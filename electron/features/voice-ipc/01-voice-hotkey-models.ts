@@ -4,22 +4,52 @@
  * ⛔ 顺序即契约：段内含 hook 调用，React 靠**调用顺序**绑定 state ⇒ 组合根必须按文件名前缀顺序调用。
  * ⛔ 本段语句只引用「自己的局部声明」与 bag；跨段名字由组合根按入参转交。
  */
-import { app, dialog, globalShortcut, ipcMain, shell, systemPreferences } from "electron";
+import { app, dialog, globalShortcut, shell, systemPreferences } from "electron";
 import { VoiceService } from "../../voice/voice-service";
 import { ALL_VOICE_REPOS, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "../../voice/model-manifest";
 import { ensureZipvoice, modelsSizeOnDisk, voiceModelsStatus } from "../../voice/model-store";
 import { isVoiceResourceEnabled, loadVoiceSettings, voiceResourceStates } from "../../voice/voice-settings";
 import { toolsRoot } from "../../toolchain";
 import { sendToWindow } from "../window-bus";
+import { defineFeature } from "../../context";
+import type { IpcHost } from "../../ipc-host";
+import type { HostCaps } from "../../runtime/seams";
+import { voiceService, voiceModelsRoot } from "../../runtime-refs";
 
-export function registerVoiceIpc1(deps: { voiceService: VoiceService; voiceModelsRoot: string }) {
-  const { voiceService, voiceModelsRoot } = deps;
+/**
+ * 取 voiceService 单例（10-03 由 main.ts 构造完成后经 runtime-refs 注入）。
+ *
+ * ⛔ 未注入时**明确抛错**而不是返回 null：域注册在组合表挂载时，而 `new VoiceService()`
+ *   在 main.ts 后段 ⇒ 正常启动顺序下这里一定拿得到。拿不到说明启动链被改坏了
+ *   （例如有人把 setVoiceService 删了），此时静默返回 null 会让所有语音 handler
+ *   在**用户点下按钮那一刻**才炸在别处，极难归因 —— 宁可现在就失败。
+ */
+function requireVoiceService(): VoiceService {
+  if (!voiceService) throw new Error("voice: 语音服务尚未初始化（main.ts 应在启动链里调 setVoiceService）");
+  return voiceService;
+}
+/** 同上：模型根目录必须已注入（它由 app.getPath("userData") 派生，模块体求值会拿到错值）。 */
+function requireVoiceModelsRoot(): string {
+  if (!voiceModelsRoot) throw new Error("voice: 模型根目录尚未注入（main.ts 应调 setVoiceModelsRoot）");
+  return voiceModelsRoot;
+}
+
+export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
+  const { ipcHost, host } = deps;
+  /**
+   * ⛔⛔ `svc()` / `modelsRoot()` **必须延后取**（10-03）：组合表 import 在 main.ts
+   *   前部，而 `new VoiceService(...)` 在其后数百行 ⇒ 挂载时这两个值还不存在。
+   *   若在函数签名里解构捕获，会永久拿到 null，症状是「语音一点反应都没有」且无任何报错。
+   *   每次使用时经基座门面现取 ⇒ 拿到的永远是当前实例。
+   */
+  const svc = (): VoiceService => requireVoiceService();
+  const modelsRoot = (): string => requireVoiceModelsRoot();
   /** 语音模型安装的并发与取消由 voiceService 内部管（installController），主进程不再包一层。 */
-  ipcMain.handle("voice:status", () => voiceService.status());
+  ipcHost.handle("voice:status", () => svc().status());
 
-  ipcMain.handle("voice:settings-get", () => {
+  ipcHost.handle("voice:settings-get", () => {
     const { loadVoiceSettings, TTS_VOICE_NAMES, MODEL_HOST_PRESETS, MODEL_HOST_LABELS } = require("../../voice/voice-settings");
-    const settings = voiceService.getSettings();
+    const settings = svc().getSettings();
     // 把枚举的可选值一起回传，渲染层不用自己硬码
     return {
       settings,
@@ -29,10 +59,10 @@ export function registerVoiceIpc1(deps: { voiceService: VoiceService; voiceModel
     };
   });
 
-  ipcMain.handle("voice:settings-set", async (_event, patch: any) => {
+  ipcHost.handle("voice:settings-set", async (_event, patch: any) => {
     const { saveVoiceSettings } = require("../../voice/voice-settings");
     const next = saveVoiceSettings(app.getPath("userData"), patch ?? {});
-    voiceService.updateSettings(next);
+    svc().updateSettings(next);
     // ★ 广播出去：语音唤醒这类「按设置常驻」的能力必须能**立刻**重挂。
     //   旧实现：VoiceCallFloat 的唤醒 effect 只在 phase 变化时读一次设置 →
     //   在设置页打开开关后毫无反应（用户 09-13 反馈「唤醒功能不太行」的直接原因之一）。
@@ -40,31 +70,32 @@ export function registerVoiceIpc1(deps: { voiceService: VoiceService; voiceModel
     return next;
   });
 
-  ipcMain.handle("voice:start", async (event, threadId: string, options?: { mode?: "conversation" | "dictation" }) => {
+  ipcHost.handle("voice:start", async (event, threadId: string, options?: { mode?: "conversation" | "dictation" }) => {
     // ⛔ 全局互斥（09-13 用户要求）：语音通话是**全应用唯一**的（麦克风/ASR/TTS 线程只有一份），
-    // 多窗口下每个窗口都渲染了自己的悬浮球——A 窗口通话中，B 窗口再点会被 voiceService
+    // 多窗口下每个窗口都渲染了自己的悬浮球——A 窗口通话中，B 窗口再点会被 svc()
     // 静默复用（`if (this.active) return ok`），把 B 的会话绑不上、音频还全喂给了 A 的通话。
     // 规则：同一会话重复 start = 恢复语义放行；不同会话 → 明确拒绝，前端据此把悬浮球置灰。
-    const status = voiceService.status();
+    const status = svc().status();
     const requestedThread = String(threadId ?? "");
     if (status.active && status.threadId && requestedThread && status.threadId !== requestedThread) {
       return { ok: false, busy: true, error: "另一个窗口正在语音通话中，请先挂断那边的通话再试" };
     }
-    const result = await voiceService.start({ threadId: requestedThread, mode: options?.mode });
-    return { ...result, status: voiceService.status() };
+    const result = await svc().start({ threadId: requestedThread, mode: options?.mode });
+    return { ...result, status: svc().status() };
   });
 
-  ipcMain.handle("voice:dictation-finish", async () => voiceService.finishDictation());
+  ipcHost.handle("voice:dictation-finish", async () => svc().finishDictation());
   /** 提前端点（审计 ④）：渲染层判定「句末标点 + 停口 0.5s」时调用，立即提交这一句 */
-  ipcMain.handle("voice:endpoint-now", async () => voiceService.endpointNow());
-  ipcMain.handle("voice:stop", async () => {
-    await voiceService.stop();
-    return { ok: true, status: voiceService.status() };
+  ipcHost.handle("voice:endpoint-now", async () => svc().endpointNow());
+  ipcHost.handle("voice:stop", async () => {
+    await svc().stop();
+    return { ok: true, status: svc().status() };
   });
 
   // 音频块走 send（不等回包），避免每 64ms 一次 IPC 往返带来的抖动
-  ipcMain.on("voice:audio", (_event, samples: Float32Array) => {
-    void voiceService.handleAudio(samples).catch((error) => console.error("[voice] audio:", error));
+  // ⛔ 10-03：用 `ipcHost.on`（单向监听）而非 `ipcMain.on` —— 后者无法被插件卸载摘除。
+  ipcHost.on("voice:audio", (_event, samples: Float32Array) => {
+    void svc().handleAudio(samples).catch((error) => console.error("[voice] audio:", error));
   });
 
   /**
@@ -86,12 +117,12 @@ export function registerVoiceIpc1(deps: { voiceService: VoiceService; voiceModel
     };
   }
 
-  ipcMain.handle("voice:speak", async (_event, text: string, options?: { sid?: number; speed?: number }) => {
-    return voiceAudioForIpc(await voiceService.speak(String(text ?? ""), options));
+  ipcHost.handle("voice:speak", async (_event, text: string, options?: { sid?: number; speed?: number }) => {
+    return voiceAudioForIpc(await svc().speak(String(text ?? ""), options));
   });
-  ipcMain.handle("voice:preview-voice", async (_event, input?: { sid?: number; speed?: number; text?: string }) => {
+  ipcHost.handle("voice:preview-voice", async (_event, input?: { sid?: number; speed?: number; text?: string }) => {
     // 设置页「音色试听」：不必在通话中，内部会临时起一个 TTS worker，合成完即销毁
-    return voiceAudioForIpc(await voiceService.previewVoice(input ?? {}));
+    return voiceAudioForIpc(await svc().previewVoice(input ?? {}));
   });
 
   // ── 语音通话「按键启动」：系统级快捷键（Electron globalShortcut）──
@@ -128,27 +159,27 @@ export function registerVoiceIpc1(deps: { voiceService: VoiceService; voiceModel
     const s = require("../../voice/voice-settings").loadVoiceSettings(app.getPath("userData"));
     if (s.hotkey?.enabled && s.hotkey.accelerator) applyVoiceHotkey(s.hotkey.accelerator);
   });
-  ipcMain.handle("voice:hotkey-set", async (_event, input: { accelerator: string; enabled?: boolean }) => {
+  ipcHost.handle("voice:hotkey-set", async (_event, input: { accelerator: string; enabled?: boolean }) => {
     const accelerator = input?.enabled === false ? "" : String(input?.accelerator ?? "");
     return applyVoiceHotkey(accelerator);
   });
-  ipcMain.handle("voice:hotkey-get", () => ({ registered: registeredVoiceHotkey }));
+  ipcHost.handle("voice:hotkey-get", () => ({ registered: registeredVoiceHotkey }));
 
   // ── 语音唤醒（持续聆听 + 文本匹配唤醒词）──
-  ipcMain.handle("voice:wake-start", () => voiceService.startWakeListener());
-  ipcMain.handle("voice:wake-audio", async (_event, samples: Float32Array) => voiceService.feedWakeAudio(samples));
-  ipcMain.handle("voice:wake-reset", async () => { await voiceService.resetWakeStream(); return { ok: true }; });
-  ipcMain.handle("voice:wake-stop", async () => { await voiceService.stopWakeListener(); return { ok: true }; });
+  ipcHost.handle("voice:wake-start", () => svc().startWakeListener());
+  ipcHost.handle("voice:wake-audio", async (_event, samples: Float32Array) => svc().feedWakeAudio(samples));
+  ipcHost.handle("voice:wake-reset", async () => { await svc().resetWakeStream(); return { ok: true }; });
+  ipcHost.handle("voice:wake-stop", async () => { await svc().stopWakeListener(); return { ok: true }; });
 
-  ipcMain.handle("voice:barge", () => voiceService.barge());
+  ipcHost.handle("voice:barge", () => svc().barge());
 
-  ipcMain.handle("voice:playback-done", () => {
-    voiceService.notifyPlaybackDone();
+  ipcHost.handle("voice:playback-done", () => {
+    svc().notifyPlaybackDone();
     return { ok: true };
   });
 
-  ipcMain.handle("voice:models-status", async () => {
-    const status = await voiceModelsStatus(voiceModelsRoot, ALL_VOICE_REPOS);
+  ipcHost.handle("voice:models-status", async () => {
+    const status = await voiceModelsStatus(modelsRoot(), ALL_VOICE_REPOS);
     // ⛔ 10-03：启用状态要与"是否就绪"**分开**回传 —— 两者正交：
     //    停用中的资源文件仍在磁盘（installed 仍为 true），只是不加载（enabled=false）。
     //    只回一个就必然丢信息：回 installed 会让「停用」显示成「已就绪」，
@@ -156,20 +187,20 @@ export function registerVoiceIpc1(deps: { voiceService: VoiceService; voiceModel
     const settings = loadVoiceSettings(app.getPath("userData"));
     return {
       ...status,
-      bytes: modelsSizeOnDisk(voiceModelsRoot),
-      root: voiceModelsRoot,
+      bytes: modelsSizeOnDisk(modelsRoot()),
+      root: modelsRoot(),
       // 提示 UI「本地导入」该期望的目录结构（HF 仓库 id 很长，用户需要明确看到）
       repos: ALL_VOICE_REPOS.map((r) => ({ id: r.repo, lastSegment: r.repo.split("/").pop() ?? r.repo })),
       // 音色克隆模型（ZipVoice，归档型资源，单独安装）：UI 按它显示独立条目
       zipvoice: {
-        ready: zipvoiceReady(voiceModelsRoot),
+        ready: zipvoiceReady(modelsRoot()),
         enabled: isVoiceResourceEnabled(settings, "zipvoice"),
         bytes: ZIPVOICE_ARCHIVE.bytes + ZIPVOICE_ARCHIVE.vocoder.bytes,
         dir: ZIPVOICE_DIR,
       },
       // 语音唤醒关键词模型（KWS，归档型资源，单独安装）：唤醒卡片按它决定显示「一键下载」还是「已就绪」
       kws: {
-        ready: kwsReady(voiceModelsRoot),
+        ready: kwsReady(modelsRoot()),
         enabled: isVoiceResourceEnabled(settings, "kws"),
         bytes: KWS_ARCHIVE.bytes,
         dir: KWS_DIR,
@@ -182,7 +213,7 @@ export function registerVoiceIpc1(deps: { voiceService: VoiceService; voiceModel
 
   /** 音色克隆模型的安装与取消（归档型资源：GitHub release 整包 + 声码器，按需下载）。 */
   let zipvoiceAbort: AbortController | null = null;
-  ipcMain.handle("voice:zipvoice-install", async () => {
+  ipcHost.handle("voice:zipvoice-install", async () => {
     // ⛔ 10-03：停用状态下拒绝下载。停用 = "暂时不要用但别删"，若还照下 156MB
     //    就成了"下完不用"，与用户预期相反，也会白耗流量。
     if (!isVoiceResourceEnabled(loadVoiceSettings(app.getPath("userData")), "zipvoice")) {
@@ -192,7 +223,7 @@ export function registerVoiceIpc1(deps: { voiceService: VoiceService; voiceModel
     zipvoiceAbort = new AbortController();
     try {
       const result = await ensureZipvoice(
-        voiceModelsRoot,
+        modelsRoot(),
         toolsRoot(),
         (progress) => sendToWindow("voice:event", { type: "download", ...progress, target: "zipvoice" }),
         zipvoiceAbort.signal,
@@ -203,7 +234,7 @@ export function registerVoiceIpc1(deps: { voiceService: VoiceService; voiceModel
       zipvoiceAbort = null;
     }
   });
-  ipcMain.handle("voice:zipvoice-cancel", () => {
+  ipcHost.handle("voice:zipvoice-cancel", () => {
     zipvoiceAbort?.abort();
     return { ok: true };
   });
@@ -213,10 +244,10 @@ export function registerVoiceIpc1(deps: { voiceService: VoiceService; voiceModel
    * 不装也能用（回退到识别模型匹配），装了才是不误唤醒 + 低 CPU 的那条路。
    */
   let kwsAbort: AbortController | null = null;
-  ipcMain.handle("voice:kws-install", async () => {
+  ipcHost.handle("voice:kws-install", async () => {
     const { ensureKws } = require("../../voice/model-store");
     const { kwsReady } = require("../../voice/model-manifest");
-    if (kwsReady(voiceModelsRoot)) return { ok: true };
+    if (kwsReady(modelsRoot())) return { ok: true };
     // ⛔ 10-03：同上，停用状态下不下载（停用是"暂时不用"，不是"照下但不用"）
     if (!isVoiceResourceEnabled(loadVoiceSettings(app.getPath("userData")), "kws")) {
       return { ok: false, error: "语音唤醒模型已被停用 —— 请先重新启用再下载" };
@@ -225,29 +256,31 @@ export function registerVoiceIpc1(deps: { voiceService: VoiceService; voiceModel
     kwsAbort = new AbortController();
     try {
       const result = await ensureKws(
-        voiceModelsRoot,
+        modelsRoot(),
         toolsRoot(),
         (progress: any) => sendToWindow("voice:event", { type: "download", ...progress, target: "kws" }),
         kwsAbort.signal,
       );
       sendToWindow("voice:event", { type: "downloadDone", ok: result.ok, error: result.ok ? undefined : (result as any).error, target: "kws" });
       // 装好了让唤醒用上关键词模型：唤醒词没变也要重挂（引擎从 asr 换成 kws）
-      if (result.ok && voiceService.wakeListening()) {
-        await voiceService.stopWakeListener();
-        await voiceService.startWakeListener();
+      if (result.ok && svc().wakeListening()) {
+        await svc().stopWakeListener();
+        await svc().startWakeListener();
       }
       return result;
     } finally {
       kwsAbort = null;
     }
   });
-  ipcMain.handle("voice:kws-cancel", () => {
+  ipcHost.handle("voice:kws-cancel", () => {
     kwsAbort?.abort();
     return { ok: true };
   });
-  ipcMain.handle("voice:kws-status", () => {
+  ipcHost.handle("voice:kws-status", () => {
     const { kwsReady } = require("../../voice/model-manifest");
-    return { ready: kwsReady(voiceModelsRoot) };
+    return { ready: kwsReady(modelsRoot()) };
   });
-  return { voiceService, voiceModelsRoot, voiceAudioForIpc, registeredVoiceHotkey, applyVoiceHotkey, zipvoiceAbort, kwsAbort };
+  // ⛔ bag 必须把 ipcHost / host 传给 2、3 段 —— 它们只拿 ibA（顺序即契约，不许另开参数）。
+  //    漏传的症状很隐蔽：2/3 段里 `ipcHost` 是 undefined，tsc 直接报而不是运行时报。
+  return { ipcHost, host, svc, modelsRoot, voiceAudioForIpc, registeredVoiceHotkey, applyVoiceHotkey, zipvoiceAbort, kwsAbort };
 }

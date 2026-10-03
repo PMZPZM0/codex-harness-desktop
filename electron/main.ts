@@ -45,7 +45,6 @@ import {
   setDispatchHttpReady, stableKey,
 } from "./features/dispatch-core";
 import { dirEntries, fileStat, sizeLabel } from "./features/app-diagnostics";
-import { registerVoiceIpc } from "./features/voice-ipc";
 import { readRelayStore, writeRelayStore } from "./features/relay-ipc";
 import { IPC_DOMAINS, domainsStillInMain } from "./ipc-registry";
 import { ensureBuiltinSkills, ensureExpertSkillsMarketplace, expertSkillsSourceDir } from "./builtin-skills";
@@ -76,7 +75,8 @@ import {
   isInsideOrEqualTrustedRoots, isInsideTrustedRoots, mainWindow, memoryGatewayFile, memoryLayers,
   memoryStore, memoryWorkspaceFile, notifyPopoutClosed, pastedTextDir, popoutThreadIds, qrSvg,
   rpaStore, server, setAppThemeDark, setDelegateRegistry, setMainWindow, setMemoryLayers,
-  setMemoryStore, setRpaStore, setServer, setTeamRunStore, setThreadRuntimeStore, sshSessions,
+  setMemoryStore, setRpaStore, setServer, setTeamRunStore, setThreadRuntimeStore,
+  setVoiceModelsRoot, setVoiceService, sshSessions,
   syncEngineWatchdog, teamRunStore, terminals, threadCwd, threadRuntimeStore, titleBarOverlayOptions,
   trustPicked, upsertCustomModel,
 } from "./runtime-refs";
@@ -570,8 +570,13 @@ void (async () => {
   } catch { /* 清理失败不阻塞启动 */ }
 })();
 
-// ── 语音通话 IPC 面（39 个 handler）已按域拆到 features/voice-ipc.ts；仍在此处注册以保持时机不变 ──
-registerVoiceIpc({ voiceService, voiceModelsRoot });
+// ── 语音通话 IPC 面（42 个 handler）已于 10-03 改由组合层 `./composition.gen` 挂载
+//    （`voiceFeature`）。⛔ 这里**只做单例注入**、不再调 registerVoiceIpc：
+//    组合表的 import 在文件前部（远早于本行），那时 `new VoiceService(...)` 还没执行
+//    ⇒ 域内若在 setup 里取 voiceService 会拿到 null。改为构造完成后经基座门面注入，
+//    域内 handler 回调体（运行期）再取 —— 与 server / delegateRegistry 同款范式。
+setVoiceModelsRoot(voiceModelsRoot);
+setVoiceService(voiceService);
 
 
 

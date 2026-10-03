@@ -94,8 +94,12 @@ if (!mainSrc || !preloadSrc) {
   // ⛔ 10-03（P0 主进程插件容器）：域改成插件形态后，通道注册走**容器注入**的
   //    `ipcHost.handle("域:动作", …)`（见 electron/ipc-host.ts）。这里必须同时认这两种写法 ——
   //    否则容器路线注册的通道会被判成"preload 有、main 无"的死链（假红，而且是最吓人的那种）。
-  //    ⛔ 域里注册通道一律写**字面量** `ipcHost.handle("域:动作", …)`：动态拼名会让这条守卫静默失效。
-  const handlers = collect(mainSrc, /(?:ipcMain\.(?:handle|on)|ipcHost\.handle)\(\s*["'`]([^"'`]+)["'`]/g);
+  // ⛔⛔ 10-03 补 `ipcHost.on`：容器也承载**单向监听**（麦克风音频块每 64ms 一帧，走 invoke
+  //    会因等回包产生抖动）。只认 `handle` 会把 `voice:audio` 判成死链 —— 而它明明注册了。
+  //    这是**补全判据**不是放宽：`on` 与 `handle` 一样是真实注册。
+  //    ⛔ 域里注册通道一律写**字面量**（`ipcHost.handle("x:y", …)` / `ipcHost.on("x:y", …)`）：
+  //    动态拼名会让这条守卫静默失效。
+  const handlers = collect(mainSrc, /(?:ipcMain\.(?:handle|on)|ipcHost\.(?:handle|on))\(\s*["'`]([^"'`]+)["'`]/g);
   const bridges = collect(preloadSrc, /ipcRenderer\.(?:invoke|send|sendSync)\(\s*["'`]([^"'`]+)["'`]/g);
 
   ok(`主进程 handler ${handlers.size} 个 / preload 桥接 ${bridges.size} 个`);
