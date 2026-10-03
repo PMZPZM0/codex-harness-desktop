@@ -163,8 +163,12 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
      改锚**本实例真实直播过**：只有这个挂载实例亲眼见过出字（running && displayed 同帧）
      或用户点开过，浮窗才允许出现；重挂载的已完成卡从收起起步，动画无从重播。 */
   const liveStreamedRef = useRef(false);
-  useEffect(() => { if (running && displayed) liveStreamedRef.current = true; }, [running, displayed]);
-  const popupOpen = open && Boolean(displayed) && (liveStreamedRef.current || manualOpen !== null);
+  /* ⛔ 判据（10-03 定稿）：**挂载那一刻思考文本还不存在** = 本实例是「直播前」挂载的
+     （item/started 先到、正文 delta 后到）⇒ 允许自动展开浮窗；大折叠重挂载时文本早已在
+     （挂在的是已完成/半完成状态）⇒ 一律从收起起步，吸入动画无从重播。
+     useRef 初始值只在首帧取一次 ⇒ 天然区分「直播前挂载」与「回放式重挂载」。 */
+  const mountedBeforeTextRef = useRef(!text);
+  const popupOpen = open && Boolean(displayed) && (mountedBeforeTextRef.current || manualOpen !== null);
   const prevOpenRef = useRef(false);
   useEffect(() => {
     if (popupOpen) { prevOpenRef.current = true; setExiting(false); return; }
