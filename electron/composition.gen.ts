@@ -80,6 +80,8 @@ import { hooksFeature as feat_hooks } from "./features/hooks-ipc";
 import { remoteFeature as feat_remote } from "./features/remote-ipc";
 import { fsFeature as feat_fs } from "./features/fs-ipc";
 import { dialogFeature as feat_dialog } from "./features/dialog-ipc";
+import { appFeature as feat_app } from "./features/app-diagnostics";
+import { relayFeature as feat_relay } from "./features/relay-ipc";
 
 export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unknown };
 
@@ -161,6 +163,8 @@ export const ENABLED: EnabledDomain[] = [
   { id: "remote", plugin: feat_remote as Plugin<unknown>, config: null },
   { id: "fs", plugin: feat_fs as Plugin<unknown>, config: null },
   { id: "dialog", plugin: feat_dialog as Plugin<unknown>, config: null },
+  { id: "app", plugin: feat_app as Plugin<unknown>, config: null },
+  { id: "relay", plugin: feat_relay as Plugin<unknown>, config: null },
 ];
 
 for (const row of ENABLED) mountFeature(row.plugin, row.config);

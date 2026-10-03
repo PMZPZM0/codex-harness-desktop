@@ -46,7 +46,7 @@ import {
 } from "./features/dispatch-core";
 import { dirEntries, fileStat, sizeLabel } from "./features/app-diagnostics";
 import { registerVoiceIpc } from "./features/voice-ipc";
-import { readRelayStore, registerRelayIpc, writeRelayStore } from "./features/relay-ipc";
+import { readRelayStore, writeRelayStore } from "./features/relay-ipc";
 import { IPC_DOMAINS, domainsStillInMain } from "./ipc-registry";
 import { ensureBuiltinSkills, ensureExpertSkillsMarketplace, expertSkillsSourceDir } from "./builtin-skills";
 import { NUPHUS_VISION_ENV_TABLE, nuphusVisionEnv, nuphusVisionEnvDrift } from "./nuphus-env";
@@ -805,15 +805,10 @@ ipcMain.handle("window:popout-close", (event, threadId: unknown) => {
 
 
 
-// ── 中转站账户域（登录/多账户/余额/套餐/密钥/订阅支付）已按域拆到 features/relay-ipc.ts；仍在此处注册以保持时机不变 ──
-registerRelayIpc({
-  readCustomModels,
-  readCustomModel,
-  upsertCustomModel,
-  customModelFile,
-  describeNetworkError,
-  server,
-});
+// ── 中转站账户域（登录/多账户/余额/套餐/密钥/订阅支付）已于 10-03 改由组合层 `./composition.gen`
+//    挂载（`relayFeature`）；⛔ `server` 单例**不能**在这里传 —— 组合表 import 在本行之前，
+//    那时 `setServer(...)` 还没执行（main.ts 第 337 行）⇒ 传进去只会捕获 undefined。域内改为
+//    经 `runtime-refs` 活绑定现取。
 
 // ⚠️ 必须 await：`remote.start()` 是 async，不 await 时 port 是个 Promise 对象（渲染层拿到
 // `{}`、二维码地址也可能在 token 生成前取），这正是 09-13 冒烟测试第一次跑就超时的原因。

@@ -22,10 +22,21 @@ import { ThreadRuntimeStore } from "./thread-runtime-store";
 import { MemoryLayers } from "./memory-layers";
 import { MemoryStore } from "./memory-store";
 import { RpaStore } from "./rpa-store";
-import { readCustomModels, writeCustomModels } from "./main/01-model-catalog";
+import { readCustomModel, readCustomModels, writeCustomModels } from "./main/01-model-catalog";
+import { describeNetworkError } from "./main/11-maintenance";
 import type { CustomModelFile } from "./features/custom-model-types";
 import { readAppSettings, readAppSettingsSync } from "./app-settings";
 import { broadcastHarnessEvent } from "./features/window-bus";
+
+/* ── 域插件化后跨域取用的基座门面（10-03 阶段 2/3）───────────────────────────
+   relay 域改 defineFeature 后，deps 不再由 main.ts 传参，而是经本门面取**活绑定**。
+   ⛔ 这两个符号原先只在 main.ts 的具名 import 里可达，域要取就得有门面 —— 这不是"为了方便
+   而乱加导出"，而是【132】反向依赖原则的正面用法：**跨域共用符号归基座层**。
+   ⚠️ 必须是 re-export 而不是拷贝：TS→CJS 下才是 getter 转发（活绑定），
+   拷贝会在 main/ 段重新初始化时留下过期引用。 */
+export { describeNetworkError, readCustomModel };
+/** 10-03：relay 域插件化后也要经门面取（原先由 main.ts 传参，组合表挂载时 main.ts 的 import 尚未完成） */
+export { readCustomModels };
 
 /* ── 主窗口句柄（window-factory 经 mutableState.mainWindow = 写入）──────── */
 export let mainWindow: BrowserWindow | null = null;
