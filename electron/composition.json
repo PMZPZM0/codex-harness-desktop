@@ -70,6 +70,13 @@
       "file": "features/skillhub-markets-ipc.ts",
       "export": "soulMarketFeature",
       "config": null
+    },
+    {
+      "id": "drama-canvas",
+      "enabled": true,
+      "file": "features/drama-canvas.ts",
+      "export": "dramaCanvasFeature",
+      "config": null
     }
   ]
 }
