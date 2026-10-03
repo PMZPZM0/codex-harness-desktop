@@ -21,6 +21,27 @@
       "file": "features/clipboard-ipc.ts",
       "export": "clipboardFeature",
       "config": null
+    },
+    {
+      "id": "phone",
+      "enabled": true,
+      "file": "features/phone-harness-ipc.ts",
+      "export": "phoneHarnessFeature",
+      "config": null
+    },
+    {
+      "id": "updates",
+      "enabled": true,
+      "file": "features/updates-ipc.ts",
+      "export": "updatesFeature",
+      "config": null
+    },
+    {
+      "id": "dataDir",
+      "enabled": true,
+      "file": "features/data-dir-ipc.ts",
+      "export": "dataDirFeature",
+      "config": null
     }
   ]
 }

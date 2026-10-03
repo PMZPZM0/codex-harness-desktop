@@ -567,7 +567,10 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   (/isInsideOrEqualTrustedRoots\(target\)/.test(shellReveal) ? ok : fail)(
     "shell:reveal 收敛到可信根（含根本身：reveal 工作区 / userData 目录是合法用法）"
   );
-  const updReveal = mainForSec.slice(mainForSec.indexOf('ipcMain.handle("updates:reveal"'), mainForSec.indexOf('ipcMain.handle("updates:install"'));
+  /* ⛔ 10-03 P2：锚点必须认两种注册形态 —— 域迁到容器后写的是 ipcHost.handle，用 indexOf('ipcMain.handle("...') 会得到 -1 ⇒ 切片为空 ⇒ 这条安全断言假红（不变量本身没破）。 */
+  const updRevealFrom = mainForSec.search(/(?:ipcMain\.handle|ipcHost\.handle)\("updates:reveal"/);
+  const updRevealTo = mainForSec.search(/(?:ipcMain\.handle|ipcHost\.handle)\("updates:install"/);
+  const updReveal = updRevealFrom >= 0 && updRevealTo > updRevealFrom ? mainForSec.slice(updRevealFrom, updRevealTo) : "";
   (/lastVerifiedUpdatePath/.test(updReveal) && /path_not_verified/.test(updReveal)
     ? ok("updates:reveal 只允许定位刚下载并通过校验的安装包（与 updates:install 同口径）")
     : fail("updates:reveal 又能被渲染层指定任意路径 showItemInFolder 了"));
