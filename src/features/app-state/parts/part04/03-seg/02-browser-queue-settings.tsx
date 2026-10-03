@@ -487,9 +487,8 @@ bag.startQueued = startQueued as typeof bag.startQueued;
     //   补齐口径：**引擎列表为准 + 本地已装减去引擎已认领的**（不重复、不覆盖引擎状态）。
     //   只扫本地目录（listInstalledMarketPlugins 零网络），扫失败就只显示引擎列表，不让整页空掉。
     const enginePlugins: any[] = (pluginsResult.marketplaces ?? [])
-      // 官方精选市场（openai-api-curated）需 ChatGPT 账号登录才能装，API Key 方式装不了；
-      // 与其显示一堆点不动的「虚假卡片」，直接不展示，用户需要的插件走「开发工具」随包内置。
-      .filter((marketplace: any) => marketplace.name !== "openai-api-curated")
+      // 10-03 用户改判：**放出** openai-api-curated 的官方卡片（此前为「点不动的虚假卡片」而整源隐藏）。
+      // 点得到得不到由 changePlugin 兜着：它已按 ChatGPT 鉴权类报错给中文提示，不再静默失败。
       .flatMap((marketplace: any) => (marketplace.plugins ?? []).map((plugin: any) => ({ ...plugin, marketplaceName: marketplace.name, marketplacePath: marketplace.path })));
     const engineSlugs = new Set(enginePlugins.map((plugin: any) => String(plugin.id ?? plugin.name ?? "").split("@")[0]));
     let localOnlyPlugins: any[] = [];

@@ -3057,6 +3057,11 @@ w.postMessage({id:1,op:"list",root});
         && !/codex-official-market:installed[\s\S]{0,200}listOfficialMarketPlugins\(/.test(officialIpc) ? ok : fail)(
         "【254】官方已装清单通道零网络（走本地扫描；误接 list 会去拉上游 65 条拖慢刷新）"
       );
+      // pluginPath 来自渲染层字符串且参与临时目录取值拼接 ⇒ 必须白名单校验（不能靠"大概传不到"）
+      (/if \(!\/\^\[\\w\.-\]\+\(\\\/\[\\w\.-\]\+\)\+\$\/\.test\(plugin\.pluginPath\)/.test(officialSrc)
+        && officialSrc.includes('plugin.pluginPath.split("/").includes("..")') ? ok : fail)(
+        "【254】安装入参 pluginPath 走形态白名单（只允许 plugins/<slug>，含 .. 或以 / 开头一律拒绝）"
+      );
       (officialSrc.includes("export async function removeOfficialMarketPluginFiles(")
         && officialSrc.includes("path.resolve(pluginsRootOf(marketDir))")
         && /target === root \|\| !target\.startsWith\(root \+ path\.sep\)/.test(officialSrc)

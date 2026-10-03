@@ -105,6 +105,29 @@
 - 分类中文名映射在 codex-market.ts 的 `CATEGORY_ZH`；UI 分类 tab 在 `helpers/catalogs.ts` 的
   `pluginMarketCategoryTabs`（两处要与 marketplace.json 的 category key 对齐）。
 
+### 🧩 Codex 官方插件市场（`electron/codex-official-market.ts` + `features/codex-official-market-ipc.ts`，2026-10-03 立）
+
+插件页的**第二个数据源**：GitHub `openai/plugins`（Codex 官方市场原档，**65 条**）。与上面的 Gitee 源是两个板块、
+两套目录，插件页顶部源切换，**各用各的分类 tab**（Gitee 8 类 / 官方 10 类，key 不重叠）。守卫【254】【255】。
+
+- 清单 = `.agents/plugins/marketplace.json`（65 条，只有 name/source/policy/category）+ `.agents/plugins/api_marketplace.json`
+  （50 条子集 = ChatGPT 精选）。⛔ **简介与显示名不在清单里**，在各插件的 `plugins/<slug>/.codex-plugin/plugin.json`
+  ⇒ 文案走生成快照 `electron/codex-official-catalog.gen.ts`（**禁手改**，重跑 `node scripts/gen-codex-official-catalog.mjs`）；
+  中文名仍是手写表 `OFFICIAL_PLUGIN_ZH`（缺条目回落快照英文）。
+- 下载 = `git/trees?recursive=1` 一次拿全 + 落盘缓存（`<市场目录>/.cache/tree.json`，6h）+ raw 逐文件（8 路并发）。
+  ⛔ 镜像序 = **gh-proxy → ghfast → 直连**；前两个连 `api.github.com` 都能代理（未登录直连限 60 次/小时）。
+- 落盘 = `<codexHome>/plugins/codex-official-market/plugins/<slug>` + marker `.codex-official.json`
+  （**「已安装」的真相源**，同【245】口径）+ 本地 `.agents/plugins/marketplace.json`（照上游形态）
+  + config 段 `[marketplaces.codex-official-market]` → 引擎 `plugin/install`（清单**文件**路径）→ 重启引擎。
+- ⛔ **官方 65 条全部要鉴权**（ON_INSTALL 58 / ON_USE 7），其中 15 条还依赖 ChatGPT 应用连接器 ⇒ 每张卡片必须写
+  `authNote`（「装了 ≠ 能用」）；3 条 `source` 指向外部仓库（CrowdStrike ×2 / Qodo）⇒ 只给查看来源，不给一键安装。
+- ⛔ 62 个插件共 **51.13 MB** > 50MB 内置口径 ⇒ 不随包，按需下载；单插件最多 795 个文件 ⇒ `MAX_FILES` 不许退回 300。
+- ⛔ 安装进度事件 type = `official-plugin-install`，**不与 Gitee 的 `plugin-install` 共用**（两源 slug 有重名：linear / github）。
+- 渲染层 = `src/features/codex-official-market/`（自包含、本地 state，**不进 bag**；样板同 `component-library` 页）。
+- ⚠️ **已知边界（与 Gitee 源同款，不是本轮新欠账）**：「已安装」管理列表只补引擎已认领的插件（part04 的 union 扫的是
+  Gitee 目录）；官方源里**引擎没认领**的那批在本板块卡片上有 ✓ 与卸载，但不出现在下方「已安装」卡片区。
+  补齐它要动 part04/part05 的 bag 分流（多一个市场维度），未经用户确认不擅自扩。
+
 ### 📚 Uiverse 组件库（`electron/features/uiverse-library.ts` + `src/features/component-library/`，2026-10-01）
 
 组件库的唯一数据源 = `src/lib/ui-skin/data/*.gz` + `src/lib/ui-skin/catalog.gen.ts`（ingest：`scripts/gen-ui-skin-library.mjs`；⛔ 不复制第二份）：
@@ -360,7 +383,7 @@ FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）· Playwright 内核�
 
 - **初始化回归原生**：不预写 marketplace 段、不首启自动种插件/技能。
 - **一切可下载的拓展都按需安装**（自动化包、浏览器内核、ponytail、ffmpeg 等），`runtime:install` 统一入口。
-- 官方精选市场（`openai-api-curated`）需 ChatGPT 账号登录才能装，API Key 方式装不了——插件页已隐藏，不要尝试 `plugin/install` 该市场。
+- 官方精选市场（`openai-api-curated`）需 ChatGPT 账号登录才能装，API Key 方式装不了。**10-03 用户改判：卡片放出来**（不再整源隐藏），点不动时由 `changePlugin` 给中文提示兜底。想要「装了就能一键用」的官方插件走上面「Codex 官方插件市场」那一节内置的镜像源。
 
 ## 引擎怎么知道「宿主有哪些能力、能拓展什么」（09-25 立，守卫【153】【159】）
 
