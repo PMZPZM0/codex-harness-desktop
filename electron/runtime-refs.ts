@@ -71,6 +71,18 @@ export function setServer(instance: CodexServer) { server = instance; }
 export let delegateRegistry!: DelegateRegistry;
 export function setDelegateRegistry(instance: DelegateRegistry) { delegateRegistry = instance; }
 
+/* ── 语音服务单例（10-03：voice 域改插件形态后要经门面取）────────────────────
+   ⛔ **为什么必须走 setter 注入而不是直接 import**：voiceService 在 main.ts 第 542 行构造
+   （依赖 server / getModel / userDataDir），而 voice 域改由组合表挂载（import 在第 96 行）
+   ⇒ 挂载时 `new VoiceService()` 还没执行。域内只能**延后取**（handler 回调体内），
+   或者由 main.ts 在构造完成后注入 —— 后者与 server / delegateRegistry 同款范式。
+   ⛔ 模型根目录同理：它是 `path.join(app.getPath("userData"), …)`，模块体求值会拿到
+   错的 userData（【91】），必须等 app.setPath 之后再算。 */
+export let voiceService: import("./voice/voice-service").VoiceService | null = null;
+export function setVoiceService(instance: import("./voice/voice-service").VoiceService) { voiceService = instance; }
+export let voiceModelsRoot = "";
+export function setVoiceModelsRoot(dir: string) { voiceModelsRoot = dir; }
+
 export let teamRunStore!: TeamRunStore;
 export function setTeamRunStore(instance: TeamRunStore) { teamRunStore = instance; }
 

@@ -4,7 +4,7 @@
  * ⛔ 顺序即契约：段内含 hook 调用，React 靠**调用顺序**绑定 state ⇒ 组合根必须按文件名前缀顺序调用。
  * ⛔ 本段语句只引用「自己的局部声明」与 bag；跨段名字由组合根按入参转交。
  */
-import { app, dialog, globalShortcut, ipcMain, shell, systemPreferences } from "electron";
+import { app, dialog, globalShortcut, shell, systemPreferences } from "electron";
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -23,10 +23,10 @@ import { sendToWindow } from "../window-bus";
 import type { registerVoiceIpc1 } from "./01-voice-hotkey-models";
 
 /**
- * 每种资源对应的**目录名**（相对 voiceModelsRoot）。
+ * 每种资源对应的**目录名**（相对 modelsRoot()）。
  *
  * ⛔ `base` 是空串：三个基础模型仓库（ASR/VAD/TTS）各自是根下的一个子目录、彼此独立，
- *    没有一个能代表"整套基础模型"的父目录 ⇒ 删 base 只能删整个 voiceModelsRoot。
+ *    没有一个能代表"整套基础模型"的父目录 ⇒ 删 base 只能删整个 modelsRoot()。
  *    这也是 `resourceDirOf` 对空串返回 root 的原因（root 自身在允许范围内）。
  */
 const RESOURCE_DIRS: Record<VoiceResourceKind, string> = {
@@ -43,14 +43,14 @@ const RESOURCE_INSTALLED: Record<VoiceResourceKind, (modelsRoot: string) => bool
 };
 
 export function registerVoiceIpc3(ibA: ReturnType<typeof registerVoiceIpc1>) {
-  const { voiceAudioForIpc, voiceModelsRoot, voiceService } = ibA;
-  ipcMain.handle("voice:profiles-preview", async (_event, input?: { id?: string; text?: string }) =>
-    voiceAudioForIpc(await voiceService.previewVoice({ profileId: input?.id, text: input?.text }))
+  const { voiceAudioForIpc, modelsRoot, svc, ipcHost } = ibA;
+  ipcHost.handle("voice:profiles-preview", async (_event, input?: { id?: string; text?: string }) =>
+    voiceAudioForIpc(await svc().previewVoice({ profileId: input?.id, text: input?.text }))
   );
 
-  ipcMain.handle("voice:models-install", () => voiceService.installModels());
-  ipcMain.handle("voice:models-cancel", () => ({ ok: voiceService.cancelInstall() }));
-  ipcMain.handle("voice:models-import", async (_event, input: { sourceDir: string }) => {
+  ipcHost.handle("voice:models-install", () => svc().installModels());
+  ipcHost.handle("voice:models-cancel", () => ({ ok: svc().cancelInstall() }));
+  ipcHost.handle("voice:models-import", async (_event, input: { sourceDir: string }) => {
     // ⛔ 10-03：停用状态下也拒绝导入。installModels 拦了但这条是**另一条入口** ——
     //   只拦一条就等于没拦（用户会从"本地导入"把 270MB 灌回来，停用形同虚设）。
     if (!isVoiceResourceEnabled(loadVoiceSettings(app.getPath("userData")), "base")) {
@@ -61,19 +61,19 @@ export function registerVoiceIpc3(ibA: ReturnType<typeof registerVoiceIpc1>) {
     const { ALL_VOICE_REPOS } = require("../../voice/model-manifest");
     const failures: string[] = [];
     for (const repo of ALL_VOICE_REPOS) {
-      const f = await importRepoFromDir(voiceModelsRoot, input.sourceDir, repo, (progress: any) => {
+      const f = await importRepoFromDir(modelsRoot(), input.sourceDir, repo, (progress: any) => {
         sendToWindow("voice:event", { type: "download", ...progress });
       });
       failures.push(...f.map((x: string) => `${repo.repo} → ${x}`));
     }
-    await voiceService.refreshModelsReady();
+    await svc().refreshModelsReady();
     sendToWindow("voice:event", { type: "download", percent: 100, message: "导入完成" });
     sendToWindow("voice:event", { type: "downloadDone", ok: failures.length === 0, error: failures.slice(0, 3).join("；") });
     return { ok: failures.length === 0, failures };
   });
-  ipcMain.handle("voice:models-reveal", () => {
+  ipcHost.handle("voice:models-reveal", () => {
     // 在文件管理器里打开模型目录（开发者验证下载内容用）
-    return shell.openPath(voiceModelsRoot);
+    return shell.openPath(modelsRoot());
   });
 
   // ── 已下载资源的三态管理：启用 / 停用 / 删除（10-03 用户要求）──
@@ -98,7 +98,7 @@ export function registerVoiceIpc3(ibA: ReturnType<typeof registerVoiceIpc1>) {
    */
   const resourceDirOf = (kind: string): kind is VoiceResourceKind => {
     if (!isVoiceResourceKind(kind)) return false;
-    const root = path.resolve(voiceModelsRoot);
+    const root = path.resolve(modelsRoot());
     if (!root) return false;
     // ⛔ base 的目录名是空串 ⇒ 解析结果就是 root 自身。它**是**合法的删除目标
     //    （三个仓库分散在根下，删 base 只能删整个根），所以这里允许 target === root；
@@ -107,27 +107,27 @@ export function registerVoiceIpc3(ibA: ReturnType<typeof registerVoiceIpc1>) {
     return target === root || target.startsWith(root + path.sep);
   };
   /** 取目录字符串（调用前必须已通过 resourceDirOf 的白名单校验）。 */
-  const dirOfKind = (kind: VoiceResourceKind): string => path.resolve(voiceModelsRoot, RESOURCE_DIRS[kind]);
+  const dirOfKind = (kind: VoiceResourceKind): string => path.resolve(modelsRoot(), RESOURCE_DIRS[kind]);
 
-  ipcMain.handle("voice:resource-set-enabled", async (_event, input: { kind?: string; enabled?: boolean }) => {
+  ipcHost.handle("voice:resource-set-enabled", async (_event, input: { kind?: string; enabled?: boolean }) => {
     const kind = String(input?.kind ?? "");
     if (!isVoiceResourceKind(kind)) return { ok: false, error: `未知的资源类型：${kind || "(空)"}` };
     // ⛔ 破坏性前置：删除一个正在跑的模型目录前必须先停掉持有句柄的 worker，
     //    否则 Windows 上 fs.rm 会 EBUSY（既有 models-uninstall 已踩过，用户看到的是
     //    「卸载失败但也没提示」）。停用/启用不走删除，但为一致性也在这里统一处理。
     const enabled = input?.enabled !== false;
-    if (!enabled) voiceService.disposeIdleWorkers();
+    if (!enabled) svc().disposeIdleWorkers();
     const settings = setVoiceResourceEnabled(app.getPath("userData"), kind, enabled);
     // 唤醒是常驻监听：KWS 的启停必须立刻生效，否则「停了还在后台听着」（隐私问题，不只是体验）。
-    if (kind === "kws" && voiceService.wakeListening()) {
-      await voiceService.stopWakeListener();
-      await voiceService.startWakeListener();
+    if (kind === "kws" && svc().wakeListening()) {
+      await svc().stopWakeListener();
+      await svc().startWakeListener();
     }
-    await voiceService.refreshModelsReady();
+    await svc().refreshModelsReady();
     return { ok: true, enabled, resources: voiceResourceStates(settings)[kind] };
   });
 
-  ipcMain.handle("voice:resource-delete", async (_event, input: { kind?: string }) => {
+  ipcHost.handle("voice:resource-delete", async (_event, input: { kind?: string }) => {
     const kind = String(input?.kind ?? "");
     if (!resourceDirOf(kind)) return { ok: false, error: `未知的资源类型：${kind || "(空)"}` };
     const dir = dirOfKind(kind);
@@ -138,23 +138,23 @@ export function registerVoiceIpc3(ibA: ReturnType<typeof registerVoiceIpc1>) {
       return { ok: false, error: `「${VOICE_RESOURCE_LABELS[kind]}」处于停用状态，请先重新启用再删除` };
     }
     // 与 models-uninstall 同款防御：解析后必须仍在 voice-models 内（防目录穿越）
-    const root = path.resolve(voiceModelsRoot);
+    const root = path.resolve(modelsRoot());
     if (dir !== root && !dir.startsWith(root + path.sep)) {
       return { ok: false, error: "目标路径不在语音模型目录内，已取消删除" };
     }
     // ★ 必须先销毁工作线程：它们持有已加载的 onnx 文件句柄，Windows 上会让 fs.rm 报 EBUSY
-    voiceService.disposeIdleWorkers();
+    svc().disposeIdleWorkers();
     try {
       await fs.rm(dir, { recursive: true, force: true });
     } catch (e: any) {
       return { ok: false, error: `删除失败：${e?.message ?? e}` };
     }
-    await voiceService.refreshModelsReady();
+    await svc().refreshModelsReady();
     return { ok: true, kind };
   });
 
   /** 单个资源的状态（启用与否 + 是否已下载）。已下载仍走既有的 ready 判定，不重复造。 */
-  ipcMain.handle("voice:resource-status", async (_event, input: { kind?: string }) => {
+  ipcHost.handle("voice:resource-status", async (_event, input: { kind?: string }) => {
     const kind = String(input?.kind ?? "");
     if (!isVoiceResourceKind(kind)) return { ok: false, error: `未知的资源类型：${kind || "(空)"}` };
     if (!resourceDirOf(kind)) return { ok: false, error: "语音模型目录路径异常" };
@@ -167,32 +167,32 @@ export function registerVoiceIpc3(ibA: ReturnType<typeof registerVoiceIpc1>) {
       kind,
       enabled: isVoiceResourceEnabled(settings, kind),
       label: VOICE_RESOURCE_LABELS[kind],
-      installed: RESOURCE_INSTALLED[kind](voiceModelsRoot),
+      installed: RESOURCE_INSTALLED[kind](modelsRoot()),
       bytes,
       dir,
     };
   });
 
-  ipcMain.handle("voice:models-uninstall", async () => {
+  ipcHost.handle("voice:models-uninstall", async () => {
     // 防御（破坏性操作必须显式收口）：只认 <userData>/voice-models 这一个专用子目录。
     // 万一将来路径拼错（比如退化成 userData 本身），宁可直接失败也不能端掉整个配置目录。
     const userData = app.getPath("userData");
     const expected = path.join(userData, "voice-models");
-    const target = path.resolve(voiceModelsRoot);
-    if (!voiceModelsRoot || target !== path.resolve(expected) || target === path.resolve(userData)) {
+    const target = path.resolve(modelsRoot());
+    if (!modelsRoot() || target !== path.resolve(expected) || target === path.resolve(userData)) {
       return { ok: false, error: "语音模型目录路径异常，已取消卸载" };
     }
     // 卸载 = 删除整个 voice-models 根目录（含 .part）；下次再点下载会重新拉。
     // ★ 必须先销毁「挂断后保活」的工作线程：它们持有已加载的 onnx 文件句柄，
     //   Windows 上会让 fs.rm 报 EBUSY（表现为「卸载失败但也没提示」）。
-    voiceService.disposeIdleWorkers();
-    await fs.rm(voiceModelsRoot, { recursive: true, force: true });
-    await voiceService.refreshModelsReady();
+    svc().disposeIdleWorkers();
+    await fs.rm(modelsRoot(), { recursive: true, force: true });
+    await svc().refreshModelsReady();
     return { ok: true };
   });
 
   /** macOS 需要显式申请麦克风授权；Windows/Linux 直接按「已授权」处理。 */
-  ipcMain.handle("voice:mic-permission", async () => {
+  ipcHost.handle("voice:mic-permission", async () => {
     if (process.platform !== "darwin") return { status: "granted" };
     try {
       const current = systemPreferences.getMediaAccessStatus("microphone");

@@ -84,6 +84,7 @@ import { appFeature as feat_app } from "./features/app-diagnostics";
 import { relayFeature as feat_relay } from "./features/relay-ipc";
 import { layaFeature as feat_laya } from "./features/laya-service";
 import { videoFeature as feat_video } from "./features/video-gen";
+import { voiceFeature as feat_voice } from "./features/voice-ipc";
 
 export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unknown };
 
@@ -169,6 +170,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "relay", plugin: feat_relay as Plugin<unknown>, config: null },
   { id: "laya", plugin: feat_laya as Plugin<unknown>, config: null },
   { id: "video", plugin: feat_video as Plugin<unknown>, config: null },
+  { id: "voice", plugin: feat_voice as Plugin<unknown>, config: null },
 ];
 
 for (const row of ENABLED) mountFeature(row.plugin, row.config);

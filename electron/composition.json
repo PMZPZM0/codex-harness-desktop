@@ -539,6 +539,13 @@
       "file": "features/video-gen.ts",
       "export": "videoFeature",
       "config": null
+    },
+    {
+      "id": "voice",
+      "enabled": true,
+      "file": "features/voice-ipc.ts",
+      "export": "voiceFeature",
+      "config": null
     }
   ]
 }

@@ -4,7 +4,7 @@
  * ⛔ 顺序即契约：段内含 hook 调用，React 靠**调用顺序**绑定 state ⇒ 组合根必须按文件名前缀顺序调用。
  * ⛔ 本段语句只引用「自己的局部声明」与 bag；跨段名字由组合根按入参转交。
  */
-import { app, dialog, globalShortcut, ipcMain, shell, systemPreferences } from "electron";
+import { app, dialog, globalShortcut, shell, systemPreferences } from "electron";
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -13,7 +13,7 @@ import { ALL_VOICE_REPOS, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_ARCHIVE, ZIPV
 import type { registerVoiceIpc1 } from "./01-voice-hotkey-models";
 
 export function registerVoiceIpc2(ibA: ReturnType<typeof registerVoiceIpc1>) {
-  const { voiceModelsRoot, voiceService } = ibA;
+  const { svc, modelsRoot, ipcHost } = ibA;
   // ── 音色档案（音色克隆 ZipVoice）：导入/录制参考音频 → 本机 ASR 转写参考文本 → 保存为专属音色 ──
   const voiceProfilesDirOf = () => path.join(app.getPath("userData"), "voice-profiles");
 
@@ -31,7 +31,7 @@ export function registerVoiceIpc2(ibA: ReturnType<typeof registerVoiceIpc1>) {
     let refText = "";
     let transcribeError = "";
     try {
-      const done = await voiceService.transcribeAudioFile(path.join(root, tmp16));
+      const done = await svc().transcribeAudioFile(path.join(root, tmp16));
       if (done.ok) refText = String(done.text ?? "").trim();
       else transcribeError = String(done.error ?? "");
     } catch (error) {
@@ -49,9 +49,9 @@ export function registerVoiceIpc2(ibA: ReturnType<typeof registerVoiceIpc1>) {
     };
   }
 
-  ipcMain.handle("voice:profiles-list", async () => ({
+  ipcHost.handle("voice:profiles-list", async () => ({
     profiles: await voiceProfiles.listProfiles(app.getPath("userData")),
-    zipvoiceReady: zipvoiceReady(voiceModelsRoot),
+    zipvoiceReady: zipvoiceReady(modelsRoot()),
   }));
 
   /** 内置音色预设（合成音源的克隆预设）：wav+参考文本随包分发，一键创建档案。
@@ -62,7 +62,7 @@ export function registerVoiceIpc2(ibA: ReturnType<typeof registerVoiceIpc1>) {
     return path.join(process.resourcesPath ?? process.cwd(), "voice-presets");
   }
 
-  ipcMain.handle("voice:preset-list", async () => {
+  ipcHost.handle("voice:preset-list", async () => {
     try {
       const raw = JSON.parse(await fs.readFile(path.join(voicePresetsDir(), "presets.json"), "utf8"));
       const profiles = await voiceProfiles.listProfiles(app.getPath("userData"));
@@ -77,7 +77,7 @@ export function registerVoiceIpc2(ibA: ReturnType<typeof registerVoiceIpc1>) {
     } catch { return { presets: [] }; }
   });
 
-  ipcMain.handle("voice:preset-apply", async (_event, presetId: string) => {
+  ipcHost.handle("voice:preset-apply", async (_event, presetId: string) => {
     try {
       const raw = JSON.parse(await fs.readFile(path.join(voicePresetsDir(), "presets.json"), "utf8"));
       const preset = (Array.isArray(raw) ? raw : []).find((p: any) => p.id === String(presetId ?? ""));
@@ -99,7 +99,7 @@ export function registerVoiceIpc2(ibA: ReturnType<typeof registerVoiceIpc1>) {
     }
   });
 
-  ipcMain.handle("voice:profiles-import", async () => {
+  ipcHost.handle("voice:profiles-import", async () => {
     const picked = await dialog.showOpenDialog({
       title: "选择一段参考音频（16-bit PCM wav，10 秒左右效果最好）",
       filters: [{ name: "音频", extensions: ["wav"] }],
@@ -122,7 +122,7 @@ export function registerVoiceIpc2(ibA: ReturnType<typeof registerVoiceIpc1>) {
   });
 
   /** 渲染层录制（麦克风）→ PCM 回传 → 与导入走同一条草稿链路。 */
-  ipcMain.handle("voice:profiles-record", async (_event, input: { samples?: number[]; sampleRate?: number }) => {
+  ipcHost.handle("voice:profiles-record", async (_event, input: { samples?: number[]; sampleRate?: number }) => {
     try {
       const samples = Float32Array.from(Array.isArray(input?.samples) ? input!.samples! : []);
       const rate = Number(input?.sampleRate ?? 16000) || 16000;
@@ -133,7 +133,7 @@ export function registerVoiceIpc2(ibA: ReturnType<typeof registerVoiceIpc1>) {
     }
   });
 
-  ipcMain.handle("voice:profiles-save", async (_event, input: { draftFile?: string; name?: string; refText?: string }) => {
+  ipcHost.handle("voice:profiles-save", async (_event, input: { draftFile?: string; name?: string; refText?: string }) => {
     try {
       const root = voiceProfilesDirOf();
       const draft = String(input?.draftFile ?? "");
@@ -152,18 +152,18 @@ export function registerVoiceIpc2(ibA: ReturnType<typeof registerVoiceIpc1>) {
     }
   });
 
-  ipcMain.handle("voice:profiles-delete", async (_event, id: string) => ({
+  ipcHost.handle("voice:profiles-delete", async (_event, id: string) => ({
     ok: await voiceProfiles.deleteProfile(app.getPath("userData"), String(id ?? "")),
   }));
 
   /** 选用某个音色（写进语音设置 tts.profileId；空串 = 用内置预置音色）。 */
-  ipcMain.handle("voice:profiles-select", async (_event, id: string) => {
+  ipcHost.handle("voice:profiles-select", async (_event, id: string) => {
     const { saveVoiceSettings } = require("../../voice/voice-settings");
-    const current = voiceService.getSettings();
+    const current = svc().getSettings();
     const next = saveVoiceSettings(app.getPath("userData"), {
       tts: { ...current.tts, profileId: String(id ?? "") },
     });
-    voiceService.updateSettings(next);
+    svc().updateSettings(next);
     return { ok: true, profileId: String(id ?? "") };
   });
   return { voiceProfilesDirOf, draftProfileAudio, voicePresetsDir };
