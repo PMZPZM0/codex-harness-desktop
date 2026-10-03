@@ -16,7 +16,8 @@
  *   shell   12 —— openExternal / reveal 能触及系统，必须接缝
  *   dialog  11 · window 6 —— 宿主 UI，必须接缝
  *   其余（net/session/globalShortcut/systemPreferences/Notification/screen…）各 1–4 个域，
- *         本轮**不接**（见 `ALLOWED_DIRECT_ELECTRON`：低频、无权限语义，进接缝只增概念面）。
+ *         本轮**不接**（守卫【266】的 `ALLOWED_DIRECT_ELECTRON` 只锁高危三项：safeStorage /
+ *         BrowserWindow / ipcMain；低频项进接缝只增概念面）。
  *
  * ⛔⛔ **内核独占、不可替换的两项**（不提供接缝，见方案 §4.1）：
  *   `protocol`（自定义协议注册）与路径可信校验（`isInsideOrEqualTrustedRoots`）。

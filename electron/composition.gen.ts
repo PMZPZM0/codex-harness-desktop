@@ -76,6 +76,7 @@ import { toolsFeature as feat_tools } from "./features/tools-ipc";
 import { skillsFeature as feat_skills } from "./features/skills-ipc";
 import { skillDisciplineFeature as feat_skill_discipline } from "./features/skill-discipline-ipc";
 import { pluginsFeature as feat_plugins } from "./features/plugins-ipc";
+import { codexOfficialMarketFeature as feat_codex_official_market } from "./features/codex-official-market-ipc";
 import { hooksFeature as feat_hooks } from "./features/hooks-ipc";
 import { remoteFeature as feat_remote } from "./features/remote-ipc";
 import { fsFeature as feat_fs } from "./features/fs-ipc";
@@ -162,6 +163,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "skills", plugin: feat_skills as Plugin<unknown>, config: null },
   { id: "skill-discipline", plugin: feat_skill_discipline as Plugin<unknown>, config: null },
   { id: "plugins", plugin: feat_plugins as Plugin<unknown>, config: null },
+  { id: "codex-official-market", plugin: feat_codex_official_market as Plugin<unknown>, config: null },
   { id: "hooks", plugin: feat_hooks as Plugin<unknown>, config: null },
   { id: "remote", plugin: feat_remote as Plugin<unknown>, config: null },
   { id: "fs", plugin: feat_fs as Plugin<unknown>, config: null },
