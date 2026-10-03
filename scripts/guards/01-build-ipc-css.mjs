@@ -91,10 +91,18 @@ if (!mainSrc || !preloadSrc) {
     for (const m of src.matchAll(re)) set.add(m[2] ?? m[1]);
     return set;
   };
-  const handlers = collect(mainSrc, /ipcMain\.(?:handle|on)\(\s*["'`]([^"'`]+)["'`]/g);
+  // ⛔ 10-03（P0 主进程插件容器）：域改成插件形态后，通道注册走**容器注入**的
+  //    `ipcHost.handle("域:动作", …)`（见 electron/ipc-host.ts）。这里必须同时认这两种写法 ——
+  //    否则容器路线注册的通道会被判成"preload 有、main 无"的死链（假红，而且是最吓人的那种）。
+  //    ⛔ 域里注册通道一律写**字面量** `ipcHost.handle("域:动作", …)`：动态拼名会让这条守卫静默失效。
+  const handlers = collect(mainSrc, /(?:ipcMain\.(?:handle|on)|ipcHost\.handle)\(\s*["'`]([^"'`]+)["'`]/g);
   const bridges = collect(preloadSrc, /ipcRenderer\.(?:invoke|send|sendSync)\(\s*["'`]([^"'`]+)["'`]/g);
 
   ok(`主进程 handler ${handlers.size} 个 / preload 桥接 ${bridges.size} 个`);
+  // 这条不只为"证明正则没白加"：容器路线一旦没人用，上面放宽的匹配就该收回去（否则它是死代码）
+  (mainSrc.includes("ipcHost.handle(") ? ok : fail)(
+    "域经容器注入注册通道（ipcHost.handle 字面量可被死链检测发现）"
+  );
 
   // 高置信度死链：preload 发出，但主进程无 handler
   const deadLinks = [...bridges].filter((c) => !handlers.has(c));

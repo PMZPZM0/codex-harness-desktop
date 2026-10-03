@@ -2599,8 +2599,11 @@ w.postMessage({id:1,op:"list",root});
     console.log(C.bold("\n【187】排队消息定时发送（queue-timer 域）"));
     const timerIpc = codeOnly(readFileSync(join(ROOT, "electron", "features", "queue-timer-ipc.ts"), "utf8"));
     // ① 主进程：定时器本体必须在主进程（渲染层 setTimeout 会被 Chromium 隐藏节流），set 前幂等清理
-    (/ipcMain\.handle\("queue-timer:set"/.test(timerIpc) && /ipcMain\.handle\("queue-timer:cancel"/.test(timerIpc) ? ok : fail)(
-      "【187】主进程注册 queue-timer:set / queue-timer:cancel 两个 handler"
+    // ⛔ 10-03 改插件形态（P0 容器）：注册走 `inject: ["ipc"]` 注入的 ipcHost，不再直接 `ipcMain.handle`。
+    //    **断言跟着搬**：锚点换成新形态，但"两个通道都必须注册、且卸载要能摘掉"这条不变量不变。
+    (/ipcHost\.handle\("queue-timer:set"/.test(timerIpc) && /ipcHost\.handle\("queue-timer:cancel"/.test(timerIpc)
+      && /inject: \["ipc"\]/.test(timerIpc) && /ctx\.effect\(/.test(timerIpc) ? ok : fail)(
+      "【187】主进程注册 queue-timer:set / queue-timer:cancel 两个 handler（经容器注入 ipcHost），且卸载可摘"
     );
     (/broadcastToAll\("queue-timer:due", \{ threadId, queuedSubmissionId: id \}\)/.test(timerIpc) && /timers\.delete\(id\);/.test(timerIpc) ? ok : fail)(
       "【187】到点只广播 queue-timer:due、不直接调引擎（启动/钉顶/429 兜底/toast 全在渲染层），广播前消费掉条目（一次性）"

@@ -27,6 +27,7 @@
     "start": "electron .",
     "dist": "npm run build && electron-builder --win nsis",
     "gen:ipc": "node scripts/gen-ipc-bridge.mjs generate && node scripts/gen-capability-skill.mjs",
+    "gen:domains": "node scripts/gen-domain-registry.mjs",
     "lint": "eslint ."
   },
   "dependencies": {
