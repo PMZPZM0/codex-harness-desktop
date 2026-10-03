@@ -1,16 +1,30 @@
 /**
- * builtin-skills-ipc 的「builtin-images」部分（09-22 从同目录 builtin-skills-ipc.ts 按顶层声明分出，纯搬迁、零改写）。
- * ⛔ 逻辑与原地逐字一致，只补了顶部 import 与 `export`。
+ * builtin-ipc（10-03 从 `features/builtin-skills-ipc/01-...` 按前缀拆出，同时改为**插件形态**）
+ *
+ * 域：builtin(5)
+ * 通道：builtin:read / save / probe / generate-image / describe-image
+ *
+ * ⛔⛔ 三条实证口径（本次纯搬迁，一字未改）：
+ *   1. **回给渲染层的是本地路径，不是 data URL**：内联 base64 会被拼进工具返回文本 ⇒
+ *      3 MB 文本进对话历史且每轮重发。只有网关给的是真托管地址时才把 url 一并带出。
+ *   2. **size / negative_prompt 只在显式给了才带上**：不同网关接受的字段名与取值差异很大，
+ *      默认不带 = 保持旧行为，不会因为多传一个字段就把本来能用的网关弄挂。
+ *   3. **落盘失败不该让生图整体失败**：调用方退回「只给托管 url」，图只是不再持久。
+ * ⛔ `generateImageResilient`（带重试的生图）同时被 `./dispatch-rpc` 使用 ⇒ 从本板块导出，
+ *    稳定性口径只有一份（MCP 工具与画布卡片共用）。
+ * ⛔ 待接缝化（阶段 2）：app / fs 为宿主能力。
  */
 import path from "node:path";
-import os from "node:os";
 import fs from "node:fs/promises";
-import { app, dialog, ipcMain } from "electron";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { cloakCacheDir, npmGlobalRoot, nuphusBinary, toolsRoot } from "../../toolchain";
-import { applyCustomModel, builtinPluginsFile, describeNetworkError, dirEntries, readBuiltinPlugins, readCustomModel, refreshSkillDiscipline, skillsRegistryFile, userSkillsDir } from "../../main";
-import { codexHome, mainWindow, server } from "../../runtime-refs";
-import type { BuiltinPluginConfig } from "../../main";
+import { app } from "electron";
+import { existsSync } from "node:fs";
+import { describeNetworkError, readBuiltinPlugins, readCustomModel, applyCustomModel } from "../main";
+import type { BuiltinPluginConfig } from "../main";
+import { builtinPluginsFile } from "../main";
+import { server } from "../runtime-refs";
+import { defineFeature } from "../context";
+import type { IpcHost } from "../ipc-host";
+
 async function writeBuiltinPlugins(cfg: BuiltinPluginConfig) {
   await fs.writeFile(builtinPluginsFile, JSON.stringify(cfg, null, 2), "utf8");
 }
@@ -88,15 +102,14 @@ export async function generateImageWith(input: { baseUrl: string; apiKey: string
   // 返回 url 时会拼出 "data:image/png;base64,undefined"，已修）
   const url = item?.url || (item?.b64_json ? "data:image/png;base64," + item.b64_json : "");
   if (typeof url !== "string" || !url.trim()) throw new Error("生图服务未返回图片地址或图片数据");
-  // ⛔ 回给渲染层的是**本地路径**，不是 data URL（理由见 persistGeneratedImage 注释：
-  //   内联 base64 会被拼进工具返回文本 ⇒ 3 MB 文本进对话历史且每轮重发）。
-  //   只有网关给的是真托管地址时才把 url 一并带出（它很短，且能直接当可点击链接用）。
+  // ⛔ 回给渲染层的是**本地路径**，不是 data URL（理由见 persistGeneratedImage 注释）。
+  // ⛔ 变量名沿用原实现（`path` 在此处之后不再使用 path 模块，故遮蔽无害）——
+  //    守卫【84】按 `return { path, url: ... }` 字面量锚这条不变量，别改成 `path: saved`。
   const path = await persistGeneratedImage(url, input.outputDir);
   return { path, url: /^https?:/i.test(url) ? url : "" };
 }
 
-/** 带重试的生图（09-29）：网络抖动 / 5xx / 429 自动再试一次；4xx 参数错不重试（重试也没用）。
- *  会话里的 MCP 工具与画布卡片共用这一个入口 —— 稳定性口径只有一份。 */
+/** 带重试的生图（09-29）：网络抖动 / 5xx / 429 自动再试一次；4xx 参数错不重试（重试也没用）。 */
 export async function generateImageResilient(input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string; outputDir?: string }, attempts = 2): Promise<{ path: string; url: string }> {
   let lastError: unknown = null;
   for (let attempt = 0; attempt < attempts; attempt++) {
@@ -149,86 +162,30 @@ async function describeImageWith(input: { baseUrl: string; apiKey: string; model
   return { text: data?.choices?.[0]?.message?.content ?? "" };
 }
 
-ipcMain.handle("builtin:read", async () => readBuiltinPlugins());
+const BUILTIN_CHANNELS = ["builtin:read", "builtin:save", "builtin:probe", "builtin:generate-image", "builtin:describe-image"];
 
-ipcMain.handle("builtin:save", async (_e, cfg: BuiltinPluginConfig) => {
-  await writeBuiltinPlugins(cfg);
-  // 保存后重写 config.toml 并重启引擎：developer_instructions 的生图/视觉段与
-  // dynamicTools 都依赖这份配置，不重启的话引擎和已有会话感知不到配置变化。
-  const model = await readCustomModel();
-  if (model) await applyCustomModel(model); else await server.restart();
-  return readBuiltinPlugins();
-});
+export const builtinFeature = defineFeature<null>({
+  id: "builtin",
+  inject: ["ipc"],
+  setup: (ctx) => {
+    const ipcHost = ctx.get<IpcHost>("ipc");
+    if (!ipcHost) throw new Error("builtin: 缺少 ipc 服务（宿主未提供）");
 
-ipcMain.handle("builtin:probe", async (_e, input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }) => probeBuiltinModels(input));
+    ipcHost.handle("builtin:read", async () => readBuiltinPlugins());
+    ipcHost.handle("builtin:save", async (_e, cfg: BuiltinPluginConfig) => {
+      await writeBuiltinPlugins(cfg);
+      // 保存后重写 config.toml 并重启引擎：developer_instructions 的生图/视觉段与
+      // dynamicTools 都依赖这份配置，不重启的话引擎和已有会话感知不到配置变化。
+      const model = await readCustomModel();
+      if (model) await applyCustomModel(model); else await server.restart();
+      return readBuiltinPlugins();
+    });
+    ipcHost.handle("builtin:probe", async (_e, input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }) => probeBuiltinModels(input));
+    ipcHost.handle("builtin:generate-image", async (_e, input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string; outputDir?: string }) => generateImageResilient(input));
+    ipcHost.handle("builtin:describe-image", async (_e, input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }) => describeImageWith(input));
 
-ipcMain.handle("builtin:generate-image", async (_e, input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string; outputDir?: string }) => generateImageResilient(input));
-
-ipcMain.handle("builtin:describe-image", async (_e, input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }) => describeImageWith(input));
-
-ipcMain.handle("plugin:validate", async (_event, input: { path?: string }) => {
-  const root = input?.path ? String(input.path) : "";
-  if (!root) return { ok: false, root: "", issues: ["未提供插件目录路径"], inventory: {} };
-  if (!existsSync(root)) return { ok: false, root, issues: [`目录不存在：${root}`], inventory: {} };
-  const manifestCandidates = [".codex-plugin/plugin.json", "plugin.json", ".codebuddy-plugin/plugin.json"];
-  const manifestPath = manifestCandidates.map((rel) => path.join(root, rel)).find((full) => existsSync(full)) ?? "";
-  const issues: string[] = [];
-  let manifest: any = null;
-  if (manifestPath) {
-    try { manifest = JSON.parse(readFileSync(manifestPath, "utf8")); } catch (error: any) { issues.push(`清单解析失败：${manifestPath} — ${error.message}`); }
-  } else {
-    issues.push("缺少插件清单（.codex-plugin/plugin.json 或 plugin.json）");
-  }
-  if (manifest && !manifest.name) issues.push("清单缺少 name 字段");
-  const count = (rel: string) => dirEntries(path.join(root, rel))?.length ?? 0;
-  const inventory = { skills: count("skills"), commands: count("commands"), agents: count("agents"), hooks: existsSync(path.join(root, "hooks", "hooks.json")) ? 1 : 0 };
-  if (!inventory.skills && !inventory.commands && !inventory.agents && !inventory.hooks) issues.push("插件没有任何能力目录（skills / commands / agents / hooks）");
-  return { ok: issues.length === 0, root, manifestPath, issues, inventory, name: manifest?.name ?? "" };
-});
-
-ipcMain.handle("tools:status", () => {
-  const readVersion = (pkgDir: string) => {
-    try { return JSON.parse(readFileSync(pkgDir, "utf8")).version as string; }
-    catch { return ""; }
-  };
-  const root = toolsRoot();
-  const modules = npmGlobalRoot();
-  const nuphusBin = nuphusBinary();
-  // CloakBrowser 内核优先查应用内置缓存，兼容旧的用户目录缓存
-  const cloakDirs = [cloakCacheDir(), path.join(os.homedir(), ".cloakbrowser")].filter(Boolean);
-  let cloakBinary = false;
-  for (const dir of cloakDirs) {
-    try { if (readdirSync(dir).some((entry) => entry.includes("chromium"))) { cloakBinary = true; break; } } catch { /* 未下载 */ }
-  }
-  return [
-    {
-      id: "nuphus-mcp", name: "Nuphus 桌面自动化", scope: "computer",
-      version: modules ? readVersion(path.join(modules, "@nuphus", "nuphus-mcp", "package.json")) : "",
-      installed: Boolean(nuphusBin), binaryReady: Boolean(nuphusBin),
-      detail: nuphusBin ? "35 个桌面/浏览器自动化工具就绪（屏幕、窗口、键鼠、剪贴板、OCR、Chrome CDP），经 nuphus-call 按需调用，不占模型上下文" : "未安装：到「开发工具」页对「Nuphus 桌面自动化」点一次「修复安装」",
-      command: nuphusBin,
-    },
-    {
-      id: "playwright-cli", name: "Playwright 浏览器自动化", scope: "browser",
-      version: modules ? readVersion(path.join(modules, "@playwright", "cli", "package.json")) : "",
-      installed: modules ? existsSync(path.join(modules, "@playwright", "cli", "package.json")) : false,
-      binaryReady: existsSync(path.join(root, "pw-browsers")) && readdirSync(path.join(root, "pw-browsers")).some((entry) => entry.startsWith("chromium-")),
-      detail: "命令行浏览器自动化：open / snapshot / click / type / screenshot；默认浏览器通道，内核可在「开发工具」页下载（国内镜像）",
-      command: "playwright-cli",
-    },
-    {
-      id: "cloakbrowser", name: "CloakBrowser 指纹浏览器", scope: "browser",
-      version: modules ? readVersion(path.join(modules, "cloakbrowser", "package.json")) : "",
-      installed: modules ? existsSync(path.join(modules, "cloakbrowser", "package.json")) : false,
-      binaryReady: cloakBinary,
-      // 三态（09-16 起 CloakBrowser 不随包，默认浏览器是内置视图 / playwright-cli）：
-      // 未装包 → 提示可按需下载；装了包没内核 → 提示点内核卡片下载；都在 → 就绪。
-      detail: !(modules && existsSync(path.join(modules, "cloakbrowser", "package.json")))
-        ? "未安装（按需使用：需要过反爬站点时再到「开发工具」页下载，约 4 MB）"
-        : cloakBinary
-          ? "反检测 Chromium 内核已就绪（tools/cloak-cache）"
-          : "npm 包已装，Chromium 内核未下载（「开发工具」页点「Cloak 指纹浏览器内核」下载）",
-      command: "cloakbrowser",
-    },
-  ];
+    ctx.effect(() => {
+      for (const ch of BUILTIN_CHANNELS) ipcHost.removeHandler(ch);
+    });
+  },
 });

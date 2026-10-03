@@ -1272,9 +1272,10 @@ export async function run() {
     //       · 新增/新长出多前缀板块 ⇒ 前半红；
     //       · 拆完了却忘记从名单里删掉 ⇒ 后半红（防止名单腐烂成"永久豁免"）。
     //     ⛔ 判定必须过 `codeOnly()`：本仓注释里引用代码片段是常态，裸正则会被注释顶成假红/假绿。
-    const ALLOWED_MULTI_PREFIX = [
-      "builtin-skills-ipc/",  // 4 文件 /  7 前缀（builtin, plugin, tools, skills, skill-discipline, plugins, hooks）
-    ];
+    // 🎉 10-03 清零：原 10 处欠账（56 个前缀）已全部拆成独立板块，名单空了。
+    //    ⛔ 名单为空**不等于判据失效** —— 下面的 `grew253` 仍会捕获任何新增/新长出的多前缀板块；
+    //       这正是棘轮的意义：欠账只许缩不许长，缩到 0 之后也**不许再长出来**。
+    const ALLOWED_MULTI_PREFIX = [];
     const PREFIX_RE = /(?:ipcMain|ipcHost)\.(?:handle|on)\(\s*"([a-zA-Z][\w-]*):/g;
     const multiPrefix = [];
     for (const e of readdirSync(join(ROOT, "electron", "features"), { withFileTypes: true })) {

@@ -415,7 +415,7 @@ export async function run() {
     (packs.includes("markSkillsetChild") && packs.includes('raw.kind = "skillset-child"') ? ok : fail)(
       "【236】专家包子技能落盘时打 kind=skillset-child 标记（没标记 ⇒ # 面板分不出专家专属技能）"
     );
-    const listSrc = readFileSync(join(ROOT, "electron", "features", "builtin-skills-ipc", "03-plugins-market.ts"), "utf8");
+    const listSrc = readFileSync(join(ROOT, "electron", "features", "skills-ipc.ts"), "utf8");
     (listSrc.includes('skillsetSlug: marketKind === "skillset-child"') ? ok : fail)(
       "【236】skills:local-list 透出 skillsetSlug（渲染层判专家专属的唯一依据）"
     );

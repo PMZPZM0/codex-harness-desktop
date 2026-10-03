@@ -441,6 +441,55 @@
       "file": "features/engine-ipc.ts",
       "export": "engineFeature",
       "config": null
+    },
+    {
+      "id": "builtin",
+      "enabled": true,
+      "file": "features/builtin-ipc.ts",
+      "export": "builtinFeature",
+      "config": null
+    },
+    {
+      "id": "plugin",
+      "enabled": true,
+      "file": "features/plugin-ipc.ts",
+      "export": "pluginFeature",
+      "config": null
+    },
+    {
+      "id": "tools",
+      "enabled": true,
+      "file": "features/tools-ipc.ts",
+      "export": "toolsFeature",
+      "config": null
+    },
+    {
+      "id": "skills",
+      "enabled": true,
+      "file": "features/skills-ipc.ts",
+      "export": "skillsFeature",
+      "config": null
+    },
+    {
+      "id": "skill-discipline",
+      "enabled": true,
+      "file": "features/skill-discipline-ipc.ts",
+      "export": "skillDisciplineFeature",
+      "config": null
+    },
+    {
+      "id": "plugins",
+      "enabled": true,
+      "file": "features/plugins-ipc.ts",
+      "export": "pluginsFeature",
+      "config": null
+    },
+    {
+      "id": "hooks",
+      "enabled": true,
+      "file": "features/hooks-ipc.ts",
+      "export": "hooksFeature",
+      "config": null
     }
   ]
 }

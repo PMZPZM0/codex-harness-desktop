@@ -2102,7 +2102,7 @@ w.postMessage({id:1,op:"list",root});
       "【173】迁移保底：遗留 .disabled 先记入全局停用集（防已停用技能被误恢复）"
     );
     // ④ IPC 三件套：handler 注册 + manifest 通道 + registry 域表
-    const handlerPool = readFileSync(join(ROOT, "electron", "features", "builtin-skills-ipc", "03-plugins-market.ts"), "utf8");
+    const handlerPool = readFileSync(join(ROOT, "electron", "features", "skills-ipc.ts"), "utf8");
     const manifestPool = readFileSync(join(ROOT, "electron", "ipc-channels.manifest.json"), "utf8");
     const registryPool = readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8");
     (/(?:ipcMain|ipcHost)\.handle\("skills:pool-describe"/.test(handlerPool) && /(?:ipcMain|ipcHost)\.handle\("skills:pool-set"/.test(handlerPool) ? ok : fail)(
@@ -2952,7 +2952,7 @@ w.postMessage({id:1,op:"list",root});
        （清单条目必须有 pluginPath——DSH 探测分支已随换源删除，不许回来）。 */
     {
       const marketSrc = readFileSync(join(ROOT, "electron", "codex-market.ts"), "utf8");
-      const plugIpcSrc = readFileSync(join(ROOT, "electron", "features", "builtin-skills-ipc", "03-plugins-market.ts"), "utf8");
+      const plugIpcSrc = readFileSync(join(ROOT, "electron", "features", "plugins-ipc.ts"), "utf8");
       (marketSrc.includes("claude-plugins-official-gitee") && marketSrc.includes("gitee.com/api/v5") ? ok : fail)(
         "【239】插件市场源 = Gitee 官方镜像（claude-plugins-official-gitee，48 个 .claude-plugin 兼容插件）"
       );
@@ -2976,7 +2976,7 @@ w.postMessage({id:1,op:"list",root});
        真相源 = 安装时写入市场目录的 `.codex-market.json`（主进程扫目录回传 installed）。 */
     const appUiCode245 = codeOnly(readAppUi());
     const marketSrc245 = codeOnly(readFileSync(join(ROOT, "electron", "codex-market.ts"), "utf8"));
-    const marketIpcSrc245 = codeOnly(readFileSync(join(ROOT, "electron", "features", "builtin-skills-ipc", "03-plugins-market.ts"), "utf8"));
+    const marketIpcSrc245 = codeOnly(readFileSync(join(ROOT, "electron", "features", "plugins-ipc.ts"), "utf8"));
     // ⛔ 自读源文件：marketSrc 是【239】块内的局部 const，在块外引用会 ReferenceError
     //   ⇒ 「预检自身异常」会把后面所有断言一起废掉（10-03 实测踩过）。
     (marketSrc245.includes("export function codexMarketDir(") && /const marketDir = codexMarketDir\(codexHome\)/.test(marketSrc245) ? ok : fail)(

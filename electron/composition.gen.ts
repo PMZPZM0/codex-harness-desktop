@@ -66,6 +66,13 @@ import { runtimeFeature as feat_runtime } from "./features/runtime-ipc";
 import { threadsFeature as feat_threads } from "./features/threads-ipc";
 import { bridgeFeature as feat_bridge } from "./features/bridge-ipc";
 import { engineFeature as feat_engine } from "./features/engine-ipc";
+import { builtinFeature as feat_builtin } from "./features/builtin-ipc";
+import { pluginFeature as feat_plugin } from "./features/plugin-ipc";
+import { toolsFeature as feat_tools } from "./features/tools-ipc";
+import { skillsFeature as feat_skills } from "./features/skills-ipc";
+import { skillDisciplineFeature as feat_skill_discipline } from "./features/skill-discipline-ipc";
+import { pluginsFeature as feat_plugins } from "./features/plugins-ipc";
+import { hooksFeature as feat_hooks } from "./features/hooks-ipc";
 
 export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unknown };
 
@@ -137,6 +144,13 @@ export const ENABLED: EnabledDomain[] = [
   { id: "threads", plugin: feat_threads as Plugin<unknown>, config: null },
   { id: "bridge", plugin: feat_bridge as Plugin<unknown>, config: null },
   { id: "engine", plugin: feat_engine as Plugin<unknown>, config: null },
+  { id: "builtin", plugin: feat_builtin as Plugin<unknown>, config: null },
+  { id: "plugin", plugin: feat_plugin as Plugin<unknown>, config: null },
+  { id: "tools", plugin: feat_tools as Plugin<unknown>, config: null },
+  { id: "skills", plugin: feat_skills as Plugin<unknown>, config: null },
+  { id: "skill-discipline", plugin: feat_skill_discipline as Plugin<unknown>, config: null },
+  { id: "plugins", plugin: feat_plugins as Plugin<unknown>, config: null },
+  { id: "hooks", plugin: feat_hooks as Plugin<unknown>, config: null },
 ];
 
 for (const row of ENABLED) mountFeature(row.plugin, row.config);
