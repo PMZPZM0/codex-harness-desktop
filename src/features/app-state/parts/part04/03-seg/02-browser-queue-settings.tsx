@@ -481,16 +481,43 @@ bag.startQueued = startQueued as typeof bag.startQueued;
         ? safe("MCP", () => window.codex.request("mcpServerStatus/list", { detail: "toolsAndAuthOnly", ...(bag.threadRef.current?.id ? { threadId: bag.threadRef.current.id } : {}) }), { data: [] })
         : Promise.resolve({ data: bag.settingsResources.mcp }),
     ]);
+    // ⛔⛔ 10-03 用户报障「插件装完在『已安装』里看不到」：引擎 plugin/list 有时**不认领**
+    //   本地市场插件（安装流程自己也会提示「当前列表未返回该插件」），但它的文件确实在
+    //   市场目录里（安装时写了 .codex-market.json）。不补齐 ⇒ 用户装完在已安装页里找不到。
+    //   补齐口径：**引擎列表为准 + 本地已装减去引擎已认领的**（不重复、不覆盖引擎状态）。
+    //   只扫本地目录（listInstalledMarketPlugins 零网络），扫失败就只显示引擎列表，不让整页空掉。
+    const enginePlugins: any[] = (pluginsResult.marketplaces ?? [])
+      // 官方精选市场（openai-api-curated）需 ChatGPT 账号登录才能装，API Key 方式装不了；
+      // 与其显示一堆点不动的「虚假卡片」，直接不展示，用户需要的插件走「开发工具」随包内置。
+      .filter((marketplace: any) => marketplace.name !== "openai-api-curated")
+      .flatMap((marketplace: any) => (marketplace.plugins ?? []).map((plugin: any) => ({ ...plugin, marketplaceName: marketplace.name, marketplacePath: marketplace.path })));
+    const engineSlugs = new Set(enginePlugins.map((plugin: any) => String(plugin.id ?? plugin.name ?? "").split("@")[0]));
+    let localOnlyPlugins: any[] = [];
+    try {
+      const installedRows = await window.codex.listInstalledMarketPlugins();
+      localOnlyPlugins = (installedRows ?? [])
+        .filter((row: any) => row?.slug && !engineSlugs.has(row.slug))
+        .map((row: any) => ({
+          id: `${row.slug}@codex-market`,
+          name: row.slug,
+          displayName: row.slug,
+          description: row.description || "已下载到本地插件目录（引擎尚未加载；重启应用后生效）",
+          version: row.version || "",
+          installed: true,
+          enabled: true,
+          // ⛔ localOnly = 引擎没认领 ⇒ 卸载/启用都必须走另一条路（见 changePlugin 的分支）
+          localOnly: true,
+          marketSlug: row.slug,
+          marketplaceName: "本地市场",
+          interface: { capabilities: [] },
+        }));
+    } catch { /* 扫不到就只显示引擎列表 */ }
     bag.setSettingsResources({
       skills: (skillsResult.data ?? []).flatMap((entry: any) => entry.skills ?? []),
       // hooks/list 的 data 是按 cwd 分组的数组（[{ cwd, hooks: [...] }]），必须摊平，
       // 否则渲染层拿到的是分组对象，页面上只会渲染出空白卡片（ponytail 的钩子就是这样“消失”的）。
       hooks: (hooksResult.data ?? []).flatMap((entry: any) => entry.hooks ?? []),
-      plugins: (pluginsResult.marketplaces ?? [])
-        // 官方精选市场（openai-api-curated）需 ChatGPT 账号登录才能装，API Key 方式装不了；
-        // 与其显示一堆点不动的「虚假卡片」，直接不展示，用户需要的插件走「开发工具」随包内置。
-        .filter((marketplace: any) => marketplace.name !== "openai-api-curated")
-        .flatMap((marketplace: any) => (marketplace.plugins ?? []).map((plugin: any) => ({ ...plugin, marketplaceName: marketplace.name, marketplacePath: marketplace.path }))),
+      plugins: [...enginePlugins, ...localOnlyPlugins],
       mcp: mcpResult.data ?? [],
     });
     bag.setMemories(memoryResult ?? []);

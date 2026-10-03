@@ -39,6 +39,16 @@ export function usePart05a(bag: Bag) {
     const key = String(plugin.name ?? plugin.id ?? "");
     bag.setPluginBusy(key);
     try {
+      // ⛔⛔ 10-03：本地已装、但**引擎没认领**的插件（localOnly）引擎侧卸不掉
+      //   （plugin/uninstall 会报 unknown plugin）⇒ 走本地卸载 IPC：删落盘目录 + 摘 marketplace 清单。
+      if (plugin.localOnly && plugin.marketSlug) {
+        const removed = await window.codex.uninstallMarketPlugin(plugin.marketSlug);
+        if (!removed?.ok) { bag.setNotice(`卸载失败：${removed?.reason ?? "未知原因"}`); return; }
+        // 市场卡片与已安装列表都要跟着变（前者看 installed 标记，后者看列表本身）
+        await bag.refreshPluginsPage();
+        bag.setNotice(`已卸载本地插件：${plugin.displayName ?? plugin.name}`);
+        return;
+      }
       if (plugin.installed && plugin.id) {
         await window.codex.request("plugin/uninstall", { pluginId: plugin.id });
       } else {

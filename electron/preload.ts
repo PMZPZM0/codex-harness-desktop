@@ -133,8 +133,13 @@ contextBridge.exposeInMainWorld("codex", {
   importSkill: () => __ipc("skills:import", 0, []),
   listMarketSkills: (input: unknown = {}) => __ipc("skills:market-list", 0, [input]),
   installMarketSkill: (skill: unknown) => __ipc("skills:market-install", 1, [skill]),
+  /* 10-03：逐项 installed 之外另给**全量已装 slug 清单**（不分页），供渲染层把「引擎没认领但文件已落盘」的插件补进「已安装」列表 */
   listMarketPlugins: (input: unknown = {}) => __ipc("plugins:market-list", 0, [input]),
   installMarketPlugin: (plugin: unknown) => __ipc("plugins:market-install", 1, [plugin]),
+  /* 10-03：本地市场插件卸载（先请引擎 plugin/uninstall，再删落盘目录 + 摘 marketplace 清单；删除目标经 safeFolder 归一 + 目录内校验） */
+  uninstallMarketPlugin: (slug: unknown) => __ipc("plugins:market-uninstall", 1, [slug]),
+  /* 10-03：本地已装市场插件清单（**只扫本地目录、零网络**；供「已安装」列表补齐引擎没认领的那批 —— 不能走 market-list，那条会拉远端 48 个插件） */
+  listInstalledMarketPlugins: () => __ipc("plugins:market-installed", 0, []),
   listLocalSkills: () => __ipc("skills:local-list", 0, []),
   setEnabledSkill: (input: { folder: string; enabled: boolean }) => __ipc("skills:set-enabled", 1, [input]),
   setEnabledSkillBatch: (input: { folders: string[]; enabled: boolean }) => __ipc("skills:set-enabled-batch", 1, [input]),

@@ -454,8 +454,13 @@ interface Window {
     importSkill(): Promise<{ name: string; path: string; source: string; content: string } | null>;
     listMarketSkills(input?: { category?: string; page?: number; pageSize?: number; query?: string }): Promise<{ items: MarketSkillEntry[]; total: number; page: number; pageSize: number }>;
     installMarketSkill(skill: MarketSkillEntry): Promise<LocalSkillEntry>;
-    listMarketPlugins(input?: { category?: string; query?: string; page?: number; pageSize?: number }): Promise<{ items: PluginMarketEntry[]; total: number; page: number; pageSize: number }>;
+    /* 10-03：逐项 installed 之外另给**全量已装 slug 清单**（不分页），供渲染层把「引擎没认领但文件已落盘」的插件补进「已安装」列表 */
+    listMarketPlugins(input?: { category?: string; query?: string; page?: number; pageSize?: number }): Promise<{ items: PluginMarketEntry[]; installedIds: string[]; total: number; page: number; pageSize: number }>;
     installMarketPlugin(plugin: PluginMarketEntry): Promise<PluginMarketInstallResult>;
+    /* 10-03：本地市场插件卸载（先请引擎 plugin/uninstall，再删落盘目录 + 摘 marketplace 清单；删除目标经 safeFolder 归一 + 目录内校验） */
+    uninstallMarketPlugin(slug: string): Promise<{ ok: boolean; reason?: string; engineRemoved?: boolean }>;
+    /* 10-03：本地已装市场插件清单（**只扫本地目录、零网络**；供「已安装」列表补齐引擎没认领的那批 —— 不能走 market-list，那条会拉远端 48 个插件） */
+    listInstalledMarketPlugins(): Promise<{ slug: string; version: string; description: string }[]>;
     listLocalSkills(): Promise<LocalSkillEntry[]>;
     setEnabledSkill(input: { folder: string; enabled: boolean }): Promise<{ ok: boolean }>;
     setEnabledSkillBatch(input: { folders: string[]; enabled: boolean }): Promise<{ ok: boolean; changed: number; failures: string[] }>;

@@ -7,7 +7,7 @@ import fs from "node:fs/promises";
 import { app, dialog, ipcMain } from "electron";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { sendToWindow } from "../../features/window-bus";
-import { codexMarketDir, ensureCodexMarketplaceSection, installCodexMarketPlugin, listMarketPlugins } from "../../codex-market";
+import { codexMarketDir, ensureCodexMarketplaceSection, installCodexMarketPlugin, listInstalledMarketPlugins, listMarketPlugins, removeCodexMarketPluginFiles } from "../../codex-market";
 import type { InstalledMarketSkill, MarketSkill } from "../../skills-market";
 import type { CodexMarketPlugin } from "../../codex-market";
 import { applyCustomModel, builtinPluginsFile, describeNetworkError, dirEntries, readBuiltinPlugins, readCustomModel, refreshSkillDiscipline, skillsRegistryFile, userSkillsDir } from "../../main";
@@ -55,6 +55,34 @@ ipcMain.handle("plugins:market-install", async (_event, plugin: CodexMarketPlugi
   }
   emit(engineRegistered ? "complete" : "pending", engineCheckMessage);
   return { ...installed, engineRegistered, engineCheckMessage };
+});
+
+ipcMain.handle("plugins:market-uninstall", async (_event, slug: string) => {
+  const slugText = String(slug ?? "").trim();
+  if (!slugText) return { ok: false, reason: "缺少插件标识" };
+  const marketDir = codexMarketDir(codexHome);
+  // ① 引擎侧：认领了就让它停用（plugin/uninstall 会更新引擎自己的注册表，无需重启引擎）。
+  //    没认领（本地 manifest 有、引擎 plugin/list 没有）会报错 —— 忽略，文件侧照删。
+  let engineRemoved = false;
+  for (const pluginId of [`${slugText}@codex-market`, slugText]) {
+    try {
+      await server.request("plugin/uninstall", { pluginId });
+      engineRemoved = true;
+      break;
+    } catch { /* 试下一个 id 形态；都不成 = 引擎未认领 */ }
+  }
+  // ② 文件侧（safeFolder 归一 + 目录内校验在函数内部）
+  const removed = await removeCodexMarketPluginFiles(slugText, marketDir);
+  if (!removed.ok) return { ok: false, reason: removed.reason, engineRemoved };
+  return { ok: true, engineRemoved };
+});
+
+// 本地已装市场插件清单（10-03）：**只扫本地目录、零网络**。
+// 「已安装」列表用它补齐「引擎 plugin/list 没认领、但文件已落盘」的那批插件 ——
+// 缺了它们，用户装完在已安装页里根本找不到（10-03 报障）。
+ipcMain.handle("plugins:market-installed", async () => {
+  const map = await listInstalledMarketPlugins(codexMarketDir(codexHome));
+  return [...map.entries()].map(([slug, info]) => ({ slug, version: info.version, description: info.description }));
 });
 
 ipcMain.handle("skills:local-list", async () => {
