@@ -1274,15 +1274,8 @@ export async function run() {
     //     ⛔ 判定必须过 `codeOnly()`：本仓注释里引用代码片段是常态，裸正则会被注释顶成假红/假绿。
     const ALLOWED_MULTI_PREFIX = [
       "builtin-skills-ipc/",  // 4 文件 /  7 前缀（builtin, plugin, tools, skills, skill-discipline, plugins, hooks）
-      "connectors-mcp-ipc/",  // 4 文件 /  3 前缀（prompt, connectors, mcp-servers）
       "engine-ipc/",          // 6 文件 /  6 前缀（thread-runtime, codex, engine, runtime, threads, bridge）
-      "im-channels-ipc.ts",   //   221 行 / 13 前缀 / 43 通道 —— 最大的一个
-      "memory-rpa-ipc.ts",    //   248 行 /  4 前缀 / 36 通道
       "model-custom-ipc/",    // 5 文件 /  3 前缀（openai, model-specs, custom-model）
-      "settings-app-ipc.ts",  //   310 行 /  8 前缀 / 33 通道
-      "shell-misc-ipc.ts",    //    55 行 /  4 前缀 /  4 通道
-      "teams-agents-ipc.ts",  //   421 行 /  6 前缀 / 30 通道
-      "user-ipc.ts",          //    53 行 /  2 前缀 /  2 通道
     ];
     const PREFIX_RE = /(?:ipcMain|ipcHost)\.(?:handle|on)\(\s*"([a-zA-Z][\w-]*):/g;
     const multiPrefix = [];

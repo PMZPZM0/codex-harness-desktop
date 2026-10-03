@@ -84,16 +84,10 @@ import { readCustomModel, readCustomModels, writeCustomModels, healReservedProvi
 import { distillSummarize, turnOutputText, waitForTurnCompletion } from "./main/03-turn-summary";
 import { connectorEnv, readChannelBot, connectorToml, mcpToolRulesOf } from "./main/04-connector-config";
 import "./features/dialog-ipc";
-import "./features/im-channels-ipc";
-import "./features/teams-agents-ipc";
 import "./features/engine-ipc";
 import "./features/builtin-skills-ipc";
-import "./features/connectors-mcp-ipc";
 import "./features/model-custom-ipc";
-import "./features/settings-app-ipc";
-import "./features/user-ipc";
 import "./features/remote-ipc";
-import "./features/memory-rpa-ipc";
 import "./features/laya-service";
 import "./features/fs-ipc";
 /* 桌面宠物（09-30）：IPC 域 + 浮窗。侧效应 import ⇒ handler 立即注册（早于 whenReady）。
@@ -106,7 +100,6 @@ import "./features/video-gen";
    preload 四处都齐，唯一缺的就是这行引用 —— 缺它整条通道静默失效（不报编译错）。
    守卫【194】按 ipc-registry 逐个比对「in-features 的 file 必须被 main 引用」。 */
 import "./composition.gen"; // 组合层（P1）：读 electron/composition.json 决定挂哪些域；原位替换 = 不改启动顺序
-import "./features/shell-misc-ipc";
 /* 截图（全屏/框选）+ 收藏夹：用户素材链的两端（截图可收藏、收藏可发送/进记忆）。
    ⛔ 10-03 P2 批次 7 起，这两个域的 13 条通道改由组合层 `./composition.gen` 挂载（域不自挂）。 */
 /* 历史会话搜索：顶栏 🔍 → 扫 rollout 原档搜对话内容（真相源=rollout，见 history-search-ipc.ts） */

@@ -25,7 +25,7 @@ export async function run() {
   const queueSeg = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part04", "03-seg", "02-browser-queue-settings.tsx"), "utf8");
   const sched = codeOnly(readFileSync(join(ROOT, "electron", "scheduler.ts"), "utf8"));
   const boot = readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8");
-  const mrp = readFileSync(join(ROOT, "electron", "features", "memory-rpa-ipc.ts"), "utf8");
+  const mrp = readFileSync(join(ROOT, "electron", "features", "scheduler-ipc.ts"), "utf8");
   const dispatch = codeOnly(readFileSync(join(ROOT, "electron", "features", "dispatch-core.ts"), "utf8"));
 
   /* ① 回合结束自动启动队头之前，必须先看「这条是不是未到点的定时消息」 */

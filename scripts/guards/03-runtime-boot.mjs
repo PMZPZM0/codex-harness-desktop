@@ -313,7 +313,7 @@ console.log(C.bold("\n【8】打包必备件：随包 automation-tools.zip（发
     (!ipcSrc.includes("dataDir:relaunch") ? ok : fail)("【152】不重复注册 relaunch（复用既有 app:relaunch）");
     /* ⛔ MCP 记忆安装器必须跟随数据目录（09-25 用户实测：切到 D:\11 后「装了但永远显示未安装」——
        安装器把服务装进硬编码旧锚点，引擎在新目录找 ⇒ 永远对不上）。两处缺一不可。 */
-    const mcpIpcSrc = readFileSync(join(ROOT, "electron", "features", "memory-rpa-ipc.ts"), "utf8");
+    const mcpIpcSrc = readFileSync(join(ROOT, "electron", "features", "memory-ipc.ts"), "utf8");
     (mcpIpcSrc.includes('CODEX_HARNESS_USER_DATA: app.getPath("userData")') ? ok : fail)("【152】spawn MCP 安装器时显式传当前 userData（否则安装器装进旧锚点）");
     const instSrc = readFileSync(join(ROOT, "scripts", "install-memory-mcp.cjs"), "utf8");
     (instSrc.includes("data-dir.json") ? ok : fail)("【152】安装器自身也读指路牌（用户手工复制命令跑时不带 env）");
@@ -563,7 +563,11 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
     "fs:read 收敛到可信根（会话工作目录 + userData + 用户选过的路径，不再任意读全盘文件）"
   );
   // shell:reveal / updates:reveal 同口径收敛
-  const shellReveal = mainForSec.slice(mainForSec.indexOf('ipcMain.handle("shell:reveal"'), mainForSec.indexOf('ipcMain.handle("shell:reveal"') + 900);
+  // ⛔ 10-03：与下面 updates:reveal 同口径 —— 域改成插件形态后注册写的是 ipcHost.handle，
+  //    只认 ipcMain.handle 会得到 -1 ⇒ slice(-1, 900) 取到聚合面尾部 ⇒ 这条**安全**断言
+  //    读到无关片段而假红（不变量本身并没破）。找不到锚点就切片为空 ⇒ 明红，不静默放过。
+  const shellRevealFrom = mainForSec.search(/(?:ipcMain\.handle|ipcHost\.handle)\("shell:reveal"/);
+  const shellReveal = shellRevealFrom >= 0 ? mainForSec.slice(shellRevealFrom, shellRevealFrom + 900) : "";
   (/isInsideOrEqualTrustedRoots\(target\)/.test(shellReveal) ? ok : fail)(
     "shell:reveal 收敛到可信根（含根本身：reveal 工作区 / userData 目录是合法用法）"
   );
@@ -575,7 +579,11 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
     ? ok("updates:reveal 只允许定位刚下载并通过校验的安装包（与 updates:install 同口径）")
     : fail("updates:reveal 又能被渲染层指定任意路径 showItemInFolder 了"));
   // terminal:restart 的 cwd 必须验证存在且是目录
-  const termRestart = mainForSec.slice(mainForSec.indexOf('ipcMain.handle("terminal:restart"'), mainForSec.indexOf('ipcMain.handle("git:diff"'));
+  // ⛔ 10-03 两处修正：① 形态（域改插件后写 ipcHost.handle）；② **切片终点不再用"下一个 handler"**
+  //    —— 原写法以 `git:diff` 为终点，靠的是两者在**同一个文件里相邻**；按前缀拆成 terminal-ipc /
+  //    git-ipc 后聚合面顺序由遍历决定（git 排在 terminal 前）⇒ 窗口会读到别处。改用固定窗口。
+  const termFrom = mainForSec.search(/(?:ipcMain\.handle|ipcHost\.handle)\("terminal:restart"/);
+  const termRestart = termFrom >= 0 ? mainForSec.slice(termFrom, termFrom + 900) : "";
   (/fileStat\(cwd\)/.test(termRestart) && /isDirectory\(\)/.test(termRestart)
     ? ok("terminal:restart 校验 cwd 是真实存在的目录（终端可交互 cd，故做存在性校验而非白名单）")
     : fail("terminal:restart 又直收渲染层 cwd 且不验证了"));

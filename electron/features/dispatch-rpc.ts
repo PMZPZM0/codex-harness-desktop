@@ -19,7 +19,7 @@ import { normalizeTeamConfig, readExpertTeams, writeExpertTeams } from "../exper
 import { readConnectors } from "../main";
 import { voiceService } from "../main";
 import { encodeWav16 } from "../voice/voice-profiles";
-import { writeConnectors } from "./connectors-mcp-ipc/01-prompt-enhance";
+import { writeConnectors } from "../connector-store";
 import { boardsFileOf, readWorkflowBoards, writeWorkflowBoards } from "./drama-workflow-boards";
 import { readSubAgents, writeSubAgents } from "../main/09-agents-plugins";
 import { runDelegatedTask } from "../features/delegation";

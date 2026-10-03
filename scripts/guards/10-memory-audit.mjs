@@ -90,7 +90,7 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
   }
 
   /* ⑥ 文本面：三件套 scope / 引擎指令 / 蒸馏提示 */
-  const rpaIpc = readFileSync(join(ROOT, "electron/features/memory-rpa-ipc.ts"), "utf8");
+  const rpaIpc = readFileSync(join(ROOT, "electron/features/memory-ipc.ts"), "utf8");
   /* preload 是自包含单文件（09-23 深夜改内联） */
   const preloadSrc = readFileSync(join(ROOT, "electron/preload.ts"), "utf8");
   const envSrc = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
@@ -507,7 +507,7 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     }
 
     /* ④ 护栏（文本断言：改动这几处等于拆掉安全网） */
-    const ipcSrc = readFileSync(join(ROOT, "electron", "features", "memory-rpa-ipc.ts"), "utf8");
+    const ipcSrc = readFileSync(join(ROOT, "electron", "features", "memory-ipc.ts"), "utf8");
     (/confirm !== true/.test(ipcSrc) ? ok : fail)("【107】IPC 层强制 confirm 检查（渲染层 bug 也删不掉冷存档）");
     (/isHygieneAction\(/.test(ipcSrc) ? ok : fail)("【107】IPC 层走动作白名单校验");
     (/memory:hygiene:plan/.test(ipcSrc) && /memory:hygiene:apply/.test(ipcSrc) ? ok : fail)("【107】两个通道都已注册（plan 只读 / apply 动作）");
@@ -910,7 +910,7 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     (nDeleg >= 1 ? ok : fail)(`【125】runDelegatedTask 接线（实得 ${nDeleg} 处，需 ≥1 —— 引擎调度的全部角色走它）`);
     (deleg.includes("delegateMemory.text") ? ok : fail)("【125】runDelegatedTask 的记忆段确实追到了出站文本上");
 
-    const teams = readFileSync(join(ROOT, "electron", "features", "teams-agents-ipc.ts"), "utf8").replace(/\r/g, "");
+    const teams = readFileSync(join(ROOT, "electron", "features", "teams-ipc.ts"), "utf8").replace(/\r/g, "");
     const nTeams = (teams.match(/buildDelegateMemory\(/g) || []).length;
     (nTeams >= 2 ? ok : fail)(
       `【125】成员会话两条入口都接线（实得 ${nTeams} 处，需 ≥2 —— teams:member-session + teams:invoke-member）`
@@ -977,7 +977,7 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
        Electron 43 = 149 / 自带 node 24 = 137，用错一个就 `Could not locate the bindings file`
        （09-25 现场：装好了引擎侧仍报 local-memory 启动失败）。 */
     (/bundledNodePath\(\)/.test(connSrc) ? ok : fail)("【150】连接器用应用自带 node 当 runner（否则 ABI 不匹配，装好了也起不来）");
-    const ipcSrc150 = readFileSync(join(ROOT, "electron", "features", "memory-rpa-ipc.ts"), "utf8");
+    const ipcSrc150 = readFileSync(join(ROOT, "electron", "features", "memory-ipc.ts"), "utf8");
     (/bundledNodePath\(\)/.test(ipcSrc150) ? ok : fail)("【150】一键安装用自带 node 跑安装器（新电脑无需预装 Node.js）");
     const centerSrc = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryCenterSection.tsx"), "utf8");
     (centerSrc.includes("MemoryBackendSection") && centerSrc.includes("readMemoryBackend") && centerSrc.includes("setMemoryBackend") ? ok : fail)("【150】设置页「记忆」有后端入口（MemoryBackendSection：能读、能切；否则用户无处开启）");

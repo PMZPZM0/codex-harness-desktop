@@ -98,6 +98,286 @@
       "file": "features/favorites-ipc.ts",
       "export": "favoritesFeature",
       "config": null
+    },
+    {
+      "id": "user",
+      "enabled": true,
+      "file": "features/user-ipc.ts",
+      "export": "userFeature",
+      "config": null
+    },
+    {
+      "id": "capabilities",
+      "enabled": true,
+      "file": "features/capabilities-ipc.ts",
+      "export": "capabilitiesFeature",
+      "config": null
+    },
+    {
+      "id": "notify",
+      "enabled": true,
+      "file": "features/notify-ipc.ts",
+      "export": "notifyFeature",
+      "config": null
+    },
+    {
+      "id": "awake",
+      "enabled": true,
+      "file": "features/awake-ipc.ts",
+      "export": "awakeFeature",
+      "config": null
+    },
+    {
+      "id": "external",
+      "enabled": true,
+      "file": "features/external-ipc.ts",
+      "export": "externalFeature",
+      "config": null
+    },
+    {
+      "id": "shell",
+      "enabled": true,
+      "file": "features/shell-ipc.ts",
+      "export": "shellFeature",
+      "config": null
+    },
+    {
+      "id": "bot",
+      "enabled": true,
+      "file": "features/bot-ipc.ts",
+      "export": "botFeature",
+      "config": null
+    },
+    {
+      "id": "bots",
+      "enabled": true,
+      "file": "features/bots-ipc.ts",
+      "export": "botsFeature",
+      "config": null
+    },
+    {
+      "id": "bot-binding",
+      "enabled": true,
+      "file": "features/bot-binding-ipc.ts",
+      "export": "botBindingFeature",
+      "config": null
+    },
+    {
+      "id": "bot-stream",
+      "enabled": true,
+      "file": "features/bot-stream-ipc.ts",
+      "export": "botStreamFeature",
+      "config": null
+    },
+    {
+      "id": "channel-bot",
+      "enabled": true,
+      "file": "features/channel-bot-ipc.ts",
+      "export": "channelBotFeature",
+      "config": null
+    },
+    {
+      "id": "weixin",
+      "enabled": true,
+      "file": "features/weixin-ipc.ts",
+      "export": "weixinFeature",
+      "config": null
+    },
+    {
+      "id": "telegram",
+      "enabled": true,
+      "file": "features/telegram-ipc.ts",
+      "export": "telegramFeature",
+      "config": null
+    },
+    {
+      "id": "feishu",
+      "enabled": true,
+      "file": "features/feishu-ipc.ts",
+      "export": "feishuFeature",
+      "config": null
+    },
+    {
+      "id": "dingtalk",
+      "enabled": true,
+      "file": "features/dingtalk-ipc.ts",
+      "export": "dingtalkFeature",
+      "config": null
+    },
+    {
+      "id": "qq",
+      "enabled": true,
+      "file": "features/qq-ipc.ts",
+      "export": "qqFeature",
+      "config": null
+    },
+    {
+      "id": "wecom-webhook",
+      "enabled": true,
+      "file": "features/wecom-webhook-ipc.ts",
+      "export": "wecomWebhookFeature",
+      "config": null
+    },
+    {
+      "id": "ponytail",
+      "enabled": true,
+      "file": "features/ponytail-ipc.ts",
+      "export": "ponytailFeature",
+      "config": null
+    },
+    {
+      "id": "channels",
+      "enabled": true,
+      "file": "features/channels-ipc.ts",
+      "export": "channelsFeature",
+      "config": null
+    },
+    {
+      "id": "memory",
+      "enabled": true,
+      "file": "features/memory-ipc.ts",
+      "export": "memoryFeature",
+      "config": null
+    },
+    {
+      "id": "rpa",
+      "enabled": true,
+      "file": "features/rpa-ipc.ts",
+      "export": "rpaFeature",
+      "config": null
+    },
+    {
+      "id": "tasks",
+      "enabled": true,
+      "file": "features/tasks-ipc.ts",
+      "export": "tasksFeature",
+      "config": null
+    },
+    {
+      "id": "scheduler",
+      "enabled": true,
+      "file": "features/scheduler-ipc.ts",
+      "export": "schedulerFeature",
+      "config": null
+    },
+    {
+      "id": "ssh",
+      "enabled": true,
+      "file": "features/ssh-ipc.ts",
+      "export": "sshFeature",
+      "config": null
+    },
+    {
+      "id": "terminal",
+      "enabled": true,
+      "file": "features/terminal-ipc.ts",
+      "export": "terminalFeature",
+      "config": null
+    },
+    {
+      "id": "browser",
+      "enabled": true,
+      "file": "features/browser-ipc.ts",
+      "export": "browserFeature",
+      "config": null
+    },
+    {
+      "id": "git",
+      "enabled": true,
+      "file": "features/git-ipc.ts",
+      "export": "gitFeature",
+      "config": null
+    },
+    {
+      "id": "scratch",
+      "enabled": true,
+      "file": "features/scratch-ipc.ts",
+      "export": "scratchFeature",
+      "config": null
+    },
+    {
+      "id": "pasted-text",
+      "enabled": true,
+      "file": "features/pasted-text-ipc.ts",
+      "export": "pastedTextFeature",
+      "config": null
+    },
+    {
+      "id": "appSettings",
+      "enabled": true,
+      "file": "features/app-settings-ipc.ts",
+      "export": "appSettingsFeature",
+      "config": null
+    },
+    {
+      "id": "personalization",
+      "enabled": true,
+      "file": "features/personalization-ipc.ts",
+      "export": "personalizationFeature",
+      "config": null
+    },
+    {
+      "id": "team-runs",
+      "enabled": true,
+      "file": "features/team-runs-ipc.ts",
+      "export": "teamRunsFeature",
+      "config": null
+    },
+    {
+      "id": "team-threads",
+      "enabled": true,
+      "file": "features/team-threads-ipc.ts",
+      "export": "teamThreadsFeature",
+      "config": null
+    },
+    {
+      "id": "teams",
+      "enabled": true,
+      "file": "features/teams-ipc.ts",
+      "export": "teamsFeature",
+      "config": null
+    },
+    {
+      "id": "subagents",
+      "enabled": true,
+      "file": "features/subagents-ipc.ts",
+      "export": "subagentsFeature",
+      "config": null
+    },
+    {
+      "id": "agents",
+      "enabled": true,
+      "file": "features/agents-ipc.ts",
+      "export": "agentsFeature",
+      "config": null
+    },
+    {
+      "id": "commands",
+      "enabled": true,
+      "file": "features/commands-ipc.ts",
+      "export": "commandsFeature",
+      "config": null
+    },
+    {
+      "id": "prompt",
+      "enabled": true,
+      "file": "features/prompt-ipc.ts",
+      "export": "promptFeature",
+      "config": null
+    },
+    {
+      "id": "connectors",
+      "enabled": true,
+      "file": "features/connectors-ipc.ts",
+      "export": "connectorsFeature",
+      "config": null
+    },
+    {
+      "id": "mcp-servers",
+      "enabled": true,
+      "file": "features/mcp-servers-ipc.ts",
+      "export": "mcpServersFeature",
+      "config": null
     }
   ]
 }
