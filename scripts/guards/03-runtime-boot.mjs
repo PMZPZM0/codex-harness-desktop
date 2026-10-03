@@ -606,6 +606,25 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   (/Content-Security-Policy/.test(indexHtml) && /object-src 'none'/.test(indexHtml) && /base-uri 'self'/.test(indexHtml) && /form-action 'none'/.test(indexHtml)
     ? ok("index.html 带 CSP（封外链脚本注入 + object/base/form 劫持；inline 脚本为 srcdoc 可视化卡片保留）")
     : fail("index.html 的 CSP 被摘了 —— 渲染层渲染模型输出/渠道消息时注入脚本可加载外部代码"));
+  /* ⛔ script-src 必须放行 blob:（10-03 语音通话全废事故，与下面【175】同型）
+     语音的 AudioWorklet 用 `audioWorklet.addModule(blobUrl)` 注册处理器
+     （`src/voice/capture-worklet.ts` 以字符串常量提供源码，走 Blob URL 才不依赖打包后的资源路径）。
+     ⛔ AudioWorklet 的 addModule 受 **script-src** 管（**不是** worker-src）⇒ 缺 blob: 时 Chromium
+     只抛 "Unable to load a worklet's module." 且**不给更具体的原因**，表现为「语言模型已就绪
+     （509 MB）但点开始通话就报错」⇒ 极易误判成语音模型坏了。09-19 审计加 CSP 时漏了这一条
+     （img/media/connect/worker-src 当时都放了 blob:），语音通话自那时起完全无法启动。
+     判据刻意做成**关联式**：既查 CSP 放行、也查确实仍存在 addModule(blob) 调用 ——
+     将来若改走静态资源路径，这条会红并提醒同步复核 CSP，而不是留下一个没人用的盲放 blob:。 */
+  (() => {
+    const scriptSrc = (indexHtml.match(/script-src([^;]*)/) || ["", ""])[1];
+    let usesBlobWorklet = false;
+    try {
+      usesBlobWorklet = /addModule\(blobUrl\)/.test(readFileSync(join(ROOT, "src", "components", "VoiceCallFloat", "use-voice-call-float-state.tsx"), "utf8"));
+    } catch { /* 读不到按「未使用」处理 */ }
+    return scriptSrc.includes("blob:") && usesBlobWorklet;
+  })()
+    ? ok("CSP 的 script-src 放行 blob:（语音 AudioWorklet 经 addModule(blob) 注册；缺了只会报 worklet module 加载失败）")
+    : fail("CSP 的 script-src 缺 blob: 但语音仍在用 addModule(blobUrl) 注册 AudioWorklet ⇒ 语音通话必报 \"Unable to load a worklet's module.\"（10-03 事故）；若已改静态资源路径请同步复核这条");
   /* 【175】connect-src 必须放行 data:（09-27 白方块事故，⛔ 只在构建产物里暴露）
      PixiJS 用 fetch 加载贴图 ⇒ 受 connect-src 管（不是 img-src）。Vite 构建会把 <4KB 的
      小图内联成 data: URI（生图素材全部命中），不放行 data: ⇒ 贴图全被
