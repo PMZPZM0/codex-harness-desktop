@@ -214,8 +214,8 @@ export function codexMarketDir(codexHome: string): string {
  *   UI 于是永远显示「+」——用户原话「插件安装后没有更新状态」。
  *   目录在就算已装（用户视角就是装了）；manifest 缺失时用目录名兜底。
  */
-export async function listInstalledMarketPlugins(marketDir: string): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
+export async function listInstalledMarketPlugins(marketDir: string): Promise<Map<string, { version: string; description: string }>> {
+  const out = new Map<string, { version: string; description: string }>();
   let entries: string[] = [];
   try { entries = await fs.readdir(marketDir); } catch { return out; }
   for (const name of entries) {
@@ -223,9 +223,9 @@ export async function listInstalledMarketPlugins(marketDir: string): Promise<Map
     try {
       const raw = await fs.readFile(path.join(marketDir, name, ".codex-market.json"), "utf8");
       const data = JSON.parse(raw);
-      out.set(String(data?.marketId ?? name), String(data?.version ?? ""));
+      out.set(String(data?.marketId ?? name), { version: String(data?.version ?? ""), description: String(data?.description ?? "") });
     } catch {
-      out.set(name, "");
+      out.set(name, { version: "", description: "" });
     }
   }
   return out;
@@ -248,13 +248,16 @@ export async function listMarketPlugins(input: { category?: string; query?: stri
   const total = items.length;
   const start = (page - 1) * pageSize;
   // ⛔ 10-03：逐项合并本地已装标记（见 listInstalledMarketPlugins 的注释：这是唯一可靠的真相源）
-  const installedMap = input.installedDir ? await listInstalledMarketPlugins(input.installedDir) : new Map<string, string>();
+  const installedMap = input.installedDir ? await listInstalledMarketPlugins(input.installedDir) : new Map<string, { version: string; description: string }>();
   return {
     items: items.slice(start, start + pageSize).map((entry) => ({
       ...entry,
       installed: installedMap.has(entry.slug),
-      installedVersion: installedMap.get(entry.slug) || undefined,
+      installedVersion: installedMap.get(entry.slug)?.version || undefined,
     })),
+    // ⛔ 全量已装清单（不分页）：渲染层要靠它把「引擎没认领、但文件已落盘」的市场插件
+    //   补进「已安装」列表 —— 否则那些插件在已安装页里彻底消失，用户以为没装上。
+    installedIds: [...installedMap.keys()],
     total,
     page,
     pageSize,
@@ -392,6 +395,35 @@ export async function upsertCodexMarketManifest(marketDir: string, entry: { name
   await fs.mkdir(manifestDir, { recursive: true });
   await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
   return manifestPath;
+}
+
+/**
+ * 卸载本地市场插件的**文件部分**（10-03）：删落盘目录 + 从 marketplace 清单摘除条目。
+ * 引擎那侧（plugin/uninstall）由 IPC handler 先调 —— 它认领时才能真正停用。
+ *
+ * ⛔ 删除是高风险动作，三道防御（任一不过就拒绝，宁可不动也不误删）：
+ *   ① 目录名经 `safeFolder` 归一 —— 它把一切非 `[A-Za-z0-9._-]` 字符（含 / 与 \）剥掉，
+ *      `../..` 这类输入会退化成空串并回落到固定名 `plugin`；
+ *   ② 归一化后的绝对路径必须仍在市场目录**之内**且不等于它本身（防穿越兜底）；
+ *   ③ `.claude-plugin` 等以点开头的目录不作为插件目录（清单文件所在，不参与删除）。
+ */
+export async function removeCodexMarketPluginFiles(slug: string, marketDir: string): Promise<{ ok: boolean; reason?: string }> {
+  const root = path.resolve(marketDir);
+  const target = path.resolve(path.join(root, safeFolder(slug)));
+  if (target === root || !target.startsWith(root + path.sep) || path.basename(target).startsWith(".")) {
+    return { ok: false, reason: "安装路径解析异常，已取消卸载" };
+  }
+  // 清单条目先摘（清单坏了也要删目录，所以各自独立 try）
+  const manifestPath = path.join(root, ".claude-plugin", "marketplace.json");
+  try {
+    const parsed = JSON.parse(await fs.readFile(manifestPath, "utf8"));
+    if (Array.isArray(parsed?.plugins)) {
+      parsed.plugins = parsed.plugins.filter((item: any) => item?.name !== path.basename(target));
+      await fs.writeFile(manifestPath, JSON.stringify(parsed, null, 2), "utf8");
+    }
+  } catch { /* 清单缺失或已损坏：目录仍要删 */ }
+  await fs.rm(target, { recursive: true, force: true });
+  return { ok: true };
 }
 
 /**

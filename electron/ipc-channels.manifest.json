@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-01",
-  "count": 388,
+  "count": 390,
   "channels": [
     {
       "name": "request",
@@ -528,10 +528,10 @@
       "channel": "plugins:market-list",
       "paramsImpl": "input: unknown = {}",
       "paramsDecl": "input?: { category?: string; query?: string; page?: number; pageSize?: number }",
-      "returns": "Promise<{ items: PluginMarketEntry[]; total: number; page: number; pageSize: number }>",
+      "returns": "Promise<{ items: PluginMarketEntry[]; installedIds: string[]; total: number; page: number; pageSize: number }>",
       "invokeArgs": "input",
       "cast": null,
-      "note": null
+      "note": "10-03：逐项 installed 之外另给**全量已装 slug 清单**（不分页），供渲染层把「引擎没认领但文件已落盘」的插件补进「已安装」列表"
     },
     {
       "name": "installMarketPlugin",
@@ -542,6 +542,26 @@
       "invokeArgs": "plugin",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "uninstallMarketPlugin",
+      "channel": "plugins:market-uninstall",
+      "paramsImpl": "slug: unknown",
+      "paramsDecl": "slug: string",
+      "returns": "Promise<{ ok: boolean; reason?: string; engineRemoved?: boolean }>",
+      "invokeArgs": "slug",
+      "cast": null,
+      "note": "10-03：本地市场插件卸载（先请引擎 plugin/uninstall，再删落盘目录 + 摘 marketplace 清单；删除目标经 safeFolder 归一 + 目录内校验）"
+    },
+    {
+      "name": "listInstalledMarketPlugins",
+      "channel": "plugins:market-installed",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ slug: string; version: string; description: string }[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "10-03：本地已装市场插件清单（**只扫本地目录、零网络**；供「已安装」列表补齐引擎没认领的那批 —— 不能走 market-list，那条会拉远端 48 个插件）"
     },
     {
       "name": "listLocalSkills",

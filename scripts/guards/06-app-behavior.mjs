@@ -2989,6 +2989,26 @@ w.postMessage({id:1,op:"list",root});
       "【245】装完插件必须重拉市场列表（只刷页面资源 ⇒ 卡片停留在旧状态）"
     );
 
+    /* ── 【246】本地已装插件必须能进「已安装」列表并能真卸载（10-03 用户追问后补做）─────
+       引擎 plugin/list 有时不认领本地市场插件（安装流程自己会提示「当前列表未返回该插件」），
+       于是「装完了但已安装列表里没有、也卸不掉」。两条不变量：
+         ① 补齐口径 = 引擎列表 ∪（本地已装 − 引擎已认领），且通道必须**零网络**；
+         ② 卸载走本地删除时，目标必须过 safeFolder 归一 + 市场目录内校验（删除是唯一不可逆动作）。 */
+    (marketIpcSrc245.includes('ipcMain.handle("plugins:market-installed"') && marketIpcSrc245.includes("listInstalledMarketPlugins(codexMarketDir(codexHome))") && !/market-installed[\s\S]{0,200}listMarketPlugins\(/.test(marketIpcSrc245) ? ok : fail)(
+      "【246】已装清单通道只扫本地目录（走 listInstalledMarketPlugins；误接 listMarketPlugins 会去拉远端 48 个插件）"
+    );
+    (appUiCode245.includes("localOnly: true") && appUiCode245.includes("engineSlugs.has(row.slug)") ? ok : fail)(
+      "【246】「已安装」列表补齐本地已装且不与引擎重复（localOnly 标记 + 引擎 slug 差集）"
+    );
+    (/if \(plugin\.localOnly && plugin\.marketSlug\)[\s\S]{0,300}uninstallMarketPlugin\(/.test(appUiCode245) ? ok : fail)(
+      "【246】localOnly 插件卸载走本地 IPC（引擎 plugin/uninstall 认不出它，绕过去会报 unknown plugin）"
+    );
+    (marketSrc245.includes("export async function removeCodexMarketPluginFiles(")
+      && /target === root \|\| !target\.startsWith\(root \+ path\.sep\)/.test(marketSrc245)
+      && marketSrc245.includes("safeFolder(slug)") ? ok : fail)(
+      "【246】卸载删除有三重防御（safeFolder 归一 + 必须落在市场目录内 + 不等于根本身）"
+    );
+
     /* ③c 坐姿打字微动画 = 图集两个坐姿变体交替（cols 5/6） */
     (fmtSrc.includes("SIT_FRAMES = [5, 6]") && canvasSrc.includes("SIT_FRAMES[") ? ok : fail)(
       "【233】坐姿用双帧变体交替（打字微动画）"
