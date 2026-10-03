@@ -3014,8 +3014,18 @@ export async function run() {
   );
   // ⑩ 通知是多条队列（09-20 用户：「会话窗口产生的弹窗相互污染，区分不出来哪个是哪个」）
   //   旧实现 const [notice, setNotice] = useState("") 是单槽：多会话并发来通知时后到的**直接顶掉**先到的。
-  (!/const \[notice, setNotice\] = useState\(""\)/.test(app73) ? ok : fail)(
-    "【73】不得回退成单槽 notice useState（多会话并发时会互相覆盖）"
+  // ⛔ 10-03 收窄判据范围：本条针对的是**多会话通知中枢**（app-state 的 setNotice，
+  //   它被当 onNotice 传进各域组件、并进它们的 effect 依赖），不是"任何组件都不许有单槽"。
+  //   理由：`CodexOfficialMarketSection` 之类**独立设置面板**的单槽是正确语义 ——
+  //   它的通知只由"用户点这一页的按钮"产生，不存在并发来源；强行改成队列反而是无意义的复杂度。
+  //   ⛔ 判据改为扫真相源（app-state 的通知中枢）而不是聚合面全扫：
+  //   否则任何新写一个单槽提示的独立组件都会被当成"回退"，守卫就会被稀释成噪声。
+  const noticeHub73 = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part02", "02-goal-browser-notice", "02-approval-notice-center.tsx"), "utf8");
+  (/const \[notices, setNotices\] = useState</.test(noticeHub73) ? ok : fail)(
+    "【73】多会话通知中枢是队列（notices[]）不是单槽 —— 单槽会让并发通知互相顶掉"
+  );
+  (!/const \[notice, setNotice\] = useState\(""\)/.test(noticeHub73) ? ok : fail)(
+    "【73】通知中枢不得回退成单槽 notice useState（多会话并发时会互相覆盖）"
   );
   (/const setNotice = useCallback\(\(text: string, threadId\?: string\) => \{[\s\S]{0,1500}?setNotices\(\(current\) => \[\.\.\.current, \{ id, text, threadId, scope \}\]/.test(app73) ? ok : fail)(
     "【73】setNotice 是「推一条入队」的兼容函数且引用稳定（useCallback——它被当 onNotice 传进子组件的 effect 依赖；空串仍=清空全部）"
