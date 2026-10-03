@@ -1,7 +1,11 @@
 /* ⛔ 本文件由 scripts/gen-domain-registry.mjs 生成，禁手改。
    改"启用哪些域"请改 electron/composition.json，然后跑：npm run gen:domains
    守卫【253】逐字节比对生成物与 renderRegistry() 的产物 —— 手改过、或改了配置没重跑，都会红。 */
-import "./ipc-host"; // 先 provide "ipc" 服务（域的 inject 依赖），再挂载
+// ⛔ 下面两行是**接缝的 provide**，必须排在所有域 import 之前（域的 inject 依赖它们）：
+//   "ipc"  —— 注册通道（electron/ipc-host.ts）；"host" —— app/secure/shell/dialog/window 五条宿主能力接缝。
+//   顺序即契约：把接缝 import 挪到域 import 之后 ⇒ 域 setup 里 ctx.get("host") 得 undefined。
+import "./ipc-host";
+import "./runtime/seams";
 import type { Plugin } from "./context";
 import { mountFeature } from "./context";
 import { queueTimerFeature as feat_queue_timer } from "./features/queue-timer-ipc";
@@ -73,6 +77,7 @@ import { skillsFeature as feat_skills } from "./features/skills-ipc";
 import { skillDisciplineFeature as feat_skill_discipline } from "./features/skill-discipline-ipc";
 import { pluginsFeature as feat_plugins } from "./features/plugins-ipc";
 import { hooksFeature as feat_hooks } from "./features/hooks-ipc";
+import { remoteFeature as feat_remote } from "./features/remote-ipc";
 
 export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unknown };
 
@@ -151,6 +156,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "skill-discipline", plugin: feat_skill_discipline as Plugin<unknown>, config: null },
   { id: "plugins", plugin: feat_plugins as Plugin<unknown>, config: null },
   { id: "hooks", plugin: feat_hooks as Plugin<unknown>, config: null },
+  { id: "remote", plugin: feat_remote as Plugin<unknown>, config: null },
 ];
 
 for (const row of ENABLED) mountFeature(row.plugin, row.config);

@@ -39,7 +39,11 @@ export function renderRegistry(composition) {
     const varName = `feat_${String(d.id).replace(/-/g, "_")}`;
     return `  { id: ${JSON.stringify(d.id)}, plugin: ${varName} as Plugin<unknown>, config: ${JSON.stringify(d.config ?? null)} },`;
   });
-  return `${HEADER}import "./ipc-host"; // 先 provide "ipc" 服务（域的 inject 依赖），再挂载
+  return `${HEADER}// ⛔ 下面两行是**接缝的 provide**，必须排在所有域 import 之前（域的 inject 依赖它们）：
+//   "ipc"  —— 注册通道（electron/ipc-host.ts）；"host" —— app/secure/shell/dialog/window 五条宿主能力接缝。
+//   顺序即契约：把接缝 import 挪到域 import 之后 ⇒ 域 setup 里 ctx.get("host") 得 undefined。
+import "./ipc-host";
+import "./runtime/seams";
 import type { Plugin } from "./context";
 import { mountFeature } from "./context";
 ${imports.join("\n")}
