@@ -23,14 +23,14 @@
 |---|---:|---|
 | `src/App.tsx` | **12 行** | 只剩 `useHarnessApp()` + earlyView 短路 + `<AppView/>`，**不再吸收任何逻辑**（底部 60 行死 re-export 面 09-22 已删） |
 | `src/features/app-view/AppView.tsx` | 472 行 | 视图装配壳：编号段 `01-sidebar-shell` … `09-file-preview-editor` + 子目录 |
-| `src/features/` | **58 个域目录**（10-03 实测） | 其中 `settings-*` **26 个**（设置页**按页同构**拆分，粒度稳定） |
+| `src/features/` | **59 个域目录**（10-03 实测） | 其中 `settings-*` **27 个**（设置页**按页同构**拆分，粒度稳定）；10-03 新增 `codex-official-market`（Codex 官方插件市场板块） |
 | `src/features/app-state/useHarnessApp.tsx` | 39 行 | 组合根：建 `bag` → 按序调 9 个 part → 合并 return |
 | `src/features/app-state/parts/` | 9 组合根 + 30 子 hook + `types.ts` + `bag-types.ts` | `bag-types.ts` **自动生成，禁手改**（守卫【93】） |
 | `electron/main.ts` | **1204 行**（10-03 实测；⛔ 行数随域下沉变动，改动后请重测本节；纯副作用 import **5** 行） | 余 5 handler（`theme:apply` + `window:popout-*`×4，已证搬不动）+ 系统托盘（`electron/tray.ts` 接线）+ 启动链 + 模块级单例 |
-| `electron/features/` | **101 个条目**（10-03 实测：100 顶层文件 + 1 子目录 `voice-ipc/`） | IPC handler 实现。⛔ **一个板块 = 一个域前缀**（10-03 用户令）：10 处多前缀欠账已全部拆完，守卫【253】⑥ 棘轮名单清零 |
+| `electron/features/` | **102 个条目**（10-03 实测：101 顶层文件 + 1 子目录 `voice-ipc/`） | IPC handler 实现。⛔ **一个板块 = 一个域前缀**（10-03 用户令）：10 处多前缀欠账已全部拆完，守卫【253】⑥ 棘轮名单清零。域组合表启用 **78 个域**（10-03 实测 `composition.json`） |
 | `electron/ipc-registry.ts` | 账本 | `prefix / count / status(in-main\|in-features\|shell) / file / channels` |
-| `electron/ipc-channels.manifest.json` | **390 个通道**（IPC 桥单一真相源） | `preload.ts` gen 段 + `vite-env.d.ts` gen 段由它生成：`npm run gen:ipc`（**自动**同步 `count` 并**体检账本登记**，缺了直接打印可粘贴条目）；**生成物禁手改**（守卫【2】22 条）。09-24 起所有 invoke 走 `__ipc`：参数个数校验 + 错误归一化（`[ERR_*]` 消息前缀）+ 通道级超时表 |
-| `src/styles/` | 19 分节（`styles.css` 31 行 barrel） | 界面区域样式 |
+| `electron/ipc-channels.manifest.json` | **398 个通道**（IPC 桥单一真相源；10-03 实测，含官方插件市场新增 5 条） | `preload.ts` gen 段 + `vite-env.d.ts` gen 段由它生成：`npm run gen:ipc`（**自动**同步 `count` 并**体检账本登记**，缺了直接打印可粘贴条目）；**生成物禁手改**（守卫【2】22 条）。09-24 起所有 invoke 走 `__ipc`：参数个数校验 + 错误归一化（`[ERR_*]` 消息前缀）+ 通道级超时表 |
+| `src/styles/` | 25 分节（`styles.css` 27 行 `@import`） | 界面区域样式；10-03 新增 `25-codex-official-market.css` |
 | 跨域活绑定 | **22 个** `electron/features/*` 从 `../main` 取值 | 架构层真残留，纪律 +【91】守着（见 §8） |
 | `electron/builtin-skills/` | **16 个内置技能**（含元技能 `skill-authoring` / `memory-distill` / `self-review` / `memory-hygiene` / `memory-classify` / `skill-audit`，09-29 新增 `image-generation` 与重写后的 `video-generation`） | 启动时 `ensureBuiltinSkills` 落盘到 `$CODEX_HOME/skills`（守卫【103】） |
 | **AI 画布工作流板块**（09-29 立，见 §2.1） | 渲染层 `src/features/drama-canvas/` 14 文件 / 3737 行；IPC 域 `drama-canvas` **2** + `video` **7** + `builtin`（生图）；CSS `src/styles/21-drama-canvas.css` **1519 行**；内置技能 `image-generation` / `video-generation`；MCP 工具 `image_generate` / `video_generate` / `video_status` / `video_concat` | **五层全占的独立功能板块**：界面 + 状态 + 存储 + IPC + 引擎工具/技能 |

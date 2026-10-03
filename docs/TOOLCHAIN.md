@@ -111,5 +111,5 @@ FFmpeg（音视频）、yt-dlp（下载）、Miniconda（conda 环境）、MinGW
 - **playwright-cli 提示缺内核**：装「Playwright 浏览器内核」。
 - **cloakbrowser 打不开**：装「Cloak 指纹浏览器内核」。
 - **7z 解压失败 "Cannot open the file as archive"**：`7z.exe` 缺 `7z.dll`，用内置 python zipfile 解压。
-- **官方插件装不了**（`openai-api-curated` 市场）：需 ChatGPT 账号登录，API Key 方式不可用——该市场已在插件页隐藏，不要尝试安装。
+- **官方精选市场（`openai-api-curated`）装不上**：需 ChatGPT 账号登录，API Key 方式不可用。**10-03 用户改判：卡片放出来**（不再整源隐藏），点了装不上会有中文提示。要装官方插件请走插件页的「Codex 官方插件」源（GitHub `openai/plugins` 国内镜像，一键装到本地插件目录）。
 - **技能列表重复（ponytail-* 两遍）**：全局 skills/ 里残留了插件技能副本，删掉全局那份即可（引擎会从插件 cache 列）。

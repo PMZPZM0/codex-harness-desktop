@@ -335,6 +335,53 @@ const CHECKS = [
         nav >= 0 && ui?.hasGitee && ui?.noSkillhub, JSON.stringify(ui).slice(0, 120));
     },
   },
+  {
+    id: "codex-official-market",
+    name: "⑳ Codex 官方插件市场（GitHub openai/plugins 国内镜像 / 分类 / 安装入口与已装反馈）",
+    run: async (h) => {
+      // 为什么钉这一条：10-03 用户要「把 Codex 原生插件源内置进来，分好类，给安装入口 + 安装状态与已安装反馈」。
+      // 真IPC + 真 DOM 两头都要验：静态守卫只能钉代码形态，钉不住「上游清单能不能真拉到」。
+      const list = await h.eval(`window.codex.listOfficialMarketPlugins({ page: 1, pageSize: 30 }).then((r) => ({
+        total: r.total, live: r.live, first: r.items[0] ? { slug: r.items[0].slug, path: r.items[0].pluginPath, cat: r.items[0].categoryZh, auth: r.items[0].authNote, ok: r.items[0].installable } : null,
+        installedIds: r.installedIds,
+      })).catch((e) => ({ error: String(e) }))`);
+      h.check("① 官方清单真拉到（≥60 个插件，条目带仓库路径 / 分类 / 鉴权提示）",
+        (list?.total ?? 0) >= 60 && list?.first?.path && list?.first?.cat && list?.first?.auth, JSON.stringify(list).slice(0, 200));
+      // 上游网络不通时读内置快照 —— 但必须如实回传 live=false（不许冒充实时数据）
+      h.check("② live 标志是布尔（true=实时上游 / false=内置快照，UI 据此提示）",
+        typeof list?.live === "boolean", JSON.stringify(list?.live));
+      const cats = await h.eval(`window.codex.listOfficialMarketCategories().then((r) => ({ n: r.length, keys: r.map((x) => x.displayName), sum: r.reduce((s, x) => s + x.count, 0) })).catch((e) => ({ error: String(e) }))`);
+      h.check("③ 分类 tab 由清单现算（≥8 类且数量之和 = 条目总数）",
+        (cats?.n ?? 0) >= 8 && cats?.sum === list?.total, JSON.stringify(cats).slice(0, 160));
+      // UI：设置 → 插件 → 切到「Codex 官方插件」源
+      await h.eval(`(function(){ document.querySelector('.sidebar-settings')?.click(); return 1; })()`);
+      await wait(1400);
+      await h.eval(`(function(){ const items=[...document.querySelectorAll('.settings-nav button')];
+        const i=items.findIndex((b)=>(b.textContent||'').trim()==='插件'); if(i>=0) items[i].click(); return i; })()`);
+      await wait(1600);
+      const switched = await h.eval(`(function(){ const tabs=[...document.querySelectorAll('.market-source-switch .segmented-tabs button')];
+        const t=tabs.find((b)=>(b.textContent||'').includes('Codex 官方')); if(t) t.click(); return tabs.length; })()`);
+      await wait(2600);
+      const ui = await h.eval(`(function(){ const box=document.querySelector('.codex-official-market');
+        const modal=document.querySelector('.settings-modal')?.innerText||'';
+        // 两个源共用 .plugin-market-block 容器皮肤 ⇒ 「Gitee 块消失」只能按标题文案判，不能按类名判
+        const giteeTitle=[...document.querySelectorAll('.plugin-market-title')].some((el)=>(el.textContent||'').includes('来自 Gitee 官方镜像'));
+        return { tabs: document.querySelectorAll('.market-source-switch .segmented-tabs button').length,
+          hasBox: !!box, cards: document.querySelectorAll('.codex-official-market-card').length,
+          addable: document.querySelectorAll('.codex-official-market-card .skill-add:not([disabled])').length,
+          authNotes: document.querySelectorAll('.codex-official-market-auth').length,
+          installedFlags: document.querySelectorAll('.codex-official-market-flag').length,
+          mentionsRepo: modal.includes('openai/plugins'), giteeVisible: giteeTitle }; })()`);
+      h.check("④ 插件页有两个源切换，切到官方源后卡片真渲染、Gitee 块让位（安装钮可用 = 有安装入口）",
+        switched === 2 && ui?.hasBox && (ui?.cards ?? 0) > 0 && (ui?.addable ?? 0) > 0 && ui?.giteeVisible === false, JSON.stringify(ui).slice(0, 220));
+      h.check("⑤ 每张卡片都带鉴权提示（装了不等于能用，「已安装」不许骗人）",
+        (ui?.authNotes ?? 0) === (ui?.cards ?? -1) && ui?.mentionsRepo, JSON.stringify({ notes: ui?.authNotes, cards: ui?.cards, mentionsRepo: ui?.mentionsRepo }));
+      // 已安装反馈：判定来自本地 marker（零网络通道），不是引擎 plugin/list 的命名巧合
+      const local = await h.eval(`window.codex.listInstalledOfficialMarketPlugins().then((r) => ({ n: (r ?? []).length, sample: r?.[0]?.slug ?? null })).catch((e) => ({ error: String(e) }))`);
+      h.check("⑥ 本地已装清单通道可用（零网络扫描；装了没被引擎认领也看得见，且与 list 回传的 installedIds 同源）",
+        typeof local?.n === "number" && local.n === (list?.installedIds ?? []).length, JSON.stringify({ local, marketInstalled: list?.installedIds?.length }));
+    },
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -364,10 +411,11 @@ async function enterMain(h) {
 //   历史项不删（它们仍然是回归证据），但**永远不会在默认路径上被执行** ——
 //   这样"每次只测最新改动"是机制保证的，不再依赖我记不记得。
 // ─────────────────────────────────────────────────────────────────────────────
-const LATEST_ROUND = "10-01";
+const LATEST_ROUND = "10-03";
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
-  "plugin-market-gitee": "10-01",
+  "plugin-market-gitee": "10-03",
+  "codex-official-market": "10-03",   // 本轮新项；Gitee 项同轮重跑（插件页加了源切换，两个源都得看一眼）
   "file-card-edit": "09-26",
   "settings-pages": "09-25",
   "shot-editor": "09-24",

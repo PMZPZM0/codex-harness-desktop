@@ -194,6 +194,23 @@ type PluginMarketEntry = {
   categoryZh?: string; fullName?: string; owner?: string; defaultBranch?: string; license?: string; installability?: string;
 };
 type PluginMarketInstallResult = { id: string; name: string; path: string; version: string; description: string; marketId: string; sourceUrl: string; engineRegistered?: boolean; engineCheckMessage?: string };
+/**
+ * Codex 官方插件市场（GitHub `openai/plugins`，10-03 立；与 Gitee 镜像源并存的**第二个源**，两个板块）。
+ * 字段口径见 `electron/codex-official-market.ts`：auth/apiCurated 决定卡片的「还要配什么」提示，
+ * installable=false 是源指向外部仓库的那 3 条（不给一键安装，只给查看来源）。
+ */
+type OfficialMarketPluginEntry = {
+  slug: string; name: string; displayName: string; description: string; category: string; categoryZh: string;
+  /** 上游 policy.authentication：ON_INSTALL / ON_USE */
+  auth: string;
+  /** 是否在 api_marketplace.json（ChatGPT 精选 50 条）里 —— 不在的 15 条依赖 ChatGPT 应用连接器 */
+  apiCurated: boolean;
+  pluginPath: string; version: string; license: string; author: string; homepage: string; sourceUrl: string;
+  installable: boolean; unavailableReason?: string; authNote: string;
+  installed?: boolean; installedVersion?: string;
+};
+type OfficialMarketListResult = { items: OfficialMarketPluginEntry[]; installedIds: string[]; live: boolean; catalogGeneratedAt: string; total: number; page: number; pageSize: number };
+type OfficialMarketInstallResult = { id: string; name: string; path: string; version: string; description: string; marketId: string; manifestPath: string; engineRegistered?: boolean; engineCheckMessage?: string };
 type LocalSkillEntry = { name: string; folder?: string; path: string; description: string; descriptionZh?: string; marketId?: string; pluginId?: string; sourceUrl?: string; installedAt?: string; engineRegistered?: boolean; engineCheckMessage?: string; source?: "cocoloop" | "skillhub" | "local"; enabled?: boolean; allowedTools?: string[]; icon?: string; category?: string; /** 专家市场包元技能（.skillhub.json kind=skillset） */ skillset?: boolean; /** 专家包子技能：所属包 slug（.skillhub.json kind=skillset-child） */ skillsetSlug?: string };
 type PersonalizationConfig = { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; onboarded?: boolean; greeted?: boolean };
 
@@ -885,6 +902,16 @@ interface Window {
     layaUninstall(): Promise<{ ok: boolean; log: string }>;
     /* 思考等级自动判断（choice: low/medium/high/xhigh + 校准置信度；置信 <0.45 弃权返回 null，调用方回落手选档） */
     layaDecideEffort(text: string): Promise<{ effort: string; confidence: number } | null>;
+    /* 10-03：Codex 官方插件市场（GitHub openai/plugins，gh-proxy 镜像优先）。installedDir 由主进程注入 —— 「装没装」的真相源是本地 marker；live=false 表示上游没连通、这次读的是内置快照 */
+    listOfficialMarketPlugins(input?: { category?: string; query?: string; page?: number; pageSize?: number }): Promise<OfficialMarketListResult>;
+    /* 官方源的 10 个分类（含每类数量）。⛔ 与 Gitee 镜像源的分类各算各的，tab 按源切换 */
+    listOfficialMarketCategories(): Promise<{ key: string; displayName: string; count: number }[]>;
+    /* 镜像下载 plugins/<slug> 子树 → 写本地市场目录 → 注册 [marketplaces.codex-official-market] → 引擎 plugin/install + 重启 → plugin/list 确认；进度走 harness:event 的 official-plugin-install（⛔ 不与 plugin-install 共用 type，上游 slug 有重名） */
+    installOfficialMarketPlugin(plugin: OfficialMarketPluginEntry): Promise<OfficialMarketInstallResult>;
+    /* 先请引擎 plugin/uninstall（认领时才生效），再删落盘目录 + 摘本地 marketplace 清单；删除目标经 safeFolder 归一 + 目录内校验 */
+    uninstallOfficialMarketPlugin(slug: string): Promise<{ ok: boolean; reason?: string; engineRemoved?: boolean }>;
+    /* 本地已装官方插件（**只扫本地目录、零网络**）：补齐「引擎没认领、但文件已落盘」的那批，不能走 list（那条要拉上游 65 条） */
+    listInstalledOfficialMarketPlugins(): Promise<{ slug: string; version: string; description: string }[]>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */

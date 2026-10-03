@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（79 个能力域 / 393 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（80 个能力域 / 398 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -252,6 +252,10 @@ Bot 会话（Bot 与会话的绑定与消息注入）
 ### plugins（6 通道）
 插件市场（安装/启停/列表）
 通道：plugins:market-install, plugins:market-installed, plugins:market-list, plugins:market-uninstall, plugins:set-enabled, plugins:set-linked-enabled
+
+### codex-official-market（5 通道）
+Codex 官方插件市场（GitHub openai/plugins 走国内镜像：清单/分类/一键安装/卸载/本地已装）
+通道：codex-official-market:categories, codex-official-market:install, codex-official-market:installed, codex-official-market:list, codex-official-market:uninstall
 
 ### hooks（2 通道）
 钩子（会话生命周期挂钩配置）

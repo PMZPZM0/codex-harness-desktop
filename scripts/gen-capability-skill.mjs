@@ -65,6 +65,7 @@ const DOMAIN_DESCRIPTIONS = {
   "commands": "斜杠命令（自定义 / 命令的定义与管理）",
   "skill-discipline": "技能纪律（写技能时必须遵守的硬规则查询）",
   "plugins": "插件市场（安装/启停/列表）",
+  "codex-official-market": "Codex 官方插件市场（GitHub openai/plugins 走国内镜像：清单/分类/一键安装/卸载/本地已装）",
   "builtin": "内置模型供应商目录（读/存/探测/图像模型）",
   "hooks": "钩子（会话生命周期挂钩配置）",
   "connectors": "MCP 连接器（外部 app/服务接入：增删改查、启停、OAuth）",
