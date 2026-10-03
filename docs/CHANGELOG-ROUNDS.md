@@ -2304,7 +2304,8 @@ localStorage 脏值。外观页由注册表 `map` 渲染，**新增主题 = 表�
     刻意避开 `Ctrl+Shift+S`（另存为）、`Ctrl+Shift+A`（搜索标签页）这类浏览器常用键。
   · 落盘 `userData/screenshots/shot-YYYYMMDD-HHmmss.png`（设置页可改目录）；mac 未授权「屏幕录制」时
     给可照做的提示而不是黑帧。
-- **收藏夹（09-24，守卫【129】）**：`electron/favorites.ts` + `features/screenshot-favorites-ipc.ts`。
+- **收藏夹（09-24，守卫【129】）**：`electron/favorites.ts` + `features/favorites-ipc.ts`
+  （10-03 P2 批次 8 由合并文件 `features/screenshot-favorites-ipc.ts` 拆出 —— 截图侧现在在 `features/screenshot-ipc.ts`）。
   真相源 = `userData/favorites.json`（临时文件 rename 原子写、读盘归一化），渲染层只是**镜像**
   （`bag.favorites` + 四个消费面：设置页批量管理 / 加号菜单子面板 / 消息操作条 ☆ / 加入记忆）。
   · ⛔ **删除只认显式 id 列表**（`deleteFavorites(userData, ids)`），空数组 = 什么都不做；

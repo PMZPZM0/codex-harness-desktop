@@ -1,9 +1,9 @@
 {
-  "$comment": "域组合配置（P1 单一真相源）。enabled=false 的域不会被 composition.gen.ts 挂载；改完必须跑 npm run gen:domains（守卫【253】比对生成物，过期即红）。⛔ 一行恒等于一个域前缀（一个文件承载两个前缀时导出两个 feature、写两行）—— 行的 id 就是挂载身份，一行多前缀会让重复挂载校验和 ipc-registry 的 prefix 对不上账。",
+  "$comment": "域组合配置（P1 单一真相源）。enabled=false 的域不会被 composition.gen.ts 挂载；改完必须跑 npm run gen:domains（守卫【253】比对生成物，过期即红）。⛔ 一行恒等于一个域前缀，且**一个 file 只许出现一次** —— 一个文件恒等于一个域前缀（多前缀文件必须拆开，守卫【253】有棘轮盯着这条不许长回来）。",
   "$schema": {
     "id": "kebab-case 域前缀（= ipc-registry.ts 的 prefix = 目录/类名前缀）；必须与域文件里 defineFeature 的 id 逐字一致（守卫【253】）",
     "enabled": "boolean：是否挂载",
-    "file": "相对 electron/ 的域文件路径（必须是插件形态：export defineFeature 的产物）；允许多行指向同一文件（多前缀文件）",
+    "file": "相对 electron/ 的域文件路径（必须是插件形态：export defineFeature 的产物）；⛔ 一个文件只能被一行引用（多前缀文件要拆成多个文件）",
     "export": "该文件里导出的 feature 变量名",
     "config": "传给 feature 的 config（可 null）"
   },
@@ -60,14 +60,14 @@
     {
       "id": "expert-market",
       "enabled": true,
-      "file": "features/skillhub-markets-ipc.ts",
+      "file": "features/expert-market-ipc.ts",
       "export": "expertMarketFeature",
       "config": null
     },
     {
       "id": "soul-market",
       "enabled": true,
-      "file": "features/skillhub-markets-ipc.ts",
+      "file": "features/soul-market-ipc.ts",
       "export": "soulMarketFeature",
       "config": null
     },
@@ -88,14 +88,14 @@
     {
       "id": "screenshot",
       "enabled": true,
-      "file": "features/screenshot-favorites-ipc.ts",
+      "file": "features/screenshot-ipc.ts",
       "export": "screenshotFeature",
       "config": null
     },
     {
       "id": "favorites",
       "enabled": true,
-      "file": "features/screenshot-favorites-ipc.ts",
+      "file": "features/favorites-ipc.ts",
       "export": "favoritesFeature",
       "config": null
     }

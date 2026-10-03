@@ -11,12 +11,12 @@ import { updatesFeature as feat_updates } from "./features/updates-ipc";
 import { dataDirFeature as feat_dataDir } from "./features/data-dir-ipc";
 import { historySearchFeature as feat_history } from "./features/history-search-ipc";
 import { workLogsFeature as feat_work_logs } from "./features/work-logs";
-import { expertMarketFeature as feat_expert_market } from "./features/skillhub-markets-ipc";
-import { soulMarketFeature as feat_soul_market } from "./features/skillhub-markets-ipc";
+import { expertMarketFeature as feat_expert_market } from "./features/expert-market-ipc";
+import { soulMarketFeature as feat_soul_market } from "./features/soul-market-ipc";
 import { dramaCanvasFeature as feat_drama_canvas } from "./features/drama-canvas";
 import { petFeature as feat_pet } from "./features/pet-ipc";
-import { screenshotFeature as feat_screenshot } from "./features/screenshot-favorites-ipc";
-import { favoritesFeature as feat_favorites } from "./features/screenshot-favorites-ipc";
+import { screenshotFeature as feat_screenshot } from "./features/screenshot-ipc";
+import { favoritesFeature as feat_favorites } from "./features/favorites-ipc";
 
 export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unknown };
 

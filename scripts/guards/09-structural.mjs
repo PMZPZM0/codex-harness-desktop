@@ -480,7 +480,10 @@ export async function run() {
   console.log(C.bold("\n【129】截图与收藏夹（不可再生数据 / 系统级副作用）"));
   const SHOT = join(ROOT, "electron", "screenshot.ts");
   const FAV = join(ROOT, "electron", "favorites.ts");
-  const IPC_FILE = join(ROOT, "electron", "features", "screenshot-favorites-ipc.ts");
+  /* ⛔ 10-03 P2 批次 8：截图 / 收藏夹拆成两个独立板块（硬规则「一个文件恒等于一个域前缀」），
+     断言**跟着搬**：截图那三条读 SHOT_IPC，记忆那一条读 FAV_IPC（拆开不是取消断言）。 */
+  const SHOT_IPC = join(ROOT, "electron", "features", "screenshot-ipc.ts");
+  const FAV_IPC = join(ROOT, "electron", "features", "favorites-ipc.ts");
   const OVERLAY = join(ROOT, "electron", "overlay-preload.ts");
   const APP_PART = join(ROOT, "src", "features", "app-state", "parts", "part07", "03-seg.tsx");
   const FAV_PAGE = join(ROOT, "src", "features", "settings-favorites", "FavoritesSettingsSection.tsx");
@@ -490,7 +493,7 @@ export async function run() {
   const TYPES_FILE = join(ROOT, "src", "features", "app-view", "types.ts");
   const HELP_FILE = join(ROOT, "src", "components", "HelpDialog.tsx");
 
-  for (const [file, label] of [[SHOT, "screenshot.ts"], [FAV, "favorites.ts"], [IPC_FILE, "screenshot-favorites-ipc.ts"], [OVERLAY, "overlay-preload.ts"], [APP_PART, "app-state/part07/03-seg.tsx"], [FAV_PAGE, "settings-favorites"], [SHOT_PAGE, "settings-screenshot"]]) {
+  for (const [file, label] of [[SHOT, "screenshot.ts"], [FAV, "favorites.ts"], [SHOT_IPC, "screenshot-ipc.ts"], [FAV_IPC, "favorites-ipc.ts"], [OVERLAY, "overlay-preload.ts"], [APP_PART, "app-state/part07/03-seg.tsx"], [FAV_PAGE, "settings-favorites"], [SHOT_PAGE, "settings-screenshot"]]) {
     (existsSync(file) ? ok : fail)(`【129】${label} 存在`);
   }
 
@@ -544,8 +547,8 @@ export async function run() {
   (/onScreenshotCaptured:\s*\(listener/.test(preloadNow) && /__on\("screenshot:captured"/.test(preloadNow) ? ok : fail)(
     "【129】preload 暴露 onScreenshotCaptured（截图落地渲染层唯一入口）"
   );
-  if (existsSync(IPC_FILE)) {
-    const ipc = codeOnly(readFileSync(IPC_FILE, "utf8"));
+  if (existsSync(SHOT_IPC)) {
+    const ipc = codeOnly(readFileSync(SHOT_IPC, "utf8"));
     (/sendToWindow\("screenshot:captured"/.test(ipc) ? ok : fail)("【129】截图成功才推 screenshot:captured 事件（失败/取消不推）");
     (/copyImageFileToClipboard/.test(ipc) ? ok : fail)(
       "【129】截图确认即复制剪贴板（图要有去处，不能只躺在输入框）"
@@ -553,7 +556,10 @@ export async function run() {
     (/hotkeys\.apply\(mode, accelerator, \(\) => fire\(mode\)\);\s*\n\s*if \(!applied\.ok\)/.test(ipc) ? ok : fail)(
       "【129】hotkey-set 先注册、失败即返回（不落盘）——顺序不能反"
     );
-    (/await memoryLayers\.readProject\(workspace\)/.test(ipc) && /await memoryLayers\.writeProject\(workspace, appendBlock/.test(ipc) ? ok : fail)(
+  }
+  if (existsSync(FAV_IPC)) {
+    const favIpc = codeOnly(readFileSync(FAV_IPC, "utf8"));
+    (/await memoryLayers\.readProject\(workspace\)/.test(favIpc) && /await memoryLayers\.writeProject\(workspace, appendBlock/.test(favIpc) ? ok : fail)(
       "【129】加入记忆先读后写（层文件是整份覆盖语义，不读就写 = 抹掉用户已有记忆）"
     );
   }
@@ -1255,6 +1261,48 @@ export async function run() {
     }
     (wrongId253.length === 0 ? ok : fail)(
       `【253】组合表每行 id == 域文件 defineFeature 的 id（⛔ 不一致 = 挂载身份与登记前缀错位、重复挂载校验失效；不符：${wrongId253.join("/") || "无"}）`
+    );
+    // ⑥⛔⛔ 硬规则：**一个板块恒等于一个域前缀**（10-03 用户令：功能必须独立板块、不许巨型文件）。
+    //     "板块"= `electron/features/` 下的**一个顶层文件或一个顶层目录**（目录形态是给大域用的，
+    //     样板 = `features/voice-ipc/`：3 个文件、只有 `voice` 一个前缀）。
+    //     ⛔ 必须按**板块**聚合而不是按单文件 —— 按单文件会把 `voice-ipc/` 这种正确写法误判成违规
+    //        （实测教训：第一版按文件判，报出 6 个假违规，全是目录里的子文件）。
+    //     "一个文件塞多个前缀"曾被我当成"一行一前缀"的例外放行过 —— 那是错的，这里改成**棘轮**：
+    //     ALLOWED 是尚未拆完的历史欠账，**只许缩不许长**。
+    //       · 新增/新长出多前缀板块 ⇒ 前半红；
+    //       · 拆完了却忘记从名单里删掉 ⇒ 后半红（防止名单腐烂成"永久豁免"）。
+    //     ⛔ 判定必须过 `codeOnly()`：本仓注释里引用代码片段是常态，裸正则会被注释顶成假红/假绿。
+    const ALLOWED_MULTI_PREFIX = [
+      "builtin-skills-ipc/",  // 4 文件 /  7 前缀（builtin, plugin, tools, skills, skill-discipline, plugins, hooks）
+      "connectors-mcp-ipc/",  // 4 文件 /  3 前缀（prompt, connectors, mcp-servers）
+      "engine-ipc/",          // 6 文件 /  6 前缀（thread-runtime, codex, engine, runtime, threads, bridge）
+      "im-channels-ipc.ts",   //   221 行 / 13 前缀 / 43 通道 —— 最大的一个
+      "memory-rpa-ipc.ts",    //   248 行 /  4 前缀 / 36 通道
+      "model-custom-ipc/",    // 5 文件 /  3 前缀（openai, model-specs, custom-model）
+      "settings-app-ipc.ts",  //   310 行 /  8 前缀 / 33 通道
+      "shell-misc-ipc.ts",    //    55 行 /  4 前缀 /  4 通道
+      "teams-agents-ipc.ts",  //   421 行 /  6 前缀 / 30 通道
+      "user-ipc.ts",          //    53 行 /  2 前缀 /  2 通道
+    ];
+    const PREFIX_RE = /(?:ipcMain|ipcHost)\.(?:handle|on)\(\s*"([a-zA-Z][\w-]*):/g;
+    const multiPrefix = [];
+    for (const e of readdirSync(join(ROOT, "electron", "features"), { withFileTypes: true })) {
+      const files = e.isDirectory()
+        ? walkFeat253(join(ROOT, "electron", "features", e.name))
+        : (e.name.endsWith(".ts") ? [join(ROOT, "electron", "features", e.name)] : []);
+      if (!files.length) continue;
+      const prefixes = new Set();
+      for (const p of files) {
+        for (const m of codeOnly(readFileSync(p, "utf8")).matchAll(PREFIX_RE)) prefixes.add(m[1]);
+      }
+      if (prefixes.size > 1) multiPrefix.push(e.isDirectory() ? `${e.name}/` : e.name);
+    }
+    const grew253 = multiPrefix.filter((n) => !ALLOWED_MULTI_PREFIX.includes(n));
+    const stale253 = ALLOWED_MULTI_PREFIX.filter((n) => !multiPrefix.includes(n));
+    (grew253.length === 0 && stale253.length === 0 ? ok : fail)(
+      `【253】一个板块只能有一个域前缀（棘轮：欠账 ${ALLOWED_MULTI_PREFIX.length} 个只许缩不许长`
+        + `；新违规：${grew253.join("/") || "无"}`
+        + `；已拆完但没从名单删掉：${stale253.join("/") || "无"}）`
     );
 
   }

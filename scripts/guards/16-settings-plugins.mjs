@@ -382,7 +382,11 @@ export async function run() {
     );
     // ⑤ 新市场域接线（10-01 立项 expert-market / soul-market）：handler 挂载 + 人格生效链 +
     //    专家卡落地，缺一环 = 功能白配。
-    const mkts = readFileSync(join(ROOT, "electron", "features", "skillhub-markets-ipc.ts"), "utf8");
+    /* ⛔ 10-03 P2 批次 8：两个市场拆成两个独立板块（一个文件恒等于一个域前缀）⇒ 断言跟着搬，
+       读**两个**文件再拼起来判（拆开不是把断言删掉）。 */
+    const mkts = ["expert-market-ipc.ts", "soul-market-ipc.ts"]
+      .map((f) => readFileSync(join(ROOT, "electron", "features", f), "utf8"))
+      .join("\n");
     (mkts.includes('"expert-market:list"') && mkts.includes('"expert-market:install"') && mkts.includes('"soul-market:apply"') && mkts.includes('"soul-market:current"') ? ok : fail)(
       "【236】expert-market / soul-market 两域 handler 全部挂载（缺 = 市场白配，桥接面有但主进程没人接）"
     );
