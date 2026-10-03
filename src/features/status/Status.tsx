@@ -5,6 +5,7 @@ import { RUN_CLOCK } from "../../lib/run-clock-2";
 import { Turn } from "../../lib/turn";
 import { diffStats } from "../../lib/diff-stats";
 import { ToolCodeBlock } from "../shared/ToolCodeBlock";
+import { getTurnFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
 import { usageBucket } from "../../lib/usage-bucket";
 import { usageInputTokens } from "../../lib/usage-input-tokens";
 import { usageCachedTokens } from "../../lib/usage-cached-tokens";
@@ -33,13 +34,24 @@ export function fileChip(path: string) {
 export function CompletedChanges({ turn }: { turn: Turn }) {
   const [review, setReview] = useState<{ path: string; diff: string } | null>(null);
   const changes = turn.items.flatMap((item) => item.type === "fileChange" ? (item.changes ?? []) : []);
-  if (!changes.length) return null;
-  const byPath = new Map<string, { path: string; added: number; deleted: number; diffs: string[] }>();
+  /* 宿主追踪（10-01）：模型走 shell / MCP / 浏览器写文件时引擎不发 fileChange，
+     这份差异由主进程快照对比得出 —— 与引擎 changes 合并（同路径引擎优先）。 */
+  const [trackedVersion, setTrackedVersion] = useState(0);
+  useEffect(() => subscribeTurnFileChanges((changedTurnId: string) => { if (changedTurnId === turn.id) setTrackedVersion((v) => v + 1); }), [turn.id]);
+  void trackedVersion;
+  const tracked = getTurnFileChanges(turn.id);
+  if (!changes.length && !tracked.length) return null;
+  const byPath = new Map<string, { path: string; added: number; deleted: number; diffs: string[]; deletedFile?: boolean }>();
   for (const change of changes) {
     const path = change.path ?? change.filePath ?? "未知文件";
     const stats = diffStats(change.diff ?? "");
     const current = byPath.get(path) ?? { path, added: 0, deleted: 0, diffs: [] };
     byPath.set(path, { path, added: current.added + stats.added, deleted: current.deleted + stats.deleted, diffs: [...current.diffs, String(change.diff ?? "")] });
+  }
+  for (const entry of tracked) {
+    const existing = byPath.get(entry.path);
+    if (existing) { if (!existing.added && !existing.deleted && (entry.added || entry.deleted || entry.status === "deleted")) byPath.set(entry.path, { path: entry.path, added: entry.added, deleted: entry.deleted, diffs: entry.diff ? [entry.diff] : existing.diffs, deletedFile: entry.status === "deleted" }); continue; }
+    byPath.set(entry.path, { path: entry.path, added: entry.status === "deleted" ? 0 : entry.added, deleted: entry.status === "deleted" ? entry.deleted : entry.deleted, diffs: entry.diff ? [entry.diff] : [], deletedFile: entry.status === "deleted" });
   }
   const files = [...byPath.values()];
   const totals = files.reduce((sum, file) => ({ added: sum.added + file.added, deleted: sum.deleted + file.deleted }), { added: 0, deleted: 0 });
@@ -60,7 +72,7 @@ export function CompletedChanges({ turn }: { turn: Turn }) {
               <div className="completed-file" key={file.path}>
                 {fileChip(file.path)}
                 <span className="completed-file-meta"><code title={file.path}>{name}</code><small title={file.path}>{dir}</small></span>
-                <span className="completed-file-stats"><b>+{file.added}</b> <i>-{file.deleted}</i></span>
+                <span className="completed-file-stats">{file.deletedFile ? <i className="completed-file-gone">已删除</i> : <><b>+{file.added}</b> <i>-{file.deleted}</i></>}</span>
                 <button type="button" className="completed-file-btn" title="弹窗查看这个文件的完整 diff" onClick={() => setReview({ path: file.path, diff: diffText })}>审查</button>
                 <button type="button" className="completed-file-btn" title="在资源管理器里定位该文件" onClick={() => { try { void window.codex.revealInFolder(file.path); } catch { /* 目录可能已删 */ } }}>打开</button>
               </div>
