@@ -46,6 +46,17 @@ export type AppHost = {
   isPackaged: () => boolean;
   quit: () => void;
   relaunch: (args?: string) => void;
+  /**
+   * 订阅应用生命周期事件（10-03，laya 域需要 `will-quit` 关停子进程）。
+   *
+   * ⛔ **必须返回退订函数**，且调用方要把它挂进 `ctx.effect` —— 不登记退订的订阅会在
+   *   域卸载后残留（泄漏；再挂一次还会重复触发）。这是「可逆副作用」语义的硬要求，
+   *   也是本接缝存在的意义：不让域直接 `import { app } from "electron"` 自己去 `app.on`。
+   *
+   * ⚠️ 事件名用**白名单**而不是任意 string：这是宿主生命周期面，允许域监听
+   *   `before-quit` 之类并 `preventDefault()` 就能改变退出流程（域不该有这种权力）。
+   */
+  on: (event: "will-quit", listener: () => void) => () => void;
 };
 
 /* ── secure：密钥加密（14 个域在用） ────────────────────────────────────── */
@@ -105,6 +116,10 @@ const hostCaps: HostCaps = {
     // ⚠️ `app.isPackaged` 是**属性**不是方法（写 `isPackaged()` 会 TS2349）；
     //    `app.relaunch` 收的是 `{ args?: string[] }` 对象，不是裸字符串数组。
     relaunch: (args) => app.relaunch(typeof args === "string" ? { args: [args] } : undefined),
+    on: (event, listener) => {
+      app.on(event, listener);
+      return () => { app.removeListener(event, listener); };
+    },
   },
   secure: {
     isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),

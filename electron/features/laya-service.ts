@@ -21,9 +21,13 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import crypto from "node:crypto";
-import { app } from "electron";
 import { bundledPython, pythonPipReady } from "../toolchain";
 import { PIP_COMMON_ARGS, PIP_INDEXES } from "./pip-sources";
+import { defineFeature } from "../context";
+import type { IpcHost } from "../ipc-host";
+import type { HostCaps } from "../runtime/seams";
+
+const LAYA_CHANNELS = ["laya:status", "laya:install", "laya:uninstall", "laya:decide-effort"];
 
 /** 首选源可被环境变量覆盖（自测/代理场景）；其后按共享兜底表顺序（去重）。 */
 const PIP_INDEX = process.env.LAYA_PIP_INDEX ?? "";
@@ -69,8 +73,21 @@ let serviceLog: string[] = [];
 let installProgress: LayaProgress | null = null;
 let startProgress: LayaProgress | null = null;
 
+/**
+ * userData 目录。10-03 起经 **host 接缝**取（`ctx.get("host").app.getPath`）。
+ *
+ * ⛔ 保留"取不到就回落 cwd"的宽容口径：原实现是 `app?.getPath?.(...)`（可选链），
+ *    为无 Electron 宿主的场景（单测/脚本）留的。接缝取不到时同样回落，行为不变。
+ * ⛔ **惰性求值**：只在函数体内取，不在模块体 —— 模块体求值会早于 main.ts 的
+ *    `app.setPath("userData", …)`，拿到错的目录（【91】复发防线）。
+ */
+let hostApp: HostCaps["app"] | null = null;
+/** 供 defineFeature 注入接缝；未注入时（单测/脚本）userDataDir 回落 cwd。 */
+export function bindLayaHost(app: HostCaps["app"]): void {
+  hostApp = app;
+}
 function userDataDir(): string {
-  return app?.getPath?.("userData") ?? process.cwd();
+  return hostApp?.getPath?.("userData") ?? process.cwd();
 }
 
 function keyFile(): string {
@@ -474,12 +491,33 @@ export function layaShutdown() {
   killService("应用退出");
 }
 
-/* ── IPC 接线（laya 域 3 条）───────────────────────────────────────── */
-import { ipcMain } from "electron";
+/* ── 插件入口（10-03：模块体裸注册 → defineFeature）────────────────────────
+   4 条通道 + will-quit 订阅都收进 setup()：卸载时 ctx.effect 会摘掉 will-quit 钩子，
+   不会像原先 `app.on(...)` 那样留在 app 上（泄漏 + 再挂一次重复触发）。 */
+export const layaFeature = defineFeature<null>({
+  id: "laya",
+  inject: ["ipc", "host"],
+  setup: (ctx) => {
+    const ipcHost = ctx.get<IpcHost>("ipc");
+    const host = ctx.get<HostCaps>("host");
+    if (!ipcHost) throw new Error("laya: 缺少 ipc 服务（宿主未提供）");
+    if (!host) throw new Error("laya: 缺少 host 接缝（宿主未提供）");
+    const appHost = host.app;
+    // 供模块级函数（userDataDir）惰性取用 —— 保持"模块体不求值"的【91】防线
+    bindLayaHost(appHost);
 
-ipcMain.handle("laya:status", () => layaStatus());
-ipcMain.handle("laya:install", () => layaInstall());
-ipcMain.handle("laya:uninstall", () => layaUninstall());
-ipcMain.handle("laya:decide-effort", (_event, text: unknown) => layaDecideEffort(String(text ?? "")));
+    ipcHost.handle("laya:status", () => layaStatus());
+    ipcHost.handle("laya:install", () => layaInstall());
+    ipcHost.handle("laya:uninstall", () => layaUninstall());
+    ipcHost.handle("laya:decide-effort", (_event, text: unknown) => layaDecideEffort(String(text ?? "")));
 
-app.on("will-quit", () => layaShutdown());
+    // ⛔ 10-03：will-quit 订阅的**退订函数**必须交给 ctx.effect —— 插件卸载时随容器一起释放。
+    //    直接 app.on(...) 不注册退订 = 域卸载后钩子仍在（泄漏，且再挂一次会重复触发）。
+    ctx.effect(() => appHost.on("will-quit", () => layaShutdown()));
+
+    // 卸载即摘通道
+    ctx.effect(() => {
+      for (const ch of LAYA_CHANNELS) ipcHost.removeHandler(ch);
+    });
+  },
+});

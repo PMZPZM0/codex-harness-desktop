@@ -83,12 +83,10 @@ import {
 import { readCustomModel, readCustomModels, writeCustomModels, healReservedProviderConfig, normalizeProvider, writeModelCatalogToml, readUserConfigSplit } from "./main/01-model-catalog";
 import { distillSummarize, turnOutputText, waitForTurnCompletion } from "./main/03-turn-summary";
 import { connectorEnv, readChannelBot, connectorToml, mcpToolRulesOf } from "./main/04-connector-config";
-import "./features/laya-service";
 /* 桌面宠物（09-30）：IPC 域 + 浮窗。侧效应 import ⇒ handler 立即注册（早于 whenReady）。
    ⛔ 10-03 P2 批次 6 起，`pet-ipc` 的十条通道改由组合层 `./composition.gen` 挂载（域不自挂），
    这里只留浮窗模块的具名导入。 */
 import { closePetWindow } from "./features/pet-window";
-import "./features/video-gen";
 /* 排队消息定时发送（09-28）：⛔ 本行曾经漏掉 ⇒ `queue-timer:set` 报
    「No handler registered」（用户现场实测）。handler 文件、manifest、registry、
    preload 四处都齐，唯一缺的就是这行引用 —— 缺它整条通道静默失效（不报编译错）。
