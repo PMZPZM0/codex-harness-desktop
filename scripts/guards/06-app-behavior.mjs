@@ -2963,6 +2963,32 @@ w.postMessage({id:1,op:"list",root});
       );
     }
 
+    /* ── 【245】插件市场「已安装」状态必须来自**本地 manifest**（10-03 用户报障：
+       装完卡片仍是「+」，「已安装」里也看不到）───────────────────────────────
+       根因：判定只依赖引擎 `plugin/list` 的「id@market 前段 === slug」，而引擎可能未认领
+       （安装流程自己的提示语就写着「当前列表未返回该插件」）⇒ 永远显示未安装。
+       真相源 = 安装时写入市场目录的 `.codex-market.json`（主进程扫目录回传 installed）。 */
+    const appUiCode245 = codeOnly(readAppUi());
+    const marketSrc245 = codeOnly(readFileSync(join(ROOT, "electron", "codex-market.ts"), "utf8"));
+    const marketIpcSrc245 = codeOnly(readFileSync(join(ROOT, "electron", "features", "builtin-skills-ipc", "03-plugins-market.ts"), "utf8"));
+    // ⛔ 自读源文件：marketSrc 是【239】块内的局部 const，在块外引用会 ReferenceError
+    //   ⇒ 「预检自身异常」会把后面所有断言一起废掉（10-03 实测踩过）。
+    (marketSrc245.includes("export function codexMarketDir(") && /const marketDir = codexMarketDir\(codexHome\)/.test(marketSrc245) ? ok : fail)(
+      "【245】本地市场目录单一真相源 codexMarketDir()（安装落点与「已装」扫描不许各拼一份路径）"
+    );
+    (marketSrc245.includes("listInstalledMarketPlugins") && /installed: installedMap\.has\(entry\.slug\)/.test(marketSrc245) ? ok : fail)(
+      "【245】市场列表逐项合并本地已装标记（真相源 = .codex-market.json，不靠引擎 plugin/list 的命名巧合）"
+    );
+    (marketIpcSrc245.includes("installedDir: codexMarketDir(codexHome)") ? ok : fail)(
+      "【245】plugins:market-list 必须传 installedDir（不传就退化成只看引擎列表 ⇒ 装完仍显示「+」）"
+    );
+    (appUiCode245.includes("plugin.installed === true") ? ok : fail)(
+      "【245】市场卡片的「已安装」判定读主进程回传的 plugin.installed（引擎 id 比对只作回落）"
+    );
+    (/installMarketPlugin\(plugin\)[\s\S]{0,400}refreshPluginsPage\(\)/.test(appUiCode245) ? ok : fail)(
+      "【245】装完插件必须重拉市场列表（只刷页面资源 ⇒ 卡片停留在旧状态）"
+    );
+
     /* ③c 坐姿打字微动画 = 图集两个坐姿变体交替（cols 5/6） */
     (fmtSrc.includes("SIT_FRAMES = [5, 6]") && canvasSrc.includes("SIT_FRAMES[") ? ok : fail)(
       "【233】坐姿用双帧变体交替（打字微动画）"

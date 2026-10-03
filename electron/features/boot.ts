@@ -454,7 +454,11 @@ export async function bootApp() {
         if (id) engineActiveTurnIds.delete(id);
         /* 回合收尾 = 汇报时点：算工作目录差异并广播 turn-file-changes（ZCode 式汇总的数据源）。 */
         emitTurnFileChanges(threadIdOf);
-        else if (threadIdOf) {
+        // ⛔ 10-03 语法修复：58afb8b 把这里写成了 `else if (threadIdOf)`，但上面的
+        //   `} else if (...)` 分支已闭合 ⇒ 整个文件解析失败（tsc TS1128），主进程编译不过。
+        //   按本段注释的原意（"id 形态不认识 → 只释放该线程名下的回合"）补回条件：
+        //   有 id 时上面已 delete 过，这里只在**没有 id** 时才遍历释放。
+        if (!id && threadIdOf) {
           // id 形态不认识 → 只释放该线程名下的回合（绝不动别的会话）
           for (const [turnId, owner] of [...engineActiveTurnIds]) if (owner === threadIdOf) engineActiveTurnIds.delete(turnId);
         }

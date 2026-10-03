@@ -76,7 +76,10 @@ bag.refreshPluginsPage = refreshPluginsPage as typeof bag.refreshPluginsPage;
     bag.setPluginInstall({ plugin, current: 0 });
     try {
       const installed = await window.codex.installMarketPlugin(plugin);
-      await bag.refreshSettingsResources();
+      // ⛔⛔ 10-03 用户报障「插件安装后没有更新状态」：卡片的「已安装」标记由主进程按
+      //   **本地 manifest** 回传（plugin.installed），不重拉市场列表就还是旧数据 ⇒ 仍显示「+」。
+      //   走「插件」页的唯一刷新入口（同时刷页面资源 + 市场列表，沿用当前筛选与页码）。
+      await bag.refreshPluginsPage();
       bag.setPluginInstall({ plugin, current: 7, engineRegistered: installed.engineRegistered, engineCheckMessage: installed.engineCheckMessage });
       bag.setNotice(installed.engineRegistered ? `已安装并由 Codex 发现：${installed.name}` : `插件已安装：${installed.name}`);
     } catch (error: any) {
