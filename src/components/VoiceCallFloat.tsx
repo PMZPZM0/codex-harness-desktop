@@ -15,7 +15,9 @@ export type ModelsStatus = { ready: boolean; missing: string[]; readyFiles: numb
 export const POS_KEY = "voice-float-pos";
 const DEFAULT_POS = { right: 22, bottom: 104 };
 export const CAPTURE_RATE = 16000;
-export const BARGUE_COOLDOWN_MS = 1200;
+/** 两次自动打断之间的冷却。⛔ 10-03 由 1200 抬到 2500：原来 1.2s 就允许再打断一次，
+ *  表现为「Codex 刚要开口又被自己噎住」—— 一句话里能触发好几次。 */
+export const BARGUE_COOLDOWN_MS = 2500;
 /** 参考环 30 秒（审计 ⑤①）：TTS 队列领先量可以到十几秒，2 秒的环必然失步 */
 export const REF_RING_SECONDS = 30;
 /** AEC 延迟线上限 256ms：蓝牙耳机也够（真实值由 outputLatency 按次校正） */

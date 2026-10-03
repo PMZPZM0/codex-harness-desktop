@@ -6,7 +6,7 @@
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
  */
 import {
-  C, OWN_WRITE_TTL_MS, ROOT, SESSION_SCOPE_HEADING, codeOnly, composeScopeInstructions, createAec, createEchoGate, createSentenceChunker, createSpeakFilter, emptyRuntime, existsSync, fail, isOwnEcho, join, legacyMirror, mainSrc, migrateRuntime, normalizeNumbers, normalizeRuntime, numberToChinese, ok, patchRuntime, preloadSrc, readAppUi, readFileSync, readMainSource, readStyles, readVoiceCallFloatSrc, readVoiceSettingsSrc, rememberOwnWrite, resampleLinear, resolveModelForOpen, rmsOf, runtimeSignature, sessionScopeBlock, sessionScopeSignature, shouldSyncOpenThread, stripScopeBlock, toSpeakableText, warn,
+  C, OWN_WRITE_TTL_MS, ROOT, SESSION_SCOPE_HEADING, codeOnly, composeScopeInstructions, createAec, createEchoGate, GATE_DEFAULTS, createSentenceChunker, createSpeakFilter, emptyRuntime, existsSync, fail, isOwnEcho, join, legacyMirror, mainSrc, migrateRuntime, normalizeNumbers, normalizeRuntime, numberToChinese, ok, patchRuntime, preloadSrc, readAppUi, readFileSync, readMainSource, readStyles, readVoiceCallFloatSrc, readVoiceSettingsSrc, rememberOwnWrite, resampleLinear, resolveModelForOpen, rmsOf, runtimeSignature, sessionScopeBlock, sessionScopeSignature, shouldSyncOpenThread, stripScopeBlock, toSpeakableText, warn,
 } from "./_ctx.mjs";
 
 export async function run() {
@@ -584,7 +584,10 @@ console.log(C.bold("\n【4b】语音通话纯逻辑（回声消除 / 回声门�
   gate.update(0.5, true);
   gate.doubleTalk === false ? ok("门控：单块能量尖峰不判插话（去抖生效）") : fail("门控：单块尖峰就判插话（去抖失效）");
   let fired = false;
-  for (let i = 0; i < 6; i++) {
+  // ⛔ 10-03：持续人声的块数必须跟着 GATE_DEFAULTS.holdBlocks 走，不能写死 ——
+  //    写死 6 时，holdBlocks 一调大「持续人声」就不再持续，断言会以「门限过严」为名报红。
+  const sustainedBlocks = GATE_DEFAULTS.holdBlocks + 2;
+  for (let i = 0; i < sustainedBlocks; i++) {
     gate.update(0.5, true);
     if (gate.doubleTalk) fired = true;
   }

@@ -497,7 +497,7 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
     micSettingsRef.current = mic;
     volumeRef.current = s?.tts?.volume ?? 1;
     // 打断方式 + 灵敏度从设置取：auto=能量门控自动打断，manual=仅手动按钮（外放场景避免误触发）
-    gateRef.current = createEchoGate({ echoGateDb: s?.barge?.gateDb ?? 6 });
+    gateRef.current = createEchoGate({ echoGateDb: s?.barge?.gateDb ?? 9 });
     bargeModeRef.current = s?.barge?.mode ?? "auto";
     if (typeof s?.asr?.rule2 === "number") setEndpointSec(s.asr.rule2);
 

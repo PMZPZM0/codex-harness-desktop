@@ -53,7 +53,10 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   // 汉语自然停顿（~0.3s），不会把长句切碎。
   asr: { rule1: 2.4, rule2: 0.8, rule3: 20, numThreads: 2 },
   mic: { deviceId: "", noiseSuppression: false, echoCancellation: true, autoGainControl: false },
-  barge: { gateDb: 6, mode: "auto" },
+  // ⛔ 10-03 用户报「自动打断太灵敏」：6dB 只比回声地板高一点，外放/键盘声都够得着。
+  //    抬到 9（clamp 仍是 3–12，用户可自己调）。⚠️ 改了这里**只影响新装/未设过该项的用户** ——
+  //    对已存设置的老用户真正生效的是 GATE_DEFAULTS 的 minFloor / holdBlocks（用户不可配）。
+  barge: { gateDb: 9, mode: "auto" },
   aec: { mode: "auto" },
   modelHost: "auto",
   // ⛔ mac 适配（09-17 审计）：默认呼叫键原来写死 "Ctrl+Shift+M"。Electron 的 accelerator 里
