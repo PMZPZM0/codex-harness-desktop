@@ -36,6 +36,21 @@ bag.keepAwake = keepAwake as typeof bag.keepAwake; bag.setKeepAwake = setKeepAwa
 bag.ctxMenuOpen = ctxMenuOpen as typeof bag.ctxMenuOpen; bag.setCtxMenuOpen = setCtxMenuOpen as typeof bag.setCtxMenuOpen;
 
 
+  /* ⛔⛔ 缩到窄屏时**强制关掉**工作区浮层（10-03 用户截图「右上角那块跟最小化重叠」）。
+     为什么要逻辑兜底而不只靠 CSS：`@media (width<=760px)` 已经把 .ctx-picker 整块
+     `display:none`，但**已经打开的浮层开着就关不掉** —— 按钮没了，用户再也点不到它，
+     浮层永久糊在原生窗口钮上（死角：缩窄 → 隐藏 → 点不掉）。
+     断点值必须与 09-settings-workspace-memory.css 的 media 查询**同源同值**，改一处要改两处。 */
+  useEffect(() => {
+    if (!ctxMenuOpen) return;
+    const NARROW = window.matchMedia("(width<=760px)");
+    if (NARROW.matches) { setCtxMenuOpen(false); return; }
+    const onChange = (event: MediaQueryListEvent) => { if (event.matches) setCtxMenuOpen(false); };
+    NARROW.addEventListener("change", onChange);
+    return () => NARROW.removeEventListener("change", onChange);
+  }, [ctxMenuOpen]);
+
+
   const [skillHubCategory, setSkillHubCategory] = useState("总排行");
 bag.skillHubCategory = skillHubCategory as typeof bag.skillHubCategory; bag.setSkillHubCategory = setSkillHubCategory as typeof bag.setSkillHubCategory;
 

@@ -860,4 +860,28 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   }
 }
   }
+
+
+  /* ── 【250】窄屏下顶栏浮层不许压到原生窗口钮（10-03 用户截图）─────────────────
+     背景：Windows 无边框窗的最小化/最大化/关闭是**原生** WCO，渲染层碰不到；
+     顶栏靠 padding-right:145px 给它留位。09-13 已做「缩窗分级隐藏按钮」，
+     但漏了工作区上下文选择器 `.ctx-picker` —— 它的**下拉浮层**是容器div 的孩子，
+     `display:none` 藏不住它 ⇒ 浮层压在 WCO 上面（探针实测窗口 651px 时相交）。
+     两条断言分别钉「CSS 收浮层」「逻辑兜底关状态」「145px 预留」，缺任一都还会复现：
+       只加 CSS⇒ 开着浮层缩窄后按钮消失，浮层永久糊在窗口钮上且**点不掉**（死角）；
+       只加逻辑⇒ 断点值与 CSS 不同源时两边打架，谁最后生效说不清。 */
+  {
+    const topbarCss250 = readFileSync(join(ROOT, "src/styles/09-settings-workspace-memory.css"), "utf8");
+    const narrowBlock250 = topbarCss250.slice(topbarCss250.indexOf("@media (width<=760px)"));
+    (/@media \(width<=760px\)[\s\S]*?\.ctx-picker,[\s\S]*?\.ctx-menu[\s\S]{0,200}display: none/.test(narrowBlock250) ? ok : fail)(
+      "【250】窄屏（<=760px）必须连.ctx-picker 容器与其.ctx-menu 浮层一起隐藏（浮层是容器孩子，display:none 藏不住它）"
+    );
+    const goalPal250 = readFileSync(join(ROOT, "src/features/app-state/parts/part01/06-goals-palette-commands.tsx"), "utf8");
+    (/matchMedia\("\(width<=760px\)"\)/.test(goalPal250) && /ctxMenuOpen\)[\s\S]{0,400}setCtxMenuOpen\(false\)/.test(goalPal250) ? ok : fail)(
+      "【250】缩到窄屏必须**逻辑关掉**工作区浮层（只靠 CSS 会出现「按钮没了 ⇒ 浮层点不掉」的死角）"
+    );
+    (/padding-right: 145px/.test(readFileSync(join(ROOT, "src/styles/02-sidebar-threads.css"), "utf8")) ? ok : fail)(
+      "【250】顶栏保留 145px 给原生窗口钮（Windows 无边框窗的 WCO 渲染层碰不到）"
+    );
+  }
 }
