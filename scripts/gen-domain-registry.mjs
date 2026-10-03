@@ -64,8 +64,10 @@ export function validate(composition, root = ROOT) {
   const problems = [];
   const seen = new Set();
   for (const d of composition.domains || []) {
-    if (!d || typeof d.id !== "string" || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(d.id)) {
-      problems.push(`id 不是 kebab-case：${JSON.stringify(d && d.id)}`);
+    if (!d || typeof d.id !== "string" || !/^[a-zA-Z][\w-]*$/.test(d.id)) {
+      // ⛔ 字符集必须跟着 ipc-registry.ts 的真实前缀走：那里有驼峰前缀（如 `dataDir`），
+      //    只允许 kebab 会把合法域挡在门外（10-03 实测）。
+      problems.push(`id 不是合法域前缀（字母开头，字母/数字/_/-）：${JSON.stringify(d && d.id)}`);
       continue;
     }
     if (seen.has(d.id)) problems.push(`id 重复：${d.id}`);

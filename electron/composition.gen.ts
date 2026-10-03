@@ -6,6 +6,9 @@ import type { Plugin } from "./context";
 import { mountFeature } from "./context";
 import { queueTimerFeature as feat_queue_timer } from "./features/queue-timer-ipc";
 import { clipboardFeature as feat_clipboard } from "./features/clipboard-ipc";
+import { phoneHarnessFeature as feat_phone } from "./features/phone-harness-ipc";
+import { updatesFeature as feat_updates } from "./features/updates-ipc";
+import { dataDirFeature as feat_dataDir } from "./features/data-dir-ipc";
 
 export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unknown };
 
@@ -17,6 +20,9 @@ export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unkno
 export const ENABLED: EnabledDomain[] = [
   { id: "queue-timer", plugin: feat_queue_timer as Plugin<unknown>, config: null },
   { id: "clipboard", plugin: feat_clipboard as Plugin<unknown>, config: null },
+  { id: "phone", plugin: feat_phone as Plugin<unknown>, config: null },
+  { id: "updates", plugin: feat_updates as Plugin<unknown>, config: null },
+  { id: "dataDir", plugin: feat_dataDir as Plugin<unknown>, config: null },
 ];
 
 for (const row of ENABLED) mountFeature(row.plugin, row.config);
