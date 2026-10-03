@@ -155,7 +155,11 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
   /* ── 浮窗挂载态：直播自动展开；done 态点芯片 = 弹窗预览（open 驱动）。
      卸载走**吸入特效**：popupOpen 转 false 的那一次先挂 .sucking 停 240ms 再卸——
      ⛔ 不能直接卸载：macOS 缩回特效需要元素活着播完 forwards 帧。 */
-  const popupOpen = open && Boolean(displayed);
+  /* ⛔ 10-01 用户实测「大折叠收起时思考板块的折叠效果重复播放一次」：回合结束大折叠会把
+     过程组重挂载，重挂载那一帧 open 仍为 true ⇒ 浮窗先「重开」再「关闭」，吸入动画就多播一遍。
+     修法：浮窗只在 **直播中（running/revealing）** 或 **用户点开（manualOpen 已定）** 时出现——
+     重挂载的已完成卡（manualOpen=null 且不直播）不再自动开浮窗，吸入动画就不会重复。 */
+  const popupOpen = open && Boolean(displayed) && Boolean(running || revealing || manualOpen !== null);
   const prevOpenRef = useRef(false);
   useEffect(() => {
     if (popupOpen) { prevOpenRef.current = true; setExiting(false); return; }
