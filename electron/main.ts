@@ -96,8 +96,9 @@ import "./features/remote-ipc";
 import "./features/memory-rpa-ipc";
 import "./features/laya-service";
 import "./features/fs-ipc";
-/* 桌面宠物（09-30）：IPC 域 + 浮窗。侧效应 import ⇒ handler 立即注册（早于 whenReady）。 */
-import "./features/pet-ipc";
+/* 桌面宠物（09-30）：IPC 域 + 浮窗。侧效应 import ⇒ handler 立即注册（早于 whenReady）。
+   ⛔ 10-03 P2 批次 6 起，`pet-ipc` 的十条通道改由组合层 `./composition.gen` 挂载（域不自挂），
+   这里只留浮窗模块的具名导入。 */
 import { closePetWindow } from "./features/pet-window";
 import "./features/video-gen";
 /* 排队消息定时发送（09-28）：⛔ 本行曾经漏掉 ⇒ `queue-timer:set` 报

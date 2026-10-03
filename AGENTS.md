@@ -18,7 +18,7 @@
 
 > **写/改代码前先读 `docs/ARCHITECTURE-RULES.md`**（以实测现状为基准的规范条文：板块划分判据、四条接口面契约、新增板块 checklist、红线汇总）。
 > ⚠️ `docs/ARCHITECTURE.md` 是 09-21 的**目标形态草案**（`registry.ts` / `defineFeature` / `Slot.tsx` / `lib/bus.mjs` 未落地；`gen-ipc-bridge.mjs` 已于 09-23 落地，见 ARCHITECTURE-RULES.md §0/§6），**冲突时以 ARCHITECTURE-RULES.md 为准**。
-> ✅ **10-03 更新**：**主进程侧**的 `defineFeature` + `ctx` 容器**已落地**（`electron/context.ts` + `electron/ipc-host.ts`），并已加**域组合层**（`electron/composition.json` → `npm run gen:domains` → `composition.gen.ts`，守卫【252】【253】）。**P2 批次 1–5 已迁 10 个域**（queue-timer / clipboard / phone / updates / dataDir / history / work-logs / expert-market / soul-market / drama-canvas）：`inject: ["ipc"]` + `ipcHost.handle` + `ctx.effect` 摘 handler，`main.ts` 副作用域 import 26 → **17** 行。⛔ **组合表一行恒等于一个域前缀**（一个文件承载两个前缀 ⇒ 导出两个 `defineFeature`、写两行，见 `features/skillhub-markets-ipc.ts`）；【253】新增「表每行 `id` == 域文件 `defineFeature` 的 `id`」断言。⛔ 域仍可从 `electron` 取 `app`/`dialog` 等宿主能力（那是 P3 白名单的事），本阶段只把「注册通道」收进容器。**渲染层**的 `Slot.tsx` / `registry.ts` **仍未落地** —— 现状见 ARCHITECTURE-RULES.md §8。
+> ✅ **10-03 更新**：**主进程侧**的 `defineFeature` + `ctx` 容器**已落地**（`electron/context.ts` + `electron/ipc-host.ts`），并已加**域组合层**（`electron/composition.json` → `npm run gen:domains` → `composition.gen.ts`，守卫【252】【253】）。**P2 批次 1–6 已迁 11 个域**（queue-timer / clipboard / phone / updates / dataDir / history / work-logs / expert-market / soul-market / drama-canvas / pet）：`inject: ["ipc"]` + `ipcHost.handle` + `ctx.effect` 摘 handler，`main.ts` 副作用域 import 26 → **16** 行。⛔ **组合表一行恒等于一个域前缀**（一个文件承载两个前缀 ⇒ 导出两个 `defineFeature`、写两行，见 `features/skillhub-markets-ipc.ts`）；【253】新增「表每行 `id` == 域文件 `defineFeature` 的 `id`」断言。⛔ 域仍可从 `electron` 取 `app`/`dialog` 等宿主能力（那是 P3 白名单的事），本阶段只把「注册通道」收进容器。**渲染层**的 `Slot.tsx` / `registry.ts` **仍未落地** —— 现状见 ARCHITECTURE-RULES.md §8。
 > ⛔⛔ **09-29 用户点名的通用纪律**（细则见文档 §2.2）：**后续新增功能一律做成独立板块、留好拓展接口、并考虑后续维护与拓展** —— 不往既有域里"顺手加一块"；能力表/厂商表/类型表保持单一真相源；新增或修改时**同轮**同步它的每一处引用（守卫、文档、生成器、能力清单）。
 > 样板 = **AI 画布工作流**（`src/features/drama-canvas/`），它是五层全占的独立功能板块，见文档 §2.1。
 
@@ -32,7 +32,7 @@
 
 **当前落点（实测值见 `docs/archive/REFACTOR-INVENTORY-2026-09-22.md` §10；行数口径一律 `wc -l`，别用 `split("\n").length`——后者多算 1 行；⛔ 09-22 自检教训：文档数字滞后会主动误导下一轮，每轮收尾必须同步本节）**：
 - `src/App.tsx` **12 行**：仅剩 hook 调用 + earlyView 短路 + `<AppView/>`（组件体已全部落 `app-view/`）。
-- `electron/main.ts` **1,016 行**：剩 5 个 handler（theme + popout×4，已证不可搬；`ipcMain.handle/on` 实测计数 = 5）+ 启动链 + 模块级单例 + `import "./composition.gen"`（域挂载唯一入口）。副作用域 import 已 **26 → 17 行**（组合表启用 **10 个域**，10-03 P2 批次 5）。
+- `electron/main.ts` **1,017 行**：剩 5 个 handler（theme + popout×4，已证不可搬；`ipcMain.handle/on` 实测计数 = 5）+ 启动链 + 模块级单例 + `import "./composition.gen"`（域挂载唯一入口）。副作用域 import 已 **26 → 16 行**（组合表启用 **11 个域**，10-03 P2 批次 6）。
 - `src/features/app-state/useHarnessApp.tsx` **39 行（组合根）**：建 `bag` → 按序调用 9 个 part → 合并 return。
   - 逻辑在 `parts/part01.tsx` … `parts/part09.tsx`，**9 个 part 现在每个都是「组合根 + 子 hook 目录」两层结构**：
     - 第一层 `parts/partNN.tsx`（16–24 行）：只 `import` 子 hook → 按序调用 → 展开合并 return；
