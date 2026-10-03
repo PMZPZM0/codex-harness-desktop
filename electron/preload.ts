@@ -128,14 +128,6 @@ contextBridge.exposeInMainWorld("codex", {
   readFile: (path: string) => __ipc("fs:read", 1, [{ path }]),
   fileExists: (path: string) => __ipc("fs:exists", 1, [{ path }]),
   chooseDirectory: () => __ipc("dialog:directory", 0, []),
-  /* 10-03 新增：列出可用壁纸（自带素材 + 用户选过的本地图；文件已不存在的自动剔除） */
-  listWallpapers: () => __ipc("wallpaper:list", 0, []),
-  /* 10-03 新增：系统对话框选图（选完自动 trustPicked 进可信根，渲染层可直接引原路径，不复制文件） */
-  pickWallpaper: () => __ipc("wallpaper:pick", 0, []),
-  /* 10-03 新增：校验并登记手填的本地图片路径。手打路径不在可信根内 ⇒ 必须先 isInsideTrustedRoots + trustPicked，否则渲染层拿到 403 破图 */
-  verifyWallpaperPath: (filePath: unknown) => __ipc("wallpaper:verify", 1, [filePath]),
-  /* 10-03 新增：从最近使用里移除一条引用（⛔ 不动用户磁盘原图 —— 那是用户的文件，删不得） */
-  forgetWallpaper: (id: unknown) => __ipc("wallpaper:forget", 1, [id]),
   chooseImages: () => __ipc("dialog:images", 0, []),
   chooseFiles: () => __ipc("dialog:files", 0, []),
   importSkill: () => __ipc("skills:import", 0, []),
