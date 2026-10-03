@@ -33,7 +33,7 @@
 
 **当前落点（实测值见 `docs/archive/REFACTOR-INVENTORY-2026-09-22.md` §10；行数口径一律 `wc -l`，别用 `split("\n").length`——后者多算 1 行；⛔ 09-22 自检教训：文档数字滞后会主动误导下一轮，每轮收尾必须同步本节）**：
 - `src/App.tsx` **12 行**：仅剩 hook 调用 + earlyView 短路 + `<AppView/>`（组件体已全部落 `app-view/`）。
-- `electron/main.ts` **1,017 行**：剩 5 个 handler（theme + popout×4，已证不可搬；`ipcMain.handle/on` 实测计数 = 5）+ 启动链 + 模块级单例 + `import "./composition.gen"`（域挂载唯一入口）。副作用域 import 已 **26 → 15 行**（组合表启用 **13 个域**，10-03 P2 批次 7）。
+- `electron/main.ts` **1,214 行**（口径 `wc -l`＝数换行符、**含空行**；⛔ 10-03 自查纠错：此处曾写 **1,017**，那是 `Get-Content | Measure-Object -Line` 的「非空行」口径，两者差 197 行 —— 本项目已两次踩在"行数口径不一致"上）：剩 5 个 handler（theme + popout×4，已证不可搬；`ipcMain.handle/on` 实测计数 = 5）+ 启动链 + 模块级单例 + `import "./composition.gen"`（域挂载唯一入口）。副作用域 import 已 **26 → 15 行**（组合表启用 **13 个域**，10-03 P2 批次 8）。
 - `src/features/app-state/useHarnessApp.tsx` **39 行（组合根）**：建 `bag` → 按序调用 9 个 part → 合并 return。
   - 逻辑在 `parts/part01.tsx` … `parts/part09.tsx`，**9 个 part 现在每个都是「组合根 + 子 hook 目录」两层结构**：
     - 第一层 `parts/partNN.tsx`（16–24 行）：只 `import` 子 hook → 按序调用 → 展开合并 return；
