@@ -6,7 +6,7 @@
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
  */
 import {
-  ALIGN_RESULT, C, CONTINUITY_TEXT, ROOT, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, mkdtempSync, planCompletedFold, readAppUi, readFileSync, readMainSource, readStyles, readVoiceCallFloatSrc, rmSync, shouldAlignProvider, spawnSync, statSync, tmpdir, warn, writeFileSync,
+  ALIGN_RESULT, C, CONTINUITY_TEXT, ROOT, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, mkdtempSync, planCompletedFold, readAppUi, readFileSync, readMainSource, readStyles, readVoiceCallFloatSrc, rmSync, shouldAlignProvider, sliceHandle, spawnSync, statSync, tmpdir, warn, writeFileSync,
 } from "./_ctx.mjs";
 
 export async function run() {
@@ -552,13 +552,14 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   // ⛔ fs:write / fs:read 一律收敛到主进程可信根集合（09-19 用户明令「用户隐私必须重之重」，
   //   推翻 09-13 的「保持原语义」决策）：fs:write 原来用渲染层自报的 root 判包含（传 C:\ 即绕过），
   //   fs:read 原来完全无校验（任意路径读）。两条守卫都锚定 handler 内部出现 isInsideTrustedRoots 调用。
-  const fsWrite = mainForSec.slice(mainForSec.indexOf('ipcMain.handle("fs:write"'), mainForSec.indexOf('ipcMain.handle("fs:read"'));
+  // ⛔ 10-03 第三轮：域改成插件形态后注册写的是 `ipcHost.handle`，锚点必须**双形态**
+  //    （indexOfHandle 同时认两种）。只认 ipcMain 会得 -1 ⇒ slice(-1, …) 读到聚合面尾部
+  //    ⇒ 这两条**安全**断言会以「可信根收敛被去掉」为名报红，而不变量其实没破（实测假红两轮）。
+  const fsWrite = sliceHandle(mainForSec, "fs:write", 1400);
   /isInsideTrustedRoots\(resolved\)/.test(fsWrite)
     ? ok("fs:write 收敛到主进程可信根（渲染层自报的 root 不再参与判定，09-19 用户拍板收紧）")
     : fail("fs:write 又用渲染层可控的 root 做校验或去掉了可信根收敛 —— 等于任意路径写文件");
-  const fsReadFrom = mainForSec.indexOf('ipcMain.handle("fs:read"');
-  const fsReadNext = mainForSec.indexOf("ipcMain.handle(", fsReadFrom + 20);
-  const fsRead = mainForSec.slice(fsReadFrom, fsReadNext > fsReadFrom ? fsReadNext : undefined);
+  const fsRead = sliceHandle(mainForSec, "fs:read", 1400);
   (/isInsideTrustedRoots\(target\)/.test(fsRead) ? ok : fail)(
     "fs:read 收敛到可信根（会话工作目录 + userData + 用户选过的路径，不再任意读全盘文件）"
   );

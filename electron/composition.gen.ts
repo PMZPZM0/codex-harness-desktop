@@ -78,6 +78,8 @@ import { skillDisciplineFeature as feat_skill_discipline } from "./features/skil
 import { pluginsFeature as feat_plugins } from "./features/plugins-ipc";
 import { hooksFeature as feat_hooks } from "./features/hooks-ipc";
 import { remoteFeature as feat_remote } from "./features/remote-ipc";
+import { fsFeature as feat_fs } from "./features/fs-ipc";
+import { dialogFeature as feat_dialog } from "./features/dialog-ipc";
 
 export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unknown };
 
@@ -157,6 +159,8 @@ export const ENABLED: EnabledDomain[] = [
   { id: "plugins", plugin: feat_plugins as Plugin<unknown>, config: null },
   { id: "hooks", plugin: feat_hooks as Plugin<unknown>, config: null },
   { id: "remote", plugin: feat_remote as Plugin<unknown>, config: null },
+  { id: "fs", plugin: feat_fs as Plugin<unknown>, config: null },
+  { id: "dialog", plugin: feat_dialog as Plugin<unknown>, config: null },
 ];
 
 for (const row of ENABLED) mountFeature(row.plugin, row.config);

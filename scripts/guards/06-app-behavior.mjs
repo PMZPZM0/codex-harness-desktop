@@ -6,7 +6,7 @@
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
  */
 import {
-  C, ROOT, codeOnly, createRequire, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, readAppUi, readBuiltinSkillsSource, readFileSync, readMainSource, readResponsesBridgeSource, readStyles, readdirSync, relative, rmSync, spawnSync, statSync, typesSrc,
+  C, ROOT, codeOnly, createRequire, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, readAppUi, readBuiltinSkillsSource, readFileSync, readMainSource, readResponsesBridgeSource, readStyles, readdirSync, relative, rmSync, sliceHandle, spawnSync, statSync, typesSrc,
 } from "./_ctx.mjs";
 
 export async function run() {
@@ -1525,7 +1525,9 @@ w.postMessage({id:1,op:"list",root});
     (viewSrc.includes("runningThreadIds") ? ok : fail)("【154】角色运行态来自 runningThreadIds（回退路径）");
     (viewSrc.includes("runningByMember") ? ok : fail)("【154】角色状态映射真实成员运行记录 runningByMember（优先）");
     (viewSrc.includes("openThread") ? ok : fail)("【154】预览的「进入对话」真实跳到该成员会话");
-    (!/ipcMain\.handle/.test(viewSrc) ? ok : fail)("【154】视图组件内不得直接注册 IPC");
+    // ⛔ 10-03：负向断言也要双形态 —— 渲染层一旦出现 `ipcHost.handle` 同样是"视图组件内注册 IPC"，
+    //    只禁 ipcMain 的话，改个名字就能绕过（负向断言最怕这种"换个写法就绿"）。
+    (!/ipcMain\.handle/.test(viewSrc) && !/ipcHost\.handle/.test(viewSrc) ? ok : fail)("【154】视图组件内不得直接注册 IPC");
     const appViewSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView.tsx"), "utf8");
     (appViewSrc.includes("<TeamOfficePreview") && appViewSrc.includes("teamId={app.companyPreviewTeamId}") ? ok : fail)("【154】预览浮层已挂载进 AppView（显式 props，域组件禁收 app）");
     const bagSrc = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "bag-types.ts"), "utf8");
@@ -2056,7 +2058,8 @@ w.postMessage({id:1,op:"list",root});
       "【174】app:relaunch 在 dev 下摘掉 VITE_DEV_SERVER_URL（否则新实例连已死的 vite ⇒ 白屏）"
     );
     // ② relaunch 必须优雅退（app.quit 而非 app.exit）——保证 before-quit 清理与图标不被打断
-    const relaunchBlock = diagSrc.slice(diagSrc.indexOf('ipcMain.handle("app:relaunch"'), diagSrc.indexOf('ipcMain.handle("app:relaunch"') + 1200);
+    // ⛔ 10-03：双形态锚点（域改插件形态后写 ipcHost.handle）
+    const relaunchBlock = sliceHandle(diagSrc, "app:relaunch", 1200);
     (/app\.relaunch\(\)/.test(relaunchBlock) && /app\.quit\(\)/.test(relaunchBlock) && !/app\.exit\(0\)/.test(relaunchBlock) ? ok : fail)(
       "【174】app:relaunch 用 app.quit() 优雅退出（app.exit 会跳过 before-quit 清理并打断任务栏图标）"
     );

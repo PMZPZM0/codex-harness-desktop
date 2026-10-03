@@ -497,6 +497,20 @@
       "file": "features/remote-ipc.ts",
       "export": "remoteFeature",
       "config": null
+    },
+    {
+      "id": "fs",
+      "enabled": true,
+      "file": "features/fs-ipc.ts",
+      "export": "fsFeature",
+      "config": null
+    },
+    {
+      "id": "dialog",
+      "enabled": true,
+      "file": "features/dialog-ipc.ts",
+      "export": "dialogFeature",
+      "config": null
     }
   ]
 }
