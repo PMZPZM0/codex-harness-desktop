@@ -883,5 +883,38 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (/padding-right: 145px/.test(readFileSync(join(ROOT, "src/styles/02-sidebar-threads.css"), "utf8")) ? ok : fail)(
       "【250】顶栏保留 145px 给原生窗口钮（Windows 无边框窗的 WCO 渲染层碰不到）"
     );
+
+    /* ⛔⛔ 本轮真正的根因（10-03 用户截图「搜索跟调度图标没有隐藏」）：
+       09-13 那套断点**只列了当时存在的按钮**，后来新增的顶栏控件没人补进去——
+       搜索 .history-search-wrap 与 目标进程 .tb-goals-entry 就一直漏在所有档之外，
+       651px 下仍挤在原生钮预留区里。
+       ⇒ 光钉「该藏的藏了」不够（上面三条都过了，它照样漏），必须钉**覆盖率**。
+
+       ⛔⛔ 判据的坑（第一次写成「文件里出现过这个类名」= **假绿**，变异测试当场抓到）：
+         CSS 里多个容器常写在**同一个选择器组**里（逗号分隔），删掉其中一个类名后
+         「文件里还能搜到这个串」仍然成立 ⇒ 断言恒真、抓不到漏网。
+         正确判据 = **逐个容器检查它自己那一行选择器**（行首匹配，排除逗号续行）。 */
+    const topbarJsx250 = readFileSync(join(ROOT, "src/features/app-state/parts/part09/02-seg.tsx"), "utf8");
+    // 顶栏动作区的「容器级」class：按钮被藏后仍会渲染浮层的那几个必须算在内
+    const CONTAINERS = ["history-search-wrap", "ctx-picker", "task-menu-wrap"];
+    const uncovered = CONTAINERS.filter((c) => {
+      const inJsx = topbarJsx250.includes(c);
+      if (!inJsx) return false;                       // 已从 JSX 移除 ⇒ 不用管
+      // 精确匹配「这一行就是它」：行首可有缩进，类名后面必须是逗号或 {（不是逗号续行里的第二个）
+      const ownLine = new RegExp("^\\s*\\.topbar-actions\\s+\\." + c + "\\s*[,{]", "m");
+      return !ownLine.test(topbarCss250);
+    });
+    (uncovered.length === 0 ? ok : fail)(
+      `【250】顶栏新增控件必须补进断点（漏：${uncovered.join("、") || "无"}）`
+    );
+    // 目标进程按钮是 .task-menu-wrap 的**孩子**，父容器藏了它自然一起藏；单独钉它不存在反而是错的
+    (/^\s*\.topbar-actions \.history-search-wrap\s*,?$/m.test(topbarCss250) ? ok : fail)(
+      "【250】搜索🔍 必须在 <=980px 档被隐藏（10-03 用户截图：它没进过任何断点）"
+    );
+
+    const botChan250 = readFileSync(join(ROOT, "src/features/app-state/parts/part03/01-remote-bot-pin/01-bot-remote-channel.tsx"), "utf8");
+    (/matchMedia\("\(width<=980px\)"\)/.test(botChan250) && /taskMenuOpen\)[\s\S]{0,400}setTaskMenuOpen\(false\)/.test(botChan250) ? ok : fail)(
+      "【250】缩到 <=980px 必须**逻辑关掉**任务操作浮层（只靠 CSS ⇒ 按钮没了浮层点不掉）"
+    );
   }
 }

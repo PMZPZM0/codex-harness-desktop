@@ -284,6 +284,20 @@
     display: none;
   }
 }
+
+  /* ⛔ 10-03 用户截图「搜索跟调度图标没有隐藏」—— 这两个**从来没进过任何断点**，
+     所以 651px 下仍留在顶栏右侧，挤在原生窗口钮预留区（145px）里。
+     归到 980px 这档的理由 = 与右栏/终端同级（都是辅助操作），符合 09-13 定的
+     「从次要到主要」顺序；搜索另有 Ctrl+F / Ctrl+, 快捷键，不依赖鼠标点。 */
+  .topbar-actions .history-search-wrap,
+  .topbar-actions .tb-goals-entry {
+    display: none;
+  }
+  /* ⛔ .task-menu-wrap 是上面那个 📋 按钮的**容器**（与 .ctx-picker 同构问题）：
+     藏按钮但留容器 ⇒ 已打开的浮层 .task-menu 照样渲染、压住窗口钮。 */
+  .topbar-actions .task-menu-wrap {
+    display: none;
+  }
 @media (width<=860px) {
   .topbar-actions .tb-task-menu {
     display: none;
