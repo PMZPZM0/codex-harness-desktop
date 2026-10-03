@@ -353,6 +353,95 @@
 .completed-file:last-child {
   border-bottom: 0;
 }
+/* 10-01 ZCode 式汇报行：类型图标（彩色块）+ 文件名 + 所在目录 + 增删 + 审查/打开。 */
+.completed-file-chip {
+  flex: none;
+  min-width: 30px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: #fff;
+  font: 700 9px/1.3 Cascadia Code, Consolas, monospace;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+.completed-file-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.completed-file-meta code {
+  color: var(--text);
+  font-size: 12px;
+}
+.completed-file-meta small {
+  color: var(--faint);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.completed-file-stats {
+  flex: none;
+  font: 11.5px/1.4 Cascadia Code, Consolas, monospace;
+}
+.completed-file-stats b { color: var(--ok); font-weight: 600; }
+.completed-file-stats i { color: var(--red); font-style: normal; }
+.completed-file-btn {
+  flex: none;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.completed-file-btn:hover { color: var(--accent); border-color: var(--accent); }
+/* 审查弹窗（950 = 模态之上的最后一层，DESIGN.md 层叠带） */
+.turn-diff-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+.turn-diff-modal {
+  width: min(760px, 92vw);
+  max-height: 84vh;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  padding: 12px 14px;
+}
+.turn-diff-modal header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.turn-diff-modal header code {
+  font-size: 12px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.turn-diff-modal header button {
+  flex: none;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.turn-diff-modal header button:hover { color: var(--text); }
 .completed-file code {
   min-width: 0;
   color: var(--muted);
