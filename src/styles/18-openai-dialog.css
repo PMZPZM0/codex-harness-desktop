@@ -755,6 +755,25 @@
   border-color: color-mix(in srgb, #c0392b 30%, var(--line));
 }
 
+/* 卸载二次确认（10-03）：第一次点「卸载」只展开这条提示 + 「确认卸载 / 取消」。
+   沿用本项目其它不可逆动作的惯例（drama 删除 / 记忆清理 / 删订阅账号），
+   不用 window.confirm —— 原生框会抢焦点、打断输入。 */
+.voice-uninstall-hint {
+  flex: 1 1 100%;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #c0392b;
+  background: color-mix(in srgb, #c0392b 7%, transparent);
+  border: 1px solid color-mix(in srgb, #c0392b 28%, var(--line));
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.voice-uninstall-hint strong {
+  font-weight: 500;
+  color: #c0392b;
+}
+
 .voice-devtools-path {
   display:flex; align-items:center; gap:8px;
   font-size:11px; color: var(--muted);
