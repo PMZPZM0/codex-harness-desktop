@@ -525,6 +525,20 @@
       "file": "features/relay-ipc.ts",
       "export": "relayFeature",
       "config": null
+    },
+    {
+      "id": "laya",
+      "enabled": true,
+      "file": "features/laya-service.ts",
+      "export": "layaFeature",
+      "config": null
+    },
+    {
+      "id": "video",
+      "enabled": true,
+      "file": "features/video-gen.ts",
+      "export": "videoFeature",
+      "config": null
     }
   ]
 }

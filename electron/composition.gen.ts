@@ -82,6 +82,8 @@ import { fsFeature as feat_fs } from "./features/fs-ipc";
 import { dialogFeature as feat_dialog } from "./features/dialog-ipc";
 import { appFeature as feat_app } from "./features/app-diagnostics";
 import { relayFeature as feat_relay } from "./features/relay-ipc";
+import { layaFeature as feat_laya } from "./features/laya-service";
+import { videoFeature as feat_video } from "./features/video-gen";
 
 export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unknown };
 
@@ -165,6 +167,8 @@ export const ENABLED: EnabledDomain[] = [
   { id: "dialog", plugin: feat_dialog as Plugin<unknown>, config: null },
   { id: "app", plugin: feat_app as Plugin<unknown>, config: null },
   { id: "relay", plugin: feat_relay as Plugin<unknown>, config: null },
+  { id: "laya", plugin: feat_laya as Plugin<unknown>, config: null },
+  { id: "video", plugin: feat_video as Plugin<unknown>, config: null },
 ];
 
 for (const row of ENABLED) mountFeature(row.plugin, row.config);

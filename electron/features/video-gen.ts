@@ -19,8 +19,10 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { app, ipcMain } from "electron";
 import { isInsideTrustedRoots } from "../runtime-refs";
+import { defineFeature } from "../context";
+import type { IpcHost } from "../ipc-host";
+import type { HostCaps } from "../runtime/seams";
 import { bundledFfprobe, ffmpegMissingMessage, resolveFfmpegPath } from "../toolchain";
 import {
   videoAssertImageOk,
@@ -35,10 +37,21 @@ import {
   VIDEO_PROVIDERS,
 } from "../../src/lib/video-providers.mjs";
 
+/**
+ * userData 接缝（10-03 由 electron 的 app 改为容器注入）。
+ * ⛔ 惰性求值不变：app.getPath 在 ready 前后返回值不同（app.setPath userData 改写过），
+ *    仍只在**函数体内**取，绝不在模块顶层求值（【91】）。
+ * ⚠️ 未注入时回落 cwd —— 保留原实现"取不到就兜底"的宽容口径（单测/脚本会用到）。
+ */
+let hostApp: { getPath: (n: "userData") => string } | null = null;
+export function bindVideoHost(app: { getPath: (n: "userData") => string }): void {
+  hostApp = app;
+}
+function userDataDir(): string {
+  return hostApp?.getPath?.("userData") ?? process.cwd();
+}
 function configPath(): string {
-  // ⛔ 惰性求值：app.getPath 在 ready 前后返回值不同（app.setPath userData 改写过），
-  //    不能在模块顶层求值（【91】），调用时才取。
-  return path.join(app.getPath("userData"), "video-providers.json");
+  return path.join(userDataDir(), "video-providers.json");
 }
 
 type ProviderConfig = Record<string, string>;
@@ -103,7 +116,7 @@ export type VideoJob = {
 };
 
 function jobsPath(): string {
-  return path.join(app.getPath("userData"), "video-jobs.json");
+  return path.join(userDataDir(), "video-jobs.json");
 }
 
 /** 读全部任务记录（按提交时间倒序；顺带裁掉 30 天前的旧记录，防文件无限增长） */
@@ -385,17 +398,17 @@ function safeVideoName(name: unknown): string {
 
 /* ────────────────────────────── IPC 通道（薄壳）────────────────────────────── */
 
-export function registerVideoGen(): void {
+function registerVideoGen(ipcHost: IpcHost): void {
   // ⛔ 返回面是**整个 provider 对象** + configured（渲染层的配置表单要读 fields / imageInput /
   //    defaultModel 等 —— 只回 5 个字段会让配置界面变成空白，09-29 重写时踩过又改回）
-  ipcMain.handle("video:providers", async () => {
+  ipcHost.handle("video:providers", async () => {
     const config = readConfig();
     return VIDEO_PROVIDERS.map((provider) => ({ ...provider, configured: hasCredentials(provider.id, config[provider.id]) }));
   });
 
-  ipcMain.handle("video:config-read", async () => readConfig());
+  ipcHost.handle("video:config-read", async () => readConfig());
 
-  ipcMain.handle("video:config-save", async (_event, input: { providerId: string; values: ProviderConfig }) => {
+  ipcHost.handle("video:config-save", async (_event, input: { providerId: string; values: ProviderConfig }) => {
     const provider = VIDEO_PROVIDERS.find((p) => p.id === String(input?.providerId ?? ""));
     if (!provider) throw new Error(`未知厂商：${input?.providerId}`);
     const config = readConfig();
@@ -409,7 +422,7 @@ export function registerVideoGen(): void {
     return { ok: true, configured: hasCredentials(provider.id, values) };
   });
 
-  ipcMain.handle("video:submit", async (_event, input: { providerId: string; mode: "t2v" | "i2v"; prompt: string; image?: string; model?: string; duration?: number }) => {
+  ipcHost.handle("video:submit", async (_event, input: { providerId: string; mode: "t2v" | "i2v"; prompt: string; image?: string; model?: string; duration?: number }) => {
     const { jobId } = await submitVideoCore(input);
     // 09-29：提交即落盘 —— 关掉画布/重启应用后任务不丢，可随时续查
     rememberVideoJob({
@@ -420,7 +433,7 @@ export function registerVideoGen(): void {
     return { jobId };
   });
 
-  ipcMain.handle("video:poll", async (_event, input: { providerId: string; jobId: string }) => {
+  ipcHost.handle("video:poll", async (_event, input: { providerId: string; jobId: string }) => {
     const result = await pollVideoCore(input);
     if (result.status === "succeeded" || result.status === "failed") {
       updateVideoJob(String(input?.jobId ?? ""), { status: result.status, url: result.url, error: result.error });
@@ -428,19 +441,37 @@ export function registerVideoGen(): void {
     return result;
   });
 
-  ipcMain.handle("video:download", async (_event, input: { url: string; workspace: string; name: string; subdir?: string; outputDir?: string }) => downloadVideoCore(input));
+  ipcHost.handle("video:download", async (_event, input: { url: string; workspace: string; name: string; subdir?: string; outputDir?: string }) => downloadVideoCore(input));
 
   // 09-29 整片导出：把分镜的各镜片段按顺序合并成一条成片（copy 优先 + 失败重编码）
-  ipcMain.handle("video:concat", async (_event, input: { workspace: string; name: string; files: string[]; width?: number; height?: number; fps?: number }) => concatVideosCore(input));
+  ipcHost.handle("video:concat", async (_event, input: { workspace: string; name: string; files: string[]; width?: number; height?: number; fps?: number }) => concatVideosCore(input));
 }
 
-/* ⛔⛔ 09-28 事故（用户现场：「视频生成接口一直加载中…，根本配置不了」）：
-   上面把 6 个通道包在 `export function registerVideoGen()` 里，但**全仓库没有任何调用点**
-   ⇒ ipcMain.handle 从未执行 ⇒ 渲染层 `invoke("video:providers")` 抛
-   「No handler registered」⇒ 组件 catch 成空数组 ⇒ 卡片永远显示「加载中…」、
-   弹窗里一个厂商都没有（配都没法配）。
-   ⛔ 与本仓多数域不一致：其它域（fs-ipc / drama-canvas / im-channels-ipc…）都是
-   **模块顶层直接 ipcMain.handle**，import 即注册。这里补一次自调用对齐该语义，
-   守卫【194】同时钉死「每个 register* 导出都必须有调用点」。
-   ⛔ 只在此处调用一次：Electron 对同一 channel 重复 handle 会直接抛错。 */
-registerVideoGen();
+const VIDEO_CHANNELS = [
+  "video:providers", "video:config-read", "video:config-save",
+  "video:submit", "video:poll", "video:download", "video:concat",
+];
+
+/**
+ * 视频生成域的插件入口（10-03）。
+ *
+ * ⛔ 此前是 `registerVideoGen()` + **模块底自调用**（09-28 事故的补丁：导出却零调用点 ⇒
+ *    6 条通道从未注册 ⇒ 渲染层「永远加载中」）。现在注册由组合表挂载承担，那个自调用与
+ *    整个「记得自己调一次」的负担一并消失 —— 域不再有「import 了但忘了调」的失效模式。
+ */
+export const videoFeature = defineFeature<null>({
+  id: "video",
+  inject: ["ipc", "host"],
+  setup: (ctx) => {
+    const ipcHost = ctx.get<IpcHost>("ipc");
+    const host = ctx.get<HostCaps>("host");
+    if (!ipcHost) throw new Error("video: 缺少 ipc 服务（宿主未提供）");
+    if (!host) throw new Error("video: 缺少 host 接缝（宿主未提供）");
+    // 供模块级函数（configPath / jobsPath）惰性取用，保持【91】的"模块体不求值"防线
+    bindVideoHost(host.app);
+    registerVideoGen(ipcHost);
+    ctx.effect(() => {
+      for (const ch of VIDEO_CHANNELS) ipcHost.removeHandler(ch);
+    });
+  },
+});
