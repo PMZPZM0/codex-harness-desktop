@@ -8,6 +8,7 @@
  * 会被重新赋值的符号经 `mutableState` 访问器读写（ESM 里 import 的绑定不可赋值）。
  */
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { BrowserWindow, app, dialog, shell } from "electron";
 import { existsSync } from "node:fs";
 import { applyRoundedCorners } from "../win-rounded-corners";
@@ -168,6 +169,21 @@ export function createWindow() {
       try { void mutableState.mainWindow?.loadFile(distIndex); } catch { /* 兜底失败不再处理 */ }
     });
   } else void mutableState.mainWindow.loadFile(path.join(app.getAppPath(), "dist", "index.html"));
+  /* ⛔⛔ 白屏自愈（10-03 用户实测两次白屏）：`npm run check` / 手工构建会先 `clean-dist` 清空
+     dist 再重建，若窗口恰好在这个窗口期加载（或用户此时点开应用）⇒ did-fail-load，界面全白。
+     这里不再留白：加载失败就换一页自刷新的提示页（3 秒重试一次），构建一完成自动回到真界面；
+     同时把失败原因打在页面上，省得用户以为应用坏了。 */
+  contents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame) return;
+    const appIndex = path.join(app.getAppPath(), "dist", "index.html");
+    const retryUrl = pathToFileURL(appIndex).href;
+    const page = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>正在准备界面…</title>
+<style>body{margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;font-family:"Segoe UI",system-ui,sans-serif;background:#fff;color:#23231f}img{width:112px;height:112px;border-radius:26px}small{color:#6f6f69}</style>
+</head><body><img src="${pathToFileURL(path.join(app.getAppPath(), "dist", "icon.png")).href}" alt="">
+<strong>界面文件正在更新，3 秒后自动重试…</strong><small>（构建完成即自动进入；错误：${String(errorDescription ?? errorCode)}）</small>
+<script>setTimeout(() => { location.replace(${JSON.stringify(retryUrl)}); }, 3000);</script></body></html>`;
+    void contents.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`).catch(() => undefined);
+  });
   installContextMenu(mutableState.mainWindow);
 }
 
