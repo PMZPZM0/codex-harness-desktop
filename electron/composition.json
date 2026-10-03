@@ -42,6 +42,13 @@
       "file": "features/data-dir-ipc.ts",
       "export": "dataDirFeature",
       "config": null
+    },
+    {
+      "id": "history",
+      "enabled": true,
+      "file": "features/history-search-ipc.ts",
+      "export": "historySearchFeature",
+      "config": null
     }
   ]
 }

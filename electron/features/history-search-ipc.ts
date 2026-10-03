@@ -1,5 +1,5 @@
 /**
- * 历史会话搜索的 IPC 面（09-24）。
+ * 历史会话搜索的 IPC 面（09-24；10-03 改插件形态，P2 批次 3）。
  *
  * 需求：顶栏 🔍 图标 → 搜全部历史会话的**对话内容**（不是只搜标题），点结果跳进那个会话。
  * 数据源 = 引擎 rollout 原档（codex-home/sessions/** + archived_sessions/**）——
@@ -8,11 +8,18 @@
  *
  * ⛔ 性能护栏：rollout 单文件可达很大 ⇒ ① 先对原文做一次 indexOf 快速否决（不含关键词不解析）
  * ② 超大文件直接跳过并计数返回 ③ 文件按 mtime 倒序扫、命中够了且后续文件更旧就提前收工。
+ *
+ * ── 10-03 插件化（P2 批次 3）────────────────────────────────────────────────
+ *   · `inject: ["ipc"]` + `ipcHost.handle`，⛔ 不再直接 import `ipcMain`；
+ *   · 业务体整段搬成模块级 `searchHistory()`（**不加一层缩进**，逐字保留）；
+ *     导出类型 `HistorySearchMatch/Thread/Result` 原样保留（渲染层要用）；
+ *   · `ctx.effect` 卸载摘通道；挂载由 electron/composition.gen.ts 负责。
  */
 
 import { readFile, statSync } from "node:fs";
 import { promisify } from "node:util";
-import { ipcMain } from "electron";
+import { defineFeature } from "../context";
+import type { IpcHost } from "../ipc-host";
 import { codexHome } from "../runtime-refs";
 import { parseRolloutMessages, scanSessionFiles } from "../thread-backup";
 // ⛔ 09-24 修（用户反馈「搜出来的历史记录点进去报错」）：搜索结果**必须排除已删除会话**。
@@ -66,7 +73,7 @@ function titleOf(messages: ReturnType<typeof parseRolloutMessages>): string {
   return "";
 }
 
-ipcMain.handle("history:search", async (_event, input?: { query?: string; limit?: number }): Promise<HistorySearchResult> => {
+async function searchHistory(input?: { query?: string; limit?: number }): Promise<HistorySearchResult> {
   const started = Date.now();
   const query = String(input?.query ?? "").trim();
   const limit = Math.max(1, Math.min(80, Number(input?.limit) || DEFAULT_LIMIT));
@@ -129,4 +136,15 @@ ipcMain.handle("history:search", async (_event, input?: { query?: string; limit?
 
   const threads = [...found.values()].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limit);
   return { threads, scannedFiles, skippedLarge, elapsedMs: Date.now() - started };
+}
+
+export const historySearchFeature = defineFeature<null>({
+  id: "history",
+  inject: ["ipc"],
+  setup: (ctx) => {
+    const ipcHost = ctx.get<IpcHost>("ipc");
+    if (!ipcHost) throw new Error("history: 缺少 ipc 服务（宿主未提供）");
+    ipcHost.handle("history:search", async (_event, input?: { query?: string; limit?: number }) => await searchHistory(input));
+    ctx.effect(() => ipcHost.removeHandler("history:search"));
+  },
 });
