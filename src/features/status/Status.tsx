@@ -4,6 +4,7 @@ import { FileCode2, ChevronDown, CircleGauge, Minimize2 } from "lucide-react";
 import { RUN_CLOCK } from "../../lib/run-clock-2";
 import { Turn } from "../../lib/turn";
 import { diffStats } from "../../lib/diff-stats";
+import { ToolCodeBlock } from "../shared/ToolCodeBlock";
 import { usageBucket } from "../../lib/usage-bucket";
 import { usageInputTokens } from "../../lib/usage-input-tokens";
 import { usageCachedTokens } from "../../lib/usage-cached-tokens";
@@ -12,23 +13,71 @@ export function StatusDot({ status }: { status: string }) {
   return <span className={`status-dot ${status}`} title={status === "ready" ? "Codex 已连接" : status === "error" ? "Codex 连接失败" : "Codex 正在启动"} />;
 }
 
+export function fileChip(path: string) {
+  const ext = (path.split(".").pop() ?? "").toLowerCase();
+  const map: Record<string, { label: string; color: string }> = {
+    ts: { label: "TS", color: "#2f74c0" }, tsx: { label: "TSX", color: "#2f74c0" },
+    js: { label: "JS", color: "#b8860b" }, jsx: { label: "JSX", color: "#b8860b" }, mjs: { label: "JS", color: "#b8860b" }, cjs: { label: "JS", color: "#b8860b" },
+    json: { label: "JSON", color: "#8a8a84" }, css: { label: "CSS", color: "#2965c8" }, html: { label: "HTML", color: "#c86a28" },
+    py: { label: "PY", color: "#2e8b6e" }, rs: { label: "RS", color: "#b4633a" }, go: { label: "GO", color: "#3a9bb4" },
+    md: { label: "MD", color: "#5a79b8" }, toml: { label: "TOML", color: "#8a8a84" }, yml: { label: "YML", color: "#8a8a84" }, yaml: { label: "YML", color: "#8a8a84" },
+    sh: { label: "SH", color: "#4e9a54" },
+  };
+  const hit = map[ext] ?? { label: (ext || "文件").slice(0, 3).toUpperCase(), color: "#8a8a84" };
+  return <span className="completed-file-chip" style={{ background: hit.color }} title={ext || "文件"}>{hit.label}</span>;
+}
+
+/** 回合结束的「文件更改汇报」（10-01 复刻 ZCode）：已更改 N 个文件 +X -Y；每行 = 类型图标 +
+    文件名 + 所在目录 + 增删行数 + 「审查」（弹窗看完整 diff）与「打开」（资源管理器定位）。
+    ⛔ 不再限定 task 回合——普通聊天回合里模型改了文件同样要汇报（用户按文件数核对改动）。 */
 export function CompletedChanges({ turn }: { turn: Turn }) {
+  const [review, setReview] = useState<{ path: string; diff: string } | null>(null);
   const changes = turn.items.flatMap((item) => item.type === "fileChange" ? (item.changes ?? []) : []);
   if (!changes.length) return null;
-  const byPath = new Map<string, { path: string; added: number; deleted: number }>();
+  const byPath = new Map<string, { path: string; added: number; deleted: number; diffs: string[] }>();
   for (const change of changes) {
     const path = change.path ?? change.filePath ?? "未知文件";
     const stats = diffStats(change.diff ?? "");
-    const current = byPath.get(path) ?? { path, added: 0, deleted: 0 };
-    byPath.set(path, { path, added: current.added + stats.added, deleted: current.deleted + stats.deleted });
+    const current = byPath.get(path) ?? { path, added: 0, deleted: 0, diffs: [] };
+    byPath.set(path, { path, added: current.added + stats.added, deleted: current.deleted + stats.deleted, diffs: [...current.diffs, String(change.diff ?? "")] });
   }
   const files = [...byPath.values()];
   const totals = files.reduce((sum, file) => ({ added: sum.added + file.added, deleted: sum.deleted + file.deleted }), { added: 0, deleted: 0 });
+  const segments = (full: string) => {
+    const norm = full.replaceAll("\\", "/");
+    const cut = norm.lastIndexOf("/");
+    return { name: cut >= 0 ? norm.slice(cut + 1) : norm, dir: cut >= 0 ? norm.slice(0, cut) : "" };
+  };
   return (
-    <details className="completed-changes" open>
-      <summary><FileCode2 size={15} /><strong>已编辑 {files.length} 个文件</strong><span className="diff-add">+{totals.added}</span><span className="diff-delete">-{totals.deleted}</span><ChevronDown size={14} /></summary>
-      <div>{files.map((file) => <div className="completed-file" key={file.path}><code>{file.path}</code><span><b>+{file.added}</b> <i>-{file.deleted}</i></span></div>)}</div>
-    </details>
+    <>
+      <details className="completed-changes" open>
+        <summary><FileCode2 size={15} /><strong>已更改 {files.length} 个文件</strong><span className="diff-add">+{totals.added}</span><span className="diff-delete">-{totals.deleted}</span><ChevronDown size={14} /></summary>
+        <div>
+          {files.map((file) => {
+            const { name, dir } = segments(file.path);
+            const diffText = file.diffs.join("\n");
+            return (
+              <div className="completed-file" key={file.path}>
+                {fileChip(file.path)}
+                <span className="completed-file-meta"><code title={file.path}>{name}</code><small title={file.path}>{dir}</small></span>
+                <span className="completed-file-stats"><b>+{file.added}</b> <i>-{file.deleted}</i></span>
+                <button type="button" className="completed-file-btn" title="弹窗查看这个文件的完整 diff" onClick={() => setReview({ path: file.path, diff: diffText })}>审查</button>
+                <button type="button" className="completed-file-btn" title="在资源管理器里定位该文件" onClick={() => { try { void window.codex.revealInFolder(file.path); } catch { /* 目录可能已删 */ } }}>打开</button>
+              </div>
+            );
+          })}
+        </div>
+      </details>
+      {/* 审查弹窗：完整 diff 就地可看（层级 950 = 模态之上的最后一层，见 DESIGN.md 层叠带） */}
+      {review && (
+        <div className="turn-diff-modal-mask" onClick={() => setReview(null)}>
+          <div className="turn-diff-modal" role="dialog" aria-label={`${review.path} 改动审查`} onClick={(event) => event.stopPropagation()}>
+            <header><code>{review.path}</code><button type="button" onClick={() => setReview(null)}>关闭</button></header>
+            <ToolCodeBlock language="diff" text={review.diff || "（这个文件的 diff 内容不可用——会话记录里只存了路径）"} maxHeight={560} />
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

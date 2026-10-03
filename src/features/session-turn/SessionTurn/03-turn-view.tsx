@@ -144,7 +144,8 @@ export function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForAp
           )}
           {/* inner 永远不渲染 finalAgent 的 footer（避免 running 时每个新 body 短暂成为 finalAgent 挂按钮 + 避免与外层 2129 行双排）。外层 turnFinished 决定最终是否独占渲染一份。CompletedChanges 仍需 completedTask（聊天回合没文件改动可显）。 */}
           <TurnFoldStream items={foldItems} turn={turn} running={running} fallbackWindow={fallbackWindow} waitingForApproval={waitingForApproval} handlers={handlers} finalAgentId={finalAgent?.id} usage={usage} tokenUsage={tokenUsage} keepProcessOpen={userStopped} />
-          {completedTask && <CompletedChanges turn={turn} />}
+          {/* 文件更改汇报：**任何收尾的回合**只要有文件改动就汇报（10-01 用户：「底部汇报改成跟 ZCode 一样」），不再限定 task 回合。 */}
+          {turnFinished && <CompletedChanges turn={turn} />}
           {/* 「用户已停止」标记：落在**最新内容之后**（用户 09-18 明确定位）。
               ⛔ 不重复耗时：上方过程组的标题已经写着「已停止 · 耗时 36 秒」，这里再说一遍就是
               同屏两处（用户对重复文案零容忍，09-18 已因同类问题返工过一次）。这里只说
