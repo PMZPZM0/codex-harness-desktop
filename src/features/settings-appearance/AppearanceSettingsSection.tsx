@@ -7,13 +7,12 @@
  */
 import { Check, Moon, Sun, ZoomIn } from "lucide-react";
 import { CodeAppearanceSection } from "../../components/CodeAppearance";
-import { WallpaperSettingsSection } from "../wallpaper";
 import { THEMES } from "../../lib/themes";
 
-export type AppearanceSettingsSectionProps = { theme: any; setTheme: any; uiFont: any; setUiFont: any; setNotice?: any };
+export type AppearanceSettingsSectionProps = { theme: any; setTheme: any; uiFont: any; setUiFont: any };
 
 export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps) {
-  const { theme, setTheme, uiFont, setUiFont, setNotice } = props;
+  const { theme, setTheme, uiFont, setUiFont } = props;
   return (
     <>
       <section className="settings-section stack appearance-page">
@@ -40,7 +39,6 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
           <button type="button" className={uiFont === "large" ? "active" : ""} onClick={() => { setUiFont("large"); localStorage.setItem("ui-font", "large"); }}><span className="fs-demo fs-demo-large">大字</span></button>
         </div>
         <CodeAppearanceSection />
-        <WallpaperSettingsSection onNotice={setNotice} />
       </section>
     </>
   );
