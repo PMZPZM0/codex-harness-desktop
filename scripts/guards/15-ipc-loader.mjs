@@ -42,6 +42,11 @@ export async function run() {
   );
 
   const loaders = loaderSources();
+  /* ⛔ P1 组合层（10-03）：域可能不再被 main.ts **直接** import，而由生成物
+     electron/composition.gen.ts 引用并挂载 ⇒ 生成物必须一并算作**启动链**，
+     否则这条"每个 in-features 模块都被启动链 import"会假红（判据不变：可达即可）。 */
+  const genPath = join(ROOT, "electron", "composition.gen.ts");
+  if (existsSync(genPath)) loaders.push({ file: genPath, text: readFileSync(genPath, "utf8") });
   const unloaded = [];
   for (const rel of files) {
     const base = rel.replace(/\.ts$/, "");           // features/queue-timer-ipc
@@ -57,10 +62,12 @@ export async function run() {
     }`
   );
 
-  /* 事故本体回归：queue-timer 域必须真的被 main.ts 引用（这条写死也值得 —— 它被真踩过） */
+  /* 事故本体回归：queue-timer 域必须真的在启动链上（这条写死也值得 —— 它被真踩过）。
+     ⛔ 10-03 P1：引用方式从「main.ts 直接 import 域」改成「main.ts import 组合表 → 组合表 import 域」，
+     断言跟着搬（两种形态都认），不变量不变：**该域必须在启动链上**。 */
   const mainText = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
-  (/import\s+"\.\/features\/queue-timer-ipc"/.test(mainText) ? ok : fail)(
-    "【194】main.ts 引用了 queue-timer-ipc（09-28「排队消息定时不了」的直接病根）"
+  (/import\s+"\.\/(features\/queue-timer-ipc|composition\.gen)"/.test(mainText) ? ok : fail)(
+    "【194】main.ts 引用了 queue-timer 的启动链（直接 import 域，或经组合表 composition.gen）"
   );
 
   /* 反向：启动链里 import 的 features 模块必须都存在（防笔误路径 —— tsc 对字面量 require/import

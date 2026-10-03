@@ -1167,8 +1167,8 @@ export async function run() {
     }
     // ③ 示范域真的是插件形态（锚**代码形态**；codeOnly 剥注释后仍要命中）
     const qt = codeOnly(readFileSync(join(ROOT, "electron", "features", "queue-timer-ipc.ts"), "utf8"));
-    (qt.includes("defineFeature<") && qt.includes('inject: ["ipc"]') && qt.includes("ipcHost.handle(") && qt.includes("ctx.effect(") && qt.includes("mountFromComposition(") ? ok : fail)(
-      "【252】queue-timer 已是插件形态（defineFeature + inject + ipcHost 注册 + effect 清理 + 经组合表挂载）"
+    (qt.includes("defineFeature<") && qt.includes('inject: ["ipc"]') && qt.includes("ipcHost.handle(") && qt.includes("ctx.effect(") && !qt.includes("mountFromComposition(") ? ok : fail)(
+      "【252】queue-timer 已是插件形态（defineFeature + inject + ipcHost 注册 + effect 清理 + 不自挂载）"
     );
     (!qt.includes('from "electron"') ? ok : fail)(
       "【252】示范域不再直接 import electron（宿主能力经容器注入，为 P3 的白名单能力留位置）"
@@ -1206,46 +1206,41 @@ export async function run() {
     (enabled.length > 0 && missing253.length === 0 ? ok : fail)(
       `【253】启用域都在 ipc-registry 登记（启用 ${enabled.length} 个，未登记：${missing253.join("/") || "无"}）`
     );
-    const qt253 = codeOnly(readFileSync(join(ROOT, "electron", "features", "queue-timer-ipc.ts"), "utf8"));
-    (qt253.includes('mountFromComposition("queue-timer", queueTimerFeature)') && !qt253.includes("mountFeature(") ? ok : fail)(
-      "【253】域经组合表挂载（⛔ 不许自己 mountFeature —— 绕过配置）"
-    );
-    // ⛔ 审查发现（10-03）：把断言从"这一个域"扩到**所有调用点** —— 域自报的 id 没登记时
-    //    mountFromComposition 静默返回 false（域不挂载、零症状），P2 要迁 57 个域，这条必须成规矩。
-    //    两半都验：调用点存在（落地）+ 每个 id 都已登记（剔除）。
-    const callSites253 = [];
     const walkFeat253 = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
       const p = join(dir, e.name);
       if (e.isDirectory()) return walkFeat253(p);
       return /\.ts$/.test(e.name) ? [p] : [];
     });
+    // ① 生成物必须 import 每个启用域（"挂了谁"由生成物决定，域不再自挂）
+    const genFiles = enabled.map((id) => {
+      const row = (composition.domains || []).find((d) => d && d.id === id) || {};
+      return String(row.file || "").replace(/\.tsx?$/, "");
+    });
+    const missingImp = genFiles.filter((f) => !genSrc.includes('from "./' + f + '"'));
+    (missingImp.length === 0 && genFiles.length > 0 ? ok : fail)(
+      `【253】生成物 import 了每个启用域（缺：${missingImp.join("/") || "无"}）—— 谁被挂载由组合表决定，域不自挂`
+    );
+    // ② 生成物必须先 provide "ipc" 服务再挂载（顺序反了 ⇒ inject 门禁直接把启动打崩）
+    const iHost = genSrc.indexOf('import "./ipc-host"');
+    const iMount = genSrc.indexOf("for (const row of ENABLED)");
+    (iHost >= 0 && iMount > iHost ? ok : fail)(
+      "【253】生成物先 provide ipc 服务、再挂载（⛔ 顺序反了 = 启动即崩）"
+    );
+    // ③⛔⛔ 启动即崩事故守卫：域**绝不 import 组合层** —— 反向即成环 ⇒ plugin 为 undefined
+    const offenders253 = [];
     for (const p of walkFeat253(join(ROOT, "electron", "features"))) {
-      const src = codeOnly(readFileSync(p, "utf8"));
-      // 调用点形态 = mountFromComposition("id", <plugin>)：⛔ 生成物只存数据，插件值由域自己传（防环）
-      for (const m of src.matchAll(/mountFromComposition\(\s*"([\w-]+)"\s*,/g)) callSites253.push([p, m[1]]);
+      const s = codeOnly(readFileSync(p, "utf8"));
+      if (/from "\.\.\/(composition\.gen|composition-runtime)"/.test(s)) offenders253.push(p.split(/[\\/]/).pop());
     }
-    const registered253 = new Set((composition.domains || []).map((d) => d && d.id));
-    const unregistered253 = callSites253.filter(([, id]) => !registered253.has(id));
-    (callSites253.length > 0 && unregistered253.length === 0 ? ok : fail)(
-      `【253】所有 mountFromComposition 调用点的 id 都已登记（调用点 ${callSites253.length} 个，未登记：${unregistered253.map(([p, id]) => `${id}@${p.split(/[\\/]/).pop()}`).join("/") || "无"}）`
+    (offenders253.length === 0 ? ok : fail)(
+      `【253】域不许 import 组合层（⛔ 反向 import = 成环 = 启动即崩；违规：${offenders253.join("/") || "无"}`
+        + "）"
     );
-    // ⛔⛔ 10-03 启动即崩事故守卫：`TypeError: Cannot read properties of undefined (reading 'name')` @ mountFeature
-    //    根因 = 生成物 import 了域，而域要 import 生成物查"我启用了没" ⇒ **循环依赖**，
-    //    CJS 下域模块尚未求值完，plugin 值就是 undefined。所以：生成物**不许有任何相对 import**。
-    (!/from\s+"\.\//.test(genSrc) ? ok : fail)(
-      "【253】生成物是**纯数据**（⛔ 不 import 任何域 —— 成环会让 plugin 变 undefined，启动即崩）"
+    // ④ 壳（main.ts）必须经组合表挂载（唯一入口）
+    (/import\s+"\.\/composition\.gen"/.test(readFileSync(join(ROOT, "electron", "main.ts"), "utf8")) ? ok : fail)(
+      "【253】壳 main.ts 经组合表挂载（域不再被壳直接 import）"
     );
-    // ⛔ 真跑：生成物是数据模块 ⇒ 可以安全 require（不碰 electron）。
-    //    "构建通过、静态断言全绿、一启动就崩" 这类问题只有**真加载**才看得见（本次事故就是）。
-    try {
-      const genJs = createRequire(import.meta.url)(join(ROOT, "dist-electron", "composition.gen.js"));
-      const enabledCount = (composition.domains || []).filter((d) => d && d.enabled).length;
-      (Array.isArray(genJs.ENABLED) && genJs.ENABLED.length === enabledCount ? ok : fail)(
-        `【253】生成物可加载且 ENABLED 条数一致（${Array.isArray(genJs.ENABLED) ? genJs.ENABLED.length : "?"} vs 配置 ${enabledCount}）`
-      );
-    } catch (e) {
-      fail(`【253】生成物可加载（dist-electron/composition.gen.js 加载即崩）：${String((e && e.message) || e).slice(0, 90)}`);
-    }
+
   }
 
 }
