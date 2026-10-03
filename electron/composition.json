@@ -84,6 +84,20 @@
       "file": "features/pet-ipc.ts",
       "export": "petFeature",
       "config": null
+    },
+    {
+      "id": "screenshot",
+      "enabled": true,
+      "file": "features/screenshot-favorites-ipc.ts",
+      "export": "screenshotFeature",
+      "config": null
+    },
+    {
+      "id": "favorites",
+      "enabled": true,
+      "file": "features/screenshot-favorites-ipc.ts",
+      "export": "favoritesFeature",
+      "config": null
     }
   ]
 }

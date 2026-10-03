@@ -15,6 +15,8 @@ import { expertMarketFeature as feat_expert_market } from "./features/skillhub-m
 import { soulMarketFeature as feat_soul_market } from "./features/skillhub-markets-ipc";
 import { dramaCanvasFeature as feat_drama_canvas } from "./features/drama-canvas";
 import { petFeature as feat_pet } from "./features/pet-ipc";
+import { screenshotFeature as feat_screenshot } from "./features/screenshot-favorites-ipc";
+import { favoritesFeature as feat_favorites } from "./features/screenshot-favorites-ipc";
 
 export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unknown };
 
@@ -35,6 +37,8 @@ export const ENABLED: EnabledDomain[] = [
   { id: "soul-market", plugin: feat_soul_market as Plugin<unknown>, config: null },
   { id: "drama-canvas", plugin: feat_drama_canvas as Plugin<unknown>, config: null },
   { id: "pet", plugin: feat_pet as Plugin<unknown>, config: null },
+  { id: "screenshot", plugin: feat_screenshot as Plugin<unknown>, config: null },
+  { id: "favorites", plugin: feat_favorites as Plugin<unknown>, config: null },
 ];
 
 for (const row of ENABLED) mountFeature(row.plugin, row.config);
