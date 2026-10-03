@@ -11,7 +11,7 @@
  *    顶层求值会拿到默认目录（路径静默漂移，守卫【91】盯死这一条）。
  */
 
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, globalShortcut } from "electron";
 import path from "node:path";
 import {
   DEFAULT_SCREENSHOT_SETTINGS,
@@ -36,6 +36,8 @@ import {
 } from "../favorites";
 import { allBusWindows, sendToWindow } from "./window-bus";
 import { copyImageFileToClipboard } from "./clipboard-ipc";
+import { defineFeature } from "../context";
+import type { IpcHost } from "../ipc-host";
 
 type MemoryScope = "user" | "project" | "background" | "lessons";
 
@@ -88,9 +90,17 @@ function registerSavedHotkeys() {
   }).catch((error: unknown) => console.error("[screenshot] 热键注册失败：", error));
 }
 
-app.whenReady().then(registerSavedHotkeys);
+/* ⛔ 原来这里是模块体 `app.whenReady().then(registerSavedHotkeys)` —— P2 批次 7 移进
+   `screenshotFeature.setup`：setup 在**模块被 require 时**执行（与原来同一时机），
+   但"域被组合表禁用 ⇒ 模块根本不会被 import ⇒ 热键不注册"这条语义现在成立了，
+   而且卸载时能一并注销。 */
 
-ipcMain.handle("screenshot:settings-get", async () => {
+/* ══════════════════ IPC：两个域（P2 批次 7） ══════════════════
+   这个文件承载**两个前缀**（screenshot + favorites）⇒ 导出**两个** `defineFeature`、
+   组合表写**两行**（一行恒等于一个前缀：行的 id 就是挂载身份）。
+   ⛔ 13 个通道名 / 参数 / 返回值 / 注释里的口径一字不改；实现留模块级函数，注册交容器。 */
+
+async function screenshotSettingsGet() {
   const settings = await readScreenshotSettings(userDataDir());
   return {
     settings,
@@ -101,9 +111,9 @@ ipcMain.handle("screenshot:settings-get", async () => {
     defaults: DEFAULT_SCREENSHOT_SETTINGS,
     platform: process.platform,
   };
-});
+}
 
-ipcMain.handle("screenshot:settings-set", async (_event, patch: Partial<ScreenshotSettings>) => {
+async function screenshotSettingsSet(patch: Partial<ScreenshotSettings>) {
   const next = await writeScreenshotSettings(userDataDir(), patch ?? {});
   // 设置变更后立刻重挂快捷键：不然「改完不生效，要重启」
   for (const mode of ["full", "region"] as ShotMode[]) {
@@ -113,9 +123,9 @@ ipcMain.handle("screenshot:settings-set", async (_event, patch: Partial<Screensh
     else delete hotkeyError[mode];
   }
   return { settings: next, registered: { ...hotkeys.registered }, errors: { ...hotkeyError } };
-});
+}
 
-ipcMain.handle("screenshot:hotkey-set", async (_event, input: { mode: ShotMode; accelerator?: string; enabled?: boolean }) => {
+async function screenshotHotkeySet(input: { mode: ShotMode; accelerator?: string; enabled?: boolean }) {
   const mode: ShotMode = input?.mode === "region" ? "region" : "full";
   const current = await readScreenshotSettings(userDataDir());
   const accelerator = input?.enabled === false ? "" : String(input?.accelerator ?? "");
@@ -135,32 +145,15 @@ ipcMain.handle("screenshot:hotkey-set", async (_event, input: { mode: ShotMode; 
   delete hotkeyError[mode];
   const next = await writeScreenshotSettings(userDataDir(), { [mode]: { enabled: true, accelerator } } as any);
   return { ok: true, settings: next, registered: { ...hotkeys.registered } };
-});
+}
 
-ipcMain.handle("screenshot:capture", async (_event, mode: ShotMode) => capture(mode === "region" ? "region" : "full"));
-
-ipcMain.handle("screenshot:pick-dir", async () => {
+async function screenshotPickDir() {
   const result = await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"], title: "选择截图保存目录" });
   if (result.canceled || !result.filePaths.length) return null;
   return result.filePaths[0];
-});
+}
 
-ipcMain.handle("screenshot:reveal", async (_event, file: string) => revealShot(String(file ?? "")));
-
-/* ── 收藏夹 ─────────────────────────────────────────────────────── */
-
-ipcMain.handle("favorites:list", () => readFavorites(userDataDir()));
-
-ipcMain.handle("favorites:add", async (_event, input: Partial<FavoriteItem>) => addFavorite(userDataDir(), input ?? {}));
-
-ipcMain.handle("favorites:update", async (_event, input: { id: string; patch: Partial<FavoriteItem> }) =>
-  updateFavorite(userDataDir(), String(input?.id ?? ""), input?.patch ?? {}));
-
-ipcMain.handle("favorites:delete", async (_event, ids: string[]) => deleteFavorites(userDataDir(), Array.isArray(ids) ? ids : []));
-
-ipcMain.handle("favorites:clear", () => clearFavorites(userDataDir()));
-
-ipcMain.handle("favorites:touch", async (_event, id: string) => {
+async function favoritesTouch(id: string) {
   try {
     return await touchFavorite(userDataDir(), String(id ?? ""));
   } catch (error) {
@@ -168,7 +161,7 @@ ipcMain.handle("favorites:touch", async (_event, id: string) => {
     console.error("[favorites] touch 失败：", error);
     return readFavorites(userDataDir());
   }
-});
+}
 
 /**
  * 把收藏写进 Agent 记忆（记忆金字塔的层文件）。
@@ -177,7 +170,7 @@ ipcMain.handle("favorites:touch", async (_event, id: string) => {
  * ⛔ 只**追加**：先读该层当前文本，再写回（层文件是整份覆盖语义，不读就写 = 抹掉用户已有记忆）。
  * ⛔ 单行限长见 favoriteMemoryLine（记忆注入是硬预算）。
  */
-ipcMain.handle("favorites:to-memory", async (_event, input: { ids: string[]; scope?: MemoryScope; workspace?: string }) => {
+async function favoritesToMemory(input: { ids: string[]; scope?: MemoryScope; workspace?: string }) {
   const ids = (Array.isArray(input?.ids) ? input.ids : []).filter((id) => typeof id === "string" && id);
   if (!ids.length) return { ok: false, written: 0, error: "没有选中任何收藏" };
   const scope: MemoryScope = input?.scope === "user" || input?.scope === "lessons" || input?.scope === "background" ? input.scope : "project";
@@ -216,6 +209,67 @@ ipcMain.handle("favorites:to-memory", async (_event, input: { ids: string[]; sco
     }
   }
   return { ok: written > 0, written, error: failed.length ? failed.join("；") : undefined };
+}
+
+/** 截图域：六条通道 + 全局快捷键注册（启动时按已保存设置注册一次，失败只记录不阻断）。 */
+export const screenshotFeature = defineFeature<null>({
+  id: "screenshot",
+  inject: ["ipc"],
+  setup: (ctx) => {
+    const ipcHost = ctx.get<IpcHost>("ipc");
+    // inject 已在容器侧挡过一次；这里再挡一次只为把类型收紧（⛔ 不写 `!`：缺依赖要报得出来）
+    if (!ipcHost) throw new Error("screenshot: 缺少 ipc 服务（宿主未提供）");
+
+    ipcHost.handle("screenshot:settings-get", () => screenshotSettingsGet());
+    ipcHost.handle("screenshot:settings-set", (_event, patch: Partial<ScreenshotSettings>) => screenshotSettingsSet(patch));
+    ipcHost.handle("screenshot:hotkey-set", (_event, input: { mode: ShotMode; accelerator?: string; enabled?: boolean }) => screenshotHotkeySet(input));
+    ipcHost.handle("screenshot:capture", (_event, mode: ShotMode) => capture(mode === "region" ? "region" : "full"));
+    ipcHost.handle("screenshot:pick-dir", () => screenshotPickDir());
+    ipcHost.handle("screenshot:reveal", (_event, file: string) => revealShot(String(file ?? "")));
+
+    app.whenReady().then(registerSavedHotkeys);
+
+    // 生命期：卸载时摘掉六条通道 + 注销两条全局热键（不注销 = 键还占着、实现已回收）
+    ctx.effect(() => {
+      for (const mode of ["full", "region"] as ShotMode[]) hotkeys.apply(mode, "", () => fire(mode));
+      ipcHost.removeHandler("screenshot:settings-get");
+      ipcHost.removeHandler("screenshot:settings-set");
+      ipcHost.removeHandler("screenshot:hotkey-set");
+      ipcHost.removeHandler("screenshot:capture");
+      ipcHost.removeHandler("screenshot:pick-dir");
+      ipcHost.removeHandler("screenshot:reveal");
+    });
+  },
+});
+
+/** 收藏夹域：七条通道（含 to-memory 写记忆层）。 */
+export const favoritesFeature = defineFeature<null>({
+  id: "favorites",
+  inject: ["ipc"],
+  setup: (ctx) => {
+    const ipcHost = ctx.get<IpcHost>("ipc");
+    if (!ipcHost) throw new Error("favorites: 缺少 ipc 服务（宿主未提供）");
+
+    ipcHost.handle("favorites:list", () => readFavorites(userDataDir()));
+    ipcHost.handle("favorites:add", (_event, input: Partial<FavoriteItem>) => addFavorite(userDataDir(), input ?? {}));
+    ipcHost.handle("favorites:update", (_event, input: { id: string; patch: Partial<FavoriteItem> }) =>
+      updateFavorite(userDataDir(), String(input?.id ?? ""), input?.patch ?? {}));
+    ipcHost.handle("favorites:delete", (_event, ids: string[]) => deleteFavorites(userDataDir(), Array.isArray(ids) ? ids : []));
+    ipcHost.handle("favorites:clear", () => clearFavorites(userDataDir()));
+    ipcHost.handle("favorites:touch", (_event, id: string) => favoritesTouch(id));
+    ipcHost.handle("favorites:to-memory", (_event, input: { ids: string[]; scope?: MemoryScope; workspace?: string }) => favoritesToMemory(input));
+
+    // 生命期：卸载时摘掉本域七条通道（收藏数据在磁盘上，不随卸载销毁 —— 那是用户数据）
+    ctx.effect(() => {
+      ipcHost.removeHandler("favorites:list");
+      ipcHost.removeHandler("favorites:add");
+      ipcHost.removeHandler("favorites:update");
+      ipcHost.removeHandler("favorites:delete");
+      ipcHost.removeHandler("favorites:clear");
+      ipcHost.removeHandler("favorites:touch");
+      ipcHost.removeHandler("favorites:to-memory");
+    });
+  },
 });
 
 /** 追加一行（保留原文件头与既有内容，只在末尾加，并保证一个换行分隔）。 */
