@@ -3025,6 +3025,108 @@ w.postMessage({id:1,op:"list",root});
       "【246】卸载删除有三重防御（safeFolder 归一 + 必须落在市场目录内 + 不等于根本身）"
     );
 
+    /* ── 【254】Codex 官方插件市场（GitHub openai/plugins，国内镜像）—— 10-03 用户立项 ──────
+       「帮我内置国内镜像源到插件列表里面，分好类，加官方插件安装入口，和安装状态反馈和已安装反馈」
+       这是**第二个数据源**、独立板块（codex-official-market 前缀），不改 Gitee 源（【239】）一根毛。
+       ⛔ 块内一律自读源文件（引用别的块内局部 const = ReferenceError，会把后面所有断言一起废掉）。 */
+    {
+      const officialSrc = codeOnly(readFileSync(join(ROOT, "electron", "codex-official-market.ts"), "utf8"));
+      const officialIpc = codeOnly(readFileSync(join(ROOT, "electron", "features", "codex-official-market-ipc.ts"), "utf8"));
+      const officialCatalog = readFileSync(join(ROOT, "electron", "codex-official-catalog.gen.ts"), "utf8");
+      (officialSrc.includes('const GH_OWNER = "openai"') && officialSrc.includes('const GH_REPO = "plugins"')
+        && officialSrc.includes('".agents/plugins/marketplace.json"') && officialSrc.includes('".agents/plugins/api_marketplace.json"') ? ok : fail)(
+        "【254】官方源锚定 GitHub openai/plugins 的 .agents/plugins/{marketplace,api_marketplace}.json（清单形态与上游一致）"
+      );
+      // 镜像顺序 = 实测可用性（gh-proxy 通、直连兜底）；顺序反了国内首屏就要等三轮超时
+      (/const MIRROR_PREFIXES = \["https:\/\/gh-proxy\.com\/", "https:\/\/ghfast\.top\/", ""\]/.test(officialSrc) ? ok : fail)(
+        "【254】镜像优先级 gh-proxy → ghfast → 直连（⛔ api.github.com 也走代理：未登录直连限 60 次/小时）"
+      );
+      (officialSrc.includes("const MAX_FILES = 1_200") && officialSrc.includes("MAX_SINGLE_FILE_BYTES = 20 * 1024 * 1024") ? ok : fail)(
+        "【254】文件数上限按实测放宽到 1200（上游 zoom 单插件 795 个文件；沿用 Gitee 源的 300 会拒装 4 个合法插件）"
+      );
+      (officialSrc.includes("export function codexOfficialMarketDir(") && /installedDir: codexOfficialMarketDir\(codexHome\)/.test(officialIpc) ? ok : fail)(
+        "【254】官方市场目录单一真相源 + list 必须传 installedDir（同【245】口径，不传就只看引擎列表）"
+      );
+      // 已装真相源 = 安装时写的 marker；两处（写 / 读）都要在，缺一处就是「装完仍是 +」
+      (/\.codex-official\.json/.test(officialSrc) && officialSrc.includes("listInstalledOfficialPlugins")
+        && /installed: installedMap\.has\(item\.slug\)/.test(officialSrc) ? ok : fail)(
+        "【254】官方插件「已安装」判定读本地 marker .codex-official.json（引擎 plugin/list 不认领时它返空）"
+      );
+      (/(?:ipcHost|ipcMain)\.handle\("codex-official-market:installed"/.test(officialIpc)
+        && officialIpc.includes("listInstalledOfficialPlugins(codexOfficialMarketDir(codexHome))")
+        && !/codex-official-market:installed[\s\S]{0,200}listOfficialMarketPlugins\(/.test(officialIpc) ? ok : fail)(
+        "【254】官方已装清单通道零网络（走本地扫描；误接 list 会去拉上游 65 条拖慢刷新）"
+      );
+      (officialSrc.includes("export async function removeOfficialMarketPluginFiles(")
+        && officialSrc.includes("path.resolve(pluginsRootOf(marketDir))")
+        && /target === root \|\| !target\.startsWith\(root \+ path\.sep\)/.test(officialSrc)
+        && officialSrc.includes("safeFolder(slug)") ? ok : fail)(
+        "【254】官方插件卸载同样有三重删除防御（归一 + 必须落在 <市场>/plugins 内 + 点开头目录不碰）"
+      );
+      (officialIpc.includes("ensureOfficialMarketplaceSection(codexHome)")
+        && /marketplacePath: installed\.manifestPath/.test(officialIpc)
+        && officialIpc.includes('server.request("plugin/install"') && officialIpc.includes("server.restart()") ? ok : fail)(
+        "【254】装完必须注册本地市场段 + plugin/install 传清单**文件**（传目录报 os error 5）+ 重启引擎（照【245】三条实证）"
+      );
+      (/自动生成，请勿手改/.test(officialCatalog) && /node scripts\/gen-codex-official-catalog\.mjs/.test(officialCatalog) ? ok : fail)(
+        "【254】官方文案快照是生成物（头部标记 + 生成器命令都在，别手改 electron/codex-official-catalog.gen.ts）"
+      );
+      // 上游拉不通时回落内置快照，但**必须带 live=false 让 UI 说明白**（静默冒充实时数据 = 骗人）
+      (/manifestCache = \{ at: Date.now\(\), entries, live: false \}/.test(officialSrc) && /live,\n?\s*catalogGeneratedAt/.test(officialSrc) ? ok : fail)(
+        "【254】网络失败回落内置快照时回传 live=false + 快照日期（UI 要如实标注，不许冒充实时清单）"
+      );
+    }
+
+    /* ── 【255】两个市场源在插件页各自成块 + 安装/已装反馈（10-03）──────────────────
+       用户拍板：新独立板块（不塞进 plugins 域）· 按源给各自的分类 tab · 同时放出引擎自带的
+       openai-api-curated 官方卡片。三条都各有断言，防止下一轮"顺手合并成一个列表"。 */
+    {
+      const officialUiSrc = readFileSync(join(ROOT, "src", "features", "codex-official-market", "CodexOfficialMarketSection.tsx"), "utf8");
+      const officialUiCode = codeOnly(officialUiSrc);
+      const officialIpc255 = codeOnly(readFileSync(join(ROOT, "electron", "features", "codex-official-market-ipc.ts"), "utf8"));
+      const pluginsPageCode = codeOnly(readFileSync(join(ROOT, "src", "features", "settings-plugins", "PluginsMarketSection.tsx"), "utf8"));
+      const appUiCode255 = codeOnly(readAppUi());
+      (officialUiCode.includes("export function CodexOfficialMarketSection(") && officialUiCode.includes("useState(")
+        && !/\bbag\./.test(officialUiCode) ? ok : fail)(
+        "【255】官方市场板块自包含（本地 state，不进 bag —— 装进度/分页/搜索只有本页消费）"
+      );
+      (pluginsPageCode.includes("<CodexOfficialMarketSection") && /marketSource === "official"/.test(pluginsPageCode)
+        && /label: "Claude 插件镜像"/.test(pluginsPageCode) && /label: "Codex 官方插件"/.test(pluginsPageCode) ? ok : fail)(
+        "【255】插件页有源切换，两个源各渲染各的块（分类表 8 类 / 10 类不混排 —— 用户拍板按源给 tab）"
+      );
+      (/window\.codex\.listOfficialMarketCategories\(\)/.test(officialUiCode) ? ok : fail)(
+        "【255】官方分类 tab 读上游清单（主进程现算 10 类含数量），不许在 catalogs.ts 里再硬编码一份"
+      );
+      (officialIpc255.includes('type: "official-plugin-install"') && /event\?\.type !== "official-plugin-install"/.test(officialUiCode) ? ok : fail)(
+        "【255】安装进度事件独立 type（⛔ 不许与 Gitee 源共用 plugin-install：两源 slug 有重名 linear/github，会认错插件）"
+      );
+      (officialUiCode.includes("<PluginInstallModal") && officialUiCode.includes("STAGE_POSITIONS") ? ok : fail)(
+        "【255】安装中有六步弹层（复用 PluginInstallModal，同一套 DOM/CSS，装了看不到进度=没有反馈）"
+      );
+      (officialUiCode.includes("if (confirmSlug !== plugin.slug) { setConfirmSlug(plugin.slug); return; }") ? ok : fail)(
+        "【255】卸载走两段式确认（第一次只武装确认条，第二次才真删 —— 删除不可逆）"
+      );
+      (officialUiCode.includes("!live &&") && officialUiCode.includes("codex-official-market-error") ? ok : fail)(
+        "【255】快照模式与加载失败都在 UI 上明说（⛔ 静默空列表会被当成「官方源没有插件」）"
+      );
+      // 每张卡片必须写清「还要配什么」：官方 65 条全部要鉴权（ON_INSTALL 58 / ON_USE 7），15 条还要 ChatGPT 连接器
+      (officialUiCode.includes("{plugin.authNote}") && /authNote: /.test(codeOnly(readFileSync(join(ROOT, "electron", "codex-official-market.ts"), "utf8"))) ? ok : fail)(
+        "【255】卡片带鉴权提示 authNote（装了不等于能用；「已安装」不能骗人）"
+      );
+      (!/\.filter\(\(marketplace: any\) => marketplace\.name !== "openai-api-curated"\)/.test(appUiCode255)
+        && /\.flatMap\(\(marketplace: any\) => \(marketplace\.plugins \?\? \[\]\)/.test(appUiCode255) ? ok : fail)(
+        "【255】openai-api-curated 整源过滤已按用户改判删除（引擎自带的官方市场卡片要放出来）"
+      );
+      (/if \(!plugin\.installable \|\| installing\) return;/.test(officialUiCode) ? ok : fail)(
+        "【255】外部仓库源（3 条）不许触发安装（只给查看来源，不给人点了才发现报错）"
+      );
+      // 板块三前缀同源：目录名 = IPC 前缀 = CSS 类前缀，且 CSS 独立成文件（不许塞进别人的分节尾部）
+      (/\.codex-official-market/.test(readFileSync(join(ROOT, "src", "styles", "25-codex-official-market.css"), "utf8"))
+        && readFileSync(join(ROOT, "src", "styles.css"), "utf8").includes('./styles/25-codex-official-market') ? ok : fail)(
+        "【255】官方市场样式独立分节 25-codex-official-market.css 且已进 barrel（类前缀 = 域 id）"
+      );
+    }
+
     /* ③c 坐姿打字微动画 = 图集两个坐姿变体交替（cols 5/6） */
     (fmtSrc.includes("SIT_FRAMES = [5, 6]") && canvasSrc.includes("SIT_FRAMES[") ? ok : fail)(
       "【233】坐姿用双帧变体交替（打字微动画）"

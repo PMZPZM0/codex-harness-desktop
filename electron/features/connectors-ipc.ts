@@ -18,7 +18,7 @@ import crypto from "node:crypto";
 import http from "node:http";
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { safeStorage, shell } from "electron";
+import { shell } from "electron";
 import { BUILTIN_CONNECTOR_TEMPLATES } from "./connector-templates";
 import type { ConnectorOAuthSpec, ConnectorTemplate } from "./connector-templates";
 import { sendToWindow } from "./window-bus";
@@ -28,6 +28,7 @@ import { codexHome, server } from "../runtime-refs";
 import { publicConnector, writeConnectors } from "../connector-store";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
+import type { HostCaps } from "../runtime/seams";
 
 function sendOAuthEvent(payload: { templateId: string; phase: "waiting" | "authorized" | "failed"; message: string; authorizeUrl?: string }) {
   sendToWindow("connectors:oauth-event", payload);
@@ -147,7 +148,7 @@ async function applyOAuthResult(template: ConnectorTemplate, values: Record<stri
     for (const token of argsPatch.remove) { const index = args.indexOf(token); if (index >= 0) args.splice(index, 1); }
     config.args = [...new Set([...args, ...argsPatch.add])];
   }
-  config.encryptedSecrets = { ...(previous?.encryptedSecrets ?? {}), ...Object.fromEntries(Object.entries(secrets).map(([key, value]) => [key, safeStorage.encryptString(value).toString("base64")])) };
+  config.encryptedSecrets = { ...(previous?.encryptedSecrets ?? {}), ...Object.fromEntries(Object.entries(secrets).map(([key, value]) => [key, secureHost().encryptString(value).toString("base64")])) };
   config.oauth = { status: "connected", provider: template.id, authorizedAt: Date.now(), accountHint };
   config.updatedAt = new Date().toISOString();
   await writeConnectors([...list.filter((entry) => entry.id !== template.id), config]);
@@ -160,11 +161,27 @@ const CONNECTORS_CHANNELS = [
   "connectors:set-enabled", "connectors:oauth-start", "connectors:oauth-cancel",
 ];
 
+/**
+ * 宿主密钥能力（10-03 阶段 2b 由 electron 的 safeStorage 改为接缝注入）。
+ *
+ * ⛔ bind 注入的原因：本域的加解密在**模块级函数**（保存连接器配置）里用，不接收 ctx。
+ * ⛔ 未注入时明确抛错，不静默返回 undefined。
+ */
+let secureRef: HostCaps["secure"] | null = null;
+export function bindConnectorsSecure(host: HostCaps): void {
+  secureRef = host.secure;
+}
+function secureHost(): HostCaps["secure"] {
+  if (!secureRef) throw new Error("connectors-ipc: 宿主密钥能力未注入（组合表挂载时应调 bindConnectorsSecure）");
+  return secureRef;
+}
+
 export const connectorsFeature = defineFeature<null>({
   id: "connectors",
-  inject: ["ipc"],
+  inject: ["ipc", "host"],
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");
+    bindConnectorsSecure(ctx.get<HostCaps>("host")!);   // 供模块级函数惰性取用（【91】：不在模块体求值）
     if (!ipcHost) throw new Error("connectors: 缺少 ipc 服务（宿主未提供）");
 
     ipcHost.handle("connectors:list", async () => (await readConnectors()).map(publicConnector));
@@ -185,8 +202,8 @@ export const connectorsFeature = defineFeature<null>({
       const list = await readConnectors();
       const previous = list.find((entry) => entry.id === id);
       const secrets: Record<string, string> = Object.fromEntries(Object.entries(input.secrets ?? {}).map(([key, value]) => [String(key).trim(), String(value ?? "").trim()]).filter(([key, value]) => Boolean(key && value)) as [string, string][]);
-      if (Object.keys(secrets).length && !safeStorage.isEncryptionAvailable()) throw new Error("当前系统无法安全保存连接器密钥");
-      const encryptedSecrets = { ...(previous?.encryptedSecrets ?? {}), ...Object.fromEntries(Object.entries(secrets).map(([key, value]) => [key, safeStorage.encryptString(value).toString("base64")])) };
+      if (Object.keys(secrets).length && !secureHost().isEncryptionAvailable()) throw new Error("当前系统无法安全保存连接器密钥");
+      const encryptedSecrets = { ...(previous?.encryptedSecrets ?? {}), ...Object.fromEntries(Object.entries(secrets).map(([key, value]) => [key, secureHost().encryptString(value).toString("base64")])) };
       const config: ConnectorConfig = {
         id, name, transport, command: transport === "stdio" ? command : undefined,
         args: transport === "stdio" ? (Array.isArray(input.args) ? input.args.map((value: unknown) => String(value).trim()).filter(Boolean) : []) : undefined,

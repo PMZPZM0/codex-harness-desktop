@@ -1297,6 +1297,66 @@ export async function run() {
         + `；已拆完但没从名单删掉：${stale253.join("/") || "无"}）`
     );
 
+    // ===== 【266】域直取 electron 的能力分级门禁（10-03 阶段 2b）=====
+    //
+    // 为什么要分级而不是一刀切：能力接缝层只做了 5 条高频能力（app/secure/shell/dialog/window）。
+    // 实测（10-03 22:5x，77 个域）：app 35 域、shell 12 域、dialog 11 域仍在直取 —— 全量接缝化
+    // 是 200+ 文件的机械改动、风险大于收益，**明确不做**（别把它当"还没做完的阶段 2"）。
+    // ⛔ 但有三类**必须锁死**，因为它们让插件能绕过容器的全部声明与校验：
+    //   safeStorage —— 触碰系统密钥库，域可自选加解密策略
+    //   BrowserWindow —— 能开窗口；接缝的 window.create 会**强制补齐隔离三项**，
+    //                    域直取 new 就绕过了这层强制（这是安全边界，不是风格问题）
+    //   ipcMain —— 绕过容器直接注册通道，容器的 inject 声明与卸载摘除全部失效
+    //
+    // 白名单只列**内核职责本身**（窗口工厂 / 启动链 / 协议），不列任何业务域。
+    const ALLOWED_DIRECT_ELECTRON = {
+      // —— 内核本身：safeStorage 锁进容器的"钥匙"就在内核这儿 ——
+      safeStorage: [
+        "boot.ts",                  // 启动链 = 内核职责（组装单例与内核级接线）
+        "custom-model-apply.ts",    // 辅助模块（非 defineFeature 域）：被 custom-model 域 import
+        "custom-model-probe.ts",    // 同上（探测自定义模型可用性）
+        "delegation.ts",            // 同上（子智能体委派）
+      ],
+      BrowserWindow: [
+        "window-factory.ts",   // 主窗口工厂 = 内核职责（渲染层隔离边界的定义者）
+        "boot.ts",             // 启动链：组装窗口与内核级接线
+        "browser-ipc.ts",      // 打开外部浏览器（无边框子窗口，TODO 接缝）
+        "pet-window.ts",       // 宠物悬浮窗（透明置顶，TODO 接缝）
+        "screenshot-ipc.ts",   // 只取引用类型（不 new）
+      ],
+      ipcMain: [
+        "boot.ts",             // 只取引用类型（启动链里有几处内核级注册）
+      ],
+    };
+    // 门禁只看**代码**（剥注释）—— 否则本文件自己的说明注释会把判据顶成恒真。
+    const directUse = (symbol) => {
+      const hits = [];
+      for (const p of walkFeat253(join(ROOT, "electron", "features"))) {
+        const rel = relative(join(ROOT, "electron", "features"), p).replace(/\\/g, "/");
+        const name = rel.split("/").pop();
+        if (ALLOWED_DIRECT_ELECTRON[symbol]?.includes(name)) continue;
+        const code = codeOnly(readFileSync(p, "utf8"));
+        // ⛔ 判据锚「import 语句里含该符号」，不是全文出现 —— 注释里提一句不算违规。
+        for (const m of code.matchAll(/import\s*\{([^}]+)\}\s*from\s*["']electron["']/g)) {
+          const names = m[1].split(",").map((x) => x.trim().split(/\s+as\s+/)[0].trim());
+          if (names.includes(symbol)) { hits.push(rel); break; }
+        }
+      }
+      return hits;
+    };
+    for (const symbol of ["safeStorage", "BrowserWindow", "ipcMain"]) {
+      const hits = directUse(symbol);
+      (hits.length === 0 ? ok : fail)(
+        `【266】域不经接缝直取 ${symbol}（0 容忍；已列白名单：${ALLOWED_DIRECT_ELECTRON[symbol].join("/") || "无"}）`
+          + `违规：${hits.join("/") || "无"}`
+      );
+    }
+    // 白名单里的"只取引用类型"要真成立：boot.ts 不得出现 ipcMain.handle 实调用
+    (/(?<![\w.])ipcMain\.(handle|on)\(/.test(codeOnly(readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8"))) ? fail : ok)(
+      "【266】boot.ts 对 ipcMain 只取引用类型，不做实调用（它在白名单里仅因类型引用）"
+    );
+
   }
+
 
 }

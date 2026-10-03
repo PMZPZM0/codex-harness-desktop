@@ -10,7 +10,7 @@
  *    判空一律用 `!== false`（缺省继承）—— 写成 `=== true` 会让缺省变成"不继承"，行为反转。
  * ⛔ 待接缝化（阶段 2）：safeStorage 为宿主能力。
  */
-import { safeStorage } from "electron";
+
 import { safeProviderId } from "../provider-id";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { readCustomModel } from "../main/01-model-catalog";
@@ -22,6 +22,7 @@ import type { SubAgentConfig } from "../main";
 import { ensureProjectAgentsMd } from "../project-conventions";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
+import type { HostCaps } from "../runtime/seams";
 
 function safeAgentId(name: string) {
   return String(name ?? "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64) || `agent-${Date.now()}`;
@@ -29,9 +30,12 @@ function safeAgentId(name: string) {
 
 export const subagentsFeature = defineFeature<null>({
   id: "subagents",
-  inject: ["ipc"],
+  inject: ["ipc", "host"],
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");
+    // 宿主能力经接缝取（10-03 阶段 2b）：safeStorage 触碰系统密钥库，
+    // 域直取等于"插件自选加解密策略" ⇒ 锁进容器（守卫【266】零容忍）。
+    const { secure } = ctx.get<HostCaps>("host")!;
     if (!ipcHost) throw new Error("subagents: 缺少 ipc 服务（宿主未提供）");
 
     ipcHost.handle("subagents:list", async () => {
@@ -82,7 +86,7 @@ export const subagentsFeature = defineFeature<null>({
       const provider = customModel?.provider ?? "openai";
       const baseUrl = customModel?.baseUrl;
       const name = customModel?.name ?? provider;
-      const apiKey = customModel?.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(customModel.encryptedKey, "base64")) : "";
+      const apiKey = customModel?.encryptedKey && secure.isEncryptionAvailable() ? secure.decryptString(Buffer.from(customModel.encryptedKey, "base64")) : "";
       if (apiKey) server.setApiKey(apiKey);
       const effectiveModel = input.model || (agent.inheritModel ? customModel?.model : agent.model) || customModel?.model;
       if (!effectiveModel) throw new Error("尚未配置自定义模型，无法启动子智能体");

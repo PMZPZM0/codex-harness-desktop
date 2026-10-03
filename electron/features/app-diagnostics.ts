@@ -9,7 +9,7 @@
  * ── 10-03：改为插件形态 + 接缝化（方案 §6 阶段 2/3）────────────────────────
  * `app` 原先直接 `import { app } from "electron"`，现在经 `inject: ["ipc", "host"]` 取 `host.app`。
  * `systemPreferences`（macOS 辅助功能/录屏权限）**未接缝**（接缝层刻意只做 5 条高频能力），
- * 仍直接 import —— 见 `scripts/guards/05b` 的 ALLOWED_DIRECT_ELECTRON 口径。
+ * 仍直接 import —— 属守卫【266】里「低频、无权限语义」的未接缝类（不进 ALLOWED_DIRECT_ELECTRON 零容忍名单）。
  *
  * 跨域符号经 `../runtime-refs` 与 `../main` 取用 —— **活绑定**，且**只在 handler 回调体内
  * 求值**（模块体不碰跨域符号）⇒ 不受 main.ts 模块体执行顺序影响（【91】复发防线：
@@ -20,7 +20,7 @@
  *    commandOutput / engineLogFile 被 fs-ipc 等域 import。改成 defineFeature **不影响这些导出**
  *    （它们是模块级函数，仍照常 export）—— 但若哪天把它们挪进 setup() 里，跨域 import 就断了。
  */
-import { ipcMain, systemPreferences } from "electron";
+import { systemPreferences } from "electron";
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";

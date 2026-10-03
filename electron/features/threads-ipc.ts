@@ -14,7 +14,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { dialog, safeStorage } from "electron";
+import { dialog } from "electron";
 import { safeProviderId } from "../provider-id";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { BACKUP_FORMAT, BACKUP_VERSION, applySessionsBackup, backupFromRolloutFile, buildMarkdownExport, buildSessionsBackup, buildThreadPreview, parseMarkdownConversation } from "../thread-backup";
@@ -24,14 +24,18 @@ import { forgetDeletedThreads } from "./thread-deletion";
 import { ensureProjectAgentsMd } from "../project-conventions";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
+import type { HostCaps } from "../runtime/seams";
 
 const THREADS_CHANNELS = ["threads:export", "threads:export-markdown", "threads:preview-conversation", "threads:import", "threads:import-conversation"];
 
 export const threadsFeature = defineFeature<null>({
   id: "threads",
-  inject: ["ipc"],
+  inject: ["ipc", "host"],
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");
+    // 宿主能力经接缝取（10-03 阶段 2b）：safeStorage 触碰系统密钥库，
+    // 域直取等于"插件自选加解密策略" ⇒ 锁进容器（守卫【266】零容忍）。
+    const { secure } = ctx.get<HostCaps>("host")!;
     if (!ipcHost) throw new Error("threads: 缺少 ipc 服务（宿主未提供）");
 
     ipcHost.handle("threads:export", async (_event, input?: { threadIds?: string[] }): Promise<{ path: string; count: number } | null> => {
@@ -133,7 +137,7 @@ export const threadsFeature = defineFeature<null>({
       const provider = customModel?.provider ?? "openai";
       const baseUrl = customModel?.baseUrl;
       const name = customModel?.name ?? provider;
-      const apiKey = customModel?.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(customModel.encryptedKey, "base64")) : "";
+      const apiKey = customModel?.encryptedKey && secure.isEncryptionAvailable() ? secure.decryptString(Buffer.from(customModel.encryptedKey, "base64")) : "";
       if (apiKey) server.setApiKey(apiKey);
       const effectiveModel = input?.model || customModel?.model;
       if (!effectiveModel) throw new Error("尚未配置自定义模型，无法新建导入会话");

@@ -12,7 +12,7 @@
  *   · 密钥经 `safeStorage` 加密落盘；读出一律**不回传明文**（只给 hasXxx 布尔位）；
  *   · 启用前必须填齐 workspace / appId / appSecret / verificationToken。
  */
-import { safeStorage } from "electron";
+
 import fs from "node:fs/promises";
 import type { ChannelBotConfig } from "../channel-bot";
 import { readChannelBot } from "../main/04-connector-config";
@@ -21,6 +21,7 @@ import { channelBot } from "../main";
 import type { StoredChannelBot } from "../main";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
+import type { HostCaps } from "../runtime/seams";
 
 function publicChannelBot(config: ChannelBotConfig | null) {
   const defaults = { enabled: false, host: "127.0.0.1" as const, port: 8787, workspace: "", sandbox: "workspace-write" as const, appId: "" };
@@ -61,8 +62,8 @@ async function normalizeChannelBot(input: any): Promise<ChannelBotConfig> {
 
 async function saveChannelBot(input: any) {
   const config = await normalizeChannelBot(input);
-  if ((config.appSecret || config.verificationToken || config.encryptKey) && !safeStorage.isEncryptionAvailable()) throw new Error("当前系统无法安全保存机器人密钥");
-  const encrypt = (value: string) => value ? safeStorage.encryptString(value).toString("base64") : undefined;
+  if ((config.appSecret || config.verificationToken || config.encryptKey) && !secureHost().isEncryptionAvailable()) throw new Error("当前系统无法安全保存机器人密钥");
+  const encrypt = (value: string) => value ? secureHost().encryptString(value).toString("base64") : undefined;
   const stored: StoredChannelBot = {
     enabled: config.enabled,
     host: config.host,
@@ -79,11 +80,29 @@ async function saveChannelBot(input: any) {
   return publicChannelBot(config);
 }
 
+/**
+ * 宿主密钥能力（10-03 阶段 2b 由 electron 的 safeStorage 改为接缝注入）。
+ *
+ * ⛔ 为什么是「bind 注入」而不是在 setup() 里 const 解构：本域的加解密在**模块级函数**
+ *    `saveChannelBot` 里用，那个函数不接收 ctx。与 laya/video 的 bindLayaHost 同款解法。
+ * ⛔ 未注入时**明确抛错**：静默返回 undefined 会让「保存密钥」在用户点下按钮时才炸，
+ *    且报错信息（读 undefined 的属性）完全指不到真凶。
+ */
+let secureRef: HostCaps["secure"] | null = null;
+export function bindChannelBotSecure(host: HostCaps): void {
+  secureRef = host.secure;
+}
+function secureHost(): HostCaps["secure"] {
+  if (!secureRef) throw new Error("channel-bot-ipc: 宿主密钥能力未注入（组合表挂载时应调 bindChannelBotSecure）");
+  return secureRef;
+}
+
 export const channelBotFeature = defineFeature<null>({
   id: "channel-bot",
-  inject: ["ipc"],
+  inject: ["ipc", "host"],
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");
+    bindChannelBotSecure(ctx.get<HostCaps>("host")!);   // 供模块级函数惰性取用（【91】：不在模块体求值）
     if (!ipcHost) throw new Error("channel-bot: 缺少 ipc 服务（宿主未提供）");
 
     ipcHost.handle("channel-bot:read", async () => publicChannelBot(await readChannelBot()));

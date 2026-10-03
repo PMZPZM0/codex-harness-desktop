@@ -1,0 +1,40 @@
+/* 25-codex-official-market.css —— 插件页的第二个市场源「Codex 官方插件」（codex-official-market 域，10-03 立）
+   视觉遵循 DESIGN.md：--panel/--line/--text 递进、唯一主色 --accent，不写死色值。
+   卡片本体复用 .skill-card 皮肤（与 Gitee 源同款），这里只补两件事：源切换条 + 「还要配什么」的鉴权提示。 */
+
+/* ── 源切换（Claude 镜像 ⇄ Codex 官方）─────────────────────────────────── */
+.market-source-switch { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.market-source-switch .segmented-tabs { flex: none; }
+
+/* ── 官方市场块（.plugin-market-block 的增量，两者同挂在一个容器上）────── */
+.codex-official-market-title-code { font-family: var(--mono); font-size: 11px; }
+.codex-official-market-note,
+.codex-official-market-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0; font-size: 12px; line-height: 1.6; }
+.codex-official-market-note { color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+.codex-official-market-note b { color: var(--text); font-weight: 600; }
+.codex-official-market-note code,
+.codex-official-market-confirm code { font-family: var(--mono); font-size: 11px; background: var(--panel-2); border-radius: 4px; padding: 0 4px; }
+/* ⛔ 加载失败不许静默成空列表（会被当成「官方源没插件」） */
+.codex-official-market-error { color: var(--red); background: var(--panel); border: 1px solid var(--red); border-radius: 8px; padding: 6px 10px; }
+.codex-official-market-error .secondary-setting { padding: 2px 10px; font-size: 11px; }
+
+/* ── 卡片：鉴权提示（装了不等于能用，这条必须显性）────────────────────── */
+.codex-official-market-auth { display: inline-flex; align-items: flex-start; gap: 5px; margin: 0; font-style: normal; font-size: 11px; line-height: 1.5; color: var(--accent-text); }
+.codex-official-market-auth svg { flex: none; margin-top: 2px; }
+/* ⛔ 10-03：用项目实际存在的 --orange（01-base-and-chrome.css 定义了亮/暗两套），
+   不是 --warn —— 项目根本没有 --warn 这个变量，守卫【160】会报"被引用但从未定义"，
+   且暗色主题下会静默落成 fallback 的亮色。 */
+.codex-official-market-external { color: var(--orange); }
+
+/* ── 已安装态：✓ 标记 + 独立卸载钮（不共用 .skill-add，避免「点勾=删除」）─ */
+.codex-official-market-state { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.codex-official-market-flag { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--ok); background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+.codex-official-market-remove { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); color: var(--faint); cursor: pointer; }
+.codex-official-market-remove:hover { color: var(--red); border-color: var(--red); }
+/* 两段式确认的武装态：第一次点只把钮点亮，第二次才真删（删除不可逆） */
+.codex-official-market-remove.armed { color: var(--red); border-color: var(--red); background: var(--accent-soft); }
+.codex-official-market-confirm { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11px; color: var(--text); background: var(--panel-2); border: 1px solid var(--red); border-radius: 8px; padding: 6px 8px; }
+.codex-official-market-confirm span { flex: 1 1 180px; min-width: 0; }
+.codex-official-market-confirm .primary-setting,
+.codex-official-market-confirm .secondary-setting { padding: 2px 10px; font-size: 11px; }
+.codex-official-market-card { cursor: default; }

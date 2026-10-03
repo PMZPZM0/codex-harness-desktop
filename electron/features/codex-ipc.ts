@@ -16,11 +16,10 @@
  *      （09-18 实测「重启又恢复」）。且扫描在 **worker 线程**（同步 I/O 会阻塞所有会话）。
  *   5. **别名 provider 段恒 `wire_api = "responses"`**（09-16 探针实证）：写 chat 会被整份拒载。
  * ⛔ `rendererActiveThreadId` / `bridgeRewriteProviderConfig` 是本域私有（只服务 codex 三通道）。
- * ⛔ 待接缝化（阶段 2）：safeStorage / fs 为宿主能力。
+ * ⛔ 待接缝化（阶段 2）：fs 为宿主能力（safeStorage 已于 10-03 走 host 接缝）。
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { safeStorage } from "electron";
 import { safeProviderId } from "../provider-id";
 import { enrichThreadWithRolloutToolsAsync, listRolloutThreadsAsync } from "../rollout-pool";
 import { markMissingRollouts, mergeThreadList } from "../session-tools";

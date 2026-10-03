@@ -19,7 +19,7 @@
  * ⛔ 待接缝化（阶段 2）：app / safeStorage 为宿主能力。
  */
 import fs from "node:fs/promises";
-import { app, safeStorage } from "electron";
+import { app } from "electron";
 import { probeCustomModel } from "./custom-model-probe";
 import { safeProviderId } from "../provider-id";
 import type { CustomModelFile, ProviderModel } from "./custom-model-types";
@@ -34,6 +34,7 @@ import { customModelFile, server, upsertCustomModel } from "../runtime-refs";
 import { isLocalEndpoint, publicCustomModel, withModels } from "../custom-model-store";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
+import type { HostCaps } from "../runtime/seams";
 
 async function disableOtherCustomProviders(provider: string) {
   const list = await readCustomModels();
@@ -56,9 +57,12 @@ const CUSTOM_MODEL_CHANNELS = [
 
 export const customModelFeature = defineFeature<null>({
   id: "custom-model",
-  inject: ["ipc"],
+  inject: ["ipc", "host"],
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");
+    // 宿主能力经接缝取（10-03 阶段 2b）：safeStorage 触碰系统密钥库，
+    // 域直取等于"插件自选加解密策略" ⇒ 锁进容器（守卫【266】零容忍）。
+    const { secure } = ctx.get<HostCaps>("host")!;
     if (!ipcHost) throw new Error("custom-model: 缺少 ipc 服务（宿主未提供）");
 
     ipcHost.handle("custom-model:read", async () => publicCustomModel(await readCustomModel()));
@@ -79,8 +83,8 @@ export const customModelFeature = defineFeature<null>({
       const previous = await readCustomModel();
       let encryptedKey = previous?.encryptedKey;
       if (input.apiKey) {
-        if (!safeStorage.isEncryptionAvailable()) throw new Error("当前系统无法安全保存 API Key");
-        encryptedKey = safeStorage.encryptString(input.apiKey).toString("base64");
+        if (!secure.isEncryptionAvailable()) throw new Error("当前系统无法安全保存 API Key");
+        encryptedKey = secure.encryptString(input.apiKey).toString("base64");
       }
       // ⛔ 恒 responses（09-16 真实引擎探针实证：写 chat 会让整份 config.toml 拒载、所有请求失败）。
       // 前端也不再传 chat（UI 已撤掉协议选项），这里保留入参只为兼容旧渲染层，统一归一。

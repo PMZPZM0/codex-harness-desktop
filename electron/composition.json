@@ -485,6 +485,13 @@
       "config": null
     },
     {
+      "id": "codex-official-market",
+      "enabled": true,
+      "file": "features/codex-official-market-ipc.ts",
+      "export": "codexOfficialMarketFeature",
+      "config": null
+    },
+    {
       "id": "hooks",
       "enabled": true,
       "file": "features/hooks-ipc.ts",

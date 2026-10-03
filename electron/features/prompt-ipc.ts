@@ -8,10 +8,11 @@
  * ⛔ 返回形状 `{ ok, text }` / `{ ok, error }` 逐字保留 —— 换容器不许改对外契约。
  * ⛔ 待接缝化（阶段 2）：safeStorage 为宿主能力。
  */
-import { safeStorage } from "electron";
+
 import { readCustomModel } from "../main";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
+import type { HostCaps } from "../runtime/seams";
 
 const ENHANCE_SYSTEM_PROMPT = [
   "你是提示词优化助手。把用户的原始输入改写成一个清晰、具体、结构化的 AI 提示词：",
@@ -22,9 +23,12 @@ const ENHANCE_SYSTEM_PROMPT = [
 
 export const promptFeature = defineFeature<null>({
   id: "prompt",
-  inject: ["ipc"],
+  inject: ["ipc", "host"],
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");
+    // 宿主能力经接缝取（10-03 阶段 2b）：safeStorage 触碰系统密钥库，
+    // 域直取等于"插件自选加解密策略" ⇒ 锁进容器（守卫【266】零容忍）。
+    const { secure } = ctx.get<HostCaps>("host")!;
     if (!ipcHost) throw new Error("prompt: 缺少 ipc 服务（宿主未提供）");
 
     ipcHost.handle("prompt:enhance", async (_event, input: { text: string }) => {
@@ -33,7 +37,7 @@ export const promptFeature = defineFeature<null>({
       try {
         const model = await readCustomModel();
         if (!model?.baseUrl || !model.model || model.enabled === false) return { ok: false, error: "请先在设置中配置并启用自定义模型" };
-        const apiKey = model.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(model.encryptedKey, "base64")) : "";
+        const apiKey = model.encryptedKey && secure.isEncryptionAvailable() ? secure.decryptString(Buffer.from(model.encryptedKey, "base64")) : "";
         const base = model.baseUrl.trim().replace(/\/$/, "");
         const endpoint = /\/chat\/completions$/.test(base) ? base : base + "/chat/completions";
         const controller = new AbortController();

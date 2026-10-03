@@ -8,10 +8,12 @@
  * 走内置 IPC `video:*`（国内外 8 家），不是市场里的可安装插件，所以独立成卡。
  */
 import { PageInfo } from "../../components/SettingsHead";
+import { useState } from "react";
 import { ArrowLeft, ArrowRight, ArrowUpRight, Check, CircleStop, Play, Plus, RefreshCw, Store, Trash2 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { BatchActions, CheckCard, SearchField, SegmentedTabs, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
 import { MarketLogo } from "../../features/skills-market";
+import { CodexOfficialMarketSection } from "../codex-official-market";
 import { avatarToneOf } from "../../lib/entity-avatar";
 
 export type PluginsMarketSectionProps = { settingsResources: any; pluginSearch: any; pluginInstalledOnly: any; pluginDisplayName: any; pluginDescription: any; pluginChecked: any; setPluginChecked: any; refreshPluginsPage: any; resourceLoading: any; pluginMarketLoading: any; pluginMarketCategoryTabs: any; pluginMarketCategory: any; setPluginMarketCategory: any; setPluginMarketPage: any; pluginMarketSearch: any; setPluginMarketSearch: any; pluginMarketItems: any; installingMarketPlugin: any; setMarketPreview: any; installMarketPlugin: any; pluginMarketTotal: any; pluginMarketPage: any; pluginMarketPageSize: any; setPluginInstalledOnly: any; setPluginSearch: any; pluginBatchBusy: any; batchSetPluginEnabled: any; pluginBusy: any; setPluginEnabled: any; changePlugin: any };
@@ -40,13 +42,26 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
     disable: checkedPlugins.filter((plugin) => plugin.enabled !== false),
   };
   const togglePluginChecked = (id: string) => setPluginChecked((current: any) => current.includes(id) ? current.filter((entry: any) => entry !== id) : [...current, id]);
+  // 两个市场数据源（10-03）：Gitee 上的 Claude Code 官方镜像 ⇄ Codex 官方 openai/plugins（GitHub 国内镜像读取）。
+  // 各自的分类表、卡片与安装进度互不相干 ⇒ 切的是**整块**（用户拍板「按源给各自的分类 tab」），不是把 18 个分类混排。
+  const [marketSource, setMarketSource] = useState("gitee");
   return <section className="settings-section stack plugin-center">
-    <div className="settings-copy channel-heading"><div><h2>插件<PageInfo text={<>上方卡片来自 Gitee 上的 Claude Code 官方插件市场镜像（国内源，48 个插件全部与 Codex 兼容），一键安装写入本地插件目录；涵盖开发工具、效率、安全、LSP 等类目。下方为已安装插件管理，停用后 Codex 不再加载该插件提供的指令、技能与钩子。</>} helpKey="plugins" label="插件" /></h2></div><div className="settings-heading-actions"><button className="secondary-setting" title="打开 Gitee 插件市场镜像" onClick={() => void window.codex.openExternal("https://gitee.com/yuqiaodi/claude-plugins-official-gitee")}><ArrowUpRight size={14} />在线市场</button><button className="icon-button" title="刷新：已装插件 / 技能 / 钩子 / 记忆 / 任务 / MCP + 插件市场（沿用当前分类与搜索）" onClick={() => void refreshPluginsPage()}>{(resourceLoading || pluginMarketLoading) ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+    <div className="settings-copy channel-heading"><div><h2>插件<PageInfo text={<>上方卡片来自两个插件市场源：<b>Claude 插件镜像</b>（Gitee 国内源，48 个，全部与 Codex 兼容）与 <b>Codex 官方源</b>（GitHub <code>openai/plugins</code>，65 个官方插件，走国内镜像下载）。一键安装写入本地插件目录；官方源全部需要授权/配置服务凭据（其中 15 个依赖 ChatGPT 应用连接器），卡片上的提示就是这一条。下方为已安装插件管理（含引擎自带的 openai-api-curated 官方市场），停用后 Codex 不再加载该插件提供的指令、技能与钩子。</>} helpKey="plugins" label="插件" /></h2></div><div className="settings-heading-actions"><button className="secondary-setting" title={marketSource === "official" ? "打开 GitHub 上的 Codex 官方插件仓库" : "打开 Gitee 插件市场镜像"} onClick={() => void window.codex.openExternal(marketSource === "official" ? "https://github.com/openai/plugins" : "https://gitee.com/yuqiaodi/claude-plugins-official-gitee")}><ArrowUpRight size={14} />在线市场</button><button className="icon-button" title="刷新：已装插件 / 技能 / 钩子 / 记忆 / 任务 / MCP + 插件市场（沿用当前分类与搜索）" onClick={() => void refreshPluginsPage()}>{(resourceLoading || pluginMarketLoading) ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+
+    <div className="market-source-switch">
+      <SegmentedTabs
+        value={marketSource}
+        onChange={(next) => setMarketSource(next === "official" ? "official" : "gitee")}
+        options={[{ value: "gitee", label: "Claude 插件镜像" }, { value: "official", label: "Codex 官方插件" }]}
+      />
+    </div>
 
     {/* ⛔ 09-28：「内置接口（视频生成接口）」块**搬走**了 —— 它属于「内置插件」那一组
         （与生图/视觉插件并列，见 BuiltinPluginsSection）。本页只负责**插件市场**：
         外部市场的可安装列表 + 已安装插件管理。两件事混在一页会让人分不清「自带」与「要装」。 */}
-    <div className="plugin-market-block">
+    {marketSource === "official"
+      ? <CodexOfficialMarketSection onResourcesChanged={() => void refreshPluginsPage()} />
+      : <div className="plugin-market-block">
       <div className="plugin-market-title">插件市场<small>来自 Gitee 官方镜像（Claude Code 插件，与 Codex 兼容）· 一键安装</small></div>
       <div className="resource-toolbar">
         <div className="skill-tabs">{pluginMarketCategoryTabs.map(([label, value]: any) => <button key={value} className={pluginMarketCategory === value ? "active" : ""} onClick={() => { setPluginMarketCategory(value); setPluginMarketPage(1); }}>{label}</button>)}</div>
@@ -86,7 +101,7 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
         })}
       </div> : <p className="muted">{pluginMarketLoading ? "正在加载插件市场…" : "没有匹配的插件，换个关键词试试。"}</p>}
       <div className="skill-market-pagination"><span>共 {pluginMarketTotal} 个插件 · 第 {pluginMarketPage} / {Math.max(1, Math.ceil(pluginMarketTotal / pluginMarketPageSize))} 页</span><div><button className="secondary-setting" disabled={pluginMarketLoading || pluginMarketPage <= 1} onClick={() => setPluginMarketPage((page: any) => Math.max(1, page - 1))}><ArrowLeft size={14} />上一页</button><button className="secondary-setting" disabled={pluginMarketLoading || pluginMarketPage >= Math.max(1, Math.ceil(pluginMarketTotal / pluginMarketPageSize))} onClick={() => setPluginMarketPage((page: any) => page + 1)}>下一页<ArrowRight size={14} /></button></div></div>
-    </div>
+    </div>}
 
     <div className="plugin-stats">
       <div className="plugin-stat"><span>市场插件</span><strong>{all.length}</strong></div>
