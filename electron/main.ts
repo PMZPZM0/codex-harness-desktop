@@ -112,7 +112,6 @@ import "./features/shell-misc-ipc";
 /* 截图（全屏/框选）+ 收藏夹：用户素材链的两端（截图可收藏、收藏可发送/进记忆） */
 import "./features/screenshot-favorites-ipc";
 /* 历史会话搜索：顶栏 🔍 → 扫 rollout 原档搜对话内容（真相源=rollout，见 history-search-ipc.ts） */
-import "./features/history-search-ipc";
 import { readMemoryMode, applyMemoryMode, workspaceMemoryEnabled } from "./main/05-memory-mode";
 import { readMcpOverrides, mcpOverrideEnabled } from "./main/06-mcp-overrides";
 import { escapeToml, readConnectors } from "./main/07-connectors-io";

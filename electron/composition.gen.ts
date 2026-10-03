@@ -9,6 +9,7 @@ import { clipboardFeature as feat_clipboard } from "./features/clipboard-ipc";
 import { phoneHarnessFeature as feat_phone } from "./features/phone-harness-ipc";
 import { updatesFeature as feat_updates } from "./features/updates-ipc";
 import { dataDirFeature as feat_dataDir } from "./features/data-dir-ipc";
+import { historySearchFeature as feat_history } from "./features/history-search-ipc";
 
 export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unknown };
 
@@ -23,6 +24,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "phone", plugin: feat_phone as Plugin<unknown>, config: null },
   { id: "updates", plugin: feat_updates as Plugin<unknown>, config: null },
   { id: "dataDir", plugin: feat_dataDir as Plugin<unknown>, config: null },
+  { id: "history", plugin: feat_history as Plugin<unknown>, config: null },
 ];
 
 for (const row of ENABLED) mountFeature(row.plugin, row.config);
