@@ -1,5 +1,6 @@
 /**
- * clipboard-ipc（09-22 架构改造：从 electron/main.ts 组合根按域拆出，纯搬迁）
+ * clipboard-ipc（09-22 架构改造：从 electron/main.ts 组合根按域拆出，纯搬迁；
+ *              10-03 改为**插件形态**，主进程容器 P2 第一批）
  *
  * 域：**剪贴板读写**（复制截图 / 写文本 / 写图片 / 读文件列表）。
  * 搬出符号：IPC handler clipboard:image / clipboard:write / clipboard:write-image /
@@ -12,35 +13,22 @@
  *   `app.getPath("userData")`（【91】复发防线，见 electron/personalization.ts）。
  *   其余符号（clipboard / nativeImage / ClipboardItem / app）均来自 electron 模块，
  *   不依赖 main.ts，零跨域耦合。
- * 注册时机不变：main.ts 模块加载期 import 本文件 ⇒ ipcMain.handle 立即执行（早于 whenReady）。
+ *
+ * ── 10-03 插件化（P2 批次 1）────────────────────────────────────────────────
+ *   · 依赖经 `inject: ["ipc"]` 声明，⛔ 不再直接 import `ipcMain`（宿主能力走容器注入）；
+ *   · 四个通道名 / 参数 / 返回值 / 全部业务逻辑**逐字保留**；`copyImageFileToClipboard`
+ *     仍**原样导出**（`screenshot-favorites-ipc` 复用它，改动会波及那个域）；
+ *   · `ctx.effect` 卸载时摘掉本域 4 个 handler（插件必须能干净卸载）；
+ *   · 挂载由 `electron/composition.gen.ts` 负责（壳经组合表挂载），本域**不自挂载**。
+ *   · 注册时机不变：生成物在主进程模块加载期被 import ⇒ handler 立即注册（早于 whenReady）。
  */
-import { app, clipboard, nativeImage, ClipboardItem, ipcMain } from "electron";
+import { app, clipboard, nativeImage, ClipboardItem } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { imagesDir as resolveImagesDir } from "../user-data-paths";
+import { defineFeature } from "../context";
+import type { IpcHost } from "../ipc-host";
 
-ipcMain.handle("clipboard:image", async () => {
-  // Electron 44：clipboard.readImage() 已移除，改 W3C 风格 read() → ClipboardItem[] → image/png Blob
-  const items = await clipboard.read();
-  const item = items.find((entry) => entry.types.includes("image/png"));
-  if (!item) return null;
-  const blob = await item.getType("image/png");
-  if (!(blob instanceof Blob)) return null;
-  const buffer = Buffer.from(await blob.arrayBuffer());
-  if (!buffer.length) return null;
-  const imagesDir = resolveImagesDir();
-  await fs.mkdir(imagesDir, { recursive: true });
-  const file = path.join(imagesDir, `codex-harness-${Date.now()}.png`);
-  await fs.writeFile(file, buffer);
-  return file;
-});
-/** 文本写剪贴板：走主进程 electron clipboard，不受渲染层 Clipboard API 的
- *  焦点/权限限制（用户实测窗口失焦时 navigator.clipboard.writeText 抛
- *  "Write permission denied"，表现为「复制失败」toast）。 */
-ipcMain.handle("clipboard:write", async (_event, text: string) => {
-  clipboard.writeText(String(text ?? ""));
-  return true;
-});
 /** 复制本地图片文件到剪贴板（主进程能力，渲染层拿不到）：供 clipboard:write-image 与
  *  截图确认（screenshot-favorites-ipc）共用 —— Electron 44 已移除 clipboard.writeImage。 */
 export async function copyImageFileToClipboard(filePath: string): Promise<void> {
@@ -55,33 +43,74 @@ export async function copyImageFileToClipboard(filePath: string): Promise<void> 
   await clipboard.write([new ClipboardItem({ "image/png": new Blob([new Uint8Array(png)], { type: "image/png" }) })]);
 }
 
-ipcMain.handle("clipboard:write-image", async (_event, filePath: string) => {
-  await copyImageFileToClipboard(String(filePath ?? ""));
-  return true;
-});
-/** 读取剪贴板里的文件路径（渲染层 clipboardData.files/uri-list 拿不到时的兜底）：
- *  Windows 复制文件进剪贴板是 CF_HDROP，Chromium 渲染层有时不暴露，但主进程
- *  clipboard.read() 的 ClipboardItem 带 text/uri-list（file:/// 列表）。 */
-ipcMain.handle("clipboard:read-files", async () => {
-  const items = await clipboard.read();
-  const paths: string[] = [];
-  for (const item of items) {
-    if (!item.types.includes("text/uri-list")) continue;
-    try {
-      const payload = await item.getType("text/uri-list");
-      if (!(payload instanceof Blob)) continue;
-      const text = await payload.text();
-      for (const line of text.split(/\r?\n/)) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
+const CLIPBOARD_CHANNELS = ["clipboard:image", "clipboard:write", "clipboard:write-image", "clipboard:read-files"];
+
+export const clipboardFeature = defineFeature<null>({
+  id: "clipboard",
+  inject: ["ipc"],
+  setup: (ctx) => {
+    const ipcHost = ctx.get<IpcHost>("ipc");
+    if (!ipcHost) throw new Error("clipboard: 缺少 ipc 服务（宿主未提供）");
+
+    ipcHost.handle("clipboard:image", async () => {
+      // Electron 44：clipboard.readImage() 已移除，改 W3C 风格 read() → ClipboardItem[] → image/png Blob
+      const items = await clipboard.read();
+      const item = items.find((entry) => entry.types.includes("image/png"));
+      if (!item) return null;
+      const blob = await item.getType("image/png");
+      if (!(blob instanceof Blob)) return null;
+      const buffer = Buffer.from(await blob.arrayBuffer());
+      if (!buffer.length) return null;
+      const imagesDir = resolveImagesDir();
+      await fs.mkdir(imagesDir, { recursive: true });
+      const file = path.join(imagesDir, `codex-harness-${Date.now()}.png`);
+      await fs.writeFile(file, buffer);
+      return file;
+    });
+
+    /** 文本写剪贴板：走主进程 electron clipboard，不受渲染层 Clipboard API 的
+     *  焦点/权限限制（用户实测窗口失焦时 navigator.clipboard.writeText 抛
+     *  "Write permission denied"，表现为「复制失败」toast）。 */
+    ipcHost.handle("clipboard:write", async (_event, text: string) => {
+      clipboard.writeText(String(text ?? ""));
+      return true;
+    });
+
+    ipcHost.handle("clipboard:write-image", async (_event, filePath: string) => {
+      await copyImageFileToClipboard(String(filePath ?? ""));
+      return true;
+    });
+
+    /** 读取剪贴板里的文件路径（渲染层 clipboardData.files/uri-list 拿不到时的兜底）：
+     *  Windows 复制文件进剪贴板是 CF_HDROP，Chromium 渲染层有时不暴露，但主进程
+     *  clipboard.read() 的 ClipboardItem 带 text/uri-list（file:/// 列表）。 */
+    ipcHost.handle("clipboard:read-files", async () => {
+      const items = await clipboard.read();
+      const paths: string[] = [];
+      for (const item of items) {
+        if (!item.types.includes("text/uri-list")) continue;
         try {
-          const url = new URL(trimmed);
-          if (url.protocol === "file:") {
-            paths.push(decodeURIComponent(trimmed.slice("file://".length)).replace(/\//g, "\\").replace(/^\\/, ""));
+          const payload = await item.getType("text/uri-list");
+          if (!(payload instanceof Blob)) continue;
+          const text = await payload.text();
+          for (const line of text.split(/\r?\n/)) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            try {
+              const url = new URL(trimmed);
+              if (url.protocol === "file:") {
+                paths.push(decodeURIComponent(trimmed.slice("file://".length)).replace(/\//g, "\\").replace(/^\\/, ""));
+              }
+            } catch { /* 非 URL 行跳过 */ }
           }
-        } catch { /* 非 URL 行跳过 */ }
+        } catch { /* 单个 item 读取失败不影响其他 */ }
       }
-    } catch { /* 单个 item 读取失败不影响其他 */ }
-  }
-  return paths;
+      return paths;
+    });
+
+    // 生命期：卸载时摘掉本域注册的 4 个通道（未摘 = 卸载后仍占着通道，重装即 "second handler" 抛错）
+    ctx.effect(() => {
+      for (const channel of CLIPBOARD_CHANNELS) ipcHost.removeHandler(channel);
+    });
+  },
 });

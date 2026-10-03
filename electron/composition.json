@@ -14,6 +14,13 @@
       "file": "features/queue-timer-ipc.ts",
       "export": "queueTimerFeature",
       "config": null
+    },
+    {
+      "id": "clipboard",
+      "enabled": true,
+      "file": "features/clipboard-ipc.ts",
+      "export": "clipboardFeature",
+      "config": null
     }
   ]
 }

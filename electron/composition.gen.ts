@@ -5,6 +5,7 @@ import "./ipc-host"; // 先 provide "ipc" 服务（域的 inject 依赖），再
 import type { Plugin } from "./context";
 import { mountFeature } from "./context";
 import { queueTimerFeature as feat_queue_timer } from "./features/queue-timer-ipc";
+import { clipboardFeature as feat_clipboard } from "./features/clipboard-ipc";
 
 export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unknown };
 
@@ -15,6 +16,7 @@ export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unkno
  *  ⛔⛔ 本函数体是**模板字符串**：里面**绝不能出现反引号**（会把模板提前闭合 ⇒ 生成器语法错误）。 */
 export const ENABLED: EnabledDomain[] = [
   { id: "queue-timer", plugin: feat_queue_timer as Plugin<unknown>, config: null },
+  { id: "clipboard", plugin: feat_clipboard as Plugin<unknown>, config: null },
 ];
 
 for (const row of ENABLED) mountFeature(row.plugin, row.config);
