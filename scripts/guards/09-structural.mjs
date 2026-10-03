@@ -1075,4 +1075,22 @@ export async function run() {
       (/--body-file/.test(readFileSync(join(ROOT, "logs", "README.md"), "utf8")) ? ok : fail)("【158】规范里也写明 --body-file 的用法与原因");
     }
   }
+
+  /* ══ 【245】回合文件变更追踪（10-01 用户令：动了文件就要 ZCode 式 ± 汇报，触发条件齐全）══
+     引擎只对 apply_patch 发 fileChange —— shell / exec_command / MCP / 浏览器自动化写文件
+     引擎毫无感知。宿主自己盯：turn/started|begin 记工作目录快照，turn/(completed|aborted|
+     failed|interrupted) + thread/status idle 兜底结算，广播 turn-file-changes 给汇总卡。 */
+  {
+    const tfw = readFileSync(join(ROOT, "electron", "turn-file-watch.ts"), "utf8");
+    const bootTfw = codeOnly(readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8"));
+    (/export function snapshotTurnWorkspace/.test(tfw) && /export function emitTurnFileChanges/.test(tfw) && /setTurnFileWatchBroadcast/.test(tfw) ? ok : fail)(
+      "【245】快照/结算/广播三件套齐备（引擎只报 apply_patch —— shell 与浏览器写文件必须宿主自己盯）"
+    );
+    (/snapshotTurnWorkspace\(threadIdOf, startCwd\)/.test(bootTfw) && /emitTurnFileChanges\(threadIdOf\)/.test(bootTfw) ? ok : fail)(
+      "【245】触发条件齐全：turn/started 记快照 + 收尾族（completed/aborted/failed/interrupted）结算（少一处 = 那条路径的改动永远没汇报）"
+    );
+    (/turn-file-changes\.mjs/.test(codeOnly(readFileSync(join(ROOT, "src", "features", "status", "Status.tsx"), "utf8"))) ? ok : fail)(
+      "【245】汇总卡合并宿主追踪结果（只认引擎 changes = shell/浏览器写的文件永远不进汇报）"
+    );
+  }
 }

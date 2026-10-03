@@ -15,6 +15,7 @@ import { WeixinGateway } from "../weixin-gateway";
 import { markBoot } from "../boot-timing";
 import { debugMemoryCapture } from "../memory-capture-debug";
 import { sendToWindow } from "./window-bus";
+import { emitTurnFileChanges, setTurnFileWatchBroadcast, snapshotTurnWorkspace } from "../turn-file-watch";
 
 import { shouldRegisterNuphus } from "../automation-policy";
 import { BotStreamSession, readBotStreamSettingsSync } from "../bot-stream";
@@ -203,6 +204,8 @@ export function bindBoot(deps: Record<string, any>) {
   scheduler = deps.scheduler;
   remote = deps.remote;
 }
+
+setTurnFileWatchBroadcast((payload: unknown) => sendToWindow("harness:event", payload));
 
 export async function bootApp() {
   markBoot("app-ready");   // 启动耗时测量（见 electron/boot-timing.ts）
@@ -443,9 +446,14 @@ export async function bootApp() {
       if (METHOD === "turn/started" || METHOD === "turn/begin") {
         const id = turnIdOf(p);
         if (id) engineActiveTurnIds.set(id, threadIdOf);
+        /* 文件变更追踪（10-01 用户令）：回合开始记工作目录快照；cwd 跟随会话（threadCwd）。 */
+        const startCwd = threadCwd.get(threadIdOf);
+        if (startCwd) snapshotTurnWorkspace(threadIdOf, startCwd);
       } else if (/^turn\/(completed|aborted|failed|interrupted)$/.test(METHOD)) {
         const id = turnIdOf(p);
         if (id) engineActiveTurnIds.delete(id);
+        /* 回合收尾 = 汇报时点：算工作目录差异并广播 turn-file-changes（ZCode 式汇总的数据源）。 */
+        emitTurnFileChanges(threadIdOf);
         else if (threadIdOf) {
           // id 形态不认识 → 只释放该线程名下的回合（绝不动别的会话）
           for (const [turnId, owner] of [...engineActiveTurnIds]) if (owner === threadIdOf) engineActiveTurnIds.delete(turnId);
