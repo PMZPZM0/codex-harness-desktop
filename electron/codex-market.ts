@@ -50,6 +50,15 @@ export type CodexMarketPlugin = {
   defaultBranch?: string;
   license?: string;
   installability?: string;
+  /**
+   * ⛔⛔ 10-03 用户报障「插件安装后没有更新状态、已安装里还是那个 +」：
+   *   本地已装标记。**真相源 = 市场目录里安装时写入的 `.codex-market.json`**，
+   *   不能再只靠引擎 `plugin/list` 的「id@market 前段 === slug」——
+   *   引擎没认领（列表为空）或 id 命名不一致时，UI 永远显示「安装」按钮。
+   */
+  installed?: boolean;
+  /** 已装版本（取自本地 manifest；未装为 undefined）。 */
+  installedVersion?: string;
 };
 
 export type CodexMarketInstallProgress = { stage: "resolve" | "download" | "install" | "register"; message: string };
@@ -193,7 +202,36 @@ export async function listMarketCategories(): Promise<MarketCategory[]> {
 }
 
 /** 市场清单：客户端过滤（48 个全量拉回，q/category 过滤 + 页切片） */
-export async function listMarketPlugins(input: { category?: string; query?: string; page?: number; pageSize?: number } = {}) {
+/** 本地市场目录（安装落点 + 清单来源）——「装没装」的真相源位置，单一真相源（守卫【245】）。 */
+export function codexMarketDir(codexHome: string): string {
+  return path.join(codexHome, "plugins", "codex-market");
+}
+
+/**
+ * 本地已装市场插件：slug → 版本。
+ * ⛔⛔ 10-03：这是「装没装」的**权威真相源**（安装时写下的 `.codex-market.json`）。
+ *   不能只靠引擎 `plugin/list`：引擎未认领 / id 命名不一致时它返空，
+ *   UI 于是永远显示「+」——用户原话「插件安装后没有更新状态」。
+ *   目录在就算已装（用户视角就是装了）；manifest 缺失时用目录名兜底。
+ */
+export async function listInstalledMarketPlugins(marketDir: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  let entries: string[] = [];
+  try { entries = await fs.readdir(marketDir); } catch { return out; }
+  for (const name of entries) {
+    if (name.startsWith(".")) continue;
+    try {
+      const raw = await fs.readFile(path.join(marketDir, name, ".codex-market.json"), "utf8");
+      const data = JSON.parse(raw);
+      out.set(String(data?.marketId ?? name), String(data?.version ?? ""));
+    } catch {
+      out.set(name, "");
+    }
+  }
+  return out;
+}
+
+export async function listMarketPlugins(input: { category?: string; query?: string; page?: number; pageSize?: number; installedDir?: string } = {}) {
   const page = Math.max(1, Math.floor(Number(input.page) || 1));
   const pageSize = Math.min(30, Math.max(1, Math.floor(Number(input.pageSize) || 18)));
   let items = await loadMarketPlugins();
@@ -209,7 +247,18 @@ export async function listMarketPlugins(input: { category?: string; query?: stri
   }
   const total = items.length;
   const start = (page - 1) * pageSize;
-  return { items: items.slice(start, start + pageSize), total, page, pageSize };
+  // ⛔ 10-03：逐项合并本地已装标记（见 listInstalledMarketPlugins 的注释：这是唯一可靠的真相源）
+  const installedMap = input.installedDir ? await listInstalledMarketPlugins(input.installedDir) : new Map<string, string>();
+  return {
+    items: items.slice(start, start + pageSize).map((entry) => ({
+      ...entry,
+      installed: installedMap.has(entry.slug),
+      installedVersion: installedMap.get(entry.slug) || undefined,
+    })),
+    total,
+    page,
+    pageSize,
+  };
 }
 
 type RepoRef = { owner: string; repo: string };
@@ -351,7 +400,7 @@ export async function upsertCodexMarketManifest(marketDir: string, entry: { name
  * 该段不在 HARNESS_CONFIG_SECTIONS，harness 整份重写时会被 preserveUserConfig 原样拼回。
  */
 export async function ensureCodexMarketplaceSection(codexHome: string): Promise<string> {
-  const marketDir = path.join(codexHome, "plugins", "codex-market");
+  const marketDir = codexMarketDir(codexHome);
   const configPath = path.join(codexHome, "config.toml");
   try {
     let existing = await fs.readFile(configPath, "utf8").catch(() => "");

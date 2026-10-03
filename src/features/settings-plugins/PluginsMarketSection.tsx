@@ -54,7 +54,11 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
       </div>
       {pluginMarketItems.length > 0 ? <div className="skill-card-grid">
         {pluginMarketItems.map((plugin: any) => {
-          const installedMarket = installedMarketPluginSlugs.has(plugin.slug);
+          // ⛔⛔ 10-03 用户报障「插件安装后没有更新状态，已安装里还是 +」：
+          //   权威判定 = 主进程按**本地 manifest**（.codex-market.json）回传的 plugin.installed；
+          //   引擎 plugin/list 的「id@market 前段 === slug」只作回落（引擎没认领时它为空，
+          //   以前这就是永远显示「+」的根因）。两个来源任一命中即视为已装。
+          const installedMarket = plugin.installed === true || installedMarketPluginSlugs.has(plugin.slug);
           const busy = installingMarketPlugin === plugin.slug;
           return <article className={`skill-card ${installedMarket ? "installed" : ""}`} key={plugin.fullName ?? plugin.slug} onClick={() => setMarketPreview({
             kind: "plugin",

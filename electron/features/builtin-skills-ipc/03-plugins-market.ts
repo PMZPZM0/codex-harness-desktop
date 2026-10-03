@@ -7,7 +7,7 @@ import fs from "node:fs/promises";
 import { app, dialog, ipcMain } from "electron";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { sendToWindow } from "../../features/window-bus";
-import { ensureCodexMarketplaceSection, installCodexMarketPlugin, listMarketPlugins } from "../../codex-market";
+import { codexMarketDir, ensureCodexMarketplaceSection, installCodexMarketPlugin, listMarketPlugins } from "../../codex-market";
 import type { InstalledMarketSkill, MarketSkill } from "../../skills-market";
 import type { CodexMarketPlugin } from "../../codex-market";
 import { applyCustomModel, builtinPluginsFile, describeNetworkError, dirEntries, readBuiltinPlugins, readCustomModel, refreshSkillDiscipline, skillsRegistryFile, userSkillsDir } from "../../main";
@@ -15,7 +15,9 @@ import { codexHome, mainWindow, server } from "../../runtime-refs";
 import { removeFromSkillRegistry } from "./02-skills-registry";
 import { describeSkillPool, setSkillPoolState } from "../../skill-pool";
 // 插件市场清单：Gitee 官方镜像源（2026-10-01 二次换源；SkillHub 源插件几乎全为 DSH 生态已弃）
-ipcMain.handle("plugins:market-list", (_event, input: { category?: string; query?: string; page?: number; pageSize?: number } = {}) => listMarketPlugins(input));
+// ⛔ 10-03：installedDir 必须传 —— 卡片「已安装」标记取自**本地 manifest**（权威），
+//   不传就退化成"只看引擎 plugin/list"，引擎没认领时用户装完仍看到「+」（原报障）。
+ipcMain.handle("plugins:market-list", (_event, input: { category?: string; query?: string; page?: number; pageSize?: number } = {}) => listMarketPlugins({ ...input, installedDir: codexMarketDir(codexHome) }));
 
 ipcMain.handle("plugins:market-install", async (_event, plugin: CodexMarketPlugin) => {
   const emit = (stage: string, message: string) => sendToWindow("harness:event", { type: "plugin-install", pluginId: plugin.slug, stage, message, at: Date.now() });
