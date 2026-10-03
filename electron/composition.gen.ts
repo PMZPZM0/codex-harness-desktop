@@ -10,6 +10,9 @@ import { phoneHarnessFeature as feat_phone } from "./features/phone-harness-ipc"
 import { updatesFeature as feat_updates } from "./features/updates-ipc";
 import { dataDirFeature as feat_dataDir } from "./features/data-dir-ipc";
 import { historySearchFeature as feat_history } from "./features/history-search-ipc";
+import { workLogsFeature as feat_work_logs } from "./features/work-logs";
+import { expertMarketFeature as feat_expert_market } from "./features/skillhub-markets-ipc";
+import { soulMarketFeature as feat_soul_market } from "./features/skillhub-markets-ipc";
 
 export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unknown };
 
@@ -25,6 +28,9 @@ export const ENABLED: EnabledDomain[] = [
   { id: "updates", plugin: feat_updates as Plugin<unknown>, config: null },
   { id: "dataDir", plugin: feat_dataDir as Plugin<unknown>, config: null },
   { id: "history", plugin: feat_history as Plugin<unknown>, config: null },
+  { id: "work-logs", plugin: feat_work_logs as Plugin<unknown>, config: null },
+  { id: "expert-market", plugin: feat_expert_market as Plugin<unknown>, config: null },
+  { id: "soul-market", plugin: feat_soul_market as Plugin<unknown>, config: null },
 ];
 
 for (const row of ENABLED) mountFeature(row.plugin, row.config);

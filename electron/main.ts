@@ -83,11 +83,9 @@ import {
 import { readCustomModel, readCustomModels, writeCustomModels, healReservedProviderConfig, normalizeProvider, writeModelCatalogToml, readUserConfigSplit } from "./main/01-model-catalog";
 import { distillSummarize, turnOutputText, waitForTurnCompletion } from "./main/03-turn-summary";
 import { connectorEnv, readChannelBot, connectorToml, mcpToolRulesOf } from "./main/04-connector-config";
-import "./features/work-logs";
 import "./features/dialog-ipc";
 import "./features/im-channels-ipc";
 import "./features/teams-agents-ipc";
-import "./features/skillhub-markets-ipc";
 import "./features/engine-ipc";
 import "./features/builtin-skills-ipc";
 import "./features/connectors-mcp-ipc";
