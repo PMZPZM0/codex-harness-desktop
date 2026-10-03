@@ -22,7 +22,11 @@
 1. **内核不是从零建**：`electron/context.ts` + `ipc-host.ts` + 组合层已具备 Cordis 语义（`inject` 门禁、`Fiber.dispose()` 可逆副作用、半注册回滚）—— 缺的是**覆盖面**与**接缝 / 组合 / 渲染层**三块。
 2. ⛔ **不能照抄 dsh**：Electron 有宿主特权边界 —— `app` 生命周期 / 窗口 / preload / CSP / 自定义协议 / 路径可信校验**必须留在内核**，插件化它们 = 安全回归（CSP `*` 不覆盖自定义协议、`harness-image` 可信根，均有实证事故）。内核 = 宿主绑定 + 安全强制 + 插件运行时。
 3. ✅ **阶段 0 已完成（`07397e2`）**：10 处多前缀欠账（**56 个前缀**）全部拆成独立板块并**顺带插件化** —— 组合表启用域 **13 → 69**，守卫【253】⑥ 棘轮名单由 10 行**清零为 0**（仍会捕获任何新长出的多前缀板块）。`main.ts` 纯副作用 import **14 → 5 行**、行数 1214 → **1204**（`ipcMain.handle/on` 仍 = 5）。拆分中把**跨域共用**的辅助函数下沉到基座层（`connector-store` / `openai-vault` / `custom-model-store` / `skill-store`）—— 拆成独立板块后它们不能留在任一域的内部文件里。
-4. ⛔ **仍未做（方案 §6 阶段 1–6）**：能力接缝（`fs`/`dialog`/`shell`/`window`/`storage`/`subprocess` —— 当前域仍直接 `import from "electron"`，已在各文件头**显式标注待接缝化**，不假装已做）、运行时装卸、profile 分层、渲染层 `registry.ts` / `Slot.tsx`。⛔ **未批准不动**：新增 `electron/runtime/`、`electron/runtime/seams/`、`src/runtime/` 三个顶层目录属红线 §9-4，需用户单独点头；`bot` 系 5 前缀是否归一化、渲染层改造范围，见方案 §10 待拍板。
+4. ✅ **阶段 1–6 已批准**（10-03 19:35 用户「直接改完」，含三项拍板：新增顶层目录 / `bot` 系归一化 / 渲染层范围）。**按批推进中**：
+   - **接缝层已建**（`5d9c236`）：`electron/runtime/seams/index.ts` 提供 `app`(38 域) / `secure`(14) / `shell`(12) / `dialog`(11) / `window`(6) 五条宿主能力接缝 + 原有 `ipc`。⛔ `protocol` 与路径可信校验**内核独占、不提供接缝**（协议白名单可替换 = 安全回归）。⛔ **不做 fs/path/crypto/child_process 的接缝化**——那是 Node 能力不是宿主绑定，真门禁是路径可信校验。
+   - ⛔ **接缝必须在域挂载前 provide**：组合表生成物头部 `import "./ipc-host"; import "./runtime/seams";` 排在所有域 import 之前（顺序即契约，晚了 `ctx.get("host")` 得 undefined）。
+   - **样板**：`features/remote-ipc.ts` 是唯一"只依赖 ipc"的老域，已改 `defineFeature`，照它办理其余。
+   - ⛔ **守卫要等域改完再加**：此刻 59 个已插件化域里仍有 8 个用 `shell`、5 个用 `BrowserWindow`、1 个用 `ipcMain`，先加断言必然红。顺序：接缝层 → 改域 → 加棘轮守卫。
 
 ## 📐 功能板块划分与接口规则（现行有效，2026-09-22 立）
 
