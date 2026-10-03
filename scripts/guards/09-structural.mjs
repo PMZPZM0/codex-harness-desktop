@@ -1207,7 +1207,7 @@ export async function run() {
       `【253】启用域都在 ipc-registry 登记（启用 ${enabled.length} 个，未登记：${missing253.join("/") || "无"}）`
     );
     const qt253 = codeOnly(readFileSync(join(ROOT, "electron", "features", "queue-timer-ipc.ts"), "utf8"));
-    (qt253.includes('mountFromComposition("queue-timer")') && !qt253.includes("mountFeature(") ? ok : fail)(
+    (qt253.includes('mountFromComposition("queue-timer", queueTimerFeature)') && !qt253.includes("mountFeature(") ? ok : fail)(
       "【253】域经组合表挂载（⛔ 不许自己 mountFeature —— 绕过配置）"
     );
     // ⛔ 审查发现（10-03）：把断言从"这一个域"扩到**所有调用点** —— 域自报的 id 没登记时
@@ -1221,13 +1221,31 @@ export async function run() {
     });
     for (const p of walkFeat253(join(ROOT, "electron", "features"))) {
       const src = codeOnly(readFileSync(p, "utf8"));
-      for (const m of src.matchAll(/mountFromComposition\(\s*"([\w-]+)"\s*\)/g)) callSites253.push([p, m[1]]);
+      // 调用点形态 = mountFromComposition("id", <plugin>)：⛔ 生成物只存数据，插件值由域自己传（防环）
+      for (const m of src.matchAll(/mountFromComposition\(\s*"([\w-]+)"\s*,/g)) callSites253.push([p, m[1]]);
     }
     const registered253 = new Set((composition.domains || []).map((d) => d && d.id));
     const unregistered253 = callSites253.filter(([, id]) => !registered253.has(id));
     (callSites253.length > 0 && unregistered253.length === 0 ? ok : fail)(
       `【253】所有 mountFromComposition 调用点的 id 都已登记（调用点 ${callSites253.length} 个，未登记：${unregistered253.map(([p, id]) => `${id}@${p.split(/[\\/]/).pop()}`).join("/") || "无"}）`
     );
+    // ⛔⛔ 10-03 启动即崩事故守卫：`TypeError: Cannot read properties of undefined (reading 'name')` @ mountFeature
+    //    根因 = 生成物 import 了域，而域要 import 生成物查"我启用了没" ⇒ **循环依赖**，
+    //    CJS 下域模块尚未求值完，plugin 值就是 undefined。所以：生成物**不许有任何相对 import**。
+    (!/from\s+"\.\//.test(genSrc) ? ok : fail)(
+      "【253】生成物是**纯数据**（⛔ 不 import 任何域 —— 成环会让 plugin 变 undefined，启动即崩）"
+    );
+    // ⛔ 真跑：生成物是数据模块 ⇒ 可以安全 require（不碰 electron）。
+    //    "构建通过、静态断言全绿、一启动就崩" 这类问题只有**真加载**才看得见（本次事故就是）。
+    try {
+      const genJs = createRequire(import.meta.url)(join(ROOT, "dist-electron", "composition.gen.js"));
+      const enabledCount = (composition.domains || []).filter((d) => d && d.enabled).length;
+      (Array.isArray(genJs.ENABLED) && genJs.ENABLED.length === enabledCount ? ok : fail)(
+        `【253】生成物可加载且 ENABLED 条数一致（${Array.isArray(genJs.ENABLED) ? genJs.ENABLED.length : "?"} vs 配置 ${enabledCount}）`
+      );
+    } catch (e) {
+      fail(`【253】生成物可加载（dist-electron/composition.gen.js 加载即崩）：${String((e && e.message) || e).slice(0, 90)}`);
+    }
   }
 
 }

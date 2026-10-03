@@ -197,6 +197,11 @@ const mounted = new Set<string>();
  *    释放后自动从清单移除，可以重挂。
  */
 export function mountFeature<T>(plugin: Plugin<T>, config?: T): Fiber {
+  // ⛔ 传进来 undefined 时旧写法读 `plugin.name` 会把整个宿主带走（10-03 实测事故：
+  //    CJS 循环依赖导致 plugin 为 undefined ⇒ 启动即崩，且错误信息指向容器而非根因）。
+  if (!plugin) {
+    throw new Error("[mountFeature] 插件是 undefined —— 多半是**循环依赖**或导出名写错（见 electron/composition-runtime.ts 的说明）");
+  }
   const name = typeof plugin === "function" ? "" : plugin.name || "";
   if (name && mounted.has(name)) throw new Error(`[mountFeature] 插件已挂载：${name}`);
   const fiber = rootContext.plugin(plugin, config);
