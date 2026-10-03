@@ -42,8 +42,45 @@ export type VoiceSettings = {
   wake: { enabled: boolean; phrase: string };
   /** 悬浮球：是否显示 + 是否弹出随机的短提示气泡 */
   ball: { visible: boolean; hints: boolean };
+  /**
+   * 已下载资源的启用状态（10-03 新增）。
+   *
+   * ⛔ 为什么存「设置」而不是模型目录旁边放标记文件：设置文件已有版本迁移 + 原子写 + 损坏回退，
+   *    而模型目录会被 `models-uninstall` 整个删掉 ⇒ 标记文件会一起消失，"停用"状态活不过卸载。
+   *    资源本身（几百 MB 文件）与状态（几十字节）**生命周期不同**，必须分开放。
+   *
+   * 语义三层（10-03 用户要求：启用 / 停用 / 删除）：
+   *   - 缺省或 `true`  = 启用（老档案没有这个字段 ⇒ 全部启用，升级不改变任何现有行为）
+   *   - `false`         = 停用：文件**保留在磁盘**，只是不被加载；随时可改回 true，无需重下
+   *   - 删除是独立动作（物理删文件），与 enabled 无关
+   */
+  resources?: Partial<Record<VoiceResourceKind, boolean>>;
   /** 结构版本（迁移用） */
   version?: number;
+};
+
+/**
+ * 可单独启用/停用/删除的已下载资源。
+ *
+ * - `base`：语音基础模型（识别 zipformer + 端点检测 silero + 合成 vits-zh-ll，约 270MB）
+ * - `zipvoice`：音色克隆模型（156MB）
+ * - `kws`：唤醒关键词模型（31MB）
+ *
+ * ⛔ 这里是**白名单**而不是任意字符串：主进程会拿它拼路径删文件，未登记的 kind 一律拒绝
+ *    （渲染层传什么都不能越界删 `<userData>` 里的别的东西）。
+ */
+export const VOICE_RESOURCE_KINDS = ["base", "zipvoice", "kws"] as const;
+export type VoiceResourceKind = (typeof VOICE_RESOURCE_KINDS)[number];
+
+export function isVoiceResourceKind(v: unknown): v is VoiceResourceKind {
+  return typeof v === "string" && (VOICE_RESOURCE_KINDS as readonly string[]).includes(v);
+}
+
+/** 资源的中文名（主进程回给渲染层显示，避免两边各写一份字面量）。 */
+export const VOICE_RESOURCE_LABELS: Record<VoiceResourceKind, string> = {
+  base: "语音基础模型",
+  zipvoice: "音色克隆模型",
+  kws: "语音唤醒模型",
 };
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
@@ -66,6 +103,8 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   dictationHotkey: { enabled: false, accelerator: "Alt+Space" },
   wake: { enabled: false, phrase: "小柯小柯" },
   ball: { visible: true, hints: true },
+  // 10-03：资源默认全部启用（老档案缺这个字段时也是这个效果 ⇒ 升级不改变任何现有行为）
+  resources: {},
   version: VOICE_SETTINGS_VERSION,
 };
 
@@ -210,8 +249,29 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
     },
     aec: { mode: aecMode === "on" || aecMode === "off" ? aecMode : d.aec!.mode },
     modelHost,
+    // ⛔ 必须显式透传（10-03）：这里是显式字段映射，漏写 resources 的后果是
+    //    「用户点了停用 → 保存 → 下次读回来又是启用」，而且**不报任何错**。
+    //    同款坑：09-12 profileId 被吞、09-12 zipvoice 状态被吞。
+    resources: mergeResources(raw.resources),
     version: VOICE_SETTINGS_VERSION,
   };
+}
+
+/**
+ * 规范化资源启用状态：**只保留白名单里的 kind**，且值严格归一为布尔。
+ *
+ * 过滤未登记 kind 的原因：这份 JSON 用户可手改，而它会被主进程用来决定
+ * 「这个资源启不启用」。留未知 key 不会造成越界（消费侧只按 kind 查），
+ * 但会让文件越攒越脏、也让「读回来等于写进去」这条判据失效。
+ */
+function mergeResources(raw: unknown): Partial<Record<VoiceResourceKind, boolean>> {
+  const out: Partial<Record<VoiceResourceKind, boolean>> = {};
+  if (!raw || typeof raw !== "object") return out;
+  const src = raw as Record<string, unknown>;
+  for (const kind of VOICE_RESOURCE_KINDS) {
+    if (Object.prototype.hasOwnProperty.call(src, kind)) out[kind] = src[kind] !== false;
+  }
+  return out;
 }
 
 /**
@@ -251,3 +311,34 @@ function clampNum(v: unknown, min: number, max: number, fallback: number): numbe
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, n));
 }
+
+/**
+ * 某个已下载资源当前是否启用（10-03）。
+ *
+ * ⛔ **缺省 = 启用**：`resources[kind] !== false`。老档案没有这个字段，
+ *    迁移后也是启用 ⇒ 升级不改变任何现有行为（这条是本功能的兼容底线）。
+ */
+export function isVoiceResourceEnabled(settings: VoiceSettings, kind: VoiceResourceKind): boolean {
+  return settings.resources?.[kind] !== false;
+}
+
+/** 停用某个资源（不碰磁盘上的文件）。返回合并后的完整设置。 */
+export function setVoiceResourceEnabled(
+  userDataDir: string,
+  kind: VoiceResourceKind,
+  enabled: boolean
+): VoiceSettings {
+  const current = loadVoiceSettings(userDataDir);
+  const resources = { ...(current.resources ?? {}), [kind]: enabled };
+  return saveVoiceSettings(userDataDir, { resources });
+}
+
+/** 把三种资源状态回给渲染层：是否启用 + 是否已下载（两者正交，四种组合都有意义）。 */
+export function voiceResourceStates(settings: VoiceSettings): Record<VoiceResourceKind, { enabled: boolean; label: string }> {
+  const out = {} as Record<VoiceResourceKind, { enabled: boolean; label: string }>;
+  for (const kind of VOICE_RESOURCE_KINDS) {
+    out[kind] = { enabled: isVoiceResourceEnabled(settings, kind), label: VOICE_RESOURCE_LABELS[kind] };
+  }
+  return out;
+}
+

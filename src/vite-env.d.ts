@@ -678,6 +678,12 @@ interface Window {
     listTerminals(): Promise<{ id: string; alive: boolean; cwd: string }[]>;
     validatePlugin(target: string): Promise<{ ok: boolean; root: string; manifestPath?: string; issues: string[]; inventory: { skills: number; commands: number; agents: number; hooks: number }; name?: string }>;
     chooseDirectoryAt(startPath: string): Promise<string | null>;
+    /* 10-03 资源停用/启用（不删文件，可逆） */
+    voiceResourceSetEnabled(input: { kind: string; enabled: boolean }): Promise<{ ok: boolean; error?: string; enabled?: boolean }>;
+    /* 10-03 按资源删除（物理删文件，渲染层二次确认） */
+    voiceResourceDelete(input: { kind: string }): Promise<{ ok: boolean; error?: string }>;
+    /* 10-03 单个资源的启用状态与占用 */
+    voiceResourceStatus(input: { kind: string }): Promise<any>;
     voiceStop(): Promise<{ ok: boolean }>;
     voiceProfilesImport(): Promise<any>;
     voiceProfilesRecord(input: { samples: number[]; sampleRate: number }): Promise<any>;
@@ -750,7 +756,8 @@ interface Window {
     voicePresetList(): Promise<{ presets: { id: string; name: string; desc: string; lang: string; applied: boolean }[] }>;
     voicePresetApply(presetId: string): Promise<{ ok: boolean; profile?: any; existed?: boolean; error?: string }>;
     voiceProfilesSelect(id: string): Promise<{ ok: boolean; profileId: string }>;
-    voiceModelsStatus(): Promise<{ ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; root: string; repos: { id: string; lastSegment: string }[]; zipvoice?: { ready: boolean; bytes: number; dir: string }; kws?: { ready: boolean; bytes: number; dir: string }; }>;
+    /* 10-03：新增 baseEnabled / 各资源 enabled —— 启用与已下载正交，UI 靠它们组合出四态 */
+    voiceModelsStatus(): Promise<{ ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; root: string; repos: { id: string; lastSegment: string }[]; baseEnabled?: boolean; zipvoice?: { ready: boolean; enabled?: boolean; bytes: number; dir: string }; kws?: { ready: boolean; enabled?: boolean; bytes: number; dir: string }; resources?: Record<string, { enabled: boolean; label: string }>; }>;
     voiceModelsInstall(): Promise<{ ok: boolean; error?: string }>;
     voiceZipvoiceInstall(): Promise<{ ok: boolean; error?: string }>;
     voiceModelsImport(input: { sourceDir: string }): Promise<{ ok: boolean; failures: string[] }>;

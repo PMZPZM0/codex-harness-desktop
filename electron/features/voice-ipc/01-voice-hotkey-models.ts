@@ -8,6 +8,7 @@ import { app, dialog, globalShortcut, ipcMain, shell, systemPreferences } from "
 import { VoiceService } from "../../voice/voice-service";
 import { ALL_VOICE_REPOS, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "../../voice/model-manifest";
 import { ensureZipvoice, modelsSizeOnDisk, voiceModelsStatus } from "../../voice/model-store";
+import { isVoiceResourceEnabled, loadVoiceSettings, voiceResourceStates } from "../../voice/voice-settings";
 import { toolsRoot } from "../../toolchain";
 import { sendToWindow } from "../window-bus";
 
@@ -148,6 +149,11 @@ export function registerVoiceIpc1(deps: { voiceService: VoiceService; voiceModel
 
   ipcMain.handle("voice:models-status", async () => {
     const status = await voiceModelsStatus(voiceModelsRoot, ALL_VOICE_REPOS);
+    // ⛔ 10-03：启用状态要与"是否就绪"**分开**回传 —— 两者正交：
+    //    停用中的资源文件仍在磁盘（installed 仍为 true），只是不加载（enabled=false）。
+    //    只回一个就必然丢信息：回 installed 会让「停用」显示成「已就绪」，
+    //    回 enabled 会让「没下载」显示成「已停用」。渲染层靠这两个字段组合出四态。
+    const settings = loadVoiceSettings(app.getPath("userData"));
     return {
       ...status,
       bytes: modelsSizeOnDisk(voiceModelsRoot),
@@ -155,15 +161,33 @@ export function registerVoiceIpc1(deps: { voiceService: VoiceService; voiceModel
       // 提示 UI「本地导入」该期望的目录结构（HF 仓库 id 很长，用户需要明确看到）
       repos: ALL_VOICE_REPOS.map((r) => ({ id: r.repo, lastSegment: r.repo.split("/").pop() ?? r.repo })),
       // 音色克隆模型（ZipVoice，归档型资源，单独安装）：UI 按它显示独立条目
-      zipvoice: { ready: zipvoiceReady(voiceModelsRoot), bytes: ZIPVOICE_ARCHIVE.bytes + ZIPVOICE_ARCHIVE.vocoder.bytes, dir: ZIPVOICE_DIR },
+      zipvoice: {
+        ready: zipvoiceReady(voiceModelsRoot),
+        enabled: isVoiceResourceEnabled(settings, "zipvoice"),
+        bytes: ZIPVOICE_ARCHIVE.bytes + ZIPVOICE_ARCHIVE.vocoder.bytes,
+        dir: ZIPVOICE_DIR,
+      },
       // 语音唤醒关键词模型（KWS，归档型资源，单独安装）：唤醒卡片按它决定显示「一键下载」还是「已就绪」
-      kws: { ready: kwsReady(voiceModelsRoot), bytes: KWS_ARCHIVE.bytes, dir: KWS_DIR },
+      kws: {
+        ready: kwsReady(voiceModelsRoot),
+        enabled: isVoiceResourceEnabled(settings, "kws"),
+        bytes: KWS_ARCHIVE.bytes,
+        dir: KWS_DIR,
+      },
+      // 基础模型：readyFiles/totalFiles 已说明装了多少，这里补启用状态
+      baseEnabled: isVoiceResourceEnabled(settings, "base"),
+      resources: voiceResourceStates(settings),
     };
   });
 
   /** 音色克隆模型的安装与取消（归档型资源：GitHub release 整包 + 声码器，按需下载）。 */
   let zipvoiceAbort: AbortController | null = null;
   ipcMain.handle("voice:zipvoice-install", async () => {
+    // ⛔ 10-03：停用状态下拒绝下载。停用 = "暂时不要用但别删"，若还照下 156MB
+    //    就成了"下完不用"，与用户预期相反，也会白耗流量。
+    if (!isVoiceResourceEnabled(loadVoiceSettings(app.getPath("userData")), "zipvoice")) {
+      return { ok: false, error: "音色克隆模型已被停用 —— 请先重新启用再下载" };
+    }
     if (zipvoiceAbort) return { ok: false, error: "正在安装中" };
     zipvoiceAbort = new AbortController();
     try {
@@ -193,6 +217,10 @@ export function registerVoiceIpc1(deps: { voiceService: VoiceService; voiceModel
     const { ensureKws } = require("../../voice/model-store");
     const { kwsReady } = require("../../voice/model-manifest");
     if (kwsReady(voiceModelsRoot)) return { ok: true };
+    // ⛔ 10-03：同上，停用状态下不下载（停用是"暂时不用"，不是"照下但不用"）
+    if (!isVoiceResourceEnabled(loadVoiceSettings(app.getPath("userData")), "kws")) {
+      return { ok: false, error: "语音唤醒模型已被停用 —— 请先重新启用再下载" };
+    }
     if (kwsAbort) return { ok: false, error: "正在安装中" };
     kwsAbort = new AbortController();
     try {

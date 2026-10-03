@@ -357,6 +357,12 @@ contextBridge.exposeInMainWorld("codex", {
   listTerminals: () => __ipc("terminal:list", 0, []),
   validatePlugin: (target: string) => __ipc("plugin:validate", 1, [{ path: target }]),
   chooseDirectoryAt: (startPath: string) => __ipc("dialog:directory-at", 1, [startPath]),
+  /* 10-03 资源停用/启用（不删文件，可逆） */
+  voiceResourceSetEnabled: (input: { kind: string; enabled: boolean }) => __ipc("voice:resource-set-enabled", 1, [input]) as Promise<{ ok: boolean; error?: string; enabled?: boolean }>,
+  /* 10-03 按资源删除（物理删文件，渲染层二次确认） */
+  voiceResourceDelete: (input: { kind: string }) => __ipc("voice:resource-delete", 1, [input]) as Promise<{ ok: boolean; error?: string }>,
+  /* 10-03 单个资源的启用状态与占用 */
+  voiceResourceStatus: (input: { kind: string }) => __ipc("voice:resource-status", 1, [input]) as Promise<any>,
   voiceStop: () => __ipc("voice:stop", 0, []) as Promise<{ ok: boolean }>,
   voiceProfilesImport: () => __ipc("voice:profiles-import", 0, []) as Promise<any>,
   voiceProfilesRecord: (input: { samples: number[]; sampleRate: number }) => __ipc("voice:profiles-record", 1, [input]) as Promise<any>,
@@ -429,6 +435,7 @@ contextBridge.exposeInMainWorld("codex", {
   voicePresetList: () => __ipc("voice:preset-list", 0, []),
   voicePresetApply: (presetId: string) => __ipc("voice:preset-apply", 1, [presetId]),
   voiceProfilesSelect: (id: string) => __ipc("voice:profiles-select", 1, [id]),
+  /* 10-03：新增 baseEnabled / 各资源 enabled —— 启用与已下载正交，UI 靠它们组合出四态 */
   voiceModelsStatus: () => __ipc("voice:models-status", 0, []),
   voiceModelsInstall: () => __ipc("voice:models-install", 0, []),
   voiceZipvoiceInstall: () => __ipc("voice:zipvoice-install", 0, []),

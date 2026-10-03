@@ -10,7 +10,7 @@
  * 模型数据走 `<userData>/voice-models/` 按需下载）。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, ExternalLink, FolderOpen, LoaderCircle, Mic, X } from "lucide-react";
+import { Download, ExternalLink, FolderOpen, LoaderCircle, Mic, Power, Trash2, X } from "lucide-react";
 
 type Status = {
   ready: number;
@@ -19,9 +19,50 @@ type Status = {
   root: string;
   repos: { id: string; lastSegment: string }[];
   /** 音色克隆模型（ZipVoice）就绪状态——主进程新增字段必须在这里带出来，否则 UI 永远显示未安装 */
-  zipvoice?: { ready: boolean; bytes?: number; dir?: string };
+  zipvoice?: { ready: boolean; enabled?: boolean; bytes?: number; dir?: string };
+  /** 语音唤醒关键词模型（KWS） */
+  kws?: { ready: boolean; enabled?: boolean; bytes?: number; dir?: string };
+  /** 基础模型是否启用（10-03 三态；缺省 true = 启用，兼容老主进程） */
+  baseEnabled?: boolean;
 };
 type DownloadState = { percent: number; message: string; mode: "download" | "import" } | null;
+
+/** 可三态管理的资源种类（与主进程 VOICE_RESOURCE_KINDS 对齐）。 */
+type ResourceKind = "base" | "zipvoice" | "kws";
+
+/**
+ * 单个资源的四态（10-03）。
+ *
+ * ⛔ 为什么是四态而不是「启用/停用」两态：**「是否启用」与「是否已下载」是两个正交维度**，
+ *    组合出四种有意义的情况，UI 必须都能区分：
+ *      未安装        = 没下载过（谈不上启用/停用）
+ *      已停用        = 装着但不加载（文件在磁盘，启用后立即可用）
+ *      已就绪        = 装着且加载中
+ *      部分就绪      = 基础模型这种多文件资源只下了一部分（base 专属）
+ */
+type ResourceState = "not-installed" | "disabled" | "ready" | "partial";
+
+/** 由「已下载」+「启用」两个正交事实推出展示态。`enabled` 缺省 true = 启用（兼容老主进程）。 */
+function stateOf(installed: boolean, enabled: boolean, partial = false): ResourceState {
+  if (!installed) return "not-installed";
+  if (!enabled) return "disabled";
+  return partial ? "partial" : "ready";
+}
+
+const STATE_TEXT: Record<ResourceState, string> = {
+  "not-installed": "未安装",
+  disabled: "已停用",
+  ready: "已就绪",
+  partial: "未装全",
+};
+
+/** 徽标配色：ok=绿（可用）/ warn=琥珀（停用，不可用但文件在）/ missing=灰（没装） */
+const STATE_BADGE: Record<ResourceState, string> = {
+  "not-installed": "missing",
+  disabled: "warn",
+  ready: "ok",
+  partial: "warn",
+};
 
 export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: string) => void }) {
   const [status, setStatus] = useState<Status | null>(null);
@@ -36,6 +77,16 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
    *   **第一次点只展开确认条，第二次才真删** —— 既不抢焦点，也不是一击生效。
    */
   const [confirmUninstall, setConfirmUninstall] = useState(false);
+  /**
+   * 10-03 三态管理：每个资源一个待确认的删除动作（`null` = 不在确认态）。
+   * ⛔ 用 `kind` 而不是布尔量：三个资源各有各的确认态，一个 `confirmUninstall` 会让
+   *    「音色克隆」点删除时把「基础模型」的确认条也弹出来（同款"共享槽位两态"坑，09-23 返工过）。
+   */
+  const [confirmDelete, setConfirmDelete] = useState<ResourceKind | null>(null);
+  /** 正在切换启用状态的资源（按钮转圈 + 防连点） */
+  const [toggling, setToggling] = useState<ResourceKind | null>(null);
+  /** 正在删除的资源 */
+  const [deleting, setDeleting] = useState<ResourceKind | null>(null);
   const unsubRef = useRef<(() => void) | null>(null);
 
   const refresh = useCallback(() => {
@@ -48,7 +99,10 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
         repos: Array.isArray(s.repos) ? s.repos : [],
         // ⚠️ 这里是**显式字段映射**，主进程新增的字段必须在这里带出来，
         // 否则表现为「装完了状态一直显示未安装」（09-12 用户实测踩过：zipvoice 被丢掉）。
-        zipvoice: s.zipvoice,
+        // 10-03 同款坑第二次：enabled 漏了会让「已停用」显示成「已就绪」。
+        zipvoice: s.zipvoice ? { ...s.zipvoice, enabled: s.zipvoice.enabled !== false } : undefined,
+        kws: s.kws ? { ...s.kws, enabled: s.kws.enabled !== false } : undefined,
+        baseEnabled: s.baseEnabled !== false,
       }))
       .catch((e: any) => onNotice(`读取语音模型状态失败：${e?.message ?? e}`));
   }, [onNotice]);
@@ -125,6 +179,59 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
   /** 音色克隆模型体积（主包 + 声码器，10-03 约 156MB）—— 确认文案要写准，别让用户以为"只是删个小文件" */
   const zipBytesMB = (status as any)?.zipvoice?.bytes ? Math.round((status as any).zipvoice.bytes / 1024 / 1024) : null;
 
+  // ── 四态（启用 × 已下载 正交）──
+  const baseInstalled = Boolean(status && status.total > 0 && status.ready > 0);
+  const baseState: ResourceState = stateOf(baseInstalled, status?.baseEnabled !== false, status ? status.ready < status.total : false);
+  const zipState: ResourceState = stateOf(zipReady, status?.zipvoice?.enabled !== false);
+  const baseDisabled = baseState === "disabled";
+  const zipDisabled = zipState === "disabled";
+
+  /**
+   * 启用 / 停用：可逆、不碰磁盘文件。
+   *
+   * ⛔ 文案必须说清「停用不省空间」——用户看到文件还在 270MB 就会以为没生效。
+   *    停用省的是加载开销（不占内存/CPU），不是磁盘。这点不说清，下一条反馈
+   *    就是「停用了但还是占 270MB」。
+   */
+  const setEnabled = useCallback(async (kind: ResourceKind, enabled: boolean, label: string) => {
+    setToggling(kind);
+    try {
+      const r: any = await window.codex.voiceResourceSetEnabled({ kind, enabled });
+      if (!r?.ok) onNotice(r?.error ?? "操作失败");
+      else onNotice(enabled ? `${label}已启用` : `${label}已停用（文件仍保留在本机，重新启用即可恢复，无需重新下载）`);
+      refresh();
+    } catch (e: any) {
+      onNotice(`操作失败：${e?.message ?? e}`);
+    } finally {
+      setToggling(null);
+    }
+  }, [onNotice, refresh]);
+
+  /** 删除：物理删除，走项目惯例的二次确认（第一次点只展开确认条）。 */
+  const doDelete = useCallback(async (kind: ResourceKind, label: string) => {
+    setConfirmDelete(null);
+    setDeleting(kind);
+    try {
+      const r: any = await window.codex.voiceResourceDelete({ kind });
+      if (!r?.ok) onNotice(r?.error ?? "删除失败");
+      else onNotice(`${label}已删除，需要时可重新下载`);
+      refresh();
+    } catch (e: any) {
+      onNotice(`删除失败：${e?.message ?? e}`);
+    } finally {
+      setDeleting(null);
+    }
+  }, [onNotice, refresh]);
+
+  /** 停用中的资源主进程会拒绝删除；这里提前拦一层并解释原因，别让用户点了才吃报错。 */
+  const requestDelete = useCallback((kind: ResourceKind, label: string) => {
+    if (kind === "base" ? baseDisabled : kind === "zipvoice" ? zipDisabled : false) {
+      onNotice(`「${label}」处于停用状态，请先重新启用再删除`);
+      return;
+    }
+    setConfirmDelete(kind);
+  }, [baseDisabled, zipDisabled, onNotice]);
+
   const installZipvoice = useCallback(() => {
     setZipDownloading({ percent: 0, message: "准备下载音色克隆模型…", mode: "download" });
     window.codex.voiceZipvoiceInstall().catch((e: any) => { setZipDownloading(null); onNotice(`下载失败：${e?.message ?? e}`); });
@@ -149,14 +256,20 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
             <code className="voice-devtools-path-inline" title={status.root}>{status.root}</code>
           )}
         </div>
-        <span className={`voice-devtools-badge ${ready ? "ok" : "missing"}`}>
-          {status ? (ready ? "已就绪" : `${sizeMB} MB · ${status.ready}/${status.total}`) : "读取中…"}
+        <span className={`voice-devtools-badge ${STATE_BADGE[baseState]}`}>
+          {status ? (baseState === "ready" ? "已就绪" : baseState === "disabled" ? "已停用" : baseState === "partial" ? `未装全 ${status.ready}/${status.total}` : `${sizeMB} MB · ${status.ready}/${status.total}`) : "读取中…"}
         </span>
       </div>
 
       <div className="voice-devtools-body">
         <div className="voice-devtools-desc">
           <strong>总大小约 270MB</strong>——首次使用按需下载（HF / hf-mirror 镜像自动测速），或从本地目录导入。
+          {baseDisabled && (
+            <div className="voice-resource-note">
+              该模型已<strong>停用</strong>：文件仍保留在本机（不占额外空间，也不需要重新下载），
+              但语音功能不会加载它。重新启用后立即恢复。
+            </div>
+          )}
         </div>
         {status && !ready && status.repos.length > 0 && (
           <details className="voice-devtools-import-hint">
@@ -190,27 +303,64 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
           <button className="secondary-setting" onClick={cancel}>
             <X size={13} />取消{downloading.mode === "import" ? "导入" : "下载"}
           </button>
-        ) : ready ? (
+        ) : baseInstalled ? (
           <>
             <button className="secondary-setting" onClick={reveal}>
               <FolderOpen size={13} />打开目录
             </button>
+            {/* 停用 ↔ 启用：可逆、不删文件。停用态下仍保留"打开目录"和"启用"，
+                免得用户停用后界面变成死路（只能刷新或重装）。 */}
+            {baseDisabled ? (
+              <button
+                className="primary-setting"
+                disabled={toggling === "base"}
+                onClick={() => setEnabled("base", true, "语音基础模型")}
+              >
+                {toggling === "base" ? <LoaderCircle className="spin" size={13} /> : <Power size={13} />}启用
+              </button>
+            ) : (
+              <button
+                className="secondary-setting"
+                disabled={toggling === "base"}
+                onClick={() => setEnabled("base", false, "语音基础模型")}
+                title="停用后不加载该模型（省内存/CPU），文件仍保留在本机，可随时重新启用"
+              >
+                {toggling === "base" ? <LoaderCircle className="spin" size={13} /> : <Power size={13} />}停用
+              </button>
+            )}
+            {confirmDelete === "base" ? (
+              <>
+                <span className="voice-uninstall-hint">
+                  将删除语音基础模型{sizeMB ? `（约 ${sizeMB} MB` : ""}，<strong>需重新下载才能恢复</strong>。
+                  若只是想暂时不用，请改用「停用」。
+                </span>
+                <button className="secondary-setting voice-uninstall" onClick={() => doDelete("base", "语音基础模型")}>
+                  <X size={13} />确认删除
+                </button>
+                <button className="secondary-setting" onClick={() => setConfirmDelete(null)}>取消</button>
+              </>
+            ) : (
+              <button className="secondary-setting voice-uninstall" onClick={() => requestDelete("base", "语音基础模型")}>
+                <Trash2 size={13} />删除
+              </button>
+            )}
+            {/* 全部清空（含音色克隆与唤醒模型）——与「删除」区分：那个只删本卡片这一个资源 */}
             {confirmUninstall ? (
               <>
                 <span className="voice-uninstall-hint">
-                  将删除全部语音模型
+                  将删除<strong>全部</strong>语音模型
                   {sizeMB ? `（基础约 ${sizeMB} MB` : ""}
                   {zipBytesMB ? ` + 音色克隆约 ${zipBytesMB} MB` : ""}
                   ，需重新下载才能恢复。<strong>你的音色（参考音频）不会被删除。</strong>
                 </span>
                 <button className="secondary-setting voice-uninstall" onClick={uninstall}>
-                  <X size={13} />确认卸载
+                  <X size={13} />确认全部清空
                 </button>
                 <button className="secondary-setting" onClick={() => setConfirmUninstall(false)}>取消</button>
               </>
             ) : (
               <button className="secondary-setting voice-uninstall" onClick={() => setConfirmUninstall(true)}>
-                <X size={13} />卸载
+                <X size={13} />全部清空
               </button>
             )}
           </>
@@ -238,12 +388,18 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
           <strong>音色克隆模型</strong>
           <span className="voice-devtools-sub">ZipVoice zero-shot 克隆（中英双语 · 约 156MB）——导入或录制一段参考音频，就能用那个嗓音朗读任意文本；现有 5 个内置音色不受影响</span>
         </div>
-        <span className={`voice-devtools-badge ${zipReady ? "ok" : "missing"}`}>
-          {status ? (zipReady ? "已就绪" : "未安装") : "读取中…"}
+        <span className={`voice-devtools-badge ${STATE_BADGE[zipState]}`}>
+          {status ? STATE_TEXT[zipState] : "读取中…"}
         </span>
       </div>
 
       <div className="voice-devtools-body">
+        {zipDisabled && (
+          <div className="voice-resource-note">
+            该模型已<strong>停用</strong>：156MB 文件仍保留在本机（无需重新下载），但语音合成不会使用它 ——
+            选择「我的音色」时会回退到内置音色。重新启用后立即恢复。
+          </div>
+        )}
         {zipDownloading && (
           <div className="voice-devtools-progress">
             <div className="voice-devtools-progress-bar"><span style={{ width: `${zipDownloading.percent >= 0 ? zipDownloading.percent : 6}%` }} /></div>
@@ -258,9 +414,45 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
             <X size={13} />取消下载
           </button>
         ) : zipReady ? (
-          <button className="secondary-setting" onClick={reveal}>
-            <FolderOpen size={13} />打开模型目录
-          </button>
+          <>
+            <button className="secondary-setting" onClick={reveal}>
+              <FolderOpen size={13} />打开模型目录
+            </button>
+            {zipDisabled ? (
+              <button
+                className="primary-setting"
+                disabled={toggling === "zipvoice"}
+                onClick={() => setEnabled("zipvoice", true, "音色克隆模型")}
+              >
+                {toggling === "zipvoice" ? <LoaderCircle className="spin" size={13} /> : <Power size={13} />}启用
+              </button>
+            ) : (
+              <button
+                className="secondary-setting"
+                disabled={toggling === "zipvoice"}
+                onClick={() => setEnabled("zipvoice", false, "音色克隆模型")}
+                title="停用后合成会回退到内置音色，156MB 文件仍保留在本机，可随时重新启用"
+              >
+                {toggling === "zipvoice" ? <LoaderCircle className="spin" size={13} /> : <Power size={13} />}停用
+              </button>
+            )}
+            {confirmDelete === "zipvoice" ? (
+              <>
+                <span className="voice-uninstall-hint">
+                  将删除音色克隆模型{zipBytesMB ? `（约 ${zipBytesMB} MB` : ""}，<strong>需重新下载才能恢复</strong>。
+                  若只是想暂时不用，请改用「停用」。<strong>你已导入/录制的音色（参考音频）不会被删除。</strong>
+                </span>
+                <button className="secondary-setting voice-uninstall" onClick={() => doDelete("zipvoice", "音色克隆模型")}>
+                  <X size={13} />确认删除
+                </button>
+                <button className="secondary-setting" onClick={() => setConfirmDelete(null)}>取消</button>
+              </>
+            ) : (
+              <button className="secondary-setting voice-uninstall" onClick={() => requestDelete("zipvoice", "音色克隆模型")}>
+                <Trash2 size={13} />删除
+              </button>
+            )}
+          </>
         ) : (
           <button className="primary-setting" onClick={installZipvoice}>
             <Download size={13} />下载音色克隆模型

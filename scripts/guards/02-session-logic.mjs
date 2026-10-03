@@ -1026,11 +1026,86 @@ console.log(C.bold("\n【4e】语音唤醒关键词模型（KWS，读音匹配�
     warn("找不到语音源码，跳过 KWS 接线守卫");
   } else {
     // ① 首选关键词模型、失败再回退识别模型（顺序反了就等于白装）
-    const kwsFirst = serviceSrc3.indexOf("if (kwsReady(this.deps.modelsRoot))") > 0
-      && serviceSrc3.indexOf("if (kwsReady(this.deps.modelsRoot))") < serviceSrc3.indexOf("startWakeAsrFallback(");
+    // ⛔ 10-03：条件已从 `if (kwsReady(...))` 变成 `if (kwsEnabled && kwsReady(...))`
+    //    （前面加了「用户是否停用了 KWS」的判断）。锚点必须跟着走，否则 indexOf 得 -1、
+    //    断言会以「顺序不对」为名报红，而顺序其实没变 —— 这是**判据失效**，不是回归。
+    //    同时断言停用判断存在，否则「停用」会退化成纯装饰（文件在磁盘上照用）。
+    const kwsAnchor = "if (kwsEnabled && kwsReady(this.deps.modelsRoot))";
+    const kwsFirst = serviceSrc3.indexOf(kwsAnchor) > 0
+      && serviceSrc3.indexOf(kwsAnchor) < serviceSrc3.indexOf("startWakeAsrFallback(");
     kwsFirst
       ? ok("KWS：唤醒优先用关键词模型，装不上/转不出关键词才回退识别模型")
       : fail("KWS：引擎选择顺序不对（回退分支排在关键词模型之前）");
+
+    // ①bis 停用必须真生效：KWS 停用后不能因为"文件还在磁盘"就照用
+    /kwsEnabled\s*=\s*isVoiceResourceEnabled\(/.test(serviceSrc3)
+      ? ok("KWS：停用后不再走关键词模型（文件保留但不加载）")
+      : fail("KWS：停用未生效 —— 停用后仍会加载磁盘上的关键词模型（假停用）");
+
+    // ①ter 三态管理的三个消费点（10-03）
+    //   ⛔ 这三条是「停用」这个功能的**全部**判据所在。少任何一条，那个资源就只是
+    //   UI 上的一个装饰开关（用户点了没反应 = 最坏的假功能）。改动这三个消费点时必须同轮更新。
+    //   ① base：停用后拒绝下载（否则变成"照下 270MB 但不用"）
+    //      ⛔ 拆成两个独立断言、**不把它们串在一个正则里**：串起来就要赌两个记号之间的
+    //      距离与括号层级（第一版 `[^)]*"base"\)` 就因为 `if (` 多一层括号而在第一个 `)` 处截断，
+    //      明明实现正确却报红）。各自的判据只用紧邻的记号，稳。
+    const baseGateCall = /isVoiceResourceEnabled\(loadVoiceSettings\(this\.deps\.userDataDir\),\s*"base"\)/.test(serviceSrc3);
+    const baseGateMsg = /语音基础模型已被停用/.test(serviceSrc3);
+    baseGateCall && baseGateMsg
+      ? ok("资源三态：基础模型停用后拒绝下载（不产生「下完不用」）")
+      : fail(`资源三态：基础模型停用后仍可下载 —— 停用语义被架空（判据=${baseGateCall}/${baseGateMsg}）`);
+
+    //   ② zipvoice：合成时判定停用 ⇒ 回退内置音色，且**带日志说明**（静默回退会被当成"音色坏了"）
+    //      同样拆开断言（记号之间隔着 if 条件与 return，串起来就是在赌距离）
+    const zipGateCall = /zipEnabled\s*=\s*isVoiceResourceEnabled\(/.test(serviceSrc3);
+    const zipGateBranch = /if \(wanted && zipEnabled && zipvoiceReady\(/.test(serviceSrc3);
+    const zipGateLog = /音色克隆模型已被停用/.test(serviceSrc3);
+    zipGateCall && zipGateBranch && zipGateLog
+      ? ok("资源三态：音色克隆停用后合成回退内置音色（并记日志说明原因）")
+      : fail(`资源三态：音色克隆停用后仍走克隆模式，或回退时无任何说明（判据=${zipGateCall}/${zipGateBranch}/${zipGateLog}）`);
+
+    // ③ zipvoice/kws 的安装入口也要拦停用（主进程侧）
+    //    ⛔ 必须真读到源文件，否则正则对着空串跑会**恒真** —— 恒真的守卫比没有守卫更危险
+    //    （它给人"已覆盖"的错觉）。读不到就报 fail。
+    const voiceIpcSrc = readSrc3("electron/features/voice-ipc/03-voice-misc.ts")
+      + readSrc3("electron/features/voice-ipc/01-voice-hotkey-models.ts");
+    const ipcGate = !!voiceIpcSrc
+      && /voice:zipvoice-install[\s\S]{0,900}isVoiceResourceEnabled\([\s\S]{0,200}"zipvoice"/.test(voiceIpcSrc)
+      && /voice:kws-install[\s\S]{0,900}isVoiceResourceEnabled\([\s\S]{0,200}"kws"/.test(voiceIpcSrc);
+    ipcGate
+      ? ok("资源三态：音色克隆 / 唤醒模型的下载入口也拦停用态")
+      : fail(`资源三态：下载入口未拦停用态（源文件${voiceIpcSrc ? "已读到但判据未命中" : "没读到 ⇒ 判据恒真，已按失败处理"}）`);
+
+    //   ④ 删除的权限收口：白名单 + 路径必须在 voice-models 内（防目录穿越）
+    const delGate = !!voiceIpcSrc
+      && /voice:resource-delete[\s\S]{0,2500}isVoiceResourceKind\(kind\)/.test(voiceIpcSrc)
+      && /voice:resource-delete[\s\S]{0,2500}startsWith\(root \+ path\.sep\)/.test(voiceIpcSrc);
+    delGate
+      ? ok("资源三态：删除走白名单 + 路径必须在模型目录内（防穿越）")
+      : fail("资源三态：删除缺少白名单或路径校验 —— 可越界删 <userData> 里的其它目录");
+
+    //   ⑤ 停用中的资源拒绝删除（否则「停用=安全暂存」会被一次误点删除绕过）
+    const disabledDeleteGuard = !!voiceIpcSrc
+      && /voice:resource-delete[\s\S]{0,2500}处于停用状态，请先重新启用再删除/.test(voiceIpcSrc);
+    disabledDeleteGuard
+      ? ok("资源三态：停用中的资源拒绝删除")
+      : fail("资源三态：停用中的资源仍可删除 —— 停用失去「安全暂存」意义");
+
+    //   ⑥ 运行时总闸：refreshModelsReady 必须看停用状态（10-03 code review 抓到的漏洞）
+    //      ⛔ 这是最重要的一条：modelsReady 是语音链路总闸，若它只看"文件在不在"，
+    //         停用就只是 UI 装饰 —— 模型照样被加载、语音照样能跑（假停用）。
+    const readyGate = /async refreshModelsReady\([\s\S]{0,700}isVoiceResourceEnabled\([\s\S]{0,200}"base"/.test(serviceSrc3)
+      && /modelsUnavailableReason\s*=\s*"disabled"/.test(serviceSrc3);
+    readyGate
+      ? ok("资源三态：refreshModelsReady 看停用状态（停用后语音链路真停）")
+      : fail("资源三态：refreshModelsReady 只看文件在不在 ⇒ 基础模型停用是假功能（语音照跑）");
+
+    //   ⑦ 本地导入是**另一条**入口，只拦 installModels 等于没拦
+    const importGate = !!voiceIpcSrc
+      && /voice:models-import[\s\S]{0,700}isVoiceResourceEnabled\([\s\S]{0,200}"base"/.test(voiceIpcSrc);
+    importGate
+      ? ok("资源三态：本地导入入口也拦停用态（不会绕过下载侧把模型灌回来）")
+      : fail("资源三态：本地导入未拦停用态 —— 可绕过下载侧把 270MB 导回来");
 
     // ② 关键词落盘在 userData（模型目录只读语义），且命中即 reset（否则同句反复命中）
     const kwFile = /voice-kws/.test(serviceSrc3) && /keywords\.txt/.test(serviceSrc3);
