@@ -77,6 +77,13 @@
       "file": "features/drama-canvas.ts",
       "export": "dramaCanvasFeature",
       "config": null
+    },
+    {
+      "id": "pet",
+      "enabled": true,
+      "file": "features/pet-ipc.ts",
+      "export": "petFeature",
+      "config": null
     }
   ]
 }

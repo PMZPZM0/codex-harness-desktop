@@ -21,12 +21,14 @@
  * ⛔ 惰性求值：本模块**不得**在顶层调 `app.getPath()`（【91】复发防线：模块体早于
  *    main.ts 的 `app.setPath("userData")` 执行，会拿到默认目录导致路径静默漂移）。
  */
-import { app, ipcMain, shell } from "electron";
+import { app, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { petSignal } from "./pet-state";
 import { applyPetSettings, hidePetWindow, isPetVisible, petWindowBounds, pushPetConfig, setPetMoveHandler, showPetWindow } from "./pet-window";
+import { defineFeature } from "../context";
+import type { IpcHost } from "../ipc-host";
 
 /** 官方九态行名（v1）。顺序即行序，⛔ 别重排。 */
 export const PET_STATE_ROWS = [
@@ -237,39 +239,28 @@ export function resolveActivePet(settings = readPetSettings()): PetPackage | nul
 }
 
 /* ══════════════════════ IPC ══════════════════════ */
+/* P2 批次 6（10-03）：改插件形态 —— 十个 handler 的**实现**留在模块级函数里（逐字未改），
+   注册 / 卸载交给容器（`inject: ["ipc"]`，⛔ 不再直接 `ipcMain.handle`）。
+   ⛔ 十个通道名是对外契约：preload 桥接面 / ipc-registry 账本 / 守卫【232】都按**字面量**锚它们。 */
 
-ipcMain.handle("pet:list", () => scanPets());
-
-ipcMain.handle("pet:settings-get", () => ({ settings: readPetSettings(), active: resolveActivePet() }));
-
-ipcMain.handle("pet:settings-set", (_event, patch: Partial<PetSettings>) => {
+function setPetSettingsFromPatch(patch: Partial<PetSettings>) {
   const next = writePetSettings({ ...readPetSettings(), ...(patch ?? {}) });
   // 应用副作用（显隐 / 位置 / 缩放）交给窗口模块；它内部自己读设置
   applyPetSettings(next);
   publishPetConfig(next);
   return { settings: next, active: resolveActivePet(next) };
-});
+}
 
-ipcMain.handle("pet:state", () => ({ signal: petSignal(), open: isPetVisible(), bounds: petWindowBounds() }));
-
-/** 目录清单：给设置页显示"能放哪儿"+ 打开按钮。 */
-ipcMain.handle("pet:roots", () => petRoots().map(({ dir, source }) => ({
-  dir,
-  source,
-  exists: fs.existsSync(dir),
-  writable: source === "user",
-})));
-
-ipcMain.handle("pet:open-dir", async (_event, which?: string) => {
+async function openPetDir(which?: string) {
   const target = which === "user" || !which ? userPetDir() : String(which);
   // 目录不存在先建（打开不存在的路径在 Windows 上会静默什么都不发生）
   try { fs.mkdirSync(target, { recursive: true }); } catch { /* 外目录不可写时忽略 */ }
   const error = await shell.openPath(target);
   return { ok: !error, error: error || undefined, dir: target };
-});
+}
 
 /** 导入：把外部宠物包**复制**进 `<userData>/pets`（⛔ 不移动、不覆盖已有同名目录）。 */
-ipcMain.handle("pet:import", (_event, dir: string) => {
+function importPetDir(dir: string) {
   const source = path.resolve(String(dir ?? ""));
   const allowed = petRoots().some((r) => path.resolve(r.dir) === path.dirname(source));
   if (!allowed) return { ok: false, error: "只允许从已登记的宠物目录导入" };
@@ -284,27 +275,77 @@ ipcMain.handle("pet:import", (_event, dir: string) => {
     return { ok: false, error: (error as Error).message };
   }
   return { ok: true, id };
-});
+}
 
 /** 显隐（走独立通道，避免设置页为了开关宠物而整份重写设置）。 */
-ipcMain.handle("pet:toggle", () => {
+function togglePet() {
   const settings = readPetSettings();
   const next = writePetSettings({ ...settings, enabled: !settings.enabled });
   applyPetSettings(next);
   publishPetConfig(next);
   return { settings: next, open: isPetVisible() };
-});
+}
 
-ipcMain.handle("pet:show", () => {
+function showPet() {
   const next = writePetSettings({ ...readPetSettings(), enabled: true });
   showPetWindow(next);
   publishPetConfig(next);
   return { settings: next, open: isPetVisible() };
-});
+}
 
-ipcMain.handle("pet:hide", () => {
+function hidePet() {
   const next = writePetSettings({ ...readPetSettings(), enabled: false });
   hidePetWindow();
   publishPetConfig(next);
   return { settings: next, open: isPetVisible() };
+}
+
+export const petFeature = defineFeature<null>({
+  id: "pet",
+  inject: ["ipc"],
+  setup: (ctx) => {
+    const ipcHost = ctx.get<IpcHost>("ipc");
+    // inject 已在容器侧挡过一次；这里再挡一次只为把类型收紧（⛔ 不写 `!`：缺依赖要报得出来）
+    if (!ipcHost) throw new Error("pet: 缺少 ipc 服务（宿主未提供）");
+
+    ipcHost.handle("pet:list", () => scanPets());
+
+    ipcHost.handle("pet:settings-get", () => ({ settings: readPetSettings(), active: resolveActivePet() }));
+
+    ipcHost.handle("pet:settings-set", (_event, patch: Partial<PetSettings>) => setPetSettingsFromPatch(patch));
+
+    ipcHost.handle("pet:state", () => ({ signal: petSignal(), open: isPetVisible(), bounds: petWindowBounds() }));
+
+    /** 目录清单：给设置页显示"能放哪儿"+ 打开按钮。 */
+    ipcHost.handle("pet:roots", () => petRoots().map(({ dir, source }) => ({
+      dir,
+      source,
+      exists: fs.existsSync(dir),
+      writable: source === "user",
+    })));
+
+    ipcHost.handle("pet:open-dir", (_event, which?: string) => openPetDir(which));
+
+    ipcHost.handle("pet:import", (_event, dir: string) => importPetDir(dir));
+
+    ipcHost.handle("pet:toggle", () => togglePet());
+
+    ipcHost.handle("pet:show", () => showPet());
+
+    ipcHost.handle("pet:hide", () => hidePet());
+
+    // 生命期：卸载时摘掉本域十条通道（不摘 = 卸载后通道还在、实现已被回收 ⇒ 调用报错）
+    ctx.effect(() => {
+      ipcHost.removeHandler("pet:list");
+      ipcHost.removeHandler("pet:settings-get");
+      ipcHost.removeHandler("pet:settings-set");
+      ipcHost.removeHandler("pet:state");
+      ipcHost.removeHandler("pet:roots");
+      ipcHost.removeHandler("pet:open-dir");
+      ipcHost.removeHandler("pet:import");
+      ipcHost.removeHandler("pet:toggle");
+      ipcHost.removeHandler("pet:show");
+      ipcHost.removeHandler("pet:hide");
+    });
+  },
 });
