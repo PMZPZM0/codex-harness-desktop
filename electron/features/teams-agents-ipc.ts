@@ -131,6 +131,7 @@ ipcMain.handle("subagents:invoke", async (_event, input: { id?: string; name?: s
     modelProvider: provider,
     config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
   });
+  threadCwd.set(String(started.thread.id), String(input.cwd || process.cwd())); /* 文件变更追踪 cwd 登记（10-01） */
   const systemPrefix = `[子智能体 ${agent.name}] ${agent.systemPrompt}\n\n`;
   // 09-14：同样包 SYSTEM TASK 壳（子智能体会话首条气泡也不再裸露角色提示词）
   const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n用户任务：${input.query}\n=== END ===\n\n${systemPrefix}完成后请输出结构化结果（关键结论 + 行动步骤 + 任何上下文）；不要主动发起破坏性操作。`;
@@ -213,6 +214,7 @@ ipcMain.handle("teams:start-session", async (_event, input: { teamId: string; ta
     config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
     dynamicTools: [teamTool, teamPhaseTool],
   });
+  threadCwd.set(String(started.thread.id), String(input.cwd || process.cwd())); /* 文件变更追踪 cwd 登记（10-01） */
   // 线程 → 团队映射落主进程并持久化：任何窗口（含 popout）据此才知道这个会话属于哪个团
   teamRunStore.setThreadTeam(started.thread.id, team.teamId);
   if (input.defer) {
@@ -262,6 +264,7 @@ ipcMain.handle("teams:member-session", async (_event, input: { teamId: string; m
     config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
   });
   const systemPrefix = `[专家团「${team.displayName.zh}」${isLead ? "主理人" : "成员"} ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}\n\n`;
+  threadCwd.set(String(started.thread.id), String(input.cwd || process.cwd())); /* 文件变更追踪 cwd 登记（10-01） */
   teamRunStore.setThreadTeam(started.thread.id, team.teamId);
   if (input.defer) {
     // 会话标题只展示角色职能，不把成员真实姓名带到用户界面。
@@ -312,7 +315,10 @@ ipcMain.handle("teams:invoke-member", async (_event, input: { teamId: string; me
   let memberThreadId = "";
   if (existingThreadId) {
     const resumed: any = await server.request("thread/resume", { threadId: existingThreadId, excludeTurns: false }).catch(() => null);
-    if (resumed?.thread?.id) memberThreadId = String(resumed.thread.id);
+    if (resumed?.thread?.id) {
+      memberThreadId = String(resumed.thread.id);
+      threadCwd.set(memberThreadId, String(input.cwd || process.cwd())); /* 文件变更追踪 cwd 登记（10-01，复用线程同样要登记） */
+    }
   }
   if (!memberThreadId) {
     ensureProjectAgentsMd(input.cwd || process.cwd());
@@ -325,6 +331,7 @@ ipcMain.handle("teams:invoke-member", async (_event, input: { teamId: string; me
       config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
     });
     memberThreadId = String(started.thread.id);
+    threadCwd.set(memberThreadId, String(input.cwd || process.cwd())); /* 文件变更追踪 cwd 登记（10-01） */
     // ② 成员线程标题：`团名·角色`。不设名字时引擎拿首条用户消息（角色提示词全文）当标题，
     //    侧栏里会显示成一整坨提示词（09-14 实测截图）。
     try { await server.request("thread/name/set", { threadId: memberThreadId, name: memberThreadName(team.displayName.zh, member.profession.zh || member.name) }); } catch { /* 命名失败不阻塞调度 */ }
