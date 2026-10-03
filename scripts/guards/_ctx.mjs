@@ -145,6 +145,47 @@ function codeOnly(source) {
 
 // ---------- 工具 ----------
 
+/**
+ * 在聚合面里按通道名定位 handler 的注册处，**同时认两种形态**（10-03 第三轮踩坑后统一）。
+ *
+ * ⛔ 为什么必须双形态：域从「模块体裸 `ipcMain.handle`」改成插件形态后写的是
+ *    `ipcHost.handle`，而旧锚点 `indexOf('ipcMain.handle("X"')` 会得 **-1**，
+ *    紧跟的 `slice(-1, 900)` 就读到**聚合面尾部** —— 安全断言以「不可信根收敛被去掉」
+ *    为名报红，而不变量其实没破（fs:write / fs:read 假红实测过两轮）。
+ *
+ * ⚠️ 两个刻意的取舍：
+ *   - **不剥注释**（与 codeOnly 不同）：调用方要的就是"这段代码里有没有某调用"，
+ *     注释里出现 `isInsideTrustedRoots(` 不构成风险，反而能提示意图。
+ *   - 找不到时返回 **-1** 而非 0：`slice(-1, n)` 的危险必须由调用方显式处理
+ *     （本仓的用法都带 `> start` 之类的兜底），不能让 helper 悄悄返回一个"看似有效"的位置。
+ */
+function indexOfHandle(agg, channel) {
+  const s = String(agg);
+  const i1 = s.indexOf(`ipcMain.handle("${channel}`);
+  const i2 = s.indexOf(`ipcHost.handle("${channel}`);
+  if (i1 < 0) return i2;
+  if (i2 < 0) return i1;
+  return Math.min(i1, i2);
+}
+
+/** 从 `from` 之后找**下一个** handler 注册处（双形态）。用于"取 handler 之间的切片"。 */
+function indexOfHandleAfter(agg, from) {
+  const s = String(agg);
+  const i1 = s.indexOf("ipcMain.handle(", from);
+  const i2 = s.indexOf("ipcHost.handle(", from);
+  if (i1 < 0) return i2;
+  if (i2 < 0) return i1;
+  return Math.min(i1, i2);
+}
+
+/** 取某个通道的 handler 体：从它的注册处切到下一个 handler（或末尾固定窗口）。 */
+function sliceHandle(agg, channel, window = 1200) {
+  const from = indexOfHandle(agg, channel);
+  if (from < 0) return "";
+  const next = indexOfHandleAfter(agg, from + 20);
+  return next > from ? String(agg).slice(from, Math.min(next, from + window)) : String(agg).slice(from, from + window);
+}
+
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "dist-electron", "release", ".e2e-artifacts"]);
 
 function walk(dir, exts, out = []) {
@@ -326,7 +367,7 @@ const typesSrc = existsSync(typesPath) ? readFileSync(typesPath, "utf8") : "";
 
 /* 守卫共享面：ESM 活绑定导出（守卫只读，不写这些名字） */
 export {
-  ALIGN_RESULT, AUTO_CONTINUE_MAX_ATTEMPTS, GATE_DEFAULTS, AUTO_CONTINUE_WINDOW_MS, C, CONTINUITY_TEXT, MOOD_HEADING, OWN_WRITE_TTL_MS, ROOT, SESSION_SCOPE_HEADING, SKIP_DIRS, TRUNCATE_OUTPUT_MAX_CHARS, TRUNCATE_REASONING_MIN_CHARS, applyMoodSignal, checks, codeOnly, composeMoodInstructions, composeScopeInstructions, createAec, createEchoGate, createHash, createRequire, createSentenceChunker, createSpeakFilter, decayMood, dirname, emptyMood, emptyRuntime, existsSync, fail, fileURLToPath, hardFails, homedir, isOwnEcho, isTruncatedEmptyTurn, join, legacyMirror, mainSrc, migrateRuntime, mkdirSync, mkdtempSync, moodBlock, moodSignature, moodTone, normalizeMood, normalizeNumbers, normalizeRuntime, numberToChinese, ok, patchRuntime, pathToFileURL, planCompletedFold, preloadSrc, readAppUi, readBuiltinSkillsSource, readFileSync, readMainSource, readModuleWithDir, readResponsesBridgeSource, readStyles, readVoiceCallFloatSrc, readVoiceSettingsSrc, readdirSync, relative, rememberOwnWrite, resampleLinear, resolveModelForOpen, rmSync, rmsOf, runtimeSignature, sessionScopeBlock, sessionScopeSignature, shouldAlignProvider, shouldSyncOpenThread, spawnSync, statSync, stripMoodBlock, stripScopeBlock, tmpdir, toSpeakableText, topLevelKeys, truncationNotice, turnOutputStats, typesPath, typesSrc, walk, warn, warns, writeFileSync,
+  ALIGN_RESULT, AUTO_CONTINUE_MAX_ATTEMPTS, GATE_DEFAULTS, indexOfHandle, indexOfHandleAfter, sliceHandle, AUTO_CONTINUE_WINDOW_MS, C, CONTINUITY_TEXT, MOOD_HEADING, OWN_WRITE_TTL_MS, ROOT, SESSION_SCOPE_HEADING, SKIP_DIRS, TRUNCATE_OUTPUT_MAX_CHARS, TRUNCATE_REASONING_MIN_CHARS, applyMoodSignal, checks, codeOnly, composeMoodInstructions, composeScopeInstructions, createAec, createEchoGate, createHash, createRequire, createSentenceChunker, createSpeakFilter, decayMood, dirname, emptyMood, emptyRuntime, existsSync, fail, fileURLToPath, hardFails, homedir, isOwnEcho, isTruncatedEmptyTurn, join, legacyMirror, mainSrc, migrateRuntime, mkdirSync, mkdtempSync, moodBlock, moodSignature, moodTone, normalizeMood, normalizeNumbers, normalizeRuntime, numberToChinese, ok, patchRuntime, pathToFileURL, planCompletedFold, preloadSrc, readAppUi, readBuiltinSkillsSource, readFileSync, readMainSource, readModuleWithDir, readResponsesBridgeSource, readStyles, readVoiceCallFloatSrc, readVoiceSettingsSrc, readdirSync, relative, rememberOwnWrite, resampleLinear, resolveModelForOpen, rmSync, rmsOf, runtimeSignature, sessionScopeBlock, sessionScopeSignature, shouldAlignProvider, shouldSyncOpenThread, spawnSync, statSync, stripMoodBlock, stripScopeBlock, tmpdir, toSpeakableText, topLevelKeys, truncationNotice, turnOutputStats, typesPath, typesSrc, walk, warn, warns, writeFileSync,
 };
 
 /** 汇总与退出码（原文件尾部逐字搬入） */
