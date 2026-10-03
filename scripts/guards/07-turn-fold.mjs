@@ -4048,7 +4048,9 @@ export async function run() {
   (entries90.length === expect90 ? ok : fail)(`【90】ipc-registry 登记 ${entries90.length}/${expect90} 个 IPC 域（= manifest 唯一 prefix 数；新拆域必须同步登记进账本）`);
   const countByPrefix90 = (src) => {
     const m2 = new Map();
-    for (const mm of src.matchAll(/ipcMain\.(?:handle|on|removeHandler)\(\s*["']([^"']+)["']/g)) {
+    // ⛔ 10-03：域改成插件形态后，通道注册走容器注入的 ipcHost.handle（electron/ipc-host.ts）。
+    //    这里的计数必须同时认两种写法，否则"搬走 = main.ts 里应消失/域文件里应存在"两条判据都会假红。
+    for (const mm of src.matchAll(/(?:ipcMain\.(?:handle|on|removeHandler)|ipcHost\.handle)\(\s*["']([^"']+)["']/g)) {
       const p2 = mm[1].split(":")[0];
       m2.set(p2, (m2.get(p2) || 0) + 1);
     }
@@ -4074,7 +4076,7 @@ export async function run() {
         });
         fSrc += "\n" + walk90(fDir).join("\n");
       }
-      const inFile = (fSrc.match(new RegExp(`ipcMain\\.(?:handle|on|removeHandler)\\(\\s*["']${prefix}:`, "g")) || []).length;
+      const inFile = (fSrc.match(new RegExp(`(?:ipcMain\\.(?:handle|on|removeHandler)|ipcHost\\.handle)\\(\\s*["']${prefix}:`, "g")) || []).length;
       (inFile >= count ? ok : fail)(`【90】已拆域 ${prefix}：${file} 应有 ≥ ${count} 个通道（实际 ${inFile}）`);
     } else {
       const actual = mainCounts90.get(prefix) || 0;

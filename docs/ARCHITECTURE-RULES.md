@@ -256,7 +256,7 @@
 | preload/vite-env **自动生成** | ✅ **已落地（09-23）**：`ipc-channels.manifest.json` 单一真相源 + `npm run gen:ipc`，两个生成物与 manifest 逐字节一致由守卫【2】钉住 | 残留：**manifest → 账本是单向校验** —— 加了 handler 忘进 manifest ⇒ 渲染层静默调不到（反向需"是否暴露"标记位，未做） |
 | `electron/features` ↔ `main.ts` **双向依赖**（22 文件取 103 符号） | ⛔ **搬迁方案已实测证否（09-22）** | 现状靠"只在 handler 体内取用"纪律 +【91】兜着。**别再试「把定义搬到 ctx 模块」**：103 符号里 23 个是顶层 `app.getPath("userData")` 路径常量（+ 依赖它们的单例），搬到任何非 main.ts 模块都会被【91】拦（import 早于 `app.setPath` ⇒ 路径静默漂移到 `%APPDATA%\codex-harness-desktop`）；而"先惰性化再搬"的代价实测 = **387 处调用点**（`codexHome` 一个 170 处 / 跨 36 文件）⇒ 成本远超收益。完整踩坑记录见 `.codex-harness/memory/lessons/pitfalls.md` |
 | `lib/bus.mjs` 跨域事件总线 / `lib/ipc.ts` 服务访问层 | 未落地 | 域间偶发直连与 `window.codex.*` 直调 |
-| 主进程 `ctx`（deps 契约） | 未落地 | handler 仍共享模块级闭包，可测性差 |
+| 主进程 `ctx`（deps 契约） | 🟡 **P0 已落地（10-03）**：`electron/context.ts`（Context / Service 式 `provide`+`get` / `inject` / `Fiber` 生命期）+ `electron/ipc-host.ts`（把 `ipcMain` 封成可注入的 `"ipc"` 服务）；示范域 = `electron/features/queue-timer-ipc.ts`（`defineFeature` + `inject: ["ipc"]` + `ctx.effect` 卸载清理）。**行为零变化**：挂载仍由域自己 `mountFeature(...)`，`main.ts` 那行副作用 import 未动。守卫【252】11 条**跑真产物** `dist-electron/context.js` 验依赖门禁 / 作用域 / 释放语义 | 仍缺（P1+）：**组合文件**（哪些域启用是编译期写死的）、**插槽**、**运行时安装**、**白名单能力与权限**。另外两条实测量出的边界：① `【90】` 的"域文件通道数 ≥ 账本 count"是**下界**，抓不到**同前缀改名**（改名只被 preload 死链检测到）——想抓得改成"集合相等"；② 容器改写后，所有按 `ipcMain.handle` 字面量收集 handler 的守卫（`01-build-ipc-css` 死链、`【90】`、`【187】`）必须同轮加上 `ipcHost.handle` 形态，否则假红 |
 
 ---
 

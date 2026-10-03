@@ -1,0 +1,19 @@
+{
+  "$comment": "域组合配置（P1 单一真相源）。enabled=false 的域不会被 composition.gen.ts 挂载；改完必须跑 npm run gen:domains（守卫【253】比对生成物，过期即红）。",
+  "$schema": {
+    "id": "kebab-case 域前缀（= ipc-registry.ts 的 prefix = 目录/类名前缀）",
+    "enabled": "boolean：是否挂载",
+    "file": "相对 electron/ 的域文件路径（必须是插件形态：export defineFeature 的产物）",
+    "export": "该文件里导出的 feature 变量名",
+    "config": "传给 feature 的 config（可 null）"
+  },
+  "domains": [
+    {
+      "id": "queue-timer",
+      "enabled": true,
+      "file": "features/queue-timer-ipc.ts",
+      "export": "queueTimerFeature",
+      "config": null
+    }
+  ]
+}

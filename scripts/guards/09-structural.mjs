@@ -1093,4 +1093,123 @@ export async function run() {
       "【245】汇总卡合并宿主追踪结果（只认引擎 changes = shell/浏览器写的文件永远不进汇报）"
     );
   }
+  /* ══ 【252】主进程插件容器（10-03 P0：Context + inject + Fiber 生命期）════════════
+     ⛔ 这一节的判据 **跑构建产物** `dist-electron/context.js`（纯逻辑、零 electron 依赖）：
+        "容器能承载一个域"必须由**真跑**证明 —— 读源码只能证明"写了几个函数"。
+     ⛔ 分工：容器管依赖与生命期（本节），域只管自己的业务（【187】管 queue-timer 的业务语义）。 */
+  {
+    const ctxPath = join(ROOT, "electron", "context.ts");
+    (existsSync(ctxPath) ? ok : fail)("【252】主进程插件容器存在（electron/context.ts）");
+    const ctxSrc = codeOnly(existsSync(ctxPath) ? readFileSync(ctxPath, "utf8") : "");
+    // ① 容器必须是纯逻辑：不许 import electron / node:*（否则守卫进程根本加载不起来，也谈不上"可替换"）
+    (!ctxSrc.includes('from "electron"') && !ctxSrc.includes('require("electron"') && !ctxSrc.includes('from "node:') ? ok : fail)(
+      "【252】容器是纯逻辑（⛔ 不 import electron / node:*：预检要直接 require 产物跑真值表）"
+    );
+    // ② 真值表：直接 require dist-electron/context.js
+    let built = null;
+    try {
+      built = createRequire(import.meta.url)(join(ROOT, "dist-electron", "context.js"));
+    } catch { /* 产物缺失或编译失败 —— 下面统一报红 */ }
+    if (!built || typeof built.Context !== "function" || typeof built.defineFeature !== "function") {
+      fail("【252】容器产物可加载（dist-electron/context.js —— 先 npm run build:electron）");
+    } else {
+      ok("【252】容器产物可加载（dist-electron/context.js）");
+      const { Context, defineFeature, mountFeature, mountedFeatures } = built;
+      // (a) inject 缺失 ⇒ 挂载前抛错，且**不留半注册**（apply 不执行）
+      const r1 = new Context(null, "t1");
+      let applied = 0;
+      let err1 = "";
+      try {
+        r1.plugin(defineFeature({ id: "needs-dep", inject: ["nope"], setup: () => { applied++; } }));
+      } catch (e) { err1 = String((e && e.message) || e); }
+      (err1.includes("缺少依赖服务") && applied === 0 && r1.get("nope") === undefined ? ok : fail)(
+        "【252】inject 缺失 ⇒ 挂载前失败、apply 不执行、不留半注册（依赖声明是真门禁）"
+      );
+      // (b) 服务沿父链查找；子 ctx 释放不动父的服务（作用域边界）
+      const parent = new Context(null, "p");
+      const child = new Context(parent, "c");
+      parent.provide("svc", 7);
+      const upward = child.get("svc") === 7;
+      child.dispose();
+      (upward && parent.get("svc") === 7 ? ok : fail)(
+        "【252】服务沿父链查找 + 子 ctx 释放不清父的服务（作用域边界成立）"
+      );
+      // (c) 释放语义：冒泡方向（子 → 父）+ effect 逆序 + 监听摘除 + 本地服务清空
+      const order = [];
+      const r2 = new Context(null, "t2");
+      const f2 = r2.plugin({ name: "p2", apply: (c) => { c.effect(() => order.push(1)); c.effect(() => order.push(2)); c.on("e", () => order.push("L")); c.provide("tmp", 1); } });
+      r2.on("e", () => order.push("P")); // 父 ctx 的监听：子 emit 必须冒泡上来（方向反了就收不到）
+      f2.ctx.emit("e");
+      f2.dispose();
+      f2.ctx.emit("e");
+      // 三个不变量分开断言（⛔ 别用"整串相等"：父的监听在子释放后本就该继续存在）
+      const childFired = order.filter((x) => x === "L").length;   // 子监听：释放前触发一次、释放后不再触发
+      const parentFired = order.filter((x) => x === "P").length;   // 父监听：两次 emit 都该收到（冒泡 + 父未释放）
+      const effectOrder = order.filter((x) => x === 1 || x === 2).join(","); // 逆序：后注册的先跑
+      (childFired === 1 && parentFired === 2 && effectOrder === "2,1" && f2.ctx.get("tmp") === undefined ? ok : fail)(
+        `【252】释放语义：子监听摘除（L×${childFired}）+ 冒泡到父（P×${parentFired}）+ effect 逆序（${effectOrder}）+ 服务清空（实测 ${order.join("→")}）`
+      );
+      // (d) apply 中途抛错 ⇒ 半成品回收，不留半个服务
+      const r3 = new Context(null, "t3");
+      let threw = false;
+      try { r3.plugin({ name: "boom", apply: (c) => { c.provide("half", 1); throw new Error("boom"); } }); } catch { threw = true; }
+      (threw && r3.get("half") === undefined ? ok : fail)("【252】apply 抛错 ⇒ 半注册回收（不留半个服务）");
+      // (e) mountFeature：同 id 不许重复挂载；释放后从挂载清单移除（可重挂）
+      const probe = defineFeature({ id: "guard-probe", setup: () => {} });
+      const m1 = mountFeature(probe);
+      let dupErr = "";
+      try { mountFeature(probe); } catch (e) { dupErr = String((e && e.message) || e); }
+      const listed = mountedFeatures().includes("guard-probe");
+      m1.dispose();
+      (dupErr.includes("已挂载") && listed && !mountedFeatures().includes("guard-probe") ? ok : fail)(
+        "【252】同一 feature 不许重复挂载；释放后从挂载清单移除（可重挂）"
+      );
+    }
+    // ③ 示范域真的是插件形态（锚**代码形态**；codeOnly 剥注释后仍要命中）
+    const qt = codeOnly(readFileSync(join(ROOT, "electron", "features", "queue-timer-ipc.ts"), "utf8"));
+    (qt.includes("defineFeature<") && qt.includes('inject: ["ipc"]') && qt.includes("ipcHost.handle(") && qt.includes("ctx.effect(") && qt.includes("mountFromComposition(") ? ok : fail)(
+      "【252】queue-timer 已是插件形态（defineFeature + inject + ipcHost 注册 + effect 清理 + 经组合表挂载）"
+    );
+    (!qt.includes('from "electron"') ? ok : fail)(
+      "【252】示范域不再直接 import electron（宿主能力经容器注入，为 P3 的白名单能力留位置）"
+    );
+    (qt.includes('"queue-timer:set"') && qt.includes('"queue-timer:cancel"') ? ok : fail)(
+      "【252】示范域两个通道名逐字保留（换容器不许改对外契约）"
+    );
+  }
+
+  /* ══ 【253】域组合层（10-03 P1：composition.json → 生成表 → 挂载）════════════
+     ⛔ 生成物禁手改：这里直接 import 生成器的**纯函数** renderRegistry() 做逐字节比对
+        —— 守卫**零 spawn**（agent 沙箱里嵌套 spawn 会被拒，预检必须自给自足）。 */
+  {
+    const compPath = join(ROOT, "electron", "composition.json");
+    const genPath = join(ROOT, "electron", "composition.gen.ts");
+    (existsSync(compPath) && existsSync(genPath) ? ok : fail)(
+      "【253】组合配置与生成物都在（electron/composition.json + composition.gen.ts）"
+    );
+    const compSrc = existsSync(compPath) ? readFileSync(compPath, "utf8") : "{}";
+    const genSrc = existsSync(genPath) ? readFileSync(genPath, "utf8") : "";
+    let gen = null;
+    try { gen = await import("../../scripts/gen-domain-registry.mjs"); } catch { /* 下面统一报红 */ }
+    const composition = JSON.parse(compSrc);
+    if (!gen || typeof gen.renderRegistry !== "function") {
+      fail("【253】生成器可 import（scripts/gen-domain-registry.mjs 的 renderRegistry 必须是纯函数）");
+    } else {
+      (gen.renderRegistry(composition) === genSrc ? ok : fail)(
+        "【253】生成物与 composition.json 逐字节一致（改了配置没重跑 npm run gen:domains ⇒ 红；手改生成物 ⇒ 红）"
+      );
+    }
+    (genSrc.includes("禁手改") ? ok : fail)("【253】生成物带「禁手改」抬头");
+    const enabled = (composition.domains || []).filter((d) => d && d.enabled).map((d) => d.id);
+    const reg = readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8");
+    const missing253 = enabled.filter((id) => !new RegExp(`prefix:\\s*"${id}"`).test(reg));
+    (enabled.length > 0 && missing253.length === 0 ? ok : fail)(
+      `【253】启用域都在 ipc-registry 登记（启用 ${enabled.length} 个，未登记：${missing253.join("/") || "无"}）`
+    );
+    const qt253 = codeOnly(readFileSync(join(ROOT, "electron", "features", "queue-timer-ipc.ts"), "utf8"));
+    (qt253.includes('mountFromComposition("queue-timer")') && !qt253.includes("mountFeature(") ? ok : fail)(
+      "【253】域经组合表挂载（⛔ 不许自己 mountFeature —— 绕过配置）"
+    );
+  }
+
 }
