@@ -57,6 +57,15 @@ import { commandsFeature as feat_commands } from "./features/commands-ipc";
 import { promptFeature as feat_prompt } from "./features/prompt-ipc";
 import { connectorsFeature as feat_connectors } from "./features/connectors-ipc";
 import { mcpServersFeature as feat_mcp_servers } from "./features/mcp-servers-ipc";
+import { openaiFeature as feat_openai } from "./features/openai-ipc";
+import { customModelFeature as feat_custom_model } from "./features/custom-model-ipc";
+import { modelSpecsFeature as feat_model_specs } from "./features/model-specs-ipc";
+import { threadRuntimeFeature as feat_thread_runtime } from "./features/thread-runtime-ipc";
+import { codexFeature as feat_codex } from "./features/codex-ipc";
+import { runtimeFeature as feat_runtime } from "./features/runtime-ipc";
+import { threadsFeature as feat_threads } from "./features/threads-ipc";
+import { bridgeFeature as feat_bridge } from "./features/bridge-ipc";
+import { engineFeature as feat_engine } from "./features/engine-ipc";
 
 export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unknown };
 
@@ -119,6 +128,15 @@ export const ENABLED: EnabledDomain[] = [
   { id: "prompt", plugin: feat_prompt as Plugin<unknown>, config: null },
   { id: "connectors", plugin: feat_connectors as Plugin<unknown>, config: null },
   { id: "mcp-servers", plugin: feat_mcp_servers as Plugin<unknown>, config: null },
+  { id: "openai", plugin: feat_openai as Plugin<unknown>, config: null },
+  { id: "custom-model", plugin: feat_custom_model as Plugin<unknown>, config: null },
+  { id: "model-specs", plugin: feat_model_specs as Plugin<unknown>, config: null },
+  { id: "thread-runtime", plugin: feat_thread_runtime as Plugin<unknown>, config: null },
+  { id: "codex", plugin: feat_codex as Plugin<unknown>, config: null },
+  { id: "runtime", plugin: feat_runtime as Plugin<unknown>, config: null },
+  { id: "threads", plugin: feat_threads as Plugin<unknown>, config: null },
+  { id: "bridge", plugin: feat_bridge as Plugin<unknown>, config: null },
+  { id: "engine", plugin: feat_engine as Plugin<unknown>, config: null },
 ];
 
 for (const row of ENABLED) mountFeature(row.plugin, row.config);

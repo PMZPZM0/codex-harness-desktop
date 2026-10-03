@@ -378,6 +378,69 @@
       "file": "features/mcp-servers-ipc.ts",
       "export": "mcpServersFeature",
       "config": null
+    },
+    {
+      "id": "openai",
+      "enabled": true,
+      "file": "features/openai-ipc.ts",
+      "export": "openaiFeature",
+      "config": null
+    },
+    {
+      "id": "custom-model",
+      "enabled": true,
+      "file": "features/custom-model-ipc.ts",
+      "export": "customModelFeature",
+      "config": null
+    },
+    {
+      "id": "model-specs",
+      "enabled": true,
+      "file": "features/model-specs-ipc.ts",
+      "export": "modelSpecsFeature",
+      "config": null
+    },
+    {
+      "id": "thread-runtime",
+      "enabled": true,
+      "file": "features/thread-runtime-ipc.ts",
+      "export": "threadRuntimeFeature",
+      "config": null
+    },
+    {
+      "id": "codex",
+      "enabled": true,
+      "file": "features/codex-ipc.ts",
+      "export": "codexFeature",
+      "config": null
+    },
+    {
+      "id": "runtime",
+      "enabled": true,
+      "file": "features/runtime-ipc.ts",
+      "export": "runtimeFeature",
+      "config": null
+    },
+    {
+      "id": "threads",
+      "enabled": true,
+      "file": "features/threads-ipc.ts",
+      "export": "threadsFeature",
+      "config": null
+    },
+    {
+      "id": "bridge",
+      "enabled": true,
+      "file": "features/bridge-ipc.ts",
+      "export": "bridgeFeature",
+      "config": null
+    },
+    {
+      "id": "engine",
+      "enabled": true,
+      "file": "features/engine-ipc.ts",
+      "export": "engineFeature",
+      "config": null
     }
   ]
 }
