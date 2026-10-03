@@ -13,6 +13,7 @@ import { historySearchFeature as feat_history } from "./features/history-search-
 import { workLogsFeature as feat_work_logs } from "./features/work-logs";
 import { expertMarketFeature as feat_expert_market } from "./features/skillhub-markets-ipc";
 import { soulMarketFeature as feat_soul_market } from "./features/skillhub-markets-ipc";
+import { dramaCanvasFeature as feat_drama_canvas } from "./features/drama-canvas";
 
 export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unknown };
 
@@ -31,6 +32,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "work-logs", plugin: feat_work_logs as Plugin<unknown>, config: null },
   { id: "expert-market", plugin: feat_expert_market as Plugin<unknown>, config: null },
   { id: "soul-market", plugin: feat_soul_market as Plugin<unknown>, config: null },
+  { id: "drama-canvas", plugin: feat_drama_canvas as Plugin<unknown>, config: null },
 ];
 
 for (const row of ENABLED) mountFeature(row.plugin, row.config);

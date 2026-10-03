@@ -99,7 +99,6 @@ import "./features/fs-ipc";
 /* 桌面宠物（09-30）：IPC 域 + 浮窗。侧效应 import ⇒ handler 立即注册（早于 whenReady）。 */
 import "./features/pet-ipc";
 import { closePetWindow } from "./features/pet-window";
-import "./features/drama-canvas";
 import "./features/video-gen";
 /* 排队消息定时发送（09-28）：⛔ 本行曾经漏掉 ⇒ `queue-timer:set` 报
    「No handler registered」（用户现场实测）。handler 文件、manifest、registry、

@@ -12,12 +12,21 @@
  *   · 文件名净化（去掉路径分隔符与 ..）+ 扩展名白名单 + 体积上限 —— 不给"任意路径写文件"留口子。
  *
  * 跨域取用：`isInsideTrustedRoots` 从 `../runtime-refs`（叶子模块）取，不在模块顶层求值任何路径。
+ *
+ * ── P2 批次 5（10-03）：改插件形态 ─────────────────────────────────────────
+ * 七个 handler 的**实现**留在模块级函数里（逐字未改），注册 / 卸载交给容器：
+ * `inject: ["ipc"]` 声明依赖，⛔ 不再直接 `ipcMain.handle`。通道名 / 参数 / 返回值 /
+ * 错误文案 / 安全口径（可信根 + 净化 + 白名单）一字不改。
+ * ⛔ 仍从 `electron` 取 `app` / `dialog`：那是**宿主能力**，P3 才做白名单注入；
+ *   本批只把"注册通道"这一件事收进容器（死链守卫按字面量收集 `ipcHost.handle`）。
  */
-import { app, dialog, ipcMain } from "electron";
+import { app, dialog } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { isInsideTrustedRoots, mainWindow, trustPicked } from "../runtime-refs";
 import { describeProductOnce, polishPromptOnce } from "../prompt-polish";
+import { defineFeature } from "../context";
+import type { IpcHost } from "../ipc-host";
 
 /** 画布域的工作区目录：与分镜表同一棵树，用户拷走工作区就带走了全部产物 */
 const ROOT_DIR = ".drama-canvas";
@@ -42,24 +51,25 @@ export function safeSubdir(raw: string): string {
 
 /* 画布快照镜像（09-29「打通」第一步）：渲染层防抖推 {name, flow, nodes, edges}，
      主进程存 userData/drama-canvas/boards.json ⇒ workflow_read 工具能读到画布内容。 */
-  ipcMain.handle("drama-canvas:board-sync", async (_event, input: { name?: unknown; flow?: unknown; nodes?: unknown; edges?: unknown }) => {
-    const name = String(input?.name ?? "").trim();
-    if (!name || !Array.isArray(input?.nodes)) return { ok: false };
-    const root = path.join(app.getPath("userData"), "drama-canvas");
-    await fs.mkdir(root, { recursive: true });
-    const file = path.join(root, "boards.json");
-    let all: Record<string, unknown> = {};
-    try { all = JSON.parse(await fs.readFile(file, "utf8")); } catch { /* 首次 */ }
-    all[name] = {
-      flow: String(input?.flow ?? ""),
-      nodes: input?.nodes,
-      edges: input?.edges,
-      updatedAt: new Date().toISOString(),
-    };
-    await fs.writeFile(file, JSON.stringify(all, null, 2), "utf8");
-    return { ok: true };
-  });
-ipcMain.handle("drama-canvas:asset-write", async (_event, input: { workspace: string; name: string; base64: string; subdir?: string }) => {
+async function syncBoard(input: { name?: unknown; flow?: unknown; nodes?: unknown; edges?: unknown }) {
+  const name = String(input?.name ?? "").trim();
+  if (!name || !Array.isArray(input?.nodes)) return { ok: false };
+  const root = path.join(app.getPath("userData"), "drama-canvas");
+  await fs.mkdir(root, { recursive: true });
+  const file = path.join(root, "boards.json");
+  let all: Record<string, unknown> = {};
+  try { all = JSON.parse(await fs.readFile(file, "utf8")); } catch { /* 首次 */ }
+  all[name] = {
+    flow: String(input?.flow ?? ""),
+    nodes: input?.nodes,
+    edges: input?.edges,
+    updatedAt: new Date().toISOString(),
+  };
+  await fs.writeFile(file, JSON.stringify(all, null, 2), "utf8");
+  return { ok: true };
+}
+
+async function writeAsset(input: { workspace: string; name: string; base64: string; subdir?: string }) {
   const requested = String(input?.workspace || "").trim();
   const resolved = requested ? path.resolve(requested) : "";
   /* ⛔⛔ 09-29 用户实测「参考图传不了」（报错：只允许把素材写进会话工作区或应用数据目录）：
@@ -84,22 +94,42 @@ ipcMain.handle("drama-canvas:asset-write", async (_event, input: { workspace: st
   const target = path.join(dir, name);
   await fs.writeFile(target, buffer);
   return { path: target, fallback: !trusted };
-});
+}
 
 /** 删分镜表的**工作区文件**（09-29 项目管理）。
  *  ⛔ 域内窄通道，不是通用文件删除：目标由主进程自己拼（<workspace>/.drama-canvas/storyboards/<name>.json），
  *  渲染层只给「哪个工作区 + 叫什么名」；只删这一个 .json **文件**（目录一律拒绝）；
  *  文件不存在时幂等返回 removed:false，不抛（删除按钮重跑不会报错）。 */
+async function removeStoryboardFile(input: { workspace: string; name: string }) {
+  const workspace = path.resolve(String(input?.workspace || ""));
+  if (!workspace) return { removed: false };
+  if (!isInsideTrustedRoots(workspace)) throw new Error("只允许操作会话工作区或应用数据目录");
+  const safe = String(input?.name || "main").replace(/[\\/:*?"<>|]/g, "_").replace(/.json$/i, "") || "main";
+  const target = path.join(workspace, ROOT_DIR, "storyboards", `${safe}.json`);
+  const stat = await fs.stat(target).catch(() => null);
+  if (!stat) return { removed: false };
+  if (!stat.isFile()) throw new Error("目标不是文件，拒绝删除");
+  await fs.unlink(target);
+  return { removed: true };
+}
+
 /** 提示词润色（09-29 用户「写提示词加一个 AI 润色功能」+「不要新开会话」）：
  *  主进程用**用户已配置的模型**发一次短请求，结果就地写回卡片 —— 不开会话、不弹选择器。
  *  ⛔ 域内窄通道：渲染层只给「润色哪段文本」，模型与凭证全在主进程取（渲染层看不到 Key）。 */
-ipcMain.handle("drama-canvas:polish-prompt", async (_event, input: { text: string; context?: string }) => {
+async function polishPrompt(input: { text: string; context?: string }) {
   const text = String(input?.text || "").trim();
   if (!text) throw new Error("这张卡还没有提示词 —— 先写一版再润色");
   return { text: await polishPromptOnce(text, input?.context ? String(input.context) : undefined) };
-});
+}
+
 /* 锁主体（09-29）：把「商品参考图」反推成一段固定主体描述，六类图共用 ⇒ 一套图是同一件商品。
    ⛔ 这是「参考图锁主体」在**纯文生图**通道下的可行替代（生图接口无图输入）—— 不假装能图生图。 */
+async function describeImage(input: { image: string; context?: string }) {
+  const image = String(input?.image || "").trim();
+  if (!image) throw new Error("这张卡还没有参考图 —— 先在「商品参考图」卡上传一张");
+  return { text: await describeProductOnce(image, input?.context ? String(input.context) : undefined) };
+}
+
 /* ── 产物目录（09-29 用户：「在 codexharness 目录下面新增一个存的目录，也可以选择和修改目录」）──
    默认 <userData>/outputs：**跟着应用走**，不依赖会话工作区（画布没绑工作区时也能出图落盘）。
    ⛔ 用户显式选过 / 改过的目录要持久化；空串 = 恢复默认。选目录用系统原生对话框。 */
@@ -125,9 +155,7 @@ async function readOutputDir(): Promise<{ dir: string; isDefault: boolean }> {
   return { dir, isDefault: !saved };
 }
 
-ipcMain.handle("drama-canvas:output-dir", async () => readOutputDir());
-
-ipcMain.handle("drama-canvas:output-dir-set", async (_event, input: { dir?: string; pick?: boolean }) => {
+async function setOutputDir(input: { dir?: string; pick?: boolean }) {
   const current = await readOutputDir();
   let next = String(input?.dir ?? "").trim();
   if (input?.pick) {
@@ -156,22 +184,34 @@ ipcMain.handle("drama-canvas:output-dir-set", async (_event, input: { dir?: stri
   trustPicked([resolved]);
   await fs.writeFile(outputDirFile(), JSON.stringify({ dir: resolved }, null, 2), "utf8");
   return { dir: resolved, isDefault: false };
-});
+}
 
-ipcMain.handle("drama-canvas:describe-image", async (_event, input: { image: string; context?: string }) => {
-  const image = String(input?.image || "").trim();
-  if (!image) throw new Error("这张卡还没有参考图 —— 先在「商品参考图」卡上传一张");
-  return { text: await describeProductOnce(image, input?.context ? String(input.context) : undefined) };
-});
-ipcMain.handle("drama-canvas:storyboard-file-remove", async (_event, input: { workspace: string; name: string }) => {
-  const workspace = path.resolve(String(input?.workspace || ""));
-  if (!workspace) return { removed: false };
-  if (!isInsideTrustedRoots(workspace)) throw new Error("只允许操作会话工作区或应用数据目录");
-  const safe = String(input?.name || "main").replace(/[\\/:*?"<>|]/g, "_").replace(/.json$/i, "") || "main";
-  const target = path.join(workspace, ROOT_DIR, "storyboards", `${safe}.json`);
-  const stat = await fs.stat(target).catch(() => null);
-  if (!stat) return { removed: false };
-  if (!stat.isFile()) throw new Error("目标不是文件，拒绝删除");
-  await fs.unlink(target);
-  return { removed: true };
+/** 域内七条通道（⛔ 名称是**对外契约**：preload 桥接面 / ipc-registry 账本 / 各守卫都按字面量锚它）。 */
+export const dramaCanvasFeature = defineFeature<null>({
+  id: "drama-canvas",
+  inject: ["ipc"],
+  setup: (ctx) => {
+    const ipcHost = ctx.get<IpcHost>("ipc");
+    // inject 已在容器侧挡过一次；这里再挡一次只为把类型收紧（⛔ 不写 `!`：缺依赖要报得出来）
+    if (!ipcHost) throw new Error("drama-canvas: 缺少 ipc 服务（宿主未提供）");
+
+    ipcHost.handle("drama-canvas:board-sync", (_event, input: { name?: unknown; flow?: unknown; nodes?: unknown; edges?: unknown }) => syncBoard(input));
+    ipcHost.handle("drama-canvas:asset-write", (_event, input: { workspace: string; name: string; base64: string; subdir?: string }) => writeAsset(input));
+    ipcHost.handle("drama-canvas:polish-prompt", (_event, input: { text: string; context?: string }) => polishPrompt(input));
+    ipcHost.handle("drama-canvas:output-dir", () => readOutputDir());
+    ipcHost.handle("drama-canvas:output-dir-set", (_event, input: { dir?: string; pick?: boolean }) => setOutputDir(input));
+    ipcHost.handle("drama-canvas:describe-image", (_event, input: { image: string; context?: string }) => describeImage(input));
+    ipcHost.handle("drama-canvas:storyboard-file-remove", (_event, input: { workspace: string; name: string }) => removeStoryboardFile(input));
+
+    // 生命期：卸载时摘掉本域七条通道（不摘 = 卸载后通道还在、实现已被回收 ⇒ 调用报错）
+    ctx.effect(() => {
+      ipcHost.removeHandler("drama-canvas:board-sync");
+      ipcHost.removeHandler("drama-canvas:asset-write");
+      ipcHost.removeHandler("drama-canvas:polish-prompt");
+      ipcHost.removeHandler("drama-canvas:output-dir");
+      ipcHost.removeHandler("drama-canvas:output-dir-set");
+      ipcHost.removeHandler("drama-canvas:describe-image");
+      ipcHost.removeHandler("drama-canvas:storyboard-file-remove");
+    });
+  },
 });
