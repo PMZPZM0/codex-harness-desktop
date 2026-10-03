@@ -75,13 +75,20 @@ export const cronTemplates = [
   { name: "文档同步检查", desc: "对照最近 7 天的代码、配置、接口与文档变更，识别已改变公开行为但文档尚未同步的高置信差异，并附文件路径和修复建议。", time: "每周三 15:00", intervalMinutes: 10080, icon: "📄" },
 ];
 
+/** 设置侧栏导航（10-03 重新分组：29 个页面一个没动，只重排归属与组名）。
+ *  ⛔ 旧结构的两个病：「常用」塞了 13 项（外观/宠物/技能/插件/记忆/命令/截图/收藏夹全混在一起），
+ *    「智能体」只有 1 项却独立成组；组名也不平行（「常用」是频率维度，其余是主题维度）。
+ *  新的判据：**每组都是同一类事物、组名平行、每组 2~6 项**。
+ *  ⛔ 归属必须与 components/HelpDialog.tsx 的 OVERVIEW_GROUPS **逐组一致** ——
+ *    两处曾各分各的（截图/组件库/人格市场/收藏夹 在总览属「开发工具」、在侧栏属「常用」），
+ *    用户看到的分类因此对不上。守卫【32】只钉页名集合，归属靠这条注释与人工同步。 */
 export const settingsNav: { group: string; items: [SettingsPage, string, any][] }[] = [
-  { group: "账户", items: [["user", "用户中心", UserRound], ["model", "模型", Bot], ["relay", "中转站", Wallet], ["openai", "OpenAI 订阅", CircleGauge]] },
-  { group: "常用", items: [["general", "控制台", Settings2], ["appearance", "外观", Sun], ["component-library", "组件库", LayoutGrid], ["personalization", "个性化", Sparkles], ["soul-market", "人格市场", Heart], ["pet", "桌面宠物", PawPrint], ["voice", "语音通话", Headphones], ["skills", "技能", Zap], ["plugins", "插件", Store], ["memory", "记忆", Archive], ["commands", "命令", TerminalSquare], ["screenshot", "截图", Camera], ["favorites", "收藏夹", Star]] },
-  { group: "智能体", items: [["agentteam", "专家/专家团", Users]] },
-  { group: "自动化与能力", items: [["automation", "自动化", Workflow], ["mcp", "MCP", Wifi], ["schedule", "定时任务", Clock3], ["hooks", "钩子", Wrench], ["ssh", "SSH 服务器", Server]] },
-  { group: "数据与统计", items: [["usage", "使用统计", CircleGauge], ["storage", "数据管理", Database], ["backup", "会话备份", Download], ["archive", "归档管理", Archive]] },
-  { group: "开发工具", items: [["devtools", "开发工具", TerminalSquare], ["extensibility", "拓展接口", Blocks]] },
+  { group: "账户与模型", items: [["user", "用户中心", UserRound], ["model", "模型", Bot], ["relay", "中转站", Wallet], ["openai", "OpenAI 订阅", CircleGauge]] },
+  { group: "外观与体验", items: [["general", "控制台", Settings2], ["appearance", "外观", Sun], ["personalization", "个性化", Sparkles], ["pet", "桌面宠物", PawPrint], ["voice", "语音通话", Headphones], ["screenshot", "截图", Camera]] },
+  { group: "能力与内容", items: [["skills", "技能", Zap], ["plugins", "插件", Store], ["component-library", "组件库", LayoutGrid], ["soul-market", "人格市场", Heart], ["memory", "记忆", Archive], ["commands", "命令", TerminalSquare]] },
+  { group: "自动化与智能体", items: [["automation", "自动化", Workflow], ["schedule", "定时任务", Clock3], ["mcp", "MCP", Wifi], ["hooks", "钩子", Wrench], ["ssh", "SSH 服务器", Server], ["agentteam", "专家/专家团", Users]] },
+  { group: "数据", items: [["usage", "使用统计", CircleGauge], ["storage", "数据管理", Database], ["backup", "会话备份", Download], ["archive", "归档管理", Archive], ["favorites", "收藏夹", Star]] },
+  { group: "开发", items: [["devtools", "开发工具", TerminalSquare], ["extensibility", "拓展接口", Blocks]] },
 ];
 
 export const imageExts = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico"]);

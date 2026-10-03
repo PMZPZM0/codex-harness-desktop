@@ -302,6 +302,39 @@ export async function run() {
     (/共 \$\{OVERVIEW_GROUPS\.reduce/.test(helpC))
       ? ok("【32】总览页数是动态计算的（新增页不会与简介数字打架）")
       : fail("【32】总览简介里的页数写成了固定数字 —— 新增设置页后会误导用户");
+
+    /* ── 【247】设置两处分组必须**逐组一致**（10-03 用户「设置菜单看着有点乱」）─────
+       病根不是分组难看，而是**侧栏与总览各分各的**：截图/组件库/人格市场/收藏夹
+       在总览归「开发工具」、在侧栏归「常用」⇒ 同一页在两处位置不同，用户以为两套菜单。
+       【32】只钉「页名集合覆盖」，钉不住**归属** ⇒ 这里真解析两个数组逐组比对：
+         组数 / 组名（按序）/ 每组页名集合，且不许出现过载（>6）或过轻（<2）分组。 */
+    (() => {
+      const navBlock = (appC.match(/export const settingsNav[\s\S]*?\n\];/) || [""])[0];
+      const helpBlock = (helpC.match(/export const OVERVIEW_GROUPS[\s\S]*?\n\];/) || [""])[0];
+      if (!navBlock || !helpBlock) return fail("【247】读不到 settingsNav / OVERVIEW_GROUPS（结构变了？）");
+      const navGroups = [...navBlock.matchAll(/group:\s*"([^"]+)",\s*items:\s*\[([\s\S]*?)\]\s*\}/g)].map((g) => ({
+        name: g[1],
+        items: [...g[2].matchAll(/\[\s*"[a-z0-9-]+",\s*"([^"]+)"/g)].map((x) => x[1]),
+      }));
+      const helpGroups = [...helpBlock.matchAll(/group:\s*"([^"]+)"[\s\S]{0,400}?items:\s*\[([\s\S]*?)\n\s{4}\]/g)].map((g) => ({
+        name: g[1],
+        items: [...g[2].matchAll(/page:\s*"([^"]+)"/g)].map((x) => x[1]),
+      }));
+      if (navGroups.length !== helpGroups.length) {
+        return fail(`【247】侧栏 ${navGroups.length} 组 ≠ 总览 ${helpGroups.length} 组 —— 两处分组必须逐组一致`);
+      }
+      for (let i = 0; i < navGroups.length; i++) {
+        if (navGroups[i].name !== helpGroups[i].name) {
+          return fail(`【247】第 ${i + 1} 组组名不一致：侧栏「${navGroups[i].name}」vs 总览「${helpGroups[i].name}」`);
+        }
+        const missing = navGroups[i].items.filter((x) => !helpGroups[i].items.includes(x));
+        if (missing.length) return fail(`【247】「${navGroups[i].name}」组两处归属不同：总览缺 ${missing.join("、")}`);
+        const size = navGroups[i].items.length;
+        if (size > 6) return fail(`【247】「${navGroups[i].name}」有 ${size} 项（>6，侧栏一屏拉不到底）`);
+        if (size < 2) return fail(`【247】「${navGroups[i].name}」只有 ${size} 项（独立成组很怪，并入邻近组）`);
+      }
+      return ok(`【247】设置两处分组逐组一致（${navGroups.length} 组 / ${navGroups.reduce((n, g) => n + g.items.length, 0)} 页，每组 2~6 项）`);
+    })();
   }
 
   // ⑰ 增强按钮提示气泡（09-17 用户要求：输入内容后在图标上方小气泡，词库 15~20 条）。
