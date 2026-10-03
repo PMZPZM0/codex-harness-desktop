@@ -461,7 +461,7 @@ export async function run() {
       "【203】ffmpeg 缺失的报错是**可操作**的（指向开发工具页，而不是只说「不可用」）"
     );
     // 共用同一实现：IPC 薄壳与 MCP 执行端都调 core
-    (videoGenSrc.includes('ipcMain.handle("video:concat"') && videoGenSrc.includes("concatVideosCore(input)") ? ok : fail)(
+    (/(?:ipcMain|ipcHost)\.handle\("video:concat"/.test(videoGenSrc) && videoGenSrc.includes("concatVideosCore(input)") ? ok : fail)(
       "【203】video:concat 是薄壳（直接调 core，不在 handler 里重写一遍）"
     );
     (rpcSrc.includes('name === "video_concat"') && rpcSrc.includes("concatVideosCore({") ? ok : fail)(

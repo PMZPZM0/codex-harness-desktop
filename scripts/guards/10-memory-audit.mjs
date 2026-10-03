@@ -765,8 +765,10 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     }
 
     const importSrc = readFileSync(join(ROOT, "electron", "features", "builtin-skills-ipc", "02-skills-registry.ts"), "utf8");
-    const at = importSrc.indexOf('ipcMain.handle("skills:import"');
-    const nextAt = at >= 0 ? importSrc.indexOf("ipcMain.handle(", at + 10) : -1;
+    const at = importSrc.search(/(?:ipcMain\.handle|ipcHost\.handle)\("skills:import"/);
+    const tailSrc = at >= 0 ? importSrc.slice(at + 10) : "";
+    const relAt = tailSrc.search(/(?:ipcMain\.handle|ipcHost\.handle)\(/);
+    const nextAt = relAt >= 0 ? at + 10 + relAt : -1;
     const body = at >= 0 ? importSrc.slice(at, nextAt > 0 ? nextAt : importSrc.length) : "";
     const audited = at >= 0 && /auditSkill\(/.test(body) && /安全检查未通过/.test(body) && /throw new Error/.test(body);
     (audited ? ok : fail)("【114】skills:import 导入口也过安全审查（否则本地导入是绕开审查的后门）");

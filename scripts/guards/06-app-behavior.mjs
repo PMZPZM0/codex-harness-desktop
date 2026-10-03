@@ -456,7 +456,7 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   //   —— 那是个**shim 文件**，包体 `node_modules/@nuphus` 原地不动，于是卸载后 marker 依然命中。
   //   反证：把包体路径改回 marker 首段推导 → 断言必须红。
   {
-    const rt = codeOnly(readFileSync(join(ROOT, "electron", "features", "engine-ipc", "03-dev-runtime.ts"), "utf8"));
+    const rt = codeOnly(readFileSync(join(ROOT, "electron", "features", "runtime-ipc.ts"), "utf8"));
     const hasMap = /NPM_PACKAGE_ARTIFACTS[^=]*=\s*\{[\s\S]*?nuphus:\s*\{[^}]*node_modules\/@nuphus[\s\S]*?"playwright-cli":\s*\{[^}]*node_modules\/@playwright\/cli[\s\S]*?cloakbrowser:\s*\{[^}]*node_modules\/cloakbrowser/.test(rt);
     hasMap
       ? ok("【242】npm 类工具的卸载落点是**包体目录**（node_modules/@nuphus、@playwright/cli、cloakbrowser），不是 marker 首段")
@@ -549,8 +549,8 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
     (laya.includes("LAYA_PIP_SOURCES") && phone.includes("PHONE_PIP_SOURCES") ? ok : fail)("【244】Laya / 手机控制都走多源兜底表");
     (laya.includes("runPip(") && phone.includes("runPip(") ? ok : fail)("【244】Laya 与手机控制的失败路径都会换源重跑（不是单源硬失败）");
     // 工具自检：用户明确要的「检查」——必须是**真跑**，不能只查文件在不在
-    const rt = readFileSync(join(ROOT, "electron", "features", "engine-ipc", "03-dev-runtime.ts"), "utf8");
-    (rt.includes('ipcMain.handle("runtime:health"') ? ok : fail)("【244】存在工具自检 IPC（runtime:health）");
+    const rt = readFileSync(join(ROOT, "electron", "features", "runtime-ipc.ts"), "utf8");
+    (/(?:ipcMain|ipcHost)\.handle\("runtime:health"/.test(rt) ? ok : fail)("【244】存在工具自检 IPC（runtime:health）");
     (rt.includes("function probeTool(") && rt.includes("child.on(\"close\"") ? ok : fail)("【244】自检是真跑版本命令（不是只查文件在不在）");
     (rt.includes('if (spec.kind === "guide") continue;') ? ok : fail)("【244】自检跳过系统级安装项（Docker / OpenSSL 我们没装，无从探测）");
   }
@@ -1999,7 +1999,7 @@ w.postMessage({id:1,op:"list",root});
         + (unwired.length ? "，未接线：" + unwired.slice(0, 3).map((f) => f.replace(ROOT, "")).join("；") : "")
     );
     // ⑤ 主路径必须在**转发前**调用（响应侧建会让本会话错过）
-    const bridge171 = readFileSync(join(ROOT, "electron", "features", "engine-ipc", "01-thread-runtime-codex-bridge.ts"), "utf8");
+    const bridge171 = readFileSync(join(ROOT, "electron", "features", "codex-ipc.ts"), "utf8");
     ((() => {
       const call = bridge171.indexOf("ensureProjectAgentsMd(startCwd)");
       const req = bridge171.indexOf("server.request(method, params)");
@@ -2105,7 +2105,7 @@ w.postMessage({id:1,op:"list",root});
     const handlerPool = readFileSync(join(ROOT, "electron", "features", "builtin-skills-ipc", "03-plugins-market.ts"), "utf8");
     const manifestPool = readFileSync(join(ROOT, "electron", "ipc-channels.manifest.json"), "utf8");
     const registryPool = readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8");
-    (handlerPool.includes('ipcMain.handle("skills:pool-describe"') && handlerPool.includes('ipcMain.handle("skills:pool-set"') ? ok : fail)(
+    (/(?:ipcMain|ipcHost)\.handle\("skills:pool-describe"/.test(handlerPool) && /(?:ipcMain|ipcHost)\.handle\("skills:pool-set"/.test(handlerPool) ? ok : fail)(
       "【173】skills:pool-describe / skills:pool-set handler 已注册"
     );
     (manifestPool.includes("skills:pool-describe") && manifestPool.includes("skills:pool-set") ? ok : fail)(
@@ -3000,7 +3000,7 @@ w.postMessage({id:1,op:"list",root});
        于是「装完了但已安装列表里没有、也卸不掉」。两条不变量：
          ① 补齐口径 = 引擎列表 ∪（本地已装 − 引擎已认领），且通道必须**零网络**；
          ② 卸载走本地删除时，目标必须过 safeFolder 归一 + 市场目录内校验（删除是唯一不可逆动作）。 */
-    (marketIpcSrc245.includes('ipcMain.handle("plugins:market-installed"') && marketIpcSrc245.includes("listInstalledMarketPlugins(codexMarketDir(codexHome))") && !/market-installed[\s\S]{0,200}listMarketPlugins\(/.test(marketIpcSrc245) ? ok : fail)(
+    (/(?:ipcMain|ipcHost)\.handle\("plugins:market-installed"/.test(marketIpcSrc245) && marketIpcSrc245.includes("listInstalledMarketPlugins(codexMarketDir(codexHome))") && !/market-installed[\s\S]{0,200}listMarketPlugins\(/.test(marketIpcSrc245) ? ok : fail)(
       "【246】已装清单通道只扫本地目录（走 listInstalledMarketPlugins；误接 listMarketPlugins 会去拉远端 48 个插件）"
     );
     (appUiCode245.includes("localOnly: true") && appUiCode245.includes("engineSlugs.has(row.slug)") ? ok : fail)(

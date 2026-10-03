@@ -674,7 +674,7 @@ export async function run() {
       : fail(`【32】推荐项变成 ${coreCount} 项 —— 弹窗触发条件会跟着偏`);
     // Laya / 手机控制是 pip 包（不在 install-runtimes 里）⇒ runtime:install 必须分派到各自的安装器，
     // 否则引导里点「一键安装」会静默什么都不装（用户看到"装好了"但功能还是缺）。
-    const instDispatch = readFileSync(join(ROOT, "electron", "features", "engine-ipc", "04-dev-runtime-install.ts"), "utf8");
+    const instDispatch = readFileSync(join(ROOT, "electron", "features", "runtime-ipc.ts"), "utf8");
     (/if \(id === "laya" \|\| id === "phone-harness"\)[\s\S]{0,400}?layaInstall\(\)[\s\S]{0,200}?installPhoneHarness\(\)/.test(instDispatch))
       ? ok("【32】runtime:install 对 Laya / 手机控制分派到各自的 pip 安装器（否则引导里的「一键安装」是空转）")
       : fail("【32】runtime:install 没分派 laya / phone-harness —— 引导点一键安装会静默什么都不装");
@@ -1860,7 +1860,7 @@ export async function run() {
     ? ok : fail)("【52】回合 id 三种形态都收（否则闸门拿不到真实计数）");
   (/METHOD === "thread\/status\/changed"/.test(main) && /st === "idle" \|\| st === "notLoaded"/.test(main)
     ? ok : fail)("【52】线程变空闲时释放**该线程**的记账（引擎侧权威信号，防记账泄漏卡死闸门）");
-  (/ipcMain\.handle\("engine:active-turns"/.test(main) && /engineActiveTurns: \(\) => __ipc\("engine:active-turns",/.test(pre)
+  (/(?:ipcMain|ipcHost)\.handle\("engine:active-turns"/.test(main) && /engineActiveTurns: \(\) => __ipc\("engine:active-turns",/.test(pre)
     ? ok : fail)("【52】有「活跃回合数」探针（验收必须确认前置成立，否则测的是「不忙时当然不推迟」）");
 
   // ④ 安装目录漂移自愈（09-19 用户：「还有没有绝对路径的，通通查出来解决掉」）
@@ -1869,7 +1869,7 @@ export async function run() {
   (/envPathStale \|\| instructionsOutdated/.test(main) ? ok : fail)("【52】PATH 漂移被纳入自愈触发条件");
 
   // ④ 台账 + 通知（诊断"是谁打断的" + 告诉用户"改动待生效"）
-  (/ipcMain\.handle\("engine:restart-log"/.test(main) ? ok : fail)("【52】有重启台账 IPC（下次再断能查到是谁触发的）");
+  (/(?:ipcMain|ipcHost)\.handle\("engine:restart-log"/.test(main) ? ok : fail)("【52】有重启台账 IPC（下次再断能查到是谁触发的）");
   (/engineRestartLog: \(\) => __ipc\("engine:restart-log",/.test(pre) ? ok : fail)("【52】preload 暴露台账");
   (/engineRestartLog\(\): Promise</.test(viteEnv) ? ok : fail)("【52】台账有类型声明（IPC 三件套同步）");
   (/onEngineRestartDeferred:/.test(pre) && /onEngineRestartDeferred\(listener/.test(viteEnv)
@@ -4008,7 +4008,7 @@ export async function run() {
     !/store\.activeId = store\.accounts\[0\]/.test(mainSrc89)
       ? ok("不再有「activeId = accounts[0]」这种不看停用状态的赋值")
       : fail("仍有按索引取生效账号的写法 —— 会落到停用账号上");
-    !/window\.codex\.relayLogout|relayLogout:/.test(relayUi89) && !/relayLogout/.test(readFileSync(join(ROOT, "electron", "preload.ts"), "utf8")) && !/ipcMain\.handle\("relay:logout"/.test(mainSrc89)
+    !/window\.codex\.relayLogout|relayLogout:/.test(relayUi89) && !/relayLogout/.test(readFileSync(join(ROOT, "electron", "preload.ts"), "utf8")) && !/(?:ipcMain|ipcHost)\.handle\("relay:logout"/.test(mainSrc89)
       ? ok("★ 「退出登录」（按 activeId 删账号的隐藏删除入口）已整链移除：handler / preload / 调用点")
       : fail("relay:logout 还留在某处（handler 或 preload 桥）—— 看着 A 的面板可能删掉 B");
     !/if \(!a\.active\) await switchAccount\(a\.id\)/.test(relayUi89)
@@ -4023,7 +4023,7 @@ export async function run() {
     /const live = Boolean\(a\.active\) && !a\.disabled;/.test(relayUi89)
       ? ok("卡片「使用中/当前生效」判据同时要求未停用（与数据层同源）")
       : fail("卡片仍只看 active —— 停用账号会显示成当前生效");
-    /ipcMain\.handle\("relay:overview", async \(_e, id\?: string\)/.test(mainSrc89) && /relayOverview\(account\?\.id\)/.test(relayUi89)
+    /(?:ipcMain|ipcHost)\.handle\("relay:overview", async \(_e, id\?: string\)/.test(mainSrc89) && /relayOverview\(account\?\.id\)/.test(relayUi89)
       ? ok("★ 管理面板按「被点开的账号」读余额/套餐/密钥（不再一律读生效账号）")
       : fail("面板仍读生效账号 —— 点开别的账号只会看到别人的数据");
     (relayUi89.match(/!isLiveRow\(account\.id\)/g) || []).length >= 2 && /不是当前生效账号/.test(relayUi89)
