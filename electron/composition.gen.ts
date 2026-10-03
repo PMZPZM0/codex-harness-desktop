@@ -17,6 +17,46 @@ import { dramaCanvasFeature as feat_drama_canvas } from "./features/drama-canvas
 import { petFeature as feat_pet } from "./features/pet-ipc";
 import { screenshotFeature as feat_screenshot } from "./features/screenshot-ipc";
 import { favoritesFeature as feat_favorites } from "./features/favorites-ipc";
+import { userFeature as feat_user } from "./features/user-ipc";
+import { capabilitiesFeature as feat_capabilities } from "./features/capabilities-ipc";
+import { notifyFeature as feat_notify } from "./features/notify-ipc";
+import { awakeFeature as feat_awake } from "./features/awake-ipc";
+import { externalFeature as feat_external } from "./features/external-ipc";
+import { shellFeature as feat_shell } from "./features/shell-ipc";
+import { botFeature as feat_bot } from "./features/bot-ipc";
+import { botsFeature as feat_bots } from "./features/bots-ipc";
+import { botBindingFeature as feat_bot_binding } from "./features/bot-binding-ipc";
+import { botStreamFeature as feat_bot_stream } from "./features/bot-stream-ipc";
+import { channelBotFeature as feat_channel_bot } from "./features/channel-bot-ipc";
+import { weixinFeature as feat_weixin } from "./features/weixin-ipc";
+import { telegramFeature as feat_telegram } from "./features/telegram-ipc";
+import { feishuFeature as feat_feishu } from "./features/feishu-ipc";
+import { dingtalkFeature as feat_dingtalk } from "./features/dingtalk-ipc";
+import { qqFeature as feat_qq } from "./features/qq-ipc";
+import { wecomWebhookFeature as feat_wecom_webhook } from "./features/wecom-webhook-ipc";
+import { ponytailFeature as feat_ponytail } from "./features/ponytail-ipc";
+import { channelsFeature as feat_channels } from "./features/channels-ipc";
+import { memoryFeature as feat_memory } from "./features/memory-ipc";
+import { rpaFeature as feat_rpa } from "./features/rpa-ipc";
+import { tasksFeature as feat_tasks } from "./features/tasks-ipc";
+import { schedulerFeature as feat_scheduler } from "./features/scheduler-ipc";
+import { sshFeature as feat_ssh } from "./features/ssh-ipc";
+import { terminalFeature as feat_terminal } from "./features/terminal-ipc";
+import { browserFeature as feat_browser } from "./features/browser-ipc";
+import { gitFeature as feat_git } from "./features/git-ipc";
+import { scratchFeature as feat_scratch } from "./features/scratch-ipc";
+import { pastedTextFeature as feat_pasted_text } from "./features/pasted-text-ipc";
+import { appSettingsFeature as feat_appSettings } from "./features/app-settings-ipc";
+import { personalizationFeature as feat_personalization } from "./features/personalization-ipc";
+import { teamRunsFeature as feat_team_runs } from "./features/team-runs-ipc";
+import { teamThreadsFeature as feat_team_threads } from "./features/team-threads-ipc";
+import { teamsFeature as feat_teams } from "./features/teams-ipc";
+import { subagentsFeature as feat_subagents } from "./features/subagents-ipc";
+import { agentsFeature as feat_agents } from "./features/agents-ipc";
+import { commandsFeature as feat_commands } from "./features/commands-ipc";
+import { promptFeature as feat_prompt } from "./features/prompt-ipc";
+import { connectorsFeature as feat_connectors } from "./features/connectors-ipc";
+import { mcpServersFeature as feat_mcp_servers } from "./features/mcp-servers-ipc";
 
 export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unknown };
 
@@ -39,6 +79,46 @@ export const ENABLED: EnabledDomain[] = [
   { id: "pet", plugin: feat_pet as Plugin<unknown>, config: null },
   { id: "screenshot", plugin: feat_screenshot as Plugin<unknown>, config: null },
   { id: "favorites", plugin: feat_favorites as Plugin<unknown>, config: null },
+  { id: "user", plugin: feat_user as Plugin<unknown>, config: null },
+  { id: "capabilities", plugin: feat_capabilities as Plugin<unknown>, config: null },
+  { id: "notify", plugin: feat_notify as Plugin<unknown>, config: null },
+  { id: "awake", plugin: feat_awake as Plugin<unknown>, config: null },
+  { id: "external", plugin: feat_external as Plugin<unknown>, config: null },
+  { id: "shell", plugin: feat_shell as Plugin<unknown>, config: null },
+  { id: "bot", plugin: feat_bot as Plugin<unknown>, config: null },
+  { id: "bots", plugin: feat_bots as Plugin<unknown>, config: null },
+  { id: "bot-binding", plugin: feat_bot_binding as Plugin<unknown>, config: null },
+  { id: "bot-stream", plugin: feat_bot_stream as Plugin<unknown>, config: null },
+  { id: "channel-bot", plugin: feat_channel_bot as Plugin<unknown>, config: null },
+  { id: "weixin", plugin: feat_weixin as Plugin<unknown>, config: null },
+  { id: "telegram", plugin: feat_telegram as Plugin<unknown>, config: null },
+  { id: "feishu", plugin: feat_feishu as Plugin<unknown>, config: null },
+  { id: "dingtalk", plugin: feat_dingtalk as Plugin<unknown>, config: null },
+  { id: "qq", plugin: feat_qq as Plugin<unknown>, config: null },
+  { id: "wecom-webhook", plugin: feat_wecom_webhook as Plugin<unknown>, config: null },
+  { id: "ponytail", plugin: feat_ponytail as Plugin<unknown>, config: null },
+  { id: "channels", plugin: feat_channels as Plugin<unknown>, config: null },
+  { id: "memory", plugin: feat_memory as Plugin<unknown>, config: null },
+  { id: "rpa", plugin: feat_rpa as Plugin<unknown>, config: null },
+  { id: "tasks", plugin: feat_tasks as Plugin<unknown>, config: null },
+  { id: "scheduler", plugin: feat_scheduler as Plugin<unknown>, config: null },
+  { id: "ssh", plugin: feat_ssh as Plugin<unknown>, config: null },
+  { id: "terminal", plugin: feat_terminal as Plugin<unknown>, config: null },
+  { id: "browser", plugin: feat_browser as Plugin<unknown>, config: null },
+  { id: "git", plugin: feat_git as Plugin<unknown>, config: null },
+  { id: "scratch", plugin: feat_scratch as Plugin<unknown>, config: null },
+  { id: "pasted-text", plugin: feat_pasted_text as Plugin<unknown>, config: null },
+  { id: "appSettings", plugin: feat_appSettings as Plugin<unknown>, config: null },
+  { id: "personalization", plugin: feat_personalization as Plugin<unknown>, config: null },
+  { id: "team-runs", plugin: feat_team_runs as Plugin<unknown>, config: null },
+  { id: "team-threads", plugin: feat_team_threads as Plugin<unknown>, config: null },
+  { id: "teams", plugin: feat_teams as Plugin<unknown>, config: null },
+  { id: "subagents", plugin: feat_subagents as Plugin<unknown>, config: null },
+  { id: "agents", plugin: feat_agents as Plugin<unknown>, config: null },
+  { id: "commands", plugin: feat_commands as Plugin<unknown>, config: null },
+  { id: "prompt", plugin: feat_prompt as Plugin<unknown>, config: null },
+  { id: "connectors", plugin: feat_connectors as Plugin<unknown>, config: null },
+  { id: "mcp-servers", plugin: feat_mcp_servers as Plugin<unknown>, config: null },
 ];
 
 for (const row of ENABLED) mountFeature(row.plugin, row.config);

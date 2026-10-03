@@ -1296,7 +1296,8 @@ w.postMessage({id:1,op:"list",root});
     /* 09-22 收紧：scratch root 必须**全平台**统一 userData —— 旧 darwin 分支写法允许 win 落 exe 同级目录，
        实测 dist/scratch 里的会话记忆被构建清掉（假记忆）；打包后在 Program Files 还会只读。
        ⛔ 只检查 scratch:create handler 的函数体窗口 —— 聚合源里别处（如注释）出现 exe 字样不算。 */
-    const scratchIdx = mainSrc.indexOf('ipcMain.handle("scratch:create"');
+    // ⛔ 10-03：域改插件形态后注册写 ipcHost.handle —— 只认 ipcMain.handle 会得到 -1 ⇒ 切片为空 ⇒ 假红。
+    const scratchIdx = mainSrc.search(/(?:ipcMain\.handle|ipcHost\.handle)\("scratch:create"/);
     const scratchBody = scratchIdx < 0 ? "" : mainSrc.slice(scratchIdx, scratchIdx + 500);
     (/getPath\("userData"\)/.test(scratchBody) && scratchBody.includes('"scratch"') && !/dirname\(app\.getPath\("exe"\)\)/.test(scratchBody))
       ? ok("【30】scratch:create 全平台落 userData（不写 exe 同级 dist / .app bundle）")
@@ -1473,8 +1474,9 @@ w.postMessage({id:1,op:"list",root});
   /* ══ 【138】不许"吞掉失败还报成功"（09-24，评估报告 §4.2 / §4.4）══
      同类事故在本仓反复出现（开关点了没生效 / 归档报喜而会话还在），故钉成结构判据。 */
   {
-    const teamsSrc = readFileSync(join(ROOT, "electron", "features", "teams-agents-ipc.ts"), "utf8");
-    const archiveHandler = teamsSrc.slice(teamsSrc.indexOf('ipcMain.handle("agents:archive"'));
+    const teamsSrc = readFileSync(join(ROOT, "electron", "features", "agents-ipc.ts"), "utf8");
+    const archiveFrom = teamsSrc.search(/(?:ipcMain\.handle|ipcHost\.handle)\("agents:archive"/);
+    const archiveHandler = archiveFrom >= 0 ? teamsSrc.slice(archiveFrom) : "";
     /* ⛔ 形态判据：thread/archive 的失败必须先落到 failed，不能 `.catch(() => undefined)` 之后
        无条件自增 —— 那会让界面弹「已归档 N 个」而引擎侧根本没归档。 */
     (!/thread\/archive"[\s\S]{0,120}?\.catch\(\(\) => undefined\)[\s\S]{0,200}?archived \+= 1/.test(archiveHandler) ? ok : fail)(
@@ -2434,7 +2436,7 @@ w.postMessage({id:1,op:"list",root});
   /* ══ 【183】定时任务 → 微信主动投递（09-27：打通「会话设定时 + 到点推微信」通道） ══ */
   {
     const sched183 = readFileSync(join(ROOT, "electron", "scheduler.ts"), "utf8");
-    const im183 = readFileSync(join(ROOT, "electron", "features", "im-channels-ipc.ts"), "utf8");
+    const im183 = readFileSync(join(ROOT, "electron", "features", "weixin-ipc.ts"), "utf8");
     const gw183 = readFileSync(join(ROOT, "electron", "weixin-gateway.ts"), "utf8");
     // ⛔ 都锚接线形态，别锚常量/注释（注释里的同名字串不算——【180】【70】各踩过一次）
     (/deliver\?: DeliverTarget/.test(sched183) && /deliver: input\.deliver === undefined \? current\?\.deliver : sanitizeDeliver\(input\.deliver\)/.test(sched183) ? ok : fail)(
@@ -2449,7 +2451,8 @@ w.postMessage({id:1,op:"list",root});
     (/textByTurn/.test(sched183) && /item\/agentMessage\/delta/.test(sched183) && /item\/completed/.test(sched183) ? ok : fail)(
       "【183】回复文本从 agentMessage 增量聚合 + completed 兜底（完成事件经常只回 id+status，只等 completed 会拿到空文本）"
     );
-    (/ipcMain\.handle\("weixin:send"/.test(im183) && /sendToBoundUser\(text\)/.test(im183) && /hasSession\(\)/.test(im183) ? ok : fail)(
+    // ⛔ 10-03：域改插件形态后注册写 ipcHost.handle —— 只认 ipcMain.handle 会让这条**安全/能力**断言假红。
+    (/(?:ipcMain\.handle|ipcHost\.handle)\("weixin:send"/.test(im183) && /sendToBoundUser\(text\)/.test(im183) && /hasSession\(\)/.test(im183) ? ok : fail)(
       "【183】weixin:send 通道存在（agent 主动推送的直连工具；未登录 must 抛错，to 缺省走绑定用户）"
     );
     (/get boundUserId\(\)/.test(gw183) && /sendToBoundUser/.test(gw183) ? ok : fail)(
