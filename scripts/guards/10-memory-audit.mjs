@@ -764,7 +764,7 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
         ? ok : fail)("【114】每轮指令含记忆分类与整洁规则（指向对应技能）");
     }
 
-    const importSrc = readFileSync(join(ROOT, "electron", "features", "builtin-skills-ipc", "02-skills-registry.ts"), "utf8");
+    const importSrc = readFileSync(join(ROOT, "electron", "features", "skills-ipc.ts"), "utf8");
     const at = importSrc.search(/(?:ipcMain\.handle|ipcHost\.handle)\("skills:import"/);
     const tailSrc = at >= 0 ? importSrc.slice(at + 10) : "";
     const relAt = tailSrc.search(/(?:ipcMain\.handle|ipcHost\.handle)\(/);

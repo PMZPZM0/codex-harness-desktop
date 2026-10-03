@@ -25,7 +25,7 @@ import { readSubAgents, writeSubAgents } from "../main/09-agents-plugins";
 import { runDelegatedTask } from "../features/delegation";
 import { delegateRegistry, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
 import { mutableState, readBuiltinPlugins, scheduler } from "../main";
-import { generateImageResilient } from "./builtin-skills-ipc/01-builtin-images";
+import { generateImageResilient } from "./builtin-ipc";
 import { uiverseSearch, uiverseGet } from "./uiverse-library";
 import { concatVideosCore, downloadVideoCore, findVideoJob, listVideoJobs, pollVideoCore, rememberVideoJob, submitVideoCore, updateVideoJob, videoProviderViews } from "./video-gen";
 export async function dispatchRpcCall(name: unknown, args: Record<string, unknown>): Promise<{ ok: boolean; output?: string; error?: string }> {

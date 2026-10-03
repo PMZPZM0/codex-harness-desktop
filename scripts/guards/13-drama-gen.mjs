@@ -321,7 +321,7 @@ export async function run() {
     const coreSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "dispatch-core.ts"), "utf8"));
     const rpcSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "dispatch-rpc.ts"), "utf8"));
     const videoSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "video-gen.ts"), "utf8"));
-    const imageSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "builtin-skills-ipc", "01-builtin-images.ts"), "utf8"));
+    const imageSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "builtin-ipc.ts"), "utf8"));
     const storySrc = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "use-drama-story.ts"), "utf8"));
 
     for (const tool of ["image_generate", "video_generate", "video_status"]) {
@@ -588,7 +588,7 @@ export async function run() {
       "【206】不指定画幅时保持原默认（默认路径不能被改坏）"
     );
     /* ④ 生图：size / negative 只在显式给时才带上（不同网关接受度差异大，默认不带 = 旧行为） */
-    const imgSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "builtin-skills-ipc", "01-builtin-images.ts"), "utf8"));
+    const imgSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "builtin-ipc.ts"), "utf8"));
     (/\.\.\.\(input\.size \? \{ size: input\.size \} : \{\}\)/.test(imgSrc) && /negative_prompt: input\.negative/.test(imgSrc) ? ok : fail)(
       "【206】生图 size / negative 只在显式给时才传（默认不带 = 不把本来能用的网关弄挂）"
     );
@@ -1048,7 +1048,7 @@ export async function run() {
     (/outputDir: String\(outDir\?\.dir \|\| ""\)\.trim\(\) \|\| undefined/.test(storySrc220) ? ok : fail)(
       "【220】生成时把产物目录传给主进程（只登记通道不传 = 白做）"
     );
-    (/persistGeneratedImage\(url: string, dirOverride\?: string\)/.test(readFileSync(join(ROOT, "electron", "features", "builtin-skills-ipc", "01-builtin-images.ts"), "utf8")) ? ok : fail)(
+    (/persistGeneratedImage\(url: string, dirOverride\?: string\)/.test(readFileSync(join(ROOT, "electron", "features", "builtin-ipc.ts"), "utf8")) ? ok : fail)(
       "【220】落盘真的落到指定目录（不传时仍走旧默认 —— 会话里的 MCP 工具行为不变）"
     );
     (/outputDir && !isInsideTrustedRoots/.test(readFileSync(join(ROOT, "electron", "features", "video-gen.ts"), "utf8"))

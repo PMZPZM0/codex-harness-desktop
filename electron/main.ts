@@ -84,7 +84,6 @@ import { readCustomModel, readCustomModels, writeCustomModels, healReservedProvi
 import { distillSummarize, turnOutputText, waitForTurnCompletion } from "./main/03-turn-summary";
 import { connectorEnv, readChannelBot, connectorToml, mcpToolRulesOf } from "./main/04-connector-config";
 import "./features/dialog-ipc";
-import "./features/builtin-skills-ipc";
 import "./features/remote-ipc";
 import "./features/laya-service";
 import "./features/fs-ipc";
