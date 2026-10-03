@@ -490,6 +490,13 @@
       "file": "features/hooks-ipc.ts",
       "export": "hooksFeature",
       "config": null
+    },
+    {
+      "id": "remote",
+      "enabled": true,
+      "file": "features/remote-ipc.ts",
+      "export": "remoteFeature",
+      "config": null
     }
   ]
 }

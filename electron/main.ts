@@ -84,7 +84,6 @@ import { readCustomModel, readCustomModels, writeCustomModels, healReservedProvi
 import { distillSummarize, turnOutputText, waitForTurnCompletion } from "./main/03-turn-summary";
 import { connectorEnv, readChannelBot, connectorToml, mcpToolRulesOf } from "./main/04-connector-config";
 import "./features/dialog-ipc";
-import "./features/remote-ipc";
 import "./features/laya-service";
 import "./features/fs-ipc";
 /* 桌面宠物（09-30）：IPC 域 + 浮窗。侧效应 import ⇒ handler 立即注册（早于 whenReady）。
