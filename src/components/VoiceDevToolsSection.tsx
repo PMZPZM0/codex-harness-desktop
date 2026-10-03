@@ -28,6 +28,14 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
   const [downloading, setDownloading] = useState<DownloadState>(null);
   // 音色克隆模型（ZipVoice）独立下载状态：与基础语音模型分开显示/取消
   const [zipDownloading, setZipDownloading] = useState<DownloadState>(null);
+  /**
+   * ⛔ 10-03 恢复卸载二次确认（此前被显式移除，理由是"window.confirm 抢焦点"+"只是删本地文件"）。
+   *   这两条理由对 156MB 的**按需下载**模型都不成立：删了要重新走网络才能恢复，而 GitHub
+   *   直连在国内不稳（已走 ghfast/gh-proxy 镜像，但仍是 156MB 的往返）。用户反馈「删了就没了」。
+   *   做法沿用本项目惯例（`DramaProjectsPanel` 删除 / `MemoryPanels` 清理动作 / 删订阅账号）：
+   *   **第一次点只展开确认条，第二次才真删** —— 既不抢焦点，也不是一击生效。
+   */
+  const [confirmUninstall, setConfirmUninstall] = useState(false);
   const unsubRef = useRef<(() => void) | null>(null);
 
   const refresh = useCallback(() => {
@@ -102,16 +110,20 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
   }, [onNotice]);
 
   const uninstall = useCallback(() => {
-    // 不再 window.confirm——浏览器原生确认框会抢焦点、打断输入框；直接开始卸载
-    // （卸载瞬间完成、不可逆的操作让用户主动在按钮上点就行；卸载本身也只是删本地文件）
+    // ⛔ 10-03：二次确认改在按钮上做（见 confirmUninstall），这里只负责真正执行。
+    //    卸载删的是**整个 voice-models 目录**（含音色克隆模型 156MB 与唤醒模型），
+    //    但**不碰 <userData>/voice-profiles** ⇒ 用户导入/录制的音色（参考音频）安全。
+    setConfirmUninstall(false);
     window.codex.voiceModelsUninstall()
-      .then((r: any) => { if (r.ok) onNotice("语音模型已卸载"); else onNotice("卸载失败"); refresh(); })
+      .then((r: any) => { if (r.ok) onNotice("语音模型已卸载（音色参考音频已保留）"); else onNotice("卸载失败"); refresh(); })
       .catch((e: any) => onNotice(`卸载失败：${e?.message ?? e}`));
   }, [onNotice, refresh]);
 
   const ready = status ? status.ready === status.total && status.total > 0 : false;
   const sizeMB = status ? Math.round(status.bytes / 1024 / 1024) : null;
   const zipReady = Boolean((status as any)?.zipvoice?.ready);
+  /** 音色克隆模型体积（主包 + 声码器，10-03 约 156MB）—— 确认文案要写准，别让用户以为"只是删个小文件" */
+  const zipBytesMB = (status as any)?.zipvoice?.bytes ? Math.round((status as any).zipvoice.bytes / 1024 / 1024) : null;
 
   const installZipvoice = useCallback(() => {
     setZipDownloading({ percent: 0, message: "准备下载音色克隆模型…", mode: "download" });
@@ -183,9 +195,24 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
             <button className="secondary-setting" onClick={reveal}>
               <FolderOpen size={13} />打开目录
             </button>
-            <button className="secondary-setting voice-uninstall" onClick={uninstall}>
-              <X size={13} />卸载
-            </button>
+            {confirmUninstall ? (
+              <>
+                <span className="voice-uninstall-hint">
+                  将删除全部语音模型
+                  {sizeMB ? `（基础约 ${sizeMB} MB` : ""}
+                  {zipBytesMB ? ` + 音色克隆约 ${zipBytesMB} MB` : ""}
+                  ，需重新下载才能恢复。<strong>你的音色（参考音频）不会被删除。</strong>
+                </span>
+                <button className="secondary-setting voice-uninstall" onClick={uninstall}>
+                  <X size={13} />确认卸载
+                </button>
+                <button className="secondary-setting" onClick={() => setConfirmUninstall(false)}>取消</button>
+              </>
+            ) : (
+              <button className="secondary-setting voice-uninstall" onClick={() => setConfirmUninstall(true)}>
+                <X size={13} />卸载
+              </button>
+            )}
           </>
         ) : (
           <>
