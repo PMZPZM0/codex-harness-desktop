@@ -30,19 +30,16 @@ export const HEADER = `/* ⛔ 本文件由 scripts/gen-domain-registry.mjs 生�
 /** 纯函数：把组合配置渲染成生成物全文（守卫直接 import 这个函数做逐字节比对）。 */
 export function renderRegistry(composition) {
   const rows = (composition.domains || []).filter((d) => d && d.enabled);
-  const imports = [];
-  const entries = [];
-  for (const d of rows) {
-    const varName = `feat_${String(d.id).replace(/-/g, "_")}`;
-    const fileNoExt = String(d.file).replace(/\.tsx?$/, "");
-    imports.push(`import { ${d.export} as ${varName} } from "./${fileNoExt}";`);
-    entries.push(`  { id: ${JSON.stringify(d.id)}, plugin: ${varName} as Plugin<unknown>, config: ${JSON.stringify(d.config ?? null)} },`);
-  }
-  return `${HEADER}import type { Plugin } from "./context";
-${imports.join("\n")}
+  const entries = rows.map((d) => `  { id: ${JSON.stringify(d.id)}, config: ${JSON.stringify(d.config ?? null)} },`);
+  return `${HEADER}export type EnabledDomain = { id: string; config: unknown };
 
-/** 已启用的域（顺序 = composition.json 里的顺序 = 挂载顺序）。 */
-export const COMPOSITION: Array<{ id: string; plugin: Plugin<unknown>; config: unknown }> = [
+/** 已启用的域（顺序 = composition.json 里的顺序 = 挂载顺序）。
+ *  ⛔⛔ 这里**只放数据，绝不 import 域模块** —— 生成物会被**域自己** import（域要查"我启用了没"），
+ *     一旦这里也 import 域就成**循环依赖**：CJS 下域模块还没求值完，plugin 值就是 undefined，
+ *     启动即崩（10-03 实测事故：Cannot read properties of undefined (reading name) @ mountFeature）。
+ *     ⛔⛔ 本函数体是**模板字符串**：里面**绝不能出现反引号**（会把模板提前闭合，生成器直接语法错误）。
+ *     插件值由**域自己**传给 mountFromComposition(id, plugin)，环就此断开。 */
+export const ENABLED: EnabledDomain[] = [
 ${entries.join("\n")}
 ];
 `;

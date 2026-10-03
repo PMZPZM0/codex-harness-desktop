@@ -11,13 +11,21 @@
  *
  * ⛔ 本文件属基座层（electron/ 根）：只依赖 context，不 import 任何域（域→基座单向）。
  */
-import { mountFeature } from "./context";
-import { COMPOSITION } from "./composition.gen";
+import { mountFeature, type Plugin } from "./context";
+import { ENABLED } from "./composition.gen";
 
-/** 挂载组合表里启用且登记过的那个域；未登记/已禁用返回 false（由调用方决定是否报错）。 */
-export function mountFromComposition(id: string): boolean {
-  const row = COMPOSITION.find((r) => r.id === id);
+/**
+ * 挂载组合表里启用且登记过的那个域。
+ * ⛔ 插件值由**调用方（域自己）**传进来：生成物只存数据（id/config），不 import 域 ——
+ *    否则"生成物 import 域 + 域 import 生成物"成环，CJS 下 plugin 会是 undefined，启动即崩
+ *    （10-03 事故）。传错/未导出时这里显式报错，不再让 `undefined.name` 把宿主带走。
+ */
+export function mountFromComposition<T>(id: string, plugin: Plugin<T>): boolean {
+  if (!plugin) {
+    throw new Error(`[composition] ${id}: 传入的插件是 undefined（循环依赖、或 export 名字写错）`);
+  }
+  const row = ENABLED.find((r) => r.id === id);
   if (!row) return false;
-  mountFeature(row.plugin, row.config as never);
+  mountFeature(plugin, row.config as never);
   return true;
 }
