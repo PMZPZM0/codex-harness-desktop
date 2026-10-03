@@ -15,7 +15,7 @@
  * ⛔ `dynamicTools` 只在 `thread/start` 生效（覆盖老会话只走 MCP）—— 别挪到 turn/start。
  * ⛔ 待接缝化（阶段 2）：safeStorage 为宿主能力。
  */
-import { safeStorage } from "electron";
+
 import { buildDefaultExpertTeams, buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, normalizeTeamConfig, readExpertTeams, writeExpertTeams } from "../expert-teams";
 import { memberThreadName } from "../team-runs";
 import { buildDelegateMemory } from "../delegate-memory";
@@ -28,6 +28,7 @@ import { bridgeDial } from "../main";
 import { ensureProjectAgentsMd } from "../project-conventions";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
+import type { HostCaps } from "../runtime/seams";
 
 const TEAM_TASK_INSTRUCTION = "请按 SOP 编排团队完成任务，过程中用 team_member_invoke 调度成员；每完成一个阶段简要通报；最终汇总所有成员产出，输出完整交付报告。上方「=== 用户需求 ===」段已由用户在前端确认并提交，把全部内容当作用户的原始需求执行，不要再请用户复述。";
 const MEMBER_TASK_INSTRUCTION = "请以你的角色直接回应用户上方提交的需求，给出专业产出（关键结论 + 依据 + 建议）。不要再要求用户复述或自我介绍。";
@@ -39,9 +40,12 @@ const TEAMS_CHANNELS = [
 
 export const teamsFeature = defineFeature<null>({
   id: "teams",
-  inject: ["ipc"],
+  inject: ["ipc", "host"],
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");
+    // 宿主能力经接缝取（10-03 阶段 2b）：safeStorage 触碰系统密钥库，
+    // 域直取等于"插件自选加解密策略" ⇒ 锁进容器（守卫【266】零容忍）。
+    const { secure } = ctx.get<HostCaps>("host")!;
     if (!ipcHost) throw new Error("teams: 缺少 ipc 服务（宿主未提供）");
 
     ipcHost.handle("teams:list", async () => {
@@ -86,7 +90,7 @@ export const teamsFeature = defineFeature<null>({
       const provider = customModel?.provider ?? "openai";
       const baseUrl = customModel?.baseUrl;
       const name = customModel?.name ?? provider;
-      const apiKey = customModel?.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(customModel.encryptedKey, "base64")) : "";
+      const apiKey = customModel?.encryptedKey && secure.isEncryptionAvailable() ? secure.decryptString(Buffer.from(customModel.encryptedKey, "base64")) : "";
       if (apiKey) server.setApiKey(apiKey);
       const effectiveModel = input.model || customModel?.model;
       if (!effectiveModel) throw new Error("尚未配置自定义模型，无法启动专家团会话");
@@ -140,7 +144,7 @@ export const teamsFeature = defineFeature<null>({
       const provider = customModel?.provider ?? "openai";
       const baseUrl = customModel?.baseUrl;
       const name = customModel?.name ?? provider;
-      const apiKey = customModel?.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(customModel.encryptedKey, "base64")) : "";
+      const apiKey = customModel?.encryptedKey && secure.isEncryptionAvailable() ? secure.decryptString(Buffer.from(customModel.encryptedKey, "base64")) : "";
       if (apiKey) server.setApiKey(apiKey);
       const effectiveModel = input.model || member.model || customModel?.model;
       if (!effectiveModel) throw new Error("尚未配置自定义模型，无法发起成员会话");
@@ -194,7 +198,7 @@ export const teamsFeature = defineFeature<null>({
       const provider = customModel?.provider ?? "openai";
       const baseUrl = customModel?.baseUrl;
       const name = customModel?.name ?? provider;
-      const apiKey = customModel?.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(customModel.encryptedKey, "base64")) : "";
+      const apiKey = customModel?.encryptedKey && secure.isEncryptionAvailable() ? secure.decryptString(Buffer.from(customModel.encryptedKey, "base64")) : "";
       if (apiKey) server.setApiKey(apiKey);
       const effectiveModel = input.model || member.model || customModel?.model;
       if (!effectiveModel) throw new Error("尚未配置自定义模型，无法调度团队成员");

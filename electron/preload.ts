@@ -564,6 +564,16 @@ contextBridge.exposeInMainWorld("codex", {
   layaUninstall: () => __ipc("laya:uninstall", 0, []),
   /* 思考等级自动判断（choice: low/medium/high/xhigh + 校准置信度；置信 <0.45 弃权返回 null，调用方回落手选档） */
   layaDecideEffort: (text: string) => __ipc("laya:decide-effort", 1, [text]),
+  /* 10-03：Codex 官方插件市场（GitHub openai/plugins，gh-proxy 镜像优先）。installedDir 由主进程注入 —— 「装没装」的真相源是本地 marker；live=false 表示上游没连通、这次读的是内置快照 */
+  listOfficialMarketPlugins: (input: unknown = {}) => __ipc("codex-official-market:list", 0, [input]),
+  /* 官方源的 10 个分类（含每类数量）。⛔ 与 Gitee 镜像源的分类各算各的，tab 按源切换 */
+  listOfficialMarketCategories: () => __ipc("codex-official-market:categories", 0, []),
+  /* 镜像下载 plugins/<slug> 子树 → 写本地市场目录 → 注册 [marketplaces.codex-official-market] → 引擎 plugin/install + 重启 → plugin/list 确认；进度走 harness:event 的 official-plugin-install（⛔ 不与 plugin-install 共用 type，上游 slug 有重名） */
+  installOfficialMarketPlugin: (plugin: unknown) => __ipc("codex-official-market:install", 1, [plugin]),
+  /* 先请引擎 plugin/uninstall（认领时才生效），再删落盘目录 + 摘本地 marketplace 清单；删除目标经 safeFolder 归一 + 目录内校验 */
+  uninstallOfficialMarketPlugin: (slug: unknown) => __ipc("codex-official-market:uninstall", 1, [slug]),
+  /* 本地已装官方插件（**只扫本地目录、零网络**）：补齐「引擎没认领、但文件已落盘」的那批，不能走 list（那条要拉上游 65 条） */
+  listInstalledOfficialMarketPlugins: () => __ipc("codex-official-market:installed", 0, []),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

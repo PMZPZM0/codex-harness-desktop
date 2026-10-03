@@ -23,7 +23,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
-import { app, safeStorage } from "electron";
+import { app } from "electron";
 import { saveAppSettings } from "../app-settings";
 import { ensureBuiltinSkills } from "../builtin-skills";
 import { bundledNodePath, memoryBackendStatus, memoryInstallerPath, type MemoryBackend } from "../memory-backend";
@@ -38,6 +38,7 @@ import { userSkillsDir } from "../main";
 import type { MemoryMode, StoredMemoryGateway } from "../main";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
+import type { HostCaps } from "../runtime/seams";
 
 async function setWorkspaceMemoryEnabled(workspace: string, enabled: boolean): Promise<boolean> {
   const key = path.resolve(workspace);
@@ -58,8 +59,8 @@ async function saveMemoryGateway(input: any) {
   };
   if (config.endpoint && !/^https?:\/\//.test(config.endpoint)) throw new Error("Memory Gateway 地址必须使用 http 或 https");
   if (config.endpoint && (!config.sessionKey || !config.userId)) throw new Error("Gateway 模式需要 session key 和 user ID");
-  if (config.apiKey && !safeStorage.isEncryptionAvailable()) throw new Error("当前系统无法安全保存 Memory Gateway Key");
-  await fs.writeFile(memoryGatewayFile, JSON.stringify({ endpoint: config.endpoint, sessionKey: config.sessionKey, userId: config.userId, encryptedApiKey: config.apiKey ? safeStorage.encryptString(config.apiKey).toString("base64") : undefined } satisfies StoredMemoryGateway, null, 2), "utf8");
+  if (config.apiKey && !secureHost().isEncryptionAvailable()) throw new Error("当前系统无法安全保存 Memory Gateway Key");
+  await fs.writeFile(memoryGatewayFile, JSON.stringify({ endpoint: config.endpoint, sessionKey: config.sessionKey, userId: config.userId, encryptedApiKey: config.apiKey ? secureHost().encryptString(config.apiKey).toString("base64") : undefined } satisfies StoredMemoryGateway, null, 2), "utf8");
   // 填了网关地址就切到云端（Codex 从此去云端找记忆），清空地址则回到本地
   await applyMemoryMode(config.endpoint ? "cloud" : "local");
   return { ...memoryStore.remoteStatus(), sessionKey: config.sessionKey, userId: config.userId, hasApiKey: Boolean(config.apiKey) };
@@ -116,11 +117,27 @@ const MEMORY_CHANNELS = [
   "memory:distill", "memory:hygiene:plan", "memory:hygiene:apply",
 ];
 
+/**
+ * 宿主密钥能力（10-03 阶段 2b 由 electron 的 safeStorage 改为接缝注入）。
+ *
+ * ⛔ bind 注入的原因：本域的加解密在**模块级函数** `saveMemoryGateway` 里用，不接收 ctx。
+ * ⛔ 未注入时明确抛错，不静默返回 undefined。
+ */
+let secureRef: HostCaps["secure"] | null = null;
+export function bindMemorySecure(host: HostCaps): void {
+  secureRef = host.secure;
+}
+function secureHost(): HostCaps["secure"] {
+  if (!secureRef) throw new Error("memory-ipc: 宿主密钥能力未注入（组合表挂载时应调 bindMemorySecure）");
+  return secureRef;
+}
+
 export const memoryFeature = defineFeature<null>({
   id: "memory",
-  inject: ["ipc"],
+  inject: ["ipc", "host"],
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");
+    bindMemorySecure(ctx.get<HostCaps>("host")!);   // 供模块级函数惰性取用（【91】：不在模块体求值）
     if (!ipcHost) throw new Error("memory: 缺少 ipc 服务（宿主未提供）");
 
     ipcHost.handle("memory:list", (_event, category?: string) => memoryStore.list(category));
