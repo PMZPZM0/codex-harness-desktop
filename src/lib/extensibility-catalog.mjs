@@ -73,7 +73,7 @@ export const EXTENSIBILITY_ENTRIES = [
     purpose: "外部能力接入：MCP 工具、连接器市场、插件（动态工具）各自有注册与开关表。",
     where: [
       "electron/capability-registry.ts",
-      "electron/features/builtin-skills-ipc/03-plugins-market.ts",
+      "electron/features/plugins-ipc.ts",
       "src/features/settings-mcp/",
     ],
     steps: [
@@ -115,7 +115,7 @@ export const EXTENSIBILITY_ENTRIES = [
     where: [
       "electron/accelerator.ts（sanitizeAccelerator / acceleratorLabel，主进程唯净化入口）",
       "electron/screenshot.ts（createHotkeyRegistry：先注册成功才注销旧键）",
-      "electron/features/screenshot-favorites-ipc.ts（启动时按设置注册一次 + 设置变更即时重挂）",
+      "electron/features/screenshot-ipc.ts（启动时按设置注册一次 + 设置变更即时重挂）",
       "src/features/settings-screenshot/ScreenshotSettingsSection.tsx（录入控件）",
     ],
     steps: [
@@ -265,7 +265,7 @@ export const EXTENSIBILITY_ENTRIES = [
     purpose: "新增一类「用户可以攒起来复用」的素材（现在是 片段/截图/文件/链接）：一种数据 + 三个消费面。",
     where: [
       "electron/favorites.ts（读盘归一化 / 原子写 / 批量删除只认显式 id）",
-      "electron/features/screenshot-favorites-ipc.ts（favorites:* 通道）",
+      "electron/features/favorites-ipc.ts（favorites:* 通道）",
       "src/features/app-state/parts/part07/03-seg.tsx（镜像 + 插入/发送/加入记忆）",
       "src/features/settings-favorites/FavoritesSettingsSection.tsx（批量管理页）",
       "src/features/app-view/AppView/02-main-stage/03-composer/02-composer-form.tsx（加号菜单子面板）",
