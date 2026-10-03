@@ -159,7 +159,12 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
      过程组重挂载，重挂载那一帧 open 仍为 true ⇒ 浮窗先「重开」再「关闭」，吸入动画就多播一遍。
      修法：浮窗只在 **直播中（running/revealing）** 或 **用户点开（manualOpen 已定）** 时出现——
      重挂载的已完成卡（manualOpen=null 且不直播）不再自动开浮窗，吸入动画就不会重复。 */
-  const popupOpen = open && Boolean(displayed) && Boolean(running || revealing || manualOpen !== null);
+  /* 10-03 二修：上一版用 running/revealing 挡不住「大折叠重挂载时 running 仍为 true」的那一帧。
+     改锚**本实例真实直播过**：只有这个挂载实例亲眼见过出字（running && displayed 同帧）
+     或用户点开过，浮窗才允许出现；重挂载的已完成卡从收起起步，动画无从重播。 */
+  const liveStreamedRef = useRef(false);
+  useEffect(() => { if (running && displayed) liveStreamedRef.current = true; }, [running, displayed]);
+  const popupOpen = open && Boolean(displayed) && (liveStreamedRef.current || manualOpen !== null);
   const prevOpenRef = useRef(false);
   useEffect(() => {
     if (popupOpen) { prevOpenRef.current = true; setExiting(false); return; }
