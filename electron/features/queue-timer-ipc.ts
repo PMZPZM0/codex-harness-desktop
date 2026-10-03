@@ -23,8 +23,6 @@
  */
 import { broadcastToAll } from "./window-bus";
 import { defineFeature } from "../context";
-import { mountFromComposition } from "../composition-runtime";
-import "../ipc-host"; // 提供 "ipc" 服务（inject 的依赖；import 顺序 = 挂载顺序，必须在本文件 mount 之前）
 import type { IpcHost } from "../ipc-host";
 
 type QueueTimerEntry = { threadId: string; runAt: number; timer: ReturnType<typeof setTimeout> | null };
@@ -76,8 +74,6 @@ export const queueTimerFeature = defineFeature<null>({
   },
 });
 
-// ⛔ 是否启用由 **electron/composition.json** 决定（P1 组合层）：禁用只改配置 + 重跑生成器，
-//    不动代码；未登记/被禁用时这里静默返回 false（由守卫【253】保证"域自报的 id 一定登记过"）。
-//    ⛔ 插件值**必须由这里传进去**（生成物只存数据）：否则"生成物 import 域 + 域 import 生成物"成环，
-//    CJS 下 plugin 会是 undefined ⇒ 启动即崩（10-03 实测事故）。
-mountFromComposition("queue-timer", queueTimerFeature);
+// ⛔ 本域**不自挂载**（P1 shell 收敛）：是否启用由 `electron/composition.json` 决定，
+//    挂载由生成物 `electron/composition.gen.ts` 负责（依赖方向恒为 生成物 → 域，**禁止反向 import**，
+//    否则成环 ⇒ plugin 为 undefined ⇒ 启动即崩）。

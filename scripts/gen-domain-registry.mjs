@@ -30,18 +30,32 @@ export const HEADER = `/* ⛔ 本文件由 scripts/gen-domain-registry.mjs 生�
 /** 纯函数：把组合配置渲染成生成物全文（守卫直接 import 这个函数做逐字节比对）。 */
 export function renderRegistry(composition) {
   const rows = (composition.domains || []).filter((d) => d && d.enabled);
-  const entries = rows.map((d) => `  { id: ${JSON.stringify(d.id)}, config: ${JSON.stringify(d.config ?? null)} },`);
-  return `${HEADER}export type EnabledDomain = { id: string; config: unknown };
+  const imports = rows.map((d) => {
+    const varName = `feat_${String(d.id).replace(/-/g, "_")}`;
+    const fileNoExt = String(d.file).replace(/\.tsx?$/, "");
+    return `import { ${d.export} as ${varName} } from "./${fileNoExt}";`;
+  });
+  const entries = rows.map((d) => {
+    const varName = `feat_${String(d.id).replace(/-/g, "_")}`;
+    return `  { id: ${JSON.stringify(d.id)}, plugin: ${varName} as Plugin<unknown>, config: ${JSON.stringify(d.config ?? null)} },`;
+  });
+  return `${HEADER}import "./ipc-host"; // 先 provide "ipc" 服务（域的 inject 依赖），再挂载
+import type { Plugin } from "./context";
+import { mountFeature } from "./context";
+${imports.join("\n")}
+
+export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unknown };
 
 /** 已启用的域（顺序 = composition.json 里的顺序 = 挂载顺序）。
- *  ⛔⛔ 这里**只放数据，绝不 import 域模块** —— 生成物会被**域自己** import（域要查"我启用了没"），
- *     一旦这里也 import 域就成**循环依赖**：CJS 下域模块还没求值完，plugin 值就是 undefined，
- *     启动即崩（10-03 实测事故：Cannot read properties of undefined (reading name) @ mountFeature）。
- *     ⛔⛔ 本函数体是**模板字符串**：里面**绝不能出现反引号**（会把模板提前闭合，生成器直接语法错误）。
- *     插件值由**域自己**传给 mountFromComposition(id, plugin)，环就此断开。 */
+ *  ⛔⛔ 依赖方向恒为 **本生成物 → 域**：域**绝不 import 本文件** —— 反向就是环，
+ *     CJS 下 domain 还没求值完 ⇒ plugin 为 undefined ⇒ 启动即崩（10-03 实测事故）。
+ *     挂载在**模块作用域**执行 = 与原 import "./features/xxx" 同时机，不改变启动顺序。
+ *  ⛔⛔ 本函数体是**模板字符串**：里面**绝不能出现反引号**（会把模板提前闭合 ⇒ 生成器语法错误）。 */
 export const ENABLED: EnabledDomain[] = [
 ${entries.join("\n")}
 ];
+
+for (const row of ENABLED) mountFeature(row.plugin, row.config);
 `;
 }
 
