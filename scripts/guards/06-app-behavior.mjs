@@ -2060,7 +2060,14 @@ w.postMessage({id:1,op:"list",root});
     // ② relaunch 必须优雅退（app.quit 而非 app.exit）——保证 before-quit 清理与图标不被打断
     // ⛔ 10-03：双形态锚点（域改插件形态后写 ipcHost.handle）
     const relaunchBlock = sliceHandle(diagSrc, "app:relaunch", 1200);
-    (/app\.relaunch\(\)/.test(relaunchBlock) && /app\.quit\(\)/.test(relaunchBlock) && !/app\.exit\(0\)/.test(relaunchBlock) ? ok : fail)(
+    // ⛔ 10-03：域接缝化后写的是 `host.app.relaunch()` / `host.app.quit()`。
+    //    判据必须**认接缝形态** —— 只写 /app\.relaunch\(\)/ 的话，此刻仍能过是因为它恰好是
+    //    `host.app.relaunch()` 的子串（**碰巧匹配**，不是设计）。将来若改成别的接缝名
+    //    （如 `caps.app`）就会静默假红/假绿。判据要显式列出两种形态。
+    const relaunchGraceful = /(?:\bhost\.app|app)\.relaunch\(\)/.test(relaunchBlock)
+      && /(?:\bhost\.app|app)\.quit\(\)/.test(relaunchBlock)
+      && !/(?:\bhost\.app|app)\.exit\(0\)/.test(relaunchBlock);
+    (relaunchGraceful ? ok : fail)(
       "【174】app:relaunch 用 app.quit() 优雅退出（app.exit 会跳过 before-quit 清理并打断任务栏图标）"
     );
     // ③ 窗口加载失败要能回落本地 dist（宁可看构建版也不能白屏）

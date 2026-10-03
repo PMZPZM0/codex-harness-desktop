@@ -1,17 +1,34 @@
 /**
- * 中转站账户域 IPC 面（14 个 handler：登录 / 多账户 / 余额套餐密钥 / 订阅支付 / keys-all）
+ * 中转站账户域（14 个 handler：登录 / 多账户 / 余额套餐密钥 / 订阅支付 / keys-all）
  *
- * 09-21 架构改造：从 electron/main.ts 按域拆出。**纯搬迁，零行为改动** —— 内容与原地逐字一致
- * （仅整体缩进 2 空格；跨域符号经 deps 注入：模型域 readCustomModels/upsertCustomModel/
- * readCustomModel/customModelFile、describeNetworkError、CodexServer 单例 server）。
- * 注册时机不变：main.ts 仍在原来那一行调用 registerRelayIpc()。
+ * ── 10-03：改为插件形态 + 接缝化（方案 §6 阶段 2/3）────────────────────────
+ * 原为「函数式注册」：deps 由 main.ts 传参 + `main.ts` 那一行调 `registerRelayIpc()`。
+ * 现在 deps 经**基座门面 runtime-refs** 取活绑定，宿主能力经 `inject: ["ipc","host"]` 取。
+ * 通道名 / handler 体逐字保留（零行为变化）。
+ *
+ * ⛔ 为什么 deps 走 runtime-refs 而不是继续传参：插件的 `setup(ctx)` 拿不到 main.ts 的局部值，
+ *    而 deps 全是**跨域共用符号**（模型域读写、网络错误翻译、CodexServer 单例）——
+ *    按【132】反向依赖原则它们本就属于基座层，main.ts 传参只是历史形态。
+ *
+ * ⛔ 支付窗口的隔离设置：`host.window.create` 会**强制补齐**
+ *    contextIsolation / nodeIntegration / sandbox —— 本域原代码本就写了这三项，
+ *    所以行为不变；强制项在内核侧是"域传什么都改不掉"，属安全收敛。
  */
-import { app, BrowserWindow, ipcMain, safeStorage } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { normalizeRelayStore, pickRelayActiveId, relayProviderIdOf } from "../relay-accounts";
+import { server as relayServer } from "../runtime-refs";
+// 跨域共用符号的基座门面（10-03）：用命名空间整体引入，避免与内部同名局部变量打架
+import * as runtimeRefs from "../runtime-refs";
+import { defineFeature } from "../context";
+import type { IpcHost } from "../ipc-host";
+import type { HostCaps } from "../runtime/seams";
 
 export interface RelayIpcDeps {
+  /** 通道宿主：10-03 起由组合表挂载时从容器取（原为 main.ts 传参后直接摸 ipcMain） */
+  ipcHost: IpcHost;
+  /** 宿主能力接缝（app / secure / window） */
+  host: HostCaps;
   readCustomModels: () => Promise<{ provider: string; enabled?: boolean }[]>;
   readCustomModel: () => Promise<{ provider?: string } | null>;
   // ⛔ 用 any 而非 { provider: string; enabled?: boolean }：main.ts 的实际实现是 (value: CustomModelFile) => Promise<void>，
@@ -19,7 +36,8 @@ export interface RelayIpcDeps {
   upsertCustomModel: (m: any) => Promise<unknown>;
   customModelFile: string;
   describeNetworkError: (error: unknown, what: string) => Error;
-  server: { restart: () => Promise<unknown> };
+  // ⛔ 10-03：`server` 不再由 deps 传入 —— 组合表挂载早于 setServer（见 currentServer 注释），
+  //    传进来只会捕获到 undefined。改为域内经 runtime-refs 活绑定取。
 }
 
 /**
@@ -42,15 +60,65 @@ export async function writeRelayStore(store: any): Promise<void> {
   return relayStoreApi.write(store);
 }
 
-export function registerRelayIpc(deps: RelayIpcDeps) {
-  const { readCustomModels, readCustomModel, upsertCustomModel, customModelFile, describeNetworkError, server } = deps;
+const RELAY_CHANNELS = [
+  "relay:login", "relay:load-account", "relay:accounts", "relay:toggle-account",
+  "relay:switch-account", "relay:remove-account", "relay:overview", "relay:create-key",
+  "relay:select", "relay:key-billing", "relay:register", "relay:payment-plans",
+  "relay:open-purchase", "relay:keys-all",
+];
+
+/**
+ * 中转站域的插件入口（10-03）。
+ *
+ * 为什么要「defineFeature 包一层 + 保留 registerRelayIpc 内部实现」而不是把 400 行
+ * 整体塞进 setup()：后者会让 diff 变成"整文件重写"，code review 逐行核对失效、
+ * 出问题也无法用 git bisect 定位。前者只改**装配处**，主体逐字不动。
+ */
+export const relayFeature = defineFeature<null>({
+  id: "relay",
+  inject: ["ipc", "host"],
+  setup: (ctx) => {
+    const ipcHost = ctx.get<IpcHost>("ipc");
+    const host = ctx.get<HostCaps>("host");
+    if (!ipcHost) throw new Error("relay: 缺少 ipc 服务（宿主未提供）");
+    if (!host) throw new Error("relay: 缺少 host 接缝（宿主未提供）");
+    registerRelayIpc({
+      ipcHost,
+      host,
+      // 跨域共用符号经基座门面取活绑定（【132】反向依赖原则：它们本就属基座层）
+      readCustomModels: runtimeRefs.readCustomModels,
+      readCustomModel: runtimeRefs.readCustomModel,
+      upsertCustomModel: runtimeRefs.upsertCustomModel,
+      customModelFile: runtimeRefs.customModelFile,
+      describeNetworkError: runtimeRefs.describeNetworkError,
+    });
+    // 卸载即摘通道（可逆副作用：域的私有状态 relayStoreApi / purchaseWindow 随之失效）
+    ctx.effect(() => {
+      for (const ch of RELAY_CHANNELS) ipcHost.removeHandler(ch);
+    });
+  },
+});
+
+function registerRelayIpc(deps: RelayIpcDeps) {
+  const { readCustomModels, readCustomModel, upsertCustomModel, customModelFile, describeNetworkError } = deps;
+  const ipcHost = deps.ipcHost;
+  // 宿主能力一律经接缝取（10-03）：app 路径锚点 / 密钥加密 / 支付窗口创建。
+  // ⛔ 这三项都是高权限能力（读 userData、触碰系统密钥库、创建窗口）——
+  //    留在域里直接 import electron 就等于"插件自选安全策略"，那是内核该守的边界。
+  const { app: appHost, secure, window: windowHost } = deps.host;
+  // ⛔⛔ **`server` 必须延后取，不能从 deps 解构**：`export let server!` 是活绑定，而
+  //    `setServer(new CodexServer(...))` 在 main.ts 第 337 行才执行 —— 本域改由组合表挂载
+  //    （import 在第 96 行）⇒ **挂载时 server 仍是 undefined**。解构会把它永久捕获成
+  //    undefined，`server.restart()` 到运行时才炸（且只在切账户时才触发，极难归因）。
+  //    每次使用时从门面现取，拿到的一定是当前实例。
+  const currentServer = () => relayServer;
   // —— 中转站账户（sub2api 兼容网关：登录 / 余额 / 订阅套餐 / 密钥） ——
   // 协议实证（Wei-Shaw/sub2api）：POST /api/v1/auth/login{email,password}→{access_token,refresh_token,user}；
   // GET /api/v1/user/profile→data.balance(USD)；GET /api/v1/subscriptions/summary→[{group_id,group_name,monthly_used_usd,monthly_limit_usd,expires_at}]；
   // GET /api/v1/keys→[{id,key(明文),name,group_id,quota,quota_used,status}]；POST /api/v1/keys{name,group_id?}；
   // GET /api/v1/groups/available；网关 OpenAI 兼容 = {baseUrl}/v1。
-  const relayAccountFile = path.join(app.getPath("userData"), "relay-account.json");
-  const relayStoreFile = path.join(app.getPath("userData"), "relay-store.json");
+  const relayAccountFile = path.join(appHost.getPath("userData"), "relay-account.json");
+  const relayStoreFile = path.join(appHost.getPath("userData"), "relay-store.json");
   type RelayAccount = {
     baseUrl: string;
     email: string;
@@ -125,7 +193,7 @@ export function registerRelayIpc(deps: RelayIpcDeps) {
     const current = await readCustomModel();
     if (current?.provider === providerId) {
       await fs.writeFile(customModelFile, "null", "utf8");
-      await server.restart();
+      await currentServer().restart();
     }
   }
   function relayBase(input: string | undefined): string {
@@ -161,8 +229,8 @@ export function registerRelayIpc(deps: RelayIpcDeps) {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     let result = await call(account.accessToken ?? "");
-    if (result.status === 401 && account.passwordEnc && safeStorage.isEncryptionAvailable()) {
-      const password = safeStorage.decryptString(Buffer.from(account.passwordEnc, "base64"));
+    if (result.status === 401 && account.passwordEnc && secure.isEncryptionAvailable()) {
+      const password = secure.decryptString(Buffer.from(account.passwordEnc, "base64"));
       const login = await relayLoginRaw(base, account.email, password);
       account.accessToken = login.access_token;
       account.refreshToken = login.refresh_token;
@@ -180,7 +248,7 @@ export function registerRelayIpc(deps: RelayIpcDeps) {
   // 登记模块级出口（供 main.ts 的「启用/停用 relay 供应商」联动使用）
   relayStoreApi = { read: readRelayStore, write: writeRelayStore };
 
-  ipcMain.handle("relay:login", async (_e, input: { baseUrl: string; email: string; password: string }) => {
+  ipcHost.handle("relay:login", async (_e, input: { baseUrl: string; email: string; password: string }) => {
     const baseUrl = relayBase(input.baseUrl);
     const email = String(input.email ?? "").trim();
     const login = await relayLoginRaw(baseUrl, email, String(input.password ?? ""));
@@ -191,13 +259,13 @@ export function registerRelayIpc(deps: RelayIpcDeps) {
       refreshToken: login.refresh_token,
       tokenExpiresAt: login.expires_in ? Date.now() + login.expires_in * 1000 : undefined,
     };
-    if (safeStorage.isEncryptionAvailable()) {
-      try { account.passwordEnc = safeStorage.encryptString(String(input.password ?? "")).toString("base64"); } catch { /* 加密不可用就不存密码，401 时需重新登录 */ }
+    if (secure.isEncryptionAvailable()) {
+      try { account.passwordEnc = secure.encryptString(String(input.password ?? "")).toString("base64"); } catch { /* 加密不可用就不存密码，401 时需重新登录 */ }
     }
     await writeRelayAccount(account);
     return { email, baseUrl, balance: Number(login.user?.balance ?? 0) };
   });
-  ipcMain.handle("relay:load-account", async () => {
+  ipcHost.handle("relay:load-account", async () => {
     const account = await readRelayAccount();
     if (!account) return null;
     return { baseUrl: account.baseUrl, email: account.email, loggedIn: Boolean(account.accessToken), selectedMode: account.selectedMode ?? null, selectedGroupId: account.selectedGroupId ?? null, selectedKeyName: account.selectedKeyName ?? null };
@@ -206,13 +274,13 @@ export function registerRelayIpc(deps: RelayIpcDeps) {
   //    账号，而弹窗是给**某一个**账号打开的 ⇒ 用户可能看着 A 的面板删掉 B；它也是「删除」的第二条
   //    隐藏入口（卡片上那个小图标之外没人知道）。现在语义拆清楚：删除走 `relay:remove-account(id)`
   //    （无歧义、有二次确认），「退出生效」走卡片开关（停用，数据保留）。
-  ipcMain.handle("relay:accounts", async () => {
+  ipcHost.handle("relay:accounts", async () => {
     const store = await readRelayStore();
     return store.accounts.map((a) => ({ id: a.id, baseUrl: a.baseUrl, email: a.email, loggedIn: Boolean(a.accessToken), selectedMode: a.selectedMode ?? null, selectedGroupId: a.selectedGroupId ?? null, selectedKeyName: a.selectedKeyName ?? null, active: a.id === store.activeId, disabled: Boolean(a.disabled) }));
   });
   // 账号启用/停用：停用 = 退出切换候选（数据保留，随时可重新启用）。
   // 停用**当前生效**账号时同步退出生效状态：清 activeId + 禁用其 relay 供应商（引擎侧不再可用）。
-  ipcMain.handle("relay:toggle-account", async (_e, input: { id: string; disabled: boolean }) => {
+  ipcHost.handle("relay:toggle-account", async (_e, input: { id: string; disabled: boolean }) => {
     const store = await readRelayStore();
     const account = store.accounts.find((a) => a.id === input.id);
     if (!account) throw new Error("账户不存在");
@@ -227,7 +295,7 @@ export function registerRelayIpc(deps: RelayIpcDeps) {
     await writeRelayStore(store);
     return { ok: true, disabled: Boolean(account.disabled), deactivated: false };
   });
-  ipcMain.handle("relay:switch-account", async (_e, id: string) => {
+  ipcHost.handle("relay:switch-account", async (_e, id: string) => {
     const store = await readRelayStore();
     const target = store.accounts.find((a) => a.id === id);
     if (!target) throw new Error("账户不存在");
@@ -237,7 +305,7 @@ export function registerRelayIpc(deps: RelayIpcDeps) {
     await writeRelayStore(store);
     return { ok: true, baseUrl: target.baseUrl, email: target.email };
   });
-  ipcMain.handle("relay:remove-account", async (_e, id: string) => {
+  ipcHost.handle("relay:remove-account", async (_e, id: string) => {
     const store = await readRelayStore();
     const target = store.accounts.find((a) => a.id === id) ?? null;
     // 没这个账号就当无事发生：**不要**顺手重挑 activeId（否则一次误调用会把别的账号悄悄变成生效）
@@ -255,7 +323,7 @@ export function registerRelayIpc(deps: RelayIpcDeps) {
   // ⛔ `id` 可选（09-21）：管理面板要能看**被点开的那个账号**的余额/套餐/密钥。
   //    从前一律读「当前生效账号」，于是「点卡片看一眼」要么显示别人的数据、要么靠 openManage
   //    偷偷切换生效账号来对齐（用户实测报的副作用：点击管理直接生效了）。
-  ipcMain.handle("relay:overview", async (_e, id?: string) => {
+  ipcHost.handle("relay:overview", async (_e, id?: string) => {
     const account = id ? (await readRelayStore()).accounts.find((a) => a.id === String(id)) ?? null : await readRelayAccount();
     if (!account?.accessToken) throw new Error("尚未登录中转站");
     const profile = await relayAuthedFetch(account, "/api/v1/user/profile").catch(() => null);
@@ -277,7 +345,7 @@ export function registerRelayIpc(deps: RelayIpcDeps) {
       selectedKeyName: account.selectedKeyName ?? null,
     };
   });
-  ipcMain.handle("relay:create-key", async (_e, input: { name: string; groupId?: number | null; accountId?: string }) => {
+  ipcHost.handle("relay:create-key", async (_e, input: { name: string; groupId?: number | null; accountId?: string }) => {
     // accountId 可选：面板看哪个账号就把密钥建在哪个账号上（原先只能建在当前生效账号上）
     const account = input.accountId ? (await readRelayStore()).accounts.find((a) => a.id === String(input.accountId)) ?? null : await readRelayAccount();
     if (!account?.accessToken) throw new Error("尚未登录中转站");
@@ -285,7 +353,7 @@ export function registerRelayIpc(deps: RelayIpcDeps) {
     if (input.groupId != null) body.group_id = input.groupId;
     return relayAuthedFetch(account, "/api/v1/keys", body);
   });
-  ipcMain.handle("relay:select", async (_e, input: { mode: "balance" | "plan"; groupId: number | null; keyId?: number; keyName?: string }) => {
+  ipcHost.handle("relay:select", async (_e, input: { mode: "balance" | "plan"; groupId: number | null; keyId?: number; keyName?: string }) => {
     const account = await readRelayAccount();
     if (!account) throw new Error("尚未登录中转站");
     account.selectedMode = input.mode;
@@ -296,7 +364,7 @@ export function registerRelayIpc(deps: RelayIpcDeps) {
     return { ok: true };
   });
   // 主界面余额徽标：用 API key 直接查网关账单（无需面板 token）
-  ipcMain.handle("relay:key-billing", async (_e, input: { baseUrl: string; apiKey: string }) => {
+  ipcHost.handle("relay:key-billing", async (_e, input: { baseUrl: string; apiKey: string }) => {
     const base = relayBase(input.baseUrl);
     const { ok, data, message } = await relayRequest(`${base}/v1/sub2api/billing`, { headers: { Authorization: `Bearer ${input.apiKey}` } });
     if (!ok) throw new Error("账单查询失败：" + (message || ""));
@@ -307,7 +375,7 @@ export function registerRelayIpc(deps: RelayIpcDeps) {
   // 协议实证（Wei-Shaw/sub2api + pptoken 实测 09-12）：
   //   POST /api/v1/auth/register {email,password,aff_code?}（站点可选用 verify_code/turnstile，
   //   未开启时三字段即可；开启时报错原文透传，渲染层降级为外部注册页）
-  ipcMain.handle("relay:register", async (_e, input: { baseUrl: string; email: string; password: string; affCode?: string }) => {
+  ipcHost.handle("relay:register", async (_e, input: { baseUrl: string; email: string; password: string; affCode?: string }) => {
     const baseUrl = relayBase(input.baseUrl);
     const email = String(input.email ?? "").trim();
     const password = String(input.password ?? "");
@@ -328,14 +396,14 @@ export function registerRelayIpc(deps: RelayIpcDeps) {
       refreshToken: login.refresh_token,
       tokenExpiresAt: login.expires_in ? Date.now() + login.expires_in * 1000 : undefined,
     };
-    if (safeStorage.isEncryptionAvailable()) {
-      try { account.passwordEnc = safeStorage.encryptString(password).toString("base64"); } catch { /* 加密不可用就不存密码 */ }
+    if (secure.isEncryptionAvailable()) {
+      try { account.passwordEnc = secure.encryptString(password).toString("base64"); } catch { /* 加密不可用就不存密码 */ }
     }
     await writeRelayAccount(account);
     return { email, baseUrl, balance: Number(login.user?.balance ?? 0) };
   });
   // 套餐市场目录（站方定价/有效期/划线价/features），登录后可拉
-  ipcMain.handle("relay:payment-plans", async () => {
+  ipcHost.handle("relay:payment-plans", async () => {
     const account = await readRelayAccount();
     if (!account?.accessToken) throw new Error("尚未登录中转站");
     const plans = await relayAuthedFetch(account, "/api/v1/payment/plans");
@@ -346,7 +414,7 @@ export function registerRelayIpc(deps: RelayIpcDeps) {
   // （sub2api 前端键名实证：auth_token / refresh_token / token_expires_at）再刷新一次 —— 打开即登录态，
   // 用户在站内完成选套餐+支付；应用侧同时轮询 subscriptions/summary 等待新订阅出现。
   let purchaseWindow: Electron.BrowserWindow | null = null;
-  ipcMain.handle("relay:open-purchase", async () => {
+  ipcHost.handle("relay:open-purchase", async () => {
     const account = await readRelayAccount();
     if (!account?.accessToken) throw new Error("尚未登录中转站");
     const base = relayBase(account.baseUrl);
@@ -354,7 +422,7 @@ export function registerRelayIpc(deps: RelayIpcDeps) {
       purchaseWindow.focus();
       return { ok: true, url: `${base}/purchase` };
     }
-    const win = new BrowserWindow({
+    const win = windowHost.create({
       width: 1120,
       height: 840,
       minWidth: 760,
@@ -390,7 +458,7 @@ export function registerRelayIpc(deps: RelayIpcDeps) {
   });
 
   // ── 中转站多账号：全部账号的密钥（按账户分组返回，渲染层折叠展示）──
-  ipcMain.handle("relay:keys-all", async () => {
+  ipcHost.handle("relay:keys-all", async () => {
     const store = await readRelayStore();
     const groups: any[] = [];
     for (const account of store.accounts) {

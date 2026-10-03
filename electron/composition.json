@@ -511,6 +511,20 @@
       "file": "features/dialog-ipc.ts",
       "export": "dialogFeature",
       "config": null
+    },
+    {
+      "id": "app",
+      "enabled": true,
+      "file": "features/app-diagnostics.ts",
+      "export": "appFeature",
+      "config": null
+    },
+    {
+      "id": "relay",
+      "enabled": true,
+      "file": "features/relay-ipc.ts",
+      "export": "relayFeature",
+      "config": null
     }
   ]
 }
