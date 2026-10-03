@@ -13,7 +13,7 @@
 
 import { ASR_REPO, KWS_ARCHIVE, TTS_REPO, VAD_REPO, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, kwsDir, kwsReady, zipvoiceReady } from "./model-manifest";
 import { ensureRepo, isRepoReady, modelFilePath, probeHosts, repoDir } from "./model-store";
-import { DEFAULT_VOICE_SETTINGS, MODEL_HOST_PRESETS, VOICE_SAMPLE_TEXT, loadVoiceSettings, type VoiceSettings } from "./voice-settings";
+import { DEFAULT_VOICE_SETTINGS, MODEL_HOST_PRESETS, VOICE_SAMPLE_TEXT, isVoiceResourceEnabled, loadVoiceSettings, type VoiceSettings } from "./voice-settings";
 import { ASR_WORKER_SOURCE, KWS_WORKER_SOURCE, TTS_WORKER_SOURCE, VoiceWorkerClient, resolveSherpaPath } from "./workers";
 import { buildHomophoneMap, createWakeMatcher, phraseVocabHint, type WakeMatcher } from "./wake-match";
 import { buildKeywordLines, parseLexiconReadings } from "./kws-keywords";
@@ -94,6 +94,8 @@ export type VoiceStatus = {
   runtimeReady: boolean;
   /** 模型是否齐备 */
   modelsReady: boolean;
+  /** 10-03：模型不可用原因；`"disabled"` = 被用户停用（文件在，**不要**引导去下载） */
+  modelsUnavailableReason?: "disabled" | null;
   /** 当前绑定的会话 */
   threadId: string;
   /** 最近一次错误（用于 UI 提示） */
@@ -140,12 +142,17 @@ export class VoiceService {
       state: this.state,
       runtimeReady: Boolean(resolveSherpaPath()),
       modelsReady: this.modelsReadyFlag,
+      // 10-03：区分「没下载」与「被停用」—— 前者引导下载（270MB），后者引导启用（一键）。
+      // 不区分的话，停用后用户会被引导去重下 270MB，而正确的动作只是点一下「启用」。
+      modelsUnavailableReason: this.modelsUnavailableReason,
       threadId: this.threadId,
       lastError: this.lastError,
     };
   }
 
   private modelsReadyFlag = false;
+  /** 10-03：模型不可用原因（目前只有"被停用"）；null = 走常规"请下载"提示 */
+  private modelsUnavailableReason: "disabled" | null = null;
   /** 用户设置（音色/语速/打断/镜像源）—— start() 时从磁盘读，updateSettings 后热更新。 */
   private currentSettings: VoiceSettings = DEFAULT_VOICE_SETTINGS;
   /** 模型下载的 AbortController；正在下载时存在，点取消后 abort 并清空。 */
@@ -154,6 +161,18 @@ export class VoiceService {
   /** 模型是否齐备（启动时算一次；安装完模型后可再调）。 */
   async refreshModelsReady(): Promise<boolean> {
     try {
+      // ⛔ 10-03：基础模型被**停用**时必须报"未就绪"。
+      //   为什么这道闸在这里：`modelsReady` 是语音链路的总开关（voice:status 回给前端，
+      //   pickHint 据它决定提示"先去下载"）。若这里只看文件在不在，停用就只是个 UI 装饰 ——
+      //   用户看到"已就绪"、语音也照跑（模型照样被加载），点了停用毫无效果。
+      //   ⚠️ 与"文件缺失"的区别要靠 `reason` 区分，不能都报成同一句"请下载"：
+      //   停用时该提示的是"已被停用，请重新启用"，引导用户点错按钮就白跑一趟下载。
+      if (!isVoiceResourceEnabled(loadVoiceSettings(this.deps.userDataDir), "base")) {
+        this.modelsReadyFlag = false;
+        this.modelsUnavailableReason = "disabled";
+        return false;
+      }
+      this.modelsUnavailableReason = null;
       const [asr, vad, tts] = await Promise.all([
         isRepoReady(this.deps.modelsRoot, ASR_REPO),
         isRepoReady(this.deps.modelsRoot, VAD_REPO),
@@ -516,10 +535,18 @@ export class VoiceService {
    * 组装 TTS 工作线程的初始化数据：
    * 选了「我的音色」且克隆模型已就绪 → zipvoice 克隆模式（参考音频 + 参考文本成对传）；
    * 否则沿用内置 vits（预置 5 个音色）。参考文本为空时不走克隆——文本对不上音质会明显劣化。
+   *
+   * ⛔ 10-03：克隆模型被**用户停用**时也走 vits，但必须让用户知道为什么音色变了
+   *    （否则表现为「我选的音色被无视了」，是比报错更难查的一类问题）。
+   *    文件仍在磁盘上，改回启用即恢复，无需重下 156MB。
    */
   private async ttsWorkerData(sherpaPath: string, numThreads: number, profileId?: string): Promise<Record<string, unknown>> {
     const wanted = String(profileId ?? this.currentSettings?.tts?.profileId ?? "").trim();
-    if (wanted && zipvoiceReady(this.deps.modelsRoot)) {
+    const zipEnabled = isVoiceResourceEnabled(this.settingsNow(), "zipvoice");
+    if (wanted && !zipEnabled) {
+      this.deps.log("info", "音色克隆模型已被停用 —— 本次朗读回退到内置音色（文件仍保留，重新启用即可恢复）");
+    }
+    if (wanted && zipEnabled && zipvoiceReady(this.deps.modelsRoot)) {
       const profile = (await listProfiles(this.deps.userDataDir)).find((p: VoiceProfile) => p.id === wanted);
       if (profile?.refText?.trim()) {
         const dir = path.join(this.deps.modelsRoot, ZIPVOICE_DIR);
@@ -754,7 +781,10 @@ export class VoiceService {
     if (!phrase) return { ok: false, error: "唤醒词为空，请先在「设置 → 语音通话 → 语音唤醒」里填写" };
 
     // ── 首选：关键词模型（KWS）──
-    if (kwsReady(this.deps.modelsRoot)) {
+    // ⛔ 10-03：用户把 KWS 停用后必须走 asr 回退，**不能因为文件还在磁盘上就照用** ——
+    //    那会让「停用」变成纯装饰（用户 complained「点了没反应」这类）。
+    const kwsEnabled = isVoiceResourceEnabled(settings, "kws");
+    if (kwsEnabled && kwsReady(this.deps.modelsRoot)) {
       try {
         const built = await this.writeKwsKeywords(phrase);
         if (built.lines.length) {
@@ -942,6 +972,18 @@ export class VoiceService {
     return loadVoiceSettings(this.deps.userDataDir);
   }
 
+  /**
+   * 供资源启用状态判定用的设置读取（10-03）。
+   *
+   * ⛔ 为什么不用 `this.currentSettings`：那是**内存副本**，只在设置页保存 / 启动时更新。
+   *    而资源停用可能由别的入口改（比如资源管理页），内存就会过期 ⇒
+   *    「点了停用但语音还用克隆音色」这种假停用。统一从磁盘读，代价可忽略
+   *    （这几个判定点都在语音链路上，不是每帧调用）。
+   */
+  private settingsNow(): VoiceSettings {
+    return loadVoiceSettings(this.deps.userDataDir);
+  }
+
   /** 设置页保存后由主进程调用，内存立刻更新（下次 speak/start 用新值）。 */
   updateSettings(patch: Partial<VoiceSettings>): VoiceSettings {
     const next = loadVoiceSettings(this.deps.userDataDir);
@@ -970,6 +1012,12 @@ export class VoiceService {
    */
   async installModels(): Promise<{ ok: boolean; error?: string }> {
     if (this.installController) return { ok: false, error: "模型正在下载中" };
+    // ⛔ 10-03：基础模型被停用时拒绝下载。停用 = "我暂时不要用但别删"，
+    //    这时若还照下 270MB，语义就反了（用户预期是"省着用"，实际是"照下但不用"）。
+    //    文件在停用期间**原样保留** ⇒ 重新启用后立即可用，无需重下。
+    if (!isVoiceResourceEnabled(loadVoiceSettings(this.deps.userDataDir), "base")) {
+      return { ok: false, error: "语音基础模型已被停用 —— 请先在「设置 → 开发工具 → 语音模型」里重新启用" };
+    }
     this.installController = new AbortController();
     const signal = this.installController.signal;
     const settings = loadVoiceSettings(this.deps.userDataDir);

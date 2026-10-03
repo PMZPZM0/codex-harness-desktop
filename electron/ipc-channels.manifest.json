@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-01",
-  "count": 390,
+  "count": 393,
   "channels": [
     {
       "name": "request",
@@ -2474,6 +2474,36 @@
       "note": null
     },
     {
+      "name": "voiceResourceSetEnabled",
+      "channel": "voice:resource-set-enabled",
+      "paramsImpl": "input: { kind: string; enabled: boolean }",
+      "paramsDecl": "input: { kind: string; enabled: boolean }",
+      "returns": "Promise<{ ok: boolean; error?: string; enabled?: boolean }>",
+      "invokeArgs": "input",
+      "cast": "Promise<{ ok: boolean; error?: string; enabled?: boolean }>",
+      "note": "10-03 资源停用/启用（不删文件，可逆）"
+    },
+    {
+      "name": "voiceResourceDelete",
+      "channel": "voice:resource-delete",
+      "paramsImpl": "input: { kind: string }",
+      "paramsDecl": "input: { kind: string }",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "input",
+      "cast": "Promise<{ ok: boolean; error?: string }>",
+      "note": "10-03 按资源删除（物理删文件，渲染层二次确认）"
+    },
+    {
+      "name": "voiceResourceStatus",
+      "channel": "voice:resource-status",
+      "paramsImpl": "input: { kind: string }",
+      "paramsDecl": "input: { kind: string }",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
+      "cast": "Promise<any>",
+      "note": "10-03 单个资源的启用状态与占用"
+    },
+    {
       "name": "voiceStop",
       "channel": "voice:stop",
       "paramsImpl": "",
@@ -3163,9 +3193,9 @@
       "channel": "voice:models-status",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; root: string; repos: { id: string; lastSegment: string }[]; zipvoice?: { ready: boolean; bytes: number; dir: string }; kws?: { ready: boolean; bytes: number; dir: string }; }>",
+      "returns": "Promise<{ ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; root: string; repos: { id: string; lastSegment: string }[]; baseEnabled?: boolean; zipvoice?: { ready: boolean; enabled?: boolean; bytes: number; dir: string }; kws?: { ready: boolean; enabled?: boolean; bytes: number; dir: string }; resources?: Record<string, { enabled: boolean; label: string }>; }>",
       "cast": null,
-      "note": null
+      "note": "10-03：新增 baseEnabled / 各资源 enabled —— 启用与已下载正交，UI 靠它们组合出四态"
     },
     {
       "name": "voiceModelsInstall",

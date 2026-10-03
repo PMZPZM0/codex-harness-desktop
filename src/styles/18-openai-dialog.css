@@ -673,6 +673,23 @@
   background: color-mix(in srgb, var(--muted) 14%, transparent);
   color: var(--muted);
 }
+/* 10-03 三态：warn = 已停用 / 未装全。
+   ⛔ 停用必须与「未安装」视觉上分开 —— 两者都"不能用"，但一个文件在磁盘、一个没有，
+   用户要能一眼分辨（不然会以为停用把文件删了，那正是本次要修的误解）。 */
+.voice-devtools-badge.warn {
+  background: color-mix(in srgb, var(--orange) 16%, transparent);
+  color: var(--orange);
+}
+
+/* 停用说明块：解释「文件还在、只是不加载」，避免用户以为停用 = 释放空间 */
+.voice-resource-note {
+  margin-top:6px; padding:7px 9px;
+  border:1px solid color-mix(in srgb, var(--orange) 30%, var(--line));
+  background: color-mix(in srgb, var(--orange) 7%, transparent);
+  border-radius:6px;
+  font-size:11px; line-height:1.5; color: var(--text);
+}
+.voice-resource-note strong { color: var(--orange); }
 
 .voice-devtools-body { display:flex; flex-direction:column; gap:6px; }
 .voice-devtools-desc {

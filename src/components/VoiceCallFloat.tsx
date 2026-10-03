@@ -11,7 +11,7 @@ import { useVoiceCallFloatState } from "./VoiceCallFloat/use-voice-call-float-st
 
 export type VoicePhase = "idle" | "starting" | "active";
 export type VoiceState = "listening" | "thinking" | "speaking";
-export type ModelsStatus = { ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number };
+export type ModelsStatus = { ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; /** 10-03：基础模型是否被用户停用（false = 停用；缺省 true 兼容老主进程） */ baseEnabled?: boolean };
 export const POS_KEY = "voice-float-pos";
 const DEFAULT_POS = { right: 22, bottom: 104 };
 export const CAPTURE_RATE = 16000;
@@ -76,11 +76,20 @@ const HINT_POOLS: Record<string, string[]> = {
     "去设置下",
     "还没准备好",
   ],
+  /** 10-03：被**停用**（不是没下载）。文案必须指向"启用"而不是"下载" ——
+   *  否则用户会去重下 270MB，而正确动作只是点一下「启用」。 */
+  modelsDisabled: [
+    "模型已停用",
+    "去设置里启用",
+    "启用后才能通话",
+  ],
 };
 /** 按当前 phase/state/模型状态挑一个最合适的池子随机抽 */
-export function pickHint(phase: VoicePhase, state: VoiceState, modelsReady: boolean): string {
+export function pickHint(phase: VoicePhase, state: VoiceState, modelsReady: boolean, modelsDisabled = false): string {
   let pool: string[];
-  if (!modelsReady && phase !== "active") {
+  if (!modelsReady && modelsDisabled && phase !== "active") {
+    pool = HINT_POOLS.modelsDisabled;
+  } else if (!modelsReady && phase !== "active") {
     pool = HINT_POOLS.modelsMissing;
   } else if (phase === "active") {
     pool = HINT_POOLS[state] ?? HINT_POOLS.idle;

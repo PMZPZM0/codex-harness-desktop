@@ -120,6 +120,9 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
         readyFiles: status.readyFiles,
         totalFiles: status.totalFiles,
         bytes: status.bytes,
+        // ⛔ 10-03 显式字段映射：漏了它，被停用时提示会指向"去下载 270MB"，
+        //   而正确动作只是点一下「启用」（同款"显式映射吞新字段"坑，09-12/10-03 各踩一次）。
+        baseEnabled: status.baseEnabled !== false,
       });
     } catch {
       setModels(null);
@@ -167,7 +170,7 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
     let timer = 0;
     let hideTimer = 0;
     const tick = () => {
-      setHint(pickHint(phase, state, models?.ready ?? false));
+      setHint(pickHint(phase, state, models?.ready ?? false, models?.baseEnabled === false));
       hideTimer = window.setTimeout(() => setHint(null), 3000);
       timer = window.setTimeout(tick, 15000 + Math.random() * 10000);
     };
@@ -672,7 +675,13 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
       return;
     }
     if (models && !models.ready) {
-      setNotice(`语音模型尚未下载完整（${models.readyFiles}/${models.totalFiles}），请先点下方「下载模型」`);
+      // ⛔ 10-03：停用与未下载要分开提示。停用时模型文件**就在本地**，
+      //   说"尚未下载完整，请点下载"会把用户引去重下 270MB —— 而正确动作只是启用一下。
+      if (models.baseEnabled === false) {
+        setNotice("语音基础模型已被停用 —— 请在「设置 → 开发工具 → 语音模型」里点「启用」（文件仍在本机，无需重新下载）");
+      } else {
+        setNotice(`语音模型尚未下载完整（${models.readyFiles}/${models.totalFiles}），请先点下方「下载模型」`);
+      }
       setExpanded(true);
       return;
     }
