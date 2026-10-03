@@ -147,6 +147,20 @@ bag.userDataPath = userDataPath as typeof bag.userDataPath; bag.setUserDataPath 
   const [taskMenuOpen, setTaskMenuOpen] = useState(false);
 bag.taskMenuOpen = taskMenuOpen as typeof bag.taskMenuOpen; bag.setTaskMenuOpen = setTaskMenuOpen as typeof bag.setTaskMenuOpen;
 
+  /* ⛔⛔ 缩到窄屏时**强制关掉**「当前任务操作」浮层（10-03 用户截图「搜索跟调度图标没有隐藏」）。
+     与 ctxMenuOpen 同一类死角：980px 档已把 .task-menu-wrap 整块 display:none，
+     但**已打开的浮层**是容器的孩子、照样渲染并压住原生窗口钮；而按钮没了就再也点不掉。
+     ⛔ 只关taskMenuOpen，**不关 goalsOpen**：后者是侧边停靠面板（不是顶栏浮层），
+     窄屏下仍应可用。断点值与 09-settings-workspace-memory.css 的 media 查询同源同值。 */
+  useEffect(() => {
+    if (!taskMenuOpen) return;
+    const NARROW = window.matchMedia("(width<=980px)");
+    if (NARROW.matches) { setTaskMenuOpen(false); return; }
+    const onChange = (event: MediaQueryListEvent) => { if (event.matches) setTaskMenuOpen(false); };
+    NARROW.addEventListener("change", onChange);
+    return () => NARROW.removeEventListener("change", onChange);
+  }, [taskMenuOpen]);
+
   const [renameDraft, setRenameDraft] = useState("");
 bag.renameDraft = renameDraft as typeof bag.renameDraft; bag.setRenameDraft = setRenameDraft as typeof bag.setRenameDraft;
 
