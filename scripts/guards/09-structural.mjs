@@ -1240,6 +1240,22 @@ export async function run() {
     (/import\s+"\.\/composition\.gen"/.test(readFileSync(join(ROOT, "electron", "main.ts"), "utf8")) ? ok : fail)(
       "【253】壳 main.ts 经组合表挂载（域不再被壳直接 import）"
     );
+    // ⑤⛔ 组合表的 id 必须与域文件里 `defineFeature` 的 id **逐字一致**。
+    //    为什么要钉：行的 id 是**挂载身份**（mountFeature 靠它挡重复挂载、守卫靠它去
+    //    ipc-registry 对账 prefix）。一旦表里写 A、文件里是 B，四处是"绿的"却互相错位 ——
+    //    重复挂载校验形同虚设，且 registry 对账查的是另一个前缀。多前缀文件（一个文件
+    //    导出多个 feature、组合表写多行）就是这条断言的真实用例，故按 export 名定位块首。
+    const wrongId253 = [];
+    for (const row of (composition.domains || []).filter((d) => d && d.enabled)) {
+      let src = "";
+      try { src = codeOnly(readFileSync(join(ROOT, "electron", String(row.file || "")), "utf8")); } catch { /* 下一行的 file 存在性另有断言 */ }
+      const at = src.indexOf(`export const ${row.export} `);
+      const m = at >= 0 ? /id:\s*"([^"]+)"/.exec(src.slice(at, at + 4000)) : null;
+      if (!m || m[1] !== row.id) wrongId253.push(`${row.id}→${m ? m[1] : "未找到"}`);
+    }
+    (wrongId253.length === 0 ? ok : fail)(
+      `【253】组合表每行 id == 域文件 defineFeature 的 id（⛔ 不一致 = 挂载身份与登记前缀错位、重复挂载校验失效；不符：${wrongId253.join("/") || "无"}）`
+    );
 
   }
 

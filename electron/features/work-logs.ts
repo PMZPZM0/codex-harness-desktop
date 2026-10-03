@@ -15,10 +15,11 @@
  * 之下、必须是 `.md`/`.txt` **文件**（目录拒绝）。
  * ⛔ 删除是销毁性的（工作日志删了不重建），UI 侧必须二次确认。
  */
-import { ipcMain } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { codexHome } from "../runtime-refs";
+import { defineFeature } from "../context";
+import type { IpcHost } from "../ipc-host";
 
 const MEM_DIR = path.join(".codex-harness", "memory");
 const READABLE_RE = /\.(md|txt|jsonl?)$/i;
@@ -105,7 +106,7 @@ async function walkFiles(dir: string, depth = 0, out: string[] = []): Promise<st
   return out;
 }
 
-ipcMain.handle("work-logs:scan", async () => {
+async function scanWorkLogs() {
   const projects: Array<{
     cwd: string; name: string; memoryDir: string; exists: boolean;
     files: Array<{ path: string; rel: string; kind: string; bytes: number; mtime: number }>;
@@ -133,9 +134,9 @@ ipcMain.handle("work-logs:scan", async () => {
   // 有日志的项目排前面，其次按总量
   projects.sort((a, b) => (b.files.length ? 1 : 0) - (a.files.length ? 1 : 0) || b.bytes - a.bytes);
   return { projects };
-});
+}
 
-ipcMain.handle("work-logs:read", async (_event, input: { path: string }) => {
+async function readWorkLog(input: { path: string }) {
   const target = path.resolve(String(input?.path ?? ""));
   const dirs = await knownProjectDirs();
   const rooted = dirs.find((cwd) => target.startsWith(path.join(cwd, MEM_DIR) + path.sep));
@@ -145,9 +146,9 @@ ipcMain.handle("work-logs:read", async (_event, input: { path: string }) => {
   if (stat.size > 512 * 1024) throw new Error("文件过大（>512KB），请到文件管理器打开");
   const text = await fs.readFile(target, "utf8");
   return { path: target, text, bytes: stat.size, mtime: stat.mtimeMs };
-});
+}
 
-ipcMain.handle("work-logs:delete", async (_event, input: { paths: string[] }) => {
+async function deleteWorkLogs(input: { paths: string[] }) {
   const dirs = await knownProjectDirs();
   const roots = dirs.map((cwd) => path.join(cwd, MEM_DIR) + path.sep);
   let deleted = 0, bytes = 0;
@@ -163,4 +164,28 @@ ipcMain.handle("work-logs:delete", async (_event, input: { paths: string[] }) =>
     } catch { failed.push(String(raw)); }
   }
   return { deleted, bytes, failed };
+}
+
+/* ── 插件形态（P2 批次 4）：三个 handler 的**实现**留在模块级纯函数里（逐字未改），
+   注册 / 卸载交给容器 —— `inject: ["ipc"]` 声明依赖，不再直接 import electron。
+   ⛔ 通道名 / 参数 / 返回值 / 错误文案一字不改：换容器不许改对外契约（守卫【226】锚三通道）。 */
+export const workLogsFeature = defineFeature<null>({
+  id: "work-logs",
+  inject: ["ipc"],
+  setup: (ctx) => {
+    const ipcHost = ctx.get<IpcHost>("ipc");
+    // inject 已在容器侧挡过一次；这里再挡一次只为把类型收紧（⛔ 不写 `!`：缺依赖要报得出来）
+    if (!ipcHost) throw new Error("work-logs: 缺少 ipc 服务（宿主未提供）");
+
+    ipcHost.handle("work-logs:scan", () => scanWorkLogs());
+    ipcHost.handle("work-logs:read", (_event, input: { path: string }) => readWorkLog(input));
+    ipcHost.handle("work-logs:delete", (_event, input: { paths: string[] }) => deleteWorkLogs(input));
+
+    // 生命期：卸载时摘掉本域三个通道（不摘 = 卸载后通道还在、handler 却已被回收 ⇒ 调用报错）
+    ctx.effect(() => {
+      ipcHost.removeHandler("work-logs:scan");
+      ipcHost.removeHandler("work-logs:read");
+      ipcHost.removeHandler("work-logs:delete");
+    });
+  },
 });
