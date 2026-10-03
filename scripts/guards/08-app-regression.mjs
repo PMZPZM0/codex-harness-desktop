@@ -22,6 +22,12 @@ export async function run() {
     if (name === "main.ts") continue; // main.ts 的模块体在 setPath 之后执行，天然安全
     const src = readFileSync(join(ROOT, "electron", name), "utf8");
     src.split(/\r?\n/).forEach((line, i) => {
+      // ⛔⛔ 必须排除**箭头函数/函数表达式**：`() => path.join(app.getPath("userData"), …)`
+      //   看着像顶层赋值，实际 getPath 在**调用时**才求值 ⇒ 完全惰性、安全。
+      //   10-03 壁纸域踩到：守卫按行首正则把 `const recentFile = () => app.getPath(...)` 判成违规，
+      //   而 `runtime-refs.ts` 自己的 mainWindow 等惰性助手也是同一形态。
+      //   真正要防的是「模块体直接赋值给常量、导入时立刻求值」那一类。
+      if (/=>\s*.*app\.getPath\(\s*["']userData["']/.test(line)) return;
       if (/^(?:export\s+)?(?:const|let|var)\s+[\w$]+\s*(?::[^=]+)?=.*app\.getPath\(\s*["']userData["']/.test(line)) {
         offenders.push(`${name}:${i + 1}`);
       }

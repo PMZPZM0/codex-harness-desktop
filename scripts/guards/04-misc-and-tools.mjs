@@ -917,4 +917,85 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       "【250】缩到 <=980px 必须**逻辑关掉**任务操作浮层（只靠 CSS ⇒ 按钮没了浮层点不掉）"
     );
   }
+
+
+  /* ── 【251】主界面壁纸（10-03）──────────────────────────────────────────────
+     每条都钉一个「不这么做就真的坏」的后果，不是风格偏好：
+       ① ⛔⛔ CSS 里不许出现 `background-size: 100% 100%`（含空格变体）——
+          那正是把 4:3 的图硬拉成 21:9 的**变形**（用户需求 2/3 明确禁止）。
+          适配只能走 cover / contain / auto，由 --wallpaper-fit 传入；
+       ② 所有壁纸规则必须有 [data-wallpaper] 前缀作用域 —— 直接改 .app-shell
+          会让「没开壁纸」的用户也吃 backdrop-filter 开销，且壁纸一坏连纯色模式一起坏；
+       ③ 代码块 / diff 在壁纸模式下必须完全 opaque —— 那是必须逐字读的内容，
+          半透明+模糊会让语法高亮对比度崩掉（本类需求里最容易被牺牲的一处）；
+       ④ 自带素材必须在 public/ 且 dist 产物里存在 —— 放 resources/ 下只有
+          列进 extraResources 的才进包 ⇒ 安装版 404（dev 正常、用户看不到、无报错）；
+       ⑤ ⛔ 手填本地路径必须在主进程校验 isInsideTrustedRoots —— 用户可以手打任意
+          C:\...，不能因为「前端会显示」就当合法图片源（那是任意文件读取面）。 */
+  {
+    const wallCss251 = readFileSync(join(ROOT, "src/styles/25-wallpaper.css"), "utf8");
+    const wallJsx251 = readFileSync(join(ROOT, "src/features/wallpaper/WallpaperSettingsSection.tsx"), "utf8");
+    const wallLib251 = readFileSync(join(ROOT, "src/lib/wallpaper.ts"), "utf8");
+    const wallIpc251 = readFileSync(join(ROOT, "electron/features/wallpaper-ipc.ts"), "utf8");
+
+    // ① 拉伸变形 = background-size 给两个百分比值（容忍任意空格），⛔ 类型层也不许有 stretch 档
+    //   ⛔ 必须先去掉块注释：注释里写「绝不使用 background-size: 100% 100%」是说明性文字，
+    //     不去注释会被自己判红（10-03 实测踩过）。
+    (!/background-size:\s*100%\s+100%/.test(wallCss251.replace(/\/\*[\s\S]*?\*\//g, "")) ? ok : fail)(
+      "【251】壁纸不许用 background-size:100% 100%（那正是拉伸变形；适配只走 cover/contain/auto）"
+    );
+    (/cover:\s*"cover"/.test(wallLib251) && /contain:\s*"contain"/.test(wallLib251) && /auto:\s*"auto"/.test(wallLib251) ? ok : fail)(
+      "【251】适配档位映射表完整（cover 铺满 / contain 居中 / auto 原始 —— 缺一项就有窗口比例下露黑边）"
+    );
+    (/background-size:\s*var\(--wallpaper-fit/.test(wallCss251) ? ok : fail)(
+      "【251】背景尺寸由 --wallpaper-fit 驱动（浏览器按当前盒模型实时求解 ⇒ 窗口缩放天然跟随，无需 resize 监听）"
+    );
+    // ② 独立作用域 + 壁纸挂在 .app-shell 自身背景
+    //    ⛔ 判据含"必须挂在 .app-shell 的 background-image 上"：10-03 实测踩过 ——
+    //    壁纸若挂在 ::before（z-index:0）会被 .sidebar(z-index:5) 与不透明的 .workspace
+    //    完整压在下面，像素取证显示图片正确、opacity 1，但界面里一点都看不见。
+    (!/^\.app-shell\s*\{/m.test(wallCss251)
+      && /\[data-wallpaper\] \.app-shell\s*\{/.test(wallCss251)
+      && /background-image:[^;]*var\(--wallpaper-image\)/.test(wallCss251) ? ok : fail)(
+      "【251】壁纸挂在 .app-shell 自身的 background-image（挂伪元素会被 sidebar/内容区压住 ⇒ 看不见）"
+    );
+    // ②b 遮罩必须是合法<image>（linear-gradient），不能直接给颜色 ——
+    //     background-image 位置只接受 <image>，写颜色会让整条声明作废、壁纸一起消失。
+    (/linear-gradient\(var\(--wp-veil/.test(wallCss251) ? ok : fail)(
+      "【251】可读性遮罩用 linear-gradient 承载（直接写颜色会让整条 background-image 声明作废）"
+    );
+    // ③ 代码块强制不透明
+    (/\[data-wallpaper\] pre,/.test(wallCss251)
+      && /background-color: var\(--bg\) !important/.test(wallCss251)
+      && /backdrop-filter: none/.test(wallCss251) ? ok : fail)(
+      "【251】代码块/diff 在壁纸模式下必须完全 opaque（半透明+模糊 ⇒ 语法高亮读不了）"
+    );
+    // ④ 素材在位（public 源 + dist 产物）
+    const want251 = ["wall-aurora.jpg", "wall-grid.jpg", "wall-orbit.jpg"];
+    const srcDir251 = join(ROOT, "public", "visual");
+    const distDir251 = join(ROOT, "dist", "visual");
+    const missSrc251 = want251.filter((n) => !existsSync(join(srcDir251, n)));
+    (missSrc251.length === 0 ? ok : fail)(
+      `【251】自带壁纸素材齐备（public/visual 下 3 张${missSrc251.length ? `，缺 ${missSrc251.join("、")}` : ""}）`
+    );
+    const distOk251 = existsSync(distDir251) && want251.every((n) => existsSync(join(distDir251, n)));
+    (distOk251 ? ok : fail)(
+      `【251】构建产物带得上素材（dist/visual 3 张${existsSync(distDir251) ? "" : "，dist/visual 不存在 ⇒ 打包后 404"}）`
+    );
+    (/prefers-reduced-motion/.test(wallCss251) ? ok : fail)(
+      "【251】壁纸层尊重 prefers-reduced-motion（以后有人加缓慢漂移时不会忘了这条）"
+    );
+    // ⑤ 手填路径必须过可信根校验
+    (/wallpaper:verify/.test(wallIpc251)
+      && /isInsideTrustedRoots/.test(wallIpc251)
+      && /trustPicked/.test(wallIpc251) ? ok : fail)(
+      "【251】手填本地路径必须过 isInsideTrustedRoots 校验（用户能手打任意 C:\...，否则等于开任意文件读取面）"
+    );
+    (/const IMAGE_EXT = \//.test(wallIpc251) && /png\|jpe\?g\|webp\|gif\|bmp\|avif/.test(wallIpc251) ? ok : fail)(
+      "【251】壁纸只收图片扩展名（非图片一律拒绝，避免把任意文件当壁纸塞进渲染层）"
+    );
+    (/wallpaper:forget/.test(wallIpc251) && !/rmSync|unlink/.test(wallIpc251) ? ok : fail)(
+      "【251】移除壁纸只删引用、不动用户磁盘原图（那是用户的文件）"
+    );
+  }
 }

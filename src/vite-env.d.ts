@@ -449,6 +449,14 @@ interface Window {
     readFile(path: string): Promise<{ dataBase64: string; size: number }>;
     fileExists(path: string): Promise<{ exists: boolean }>;
     chooseDirectory(): Promise<string | null>;
+    /* 10-03 新增：列出可用壁纸（自带素材 + 用户选过的本地图；文件已不存在的自动剔除） */
+    listWallpapers(): Promise<{ id: string; bundled?: string; filePath?: string; label: string }[]>;
+    /* 10-03 新增：系统对话框选图（选完自动 trustPicked 进可信根，渲染层可直接引原路径，不复制文件） */
+    pickWallpaper(): Promise<{ ok: boolean; canceled?: boolean; reason?: string; wallpaper?: { id: string; filePath: string; label: string } }>;
+    /* 10-03 新增：校验并登记手填的本地图片路径。手打路径不在可信根内 ⇒ 必须先 isInsideTrustedRoots + trustPicked，否则渲染层拿到 403 破图 */
+    verifyWallpaperPath(filePath: string): Promise<{ ok: boolean; reason?: string; wallpaper?: { id: string; filePath: string; label: string } }>;
+    /* 10-03 新增：从最近使用里移除一条引用（⛔ 不动用户磁盘原图 —— 那是用户的文件，删不得） */
+    forgetWallpaper(id: string): Promise<{ ok: boolean; removed: number }>;
     chooseImages(): Promise<string[]>;
     chooseFiles(): Promise<string[]>;
     importSkill(): Promise<{ name: string; path: string; source: string; content: string } | null>;
