@@ -11,7 +11,7 @@
  *
  * ⛔ 本文件属基座层（electron/ 根）：只依赖 context，不 import 任何域（域→基座单向）。
  */
-import { mountFeature, mountedFeatures } from "./context";
+import { mountFeature } from "./context";
 import { COMPOSITION } from "./composition.gen";
 
 /** 挂载组合表里启用且登记过的那个域；未登记/已禁用返回 false（由调用方决定是否报错）。 */
@@ -20,14 +20,4 @@ export function mountFromComposition(id: string): boolean {
   if (!row) return false;
   mountFeature(row.plugin, row.config as never);
   return true;
-}
-
-/** 组合表里启用的域 id（守卫断言用）。 */
-export function enabledDomainIds(): string[] {
-  return COMPOSITION.map((r) => r.id);
-}
-
-/** 已挂载的域（= context 的挂载清单；两者不一致说明有人绕过组合表挂载）。 */
-export function mountedDomainIds(): string[] {
-  return mountedFeatures();
 }

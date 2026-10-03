@@ -1210,6 +1210,24 @@ export async function run() {
     (qt253.includes('mountFromComposition("queue-timer")') && !qt253.includes("mountFeature(") ? ok : fail)(
       "【253】域经组合表挂载（⛔ 不许自己 mountFeature —— 绕过配置）"
     );
+    // ⛔ 审查发现（10-03）：把断言从"这一个域"扩到**所有调用点** —— 域自报的 id 没登记时
+    //    mountFromComposition 静默返回 false（域不挂载、零症状），P2 要迁 57 个域，这条必须成规矩。
+    //    两半都验：调用点存在（落地）+ 每个 id 都已登记（剔除）。
+    const callSites253 = [];
+    const walkFeat253 = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) return walkFeat253(p);
+      return /\.ts$/.test(e.name) ? [p] : [];
+    });
+    for (const p of walkFeat253(join(ROOT, "electron", "features"))) {
+      const src = codeOnly(readFileSync(p, "utf8"));
+      for (const m of src.matchAll(/mountFromComposition\(\s*"([\w-]+)"\s*\)/g)) callSites253.push([p, m[1]]);
+    }
+    const registered253 = new Set((composition.domains || []).map((d) => d && d.id));
+    const unregistered253 = callSites253.filter(([, id]) => !registered253.has(id));
+    (callSites253.length > 0 && unregistered253.length === 0 ? ok : fail)(
+      `【253】所有 mountFromComposition 调用点的 id 都已登记（调用点 ${callSites253.length} 个，未登记：${unregistered253.map(([p, id]) => `${id}@${p.split(/[\\/]/).pop()}`).join("/") || "无"}）`
+    );
   }
 
 }

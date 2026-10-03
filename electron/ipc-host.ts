@@ -14,7 +14,10 @@ import { ipcMain } from "electron";
 import { rootContext } from "./context";
 
 export type IpcHost = {
-  /** 注册一个 invoke 通道（同名重复注册由 Electron 抛错，与直连 `ipcMain.handle` 行为一致）。 */
+  /** 注册一个 invoke 通道（同名重复注册由 Electron 抛错，与直连 `ipcMain.handle` 行为一致）。
+   *  ⚠️ 这里必须用 `any[]`：`ipcMain.handle` 的 handler 签名就是 `(event, ...args: any[])`，
+   *  收窄成 `unknown[]` 会与 Electron 的类型面不兼容（只能靠回调内部的参数校验兜住，
+   *  见各域的 `input?.x` 判空写法）。 */
   handle(channel: string, fn: (event: unknown, ...args: any[]) => unknown): void;
   /** 摘掉一个通道（插件卸载用；未注册时幂等）。 */
   removeHandler(channel: string): void;

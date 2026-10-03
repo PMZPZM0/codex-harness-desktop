@@ -18,6 +18,7 @@
 
 > **写/改代码前先读 `docs/ARCHITECTURE-RULES.md`**（以实测现状为基准的规范条文：板块划分判据、四条接口面契约、新增板块 checklist、红线汇总）。
 > ⚠️ `docs/ARCHITECTURE.md` 是 09-21 的**目标形态草案**（`registry.ts` / `defineFeature` / `Slot.tsx` / `lib/bus.mjs` 未落地；`gen-ipc-bridge.mjs` 已于 09-23 落地，见 ARCHITECTURE-RULES.md §0/§6），**冲突时以 ARCHITECTURE-RULES.md 为准**。
+> ✅ **10-03 更新**：**主进程侧**的 `defineFeature` + `ctx` 容器**已落地**（`electron/context.ts` + `electron/ipc-host.ts`，示范域 `features/queue-timer-ipc.ts`），并已加**域组合层**（`electron/composition.json` → `npm run gen:domains` → `composition.gen.ts`，守卫【252】【253】）。**渲染层**的 `Slot.tsx` / `registry.ts` **仍未落地** —— 现状见 ARCHITECTURE-RULES.md §8。
 > ⛔⛔ **09-29 用户点名的通用纪律**（细则见文档 §2.2）：**后续新增功能一律做成独立板块、留好拓展接口、并考虑后续维护与拓展** —— 不往既有域里"顺手加一块"；能力表/厂商表/类型表保持单一真相源；新增或修改时**同轮**同步它的每一处引用（守卫、文档、生成器、能力清单）。
 > 样板 = **AI 画布工作流**（`src/features/drama-canvas/`），它是五层全占的独立功能板块，见文档 §2.1。
 

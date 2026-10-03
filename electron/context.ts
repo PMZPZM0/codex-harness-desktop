@@ -139,6 +139,12 @@ export class Context {
     this.children.add(ctx);
     try {
       const ret = spec.apply(ctx, config as T);
+      // ⛔ 审查发现（10-03）：apply 返回 Promise 时**旧写法会静默丢掉它** —— 插件"挂上了"但初始化没跑完，
+      //    而且没有任何症状。P0 容器只支持同步挂载（异步初始化请自行 ready 后再对外暴露能力），
+      //    所以这里显式报错；抛在 try 内 ⇒ 走下面 catch 的回滚路径，不留半注册。
+      if (ret && typeof (ret as { then?: unknown }).then === "function") {
+        throw new Error(`[context] 插件 ${name} 的 apply 返回了 Promise —— P0 容器只支持同步挂载（异步初始化请自行 ready 后再暴露能力）`);
+      }
       if (typeof ret === "function") ctx.effect(ret as Disposer);
     } catch (err) {
       this.children.delete(ctx);
