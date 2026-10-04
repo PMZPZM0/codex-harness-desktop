@@ -486,6 +486,18 @@ export async function layaDecideEffort(text: string): Promise<{ effort: string; 
   ]);
 }
 
+/* ── 判定结果解析（10-05 校准实测，scripts/calibrate-laya-kb.mjs）──────────────
+   ⛔⛔ 置信度必须读 `answer_confidence`（= 所选答案的校准概率，实测定标 0.6~0.9 档）——
+   `confidence` 是**行动门限**（实测可能低到 0.10），拿它当判定置信会把全部判断弃权掉。
+   answer_confidence 缺失时回落 probabilities[choice]，再回落 confidence（老版本兼容）。 */
+function parseVerdict(ans: unknown, criteria: Record<string, string>): { choice: string; confidence: number } | null {
+  const a = ans as { choice?: string; confidence?: number; answer_confidence?: number; probabilities?: Record<string, number> } | undefined;
+  const choice = String(a?.choice ?? "").toLowerCase();
+  if (!(choice in criteria)) return null;
+  const confidence = Number(a?.answer_confidence ?? a?.probabilities?.[choice] ?? a?.confidence ?? 0);
+  return { choice, confidence };
+}
+
 /**
  * 通用单问判断（知识库写入门禁 / 检索重排等**软增强**用，10-04 用户拍板「未装照旧、装了增强」）：
  * 服务已就绪才判；未就绪 / 超时 / 低置信 / 答案不在 criteria 里 ⇒ 一律返回 null（fail-open，
@@ -506,16 +518,49 @@ export async function layaJudge(
     const answers = await layaDecide(text.slice(0, 4000), {
       judge: { type: "choice", instructions: question.instructions, criteria: question.criteria },
     });
-    const ans = answers.judge as { choice?: string; confidence?: number } | undefined;
-    const choice = String(ans?.choice ?? "").toLowerCase();
-    const confidence = Number(ans?.confidence ?? 0);
-    if (!(choice in question.criteria)) return null;
-    if (!(confidence >= minConfidence)) return null;
-    return { choice, confidence };
+    const verdict = parseVerdict(answers.judge, question.criteria);
+    if (!verdict || !(verdict.confidence >= minConfidence)) return null;
+    return verdict;
   })();
   return Promise.race([
     run,
     new Promise<null>((resolve) => setTimeout(() => resolve(null), options.timeoutMs ?? 2_000)),
+  ]);
+}
+
+/**
+ * 批量判断（10-04 检索全过滤 / 重复拦截用）：同一个 state 一次 HTTP 带**多个问题**
+ * （layaDecide 协议原生支持 answers 按名字返回）——N 条候选的逐条判断只有一次往返。
+ * 返回值只含「答了、选项合法、过了置信线」的问题，缺席 = 弃权（fail-open，调用方按"保留"处理）。
+ * ⛔ 与 layaJudge 同款延迟纪律：未就绪只预热并返回空对象，绝不为此拉起服务。
+ */
+export async function layaJudgeAll(
+  text: string,
+  questions: Record<string, { instructions: string; criteria: Record<string, string> }>,
+  options: { minConfidence?: number; timeoutMs?: number } = {},
+): Promise<Record<string, { choice: string; confidence: number }>> {
+  if (!proc || !ready) {
+    void ensureService().catch((err) => log(`预热失败: ${String(err).slice(0, 120)}`));
+    return {};
+  }
+  const minConfidence = options.minConfidence ?? 0.5;
+  const run = (async () => {
+    const payload: Record<string, unknown> = {};
+    for (const [name, q] of Object.entries(questions)) {
+      payload[name] = { type: "choice", instructions: q.instructions, criteria: q.criteria };
+    }
+    const answers = await layaDecide(text.slice(0, 4000), payload);
+    const out: Record<string, { choice: string; confidence: number }> = {};
+    for (const [name, q] of Object.entries(questions)) {
+      const verdict = parseVerdict(answers[name], q.criteria);
+      if (!verdict || !(verdict.confidence >= minConfidence)) continue;
+      out[name] = verdict;
+    }
+    return out;
+  })();
+  return Promise.race([
+    run,
+    new Promise<Record<string, { choice: string; confidence: number }>>((resolve) => setTimeout(() => resolve({}), options.timeoutMs ?? 3_000)),
   ]);
 }
 
