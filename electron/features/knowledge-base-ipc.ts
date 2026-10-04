@@ -15,10 +15,16 @@ const KB_CHANNELS = ["kb:list", "kb:add-text", "kb:add-files", "kb:remove", "kb:
 /** 语义向量档的 embedding 函数：**本地后端优先**（开发工具页「知识库本地语义检索」装了就用，
  *  完全离线、不依赖供应商）；未装则回落供应商 /embeddings（与「AI 润色」同一条配置）；
  *  两者都不可用时返回 undefined ⇒ searchDocsSmart 自动只用全文档，永不报错。 */
-function buildEmbedFn(secure: HostCaps["secure"]): ((texts: string[]) => Promise<number[][]>) | undefined {
+/** ⚠️ `secure` 只在**供应商回落**分支用到（解密 API Key 走 /embeddings）；
+ *  **本地后端分支（第 21 行）完全不读它**—— 而本地后端是完全离线的。
+ *  ⛔ 故允许传 null：模型侧 `knowledge_add`（dispatch-rpc.ts）拿不到宿主 `secure` 接缝，
+ *  但它只在本地后端已装时补向量（那个路径不需要 secure）⇒ 不该为它编造一个假 secure。 */
+function buildEmbedFn(secure: HostCaps["secure"] | null): ((texts: string[]) => Promise<number[][]>) | undefined {
   if (process.env.CODEX_HARNESS_KB_EMBED === "0") return undefined;
   return async (texts: string[]) => {
     if (kbEmbeddingInstalled()) return embedWithLocalBackend(texts);
+    //⚠️ 走到这里说明本地后端没装 ⇒ 需要供应商回落 ⇒ 必须有 secure。拿不到就早失败、说真话。
+    if (!secure) throw new Error("本地嵌入后端未安装，且当前调用方没有 secure 接缝（无法解密供应商 Key）—— 语义索引不可用");
     const cfg = await readCustomModel();
     if (!cfg?.baseUrl || cfg.provider === "openai-official") throw new Error("no custom provider for embeddings");
     const key = cfg.encryptedKey && secure.isEncryptionAvailable() ? secure.decryptString(Buffer.from(cfg.encryptedKey, "base64")) : "";
@@ -38,8 +44,15 @@ function buildEmbedFn(secure: HostCaps["secure"]): ((texts: string[]) => Promise
   };
 }
 
-/** 导入后台补向量（fire-and-forget）：失败只影响语义档，全文检索照常。 */
-function embedInBackground(secure: HostCaps["secure"], workspace: string, docIds: string[]): void {
+/** 导入后台补向量（fire-and-forget）：失败只影响语义档，全文检索照常。
+ *
+ *  ⛔⛔ 2026-10-04导出成公共函数的原因：补向量原来只在**这个文件里**的 UI 两条路径
+ *    （kb:add-text / kb:add-files）被调⇒ **模型侧 `knowledge_add`（dispatch-rpc.ts）
+ *    直调 addDocument，绕过了这里** ⇒ 模型写进去的知识**只有全文索引、没有向量索引**，
+ *    语义检索永远召不回（用户问「读和写还有索引工具都有了吧」时查出来的缺口）。
+ *  ⇒ **凡是往知识库写文档的路径，都必须调它**；漏一条就静默退化成半索引。
+ *  ⚠️ fire-and-forget 是有意的：本地嵌入后端可能很慢/要下载，不该卡住写入。 */
+export function embedInBackground(secure: HostCaps["secure"] | null, workspace: string, docIds: string[]): void {
   const embed = buildEmbedFn(secure);
   if (!embed || !workspace) return;
   for (const docId of docIds) void embedDocument(workspace, docId, embed).catch(() => false);
