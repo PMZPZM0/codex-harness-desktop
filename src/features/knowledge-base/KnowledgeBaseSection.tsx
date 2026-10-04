@@ -5,7 +5,8 @@
  * ⛔ 未选工作区时功能不可用——知识库是项目级的，必须先有项目。
  */
 import { useCallback, useEffect, useState } from "react";
-import { FilePlus2, FolderOpen, Library, RefreshCw, Search, Trash2 } from "lucide-react";
+import { createPortal } from "react-dom";
+import { FilePlus2, FolderOpen, Library, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { PageInfo } from "../../components/SettingsHead";
 import { Spinner } from "../../components/CardShell";
 
@@ -24,6 +25,15 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteTitle, setPasteTitle] = useState("");
   const [pasteText, setPasteText] = useState("");
+  const [preview, setPreview] = useState<{ meta: KbDoc; text: string } | null>(null);
+
+  const openPreview = async (doc: KbDoc) => {
+    try {
+      const result = await window.codex.readKnowledgeDoc({ workspace, docId: doc.id });
+      if (result) setPreview(result);
+      else setNotice(`读不到「${doc.title}」——文件可能已被删除`);
+    } catch (error: any) { setNotice(`预览失败：${error?.message ?? error}`); }
+  };
 
   const load = useCallback(async () => {
     if (!workspace) return;
@@ -133,11 +143,28 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
         docs.length ? <div className="kb-docs">
           {docs.map((doc) => (
             <div className="kb-doc" key={doc.id}>
-              <span className="kb-doc-main"><strong>{doc.title}</strong><small>{doc.chunks} 块 · {Math.max(1, Math.round(doc.bytes / 1024))} KB</small></span>
-              <button className="icon-button" title={`删除「${doc.title}」`} disabled={Boolean(busy)} onClick={() => void remove(doc)}>{busy === doc.id ? <Spinner /> : <Trash2 size={13} />}</button>
+              <span className="kb-doc-main" style={{ cursor: "pointer" }} title="点击查看全文" onClick={() => void openPreview(doc)}>
+                <strong>{doc.title}</strong><small>{doc.chunks} 块 · {Math.max(1, Math.round(doc.bytes / 1024))} KB</small>
+              </span>
+              <button className="icon-button" title={`删除「${doc.title}」`} disabled={Boolean(busy)} onClick={(e) => { e.stopPropagation(); void remove(doc); }}>{busy === doc.id ? <Spinner /> : <Trash2 size={13} />}</button>
             </div>
           ))}
         </div> : <p className="muted">{loading ? "正在加载…" : "知识库还是空的——用上面「导入文件」或「粘贴文本」添加第一份文档。"}</p>
+      )}
+
+      {/* 全文预览弹窗（info-modal 体系，portal 到 body——设置页 transform 会劫持 fixed） */}
+      {preview && createPortal(
+        <div className="info-modal-mask" onClick={() => setPreview(null)}>
+          <div className="info-modal kb-preview-modal" role="dialog" aria-label={`${preview.meta.title} 全文预览`} onClick={(e) => e.stopPropagation()}>
+            <header>
+              <strong>{preview.meta.title}</strong>
+              <small>{preview.meta.chunks} 块 · {Math.max(1, Math.round(preview.meta.bytes / 1024))} KB · 来源: {preview.meta.source || "粘贴"}</small>
+              <button type="button" title="关闭" onClick={() => setPreview(null)}><X size={14} /></button>
+            </header>
+            <pre className="kb-preview-body">{preview.text}</pre>
+          </div>
+        </div>,
+        document.body,
       )}
     </section>
   );
