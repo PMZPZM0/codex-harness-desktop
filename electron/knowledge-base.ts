@@ -46,12 +46,29 @@ export function listDocs(workspace: string): KbDocMeta[] {
   return out.sort((a, b) => (a.addedAt < b.addedAt ? 1 : -1));
 }
 
-/** 切块：按空行分段，段过长再按句号切，保证块 ≤ CHUNK_SIZE */
+/** 块间重叠长度（2026-10-04，规范 docs/KNOWLEDGE-BASE.md §3 第 4 条）。
+ *  ⛔ 为什么需要：原实现**块间零重叠** ⇒ 一句话被切成"前半在块 3、后半在块 4"时，
+ *    两块都不完整 ⇒ 任何一边被检索到都答不全，**跨块的信息永远召不回来**。
+ *    重叠让跨界的句子至少在一块里是完整的。
+ *  ⚠️ 代价：块与块之间有重复文本 ⇒ 向量档会算两次相似度（略费算力，不是正确性问题）。
+ *    合并时按 `docId:chunkIndex` 去重仍是按块粒度，重叠部分重复出现在两个 chunkIndex 上，
+ *    因此**不去重**（要合并就别按 chunkIndex，按内容首 80 字符归一）。 */
+const CHUNK_OVERLAP = 80;
+
+/** 切块：按空行分段，段过长再按句号切；**块间带 CHUNK_OVERLAP 重叠**。
+ *  ⛔ 语义单元优先：表格/代码块整体保留（被切开就不可读）。 */
 export function chunkText(text: string): string[] {
   const paragraphs = String(text ?? "").replace(/\r\n?/g, "\n").split(/\n\s*\n/);
   const chunks: string[] = [];
   let current = "";
-  const push = () => { if (current.trim()) chunks.push(current.trim()); current = ""; };
+  /** 收尾：把「末尾 CHUNK_OVERLAP 字符」留给下一块当前缀（重叠）。 */
+  const push = () => {
+    if (!current.trim()) { current = ""; return; }
+    chunks.push(current.trim());
+    // 重叠：截尾部（**按字符、不按句**——按句会让短句块的重叠过大）
+    const tail = current.length > CHUNK_OVERLAP ? current.slice(-CHUNK_OVERLAP) : current;
+    current = tail;
+  };
   for (const para of paragraphs) {
     if (para.length <= CHUNK_SIZE) {
       if ((current + "\n\n" + para).length > CHUNK_SIZE) push();
@@ -65,8 +82,20 @@ export function chunkText(text: string): string[] {
     }
     push();
   }
-  push();
-  return chunks;
+  // 最后一块：current 里还带着"为了重叠而留下的尾巴"，直接收掉
+  chunks.push(current.trim());
+  // ⛔ 去重**按 Set 保序**，不要用 `chunks.indexOf(c) === i`——那会连带删掉
+  //   内容完全相同的**合法**块（两篇不同文档里同样的段落），把召回结果弄丢。
+  //   只去掉"完全空"与"相邻重复"这两种真冗余。
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const c of chunks) {
+    if (!c) continue;
+    if (seen.has(c)) continue;
+    seen.add(c);
+    out.push(c);
+  }
+  return out;
 }
 
 /** 导入一个文档：title + 全文文本（渲染层负责读文件/粘贴），落盘 source.md + meta.json */
@@ -92,6 +121,28 @@ export function removeDocument(workspace: string, docId: string): void {
   const docDir = path.join(docsDir(workspace), id);
   if (!fs.existsSync(docDir)) throw new Error("文档不存在，可能已被删除");
   fs.rmSync(docDir, { recursive: true, force: true });
+}
+
+/** query → 命中词列表（全文档档与语义档**共用一套**，否则两档 snippet 定位会不一致）。
+ *  ⛔ 中文没有空格：只按空格切等于"整句当一个词"，`indexOf` 只能命中整句，
+ *  而整句几乎不会出现在块里 ⇒ snippet 永远定位不到 ⇒ 回退到块首（等于没修）。 */
+function queryTerms(query: string): string[] {
+  return String(query ?? "")
+    .toLowerCase()
+    .split(/[\s,.;:!?，。；：！？、"'“”‘’（）()\[\]【】/\\]+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+}
+
+/** chunk 里第一个命中词的位置；全不命中返回 -1。 */
+function firstHitIndex(chunk: string, terms: string[]): number {
+  const lower = chunk.toLowerCase();
+  let best = -1;
+  for (const t of terms) {
+    const i = lower.indexOf(t);
+    if (i >= 0 && (best < 0 || i < best)) best = i;
+  }
+  return best;
 }
 
 /** v1 检索：分块全文评分（命中词覆盖 + 词频密度），返回带高亮片段的命中列表。零依赖。 */
@@ -187,7 +238,17 @@ export async function searchDocsSemantic(workspace: string, query: string, limit
       const score = cosine(queryVector, vector);
       if (score < 0.25) return; // 低相似度不凑数（余弦对短文本噪声大）
       const chunk = chunks[chunkIndex] ?? "";
-      hits.push({ docId: meta.id, title: meta.title, chunkIndex, score: score * 10, snippet: chunk.slice(0, 260).replace(/\s+/g, " ") });
+      // ⛔⛔ 2026-10-04 修「召回不准」：原来这里 `chunk.slice(0, 260)` **取块首**，
+      //   而语义档的命中位置恰恰**多半不在块首**（向量是整块算的，相似的是整块的意思，
+      //   不是它的开头）⇒ 返回给调用方的snippet 与 query 无关，精准度被自己拖垮。
+      //   改成与全文档档一致：**围绕 query 的命中词取**，并在头���标出命中的词。
+      const terms = queryTerms(q);
+      const at = terms.length ? firstHitIndex(chunk, terms) : -1;
+      const start = at < 0 ? 0 : Math.max(0, at - 90);
+      const snippet = (start > 0 ? "…" : "")
+        + chunk.slice(start, start + 260).replace(/\s+/g, " ")
+        + (start + 260 < chunk.length ? "…" : "");
+      hits.push({ docId: meta.id, title: meta.title, chunkIndex, score: score * 10, snippet });
     });
   }
   return hits.sort((a, b) => b.score - a.score).slice(0, Math.max(1, Math.min(20, limit)));
