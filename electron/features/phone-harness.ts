@@ -18,7 +18,6 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { app } from "electron";
 import { bundledPython, pythonPipReady } from "../toolchain";
 import { codexHome } from "../runtime-paths";
 import { toolsRoot } from "../toolchain";
@@ -264,4 +263,11 @@ export async function openPhoneHarnessSettings(): Promise<void> {
   await run("xdg-open", ["https://developer.android.com/tools/adb"]);
 }
 
-export const phoneHarnessAppName = app.name;
+/* ⛔⛔ 2026-10-04 删除 `export const phoneHarnessAppName = app.name`：
+   ① **无任何消费方**（全仓 grep 只有这一行声明，零引用）—— 纯死导出；
+   ② 它在**模块顶层**求值 `app.name`。`phone-harness-ipc.ts` 在主进程模块体里 import 本文件，
+      而 Electron 的 `app` 对象在模块求值阶段尚未完成绑定 ⇒ 这里抛
+      `TypeError: Cannot read properties of undefined (reading 'name')`
+      ⇒ **整个主进程启动即崩**（实测：隔离实例连窗口都起不来）。
+   这与 runtime-paths 那条【91】纪律同族：**模块顶层不许求值依赖 app 绑定的值**。
+   ⛔ 若将来真需要应用名，用 `app.getName()` 且放在函数体内惰性求值。 */
