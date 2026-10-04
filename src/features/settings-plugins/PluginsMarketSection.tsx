@@ -51,15 +51,31 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
     <div className="market-source-switch">
       <SegmentedTabs
         value={marketSource}
-        onChange={(next) => setMarketSource(next === "official" ? "official" : "gitee")}
-        options={[{ value: "gitee", label: "Claude 插件镜像" }, { value: "official", label: "Codex 官方插件" }]}
+        // ⛔ 三个选项而不是两个：之前「已安装」那屏被压在**市场下面**（同一个页面里从上往下滚），
+        //   于是用户看到的是「57 个市场插件混排，其中 6 个显示已安装」—— 既看不出哪些是本地的，
+        //   也找不到启停开关。⇒ 已安装独立成第三个 tab（用户 10-04 拍板）。
+        //   ⛔ 值域用三态字符串而不是布尔：布尔无法表达「市场/已安装」这第三种。
+        onChange={(next) => setMarketSource(next === "official" ? "official" : next === "installed" ? "installed" : "gitee")}
+        options={[
+          { value: "gitee", label: "Claude 插件镜像" },
+          { value: "official", label: "Codex 官方插件" },
+          // ⛔ 不是「已安装 6」这种数字角标：已安装的数量会随启停变，角标会骗人。
+          //   只在真安装/卸载后刷新时才有意义 —— 那一屏本来就在下面，不必再报数。
+          { value: "installed", label: "已安装" },
+        ]}
       />
     </div>
 
+    {/* 10-04：切到「已安装」时不渲染市场那整块（57 张卡片 + 分页）—— 不是 display:none，
+        而是**根本不挂载**：省掉一次长列表渲染，也避免用户滚动时误以为下面还有市场。 */}
     {/* ⛔ 09-28：「内置接口（视频生成接口）」块**搬走**了 —— 它属于「内置插件」那一组
         （与生图/视觉插件并列，见 BuiltinPluginsSection）。本页只负责**插件市场**：
         外部市场的可安装列表 + 已安装插件管理。两件事混在一页会让人分不清「自带」与「要装」。 */}
-    {marketSource === "official"
+    {/* 10-04：切到「已安装」tab 时**不挂载市场那整块**（57 张卡片 + 分页）——
+        不是 display:none，而是不渲染：省一次长列表，也避免用户以为下面还有市场。
+        ⛔ 这行必须紧贴它下面的三元开头 —— 写偏一行会把表达式截断，tsc 直接语法错
+        （本轮踩过：注释里带引号 + 三元符号，在 JSX 注释中会被解析器当成真代码）。 */}
+    {marketSource === "installed" ? null : marketSource === "official"
       ? <CodexOfficialMarketSection onResourcesChanged={() => void refreshPluginsPage()} />
       : <div className="plugin-market-block">
       <div className="plugin-market-title">插件市场<small>来自 Gitee 官方镜像（Claude Code 插件，与 Codex 兼容）· 一键安装</small></div>
@@ -103,7 +119,13 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
       <div className="skill-market-pagination"><span>共 {pluginMarketTotal} 个插件 · 第 {pluginMarketPage} / {Math.max(1, Math.ceil(pluginMarketTotal / pluginMarketPageSize))} 页</span><div><button className="secondary-setting" disabled={pluginMarketLoading || pluginMarketPage <= 1} onClick={() => setPluginMarketPage((page: any) => Math.max(1, page - 1))}><ArrowLeft size={14} />上一页</button><button className="secondary-setting" disabled={pluginMarketLoading || pluginMarketPage >= Math.max(1, Math.ceil(pluginMarketTotal / pluginMarketPageSize))} onClick={() => setPluginMarketPage((page: any) => page + 1)}>下一页<ArrowRight size={14} /></button></div></div>
     </div>}
 
-    <div className="plugin-stats">
+    {/* 10-04 用户拍板：市场与已安装**顶栏各占一个 tab**。
+        ⛔ 下面这块（plugin-stats 起）是**本地已装插件**的列表：启用/停用开关、版本、来源都在这，
+           与远端市场是**两个不同的池子**。之前两者同页上下堆叠 ⇒ 用户看到「57 个市场插件混排，
+           其中几个标着已安装」，既看不出哪些是本地的、也找不到启停入口。
+        ⛔ 切到「已安装」tab 时**只显示这一块**（下面的条件化），市场那整块不挂载。 */}
+    {marketSource === "installed" ? null : <>
+      <div className="plugin-stats">
       <div className="plugin-stat"><span>市场插件</span><strong>{all.length}</strong></div>
       <div className="plugin-stat"><span>已安装</span><strong>{installed.length}</strong></div>
       <div className="plugin-stat"><span>启用中</span><strong className="stat-ok">{enabledCount}</strong></div>
@@ -165,5 +187,6 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
       })}
       {!visible.length && <div className="plugin-empty"><Store size={26} /><strong>{all.length ? "没有匹配的插件" : "还没有发现插件"}</strong><p>{all.length ? "换个关键词，或清除「已安装」筛选。" : "在 Codex 配置里添加 marketplace 后，插件会出现在这里。"}</p></div>}
     </div>
+    </>}
   </section>;
 }
