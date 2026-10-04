@@ -125,5 +125,23 @@ ok(
   "⛔ .topbar 仍有 overflow:hidden（撤掉会让「图标压原生窗口钮」复发 —— 正确做法是改弹层，不是撤裁剪）",
 );
 
+// ── ⑧ portal 之后，「点外面关闭」必须同时问两个容器 ──
+// ⛔⛔ 2026-10-04 用户报「界面出来了，点一下又消失」——**上一个提交造成的**：
+//   弹层 portal 到 body 后不在 wrapRef 的 DOM 子树里 ⇒ `wrapRef.contains(点到的节点)`
+//   恒为 false ⇒ 弹层内**任何一次点击**（点开关、点行）都被判成"点了外面"⇒ 立刻关闭。
+//   ⚠️ 这类错 tsc / build / 本文件前面 23 条断言**全绿**：逻辑完全合法，只是 ref 指错了地方。
+//   ✅ 判据：既要有弹层自己的 ref，也要在 onDown 里判它。
+{
+  const hasPopRef = /popRef\s*=\s*useRef/.test(dispatch) && /ref=\{popRef\}/.test(dispatch);
+  ok(hasPopRef, "dispatch-pop 有自己的 ref（portal 后它已脱离按钮的 DOM 子树）");
+  const onDown = /const onDown =[\s\S]{0,600}?\n {4}\};/m.exec(dispatch)?.[0] ?? "";
+  ok(/wrapRef\.current\?\.contains/.test(onDown) && /popRef\.current\?\.contains/.test(onDown),
+    "⛔ onDown 同时判 wrapRef 与 popRef（只判 wrapRef ⇒ 弹层内点击全被当外部、点一下就消失）");
+  ok(
+    new RegExp(`window\\.addEventListener\\("mousedown"`).test(dispatch),
+    "点外面关闭仍监听在 window 上（改到 document 会在 portal 场景漏判）",
+  );
+}
+
 console.log(`\n【popover】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
