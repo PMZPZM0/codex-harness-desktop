@@ -86,6 +86,11 @@ import { relayFeature as feat_relay } from "./features/relay-ipc";
 import { layaFeature as feat_laya } from "./features/laya-service";
 import { videoFeature as feat_video } from "./features/video-gen";
 import { voiceFeature as feat_voice } from "./features/voice-ipc";
+import { domainsFeature as feat_domains } from "./features/domains-ipc";
+
+import { app } from "electron";
+import { readAppSettingsSync } from "./app-settings";
+import { isEssentialDomain } from "./essential-domains";
 
 export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unknown };
 
@@ -173,6 +178,35 @@ export const ENABLED: EnabledDomain[] = [
   { id: "laya", plugin: feat_laya as Plugin<unknown>, config: null },
   { id: "video", plugin: feat_video as Plugin<unknown>, config: null },
   { id: "voice", plugin: feat_voice as Plugin<unknown>, config: null },
+  { id: "domains", plugin: feat_domains as Plugin<unknown>, config: null },
 ];
 
-for (const row of ENABLED) mountFeature(row.plugin, row.config);
+/**
+ * 用户停用的域（10-04 阶段 6）。
+ *
+ * ⛔ **为什么在挂载时跳过、而不是生成期就过滤 import**：
+ *   上面的 import 列表是**构建期静态**的 —— 它必须包含全部域，否则打包期的可达闭包
+ *   看不见被停用的域，用户的设置一旦改变就会造出"配置启用了、包里却没有"的静默失效
+ *   （这正是本生成物存在的理由，见文件头）。所以停用只影响**是否 mount**。
+ *
+ * ⛔ **为什么不做真热插拔**：多数域的私有状态是模块级变量（voice 的 worker 池、
+ *   relay 的 purchaseWindow），容器管不到 ⇒ 卸载后再挂载会拿到半初始化的单例。
+ *   首版诚实地只做"下次启动生效"，见 app-settings.ts 的 disabledDomains 注释。
+ *
+ * ⚠️ essential 域**不可停用**（即使设置里写了也要挂）：它们承载应用自身的身份、
+ *   对话主链路与基础对话框 —— 停掉等于应用不可用。
+ */
+function _disabledDomainSet(): Set<string> {
+  try {
+    const settings = readAppSettingsSync(app.getPath("userData"));
+    const raw = Array.isArray(settings.disabledDomains) ? settings.disabledDomains : [];
+    return new Set(raw.filter((id) => !isEssentialDomain(id)));
+  } catch {
+    return new Set();
+  }
+}
+
+for (const row of ENABLED) {
+  if (_disabledDomainSet().has(row.id)) continue;   // 用户停用 ⇒ 本次不挂载
+  mountFeature(row.plugin, row.config);
+}

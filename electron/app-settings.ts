@@ -40,6 +40,23 @@ export type AppSettings = {
    *  - "force"：忽略 GPU 黑名单 + 强制 GPU 光栅化/零拷贝——低配机上软件渲染卡顿时可选
    *  - "off"：完全关闭硬件加速（极个别驱动与 GPU 通道冲突时用） */
   hardwareAcceleration?: "auto" | "force" | "off";
+  /**
+   * 被用户停用的宿主域（10-04 阶段 6）。
+   *
+   * ⛔ **语义 = "下次启动不挂载"，不是"运行时卸载"**。理由：
+   *   真热插拔要求域在卸载时把私有状态（子进程、句柄、定时器、单例）全部安全交还，
+   *   而多数域的私有状态是**模块级变量**（如 voice 的 worker 池、relay 的 purchaseWindow），
+   *   容器管不到它们 ⇒ 卸载后再挂载极可能拿到半初始化的单例。
+   *   首版诚实地只做"重启后生效"，不假装支持热插拔。
+   *
+   * ⚠️ 停用后该域的通道**不存在** ⇒ 渲染层 `invoke` 抛 `No handler registered`。
+   *   所以 UI 必须把它呈现为"功能不可用"而不是"坏了"，且清单视图要显式提示这一点。
+   *
+   * ⚠️ 不可停用的域：组合表里标了 `essential: true` 的（如 user / app / dialog）——
+   *   它们承载应用自身能力（用户信息、文件对话框），关掉等于应用不能用了。
+   *   由 `essential-domains.ts` 单一真相源约束，设置侧只允许停用非 essential 的。
+   */
+  disabledDomains?: string[];
   /** 语气自适应（默认开）：按会话维护少量状态（心情/精力/默契），随会话自己的
    *  developer instructions 下发一句「只影响说法、不影响内容」的语气指引。
    *  状态按会话各自一份（agent-mood-<threadId>），关掉即停止更新与注入。 */

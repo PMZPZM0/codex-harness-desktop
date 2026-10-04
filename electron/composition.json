@@ -553,6 +553,13 @@
       "file": "features/voice-ipc.ts",
       "export": "voiceFeature",
       "config": null
+    },
+    {
+      "id": "domains",
+      "enabled": true,
+      "file": "features/domains-ipc.ts",
+      "export": "domainsFeature",
+      "config": null
     }
   ]
 }

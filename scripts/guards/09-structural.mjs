@@ -1469,12 +1469,12 @@ export async function run() {
         "scripts/guards/06-app-behavior.mjs": 3257,
         "scripts/guards/02-session-logic.mjs": 1533,
         "src/features/app-state/parts/bag-types.ts": 1423,
-        "scripts/guards/09-structural.mjs": 1660,   // 本文件是守卫载体：每加一条规则基线随之上移（1362→1521→1571→1618→1660）
+        "scripts/guards/09-structural.mjs": 1691,   // 本文件是守卫载体：每加一条规则基线随之上移（1362→1521→1571→1618→1660→1691）
         "scripts/guards/13-drama-gen.mjs": 1227,
         "electron/main.ts": 1199,
         "scripts/guards/03-runtime-boot.mjs": 1176,
         "electron/voice/voice-service.ts": 1076,
-        "src/vite-env.d.ts": 1062,
+        "src/vite-env.d.ts": 1068,   // 生成物：通道数增加时自然变长（守卫【2】保证与 manifest 一致）
         "src/components/VoiceCallFloat/use-voice-call-float-state.tsx": 1044,
         "scripts/guards/10-memory-audit.mjs": 1040,
         "src/features/drama-canvas/DramaCanvas.tsx": 1036,
@@ -1650,6 +1650,37 @@ export async function run() {
         (slotUsers.length > 0 ? ok : fail)(
           `【268】插槽机制有真实消费点（${slotUsers.length} 处）—— 只有机制没有消费点 = 死代码`
             + `消费点：${slotUsers.slice(0, 3).join("/") || "无"}`
+        );
+      }
+    }
+
+    // ===== 【269】essential 域名单的单一真相源（10-04 阶段 6）====================
+    // ① 名单里的每个域都必须真实存在于组合表（打错字 ⇒ 那个域实际可被停用，
+    //    而 UI 显示"不可停用" ⇒ 用户点了没反应，且没有任何报错）。
+    // ② 清单通道必须真的拒绝停 essential 域（源码级锚点）—— 只在 UI 上禁用按钮是不够的，
+    //    渲染层可以被注入，UI 的禁用形同虚设。
+    {
+      const essFile = join(ROOT, "electron", "essential-domains.ts");
+      const domIpc = join(ROOT, "electron", "features", "domains-ipc.ts");
+      if (!existsSync(essFile) || !existsSync(domIpc)) {
+        fail("【269】essential 名单或 domains 域缺失（见 electron/essential-domains.ts）");
+      } else {
+        const essSrc = readFileSync(essFile, "utf8");
+        const domSrc = codeOnly(readFileSync(domIpc, "utf8"));
+        const m = essSrc.match(/ESSENTIAL_DOMAINS[^=]*=\s*\[([\s\S]*?)\]/);
+        const listed = m ? [...m[1].matchAll(/"([a-zA-Z][\w-]*)"/g)].map((x) => x[1]) : [];
+        // ① 名单 ⊆ 组合表
+        const comp269 = existsSync(join(ROOT, "electron", "composition.json"))
+          ? JSON.parse(readFileSync(join(ROOT, "electron", "composition.json"), "utf8")) : { domains: [] };
+        const ids269 = new Set((comp269.domains || []).map((d) => d.id));
+        const ghost = listed.filter((id) => !ids269.has(id));
+        (listed.length > 0 && ghost.length === 0 ? ok : fail)(
+          `【269】essential 名单里的域都真实存在（${listed.length} 个在册）`
+            + `；查无此域：${ghost.join("/") || "无"}`
+        );
+        // ② 通道层必须拒绝
+        (/domains:set-enabled[\s\S]{0,900}isEssentialDomain\(id\)/.test(domSrc) ? ok : fail)(
+          "【269】domains:set-enabled 在通道层拒绝停用 essential 域（UI 禁用不够——渲染层可被注入）"
         );
       }
     }
