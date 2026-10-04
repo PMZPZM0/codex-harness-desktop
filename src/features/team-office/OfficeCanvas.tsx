@@ -35,6 +35,14 @@ function hashId(id: string): number {
 export type OfficeCanvasProps = {
   members: OfficeMemberState[];
   onOpenMember?: (memberId: string) => void;
+  /** 10-04 事件驱动：取某成员的真实事件状态（null = 该成员当下无事件）。
+   *  ⛔ 由上层从 `TeamMemberRunRecord` 派生（不订阅引擎，见 TeamOfficePreview 注释）。 */
+  eventStateOf?: (memberId: string) => {
+    activity: null | "book" | "water" | "toilet" | "run" | "gym";
+    thinking: boolean;
+    waiting: boolean;
+    reporting: boolean;
+  } | null;
 };
 
 /** 加载一张图（resolve 后才用；失败 resolve null 绝不 reject —— 一张图挂了别拖死整层）。 */
@@ -47,12 +55,14 @@ function loadImage(url: string): Promise<HTMLImageElement | null> {
   });
 }
 
-export function OfficeCanvas({ members, onOpenMember }: OfficeCanvasProps) {
+export function OfficeCanvas({ members, onOpenMember, eventStateOf }: OfficeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const membersRef = useRef(members);
   const openRef = useRef(onOpenMember);
+  const eventRef = useRef(eventStateOf);
   membersRef.current = members;
   openRef.current = onOpenMember;
+  eventRef.current = eventStateOf;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -79,6 +89,24 @@ export function OfficeCanvas({ members, onOpenMember }: OfficeCanvasProps) {
         if (now - lastSync > 250) {
           lastSync = now;
           sim.sync(membersRef.current, Date.now());
+          /* ⛔⛔ 10-04 事件驱动：把**真实事件**灌进 sim。
+             两件事分开：
+               · setEventState ⇒ 只改显示器画什么（不驱动移动）
+               · sendTo⇒ 真的派人去对应 POI（书架/饮水机/卫生间/跑步机/哑铃）
+             ⚠️ 4Hz 派单会不会反复派？sendTo 内部有「已在途/已在做同一件事就拒」，
+               所以同一条事件最多派一次；换任务（query 变了）才会派新的。 */
+          const es = eventRef.current;
+          if (es) {
+            for (const a of sim.agents) {
+              const st = es(a.id);
+              sim.setEventState(a.id, {
+                thinking: Boolean(st?.thinking),
+                waiting: Boolean(st?.waiting),
+                reporting: Boolean(st?.reporting),
+              });
+              if (st?.activity) sim.sendTo(a.id, st.activity, Date.now());
+            }
+          }
         }
         sim.tick(dt);
 
