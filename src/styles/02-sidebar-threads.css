@@ -1430,3 +1430,11 @@ html[data-ui-font="large"] .action-content pre {
   border-color: color-mix(in srgb, var(--ok) 40%, var(--line-soft));
   background: color-mix(in srgb, var(--ok) 10%, transparent);
 }
+/* 「调度 / 已调度」徽标（10-04 用户拍板）：被调度会话统一「调度」，
+   派出调度会话的主会话挂「已调度」。配色用 warn（橙）—— 与专家团(蓝)/专家(绿)区分开，
+   一眼看出"这是派出去的活"。 */
+.thread-source-badge.tone-dispatch {
+  color: var(--orange);
+  border-color: color-mix(in srgb, var(--orange) 45%, var(--line-soft));
+  background: color-mix(in srgb, var(--orange) 12%, transparent);
+}

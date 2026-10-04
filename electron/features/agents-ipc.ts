@@ -9,7 +9,7 @@
  *    —— 正是本项目记录过的"开关点了没生效"类假象。对照：MCP 孪生实现 dispatch-rpc.ts 本来就是对的。
  * ⛔ `agents:invoke` 走 `runDelegatedTask`（`./delegation`），被委派会话的记忆注入在那里补（守卫【125】）。
  */
-import { dispatchNoticeText, dispatchOffNoticeText, dispatchToolDescription } from "../dispatch";
+import { dispatchNoticeText, dispatchOffNoticeText, dispatchToolDescription, dispatchEnabledNotice, dispatchSelectionChangeNotice } from "../dispatch";
 import { broadcastHarnessEvent } from "./window-bus";
 import { buildDispatchCatalog, restrictedThreadRole } from "./dispatch-core";
 import { runDelegatedTask } from "./delegation";
@@ -18,7 +18,7 @@ import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
 const AGENTS_CHANNELS = [
-  "agents:thread-role", "agents:catalog", "agents:tool-description", "agents:notice", "agents:off-notice",
+  "agents:thread-role", "agents:catalog", "agents:tool-description", "agents:notice", "agents:enabled-notice", "agents:off-notice",
   "agents:delegated", "agents:delegated-of", "agents:invoke", "agents:archive",
 ];
 
@@ -39,7 +39,15 @@ export const agentsFeature = defineFeature<null>({
             隐藏会让模型以为不存在而报错，明确否定才不会乱试）。
          取不到 threadId 或开关全 false 时退化为"全列"（保持旧行为，不让描述变空）。*/
       const id = String(threadId ?? "");
-      const cfg = id ? ((await threadRuntimeStore.get(id))?.dispatch ?? null) : null;
+      /* ⛔ threadRuntimeStore 是惰性赋值（`export let ...!`），应用启动早期可能还没 set
+         ⇒ 直接 .get() 会抛 "Cannot read properties of undefined" ⇒ 连带把整个
+         tool-description 拖垮。这里按"取不到开关 = 未开启"降级（返回 allow=null 全列，
+         不让描述通道挂）。 */
+      let cfg: any = null;
+      if (id) {
+        try { cfg = (await threadRuntimeStore.get(id))?.dispatch ?? null; }
+        catch { cfg = null; }
+      }
       const allow = cfg
         ? { expert: cfg.expert === true, team: cfg.team === true, subagent: cfg.subagent === true }
         : null;
@@ -47,7 +55,29 @@ export const agentsFeature = defineFeature<null>({
       const anyOn = allow ? allow.expert || allow.team || allow.subagent : true;
       return { description: dispatchToolDescription(anyOn ? targets : [], allow) };
     });
-    ipcHost.handle("agents:notice", async () => ({ text: dispatchNoticeText(await buildDispatchCatalog()) }));
+    /* ⛔⛔ 2026-10-04 用户拍板的逐类通知映射（覆盖勾 1/2/3 个 + 取消某项其余仍开）：
+       渲染层把「确认前的勾选 before」「确认后的勾选 next」传上来，主进程算**差集**
+       生成一条通知（一条消息按类分段 —— 不遗漏、不重复发送）。
+       · 总开关 关→开：用 dispatchEnabledNotice（按 next 勾选逐段列）
+       · 总开关 开→关：用 dispatchOffNoticeText
+       · 总开关不变、勾选变化：用 dispatchSelectionChangeNotice（差集驱动）
+       before/next 缺省（旧调用方）时退化为旧行为：全开通知 / 关闭通知。 */
+    ipcHost.handle("agents:notice", async (_event, before?: { expert?: boolean; team?: boolean; subagent?: boolean }, next?: { expert?: boolean; team?: boolean; subagent?: boolean }) => {
+      const targets = await buildDispatchCatalog();
+      if (before || next) {
+        const b = { expert: before?.expert === true, team: before?.team === true, subagent: before?.subagent === true };
+        const n = { expert: next?.expert === true, team: next?.team === true, subagent: next?.subagent === true };
+        const kinds = ["expert", "team", "subagent"] as const;
+        const turnedOn = kinds.filter((k) => n[k] && !b[k]);
+        const turnedOff = kinds.filter((k) => !n[k] && b[k]);
+        return { text: dispatchSelectionChangeNotice([...turnedOn], [...turnedOff], n) };
+      }
+      return { text: dispatchEnabledNotice(targets, null) };
+    });
+    ipcHost.handle("agents:enabled-notice", async (_event, next?: { expert?: boolean; team?: boolean; subagent?: boolean }) => {
+      const allow = next ? { expert: next.expert === true, team: next.team === true, subagent: next.subagent === true } : null;
+      return { text: dispatchEnabledNotice(await buildDispatchCatalog(), allow) };
+    });
     ipcHost.handle("agents:off-notice", async () => ({ text: dispatchOffNoticeText() }));
     ipcHost.handle("agents:delegated", async () => ({ records: await delegateRegistry.listAll() }));
     ipcHost.handle("agents:delegated-of", async (_event, originThreadId: string) => ({

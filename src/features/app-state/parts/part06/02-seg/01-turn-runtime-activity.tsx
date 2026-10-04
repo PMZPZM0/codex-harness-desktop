@@ -161,24 +161,44 @@ bag.finalizePhraseRef = finalizePhraseRef as typeof bag.finalizePhraseRef;
       } else {
         void bag.refreshDispatchOwner();
       }
-      // ⛔ 工具面注册已改走内置 MCP（09-16 引擎硬约束：dynamicTools 只在 thread/start 生效，
-      // resume/fork/turn/start 一律不认 —— 对已存在的会话没有任何「补注册」通道）。
-      // MCP 工具对**所有会话**可见（含老会话），开关的闸在主进程执行端（holdsLock / 身份闸）。
-      // 这里只落盘开关 + 发告知消息，不再重放 resume（那条路是假绿，实测模型答「没有」）。
+      /* ⛔⛔ 2026-10-04 用户拍板的发送时机（映射规则见 dispatch.ts 的 dispatchSelectionChangeNotice）：
+         · 总开关 关→开：发「调度已开启」—— 按 next 勾选**逐段**列（勾 1 类 1 段、3 类 3 段），
+           未勾选的类别明确否定；
+         · 总开关 开→关：发「调度已关闭」；
+         · 总开关保持开、勾选变化：发「调度范围已更新」—— 由 before→next 的**差集**驱动，
+           每个新增类一段独立文案、每个取消类一段停用文案、末尾写明「当前仍可调度：…」。
+           ⚠️ 覆盖用户点名的全部场景：勾 1 个 / 2 个 / 3 个、取消其中一个其余仍开。
+           ⚠️ 一次确认只发**一条**消息（按类分段），不是每类发一条 —— 「不重复发送」。
+         ⚠️ before 必须取**确认前**的勾选（本函数开头第 136 行已取 before，传下去），
+            取 next 当 before 用 ⇒ 差集恒空 ⇒ 永远不发，是假绿。 */
       if (next.enabled && !before.enabled) {
         try {
-          const notice: any = await window.codex.dispatchNotice();
+          const notice: any = await window.codex.dispatchEnabledNotice({ expert: next.expert, team: next.team, subagent: next.subagent });
           const text = String(notice?.text ?? "");
-          // 走 pendingCommandTextRef：send() 会优先消费它，跳过 / 与 # 解析，正好适合系统告知
-          if (text) { bag.pendingCommandTextRef.current = text; void bag.send(); }
+          /* ⛔⛔ 会话作用域闸（10-04 用户报「新会话冒出调度已关闭」）：IPC 往返期间用户可能已切走会话，
+             bag.thread 已变 ⇒ pending+send 会把 A 会话的通知发进 B。通知是给引擎的会话级告知，
+             目标会话不在前台就该丢弃（开关本身已按 id 落库，不受影响）。 */
+          if (text && bag.threadRef.current?.id === id) { bag.pendingCommandTextRef.current = text; void bag.send(); }
         } catch { /* 告知失败不影响开关本身已生效 */ }
       } else if (!next.enabled && before.enabled) {
         // 关闭也要告知：让 Codex 立刻知道权限被收回，别白费回合去试
         try {
           const off: any = await window.codex.dispatchOffNotice();
           const text = String(off?.text ?? "");
-          if (text) { bag.pendingCommandTextRef.current = text; void bag.send(); }
+          if (text && bag.threadRef.current?.id === id) { bag.pendingCommandTextRef.current = text; void bag.send(); }
         } catch { /* 同上 */ }
+      } else if (next.enabled && before.enabled) {
+        const changed = before.expert !== next.expert || before.team !== next.team || before.subagent !== next.subagent;
+        if (changed) {
+          try {
+            const chg: any = await window.codex.dispatchNotice(
+              { expert: before.expert, team: before.team, subagent: before.subagent },
+              { expert: next.expert, team: next.team, subagent: next.subagent },
+            );
+            const text = String(chg?.text ?? "");
+            if (text && bag.threadRef.current?.id === id) { bag.pendingCommandTextRef.current = text; void bag.send(); }
+          } catch { /* 同上 */ }
+        }
       }
     } finally {
       bag.setDispatchBusy(false);

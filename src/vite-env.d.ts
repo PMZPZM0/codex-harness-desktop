@@ -622,7 +622,10 @@ interface Window {
     removeSubAgent(id: string): Promise<{ ok: boolean }>;
     invokeSubAgent(input: { id?: string; name?: string; query: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }): Promise<{ threadId: string; turnId?: string; name: string; output: string }>;
     dispatchToolDescription(threadId: string): Promise<{ description: string }>;
-    dispatchNotice(): Promise<{ text: string }>;
+    /* 10-04 逐类通知：传 before/next 勾选 ⇒ 主进程按差集生成一条按类分段的通知；不传退化为全开通知 */
+    dispatchNotice(before?: { expert?: boolean; team?: boolean; subagent?: boolean }, next?: { expert?: boolean; team?: boolean; subagent?: boolean }): Promise<{ text: string }>;
+    /* 总开关开启时的完整告知：按勾选类别逐段列（勾 1 类 1 段、3 类 3 段），未开启的明确否定 */
+    dispatchEnabledNotice(next?: { expert?: boolean; team?: boolean; subagent?: boolean }): Promise<{ text: string }>;
     dispatchOffNotice(): Promise<{ text: string }>;
     listDelegates(): Promise<{ records: DelegateRecordEntry[] }>;
     listDelegatesOf(originThreadId: string): Promise<{ records: DelegateRecordEntry[] }>;

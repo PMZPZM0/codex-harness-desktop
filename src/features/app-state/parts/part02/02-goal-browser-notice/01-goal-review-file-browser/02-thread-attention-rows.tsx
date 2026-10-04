@@ -210,11 +210,22 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
     /* 角色登记（10-01）：startTeamSession / startMemberDirectSession 建会话当刻就 rememberExpertRole，
        是「新建会话」唯一**同步可得**的身份来源（上面两张表都可能还没跟上）。 */
     const expertRole = bag.readStoredExpertRole?.(entry.id);
-    const sourceBadge = variant === "lead" || delegateKind === "team" || expertRole?.kind === "team"
-      ? leadBadge
-      : variant === "member" || delegateKind === "expert" || expertRole?.kind === "member"
-        ? { tone: "expert", label: "专家" }
-        : delegateKind === "subagent" ? { tone: "agent", label: "代理" } : null;
+    /* ⛔⛔ 2026-10-04 用户拍板（需求1）：被调度的会话统一挂「调度」徽标（专家团风格），
+       不再按来源分成「专家团 / 专家 / 代理」三种 —— 用户原话：
+       「标签（已调度）主会话 / 调度会话--专家名字或者专家团名字或者子智能体随机名字」。
+       角色信息在会话名里已经有了（调度时按对象命名），徽标只标"它是被调度的"。
+       层级（挂主会话下面）由 buildDispatchChildren 的 childrenOf/childIds 负责（09-25 已有）。 */
+    const sourceBadge = delegateKind
+      ? { tone: "dispatch", label: "调度" }
+      : variant === "lead" || expertRole?.kind === "team"
+        ? leadBadge
+        : variant === "member" || expertRole?.kind === "member"
+          ? { tone: "expert", label: "专家" }
+          : null;
+    /* 主会话徽标（用户 19:31：「标签（已调度）主会话」）：该会话派出了未归档的调度会话
+       ⇒ 挂「已调度」。与专家团徽标可并存（一个标身份、一个标"它派了人"）。 */
+    const hasLiveDelegates = !delegateKind && Object.values(bag.delegateRecords ?? {})
+      .some((r) => String(r?.originThreadId ?? "") === entry.id && !r?.archived);
     /* 兜底（10-01）：分类视图里主理人会话是**普通行**渲染（variant/调度记录都没有），
        但 teamThreadsIndex / 角色登记知道它属于哪个团队 ⇒ 同样按成员数给「专家/专家团」徽标，
        不然专家团主理人会在分类视图里光溜溜地混进普通会话。成员行（variant=member）不适用。 */
@@ -228,7 +239,7 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
       data-thread-id={entry.id}
     >
       <button title={entry.rolloutMissing ? "该会话的历史记录文件已丢失，无法打开" : poppedOut ? "该会话已在独立窗口中打开（关闭独立窗口后恢复）" : bag.runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : bag.unreadDoneIds.has(entry.id) ? "任务已完成，点击查看" : "双击修改任务名称"} onClick={() => { bag.clearThreadDoneUnread(entry.id); if (poppedOut) { bag.showToast("会话在独立窗口中", "已打开为独立窗口，关闭该窗口后会话自动回到主应用"); return; } if (entry.rolloutMissing) { bag.showToast("会话记录已丢失", "该会话的历史记录文件（rollout）已不在磁盘上，引擎无法恢复内容。可归档该会话，或新建会话继续。"); return; } void bag.openThread(entry.id); }}>
-        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void bag.openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void bag.renameThread(entry.id, next); }); }}>{sourceBadge && <span className={`thread-source-badge tone-${sourceBadge.tone}`} title={`来源：${sourceBadge.label}`}>{sourceBadge.label}</span>}{!sourceBadge && fallbackTeamBadge && <span className={`thread-source-badge tone-${fallbackTeamBadge.tone}`} title={`来源：${fallbackTeamBadge.label}`}>{fallbackTeamBadge.label}</span>}<span title={rawTitle}>{displayTitle}</span>{bag.delegateRecords[entry.id] ? <DispatchBadge record={bag.delegateRecords[entry.id]} /> : null}{extras?.badge}{entry.rolloutMissing && <span className="thread-attention-badge tone-confirm" title="会话的历史记录文件已丢失，点开只能看到提示">记录丢失</span>}{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
+        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void bag.openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void bag.renameThread(entry.id, next); }); }}>{sourceBadge && <span className={`thread-source-badge tone-${sourceBadge.tone}`} title={`来源：${sourceBadge.label}`}>{sourceBadge.label}</span>}{!sourceBadge && fallbackTeamBadge && <span className={`thread-source-badge tone-${fallbackTeamBadge.tone}`} title={`来源：${fallbackTeamBadge.label}`}>{fallbackTeamBadge.label}</span>}{hasLiveDelegates && <span className="thread-source-badge tone-dispatch" title="该会话派出了调度会话（见其下方缩进的子会话）">已调度</span>}<span title={rawTitle}>{displayTitle}</span>{bag.delegateRecords[entry.id] ? <DispatchBadge record={bag.delegateRecords[entry.id]} /> : null}{extras?.badge}{entry.rolloutMissing && <span className="thread-attention-badge tone-confirm" title="会话的历史记录文件已丢失，点开只能看到提示">记录丢失</span>}{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><small>{basename(entry.cwd)} · {timeAgo(entry.updatedAt)}</small>
       </button>
       <div className="thread-actions">
         <button className={`thread-pin-button ${bag.pinnedThreads.includes(entry.id) ? "pinned" : ""}`} title={bag.pinnedThreads.includes(entry.id) ? "取消置顶" : "置顶会话"} onClick={(event) => { event.stopPropagation(); bag.togglePinThread(entry.id); }}><Pin size={13} /></button>
