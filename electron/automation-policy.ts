@@ -90,6 +90,37 @@ export function shouldRegisterNuphus(switches: AutomationSwitches): boolean {
 }
 
 /**
+ * Windows 原生控件清单通道（`resources/tools/harness-uia.mjs` + `desktop-uia.ps1`）。
+ *
+ * 为什么要它：nuphus 的定位是「截屏 → 本地 OCR → 像素坐标」，坐标在窗口挪动 / DPI 缩放 /
+ * 自绘界面上会失手；Windows 自己有一份控件清单（UI Automation），拿到就能按序号操作。
+ * 为什么是**另一个 MCP 服务器**而不是往 nuphus 里加：nuphus 是第三方预编译二进制，我们改不了它的工具面。
+ *
+ * ⛔ 注册判据 = win32 + 桌面总闸开启 + 随包脚本齐备。**关掉就是不写这一段**（工具从引擎表里
+ *    干净消失），不复用 nuphus 的 `disabled_tools` 掩码 —— 那套掩码是为「同一服务器混装
+ *    desktop_* 与 browser_*」准备的（见上方 09-20 说明），这里没那个约束，别拿过来用。
+ */
+export const HARNESS_UIA_MCP_SERVER = "harness-uia";
+
+/** harness-uia 的四个工具（与 `harness-uia.mjs` 里的 TOOLS 名单同源；守卫【273】逐字比对）。 */
+export const HARNESS_UIA_TOOLS: readonly string[] = [
+  "desktop_ui_windows",
+  "desktop_ui_snapshot",
+  "desktop_ui_invoke",
+  "desktop_ui_set_value",
+];
+
+/** UIA 是 Windows 专属能力（macOS 的对应物是 Accessibility，属另一个后端）。 */
+export function uiaDesktopSupported(platform: NodeJS.Platform = process.platform): boolean {
+  return platform === "win32";
+}
+
+/** 注册判据（binaryReady 由 `toolchain.harnessUiaServer()` 给：两个随包文件都在才算齐）。 */
+export function shouldRegisterUia(input: { desktop: boolean; binaryReady: boolean; platform?: NodeJS.Platform }): boolean {
+  return uiaDesktopSupported(input.platform) && input.desktop === true && input.binaryReady === true;
+}
+
+/**
  * 工具在「总闸 + 用户显式规则」下的**最终档位** —— UI 与 config.toml 必须都走这里。
  * 掩码（总闸关掉的组）恒为 `deny`，压过用户的 allow/ask。
  */

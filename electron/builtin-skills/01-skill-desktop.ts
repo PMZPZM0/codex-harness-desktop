@@ -21,6 +21,21 @@ description: 用 nuphus-mcp 的 desktop_* 工具操控本机桌面：截屏、�
 
 同理，**工具列表里没有 \`browser_*\` 时**不要假设浏览器能力可用（浏览器侧另有 \`playwright-cli\` 兜底通道，见 browser-skill）。
 
+## 选路：三条通道各管一段，别混用
+
+Windows 上另有**原生控件清单通道**（服务器名 \`harness-uia\`，工具 \`desktop_ui_*\`，走系统自带的 UI Automation）。按目标类型选：
+
+| 目标 | 用哪条 | 为什么 |
+|---|---|---|
+| 原生应用（资源管理器 / Office / 记事本 / 各类 Win32、WPF、WinForms 软件） | **\`desktop_ui_snapshot\` 拿清单 → \`desktop_ui_invoke\` / \`desktop_ui_set_value\` 按序号操作** | 清单里每个元素有类型、名字、AutomationId 和支持的动作；**按序号操作不依赖坐标**，窗口挪了、DPI 缩放了都不用重新定位 |
+| 网页 / 浏览器里的东西（含 Electron、Tauri 应用的内容区） | **\`browser_*\`**（或 playwright-cli） | 这类窗口的 UIA 树实测只有个位数元素（Chromium 无障碍默认不展开），拿不到清单；DOM 层比像素可靠得多 |
+| 清单拿不到、也不是网页（自绘界面 / 游戏 / 只给了图片的目标） | 退回 \`desktop_perceive\` + \`desktop_mouse\` 坐标点击 | OCR 坐标是**兜底**不是首选：窗口一动坐标全失效，且 DPI 缩放容易打偏 |
+
+- \`desktop_ui_*\` 的判存在方式同上：**工具列表里没有就是不可用**（非 Windows、或桌面总闸关着 ⇒ 整段不注册），⛔ 不要改用 PowerShell 手搓 UIA 去绕。
+- 写操作口径一致：\`desktop_ui_invoke\` / \`desktop_ui_set_value\` **必须显式 \`confirm: true\`**；不可逆动作（发送 / 删除 / 支付 / 覆盖保存）仍然先跟用户说清楚要点哪个再等确认。
+- \`desktop_ui_snapshot\` 返回 \`rawCount\`（原始元素数）与 \`count\`（筛后有信息的元素数）：清单很大时**先小 limit 看清结构**，别一次拉几千个元素把上下文灌满。
+- 元素序号来自上一次 snapshot；界面一变就可能错位，报 \`index_out_of_range\` 就重新拍一次清单，⛔ 不要拿旧序号硬点。
+
 ## 0. 三段循环：先看 → 再做 → 再验
 
 | 段 | 工具 | 要点 |

@@ -123,6 +123,20 @@ export function nuphusCallHelper() {
   }
 }
 
+// Windows 原生控件清单通道的 server 脚本（harness-uia.mjs）。
+// ⛔ 必须**两个文件都在**才算就绪：.mjs 只是 MCP 门面，真正的 UIA 调用在同目录的 desktop-uia.ps1；
+//    只带一个的话服务器起得来、每个工具都报「找不到脚本」，比不注册更难排查。
+export function harnessUiaServer() {
+  const tools = toolsRoot();
+  const server = path.join(tools, "harness-uia.mjs");
+  const bridge = path.join(tools, "desktop-uia.ps1");
+  try {
+    return tools && fs.existsSync(server) && fs.existsSync(bridge) ? server : "";
+  } catch {
+    return "";
+  }
+}
+
 // 国内下载加速（09-16 打包瘦身配套）：浏览器内核不随包，按需下载时默认走国内镜像。
 // ① Playwright 内核：npmmirror 的 binaries 镜像（淘宝系，国内直连快）；
 // ② CloakBrowser 内核：官方只发 GitHub Releases，国内直连慢/不稳，走 gh 代理前缀

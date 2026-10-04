@@ -1059,6 +1059,10 @@ w.postMessage({id:1,op:"list",root});
     "resources/tools/harness-media.mjs",
     "resources/tools/harness-video.mjs",
     "resources/tools/cloak-open.mjs",
+    // Windows 控件清单通道（10-04）：两个都是**版本控制里的静态脚本**，干净检出就有，
+    // 不需要 CI 现造（harness-uia.mjs 是 MCP 门面，desktop-uia.ps1 调系统自带 UIAutomation）。
+    "resources/tools/harness-uia.mjs",
+    "resources/tools/desktop-uia.ps1",
   ]);
   const uncovered = [];
   for (const entry of pkg29.build?.extraResources ?? []) {
