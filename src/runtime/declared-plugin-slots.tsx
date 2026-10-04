@@ -21,14 +21,19 @@ import type { DeclaredPlugin } from "../../electron/declared-plugin-types";
 const CHANNEL_RE = /^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$/;
 
 /**
- * 行级插槽（每个数据行渲染一次）。
+ * 行级插槽 → 它要求的 id 字段名。
  *
- * ⛔ 与「全局插槽」的本质区别：全局插槽渲染**一次**（页面级），行级插槽被`<Slot>` 在
- *   **每一行**渲染一次，且每次带不同的 props（threadId/thread）。
- *   ⛔ 因此行级插槽拿不到 `threadId` 时**必须不渲染** —— 见 DeclaredSlotBody 里的处理。
+ * ⛔ 与「全局插槽」的本质区别：全局插槽渲染**一次**（页面级），行级插槽被 `<Slot>` 在
+ *   **每一行**渲染一次，且每次带不同的 props。
+ * ⛔⛔ **值是"该插槽要的 id 字段名"，不是布尔标记** —— 早先只查 `props.threadId`，
+ *   而 `turn.after-content` 传的是 `turnId` ⇒ 该插槽被静默判成"没有 id"永不渲染
+ *   （扩展面看着在、实际永远空）。**每个行级插槽的 id 字段名必须登记在这里。**
  * ⛔ 这份名单与 electron/declared-plugins.ts 的 KNOWN_SLOTS 同源（守卫【271】查一致性）。
  */
-const ROW_SCOPED_SLOTS = new Set(["sidebar.thread-row-actions"]);
+const ROW_SCOPED_SLOTS = new Map<string, string>([
+  ["sidebar.thread-row-actions", "threadId"],
+  ["turn.after-content", "turnId"],
+]);
 
 /** `voice:models-status` → `voiceModelsStatus`（与 preload 的 camel 规则一致）。 */
 function bridgeName(channel: string): string {
@@ -119,15 +124,19 @@ function DeclaredSlotBody({ plugin, slot, props }: { plugin: DeclaredPlugin; slo
     () => plugin.slots.filter((s) => s.slot === slot).sort((a, b) => a.order - b.order),
     [plugin.slots, slot],
   );
-  // 行级插槽必须拿到 threadId；拿不到就**不渲染**（渲染一个不知道作用在谁身上的按钮
-  // 比不渲染更糟：用户点了会以为对整个应用生效）
-  const rowScoped = ROW_SCOPED_SLOTS.has(slot);
-  if (rowScoped && !props?.threadId) return null;
+  // 行级插槽必须拿到**它自己要的那个 id 字段**；拿不到就**不渲染**（渲染一个不知道
+  // 作用在谁身上的按钮比不渲染更糟：用户点了会以为对整个应用生效）。
+  // ⛔⛔ id 字段**按插槽而异**（早先只查 threadId，turn.after-content 传的是 turnId
+  //   ⇒ 会被误判成"没有 id"而永不渲染，插槽静默失效）：
+  //   sidebar.thread-row-actions → threadId（会话行）
+  //   turn.after-content         → turnId（回合）
+  const rowScoped = ROW_SCOPED_SLOTS.get(slot);
+  if (rowScoped && !props?.[rowScoped]) return null;
   return (
     <>
       {items.map((it, i) => (
         <Fragment key={`${plugin.id}:${slot}:${i}:${String(props?.threadId ?? "")}`}>
-          {it.invoke ? <InvokeButton label={it.label} title={it.title} channel={it.invoke} args={it.args} rowScoped={rowScoped} /> : null}
+          {it.invoke ? <InvokeButton label={it.label} title={it.title} channel={it.invoke} args={it.args} rowScoped={Boolean(rowScoped)} /> : null}
           {it.text ? <div className="declared-plugin-text">{it.text}</div> : null}
         </Fragment>
       ))}

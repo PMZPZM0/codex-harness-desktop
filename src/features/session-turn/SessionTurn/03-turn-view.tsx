@@ -18,6 +18,7 @@ import { CircleStop, AlertTriangle, FileText, Brain, ChevronDown } from "lucide-
 import { MessageFooter } from "../../shared/MessageFooter";
 import { UserMessageView } from "../../shared/UserMessageView";
 import { isTaskTurn } from "../SessionTurn";
+import { Slot } from "../../../runtime/Slot";
 export function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForApproval, interruptedAt, elapsedSeconds, handlers, hooks, isLastTurn }: { turn: Turn; usage?: any; tokenUsage?: any; fallbackWindow?: number; waitingForApproval?: boolean; interruptedAt?: number; elapsedSeconds?: number; handlers: FoldHandlers; hooks?: any[] | null; isLastTurn?: boolean }) {
   // Codex 的名字（09-17）：用户在用户中心取的；走外部 store 而不是逐层传 props
   // —— 回合标识（.turn-head）在 TurnView 渲染，这里取一次（见 codex-identity.mjs）。
@@ -160,6 +161,14 @@ export function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForAp
             </div>
           )}
           {turnFinished && finalAgent && <MessageFooter item={finalAgent} turn={turn} usage={usage} tokenUsage={tokenUsage} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onFork={() => handlers.onFork(turn.id)} extraIcon={hookBadge} />}
+          {/* 10-04 第 9 个插槽位：**回合内容之下**（codex-turn 之内、气泡区末尾）。
+              行级插槽 —— 每个回合渲染一次。⛔ 必须传 turnId：插件拿到才知道
+              自己作用在哪一回合（与 sidebar.thread-row-actions 同一条纪律：拿不到 id
+              就不渲染，见 declared-plugin-slots 的 ROW_SCOPED_SLOTS）。
+              ⛔ 位置在 codex-turn **之内**而非 turn-card-body 外：回合容器是折叠/贴顶/
+              working-indicator 的边界（记忆里「钉顶几何只看正文底 bodyBottomOf」），
+              插在外面会落在折叠区之外，展开/收起时跟着错位。 */}
+          <Slot id="turn.after-content" props={{ turnId: turn.id, running, status: turn.status }} />
           </div>
         </div>
       </div>
