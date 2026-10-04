@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（83 个能力域 / 414 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（83 个能力域 / 413 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -293,9 +293,9 @@ SSH 服务器库（保存/执行远程命令/导入导出/会话终端）
 斜杠命令（自定义 / 命令的定义与管理）
 通道：commands:delete, commands:expand, commands:list, commands:read, commands:save
 
-### subagents（4 通道）
+### subagents（3 通道）
 子智能体——**可创建**：用户要「新建一个子智能体/代理」时，**直接用真工具 \`subagent_save\`**（name+systemPrompt 必填；同 name 即更新）→ \`agent_invoke\` 派活
-通道：subagents:invoke, subagents:list, subagents:remove, subagents:save
+通道：subagents:list, subagents:remove, subagents:save
 
 ### teams（9 通道）
 专家团/专家的定义与成员管理——**可创建**：用户要「新建一个专家/专家团」时，**直接用真工具 \`expert_save\`**（先 \`expert_list\` 查重；normalize 自动补默认与 id 规范；teamId 相同即覆盖更新）。字段：displayName/profession/description（zh+en）/category/tags(≤3)/quickPrompts(≤3)/sop；lead 必带 name+systemPrompt；多角色协作加 members[]（每人 name+profession+description+systemPrompt）。⛔ 内置专家（知微/呈象/洞明/鲁班/画意/剪承团）每次启动确保存在——不要用与内置相同的 teamId 去覆盖内置定义，新建用独有 teamId；建完向用户复述 teamId 与成员名单

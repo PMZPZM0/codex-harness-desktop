@@ -71,8 +71,13 @@ console.log(C.bold("\n【24】协议桥：引擎只发 Responses，chat-only 网
   (mainTs.includes("bridgeDial(activeNormalized.provider, activeNormalized.baseUrl)") ? ok : fail)("applyCustomModel 的 config.toml 地址走桥（provider/别名/harness 三段的单点来源）");
   (mainTs.includes('base_url = "${bridgeDial(alias, active.baseUrl)}"') ? ok : fail)("历史会话别名段的 base_url 也走桥");
   (!/base_url: baseUrl\b/.test(mainTs) ? ok : fail)("main.ts 不留任何直连 base_url 的内联配置（漏一处 = chat-only 网关静默不可用）");
+  // ⛔ 口径变化（10-04）：删除 `subagents:invoke` 那条绕过调度闸门的旁路时，连带移除了它内联的
+  // 一处 provider 配置（`base_url: bridgeDial(…)`）⇒ 「走桥的内联配置」由 7 处降到 6 处。
+  // 这是**消费方消失**、不是漏桥 —— 下方「不留任何直连 base_url 的内联配置」那条才是真正的安全网；
+  // 这个计数闸门保留，只为在有人**再少一处**时报警（少 = 要么删了消费方、要么漏了桥，必须来看一眼）。
+  // ⛔ 注释写成 `//` 前缀：本文件在【265】棘轮名单里，口径是**净代码行**，块注释的续行会被算成代码行。
   const dialedCount = (mainTs.match(/base_url: bridgeDial\(/g) ?? []).length;
-  (dialedCount >= 7 ? ok : fail)(`main.ts 内联 provider 配置已桥化（实测 ${dialedCount} 处）`);
+  (dialedCount >= 6 ? ok : fail)(`main.ts 内联 provider 配置已桥化（实测 ${dialedCount} 处，10-04 起基线 6）`);
   (preloadTs.includes('"bridge:status"') && typesSrc.includes("bridgeStatus") ? ok : fail)("桥状态 IPC 在 preload 与类型声明里对齐");
   (hookTs.includes("本机协议桥") ? ok : fail)("useModelProviders 明确告知 chat-only 网关已由协议桥接管（不再说「无法使用」）");
 

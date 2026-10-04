@@ -4,7 +4,7 @@
  *    调用处 `if (handleN(...)) return;` —— 提前退出的效果逐位保留（回调的返回值本来就被丢弃）。
  */
 import "@xterm/xterm/css/xterm.css";
-import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, subAgentTools, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
+import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 import { createToolCallDedupe } from "../../../../../lib/tool-call-dedupe.mjs";
 
@@ -59,26 +59,12 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                 } catch (error: any) {
                   await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `保存失败：${error.message}` }], success: false });
                 }
-              } else if (event.params?.tool === "subagent_invoke") {
-                bag.setSubAgentRunning(String(args.name ?? ""));
-                try {
-                  const result = await window.codex.invokeSubAgent({
-                    name: String(args.name ?? ""),
-                    query: String(args.query ?? ""),
-                    cwd: bag.workspace || undefined,
-                    model: bag.selectedModel?.model ?? modelName(bag.modelId),
-                    effort: bag.effort || undefined,
-                    sandbox: bag.sandbox,
-                    approvalPolicy: bag.approvalPolicy,
-                  });
-                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `[子智能体 ${result.name} 的执行结果]\n${result.output}` }], success: true });
-                } finally {
-                  bag.setSubAgentRunning(null);
-                }
               }
-              // ⛔ agent_invoke / agent_archive_sessions 的动态工具分支已删（09-16）：
-              //    两者改走内置 MCP（harness-dispatch），调用由主进程 HTTP 执行端直接处理，
-              //    不再经渲染层 dynamicToolCall 事件回流。
+              // ⛔ 调度工具的渲染层分支已全部删除（09-16 删 agent_invoke / agent_archive_sessions；
+              //    10-04 删 subagent_invoke）：三类对象统一走内置 MCP 的 `agent_invoke`
+              //    （harness-dispatch），调用由主进程 HTTP 执行端直接处理，不再经渲染层回流。
+              //    ⛔ subagent_invoke 那条通道与「调度」开关**完全脱钩**（有已启用子智能体就永远在），
+              //       还让模型只会用名字最直白的它、永远绕过专家 / 专家团（用户症状：「只能调子智能体」）。
               else if (event.params?.tool === "team_member_invoke") {
                 await bag.invokeTeamMember(args, String(event.params?.threadId ?? ""), event.id!);
               } else if (event.params?.tool === "team_phase_invoke") {
@@ -240,7 +226,7 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                 await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `Dynamic tool ${event.params?.tool ?? "unknown"} is not registered by this harness.` }], success: false });
               }
             } catch (error: any) {
-              await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `${event.params?.tool === "subagent_invoke" ? "子智能体调用失败" : "记忆工具失败"}：${error.message}` }], success: false });
+              await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `${event.params?.tool ?? "工具"} 调用失败：${error.message}` }], success: false });
             }
           }).then((duplicate) => {
             // ⛔ 重复到达也必须回包：引擎重发往往就是因为它没收到第一次的 respond，

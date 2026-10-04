@@ -158,6 +158,48 @@ export function filterTargetsBySwitch(targets: DispatchTarget[], dispatch?: Disp
   });
 }
 
+/** 某一类**此刻**是否允许被调度（执行侧真相源）。
+ *
+ * ⛔⛔ 2026-10-04 用户拍板「调度开关就要对应生效工具，这个联动必须做好」——
+ *   此前只有**提示词**在说「只开启了 X」，执行端（canDispatchFrom）只查身份 / 深度 / 独占锁，
+ *   **完全不看 kind** ⇒ 用户取消勾选「专家 / 专家团」之后，模型仍能凭 MCP 工具的参数
+ *   （kind=expert）把活派出去 —— 勾选等于装饰。
+ * ⛔ 判据与 filterTargetsBySwitch **同源**（member 跟随 team；总开关关 ⇒ 一律不许），
+ *   绝不许两处各写一套 —— 否则「列表里没有、调用却成功」这类口径漂移迟早回来。
+ * 返回值带 reason：调用被拒时模型要能读到「哪一类没开、现在开了哪几类」，
+ * 才能自己改派或如实回报用户，而不是反复重试同一个被拒的 kind。 */
+export function dispatchKindAllowed(
+  kind: DispatchKind | string,
+  dispatch?: DispatchConfig | null,
+): { ok: boolean; reason?: string } {
+  if (dispatch?.enabled !== true) {
+    return {
+      ok: false,
+      reason:
+        "本会话的「调度」总开关是关着的，不能派活给任何智能体。" +
+        "请自己把活干完；需要派人时请用户在顶栏的「调度」面板里开启（会话标题栏那一排的图标）。",
+    };
+  }
+  const allowed: Record<string, boolean> = {
+    expert: dispatch.expert === true,
+    team: dispatch.team === true,
+    // 团队成员没有独立开关：面板勾「专家团」即代表允许团内成员被调度
+    member: dispatch.team === true,
+    subagent: dispatch.subagent === true,
+  };
+  if (allowed[String(kind)] === true) return { ok: true };
+  const on = (["expert", "team", "subagent"] as const)
+    .filter((key) => dispatch[key] === true)
+    .map((key) => KIND_LABEL[key]);
+  return {
+    ok: false,
+    reason:
+      `本会话没有开启「${KIND_LABEL[kind as DispatchKind] ?? String(kind)}」这一类调度` +
+      `（当前开启：${on.length ? on.join("、") : "（无）"}）。` +
+      "请改用已开启的类别、或自己完成；需要放开时请用户在顶栏的「调度」面板里勾选。",
+  };
+}
+
 /** 目录 → 工具 description（模型据此知道「有什么可以调」，这是闭环的前提）。
  *
  * ⛔⛔ 2026-10-04 用户报「我勾了子智能体，提示词还让我派专家」——

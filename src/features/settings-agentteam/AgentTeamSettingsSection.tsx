@@ -19,7 +19,7 @@ export function AgentTeamSettingsSection(props: AgentTeamSettingsSectionProps) {
                         <button className="hub-card" onClick={() => setSettingsPage("agents")}>
                           <span className="hub-card-icon"><Bot size={20} /></span>
                           <strong>子智能体</strong>
-                          <p>自定义角色，注册为 subagent_invoke 函数，Codex 在对话中直接调用。</p>
+                          <p>自定义角色，经统一调度工具 agent_invoke（kind=subagent）调用——需在会话顶栏「调度」面板里勾选「子智能体」。</p>
                         </button>
                         <button className="hub-card" onClick={() => setSettingsPage("expert-center")}>
                           <span className="hub-card-icon"><LayoutGrid size={20} /></span>

@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-03",
-  "count": 414,
+  "count": 413,
   "channels": [
     {
       "name": "request",
@@ -1760,16 +1760,6 @@
       "paramsDecl": "id: string",
       "returns": "Promise<{ ok: boolean }>",
       "invokeArgs": "id",
-      "cast": null,
-      "note": null
-    },
-    {
-      "name": "invokeSubAgent",
-      "channel": "subagents:invoke",
-      "paramsImpl": "input: unknown",
-      "paramsDecl": "input: { id?: string; name?: string; query: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }",
-      "returns": "Promise<{ threadId: string; turnId?: string; name: string; output: string }>",
-      "invokeArgs": "input",
       "cast": null,
       "note": null
     },

@@ -1,10 +1,16 @@
 /**
  * app-view/helpers/skills（09-22 架构改造：从 helpers.tsx 按功能域拆出，纯搬迁）
  *
- * 域：技能 / 专家目录的文案与匹配（技能名规范化、中文备注、子代理工具）
- * 符号（6）：normSkillName / shortSkillName / skillZhNote / matchSkillCatalog / categoryLabel / subAgentTools
+ * 域：技能 / 专家目录的文案与匹配（技能名规范化、中文备注、技能列表重拉节流）
+ * 符号（6）：normSkillName / shortSkillName / skillZhNote / matchSkillCatalog / categoryLabel / shouldRefreshSkillList
  *
  * 代码与拆分前逐字一致；依赖边经 AST 依赖图核对，**不跨模块** ⇒ 本文件不 import 同目录其他模块。
+ * ⛔ 10-04 用户拍板「调度开关要真正生效到工具」：原本这里的 `subAgentTools()`（把子智能体注册成
+ *    dynamicTool `subagent_invoke`）**已整体删除**。理由：那条通道与「调度」开关完全脱钩
+ *    （只要存在已启用子智能体就永远在），且与 MCP 的 `agent_invoke` 形成**两套调度工具**
+ *    ⇒ 模型只会用名字最直白的那个（子智能体），专家 / 专家团永远被绕过。
+ *    现在三类统一走 `agent_invoke`（kind=expert|team|member|subagent），闸在执行端
+ *    （electron/dispatch.ts 的 dispatchKindAllowed）。
  */
 import { CJK_TEXT_RE, EXPERT_CATEGORY_LABELS, SKILL_ZH_NOTES } from "../constants";
 
@@ -69,23 +75,4 @@ export function shouldRefreshSkillList(): boolean {
   if (Date.now() - lastSkillListRefreshAt < 30_000) return false;
   lastSkillListRefreshAt = Date.now();
   return true;
-}
-
-export /** 把启用的子智能体登记成 Codex 可直接调用的 dynamicTool。 */
-function subAgentTools(agents: SubAgentEntry[]) {
-  const enabled = agents.filter((agent) => agent.enabled);
-  if (!enabled.length) return [];
-  return [{
-    type: "function",
-    name: "subagent_invoke",
-    description: `调用用户配置的子智能体完成一个独立子任务并返回结构化结果。可用子智能体：${enabled.map((agent) => `${agent.name}（${agent.description || "无描述"}）`).join("；")}。子智能体在独立会话中运行，会继承主对话的模型与权限设置。`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: { type: "string", description: "要调用的子智能体名称，必须是上面列出的名称之一", enum: enabled.map((agent) => agent.name) },
-        query: { type: "string", description: "交给子智能体的完整任务描述，信息要足够独立执行" },
-      },
-      required: ["name", "query"],
-    },
-  }];
 }
