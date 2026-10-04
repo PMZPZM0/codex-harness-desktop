@@ -39,6 +39,7 @@ import {
   GripVertical,
   CornerDownRight,
   Layers,
+  Library,
   Info,
   KeyRound,
   LayoutGrid,
@@ -340,7 +341,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
               <button className="sidebar-tab" onClick={() => { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); }}><Clock3 size={15} /><span>定时任务</span></button>
               {/* 09-27 用户要求：「在左侧菜单栏中新增『AI 短剧无限画布』入口」—— 它是与「聊天」并列的
                   另一种工作台，不是设置项；放进设置类入口那一簇会显得像配置页。 */}
-              <button className="sidebar-tab" title="AI 画布工作流：短剧 / 生图两种起手，卡片连线就是「这份输入喂给下一步」" onClick={() => { setDramaCanvasOpen(true); setMobileNav(false); }}>
+              <button className="sidebar-tab" title="项目知识库：导入文档，Codex 可直接检索" onClick={() => { setSettingsPage("knowledge-base"); setSettingsOpen(true); setMobileNav(false); }}><Library size={15} /><span>知识库</span></button><button className="sidebar-tab" title="AI 画布工作流：短剧 / 生图两种起手，卡片连线就是「这份输入喂给下一步」" onClick={() => { setDramaCanvasOpen(true); setMobileNav(false); }}>
                 <Clapperboard size={15} /><span>AI 画布工作流</span>
               </button>
               {/* ⛔ 09-27 用户要求：技能中心 / 插件市场 / 专家-专家团**合并成一个入口**，点击弹窗三选一

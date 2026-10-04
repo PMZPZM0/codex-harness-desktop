@@ -10,7 +10,7 @@ import { X, BookOpen } from "lucide-react";
  *  内容只描述**当前应用真实有的入口与字段**（写之前逐页核过控件名），
  *  不写「未来可以」这类承诺——新手照着做走不通会直接失去信任。
  */
-export type HelpKey = "model" | "plugins" | "skills" | "mcp" | "agentteam" | "voice" | "devtools" | "soul-market";
+export type HelpKey = "model" | "plugins" | "skills" | "mcp" | "agentteam" | "voice" | "devtools" | "soul-market" | "knowledge-base";
 
 type HelpSection = { title: string; steps: string[] };
 export type HelpContent = { title: string; intro: string; sections: HelpSection[]; tips: string[] };
@@ -59,10 +59,18 @@ export const OVERVIEW_GROUPS: OverviewGroup[] = [
     items: [
       { page: "技能", what: "领域知识包（写 PPT、查数据库等）", when: "同类任务反复教它、想让它一次做对时" },
       { page: "插件", what: "从市场装插件，扩展指令/技能/钩子", when: "想要别人做好的整套能力时" },
-      { page: "组件库", what: "浏览 Uiverse 社区组件库（3800+ 个 HTML+CSS 组件，MIT）：点开看代码、一键复制，写自己的网页/软件时直接用；Codex 写前端时也会自动来这里查现成组件", when: "想找个现成的按钮/卡片/加载器效果，或让 Codex 做界面时想让它用上好组件" },
-      { page: "人格市场", what: "SkillHub 现成人格（16 套）：一键应用，Codex 的性格与说话风格就换成 TA；写进全局个性化（AGENTS.md），下一个新会话生效，随时还原默认", when: "想让 Codex 换个性格/语气（比如更毒舌、更温柔的助手）时" },
       { page: "记忆", what: "Codex 记住的偏好与项目背景，可编辑可删", when: "发现它记错了、或想主动告诉它背景时" },
       { page: "命令", what: "自定义快捷命令（输入 / 触发）", when: "有反复要输入的模板话术时" },
+    ],
+  },
+  {
+    group: "创意与知识",
+    purpose: "给 Codex 换性格、给它项目资料、找现成 UI 组件。",
+    startHere: "知识库",
+    items: [
+      { page: "组件库", what: "浏览 Uiverse 社区组件库（3800+ 个 HTML+CSS 组件，MIT）：点开看代码、一键复制，写自己的网页/软件时直接用；Codex 写前端时也会自动来这里查现成组件", when: "想找个现成的按钮/卡片/加载器效果，或让 Codex 做界面时想让它用上好组件" },
+      { page: "人格市场", what: "SkillHub 现成人格（16 套）：一键应用，Codex 的性格与说话风格就换成 TA；写进全局个性化（AGENTS.md），下一个新会话生效，随时还原默认", when: "想让 Codex 换个性格/语气（比如更毒舌、更温柔的助手）时" },
+      { page: "知识库", what: "项目级本地知识库：导入 md/txt 文档与笔记，Codex 在会话里可直接检索引用；文档随项目目录走", when: "想让 Codex 记住项目资料/规范/背景，并在干活时自己查" },
     ],
   },
   {
@@ -317,6 +325,25 @@ export const HELP_CONTENT: Record<HelpKey, HelpContent> = {
     tips: [
       "人格只改性格与说话风格，不改模型与能力",
       "一次只生效一个人格；应用新的人格会替换旧的",
+    ],
+  },
+  "knowledge-base": {
+    title: "知识库 · 新手帮助",
+    intro: "项目级本地知识库：导入项目资料（md/txt/代码等），Codex 干活时可检索引用。",
+    sections: [
+      {
+        title: "怎么用",
+        steps: [
+          "「导入文件」一次可选多个文本文件（md / txt / 代码等）",
+          "「粘贴文本」直接把一段资料贴进知识库",
+          "顶部检索框输入关键词即可查命中片段",
+          "Codex 在会话里也会被引导查知识库（后续版本接入引擎工具）",
+        ],
+      },
+    ],
+    tips: [
+      "文档落在项目的 .codex-harness/knowledge/ 目录，随项目走、换电脑随项目复制",
+      "删除文档不影响项目其他文件",
     ],
   },
 };
