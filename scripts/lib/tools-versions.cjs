@@ -16,6 +16,12 @@
 const TOOLS_VERSIONS = {
   /** 桌面自动化 MCP（nuphus）：四处同源，升级理由通常是安全依赖 */
   nuphus: "0.2.3",
+  /**
+   * Codex 式电脑操作（open-computer-use，MIT）：**只在 macOS 随包**，作为 mac 的桌面自动化后端。
+   * npm 包已内置四平台二进制（解包 13MB），postinstall 只打印安装提示 ⇒ CI 用 --ignore-scripts 也装得动。
+   * Windows 不用它（那边是 nuphus + 我们自己的 UIA 控件清单通道）。
+   */
+  computerUse: "0.3.6",
   /** Playwright CLI（随包直出的浏览器自动化入口） */
   playwrightCli: "0.1.18",
   /** playwright-core：⛔ 各平台现值不同，见文件头说明 */

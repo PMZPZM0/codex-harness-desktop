@@ -72,10 +72,17 @@ export type AutomationSwitches = { desktop: boolean; browser: boolean };
 /**
  * 该被**硬禁用**的 nuphus 工具：关闭的那一组整体摘掉。
  * 返回空数组表示不需要掩码（两个都开着）。
+ *
+ * ⛔ 第二个参数 `platform`（10-04 加，默认当前平台，老调用点行为不变）：**mac 上永远掩掉桌面组**。
+ *   理由不是"nuphus 在 mac 上坏了"（它 mac arm64 有官方二进制），而是 mac 的桌面自动化换了后端
+ *   （`open-computer-use`，走 Accessibility 拿控件清单）。两套真实键鼠通道同时挂在工具表里，
+ *   模型会随机挑一个、出问题也分不清是谁 —— 所以按平台**只留一条**，浏览器组不受影响。
  */
-export function nuphusDisabledTools(switches: AutomationSwitches): string[] {
+export function nuphusDisabledTools(switches: AutomationSwitches, platform: NodeJS.Platform = process.platform): string[] {
   const disabled: string[] = [];
   if (!switches.desktop) disabled.push(...NUPHUS_DESKTOP_TOOLS);
+  // mac 的桌面能力由 computer-use 提供 ⇒ nuphus 只保留浏览器组
+  else if (platform === "darwin") disabled.push(...NUPHUS_DESKTOP_TOOLS);
   if (!switches.browser) disabled.push(...NUPHUS_BROWSER_TOOLS);
   return disabled;
 }
@@ -118,6 +125,38 @@ export function uiaDesktopSupported(platform: NodeJS.Platform = process.platform
 /** 注册判据（binaryReady 由 `toolchain.harnessUiaServer()` 给：两个随包文件都在才算齐）。 */
 export function shouldRegisterUia(input: { desktop: boolean; binaryReady: boolean; platform?: NodeJS.Platform }): boolean {
   return uiaDesktopSupported(input.platform) && input.desktop === true && input.binaryReady === true;
+}
+
+/**
+ * mac 的桌面自动化后端：`open-computer-use`（Codex 式电脑操作，MIT，走 Accessibility 控件清单）。
+ * 用户 10-04 拍板：「mac 版本就用 computer use 随包内置，Windows 就用 nuphus」。
+ *
+ * 与 nuphus 的分工由 `nuphusDisabledTools` 的平台参数保证：**mac 上 nuphus 只剩浏览器组**，
+ * 桌面组整组进 `disabled_tools` ⇒ 同一时刻只有一条真实键鼠通道，模型不会随机挑、出错也好归因。
+ */
+export const COMPUTER_USE_MCP_SERVER = "computer-use";
+
+/** open-computer-use 的九个工具（与上游 SKILL.md 同源；升级版本时先核对这张表，守卫【274】比对）。 */
+export const COMPUTER_USE_TOOLS: readonly string[] = [
+  "list_apps",
+  "get_app_state",
+  "click",
+  "perform_secondary_action",
+  "scroll",
+  "drag",
+  "type_text",
+  "press_key",
+  "set_value",
+];
+
+/** computer use 只在 macOS 随包（Windows 侧走 nuphus + UIA 清单通道）。 */
+export function computerUseSupported(platform: NodeJS.Platform = process.platform): boolean {
+  return platform === "darwin";
+}
+
+/** 注册判据：darwin + 桌面总闸开 + 随包包齐（launcher 与 .app 都在）。 */
+export function shouldRegisterComputerUse(input: { desktop: boolean; binaryReady: boolean; platform?: NodeJS.Platform }): boolean {
+  return computerUseSupported(input.platform) && input.desktop === true && input.binaryReady === true;
 }
 
 /**

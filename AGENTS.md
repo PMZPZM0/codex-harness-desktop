@@ -147,6 +147,25 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
   ⇒ 原样写出就不是合法 JSON，坐标一律过 `Round-Geom` 归一。
 - ⛔ `harness-uia.mjs` 拉起 PowerShell 只用**参数数组、不开 shell**（title/text 是外部输入 = 注入面）。
 
+### 🖥 mac 桌面自动化后端 open-computer-use（10-04 用户拍板，守卫【274】8 条）
+
+用户决策：**mac 用 computer use 随包内置，Windows 用 nuphus**（+ 上面的 UIA 清单通道）。
+
+- 数据源 = npm 包 `open-computer-use`（MIT，作者 iFurySt，是对 Codex 原生 computer use 的开源复刻）。
+  包内**已带四平台二进制**（解包 ~13MB），`postinstall` 只打印安装提示 ⇒ CI 加 `--ignore-scripts` 也装得动。
+- 装法照 nuphus：`scripts/prepare-mac-tools.cjs` 里 `npm install -g --prefix`，版本走
+  `scripts/lib/tools-versions.cjs` 的 `computerUse`（⛔ 不许在别处写字面量，【274】钉着）。
+  装完**裁掉 `dist/windows` 与 `dist/linux`**（mac 包里不该躺别的平台的二进制），并补 `Contents/MacOS/*` 执行位。
+- 注册 = `[mcp_servers.computer-use]`，`command` 用**随包 node + 启动脚本绝对路径**、`args = [<launcher>, "mcp"]`。
+  ⛔ 不能写裸命令名 `open-computer-use`：装进 `.app` 后 PATH 里没有它，会得到一个静默起不来的服务器。
+- ⛔ **同一时刻只留一条真实键鼠通道**：mac 上把 nuphus 的 15 个 `desktop_*` 整组进 `disabled_tools`
+  （`nuphusDisabledTools(switches, platform)` 的新参数），浏览器组照旧由 nuphus 提供。
+  否则模型会随机挑一个后端，出错也分不清是谁。
+- 「设置 → 开发工具」的**当前能力链路**按平台给唯一后端（mac=`computer-use-desktop`，win=`nuphus-desktop`），
+  判据与 automation-policy 同源，【274】真跑 `resolveCapabilities` 比对两平台结论。
+- ⚠️ **未经真机验证**：签名/公证与 Gatekeeper 放行、首次「辅助功能 + 屏幕录制」授权体验只能在 mac 上跑出来。
+  产物层的三条硬校验（主程序存在 / 执行位 / 不残留别的平台二进制）已写进 `scripts/verify-packaged-tools.cjs`。
+
 ### 📚 Uiverse 组件库（`electron/features/uiverse-library.ts` + `src/features/component-library/`，2026-10-01）
 
 组件库的唯一数据源 = `src/lib/ui-skin/data/*.gz` + `src/lib/ui-skin/catalog.gen.ts`（ingest：`scripts/gen-ui-skin-library.mjs`；⛔ 不复制第二份）：

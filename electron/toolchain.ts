@@ -137,6 +137,26 @@ export function harnessUiaServer() {
   }
 }
 
+/**
+ * mac 的桌面自动化后端 `open-computer-use`（Codex 式电脑操作，走 Accessibility 拿控件清单）。
+ * 返回它的 CLI 启动脚本路径（Node CJS，内部按自身目录解析 `dist/Open Computer Use.app/...`）；
+ * 非 darwin 或包/主程序缺失 ⇒ 空串（不注册，而不是注册一个起不来的服务器）。
+ * ⛔ 判就绪要**同时**看启动脚本与 .app：只装上半截时 MCP 起得来但每次调用都失败，最难排查。
+ */
+export function computerUseLauncher() {
+  if (process.platform !== "darwin") return "";
+  const root = npmGlobalRoot();
+  if (!root) return "";
+  const pkg = path.join(root, "open-computer-use");
+  const launcher = path.join(pkg, "bin", "open-computer-use");
+  const app = path.join(pkg, "dist", "Open Computer Use.app");
+  try {
+    return fs.existsSync(launcher) && fs.existsSync(app) ? launcher : "";
+  } catch {
+    return "";
+  }
+}
+
 // 国内下载加速（09-16 打包瘦身配套）：浏览器内核不随包，按需下载时默认走国内镜像。
 // ① Playwright 内核：npmmirror 的 binaries 镜像（淘宝系，国内直连快）；
 // ② CloakBrowser 内核：官方只发 GitHub Releases，国内直连慢/不稳，走 gh 代理前缀
