@@ -1521,8 +1521,11 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     );
     // ⛔⛔ 10-01 用户令：「专家不要归类到一起」——只有**配置了成员**的专家团才聚类；
     //    专家（单人/专家包，members 为空）的一对一会话一律平铺，不许聚成可展开的簇。
+    // ⛔ 10-04 锚点修正：原正则锚 `clusterableTeams.has(teamId) … continue;`（**字面形态**）——
+    //    把过滤循环改写成单语句（`if (…) keptClusters.set(…)`）后当场假红。改成锚**接线**
+    //    （has(teamId) → keptClusters.set(teamId, cluster)），两种写法都成立。
     const part04Src = codeOnly(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part04", "01-seg.tsx"), "utf8"));
-    (/clusterableTeams\.has\(teamId\)[\s\S]{0,90}?continue;/.test(part04Src) && /members\?\.length \?\? 0\) > 0/.test(part04Src) ? ok : fail)(
+    (/clusterableTeams\.has\(teamId\)[\s\S]{0,120}?keptClusters\.set\(teamId, cluster\)/.test(part04Src) && /members\?\.length \?\? 0\) > 0/.test(part04Src) ? ok : fail)(
       "【207】只有配置了成员的专家团才聚类（专家/专家包会话平铺——把零成员团队聚成簇 = 用户点名的「专家归类到一起」）"
     );
     /* ⛔ 09-29 用户实测：专家团簇行自带 09-14 的淡蓝底+描边+左色条（旧"团队条"装饰），
@@ -1534,6 +1537,47 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
        accent 8% 淡蓝底出现，看起来像被选中）。身份区分一律用「专家团」徽章。 */
     ((!/(^|[\n])\.team-cluster > \.thread-row,[\s\S]{0,120}?background:[^;]*accent/.test(css207) && !/(^|[\n])\.team-cluster-head \{[^}]*background:[^;]*accent/.test(css207)) ? ok : fail)(
       "【207】专家团簇行不许自带默认底色（身份用徽章区分，不用底色）"
+    );
+  }
+
+  /* ══ 【281】侧栏「幽灵会话」：正在运行的会话不显示、也没有选中态（10-04 用户实测） ══ */
+  {
+    console.log(C.bold("\n【281】侧栏幽灵消失（正在运行的会话从列表凭空不见、无选中态）"));
+    // 症状：右侧主舞台正在跑的会话，左侧栏**整行不存在**（不是没高亮，是压根没渲染）。
+    // ⛔ 这不是渲染层丢行，而是 `clusteredSidebar` 把它的 id 收编进 `memberIds` 之后该 id
+    // **不在任何簇的 members 里** —— 渲染端 singles 按 memberIds 排除、簇体按 clusters 渲染，
+    // 两边口径一旦不一致，这个会话就谁都不渲染（见 02-thread-attention-rows 的 clusterSplit）。
+    // 两条独立成因，**都必须钉住**：① 兜底识别把「正文」当标题匹配；② memberIds 由 add/delete
+    // 累加、与最终 clusters 脱钩。
+    const part04Src281 = codeOnly(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part04", "01-seg.tsx"), "utf8"));
+
+    // ① 兜底识别「历史成员会话」的实参只能取**会话名开头**，绝不拼 preview。
+    // 实测根因：正在运行的会话（题「你好」，id 01a106d4）的 name+preview 里**引用**了
+    // `[专家团「Bug 排查」…（团队主理人）]`（命中位置在 18,788 字符正文的第 9,311 字符处），
+    // 被全长匹配误判成「零成员团队 Bug 排查」的成员 ⇒ 收编进 memberIds、该簇随后被
+    // clusterableTeams 过滤丢弃 ⇒ 会话从侧栏整体消失。同一份正文在 01a106ce 上也命中，
+    // 只是它没被提升为簇头才侥幸留下。
+    const fallbackArg = /const\s+raw\s*=\s*([^\n;]+);[\s\S]{0,400}?parseTeamMemberTitle\(\s*raw\s*\)/.exec(part04Src281);
+    (fallbackArg && !/preview/.test(fallbackArg[1]) && /\.name/.test(fallbackArg[1]) ? ok : fail)(
+      "【281】兜底收编「历史成员会话」只认会话名开头、不吃 preview 正文（把正文也拿去匹配 = 正文里"
+        + "引用同格式即误判成成员 ⇒ 该会话被抽走却不落在任何簇里 ⇒ 侧栏幽灵消失）"
+    );
+
+    // ② memberIds 必须是「最终会被渲染的簇成员」的**派生量**：part04 里不许存在可累加的中间态。
+    // ⛔ 判据不是「有没有 delete」（旧代码就有，照样出事故：lead 兜底提升簇头时只改了 members、
+    // 漏删 memberIds，随后该簇因零成员被丢弃 ⇒ 残留 id 永久留在 memberIds）——必须是**派生**。
+    (!/const\s+memberIds\s*=/.test(part04Src281)
+      && /const\s+visibleMemberIds\s*=\s*new Set<string>\(\)/.test(part04Src281)
+      && /for \(const cluster of keptClusters\.values\(\)\)[\s\S]{0,160}?visibleMemberIds\.add\(member\.id\)/.test(part04Src281)
+      && /memberIds:\s*visibleMemberIds/.test(part04Src281) ? ok : fail)(
+      "【281】memberIds = 「最终会被渲染的簇成员」的派生量（不设 add/delete 中间态 —— 残留 id 既不渲染"
+        + "在簇里、又被 singles 排除 ⇒ 会话从侧栏整体消失）"
+    );
+
+    // ③ 消费侧同源：singles 仍按 memberIds 排除成员行，簇体按 clusters 渲染 —— 两处口径必须同源。
+    const rowsSrc281 = codeOnly(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part02", "02-goal-browser-notice", "01-goal-review-file-browser", "02-thread-attention-rows.tsx"), "utf8"));
+    (/memberIds\.has\(entry\.id\)/.test(rowsSrc281) && /!leadIds\.has\(entry\.id\)/.test(rowsSrc281) ? ok : fail)(
+      "【281】侧栏 singles 同时排除「簇成员」与「各簇主会话」（memberIds + leadIds，二者缺一都会让行凭空消失或重复）"
     );
   }
 }
