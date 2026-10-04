@@ -84,7 +84,73 @@ ok(/const u = Math\.max\(2, Math\.round\(h \/ 10\)\)/.test(screen),
 ok(!/const rowH = 6;/.test(screen) && !/const n = 6;/.test(screen),
   "⛔ 不许写死行高 6 / 柱数 6（那是给 116×62 大屏设计的）");
 // 代码行段长必须按可用宽度收口
-ok(/Math\.min\(len,/.test(screen), "代码行段长按 innerW 收口（防画出屏面外）");
+ok(/Math\.min\(len \* u,/.test(screen) || /Math\.min\(len,/.test(screen),
+  "代码行段长按 innerW 收口（防画出屏面外）");
+
+/* ── 判据组 E：**每种模式都必须有「持续变化」**（2026-10-04 用户报
+   「显示器上没有 CSS 动画」）──
+   ⛔ 病根不是"没调 drawScreen"（它每帧都在跑），而是**变化幅度在 53×30 屏面上
+     看不见**：code 长满 6 行后完全静止（只剩 3×3px 光标，占屏面 0.6%）、
+     thinking 只跳 2px、report 柱子 6 秒长完就停。
+   ⇒ 判据形状：每种模式都必须在**每一帧**产生不同的像素，且**不得"长完就停"**。
+   ⚠️ 屏面小 ⇒ 只有**位移 / 增删**看得见，"淡入淡出 / 缓慢变色"一律看不出来。 */
+{
+  /* 每种模式块：限定在 **drawScreen 函数体**内找，取**最后一个**匹配。
+   * ⛔⛔ 两个坑叠在一起（各踩一次）：
+   *   ① `indexOf` 找到的是文件尾部 `screenModeOf()` 里的三元（`mode === "code" ? PAL.codeBg`），
+   *      那里也**同样写着一模一样的字符串** ⇒ 取到无关代码 ⇒ 恒红。
+   *   ② 改成"取最后一个"也不够 —— `screenModeOf` 里的三元**同时含全部五个模式名**，
+   *      "最后一个"照样落在它里面。
+   * ✅ 唯一可靠做法：**先把 drawScreen 的函数体切出来**，再在块内找模式。 */
+  const fnStart = screen.indexOf("export function drawScreen");
+  const fnEnd = screen.indexOf("\n/** 成员活动", fnStart);
+  const drawBody = fnStart >= 0
+    ? screen.slice(fnStart, fnEnd > fnStart ? fnEnd : undefined)
+    : "";
+  ok(drawBody.length > 200, `切出 drawScreen 函数体（${drawBody.length} 字符）`);
+
+  /* 每种模式的绘制块。⚠️⛔ **不能靠 `mode === "xxx"` 定位**：
+     · `report` 是**兜底分支**（if 链走完直接执行），源码里**没有** `mode === "report"`；
+     · `search` 等虽有大写模式名，但同名的 `PAL.xxxBg` 三元会误导定位。
+     ✅ 统一用**该模式专属的注释标记**（`// <name>：` 或 `if (mode === "<name>")` 前的注释）
+        作为块起点，再取到下一个同缩进的 `if (mode ===` 或函数尾。 */
+  /* 每种模式的绘制块。
+   * ⛔⛔⛔ 判据自己在这上面裕了**三次**（indexOf → 取最后 → CRLF → 起点回退），
+   *   每次都表现为「改动明明在，判据却恒红」。根因：**靠缩进/空白猜边界太脆**。
+   * ✅ 稳的形状：**边界 = 下一个块标记**（显式标记，不猜）。
+   *   判据面与代码面因此**共用同一套显式标记** —— 标记删了判据立刻报「找不到块」，
+   *   不会静默取到错的那段。 */
+  const MARK = /\/\/\s*(\w+)\s*[:：]\s*【块标记】/g;
+  const marks = [...drawBody.matchAll(MARK)].map((m) => ({ name: m[1], at: m.index }));
+  ok(marks.length >= 5, `扫到 ${marks.length} 个块标记（应 ≥5）`);
+
+  const modeBlock = (name) => {
+    if (!drawBody) return "";
+    const i = marks.findIndex((m) => m.name === name);
+    if (i < 0) return "";
+    const from = marks[i].at;
+    const to = i + 1 < marks.length ? marks[i + 1].at : drawBody.length;
+    return drawBody.slice(from, to);
+  };
+  for (const name of ["code", "thinking", "search", "wait", "report"]) {
+    const b = modeBlock(name);
+    ok(b.length > 0, `找到 ${name} 模式的绘制块`);
+    if (!b) continue;
+    // 连续时间函数（Math.sin/cos）⇒ 每帧不同，不会"长完就停"
+    const continuous = /Math\.(sin|cos)\s*\(/.test(b);
+    // 位移类（y/x 坐标随t 变）⇒ 幅度够大看得见
+    const moves = /yOff|sweep|groupY|% innerH|% \(Math\.sin|slot/.test(b);
+    ok(continuous || moves,
+      `${name} 模式有持续变化（连续函数或逐帧位移）—— 否则长完即静止 ⇒ 看着像没动画`);
+  }
+  // ⛔ 具体钉住 code 模式：必须有"像素级滚动"（yOff）而不是只靠行数增长
+  ok(/const yOff = -/.test(modeBlock("code")),
+    "⛔ code 模式有**像素级纵向滚动**（yOff）—— 只让行数增长的话长满就静止");
+  // ⛔ report 模式：基准高度不能用 rnd()（每帧抖成噪声），且要有 wobble 波动
+  const rep = modeBlock("report");
+  ok(/wobble/.test(rep) && !/rnd\(\) \* 0\.7/.test(rep),
+    "⛔ report 模式柱高有稳定基准 + 波动（不用 rnd() 当高度，否则每帧闪成噪声）");
+}
 
 /* ── 判据组 D：**sim 必须是全局单例**（2026-10-04 用户报「每次打开办公室预览，
    人物就重新进办公室」）──
