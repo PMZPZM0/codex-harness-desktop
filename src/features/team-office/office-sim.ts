@@ -165,6 +165,19 @@ export class OfficeSim {
   readonly grid = buildCollision();
   agents: Agent[] = [];
 
+  /* ── 2026-10-04 用户报「每次打开办公室预览，人物就重新进办公室，没必要」──
+   *
+   * ⛔ 根因：`OfficeCanvas` 在自己的 `useEffect(..., [])` 里 `new OfficeSim()`，
+   *   而**每次打开预览 = 画布重新挂载** ⇒ 新 sim ⇒ 新 agent ⇒ 初始位置是门口
+   *   （`x:64, y:596`）⇒ 全员依次走进来。用户看到的就是"每次打开都重播进场"。
+   * ✅ 修在 OfficeCanvas 侧：**sim 提为模块级单例**，整个应用只建一次；
+   *   关掉预览只是画布卸载，sim（成员位置/座位/ID）原样留着，下次打开直接接着。
+   *
+   * ⚠️ 这里**刻意不加 `inheritFrom` 之类"新 sim 继承旧 sim"的接口**：
+   *   既然单例已解决重建问题，那类接口就是**没有调用方的死代码**
+   *   （而且真要用时很容易写错：换团队该"清场重进"，而不是"继承旧阵容"）。
+   *   ⓘ 教训：加"看起来通用"的抽象前先确认有真实调用方，否则它只是伪装成功能的注释。 */
+
   /** 成员清单变化（含状态）⇒ 对齐 agents（沿用 id 保持位置/相位）。 */
   sync(members: OfficeMemberState[], now: number) {
     const next: Agent[] = [];
