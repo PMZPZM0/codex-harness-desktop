@@ -83,7 +83,13 @@ bag.dispatchInfoRef = dispatchInfoRef as typeof bag.dispatchInfoRef;
 
   const refreshDispatchInfo = useCallback(async () => {
     try {
-      const [desc, cat] = await Promise.all([window.codex.dispatchToolDescription(), window.codex.listDispatchCatalog()]);
+      /* ⛔⛔ 2026-10-04 用户报「我只选了子智能体，点确认之后就只自动发送子智能体调度提示词」——
+         原来**无参**调用 ⇒ 主进程拿不到「用户在面板里勾了哪几类」⇒ 三类全列进描述
+         ⇒ 模型面对一堆名字自由发挥，派了没勾选的专家。
+         ✅ 把 threadId 传下去，主进程读该会话的 dispatch 开关**按勾选生成**描述。
+         ⚠️ 依赖必须含 threadId 与开关值：否则切会话/改勾选后描述不刷新（闭包旧值）。 */
+      const tid = bag.threadRef.current?.id ?? "";
+      const [desc, cat] = await Promise.all([window.codex.dispatchToolDescription(tid), window.codex.listDispatchCatalog()]);
       const next = {
         description: String((desc as any)?.description ?? ""),
         targets: Array.isArray((cat as any)?.targets) ? (cat as any).targets : [],
@@ -124,9 +130,20 @@ bag.refreshDelegateRecords = refreshDelegateRecords as typeof bag.refreshDelegat
 
 
 
-  // 可调度对象会随专家/子智能体的启用状态变化 → 工具说明书跟着刷新；
-  // 调度记录启动拉一次，之后由 harness 广播的 delegates-changed 增量刷新。
-  useEffect(() => { void bag.refreshDispatchInfo(); }, [bag.refreshDispatchInfo, bag.expertTeams, bag.subAgents]);
+  /* 可调度对象会随专家/子智能体的启用状态变化 → 工具说明书跟着刷新；
+     调度记录启动拉一次，之后由 harness 广播的 delegates-changed 增量刷新。
+     ⛔⛔ 2026-10-04 补：**开关变了必须重取描述** —— 用户点「确认」后应当立刻
+     按新的勾选生成提示词（他只勾子智能体 ⇒ 描述只含子智能体）。
+     不刷新就会出现"确认了却还是旧描述"，正是用户说的"点了确认之后就只自动发送
+     子智能体调度提示词"没生效的表现。
+     ⚠️ 用 activeDispatch 的三态拼成字符串当依赖（对象每次渲染都是新引用，
+     直接放对象当依赖 ⇒ effect 每帧都跑）。 */
+  const dispatchKey = bag.activeDispatch
+    ? `${bag.activeDispatch.enabled ? 1 : 0}|${bag.activeDispatch.expert ? 1 : 0}|${bag.activeDispatch.team ? 1 : 0}|${bag.activeDispatch.subagent ? 1 : 0}`
+    : "";
+  useEffect(() => {
+    void bag.refreshDispatchInfo();
+  }, [bag.refreshDispatchInfo, bag.expertTeams, bag.subAgents, dispatchKey]);
 
 
   useEffect(() => { void bag.refreshDelegateRecords(); }, [bag.refreshDelegateRecords]);

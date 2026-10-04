@@ -158,8 +158,21 @@ export function filterTargetsBySwitch(targets: DispatchTarget[], dispatch?: Disp
   });
 }
 
-/** 目录 → 工具 description（模型据此知道「有什么可以调」，这是闭环的前提）。 */
-export function dispatchToolDescription(targets: DispatchTarget[]): string {
+/** 目录 → 工具 description（模型据此知道「有什么可以调」，这是闭环的前提）。
+ *
+ * ⛔⛔ 2026-10-04 用户报「我勾了子智能体，提示词还让我派专家」——
+ *   **allow 是关键**：用户在调度面板里逐类勾选（`dispatch.expert/team/subagent`），
+ *   描述必须**只列勾选的那几类**，并对未勾选的明确说"本会话未开启，不要派"。
+ *   ⚠️ 之前两个错叠加：
+ *     ① 无 allow（三类全列）⇒ 模型面对一堆名字自由发挥；
+ *     ② 三类平铺无分节 ⇒ 连"选谁"这件事都没讲清。
+ *   ⇒ 两者都要：allow 决定**列不列**，分节+场景决定**怎么选**。
+ *   ⚠️ 未勾选的类别要**显式否定**而不是隐藏：隐藏会让模型以为不存在而反复试错。
+ *   ⚠️ allow 为 null（全 false / 取不到开关）时退化为"三类全列"，保持旧行为、不让描述变空。 */
+export function dispatchToolDescription(
+  targets: DispatchTarget[],
+  allow: { expert: boolean; team: boolean; subagent: boolean } | null = null,
+): string {
   const list = Array.isArray(targets) ? targets : [];
   const line = (target: DispatchTarget) => {
     const who = target.kind === "member" && target.teamId ? `${target.teamId} / ${target.memberId}` : target.key;
@@ -173,9 +186,18 @@ export function dispatchToolDescription(targets: DispatchTarget[]): string {
      根因不是"没列出来"，而是**没把"选谁"这件事讲清**：三类适用场景完全不同，
      平铺后模型只能靠名字猜。⇒ 改成**按 kind 分节 + 每节写明"什么时候选它"**，
      并显式给出"用户点名了哪类就派哪类"这条硬规则。 */
+  const KIND_LABEL: Record<string, string> = { expert: "专家", team: "专家团", subagent: "子智能体" };
+  /** 该类是否被用户勾选（allow 为 null ⇒ 全开，保持旧行为）。
+   *  ⚠️ `member` 不在 allow 键里（它是团结成员、不参与面板勾选）⇒ 一律按开处理。 */
+  const enabled = (kind: DispatchTarget["kind"]) =>
+    allow && (kind === "expert" || kind === "team" || kind === "subagent") ? allow[kind] === true : true;
   const section = (kind: DispatchTarget["kind"], title: string, when: string) => {
     const items = list.filter((t) => t.kind === kind);
     if (!items.length) return [];
+    // ⛔⛔ 有对象但用户没勾 ⇒ 必须显式否定（隐藏会让模型以为不存在而反复试错）
+    if (!enabled(kind)) {
+      return ["", `⛔【${KIND_LABEL[kind]}】本会话**未开启**（用户没勾选）——不要派这一类，即使下面列出了名字也不要调。`];
+    }
     return ["", `【${title}】${when}`, ...items.map(line)];
   };
   const sections = [
@@ -183,7 +205,13 @@ export function dispatchToolDescription(targets: DispatchTarget[]): string {
     ...section("team", "专家团（多人协作）", "一个团队按 SOP 分工协作，适合**要多个角色配合、产出需要汇总**的活（如软件开发：设计+前端+后端+测试）。"),
     ...section("subagent", "子智能体（你自定义的角色）", "你在设置里配置的自定义角色，适合**固定流程、专精某一类活**（如只做评审、只做翻译）。"),
   ];
+  const onList = (["expert", "team", "subagent"] as const).filter(enabled);
+  // ⛔ 顶部第一句就说明“只能派勾选的那几类”——这是模型最先读到的约束
+  const scope = allow
+    ? `⛔ **本会话只开启了：${onList.map((k) => KIND_LABEL[k]).join("、") || "（无）"}。只能派这几类；未列出的类别一律不要派。**`
+    : "";
   return [
+    scope,
     "调度一个智能体替你完成**独立的子任务**并拿到它的产出。适合：需要专门角色、需要上下文隔离（大量文件阅读不要污染本会话）、可以并行推进的活。",
     "调用后会为它开一个独立会话（会出现在左侧侧栏），任务结束前保持同步等待；返回的是它的最终产出文本。",
     "",

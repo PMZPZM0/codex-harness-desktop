@@ -621,7 +621,7 @@ interface Window {
     saveSubAgent(input: unknown): Promise<SubAgentEntry>;
     removeSubAgent(id: string): Promise<{ ok: boolean }>;
     invokeSubAgent(input: { id?: string; name?: string; query: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }): Promise<{ threadId: string; turnId?: string; name: string; output: string }>;
-    dispatchToolDescription(): Promise<{ description: string }>;
+    dispatchToolDescription(threadId: string): Promise<{ description: string }>;
     dispatchNotice(): Promise<{ text: string }>;
     dispatchOffNotice(): Promise<{ text: string }>;
     listDelegates(): Promise<{ records: DelegateRecordEntry[] }>;
