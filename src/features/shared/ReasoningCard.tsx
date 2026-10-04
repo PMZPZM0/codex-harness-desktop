@@ -187,19 +187,34 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
         思考卡填过它 ⇒ 又变成"别的卡片在流"来决定这张开不开。 */
   const streamingNow = revealing;
   const popupOpen = open && Boolean(displayed) && (streamingNow || manualOpen !== null);
+  /* 芯片 ref：被下面那个 effect 用来判"元素是否还被父容器带着"
+     （⛔ 必须声明在它的使用者之前 —— effect 回调虽在渲染后才跑，但依赖"后面才声明的
+     const"太脆：谁把这段代码上移/下移就会变成 TDZ 崩。 */
+  const headRef = useRef<HTMLButtonElement>(null);
+  const floatRef = useRef<HTMLDivElement>(null);
   const prevOpenRef = useRef(false);
+  /* ⛔⛔ 10-04 用户报「回合结束、大折叠收起时思考板块播放缩小动画」——
+     根因不是"大折叠联动"（没这种代码），而是**卸载与收起走了同一条 exiting 路径**：
+     过程组折叠 ⇒ 思考卡被父容器带走 ⇒ popupOpen 由真变假 ⇒ 走 `exiting` ⇒ 播
+     `scale(0.12)` 吸入动画。**用户并没有"收起"它，是被带走的**，不该播动作。
+
+     区分判据 = **元素是否还挂在文档里**（`headRef.current?.isConnected`）：
+     ·还连着 ⇒ 思考自己结束/用户点了 ⇒ 播吸入动画（有"我做了个操作"的反馈）
+     · 已断开 ⇒ 被父容器折叠/卸载 ⇒ 立刻收，不播（否则就是"凭空缩一下"）
+     ⚠️ 用 isConnected 而不是 running/turnActive：后者在折叠瞬间通常仍是 true，
+     判不出"被卸载"这件事。 */
   useEffect(() => {
     if (popupOpen) { prevOpenRef.current = true; setExiting(false); return; }
     if (prevOpenRef.current && Boolean(displayed)) {
       prevOpenRef.current = false;
+      // 已被父容器带走 ⇒ 不播吸入动画，直接收
+      if (!headRef.current?.isConnected) { setExiting(false); return; }
       setExiting(true);
       const t = setTimeout(() => setExiting(false), 240);
       return () => clearTimeout(t);
     }
   }, [popupOpen, displayed]);
   const reasoningBodyPointerMounted = (popupOpen || exiting) && Boolean(displayed);
-  const headRef = useRef<HTMLButtonElement>(null);
-  const floatRef = useRef<HTMLDivElement>(null);
   /* ── 浮窗定位：与输入框**同宽同列**（跟输入框一样长）；垂直方向**按空间自适应**
      （09-26 用户定稿「位置不是固定每次都在下方」）：下方够就贴芯片下方 4px；
      下方不够（芯片贴近输入框——最常见）放芯片上方；两侧都不够取**空间大**的一侧
