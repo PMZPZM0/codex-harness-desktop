@@ -190,8 +190,13 @@ for (const nm of existing.keys()) if (!inferred.has(nm)) extra.push(nm);
 
 const detail = (list) => list.slice(0, 8).map((x) => "\n      " + (typeof x === "string" ? x : x)).join("");
 
-if (missing.length) fail(`推断有、Bag 没有（${missing.length}）：${missing.slice(0, 8).join(", ")}${missing.length > 8 ? " …" : ""}`);
-else ok("名字覆盖：推断出的每个名字都在 Bag 里（0 missing）");
+if (missing.length) {
+  fail(`推断有、Bag 没有（${missing.length}）：`);
+  /* ⛔ 连类型串一起打 —— 只说"缺哪几个名字"的话，补的时候还得再跑一次工具才知道该写什么类型
+     （10-04 补调度派生值时的实测痛点）。下面每行可直接拷进 bag-types.ts。 */
+  for (const nm of missing.slice(0, 12)) console.log(`      ${nm}: ${inferred.get(nm)};`);
+  if (missing.length > 12) console.log(`      …（其余 ${missing.length - 12} 项略）`);
+} else ok("名字覆盖：推断出的每个名字都在 Bag 里（0 missing）");
 
 if (extra.length) fail(`Bag 有、当前 parts 里已无人声明（${extra.length}）：${extra.slice(0, 8).join(", ")}${extra.length > 8 ? " …" : ""}`);
 else ok("反向覆盖：Bag 里每个名字都仍有人声明（0 extra）");

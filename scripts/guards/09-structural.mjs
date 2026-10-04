@@ -1483,7 +1483,7 @@ export async function run() {
         "scripts/guards/07-turn-fold.mjs": 3740,
         "scripts/guards/06-app-behavior.mjs": 2568,
         "scripts/guards/02-session-logic.mjs": 1198,
-        "src/features/app-state/parts/bag-types.ts": 1407,
+        "src/features/app-state/parts/bag-types.ts": 1412,   // 生成物（段内顶层声明的类型面）：本文件不承载任何逻辑，长度随「段内顶层声明数」变化 —— 10-04 补 5 条漏接线的声明（ctxBtnRef / ctxMenuStyle / taskBtnRef / taskMenuStyle / dispatchKey，守卫【93】报的 missing），非业务代码增长
         "scripts/guards/09-structural.mjs": 1665,   // 本文件是守卫载体：每加一条规则基线随之上移（→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916）
         "scripts/guards/13-drama-gen.mjs": 1070,
         "electron/main.ts": 540,

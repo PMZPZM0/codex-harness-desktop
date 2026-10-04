@@ -283,11 +283,11 @@ contextBridge.exposeInMainWorld("codex", {
   saveSubAgent: (input: unknown) => __ipc("subagents:save", 1, [input]),
   removeSubAgent: (id: string) => __ipc("subagents:remove", 1, [id]),
   invokeSubAgent: (input: unknown) => __ipc("subagents:invoke", 1, [input]),
-  dispatchToolDescription: (threadId: string) => __ipc("agents:tool-description", 1, []),
+  dispatchToolDescription: (threadId: string) => __ipc("agents:tool-description", 1, [threadId]),
   /* 10-04 逐类通知：传 before/next 勾选 ⇒ 主进程按差集生成一条按类分段的通知；不传退化为全开通知 */
-  dispatchNotice: (before?: { expert?: boolean; team?: boolean; subagent?: boolean }, next?: { expert?: boolean; team?: boolean; subagent?: boolean }) => __ipc("agents:notice", 0, []),
+  dispatchNotice: (before?: { expert?: boolean; team?: boolean; subagent?: boolean }, next?: { expert?: boolean; team?: boolean; subagent?: boolean }) => __ipc("agents:notice", 0, [before, next]),
   /* 总开关开启时的完整告知：按勾选类别逐段列（勾 1 类 1 段、3 类 3 段），未开启的明确否定 */
-  dispatchEnabledNotice: (next?: { expert?: boolean; team?: boolean; subagent?: boolean }) => __ipc("agents:enabled-notice", 0, []),
+  dispatchEnabledNotice: (next?: { expert?: boolean; team?: boolean; subagent?: boolean }) => __ipc("agents:enabled-notice", 0, [next]),
   dispatchOffNotice: () => __ipc("agents:off-notice", 0, []),
   listDelegates: () => __ipc("agents:delegated", 0, []),
   listDelegatesOf: (originThreadId: string) => __ipc("agents:delegated-of", 1, [originThreadId]),

@@ -473,5 +473,5 @@ bag.topbarActionsNode = topbarActionsNode as typeof bag.topbarActionsNode;
   const layaInstalled = bag.layaInstalled;
   const layaReady = bag.layaReady;
   const autoEffortApplied = bag.autoEffortApplied;
-  return { activeThreadMemberRunning, activeMemberTeam, activeMember, activityLabel, railTeamId, railTeam, railRuns, railRunningByMember, railLastByMember, popupRun, historyMemberRuns, delegatedRailRuns, delegatedPopupRun, recentCompaction, saveInlineRename, earlyView, topbarActionsNode, effortAuto, changeEffortAuto, resolveAutoEffort, layaInstalled, layaReady, autoEffortApplied };
+  return { activeThreadMemberRunning, activeMemberTeam, activeMember, activityLabel, railTeamId, railTeam, railRuns, railRunningByMember, railLastByMember, popupRun, historyMemberRuns, delegatedRailRuns, delegatedPopupRun, recentCompaction, saveInlineRename, earlyView, topbarActionsNode, effortAuto, changeEffortAuto, resolveAutoEffort, layaInstalled, layaReady, autoEffortApplied, ctxBtnRef, ctxMenuStyle, taskBtnRef, taskMenuStyle };
 }

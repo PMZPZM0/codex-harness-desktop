@@ -190,6 +190,29 @@ if (!mainSrc || !preloadSrc) {
       (existsSync(PRELOAD_PATH) && normalizeEol(regionOf(readFileSync(PRELOAD_PATH, "utf8"))) === normalizeEol(generatePreloadRegion(manifest.channels)) ? ok : fail)(
         "【2】preload.ts gen 内联段与 manifest 逐字节一致（改了 manifest 就跑 npm run gen:ipc）"
       );
+      /* ── 【2】参数必须真的传出去（10-04 用户报「开启的对象类别：（无）」）──
+         ⛔⛔ 根因：生成 preload 的实参**只由 `invokeArgs` 决定**（gen-ipc-core.mjs：
+         `const args = e.invokeArgs ? `[${e.invokeArgs}]` : "[]"`）。`paramsImpl` 仅用来数
+         「最少几个参数」做调用校验 —— **声明了参数却漏写 invokeArgs，参数就在 preload 层被静默丢掉**：
+           · dispatchToolDescription(threadId) ⇒ 主进程收到 ""（描述永远"全列三类"）
+           · dispatchNotice(before,next) / dispatchEnabledNotice(next) ⇒ 主进程收到 undefined（按 null ⇒「（无）」）
+         tsc 过、逐字节一致性过、主进程纯函数守卫也全绿 —— 因为那些测的是函数，不是这条链。
+         ⇒ 判据：paramsImpl 里声明的**每个**参数名都必须出现在 invokeArgs 中（含可选参数：
+            可选只是"可以不传"，真传了就必须能到；漏写就是静默丢参）。 */
+      {
+        const namesOf = (p) => (!p || !p.trim() ? [] : p.split(",").map((s) => s.trim().split(":")[0].replace(/\?$/, "").trim()).filter((s) => /^[A-Za-z_$][\w$]*$/.test(s)));
+        const dropped = [];
+        for (const ch of manifest.channels) {
+          const names = namesOf(ch.paramsImpl);
+          if (!names.length) continue;
+          const inv = ch.invokeArgs || "";
+          const miss = names.filter((n) => !new RegExp(`(^|[^\\w$])${n.replace(/\$/g, "\\$")}([^\\w$]|$)`).test(inv));
+          if (miss.length) dropped.push(`${ch.name}(${miss.join(",")})`);
+        }
+        (dropped.length === 0 ? ok : fail)(
+          `【2】manifest 声明的参数都真的传给了主进程（漏写 invokeArgs ⇒ 静默丢参；丢参 ${dropped.length} 个：${dropped.slice(0, 6).join("、")}）`
+        );
+      }
       /* ⛔ 沙箱化 preload 不许 require 相对模块（09-23 白屏事故根因：生成物放独立文件
          preload.generated.ts ⇒ preload 加载失败 ⇒ window.codex 不存在）⇒ 钉死「自包含单文件」 */
       const preloadNow = readFileSync(PRELOAD_PATH, "utf8");
