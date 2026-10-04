@@ -1,0 +1,28 @@
+{
+  "$comment": [
+    "minimal profile —— 10-04 阶段 4 落地。参照 dsh 的 minimal 模式。",
+    "⛔ 它是**默认表的子集**，不是另一张表：合成 = default 减去 disable 列表。",
+    "   为什么不独立维护一份完整清单：两份清单一旦漂移，「profile 少了某个域」与「配置写错」",
+    "   两种故障长得一模一样，排查成本极高。子集语义让 default 永远是超集。",
+    "⛔ disable 的域 id 必须在 default 表里存在 —— 不存在时生成器**直接报错**（不静默忽略），",
+    "   否则打错一个 id 会让 profile 看起来生效了、实际没少任何东西。",
+    "⛔ 这不是「卸载插件」机制：没被挂载的域，其通道不存在 ⇒ 渲染层 invoke 会抛",
+    "   'No handler registered'。所以 minimal 只适合诊断与低资源场景，日常用 default。",
+    "   要「功能开关」请用设置里的插件开关（阶段 6），那才是给用户用的语义。"
+  ],
+  "id": "minimal",
+  "$extends": "default",
+  "disable": [
+    "pet", "drama-canvas", "screenshot", "team-runs", "team-threads", "teams",
+    "subagents", "memory", "rpa", "tasks", "scheduler",
+    "expert-market", "soul-market", "phone", "clipboard", "laya", "video",
+    "weixin", "telegram", "channels", "feishu", "dingtalk", "qq", "wecom-webhook",
+    "ponytail", "bot", "bots", "bot-binding", "bot-stream", "channel-bot",
+    "updates", "work-logs", "favorites", "queue-timer", "bridge",
+    "connectors", "mcp-servers", "prompt", "custom-model", "model-specs",
+    "openai", "personalization", "appSettings", "ssh", "terminal", "browser",
+    "git", "scratch", "pasted-text", "plugins", "hooks", "plugin", "tools",
+    "skills", "skill-discipline", "builtin", "external", "notify", "awake",
+    "shell", "codex-official-market"
+  ]
+}
