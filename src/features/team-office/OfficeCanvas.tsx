@@ -22,6 +22,17 @@ import { drawScreen, screenModeOf } from "./office-screen";
 
 const CHAR_URLS = [char0, char1, char2, char3, char4, char5];
 
+/* ⭐ 全局常驻 sim（2026-10-04）。
+ * ⛔ 为什么必须是模块级而不是组件级：`OfficeCanvas` 每次打开预览都会重新挂载
+ *   ⇒ 组件内的 sim（含 agents 数组）会一起销毁 ⇒ 每人退回门口初始位置、重播进场。
+ *   sim 属于「整个应用的一份世界状态」，不属于「这块画布」。
+ * ⛔ 不加「新 sim 继承旧 sim」那类接口：单例已解决重建问题，那类方法就是**没有调用方的死代码**。 */
+let officeSimSingletonRef: OfficeSim | null = null;
+function officeSimSingleton(): OfficeSim {
+  if (!officeSimSingletonRef) officeSimSingletonRef = new OfficeSim();
+  return officeSimSingletonRef;
+}
+
 /** 成员 id → 稳定整数（屏幕内容种子）。⛔ 同一个成员每次刷新必须同一套"代码"，不能乱跳。 */
 function hashId(id: string): number {
   let h = 2166136261;
@@ -75,7 +86,12 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf }: OfficeCanv
     void (async () => {
       const [bg, ...chars] = await Promise.all([loadImage(bgUrl), ...CHAR_URLS.map(loadImage)]);
       if (disposed) return;
-      const sim = new OfficeSim();
+      /* ⛔⛔ 2026-10-04 用户报「每次打开办公室预览，人物就重新进办公室」——
+         这里原本是 `new OfficeSim()`，而**每次打开预览 = 本组件重新挂载**
+         ⇒ 新 sim ⇒ 成员回到门口初始位置 (`x:64,y:596`) ⇒ 每次都重播进场。
+         ⇒ 改为**模块级常驻单例**：整个应用生命周期内只建一次；
+            关掉预览只是画布卸载，sim（成员位置/座位/ID）原样留着，下次打开直接接着。 */
+      const sim = officeSimSingleton();
       /* 调试/e2e 句柄：探针据此断言 agents 状态（⛔ 只读使用，别在业务里碰它） */
       (window as unknown as Record<string, unknown>).__officeSim = sim;
       let lastSync = 0;

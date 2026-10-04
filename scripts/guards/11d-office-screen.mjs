@@ -86,5 +86,26 @@ ok(!/const rowH = 6;/.test(screen) && !/const n = 6;/.test(screen),
 // 代码行段长必须按可用宽度收口
 ok(/Math\.min\(len,/.test(screen), "代码行段长按 innerW 收口（防画出屏面外）");
 
+/* ── 判据组 D：**sim 必须是全局单例**（2026-10-04 用户报「每次打开办公室预览，
+   人物就重新进办公室」）──
+   ⛔ 病根：`OfficeCanvas` 在 `useEffect(..., [])` 里 `new OfficeSim()`，
+     而**每次打开预览 = 画布重新挂载** ⇒ 新 sim ⇒ 成员回门口 (`x:64,y:596`) 重播进场。
+   ⇒ 判据形状：**sim 的创建点必须在模块顶层**（不在任何函数/组件体内）。
+   ⚠️ 单纯 grep "有没有 new OfficeSim"不够—— 单例函数里也该有；
+     要钉的是「它被一个模块级变量持有、且那个变量不在组件里」。 */
+{
+  const canvas = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
+  ok(/let officeSimSingletonRef\s*:\s*OfficeSim \| null = null/.test(canvas),
+    "⛔ sim 由模块级变量持有（不在组件里）—— 否则画布重挂载 ⇒ 位置全丢");
+  ok(/function officeSimSingleton\(\)\s*:\s*OfficeSim\s*\{[\s\S]{0,200}?if \(!officeSimSingletonRef\)[\s\S]{0,120}?officeSimSingletonRef = new OfficeSim\(\)/.test(canvas),
+    "⛔ 单例函数惰性创建 sim（重复 new 会退回到「每次进场」）");
+  //⛔ 组件里**不许**再直接 new OfficeSim()
+  const inEffect = /useEffect\(\(\) => \{[\s\S]*?\n {4}\}\);/.exec(canvas)?.[0] ?? "";
+  ok(!/new OfficeSim\(\)/.test(inEffect),
+    "⛔ useEffect 里没有直接 new OfficeSim()（那正是重播进场的病根）");
+  ok(/const sim = officeSimSingleton\(\)/.test(canvas),
+    "⛔ 画布用的是单例（而不是自己 new）");
+}
+
 console.log(`\n【screen】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
