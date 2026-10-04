@@ -11,11 +11,11 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { normalizeAutoCompactRatio, readAppSettings } from "../app-settings";
 import { app, safeStorage } from "electron";
-import { HARNESS_UIA_MCP_SERVER, shouldRegisterNuphus, shouldRegisterUia, withNuphusMasksForRules } from "../automation-policy";
+import { COMPUTER_USE_MCP_SERVER, HARNESS_UIA_MCP_SERVER, shouldRegisterComputerUse, shouldRegisterNuphus, shouldRegisterUia, withNuphusMasksForRules } from "../automation-policy";
 import { safeProviderId } from "../provider-id";
 import { injectMcpToolRules, injectSectionExtras, tomlBareKey } from "../config-toml";
 import { developerInstructionsLine } from "../developer-instructions";
-import { augmentedPath, bundledNode, bundledPython, harnessUiaServer, nuphusBinary } from "../toolchain";
+import { augmentedPath, bundledNode, bundledPython, computerUseLauncher, harnessUiaServer, nuphusBinary } from "../toolchain";
 import { NUPHUS_VISION_ENV_TABLE, nuphusVisionEnv } from "../nuphus-env";
 import type { CustomModelFile } from "../features/custom-model-types";
 import { collectSessionProviderIds } from "../features/provider-sessions";
@@ -49,7 +49,7 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
   // harness-dispatch（09-16 调度 MCP）同样是 harness 自己生成的段：不进保留清单，
   // 否则「保留旧段 +新生成段」会在 config.toml 里写出重复的 [mcp_servers.harness-dispatch]，
   // MCP 服务器起不来（实测：模型看不到任何 mcp__ 工具）。
-  const ownedMcpServers = new Set(["nuphus", "harness-dispatch", HARNESS_UIA_MCP_SERVER, ...connectors.map((connector) => safeConnectorId(connector.id))]);
+  const ownedMcpServers = new Set(["nuphus", "harness-dispatch", HARNESS_UIA_MCP_SERVER, COMPUTER_USE_MCP_SERVER, ...connectors.map((connector) => safeConnectorId(connector.id))]);
   const { preserved, mcpExtra } = await readUserConfigSplit(ownedMcpServers, mcpOverrides);
   // 工具级权限规则（deny/ask/allow）→ 引擎真正支持的键（disabled_tools / approval_mode）。
   // 见 mcpToolRulesOf 上方 09-16 实证说明：旧实现写 [permissions.*] 既无效又会把整份配置打废。
@@ -330,6 +330,22 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
         `command = "${escapeToml(uiaNode)}"`,
         `args = ["${escapeToml(uiaServer)}"]`,
         "startup_timeout_sec = 20",
+        "",
+      ];
+    })(),
+    // mac 的桌面自动化后端（10-04 用户拍板：mac 用 computer use 随包内置，Windows 用 nuphus）。
+    // 它是 npm 随包的第三方 CLI ⇒ command 走**随包 node + 绝对路径启动脚本**，不依赖 PATH
+    // （装进 .app 后 PATH 里没有 open-computer-use，写命令名只会得到一个起不来的服务器）。
+    ...(() => {
+      const launcher = computerUseLauncher();
+      const node = bundledNode();
+      if (!shouldRegisterComputerUse({ desktop: desktopAuto, binaryReady: Boolean(launcher) })) return [];
+      if (!node || !mcpOverrideEnabled(mcpOverrides, COMPUTER_USE_MCP_SERVER)) return [];
+      return [
+        `[mcp_servers.${COMPUTER_USE_MCP_SERVER}]`,
+        `command = "${escapeToml(node)}"`,
+        `args = ["${escapeToml(launcher)}", "mcp"]`,
+        "startup_timeout_sec = 30",
         "",
       ];
     })(),

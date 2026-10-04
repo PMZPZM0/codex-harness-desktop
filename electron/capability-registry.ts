@@ -43,6 +43,10 @@ export type CapabilityProbe = {
   browserSwitch: boolean;
   /** nuphus MCP 是否可用（二进制存在 + 没被连接器覆盖表禁用） */
   nuphusAvailable: boolean;
+  /** Windows 控件清单通道是否就绪（harness-uia.mjs 与 desktop-uia.ps1 两个随包脚本都在） */
+  uiaAvailable: boolean;
+  /** mac 电脑操作后端是否就绪（open-computer-use 的启动脚本与 .app 都在） */
+  computerUseAvailable: boolean;
   /** 视觉插件的配置是否已下发给 nuphus 进程（NUPHUS_MCP_VISION_*） */
   nuphusVisionEnv: boolean;
   /** 内置「视觉辅助插件」是否已配置（describe_image 用） */
@@ -85,7 +89,9 @@ export const CAPABILITIES: readonly CapabilityDefinition[] = [
     label: "桌面控制（键鼠 / 窗口 / 截屏）",
     purpose: "操作真实桌面应用、截屏、多窗口",
     backends: [
-      { id: "nuphus-desktop", label: "内置 MCP（nuphus desktop_*）", why: "唯一的真实键鼠控制通道；关掉「桌面自动化」总闸即整体摘除" },
+      { id: "nuphus-desktop", label: "内置 MCP（nuphus desktop_*）", why: "截屏 + 本地 OCR + 像素坐标；Windows/Linux 的真实键鼠通道。⛔ mac 上整组被掩（桌面交给 computer-use），同一条规则的唯一来源是 automation-policy.nuphusDisabledTools" },
+      { id: "uia-desktop", label: "Windows 控件清单（desktop_ui_*，UIA）", why: "Windows 专属：读系统无障碍树拿控件清单，按元素序号操作，不依赖坐标；与 nuphus 并存互补（网页内容仍走 browser_*）" },
+      { id: "computer-use-desktop", label: "mac 电脑操作（computer-use MCP）", why: "macOS 专属：open-computer-use 走 Accessibility，与 Codex 原生 computer use 同一类实现；随包内置，需用户授 辅助功能 + 屏幕录制" },
     ],
   },
   {
@@ -137,7 +143,10 @@ export function resolveCapabilities(probe: CapabilityProbe): CapabilityResolutio
   const availability: Record<string, boolean> = {
     "nuphus-browser": probe.browserSwitch && probe.nuphusAvailable,
     "playwright-cli": probe.playwrightCli,
-    "nuphus-desktop": probe.desktopSwitch && probe.nuphusAvailable,
+    "nuphus-desktop": probe.desktopSwitch && probe.nuphusAvailable && probe.platform !== "darwin",
+    // 判据与 automation-policy 的同名函数一致（守卫【274】比对，不许两处各写一套平台判断）
+    "uia-desktop": probe.desktopSwitch && probe.uiaAvailable && probe.platform === "win32",
+    "computer-use-desktop": probe.desktopSwitch && probe.computerUseAvailable && probe.platform === "darwin",
     "nuphus-vision": probe.desktopSwitch && probe.nuphusAvailable && probe.nuphusVisionEnv,
     "describe-image": probe.visionPlugin,
     "local-ocr": probe.desktopSwitch && probe.nuphusAvailable && localOcrSupported(probe),

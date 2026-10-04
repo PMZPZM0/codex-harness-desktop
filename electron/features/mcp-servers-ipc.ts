@@ -17,7 +17,7 @@ import path from "node:path";
 import { app } from "electron";
 import { collectMcpServerNames } from "../config-toml";
 import { readAppSettings } from "../app-settings";
-import { HARNESS_UIA_MCP_SERVER, withNuphusMasks } from "../automation-policy";
+import { COMPUTER_USE_MCP_SERVER, HARNESS_UIA_MCP_SERVER, withNuphusMasks } from "../automation-policy";
 import { applyCustomModel, connectorEnv, mcpOverrideEnabled, readConnectors, readCustomModel, readMcpOverrides, writeMcpOverrides } from "../main";
 import { codexHome, server } from "../runtime-refs";
 import { writeConnectors } from "../connector-store";
@@ -66,7 +66,7 @@ export const mcpServersFeature = defineFeature<null>({
       } catch { /* config.toml 还不存在就当没有手工段 */ }
       for (const id of ids) {
         if (connectorIds.has(id)) continue; // 已由连接器处理，别在覆盖表里留下同名垃圾
-        if (id !== "nuphus" && id !== HARNESS_UIA_MCP_SERVER && !(id in overrides) && !knownExtra.has(id)) continue;
+        if (id !== "nuphus" && id !== HARNESS_UIA_MCP_SERVER && id !== COMPUTER_USE_MCP_SERVER && !(id in overrides) && !knownExtra.has(id)) continue;
         if (mcpOverrideEnabled(overrides, id) === enabled) continue;
         // 保留已有原文与工具权限：用户手工写的 MCP 靠原文才能启用时拼回，工具权限不能因启停被抹掉
         overrides[id] = { enabled, toml: overrides[id]?.toml, permissions: overrides[id]?.permissions };
@@ -111,7 +111,7 @@ export const mcpServersFeature = defineFeature<null>({
       try {
         knownExtra = new Set(collectMcpServerNames(await fs.readFile(path.join(codexHome, "config.toml"), "utf8")));
       } catch { /* config.toml 不存在就当没有手工段 */ }
-      const known = serverId === "nuphus" || serverId === HARNESS_UIA_MCP_SERVER || connectors.some((c) => c.id === serverId) || (serverId in overrides) || knownExtra.has(serverId);
+      const known = serverId === "nuphus" || serverId === HARNESS_UIA_MCP_SERVER || serverId === COMPUTER_USE_MCP_SERVER || connectors.some((c) => c.id === serverId) || (serverId in overrides) || knownExtra.has(serverId);
       if (!known) return { ok: true, updated: false, reason: "unknown-server" };
 
       const permissions = overrides[serverId]?.permissions ?? {};

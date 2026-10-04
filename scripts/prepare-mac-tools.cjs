@@ -54,8 +54,14 @@ async function main() {
     : ["--allow-scripts=@nuphus/nuphus-mcp"];
   // ⛔ 09-16 用户「CloakBrowser 不用内置，按需下载就行」：这里**不再**装 cloakbrowser，
   //    它由应用「开发工具」页按需 npm 下载（npmmirror）。内核（cloak-cache）本来就不随包。
+  // ⛔ 09-16 用户「CloakBrowser 不用内置，按需下载就行」：这里**不再**装 cloakbrowser，
+  //    它由应用「开发工具」页按需 npm 下载（npmmirror）。内核（cloak-cache）本来就不随包。
+  // 10-04：mac 的桌面自动化后端 = open-computer-use（Codex 式电脑操作，MIT，走 Accessibility 拿控件清单）。
+  //    它的 postinstall 只打印安装提示（实测读过 package/scripts/postinstall.mjs），所以
+  //    x64 那条 --ignore-scripts 分支不影响它可用；arm64 分支的 --allow-scripts 也只放行 nuphus。
   run(node, [npm, "install", "-g", "--prefix", prefix, "--registry=https://registry.npmjs.org",
-    ...npmFlags, `@nuphus/nuphus-mcp@${TOOLS_VERSIONS.nuphus}`, `@playwright/cli@${TOOLS_VERSIONS.playwrightCli}`,
+    ...npmFlags, `@nuphus/nuphus-mcp@${TOOLS_VERSIONS.nuphus}`, `open-computer-use@${TOOLS_VERSIONS.computerUse}`,
+    `@playwright/cli@${TOOLS_VERSIONS.playwrightCli}`,
     `playwright-core@${TOOLS_VERSIONS.playwrightCore.darwin}`], env);
   const modules = path.join(prefix, "lib/node_modules");
   // Keep the same module layout as the Windows distribution.
@@ -84,6 +90,27 @@ async function main() {
   fs.unlinkSync(path.join(prefix, "bin/nuphus-mcp"));
   fs.writeFileSync(path.join(prefix, "bin/nuphus-mcp"), '#!/bin/sh\nif [ -z "$NUPHUS_BIN" ]; then echo "Start from the application toolchain" >&2; exit 1; fi\nexec "$NUPHUS_BIN" "$@"\n');
   fs.chmodSync(path.join(prefix, "bin/nuphus-mcp"), 0o755);
+
+  // ── open-computer-use（mac 的桌面自动化后端，10-04 立）──────────────────────────
+  // npm 包内置四平台二进制（解包 ~13MB）。mac 的包里只该有 mac 那份：删掉 windows/linux 目录
+  // 既省体积，也避免我们的 .app 里躺着别的平台的 exe（审计/杀软看到会问"这是什么"）。
+  const ocuRoot = path.join(prefix, "node_modules/open-computer-use");
+  const ocuApp = path.join(ocuRoot, "dist/Open Computer Use.app");
+  const ocuBinary = path.join(ocuApp, "Contents/MacOS/OpenComputerUse");
+  for (const foreign of ["windows", "linux"]) {
+    fs.rmSync(path.join(ocuRoot, "dist", foreign), { recursive: true, force: true });
+  }
+  if (!fs.existsSync(ocuBinary)) throw new Error(`open-computer-use 装完找不到 mac 主程序：${ocuBinary}`);
+  // 执行位补齐：npm 解包不保证 +x，缺了 macOS 起不来（LaunchServices 直接判"无法打开"）。
+  // 只补 Contents/MacOS 下的可执行与 CLI 软链，别把 .json/.png 之类也 chmod 成 755。
+  for (const name of fs.readdirSync(path.join(ocuApp, "Contents/MacOS"))) {
+    fs.chmodSync(path.join(ocuApp, "Contents/MacOS", name), 0o755);
+  }
+  for (const shim of ["open-computer-use", "ocu", "open-computer-use-mcp", "open-codex-computer-use-mcp"]) {
+    const target = path.join(prefix, "bin", shim);
+    if (fs.existsSync(target)) fs.chmodSync(target, 0o755);
+  }
+  console.log(`[open-computer-use] ${TOOLS_VERSIONS.computerUse} → ${ocuApp}`);
 
   const pythonRelease = await json("https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest");
   const triple = arch === "arm64" ? "aarch64" : "x86_64";
@@ -130,6 +157,7 @@ async function main() {
 
   fs.writeFileSync(path.join(tools, "mac-runtime-manifest.json"), JSON.stringify({
     platform: process.platform, arch, node: nodeVersion, nuphus: TOOLS_VERSIONS.nuphus,
+    computerUse: TOOLS_VERSIONS.computerUse,
     bundledSmall: BUNDLED_SMALL,
     // cloakbrowser 09-16 起不随包（按需下载），故不再记入随包清单
     playwrightCli: TOOLS_VERSIONS.playwrightCli, python: pythonAsset.name, cloudflared: cfRelease.tag_name, source: process.env.GITHUB_SHA || "",

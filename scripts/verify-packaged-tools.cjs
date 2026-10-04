@@ -37,6 +37,21 @@ if (process.platform === "darwin") {
     "（remote.ts 的手机配对隧道依赖它）。");
   assert.ok((fs.statSync(cloudflared).mode & 0o111) !== 0,
     "tools/cloudflared/cloudflared 没有执行位 —— .app 里 spawn 会 EACCES。");
+  // ── mac 的桌面自动化后端 open-computer-use（10-04）───────────────────────────
+  // 这三条都是**只有产物层才看得出来**的事：源码在 Windows 上跑，装出来的 mac 包缺哪个文件、
+  // 有没有执行位、有没有把别的平台的二进制一起带上，本地预检一律看不见。
+  const ocuRoot = path.join(modules, "open-computer-use");
+  const ocuLauncher = path.join(ocuRoot, "bin", "open-computer-use");
+  const ocuBinary = path.join(ocuRoot, "dist", "Open Computer Use.app", "Contents", "MacOS", "OpenComputerUse");
+  assert.ok(fs.existsSync(ocuLauncher) && fs.existsSync(ocuBinary),
+    "mac 包缺少 open-computer-use（桌面自动化后端）—— 检查 prepare-mac-tools.cjs 的 npm 安装与执行位补齐步骤。");
+  assert.ok((fs.statSync(ocuBinary).mode & 0o111) !== 0,
+    "open-computer-use 的 mac 主程序没有执行位 —— MCP 起得来但每次调用都会失败。");
+  for (const foreign of ["windows", "linux"]) {
+    assert.ok(!fs.existsSync(path.join(ocuRoot, "dist", foreign)),
+      `mac 包里残留 open-computer-use/dist/${foreign}（别的平台的二进制）—— prepare-mac-tools 应裁掉它，` +
+      "既省体积也免得杀软/审计问这是什么。");
+  }
 }
 const env = {
   ...process.env,

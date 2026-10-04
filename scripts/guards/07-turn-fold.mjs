@@ -3324,7 +3324,7 @@ export async function run() {
   );
   const apply272 = codeOnly(readFileSync(join(ROOT, "electron", "features", "custom-model-apply.ts"), "utf8"));
   (/shouldRegisterUia\(\{ desktop: desktopAuto, binaryReady: Boolean\(uiaServer\) \}\)/.test(apply272)
-    && apply272.includes("HARNESS_UIA_MCP_SERVER, ...connectors") ? ok : fail)(
+    && apply272.includes("HARNESS_UIA_MCP_SERVER,") ? ok : fail)(
     "【273】注册处真接线（调 shouldRegisterUia + 服务器名进 ownedMcpServers；漏后者会「保留旧段+新段」写出重复键）"
   );
   (/if \(args\?\.confirm !== true\) return/.test(uiaServer) ? ok : fail)(
@@ -3340,6 +3340,64 @@ export async function run() {
     && /Chromium 无障碍默认不展开/.test(skill272) && di272.includes("desktop_ui_set_value")
     && di272.includes("CHANNEL PRIORITY on Windows") ? ok : fail)(
     "【273】选路指引两处都在（技能讲清「原生用清单 / 网页用 browser_* / 坐标只兜底」，常驻指令给优先级）"
+  );
+}
+
+// ---------- 【274】mac 桌面自动化后端 open-computer-use（10-04 用户拍板）----------
+// 用户原话：「mac 版本就用 computer use 随包内置，Windows 就用 nuphus」。
+// 两条最容易出的错：① 两套真实键鼠通道同时在 mac 上注册（模型随机挑一个、出错分不清是谁）；
+// ② 注册命令写成裸命令名 `open-computer-use`（装进 .app 后 PATH 里没有它 ⇒ 静默起不来）。
+{
+  const req274 = createRequire(import.meta.url);
+  const versions274 = readFileSync(join(ROOT, "scripts", "lib", "tools-versions.cjs"), "utf8");
+  const prepMac = readFileSync(join(ROOT, "scripts", "prepare-mac-tools.cjs"), "utf8");
+  const verifyPkg = readFileSync(join(ROOT, "scripts", "verify-packaged-tools.cjs"), "utf8");
+  const apply274 = codeOnly(readFileSync(join(ROOT, "electron", "features", "custom-model-apply.ts"), "utf8"));
+  const toolchain274 = codeOnly(readFileSync(join(ROOT, "electron", "toolchain.ts"), "utf8"));
+  (/computerUse: "\d+\.\d+\.\d+"/.test(versions274) && /TOOLS_VERSIONS\.computerUse/.test(prepMac)
+    && !/open-computer-use@\d/.test(prepMac) ? ok : fail)(
+    "【274】open-computer-use 版本单一来源（表里一处、prepare-mac 从表取；出现第二处字面量即红）"
+  );
+  (/computerUse: TOOLS_VERSIONS\.computerUse/.test(prepMac) ? ok : fail)(
+    "【274】mac 随包清单记了 computer use 版本（缺了就无从核对产物里到底是哪一版）"
+  );
+  (verifyPkg.includes("open-computer-use") && verifyPkg.includes("没有执行位") && verifyPkg.includes("别的平台的二进制") ? ok : fail)(
+    "【274】产物层三条校验在位（主程序存在 + 执行位 + 不许残留 windows/linux 二进制）"
+  );
+  (/shouldRegisterComputerUse\(\{ desktop: desktopAuto, binaryReady: Boolean\(launcher\) \}\)/.test(apply274)
+    && apply274.includes("COMPUTER_USE_MCP_SERVER, ...connectors") ? ok : fail)(
+    "【274】注册处真接线（调 shouldRegisterComputerUse + 服务器名进 ownedMcpServers）"
+  );
+  (/args = \["\$\{escapeToml\(launcher\)\}", "mcp"\]/.test(apply274) ? ok : fail)(
+    "【274】args 固定为 [启动脚本绝对路径, \"mcp\"]（上游 MCP 配置就是 command + args:[mcp]，写成裸命令名会静默起不来）"
+  );
+  (/fs\.existsSync\(launcher\) && fs\.existsSync\(app\)/.test(toolchain274) ? ok : fail)(
+    "【274】就绪判据同时看启动脚本与 .app（只装上半截 = MCP 起得来但每次调用都失败）"
+  );
+  let policy274 = null;
+  try { policy274 = req274(join(ROOT, "dist-electron", "automation-policy.js")); } catch { policy274 = null; }
+  // ⛔ 真跑：mac 上 nuphus 桌面组必须整组被掩（否则两条键鼠通道并存），浏览器组不受影响
+  const macMask = policy274 ? policy274.nuphusDisabledTools({ desktop: true, browser: true }, "darwin") : null;
+  const winMask = policy274 ? policy274.nuphusDisabledTools({ desktop: true, browser: true }, "win32") : null;
+  (Array.isArray(macMask) && policy274 && macMask.length === policy274.NUPHUS_DESKTOP_TOOLS.length
+    && macMask.every((tool) => tool.startsWith("desktop_")) && !macMask.some((tool) => tool.startsWith("browser_"))
+    && Array.isArray(winMask) && winMask.length === 0 ? ok : fail)(
+    `【274】mac 掩掉 nuphus 桌面组、Windows 一组都不掩（实测 mac=${macMask ? macMask.length : "取不到"} 条 / win=${winMask ? winMask.length : "取不到"} 条）`
+  );
+  let caps274 = null;
+  try { caps274 = req274(join(ROOT, "dist-electron", "capability-registry.js")); } catch { caps274 = null; }
+  const probeBase = {
+    arch: "arm64", desktopSwitch: true, browserSwitch: true, nuphusAvailable: true, uiaAvailable: true,
+    computerUseAvailable: true, nuphusVisionEnv: true, visionPlugin: true, imagePlugin: true, playwrightCli: true, markitdown: true,
+  };
+  const desktopItem = (resolution, platform) => {
+    const item = (resolution ?? []).find((entry) => entry.id === "desktop");
+    return { platform, activeId: item?.activeId ?? null, uiaAvailable: item?.alternatives?.find((entry) => entry.id === "uia-desktop")?.available === true };
+  };
+  const mac274 = caps274 ? desktopItem(caps274.resolveCapabilities({ ...probeBase, platform: "darwin" }), "darwin") : null;
+  const win274 = caps274 ? desktopItem(caps274.resolveCapabilities({ ...probeBase, platform: "win32" }), "win32") : null;
+  (mac274?.activeId === "computer-use-desktop" && win274?.activeId === "nuphus-desktop" && win274?.uiaAvailable === true && mac274?.uiaAvailable === false ? ok : fail)(
+    `【274】能力链路按平台给唯一后端（mac=${mac274?.activeId} / win=${win274?.activeId}；UIA 仅 win 判可用）—— 界面显示的后端必须等于实际会用的那个`
   );
 }
 
