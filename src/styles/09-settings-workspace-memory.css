@@ -279,8 +279,9 @@
    ⚠️ 用专用 class 匹配，不要用 [title*="中文"] 属性选择器——lightningcss minify 会剥掉
    属性值的引号，非 ASCII 值没引号是非法选择器，整条规则被静默丢弃（实测踩坑）。 */
 @media (width<=980px) {
-  .topbar-actions .tb-right-panel,
-  .topbar-actions .tb-terminal {
+  /* 10-04：`.tb-terminal` 已随顶栏终端按钮一起删除（右侧栏里已有终端标签页），
+     从这条规则里移除，否则留下一条无主的死样式。 */
+  .topbar-actions .tb-right-panel {
     display: none;
   }
 }

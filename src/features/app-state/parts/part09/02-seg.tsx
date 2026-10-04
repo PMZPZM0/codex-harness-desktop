@@ -84,7 +84,7 @@ import {
   ShieldCheck,
   Sparkles,
   Store,
-  TerminalSquare,
+  
   Target,
   Type,
   Sun,
@@ -439,7 +439,11 @@ bag.earlyView = earlyView as typeof bag.earlyView;
             </div>
           </>}
         </div>
-        <button className="icon-button tb-terminal" title="新建终端标签页" onClick={() => { bag.setRightOpen(true); bag.setRightTab("terminal"); }}><TerminalSquare size={16} /></button>
+        {/* 10-04 用户拍板：**顶栏的终端按钮已删** —— 右侧栏里已经有「终端」标签页
+            （part09/01-seg.tsx 的面板分组），顶栏那个是重复入口。
+            ⛔ 同步清掉了 09-settings-workspace-memory.css 里的 `.tb-terminal` 规则 ——
+               留着就是一条无主的死样式（守卫【160】那种"引用了但类没了"的方向相反：
+               类没了规则还在）。*/}
         <button className="icon-button tb-right-panel" title={bag.rightOpen ? "收起右侧面板" : "展开右侧面板"} onClick={() => bag.setRightOpen(!bag.rightOpen)}>{bag.rightOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button>
     </>
   );
