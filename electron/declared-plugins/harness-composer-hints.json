@@ -1,0 +1,14 @@
+{
+  "id": "harness-composer-hints",
+  "name": "输入区快捷提示",
+  "version": "1.0.0",
+  "description": "在输入框工具条下方显示一行当前会话的快捷提示。演示 composer.above-actions 插槽（输入区的一部分，不是应用级入口）。默认停用。",
+  "enabled": false,
+  "slots": [
+    {
+      "slot": "composer.above-actions",
+      "order": 800,
+      "text": "这一行挂在上方工具条之下、输入框之内 —— 声明式插件可以放进输入区，而不必挤在标题栏或侧栏。"
+    }
+  ]
+}

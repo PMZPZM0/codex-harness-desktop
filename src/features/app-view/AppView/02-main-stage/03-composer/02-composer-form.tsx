@@ -151,6 +151,7 @@ import { RunningProcessTime, CompletedChanges, ContextRing, UsageCounterSnapshot
 import { requestVoiceDictation, setVoiceDictationSendHandler, setVoiceOpenSettingsHandler, subscribeVoiceStage } from "../../../../../voice/wave-level";
 import { RequestCard, ToolCard, VoiceSettingsBridge, admitThreadRuntimeRef, ago, appendDelta, appendIndexedDelta, applyThreadEvent, approvalMenuOptions, armSendAnimationClaim, botChannelName, botOnlineOf, builtinCommandCatalog, categoryLabel, clampRruleNum, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, cronTemplates, deltaMethods, describeRrule, describeSchedule, displayPath, fmtImportTime, formatTimestamp, greetingForHour, groupThreadsByTime, hydrateTurnUserMessage, idleTemplates, imageExts, isActivityItem, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, localFormatDurationMs, locateMatchEl, markBufferedAgentReveal, markBufferedTurnReveal, matchSkillCatalog, mergeItem, mergeLongerStreams, mergeTurn, modelBadges, modelName, normSkillName, noticeTone, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDescription, pluginDisplayName, pluginMarketCategoryTabs, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, revealStepFor, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, settingsNav, shortSkillName, skillHubCategories, skillHubCategoryName, skillHubCategoryTabs, skillZhNote, slashCommands, stableItem, subAgentTools, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, toFileUrl, uniqueModelCount, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../helpers";
 import type { HarnessAppApi } from "../../../../app-state/useHarnessApp";
+import { Slot } from "../../../../../runtime/Slot";
 
 export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
   const {
@@ -570,6 +571,14 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                             })()}
                           </div>
                         </div>
+                        {/* 10-04 第 8 个插槽位：**输入框上方工具条下方**（composer-actions 之后、
+                            form 之内）。位置语义：输入区的一部分 —— 快捷操作 / 提示 / 轻量状态，
+                            而不是应用级入口（那是 sidebar.top / topbar.end）。
+                            ⛔ 放在 composer-actions **之后**而不是里面：composer-left/right 各自
+                            已有 flex 布局与 min-width约束，插进去会挤掉附件按钮或模型选择器。
+                            ⛔ 放form 内而非外：外层是 composer 容器（有边框/圆角），插槽内容
+                            会在边框外漂着，视觉上不属于输入区。 */}
+                        <Slot id="composer.above-actions" />
                       </form>
   );
 }
