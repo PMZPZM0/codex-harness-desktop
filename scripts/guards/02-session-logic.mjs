@@ -1540,6 +1540,25 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     );
   }
 
+  /* ══ 【282】侧栏会话行不再展示项目地址（10-04 用户点名删除） ══ */
+  {
+    console.log(C.bold("\n【282】侧栏会话行不展示项目地址"));
+    // 用户 10-04 截图圈出会话行第二行里的项目名（「临时1 · 1 天前」的「临时1」）要求删除。
+    // 会话已按 cwd 分组（项目视图的组头就是项目名），行内再重复一次纯噪声。
+    // ⚠️ 删的是「项目地址」这一项，**不是整行** ⇒ 时间（timeAgo）与小字样式（.thread-row small）
+    //    必须保留，否则行高/层级会塌掉。簇头兜底行（主会话缺失时的那条分组条）同理。
+    // ⛔ 锚点选「这个模块还碰不碰 cwd」而不是扫 `basename` 字样：
+    //    该模块（会话行渲染器）本就不该知道 cwd 存在 —— 实测删除后 cwd 出现次数为 0，
+    //    这是比字面形态更稳的不变量（换任何取址方式都会被它抓住）。
+    const rowsSrc282 = codeOnly(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part02", "02-goal-browser-notice", "01-goal-review-file-browser", "02-thread-attention-rows.tsx"), "utf8"));
+    (!/\bcwd\b/.test(rowsSrc282) ? ok : fail)(
+      "【282】侧栏会话行渲染器不再引用 cwd（项目地址展示项已删除——会话按 cwd 分组，行内重复是噪声）"
+    );
+    ((rowsSrc282.match(/<small>\{timeAgo\(/g) ?? []).length >= 2 ? ok : fail)(
+      "【282】两处会话行小字仍保留时间（会话行 + 簇头兜底行；⛔ 删地址 ≠ 删整行）"
+    );
+  }
+
   /* ══ 【281】侧栏「幽灵会话」：正在运行的会话不显示、也没有选中态（10-04 用户实测） ══ */
   {
     console.log(C.bold("\n【281】侧栏幽灵消失（正在运行的会话从列表凭空不见、无选中态）"));
