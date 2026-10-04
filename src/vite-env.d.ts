@@ -620,7 +620,6 @@ interface Window {
     listSubAgents(): Promise<SubAgentEntry[]>;
     saveSubAgent(input: unknown): Promise<SubAgentEntry>;
     removeSubAgent(id: string): Promise<{ ok: boolean }>;
-    invokeSubAgent(input: { id?: string; name?: string; query: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }): Promise<{ threadId: string; turnId?: string; name: string; output: string }>;
     dispatchToolDescription(threadId: string): Promise<{ description: string }>;
     /* 10-04 逐类通知：传 before/next 勾选 ⇒ 主进程按差集生成一条按类分段的通知；不传退化为全开通知 */
     dispatchNotice(before?: { expert?: boolean; team?: boolean; subagent?: boolean }, next?: { expert?: boolean; team?: boolean; subagent?: boolean }): Promise<{ text: string }>;

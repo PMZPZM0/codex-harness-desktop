@@ -9,10 +9,9 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "../../../../lib/session-scope.mjs";
-import { LEGACY_PREFIX, dispatchSignature, emptyDispatch, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeDispatch, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeKey, runtimeSignature } from "../../../../lib/thread-runtime.mjs";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../lib/user-refs";
 import { basename } from "../../../../lib/basename";
-import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, subAgentTools, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
+import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
 import { DELEGATE_RAIL_LINGER_MS, IDENTITY_ONBOARD_INSTRUCTIONS, IDENTITY_ONBOARD_TOOL, MEMBER_LABELS, NOTICE_MAX, NOTICE_TTL_MS, QUICK_SITES } from "../../../app-view/constants";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../app-view/types";
 import type { Bag } from "../bag-types";
@@ -275,11 +274,15 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
    *  永远进不去（Codex 反馈「我工具列表里没有 skill_search」的根因）。 */
   const buildDynamicTools = useCallback(async (): Promise<any[]> => {
     const builtinCfg = await window.codex.readBuiltinPlugins().catch(() => null);
-    // 调度（L2 注册侧）：只有「用户直连会话」才拿到 agent_invoke —— 被调度出来的会话再拿到它
-    // 就会套娃。主进程另有 L3 硬闸兜底（给了也不认），这里只是不给，少给模型一次犯错机会。
-    const dispatchThreadId = bag.threadRef.current?.id ?? "";
-    const dispatchIsDelegated = Boolean(dispatchThreadId && bag.delegateRecordsRef.current[dispatchThreadId]);
-    const dispatchSwitch = dispatchThreadId ? loadThreadRuntime(dispatchThreadId).dispatch : emptyDispatch();
+    /* ⛔ 调度工具面（10-04 用户拍板「调度开关就要对应生效工具，这个联动必须做好」）：
+       渲染层**一律不再注册任何调度工具**，三类对象统一走内置 MCP 的 `agent_invoke`
+       （引擎级注入，覆盖所有会话，含老会话）。闸收在两个地方：
+         · 「被委派会话不许再往下套娃」—— 主进程 L3 硬闸（canDispatchFrom）；
+         · 「哪一类被放开」—— 主进程执行端按会话勾选硬拦（electron/dispatch.ts 的 dispatchKindAllowed）。
+       ⛔ 这里曾经还注册过 `subagent_invoke`（subAgentTools）：那条通道与「调度」开关**完全脱钩**
+          （只要存在已启用子智能体，它就永远在，与总开关/子智能体勾选毫无关系），
+          还与 agent_invoke 形成**两套调度工具** ⇒ 模型只会用名字最直白的那个，
+          专家 / 专家团永远被绕过（用户症状：「只能调度子智能体」）。已整体删除。 */
     return [
       ...(builtinCfg?.image?.enabled !== false && builtinCfg?.image?.baseUrl ? [{
         type: "function",
@@ -297,11 +300,9 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
         { type: "function", name: "memory_recall", description: "按当前任务查询相关的分类记忆。", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
         { type: "function", name: "memory_save", description: "保存可复用的项目事实，必须选择分类。", inputSchema: { type: "object", properties: { category: { type: "string", enum: ["用户偏好", "项目背景", "工作流/SOP", "任务经验", "临时上下文"] }, content: { type: "string" } }, required: ["category", "content"] } },
       ] : []),
-      // 子智能体：委派会话不注册（它自己就是被调起来的，再往下调就是套娃）
-      ...(dispatchIsDelegated ? [] : subAgentTools(bag.subAgents)),
-      // ⛔ 调度工具（agent_invoke / agent_archive_sessions）已改走内置 MCP（harness-dispatch）：
-      //    dynamicTools 只在 thread/start 生效（引擎硬约束），对老会话永远不可见；MCP 引擎级注入
-      //    覆盖所有会话，闸收敛到主进程执行端。这里不再注册，避免同名双工具让模型混乱。
+      // ⛔ 调度工具（agent_invoke / agent_archive_sessions）走内置 MCP（harness-dispatch）：引擎级注入、
+      //    覆盖所有会话（dynamicTools 只在 thread/start 生效，对老会话永远不可见）。渲染层不注册，
+      //    避免同名双工具让模型混乱 —— 子智能体曾在这里单独注册成 subagent_invoke，已删（见上）。
       // RPA 配方与任务清单：让 agent 能存配方/跑配方/维护清单/向用户提问
       { type: "function", name: "rpa_save", description: "把刚跑通的一条自动化流程保存为 RPA 配方，下次可直接复用执行。steps 按顺序写清每一步（网址/点击/输入/桌面操作等），kind 选 browser（浏览器）/desktop（桌面）/mixed。", inputSchema: { type: "object", properties: { name: { type: "string", description: "配方名称，如「每天导出日报」" }, desc: { type: "string", description: "一句话说明用途" }, kind: { type: "string", enum: ["browser", "desktop", "mixed"] }, steps: { type: "array", items: { type: "string" }, description: "按顺序的执行步骤" }, target: { type: "string", description: "起始网址或目标程序，可省略" } }, required: ["name", "steps", "kind"] } },
       { type: "function", name: "rpa_run", description: "列出已保存的 RPA 配方（不传 name），或按名称执行某条配方。执行时按 steps 逐步复现自动化流程。", inputSchema: { type: "object", properties: { name: { type: "string", description: "要执行的配方名称；省略则返回全部配方清单" } } } },
@@ -314,7 +315,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
       { type: "function", name: "connector_search", description: "列出内置 MCP 连接器模板与已配置状态（浏览器自动化、桌面自动化、GitHub 等）。需要某种外部服务能力但当前没有对应工具时调用。", inputSchema: { type: "object", properties: { query: { type: "string", description: "过滤关键词，可省略" } } } },
       { type: "function", name: "connector_install", description: "安装一个 MCP 连接器模板（写入配置并重启引擎，会中断当前回合）。必须先用 agent_ask 征得用户同意才能调用；安装后提醒用户重新发一条消息继续。", inputSchema: { type: "object", properties: { templateId: { type: "string", description: "connector_search 结果里的模板 id" } }, required: ["templateId"] } },
     ];
-  }, [bag.memoryEnabled, bag.subAgents]);
+  }, [bag.memoryEnabled]);
 bag.buildDynamicTools = buildDynamicTools as typeof bag.buildDynamicTools;
 
   async function createEmptyThread(): Promise<Thread | null> {

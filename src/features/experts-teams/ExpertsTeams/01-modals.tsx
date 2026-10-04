@@ -43,7 +43,7 @@ export function SubAgentEditorModal({ draft, onChange, onClose, onSave }: { draf
               <label className="subagent-toggle"><input type="checkbox" checked={draft.enabled} onChange={(event) => onChange({ ...draft, enabled: event.target.checked })} />已启用</label>
             </label>
             <label><span>工具名</span>
-              <div className="subagent-tool-name"><code>subagent_invoke</code></div>
+              <div className="subagent-tool-name"><code>agent_invoke · subagent</code></div>
             </label>
           </div>
           <div className="connector-example"><Info size={14} /><span>Codex 调用时会附带 <code>name</code> 与 <code>query</code>；主会话配置变更后，子智能体会自动跟随。</span></div>

@@ -24,11 +24,11 @@
    （163 条仍有其它引用者）；② 删除后 `dist/` 与 `dist-electron/` 产物**字节与哈希完全一致**。
    副作用 import 则不同：删了会改变模块求值时机与 CSS 拼接顺序，故**保留**。 */
 import "@xterm/xterm/css/xterm.css";
-/** 对外导出面与拆分前完全一致（86 个符号）。 */
+/** 对外导出面与拆分前一致（85 个符号；10-04 删除 subAgentTools —— 子智能体并入统一调度工具 agent_invoke）。 */
 export { loadThreadRuntimeRaw, loadThreadRuntime, writeThreadRuntimeMirror, saveThreadRuntime, admitThreadRuntimeRef, ownRuntimeWrites, loadThreadPermissions, threadSandboxOf, threadApprovalOf, saveThreadPermissions, loadThreadModel, saveThreadModel, resolveThreadModel, loadThreadEffort, saveThreadEffort, sandboxPolicy, sandboxMode, displayPath } from "./helpers/runtime";
 export { reasoningStart, deltaMethods, isDeltaMethod, mergeItem, threadContentChanged, mergeLongerStreams, mergeTurn, markBufferedAgentReveal, markBufferedTurnReveal, stableItem, hydrateTurnUserMessage, appendDelta, appendIndexedDelta, threadStreamMethods, applyThreadEvent } from "./helpers/stream";
 export { builtinCommandCatalog, slashCommands, idleTemplates, cronTemplates, settingsNav, imageExts, approvalMenuOptions, skillHubCategories, skillHubCategoryTabs, skillHubCategoryName, pluginMarketCategoryTabs } from "./helpers/catalogs";
-export { normSkillName, shortSkillName, skillZhNote, matchSkillCatalog, categoryLabel, subAgentTools, shouldRefreshSkillList } from "./helpers/skills";
+export { normSkillName, shortSkillName, skillZhNote, matchSkillCatalog, categoryLabel, shouldRefreshSkillList } from "./helpers/skills";
 export { fmtImportTime, prettifyHookLabel, noticeTone, modelName, botChannelName, botOnlineOf, localFormatDurationMs, isActivityItem, formatTimestamp, timeAgo, ago, uniqueModelCount, clampRruleNum, describeRrule, describeSchedule, greetingForHour, modelBadges, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, pluginDescription } from "./helpers/text";
 export { parseTeamMemberTitle, groupThreadsByTime, collectMessageTexts, locateMatchEl, resumeThreadWithTurns } from "./helpers/thread-list";
 export { collectKnownPaths, usageCounterSnapshot, toFileUrl } from "./helpers/paths";

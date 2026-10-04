@@ -215,6 +215,23 @@ bag.historyMemberRuns = historyMemberRuns as typeof bag.historyMemberRuns;
 bag.delegatedRailRuns = delegatedRailRuns as typeof bag.delegatedRailRuns;
 
 
+  /* ⛔⛔ 10-04：「子智能体执行中」指示器的**原唯一写入点**是渲染层的 `subagent_invoke` 分支
+      —— 那条通道随「合并成单一调度工具」删除 ⇒ `bag.subAgentRunning` 恒为 null，
+      顶栏 badge（AppView 的 .subagent-badge）与时间线活动指示器**静默失效**（不是坏了，是永远不显示）。
+      ⇒ 改为从统一的**委托记录**回灌（与调度头像轨 `delegatedRailRuns` 同一份主进程真相）：
+      语义等价（= 本会话正在跑的子智能体），且对新通道 `agent_invoke(kind=subagent)` 同样生效。
+      ⚠️ 必须走 **setter**、不能直接写 `bag.subAgentRunning = …`：后者会被【92】判成「本 part 的
+         镜像」，要求它也出现在本段 return 里；而该名字已由 part02 发布 ⇒ 同名双 return 会被
+         【92】判为「组合根展开静默覆盖」。setter 不在镜像口径内（守卫只认 `bag.X =`）。 */
+  useEffect(() => {
+    // ⛔ 派生写在 effect 体内、**不新增段顶层声明** —— 【93】会把段顶层的每个 const 当成 Bag 名，
+    //    没有对应声明就报「推断有、Bag 没有」。
+    const live = Object.values(bag.delegateLiveRuns);
+    const run = live.find((entry) => entry.originThreadId === bag.thread?.id && entry.status === "running" && entry.kind === "subagent") ?? null;
+    bag.setSubAgentRunning(run ? run.name : null);
+  }, [bag.delegateLiveRuns, bag.thread?.id, bag.setSubAgentRunning]);
+
+
   const delegatedPopupRun = bag.delegatedPopupId ? bag.delegateLiveRuns[bag.delegatedPopupId] ?? null : null;
 bag.delegatedPopupRun = delegatedPopupRun as typeof bag.delegatedPopupRun;
 

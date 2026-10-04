@@ -17,9 +17,9 @@ export function AgentsSettingsSection(props: AgentsSettingsSectionProps) {
   return (
     <>
       <section className="settings-section stack subagent-center">
-                    <div className="settings-copy channel-heading"><div><h2>子智能体<PageInfo text={<>用户自定义角色；Codex 可以通过 <code>subagent_invoke</code> 真正调用它们完成子任务。</>} /></h2></div><div className="settings-heading-actions"><button className="primary-setting" onClick={openNewSubAgent}><Plus size={14} />新建子智能体</button><button className="icon-button" title="刷新子智能体" onClick={() => void refreshSubAgents()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+                    <div className="settings-copy channel-heading"><div><h2>子智能体<PageInfo text={<>用户自定义角色；Codex 通过统一调度工具 <code>agent_invoke</code>（kind=subagent）调用它们完成子任务 —— 需在会话顶栏「调度」面板里勾选「子智能体」。</>} /></h2></div><div className="settings-heading-actions"><button className="primary-setting" onClick={openNewSubAgent}><Plus size={14} />新建子智能体</button><button className="icon-button" title="刷新子智能体" onClick={() => void refreshSubAgents()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
 
-                    <div className="subagent-banner"><Sparkles size={16} /><div><strong>让 Codex 真正会叫子智能体干活</strong><p>每个子智能体保存后，会被注册为 <code>subagent_invoke(name, query)</code> 函数；Codex 在主对话中可以直接调用，返回结构化结果。</p></div></div>
+                    <div className="subagent-banner"><Sparkles size={16} /><div><strong>让 Codex 真正会叫子智能体干活</strong><p>每个子智能体保存后即可被调度：在会话顶栏的「调度」面板里勾选「子智能体」，主对话就能把独立子任务派给它（走统一工具 <code>agent_invoke</code>），返回结构化结果。</p></div></div>
 
                     <div className="subagent-grid">{subAgents.map((agent: any) => <article className={`subagent-card ${agent.enabled ? "enabled" : "disabled"}`} key={agent.id}>
                       <div className="subagent-card-head"><span className="subagent-avatar"><Bot size={16} /></span><label className="channel-enable" title={agent.enabled ? "停用" : "启用"}><input type="checkbox" checked={agent.enabled} onChange={() => void toggleSubAgentEnabled(agent)} /><span>{agent.enabled ? "已启用" : "已停用"}</span></label></div>
@@ -32,10 +32,10 @@ export function AgentsSettingsSection(props: AgentsSettingsSectionProps) {
                       </div>
                       <div className="subagent-meta">
                         <span title="审批策略"><Check size={11} />{agent.inheritApproval ? "跟随主对话" : (agent.approvalPolicy ?? "未指定")}</span>
-                        <span title="工具名"><Bot size={11} />subagent_invoke</span>
+                        <span title="调度工具"><Bot size={11} />agent_invoke · subagent</span>
                       </div>
                       <div className="subagent-card-actions"><button className="secondary-setting" onClick={() => openEditSubAgent(agent)}><PenLine size={12} />编辑</button><button className="icon-button" title="删除" onClick={() => void deleteSubAgent(agent.id)}><Trash2 size={13} /></button></div>
-                    </article>)}{!subAgents.length && <div className="subagent-empty"><Bot size={28} /><strong>还没有子智能体</strong><p>点击「新建子智能体」即可创建；它会跟随当前会话配置（模型、推理强度、沙箱、审批），并被 Codex 通过 dynamicTools 调用。</p><button className="primary-setting" onClick={openNewSubAgent}><Plus size={14} />创建第一个子智能体</button></div>}</div>
+                    </article>)}{!subAgents.length && <div className="subagent-empty"><Bot size={28} /><strong>还没有子智能体</strong><p>点击「新建子智能体」即可创建；它会跟随当前会话配置（模型、推理强度、沙箱、审批），并可按会话开启的「调度」被派活。</p><button className="primary-setting" onClick={openNewSubAgent}><Plus size={14} />创建第一个子智能体</button></div>}</div>
 
                     {subAgentEditorOpen && subAgentDraft && <SubAgentEditorModal draft={subAgentDraft} onChange={setSubAgentDraft} onClose={() => { setSubAgentEditorOpen(false); setSubAgentDraft(null); }} onSave={(draft) => void saveSubAgent(draft)} />}
                   </section>

@@ -7,7 +7,7 @@
  * 跨域符号经 `import … from "../main"` 取用 —— **活绑定**（TS→CJS 编译成 `main_1.X` 属性访问）。
  * 会被重新赋值的符号经 `mutableState` 访问器读写（ESM 里 import 的绑定不可赋值）。
  */
-import { canDispatchFrom, clipDispatchOutput, delegateScopeBlock, kindLabel, resolveDispatchTarget } from "../dispatch";
+import { canDispatchFrom, clipDispatchOutput, delegateScopeBlock, dispatchKindAllowed, kindLabel, resolveDispatchTarget } from "../dispatch";
 import { buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, readExpertTeams } from "../expert-teams";
 import { safeStorage } from "electron";
 import { safeProviderId } from "../provider-id";
@@ -42,6 +42,14 @@ export async function runDelegatedTask(input: {
     restrictedLabel: originRestrict.label,
   });
   if (!gate.ok) return { ok: false, output: "", error: gate.reason };
+  /* ⛔⛔ 勾选硬闸（10-04 用户拍板「调度开关就要对应生效工具」）：
+     `canDispatchFrom` 只管身份 / 深度 / 独占锁，**完全不看 kind** ⇒ 用户取消勾选
+     「专家 / 专家团」之后，模型仍能凭工具参数拼出 kind=expert 把活派出去（勾选沦为装饰）。
+     放在 canDispatchFrom **之后**：身份与锁的错更根本，先报那个。
+     ⛔ 闸收在 runDelegatedTask（两条入口 agent_invoke MCP 与 agents:invoke IPC 都经过它），
+     不在 dispatch-rpc 里各写一份 —— 一处漏了就是同一条 bug 再犯一次。 */
+  const kindGate = dispatchKindAllowed(input.kind, originDispatch);
+  if (!kindGate.ok) return { ok: false, output: "", error: kindGate.reason };
   /* ⛔ 原先这里有一道 L4 并发闸（同时进行的调度任务上限，超限就拒）。09-25 用户要求删除并发限制
      ⇒ 移除；一次 fan-out 派多少成员不再受限（后果：更容易撞上游 429，由引擎默认重试兜底）。
      L3 深度闸仍在上面（`canDispatchFrom`）—— 它挡的是调用链无限延长，不是并发数。 */

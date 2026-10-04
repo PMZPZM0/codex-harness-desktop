@@ -87,11 +87,15 @@ function dispatchMcpTools(): unknown[] {
   return [
     {
       name: "agent_invoke",
-      description: "调度专家 / 专家团 / 子智能体 执行一个独立子任务并拿回产出（仅在会话开启调度时可用）。",
+      description:
+        "调度专家 / 专家团 / 子智能体 执行一个独立子任务并拿回产出。"
+        + "⛔ 可用范围**按会话**：只允许派本会话「调度」面板里**已勾选**的类别；"
+        + "未勾选的类别**即使参数能拼出名字，调用也会被拒绝**（别反复试，白烧回合）。"
+        + "本会话当前实际开启了哪几类、各有哪些对象，以会话里那条「调度已开启 / 调度范围已更新」的告知为准。",
       inputSchema: {
         type: "object",
         properties: {
-          kind: { type: "string", enum: ["expert", "team", "member", "subagent"], description: "expert=单个专家, team=专家团(主理人按SOP调度), member=专家团某成员, subagent=子智能体" },
+          kind: { type: "string", enum: ["expert", "team", "member", "subagent"], description: "expert=单个专家, team=专家团(主理人按SOP调度), member=专家团某成员, subagent=子智能体。⛔ 只能传本会话已开启的类别" },
           name: { type: "string", description: "对象名称（专家名 / 团名 / 子智能体名）" },
           member: { type: "string", description: "kind=member 时的成员名" },
           query: { type: "string", description: "交给它的任务描述（要自包含：对方看不到本会话上下文）" },

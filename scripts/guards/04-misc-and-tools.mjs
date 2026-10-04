@@ -6,7 +6,7 @@
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
  */
 import {
-  C, ROOT, createRequire, existsSync, fail, join, mainSrc, ok, pathToFileURL, readAppUi, readFileSync, readMainSource, readStyles, readdirSync, relative, warn,
+  C, ROOT, codeOnly, createRequire, existsSync, fail, join, mainSrc, ok, pathToFileURL, readAppUi, readFileSync, readMainSource, readStyles, readdirSync, relative, warn,
 } from "./_ctx.mjs";
 
 export async function run() {
@@ -586,10 +586,43 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     /不要委派给任何人/.test(dp.delegateScopeBlock({ kind: "member", name: "承枢" }))
       ? ok("L1 文案：团队成员直接干活不转派")
       : fail("团队成员约束文案缺失");
-    // L2 注册侧（渲染层不给工具）
-    /dispatchIsDelegated \? \[\] : subAgentTools/.test(appSrc9)
-      ? ok("★ L2 注册侧：委派会话不注册 subAgentTools")
-      : fail("委派会话仍会拿到 subAgentTools —— 套娃入口没关");
+    /* ⛔⛔ 10-04 用户拍板「调度开关就要对应生效工具，这个联动必须做好」——
+       原判据（委派会话不注册 subAgentTools）已过时：那条通道**整体删除**了。为什么必须删：
+       `subagent_invoke` 与「调度」开关**完全脱钩**（只要存在已启用子智能体就永远在，与总开关
+       和「子智能体」勾选毫无关系），还与 MCP 的 agent_invoke 形成**两套调度工具**
+       ⇒ 模型只挑名字最直白的那个，专家 / 专家团永远被绕过
+       （用户症状：「只能调度子智能体」「取消了勾选还是它」「工具都乱了不知道用哪个」）。 */
+    !/subagent_invoke/.test(codeOnly(appSrc9))
+      ? ok("★ 单一调度通道：渲染层不再注册 subagent_invoke（三类并入 agent_invoke）")
+      : fail("渲染层仍有 subagent_invoke —— 脱钩的旧通道会让模型只调子智能体");
+    /* ⛔⛔ 通道侧也要断根（只删渲染层工具不够）：`subagents:invoke` 这条 IPC 仍然暴露给渲染层，
+       它是**绕过全部调度闸门**的旁路 —— 不查「调度」勾选、不过 canDispatchFrom（身份/深度/独占锁）、
+       **更不登记 delegateRegistry** ⇒ 它派出的会话不缩进在发起会话下面、也不上调度头像轨
+       （用户症状同源：「被调度会话还不在主会话下面」—— 真机数据佐证：`delegate-threads.json`
+       里 kind=subagent 的记录恒为 0）。⇒ 两条断言：通道不许复活 + 域不许再直连引擎派活。 */
+    {
+      const manifestJson = JSON.parse(readFileSync(join(ROOT, "electron", "ipc-channels.manifest.json"), "utf8"));
+      const subagentsSrc = readFileSync(join(ROOT, "electron", "features", "subagents-ipc.ts"), "utf8");
+      const channelGone = !(manifestJson.channels ?? []).some((entry) => entry.channel === "subagents:invoke");
+      const noDirectStart = !/server\.request\(\s*["'](?:thread|turn)\/start["']/.test(codeOnly(subagentsSrc));
+      (channelGone && noDirectStart ? ok : fail)(
+        `★ subagents:invoke 旁路已断根（manifest 无该通道=${channelGone} + 域不直连引擎派活=${noDirectStart}）`
+      );
+    }
+    /* 勾选必须**在执行端硬拦** kind。只删工具不加闸 ⇒ 模型仍能凭 agent_invoke 的参数拼出
+       被取消的类别（用户报的正是「取消勾选还是能调」）。⛔ 断言分两层：纯函数**取值** + **接线**
+       —— 写了没接 = 恒绿死函数（本仓反复踩过的坑）。 */
+    (typeof dp.dispatchKindAllowed === "function"
+      && dp.dispatchKindAllowed("expert", { enabled: true, expert: false, team: true, subagent: true }).ok === false
+      && dp.dispatchKindAllowed("team", { enabled: true, expert: false, team: true, subagent: true }).ok === true
+      && dp.dispatchKindAllowed("member", { enabled: true, expert: false, team: true, subagent: true }).ok === true
+      && dp.dispatchKindAllowed("member", { enabled: true, expert: true, team: false, subagent: true }).ok === false
+      && dp.dispatchKindAllowed("expert", { enabled: false, expert: true, team: true, subagent: true }).ok === false
+      ? ok("★ 勾选硬闸：取消勾选的类别在执行端被拒（member 随 team；总开关关 ⇒ 全拒）")
+      : fail("dispatchKindAllowed 判据不对 —— 取消勾选的类别仍会被放行（勾选沦为装饰）"));
+    /dispatchKindAllowed\(input\.kind, originDispatch\)/.test(readFileSync(join(ROOT, "electron/features/delegation.ts"), "utf8"))
+      ? ok("★ 勾选硬闸接线到 runDelegatedTask（agent_invoke 与 agents:invoke 两条入口共用一处闸）")
+      : fail("dispatchKindAllowed 写了却没接进 runDelegatedTask —— 恒绿死函数");
     // ⛔ 09-16 起调度工具改走内置 MCP（引擎硬约束：dynamicTools 只在 thread/start 生效，
     // resume/fork/turn/start 全部不认 —— 渲染层 dynamic 注册对老会话永远不可见）
     !/name: "agent_invoke"/.test(appSrc9)

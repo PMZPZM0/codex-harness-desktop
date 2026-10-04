@@ -282,7 +282,6 @@ contextBridge.exposeInMainWorld("codex", {
   listSubAgents: () => __ipc("subagents:list", 0, []),
   saveSubAgent: (input: unknown) => __ipc("subagents:save", 1, [input]),
   removeSubAgent: (id: string) => __ipc("subagents:remove", 1, [id]),
-  invokeSubAgent: (input: unknown) => __ipc("subagents:invoke", 1, [input]),
   dispatchToolDescription: (threadId: string) => __ipc("agents:tool-description", 1, [threadId]),
   /* 10-04 逐类通知：传 before/next 勾选 ⇒ 主进程按差集生成一条按类分段的通知；不传退化为全开通知 */
   dispatchNotice: (before?: { expert?: boolean; team?: boolean; subagent?: boolean }, next?: { expert?: boolean; team?: boolean; subagent?: boolean }) => __ipc("agents:notice", 0, [before, next]),
