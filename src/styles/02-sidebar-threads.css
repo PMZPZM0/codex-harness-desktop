@@ -50,7 +50,9 @@
      · 容器开 **16×16px**（只负责占位与对齐，看起来是个"小图标"）
      · 内部 `i` 用 **position:absolute + 居中** ⇒ 点阵向外溢出但**参与布局的仍只有 16px**
      · 祖先链**不得有 overflow:hidden**（那会真的裁掉溢出的点）——
-       已核实 .thread-actions / .thread-row 无 overflow（见提交说明）
+       ⛔⛔ 我第一版说"已核实无 overflow"是**错的**：漏了 
+          （标签型选择器，class 再规范也躲不掉）⇒ 点被切掉一角，用户以为空间不够。
+          真正的豁免在下方 。
      ⛔ 若哪天祖先加了 overflow:hidden，点会只剩上半圈 —— 改容器尺寸没用，要先去掉那个 overflow。 */
   position: relative;
   display: inline-block;
@@ -113,6 +115,21 @@
   white-space: nowrap;
   font-size: 12.5px;
   overflow: hidden;
+}
+/* ⛔⛔ spinner 豁免上面那条（2026-10-04 用户反馈「是不是空间留少了」= 形状缺了一角）：
+     上面 `.thread-row span` 是**标题省略号**规则（text-overflow:ellipsis + overflow:hidden），
+     而 `.thread-running-indicator` 外层**正好是一个 `<span>`** ⇒ 直接吃到 overflow:hidden
+     ⇒ 16px 容器外溢出的点被切掉 ⇒ 看起来像"只转了半圈/缺一角"。
+   ⚠️ 教训：**改这类"溢出型"视觉元素前，先看它自己在不在某个 overflow 规则的选择器里**
+     （本例是元素标签恰好撞上宽泛选择器，class 写得再规范也躲不掉）。
+   ⛔ 必须 `overflow: visible`（不是 `unset`）—— 显式声明胜出，
+     且 specificity 要够：.thread-row span 是 (0,1,1)，这里用 (0,2,0) 压过它。
+   ⚠️ 同时把 white-space 改回 normal：nowrap 会让 box-shadow 的定位上下文也不对。 */
+.thread-row span.thread-running-indicator {
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+  font-size: 0; /* 内部只有 i，继承 12.5px 会让空盒计算偏大 */
 }
 .thread-row small {
   color: var(--faint);

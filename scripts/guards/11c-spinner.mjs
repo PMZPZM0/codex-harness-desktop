@@ -77,7 +77,21 @@ if (cssFile) {
     const bad = family
       .filter((m) => /overflow\s*:\s*(hidden|clip)/.test(m[2]))
       .map((m) => m[1]);
-    ok(bad.length === 0, `祖先链无 overflow:hidden（当前：${family.length} 条规则）${bad.length ? `—— 有：${bad.join("/")}` : ""}`);
+    ok(bad.length === 0, `class 型祖先规则无 overflow:hidden（当前 ${family.length} 条）${bad.length ? `—— 有：${bad.join("/")}` : ""}`);
+
+    /*⛔⛔ 标签型选择器才是真陷阱（2026-10-04 用户反馈"空间留少了"= 形状缺一角）：
+       `.thread-row span { overflow: hidden }` 是**标题省略号**规则，而 spinner 外层
+       **正好是 `<span>`** ⇒ 直接吃到裁剪。class 命名再规范也躲不掉宽泛标签选择器。
+       ⇒ 判据形状：不只扫 `\.xxx {`，还要扫 `.thread-row <标签> {` 这类**标签型**规则。 */
+    const tagRules = [...src.matchAll(/^\.(thread-row[a-z-]*)\s+(span|small|div|em|strong)\s*\{([^}]*)\}/gm)];
+    const tagBad = tagRules
+      .filter((m) => /overflow\s*:\s*(hidden|clip)/.test(m[3]))
+      .map((m) => `${m[1]} ${m[2]}`);
+    ok(tagBad.length > 0, `扫到了 ${tagRules.length} 条标签型规则（如 .thread-row span）`);
+
+    //⇒ spinner 必须有一条高特异性豁免
+    const exempt = /\.thread-row\s+span\.thread-running-indicator\s*\{[^}]*overflow\s*:\s*visible/.test(src);
+    ok(exempt, "⛔ spinner 有 `.thread-row span.thread-running-indicator`豁免规则（否则被标题省略号规则裁掉）");
   }
 }
 
