@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { FilePlus2, FolderOpen, Library, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { Eye, FilePlus2, FolderOpen, Library, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { PageInfo } from "../../components/SettingsHead";
 import { Spinner } from "../../components/CardShell";
 
@@ -146,6 +146,7 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
               <span className="kb-doc-main" style={{ cursor: "pointer" }} title="点击查看全文" onClick={() => void openPreview(doc)}>
                 <strong>{doc.title}</strong><small>{doc.chunks} 块 · {Math.max(1, Math.round(doc.bytes / 1024))} KB</small>
               </span>
+              <button className="icon-button" title={`查看「${doc.title}」全文`} onClick={(e) => { e.stopPropagation(); void openPreview(doc); }}>{<Eye size={13} />}</button>
               <button className="icon-button" title={`删除「${doc.title}」`} disabled={Boolean(busy)} onClick={(e) => { e.stopPropagation(); void remove(doc); }}>{busy === doc.id ? <Spinner /> : <Trash2 size={13} />}</button>
             </div>
           ))}
@@ -158,7 +159,6 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
           <div className="info-modal kb-preview-modal" role="dialog" aria-label={`${preview.meta.title} 全文预览`} onClick={(e) => e.stopPropagation()}>
             <header>
               <strong>{preview.meta.title}</strong>
-              <small>{preview.meta.chunks} 块 · {Math.max(1, Math.round(preview.meta.bytes / 1024))} KB · 来源: {preview.meta.source || "粘贴"}</small>
               <button type="button" title="关闭" onClick={() => setPreview(null)}><X size={14} /></button>
             </header>
             <pre className="kb-preview-body">{preview.text}</pre>
