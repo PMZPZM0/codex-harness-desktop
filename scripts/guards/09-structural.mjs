@@ -1469,7 +1469,7 @@ export async function run() {
         "scripts/guards/06-app-behavior.mjs": 3257,
         "scripts/guards/02-session-logic.mjs": 1533,
         "src/features/app-state/parts/bag-types.ts": 1423,
-        "scripts/guards/09-structural.mjs": 1618,   // 本文件是守卫载体：每加一条规则基线随之上移（1362→1521→1571→1618）
+        "scripts/guards/09-structural.mjs": 1660,   // 本文件是守卫载体：每加一条规则基线随之上移（1362→1521→1571→1618→1660）
         "scripts/guards/13-drama-gen.mjs": 1227,
         "electron/main.ts": 1199,
         "scripts/guards/03-runtime-boot.mjs": 1176,
@@ -1608,6 +1608,48 @@ export async function run() {
         (onDisk === expected ? ok : fail)(
           "【263】仓库里的 composition.gen.ts == default profile 的合成结果"
             + "（用别的 profile 生成过之后必须切回 default 重生成，否则仓库状态与 default 不符）"
+        );
+      }
+    }
+
+    // ===== 【268】渲染层插槽机制的不变量（10-04 阶段 5）=====================
+    // ① 插槽层是**纯渲染**的：不许碰 window.codex（IPC）与 fetch（网络）——
+    //    插槽是"往界面挂内容"，让它有网络/宿主权限就绕过了插件的权限声明。
+    // ② `<Slot>` 未注册时必须渲染 null：否则每个挂载点都会在 DOM 里留下空节点，
+    //    而 DOM/class 是 accept.mjs 的 CDP 选择器依赖（AGENTS.md 硬纪律第 2 条）。
+    // ③ 至少有一个**真实消费点**：只有机制没有消费点 = 死代码，日后会被当成"已落地"引用。
+    {
+      const slotFile = join(ROOT, "src", "runtime", "Slot.tsx");
+      const regFile = join(ROOT, "src", "runtime", "registry.ts");
+      if (!existsSync(slotFile) || !existsSync(regFile)) {
+        fail("【268】渲染层插槽机制缺失（src/runtime/{registry.ts,Slot.tsx}）");
+      } else {
+        const slotSrc = codeOnly(readFileSync(slotFile, "utf8"));
+        const regSrc = codeOnly(readFileSync(regFile, "utf8"));
+        const pureRender = !/window\.codex|ipcRenderer|require\(["']electron/.test(slotSrc + regSrc)
+          && !/\bfetch\s*\(/.test(slotSrc + regSrc);
+        (pureRender ? ok : fail)(
+          "【268】插槽层是纯渲染的（不碰 window.codex / fetch / electron）—— 有宿主权限就能绕过插件的权限声明"
+        );
+        (/if \(!reg\) return null;/.test(slotSrc) ? ok : fail)(
+          "【268】<Slot> 未注册时返回 null（不留空节点 ⇒ 既有 DOM/class 不变，accept.mjs 选择器依赖它）"
+        );
+        // ③ 真消费点：全仓至少有 1 处 <Slot id=...>
+        const slotUsers = [];
+        const scanSlot = (d) => {
+          for (const e of readdirSync(d, { withFileTypes: true })) {
+            if (e.name === "node_modules" || e.name.startsWith(".")) continue;
+            const p = join(d, e.name);
+            if (e.isDirectory()) { scanSlot(p); continue; }
+            if (!/\.tsx$/.test(e.name)) continue;
+            if (p === slotFile) continue;
+            if (/<Slot\s+id=/.test(readFileSync(p, "utf8"))) slotUsers.push(relative(ROOT, p).replace(/\\/g, "/"));
+          }
+        };
+        scanSlot(join(ROOT, "src"));
+        (slotUsers.length > 0 ? ok : fail)(
+          `【268】插槽机制有真实消费点（${slotUsers.length} 处）—— 只有机制没有消费点 = 死代码`
+            + `消费点：${slotUsers.slice(0, 3).join("/") || "无"}`
         );
       }
     }
