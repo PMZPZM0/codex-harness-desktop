@@ -77,6 +77,7 @@ export const KNOWN_SLOTS: readonly string[] = [
   "sidebar.top",
   "sidebar.middle",
   "composer.above-actions",
+  "turn.after-content",
   "sidebar.thread-row-actions",   // ⛔ 行级：插件拿到 props.threadId/thread才知道作用在哪一行
 ];
 

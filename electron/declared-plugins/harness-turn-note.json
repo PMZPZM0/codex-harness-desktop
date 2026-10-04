@@ -1,0 +1,17 @@
+{
+  "id": "harness-turn-note",
+  "name": "回合注记",
+  "version": "1.0.0",
+  "description": "在每个回合内容之下显示一行占位。演示 turn.after-content —— 第二个行级插槽，它要的是 turnId（不是 threadId）。默认停用。",
+  "enabled": false,
+  "slots": [
+    {
+      "slot": "turn.after-content",
+      "order": 900,
+      "label": "注记",
+      "title": "这一行由行级插槽 turn.after-content 渲染（拿的是 turnId，所以知道自己作用于哪一回合）",
+      "invoke": "updates:check",
+      "args": {}
+    }
+  ]
+}
