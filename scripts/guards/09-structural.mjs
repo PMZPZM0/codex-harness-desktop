@@ -1356,6 +1356,165 @@ export async function run() {
       "【266】boot.ts 对 ipcMain 只取引用类型，不做实调用（它在白名单里仅因类型引用）"
     );
 
+    // ===== 【260】-【265】方案 §7 的六条新增守卫（10-04 落地）====================
+    //
+    // 【260】内核纯洁性：runtime/ 不许 import features/（否则内核反过来依赖域 = 分层倒置，
+    //        组合表生成物 import 链会成环 ⇒ 启动崩）。
+    //        ⛔ 判据必须过 codeOnly —— features/ 里有多处注释**提到** composition.gen
+    //        （说明"本域不自挂载"），不过滤会把正确的说明当成违规。
+    {
+      const runtimeSrc = readdirSync(join(ROOT, "electron", "runtime"), { withFileTypes: true })
+        .filter((e) => e.isFile() && e.name.endsWith(".ts"))
+        .map((e) => ({ name: `runtime/${e.name}`, code: codeOnly(readFileSync(join(ROOT, "electron", "runtime", e.name), "utf8")) }));
+      const bad = runtimeSrc.filter((f) => /from\s*["'][^"']*(\.\.\/features|\.\/features)\//.test(f.code));
+      (bad.length === 0 ? ok : fail)(
+        `【260】内核（electron/runtime/）不许 import 域（features/）—— 依赖方向恒为 runtime → 基座，反向即分层倒置`
+        + `违规：${bad.map((f) => f.name).join("/") || "无"}`
+      );
+    }
+
+    // 【261】域不许 import 组合层（composition.gen / composition.json）：
+    //        挂载方向恒为 生成物 → 域；域反向 import 会成环。
+    {
+      const featFiles = walkFeat253(join(ROOT, "electron", "features"));
+      const bad = featFiles
+        .filter((p) => /from\s*["'][^"']*composition\.(gen|json)/.test(codeOnly(readFileSync(p, "utf8"))))
+        .map((p) => relative(join(ROOT, "electron", "features"), p).replace(/\\/g, "/"));
+      (bad.length === 0 ? ok : fail)(
+        `【261】域不许 import 组合层（挂载方向恒为 生成物 → 域；反向 import 会成环导致启动崩）`
+        + `违规：${bad.join("/") || "无"}`
+      );
+    }
+
+    // 【262】接缝契约：① 接缝层只 provide 不注册通道（否则它就不是基座而是第 N 个域）；
+    //        ② 域取接缝必须经 ctx.get("host")，不许 import 接缝模块的实现。
+    {
+      const seamSrc = codeOnly(readFileSync(join(ROOT, "electron", "runtime", "seams", "index.ts"), "utf8"));
+      (seamSrc.includes('rootContext.provide("host"') && !/(?:ipcMain|ipcHost)\.(?:handle|on)\(\s*["'`]/.test(seamSrc) ? ok : fail)(
+        "【262】接缝层只 provide 能力、不注册通道（它属基座层；注册通道就变成了第 N 个域）"
+      );
+      // ② 域可以 import 接缝的**类型**，但不许 import 它的实现（否则拿到的是单例而非注入值）
+      const featFiles2 = walkFeat253(join(ROOT, "electron", "features"));
+      const bad = featFiles2.filter((p) => {
+        const code = codeOnly(readFileSync(p, "utf8"));
+        // import 了 seams 的值（不是 `import type`）
+        return /import\s+(?!type\s)[^;]*from\s*["'][^"']*runtime\/seems/.test(code);
+      }).map((p) => relative(join(ROOT, "electron", "features"), p).replace(/\\/g, "/"));
+      (bad.length === 0 ? ok : fail)(
+        `【262】域只能 import 接缝的**类型**，取值一律 ctx.get("host")（否则绕过了注入与声明）`
+        + `违规：${bad.join("/") || "无"}`
+      );
+    }
+
+    // 【263】profile 一致：留到阶段 4（profile 分层）落地时写 —— 现在 composition.json
+    //        是唯一的平表、没有 profile 概念，凭空写断言就是恒假/恒真。**不写假判据**。
+    //        （在阶段 4 的提交里补，注释在此说明为何缺席。）
+
+    // 【264】插件可逆性：真跑 dist-electron/context.js —— 挂载后 dispose() 该插件注册的
+    //        **全部通道清零**。
+    //   ⛔ 为什么【252】不够：【252】验的是**容器**语义（依赖门禁 / 作用域 / effect 逆序 /
+    //      挂载清单移除），它**没有验域注册的通道真被摘掉** —— 域若忘了
+    //      `ctx.effect(() => ipcHost.removeHandler(...))`，容器语义照样全绿，而运行时
+    //      会残留一批 handler（域"卸载"了但通道还在应答）。
+    //   ⛔ 必须真跑产物：源码级断言抓不到"effect 没挂上"这类 wiring 缺失。
+    {
+      const ctxDist = join(ROOT, "dist-electron", "context.js");
+      let built264 = null;
+      try { built264 = createRequire(import.meta.url)(ctxDist); } catch { /* 下面统一报红 */ }
+      if (!built264 || typeof built264.mountFeature !== "function") {
+        fail("【264】容器产物可加载（dist-electron/context.js —— 先 npm run build:electron）");
+      } else {
+        const { Context, defineFeature } = built264;
+        const root = new Context(null, "test264");
+        // 桩 ipc 服务：记录注册与摘除，验"通道清零"
+        const live = new Set();
+        const removed = [];
+        root.provide("ipc", {
+          handle: (ch) => { live.add(ch); },
+          on: (ch) => { live.add(ch); },
+          removeHandler: (ch) => { live.delete(ch); removed.push(ch); },
+        });
+        const CH = ["demo:one", "demo:two", "demo:three"];
+        // ⛔ 用 `ctx.plugin(...)` 而不是 `mountFeature(...)`：后者挂到**模块级 rootContext**
+        //    （守卫进程里的单例，会跨用例串味）。这与 252 的 (a) 用法一致。
+        const fiber = root.plugin(defineFeature({
+          id: "demo-reversible",
+          inject: ["ipc"],
+          setup: (ctx) => {
+            const ipc = ctx.get("ipc");
+            for (const ch of CH) ipc.handle(ch, () => ({ ok: true }));
+            ctx.effect(() => { for (const ch of CH) ipc.removeHandler(ch); });
+          },
+        }), null);
+        const afterMount = live.size;
+        fiber.dispose();
+        const afterDispose = live.size;
+        (afterMount === CH.length && afterDispose === 0 ? ok : fail)(
+          `【264】插件可逆：挂载后注册 ${CH.length} 条通道，dispose() 后剩 ${afterDispose} 条`
+            + `（已摘除记录 ${removed.length} 条）—— 域卸载后通道必须真清零，否则"卸载"只是名义上的`
+        );
+        // 顺带：重复 dispose 不得抛（卸载入口会被多次调用）
+        let doubleDisposeOk = true;
+        try { fiber.dispose(); fiber.dispose(); } catch { doubleDisposeOk = false; }
+        (doubleDisposeOk ? ok : fail)("【264】dispose() 可重复调用（用户入口会多次触发卸载）");
+      }
+    }
+
+    // 【265】巨型文件棘轮：>1000 行的文件**只许缩不许长**。
+    //   基线 14 个（10-04 实测），其中 6 个是守卫脚本（07-turn-fold 4,825 行最大）。
+    //   ⛔ 用「名单 + 逐个上限」而不是「总数」：总数不变但某个文件暴涨、另一个被拆小，总数不动 ⇒ 漏。
+    {
+      const GIANT_CAP = {
+        "scripts/guards/07-turn-fold.mjs": 4825,
+        "scripts/guards/06-app-behavior.mjs": 3257,
+        "scripts/guards/02-session-logic.mjs": 1533,
+        "src/features/app-state/parts/bag-types.ts": 1423,
+        "scripts/guards/09-structural.mjs": 1521,
+        "scripts/guards/13-drama-gen.mjs": 1227,
+        "electron/main.ts": 1199,
+        "scripts/guards/03-runtime-boot.mjs": 1176,
+        "electron/voice/voice-service.ts": 1076,
+        "src/vite-env.d.ts": 1062,
+        "src/components/VoiceCallFloat/use-voice-call-float-state.tsx": 1044,
+        "scripts/guards/10-memory-audit.mjs": 1040,
+        "src/features/drama-canvas/DramaCanvas.tsx": 1036,
+        "electron/remote.ts": 1026,
+      };
+      const grew = [];
+      const stale = [];
+      for (const [rel, cap] of Object.entries(GIANT_CAP)) {
+        const p = join(ROOT, rel);
+        if (!existsSync(p)) { stale.push(rel); continue; }
+                // ⛔ 口径必须与基线一致：基线用 `wc -l`（数换行符）。
+        //    split("\n").length 比 wc -l **多 1**（末行无换行时）—— 第一版没减，
+        //    结果每个文件都报「长 1 行」，14 个假红。
+        const n = readFileSync(p, "utf8").split("\n").length - 1;
+        if (n > cap) grew.push(`${rel}(${cap}→${n})`);
+      }
+      // 新长出的 >1000 行文件（不在名单里 = 没登记 = 违规）
+      const extra = [];
+      for (const dir of ["electron", "src", "scripts"]) {
+        const scan = (d) => {
+          for (const e of readdirSync(d, { withFileTypes: true })) {
+            if (e.name === "node_modules" || e.name.startsWith(".")) continue;
+            const p = join(d, e.name);
+            if (e.isDirectory()) { scan(p); continue; }
+            if (!/\.(ts|tsx|mjs)$/.test(e.name)) continue;
+            const rel = relative(ROOT, p).replace(/\\/g, "/");
+            if (rel in GIANT_CAP) continue;
+                        if (readFileSync(p, "utf8").split("\n").length - 1 > 1000) extra.push(rel);
+          }
+        };
+        scan(join(ROOT, dir));
+      }
+      (grew.length === 0 && stale.length === 0 && extra.length === 0 ? ok : fail)(
+        `【265】>1000 行文件棘轮（${Object.keys(GIANT_CAP).length} 个在册，只许缩不许长）`
+        + `；变长：${grew.join("/") || "无"}`
+        + `；已拆完但没从名单删：${stale.join("/") || "无"}`
+        + `；新长出（未登记）：${extra.join("/") || "无"}`
+      );
+    }
+
   }
 
 
