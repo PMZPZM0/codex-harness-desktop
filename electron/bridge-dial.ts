@@ -18,8 +18,27 @@ import { upstreamProtocols } from "./upstream-protocols";
  *
  * 端口固定 47121（与内置调度 MCP 47120 同族）以便跨运行稳定；被占用则退回随机端口。
  * 构造函数无副作用（仅存配置），故可在此顶层构造——与原 main.ts 行为一致。
+ *
+ * `emitReasoning: true` —— 必须显式打开，否则思考内容只在**回合结束后**一次性出现。
+ * 原因在 `responses-bridge/02-chat-convert.ts` 的构造函数：
+ *     this.emitReasoning = options.emitReasoning === true;   // 不传 ⇒ false
+ * 门控的是 `if (this.emitReasoning && reasoning)`，即**推理增量的下发**；
+ * 而收尾时 `01-sse-items.ts:finalizeItems` 会把累积文本一次性写进
+ * `reasoning.summary` 发出 —— 这正是「结束时能看到、过程中看不到」的成因。
+ *
+ * 两条协议路径的默认值**不一致**，chat 路径是「不传即关」：
+ *   · chat      02-chat-convert.ts:117      `options.emitReasoning === true`   → 默认关
+ *   · anthropic 03-anthropic-convert.ts:188  `options.emitReasoning !== false`  → 默认开
+ * 本单例是 chat 路径的唯一构造点，漏传即整个应用拿不到实时思考流。
+ *
+ * 上游侧无需改动：面板 `/v1/responses` 实测会流式发
+ * `response.reasoning_summary_text.delta`（单次对话 347 个事件 / 4188 字符）。
  */
-export const responsesBridge = new ResponsesBridge({ preferredPort: 47121, log: (line) => console.log(line) });
+export const responsesBridge = new ResponsesBridge({
+  preferredPort: 47121,
+  log: (line) => console.log(line),
+  emitReasoning: true,
+});
 
 /**
  * 生成「下发给引擎」的 base_url：桥已启动时换成桥地址并登记上游目标；
