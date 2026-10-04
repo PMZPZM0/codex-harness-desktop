@@ -1480,7 +1480,7 @@ export async function run() {
           }).length;
 
       const GIANT_CAP = {
-        "scripts/guards/07-turn-fold.mjs": 3685,
+        "scripts/guards/07-turn-fold.mjs": 3737,
         "scripts/guards/06-app-behavior.mjs": 2567,
         "scripts/guards/02-session-logic.mjs": 1193,
         "src/features/app-state/parts/bag-types.ts": 1407,

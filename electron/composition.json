@@ -569,7 +569,7 @@
       "config": null
     },
     {
-      "id": "knowledge-base",
+      "id": "kb",
       "enabled": true,
       "file": "features/knowledge-base-ipc.ts",
       "export": "knowledgeBaseFeature",

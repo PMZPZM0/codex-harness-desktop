@@ -6,7 +6,7 @@
  *
  * 代码与拆分前逐字一致；依赖边经 AST 依赖图核对，**不跨模块** ⇒ 本文件不 import 同目录其他模块。
  */
-import { Archive, Blocks, Bot, Camera, CircleGauge, Clock3, Download, Heart, LayoutGrid, PawPrint, Settings2, Sparkles, Star, Store, TerminalSquare, Sun, Wrench, Wifi, Zap, Server, UserRound, Users, Workflow, Wallet, Database, Headphones } from "lucide-react";
+import { Archive, BookOpen, Blocks, Bot, Camera, CircleGauge, Clock3, Download, Heart, LayoutGrid, PawPrint, Settings2, Sparkles, Star, Store, TerminalSquare, Sun, Wrench, Wifi, Zap, Server, UserRound, Users, Workflow, Wallet, Database, Headphones } from "lucide-react";
 import { BuiltinCommandDef } from "../../../features/commands";
 import type { SettingsPage } from "../types";
 
@@ -85,7 +85,8 @@ export const cronTemplates = [
 export const settingsNav: { group: string; items: [SettingsPage, string, any][] }[] = [
   { group: "账户与模型", items: [["user", "用户中心", UserRound], ["model", "模型", Bot], ["relay", "中转站", Wallet], ["openai", "OpenAI 订阅", CircleGauge]] },
   { group: "外观与体验", items: [["general", "控制台", Settings2], ["appearance", "外观", Sun], ["personalization", "个性化", Sparkles], ["pet", "桌面宠物", PawPrint], ["voice", "语音通话", Headphones], ["screenshot", "截图", Camera]] },
-  { group: "能力与内容", items: [["skills", "技能", Zap], ["plugins", "插件", Store], ["component-library", "组件库", LayoutGrid], ["soul-market", "人格市场", Heart], ["memory", "记忆", Archive], ["commands", "命令", TerminalSquare]] },
+  { group: "能力与内容", items: [["skills", "技能", Zap], ["plugins", "插件", Store], ["memory", "记忆", Archive], ["commands", "命令", TerminalSquare]] },
+  { group: "创意与知识", items: [["component-library", "组件库", LayoutGrid], ["soul-market", "人格市场", Heart], ["knowledge-base", "知识库", BookOpen]] },
   { group: "自动化与智能体", items: [["automation", "自动化", Workflow], ["schedule", "定时任务", Clock3], ["mcp", "MCP", Wifi], ["hooks", "钩子", Wrench], ["ssh", "SSH 服务器", Server], ["agentteam", "专家/专家团", Users]] },
   { group: "数据", items: [["usage", "使用统计", CircleGauge], ["storage", "数据管理", Database], ["backup", "会话备份", Download], ["archive", "归档管理", Archive], ["favorites", "收藏夹", Star]] },
   { group: "开发", items: [["devtools", "开发工具", TerminalSquare], ["extensibility", "拓展接口", Blocks]] },
