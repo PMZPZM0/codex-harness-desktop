@@ -60,6 +60,16 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
     { key: "subagent", title: "子智能体", hint: "你在设置里配置的自定义角色", n: countOf("subagent"), icon: Bot },
   ];
   const dirty = JSON.stringify(draft) !== JSON.stringify(dispatch);
+  /* ⛔ 防呆（同「（无）」投诉）：**从关切到开**且一个类别都没勾 ⇒ 提交出去就是
+     「调度已开启 · 开启的对象类别：（无）」，模型什么也派不了。挡住它并说明原因。
+     （总开关原本就开着、之后逐行取消全部 ⇒ 不拦 —— 那是合法的"收回全部对象"，
+       对应 dispatchSelectionChangeNotice 的"当前没有任何可调度的对象"分支。）
+     ⚠️ 必须带 anyAvailable：三类**当前都没有对象**时（用户在设置里一个都没启用），
+        行全被 `row.n === 0` 禁用 ⇒ 用户根本勾不上，再拦确认就是死锁 + 文案让他做做不到的事。
+        那种情况放行（开一个空调度无害），并如实告诉他先去启用对象。 */
+  const noKindSelected = !draft.expert && !draft.team && !draft.subagent;
+  const anyAvailable = rows.some((row) => row.n > 0);
+  const blockedEmptyEnable = draft.enabled && !dispatch.enabled && noKindSelected && anyAvailable;
   /*⛔⛔ 2026-10-04 用户报「点调度弹窗展示不出来」——
      根因：`.topbar` 在 d19c510 被加了 `overflow: hidden`（修「图标压到原生窗口钮底下」），
      而本弹层是 `.topbar` 的 `position: absolute` 后代 ⇒ **被整棵子树裁掉**，
@@ -140,7 +150,17 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
             role="switch"
             aria-checked={draft.enabled}
             className={`dispatch-master ${draft.enabled ? "on" : ""}`}
-            onClick={() => setDraft({ ...draft, enabled: !draft.enabled })}
+            onClick={() => {
+              if (draft.enabled) { setDraft({ ...draft, enabled: false }); return; }
+              /* ⛔⛔ 2026-10-04 用户报「开启的对象类别：（无）」——
+                 总开关开了、一个类别都没勾 ⇒ 发给 Codex 的提示词就是「没有任何可调度的对象」，
+                 等于开了个空壳（用户以为开了调度，模型却什么也派不了）。
+                 用户开总开关的语义 = 「允许本会话调度」⇒ 默认允许**当前有对象**的全部类别，
+                 之后仍可逐行取消（单独开启/关闭的能力完全保留，只是不再有"零类别的开启态"）。 */
+              const next = { ...draft, enabled: true };
+              for (const row of rows) if (row.n > 0) next[row.key] = true;
+              setDraft(next);
+            }}
           >
             <span className="dispatch-master-text">
               <strong>允许本会话调度</strong>
@@ -174,13 +194,17 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
             })}
           </div>
           <div className="dispatch-foot">
-            <small className="dispatch-scope">仅对当前会话生效</small>
+            <small className="dispatch-scope">
+              {blockedEmptyEnable
+                ? "⚠️ 请先勾选至少一类可调度对象"
+                : (draft.enabled && !anyAvailable ? "⚠️ 当前没有可调度的对象：先去设置里启用专家 / 子智能体" : "仅对当前会话生效")}
+            </small>
             <div className="dispatch-actions">
               <button type="button" onClick={() => setOpen(false)}>取消</button>
               <button
                 type="button"
                 className="primary"
-                disabled={!dirty || busy}
+                disabled={!dirty || busy || blockedEmptyEnable}
                 onClick={() => { onChange(draft, { takeOver: Boolean(lockedBy) && draft.enabled }); setOpen(false); }}
               >
                 {busy ? "应用中…" : (lockedBy && draft.enabled ? "接管并开启" : "确认")}

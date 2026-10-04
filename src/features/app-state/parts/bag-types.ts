@@ -371,6 +371,8 @@ export interface Bag {
   setKeepAwake: React.Dispatch<React.SetStateAction<boolean>>;
   ctxMenuOpen: boolean;
   setCtxMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  ctxBtnRef: React.RefObject<HTMLButtonElement | null>;
+  ctxMenuStyle: React.CSSProperties;
   skillHubCategory: string;
   setSkillHubCategory: React.Dispatch<React.SetStateAction<string>>;
   skillHubSearch: string;
@@ -826,6 +828,8 @@ export interface Bag {
   setUserDataPath: React.Dispatch<React.SetStateAction<string>>;
   taskMenuOpen: boolean;
   setTaskMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  taskBtnRef: React.RefObject<HTMLButtonElement | null>;
+  taskMenuStyle: React.CSSProperties;
   renameDraft: string;
   setRenameDraft: React.Dispatch<React.SetStateAction<string>>;
   inlineRename: boolean;
@@ -1209,6 +1213,7 @@ export interface Bag {
   dispatchTick: number;
   setDispatchTick: React.Dispatch<React.SetStateAction<number>>;
   activeDispatch: import("../../../lib/thread-runtime.mjs").DispatchConfig;
+  dispatchKey: string;
   dispatchHolderName: string | null;
   taskRunning: boolean;
   lastTurnOfThread: import("../../../lib/turn.ts").Turn | undefined;

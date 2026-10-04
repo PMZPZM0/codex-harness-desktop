@@ -197,5 +197,5 @@ bag.activeDispatch = activeDispatch as typeof bag.activeDispatch;
     return label?.trim() || "另一个会话";
   }, [bag.dispatchOwnerId, bag.thread?.id, bag.threads]);
 bag.dispatchHolderName = dispatchHolderName as typeof bag.dispatchHolderName;
-  return { runtimeStateRef, adoptedRevRef, dispatchInfo, setDispatchInfo, delegateRecords, setDelegateRecords, dispatchOwnerId, setDispatchOwnerId, refreshDispatchOwner, threadRole, setThreadRole, refreshThreadRole, delegateRecordsRef, dispatchInfoRef, refreshDispatchInfo, refreshDelegateRecords, dispatchBusy, setDispatchBusy, delegateLiveRuns, setDelegateLiveRuns, delegatedPopupId, setDelegatedPopupId, delegateRailTimersRef, dispatchTick, setDispatchTick, activeDispatch, dispatchHolderName };
+  return { runtimeStateRef, adoptedRevRef, dispatchInfo, setDispatchInfo, delegateRecords, setDelegateRecords, dispatchOwnerId, setDispatchOwnerId, refreshDispatchOwner, threadRole, setThreadRole, refreshThreadRole, delegateRecordsRef, dispatchInfoRef, refreshDispatchInfo, refreshDelegateRecords, dispatchBusy, setDispatchBusy, delegateLiveRuns, setDelegateLiveRuns, delegatedPopupId, setDelegatedPopupId, delegateRailTimersRef, dispatchTick, setDispatchTick, activeDispatch, dispatchHolderName, dispatchKey };
 }
