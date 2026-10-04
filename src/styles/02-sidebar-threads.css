@@ -325,11 +325,29 @@
   gap: 10px;
   min-width: 0;
   padding-left: 16px;
-  /* 145 = 原生窗口钮预留区：操作簇右缘紧贴系统按钮，位置恒定 */
+  /* 145 = 原生窗口钮预留区：操作簇右缘紧贴系统按钮，位置恒定
+     （titleBarStyle:"hidden" + titleBarOverlay ⇒ 系统钮是**浮在页面上的原生 overlay**、
+     不占文档流，这段padding 是唯一让位手段） */
   padding-right: 145px;
   display: flex;
   -webkit-app-region: drag;
   height: 44px;
+  /* ⛔⛔ 10-04 用户截图「搜索/调度图标压在最小化-最大化-关闭底下」——
+     **根因是顶栏没有溢出裁剪**：内容总宽超出可用宽度时，flex 子项会**溢出 padding 边界**
+     （margin-left:auto 在空间不足时归零，不再把操作簇拉回来），于是操作簇直接落到
+     145px 预留区里、盖在系统钮下面。
+     ⚠️ 只裁剪不管重叠（那是布局问题）：裁剪保证**内容永不越界**，
+     真正的让位靠下面按宽度分档隐藏低优先级项 —— 见 09-settings-workspace-memory.css。
+     ⛔ 不用 overflow:hidden 遮住问题：那样图标会被切一半（用户看到的是"图标不见了"，
+     不是"图标移开了"）。 */
+  overflow: hidden;
+}
+/* ⛔ 操作簇**不许被压到零宽**：它承载搜索/右栏/调度等入口。空间不足时若它被 flex 压扁，
+   里面的按钮会溢出到 .topbar 的 overflow 裁剪区外，看起来就是"图标凭空消失"。
+   ⇒ flex-shrink:0 + 白-space:nowrap，让它保持原宽，把让位压力交给标题与分档隐藏。 */
+.topbar-actions {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 /* 侧栏折叠/窄屏：侧栏变 fixed 飞出层，顶行补位跨全宽 */
 .app-shell.side-collapsed:not(.narrow) .topbar,
