@@ -611,6 +611,11 @@
 .ext-hub-modal {
   width: min(440px, calc(100vw - 48px));
 }
+/* 「···更多」（10-04）：比技能/插件那个多两项，宽一档让说明不至于折三行。
+   列表样式与 .ext-hub-modal 共用 .ext-hub-list（同一种"图标 + 标题 + 一行说明"的行）。 */
+.more-hub-modal {
+  width: min(520px, calc(100vw - 32px));
+}
 
 .sidebar-tab:hover {
   background: var(--panel-2);

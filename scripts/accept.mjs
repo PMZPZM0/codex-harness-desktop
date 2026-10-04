@@ -382,6 +382,77 @@ const CHECKS = [
         typeof local?.n === "number" && local.n === (list?.installedIds ?? []).length, JSON.stringify({ local, marketInstalled: list?.installedIds?.length }));
     },
   },
+  {
+    id: "ui-sketch",
+    name: "㉑ 界面草图（侧栏「···更多」五入口 / 嵌入站真加载 / 组件库送进草图，10-05 轮）",
+    run: async (h) => {
+      // 为什么必须真跑：这条链路的六个接缝（侧栏按钮 → bag 开关 → AppView 挂载 → sketch:// 协议
+      // → CSP frame-src → 随包产物 + 内联桥）**每一个都能在 tsc/预检全绿的情况下静默白屏**
+      // —— pet:// 当年就是这么漏过去的（【232】②）。只有真实构建产物 + 真实 CSP 才算数。
+      const opened = await h.eval(`(function(){
+        const tabs=[...document.querySelectorAll('.sidebar-tabs .sidebar-tab')];
+        const more=tabs.find((t)=>((t.textContent||'').trim()==='更多'));
+        if(!more) return { found:false, tabs: tabs.map((t)=>(t.textContent||'').trim()) };
+        more.click(); return { found:true }; })()`);
+      h.check("① 侧栏导航区有「更多」入口（前置条件：找不到就整项作废，不许往下假通过）", opened?.found === true, JSON.stringify(opened).slice(0, 200));
+      await wait(600);
+      const hub = await h.eval(`(function(){ const m=document.querySelector('.more-hub-modal');
+        if(!m) return { open:false };
+        return { open:true, rows:[...m.querySelectorAll('.ext-hub-list > button strong')].map((s)=>(s.textContent||'').trim()),
+          navTitles:[...document.querySelectorAll('.sidebar-tabs .sidebar-tab')].map((t)=>(t.textContent||'').trim()) }; })()`);
+      h.check("② 弹窗五项齐全：AI 画布工作流 / 界面草图 / 知识库 / 组件库 / 人格市场",
+        hub?.open === true && ["AI 画布工作流", "界面草图", "知识库", "组件库", "人格市场"].every((title) => (hub?.rows ?? []).includes(title)),
+        JSON.stringify(hub?.rows));
+      h.check("③ 知识库与 AI 画布工作流已收进更多，不再平铺在导航区",
+        !(hub?.navTitles ?? []).some((t) => t === "知识库" || t === "AI 画布工作流"), JSON.stringify(hub?.navTitles));
+      await h.eval(`(function(){ const rows=[...document.querySelectorAll('.more-hub-modal .ext-hub-list > button')];
+        const row=rows.find((b)=>(b.textContent||'').includes('界面草图')); if(row) row.click(); return !!row; })()`);
+      await h.waitFor(`!!document.querySelector('.ui-sketch-shell')`, { label: "界面草图浮层", timeoutMs: 15000 });
+      const frame = await h.eval(`(function(){ const f=document.querySelector('.ui-sketch-frame');
+        if(!f) return { has:false };
+        const r=f.getBoundingClientRect(); return { has:true, src:f.src, w:Math.round(r.width), h:Math.round(r.height) }; })()`);
+      h.check("④ iframe 走的是随包协议、且真的占满主体区",
+        frame?.has === true && String(frame?.src).startsWith("sketch://") && frame.w > 400 && frame.h > 300, JSON.stringify(frame));
+      // 桥应答 = 协议 + CSP + 产物 + postMessage 四处同时通了（读不到 DOM，只能靠这个握手判）
+      const ready = await h.waitFor(`document.querySelector('.ui-sketch-shell')?.getAttribute('data-bridge')==="ready"`,
+        { label: "草图桥应答（data-bridge=ready）", timeoutMs: 25000 }).then(() => true).catch(() => false);
+      const meta = await h.text(".ui-sketch-meta").catch(() => "");
+      h.check("⑤ 与嵌入站的双向桥握手成功（这一条为假 = 协议/CSP/产物任一处断了，且不会有任何报错）", ready === true, `meta=${String(meta).slice(0, 90)}`);
+      await h.waitFor(`document.querySelectorAll('.ui-sketch-list button').length > 0`, { label: "组件库列表非空", timeoutMs: 20000 });
+      // ⚠️ 勾选与「送进草图」**必须分两次 eval、中间等一轮渲染**：同一段脚本里连点两次，
+      // 第二次点到的还是上一次渲染出来的那个 handler（闭包里 picked 还是空的），
+      // 状态条会说"先勾选"—— 那是测试写法的问题，不是应用的。10-05 首跑就是这么假的红了一次。
+      await h.eval(`(function(){ const first=document.querySelector('.ui-sketch-list button'); if(first) first.click(); return !!first; })()`);
+      await wait(500);
+      const pushed = await h.eval(`(function(){
+        const btn=[...document.querySelectorAll('.ui-sketch-actions button')].find((b)=>(b.textContent||'').includes('送进草图'));
+        if(!btn) return { button:false };
+        btn.click(); return { button:true, picked:document.querySelectorAll('.ui-sketch-list button.picked').length }; })()`);
+      await wait(2500);
+      const after = await h.eval(`(function(){ return { status:(document.querySelector('.ui-sketch-status')?.textContent||'').trim(),
+        picked:document.querySelectorAll('.ui-sketch-list button.picked').length,
+        warn:document.querySelector('.ui-sketch-warn')?.textContent||"" }; })()`);
+      h.check("⑥ 组件库选中项能送进草图（状态条给出「已送进画布 N 个组件」或幂等提示）",
+        pushed?.button === true && /送进画布|已经在画布/.test(after?.status ?? "") && !after?.warn, JSON.stringify(after).slice(0, 220));
+      /* ⑤ 只证明"协议 + CSP + postMessage"三处通了 —— 桥是内联在 <head> 的，
+         编辑器 chunk 还没 hydration 也能应答 ready，所以那时画布可能还是骨架屏。
+         这一条要的是**读回通道真的拿到了编辑器写进 localStorage 的文档**（标题栏才会出现「屏 / 部件」）。 */
+      const booted = await h.waitFor(
+        `(document.querySelector('.ui-sketch-meta')?.textContent || "").indexOf("部件") >= 0`,
+        { label: "草图编辑器启动并回传文档", timeoutMs: 25000 }
+      ).then(() => true).catch(() => false);
+      const bootedMeta = await h.text(".ui-sketch-meta").catch(() => "");
+      h.check("⑧ 嵌入站真的启动了、且把画布内容读回宿主（骨架屏不算通过）", booted === true, `meta=${String(bootedMeta).slice(0, 80)}`);
+      // 截图前关掉宿主自己的引导浮层（环境体检），否则挡住被测区域看不清
+      await h.clickByText("全部稍后再说").catch(() => undefined);
+      await wait(1200);
+      await h.screenshot("uisketch");
+      await h.eval(`(function(){ document.querySelector('.ui-sketch-head > button')?.click(); return 1; })()`);
+      await wait(500);
+      const closed = await h.eval(`!!document.querySelector('.ui-sketch-shell')`);
+      h.check("⑦ 关闭键真的收起浮层（关不掉的模态会挡住后面所有验收项）", closed === false, `stillOpen=${closed}`);
+    },
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -411,9 +482,10 @@ async function enterMain(h) {
 //   历史项不删（它们仍然是回归证据），但**永远不会在默认路径上被执行** ——
 //   这样"每次只测最新改动"是机制保证的，不再依赖我记不记得。
 // ─────────────────────────────────────────────────────────────────────────────
-const LATEST_ROUND = "10-03";
+const LATEST_ROUND = "10-05";
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
+  "ui-sketch": "10-05",   // 本轮：侧栏「···更多」+ 嵌入的界面草图（协议 / CSP / 产物三处接缝只有真跑才算数）
   "plugin-market-gitee": "10-03",
   "codex-official-market": "10-03",   // 本轮新项；Gitee 项同轮重跑（插件页加了源切换，两个源都得看一眼）
   "file-card-edit": "09-26",

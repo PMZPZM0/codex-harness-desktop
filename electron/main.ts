@@ -49,6 +49,7 @@ import { readRelayStore, writeRelayStore } from "./features/relay-ipc";
 import { IPC_DOMAINS, domainsStillInMain } from "./ipc-registry";
 import { ensureBuiltinSkills, ensureExpertSkillsMarketplace, expertSkillsSourceDir } from "./builtin-skills";
 import { NUPHUS_VISION_ENV_TABLE, nuphusVisionEnv, nuphusVisionEnvDrift } from "./nuphus-env";
+import { SKETCH_SCHEME } from "./sketch-protocol";
 import {
   buildChengxiangExpertTeam, buildDefaultExpertTeams, buildDongmingExpertTeam, buildModel3dExpertTeam, buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, buildZhiweiExpertTeam, imageGenExpert, normalizeTeamConfig, videoProductionTeam,
   readExpertTeams, setExpertTeamsFile, syncSkillsPathInTeam, writeExpertTeams, type ExpertTeamConfig, type ExpertTeamMember,
@@ -151,10 +152,15 @@ function enrichScanCountSnapshot() {
    · `pet`（09-30 加）：**只服务宠物目录下的图集**。宠物包可能躺在 `~/.codex/pets`、`~/.petdex/pets`
      这些**不在可信根**的目录里，而把 harness-image 的可信根放宽 = 安全回归（红线）。
      所以另开一条**窄口径**协议：白名单目录（唯一定义在 features/pet-ipc.ts 的 petRoots）+
-     图片扩展名，两者同时满足才放行。 */
+     图片扩展名，两者同时满足才放行。
+   · `sketch`（10-05 加）：**只服务随包的界面草图静态站**（打包内 dist/sketch，只读）。
+     多一个 `standard: true`：那份产物的资源引用全是绝对路径（/_next/…），只有让
+     `sketch://app` 成为标准 origin，绝对路径才解析得对、iframe 的 frame-src 才匹配得上。
+     详见 electron/sketch-protocol.ts 头部三条"为什么不能用别的办法"。 */
 protocol.registerSchemesAsPrivileged([
   { scheme: "harness-image", privileges: { secure: true, supportFetchAPI: true } },
   { scheme: "pet", privileges: { secure: true, supportFetchAPI: true } },
+  { scheme: SKETCH_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
 
 app.setName("Codex Harness Desktop");

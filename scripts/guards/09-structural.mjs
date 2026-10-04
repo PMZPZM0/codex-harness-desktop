@@ -1483,10 +1483,10 @@ export async function run() {
         "scripts/guards/07-turn-fold.mjs": 3740,
         "scripts/guards/06-app-behavior.mjs": 2568,
         "scripts/guards/02-session-logic.mjs": 1229,   // 本文件是守卫载体（侧栏会话逻辑域）：每加一条规则基线随之上移 —— 10-04 新增【281】侧栏幽灵消失三条（兜底收编不吃 preview / memberIds 必须是派生量 / singles 与簇体同源）+20；10-04 新增【282】侧栏会话行不展示项目地址两条（渲染器不再引用 cwd / 两处小字各自锚定）+11
-        "src/features/app-state/parts/bag-types.ts": 1412,   // 生成物（段内顶层声明的类型面）：本文件不承载任何逻辑，长度随「段内顶层声明数」变化 —— 10-04 补 5 条漏接线的声明（ctxBtnRef / ctxMenuStyle / taskBtnRef / taskMenuStyle / dispatchKey，守卫【93】报的 missing），非业务代码增长
+        "src/features/app-state/parts/bag-types.ts": 1414,   // 生成物（段内顶层声明的类型面）：本文件不承载任何逻辑，长度随「段内顶层声明数」变化 —— 10-04 补 5 条漏接线的声明（ctxBtnRef / ctxMenuStyle / taskBtnRef / taskMenuStyle / dispatchKey，守卫【93】报的 missing）；10-05 界面草图那一位（uiSketchOpen + setter，【283】钉）+2，非业务代码增长
         "scripts/guards/09-structural.mjs": 1665,   // 本文件是守卫载体：每加一条规则基线随之上移（→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916）
         "scripts/guards/13-drama-gen.mjs": 1070,
-        "electron/main.ts": 540,
+        "electron/main.ts": 546,   // 10-05 界面草图：sketch 协议的特权声明 + 那段"为什么不用 file://、为什么必须 standard/secure"的注释（【283】钉），不是新逻辑
         "scripts/guards/03-runtime-boot.mjs": 917,
         "electron/voice/voice-service.ts": 800,
         "src/vite-env.d.ts": 785,   // 生成物：通道数增加时自然变长（守卫【2】保证与 manifest 一致）

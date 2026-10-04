@@ -1,0 +1,13 @@
+{
+  "source": "https://github.com/lnkiai/m3e-canvas",
+  "license": "MIT",
+  "upstreamVersion": "0.1.0",
+  "next": "16.3.6",
+  "builtAt": "2026-10-04",
+  "fontsLocalized": true,
+  "bridge": "scripts/sketch-bridge.js",
+  "rebuiltBy": "node scripts/build-sketch-bundle.mjs --from <next export out/>",
+  "files": 40,
+  "bytes": 4295983,
+  "indexHtmlBytes": 26003
+}

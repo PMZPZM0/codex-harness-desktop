@@ -38,6 +38,7 @@ import {
   Globe2,
   GripVertical,
   CornerDownRight,
+  Heart,
   Layers,
   Library,
   Info,
@@ -181,6 +182,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     setAccountMenuSub,
     setMobileNav,
     setDramaCanvasOpen,
+    setUiSketchOpen,
     setMobileRemoteOpen,
     setPaletteOpen,
     setPaletteQuery,
@@ -237,6 +239,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   //   纯局部 UI 状态（不跨组件共享、不进 bag）⇒ 用组件内 useState，与 09-file-preview-editor.tsx
   //   的 mdSourceView 同款做法，避免动自动生成的 bag-types.ts。
   const [extHubOpen, setExtHubOpen] = useState(false);
+  // ⛔ 10-04 用户要求：知识库 / AI 画布工作流 / 组件库 / 人格市场 / 界面草图**收进「···更多」**，
+  //   侧栏导航区不再逐个平铺。同上同款纯局部 UI 状态（不跨组件共享、不进 bag）。
+  const [moreHubOpen, setMoreHubOpen] = useState(false);
 
   /** 复制「我正在跑的是哪一份构建」的诊断信息（09-23）。
    *  目的很具体：用户报「改了没生效」时，第一件要排除的就是**跑的产物不是最新构建**（09-23 真实事故，
@@ -345,12 +350,16 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
               {/* ⛔ 09-27 用户要求：侧栏「自动化」改名「定时任务」—— 它跳的本来就是 settingsPage="schedule"
                   （该页标题即「定时任务」），改名后入口与目标页同名，不再和设置页里那个真正叫
                   「自动化」的 automation 页混起来。配套：命令面板里的同名项一起改（part09）。
-                  ⛔ 09-28 用户指定顺序：定时任务排在 AI 画布工作流**前面**。 */}
+                  ⛔ 09-28 用户指定顺序：定时任务排在「···更多」前面（原来排在 AI 画布工作流前面，
+                  10-04 该入口收进更多后同序）。 */}
               <button className="sidebar-tab" onClick={() => { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); }}><Clock3 size={15} /><span>定时任务</span></button>
-              {/* 09-27 用户要求：「在左侧菜单栏中新增『AI 短剧无限画布』入口」—— 它是与「聊天」并列的
-                  另一种工作台，不是设置项；放进设置类入口那一簇会显得像配置页。 */}
-              <button className="sidebar-tab" title="项目知识库：导入文档，Codex 可直接检索" onClick={() => { setSettingsPage("knowledge-base"); setSettingsOpen(true); setMobileNav(false); }}><Library size={15} /><span>知识库</span></button><button className="sidebar-tab" title="AI 画布工作流：短剧 / 生图两种起手，卡片连线就是「这份输入喂给下一步」" onClick={() => { setDramaCanvasOpen(true); setMobileNav(false); }}>
-                <Clapperboard size={15} /><span>AI 画布工作流</span>
+              {/* ⛔ 10-04 用户要求：「在主界面左侧栏加一个三个点更多选项，把 AI 画布工作流和知识库
+                  和这个新的自定义 UI 放里面」+「把组件库也放一个到更多里面，还有人格市场」。
+                  09-27 那条「它是与聊天并列的另一种工作台，不是设置项」仍然成立 —— 更多里既有
+                  工作台（画布 / 草图），也有设置页跳转（知识库 / 组件库 / 人格市场），
+                  所以这个入口叫「更多」而不叫「设置」。 */}
+              <button className="sidebar-tab" title="知识库 / AI 画布工作流 / 界面草图 / 组件库 / 人格市场" aria-expanded={moreHubOpen} onClick={() => setMoreHubOpen(true)}>
+                <MoreHorizontal size={15} /><span>更多</span>
               </button>
               {/* ⛔ 09-27 用户要求：技能中心 / 插件市场 / 专家-专家团**合并成一个入口**，点击弹窗三选一
                   （原来三个独立按钮）。入口名按用户指定逐字写全。 */}
@@ -380,6 +389,42 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                     <button type="button" onClick={() => { setExtHubOpen(false); setSettingsPage("agentteam"); setSettingsOpen(true); setMobileNav(false); }}>
                       <Users size={16} />
                       <span><strong>智能体</strong><small>专家 / 专家团与子智能体</small></span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {/* 10-04「···更多」的弹窗：与上面同款 info-modal 体系（遮罩点击关闭 / header 带关闭键 /
+                列表项跳完先关弹窗再关移动端导航）。分两类摆：工作台（画布 / 草图）在前，
+                设置页（知识库 / 组件库 / 人格市场）在后 —— 用户点名把两边混在同一个入口里。 */}
+            {moreHubOpen && (
+              <div className="info-modal-mask" onClick={() => setMoreHubOpen(false)}>
+                <div className="info-modal more-hub-modal" role="dialog" aria-label="更多" onClick={(event) => event.stopPropagation()}>
+                  <header>
+                    <MoreHorizontal size={15} className="info-modal-icon" />
+                    <strong>更多</strong>
+                    <button title="关闭" onClick={() => setMoreHubOpen(false)}><X size={14} /></button>
+                  </header>
+                  <div className="ext-hub-list">
+                    <button type="button" title="AI 画布工作流：短剧 / 生图两种起手，卡片连线就是「这份输入喂给下一步」" onClick={() => { setMoreHubOpen(false); setDramaCanvasOpen(true); setMobileNav(false); }}>
+                      <Clapperboard size={16} />
+                      <span><strong>AI 画布工作流</strong><small>短剧 / 生图两种起手，卡片连线就是「这份输入喂给下一步」</small></span>
+                    </button>
+                    <button type="button" title="界面草图：Material 3 Expressive 屏摄画布，摆好的界面直接变成前端提示词" onClick={() => { setMoreHubOpen(false); setUiSketchOpen(true); setMobileNav(false); }}>
+                      <PenTool size={16} />
+                      <span><strong>界面草图</strong><small>拖组件拼界面，连着看导航；组件库里的真实控件可以一键送进草图</small></span>
+                    </button>
+                    <button type="button" title="项目知识库：导入文档，Codex 可直接检索" onClick={() => { setMoreHubOpen(false); setSettingsPage("knowledge-base"); setSettingsOpen(true); setMobileNav(false); }}>
+                      <Library size={16} />
+                      <span><strong>知识库</strong><small>导入项目文档，Codex 检索时直接引用</small></span>
+                    </button>
+                    <button type="button" title="组件库：3802 个 Uiverse 控件，看源码、复制走" onClick={() => { setMoreHubOpen(false); setSettingsPage("component-library"); setSettingsOpen(true); setMobileNav(false); }}>
+                      <LayoutGrid size={16} />
+                      <span><strong>组件库</strong><small>Uiverse 控件原文与预览，复制就能用</small></span>
+                    </button>
+                    <button type="button" title="人格市场：给专家与子智能体挑人格" onClick={() => { setMoreHubOpen(false); setSettingsPage("soul-market"); setSettingsOpen(true); setMobileNav(false); }}>
+                      <Heart size={16} />
+                      <span><strong>人格市场</strong><small>专家 / 子智能体的人格与语气模板</small></span>
                     </button>
                   </div>
                 </div>

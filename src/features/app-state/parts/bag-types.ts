@@ -680,6 +680,8 @@ export interface Bag {
   setSettingsOpen: React.Dispatch<React.SetStateAction<boolean>>;
   dramaCanvasOpen: boolean;
   setDramaCanvasOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  uiSketchOpen: boolean;
+  setUiSketchOpen: React.Dispatch<React.SetStateAction<boolean>>;
   pptokenCardOff: boolean;
   setPptokenCardOff: React.Dispatch<React.SetStateAction<boolean>>;
   settingsPage: import("../../app-view/types.ts").SettingsPage;

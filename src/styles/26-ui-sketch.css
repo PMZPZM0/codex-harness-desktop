@@ -1,0 +1,314 @@
+/**
+ * 26 · 界面草图（域 id = `ui-sketch`，类名前缀与域同源）
+ *
+ * 档位与 AI 画布工作流同档：**整屏浮层**（草图是"与聊天并列的另一种工作台"，
+ * 塞进右栏会被挤成缩略图）。backdrop 用画布那一层 z-index: 90 —— ⛔ 不是全局模态的 400，
+ * 层级带见 DESIGN.md 与守卫【198】。
+ *
+ * 颜色一律走既有令牌（--bg/--panel/--panel-2/--line/--text/--muted/--faint/--accent），
+ * 不新增色板：iframe 里那份站点是它自己的 Material 3 配色，宿主这一圈必须跟着主题走，
+ * 否则深浅两套里必然有一套对不上（守卫【170】做的是真值对账）。
+ */
+
+.ui-sketch-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 顶部避让窗口控制钮（~33px），与画布同款处理 */
+  padding: clamp(40px, 4.5vmin, 56px) clamp(14px, 3vmin, 40px) clamp(14px, 3vmin, 40px);
+}
+
+.ui-sketch-shell {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  max-width: 1480px;
+  max-height: 960px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
+}
+
+/* ---------------------------------------------------------------- 标题栏 */
+
+.ui-sketch-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+.ui-sketch-head-icon {
+  color: var(--accent);
+  flex: none;
+}
+.ui-sketch-head strong {
+  font-size: 13px;
+  font-weight: 600;
+  flex: none;
+}
+.ui-sketch-meta {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-sketch-warn {
+  font-style: normal;
+  color: var(--red, #d94f43);
+}
+.ui-sketch-head .esc-hint {
+  flex: none;
+}
+.ui-sketch-head > button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ui-sketch-head > button:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------------- 动作条 */
+
+.ui-sketch-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.ui-sketch-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.ui-sketch-actions button:hover {
+  background: var(--panel-2);
+  border-color: var(--accent);
+}
+.ui-sketch-actions button svg {
+  color: var(--muted);
+  flex: none;
+}
+.ui-sketch-actions button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.ui-sketch-actions button.primary svg {
+  color: var(--accent-text);
+}
+.ui-sketch-actions button.ghost {
+  margin-left: auto;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- 主体 */
+
+.ui-sketch-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+/* 草图站本身是全屏应用：给它一整块不留内边距的区域，剩下的边框由 shell 出 */
+.ui-sketch-frame {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+
+.ui-sketch-panel {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: min(320px, 38vw);
+  border-left: 1px solid var(--line);
+  background: var(--bg);
+  min-height: 0;
+}
+.ui-sketch-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 10px 12px 6px;
+  font-size: 12.5px;
+}
+.ui-sketch-panel-head svg {
+  color: var(--accent);
+}
+.ui-sketch-panel-head .muted {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--faint);
+}
+.ui-sketch-search {
+  flex: none;
+  margin: 0 12px 8px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+}
+.ui-sketch-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: none;
+  padding: 0 12px 8px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.ui-sketch-cats button {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.ui-sketch-cats button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.ui-sketch-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ui-sketch-list > p {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--faint);
+}
+.ui-sketch-error {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--red, #d94f43);
+}
+.ui-sketch-list button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  text-align: left;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ui-sketch-list button:hover {
+  border-color: var(--accent);
+}
+.ui-sketch-list button.picked {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.ui-sketch-pick {
+  flex: none;
+  width: 16px;
+  color: var(--accent);
+  font-weight: 700;
+}
+.ui-sketch-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-sketch-author {
+  margin-left: auto;
+  flex: none;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--faint);
+}
+.ui-sketch-foot {
+  display: flex;
+  gap: 8px;
+  flex: none;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+}
+.ui-sketch-foot button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------- 状态条 */
+
+.ui-sketch-status {
+  flex: none;
+  padding: 6px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

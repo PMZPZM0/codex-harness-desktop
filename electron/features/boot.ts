@@ -18,6 +18,7 @@ import { sendToWindow } from "./window-bus";
 import { emitTurnFileChanges, setTurnFileWatchBroadcast, snapshotTurnWorkspace } from "../turn-file-watch";
 
 import { shouldRegisterNuphus } from "../automation-policy";
+import { SKETCH_SCHEME, sketchResponse } from "../sketch-protocol";
 import { BotStreamSession, readBotStreamSettingsSync } from "../bot-stream";
 import { ensureBuiltinSkills, ensureExpertSkillsMarketplace } from "../builtin-skills";
 import { syncLocalMemoryConnector } from "../memory-mcp-connector";
@@ -348,6 +349,11 @@ export async function bootApp() {
       return new Response("Read failed", { status: 500 });
     }
   });
+
+  /* `sketch://`：随包的**界面草图静态站**（10-05 加，m3e-canvas 的 next 静态导出）。
+     根恒等于打包内 dist/sketch、扩展名走白名单 ⇒ 能读的文件集合就是"随包只读资源"那一圈，
+     面没有扩大（三条为什么不另做他选的论证写在 electron/sketch-protocol.ts 头部）。 */
+  protocol.handle(SKETCH_SCHEME, (request) => sketchResponse(request.url));
 
   // 语音通话：授予麦克风权限。此前全项目没有任何权限处理，getUserMedia 会被直接拒绝。
   // 只放行 media，其余权限一律沿用 Electron 默认（不放大授权面）。
