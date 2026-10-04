@@ -1554,8 +1554,11 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (!/\bcwd\b/.test(rowsSrc282) ? ok : fail)(
       "【282】侧栏会话行渲染器不再引用 cwd（项目地址展示项已删除——会话按 cwd 分组，行内重复是噪声）"
     );
-    ((rowsSrc282.match(/<small>\{timeAgo\(/g) ?? []).length >= 2 ? ok : fail)(
-      "【282】两处会话行小字仍保留时间（会话行 + 簇头兜底行；⛔ 删地址 ≠ 删整行）"
+    // ⛔ 两个落点**各自锚定**，不用「计数 ≥2」——计数会被「删掉一处、别处再凑一处」绕过，
+    //    而文案承诺的是「这两处」都在（§条件强度必须 ≥ 文案承诺强度）。
+    (/<small>\{timeAgo\(entry\.updatedAt\)\}<\/small>/.test(rowsSrc282)
+      && /<small>\{timeAgo\(rep\.updatedAt\)\}<\/small>/.test(rowsSrc282) ? ok : fail)(
+      "【282】两处会话行小字仍保留时间（会话行 entry / 簇头兜底行 rep，各点独立锚定；⛔ 删地址 ≠ 删整行）"
     );
   }
 
