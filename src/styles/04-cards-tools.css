@@ -511,6 +511,9 @@
   padding: 1px 8px;
 }
 .kb-page .resource-toolbar { flex-wrap: wrap; }
+.kb-docs { max-height: 420px; overflow-y: auto; }
+.kb-hits { max-height: 480px; overflow-y: auto; }
+.kb-hit p { word-break: break-all; }
 /* 审查弹窗（950 = 模态之上的最后一层，DESIGN.md 层叠带） */
 .turn-diff-modal-mask {
   position: fixed;
