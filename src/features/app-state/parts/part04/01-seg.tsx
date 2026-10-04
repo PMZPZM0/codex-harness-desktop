@@ -90,7 +90,11 @@ bag.dispatchBlockKeys = dispatchBlockKeys as typeof bag.dispatchBlockKeys;
    *  主会话识别：threads 表里同 teamId 的会话中，标题**不带**成员会话特征（「 · 」分隔或
    *  [专家团 前缀）的那条；主会话不在列表（被删/归档）时用最新成员会话当代表行。 */
   const clusteredSidebar = useMemo(() => {
-    const memberIds = new Set<string>();
+    /* ⛔⛔ 10-04：这里**不再**维护可累加的 memberIds —— 它必须是「最终会被渲染的簇成员」的派生量
+       （见函数末尾 visibleMemberIds）。旧写法靠 add/delete 累加：任何一步漏同步（例如 lead 兜底
+       把某成员提升为簇头时只改了 cluster.members、没删 memberIds）就会留下**残留 id**，该 id 既
+       不渲染在簇里、又被 singles 排除 ⇒ 从侧栏彻底消失（用户症状：「正在运行的会话没有显示、
+       也没有选中」）。改成派生即可根治，且结构上不可能再出现残留。 */
     const clusters = new Map<string, { teamId: string; lead: Thread | null; members: Thread[] }>();
     for (const entry of bag.listThreads) {
       const teamId = bag.teamThreadsIndex[entry.id];
@@ -98,14 +102,21 @@ bag.dispatchBlockKeys = dispatchBlockKeys as typeof bag.dispatchBlockKeys;
       let cluster = clusters.get(teamId);
       if (!cluster) { cluster = { teamId, lead: null, members: [] }; clusters.set(teamId, cluster); }
       // ★ 权威判定：members 映射里的 = 成员会话；同团队里不在其中的 = **主会话**（团队名那条）
-      if (bag.teamMemberThreadIds.has(entry.id)) { cluster.members.push(entry); memberIds.add(entry.id); }
+      if (bag.teamMemberThreadIds.has(entry.id)) cluster.members.push(entry);
       else if (!cluster.lead) cluster.lead = entry;
     }
     // ★ 兜底：映射里没有、但标题带 `[专家团「X」成员 Y（Z）]` 的历史成员会话 ——
     //   按团队名匹配专家团配置，归入同一个簇（否则它们散在外面，与簇内同职能成员「看起来重复」）。
     for (const entry of bag.listThreads) {
       if (bag.teamThreadsIndex[entry.id]) continue;
-      const raw = `${entry.name ?? ""}${entry.preview ?? ""}`;
+      /* ⛔⛔ 10-04 修「正在运行的会话从侧栏凭空消失」：角色头只在**会话开头**识别，且**不吃 preview**。
+         真实的历史成员会话，`[专家团「X」成员 Y（Z）]` 就在标题最前面；而普通会话的 preview 是
+         **超长正文**（记忆/日志注入），正文里**引用**了同样的格式就会被全长匹配误判成成员
+         ⇒ 收编进一个「零成员团队」簇 ⇒ 该簇被丢弃后 id 仍残留在 memberIds ⇒ 既不渲染在簇里、
+         也被 singles 排除 = 彻底消失。实测：正在运行的会话 01a106d4（题「你好」）误命中位置在
+         18788 字符正文的第 9311 字符处，命中的是记忆正文里 `[专家团「Bug 排查」…（团队主理人）]`
+         这类**引用文本**；同一份正文在 01a106ce 上也命中，只是它没被提升为簇头才侥幸留下。 */
+      const raw = String(entry.name ?? "").slice(0, 240);
       const parsed = parseTeamMemberTitle(raw);
       if (!parsed) continue;
       const team = bag.expertTeams.find((t) => t.displayName.zh === parsed.teamName);
@@ -113,7 +124,6 @@ bag.dispatchBlockKeys = dispatchBlockKeys as typeof bag.dispatchBlockKeys;
       let cluster = clusters.get(team.teamId);
       if (!cluster) { cluster = { teamId: team.teamId, lead: null, members: [] }; clusters.set(team.teamId, cluster); }
       cluster.members.push(entry);
-      memberIds.add(entry.id);
     }
     for (const cluster of clusters.values()) {
       cluster.members.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -138,10 +148,15 @@ bag.dispatchBlockKeys = dispatchBlockKeys as typeof bag.dispatchBlockKeys;
     );
     const keptClusters = new Map<string, { teamId: string; lead: Thread | null; members: Thread[] }>();
     for (const [teamId, cluster] of clusters) {
-      if (clusterableTeams.has(teamId)) { keptClusters.set(teamId, cluster); continue; }
-      for (const member of cluster.members) memberIds.delete(member.id);
+      if (clusterableTeams.has(teamId)) keptClusters.set(teamId, cluster);
     }
-    return { memberIds, clusters: [...keptClusters.values()] };
+    /* memberIds = 「最终会被渲染的簇成员」的**派生量**（不是 add/delete 累加出来的残留）。
+       ⛔ 判据：memberIds ⊆ clusters 里各簇的 members —— 只有这一条能保证「凡是被 singles 排除的
+       id，一定能在某个簇体内被渲染出来」。渲染端（02-thread-attention-rows 的 clusterSplit）正是
+       靠它把成员行从顶层抽走，一旦两侧不一致，会话就会从侧栏整体消失。 */
+    const visibleMemberIds = new Set<string>();
+    for (const cluster of keptClusters.values()) for (const member of cluster.members) visibleMemberIds.add(member.id);
+    return { memberIds: visibleMemberIds, clusters: [...keptClusters.values()] };
   }, [bag.listThreads, bag.teamThreadsIndex, bag.teamMemberThreadIds, bag.expertTeams]);
 bag.clusteredSidebar = clusteredSidebar as typeof bag.clusteredSidebar;
 
