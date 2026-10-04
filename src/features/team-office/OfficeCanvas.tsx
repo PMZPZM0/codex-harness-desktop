@@ -18,8 +18,19 @@ import {
   type OfficeMemberState,
 } from "./office-format";
 import { OfficeSim } from "./office-sim";
+import { drawScreen, screenModeOf } from "./office-screen";
 
 const CHAR_URLS = [char0, char1, char2, char3, char4, char5];
+
+/** 成员 id → 稳定整数（屏幕内容种子）。⛔ 同一个成员每次刷新必须同一套"代码"，不能乱跳。 */
+function hashId(id: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
 
 export type OfficeCanvasProps = {
   members: OfficeMemberState[];
@@ -77,6 +88,34 @@ export function OfficeCanvas({ members, onOpenMember }: OfficeCanvasProps) {
         else {
           ctx.fillStyle = "#dfe5ec";
           ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+        }
+
+        // ── 显示器内容（10-04 用户报「显示器像一张图、没有动画」）──
+        // ⛔ 必须画在**背景之后、角色之前**：背景图把六个显示器烙死了，内容区是叠在
+        //   屏面上的；而角色要能走到屏前面（路过后被挡住才对）。
+        // ⛔ 屏幕坐标**锚在座位、不是角色**：角色起身去喝水时，屏幕必须留在原地亮着，
+        //   不能跟着人飘到饮水机那儿去。
+        // ⛔ 每个座位都画（没人也画 off=熄屏）—— 否则"有人来了屏幕才亮"这个状态变化
+        //   体现不出来，显示器看上去仍是静态图。
+        for (let i = 0; i < SEATS.length; i++) {
+          const seat = SEATS[i];
+          const sc = seat?.screen;
+          if (!seat || !sc) continue;
+          const a = sim.agents.find((x) => x.seatIndex === i);
+          const mode = a
+            ? screenModeOf({
+                activity: a.activity,
+                mode: a.mode,
+                occupied: true,
+                thinking: a.thinking,
+                waiting: a.waiting,
+                reporting: a.reporting,
+              })
+            : "off";
+          drawScreen(
+            ctx, now / 1000, mode, a ? hashId(a.id) : i + 1,
+            Math.round(seat.x + sc.x), Math.round(seat.y + sc.y), sc.w, sc.h,
+          );
         }
 
         // ── 角色（y 排序：越靠下越后画 = 遮挡正确）──

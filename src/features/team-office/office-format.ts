@@ -53,13 +53,22 @@ export type SeatSpot = { x: number; y: number; facing: "up" | "down" | "left" | 
  *   渲染端从 backrest 推导一切：人物顶 = 椅背顶 - 31（露头肩 31px，与下排自然态一致）；
  *   手部动画 y = 椅背顶 - 28（键盘面，两排一致）。
  */
-export const SEATS: (SeatSpot & { backrest: { dx: number; dy: number; w: number; h: number } })[] = [
-  { x: 264, y: 300, facing: "up", backrest: { dx: -30, dy: -62, w: 60, h: 74 } },
-  { x: 490, y: 300, facing: "up", backrest: { dx: -30, dy: -62, w: 60, h: 74 } },
-  { x: 705, y: 300, facing: "up", backrest: { dx: -30, dy: -62, w: 60, h: 74 } },
-  { x: 266, y: 470, facing: "up", backrest: { dx: -30, dy: -37, w: 60, h: 75 } },
-  { x: 491, y: 470, facing: "up", backrest: { dx: -30, dy: -37, w: 60, h: 75 } },
-  { x: 707, y: 470, facing: "up", backrest: { dx: -30, dy: -37, w: 60, h: 75 } },
+/* ⭐ 显示器内容区（2026-10-04 用户报「显示器内容像一张图、没有动画」）。
+ * ⛔⚠️ 这组坐标是**从用户 792×544 截图按 960/792、640/544 换算量出来的**（红框标注 + 像素分析），
+ *   **不是猜的**。改这里之前请用量测脚本重测，别凭"看起来差不多"调 ——
+ *   屏幕画错位置比不画更难看（会在桌面上飘一个错位的黑框）。
+ *   量法：解码 PNG → 找纯红标注像素（R>200 且 G<90 且 B<90）→ 分 x 段得到每个红框
+ *        → 逐行数红像素找纵向范围 → ×(960/w) 与 ×(640/h) 换算到画布坐标。
+ *   截图中上排框 = 画布 x 417-533 / y 145-207（座位 x=490）⇒ 相对座位 dx=-15 dy=-124。
+ *   下排按 y 差 170 平移 ⇒ dy = -124 + 170 = +46。
+ *   屏幕内容区 116×62（比红框略小，红框含了显示器外壳）。 */
+export const SEATS: (SeatSpot & { backrest: { dx: number; dy: number; w: number; h: number }; screen: { x: number; y: number; w: number; h: number } })[] = [
+  { x: 264, y: 300, facing: "up", backrest: { dx: -30, dy: -62, w: 60, h: 74 }, screen: { x: -15, y: -124, w: 116, h: 62 } },
+  { x: 490, y: 300, facing: "up", backrest: { dx: -30, dy: -62, w: 60, h: 74 }, screen: { x: -15, y: -124, w: 116, h: 62 } },
+  { x: 705, y: 300, facing: "up", backrest: { dx: -30, dy: -62, w: 60, h: 74 }, screen: { x: -15, y: -124, w: 116, h: 62 } },
+  { x: 266, y: 470, facing: "up", backrest: { dx: -30, dy: -37, w: 60, h: 75 }, screen: { x: -15, y: 46, w: 116, h: 62 } },
+  { x: 491, y: 470, facing: "up", backrest: { dx: -30, dy: -37, w: 60, h: 75 }, screen: { x: -15, y: 46, w: 116, h: 62 } },
+  { x: 707, y: 470, facing: "up", backrest: { dx: -30, dy: -37, w: 60, h: 75 }, screen: { x: -15, y: 46, w: 116, h: 62 } },
 ];
 
 /** 大门落点（新成员从这进）——左下角玻璃门内侧。 */
