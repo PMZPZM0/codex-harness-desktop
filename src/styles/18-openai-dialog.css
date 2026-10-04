@@ -1468,3 +1468,6 @@
 .domains-list { display:flex; flex-direction:column; gap:4px; max-height:320px; overflow-y:auto; }
 .domains-row { display:flex; align-items:center; gap:8px; padding:5px 8px; border:1px solid var(--line); border-radius:6px; }
 .domains-id { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11.5px; color:var(--text); }
+
+/* 侧栏「N 个域已停用」入口（10-04 插槽 sidebar.top 的消费者）—— 只在有停用域时出现 */
+.domains-sidebar-entry { width:100%; justify-content:center; margin:4px 0 6px; font-size:11px; }
