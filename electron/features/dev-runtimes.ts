@@ -19,6 +19,7 @@ import { app } from "electron";
 import type { AppSettings } from "../app-settings";
 import { toolsRoot } from "../toolchain";
 import { sendToWindow } from "./window-bus";
+import { kbEmbeddingInstalled } from "./kb-embed-backend";
 import { codexHome, engineActiveTurnIds, server } from "../runtime-refs";
 // 自动化工具链状态：nuphus-mcp（桌面）/ playwright-cli（浏览器）/ cloakbrowser（指纹浏览器）。
 // 静态检测安装目录与缓存，不 spawn 进程，打开设置页即时返回。
@@ -88,7 +89,7 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   //    hidden: true ⇒ 不在「开发工具」页重复出卡（它们各有专用卡片：LayaCard / PhoneHarnessCard）。
   //    安装/卸载走各自的专用通道（见 04-dev-runtime-install.ts 的分派与 laya-service/phone-harness）。
   laya: { name: "Laya 智能判断", description: "本地决策模型（33ms）：思考等级「自动」档的判断端——发送前自动选 低/中/高/极高（含 PyTorch，约 800 MB，走清华 pip 镜像）", size: "约 800 MB", marker: "laya", hidden: true },
-  "kb-embedding": { name: "知识库本地语义检索", description: "让知识库检索从「关键词匹配」升级到「语义匹配」（问「登录凭证怎么做」也能命中「JWT 双令牌」那段）。本地 ONNX 推理，完全离线，不依赖供应商接口。随包内置（≤50MB 内置线），无首次下载", size: "随包 35 MB", marker: "kb-embedding", bundled: true },
+  "kb-embedding": { name: "知识库本地语义检索", description: "让知识库检索从「关键词匹配」升级到「语义匹配」（问「登录凭证怎么做」也能命中「JWT 双令牌」那段）。本地 ONNX 推理，完全离线，不依赖供应商接口。npm 树实测 463MB 远超 50MB 内置线 ⇒ 按需下载（npmmirror + hf-mirror 国内镜像），装完自动裁掉无关平台二进制并预下好模型，装完即用", size: "约 110 MB", marker: "kb-embedding" },
   "phone-harness": { name: "手机控制（phone-harness）", description: "让 Codex 直接操作真机：看屏幕、点、打字、滑、读结果（MIT 许可的 Python CLI，装机后注册为技能；约 3 MB）", size: "约 3 MB", marker: "phone-harness", hidden: true },
   // Android 平台工具（adb）：手机控制（phone-harness）的 Android 通道必需。⛔ 官方源 dl.google.com
   //  **没有国内镜像**（npmmirror 的 binaries 目录下没有该包，实测 404）⇒ 下载慢/失败时只能回落手动安装，
@@ -173,10 +174,9 @@ const PIP_PACKAGE_DIRS: Partial<Record<DevRuntimeId, string>> = {
  *  其余按 tools 目录里的 marker 文件判断。 */
 function runtimeInstalled(id: DevRuntimeId, spec: DevRuntimeSpec): boolean {
   if (id === "ponytail") return existsSync(path.join(codexHome, "plugins", "cache", "ponytail"));
-  // 知识库本地 embedding 后端（10-04）：装在 <userData>/kb-backend，不在 tools 目录 ⇒ 独立判据。
-  if (id === "kb-embedding") {
-    return existsSync(path.join(app.getPath("userData"), "kb-backend", "node_modules", "@huggingface", "transformers", "package.json"));
-  }
+  // 知识库本地 embedding 后端（10-04）：装在 <userData>/kb-backend（kbBackendDir 兼容旧随包实验路径）。
+  //  判据与安装面同源 = kbEmbeddingInstalled()（npm 包 + worker + 模型三者齐）。
+  if (id === "kb-embedding") return kbEmbeddingInstalled();
   const root = toolsRoot();
   if (!root) return false;
   // ⛔⛔ python：只有 `python.exe` 不算装好 —— 旧版 embeddable 安装就是「有 exe、无 pip 无 Tkinter」，

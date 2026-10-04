@@ -401,6 +401,18 @@
 .completed-file-btn:hover { color: var(--accent); border-color: var(--accent); }
 
 /* ── 知识库设置页（kb 域，10-01）──────────────────────────── */
+.kb-embed-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+.kb-embed-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.kb-embed-main strong { font-size: 12.5px; color: var(--text); }
+.kb-embed-main small { font-size: 10.5px; color: var(--faint); line-height: 1.5; }
 .kb-search {
   display: flex;
   align-items: center;

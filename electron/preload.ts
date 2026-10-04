@@ -593,6 +593,11 @@ contextBridge.exposeInMainWorld("codex", {
   removeKnowledgeDoc: (input: { workspace?: string; docId?: string }) => __ipc("kb:remove", 0, [input]),
   searchKnowledge: (input: { workspace?: string; query?: string; limit?: number }) => __ipc("kb:search", 0, [input]),
   readKnowledgeDoc: (input: { workspace?: string; docId?: string }) => __ipc("kb:read", 0, [input]),
+  /* 10-04：本地语义后端改按需下载 —— 知识库页卡片据此显示安装入口 */
+  getKbEmbedStatus: () => __ipc("kb:embed-status", 0, []),
+  /* npm(npmmirror)+模型(hf-mirror)；进度经 runtime:progress(id=kb-embedding) 推送 */
+  installKbEmbedBackend: () => __ipc("kb:embed-install", 0, []),
+  uninstallKbEmbedBackend: () => __ipc("kb:embed-uninstall", 0, []),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

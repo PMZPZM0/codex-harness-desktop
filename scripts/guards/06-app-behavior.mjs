@@ -412,6 +412,9 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
     "resources/tools/pw-browsers", "resources/tools/cloak-cache",
     "resources/tools/pwsh", "resources/tools/git", "resources/tools/ffmpeg",
     "resources/tools/miniconda", "resources/tools/mingw",
+    // 知识库本地 embedding 后端（10-04 改判）：npm 树解压实测 463MB（裁剪后仍 ~85MB + 模型 23MB），
+    // 早先「35MB 内置」只算了模型 ⇒ 改回按需下载（知识库页 / 开发工具页），负向断言防体积回潮。
+    "resources/tools/kb-embedding",
   ];
   for (const source of unbundled) {
     (!extraFrom.includes(source) ? ok : fail)(`package.json extraResources 不随包内置 ${source.replace("resources/tools/", "")}（体积回潮守卫）`);

@@ -25,7 +25,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { app, shell } from "electron";
 import { CHINA_NPM_REGISTRY, bundledNode, downloadEnv, npmGlobalRoot, pythonPipReady, toolchainEnv, toolsRoot } from "../toolchain";
-import { installKbEmbedding } from "./kb-embed-backend";
+import { installKbEmbedding, kbEmbeddingInstalled } from "./kb-embed-backend";
 import { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, devRuntimeSpecs, emitRuntimeProgress, pythonSiteDir, readDownloadSource, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls } from "./dev-runtimes";
 import type { DevRuntimeId, DevRuntimeSpec } from "./dev-runtimes";
 import { sendToWindow } from "./window-bus";
@@ -379,11 +379,14 @@ export const runtimeFeature = defineFeature<null>({
       // ⛔ 10-01：Laya / 手机控制是 pip 包（各有专用安装器）——必须走它们自己的安装链，
       //   绝不能落到 install-runtimes.cjs（那里没有这两个 id，会静默什么也不做）。
       if (id === "kb-embedding") {
-        // 知识库本地 embedding 后端（10-04）：npm 装 @huggingface/transformers 到 <userData>/kb-backend，
-        // 模型权重首次检索时经 hf-mirror 下载。不走 tools 目录、不随包（用户令：别拉大安装包）。
+        // 知识库本地 embedding 后端（10-04 改判：npm 树 463MB 远超 50MB 内置线 ⇒ 不随包，按需下载）。
+        // npm 装 @huggingface/transformers 到 <userData>/kb-backend + 预下载 bge 模型（hf-mirror）。
+        // 进度事件直接透传给渲染层（知识库页与开发工具页共用 runtime:progress）。
         const task = (async () => {
-          emitRuntimeProgress(id, "正在安装本地 embedding 运行库（国内镜像优先）…");
-          await installKbEmbedding((text: string) => emitRuntimeProgress(id, text));
+          if (kbEmbeddingInstalled()) return; // 已装好（三件齐）⇒ 幂等早退，不重下 463MB
+          sendToWindow("runtime:progress", { id, message: "正在安装本地 embedding 运行库（npmmirror + hf-mirror）…" });
+          await installKbEmbedding((p) => sendToWindow("runtime:progress", { id, ...p }));
+          sendToWindow("runtime:progress", { id, percent: 100, message: "安装完成", done: true });
         })();
         runtimeInstalls.set(id, task.finally(() => runtimeInstalls.delete(id)) as Promise<void>);
         await task.catch((error) => { throw error instanceof Error ? error : new Error(String(error)); });

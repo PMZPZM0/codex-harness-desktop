@@ -1481,7 +1481,7 @@ export async function run() {
 
       const GIANT_CAP = {
         "scripts/guards/07-turn-fold.mjs": 3737,
-        "scripts/guards/06-app-behavior.mjs": 2567,
+        "scripts/guards/06-app-behavior.mjs": 2568,
         "scripts/guards/02-session-logic.mjs": 1193,
         "src/features/app-state/parts/bag-types.ts": 1407,
         "scripts/guards/09-structural.mjs": 1665,   // 本文件是守卫载体：每加一条规则基线随之上移（→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916）
@@ -1489,7 +1489,7 @@ export async function run() {
         "electron/main.ts": 540,
         "scripts/guards/03-runtime-boot.mjs": 917,
         "electron/voice/voice-service.ts": 800,
-        "src/vite-env.d.ts": 781,   // 生成物：通道数增加时自然变长（守卫【2】保证与 manifest 一致）
+        "src/vite-env.d.ts": 784,   // 生成物：通道数增加时自然变长（守卫【2】保证与 manifest 一致）
         "src/components/VoiceCallFloat/use-voice-call-float-state.tsx": 806,
         "scripts/guards/10-memory-audit.mjs": 848,
         "src/features/drama-canvas/DramaCanvas.tsx": 922,

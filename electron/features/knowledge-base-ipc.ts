@@ -4,13 +4,14 @@
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { addDocument, embedDocument, listDocs, readDocument, removeDocument, searchDocs, searchDocsSmart } from "../knowledge-base";
-import { kbEmbeddingInstalled, embedWithLocalBackend } from "./kb-embed-backend";
+import { kbEmbeddingInstalled, embedWithLocalBackend, installKbEmbedding, kbEmbedStatus, uninstallKbEmbedding } from "./kb-embed-backend";
 import { readCustomModel } from "../main/01-model-catalog";
 import type { HostCaps } from "../runtime/seams";
+import { sendToWindow } from "./window-bus";
 import fs from "node:fs";
 import path from "node:path";
 
-const KB_CHANNELS = ["kb:list", "kb:add-text", "kb:add-files", "kb:remove", "kb:search", "kb:read"];
+const KB_CHANNELS = ["kb:list", "kb:add-text", "kb:add-files", "kb:remove", "kb:search", "kb:read", "kb:embed-status", "kb:embed-install", "kb:embed-uninstall"];
 
 /** 语义向量档的 embedding 函数：**本地后端优先**（开发工具页「知识库本地语义检索」装了就用，
  *  完全离线、不依赖供应商）；未装则回落供应商 /embeddings（与「AI 润色」同一条配置）；
@@ -113,6 +114,20 @@ export const knowledgeBaseFeature = defineFeature<null>({
 
     ipcHost.handle("kb:read", (_event, input: { workspace?: string; docId?: string }) => {
       return readDocument(String(input?.workspace ?? ""), String(input?.docId ?? ""));
+    });
+
+    /* ── 本地语义后端（按需下载，10-04 改判：463MB 不随包）——知识库页内直接装 ── */
+    ipcHost.handle("kb:embed-status", () => kbEmbedStatus());
+
+    ipcHost.handle("kb:embed-install", async () => {
+      await installKbEmbedding((p) => sendToWindow("runtime:progress", { id: "kb-embedding", ...p }));
+      sendToWindow("runtime:progress", { id: "kb-embedding", percent: 100, message: "安装完成", done: true });
+      return kbEmbedStatus();
+    });
+
+    ipcHost.handle("kb:embed-uninstall", async () => {
+      await uninstallKbEmbedding();
+      return kbEmbedStatus();
     });
   },
 });

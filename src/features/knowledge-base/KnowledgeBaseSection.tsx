@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Eye, FilePlus2, FolderOpen, Library, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { Eye, FilePlus2, FolderOpen, Library, RefreshCw, Search, Trash2, X, ArrowDown } from "lucide-react";
 import { PageInfo } from "../../components/SettingsHead";
 import { Spinner } from "../../components/CardShell";
 
@@ -26,6 +26,32 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
   const [pasteTitle, setPasteTitle] = useState("");
   const [pasteText, setPasteText] = useState("");
   const [preview, setPreview] = useState<{ meta: KbDoc; text: string } | null>(null);
+  /* 本地语义后端（按需下载，10-04）：状态 + 安装进度（进度事件复用主进程 runtime:progress，id=kb-embedding） */
+  const [embedInstalled, setEmbedInstalled] = useState<boolean | null>(null);
+  const [embedBusy, setEmbedBusy] = useState(false);
+  const [embedProg, setEmbedProg] = useState<{ percent?: number; speed?: string; remaining?: string; message?: string } | null>(null);
+
+  const refreshEmbedStatus = useCallback(async () => {
+    try { setEmbedInstalled(Boolean((await window.codex.getKbEmbedStatus())?.installed)); }
+    catch { setEmbedInstalled(false); }
+  }, []);
+
+  useEffect(() => {
+    void refreshEmbedStatus();
+    const off = window.codex.onRuntimeProgress((payload: any) => {
+      if (payload?.id !== "kb-embedding") return;
+      if (payload.done) { setEmbedBusy(false); setEmbedProg(null); void refreshEmbedStatus(); }
+      else setEmbedProg(payload);
+    });
+    return off;
+  }, [refreshEmbedStatus]);
+
+  const installEmbed = async () => {
+    setEmbedBusy(true);
+    try { await window.codex.installKbEmbedBackend(); setNotice("本地语义检索已就绪——之后的导入与检索都会带上语义档"); }
+    catch (error: any) { setNotice(`安装失败：${error?.message ?? error}`); }
+    finally { setEmbedBusy(false); }
+  };
 
   const openPreview = async (doc: KbDoc) => {
     try {
@@ -107,6 +133,31 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
   return (
     <section className="settings-section stack kb-page">
       <div className="settings-copy"><h2>知识库<PageInfo text={<>项目级本地知识库：文档落在 <code>{workspace}\.codex-harness\knowledge\</code>，随项目走。检索 v1 = 分块全文评分（零依赖、离线可用）；语义向量检索后端（LanceDB + 本地 embedding）将在开发工具页按需提供。</>} helpKey="knowledge-base" label="知识库" /></h2></div>
+
+      {/* 本地语义后端：未安装时给下载卡片（进度/速度/剩余），装完卡片消失 */}
+      {embedInstalled === false ? (
+        <div className="kb-embed-card">
+          <span className="kb-embed-main">
+            <strong>本地语义检索（可选增强）</strong>
+            <small>离线中文向量模型 + ONNX 运行库，装好后「语义检索」不再依赖供应商接口。约 110 MB，走国内镜像（npmmirror + hf-mirror），装完即用。</small>
+          </span>
+          {embedProg || embedBusy ? (
+            <span className="runtime-install-state">
+              <span className="runtime-progress-bar" role="progressbar" aria-label="本地语义检索下载进度" aria-valuenow={embedProg?.percent ?? 0} aria-valuemin={0} aria-valuemax={100}>
+                <i style={{ width: `${embedProg?.percent ?? 0}%` }} />
+              </span>
+              <em className="runtime-progress">
+                {typeof embedProg?.percent === "number" ? `${embedProg.percent}%` : "准备中…"}
+                {embedProg?.speed ? ` · ${embedProg.speed}` : ""}
+                {embedProg?.remaining ? ` · ${embedProg.remaining}` : ""}
+                {embedProg?.message ? ` · ${embedProg.message}` : ""}
+              </em>
+            </span>
+          ) : (
+            <button className="primary-setting" disabled={embedBusy} onClick={() => void installEmbed()}><ArrowDown size={13} />下载并安装</button>
+          )}
+        </div>
+      ) : null}
 
       <div className="resource-toolbar">
         <div className="kb-search"><Search size={13} /><input value={query} placeholder="在知识库中检索…" onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void doSearch(); }} /></div>
