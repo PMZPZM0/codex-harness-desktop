@@ -136,6 +136,12 @@ try {
   //   用户只能手动在设置页里存，Codex 自己写不进去。能力清单里还列着通道名 ⇒
   //   读代码会以为"配好了"。⇒ 必须钉工具清单里的**读写两侧**都在。
   {
+    const branchOf = (src, tool) => {
+      const i = src.indexOf(`name === "${tool}"`);
+      if (i < 0) return "";
+      const j = src.indexOf('if (name === "', i + 10);
+      return src.slice(i, j < 0 ? i + 4000 : j);
+    };
     const core = readFileSync(join(ROOT, "dist-electron", "features", "dispatch-core.js"), "utf8");
     const rpc = readFileSync(join(ROOT, "dist-electron", "features", "dispatch-rpc.js"), "utf8");
     const toolNames = [...core.matchAll(/name:\s*"([a-z_]+)"/g)].map((m) => m[1]);
@@ -143,10 +149,33 @@ try {
     ok(toolNames.includes("knowledge_add"), "模型侧有 knowledge_add（写）—— 缺它就退化成只能手动存");
     // ⛔ 声明了不等于能跑：执行端也必须有同名分支
     ok(/name === "knowledge_add"/.test(rpc), "knowledge_add 有执行端分支（只声明不接 = 点了没反应）");
-    // ⚠️ 权限闸：被委派会话不该能改项目知识库
+    // ⚠️ 权限闸：被委派会话不该能改项目知识库（同⛔ 用结构边界，不用固定窗口）
     ok(
-      /knowledge_add[\s\S]{0,900}restrictedThreadRole/.test(rpc),
+      /restrictedThreadRole/.test(branchOf(rpc, "knowledge_add")),
       "knowledge_add 受 restrictedThreadRole 闸（专家/被调度会话不许写知识库）",
+    );
+    /*⛔⛔ 判据 7（2026-10-04 用户问「读和写还有索引工具都有了吧」查出来的缺口）：
+       补向量原来**只在 UI 两条路径**里调（knowledge-base-ipc.ts 的 add-text / add-files），
+       模型这条路绕过了它 ⇒ 模型写进去的知识**只有全文索引、没有向量索引**，
+       语义检索永远召不回，**且用户看不到任何报错**。
+       ⚠️ 这类缺口只看"工具在不在清单里"抓不到 —— 必须钉**写入路径有没有接索引**。
+       ⛔⛔ 判据形状：不能用「`knowledge_add[\s\S]{0,900}embedInBackground`」这种
+       **固定字符窗口** —— 实测真实距离 1671 字符（我注释写长了），窗口不够就恒红。
+       ⇒ 改成「**取该工具分支到下一个 `if (name ===` 之间**的片段」（结构边界，与长度无关）。
+       这与「切片窗口不能靠下一个 handler / 用结构不用字符数」是同一条纪律。 */
+    const addBranch = branchOf(rpc, "knowledge_add");
+    ok(
+      /embedInBackground/.test(addBranch) && /kbEmbeddingInstalled/.test(addBranch),
+      "knowledge_add 会补语义向量索引（否则模型写的知识只有全文索引、语义档永远召不回）",
+    );
+    // ⛔⛔ 查**产物**时必须用 **CJS 形态**：TS 的 `export function` 编译成
+    //   `exports.xxx = xxx`，产物里**搜不到 "export function"**。
+    //   我第一版写 `/export function embedInBackground/` ⇒ 恒红，差点以为"没导出"。
+    ok(
+      /exports\.embedInBackground\s*=/.test(
+        readFileSync(join(ROOT, "dist-electron", "features", "knowledge-base-ipc.js"), "utf8"),
+      ),
+      "embedInBackground 已导出（模型侧要复用它，否则又变成两套索引逻辑）—— 查 CJS 形态 exports.x =",
     );
   }
 } finally {

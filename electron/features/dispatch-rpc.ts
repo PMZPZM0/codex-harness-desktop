@@ -119,10 +119,31 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     // ⛔ 先查同名：同名会**新增**一条（safeId 带时间戳），不报错 ⇒ 重复条目会悄悄堆起来
     const dup = listDocs(cwd).find((d) => d.title === title);
     const meta = addDocument(cwd, { title, text, source: String(args.source ?? "模型写入") });
+    /*⛔⛔ 补向量索引（2026-10-04 用户问「读和写还有索引工具都有了吧」查出来的缺口）：
+       补向量原来**只在 UI 两条路径**（kb:add-text / kb:add-files）里调，
+       模型这条路绕过了它 ⇒ **模型写进去的知识只有全文索引、没有向量索引**，
+       语义检索（`semantic: true`）永远召不回 —— 而用户看不到任何报错。
+       ⚠️ 只在**本地嵌入后端已装**时补：`dispatch-rpc` 拿不到 `secure`（那是宿主能力接缝，
+       只用于解密供应商 API Key 做回落），而本地后端是**完全离线**的、不要 secure。
+       ⇒ 未装后端时如实告诉用户"当前只有全文索引"，不假装已经全索引了。 */
+    let indexed = false;
+    try {
+      const { kbEmbeddingInstalled } = await import("./kb-embed-backend");
+      if (kbEmbeddingInstalled()) {
+        const { embedInBackground } = await import("./knowledge-base-ipc");
+        // ⛔ secure 传 null（不是假造一个）：本地后端分支**完全不读** secure，
+        //   而拿不到 secure 就意味着没法做供应商回落 —— 那种情况如实报错更好。
+        embedInBackground(null, cwd, [meta.id]);
+        indexed = true;
+      }
+    } catch { /* 补向量失败只影响语义档，全文检索照常 —— 不阻断写入 */ }
     return {
       ok: true,
       output: `已写入知识库：${meta.title}（${meta.chunks} 块，docId=${meta.id}）`
-        + (dup ? `。⚠️ 已存在同名文档（docId=${dup.id}），本次**新增**了一条而非覆盖 —— 若只是更新，请改用带日期的标题避免重复。` : ""),
+        + (dup ? `。⚠️ 已存在同名文档（docId=${dup.id}），本次**新增**了一条而非覆盖 —— 若只是更新，请改用带日期的标题避免重复。` : "")
+        + (indexed
+          ? "。已在后台补语义向量索引（稍候片刻即可被语义检索召回）。"
+          : "。⚠️ 未装本地嵌入后端 ⇒ **只有全文索引**；语义检索召不到这条（全文检索不受影响）。"),
     };
   }
   if (name === "scheduler_save") {
