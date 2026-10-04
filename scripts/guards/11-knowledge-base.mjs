@@ -12,6 +12,7 @@
  *   4. limit 生效、不超上限
  */
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { codeOnly } from "./_ctx.mjs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
@@ -176,6 +177,45 @@ try {
         readFileSync(join(ROOT, "dist-electron", "features", "knowledge-base-ipc.js"), "utf8"),
       ),
       "embedInBackground 已导出（模型侧要复用它，否则又变成两套索引逻辑）—— 查 CJS 形态 exports.x =",
+    );
+
+    /* ── 判据 8（2026-10-04 用户拍板「Laya 未装照旧、装了增强」）：软增强接线 ──
+       两条增强：① knowledge_add 写入前 Laya 判低价值则拒写；② knowledge_search 结果 Laya 重排。
+       ⛔ fail-open 是命门：Laya 未装 / 未就绪 / 超时 = 弃权放行，门禁绝不能丢知识。
+       ⛔ UI 手动路径（knowledge-base-ipc.ts）不许接门禁 —— 用户手动导入是明确意图，不掺模型判断。 */
+    const layaDist = readFileSync(join(ROOT, "dist-electron", "features", "laya-service.js"), "utf8");
+    ok(/exports\.layaJudge\s*=/.test(layaDist), "layaJudge 已导出（软增强的唯一入口，查 CJS 形态）");
+    // 就绪门槛：layaJudge 必须先查 proc/ready（⛔ 不为一次判断拉起 1.7GB 服务 —— 思考档同款纪律）。
+    // ⛔ 锚在 **函数体**（async function layaJudge 起）：文件头的 exports 赋值块在所有函数体之前，
+    //   从 exports.layaJudge 往后搜 `!proc || !ready` 会命中 **layaDecideEffort** 的同款判断 ⇒ 假绿。
+    const layaFn = layaDist.slice(layaDist.indexOf("async function layaJudge"));
+    ok(
+      /!\s*proc\s*\|\|\s*!\s*ready[\s\S]*?Promise\.race/.test(layaFn),
+      "layaJudge 先查服务就绪再判 + 超时兜底（未就绪弃权，不为判断拉起服务）",
+    );
+    const searchBranch = branchOf(rpc, "knowledge_search");
+    ok(
+      /layaJudge/.test(addBranch) && /"junk"/.test(addBranch) && /未写入知识库/.test(addBranch),
+      "knowledge_add 接了 Laya 写入门禁（判 junk 拒写并说明）",
+    );
+    // ⛔ fail-open 形状 = **顺序**：layaJudge → catch（门禁自己的）→ addDocument。
+    //   光搜 `layaJudge…catch` 不够 —— 分支后段的补向量还有第二个 try/catch，会顶替命中（变异实测）。
+    ok(
+      /layaJudge[\s\S]*?catch[\s\S]*?addDocument/.test(addBranch),
+      "写入门禁 fail-open（layaJudge 环节被 try/catch 包住，异常不拦写入）",
+    );
+    ok(
+      /layaJudge/.test(searchBranch) && /hits\[\w+\]/.test(searchBranch) && /"none"/.test(searchBranch),
+      "knowledge_search 接了 Laya 重排（选中候选置顶；选 none = 弃权原序返回）",
+    );
+    ok(
+      /Laya 智能判断/.test(core),
+      "knowledge_add 工具描述写了 Laya 门禁（模型不知道门禁存在 = 被拒后不知所措）",
+    );
+    // 负向断言：UI 手动路径不接门禁。⛔ 查**源码**必须过 codeOnly 剥注释（注释里提 laya 会假红）
+    ok(
+      !/laya/i.test(codeOnly(readFileSync(join(ROOT, "electron", "features", "knowledge-base-ipc.ts"), "utf8"))),
+      "UI 手动路径（kb:add-text / kb:add-files）不接 Laya 门禁（用户手动导入是明确意图）",
     );
   }
 } finally {
