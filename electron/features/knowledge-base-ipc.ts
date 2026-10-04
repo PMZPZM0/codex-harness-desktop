@@ -60,7 +60,5 @@ export const knowledgeBaseFeature = defineFeature<null>({
     ipcHost.handle("kb:read", (_event, input: { workspace?: string; docId?: string }) => {
       return readDocument(String(input?.workspace ?? ""), String(input?.docId ?? ""));
     });
-
-    for (const ch of KB_CHANNELS) ipcHost.removeHandler(ch);
   },
 });
