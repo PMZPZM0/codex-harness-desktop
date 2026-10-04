@@ -161,18 +161,40 @@ export function filterTargetsBySwitch(targets: DispatchTarget[], dispatch?: Disp
 /** 目录 → 工具 description（模型据此知道「有什么可以调」，这是闭环的前提）。 */
 export function dispatchToolDescription(targets: DispatchTarget[]): string {
   const list = Array.isArray(targets) ? targets : [];
-  const lines = list.slice(0, 40).map((target) => {
+  const line = (target: DispatchTarget) => {
     const who = target.kind === "member" && target.teamId ? `${target.teamId} / ${target.memberId}` : target.key;
     const title = [target.name, target.profession].filter(Boolean).join(" · ");
     const desc = String(target.description ?? "").replace(/\s+/g, " ").slice(0, 80);
-    return `- ${kindLabel(target.kind)}「${title}」→ name=${JSON.stringify(who)}${desc ? `：${desc}` : ""}`;
-  });
+    return `  - ${title} → name=${JSON.stringify(who)}（kind="${target.kind}"）${desc ? `：${desc}` : ""}`;
+  };
+  /* ⛔⛔ 2026-10-04 用户报「提示词写错了」——
+     原版把三类**平铺在一个无分节的列表**里，只在每行前缀写「专家」「专家团」「子智能体」，
+     模型据此自己挑 ⇒ 用户开了子智能体、明确要派子智能体，模型却派了专家。
+     根因不是"没列出来"，而是**没把"选谁"这件事讲清**：三类适用场景完全不同，
+     平铺后模型只能靠名字猜。⇒ 改成**按 kind 分节 + 每节写明"什么时候选它"**，
+     并显式给出"用户点名了哪类就派哪类"这条硬规则。 */
+  const section = (kind: DispatchTarget["kind"], title: string, when: string) => {
+    const items = list.filter((t) => t.kind === kind);
+    if (!items.length) return [];
+    return ["", `【${title}】${when}`, ...items.map(line)];
+  };
+  const sections = [
+    ...section("expert", "专家（单人）", "一个独立的专业角色，适合评审/创作/调研这类**要专业判断、产出自己就是最终答案**的活。"),
+    ...section("team", "专家团（多人协作）", "一个团队按 SOP 分工协作，适合**要多个角色配合、产出需要汇总**的活（如软件开发：设计+前端+后端+测试）。"),
+    ...section("subagent", "子智能体（你自定义的角色）", "你在设置里配置的自定义角色，适合**固定流程、专精某一类活**（如只做评审、只做翻译）。"),
+  ];
   return [
-    "调度一个智能体替你完成**独立的子任务**并拿到它的产出。适合：需要专门角色（代码审查/演示文稿/内容创作）、需要上下文隔离（大量文件阅读不要污染本会话）、可以并行推进的活。",
+    "调度一个智能体替你完成**独立的子任务**并拿到它的产出。适合：需要专门角色、需要上下文隔离（大量文件阅读不要污染本会话）、可以并行推进的活。",
     "调用后会为它开一个独立会话（会出现在左侧侧栏），任务结束前保持同步等待；返回的是它的最终产出文本。",
     "",
+    "⛔ **选谁：先看用户点名了哪一类，就派那一类。**用户说「派专家/找个专家」→ 专家；",
+    "   说「用专家团/让团队」→ 专家团；说「派子智能体/让 XX 角色」→ 子智能体。",
+    "   用户没指定时，按下面三节的适用场景挑**最贴切的一类**，并在回复里说明你选了谁、为什么。",
+    "⛔ **不要把子智能体当专家用，也不要把专家当子智能体用**——它们是三套独立配置，",
+    "   名字相似但能力和来源不同，派错类型用户会立刻发现。",
+    "",
     "当前本会话可调度的对象：",
-    ...lines,
+    ...(sections.length ? sections : ["  （当前没有任何可调度对象 —— 如需派活，先让用户到设置里启用专家/专家团/子智能体）"]),
     "",
     "参数 kind 必须与上面列出的对象类型一致；name 用上面给出的值。委托时把「要它做什么、验收标准、相关文件/背景」一次说清——它看不到你和用户的对话。",
     "任务整体完成后，如果本次调度产生了临时会话，可以先问用户是否归档它们（用 agent_ask），用户同意后再调用 agent_archive_sessions。",
