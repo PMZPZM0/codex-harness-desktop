@@ -394,12 +394,6 @@ export async function installOfficialMarketPlugin(input: { plugin: OfficialMarke
   const plugin = input.plugin;
   const progress: ProgressFn = (stage, message) => input.onProgress?.({ stage, message });
   if (!plugin?.slug || !plugin.pluginPath) throw new Error(plugin?.unavailableReason || "无效的插件条目");
-  // ⛔ pluginPath 是**渲染层传来的字符串**，而它会被拼进临时目录里的取值路径：
-  //   只允许 `plugins/<slug>` 这一种上游形态（含 `..` 或以 / 开头的都拒绝）。
-  //   越界拼写在下游拿不到任何文件（tree 前缀过滤）看似无害，但**路径校验不能靠"大概传不到"**。
-  if (!/^[\w.-]+(\/[\w.-]+)+$/.test(plugin.pluginPath) || plugin.pluginPath.split("/").includes("..")) {
-    throw new Error(`插件路径不合法：${plugin.pluginPath}`);
-  }
   const marketDir = input.marketDir;
   progress("resolve", "正在解析官方插件清单与文件列表");
   const files = (await repoTree(marketDir, progress)).filter((file) => file.path.startsWith(`${plugin.pluginPath}/`));
@@ -407,6 +401,14 @@ export async function installOfficialMarketPlugin(input: { plugin: OfficialMarke
   if (files.length > MAX_FILES) throw new Error(`插件文件过多（${files.length} 个），已拒绝安装`);
   const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
   if (totalBytes > MAX_TOTAL_BYTES) throw new Error("插件包超过 50 MB，已拒绝安装");
+
+  // ⛔ 10-03 合并时补上（WorkBuddy 侧加的校验，引擎那份缺）：pluginPath 是**渲染层传来的字符串**，
+  //   而它会被拼进临时目录里的取值路径 —— 只允许 `plugins/<slug>` 这一种上游形态
+  //   （含 `..` 或以 / 开头的都拒绝）。
+  //   越界拼写在下游拿不到任何文件（tree 前缀过滤）看似无害，但**路径校验不能靠"大概传不到"**。
+  if (!/^[\w.-]+(\/[\w.-]+)+$/.test(plugin.pluginPath) || plugin.pluginPath.split("/").includes("..")) {
+    throw new Error(`插件路径不合法：${plugin.pluginPath}`);
+  }
 
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), "codex-harness-official-"));
   try {
