@@ -354,18 +354,31 @@ FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）· Playwright 内核�
 | 指纹浏览器 | `require("cloakbrowser")` / `tools/npm-global/cloakbrowser` | 需先装「自动化工具包」+「Cloak 内核」 |
 | 内置技能 | `codex-home/skills/` 的 `desktop-automation`、`browser-skill` | 随应用写入，引导引擎调自动化工具；旧 `browser-automation` 已退役（升级时按指纹自动清理，用户改过的目录不碰） |
 
-## 会话动态工具（thread/start 已注册，可直接调用）
+## 会话动态工具（thread/start / thread/resume 注册，可直接调用）
 
 | 工具 | 来源 | 用途 |
 |---|---|---|
-| agent_invoke / agent_archive_sessions | **内置 MCP** harness-dispatch | 派一个干净上下文的自己 / 归档本次调度产生的临时会话 |
-| scheduler_save / scheduler_list / scheduler_run / scheduler_delete | **内置 MCP** harness-dispatch | 定时任务四件套（`threadId:"current"` = 就在当前会话里续聊执行；不确定用户要在哪个会话执行就先问） |
-| image_generate / video_generate / video_status / video_concat | **内置 MCP** harness-dispatch | **媒体四件套（09-29）**：生图（`count` 1–4 并发变体、落盘返回本地路径）/ 提交视频（**立即返回 jobId，不等待**）/ 查任务（成功自动下载落盘）/ 多镜拼成片（ffmpeg，缺 FFmpeg 时引导开发工具页装） |
+| agent_invoke / agent_archive_sessions | 宿主 **dynamicTools**（`part08/01-seg.tsx` 的 `buildDynamicTools`，分发在 `part05/event-router/02-request.tsx`） | 派一个干净上下文的自己 / 归档本次调度产生的临时会话。执行端转 IPC `agents:invoke` / `agents:archive`，与内置 MCP harness-dispatch **共用同一个 `runDelegatedTask` 硬闸** |
 | memory_recall / memory_save | 引擎 dynamicTools | 查询/保存分层记忆（用户偏好/项目背景/工作流/任务经验）；发送前应用会自动注入相关记忆 |
-| 生图：首选 **MCP `image_generate`**，命令行 `harness-media.mjs image` 只作老会话兜底；识图：命令行 `harness-media.mjs vision` | 命令行 | 需在 设置→插件→内置插件 配置；未配置时调用会返回指引 |
-| rpa_save / rpa_run | — | 保存自动化流程为 RPA 配方 / 列出并执行已存配方（逐步复现） |
-| task_add / task_update | — | 维护用户任务清单（新增/改状态/列出/删除） |
-| agent_ask | — | 向用户展示选项卡等待选择（第一项为推荐），用于关键决策确认 |
+| 生图：命令行 `harness-media.mjs image`（首选 dynamicTool `generate_image`）；识图：命令行 `harness-media.mjs vision` | 命令行 / dynamicTool | 需在 设置→插件→内置插件 配置；未配置时调用会返回指引 |
+| rpa_save / rpa_run | dynamicTools | 保存自动化流程为 RPA 配方 / 列出并执行已存配方（逐步复现） |
+| task_add / task_update | dynamicTools | 维护用户任务清单（新增/改状态/列出/删除） |
+| agent_ask | dynamicTools | 向用户展示选项卡等待选择（第一项为推荐），用于关键决策确认 |
+
+> ⛔⛔ **内置 MCP（harness-dispatch）的工具在引擎 0.157 里不再直接可调**（10-05 实测定性，用户报「调度工具用不了」的根因）：
+>   · 引擎把 MCP 工具改为**延迟暴露** —— `input[0].additional_tools` 里只有 `functions` / `clock` / `collaboration`
+>     三组 11 个工具，`agent_invoke` 出现 0 次；`functions.exec` 的说明原话是「Some deferred nested tools may be
+>     omitted from this description … still available on the global `tools` object and **listed in `ALL_TOOLS`**」。
+>     引擎 feature `tool_search_always_defer_mcp_tools` 已 `removed=true` ⇒ 该行为**永久生效**。
+>   · 直接调裸名 → `unsupported call: <name>`（`codex_core::tools::router`）；调 `mcp__<server>__<name>` 同样不支持。
+>   · 复现方法：起**独立 `CODEX_HOME`**（隔离，不碰用户会话）+ 把 `model_provider` 指向一个本地 mock HTTP 服务，
+>     截获引擎真实请求体 —— 工具面在 `input[0]`（`type:"additional_tools"`）的 `tools[]` 里，直接数 `name` 即可。
+>     （隔离起真实 app-server 的握手套路见技能 `codex-engine-config-probe`；判定「某个名到底在不在工具面」必须这样实测，读代码会漏。）
+>   ⇒ 所以 `scheduler_*` / `knowledge_*` / `ui_component_*` / `video_*` / `workflow_*` / `voice_generate` /
+>     `expert_save` / `subagent_save` / `connector_register` / `expert_list` 这些**当前都不在模型工具面里**
+>     （宿主指令里那句「if it is in your tool list」的判据因此恒假，能力静默降级）。
+>     要恢复它们得把内置 MCP 的工具面**镜像成 dynamicTools**（并给 `dispatchRpcCall` 补一条显式 callerThreadId
+>     入参 —— 它的身份证据来自 MCP 路径才有的 `dispatchProbes`），属**未开工的架构欠账**，改前先问用户。
 
 > ⛔ 上表的**权威来源是代码**：MCP 工具见 `electron/features/dispatch-core.ts` 的工具数组（改完跑 `npm run gen:ipc` 会同步进 `harness-api` 技能），命令行能力见 `electron/developer-instructions.ts`。表里对不上的名字以代码为准（09-29 发现本表长期把命令行能力 `generate_image` 写成"工具"，且漏了后来新增的调度/媒体工具）。
 > ⛔ **生图生视频的完整用法**读两个内置技能：`image-generation`（提示词五段结构 / 尺寸选择 / 变体策略 / 一致性）、`video-generation`（模式路由 / 8 家厂商矩阵 / 去漂移 / 失败修复 / 成片拼接）。

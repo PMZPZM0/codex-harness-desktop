@@ -71,15 +71,18 @@ const VISION_INSTRUCTIONS = (mediaCommand: string) =>
  *  ⛔ 必须写成**条件式**（与 BROWSER_INSTRUCTIONS 同一纪律）：调度是**会话级**开关，而这里是
  *     全局指令 —— 直接命令"用 agent_invoke"会让没开调度的会话去调不存在的工具，把「没开」
  *     误判成「坏了」。
- *  ⛔ **但「工具表里有没有」不是可靠判据（09-21 查清）**：`harness-dispatch` 是 config.toml 里的
- *     **全局** MCP 段，`tools/list` **无条件**返回 `agent_invoke`（`main.ts` 里 `mcp_servers`
- *     只出现在 config.toml 生成路径，没有任何 per-thread 掩码；开关只按会话存在
- *     thread-runtime，引擎侧读不到）⇒ 没开调度的会话，工具**照样在表里**。所以判据必须落到
- *     **调用结果**上：调用被拒（原因含「不持有调度权限」）＝本会话调度没开。两条都写进指引，
- *     哪个成立都给出正确行为（工具表判断留着，以防将来真有掩码）。
+ *  ⛔⛔ 判据演进（10-05 第三次修正，前两次都踩空）：
+ *     · 09-21 版用「调用被拒（原因含「不持有调度权限」）」—— 对，但已不是唯一拒绝理由；
+ *     · 09-21 补的「工具表里有没有」判据**已彻底失效**：10-05 起 `agent_invoke` 是宿主
+ *       注册的 dynamicTool，**永远在工具表里**（见 part08/01-seg.tsx 的 buildDynamicTools：
+ *       注册刻意不带开关条件，否则用户中途打开调度时工具面不重建）。这条判据恒真 ⇒
+ *       模型会对着"没开调度"的会话反复尝试。
+ *     ⇒ 现在以**会话里那条告知**为主判据（`【调度已开启】`，用户扳开关时由应用发出、
+ *       关掉时有 `【调度已关闭】`；它按勾选逐类列出可派对象，是会话级真相），
+ *       并保留"调用被拒就收手"的兜底 —— 拒绝文案会让模型读到「当前开启：X」。
  *  对应的执行者是随应用种入的内置子智能体（electron/builtin-agents.ts，id=fresh-review）。 */
 const REVIEW_INSTRUCTIONS =
-  "\n6) fresh-context review — when you are about to hand over a non-trivial result (a code change, a plan, a document), prefer having it reviewed by a NEW session that cannot see this conversation.\n   IF `agent_invoke` is in your tool list: dispatch the built-in subagent named \"评审（新鲜上下文）\" with kind=subagent. It judges only the material you hand it — which is the point: your own review is contaminated by the detour you just took.\n   How to write the query (the reviewer sees NOTHING else, so it must be self-contained): (a) what the material is and where it lives — file paths, or the full text if short; (b) what the goal was; (c) what you are unsure about. Do NOT paste this conversation, and do NOT narrate your reasoning.\n   IF that call comes back rejected, the reason containing 「不持有调度权限」: scheduling is off for this session after all — do not retry, do not work around it, fall through to the next line.\n   IF `agent_invoke` is NOT in your tool list, or a call was just rejected for that reason: scheduling is off for this session — do not try to work around it; review the material yourself and say explicitly that it was a self-review.\n   Skip this entirely for trivial edits, or when the user asked for speed.";
+  "\n6) fresh-context review — when you are about to hand over a non-trivial result (a code change, a plan, a document), prefer having it reviewed by a NEW session that cannot see this conversation.\n   IF the conversation carries the notice 「【调度已开启】」(the app posts it when the user flips this session's 调度 switch): dispatch the built-in subagent named \"评审（新鲜上下文）\" with kind=subagent. It judges only the material you hand it — which is the point: your own review is contaminated by the detour you just took.\n   How to write the query (the reviewer sees NOTHING else, so it must be self-contained): (a) what the material is and where it lives — file paths, or the full text if short; (b) what the goal was; (c) what you are unsure about. Do NOT paste this conversation, and do NOT narrate your reasoning.\n   IF that call comes back rejected with a reason about the 调度 switch (「总开关是关着的」/「不持有调度权限」/「没有开启…这一类」): scheduling is off for this session after all — do not retry, do not work around it, fall through to the next line.\n   IF there is no such notice, or a call was just rejected for that reason: scheduling is off for this session — do not try to work around it; review the material yourself and say explicitly that it was a self-review.\n   Skip this entirely for trivial edits, or when the user asked for speed.";
 
 /** 记忆分层 + 踩坑留痕（09-22 加：用户实测「犯的错、踩的坑都不记」） */
 const MEMORY_INSTRUCTIONS =

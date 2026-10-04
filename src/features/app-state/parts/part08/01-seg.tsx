@@ -17,6 +17,20 @@ import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntr
 import type { Bag } from "../bag-types";
 import { openThread as openThreadImpl } from "./01-seg/open-thread";
 
+/** 调度工具 `agent_invoke` 的**兜底描述**（本会话没开调度、或描述还没算出来时用）。
+ *  ⛔ 与 `electron/features/dispatch-core.ts` 里那条 MCP 孪生描述**逐字同源**
+ *     （守卫【dpcat】比对这句「以会话里那条《调度已开启 / 调度范围已更新》的告知为准」）。
+ *     electron/ 与 src/ 互不 import ⇒ 只能各留一份字面量，靠守卫防漂移。
+ *  ⛔ 描述里**不写会话级目录**：dynamicTools 在 thread/start 时就定死了，用户中途打开调度
+ *     不会重建工具面（真机实证：会话 15:35:32 建立、15:35:54 才注入「调度已开启」）⇒
+ *     把目录写死进描述，就会出现"告诉模型去派一个本会话没开的类"的假信息。
+ *     会话级目录的唯一投递口 = 那条告知（按勾选逐类列 + 显式否定未开的类）。 */
+const DISPATCH_TOOL_DESC_FALLBACK =
+  "调度专家 / 专家团 / 子智能体 执行一个独立子任务并拿回产出。"
+  + "⛔ 可用范围**按会话**：只允许派本会话「调度」面板里**已勾选**的类别；"
+  + "未勾选的类别**即使参数能拼出名字，调用也会被拒绝**（别反复试，白烧回合）。"
+  + "本会话当前实际开启了哪几类、各有哪些对象，以会话里那条「调度已开启 / 调度范围已更新」的告知为准。";
+
 export function usePart08a(bag: Bag) {function openThread(id: string, freshThread?: Thread | null) {
   return openThreadImpl(bag, id, freshThread);
 }
@@ -274,15 +288,9 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
    *  永远进不去（Codex 反馈「我工具列表里没有 skill_search」的根因）。 */
   const buildDynamicTools = useCallback(async (): Promise<any[]> => {
     const builtinCfg = await window.codex.readBuiltinPlugins().catch(() => null);
-    /* ⛔ 调度工具面（10-04 用户拍板「调度开关就要对应生效工具，这个联动必须做好」）：
-       渲染层**一律不再注册任何调度工具**，三类对象统一走内置 MCP 的 `agent_invoke`
-       （引擎级注入，覆盖所有会话，含老会话）。闸收在两个地方：
-         · 「被委派会话不许再往下套娃」—— 主进程 L3 硬闸（canDispatchFrom）；
-         · 「哪一类被放开」—— 主进程执行端按会话勾选硬拦（electron/dispatch.ts 的 dispatchKindAllowed）。
-       ⛔ 这里曾经还注册过 `subagent_invoke`（subAgentTools）：那条通道与「调度」开关**完全脱钩**
-          （只要存在已启用子智能体，它就永远在，与总开关/子智能体勾选毫无关系），
-          还与 agent_invoke 形成**两套调度工具** ⇒ 模型只会用名字最直白的那个，
-          专家 / 专家团永远被绕过（用户症状：「只能调度子智能体」）。已整体删除。 */
+    /* ⛔ 调度工具面的**完整来龙去脉**（10-04 用户拍板"调度开关就要对应生效工具"→ 引擎 0.157
+       起 MCP 工具整批延迟暴露、不可达 → 10-05 改回渲染层注册 dynamicTools）见下方
+       `agent_invoke` / `agent_archive_sessions` 两处注册上方的注释，那里是唯一真相源。 */
     return [
       ...(builtinCfg?.image?.enabled !== false && builtinCfg?.image?.baseUrl ? [{
         type: "function",
@@ -300,9 +308,57 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
         { type: "function", name: "memory_recall", description: "按当前任务查询相关的分类记忆。", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
         { type: "function", name: "memory_save", description: "保存可复用的项目事实，必须选择分类。", inputSchema: { type: "object", properties: { category: { type: "string", enum: ["用户偏好", "项目背景", "工作流/SOP", "任务经验", "临时上下文"] }, content: { type: "string" } }, required: ["category", "content"] } },
       ] : []),
-      // ⛔ 调度工具（agent_invoke / agent_archive_sessions）走内置 MCP（harness-dispatch）：引擎级注入、
-      //    覆盖所有会话（dynamicTools 只在 thread/start 生效，对老会话永远不可见）。渲染层不注册，
-      //    避免同名双工具让模型混乱 —— 子智能体曾在这里单独注册成 subagent_invoke，已删（见上）。
+      /* ── 调度工具面（10-05 修正；⛔ 这里是「调度开关 → 生效工具」联动的**唯一**落点）──────
+         ⛔⛔ 10-04 拍板「三类对象统一走内置 MCP」本身没错，但**引擎 0.157 改了工具面策略**：
+            内置 MCP（harness-dispatch）的工具整批不进模型工具面。隔离复现（2026-10-05，
+            独立 CODEX_HOME + mock provider 截获引擎真实请求体）：`input[0].type==="additional_tools"`
+            只有 functions / clock / collaboration 三组 11 个工具，`agent_invoke` 出现 **0** 次；
+            而 `functions.exec` 的说明里明写「Some deferred nested tools may be omitted from this
+            description … they are still available on the global `tools` object and listed in
+            ALL_TOOLS」—— MCP 工具被"延迟暴露"了（引擎 feature `tool_search_always_defer_mcp_tools`
+            已 removed=true，即该行为永久生效）。
+            真机症状（用户 10-04 报「调度工具用不了」）：会话 01a1078e 里模型连调 `expert_list` /
+            `agent_invoke` 都得到 `unsupported call`（codex_core::tools::router，23:36:22 / 23:36:32），
+            而宿主同一时刻还注入了「【调度已开启】…可派对象：知微…」的告知 ⇒ 告知成了空头支票。
+         ✅ 实测回到 dynamicTools 后（与宿主完全相同的 app-server 握手验证）：
+              `agent_invoke` 会以**非延迟**条目出现在 exec 说明里（带完整签名，模型一眼看得见），
+              模型调用后由引擎以 `item/tool/call {tool:"agent_invoke", arguments}` 发回宿主执行。
+         ⛔⛔ **注册不带开关条件**：dynamicTools 只在 thread/start（新会话）与 thread/resume
+            （切会话）生效，用户中途打开调度时工具面**不会重建** ⇒ 带条件就会出现
+            「开关打开了却仍然没有工具」——那正是用户最初报的现象。开关的硬拦一律放执行端
+            （canDispatchFrom + dispatchKindAllowed，拒绝文案自带「当前开启：X」），
+            模型据此改派或如实回报，比"工具凭空消失"可解释得多。
+         ⛔ 执行端复用 IPC（agents:invoke / agents:archive），**不新增通道** —— 与 MCP 执行端
+            共用同一个 runDelegatedTask 硬闸（"被委派会话不许再套娃" + "按勾选拦 kind"）。
+         ⛔ 这里曾注册过 `subagent_invoke`（subAgentTools）：那条通道与「调度」开关**完全脱钩**、
+            还与 agent_invoke 形成两套调度工具 ⇒ 模型只挑名字最直白的它，专家/专家团永远被绕过
+            （用户症状：「只能调度子智能体」）。已整体删除，⛔ 不许再加回来。 */
+      {
+        type: "function",
+        name: "agent_invoke",
+        description: bag.activeDispatch?.enabled && bag.dispatchInfoRef.current.description
+          ? bag.dispatchInfoRef.current.description
+          : DISPATCH_TOOL_DESC_FALLBACK,
+        inputSchema: {
+          type: "object",
+          properties: {
+            kind: { type: "string", enum: ["expert", "team", "member", "subagent"], description: "expert=单个专家, team=专家团, member=专家团某成员, subagent=子智能体。⛔ 只能传本会话已开启的类别" },
+            name: { type: "string", description: "对象名称（专家名 / 团名 / 某成员名 / 子智能体名）" },
+            query: { type: "string", description: "交给它的任务描述（必须自包含：它看不到你和用户的对话）" },
+          },
+          required: ["kind", "name", "query"],
+        },
+      },
+      {
+        type: "function",
+        name: "agent_archive_sessions",
+        description: "征得用户同意后，归档本次调度产生的临时会话（threadIds 传那些调度会话的 id；省略则归档本会话派出的全部）。",
+        inputSchema: {
+          type: "object",
+          properties: { threadIds: { type: "array", items: { type: "string" }, description: "要归档的调度会话 id 列表" } },
+          required: [],
+        },
+      },
       // RPA 配方与任务清单：让 agent 能存配方/跑配方/维护清单/向用户提问
       { type: "function", name: "rpa_save", description: "把刚跑通的一条自动化流程保存为 RPA 配方，下次可直接复用执行。steps 按顺序写清每一步（网址/点击/输入/桌面操作等），kind 选 browser（浏览器）/desktop（桌面）/mixed。", inputSchema: { type: "object", properties: { name: { type: "string", description: "配方名称，如「每天导出日报」" }, desc: { type: "string", description: "一句话说明用途" }, kind: { type: "string", enum: ["browser", "desktop", "mixed"] }, steps: { type: "array", items: { type: "string" }, description: "按顺序的执行步骤" }, target: { type: "string", description: "起始网址或目标程序，可省略" } }, required: ["name", "steps", "kind"] } },
       { type: "function", name: "rpa_run", description: "列出已保存的 RPA 配方（不传 name），或按名称执行某条配方。执行时按 steps 逐步复现自动化流程。", inputSchema: { type: "object", properties: { name: { type: "string", description: "要执行的配方名称；省略则返回全部配方清单" } } } },
