@@ -313,7 +313,16 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         })}
         {singles.map((entry) => (
           <div className="dispatch-parent" key={entry.id}>
-            {renderThreadRow(entry)}
+            {/* 10-04 扩展面：**走会话行自带的 extras.actions 插入点**（02-thread-attention-rows
+                里 {extras?.actions} 就在行内部）—— 不另插兄弟节点，那样内容会落到行外面。
+                ⛔ 只对单会话行给（专家团簇与调度子会话由 renderClusterRow /
+                dispatch-children 自己管）。
+                ⛔⛔ variant 必须传 **undefined** 而不是 "lead"：该参数会走
+                `variant === "lead" ? leadBadge` 分支 ⇒ 给**每一行**都加上 lead 徽章
+                （02-thread-attention-rows:213）—— 那是行为变更，不是加个插槽。
+                ⛔ 传 threadId 是必需的：行级插槽必须知道自己在哪一行。*/}
+            {renderThreadRow(entry, undefined, { actions: <Slot id="sidebar.thread-row-actions" props={{ threadId: entry.id, thread: entry }} /> })}
+            {renderThreadRow(entry, undefined, { actions: <Slot id="sidebar.thread-row-actions" props={{ threadId: entry.id, thread: entry }} /> })}
             {childrenAfter(entry.id)}
           </div>
         ))}

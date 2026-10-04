@@ -75,6 +75,7 @@ export const KNOWN_SLOTS: readonly string[] = [
   "topbar.end",
   "overlay.root",
   "sidebar.top",
+  "sidebar.thread-row-actions",   // ⛔ 行级：插件拿到 props.threadId/thread才知道作用在哪一行
 ];
 
 /** 一处结构错误（不算致命：该插件跳过，其余继续）。 */
