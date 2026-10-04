@@ -305,6 +305,18 @@
   .topbar-actions .tb-task-menu {
     display: none;
   }
+  /* ⛔⛔ 10-04 用户截图「搜索/调度压在最小化-最大化-关闭底下」——
+     **根因不是缺断点，是顶栏没溢出裁剪**：内容宽超出可用宽度时 flex 子项会溢出
+     padding 边界（margin-left:auto 在空间不足时归零），操作簇直接落进 145px 预留区。
+     已在 02-sidebar-threads.css 给 .topbar 加 overflow:hidden + .topbar-actions flex-shrink:0。
+
+     这一档是**兜底**：万一内容仍偏多（长标题 + 大窗口钮），按「从低频到高频」收：
+       ① 右栏钮（可由快捷键替代）→ ② 调度/目标（980px 已收，这里再确认）
+     ⛔ **搜索（.history-search-wrap）不隐藏** —— 用户 10-04 明确要求：它无替代入口，
+        是高频功能，与调度是两个不同功能，不许同档。 */
+  .topbar-actions .tb-right-panel {
+    display: none;
+  }
 }
 @media (width<=760px) {
   /* 最窄：全部顶栏按键隐藏（含独立弹窗/返回，09-13 用户定稿「放大缩小按键也跟着隐藏」）。

@@ -895,8 +895,15 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
          「文件里还能搜到这个串」仍然成立 ⇒ 断言恒真、抓不到漏网。
          正确判据 = **逐个容器检查它自己那一行选择器**（行首匹配，排除逗号续行）。 */
     const topbarJsx250 = readFileSync(join(ROOT, "src/features/app-state/parts/part09/02-seg.tsx"), "utf8");
-    // 顶栏动作区的「容器级」class：按钮被藏后仍会渲染浮层的那几个必须算在内
-    const CONTAINERS = ["history-search-wrap", "ctx-picker", "task-menu-wrap"];
+    /*⛔⛔ 10-04 用户改判：**搜索（.history-search-wrap）豁免，不进任何断点**。
+       原判据（10-03）把它与"目标进程"同列 —— 但那是两个完全不同的功能：
+       搜索搜当前会话的消息，是高频且**无替代入口**（快捷键不等于可发现性）；
+       目标是低频辅助。⇒豁免必须写进断言，否则下一个人又会"顺手"把它加回断点。
+
+       豁免机制：EXEMPT 里的是**"必须不出现在任何断点里"**的控件
+       （出现即fail —— 防止"当年那个决定又回来了"）。 */
+    const EXEMPT_250 = ["history-search-wrap"];
+    const CONTAINERS = ["ctx-picker", "task-menu-wrap"];
     const uncovered = CONTAINERS.filter((c) => {
       const inJsx = topbarJsx250.includes(c);
       if (!inJsx) return false;                       // 已从 JSX 移除 ⇒ 不用管
@@ -904,12 +911,43 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       const ownLine = new RegExp("^\\s*\\.topbar-actions\\s+\\." + c + "\\s*[,{]", "m");
       return !ownLine.test(topbarCss250);
     });
+    // ⛔ 豁免控件若被人加回断点 ⇒ fail（这条是"不许回退"的防线）
+    const reExempted = EXEMPT_250.filter((c) => {
+      const inJsx = topbarJsx250.includes(c);
+      if (!inJsx) return false;
+      const ownLine = new RegExp("^\\s*\\.topbar-actions\\s+\\." + c + "\\s*[,{]", "m");
+      return ownLine.test(topbarCss250);
+    });
+    (reExempted.length === 0 ? ok : fail)(
+      `【250】豁免控件不得回到断点里（${EXEMPT_250.join("、")}）—— `
+        + `被加回：${reExempted.join("、") || "无"}；`
+        + `⚠️ 搜索无替代入口，用户 10-04 明确要求无条件显示，别按旧判据"顺手"收进窄屏档`
+    );
+    // ⛔ 10-04 根因守卫：顶栏**必须**有溢出裁剪。缺了它，内容总宽超出可用宽度时
+    //   flex 子项会溢出 padding 边界（margin-left:auto 在空间不足时归零）⇒
+    //   操作簇直接落进 145px 原生钮预留区、盖在最小化/最大化/关闭上（用户实测截图）。
+    //   这条是布局层的硬约束，与「哪个控件该隐藏」是两件事，别混。
+    // ⛔⛔ 必须读**规则真正所在的文件**：`.topbar` 基础规则在 02-sidebar-threads.css，
+    //   不是 topbarCss250（那是 09- 断点文件）—— 我第一版查错了文件，断言恒红。
+    //   ⇒判据要钉「文件归属」而不是"某文件里有"：两个文件都可能放这条规则。
+    const topbarBaseCss250 = readFileSync(join(ROOT, "src/styles/02-sidebar-threads.css"), "utf8");
+    const topbarOverflowOk =
+      /^\s*\.topbar\s*\{[^}]*overflow\s*:\s*hidden/m.test(topbarBaseCss250) ||
+      /^\s*\.topbar\s*\{[\s\S]{0,400}?overflow\s*:\s*hidden[\s\S]{0,400}?\}/m.test(topbarBaseCss250);
+    (topbarOverflowOk ? ok : fail)(
+      "【250】顶栏必须有 overflow:hidden（缺了它，操作簇会溢出到原生窗口钮底下 —— "
+        + "那是布局问题，加断点隐藏治不了；规则在 02-sidebar-threads.css）"
+    );
     (uncovered.length === 0 ? ok : fail)(
       `【250】顶栏新增控件必须补进断点（漏：${uncovered.join("、") || "无"}）`
     );
     // 目标进程按钮是 .task-menu-wrap 的**孩子**，父容器藏了它自然一起藏；单独钉它不存在反而是错的
-    (/^\s*\.topbar-actions \.history-search-wrap\s*,?$/m.test(topbarCss250) ? ok : fail)(
-      "【250】搜索🔍 必须在 <=980px 档被隐藏（10-03 用户截图：它没进过任何断点）"
+    // ⛔⛔ 10-04 用户改判：这条断言**整条废弃**。它原来要求"搜索🔍 必须在 <=980px 被隐藏"
+    //   （10-03 的判断），而用户 10-04 明确指出搜索与调度是两个不同功能、搜索必须无条件显示
+    //   （它搜当前会话的消息，是高频且无替代入口）。⇒ 反向断言已加在上面的 EXEMPT_250 里。
+    //   保留一条反向检查：搜索**不得**出现在 <=980px 那条断点规则里（防止旧判据复活）。
+    (/^\s*\.topbar-actions \.history-search-wrap\s*,?$/m.test(topbarCss250) ? fail : ok)(
+      "【250】搜索🔍 不得回到 <=980px 档的隐藏规则里（10-04 用户改判：无条件显示，它与调度是两个功能）"
     );
 
     const botChan250 = readFileSync(join(ROOT, "src/features/app-state/parts/part03/01-remote-bot-pin/01-bot-remote-channel.tsx"), "utf8");
