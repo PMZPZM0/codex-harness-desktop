@@ -147,10 +147,6 @@
         "to": "tools/python"
       },
       {
-        "from": "resources/tools/kb-embedding",
-        "to": "tools/kb-embedding"
-      },
-      {
         "from": "resources/tools/rg",
         "to": "tools/rg"
       },

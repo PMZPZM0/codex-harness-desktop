@@ -931,6 +931,11 @@ interface Window {
     removeKnowledgeDoc(input: { workspace?: string; docId?: string }): Promise<{ ok: boolean }>;
     searchKnowledge(input: { workspace?: string; query?: string; limit?: number }): Promise<{ docId: string; title: string; chunkIndex: number; score: number; snippet: string }[]>;
     readKnowledgeDoc(input: { workspace?: string; docId?: string }): Promise<{ meta: KbDocMeta; text: string } | null>;
+    /* 10-04：本地语义后端改按需下载 —— 知识库页卡片据此显示安装入口 */
+    getKbEmbedStatus(): Promise<{ installed: boolean; dir: string }>;
+    /* npm(npmmirror)+模型(hf-mirror)；进度经 runtime:progress(id=kb-embedding) 推送 */
+    installKbEmbedBackend(): Promise<{ installed: boolean; dir: string }>;
+    uninstallKbEmbedBackend(): Promise<{ installed: boolean; dir: string }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */
