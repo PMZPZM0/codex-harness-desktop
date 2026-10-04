@@ -60,12 +60,47 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                   await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `保存失败：${error.message}` }], success: false });
                 }
               }
-              // ⛔ 调度工具的渲染层分支已全部删除（09-16 删 agent_invoke / agent_archive_sessions；
-              //    10-04 删 subagent_invoke）：三类对象统一走内置 MCP 的 `agent_invoke`
-              //    （harness-dispatch），调用由主进程 HTTP 执行端直接处理，不再经渲染层回流。
-              //    ⛔ subagent_invoke 那条通道与「调度」开关**完全脱钩**（有已启用子智能体就永远在），
-              //       还让模型只会用名字最直白的它、永远绕过专家 / 专家团（用户症状：「只能调子智能体」）。
-              else if (event.params?.tool === "team_member_invoke") {
+              // ⛔⛔ 调度工具走**渲染层注册的 dynamicTool**（10-05 改回；根因见 part08/01-seg.tsx
+              //    的 buildDynamicTools 注释：引擎 0.157 起内置 MCP 的工具整批被"延迟暴露"，
+              //    不进模型工具面 ⇒ 只走 MCP 的通道等于没通道，用户报「调度工具用不了」）。
+              //    执行端不在这里另写一套：直接转 IPC，与 MCP 执行端共用 runDelegatedTask 硬闸
+              //    （canDispatchFrom 防套娃 + dispatchKindAllowed 按勾选拦 kind）。
+              //    ⛔ 发起方身份取**引擎下发的** event.params.threadId（item/tool/call 自带），
+              //    模型只能提供 kind/name/query，伪造不了身份。子智能体专用的 subagent_invoke
+              //    已整体删除（它与调度开关脱钩、还让专家/专家团永远被绕过），⛔ 不许加回来。
+              else if (event.params?.tool === "agent_invoke") {
+                const dispatchOrigin = String(event.params?.threadId ?? bag.threadRef.current?.id ?? "");
+                // kind 是联合类型：非法值**不硬塞**（先校验再断言，断言因此可证安全），
+                // 当场回一条可读的拒绝，而不是让 IPC 抛类型错——模型据此立刻改参数。
+                const kindRaw = String(args.kind ?? "");
+                const kindArg = (["expert", "team", "member", "subagent"] as const).includes(kindRaw as any)
+                  ? (kindRaw as "expert" | "team" | "member" | "subagent")
+                  : null;
+                const delegated: any = kindArg === null
+                  ? { ok: false, error: `kind 必须是 expert / team / member / subagent 之一（收到「${kindRaw}」）` }
+                  : await window.codex.invokeAgent({
+                    kind: kindArg,
+                    name: String(args.name ?? ""),
+                    query: String(args.query ?? ""),
+                    originThreadId: dispatchOrigin,
+                  });
+                await toolCallRespond.send(event.id!, {
+                  contentItems: [{ type: "inputText", text: delegated?.ok ? String(delegated.output ?? "") : `调度被拒绝：${delegated?.error ?? "未知原因"}` }],
+                  success: delegated?.ok === true,
+                });
+              } else if (event.params?.tool === "agent_archive_sessions") {
+                const dispatchOrigin = String(event.params?.threadId ?? bag.threadRef.current?.id ?? "");
+                const archived: any = await window.codex.archiveDelegates({
+                  threadIds: Array.isArray(args.threadIds) ? args.threadIds.map(String) : [],
+                  originThreadId: dispatchOrigin,
+                });
+                const done = Number(archived?.archived ?? 0);
+                const missed = Array.isArray(archived?.failed) ? archived.failed.length : 0;
+                await toolCallRespond.send(event.id!, {
+                  contentItems: [{ type: "inputText", text: `已归档 ${done} 个调度会话${missed ? `（${missed} 个失败）` : ""}。` }],
+                  success: missed === 0,
+                });
+              } else if (event.params?.tool === "team_member_invoke") {
                 await bag.invokeTeamMember(args, String(event.params?.threadId ?? ""), event.id!);
               } else if (event.params?.tool === "team_phase_invoke") {
                 // 并行阶段：一次提交多名成员，宿主并发执行（Promise.all 同时发起）后一起返回

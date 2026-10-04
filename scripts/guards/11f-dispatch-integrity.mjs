@@ -160,5 +160,48 @@ try {
   ), "主会话下方渲染 DelegatedRail（被调度会话出现在主会话下）");
 }
 
+// ── ⑦ 调度工具必须真的在模型工具面里（10-05 用户报「调度工具用不了」的结构判据）──
+// ⛔⛔ 起因：10-04 把调度改成"只走内置 MCP harness-dispatch"，而**引擎 0.157 把 MCP 工具整批
+//    延迟暴露**（`input[0].additional_tools` 里一个都没有，`functions.exec` 说明里写着
+//    "…listed in ALL_TOOLS"）⇒ 模型连调 `expert_list` / `agent_invoke` 都是
+//    `unsupported call`，而宿主同时注入「【调度已开启】…可派对象：知微…」的告知。
+//    ⇒ 下面这些判据钉的是「告知」与「工具」**必须同时到位**，且**不许按开关条件注册**
+//      （dynamicTools 只在 thread/start / thread/resume 生效，带条件注册就会出现
+//       "用户中途打开调度、工具面却不重建" —— 真机实证：会话 15:35:32 建立、15:35:54 才注入告知）。
+{
+  const seg08 = readFileSync(join(ROOT, "src/features/app-state/parts/part08/01-seg.tsx"), "utf8");
+  const req = readFileSync(join(ROOT, "src/features/app-state/parts/part05/event-router/02-request.tsx"), "utf8");
+  const core2 = readFileSync(join(ROOT, "electron/features/dispatch-core.ts"), "utf8");
+
+  ok(/name: "agent_invoke"/.test(seg08), "buildDynamicTools 注册了 agent_invoke（模型工具面的唯一来源）");
+  // ⛔ 两个代码形态**各自锚定**，⛔ 不用 `[\s\S]{0,N}` 字符窗口把它们串起来 —— 中间插几行
+  //    注释就会假红，而每次假红都诱人把 N 调大，最后等于没约束（本仓库踩过：窗口 220→600→877）。
+  ok(/required: \["kind", "name", "query"\]/.test(seg08),
+    "agent_invoke 带完整 inputSchema（空 schema ⇒ 模型只能瞎猜参数）");
+  ok(/name: "agent_archive_sessions"/.test(seg08),
+    "agent_archive_sessions 也注册了（描述里让模型「用户同意后归档」，没工具就是空话）");
+
+  // ⛔ 负向：注册侧**不得**再按开关条件注册 —— 中途开开关时 thread/start 早已过去，工具面不会重建。
+  //    （09-16~10-04 那版用 `emptyDispatch()` / `loadThreadRuntime()` 在这里取开关，正是要防它回潮。
+  //      ⚠️ 注意不能用 `loadThreadRuntime` 做判据：本文件另有 `loadThreadRuntimeRaw(`，会假红。）
+  ok(!/emptyDispatch\(/.test(seg08) && !/loadThreadRuntime\(/.test(seg08),
+    "⛔ 调度工具**不许按开关条件注册**（带了条件 ⇒ 用户打开调度后工具面仍是旧的，等于没修）");
+
+  // 描述兜底文案与 MCP 孪生同源：两边都必须把「以会话里那条告知为准」写出来
+  //（electron/ 与 src/ 互不 import ⇒ 各留一份字面量，只能靠这条防漂移）
+  const SHARED = "以会话里那条「调度已开启 / 调度范围已更新」的告知为准";
+  ok(seg08.includes(SHARED) && core2.includes(SHARED),
+    "⛔ 调度工具描述两侧同源（渲染层兜底 + dispatch-core 的 MCP 孪生都把会话级真相指向那条告知）");
+
+  // 分发端：分支必须接到**现有 IPC**（与 MCP 执行端共用 runDelegatedTask 硬闸），不许另写一套。
+  //（同上分离锚定：`event.params?.tool === "…"` 与 `window.codex.<fn>(` 各是代码形态、各自唯一。）
+  ok(/event\.params\?\.tool === "agent_invoke"/.test(req) && /window\.codex\.invokeAgent\(/.test(req),
+    "渲染层 agent_invoke 分发接 invokeAgent（agents:invoke → runDelegatedTask，与 MCP 同一处闸）");
+  ok(/event\.params\?\.tool === "agent_archive_sessions"/.test(req) && /window\.codex\.archiveDelegates\(/.test(req),
+    "渲染层 agent_archive_sessions 分发接 archiveDelegates");
+  ok((req.match(/const dispatchOrigin = String\(event\.params\?\.threadId/g) || []).length === 2,
+    "⛔ 两处发起方身份都取**引擎下发的** threadId（取 bag.threadRef 会串会话 / 让模型有机会伪造发起方）");
+}
+
 console.log("\n【dpcat】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));
 process.exit(fails ? 1 : 0);

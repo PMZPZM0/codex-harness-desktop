@@ -4071,18 +4071,16 @@ export async function run() {
   (/try \{ await ensureBuiltinReviewer\(\); \} catch/.test(main88) ? ok : fail)(
     "【88】调用包在 try/catch 里（启动链一处裸 await 抛出会掐死整条链）"
   );
-  // ⛔ 最关键的一条：指引必须**条件式**。调度是**会话级**开关，而 developer_instructions 是全局的 ——
-  // 直接命令"用 agent_invoke"会让没开调度的会话去调不存在的工具，把「没开」误判成「坏了」
-  // （BROWSER_INSTRUCTIONS 的注释里记着同款教训）。
-  (/IF `agent_invoke` is in your tool list/.test(di88) && /is NOT in your tool list/.test(di88) ? ok : fail)(
-    "【88】复审指引是条件式的（先看自己的工具表；没开调度时不许硬调 agent_invoke）"
-  );
-  // ⛔ 09-21 查清：`agent_invoke` 是 config.toml 里的**全局** MCP 段（`tools/list` 无条件返回，
-  //    main.ts 里没有 per-thread 掩码，开关只存在 thread-runtime）⇒「工具表里有没有」区分不出
-  //    调度开没开。真实判据落在**调用结果**上（原因含「不持有调度权限」），必须写进指引。
-  (/IF `agent_invoke` is in your tool list[\s\S]*不持有调度权限/.test(di88) ? ok : fail)(
-    "【88】调度开关的判据落在调用结果上（工具表无差别返回 agent_invoke，当判据会白费回合）"
-  );
+  // ⛔⛔ 10-05 修正：09-21 那两条判据都失效了 ——「调用被拒（含「不持有调度权限」）」已不是唯一
+  //    拒绝理由（还有「总开关是关着的」/「没有开启…这一类」）；而「工具表里有没有」**恒真**
+  //    （agent_invoke 现为渲染层注册的 dynamicTool，注册刻意不带开关条件）⇒ 会白烧回合。
+  //    真实信号 = 会话里那条告知 + 调用被拒文案。⛔ 只判 REVIEW_INSTRUCTIONS 那一段：别的
+  //    指令也写着 "in your tool list"（生图/视频/组件库），按全文判会假绿。
+  {
+    const reviewStr = di88.slice(di88.indexOf("const REVIEW_INSTRUCTIONS ="), di88.indexOf("const MEMORY_INSTRUCTIONS ="));
+    (/【调度已开启】/.test(reviewStr) && /不持有调度权限/.test(reviewStr) ? ok : fail)("【88】复审指引以「会话里那条【调度已开启】告知 + 被拒文案」为判据（工具表判据 10-05 已失效）");
+    (!/in your tool list/.test(reviewStr) ? ok : fail)("【88】复审指引不再拿「工具表里有没有」当调度开关的判据（dynamicTools 注册后恒真，会白烧回合）");
+  }
   (/text \+= REVIEW_INSTRUCTIONS;/.test(di88) ? ok : fail)(
     "【88】复审指引真的被注入（算了常量却没拼进去 = 死代码）"
   );

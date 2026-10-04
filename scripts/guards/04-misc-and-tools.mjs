@@ -623,11 +623,18 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     /dispatchKindAllowed\(input\.kind, originDispatch\)/.test(readFileSync(join(ROOT, "electron/features/delegation.ts"), "utf8"))
       ? ok("★ 勾选硬闸接线到 runDelegatedTask（agent_invoke 与 agents:invoke 两条入口共用一处闸）")
       : fail("dispatchKindAllowed 写了却没接进 runDelegatedTask —— 恒绿死函数");
-    // ⛔ 09-16 起调度工具改走内置 MCP（引擎硬约束：dynamicTools 只在 thread/start 生效，
-    // resume/fork/turn/start 全部不认 —— 渲染层 dynamic 注册对老会话永远不可见）
-    !/name: "agent_invoke"/.test(appSrc9)
-      ? ok("★ 渲染层不再用 dynamicTools 注册 agent_invoke（对老会话无效，改走 MCP）")
-      : fail("App.tsx 仍存在 dynamic agent_invoke 注册 —— 与 MCP 双通道会让模型混乱");
+    /* ⛔⛔ 10-05 **反转**（推翻 09-16 那条「改走内置 MCP」的判据）：引擎 0.157 起内置 MCP 的工具
+       整批被**延迟暴露** —— 真机复现（独立 CODEX_HOME + mock provider 截获引擎真实请求体）：
+       `input[0].additional_tools` 里只有 functions / clock / collaboration 三组 11 个工具，
+       `agent_invoke` 一个都没有；`functions.exec` 的说明原话是 "…listed in ALL_TOOLS"。
+       ⇒ 只走 MCP = 模型**根本看不到**这些工具，用户报「调度工具用不了」
+         （trace：`codex_core::tools::router` … `unsupported call: agent_invoke`）。
+       ⇒ 现在**必须**由渲染层注册 dynamicTool —— 实测注册后它以**非延迟**条目出现在工具面，
+          模型调用由引擎以 `item/tool/call` 发回宿主执行。
+       细节判据（不许按开关条件注册 / 描述两侧同源 / 分发接 IPC）在守卫 11f 的 ⑦ 段。 */
+    /name: "agent_invoke"/.test(codeOnly(appSrc9))
+      ? ok("★ 渲染层注册了 dynamicTool agent_invoke（引擎 0.157 不暴露 MCP 工具，这是模型唯一可见通道）")
+      : fail("渲染层没注册 agent_invoke —— 模型工具面里不会出现它，调度直接不可用（10-04 用户现场）");
     /mcp_servers\.harness-dispatch/.test(mainSrc9) && /dispatchMcpTools\(\)/.test(mainSrc9) && /ensureDispatchHttp/.test(mainSrc9)
       ? ok("★ 内置调度 MCP 已接线（HTTP 直连 + /mcp 端点 + config.toml 注入）")
       : fail("调度 MCP 通道缺失 —— 老会话永远拿不到调度工具");
