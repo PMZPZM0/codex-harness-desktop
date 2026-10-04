@@ -135,8 +135,15 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
   }, [item.id, text, revealing, running, exiting]);
   // 自动延迟可见与用户手动展开必须分开：自动行为不能写进 manualOpen，
   // 否则会被误认为“用户主动展开”，导致第一块思考永久保持打开。
-  const { open, toggle, manualOpen } = useCardOpen(Boolean(running) || revealing);
-  // 思考输出完即自动折叠（running/revealing 双双转 false 时 useCardOpen 自动收起），
+  // ⛔⛔ 10-04 用户报障「思考输出完了也不折叠」—— 原来这里写的是
+  //    `useCardOpen(Boolean(running) || revealing)`，而 **running 是"整个回合还在跑"**：
+  //    思考早就出完了、回合还在跑（工具调用/写文件/等审批）⇒ running 仍为 true
+  //    ⇒ `open = manualOpen ?? autoOpen` 一直为真 ⇒ **该折叠的永远不折叠**。
+  //    下面那句注释（"思考输出完即自动折叠"）与代码矛盾——今天才算对上。
+  //    ✅ 只看 revealing（本卡片还在逐字出字）：出完即 false ⇒ 自动折叠。
+  //    ⚠️ 别改回 running：这一行就是"折叠时机"的唯一开关。
+  const { open, toggle, manualOpen } = useCardOpen(revealing);
+  // 思考输出完即自动折叠（revealing 转 false 时 useCardOpen 自动收起），
   // 不做「完成后保持展开凑满最短可见时长」的停留——09-05 用户反馈停留体验不好。
   // 思考结束瞬间的剩余缓冲由上面揭示 effect 立即放完，不会闪断。
   // 回合运行期间只要该 reasoning item 已进入事件流，就先保留它的标题节点；
@@ -164,21 +171,22 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
      或用户点开过，浮窗才允许出现；重挂载的已完成卡从收起起步，动画无从重播。 */
   /* ⛔ 旧的 `liveStreamedRef` 与 `mountedBeforeTextRef` 已于 10-04 移除（理由见下）。
      前者声明了却从未被赋值；后者是首帧快照、判不出流式。 */
-  /* ⛔⛔ 10-04 用户报「正在思考，深度思考却没有展示出来」——
-     旧的 `mountedBeforeTextRef = useRef(!text)` 判的是**挂载那一瞬间正文是否已到齐**，
-     而 **useRef 初始值只在首帧取一次、之后再不更新** ⇒ 它不是"这个思考是否正在流式"。
-     回收历史思考、批量注入、或渲染时序差几毫秒（一起到）都会让它为 false，
-     于是"正在思考"却只剩一个空芯片 —— 那次报障就是这个。
-     同段注释里说的「10-03 定用『本实例真实直播过』」(liveStreamedRef) **声明了却从未被赋值**
-     （全文件仅声明处一个引用）⇒ 那个设计从来没落地。
+  /* ⛔⛔⛔ 10-04 两次返工才定对（用户两次报障）：
+       第1版 用 `mountedBeforeTextRef`（首帧快照）⇒ 回收历史思考/批量注入/渲染时序差几毫秒
+              时判false ⇒ "正在思考"却只剩空芯片（第一次报障）。
+       第2版 换成 `Boolean(running)` ⇒ **错得更远**：`running` 是**整个回合**在跑，
+              思考早出完了、回合还在跑 ⇒ 浮层一直开着、该折叠的不折叠（第二次报障）。
+              ⚠️ 卡片是**逐个思考**的，判据必须是「**这个思考**还在不在出字」，
+              绝不是「回合还在不在跑」。
 
-     ⇒ 换成真正可靠的信号，三者取或：
-       ① running —— 用户反馈的场景：正在思考就该看得见
-       ② revealReasoningProgress 有进度 —— 引擎确实在逐字喂（真流式）
-       ③ 手动点开过（manualOpen）—— 用户主动的意图
-     ⚠️ `Boolean(displayed)` 这道必须留着：空正文没有可展示的东西。 */
-  const streamedThisInstance = Boolean(running) || revealReasoningProgress.has(String(item.id));
-  const popupOpen = open && Boolean(displayed) && (streamedThisInstance || manualOpen !== null);
+     ⇒ 正确判据 = `revealing`（本卡片的逐字揭示进行中；第 56 行初值、第 115 行置 true、
+                第 86/96/102/112/131 行出完即置 false）
+                 || 用户手动点开过（manualOpen）
+     ⚠️ `Boolean(displayed)` 这道必须留着：空正文没有可展示的东西。
+     ⚠️ 不要再引 `revealReasoningProgress`：它是**全局表跨卡片共享**，同一回合里上一张
+        思考卡填过它 ⇒ 又变成"别的卡片在流"来决定这张开不开。 */
+  const streamingNow = revealing;
+  const popupOpen = open && Boolean(displayed) && (streamingNow || manualOpen !== null);
   const prevOpenRef = useRef(false);
   useEffect(() => {
     if (popupOpen) { prevOpenRef.current = true; setExiting(false); return; }
