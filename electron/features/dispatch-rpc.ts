@@ -98,33 +98,11 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     if (!cwd.trim()) return { ok: false, error: "无法确定工作目录 —— 知识库是项目级的，请先在会话里选择工作文件夹" };
     const { searchDocs } = await import("../knowledge-base");
     const hits = searchDocs(cwd, String(args.query ?? ""), Number(args.limit) || 8);
-    /* ── Laya 检索重排（10-04 用户拍板「未装照旧、装了增强」）：模型侧 knowledge_search
-       走的是全文 searchDocs（没有语义分）⇒ 就绪的 Laya 在候选里挑一条最相关的置顶。
-       单次 choice 调用（~33ms 量级）；未就绪 / 低置信 / 选了 none ⇒ 弃权，原序返回（fail-open）。
-       ⛔ 不在 UI 的 kb:search 上做 —— 用户手动检索要求确定性排序，不掺模型判断。 */
-    let boostIndex = -1, boostConfidence = 0;
-    if (hits.length > 1) {
-      try {
-        const { layaJudge } = await import("./laya-service");
-        const criteria: Record<string, string> = {};
-        hits.forEach((h, i) => { criteria[String(i + 1)] = `【${h.title}】${h.snippet.slice(0, 200)}`; });
-        criteria.none = "没有一条与问题相关";
-        const verdict = await layaJudge(String(args.query ?? ""), {
-          instructions: "用户在项目知识库里检索。从候选条目中选出与问题最相关的一条，按编号回答；都不相关则选 none。",
-          criteria,
-        }, { minConfidence: 0.5 });
-        if (verdict && verdict.choice !== "none") {
-          const idx = Number(verdict.choice) - 1;
-          if (idx >= 0 && idx < hits.length) { boostIndex = idx; boostConfidence = verdict.confidence; }
-        }
-      } catch { /* Laya 不可用 = 弃权，检索结果不受影响 */ }
-    }
-    const ordered = boostIndex >= 0 ? [hits[boostIndex], ...hits.filter((_, i) => i !== boostIndex)] : hits;
-    const output = ordered.map((h, i) => {
-      const tag = boostIndex >= 0 && i === 0 ? `⭐ Laya 推荐（置信 ${(boostConfidence * 100).toFixed(0)}%）· ` : "";
-      return `${tag}【${h.title} · 第 ${h.chunkIndex + 1} 块】${h.snippet}`;
-    }).join("\n\n");
-    return { ok: true, output: ordered.length ? output : "（知识库没有命中——确认相关文档已导入，或换个关键词）" };
+    /* ⛔⛔ 不接 Laya 相关性过滤（2026-10-05 校准定案，scripts/calibrate-laya-kb.mjs）：
+       三种问法实测模型把**一切候选都判相关**（不相关候选置信高达 0.80~0.94）——
+       multilingual checkpoint 对「主题相关」这类判断系统性偏置，接上只会随机丢真命中。
+       检索质量由全文/语义分负责；Laya 只做校准通过的判断（写入门禁 / 重复拦截）。 */
+    return { ok: true, output: hits.length ? hits.map((h) => `【${h.title} · 第 ${h.chunkIndex + 1} 块】${h.snippet}`).join("\n\n") : "（知识库没有命中——确认相关文档已导入，或换个关键词）" };
   }
   /* ── 知识库写入（2026-10-04）：此前**模型侧没有任何写入工具**（只读）——
      执行端与 knowledge_search 同源（同一个 knowledge-base.ts，workspace 缺省 = 调用者 cwd）。
@@ -141,26 +119,57 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     const text = String(args.text ?? "");
     if (!title) return { ok: false, error: "缺少 title" };
     if (!text.trim()) return { ok: false, error: "缺少 text（内容为空，写了也检索不到任何东西）" };
-    /* ── Laya 写入门禁（10-04 用户拍板「未装照旧、装了增强」）：服务已就绪才判，
-       判定「不值得长期保存」且置信 ≥0.6 ⇒ 拒写并说明，让模型充实内容后重试或让用户手动加。
+    /* ── Laya 写入门禁（10-04 用户拍板「未装照旧、装了增强」；阈值与问法来自
+       2026-10-05 校准 scripts/calibrate-laya-kb.mjs：knowledge/chatter 两分类问法下
+       真知识 6/6 判对（0.79+）、阈值 0.5 拦 4/6 废话且**误杀 0**——v1 问法会把
+       真知识全判 junk，⛔ 改问法必须重跑校准）。判 chatter ⇒ 拒写并说明。
        ⛔ fail-open：未装 / 未就绪 / 超时 / 低置信 / 判定异常一律放行——门禁绝不能丢知识。 */
     try {
       const { layaJudge } = await import("./laya-service");
       const verdict = await layaJudge(`${title}\n${text}`, {
-        instructions: "判断这条内容是否值得长期保存进项目知识库（保存后供日后检索复用）。",
+        instructions: "下面是一条用户想让 AI 存进项目知识库的内容。判断它属于哪一类。",
         criteria: {
-          worth: "有实质信息量：规范、结论、决策、踩坑经验、配置/接口说明等，日后会被再次引用",
-          junk: "寒暄闲聊、临时过程性内容、无信息量或与任何项目工作无关",
+          knowledge: "项目知识：开发规范、技术结论、踩坑经验、配置或接口说明、决策记录，有实质信息量。",
+          chatter: "非知识：寒暄、闲聊、情绪表达、口头招呼、无实义内容。",
         },
-      }, { minConfidence: 0.6 });
-      if (verdict?.choice === "junk") {
+      }, { minConfidence: 0.5 });
+      if (verdict?.choice === "chatter") {
         return {
           ok: false,
           error: `未写入知识库：Laya 判定该内容价值低、不适合长期保存（置信 ${(verdict.confidence * 100).toFixed(0)}%）。若它确实值得保存，请充实内容（补充背景/结论/来源）后重试，或让用户在「知识库」页手动添加。`,
         };
       }
     } catch { /* 门禁失败不拦写入 */ }
-    const { addDocument, listDocs } = await import("../knowledge-base");
+    const { addDocument, listDocs, searchDocs } = await import("../knowledge-base");
+    /* ── Laya 重复拦截（10-04 用户拍板升级）：同名检查只能挡同标题，**换了标题的重复内容照样堆**
+       （工具描述里自己承认的坑）。写入前拿「标题 + 正文开头」全文捞最像的 3 条，让 Laya 一次调用
+       逐条判 duplicate/new；判 duplicate ⇒ 拒写并给出已有条目，让模型去更新表述或换标题。
+       ⛔ fail-open：捞不到候选 / Laya 未就绪 / 低置信 / 异常一律放行——门禁绝不能丢知识。 */
+    try {
+      const { layaJudgeAll } = await import("./laya-service");
+      const similar = searchDocs(cwd, `${title} ${text.slice(0, 300)}`, 3);
+      if (similar.length) {
+        const questions: Record<string, { instructions: string; criteria: Record<string, string> }> = {};
+        similar.forEach((h, i) => {
+          questions[String(i)] = {
+            instructions: `已有知识条目：【${h.title}】${h.snippet.slice(0, 200)}\n新写入内容：\n${(`${title}\n${text}`).slice(0, 800)}\n判断新内容相对这条已有条目是否重复。`,
+            criteria: {
+              duplicate: "重复：讲的是同一件事，已有条目已覆盖，没有新增信息",
+              new: "新知识：内容不同或有新增信息，值得另存一条",
+            },
+          };
+        });
+        const verdicts = await layaJudgeAll(`${title}\n${text}`, questions, { minConfidence: 0.5, timeoutMs: 3_000 });
+        const dupIdx = Object.keys(verdicts).find((k) => verdicts[k]?.choice === "duplicate");
+        if (dupIdx !== undefined) {
+          const hit = similar[Number(dupIdx)];
+          return {
+            ok: false,
+            error: `未写入知识库：Laya 判定与已有文档《${hit.title}》重复（置信 ${(verdicts[dupIdx].confidence * 100).toFixed(0)}%）。若确有新信息请改写正文突出增量后重试；若只是想更新，已有条目不会覆盖（docId 见检索），请换用带日期的标题。`,
+          };
+        }
+      }
+    } catch { /* 重复拦截失败不拦写入 */ }
     // ⛔ 先查同名：同名会**新增**一条（safeId 带时间戳），不报错 ⇒ 重复条目会悄悄堆起来
     const dup = listDocs(cwd).find((d) => d.title === title);
     const meta = addDocument(cwd, { title, text, source: String(args.source ?? "模型写入") });

@@ -179,34 +179,55 @@ try {
       "embedInBackground 已导出（模型侧要复用它，否则又变成两套索引逻辑）—— 查 CJS 形态 exports.x =",
     );
 
-    /* ── 判据 8（2026-10-04 用户拍板「Laya 未装照旧、装了增强」）：软增强接线 ──
-       两条增强：① knowledge_add 写入前 Laya 判低价值则拒写；② knowledge_search 结果 Laya 重排。
+    /* ── 判据 8（2026-10-04 用户拍板「Laya 未装照旧、装了增强」；2026-10-05 按校准改形）──
+       校准（scripts/calibrate-laya-kb.mjs）定案：写入门禁（knowledge/chatter 问法）与重复拦截可用，
+       **检索相关性过滤不可用**（三种问法模型都把一切候选判 relevant，0.80+ 置信）⇒ 已砍。
        ⛔ fail-open 是命门：Laya 未装 / 未就绪 / 超时 = 弃权放行，门禁绝不能丢知识。
        ⛔ UI 手动路径（knowledge-base-ipc.ts）不许接门禁 —— 用户手动导入是明确意图，不掺模型判断。 */
     const layaDist = readFileSync(join(ROOT, "dist-electron", "features", "laya-service.js"), "utf8");
     ok(/exports\.layaJudge\s*=/.test(layaDist), "layaJudge 已导出（软增强的唯一入口，查 CJS 形态）");
+    ok(/exports\.layaJudgeAll\s*=/.test(layaDist), "layaJudgeAll 已导出（重复拦截用一次 HTTP 多问，不许 N 次往返）");
     // 就绪门槛：layaJudge 必须先查 proc/ready（⛔ 不为一次判断拉起 1.7GB 服务 —— 思考档同款纪律）。
     // ⛔ 锚在 **函数体**（async function layaJudge 起）：文件头的 exports 赋值块在所有函数体之前，
     //   从 exports.layaJudge 往后搜 `!proc || !ready` 会命中 **layaDecideEffort** 的同款判断 ⇒ 假绿。
-    const layaFn = layaDist.slice(layaDist.indexOf("async function layaJudge"));
+    // ⛔ 窗口必须**止于 layaJudgeAll 的函数声明**：layaFn 若切到文件尾，正则会命中
+    //   layaJudgeAll 里的同款就绪判断 ⇒ 变异改坏 layaJudge 本体也不红（实测抓过）。
+    const layaFn = layaDist.slice(
+      layaDist.indexOf("async function layaJudge"),
+      layaDist.indexOf("async function layaJudgeAll") < 0 ? undefined : layaDist.indexOf("async function layaJudgeAll"),
+    );
     ok(
       /!\s*proc\s*\|\|\s*!\s*ready[\s\S]*?Promise\.race/.test(layaFn),
       "layaJudge 先查服务就绪再判 + 超时兜底（未就绪弃权，不为判断拉起服务）",
     );
+    ok(
+      /answer_confidence\s*\?\?/.test(layaDist),
+      "判定置信读 answer_confidence（校准实测：confidence 是行动门限、可能低到 0.10，拿它判定会全部弃权）",
+    );
     const searchBranch = branchOf(rpc, "knowledge_search");
     ok(
-      /layaJudge/.test(addBranch) && /"junk"/.test(addBranch) && /未写入知识库/.test(addBranch),
-      "knowledge_add 接了 Laya 写入门禁（判 junk 拒写并说明）",
+      /layaJudge/.test(addBranch) && /"chatter"/.test(addBranch) && /未写入知识库/.test(addBranch),
+      "knowledge_add 接了 Laya 写入门禁（校准问法 knowledge/chatter，判 chatter 拒写并说明）",
     );
-    // ⛔ fail-open 形状 = **顺序**：layaJudge → catch（门禁自己的）→ addDocument。
-    //   光搜 `layaJudge…catch` 不够 —— 分支后段的补向量还有第二个 try/catch，会顶替命中（变异实测）。
+    // ⛔ fail-open 形状：写入门禁自己的 try/catch 必须存在于「第一个 layaJudge → layaJudgeAll」
+    //   的窗口内。光搜 `layaJudge…catch` 不够 —— 分支后段重复拦截还有第二个 try/catch，会顶替命中
+    //   （变异实测：删掉门禁的 catch，正则靠重复拦截的 catch 假绿）。
+    const gateSection = addBranch.slice(
+      addBranch.indexOf("layaJudge"),
+      addBranch.indexOf("layaJudgeAll") < 0 ? undefined : addBranch.indexOf("layaJudgeAll"),
+    );
     ok(
-      /layaJudge[\s\S]*?catch[\s\S]*?addDocument/.test(addBranch),
+      /catch/.test(gateSection),
       "写入门禁 fail-open（layaJudge 环节被 try/catch 包住，异常不拦写入）",
     );
     ok(
-      /layaJudge/.test(searchBranch) && /hits\[\w+\]/.test(searchBranch) && /"none"/.test(searchBranch),
-      "knowledge_search 接了 Laya 重排（选中候选置顶；选 none = 弃权原序返回）",
+      /searchDocs/.test(addBranch) && /"duplicate"/.test(addBranch),
+      "knowledge_add 接了 Laya 重复拦截（同名挡不住换标题的重复内容，校准 4/5、错在漏放方向）",
+    );
+    // 负向断言（校准定案）：检索不许接 Laya 过滤 —— 模型把一切候选判 relevant，接上只会随机丢真命中。
+    ok(
+      !/layaJudge/.test(searchBranch),
+      "knowledge_search 不接 Laya 过滤（校准三问法全不可用；想加回来必须先重跑校准并推翻结论）",
     );
     ok(
       /Laya 智能判断/.test(core),
