@@ -206,7 +206,47 @@ function _disabledDomainSet(): Set<string> {
   }
 }
 
+// ── 运行时装卸（10-04 阶段 6 真热插拔）────────────────────────────────────
+// ⛔⛔ 为什么生成物要**持有** Fiber 而不只是 mountFeature(...)：
+//    mountFeature 返回 Fiber（dispose() ⇒ 逆序跑 effect、摘监听、清服务），
+//    但原写法丢弃了返回值 ⇒ 运行期没有任何句柄可调 ⇒ 停用只能靠重启。
+//    保留句柄后，domains:set-enabled 能在运行时真正卸载/挂载单个域。
+// ⛔ 为什么挂载函数要能"按需装"：停用后再启用必须能补装回�� ——
+//    但 ENABLED 是**编译期静态 import 列表**（打包可达闭包的要求，见下方注释），
+//    所以插件本体已经在包里，缺的只是"这次没调 mountFeature"。
+export const FIBERS = new Map<string, { dispose: () => void; disposed: boolean }>();
+
+/** 当前已挂载的域 id（按挂载顺序）。 */
+export function mountedDomainIds(): string[] {
+  return [...FIBERS.keys()].filter((id) => !FIBERS.get(id)!.disposed);
+}
+
+/** 运行时挂载单个域（幂等：已挂载则原样返回 false）。 */
+export function mountDomainById(id: string): boolean {
+  if (FIBERS.has(id)) return false;
+  const row = ENABLED.find((r) => r.id === id);
+  if (!row) return false;          // 不在组合表里（不该发生）
+  if (_disabledDomainSet().has(id)) return false;  // 用户已停用 ⇒ 拒绝补装
+  FIBERS.set(id, mountFeature(row.plugin, row.config) as never);
+  return true;
+}
+
+/**
+ * 运行时卸载单个域。
+ *
+ * ⛔ 能否安全卸载取决于域的私有状态：模块级变量（子进程/句柄/定时器）不会因
+ *    dispose() 而被重置 —— 卸载后再挂载拿到的是半初始化的单例。
+ *    所以 essential-domains.ts 之外还标了 DOMAINS_NOT_HOT_UNLOADABLE（共享单例域）。
+ */
+export function unmountDomainById(id: string): boolean {
+  const fiber = FIBERS.get(id);
+  if (!fiber || fiber.disposed) return false;
+  fiber.dispose();
+  FIBERS.delete(id);
+  return true;
+}
+
 for (const row of ENABLED) {
   if (_disabledDomainSet().has(row.id)) continue;   // 用户停用 ⇒ 本次不挂载
-  mountFeature(row.plugin, row.config);
+  FIBERS.set(row.id, mountFeature(row.plugin, row.config) as never);
 }

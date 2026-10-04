@@ -28,9 +28,34 @@ import { app } from "electron";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readAppSettingsSync, saveAppSettings } from "../app-settings";
-import { ESSENTIAL_DOMAINS, isEssentialDomain } from "../essential-domains";
-import { mountedFeatures } from "../context";
+import { DOMAINS_NOT_HOT_UNLOADABLE, ESSENTIAL_DOMAINS, canHotUnload, isEssentialDomain } from "../essential-domains";
 import { defineFeature } from "../context";
+
+/**
+ * 取生成物的装卸 API（**必须惰性 require**）。
+ *
+ * ⛔⛔ 绝不能顶层 import：composition.gen.ts 的 import 列表里**有本域** ⇒ 顶层 import
+ *   生成物就是循环依赖，CJS 下生成物还没求值完 exports，本域拿到 undefined ⇒
+ *   require("electron") 侧的注册炸在 "Cannot read properties of undefined"
+ *   （10-04 真跑 dist-electron 复现，与 10-03 同型事故）。惰性 require 把取值推迟到
+ *   **调用时** —— 那时生成物早已求值完。
+ *
+ * ⛔ 同时防另一头：万一生成物结构变了（例如忘了重跑 gen:domains），这里要报出可读错误，
+ *   而不是让调用方看到 "undefined is not a function"（那句话指不出根因）。
+ */
+type RegistryApi = {
+  mountedDomainIds: () => string[];
+  mountDomainById: (id: string) => boolean;
+  unmountDomainById: (id: string) => boolean;
+};
+
+function registry(): RegistryApi {
+  const mod = require("../composition.gen") as Partial<RegistryApi>;
+  if (typeof mod.mountDomainById !== "function" || typeof mod.unmountDomainById !== "function") {
+    throw new Error("domains: 生成物缺少装卸 API —— 请跑 npm run gen:domains");
+  }
+  return mod as RegistryApi;
+}
 import type { IpcHost } from "../ipc-host";
 
 const DOMAINS_CHANNELS = ["domains:list", "domains:set-enabled", "domains:reload-hint"];
@@ -43,6 +68,8 @@ export type DomainRow = {
   disabled: boolean;
   /** 是否不可停用（essential：承载应用自身能力） */
   essential: boolean;
+  /** 能否运行时卸载（即本次停用能否立即生效），见 canHotUnload */
+  hotUnloadable: boolean;
 };
 
 /**
@@ -88,22 +115,31 @@ export const domainsFeature = defineFeature<null>({
     };
 
     ipcHost.handle("domains:list", () => {
-      const mounted = new Set(mountedFeatures());
+      const mounted = new Set(registry().mountedDomainIds());
       const off = disabledSet();
       return {
         // ⛔ 全集真相源读 **composition.json（数据文件）**，不是 composition.gen.ts：
         //   生成物 import 本域、本域再 require 生成物 = **循环依赖**，CJS 下会在模块求值期
         //   拿到未完成的 exports（10-03 实测过同类事故：plugin 为 undefined ⇒ 启动即崩）。
         //   读数据文件没有这个问题，且它才是「有哪些域可选」的真身。
-        domains: listAllDomainIds().map((id) => ({
-          id,
-          mounted: mounted.has(id),
-          disabled: off.has(id),
-          essential: isEssentialDomain(id),
-        })) as DomainRow[],
+        domains: listAllDomainIds().map((id) => {
+          const isMounted = mounted.has(id);
+          return {
+            id,
+            mounted: isMounted,
+            disabled: off.has(id),
+            essential: isEssentialDomain(id),
+            // ⛔ 可否运行时卸载 —— UI 要据此区分「立即生效」与「要重启」两种文案。
+            //   共享单例持有方（server / codexHome / mainWindow 的主人）热卸载会让
+            //   别的域拿到半初始化对象，所以必须先拒绝。
+            hotUnloadable: canHotUnload(id, isMounted),
+          };
+        }) as DomainRow[],
         essentialDomains: [...ESSENTIAL_DOMAINS],
-        // ⛔ 停用是"下次启动生效"，这个字段让 UI 能把话说准，而不是让用户以为立刻生效了
-        requiresRestart: true,
+        notHotUnloadable: [...DOMAINS_NOT_HOT_UNLOADABLE],
+        // ⛔ 不是"一律要重启"了：能热卸载的域**立即生效**。这个字段保留是因为
+        //   它现在的含义是"本次操作是否需要重启"，UI 每条记录各自带 applied。
+        requiresRestart: false,
       };
     });
 
@@ -117,17 +153,79 @@ export const domainsFeature = defineFeature<null>({
       const enabled = input?.enabled !== false;
       const userData = app.getPath("userData");
       const current = disabledSet();
+      const wasMounted = registry().mountedDomainIds().includes(id);
+
+      // ⛔⛔ 顺序要紧：**先落盘、再改运行时**。
+      //    反过来的话，一旦运行时操作抛错（半初始化域 / dispose 副作用），配置已经写了
+      //    而内存状态没变 ⇒ 下次启动行为与本次不一致，且用户看不到任何提示。
       if (enabled) current.delete(id);
       else current.add(id);
       await saveAppSettings(userData, { disabledDomains: [...current].sort() });
-      return { ok: true, id, enabled, requiresRestart: true };
+
+      // ── 运行时热插拔（10-04）────────────────────────────────────────────
+      // 能热卸载 ⇒ 真的现在就把域卸掉，通道立即消失。
+      // 不能热卸载（共享单例 / 模块级子进程）⇒ 配置已落盘，明说"要重启"，
+      //   **不假装已经生效**（那会让用户以为功能还在，其实下个进程才真的没）。
+      let applied = false;
+      let hotUnloadBlocked = false;
+      if (wasMounted && !enabled) {
+        if (canHotUnload(id, wasMounted)) {
+          try {
+            applied = registry().unmountDomainById(id);
+          } catch (error) {
+            // 域的 dispose 抛错 ⇒ 回滚配置，否则下次启动这个域静默缺席
+            const rollback = disabledSet();
+            rollback.delete(id);
+            await saveAppSettings(userData, { disabledDomains: [...rollback].sort() });
+            return { ok: false, error: `卸载「${id}」失败：${error instanceof Error ? error.message : String(error)}（配置已回滚）` };
+          }
+        } else {
+          hotUnloadBlocked = true;
+        }
+      } else if (!enabled && !wasMounted) {
+        // 本来就没挂载（配置与内存一致）⇒ 无需运行时动作
+        applied = true;
+      } else if (enabled && !wasMounted) {
+        // 之前被停用而未挂载 ⇒ 现在补装。插件本��已在包里（ENABLED 是静态 import 全集），
+        // 缺的只是这次没调 mountFeature。
+        try {
+          applied = registry().mountDomainById(id);
+        } catch (error) {
+          return { ok: false, error: `挂载「${id}」失败：${error instanceof Error ? error.message : String(error)}` };
+        }
+      } else {
+        applied = true;   // 状态本来就一致
+      }
+
+      const requiresRestart = !applied;
+      return {
+        ok: true,
+        id,
+        enabled,
+        /** 运行时是否已生效（false = 要重启） */
+        applied,
+        requiresRestart,
+        /** 为什么不热生效（UI 要把它讲清楚，而不是只说"要重启"） */
+        hotUnloadBlocked,
+      };
     });
 
-    // 单独一条：让 UI 能把"重启才生效"这句话取自主进程，而不是硬编码在前端
-    ipcHost.handle("domains:reload-hint", () => ({
-      requiresRestart: true,
-      text: "停用/启用在下次启动生效（域的通道在本次运行里已经存在或已经消失，运行时卸载不安全）",
-    }));
+    // 单独一条：让 UI 能把"要重启"这句话取自主进程，而不是硬编码在前端。
+    // ⛔ 文本必须讲清**为什么**（共享单例不能热卸载），否则用户会以为这是个 bug。
+    ipcHost.handle("domains:reload-hint", (_event, input: { id?: string }) => {
+      const id = String(input?.id ?? "");
+      const mounted = id ? registry().mountedDomainIds().includes(id) : false;
+      const blocked = id ? DOMAINS_NOT_HOT_UNLOADABLE.includes(id) : false;
+      return {
+        requiresRestart: blocked || !id,
+        text: !id
+          ? "指定一个域才能给出是否需要重启的判断"
+          : blocked
+            ? `「${id}」与其他功能共享内部单例（或持有子进程），卸载它会影响它们 —— 需重启后生效`
+            : "该域可在运行时卸载/挂载，通道立即生效（界面可能需要重载一次）",
+        domain: id,
+      };
+    });
 
     ctx.effect(() => {
       for (const ch of DOMAINS_CHANNELS) ipcHost.removeHandler(ch);
