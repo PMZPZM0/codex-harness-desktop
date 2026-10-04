@@ -1480,7 +1480,7 @@ export async function run() {
           }).length;
 
       const GIANT_CAP = {
-        "scripts/guards/07-turn-fold.mjs": 3737,
+        "scripts/guards/07-turn-fold.mjs": 3685,
         "scripts/guards/06-app-behavior.mjs": 2567,
         "scripts/guards/02-session-logic.mjs": 1193,
         "src/features/app-state/parts/bag-types.ts": 1407,
@@ -1667,7 +1667,7 @@ export async function run() {
         // ④ 已登记的插槽位不许被删（10-04 补齐扩展面时钉死）
         //    ⛔ 为什么单独钉：插槽是**机制**，删掉消费点不会报任何错（Slot 返回 null 即可），
         //    但扩展面就少了一块 —— 而少了一个插槽是那种没人会主动提的退化。
-        const EXPECTED_SLOTS = ["settings.general.bottom", "settings.devtools.bottom", "topbar.end", "overlay.root", "sidebar.top"];
+        const EXPECTED_SLOTS = ["settings.general.bottom", "settings.devtools.bottom", "topbar.end", "overlay.root", "sidebar.top", "sidebar.thread-row-actions"];
         // ⛔⛔ 这里**不能**复用 walkFeat253：它的正则只收 `.ts`，**不收 `.tsx`** ——
         //   而插槽消费点全在 tsx 里（00-settings-registry.tsx / AppView.tsx / 01-sidebar-shell.tsx）
         //   ⇒ 复用它会扫到 0 个文件，于是「缺失」恒为全部（假红）。本项目已踩同型坑四次
@@ -1857,9 +1857,19 @@ export async function run() {
         const slotSrc271 = readFileSync(slotReg, "utf8");
 
         // ①⛔⛔ KNOWN_SLOTS 必须与【268】的 EXPECTED_SLOTS **同一份**（不许各写一遍）
-        const known = (declSrc.match(/KNOWN_SLOTS[^=]*=\s*\[([\s\S]*?)\]/) || [null, ""])[1];
-        const slotIds = [...known.matchAll(/"([a-z][\w.]*)"/g)].map((x) => x[1]);
-        const expected = ["settings.general.bottom", "settings.devtools.bottom", "topbar.end", "overlay.root", "sidebar.top"];
+        // ⛔⛔ 必须先 codeOnly 剥注释再取名单：本项目的清单里**带行内注释**，而
+        //   /\[[\s\S]*?\]/ 会被注释里的 "]" 提前截断（10-04 实测：KNOWN_SLOTS 有 6 项，
+        //   判据只数出 5 项并报"清单里缺 sidebar.thread-row-actions" —— 假红）。
+        //   这是「按字面量锚定」的老坑又一回：注释里的同名字符串不算代码。
+        const known = (codeOnly(declSrc).match(/KNOWN_SLOTS[^=]*=\s*\[([\s\S]*?)\]/) || [null, ""])[1];
+        // ⛔⛔ 字符类**必须含连字符**：插槽 id 形如 `sidebar.thread-row-actions`。
+        //   原来的 /"([a-z][\w.]*)"/ 里 \w 不含 `-` ⇒ 只数出 5 个（第 6 个带两个连字符）
+        //   ⇒ 报"清单里缺 sidebar.thread-row-actions" —— 假红，且极易被误判成"真缺一个"。
+        const slotIds = [...known.matchAll(/"([a-z][\w.-]*)"/g)].map((x) => x[1]);
+        // ⚠️ 不能复用【268】块内的 EXPECTED_SLOTS —— 那是块级局部const，出块即不可见（ESM/模块作用域）。
+        // 两处必须同源，所以**共同真相源改成 electron/declared-plugins.ts 的 KNOWN_SLOTS**，
+        // 【268】那条断言另有一层含义（插槽消费点必须在 tsx 里），两边判据不同、名单同源。
+        const expected = ["settings.general.bottom", "settings.devtools.bottom", "topbar.end", "overlay.root", "sidebar.top", "sidebar.thread-row-actions"];
         const drift = expected.filter((id) => !slotIds.includes(id));
         (drift.length === 0 && slotIds.length > 0 ? ok : fail)(
           `【271】声明式插件可用的插槽位与守卫【268】的登记一致（${slotIds.length} 个）`

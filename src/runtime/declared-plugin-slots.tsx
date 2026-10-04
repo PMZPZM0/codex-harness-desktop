@@ -20,6 +20,16 @@ import type { DeclaredPlugin } from "../../electron/declared-plugin-types";
 /** 通道名必须是 `域:动作` 形状 —— 它会被用来动态取 preload 上的方法。 */
 const CHANNEL_RE = /^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$/;
 
+/**
+ * 行级插槽（每个数据行渲染一次）。
+ *
+ * ⛔ 与「全局插槽」的本质区别：全局插槽渲染**一次**（页面级），行级插槽被`<Slot>` 在
+ *   **每一行**渲染一次，且每次带不同的 props（threadId/thread）。
+ *   ⛔ 因此行级插槽拿不到 `threadId` 时**必须不渲染** —— 见 DeclaredSlotBody 里的处理。
+ * ⛔ 这份名单与 electron/declared-plugins.ts 的 KNOWN_SLOTS 同源（守卫【271】查一致性）。
+ */
+const ROW_SCOPED_SLOTS = new Set(["sidebar.thread-row-actions"]);
+
 /** `voice:models-status` → `voiceModelsStatus`（与 preload 的 camel 规则一致）。 */
 function bridgeName(channel: string): string {
   const [prefix, action] = channel.split(":");
@@ -72,11 +82,13 @@ export function useToggleDeclaredPlugin() {
 }
 
 /** 按钮形态：点一下调一条已有通道。 */
-function InvokeButton({ label, title, channel, args }: {
+function InvokeButton({ label, title, channel, args, rowScoped }: {
   label: string;
   title: string;
   channel: string;
   args?: Record<string, unknown>;
+  /** 行级插槽 ⇒ 用小号样式（不能挤会话标题） */
+  rowScoped?: boolean;
 }) {
   const onClick = useCallback(() => {
     const bridge = (window as unknown as { codex?: Record<string, unknown> }).codex;
@@ -88,23 +100,34 @@ function InvokeButton({ label, title, channel, args }: {
   if (!CHANNEL_RE.test(channel)) return null;
   const [, action] = channel.split(":");
   return (
-    <button className="secondary-setting declared-plugin-btn" title={title || label} onClick={onClick}>
+    <button className={`secondary-setting declared-plugin-btn${rowScoped ? " is-row-scoped" : ""}`} title={title || label} onClick={onClick}>
       {label || action}
     </button>
   );
 }
 
-/** 一个插槽位内的内容片段。 */
-function DeclaredSlotBody({ plugin, slot }: { plugin: DeclaredPlugin; slot: string }) {
+/**
+ * 一个插槽位内的内容片段。
+ *
+ * ⛔⛔ `props` 是**行级插槽的唯一信息来源**：同一个插槽位会被 `<Slot>` 渲染**多次**
+ *   （会话行插槽 = 每个会话一行一次），每次带不同的 props（threadId/thread）。
+ *   插件侧要按行区分动作，就必须能拿到本行的 props —— 否则它渲染出来的东西
+ *   不知道该作用于谁（这正是 `sidebar.thread-row-actions` 的存在理由）。
+ */
+function DeclaredSlotBody({ plugin, slot, props }: { plugin: DeclaredPlugin; slot: string; props?: Record<string, unknown> }) {
   const items = useMemo(
     () => plugin.slots.filter((s) => s.slot === slot).sort((a, b) => a.order - b.order),
     [plugin.slots, slot],
   );
+  // 行级插槽必须拿到 threadId；拿不到就**不渲染**（渲染一个不知道作用在谁身上的按钮
+  // 比不渲染更糟：用户点了会以为对整个应用生效）
+  const rowScoped = ROW_SCOPED_SLOTS.has(slot);
+  if (rowScoped && !props?.threadId) return null;
   return (
     <>
       {items.map((it, i) => (
-        <Fragment key={`${plugin.id}:${slot}:${i}`}>
-          {it.invoke ? <InvokeButton label={it.label} title={it.title} channel={it.invoke} args={it.args} /> : null}
+        <Fragment key={`${plugin.id}:${slot}:${i}:${String(props?.threadId ?? "")}`}>
+          {it.invoke ? <InvokeButton label={it.label} title={it.title} channel={it.invoke} args={it.args} rowScoped={rowScoped} /> : null}
           {it.text ? <div className="declared-plugin-text">{it.text}</div> : null}
         </Fragment>
       ))}
@@ -134,7 +157,7 @@ export function DeclaredPluginSlots() {
               label: plugin.name,
               pluginId: `declared:${plugin.id}`,
               order: 1000,
-              render: () => <DeclaredSlotBody plugin={plugin} slot={slotId} />,
+              render: (props) => <DeclaredSlotBody plugin={plugin} slot={slotId} props={props as Record<string, unknown> | undefined} />,
             },
             `declared:${plugin.id}`,
           ),

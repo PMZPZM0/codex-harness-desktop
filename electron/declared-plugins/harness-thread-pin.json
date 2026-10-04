@@ -1,0 +1,17 @@
+{
+  "id": "harness-thread-pin",
+  "name": "会话行标记",
+  "version": "1.0.0",
+  "description": "在每个会话行右侧加一个按钮。演示**行级插槽**（sidebar.thread-row-actions）：插槽把 threadId 传给插件，插件才知道作用在哪一行。默认停用 —— 想看效果去设置 → 开发工具 → 声明式插件里启用。",
+  "enabled": false,
+  "slots": [
+    {
+      "slot": "sidebar.thread-row-actions",
+      "order": 500,
+      "label": "查更新",
+      "title": "这一行由行级插槽渲染（声明式插件 · 零代码）",
+      "invoke": "updates:check",
+      "args": {}
+    }
+  ]
+}
