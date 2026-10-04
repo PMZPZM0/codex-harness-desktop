@@ -3,18 +3,52 @@
 // 10-04 迁移到组合系统（defineFeature + ipcHost），与 domains-ipc 同款形态。
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
-import { addDocument, listDocs, readDocument, removeDocument, searchDocs } from "../knowledge-base";
+import { addDocument, embedDocument, listDocs, readDocument, removeDocument, searchDocs, searchDocsSmart } from "../knowledge-base";
+import { readCustomModel } from "../main/01-model-catalog";
+import type { HostCaps } from "../runtime/seams";
 import fs from "node:fs";
 import path from "node:path";
 
 const KB_CHANNELS = ["kb:list", "kb:add-text", "kb:add-files", "kb:remove", "kb:search", "kb:read"];
 
+/** 语义向量档的 embedding 函数（供应商 /embeddings，与「AI 润色」同一条 chat 供应商配置）。
+ *  任何一步失败都抛错 —— 上层（searchDocsSmart / embedDocument）会静默回落全文档，不阻塞主流程。 */
+function buildEmbedFn(secure: HostCaps["secure"]): ((texts: string[]) => Promise<number[][]>) | undefined {
+  if (process.env.CODEX_HARNESS_KB_EMBED === "0") return undefined;
+  return async (texts: string[]) => {
+    const cfg = await readCustomModel();
+    if (!cfg?.baseUrl || cfg.provider === "openai-official") throw new Error("no custom provider for embeddings");
+    const key = cfg.encryptedKey && secure.isEncryptionAvailable() ? secure.decryptString(Buffer.from(cfg.encryptedKey, "base64")) : "";
+    if (!key) throw new Error("no api key");
+    const base = String(cfg.baseUrl).replace(/\/$/, "");
+    const response = await fetch(`${base}/embeddings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model: (cfg as any).embeddingModel || cfg.model, input: texts }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) throw new Error(`embeddings HTTP ${response.status}`);
+    const payload: any = await response.json().catch(() => null);
+    const vectors = (Array.isArray(payload?.data) ? payload.data : []).map((entry: any) => entry?.embedding).filter((vector: any) => Array.isArray(vector));
+    if (vectors.length !== texts.length) throw new Error("embeddings shape mismatch");
+    return vectors;
+  };
+}
+
+/** 导入后台补向量（fire-and-forget）：失败只影响语义档，全文检索照常。 */
+function embedInBackground(secure: HostCaps["secure"], workspace: string, docIds: string[]): void {
+  const embed = buildEmbedFn(secure);
+  if (!embed || !workspace) return;
+  for (const docId of docIds) void embedDocument(workspace, docId, embed).catch(() => false);
+}
+
 export const knowledgeBaseFeature = defineFeature<null>({
   id: "kb",
-  inject: ["ipc"],
+  inject: ["ipc", "host"],
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");
-    try { require("node:fs").appendFileSync(require("node:path").join(require("electron").app.getPath("userData"), "kb-debug.log"), "setup called at " + new Date().toISOString() + " ipcHost:" + !!ipcHost + "\n"); } catch {}
+    const host = ctx.get<HostCaps>("host");
+    if (!host) throw new Error("kb: 缺少 host 接缝（宿主未提供）");
     if (!ipcHost) throw new Error("knowledge-base: 缺少 ipc 服务（宿主未提供）");
 
     ipcHost.handle("kb:list", (_event, input: { workspace?: string } = {}) => {
@@ -24,7 +58,10 @@ export const knowledgeBaseFeature = defineFeature<null>({
     });
 
     ipcHost.handle("kb:add-text", (_event, input: { workspace?: string; title?: string; text?: string; source?: string }) => {
-      return addDocument(String(input?.workspace ?? ""), { title: String(input?.title ?? ""), text: String(input?.text ?? ""), source: input?.source ? String(input.source) : undefined });
+      const workspace = String(input?.workspace ?? "");
+      const meta = addDocument(workspace, { title: String(input?.title ?? ""), text: String(input?.text ?? ""), source: input?.source ? String(input.source) : undefined });
+      embedInBackground(host.secure, workspace, [meta.id]);
+      return meta;
     });
 
     ipcHost.handle("kb:add-files", async (_event, input: { workspace?: string; paths?: string[] }) => {
@@ -45,6 +82,7 @@ export const knowledgeBaseFeature = defineFeature<null>({
         }
       }
       if (failures.length && !imported.length) throw new Error(`导入失败：${failures.join("；")}`);
+      embedInBackground(host.secure, workspace, imported.map((entry) => entry.id));
       return { imported, failures };
     });
 
@@ -54,7 +92,7 @@ export const knowledgeBaseFeature = defineFeature<null>({
     });
 
     ipcHost.handle("kb:search", (_event, input: { workspace?: string; query?: string; limit?: number }) => {
-      return searchDocs(String(input?.workspace ?? ""), String(input?.query ?? ""), Number(input?.limit) || 8);
+      return searchDocsSmart(String(input?.workspace ?? ""), String(input?.query ?? ""), Number(input?.limit) || 8, buildEmbedFn(host.secure));
     });
 
     ipcHost.handle("kb:read", (_event, input: { workspace?: string; docId?: string }) => {

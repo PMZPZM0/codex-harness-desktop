@@ -1,7 +1,10 @@
 // 本地知识库（10-01 立项，独立板块 knowledge-base）：**项目级**知识库。
 // 落点：<项目>/.codex-harness/knowledge/<docId>/——文档原文(source.md) + meta.json，全部跟项目走。
-// 检索 v1 = 纯 JS 分块全文评分（零依赖、装完即用）；语义向量检索（LanceDB + 本地 embedding）
-// 为「开发工具」页按需下载的后端，接口已按可替换设计（searchDocs 单点）。
+// 检索有两档（全局搜索时**自动合并**，任何一档不可用都不影响另一档）：
+//   · 全文评分（零依赖、永远可用）
+//   · 语义向量（可选）：复用用户已配置供应商的 /embeddings 接口生成向量，纯 JS 余弦检索——
+//     ⛔ 刻意不引入 LanceDB 这类原生包：30MB+ 原生模块要进安装包或做 ABI 匹配的大下载，
+//     违背「不把安装包拉大」；本地后端将来要做也走「开发工具」页按需下载项，不进包。
 // ⛔ 本模块是叶子：不 import 业务模块；workspace/cwd 由 IPC 层传入。
 import fs from "node:fs";
 import path from "node:path";
@@ -127,4 +130,80 @@ export function readDocument(workspace: string, docId: string): { meta: KbDocMet
   const meta = readMeta(workspace, String(docId ?? "").trim());
   if (!meta) return null;
   try { return { meta, text: fs.readFileSync(path.join(docsDir(workspace), meta.id, "source.md"), "utf8") }; } catch { return null; }
+}
+
+/* ── 语义向量检索（10-01 第三步）─────────────────────────────────────────────
+   向量来源 = 用户已配置供应商的 /embeddings 接口（与润色同一条 chat 供应商配置）。
+   向量落盘 = <docDir>/embeddings.json（每块一条，Float 数组），失败/未装时全部静默跳过；
+   ⛔ 永不阻塞写入：embed 失败只影响语义档，全文检索照常。 */
+export type KbEmbedFn = (texts: string[]) => Promise<number[][]>;
+
+function embeddingsFile(workspace: string, docId: string): string {
+  return path.join(docsDir(workspace), docId, "embeddings.json");
+}
+
+/** 给一个文档的全部块生成向量并落盘（幂等：已有且块数一致则跳过）。返回是否可用。 */
+export async function embedDocument(workspace: string, docId: string, embed: KbEmbedFn): Promise<boolean> {
+  const doc = readDocument(workspace, docId);
+  if (!doc) return false;
+  const chunks = chunkText(doc.text);
+  const file = embeddingsFile(workspace, docId);
+  try {
+    const cached = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (Array.isArray(cached?.vectors) && cached.vectors.length === chunks.length) return true;
+  } catch { /* 首次或损坏：重建 */ }
+  try {
+    const vectors = await embed(chunks);
+    if (!vectors.length || vectors.length !== chunks.length) return false;
+    fs.writeFileSync(file, JSON.stringify({ version: 1, at: new Date().toISOString(), vectors }), "utf8");
+    return true;
+  } catch { return false; }
+}
+
+function cosine(a: number[], b: number[]): number {
+  let dot = 0; let na = 0; let nb = 0;
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i += 1) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+  if (!na || !nb) return 0;
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
+/** 语义档检索：对已有向量的文档算余弦相似度。embed 失败返回 null（调用方回落全文档）。 */
+export async function searchDocsSemantic(workspace: string, query: string, limit: number, embed: KbEmbedFn): Promise<KbHit[] | null> {
+  const q = String(query ?? "").trim();
+  if (!q) return [];
+  let queryVector: number[];
+  try { queryVector = (await embed([q]))[0]; } catch { return null; }
+  if (!queryVector?.length) return null;
+  const hits: KbHit[] = [];
+  for (const meta of listDocs(workspace)) {
+    let vectors: number[][] = [];
+    try { vectors = JSON.parse(fs.readFileSync(embeddingsFile(workspace, meta.id), "utf8")).vectors ?? []; } catch { continue; }
+    if (!vectors.length) continue;
+    let text = "";
+    try { text = fs.readFileSync(path.join(docsDir(workspace), meta.id, "source.md"), "utf8"); } catch { continue; }
+    const chunks = chunkText(text);
+    vectors.forEach((vector, chunkIndex) => {
+      const score = cosine(queryVector, vector);
+      if (score < 0.25) return; // 低相似度不凑数（余弦对短文本噪声大）
+      const chunk = chunks[chunkIndex] ?? "";
+      hits.push({ docId: meta.id, title: meta.title, chunkIndex, score: score * 10, snippet: chunk.slice(0, 260).replace(/\s+/g, " ") });
+    });
+  }
+  return hits.sort((a, b) => b.score - a.score).slice(0, Math.max(1, Math.min(20, limit)));
+}
+
+/** 全档检索：语义 + 全文合并（同块去重取高分；语义不可用时自动只有全文档）。 */
+export async function searchDocsSmart(workspace: string, query: string, limit: number, embed?: KbEmbedFn): Promise<{ hits: KbHit[]; semantic: boolean }> {
+  const textHits = searchDocs(workspace, query, limit);
+  if (!embed) return { hits: textHits, semantic: false };
+  const semanticHits = await searchDocsSemantic(workspace, query, limit, embed);
+  if (!semanticHits) return { hits: textHits, semantic: false };
+  const merged = new Map<string, KbHit>();
+  for (const hit of [...semanticHits, ...textHits]) {
+    const key = `${hit.docId}:${hit.chunkIndex}`;
+    const prev = merged.get(key);
+    if (!prev || hit.score > prev.score) merged.set(key, hit);
+  }
+  return { hits: [...merged.values()].sort((a, b) => b.score - a.score).slice(0, Math.max(1, Math.min(20, limit))), semantic: true };
 }

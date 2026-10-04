@@ -399,6 +399,118 @@
   cursor: pointer;
 }
 .completed-file-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ── 知识库设置页（kb 域，10-01）──────────────────────────── */
+.kb-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 200px;
+  max-width: 420px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: var(--panel-2);
+  color: var(--muted);
+}
+.kb-search input {
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  width: 100%;
+}
+.kb-paste {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--panel);
+}
+.kb-paste input {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 12px;
+}
+.kb-paste textarea {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 72px;
+}
+.kb-paste > button { align-self: flex-end; }
+.kb-docs {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+}
+.kb-doc {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.kb-doc:last-child { border-bottom: 0; }
+.kb-doc-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.kb-doc-main strong { font-size: 12.5px; color: var(--text); }
+.kb-doc-main small { font-size: 10.5px; color: var(--faint); }
+.kb-hits {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.kb-hit {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 10px 12px;
+  position: relative;
+}
+.kb-hit-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.kb-hit p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text);
+}
+.kb-hit-top {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  font-style: normal;
+  font-size: 10px;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.kb-page .resource-toolbar { flex-wrap: wrap; }
 /* 审查弹窗（950 = 模态之上的最后一层，DESIGN.md 层叠带） */
 .turn-diff-modal-mask {
   position: fixed;
