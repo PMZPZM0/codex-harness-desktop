@@ -1469,7 +1469,7 @@ export async function run() {
         "scripts/guards/06-app-behavior.mjs": 3257,
         "scripts/guards/02-session-logic.mjs": 1533,
         "src/features/app-state/parts/bag-types.ts": 1423,
-        "scripts/guards/09-structural.mjs": 1521,
+        "scripts/guards/09-structural.mjs": 1571,   // 本文件是守卫载体：每加一条规则基线随之上移（1362→1521→1571）
         "scripts/guards/13-drama-gen.mjs": 1227,
         "electron/main.ts": 1199,
         "scripts/guards/03-runtime-boot.mjs": 1176,
@@ -1512,6 +1512,56 @@ export async function run() {
         + `；变长：${grew.join("/") || "无"}`
         + `；已拆完但没从名单删：${stale.join("/") || "无"}`
         + `；新长出（未登记）：${extra.join("/") || "无"}`
+      );
+    }
+
+    // ===== 【267】"同一族多前缀"必须登记在册（10-04，替代原计划的 bot 系归一化）=====
+    //
+    // 背景：bot 系曾有 5 个前缀（bot / bots / bot-binding / bot-stream / channel-bot）。
+    //   原计划是"归一化成 1 个域"，但实测它们**已经是 5 个独立插件域**（各自进组合表、
+    //   各自 `ipcHost.handle` + `ctx.effect`），且**配置落点各不相同**：
+    //   bots→bots.json · bot-pairing· bot-stream→bot-stream.json · channel-bot→渠道配置。
+    //   ⇒ 一板块一前缀已满足，归一化是"为名字好看而改 16 个通道名 + manifest + preload +
+    //   渲染层 + 守卫"，**零功能收益、有回归风险**。用户 10-04 拍板：不归一，改为加守卫。
+    //
+    // ⛔ 这条守卫拦的是**下一种情况**：将来有人把 `bot-xxx` / `bot-xxx-yyy` 当成新前缀加进来，
+    //   却没有独立域登记（那通常是"顺手加一块"而非新功能）⇒ 族名扩散、语义边界糊掉。
+    //
+    // 判据：① 名单里的每个族成员都必须是组合表里的**独立域**（不是别人域的一部分）；
+    //       ② 新长出的同族前缀（`bot*` 开头却不在名单）一律红。
+    {
+      const DECLARED_FAMILIES = {
+        bot: ["bot", "bots", "bot-binding", "bot-stream", "channel-bot"],
+      };
+      const compPath = join(ROOT, "electron", "composition.json");
+      const comp = existsSync(compPath) ? JSON.parse(readFileSync(compPath, "utf8")) : { domains: [] };
+      const domainIds = new Set((comp.domains || []).filter((d) => d.enabled !== false).map((d) => d.id));
+
+      const notDomain = [];
+      const extraFamily = [];
+      for (const [family, members] of Object.entries(DECLARED_FAMILIES)) {
+        for (const m of members) {
+          if (!domainIds.has(m)) notDomain.push(`${family}/${m}`);
+        }
+        // 扫全仓前缀：同族前缀要么在名单里，要么红
+        // （自己建正则而不复用【253】的局部常量 PREFIX_RE —— 那个是块内 const，不在作用域内）
+        const familyPrefixRe = /(?:ipcMain|ipcHost)\.(?:handle|on)\(\s*"([a-zA-Z][\w-]*):/g;
+        const seenPrefixes = new Set();
+        for (const p of walkFeat253(join(ROOT, "electron", "features"))) {
+          for (const m of codeOnly(readFileSync(p, "utf8")).matchAll(familyPrefixRe)) seenPrefixes.add(m[1]);
+        }
+        for (const m of seenPrefixes) {
+          if (m.startsWith(family) && !members.includes(m)) extraFamily.push(m);
+        }
+      }
+      (notDomain.length === 0 ? ok : fail)(
+        `【267】族内每个成员都必须是组合表里的独立域（${Object.values(DECLARED_FAMILIES).flat().length} 个在册）`
+          + `；不是独立域：${notDomain.join("/") || "无"}`
+      );
+      (extraFamily.length === 0 ? ok : fail)(
+        `【267】同族新前缀必须先归册（族：${Object.keys(DECLARED_FAMILIES).join("/")}）`
+          + `—— 新长出：${extraFamily.join("/") || "无"}。`
+          + `新加同族前缀前先回答：它是独立功能（独立配置/独立语义）还是顺手加的一块？`
       );
     }
 
