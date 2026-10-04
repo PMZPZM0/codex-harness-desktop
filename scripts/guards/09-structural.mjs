@@ -1469,7 +1469,7 @@ export async function run() {
         "scripts/guards/06-app-behavior.mjs": 3257,
         "scripts/guards/02-session-logic.mjs": 1533,
         "src/features/app-state/parts/bag-types.ts": 1423,
-        "scripts/guards/09-structural.mjs": 1571,   // 本文件是守卫载体：每加一条规则基线随之上移（1362→1521→1571）
+        "scripts/guards/09-structural.mjs": 1618,   // 本文件是守卫载体：每加一条规则基线随之上移（1362→1521→1571→1618）
         "scripts/guards/13-drama-gen.mjs": 1227,
         "electron/main.ts": 1199,
         "scripts/guards/03-runtime-boot.mjs": 1176,
@@ -1563,6 +1563,53 @@ export async function run() {
           + `—— 新长出：${extraFamily.join("/") || "无"}。`
           + `新加同族前缀前先回答：它是独立功能（独立配置/独立语义）还是顺手加的一块？`
       );
+    }
+
+    // ===== 【263】profile 一致性（10-04 阶段 4 落地后从"故意缺席"转为真判据）=====
+    // ⛔ 这条之前是**故意不写**的（那时 profile 概念还不存在，写了就是恒假/恒真）。
+    //    现在 `electron/profiles/*.json` + 生成器的 `resolveProfile()` 已落地，
+    //    于是它能真判三件事：
+    //   ① 每个 profile 的 disable 里的 id 都存在于 default 表（打错 id ⇒ 静默失效）
+    //   ② 每个 profile 合成的结果**短于** default（否则它什么也没做，是死配置）
+    //   ③ 生成物与「default profile 的合成结果」逐字节一致
+    //      —— 守卫【253】只比 default；这条保证**用别的 profile 生成过之后**
+    //         仓库里的生成物不会悄悄留在那个 profile 的状态上。
+    {
+      const genMod = join(ROOT, "scripts", "gen-domain-registry.mjs");
+      const compPath263 = join(ROOT, "electron", "composition.json");
+      if (!existsSync(genMod) || !existsSync(compPath263)) {
+        fail("【263】生成器或 composition.json 缺失（profile 判据无法验证）");
+      } else {
+        const { resolveProfile, listProfiles, renderRegistry } = await import(pathToFileURL(genMod).href);
+        const comp263 = JSON.parse(readFileSync(compPath263, "utf8"));
+        const profiles = listProfiles();
+        const badDisable = [];
+        const emptyProfiles = [];
+        for (const pid of profiles) {
+          if (pid === "default") continue;
+          let r = null;
+          try { r = resolveProfile(comp263, pid); } catch (e) { badDisable.push(`${pid}: ${String(e.message || e)}`); continue; }
+          if (r.domains.length >= (comp263.domains || []).filter((d) => d.enabled).length) {
+            emptyProfiles.push(`${pid}(减了 0 个域)`);
+          }
+        }
+        (badDisable.length === 0 ? ok : fail)(
+          `【263】profile 的 disable 只许引用 default 表里存在的域（${profiles.length - 1} 个 profile）`
+            + `；非法：${badDisable.join(" / ") || "无"}`
+        );
+        (emptyProfiles.length === 0 ? ok : fail)(
+          `【263】profile 必须真的减掉域（否则是死配置，且会给人"已精简"的错觉）`
+            + `；空转：${emptyProfiles.join(" / ") || "无"}`
+        );
+        // ③ 生成物必须等于 default 的合成结果
+        const onDisk = existsSync(join(ROOT, "electron", "composition.gen.ts"))
+          ? readFileSync(join(ROOT, "electron", "composition.gen.ts"), "utf8") : "";
+        const expected = renderRegistry({ domains: resolveProfile(comp263, "default").domains });
+        (onDisk === expected ? ok : fail)(
+          "【263】仓库里的 composition.gen.ts == default profile 的合成结果"
+            + "（用别的 profile 生成过之后必须切回 default 重生成，否则仓库状态与 default 不符）"
+        );
+      }
     }
 
   }
