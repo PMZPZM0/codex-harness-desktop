@@ -1484,7 +1484,7 @@ export async function run() {
         "scripts/guards/06-app-behavior.mjs": 2567,
         "scripts/guards/02-session-logic.mjs": 1193,
         "src/features/app-state/parts/bag-types.ts": 1407,
-        "scripts/guards/09-structural.mjs": 1638,   // 本文件是守卫载体：每加一条规则基线随之上移（→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916）
+        "scripts/guards/09-structural.mjs": 1665,   // 本文件是守卫载体：每加一条规则基线随之上移（→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916）
         "scripts/guards/13-drama-gen.mjs": 1070,
         "electron/main.ts": 540,
         "scripts/guards/03-runtime-boot.mjs": 917,
@@ -1686,6 +1686,45 @@ export async function run() {
         (slotUsers.length > 0 ? ok : fail)(
           `【268】插槽机制有真实消费点（${slotUsers.length} 处）—— 只有机制没有消费点 = 死代码`
             + `消费点：${slotUsers.slice(0, 3).join("/") || "无"}`
+        );
+
+        // ⛔⛔⛔ 【268-b】**连续两行完全相同的 JSX 调用 = 同一个东西被渲染两次**。
+        //   这条是 10-04 用户截图「每个会话渲染两个会话选项」的根因防线。
+        //
+        //   ⛔ 为什么必须专门写这条：**tsc 通过、预检全绿、build 通过、3000+ 断言全过** ——
+        //     重复的一行在语法与类型上都合法，画面上却是"每个会话多一行"。所有既有判据
+        //     全部为绿 ⇒ 只有一条"结构指纹"判据能拦。
+        //   ⛔ 成因（值得记住）：用 node 脚本做 `splice`/`replace` 插插槽时，old 文本
+        //     **同时命中两处相同内容**（一次是我把同一句写了两次，一次是 replace 全量替换），
+        //     于是形成"上一行是 JSX 元素、下一行还是同一元素" ⇒ React 渲染两遍。
+        //   ⛔ 判据口径：只查**相邻两行**（trim 后完全相同 且 长于 40 字 且 以 < 或 { 开头
+        //     且 含调用括号）—— 宁可不报也不误报，重复渲染一定会是相邻的。
+        const dupRender = [];
+        {
+          const walkTsx = (dir) => {
+            for (const e of readdirSync(dir, { withFileTypes: true })) {
+              if (e.name === "node_modules" || e.name.startsWith(".")) continue;
+              const p = join(dir, e.name);
+              if (e.isDirectory()) { walkTsx(p); continue; }
+              if (!/\.tsx?$/.test(e.name)) continue;
+              const lines = codeOnly(readFileSync(p, "utf8")).split(/\r?\n/);
+              for (let i = 1; i < lines.length; i++) {
+                const a = (lines[i - 1] || "").trim();
+                const b = (lines[i] || "").trim();
+                if (a.length > 40 && a === b && /^[<{]/.test(a) && /[({[]/.test(a)) {
+                  dupRender.push(`${p.split(/[\\/]/).pop()}:${i + 1}`);
+                }
+              }
+            }
+          };
+          for (const d of ["electron", join("src")]) {
+            if (existsSync(join(ROOT, d))) walkTsx(join(ROOT, d));
+          }
+        }
+        (dupRender.length === 0 ? ok : fail)(
+          "【268-b】没有「连续两行完全相同的 JSX 调用」（那是同一个东西渲染两遍 —— "
+            + "tsc/预检/build 全绿也抓不到，只有这条结构指纹能拦）"
+            + `；命中：${dupRender.slice(0, 5).join("/") || "无"}`
         );
       }
     }

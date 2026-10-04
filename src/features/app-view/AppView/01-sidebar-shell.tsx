@@ -322,7 +322,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 （02-thread-attention-rows:213）—— 那是行为变更，不是加个插槽。
                 ⛔ 传 threadId 是必需的：行级插槽必须知道自己在哪一行。*/}
             {renderThreadRow(entry, undefined, { actions: <Slot id="sidebar.thread-row-actions" props={{ threadId: entry.id, thread: entry }} /> })}
-            {renderThreadRow(entry, undefined, { actions: <Slot id="sidebar.thread-row-actions" props={{ threadId: entry.id, thread: entry }} /> })}
             {childrenAfter(entry.id)}
           </div>
         ))}
