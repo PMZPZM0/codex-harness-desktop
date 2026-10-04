@@ -162,13 +162,23 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
   /* 10-03 二修：上一版用 running/revealing 挡不住「大折叠重挂载时 running 仍为 true」的那一帧。
      改锚**本实例真实直播过**：只有这个挂载实例亲眼见过出字（running && displayed 同帧）
      或用户点开过，浮窗才允许出现；重挂载的已完成卡从收起起步，动画无从重播。 */
-  const liveStreamedRef = useRef(false);
-  /* ⛔ 判据（10-03 定稿）：**挂载那一刻思考文本还不存在** = 本实例是「直播前」挂载的
-     （item/started 先到、正文 delta 后到）⇒ 允许自动展开浮窗；大折叠重挂载时文本早已在
-     （挂在的是已完成/半完成状态）⇒ 一律从收起起步，吸入动画无从重播。
-     useRef 初始值只在首帧取一次 ⇒ 天然区分「直播前挂载」与「回放式重挂载」。 */
-  const mountedBeforeTextRef = useRef(!text);
-  const popupOpen = open && Boolean(displayed) && (mountedBeforeTextRef.current || manualOpen !== null);
+  /* ⛔ 旧的 `liveStreamedRef` 与 `mountedBeforeTextRef` 已于 10-04 移除（理由见下）。
+     前者声明了却从未被赋值；后者是首帧快照、判不出流式。 */
+  /* ⛔⛔ 10-04 用户报「正在思考，深度思考却没有展示出来」——
+     旧的 `mountedBeforeTextRef = useRef(!text)` 判的是**挂载那一瞬间正文是否已到齐**，
+     而 **useRef 初始值只在首帧取一次、之后再不更新** ⇒ 它不是"这个思考是否正在流式"。
+     回收历史思考、批量注入、或渲染时序差几毫秒（一起到）都会让它为 false，
+     于是"正在思考"却只剩一个空芯片 —— 那次报障就是这个。
+     同段注释里说的「10-03 定用『本实例真实直播过』」(liveStreamedRef) **声明了却从未被赋值**
+     （全文件仅声明处一个引用）⇒ 那个设计从来没落地。
+
+     ⇒ 换成真正可靠的信号，三者取或：
+       ① running —— 用户反馈的场景：正在思考就该看得见
+       ② revealReasoningProgress 有进度 —— 引擎确实在逐字喂（真流式）
+       ③ 手动点开过（manualOpen）—— 用户主动的意图
+     ⚠️ `Boolean(displayed)` 这道必须留着：空正文没有可展示的东西。 */
+  const streamedThisInstance = Boolean(running) || revealReasoningProgress.has(String(item.id));
+  const popupOpen = open && Boolean(displayed) && (streamedThisInstance || manualOpen !== null);
   const prevOpenRef = useRef(false);
   useEffect(() => {
     if (popupOpen) { prevOpenRef.current = true; setExiting(false); return; }
