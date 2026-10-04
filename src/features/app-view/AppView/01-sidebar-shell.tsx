@@ -454,6 +454,14 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 ))}</> : <div className="empty-list">{threads.length ? "当前筛选下暂无任务" : "暂无任务"}</div>
               )}
             </div>
+            {/* 10-04 第 10 个插槽位：**侧栏底部**（会话列表之下、账户行之上）。
+                用户指定的位置（截图里红框处）。语义 =「贴在侧栏下沿的常驻入口」——
+                刚好是 sidebar.top（最上沿）的镜像，插件想"一直在但不抢顶部"就挂这里。
+                ⛔ 位置在 thread-list **之外**、account-row **之上**：插进thread-list 会
+                随会话滚动（位置不固定），插到 account-row 里会与账户/设置按钮抢位。
+                ⚠️ 这里空间紧（账户行固定高度），**插槽内容宜少不宜多** —— 一个统计数字、
+                一个开关那种；别往这里塞长列表。 */}
+            <Slot id="sidebar.bottom" props={{ onOpenSettings }} loader={() => import("../../settings-devtools/DomainsPanel")} />
             <div className="account-row">
               <button className="account-avatar" title="账户菜单" onClick={() => { setAccountMenuSub(null); setAccountMenuOpen(!accountMenuOpen); }}>{userAvatar?.type === "image" && userAvatar.value ? <img src={userAvatar.value} alt="头像" /> : userAvatar?.type === "emoji" && userAvatar.value ? <span className="account-avatar-emoji">{userAvatar.value}</span> : <span className="account-avatar-letter">{username.trim().charAt(0).toUpperCase() || "?"}</span>}</button>
               {accountEditing ? (

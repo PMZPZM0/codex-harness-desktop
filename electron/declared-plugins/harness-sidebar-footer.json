@@ -1,0 +1,14 @@
+{
+  "id": "harness-sidebar-footer",
+  "name": "侧栏底部入口",
+  "version": "1.0.0",
+  "description": "在侧栏底部（账户行之上）挂一行文字。演示 sidebar.bottom 插槽 —— 与 sidebar.top 镜像的位置：常驻但不抢顶部。注意这里空间紧，宜少不宜多。默认停用。",
+  "enabled": false,
+  "slots": [
+    {
+      "slot": "sidebar.bottom",
+      "order": 950,
+      "text": "侧栏底部插槽：与顶部那个互为镜像，常驻但不抢顶部。"
+    }
+  ]
+}
