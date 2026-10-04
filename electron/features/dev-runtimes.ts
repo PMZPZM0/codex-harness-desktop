@@ -23,7 +23,7 @@ import { codexHome, engineActiveTurnIds, server } from "../runtime-refs";
 // 自动化工具链状态：nuphus-mcp（桌面）/ playwright-cli（浏览器）/ cloakbrowser（指纹浏览器）。
 // 静态检测安装目录与缓存，不 spawn 进程，打开设置页即时返回。
 
-type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "playwright-cli" | "cloakbrowser" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "cloak-browsers" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown" | "platform-tools" | "laya" | "phone-harness";
+type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "playwright-cli" | "cloakbrowser" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "cloak-browsers" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown" | "platform-tools" | "laya" | "phone-harness" | "kb-embedding";
 // bundled：随包内置（zip / 预解压目录是来源，不是联网下载）。界面显示「内置」徽标；
 // 缺失时允许「修复安装」（从随包 zip 重新解压），但不允许卸载（删了没有可靠重取途径）。
 // hidden：**不在「开发工具」页出卡**（它有自己的专用卡片），但注册成正式工具项 ⇒
@@ -88,6 +88,7 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   //    hidden: true ⇒ 不在「开发工具」页重复出卡（它们各有专用卡片：LayaCard / PhoneHarnessCard）。
   //    安装/卸载走各自的专用通道（见 04-dev-runtime-install.ts 的分派与 laya-service/phone-harness）。
   laya: { name: "Laya 智能判断", description: "本地决策模型（33ms）：思考等级「自动」档的判断端——发送前自动选 低/中/高/极高（含 PyTorch，约 800 MB，走清华 pip 镜像）", size: "约 800 MB", marker: "laya", hidden: true },
+  "kb-embedding": { name: "知识库本地语义检索", description: "让知识库检索从「关键词匹配」升级到「语义匹配」（问「登录凭证怎么做」也能命中「JWT 双令牌」那段）。本地 ONNX 推理，不依赖供应商接口；模型约 30MB 首次检索时自动下载（走国内镜像）", size: "约 35 MB", marker: "kb-embedding" },
   "phone-harness": { name: "手机控制（phone-harness）", description: "让 Codex 直接操作真机：看屏幕、点、打字、滑、读结果（MIT 许可的 Python CLI，装机后注册为技能；约 3 MB）", size: "约 3 MB", marker: "phone-harness", hidden: true },
   // Android 平台工具（adb）：手机控制（phone-harness）的 Android 通道必需。⛔ 官方源 dl.google.com
   //  **没有国内镜像**（npmmirror 的 binaries 目录下没有该包，实测 404）⇒ 下载慢/失败时只能回落手动安装，
@@ -172,6 +173,10 @@ const PIP_PACKAGE_DIRS: Partial<Record<DevRuntimeId, string>> = {
  *  其余按 tools 目录里的 marker 文件判断。 */
 function runtimeInstalled(id: DevRuntimeId, spec: DevRuntimeSpec): boolean {
   if (id === "ponytail") return existsSync(path.join(codexHome, "plugins", "cache", "ponytail"));
+  // 知识库本地 embedding 后端（10-04）：装在 <userData>/kb-backend，不在 tools 目录 ⇒ 独立判据。
+  if (id === "kb-embedding") {
+    return existsSync(path.join(app.getPath("userData"), "kb-backend", "node_modules", "@huggingface", "transformers", "package.json"));
+  }
   const root = toolsRoot();
   if (!root) return false;
   // ⛔⛔ python：只有 `python.exe` 不算装好 —— 旧版 embeddable 安装就是「有 exe、无 pip 无 Tkinter」，

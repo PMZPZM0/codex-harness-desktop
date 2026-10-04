@@ -4,6 +4,7 @@
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { addDocument, embedDocument, listDocs, readDocument, removeDocument, searchDocs, searchDocsSmart } from "../knowledge-base";
+import { kbEmbeddingInstalled, embedWithLocalBackend } from "./kb-embed-backend";
 import { readCustomModel } from "../main/01-model-catalog";
 import type { HostCaps } from "../runtime/seams";
 import fs from "node:fs";
@@ -11,11 +12,13 @@ import path from "node:path";
 
 const KB_CHANNELS = ["kb:list", "kb:add-text", "kb:add-files", "kb:remove", "kb:search", "kb:read"];
 
-/** 语义向量档的 embedding 函数（供应商 /embeddings，与「AI 润色」同一条 chat 供应商配置）。
- *  任何一步失败都抛错 —— 上层（searchDocsSmart / embedDocument）会静默回落全文档，不阻塞主流程。 */
+/** 语义向量档的 embedding 函数：**本地后端优先**（开发工具页「知识库本地语义检索」装了就用，
+ *  完全离线、不依赖供应商）；未装则回落供应商 /embeddings（与「AI 润色」同一条配置）；
+ *  两者都不可用时返回 undefined ⇒ searchDocsSmart 自动只用全文档，永不报错。 */
 function buildEmbedFn(secure: HostCaps["secure"]): ((texts: string[]) => Promise<number[][]>) | undefined {
   if (process.env.CODEX_HARNESS_KB_EMBED === "0") return undefined;
   return async (texts: string[]) => {
+    if (kbEmbeddingInstalled()) return embedWithLocalBackend(texts);
     const cfg = await readCustomModel();
     if (!cfg?.baseUrl || cfg.provider === "openai-official") throw new Error("no custom provider for embeddings");
     const key = cfg.encryptedKey && secure.isEncryptionAvailable() ? secure.decryptString(Buffer.from(cfg.encryptedKey, "base64")) : "";

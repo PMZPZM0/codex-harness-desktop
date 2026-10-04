@@ -25,6 +25,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { app, shell } from "electron";
 import { CHINA_NPM_REGISTRY, bundledNode, downloadEnv, npmGlobalRoot, pythonPipReady, toolchainEnv, toolsRoot } from "../toolchain";
+import { installKbEmbedding } from "./kb-embed-backend";
 import { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, devRuntimeSpecs, emitRuntimeProgress, pythonSiteDir, readDownloadSource, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls } from "./dev-runtimes";
 import type { DevRuntimeId, DevRuntimeSpec } from "./dev-runtimes";
 import { sendToWindow } from "./window-bus";
@@ -377,6 +378,17 @@ export const runtimeFeature = defineFeature<null>({
       if (spec.bundled && runtimeInstalled(id, spec)) return { ok: true, runtimes: runtimeList() };
       // ⛔ 10-01：Laya / 手机控制是 pip 包（各有专用安装器）——必须走它们自己的安装链，
       //   绝不能落到 install-runtimes.cjs（那里没有这两个 id，会静默什么也不做）。
+      if (id === "kb-embedding") {
+        // 知识库本地 embedding 后端（10-04）：npm 装 @huggingface/transformers 到 <userData>/kb-backend，
+        // 模型权重首次检索时经 hf-mirror 下载。不走 tools 目录、不随包（用户令：别拉大安装包）。
+        const task = (async () => {
+          emitRuntimeProgress(id, "正在安装本地 embedding 运行库（国内镜像优先）…");
+          await installKbEmbedding((text: string) => emitRuntimeProgress(id, text));
+        })();
+        runtimeInstalls.set(id, task.finally(() => runtimeInstalls.delete(id)) as Promise<void>);
+        await task.catch((error) => { throw error instanceof Error ? error : new Error(String(error)); });
+        return { ok: true, runtimes: runtimeList() };
+      }
       if (id === "laya" || id === "phone-harness") {
         const task = (async () => {
           const result = id === "laya" ? await layaInstall() : await installPhoneHarness();
