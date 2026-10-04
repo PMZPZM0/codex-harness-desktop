@@ -88,7 +88,7 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   //    hidden: true ⇒ 不在「开发工具」页重复出卡（它们各有专用卡片：LayaCard / PhoneHarnessCard）。
   //    安装/卸载走各自的专用通道（见 04-dev-runtime-install.ts 的分派与 laya-service/phone-harness）。
   laya: { name: "Laya 智能判断", description: "本地决策模型（33ms）：思考等级「自动」档的判断端——发送前自动选 低/中/高/极高（含 PyTorch，约 800 MB，走清华 pip 镜像）", size: "约 800 MB", marker: "laya", hidden: true },
-  "kb-embedding": { name: "知识库本地语义检索", description: "让知识库检索从「关键词匹配」升级到「语义匹配」（问「登录凭证怎么做」也能命中「JWT 双令牌」那段）。本地 ONNX 推理，不依赖供应商接口；模型约 30MB 首次检索时自动下载（走国内镜像）", size: "约 35 MB", marker: "kb-embedding" },
+  "kb-embedding": { name: "知识库本地语义检索", description: "让知识库检索从「关键词匹配」升级到「语义匹配」（问「登录凭证怎么做」也能命中「JWT 双令牌」那段）。本地 ONNX 推理，完全离线，不依赖供应商接口。随包内置（≤50MB 内置线），无首次下载", size: "随包 35 MB", marker: "kb-embedding", bundled: true },
   "phone-harness": { name: "手机控制（phone-harness）", description: "让 Codex 直接操作真机：看屏幕、点、打字、滑、读结果（MIT 许可的 Python CLI，装机后注册为技能；约 3 MB）", size: "约 3 MB", marker: "phone-harness", hidden: true },
   // Android 平台工具（adb）：手机控制（phone-harness）的 Android 通道必需。⛔ 官方源 dl.google.com
   //  **没有国内镜像**（npmmirror 的 binaries 目录下没有该包，实测 404）⇒ 下载慢/失败时只能回落手动安装，

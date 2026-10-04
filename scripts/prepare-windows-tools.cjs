@@ -181,6 +181,56 @@ async function main() {
     `@nuphus/nuphus-mcp@${NUPHUS_VERSION}`, `@playwright/cli@${PLAYWRIGHT_CLI_VERSION}`, `playwright-core@${PLAYWRIGHT_CORE_VERSION}`,
   ], env);
 
+  // 2.5) 知识库本地 embedding 运行库（10-04 用户令：≤50MB 一律内置）。
+  //    npm 装 @huggingface/transformers + 下载 bge-small-zh-v1.5 ONNX 权重（hf-mirror），
+  //    产出 resources/tools/kb-embedding/：node_modules/ + models/Xenova/... + worker 脚本。
+  //    ⛔ extraResources 已有映射（守卫【29】）；模型合计 ~30MB，仍在 50MB 内置线内。
+  const kbEmbedDir = path.join(tools, "kb-embedding");
+  const kbTransformersReady = fs.existsSync(path.join(kbEmbedDir, "node_modules", "@huggingface", "transformers", "package.json"));
+  if (!kbTransformersReady) {
+    run(node, [npmCli, "install", "--prefix", kbEmbedDir, "--registry=https://registry.npmmirror.com", "--no-audit", "--no-fund", "@huggingface/transformers"], env);
+  } else {
+    console.log("[kb-embedding] transformers 已有，跳过");
+  }
+  const kbModelDir = path.join(kbEmbedDir, "models", "Xenova", "bge-small-zh-v1.5");
+  if (!fs.existsSync(path.join(kbModelDir, "onnx", "model_quantized.onnx"))) {
+    fs.mkdirSync(path.join(kbModelDir, "onnx"), { recursive: true });
+    for (const file of ["config.json", "tokenizer.json", "tokenizer_config.json", "special_tokens_map.json"]) {
+      const dest = path.join(kbModelDir, file);
+      if (!fs.existsSync(dest)) fs.copyFileSync(download(`https://hf-mirror.com/Xenova/bge-small-zh-v1.5/resolve/main/${file}`, file), dest);
+    }
+    const onnx = download(`https://hf-mirror.com/Xenova/bge-small-zh-v1.5/resolve/main/onnx/model_quantized.onnx`, "model_quantized.onnx");
+    fs.copyFileSync(onnx, path.join(kbModelDir, "onnx", "model_quantized.onnx"));
+  } else {
+    console.log("[kb-embedding] 模型已有，跳过");
+  }
+  fs.writeFileSync(path.join(kbEmbedDir, "kb-embed-worker.mjs"), [
+    '// kb-embed-worker.mjs —— 常驻 embedding 子进程（stdin/stdout JSON 行协议）',
+    'import { pipeline, env } from "@huggingface/transformers";',
+    'import path from "node:path";',
+    'import { fileURLToPath } from "node:url";',
+    'env.allowLocalModels = true;',
+    'env.allowRemoteModels = false;',
+    'env.localModelPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "models");',
+    'let pipePromise = null;',
+    'function extractor() { pipePromise ??= pipeline("feature-extraction", "Xenova/bge-small-zh-v1.5", { dtype: "q8" }); return pipePromise; }',
+    'let buffer = "";',
+    'process.stdin.setEncoding("utf8");',
+    'process.stdin.on("data", (chunk) => { buffer += chunk; let index; while ((index = buffer.indexOf("\\n")) >= 0) { const line = buffer.slice(0, index); buffer = buffer.slice(index + 1); if (!line.trim()) continue; void handle(line); } });',
+    'async function handle(line) {',
+    '  let request = null;',
+    '  try {',
+    '    request = JSON.parse(line);',
+    '    const pipe = await extractor();',
+    '    const output = await pipe(request.texts, { pooling: "mean", normalize: true });',
+    '    process.stdout.write(JSON.stringify({ id: request.id, vectors: output.tolist() }) + "\\n");',
+    '  } catch (error) {',
+    '    process.stdout.write(JSON.stringify({ id: request?.id ?? 0, error: String(error?.message ?? error) }) + "\\n");',
+    '  }',
+    '}',
+    'process.stdout.write(JSON.stringify({ ready: true }) + "\\n");',
+  ].join("\n"), "utf8");
+  console.log("[kb-embedding] 就绪");
   // 3) VS Code CLI（latest 口径，已就位就跳过）
   const vscodeCode = path.join(tools, "vscode-cli", "code.exe");
   if (fs.existsSync(vscodeCode)) {

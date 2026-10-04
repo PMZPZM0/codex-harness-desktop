@@ -19,6 +19,11 @@ const MODEL = "Xenova/bge-small-zh-v1.5";
 export const KB_EMBED_MARKER = "kb-embedding";
 
 export function kbBackendDir(): string {
+  /* ⛔ 内置优先（10-04 用户令：35MB 在 50MB 内置线内 ⇒ 随包）：产物在 app 路径下
+     resources/tools/kb-embedding/（CI 的 prepare-windows-tools 现造、extraResources 映射进包）。
+     userData/kb-backend 是旧的按需安装落点，仍兼容（有人已经用旧版装过就不作废）。 */
+  const bundled = path.join(app.getAppPath(), "resources", "tools", "kb-embedding");
+  if (existsSync(bundled)) return bundled;
   return path.join(app.getPath("userData"), "kb-backend");
 }
 
