@@ -820,6 +820,21 @@
 .dispatch-topbar-btn.dispatch-dot,
 .dispatch-topbar-btn .dispatch-dot { position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 .dispatch-pop-down { bottom: auto; top: calc(100% + 8px); left: auto; right: 0; }
+/* ⛔⛔ 2026-10-04：`.topbar` 加了 `overflow: hidden`（修「图标压到原生窗口钮底下」）
+   ⇒ 顶栏里的 `position: absolute` 弹层**整棵子树被裁**，点了没反应。
+   z-index 救不了（裁剪与层叠次序无关）。
+   ✅ 顶栏形态改为 portal 到 body + fixed：包含块变成视口 ⇒ 不被任何祖先裁。
+      坐标由 JS 按按钮 getBoundingClientRect 算（见 useAnchoredPopover）。
+   ⚠️ `bottom: auto; top: …; right: 0` 那条是**相对定位**的，fixed 下必须清掉，
+      否则会叠加在 JS 给的 top/left 上 ⇒ 弹层跑到视口右上角。 */
+.dispatch-pop-fixed {
+  position: fixed;
+  bottom: auto;
+  top: auto;
+  left: auto;
+  right: auto;
+  z-index: 10100; /* 与顶栏搜索面板同档：必须在 .topbar(z30) 之上 */
+}
 .dispatch-pop {
   width: 300px;
   max-width: min(324px, calc(100vw - 48px));
