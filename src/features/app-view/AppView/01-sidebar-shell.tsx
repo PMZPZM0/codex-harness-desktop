@@ -143,8 +143,10 @@ import {
 import { basename } from "../../../lib/basename";
 import { copyTextToClipboard } from "../../../lib/clipboard";
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
+// 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
+import { Slot } from "../../../runtime/registry";
 
-export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
+export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppApi; onOpenSettings?: (page: string) => void }) {
   const {
     accountDraft,
     accountEditing,
@@ -387,6 +389,9 @@ export function AppViewSidebarShell({ app }: { app: HarnessAppApi }) {
                 <button className="view-toolbar-btn" title={sidebarAllCollapsed ? "全部展开" : "全部折叠"} onClick={toggleAllSidebarSections} disabled={viewTab === "source" ? !sourcedThreads.length : !projectGroups.length}>{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
               </div>
             </div>
+            {/* 10-04 渲染层插槽：侧栏顶部（在会话列表之上）。插件放这里 = 常驻可见的入口
+        （筛选器 / 快速操作 / 状态指示）。挂在 thread-list 里的话会随会话滚动，位置不固定。 */}
+            <Slot id="sidebar.top" props={{ onOpenSettings }} loader={() => import("../../settings-devtools/DomainsPanel")} />
             <div className="thread-list">
               {loading ? Array.from({ length: 5 }).map((_, index) => <div className="thread-skeleton shimmer" key={index} />) : viewTab === "projects" ? (
                 <div className="project-list">

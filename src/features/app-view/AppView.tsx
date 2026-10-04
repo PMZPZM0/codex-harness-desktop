@@ -160,6 +160,8 @@ import { TeamOfficePreview } from "../team-office";
 import { DramaCanvas } from "../drama-canvas";
 import { AppViewSettingsSheet } from "./AppView/08-settings-sheet";
 import { AppViewFilePreviewEditor } from "./AppView/09-file-preview-editor";
+// 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
+import { Slot } from "../../runtime/registry";
 
 
 
@@ -397,8 +399,11 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           {subAgentRunning && <span className="subagent-badge" title={`子智能体「${subAgentRunning}」执行中`}><Bot size={13} className="subagent-pulse" /><em>{subAgentRunning}</em><i>执行中</i></span>}
         </div>
         <div className="topbar-actions">{topbarActionsNode}</div>
+        {/* 10-04 渲染层插槽：插件可往标题栏右侧挂按钮（标题栏是 titleBarOverlay 的绘制区，
+            插件按钮会落进窗口拖拽区右侧，不影响拖动）。守卫【268】盯它有真实消费点。 */}
+        <Slot id="topbar.end" loader={() => import("../../runtime/plugin-slots")} />
       </header>
-      <AppViewSidebarShell app={app} />
+      <AppViewSidebarShell app={app} onOpenSettings={(page) => { setSearchPreview(null); setMemoryCenterOpen(false); setSettingsPage(page as SettingsPage); setSettingsOpen(true); }} />
       {popoutThreadId && <div className="" aria-hidden />}
 
       <AppViewMainStage app={app} />
@@ -426,6 +431,9 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           {!paletteSections.length && <div className="switcher-empty">没有匹配的结果</div>}
         </div>
       </div>}
+      {/* 10-04 渲染层插槽：全局浮层出口。插件要挂「不依附任何页面」的浮层
+      （确认框 / 托盘气泡 / 全局进度）挂这里 —— 页面级插槽只活在那个页面的渲染树里。 */}
+      <Slot id="overlay.root" />
       <AppViewRemoteApproval app={app} />
       <AppViewRemoteConsole app={app} />
 <AppViewTaskComposer app={app} />

@@ -1469,7 +1469,7 @@ export async function run() {
         "scripts/guards/06-app-behavior.mjs": 3257,
         "scripts/guards/02-session-logic.mjs": 1533,
         "src/features/app-state/parts/bag-types.ts": 1423,
-        "scripts/guards/09-structural.mjs": 1691,   // 本文件是守卫载体：每加一条规则基线随之上移（1362→1521→1571→1618→1660→1691）
+        "scripts/guards/09-structural.mjs": 1710,   // 本文件是守卫载体：每加一条规则基线随之上移（1362→1521→1571→1618→1660→1691→1710）
         "scripts/guards/13-drama-gen.mjs": 1227,
         "electron/main.ts": 1199,
         "scripts/guards/03-runtime-boot.mjs": 1176,
@@ -1647,6 +1647,25 @@ export async function run() {
           }
         };
         scanSlot(join(ROOT, "src"));
+        // ④ 已登记的插槽位不许被删（10-04 补齐扩展面时钉死）
+        //    ⛔ 为什么单独钉：插槽是**机制**，删掉消费点不会报任何错（Slot 返回 null 即可），
+        //    但扩展面就少了一块 —— 而少了一个插槽是那种没人会主动提的退化。
+        const EXPECTED_SLOTS = ["settings.general.bottom", "settings.devtools.bottom", "topbar.end", "overlay.root", "sidebar.top"];
+        // ⛔⛔ 这里**不能**复用 walkFeat253：它的正则只收 `.ts`，**不收 `.tsx`** ——
+        //   而插槽消费点全在 tsx 里（00-settings-registry.tsx / AppView.tsx / 01-sidebar-shell.tsx）
+        //   ⇒ 复用它会扫到 0 个文件，于是「缺失」恒为全部（假红）。本项目已踩同型坑四次
+        //   （最早的 arch-scan.mjs 也是只收 .ts，把 44,654 行报成 19,047）。
+        const walkTsx = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+          const p = join(dir, e.name);
+          if (e.isDirectory()) return walkTsx(p);
+          return /\.(ts|tsx)$/.test(e.name) ? [p] : [];
+        });
+        const slotSrcAll = [slotSrc, ...walkTsx(join(ROOT, "src", "features")).map((p) => readFileSync(p, "utf8"))].join("\n");
+        const missingSlots = EXPECTED_SLOTS.filter((id) => !slotSrcAll.includes(`id="${id}"`) && !slotSrcAll.includes(`registerSlot("${id}"`));
+        (missingSlots.length === 0 ? ok : fail)(
+          `【268】已登记的 ${EXPECTED_SLOTS.length} 个插槽位都在（删消费点不会报错，扩展面会静默退化）`
+            + `；缺失：${missingSlots.join("/") || "无"}`
+        );
         (slotUsers.length > 0 ? ok : fail)(
           `【268】插槽机制有真实消费点（${slotUsers.length} 处）—— 只有机制没有消费点 = 死代码`
             + `消费点：${slotUsers.slice(0, 3).join("/") || "无"}`

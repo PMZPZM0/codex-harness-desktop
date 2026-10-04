@@ -114,4 +114,37 @@ registerSlot("settings.devtools.bottom", {
   render: (props) => <DomainsPanel {...(props as { onNotice: (m: string) => void })} />,
 }, "domains");
 
+// ⛔ 同一个面板**注册两个插槽**（10-04 补齐渲染层扩展面时加的侧栏入口）：
+//   settings.devtools.bottom —— 设置页里的完整面板
+//   sidebar.top             —— 侧栏顶部的入口按钮（点开切到设置页的功能域页）
+//   为什么入口按钮要独立组件而不是复用面板：面板是长列表，挂在侧栏会把会话列表挤扁。
+registerSlot("sidebar.top", {
+  label: "功能域状态",
+  pluginId: "domains",
+  order: 800,
+  render: (props) => <SidebarEntry {...(props as { onOpenSettings?: (page: string) => void })} />,
+}, "domains");
+
+/** 侧栏入口：只显示「有被停用的域」时的提醒，正常状态不占空间（返回 null）。 */
+function SidebarEntry({ onOpenSettings }: { onOpenSettings?: (page: string) => void }) {
+  const [off, setOff] = useState<string[] | null>(null);
+  useEffect(() => {
+    void window.codex.domainsList().then((r: any) => {
+      const disabled = (r?.domains ?? []).filter((d: any) => d.disabled && !d.essential).map((d: any) => d.id);
+      setOff(disabled);
+    }).catch(() => setOff([]));
+  }, []);
+  // 一条都没停 ⇒ 什么都不渲染（不占侧栏空间）
+  if (!off || off.length === 0) return null;
+  return (
+    <button
+      className="secondary-setting domains-sidebar-entry"
+      title={"有 "+off.length+" 个功能域已停用，重启后生效："+off.join("、")}
+      onClick={() => onOpenSettings?.("devtools")}
+    >
+      <Power size={13} />{off.length} 个域已停用
+    </button>
+  );
+}
+
 export default DomainsPanel;
