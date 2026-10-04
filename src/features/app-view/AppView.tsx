@@ -159,6 +159,7 @@ import { AppViewTaskComposer } from "./AppView/06-task-composer";
 import { AppViewMemoryPanel } from "./AppView/07-memory-panel";
 import { TeamOfficePreview } from "../team-office";
 import { DramaCanvas } from "../drama-canvas";
+import { UiSketchModal } from "../ui-sketch";
 import { AppViewSettingsSheet } from "./AppView/08-settings-sheet";
 import { AppViewFilePreviewEditor } from "./AppView/09-file-preview-editor";
 // 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
@@ -351,7 +352,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     setSshExecTarget, setSshFilter, setSshQuery, setSshTerminal,
     setSubAgentDraft, setSubAgentEditorOpen, setTaskList, setTeamHistoryMember,
     setTeamPopupRunId, setTheme, setThreadFileQuery, setUiFont,
-    setUiLang, setUiZoom, setUpdateNotice, setUsageStats,
+    setUiLang, setUiSketchOpen, setUiZoom, setUpdateNotice, setUsageStats,
     setUserAvatar, setUsername, setViewTab, setWelcomeCwdMenuOpen,
     setWelcomeScratchDir, settingsContentReady, settingsOpen, settingsPage,
     settingsResources, shellRef, shortcutsOpen, showApiKey,
@@ -380,7 +381,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     toggleSubAgentEnabled, toggleTreeDir, tokenUsage, toolsStatus,
     topbarActionsNode, treeChildren, treeExpanded, treeLoading,
     treePath, trustAllHooks, turnWindow, turnsCursorRef,
-    uiFont, uiLang, uiZoom, uninstallDevRuntime,
+    uiFont, uiLang, uiSketchOpen, uiZoom, uninstallDevRuntime,
     updateBotStream, updateChecking, updateCurrentVersion, updateDownloading,
     updateError, updateInfo, updateMemoryMode, updateNotice,
     updateProgress, upstreamRetries, usage, useCommand,
@@ -573,6 +574,25 @@ export function AppView({ app }: { app: HarnessAppApi }) {
             window.codex.startTeamSession({ teamId, task: text, cwd: workspace || undefined }).catch((error: any) => {
               setNotice(`召唤专家失败：${String(error?.message ?? error).slice(0, 120)}`);
             });
+          }}
+        />
+      )}
+      {/* 界面草图（10-05，嵌 m3e-canvas）：与画布同档的整屏浮层，从侧栏「···更多」开。
+          「交给 Codex 实现」走的是画布那条已验证的通路 —— 关浮层 → 塞 pendingCommandTextRef
+          （⛔ 它是 ref，不受 setPrompt 状态滞后影响）→ 直接发送；发送失败兜底成填输入框。 */}
+      {uiSketchOpen && (
+        <UiSketchModal
+          onClose={() => setUiSketchOpen(false)}
+          onAskAgent={(text) => {
+            setUiSketchOpen(false);
+            pendingCommandTextRef.current = text;
+            void (async () => {
+              try {
+                await send();
+              } catch {
+                setPrompt(text);
+              }
+            })();
           }}
         />
       )}

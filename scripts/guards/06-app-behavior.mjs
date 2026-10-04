@@ -2321,12 +2321,14 @@ w.postMessage({id:1,op:"list",root});
   (/\{extHubOpen && \(/.test(side180) ? ok : fail)(
     "【180】弹窗挂在 extHubOpen 条件上（⛔ 不是被改成恒假/被删）"
   );
-  // 弹窗内容取「aria-label → 下一个稳定标记 {projectFilter」之间（⛔ 别用固定字符窗口，
+  // 弹窗内容取「aria-label → 下一个稳定标记 {moreHubOpen」之间（⛔ 别用固定字符窗口，
   // 插几行就假红；也别锚结尾缩进 —— 09-27 自己在这里写错过一次）
+  // 10-04：「···更多」的弹窗插在 {projectFilter 之前，窗口尾锚必须跟着换成 {moreHubOpen，
+  // 否则这个 hub 的窗口会把另一个弹窗也算进来（"every" 断言仍会绿，但盯不住它自己那三项）。
   const hub180 = (() => {
     const at = side180.indexOf('aria-label="技能 / 插件 / 智能体"');
     if (at < 0) return "";
-    const end = side180.indexOf("{projectFilter &&", at);
+    const end = side180.indexOf("{moreHubOpen &&", at);
     return side180.slice(at, end > at ? end : at + 2400);
   })();
   (["skills", "plugins", "agentteam"].every((p) => new RegExp(`setSettingsPage\\("${p}"\\)`).test(hub180)) ? ok : fail)(

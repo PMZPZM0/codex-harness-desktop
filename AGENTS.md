@@ -166,6 +166,35 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
 - ⚠️ **未经真机验证**：签名/公证与 Gatekeeper 放行、首次「辅助功能 + 屏幕录制」授权体验只能在 mac 上跑出来。
   产物层的三条硬校验（主程序存在 / 执行位 / 不残留别的平台二进制）已写进 `scripts/verify-packaged-tools.cjs`。
 
+### 🎨 界面草图（`ui-sketch` 板块 + `sketch://` 协议，2026-10-05 立，守卫【283】67 条）
+
+把开源 **m3e-canvas**（Material 3 Expressive 屏摄画布，MIT）嵌进应用：侧栏「···更多」开一整屏的草图，
+摆好的界面直接变成前端提示词。要点五条：
+
+- ⛔ **不并源码**：上游 30,722 行 TS + 自己一套 Tailwind v4 与色板 ⇒ 并进本仓等于在设计体系里再塞一个
+  体系（【170】的色板对账会当场失焦）。做法是**提交它的静态导出产物** `public/sketch/`（4.2MB），
+  布局与功能一字不动。⛔ 产物只能落 `public/`：`clean-dist.mjs` 每次 check 会 `rmSync(dist)`（手放 dist 必丢），
+  而 `before-pack` 的可达闭包只走 `dist/assets` ⇒ `dist/sketch` 天然不被裁（同 `public/pets` 口径）。
+- **刷新产物** = `node scripts/build-sketch-bundle.mjs --from <上游 out/>`（人工工具，⛔ 不进 check / CI：要联网 + Next 工具链）。
+  它干三件事：剪掉 GitHub Pages 死文件、**把两个 Google Fonts 本地化**、把 `scripts/sketch-bridge.js` 内联进 `index.html`。
+  ⛔ 字体必须本地化：Material Symbols 是这套 UI 的**全部图标**，外链取不到时图标退化成 `home` / `add_circle` 这样的**单词**，看着就是坏了。
+- `sketch://` 协议（`electron/sketch-protocol.ts` 声明口径 + `boot.ts` 注册 handler）：根**恒等于打包内 dist/sketch**，
+  扩展名白名单，越界 403、越类型 415。⛔ 不复用 `harness-image`/`pet`（那两个只放图片扩展名，放宽它们 = 扩大任意文件读取面，安全回归）；
+  ⛔ 不用 `file://`（产物里资源引用全是绝对路径 `/_next/…`，file:// 下会解析到文件系统根）。
+  `standard: true` 让 `sketch://app` 成为标准 origin（绝对路径解析与 `frame-src` 匹配都靠它）；
+  `secure: true` 给 `navigator.locks` —— 上游用它做"同一份草图只允许一个可写实例"的单写者锁，非安全上下文里这个 API **直接不存在**
+  ⇒ 静默降级（同 pet:// 的 CSP 事故同型，最难发现的那类）。
+- ⛔ **CSP 的 `frame-src` 必须显式加 `sketch:`**：`*` 不覆盖自定义协议（`index.html` 里已写成纪律），漏写 = iframe 静默空白。
+  这条链六个接缝（侧栏按钮 → bag 开关 → AppView 挂载 → 协议 → CSP → 产物+桥），**每一个都能在 tsc 与预检全绿时白屏**
+  ⇒ 验收项 `ui-sketch` 真跑「桥握手成功」（`data-bridge="ready"`）：跨源 iframe 读不到 DOM，握手是唯一可观测判据。
+- **双向通道用它自己的导入机制**：写 = 桥把文档写成 `#doc=<encodeURIComponent(JSON)>` ⇒ 上游 `hashchange → readShareHash → arrive()`
+  （落画布、被替换的那份留在 draftBefore 可撤销、不重载页面）；读 = 桥读同源的 `localStorage["m3e:doc"]` 回传宿主。
+  ⛔ 不 encodeURIComponent 的话 JSON 里的 `&` 被当分隔符、`+` 变空格 ⇒ 上游只收到半份文档。
+- **组件库融合**（⛔ 不复制第二份数据）：草图右侧直接用基座 `src/lib/ui-skin`（`loadCategory`，3802 个 Uiverse 控件），
+  勾中的组件追加成**一个新 group**（不动用户已有的组，重复送幂等），引用锚写在 item 的 `note` 里
+  —— 上游文档明确「note 原样进它导出的提示词」⇒ 「交给 Codex 实现」= 草图结构 + 组件真实 HTML/CSS
+  （单条超 12KB 预算就只给 id，让引擎自己调 MCP `ui_component_get` 取，⛔ 不许截一半正文）。
+
 ### 📚 Uiverse 组件库（`electron/features/uiverse-library.ts` + `src/features/component-library/`，2026-10-01）
 
 组件库的唯一数据源 = `src/lib/ui-skin/data/*.gz` + `src/lib/ui-skin/catalog.gen.ts`（ingest：`scripts/gen-ui-skin-library.mjs`；⛔ 不复制第二份）：

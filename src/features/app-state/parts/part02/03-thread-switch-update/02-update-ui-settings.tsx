@@ -130,6 +130,11 @@ bag.companyPreviewTeamId = companyPreviewTeamId as typeof bag.companyPreviewTeam
   const [dramaCanvasOpen, setDramaCanvasOpen] = useState(false);
   bag.dramaCanvasOpen = dramaCanvasOpen as typeof bag.dramaCanvasOpen; bag.setDramaCanvasOpen = setDramaCanvasOpen as typeof bag.setDramaCanvasOpen;
 
+  // 界面草图（10-04，m3e-canvas 嵌入）：与画布同款 —— 草图自己的状态全在域内（iframe 里那份
+  // localStorage），挂 bag 的只有「开没开」这一位（侧栏「···更多」开、AppView 渲染宿主）。
+  const [uiSketchOpen, setUiSketchOpen] = useState(false);
+  bag.uiSketchOpen = uiSketchOpen as typeof bag.uiSketchOpen; bag.setUiSketchOpen = setUiSketchOpen as typeof bag.setUiSketchOpen;
+
   // 通知归属判定用的镜像（09-20）：setNotice 是 useCallback 稳定引用，闭包读 ref 拿最新开关状态
   bag.settingsOpenRef.current = bag.settingsOpen;
 
@@ -199,5 +204,5 @@ bag.runtimePercent = runtimePercent as typeof bag.runtimePercent; bag.setRuntime
 
   const [runtimeStage, setRuntimeStage] = useState<Record<string, string>>({});
 bag.runtimeStage = runtimeStage as typeof bag.runtimeStage; bag.setRuntimeStage = setRuntimeStage as typeof bag.setRuntimeStage;
-  return { runUpdateCheck, runUpdateDownload, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, envCheckOpen, setEnvCheckOpen, envInstalling, setEnvInstalling, envCheckDoneRef, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
+  return { runUpdateCheck, runUpdateDownload, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, uiSketchOpen, setUiSketchOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, envCheckOpen, setEnvCheckOpen, envInstalling, setEnvInstalling, envCheckDoneRef, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
 }
