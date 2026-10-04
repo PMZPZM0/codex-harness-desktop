@@ -21,6 +21,9 @@ export type PluginsMarketSectionProps = { settingsResources: any; pluginSearch: 
 export function PluginsMarketSection(props: PluginsMarketSectionProps) {
   const { settingsResources, pluginSearch, pluginInstalledOnly, pluginDisplayName, pluginDescription, pluginChecked, setPluginChecked, refreshPluginsPage, resourceLoading, pluginMarketLoading, pluginMarketCategoryTabs, pluginMarketCategory, setPluginMarketCategory, setPluginMarketPage, pluginMarketSearch, setPluginMarketSearch, pluginMarketItems, installingMarketPlugin, setMarketPreview, installMarketPlugin, pluginMarketTotal, pluginMarketPage, pluginMarketPageSize, setPluginInstalledOnly, setPluginSearch, pluginBatchBusy, batchSetPluginEnabled, pluginBusy, setPluginEnabled, changePlugin } = props;
   const all = settingsResources.plugins as any[];
+  // 10-04：源切换器（Claude 镜像 / Codex 官方 / 已安装）。⛔ 必须声明在 visible 之前——
+  //   visible 要按它过滤（已装屏只显示已装的）。
+  const [marketSource, setMarketSource] = useState("gitee");
   const installed = all.filter((plugin) => plugin.installed);
   // 市场卡片「已安装」判定：引擎插件 id 形如 name@marketplace，取 @ 前与市场 slug 比对
   const installedMarketPluginSlugs = new Set(installed.map((plugin) => String(plugin.id ?? plugin.name ?? "").split("@")[0]));
@@ -28,7 +31,13 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
   const disabledCount = installed.length - enabledCount;
   const keyword = pluginSearch.trim().toLowerCase();
   const visible = all.filter((plugin) => {
-    if (pluginInstalledOnly && !plugin.installed) return false;
+    // 10-04：源切换器有「已安装」这一项 ⇒ 这一屏**只显示已装的**。
+    // 原来的 `pluginInstalledOnly` 二级 tab（全部 57 / 已安装 6）已删除——它与顶栏那一项
+    // 语义重复且位置别扭（在页面最下面，用户以为是"上面那个市场的下半截"）。
+    // ⚠️ 未安装的那些来自**引擎自带市场**（openai-api-curated），安装走 `plugin/install`
+    //   引擎请求、需要登录 ChatGPT 账号 ⇒ 没登录时点了必然失败。放在"已安装"这一屏里
+    //   只会让人反复点一个注定失败的东西，所以这里**彻底不露出未安装的**。
+    if (marketSource === "installed" && !plugin.installed) return false;
     if (!keyword) return true;
     return `${pluginDisplayName(plugin)} ${pluginDescription(plugin)} ${plugin.marketplaceName ?? ""} ${plugin.name ?? ""}`.toLowerCase().includes(keyword);
   });
@@ -44,22 +53,25 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
   const togglePluginChecked = (id: string) => setPluginChecked((current: any) => current.includes(id) ? current.filter((entry: any) => entry !== id) : [...current, id]);
   // 两个市场数据源（10-03）：Gitee 上的 Claude Code 官方镜像 ⇄ Codex 官方 openai/plugins（GitHub 国内镜像读取）。
   // 各自的分类表、卡片与安装进度互不相干 ⇒ 切的是**整块**（用户拍板「按源给各自的分类 tab」），不是把 18 个分类混排。
-  const [marketSource, setMarketSource] = useState("gitee");
   return <section className="settings-section stack plugin-center">
     <div className="settings-copy channel-heading"><div><h2>插件<PageInfo text={<>上方卡片来自两个插件市场源：<b>Claude 插件镜像</b>（Gitee 国内源，48 个，全部与 Codex 兼容）与 <b>Codex 官方源</b>（GitHub <code>openai/plugins</code>，65 个官方插件，走国内镜像下载）。一键安装写入本地插件目录；官方源全部需要授权/配置服务凭据（其中 15 个依赖 ChatGPT 应用连接器），卡片上的提示就是这一条。下方为已安装插件管理（含引擎自带的 openai-api-curated 官方市场），停用后 Codex 不再加载该插件提供的指令、技能与钩子。</>} helpKey="plugins" label="插件" /></h2></div><div className="settings-heading-actions"><button className="secondary-setting" title={marketSource === "official" ? "打开 GitHub 上的 Codex 官方插件仓库" : "打开 Gitee 插件市场镜像"} onClick={() => void window.codex.openExternal(marketSource === "official" ? "https://github.com/openai/plugins" : "https://gitee.com/yuqiaodi/claude-plugins-official-gitee")}><ArrowUpRight size={14} />在线市场</button><button className="icon-button" title="刷新：已装插件 / 技能 / 钩子 / 记忆 / 任务 / MCP + 插件市场（沿用当前分类与搜索）" onClick={() => void refreshPluginsPage()}>{(resourceLoading || pluginMarketLoading) ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
 
     <div className="market-source-switch">
       <SegmentedTabs
         value={marketSource}
-        onChange={(next) => setMarketSource(next === "official" ? "official" : "gitee")}
-        options={[{ value: "gitee", label: "Claude 插件镜像" }, { value: "official", label: "Codex 官方插件" }]}
+        onChange={(next) => setMarketSource(next === "official" ? "official" : next === "installed" ? "installed" : "gitee")}
+        options={[
+          { value: "gitee", label: "Claude 插件镜像" },
+          { value: "official", label: "Codex 官方插件" },
+          { value: "installed", label: "已安装" },
+        ]}
       />
     </div>
 
     {/* ⛔ 09-28：「内置接口（视频生成接口）」块**搬走**了 —— 它属于「内置插件」那一组
         （与生图/视觉插件并列，见 BuiltinPluginsSection）。本页只负责**插件市场**：
         外部市场的可安装列表 + 已安装插件管理。两件事混在一页会让人分不清「自带」与「要装」。 */}
-    {marketSource === "official"
+    {marketSource === "installed" ? null : marketSource === "official"
       ? <CodexOfficialMarketSection onResourcesChanged={() => void refreshPluginsPage()} />
       : <div className="plugin-market-block">
       <div className="plugin-market-title">插件市场<small>来自 Gitee 官方镜像（Claude Code 插件，与 Codex 兼容）· 一键安装</small></div>
@@ -103,20 +115,14 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
       <div className="skill-market-pagination"><span>共 {pluginMarketTotal} 个插件 · 第 {pluginMarketPage} / {Math.max(1, Math.ceil(pluginMarketTotal / pluginMarketPageSize))} 页</span><div><button className="secondary-setting" disabled={pluginMarketLoading || pluginMarketPage <= 1} onClick={() => setPluginMarketPage((page: any) => Math.max(1, page - 1))}><ArrowLeft size={14} />上一页</button><button className="secondary-setting" disabled={pluginMarketLoading || pluginMarketPage >= Math.max(1, Math.ceil(pluginMarketTotal / pluginMarketPageSize))} onClick={() => setPluginMarketPage((page: any) => page + 1)}>下一页<ArrowRight size={14} /></button></div></div>
     </div>}
 
-    <div className="plugin-stats">
-      <div className="plugin-stat"><span>市场插件</span><strong>{all.length}</strong></div>
+    {marketSource === "installed" ? <><div className="plugin-market-title">已安装插件<small>本机已安装的插件 · 停用后 Codex 不再加载它提供的指令、技能与钩子（文件仍在，不占不到磁盘）</small></div>    <div className="plugin-stats">
       <div className="plugin-stat"><span>已安装</span><strong>{installed.length}</strong></div>
       <div className="plugin-stat"><span>启用中</span><strong className="stat-ok">{enabledCount}</strong></div>
       <div className="plugin-stat"><span>已停用</span><strong className="stat-off">{disabledCount}</strong></div>
     </div>
 
     <div className="resource-toolbar">
-      <SegmentedTabs
-        value={pluginInstalledOnly ? "installed" : "all"}
-        onChange={(next) => setPluginInstalledOnly(next === "installed")}
-        options={[{ value: "all", label: "全部", count: all.length }, { value: "installed", label: "已安装", count: installed.length }]}
-      />
-      <SearchField value={pluginSearch} onChange={setPluginSearch} placeholder="搜索插件名称、描述或来源市场" />
+      <SearchField value={pluginSearch} onChange={setPluginSearch} placeholder="搜索已安装插件的名称、描述或来源" />
     </div>
     <div className="resource-toolbar secondary">
       <SelectAllToggle total={selectableIds.length} selected={checkedIds.length} unit="个插件" onSelectAll={() => setPluginChecked(selectableIds)} onClear={() => setPluginChecked([])} />
@@ -163,7 +169,8 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
           </div>
         </article>;
       })}
-      {!visible.length && <div className="plugin-empty"><Store size={26} /><strong>{all.length ? "没有匹配的插件" : "还没有发现插件"}</strong><p>{all.length ? "换个关键词，或清除「已安装」筛选。" : "在 Codex 配置里添加 marketplace 后，插件会出现在这里。"}</p></div>}
+      {!visible.length && <div className="plugin-empty"><Store size={26} /><strong>{all.length ? "没有匹配的插件" : "还没有安装任何插件"}</strong><p>{all.length ? "换个关键词试试。" : "去上面两个市场装一个，或在 Codex 配置里添加 marketplace 后，插件会出现在这里。"}</p></div>}
     </div>
+    </> : null}
   </section>;
 }
