@@ -1469,7 +1469,7 @@ export async function run() {
         "scripts/guards/06-app-behavior.mjs": 3257,
         "scripts/guards/02-session-logic.mjs": 1533,
         "src/features/app-state/parts/bag-types.ts": 1423,
-        "scripts/guards/09-structural.mjs": 1710,   // 本文件是守卫载体：每加一条规则基线随之上移（1362→1521→1571→1618→1660→1691→1710）
+        "scripts/guards/09-structural.mjs": 1829,   // 本文件是守卫载体：每加一条规则基线随之上移（1362→1521→1571→1618→1660→1691→1813→1820→1823→1829）
         "scripts/guards/13-drama-gen.mjs": 1227,
         "electron/main.ts": 1199,
         "scripts/guards/03-runtime-boot.mjs": 1176,
@@ -1701,6 +1701,125 @@ export async function run() {
         (/domains:set-enabled[\s\S]{0,900}isEssentialDomain\(id\)/.test(domSrc) ? ok : fail)(
           "【269】domains:set-enabled 在通道层拒绝停用 essential 域（UI 禁用不够——渲染层可被注入）"
         );
+      }
+    }
+
+    // ===== 【270】真热插拔的安全判据（10-04 阶段 6 真热插拔）==================
+    // ⛔ 这组断言针对的是「上一轮说支持、其实没接线」的失效模式：
+    //    停用只写配置不动运行时（通道还在、域还挂着），用户以为关了其实没关。
+    //    三个维度都要钉：① 名单里不许有假域 ② 装卸 API 真的接上 ③ 真跑产物验语义。
+    {
+      const essFile = join(ROOT, "electron", "essential-domains.ts");
+      const domFile = join(ROOT, "electron", "features", "domains-ipc.ts");
+      const genFile = join(ROOT, "electron", "composition.gen.ts");
+      if (!existsSync(essFile) || !existsSync(domFile) || !existsSync(genFile)) {
+        fail("【270】essential-domains.ts / domains-ipc.ts / composition.gen.ts 缺失（热插拔判据无法验证）");
+      } else {
+        const essSrc = readFileSync(essFile, "utf8");
+        const domSrc = readFileSync(domFile, "utf8");
+        const genSrc = readFileSync(genFile, "utf8");
+
+        // ① ⛔⛔ 名单不许有**不存在的域** —— 这正是本轮真踩的：
+        //    我先写了 window-factory / popout / boot，它们**不是域**（在 main.ts 的 5 个
+        //    handler 里）⇒ 名单看起来严谨，实际三条永远命中不到任何东西 = 假判据。
+        const compRaw = JSON.parse(readFileSync(join(ROOT, "electron", "composition.json"), "utf8"));
+        const realIds = new Set((compRaw.domains || []).map((d) => d.id));
+        const hotList = (essSrc.match(/DOMAINS_NOT_HOT_UNLOADABLE[^=]*=\s*\[([\s\S]*?)\]/) || [null, ""])[1];
+        const hotIds = [...hotList.matchAll(/"([a-zA-Z][\w-]*)"/g)].map((x) => x[1]);
+        const ghostHot = hotIds.filter((id) => !realIds.has(id));
+        (ghostHot.length === 0 && hotIds.length > 0 ? ok : fail)(
+          `【270】不可热卸载名单里的域都真实存在（${hotIds.length} 个在册）`
+            + `；名单里写了不存在的域（= 永远命不中的假判据）：${ghostHot.join("/") || "无"}`
+        );
+
+        // ② 装卸 API 必须真的存在且接上（否则又退回"只写配置不动运行时"）
+        const apiOk = /export function mountDomainById/.test(genSrc)
+          && /export function unmountDomainById/.test(genSrc)
+          && /export const FIBERS/.test(genSrc)
+          && /registry\(\)\.unmountDomainById/.test(domSrc)
+          && /registry\(\)\.mountDomainById/.test(domSrc);
+        (apiOk ? ok : fail)(
+          "【270】生成物持有 Fiber 句柄并暴露装卸 API，且 domains:set-enabled 真的调用它"
+            + "（只写配置不动运行时 = 假热插拔：通道还在、域还挂着）"
+        );
+
+        // ②bis⛔ 顶层 import 生成物 = 循环依赖（CJS 下生成物未求值完 ⇒ undefined ⇒ 启动即崩）。
+        //   domains 域**在**生成物的 import 列表里，所以它只能惰性 require。本轮真跑 dist
+        //   复现过这个事故（"Cannot read properties of undefined"），判据必须钉死。
+        (/^import[^\n]*from\s*"\.\.\/composition\.gen"/m.test(domSrc) ? fail : ok)(
+          "【270】domains 域不顶层 import 生成物（它在生成物的 import 列表里 ⇒ 顶层 import 即循环依赖）"
+        );
+
+        // ③ 真跑产物：装卸语义（挂 3 个 → 卸 1 → 少 1 → 装回 → 复原；幂等与未知域要拒绝）
+        const genDist = join(ROOT, "dist-electron", "composition.gen.js");
+        if (!existsSync(genDist)) {
+          warn("【270】找不到 dist-electron/composition.gen.js —— 先跑 npm run build（热插拔语义需真跑产物）");
+        } else {
+          // ⛔⛔ 桩的**深度守卫要放在「递归建桩」那一层**，不是取属性这一层。
+          //   第一版把守卫写在 get 里 ⇒ 深层取值（session.defaultSession.xxx、protocol.handle）
+          //   拿到的是 noop 而非可调用 stub ⇒ "is not a function"。
+          //   正确形态：只有**自引用/无限递归**（同一路径访问超过 N 次）才降级，
+          //   正常嵌套一律返回可调用 stub。
+          // ⛔⛔ 更重要的教训（本轮为它花了三轮）：桩一旦抛错，**预检自身崩掉 ⇒
+          //   后面上千条断言全部不执行**（2839 行"断言未跑完"），
+          //   看起来像"只有几条红"，实际是整片假绿 —— 比假红危险得多。
+          //   ⇒ 所以断言里凡要 require 宿主产物的，桩必须宁可过宽。
+          const noop = () => {};
+          const mkStub = () => new Proxy(function stubFn() {}, {
+            get(_t, k) {
+              if (k === "then" || typeof k === "symbol") return undefined;
+              // ⛔⛔ Symbol.toPrimitive **必须给真字符串**（不是 undefined）：
+              //   宿主代码里有 `` `${someElectronThing}` `` 这样的模板拼接 ——
+              //   返回 undefined 会炸 "Cannot convert object to primitive value"
+              //   ⇒ 预检自身崩 ⇒ 后面上千条断言不执行（本轮第三次踩这条，2839 行）。
+              if (k === Symbol.toPrimitive) return () => "[electron-stub]";
+              if (k === "toString") return () => "[electron-stub]";
+              if (k === "toJSON") return () => ({});
+              if (k === "getPath") {
+                // ⛔ 必须给**真字符串**：宿主有 path.join(app.getPath("userData"), …) 这类调用
+                //   给 stub 对象会炸 "The path argument must be of type string"（本轮第 4 次迭代）。
+                return () => join(ROOT, ".workbuddy", "tmp", "guard-stub");
+              }
+              if (k === "getAppPath") return () => join(ROOT, ".workbuddy", "tmp", "guard-stub");
+              if (k === "getName") return () => "guard-stub";
+              if (k === "getVersion") return () => "0.0.0-stub";
+              if (k === "isPackaged") return false;
+              if (k === "whenReady") return () => Promise.resolve();
+              return mkStub();
+            },
+            apply: () => mkStub(),
+            construct: () => mkStub(),
+          });
+          const electronStub = mkStub();
+          const moduleAny = createRequire(import.meta.url);
+          const loadOrig = moduleAny("node:module")._load;
+          try {
+            moduleAny("node:module")._load = function (request, ...rest) {
+              if (String(request) === "electron") return electronStub;
+              return loadOrig.call(this, request, ...rest);
+            };
+            const g = moduleAny(genDist);
+            const ids0 = g.mountedDomainIds();
+            const probe = ids0.find((id) => id !== "domains") || null;
+            let ok270 = ids0.length > 0 && Boolean(probe);
+            let detail = `挂载 ${ids0.length} 个域`;
+            if (ok270) {
+              const after1 = g.unmountDomainById(probe) ? g.mountedDomainIds().length : -1;
+              const backOk = g.mountDomainById(probe);
+              const after2 = g.mountedDomainIds().length;
+              const idempotent = g.mountDomainById(probe) === false;
+              const unknown = g.unmountDomainById("no-such-domain") === false;
+              ok270 = after1 === ids0.length - 1 && backOk && after2 === ids0.length && idempotent && unknown;
+              detail = `卸载 ${probe} → ${after1}（原 ${ids0.length}）→ 装回 → ${after2}`
+                + `；幂等重复挂载被拒=${idempotent}；未知域被拒=${unknown}`;
+            }
+            (ok270 ? ok : fail)(`【270】真跑产物：域可运行时卸载/装回（${detail}）`);
+          } catch (error270) {
+            fail(`【270】真跑 dist-electron/composition.gen.js 失败：${error270 instanceof Error ? error270.message : String(error270)}`);
+          } finally {
+            moduleAny("node:module")._load = loadOrig;
+          }
+        }
       }
     }
 
