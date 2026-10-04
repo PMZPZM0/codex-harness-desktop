@@ -81,6 +81,26 @@ try {
   ok(desc.length > 40, "工具描述非空（" + desc.length + " 字符）");
   ok(desc.includes("subagent") || desc.includes("子智能体"), "描述里出现子智能体（模型才知道能派谁）");
 
+  /* ⛔⛔ 2026-10-04 用户报「我只选了子智能体，点确认之后就只自动发送子智能体调度提示词」——
+     两个漏：① 描述不按勾选生成（三类全列）② 勾选变了不重取描述。
+     ⇒ 判据：只勾一类时，描述必须**只列那一类**、且对其余两类**显式否定**。 */
+  {
+    const only = dispatchToolDescription(targets, { expert: false, team: false, subagent: true });
+    ok(/只开启了：子智能体/.test(only), "只勾子智能体时描述首句写明「只开启了：子智能体」");
+    ok(!only.includes('kind="expert"') && !only.includes('kind="team"'),
+      "只勾子智能体时**不列**任何专家/专家团条目（列了模型就会派错）");
+    ok(/【专家】本会话\*\*未开启\*\*/.test(only) && /【专家团】本会话\*\*未开启\*\*/.test(only),
+      "未勾选的类别被**显式否定**（不是隐藏 —— 隐藏会让模型以为不存在而反复试错）");
+    ok(only.includes('kind="subagent"'), "勾选的子智能体仍然列出");
+    // 反向：全勾时三类都要出现
+    const all = dispatchToolDescription(targets, { expert: true, team: true, subagent: true });
+    ok(all.includes('kind="expert"') && all.includes('kind="team"') && all.includes('kind="subagent"'),
+      "三类全勾时三类都列出（不得被 allow 误伤）");
+    // 退化：allow=null 时全列（保持旧行为，不让描述变空）
+    const dflt = dispatchToolDescription(targets, null);
+    ok(dflt.includes('kind="expert"') && dflt.includes('kind="subagent"'), "allow=null 退化为全列（旧行为不破）");
+  }
+
   /*⛔⛔ 2026-10-04 用户报「提示词写错了」——
      原版把三类**平铺成一个无分节的列表**，每行只写个「专家」「子智能体」前缀，
      模型据此自己挑 ⇒ 用户开了子智能体、明确要派子智能体，模型却派了专家。
@@ -118,6 +138,23 @@ try {
   // 渲染层只是 UX，也钉一下（否则用户会看到"能点但没反应"）
   const seg = readFileSync(join(ROOT, "src/features/app-state/parts/part09/02-seg.tsx"), "utf8");
   ok(/restrictedLabel=\{bag\.threadRole\.restricted/.test(seg), "顶栏调度按钮把 restrictedLabel 传下去（UI 层也禁）");
+  // ② 勾选变化必须重取描述（否则"点了确认却还是旧提示词"）
+  const roles = readFileSync(join(ROOT, "src/features/app-state/parts/part06/01-seg/02-runtime-dispatch-roles.tsx"), "utf8");
+  ok(/dispatchToolDescription\(tid\)/.test(roles) || /dispatchToolDescription\(\w+\)/.test(roles),
+    "⛔ 渲染层把 threadId 传给 dispatchToolDescription（无参 ⇒ 主进程拿不到勾选、只能三类全列）");
+  ok(/const tid = bag\.threadRef\.current\?\.id/.test(roles), "threadId 走 threadRef 读（闭包旧值会串会话）");
+  ok(/dispatchKey/.test(roles) && /dispatchKey\]\);/.test(roles),
+    "勾选变化会重取描述（effect 依赖含 dispatchKey）");
+  // preload / 类型签名同步
+  ok(/dispatchToolDescription: \(threadId: string\)/.test(
+    readFileSync(join(ROOT, "electron/preload.ts"), "utf8")),
+    "preload 签名带 threadId 且 arity=1（改了签名不同步 ⇒ IPC 静默丢参）");
+  ok(/dispatchToolDescription\(threadId: string\)/.test(
+    readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8")),
+    "vite-env.d.ts 签名同步（不同步 ⇒ tsc 不报、运行时丢参）");
+  ok(/agents:tool-description", async \(_event, threadId: string\)/.test(
+    readFileSync(join(ROOT, "electron/features/agents-ipc.ts"), "utf8")),
+    "主进程 handler 接 threadId 并按 dispatch 开关生成 allow");
   ok(/delegatedRailRuns\.length > 0/.test(
     readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/01-timeline.tsx"), "utf8"),
   ), "主会话下方渲染 DelegatedRail（被调度会话出现在主会话下）");

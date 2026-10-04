@@ -13,7 +13,7 @@ import { dispatchNoticeText, dispatchOffNoticeText, dispatchToolDescription } fr
 import { broadcastHarnessEvent } from "./window-bus";
 import { buildDispatchCatalog, restrictedThreadRole } from "./dispatch-core";
 import { runDelegatedTask } from "./delegation";
-import { delegateRegistry, server } from "../runtime-refs";
+import { delegateRegistry, server, threadRuntimeStore } from "../runtime-refs";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
@@ -31,7 +31,22 @@ export const agentsFeature = defineFeature<null>({
 
     ipcHost.handle("agents:thread-role", async (_event, threadId: string) => await restrictedThreadRole(String(threadId ?? "")));
     ipcHost.handle("agents:catalog", async () => ({ targets: await buildDispatchCatalog() }));
-    ipcHost.handle("agents:tool-description", async () => ({ description: dispatchToolDescription(await buildDispatchCatalog()) }));
+    ipcHost.handle("agents:tool-description", async (_event, threadId: string) => {
+      /*⛔⛔ 2026-10-04 用户报「我勾了子智能体，提示词还让我派专家」——
+         原来**无参**调用，只能把三类全列上⇒ 模型自己挑、挑错。
+         ✅ 现在按该会话**实际勾选**的类别生成：用户开了哪类才列哪类，
+            未勾选的明确写"本会话未开启，不要派"（不是隐藏，是明确否定 ——
+            隐藏会让模型以为不存在而报错，明确否定才不会乱试）。
+         取不到 threadId 或开关全 false 时退化为"全列"（保持旧行为，不让描述变空）。*/
+      const id = String(threadId ?? "");
+      const cfg = id ? ((await threadRuntimeStore.get(id))?.dispatch ?? null) : null;
+      const allow = cfg
+        ? { expert: cfg.expert === true, team: cfg.team === true, subagent: cfg.subagent === true }
+        : null;
+      const targets = await buildDispatchCatalog();
+      const anyOn = allow ? allow.expert || allow.team || allow.subagent : true;
+      return { description: dispatchToolDescription(anyOn ? targets : [], allow) };
+    });
     ipcHost.handle("agents:notice", async () => ({ text: dispatchNoticeText(await buildDispatchCatalog()) }));
     ipcHost.handle("agents:off-notice", async () => ({ text: dispatchOffNoticeText() }));
     ipcHost.handle("agents:delegated", async () => ({ records: await delegateRegistry.listAll() }));

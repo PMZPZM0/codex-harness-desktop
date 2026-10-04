@@ -283,7 +283,7 @@ contextBridge.exposeInMainWorld("codex", {
   saveSubAgent: (input: unknown) => __ipc("subagents:save", 1, [input]),
   removeSubAgent: (id: string) => __ipc("subagents:remove", 1, [id]),
   invokeSubAgent: (input: unknown) => __ipc("subagents:invoke", 1, [input]),
-  dispatchToolDescription: () => __ipc("agents:tool-description", 0, []),
+  dispatchToolDescription: (threadId: string) => __ipc("agents:tool-description", 1, []),
   dispatchNotice: () => __ipc("agents:notice", 0, []),
   dispatchOffNotice: () => __ipc("agents:off-notice", 0, []),
   listDelegates: () => __ipc("agents:delegated", 0, []),
