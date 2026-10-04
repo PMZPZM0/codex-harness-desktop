@@ -6,6 +6,8 @@
 
 import { Sparkles, Users, Bot, Lock, ChevronDown, Trash2, CircleCheck } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
+import { useAnchoredPopover } from "../app-view/hooks/useAnchoredPopover";
 
 export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topbar, lockedBy, onReleaseHolder, restrictedLabel }: {
   dispatch: { enabled: boolean; expert: boolean; team: boolean; subagent: boolean };
@@ -44,6 +46,15 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
     { key: "subagent", title: "子智能体", hint: "你在设置里配置的自定义角色", n: countOf("subagent"), icon: Bot },
   ];
   const dirty = JSON.stringify(draft) !== JSON.stringify(dispatch);
+  /*⛔⛔ 2026-10-04 用户报「点调度弹窗展示不出来」——
+     根因：`.topbar` 在 d19c510 被加了 `overflow: hidden`（修「图标压到原生窗口钮底下」），
+     而本弹层是 `.topbar` 的 `position: absolute` 后代 ⇒ **被整棵子树裁掉**，
+     按钮点了、state 也变了，就是看不见。
+     ⚠️ z-index 救不了：`overflow: hidden` 裁的是**整棵子树**，与层叠次序无关。
+     ✅ 正确做法（与顶栏搜索面板同款，本仓已有先例）：**portal 到 body + position: fixed**。
+     定位逻辑共用 `useAnchoredPopover`（⛔ 别在这里另写一份：三处弹层同病，
+     各自复制坐标算法 = 以后改一处忘两处）。 */
+  const posStyle = useAnchoredPopover(open, wrapRef, 300);
   return (
     <div className={`composer-menu dispatch-menu ${open ? "open" : ""}`} ref={wrapRef}>
       {topbar ? (
@@ -74,8 +85,13 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
           <ChevronDown size={12} className={`menu-caret ${open ? "up" : ""}`} />
         </button>
       )}
-      {open && (
-        <div className={`composer-menu-pop dispatch-pop ${topbar ? "dispatch-pop-down" : ""}`} role="dialog" aria-label="调度设置">
+      {open && createPortal(
+        <div
+          className={`composer-menu-pop dispatch-pop${topbar ? " dispatch-pop-fixed" : " dispatch-pop-down"}`}
+          role="dialog"
+          aria-label="调度设置"
+          style={topbar ? posStyle : undefined}
+        >
           <div className="dispatch-head">
             <strong>调度</strong>
             <small>把合适的独立子任务交给专门的角色去做，产出回传本会话</small>
@@ -156,7 +172,8 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

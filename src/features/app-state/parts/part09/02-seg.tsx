@@ -145,6 +145,7 @@ import {
 } from "lucide-react";
 import { basename } from "../../../../lib/basename";
 import { locateMatchEl } from "../../../app-view/helpers";
+import { useAnchoredPopover } from "../../../app-view/hooks/useAnchoredPopover";
 import type { Bag } from "../bag-types";
 
 export function usePart09b(bag: Bag) {
@@ -262,6 +263,16 @@ bag.earlyView = earlyView as typeof bag.earlyView;
   //    Ctrl+Shift+F 走的是 bag.setChatSearchOpen(true)，若这里用另一个 state，
   //    快捷键会把结果算出来、把高亮打上，却**不显示面板**（状态分叉）。
   const historySearchBtnRef = useRef<HTMLButtonElement | null>(null);
+  /* ⛔⛔ 2026-10-04：`.topbar` 带 `overflow: hidden`（守卫【250】为修「图标压原生钮」加的）
+     ⇒ 顶栏里的 `position: absolute` 弹层被**整棵子树裁掉**，点了没反应，z-index 救不了。
+     工作区菜单（ctx-menu）与任务菜单（task-menu）同病，与 dispatch-pop 一起改成
+     **portal 到 body + fixed**；定位共用 useAnchoredPopover。
+     ⚠️ 只改 position 不够 —— 不 portal 仍在被裁的子树里。
+     ⚠️ 宽度要与 CSS 实际宽度一致：`.task-menu` 是 226px（见 02-sidebar-threads.css）。 */
+  const ctxBtnRef = useRef<HTMLButtonElement | null>(null);
+  const ctxMenuStyle = useAnchoredPopover(bag.ctxMenuOpen, ctxBtnRef, 226);
+  const taskBtnRef = useRef<HTMLButtonElement | null>(null);
+  const taskMenuStyle = useAnchoredPopover(bag.taskMenuOpen, taskBtnRef, 226);
   const closeHistoryPanel = useCallback(() => {
     bag.setChatSearchOpen(false);
     bag.setChatSearchQuery(""); // 关面板即清词：下次打开不留旧高亮 / 旧结果
@@ -396,13 +407,16 @@ bag.earlyView = earlyView as typeof bag.earlyView;
         </>
       )}
                 <div className="ctx-picker">
-          <button className="icon-button tb-workspace" title="工作区上下文（当前会话使用的项目目录）" onClick={() => bag.setCtxMenuOpen((current) => !current)}><FolderOpen size={16} /></button>
+          <button ref={ctxBtnRef} className="icon-button tb-workspace" title="工作区上下文（当前会话使用的项目目录）" onClick={() => bag.setCtxMenuOpen((current) => !current)}><FolderOpen size={16} /></button>
           {bag.ctxMenuOpen && <>
             <div className="menu-backdrop" onClick={() => bag.setCtxMenuOpen(false)} />
-            <div className="task-menu ctx-menu">
-              <button onClick={() => { bag.setCtxMenuOpen(false); void bag.chooseWorkspace(); }}><FolderOpen size={14} />{bag.workspace ? "选择其他目录…" : "选择工作区目录"}</button>
-              {bag.workspace && <button onClick={() => bag.setCtxMenuOpen(false)}><FolderOpen size={14} /><span className="ctx-current-name">资源管理器 · {basename(bag.workspace)}</span><Check size={14} className="ctx-check" /></button>}
-            </div>
+            {createPortal(
+              <div className="task-menu ctx-menu ctx-menu-fixed" role="menu" style={ctxMenuStyle}>
+                <button onClick={() => { bag.setCtxMenuOpen(false); void bag.chooseWorkspace(); }}><FolderOpen size={14} />{bag.workspace ? "选择其他目录…" : "选择工作区目录"}</button>
+                {bag.workspace && <button onClick={() => bag.setCtxMenuOpen(false)}><FolderOpen size={14} /><span className="ctx-current-name">资源管理器 · {basename(bag.workspace)}</span><Check size={14} className="ctx-check" /></button>}
+              </div>,
+              document.body,
+            )}
           </>}
         </div>
         <div className="task-menu-wrap">
@@ -419,10 +433,11 @@ bag.earlyView = earlyView as typeof bag.earlyView;
               <span className="tb-goals-badge">{bag.planSteps.filter((s) => s.status === "completed").length}/{bag.planSteps.length}</span>
             </button>
           )}
-          <button className="icon-button tb-task-menu" title="当前任务操作" onClick={() => bag.setTaskMenuOpen((current) => !current)}><MoreHorizontal size={18} /></button>
+          <button ref={taskBtnRef} className="icon-button tb-task-menu" title="当前任务操作" onClick={() => bag.setTaskMenuOpen((current) => !current)}><MoreHorizontal size={18} /></button>
           {bag.taskMenuOpen && <>
             <div className="menu-backdrop" onClick={bag.closeTaskMenu} />
-            <div className="task-menu" role="menu">
+            {createPortal(
+              <div className="task-menu task-menu-fixed" role="menu" style={taskMenuStyle}>
               <div className="task-menu-sections">
                 <div className="task-menu-section">
                   <span className="task-menu-label">当前任务</span>
@@ -436,7 +451,9 @@ bag.earlyView = earlyView as typeof bag.earlyView;
                   <button disabled={!bag.thread} onClick={() => { bag.closeTaskMenu(); void bag.runSlashCommand("/queue"); }}><ListChecks size={14} /><span>消息队列</span></button>
                 </div>
               </div>
-            </div>
+              </div>,
+              document.body,
+            )}
           </>}
         </div>
         {/* 10-04 用户拍板：**顶栏的终端按钮已删** —— 右侧栏里已经有「终端」标签页

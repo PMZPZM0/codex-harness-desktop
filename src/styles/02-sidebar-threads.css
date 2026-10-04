@@ -598,6 +598,33 @@
   overflow-y: auto;
   scrollbar-width: thin;
 }
+/* ⛔⛔ 2026-10-04：顶栏版任务菜单 / 工作区菜单改为 portal + fixed。
+   根因是 `.topbar` 的 `overflow: hidden`（守卫【250】为修「图标压原生钮」加的）
+   会裁掉**整棵子树** ⇒ 顶栏里的 absolute 弹层点了没反应，z-index 救不了。
+   ✅ 手法与顶栏搜索面板一致（`19-misc-hints.css` 的 `.history-search-panel`）。
+   ⚠️ 必须清掉 `.task-menu` 的 relative 定位（top/right/bottom），否则与 JS 坐标叠加。 */
+.task-menu-fixed {
+  position: fixed;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  z-index: 10100; /* 高于 .topbar(z30) 与设置内遮罩(80~97) */
+}
+/* ⚠️ 用 min-width（与 `05-composer-input.css` 里 `.ctx-menu` 同语义）：内容长时撑开，
+   若写成 `width: 220px` 会把「资源管理器 · 很长目录名」那行截断。
+   ⛔ 定位相关的声明**必须写全**（fixed + 清 top/right）：只写 min-width 时它仍继承
+   `.task-menu` 的 `position:absolute; top:calc(100%+6px); right:0`
+   ⇒ 又被祖先 overflow 裁掉（这正是 11-04 修的那个 bug 的同款复发路径）。 */
+.ctx-menu-fixed { min-width: 220px; }
+.task-menu.ctx-menu-fixed {
+  position: fixed;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  z-index: 10100;
+}
 .task-menu button {
   min-height: 32px;
   height: auto;
