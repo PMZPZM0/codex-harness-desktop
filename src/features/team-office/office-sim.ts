@@ -102,6 +102,24 @@ type AgentMode = "work" | "idle";
 const WATER_POI = { x: 832, y: 170, label: "接杯水 💧" };
 const BOOK_POI = { x: 352, y: 178, label: "查点资料 📖" };
 
+/* ── 10-04 新增三个 POI（用户要求「加一个卫生间，和跑步机，还有哑铃」）──
+ * ⚠️ 素材只有 23 张图、**没有这三样设备本体**（用户选"用现有素材拼"）⇒
+ *   本轮先用**地面标记 + 气泡文案**表达，不画设备；设备像素图下一轮补。
+ * ⛔ 坐标同理由用户 978×679 截图换算（门在左下 x8-59/y481-622）：
+ *   卫生间就在那扇门里 ⇒ 站立点取门内侧；跑步机/哑铃放右侧空地（饮水机下方那片空地）。 */
+const TOILET_POI = { x: 96, y: 520, label: "去洗手间 🚻" };
+const TREADMILL_POI = { x: 880, y: 250, label: "跑两步 🏃" };
+const GYM_POI = { x: 880, y: 340, label: "举铁 🏋️" };
+
+/** 全部休息 POI（供事件驱动调度用）。 */
+const ALL_POIS = [
+  { poi: WATER_POI, act: "water" as const },
+  { poi: BOOK_POI, act: "book" as const },
+  { poi: TOILET_POI, act: "toilet" as const },
+  { poi: TREADMILL_POI, act: "run" as const },
+  { poi: GYM_POI, act: "gym" as const },
+];
+
 /** 一个在办公室里的人的运行时状态（sim 内部）。 */
 export type Agent = {
   id: string;
@@ -123,11 +141,22 @@ export type Agent = {
   breakCooldown: number;
   onBreak: boolean;
   /** 休息活动（10-01 用户：「加一点喝茶，倒水，查资料」）：
-   *  tea = 原地举杯（不起身）；water/book = 走到 POI 站立片刻；null = 普通走动 */
-  activity: null | "tea" | "water" | "book";
+   *  tea = 原地举杯（不起身）；water/book = 走到 POI 站立片刻；null = 普通走动
+   *  10-04 新增：toilet 卫生间 / run 跑步机 / gym 哑铃（都走到对应 POI） */
+  activity: null | "tea" | "water" | "book" | "toilet" | "run" | "gym";
   /** 活动进行中的站立截止时刻（到点回工位） */
   activityUntil: number;
   bubble: { text: string; until: number } | null;
+  /* ── 10-04 事件驱动（用户选"跟真实事件挂钩"）：这三个由真实会话状态灌进来，
+     只影响**显示器画什么**，不驱动移动（移动是下面 activity 管的）。
+     ⛔ 别拿 running/turnActive 当它们用——那是回合级信号，一张卡亮一片屏就废了
+        （与 4f7c610 思考浮层那个教训同族）。 */
+  /** 该成员正在思考（引擎 reasoning 在流） */
+  thinking: boolean;
+  /** 正在等审批/等工具/轮询 */
+  waiting: boolean;
+  /** 正在汇报/总结 */
+  reporting: boolean;
 };
 
 const WALK_SPEED = 1.35; // 逻辑像素 / tick(60fps)
@@ -163,6 +192,9 @@ export class OfficeSim {
         activity: null,
         activityUntil: 0,
         bubble: null,
+        thinking: false,
+        waiting: false,
+        reporting: false,
       };
       // 状态迁移沿 ⇒ 气泡（⛔ 只在变化沿发，不刷屏）
       if (prev && prev.mode !== mode) {
@@ -192,6 +224,47 @@ export class OfficeSim {
   }
 
   /** 推进一帧。 */
+  /* ── 10-04 事件驱动（用户选"跟真实事件挂钩"）：真实会话事件 ⇒ 让某个成员去做某件事。
+   *
+   * ⛔⛔ 为什么必须独立于原来那套随机休息：原来 `step()` 里
+   *   `if (a.mode === "work" || a.onBreak) return;` ⇒ **work 成员永不离席**
+   *   ⇒ 用户看到的"查资料没走到书架前、喝水也是"，就是因为干活的角色根本不会起身。
+   *   改法不是"删掉这行"（那会变成纯随机、无节操乱跑），而是**给事件一个显式入口**：
+   *   随机那套继续管"空闲时的自作主张"，事件这套管"真的有事情发生"。
+   *
+   * @param kind  "book"查资料 / "water"喝水 / "toilet"洗手间 / "run"跑步机 / "gym"举哑铃
+   * @returns 是否成功派出去（找不到人/在途/已在同活动 ⇒ false）
+   */
+  sendTo(memberId: string, kind: "book" | "water" | "toilet" | "run" | "gym", now = Date.now()): boolean {
+    const a = this.agents.find((x) => x.id === memberId);
+    if (!a) return false;
+    if (a.onBreak && a.activity === kind) return false;   // 已经在做同一件事
+    if (a.path.length > 0) return false;                    // 在途中，不打断
+    const hit = ALL_POIS.find((p) => p.act === kind);
+    if (!hit) return false;
+    const out = findPath(this.grid, a, hit.poi) ?? [];
+    if (out.length <= 1) return false;
+    // 终点补精确点（路径原生终点是格中心，最多偏 16px ⇒ "没走到跟前"）
+    out.push({ x: hit.poi.x, y: hit.poi.y });
+    a.onBreak = true;
+    a.activity = hit.act;
+    a.bubble = { text: hit.poi.label, until: now + 2600 };
+    a.path = out;
+    a.homePath = [...out].reverse();
+    a.activityUntil = now + 6000;
+    return true;
+  }
+
+  /** 灌入某成员的真实事件状态（只影响显示器画什么，不驱动移动）。 */
+  setEventState(memberId: string, ev: { thinking?: boolean; waiting?: boolean; reporting?: boolean }) {
+    const a = this.agents.find((x) => x.id === memberId);
+    if (!a) return;
+    if (ev.thinking !== undefined) a.thinking = ev.thinking;
+    if (ev.waiting !== undefined) a.waiting = ev.waiting;
+    if (ev.reporting !== undefined) a.reporting = ev.reporting;
+  }
+
+  /** 推进。 */
   tick(dtMs: number) {
     const steps = Math.max(1, Math.round(dtMs / 16.6));
     for (const a of this.agents) {
