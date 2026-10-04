@@ -82,21 +82,26 @@ bag.dispatchInfoRef = dispatchInfoRef as typeof bag.dispatchInfoRef;
 
 
   const refreshDispatchInfo = useCallback(async () => {
+    /*⛔⛔ 2026-10-04 用户报「新会话勾选不了调度」——
+       上一版把 description 和 catalog 塞进**同一个 Promise.all**：
+       dispatchToolDescription(tid) 一抛错（threadRuntimeStore 未就绪等）⇒ 整体 reject
+       ⇒ catch 静默 ⇒ **catalog 也一起丢** ⇒ 面板三行 n=0、看起来"没有可调度对象"。
+       ✅ 拆成两个独立 try/catch：**一个失败绝不拖垮另一个**；
+          catalog 拿到后立刻 setState（不等 description）。 */
+    let targets: DispatchTargetEntry[] = [];
+    let description = "";
     try {
-      /* ⛔⛔ 2026-10-04 用户报「我只选了子智能体，点确认之后就只自动发送子智能体调度提示词」——
-         原来**无参**调用 ⇒ 主进程拿不到「用户在面板里勾了哪几类」⇒ 三类全列进描述
-         ⇒ 模型面对一堆名字自由发挥，派了没勾选的专家。
-         ✅ 把 threadId 传下去，主进程读该会话的 dispatch 开关**按勾选生成**描述。
-         ⚠️ 依赖必须含 threadId 与开关值：否则切会话/改勾选后描述不刷新（闭包旧值）。 */
+      const cat: any = await window.codex.listDispatchCatalog();
+      targets = Array.isArray(cat?.targets) ? cat.targets : [];
+    } catch { /* catalog 失败：保持空，但不影响 description */ }
+    try {
       const tid = bag.threadRef.current?.id ?? "";
-      const [desc, cat] = await Promise.all([window.codex.dispatchToolDescription(tid), window.codex.listDispatchCatalog()]);
-      const next = {
-        description: String((desc as any)?.description ?? ""),
-        targets: Array.isArray((cat as any)?.targets) ? (cat as any).targets : [],
-      };
-      bag.dispatchInfoRef.current = next;
-      bag.setDispatchInfo(next);
-    } catch { /* 拿不到目录就不注册工具：宁可没有，也不要一个描述空的工具让模型乱猜 */ }
+      const desc: any = await window.codex.dispatchToolDescription(tid);
+      description = String(desc?.description ?? "");
+    } catch { /* description 失败：留空（宁可没有也不要让模型乱猜），不影响 catalog */ }
+    const next = { description, targets };
+    bag.dispatchInfoRef.current = next;
+    bag.setDispatchInfo(next);
   }, []);
 bag.refreshDispatchInfo = refreshDispatchInfo as typeof bag.refreshDispatchInfo;
 

@@ -1125,6 +1125,12 @@ export async function run() {
     //    断言钉住「条件 + 匹配串」两部分，只查标识符会被 `if (false)` 架空。
     (/if \(purgeTarget && \/failed to delete thread\|failed to read session metadata\|no rollout found/.test(mainTs) ? ok : fail)("【43】幽灵会话的删除报错按成功处理（不然用户二次删除会看到「删除失败」）");
     (mainTs.includes("localCleanupOnly") ? ok : fail)("【43】成功返回带上 localCleanupOnly 标记（便于将来排查「日志说成功、引擎侧没删」）");
+    // ④② 僵尸会话根治（10-04）：引擎的 thread/delete 只认 archived_sessions/ 里的 rollout，
+    //     活会话（rollout 还在 sessions/）删一次报一次 "must be in archived sessions directory"。
+    //     断言钉住「归档兜底 + 重试 + 仍失败按本地清理」三段接线，只查标识符会被架空。
+    (mainTs.includes("/must be in archived sessions directory/i") ? ok : fail)("【43】引擎拒删活会话（rollout 在 sessions/）的错误有识别分支");
+    (mainTs.includes('await server.request("thread/archive", { threadId: purgeTarget })') ? ok : fail)("【43】拒删时先 thread/archive 把 rollout 挪进归档目录再重试 delete");
+    (/归档后重试删除仍失败，按本地清理处理/.test(mainTs) ? ok : fail)("【43】归档后重试仍失败按本地清理成功处理（不反复弹错让用户反复点）");
 
     // ⑤ 墓碑不能是**单向死锁**（code review 抓到的真缺口）：导入会话备份时
     //    `applySessionsBackup` 原样复用备份里的 thread id，不清墓碑的话

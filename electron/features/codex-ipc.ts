@@ -76,6 +76,27 @@ export const codexFeature = defineFeature<null>({
         result = await server.request(method, params);
       } catch (error: any) {
         const firstMessage = String(error?.message ?? "");
+        // ⛔ 僵尸会话根治（10-04 用户：「删不掉的僵尸会话给老子解决掉」）：引擎的 thread/delete
+        //   只认 archived_sessions/ 里的 rollout，活会话的 rollout 还在 sessions/ ⇒ 引擎直接拒删
+        //   （报 "rollout path … must be in archived sessions directory"），删除永远失败。
+        //   修法：先 thread/archive（引擎把 rollout 挪进归档目录），再重试 delete；重试仍失败
+        //   且错误形态仍是「引擎不认这条会话」⇒ 按下面的 ghost 分支本地清理成功处理
+        //   （finally 的 purge + 墓碑会兜住磁盘与侧栏，绝不反复报错让用户反复点）。
+        if (purgeTarget && /must be in archived sessions directory/i.test(firstMessage)) {
+          const archived = await server.request("thread/archive", { threadId: purgeTarget }).then(
+            () => true,
+            (archiveError: any) => { console.warn("[thread/delete] 归档兜底失败：", String(archiveError?.message ?? archiveError).slice(0, 200)); return false; },
+          );
+          if (archived) {
+            try { result = await server.request(method, params); } catch (retryError: any) {
+              console.warn("[thread/delete] 归档后重试删除仍失败，按本地清理处理（墓碑 + rollout 清理）：", String(retryError?.message ?? retryError).slice(0, 200));
+            }
+          }
+          if (!result) {
+            // 引擎侧始终不认这条会话 ⇒ 本地清理（finally 的 purge + 墓碑）达成用户意图，按成功返回
+            return { ok: true, localCleanupOnly: true };
+          }
+        }
         // ⛔ 幽灵会话的删除按成功处理（09-18）：本地残留已在 finally 清掉、墓碑也记了，
         //   用户点「永久删除」的意图已达成 —— 把这种错误抛回去只会让他以为没删掉、反复再点。
         if (purgeTarget && /failed to delete thread|failed to read session metadata|no rollout found|thread[^.]{0,40}not found/i.test(firstMessage)) {

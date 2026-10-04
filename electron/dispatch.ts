@@ -260,6 +260,138 @@ export function dispatchOffNoticeText(): string {
   ].join("\n");
 }
 
+/* ════════════════════════════════════════════════════════════════════════
+ * ⛔⛔ 2026-10-04 用户拍板：勾选/取消勾选的**逐类**通知与提示词（完整映射）。
+ *
+ * 用户原话：「用户勾选某个可调度项时，被勾选的那一项要发送对应通知，并生成
+ * 对应提示词内容。需分别覆盖一次勾选 1 个、2 个、3 个的场景，确保每个被勾选
+ * 项都有独立的、准确的提示词文案，不遗漏也不重复发送。取消其中某一项、其他项
+ * 仍开启时，同样要生成对应的提示词与通知，内容需正确反映状态。」
+ *
+ * 设计（映射规则的实现，守卫【dpcat】会真跑这 8 态）：
+ *   · **一条通知、按类分段**：勾了 3 类 ⇒ 通知里 3 段（每段一段说明），不是 3 条消息。
+ *     ——「不遗漏」：每段都列名字与职责；「不重复发送」：一次确认只发一条。
+ *   · **差异驱动**：发什么由 before → next 的**差集**决定（新增勾了什么、取消了什么），
+ *     与"第几类"无关 —— 三类对称，不会漏某一类。
+ *   · **取消也要发**：关闭 A、B/C 仍开 ⇒ 通知里 A 段写「已停用」、末尾写「仍可调度：B、C」。
+ *   · 全部取消（三类全关）但总开关还开着 ⇒ 等价于"无对象"，也要发（模型才不会白试）。
+ * ════════════════════════════════════════════════════════════════════════ */
+
+/** 用户在调度面板逐类勾选的结果（DispatchConfig 的三个子开关）。 */
+export type DispatchAllow = { expert: boolean; team: boolean; subagent: boolean };
+
+export const DISPATCH_KIND_LABEL: Record<Exclude<DispatchKind, "member">, string> = {
+  expert: "专家",
+  team: "专家团",
+  subagent: "子智能体",
+};
+
+/** 每类"是什么、适合派什么活"——通知里给模型的一句话职责说明（按类独立，不共用）。 */
+const KIND_ROLE: Record<Exclude<DispatchKind, "member">, string> = {
+  expert: "一个独立的专业角色——适合评审、创作、调研这类要专业判断、产出本身就是最终答案的活。",
+  team: "一个团队按 SOP 分工协作——适合要多角色配合（设计/开发/测试等）、产出需要汇总的活。",
+  subagent: "你在设置里配置的自定义角色——适合固定流程、专精某一类活（如只做评审、只做翻译）。",
+};
+
+const KIND_ORDER = ["expert", "team", "subagent"] as const;
+
+/** 当前开启的是哪几类（固定顺序：专家 → 专家团 → 子智能体；顺序即通知段落顺序）。 */
+export function activeDispatchKinds(allow: DispatchAllow | null | undefined): Exclude<DispatchKind, "member">[] {
+  if (!allow) return [];
+  return KIND_ORDER.filter((k) => allow[k] === true);
+}
+
+/** 「A、B」形式的类名列表（空 ⇒ 「（无）」）。 */
+function kindsLabel(kinds: Exclude<DispatchKind, "member">[]): string {
+  return kinds.length ? kinds.map((k) => DISPATCH_KIND_LABEL[k]).join("、") : "（无）";
+}
+
+/** 一段「【类名】职责说明」——每个被勾选项的独立文案，互不共用。 */
+function kindParagraph(kind: Exclude<DispatchKind, "member">): string {
+  return `【${DISPATCH_KIND_LABEL[kind]}】${KIND_ROLE[kind]}`;
+}
+
+/**
+ * 勾选变化通知：总开关保持开启、面板里勾了/取消了某些类时发。
+ * 映射规则（8 态全覆盖，守卫逐态断言）：
+ *   · turnedOn 非空 ⇒ 每个新增类一段独立文案（不遗漏、不共用）
+ *   · turnedOff 非空 ⇒ 每个取消类一段「已停用」文案
+ *   · 末尾固定写「当前仍可调度：…」（正确反映其余项保持开启）
+ *   · 两者都空 ⇒ 不该调用（渲染层负责不发）；真调了就给一句中性状态说明，不发空串
+ */
+export function dispatchSelectionChangeNotice(
+  turnedOn: Exclude<DispatchKind, "member">[],
+  turnedOff: Exclude<DispatchKind, "member">[],
+  nowAllow: DispatchAllow,
+): string {
+  const on = KIND_ORDER.filter((k) => turnedOn.includes(k));
+  const off = KIND_ORDER.filter((k) => turnedOff.includes(k));
+  /* ⛔ 仍可调度 = **当前开启的全部类**（含本轮刚勾上的）—— 之前误写成"排除本轮新增"，
+     勾 2 个时 still 恒空 ⇒ 误打「当前没有任何可调度的对象」（守卫【dnotice】抓的）。 */
+  const nowActive = activeDispatchKinds(nowAllow);
+  const lines: string[] = ["【调度范围已更新】本会话的可调度对象有变化。"];
+  if (on.length) {
+    lines.push("新开启（可以派它们干活）：");
+    for (const k of on) lines.push(kindParagraph(k));
+  }
+  if (off.length) {
+    lines.push("已停用（之后不要再派这一类；即使工具参数里还能拼出名字，调用也会被拒绝）：");
+    for (const k of off) lines.push(`【${DISPATCH_KIND_LABEL[k]}】已在本会话停用。`);
+  }
+  lines.push(`当前仍可调度：${kindsLabel(nowActive)}。`);
+  // 未开启且不是本轮取消的 ⇒ 从没开过（首次勾选场景）⇒ 也给一句否定（防模型去试）
+  const neverOn = KIND_ORDER.filter((k) => !nowActive.includes(k) && !off.includes(k));
+  if (neverOn.length) lines.push(`⛔ 未开启（用户没勾选，不要派）：${neverOn.map((k) => DISPATCH_KIND_LABEL[k]).join("、")}。`);
+  if (on.length) lines.push("对新增的类：收到本条后不用逐个回复，之后按需直接调度即可。");
+  if (!on.length && !off.length) lines.push("（本次没有实际变化。）");
+  if (nowActive.length === 0) lines.push("⚠️ 当前没有任何可调度的对象——所有任务都由你自己完成，不要尝试调度。");
+  lines.push("收到请只回复「收到」两个字，不要展开。");
+  return lines.join("\n");
+}
+
+/**
+ * 总开关开启时的完整告知（原来那条 dispatchNoticeText 的升级版）：
+ * 按当时勾选的类**逐段**列出（勾 1 类就 1 段、3 类就 3 段），未开启的类明确否定。
+ */
+export function dispatchEnabledNotice(targets: DispatchTarget[], allow: DispatchAllow | null): string {
+  const list = Array.isArray(targets) ? targets : [];
+  const on = activeDispatchKinds(allow);
+  const byKind = new Map<string, string[]>();
+  for (const target of list) {
+    if (!on.includes(target.kind as Exclude<DispatchKind, "member">)) continue; // 只列开启的类
+    const arr = byKind.get(target.kind) ?? [];
+    if (target.name) arr.push(target.name);
+    byKind.set(target.kind, arr);
+  }
+  const lines: string[] = [
+    `【调度已开启】本会话已启用「调度」能力。开启的对象类别：${kindsLabel(on)}。`,
+    "",
+  ];
+  if (!on.length) {
+    lines.push("⚠️ 但没有勾选任何类别——请用户在调度面板里至少勾选一类，否则你无法派出任何任务，也不要白试。");
+  }
+  for (const k of on) {
+    lines.push(kindParagraph(k));
+    const names = byKind.get(k) ?? [];
+    lines.push(names.length ? `  可派对象：${names.slice(0, 12).join("、")}${names.length > 12 ? ` 等 ${names.length} 个` : ""}。` : "  （该类当前没有已启用的对象——不要尝试派这一类。）");
+    lines.push("");
+  }
+  // ⛔ 未勾选的类也要**显式否定**（守卫【dnotice】钉的）：只写"只开启了 X"不够，
+  //    模型看到工具参数里能拼出其它类的名字仍可能去试 ⇒ 逐类点名"没开、别派"。
+  const offAll = KIND_ORDER.filter((k) => !on.includes(k));
+  if (offAll.length && on.length) {
+    lines.push(`⛔ 未开启（用户没勾选，不要派）：${offAll.map((k) => DISPATCH_KIND_LABEL[k]).join("、")}。`);
+    lines.push("");
+  }
+  lines.push(
+    "原则：适合独立完成、需要专门角色、或会大量读取上下文而不该污染本会话的子任务，优先调度它们来做；",
+    "需要来回确认的活、自己做更快，就自己做。",
+    "调度它们会产生临时会话并出现在左侧侧栏（挂在发起调度的会话下面）；一个任务整体做完后，主动问用户是否归档这些临时会话。",
+    "收到请只回复「收到」两个字，不要展开。",
+  );
+  return lines.join("\n");
+}
+
 /**
  * 按 kind + name 在目录里定位一个可调度对象。
  * name 允许给 key（英文 id）或显示名（中文），大小写不敏感；再不行做一次包含匹配。
