@@ -574,6 +574,12 @@ contextBridge.exposeInMainWorld("codex", {
   uninstallOfficialMarketPlugin: (slug: unknown) => __ipc("codex-official-market:uninstall", 1, [slug]),
   /* 本地已装官方插件（**只扫本地目录、零网络**）：补齐「引擎没认领、但文件已落盘」的那批，不能走 list（那条要拉上游 65 条） */
   listInstalledOfficialMarketPlugins: () => __ipc("codex-official-market:installed", 0, []),
+  /* 10-04 阶段 6 宿主域清单（启用/停用状态 + 是否 essential） */
+  domainsList: () => __ipc("domains:list", 0, []) as Promise<{ domains: Array<{ id: string; mounted: boolean; disabled: boolean; essential: boolean }>; essentialDomains: string[]; requiresRestart: boolean }>,
+  /* 10-04 阶段 6 停用/启用宿主域（下次启动生效，essential 域拒绝） */
+  domainsSetEnabled: (input: { id: string; enabled: boolean }) => __ipc("domains:set-enabled", 1, [input]) as Promise<{ ok: boolean; error?: string; id?: string; enabled?: boolean; requiresRestart?: boolean }>,
+  /* 10-04 「重启才生效」的话术由主进程出，禁在前端硬编码 */
+  domainsReloadHint: () => __ipc("domains:reload-hint", 0, []) as Promise<{ requiresRestart: boolean; text: string }>,
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

@@ -41,6 +41,29 @@ export type SlotRegistration<P = Record<string, unknown>> = {
 
 const REGISTRY = new Map<string, SlotRegistration<never>>();
 const PLUGIN_IDS = new Map<string, string>();
+/** 变更订阅（`useSyncExternalStore` 用）：注册/覆盖/卸载都通知。 */
+const LISTENERS = new Set<() => void>();
+/**
+ * ⛔ 版本号是 `useSyncExternalStore` 的 getSnapshot：**必须返回稳定值**。
+ *   返回 `REGISTRY.size` 会在"覆盖注册"时不变（size 相同）⇒ 订阅者不重渲染 ⇒ 覆盖不生效。
+ *   用单调递增的版本号，任何变更都会让它变化。
+ */
+let VERSION = 0;
+function notify(): void {
+  VERSION += 1;
+  for (const fn of [...LISTENERS]) {
+    try { fn(); } catch { /* 单个订阅者出错不影响其余 */ }
+  }
+}
+/** 订阅注册表变更（返回退订函数）。 */
+export function subscribeSlots(fn: () => void): () => void {
+  LISTENERS.add(fn);
+  return () => { LISTENERS.delete(fn); };
+}
+/** 当前版本号（给 `useSyncExternalStore` 当 getSnapshot）。 */
+export function slotVersion(): number {
+  return VERSION;
+}
 
 /**
  * 注册一个插槽。
@@ -66,11 +89,13 @@ export function registerSlot<P extends Record<string, unknown> = Record<string, 
   }
   REGISTRY.set(id, reg as SlotRegistration<never>);
   if (pluginId) PLUGIN_IDS.set(id, pluginId);
+  notify();   // 通知订阅者（覆盖注册也要通知：size 不变但内容变了）
   return () => {
     // 卸载：只有还属于自己时才摘（避免误删别人的覆盖）
     if (PLUGIN_IDS.get(id) === pluginId || !pluginId) {
       REGISTRY.delete(id);
       PLUGIN_IDS.delete(id);
+      notify();
     }
   };
 }

@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-01",
-  "count": 398,
+  "count": 401,
   "channels": [
     {
       "name": "request",
@@ -3951,6 +3951,36 @@
       "invokeArgs": "",
       "cast": null,
       "note": "本地已装官方插件（**只扫本地目录、零网络**）：补齐「引擎没认领、但文件已落盘」的那批，不能走 list（那条要拉上游 65 条）"
+    },
+    {
+      "name": "domainsList",
+      "channel": "domains:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ domains: Array<{ id: string; mounted: boolean; disabled: boolean; essential: boolean }>; essentialDomains: string[]; requiresRestart: boolean }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ domains: Array<{ id: string; mounted: boolean; disabled: boolean; essential: boolean }>; essentialDomains: string[]; requiresRestart: boolean }>",
+      "note": "10-04 阶段 6 宿主域清单（启用/停用状态 + 是否 essential）"
+    },
+    {
+      "name": "domainsSetEnabled",
+      "channel": "domains:set-enabled",
+      "paramsImpl": "input: { id: string; enabled: boolean }",
+      "paramsDecl": "input: { id: string; enabled: boolean }",
+      "returns": "Promise<{ ok: boolean; error?: string; id?: string; enabled?: boolean; requiresRestart?: boolean }>",
+      "invokeArgs": "input",
+      "cast": "Promise<{ ok: boolean; error?: string; id?: string; enabled?: boolean; requiresRestart?: boolean }>",
+      "note": "10-04 阶段 6 停用/启用宿主域（下次启动生效，essential 域拒绝）"
+    },
+    {
+      "name": "domainsReloadHint",
+      "channel": "domains:reload-hint",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ requiresRestart: boolean; text: string }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ requiresRestart: boolean; text: string }>",
+      "note": "10-04 「重启才生效」的话术由主进程出，禁在前端硬编码"
     }
   ]
 }
