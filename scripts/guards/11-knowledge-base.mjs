@@ -130,6 +130,25 @@ try {
   } else {
     ok(false, "找不到 searchDocsSemantic —— 语义档无法测");
   }
+
+  // ── 判据 6（2026-10-04 用户问「写入知识库的工具有配置好后」补）：模型侧必须有**写**工具 ──
+  // ⛔ 缺口真相：当时 `kb:add-text` / `kb:add-files` 通道**只有 IPC、没有模型工具** ⇒
+  //   用户只能手动在设置页里存，Codex 自己写不进去。能力清单里还列着通道名 ⇒
+  //   读代码会以为"配好了"。⇒ 必须钉工具清单里的**读写两侧**都在。
+  {
+    const core = readFileSync(join(ROOT, "dist-electron", "features", "dispatch-core.js"), "utf8");
+    const rpc = readFileSync(join(ROOT, "dist-electron", "features", "dispatch-rpc.js"), "utf8");
+    const toolNames = [...core.matchAll(/name:\s*"([a-z_]+)"/g)].map((m) => m[1]);
+    ok(toolNames.includes("knowledge_search"), "模型侧有 knowledge_search（读）");
+    ok(toolNames.includes("knowledge_add"), "模型侧有 knowledge_add（写）—— 缺它就退化成只能手动存");
+    // ⛔ 声明了不等于能跑：执行端也必须有同名分支
+    ok(/name === "knowledge_add"/.test(rpc), "knowledge_add 有执行端分支（只声明不接 = 点了没反应）");
+    // ⚠️ 权限闸：被委派会话不该能改项目知识库
+    ok(
+      /knowledge_add[\s\S]{0,900}restrictedThreadRole/.test(rpc),
+      "knowledge_add 受 restrictedThreadRole 闸（专家/被调度会话不许写知识库）",
+    );
+  }
 } finally {
   rmSync(ws, { recursive: true, force: true });
 }
