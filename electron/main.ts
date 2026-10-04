@@ -97,6 +97,9 @@ import "./composition.gen"; // 组合层（P1）：读 electron/composition.json
 /* 历史会话搜索：顶栏 🔍 → 扫 rollout 原档搜对话内容（真相源=rollout，见 history-search-ipc.ts） */
 import { readMemoryMode, applyMemoryMode, workspaceMemoryEnabled } from "./main/05-memory-mode";
 import { readMcpOverrides, mcpOverrideEnabled } from "./main/06-mcp-overrides";
+// 10-04 阶段 1 内核瘦身：崩溃取证 + 图片占位兜底下沉到 runtime/host/（应用级职责，
+// 不属于任何功能域；那里的路径求值是**惰性**的 —— 见该文件头的搬迁纪律①）。
+import { installCrashDiagnostics, placeholderPngResponse } from "./runtime/host/diagnostics";
 import { escapeToml, readConnectors } from "./main/07-connectors-io";
 import { ensureBuiltinReviewer } from "./main/09-agents-plugins";
 import { classifyProbeError, migrateLegacyRolloutHome, describeNetworkError } from "./main/11-maintenance";
@@ -208,43 +211,12 @@ if (process.env.CODEX_HARNESS_IN_PROCESS_GPU) {
   });
 }
 
-/**
- * 崩溃取证（09-12 新增）：用户反馈「开实时语音一会就闪退」，但应用跑 e2e 之外的路径
- * 没有任何崩溃日志——渲染进程一死 → 窗口关闭 → window-all-closed → app.quit()，
- * 从用户视角就是「应用自己没了」，且不留证据。
- * 现在两件事一起做：① 落盘确切原因（reason/exitCode/时间）到 userData/voice-crash.log；
- * ② 渲染进程异常退出时重载窗口（应用不再整体退出），把「闪退」降级成「闪一下自动恢复」。
- */
-function logCrash(scope: string, detail: unknown): void {
-  try {
-    const line = `[${new Date().toISOString()}] ${scope} ${typeof detail === "string" ? detail : JSON.stringify(detail)}\n`;
-    void fs.appendFile(path.join(app.getPath("userData"), "voice-crash.log"), line).catch(() => undefined);
-    console.error("[crash]", line.trim());
-  } catch {
-    /* 取证失败不能影响主流程 */
-  }
-}
-
-app.on("render-process-gone", (_event, contents, details) => {
-  logCrash("renderer-gone", { reason: details?.reason, exitCode: details?.exitCode });
-  if (details?.reason === "clean-exit") return;
-  try {
-    if (!contents.isDestroyed()) contents.reload();
-  } catch {
-    /* 重载失败就交给用户手动重开 */
-  }
-});
-
-process.on("uncaughtException", (error) => logCrash("main-uncaught", String(error?.stack ?? error)));
-
-process.on("unhandledRejection", (reason) => logCrash("main-unhandled", String((reason as any)?.stack ?? reason)));
-
-void app.whenReady().then(() => {
-  try {
-    const gpuStatus = app.getGPUFeatureStatus();
-    console.log("[gpu] feature status:", JSON.stringify(gpuStatus));
-  } catch { /* 诊断日志，失败不影响启动 */ }
-});
+// 崩溃取证（落 voice-crash.log + 渲染进程死了自动重载）与 GPU 诊断已下沉到
+// electron/runtime/host/diagnostics.ts（10-04 阶段 1）。
+// ⚠️ 上面还有一个 `render-process-gone` 订阅**故意留着**：它是 e2e 测试开关下的诊断输出，
+//    只 console.error 不重载窗口，与取证订阅职责不同（那个在 diagnostics.ts，幂等且会重载）。
+//    两者并存是有意的：e2e 需要那行 `[e2e-diag]` 才能定位 "Target crashed"。
+installCrashDiagnostics();
 
 initRuntimePaths();
 
@@ -322,15 +294,9 @@ void (async () => {
 // 粘贴长文本落盘目录（见 `pasted-text:save`）。与 images 同层，属应用数据、不进用户工作区。
 
 
-// 1x1 透明 PNG（base64），图片文件缺失时的兜底响应
-const PLACEHOLDER_PNG_B64 =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
-
-function placeholderPngResponse(): Response {
-  return new Response(Buffer.from(PLACEHOLDER_PNG_B64, "base64"), {
-    headers: { "content-type": "image/png" },
-  });
-}
+// 1x1 透明 PNG 与崩溃取证已下沉到 electron/runtime/host/diagnostics.ts（10-04 阶段 1）。
+// 它们是**应用级**职责（渲染进程死/未捕获异常/协议层图片兜底），不属于任何功能域；
+// 路径求值在那份文件里是惰性的（模块体求值早于 app.setPath("userData")）。
 
 setServer(new CodexServer(codexHome));
 

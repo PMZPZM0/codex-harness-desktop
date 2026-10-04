@@ -1464,31 +1464,48 @@ export async function run() {
     //   基线 14 个（10-04 实测），其中 6 个是守卫脚本（07-turn-fold 4,825 行最大）。
     //   ⛔ 用「名单 + 逐个上限」而不是「总数」：总数不变但某个文件暴涨、另一个被拆小，总数不动 ⇒ 漏。
     {
+      // ⛔⛔ 棘轮口径 = **净代码行**（剥整行注释 + 空行），不是总行数。
+      //   原因（本轮实际踩了三轮）：按总行数判 ⇒ **加一条守卫说明就报红**，
+      //   棘轮基线要跟着改，改完又触发下一条 ⇒ 死循环。
+      //   这份文件 1971 行里约 219 行是注释；真正要防的是「**逻辑**变臃肿」。
+      const netCodeLines = (p) =>
+        readFileSync(p, "utf8")
+          .split("\n")
+          .filter((l) => {
+            const t = l.trim();
+            if (!t) return false;
+            if (t.startsWith("//")) return false;
+            if (t.startsWith("/*") || t.startsWith("*")) return false;
+            return true;
+          }).length;
+
       const GIANT_CAP = {
-        "scripts/guards/07-turn-fold.mjs": 4887,
-        "scripts/guards/06-app-behavior.mjs": 3261,
-        "scripts/guards/02-session-logic.mjs": 1533,
-        "src/features/app-state/parts/bag-types.ts": 1423,
-        "scripts/guards/09-structural.mjs": 1916,   // 本文件是守卫载体：每加一条规则基线随之上移（1362→1521→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916）
-        "scripts/guards/13-drama-gen.mjs": 1227,
-        "electron/main.ts": 1199,
-        "scripts/guards/03-runtime-boot.mjs": 1176,
-        "electron/voice/voice-service.ts": 1076,
-        "src/vite-env.d.ts": 1068,   // 生成物：通道数增加时自然变长（守卫【2】保证与 manifest 一致）
-        "src/components/VoiceCallFloat/use-voice-call-float-state.tsx": 1044,
-        "scripts/guards/10-memory-audit.mjs": 1040,
-        "src/features/drama-canvas/DramaCanvas.tsx": 1036,
-        "electron/remote.ts": 1026,
+        "scripts/guards/07-turn-fold.mjs": 3685,
+        "scripts/guards/06-app-behavior.mjs": 2567,
+        "scripts/guards/02-session-logic.mjs": 1193,
+        "src/features/app-state/parts/bag-types.ts": 1407,
+        "scripts/guards/09-structural.mjs": 1638,   // 本文件是守卫载体：每加一条规则基线随之上移（→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916）
+        "scripts/guards/13-drama-gen.mjs": 1070,
+        "electron/main.ts": 540,
+        "scripts/guards/03-runtime-boot.mjs": 917,
+        "electron/voice/voice-service.ts": 800,
+        "src/vite-env.d.ts": 781,   // 生成物：通道数增加时自然变长（守卫【2】保证与 manifest 一致）
+        "src/components/VoiceCallFloat/use-voice-call-float-state.tsx": 806,
+        "scripts/guards/10-memory-audit.mjs": 848,
+        "src/features/drama-canvas/DramaCanvas.tsx": 922,
+        "electron/remote.ts": 853,
       };
       const grew = [];
       const stale = [];
       for (const [rel, cap] of Object.entries(GIANT_CAP)) {
         const p = join(ROOT, rel);
         if (!existsSync(p)) { stale.push(rel); continue; }
-                // ⛔ 口径必须与基线一致：基线用 `wc -l`（数换行符）。
-        //    split("\n").length 比 wc -l **多 1**（末行无换行时）—— 第一版没减，
-        //    结果每个文件都报「长 1 行」，14 个假红。
-        const n = readFileSync(p, "utf8").split("\n").length - 1;
+        // ⛔⛔ 口径 = **净代码行**（剥掉整行注释与空行），不是总行数。
+        //   为什么：这份文件（及 06/02/07 等守卫）里 219/1971 行是注释。
+        //   按总行数判 ⇒ **加一条守卫说明就报红**，而棘轮基线又要跟着改，
+        //   改完又触发下一条 ⇒ 死循环（10-04 实际踩了三轮，每轮都以为是别的问题）。
+        //   真正要防的是"**逻辑**变臃肿"，注释变多不是膨胀。
+        const n = netCodeLines(p);
         if (n > cap) grew.push(`${rel}(${cap}→${n})`);
       }
       // 新长出的 >1000 行文件（不在名单里 = 没登记 = 违规）
@@ -1502,7 +1519,7 @@ export async function run() {
             if (!/\.(ts|tsx|mjs)$/.test(e.name)) continue;
             const rel = relative(ROOT, p).replace(/\\/g, "/");
             if (rel in GIANT_CAP) continue;
-                        if (readFileSync(p, "utf8").split("\n").length - 1 > 1000) extra.push(rel);
+                        if (netCodeLines(p) > 1000) extra.push(rel);
           }
         };
         scan(join(ROOT, dir));
@@ -1907,6 +1924,61 @@ export async function run() {
             fail(`【271】真跑 dist-electron/declared-plugins.js 失败：${error271 instanceof Error ? error271.message : String(error271)}`);
           }
         }
+      }
+    }
+
+    // ===== 【280】内核瘦身的搬迁判据（10-04 阶段 1）============================
+    // ⛔ 为什么这类断言要专门写：搬迁最容易出的错不是"搬错了"，而是**搬了一半**
+    //   ——旧代码留在原地（两份实现同时在跑）或只改了调用点没改定义。
+    //   而且这两条都**不会**让 tsc 报错（同名符号不冲突时它们各自成立）。
+    {
+      const hostDiag = join(ROOT, "electron", "runtime", "host", "diagnostics.ts");
+      // ⛔ 直接读文件：09 的 import 面只有 readFileSync，没有 mainSrc / readMainSource
+        const mainSrc272 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
+      if (!existsSync(hostDiag)) {
+        fail("【280】electron/runtime/host/diagnostics.ts 缺失（崩溃取证与图片占位兜底无处安放）");
+      } else {
+        const diag = codeOnly(readFileSync(hostDiag, "utf8"));
+
+        // ①⛔ 旧实现不许留在 main.ts（搬一半 = 两份日志钩子 / 两份占位常量）
+        //   ⛔ 判据按「**会不会重载窗口**」判，而不是「有没有 render-process-gone 订阅」——
+        //     main.ts 里**故意**留着一个 e2e 测试开关下的 render-process-gone 订阅（只 console.error，
+        //     供 e2e 定位 "Target crashed"）。判据若只看订阅存在就会误报，
+        //     而真正要防的是"两份都重载窗口"（崩溃一次弹两次）。
+        const mainCode = codeOnly(mainSrc272);
+        const stillReloads = /contents\.reload\s*\(/.test(mainCode);
+        const leftover = /PLACEHOLDER_PNG_B64/.test(mainCode) || /logCrash\(/.test(mainCode) || stillReloads;
+        (leftover ? fail : ok)(
+          "【280】崩溃取证与图片占位兜底已**完整**下沉（main.ts 里不再有占位图常量、logCrash、"
+            + "以及渲染进程死后**重载窗口**的逻辑 —— 搬一半会让同一次崩溃写两行日志、且重载两次窗口）"
+            + "注：e2e 测试开关下的 console.error 订阅是有意保留的，不算残留"
+        );
+
+        // ②⛔ 搬迁后的路径求值必须**惰性**：app.getPath 只许出现在函数/回调体内，
+        //   模块顶层求值会拿到 app.setPath 之前的默认目录（守卫【91】复发防线）。
+        //   ⛔ 判据不能只 grep 整文件（那会把文档里的举例也算进去）；必须逐条**顶层语句**判定 ——
+        //   本项目已踩多次"字面量锚定"的坑，这里用「顶层 const/let 是否直接调 app.getPath」。
+        const diagLines = diag.split("\n");
+        const braceDepth = [];
+        let depth = 0;
+        let topLevelGetPath = null;
+        diagLines.forEach((line, i) => {
+          const opens = (line.match(/\{/g) || []).length;
+          const closes = (line.match(/\}/g) || []).length;
+          if (depth === 0 && /app\.getPath\(/.test(line)) topLevelGetPath = topLevelGetPath ?? i + 1;
+          depth += opens - closes;
+          braceDepth[i] = depth;
+          if (depth < 0) depth = 0;
+        });
+        (!topLevelGetPath ? ok : fail)(
+          (topLevelGetPath ? `【280】diagnostics.ts 第 ${topLevelGetPath} 行在模块顶层调了 app.getPath（` : "【280】diagnostics.ts 的 app.getPath 不在模块顶层（")
+            + "路径漂移防线：main.ts 模块体第 159 行才 app.setPath(\"userData\")，顶层求值拿到的是默认目录）"
+        );
+
+        // ③ 幂等：重复调用 installCrashDiagnostics 不得重复挂钩子
+        (/let installed = false/.test(diag) && /if \(installed\) return/.test(diag) ? ok : fail)(
+          "【280】installCrashDiagnostics 幂等（重复挂钩子 = 同一次崩溃写两行日志，且重载两次窗口）"
+        );
       }
     }
 
