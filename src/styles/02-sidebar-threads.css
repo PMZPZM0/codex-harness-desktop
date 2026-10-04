@@ -20,31 +20,47 @@
   position: relative;
 }
 .thread-row > button:first-child:after { content: none; }
+/* 任务运行中：8 点旋转 spinner（Uiverse「serious-mule-65」/ AHMED-MIT，MIT License）
+   ⛔ 2026-10-04 用户指定换掉原来的「三点上下弹跳」。
+     ⚠️ 形态变了：原来用 **3 个 `<i>` 元素**（靠 `:nth-child(1..3)` 各配 animation-delay），
+       现在是**单元素 + 7 层 box-shadow** 画点阵 ⇒ JSX 必须同步改成**只有 1 个 `<i>`**
+       （见 02-thread-attention-rows.tsx）。两边少改一个 ⇒ 点会挤成一坨或只转半圈。
+     ⚠️ --d 是**点间距**：Uiverse 原值 24.6px 在 13px 高的行里必然溢出，缩到 8.6px。
+       7 层偏移全是 --d 的三角函数值（0/0.707/1）⇒ 改 --d 时 8 层等比缩放，别单独改某层。
+     ⛔ steps(8) 不能换成线性：8 个点是"逐个接力"，线性旋转能看出点间有缝。 */
 .thread-running-indicator {
   display: inline-flex;
   align-items: center;
-  gap: 2.5px;
-  width: auto;
+  justify-content: center;
+  width: 11px;
   height: 13px;
   flex: 0 0 auto;
   margin-right: 7px;
-  padding: 0 1px;
+  padding: 0;
+  --d: 8.6px;
 }
-/* 三点跳跃式动态运行图标：依次上浮-回落，带呼吸节奏（WorkBuddy 风格） */
 .thread-running-indicator i {
-  width: 3.5px;
-  height: 3.5px;
+  display: block;
+  width: 2.4px;
+  height: 2.4px;
   border-radius: 50%;
-  background: var(--accent);
-  opacity: 0.85;
-  animation: thread-dot-bounce 1.05s ease-in-out infinite;
+  color: var(--accent);
+  /* 7 层 = 8 个点。spread 从 0 递增到 2.8px ⇒ 尾巴由淡到浓（Uiverse 原设计语言） */
+  box-shadow:
+    calc(1 * var(--d)) calc(0 * var(--d)) 0 0,
+    calc(0.707 * var(--d)) calc(0.707 * var(--d)) 0 0.4px,
+    calc(0 * var(--d)) calc(1 * var(--d)) 0 0.8px,
+    calc(-0.707 * var(--d)) calc(0.707 * var(--d)) 0 1.2px,
+    calc(-1 * var(--d)) calc(0 * var(--d)) 0 1.6px,
+    calc(-0.707 * var(--d)) calc(-0.707 * var(--d)) 0 2.4px,
+    calc(0 * var(--d)) calc(-1 * var(--d)) 0 2.8px;
+  /* 最后一点在正下方，会越出行高 ⇒ 裁掉。⛔ 用 clip-path 而非 overflow：
+     overflow 会把 box-shadow **整体**裁掉（八个点全没），clip-path 只裁越界那一侧。 */
+  clip-path: inset(-6px -6px 0 -6px);
+  animation: thread-dot-spin 1.1s infinite steps(8);
 }
-.thread-running-indicator i:nth-child(1) { animation-delay: 0s; }
-.thread-running-indicator i:nth-child(2) { animation-delay: 0.15s; }
-.thread-running-indicator i:nth-child(3) { animation-delay: 0.3s; }
-@keyframes thread-dot-bounce {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.55; }
-  30% { transform: translateY(-3.5px); opacity: 1; }
+@keyframes thread-dot-spin {
+  100% { transform: rotate(1turn); }
 }
 /* 任务完成绿点（09-19）：后台会话跑完，侧栏该行亮绿点提醒；点击进入该会话即消失。
    绿色=成功收尾（运行中是 accent 色的三点动画，二者不会同时出现——running 优先渲染）。 */

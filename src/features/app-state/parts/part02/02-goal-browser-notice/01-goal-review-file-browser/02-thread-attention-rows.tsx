@@ -235,7 +235,11 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
         <button className="thread-archive-button" title="归档会话" onClick={(event) => { event.stopPropagation(); void bag.archiveThread(entry.id); }}><Archive size={13} /></button>
         <button className="thread-more-button" title="会话操作" aria-expanded={bag.threadRowMenu?.id === entry.id} onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); const menuHeight = 250; bag.setThreadRowMenu((current) => current?.id === entry.id ? null : { id: entry.id, top: Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - menuHeight - 8)), right: Math.max(8, window.innerWidth - rect.right) }); }}><MoreHorizontal size={14} /></button>
         {extras?.actions}
-        {bag.openingThread === entry.id ? <Spinner /> : running ? <span className="thread-running-indicator" title="任务运行中"><i /><i /><i /></span> : bag.unreadDoneIds.has(entry.id) ? <span className="thread-done-dot" title="任务已完成，点击进入查看" /> : null}
+        {/* ⛔⛔ 2026-10-04 用户指定换成 Uiverse「serious-mule-65」8 点旋转 spinner。
+            **这里必须只有 1 个 `<i />`** —— 8 个点由 CSS 的 7 层 box-shadow 画出。
+            原来这里是 `<i /><i /><i />`（三点弹跳），⛔ 留着三个会让 box-shadow 的点
+            叠在三个元素上、糊成一团。CSS 侧改动见 02-sidebar-threads.css（两边必须同步）。 */}
+        {bag.openingThread === entry.id ? <Spinner /> : running ? <span className="thread-running-indicator" title="任务运行中"><i /></span> : bag.unreadDoneIds.has(entry.id) ? <span className="thread-done-dot" title="任务已完成，点击进入查看" /> : null}
         {bag.threadRowMenu?.id === entry.id && createPortal(<>
           <button className="thread-row-menu-backdrop" aria-label="关闭会话菜单" onClick={() => bag.setThreadRowMenu(null)} />
           <div className="thread-row-menu" role="menu" style={{ top: bag.threadRowMenu.top, right: bag.threadRowMenu.right }}>
