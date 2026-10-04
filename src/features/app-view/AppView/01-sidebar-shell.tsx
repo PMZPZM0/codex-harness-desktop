@@ -402,6 +402,13 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
             {/* 10-04 渲染层插槽：侧栏顶部（在会话列表之上）。插件放这里 = 常驻可见的入口
         （筛选器 / 快速操作 / 状态指示）。挂在 thread-list 里的话会随会话滚动，位置不固定。 */}
             <Slot id="sidebar.top" props={{ onOpenSettings }} loader={() => import("../../settings-devtools/DomainsPanel")} />
+{/* 10-04 第 7 个插槽位：**侧栏中部**（工具条下方、会话列表之上，紧随 sidebar.top）。
+                与 sidebar.top 的分工：那个是「应用级入口」（状态提醒类，一眼要看到），
+                这个是「侧栏的一部分」（筛选器 / 视图内操作）—— 两个位置视觉相邻但语义不同，
+                分开放是为了插件能按自己的性质选，不必都挤在同一个位置。
+                ⛔ DOM 顺序是**契约的一部分**（守卫【268】钉死已登记插槽位不许被删），
+                   所以只允许追加在既有插槽之后，不许插到既有按钮之间。*/}
+            <Slot id="sidebar.middle" props={{ onOpenSettings }} loader={() => import("../../settings-devtools/DomainsPanel")} />
             <div className="thread-list">
               {loading ? Array.from({ length: 5 }).map((_, index) => <div className="thread-skeleton shimmer" key={index} />) : viewTab === "projects" ? (
                 <div className="project-list">
