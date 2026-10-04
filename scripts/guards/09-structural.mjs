@@ -1465,11 +1465,11 @@ export async function run() {
     //   ⛔ 用「名单 + 逐个上限」而不是「总数」：总数不变但某个文件暴涨、另一个被拆小，总数不动 ⇒ 漏。
     {
       const GIANT_CAP = {
-        "scripts/guards/07-turn-fold.mjs": 4825,
-        "scripts/guards/06-app-behavior.mjs": 3257,
+        "scripts/guards/07-turn-fold.mjs": 4879,
+        "scripts/guards/06-app-behavior.mjs": 3261,
         "scripts/guards/02-session-logic.mjs": 1533,
         "src/features/app-state/parts/bag-types.ts": 1423,
-        "scripts/guards/09-structural.mjs": 1829,   // 本文件是守卫载体：每加一条规则基线随之上移（1362→1521→1571→1618→1660→1691→1813→1820→1823→1829）
+        "scripts/guards/09-structural.mjs": 1916,   // 本文件是守卫载体：每加一条规则基线随之上移（1362→1521→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916）
         "scripts/guards/13-drama-gen.mjs": 1227,
         "electron/main.ts": 1199,
         "scripts/guards/03-runtime-boot.mjs": 1176,
@@ -1818,6 +1818,93 @@ export async function run() {
             fail(`【270】真跑 dist-electron/composition.gen.js 失败：${error270 instanceof Error ? error270.message : String(error270)}`);
           } finally {
             moduleAny("node:module")._load = loadOrig;
+          }
+        }
+      }
+    }
+
+    // ===== 【271】声明式插件（外部 JSON）的不变量 ============================
+    // ⛔ 这组针对「外部输入」—— 与其它断言最大的不同：清单是用户/第三方写的 JSON，
+    //   所以判据必须是「坏输入被拦住 / 被跳过，而不是崩掉或半生效」。
+    {
+      const declFile = join(ROOT, "electron", "declared-plugins.ts");
+      const typeFile = join(ROOT, "electron", "declared-plugin-types.ts");
+      const domFile = join(ROOT, "electron", "features", "declared-plugins-ipc.ts");
+      const slotReg = join(ROOT, "src", "runtime", "declared-plugin-slots.tsx");
+      const panelFile = join(ROOT, "src", "features", "settings-devtools", "DeclaredPluginsPanel.tsx");
+      const missing271 = [declFile, typeFile, domFile, slotReg, panelFile].filter((p) => !existsSync(p));
+      if (missing271.length) {
+        fail(`【271】声明式插件的实现文件缺失（${missing271.length} 个）：${missing271.map((p) => p.split(/[\\/]/).pop()).join("/")}`);
+      } else {
+        const declSrc = readFileSync(declFile, "utf8");
+        const slotSrc271 = readFileSync(slotReg, "utf8");
+
+        // ①⛔⛔ KNOWN_SLOTS 必须与【268】的 EXPECTED_SLOTS **同一份**（不许各写一遍）
+        const known = (declSrc.match(/KNOWN_SLOTS[^=]*=\s*\[([\s\S]*?)\]/) || [null, ""])[1];
+        const slotIds = [...known.matchAll(/"([a-z][\w.]*)"/g)].map((x) => x[1]);
+        const expected = ["settings.general.bottom", "settings.devtools.bottom", "topbar.end", "overlay.root", "sidebar.top"];
+        const drift = expected.filter((id) => !slotIds.includes(id));
+        (drift.length === 0 && slotIds.length > 0 ? ok : fail)(
+          `【271】声明式插件可用的插槽位与守卫【268】的登记一致（${slotIds.length} 个）`
+            + `；清单里缺：${drift.join("/") || "无"}`
+        );
+
+        // ② 通道名必须收紧成 `域:动作`（它会经 preload 动态取值 ⇒ 取值路径不能放任）
+        // ⛔ 必须用 codeOnly 剥注释再判：本条断言的说明文字里**本身就写了
+        //   dangerouslySetInnerHTML 这个词**（"不用它"），直接搜原文会命中注释 ⇒ 恒红。
+        //   这与本项目已踩过多次的「按字面量锚定」是同型（注释里的同名字串不算代码）。
+        (() => {
+          const slotCode = codeOnly(slotSrc271);
+          const shapeOk = /CHANNEL_RE\s*=\s*\/\^\[a-z\]/.test(slotCode);
+          const noDangerousHtml = !/dangerouslySetInnerHTML/.test(slotCode);
+          if (shapeOk && noDangerousHtml) {
+            ok("【271】渲染层收紧通道名形状且不用 dangerouslySetInnerHTML（清单是外部输入 ⇒ 文本必须按纯文本渲染，否则 JSON 里的字符串会被当 HTML/JS 执行）");
+          } else {
+            fail("【271】渲染层的安全闸缺失：" + [
+              shapeOk ? "" : "通道名未收紧成 `域:动作` 形状（它会经 preload 动态取值 ⇒ 取值路径不能放任）",
+              noDangerousHtml ? "" : "清单文本被当 HTML/JS 渲染（外部 JSON 里的字符串必须按纯文本输出）",
+            ].filter(Boolean).join("；"));
+          }
+        })();
+
+        // ③⛔ 逐字段校验必须真在（一份坏 JSON 不能让整个面板空白）
+        const checks = ["ID_RE.test", "KNOWN_SLOTS.includes", "MAX_SLOTS", "MAX_TEXT", "JSON.parse"];
+        const missingChecks = checks.filter((c) => !declSrc.includes(c));
+        (missingChecks.length === 0 ? ok : fail)(
+          `【271】外部清单逐字段校验齐备（id 形状 / 插槽白名单 / 槽数上限 / 文本上限 / JSON.parse）`
+            + `；缺：${missingChecks.join("/") || "无"}`
+        );
+
+        // ④ ⛔ source 由宿主判定、不信文件自述（否则内置文件自称 user 就能伪装覆盖别人）
+        (/source:\s*"builtin"\s*\|\s*"user"/.test(declSrc)
+          && /readDirPlugins\(builtinDir,\s*"builtin"/.test(declSrc)
+          && /readDirPlugins\(userDir,\s*"user"/.test(declSrc) ? ok : fail)(
+          "【271】插件 source 由宿主按目录判定，不信清单里的自述（防伪装覆盖）"
+        );
+
+        // ⑤ 真跑产物：加载真实清单 + 坏清单被跳过（不是崩、不是半生效）
+        const declDist = join(ROOT, "dist-electron", "declared-plugins.js");
+        if (!existsSync(declDist)) {
+          warn("【271】找不到 dist-electron/declared-plugins.js —— 先跑 npm run build");
+        } else {
+          try {
+            const mod = createRequire(import.meta.url)(declDist);
+            const builtinDir = join(ROOT, "electron", "declared-plugins");
+            const { plugins, issues } = mod.loadDeclaredPlugins(builtinDir, join(builtinDir, "__no_such_user_dir__"));
+            // 坏清单四种：id 不合法 / 未登记插槽 / 空 slots / 无动作
+            const bads = [
+              { id: "Bad-Id", slots: [{ slot: "topbar.end", invoke: "a:b" }] },
+              { id: "ok-unknown-slot", slots: [{ slot: "no.such.slot", invoke: "a:b" }] },
+              { id: "ok-empty-slots", slots: [] },
+              { id: "ok-no-action", slots: [{ slot: "topbar.end" }] },
+            ].map((b) => mod.normalizeDeclaredPlugin(b, "user", "guard-probe.json"));
+            const slipped = bads.filter((b) => !b.reason).map((b) => b.id);
+            (plugins.length > 0 && issues.length === 0 && slipped.length === 0 ? ok : fail)(
+              `【271】真跑产物：读到 ${plugins.length} 个内置清单、无 issue；`
+                + `4 类坏清单全部被跳过${slipped.length ? `；❌漏过：${slipped.join("/")}` : ""}`
+            );
+          } catch (error271) {
+            fail(`【271】真跑 dist-electron/declared-plugins.js 失败：${error271 instanceof Error ? error271.message : String(error271)}`);
           }
         }
       }

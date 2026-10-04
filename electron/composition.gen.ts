@@ -87,6 +87,8 @@ import { layaFeature as feat_laya } from "./features/laya-service";
 import { videoFeature as feat_video } from "./features/video-gen";
 import { voiceFeature as feat_voice } from "./features/voice-ipc";
 import { domainsFeature as feat_domains } from "./features/domains-ipc";
+import { declaredPluginsFeature as feat_declared_plugins } from "./features/declared-plugins-ipc";
+import { knowledgeBaseFeature as feat_knowledge_base } from "./features/knowledge-base-ipc";
 
 import { app } from "electron";
 import { readAppSettingsSync } from "./app-settings";
@@ -179,6 +181,8 @@ export const ENABLED: EnabledDomain[] = [
   { id: "video", plugin: feat_video as Plugin<unknown>, config: null },
   { id: "voice", plugin: feat_voice as Plugin<unknown>, config: null },
   { id: "domains", plugin: feat_domains as Plugin<unknown>, config: null },
+  { id: "declared-plugins", plugin: feat_declared_plugins as Plugin<unknown>, config: null },
+  { id: "knowledge-base", plugin: feat_knowledge_base as Plugin<unknown>, config: null },
 ];
 
 /**

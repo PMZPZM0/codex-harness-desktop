@@ -560,6 +560,20 @@
       "file": "features/domains-ipc.ts",
       "export": "domainsFeature",
       "config": null
+    },
+    {
+      "id": "declared-plugins",
+      "enabled": true,
+      "file": "features/declared-plugins-ipc.ts",
+      "export": "declaredPluginsFeature",
+      "config": null
+    },
+    {
+      "id": "knowledge-base",
+      "enabled": true,
+      "file": "features/knowledge-base-ipc.ts",
+      "export": "knowledgeBaseFeature",
+      "config": null
     }
   ]
 }
