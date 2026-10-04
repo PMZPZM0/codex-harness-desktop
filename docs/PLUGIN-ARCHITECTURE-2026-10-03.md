@@ -48,7 +48,33 @@
 | └ 未插件化（模块体裸 `ipcMain.handle`） | **66** |
 | `electron/features/` 文件 | 76（插件形态 13 · 仍裸 `ipcMain` 35） |
 | `electron/` 基座层模块（根层 `.ts`，非 `features`） | **83 个 / 18,502 行** |
-| `electron/main.ts` | **1,215 行**：import 83 · 模块级单例 34 · app 生命周期 11 · 窗口/协议/CSP 6 · IPC handler 5 · 启动链 24 |
+> **10-04 实测：`main.ts` 剩余构成（按段落行数，这是迁移依据）**
+>
+> ⛔ **别只看总行数** —— 1,165 行里 **430 行是注释、198 空行**，真实代码约 450 行。
+> 而且托盘 / 语音 / 中转站 / 内置插件这几段的**实现早已在** `electron/tray.ts`、
+> `features/voice-ipc/` 等处，`main.ts` 里剩的是 8–22 行的**接线注释 + 调用**。
+> 真正还能搬的是下面几段：
+>
+> | 行数 | 段落 | 判断 |
+> |---:|---|---|
+> | 151 | 会话运行时配置（模型 / 思考档位 / 权限） | **可搬**：内部自成一域（读 config.toml + 写回 + 多窗口并发保护） |
+> | 114 | Bot Channel 配对门卫 | 需判定：依赖 `showMainWindow` 与配对状态机 |
+> | 113 | 会话备份导入 / 导出 | **可搬**：读引擎 rollout 原档 + 元信息打包 —— 独立功能域 |
+> | 101 | 语音通话 IPC 面 | 已搬完（10-03 改组合表），剩下的是注释 |
+> | 88 | 系统托盘 | 接线已只有 22 行，实现早就在 `electron/tray.ts` |
+> | 77 | 重启闸门接线 | 需判定：依赖单实例锁与窗口显示的时序 |
+> | 55 | 退出统一清理 | 需判定：依赖服务单例的构造顺序 |
+>
+> ⇒ **建议把目标从「到 600 行」改成「消除服务实例区」**：那些 `setServer` /
+>   `setVoiceService` / `setRpaStore` 等注入点背后是**互相咬合**的对象（scheduler 依赖
+>   server、channelBot 依赖 mainWindow、voice 依赖 toolsRoot + server），且
+>   **组合表在 main.ts 第 96 行 import，而这些注入在 300–580 行** ⇒ **域挂载早于单例注入**。
+>   硬搬的失败模式是「行数达标但启动崩」。按依赖链分批（先搬无依赖的）比追求行数更安全，
+>   行数会自然跟着降。
+>
+> **已搬走的第一批**（10-04，`06822dc`）：崩溃取证 + GPU 诊断 + 图片占位兜底
+> → `electron/runtime/host/diagnostics.ts`，main.ts 1199 → 1165。
+| `electron/main.ts` | **1,165 行**（10-04 实测）：import 67 · **代码约 450** · 注释约 430 · 空行约 198 · 纯副作用域 import **0 行** · `ipcMain.handle/on` **5**（theme + window:popout×4，已证不可搬） |
 | ├ 含 `features/` 的 import | 36 行 |
 | └ 其中**纯副作用** import（`import "./features/x"`） | **14 行** ⚠️ 口径见下 |
 | `src/features/`（渲染层） | **58 板块 / 44,654 行** |
