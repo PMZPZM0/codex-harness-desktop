@@ -100,6 +100,31 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     const hits = searchDocs(cwd, String(args.query ?? ""), Number(args.limit) || 8);
     return { ok: true, output: hits.length ? hits.map((h) => `【${h.title} · 第 ${h.chunkIndex + 1} 块】${h.snippet}`).join("\n\n") : "（知识库没有命中——确认相关文档已导入，或换个关键词）" };
   }
+  /* ── 知识库写入（2026-10-04）：此前**模型侧没有任何写入工具**（只读）——
+     执行端与 knowledge_search 同源（同一个 knowledge-base.ts，workspace 缺省 = 调用者 cwd）。
+     ⚠️ 权限闸与 scheduler_save 同源（restrictedThreadRole）：专家 / 被调度会话不许写
+     —— 被委派的模型能改项目知识库是越权。
+     ⛔ 同名不覆盖（safeId 带时间戳）⇒ 这里**主动检出同名并回报**，让模型换标题或明确"要存两份"，
+     不静默堆同名垃圾（会让检索结果被重复条目占满、白烧 token）。 */
+  if (name === "knowledge_add") {
+    const restrict = await restrictedThreadRole(callerThreadId);
+    if (restrict.restricted) return { ok: false, error: `当前会话（${restrict.label}）不允许写入知识库` };
+    const cwd = String(args.workspace ?? threadCwd.get(callerThreadId) ?? "");
+    if (!cwd.trim()) return { ok: false, error: "无法确定工作目录 —— 知识库是项目级的，请在参数里传 workspace" };
+    const title = String(args.title ?? "").trim();
+    const text = String(args.text ?? "");
+    if (!title) return { ok: false, error: "缺少 title" };
+    if (!text.trim()) return { ok: false, error: "缺少 text（内容为空，写了也检索不到任何东西）" };
+    const { addDocument, listDocs } = await import("../knowledge-base");
+    // ⛔ 先查同名：同名会**新增**一条（safeId 带时间戳），不报错 ⇒ 重复条目会悄悄堆起来
+    const dup = listDocs(cwd).find((d) => d.title === title);
+    const meta = addDocument(cwd, { title, text, source: String(args.source ?? "模型写入") });
+    return {
+      ok: true,
+      output: `已写入知识库：${meta.title}（${meta.chunks} 块，docId=${meta.id}）`
+        + (dup ? `。⚠️ 已存在同名文档（docId=${dup.id}），本次**新增**了一条而非覆盖 —— 若只是更新，请改用带日期的标题避免重复。` : ""),
+    };
+  }
   if (name === "scheduler_save") {
     const restrict = await restrictedThreadRole(callerThreadId);
     if (restrict.restricted) return { ok: false, error: `当前会话（${restrict.label}）不允许创建定时任务` };

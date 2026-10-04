@@ -123,6 +123,28 @@ function dispatchMcpTools(): unknown[] {
         required: ["query"],
       },
     },
+    /* ── 知识库写入（2026-10-04 用户问「写入知识库的工具有配置好吗」——
+       答：只配了一半。knowledge_search 能读，但**模型没有任何工具能写**，
+       kb:add-text / kb:add-files 只接在 IPC 上给设置页 UI 用，模型侧不可达。
+       ⚠️ 权限闸与 scheduler_save 同源（restrictedThreadRole）：专家/被调度会话不许写知识库
+       —— 否则"被委派的模型能往项目知识库塞东西"是**越权**。
+       ⛔⚠️ 关于同名：`safeId()` 末尾拼了 `Date.now()` ⇒ **同名不覆盖，而是变成新文档**
+       （这是既有实现，防的是"静默丢知识"）。代价是**同名会堆积成重复条目**，
+       所以本工具在同名时**明确回报"已存在同名文档"并给出 docId**，让模型决定要不要换标题；
+       ⛔ 绝不静默塞一堆同名垃圾进知识库（那会让检索结果被重复条目占满）。 */
+    {
+      name: "knowledge_add",
+      description: "把一段内容写入当前项目的本地知识库（之后可用 knowledge_search 检索到）。用于：用户说「把这个记进知识库/存到项目资料」时，或你刚产出一份会被反复引用的规范/结论/说明。⚠️ 不会自动做语义向量化（全文检索立刻可用），且同名文档不会覆盖、会产生新条目。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "文档标题（同一标题再次写入会**新增一条**而不是覆盖）" },
+          text: { type: "string", description: "正文（Markdown 纯文本）" },
+          source: { type: "string", description: "来源标注（文件路径 / URL / 手写），便于日后追溯与删除" },
+        },
+        required: ["title", "text"],
+      },
+    },
     /* ── 定时任务四件套（09-28 用户要求「直接调用定时任务工具」）─────────────────────
        用户在会话里说「每天早上给我 AI 早报」⇒ 模型直接建任务，不用去界面点。
        执行端在 dispatch-rpc.ts：scheduler_save 走 restrictedThreadRole 同源闸
