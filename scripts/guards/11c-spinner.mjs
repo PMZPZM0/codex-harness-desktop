@@ -93,6 +93,55 @@ if (cssFile) {
     const exempt = /\.thread-row\s+span\.thread-running-indicator\s*\{[^}]*overflow\s*:\s*visible/.test(src);
     ok(exempt, "⛔ spinner 有 `.thread-row span.thread-running-indicator`豁免规则（否则被标题省略号规则裁掉）");
   }
+
+  /* ── 判据组 C：**点不能重叠**（2026-10-04 第三版，用户反馈"又太粗了/糊成一坨"）──
+   * ⛔ 上一版病根：我把**点放大 1.7 倍、间距只放大 1.05 倍** ⇒ 8 个点连成一块。
+   * ⛔ 这类"看起来太粗/太糊"**不需要截图确认**—— 有硬不等式可验：
+   *     最大点直径 solid = dot + 2·spreadMax
+   *     相邻点圆心距 gap = 2·d·sin(π/8) = 0.7654·d   （8 点均布在半径 d 的圆上）
+   *     必须 **solid ≤ gap**，否则点重叠 ⇒ 糊。
+   * ⭐ 配合 spreadMax = 1.49·dot（原版 6.7/4.5 比例）可化简为 **d ≥ 5.2·dot**。
+   */
+  {
+    const src = readFileSync(join(ROOT, "src", "styles", "02-sidebar-threads.css"), "utf8");
+    const container = /\.thread-running-indicator\s*\{([^}]*)\}/.exec(src);
+    const item = /\.thread-running-indicator i\s*\{([\s\S]*?)\n\}/.exec(src);
+    ok(Boolean(container && item), "取到 container / i 两条规则");
+    if (container && item) {
+      const d = Number((/--d:\s*([\d.]+)px/.exec(container[1]) || [])[1]);
+      const dot = Number((/width:\s*([\d.]+)px/.exec(item[1]) || [])[1]);
+      /* 7 层 spread：box-shadow 每层形如 `<x> <y> <blur=0> <spread>`。
+       * ⛔⛔ 判据第一版写错两次，这是**第三次**才写对：
+       *   ① `/,\s*0 ([\d.]+)px/` —— 末层后面是 `;` 不是 `,` ⇒ 漏掉 spreadMax（最大的那层）
+       *      ⇒ solid 被低估 ⇒ 判据**假绿**（实测 0 层）。
+       *   ② 改成 `[,;]` 仍为 0 —— 因为 `0` 后面还有 blur 那个 0，形如 `... 0 0.44px`，
+       *      不是 `0 0.44px` 紧邻（第一层是 `0 0`，spread 写作 `0` 无 px）。
+       * ✅ 正确取法：**按逗号/分号切层，每层取最后一个数字**就是 spread。
+       */
+      const shadowBody = (/box-shadow:([\s\S]*?);/.exec(item[1]) || [, ""])[1];
+      const spreads = shadowBody
+        .split(/[,;]/)
+        .map((part) => part.match(/([\d.]+)px?\s*$/))
+        .filter(Boolean)
+        .map((m) => Number(m[1]));
+      ok(Number.isFinite(d) && Number.isFinite(dot) && spreads.length === 6,
+        `解析出 --d=${d} / 点=${dot} / spread 层数=${spreads.length}（应 6 个偏移 + 本体共 8 点）`);
+      if (Number.isFinite(d) && Number.isFinite(dot) && spreads.length === 6) {
+        const spreadMax = Math.max(...spreads, 0);
+        const solid = dot + 2 * spreadMax;
+        const gap = 2 * d * Math.sin(Math.PI / 8);
+        ok(solid <= gap,
+          `点不重叠：solid(${solid.toFixed(1)}) ≤ gap(${gap.toFixed(1)})，间隙比 ${(gap / solid).toFixed(2)}`
+            + ` —— Uiverse 原版 1.05，< 1 就是糊成一坨`);
+        // 层次还在吗（spread 必须递增 ⇒ 大点小点）
+        const rising = spreads.every((v, i) => i === 0 || v >= spreads[i - 1]) && spreadMax > 0;
+        ok(rising, `spread 递增（层次在）：${spreads.join(" → ")}`);
+        // 点阵总直径必须放得进会话行（~34px 高）
+        const total = 2 * (d + dot / 2 + spreadMax);
+        ok(total <= 30, `点阵总直径 ${total.toFixed(0)}px ≤ 30px（会话行 ~34px 高）`);
+      }
+    }
+  }
 }
 
 console.log(`\n【spin】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
