@@ -511,6 +511,33 @@
   padding: 1px 8px;
 }
 .kb-page .resource-toolbar { flex-wrap: wrap; }
+.kb-preview-modal {
+  width: min(680px, 90vw);
+  max-height: 82vh;
+  overflow: auto;
+}
+.kb-preview-modal header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.kb-preview-modal header strong { font-size: 13px; color: var(--text); }
+.kb-preview-modal header small { color: var(--faint); font-size: 10.5px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-preview-modal header button { flex: none; border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 2px; }
+.kb-preview-body {
+  margin: 0;
+  max-height: 60vh;
+  overflow: auto;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text);
+  white-space: pre-wrap;
+  font-family: inherit;
+  background: var(--panel-2);
+  border-radius: 8px;
+  padding: 10px;
+}
 .kb-docs { max-height: 420px; overflow-y: auto; }
 .kb-hits { max-height: 480px; overflow-y: auto; }
 .kb-hit p { word-break: break-all; }
