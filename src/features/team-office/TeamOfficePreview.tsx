@@ -47,6 +47,35 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
     }
   };
 
+  /* ── 10-04 事件驱动（用户选「跟真实事件挂钩」）──
+   * ⛔ 不订阅引擎、不读引擎的"思考"事件 —— `TeamMemberRunRecord.query` 是**主进程轨道里
+   *   记录的真实派发任务**，比订阅便宜得多，且天然与成员一一对应。
+   * ⚠️ 关键词命中是**降级**方案：将来轨道若补上 `kind` 字段，优先用它（本函数留了接口）。 */
+  const activityOf = (query: string): null | "book" | "water" | "toilet" | "run" | "gym" => {
+    const q = (query ?? "").toLowerCase();
+    if (/查|找资料|搜索|search|调研|读一下|看看文档/.test(q)) return "book";
+    if (/洗手间|厕所|toilet|wc|restroom/.test(q)) return "toilet";
+    if (/跑|run|跑步/.test(q)) return "run";
+    if (/举铁|哑铃|健身|gym|力量/.test(q)) return "gym";
+    if (/喝|water|倒水|接水/.test(q)) return "water";
+    return null;
+  };
+
+  /** 每成员的真实事件状态（供显示器画内容 + sim 派单）。 */
+  const eventStateOf = (memberId: string) => {
+    const run = runningByMember[memberId];
+    if (!run) return null;
+    const act = activityOf(run.query);
+    return {
+      activity: act,
+      /** 轨道里没有"思考"这个字段 ⇒ 派了查资料任务就算在"翻资料"（搜索屏）；
+       *  其余在跑 ⇒ 敲代码屏；跑完（不在 runningByMember 里）⇒ 熄屏。 */
+      thinking: act === "book",
+      waiting: false,
+      reporting: act === null,
+    };
+  };
+
   if (!teamId || !team) return null;
 
   return (
@@ -61,7 +90,7 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
         </button>
       </header>
       <div className="office-overlay-body">
-        <OfficeCanvas members={members} onOpenMember={openMember} />
+        <OfficeCanvas members={members} onOpenMember={openMember} eventStateOf={eventStateOf} />
         {members.length === 0 && <p className="office-overlay-empty">这个团队还没有成员。</p>}
       </div>
     </div>
