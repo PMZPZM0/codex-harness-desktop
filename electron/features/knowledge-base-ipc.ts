@@ -14,6 +14,7 @@ export const knowledgeBaseFeature = defineFeature<null>({
   inject: ["ipc"],
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");
+    try { require("node:fs").appendFileSync(require("node:path").join(require("electron").app.getPath("userData"), "kb-debug.log"), "setup called at " + new Date().toISOString() + " ipcHost:" + !!ipcHost + "\n"); } catch {}
     if (!ipcHost) throw new Error("knowledge-base: 缺少 ipc 服务（宿主未提供）");
 
     ipcHost.handle("kb:list", (_event, input: { workspace?: string } = {}) => {
