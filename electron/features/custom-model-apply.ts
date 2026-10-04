@@ -11,11 +11,11 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { normalizeAutoCompactRatio, readAppSettings } from "../app-settings";
 import { app, safeStorage } from "electron";
-import { shouldRegisterNuphus, withNuphusMasksForRules } from "../automation-policy";
+import { HARNESS_UIA_MCP_SERVER, shouldRegisterNuphus, shouldRegisterUia, withNuphusMasksForRules } from "../automation-policy";
 import { safeProviderId } from "../provider-id";
 import { injectMcpToolRules, injectSectionExtras, tomlBareKey } from "../config-toml";
 import { developerInstructionsLine } from "../developer-instructions";
-import { augmentedPath, bundledPython, nuphusBinary } from "../toolchain";
+import { augmentedPath, bundledNode, bundledPython, harnessUiaServer, nuphusBinary } from "../toolchain";
 import { NUPHUS_VISION_ENV_TABLE, nuphusVisionEnv } from "../nuphus-env";
 import type { CustomModelFile } from "../features/custom-model-types";
 import { collectSessionProviderIds } from "../features/provider-sessions";
@@ -49,7 +49,7 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
   // harness-dispatch（09-16 调度 MCP）同样是 harness 自己生成的段：不进保留清单，
   // 否则「保留旧段 +新生成段」会在 config.toml 里写出重复的 [mcp_servers.harness-dispatch]，
   // MCP 服务器起不来（实测：模型看不到任何 mcp__ 工具）。
-  const ownedMcpServers = new Set(["nuphus", "harness-dispatch", ...connectors.map((connector) => safeConnectorId(connector.id))]);
+  const ownedMcpServers = new Set(["nuphus", "harness-dispatch", HARNESS_UIA_MCP_SERVER, ...connectors.map((connector) => safeConnectorId(connector.id))]);
   const { preserved, mcpExtra } = await readUserConfigSplit(ownedMcpServers, mcpOverrides);
   // 工具级权限规则（deny/ask/allow）→ 引擎真正支持的键（disabled_tools / approval_mode）。
   // 见 mcpToolRulesOf 上方 09-16 实证说明：旧实现写 [permissions.*] 既无效又会把整份配置打废。
@@ -315,6 +315,24 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
       })(),
       "",
     ] : []),
+    // Windows 原生控件清单通道（10-04）：`desktop_ui_*` 四个工具，走系统自带的 UIAutomation，
+    // 补 nuphus「只有 OCR 坐标」的短板（窗口挪动 / DPI 缩放 / 自绘界面时按元素序号操作）。
+    // ⛔ 判据 = win32 + 桌面总闸开 + 两个随包脚本齐备；不注册就是**整段不写**（工具从引擎表里
+    //    干净消失），不复用 nuphus 的 disabled_tools 掩码 —— 这个服务器只有桌面组工具，
+    //    没有 nuphus 那种「关桌面连带关浏览器」的耦合要拆。
+    ...(() => {
+      const uiaServer = harnessUiaServer();
+      const uiaNode = bundledNode();
+      if (!shouldRegisterUia({ desktop: desktopAuto, binaryReady: Boolean(uiaServer) })) return [];
+      if (!uiaNode || !mcpOverrideEnabled(mcpOverrides, HARNESS_UIA_MCP_SERVER)) return [];
+      return [
+        `[mcp_servers.${HARNESS_UIA_MCP_SERVER}]`,
+        `command = "${escapeToml(uiaNode)}"`,
+        `args = ["${escapeToml(uiaServer)}"]`,
+        "startup_timeout_sec = 20",
+        "",
+      ];
+    })(),
     // 用户手工写进 config.toml 的 MCP 段：启用中的原样拼回，停用的保留原文但不输出
     ...mcpExtra.flatMap((section) => [section, ""]),
     // 用户自行管理的段落（projects / marketplaces / plugins / hooks / permissions 等）原样拼回，

@@ -128,6 +128,25 @@
   Gitee 目录）；官方源里**引擎没认领**的那批在本板块卡片上有 ✓ 与卸载，但不出现在下方「已安装」卡片区。
   补齐它要动 part04/part05 的 bag 分流（多一个市场维度），未经用户确认不擅自扩。
 
+### 🖥 Windows 原生控件清单通道（`resources/tools/harness-uia.mjs` + `desktop-uia.ps1`，2026-10-04 立）
+
+nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口挪动 / DPI 缩放 / 自绘界面就会失手。
+本通道用 **Windows 自带的 UI Automation** 直接拿「控件清单」（元素类型、名字、AutomationId、矩形、
+支持哪些动作），按**元素序号**操作，不猜坐标。守卫【273】9 条。
+
+- ⛔ **是独立 MCP 服务器 `harness-uia`，不塞进 nuphus**：nuphus 是第三方预编译二进制，我们改不了它的工具面。
+- 4 个工具：`desktop_ui_windows` / `desktop_ui_snapshot` / `desktop_ui_invoke` / `desktop_ui_set_value`
+  （后两个是写操作，**必须显式 `confirm:true`**，与 `desktop_mouse` 同口径）。
+- 注册判据 = **win32 + 桌面总闸开 + 两个随包脚本齐备**（`shouldRegisterUia`）；不注册就是整段不写、
+  工具干净消失，⛔ 不复用 nuphus 的 `disabled_tools` 掩码（那套是为「一个服务器混装两组工具」准备的）。
+- 三条通道的分工写进了 `desktop-automation` 技能与常驻指令：**原生应用走清单；网页与 Electron/Tauri 内容走
+  `browser_*`（实测这类窗口的 UIA 树只有个位数元素）；清单拿不到才退回 OCR 坐标**。
+- ⛔ 两个实测坑（守卫已钉）：PowerShell 按 GBK 写管道，**汉字尾字节可能是反斜杠或双引号的 ASCII 码**
+  ⇒ 输出的 JSON 直接打断
+  ⇒ `.ps1` 必须纯 ASCII 且强制 `[Console]::OutputEncoding` 为 UTF-8；最小化窗口的矩形是 `Infinity`
+  ⇒ 原样写出就不是合法 JSON，坐标一律过 `Round-Geom` 归一。
+- ⛔ `harness-uia.mjs` 拉起 PowerShell 只用**参数数组、不开 shell**（title/text 是外部输入 = 注入面）。
+
 ### 📚 Uiverse 组件库（`electron/features/uiverse-library.ts` + `src/features/component-library/`，2026-10-01）
 
 组件库的唯一数据源 = `src/lib/ui-skin/data/*.gz` + `src/lib/ui-skin/catalog.gen.ts`（ingest：`scripts/gen-ui-skin-library.mjs`；⛔ 不复制第二份）：

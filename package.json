@@ -119,6 +119,14 @@
         "to": "tools/nuphus-call.mjs"
       },
       {
+        "from": "resources/tools/harness-uia.mjs",
+        "to": "tools/harness-uia.mjs"
+      },
+      {
+        "from": "resources/tools/desktop-uia.ps1",
+        "to": "tools/desktop-uia.ps1"
+      },
+      {
         "from": "resources/tools/harness-media.mjs",
         "to": "tools/harness-media.mjs"
       },

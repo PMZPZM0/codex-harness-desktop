@@ -3281,6 +3281,68 @@ export async function run() {
   );
 }
 
+// ---------- 【273】Windows 原生控件清单通道（harness-uia，10-04）----------
+// 为什么要它：nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口挪动 / DPI 缩放 / 自绘界面
+// 就会失手。Windows 自己有一份控件清单（UI Automation），拿到就能按元素序号操作，不猜坐标。
+// ⛔ nuphus 是第三方预编译二进制、我们改不了它的工具面 ⇒ 做成**独立 MCP 服务器**并存，不塞进去。
+// 两条开发当天实测踩到的坑必须钉住（都会让通道"接得上但每个工具都报错"）：
+//   ① PowerShell 按系统 ANSI(GBK) 写管道 ⇒ 汉字尾字节可能是 `\` 或 `"` ⇒ 输出的 JSON 直接打断；
+//   ② 最小化/越界窗口的矩形是 Infinity ⇒ ConvertTo-Json 原样写出 `Infinity` ⇒ 不是合法 JSON。
+{
+  const req272 = createRequire(import.meta.url);
+  const uiaServer = readFileSync(join(ROOT, "resources", "tools", "harness-uia.mjs"), "utf8");
+  const uiaBridgeBytes = readFileSync(join(ROOT, "resources", "tools", "desktop-uia.ps1"));
+  const uiaBridge = uiaBridgeBytes.toString("utf8");
+  const pkg272 = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+  const shipped = (pkg272.build?.extraResources ?? []).map((entry) => (typeof entry === "string" ? entry : entry?.from));
+  (shipped.includes("resources/tools/harness-uia.mjs") && shipped.includes("resources/tools/desktop-uia.ps1") ? ok : fail)(
+    "【273】控件清单通道的两个脚本都随包（只带 .mjs 不带 .ps1 ⇒ 服务器起得来、每个工具都报找不到脚本）"
+  );
+  const nonAscii = [...uiaBridgeBytes].filter((byte) => byte > 0x7f).length;
+  (nonAscii === 0 && /\[Console\]::OutputEncoding = New-Object System\.Text\.UTF8Encoding/.test(uiaBridge) ? ok : fail)(
+    `【273】desktop-uia.ps1 纯 ASCII 且强制 UTF-8 输出（GBK 尾字节会吃掉引号/大括号；当前非 ASCII 字节 ${nonAscii} 个）`
+  );
+  (/(?:^|\n)\s*function Round-Geom/.test(uiaBridge) && /IsInfinity/.test(uiaBridge)
+    && (uiaBridge.match(/Round-Geom\(\$r\./g) ?? []).length >= 8 ? ok : fail)(
+    "【273】几何坐标过 Infinity 归一（最小化窗口矩形是 Infinity，原样写出就不是合法 JSON）"
+  );
+  let policy272 = null;
+  try { policy272 = req272(join(ROOT, "dist-electron", "automation-policy.js")); } catch { policy272 = null; }
+  const mjsTools = [...uiaServer.matchAll(/name: "(desktop_ui_[a-z_]+)"/g)].map((m) => m[1]);
+  (policy272 && mjsTools.length === 4 && JSON.stringify([...policy272.HARNESS_UIA_TOOLS].sort()) === JSON.stringify([...mjsTools].sort()) ? ok : fail)(
+    `【273】工具名两侧同源（policy.HARNESS_UIA_TOOLS == harness-uia.mjs 的 TOOLS：${mjsTools.join("/") || "解析失败"}）`
+  );
+  // ⛔ 判据要真跑产物，不看文本：真值表错一格就是「该注册时没注册 / 不该注册时把键鼠交出去了」
+  const truth272 = policy272 ? [
+    policy272.shouldRegisterUia({ desktop: true, binaryReady: true, platform: "win32" }) === true,
+    policy272.shouldRegisterUia({ desktop: false, binaryReady: true, platform: "win32" }) === false,
+    policy272.shouldRegisterUia({ desktop: true, binaryReady: false, platform: "win32" }) === false,
+    policy272.shouldRegisterUia({ desktop: true, binaryReady: true, platform: "darwin" }) === false,
+  ] : [];
+  (truth272.length === 4 && truth272.every(Boolean) ? ok : fail)(
+    `【273】shouldRegisterUia 真值表（win32 应注册 / 关总闸应不注册 / 缺脚本应不注册 / mac 应不注册）实测 ${truth272.filter(Boolean).length}/4`
+  );
+  const apply272 = codeOnly(readFileSync(join(ROOT, "electron", "features", "custom-model-apply.ts"), "utf8"));
+  (/shouldRegisterUia\(\{ desktop: desktopAuto, binaryReady: Boolean\(uiaServer\) \}\)/.test(apply272)
+    && apply272.includes("HARNESS_UIA_MCP_SERVER, ...connectors") ? ok : fail)(
+    "【273】注册处真接线（调 shouldRegisterUia + 服务器名进 ownedMcpServers；漏后者会「保留旧段+新段」写出重复键）"
+  );
+  (/if \(args\?\.confirm !== true\) return/.test(uiaServer) ? ok : fail)(
+    "【273】写操作必须显式 confirm=true（与 nuphus 的 desktop_mouse 同一条口径）"
+  );
+  (/spawn\(powershell, \[/.test(uiaServer) && !/shell:\s*!0|shell:\s*true/.test(uiaServer) ? ok : fail)(
+    "【273】拉起 PowerShell 用参数数组且不开 shell（title/text 是外部输入，拼进命令行就是注入面）"
+  );
+  // 通道接上但模型不知道 = 白配（09-25「能力可达性」同型教训）：技能与常驻指令两处都要有选路指引
+  const skill272 = codeOnly(readBuiltinSkillsSource());
+  const di272 = codeOnly(readFileSync(join(ROOT, "electron", "developer-instructions.ts"), "utf8"));
+  (skill272.includes("desktop_ui_snapshot") && skill272.includes("desktop_ui_invoke")
+    && /Chromium 无障碍默认不展开/.test(skill272) && di272.includes("desktop_ui_set_value")
+    && di272.includes("CHANNEL PRIORITY on Windows") ? ok : fail)(
+    "【273】选路指引两处都在（技能讲清「原生用清单 / 网页用 browser_* / 坐标只兜底」，常驻指令给优先级）"
+  );
+}
+
 // ---------- 【76】nuphus 视觉插件接线（09-20）----------
 // 背景：用户报「视觉插件配置好了总是不生效」。根因 = `[mcp_servers.nuphus]` 从来没有 env 段，
 // 插件里的 baseUrl/apiKey/model 根本没进 nuphus 进程（`desktop_vision` 恒报 API_KEY required，

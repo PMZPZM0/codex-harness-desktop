@@ -66,6 +66,10 @@ dist-new/
 # 大体积二进制运行时（不纳入 git，首次启动由 install-runtimes.cjs 按需下载）
 resources/tools/*
 !resources/tools/harness-media.mjs
+# Windows 控件清单通道（10-04）：两个都是**源码脚本**（不是二进制运行时），必须进版本控制 ——
+# harness-uia.mjs 是 MCP 门面、desktop-uia.ps1 调系统自带 UIAutomation，二者随包由 extraResources 带走。
+!resources/tools/harness-uia.mjs
+!resources/tools/desktop-uia.ps1
 # pwsh 无窗口桥的编译源码（产物 pwsh.exe 由 CI 在 runner 上现编，见 scripts/prepare-windows-tools.cjs）
 !resources/tools/pwsh-headless/
 resources/tools/pwsh-headless/*

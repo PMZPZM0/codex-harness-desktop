@@ -1465,7 +1465,7 @@ export async function run() {
     //   ⛔ 用「名单 + 逐个上限」而不是「总数」：总数不变但某个文件暴涨、另一个被拆小，总数不动 ⇒ 漏。
     {
       const GIANT_CAP = {
-        "scripts/guards/07-turn-fold.mjs": 4879,
+        "scripts/guards/07-turn-fold.mjs": 4887,
         "scripts/guards/06-app-behavior.mjs": 3261,
         "scripts/guards/02-session-logic.mjs": 1533,
         "src/features/app-state/parts/bag-types.ts": 1423,
