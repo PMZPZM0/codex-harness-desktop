@@ -29,11 +29,25 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(dispatch);
   const wrapRef = useRef<HTMLDivElement>(null);
+  /* 弹层自身（portal 到 body 后已脱离 wrapRef 子树）：「点外面关闭」必须单独问它，
+     否则弹层内点击全被判成外部。详见下面 onDown 的注释。 */
+  const popRef = useRef<HTMLDivElement>(null);
   // 每次打开都从「当前生效值」起算：上一次没点确认就关掉时，草稿不该残留
   useEffect(() => { if (open) setDraft(dispatch); }, [open, dispatch]);
   useEffect(() => {
     if (!open) return;
-    const onDown = (event: globalThis.MouseEvent) => { if (!wrapRef.current?.contains(event.target as Node)) setOpen(false); };
+    /*⛔⛔ 2026-10-04 用户报「界面出来了，点一下又消失」——**我上一个提交造成的**。
+       原因：弹层改成 `portal 到 body` 后，它**不在 wrapRef 的 DOM 子树里**
+       ⇒ `wrapRef.current.contains(点到的节点)` 恒为 false
+       ⇒ 弹层内部**任何一次点击**（含点开关、点行）都被判成"点了外面"⇒ 立刻关闭。
+       ✅ 修法：判定要同时问两个容器 —— 按钮的 wrap **和** 弹层自己（popRef）。
+       ⚠️ 这类错 tsc/build/旧守卫全绿：逻辑合法，只是 ref 指错了地方。 */
+    const onDown = (event: globalThis.MouseEvent) => {
+      const target = event.target as Node;
+      if (wrapRef.current?.contains(target)) return;
+      if (popRef.current?.contains(target)) return;
+      setOpen(false);
+    };
     const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
     window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
@@ -87,6 +101,7 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
       )}
       {open && createPortal(
         <div
+          ref={popRef}
           className={`composer-menu-pop dispatch-pop${topbar ? " dispatch-pop-fixed" : " dispatch-pop-down"}`}
           role="dialog"
           aria-label="调度设置"
