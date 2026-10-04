@@ -55,6 +55,30 @@ if (cssFile) {
   // ⛔ 旧实现不得残留（两处任一残留都会与新形态打架）
   ok(!/thread-dot-bounce/.test(css), "旧关键帧 thread-dot-bounce 已从产物清除");
   ok(!/thread-running-indicator i:nth-child/.test(css), "旧的 :nth-child 逐点 delay 规则已清除");
+
+  /* ── 判据组 B：**点阵必须"完整可见"**（2026-10-04 第二版，用户反馈"不像原版转圈"）──
+     ⛔ 病根一：我在 `i` 上加了 `clip-path: inset(-8px -8px 0 -8px)`。
+        inset 第四值是"下边界"，写 0 =不向外扩 ⇒ 裁在元素自身盒子下沿（3.4px）
+        ⇒ 圆心 y=+--d 的那颗（下半个圆）被**整颗切掉** ⇒ 根本不是一圈。
+     ⛔ 病根二：容器只开 16px，而点阵实测要 **33×33px**（半宽 = 9.4 + 1.7 + 5.4 = 16.5）。
+        当前解法 = `i` 绝对定位 + 容器不裁 ⇒ 溢出但完整可见。 */
+  const iBlock = (/\.thread-running-indicator i\s*\{([\s\S]*?)\}/.exec(css) || [, ""])[1];
+  ok(!/clip-path/.test(iBlock),
+    "⛔ i 上不许 clip-path（inset 底部不外扩会把下半个圆整颗切掉 —— 这是「不像一圈」的真凶）");
+  ok(!/overflow\s*:\s*hidden/.test(iBlock), "⛔ i 上不许 overflow:hidden（会把 box-shadow 整体裁掉，八个点全没）");
+  ok(/position:\s*absolute/.test(iBlock),
+    "i 是绝对定位（点阵要溢出到16px 容器之外，不裁也不撑布局）");
+  ok(/spread|box-shadow/.test(iBlock), "点阵由 box-shadow 画出");
+
+  // ⛔ 祖先链不得有 overflow:hidden —— 那会真的裁掉溢出的点（改容器尺寸也没用）
+  {
+    const src = readFileSync(join(ROOT, "src", "styles", "02-sidebar-threads.css"), "utf8");
+    const family = [...src.matchAll(/^\.(thread-row[a-z-]*|thread-actions)\s*\{([^}]*)\}/gm)];
+    const bad = family
+      .filter((m) => /overflow\s*:\s*(hidden|clip)/.test(m[2]))
+      .map((m) => m[1]);
+    ok(bad.length === 0, `祖先链无 overflow:hidden（当前：${family.length} 条规则）${bad.length ? `—— 有：${bad.join("/")}` : ""}`);
+  }
 }
 
 console.log(`\n【spin】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
