@@ -173,5 +173,55 @@ ok(/Math\.min\(len \* u,/.test(screen) || /Math\.min\(len,/.test(screen),
     "⛔ 画布用的是单例（而不是自己 new）");
 }
 
+/* ── 判据组 F：**普通会话也能开办公室**（2026-10-04 用户要求「给普通会话也加上，
+   调度其他会话后就新增一个卡通人物」）──
+   ⛔ 病根：成员来源只有 `team`（专家团）一条 ⇒ 普通会话里办公室永远是空的；
+     且显示门槛是 `if (!teamId || !team) return null` ⇒ 连浮层都打不开。
+   ⇒ 判据形状：两条来源（team / delegatedRuns）+ 门槛只认 teamId + 徽标计数与成员同源。 */
+{
+  const preview = readFileSync(join(ROOT, "src", "features", "team-office", "TeamOfficePreview.tsx"), "utf8");
+  const appView = readFileSync(join(ROOT, "src", "features", "app-view", "AppView.tsx"), "utf8");
+
+  ok(/delegatedRuns\?:\s*DelegateRecordEntry\[\]/.test(preview),
+    "⛔ TeamOfficePreview 接受 delegatedRuns prop（普通会话的成员来源）");
+  ok(/if \(!team\)\s*\{[\s\S]{0,600}?delegatedRuns/.test(preview),
+    "⛔ team 为空时走「委托记录当成员」这条路径");
+  ok(/\.filter\(\(r\) => r\.status === "running"\)/.test(preview),
+    "⛔ 只取 running 的委托（跑完的子会话该下班，不能越积越多直到 6 个满）");
+  ok(/if \(!teamId\) return null;/.test(preview) && !/if \(!teamId \|\| !team\) return null;/.test(preview),
+    "⛔ 显示门槛只认 teamId（原来的 `|| !team` 会把普通会话浮层直接挡掉）");
+  // 成员 id 必须是 threadId（点角色要能直接打开子会话）
+  ok(/id:\s*r\.threadId/.test(preview),
+    "⛔ 普通会话成员的 id 是 threadId（点角色才能直接打开子会话）");
+  // 点角色：普通会话分支直接用 threadId
+  ok(/if \(!team\)\s*\{[\s\S]{0,300}?openThread\(del\.threadId\)/.test(preview),
+    "⛔ 点角色在普通会话下直接打开该子会话");
+  // 事件状态：普通会话不能返回 null（否则屏幕永远熄）
+  /*⛔⛔ 不用固定字符窗口（`[\s\S]{0,400}?`）—— 实测这段有 **511 字符**，窗口不够就恒红。
+     ⛔ 本轮已经因为"固定字符窗口"栽过三次（spinner 900 vs 1671、kb 900 vs 1671、这里 400 vs 511）。
+     ✅ 改成按**函数边界**取块：取 `eventStateOf` 的函数体，与长度无关。 */
+  const esStart = preview.indexOf("const eventStateOf = (memberId: string) => {");
+  const esEnd = preview.indexOf("\n  /*", esStart);
+  const esBody = esStart >= 0 ? preview.slice(esStart, esEnd > esStart ? esEnd : undefined) : "";
+  ok(esBody.length > 100, `切出 eventStateOf 函数体（${esBody.length} 字符）`);
+  ok(/if \(!team\)/.test(esBody) && /thinking:/.test(esBody),
+    "⛔ 普通会话下 eventStateOf 有默认活动（否则屏幕永远熄屏）");
+  // 随机取名：必须按 id 确定性取，不能每次渲染重随
+  ok(/ROLE_NAMES/.test(preview) && /run\.threadId\.charCodeAt/.test(preview),
+    "⛔ 随机名按 threadId 哈希取（同一人恒定同名，不会每帧改名）");
+  // AppView：传参 + 徽标计数同源
+  ok(/delegatedRuns=\{app\.delegatedRailRuns\}/.test(appView),
+    "⛔ AppView 把 delegatedRailRuns 传进去");
+  ok(/officeRunningCount\s*=\s*delegatedRailRuns\.filter\(\(r\) => r\.status === "running"\)\.length/.test(appView),
+    "⛔ 徽标计数与办公室成员同源（都用 running 的委托条数，否则徽标 3、屋里 0 人）");
+  ok(/OFFICE_SESSION_TEAM_ID\s*=\s*"__office-session__"/.test(appView),
+    "⛔ 普通会话用哨兵 teamId 打开（不能用空串 —— 与「未打开」不可区分）");
+  // 入口按钮
+  ok(/className="office-entry-btn"/.test(appView), "有常驻入口按钮");
+  ok(/\.office-entry-btn\s*\{/.test(
+      readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8"),
+    ), "入口按钮有样式（否则裸按钮不可见）");
+}
+
 console.log(`\n【screen】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
