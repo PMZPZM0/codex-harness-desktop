@@ -108,6 +108,21 @@ function dispatchMcpTools(): unknown[] {
         required: ["threadIds"],
       },
     },
+    /* ── 知识库检索（10-01 立项）：模型在会话里直接查项目知识库 ──────────────────
+       执行端在 dispatch-rpc.ts（knowledge_search 调 kb:search 同源逻辑）。
+       workspace 缺省 = 当前会话的工作目录（threadCwd）。 */
+    {
+      name: "knowledge_search",
+      description: "检索当前项目的本地知识库（用户通过「知识库」页导入的文档/笔记/规范）。返回相关片段列表（含来源文档名与高亮片段）。用户说「查一下知识库/项目资料/我们的规范」时用它。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "检索关键词（可空格分隔多个词）" },
+          limit: { type: "number", description: "返回条数（缺省 8）" },
+        },
+        required: ["query"],
+      },
+    },
     /* ── 定时任务四件套（09-28 用户要求「直接调用定时任务工具」）─────────────────────
        用户在会话里说「每天早上给我 AI 早报」⇒ 模型直接建任务，不用去界面点。
        执行端在 dispatch-rpc.ts：scheduler_save 走 restrictedThreadRole 同源闸

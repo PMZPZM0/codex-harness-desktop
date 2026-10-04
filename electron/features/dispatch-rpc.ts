@@ -91,6 +91,15 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
      AI 早报」，模型只能引导去界面。现在走内置调度 MCP 暴露（引擎级注入，覆盖所有会话）。
      安全：scheduler_save 走 restrictedThreadRole 同源闸（专家/被调度会话不许建 —— 防套娃：
      专家安排任务、任务再调专家）；工作区缺省 = 调用者会话的 cwd（threadCwd）。 */
+  /* ── 知识库检索（10-01 立项）：模型直接查项目知识库 ────────────────────────────
+     workspace 缺省 = 调用者会话的 cwd（threadCwd）。调 knowledge-base 的 searchDocs 同源。 */
+  if (name === "knowledge_search") {
+    const cwd = threadCwd.get(callerThreadId) || "";
+    if (!cwd.trim()) return { ok: false, error: "无法确定工作目录 —— 知识库是项目级的，请先在会话里选择工作文件夹" };
+    const { searchDocs } = await import("../knowledge-base");
+    const hits = searchDocs(cwd, String(args.query ?? ""), Number(args.limit) || 8);
+    return { ok: true, output: hits.length ? hits.map((h) => `【${h.title} · 第 ${h.chunkIndex + 1} 块】${h.snippet}`).join("\n\n") : "（知识库没有命中——确认相关文档已导入，或换个关键词）" };
+  }
   if (name === "scheduler_save") {
     const restrict = await restrictedThreadRole(callerThreadId);
     if (restrict.restricted) return { ok: false, error: `当前会话（${restrict.label}）不允许创建定时任务` };
