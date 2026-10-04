@@ -57,6 +57,18 @@ export type AppSettings = {
    *   由 `essential-domains.ts` 单一真相源约束，设置侧只允许停用非 essential 的。
    */
   disabledDomains?: string[];
+  /**
+   * 已停用的**声明式插件** id（10-04 B 档）。
+   *
+   * ⚠️ 与 `disabledDomains` 的区别（这两个别混）：
+   *   · disabledDomains          = 停用**宿主功能域**（编译期就在包里的 79 个，
+   *                                部分域因共享单例只能重启生效）
+   *   · disabledDeclaredPlugins  = 停用**外部声明式插件**（用户目录里的 JSON，
+   *                                只有界面内容 ⇒ 插槽即时刷新，真热插拔）
+   *
+   * ⛔ 缺省 = 启用（不在名单里就是启用）⇒ 升级不改变任何现有行为。
+   */
+  disabledDeclaredPlugins?: string[];
   /** 语气自适应（默认开）：按会话维护少量状态（心情/精力/默契），随会话自己的
    *  developer instructions 下发一句「只影响说法、不影响内容」的语气指引。
    *  状态按会话各自一份（agent-mood-<threadId>），关掉即停止更新与注入。 */

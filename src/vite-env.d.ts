@@ -918,6 +918,19 @@ interface Window {
     domainsSetEnabled(input: { id: string; enabled: boolean }): Promise<{ ok: boolean; error?: string; id?: string; enabled?: boolean; requiresRestart?: boolean }>;
     /* 10-04 「重启才生效」的话术由主进程出，禁在前端硬编码 */
     domainsReloadHint(): Promise<{ requiresRestart: boolean; text: string }>;
+    /* 10-04 B档 声明式插件清单（外部 JSON，含无效条目报告与两个目录路径） */
+    declaredPluginsList(): Promise<any>;
+    /* 10-04 启停声明式插件（插槽即时生效，无需重启） */
+    declaredPluginsToggle(input: { id: string; enabled: boolean }): Promise<{ ok: boolean; error?: string; id?: string; enabled?: boolean; requiresRestart?: boolean }>;
+    /* 10-04 打开用户插件目录（不存在则创建） */
+    declaredPluginsOpenDirs(): Promise<{ ok: boolean; error?: string; userDir?: string; builtinDir?: string }>;
+    /* 10-01 新增：项目级本地知识库（<项目>/.codex-harness/knowledge/） */
+    listKnowledgeDocs(input?: { workspace?: string }): Promise<KbDocMeta[]>;
+    addKnowledgeText(input: { workspace?: string; title?: string; text?: string; source?: string }): Promise<KbDocMeta>;
+    addKnowledgeFiles(input: { workspace?: string; paths?: string[] }): Promise<{ imported: { title: string; id: string }[]; failures: string[] }>;
+    removeKnowledgeDoc(input: { workspace?: string; docId?: string }): Promise<{ ok: boolean }>;
+    searchKnowledge(input: { workspace?: string; query?: string; limit?: number }): Promise<{ docId: string; title: string; chunkIndex: number; score: number; snippet: string }[]>;
+    readKnowledgeDoc(input: { workspace?: string; docId?: string }): Promise<{ meta: KbDocMeta; text: string } | null>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */

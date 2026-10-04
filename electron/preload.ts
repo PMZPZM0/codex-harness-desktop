@@ -580,6 +580,19 @@ contextBridge.exposeInMainWorld("codex", {
   domainsSetEnabled: (input: { id: string; enabled: boolean }) => __ipc("domains:set-enabled", 1, [input]) as Promise<{ ok: boolean; error?: string; id?: string; enabled?: boolean; requiresRestart?: boolean }>,
   /* 10-04 「重启才生效」的话术由主进程出，禁在前端硬编码 */
   domainsReloadHint: () => __ipc("domains:reload-hint", 0, []) as Promise<{ requiresRestart: boolean; text: string }>,
+  /* 10-04 B档 声明式插件清单（外部 JSON，含无效条目报告与两个目录路径） */
+  declaredPluginsList: () => __ipc("declared-plugins:list", 0, []) as Promise<any>,
+  /* 10-04 启停声明式插件（插槽即时生效，无需重启） */
+  declaredPluginsToggle: (input: { id: string; enabled: boolean }) => __ipc("declared-plugins:toggle", 1, [input]) as Promise<{ ok: boolean; error?: string; id?: string; enabled?: boolean; requiresRestart?: boolean }>,
+  /* 10-04 打开用户插件目录（不存在则创建） */
+  declaredPluginsOpenDirs: () => __ipc("declared-plugins:open-dirs", 0, []) as Promise<{ ok: boolean; error?: string; userDir?: string; builtinDir?: string }>,
+  /* 10-01 新增：项目级本地知识库（<项目>/.codex-harness/knowledge/） */
+  listKnowledgeDocs: (input?: { workspace?: string }) => __ipc("kb:list", 0, [input]),
+  addKnowledgeText: (input: { workspace?: string; title?: string; text?: string; source?: string }) => __ipc("kb:add-text", 0, [input]),
+  addKnowledgeFiles: (input: { workspace?: string; paths?: string[] }) => __ipc("kb:add-files", 0, [input]),
+  removeKnowledgeDoc: (input: { workspace?: string; docId?: string }) => __ipc("kb:remove", 0, [input]),
+  searchKnowledge: (input: { workspace?: string; query?: string; limit?: number }) => __ipc("kb:search", 0, [input]),
+  readKnowledgeDoc: (input: { workspace?: string; docId?: string }) => __ipc("kb:read", 0, [input]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

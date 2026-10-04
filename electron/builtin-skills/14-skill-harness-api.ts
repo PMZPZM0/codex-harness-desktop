@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（81 个能力域 / 401 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（82 个能力域 / 404 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -362,8 +362,12 @@ RPA 配方（录制好的桌面自动化流程）
 通道：voice:status, voice:settings-get, voice:settings-set, voice:start, voice:dictation-finish, voice:endpoint-now, voice:stop, voice:audio, voice:speak, voice:preview-voice, voice:hotkey-set, voice:hotkey-get, voice:wake-start, voice:wake-audio, voice:wake-reset, voice:wake-stop, voice:barge, voice:playback-done, voice:models-status, voice:zipvoice-install, voice:zipvoice-cancel, voice:kws-install, voice:kws-cancel, voice:kws-status, voice:profiles-list, voice:preset-list, voice:preset-apply, voice:profiles-import, voice:profiles-record, voice:profiles-save, voice:profiles-delete, voice:profiles-select, voice:profiles-preview, voice:models-install, voice:models-cancel, voice:models-import, voice:models-reveal, voice:models-uninstall, voice:mic-permission, voice:resource-set-enabled, voice:resource-delete, voice:resource-status
 
 ### domains（3 通道）
-**宿主功能域**的清单与启停（设置 → 开发工具 → 功能域）——⛔ 停用是「下次启动不挂载」不是运行时卸载：域的通道是功能唯一的调用入口，停用后该功能会提示不可用，需重启生效。承载应用自身能力的域（身份/对话主链路/基础对话框）不可停用
+**宿主功能域**的清单与启停（设置 → 开发工具 → 功能域）——停用支持**真热插拔**（通道立即消失、无需重启），但持有跨域共享单例的域（server / codexHome / mainWindow / toolsRoot 的主人）只能重启生效。承载应用自身能力的域（身份/对话主链路/基础对话框）不可停用
 通道：domains:list, domains:set-enabled, domains:reload-hint
+
+### declared-plugins（3 通道）
+**声明式插件**清单与启停（设置 → 开发工具 → 声明式插件）——插件是一份 JSON（用户目录 codex-home/harness-plugins 或内置 declared-plugins），只描述往哪个插槽挂什么内容、调哪条**已有**通道，不含任何代码。插槽即时生效、无需重启。⛔ 不加载第三方 JS：主进程是特权域（密钥库/开窗/全盘 fs），进代码即提权
+通道：declared-plugins:list, declared-plugins:toggle, declared-plugins:open-dirs
 
 ### screenshot（6 通道）
 截图（冻结帧框选/保存/历史）

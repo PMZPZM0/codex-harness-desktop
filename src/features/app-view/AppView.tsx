@@ -162,6 +162,7 @@ import { AppViewSettingsSheet } from "./AppView/08-settings-sheet";
 import { AppViewFilePreviewEditor } from "./AppView/09-file-preview-editor";
 // 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
 import { Slot } from "../../runtime/registry";
+import { DeclaredPluginSlots } from "../../runtime/declared-plugin-slots";
 
 
 
@@ -434,6 +435,10 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       {/* 10-04 渲染层插槽：全局浮层出口。插件要挂「不依附任何页面」的浮层
       （确认框 / 托盘气泡 / 全局进度）挂这里 —— 页面级插槽只活在那个页面的渲染树里。 */}
       <Slot id="overlay.root" />
+      {/* 10-04 B 档：声明式插件的注册器。常驻在这里（不需要被哪个页面加载），
+          它自己渲染 null，只把「用户目录里的 JSON 清单」注册进各个插槽。
+          ⛔ 与 plugin-slots.tsx 那个自检出口不同：这个有真实消费者（用户能放 JSON 进来）。 */}
+      <DeclaredPluginSlots />
       <AppViewRemoteApproval app={app} />
       <AppViewRemoteConsole app={app} />
 <AppViewTaskComposer app={app} />

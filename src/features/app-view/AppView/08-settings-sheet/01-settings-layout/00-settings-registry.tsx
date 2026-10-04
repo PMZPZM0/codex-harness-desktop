@@ -73,6 +73,8 @@ const ComponentLibrarySection = lazy(() => import("../../../../component-library
 const PetSettingsSection = lazy(() => import("../../../../settings-pet/PetSettingsSection").then((m) => ({ default: m.PetSettingsSection })));
 /* 人格市场页（10-01）：SkillHub 人格（skillhub.cn/soul），应用后下一个新会话生效 */
 const SoulMarketSection = lazy(() => import("../../../../soul-market/SoulMarketSection").then((m) => ({ default: m.SoulMarketSection })));
+/* 知识库页（10-01）：项目级本地知识库（导入/检索/管理） */
+const KnowledgeBaseSection = lazy(() => import("../../../../knowledge-base/KnowledgeBaseSection").then((m) => ({ default: m.KnowledgeBaseSection })));
 /* 专家市场包（10-01）：SkillHub 技能包，装完在专家中心新增对应专家卡片 */
 const ExpertMarketSection = lazy(() => import("../../../../expert-market/ExpertMarketSection").then((m) => ({ default: m.ExpertMarketSection })));
 
@@ -474,13 +476,16 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
     general: { render: () => <><GeneralSettingsSection globalPermApproval={globalPermApproval} applyGlobalPermissionMode={applyGlobalPermissionMode} workspace={workspace} chooseWorkspace={chooseWorkspace} userDataPath={userDataPath} setNotice={setNotice} rightOpen={rightOpen} setRightOpen={setRightOpen} capabilityHint={capabilityHint} desktopAuto={desktopAuto} groupBusy={groupBusy} toggleDesktopAuto={toggleDesktopAuto} browserAuto={browserAuto} toggleBrowserAuto={toggleBrowserAuto} ponytailOn={ponytailOn} applyGroup={applyGroup} hardwareAccel={hardwareAccel} changeHardwareAccel={changeHardwareAccel} restartPending={restartPending} SHORTCUT_GROUPS={SHORTCUT_GROUPS} setShortcutsOpen={setShortcutsOpen} engineVersion={engineVersion} engineCheck={engineCheck} engineUpdating={engineUpdating} checkEngineUpdateNow={checkEngineUpdateNow} performEngineUpdateNow={performEngineUpdateNow} engineUpdatePercent={engineUpdatePercent} engineUpdateStageText={engineUpdateStageText} engineUpdateLog={engineUpdateLog} engineUpdateResult={engineUpdateResult} relaunchCountdown={relaunchCountdown} downloadSource={downloadSource} /><Slot id="settings.general.bottom" /></> },
     /* ⛔ 这里用 `app.` 而不是往上面的逐字解构块里加名字：那段解构是「与搬迁前逐字一致」的
        （改它会让对照 diff 失真）。新增 props 直接取 app 上的同名状态即可。 */
-    devtools: { render: () => <><DevtoolsSettingsSection capabilityRows={capabilityRows} capabilityError={capabilityError} VoiceDevToolsSection={VoiceDevToolsSection} setNotice={setNotice} devRuntimes={devRuntimes} runtimeInstalling={runtimeInstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} installDevRuntime={installDevRuntime} uninstallDevRuntime={uninstallDevRuntime} /><Slot id="settings.devtools.bottom" props={{ onNotice: setNotice }} loader={() => import("../../../../settings-devtools/DomainsPanel")} /></> },
+    devtools: { render: () => <><DevtoolsSettingsSection capabilityRows={capabilityRows} capabilityError={capabilityError} VoiceDevToolsSection={VoiceDevToolsSection} setNotice={setNotice} devRuntimes={devRuntimes} runtimeInstalling={runtimeInstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} installDevRuntime={installDevRuntime} uninstallDevRuntime={uninstallDevRuntime} /><Slot id="settings.devtools.bottom" props={{ onNotice: setNotice }} loader={() => import("../../../../settings-devtools/DomainsPanel")} />
+      {/* B 档：声明式插件面板（自带loader，按需加载） */}
+      <Slot id="settings.devtools.bottom" loader={() => import("../../../../settings-devtools/DeclaredPluginsPanel")} /></> },
     extensibility: { render: () => <ExtensibilitySettingsSection onNotice={setNotice} /> },
     screenshot: { render: () => <ScreenshotSettingsSection onNotice={setNotice} /> },
     /* 桌面宠物（09-30）：域只收显式 props（onNotice），状态全走自己的 IPC（pet:*），不占 app 字段面 */
     pet: { render: () => <PetSettingsSection onNotice={setNotice} /> },
     "component-library": { render: () => <ComponentLibrarySection /> },
     "soul-market": { render: () => <SoulMarketSection onNotice={(m) => setNotice(m)} /> },
+    "knowledge-base": { render: () => <KnowledgeBaseSection workspace={workspace} setNotice={(m) => setNotice(m)} /> },
     favorites: { render: () => <FavoritesSettingsSection
       favorites={favorites}
       busy={favoritesBusy}

@@ -1,0 +1,22 @@
+{
+  "id": "harness-welcome",
+  "name": "欢迎与版本提示",
+  "version": "1.0.0",
+  "description": "在侧栏顶部与标题栏显示版本/更新提示。纯声明式，无代码。",
+  "enabled": true,
+  "slots": [
+    {
+      "slot": "sidebar.top",
+      "order": 900,
+      "label": "关于",
+      "title": "查看版本与检查更新",
+      "invoke": "updates:check",
+      "args": {}
+    },
+    {
+      "slot": "settings.general.bottom",
+      "order": 900,
+      "text": "声明式插件：你看到的这条文字来自 electron/declared-plugins/harness-welcome.json。它不含任何代码，宿主只按清单往插槽里放内容。同目录再放一份 JSON 就能加第二个插件（无需重新构建）。"
+    }
+  ]
+}
