@@ -483,3 +483,4 @@ FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）· Playwright 内核�
 - 🧭 设置页「拓展接口」（09-24，守卫【128】）
 - 🪟 任务栏图标 = AUMID 配对问题（09-24，守卫【2】新增 4 条）
 - （09-24 下午 ~ 09-25 的详细记录已迁往 `docs/CHANGELOG-ROUNDS.md`，2026-09-26 二次拆骨；本处只留索引）
+- 🧠 知识库 Laya 软增强（10-04）：knowledge_add 写入门禁 + knowledge_search 检索重排，未装照旧装了增强、fail-open，守卫【kb】判据 8（docs/KNOWLEDGE-BASE.md §9）

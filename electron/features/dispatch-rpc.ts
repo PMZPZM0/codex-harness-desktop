@@ -98,7 +98,33 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     if (!cwd.trim()) return { ok: false, error: "无法确定工作目录 —— 知识库是项目级的，请先在会话里选择工作文件夹" };
     const { searchDocs } = await import("../knowledge-base");
     const hits = searchDocs(cwd, String(args.query ?? ""), Number(args.limit) || 8);
-    return { ok: true, output: hits.length ? hits.map((h) => `【${h.title} · 第 ${h.chunkIndex + 1} 块】${h.snippet}`).join("\n\n") : "（知识库没有命中——确认相关文档已导入，或换个关键词）" };
+    /* ── Laya 检索重排（10-04 用户拍板「未装照旧、装了增强」）：模型侧 knowledge_search
+       走的是全文 searchDocs（没有语义分）⇒ 就绪的 Laya 在候选里挑一条最相关的置顶。
+       单次 choice 调用（~33ms 量级）；未就绪 / 低置信 / 选了 none ⇒ 弃权，原序返回（fail-open）。
+       ⛔ 不在 UI 的 kb:search 上做 —— 用户手动检索要求确定性排序，不掺模型判断。 */
+    let boostIndex = -1, boostConfidence = 0;
+    if (hits.length > 1) {
+      try {
+        const { layaJudge } = await import("./laya-service");
+        const criteria: Record<string, string> = {};
+        hits.forEach((h, i) => { criteria[String(i + 1)] = `【${h.title}】${h.snippet.slice(0, 200)}`; });
+        criteria.none = "没有一条与问题相关";
+        const verdict = await layaJudge(String(args.query ?? ""), {
+          instructions: "用户在项目知识库里检索。从候选条目中选出与问题最相关的一条，按编号回答；都不相关则选 none。",
+          criteria,
+        }, { minConfidence: 0.5 });
+        if (verdict && verdict.choice !== "none") {
+          const idx = Number(verdict.choice) - 1;
+          if (idx >= 0 && idx < hits.length) { boostIndex = idx; boostConfidence = verdict.confidence; }
+        }
+      } catch { /* Laya 不可用 = 弃权，检索结果不受影响 */ }
+    }
+    const ordered = boostIndex >= 0 ? [hits[boostIndex], ...hits.filter((_, i) => i !== boostIndex)] : hits;
+    const output = ordered.map((h, i) => {
+      const tag = boostIndex >= 0 && i === 0 ? `⭐ Laya 推荐（置信 ${(boostConfidence * 100).toFixed(0)}%）· ` : "";
+      return `${tag}【${h.title} · 第 ${h.chunkIndex + 1} 块】${h.snippet}`;
+    }).join("\n\n");
+    return { ok: true, output: ordered.length ? output : "（知识库没有命中——确认相关文档已导入，或换个关键词）" };
   }
   /* ── 知识库写入（2026-10-04）：此前**模型侧没有任何写入工具**（只读）——
      执行端与 knowledge_search 同源（同一个 knowledge-base.ts，workspace 缺省 = 调用者 cwd）。
@@ -115,6 +141,25 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     const text = String(args.text ?? "");
     if (!title) return { ok: false, error: "缺少 title" };
     if (!text.trim()) return { ok: false, error: "缺少 text（内容为空，写了也检索不到任何东西）" };
+    /* ── Laya 写入门禁（10-04 用户拍板「未装照旧、装了增强」）：服务已就绪才判，
+       判定「不值得长期保存」且置信 ≥0.6 ⇒ 拒写并说明，让模型充实内容后重试或让用户手动加。
+       ⛔ fail-open：未装 / 未就绪 / 超时 / 低置信 / 判定异常一律放行——门禁绝不能丢知识。 */
+    try {
+      const { layaJudge } = await import("./laya-service");
+      const verdict = await layaJudge(`${title}\n${text}`, {
+        instructions: "判断这条内容是否值得长期保存进项目知识库（保存后供日后检索复用）。",
+        criteria: {
+          worth: "有实质信息量：规范、结论、决策、踩坑经验、配置/接口说明等，日后会被再次引用",
+          junk: "寒暄闲聊、临时过程性内容、无信息量或与任何项目工作无关",
+        },
+      }, { minConfidence: 0.6 });
+      if (verdict?.choice === "junk") {
+        return {
+          ok: false,
+          error: `未写入知识库：Laya 判定该内容价值低、不适合长期保存（置信 ${(verdict.confidence * 100).toFixed(0)}%）。若它确实值得保存，请充实内容（补充背景/结论/来源）后重试，或让用户在「知识库」页手动添加。`,
+        };
+      }
+    } catch { /* 门禁失败不拦写入 */ }
     const { addDocument, listDocs } = await import("../knowledge-base");
     // ⛔ 先查同名：同名会**新增**一条（safeId 带时间戳），不报错 ⇒ 重复条目会悄悄堆起来
     const dup = listDocs(cwd).find((d) => d.title === title);

@@ -486,6 +486,39 @@ export async function layaDecideEffort(text: string): Promise<{ effort: string; 
   ]);
 }
 
+/**
+ * 通用单问判断（知识库写入门禁 / 检索重排等**软增强**用，10-04 用户拍板「未装照旧、装了增强」）：
+ * 服务已就绪才判；未就绪 / 超时 / 低置信 / 答案不在 criteria 里 ⇒ 一律返回 null（fail-open，
+ * 调用方必须把 null 当「弃权放行」处理，绝不因判断不可用而丢功能）。
+ * ⛔ 沿用思考档同款延迟纪律：**不为一次判断拉起 1.7GB 服务**——未就绪只后台预热、立刻弃权。
+ */
+export async function layaJudge(
+  text: string,
+  question: { instructions: string; criteria: Record<string, string> },
+  options: { minConfidence?: number; timeoutMs?: number } = {},
+): Promise<{ choice: string; confidence: number } | null> {
+  if (!proc || !ready) {
+    void ensureService().catch((err) => log(`预热失败: ${String(err).slice(0, 120)}`));
+    return null;
+  }
+  const minConfidence = options.minConfidence ?? 0.5;
+  const run = (async () => {
+    const answers = await layaDecide(text.slice(0, 4000), {
+      judge: { type: "choice", instructions: question.instructions, criteria: question.criteria },
+    });
+    const ans = answers.judge as { choice?: string; confidence?: number } | undefined;
+    const choice = String(ans?.choice ?? "").toLowerCase();
+    const confidence = Number(ans?.confidence ?? 0);
+    if (!(choice in question.criteria)) return null;
+    if (!(confidence >= minConfidence)) return null;
+    return { choice, confidence };
+  })();
+  return Promise.race([
+    run,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), options.timeoutMs ?? 2_000)),
+  ]);
+}
+
 /** 应用退出时收服务进程。 */
 export function layaShutdown() {
   killService("应用退出");
