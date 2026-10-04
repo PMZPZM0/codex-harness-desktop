@@ -100,6 +100,17 @@ export function drawScreen(
     : mode === "rest" ? PAL.restBg
     : PAL.offBg;
 
+  /* ⛔⛔ 所有尺寸**必须从 w/h 推导**，⛔ 不许硬编码。
+     起因（2026-10-04）：屏面实测是 **53×30**（六个各不相同），而我第一版按"红框量出来的
+     116×62" 写死排版（rowH=6、结果行 y+17+8r、柱子 6 根…）⇒ 内容撑出屏面，
+     再叠加坐标也错位 ⇒ 用户看到"三个大黑块盖在桌子上"。
+     ⚠️ 六个屏面尺寸**逐个不同**（53/58/58/53/55/53 宽、30-32 高）⇒ 更不能写统一值。
+     ✅ 统一做法：先算一个**单位格** `u = max(2, round(h/10))`，其余全部按 u / w / h 推。 */
+  const u = Math.max(2, Math.round(h / 10));   // 单位格：h=30 ⇒ u=3
+  const pad = Math.max(1, Math.round(u * 0.5));
+  const innerW = w - pad * 2;
+  const innerH = h - pad * 2;
+
   // 屏底（像素风：纯色，不要渐变）
   ctx.fillStyle = bg;
   ctx.fillRect(x, y, w, h);
@@ -107,7 +118,7 @@ export function drawScreen(
   // 熄屏：一点点反光暗示"没开"
   if (mode === "off") {
     ctx.fillStyle = PAL.offGlow;
-    ctx.fillRect(x + 2, y + 2, w - 4, 3);
+    ctx.fillRect(x + pad, y + pad, innerW, u);
     return;
   }
 
@@ -120,60 +131,64 @@ export function drawScreen(
 
   if (mode === "code") {
     // 逐行浮现：已"敲出来"的行数随时间增长
-    const rowH = 6;
-    const rows = Math.floor((h - 4) / rowH);
+    const rowH = u + 1;                       // h=30 ⇒ 4px/行 ⇒ 6 行
+    const rows = Math.max(1, Math.floor(innerH / rowH));
     const typed = Math.min(rows, Math.floor(t * 1.6) % (rows + 12));
     for (let r = 0; r < typed; r++) {
       const segs = CODE_LINES[(r + seed) % CODE_LINES.length];
-      const ly = y + 3 + r * rowH;
-      let lx = x + 4;
+      const ly = y + pad + r * rowH;
+      let lx = x + pad;
       segs.forEach(([indent, len], si) => {
-        lx = x + 4 + indent * 3;
+        lx = x + pad + indent * u;
         // 关键字段落用暖色，其余用绿色
         ctx.fillStyle = si === 0 ? PAL.codeKeyword : PAL.codeText;
-        ctx.fillRect(lx, ly, len, 3);
-        lx += len + 2;
+        //⛔ 每段长度按 innerW 收口：CODE_LINES 里的数字是给"宽屏"设计的，
+        //   直接用会画出屏面之外 ⇒ 又是"内容溢出"那一类错。
+        ctx.fillRect(lx, ly, Math.min(len, Math.max(1, x + w - pad - lx)), u - 1);
+        lx += len * u + u;
       });
     }
     // 光标闪烁（1.6s 周期）
-    const cy = y + 3 + (typed % rows) * rowH;
+    const cy = y + pad + (typed % rows) * rowH;
     ctx.fillStyle = "#e8f0f6";
-    if ((t * 1.6) % 1 < 0.55) ctx.fillRect(x + 4 + Math.floor(rnd() * 6) * 3, cy, 3, 4);
+    if ((t * 1.6) % 1 < 0.55) ctx.fillRect(x + pad + Math.floor(rnd() * 5) * u, cy, u, u);
     return;
   }
 
   if (mode === "thinking") {
-    // 思考：三个点依次跳动 + 顶部扫描线缓慢下移
+    // 思考：三个点依次跳动 + 扫描线缓慢下移
     const dots = 3;
     for (let i = 0; i < dots; i++) {
       const phase = (t * 2.2 - i * 0.5) % 3;
-      const lift = phase >= 0 && phase < 1 ? Math.round(2 * Math.sin(phase * Math.PI)) : 0;
+      const lift = phase >= 0 && phase < 1 ? Math.round(u * 0.6 * Math.sin(phase * Math.PI)) : 0;
       ctx.fillStyle = PAL.thinkDot;
-      ctx.fillRect(x + 10 + i * 9, y + h / 2 - 2 - lift, 5, 5);
+      ctx.fillRect(x + pad + i * u * 2, y + h / 2 - u / 2 - lift, u, u);
     }
     // 扫描线
-    const sy = y + 3 + ((t * 14) % (h - 6));
+    const sy = y + pad + ((t * 14) % Math.max(1, innerH));
     ctx.fillStyle = PAL.scan;
-    ctx.fillRect(x + 2, sy, w - 4, 2);
+    ctx.fillRect(x + pad, sy, innerW, u - 1);
     return;
   }
 
   if (mode === "search") {
     // 搜索：顶部一条搜索框 + 下面几行结果，命中的那条高亮并跳动
+    const barH = u * 2;
     ctx.fillStyle = PAL.thinkDot;
-    ctx.fillRect(x + 5, y + 5, Math.round((w - 10) * 0.72), 7);
+    ctx.fillRect(x + pad, y + pad, Math.round(innerW * 0.72), barH);
     // 搜索框里的放大镜 + 光标
     ctx.fillStyle = PAL.searchBg;
-    ctx.fillRect(x + 7, y + 7, 3, 3);
-    if ((t * 2) % 1 < 0.5) ctx.fillRect(x + 5 + Math.round((w - 10) * 0.3), y + 7, 2, 3);
-    // 结果行
-    for (let r = 0; r < 4; r++) {
-      const ry = y + 17 + r * 8;
-      if (ry + 5 > y + h) break;
-      const hit = r === Math.floor(t * 1.4) % 4;
+    ctx.fillRect(x + pad + u, y + pad + Math.floor(u / 2), u, u);
+    if ((t * 2) % 1 < 0.5) ctx.fillRect(x + pad + Math.round(innerW * 0.3), y + pad + Math.floor(u / 2), u, u);
+    // 结果行（行数按剩余高度算，⛔ 不写死 4 行）
+    const resTop = y + pad + barH + u;
+    const resRows = Math.max(1, Math.floor((y + h - pad - resTop) / (u * 2)));
+    for (let r = 0; r < resRows; r++) {
+      const ry = resTop + r * u * 2;
+      const hit = r === Math.floor(t * 1.4) % resRows;
       ctx.fillStyle = hit ? PAL.searchHit : PAL.codeDim;
-      const len = 18 + Math.round(rnd() * (w - 34));
-      ctx.fillRect(x + 8, ry, len, 4);
+      const len = Math.round(innerW * (0.45 + rnd() * 0.5));
+      ctx.fillRect(x + pad, ry, len, u);
     }
     return;
   }
@@ -182,23 +197,24 @@ export function drawScreen(
     // 等待：像素转圈
     const cx = x + w / 2;
     const cy = y + h / 2;
-    const r = Math.min(w, h) / 2 - 6;
+    const r = Math.max(u, Math.min(innerW, innerH) / 2 - u);
     for (let i = 0; i < 8; i++) {
       const a = (t * 3 + i * 0.785) % (Math.PI * 2);
       ctx.fillStyle = i === 0 ? PAL.waitRing : PAL.codeDim;
-      ctx.fillRect(Math.round(cx + Math.cos(a) * r) - 1, Math.round(cy + Math.sin(a) * r) - 1, 3, 3);
+      ctx.fillRect(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r), u, u);
     }
     return;
   }
 
   // report：柱状图逐根抽动
-  const n = 6;
-  const bw = Math.floor((w - 12) / n) - 2;
+  const n = Math.max(3, Math.floor(innerW / (u * 2)));   // ⛔ 不写死 6 根
+  const slot = Math.floor(innerW / n);
+  const bw = Math.max(1, slot - u);
   for (let i = 0; i < n; i++) {
     const grow = Math.min(1, Math.max(0, t * 0.9 - i * 0.28));
-    const bh = Math.round((h - 12) * (0.25 + rnd() * 0.7) * grow);
+    const bh = Math.round(innerH * (0.25 + rnd() * 0.7) * grow);
     ctx.fillStyle = i % 2 ? PAL.bar : PAL.barAlt;
-    ctx.fillRect(x + 6 + i * (bw + 2), y + h - 4 - bh, bw, bh);
+    ctx.fillRect(x + pad + i * slot, y + h - pad - bh, bw, bh);
   }
 }
 
