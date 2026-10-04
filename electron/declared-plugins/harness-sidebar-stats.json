@@ -1,0 +1,14 @@
+{
+  "id": "harness-sidebar-stats",
+  "name": "侧栏会话统计",
+  "version": "1.0.0",
+  "description": "在侧栏中部显示一行会话统计。演示 sidebar.middle 插槽（工具条下方、会话列表之上）。默认停用。",
+  "enabled": false,
+  "slots": [
+    {
+      "slot": "sidebar.middle",
+      "order": 700,
+      "text": "这一行来自 electron/declared-plugins/harness-sidebar-stats.json —— 声明式插件挂到侧栏中部插槽。同目录再放一份 JSON 就能加第二个，无需重新构建。"
+    }
+  ]
+}

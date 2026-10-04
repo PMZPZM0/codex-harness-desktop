@@ -1667,7 +1667,7 @@ export async function run() {
         // ④ 已登记的插槽位不许被删（10-04 补齐扩展面时钉死）
         //    ⛔ 为什么单独钉：插槽是**机制**，删掉消费点不会报任何错（Slot 返回 null 即可），
         //    但扩展面就少了一块 —— 而少了一个插槽是那种没人会主动提的退化。
-        const EXPECTED_SLOTS = ["settings.general.bottom", "settings.devtools.bottom", "topbar.end", "overlay.root", "sidebar.top", "sidebar.thread-row-actions"];
+        const EXPECTED_SLOTS = ["settings.general.bottom", "settings.devtools.bottom", "topbar.end", "overlay.root", "sidebar.top", "sidebar.thread-row-actions", "sidebar.middle"];
         // ⛔⛔ 这里**不能**复用 walkFeat253：它的正则只收 `.ts`，**不收 `.tsx`** ——
         //   而插槽消费点全在 tsx 里（00-settings-registry.tsx / AppView.tsx / 01-sidebar-shell.tsx）
         //   ⇒ 复用它会扫到 0 个文件，于是「缺失」恒为全部（假红）。本项目已踩同型坑四次
@@ -1869,7 +1869,7 @@ export async function run() {
         // ⚠️ 不能复用【268】块内的 EXPECTED_SLOTS —— 那是块级局部const，出块即不可见（ESM/模块作用域）。
         // 两处必须同源，所以**共同真相源改成 electron/declared-plugins.ts 的 KNOWN_SLOTS**，
         // 【268】那条断言另有一层含义（插槽消费点必须在 tsx 里），两边判据不同、名单同源。
-        const expected = ["settings.general.bottom", "settings.devtools.bottom", "topbar.end", "overlay.root", "sidebar.top", "sidebar.thread-row-actions"];
+        const expected = ["settings.general.bottom", "settings.devtools.bottom", "topbar.end", "overlay.root", "sidebar.top", "sidebar.thread-row-actions", "sidebar.middle"];
         const drift = expected.filter((id) => !slotIds.includes(id));
         (drift.length === 0 && slotIds.length > 0 ? ok : fail)(
           `【271】声明式插件可用的插槽位与守卫【268】的登记一致（${slotIds.length} 个）`
