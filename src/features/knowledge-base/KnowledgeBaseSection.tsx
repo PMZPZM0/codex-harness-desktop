@@ -19,6 +19,7 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<KbHit[] | null>(null);
+  const [semantic, setSemantic] = useState<boolean | null>(null);
   const [busy, setBusy] = useState("");
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteTitle, setPasteTitle] = useState("");
@@ -62,7 +63,14 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
   const doSearch = async () => {
     if (!query.trim()) { setHits(null); return; }
     setBusy("search");
-    try { setHits(await window.codex.searchKnowledge({ workspace, query, limit: 12 })); }
+    try {
+      /* kb:search 返回 { hits, semantic }（10-01 第三步）：semantic=true 表示带上了语义向量档
+         （供应商 /embeddings 可用），false = 纯全文（embedding 不可用时自动回落，不报错）。 */
+      const result = await window.codex.searchKnowledge({ workspace, query, limit: 12 }) as any;
+      const list = Array.isArray(result) ? result : (result?.hits ?? []);
+      setHits(list);
+      setSemantic(Array.isArray(result) ? null : Boolean(result?.semantic));
+    }
     catch (error: any) { setNotice(`检索失败：${error?.message ?? error}`); }
     finally { setBusy(""); }
   };
@@ -107,6 +115,8 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
       )}
 
       {hits !== null ? (
+        <>
+        {semantic !== null ? <p className="muted kb-mode">{semantic ? "语义 + 全文双档检索（供应商 embedding 可用）" : "全文检索（供应商 embedding 不可用时的自动回落）"}</p> : null}
         hits.length ? (
           <div className="kb-hits">
             {hits.map((hit, index) => (
@@ -118,6 +128,7 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
             ))}
           </div>
         ) : <p className="muted">没有命中的内容——换个关键词，或确认相关文档已导入。</p>
+        </>
       ) : (
         docs.length ? <div className="kb-docs">
           {docs.map((doc) => (
