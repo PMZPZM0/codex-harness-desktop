@@ -454,6 +454,21 @@ const CHECKS = [
     run: async (h) => {
       // 为什么真跑：这三件事全是"改坏了不会报错、只会悄悄变难看"的类型 ——
       // 顺序靠 flex 排、动画靠属性选择器命中 DOM，tsc 与静态守卫都看不见最终像素。
+      /* ⛔ 先把宿主自己的引导浮层关掉再测拖选：10-05 排查"松手不弹"排了半天，真因是
+         **环境体检弹窗盖在时间线上**，按坐标拖的那一下选到的是弹窗里的字（`.env-check-row`），
+         浮条按规则正确地没弹 —— 不是应用的错，是测试的前置状态脏了。
+         ⛔ 不能用 `h.clickByText("全部稍后再说")`：这一项**跑到拖选那一步才需要它**，而体检是
+         启动后异步扫完才弹的 —— 开头点的那一次常常还没出现（10-05 实测 covered 全是 env-check-row）。
+         所以做成可重入的：开头关一次，拖选前再关一次。 */
+      const dismissOverlays = async () => {
+        const closed = await h.eval(`(function(){ const box=document.querySelector(".env-check-modal");
+          if(!box) return 0; const b=[...box.querySelectorAll("button")].find((x)=>/全部稍后再说/.test(x.textContent||""));
+          if(!b) return -1; b.click(); return 1; })()`);
+        await h.waitFor(`!document.querySelector(".env-check-modal")`, { label: "环境体检弹窗已关闭", timeoutMs: 4000 })
+          .then(() => true).catch(() => false);
+        return closed;
+      };
+      await dismissOverlays();
       /* 前置：应用启动时停在新任务（时间线是空的），必须先开一个**有历史**的会话。
          ⛔ 点 `.thread-row` 那个 div 不生效 —— 真正绑 onClick 的是行里面的按钮（10-05 实测：
          点 div 之后 .message 数量仍是 0，看着像"脚部没渲染"，其实根本没切会话）。
@@ -482,20 +497,37 @@ const CHECKS = [
          另一条消息的 idle 态，看着像"反馈没生效"）。 */
       const stage1 = await h.eval(`(function(){
         const b=document.querySelector(".user-message-footer .message-footer .message-action-default");
-        if(!b) return {found:false}; window.__fbBtn=b; b.click(); return {found:true}; })()`);
-      /* 成功态窗口只有 1.1 秒，而 waitFor 每 300ms 轮询一次 ⇒ 不能"先等 done 再固定 sleep"，
-         要直接等到**样式稳定**（transition 120ms 走完、opacity 到 1），仍在窗口内。 */
-      const settled = await h.waitFor(`(function(){ const b=window.__fbBtn; if(!b) return false;
-        const cs=getComputedStyle(b); return b.getAttribute("data-phase")==="done" && cs.opacity==="1"; })()`,
-        { label: "第一段：成功态且样式已稳定", timeoutMs: 1000 }).then(() => true).catch(() => false);
-      const done = await h.eval(`(function(){ const b=window.__fbBtn; const cs=getComputedStyle(b);
-        return {phase:b.getAttribute("data-phase"), title:b.title, anim:cs.animationName, color:cs.color, opacity:cs.opacity,
-          hasCheck: !!b.querySelector("svg.lucide-check")}; })()`);
+        if(!b) return {found:false}; window.__fbBtn=b; const r={found:true, color:getComputedStyle(b).color, opacity:getComputedStyle(b).opacity}; b.click(); return r; })()`);
+      /* ⛔ 判定与取值必须在**同一次求值**里完成：成功窗口只有 1.1 秒，命中后再发一次 eval 就可能
+         读到回位之后的值 —— 10-05 就出现过 phase=done 却 opacity=0.5 的"自相矛盾"读数，那是读早晚
+         的问题，不是样式没生效。
+         ⛔ 也不能借 h.waitFor 轮询：它固定 300ms 一次、且只回真假，一旦某次读数差一点就整条 null，
+         看不出到底是哪一项没到（10-05 在这一步假失败过一次，排查半天只能自己写轮询把每次读数留下）。 */
+      let done = null, seen = null;
+      for (let poll = 0; poll < 8 && !done; poll++) {
+        /* ⛔ 读数前把这一颗按钮的 transition **临时关掉**再取 computed style：过渡值是按帧推进的，
+           页面被后台化 / 主线程被引擎占住时它会**停在中间值**（10-05 实测：同一份代码单跑读到 1，
+           在 `npm run verify` 里停在 0.704 且 8 次轮询都没走完）。停在中间值不是样式没生效，
+           所以判"生效了没有"要看**目标值** —— 关掉过渡取到的就是最终值，与帧调度彻底无关。 */
+        const read = await h.eval(`(function(){ const b=window.__fbBtn; if(!b) return {missing:true};
+          const prev=b.style.transition; b.style.transition="none"; const cs=getComputedStyle(b);
+          const s={phase:b.getAttribute("data-phase"), title:b.title, anim:cs.animationName, color:cs.color,
+            opacity:cs.opacity, hasCheck:!!b.querySelector("svg.lucide-check")};
+          b.style.transition=prev;
+          if(s.phase==="done" && s.hasCheck && Number(s.opacity)>0.9) return {settled:s};
+          return {seen:s}; })()`);
+        if (read?.settled) done = read.settled;
+        else if (read?.seen) seen = read.seen;
+        await wait(110);
+      }
+      const settled = !!done;
       h.check("③ 第一段反馈：图标换成对勾、CSS 动画真的命中（选择器与 data-phase 对得上）",
-        stage1?.found === true && done?.phase === "done" && done?.anim === "message-action-pop" && done?.hasCheck === true, JSON.stringify(done));
+        stage1?.found === true && done?.phase === "done" && done?.anim === "message-action-pop" && done?.hasCheck === true,
+        JSON.stringify({ done, seen }).slice(0, 220));
       h.check("④ 成功态文案改口 + 不 hover 也看得见（收藏/引用是 hover 项，点了之后鼠标移开也要能看到反馈）",
-        settled === true && /已复制/.test(String(done?.title ?? "")) && done?.opacity === "1"
-          && /47, 107, 221|124, 171, 248/.test(String(done?.color ?? "")), JSON.stringify(done).slice(0, 180));
+        settled === true && /已复制/.test(String(done?.title ?? "")) && Number(done?.opacity) > 0.9
+          && Number(done?.opacity) > Number(stage1?.opacity ?? 0) && String(done?.color) !== String(stage1?.color),
+        JSON.stringify({ before: { color: stage1?.color, opacity: stage1?.opacity }, done, seen }).slice(0, 260));
       await wait(1500);
       const stage2 = await h.eval(`(function(){ const b=window.__fbBtn; const cs=getComputedStyle(b);
         return {phase:b.getAttribute("data-phase"), anim:cs.animationName, title:b.title, hasCopy: !!b.querySelector("svg.lucide-copy")}; })()`);
@@ -552,13 +584,75 @@ const CHECKS = [
           labels:[...b.querySelectorAll("button")].map((x)=>(x.textContent||"").trim()),
           inView:r.top>=0 && r.left>=0 && r.right<=window.innerWidth && r.height>0,
           gapToSel: last?Math.round(Math.abs(r.bottom-last.top)):null, scrim:!!document.querySelector(".selection-action-scrim")}; })()`);
-      h.check("⑧ 在消息区选中文字会自动弹出浮条，两个动作齐全（复制 / 添加到对话）",
+      h.check("⑧ 在消息区选中文字会自动弹出浮条，三个动作齐全（选整条 / 复制 / 添加到对话）",
         selected?.ok === true && barUp === true && bar?.found === true
-          && JSON.stringify(bar?.labels) === '["复制","添加到对话"]', JSON.stringify({ selected, bar }).slice(0, 220));
-      h.check("⑨ 浮条 portal 到 body、贴着选区末行（≤44px）、轻浮层档且在视口内",
+          && JSON.stringify(bar?.labels) === '["选整条","复制","添加到对话"]', JSON.stringify({ selected, bar }).slice(0, 220));
+      h.check("⑨ 浮条 portal 到 body、贴着选区末行（≤44px）、轻浮层档且在视口内；⛔ 没有全屏遮罩（它会抢走拖选命中）",
         bar?.parent === "BODY" && bar?.pos === "fixed" && bar?.z === "1001" && bar?.inView === true
-          && Number(bar?.gapToSel) >= 0 && Number(bar?.gapToSel) <= 44 && bar?.scrim === true, JSON.stringify(bar));
-      await h.screenshot("selection-bar");   // 留一张"浮条正浮在选区上"的图给人看
+          && Number(bar?.gapToSel) >= 0 && Number(bar?.gapToSel) <= 44 && bar?.scrim === false, JSON.stringify(bar));
+      /* ⑩ 真拖选回归（10-05 用户：「拖动的时候一直闪全选内容，停下来又不闪」）：
+         按下 → 连续移动 → **过程中浮条必须一次都不出现**，松手后才弹一次；
+         同时验证选区真的建起来了（上一版的全屏遮罩会把命中目标抢走，选区被反复重置 = 闪）。 */
+      /* ⛔ 这一段的页面侧代码**不能有 await 循环**：`h.eval` 的 CDP 回包上限 20 秒，而长会话里
+         够长的文本节点有几百个，「逐个 scrollIntoView + sleep 320ms」扫到第 60 个就超时
+         （10-05 实测：`CDP Runtime.evaluate 超时`）。改成一次同步扫描挑**已经在视口里**的那一行，
+         顶多再滚一格重扫。 */
+      /* ⛔ 拖之前先把上一轮的选区清掉：浮条还浮在那儿，`elementFromPoint` 就会命中浮条自己，
+         每一行都被"命中不在时间线内"筛掉 ⇒ dragFrom 恒为 null 的假失败（10-05 实测）。 */
+      await h.eval(`(function(){ window.getSelection()?.removeAllRanges(); return 1; })()`);
+      await h.waitFor(`!document.querySelector(".selection-action-bar")`, { label: "上一轮浮条已收起", timeoutMs: 3000 })
+        .then(() => true).catch(() => false);
+      await dismissOverlays();   // 体检是异步扫完的，可能正好这会儿冒出来
+      /* ⛔ 取点用**行矩形**（getClientRects 的每一行），不用整个文本节点的联合矩形：
+         多行段落的联合矩形左边界属于最宽那一行，按 (left+2, 竖直中心) 取的那一点常落在**行与行之间**，
+         命中的是覆盖在正文上的元素（消息定位尺那一类），于是每一行都被"命中不在时间线内"筛掉
+         —— 10-05 实测 dragFrom 恒为 null（scanned 726 / covered 9）就是这个坑。 */
+      const dragScan = (scroll) => h.eval(`(function(){
+        const host=document.querySelector(".timeline"), wrap=document.querySelector(".timeline-wrap");
+        if(!host||!wrap) return {why:"没有 .timeline / .timeline-wrap"};
+        if(${scroll}) wrap.scrollTop=Math.max(0, wrap.scrollTop+(${scroll}));
+        const stat={scanned:0, noBody:0, offscreen:0, covered:[], found:null};
+        const w=document.createTreeWalker(host, NodeFilter.SHOW_TEXT); let n;
+        while((n=w.nextNode())){ stat.scanned++;
+          const t=(n.textContent||"").trim(); if(t.length<24) continue;
+          const el=n.parentElement; if(!el) continue;
+          // 只从正文里挑：脚部/按钮/浮条自己的字拖不出选区
+          if(!el.closest(".message-body") || el.closest("button, .message-footer, .selection-action-bar, style, script")) { stat.noBody++; continue; }
+          const pr=document.createRange(); pr.selectNodeContents(n);
+          const rects=[...pr.getClientRects()].filter((r)=>r.width>30 && r.height>6);
+          for(const r of rects){
+            if(r.top<90 || r.bottom>window.innerHeight-90) { stat.offscreen++; continue; }
+            const x=Math.round(r.left+4), y=Math.round(r.top+r.height/2);
+            const hit=document.elementFromPoint(x, y);
+            const label=hit ? (hit.tagName+"."+String(hit.className).slice(0,18)) : "无";
+            // ⛔ 该点必须真的落在这行字（或它的祖先）上：有弹窗/覆盖层压着时按坐标拖会选到别人的字
+            if(!hit || !wrap.contains(hit) || !(hit===el || el.contains(hit) || hit.contains(el))) { stat.covered.push(label); continue; }
+            stat.found={x:x, y:y, to:Math.round(r.right-4), hit:label, text:t.slice(0,16)}; break;
+          }
+          if(stat.found) break; }
+        return stat; })()`);
+      const dragProbe = await dragScan(0);
+      if (!dragProbe?.found) dragProbe.found = (await dragScan(-260)).found ?? null;
+      const dragFrom = dragProbe?.found ?? null;
+      let during = null, afterRelease = null, draggedLen = null;
+      if (dragFrom) {
+        await h._send("Input.dispatchMouseEvent", { type: "mousePressed", x: dragFrom.x, y: dragFrom.y, button: "left", clickCount: 1 });
+        for (let step = 1; step <= 10; step++) {
+          await h._send("Input.dispatchMouseEvent", { type: "mouseMoved", x: Math.min(dragFrom.to, dragFrom.x + step * 24), y: dragFrom.y, button: "left", buttons: 1 });
+          await wait(25);   // 全程远短于 220ms 的防抖窗口？不：每动一下都重置计时 ⇒ 过程里一次都不渲染
+        }
+        during = await h.eval(`!!document.querySelector(".selection-action-bar")`);
+        draggedLen = await h.eval(`(window.getSelection()||{toString:()=>""}).toString().length`);
+        await h._send("Input.dispatchMouseEvent", { type: "mouseReleased", x: dragFrom.to, y: dragFrom.y, button: "left", clickCount: 1 });
+        await wait(600);
+        afterRelease = await h.eval(`!!document.querySelector(".selection-action-bar")`);
+      }
+      h.check("⑩ 真拖选：过程中浮条一次都不闪，松手才弹一次，且选区真的建起来了（遮罩不再抢命中）",
+        !!dragFrom && during === false && afterRelease === true && Number(draggedLen) > 4,
+        JSON.stringify({ dragFrom, during, afterRelease, draggedLen, scanned: dragProbe?.scanned, noBody: dragProbe?.noBody, offscreen: dragProbe?.offscreen, covered: (dragProbe?.covered ?? []).slice(0, 4), why: dragProbe?.why }).slice(0, 260));
+      await h.screenshot("selection-bar");   // 趁浮条还贴着选区留一张图给人看（⛔ 清选区之后就拍不到了）
+      await h.eval(`(function(){ window.getSelection()?.removeAllRanges(); return 1; })()`);
+      await wait(400);
       /* ⛔ 真鼠标点击（按坐标发 mousePressed/mouseReleased），不用 el.click()：
          合成点击**绕过命中测试**，"浮条被别的东西盖住、点不动"这种问题它永远测不出来
          —— 上一版就是因此全绿、用户一上手就点不动（10-05）。 */
@@ -573,33 +667,70 @@ const CHECKS = [
         await h._send("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", clickCount: 1 });
         return { point, ...hit };
       };
-      const copyClicked = await realClick(0);
-      const copyFeedback = await h.waitFor(`(function(){ const b=document.querySelector(".selection-action-bar button");
+      /* 每一轮点按钮前都要**重新选一次字**：上一轮的收尾会清掉选区（浮条跟着收），
+         不重选就变成"点一个不存在的按钮"，测出来是假失败（10-05）。 */
+      const barAgain = async (label) => {
+        const found = await selectIn();
+        const up = await h.waitFor(`!!document.querySelector(".selection-action-bar")`, { label, timeoutMs: 4000 })
+          .then(() => true).catch(() => false);
+        return { found, up };
+      };
+      /* ⑩「选整条消息」：真点之后**选区必须真的变大**，而且不能把操作条的字一起选进去 ——
+         agent 消息的 MessageFooter 就渲染在 .message-body 里面（ItemView.tsx:184），
+         整块 selectNodeContents 就会连「复制 / 分支 / 15:16」一起进选区。 */
+      const wholeRound = await barAgain("选整条那一轮浮条");
+      const beforeLen = await h.eval(`(window.getSelection()||{toString:()=>""}).toString().replace(/\\s+/g,"").length`);
+      const wholeClicked = await realClick(0);
+      /* ⛔ "扩到整条"的尺子用**独立量出来的这条消息正文长度**，不用"比原来多 8 个字"：
+         会话里很短的消息（这条就 22 字）会卡在阈值上，差一个字就是假失败（10-05 实测 len=22 / 要求 >22）。
+         留 25% 余量是因为代码块一类 `user-select:none` 的区域进不了文档选区，却算在 textContent 里。 */
+      const whole = await h.eval(`(function(){ const s=window.getSelection(); const t=s?s.toString():"";
+        const n=s&&s.anchorNode; const el=n?(n.nodeType===1?n:n.parentElement):null;
+        const msg=el&&el.closest&&el.closest(".message"); const body=msg&&(msg.querySelector(".message-body")||msg);
+        const flat=(x)=>String(x||"").replace(/\\s+/g,"").length;
+        const foot=body? [...body.querySelectorAll(".message-footer, .user-message-footer")].map((f)=>flat(f.textContent)).reduce((a,b)=>a+b,0) : 0;
+        return {len:flat(t), tail:t.trim().slice(-14), inMessage:!!msg,
+          expected: body? flat(body.textContent)-foot : -1,
+          barStillUp:!!document.querySelector(".selection-action-bar")}; })()`);
+      h.check("⑪「选整条消息」选区真的扩到整条、落在同一条消息里，且浮条不立刻消失（反馈看得见）",
+        wholeRound?.up === true && wholeClicked?.onBar === true
+          && Number(whole?.len) > Number(beforeLen)
+          && Number(whole?.len) >= Math.min(Number(whole?.expected) * 0.75, 20)
+          && whole?.inMessage === true && whole?.barStillUp === true,
+          JSON.stringify({ beforeLen, expected: whole?.expected, len: whole?.len, up: wholeRound?.up, clicked: wholeClicked?.at }).slice(0, 220));
+      h.check("⑫ 扩出来的文本尾部不含操作条的字（复制 / 分支 / 时间）",
+        !/(复制|分支|已复制|\d{1,2}:\d{2})$/.test(String(whole?.tail ?? "")), `tail=${JSON.stringify(whole?.tail)}`);
+      await h.waitFor(`!document.querySelector(".selection-action-bar")`, { label: "反馈播完后自动收起", timeoutMs: 3000 })
+        .then(() => true).catch(() => false);
+      /* ⑫ 复制（真鼠标，按坐标打）*/
+      const copyRound = await barAgain("复制那一轮浮条");
+      const copyClicked = await realClick(1);
+      const copyFeedback = await h.waitFor(`(function(){ const b=[...document.querySelectorAll(".selection-action-bar button")][1];
         return !!b && b.getAttribute("data-phase")==="done" && !!b.querySelector("svg.lucide-check"); })()`,
         { label: "真点击后进入成功态", timeoutMs: 900 }).then(() => true).catch(() => false);
       await h.waitFor(`!document.querySelector(".selection-action-bar")`, { label: "反馈播完后自动收起", timeoutMs: 3000 })
         .then(() => true).catch(() => false);
-      h.check("⑩ 真鼠标点得到（命中测试落在浮条自己的按钮上）+ 反馈看得见、播完才自动收起",
-        !!copyClicked?.point && copyClicked?.onBar === true && copyFeedback === true, JSON.stringify(copyClicked));
-      const appended = await selectIn();
-      const barUp2 = await h.waitFor(`!!document.querySelector(".selection-action-bar")`, { label: "第二次弹出浮条", timeoutMs: 4000 })
-        .then(() => true).catch(() => false);
-      const appendClicked = await realClick(1);
+      h.check("⑬ 真鼠标点得到复制（命中测试落在浮条自己的按钮上）+ 反馈看得见、播完才自动收起",
+        copyRound?.up === true && !!copyClicked?.point && copyClicked?.onBar === true && copyFeedback === true,
+        JSON.stringify({ copyRound, copyClicked, copyFeedback }).slice(0, 220));
+      /* ⑬ 添加到对话 */
+      const appendRound = await barAgain("添加到对话那一轮浮条");
+      const appendClicked = await realClick(2);
       const quoteUp = await h.waitFor(`!!document.querySelector(".quote-bar")`, { label: "引用条出现", timeoutMs: 4000 })
         .then(() => true).catch(() => false);
       const quoted = await h.text(".quote-bar-text").catch(() => "");
       await h.eval(`(function(){ document.querySelector('.quote-bar button[title="取消引用"]')?.click(); return 1; })()`);
       await wait(400);
       const quoteCleared = await h.eval(`!!document.querySelector(".quote-bar")`);
-      h.check("⑪「添加到对话」= 复用输入框上方那条可取消的引用条（不另造第二份引用实现），取消后清干净",
-        appended?.ok === true && barUp2 === true && appendClicked?.onBar === true && quoteUp === true && String(quoted).trim().length > 0 && quoteCleared === false,
-        JSON.stringify({ chosen: appended?.chosen, barUp2, appendClicked, quoted: String(quoted).slice(0, 30), quoteCleared }));
+      h.check("⑭「添加到对话」= 复用输入框上方那条可取消的引用条（不另造第二份引用实现），取消后清干净",
+        appendRound?.found?.ok === true && appendRound?.up === true && appendClicked?.onBar === true && quoteUp === true && String(quoted).trim().length > 0 && quoteCleared === false,
+        JSON.stringify({ chosen: appendRound?.found?.chosen, appendRound: appendRound?.up, appendClicked, quoted: String(quoted).slice(0, 30), quoteCleared }).slice(0, 240));
       // 收尾：清掉测试留下的选区，否则浮条会出现在截图里、也会挡后面几项
       await h.eval(`(function(){ window.getSelection()?.removeAllRanges(); return 1; })()`);
       await wait(400);
       // 截图前关掉宿主自己的引导浮层（环境体检），否则挡住时间线看不清
-      await h.clickByText("全部稍后再说").catch(() => undefined);
-      await wait(900);
+      await dismissOverlays();
+      await wait(400);
       await h.screenshot("message-feedback");
     },
   },
