@@ -39,6 +39,7 @@ import { applyPetSettings } from "./pet-window";
 // ── 由 main.ts 注入的顶层依赖（同名声明 ⇒ 块体保持逐字不变）──
 let codexHome!: any;
 let loadDeletedThreads!: any;
+let deletedThreadIds!: any;
 let responsesBridge!: any;
 let userSkillsDir!: any;
 let ensureBuiltinReviewer!: any;
@@ -156,6 +157,7 @@ export function bindBoot(deps: Record<string, any>) {
   readChannelBot = deps.readChannelBot;
   codexHome = deps.codexHome;
   loadDeletedThreads = deps.loadDeletedThreads;
+  deletedThreadIds = deps.deletedThreadIds;
   responsesBridge = deps.responsesBridge;
   userSkillsDir = deps.userSkillsDir;
   ensureBuiltinReviewer = deps.ensureBuiltinReviewer;
@@ -409,6 +411,13 @@ export async function bootApp() {
           // ⛔ 引擎侧发起的删除（不经渲染层 thread/delete 请求）同样要清磁盘残留 + 记墓碑，
           //   否则侧栏的 rollout 兜底扫描在下次启动把它捞回来（见 purgeDeletedThread 注释）。
           if (event.method === "thread/deleted") void purgeDeletedThread(goneId).catch(() => undefined);
+          /* 10-05：委托登记表里的记录**跟着会话一起走** —— 记录是「这个会话被委派过」的凭证，
+             会话都没了它就只是幽灵 ⇒ 办公室里会多一个点不开的人（用户 10-05 报的那个）。
+             ⛔ 归档**不清**：归档是"收起"（记录要留着防重复询问），删除才是"不存在了"。
+             ⚠️ 另一条删除入口在 features/codex-ipc.ts（渲染层发起的 thread/delete）—— 两处都要有。 */
+          if (event.method === "thread/deleted") void delegateRegistry.forget([goneId]).then((n: number) => {
+            if (n) broadcastHarnessEvent({ type: "delegates-changed", threadId: goneId } as any);
+          }).catch(() => undefined);
           void (async () => {
             const changed = event.method === "thread/deleted"
               ? await threadRuntimeStore.remove(goneId)
@@ -602,6 +611,17 @@ export async function bootApp() {
       const orphanDelegates = await delegateRegistry.reconcileRunning();
       if (orphanDelegates) console.log(`[delegate] 启动自愈：${orphanDelegates} 条残留「运行中」调度记录已收成 failed（治理残留运行中记录）`);
     } catch (error) { console.warn("delegate registry reconcile failed:", error); }
+    /* 10-05 补齐两件遗留（登记表只增不减）：
+       · forgetDeleted —— 「线程已被删除」但记录还在的幽灵。删除事件可能发生在应用**没运行**时
+         （手机上删的、另一个实例删的），事件早没了 ⇒ 拿墓碑集合对账（与侧栏过滤同源）。
+       · prune —— 7 天保留期之前**从未被调用过**（方法写好了但没有调用点）。
+       都必须包 try/catch：裸 await 抛出会掐死整条启动链（界面能开、引擎不 spawn）。 */
+    try {
+      const ghosts = await delegateRegistry.forgetDeleted(deletedThreadIds);
+      if (ghosts) console.log(`[delegate] 启动对账：${ghosts} 条指向已删除会话的委托记录已清理`);
+      const expired = await delegateRegistry.prune();
+      if (expired) console.log(`[delegate] 启动清理：${expired} 条过期（>7 天）委托记录已丢弃`);
+    } catch (error) { console.warn("delegate registry cleanup failed:", error); }
     await server.start();
   } catch (error) {
     broadcastCodexEvent({ kind: "status", status: "error", message: String(error) });

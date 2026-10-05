@@ -164,6 +164,36 @@ export class DelegateRegistry {
     return count;
   }
 
+  /** 忘掉若干条记录（10-05）：**会话被删除**时调用。
+   *  ⛔ 与 `markArchived` 的区别必须分清：**归档** = 用户明确"收起它"，记录要留着（防重复询问、
+   *     也留作审计）；**删除** = 这个东西不存在了，记录必须跟着走 —— 否则登记表里留着一条指向
+   *     已不存在会话的**幽灵记录**，办公室会凭空多一个点不开的人、侧栏标记也可能残留
+   *     （用户 10-05 报的正是办公室；侧栏那条链因为用 `listThreads ∩ delegateRecords` 天然规避了）。 */
+  async forget(threadIds: string[]): Promise<number> {
+    await this.load();
+    let count = 0;
+    for (const raw of threadIds) {
+      const key = String(raw ?? "");
+      if (!key || !this.map[key]) continue;
+      delete this.map[key];
+      this.activeThreads.delete(key);
+      count += 1;
+    }
+    if (count) this.scheduleSave();
+    return count;
+  }
+
+  /** 启动对账（10-05）：把「线程已被删除」的残留记录一次性忘掉。
+   *  ⛔ 光靠 `thread/deleted` 事件不够 —— 那次删除可能发生在应用**没运行**的时候
+   *    （手机上删的 / 上次退出前删的），事件早没了 ⇒ 只能拿**墓碑集合**对账。
+   *  入参就是 `thread-deletion.ts` 的 `deletedThreadIds`（小写 id），与侧栏过滤**同源**。 */
+  async forgetDeleted(deadIds: Set<string>): Promise<number> {
+    await this.load();
+    const dead: string[] = [];
+    for (const key of Object.keys(this.map)) if (deadIds.has(key.toLowerCase())) dead.push(key);
+    return dead.length ? this.forget(dead) : 0;
+  }
+
   /** 清理过期的已完成记录（运行中的不动；已归档的保留到同样期限，用于防重复询问） */
   async prune(now: number = Date.now()): Promise<number> {
     await this.load();

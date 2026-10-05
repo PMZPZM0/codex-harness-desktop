@@ -394,6 +394,7 @@ FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）· Playwright 内核�
 | rpa_save / rpa_run | dynamicTools | 保存自动化流程为 RPA 配方 / 列出并执行已存配方（逐步复现） |
 | task_add / task_update | dynamicTools | 维护用户任务清单（新增/改状态/列出/删除） |
 | agent_ask | dynamicTools | 向用户展示选项卡等待选择（第一项为推荐），用于关键决策确认 |
+| harness_tools | dynamicTools（**能力网关**，10-05） | 调其余内置能力：`scheduler_*`（定时任务）/ `knowledge_*`（知识库）/ `ui_component_*`（组件库）/ `video_*` / `voice_generate` / `workflow_*` / `expert_list` / `expert_save` / `subagent_save` / `connector_register`。传 `name` + `args`；⛔ 参数拿不准先 `name="list"` 取清单。执行端 = IPC `agents:dispatch-call` → `dispatchRpcCall`（与内置 MCP 同一套）。⛔ `agent_invoke` / `agent_archive_sessions` / `image_generate` 有专用工具，**不在**网关里 |
 
 > ⛔⛔ **内置 MCP（harness-dispatch）的工具在引擎 0.157 里不再直接可调**（10-05 实测定性，用户报「调度工具用不了」的根因）：
 >   · 引擎把 MCP 工具改为**延迟暴露** —— `input[0].additional_tools` 里只有 `functions` / `clock` / `collaboration`
@@ -404,11 +405,18 @@ FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）· Playwright 内核�
 >   · 复现方法：起**独立 `CODEX_HOME`**（隔离，不碰用户会话）+ 把 `model_provider` 指向一个本地 mock HTTP 服务，
 >     截获引擎真实请求体 —— 工具面在 `input[0]`（`type:"additional_tools"`）的 `tools[]` 里，直接数 `name` 即可。
 >     （隔离起真实 app-server 的握手套路见技能 `codex-engine-config-probe`；判定「某个名到底在不在工具面」必须这样实测，读代码会漏。）
->   ⇒ 所以 `scheduler_*` / `knowledge_*` / `ui_component_*` / `video_*` / `workflow_*` / `voice_generate` /
->     `expert_save` / `subagent_save` / `connector_register` / `expert_list` 这些**当前都不在模型工具面里**
->     （宿主指令里那句「if it is in your tool list」的判据因此恒假，能力静默降级）。
->     要恢复它们得把内置 MCP 的工具面**镜像成 dynamicTools**（并给 `dispatchRpcCall` 补一条显式 callerThreadId
->     入参 —— 它的身份证据来自 MCP 路径才有的 `dispatchProbes`），属**未开工的架构欠账**，改前先问用户。
+>   ⇒ **10-05 已用「能力网关」重新接回**：宿主注册 1 个网关工具 **`harness_tools`**
+>     （`part08/01-seg.tsx` 注册 → `part05/event-router/02-request.tsx` 分发 → IPC `agents:dispatch-call`
+>     → **原样转给 `dispatchRpcCall`**，与内置 MCP 共用同一套实现与闸）。模型传 `name` + `args` 调用；
+>     `name="list"` 返回全部能力 + 参数 schema。
+>   · ⛔ **为什么是 1 个网关而不是 19 个独立工具**：工具面**每次请求**都要带上 ⇒ 19 份 schema 是常驻
+>     token 成本，还会挤掉真正重要的工具；且主进程以后新增 MCP 工具时**渲染层不用改**。参数说明按需取。
+>   · ⛔ `agent_invoke` / `agent_archive_sessions` / `image_generate` **不在网关里** —— 它们已有专用
+>     dynamicTool。同一个能力挂两个名字，模型只会用最直白的那个、另一套被绕过（项目踩过：`subagent_invoke`）。
+>   · ⛔ **身份两条路径都要是引擎事实**：网关的 `callerThreadId` 取 `item/tool/call` 的 `params.threadId`
+>     （模型伪造不了）；MCP 路径仍靠 `dispatchProbes` 旁证。⛔ 别在渲染层"顺手"补一个模型可见的入参。
+>   · ⛔ **老会话要切走再切回**（dynamicTools 只在 `thread/start` / `resume` 生效）。
+>   · 守卫 `scripts/guards/11i-capability-gateway.mjs`（16 条）钉住接线；`11j` 钉「内置示范插件一律默认停用」。
 
 > ⛔ 上表的**权威来源是代码**：MCP 工具见 `electron/features/dispatch-core.ts` 的工具数组（改完跑 `npm run gen:ipc` 会同步进 `harness-api` 技能），命令行能力见 `electron/developer-instructions.ts`。表里对不上的名字以代码为准（09-29 发现本表长期把命令行能力 `generate_image` 写成"工具"，且漏了后来新增的调度/媒体工具）。
 > ⛔ **生图生视频的完整用法**读两个内置技能：`image-generation`（提示词五段结构 / 尺寸选择 / 变体策略 / 一致性）、`video-generation`（模式路由 / 8 家厂商矩阵 / 去漂移 / 失败修复 / 成片拼接）。

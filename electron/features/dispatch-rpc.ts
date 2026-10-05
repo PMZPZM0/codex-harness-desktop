@@ -28,18 +28,23 @@ import { mutableState, readBuiltinPlugins, scheduler } from "../main";
 import { generateImageResilient } from "./builtin-ipc";
 import { uiverseSearch, uiverseGet } from "./uiverse-library";
 import { concatVideosCore, downloadVideoCore, findVideoJob, listVideoJobs, pollVideoCore, rememberVideoJob, submitVideoCore, updateVideoJob, videoProviderViews } from "./video-gen";
-export async function dispatchRpcCall(name: unknown, args: Record<string, unknown>): Promise<{ ok: boolean; output?: string; error?: string }> {
-  // ── 旁证：引擎把调用转发给 MCP 服务器的同一时刻会发 item/started 事件（含真实 threadId）。
-  // 用「参数指纹」对上号，拿到的才是**引擎认定的调用者**——模型谎报身份也绕不过。
+export async function dispatchRpcCall(name: unknown, args: Record<string, unknown>, explicitCallerThreadId?: string): Promise<{ ok: boolean; output?: string; error?: string }> {
+  /* ── 调用者身份有两条来源，**都要**是引擎侧的事实，模型伪造不了：
+     · 旁证路径（内置 MCP，`explicitCallerThreadId` 不传）：引擎把调用转发给 MCP 服务器的同一时刻
+       会发 item/started 事件（含真实 threadId）。用「参数指纹」对上号。
+     · 显式路径（10-05 能力网关，见文件末尾 dispatchGatewayTools）：渲染层从 `item/tool/call` 的
+       `params.threadId` 直接带过来 —— **更硬**（不用等旁证、也不会被同名参数撞车），且省掉最多 10 秒等待。 */
   const argsKey = stableKey(args);
-  const deadline = Date.now() + 10000;
-  let callerThreadId = "";
-  while (Date.now() < deadline) {
-    const hit = [...dispatchProbes].reverse().find((probe) => probe.argsKey === argsKey && Date.now() - probe.at < 120_000);
-    if (hit) { callerThreadId = hit.threadId; break; }
-    await new Promise((r) => setTimeout(r, 200));
+  let callerThreadId = String(explicitCallerThreadId ?? "");
+  if (!callerThreadId) {
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline) {
+      const hit = [...dispatchProbes].reverse().find((probe) => probe.argsKey === argsKey && Date.now() - probe.at < 120_000);
+      if (hit) { callerThreadId = hit.threadId; break; }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    if (!callerThreadId) return { ok: false, error: "安全校验失败：引擎事件里找不到这次调用" };
   }
-  if (!callerThreadId) return { ok: false, error: "安全校验失败：引擎事件里找不到这次调用" };
 
   if (name === "agent_invoke") {
     const originDispatch = (await threadRuntimeStore.get(callerThreadId))?.dispatch;
@@ -76,14 +81,19 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
       try {
         const record = await delegateRegistry.infoOf(id);
         if (!record || record.archived) continue;
+        /* ⛔ 10-05 归属校验：`threadIds` 是模型可控参数，原来只要登记表里有这条就归档
+           ⇒ 能归档**别的会话**派出的委托（越权）。收口到「**本会话派出的**」。
+           ⛔ 比对的是 `callerThreadId`（引擎旁证认定的调用者）而**不是** `args.originThreadId`
+           —— 后者是模型自己填的，拿它当判据等于让模型自己证明自己。 */
+        if (record.originThreadId !== callerThreadId) { failed.push(id); continue; }
         await server.request("thread/archive", { threadId: id });
         await delegateRegistry.markArchived([id]);
         archived += 1;
       } catch { failed.push(id); }
     }
-    const remaining = await delegateRegistry.listByOrigin(String(args.originThreadId ?? "")).catch(() => []);
+    const remaining = await delegateRegistry.listByOrigin(callerThreadId).catch(() => []);
     broadcastHarnessEvent({ type: "delegates-changed" } as any);
-    const hint = failed.length ? `（${failed.length} 个失败）` : remaining.length ? `（还有 ${remaining.length} 个未归档）` : "";
+    const hint = failed.length ? `（${failed.length} 个失败：不属于本会话或引擎拒绝）` : remaining.length ? `（还有 ${remaining.length} 个未归档）` : "";
     return { ok: true, output: `已归档 ${archived} 个调度会话${hint}。` };
   }
   /* ── 定时任务四件套（09-28）：模型侧真入口 ──────────────────────────────────────
@@ -638,4 +648,37 @@ async function writeDispatchPortFile(port: number): Promise<void> {
   try {
     await fsp.writeFile(path.join(app.getPath("userData"), "dispatch-port.txt"), String(port), "utf8");
   } catch { /* 写失败不影响服务 */ }
+}
+
+/* ── 能力网关（10-05）：把内置 MCP 的工具面**重新**暴露给模型 ────────────────────────────
+   背景：引擎 0.157 起内置 MCP 的工具整批「延迟暴露」（`tool_search_always_defer_mcp_tools`
+   已是 `removed / true`，属永久默认），它们不再出现在发给模型的工具清单里 ⇒ 直接调用一律
+   `unsupported call`。宿主的唯一可见通道是 dynamicTools，而 dynamicTools 只在
+   `thread/start` / `thread/resume` 注册（覆盖不了"中途变化"，但覆盖得了所有新会话与切回的老会话）。
+   ⇒ 这里把 MCP 工具面**镜像成 1 个网关工具** `harness_tools`，执行端**原样复用**
+     `dispatchRpcCall`（同一套实现、同一套闸，不是第二份逻辑）。
+
+   ⛔ 为什么是「一个网关」而不是「19 个独立工具」：
+     ① 工具面**每次请求**都要带上 ⇒ 19 份 schema 是常驻 token 成本，还会挤掉真正重要的工具；
+     ② 以后主进程新增 MCP 工具时，渲染层**不用改**；
+     ③ 参数说明按需取（`name="list"`），不占常驻提示词。
+   ⛔ 为什么排除这三个：`agent_invoke` / `agent_archive_sessions` / `image_generate` 已经有
+     **专用 dynamicTool**（`generate_image` 等）。同一个能力挂两个名字，模型只会用名字最直白的
+     那个、另一套被绕过 —— 项目**踩过一次**：`subagent_invoke` 与 `agent_invoke` 并存时专家/专家团
+     永远被绕过，最后整体删除。⛔ 别把这三个加回来。 */
+const GATEWAY_EXCLUDED = new Set(["agent_invoke", "agent_archive_sessions", "image_generate"]);
+
+/** 网关暴露的工具面（= MCP 工具面 − 已有专用工具的三个）。 */
+export function dispatchGatewayTools(): Array<{ name: string; description: string; inputSchema: unknown }> {
+  const all = dispatchMcpTools() as Array<{ name?: unknown; description?: unknown; inputSchema?: unknown }>;
+  return all
+    .filter((tool) => !GATEWAY_EXCLUDED.has(String(tool?.name ?? "")))
+    .map((tool) => ({ name: String(tool?.name ?? ""), description: String(tool?.description ?? ""), inputSchema: tool?.inputSchema ?? {} }));
+}
+
+/** `harness_tools({name:"list"})` 的返回：名字 + 一句话说明 + 参数 schema（按需取，不进常驻提示词）。 */
+export function dispatchGatewayCatalogText(): string {
+  const tools = dispatchGatewayTools();
+  const body = tools.map((tool) => `【${tool.name}】${tool.description}\n参数：${JSON.stringify(tool.inputSchema)}`).join("\n\n");
+  return `共 ${tools.length} 个能力。调用方式：harness_tools({ name: "<工具名>", args: { … } })。\n\n${body}`;
 }
