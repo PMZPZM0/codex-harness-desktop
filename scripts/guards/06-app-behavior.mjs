@@ -3177,8 +3177,8 @@ w.postMessage({id:1,op:"list",root});
     (canvasSrc.includes("imageSmoothingEnabled = false") ? ok : fail)(
       "【233】canvas 关像素平滑（否则像素被拉糊）"
     );
-    (canvasSrc.includes('from "./assets/bg.webp"') && canvasSrc.includes("assets/chars/char_0.png") ? ok : fail)(
-      "【233】办公室资产走 Vite import（打包可达闭包内）"
+    (canvasSrc.includes('from "./assets/bg.webp?inline"') && canvasSrc.includes("assets/chars/char_0.png") ? ok : fail)(
+      "【233】办公室资产走 Vite import（打包可达闭包内；bg 必须 ?inline —— 80KB 超内联阈值，拆文件 = 构建版白底）"
     );
 
     /* ⑥ 事件驱动边界：域不订阅引擎、不开 IPC —— 状态只从 props 进（架构规则 §2.2） */
