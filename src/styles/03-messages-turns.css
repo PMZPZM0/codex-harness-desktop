@@ -540,7 +540,8 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
    ⛔ 动画只挂在 [data-phase="done"] 上：回 idle 时不重播，否则"变回去"会再弹一次。
    ⛔ 同时把 opacity 抬到 1：hover 才现身的收藏/引用，点了之后鼠标可能立刻移开，
       成功反馈不能被 `.message-action-extra { opacity: 0 }` 抹掉（这条选择器权重更高，正好压住）。 */
-.message-footer button[data-phase="done"] {
+.message-footer button[data-phase="done"],
+.selection-action-bar button[data-phase="done"] {
   color: var(--accent);
   opacity: 1;
   animation: message-action-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -553,9 +554,53 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
 }
 @media (prefers-reduced-motion: reduce) {
   /* 关掉弹动，但**保留对勾与颜色**：反馈是信息，动效才是装饰（同本文件其他 reduce 块的口径） */
-  .message-footer button[data-phase="done"] {
+  .message-footer button[data-phase="done"],
+  .selection-action-bar button[data-phase="done"] {
     animation: none;
   }
+}
+
+/* ---------------------------------------------------------------- 选区浮条（10-05） */
+
+/* 层级带（DESIGN.md）：轻浮层 1000/1001 —— 垫层与浮条各占一档，
+   与 `.app-select-overlay` / `.app-select-list` 同一档，必须高于全局模态 400。 */
+.selection-action-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: transparent;
+}
+.selection-action-bar {
+  position: fixed;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  white-space: nowrap;
+}
+.selection-action-bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.selection-action-bar button:hover {
+  background: var(--panel-2);
+  color: var(--text);
 }
 .message:hover .message-footer .message-action-default,
 .message-footer:focus-within .message-action-default,
