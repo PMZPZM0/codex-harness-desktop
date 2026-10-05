@@ -25,6 +25,7 @@
  *     作为交叉验证 —— 它能在 TRUTH 再次写错时独立报红。
  */
 import { readFileSync, readdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -235,12 +236,20 @@ ok(/Math\.min\(len \* u,/.test(screen) || /Math\.min\(len,/.test(screen),
   /*⛔⛔ 不用固定字符窗口（`[\s\S]{0,400}?`）—— 实测这段有 **511 字符**，窗口不够就恒红。
      ⛔ 本轮已经因为"固定字符窗口"栽过三次（spinner 900 vs 1671、kb 900 vs 1671、这里 400 vs 511）。
      ✅ 改成按**函数边界**取块：取 `eventStateOf` 的函数体，与长度无关。 */
-  const esStart = preview.indexOf("const eventStateOf = (memberId: string) => {");
-  const esEnd = preview.indexOf("\n  /*", esStart);
+  /* ⛔ 10-05 晚改契约：eventStateOf 走**真实阶段 + 真实事件**（原来是"编三个布尔"）。
+     锚点跟着换（原来锚 `=> {` 会 indexOf 到 -1 ⇒ 切出 0 字符 ⇒ 判据在空跑）。 */
+  const esStart = preview.indexOf("const eventStateOf = (memberId: string)");
+  const esEnd = preview.indexOf("\n  /* ⛔ 门槛", esStart);
   const esBody = esStart >= 0 ? preview.slice(esStart, esEnd > esStart ? esEnd : undefined) : "";
   ok(esBody.length > 100, `切出 eventStateOf 函数体（${esBody.length} 字符）`);
-  ok(/if \(!team\)/.test(esBody) && /thinking:/.test(esBody),
-    "⛔ 普通会话下 eventStateOf 有默认活动（否则屏幕永远熄屏）");
+  /* ⛔ 事件查询走 `eventOf`（它内部才是 officeActivityOf）——
+     锚点取的是 eventStateOf 的函数体，别去里面找 officeActivityOf（那会恒红）。 */
+  /* ⛔ 用 `!team` + 词边界：非专家团分支的条件已经变成
+     `if (!team && self?.threadId && …)`，钉死 `if (!team)` 会恒红（实测踩过）。 */
+  ok(/if \(!team\b/.test(esBody) && /phaseOfRun\(/.test(esBody) && /eventOf\(/.test(esBody),
+    "⛔⛔ 非专家团路径也走**真实阶段 + 真实事件**（⛔ 退回\"编一个默认活动\"就是「事件状态未接通」）");
+  ok(!/thinking:\s*(true|false|act ===)/.test(esBody),
+    "⛔⛔ 不许再出现**编造的** thinking/waiting/reporting 三布尔（上一版 `reporting: act === null` ⇒ code 屏永不出现）");
   // 随机取名：必须按 id 确定性取，不能每次渲染重随
   ok(/ROLE_NAMES/.test(preview) && /run\.threadId\.charCodeAt/.test(preview),
     "⛔ 随机名按 threadId 哈希取（同一人恒定同名，不会每帧改名）");
@@ -298,6 +307,101 @@ ok(/Math\.min\(len \* u,/.test(screen) || /Math\.min\(len,/.test(screen),
   ok(/bg\.webp\?inline/.test(canvasSrc), "办公室 bg.webp 必须 ?inline 强制 data: URI（80KB 超阈值，拆成文件 = 构建版白底）");
   const distAssets = readdirSync(join(ROOT, "dist", "assets"));
   ok(!distAssets.some((f) => /^bg-.*\.webp$/.test(f)), "dist/assets 不许出现 bg-*.webp 独立文件（出现 = 内联失效，构建版必白）");
+}
+
+/* ══ 组 G：全屏铺满（10-05 晚 用户报「画面未铺满全屏，只显示在中间区域」）═════
+   ⛔ 病根：画布只有 `max-width/max-height:100%` —— 那只**限制上限、不会放大**，
+     而画布固有尺寸就是 960×640 ⇒ 窗口一大就只剩中间一块，四周是浮层底色。
+   ✅ 判据钉三件事：① 舞台裁溢出；② 画布不许被 flex 压回去（flex:none）；
+     ③ 尺寸由 `fitCover` 按 cover 规则显式写死。
+   ⛔⛔ 另加一条**负向**断言：不许用 `object-fit` —— 那会让元素盒与实际渲染区不一致，
+     而点击命中算的是 `getBoundingClientRect()` ⇒ 人物点不中（比留边距更坏）。 */
+{
+  const css = readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8");
+  const canvasSrc = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
+  ok(/\.office-overlay-stage\s*\{[\s\S]{0,400}?overflow:\s*hidden/.test(css),
+    "⛔ 舞台容器裁溢出（cover 铺满靠它把画布多出来的部分裁掉）");
+  ok(/\.office-pixel-canvas\s*\{[\s\S]{0,300}?flex:\s*none/.test(css),
+    "⛔⛔ 画布 `flex: none`（不写的话 flex 会把超出容器的子项压回去 ⇒ cover 静默失效）");
+  ok(!/\.office-pixel-canvas\s*\{[\s\S]{0,300}?object-fit/.test(css),
+    "⛔⛔ 画布不许用 object-fit（元素盒≠渲染区 ⇒ 点击命中整体偏移、人物点不中）");
+  ok(/const scale = Math\.max\(sw \/ CANVAS_W, sh \/ CANVAS_H\)/.test(canvasSrc),
+    "⛔ 铺满用 cover 规则（取两轴较大缩放 ⇒ 永远铺满且保持 3:2，不拉伸像素）");
+  ok(/canvas\.style\.width = /.test(canvasSrc) && /canvas\.style\.height = /.test(canvasSrc),
+    "⛔ 画布尺寸**显式写死**（而不是交给 CSS 上限，那样只会缩不会放）");
+}
+
+/* ══ 组 H：事件面 + 画面映射（10-05 晚 用户要求「把对话框里出现的所有事件接入显示器」）
+   ⛔ 真跑（`--experimental-strip-types` 直接 import .ts）：`office-activity.ts` 的依赖
+     全是 .mjs，node 能直接解析 ⇒ 不需要扩展名补全钩子。
+   ⛔ 判据形状：拿**对话框真实会出现的 item**（引擎的几种 type）过分类器，
+     核对"事件 → 画面模式 → 顶栏词"这条链，而不是只查函数存在。 */
+{
+  const script = `
+import { classifyOfficeItem } from "./src/features/team-office/office-activity.ts";
+import { screenModeOfEvent, screensaverMode, marqueeText, microWidth } from "./src/features/team-office/office-screen.ts";
+const cases = [
+  [{ type: "fileChange", changes: [{ path: "a/b.ts", diff: "@@\\n-old\\n+new\\n" }] }, "file-edit", "file-edit"],
+  [{ type: "fileChange", changes: [{ path: "a/new.md", diff: "@@\\n+x\\n" }] }, "file-write", "file-write"],
+  [{ type: "commandExecution", command: "Select-String -Pattern foo -Path src/*.ts" }, "file-search", "file-search"],
+  [{ type: "commandExecution", command: "Get-Content -LiteralPath a.ts" }, "file-read", "file-read"],
+  [{ type: "commandExecution", command: "Set-Content -Path a.ts -Value x" }, "file-edit", "file-edit"],
+  [{ type: "commandExecution", command: "npm run build" }, "terminal", "terminal"],
+  [{ type: "commandExecution", command: "start chrome https://example.com" }, "browser", "browser"],
+  [{ type: "mcpToolCall", server: "playwright", tool: "browser_navigate" }, "browser", "browser"],
+  [{ type: "mcpToolCall", server: "x", tool: "y" }, "service", "service"],
+  [{ type: "webSearch", query: "sse" }, "websearch", "search"],
+  [{ type: "collabAgentToolCall", tool: "spawn" }, "collab", "collab"],
+  [{ type: "reasoning" }, "thinking", "thinking"],
+  [{ type: "userMessage", text: "hi" }, null, null],
+  [{ type: "plan" }, null, null],
+];
+let bad = 0;
+for (const [item, wantKind, wantMode] of cases) {
+  const got = classifyOfficeItem(item);
+  const mode = got ? screenModeOfEvent(got.kind) : null;
+  const pass = (got ? got.kind : null) === wantKind && mode === wantMode;
+  if (!pass) bad += 1;
+  console.log((pass ? "OK " : "NO ") + item.type + " → " + (got ? got.kind : "null") + " / " + mode);
+}
+const slots = new Set([0, 1, 2, 3, 4, 5].map((i) => screensaverMode(3.2, i * 7 + 1)));
+console.log((slots.size >= 2 ? "OK " : "NO ") + "屏保轮播覆盖多档：" + [...slots].join(","));
+const long = marqueeText("NPM RUN BUILD ELECTRON", 46, 0);
+const moved = marqueeText("NPM RUN BUILD ELECTRON", 46, 1.4);
+console.log((long !== moved && microWidth("SEARCH") < 46 ? "OK " : "NO ") + "微字模：SEARCH 宽 " + microWidth("SEARCH") + "px、长文本滚动");
+console.log(bad === 0 ? "OK 事件分类全部符合" : "NO " + bad + " 条分类不符");
+`;
+  const out = execFileSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", script],
+    { cwd: ROOT, encoding: "utf8", timeout: 120000, stdio: ["ignore", "pipe", "pipe"] });
+  const lines = out.split("\n").filter((line) => /^(OK|NO) /.test(line.trim()));
+  ok(lines.length >= 16, `事件面真跑出 ${lines.length} 条（⛔ 0 条 = 脚本没跑起来）`);
+  for (const line of lines) {
+    const good = line.trim().startsWith("OK ");
+    checks += 1;
+    if (!good) fails += 1;
+    console.log(`  ${good ? "✓" : "✗"} 【screen】${line.trim().slice(3)}`);
+  }
+}
+
+/* ══ 组 I：**姿态与屏幕同源**（用户 10-05：「确保事件对应的卡通人物动画与显示器内容
+   严格一一联动对应」）═══════════════════════════════════════════════════════
+   ⛔ 判据：姿态必须由**同一个 mode** 推出来（而不是另判一套条件）——
+     两套条件必然漂（屏幕上放着剧、人却在猛敲键盘）。 */
+{
+  const canvasSrc = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
+  ok(/const seatMode: ScreenMode\[\] = \[\]/.test(canvasSrc) && /seatMode\[i\] = mode/.test(canvasSrc),
+    "⛔ 每个工位这一帧的画法被记下来（供第二遍画人物时推姿态）");
+  ok(/const slack = a\.action === "sit" && \(scr === "video" \|\| scr === "game"\)/.test(canvasSrc),
+    "⛔⛔ 摸鱼姿态**由屏幕模式推出**（video/game ⇒ 后仰看剧），不是另判一套条件");
+  ok(/eventWordZhOf/.test(canvasSrc) && /statusOf/.test(canvasSrc),
+    "⛔ 名牌状态与屏幕同源（`eventWordZhOf` 与顶栏同一个映射表 ⇒ 不会自相矛盾）");
+  ok(/sim\.dispatchFx/.test(canvasSrc),
+    "⛔ 任务派发动画由画布绘制（sim 只管记录，画布管表现）");
+  const seg = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part05", "01-seg.tsx"), "utf8");
+  const noteIdx = seg.indexOf("noteOfficeActivity(params");
+  const filterIdx = seg.indexOf("params.threadId !== bag.threadRef.current?.id");
+  ok(noteIdx > 0 && filterIdx > noteIdx,
+    "⛔⛔ 办公室事件面接在**会话过滤之前**（放后面的话，后台会话的工具事件一条都到不了办公室）");
 }
 
 console.log(`\n【screen】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
