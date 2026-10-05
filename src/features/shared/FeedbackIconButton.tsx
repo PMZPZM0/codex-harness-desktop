@@ -14,8 +14,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
-/** 成功态停留时长：短于一次"看清图标变了"的时间，长到不会被当成没反应。 */
-const DONE_MS = 1100;
+/** 成功态停留时长：短于一次"看清图标变了"的时间，长到不会被当成没反应。
+ *  ⛔ 导出它：宿主若在按钮之外另挂浮层（如选区浮条），必须按同一个时长延后收起，
+ *     否则浮层先卸载，两段反馈就没人看得见了。 */
+export const ACTION_FEEDBACK_MS = 1100;
+const DONE_MS = ACTION_FEEDBACK_MS;
 
 export function FeedbackIconButton({ className, title, doneTitle, icon, doneIcon, label, doneLabel, onFire }: {
   className?: string;

@@ -170,6 +170,7 @@ const fileEditTransport: TextEditorTransport = {
 import { Markdown, MdCode, MdBlock, FilePreviewCode } from "../../../markdown";
 import { ItemView } from "../../../session-queue";
 import { TurnView, MemoTurnView, MessageRuler, MemoMessageRuler } from "../../../session-turn";
+import { SelectionActionBar } from "../../../shared/SelectionActionBar";
 import { RequestCard, ToolCard, VoiceSettingsBridge, admitThreadRuntimeRef, ago, appendDelta, appendIndexedDelta, applyThreadEvent, approvalMenuOptions, armSendAnimationClaim, botChannelName, botOnlineOf, builtinCommandCatalog, categoryLabel, clampRruleNum, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, cronTemplates, deltaMethods, describeRrule, describeSchedule, displayPath, fmtImportTime, formatTimestamp, greetingForHour, groupThreadsByTime, hydrateTurnUserMessage, idleTemplates, imageExts, isActivityItem, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, localFormatDurationMs, locateMatchEl, markBufferedAgentReveal, markBufferedTurnReveal, matchSkillCatalog, mergeItem, mergeLongerStreams, mergeTurn, modelBadges, modelName, normSkillName, noticeTone, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDescription, pluginDisplayName, pluginMarketCategoryTabs, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, revealStepFor, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, settingsNav, shortSkillName, skillHubCategories, skillHubCategoryName, skillHubCategoryTabs, skillZhNote, slashCommands, stableItem, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, toFileUrl, uniqueModelCount, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../helpers";
 import type { HarnessAppApi } from "../../../app-state/useHarnessApp";
 
@@ -528,6 +529,9 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                   {delegatedPopupRun && delegatedPopupRun.originThreadId === thread?.id && (
                     <DelegatedRunPopup run={delegatedPopupRun} onClose={() => setDelegatedPopupId("")} />
                   )}
+                  {/* 选中文字浮出的「复制 / 添加到对话」（10-05）：动作复用 messageHandlers 那两条现成通道
+                      （onCopy = copyMessage、onQuote = quoteMessage 引用条），不另造实现。 */}
+                  <SelectionActionBar containerRef={timelineWrapRef} onCopy={messageHandlers.onCopy} onAppend={messageHandlers.onQuote} />
                 </div>
   );
 }
