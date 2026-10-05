@@ -3,6 +3,7 @@
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
 import { isCompactionItem } from "../../../../lib/compaction-item.mjs";
+import { WallpaperLayer } from "../../../wallpaper";
 import { Fragment, type ReactNode } from "react";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../lib/entity-avatar";
 import {
@@ -267,6 +268,8 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
   } = app;
   return (
     <div className="timeline-wrap" ref={timelineWrapRef}>
+      {/* 壁纸层（wallpaper 域）：absolute z -1，只在聊天区透出，永不挡交互 */}
+      <WallpaperLayer />
                   {thread && <MemoMessageRuler turns={thread.turns} scrollRef={scrollRef} containerRef={timelineWrapRef} onJump={jumpToTurnInWindow} />}
                   <div className={`timeline ${isEmpty ? "empty-state" : ""}`} ref={scrollRef} onScroll={onTimelineScroll}>
                   {isEmpty ? (
