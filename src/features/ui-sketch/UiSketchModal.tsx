@@ -28,6 +28,7 @@ import {
   summarizeDoc,
 } from "./sketch-doc.mjs";
 import type { SketchDiag, SketchDoc, SketchEntry } from "./sketch-doc.mjs";
+import { SketchComponentRow } from "./SketchComponentRow";
 
 /** 桥没应答多久算"没就绪"：8 秒足够本地协议加载 4MB 产物，又不至于让用户干等。 */
 const BRIDGE_TIMEOUT_MS = 8000;
@@ -170,22 +171,22 @@ export function UiSketchModal({ onClose, onAskAgent }: { onClose: () => void; on
   return (
     <div className="ui-sketch-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="ui-sketch-shell" role="dialog" aria-modal="true" aria-label="界面草图" data-bridge={bridgeError ? "timeout" : bridgeReady ? "ready" : "pending"}>
+        {/* 标题与动作**同一行**（10-05 用户反馈「上面按键遮住了」）：原来两行把高度吃掉 ~80px，
+            草图站自己的浮动工具栏就顶到可视区上沿、和它右上角的控件挤在一起。 */}
         <header className="ui-sketch-head">
           <PenTool size={15} className="ui-sketch-head-icon" />
           <strong>界面草图</strong>
+          <button type="button" onClick={syncDoc}><RefreshCw size={13} />取回画布</button>
+          <button type="button" onClick={pushPicked}><Layers size={13} />送进草图</button>
+          <button type="button" onClick={() => void copyDoc()}><Copy size={13} />复制 JSON</button>
+          <button type="button" className="primary" onClick={handToAgent}><ArrowUp size={13} />交给 Codex 实现</button>
           <span className="ui-sketch-meta">
             {bridgeError ? <em className="ui-sketch-warn">{bridgeError}</em> : <>{summary.valid ? `${summary.title || "未命名"} · ${summary.frames} 屏 / ${summary.items} 部件` : "画布内容未取回"}{pickedCount ? ` · 已选 ${pickedCount} 个组件` : ""}</>}
           </span>
           <span className="esc-hint" title="按 ESC 关闭弹窗">ESC</span>
+          <button type="button" title={panelOpen ? "收起组件库" : "展开组件库"} aria-expanded={panelOpen} onClick={() => setPanelOpen((open) => !open)}><Package size={15} /></button>
           <button type="button" title="关闭" onClick={onClose}><X size={15} /></button>
         </header>
-        <div className="ui-sketch-actions">
-          <button type="button" onClick={syncDoc}><RefreshCw size={13} />取回画布</button>
-          <button type="button" onClick={pushPicked}><Layers size={13} />把选中组件送进草图</button>
-          <button type="button" onClick={() => void copyDoc()}><Copy size={13} />复制草图 JSON</button>
-          <button type="button" className="primary" onClick={handToAgent}><ArrowUp size={13} />交给 Codex 实现</button>
-          <button type="button" className="ghost" onClick={() => setPanelOpen((open) => !open)}>{panelOpen ? "收起组件库" : "展开组件库"}</button>
-        </div>
         <div className="ui-sketch-body">
           {/* ⛔ 不加 sandbox：桥要在草图源里读写 localStorage（m3e 的持久化就靠它），
               而 sandbox 不放 allow-same-origin 时 localStorage 直接不可用。
@@ -216,27 +217,19 @@ export function UiSketchModal({ onClose, onAskAgent }: { onClose: () => void; on
               <div className="ui-sketch-list">
                 {listError && <p className="ui-sketch-error">组件库读取失败：{listError}</p>}
                 {!listError && !filtered.length && <p className="muted">这一类里没有匹配的组件</p>}
-                {filtered.map((entry) => {
-                  const on = Boolean(picked[entry.id]);
-                  return (
-                    <button
-                      type="button"
-                      key={entry.id}
-                      className={on ? "picked" : ""}
-                      title={`${entry.name} · 作者 ${entry.author}`}
-                      onClick={() => setPicked((current) => {
-                        const next = { ...current };
-                        if (next[entry.id]) delete next[entry.id];
-                        else next[entry.id] = entry;
-                        return next;
-                      })}
-                    >
-                      <span className="ui-sketch-pick">{on ? "✓" : "+"}</span>
-                      <span className="ui-sketch-name">{entry.name}</span>
-                      <span className="ui-sketch-author">{entry.author}</span>
-                    </button>
-                  );
-                })}
+                {filtered.map((entry) => (
+                  <SketchComponentRow
+                    key={entry.id}
+                    entry={entry}
+                    picked={Boolean(picked[entry.id])}
+                    onToggle={() => setPicked((current) => {
+                      const next = { ...current };
+                      if (next[entry.id]) delete next[entry.id];
+                      else next[entry.id] = entry;
+                      return next;
+                    })}
+                  />
+                ))}
                 {!listError && filtered.length >= 200 && <p className="muted">只列前 200 个，用上面的搜索缩小范围</p>}
               </div>
               <footer className="ui-sketch-foot">

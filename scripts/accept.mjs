@@ -410,9 +410,12 @@ const CHECKS = [
       await h.waitFor(`!!document.querySelector('.ui-sketch-shell')`, { label: "界面草图浮层", timeoutMs: 15000 });
       const frame = await h.eval(`(function(){ const f=document.querySelector('.ui-sketch-frame');
         if(!f) return { has:false };
-        const r=f.getBoundingClientRect(); return { has:true, src:f.src, w:Math.round(r.width), h:Math.round(r.height) }; })()`);
-      h.check("④ iframe 走的是随包协议、且真的占满主体区",
-        frame?.has === true && String(frame?.src).startsWith("sketch://") && frame.w > 400 && frame.h > 300, JSON.stringify(frame));
+        const r=f.getBoundingClientRect(); const s=document.querySelector('.ui-sketch-shell').getBoundingClientRect();
+        return { has:true, src:f.src, w:Math.round(r.width), h:Math.round(r.height), shellW:Math.round(s.width), shellH:Math.round(s.height) }; })()`);
+      h.check("④ iframe 走的是随包协议，且**占满整块主体**（组件库是浮层，不许再挤窄草图 —— 10-05 用户「上面按键遮住了」）",
+        frame?.has === true && String(frame?.src).startsWith("sketch://")
+          && Math.abs(frame.w - frame.shellW) <= 2 // 主体区 = shell 高 - 标题栏 - 状态条（约 71px），给 90 的余量
+          && frame.h >= frame.shellH - 90 && frame.w > 900, JSON.stringify(frame));
       // 桥应答 = 协议 + CSP + 产物 + postMessage 四处同时通了（读不到 DOM，只能靠这个握手判）
       const ready = await h.waitFor(`document.querySelector('.ui-sketch-shell')?.getAttribute('data-bridge')==="ready"`,
         { label: "草图桥应答（data-bridge=ready）", timeoutMs: 25000 }).then(() => true).catch(() => false);
@@ -425,7 +428,7 @@ const CHECKS = [
       await h.eval(`(function(){ const first=document.querySelector('.ui-sketch-list button'); if(first) first.click(); return !!first; })()`);
       await wait(500);
       const pushed = await h.eval(`(function(){
-        const btn=[...document.querySelectorAll('.ui-sketch-actions button')].find((b)=>(b.textContent||'').includes('送进草图'));
+        const btn=[...document.querySelectorAll('.ui-sketch-head button')].find((b)=>(b.textContent||'').includes('送进草图'));
         if(!btn) return { button:false };
         btn.click(); return { button:true, picked:document.querySelectorAll('.ui-sketch-list button.picked').length }; })()`);
       await wait(2500);
@@ -443,11 +446,19 @@ const CHECKS = [
       ).then(() => true).catch(() => false);
       const bootedMeta = await h.text(".ui-sketch-meta").catch(() => "");
       h.check("⑧ 嵌入站真的启动了、且把画布内容读回宿主（骨架屏不算通过）", booted === true, `meta=${String(bootedMeta).slice(0, 80)}`);
+      /* ⑨ 预览是**懒挂载**的（一个类目上千个控件，一次全挂 shadow DOM 会把弹窗卡死）：
+         首屏那几行必须真的渲染出控件外观，而不是只有一行名字（10-05 用户：「右边组件没有预览功能」）。 */
+      const previewSeen = await h.waitFor(`document.querySelectorAll('.ui-sketch-preview .skin-host').length >= 3`,
+        { label: "组件预览挂载", timeoutMs: 15000 }).then(() => true).catch(() => false);
+      const preview = await h.eval(`(function(){ const hosts=[...document.querySelectorAll('.ui-sketch-preview .skin-host')];
+        return { hosts: hosts.length, filled: hosts.filter((x)=>x.shadowRoot && x.shadowRoot.children.length > 0).length }; })()`);
+      h.check("⑨ 组件库列表带真实外观预览（Shadow DOM 里真渲染出控件）",
+        previewSeen === true && (preview?.filled ?? 0) >= 3, JSON.stringify(preview));
       // 截图前关掉宿主自己的引导浮层（环境体检），否则挡住被测区域看不清
       await h.clickByText("全部稍后再说").catch(() => undefined);
       await wait(1200);
       await h.screenshot("uisketch");
-      await h.eval(`(function(){ document.querySelector('.ui-sketch-head > button')?.click(); return 1; })()`);
+      await h.eval(`(function(){ document.querySelector('.ui-sketch-head button[title="关闭"]')?.click(); return 1; })()`);
       await wait(500);
       const closed = await h.eval(`!!document.querySelector('.ui-sketch-shell')`);
       h.check("⑦ 关闭键真的收起浮层（关不掉的模态会挡住后面所有验收项）", closed === false, `stillOpen=${closed}`);

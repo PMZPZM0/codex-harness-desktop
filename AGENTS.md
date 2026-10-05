@@ -194,6 +194,10 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
   勾中的组件追加成**一个新 group**（不动用户已有的组，重复送幂等），引用锚写在 item 的 `note` 里
   —— 上游文档明确「note 原样进它导出的提示词」⇒ 「交给 Codex 实现」= 草图结构 + 组件真实 HTML/CSS
   （单条超 12KB 预算就只给 id，让引擎自己调 MCP `ui_component_get` 取，⛔ 不许截一半正文）。
+- ⛔ **组件库面板是浮层，不跟草图分宽度**（10-05 用户：「上面按键遮住了」）：并排会把草图挤到 ~910px，
+  它自己的浮动工具栏就摆不下、右上角控件互相遮挡；iframe 必须占满整块主体，标题与动作也合成一行省掉一条工具栏。
+  列表里的**真实预览复用基座 `components/SkinHost`**（Shadow DOM 隔离，同组件库页）：按可见性**懒挂载**
+  （一个类目上千个控件，一次全挂会把弹窗卡死），预览格 `pointer-events:none`（行要能点，不让控件抢点击）。
 
 ### 📚 Uiverse 组件库（`electron/features/uiverse-library.ts` + `src/features/component-library/`，2026-10-01）
 

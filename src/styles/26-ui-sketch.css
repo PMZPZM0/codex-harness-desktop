@@ -37,14 +37,14 @@
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
 }
 
-/* ---------------------------------------------------------------- 标题栏 */
+/* ---------------------------------------------------------------- 标题栏（含动作） */
 
 .ui-sketch-head {
   display: flex;
   align-items: center;
   gap: 8px;
   flex: none;
-  padding: 9px 12px;
+  padding: 7px 10px;
   border-bottom: 1px solid var(--line);
   background: var(--bg);
 }
@@ -57,9 +57,62 @@
   font-weight: 600;
   flex: none;
 }
+/* 标题栏里的动作键（10-05 与标题合成一行：两行会把草图站的浮动工具栏顶到看不见的地方） */
+.ui-sketch-head button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  flex: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.ui-sketch-head button:hover {
+  background: var(--panel-2);
+  border-color: var(--accent);
+}
+.ui-sketch-head button svg {
+  color: var(--muted);
+  flex: none;
+}
+.ui-sketch-head button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.ui-sketch-head button.primary svg {
+  color: var(--accent-text);
+}
+/* 最右两枚是图标键（组件库 / 关闭）：去掉边框，与浮层标题栏的惯例一致 */
+.ui-sketch-head button[aria-expanded],
+.ui-sketch-head button[title="关闭"] {
+  width: 26px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  justify-content: center;
+}
+.ui-sketch-head button[aria-expanded][aria-expanded="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.ui-sketch-head button[aria-expanded]:hover,
+.ui-sketch-head button[title="关闭"]:hover {
+  background: var(--panel-2);
+  border-color: var(--line);
+}
 .ui-sketch-meta {
   flex: 1;
   min-width: 0;
+  margin-left: 4px;
+  text-align: right;
   font-size: 11.5px;
   color: var(--muted);
   overflow: hidden;
@@ -73,95 +126,38 @@
 .ui-sketch-head .esc-hint {
   flex: none;
 }
-.ui-sketch-head > button {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-.ui-sketch-head > button:hover {
-  background: var(--panel-2);
-  color: var(--text);
-}
-
-/* ---------------------------------------------------------------- 动作条 */
-
-.ui-sketch-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: none;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--line);
-}
-.ui-sketch-actions button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-  color: var(--text);
-  font-size: 12px;
-  cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
-}
-.ui-sketch-actions button:hover {
-  background: var(--panel-2);
-  border-color: var(--accent);
-}
-.ui-sketch-actions button svg {
-  color: var(--muted);
-  flex: none;
-}
-.ui-sketch-actions button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-text);
-  font-weight: 600;
-}
-.ui-sketch-actions button.primary svg {
-  color: var(--accent-text);
-}
-.ui-sketch-actions button.ghost {
-  margin-left: auto;
-  border-color: transparent;
-  background: transparent;
-  color: var(--muted);
-}
 
 /* ---------------------------------------------------------------- 主体 */
 
 .ui-sketch-body {
+  position: relative;
   display: flex;
   flex: 1;
   min-height: 0;
 }
-/* 草图站本身是全屏应用：给它一整块不留内边距的区域，剩下的边框由 shell 出 */
+/* iframe **始终占满整块主体**：组件库是浮在它上面的抽屉（见 .ui-sketch-panel）。
+   原来两者并排分宽度，草图只剩 ~910px，它自己的工具栏就摆不下、右上角控件互相遮挡
+   （10-05 用户：「上面按键遮住了」）。 */
 .ui-sketch-frame {
   flex: 1;
   min-width: 0;
+  width: 100%;
   height: 100%;
   border: 0;
   background: #fff;
 }
 
 .ui-sketch-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
   flex-direction: column;
-  flex: none;
-  width: min(320px, 38vw);
+  width: min(340px, 46vw);
   border-left: 1px solid var(--line);
   background: var(--bg);
+  box-shadow: -14px 0 28px rgba(0, 0, 0, 0.14);
   min-height: 0;
 }
 .ui-sketch-panel-head {
@@ -238,7 +234,7 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 7px 8px;
+  padding: 6px 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
@@ -246,6 +242,7 @@
   text-align: left;
   font-size: 12px;
   cursor: pointer;
+  flex: none;
 }
 .ui-sketch-list button:hover {
   border-color: var(--accent);
@@ -256,9 +253,17 @@
 }
 .ui-sketch-pick {
   flex: none;
-  width: 16px;
+  width: 14px;
   color: var(--accent);
   font-weight: 700;
+}
+/* 名字 + 作者竖排，预览在右端固定一块（⛔ 预览不许把名字挤没） */
+.ui-sketch-id {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
 }
 .ui-sketch-name {
   min-width: 0;
@@ -267,14 +272,37 @@
   white-space: nowrap;
 }
 .ui-sketch-author {
-  margin-left: auto;
   flex: none;
-  max-width: 90px;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 10.5px;
   color: var(--faint);
+}
+/* 真实外观预览：SkinHost 的 shadow DOM 缩放塞进这一格。
+   ⛔ pointer-events:none —— 行本身要能点（勾中/取消），不能让控件抢走点击。 */
+.ui-sketch-preview {
+  position: relative;
+  flex: none;
+  width: 84px;
+  height: 42px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--panel-2);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ui-sketch-preview .skin-host {
+  display: block;
+  transform: scale(0.34);
+  transform-origin: center center;
+}
+.ui-sketch-preview-wait {
+  color: var(--faint);
+  font-size: 14px;
 }
 .ui-sketch-foot {
   display: flex;
