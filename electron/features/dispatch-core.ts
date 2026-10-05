@@ -217,6 +217,22 @@ function dispatchMcpTools(): unknown[] {
         required: ["cat", "id"],
       },
     },
+    /* ── 3D 预览（2026-10-05，用户拍板「生成 3D 图了 Codex 要晓得怎么调用、打开预览」）──
+       引擎拿到 .glb / .gltf（鲁班 Lux3D 管线导出、外部下载等）后调用它，应用内弹出可旋转缩放的
+       3D 预览，不用去文件夹找第三方查看器。执行端在 dispatch-rpc.ts：路径过可信根 + 扩展名白名单
+       （model-viewer-ipc.ts 的 resolveModelPath，与 model-viewer:read 同一道闸）→ sendToWindow。 */
+    {
+      name: "preview_3d",
+      description: "在应用内打开 3D 模型预览弹窗（可旋转/缩放/自动旋转）。当你生成、下载或写到工作区的 .glb / .gltf 模型文件后调用它让用户立刻查看 3D 效果；3D 资产工作流（如鲁班专家的 Lux3D → GLB）的最后一步应主动调用。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "模型文件绝对路径（.glb / .gltf，须在会话工作目录或应用数据目录内）" },
+          title: { type: "string", description: "预览标题（可省略，默认取文件名）" },
+        },
+        required: ["path"],
+      },
+    },
     /* ── 专家 / 子智能体管理三件套（09-29 用户：「让用户可以通过 Codex 会话新建专家和专家团还有子智能体」）──
        用户在会话里说「帮我建一个 XX 专家」⇒ 模型直接建，落盘 userData/expert-teams.json，
        重启后专家列表可见。normalizeTeamConfig 负责字段缺省与 id 规范；同 teamId 即更新。

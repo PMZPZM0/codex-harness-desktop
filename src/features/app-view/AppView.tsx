@@ -161,6 +161,7 @@ import { DramaCanvas } from "../drama-canvas";
 import { UiSketchModal } from "../ui-sketch";
 import { AppViewSettingsSheet } from "./AppView/08-settings-sheet";
 import { AppViewFilePreviewEditor } from "./AppView/09-file-preview-editor";
+import { ModelViewerBridge } from "../model-viewer";
 // 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
 import { Slot } from "../../runtime/registry";
 import { DeclaredPluginSlots } from "../../runtime/declared-plugin-slots";
@@ -589,6 +590,8 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       {skillRemove && <SkillRemoveModal state={skillRemove} onClose={() => setSkillRemove(null)} />}
       {pluginInstall && <PluginInstallModal state={pluginInstall} onClose={() => setPluginInstall(null)} />}
       <AppViewFilePreviewEditor app={app} />
+      {/* 3D 预览弹窗（model-viewer 域）：自挂载，监听 model-viewer:open 推送（引擎 preview_3d） */}
+      <ModelViewerBridge />
       {/* 悬浮球右键菜单里的「语音设置」：把「打开设置并跳到语音页」注册给 VoiceCallFloat
       （悬浮球是 body portal，拿不到这里的 setSettingsPage） */}
       <VoiceCallFloat threadId={thread?.id ?? ""} />

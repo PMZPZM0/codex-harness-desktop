@@ -518,6 +518,7 @@ contextBridge.exposeInMainWorld("codex", {
   queueTimerCancel: (input: { queuedSubmissionId: string }) => __ipc("queue-timer:cancel", 1, [input]) as Promise<{ ok: boolean }>,
   /* 在系统资源管理器中定位文件（可信根校验同 fs:read）；画布生成产物「打开文件夹」 */
   revealInFolder: (path: string) => __ipc("fs:reveal", 1, [{ path }]),
+  readModel: (path: string) => __ipc("model-viewer:read", 1, [{ path }]),
   /* 删分镜表的工作区文件（只删 .drama-canvas/storyboards/<name>.json 这一个文件；不存在时幂等返回 removed:false） */
   dramaCanvasStoryboardFileRemove: (input: { workspace: string; name: string }) => __ipc("drama-canvas:storyboard-file-remove", 1, [input]),
   /* 扫各项目的**工作日志与项目记忆**（<项目>/.codex-harness/memory/**：长期记忆 / 坑与纪律 / logs 日报 / archive / project）。项目清单来自 rollout 扫出的 cwd 集合。⛔ 这是项目里的工作记录，与会话本身的归档 / 删除（「归档管理」页）不是一回事 */
@@ -618,6 +619,10 @@ contextBridge.exposeInMainWorld("codex", {
   platform: process.platform,
 onRuntimeProgress: (listener: (event: unknown) => void) =>
     __on("runtime:progress", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload)),
+  /* 3D 预览弹窗打开推送（model-viewer 域，10-05）：引擎 harness_tools preview_3d → 主进程
+     sendToWindow("model-viewer:open") → 渲染层 ModelViewerBridge 弹窗。推送类手写桥，不在 gen 段。 */
+  onModelViewerOpen: (listener: (event: { path: string; title: string }) => void) =>
+    __on("model-viewer:open", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload as { path: string; title: string })),
   /* ⛔ 这两处原先用 `removeAllListeners(channel)` 退订 —— 会把**同一通道上别人的监听一起清掉**
      （多订阅者场景下的真 bug）。改走 __on：按监听函数引用精确退订，重复注册幂等。 */
 onRemotePairRequest: (handler: (request: { rid: string; deviceId: string; name: string }) => void) =>

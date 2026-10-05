@@ -28,7 +28,7 @@ export const BUILTIN_SKILL_ZH_NOTES: Record<string, string> = {
 
   "3d-modeling": `# 3D 建模（中文导读）
 Blender（python-bridge）做建模 / 场景 / 渲染的实操路径，外加「Aholo 管长什么样、Blender 管放哪与运镜」的分工。
-⛔ 诚实边界：AI 文本转 3D 的生成通道尚未接入（技能里写明了），别假装有这个工具。`,
+⛔ 诚实边界：AI 文本转 3D 的生成通道尚未接入（技能里写明了），别假装有这个工具。✅ 拿到 .glb/.gltf 后可调 harness_tools 的 preview_3d 在应用内弹出 3D 预览。`,
 
   "whitebox-video": `# 白模视频（中文导读）
 「Blender 白模预演 → Seedance 2.0/2.5 参考视频渲染」的路线：几何体只保留躯体、低清渲染、
