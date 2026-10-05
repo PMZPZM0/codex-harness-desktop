@@ -27,6 +27,7 @@ import { app } from "electron";
 import { saveAppSettings } from "../app-settings";
 import { ensureBuiltinSkills } from "../builtin-skills";
 import { bundledNodePath, memoryBackendStatus, memoryInstallerPath, type MemoryBackend } from "../memory-backend";
+import { lookupRoleSession, roleMemorySection } from "../role-memory";
 import { syncLocalMemoryConnector } from "../memory-mcp-connector";
 import { CLEANUP_RULES, HYGIENE_ACTION_LABEL, isHygieneAction, planHygiene, suggestedActions } from "../memory-hygiene";
 import type { MemoryCategory, MemoryRemoteConfig } from "../memory-store";
@@ -115,6 +116,7 @@ const MEMORY_CHANNELS = [
   "memory:layers:read", "memory:layers:context", "memory:layers:write",
   "memory:workspace-enabled:read", "memory:workspace-enabled:set",
   "memory:distill", "memory:hygiene:plan", "memory:hygiene:apply",
+  "memory:role-context",
 ];
 
 /**
@@ -196,7 +198,18 @@ export const memoryFeature = defineFeature<null>({
     ipcHost.handle("memory:layers:read", async (_event, workspace?: string) => ({ ...(await memoryLayers.snapshot(workspace)), entries: await memoryStore.stats() }));
     ipcHost.handle("memory:layers:context", (_event, workspace?: string, includeWorkspace = true) => memoryLayers.context(workspace, includeWorkspace));
     ipcHost.handle("memory:workspace-enabled:read", (_event, workspace?: string) => workspaceMemoryEnabled(workspace));
-    ipcHost.handle("memory:workspace-enabled:set", (_event, input: { workspace?: string; enabled?: boolean }) => {
+    /* 10-05 角色私有记忆（读）：渲染层发送路径用它把「当前会话所属角色」的私有记忆拼进上下文。
+       ⛔ 按 threadId 反查归属（索引在主进程，模型/渲染层都伪造不了），查不到就返回空段 ——
+          普通会话没有角色记忆，此时行为与今天完全一致。 */
+    ipcHost.handle("memory:role-context", async (_event, input: { threadId?: string; workspace?: string }) => {
+      const threadId = String(input?.threadId ?? "");
+      if (!threadId) return { text: "", key: "" };
+      const found = await lookupRoleSession(app.getPath("userData"), threadId).catch(() => null);
+      if (!found) return { text: "", key: "" };
+      const workspace = String(input?.workspace ?? "") || found.workspace;
+      const section = await roleMemorySection(workspace, found.ref);
+      return { text: section.text, key: section.key };
+    });    ipcHost.handle("memory:workspace-enabled:set", (_event, input: { workspace?: string; enabled?: boolean }) => {
       if (!input?.workspace) throw new Error("尚未选择工作区");
       return setWorkspaceMemoryEnabled(input.workspace, Boolean(input.enabled));
     });

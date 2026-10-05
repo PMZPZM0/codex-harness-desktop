@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（84 个能力域 / 415 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（84 个能力域 / 416 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -349,9 +349,9 @@ SkillHub **人格市场**（skillhub.cn/soul，16 套现成人格）：list 浏�
 IM 通道 Bot（把某个会话接到 IM 机器人上）
 通道：channel-bot:read, channel-bot:save, channel-bot:test
 
-### memory（24 通道）
+### memory（25 通道）
 记忆金字塔全链路（L0~L7 分层读写、召回、蒸馏、清理计划/执行、云端网关、工作区开关、记忆后端二选一）
-通道：memory:backend:read, memory:backend:set, memory:delete, memory:distill, memory:gateway:read, memory:gateway:save, memory:gateway:test, memory:hygiene:apply, memory:hygiene:plan, memory:layers:context, memory:layers:read, memory:layers:write, memory:list, memory:mcp:install, memory:mcp:uninstall, memory:mcp:verify, memory:mode-read, memory:mode-set, memory:recall, memory:reset, memory:save, memory:search, memory:workspace-enabled:read, memory:workspace-enabled:set
+通道：memory:backend:read, memory:backend:set, memory:delete, memory:distill, memory:gateway:read, memory:gateway:save, memory:gateway:test, memory:hygiene:apply, memory:hygiene:plan, memory:layers:context, memory:layers:read, memory:layers:write, memory:list, memory:mcp:install, memory:mcp:uninstall, memory:mcp:verify, memory:mode-read, memory:mode-set, memory:recall, memory:reset, memory:role-context, memory:save, memory:search, memory:workspace-enabled:read, memory:workspace-enabled:set
 
 ### rpa（4 通道）
 RPA 配方（录制好的桌面自动化流程）

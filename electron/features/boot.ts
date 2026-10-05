@@ -25,6 +25,8 @@ import { syncLocalMemoryConnector } from "../memory-mcp-connector";
 import { developerInstructionsLine } from "../developer-instructions";
 import { normalizeAutoCompactRatio, readAppSettings } from "../app-settings";
 import { broadcastCodexEvent, broadcastHarnessEvent } from "./window-bus";
+import { handleRoleMemoryToolCall } from "../role-memory-tool";
+import { forgetRoleSession } from "../role-memory";
 import { nuphusVisionEnvDrift } from "../nuphus-env";
 import { applyPersonalizationToAgentsMd, migrateGreetedForExistingUsers, readPersonalization } from "../personalization";
 
@@ -384,6 +386,12 @@ export async function bootApp() {
     console.warn("[pet] 恢复桌面宠物失败:", (error as Error)?.message ?? error);
   }
   server.on("event", (event: any) => {
+    /* 10-05 角色私有记忆写入：被委派会话的 `item/tool/call` 会被下面的 filterForRenderer
+       裁掉（它不在 RENDERER_CROSS_SESSION_METHODS 白名单里，渲染层也收不到）⇒ 只能在这里应答。
+       ⛔ 必须排在 filterForRenderer **之前**（事件一旦被裁掉就再也拿不到了）。
+       ⛔ 只处理 role_memory_save 这一个工具；返回 false = 不是它，照原流程往下走。 */
+    void handleRoleMemoryToolCall({ userDataDir: app.getPath("userData"), event, respond: (id, result) => server.respond(id as any, result) })
+      .catch(() => false);
     // 桌面宠物：旁听同一份事件流归约成九态（不改事件流向、也不消费正文内容）。
     // ⛔ 无条件喂：状态要一直维护着，用户中途打开宠物时才能立刻是对的状态（窗口关着时
     //    归约只写一个对象、不产生任何推送，成本可忽略）。
@@ -411,6 +419,10 @@ export async function bootApp() {
           // ⛔ 引擎侧发起的删除（不经渲染层 thread/delete 请求）同样要清磁盘残留 + 记墓碑，
           //   否则侧栏的 rollout 兜底扫描在下次启动把它捞回来（见 purgeDeletedThread 注释）。
           if (event.method === "thread/deleted") void purgeDeletedThread(goneId).catch(() => undefined);
+          /* 10-05 角色记忆：会话被删 ⇒ 它的角色归属索引也清掉（否则索引无限增长，
+             且那个 threadId 永远查不到归属、也永远占着一条记录）。记忆内容本身**留着** —
+             角色还在（专家/子智能体定义没删），下次派出会继续用它自己的记忆。 */
+          if (event.method === "thread/deleted") void forgetRoleSession(app.getPath("userData"), goneId).catch(() => undefined);
           /* 10-05：委托登记表里的记录**跟着会话一起走** —— 记录是「这个会话被委派过」的凭证，
              会话都没了它就只是幽灵 ⇒ 办公室里会多一个点不开的人（用户 10-05 报的那个）。
              ⛔ 归档**不清**：归档是"收起"（记录要留着防重复询问），删除才是"不存在了"。

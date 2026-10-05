@@ -665,9 +665,19 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     /canDispatchFrom\(/.test(mainSrc9) && /delegateRegistry\.register/.test(mainSrc9)
       ? ok("主进程调度入口接了硬闸与登记表")
       : fail("主进程没接硬闸 —— 只靠提示词拦不住");
-    /\.\.\.\(teamTools\.length \? \{ dynamicTools: teamTools \} : \{\}\)/.test(mainSrc9)
-      ? ok("dynamicTools 只给专家团主理人会话（其余被调会话一律不带调度工具）")
+    /* 意图没变（09-16 用户要求）：**调度工具（team_member_invoke / team_phase_invoke）只给专家团
+       主理人**，其余被调会话一律不带 —— 否则被派的执行型会话能互相套娃。
+       10-05 角色私有记忆落地后，dynamicTools 的传参条件从「teamTools 非空」变成
+       「teamTools 非空 **或** 有角色归属」（两类工具要合并进**同一个**数组，⛔ 不能写两个
+       dynamicTools 键 —— 后者会覆盖前者，主理人反而丢掉自己的调度工具）。 */
+    /\(teamTools\.length \|\| roleRef\)/.test(mainSrc9) && /dynamicTools: \[\.\.\.teamTools, \.\.\.\(roleRef \? \[/.test(mainSrc9)
+      ? ok("dynamicTools 只给专家团主理人调度工具（+ 角色记忆工具），其余被调会话不带调度工具")
       : fail("dynamicTools 传参条件变了 —— 确认没有给执行型会话挂调度工具");
+    // ⛔ 回归防线：两类工具必须**合并成一个数组**（写两个 dynamicTools 键会互相覆盖）
+    (mainSrc9.match(/dynamicTools:/g) ?? []).length >= 1
+      && !/\.\.\.\(teamTools\.length \? \{ dynamicTools: teamTools \}/.test(mainSrc9)
+      ? ok("⛔ 调度工具与角色记忆工具合并在同一个 dynamicTools 数组（没写第二个键）")
+      : fail("⛔ dynamicTools 写了两个键 —— 后者覆盖前者，主理人会丢掉调度工具");
     // .d.mts 同步守卫（09-15 踩坑：allowJs=false，改了 .mjs 不改 .d.mts 会报 has no exported member）
     const dmts9 = readFileSync(join(ROOT, "src/lib/thread-runtime.d.mts"), "utf8");
     /dispatch: DispatchConfig/.test(dmts9) && /emptyDispatch\(\): DispatchConfig/.test(dmts9) && /dispatchSignature\(raw: unknown\): string/.test(dmts9)

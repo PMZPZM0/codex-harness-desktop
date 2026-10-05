@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-03",
-  "count": 415,
+  "count": 416,
   "channels": [
     {
       "name": "request",
@@ -1482,6 +1482,16 @@
       "invokeArgs": "",
       "cast": null,
       "note": "真跑一次 MCP 握手校验（不是只判文件存在）"
+    },
+    {
+      "name": "readRoleMemoryContext",
+      "channel": "memory:role-context",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { threadId?: string; workspace?: string }",
+      "returns": "Promise<{ text: string; key: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "10-05 角色私有记忆（读）：按 threadId 反查角色归属，返回该角色专属记忆段；普通会话返回空段"
     },
     {
       "name": "saveMemory",
