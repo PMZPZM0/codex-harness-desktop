@@ -16,6 +16,10 @@ import {
 } from "./views";
 import { MemorySkeleton, MemoryState } from "./primitives";
 import {
+  LOCAL_MEMORY_CONNECTOR, normalizeDelegates, normalizeEntries, normalizeMcpBackend,
+  normalizeMember, normalizePyramid, parseNamespace, statOf, type MemberCard,
+} from "./normalize";
+import {
   MEMORY_KIND_META, type ActorMemory, type DispatchedSession, type LoadState,
   type McpBackendMemory, type MemoryKind, type PyramidMemory,
 } from "./types";
@@ -53,27 +57,39 @@ export function useMemorySources(workspace: string, enabled: boolean): {
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
-    /* ⛔ 没工作区就不取：主进程**不猜路径**，前端也不该拿"全部项目"糊过去。 */
+    /* ⛔ 没工作区就不取：主进程**不猜路径**，前端也不该拿“全部项目”糊过去。 */
     if (!enabled || !workspace) { setData(EMPTY); setState("ready"); return; }
     setState("loading");
     setError("");
     try {
       const bridge = (window as any).codex;
-      const [pyramid, mcp, namespaces, dispatched] = await Promise.all([
-        safe(() => bridge.readMemoryLayers(workspace), null),
-        safe(() => bridge.readMemoryBackend(), null),
-        safe(() => bridge.listFabricNamespaces(workspace), [] as any[]),
-        safe(() => bridge.listDelegates(), [] as any[]),
+      /* ⛔⛔ hygiene:plan 是**唯一**能拿到 `archive` 的通道（`memory:layers:read` 的
+         返回体里没有这个字段 —— 上午那次白屏就是读它读出来的）。
+         ⛔ 它是只读的（apply 需 confirm:true），所以取它没有副作用。 */
+      const [pyramid, mcp, namespaces, delegates, hygiene] = await Promise.all([
+        safe<unknown>(() => bridge.readMemoryLayers(workspace), null),
+        safe<unknown>(() => bridge.readMemoryBackend(), null),
+        safe<any[]>(() => bridge.listFabricNamespaces(workspace), []),
+        safe<unknown>(() => bridge.listDelegates(), null),
+        safe<{ archive?: { files?: number; bytes?: number } } | null>(() => bridge.planMemoryHygiene(workspace), null),
       ]);
-      const actors = await buildActorViews(bridge, workspace, namespaces ?? []);
+      const actors = await buildActorViews(bridge, workspace, namespaces ?? [], delegates);
+      /* 被调度的 memoryCount 要按 threadId 查 fabric ⇒ 先建“命名空间 → 条数”索引。
+         ⛔ 索引取自 listFabricNamespaces 自带的 `entries` 计数（⛔ 不为每个被调度会话
+         再发一次 listFabricEntries —— 委托动辄几十个，那是 N+1 次 IPC）。 */
+      const nsIndex = new Map<string, number>();
+      for (const ns of namespaces ?? []) {
+        if (ns?.namespace) nsIndex.set(String(ns.namespace), num(ns.entries));
+      }
       setData({
-        pyramid: pyramid as PyramidMemory | null,
-        mcp: mcp as McpBackendMemory | null,
+        pyramid: pyramid ? normalizePyramid(pyramid, hygiene?.archive) : null,
+        mcp: mcp ? normalizeMcpBackend(mcp) : null,
         main: actors.main,
         subagents: actors.subagents,
         experts: actors.experts,
         teams: actors.teams,
-        dispatched: (dispatched ?? []) as DispatchedSession[],
+        dispatched: normalizeDelegates(delegates, (threadId) =>
+          nsIndex.get("private__" + threadId) ?? 0),
       });
       setState("ready");
     } catch (e: any) {
@@ -87,6 +103,11 @@ export function useMemorySources(workspace: string, enabled: boolean): {
   return { data, state, error, reload: () => void load() };
 }
 
+function num(v: unknown): number {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
 type ActorBuckets = { main: ActorMemory | null; subagents: ActorMemory[]; experts: ActorMemory[]; teams: ActorMemory[] };
 
 /**
@@ -94,23 +115,31 @@ type ActorBuckets = { main: ActorMemory | null; subagents: ActorMemory[]; expert
  * ⛔⛔ 归属判定**只按命名空间前缀 + 角色登记表**，⛔ 绝不按条目内容/显示名猜 ——
  *   猜错的后果是"张老师的记忆显示在李老师名下"，而界面上完全看不出来。
  */
-async function buildActorViews(bridge: any, workspace: string, namespaces: any[]): Promise<ActorBuckets> {
+async function buildActorViews(bridge: any, workspace: string, namespaces: any[], delegatesRaw?: unknown): Promise<ActorBuckets> {
   const empty: ActorBuckets = { main: null, subagents: [], experts: [], teams: [] };
   if (!Array.isArray(namespaces) || !namespaces.length) return empty;
 
+  /* ⛔⛔ delegates 由调用方传入（⛔ 不在这里自己再调一次 —— 那是同一份数据的第二次 IPC，
+     委托一多就把刷新拖慢了；⛔ 两处各调一次还会读到不同时刻的快照）。 */
   const [roles, teams] = await Promise.all([
-    safe(() => bridge.listRoleSessions(), [] as any[]),
-    safe(() => bridge.listExpertTeams(), [] as any[]),
+    safe<any[]>(() => bridge.listRoleSessions(), []),
+    safe<any[]>(() => bridge.listExpertTeams(), []),
   ]);
   const roleByThread = new Map<string, any>((roles ?? []).map((r: any) => [String(r.threadId), r]));
   const teamById = new Map<string, any>((teams ?? []).map((t: any) => [String(t.teamId ?? t.id), t]));
 
-  const statOf = (entries: any[]) => ({
-    total: entries.length,
-    pinned: entries.filter((e) => e?.pinned).length,
-    archived: entries.filter((e) => e?.archivedAt != null).length,
-    chars: entries.reduce((sum, e) => sum + String(e?.content ?? "").length, 0),
-  });
+  /* ⛔ 成员“运行中”标记：⛔ 不能按 team 里有没有 running 会话判（委托真机几秒就跑完 ⇒ 永远假），
+     ⛔ 只能按**这个团名下的委托记录**判 —— 登记表是唯一真相源。 */
+  const runningNames = new Set<string>();
+  for (const d of normalizeDelegates(delegatesRaw)) {
+    if (d.status === "running") runningNames.add(d.name);
+  }
+  const membersOf = (team: any): MemberCard[] => {
+    const list = Array.isArray(team?.members) ? team.members : [];
+    /* ⛔ 主理人（lead）也是团成员 ⛔ 不加就少一个人（团内共享范围 = 成员名单，名单缺人 = 说谎） */
+    return [...(team?.lead ? [team.lead] : []), ...list].map((m: any) =>
+      normalizeMember(m, runningNames.has(String(m?.name ?? ""))));
+  };
 
   const out: ActorBuckets = { main: null, subagents: [], experts: [], teams: [] };
   /** 把 project 层（公共层）并进「主会话」区：它不属于任何执行体，但用户需要一个看它的入口 */
@@ -126,15 +155,17 @@ async function buildActorViews(bridge: any, workspace: string, namespaces: any[]
   };
 
   for (const ns of namespaces) {
-    const name: string = ns?.namespace ?? "";
-    const entries = await safe(
+    const name: string = String(ns?.namespace ?? "");
+    const entries = normalizeEntries(await safe(
       () => bridge.listFabricEntries({ workspace, namespace: name, includeArchived: true }),
       [] as any[],
-    );
-    if (!Array.isArray(entries) || !entries.length) continue;
+    ));
+    if (!entries.length) continue;
+
+    const { scope, owner } = parseNamespace(name);
 
     /* ① 项目公共层：不属于任何执行体 ⇒ 进「主会话」区，标题写明是公共层 */
-    if (name.startsWith("project__")) {
+    if (scope === "project") {
       pushMain(entries, "项目共享层", "project", name);
       continue;
     }
@@ -142,31 +173,28 @@ async function buildActorViews(bridge: any, workspace: string, namespaces: any[]
     /* ② 团内层：owner 是团 id ⇒ 归到该团（⛔ 不走下面的 private 分支：
        它的 owner 不是 threadId，`roleByThread` 查不到 ⇒ 会被误判成"孤儿"）。
        探针抓到过这个：团有 2 条却显示 0。 */
-    if (name.startsWith("team__")) {
-      const teamId = name.replace(/^team__/, "");
-      const team = teamById.get(teamId);
-      const found = out.teams.find((t) => t.actorId === teamId);
-      const members = (team?.members ?? []).map((m: any) => ({ id: m.id, name: m.name, profession: m.profession?.zh }));
+    if (scope === "team") {
+      const team = teamById.get(owner);
+      const found = out.teams.find((t) => t.actorId === owner);
       if (found) {
         found.entries = [...found.entries, ...entries];
         found.stats = statOf(found.entries);
       } else {
         out.teams.push({
-          kind: "team", id: name, actorId: teamId,
-          actorName: String(team?.displayName?.zh ?? teamId),
+          kind: "team", id: name, actorId: owner,
+          actorName: String(team?.displayName?.zh ?? owner),
           entries, createdAt: Date.now(), updatedAt: Date.now(), stats: statOf(entries),
-          teamNamespace: name, members,
+          teamNamespace: name, members: membersOf(team),
         });
       }
       continue;
     }
 
     /* ③ 私有层：owner 是 threadId ⇒ 靠角色登记表认人 */
-    const ownerThread = name.replace(/^private__/, "");
-    const role = roleByThread.get(ownerThread);
+    const role = roleByThread.get(owner);
     if (!role?.ref) {
       /* ⛔ 孤儿空间（会话已删 / 角色已删）⇒ 如实标成"未归属"，⛔ 不硬塞给某个人 */
-      pushMain(entries, "未归属的会话", ownerThread || "unknown", name);
+      pushMain(entries, "未归属的会话", owner || "unknown", name);
       continue;
     }
 
@@ -194,7 +222,7 @@ async function buildActorViews(bridge: any, workspace: string, namespaces: any[]
         out.teams.push({
           ...base, actorId: teamId,
           actorName: String(team?.displayName?.zh ?? ref.label ?? ref.id),
-          members: (team?.members ?? []).map((m: any) => ({ id: m.id, name: m.name, profession: m.profession?.zh })),
+          members: membersOf(team),
         });
       }
     }
@@ -310,15 +338,13 @@ function emptyActor(actorName: string, actorId: string): ActorMemory {
 }
 
 function emptyPyramid(): PyramidMemory {
-  return {
-    kind: "pyramid", id: "empty", createdAt: Date.now(), updatedAt: Date.now(),
-    layers: [], archive: { files: 0, bytes: 0 },
-  };
+  return normalizePyramid(null, null);
 }
 
 function emptyMcp(): McpBackendMemory {
   return {
-    kind: "mcp-backend", id: "empty", createdAt: Date.now(), updatedAt: Date.now(),
-    active: "builtin", connector: "local-memory", ready: false, sinkLabel: "内置金字塔",
+    kind: "mcp-backend", id: "empty", createdAt: 0, updatedAt: 0,
+    active: "builtin", connector: LOCAL_MEMORY_CONNECTOR, ready: false, sinkLabel: "内置记忆金字塔",
+    fallbackReason: null, installCommand: "",
   };
 }

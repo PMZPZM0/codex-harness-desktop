@@ -17,6 +17,11 @@
  * ⛔ 字段名与 `electron/memory-fabric.ts` 的 `MemoryEntry` **逐字对齐** ——
  * 改名会静默变成"字段缺失"（渲染成 undefined 而不报错）。
  * 守卫 `11m-memory-ui` 钉住这条。
+ *
+ * ⛔⛔ **10-05 修订：本文件的形状由 `normalize.ts` 负责对齐主进程，本文件不直接描述
+ *   IPC 返回体。** 这份契约原先是照着理想形状手写的，没核对 handler 真实返回体
+ *   ⇒ `archive` / `active` / `{records}` 三处全错 ⇒ 金字塔白屏 + 切 tab 必崩，
+ *   而守卫 56/56 全绿（它只断言视图与本文件自洽，两边出自同一份想象）。
  */
 import type { ReactNode } from "react";
 
@@ -77,6 +82,7 @@ export type PyramidMemory = MemoryMeta & {
  */
 export type McpBackendMemory = MemoryMeta & {
   kind: "mcp-backend";
+  /** **实际生效**的后端（⛔ 不是用户选的值：选了 MCP 但服务没装时会回退 builtin） */
   active: "mcp" | "builtin";
   /** 连接器名（harness 写进引擎 config.toml 的那个） */
   connector: string;
@@ -84,6 +90,10 @@ export type McpBackendMemory = MemoryMeta & {
   ready: boolean;
   /** 切换后记忆"搬到哪"的去向说明（给用户看的一句话） */
   sinkLabel: string;
+  /** ⛔ 选了 MCP 却回退内置的原因（用户唯一能知道"我明明开了为什么没生效"的线索） */
+  fallbackReason: string | null;
+  /** 装服务的命令（给用户复制） */
+  installCommand: string;
 };
 
 /** fabric 条目（⛔ 与后端 MemoryEntry 逐字对齐） */

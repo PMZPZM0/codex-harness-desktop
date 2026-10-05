@@ -14,6 +14,8 @@
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { ROOT, readAppUi } from "./_ctx.mjs";
 
 let checks = 0, fails = 0;
@@ -23,6 +25,8 @@ const TYPES = readFileSync(join(ROOT, "src", "features", "memory-ui", "types.ts"
 const PRIM = readFileSync(join(ROOT, "src", "features", "memory-ui", "primitives.tsx"), "utf8");
 const VIEWS = readFileSync(join(ROOT, "src", "features", "memory-ui", "views.tsx"), "utf8");
 const SHELL = readFileSync(join(ROOT, "src", "features", "memory-ui", "MemoryWorkbench.tsx"), "utf8");
+/* ⛔ 10-05：归一化层是跨进程字段对齐的真相源（守卫 11n 负责真跑它，这里只做结构判定） */
+const NORM_SRC = readFileSync(join(ROOT, "src", "features", "memory-ui", "normalize.ts"), "utf8");
 const CSS = readFileSync(join(ROOT, "src", "styles", "29-memory-ui.css"), "utf8");
 const PANEL = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "07-memory-panel.tsx"), "utf8");
 const FUNNEL = readFileSync(join(ROOT, "src", "features", "memory", "MemoryPanels.tsx"), "utf8");
@@ -148,16 +152,43 @@ ok(rmBlocks.length >= 2 && rmBlocks.every((b) => b.includes("animation: none")),
 
 /* ── ⑥ 归属判定不靠猜 ─────────────────────────────────────────────────── */
 console.log("\n【mui】⑥ 归属映射");
-ok(/name\.startsWith\("project__"\)/.test(SHELL)
-  && /name\.startsWith\("team__"\)/.test(SHELL)
-  && /name\.replace\(\/\^private__\/, ""\)/.test(SHELL),
+/* ⛔⛔ 10-05 修订：归属判定的**真相源搬到了 `normalize.ts` 的 parseNamespace** ——
+   原先三段 startsWith 散在外壳里，正是"同一件事写三遍"的形态。⇒ 判据跟着搬，
+   ⛔ 但判据强度不许降：① 查函数真的导出 ② 真跑它验三种前缀（守卫 11n 用 node
+   strip-types 真跑；这里只做结构判定，两层互补）。 */
+ok(/export function parseNamespace/.test(NORM_SRC),
+  "⛔ 命名空间归属判定的单一真相源是 parseNamespace（⛔ 不散落在多处 startsWith）");
+ok((NORM_SRC.match(/startsWith\("team__"\)|startsWith\("project__"\)|startsWith\("private__"\)/g) || []).length === 3,
   "⛔ 三种命名空间前缀各有分支（⛔ 漏 team__ 会让团记忆显示成 0 条 —— 探针抓到过）");
-/* ⛔⛔ 上一版只查"三个 startsWith 都在" ⇒ 变异把 team__ 那支改成 `if (false && …)` 照样绿
-   （分支存在 ≠ 会执行）。⇒ 钉住**分支体真的能进**：`continue` 收尾且不被短路。 */
-const teamBranch = (SHELL.match(/if \(name\.startsWith\("team__"\)\) \{[\s\S]{0,900}?\n    \}/) || [""])[0];
-ok(teamBranch.includes("out.teams") && teamBranch.includes("continue"),
-  "⛔⛔ 团命名空间分支**真的会把条目放进 teams**（⛔ 只查分支存在会漏\"永远进不去\"）");
-ok(!/if \(false && name\.startsWith/.test(SHELL) && !/if \(true \|\|/.test(SHELL),
+/* ⛔⛔ 判据强度：⛔ 不靠 grep 三个 startsWith 都在（变异把某支改成 `if (false && …)` 照样绿）。
+   ⇒ **真跑** parseNamespace 验三种前缀的输出。
+   ⛔⛔ 用**子进程**而不是顶层 import：本守卫历史上是无 `--experimental-strip-types` 跑的
+   （只有 11n 带那个标志）⇒ 直接 import .ts 会抛 ERR_UNKNOWN_FILE_EXTENSION，
+   ⛔ 而 catch 会把它吞成"跑不起来"= 静默降级成 grep = 假绿。⇒ 标志写死在子进程里。 */
+let nsCheck = null;
+try {
+  const script = `
+    const m = await import(${JSON.stringify(pathToFileURL(join(ROOT, "src", "features", "memory-ui", "normalize.ts")).href)});
+    const p = (x) => m.parseNamespace(x);
+    console.log(JSON.stringify({
+      team: p("team__t1").scope === "team" && p("team__t1").owner === "t1",
+      project: p("project__p1").scope === "project" && p("project__p1").owner === "p1",
+      private: p("private__th1").scope === "private" && p("private__th1").owner === "th1",
+      unknown: p("weird__x").owner === "",
+    }));
+  `;
+  const out = execFileSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", script],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  nsCheck = JSON.parse(out.trim().split("\n").filter((l) => l.startsWith("{"))[0] || "null");
+} catch {
+  nsCheck = null;
+}
+ok(nsCheck !== null, "⛔ parseNamespace 可被真跑（跑不起来 = 判据退化成 grep = 假绿风险）");
+ok(nsCheck?.team && nsCheck?.project && nsCheck?.private,
+  "⛔⛔ 三种命名空间前缀**真跑**都返回正确 scope+owner（⛔ 漏 team__ 会让团记忆显示 0 条 —— 探针抓到过）");
+ok(nsCheck?.unknown === true,
+  "⛔⛔ 未知前缀不猜归属（owner 留空 ⇒ 上层标成「未归属」，⛔ 猜错不可见）");
+ok(!/if \(false && name\.startsWith/.test(NORM_SRC) && !/if \(true \|\|/.test(NORM_SRC),
   "⛔ 归属分支没有被短路面包（变异手法自查）");
 ok(!/name\.startsWith\("project__"\)[\s\S]{0,200}?content\.includes/.test(SHELL),
   "⛔⛔ 归属**只按命名空间前缀 + 角色登记表**，⛔ 绝不按条目内容/显示名猜（猜错不可见）");
