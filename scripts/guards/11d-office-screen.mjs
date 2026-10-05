@@ -177,7 +177,10 @@ ok(/Math\.min\(len \* u,/.test(screen) || /Math\.min\(len,/.test(screen),
    调度其他会话后就新增一个卡通人物」）──
    ⛔ 病根：成员来源只有 `team`（专家团）一条 ⇒ 普通会话里办公室永远是空的；
      且显示门槛是 `if (!teamId || !team) return null` ⇒ 连浮层都打不开。
-   ⇒ 判据形状：两条来源（team / delegatedRuns）+ 门槛只认 teamId + 徽标计数与成员同源。 */
+   ⇒ 判据形状：两条来源（team / delegatedRuns）+ 门槛只认 teamId + 成员 id 用 threadId。
+   ⭐ 10-05 追加（用户：「普通会话的办公室预览按键图标和位置跟专家和专家团一样，
+     展示在对话框右边轨道上」）：入口**从 AppView 的浮动胶囊改成右侧轨道末位节点**，
+     与专家团成员轨共用 `OfficeRailNode` —— 见本组尾部那几条。 */
 {
   const preview = readFileSync(join(ROOT, "src", "features", "team-office", "TeamOfficePreview.tsx"), "utf8");
   const appView = readFileSync(join(ROOT, "src", "features", "app-view", "AppView.tsx"), "utf8");
@@ -212,15 +215,43 @@ ok(/Math\.min\(len \* u,/.test(screen) || /Math\.min\(len,/.test(screen),
   // AppView：传参 + 徽标计数同源
   ok(/delegatedRuns=\{app\.delegatedRailRuns\}/.test(appView),
     "⛔ AppView 把 delegatedRailRuns 传进去");
-  ok(/officeRunningCount\s*=\s*delegatedRailRuns\.filter\(\(r\) => r\.status === "running"\)\.length/.test(appView),
-    "⛔ 徽标计数与办公室成员同源（都用 running 的委托条数，否则徽标 3、屋里 0 人）");
-  ok(/OFFICE_SESSION_TEAM_ID\s*=\s*"__office-session__"/.test(appView),
-    "⛔ 普通会话用哨兵 teamId 打开（不能用空串 —— 与「未打开」不可区分）");
-  // 入口按钮
-  ok(/className="office-entry-btn"/.test(appView), "有常驻入口按钮");
-  ok(/\.office-entry-btn\s*\{/.test(
-      readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8"),
-    ), "入口按钮有样式（否则裸按钮不可见）");
+  const railsSrc = readFileSync(join(ROOT, "src", "features", "experts-teams", "ExpertsTeams", "02-rails.tsx"), "utf8");
+  const tlSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "02-main-stage", "01-timeline.tsx"), "utf8");
+  /* ⭐ 10-05 入口改位置（用户：「普通会话的办公室预览按键图标和位置跟专家和专家团一样，
+     展示在对话框右边轨道上」）⇒ 判据跟着换形状：
+       · 旧形态 = `.office-entry-btn` 浮动胶囊（左下角）⇒ **整体删除**，⛔ 不许回潮；
+       · 新形态 = **两条轨共用同一个末位节点**（`OfficeRailNode`）。
+     ⛔ 为什么钉"共用同一个组件"：用户这次报的正是"两处入口长得不一样"——
+       各写一份 markup 就一定会漂（图标/位置/title 三处都会各自演化）。 */
+  const officeNodeUses = railsSrc.match(/<OfficeRailNode onOpen=\{/g) ?? [];
+  ok(/function OfficeRailNode\(/.test(railsSrc),
+    "⛔ 办公室入口节点抽成了共用组件 OfficeRailNode");
+  ok(officeNodeUses.length === 2,
+    `⛔ TeamMemberRail 与 DelegatedRail **都**用它渲染入口（实际 ${officeNodeUses.length} 处）`);
+  /* ⛔ 共用的是**外观**，不是文案：两条轨里"办公室里坐的是谁"不一样
+     （专家团 = 团队成员；普通会话 = 本会话派出去的子会话）⇒ 各带自己的 title。
+     本轮 code review 抓到的正是这条：合并节点时把专家团那句"成员状态实时映射"也改掉了。 */
+  ok(/<OfficeRailNode onOpen=\{onOpenOffice\} title="办公室预览：成员状态实时映射成像素办公室/.test(railsSrc) &&
+    /<OfficeRailNode onOpen=\{onOpenOffice\} title="办公室预览：调度出去的子会话会变成办公室里的人/.test(railsSrc),
+    "⛔ 两个入口各带自己的 title（写死一句 ⇒ 对其中一条会话的悬停提示说假话）");
+  ok(/onOpenOffice=\{\(\) => setCompanyPreviewTeamId\(OFFICE_SESSION_TEAM_ID\)\}/.test(tlSrc),
+    "⛔ 普通会话的调度轨把入口接到预览状态（哨兵 teamId 开浮层）");
+  // ⛔ 门槛不许再用 runs.length：那会让「还没调度过」的普通会话整条轨消失 ⇒ 入口无处安放
+  ok(/\{!railTeam && \(/.test(tlSrc) &&
+    !/delegatedRailRuns\.length > 0 && \(/.test(tlSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")),
+    "⛔ 轨道按「非专家团会话」渲染（⛔ 不拿 runs.length 当门槛，否则没调度过就没有入口）");
+  ok(/OFFICE_SESSION_TEAM_ID\s*=\s*"__office-session__"/.test(
+      readFileSync(join(ROOT, "src", "features", "team-office", "index.ts"), "utf8"),
+    ), "⛔ 哨兵 teamId 定义在 team-office 域（timeline 与 AppView 都要用，留 AppView 会循环 import）");
+  // 入口样式：复用成员轨那套轨道节点样式
+  ok(/\.team-rail-node\.team-rail-office\s*\{/.test(
+      readFileSync(join(ROOT, "src", "styles", "19-misc-hints.css"), "utf8"),
+    ), "入口复用轨道节点样式 team-rail-office（否则裸按钮不可见）");
+  // ⛔ 负向：浮动胶囊不许回来（它正是"跟专家团不一样"的那个形态）。
+  //    ⛔ 必须**先剥注释**——AppView 里那段说明文字本身就写着 `.office-entry-btn`，
+  //    不剥的话这条永远红（项目里点名的"注释里引用代码片段"坑，负向断言必踩）。
+  const appViewCode = appView.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  ok(!/office-entry-btn/.test(appViewCode), "⛔ AppView 不再有 .office-entry-btn 浮动入口（入口归轨道）");
 }
 
 console.log(`\n【screen】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

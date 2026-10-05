@@ -9,6 +9,28 @@ import { useRefObject } from "../../../lib/use-ref-object";
 import { expertIconOf } from "../../../lib/expert-icon-of";
 import { expertRoleLabel } from "../../../lib/expert-role-label";
 import { useAvatarAnchor } from "./04-avatar-anchor";
+
+/**
+ * 「办公室」入口节点 —— 成员流转轨（专家团）与调度头像轨（普通会话）**共用一份**外观。
+ *
+ * ⭐ 10-05 用户要求：普通会话的办公室入口**不再是左下角浮动胶囊**（`.office-entry-btn`），
+ *   改为与专家团成员轨**同一个位置、同一个图标**的轨道末位节点。
+ * ⛔ 两条轨必须共用这一份实现 —— 各写一份的话图标/位置很快就漂开（用户正是为此报的）。
+ * ⛔ 由父级决定是否渲染（传 `onOpen` 才出现）：专家团会话由 `TeamMemberRail` 承担，
+ *   普通会话由 `DelegatedRail` 承担，两者不共存。
+ * ⛔ `title` 必须由父级给：两条轨里"办公室里坐的是谁"**不一样**
+ *   （专家团 = 团队成员；普通会话 = 本会话派出去的子会话），
+ *   写死一句会让其中一条会话的悬停提示说假话。
+ */
+function OfficeRailNode({ onOpen, title }: { onOpen: () => void; title: string }) {
+  return (
+    <button type="button" className="team-rail-node team-rail-office" title={title} onClick={onOpen}>
+      <span className="team-rail-avatar team-rail-office-avatar"><Building2 size={14} /></span>
+      <span className="team-rail-name">办公室</span>
+    </button>
+  );
+}
+
 export function TeamMemberRail({ team, containerRef, runningByMember, lastByMember, activeMemberId, onOpenMember, onOpenOffice }: {
   team: ExpertTeamConfig;
   containerRef: useRefObject;
@@ -59,14 +81,10 @@ export function TeamMemberRail({ team, containerRef, runningByMember, lastByMemb
             </button>
           );
         })}
-        {/* ⛔ 办公室预览**接口保留位**（09-30 用户要求整体下线重做）：按钮与回调链留着，
-            点下去由父级决定（当前是空实现 + 提示）。重做时实现 onOpenOffice 即可。 */}
-        {onOpenOffice && (
-          <button type="button" className="team-rail-node team-rail-office" title="办公室预览：成员状态实时映射成像素办公室，点角色打开会话" onClick={onOpenOffice}>
-            <span className="team-rail-avatar team-rail-office-avatar"><Building2 size={14} /></span>
-            <span className="team-rail-name">办公室</span>
-          </button>
-        )}
+        {/* 办公室入口 —— 与普通会话那条调度头像轨**同一个节点**（见 OfficeRailNode）。
+            ⛔ 外观别再在两处各写一份（用户 10-05 报「普通会话的入口跟专家团不一样」）。
+            ⚠️ title 是专家团口径：这里坐的是**团队成员**（与普通会话那条不同）。 */}
+        {onOpenOffice && <OfficeRailNode onOpen={onOpenOffice} title="办公室预览：成员状态实时映射成像素办公室，点角色打开会话" />}
       </div>
     </aside>
   );
@@ -115,11 +133,15 @@ export function TeamMemberHistory({ team, memberId, runs, onClose }: {
   );
 }
 
-export function DelegatedRail({ containerRef, runs, onOpen, activeId }: {
+export function DelegatedRail({ containerRef, runs, onOpen, activeId, onOpenOffice }: {
   containerRef: useRefObject;
   runs: { threadId: string; kind: string; name: string; status: "running" | "done" | "failed" }[];
   onOpen: (threadId: string) => void;
   activeId: string;
+  /** ⭐ 10-05：普通会话的办公室入口 —— 用户要求「跟专家和专家团一样，展示在对话框右边轨道上」。
+   *  传了就在轨道**末位**渲染办公室节点（与 `TeamMemberRail` 同一个 `OfficeRailNode`）。
+   *  ⛔ 专家团会话由 `TeamMemberRail` 承担，两者不共存（见 timeline 的 `!railTeam` 门槛）。 */
+  onOpenOffice?: () => void;
 }) {
   const [mode, setMode] = useState<"full" | "compact" | "hidden">("full");
   useEffect(() => {
@@ -132,13 +154,20 @@ export function DelegatedRail({ containerRef, runs, onOpen, activeId }: {
     observer.observe(container);
     return () => observer.disconnect();
   }, [containerRef]);
-  if (mode === "hidden" || !runs.length) return null;
+  /* ⛔ 门槛**不再含 `!runs.length`**（原为 `mode === "hidden" || !runs.length`）：
+     那样「这条会话还没调度过任何对象」时整条轨消失 ⇒ 办公室入口跟着一起没，
+     而用户要的正是"永远能在右侧轨道上开办公室"（原来只能挂在左下角浮动胶囊上）。
+     ⇒ 现在只有「窄屏自动收」与「既没委托也没入口」两种情形不渲染。 */
+  if (mode === "hidden" || (!runs.length && !onOpenOffice)) return null;
   const kindIcon = (kind: string) => (kind === "team" ? Users : kind === "subagent" ? Bot : Sparkles);
   const kindLabel = (kind: string) => (kind === "team" ? "专家团" : kind === "subagent" ? "子智能体" : "专家");
   return (
-    <aside className="team-rail is-flowing" aria-label="调度中的对象">
+    /* aria-label 覆盖两种内容（10-05 起这条轨也承载办公室入口）：原来只写「调度中的对象」，
+       在"没调度过、只有办公室一个节点"时是不准确的。 */
+    <aside className="team-rail is-flowing" aria-label="调度对象与办公室">
       <div className="team-rail-track">
-        <i className="team-rail-line" aria-hidden />
+        {/* 灰线只在**真有节点要串**时画：只剩办公室一个节点时，悬空一条短线反而像画错了 */}
+        {runs.length > 0 && <i className="team-rail-line" aria-hidden />}
         {runs.map((run) => {
           const Icon = kindIcon(run.kind);
           const state = run.status === "running" ? "running" : run.status === "failed" ? "failed" : "done";
@@ -158,6 +187,9 @@ export function DelegatedRail({ containerRef, runs, onOpen, activeId }: {
             </button>
           );
         })}
+        {/* 普通会话的办公室入口：与专家团成员轨**同一位置（轨道末位）、同一图标**。
+            ⚠️ title 是普通会话口径：这里坐的是**本会话派出去的子会话**。 */}
+        {onOpenOffice && <OfficeRailNode onOpen={onOpenOffice} title="办公室预览：调度出去的子会话会变成办公室里的人，点角色打开会话" />}
       </div>
     </aside>
   );

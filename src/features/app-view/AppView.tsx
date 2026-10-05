@@ -138,7 +138,6 @@ import {
   CircleHelp,
   Video,
   Bell,
-  Building2,
   CheckCheck,
 } from "lucide-react";
 import VoiceCallFloat from "../../components/VoiceCallFloat";
@@ -171,13 +170,9 @@ import { DeclaredPluginSlots } from "../../runtime/declared-plugin-slots";
 /* ⛔ 诊断探针（09-30）：localStorage.officeProbe = "1" 时用**内置假团队**打开像素办公室 ——
    e2e profile 里没有活动专家团（办公室按钮只在选中团队时渲染），真机断言全靠它复现。
    默认关闭、只读、不碰业务数据。 */
-/* ⭐ 普通会话打开办公室的哨兵值（2026-10-04）。
- * ⛔⛔为什么用一个“假 teamId”而不是 ：
- *    的显示门槛是 （无传值 = 未打开），
- *   而普通会话模式靠  为空来区分两条路径。
- *   故取一个不会与真实团队Id 碰的值作为“普通会话”标识。
- * ⛔ 不能用空字符串：那与「未打开」不可区分。*/
-const OFFICE_SESSION_TEAM_ID = "__office-session__";
+/* ⭐ 普通会话打开办公室的哨兵值（10-04 引入；⛔ 10-05 起**定义搬到了 team-office 域**的 barrel）。
+   入口已从本文件的浮动按钮挪进 `02-main-stage/01-timeline.tsx` 的右侧轨道 ⇒ 常量只在
+   timeline 侧使用（放在本文件会形成 AppView ⇄ timeline 的循环 import）。 */
 
 const OFFICE_PROBE_TEAM = {
   teamId: "__office-probe__",
@@ -226,7 +221,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     connectors, connectorsManageOnly, contentTailTarget, contextItems,
     contextOpen, copyImage, copyThreadReferenceId, currentModelId,
     currentProvider, customCommands, customDraft, customModel,
-    delegatedPopupId, delegatedPopupRun, delegatedRailRuns, deleteExpertTeam,
+    delegatedPopupId, delegatedPopupRun, deleteExpertTeam,
     deleteMemoryGroup, deleteMemoryRecord, deleteQueued, deleteSchedule,
     deleteSubAgent, deleteThreadsByCwd, desktopAuto, devRuntimes,
     dictationBaseRef, diff, dismissEnhanceHint, dismissNotice,
@@ -389,10 +384,6 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     voiceDictating, waitingForApproval, waitingForInput, welcomeCwdMenuOpen,
     welcomeScratchDir, workspace, workspaceMemoryEnabled,
   } = app;
-  /* 徽标计数（2026-10-04）：与办公室成员**同源**—— 都是 delegatedRailRuns 里 running 的条数。
-     ⛔ 不要另算一份（例如数 delegatedLiveRuns）：那是"全部历史委托"，跑完的也算进去
-     ⇒ 徽标显示 3、点进去办公室一个人也没有。 */
-  const officeRunningCount = delegatedRailRuns.filter((r) => r.status === "running").length;
   return (
     // 设置页的「?」要能打开完整帮助弹窗（气泡里的「查看完整帮助」）：用 context 注入 setHelpKey。
     // 不走逐页 prop —— 二十多个设置页头部每处都传一遍回调，漏传的那个会静默点不开。
@@ -508,21 +499,10 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       <AppViewSettingsSheet app={app} />
       {/* 专家团像素办公室（v19）：成员流转轨「办公室」按钮进入。数据面 = teams + railRuns 的
           运行态（引擎事件流归约），无新 IPC；交互只有「点角色 → 打开该成员会话」。 */}
-      {/* ⭐ 常驻入口（2026-10-04 普通会话也能开办公室）：常驻显示，带"正在跑几个人"的计数。
-          ⛔ 只在「没打开浮层」时出现 —— 浮层是整屏遮罩，按钮浮在上面是噪音。
-          ⚠️ 计数与办公室成员**同源**（`delegatedRailRuns` 里 running 的条数），
-             不要另算一份，否则徽标与画布人数对不上。 */}
-      {!app.companyPreviewTeamId && (
-        <button
-          className="office-entry-btn"
-          title="打开办公室：调度出去的子会话会变成办公室里的人"
-          onClick={() => app.setCompanyPreviewTeamId(OFFICE_SESSION_TEAM_ID)}
-        >
-          <Building2 size={13} />
-          办公室
-          {officeRunningCount > 0 && <span className="office-entry-count">{officeRunningCount}</span>}
-        </button>
-      )}
+      {/* ⭐ 入口位置（10-05 用户定稿）：**专家团会话** = 成员流转轨末位节点；
+          **普通会话** = 调度头像轨末位节点。两处共用 `OfficeRailNode`（`02-rails.tsx`），
+          位置/图标一致 —— 原来普通会话那个"左下角浮动胶囊"（`.office-entry-btn`）已整体删除。
+          ⛔ 别再把入口挂回 AppView：浮层开在这里，但**开浮层的按钮属于轨道**（轨道在 timeline 里）。 */}
       <TeamOfficePreview
         teamId={app.companyPreviewTeamId}
         onClose={() => app.setCompanyPreviewTeamId(null)}

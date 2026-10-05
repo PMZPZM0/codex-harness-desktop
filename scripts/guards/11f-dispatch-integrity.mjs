@@ -155,9 +155,20 @@ try {
   ok(/agents:tool-description", async \(_event, threadId: string\)/.test(
     readFileSync(join(ROOT, "electron/features/agents-ipc.ts"), "utf8")),
     "主进程 handler 接 threadId 并按 dispatch 开关生成 allow");
-  ok(/delegatedRailRuns\.length > 0/.test(
-    readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/01-timeline.tsx"), "utf8"),
-  ), "主会话下方渲染 DelegatedRail（被调度会话出现在主会话下）");
+  /* ⭐ 10-05：这条轨的门槛从 `runs.length > 0` 改成 `!railTeam`（普通会话**永远**有这条轨，
+     办公室入口就挂在它末位）。⇒ 判据改成结构式，且**钉住"不许退回 runs.length"**——
+     那正是"没调度过 ⇒ 没有轨道 ⇒ 入口无处安放"的病根（用户 10-05 报的入口位置问题）。
+     ⛔ 用注释剥离后的源码判负向：本文件/被测文件里的说明文字同样会写出那个表达式。 */
+  {
+    const tlRaw = readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/01-timeline.tsx"), "utf8");
+    const tlCode = tlRaw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    const at = tlCode.indexOf("<DelegatedRail");
+    const block = at >= 0 ? tlCode.slice(at, tlCode.indexOf("/>", at)) : "";
+    ok(at >= 0 && /runs=\{delegatedRailRuns\}/.test(block),
+      "主会话下方渲染 DelegatedRail，且接到本会话的 delegatedRailRuns（被调度会话出现在主会话下）");
+    ok(/!railTeam/.test(tlCode) && !/delegatedRailRuns\.length\s*>\s*0/.test(tlCode),
+      "⛔ 该轨按「非专家团会话」渲染（⛔ 不用 runs.length 当门槛：没调度过就没有轨道 = 办公室入口无处安放）");
+  }
 }
 
 // ── ⑦ 调度工具必须真的在模型工具面里（10-05 用户报「调度工具用不了」的结构判据）──

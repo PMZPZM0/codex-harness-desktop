@@ -1984,3 +1984,11 @@
 .team-rail-node.team-rail-office:hover .team-rail-office-avatar {
   background: color-mix(in srgb, var(--link) 22%, var(--panel-2));
 }
+/* ⭐ 10-05：普通会话的调度轨**只剩办公室一个节点**时（本会话还没派过任何对象），
+   ⛔ 不要那根 20px 分隔线与上方留白 —— 悬空一条线看着像画错了。
+   `:only-child` 只在"没有委托节点、也没画灰线"时成立（见 DelegatedRail 的 `{runs.length > 0 && …}`）。 */
+.team-rail-node.team-rail-office:only-child {
+  margin-top: 0;
+  padding-top: 0;
+}
+.team-rail-node.team-rail-office:only-child::before { display: none; }
