@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-03",
-  "count": 417,
+  "count": 420,
   "channels": [
     {
       "name": "request",
@@ -1492,6 +1492,36 @@
       "invokeArgs": "input",
       "cast": null,
       "note": "10-05 统一记忆（读）：session 段按 threadId 硬隔离 + project 段全项目共享 + 上一版角色记忆兼容段。主会话与被调度角色走同一个 handler"
+    },
+    {
+      "name": "listRoleSessions",
+      "channel": "memory:role-sessions",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ threadId: string; ref: any; workspace: string; at: number }[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "10-05 记忆前端：会话↔角色归属表（fabric 命名空间只带 threadId，靠它归到人）"
+    },
+    {
+      "name": "listFabricNamespaces",
+      "channel": "memory:fabric-namespaces",
+      "paramsImpl": "workspace?: string",
+      "paramsDecl": "workspace?: string",
+      "returns": "Promise<{ namespace: string; scope: string; entries: number; chars: number }[]>",
+      "invokeArgs": "workspace",
+      "cast": null,
+      "note": "10-05 统一记忆只读：命名空间概览（两种作用域 + 条数）—— 前端分区渲染用"
+    },
+    {
+      "name": "listFabricEntries",
+      "channel": "memory:fabric-entries",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { workspace?: string; namespace?: string; includeArchived?: boolean }",
+      "returns": "Promise<any[]>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "10-05 统一记忆只读：某命名空间的条目（含来源智能体/权重/归档态）"
     },
     {
       "name": "writeFabricMemory",

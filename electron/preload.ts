@@ -255,6 +255,12 @@ contextBridge.exposeInMainWorld("codex", {
   verifyMemoryMcp: () => __ipc("memory:mcp:verify", 0, []),
   /* 10-05 统一记忆（读）：session 段按 threadId 硬隔离 + project 段全项目共享 + 上一版角色记忆兼容段。主会话与被调度角色走同一个 handler */
   readRoleMemoryContext: (input: unknown) => __ipc("memory:role-context", 1, [input]),
+  /* 10-05 记忆前端：会话↔角色归属表（fabric 命名空间只带 threadId，靠它归到人） */
+  listRoleSessions: () => __ipc("memory:role-sessions", 0, []),
+  /* 10-05 统一记忆只读：命名空间概览（两种作用域 + 条数）—— 前端分区渲染用 */
+  listFabricNamespaces: (workspace?: string) => __ipc("memory:fabric-namespaces", 0, [workspace]),
+  /* 10-05 统一记忆只读：某命名空间的条目（含来源智能体/权重/归档态） */
+  listFabricEntries: (input: unknown) => __ipc("memory:fabric-entries", 1, [input]),
   /* 10-05 统一记忆（写）：主会话的 memory_write 走这里；session=本会话私有 / project=全项目共享 */
   writeFabricMemory: (input: unknown) => __ipc("memory:fabric-write", 1, [input]),
   saveMemory: (input: unknown) => __ipc("memory:save", 1, [input]),

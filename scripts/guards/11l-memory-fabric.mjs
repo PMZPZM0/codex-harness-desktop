@@ -33,8 +33,14 @@ const mainSrc = boot;
 
 /* ── ① 作用域模型：只有两级，且键以 scope 打头 ─────────────────────────── */
 console.log("\n【fabric】① 作用域与命名空间");
-ok(/export type MemoryScope = "session" \| "project"/.test(fab),
-  '⛔ 作用域**只有两级** session/project（角色不是存储维度 —— 架构文档 §1）');
+/* ⛔ 10-05 用户定稿：**三层**（私有 / 团内共享 / 项目共享）。
+   ⛔ 原来的 "session" 已并入 "private"（会话记忆的本质是「某个执行体独有」）。 */
+ok(/export type MemoryScope = "private" \| "team" \| "project"/.test(fab),
+  "⛔ 作用域是**三层** private/team/project（用户定稿：私有 + 团内共享 + 项目共享）");
+ok(!/export type MemoryScope = "session"/.test(fab),
+  "⛔⛔ 旧的两级枚举不许复活（\"session\" 已并入 \"private\" —— 留着会让新代码继续写错层）");
+ok(/FABRIC_BUDGET = \{ project: 3000, team: 2500, private: 4000 \}/.test(fab),
+  "⛔ 三层各有独立注入预算（⛔ 共用一个 = 某一层膨胀会挤掉其它层）");
 /* ⛔ 下面四条都锚**实现的真实形态**（⛔ 别用 `\$\{` 拼模板 —— 那是 bash/JS 双层转义的坑，
    上一版就是这么全红的）。判据形态：键模板含 scope 与 owner、生成点唯一、净化覆盖非法字符。 */
 const NS_TEMPLATE = "return `" + "${safeId(scope)}__${safeId(owner)}`";
@@ -152,8 +158,14 @@ ok(/window\.codex\.writeFabricMemory\(/.test(req),
 /* ── ⑥ 一条注入路径（不许分两处拼装）──────────────────────────────────── */
 console.log("\n【fabric】⑥ 注入路径同源");
 ok(/export async function buildContext\(/.test(fab)
-  && /handles: \{ session: MemoryHandle \| null; project: MemoryHandle \| null \}/.test(fab),
-  "⛔ 注入只有一个 buildContext（分两处拼装 ⇒ \"派出去的专家拿不到自己刚写的\"）");
+  && /handles: \{ private: MemoryHandle \| null; team: MemoryHandle \| null; project: MemoryHandle \| null \}/.test(fab),
+  "⛔ 注入只有一个 buildContext，且接受**三层**句柄（分两处拼装 ⇒ \"派出去的专家拿不到自己刚写的\"）");
+/* ⛔ 注入顺序 = 共享在前、私有在后（⛔ 顺序有语义：模型对上下文开头权重更高） */
+const injectOrder = (fab.match(/const projectSection = [\s\S]{0,900}?const privateSection = await options\.handles\.private/) || [""])[0];
+ok(injectOrder.length > 0
+  && injectOrder.indexOf("handles.project") < injectOrder.indexOf("handles.team")
+  && injectOrder.indexOf("handles.team") < injectOrder.indexOf("handles.private"),
+  "⛔⛔ 注入顺序 = 项目 → 团内 → 私有（共享的在前、自己的在后）");
 ok(/await buildContext\(\{ handles/.test(del),
   "⛔ 被委派会话走同一个 buildContext");
 ok(/memory:role-context[\s\S]{0,200}?await buildContext\(/.test(memIpc)
@@ -175,11 +187,11 @@ console.log("\n【fabric】⑦ 生命周期");
 ok(/export async function archiveSessionMemory\(/.test(fab)
   && /if \(archived\) \{[\s\S]{0,200}?e\.archivedAt = now/.test(fab),
   "⛔ 会话归档/取消归档有闭环（归档 ≠ 失忆：内容保留）");
-ok(/FABRIC_SESSION_RETENTION_DAYS \* 86_400_000/.test(fab),
-  "⛔ 会话记忆有保留期（过期**归档**而不是删除）");
+ok(/FABRIC_PRIVATE_RETENTION_DAYS \* 86_400_000/.test(fab),
+  "⛔ 私有记忆有保留期（过期**归档**而不是删除）");
 /* ⛔ 上一版只查"保留期常量被用上"，变异 m12（把过期判据改成 `false &&`）不红 = 假绿。
    ⇒ 判据必须是**可判真假的具体条件**：e.archivedAt 为空 **且** 已超保留期。 */
-ok(/e\.archivedAt == null && now - e\.createdAt > FABRIC_SESSION_RETENTION_DAYS \* 86_400_000/.test(fab),
+ok(/e\.archivedAt == null && now - e\.createdAt > FABRIC_PRIVATE_RETENTION_DAYS \* 86_400_000/.test(fab),
   "⛔⛔ 过期归档的判据是「未归档 且 超保留期」（两条件都在 —— 少一个就永不过期，恒假）");
 /* ⛔ 归档必须有**行为差异**：只打标记、不过滤 = 字段是装饰（review 抓到）。
    ⇒ 钉住 rankEntries 默认排除已归档 + 提供 includeArchived 出口。 */

@@ -246,6 +246,19 @@ export async function forgetRoleSession(userDataDir: string, threadId: string): 
   return true;
 }
 
+/**
+ * 列出**全部**会话↔角色归属（10-05 记忆前端用）。
+ * ⛔ 为什么要它：fabric 的命名空间只带 `private__<threadId>`，前端拿不到
+ *   「这个 threadId 是哪位专家/哪个子智能体」⇒ 没有它就无法把条目归到人看。
+ * ⛔ 只读索引，不含记忆内容（内容按命名空间单独读）。
+ */
+export async function listRoleSessions(userDataDir: string): Promise<{ threadId: string; ref: RoleRef; workspace: string; at: number }[]> {
+  const index = await readRoleIndex(userDataDir);
+  return Object.entries(index).map(([threadId, v]) => ({
+    threadId, ref: v.ref, workspace: String(v.workspace ?? ""), at: v.at,
+  }));
+}
+
 /** 列出当前工作区下已有私有记忆的角色（给设置页/记忆中心用；⛔ 没工作区返回空数组）。 */
 export async function listRoleMemories(workspace: string | undefined): Promise<{ key: string; chars: number }[]> {
   const dir = rolesRoot(workspace);

@@ -40,7 +40,7 @@ function formatRelativeTime(ts: number, now: number = Date.now()): string {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-export function MemoryFunnel({ groups, emptyHint, onShowAll, onPreview, onTogglePin, onDeleteOne, onDeleteGroup, onOpenThread }: {
+export function MemoryFunnel({ groups, emptyHint, onShowAll, onPreview, onTogglePin, onDeleteOne, onDeleteGroup, onOpenThread, readOnly }: {
   groups: MemoryGroup[];
   /** 空列表时的解释（09-23 加）：区分「真的没记忆」与「当前项目下没有、别处还有」—— 后者原先只显示"暂无记忆"，把用户带偏。 */
   emptyHint?: { totalElsewhere: number; scopeLabel: string } | null;
@@ -51,6 +51,10 @@ export function MemoryFunnel({ groups, emptyHint, onShowAll, onPreview, onToggle
   onDeleteOne: (id: string) => void;
   onDeleteGroup: (group: MemoryGroup) => void;
   onOpenThread: (threadId: string) => void;
+  /** ⛔⛔ 只读模式（10-05 用户定稿「记忆只能由智能体自己写，界面不提供增删改入口」）。
+   *  ⛔ 只读时**不渲染**删除/置顶按钮 —— 传 noop 只是让点击无效，⛔ 按钮还在就等于还有入口。
+   *  ⛔ 默认 false：⛔ 不改默认值会让别处（设置页总览等）突然失去编辑能力。 */
+  readOnly?: boolean;
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   // 层级别折叠：P0 默认展开（核心一眼可见），P1/P2/P3 默认整层收起
@@ -108,7 +112,9 @@ export function MemoryFunnel({ groups, emptyHint, onShowAll, onPreview, onToggle
                         {group.categories.map((cat) => <span key={cat} className="memory-category-pill">{cat}</span>)}
                         <span className="memory-group-time" title={new Date(group.latestAt).toLocaleString()}>{formatRelativeTime(group.latestAt)}</span>
                         <span className="memory-group-count">{group.items.length} 条</span>
-                        <button className="icon-button" title="删除整个会话记忆" onClick={(event) => { event.stopPropagation(); onDeleteGroup(group); }}><Trash2 size={12} /></button>
+                        {!readOnly && (
+                          <button className="icon-button" title="删除整个会话记忆" onClick={(event) => { event.stopPropagation(); onDeleteGroup(group); }}><Trash2 size={12} /></button>
+                        )}
                         <button className={`memory-group-chevron ${isOpen ? "open" : ""}`} title={isOpen ? "收起" : "展开"}>{isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>
                       </div>
                     </header>
@@ -122,8 +128,12 @@ export function MemoryFunnel({ groups, emptyHint, onShowAll, onPreview, onToggle
                               {(entry as any).workspace && <span className="memory-ws-badge" title="项目记忆">{(entry as any).workspace.split(/[\\/]/).pop()}</span>}
                               <span className="memory-card-time" title={new Date(entry.updatedAt).toLocaleString()}>{formatRelativeTime(entry.updatedAt)}</span>
                               {entry.sourceThreadId && <button className="icon-button" title="打开源会话" onClick={(event) => { event.stopPropagation(); onOpenThread(entry.sourceThreadId!); }}><MessageSquare size={12} /></button>}
-                              <button className={`icon-button ${(entry as any).pinned ? "pin-on" : ""}`} title={(entry as any).pinned ? "取消置顶" : "置顶为核心记忆"} onClick={(event) => { event.stopPropagation(); onTogglePin(entry.id); }}><Star size={12} /></button>
-                              <button className="icon-button" title="删除" onClick={(event) => { event.stopPropagation(); onDeleteOne(entry.id); }}><Trash2 size={12} /></button>
+                              {!readOnly && (
+                                <>
+                                  <button className={`icon-button ${(entry as any).pinned ? "pin-on" : ""}`} title={(entry as any).pinned ? "取消置顶" : "置顶为核心记忆"} onClick={(event) => { event.stopPropagation(); onTogglePin(entry.id); }}><Star size={12} /></button>
+                                  <button className="icon-button" title="删除" onClick={(event) => { event.stopPropagation(); onDeleteOne(entry.id); }}><Trash2 size={12} /></button>
+                                </>
+                              )}
                             </div>
                             <p className="memory-card-preview">{entry.content}</p>
                           </article>

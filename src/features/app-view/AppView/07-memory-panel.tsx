@@ -4,6 +4,7 @@
  */
 import { AppSelect } from "../../../components/AppSelect";
 import { MemoryFunnel, MemoryLayersEditor, MemoryConfigModal, MemoryHygienePanel, MemoryPyramid, MemoryInjectPreview } from "../../memory";
+import { MemoryWorkbench } from "../../memory-ui";
 import {
   AlertTriangle,
   Archive,
@@ -239,19 +240,23 @@ export function AppViewMemoryPanel({ app }: { app: HarnessAppApi }) {
                   </div>
                 </div>
                 {memoryCenterTab === "library" && <div className="memory-center-pane">
+                  {/* ⭐ 10-05 统一记忆（fabric）：**新的主入口**，放在旧记忆库上方。
+                      ⛔ 为什么要分区而不是混在一起排：会话记忆与项目记忆的**可见范围完全不同**
+                      （一个只属于一个会话、一个全体共享）⇒ 混排时用户无法判断"这条会不会被别的会话读到"。
+                      ⛔ 旧记忆库（下方）是碎片池 + P0–P3 分层，仍在用，⛔ 不删（不擅自改既有语义）。 */}
                   <div className="memory-center-block">
-                    <div className="memory-center-block-head"><div><strong>手动保存</strong><span>把临时约定或结论固化成可召回的记忆；对话里让引擎「记住」的内容也会带来源会话出现在下方记忆库（本地自动捕获只沉淀到常驻记忆的每日日志）。</span></div></div>
-                    <div className="memory-editor">
-                      <AppSelect value={memorySaveCategory} onChange={(v) => setMemorySaveCategory(v)} options={[...(MEMORY_CATEGORIES).map((entry) => ({ value: (entry.name), label: (`${entry.name}`), }))]} />
-                      <textarea value={memoryDraft} onChange={(event) => setMemoryDraft(event.target.value)} placeholder={`保存一条可复用的事实或约定（${memoryMode === "cloud" ? "云端" : "本地"}）`} />
-                      <button className={`primary-setting ${memorySavedAt ? "memory-save-success" : ""}`} disabled={!memoryDraft.trim() || !memoryManagementWorkspace} title={memoryManagementWorkspace ? "保存到当前管理项目" : "先选择一个项目"} onClick={() => void saveMemoryRecord(memoryManagementWorkspace)}>{memorySavedAt ? <CircleCheck size={14} /> : <Check size={14} />}{memorySavedAt ? "已保存" : "保存记忆"}</button>
-                    </div>
+                    <MemoryWorkbench workspace={memoryManagementWorkspace} onOpenThread={(id) => { setMemoryCenterOpen(false); setSettingsOpen(false); void openThread(id); }} />
+                  </div>
+                  <div className="memory-center-block">
+                    {/* ⛔⛔ 10-05 用户定稿：「记忆只能由智能体自身在运行过程中自动新增，
+                        不提供用户手动新增 / 编辑 / 删除的入口」⇒ 手动保存表单已移除。
+                        ⛔ 查看仍然保留（用户要能看），⛔ 写只能由模型在干活时自己决定。 */}
+                    <div className="memory-center-block-head"><div><strong>记忆由智能体自己写</strong><span>记忆只能由智能体在干活时自己记下（对话里说「记住这个」，或让它自己判断什么值得记）。这里可以查看，但不能手动增删改。</span></div></div>
                   </div>
                   <div className="memory-library">
                     <div className="memory-library-head">
                       <div className="memory-library-title"><h3>记忆库</h3><p>按重要度 P0–P3 分层，点击条目可看全文；★ 置顶的核心记忆不会被自动清理。</p><button className="secondary-setting" title="到全局搜索里按关键词找会话、记忆、任务与技能" onClick={() => setMemoryCenterTab("search")}><Search size={13} />到全局搜索找</button></div>
                       <div className="memory-toolbar">
-                        <button className="secondary-setting" onClick={async () => { const scopeText = memoryProjectWorkspace === "__all__" ? "所有项目的本地记忆条目" : `项目「${basename(memoryProjectWorkspace)}」的项目记忆条目（全局记忆不会删除）`; const cloudText = memoryMode === "cloud" ? "云端 Gateway 数据不会被删除，需要在 Gateway 管理端清理。" : ""; if (await openAppConfirm("清空记忆", `${scopeText}将被永久删除。${cloudText}`, "确认清空")) void clearSelectedMemory(); }}><Trash2 size={14} />清空{memoryProjectWorkspace === "__all__" ? (memoryMode === "cloud" ? "本地缓存" : "记忆") : "项目记忆"}</button>
                         <span className="memory-count">{memoryVisibleRecords.length} 条 · {memoryMode === "cloud" ? "云端同步 / 本地缓存" : "本地"}</span>
                       </div>
                     </div>
@@ -270,6 +275,7 @@ export function AppViewMemoryPanel({ app }: { app: HarnessAppApi }) {
                       onTogglePin={togglePinned}
                       onDeleteOne={(id) => void deleteMemoryRecord(id)}
                       onDeleteGroup={(group) => void deleteMemoryGroup((entry) => (entry.sourceThreadId ?? "__manual") === group.key).then((count) => { if (count > 0) setMemoryStatus(`已从「${group.threadTitle}」删除 ${count} 条记忆`); else setMemoryStatus("没有可删除的记忆（可能已被删除）"); })}
+                      readOnly
                       onOpenThread={(threadId) => { setMemoryCenterOpen(false); setSettingsOpen(false); void openThread(threadId); }}
                     />
                   </div>

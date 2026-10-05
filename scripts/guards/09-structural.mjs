@@ -1489,7 +1489,7 @@ export async function run() {
         "electron/main.ts": 546,   // 10-05 界面草图：sketch 协议的特权声明 + 那段"为什么不用 file://、为什么必须 standard/secure"的注释（【283】钉），不是新逻辑
         "scripts/guards/03-runtime-boot.mjs": 917,
         "electron/voice/voice-service.ts": 800,
-        "src/vite-env.d.ts": 788,   // 生成物：通道数增加时自然变长（守卫【2】保证与 manifest 一致）；10-05 +2 = model-viewer 读，再 +1 = memory:role-context（角色私有记忆读取）通道 gen 方法 + onModelViewerOpen 手写桥声明
+        "src/vite-env.d.ts": 792,   // 生成物：通道数增加时自然变长（守卫【2】保证与 manifest 一致）；10-05 +2 = model-viewer 读，再 +1 = memory:role-context，再 +3 = 统一记忆 UI 的两个读通道 + 角色归属表通道 gen 方法 + onModelViewerOpen 手写桥声明
         "src/components/VoiceCallFloat/use-voice-call-float-state.tsx": 806,
         "scripts/guards/10-memory-audit.mjs": 848,
         "src/features/drama-canvas/DramaCanvas.tsx": 922,
