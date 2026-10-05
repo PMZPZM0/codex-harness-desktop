@@ -74,25 +74,47 @@ ok(!/\[data-phase="idle"\][^{]*\{[^}]*animation:/.test(styles), "负向：回 id
 const barPath = "src/features/shared/SelectionActionBar.tsx";
 ok(existsSync(join(ROOT, barPath)), "选区浮条组件存在");
 const bar = codeOnly(read(barPath));
-ok((bar.match(/<FeedbackIconButton/g) ?? []).length === 2, "浮条两个动作都用共用按钮（与消息脚部同一套两段反馈）");
-ok(/复制所选文字/.test(bar) && /添加到对话/.test(bar), "两个动作齐全：复制 / 添加到对话");
+ok((bar.match(/<FeedbackIconButton/g) ?? []).length === 3, "浮条三枚按钮都用共用按钮（选整条 / 复制 / 添加到对话）");
+ok(/选整条消息/.test(bar) && /复制所选文字/.test(bar) && /添加到对话/.test(bar), "浮条三个动作齐全");
+ok(/function wholeMessageRange/.test(bar) && /closest\("\.message"\)/.test(bar),
+  "「选整条」是从选区往上找那条 .message，不是猜一个父节点");
+ok(/closest\("button, \.message-footer, \.user-message-footer/.test(bar),
+  "⛔ 扩到整条时必须排除操作条与按钮 —— agent 的 MessageFooter 就渲染在 .message-body 里面，整块 selectNodeContents 会把「复制 / 分支 / 15:16」一起选进去");
+ok(/if \(!range\) return false;/.test(bar), "选区不在任何一条消息里 ⇒ 「选整条」不演成功");
+ok(/selection\?\.addRange\(range\);\s*\n\s*measure\(\);/.test(bar),
+  "扩完选区立刻重新定位浮条（等浏览器下一次 selectionchange 会慢半拍）");
 ok(/onCopy=\{messageHandlers\.onCopy\}/.test(read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx"))
   && /onAppend=\{messageHandlers\.onQuote\}/.test(read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx")),
   "挂在时间线里，且两个动作都复用现成通道（copyMessage / quoteMessage）⇒ 不另造第二份复制或引用实现");
-ok(/host\.contains\(range\.commonAncestorContainer\)/.test(bar) && /host\.contains\(selection\.anchorNode\)/.test(bar),
-  "选区两头都在时间线内才弹（跨到侧栏/输入框的选区不抢）");
+ok(/const hostBox = host\.getBoundingClientRect\(\);/.test(bar)
+  && /box\.left < hostBox\.left - 1 \|\| box\.right > hostBox\.right \+ 1/.test(bar)
+  && /startElement\?\.isConnected && endElement\?\.isConnected && \(!host\.contains\(startElement\) \|\| !host\.contains\(endElement\)\)/.test(bar),
+  "「在不在时间线内」= 选区矩形**套在**时间线矩形里 + 两头节点还连着文档时补一道 contains：10-05 实测真拖选松手后消息区会重渲染，选区节点随即脱离文档，只看 contains 就永远不弹");
+ok(!/commonAncestorContainer/.test(bar),
+  "⛔ 不用 commonAncestorContainer —— 跨段选择时那个公共祖先可能是时间线的上层元素，contains 为 false 就会莫名不弹");
 ok(/closest\("input, textarea, \[contenteditable\]"\)/.test(bar), "输入框里的选区让给浏览器原生菜单");
 /* ↓ 10-05 用户实测「按键在那么远，而且两个按键都是假的，点不了」逼出来的三条硬约束 */
 ok(/createPortal\([\s\S]*document\.body\s*\)/.test(bar),
-  "⛔ 浮条必须 portal 到 body：挂在时间线里时，主舞台上有 transform 的祖先会改掉 position:fixed 的包含块 ⇒ 跑位 + 点不动（同 AppSelect 的做法）");
+  "⛔ 浮条必须 portal 到 body：挂在时间线里时，主舞台上有 transform 的祖先会改掉 position:fixed 的包含块 ⇒ 跑位 + 点不动（portal 到 body 是本仓轻浮层的做法）");
 ok(/range\.getClientRects\(\)/.test(bar) && /rects\[rects\.length - 1\]/.test(bar),
   "定位取**最后一个** client rect（拖拽结束那一行），不用整个选区的 union rect —— 跨段选区的 union 上沿常在视口外，浮条就会离得很远");
-ok(/window\.addEventListener\("scroll", measure, true\)/.test(bar),
+ok(/window\.addEventListener\("scroll", scheduleMeasure, true\)/.test(bar),
   "滚动 = 重新贴着选区（不是收起），且绑在 window 捕获阶段：绑某个具体节点会被 React 换掉而静默失效");
 ok(/above \? box\.top - GAP : box\.bottom \+ GAP/.test(bar), "上方放不下就翻到下面（锚点自己算，translate 只管对齐）");
 ok(/event\.key === "Escape"/.test(bar), "ESC 能收起浮条");
-ok(/onPointerDown=\{\(\) => setPlacement\(null\)\}/.test(bar) && !/document\.addEventListener\("mouse(down|up)"/.test(bar),
-  "收起靠全屏透明垫层，不靠 document 上的 mousedown（那会在按钮响应之前就把浮条卸掉 = 点了没反应）");
+/* ↓ 治「拖动时一直闪全选」+「松手不弹」的三条 */
+ok(/const DRAG_SETTLE_MS = 220;/.test(bar) && /window\.setTimeout\(measure, DRAG_SETTLE_MS\)/.test(bar)
+  && /document\.addEventListener\("selectionchange", scheduleMeasure\)/.test(bar),
+  "选区停止变化 220ms 才弹：一路拖就一路重置计时 ⇒ 过程中一次都不渲染（10-05 用户：「拖动的时候一直闪全选内容」）");
+ok(!/draggingRef/.test(bar),
+  "⛔ 不许拿「是否按住鼠标」当闸门：10-05 实测 CDP 的 mousePressed 在本机不产生 pointerdown，标记会永远停在 true ⇒ 松手也不弹");
+ok(/window\.addEventListener\("pointerup", scheduleMeasure, true\)/.test(bar),
+  "松手再补一次（鼠标在选区外抬起时 selectionchange 不会再来）");
+ok(/if \(bar && event\.target instanceof Node && bar\.contains\(event\.target\)\) return;/.test(bar),
+  "全局 pointerdown 必须放过浮条内部的按下 —— 否则一按按钮就先收浮条，按钮永远点不动");
+ok(!/selection-action-scrim/.test(bar) && !/\.selection-action-scrim/.test(styles),
+  "负向：不许有全屏透明遮罩（它会抢走拖选时的命中目标 ⇒ 选区被反复重置 = 一直闪）");
+ok(!/document\.addEventListener\("mouse(down|up)"/.test(bar), "不用 document 上的 mousedown 收起（会赶在按钮响应前卸掉浮条）");
 /* 这是本轮最容易写错的一处：动作一触发就 setPlacement(null)，反馈挂在即将卸载的按钮上 ⇒ 没人看得见。 */
 ok(/if \(Date\.now\(\) < holdUntilRef\.current\) return;/.test(bar),
   "触发动作后 hold 住这段时间：选区被浏览器清掉 / 输入框抢焦点都不许提前收浮条");
@@ -105,9 +127,8 @@ ok(/useEffect\(\(\) => \(\) => window\.clearTimeout\(holdTimer\.current\), \[\]\
   "延后收起的定时器在卸载时清掉");
 
 const zOf = (selector) => Number(/z-index:\s*(-?\d+)/.exec(styles.slice(styles.indexOf(selector) + selector.length).slice(0, 300))?.[1] ?? NaN);
-const scrimZ = zOf(".selection-action-scrim {");
 const barZ = zOf(".selection-action-bar {");
-ok(scrimZ === 1000 && barZ === 1001, `层级带落在"轻浮层"这一档（实得 垫层 ${scrimZ} / 浮条 ${barZ}，须为 1000 / 1001）`);
+ok(barZ === 1001, `浮条在"轻浮层"这一档（实得 ${barZ}，须为 1001，与 .app-select-list 同档）`);
 ok(barZ > 400, "浮条必须高于全局模态 400（DESIGN.md 层级带；否则模态里选字看不见浮条）");
 
 console.log(`\n【feedback】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

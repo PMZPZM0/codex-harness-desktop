@@ -562,14 +562,10 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
 
 /* ---------------------------------------------------------------- 选区浮条（10-05） */
 
-/* 层级带（DESIGN.md）：轻浮层 1000/1001 —— 垫层与浮条各占一档，
-   与 `.app-select-overlay` / `.app-select-list` 同一档，必须高于全局模态 400。 */
-.selection-action-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  background: transparent;
-}
+/* 层级带（DESIGN.md）：轻浮层 1001 —— 与 `.app-select-list` 同一档，必须高于全局模态 400。
+   ⛔ 这里**没有**"点外面收起"的全屏遮罩：遮罩盖在正文上会抢走拖选时的命中目标，
+   选区被反复重置 = 用户看到的「拖动时一直闪全选」（10-05 实测）。收起改由组件里的全局
+   pointerdown 负责，并且放过浮条内部的按下（否则按钮点不动）。 */
 .selection-action-bar {
   position: fixed;
   z-index: 1001;
