@@ -17,8 +17,9 @@ export type TeamOfficePreviewProps = {
   runningByMember: Record<string, TeamMemberRunRecord>;
   lastByMember: Record<string, TeamMemberRunRecord>;
   openThread: (threadId: string) => void;
-  /** ⭐ 2026-10-04：普通会话里「我派出的子会话」=办公室成员来源。
-   *  已在宿主侧按 `originThreadId === 当前会话` 过滤好（`bag.delegatedRailRuns`）。
+  /** ⭐ 普通会话里「我派出的子会话」= 办公室成员来源。
+   *  已在宿主侧按 `originThreadId === 当前会话` 过滤好，并且是**委托登记表**（含已完成），
+   *  ⛔ 不是头像轨的 live 表 —— 那条跑完只停留 20 秒。
    *  ⛔ 可选（`?`）：专家团那条路径不传也不受影响。 */
   delegatedRuns?: DelegateRecordEntry[];
 };
@@ -50,26 +51,28 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
   const team = useMemo(() => teams.find((t) => t.teamId === teamId) ?? null, [teams, teamId]);
 
   const members: OfficeMemberState[] = useMemo(() => {
-    /* ── 普通会话模式（2026-10-04 用户要求「给普通会话也加上」）──
+    /* ── 普通会话模式（10-04 起）──
      * ⛔ 原来只有 `team`（专家团）一条来源 ⇒ 普通会话里办公室永远是空的。
-     * ✅ 改为两条来源：
+     * ✅ 两条来源：
      *   · `team` 存在 ⇒ 专家团成员（原有行为，不变）
-     *   · 否则⇒ **本会话派出的子会话**（`delegatedRuns` = `bag.delegatedRailRuns`，
-     *     已在宿主里按 `originThreadId === 当前会话` 过滤好，正是"我调度了谁"）
-     * ⛔ 只取 `status === "running"`：跑完的子会话不再占位（人下班了，办公室该空出来）。
-     *   ⚠️ 也不保留"最近完成"的成员 —— 那样办公室会越积越多直到 6 个满。
+     *   · 否则 ⇒ **本会话派出的委托记录**（宿主按 `originThreadId === 当前会话` 过滤好，
+     *     正是"我调度了谁"；正在跑的敲键盘、跑完的坐工位待机、归档后才离场）
      */
     if (!team) {
+      /* ⛔⛔ 不许按 `status === "running"` 过滤（10-05 用户报「我调度了一个专家，办公室预览里面
+         没有更新成员」）：委托跑得极快（真机实测 3.7 秒），用户点开办公室时它已经不在 running
+         ⇒ 办公室里永远是空的。⇒ 成员取**委托记录**（含已完成），跑完的坐工位待机。
+         ⛔ 也别改用头像轨的 live 表（`delegatedRailRuns`）：那条表跑完只停留 20 秒就摘掉。 */
       return (delegatedRuns ?? [])
-        .filter((r) => r.status === "running")
-        .slice(0, 6)
+        .slice(-6)   // 工位只有 6 个；取**最近**的 6 个 ⇒ 新派的一定看得见，老的先离场
         .map((r) => ({
           //⛔ id 用 threadId（唯一且稳定）而不是数组下标 —— 下标会随列表变化导致人物"换位"。
           id: r.threadId,
           name: delegateNameOf(r),
           // 职业名留空：普通会话没有"专业"概念，冒牌反而不像
           profession: r.kind === "subagent" ? "子智能体" : r.kind === "expert" ? "专家" : "组员",
-          running: true,
+          // 跑完的坐工位待机（⛔ 不是从名单里消失）
+          running: r.status === "running",
           hasThread: true,
         }));
     }
@@ -125,10 +128,13 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
      * ✅ 改为按委托记录给一个**合理的默认活动**：
      *   DelegateRecordEntry 没有 query（那是专家团才有的），⛔ 也不该假装有。
      *   按 kind 映射一个"这个人大概在干嘛"，至少让屏幕是亮的、在动。
+     *   ⛔ 只对**正在跑**的这么做：跑完的只坐工位待机（10-05 起成员不再从名单消失）。
      * ⚠️ 这一条是**显示层的合理默认**，不是真实事件 —— 真实事件到位后应替换。 */
     if (!team) {
       const del = (delegatedRuns ?? []).find((r) => r.threadId === memberId);
       if (!del) return null;
+      // 跑完 / 失败 ⇒ 待机，不再派去书架、饮水机（与专家团那条路径口径一致）
+      if (del.status !== "running") return null;
       // ⚠️ 显式标注：⛔ 不写的话 TS 把三元推成 `string | null`，
       //   与 `eventStateOf` 声明的联合类型不兼容（tsc2322）。⛔ 别用 `as any` 绕过。
       const byKind: null | "book" | "water" =
