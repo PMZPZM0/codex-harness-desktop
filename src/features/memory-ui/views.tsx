@@ -28,19 +28,25 @@ import { SCOPE_META, type ActorMemory, type DispatchedSession, type McpBackendMe
 /* ══ ① 金字塔记忆：层级树 + 水位 ═══════════════════════════════════════ */
 
 export function PyramidView({ data }: { data: PyramidMemory }) {
+  /* ⛔⛔ 三重防御：① data ② layers ③ archive 各自独立兜底。
+     上午那次白屏就是 `data.archive.files` —— 字段在契约里写着，主进程却没返回。
+     ⛔ 一处 `?.` 只能挡住一层；这里每层都挡，是因为"缺字段 ⇒ 整页白屏"的
+     代价（用户只看到"界面发生错误"）远大于多写三行。 */
+  const layers = Array.isArray(data?.layers) ? data.layers : [];
+  const archive = data?.archive ?? { files: 0, bytes: 0 };
   return (
     <MemorySection
       title="金字塔记忆"
       hint="七层结构 · 越靠下越稳定，满了会提示蒸馏"
       icon={<Gauge size={14} />}
       stat={[
-        { label: "层", value: data.layers.length },
-        { label: "需蒸馏", value: data.layers.filter((l) => l.needDistill).length, hint: "水位到 90% 的层" },
-        { label: "归档", value: data.archive.files, hint: `${(data.archive.bytes / 1024).toFixed(1)} KB` },
+        { label: "层", value: layers.length },
+        { label: "需蒸馏", value: layers.filter((l) => l.needDistill).length, hint: "水位到 90% 的层" },
+        { label: "归档", value: archive.files, hint: `${(archive.bytes / 1024).toFixed(1)} KB` },
       ]}
     >
       <ol className="mui-pyramid">
-        {data.layers.map((layer) => (
+        {layers.map((layer) => (
           <li key={layer.id} className={`mui-pyramid-row${layer.needDistill ? " is-hot" : ""}`}>
             <div className="mui-pyramid-head">
               <span className="mui-pyramid-id">{layer.id}</span>
@@ -77,6 +83,10 @@ export function McpBackendView({ data, state, error, onRetry }: {
   data: McpBackendMemory; state: "idle" | "loading" | "ready" | "error"; error?: string; onRetry?: () => void;
 }) {
   const on = data?.active === "mcp";
+  /* ⛔ 字段兜底同 PyramidView：`connector`/`sinkLabel` 是 10-05 上午凭空造的字段名，
+     主进程一个都没返回 ⇒ 界面上是空白。宁可显示"未标注"也不能崩。 */
+  const connector = data?.connector || "未标注";
+  const sinkLabel = data?.sinkLabel || (on ? "MCP 记忆服务" : "内置记忆金字塔");
   return (
     <MemorySection
       title="本地 MCP 记忆"
@@ -96,14 +106,26 @@ export function McpBackendView({ data, state, error, onRetry }: {
           </div>
           <p className="mcp-card-body">
             {on
-              ? <>引擎通过连接器 <code>{data.connector}</code> 调用 MCP 记忆工具，写入不进金字塔文件。</>
-              : <>连接器 <code>{data.connector}</code> 处于停用状态，引擎看不到它，写入照旧进金字塔。</>}
+              ? <>引擎通过连接器 <code>{connector}</code> 调用 MCP 记忆工具，写入不进金字塔文件。</>
+              : <>连接器 <code>{connector}</code> 处于停用状态，引擎看不到它，写入照旧进金字塔。</>}
           </p>
           <dl className="mcp-card-meta">
-            <div><dt>连接器</dt><dd><code>{data.connector}</code></dd></div>
+            <div><dt>连接器</dt><dd><code>{connector}</code></dd></div>
             <div><dt>就绪</dt><dd>{data.ready ? "已就绪" : "未就绪"}</dd></div>
-            <div><dt>记忆去向</dt><dd>{data.sinkLabel}</dd></div>
+            <div><dt>记忆去向</dt><dd>{sinkLabel}</dd></div>
           </dl>
+          {/* ⛔⛔ 选了 MCP 却回退内置时**必须说出来**：这是用户唯一能知道
+              "我明明开了为什么没生效"的线索（09-25 定的口径：宁可回退也不丢记忆）。
+              不显示 = 用户以为生效了，去排查一个不存在的问题。 */}
+          {data.fallbackReason && (
+            <p className="mcp-card-warn"><TriangleAlert size={12} />{data.fallbackReason}</p>
+          )}
+          {data.installCommand && !on && (
+            <p className="mcp-card-note">
+              装服务（在项目目录执行，用应用自带 node）：
+              <code className="mcp-card-cmd">{data.installCommand}</code>
+            </p>
+          )}
           {/* ⛔ 明说"不会双份"：09-25 用户明确不要两份记忆，这里必须让他放心 */}
           <p className="mcp-card-note">同一时刻只有一个后端生效 —— 不会出现「两边都写、双份记忆」。</p>
         </div>
@@ -132,9 +154,12 @@ export function ActorMemoryView({
 
   const [scopeFilter, setScopeFilter] = useState<"all" | "private" | "team" | "project">("all");
   const entries = useMemo(
-    () => (data?.entries ?? []).filter((e) => scopeFilter === "all" || e.scope === scopeFilter),
+    () => (data?.entries ?? []).filter((e) => scopeFilter === "all" || e?.scope === scopeFilter),
     [data?.entries, scopeFilter],
   );
+  /* ⛔ stats 同型防御：它由 statOf 产出、必有值，⛔ 但 `data` 若来自别处（未来加第八类时）
+     漏了 stats 就是 `undefined.total` 白屏。归一化 + 这里 = 两道。 */
+  const stats = data?.stats ?? { total: 0, pinned: 0, archived: 0, chars: 0 };
 
   return (
     <MemorySection
@@ -142,9 +167,9 @@ export function ActorMemoryView({
       hint={META.hint}
       icon={META.icon}
       stat={data ? [
-        { label: "条目", value: data.stats.total },
-        { label: "钉住", value: data.stats.pinned, hint: "蒸馏与裁剪时永不删除" },
-        { label: "已归档", value: data.stats.archived, hint: "内容保留但不再被读到" },
+        { label: "条目", value: stats.total },
+        { label: "钉住", value: stats.pinned, hint: "蒸馏与裁剪时永不删除" },
+        { label: "已归档", value: stats.archived, hint: "内容保留但不再被读到" },
       ] : undefined}
       tools={
         <div className="mui-scope-filter" role="tablist" aria-label="按作用域筛选">
@@ -190,34 +215,37 @@ export function ActorMemoryView({
 
 /** 记忆条目行：⛔ 三层信息层次 = 徽标行 / 正文 / 元信息行。 */
 export function MemoryEntryRow({ entry, onOpenThread }: { entry: import("./types").MemoryEntry; onOpenThread?: (id: string) => void }) {
-  const scope = SCOPE_META[entry.scope];
-  const archived = entry.archivedAt != null;
+  /* ⛔ 同型防御：`SCOPE_META[entry.scope]` 在 scope 是后端新加的字面量时是 undefined
+     ⇒ 下一行 `scope.label` 必崩。作用域枚举会扩，⛔ 视图不能假设它已经登记过。 */
+  const scope = SCOPE_META[entry?.scope] ?? { label: "未知作用域", short: "未知", hint: "" };
+  const archived = entry?.archivedAt != null;
+  const agent = entry?.sourceAgent ?? { kind: "unknown", id: "", label: undefined };
   return (
     <article className={`mui-entry${archived ? " is-archived" : ""}`}>
       <div className="mui-entry-head">
         {/* ⛔ 作用域徽标 = 文字（⛔ 颜色只做辅助） */}
-        <MemoryBadge tone={entry.scope === "private" ? "neutral" : entry.scope === "team" ? "accent" : "success"}>
+        <MemoryBadge tone={entry?.scope === "private" ? "neutral" : entry?.scope === "team" ? "accent" : "success"}>
           {scope.label}
         </MemoryBadge>
-        <MemoryTag>{entry.category}</MemoryTag>
-        {entry.pinned && <MemoryBadge tone="warn" title="蒸馏与裁剪时永不删除"><Star size={10} /> 钉住</MemoryBadge>}
+        <MemoryTag>{entry?.category ?? "未分类"}</MemoryTag>
+        {entry?.pinned && <MemoryBadge tone="warn" title="蒸馏与裁剪时永不删除"><Star size={10} /> 钉住</MemoryBadge>}
         {archived && <MemoryBadge title="内容保留，但不再被模型读到">已归档</MemoryBadge>}
         <span className="mui-entry-spacer" />
-        <MemoryWeight value={entry.weight} />
-        <MemoryTime ts={entry.createdAt} />
+        <MemoryWeight value={entry?.weight ?? 0} />
+        <MemoryTime ts={entry?.createdAt ?? 0} />
       </div>
-      <p className="mui-entry-content">{entry.content}</p>
+      <p className="mui-entry-content">{entry?.content ?? ""}</p>
       <div className="mui-entry-foot">
-        <span className="mui-entry-source" title={`来源：${entry.sourceAgent.label ?? entry.sourceAgent.kind}（${entry.sourceAgent.id}）`}>
-          <Brain size={11} />{entry.sourceAgent.label || entry.sourceAgent.kind}
+        <span className="mui-entry-source" title={`来源：${agent.label ?? agent.kind}（${agent.id}）`}>
+          <Brain size={11} />{agent.label || agent.kind}
         </span>
-        {entry.scope !== "private" && entry.sessionId && (
+        {entry?.scope !== "private" && entry?.sessionId && (
           <button type="button" className="mui-link" onClick={() => onOpenThread?.(entry.sessionId!)}>
             源会话 {entry.sessionId.slice(0, 8)}
           </button>
         )}
-        {entry.useCount > 0 && <span className="mui-entry-used">被读到 {entry.useCount} 次</span>}
-        {entry.lastUsedAt != null && <MemoryTime ts={entry.lastUsedAt} prefix="最近" />}
+        {(entry?.useCount ?? 0) > 0 && <span className="mui-entry-used">被读到 {entry.useCount} 次</span>}
+        {entry?.lastUsedAt != null && <MemoryTime ts={entry.lastUsedAt} prefix="最近" />}
       </div>
     </article>
   );
@@ -312,8 +340,12 @@ export function DispatchedTimelineView({
   onOpenThread?: (id: string) => void;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
-  const running = items.filter((i) => i.status === "running").length;
-  const failed = items.filter((i) => i.status === "failed").length;
+  /* ⛔⛔ `items` 曾经是 `undefined` 就直接 `.filter` ⇒ 必崩。上午那版把
+     `listDelegates()` 的 `{records:[...]}` 当数组用，切到这个 tab 100% 白屏。
+     归一化层已修根因，这里再挡一层：⛔ tab 切换不该让整页崩。 */
+  const list = Array.isArray(items) ? items : [];
+  const running = list.filter((i) => i?.status === "running").length;
+  const failed = list.filter((i) => i?.status === "failed").length;
 
   const KIND_LABEL: Record<string, string> = {
     subagent: "子智能体", expert: "专家", team: "专家团", member: "团成员",
@@ -325,16 +357,16 @@ export function DispatchedTimelineView({
       hint="每次派出的执行记录与产出 · 它们的记忆与主会话隔离"
       icon={<Activity size={14} />}
       stat={[
-        { label: "总次数", value: items.length },
+        { label: "总次数", value: list.length },
         { label: "运行中", value: running },
         ...(failed ? [{ label: "失败", value: failed }] : []),
       ]}
     >
       <MemoryState state={state} error={error} onRetry={onRetry} empty="还没有派出去过任务" emptyHint="在对话里说「派个专家去看看」，这里会留下它的执行记录。" />
 
-      {state === "ready" && !!items.length && (
+      {state === "ready" && !!list.length && (
         <ol className="mui-timeline">
-          {items.map((d) => {
+          {list.map((d) => {
             const open = openId === d.threadId;
             const dur = d.endedAt ? Math.max(0, d.endedAt - d.startedAt) : null;
             return (
@@ -364,8 +396,8 @@ export function DispatchedTimelineView({
                   {open && (
                     <div className="mui-tl-body">
                       <dl className="mui-tl-meta">
-                        <div><dt>发起方会话</dt><dd><code>{d.originThreadId.slice(0, 12)}</code></dd></div>
-                        <div><dt>调度层级</dt><dd>第 {d.depth} 层</dd></div>
+                        <div><dt>发起方会话</dt><dd><code>{String(d.originThreadId ?? "未知").slice(0, 12)}</code></dd></div>
+                        <div><dt>调度层级</dt><dd>第 {d.depth ?? 1} 层</dd></div>
                         <div><dt>它自己的记忆</dt><dd>{d.memoryCount ?? 0} 条<span className="mui-hint">（与你的会话隔离）</span></dd></div>
                         {d.error && <div><dt>失败原因</dt><dd className="is-error">{d.error}</dd></div>}
                       </dl>
