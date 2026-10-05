@@ -100,6 +100,22 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                   contentItems: [{ type: "inputText", text: `已归档 ${done} 个调度会话${missed ? `（${missed} 个失败）` : ""}。` }],
                   success: missed === 0,
                 });
+              } else if (event.params?.tool === "harness_tools") {
+                /* ⭐ 能力网关（10-05）：把引擎 0.157 后对模型不可见的内置 MCP 工具面接回来
+                   （定时任务 / 知识库 / 组件库 / 视频 / 语音 / 工作流 / 专家管理 / 连接器注册）。
+                   ⛔ callerThreadId 取**引擎事件里的 threadId**（`item/tool/call` 自带，模型伪造不了），
+                      绝不用 args 里模型自报的值 —— 这批能力里有写操作。 */
+                const gatewayCaller = String(event.params?.threadId ?? bag.threadRef.current?.id ?? "");
+                const gatewayArgs = args.args && typeof args.args === "object" && !Array.isArray(args.args) ? args.args : {};
+                const gateway: any = await window.codex.callDispatchTool({
+                  name: String(args.name ?? ""),
+                  args: gatewayArgs,
+                  callerThreadId: gatewayCaller,
+                });
+                await toolCallRespond.send(event.id!, {
+                  contentItems: [{ type: "inputText", text: gateway?.ok ? String(gateway.output ?? "") : `调用失败：${gateway?.error ?? "未知原因"}` }],
+                  success: gateway?.ok === true,
+                });
               } else if (event.params?.tool === "team_member_invoke") {
                 await bag.invokeTeamMember(args, String(event.params?.threadId ?? ""), event.id!);
               } else if (event.params?.tool === "team_phase_invoke") {

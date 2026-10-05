@@ -359,6 +359,32 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           required: [],
         },
       },
+      /* ⭐ 能力网关（10-05）：内置 MCP 的工具面在引擎 0.157 后整批「延迟暴露」，模型直接调用一律
+         `unsupported call` ⇒ 定时任务 / 知识库 / 组件库 / 视频 / 语音 / 工作流 / 专家与子智能体管理 /
+         连接器注册这些能力对模型**全不可达**。dynamicTools 是唯一可见通道，但 19 份 schema 常驻
+         每次请求（token 成本高、还会挤掉真正重要的工具）⇒ 收成**一个网关工具**：模型传 name + args
+         调它，主进程原样转发到既有执行端（同一套实现、同一套闸）。参数拿不准时先传 name="list"。
+         ⛔ 有专用工具的那几个（agent_invoke / agent_archive_sessions / generate_image）**不在**网关里
+            —— 一个能力挂两个名字，模型只会用最直白的那个、另一套被绕过（项目踩过一次：subagent_invoke）。 */
+      {
+        type: "function",
+        name: "harness_tools",
+        description:
+          "调用宿主的其余内置能力。可用：scheduler_list / scheduler_save / scheduler_run / scheduler_delete（定时任务）；"
+          + "knowledge_search / knowledge_add（项目知识库）；ui_component_search / ui_component_get（界面组件库）；"
+          + "video_generate / video_status / video_concat（视频）；voice_generate（语音）；"
+          + "workflow_read / workflow_writeback（工作流看板）；expert_list / expert_save / subagent_save（专家与子智能体管理）；"
+          + "connector_register（注册 MCP 连接器）。传 name=\"list\" 可拿到每个能力的完整参数说明（不确定参数就先调它）。"
+          + "⛔ 调度专家 / 专家团 / 子智能体请用专用工具 agent_invoke，不在这里。",
+        inputSchema: {
+          type: "object",
+          properties: {
+            name: { type: "string", description: "工具名；传 \"list\" 返回全部能力与它们的参数说明" },
+            args: { type: "object", description: "该工具的参数对象（没有参数就省略）" },
+          },
+          required: ["name"],
+        },
+      },
       // RPA 配方与任务清单：让 agent 能存配方/跑配方/维护清单/向用户提问
       { type: "function", name: "rpa_save", description: "把刚跑通的一条自动化流程保存为 RPA 配方，下次可直接复用执行。steps 按顺序写清每一步（网址/点击/输入/桌面操作等），kind 选 browser（浏览器）/desktop（桌面）/mixed。", inputSchema: { type: "object", properties: { name: { type: "string", description: "配方名称，如「每天导出日报」" }, desc: { type: "string", description: "一句话说明用途" }, kind: { type: "string", enum: ["browser", "desktop", "mixed"] }, steps: { type: "array", items: { type: "string" }, description: "按顺序的执行步骤" }, target: { type: "string", description: "起始网址或目标程序，可省略" } }, required: ["name", "steps", "kind"] } },
       { type: "function", name: "rpa_run", description: "列出已保存的 RPA 配方（不传 name），或按名称执行某条配方。执行时按 steps 逐步复现自动化流程。", inputSchema: { type: "object", properties: { name: { type: "string", description: "要执行的配方名称；省略则返回全部配方清单" } } } },

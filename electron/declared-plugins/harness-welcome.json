@@ -2,8 +2,8 @@
   "id": "harness-welcome",
   "name": "欢迎与版本提示",
   "version": "1.0.0",
-  "description": "在侧栏顶部与标题栏显示版本/更新提示。纯声明式，无代码。",
-  "enabled": true,
+  "description": "在侧栏顶部与标题栏显示版本/更新提示。纯声明式，无代码。演示 sidebar.top + settings.general.bottom 两个插槽。**默认停用** —— 它是最早写的那个示范件，10-04 做声明式插件时唯独它留成了启用态，用户 10-05 报「侧栏怎么冒出个『关于』」；想看效果去设置 → 开发工具 → 声明式插件里启用。",
+  "enabled": false,
   "slots": [
     {
       "slot": "sidebar.top",

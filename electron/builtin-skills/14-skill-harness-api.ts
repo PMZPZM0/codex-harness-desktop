@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（83 个能力域 / 413 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（83 个能力域 / 414 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -81,9 +81,9 @@ Laya 智能判断（GitHub NandhaKishorM/laya，Apache-2.0，非自回归决策�
 会话运行态（派发所有权、运行/闲置状态机）
 通道：thread-runtime:dispatch-owner, thread-runtime:get, thread-runtime:list, thread-runtime:patch, thread-runtime:release-dispatch, thread-runtime:seed
 
-### agents（10 通道）
+### agents（11 通道）
 子智能体库（创建/归档/委派/目录；成员会话与角色）
-通道：agents:archive, agents:catalog, agents:delegated, agents:delegated-of, agents:enabled-notice, agents:invoke, agents:notice, agents:off-notice, agents:thread-role, agents:tool-description
+通道：agents:archive, agents:catalog, agents:delegated, agents:delegated-of, agents:dispatch-call, agents:enabled-notice, agents:invoke, agents:notice, agents:off-notice, agents:thread-role, agents:tool-description
 
 ### theme（1 通道）
 主题（亮/暗/跟随系统）

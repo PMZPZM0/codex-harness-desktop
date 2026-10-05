@@ -1,8 +1,11 @@
 /**
  * agents-ipc（10-03 从 `features/teams-agents-ipc.ts` 按前缀拆出，同时改为**插件形态**）
  *
- * 域：agents(9)
- * 通道：agents:thread-role / catalog / tool-description / notice / off-notice / delegated / delegated-of / invoke / archive
+ * 域：agents(11)
+ * 通道：agents:thread-role / catalog / tool-description / notice / off-notice / delegated / delegated-of /
+ *       invoke / archive / dispatch-call
+ *       （`dispatch-call` 是 10-05 的**能力网关**：内置 MCP 的工具面在引擎 0.157 后对模型不可见，
+ *        渲染层用一个 dynamicTool `harness_tools` 把它们接回来 —— 执行端仍是 dispatchRpcCall）
  *
  * ⛔⛔ `agents:archive` 的**失败必须计数**（09-24 修，评估报告 §4.2）：原写法 `.catch(() => undefined)`
  *    吞掉引擎侧失败后**无条件** `archived += 1` ⇒ 弹「已归档 N 个」而会话其实还在列表里
@@ -12,6 +15,7 @@
 import { dispatchNoticeText, dispatchOffNoticeText, dispatchToolDescription, dispatchEnabledNotice, dispatchSelectionChangeNotice } from "../dispatch";
 import { broadcastHarnessEvent } from "./window-bus";
 import { buildDispatchCatalog, restrictedThreadRole } from "./dispatch-core";
+import { dispatchGatewayCatalogText, dispatchRpcCall } from "./dispatch-rpc";
 import { runDelegatedTask } from "./delegation";
 import { delegateRegistry, server, threadRuntimeStore } from "../runtime-refs";
 import { defineFeature } from "../context";
@@ -19,7 +23,7 @@ import type { IpcHost } from "../ipc-host";
 
 const AGENTS_CHANNELS = [
   "agents:thread-role", "agents:catalog", "agents:tool-description", "agents:notice", "agents:enabled-notice", "agents:off-notice",
-  "agents:delegated", "agents:delegated-of", "agents:invoke", "agents:archive",
+  "agents:delegated", "agents:delegated-of", "agents:invoke", "agents:archive", "agents:dispatch-call",
 ];
 
 export const agentsFeature = defineFeature<null>({
@@ -85,15 +89,23 @@ export const agentsFeature = defineFeature<null>({
     }));
     ipcHost.handle("agents:invoke", async (_event, input: any) => runDelegatedTask(input ?? ({} as any)));
     ipcHost.handle("agents:archive", async (_event, input: { threadIds?: string[]; originThreadId?: string }) => {
+      /* ⛔ 10-05 归属校验：`threadIds` 是**模型可控参数**，原来只要「登记表里有这条」就归档
+         ⇒ 可以归档**别的会话**派出的委托（越权）。这里收口到「**本会话派出的**委托」：
+           · 给了 originThreadId（= 引擎发给渲染层的真实 threadId，模型伪造不了）⇒ 记录必须属于它，
+             不匹配的计入 failed（让模型/用户看得见，而不是静默成功）；
+           · 没给（历史调用方）⇒ 保持原行为。
+         与 MCP 孪生实现同口径：features/dispatch-rpc.ts 的 agent_archive_sessions。 */
+      const origin = String(input?.originThreadId ?? "");
       const ids = Array.isArray(input?.threadIds) && input.threadIds.length
         ? input.threadIds.map(String)
-        : (await delegateRegistry.listByOrigin(String(input?.originThreadId ?? ""))).map((record) => record.threadId);
+        : (await delegateRegistry.listByOrigin(origin)).map((record) => record.threadId);
       let archived = 0;
       const failed: string[] = [];
       for (const id of ids) {
         try {
           const record = await delegateRegistry.infoOf(id);
           if (!record || record.archived) continue;
+          if (origin && record.originThreadId !== origin) { failed.push(id); continue; }
           /* ⛔ 09-24 修（评估报告 §4.2）：原写法 `.catch(() => undefined)` 吞掉引擎侧失败后**无条件**
              `archived += 1` + markArchived ⇒ 弹「已归档 N 个」而会话其实还在列表里
              （正是项目记录过的"开关点了没生效"类）。归档失败必须计入 failed，不能只报喜。
@@ -106,6 +118,21 @@ export const agentsFeature = defineFeature<null>({
       }
       broadcastHarnessEvent({ type: "delegates-changed" } as any);
       return { archived, failed };
+    });
+    /* 10-05 能力网关（详见 dispatch-rpc.ts 的 dispatchGatewayTools 注释）：
+       内置 MCP 的工具面在引擎 0.157 后对模型不可见，渲染层用一个 dynamicTool `harness_tools`
+       把它们接回来，执行端仍是 `dispatchRpcCall`（同一套实现与闸）。
+       ⛔ `callerThreadId` **必须由渲染层从引擎事件里取**（`item/tool/call` 的 `params.threadId`），
+          不接受模型自报 —— 这批能力里有写操作（保存专家 / 定时任务 / 连接器），身份错了就是越权。
+       `name === "list"` 不是工具，是"要清单"：返回名字 + 说明 + 参数 schema。 */
+    ipcHost.handle("agents:dispatch-call", async (_event, input: { name?: string; args?: Record<string, unknown>; callerThreadId?: string }) => {
+      const tool = String(input?.name ?? "");
+      if (!tool) return { ok: false, output: "", error: "缺少工具名（先传 name=\"list\" 拿清单）" };
+      if (tool === "list") return { ok: true, output: dispatchGatewayCatalogText() };
+      const caller = String(input?.callerThreadId ?? "");
+      if (!caller) return { ok: false, output: "", error: "缺少 callerThreadId（宿主内部错误：渲染层必须从引擎事件取，不许用模型自报的值）" };
+      const args = input?.args && typeof input.args === "object" && !Array.isArray(input.args) ? input.args : {};
+      return dispatchRpcCall(tool, args as Record<string, unknown>, caller);
     });
 
     ctx.effect(() => {

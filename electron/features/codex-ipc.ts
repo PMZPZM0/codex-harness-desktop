@@ -26,7 +26,8 @@ import { markMissingRollouts, mergeThreadList } from "../session-tools";
 import { rendererActiveByWindow } from "./renderer-fuse";
 import { deletedThreadIds, purgeDeletedThread } from "./thread-deletion";
 import { bridgeDial, mutableState, readCustomModel } from "../main";
-import { codexHome, engineActiveTurnIds, server, threadCwd } from "../runtime-refs";
+import { codexHome, delegateRegistry, engineActiveTurnIds, server, threadCwd } from "../runtime-refs";
+import { broadcastHarnessEvent } from "./window-bus";
 import { ensureProjectAgentsMd } from "../project-conventions";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
@@ -132,6 +133,13 @@ export const codexFeature = defineFeature<null>({
       } finally {
         // 见 purgeDeletedThread 注释：删了会话就必须把磁盘残留一起带走，否则重启即复活
         if (purgeTarget) await purgeDeletedThread(purgeTarget);
+        /* 10-05：委托登记表里的那条记录也必须跟着走 —— 否则办公室里会留一个点不开的人。
+           ⛔ 另一条入口在 features/boot.ts 的 thread/deleted 通知分支（引擎侧发起的删除）——
+              两处都清才完整；forget 幂等，重复调用返回 0。 */
+        if (purgeTarget) {
+          const dropped = await delegateRegistry.forget([purgeTarget]).catch(() => 0);
+          if (dropped) broadcastHarnessEvent({ type: "delegates-changed", threadId: purgeTarget } as any);
+        }
       }
       if (method === "thread/list") {
         mutableState.threadListRequestCount += 1;

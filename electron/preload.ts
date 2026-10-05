@@ -292,6 +292,8 @@ contextBridge.exposeInMainWorld("codex", {
   listDelegatesOf: (originThreadId: string) => __ipc("agents:delegated-of", 1, [originThreadId]),
   invokeAgent: (input: unknown) => __ipc("agents:invoke", 1, [input]),
   archiveDelegates: (input: unknown) => __ipc("agents:archive", 1, [input]),
+  /* 10-05 能力网关：把引擎 0.157 后对模型不可见的内置 MCP 工具面接回来（name=工具名，name="list" 取清单） */
+  callDispatchTool: (input: unknown) => __ipc("agents:dispatch-call", 1, [input]),
   listExpertTeams: () => __ipc("teams:list", 0, []),
   saveExpertTeam: (input: unknown) => __ipc("teams:save", 1, [input]),
   removeExpertTeam: (teamId: string) => __ipc("teams:remove", 1, [teamId]),

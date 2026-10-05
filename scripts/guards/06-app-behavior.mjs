@@ -1381,8 +1381,20 @@ w.postMessage({id:1,op:"list",root});
       : fail("【29】没有任何地方清调度记录 —— 归档/删除会话会留下孤儿记录永久占锁");
 
     // 防线二：清理挂在引擎 thread/archived | thread/deleted 事件上（覆盖所有删除/归档路径，不靠 UI 自觉）
-    const evIdx = mainCode.indexOf('event.method === "thread/archived"');
-    const evSlice = evIdx < 0 ? "" : mainCode.slice(evIdx, evIdx + 900);
+    // ⛔ 10-05 修：原来用**固定 900 字符窗口**（`slice(evIdx, evIdx + 900)`）—— 同一个分支里加几行注释
+    //   或一条新语句，`threadRuntimeStore.remove(` 就被挤出窗口 ⇒ **假红**（本轮实际踩到：往这个分支
+    //   加了「委托登记表清理」就红了一次）。这正是项目记过的"固定字符窗口"坑，且它诱人把 900 越调越大。
+    //   ⇒ 改成**按分支边界切片**：从事件分支起，到下一个**同级**（6 空格缩进）的 `if (event.method === "` 之前。
+    //     ⛔ 必须是 6 空格：分支体里还有**嵌套**的 `if (event.method === "thread/deleted")`（10 空格），
+    //       按不带缩进的朴素 `indexOf` 会把边界卡在嵌套那句上 ⇒ 切片只有 297 字符 ⇒ 下一条**恒定假红**
+    //       （本轮实测踩到，靠"切片长度"这条前置断言才发现）。
+    const ARCH_START = 'event.method === "thread/archived"';
+    const evIdx = mainCode.indexOf(ARCH_START);
+    const nextBranch = evIdx < 0 ? -1 : mainCode.indexOf('\n      if (event.method === "', evIdx + ARCH_START.length);
+    const evSlice = evIdx < 0 ? "" : mainCode.slice(evIdx, nextBranch > evIdx ? nextBranch : evIdx + 4000);
+    // ⛔ 本文件的 ok/fail 是**单参**（消息）版 —— 写 `ok(cond, msg)` 会把 cond 当消息打印、
+    //   恒判通过（假绿）。凡要有条件地判定，一律用 `(cond ? ok : fail)("…")` 形态。
+    (/purgeDeletedThread\(goneId\)/.test(evSlice) ? ok : fail)("【29】切片确实跨到分支体内（边界写错会让下一条恒假）");
     (evIdx >= 0 && /thread\/deleted/.test(evSlice) && /threadRuntimeStore\.(remove|releaseDispatch)\(/.test(evSlice))
       ? ok("【29】归档/删除事件触发记录清理（覆盖所有路径）")
       : fail("【29】thread/archived|deleted 事件没接记录清理 —— 会话消失后锁仍被占");

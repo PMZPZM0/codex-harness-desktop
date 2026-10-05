@@ -212,6 +212,31 @@ try {
     "渲染层 agent_archive_sessions 分发接 archiveDelegates");
   ok((req.match(/const dispatchOrigin = String\(event\.params\?\.threadId/g) || []).length === 2,
     "⛔ 两处发起方身份都取**引擎下发的** threadId（取 bag.threadRef 会串会话 / 让模型有机会伪造发起方）");
+
+  /* ── 组 G：委托登记表的**生命周期**（10-05 收尾）──────────────────────────────
+     起因：修「调度完办公室没人」时暴露的三件相邻欠账，一起钉住 ——
+       · 记录**跟着会话一起走**（删除 ⇒ 忘掉；归档 ⇒ 留着，那只是"收起"不是"不存在"）；
+       · 7 天保留期此前**从未被调用**（prune 写好了、全仓没有调用点 ⇒ 文件只增不减）；
+       · 归档的 `threadIds` 是模型可控参数，必须校验**归属**（否则能归档别的会话派出的委托）。 */
+  {
+    const bootSrc = readFileSync(join(ROOT, "electron/features/boot.ts"), "utf8");
+    const codexSrc = readFileSync(join(ROOT, "electron/features/codex-ipc.ts"), "utf8");
+    const regSrc = readFileSync(join(ROOT, "electron/delegate-registry.ts"), "utf8");
+    const agentsSrc = readFileSync(join(ROOT, "electron/features/agents-ipc.ts"), "utf8");
+    const rpcSrc = readFileSync(join(ROOT, "electron/features/dispatch-rpc.ts"), "utf8");
+
+    ok(/async forget\(threadIds: string\[\]\)/.test(regSrc) && /async forgetDeleted\(deadIds: Set<string>\)/.test(regSrc),
+      "登记表实现了 forget / forgetDeleted（删会话时把记录一起带走）");
+    // ⛔ 两条删除入口都要清：引擎侧通知（boot）+ 渲染层 thread/delete（codex-ipc）—— 漏一条就留幽灵
+    ok(/delegateRegistry\.forget\(\[goneId\]\)/.test(bootSrc) && /delegateRegistry\.forget\(\[purgeTarget\]\)/.test(codexSrc),
+      "⛔ 两条删除入口都清登记表（boot 的事件分支 + codex-ipc 的 finally）");
+    ok(/forgetDeleted\(deletedThreadIds\)/.test(bootSrc) && /delegateRegistry\.prune\(\)/.test(bootSrc),
+      "⛔ 启动做墓碑对账 + 跑 7 天保留期清理（prune 此前无调用点 = 只增不减）");
+    ok(/record\.originThreadId !== origin/.test(agentsSrc) && /record\.originThreadId !== callerThreadId/.test(rpcSrc),
+      "⛔ 归档校验归属（IPC 用引擎下发的 origin / MCP 用 callerThreadId）");
+    ok(!/record\.originThreadId !== String\(args\.originThreadId/.test(rpcSrc),
+      "⛔ MCP 侧不许拿 args.originThreadId 当归属判据（那是模型自己填的，等于自证）");
+  }
 }
 
 console.log("\n【dpcat】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));

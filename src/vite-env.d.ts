@@ -630,6 +630,8 @@ interface Window {
     listDelegatesOf(originThreadId: string): Promise<{ records: DelegateRecordEntry[] }>;
     invokeAgent(input: { kind: "expert" | "team" | "member" | "subagent"; name: string; query: string; originThreadId: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }): Promise<{ ok: boolean; threadId?: string; name?: string; output: string; error?: string }>;
     archiveDelegates(input: { threadIds?: string[]; originThreadId?: string }): Promise<{ archived: number; failed: string[] }>;
+    /* 10-05 能力网关：把引擎 0.157 后对模型不可见的内置 MCP 工具面接回来（name=工具名，name="list" 取清单） */
+    callDispatchTool(input: { name: string; args?: Record<string, unknown>; callerThreadId: string }): Promise<{ ok: boolean; output: string; error?: string }>;
     listExpertTeams(): Promise<ExpertTeamConfig[]>;
     saveExpertTeam(input: unknown): Promise<ExpertTeamConfig>;
     removeExpertTeam(teamId: string): Promise<{ ok: boolean }>;

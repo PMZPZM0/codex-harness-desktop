@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-03",
-  "count": 413,
+  "count": 414,
   "channels": [
     {
       "name": "request",
@@ -1842,6 +1842,16 @@
       "invokeArgs": "input",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "callDispatchTool",
+      "channel": "agents:dispatch-call",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { name: string; args?: Record<string, unknown>; callerThreadId: string }",
+      "returns": "Promise<{ ok: boolean; output: string; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "10-05 能力网关：把引擎 0.157 后对模型不可见的内置 MCP 工具面接回来（name=工具名，name=\"list\" 取清单）"
     },
     {
       "name": "listExpertTeams",
