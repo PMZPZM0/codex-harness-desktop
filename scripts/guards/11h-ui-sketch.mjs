@@ -138,37 +138,33 @@ ok(unicode.ok === false && (unicode.status === 403 || unicode.status === 404), "
 ok(protocol.resolveSketchFile("sketch://app/harness.exe", ROOT_DIR).status === 415, "真跑：白名单外的扩展名 415");
 ok(protocol.resolveSketchFile("sketch://app/_next/static/chunks/nope.js", ROOT_DIR).status === 404, "真跑：白名单内但不存在的文件 404");
 
-/* ───────────────────────── 六、真跑：文档合并与提示词 ───────────────────────── */
+/* ───────────────────────── 六、真跑：摘要与任务正文 ───────────────────────── */
 
 const doc = await import(pathToFileURL(join(ROOT, "src", "features", "ui-sketch", "sketch-doc.mjs")).href);
 
 ok(doc.summarizeDoc(null).valid === false && doc.summarizeDoc({ groups: [], frames: [] }).valid === true, "真跑：summarizeDoc 只认上游的最低形状（groups + frames 两个数组）");
-const hash = doc.encodeShareHash({ title: "a&b", note: "#6750A4 + x" });
-ok(hash.startsWith("#doc=") && !hash.includes("&") && hash.includes("%26") && hash.includes("%2B"), "真跑：#doc= 编码把 & 与 + 都转义了（漏一步上游只会收到半份文档）");
 
-const buttons = { id: "serious-mule-65", cat: "Buttons", name: "Hover Button", author: "ada", html: "<button>x</button>" };
-const loaders = { id: "abcd-1", cat: "loaders", name: "Spinner", author: "bob", html: "<div></div>" };
-const first = doc.appendComponents({ title: "T", groups: [], frames: [] }, [buttons, loaders]);
-const group = first.doc.groups[0];
-ok(first.added.length === 2 && first.skipped.length === 0 && group.axis === "y" && group.items.length === 2, "真跑：两个组件追加成一个新组");
-ok(group.items[0].kind === "button" && group.items[1].kind === "box", "真跑：类目 → 上游 kind 的映射生效（Buttons→button、loaders→box）");
-ok(group.items.every((item) => typeof item.id === "string" && typeof item.label === "string" && (item.icon === null || typeof item.icon === "string") && item.variant === "filled"), "真跑：每个 item 都带上游必需的四件套 + variant（少一件整份文档会被 isProject 拒）");
-ok(doc.componentNote(buttons).includes('ui_component_get("serious-mule-65")'), "真跑：note 里带组件 id 与取源码的工具名（上游把 note 原样写进它导出的提示词）");
-const again = doc.appendComponents(first.doc, [buttons, loaders]);
-ok(again.added.length === 0 && again.skipped.length === 2 && again.doc.groups.length === first.doc.groups.length, "真跑：重复送同一批是幂等的（连点两次不许堆两份）");
-const withExisting = doc.appendComponents({ title: "T", groups: [{ id: "g", x: 100, y: 200, axis: "x", items: [{ id: "nh-keep", kind: "box", label: "k", icon: null, variant: "filled" }] }], frames: [{ id: "f", name: "Home", x: 0, y: 0 }] }, [buttons]);
-ok(withExisting.doc.groups.length === 2 && withExisting.doc.groups[0].items[0].id === "nh-keep", "真跑：追加不动用户已有的组（只往 groups 尾部加）");
-ok(doc.appendComponents({ title: "T", groups: [], frames: [] }, []).added.length === 0, "真跑：空选择不产生空组（上游 items 长度必须 ≥1）");
-ok(doc.appendComponents("不是文档", [buttons]).doc === null, "真跑：文档不合法时返回 null 而不是硬拼一份");
+const sample = {
+  title: "Recipes",
+  frames: [{ id: "home", name: "Home", x: 0, y: 0, note: "列出已存菜谱" }, { id: "detail", name: "Recipe", x: 492, y: 0 }],
+  groups: [
+    { id: "g1", x: 0, y: 0, axis: "x", items: [{ id: "bar", kind: "topAppBar", label: "Recipes", icon: "menu", variant: "filled" }] },
+    { id: "g2", x: 492, y: 112, axis: "y", items: [{ id: "r1", kind: "listItem", label: "Soup", icon: null, variant: "filled", action: { to: "detail", transition: "slide" }, note: "点开详情" }] },
+  ],
+};
+const built = doc.buildSketchPrompt(sample);
+ok(built.frames === 2 && built.items === 2, "真跑：摘要数得对（2 屏 / 2 部件）");
+ok(built.text.includes('屏「Home」：列出已存菜谱') && built.text.includes('· topAppBar「Recipes」'), "真跑：任务正文按屏列出部件（坐标归属：组的 x 落进哪一屏）");
+ok(built.text.includes('· listItem「Soup」 → 跳到「detail」 —— 点开详情'), "真跑：跳转关系与 note 都进正文（导航是草图最有价值的信息，note 上游本来就承诺原样进提示词）");
+ok(!built.text.includes("g1") && !built.text.includes("nh-"), "真跑：正文不泄漏上游内部 id（对实现方没有意义，还会诱导它照抄）");
+ok(doc.buildSketchPrompt({ title: "x", groups: [], frames: [] }).text === "", "真跑：空画布不产出任务（发一条空指令 = 白跑一个回合）");
+ok(doc.buildSketchPrompt(null).text === "" && doc.buildSketchPrompt("不是文档").text === "", "真跑：形状不对时同样不产出");
 
-const spot = doc.pickSpot({ groups: [{ x: 0, y: 0, items: [] }], frames: [{ x: 0, y: 0 }] });
-ok(spot.x > 0 && spot.y > 0, "真跑：新组落在已有内容右下方（盖住用户摆好的东西是回归）");
-
-const prompt = doc.buildComponentPrompt(first.doc, [buttons, loaders]);
-ok(prompt.inlined === 2 && prompt.text.includes("<button>x</button>") && prompt.text.includes("原样使用"), "真跑：短组件直接把 HTML/CSS 放进任务正文");
-const fat = { id: "fat-1", cat: "Cards", name: "Big", author: "eve", html: "<div>" + "z".repeat(doc.PROMPT_HTML_BUDGET) + "</div>" };
-const mixed = doc.buildComponentPrompt(first.doc, [buttons, fat]);
-ok(mixed.inlined === 1 && mixed.referenced === 1 && mixed.text.includes("#fat-1"), "真跑：超预算的那个改成只给 id，让引擎自己用 ui_component_get 取（⛔ 不许把正文截一半塞进去）");
+/* 组件库面板 10-05 被用户判掉（「跟左边那些不适配，加进来没啥用」）⇒ 留负向断言防复活。
+   ⛔ 必须过 codeOnly：本文件与板块自己的注释里必然会提到"组件库"三个字。 */
+ok(!/组件库|loadCategory|SkinHost|UI_SKIN/.test(modal), "负向：草图弹窗里没有组件库面板（要浏览控件去「设置 → 组件库」，别在草图里再造一份）");
+ok(!/load-doc|pushHash/.test(bridge), "负向：桥是只读的（宿主不往画布写；上游自己有 #doc= 导入通道）");
+ok(!/appendComponents|componentNote|encodeShareHash/.test(read("src/features/ui-sketch/sketch-doc.mjs")), "负向：纯函数层不残留写入侧的旧实现（删了面板就要删干净）");
 
 /* ───────────────────────── 七、跨进程 / 跨产物的字面量对账 ───────────────────────── */
 

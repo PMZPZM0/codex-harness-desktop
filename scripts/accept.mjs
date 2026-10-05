@@ -384,7 +384,7 @@ const CHECKS = [
   },
   {
     id: "ui-sketch",
-    name: "㉑ 界面草图（侧栏「···更多」五入口 / 嵌入站真加载 / 组件库送进草图，10-05 轮）",
+    name: "㉑ 界面草图（侧栏「···更多」五入口 / 嵌入站真加载 / 画布内容读回宿主，10-05 轮）",
     run: async (h) => {
       // 为什么必须真跑：这条链路的六个接缝（侧栏按钮 → bag 开关 → AppView 挂载 → sketch:// 协议
       // → CSP frame-src → 随包产物 + 内联桥）**每一个都能在 tsc/预检全绿的情况下静默白屏**
@@ -412,7 +412,7 @@ const CHECKS = [
         if(!f) return { has:false };
         const r=f.getBoundingClientRect(); const s=document.querySelector('.ui-sketch-shell').getBoundingClientRect();
         return { has:true, src:f.src, w:Math.round(r.width), h:Math.round(r.height), shellW:Math.round(s.width), shellH:Math.round(s.height) }; })()`);
-      h.check("④ iframe 走的是随包协议，且**占满整块主体**（组件库是浮层，不许再挤窄草图 —— 10-05 用户「上面按键遮住了」）",
+      h.check("④ iframe 走的是随包协议，且**占满整块主体**（不许再塞并排面板挤窄草图 —— 10-05 用户「上面按键遮住了」）",
         frame?.has === true && String(frame?.src).startsWith("sketch://")
           && Math.abs(frame.w - frame.shellW) <= 2 // 主体区 = shell 高 - 标题栏 - 状态条（约 71px），给 90 的余量
           && frame.h >= frame.shellH - 90 && frame.w > 900, JSON.stringify(frame));
@@ -420,40 +420,24 @@ const CHECKS = [
       const ready = await h.waitFor(`document.querySelector('.ui-sketch-shell')?.getAttribute('data-bridge')==="ready"`,
         { label: "草图桥应答（data-bridge=ready）", timeoutMs: 25000 }).then(() => true).catch(() => false);
       const meta = await h.text(".ui-sketch-meta").catch(() => "");
-      h.check("⑤ 与嵌入站的双向桥握手成功（这一条为假 = 协议/CSP/产物任一处断了，且不会有任何报错）", ready === true, `meta=${String(meta).slice(0, 90)}`);
-      await h.waitFor(`document.querySelectorAll('.ui-sketch-list button').length > 0`, { label: "组件库列表非空", timeoutMs: 20000 });
-      // ⚠️ 勾选与「送进草图」**必须分两次 eval、中间等一轮渲染**：同一段脚本里连点两次，
-      // 第二次点到的还是上一次渲染出来的那个 handler（闭包里 picked 还是空的），
-      // 状态条会说"先勾选"—— 那是测试写法的问题，不是应用的。10-05 首跑就是这么假的红了一次。
-      await h.eval(`(function(){ const first=document.querySelector('.ui-sketch-list button'); if(first) first.click(); return !!first; })()`);
-      await wait(500);
-      const pushed = await h.eval(`(function(){
-        const btn=[...document.querySelectorAll('.ui-sketch-head button')].find((b)=>(b.textContent||'').includes('送进草图'));
-        if(!btn) return { button:false };
-        btn.click(); return { button:true, picked:document.querySelectorAll('.ui-sketch-list button.picked').length }; })()`);
-      await wait(2500);
-      const after = await h.eval(`(function(){ return { status:(document.querySelector('.ui-sketch-status')?.textContent||'').trim(),
-        picked:document.querySelectorAll('.ui-sketch-list button.picked').length,
+      h.check("⑤ 与嵌入站的读回桥握手成功（这一条为假 = 协议/CSP/产物任一处断了，且不会有任何报错）", ready === true, `meta=${String(meta).slice(0, 90)}`);
+      /* ⑥「取回画布」= 按需再走一次读通道。首帧那次 ready 只证明握手成立，
+         不证明"用户改完之后随时读得到最新内容"—— 那才是这个按钮的语义。 */
+      await h.eval(`(function(){ const btn=[...document.querySelectorAll('.ui-sketch-head button')].find((b)=>(b.textContent||'').includes('取回画布')); btn?.click(); return !!btn; })()`);
+      await wait(900);
+      const synced = await h.eval(`(function(){ return { status:(document.querySelector('.ui-sketch-status')?.textContent||'').trim(),
         warn:document.querySelector('.ui-sketch-warn')?.textContent||"" }; })()`);
-      h.check("⑥ 组件库选中项能送进草图（状态条给出「已送进画布 N 个组件」或幂等提示）",
-        pushed?.button === true && /送进画布|已经在画布/.test(after?.status ?? "") && !after?.warn, JSON.stringify(after).slice(0, 220));
-      /* ⑤ 只证明"协议 + CSP + postMessage"三处通了 —— 桥是内联在 <head> 的，
-         编辑器 chunk 还没 hydration 也能应答 ready，所以那时画布可能还是骨架屏。
+      h.check("⑥「取回画布」走通读通道（状态条给出取回结果，且没有诊断告警）",
+        synced?.status === "已取回当前画布" && !synced?.warn, JSON.stringify(synced).slice(0, 200));
+      /* ⑦ 只证明"协议 + CSP + postMessage"三处通了还不够 —— 桥是内联在 <head> 的，
+         编辑器 chunk 还没 hydration 也能应答 ready，那时画布其实还是骨架屏。
          这一条要的是**读回通道真的拿到了编辑器写进 localStorage 的文档**（标题栏才会出现「屏 / 部件」）。 */
       const booted = await h.waitFor(
         `(document.querySelector('.ui-sketch-meta')?.textContent || "").indexOf("部件") >= 0`,
         { label: "草图编辑器启动并回传文档", timeoutMs: 25000 }
       ).then(() => true).catch(() => false);
       const bootedMeta = await h.text(".ui-sketch-meta").catch(() => "");
-      h.check("⑧ 嵌入站真的启动了、且把画布内容读回宿主（骨架屏不算通过）", booted === true, `meta=${String(bootedMeta).slice(0, 80)}`);
-      /* ⑨ 预览是**懒挂载**的（一个类目上千个控件，一次全挂 shadow DOM 会把弹窗卡死）：
-         首屏那几行必须真的渲染出控件外观，而不是只有一行名字（10-05 用户：「右边组件没有预览功能」）。 */
-      const previewSeen = await h.waitFor(`document.querySelectorAll('.ui-sketch-preview .skin-host').length >= 3`,
-        { label: "组件预览挂载", timeoutMs: 15000 }).then(() => true).catch(() => false);
-      const preview = await h.eval(`(function(){ const hosts=[...document.querySelectorAll('.ui-sketch-preview .skin-host')];
-        return { hosts: hosts.length, filled: hosts.filter((x)=>x.shadowRoot && x.shadowRoot.children.length > 0).length }; })()`);
-      h.check("⑨ 组件库列表带真实外观预览（Shadow DOM 里真渲染出控件）",
-        previewSeen === true && (preview?.filled ?? 0) >= 3, JSON.stringify(preview));
+      h.check("⑦ 嵌入站真的启动了、且把画布内容读回宿主（骨架屏不算通过）", booted === true, `meta=${String(bootedMeta).slice(0, 80)}`);
       // 截图前关掉宿主自己的引导浮层（环境体检），否则挡住被测区域看不清
       await h.clickByText("全部稍后再说").catch(() => undefined);
       await wait(1200);
@@ -461,7 +445,7 @@ const CHECKS = [
       await h.eval(`(function(){ document.querySelector('.ui-sketch-head button[title="关闭"]')?.click(); return 1; })()`);
       await wait(500);
       const closed = await h.eval(`!!document.querySelector('.ui-sketch-shell')`);
-      h.check("⑦ 关闭键真的收起浮层（关不掉的模态会挡住后面所有验收项）", closed === false, `stillOpen=${closed}`);
+      h.check("⑧ 关闭键真的收起浮层（关不掉的模态会挡住后面所有验收项）", closed === false, `stillOpen=${closed}`);
     },
   },
 ];

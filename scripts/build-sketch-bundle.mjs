@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const OUT_DIR = join(ROOT, "public", "sketch");
 const BRIDGE = join(ROOT, "scripts", "sketch-bridge.js");
+const bridgeSource = readFileSync(BRIDGE, "utf8");
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
 /** Pages 才用得到的死文件：社交预览图与 404 页（应用内没有任何引用）。 */
@@ -36,6 +37,24 @@ const argOf = (name, fallback) => {
 };
 const from = resolve(argOf("from", join(ROOT, ".workbuddy/tmp/m3e-src/m3e-canvas-main/out")));
 const wantFonts = !argv.includes("--no-fonts");
+
+/* 只换桥：产物已经在仓库里，改 scripts/sketch-bridge.js 不该要求你重新装一套 Next 工具链。
+   ⛔ 替换用函数形式：桥正文里出现 `$&` 之类的串会被 String.replace 当成捕获组引用。 */
+if (argv.includes("--bridge-only")) {
+  const index = join(OUT_DIR, "index.html");
+  if (!existsSync(index)) {
+    console.error(`✗ ${relative(ROOT, index)} 不存在 —— 首次接入要跑完整刷新（--from <next export out/>）`);
+    process.exit(1);
+  }
+  const html = readFileSync(index, "utf8");
+  const pattern = /<script data-nuphus-sketch-bridge="1">[\s\S]*?<\/script>/;
+  if (!pattern.test(html)) throw new Error("产物里找不到桥那一段：--bridge-only 只能替换已有的注入");
+  const tag = `<script data-nuphus-sketch-bridge="1">\n${bridgeSource}\n</script>`;
+  writeFileSync(index, html.replace(pattern, () => tag));
+  console.log(`只换桥：${relative(ROOT, index)} ${html.length} → ${readFileSync(index, "utf8").length} 字节（其余产物一字未动）`);
+  console.log("下一步：npm run build（public/ 进 dist/）");
+  process.exit(0);
+}
 
 if (!existsSync(join(from, "index.html")) || !existsSync(join(from, "_next"))) {
   console.error(`✗ ${from} 不是 next build 的静态导出（缺 index.html 或 _next/）`);
@@ -128,7 +147,6 @@ if (wantFonts) {
 
 /* 桥：注入在 head 末尾（defer 语义下 head 内联脚本在 DOMContentLoaded 前跑完，
    比 body 尾部的产物脚本更早注册 message 监听 ⇒ 宿主 onload 后 ping 一定收得到）。 */
-const bridgeSource = readFileSync(BRIDGE, "utf8");
 const bridgeTag = `<script data-nuphus-sketch-bridge="1">\n${bridgeSource}\n</script>`;
 if (/<script data-nuphus-sketch-bridge/.test(html)) throw new Error("产物里已经有桥：请先删掉 public/sketch 再重跑");
 html = `${head}${bridgeTag}\n${tail}`;

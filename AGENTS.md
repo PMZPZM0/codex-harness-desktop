@@ -177,6 +177,7 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
   而 `before-pack` 的可达闭包只走 `dist/assets` ⇒ `dist/sketch` 天然不被裁（同 `public/pets` 口径）。
 - **刷新产物** = `node scripts/build-sketch-bundle.mjs --from <上游 out/>`（人工工具，⛔ 不进 check / CI：要联网 + Next 工具链）。
   它干三件事：剪掉 GitHub Pages 死文件、**把两个 Google Fonts 本地化**、把 `scripts/sketch-bridge.js` 内联进 `index.html`。
+  只改了桥、不想重装 Next 工具链时：`node scripts/build-sketch-bundle.mjs --bridge-only`（原地替换那一段，其余产物一字不动）。
   ⛔ 字体必须本地化：Material Symbols 是这套 UI 的**全部图标**，外链取不到时图标退化成 `home` / `add_circle` 这样的**单词**，看着就是坏了。
 - `sketch://` 协议（`electron/sketch-protocol.ts` 声明口径 + `boot.ts` 注册 handler）：根**恒等于打包内 dist/sketch**，
   扩展名白名单，越界 403、越类型 415。⛔ 不复用 `harness-image`/`pet`（那两个只放图片扩展名，放宽它们 = 扩大任意文件读取面，安全回归）；
@@ -187,17 +188,13 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
 - ⛔ **CSP 的 `frame-src` 必须显式加 `sketch:`**：`*` 不覆盖自定义协议（`index.html` 里已写成纪律），漏写 = iframe 静默空白。
   这条链六个接缝（侧栏按钮 → bag 开关 → AppView 挂载 → 协议 → CSP → 产物+桥），**每一个都能在 tsc 与预检全绿时白屏**
   ⇒ 验收项 `ui-sketch` 真跑「桥握手成功」（`data-bridge="ready"`）：跨源 iframe 读不到 DOM，握手是唯一可观测判据。
-- **双向通道用它自己的导入机制**：写 = 桥把文档写成 `#doc=<encodeURIComponent(JSON)>` ⇒ 上游 `hashchange → readShareHash → arrive()`
-  （落画布、被替换的那份留在 draftBefore 可撤销、不重载页面）；读 = 桥读同源的 `localStorage["m3e:doc"]` 回传宿主。
-  ⛔ 不 encodeURIComponent 的话 JSON 里的 `&` 被当分隔符、`+` 变空格 ⇒ 上游只收到半份文档。
-- **组件库融合**（⛔ 不复制第二份数据）：草图右侧直接用基座 `src/lib/ui-skin`（`loadCategory`，3802 个 Uiverse 控件），
-  勾中的组件追加成**一个新 group**（不动用户已有的组，重复送幂等），引用锚写在 item 的 `note` 里
-  —— 上游文档明确「note 原样进它导出的提示词」⇒ 「交给 Codex 实现」= 草图结构 + 组件真实 HTML/CSS
-  （单条超 12KB 预算就只给 id，让引擎自己调 MCP `ui_component_get` 取，⛔ 不许截一半正文）。
-- ⛔ **组件库面板是浮层，不跟草图分宽度**（10-05 用户：「上面按键遮住了」）：并排会把草图挤到 ~910px，
-  它自己的浮动工具栏就摆不下、右上角控件互相遮挡；iframe 必须占满整块主体，标题与动作也合成一行省掉一条工具栏。
-  列表里的**真实预览复用基座 `components/SkinHost`**（Shadow DOM 隔离，同组件库页）：按可见性**懒挂载**
-  （一个类目上千个控件，一次全挂会把弹窗卡死），预览格 `pointer-events:none`（行要能点，不让控件抢点击）。
+- **读回通道 = `scripts/sketch-bridge.js` + postMessage**（构建时内联进产物的 index.html）：桥读草图同源
+  的 `localStorage["m3e:doc"]` 回传宿主，宿主据此显示「N 屏 / M 部件」、复制草图 JSON、把结构合成任务发给 Codex。
+  ⛔ **只读，宿主不往画布写**：上游自己有完整的导入通道（`#doc=` / `#docz=` 分享哈希 → hashchange →
+  `arrive()`，可一键撤销），要导入设计走它自己的入口就够。10-05 做过一版"把组件库控件送进草图"，
+  用户实测后判「跟左边那些不适配，加进来没啥用」⇒ 整块撤掉，守卫【283】留了三条负向断言防复活。
+- ⛔ **草图弹窗里不要再塞并排面板**（同一条用户反馈）：iframe 必须占满整块主体，并排会把草图挤到 ~910px，
+  它自己的浮动工具栏就摆不下、右上角控件互相遮挡。标题与动作也合成一行，别多一条工具栏。
 
 ### 📚 Uiverse 组件库（`electron/features/uiverse-library.ts` + `src/features/component-library/`，2026-10-01）
 
