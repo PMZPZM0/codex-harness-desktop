@@ -355,7 +355,7 @@ export async function bootApp() {
     }
   });
 
-  /* `sketch://`：随包的**界面草图静态站**（10-05 加，m3e-canvas 的 next 静态导出）。
+  /* `sketch://`：随包的**手机前端UI静态站**（10-05 加，m3e-canvas 的 next 静态导出）。
      根恒等于打包内 dist/sketch、扩展名走白名单 ⇒ 能读的文件集合就是"随包只读资源"那一圈，
      面没有扩大（三条为什么不另做他选的论证写在 electron/sketch-protocol.ts 头部）。 */
   protocol.handle(SKETCH_SCHEME, (request) => sketchResponse(request.url));

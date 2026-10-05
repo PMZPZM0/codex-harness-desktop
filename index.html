@@ -23,9 +23,9 @@
          同类前科：`connect-src` 不放行 `data:` 导致 PixiJS 贴图全变白方块。
          ⛔ 这类问题**只在构建产物 + 真实 CSP 下暴露**，改完必须用构建产物验证（探针已钉）。
          口径与 `harness-image:` 一致：都是本进程注册、内容来自本机可信目录的只读图片协议。 -->
-    <!-- ⛔ 同理 `sketch:` 必须显式列进 frame-src（10-05 界面草图）：上面那条口径对 frame-src
+    <!-- ⛔ 同理 `sketch:` 必须显式列进 frame-src（10-05 手机前端UI）：上面那条口径对 frame-src
          一样成立 —— `*` 不覆盖自定义协议，漏写的话 iframe 会**静默不加载**（表现成弹窗里一块白，
-         而不是报错）。草图站是本进程注册的只读静态站，见 electron/sketch-protocol.ts。 -->
+         而不是报错）。该站点是本进程注册的只读静态站，见 electron/sketch-protocol.ts。 -->
     <!-- ⛔ `script-src` 必须含 `blob:`：语音通话的 AudioWorklet 用
          `audioWorklet.addModule(blobUrl)` 注册处理器（`src/voice/capture-worklet.ts` 以
          字符串常量提供源码，走 Blob URL 才不用依赖打包后的资源路径）。

@@ -1,11 +1,11 @@
 /**
- * scripts/build-sketch-bundle.mjs —— 刷新「界面草图」内嵌产物（m3e-canvas 静态导出）
+ * scripts/build-sketch-bundle.mjs —— 刷新「手机前端UI」内嵌产物（m3e-canvas 静态导出，展示名 10-05 夜从「界面草图」改来）
  *
  * 干什么：把上游 `next build`（output:"export"）的产物落进 `public/sketch/`，顺手做三件
  * 我们必须自己做的事 —— ① 删掉只服务于 GitHub Pages 的死文件；② **把两个 Google Fonts
  * 外链本地化**（桌面应用离线也要有图标：Material Symbols 是这套 UI 的**全部图标**，
  * 字体拿不到时它们会退化成 "home" / "add_circle" 这样的**单词**，看着就是坏了）；
- * ③ 把 `scripts/sketch-bridge.js` 原样内联进 index.html（宿主↔草图的双向通道）。
+ * ③ 把 `scripts/sketch-bridge.js` 原样内联进 index.html（宿主↔画布的双向通道）。
  *
  * ⛔ 这是**人工刷新工具**，不进 `npm run check`、不进 CI：它要联网、要上游源码 + Next 工具链。
  *    产物 `public/sketch/` 是**提交进仓库的**（Vite 每次 build 拷进 dist/sketch，
@@ -118,7 +118,7 @@ let html = readFileSync(join(OUT_DIR, "index.html"), "utf8");
 const before = html.length;
 /* ⛔ 字体改写与桥注入**只允许动 `</head>` 之前**：10-05 实测，整文件正则会把 body 里那段
    React flight 数据（`self.__next_f.push([1,"…"])`，里面原样嵌着 <head> 的元数据标记）咬断，
-   表现是「Uncaught SyntaxError: Invalid or unexpected token @index.html:118」+ 草图永远停在骨架屏
+   表现是「Uncaught SyntaxError: Invalid or unexpected token @index.html:118」+ 画布永远停在骨架屏
    —— 而 next 的产物本身是**一整行**，人眼根本看不出少了哪一段。 */
 const headEnd = html.indexOf("</head>");
 if (headEnd < 0) throw new Error("index.html 里没有 </head>，注入点找不到");
@@ -154,7 +154,7 @@ html = `${head}${bridgeTag}\n${tail}`;
 if (!html.endsWith(tail)) throw new Error("注入后 </head> 之后的内容被改动了，产物会白屏");
 writeFileSync(join(OUT_DIR, "index.html"), html);
 
-/* 出处记录：将来"这版草图是哪来的"必须能一句话回答，别靠记忆。 */
+/* 出处记录：将来"这版产物是哪来的"必须能一句话回答，别靠记忆。 */
 const upstream = JSON.parse(readFileSync(join(from, "..", "package.json"), "utf8"));
 writeFileSync(join(OUT_DIR, "CANVAS-BUILD.json"), JSON.stringify({
   source: "https://github.com/lnkiai/m3e-canvas",

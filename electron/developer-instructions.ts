@@ -170,6 +170,14 @@ const UI_COMPONENT_INSTRUCTIONS =
   `\n12) UI COMPONENT LIBRARY — when building ANY frontend UI (web page / component / settings panel), search the built-in Uiverse library FIRST:\n` +
   `   \`ui_component_search\` (by category/keyword) + \`ui_component_get\` (fetch full HTML+CSS, MIT) — 3,800+ ready-made components (buttons, cards, checkboxes, forms, inputs, notifications, loaders, …). Prefer adapting one of these over hand-writing from scratch; paste the fetched code into the user's project and adjust to their theme. If the tools are absent from your tool table, say so instead of inventing component code.`;
 
+/* ── 第 13 条：手机前端UI 画布（10-05 夜，用户：「Codex 要知道用这个，涉及手机前端开发能主动调用
+   这个工具做手机前端UI」）──
+   ⛔ 常驻的原因与第 12 条同款：工具在表里模型未必主动用，做手机界面时"直接写代码 / 手搓 HTML
+   草图"是默认习惯。写法是**条件式**（工具不在表里 = 旧会话，明确说不要猜内容）。 */
+const MOBILE_UI_INSTRUCTIONS =
+  `\n13) MOBILE FRONTEND UI CANVAS — when the task is building or iterating a MOBILE app UI (手机端界面 / App 原型 / 移动端页面) and \`mobile_ui_apply_doc\` is in your tool list, compose the interface in the app's built-in 「手机前端UI」 canvas instead of hand-drawing mockups:\n` +
+  `   \`mobile_ui_get_doc\` reads the current design FIRST (frames = screens, groups = parts); \`mobile_ui_apply_doc\` writes an edited FULL document back (edit what get returned — never rewrite from memory). The user watches it live, can keep hand-editing, preview it as a phone app, and Ctrl+Z. It doubles as the shared design surface: assemble/iterate screens there, then implement the frontend from that document. If the tools are absent (a session started before this feature), say so instead of inventing canvas contents.`;
+
 function gateAndReviewInstructions(): string {
   const mcpBackend = effectiveMemoryBackend() === "mcp";
   const memorySkill = mcpBackend ? MEMORY_MCP_BACKEND_SKILL : MEMORY_CLASSIFY_SKILL;
@@ -208,6 +216,8 @@ export function buildDevInstructions(input: { desktop?: boolean; browser?: boole
   text += CAPABILITY_INSTRUCTIONS;
   // Uiverse 组件库（10-01：写前端先查库、取代码直接用）
   text += UI_COMPONENT_INSTRUCTIONS;
+  // 手机前端UI 画布（10-05 夜：做手机端界面时把拼装搬进应用内画布，Codex 直接读写）
+  text += MOBILE_UI_INSTRUCTIONS;
   // 深层联动软约束：自动化能力被关闭时，在基础指令里明确告诉模型不要调用这些工具。
   // 09-20：MCP 工具（`desktop_*` / `browser_*`）现在会被 disabled_tools **硬移除**，所以这里
   // 重点变成「别用命令行兜底绕过总闸」—— nuphus-call / playwright-cli 仍在 PATH 上，
