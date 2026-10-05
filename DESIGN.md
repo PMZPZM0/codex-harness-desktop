@@ -99,6 +99,14 @@
 | `.pet-float` / `.pet-bubble` / `.pet-stage` / `.pet-sprite` | **桌面宠物**（2026-09-30）：**独立透明置顶窗口**里的内容，不是主界面的一部分。精灵靠一张图集 + `background-position` 切帧（8 列 × 9 行，每帧 192×208）；整片可拖动（`-webkit-app-region: drag`） |
 | `.pet-card` / `.pet-item` / `.pet-grid` / `.pet-roots` | 设置页「桌面宠物」：卡片 / 宠物选择项（缩略图 + 名字 + 来源徽标）/ 网格 / 目录清单 |
 
+| `.message-footer`（+ `.message-action-default` / `-extra`） | 消息下方的操作条：`-default` **常驻**（复制 / 分支 / 时间），`-extra` **hover 才现身但仍占位**。⛔ 谁排最后谁贴右端 —— 用户消息所以要把常驻复制排在最后（10-05 用户：「常驻复制靠右」）。图标一律走 `FeedbackIconButton` |
+
+**消息图标的两段反馈**（`src/features/shared/FeedbackIconButton.tsx`，10-05 用户点名）：按下 → 图标弹一下并换成
+"已生效"的样子（对勾 / 实心星）→ 停 1.1 秒淡回原样。动画在 CSS（`.message-footer button[data-phase="done"]`
++ `@keyframes message-action-pop`），状态在组件；⛔ 新加动作**不许再写散装 `<button onClick>`**（一散装就少一份反馈，
+守卫【feedback】按"脚部零个 `<button>` + 恰好 5 处共用按钮"钉）。`prefers-reduced-motion` 下只关弹动、
+**保留对勾与主色** —— 反馈是信息，动效才是装饰。
+
 **命令面板**（`.command-palette`）：两列，左列命令名（`code`，12px 等宽）、右列注释（11px）；
 ⛔ 两列必须**按文字基线对齐**（`align-items: baseline`）—— 按盒子居中会让两种字号的字形错开约 2px，肉眼就是"歪了"（实测过）。
 

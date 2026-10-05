@@ -534,6 +534,29 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   opacity: 0.5;
   transition: opacity 0.12s, color 0.12s, background 0.12s;
 }
+/* 两段反馈（10-05 用户：「所有的图标都要做两段动画，比如复制成功反馈、收藏成功两段」）：
+   第一段 = 按下瞬间图标弹一下并换成对勾 / 实心星（`FeedbackIconButton` 把 data-phase 切成 done）；
+   第二段 = 停 1.1 秒后回 idle，颜色沿上面那条 transition 淡回去。
+   ⛔ 动画只挂在 [data-phase="done"] 上：回 idle 时不重播，否则"变回去"会再弹一次。
+   ⛔ 同时把 opacity 抬到 1：hover 才现身的收藏/引用，点了之后鼠标可能立刻移开，
+      成功反馈不能被 `.message-action-extra { opacity: 0 }` 抹掉（这条选择器权重更高，正好压住）。 */
+.message-footer button[data-phase="done"] {
+  color: var(--accent);
+  opacity: 1;
+  animation: message-action-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes message-action-pop {
+  0% { transform: scale(0.72); }
+  45% { transform: scale(1.22); }
+  75% { transform: scale(0.94); }
+  100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* 关掉弹动，但**保留对勾与颜色**：反馈是信息，动效才是装饰（同本文件其他 reduce 块的口径） */
+  .message-footer button[data-phase="done"] {
+    animation: none;
+  }
+}
 .message:hover .message-footer .message-action-default,
 .message-footer:focus-within .message-action-default,
 .codex-turn:hover > .message-footer .message-action-default {

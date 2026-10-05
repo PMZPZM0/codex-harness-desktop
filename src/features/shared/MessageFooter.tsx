@@ -7,8 +7,9 @@ import { usageBucket } from "../../lib/usage-bucket";
 import { usageInputTokens } from "../../lib/usage-input-tokens";
 import { usageNumber } from "../../lib/usage-number";
 import { usageCachedTokens } from "../../lib/usage-cached-tokens";
-import { Quote, PenLine, Copy, GitBranch, Clock3, Star } from "lucide-react";
+import { Quote, PenLine, Copy, GitBranch, Clock3, Star, Check } from "lucide-react";
 import { requestFavorite } from "../../lib/favorite-bridge";
+import { FeedbackIconButton } from "./FeedbackIconButton";
 
 export function MessageFooter({ item, turn, usage, tokenUsage, fallbackWindow, onCopy, onQuote, onFork, onEdit, extraIcon }: { item: ThreadItem; turn?: Turn; usage?: any; tokenUsage?: any; fallbackWindow?: number; onCopy: (text: string) => void; onQuote: (text: string) => void; onFork?: () => void; onEdit?: () => void; extraIcon?: any }) {
   const rawText = itemText(item);
@@ -25,30 +26,48 @@ export function MessageFooter({ item, turn, usage, tokenUsage, fallbackWindow, o
   const total = num(u?.totalTokens ?? u?.total_tokens);
   const cacheRate = input > 0 ? Math.round((cached / input) * 100) : null;
   const showTokenInfo = isAgent && (input > 0 || output > 0 || total > 0);
+  /* 每个动作都是同一个「两段反馈」按钮（按下 → 对勾/实心星 → 淡回原样），
+     所以在这里一次建好，末尾按角色决定**摆放顺序** —— 不在两处写两份按钮。 */
+  const quoteButton = text ? (
+    <FeedbackIconButton key="quote" className="message-action-extra" title="引用" doneTitle="已放进输入框"
+      icon={<Quote size={12} />} doneIcon={<Check size={12} />} onFire={() => { onQuote(text); }} />
+  ) : null;
+  const editButton = onEdit && text ? (
+    <FeedbackIconButton key="edit" className="message-action-extra" title="编辑并重新发送" doneTitle="已进入编辑"
+      icon={<PenLine size={12} />} doneIcon={<Check size={12} />} onFire={() => { onEdit(); }} />
+  ) : null;
+  const copyButton = text ? (
+    <FeedbackIconButton key="copy" className="message-action-default" title="复制消息" doneTitle="已复制"
+      icon={<Copy size={12} />} doneIcon={<Check size={12} />} onFire={() => { onCopy(text); }} />
+  ) : null;
+  const favoriteButton = text ? (
+    // requestFavorite 返回"有没有人接住"（app 层没挂上 handler 时是 false）⇒ 接不住就不演成功。
+    <FeedbackIconButton key="fav" className="message-action-extra" title="收藏这条消息" doneTitle="已加入收藏夹"
+      icon={<Star size={12} />} doneIcon={<Star size={12} fill="currentColor" />}
+      onFire={() => requestFavorite({
+        kind: "text",
+        content: text,
+        title: text.replace(/\s+/g, " ").trim().slice(0, 40),
+        source: { turnId: turn?.id, messageId: item.id, role: isAgent ? "assistant" : "user" },
+      })} />
+  ) : null;
+  const forkButton = isAgent && onFork ? (
+    <FeedbackIconButton key="fork" className="message-action-default" title="从此处分支" doneTitle="分支已发起"
+      icon={<GitBranch size={12} />} doneIcon={<Check size={12} />} label="分支" onFire={() => { onFork(); }} />
+  ) : null;
+  const timeNode = isAgent && turn?.startedAt ? <span key="time"><Clock3 size={12} />{formatTimestamp(turn.completedAt ?? turn.startedAt)}</span> : null;
+  const tokenNodes = isAgent && showTokenInfo ? [
+    <span key="tokens" className="message-action-extra">{input.toLocaleString()} 入 / {output.toLocaleString()} 出{total > 0 ? ` · ${total.toLocaleString()} 总` : ""}</span>,
+    cacheRate != null ? <span key="cache" className="message-action-extra">· {cacheRate}% 缓存</span> : null,
+  ] : [];
+
   return (
     <div className="message-footer">
-      {/* 用户消息：引用 → 编辑 → 复制（hover 项在前，常驻项在后） */}
-      {!isAgent && text && <button className="message-action-extra" title="引用" onClick={() => onQuote(text)}><Quote size={12} /></button>}
-      {!isAgent && onEdit && <button className="message-action-extra" title="编辑并重新发送" onClick={onEdit}><PenLine size={12} /></button>}
-      {/* 复制：agent/用户消息都常驻，纯图标 */}
-      {text && <button className="message-action-default" title="复制消息" onClick={() => onCopy(text)}><Copy size={12} /></button>}
-      {/* agent 常驻：分支 → 时间（上下文进度图标只在输入框下方的 ContextUsageBadge 展示） */}
-      {isAgent && onFork && <button className="message-action-default" title="从此处分支" onClick={onFork}><GitBranch size={12} />分支</button>}
-      {isAgent && turn?.startedAt && <span><Clock3 size={12} />{formatTimestamp(turn.completedAt ?? turn.startedAt)}</span>}
-      {/* agent hover：输入/输出 Token + 缓存命中率 + 引用 */}
-      {isAgent && showTokenInfo && <span className="message-action-extra">{input.toLocaleString()} 入 / {output.toLocaleString()} 出{total > 0 ? ` · ${total.toLocaleString()} 总` : ""}</span>}
-      {isAgent && cacheRate != null && <span className="message-action-extra">· {cacheRate}% 缓存</span>}
-      {isAgent && text && <button className="message-action-extra" title="引用" onClick={() => onQuote(text)}><Quote size={12} /></button>}
-      {/* 收藏（09-24）：用户/agent 消息都能收；hover 项，不占常驻位置。
-          经 favorite-bridge 交给 app 状态层（不逐层传 prop，见该模块注释）。 */}
-      {text && <button className="message-action-extra" title="收藏这条消息" onClick={() => {
-        requestFavorite({
-          kind: "text",
-          content: text,
-          title: text.replace(/\s+/g, " ").trim().slice(0, 40),
-          source: { turnId: turn?.id, messageId: item.id, role: isAgent ? "assistant" : "user" },
-        });
-      }}><Star size={12} /></button>}
+      {/* ⛔ 顺序按角色分岔（10-05 用户：「把用户消息下面的常驻复制靠右」）：
+          hover 才现身的项**仍占着位**（见 03-messages-turns.css 里那条"避免撑高 footer"的注释），
+          所以谁排在最后，谁就贴着右端 —— 用户消息只有复制是常驻的，必须排最后；
+          agent 侧的常驻是 复制 + 分支 + 时间，保持原顺序不动。 */}
+      {!isAgent ? <>{quoteButton}{editButton}{favoriteButton}{copyButton}</> : <>{copyButton}{forkButton}{timeNode}{tokenNodes}{quoteButton}{favoriteButton}</>}
       {extraIcon}
     </div>
   );
