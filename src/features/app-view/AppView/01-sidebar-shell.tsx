@@ -412,7 +412,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                     </button>
                     <button type="button" title="界面草图：Material 3 Expressive 屏摄画布，摆好的界面直接变成前端提示词" onClick={() => { setMoreHubOpen(false); setUiSketchOpen(true); setMobileNav(false); }}>
                       <PenTool size={16} />
-                      <span><strong>界面草图</strong><small>拖组件拼界面，连着看导航；组件库里的真实控件可以一键送进草图</small></span>
+                      <span><strong>界面草图</strong><small>拖 Material 3 组件拼界面、连导航，摆完一键变成给 Codex 的前端任务</small></span>
                     </button>
                     <button type="button" title="项目知识库：导入文档，Codex 可直接检索" onClick={() => { setMoreHubOpen(false); setSettingsPage("knowledge-base"); setSettingsOpen(true); setMobileNav(false); }}>
                       <Library size={16} />

@@ -1,9 +1,10 @@
 /*
- * nuphus 草图桥 —— 运行在**草图文档**（sketch://app）里，与 Codex Harness 主窗口双向传话。
+ * nuphus 草图桥 —— 运行在**草图文档**（sketch://app）里，把当前画布内容报给 Codex Harness 主窗口。
  *
  * ⛔ 这段代码不在我们渲染层执行：`scripts/build-sketch-bundle.mjs` 把它**原样内联**进
- *    `public/sketch/index.html`（第三方静态产物里唯一属于我们的一行）。改完必须重跑那个脚本，
- *    只改本文件不改产物 = 没生效（守卫【283】比对两边的规范化文本）。
+ *    `public/sketch/index.html`（第三方静态产物里唯一属于我们的一段）。改完必须重跑
+ *    `node scripts/build-sketch-bundle.mjs --bridge-only`，只改本文件不改产物 = 没生效
+ *    （守卫【283】比对两边的规范化文本）。
  *
  * 为什么只能靠 postMessage：草图站是 `sketch://app` 源，主窗口是 `file://` / dev 的
  * `http://localhost:*` 源 ⇒ 拿不到对方 DOM，也读不到对方 localStorage。
@@ -11,11 +12,9 @@
  *    换精确 origin 要处理打包版 `file://` 的 "null" origin（Chromium 语义），复杂度全花在
  *    一个本来就不是秘密的载荷上。入站一律按 `source` 标记过滤，不认别人的消息。
  *
- * 写通道用它**自己的**导入机制（lib/share.ts 的 `#doc=` + lib/project.ts 的 isProject 校验）：
- * 改 hash ⇒ 它的 hashchange 监听 ⇒ arrive()：设计落到画布、被替换的那份留在 draftBefore
- * 里可一键撤销 ⇒ 我们不重载页面，用户的草图不会被我们冲掉。
- * ⛔ 必须 encodeURIComponent：JSON 里的 `&` 会被 URLSearchParams 当分隔符、`+` 会变成空格，
- *    颜色值 `#6750A4` 里的 `#` 反倒无害。
+ * 方向：**只读**。宿主不往画布写东西 —— 上游自己有一套完整的导入通道
+ * （`#doc=` / `#docz=` 分享哈希 → hashchange → readShareHash → arrive()，可一键撤销），
+ * 用户要导入自己的设计时走它自己的入口就够，我们不再另造一条写通道。
  */
 (function () {
   "use strict";
@@ -66,42 +65,11 @@
     }
   }
 
-  /** 同一个文档推两次也要触发 hashchange：先把 hash 抹干净再写（它的 offer() 也会自己清）。 */
-  function pushHash(json) {
-    try {
-      history.replaceState(null, "", location.pathname + location.search);
-    } catch (error) {
-      /* 个别源上 replaceState 会被拒：最坏是"同样的文档推第二次没反应"，不影响第一次落地 */
-    }
-    location.hash = "#doc=" + encodeURIComponent(json);
-  }
-
   window.addEventListener("message", function (event) {
     var data = event.data;
     if (!data || data.source !== SOURCE) return;
-    if (data.type === "ping") {
-      post({ type: "pong", doc: currentDoc() });
-      return;
-    }
-    if (data.type === "get-doc") {
+    if (data.type === "ping" || data.type === "get-doc") {
       post({ type: "doc", doc: currentDoc() });
-      return;
-    }
-    if (data.type === "load-doc") {
-      var doc = data.doc;
-      if (!doc || typeof doc !== "object" || Array.isArray(doc)) {
-        post({ type: "error", error: "文档不是一个对象" });
-        return;
-      }
-      var json;
-      try {
-        json = JSON.stringify(doc);
-      } catch (error) {
-        post({ type: "error", error: "文档无法序列化" });
-        return;
-      }
-      pushHash(json);
-      return;
     }
   });
 
