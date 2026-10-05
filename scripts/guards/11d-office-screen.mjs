@@ -180,7 +180,11 @@ ok(/Math\.min\(len \* u,/.test(screen) || /Math\.min\(len,/.test(screen),
    ⇒ 判据形状：两条来源（team / delegatedRuns）+ 门槛只认 teamId + 成员 id 用 threadId。
    ⭐ 10-05 追加（用户：「普通会话的办公室预览按键图标和位置跟专家和专家团一样，
      展示在对话框右边轨道上」）：入口**从 AppView 的浮动胶囊改成右侧轨道末位节点**，
-     与专家团成员轨共用 `OfficeRailNode` —— 见本组尾部那几条。 */
+     与专家团成员轨共用 `OfficeRailNode` —— 见本组尾部那几条。
+   ⭐⭐ 10-05 再追加（用户：「我调度了一个专家，办公室预览里面没有更新成员」）：
+     **成员来源 = 委托登记表（含已完成）**，跑完的坐工位待机、⛔ 不从名单里消失。
+     ⛔ 病根是曾经按 `status === "running"` 过滤 —— 委托真机实测 **3.7 秒**就跑完，
+       用户点开办公室时它早已 done ⇒ 办公室永远空的（而头像轨还挂着它，两个面自相矛盾）。 */
 {
   const preview = readFileSync(join(ROOT, "src", "features", "team-office", "TeamOfficePreview.tsx"), "utf8");
   const appView = readFileSync(join(ROOT, "src", "features", "app-view", "AppView.tsx"), "utf8");
@@ -189,8 +193,10 @@ ok(/Math\.min\(len \* u,/.test(screen) || /Math\.min\(len,/.test(screen),
     "⛔ TeamOfficePreview 接受 delegatedRuns prop（普通会话的成员来源）");
   ok(/if \(!team\)\s*\{[\s\S]{0,600}?delegatedRuns/.test(preview),
     "⛔ team 为空时走「委托记录当成员」这条路径");
-  ok(/\.filter\(\(r\) => r\.status === "running"\)/.test(preview),
-    "⛔ 只取 running 的委托（跑完的子会话该下班，不能越积越多直到 6 个满）");
+  ok(/running:\s*r\.status === "running"/.test(preview),
+    "⛔ 跑完的成员**留在办公室**但置为待机（running 是标志位，不是过滤条件）");
+  ok(!/\.filter\(\(r\) => r\.status === "running"\)/.test(preview),
+    "⛔ 不许按 running 过滤成员（那正是「派了专家、办公室却没人」的病根）");
   ok(/if \(!teamId\) return null;/.test(preview) && !/if \(!teamId \|\| !team\) return null;/.test(preview),
     "⛔ 显示门槛只认 teamId（原来的 `|| !team` 会把普通会话浮层直接挡掉）");
   // 成员 id 必须是 threadId（点角色要能直接打开子会话）
@@ -213,8 +219,14 @@ ok(/Math\.min\(len \* u,/.test(screen) || /Math\.min\(len,/.test(screen),
   ok(/ROLE_NAMES/.test(preview) && /run\.threadId\.charCodeAt/.test(preview),
     "⛔ 随机名按 threadId 哈希取（同一人恒定同名，不会每帧改名）");
   // AppView：传参 + 徽标计数同源
-  ok(/delegatedRuns=\{app\.delegatedRailRuns\}/.test(appView),
-    "⛔ AppView 把 delegatedRailRuns 传进去");
+  /* ⛔ 成员源必须是**委托登记表**（`delegateRecords`，含已完成）——
+     10-05 用户报「我调度了一个专家，办公室预览里面没有更新成员」：
+     喂头像轨的 live 表（跑完 20 秒就摘）或按 running 过滤，都会让办公室永远是空的。 */
+  ok(/delegatedRuns=\{officeDelegates\}/.test(appView) &&
+    /Object\.values\(app\.delegateRecords\)/.test(appView),
+    "⛔ AppView 把委托登记表（含已完成）传进办公室");
+  ok(!/delegatedRuns=\{app\.delegatedRailRuns\}/.test(appView),
+    "⛔ 不许把头像轨的 live 表传给办公室（跑完 20 秒就摘 ⇒「派了专家没人」）");
   const railsSrc = readFileSync(join(ROOT, "src", "features", "experts-teams", "ExpertsTeams", "02-rails.tsx"), "utf8");
   const tlSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "02-main-stage", "01-timeline.tsx"), "utf8");
   /* ⭐ 10-05 入口改位置（用户：「普通会话的办公室预览按键图标和位置跟专家和专家团一样，

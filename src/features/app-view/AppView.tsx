@@ -384,6 +384,13 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     voiceDictating, waitingForApproval, waitingForInput, welcomeCwdMenuOpen,
     welcomeScratchDir, workspace, workspaceMemoryEnabled,
   } = app;
+  /* 办公室成员（10-05 用户报「我调度了一个专家，办公室预览里面没有更新成员」）：
+     取本会话派出的**委托登记表**（含已完成），⛔ 不是头像轨的 live 表 ——
+     委托跑得极快（真机实测 3.7 秒），用 live 表 / 按 running 过滤 ⇒ 点开办公室时
+     人已经"下班"了，办公室里永远是空的。 */
+  const officeDelegates = Object.values(app.delegateRecords)
+    .filter((record) => record.originThreadId === thread?.id && !record.archived)
+    .sort((a, b) => a.startedAt - b.startedAt);
   return (
     // 设置页的「?」要能打开完整帮助弹窗（气泡里的「查看完整帮助」）：用 context 注入 setHelpKey。
     // 不走逐页 prop —— 二十多个设置页头部每处都传一遍回调，漏传的那个会静默点不开。
@@ -509,9 +516,9 @@ export function AppView({ app }: { app: HarnessAppApi }) {
         teams={app.expertTeams}
         runningByMember={app.railRunningByMember}
         lastByMember={app.railLastByMember}
-        /* ⭐ 2026-10-04：普通会话也能开办公室 —— 传本会话派出的子会话。
-           宿主已按 `originThreadId === 当前会话` 过滤好（bag.delegatedRailRuns）。 */
-        delegatedRuns={app.delegatedRailRuns}
+        /* 普通会话也能开办公室 —— 传本会话派出的子会话（**委托登记表**，含已完成的，
+           见文件上方 `officeDelegates` 的由来）。 */
+        delegatedRuns={officeDelegates}
         openThread={(threadId) => void openThread(threadId)}
       />
       {typeof localStorage !== "undefined" && localStorage.getItem("officeProbe") === "1" && (
