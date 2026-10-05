@@ -349,6 +349,11 @@ export class ElectronHarness {
       await this.eval(src).catch(() => undefined);
       // 应用的 workspace 是 useState 初始化时读的（App.tsx:5972），当前文档已错过 → 重载一次
       // 让注入脚本在页面脚本之前执行。场景都在 launch 之后才等引导页/主界面，重载是透明的。
+      // ⛔ 但**必须先等首帧文档加载完**再 reload：在飞的导航被 `Page.reload` 打断会触发
+      //   `did-fail-load(ERR_ABORTED)`，应用据此切到「界面文件正在更新」的自愈页；而那一页
+      //   自己 `location.replace` 回 file:// 是被 Chromium 拦的（data: 源不能导航到 file:）
+      //   ⇒ 测试实例会永久卡在提示页，看起来像"应用被改坏了"。10-05 实测：40 秒内 13 次重试没回来。
+      await this.waitFor(`document.readyState === "complete"`, { label: "首帧文档加载完成", timeoutMs: 30000 }).catch(() => undefined);
       await this._send("Page.reload", {}).catch(() => undefined);
       await sleep(1500);
       await this._send("Runtime.enable", {}, 30000).catch(() => undefined);
