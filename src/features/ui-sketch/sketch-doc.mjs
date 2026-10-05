@@ -1,5 +1,5 @@
 /**
- * 手机前端UI（`ui-sketch` 域，展示名 10-05 夜从「界面草图」改来）· 纯函数层
+ * 前端开发（`ui-sketch` 域，两轮改名：界面草图 → 手机前端UI → 前端开发）· 纯函数层
  *
  * 只放**能在 node 里直接跑真值表**的判定（守卫【283】真跑它，不靠字符串比对）：
  * 文档形状判定、写回前置校验、摘要、桥的诊断翻译、以及给 Codex 的任务正文合成。
@@ -135,7 +135,7 @@ export function buildSketchPrompt(doc) {
   if (!summary.valid || summary.items === 0) return { text: "", frames: 0, items: 0 };
   const outline = outlineFrames(doc);
   const head = [
-    `请按「手机前端UI」画布上的设计稿实现前端（「${summary.title || "未命名"}」：${summary.frames} 个屏 / ${summary.groups} 组 / ${summary.items} 个部件）。`,
+    `请按「前端开发」画布上的设计稿实现前端（「${summary.title || "未命名"}」：${summary.frames} 个屏 / ${summary.groups} 组 / ${summary.items} 个部件）。`,
     "",
     "画布上的结构与导航（坐标即布局，屏宽 412、桌面屏 1280×800）：",
     outline,

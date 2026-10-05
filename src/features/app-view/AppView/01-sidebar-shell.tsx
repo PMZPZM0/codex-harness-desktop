@@ -239,7 +239,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   //   纯局部 UI 状态（不跨组件共享、不进 bag）⇒ 用组件内 useState，与 09-file-preview-editor.tsx
   //   的 mdSourceView 同款做法，避免动自动生成的 bag-types.ts。
   const [extHubOpen, setExtHubOpen] = useState(false);
-  // ⛔ 10-04 用户要求：知识库 / AI 画布工作流 / 组件库 / 人格市场 / 手机前端UI**收进「···更多」**，
+  // ⛔ 10-04 用户要求：知识库 / AI 画布工作流 / 组件库 / 人格市场 / 前端开发**收进「···更多」**，
   //   侧栏导航区不再逐个平铺。同上同款纯局部 UI 状态（不跨组件共享、不进 bag）。
   const [moreHubOpen, setMoreHubOpen] = useState(false);
 
@@ -358,7 +358,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   09-27 那条「它是与聊天并列的另一种工作台，不是设置项」仍然成立 —— 更多里既有
                   工作台（画布 / 草图），也有设置页跳转（知识库 / 组件库 / 人格市场），
                   所以这个入口叫「更多」而不叫「设置」。 */}
-              <button className="sidebar-tab" title="知识库 / AI 画布工作流 / 手机前端UI / 组件库 / 人格市场" aria-expanded={moreHubOpen} onClick={() => setMoreHubOpen(true)}>
+              <button className="sidebar-tab" title="知识库 / AI 画布工作流 / 前端开发 / 组件库 / 人格市场" aria-expanded={moreHubOpen} onClick={() => setMoreHubOpen(true)}>
                 <MoreHorizontal size={15} /><span>更多</span>
               </button>
               {/* ⛔ 09-27 用户要求：技能中心 / 插件市场 / 专家-专家团**合并成一个入口**，点击弹窗三选一
@@ -410,9 +410,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                       <Clapperboard size={16} />
                       <span><strong>AI 画布工作流</strong><small>短剧 / 生图两种起手，卡片连线就是「这份输入喂给下一步」</small></span>
                     </button>
-                    <button type="button" title="手机前端UI：Material 3 Expressive 手机界面画布，摆好的界面可以一键预览、直接变成前端提示词" onClick={() => { setMoreHubOpen(false); setUiSketchOpen(true); setMobileNav(false); }}>
+                    <button type="button" title="前端开发：Material 3 Expressive 手机 / 电脑 / 网页界面画布，摆好的界面可一键预览、直接变成前端提示词" onClick={() => { setMoreHubOpen(false); setUiSketchOpen(true); setMobileNav(false); }}>
                       <PenTool size={16} />
-                      <span><strong>手机前端UI</strong><small>拖 Material 3 组件拼手机界面、连导航，可一键预览，摆完交给 Codex 实现</small></span>
+                      <span><strong>前端开发</strong><small>拖 Material 3 组件拼手机 / 电脑 / 网页界面、连导航，可一键预览，摆完交给 Codex 实现</small></span>
                     </button>
                     <button type="button" title="项目知识库：导入文档，Codex 可直接检索" onClick={() => { setMoreHubOpen(false); setSettingsPage("knowledge-base"); setSettingsOpen(true); setMobileNav(false); }}>
                       <Library size={16} />

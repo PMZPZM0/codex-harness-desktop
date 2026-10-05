@@ -115,5 +115,6 @@ export const BUILTIN_DISTRIBUTED_SKILLS: string[] = [
   "skill-audit",
   "memory-mcp-backend",
   "harness-api",
+  "frontend-canvas",
   "zy-cinematic-realism",
 ];

@@ -384,11 +384,14 @@ const CHECKS = [
   },
   {
     id: "ui-sketch",
-    name: "㉑ 手机前端UI（侧栏「···更多」五入口 / 嵌入站真加载 / 画布读回 + 写回真落盘 + 一键预览，10-05 轮）",
+    name: "㉑ 前端开发（三形态画布：入口链路 → 桥握手 → 手机+电脑屏 / platform web 真落盘 → 一键预览 → 原样还原，10-06 轮重写）",
     run: async (h) => {
-      // 为什么必须真跑：这条链路的六个接缝（侧栏按钮 → bag 开关 → AppView 挂载 → sketch:// 协议
+      // 为什么必须真跑：这条链路的接缝（侧栏按钮 → bag 开关 → AppView 挂载 → sketch:// 协议
       // → CSP frame-src → 随包产物 + 内联桥）**每一个都能在 tsc/预检全绿的情况下静默白屏**
       // —— pet:// 当年就是这么漏过去的（【232】②）。只有真实构建产物 + 真实 CSP 才算数。
+      // ⛔ 10-06 重写：探针从"单屏"升级为**三形态**（手机屏 412×892 + 电脑屏 1280×800 +
+      //    platform "web"）—— 画布真实支持的形态此前从没在真产物上落过盘；检查编号同步
+      //    改成执行顺序（旧版 ⑧ 垫底是历史编号，读起来对不上）。
       const opened = await h.eval(`(function(){
         const tabs=[...document.querySelectorAll('.sidebar-tabs .sidebar-tab')];
         const more=tabs.find((t)=>((t.textContent||'').trim()==='更多'));
@@ -400,48 +403,48 @@ const CHECKS = [
         if(!m) return { open:false };
         return { open:true, rows:[...m.querySelectorAll('.ext-hub-list > button strong')].map((s)=>(s.textContent||'').trim()),
           navTitles:[...document.querySelectorAll('.sidebar-tabs .sidebar-tab')].map((t)=>(t.textContent||'').trim()) }; })()`);
-      h.check("② 弹窗五项齐全：AI 画布工作流 / 手机前端UI / 知识库 / 组件库 / 人格市场（10-05 夜「界面草图」改名）",
-        hub?.open === true && ["AI 画布工作流", "手机前端UI", "知识库", "组件库", "人格市场"].every((title) => (hub?.rows ?? []).includes(title)),
-        JSON.stringify(hub?.rows));
-      h.check("③ 知识库与 AI 画布工作流已收进更多，不再平铺在导航区",
-        !(hub?.navTitles ?? []).some((t) => t === "知识库" || t === "AI 画布工作流"), JSON.stringify(hub?.navTitles));
+      h.check("② 弹窗五项齐全且「前端开发」在列，且知识库 / AI 画布工作流没有平铺回导航区",
+        hub?.open === true && ["AI 画布工作流", "前端开发", "知识库", "组件库", "人格市场"].every((title) => (hub?.rows ?? []).includes(title))
+          && !(hub?.navTitles ?? []).some((t) => t === "知识库" || t === "AI 画布工作流"),
+        JSON.stringify({ rows: hub?.rows, nav: hub?.navTitles }));
       await h.eval(`(function(){ const rows=[...document.querySelectorAll('.more-hub-modal .ext-hub-list > button')];
-        const row=rows.find((b)=>(b.textContent||'').includes('手机前端UI')); if(row) row.click(); return !!row; })()`);
-      await h.waitFor(`!!document.querySelector('.ui-sketch-shell')`, { label: "手机前端UI浮层", timeoutMs: 15000 });
+        const row=rows.find((b)=>(b.textContent||'').includes("前端开发")); if(row) row.click(); return !!row; })()`);
+      await h.waitFor(`!!document.querySelector('.ui-sketch-shell')`, { label: "前端开发浮层", timeoutMs: 15000 });
       const frame = await h.eval(`(function(){ const f=document.querySelector('.ui-sketch-frame');
         if(!f) return { has:false };
         const r=f.getBoundingClientRect(); const s=document.querySelector('.ui-sketch-shell').getBoundingClientRect();
         return { has:true, src:f.src, w:Math.round(r.width), h:Math.round(r.height), shellW:Math.round(s.width), shellH:Math.round(s.height) }; })()`);
-      h.check("④ iframe 走的是随包协议，且**占满整块主体**（不许再塞并排面板挤窄草图 —— 10-05 用户「上面按键遮住了」）",
+      h.check("③ 浮层打开且 iframe 走随包协议、**占满整块主体**（不许再塞并排面板挤窄画布 —— 10-05 用户「上面按键遮住了」）",
         frame?.has === true && String(frame?.src).startsWith("sketch://")
           && Math.abs(frame.w - frame.shellW) <= 2 // 主体区 = shell 高 - 标题栏 - 状态条（约 71px），给 90 的余量
           && frame.h >= frame.shellH - 90 && frame.w > 900, JSON.stringify(frame));
       // 桥应答 = 协议 + CSP + 产物 + postMessage 四处同时通了（读不到 DOM，只能靠这个握手判）
       const ready = await h.waitFor(`document.querySelector('.ui-sketch-shell')?.getAttribute('data-bridge')==="ready"`,
-        { label: "草图桥应答（data-bridge=ready）", timeoutMs: 25000 }).then(() => true).catch(() => false);
+        { label: "画布桥应答（data-bridge=ready）", timeoutMs: 25000 }).then(() => true).catch(() => false);
       const meta = await h.text(".ui-sketch-meta").catch(() => "");
-      h.check("⑤ 与嵌入站的读回桥握手成功（这一条为假 = 协议/CSP/产物任一处断了，且不会有任何报错）", ready === true, `meta=${String(meta).slice(0, 90)}`);
-      /* ⑥「取回画布」= 按需再走一次读通道。首帧那次 ready 只证明握手成立，
+      h.check("④ 与嵌入站的读回桥握手成功（这一条为假 = 协议/CSP/产物任一处断了，且不会有任何报错）", ready === true, `meta=${String(meta).slice(0, 90)}`);
+      /* ⑤「取回画布」= 按需再走一次读通道。首帧那次 ready 只证明握手成立，
          不证明"用户改完之后随时读得到最新内容"—— 那才是这个按钮的语义。 */
       await h.eval(`(function(){ const btn=[...document.querySelectorAll('.ui-sketch-head button')].find((b)=>(b.textContent||'').includes('取回画布')); btn?.click(); return !!btn; })()`);
       await wait(900);
       const synced = await h.eval(`(function(){ return { status:(document.querySelector('.ui-sketch-status')?.textContent||'').trim(),
         warn:document.querySelector('.ui-sketch-warn')?.textContent||"" }; })()`);
-      h.check("⑥「取回画布」走通读通道（状态条给出取回结果，且没有诊断告警）",
+      h.check("⑤「取回画布」走通读通道（状态条给出取回结果，且没有诊断告警）",
         synced?.status === "已取回当前画布" && !synced?.warn, JSON.stringify(synced).slice(0, 200));
-      /* ⑦ 只证明"协议 + CSP + postMessage"三处通了还不够 —— 桥是内联在 <head> 的，
+      /* ⑥ 只证明"协议 + CSP + postMessage"三处通了还不够 —— 桥是内联在 <head> 的，
          编辑器 chunk 还没 hydration 也能应答 ready，那时画布其实还是骨架屏。
          这一条要的是**读回通道真的拿到了编辑器写进 localStorage 的文档**（标题栏才会出现「屏 / 部件」）。 */
       const booted = await h.waitFor(
         `(document.querySelector('.ui-sketch-meta')?.textContent || "").indexOf("部件") >= 0`,
-        { label: "草图编辑器启动并回传文档", timeoutMs: 25000 }
+        { label: "画布编辑器启动并回传文档", timeoutMs: 25000 }
       ).then(() => true).catch(() => false);
       const bootedMeta = await h.text(".ui-sketch-meta").catch(() => "");
-      h.check("⑦ 嵌入站真的启动了、且把画布内容读回宿主（骨架屏不算通过）", booted === true, `meta=${String(bootedMeta).slice(0, 80)}`);
-      /* ⑨–⑪ 写回通道（10-05 下午加，用户点名「Codex 可以直接调用这个工具，继续拼装 UI 界面」）。
-         工具面接线由守卫【283】静态钉死；这里真跑的是 **真实上游**会不会接受我们的分享哈希
-         —— 桥把文档编码成 `#docz=` 挂 location.hash，m3e 自己 hashchange → arrive() 落盘。
-         ⛔ VM 守卫里那个"上游"是我模拟的；只有这里能证明真产物收我们的编码。
+      h.check("⑥ 嵌入站真的启动了、且把画布内容读回宿主（骨架屏不算通过）", booted === true, `meta=${String(bootedMeta).slice(0, 80)}`);
+      /* ⑦–⑧ 写回通道（真产物验证）：工具面接线由守卫【283】静态钉死；这里真跑的是 **真实上游**
+         会不会接受我们的分享哈希 —— 桥把文档编码成 `#docz=` 挂 location.hash，m3e 自己
+         hashchange → arrive() 落盘。⛔ VM 守卫里那个"上游"是模拟的；只有这里能证明真产物收我们的编码。
+         10-06 探针升级为**三形态**：手机屏（412×892）+ 电脑屏（1280×800，桌面专属组件 navRail）
+         + platform "web" —— 画布真实支持的形态必须在真产物上落一次盘。
          ⛔ 探针先从画布读回原文档，测完写回去还原（持久 profile 不该被验收改脏）。 */
       const originalMeta = await h.text(".ui-sketch-meta").catch(() => "");
       const written = await h.eval(`(async function(){
@@ -458,27 +461,33 @@ const CHECKS = [
         const readback = waitMsg('doc', 8000);
         f.contentWindow.postMessage({ source: SOURCE, type: 'get-doc' }, '*');
         const original = await readback;
-        const probe = { title: '验收探针', frames: [{ id: 'acc-f1', name: '验收屏', x: 0, y: 0 }],
-          groups: [{ id: 'acc-g1', x: 0, y: 0, axis: 'x', items: [
-            { id: 'acc-i1', kind: 'topAppBar', label: '验收', icon: null, variant: 'filled' },
-            { id: 'acc-i2', kind: 'card', label: '卡片', icon: null, variant: 'filled' }] }] };
+        const probe = { title: '验收探针·三形态', platform: 'web',
+          frames: [
+            { id: 'acc-phone', name: '验收手机屏', x: 0, y: 0 },
+            { id: 'acc-desktop', name: '验收电脑屏', x: 492, y: 0, w: 1280, h: 800 }],
+          groups: [
+            { id: 'acc-g1', x: 0, y: 0, axis: 'x', items: [
+              { id: 'acc-i1', kind: 'topAppBar', label: '验收', icon: null, variant: 'filled' }] },
+            { id: 'acc-g2', x: 492, y: 0, axis: 'x', items: [
+              { id: 'acc-i2', kind: 'navRail', label: '', icon: null, variant: 'filled',
+                tabs: [{ icon: 'home', label: '首页' }, { icon: 'search', label: '搜索' }, { icon: 'settings', label: '设置' }] }] }] };
         const done = waitMsg('load-doc-result', 12000);
         f.contentWindow.postMessage({ source: SOURCE, type: 'load-doc', doc: probe }, '*');
         const result = await done;
         return { original: original ? original.doc : null, result: result ? { ok: result.ok === true, error: result.error || '' } : null };
       })()`);
-      h.check("⑨ 写回通道真跑：真实上游接受我们的分享哈希（load-doc-result ok:true —— 这一步只有真产物能证明）",
+      h.check("⑦ 写回通道真跑：真实上游接受我们的分享哈希（load-doc-result ok:true —— 这一步只有真产物能证明）",
         written?.result?.ok === true, JSON.stringify(written?.result ?? written).slice(0, 220));
       const metaChanged = await h.waitFor(
-        `(document.querySelector('.ui-sketch-meta')?.textContent || '').indexOf("1 屏 / 2 部件") >= 0`,
+        `(document.querySelector('.ui-sketch-meta')?.textContent || '').indexOf("2 屏 / 2 部件") >= 0`,
         { label: "写入后宿主摘要更新", timeoutMs: 10000 }
       ).then(() => true).catch(() => false);
-      h.check("⑩ 画布真的变了：宿主摘要显示「1 屏 / 2 部件」（排除「哈希改了、画布没动」的静默拒收）", metaChanged === true);
-      /* ⑫ 一键预览（10-05 夜，用户：「加一个对话框预览这个UI界面」）：**趁探针文档还在**
-         （1 屏 / 2 部件 —— 有屏可预览）触发，上游那颗 play_arrow 键只有真实渲染出来才找得到。
-         桥回执（点没点到）与宿主状态条（回执处理）两处都验；跨源里这是唯一可观测面，
-         预览画面本身由上游渲染 —— 紧随其后的截图即视觉旁证（空画布时上游没什么可预览，
-         所以这一项必须在探针文档落盘之后、还原之前跑）。 */
+      h.check("⑧ 三形态文档真的落盘了：宿主摘要显示「2 屏 / 2 部件」（手机屏 + 电脑屏 + platform web 全被上游收下；排除「哈希改了、画布没动」的静默拒收）",
+        metaChanged === true);
+      /* ⑨ 一键预览（趁三形态探针还在 —— 手机屏 / 电脑屏都有内容；空画布时上游没什么可预览，
+         所以这一项必须在探针落盘之后、还原之前跑）。上游那颗 play_arrow 键只有真实渲染出来
+         才找得到；桥回执（点没点到）与宿主状态条（回执处理）两处都验，跨源里这是唯一可观测面，
+         预览画面本身由上游渲染 —— 紧随其后的截图即视觉旁证。 */
       const preview = await h.eval(`(async function(){
         const f = document.querySelector('.ui-sketch-frame');
         if (!f || !f.contentWindow) return { error: 'no-iframe' };
@@ -496,7 +505,7 @@ const CHECKS = [
       })()`);
       await wait(900);
       const previewStatus = await h.text(".ui-sketch-status").catch(() => "");
-      h.check("⑫ 一键预览真跑：真实产物里找到上游的播放键并点到（桥回执 ok:true，宿主状态条同步「预览已开始」）",
+      h.check("⑨ 一键预览真跑：真实产物里找到上游的播放键并点到（桥回执 ok:true，宿主状态条同步「预览已开始」）",
         preview?.result?.ok === true && String(previewStatus).includes("预览已开始"),
         JSON.stringify({ receipt: preview?.result ?? preview, status: String(previewStatus).slice(0, 80) }));
       // 截图前关掉宿主自己的引导浮层（环境体检；它启动后**异步**才弹 ⇒ 单点容易漏，间隔点三遍）
@@ -507,7 +516,7 @@ const CHECKS = [
       await h.clickByText("全部稍后再说").catch(() => undefined);
       await wait(700);
       await h.screenshot("uisketch");
-      /* ⑪ 还原放在截图之后（截图拍的是"有内容 + 预览已开"的画面；还原是收尾不留痕）。 */
+      /* ⑩ 还原放在截图之后（截图拍的是"三形态内容 + 预览已开"的画面；还原是收尾不留痕）。 */
       const restore = await h.eval(`(async function(){
         const f = document.querySelector('.ui-sketch-frame');
         const original = ${JSON.stringify(JSON.stringify(written?.original ?? null))};
@@ -528,17 +537,17 @@ const CHECKS = [
         `(document.querySelector('.ui-sketch-meta')?.innerText || '').trim() === ${JSON.stringify(originalMeta)}`,
         { label: "还原后摘要回到进入前原文", timeoutMs: 10000 }
       ).then(() => true).catch(() => false);
-      h.check("⑪ 验收不留痕：原文档写回后摘要回到进入前原文（画布原本为空时跳过还原，信息里注明）",
+      h.check("⑩ 验收不留痕：原文档写回后摘要回到进入前原文（画布原本为空时跳过还原，信息里注明）",
         restore?.skipped ? true : (restore?.ok === true && metaRestored === true),
         restore?.skipped ? "画布原本为空，探针文档留存" : JSON.stringify({ restoreOk: restore?.ok, metaRestored, originalMeta: String(originalMeta).slice(0, 60) }));
       /* ⛔ 捞一拍再关应用：Chromium 的 localStorage 是**惰性提交**（写入先攒在浏览器进程内存，
          约 5s 才落盘）——本项跑完 accept 立刻关应用，不预留这一拍，**还原那一次写入会随进程一起丢**，
-         下次运行读到的还是探针文档（10-05 夜实测的 profile 反复漂移根因；⑨ 的写入因为早 5s+ 反而落上了）。 */
+         下次运行读到的还是探针文档（10-05 夜实测的 profile 反复漂移根因；⑦ 的写入因为早 5s+ 反而落上了）。 */
       await wait(6000);
       await h.eval(`(function(){ document.querySelector('.ui-sketch-head button[title="关闭"]')?.click(); return 1; })()`);
       await wait(500);
       const closed = await h.eval(`!!document.querySelector('.ui-sketch-shell')`);
-      h.check("⑧ 关闭键真的收起浮层（关不掉的模态会挡住后面所有验收项）", closed === false, `stillOpen=${closed}`);
+      h.check("⑪ 关闭键真的收起浮层（关不掉的模态会挡住后面所有验收项）", closed === false, `stillOpen=${closed}`);
     },
   },
   {
@@ -856,11 +865,11 @@ async function enterMain(h) {
 //   历史项不删（它们仍然是回归证据），但**永远不会在默认路径上被执行** ——
 //   这样"每次只测最新改动"是机制保证的，不再依赖我记不记得。
 // ─────────────────────────────────────────────────────────────────────────────
-const LATEST_ROUND = "10-05";
+const LATEST_ROUND = "10-06";
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
-  "ui-sketch": "10-05",   // 侧栏「···更多」+ 嵌入的手机前端UI（协议 / CSP / 产物三处接缝只有真跑才算数）
-  "message-feedback": "10-05",   // 本轮：消息操作图标的两段反馈 + 用户消息复制贴右端
+  "ui-sketch": "10-06",   // ⛔ 10-06 重写：三形态探针（手机+电脑屏 / platform web 真落盘）+ 预览 + 还原；编号改执行顺序
+  "message-feedback": "10-05",   // 10-05 轮：消息操作图标的两段反馈 + 用户消息复制贴右端（历史项，默认轮不再跑 —— 回归证据）
   "plugin-market-gitee": "10-03",
   "codex-official-market": "10-03",   // 本轮新项；Gitee 项同轮重跑（插件页加了源切换，两个源都得看一眼）
   "file-card-edit": "09-26",

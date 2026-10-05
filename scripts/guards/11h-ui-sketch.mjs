@@ -1,5 +1,5 @@
 /**
- * 手机前端UI 板块（`ui-sketch`，2026-10-05 立；展示名 10-05 夜从「界面草图」改来）判据
+ * 前端开发板块（`ui-sketch`，2026-10-05 立；两轮改名：界面草图 → 手机前端UI → 前端开发）判据
  *
  * 起因与风险面：把第三方静态站（m3e-canvas 的 next 导出）嵌进应用，接缝一共**六处**——
  * 侧栏入口 / bag 开关 / AppView 挂载 / 自定义协议 / CSP / 随包产物。
@@ -15,10 +15,12 @@
  * 判据把 bridge 原文塞进 VM **真跑**（正常写入 / 无 CompressionStream 回落 / 上游拒收 /
  * 预览触发），并真跑会话单例的串行队列、关窗拒绝与 StrictMode 重挂载语义。
  *
- * 10-05 夜加**一键预览**（用户：「加一个对话框预览这个UI界面」）与**工具改名**（`mobile_ui_*`）：
- * 预览 = 弹窗按钮 → 桥代点上游播放键 → preview-result 回执，三处字面量任一漂移都是"点了没反应"；
- * 改名后工具名两侧同源之外，**常驻指令（第 13 条）**也必须点名同一对名字（名字漂移 = 模型去找
- * 不存在的工具）。
+ * 10-05 夜三件事：**一键预览**（用户：「加一个对话框预览这个UI界面」）—— 弹窗按钮 → 桥代点
+ * 上游播放键 → preview-result 回执，三处字面量任一漂移都是"点了没反应"；**改名链**
+ * sketch_* → mobile_ui_* → **frontend_***（随展示名：界面草图 → 手机前端UI → 前端开发，第三代
+ * 用户点名「手机电脑 网页前端UI都有」）；**组件手册技能 frontend-canvas**（用户：「UI里面的组件…
+ * 再丰富一些」，36 种字段速查 + 手机/电脑/网页三形态）。工具名两侧同源之外，常驻指令（第 13 条）
+ * 与技能名也必须点名同一份东西（名字漂移 = 模型去找不存在的东西）。
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -53,11 +55,11 @@ const hubEnd = hubAt >= 0 ? side.indexOf("{projectFilter &&", hubAt) : -1;
 const hub = hubAt >= 0 ? side.slice(hubAt, hubEnd > hubAt ? hubEnd : hubAt + 3200) : "";
 ok(hub.length > 400, "取到「更多」弹窗的内容窗口（取不到 = 锚点被挪走，下面的分项断言全部不可信）");
 ok(hub.includes("setDramaCanvasOpen(true)"), "更多里有「AI 画布工作流」，动作是开画布");
-ok(hub.includes("setUiSketchOpen(true)"), "更多里有「手机前端UI」，动作是开界面窗");
+ok(hub.includes("setUiSketchOpen(true)"), "更多里有「前端开发」，动作是开界面窗");
 for (const page of ["knowledge-base", "component-library", "soul-market"]) {
   ok(hub.includes(`setSettingsPage("${page}")`), `更多里有跳设置页 ${page} 的入口`);
 }
-ok(["AI 画布工作流", "手机前端UI", "知识库", "组件库", "人格市场"].every((title) => hub.includes(`<strong>${title}</strong>`)), "五项文案齐全且锚的是**列表项标签本体**（<strong> 定界 —— 名字只出现在 title 属性里不算；10-05 夜变异实测抓出来的弱断言）");
+ok(["AI 画布工作流", "前端开发", "知识库", "组件库", "人格市场"].every((title) => hub.includes(`<strong>${title}</strong>`)), "五项文案齐全且锚的是**列表项标签本体**（<strong> 定界 —— 名字只出现在 title 属性里不算；10-05 夜变异实测抓出来的弱断言）");
 
 /** 导航区窗口：aria-label="导航" → 首个 </div>（区内不许有嵌套 div，这是【180】同一口径） */
 const navAt = side.indexOf('aria-label="导航"');
@@ -251,14 +253,14 @@ ok(!!bundleVariants && JSON.stringify(bundleVariants) === JSON.stringify(doc.SKE
 /* ───────────────────────── 八、工具面接线（part08 注册 ↔ part05 分发） ───────────────────────── */
 
 /* 两个工具名在两侧各写一份字面量（part08 注册进工具面 / part05 事件路由分发）——
-   对不上时引擎回 `Dynamic tool mobile_ui_xxx is not registered`，tsc 与 build 全绿。
+   对不上时引擎回 `Dynamic tool frontend_xxx is not registered`，tsc 与 build 全绿。
    注册形态必须是**裸对象字面量**：一旦被写成开关条件（`...(on ? [tool] : [])`），
    中途打开开关也不出现在工具面（dynamicTools 只在 thread/start 与 resume 生效）。
-   ⛔ 10-05 夜按用户拍板改名 sketch_* → mobile_ui_*（与「手机前端UI」同源；旧会话要
-   切走再切回才出现新名字 —— dynamicTools 只在会话建立时注入）。 */
+   ⛔ 人名演化（都按用户拍板）：sketch_* → mobile_ui_* → **frontend_*（当前，随展示名「前端开发」）**；
+   旧会话要切走再切回才出现新名字 —— dynamicTools 只在会话建立时注入。 */
 const part08Code = codeOnly(read("src/features/app-state/parts/part08/01-seg.tsx"));
 const part05Code = codeOnly(read("src/features/app-state/parts/part05/event-router/02-request.tsx"));
-const mobileUiTools = ["mobile_ui_get_doc", "mobile_ui_apply_doc"];
+const mobileUiTools = ["frontend_get_doc", "frontend_apply_doc"];
 
 for (const toolName of mobileUiTools) {
   /* ⛔ 锚「前面是逗号」不是「前面是 `{`」：`...(条件 ? [{ type: "function", name: … }] : [])`
@@ -266,18 +268,25 @@ for (const toolName of mobileUiTools) {
   ok(new RegExp(`,\\n\\s*\\{\\n\\s*type: "function",\\n\\s*name: "${toolName}",`).test(part08Code), `${toolName} 以裸数组元素注册进工具表（不是 ...(条件 ? [ … ]) 包一层 —— dynamicTools 只在 start/resume 生效，带条件 = 中途打开也不出现）`);
   ok(part05Code.includes(`event.params?.tool === "${toolName}"`), `${toolName} 在事件路由有分发分支（注册了没分发 = 引擎回 not registered）`);
 }
-/* 改名不许留双门：旧名写回分发 = 同一个能力两条真相（项目在 subagent_invoke 上踩过同型）。 */
-ok(!part05Code.includes('"sketch_get_doc"') && !part05Code.includes('"sketch_apply_doc"'), "负向：旧名 sketch_* 不残留在事件路由（改名 = 断干净，旧会话靠切走再切回）");
+/* 改名不许留双门：旧名写回分发 = 同一个能力两条真相（项目在 subagent_invoke 上踩过同型）。
+   两代旧名（sketch_* / mobile_ui_*）都不许残留。 */
+ok(!["sketch_get_doc", "sketch_apply_doc", "mobile_ui_get_doc", "mobile_ui_apply_doc"].some((legacy) => part05Code.includes(`"${legacy}"`)), "负向：两代旧名（sketch_* / mobile_ui_*）都不残留在事件路由（改名 = 断干净，旧会话靠切走再切回）");
 
-const getToolAt = part08Code.indexOf('name: "mobile_ui_get_doc"');
+const getToolAt = part08Code.indexOf('name: "frontend_get_doc"');
 const getTool = getToolAt >= 0 ? part08Code.slice(getToolAt, getToolAt + 700) : "";
 ok(getToolAt >= 0 && /inputSchema: \{ type: "object", properties: \{\} \}/.test(getTool), "读工具不带参数（模型不用猜参数形状）");
 
-const applyToolAt = part08Code.indexOf('name: "mobile_ui_apply_doc"');
-const applyTool = applyToolAt >= 0 ? part08Code.slice(applyToolAt, applyToolAt + 1600) : "";
+const applyToolAt = part08Code.indexOf('name: "frontend_apply_doc"');
+const applyTool = applyToolAt >= 0 ? part08Code.slice(applyToolAt, applyToolAt + 2400) : "";
 ok(applyToolAt >= 0 && /required: \["doc"\]/.test(applyTool), "写工具的 doc 必填（漏了 = 模型可能不带文档就调）");
-ok(applyTool.includes("先 mobile_ui_get_doc"), "写工具描述要求先读再改（防模型凭记忆重写、把用户画布整个覆盖）");
-ok(getTool.includes("手机前端UI") && applyTool.includes("手机前端UI"), "两个工具描述都用「手机前端UI」的叫法（用户点名：Codex 要知道这是手机前端开发用的）");
+ok(applyTool.includes("先 frontend_get_doc"), "写工具描述要求先读再改（防模型凭记忆重写、把用户画布整个覆盖）");
+ok(getTool.includes("前端开发") && applyTool.includes("前端开发"), "两个工具描述都用「前端开发」的叫法（用户改名拍板：手机 / 电脑 / 网页都归它）");
+/* 组件覆盖（10-05 夜用户：「UI里面的组件…再丰富一些」）：**36 种 kind 全列进写工具描述**，
+   每个名字都要独立出现（词界正则 —— `fab` 是 `extendedFab` 的子串，裸 includes 会假绿）。
+   ⛔ 只列名字；字段级说明在内置技能 frontend-canvas（拿 description 当手册 = 每轮背几 KB）。 */
+const missingKinds = doc.SKETCH_ITEM_KINDS.filter((kind) => !new RegExp(`(^|[^A-Za-z])${kind}([^A-Za-z]|$)`).test(applyTool));
+ok(missingKinds.length === 0, `写工具描述列全 ${doc.SKETCH_ITEM_KINDS.length} 种组件名（缺：${missingKinds.join(" / ") || "无"}；名字要独立出现，不能只当别的词的一部分）`);
+ok(getTool.includes("412×892") && getTool.includes("1280×800"), "读工具描述点名手机 / 电脑两种屏尺寸（412×892 / 1280×800）");
 
 /* part05 只经 barrel 取用（域↔域禁深链内部文件，ARCHITECTURE-RULES 红线）——
    负向断言防深链；正向断言 import 的每个名字都在 barrel 的导出面里。 */
@@ -288,12 +297,12 @@ ok(part05Names.length >= 5 && part05Names.every((name) => new RegExp(`\\b${name}
 ok(!/ui-sketch\//.test(part05Code), "负向：part05 不深链 ui-sketch 内部文件（深链 = 绕过 barrel 契约）");
 
 /* 分发分支的行为窗口：锚在 else-if 的 tool 比较上（稳定），窗口内钉关键动作序列。 */
-const getBranchAt = part05Code.indexOf('event.params?.tool === "mobile_ui_get_doc"');
+const getBranchAt = part05Code.indexOf('event.params?.tool === "frontend_get_doc"');
 const getBranch = getBranchAt >= 0 ? part05Code.slice(getBranchAt, getBranchAt + 1600) : "";
 ok(getBranchAt >= 0 && getBranch.includes("setUiSketchOpen(true)") && getBranch.includes("waitSketchReady()") && getBranch.includes("requestSketchDoc()"), "读分支：自动开窗 → 等桥就绪 → 发请求（三步缺一就发进空气）");
 ok(getBranch.includes("readback.doc") && getBranch.includes("success: true"), "读分支：空画布给 success + 指引（空画布是合法结果，不是错误）");
 
-const applyBranchAt = part05Code.indexOf('event.params?.tool === "mobile_ui_apply_doc"');
+const applyBranchAt = part05Code.indexOf('event.params?.tool === "frontend_apply_doc"');
 const applyBranch = applyBranchAt >= 0 ? part05Code.slice(applyBranchAt, applyBranchAt + 2600) : "";
 ok(applyBranchAt >= 0 && applyBranch.includes("validateSketchDoc(nextDoc)") && applyBranch.includes("applySketchDoc(nextDoc)"), "写分支：先过上游同口径的前置校验，再交给会话单例");
 ok(applyBranch.indexOf("validateSketchDoc(nextDoc)") < applyBranch.indexOf("applySketchDoc(nextDoc)"), "写分支顺序：校验在前、写入在后（反了 = 上游静默拒收，模型拿不到可读原因）");
@@ -319,24 +328,38 @@ ok(modal.indexOf("feedSketchMessage(data)") >= 0
   && modal.indexOf("feedSketchMessage(data)") < modal.indexOf('if (data.type === "preview-result"'), "弹窗先 feed（会话单例）再走展示分支（顺序反了工具永远收不到回执）");
 ok(modal.includes("detachSketchFrame();"), "弹窗卸载时交还会话单例（关窗后在飞请求立即失败，不挂到超时）");
 
-/* ── 常驻指令第 13 条（10-05 夜，用户：「Codex 要知道用这个，涉及手机前端开发能主动调用」）——
-   与第 12 条 Uiverse 同款纪律：工具在表里模型未必主动用。指令块与接线缺一不可，
-   且工具名必须与 part08 的字面量同源（名字漂移 = 模型去找一个不存在的工具）。
+/* ── 常驻指令第 13 条（10-05 夜，「Codex 要知道用这个」）+ 组件手册技能（「UI里面的组件…再丰富一些」）
+   ——与第 12 条 Uiverse 同款纪律：工具在表里模型未必主动用；组件细节放技能（渐进披露）。
+   名字必须与 part08 的注册名同源（名字漂移 = 模型去找一个不存在的工具/技能）。
    ⛔ 名字断言**切指令块本体**再判：拿整份文件 includes 会被注释/旁文顶成假绿
    （10-05 夜变异实测：块里名字删一处、别处残留一处仍绿 ⇒ 现在按块切片）。 ── */
 const devInstrSketch = read("electron/developer-instructions.ts");
-const mobileUiInstrBlock = (() => {
-  const at = devInstrSketch.indexOf("const MOBILE_UI_INSTRUCTIONS =");
+const frontendInstrBlock = (() => {
+  const at = devInstrSketch.indexOf("const FRONTEND_CANVAS_INSTRUCTIONS =");
   if (at < 0) return "";
   const end = devInstrSketch.indexOf("`;", at);
   return end > at ? devInstrSketch.slice(at, end + 2) : "";
 })();
-ok(mobileUiInstrBlock.length > 300, `切出第 13 条指令块本体（${mobileUiInstrBlock.length} 字符；切不到 = 常量被改名/挪走，下面几条不可信）`);
-ok(/text \+= MOBILE_UI_INSTRUCTIONS;/.test(devInstrSketch), "第 13 条指令块真的拼进 developer_instructions（常量在、接线不在 = 白写）");
-ok(mobileUiInstrBlock.includes("手机前端UI"), "指令里用「手机前端UI」的叫法（与界面同源，别的叫法 = 模型对不上入口）");
+ok(frontendInstrBlock.length > 300, `切出第 13 条指令块本体（${frontendInstrBlock.length} 字符；切不到 = 常量被改名/挪走，下面几条不可信）`);
+ok(/text \+= FRONTEND_CANVAS_INSTRUCTIONS;/.test(devInstrSketch), "第 13 条指令块真的拼进 developer_instructions（常量在、接线不在 = 白写）");
+ok(frontendInstrBlock.includes("前端开发"), "指令里用「前端开发」的叫法（与界面同源，别的叫法 = 模型对不上入口）");
+ok(frontendInstrBlock.includes("1280×800") && frontendInstrBlock.includes("412×892"), "指令点名手机 / 电脑两种屏尺寸（手机 412×892 / 电脑 1280×800）");
 for (const toolName of mobileUiTools) {
-  ok(mobileUiInstrBlock.includes(toolName), `指令块点名 ${toolName}（与 part08 注册名同源）`);
+  ok(frontendInstrBlock.includes(toolName), `指令块点名 ${toolName}（与 part08 注册名同源）`);
 }
+ok(frontendInstrBlock.includes("frontend-canvas"), "指令块指向组件手册技能 frontend-canvas（36 种字段速查的唯一落点）");
+
+/* 组件手册技能（10-05 夜用户：「把那个内置组件的，按照这个前端UI支持的展示和拓展效果更新进去」）：
+   注册（entries 名单）+ 内容（工具名 / 三形态 / 36 种全表）+ 中文导读，三处缺一不可 ——
+   技能没进 entries = 永远不落盘；内容缺 kind = 模型读到半份手册；没导读 = 用户看不懂。 */
+const builtinSkillsReg = read("electron/builtin-skills.ts");
+const frontendSkillSrc = read("electron/builtin-skills/20-skill-frontend-canvas.ts");
+ok(builtinSkillsReg.includes('["frontend-canvas", FRONTEND_CANVAS_SKILL]') && builtinSkillsReg.includes('from "./builtin-skills/20-skill-frontend-canvas"'), "frontend-canvas 注册进 ensureBuiltinSkills 的 entries 名单（不注册 = 永远不落盘，模型看不到）");
+const skillMissingKinds = doc.SKETCH_ITEM_KINDS.filter((kind) => !new RegExp(`(^|[^A-Za-z])${kind}([^A-Za-z]|$)`).test(frontendSkillSrc));
+ok(skillMissingKinds.length === 0, `组件手册覆盖全部 ${doc.SKETCH_ITEM_KINDS.length} 种 kind（缺：${skillMissingKinds.join(" / ") || "无"}）`);
+ok(frontendSkillSrc.includes("frontend_get_doc") && frontendSkillSrc.includes("frontend_apply_doc"), "手册点名两个工具（与注册名同源）");
+ok(frontendSkillSrc.includes("1280×800") && frontendSkillSrc.includes("platform"), "手册覆盖手机 / 电脑 / 网页三形态（屏尺寸 + platform）");
+ok(read("electron/builtin-skills/00-skill-zh-notes.ts").includes('"frontend-canvas":'), "中文导读补了 frontend-canvas 一条（守卫【229】要求与 entries 一一对应）");
 
 /* ───────────────────────── 九、真跑：会话单例 ───────────────────────── */
 

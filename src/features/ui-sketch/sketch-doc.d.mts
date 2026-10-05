@@ -1,4 +1,4 @@
-/** 手机前端UI 纯函数层的类型面（真相源在 sketch-doc.mjs，本文件只是它的声明 —— 与 src/lib/*.d.mts 同款）。 */
+/** 前端开发（域 id 仍为 `ui-sketch`）纯函数层的类型面（真相源在 sketch-doc.mjs，本文件只是它的声明 —— 与 src/lib/*.d.mts 同款）。 */
 
 /** 上游 item 的必需四件套 + 我们读到的扩展字段（note 会原样进它导出的提示词）。 */
 export type SketchItem = { id: string; kind: string; label: string; icon: string | null; variant: string; note?: string; supporting?: string; action?: { to?: string; transition?: string } };

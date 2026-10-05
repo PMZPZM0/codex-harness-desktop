@@ -1,5 +1,5 @@
 /**
- * scripts/build-sketch-bundle.mjs —— 刷新「手机前端UI」内嵌产物（m3e-canvas 静态导出，展示名 10-05 夜从「界面草图」改来）
+ * scripts/build-sketch-bundle.mjs —— 刷新「前端开发」内嵌产物（m3e-canvas 静态导出，两轮改名：界面草图 → 手机前端UI → 前端开发）
  *
  * 干什么：把上游 `next build`（output:"export"）的产物落进 `public/sketch/`，顺手做三件
  * 我们必须自己做的事 —— ① 删掉只服务于 GitHub Pages 的死文件；② **把两个 Google Fonts

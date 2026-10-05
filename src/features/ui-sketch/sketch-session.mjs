@@ -1,9 +1,9 @@
 /**
- * 手机前端UI（`ui-sketch` 域，展示名 10-05 夜从「界面草图」改来）· 宿主 ↔ 桥的会话单例（跨源 iframe 的收发中枢）
+ * 前端开发（`ui-sketch` 域，两轮改名：界面草图 → 手机前端UI → 前端开发）· 宿主 ↔ 桥的会话单例（跨源 iframe 的收发中枢）
  *
- * 草图站跑在 `sketch://app` 源里、嵌在 iframe 中，宿主**只有** postMessage 一条路。
+ * 画布站跑在 `sketch://app` 源里、嵌在 iframe 中，宿主**只有** postMessage 一条路。
  * 模态窗自己持有一条消息流（取回画布 / 复制 JSON / 更新「N 屏 / M 部件」），
- * Codex 的工具调用（`mobile_ui_get_doc` / `mobile_ui_apply_doc`）是**另一个入口** ——
+ * Codex 的工具调用（`frontend_get_doc` / `frontend_apply_doc`）是**另一个入口** ——
  * 两个入口若各持一份状态，就会出现"窗口里看着是 A、工具读到的是 B"。
  * ⇒ 本模块是**唯一**的就绪态与在飞请求表：模态负责 attach / feed（它持有 iframe），
  *   工具只发请求。模态自己的展示仍走它原有的监听，两者共用同一份消息源。
@@ -67,7 +67,7 @@ export function detachSketchFrame() {
      同步拒绝会把马上要重挂载的在飞请求误杀。0ms 后窗口还没回来才算真关。 */
   setTimeout(() => {
     if (frameWindow) return;
-    const why = new Error("手机前端UI窗口被关掉了");
+    const why = new Error("前端开发窗口被关掉了");
     for (const waiter of readyWaiters.splice(0)) { clearTimeout(waiter.timer); waiter.reject(why); }
     for (const entry of pending.splice(0)) { clearTimeout(entry.timer); entry.reject(why); }
   }, 0);
@@ -101,14 +101,14 @@ export function waitSketchReady(timeoutMs = SKETCH_READY_TIMEOUT_MS) {
     waiter.timer = setTimeout(() => {
       const index = readyWaiters.indexOf(waiter);
       if (index >= 0) readyWaiters.splice(index, 1);
-      reject(new Error(`手机前端UI 在 ${Math.round(timeoutMs / 1000)} 秒内没有就绪 —— 多半是 dist/sketch 产物缺失（跑 npm run build），或 iframe 没打开`));
+      reject(new Error(`前端开发 在 ${Math.round(timeoutMs / 1000)} 秒内没有就绪 —— 多半是 dist/sketch 产物缺失（跑 npm run build），或 iframe 没打开`));
     }, timeoutMs);
     readyWaiters.push(waiter);
   });
 }
 
 function expectReply(type, post, timeoutMessage) {
-  if (!isSketchReady()) return Promise.reject(new Error("「手机前端UI」还没就绪 —— 先打开它等画布加载完"));
+  if (!isSketchReady()) return Promise.reject(new Error("「前端开发」还没就绪 —— 先打开它等画布加载完"));
   return new Promise((resolve, reject) => {
     const entry = { type, resolve, reject, timer: null };
     entry.timer = setTimeout(() => {
@@ -124,11 +124,11 @@ function expectReply(type, post, timeoutMessage) {
 /** 读回当前画布（原样的 m3e:doc 文档 + 桥诊断）。 */
 export function requestSketchDoc() {
   return enqueue(() => expectReply("doc", () => { postToFrame({ type: "get-doc" }); },
-    "手机前端UI没有在 " + Math.round(SKETCH_REPLY_TIMEOUT_MS / 1000) + " 秒内回传画布"));
+    "前端开发没有在 " + Math.round(SKETCH_REPLY_TIMEOUT_MS / 1000) + " 秒内回传画布"));
 }
 
 /** 把文档写回画布 —— 只经上游自己的分享哈希导入，成功与否以桥的 load-doc-result 为准。 */
 export function applySketchDoc(doc) {
   return enqueue(() => expectReply("load-doc-result", () => { postToFrame({ type: "load-doc", doc }); },
-    "手机前端UI没有在 " + Math.round(SKETCH_REPLY_TIMEOUT_MS / 1000) + " 秒内回报写入结果"));
+    "前端开发没有在 " + Math.round(SKETCH_REPLY_TIMEOUT_MS / 1000) + " 秒内回报写入结果"));
 }

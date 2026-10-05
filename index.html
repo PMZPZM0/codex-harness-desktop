@@ -23,7 +23,7 @@
          同类前科：`connect-src` 不放行 `data:` 导致 PixiJS 贴图全变白方块。
          ⛔ 这类问题**只在构建产物 + 真实 CSP 下暴露**，改完必须用构建产物验证（探针已钉）。
          口径与 `harness-image:` 一致：都是本进程注册、内容来自本机可信目录的只读图片协议。 -->
-    <!-- ⛔ 同理 `sketch:` 必须显式列进 frame-src（10-05 手机前端UI）：上面那条口径对 frame-src
+    <!-- ⛔ 同理 `sketch:` 必须显式列进 frame-src（10-05 前端开发）：上面那条口径对 frame-src
          一样成立 —— `*` 不覆盖自定义协议，漏写的话 iframe 会**静默不加载**（表现成弹窗里一块白，
          而不是报错）。该站点是本进程注册的只读静态站，见 electron/sketch-protocol.ts。 -->
     <!-- ⛔ `script-src` 必须含 `blob:`：语音通话的 AudioWorklet 用
@@ -105,13 +105,14 @@
       html[data-theme="dark"] .boot-splash-logo {
         box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.4);
       }
+      /* ⛔ 呼吸动画不许用 transform:scale —— 连续缩放让合成器每帧重采样 512px 大图，
+         GPU 一忙（three.js / vanta / 粒子壁纸都在抢）就肉眼发糊（10-06 用户实拍「经常出现模糊蓝块」）。
+         只呼吸透明度：同样有「活着」的反馈，但不触发重采样。 */
       @keyframes boot-breathe {
         0%, 100% {
-          transform: scale(1);
-          opacity: 0.92;
+          opacity: 0.82;
         }
         50% {
-          transform: scale(1.045);
           opacity: 1;
         }
       }
