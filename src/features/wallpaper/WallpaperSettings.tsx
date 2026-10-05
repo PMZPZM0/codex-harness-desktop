@@ -74,7 +74,7 @@ export function WallpaperSettingsSection() {
           <input
             type="range"
             min={2}
-            max={16}
+            max={40}
             step={1}
             value={cfg.opacity}
             onChange={(event) => update({ opacity: Number(event.target.value) })}
