@@ -82,10 +82,17 @@ ok(/onCopy=\{messageHandlers\.onCopy\}/.test(read("src/features/app-view/AppView
 ok(/host\.contains\(range\.commonAncestorContainer\)/.test(bar) && /host\.contains\(selection\.anchorNode\)/.test(bar),
   "选区两头都在时间线内才弹（跨到侧栏/输入框的选区不抢）");
 ok(/closest\("input, textarea, \[contenteditable\]"\)/.test(bar), "输入框里的选区让给浏览器原生菜单");
-ok(/addEventListener\("scroll", close, true\)/.test(bar) && /addEventListener\("resize", close\)/.test(bar),
-  "一滚 / 一 resize 就收起（浮条按视口坐标定位，跟着滚必然错位）");
-ok(/onPointerDown=\{close\}/.test(bar) && !/document\.addEventListener\("mouse(down|up)"/.test(bar),
-  "收起靠透明垫层，不靠 document 上的 mousedown（那会在按钮响应之前就把浮条卸掉 = 点了没反应）");
+/* ↓ 10-05 用户实测「按键在那么远，而且两个按键都是假的，点不了」逼出来的三条硬约束 */
+ok(/createPortal\([\s\S]*document\.body\s*\)/.test(bar),
+  "⛔ 浮条必须 portal 到 body：挂在时间线里时，主舞台上有 transform 的祖先会改掉 position:fixed 的包含块 ⇒ 跑位 + 点不动（同 AppSelect 的做法）");
+ok(/range\.getClientRects\(\)/.test(bar) && /rects\[rects\.length - 1\]/.test(bar),
+  "定位取**最后一个** client rect（拖拽结束那一行），不用整个选区的 union rect —— 跨段选区的 union 上沿常在视口外，浮条就会离得很远");
+ok(/window\.addEventListener\("scroll", measure, true\)/.test(bar),
+  "滚动 = 重新贴着选区（不是收起），且绑在 window 捕获阶段：绑某个具体节点会被 React 换掉而静默失效");
+ok(/above \? box\.top - GAP : box\.bottom \+ GAP/.test(bar), "上方放不下就翻到下面（锚点自己算，translate 只管对齐）");
+ok(/event\.key === "Escape"/.test(bar), "ESC 能收起浮条");
+ok(/onPointerDown=\{\(\) => setPlacement\(null\)\}/.test(bar) && !/document\.addEventListener\("mouse(down|up)"/.test(bar),
+  "收起靠全屏透明垫层，不靠 document 上的 mousedown（那会在按钮响应之前就把浮条卸掉 = 点了没反应）");
 /* 这是本轮最容易写错的一处：动作一触发就 setPlacement(null)，反馈挂在即将卸载的按钮上 ⇒ 没人看得见。 */
 ok(/if \(Date\.now\(\) < holdUntilRef\.current\) return;/.test(bar),
   "触发动作后 hold 住这段时间：选区被浏览器清掉 / 输入框抢焦点都不许提前收浮条");
