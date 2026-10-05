@@ -240,7 +240,7 @@ bag.copyThreadReferenceId = copyThreadReferenceId as typeof bag.copyThreadRefere
         }
       } catch { /* 继续使用引擎回退 */ }
     }
-    const result = await resumeThreadWithTurns({ threadId: id, excludeTurns: false });
+    const result = await resumeThreadWithTurns(bag, { threadId: id, excludeTurns: false });
     if (!result?.thread) return null;
     const source = normalizeLoadedThread(result.thread as Thread);
     const messages: { role: "user" | "assistant"; text: string }[] = [];

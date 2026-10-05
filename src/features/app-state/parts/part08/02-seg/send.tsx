@@ -173,7 +173,7 @@ export async function send(bag: Bag, event?: FormEvent) {
       // 防止「切换供应商后不重开会话直接发」漏检——引擎是绑定的唯一权威。
       if (currentThread?.id && !boundProvider) {
         try {
-          const probe = await window.codex.request("thread/resume", { threadId: currentThread.id, excludeTurns: true });
+          const probe = await resumeThreadWithTurns(bag, { threadId: currentThread.id, excludeTurns: true });
           const probed = String(probe?.modelProvider ?? probe?.model_provider ?? "").trim();
           if (probed) { bag.threadProviderRef.current.set(currentThread.id, probed); boundProvider = probed; }
         } catch { /* 探测失败按无绑定处理，走正常发送 */ }
@@ -397,7 +397,7 @@ export async function send(bag: Bag, event?: FormEvent) {
           // 必须先 resume 原会话；只有 resume 也明确返回不存在时才创建新会话。
           let recovered: Thread | null = null;
           try {
-            const resumed = await window.codex.request("thread/resume", { threadId: active.id, excludeTurns: false });
+            const resumed = await resumeThreadWithTurns(bag, { threadId: active.id, excludeTurns: false });
             if (resumed?.thread) recovered = normalizeLoadedThread(resumed.thread);
           } catch (resumeError: any) {
             if (!/not found|no such thread/i.test(String(resumeError?.message))) throw resumeError;

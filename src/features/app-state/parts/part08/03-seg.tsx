@@ -83,7 +83,7 @@ bag.stopGoalLoop = stopGoalLoop as typeof bag.stopGoalLoop;
       bag.markThreadStopped(bag.thread.id);
       bag.setWorkStartedAt(null);
       // 保留乐观消息（避免"停止后消息消失"）：从服务端重新拉回合恢复已生成内容
-      const resumed = await resumeThreadWithTurns({ threadId: bag.thread.id, excludeTurns: false }).catch(() => null);
+      const resumed = await resumeThreadWithTurns(bag, { threadId: bag.thread.id, excludeTurns: false }).catch(() => null);
       if (resumed?.thread) {
         bag.threadRef.current = resumed.thread;
         bag.setThread(resumed.thread);
@@ -108,7 +108,7 @@ bag.stopGoalLoop = stopGoalLoop as typeof bag.stopGoalLoop;
           bag.markThreadStopped(bag.thread.id);
           bag.setWorkStartedAt(null);
           bag.setNotice("已停止（引擎活跃回合已切换，已按引擎侧实际回合中断）");
-          const resumed = await resumeThreadWithTurns({ threadId: bag.thread.id, excludeTurns: false }).catch(() => null);
+          const resumed = await resumeThreadWithTurns(bag, { threadId: bag.thread.id, excludeTurns: false }).catch(() => null);
           if (resumed?.thread) {
             bag.threadRef.current = resumed.thread;
             bag.setThread(resumed.thread);

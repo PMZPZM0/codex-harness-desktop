@@ -10,6 +10,7 @@
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readAppUi } from "./_ctx.mjs";   // 渲染层聚合读取（⛔ 必须递归，见 _ctx 注释）
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 let checks = 0, fails = 0;
@@ -92,6 +93,32 @@ ok(/callDispatchTool\(input: \{ name: string; args\?: Record<string, unknown>; c
   ok(names.length > 0 && missing.length === 0,
     `⛔ 渲染层描述列全了主进程的能力清单（${names.length} 个${missing.length ? `；漏：${missing.join(", ")}` : ""}）`
     + " —— 漏了模型就看不到那个名字，等于装了却没人用");
+}
+
+/* ── ⑥ 恢复会话必须携带工具面（10-05 用户报「能力全挂了」的第二真凶）────────────
+   引擎侧是「**最后那次 resume 决定这个会话的工具面**」⇒ 任何一条不带 dynamicTools 的
+   恢复路径都会把工具面打回创建时的快照，老会话里新增的能力集体消失（直接调用 → unsupported call）。
+   实测：修复前渲染层有 13 条恢复路径，只有 1 条带工具面（启动恢复那条最致命 —— 应用一开就抹掉）。
+   ⇒ 判据：① 直发 thread/resume 只剩 2 处且都在允许清单；② 唯一入口强制附加 dynamicTools；
+     ③ 所有入口调用都必须传 bag。 */
+{
+  const appUi = readAppUi();
+  const listSrc = readFileSync(join(ROOT, "src", "features", "app-view", "helpers", "thread-list.ts"), "utf8");
+  const raws = appUi.match(/window\.codex\.request\("thread\/resume"/g) ?? [];
+  ok(raws.length === 2,
+    `⛔ 渲染层只允许 2 处直发 thread/resume（实际 ${raws.length} 处）—— 新增恢复路径必须走 resumeThreadWithTurns`);
+  /* ⛔ 判据查的是**接线**不是"这个词还在"：变异把 `await bag.buildDynamicTools()` 换成
+     `const dynamicTools: any[] = []` 时，"函数体里出现 dynamicTools" 仍然为真 ⇒ 那样写就是**假绿**
+     （本轮实测踩到：先写成查词，变异测试当场没红）。所以分别钉住"来源"与"真的拼进请求"。 */
+  ok(/dynamicTools\s*=\s*await bag\.buildDynamicTools\(\)/.test(listSrc)
+    && /\.\.\.\(dynamicTools\.length \? \{ dynamicTools \} : \{\}\)/.test(listSrc),
+    "⛔ 唯一入口 resumeThreadWithTurns 取当前工具面并真的拼进 resume 请求（漏了 ⇒ 老会话工具面被打回创建时快照）");
+  // 只数**调用点**：声明本身（`function resumeThreadWithTurns(`）也要扣掉，否则永远差 1
+  const defs = (appUi.match(/function resumeThreadWithTurns\(/g) ?? []).length;
+  const calls = (appUi.match(/resumeThreadWithTurns\(/g) ?? []).length - defs;
+  const withBag = appUi.match(/resumeThreadWithTurns\(bag,/g) ?? [];
+  ok(calls > 0 && calls === withBag.length,
+    `⛔ 所有 resumeThreadWithTurns 调用都传 bag（${withBag.length}/${calls}）—— 少传就等于没带工具面`);
 }
 
 console.log("\n【gw】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));

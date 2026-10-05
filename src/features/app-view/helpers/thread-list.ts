@@ -123,8 +123,18 @@ export /** 调度头像轨（09-16 用户要求「跟专家团那个展示一样
  * 表现就是「切会话后上个会话的回答没了」。因此 resume 后 turns 为空时改用
  * thread/turns/list 分页（asc + itemsView:full）拉齐全部回合再返回。
  * excludeTurns:true 的调用（权限推送等元数据场景）原样透传，不做额外请求。 */
-async function resumeThreadWithTurns(params: { threadId: string; excludeTurns?: boolean } & Record<string, unknown>): Promise<any> {
-  const result = await window.codex.request("thread/resume", params);
+/** 只声明需要的那一个方法（⛔ 不 import Bag：app-view 不反向依赖 app-state）。 */
+type ResumeToolFace = { buildDynamicTools: () => Promise<unknown[]> };
+
+/* ⛔⛔ 10-05（用户报「定时任务/知识库等能力全挂了」的真凶之一）：**每一次** thread/resume 都必须
+   带上当前工具面。引擎侧是「最后那次 resume 决定这个会话的工具面」⇒ 任何一条不带 dynamicTools
+   的恢复路径（启动恢复 / 发送前探测 / 引擎重启恢复 / 改供应商 / 改权限 / 事件回流）都会把会话
+   工具面打回**创建时**的快照，老会话里新增的能力集体消失（模型直接调用 → unsupported call）。
+   ⛔ 本函数是全应用唯一的恢复入口（守卫【gw】钉住：src/** 只允许 2 处直发 thread/resume，
+   另一处是 resumeThreadLight，其调用方 open-thread 已显式传工具面）。 */
+export async function resumeThreadWithTurns(bag: ResumeToolFace, params: { threadId: string; excludeTurns?: boolean } & Record<string, unknown>): Promise<any> {
+  const dynamicTools = await bag.buildDynamicTools();
+  const result = await window.codex.request("thread/resume", { ...params, ...(dynamicTools.length ? { dynamicTools } : {}) });
   const thread = result?.thread;
   if (params.excludeTurns || !thread || (Array.isArray(thread.turns) && thread.turns.length > 0)) return result;
   try {
