@@ -124,8 +124,10 @@ const TREADMILL_POI = { x: 880, y: 250, label: "跑两步 🏃" };
 const GYM_POI = { x: 880, y: 340, label: "举铁 🏋️" };
 
 /** 一个 POI 前能**并排**站几个人（⭐ 防"几个人叠在同一个点上"）。
- *  ⛔ 偏移量 ± 22px 后必须仍在可走格内（书架 250/294 → 格 7/9；饮水机 768/812 → 格 24/25）。 */
-const POI_SLOTS = [0, -22, 22];
+ *  ⛔ 偏移量必须 **> MIN_GAP**（否则并排的两人会被分离力互相顶开 —— 站在同一处抖）。
+ *     原来 ±22，`MIN_GAP` 从 30 降到 24 之后 22 会互推 ⇒ 收到 ±26。
+ *  ⛔ 偏移后必须仍在可走格内（书架 272±26 → 246/298 格 7/9；饮水机 790±26 → 764/816 格 23/25）。 */
+const POI_SLOTS = [0, -26, 26];
 
 /** 全部休息 POI（供事件驱动调度用）。 */
 const ALL_POIS = [
@@ -215,10 +217,19 @@ export type Agent = {
   /** 这场闲聊的**主持人**（= 主动走过去的那位）。⭐ 只有主持人管计时/台词，
    *  ⛔ 两边各自计时会互相打架（被访者一坐下就把还没走到的发起人判成聊完了）。 */
   chatHost: boolean;
+  /** 这场闲聊的**开始时刻**（10-06 卡位修复：给整场闲聊一个总超时）。
+   *  ⛔ 为什么需要它：主持人若**一直走不到**（被挤 / 被让行困住），
+   *     `driveChats` 里那句 `if (a.path.length > 0) { a.chatAt = 0; continue; }`
+   *     会让"七秒后散场"永远不触发 ⇒ 两人（一个在路上、一个站着等）一起僵住。
+   *     实测最长一次僵持 70 秒（最后靠 35 秒出行超时才收场）。 */
+  chatSince: number;
   /** 这次出行的**最终目的地**（卡住自愈时按它重新规划；null = 没有出行目标） */
   dest: Pt | null;
   /** 连续多少帧没能挪窝（>90 ≈ 1.5 秒 ⇒ 触发重新规划） */
   stuck: number;
+  /** 这条路上**已经连续重规划了几次**（成功挪窝就清零）。
+   *  连 3 次还是走不动 ⇒ 判定此路不通，直接回落到「坐下」（见 step 里的兜底）。 */
+  repathCount: number;
   /** 这趟出行是什么时候出发的（0 = 没有在途出行）。用于"走太久就放弃回工位"兜底 */
   tripAt: number;
   /** 这趟出行是否已经重试过一次（超时 → 重规划 → 再给一段；再超时才回工位） */
@@ -243,10 +254,33 @@ export type DispatchFx = {
 };
 
 const WALK_SPEED = 1.35;      // 逻辑像素 / tick(60fps)
-const MIN_GAP = 30;           // ⭐ 彼此距离小于它 ⇒ 开始互相推开（防穿模）
+/** 「贴近即算到达」阈值（像素）：路点进到这个范围就 shift，**不瞬移**。
+ *  ⛔ 见 step 里那段注释：这一条是"卡位"的解药之一（分离力与步进僵持时靠它解锁）。 */
+const NEAR_REACH = 7;
+/* ⭐ 防穿模的"私人空间"半径（**压缩度量**：横向取原值、纵向 ×0.8）。
+ *
+ * ⛔⛔ 10-06 用户报「经常出现卡位」的**结构性根因**就在这里：
+ *   原来是 30 —— 而**走廊格宽只有 32px**、纵向权重 0.8（⇒ 纵向实际要 30/0.8 = 37.5px
+ *   才算分开）。也就是说：走廊里**两个人根本不可能错身**。
+ *   实测（`.workbuddy/tmp/diag-stuck9.mjs`，隔离实验）：
+ *     单独调 `step` ⇒ 人**能**前进 1.06px；单独调 `separate` ⇒ 位移 0；
+ *     调完整 `tick`（先 step 再 separate）⇒ **位置回到原点**。
+ *     —— 步进与推力每帧精确抵消 ⇒ 有人卡在离目标 5px 处 60+ 秒，
+ *        最后靠 35 秒出行超时才收场（一次串门僵持 70 秒）。
+ *   ⇒ 降到 26：横向 26px 可并排（身体宽约 30px，重叠 ~13%）；纵向 32.5px 可前后错开。
+ *     ⛔ 为什么不是 24：实测 24 时最近距离掉到 **16.4px**（明显穿模，原来是 19.9）——
+ *       因为"私人空间"同时是**分离力的触发半径**，调小它等于允许挤得更近。
+ *       26 是实测折中：走廊（32px）仍可**横向**错身，而穿模不劣化。
+ *   ⛔ 也别往上调回 30：那会重新在 32px 走廊里顶死（这才是"卡位"）。
+ *   ⛔ 更别往下调到 24 以下：那才是真穿模（同一条线上两人会叠成一个人）。 */
+const MIN_GAP = 26;
 const DISPATCH_FX_MS = 1600;  // 任务卡飞过去播多久
 const CHAT_MS = 7200;         // 一次闲聊聊多久
 const CHAT_LINE_MS = 2200;    // 一句台词显示多久
+/* 整场闲聊的**总超时**（从发起那一刻算，含"走过去"的时间）。
+ * ⛔ 必须独立于 CHAT_MS：后者只在**主持人站住之后**起算，主持人被堵在路上时它永远不开始
+ *   ⇒ 两人一起僵住（实测 70 秒）。24 秒 ≈ 最远一趟（约 10~14 秒）+ 聊 7.2 秒 + 余量。 */
+const CHAT_MAX_MS = 24000;
 
 export class OfficeSim {
   readonly grid = buildCollision();
@@ -296,8 +330,10 @@ export class OfficeSim {
         chatWith: null,
         chatAt: 0,
         chatHost: false,
+        chatSince: 0,
         dest: null,
         stuck: 0,
+        repathCount: 0,
         tripAt: 0,
         tripRetried: false,
       };
@@ -322,10 +358,17 @@ export class OfficeSim {
       if (agent.path.length === 0 && agent.action !== "sit" && !agent.onBreak) {
         const seat = SEATS[agent.seatIndex];
         const path = findPath(this.pathGrid(agent.seatIndex), agent, seat) ?? [];
-        if (path.length > 0) path.push({ x: seat.x, y: seat.y });
-        agent.path = path;
-        agent.homePath = [...path];
-        agent.dest = { x: seat.x, y: seat.y };
+        if (path.length > 0) {
+          path.push({ x: seat.x, y: seat.y });
+          agent.path = path;
+          agent.homePath = [...path];
+          agent.dest = { x: seat.x, y: seat.y };
+        } else {
+          /* ⛔⛔ 寻不到路（理论上不该发生：自己座位格是放开的）⇒ **绝不能让他站着** ——
+             原地留 `path=[]` + 非坐姿 = 站到天荒地老（另一类"卡位"）。
+             直接坐下，本函数末尾那段"坐姿钉回座位"会把他拉回自己工位。 */
+          agent.action = "sit";
+        }
       }
       // 座位上的人：把坐标钉回座位（分离力/走位都不许把人从椅子上挤走）
       if (agent.action === "sit") {
@@ -521,9 +564,27 @@ export class OfficeSim {
         return;
       }
       if (a.stuck > 90 && a.dest) {
+        a.stuck = 0;
+        a.repathCount += 1;
+        /* ⛔⛔ 连续三次重规划还是挪不动 ⇒ **这条路在当前拥挤下走不通**，别再耗着：
+           （重规划用的是同一份网格，若是"被人挡住"⇒ 每次都会得到同一条路 ⇒ 死循环；
+             实测有人在行 14 椅子行上卡住，`mode=work` 正赶回工位，一直走不回去。）
+           ⇒ 回落到「坐下」：sync（≤250ms）会把坐姿成员**钉回自己的座位** ——
+             复用已有机制，不用另写瞬移。视觉上是一次"回到工位"，比永远杵在走廊里好得多。 */
+        if (a.repathCount >= 3) {
+          a.repathCount = 0;
+          if (a.chatWith) this.endChat(a.id, false);
+          a.onBreak = false;
+          a.activity = null;
+          a.activityUntil = 0;
+          a.tripAt = 0;
+          a.path = [];
+          a.dest = null;
+          a.action = "sit";
+          return;
+        }
         const repath = findPath(this.gridTo(a, a.dest), a, a.dest) ?? [];
         if (repath.length > 0) { repath.push({ x: a.dest.x, y: a.dest.y }); a.path = repath; }
-        a.stuck = 0;
       }
       a.action = "walk";
       const target = a.path[0];
@@ -542,35 +603,20 @@ export class OfficeSim {
         a.x = target.x;
         a.y = target.y;
         a.path.shift();
+        if (a.path.length === 0) this.arrive(a);
+      } else if (dist <= NEAR_REACH) {
+        /* ⭐ 贴近即算到达（10-06 卡位修复）：`dist` 落在 (spd, NEAR_REACH] 时**只 shift**、
+           中间路点**不瞬移** —— 瞬移会直接跳进别人的私人空间（穿模），
+           而原地等又会和分离力僵持到天荒地老（实测 60+ 秒）。
+         ⛔⛔ 但**最后一个点**例外：必须**精确落位**（瞬移到目标像素）——
+           那是"站在饮水机/书架正前方"的精度要求（`SEATS`/`POI` 坐标都是实测像素值），
+           差 4~5px 肉眼就是"站偏了"。这些终点（自己的座位 / POI 槽位 / 串门站位）
+           都是**空位**（选槽时已排除被占），瞬移过去不会叠人。 */
+        a.path.shift();
         if (a.path.length === 0) {
-          // 走完了：五种归宿
-          /* ⭐ 串门到位（10-05 晚）：站住聊，**不许**落进下面的"休息走动完毕 ⇒ 回工位"
-             —— 那会让刚走到的人立刻掉头，两人永远碰不上（chats 永远停在走路阶段）。 */
-          if (a.chatWith) {
-            a.action = "stand";
-            // ⛔ onBreak 保持 true：step() ② 会因此提前 return，人不会自己走开
-          } else if (!a.onBreak) {
-            // 回工位 ⇒ 坐下（⛔ 同步清活动——mode 变 work 的沿已清，这里兜住 idle 直接坐）
-            a.action = "sit";
-            a.activity = null;
-          } else if (a.activity) {
-            // 到了饮水机 / 书架：**面朝物件**站一会儿（⭐ 站位对着物件，⛔ 不再侧身）
-            a.action = "stand";
-            a.facing = 1;          // 朝上 = 面向书架/饮水机所在的北墙
-            a.flip = false;
-            a.bubble = { text: a.activity === "water" ? WATER_POI.label : BOOK_POI.label, until: Date.now() + 2800 };
-            // ⭐ 站立计时**从到达开始**（⛔ 在出发时设会被半路中断，见 sendTo 注释）
-            a.activityUntil = Date.now() + 3000;
-            a.tripAt = 0;
-          } else {
-            // 休息走动完毕：站一会儿再回去
-            a.action = "stand";
-            a.onBreak = false;
-            a.breakCooldown = 3000 + Math.floor(Math.random() * 4800);   // 50~130 秒（拉长）
-            const seat = SEATS[a.seatIndex];
-            a.path = [...a.homePath, { x: seat.x, y: seat.y }];
-            a.dest = { x: seat.x, y: seat.y };
-          }
+          a.x = target.x;
+          a.y = target.y;
+          this.arrive(a);
         }
       } else {
         const nx = a.x + (dx / dist) * spd;
@@ -587,6 +633,7 @@ export class OfficeSim {
           a.x = nx;
           a.y = ny;
           a.stuck = 0;
+          a.repathCount = 0;
         } else {
           /* ⛔ 侧移绕行（10-05 晚）：被堵住时**必须能绕**，不能原地干等 ——
              实测：座位行（格 14）是 BFS 最短路的一部分，而坐着的人就在那一行上，
@@ -600,7 +647,7 @@ export class OfficeSim {
             const sy = a.y + s * spd;
             if (this.cellFree(sx, sy, a.seatIndex) && !this.peerAhead(a, sx, sy, 0, s)) { a.x = sx; a.y = sy; moved = true; break; }
           }
-          if (moved) a.stuck = 0;
+          if (moved) { a.stuck = 0; a.repathCount = 0; }
           else a.stuck += 1;
         }
         if (Math.abs(dy) > Math.abs(dx) * 1.2) {
@@ -613,7 +660,19 @@ export class OfficeSim {
       }
       return;
     }
-    // ② 已在工位：坐班；work 不离席，idle 到点起身休息
+    /* ② 已经没在赶路（path 空）：坐班；work 不离席，idle 到点起身休息。
+       ⛔⛔ 死态自愈（10-06 卡位修复）：**站着、没路径、没在聊、没有活动** ⇒ 一律坐下。
+         为什么必须有这一条：`endChat(id, false)`（"只断关系、位置不动"那种）只清
+         `chatWith`、**不清 `onBreak`**，于是留下 `action="stand" + path=[] + onBreak=true`
+         —— 而下面那句 `if (mode === "work" || a.onBreak) return` 会把它**永远锁住**
+         （真跑实测逮到有人就此站死 60+ 秒，靠 35 秒出行超时才被救）。
+         坐下之后 `sync`（4Hz）会把坐姿成员钉回**自己的座位** ⇒ 顺带完成"回到工位"。 */
+    if (a.path.length === 0 && a.action !== "sit" && !a.chatWith && a.activityUntil <= 0) {
+      a.action = "sit";
+      a.onBreak = false;
+      a.activity = null;
+      return;
+    }
     if (a.action === "walk") a.action = "sit";
     if (a.mode === "work" || a.onBreak) return;
     a.breakCooldown -= 1;
@@ -661,6 +720,54 @@ export class OfficeSim {
     }
   }
 
+  /**
+   * 走到路径终点（或贴近到 `NEAR_REACH`）之后的归宿（四种）。
+   * ⛔ 抽成方法是因为**两个阈值都要调它**（`dist<=spd` 精确到达 / `dist<=NEAR_REACH` 贴近到达）
+   *   —— 抄两份必然漂（上一轮"两头修一头、另一头慢慢漂"就是这么来的）。
+   */
+  private arrive(a: Agent) {
+    /* ⭐ 串门到位：站住聊，**不许**落进下面的"休息走动完毕 ⇒ 回工位"
+       —— 那会让刚走到的人立刻掉头，两人永远碰不上（chats 永远停在走路阶段）。 */
+    if (a.chatWith) {
+      a.action = "stand";
+      // ⛔ onBreak 保持 true：step() ② 会因此提前 return，人不会自己走开
+      return;
+    }
+    if (!a.onBreak) {
+      /* 回工位：**只有真的站在自己座位旁才坐**（10-06 修正）。
+         ⛔ 原来是无条件 `sit` —— 而"贴近到达"可能在离座位 7px 外触发，
+           且路径终点是**格中心**（与座位像素最多差 16px）⇒ 会在过道/别人工位旁
+           "凭空坐下"。不满足就补最后一段（`sync` 250ms 后也会再兜一次）。 */
+      const seat = SEATS[a.seatIndex];
+      if (Math.abs(a.x - seat.x) <= 10 && Math.abs(a.y - seat.y) <= 10) {
+        a.action = "sit";
+        a.activity = null;
+      } else {
+        a.path = [{ x: seat.x, y: seat.y }];
+        a.dest = { x: seat.x, y: seat.y };
+      }
+      return;
+    }
+    if (a.activity) {
+      // 到了饮水机 / 书架：**面朝物件**站一会儿（⭐ 站位对着物件，⛔ 不再侧身）
+      a.action = "stand";
+      a.facing = 1;          // 朝上 = 面向书架/饮水机所在的北墙
+      a.flip = false;
+      a.bubble = { text: a.activity === "water" ? WATER_POI.label : BOOK_POI.label, until: Date.now() + 2800 };
+      // ⭐ 站立计时**从到达开始**（⛔ 在出发时设会被半路中断，见 sendTo 注释）
+      a.activityUntil = Date.now() + 3000;
+      a.tripAt = 0;
+      return;
+    }
+    // 休息走动完毕：站一会儿再回去
+    a.action = "stand";
+    a.onBreak = false;
+    a.breakCooldown = 3000 + Math.floor(Math.random() * 4800);   // 50~130 秒（拉长）
+    const seat = SEATS[a.seatIndex];
+    a.path = [...a.homePath, { x: seat.x, y: seat.y }];
+    a.dest = { x: seat.x, y: seat.y };
+  }
+
   /* ─────────────────────────────────────────────────────────────────────
    * ⭐ 防穿模（10-05 晚，用户报「卡通人物行走时穿模」）
    *
@@ -705,10 +812,62 @@ export class OfficeSim {
              总和仍是 1（分离总量不变），但领头的能走出去，队就疏开了。 */
         const wA = canA && canB ? (a.id < b.id ? 0.15 : 0.85) : canA ? 1 : 0;
         const wB = canA && canB ? (b.id < a.id ? 0.15 : 0.85) : canB ? 1 : 0;
-        if (wA > 0) this.nudge(a, -(ux + px) * push * wA * 2, -((uy + py) * push * wA * 2) / 0.8);
-        if (wB > 0) this.nudge(b, (ux + px) * push * wB * 2, ((uy + py) * push * wB * 2) / 0.8);
+        if (wA > 0) {
+          const [ax, ay] = this.avoidAlongGoal(a, b, -(ux + px) * push * wA * 2, -((uy + py) * push * wA * 2) / 0.8);
+          this.nudge(a, ax, ay);
+        }
+        if (wB > 0) {
+          const [bx, by] = this.avoidAlongGoal(b, a, (ux + px) * push * wB * 2, ((uy + py) * push * wB * 2) / 0.8);
+          this.nudge(b, bx, by);
+        }
       }
     }
+  }
+
+  /**
+   * 把分离推力里"把人推离自己目标"的那一半**削掉**。
+   *
+   * ⛔⛔ 为什么必须削（10-06「卡位」修复，隔离实验铁证）：
+   *   正在赶路的人擦身而过时，分离推力方向恰好与步进方向相反
+   *   ⇒ 一帧 `step` +1.06 / `separate` −1.05 ⇒ **净位移 0**。
+   *   实测（`.workbuddy/tmp/diag-stuck9.mjs`）：单独调 `step` 能前进、
+   *   单独调 `separate` 位移 0、调完整 `tick` **位置回到原点** ——
+   *   有人卡在离目标 5px 处 60+ 秒，靠 35 秒出行超时才收场（一次串门僵持 70 秒）。
+   * ⚠️ 只削一半、不削干净：全削掉的话"正面相撞"时两人会**叠着穿过去**（防穿模就废了）。
+   *   削一半后仍保留 50% 分离量（穿模有兜底），而每帧净朝目标前进约半格 ⇒ 一定走得出去。
+   */
+  private avoidAlongGoal(a: Agent, other: Agent, dx: number, dy: number): [number, number] {
+    if (a.action !== "walk" || a.path.length === 0) return [dx, dy];
+    const t = a.path[0];
+    const gx = t.x - a.x;
+    const gy = t.y - a.y;
+    const gl = Math.hypot(gx, gy);
+    if (gl < 0.01) return [dx, dy];
+    const ux = gx / gl;
+    const uy = gy / gl;
+    /* ⛔⛔ **正前方的走路同伴 ⇒ 一律不削**：两个都在动的人靠 `peerAhead`（小 id 优先）
+       + 侧移绕行错身；削了反而会让先走的一方**直接从让路者身上穿过去**
+       —— 实测最近距离 1.47px（`diag-stuck11.mjs` 第 3 轮：m1 与 m4 上一帧只差 1.1px）。
+       ⚠️ 其余情形（**不动的**人 / **侧后方**的走路同伴）一律削：
+         不动的人永远不会让开（不削 = 永久僵持，实测 m1 卡在坐着的 m4 旁）；
+         侧后方的人明明不是我的障碍，却把我往回顶（同样是僵持）。 */
+    if (other.action === "walk") {
+      const fx = other.x - a.x;
+      const fy = other.y - a.y;
+      if (fx * ux + fy * uy > 0) return [dx, dy];
+    }
+    const along = dx * ux + dy * uy;      // 推力在"朝目标"方向上的投影（<0 = 在把他往回顶）
+    /* ⭐ **精准削减**（不是一刀切一半）：只把"回顶量"压到 `WALK_SPEED*0.28`（≈0.38px/帧）以内，
+       保证**净前进**始终为正，同时**最大限度保留分离力**（一刀切一半会让穿模明显变差：
+       实测最近距离从 19.9 掉到 16.4px）。
+       ⛔⛔ 这个系数**必须小于拥挤时的步速**（0.5×1.35 = 0.675）——
+         第一版取 0.5×WALK_SPEED = 0.675，与减速后的步速**恰好相等** ⇒ 净前进 ≈ 0
+         ⇒ 在"坐着的人 25px 外"继续僵住（实测逮到 m1 卡在 (451.9,300.7) 连续不动，
+           `cellFree`/`peerAhead` 全 false、单独 step 明明能走 0.65px）。 */
+    const maxBack = WALK_SPEED * 0.28;
+    if (along >= -maxBack) return [dx, dy];
+    const cut = along + maxBack;          // ≤ 0，需要补回的分量
+    return [dx - cut * ux, dy - cut * uy];
   }
 
   /** 试探性位移：⛔ 主方向被墙/桌挡住时退化为**单轴**位移 ——
@@ -802,9 +961,12 @@ export class OfficeSim {
         if (!aheadOfMe) continue;
         const peerAheadOfMe = (-mdx) * -fx + (-mdy) * -fy > 0;   // 对称：我也在他前方（面对面）
         if (peerAheadOfMe && a.id < b.id) continue;               // 面对面对冲时小 id 先走
-        /* 跟车距离：22（判据是**压缩后**的度量，22 ≈ 实际纵向 27px）——
-           ⛔ 别再加到 30：走廊里前后一排队就成串，长途出行会被无限拖慢（实测 50 秒到不了）。 */
-        if (d < 22) return true;
+        /* 跟车距离：**与 MIN_GAP 对齐（26）**。
+           ⛔ 为什么必须对齐：分离半径是 26、而这里原来只挡 22 ⇒ **22~26px 是个夹缝**：
+             分离力在推我，`peerAhead` 却不认"他挡路" ⇒ 不许侧移 ⇒ 双方一起僵住
+             （实测有一轮出现 637 秒卡位）。
+           ⛔ 也别加到 30：走廊里前后一排队就成串，长途出行会被拖慢（实测 50 秒到不了）。 */
+        if (d < 26) return true;
         continue;
       }
       /* 坐着的人：寻路已经绕开座位格 ⇒ 这里只需要挡"贴身"（20），不用挡住整条走廊
@@ -859,19 +1021,26 @@ export class OfficeSim {
     a.chatWith = partner.id;
     a.chatAt = 0;
     a.chatHost = true;
+    a.chatSince = Date.now();
     partner.chatWith = a.id;
     partner.chatAt = 0;
     partner.chatHost = false;
+    partner.chatSince = a.chatSince;
     return true;
   }
 
-  /** 对方身边的可走站立点（优先左右两侧 —— 那才是走廊，⛔ 别站到桌子上）。 */
+  /** 对方身边的可走站立点（优先左右两侧 —— 那才是走廊，⛔ 别站到桌子上）。
+   *  ⛔⛔ 偏移量必须 **> MIN_GAP**：否则"走到那儿站住"这件事**本身**就被分离力禁止
+   *     —— 人会卡在离目标几像素外永远到不了（实测有人僵持 60+ 秒）。
+   *     原来纵向给 30（压缩后仅 24.3 < 26）⇒ 一走到就互推。
+   *  ⛔ 再避开**别人的座位格**：站在别人工位的椅子里，看着就是"卡在别人位置上"
+   *     （用户 10-06 截图里红框标的正是那个位置）。 */
   private spotNear(other: Agent): Pt | null {
-    const offsets: Pt[] = [{ x: 34, y: 4 }, { x: -34, y: 4 }, { x: 4, y: 30 }, { x: 4, y: -30 }];
+    const offsets: Pt[] = [{ x: 36, y: 4 }, { x: -36, y: 4 }, { x: 4, y: 36 }, { x: 4, y: -36 }];
     for (const off of offsets) {
       const x = other.x + off.x;
       const y = other.y + off.y;
-      if (this.walkable(x, y)) return { x, y };
+      if (this.walkable(x, y) && this.cellFree(x, y, other.seatIndex)) return { x, y };
     }
     return null;
   }
@@ -883,6 +1052,10 @@ export class OfficeSim {
       if (!a.chatWith) continue;
       const partner = this.agents.find((b) => b.id === a.chatWith);
       if (!partner || !partner.chatWith) { this.endChat(a.id, true); continue; }
+      /* ⭐ 整场闲聊**总超时**（10-06 卡位修复）：到点一律收场回工位，
+         ⛔ 不能只靠下面那个"七秒" —— 它只在主持人**站住之后**才起算，
+           主持人被堵在路上时永远不开始（实测有人就此僵持 70 秒）。 */
+      if (a.chatSince && now - a.chatSince > CHAT_MAX_MS) { this.endChat(a.id, true); continue; }
       /* 到位后才转身面对对方（在途时方向由走路逻辑管，⛔ 别在这儿改） */
       if (a.path.length === 0) {
         if (a.action === "walk") a.action = "stand";
@@ -907,38 +1080,43 @@ export class OfficeSim {
     }
   }
 
-  /** 结束闲聊（`home` = 让对方走回工位；否则只断关系、位置不动）。 */
+  /** 结束闲聊（`home` = 让**站着的人**走回工位；`false` = 不主动改路）。
+   *
+   * ⛔⛔ 10-06「卡位」修复：**不论 home 真假，都必须把双方从"闲聊站姿"里放出来** ——
+   *   原实现只在 `home=true` 时复位对方，而 `home=false`（有 5 处调用点）只清
+   *   `chatWith`、**把 `onBreak=true` 留着** ⇒ 留下 `action="stand" + path=[] + onBreak=true`
+   *   的死态，被 step 里 `if (mode === "work" || a.onBreak) return` **永久锁住**。
+   *   ⇒ 统一走 `releaseFromChat()`（能坐就坐、否则回家；拿不到路就清 onBreak 交给自愈）。 */
   private endChat(id: string, home: boolean) {
     const a = this.agents.find((x) => x.id === id);
     if (!a) return;
     const partner = a.chatWith ? this.agents.find((x) => x.id === a.chatWith) : null;
-    a.chatWith = null;
-    a.chatAt = 0;
-    a.chatHost = false;
-    if (partner && partner.chatWith === id) {
-      partner.chatWith = null;
-      partner.chatAt = 0;
-      partner.chatHost = false;
-      if (partner.bubble) partner.bubble = null;
-      if (home && partner.action !== "sit" && !partner.path.length) {
-        partner.onBreak = false;
-        const seat = SEATS[partner.seatIndex];
-        const back = findPath(this.pathGrid(partner.seatIndex), partner, seat) ?? [];
-        if (back.length > 0) back.push({ x: seat.x, y: seat.y });
-        partner.path = back;
-        partner.homePath = [...back];
-        partner.dest = { x: seat.x, y: seat.y };
-      }
-    }
-    if (home && a.action !== "sit" && !a.path.length) {
-      a.onBreak = false;
-      const seat = SEATS[a.seatIndex];
-      const back = findPath(this.pathGrid(a.seatIndex), a, seat) ?? [];
-      if (back.length > 0) back.push({ x: seat.x, y: seat.y });
-      a.path = back;
-      a.homePath = [...back];
-      a.dest = { x: seat.x, y: seat.y };
-    }
+    this.releaseFromChat(a, home);
+    if (partner && partner.chatWith === id) this.releaseFromChat(partner, home);
+  }
+
+  /** 把某人从"闲聊站姿"里放出来（⛔ 绝不允许留下"站着 + 无路径 + onBreak"的死态）。
+   *  `home=true` ⇒ 让站着的人走回工位；`false` ⇒ 不强求改路，但**状态必须干净**。 */
+  private releaseFromChat(x: Agent, home: boolean) {
+    x.chatWith = null;
+    x.chatAt = 0;
+    x.chatHost = false;
+    x.chatSince = 0;
+    if (x.bubble) x.bubble = null;
+    if (x.action === "sit") return;              // 坐着的不用管（sync 会钉回座位）
+    if (!home && x.path.length > 0) return;      // 在途且不要求回家 ⇒ 让他走完这段
+    if (x.activityUntil > 0) return;             // 正在 POI 前站着 ⇒ 让它自然结束
+    /* 站着没事做（或 home 要求）⇒ 一律回家。⛔ 拿不到路径也必须清 onBreak
+       —— 那样 step ② 的死态自愈会让他坐下，而不是永远站着。 */
+    const seat = SEATS[x.seatIndex];
+    const back = findPath(this.pathGrid(x.seatIndex), x, seat) ?? [];
+    if (back.length > 0) back.push({ x: seat.x, y: seat.y });
+    x.path = back;
+    x.homePath = [...back];
+    x.dest = { x: seat.x, y: seat.y };
+    x.onBreak = false;
+    x.tripAt = Date.now();
+    x.tripRetried = false;
   }
 
   /** 工位附近 2-4 格的随机点（休息走动不出远门）。 */
