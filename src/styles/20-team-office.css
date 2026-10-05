@@ -1,45 +1,10 @@
 /* 专家团像素办公室（v19）：整屏浮层 + 原生 canvas 舞台。样式独立成域，不外溢。 */
 
-/* ⭐ 常驻入口按钮（2026-10-04 普通会话也能开办公室）。
- * ⛔ 为什么单独加而不是复用「成员轨上的办公按钮」：那个按钮在 `{railTeam && …}` 里，
- *   ⛔ 而普通会话**没有 railTeam**（它要 ExpertTeamConfig 的 lead/members 结构，
- *   与"委托记录"形状不同，硬造一个假 team 会污染成员轨/成员弹窗一整条链）。
- * ⇒ 独立最小入口：固定在右下、z-index 低于浮层(400)与全局模态(400)、高于画布(90)。
- * ⚠️ 位置避开两处：① 右下角是宠物/输入框一带 ⇒ 放在**左侧**贴边；
- *   ② 侧栏可折叠 ⇒ 用 `left: 12px` 而非依赖侧栏宽度。 */
-.office-entry-btn {
-  position: fixed;
-  left: 12px;
-  bottom: 14px;
-  z-index: 120;/* 浮层 400 / 全局模态 400 / 画布 90 ⇒ 都不压住 */
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 12px;
-  cursor: pointer;
-  opacity: 0.82;
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-.office-entry-btn:hover { opacity: 1; transform: translateY(-1px); }
-.office-entry-btn .office-entry-count {
-  min-width: 15px;
-  height: 15px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 10px;
-  line-height: 15px;
-  text-align: center;
-}
-/* ⛔ 侧栏展开时按钮会压在会话行上 ⇒ 让它退到侧栏右边（侧栏宽 232px，见 02-sidebar-threads.css） */
-.app-shell:not(.side-collapsed) .office-entry-btn { left: 244px; }
+/* ⛔ 10-05：普通会话的「常驻入口按钮」(`.office-entry-btn`，10-04 那个左下角浮动胶囊)
+   **已整体删除** —— 用户要求「跟专家和专家团一样，展示在对话框右边轨道上」。
+   ⇒ 入口现在是**右侧轨道末位的节点**，样式复用 `19-misc-hints.css` 里那套
+     `.team-rail-node.team-rail-office`（两条轨共用 `OfficeRailNode`）。
+   ⛔ 别再往这里加浮动入口：那正是用户报的"位置和图标跟专家团不一样"。 */
 
 .office-overlay {
   position: fixed;

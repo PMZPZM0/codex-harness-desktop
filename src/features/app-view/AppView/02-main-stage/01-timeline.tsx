@@ -148,6 +148,9 @@ import { CodexAvatar, useCodexName } from "../../../../components/CodexAvatar";
 import { contentOffsetTop, jumpToBottom, scrollToOffsetInstant } from "../../../../components/scroll-utils";
 import { visibleTurnWindow, mergeTurnListsById } from "../../../../lib/turn-order.mjs";
 import { ExpertTeamEditorModal, SubAgentEditorModal, TeamMemberRail, TeamMemberHistory, DelegatedRail, DelegatedRunPopup, TeamRunPopup } from "../../../experts-teams";
+/* ⭐ 10-05：普通会话的办公室入口迁到本文件的右侧轨道上 ⇒ 需要那个哨兵 teamId
+   （从 team-office 域的 barrel 取，域间只许走 barrel）。 */
+import { OFFICE_SESSION_TEAM_ID } from "../../../team-office";
 import { expertRoleLabel } from "../../../../lib/expert-role-label";
 import { ImportedRecordCard, PendingImportSlot } from "../../../import-records";
 import { ImagePreview, ImageLightbox, SearchPreviewModal, PastedTextEditor, type TextEditorTransport } from "../../../preview";
@@ -506,14 +509,20 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                       onClose={() => setTeamHistoryMember("")}
                     />
                   )}
-                  {/* 调度头像轨 + 工作内容弹窗（09-16，与专家团一致）：运行中亮头像，跑完即消失。
-                      专家团会话不会走到这里（railTeam 优先且受限会话根本开不了调度），两者不重叠。 */}
-                  {delegatedRailRuns.length > 0 && (
+                  {/* 调度头像轨 + **办公室入口**（09-16 / 10-05）：运行中亮头像，跑完停留 20 秒。
+                      ⭐ 10-05 用户要求：普通会话的办公室入口从"左下角浮动胶囊"改到**这条右侧轨道**上，
+                         图标与位置跟专家团成员轨末位那个办公室节点**完全一致**（共用 OfficeRailNode）。
+                      ⛔ 门槛是 `!railTeam` 而**不是** runs.length：
+                         · 专家团会话走上面的 TeamMemberRail（它自带办公室节点）⇒ 这里必须让开，否则两个办公室入口；
+                         · `!runs.length` 时轨道也会渲染（只有一个办公室节点），
+                           否则"没调度过"的普通会话根本没有右侧轨道、入口无处安放。 */}
+                  {!railTeam && (
                     <DelegatedRail
                       containerRef={timelineWrapRef}
                       runs={delegatedRailRuns}
                       activeId={delegatedPopupId}
                       onOpen={(tid) => setDelegatedPopupId(tid)}
+                      onOpenOffice={() => setCompanyPreviewTeamId(OFFICE_SESSION_TEAM_ID)}
                     />
                   )}
                   {delegatedPopupRun && delegatedPopupRun.originThreadId === thread?.id && (
