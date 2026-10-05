@@ -48,20 +48,29 @@
 | 场景 | 可行性 | 代价 |
 |---|---|---|
 | **A. 单机便携**（U 盘固定一台电脑用，只为"不装机器上"） | ✅ 完全可行，改动约 30 行 | 几乎无 |
-| **B. 跨机便携**（U 盘插不同电脑用） | ⚠️ 可行但**有硬伤** | API Key 需每台重填；性能受限 |
+| **B. 跨机便携**（U 盘插不同电脑用） | ✅ 可行（§8 给出真正可移植的做法） | 需改一处接缝，或接受每台重填 |
 | **C. 零系统痕迹** | ❌ 不可达 100% | 见 §0 |
 
-**最关键的硬伤先说（跨机场景）**：
+**最关键的一件事先说（跨机场景）—— 凭据**：
 
-> **`safeStorage`（DPAPI）加密的 API Key 换机器解不开。**
-> 代码实证：`main.ts:446`、`features/boot.ts:286-288`、`main/03-turn-summary.ts:48`、
-> `features/channel-bot-ipc.ts` 等多处用 `safeStorage.decryptString()` 解 API Key。
-> Windows 的 DPAPI 加密密钥**绑定"当前 Windows 用户账户 + 本机"**，
-> 换一台电脑（或同一台电脑换个 Windows 账户）⇒ `isEncryptionAvailable()` 为真但
-> **`decryptString()` 直接抛错**，表现为"密钥莫名其妙失效了"。
+> **`safeStorage`（Windows 用 DPAPI / macOS 用 Keychain）加密的密钥换机器解不开。**
+> 实测加密点 **20+ 处**（不是一处）：API Key（`custom-model-ipc.ts:87`）、连接器密钥
+> （`connectors-ipc.ts:151`）、机器人密钥（`channel-bot-ipc.ts:66`）、Memory Gateway Key
+> （`memory-ipc.ts:66`）、知识库 key（`knowledge-base-ipc.ts:31`）、
+> **中转账号密码（`relay-ipc.ts:263`）**、提示词润色（`prompt-polish.ts:34`）等。
 >
-> ⇒ 跨机场景下，**每台新机器首次使用都要重填 API Key**。这是操作系统安全机制，
-> 不是本项目能绕过的（绕过 = 把密钥明文写 U 盘，反而更危险）。
+> DPAPI/Keychain 的密钥**绑定"当前账户 + 本机"**（macOS 还绑定登录钥匙串）⇒ 换机器后
+> `isEncryptionAvailable()` 仍为真，但 `decryptString()` 抛错，表现是"密钥莫名其妙失效"。
+>
+> ⚠️ **但这不是死结**（此处修正本文档早期版本的判断）：
+> 项目已把 `safeStorage` **收口成一个接缝** ——
+> `electron/runtime/seams/index.ts:65-67` 只暴露 3 个方法
+> （`isEncryptionAvailable` / `encryptString` / `decryptString`），
+> 全部 20+ 处调用点都走它。
+> ⇒ **只要替换这一个接缝的实现**，就能换成"U 盘内密钥库 + 主密码派生密钥"，
+> 做到真正跨机可用，**且不降低安全等级**（详见 §8）。
+>
+> ⛔ 唯一不做的是"把密钥明文写 U 盘"—— 那才是真正的安全降级。
 
 ---
 
@@ -358,13 +367,240 @@ node -e "console.log(JSON.stringify(require('./package.json').build.win,null,1))
 
 ---
 
-## 7 待你拍板的三个点
+## 7 macOS 版：CI 已经能出，你不需要有 Mac
 
-1. **场景 A 还是 B？**（决定要不要接受"每台机器重填 API Key"）
-2. **要不要我直接落地实现？**（§3.2 的便携标记 + §3.3 的 dir target + §3.4 启动器，
-   约 30 行代码 + 打包配置，可以同轮加守卫与验收项）
-3. **U 盘介质**：普通 U 盘 vs 固态 U 盘 —— 这直接决定体验能否接受（§4-5）
+> ⚠️ **此处修正本文档早期版本的一个错误判断。** 早期版本说"项目完全不能打 macOS 包"——
+> 那是只看了 `package.json` 的 `build.mac`（确实不存在）就下的结论。**实际核查后发现：
+> macOS 的构建实现是完整的，只是放在独立配置 + CI 里，不走 `package.json`。**
 
-⛔ 另外两个**未实测**、需要真机确认的点（我不敢瞎说）：
+**实测现状（都是文件实证）**：
+
+| 项 | 位置 / 内容 |
+|---|---|
+| CI 工作流 | `.github/workflows/build-mac.yml` |
+| 构建矩阵 | `macos-14`(**arm64**) + `macos-15-intel`(**x64**) |
+| 打包配置 | `build/electron-builder.mac.cjs`（`target: "zip"`） |
+| 工具链准备 | `scripts/prepare-mac-tools.cjs`（打包后 `copy-mac-tools.cjs` 拷入） |
+| 产物 | `release-mac/*.zip` → artifact 名 `mac-arm64` / `mac-x64` |
+| 触发方式 | `workflow_dispatch`（手动）或 `release.yml` 复用 |
+| 签名 | ⛔ **不签名**（`CSC_IDENTITY_AUTO_DISCOVERY: false`，定位是"本地自用包"） |
+
+**工具链也已跨平台就绪**（这点比预期好很多）：
+
+- `codex-server.ts:31-36` 引擎平台映射表**已含** `darwin-x64` / `darwin-arm64` / `linux-*`
+- `scripts/install-runtimes.cjs:886` 有完整的 `mainMac()`（09-16 就做了）：
+  node(darwin) / PowerShell 7(osx) / python(python-build-standalone darwin) /
+  platform-tools(darwin) / git(用系统 Xcode CLT)
+- 大量 `process.platform === "win32"` 的三元分支（`memory-backend.ts:78`、
+  `terminal.ts:30`、`toolchain.ts:97`、`codex-server.ts:46` 等）⇒ 代码本来就是跨平台写的
+
+⇒ **所以 Mac 版 U 盘不需要你买 Mac**：推 tag 或手动触发 workflow，从 Actions 下载
+`mac-arm64.zip` / `mac-x64.zip` 即可。
+
+### 7.1 便携化在 macOS 上的额外改动点
+
+⚠️ `portableRoot()` 的实现要**分平台**——macOS 的应用可执行文件藏在 `.app` 内部：
+
+```ts
+function appBaseDir(): string {
+  const exe = app.getPath("exe");
+  // macOS: xxx.app/Contents/MacOS/xxx ⇒ 必须退三级才是 .app 所在目录（= U 盘根）
+  return process.platform === "darwin"
+    ? path.resolve(path.dirname(exe), "..", "..", "..")
+    : path.dirname(exe);
+}
+```
+
+⛔ 如果不做这个处理，Mac 上会把 `Data/` 建到 `.app/Contents/MacOS/` 里面 —— 应用签名一旦
+校验就会失败，且用户根本找不到数据。
+
+### 7.2 ⛔ macOS 特有的两个坑
+
+1. **未签名 ⇒ Gatekeeper 拦截**。从 zip 解压出来的 `.app` 带着 quarantine 属性，双击会提示
+   "已损坏 / 无法验证开发者"。放行方式（二选一）：
+   ```bash
+   # 方式 A：命令行去隔离属性（推荐，一次性）
+   xattr -dr com.apple.quarantine "/Volumes/U盘/CodexHarness/Codex Harness Desktop.app"
+   # 方式 B：右键 → 打开 → 在弹窗里点「打开」（每个新机器首次一次）
+   ```
+   ⛔ 注意：Apple Silicon (arm64) 上**未签名的二进制连"右键打开"都可能被拒**，
+   通常需要走方式 A，或者去「系统设置 → 隐私与安全性」点「仍要打开」。
+
+2. **架构必须匹配**：arm64 包只能在 Apple Silicon 上跑，x64 包在 Intel Mac 上跑
+   （x64 包在 Apple Silicon 上会经 Rosetta 转译，能跑但慢且可能踩坑）。
+   ⇒ 两个 zip 都放 U 盘，按机器选，或者只带对应那台机器的。
+
+---
+
+## 8 凭据可移植：改一处接缝，换真正跨机
+
+**核心洞察**：20+ 处加密调用点**全都走同一个接缝**，所以改动面是 1 而不是 20。
+
+```ts
+// electron/runtime/seams/index.ts:65-67 —— secure 接缝的全部接口
+isEncryptionAvailable: () => boolean;
+encryptString: (plain: string) => Buffer;
+decryptString: (buf: Buffer) => string;
+```
+
+### 8.1 实现思路：U 盘内密钥库 + 主密码派生
+
+```
+首次（在任意一台机器上）：
+  用户设一个主密码
+  → scrypt(主密码, 随机 salt, N=2^15) 派生 KEK（32 字节）
+  → 生成随机主密钥 MK（32 字节）
+  → AES-256-GCM(KEK, MK) → 存 <U盘>/Data/.vault/master.key
+  → 主密码本身**不落盘**（只留 salt + 校验位）
+
+之后每次启动：
+  提示输一次主密码 → 派生 KEK → 解出 MK（缓存内存）
+  → encryptString/decryptString 全部用 MK 做 AES-256-GCM
+
+换电脑：
+  同样的主密码 ⇒ 同样的 KEK ⇒ 同样解出 MK ⇒ **旧密钥全部可读** ✅
+```
+
+**为什么用 scrypt 而不是 Argon2id**：`node:crypto` **内置 `scryptSync`**，
+⛔ 而 Argon2id 需要第三方 native 模块 ⇒ 会引入 ABI 不匹配风险
+（本项目在 `better-sqlite3` 上已经踩过 `NODE_MODULE_VERSION` 的坑，不该再引一个）。
+scrypt 是内存硬的、被广泛认可的 KDF，够用。
+
+### 8.2 ⛔ 必须同时说清的代价与风险
+
+| 项 | 说明 |
+|---|---|
+| 每次启动输一次主密码 | 可加"本机记住 N 小时"降低骚扰（但记住 = 落回本机，跨机无影响） |
+| **主密码忘了 = 所有密钥永久丢失** | 必须在设置里提供"导出恢复码"，并明确警告 |
+| U 盘丢失 + 弱主密码 = 泄露 | 主密码强度要求必须硬性校验（长度 + 字符类） |
+| 新增一个板块 | 按项目规矩（`ARCHITECTURE-RULES.md` §2.2）应做独立域 `vault`，不塞进既有域 |
+| 便携模式才启用 | 非便携模式仍走系统 `safeStorage` —— ⛔ 不许把桌面版也拖下水 |
+
+### 8.3 更省事的替代方案（如果不想改代码）
+
+**接受"每台新机器重填一次"**。对开发场景来说，常用凭据通常只有 1–2 个
+（主力 API Key + 中转账号密码），填一次约 1 分钟。
+⇒ 如果你的开发机就 2–3 台，**§8.1 的改造收益有限**，可以先不做。
+
+---
+
+## 9 双 U 盘方案（一个系统一个盘）
+
+你提的"一个系统一个 U 盘"是**正确且必要**的 —— 因为应用产物内含**平台专用二进制**：
+Windows 包含 `codex.exe` + `node.exe` + `python.exe`…，macOS 包含 `codex`(Mach-O) +
+`node` + `python3`…。**互不通用**。
+
+### 9.1 两个盘的布局
+
+```
+【Windows 盘】(NTFS 或 exFAT，格式选择见 §9.2)
+└─ CodexHarness-Win/
+   ├─ win-unpacked/                 ← electron-builder --win dir 的产物
+   ├─ Data/                         ← 全部数据（userData）
+   ├─ Temp/                         ← 接住 4 处 os.tmpdir()
+   ├─ portable.dat                  ← 便携标记
+   └─ 启动.bat                      ← §3.4 的启动器
+
+【macOS 盘】(exFAT —— 见 §9.2 的说明)
+└─ CodexHarness-Mac/
+   ├─ Codex Harness Desktop.app/    ← 从 mac-arm64.zip 解压
+   ├─ Data/
+   ├─ Temp/
+   └─ portable.dat                  ← 与 .app 同级（§7.1 的 appBaseDir 会找到它）
+```
+
+### 9.2 ⛔ 文件系统选择（两个盘不一样）
+
+| 盘 | 推荐 | 原因 |
+|---|---|---|
+| **Windows 盘** | **NTFS** | 有日志，突然拔盘能自恢复；U 盘跑应用**一直在写**，日志很重要 |
+| **macOS 盘** | **exFAT** | macOS 原生读写、Windows 也能读（方便维护）；⛔ 但**无日志** |
+| 需要两系统都读写同一盘 | exFAT | 被迫的妥协，必须安全弹出 + 定期备份 |
+
+⛔ **提醒**：exFAT 无日志这件事，在"跑应用"场景下风险被放大 —— 因为应用全天候在写。
+⇒ macOS 盘建议开启 **Time Machine 定期备份**（哪怕备到另一个移动盘）。
+
+### 9.3 数据能否在两盘之间搬？
+
+**可以，但要挑对内容**：
+
+| 内容 | 能否跨平台搬 | 说明 |
+|---|---|---|
+| `Data/codex-home/`（会话 / rollout / 技能 / 记忆） | ✅ 可以 | 纯文本 / JSONL，格式无关平台 |
+| `Data/memory.json`、`expert-teams.json` 等配置 | ✅ 可以 | JSON |
+| `Data/` 里的**密钥**（`encryptedKey` 等） | ⛔ **不可以** | DPAPI ↔ Keychain 互不兼容（§8 改造后可） |
+| 应用本体（`win-unpacked` / `.app`） | ⛔ 不可以 | 平台专用二进制 |
+
+⇒ 所以：**想要"两边数据同步"，只需同步 `Data/` 里除密钥外的部分**；
+或者做 §8 的改造，连密钥也能跟着走。
+
+---
+
+## 10 高速 U 盘推荐
+
+### 10.1 ⛔ 先立三条选购原则（否则一定买错）
+
+1. **跑应用看的是「随机 IOPS + 持续写入」，不是包装上那个顺序读速度。**
+   厂商标的 1000/2000 MB/s 是**突发顺序速度**（SLC 缓存还没写满的那几十秒）。
+   而应用运行是**大量小文件随机读写**（SQLite、rollout 追加写、配置读改）。
+2. **U 盘形态有结构性劣势**：用低等级 NAND、**无 DRAM 缓存**、散热面积小。
+   三者叠加的后果就是"跑数据库类应用会卡 + 长时间写入掉速"。
+3. **USB 3.2 Gen2×2（标 2000MB/s）Mac 根本不支持**（多源确认）。
+   插 Mac 最多 ~1000MB/s ⇒ **别为这个参数多花钱**。
+
+### 10.2 推荐（按形态分两类）
+
+**A 类 · U 盘形态（直插、不用带线、最便携）**
+
+| 型号 | 接口 | 参考容量 | 说明 |
+|---|---|---|---|
+| **创见 Transcend ESD310** ⭐ | USB-A + USB-C **双头滑出** · 10Gbps · 1050/950 | 512G / 1TB | **出厂 exFAT**、即插即用、5 年保固；多源评测交叉验证，实测读约 1040MB/s。⚠️ 连续传 120GB 后降速约 20%（散热限制） |
+| SSK SD301 | 双头 · 10Gbps · 550/500 | 256G / 512G | 便宜，锌合金外壳 |
+| 雷克沙 D70E | 双头 · 20Gbps · 2000 | 1TB / 2TB | ⛔ Mac 用不上 20Gbps，纯 Windows 才值 |
+
+**B 类 · PSSD 移动固态硬盘（盒子形态、要带线，但更稳）**
+
+| 型号 | 参考价（搜索所得） | 说明 |
+|---|---|---|
+| **三星 T7 Shield 1TB** ⭐ | 约 ¥1,437–1,459 | IP65 防水防尘、3 米防摔、散热最好 ⇒ **长时间写入最稳** |
+| 西数 My Passport 1TB | 约 ¥949 | 硬件 AES-256 加密 |
+| 雷克沙 ES4 1TB | 约 ¥1,349 | 附 C-C 与 C-A 双线 |
+| 佰维 PD450 1TB | 约 ¥499 | 性价比最高，京东自营 |
+
+**C 类 · 追求 Mac 上的极致速度（要突破 10Gbps）**
+
+只有走 **USB4 / Thunderbolt 硬盘盒 + NVMe SSD**（macOS 支持，实测可达 ~2800MB/s）。
+⛔ 但成本高、发热大，**且对"跑应用"的收益远小于对"传大文件"的收益** ——
+不建议为这个场景上。
+
+### 10.3 我的实际建议
+
+| 你的偏好 | 选择 |
+|---|---|
+| 便携优先（揣兜里、不用带线） | **创见 ESD310**（两个盘都可以用它，最简单） |
+| 稳定性优先（跑应用不卡、长时间写不掉速） | **三星 T7 Shield**（PSSD，散热最好） |
+| 预算优先 | **佰维 PD450**（约 ¥499 拿到 10Gbps PSSD） |
+
+⚠️ **三点提醒**：
+- 上表价格为**第三方导购站搜索所得，可能已变动**，请以京东/天猫实时价为准。
+- 别买杂牌 —— 虚标容量、黑片、假固态在这类产品上很常见。
+- **格式别用出厂默认就算了**：Windows 盘建议重格 **NTFS**（§9.2），
+  Mac 盘保持 **exFAT**。
+
+---
+
+## 11 待你拍板的点
+
+1. **§8 要不要做？**（凭据可移植改造）
+   - 不做 ⇒ 每台新机器重填 1–2 个凭据（约 1 分钟），零代码风险
+   - 做 ⇒ 真正跨机，但需新增 `vault` 板块 + 主密码 UX + 恢复码机制
+   - ⚠️ 如果你的开发机就 2–3 台，**建议先不做**，等真觉得烦了再加
+2. **要不要我落地实现便携化？**（§3.2 便携标记 + §3.3 dir target + §3.4 启动器 +
+   §7.1 的 macOS 分支，约 40 行 + 打包配置，同轮加守卫与验收项）
+3. **U 盘买了哪个？**（决定 §9.2 的格式化方案和 §3.3 的打包 target）
+
+⛔ **仍未实测、需真机确认的三点**（我不敢下结论）：
 - 单实例锁在同一台机器上「本机版 + U 盘版」并存时的行为
-- exFAT 下完整功能跑一遍的实际表现（尤其 SQLite 与技能市场解压）
+- exFAT 下跑完整功能的实际表现（尤其 SQLite 随机写与技能市场解压）
+- macOS 未签名 `.app` 从 U 盘运行时的 Gatekeeper 实际拦截强度
+  （arm64 上可能比 Intel 更严，需实测）
