@@ -2,7 +2,6 @@
  * AppViewMemoryPanel —— AppView 的 JSX 第 7 段（09-22 从 AppView.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
-import { AppSelect } from "../../../components/AppSelect";
 import { MemoryFunnel, MemoryLayersEditor, MemoryConfigModal, MemoryHygienePanel, MemoryPyramid, MemoryInjectPreview } from "../../memory";
 import { MemoryWorkbench } from "../../memory-ui";
 import {
