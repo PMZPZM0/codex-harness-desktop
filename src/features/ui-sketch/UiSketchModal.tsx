@@ -7,10 +7,13 @@
  *   由 `sketch://` 只读协议加载（`electron/sketch-protocol.ts`），布局与功能一字不动 ——
  *   用户要的就是「按它原来的样子」。
  *
- * 宿主这一圈只做三件事：**读回画布**（`scripts/sketch-bridge.js` + postMessage，跨源拿不到 DOM）、
+ * 宿主这一圈做三件事：**读回画布**（`scripts/sketch-bridge.js` + postMessage，跨源拿不到 DOM）、
  * 把画布结构合成任务发给 Codex、以及把草图 JSON 复制到剪贴板。
- * ⛔ 不往画布写：上游自己有完整的导入通道（`#doc=` 分享哈希），而且 10-05 试过"从宿主送组件进去"，
- *   用户实测后判了「跟左边那些不适配，加进来没啥用」⇒ 组件库面板已整块撤掉，别照原样加回来。
+ * 另有 **Codex 侧的两个工具**（`sketch_get_doc` / `sketch_apply_doc`，见 part05 分发）——
+ * 工具的消息与弹窗共用同一条桥会话（`sketch-session.mjs` 是唯一的状态持有者），
+ * 写回同样只走上游自己的导入通道（分享哈希 `#docz=` → hashchange → arrive()），
+ * 弹窗自己的按钮**不写画布**：10-05 试过"从宿主送组件进去"，用户实测后判了
+ * 「跟左边那些不适配，加进来没啥用」⇒ 组件库面板已整块撤掉，别照原样加回来。
  *
  * ⛔ 自包含：本地 state、不碰 bag（只有「开没开」那一位在 bag，与 drama-canvas 同档）。
  * ⛔ 不许 createPortal（画布类浮层的既定立场：弹层留在自己那一层）。
@@ -18,6 +21,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Copy, PenTool, RefreshCw, X } from "lucide-react";
 import { SKETCH_BRIDGE_SOURCE, SKETCH_ENTRY_URL, buildSketchPrompt, describeDiag, summarizeDoc } from "./sketch-doc.mjs";
+import { attachSketchFrame, detachSketchFrame, feedSketchMessage } from "./sketch-session.mjs";
 import type { SketchDiag, SketchDoc } from "./sketch-doc.mjs";
 
 /** 桥没应答多久算"没就绪"：8 秒足够本地协议加载 4MB 产物，又不至于让用户干等。 */
@@ -43,11 +47,14 @@ export function UiSketchModal({ onClose, onAskAgent }: { onClose: () => void; on
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  /* 桥的应答：ready / doc 都带当前画布，一律收下（读回的唯一来源）。 */
+  /* 桥的会话：本弹窗是 iframe 的持有者 —— 挂载时把 frame 交给会话单例，卸载时交还；
+     桥的每条消息先过 feed（工具调用在等的那条回执就靠它派发），弹窗再走自己的展示逻辑。 */
   useEffect(() => {
+    attachSketchFrame(iframeRef.current ? iframeRef.current.contentWindow : null);
     const onMessage = (event: MessageEvent) => {
       const data = event.data as { source?: string; type?: string; doc?: SketchDoc; diag?: SketchDiag };
       if (!data || data.source !== SKETCH_BRIDGE_SOURCE) return;
+      feedSketchMessage(data);
       if (data.type !== "ready" && data.type !== "doc") return;
       readyRef.current = true;
       setBridgeReady(true);
@@ -62,6 +69,7 @@ export function UiSketchModal({ onClose, onAskAgent }: { onClose: () => void; on
       setBridgeError("草图组件没有应答。多半是 dist/sketch 还没生成 —— 跑一次 npm run build（public/sketch 会被 Vite 拷进 dist）。");
     }, BRIDGE_TIMEOUT_MS);
     return () => {
+      detachSketchFrame();
       window.removeEventListener("message", onMessage);
       clearTimeout(probe);
     };

@@ -384,7 +384,7 @@ const CHECKS = [
   },
   {
     id: "ui-sketch",
-    name: "㉑ 界面草图（侧栏「···更多」五入口 / 嵌入站真加载 / 画布内容读回宿主，10-05 轮）",
+    name: "㉑ 界面草图（侧栏「···更多」五入口 / 嵌入站真加载 / 画布读回 + 写回真落盘，10-05 轮）",
     run: async (h) => {
       // 为什么必须真跑：这条链路的六个接缝（侧栏按钮 → bag 开关 → AppView 挂载 → sketch:// 协议
       // → CSP frame-src → 随包产物 + 内联桥）**每一个都能在 tsc/预检全绿的情况下静默白屏**
@@ -438,6 +438,65 @@ const CHECKS = [
       ).then(() => true).catch(() => false);
       const bootedMeta = await h.text(".ui-sketch-meta").catch(() => "");
       h.check("⑦ 嵌入站真的启动了、且把画布内容读回宿主（骨架屏不算通过）", booted === true, `meta=${String(bootedMeta).slice(0, 80)}`);
+      /* ⑨–⑪ 写回通道（10-05 下午加，用户点名「Codex 可以直接调用这个工具，继续拼装 UI 界面」）。
+         工具面接线由守卫【283】静态钉死；这里真跑的是 **真实上游**会不会接受我们的分享哈希
+         —— 桥把文档编码成 `#docz=` 挂 location.hash，m3e 自己 hashchange → arrive() 落盘。
+         ⛔ VM 守卫里那个"上游"是我模拟的；只有这里能证明真产物收我们的编码。
+         ⛔ 探针先从画布读回原文档，测完写回去还原（持久 profile 不该被验收改脏）。 */
+      const originalMeta = await h.text(".ui-sketch-meta").catch(() => "");
+      const written = await h.eval(`(async function(){
+        const f = document.querySelector('.ui-sketch-frame');
+        if (!f || !f.contentWindow) return { error: 'no-iframe' };
+        const SOURCE = 'codex-harness-sketch';
+        const waitMsg = (type, ms) => new Promise((resolve) => {
+          const on = (event) => { const d = event.data || {};
+            if (d.source !== SOURCE || d.type !== type) return;
+            window.removeEventListener('message', on); resolve(d); };
+          window.addEventListener('message', on);
+          setTimeout(() => { window.removeEventListener('message', on); resolve(null); }, ms);
+        });
+        const readback = waitMsg('doc', 8000);
+        f.contentWindow.postMessage({ source: SOURCE, type: 'get-doc' }, '*');
+        const original = await readback;
+        const probe = { title: '验收探针', frames: [{ id: 'acc-f1', name: '验收屏', x: 0, y: 0 }],
+          groups: [{ id: 'acc-g1', x: 0, y: 0, axis: 'x', items: [
+            { id: 'acc-i1', kind: 'topAppBar', label: '验收', icon: null, variant: 'filled' },
+            { id: 'acc-i2', kind: 'card', label: '卡片', icon: null, variant: 'filled' }] }] };
+        const done = waitMsg('load-doc-result', 12000);
+        f.contentWindow.postMessage({ source: SOURCE, type: 'load-doc', doc: probe }, '*');
+        const result = await done;
+        return { original: original ? original.doc : null, result: result ? { ok: result.ok === true, error: result.error || '' } : null };
+      })()`);
+      h.check("⑨ 写回通道真跑：真实上游接受我们的分享哈希（load-doc-result ok:true —— 这一步只有真产物能证明）",
+        written?.result?.ok === true, JSON.stringify(written?.result ?? written).slice(0, 220));
+      const metaChanged = await h.waitFor(
+        `(document.querySelector('.ui-sketch-meta')?.textContent || '').indexOf("1 屏 / 2 部件") >= 0`,
+        { label: "写入后宿主摘要更新", timeoutMs: 10000 }
+      ).then(() => true).catch(() => false);
+      h.check("⑩ 画布真的变了：宿主摘要显示「1 屏 / 2 部件」（排除「哈希改了、画布没动」的静默拒收）", metaChanged === true);
+      const restore = await h.eval(`(async function(){
+        const f = document.querySelector('.ui-sketch-frame');
+        const original = ${JSON.stringify(JSON.stringify(written?.original ?? null))};
+        if (!f || !f.contentWindow || original === 'null') return { skipped: true };
+        const SOURCE = 'codex-harness-sketch';
+        const done = new Promise((resolve) => {
+          const on = (event) => { const d = event.data || {};
+            if (d.source !== SOURCE || d.type !== 'load-doc-result') return;
+            window.removeEventListener('message', on); resolve(d); };
+          window.addEventListener('message', on);
+          setTimeout(() => { window.removeEventListener('message', on); resolve(null); }, 12000);
+        });
+        f.contentWindow.postMessage({ source: SOURCE, type: 'load-doc', doc: JSON.parse(original) }, '*');
+        const r = await done;
+        return { ok: r ? r.ok === true : false };
+      })()`);
+      const metaRestored = restore?.skipped ? true : await h.waitFor(
+        `(document.querySelector('.ui-sketch-meta')?.innerText || '').trim() === ${JSON.stringify(originalMeta)}`,
+        { label: "还原后摘要回到进入前原文", timeoutMs: 10000 }
+      ).then(() => true).catch(() => false);
+      h.check("⑪ 验收不留痕：原文档写回后摘要回到进入前原文（画布原本为空时跳过还原，信息里注明）",
+        restore?.skipped ? true : (restore?.ok === true && metaRestored === true),
+        restore?.skipped ? "画布原本为空，探针文档留存" : JSON.stringify({ restoreOk: restore?.ok, metaRestored, originalMeta: String(originalMeta).slice(0, 60) }));
       // 截图前关掉宿主自己的引导浮层（环境体检），否则挡住被测区域看不清
       await h.clickByText("全部稍后再说").catch(() => undefined);
       await wait(1200);

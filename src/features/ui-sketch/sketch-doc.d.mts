@@ -25,7 +25,11 @@ export const SKETCH_ENTRY_URL: string;
 export const SKETCH_BRIDGE_SOURCE: string;
 export const SKETCH_DOC_KEY: string;
 
+export const SKETCH_ITEM_KINDS: string[];
+export const SKETCH_ITEM_VARIANTS: string[];
+
 export function isSketchDoc(value: unknown): boolean;
+export function validateSketchDoc(doc: unknown): { ok: true } | { ok: false; reason: string };
 export function summarizeDoc(doc: unknown): { valid: boolean; title: string; frames: number; groups: number; items: number };
 export function describeDiag(diag: SketchDiag | undefined): string;
 export function buildSketchPrompt(doc: unknown): { text: string; frames: number; items: number };
