@@ -30,7 +30,8 @@
  * 项目记忆 / 背景 / 纪律 / 日志，也不做 L3 召回。
  */
 import { memoryLayers, memoryStore, threadCwd, workspaceMemoryEnabled } from "./main";
-import { roleMemorySection, type RoleRef } from "./role-memory";
+import { type RoleRef } from "./role-memory";
+import { buildContext, getMemoryHandles, type MemorySourceAgent } from "./memory-fabric";
 
 export type DelegateMemory = {
   /** 可直接追加到出站文本尾部的记忆段（空串 = 这次没拿到记忆） */
@@ -38,9 +39,11 @@ export type DelegateMemory = {
   chars: number;
   standingChars: number;
   recalledChars: number;
-  /** 该角色的私有记忆段（10-05 角色独立记忆；空串 = 该角色还没有私有记忆） */
-  roleSection: string;
-  /** 解析到的角色归属键（空 = 这次没有角色归属，如主会话直接委派外的场景） */
+  /** 统一记忆段（10-05 架构改造）：项目共享段 + 本会话段 + 上一版角色记忆兼容段 */
+  fabricSection: string;
+  /** fabric 段里的条目数（project / session / 兼容） */
+  fabricCounts: { project: number; session: number; legacy: number };
+  /** 解析到的角色归属键（空 = 这次没有角色归属） */
   roleKey: string;
   /** 解析到的工作区（空 = 只注入了全局 L0 用户档案） */
   workspace: string;
@@ -70,8 +73,14 @@ export async function buildDelegateMemory(input: {
   originThreadId?: string;
   /** 10-05 角色独立记忆：被委派者的角色归属（子智能体 / 专家 / 团主 / 团成员） */
   role?: RoleRef;
+  /** ⛔ 被委派会话自己的 threadId（建会话后才有 ⇒ 可空）。为空时用发起方会话 id 当 session 归属。 */
+  threadId?: string;
 }): Promise<DelegateMemory> {
   const workspace = resolveDelegateWorkspace({ workspace: input?.workspace, originThreadId: input?.originThreadId });
+  /* ⛔ 被委派会话自己的 threadId（建会话后才有 ⇒ 可空）。为空时退回发起方会话 id ——
+     委派是**建会话之前**拼注入文本的，那时还没有它。这不影响隔离：
+     它写会话记忆时用的是自己的真实 threadId（见 memory-fabric-tool 的句柄构造）。 */
+  const delegateThreadId = String(input?.threadId ?? input?.originThreadId ?? "").trim();
   const includeWorkspace = workspace ? await workspaceMemoryEnabled(workspace).catch(() => false) : false;
 
   let standingChars = 0;
@@ -90,18 +99,24 @@ export async function buildDelegateMemory(input: {
     /* 记忆读取失败不阻塞委派 */
   }
 
-  /* 10-05 角色私有记忆：只读**这个角色自己**的那份（别的角色看不到）。
-     ⛔ 放在常驻层之后、召回之前：它是"我是谁、我 Remember 我做过什么"的身份段，
-     排在共享的项目记忆之后 ⇒ 角色自己的经历最靠近当前任务（注入是拼成一整段的）。
-     ⛔ 角色记忆**不参与跨角色检索**（硬隔离），也不写进主会话记忆。 */
-  let roleSection: Awaited<ReturnType<typeof roleMemorySection>> | null = null;
+  /* ⛔⛔ 统一记忆段（10-05 架构改造）：**和主会话走同一个 buildContext**。
+     分两处拼装就会出现"派出去的专家拿不到自己刚写的东西"这类只在部分路径复现的 bug。
+     · project 段 = 全项目共享（主会话写的事实，角色读得到）
+     · session 段 = 这个委派会话自己的（threadId 命名空间 ⇒ 与别的会话硬隔离）
+     · legacy 段 = 上一轮 roles/<键>/MEMORY.md（架构文档 §7：不删，读得到）
+     ⛔ 放在常驻层之后、召回之前：身份/项目段最靠近当前任务。 */
+  let fabricSection = "";
+  let fabricCounts = { project: 0, session: 0, legacy: 0 };
+  let roleKey = "";
   try {
-    if (input?.role) {
-      const section = await roleMemorySection(workspace || undefined, input.role);
-      if (section.text) { roleSection = section; body += `\n\n${section.text}`; }
-    }
+    const agent = agentOf(input?.role);
+    const handles = await getMemoryHandles({ sessionId: delegateThreadId, workspace: workspace || undefined, agent });
+    const built = await buildContext({ handles, query: input?.query, legacyRole: input?.role ?? null, workspace: workspace || undefined });
+    if (built.text) { fabricSection = built.text; body += `\n\n${built.text}`; }
+    fabricCounts = built.counts;
+    roleKey = roleKeyOf(input?.role);
   } catch {
-    /* 角色记忆读不到不影响委派（与上面两层同纪律） */
+    /* 统一记忆读不到不影响委派（与上面两层同纪律） */
   }
 
   /* L3 按需召回：只在工作区记忆开启时做（与 send.tsx 的 if (bag.workspaceMemoryEnabled) 一致）。 */
@@ -124,9 +139,34 @@ export async function buildDelegateMemory(input: {
     chars: body.length,
     standingChars,
     recalledChars,
-    roleSection: roleSection?.text ?? "",
-    roleKey: roleSection?.key ?? "",
+    fabricSection,
+    fabricCounts,
+    roleKey,
     workspace,
     scope: includeWorkspace ? "workspace" : "user-only",
   };
+}
+
+/* ── 统一记忆：角色 → 写入者身份 / 归属键 ───────────────────────────────── */
+
+/**
+ * 角色归属 → 写入者身份（⛔ 与 `memory-fabric-tool` 的 `agentOfRoleRef` 同口径，
+ * 但这里不能 import 它 —— 那个文件经 delegation 依赖本模块，会成环。
+ * ⇒ 两处由守卫 11l 钉住 kind 映射一致，漂了会红）。
+ */
+function agentOf(role: RoleRef | undefined): MemorySourceAgent {
+  if (!role) return { kind: "main", id: "main", label: "主会话" };
+  const kind = role.kind === "subagent" ? "subagent"
+    : role.kind === "expert" ? "expert"
+    : role.kind === "team-lead" ? "team-lead" : "team-member";
+  return { kind, id: role.memberId ? `${role.id}/${role.memberId}` : role.id, label: role.label };
+}
+
+/** 兼容段用的归属键（空串 = 无角色归属）。⛔ 分隔符不能是 `:`（Windows 非法文件名字符）。 */
+function roleKeyOf(role: RoleRef | undefined): string {
+  if (!role) return "";
+  const safe = (s: string) => String(s).replace(/[\\/:*?"<>|]+/g, "_").slice(0, 64);
+  return role.kind === "team-member" && role.memberId
+    ? `${safe(role.kind)}__${safe(role.id)}__${safe(String(role.memberId))}`
+    : `${safe(role.kind)}__${safe(role.id)}`;
 }

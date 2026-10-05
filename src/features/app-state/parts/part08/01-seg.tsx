@@ -306,7 +306,13 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
       }] : []),
       ...(bag.memoryEnabled ? [
         { type: "function", name: "memory_recall", description: "按当前任务查询相关的分类记忆。", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
-        { type: "function", name: "memory_save", description: "保存可复用的项目事实，必须选择分类。", inputSchema: { type: "object", properties: { category: { type: "string", enum: ["用户偏好", "项目背景", "工作流/SOP", "任务经验", "临时上下文"] }, content: { type: "string" } }, required: ["category", "content"] } },
+        /* ⛔⛔ 10-05 统一记忆：工具名从 `memory_save` 改成 `memory_write`，**与被调度角色同名**。
+           改造前主会话用 memory_save、角色用 role_memory_save（两套语义、两份说明书），
+           模型得自己判断这次该用哪个 —— 那是「两套同名能力」的变体（项目踩过：
+           agent_invoke 与 subagent_invoke 并存 ⇒ 专家团被绕过）。
+           ⛔ 旧名 `memory_save` 仍可调用（主进程同一 handler），只是**不再出现在工具面里** ——
+              留着的唯一理由是老会话的上下文里记着它。 */
+        { type: "function", name: "memory_write", description: "保存一条记忆。两种作用域：session（默认）= 只属于本会话的私事，别的会话看不到；project = 全项目共享，所有会话与智能体（子智能体 / 专家 / 专家团）都能读到。⛔ project 是公共知识，别把一次性的中间结论写进去。分类沿用五类，别自造；相同内容会自动去重。", inputSchema: { type: "object", properties: { scope: { type: "string", enum: ["session", "project"], description: "记忆作用域：session=本会话私有（默认），project=全项目共享" }, category: { type: "string", enum: ["用户偏好", "项目背景", "工作流/SOP", "任务经验", "临时上下文"] }, content: { type: "string", description: "记忆正文（单条上限 2000 字）" }, weight: { type: "number", description: "重要性 0..1（省略则按分类取默认）" }, pinned: { type: "boolean", description: "钉住：蒸馏与裁剪时永不删除" } }, required: ["content"] } },
       ] : []),
       /* ── 调度工具面（10-05 修正；⛔ 这里是「调度开关 → 生效工具」联动的**唯一**落点）──────
          ⛔⛔ 10-04 拍板「三类对象统一走内置 MCP」本身没错，但**引擎 0.157 改了工具面策略**：

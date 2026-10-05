@@ -19,6 +19,10 @@ let checks = 0, fails = 0;
 const ok = (c, m) => { checks++; console.log("  " + (c ? "✓" : "✗") + " 【role】" + m); if (!c) fails++; };
 
 const roleMemory = readFileSync(join(ROOT, "electron", "role-memory.ts"), "utf8");
+/* 10-05 架构改造：断言要能引用统一内核（memory-fabric.ts），⛔ 变量必须先定义 ——
+   上一版补断言时引了未定义的 memoryFabric，守卫直接崩、零输出（比红更坏：
+   外部只看「✗ 行」会读成"全绿"）。 */
+const memoryFabric = readFileSync(join(ROOT, "electron", "memory-fabric.ts"), "utf8");
 const roleTool = readFileSync(join(ROOT, "electron", "role-memory-tool.ts"), "utf8");
 const delegate = readFileSync(join(ROOT, "electron", "features", "delegation.ts"), "utf8");
 const teams = readFileSync(join(ROOT, "electron", "features", "teams-ipc.ts"), "utf8");
@@ -94,9 +98,12 @@ ok(/ROLE_INDEX_FILE = "role-memory-index\.json"/.test(roleMemory),
 }
 
 /* ── ⑤ 工具只给角色会话；主会话仍是 memory_save ────────────────────────── */
-ok(/ROLE_MEMORY_TOOL_NAME = "role_memory_save"/.test(roleTool)
-  && /与渲染层主会话的 `memory_save` 刻意不同名/.test(roleTool),
-  "⛔ 工具名与主会话的 memory_save 不同（两个作用域，别让模型混）");
+/* ⛔ 10-05 架构改造：这条断言的**意图**（别让模型面对两套写入语义）依然成立，
+   但**形态**已变：工具名从 role_memory_save 统一成 memory_write（旧名只作别名）。
+   ⇒ 改钉新形态：名字统一 + 别名仍认。11l 从工具面/分发两侧钉同一件事。 */
+ok(/ROLE_MEMORY_TOOL_NAME = FABRIC_WRITE_TOOL/.test(roleTool)
+  && /buildFabricWriteTool\(agentOfRoleRef\(ref\)\)/.test(roleTool),
+  "⛔ 角色与主会话**共用同一个写入工具**（10-05 起统一为 memory_write —— 两套语义的老坑）");
 ok(/buildRoleMemoryTool\(roleRef\)/.test(delegate) && /dynamicTools/.test(delegate),
   "委派会话注册了角色记忆写入工具");
 ok(/dynamicTools: \[buildRoleMemoryTool\(\{ kind: "team-member"/.test(teams),
@@ -105,12 +112,14 @@ ok(!/name: "role_memory_save"/.test(send) && !/memory_role_save/.test(send),
   "⛔ 渲染层主会话**没有**这个工具（它的记忆写入仍走既有 memory_save）");
 
 /* ── ⑥ 注入沿用既有标记；⛔ 不自发明标记 ─────────────────────────────────── */
-ok(/roleMemorySection/.test(delegateMemory) && /roleSection/.test(delegateMemory),
-  "委派记忆构建里接入了角色私有段");
+/* ⛔ 10-05：上一版的"角色私有段"已降级为**兼容段**（架构文档 §7：不删，读得到）。
+   新的主形态是统一 fabric 段（session + project），私有段只排在它后面。 */
+ok(/buildContext\(\{ handles/.test(delegateMemory) && /legacyRole: input\?\.role \?\? null/.test(delegateMemory),
+  "⛔ 委派侧走统一 buildContext，且把上一版角色记忆作为**兼容段**继续注入（不删已有资产）");
 ok(/不发明标记|塞进 `\[Harness 常驻记忆/.test(roleMemory),
   "⛔ 角色段不自带注入标记（由调用方拼进 [Harness 常驻记忆] 之内，显示侧才剥得掉）");
-ok(/roleMemorySection\(workspace \|\| undefined, input\.role\)/.test(delegateMemory),
-  "⛔ 角色私有记忆在共享层之后、召回之前注入（身份段最靠近任务）");
+ok(/legacyRole: options\.legacyRole/.test(memoryFabric) || /legacyRole: input\?\.role/.test(delegateMemory),
+  "⛔ 兼容段由调用方传入 workspace（⛔ 上一版曾用 globalThis 占位 ⇒ 读到空，等于没读）");
 
 /* ── ⑦ 主进程应答必须在事件被裁剪之前 ─────────────────────────────────── */
 {
@@ -123,8 +132,9 @@ ok(/roleMemorySection\(workspace \|\| undefined, input\.role\)/.test(delegateMem
 }
 
 /* ── ⑧ 渲染层发送路径也能读（"交互与普通会话一致"）───────────────────── */
-ok(/readRoleMemoryContext\(\{ threadId: bag\.thread\?\.id/.test(send),
-  "⛔ 渲染层发送路径按当前会话注入角色私有记忆（亲自对话与被派出读到同一份）");
+ok(/readRoleMemoryContext\(\{[\s\S]{0,200}?threadId: bag\.thread\?\.id/.test(send)
+  && /query: messageText/.test(send),
+  "⛔ 渲染层发送路径按当前会话注入统一记忆段，且带 query（亲自对话与被派出读到同一份）");
 ok(/if \(roleCtx\?\.text\) memoryPrefix/.test(send),
   "角色段为空时静默跳过（普通会话行为与今天完全一致）");
 

@@ -31,13 +31,44 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
             try {
               const args = typeof event.params?.arguments === "string" ? JSON.parse(event.params.arguments) : event.params?.arguments ?? {};
               if (event.params?.tool === "memory_recall") {
-                const result = bag.workspaceMemoryEnabled ? await window.codex.recallMemory(String(args.query ?? ""), bag.workspace) : { context: "", remote: false };
-                await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: result.context || "没有找到相关记忆" }], success: true });
-              } else if (event.params?.tool === "memory_save") {
+                /* ⛔ 10-05 统一记忆（检索）：**走同一个通道、同一套作用域** ——
+                   改造前这里只查碎片池（且那个池子跨工作区只降权、不过滤），
+                   与新的写入面脱节 ⇒ 写进去的条目召不回来。
+                   ⛔ 保留 fragments 那条兜底：碎片池里可能有历史条目。 */
+                const query = String(args.query ?? "");
+                const result = bag.workspaceMemoryEnabled
+                  ? await window.codex.readRoleMemoryContext({
+                      threadId: String(event.params?.threadId ?? bag.threadRef.current?.id ?? ""),
+                      workspace: bag.workspace || "",
+                      query,
+                    })
+                  : { text: "", key: "", counts: { project: 0, session: 0, legacy: 0 } };
+                const text = result?.text?.trim() || (await window.codex.recallMemory(query, bag.workspace || undefined)).context || "没有找到相关记忆";
+                await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text }], success: true });
+              } else if (event.params?.tool === "memory_write" || event.params?.tool === "memory_save") {
+                /* ⛔⛔ 10-05 统一记忆（写）：主会话与被调度角色**同一个内核**
+                   （主进程 memory-fabric 的 handleFabricWrite）。
+                   ⛔ 旧名 `memory_save` 走同一分支（别名期）—— 不是两套能力。
+                   ⚠️ scope=project 从这里写**不需要 promote**：主会话就是项目的主人；
+                      角色会话的 promote 闸在主进程应答路径（boot.ts），那里才有身份硬闸。 */
                 const cat = String(args.category ?? "临时上下文");
-                const result = await window.codex.saveMemory({ category: cat, content: args.content ?? "", sourceThreadId: event.params?.threadId, workspace: bag.workspace, pinned: cat === "项目背景" || cat === "工作流/SOP" });
-                bag.showToast("已记住", `${cat}：${String(args.content ?? "").slice(0, 60)}（记忆中心可查看 / 跳回本会话）`);
-                await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `记忆已保存：${result.id}` }], success: true });
+                const scope = args.scope === "project" ? "project" : "session";
+                const result = await window.codex.writeFabricMemory({
+                  threadId: String(event.params?.threadId ?? bag.threadRef.current?.id ?? ""),
+                  workspace: bag.workspace || "",
+                  scope,
+                  category: cat,
+                  content: String(args.content ?? ""),
+                  weight: typeof args.weight === "number" ? args.weight : undefined,
+                  pinned: args.pinned === true,
+                });
+                if (result?.ok) {
+                  bag.showToast("已记住", `${scope === "project" ? "项目记忆" : "本会话记忆"}：${String(args.content ?? "").slice(0, 60)}`);
+                }
+                await toolCallRespond.send(event.id!, {
+                  contentItems: [{ type: "inputText", text: result?.ok ? result.text : `没有写入：${result?.text ?? "未知原因"}` }],
+                  success: result?.ok === true,
+                });
               } else if (event.params?.tool === "identity_onboard") {
                 // 首次见面引导落盘：全部维度写个性化档案（助手名/称呼/场景/职业/风格/语气/爱好/习惯 + onboarded），
                 // AGENTS.md 即时重建——之后所有新会话都不再注入引导。
