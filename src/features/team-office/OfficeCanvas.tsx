@@ -6,7 +6,11 @@
  * ⛔ 资产走 **Vite import**（可达闭包内，打包期裁剪不掉 —— 0.0.27 那条事故的教训）。
  */
 import { useEffect, useRef } from "react";
-import bgUrl from "./assets/bg.webp";
+// ⛔ bg 必须 ?inline（强制 data: URI）：bg.webp 80KB 超过全局 assetsInlineLimit(64KB) 会被拆成
+//   独立文件 /assets/bg-*.webp，构建版 file:// 下绝对路径解析到盘根 ⇒ 404 ⇒ 画布白底
+//   （10-05 用户报「办公室白了」；09-30 v19 埋雷，办公室调试都在 dev 模式所以一直没暴露）。
+//   人物 PNG 小于阈值本来就内联成 data:，所以人物一直正常 —— 这也是它拖到今天才被发现的原因。
+import bgUrl from "./assets/bg.webp?inline";
 import char0 from "./assets/chars/char_0.png";
 import char1 from "./assets/chars/char_1.png";
 import char2 from "./assets/chars/char_2.png";

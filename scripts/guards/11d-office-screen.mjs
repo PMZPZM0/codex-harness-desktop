@@ -12,7 +12,7 @@
  * ⛔ 为什么必须逐个钉：六个屏面尺寸**各不相同**（53/58/58/53/55/53 宽、30-32 高），
  *   背景图是手绘像素风、显示器本来就不齐 ⇒ 写一个"统一值"必然有一两个错位。
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -264,6 +264,14 @@ ok(/Math\.min\(len \* u,/.test(screen) || /Math\.min\(len,/.test(screen),
   //    不剥的话这条永远红（项目里点名的"注释里引用代码片段"坑，负向断言必踩）。
   const appViewCode = appView.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   ok(!/office-entry-btn/.test(appViewCode), "⛔ AppView 不再有 .office-entry-btn 浮动入口（入口归轨道）");
+  /* ── 素材内联判据（2026-10-05 用户报「办公室白了」）──
+     bg.webp 80KB > 全局 assetsInlineLimit(64KB) ⇒ 被拆成独立文件 /assets/bg-*.webp，
+     构建版 file:// 下解析到盘根 ⇒ 404 ⇒ 白底。人物 PNG 小于阈值内联所以一直正常（拖到今天才暴露）。
+     ⛔ 同族坑第三次（0.0.27 死块 / drama-canvas 白方块 / 本次）：canvas import 的素材必须内联。 */
+  const canvasSrc = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
+  ok(/bg\.webp\?inline/.test(canvasSrc), "办公室 bg.webp 必须 ?inline 强制 data: URI（80KB 超阈值，拆成文件 = 构建版白底）");
+  const distAssets = readdirSync(join(ROOT, "dist", "assets"));
+  ok(!distAssets.some((f) => /^bg-.*\.webp$/.test(f)), "dist/assets 不许出现 bg-*.webp 独立文件（出现 = 内联失效，构建版必白）");
 }
 
 console.log(`\n【screen】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
