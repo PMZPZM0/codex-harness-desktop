@@ -520,6 +520,10 @@ export function AppView({ app }: { app: HarnessAppApi }) {
         /* 普通会话也能开办公室 —— 传本会话派出的子会话（**委托登记表**，含已完成的，
            见文件上方 `officeDelegates` 的由来）。 */
         delegatedRuns={officeDelegates}
+        /* ⭐ 「我」的工位（10-05 晚）：非专家团模式下把**本会话自己**也放进办公室 ——
+           否则本会话的事件（对话框里那些工具步骤）没有任何显示器可演，
+           "所有事件接入显示器"就只兑现了一半。 */
+        self={thread ? { threadId: thread.id, name: String(thread.name ?? ""), running: Boolean(app.sending || app.activeTurnId) } : null}
         openThread={(threadId) => void openThread(threadId)}
       />
       {typeof localStorage !== "undefined" && localStorage.getItem("officeProbe") === "1" && (
@@ -565,7 +569,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           }}
         />
       )}
-      {/* 界面草图（10-05，嵌 m3e-canvas）：与画布同档的整屏浮层，从侧栏「···更多」开。
+      {/* 手机前端UI（10-05，嵌 m3e-canvas；展示名 10-05 夜从「界面草图」改来）：与画布同档的整屏浮层，从侧栏「···更多」开。
           「交给 Codex 实现」走的是画布那条已验证的通路 —— 关浮层 → 塞 pendingCommandTextRef
           （⛔ 它是 ref，不受 setPrompt 状态滞后影响）→ 直接发送；发送失败兜底成填输入框。 */}
       {uiSketchOpen && (

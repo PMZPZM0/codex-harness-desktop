@@ -130,7 +130,7 @@ bag.companyPreviewTeamId = companyPreviewTeamId as typeof bag.companyPreviewTeam
   const [dramaCanvasOpen, setDramaCanvasOpen] = useState(false);
   bag.dramaCanvasOpen = dramaCanvasOpen as typeof bag.dramaCanvasOpen; bag.setDramaCanvasOpen = setDramaCanvasOpen as typeof bag.setDramaCanvasOpen;
 
-  // 界面草图（10-04，m3e-canvas 嵌入）：与画布同款 —— 草图自己的状态全在域内（iframe 里那份
+  // 手机前端UI（10-04，m3e-canvas 嵌入；展示名 10-05 夜从「界面草图」改来）：与画布同款 —— 界面自己的状态全在域内（iframe 里那份
   // localStorage），挂 bag 的只有「开没开」这一位（侧栏「···更多」开、AppView 渲染宿主）。
   const [uiSketchOpen, setUiSketchOpen] = useState(false);
   bag.uiSketchOpen = uiSketchOpen as typeof bag.uiSketchOpen; bag.setUiSketchOpen = setUiSketchOpen as typeof bag.setUiSketchOpen;

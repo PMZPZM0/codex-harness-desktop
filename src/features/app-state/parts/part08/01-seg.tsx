@@ -405,38 +405,38 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
       { type: "function", name: "skill_install", description: "从技能市场安装一个技能（不重启应用，下一回合即可用）。传 query 自动匹配最相似的技能；装完先读它的 SKILL.md 再按说明书使用。", inputSchema: { type: "object", properties: { query: { type: "string", description: "技能名或关键词，优先用 skill_search 结果里的准确名称" } }, required: ["query"] } },
       { type: "function", name: "connector_search", description: "列出内置 MCP 连接器模板与已配置状态（浏览器自动化、桌面自动化、GitHub 等）。需要某种外部服务能力但当前没有对应工具时调用。", inputSchema: { type: "object", properties: { query: { type: "string", description: "过滤关键词，可省略" } } } },
       { type: "function", name: "connector_install", description: "安装一个 MCP 连接器模板（写入配置并重启引擎，会中断当前回合）。必须先用 agent_ask 征得用户同意才能调用；安装后提醒用户重新发一条消息继续。", inputSchema: { type: "object", properties: { templateId: { type: "string", description: "connector_search 结果里的模板 id" } }, required: ["templateId"] } },
-      /* ⭐ 界面草图（10-05，用户点名：「Codex 可以直接调用这个工具，继续拼装 UI 界面」）——
-         读 + 写两个工具，操作的是用户在应用内手绘的界面稿（m3e-canvas 画布）。
+      /* ⭐ 手机前端UI（10-05 立、10-05 夜改名；用户点名：「涉及手机前端开发能主动调用这个工具
+         做手机前端UI」）—— 读 + 写两个工具，操作的是用户在应用内摆的手机界面稿（m3e-canvas 画布）。
          ⛔ 写入**不碰画布存储**：渲染层会话（src/features/ui-sketch/sketch-session.mjs）把文档
             编码成上游自己的分享哈希（`#docz=` → hashchange → arrive()）挂到 iframe 上 ——
             走它自己的正门（有校验、可 Ctrl+Z 撤销）；直接改 localStorage 会绕过这两样。
          ⛔ 写入口**只有这一个名字**（项目踩过：一个能力挂两个工具名 ⇒ 模型只挑直白的那个，
             另一套被绕过）。⛔ 注册**不带开关条件**（理由同 agent_invoke：dynamicTools 只在
             thread/start 与 resume 时定死，带条件 = 中途变化不生效）。
-         ⛔ 画布没打开时工具会**自动打开草图窗**（等就绪最多 15s）—— 用户点的那一下与模型
+         ⛔ 画布没打开时工具会**自动打开界面窗**（等就绪最多 15s）—— 用户点的那一下与模型
             发起的这一次共用同一条会话（sketch-session.mjs 是唯一状态源）。 */
       {
         type: "function",
-        name: "sketch_get_doc",
+        name: "mobile_ui_get_doc",
         description:
-          "读取「界面草图」画布上的完整文档（用户在应用内的手绘界面稿：frames=屏、groups=部件组）。"
-          + "返回文档 JSON 与一句摘要。当用户说「看看我的草图 / 继续拼装 UI / 按草图上这个改」时先调它 —— "
+          "读取「手机前端UI」画布上的完整设计文档（用户在应用内摆的手机界面稿：frames=屏、groups=部件组）。"
+          + "返回文档 JSON 与一句摘要。做手机端界面（App 界面 / 移动端页面）或用户说「看看我的界面 / 继续拼这个 UI / 按它改」时先调它 —— "
           + "⛔ 不要凭想象描述画布内容，一切以本工具的返回为准。画布没打开时会自动打开。",
         inputSchema: { type: "object", properties: {} },
       },
       {
         type: "function",
-        name: "sketch_apply_doc",
+        name: "mobile_ui_apply_doc",
         description:
-          "把一份草图文档写回「界面草图」画布（用户实时看到，可继续手绘、可 Ctrl+Z 撤销）。"
-          + "用法：先 sketch_get_doc 拿当前文档，**在它的基础上改**（追加屏 / 加部件 / 调坐标），把改完的完整文档传回来。"
+          "把一份设计文档写回「手机前端UI」画布（用户实时看到，可继续手绘、可 Ctrl+Z 撤销）—— 手机前端开发时拼装 / 迭代界面的正门。"
+          + "用法：先 mobile_ui_get_doc 拿当前文档，**在它的基础上改**（追加屏 / 加部件 / 调坐标 / 连导航），把改完的完整文档传回来。"
           + "要求：每屏 id/name/x/y；每组 id/x/y/axis(items 不能空)；每部件 id/kind/label/icon/variant。"
           + "kind 用上游枚举（topAppBar / bottomNav / card / listItem / button / fab / textField …共 36 种），"
           + "variant 只认 filled / tonal / elevated / outlined / text。坐标是画布坐标：手机屏 412×892、桌面屏 1280×800、"
           + "屏与屏间距 80（放不下就往右排）。⛔ 一次传整份文档，别多次小修；⛔ 别编造 get_doc 没返回过的字段。",
         inputSchema: {
           type: "object",
-          properties: { doc: { type: "object", description: "完整的草图文档（frames + groups；结构照 sketch_get_doc 的返回）" } },
+          properties: { doc: { type: "object", description: "完整的设计文档（frames + groups；结构照 mobile_ui_get_doc 的返回）" } },
           required: ["doc"],
         },
       },

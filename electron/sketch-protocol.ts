@@ -1,5 +1,5 @@
 /**
- * `sketch://` —— 随包的「界面草图」静态站（10-05 立，m3e-canvas 的 next 静态导出）。
+ * `sketch://` —— 随包的「手机前端UI」静态站（10-05 立，展示名 10-05 夜从「界面草图」改来；m3e-canvas 的 next 静态导出）。
  *
  * 为什么必须另开一个协议（而不是 file:// 或复用 harness-image / pet）：
  * 1. 那份产物里**所有资源都是绝对路径**（`/_next/static/chunks/*.js`、`/material-symbols.json`），

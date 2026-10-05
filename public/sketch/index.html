@@ -21,6 +21,9 @@
  *    → `readShareHash → arrive()`（**可 Ctrl+Z 撤销**，且是它校验/归一化文档的唯一正门）。
  *    ⛔ 桥自己**不写 localStorage**：直接改存储会绕过上游的校验与撤销栈（10-05 纪律：
  *       写画布 = 走它自己的入口；组件库面板那条已被用户判掉，见守卫【283】负向断言）。
+ *  · 预览 = **代用户点上游工具栏的播放键**（10-05 夜，用户：「加一个对话框预览这个UI界面」）：
+ *    预览界面是上游自己渲染的（点按跳转 / 滑动返回 / ESC 退出），桥不重造也不模拟，
+ *    只找到那颗 play_arrow 钮、点它（= 人类点击的同一条路径），并如实回报点没点到。
  *
  * 序列化口径与上游导出分享**逐字对齐**（源码 lib/share 的编码函数）：frames 去掉 noteHistory；
  * item 去掉 noteHistory、`src` 只在是 http(s) 时才保留（内联图片不进链接）。
@@ -171,6 +174,29 @@
     });
   }
 
+  /* ───────────────────────── 预览：代用户点上游的播放键 ───────────────────────── */
+
+  /** 上游的「预览」入口 = 一颗 play_arrow 图标钮（工具栏与屏幕面板各有一颗，都通）。
+      图标 ligature 是语言无关的稳定锚（title 随站点语言变）。⛔ 只点、不模拟其内部状态。 */
+  function triggerPreview() {
+    var buttons = document.querySelectorAll("button");
+    for (var i = 0; i < buttons.length; i++) {
+      var button = buttons[i];
+      if (button.disabled) continue;
+      var icon = button.querySelector("span.msr");
+      if (!icon || (icon.textContent || "").trim() !== "play_arrow") continue;
+      var rect = button.getBoundingClientRect();
+      if (!rect.width || !rect.height) continue;   /* 隐藏的（display:none 的整块面板）不算 */
+      try {
+        button.click();
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: "点击预览键失败：" + String((error && error.message) || error).slice(0, 120) };
+      }
+    }
+    return { ok: false, error: "没找到预览键（画布可能还在加载 / 停在骨架屏，稍后再试）" };
+  }
+
   window.addEventListener("message", function (event) {
     var data = event.data;
     if (!data || data.source !== SOURCE) return;
@@ -178,6 +204,9 @@
       post({ type: "doc", doc: currentDoc() });
     } else if (data.type === "load-doc" && data.doc) {
       importDoc(data.doc);
+    } else if (data.type === "preview") {
+      var result = triggerPreview();
+      post({ type: "preview-result", ok: result.ok, error: result.error || "" });
     }
   });
 

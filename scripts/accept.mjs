@@ -384,7 +384,7 @@ const CHECKS = [
   },
   {
     id: "ui-sketch",
-    name: "㉑ 界面草图（侧栏「···更多」五入口 / 嵌入站真加载 / 画布读回 + 写回真落盘，10-05 轮）",
+    name: "㉑ 手机前端UI（侧栏「···更多」五入口 / 嵌入站真加载 / 画布读回 + 写回真落盘 + 一键预览，10-05 轮）",
     run: async (h) => {
       // 为什么必须真跑：这条链路的六个接缝（侧栏按钮 → bag 开关 → AppView 挂载 → sketch:// 协议
       // → CSP frame-src → 随包产物 + 内联桥）**每一个都能在 tsc/预检全绿的情况下静默白屏**
@@ -400,14 +400,14 @@ const CHECKS = [
         if(!m) return { open:false };
         return { open:true, rows:[...m.querySelectorAll('.ext-hub-list > button strong')].map((s)=>(s.textContent||'').trim()),
           navTitles:[...document.querySelectorAll('.sidebar-tabs .sidebar-tab')].map((t)=>(t.textContent||'').trim()) }; })()`);
-      h.check("② 弹窗五项齐全：AI 画布工作流 / 界面草图 / 知识库 / 组件库 / 人格市场",
-        hub?.open === true && ["AI 画布工作流", "界面草图", "知识库", "组件库", "人格市场"].every((title) => (hub?.rows ?? []).includes(title)),
+      h.check("② 弹窗五项齐全：AI 画布工作流 / 手机前端UI / 知识库 / 组件库 / 人格市场（10-05 夜「界面草图」改名）",
+        hub?.open === true && ["AI 画布工作流", "手机前端UI", "知识库", "组件库", "人格市场"].every((title) => (hub?.rows ?? []).includes(title)),
         JSON.stringify(hub?.rows));
       h.check("③ 知识库与 AI 画布工作流已收进更多，不再平铺在导航区",
         !(hub?.navTitles ?? []).some((t) => t === "知识库" || t === "AI 画布工作流"), JSON.stringify(hub?.navTitles));
       await h.eval(`(function(){ const rows=[...document.querySelectorAll('.more-hub-modal .ext-hub-list > button')];
-        const row=rows.find((b)=>(b.textContent||'').includes('界面草图')); if(row) row.click(); return !!row; })()`);
-      await h.waitFor(`!!document.querySelector('.ui-sketch-shell')`, { label: "界面草图浮层", timeoutMs: 15000 });
+        const row=rows.find((b)=>(b.textContent||'').includes('手机前端UI')); if(row) row.click(); return !!row; })()`);
+      await h.waitFor(`!!document.querySelector('.ui-sketch-shell')`, { label: "手机前端UI浮层", timeoutMs: 15000 });
       const frame = await h.eval(`(function(){ const f=document.querySelector('.ui-sketch-frame');
         if(!f) return { has:false };
         const r=f.getBoundingClientRect(); const s=document.querySelector('.ui-sketch-shell').getBoundingClientRect();
@@ -474,6 +474,40 @@ const CHECKS = [
         { label: "写入后宿主摘要更新", timeoutMs: 10000 }
       ).then(() => true).catch(() => false);
       h.check("⑩ 画布真的变了：宿主摘要显示「1 屏 / 2 部件」（排除「哈希改了、画布没动」的静默拒收）", metaChanged === true);
+      /* ⑫ 一键预览（10-05 夜，用户：「加一个对话框预览这个UI界面」）：**趁探针文档还在**
+         （1 屏 / 2 部件 —— 有屏可预览）触发，上游那颗 play_arrow 键只有真实渲染出来才找得到。
+         桥回执（点没点到）与宿主状态条（回执处理）两处都验；跨源里这是唯一可观测面，
+         预览画面本身由上游渲染 —— 紧随其后的截图即视觉旁证（空画布时上游没什么可预览，
+         所以这一项必须在探针文档落盘之后、还原之前跑）。 */
+      const preview = await h.eval(`(async function(){
+        const f = document.querySelector('.ui-sketch-frame');
+        if (!f || !f.contentWindow) return { error: 'no-iframe' };
+        const SOURCE = 'codex-harness-sketch';
+        const done = new Promise((resolve) => {
+          const on = (event) => { const d = event.data || {};
+            if (d.source !== SOURCE || d.type !== 'preview-result') return;
+            window.removeEventListener('message', on); resolve(d); };
+          window.addEventListener('message', on);
+          setTimeout(() => { window.removeEventListener('message', on); resolve(null); }, 8000);
+        });
+        f.contentWindow.postMessage({ source: SOURCE, type: 'preview' }, '*');
+        const r = await done;
+        return { result: r ? { ok: r.ok === true, error: r.error || '' } : null };
+      })()`);
+      await wait(900);
+      const previewStatus = await h.text(".ui-sketch-status").catch(() => "");
+      h.check("⑫ 一键预览真跑：真实产物里找到上游的播放键并点到（桥回执 ok:true，宿主状态条同步「预览已开始」）",
+        preview?.result?.ok === true && String(previewStatus).includes("预览已开始"),
+        JSON.stringify({ receipt: preview?.result ?? preview, status: String(previewStatus).slice(0, 80) }));
+      // 截图前关掉宿主自己的引导浮层（环境体检；它启动后**异步**才弹 ⇒ 单点容易漏，间隔点三遍）
+      await h.clickByText("全部稍后再说").catch(() => undefined);
+      await wait(900);
+      await h.clickByText("全部稍后再说").catch(() => undefined);
+      await wait(600);
+      await h.clickByText("全部稍后再说").catch(() => undefined);
+      await wait(700);
+      await h.screenshot("uisketch");
+      /* ⑪ 还原放在截图之后（截图拍的是"有内容 + 预览已开"的画面；还原是收尾不留痕）。 */
       const restore = await h.eval(`(async function(){
         const f = document.querySelector('.ui-sketch-frame');
         const original = ${JSON.stringify(JSON.stringify(written?.original ?? null))};
@@ -497,10 +531,10 @@ const CHECKS = [
       h.check("⑪ 验收不留痕：原文档写回后摘要回到进入前原文（画布原本为空时跳过还原，信息里注明）",
         restore?.skipped ? true : (restore?.ok === true && metaRestored === true),
         restore?.skipped ? "画布原本为空，探针文档留存" : JSON.stringify({ restoreOk: restore?.ok, metaRestored, originalMeta: String(originalMeta).slice(0, 60) }));
-      // 截图前关掉宿主自己的引导浮层（环境体检），否则挡住被测区域看不清
-      await h.clickByText("全部稍后再说").catch(() => undefined);
-      await wait(1200);
-      await h.screenshot("uisketch");
+      /* ⛔ 捞一拍再关应用：Chromium 的 localStorage 是**惰性提交**（写入先攒在浏览器进程内存，
+         约 5s 才落盘）——本项跑完 accept 立刻关应用，不预留这一拍，**还原那一次写入会随进程一起丢**，
+         下次运行读到的还是探针文档（10-05 夜实测的 profile 反复漂移根因；⑨ 的写入因为早 5s+ 反而落上了）。 */
+      await wait(6000);
       await h.eval(`(function(){ document.querySelector('.ui-sketch-head button[title="关闭"]')?.click(); return 1; })()`);
       await wait(500);
       const closed = await h.eval(`!!document.querySelector('.ui-sketch-shell')`);
@@ -825,7 +859,7 @@ async function enterMain(h) {
 const LATEST_ROUND = "10-05";
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
-  "ui-sketch": "10-05",   // 侧栏「···更多」+ 嵌入的界面草图（协议 / CSP / 产物三处接缝只有真跑才算数）
+  "ui-sketch": "10-05",   // 侧栏「···更多」+ 嵌入的手机前端UI（协议 / CSP / 产物三处接缝只有真跑才算数）
   "message-feedback": "10-05",   // 本轮：消息操作图标的两段反馈 + 用户消息复制贴右端
   "plugin-market-gitee": "10-03",
   "codex-official-market": "10-03",   // 本轮新项；Gitee 项同轮重跑（插件页加了源切换，两个源都得看一眼）

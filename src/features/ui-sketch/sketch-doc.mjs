@@ -1,5 +1,5 @@
 /**
- * 界面草图（`ui-sketch` 域）· 纯函数层
+ * 手机前端UI（`ui-sketch` 域，展示名 10-05 夜从「界面草图」改来）· 纯函数层
  *
  * 只放**能在 node 里直接跑真值表**的判定（守卫【283】真跑它，不靠字符串比对）：
  * 文档形状判定、写回前置校验、摘要、桥的诊断翻译、以及给 Codex 的任务正文合成。
@@ -135,13 +135,13 @@ export function buildSketchPrompt(doc) {
   if (!summary.valid || summary.items === 0) return { text: "", frames: 0, items: 0 };
   const outline = outlineFrames(doc);
   const head = [
-    `请按「界面草图」实现前端（草图「${summary.title || "未命名"}」：${summary.frames} 个屏 / ${summary.groups} 组 / ${summary.items} 个部件）。`,
+    `请按「手机前端UI」画布上的设计稿实现前端（「${summary.title || "未命名"}」：${summary.frames} 个屏 / ${summary.groups} 组 / ${summary.items} 个部件）。`,
     "",
     "画布上的结构与导航（坐标即布局，屏宽 412、桌面屏 1280×800）：",
     outline,
     "",
-    "实现要求：布局与导航按草图，屏与屏之间用草图标的跳转；样式用现网令牌，不要引入新的样式体系；",
-    "草图只是占位，具体文案与间距按内容合理收口，空状态与失败态要补上。",
+    "实现要求：布局与导航按设计稿，屏与屏之间的跳转按设计稿标的来；样式用现网令牌，不要引入新的样式体系；",
+    "设计稿只是占位，具体文案与间距按内容合理收口，空状态与失败态要补上。",
   ];
   return { text: head.filter((line) => line !== undefined).join("\n"), frames: summary.frames, items: summary.items };
 }
