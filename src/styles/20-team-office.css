@@ -6,28 +6,59 @@
      `.team-rail-node.team-rail-office`（两条轨共用 `OfficeRailNode`）。
    ⛔ 别再往这里加浮动入口：那正是用户报的"位置和图标跟专家团不一样"。 */
 
+/* ⭐ 10-05 晚：**全屏铺满**（用户报「画面未铺满全屏，只显示在中间区域」）。
+   ⛔ 旧写法是 `.office-overlay` flex + body 居中 + 画布 `max-width/max-height:100%`
+     —— 那只**限制上限**、不会放大，而画布固有尺寸就是 960×640
+     ⇒ 窗口一大就只剩中间一块，四周是浮层底色。
+   ✅ 新形态：浮层自己 `overflow:hidden`，画布由一个**满屏舞台**承载，
+     尺寸由 `OfficeCanvas` 的 `fitCover()` 按 cover 规则写死（见那边注释）；
+     顶栏改成**浮层压在画布上**，不再占掉画布的高度。 */
 .office-overlay {
+  --office-top: 0px;
   position: fixed;
   inset: 0;
   z-index: 400; /* 与全局模态同档（09-30 层级表）：办公室是整屏浮层 */
-  display: flex;
-  flex-direction: column;
-  background: rgba(16, 18, 22, 0.62);
-  backdrop-filter: blur(6px);
+  display: block;
+  overflow: hidden;
+  background: #0d0f13;
 }
 
 /* ⛔ Windows titleBarOverlay：右上 145×43 是原生窗口钮（最小化/最大化/关闭）的
    **系统层命中区**，浮层 ✕ 若落在里面会被原生关闭钮截获（10-01 用户实测「叉掉
-   点不到，优先点的是应用的」——还会误关整窗）。bar 内容整体下移到原生带之下；
-   背景仍全屏铺满。darwin 红绿灯在左上，右上无钮，不必让。 */
-[data-os="win32"] .office-overlay { padding-top: 43px; }
+   点不到，优先点的是应用的」——还会误关整窗）。⇒ 整块舞台从原生带之下开始
+   （画布不会再伸到窗口钮底下）；darwin 红绿灯在左上，右上无钮，不必让。 */
+[data-os="win32"] .office-overlay { --office-top: 43px; }
+
+/* 舞台：铺满浮层、裁掉画布溢出部分（cover 铺满就靠这一层裁） */
+.office-overlay-stage {
+  position: absolute;
+  inset: var(--office-top) 0 0 0;
+  display: flex;
+  /* ⛔ 顶对齐而不是居中：铺满时纵向溢出的部分**只从底部裁**，保住房间的上半
+     （书架 / 白板 / 饮水机 / 绿植都在上半）—— 居中的话两头各切一半，顶部装饰会缺角。 */
+  align-items: flex-start;
+  justify-content: center;
+  overflow: hidden;
+  min-height: 0;
+}
 
 .office-overlay-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--office-top);
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 10px 16px;
   color: #eef0f4;
+  /* 浮在画布上 ⇒ 给一层暗角渐变，保证浅色的房间顶部也能看清标题 */
+  background: linear-gradient(180deg, rgba(10, 12, 16, 0.72), rgba(10, 12, 16, 0));
+  /* ⛔ 顶栏默认不吃点击：它压在画布上，若拦截事件则画布最上沿的角色点不中。
+     只有关闭按钮单独把事件收回来。 */
+  pointer-events: none;
+  user-select: none;
 }
 
 .office-overlay-title { display: flex; flex-direction: column; gap: 2px; }
@@ -42,31 +73,47 @@
   background: rgba(255, 255, 255, 0.08);
   color: #eef0f4;
   cursor: pointer;
+  pointer-events: auto;
 }
 .office-overlay-close:hover { background: rgba(255, 255, 255, 0.16); }
 
-.office-overlay-body {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 0;
-  padding: 4px 16px 16px;
-}
-
-/* 画布保持 3:2，随容器缩放；像素渲染交给 canvas 内部（imageSmoothingEnabled=false） */
+/* 画布：尺寸由 JS 按 cover 规则写死（⛔ 不能用 max-width/max-height —— 那只缩不放；
+   ⛔ 也不能用 object-fit:cover —— 元素盒与渲染区不一致会让点击命中整体偏移）。
+   `flex: none` 是必须的：否则 flex 会把超出容器的子项**压回去**，cover 就失效了。 */
 .office-pixel-canvas {
-  max-width: 100%;
-  max-height: 100%;
-  aspect-ratio: 3 / 2;
-  border-radius: 10px;
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
+  flex: none;
+  display: block;
   background: #dfe5ec;
   cursor: pointer;
+  /* 像素风：缩放交给最近的整数倍渲染管线（imageSmoothing 由 canvas 内部关闭） */
+  image-rendering: pixelated;
 }
 
 .office-overlay-empty {
   position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(16, 18, 22, 0.78);
   color: #eef0f4;
   font-size: 13px;
+}
+
+/* ⭐ 「点了没反应」的显式提示（10-05 晚）：点了一个还没有会话的成员时给出原因 */
+.office-overlay-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(16, 18, 22, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #eef0f4;
+  font-size: 12px;
+  pointer-events: none;
 }

@@ -24,6 +24,9 @@ import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtin
 import { DELEGATE_RAIL_LINGER_MS, IDENTITY_ONBOARD_INSTRUCTIONS, IDENTITY_ONBOARD_TOOL, MEMBER_LABELS, NOTICE_MAX, NOTICE_TTL_MS, QUICK_SITES } from "../../../app-view/constants";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../app-view/types";
 import type { Bag } from "../bag-types";
+/* ⭐ 像素办公室 · 事件面（10-05 晚）：把引擎 item 事件按会话记给办公室显示器用。
+   ⛔ 域边界：这里只**喂数据**，办公室域自己决定怎么演（渲染层域组件禁止反向依赖 app-state）。 */
+import { noteOfficeActivity } from "../../../team-office";
 import { handleEventRouter1 } from "./event-router/01-status";
 import { handleEventRouter2 } from "./event-router/02-request";
 import { handleEventRouter3 } from "./event-router/03-thread-id";
@@ -312,6 +315,12 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
       if (event.kind === "request" && event.id !== undefined && event.method) { if (handleEventRouter2(bag, event)) return; }
       if (event.kind !== "notification") return;
       const params = event.params ?? {};
+      /* ⭐ 像素办公室 · 事件面（10-05 晚，用户要求「把对话框里出现的所有事件接入显示器统一展示」）。
+         ⛔⛔ 必须放在下面那条 `params.threadId !== 当前会话` 过滤**之前**：
+           办公室里的成员（团队成员 / 被调度子会话 / 专家）**全是后台会话**，
+           放到过滤之后 ⇒ 它们的事件一条都到不了办公室 ⇒ 显示器只会演屏保。
+         ⚠️ 内部先按方法名短路（只认 item/started|completed），不会成为流式热路径。 */
+      if (params.threadId) noteOfficeActivity(params, event.method ?? "");
       // ── 跨会话生命周期事件：即使属于后台会话也要先处理，用于维护运行指示器 ──
       // 侧边栏转圈必须跟着「真正在运行的会话」，不能因为切到别的会话就跟着跑过去。
       // 这些事件不能被下面的 threadId 过滤挡掉，否则切走后后台会话的

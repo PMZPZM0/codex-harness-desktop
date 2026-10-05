@@ -21,8 +21,12 @@ import {
   CANVAS_H, CANVAS_W, COL_IDLE, FRAME_H, FRAME_W, SEATS, SIT_FRAMES, SPRITE_SCALE, WALK_CYCLE,
   type OfficeMemberState,
 } from "./office-format";
-import { OfficeSim } from "./office-sim";
-import { drawScreen, screenModeOf } from "./office-screen";
+import { OfficeSim, phaseElapsedMs, type Agent } from "./office-sim";
+import type { OfficeActivityKind } from "./office-activity";
+import {
+  drawScreen, effectivePhase, eventWordZhOf, screenModeOf, screensaverMode, TOOL_SCREEN_MODES,
+  type RunPhase, type ScreenMode,
+} from "./office-screen";
 
 const CHAR_URLS = [char0, char1, char2, char3, char4, char5];
 
@@ -47,17 +51,39 @@ function hashId(id: string): number {
   return h >>> 0;
 }
 
+/**
+ * 宿主喂进来的**真实事件状态**（只影响显示器内容 + 是否派人离席）。
+ * ⛔⛔ 10-05 晚改：原来是 `{ activity, thinking, waiting, reporting }` 三个布尔 ——
+ *   宿主**编不出**真实值（`reporting` 被写成"关键词没命中" ⇒ 敲代码屏永远不出现），
+ *   用户报「事件状态反馈未接通，操作后没有任何响应」根因就在这里。
+ *   ⇒ 换成"真实阶段 + 真实产出量 + 阶段起始时刻"，全部可从 run 记录如实推出。
+ */
+export type OfficeEventState = {
+  /** 真实运行阶段（none = 无运行信息 ⇒ 屏保） */
+  phase: RunPhase;
+  /** 阶段起始的**绝对**时刻（epoch ms；0 = 未知，由 sim 按首次观测计时） */
+  sinceMs: number;
+  /** 完成/失败时的总用时（跑动中给 0 ⇒ 屏面实时算） */
+  durationMs: number;
+  /** 本轮**真实产出字数**（report 屏的进度条按它增长） */
+  chars: number;
+  /** ⭐ 本次委派的身份（**变化 = 有新任务派下来** ⇒ 播"任务派发"动画）。
+   *  专家团取主进程给的 `runId`；被调度会话没有 runId ⇒ 用 `起始时刻` 代替
+   *  （同一个会话再次被派单 ⇒ startedAt 必变）。 */
+  runId: string;
+  /** ⭐ 该成员**最近一条真实事件**（打开浏览器 / 写文件 / 搜文件 / 跑命令…）。
+   *  来自 `office-activity` 事件面（引擎 item 事件，与对话框同一套判据）。
+   *  ⛔ 这是"显示器演什么"的**主输入**：阶段只回答"这条命跑到哪了"，
+   *    回答不了"他此刻在打开浏览器还是改文件"。 */
+  event: { kind: OfficeActivityKind; detail: string; elapsedMs: number } | null;
+};
+
 export type OfficeCanvasProps = {
   members: OfficeMemberState[];
   onOpenMember?: (memberId: string) => void;
-  /** 10-04 事件驱动：取某成员的真实事件状态（null = 该成员当下无事件）。
-   *  ⛔ 由上层从 `TeamMemberRunRecord` 派生（不订阅引擎，见 TeamOfficePreview 注释）。 */
-  eventStateOf?: (memberId: string) => {
-    activity: null | "book" | "water" | "toilet" | "run" | "gym";
-    thinking: boolean;
-    waiting: boolean;
-    reporting: boolean;
-  } | null;
+  /** 取某成员的真实事件状态（null = 该成员当下无运行信息）。
+   *  ⛔ 由上层从 run 记录派生（不订阅引擎，见 TeamOfficePreview 注释）。 */
+  eventStateOf?: (memberId: string) => OfficeEventState | null;
 };
 
 /** 加载一张图（resolve 后才用；失败 resolve null 绝不 reject —— 一张图挂了别拖死整层）。 */
@@ -70,11 +96,37 @@ function loadImage(url: string): Promise<HTMLImageElement | null> {
   });
 }
 
+/** 角色名牌下的状态词（⭐ 10-05 晚新增：把"这人什么状态"从**屏面里**也搬到**名牌上**）。
+ *  ⛔ 为什么两处都要：屏面只有 50×34（缩放到窗口里也就几十像素），远看只能看出颜色；
+ *    名牌是画布上字号最大的元素，状态放这儿才"看得见"（这正是用户说的"没有任何响应"）。 */
+function statusOf(a: Agent, nowMs: number): { text: string; color: string } {
+  /* ⛔ 顺序 = 屏幕的优先级（见 screenModeOf）：终态 > 事件 > 阶段 > 离席 > 待机。
+     两处口径必须一致 —— 否则会出现"名牌说已完成、屏幕上还在滚命令"。 */
+  const phase = effectivePhase(a.phase, a.phaseSince, nowMs);
+  if (phase === "failed") return { text: "失败", color: "#e0705f" };
+  if (phase === "done") return { text: "已完成", color: "#6ed49a" };
+  if (a.event) {
+    const s = Math.floor(a.eventElapsedMs / 1000);
+    const word = eventWordZhOf(a.event);
+    return { text: s >= 1 ? `${word} ${s}s` : word, color: "#7fd6a8" };
+  }
+  if (phase === "thinking" || phase === "waiting" || phase === "writing" || phase === "reporting") {
+    const s = Math.floor(phaseElapsedMs(a, nowMs) / 1000);
+    return { text: s >= 1 ? `运行中 ${s}s` : "运行中", color: "#7fd6a8" };
+  }
+  if (a.activity) return { text: "离席", color: "#e8c76a" };
+  if (a.mode === "work") return { text: "开工中", color: "#7fd6a8" };
+  return { text: "待机", color: "#8ea3b8" };
+}
+
 export function OfficeCanvas({ members, onOpenMember, eventStateOf }: OfficeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const membersRef = useRef(members);
   const openRef = useRef(onOpenMember);
   const eventRef = useRef(eventStateOf);
+  /* 悬停的成员 id（⭐ 10-05 晚新增）：画布上"能点"这件事原来**没有任何视觉提示**，
+     用户点空处/点没会话的人 ⇒ 静默无反应，正是"操作后没有任何响应"的一半原因。 */
+  const hoverRef = useRef<string | null>(null);
   membersRef.current = members;
   openRef.current = onOpenMember;
   eventRef.current = eventStateOf;
@@ -86,10 +138,41 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf }: OfficeCanv
     if (!ctx) return;
     let raf = 0;
     let disposed = false;
+    let ro: ResizeObserver | null = null;
+
+    /* ── 全屏铺满（⭐ 10-05 晚）───────────────────────────────────────────
+     * ⛔ 用户报「画面未铺满全屏，只显示在中间区域」。根因：CSS 只给了
+     *   `max-width/max-height:100%` —— 那**只能缩小、不能放大**，而画布固有尺寸
+     *   就是 960×640 ⇒ 窗口一大就只是居中留黑边。
+     * ✅ 改成 cover：按 max(sw/960, sh/640) 算缩放，**显式写死画布 CSS 尺寸**，
+     *   溢出部分由舞台容器（overflow:hidden）裁掉 ⇒ 永远铺满、且保持 3:2 比例
+     *   （⛔ 不能拉伸：像素风一旦非等比缩放，像素就不是方块了）。
+     * ⛔⛔ 为什么不用 CSS `object-fit: cover`：那会让元素盒子与实际渲染区不一致，
+     *   而点击命中算的是 `getBoundingClientRect()` ⇒ 命中点会整体偏移（人物点不中）。
+     *   显式设置尺寸则 rect 就是渲染区，命中天然正确。 */
+    const fitCover = () => {
+      const stage = canvas.parentElement;
+      if (!stage) return;
+      const sw = stage.clientWidth;
+      const sh = stage.clientHeight;
+      if (sw <= 0 || sh <= 0) return;
+      const scale = Math.max(sw / CANVAS_W, sh / CANVAS_H);
+      const w = Math.round(CANVAS_W * scale);
+      const h = Math.round(CANVAS_H * scale);
+      if (canvas.style.width !== `${w}px`) canvas.style.width = `${w}px`;
+      if (canvas.style.height !== `${h}px`) canvas.style.height = `${h}px`;
+    };
 
     void (async () => {
       const [bg, ...chars] = await Promise.all([loadImage(bgUrl), ...CHAR_URLS.map(loadImage)]);
       if (disposed) return;
+
+      fitCover();
+      if (typeof ResizeObserver !== "undefined") {
+        ro = new ResizeObserver(fitCover);
+        if (canvas.parentElement) ro.observe(canvas.parentElement);
+      }
+
       /* ⛔⛔ 2026-10-04 用户报「每次打开办公室预览，人物就重新进办公室」——
          这里原本是 `new OfficeSim()`，而**每次打开预览 = 本组件重新挂载**
          ⇒ 新 sim ⇒ 成员回到门口初始位置 (`x:64,y:596`) ⇒ 每次都重播进场。
@@ -104,15 +187,16 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf }: OfficeCanv
       const draw = (now: number) => {
         const dt = Math.min(64, now - last);
         last = now;
+        const nowMs = Date.now();
 
         // ── 数据同步（4Hz 足够：成员状态本来就是低频变化） ──
         if (now - lastSync > 250) {
           lastSync = now;
-          sim.sync(membersRef.current, Date.now());
+          sim.sync(membersRef.current, nowMs);
           /* ⛔⛔ 10-04 事件驱动：把**真实事件**灌进 sim。
              两件事分开：
                · setEventState ⇒ 只改显示器画什么（不驱动移动）
-               · sendTo⇒ 真的派人去对应 POI（书架/饮水机/卫生间/跑步机/哑铃）
+               · sendTo ⇒ 真的派人去对应 POI（书架/饮水机/卫生间/跑步机/哑铃）
              ⚠️ 4Hz 派单会不会反复派？sendTo 内部有「已在途/已在做同一件事就拒」，
                所以同一条事件最多派一次；换任务（query 变了）才会派新的。 */
           const es = eventRef.current;
@@ -120,12 +204,20 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf }: OfficeCanv
             for (const a of sim.agents) {
               const st = es(a.id);
               sim.setEventState(a.id, {
-                thinking: Boolean(st?.thinking),
-                waiting: Boolean(st?.waiting),
-                reporting: Boolean(st?.reporting),
+                phase: st?.phase ?? "none",
+                since: st?.sinceMs ?? 0,
+                chars: st?.chars ?? 0,
+                durationMs: st?.durationMs ?? 0,
+                event: st?.event?.kind ?? null,
+                eventDetail: st?.event?.detail ?? "",
+                eventElapsedMs: st?.event?.elapsedMs ?? 0,
+                runId: st?.runId ?? "",
               });
-              if (st?.activity) sim.sendTo(a.id, st.activity, Date.now());
             }
+            /* ⛔ 这里**刻意不再**按事件派人出门（用户 10-05：「有工作就不要闲逛」）——
+               曾经按任务里的关键词把在跑的人派去书架/饮水机表演，现在一律不出门：
+               在跑的人坐工位，屏幕照实演他手上的事（浏览器/写文件/跑命令…）。
+               出门只剩一条路径：sim 内部空闲成员的随机休息（`step` → `sendTo`）。 */
           }
         }
         sim.tick(dt);
@@ -138,6 +230,21 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf }: OfficeCanv
           ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
         }
 
+        // ── 悬停落点（画在场景最底层：地面光圈，不遮人物）──
+        const hoverId = hoverRef.current;
+        if (hoverId) {
+          const ha = sim.agents.find((x) => x.id === hoverId);
+          if (ha) {
+            ctx.save();
+            ctx.globalAlpha = 0.3;
+            ctx.fillStyle = "#ffe9a8";
+            ctx.beginPath();
+            ctx.ellipse(ha.x, ha.y + 24, 26, 9, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+
         // ── 显示器内容（10-04 用户报「显示器像一张图、没有动画」）──
         // ⛔ 必须画在**背景之后、角色之前**：背景图把六个显示器烙死了，内容区是叠在
         //   屏面上的；而角色要能走到屏前面（路过后被挡住才对）。
@@ -145,24 +252,40 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf }: OfficeCanv
         //   不能跟着人飘到饮水机那儿去。
         // ⛔ 每个座位都画（没人也画 off=熄屏）—— 否则"有人来了屏幕才亮"这个状态变化
         //   体现不出来，显示器看上去仍是静态图。
+        /* 每个工位这一帧画的是哪种画面 —— 第二遍画人物时要拿它推**姿态**
+           （姿态与屏幕必须同源，见下面那段的注释）。 */
+        const seatMode: ScreenMode[] = [];
         for (let i = 0; i < SEATS.length; i++) {
           const seat = SEATS[i];
           const sc = seat?.screen;
           if (!seat || !sc) continue;
           const a = sim.agents.find((x) => x.seatIndex === i);
-          const mode = a
-            ? screenModeOf({
-                activity: a.activity,
-                mode: a.mode,
-                occupied: true,
-                thinking: a.thinking,
-                waiting: a.waiting,
-                reporting: a.reporting,
-              })
+          /* ⛔ 完成/失败反馈有**时效**（DONE_HOLD_MS 后回到屏保）——
+             这个裁剪必须在绘制侧按绝对时刻判：宿主只在 React 重渲染时才重算阶段，
+             而用户可能一直开着办公室不动。 */
+          const phase = a ? effectivePhase(a.phase, a.phaseSince, nowMs) : "none";
+          const seed = a ? hashId(a.id) : i + 1;
+          let mode: ScreenMode = a
+            ? screenModeOf({ activity: a.activity, mode: a.mode, phase, event: a.event, occupied: true })
             : "off";
+          /* ⭐ 屏保轮播（时钟 → 电视剧 → 游戏）：`idle` 只是"该放屏保了"的意图，
+             具体放哪一档在这里定（需要时间与种子，映射层拿不到）。
+             ⛔ 用 seed 错开 ⇒ 六个工位不同时切档（同时切像整片屏一起闪）。 */
+          if (mode === "idle") mode = screensaverMode(now / 1000, seed);
+          /* 计时口径：**由事件驱动的模式**显示"这件事跑了多久"，
+             其余显示"这条命跑了多久"。⛔ 别混用（会把"写了 12 秒"显示成"开工 12 秒"）。 */
+          const eventDriven = TOOL_SCREEN_MODES.has(mode) && a?.event != null;
+          seatMode[i] = mode;
           drawScreen(
-            ctx, now / 1000, mode, a ? hashId(a.id) : i + 1,
+            ctx, now / 1000, mode, seed,
             Math.round(seat.x + sc.x), Math.round(seat.y + sc.y), sc.w, sc.h,
+            a
+              ? {
+                elapsedMs: eventDriven ? a.eventElapsedMs : phaseElapsedMs(a, nowMs),
+                chars: a.chars,
+                detail: a.eventDetail,
+              }
+              : undefined,
           );
         }
 
@@ -178,7 +301,15 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf }: OfficeCanv
           const row = a.action === "sit" ? 1 /* 朝上坐（背对观众对着显示器） */ : a.facing;
           const dw = FRAME_W * SPRITE_SCALE;
           const dh = FRAME_H * SPRITE_SCALE;
-          const dx = Math.round(a.x - dw / 2);
+          /* ⛔⛔ 姿态与屏幕**同源**（用户 10-05：「确保办公室预览中各事件对应的卡通人物
+             动画与显示器内容严格一一联动对应」）：姿态由**同一个 `mode`** 推出来，
+             ⛔ 不另判一套条件 —— 两套条件必然漂（屏幕上放着剧、人却在猛敲键盘）。
+             · 屏幕是 video/game（摸鱼）⇒ `slack`：人**后仰看屏幕**（微微左右晃 + 举着手机）
+             · 否则按 sim 的 action/mode 走原来的敲键盘 / 静坐 / 举杯。 */
+          const scr = seatMode[a.seatIndex] ?? "off";
+          const slack = a.action === "sit" && (scr === "video" || scr === "game");
+          const swing = slack ? Math.round(Math.sin(a.frameClock * 1.3)) : 0;
+          const dx = Math.round(a.x - dw / 2) + swing;
           /* ⛔ 坐姿锚点从**该座位椅背顶**推导（10-01 实测：两排椅子相对座位高度差 25px，
              统一公式必然弄错一排——上排人物整个被椅背重贴盖掉「头都没了」）：
              人物顶 = 椅背顶 - 31（露头肩 31px，与下排自然态一致）；走路/站立 = 脚底 y+26。 */
@@ -208,9 +339,28 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf }: OfficeCanv
              · activity==="tea"：右手举杯到嘴边（杯子 + 握持手），左手放键盘
              手 y = 椅背顶 - 28（键盘面，从 backrest 推导）；⛔ 画在椅背重贴之后（桌面最上层）。 */
           if (a.action === "sit") {
-            const work = a.mode === "work";
+            const work = a.mode === "work" && !slack;
             const backTop = a.y + r.dy;
-            if (a.activity === "tea") {
+            if (slack) {
+              /* 摸鱼姿态（10-05 晚，与 video/game 屏**成对**出现）：
+                 一只手举着"手机/遥控器"贴在脸前、另一只手撂在桌上不敲键盘、
+                 身体随 swing 轻晃、头顶偶尔飘一个音符（每 ~3.4s 一个，飘 1.2s）。 */
+              ctx.fillStyle = "#2b323c"; // 举着的屏幕（放在肩侧偏下 ⇒ 一眼是"举着手机看"，不是"头上顶着东西"）
+              ctx.fillRect(a.x + 11 + swing, dy + 22, 8, 12);
+              ctx.fillStyle = "#7fd6a8"; // 屏幕里的画面（绿光，与"看剧"呼应）
+              ctx.fillRect(a.x + 12 + swing, dy + 23, 6, 8);
+              ctx.fillStyle = "#e8b08a"; // 托着它的手
+              ctx.fillRect(a.x + 10 + swing, dy + 33, 5, 5);
+              ctx.fillStyle = "#e8b08a"; // 另一只手撂在桌上（⛔ 没有敲键盘动作）
+              ctx.fillRect(a.x - 16 + swing, backTop - 27, 4, 5);
+              const note = (a.frameClock * 0.29 + (hashId(a.id) % 7) / 7) % 1;
+              if (note < 0.35) {
+                const lift = Math.round((note / 0.35) * 14);
+                ctx.fillStyle = `rgba(232,199,106,${(1 - note / 0.35).toFixed(2)})`;
+                ctx.fillRect(a.x + 14 + swing, dy - 6 - lift, 3, 3);
+                ctx.fillRect(a.x + 16 + swing, dy - 11 - lift, 2, 6);
+              }
+            } else if (a.activity === "tea") {
               // 举杯喝水：杯举到头侧（人物顶+20 处），右手托杯，左手仍在键盘上
               const cupY = dy + 18;
               ctx.fillStyle = "#dfe8f2"; ctx.fillRect(a.x + 11, cupY, 6, 8); // 杯身
@@ -235,15 +385,84 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf }: OfficeCanv
             }
           }
         }
-        // ── 第二遍：名字牌 + 气泡（UI 层，永远在最上）──
+        /* ── 任务派发动画（⭐ 10-05 晚 用户要求「为任务派发增加对应的动画表现」）──
+           ⛔ 画在**人物之后、名牌之前**：任务卡是从桌面飞过去的，必须能盖住桌椅；
+             但⛔ 不能盖住名牌/气泡（那两样是"谁是谁、说了什么"的唯一出口）。
+           ⛔ 起点固定取座位 0：两条成员来源都把**派发方**放在第 0 位
+             （专家团 = 主理人；普通会话 = 「我」，见 TeamOfficePreview 的 members 构造）。 */
+        for (const fx of sim.dispatchFx) {
+          const from = SEATS[fx.from];
+          const to = sim.agents.find((x) => x.seatIndex === fx.to);
+          if (!from || !to) continue;
+          const p = Math.min(1, Math.max(0, (nowMs - fx.at) / 1600));
+          const sx = from.x;
+          const sy = from.y - 44;
+          const tx = to.x;
+          const ty = to.y - 44;
+          const ctrlX = (sx + tx) / 2;
+          const ctrlY = Math.min(sy, ty) - 64;                 // 抛物线控制点在上方 ⇒ 卡片"抛"过去
+          const mx = (1 - p) * (1 - p) * sx + 2 * (1 - p) * p * ctrlX + p * p * tx;
+          const my = (1 - p) * (1 - p) * sy + 2 * (1 - p) * p * ctrlY + p * p * ty;
+          // 拖尾（同一条二次曲线取前半段，越靠近卡片越亮）
+          ctx.strokeStyle = `rgba(232,199,106,${(0.5 * (1 - p)).toFixed(2)})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          for (let s = 0; s <= 10; s += 1) {
+            const q = p * (s / 10);
+            const qx = (1 - q) * (1 - q) * sx + 2 * (1 - q) * q * ctrlX + q * q * tx;
+            const qy = (1 - q) * (1 - q) * sy + 2 * (1 - q) * q * ctrlY + q * q * ty;
+            if (s === 0) ctx.moveTo(qx, qy);
+            else ctx.lineTo(qx, qy);
+          }
+          ctx.stroke();
+          // 任务卡（一张小纸片：黄底 + 两行"字"）
+          ctx.save();
+          ctx.translate(mx, my);
+          ctx.rotate(Math.sin(p * Math.PI) * 0.5);
+          ctx.fillStyle = "#fdf3c8";
+          ctx.fillRect(-8, -6, 16, 12);
+          ctx.fillStyle = "#8a6b1f";
+          ctx.fillRect(-6, -4, 12, 2);
+          ctx.fillRect(-6, -1, 8, 2);
+          ctx.fillRect(-6, 2, 10, 2);
+          ctx.restore();
+          // 落点高亮环（卡片到达时闪一下 ⇒ 明确"交给谁了"）
+          if (p > 0.86) {
+            ctx.strokeStyle = `rgba(232,199,106,${(1 - (p - 0.86) / 0.14).toFixed(2)})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.ellipse(tx, ty + 68, 26, 10, 0, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+
+        // ── 第二遍：名字牌（含**真实状态**）+ 气泡（UI 层，永远在最上）──
         for (const a of sorted) {
-          ctx.font = "11px ui-sans-serif, system-ui";
+          const st = statusOf(a, nowMs);
           ctx.textAlign = "center";
-          ctx.fillStyle = "rgba(28,30,36,0.72)";
-          const tw = ctx.measureText(a.name).width;
-          ctx.fillRect(a.x - tw / 2 - 5, a.y + 30, tw + 10, 15);
+          ctx.font = "11px ui-sans-serif, system-ui";
+          const nameW = ctx.measureText(a.name).width;
+          ctx.font = "10px ui-sans-serif, system-ui";
+          const stW = ctx.measureText(st.text).width;
+          const pw = Math.max(nameW, stW) + 12;
+          const plx = a.x - pw / 2;
+          const ply = a.y + 30;
+          ctx.fillStyle = "rgba(28,30,36,0.78)";
+          ctx.beginPath();
+          ctx.roundRect(plx, ply, pw, 26, 4);
+          ctx.fill();
+          /* 悬停：名牌描一圈暖色边 —— 与地面光圈一起构成"这个能点"的提示 */
+          if (hoverId === a.id) {
+            ctx.strokeStyle = "rgba(255,233,168,0.85)";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+          ctx.font = "11px ui-sans-serif, system-ui";
           ctx.fillStyle = "#f4f5f7";
-          ctx.fillText(a.name, a.x, a.y + 41);
+          ctx.fillText(a.name, a.x, ply + 11);
+          ctx.font = "10px ui-sans-serif, system-ui";
+          ctx.fillStyle = st.color;
+          ctx.fillText(st.text, a.x, ply + 23);
 
           if (a.bubble) {
             ctx.font = "12px ui-sans-serif, system-ui";
@@ -272,24 +491,47 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf }: OfficeCanv
       };
       raf = requestAnimationFrame(draw);
 
-      // 点击 → 找最近的角色（打开会话）
-      const onClick = (ev: MouseEvent) => {
+      /* 命中判定：取离点击点最近的角色。
+       * ⛔ 悬停与点击**共用同一个判定**（`hitTest`）—— 各写一份必然漂：
+       *   看着有光圈却点不中（或反过来），是最难查的那种"操作没反应"。 */
+      const hitTest = (clientX: number, clientY: number): Agent | null => {
         const rect = canvas.getBoundingClientRect();
-        const sx = ((ev.clientX - rect.left) / rect.width) * CANVAS_W;
-        const sy = ((ev.clientY - rect.top) / rect.height) * CANVAS_H;
-        let best: { d: number; id: string } | null = null;
+        if (rect.width <= 0 || rect.height <= 0) return null;
+        const sx = ((clientX - rect.left) / rect.width) * CANVAS_W;
+        const sy = ((clientY - rect.top) / rect.height) * CANVAS_H;
+        let best: { d: number; a: Agent } | null = null;
         for (const a of sim.agents) {
           const d = Math.hypot(a.x - sx, a.y - 26 - sy);
-          if (d < 48 && (!best || d < best.d)) best = { d, id: a.id };
+          if (d < 48 && (!best || d < best.d)) best = { d, a };
         }
-        if (best) openRef.current?.(best.id);
+        return best?.a ?? null;
+      };
+      const onClick = (ev: MouseEvent) => {
+        const a = hitTest(ev.clientX, ev.clientY);
+        if (a) openRef.current?.(a.id);
+      };
+      const onMove = (ev: MouseEvent) => {
+        const a = hitTest(ev.clientX, ev.clientY);
+        const id = a?.id ?? null;
+        if (hoverRef.current !== id) {
+          hoverRef.current = id;
+          canvas.style.cursor = id ? "pointer" : "default";
+        }
+      };
+      const onLeave = () => {
+        if (hoverRef.current !== null) {
+          hoverRef.current = null;
+          canvas.style.cursor = "default";
+        }
       };
       canvas.addEventListener("click", onClick);
-      return () => canvas.removeEventListener("click", onClick);
+      canvas.addEventListener("mousemove", onMove);
+      canvas.addEventListener("mouseleave", onLeave);
     })().catch(() => undefined);
 
     return () => {
       disposed = true;
+      if (ro) ro.disconnect();
       if (raf) cancelAnimationFrame(raf);
     };
   }, []);
