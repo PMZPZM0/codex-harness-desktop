@@ -30,7 +30,7 @@ export function normalizeWallpaper(raw) {
   const mode = WALLPAPER_MODES.includes(r.mode) ? r.mode : "off";
   const pattern = WALLPAPER_PATTERNS.some((p) => p.id === r.pattern) ? r.pattern : "dots";
   const opacityNum = Number(r.opacity);
-  const opacity = Number.isFinite(opacityNum) ? Math.min(16, Math.max(2, Math.round(opacityNum))) : 8;
+  const opacity = Number.isFinite(opacityNum) ? Math.min(40, Math.max(2, Math.round(opacityNum))) : 16;
   const image = typeof r.image === "string" ? r.image : "";
   return { mode, pattern, opacity, image };
 }

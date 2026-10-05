@@ -3,6 +3,11 @@
    层叠：本层 z-index:-1 挂在 .timeline-wrap（relative）内 ⇒ 永远在消息内容之下；
    pointer-events:none ⇒ 永不挡交互。 */
 
+/* ⛔⛔ 10-05 用户实测「切了没反应」：timeline-wrap 是 relative+z-auto ⇒ **不是堆叠上下文**，
+   壁纸层的 z-index:-1 落到根堆叠上下文 ⇒ 被 app-shell 的 var(--bg) 盖死（假功能观感）。
+   isolation 强制 timeline-wrap 成为堆叠上下文：负 z 层关在聊天区内 —— 背景透明之上、消息内容之下。 */
+.timeline-wrap { isolation: isolate; }
+
 .wallpaper-layer { position: absolute; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
 
 /* 图案档：SVG 走 mask（形状=alpha），颜色 = --accent */
@@ -18,3 +23,15 @@
 @media (prefers-reduced-motion: reduce) {
   .wallpaper-layer { animation: none !important; }
 }
+
+/* ── 外观设置段 ── */
+.theme-switch.five { grid-template-columns: repeat(5, 1fr); }
+.wallpaper-pattern-grid { display: grid; grid-template-columns: repeat(6, 44px); gap: 8px; }
+.wallpaper-swatch { width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 10px; cursor: pointer; }
+.wallpaper-swatch:hover { border-color: var(--accent); }
+.wallpaper-swatch.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.wallpaper-swatch-face { display: block; width: 100%; height: 100%; background-color: var(--accent); mask-size: 12px 12px; -webkit-mask-size: 12px 12px; mask-repeat: repeat; -webkit-mask-repeat: repeat; opacity: 0.75; }
+.wallpaper-custom-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wallpaper-custom-path { color: var(--muted); font-size: 12px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wallpaper-opacity { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 12px; }
+.wallpaper-opacity-value { color: var(--muted); min-width: 34px; }

@@ -32,7 +32,7 @@ function ParticlesInner({ color }: { color: string }) {
         particles: {
           number: { value: 42 },
           color: { value: [color] },
-          opacity: { value: 0.4 },
+          opacity: { value: 0.55 },
           size: { value: { min: 1, max: 2.6 } },
           move: { enable: !prefersReducedMotion(), speed: 0.55, direction: "none", outModes: "out" },
           links: { enable: false },

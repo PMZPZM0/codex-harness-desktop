@@ -34,7 +34,8 @@ function VantaPane() {
           mouseControls: { touch: false, mouse: true },
           // 主题主色转 hex（vanta 只吃具体色值）；ponytail: 挂载时取一次，运行中换主题不跟随
           color: (getComputedStyle(document.documentElement).getPropertyValue("--accent").trim().match(/^#[0-9a-fA-F]{3,8}$/) ?? ["#7a9e7e"])[0],
-          backgroundColor: "rgba(0,0,0,0)",
+          // ⛔ vanta 不支持透明背景（实测渲染成黑底、跟浅色主题打架）—— 背景色取主题 --bg
+          backgroundColor: (getComputedStyle(document.documentElement).getPropertyValue("--bg").trim().match(/^#[0-9a-fA-F]{3,8}$/) ?? ["#f6f6f4"])[0],
           maxDistance: 22,
           spacing: 18,
         }) as { destroy: () => void };
@@ -61,8 +62,11 @@ export function WallpaperLayer() {
   if (cfg.mode === "off") return null;
   // ⛔ 减动效偏好下，粒子/3D 一律退回静态图案（accessibility 基本盘）
   const mode = (cfg.mode === "particles" || cfg.mode === "vanta") && prefersReducedMotion() ? "pattern" : cfg.mode;
+  /* ⛔ 浓度只作用于图案/自定义图：粒子/3D 有自己的强度语义，被 8% 层透明度压住 = 全部隐身
+     （10-05 用户实测「切了全没反应」的真凶之二——其一见 28-wallpaper.css 的 isolation 注释）。 */
+  const opacity = mode === "pattern" || mode === "custom" ? cfg.opacity / 100 : 1;
   return (
-    <div className="wallpaper-layer" data-mode={mode} aria-hidden style={{ opacity: cfg.opacity / 100 }}>
+    <div className="wallpaper-layer" data-mode={mode} aria-hidden style={{ opacity }}>
       {mode === "pattern" && (
         <div
           className="wallpaper-pattern"

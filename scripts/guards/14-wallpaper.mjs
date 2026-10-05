@@ -29,7 +29,8 @@ const timeline = codeOnly(read("src/features/app-view/AppView/02-main-stage/01-t
 
 /* ── 数据面 ── */
 ok(libSrc.includes("off") && libSrc.includes("particles") && libSrc.includes("vanta") && libSrc.includes("custom"), "模式注册表含 off/pattern/particles/vanta/custom（归一化白名单）");
-ok(libSrc.includes("Math.min(16, Math.max") && libDts.includes("normalizeWallpaper"), "浓度归一夹在 2~16%（避免 100% 壁纸盖脸 / 0% 看不见）");
+ok(libSrc.includes("Math.min(40, Math.max") && libDts.includes("normalizeWallpaper"), "浓度归一夹在 2~40%（避免满壁纸盖脸 / 0% 看不见）");
+ok(layerSrc.includes("cfg.opacity / 100 : 1"), "浓度只压图案/自定义图（粒子/3D 被层透明度压住 = 全部隐身，10-05 实测「假功能」观感的真凶之一）");
 const patternCount = (libSrc.match(/id: "/g) ?? []).length;
 ok(patternCount >= 6, "图案库 ≥6 款（mask data-uri，颜色由层 background 提供；实测 " + patternCount + "）");
 ok(cssSrc.includes("mask-size: 24px 24px") && cssSrc.includes("background-color: var(--accent)"), "图案层用 --accent 上色（token，不写死色值）");
