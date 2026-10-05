@@ -381,7 +381,7 @@ export function finish() {
 //    上界不设（新增守卫不该被拦）。
 // ⛔ 同步义务：**改动守卫后必须同步 EXPECTED_CHECKS**（含新增/删除断言）。数字对不上时
 //    报错信息会直接把实测值打出来，照抄回填即可 —— 这是刻意的「必须动手同步」设计。
-const EXPECTED_CHECKS = 3204;   // 10-05 深夜实测回填：HEAD 与本轮 ui-sketch 工作树各跑一次全量预检，均 = 3204。
+const EXPECTED_CHECKS = 3217;   // 3204（10-05 深夜 ui-sketch 轮实测）+ 13 = 【wp】壁纸域（模式注册表/浓度夹取/图案库/accent 上色/层铁律/tsparticles lazy+fullScreen 关/vanta catch+destroy/减动效回退/挂载/设置段/事件广播）。
 // ⚠️ 上一值 3268 是高报：历史回填把**独立守卫**的条数误记进了本计数器（11n【muiipc】54 + 11m 真跑化 3 +
 //    11d【screen】6 = 63；余 1 条为更早轮次漂移）。这些守卫各自是**独立 node 进程**（npm run check 里逐条
 //    串行调用），根本不进 check-preflight 的 checks 计数 ⇒ 把它们加进来 = 高报，等于给"断言凭空消失"留了 64 条宽的缝。
