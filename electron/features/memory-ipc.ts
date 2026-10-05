@@ -27,9 +27,9 @@ import { app } from "electron";
 import { saveAppSettings } from "../app-settings";
 import { ensureBuiltinSkills } from "../builtin-skills";
 import { bundledNodePath, memoryBackendStatus, memoryInstallerPath, type MemoryBackend } from "../memory-backend";
-import { lookupRoleSession } from "../role-memory";
+import { lookupRoleSession, listRoleSessions } from "../role-memory";
 import { agentOfRoleRef, handleFabricWrite } from "../memory-fabric-tool";
-import { buildContext, getMemoryHandles } from "../memory-fabric";
+import { buildContext, getMemoryHandles, listNamespaces, readNamespace } from "../memory-fabric";
 import { syncLocalMemoryConnector } from "../memory-mcp-connector";
 import { CLEANUP_RULES, HYGIENE_ACTION_LABEL, isHygieneAction, planHygiene, suggestedActions } from "../memory-hygiene";
 import type { MemoryCategory, MemoryRemoteConfig } from "../memory-store";
@@ -118,6 +118,7 @@ const MEMORY_CHANNELS = [
   "memory:layers:read", "memory:layers:context", "memory:layers:write",
   "memory:workspace-enabled:read", "memory:workspace-enabled:set",
   "memory:distill", "memory:hygiene:plan", "memory:hygiene:apply",
+  "memory:fabric-namespaces", "memory:fabric-entries",
   "memory:role-context",
 ];
 
@@ -143,6 +144,34 @@ export const memoryFeature = defineFeature<null>({
     const ipcHost = ctx.get<IpcHost>("ipc");
     bindMemorySecure(ctx.get<HostCaps>("host")!);   // 供模块级函数惰性取用（【91】：不在模块体求值）
     if (!ipcHost) throw new Error("memory: 缺少 ipc 服务（宿主未提供）");
+
+    /* ── 统一记忆（fabric）只读通道 ─────────────────────────────────────────
+       ⛔⛔ 这两个通道是**前端能看见新记忆的唯一入口**（10-05 用户报「前端不好看、
+          不好区分」的根因：新作用域的条目前端一个都没接，只看得到旧碎片池）。
+       · fabric-namespaces：命名空间概览（两种作用域 + 条数 + 字符数）⇒ 前端做分区
+       · fabric-entries   ：某个命名空间的条目（含来源智能体 / 权重 / 归档态）⇒ 前端做卡片
+       ⛔ 只读：删除/编辑走既有管理通道，⛔ 不在这里开写口（避免两条写入路径）。
+       ⛔ 工作区**必须由前端传**：「当前管理项目」是渲染层状态（bag.memoryManagementWorkspace），
+          主进程没有 ⇒ 传空就返回空列表（⛔ 不猜路径：对任意目录读扫描等于越界）。 */
+    ipcHost.handle("memory:fabric-namespaces", async (_event, workspace?: string) => {
+      const ws = String(workspace ?? "");
+      if (!ws) return [];
+      return listNamespaces(ws);
+    });
+    ipcHost.handle("memory:fabric-entries", async (_event, input: { workspace?: string; namespace?: string; includeArchived?: boolean }) => {
+      const ws = String(input?.workspace ?? "");
+      const ns = String(input?.namespace ?? "");
+      if (!ws || !ns) return [];
+      const entries = await readNamespace(ws, ns);
+      /* ⛔ 默认过滤已归档（与内核的检索口径一致）—— 前端要显式勾选才看得到历史。 */
+      const list = input?.includeArchived ? entries : entries.filter((e) => e.archivedAt == null);
+      /* ⛔ 排序：重要度降序 → 时间新优先（与注入顺序一致，前端所见 = 模型所读）。 */
+      return list.sort((a, b) => b.weight - a.weight || b.createdAt - a.createdAt);
+    });
+
+    /* 会话↔角色归属表（10-05 记忆前端用）：fabric 的命名空间只带 threadId，
+       前端要靠它把条目归到「哪位专家/哪个子智能体」名下。⛔ 只读，不开写口。 */
+    ipcHost.handle("memory:role-sessions", async () => listRoleSessions(app.getPath("userData")));
 
     ipcHost.handle("memory:list", (_event, category?: string) => memoryStore.list(category));
     ipcHost.handle("memory:search", (_event, query: string, workspace?: string) => memoryStore.search(query, 8, { workspace }));
@@ -223,7 +252,7 @@ export const memoryFeature = defineFeature<null>({
       const agent = found ? agentOfRoleRef(found.ref) : { kind: "main" as const, id: "main", label: "主会话" };
       const handles = await getMemoryHandles({ sessionId: threadId, workspace: ws || undefined, agent });
       const built = await buildContext({ handles, query: input?.query, legacyRole: found?.ref ?? null, workspace: ws || undefined });
-      return { text: built.text, key: handles.session?.namespace ?? "", counts: built.counts };
+      return { text: built.text, key: handles.private?.namespace ?? "", counts: built.counts };
     });
 
     /* ⛔⛔ 统一记忆的**写**入口（10-05 架构改造）：主会话的 `memory_write` 与被调度角色的

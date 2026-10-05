@@ -593,6 +593,12 @@ interface Window {
     verifyMemoryMcp(): Promise<{ code: number | null; result: any; log: string; status: any }>;
     /* 10-05 统一记忆（读）：session 段按 threadId 硬隔离 + project 段全项目共享 + 上一版角色记忆兼容段。主会话与被调度角色走同一个 handler */
     readRoleMemoryContext(input: { threadId?: string; workspace?: string; query?: string }): Promise<{ text: string; key: string; counts: { project: number; session: number; legacy: number } }>;
+    /* 10-05 记忆前端：会话↔角色归属表（fabric 命名空间只带 threadId，靠它归到人） */
+    listRoleSessions(): Promise<{ threadId: string; ref: any; workspace: string; at: number }[]>;
+    /* 10-05 统一记忆只读：命名空间概览（两种作用域 + 条数）—— 前端分区渲染用 */
+    listFabricNamespaces(workspace?: string): Promise<{ namespace: string; scope: string; entries: number; chars: number }[]>;
+    /* 10-05 统一记忆只读：某命名空间的条目（含来源智能体/权重/归档态） */
+    listFabricEntries(input: { workspace?: string; namespace?: string; includeArchived?: boolean }): Promise<any[]>;
     /* 10-05 统一记忆（写）：主会话的 memory_write 走这里；session=本会话私有 / project=全项目共享 */
     writeFabricMemory(input: { threadId?: string; workspace?: string; scope?: string; category?: string; content: string; weight?: number; pinned?: boolean }): Promise<{ ok: boolean; text: string }>;
     saveMemory(input: unknown): Promise<any>;

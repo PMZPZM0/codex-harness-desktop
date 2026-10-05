@@ -1,6 +1,9 @@
 # 统一记忆架构（Unified Memory Fabric）
 
 > 状态：**10-05 实施中** —— 本文件是记忆系统的**架构真相源**。
+> ⚠️ **10-05 晚间修订**：作用域从两级扩到**三层**（用户定稿「私有 + 团内共享 + 项目共享」），
+>   并新增「被调度实例按调度作用域隔离」；前端另立 `src/features/memory-ui`（七类差异化视图，⛔ 界面纯只读）。
+>   下面 §1/§2 的两级表述已被三层取代，⛔ 改代码前以本修订为准。
 > 实现落点：`electron/memory-fabric.ts`（内核）、`electron/memory-fabric-tool.ts`（写入面）、
 > `electron/delegate-memory.ts`（委派侧读）、`electron/features/memory-ipc.ts`（渲染层读）。
 > 守卫：`scripts/guards/11l-memory-fabric.mjs`。⛔ 改架构先改本文件，再改代码。

@@ -160,8 +160,8 @@ export async function runDelegatedTask(input: {
     // 10-05 统一记忆：注入「项目共享段 + 本会话段 + 上一版角色记忆兼容段」，
     // 与主会话**同一个 buildContext**（分两处拼装会出现"派出去的专家拿不到自己刚写的"）。
     role: roleRef ?? undefined,
-  }).catch((): { text: string; fabricSection: string; fabricCounts: { project: number; session: number; legacy: number }; roleKey: string } => (
-    { text: "", fabricSection: "", fabricCounts: { project: 0, session: 0, legacy: 0 }, roleKey: "" }
+  }).catch((): { text: string; fabricSection: string; fabricCounts: { project: number; private: number; team: number; legacy: number }; roleKey: string } => (
+    { text: "", fabricSection: "", fabricCounts: { project: 0, private: 0, team: 0, legacy: 0 }, roleKey: "" }
   ));
 
   const finalQuery = [

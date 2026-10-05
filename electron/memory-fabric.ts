@@ -41,7 +41,14 @@ const FABRIC_DIR = "fabric";
 const ENTRIES_FILE = "entries.jsonl";
 
 /** 注入预算：fabric 段**独立**于 MEMORY_BUDGET（它是额外的一段，不占共享额度）。 */
-export const FABRIC_BUDGET = { project: 3000, session: 4000 } as const;
+export const FABRIC_BUDGET = { project: 3000, team: 2500, private: 4000 } as const;
+
+/** ⛔ 注入时用的作用域标题（⛔ 单一真相源：UI 与注入共用同一套措辞，避免两边说法不一致）。 */
+const SCOPE_TITLES: Record<MemoryScope, string> = {
+  private: "本执行体的私有记忆（只有它自己读得到）",
+  team: "专家团内记忆（同团成员互通，团外读不到）",
+  project: "项目记忆（全体会话与智能体共享）",
+};
 
 /** 单条上限：⛔ 不限长的话模型一次写 10MB 就能把文件撑爆（注入被钳掉但文件还在）。 */
 export const FABRIC_MAX_ENTRY = 2000;
@@ -53,12 +60,28 @@ export const FABRIC_MAX_ENTRIES = 400;
 export const FABRIC_HALF_LIFE_DAYS = 14;
 
 /** 会话记忆保留期（天）：超期归档而非删除（⛔ 归档 ≠ 失忆，见架构文档 §6）。 */
-export const FABRIC_SESSION_RETENTION_DAYS = 90;
+export const FABRIC_PRIVATE_RETENTION_DAYS = 90;
 
 /* ── 类型 ───────────────────────────────────────────────────────────────── */
 
 /** ⛔ 只有两级作用域（用户要求：会话隔离 / 项目共享）。角色是"谁写的"，不是"存在哪"。 */
-export type MemoryScope = "session" | "project";
+/* ── 作用域（三层，10-05 用户定稿）─────────────────────────────────────
+ * ① private —— **每个智能体实例独有**。主会话 / 子智能体 / 专家 / 专家团主 /
+ *    团成员各有一份，⛔ 彼此一条都读不到（用户原话：「主会话与子智能体、专家、
+ *    专家团之间的记忆互不串用」）。
+ * ② team    —— **专家团内共享**。同一团的成员之间互通，⛔ 团外读不到。
+ * ③ project —— **全体共享**。跨会话、跨智能体统一读写（上轮口径保留）。
+ *
+ * ⛔⛔ **被委派实例的可见范围 = 调度作用域**：`runDelegatedTask` 起的那条线
+ * （子智能体 / 专家 / 团成员）**永远读不到主会话的 private 层** ——
+ * 委派是「派它去干一件活」，不是「让它继承你的全部记忆」。
+ * 这条由 `getMemoryHandles` 的 dispatch 模式保证（见那里）。
+ */
+export type MemoryScope = "private" | "team" | "project";
+
+/** ⛔ 旧的 "session" 已并入 "private"：会话记忆的本质是「某个执行体独有」。
+ *  保留别名是为了让既有调用点不必一次全改，但**新代码不许再写 "session"**。 */
+export type LegacyScope = "session";
 
 /** 写入者身份。⛔ 角色**不是存储维度** —— 写进哪个作用域由 scope 决定，不由它决定。 */
 export type MemoryAgentKind = "main" | "subagent" | "expert" | "team-lead" | "team-member" | "system";
@@ -308,7 +331,7 @@ function createHandle(init: HandleInit): MemoryHandle {
       /* ⛔⛔ 写入闸：角色会话（主会话与系统之外）写 project 必须显式 promote。
          project 是全局共享的 —— 一个子智能体把中间结论写进去会污染主会话与所有角色。
          ⛔ 不静默放行：返回可执行提示，让模型转达用户确认后再带 promote 重写。 */
-      if (init.scope === "project" && isRoleAgent(init.agent) && input?.promote !== true) {
+      if ((init.scope === "project" || init.scope === "team") && isRoleAgent(init.agent) && input?.promote !== true) {
         return {
           id,
           written: false,
@@ -387,7 +410,7 @@ function createHandle(init: HandleInit): MemoryHandle {
          （delegate-memory / 渲染层 send 路径）拼在整段外面。理由：显示侧（user-refs /
          thread-backup / rollout-worker）按标记整段剥离，自己另发明标记会让机器块
          漏进用户气泡（守卫【fabric】⑥ 钉着这条）。 */
-      const budget = init.scope === "session" ? FABRIC_BUDGET.session : FABRIC_BUDGET.project;
+      const budget = FABRIC_BUDGET[init.scope] ?? FABRIC_BUDGET.private;
       /* ⛔ 带 query 时**只注入相关的**（`rankEntries` 已保证；这里再过一层是双保险：
          万一有人把 rankEntries 改回"只排序不过滤"，注入就会重新带上噪声）。
          空 query = 常驻注入，那时按重要度全给。 */
@@ -404,7 +427,7 @@ function createHandle(init: HandleInit): MemoryHandle {
           return `- （${e.category}·${who}·${date}·权重 ${e.weight.toFixed(2)}）${e.content}`;
         });
       const { text, cut } = clampText(lines.join("\n"), budget);
-      const title = init.scope === "session" ? "本会话的记忆（仅本会话可见）" : "项目记忆（全体会话与智能体共享）";
+      const title = SCOPE_TITLES[init.scope] ?? SCOPE_TITLES.private;
       const clipped = cut ? `\n> ⛔ 该段超出预算被截断 ${cut} 字 —— 以上不是全部内容。` : "";
       return {
         text: `## ${title}（本次注入 ${relevant.length} / 命名空间共 ${entries.length} 条）${clipped}\n${text}`,
@@ -524,7 +547,18 @@ export async function getMemoryHandles(input: {
   sessionId: string;
   workspace: string | undefined;
   agent: MemorySourceAgent;
-}): Promise<{ session: MemoryHandle | null; project: MemoryHandle | null; projectKey: string }> {
+  /** ⛔ 被委派实例的调度作用域（10-05 用户定稿「被调度实例按调度作用域隔离」）。
+   *  有值 = 这是被派出去干活的：它**读不到主会话的 private 层**。
+   *  ⛔ 不用它当写入归属（写入归属永远是 sessionId/agent）。 */
+  dispatch?: { originThreadId: string; depth: number; teamId?: string } | null;
+  /** 专家团 id：给了才有 team 层（⛔ 非团成员不该有团内记忆）。 */
+  teamId?: string;
+}): Promise<{
+  private: MemoryHandle | null;
+  team: MemoryHandle | null;
+  project: MemoryHandle | null;
+  projectKey: string;
+}> {
   const sessionId = String(input?.sessionId ?? "").trim();
   const workspace = input?.workspace;
   const projectKey = projectKeyOf(workspace);
@@ -534,8 +568,17 @@ export async function getMemoryHandles(input: {
     label: input?.agent?.label,
   };
   const common = { sessionId, projectKey, workspace, agent };
+
+  /* ⛔⛔ private 层的归属：**委派实例用它自己的会话 id**（不是发起方的）——
+     派出去的专家写的是"它自己在这条线上看到的"，与主会话的私有记忆是两份。
+     读取端另由 `dispatch` 标记决定**能不能读主会话那一层**（见 buildContext）。 */
+  const privateOwner = sessionId;
+  /* team 层：团 id 归一（⛔ 没有团 id 就没有 team 层，不给"空团"开后门）。 */
+  const teamId = String(input?.teamId ?? input?.dispatch?.teamId ?? "").trim();
+
   return {
-    session: sessionId ? createHandle({ ...common, scope: "session", ownerId: sessionId }) : null,
+    private: privateOwner ? createHandle({ ...common, scope: "private", ownerId: privateOwner }) : null,
+    team: teamId ? createHandle({ ...common, scope: "team", ownerId: teamId }) : null,
     project: projectKey ? createHandle({ ...common, scope: "project", ownerId: projectKey }) : null,
     projectKey,
   };
@@ -548,24 +591,30 @@ export async function getMemoryHandles(input: {
  * @param options.contextBuilder 既有 L 层注入（L0–L7），⛔ 不传则只有 fabric 段
  */
 export async function buildContext(options: {
-  handles: { session: MemoryHandle | null; project: MemoryHandle | null };
+  handles: { private: MemoryHandle | null; team: MemoryHandle | null; project: MemoryHandle | null };
   query?: string;
   contextBuilder?: () => Promise<{ text: string } | null>;
   /** 兼容上一轮的四类角色私有记忆（架构文档 §7：不删，读得到） */
   legacyRole?: RoleRef | null;
   /** ⛔ 兼容段需要工作区才能读（上一轮的 MEMORY.md 落在工作区里） */
   workspace?: string | undefined;
-}): Promise<{ text: string; chars: number; counts: { project: number; session: number; legacy: number } }> {
+}): Promise<{ text: string; chars: number; counts: { project: number; private: number; team: number; legacy: number } }> {
   const parts: string[] = [];
-  const counts = { project: 0, session: 0, legacy: 0 };
+  const counts = { project: 0, private: 0, team: 0, legacy: 0 };
 
+  /* 注入顺序 = **共享的在前、自己的在后**：身份/私有信息离任务最近。
+     ⛔ 顺序不是随意的：模型对上下文开头的权重更高 ⇒ 公共规则在前、个体经验在后。 */
   const projectSection = await options.handles.project?.section(options.query);
   if (projectSection?.text) { parts.push(projectSection.text); counts.project = projectSection.entries; }
 
-  const sessionSection = await options.handles.session?.section(options.query);
-  if (sessionSection?.text) { parts.push(sessionSection.text); counts.session = sessionSection.entries; }
+  const teamSection = await options.handles.team?.section(options.query);
+  if (teamSection?.text) { parts.push(teamSection.text); counts.team = teamSection.entries; }
 
-  /* 兼容段：上一轮的角色 MEMORY.md —— 排在 fabric 之后（新数据优先）。 */
+  const privateSection = await options.handles.private?.section(options.query);
+  if (privateSection?.text) { parts.push(privateSection.text); counts.private = privateSection.entries; }
+
+  /* 兼容段：上一轮的角色 MEMORY.md —— 排在 fabric 之后（新数据优先）。
+     ⛔ 10-05 起它**只对被委派者**有意义（那正是它当初被造的场合）。 */
   if (options.legacyRole) {
     const legacy = await readLegacyRole(options.workspace, options.legacyRole);
     if (legacy) { parts.push(legacy); counts.legacy = 1; }
@@ -596,7 +645,7 @@ export async function archiveSessionMemory(
   sessionId: string,
   archived: boolean,
 ): Promise<number> {
-  const file = entriesFile(workspace, namespaceOf("session", sessionId));
+  const file = entriesFile(workspace, namespaceOf("private", sessionId));
   if (!file) return 0;
   const entries = await readJsonl<MemoryEntry>(file);
   if (!entries.length) return 0;
@@ -630,12 +679,12 @@ export async function sweepFabric(workspace: string | undefined): Promise<{ arch
   for (const ns of dirs) {
     out.namespaces++;
     const file = path.join(root, ns, ENTRIES_FILE);
-    if (ns.startsWith("session__")) {
+    if (ns.startsWith("private__")) {
       const entries = await readJsonl<MemoryEntry>(file);
       if (!entries.length) continue;
       let dirty = false;
       for (const e of entries) {
-        if (e.archivedAt == null && now - e.createdAt > FABRIC_SESSION_RETENTION_DAYS * 86_400_000) {
+        if (e.archivedAt == null && now - e.createdAt > FABRIC_PRIVATE_RETENTION_DAYS * 86_400_000) {
           e.archivedAt = now; e.updatedAt = now; dirty = true; out.archived++;
         }
       }
@@ -664,7 +713,7 @@ export async function listNamespaces(workspace: string | undefined): Promise<{ n
     if (!entries.length) continue;
     out.push({
       namespace: ns,
-      scope: ns.startsWith("project__") ? "project" : "session",
+      scope: ns.startsWith("project__") ? "project" : ns.startsWith("team__") ? "team" : "private",
       entries: entries.length,
       chars: entries.reduce((sum, e) => sum + e.content.length, 0),
     });

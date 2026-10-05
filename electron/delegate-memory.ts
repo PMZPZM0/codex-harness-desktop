@@ -41,8 +41,8 @@ export type DelegateMemory = {
   recalledChars: number;
   /** 统一记忆段（10-05 架构改造）：项目共享段 + 本会话段 + 上一版角色记忆兼容段 */
   fabricSection: string;
-  /** fabric 段里的条目数（project / session / 兼容） */
-  fabricCounts: { project: number; session: number; legacy: number };
+  /** fabric 段里的条目数（三层：project 共享 / team 团内 / private 私有 + 兼容段） */
+  fabricCounts: { project: number; private: number; team: number; legacy: number };
   /** 解析到的角色归属键（空 = 这次没有角色归属） */
   roleKey: string;
   /** 解析到的工作区（空 = 只注入了全局 L0 用户档案） */
@@ -106,7 +106,7 @@ export async function buildDelegateMemory(input: {
      · legacy 段 = 上一轮 roles/<键>/MEMORY.md（架构文档 §7：不删，读得到）
      ⛔ 放在常驻层之后、召回之前：身份/项目段最靠近当前任务。 */
   let fabricSection = "";
-  let fabricCounts = { project: 0, session: 0, legacy: 0 };
+  let fabricCounts = { project: 0, private: 0, team: 0, legacy: 0 };
   let roleKey = "";
   try {
     const agent = agentOf(input?.role);
