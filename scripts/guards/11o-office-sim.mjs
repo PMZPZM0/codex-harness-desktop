@@ -34,7 +34,7 @@ const DT = 16.6;
 const mk = (n) => Array.from({ length: n }, (_, i) => ({ id: "m" + (i + 1), name: "成员" + i, running: false, hasThread: true, profession: "角色" }));
 const say = (p, t) => console.log((p ? "OK " : "NO ") + t);
 
-// ① 空转 1200 秒：防穿模 / 不越界 / 串门闲聊
+// ① 空转 1200 秒：卡位 / 不越界 / 串门闲聊
 const sim = new OfficeSim();
 const roster = mk(6);
 sim.sync(roster, vnow);
@@ -42,11 +42,13 @@ sim.sync(roster, vnow);
    缺了它，"坐姿成员钉回座位 / 空路径就重新规划"两条机制根本不在测试范围内
    ⇒ 会测出"有人坐在走廊里"这种**真实运行时不存在**的假现场（第一版就漏了这个）。 */
 let lastSyncAt = vnow;
-let minGap = Infinity, blocked = 0, talking = 0, attempts = 0;
-/* ⭐ 卡位/穿模指标（10-06 立）——见 ① 末尾四条断言：
+let blocked = 0, talking = 0, attempts = 0;
+/* ⭐ 卡位指标（10-06 立，10-06 晚收窄）——见 ① 末尾几条断言：
  *   maxStall 「仍在赶路却静止」的最长时长 ｜ deadMs 死态累计
- *   maxStreak18 连续贴近(<18px)的最长帧数 ｜ minGap 绝对最近距离 */
-let maxStall = 0, deadMs = 0, maxStreak18 = 0, streak18 = 0;
+ * ⛔ 原来还有"防穿模"两条（绝对最近距离 / 连续贴近时长）—— **已删除**：
+ *   用户 10-06 明确要求"删除体积碰撞"（太容易卡位）⇒ 人物重叠是**预期行为**，
+ *   再拿"最近距离"当判据就是自己打自己。防重叠改由**渲染层微错位**（画布侧）负责。 */
+let maxStall = 0, deadMs = 0;
 const stall = {}, prevPos = {};
 const pairs = new Set();
 const origChat = sim.startChat.bind(sim);
@@ -68,17 +70,6 @@ for (let t = 0; t < Math.round(1200000 / DT); t += 1) {
     if (a.action !== "sit" && a.onBreak && !a.chatWith && a.activityUntil <= 0 && a.path.length === 0) deadMs += DT;
     prevPos[a.id] = { x: a.x, y: a.y };
   }
-  for (let i = 0; i < list.length; i += 1) {
-    for (let j = i + 1; j < list.length; j += 1) {
-      const a = list[i], b = list[j];
-      const d = Math.hypot(a.x - b.x, (a.y - b.y) * 0.8);
-      /* ⭐ 判据从「绝对最近距离」改成「**连续**贴近」：坐姿钉位/擦身会有一两帧
-         距离很小（0.2 秒级），那是正常的；真正要抓的是"持续叠在一起"。 */
-      if (d < 18) { streak18 += 1; if (streak18 > maxStreak18) maxStreak18 = streak18; } else streak18 = 0;
-      if (a.action === "sit" && b.action === "sit") continue;
-      minGap = Math.min(minGap, d);
-    }
-  }
   if (t % 30 !== 0) continue;
   for (const a of list) {
     if (a.action !== "sit" && sim.grid[Math.floor(a.y / 32) * 30 + Math.floor(a.x / 32)] === 1) blocked += 1;
@@ -89,8 +80,6 @@ for (let t = 0; t < Math.round(1200000 / DT); t += 1) {
    单帧的近距离来自设计内的瞬移 —— "坐姿成员钉回座位"（sync）与"终点精确落位"
    （对准书架/饮水机/座位像素）都会造成一两帧重合，实测 13.9~16.4px 但只持续 0~0.22 秒。
    拿它当穿模判据会把正常行为打成红。 */
-say(minGap > 10, "防穿模：1200 秒内任意两人最近距离 " + minGap.toFixed(1) + "px（>10 ⇒ 没有彻底叠住）");
-say(maxStreak18 * DT <= 500, "防穿模：连续贴近(<18px)的最长时长 " + (maxStreak18 * DT / 1000).toFixed(2) + "s（<=0.5s ⇒ 不是持续穿模）");
 say(maxStall <= 5000, "卡位：仍在赶路却静止的最长时长 " + (maxStall / 1000).toFixed(1) + "s（<=5s。修复前实测 42~203 秒、甚至永久）");
 say(deadMs === 0, "卡位：死态（站着+无路径+无目标+onBreak=true）累计 " + (deadMs / 1000).toFixed(1) + "s（必须 =0）");
 say(blocked === 0, "不越界：站进阻挡格的采样数 = " + blocked);
@@ -183,6 +172,17 @@ const place = (s, id, x, y, tx, ty) => {
   }
   say(started && metAt > 0 && metAt * DT < 15000, "串门：15 秒内碰头（t=" + (metAt > 0 ? (metAt * DT / 1000).toFixed(1) : "未碰头") + "s）");
   say(endAt > 0 && endAt * DT < 25000, "串门：25 秒内散场（t=" + (endAt > 0 ? (endAt * DT / 1000).toFixed(1) : "未散场") + "s，修复前 70s）");
+}
+/* ⑤-4 「体积碰撞已删除」的**正面判据**（10-06 用户要求：太容易卡位）。
+   两人从**完全相同的坐标**出发、去同一个目标 ⇒ 都必须走到。
+   ⛔ 修复前这里必红：分离力把两人往相反方向推，谁也没占优 ⇒ 一直僵着。 */
+{
+  const s = settled();
+  const a = place(s, "m1", 400, 336, 620, 336);
+  const b = place(s, "m2", 400, 336, 620, 336);
+  for (let t = 0; t < 1200; t += 1) { vnow += DT; s.tick(DT); }
+  say(a.path.length === 0 && b.path.length === 0,
+    "同格不互斥：两人从同一坐标出发都能到点（体积碰撞已删除）");
 }
 `;
 

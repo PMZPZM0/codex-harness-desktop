@@ -124,9 +124,10 @@ const TREADMILL_POI = { x: 880, y: 250, label: "跑两步 🏃" };
 const GYM_POI = { x: 880, y: 340, label: "举铁 🏋️" };
 
 /** 一个 POI 前能**并排**站几个人（⭐ 防"几个人叠在同一个点上"）。
- *  ⛔ 偏移量必须 **> MIN_GAP**（否则并排的两人会被分离力互相顶开 —— 站在同一处抖）。
- *     原来 ±22，`MIN_GAP` 从 30 降到 24 之后 22 会互推 ⇒ 收到 ±26。
- *  ⛔ 偏移后必须仍在可走格内（书架 272±26 → 246/298 格 7/9；饮水机 790±26 → 764/816 格 23/25）。 */
+ *  ⛔ 偏移 26px：三个人之间不叠（身体宽约 30px），且偏移后仍在可走格内
+ *     （书架 272±26 → 246/298 格 7/9；饮水机 790±26 → 764/816 格 23/25）。
+ *  ⚠️ 10-06 删掉人物碰撞后，这里**不再需要**"偏移必须 > 分离半径"那条约束，
+ *     但 26 仍然合适（不叠、且不出格）⇒ 保持不动。 */
 const POI_SLOTS = [0, -26, 26];
 
 /** 全部休息 POI（供事件驱动调度用）。 */
@@ -257,23 +258,10 @@ const WALK_SPEED = 1.35;      // 逻辑像素 / tick(60fps)
 /** 「贴近即算到达」阈值（像素）：路点进到这个范围就 shift，**不瞬移**。
  *  ⛔ 见 step 里那段注释：这一条是"卡位"的解药之一（分离力与步进僵持时靠它解锁）。 */
 const NEAR_REACH = 7;
-/* ⭐ 防穿模的"私人空间"半径（**压缩度量**：横向取原值、纵向 ×0.8）。
- *
- * ⛔⛔ 10-06 用户报「经常出现卡位」的**结构性根因**就在这里：
- *   原来是 30 —— 而**走廊格宽只有 32px**、纵向权重 0.8（⇒ 纵向实际要 30/0.8 = 37.5px
- *   才算分开）。也就是说：走廊里**两个人根本不可能错身**。
- *   实测（`.workbuddy/tmp/diag-stuck9.mjs`，隔离实验）：
- *     单独调 `step` ⇒ 人**能**前进 1.06px；单独调 `separate` ⇒ 位移 0；
- *     调完整 `tick`（先 step 再 separate）⇒ **位置回到原点**。
- *     —— 步进与推力每帧精确抵消 ⇒ 有人卡在离目标 5px 处 60+ 秒，
- *        最后靠 35 秒出行超时才收场（一次串门僵持 70 秒）。
- *   ⇒ 降到 26：横向 26px 可并排（身体宽约 30px，重叠 ~13%）；纵向 32.5px 可前后错开。
- *     ⛔ 为什么不是 24：实测 24 时最近距离掉到 **16.4px**（明显穿模，原来是 19.9）——
- *       因为"私人空间"同时是**分离力的触发半径**，调小它等于允许挤得更近。
- *       26 是实测折中：走廊（32px）仍可**横向**错身，而穿模不劣化。
- *   ⛔ 也别往上调回 30：那会重新在 32px 走廊里顶死（这才是"卡位"）。
- *   ⛔ 更别往下调到 24 以下：那才是真穿模（同一条线上两人会叠成一个人）。 */
-const MIN_GAP = 26;
+/* ⛔ 这里原来有一个 `MIN_GAP = 26`（人物之间的"私人空间"半径，`separate` 用它算推开量）。
+   10-06 用户要求**删除体积碰撞**，`separate` 整块删掉了 ⇒ 这个常量也一并删除。
+   ⚠️ 历史教训（别把它加回来）：30 时走廊（32px 格宽）里根本错不开身 ⇒ 步进与推力
+     每帧精确抵消 ⇒ 有人卡在离目标 5px 处 60+ 秒。详见 tick 里那段说明。 */
 const DISPATCH_FX_MS = 1600;  // 任务卡飞过去播多久
 const CHAT_MS = 7200;         // 一次闲聊聊多久
 const CHAT_LINE_MS = 2200;    // 一句台词显示多久
@@ -300,11 +288,13 @@ export class OfficeSim {
         name: m.name,
         charIndex: i % 6,
         /* 从门口进场（第一次打开浮层，全员依次走入 —— 比凭空出现自然）。
-           ⛔⛔ 间距必须 ≥ MIN_GAP：原来 18px/10px ⇒ 六个人**一开始就叠在一起**，
-             分离力又受"步速"限制推不开 ⇒ 真机采样最近距离只有 11px（等于全员穿模）。
-             门龛是格 2-5 × 15-18（128×128px）⇒ 用 3×2、间距 40px 摆得下。 */
-        x: 84 + (i % 3) * 40,
-        y: 600 - Math.floor(i / 3) * 40,
+           ⛔⛔ 间距必须够：人物精灵 3× 后**宽 48px**，原来 40px 间距 ⇒ 横向就是挨着的
+             （用户 10-06 报「进入办公室时角色会互相挤压」）。现在改成 **2 列 × 3 行**：
+             x 96/152（间距 56 > 48 ⇒ 不挨着）、y 600/556/512（间距 44）。
+             门龛是格 2-5 × 15-18（x 64~192、y 480~608）⇒ 六个点全在龛内。
+           ⚠️ 10-06 起人物之间没有体积碰撞 ⇒ 进场不会再互相顶开（"挤压"的另一半原因）。 */
+        x: 96 + (i % 2) * 56,
+        y: 600 - Math.floor(i / 2) * 44,
         mode,
         action: "walk",
         facing: 2,
@@ -510,9 +500,8 @@ export class OfficeSim {
       if (a.bubble && Date.now() > a.bubble.until) a.bubble = null;
       for (let s = 0; s < steps; s += 1) this.step(a);
     }
-    /* ⭐ 防穿模：所有人在动完之后统一分离一次。
-       ⛔ 必须放在**所有人 step 之后**（逐人处理会因顺序不同产生偏袒/抖动）。 */
-    this.separate();
+    /* ⛔ 这里原来有一次全局 `separate()`（把靠得太近的人互相推开）——
+       10-06 用户要求删除体积碰撞，已整块去掉，见下面那段说明。 */
     this.driveChats();
     const now = Date.now();
     if (this.dispatchFx.length) this.dispatchFx = this.dispatchFx.filter((fx) => now - fx.at < DISPATCH_FX_MS);
@@ -621,31 +610,25 @@ export class OfficeSim {
       } else {
         const nx = a.x + (dx / dist) * spd;
         const ny = a.y + (dy / dist) * spd;
-        /* ⭐ 防穿模第一道（10-05 晚）：**不往"不动的人"身上走**。
-           ⛔ 只挡坐着/站着的（他们永远不会让开 ⇒ 不挡就必然穿模）；
-             两个都在走的人**不互相挡** —— 那是死锁（走廊里一对一顶死），交给分离力错身。 */
-        /* ⛔ 两条让行判据合并计数：
-           ① 不往不动的人身上走（⛔ 只挡坐着/站着的，两个走路的互相挡会死锁）；
-           ② 目标格不能被挡（被分离力推离路径后，直线冲下一路点会**切角穿桌** ——
-              实测采样到人在桌面格里：`(535,275) 格(16,8)` 就是 2 号桌）。
-           两种都算这一帧没挪窝 ⇒ 交给上面的卡住自愈。 */
-        if (this.cellFree(nx, ny, a.seatIndex) && !this.peerAhead(a, nx, ny, dx, dy)) {
+        /* ⛔ 只判**环境碰撞**（墙 / 桌子 / 别人的座位格）。
+           10-06 起不再判「有没有人挡着」—— 人物之间没有体积碰撞了。
+           ⛔ 目标格必须能走：被卡住自愈的重规划推离路径后，直线冲下一路点会
+             **切角穿桌**（实测采样到人在桌面格里：`(535,275) 格(16,8)` 就是 2 号桌）。 */
+        if (this.cellFree(nx, ny, a.seatIndex)) {
           a.x = nx;
           a.y = ny;
           a.stuck = 0;
           a.repathCount = 0;
         } else {
-          /* ⛔ 侧移绕行（10-05 晚）：被堵住时**必须能绕**，不能原地干等 ——
-             实测：座位行（格 14）是 BFS 最短路的一部分，而坐着的人就在那一行上，
-             直线走不通 ⇒ 走路的人永远卡在工位附近（派去接水的人一直没离开座位）。
+          /* ⛔ 侧移绕行：主方向被**格子**挡住时（路径格被占 / 贴墙），上下让一步。
              俯视图里"往上/往下让一步"最自然；奇偶座位定先后，避免所有人同一侧绕。
-             ⛔ 这一步既不能进阻挡格，也不能撞人，两者都验。 */
+             ⛔ 10-06 起不再判「会不会撞人」—— 只判格子。 */
           const sideOrder = a.seatIndex % 2 === 0 ? [1, -1] : [-1, 1];
           let moved = false;
           for (const s of sideOrder) {
             const sx = a.x;
             const sy = a.y + s * spd;
-            if (this.cellFree(sx, sy, a.seatIndex) && !this.peerAhead(a, sx, sy, 0, s)) { a.x = sx; a.y = sy; moved = true; break; }
+            if (this.cellFree(sx, sy, a.seatIndex)) { a.x = sx; a.y = sy; moved = true; break; }
           }
           if (moved) { a.stuck = 0; a.repathCount = 0; }
           else a.stuck += 1;
@@ -734,18 +717,14 @@ export class OfficeSim {
       return;
     }
     if (!a.onBreak) {
-      /* 回工位：**只有真的站在自己座位旁才坐**（10-06 修正）。
-         ⛔ 原来是无条件 `sit` —— 而"贴近到达"可能在离座位 7px 外触发，
-           且路径终点是**格中心**（与座位像素最多差 16px）⇒ 会在过道/别人工位旁
-           "凭空坐下"。不满足就补最后一段（`sync` 250ms 后也会再兜一次）。 */
-      const seat = SEATS[a.seatIndex];
-      if (Math.abs(a.x - seat.x) <= 10 && Math.abs(a.y - seat.y) <= 10) {
-        a.action = "sit";
-        a.activity = null;
-      } else {
-        a.path = [{ x: seat.x, y: seat.y }];
-        a.dest = { x: seat.x, y: seat.y };
-      }
+      /* 回工位 ⇒ **无条件坐下**（10-06 用户报「无法回到自己的位置」后的修法）。
+         ⛔ 上一版要求"必须先走到座位 10px 内才坐"，本意是防"在过道里凭空坐下"，
+           但它同时制造了"永远坐不下去"：最后几像素只要走不到（被格子/被别人卡住），
+           人就一直站着 —— 用户看到的就是"回不到自己位置"。
+         ✅ 现在靠 `sync`（4Hz）把**坐姿成员钉回精确座位像素**兜底 ⇒
+           "先坐下、位置下一拍自动纠正"比"站着不坐"可靠得多。 */
+      a.action = "sit";
+      a.activity = null;
       return;
     }
     if (a.activity) {
@@ -769,118 +748,21 @@ export class OfficeSim {
   }
 
   /* ─────────────────────────────────────────────────────────────────────
-   * ⭐ 防穿模（10-05 晚，用户报「卡通人物行走时穿模」）
+   * ⛔⛔ 人物之间**没有体积碰撞**了（10-06 用户明确要求：
+   *   「进入办公室时角色会互相挤压，请删除体积碰撞，因为太容易卡位」）。
    *
-   * ⛔ 病根有两个，**都要治**：
-   *   ① 两个人都按 BFS 格心走 ⇒ 同一条走廊上会**完全重叠**（画面上是一个人）；
-   *   ② POI 只有一个固定站立点 ⇒ 先后去接水的人**叠在同一个像素点**上。
-   *      ② 已由 `POI_SLOTS`（并排站位）解决；① 由这里的**软分离**解决。
-   *
-   * ⚠️ 三条纪律（缺一条就会变成"人被挤到墙里/被从椅子上挤走"）：
-   *   · 坐着的人**不动**（坐姿锚点依赖 seat.x，被推走 = 整个人错位）；
-   *   · 推开后如果落到**阻挡格**或**越界**，这一次分离作废（回退）；
-   *   · 分离幅度**每帧有上限**（0.6px）—— 否则会看到"弹开"的瞬移。
+   * 这里原来有三套「挤开」机制（separate 软分离 / peerAhead 不往不动的人身上走 /
+   * avoidAlongGoal 削背向推力）。它们确实能防穿模，但**每一次都在制造卡位**：
+   *   · 走廊格宽只有 32px，而「私人空间」半径要 ≥26px 才不重叠 ⇒ 两人错不开身；
+   *   · 步进与推力每帧精确抵消 ⇒ 有人卡在离目标 5px 处 60+ 秒；
+   *   · 追尾时后者永久卡在 31px 外、串门时两人僵持 70 秒。
+   * ⇒ 现在**只保留环境碰撞**（墙 / 桌子 / 别人的座位格，见 cellFree）：
+   *   角色只受**静态格子**约束 ⇒ 结构上不可能「被人卡住」。
+   * ⚠️ 代价：两个人可以站在同一格上（俯视图里会重叠）。为了不叠成「一个人」，
+   *   画布按 id 给了**渲染层微错位**（renderOffsetY，±5px，不改逻辑位置）。
+   * ⛔ 别把分离力加回来 —— 那等于把上面三条卡位一起加回来。
    * ───────────────────────────────────────────────────────────────────── */
-  private separate() {
-    const list = this.agents;
-    /* ⛔ 上限定 1.6px/帧：两个相向而行的人**相对**接近速度可达 2.7px/帧，
-       分离上限低于它的一半（1.35）就永远追不上 ⇒ 会看到两人叠在一起走（实测 2.5px）。 */
-    const LIMIT = 1.6;
-    for (let i = 0; i < list.length; i += 1) {
-      for (let j = i + 1; j < list.length; j += 1) {
-        const a = list[i];
-        const b = list[j];
-        const dx = b.x - a.x;
-        const dy = (b.y - a.y) * 0.8;     // 纵向权重小一点：俯视图里上下相邻本来就会重叠
-        const dist = Math.hypot(dx, dy);
-        if (dist >= MIN_GAP) continue;
-        const canA = a.action !== "sit";
-        const canB = b.action !== "sit";
-        if (!canA && !canB) continue;
-        const push = Math.min(LIMIT, (MIN_GAP - dist) / 2);
-        const ux = dist > 0.01 ? dx / dist : 1;
-        const uy = dist > 0.01 ? dy / dist : 0;
-        /* ⛔ 正面相遇时"推开"是沿运动轴的 ⇒ 两人会顶住不动。加一个**垂直分量**
-           （方向由 id 比较决定，保证同 pair 每帧一致、不会左右抖）让他们错身而过。 */
-        const side = a.id < b.id ? 1 : -1;
-        const px = -uy * side * 0.7;
-        const py = ux * side * 0.7;
-        /* ⛔⛔ 推力**必须不对称**（10-05 晚 实测踩死一次）：两边各推 50% 时，
-           推力上限（1.6×2 = 3.2px/帧）**大于步速**（1.35px/帧）⇒ 门口挤在一起的
-           六个人互相顶住，20 秒模拟后还全在门口原地打转（路径长度纹丝不动）。
-           ⇒ 按 id 定一个**稳定优先级**：小 id 基本不让（0.15），大 id 让路（0.85）。
-             总和仍是 1（分离总量不变），但领头的能走出去，队就疏开了。 */
-        const wA = canA && canB ? (a.id < b.id ? 0.15 : 0.85) : canA ? 1 : 0;
-        const wB = canA && canB ? (b.id < a.id ? 0.15 : 0.85) : canB ? 1 : 0;
-        if (wA > 0) {
-          const [ax, ay] = this.avoidAlongGoal(a, b, -(ux + px) * push * wA * 2, -((uy + py) * push * wA * 2) / 0.8);
-          this.nudge(a, ax, ay);
-        }
-        if (wB > 0) {
-          const [bx, by] = this.avoidAlongGoal(b, a, (ux + px) * push * wB * 2, ((uy + py) * push * wB * 2) / 0.8);
-          this.nudge(b, bx, by);
-        }
-      }
-    }
-  }
 
-  /**
-   * 把分离推力里"把人推离自己目标"的那一半**削掉**。
-   *
-   * ⛔⛔ 为什么必须削（10-06「卡位」修复，隔离实验铁证）：
-   *   正在赶路的人擦身而过时，分离推力方向恰好与步进方向相反
-   *   ⇒ 一帧 `step` +1.06 / `separate` −1.05 ⇒ **净位移 0**。
-   *   实测（`.workbuddy/tmp/diag-stuck9.mjs`）：单独调 `step` 能前进、
-   *   单独调 `separate` 位移 0、调完整 `tick` **位置回到原点** ——
-   *   有人卡在离目标 5px 处 60+ 秒，靠 35 秒出行超时才收场（一次串门僵持 70 秒）。
-   * ⚠️ 只削一半、不削干净：全削掉的话"正面相撞"时两人会**叠着穿过去**（防穿模就废了）。
-   *   削一半后仍保留 50% 分离量（穿模有兜底），而每帧净朝目标前进约半格 ⇒ 一定走得出去。
-   */
-  private avoidAlongGoal(a: Agent, other: Agent, dx: number, dy: number): [number, number] {
-    if (a.action !== "walk" || a.path.length === 0) return [dx, dy];
-    const t = a.path[0];
-    const gx = t.x - a.x;
-    const gy = t.y - a.y;
-    const gl = Math.hypot(gx, gy);
-    if (gl < 0.01) return [dx, dy];
-    const ux = gx / gl;
-    const uy = gy / gl;
-    /* ⛔⛔ **正前方的走路同伴 ⇒ 一律不削**：两个都在动的人靠 `peerAhead`（小 id 优先）
-       + 侧移绕行错身；削了反而会让先走的一方**直接从让路者身上穿过去**
-       —— 实测最近距离 1.47px（`diag-stuck11.mjs` 第 3 轮：m1 与 m4 上一帧只差 1.1px）。
-       ⚠️ 其余情形（**不动的**人 / **侧后方**的走路同伴）一律削：
-         不动的人永远不会让开（不削 = 永久僵持，实测 m1 卡在坐着的 m4 旁）；
-         侧后方的人明明不是我的障碍，却把我往回顶（同样是僵持）。 */
-    if (other.action === "walk") {
-      const fx = other.x - a.x;
-      const fy = other.y - a.y;
-      if (fx * ux + fy * uy > 0) return [dx, dy];
-    }
-    const along = dx * ux + dy * uy;      // 推力在"朝目标"方向上的投影（<0 = 在把他往回顶）
-    /* ⭐ **精准削减**（不是一刀切一半）：只把"回顶量"压到 `WALK_SPEED*0.28`（≈0.38px/帧）以内，
-       保证**净前进**始终为正，同时**最大限度保留分离力**（一刀切一半会让穿模明显变差：
-       实测最近距离从 19.9 掉到 16.4px）。
-       ⛔⛔ 这个系数**必须小于拥挤时的步速**（0.5×1.35 = 0.675）——
-         第一版取 0.5×WALK_SPEED = 0.675，与减速后的步速**恰好相等** ⇒ 净前进 ≈ 0
-         ⇒ 在"坐着的人 25px 外"继续僵住（实测逮到 m1 卡在 (451.9,300.7) 连续不动，
-           `cellFree`/`peerAhead` 全 false、单独 step 明明能走 0.65px）。 */
-    const maxBack = WALK_SPEED * 0.28;
-    if (along >= -maxBack) return [dx, dy];
-    const cut = along + maxBack;          // ≤ 0，需要补回的分量
-    return [dx - cut * ux, dy - cut * uy];
-  }
-
-  /** 试探性位移：⛔ 主方向被墙/桌挡住时退化为**单轴**位移 ——
-      否则人贴着桌子时就推不动，两个人会一直叠着走（真机采样到 2.5px）。 */
-  private nudge(target: Agent, dx: number, dy: number) {
-    /* ⛔ 分离用 `cellFree`（**不留边距**）而不是 `walkable`：
-       `walkable` 要求距格边 ≥6px（那是给"站立点"用的，防身体半嵌进墙），
-       但拿它当分离判据 ⇒ 人一贴到格边就再也推不动，对面的人直接走进来
-       （实测最近距离 2px、采样出 `(312,186) × (314,186)` 两个重叠的走路人）。 */
-    if (this.cellFree(target.x + dx, target.y + dy, target.seatIndex)) { target.x += dx; target.y += dy; return; }
-    if (this.cellFree(target.x + dx, target.y, target.seatIndex)) { target.x += dx; return; }
-    if (this.cellFree(target.x, target.y + dy, target.seatIndex)) { target.y += dy; }
-  }
 
   /** 该点是否在**非阻挡格**内（无内部边距 —— 分离/移动用；⛔ 别拿它当站立点判据）。
    *  ⛔⛔ 第三参 = 调用者的座位号：**别人的座位格一律算挡**。
@@ -931,52 +813,6 @@ export class OfficeSim {
     const seat = SEATS[a.seatIndex];
     const own = Math.abs(dest.x - seat.x) < 2 && Math.abs(dest.y - seat.y) < 2;
     return this.pathGrid(own ? a.seatIndex : -1);
-  }
-
-  /**
-   * 目标点上是否"有人挡着"。
-   *
-   * ⛔ 三类人的处理**刻意不同**（每一类都对应一次实测踩坑）：
-   *   · 坐着的人（`sit`）：占位最大（椅子 + 桌沿），半径给到 `MIN_GAP*0.8`；
-   *   · 站着的人（`stand`）：只挡贴身那一点，半径 16px；
-   *   · **走路的人**：⚠️ 必须也挡，但**只让 id 大的一方让** ——
-   *     两边都不挡 ⇒ 六个人从门口一个格子里挤出去时全叠成一条线
-   *     （实测最近距离 15.6px，`(163,588) × (162,608)` 同一个格子）；
-   *     两边都挡 ⇒ 走廊里一对一顶死。⇒ 用 id 定优先级：小 id **永不让**，
-   *     所以队一定会疏开；大 id 等小 id 走远 26px 再走。
-   */
-  private peerAhead(a: Agent, nx: number, ny: number, mdx = 0, mdy = 0): boolean {
-    for (const b of this.agents) {
-      if (b.id === a.id) continue;
-      const d = Math.hypot(nx - b.x, (ny - b.y) * 0.8);
-      if (b.action === "walk") {
-        /* ⛔ 走路的同伴只在**他挡在我前进方向上**时才让：
-           判据 = 位移向量与"我到对方"向量的点积 > 0（在正前方）。
-           ⛔⛔ 不能用"离得近就让"（第一版就是这么写的）：那样**谁在前谁在后都让**，
-             从后面追上去的人不算"在正前方"⇒ 他照直撞上去（实测 18.3px），
-             而两人面对面时又互相让 ⇒ 顶死。⇒ 前后关系 + id 定优先级，两头都解。 */
-        const fx = b.x - a.x;
-        const fy = b.y - a.y;
-        const aheadOfMe = mdx * fx + mdy * fy > 0;
-        if (!aheadOfMe) continue;
-        const peerAheadOfMe = (-mdx) * -fx + (-mdy) * -fy > 0;   // 对称：我也在他前方（面对面）
-        if (peerAheadOfMe && a.id < b.id) continue;               // 面对面对冲时小 id 先走
-        /* 跟车距离：**与 MIN_GAP 对齐（26）**。
-           ⛔ 为什么必须对齐：分离半径是 26、而这里原来只挡 22 ⇒ **22~26px 是个夹缝**：
-             分离力在推我，`peerAhead` 却不认"他挡路" ⇒ 不许侧移 ⇒ 双方一起僵住
-             （实测有一轮出现 637 秒卡位）。
-           ⛔ 也别加到 30：走廊里前后一排队就成串，长途出行会被拖慢（实测 50 秒到不了）。 */
-        if (d < 26) return true;
-        continue;
-      }
-      /* 坐着的人：寻路已经绕开座位格 ⇒ 这里只需要挡"贴身"（20），不用挡住整条走廊
-         （挡太宽会让走路的人被卡在工位附近 —— 实测 50 秒才走 1/3 路程）。
-         ⛔⛔ **站着的人（含闲聊的一对）一律不挡**：单格宽的过道（如格 11，两侧都是桌子）
-           没有侧移空间 ⇒ 挡了就永久卡死（实测 m4 在过道里 66 秒没挪窝、派单全部失败）。
-           交给分离力错身：站着的人会被挤开一点，两人擦过去，不会叠住。 */
-      if (b.action === "sit" && d < 20) return true;
-    }
-    return false;
   }
 
   /** 该点是否落在可走格内（留 8px 边距，避免身体半嵌进墙）。 */

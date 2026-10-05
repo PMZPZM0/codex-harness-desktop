@@ -24,8 +24,8 @@ import {
 import { OfficeSim, phaseElapsedMs, type Agent } from "./office-sim";
 import type { OfficeActivityKind } from "./office-activity";
 import {
-  drawScreen, effectivePhase, eventWordZhOf, screenModeOf, screensaverMode, TOOL_SCREEN_MODES,
-  type RunPhase, type ScreenMode,
+  drawScreen, effectivePhase, eventWordZhOf, screenModeOf, screensaverAt, TOOL_SCREEN_MODES,
+  type RunPhase, type SaScene, type ScreenMode,
 } from "./office-screen";
 
 const CHAR_URLS = [char0, char1, char2, char3, char4, char5];
@@ -49,6 +49,20 @@ function hashId(id: string): number {
     h = Math.imul(h, 16777619);
   }
   return h >>> 0;
+}
+
+/**
+ * 走路/站立时的**渲染层微错位**（±5px，纵向）。
+ *
+ * ⛔⛔ 10-06 用户要求删掉人物之间的体积碰撞（"太容易卡位"）⇒ 逻辑上两个人**可以站在
+ *   同一格**上。为了不让他们在画面上叠成"一个人"，按 id 给一个**固定**的纵向微偏移：
+ *   · 只影响**画在哪儿**，不影响 `x/y`/寻路/点击命中以外的任何东西（所以不会卡位）；
+ *   · 按 id 取 -5/0/+5 ⇒ 同一屏里三个人以内都能错开，且**每次渲染都相同**（不抖）。
+ * ⛔ 坐姿**不给偏移**：坐姿锚点是从椅背实测推出来的（精确到像素），偏了就会"人不在椅子上"。
+ *   而坐姿不会重叠（座位是按人分的，且 sync 会把坐姿钉回精确座位像素）。
+ */
+function renderOffsetY(id: string): number {
+  return ((hashId(id) % 3) - 1) * 5;
 }
 
 /**
@@ -255,6 +269,9 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf }: OfficeCanv
         /* 每个工位这一帧画的是哪种画面 —— 第二遍画人物时要拿它推**姿态**
            （姿态与屏幕必须同源，见下面那段的注释）。 */
         const seatMode: ScreenMode[] = [];
+        /* ⭐ 屏保**当前那一档**（与屏面同源：都用同一个 `screensaverAt`）——
+           只给"摸鱼姿态"用（tv/game ⇒ 人后仰看屏幕）。⛔ 别另判一套条件。 */
+        const seatScene: (SaScene | null)[] = [];
         for (let i = 0; i < SEATS.length; i++) {
           const seat = SEATS[i];
           const sc = seat?.screen;
@@ -265,17 +282,29 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf }: OfficeCanv
              而用户可能一直开着办公室不动。 */
           const phase = a ? effectivePhase(a.phase, a.phaseSince, nowMs) : "none";
           const seed = a ? hashId(a.id) : i + 1;
-          let mode: ScreenMode = a
+          const mode: ScreenMode = a
             ? screenModeOf({ activity: a.activity, mode: a.mode, phase, event: a.event, occupied: true })
             : "off";
-          /* ⭐ 屏保轮播（时钟 → 电视剧 → 游戏）：`idle` 只是"该放屏保了"的意图，
-             具体放哪一档在这里定（需要时间与种子，映射层拿不到）。
-             ⛔ 用 seed 错开 ⇒ 六个工位不同时切档（同时切像整片屏一起闪）。 */
-          if (mode === "idle") mode = screensaverMode(now / 1000, seed);
+          /* ⭐ 屏保（10-06 重做）：`idle` 表示"这块屏该放屏保了"，**具体放哪一档、
+             以及在两档之间怎么交叉溶解，全在 drawScreen 内部完成**（见 screensaverAt）。
+             ⛔ 这里**不再**把 mode 换成 video/game —— 那会让 `seatMode` 与屏面实际
+               内容不一致（屏面已经换成别的档了，姿态却还按旧档演）。 */
+          if (mode === "idle") seatScene[i] = screensaverAt(now / 1000, seed).from;
           /* 计时口径：**由事件驱动的模式**显示"这件事跑了多久"，
              其余显示"这条命跑了多久"。⛔ 别混用（会把"写了 12 秒"显示成"开工 12 秒"）。 */
           const eventDriven = TOOL_SCREEN_MODES.has(mode) && a?.event != null;
           seatMode[i] = mode;
+          /* ⛔⛔ **屏面裁剪**（10-06）：屏保里有"云从屏外飘进来""代码雨从顶上落下"
+             这类元素 —— 它们**故意**画到框外，不裁就会盖住显示器外框和桌子
+             （用户 10-04 报过"黑块盖在桌子上"，是同一类溢出）。
+             ⛔ 裁剪放在**调用侧**而不是 drawScreen 内部：drawScreen 有十来个
+               `return` 分支（每个模式一个），在里面 save/clip 必然漏掉某条 return
+               的 restore ⇒ clip 泄漏到后面的人物绘制上（人整个被裁掉）。
+               包一层在这里 ⇒ 只有一处、且不会漏。 */
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(Math.round(seat.x + sc.x), Math.round(seat.y + sc.y), sc.w, sc.h);
+          ctx.clip();
           drawScreen(
             ctx, now / 1000, mode, seed,
             Math.round(seat.x + sc.x), Math.round(seat.y + sc.y), sc.w, sc.h,
@@ -287,12 +316,18 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf }: OfficeCanv
               }
               : undefined,
           );
+          ctx.restore();
         }
 
         // ── 角色（y 排序：越靠下越后画 = 遮挡正确）──
         // 名字牌 / 气泡留到第二遍画：坐姿成员画完后要重贴椅背（盖住下半身），
         // 牌子若在同一遍会被椅背盖掉。
-        const sorted = [...sim.agents].sort((a, b) => a.y - b.y);
+        /* ⛔ y 相同时按 id 定序：10-06 删掉体积碰撞后**两个人可能站在同一格**
+           （y 完全相等）⇒ 没有 tie-break 的话绘制顺序会随数组内部状态抖动 = 闪烁。 */
+        const sorted = [...sim.agents].sort((a, b) => (a.y - b.y) || (a.id < b.id ? -1 : 1));
+        /* 每个人的**人物绘制底边**（第一遍算出来，第二遍名牌按它贴脚画）——
+           ⛔ 必须同源：两处各算一遍必然漂（名牌和人物对不上）。 */
+        const spriteBottom = new Map<string, number>();
         for (const a of sorted) {
           const sheet = chars[a.charIndex] ?? chars[0];
           if (!sheet) continue;
@@ -302,19 +337,25 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf }: OfficeCanv
           const dw = FRAME_W * SPRITE_SCALE;
           const dh = FRAME_H * SPRITE_SCALE;
           /* ⛔⛔ 姿态与屏幕**同源**（用户 10-05：「确保办公室预览中各事件对应的卡通人物
-             动画与显示器内容严格一一联动对应」）：姿态由**同一个 `mode`** 推出来，
+             动画与显示器内容严格一一联动对应」）：姿态由**同一个 `mode` / 同一个屏保档**推出来，
              ⛔ 不另判一套条件 —— 两套条件必然漂（屏幕上放着剧、人却在猛敲键盘）。
-             · 屏幕是 video/game（摸鱼）⇒ `slack`：人**后仰看屏幕**（微微左右晃 + 举着手机）
+             · 屏保当前档是 tv/game（摸鱼）⇒ `slack`：人**后仰看屏幕**（微微左右晃 + 举着手机）
              · 否则按 sim 的 action/mode 走原来的敲键盘 / 静坐 / 举杯。 */
-          const scr = seatMode[a.seatIndex] ?? "off";
-          const slack = a.action === "sit" && (scr === "video" || scr === "game");
+          const scene = seatScene[a.seatIndex] ?? null;
+          const slack = a.action === "sit" && (scene === "tv" || scene === "game");
           const swing = slack ? Math.round(Math.sin(a.frameClock * 1.3)) : 0;
           const dx = Math.round(a.x - dw / 2) + swing;
           /* ⛔ 坐姿锚点从**该座位椅背顶**推导（10-01 实测：两排椅子相对座位高度差 25px，
              统一公式必然弄错一排——上排人物整个被椅背重贴盖掉「头都没了」）：
              人物顶 = 椅背顶 - 31（露头肩 31px，与下排自然态一致）；走路/站立 = 脚底 y+26。 */
           const r = SEATS[a.seatIndex]?.backrest ?? { dx: -30, dy: -30, w: 60, h: 64 };
-          const dy = a.action === "sit" ? Math.round(a.y + r.dy - 31) : Math.round(a.y - dh + 26);
+          /* ⛔ 走路/站立加**渲染层微错位**（见 renderOffsetY）：逻辑上没有体积碰撞了，
+             靠这 ±5px 避免两人叠成"一个人"。⛔ 坐姿不加（锚点是实测像素）。 */
+          const off = a.action === "sit" ? 0 : renderOffsetY(a.id);
+          const dy = a.action === "sit"
+            ? Math.round(a.y + r.dy - 31)
+            : Math.round(a.y - dh + 26) + off;
+          spriteBottom.set(a.id, dy + dh);
           ctx.save();
           if (a.flip) {
             ctx.translate(dx + dw, dy);
@@ -446,7 +487,13 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf }: OfficeCanv
           const stW = ctx.measureText(st.text).width;
           const pw = Math.max(nameW, stW) + 12;
           const plx = a.x - pw / 2;
-          const ply = a.y + 30;
+          /* ⛔⛔ 名牌**贴脚**画（10-06 用户：「顶部一排名字与其对应角色的距离过远」）。
+             根因：原来写死 `a.y + 30` —— 而"人物底边"在**坐姿**时是 `a.y + r.dy + 65`
+             （上排 r.dy = −62 ⇒ 人物底 ≈ a.y + 3），比 `a.y + 30` **高 27px**
+             ⇒ 上排名牌浮在人物脚下老远（下排 r.dy = −37 ⇒ 人物底 a.y + 28，看着正常）。
+             ⇒ 改成从第一遍算出的 `spriteBottom`（人物**真实绘制底边**）推 ⇒ 两排一致。
+             ⚠️ 上排名牌会压住椅子下沿 ~5px 属正常（名牌是 UI 层，永远画在最上）。 */
+          const ply = (spriteBottom.get(a.id) ?? a.y + 26) + 4;
           ctx.fillStyle = "rgba(28,30,36,0.78)";
           ctx.beginPath();
           ctx.roundRect(plx, ply, pw, 26, 4);

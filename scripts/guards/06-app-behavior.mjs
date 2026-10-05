@@ -3148,7 +3148,8 @@ w.postMessage({id:1,op:"list",root});
     /* ③d ⛔ 坐姿锚点从椅背顶推导 + 椅背重贴：人不抬高看不清谁坐在哪、不重贴就是人物挡住椅子。
        ⛔ 锚**per-seat backrest**（10-01 实测：两排椅子相对座位高度差 25px，统一公式/常量
        必然弄错一排——上排人物整个被盖掉「头都没了」）。 */
-    (canvasSrc.includes('a.action === "sit" ? Math.round(a.y + r.dy - 31)') ? ok : fail)(
+    /* ⛔ 锚「坐姿分支取 per-seat 偏移 − 31」，不锚换行（10-06 拆行后旧字面量匹配假红）。 */
+    (/const dy = a\.action === "sit"\s*\?\s*Math\.round\(a\.y \+ r\.dy - 31\)/.test(canvasSrc) ? ok : fail)(
       "【233】坐姿锚点从椅背顶推导（人物顶 = 椅背顶 - 31，两排自适应）"
     );
     (canvasSrc.includes("SEATS[a.seatIndex]?.backrest") && canvasSrc.includes("ctx.drawImage(bg, a.x + r.dx") ? ok : fail)(
