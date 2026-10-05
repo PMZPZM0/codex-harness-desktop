@@ -7,6 +7,9 @@ import "@xterm/xterm/css/xterm.css";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 import { createToolCallDedupe } from "../../../../../lib/tool-call-dedupe.mjs";
+/* 界面草图（10-05）：Codex 读写画布走**对方域的 barrel**（域↔域的唯一接口面）。
+   会话单例在 ui-sketch 那边持有（iframe 由弹窗 attach），这里只发请求。 */
+import { applySketchDoc, requestSketchDoc, summarizeDoc, validateSketchDoc, waitSketchReady } from "../../../../ui-sketch";
 
 /** ⛔ 同一个 tool call 只执行一次（09-22 实测：一次 subagent_invoke 被渲染层执行 7 次 →
  *  7 个同名会话、每个约 1MB rollout、query 逐字相同 ⇒ 7 倍 token）。重复到达复用首次结果。 */
@@ -303,6 +306,45 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                   await window.codex.saveConnector(draft);
                   bag.showToast("连接器已安装", template.name);
                   await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `MCP 连接器「${template.name}」已配置并生效（引擎已重启，当前回合已中断）。请告诉用户：重新发一条消息即可继续，该连接器的工具已可直接使用。` }], success: true });
+                }
+              } else if (event.params?.tool === "sketch_get_doc") {
+                /* 界面草图（10-05）· 读：窗口没开就**自动打开**再等桥就绪 —— dynamicTools 在
+                   thread/start 时就把工具名写进了模型工具面，用户未必开着草图窗。
+                   ⛔ 等的是"attach + ready"两件事（会话单例判据），不是单看 bag 开关：
+                      开关 true 而 iframe 还没挂上时发请求 = 消息发进空气。
+                   ⛔ 空画布是**合法结果**（success:true + 指引），不是错误。 */
+                if (!bag.uiSketchOpen) bag.setUiSketchOpen(true);
+                await waitSketchReady();
+                const readback = await requestSketchDoc();
+                if (!readback.doc) {
+                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "画布当前是空的（没有已保存的草图文档）。可以直接用 sketch_apply_doc 写一份初始文档（例如一个 topAppBar + 一组 listItem 的首页），用户在草图窗口里会实时看到。" }], success: true });
+                } else {
+                  const summary = summarizeDoc(readback.doc);
+                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `[界面草图] ${summary.title || "未命名"}：${summary.frames} 屏 / ${summary.items} 部件。以下是完整文档（要在它基础上改就用它，⛔ 别凭记忆重写）：\n${JSON.stringify(readback.doc)}` }], success: true });
+                }
+              } else if (event.params?.tool === "sketch_apply_doc") {
+                /* 界面草图（10-05）· 写：先过**上游同口径**的前置校验（kind/variant/必需字段），
+                   再把整份文档交给渲染层会话 → 桥编码成上游分享哈希 → 上游自己落盘（可撤销）。
+                   ⛔ 校验失败**不打开窗口**：模型拿着中文原因改一版就能过，比让它盲写、由上游
+                      静默拒收（哈希改了画布没动）可解释得多。 */
+                let nextDoc: unknown = args.doc;
+                if (typeof nextDoc === "string") {
+                  try { nextDoc = JSON.parse(nextDoc); } catch { nextDoc = null; }
+                }
+                const verdict = validateSketchDoc(nextDoc);
+                if (!verdict.ok) {
+                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `草图文档没通过校验：${verdict.reason}。改正后重新调用（建议先 sketch_get_doc 拿现状，在它的基础上改）。` }], success: false });
+                } else {
+                  if (!bag.uiSketchOpen) bag.setUiSketchOpen(true);
+                  await waitSketchReady();
+                  const applied = await applySketchDoc(nextDoc);
+                  const summary = summarizeDoc(applied.doc ?? nextDoc);
+                  await toolCallRespond.send(event.id!, {
+                    contentItems: [{ type: "inputText", text: applied.ok
+                      ? `已写回画布：${summary.frames} 屏 / ${summary.items} 部件，用户在草图窗口里实时看到（可继续手绘，也可 Ctrl+Z 撤销）。`
+                      : `写回失败：${applied.error || "上游没有应用这份文档（原因未知）"}` }],
+                    success: applied.ok,
+                  });
                 }
               } else {
                 await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `Dynamic tool ${event.params?.tool ?? "unknown"} is not registered by this harness.` }], success: false });

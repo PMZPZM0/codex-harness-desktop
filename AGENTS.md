@@ -166,7 +166,7 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
 - ⚠️ **未经真机验证**：签名/公证与 Gatekeeper 放行、首次「辅助功能 + 屏幕录制」授权体验只能在 mac 上跑出来。
   产物层的三条硬校验（主程序存在 / 执行位 / 不残留别的平台二进制）已写进 `scripts/verify-packaged-tools.cjs`。
 
-### 🎨 界面草图（`ui-sketch` 板块 + `sketch://` 协议，2026-10-05 立，守卫【283】67 条）
+### 🎨 界面草图（`ui-sketch` 板块 + `sketch://` 协议，2026-10-05 立，守卫【283】131 条）
 
 把开源 **m3e-canvas**（Material 3 Expressive 屏摄画布，MIT）嵌进应用：侧栏「···更多」开一整屏的草图，
 摆好的界面直接变成前端提示词。要点五条：
@@ -187,12 +187,21 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
   ⇒ 静默降级（同 pet:// 的 CSP 事故同型，最难发现的那类）。
 - ⛔ **CSP 的 `frame-src` 必须显式加 `sketch:`**：`*` 不覆盖自定义协议（`index.html` 里已写成纪律），漏写 = iframe 静默空白。
   这条链六个接缝（侧栏按钮 → bag 开关 → AppView 挂载 → 协议 → CSP → 产物+桥），**每一个都能在 tsc 与预检全绿时白屏**
-  ⇒ 验收项 `ui-sketch` 真跑「桥握手成功」（`data-bridge="ready"`）：跨源 iframe 读不到 DOM，握手是唯一可观测判据。
-- **读回通道 = `scripts/sketch-bridge.js` + postMessage**（构建时内联进产物的 index.html）：桥读草图同源
-  的 `localStorage["m3e:doc"]` 回传宿主，宿主据此显示「N 屏 / M 部件」、复制草图 JSON、把结构合成任务发给 Codex。
-  ⛔ **只读，宿主不往画布写**：上游自己有完整的导入通道（`#doc=` / `#docz=` 分享哈希 → hashchange →
-  `arrive()`，可一键撤销），要导入设计走它自己的入口就够。10-05 做过一版"把组件库控件送进草图"，
-  用户实测后判「跟左边那些不适配，加进来没啥用」⇒ 整块撤掉，守卫【283】留了三条负向断言防复活。
+  ⇒ 验收项 `ui-sketch` 真跑「桥握手成功」（`data-bridge="ready"`）+ 写回往返（⑨真实上游接受分享哈希 / ⑩摘要变「1 屏 / 2 部件」/ ⑪原样还原）：
+  跨源 iframe 读不到 DOM 也读不到存储，握手与回执是唯一可观测判据。
+- **读写通道 = `scripts/sketch-bridge.js` + postMessage**（构建时内联进产物的 index.html）：读 = 桥把草图同源的
+  `localStorage["m3e:doc"]` 回传宿主（宿主据此显示「N 屏 / M 部件」、复制 JSON、合成任务）；**写回只走上游自己的导入通道** ——
+  桥把文档编码成它的分享哈希（`#docz=` = deflate-raw + base64url；无 CompressionStream 回落 `#doc=`）挂 `location.hash`
+  → 上游 `hashchange → arrive()` 落盘（有校验、可 Ctrl+Z 撤销）。⛔ 桥自己从不 `setItem/removeItem` —— 直接改存储
+  会绕过上游校验与撤销栈（【283】静态断言 + VM 真跑两处都钉）。
+- **Codex 侧两个 dynamicTool**（10-05 下午，用户点名「Codex 可以直接调用这个工具，继续拼装 UI 界面」）：
+  `sketch_get_doc` / `sketch_apply_doc`（注册 part08 → 分发 part05；窗口没开自动开 + 等桥就绪 ≤15s）。
+  写侧先过**上游同口径**前置校验（`validateSketchDoc`：kind 36 种 / variant 5 种 / 必填字段，口径抄自上游 bundle 的
+  `fL`/`fz`/`fE`/`fT` + `lp`/`sZ` 两张表，守卫再从产物原文提取枚举逐字对账），失败不打开窗口、回中文原因；
+  回执以桥的 `load-doc-result` 为准（没有回执不算成功）。渲染层 `sketch-session.mjs` 是唯一的就绪态与在飞请求持有者
+  （弹窗 attach/feed；串行队列防两次 hash 写入互踩；StrictMode 重挂载不误杀在飞请求）。
+- 10-05 做过一版"把组件库控件送进草图"，用户实测后判「跟左边那些不适配，加进来没啥用」⇒ 整块撤掉，
+  守卫【283】留两条负向断言防复活（弹窗里不许出现组件库面板 / 纯函数层不许残留写入侧旧实现）。
 - ⛔ **草图弹窗里不要再塞并排面板**（同一条用户反馈）：iframe 必须占满整块主体，并排会把草图挤到 ~910px，
   它自己的浮动工具栏就摆不下、右上角控件互相遮挡。标题与动作也合成一行，别多一条工具栏。
 
@@ -394,6 +403,7 @@ FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）· Playwright 内核�
 | rpa_save / rpa_run | dynamicTools | 保存自动化流程为 RPA 配方 / 列出并执行已存配方（逐步复现） |
 | task_add / task_update | dynamicTools | 维护用户任务清单（新增/改状态/列出/删除） |
 | agent_ask | dynamicTools | 向用户展示选项卡等待选择（第一项为推荐），用于关键决策确认 |
+| sketch_get_doc / sketch_apply_doc | dynamicTools（界面草图，10-05） | 读/写应用内「界面草图」画布（m3e-canvas）：读回整份文档 JSON + 摘要；写回=在文档基础上改（追加屏/加部件/调坐标），走上游分享哈希导入、用户实时可见可 Ctrl+Z。写侧先过 `validateSketchDoc` 前置校验（失败回中文原因）；画布没开自动打开等桥就绪 |
 | harness_tools | dynamicTools（**能力网关**，10-05） | 调其余内置能力：`scheduler_*`（定时任务）/ `knowledge_*`（知识库）/ `ui_component_*`（组件库）/ `video_*` / `voice_generate` / `workflow_*` / `expert_list` / `expert_save` / `subagent_save` / `connector_register`。传 `name` + `args`；⛔ 参数拿不准先 `name="list"` 取清单。执行端 = IPC `agents:dispatch-call` → `dispatchRpcCall`（与内置 MCP 同一套）。⛔ `agent_invoke` / `agent_archive_sessions` / `image_generate` 有专用工具，**不在**网关里 |
 
 > ⛔⛔ **内置 MCP（harness-dispatch）的工具在引擎 0.157 里不再直接可调**（10-05 实测定性，用户报「调度工具用不了」的根因）：
@@ -536,3 +546,4 @@ FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）· Playwright 内核�
 - （09-24 下午 ~ 09-25 的详细记录已迁往 `docs/CHANGELOG-ROUNDS.md`，2026-09-26 二次拆骨；本处只留索引）
 - 🧠 知识库 Laya 软增强（10-04 立项，10-05 校准定案）：knowledge_add 写入门禁（knowledge/chatter 问法）+ 重复内容拦截可用；**检索相关性过滤校准证明不可用已砍**；判定置信读 answer_confidence；校准脚本 scripts/calibrate-laya-kb.mjs；守卫【kb】判据 8 十条（docs/KNOWLEDGE-BASE.md §9）
 - 🧊 3D 模型预览（10-05 立项，model-viewer 域）：harness_tools 网关 preview_3d（.glb/.gltf，可信根+白名单+256MB 闸）→ 应用内可旋转弹窗（@google/model-viewer 懒加载 ~1MB 独立分块）；技能 3d-modeling + 鲁班种子同轮接入；守卫【mv】13 条（scripts/guards/12-model-viewer.mjs）
+- 🖊 界面草图写入通道（10-05 下午）：dynamicTools 加 `sketch_get_doc` / `sketch_apply_doc`；写回只走上游分享哈希导入（`#docz=`，桥不碰 localStorage）；渲染层会话单例 `sketch-session.mjs`（串行队列 / 关窗拒绝 / StrictMode 语义）；守卫【283】67 → 131 条（含桥 VM 真跑三用例）；验收 ⑨⑩⑪ 真跑写回往返与还原
