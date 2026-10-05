@@ -339,7 +339,7 @@ ok(/Math\.min\(len \* u,/.test(screen) || /Math\.min\(len,/.test(screen),
 {
   const script = `
 import { classifyOfficeItem } from "./src/features/team-office/office-activity.ts";
-import { screenModeOfEvent, screensaverMode, marqueeText, microWidth } from "./src/features/team-office/office-screen.ts";
+import { screenModeOfEvent, screensaverAt, drawScreen, SA_SCENES, marqueeText, microWidth } from "./src/features/team-office/office-screen.ts";
 const cases = [
   [{ type: "fileChange", changes: [{ path: "a/b.ts", diff: "@@\\n-old\\n+new\\n" }] }, "file-edit", "file-edit"],
   [{ type: "fileChange", changes: [{ path: "a/new.md", diff: "@@\\n+x\\n" }] }, "file-write", "file-write"],
@@ -364,8 +364,50 @@ for (const [item, wantKind, wantMode] of cases) {
   if (!pass) bad += 1;
   console.log((pass ? "OK " : "NO ") + item.type + " → " + (got ? got.kind : "null") + " / " + mode);
 }
-const slots = new Set([0, 1, 2, 3, 4, 5].map((i) => screensaverMode(3.2, i * 7 + 1)));
-console.log((slots.size >= 2 ? "OK " : "NO ") + "屏保轮播覆盖多档：" + [...slots].join(","));
+/* ⭐ 屏保（10-06 重做）：9 档覆盖 + 同刻六工位不同档 + mix 合法。
+   ⛔ 判据换成"遍历"而不是"取几个采样点"—— 旧版只查 size>=2，
+     新的档位池要是写错步进（比如步进与池长不互质）就会有档永远不出现。 */
+const saAll = new Set();
+for (let s = 0; s < 40; s += 1) for (let tt = 0; tt < 200; tt += 0.5) saAll.add(screensaverAt(tt, s * 3 + 1).from);
+const saTiles = new Set([0, 1, 2, 3, 4, 5].map((i) => screensaverAt(3.2, i + 1).from));
+let mixOk = true;
+for (let k = 0; k < 400; k += 1) { const m = screensaverAt(k * 0.37, 7).mix; if (m < 0 || m > 1) mixOk = false; }
+console.log((saAll.size === SA_SCENES.length && saTiles.size >= 4 && mixOk ? "OK " : "NO ")
+  + "屏保：覆盖 " + saAll.size + "/" + SA_SCENES.length + " 档、同刻 6 工位 " + saTiles.size + " 档不同、mix 合法=" + mixOk);
+/* ⭐ 每档都必须铺满**恰好等于屏面框**的底色。
+   ⛔ 这条防的是真实事故（10-04「三个大黑块盖在桌子上」）：屏保里"云从屏外飘进来"
+     "代码雨从顶上落下"是**故意**越界的（由调用侧 clip 裁掉），但**底色**一旦画错尺寸
+     就会盖住显示器外框和桌子。 */
+{
+  const mk = () => {
+    const rects = []; const t = { fillStyle: "#000", globalAlpha: 1 };
+    return { rects, ctx: new Proxy(t, {
+      get: (o, k) => {
+        if (k === "fillRect") return (x, y, w, h) => rects.push({ x, y, w, h });
+        if (k === "measureText") return () => ({ width: 8 });
+        if (k in o) return o[k];
+        return () => undefined;
+      },
+      set: (o, k, v) => { o[k] = v; return true; },
+    }) };
+  };
+  const missing = [];
+  for (const scene of SA_SCENES) {
+    let hit = false;
+    for (let s = 1; s <= 60 && !hit; s += 1) {
+      for (let tt = 0; tt < 400; tt += 0.25) {
+        const at = screensaverAt(tt, s);
+        if (at.from !== scene || at.mix > 0) continue;
+        const { ctx, rects } = mk();
+        drawScreen(ctx, tt, "idle", s, 216, 138, 50, 34, {});
+        hit = rects.some((r) => r.x === 216 && r.y === 138 && r.w === 50 && r.h === 34);
+        break;
+      }
+    }
+    if (!hit) missing.push(scene);
+  }
+  console.log((missing.length === 0 ? "OK " : "NO ") + "屏保每档铺满屏面底色（缺：" + (missing.join(",") || "无") + "）");
+}
 const long = marqueeText("NPM RUN BUILD ELECTRON", 46, 0);
 const moved = marqueeText("NPM RUN BUILD ELECTRON", 46, 1.4);
 console.log((long !== moved && microWidth("SEARCH") < 46 ? "OK " : "NO ") + "微字模：SEARCH 宽 " + microWidth("SEARCH") + "px、长文本滚动");
@@ -374,7 +416,7 @@ console.log(bad === 0 ? "OK 事件分类全部符合" : "NO " + bad + " 条分�
   const out = execFileSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", script],
     { cwd: ROOT, encoding: "utf8", timeout: 120000, stdio: ["ignore", "pipe", "pipe"] });
   const lines = out.split("\n").filter((line) => /^(OK|NO) /.test(line.trim()));
-  ok(lines.length >= 16, `事件面真跑出 ${lines.length} 条（⛔ 0 条 = 脚本没跑起来）`);
+  ok(lines.length >= 17, `事件面真跑出 ${lines.length} 条（⛔ 0 条 = 脚本没跑起来）`);
   for (const line of lines) {
     const good = line.trim().startsWith("OK ");
     checks += 1;
@@ -391,8 +433,27 @@ console.log(bad === 0 ? "OK 事件分类全部符合" : "NO " + bad + " 条分�
   const canvasSrc = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
   ok(/const seatMode: ScreenMode\[\] = \[\]/.test(canvasSrc) && /seatMode\[i\] = mode/.test(canvasSrc),
     "⛔ 每个工位这一帧的画法被记下来（供第二遍画人物时推姿态）");
-  ok(/const slack = a\.action === "sit" && \(scr === "video" \|\| scr === "game"\)/.test(canvasSrc),
-    "⛔⛔ 摸鱼姿态**由屏幕模式推出**（video/game ⇒ 后仰看剧），不是另判一套条件");
+  /* ⛔ 10-06 改：屏保由 `idle` 一档承载轮播，`seatMode` 不再被换成 video/game
+     ⇒ 姿态要拿**当前屏保档**（`seatScene`，与屏面同源同一个 `screensaverAt`）判。
+     ⛔ 仍然只允许**一个**判据来源 —— 别再另判一套条件。 */
+  ok(/const seatScene: \(SaScene \| null\)\[\] = \[\]/.test(canvasSrc)
+    && /const slack = a\.action === "sit" && \(scene === "tv" \|\| scene === "game"\)/.test(canvasSrc)
+    && /seatScene\[i\] = screensaverAt\(now \/ 1000, seed\)\.from/.test(canvasSrc),
+    "⛔⛔ 摸鱼姿态**由屏保当前档推出**（tv/game ⇒ 后仰看剧），且与屏面用同一个 screensaverAt");
+  /* ⛔ 屏面必须被裁剪在显示器框内（屏保里有"云从屏外飘进来"这类故意越界的元素）。 */
+  ok(/ctx\.clip\(\)/.test(canvasSrc) && /ctx\.rect\(Math\.round\(seat\.x \+ sc\.x\)/.test(canvasSrc),
+    "⛔ 屏面绘制被 clip 在显示器框内（否则云/代码雨会盖到外框和桌子上）");
+  /* ⭐ 名牌贴脚（10-06 用户：「顶部一排名字与其对应角色的距离过远」）——
+     原来写死 `a.y + 30`，而上排**坐姿**人物底边在 `a.y + r.dy + 65`（r.dy=−62 ⇒ a.y+3）
+     ⇒ 名牌浮在脚下 27px 外。现在改成从**人物绘制底边**（spriteBottom）推。 */
+  ok(/const spriteBottom = new Map<string, number>\(\)/.test(canvasSrc)
+    && /spriteBottom\.set\(a\.id, dy \+ dh\)/.test(canvasSrc)
+    && /const ply = \(spriteBottom\.get\(a\.id\) \?\? a\.y \+ 26\) \+ 4/.test(canvasSrc),
+    "⛔ 名牌贴脚：位置由**人物绘制底边**（spriteBottom）推，⛔ 不再写死 a.y + 30");
+  /* ⭐ 渲染层微错位：体积碰撞删掉之后，防止两人同格时叠成"一个人"。 */
+  ok(/function renderOffsetY\(id: string\): number/.test(canvasSrc)
+    && /const off = a\.action === "sit" \? 0 : renderOffsetY\(a\.id\)/.test(canvasSrc),
+    "⛔ 删掉体积碰撞后，走路/站立有**渲染层微错位**（坐姿不给偏移 —— 锚点是实测像素）");
   ok(/eventWordZhOf/.test(canvasSrc) && /statusOf/.test(canvasSrc),
     "⛔ 名牌状态与屏幕同源（`eventWordZhOf` 与顶栏同一个映射表 ⇒ 不会自相矛盾）");
   ok(/sim\.dispatchFx/.test(canvasSrc),

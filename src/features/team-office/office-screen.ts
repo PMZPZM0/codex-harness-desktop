@@ -93,8 +93,7 @@ export const REPORT_CHARS = 600;
 export const WAIT_AFTER_MS = 8000;
 /** 完成/失败反馈保留这么久，之后回到屏保（在**映射层**判，见 `effectivePhase`）。 */
 export const DONE_HOLD_MS = 60000;
-/** 屏保轮播每一档持续多少秒（时钟 → 电视剧 → 游戏）。 */
-export const SCREENSAVER_SLOT_S = 14;
+/* 屏保的两条时间参数在下面 `SA_SCENES` 附近定义（10-06 重做：9 档 + 交叉淡入淡出）。 */
 
 /** 屏幕配色（与背景图的像素风一致：低饱和、无渐变）。 */
 const PAL = {
@@ -401,15 +400,48 @@ export function effectivePhase(phase: RunPhase, sinceMs: number, now: number): R
   return now - sinceMs > DONE_HOLD_MS ? "none" : phase;
 }
 
-/**
- * 屏保轮播：时钟 → 电视剧 → 游戏（用户 10-05：「摸鱼的时候播放电视剧或者游戏画面」）。
- * ⛔ 用 `seed` 错开相位 ⇒ 六个工位不会同时切档（同时切看起来像"整片屏一起闪"）；
- *   ⛔ 也**不能**用随机数 —— 那样每次重绘都在换画面（画布 60fps，随机 = 癫痫）。
+/* ─────────────────────────────────────────────────────────────────────────
+ * 屏保轮播（⭐ 10-06 重做：用户要求「参考 Windows 锁屏那种动态切换效果」，
+ *   原话「两侧仍有固定展示内容，且没有播放动画…当前播放动画过于生硬，
+ *   且每个动画内容都一样」）
+ *
+ * ⛔ 三个设计要点，每一条都对着那句抱怨：
+ *   ① **内容池 9 档**（原来只有时钟/电视剧/游戏 ⇒ "每个动画内容都一样"）：
+ *      时钟 / 天气 / 照片(Ken Burns) / 音乐频谱 / 统计条 / 代码雨 / 曲线 / 电视剧 / 游戏。
+ *   ② **每台机器一套自己的顺序**：seed 决定起始档 + 步进（池长 9 是质数 ⇒ 任何步进
+ *      都能遍历全部 9 档且不撞档）⇒ 六个工位**永不同步**，一眼看去每块屏都不一样。
+ *   ③ **交叉淡入淡出**：新档以 alpha 0→1 **盖**在旧档上 —— 就是 Windows 锁屏那种
+ *      "图片缓慢溶解"。⛔ 必须是"新档半透明盖上"，不是"两边各降一半"
+ *      （后者两层叠加会发灰/过曝）。
+ *
+ * ⛔ 绝不用 `Math.random()`：60fps 每帧换画面 = 噪点（且是癫痫风险）。
+ *   所有变化都必须由 `t`（秒）与 `seed` **确定性**推导。
  */
-export function screensaverMode(tSec: number, seed: number): ScreenMode {
-  const slots: ScreenMode[] = ["idle", "video", "game"];
-  const phase = tSec / SCREENSAVER_SLOT_S + seed * 0.37;
-  return slots[Math.abs(Math.floor(phase)) % slots.length];
+export type SaScene = "clock" | "weather" | "photo" | "music" | "bars" | "code" | "chart" | "tv" | "game";
+
+/** 屏保场景池（⛔ 顺序即档位顺序；**长度 9 是质数**——任何步进都能遍历全部且不撞档）。 */
+export const SA_SCENES: SaScene[] = ["clock", "weather", "photo", "music", "bars", "code", "chart", "tv", "game"];
+/** 每档停留多久（秒）。⛔ 别太长：用户要的是"动态切换"。 */
+export const SA_SLOT_S = 11;
+/** 交叉淡入时长（秒）—— 落在每档的**末尾**。 */
+export const SA_FADE_S = 1.8;
+
+/**
+ * 取某台显示器**此刻**的屏保：旧档、新档、过渡进度 `mix`（0 = 完全还是旧档）。
+ * `mix > 0` 时调用方应以 `alpha = mix` 把新档**盖在**旧档上。
+ */
+export function screensaverAt(tSec: number, seed: number): { from: SaScene; to: SaScene; mix: number } {
+  const n = SA_SCENES.length;
+  const step = 1 + (seed % (n - 1));      // 1..8，与 n=9 互质 ⇒ 遍历全部
+  const phase = tSec / SA_SLOT_S;
+  const i = Math.floor(phase);
+  const frac = phase - i;
+  const s0 = seed % n;
+  const from = SA_SCENES[(s0 + i * step) % n];
+  const to = SA_SCENES[(s0 + (i + 1) * step) % n];
+  const fadeStart = 1 - SA_FADE_S / SA_SLOT_S;
+  const mix = frac <= fadeStart ? 0 : Math.min(1, (frac - fadeStart) / (SA_FADE_S / SA_SLOT_S));
+  return { from, to, mix };
 }
 
 /**
@@ -537,6 +569,215 @@ function fileRows(ctx: CanvasRenderingContext2D, x: number, y: number, w: number
  * @param x/y/w/h 屏幕内容区（画布坐标）
  * @param info   真实信息（计时 / 产出字数 / 事件细节）
  */
+/* ─────────────────────────────────────────────────────────────────────────
+ * 屏保的 9 档画面（⭐ 10-06 新增；每档都**一直在动**，且各不相同）
+ *
+ * ⛔ 三条纪律（每一条都是踩过的坑）：
+ *   · 每档**先铺自己的不透明底色** —— 交叉淡化是靠"新档半透明盖上"实现的，
+ *     底色不铺 ⇒ 两层内容互相透出来，看着像花屏。
+ *   · 只用 `t` 与 `seed` 推变化，⛔ 不用 `Math.random()`（60fps 每帧换 = 噪点 + 癫痫风险）。
+ *   · 尺寸全从 `w/h/innerW/u` 推，⛔ 不写死像素（屏面实测 48~52 × 34~35，六台各不同）。
+ * ───────────────────────────────────────────────────────────────────────── */
+type SaBox = {
+  ctx: CanvasRenderingContext2D;
+  t: number; seed: number;
+  /** 内容区（顶栏之下、字幕之上）：左上角 + 宽高 */
+  x: number; y: number; w: number; h: number;
+  u: number; pad: number; innerW: number;
+};
+
+function drawSaScene(b: SaBox, scene: SaScene) {
+  const { ctx, t, seed, x, y, w, h, u, pad, innerW } = b;
+  switch (scene) {
+    /* ① 时钟：HH:MM（冒号按秒闪）+ 秒条 —— 最有"锁屏"感的一档 */
+    case "clock": {
+      ctx.fillStyle = PAL.idleBg;
+      ctx.fillRect(x, y, w, h);
+      const d = new Date();
+      const txt = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+      const px = h >= 13 && innerW >= 34 ? 2 : 1;
+      const tw = microWidth(txt, px);
+      drawMicroText(
+        ctx, d.getSeconds() % 2 === 0 ? txt : txt.replace(":", " "),
+        x + Math.max(pad, Math.round((w - tw) / 2)),
+        y + Math.max(0, Math.round((h - 5 * px) / 2) - px),
+        PAL.idleNum, px,
+      );
+      ctx.fillStyle = PAL.idleBar;
+      ctx.fillRect(x + pad, y + h - 2, innerW, 2);
+      ctx.fillStyle = PAL.idleNum;
+      ctx.fillRect(x + pad, y + h - 2, Math.max(1, Math.round(innerW * (d.getSeconds() / 60))), 2);
+      return;
+    }
+    /* ② 天气：太阳缓升缓降 + 两朵云不同速度飘过 + 大号温度 */
+    case "weather": {
+      ctx.fillStyle = "#152232";
+      ctx.fillRect(x, y, w, h);
+      const sw = Math.max(2, u);
+      ctx.fillStyle = "#e8c76a";
+      ctx.fillRect(x + pad + Math.round(innerW * 0.16), y + Math.max(1, Math.round(h * 0.2 + Math.sin(t * 0.35 + seed) * u)), sw, sw);
+      for (let i = 0; i < 2; i += 1) {
+        const cw = Math.max(4, Math.round(innerW * 0.32));
+        const span = w + cw;
+        const cx = x - cw + ((t * (5 + i * 3.5) + seed * 7 + i * 37) % span);
+        const cy = y + Math.round(h * (0.16 + i * 0.2));
+        ctx.fillStyle = i === 0 ? "#93a7bd" : "#7d90a6";
+        ctx.fillRect(cx, cy, cw, Math.max(1, u - 1));
+        ctx.fillRect(cx + u, cy - Math.max(1, u - 1), Math.max(1, cw - u * 2), Math.max(1, u - 1));
+      }
+      const temp = String(18 + Math.round(Math.sin(t * 0.07 + seed) * 4));
+      drawMicroText(ctx, temp, x + w - microWidth(temp, 2) - pad, y + h - 10 - pad, "#dfe8f2", 2);
+      return;
+    }
+    /* ③ 照片（Windows 锁屏那味儿）：山脊逐列起伏 + 整体缓慢横移 + 太阳落山感 */
+    case "photo": {
+      ctx.fillStyle = "#1d2b3a";
+      ctx.fillRect(x, y, w, h);
+      const horizon = y + Math.round(h * 0.62);
+      const drift = t * 0.6 + seed;
+      const layers = [
+        { color: "#2b3f52", amp: 0.26, speed: 1, off: 0 },
+        { color: "#22333f", amp: 0.16, speed: 1.7, off: 13 },
+      ];
+      for (const L of layers) {
+        ctx.fillStyle = L.color;
+        for (let c = 0; c < innerW; c += 1) {
+          const ph = Math.round(h * L.amp * (0.5 + 0.5 * Math.sin((c + drift * L.speed * 6 + L.off) * 0.17)));
+          ctx.fillRect(x + pad + c, horizon - ph, 1, h - (horizon - y) + ph);
+        }
+      }
+      const sunPos = Math.sin(t * 0.09 + seed) * 0.5 + 0.5;
+      const ssz = Math.max(2, u - 1);
+      ctx.fillStyle = "#e8c76a";
+      ctx.fillRect(x + pad + Math.round(sunPos * Math.max(0, innerW - ssz)), y + Math.round(h * 0.22), ssz, ssz);
+      ctx.fillStyle = "rgba(232,199,106,0.34)";
+      ctx.fillRect(x + pad, horizon, innerW, 1);
+      return;
+    }
+    /* ④ 音乐频谱：柱高各不相同地跳 + 底部节拍点扫过 */
+    case "music": {
+      ctx.fillStyle = "#1a1526";
+      ctx.fillRect(x, y, w, h);
+      const bars = 9;
+      const bw = Math.max(1, Math.floor(innerW / (bars * 1.8)));
+      const gap = Math.max(1, Math.floor(bw * 0.6));
+      for (let i = 0; i < bars; i += 1) {
+        const v = 0.5 + 0.5 * Math.sin(t * (2.4 + i * 0.21) + seed + i * 1.3);
+        const bh = Math.max(1, Math.round((h - pad) * Math.pow(v, 1.6) * 0.85));
+        ctx.fillStyle = i % 3 === 0 ? "#c58fd8" : "#8f7fe8";
+        ctx.fillRect(x + pad + i * (bw + gap), y + h - bh, bw, bh);
+      }
+      const step2 = bw + gap;
+      ctx.fillStyle = "#e8c76a";
+      ctx.fillRect(x + pad + (Math.floor(t * 2) % bars) * step2, y + h - 2, bw, 1);
+      return;
+    }
+    /* ⑤ 统计条：三条进度条各自推进（各自速度不同 ⇒ 不是整片一起动） */
+    case "bars": {
+      ctx.fillStyle = "#16212c";
+      ctx.fillRect(x, y, w, h);
+      const rowH = Math.max(3, Math.round(h / 4));
+      const colors = [PAL.svcPack, PAL.fileNew, "#c58fd8"];
+      for (let i = 0; i < 3; i += 1) {
+        const p = (t * (0.13 + i * 0.06) + seed * 0.11 + i * 0.3) % 1;
+        const ry = y + pad + i * rowH;
+        ctx.fillStyle = PAL.idleBar;
+        ctx.fillRect(x + pad, ry, innerW - pad, Math.max(1, u - 1));
+        ctx.fillStyle = colors[i];
+        ctx.fillRect(x + pad, ry, Math.max(1, Math.round((innerW - pad) * p)), Math.max(1, u - 1));
+      }
+      return;
+    }
+    /* ⑥ 代码雨：五列字符/短横下落，头部亮尾迹暗（科幻感，和"办公室"很配） */
+    case "code": {
+      ctx.fillStyle = "#0e1a14";
+      ctx.fillRect(x, y, w, h);
+      const cols = 5;
+      const cw = Math.max(2, Math.floor(innerW / cols));
+      for (let i = 0; i < cols; i += 1) {
+        const speed = 6 + ((seed + i * 3) % 5);
+        const yy = y - 6 + ((t * speed + seed * 5 + i * 9) % (h + 6));
+        const len = 3 + ((seed + i) % 3);
+        for (let k = 0; k < len; k += 1) {
+          ctx.fillStyle = k === 0 ? "#c8f0d0" : `rgba(110,212,154,${((1 - k / len) * 0.7).toFixed(2)})`;
+          ctx.fillRect(x + pad + i * cw, Math.round(yy - k * 3), Math.max(1, cw - 2), 1);
+        }
+      }
+      return;
+    }
+    /* ⑦ 曲线：横向滚动的折线（确定性伪随机 ⇒ 像实时数据） */
+    case "chart": {
+      ctx.fillStyle = "#141d28";
+      ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = PAL.idleBar;
+      for (let g = 1; g < 3; g += 1) ctx.fillRect(x + pad, y + Math.round((h * g) / 3), innerW, 1);
+      ctx.fillStyle = "#6ed49a";
+      for (let c = 0; c < innerW; c += 2) {
+        const k = c / 5 + t * 2.2 + seed;
+        const v = 0.5 + 0.34 * Math.sin(k) + 0.16 * Math.sin(k * 2.7);
+        const py = y + h - pad - Math.round(Math.max(0, Math.min(1, v)) * Math.max(1, h - pad * 2));
+        ctx.fillRect(x + pad + c, py, 2, 2);
+      }
+      return;
+    }
+    /* ⑧ 电视剧（10-05 版原样搬进来）：宽银幕黑边 + 两个"人影" + 台词字幕条 + 集内进度 */
+    case "tv": {
+      ctx.fillStyle = PAL.videoBg;
+      ctx.fillRect(x, y, w, h);
+      const bar = Math.max(2, Math.round(h * 0.16));
+      ctx.fillStyle = PAL.videoBar;
+      ctx.fillRect(x, y, w, bar);
+      const sTop = y + bar;
+      const sH = Math.max(4, h - bar * 2);
+      ctx.fillStyle = PAL.videoBar;
+      ctx.fillRect(x, y + bar + sH, w, bar);
+      for (let i = 0; i < 2; i += 1) {
+        const figW = Math.max(2, u);
+        const spanX = Math.max(1, innerW - figW * 2);
+        const fx = x + pad + Math.round((Math.sin(t * (0.5 + i * 0.23) + seed + i * 1.7) * 0.5 + 0.5) * spanX);
+        const fy = sTop + Math.round(sH * 0.35) + i * u;
+        ctx.fillStyle = PAL.videoFig;
+        ctx.fillRect(fx, fy, figW, Math.max(3, u * 2));
+        ctx.fillRect(fx - 1, fy - u, figW + 2, u - 1);
+      }
+      if ((t * 2.4 + seed) % 1 < 0.72) {
+        const subW = Math.max(4, Math.round(innerW * (0.4 + ((Math.floor(t * 2.4) + seed) % 3) * 0.16)));
+        ctx.fillStyle = PAL.videoSub;
+        ctx.fillRect(x + Math.round((w - subW) / 2), sTop + sH - u - 1, subW, Math.max(1, u - 1));
+      }
+      ctx.fillStyle = PAL.idleBar;
+      ctx.fillRect(x + pad, y + h - 2, innerW, 2);
+      ctx.fillStyle = PAL.videoSub;
+      ctx.fillRect(x + pad, y + h - 2, Math.max(1, Math.round(innerW * ((t / 90 + seed * 0.13) % 1))), 2);
+      return;
+    }
+    /* ⑨ 像素小游戏（10-05 版原样搬进来）：地面 + 一直跳的主角 + 迎面障碍 + 分数 + 血条 */
+    default: {
+      ctx.fillStyle = PAL.gameBg;
+      ctx.fillRect(x, y, w, h);
+      const groundY = y + h - Math.max(3, u);
+      ctx.fillStyle = PAL.gameGround;
+      ctx.fillRect(x, groundY, w, Math.max(1, u - 1));
+      const heroW = Math.max(2, u);
+      const jump = Math.abs(Math.sin(t * 2.2 + seed));
+      ctx.fillStyle = PAL.gameHero;
+      ctx.fillRect(x + pad + Math.round(innerW * 0.22), groundY - heroW - Math.round(jump * Math.max(1, (h - pad) * 0.55)), heroW, heroW);
+      for (let i = 0; i < 2; i += 1) {
+        const ox = x + w - Math.round(((t * (0.55 + i * 0.18) + seed * 0.31 + i * 0.5) % 1) * (w + innerW * 0.5));
+        ctx.fillStyle = PAL.gameBlock;
+        ctx.fillRect(ox, groundY - u * 2, Math.max(2, u - 1), Math.max(2, u * 2));
+      }
+      const score = String(Math.floor(t * 7 + seed * 3) % 1000).padStart(3, "0");
+      drawMicroText(ctx, score, x + w - microWidth(score, 1) - pad, y, PAL.gameHero, 1);
+      ctx.fillStyle = PAL.fileDel;
+      ctx.fillRect(x + pad, y, Math.max(1, Math.round(innerW * 0.3)), 1);
+      ctx.fillStyle = PAL.idleBar;
+      ctx.fillRect(x + pad, y, Math.max(3, Math.round(innerW * 0.34)), 1);
+      return;
+    }
+  }
+}
+
 export function drawScreen(
   ctx: CanvasRenderingContext2D,
   t: number,
@@ -625,97 +866,44 @@ export function drawScreen(
     return;
   }
 
-  /* ⭐ 待机 = **时钟屏保**（真实本地时间：HH:MM + 秒条）。
-     ⛔⛔ 用户报「显示器都还是固定的、没有动画」的两层原因之二：
-       这里原先把"有人在座但没在跑"直接归到 "off" ⇒ 只画一个静态色块 ⇒
-       委托真机 3.7s 就跑完，用户点开办公室时**全员待机** ⇒ 六块屏全黑静止。 */
+  /* ⭐ 待机 = **屏保轮播**（10-06 重做：9 档内容 + 交叉淡入淡出，见 screensaverAt）。
+     ⛔⛔ 为什么不能像原来那样「一屏一个固定画面」：用户报「两侧仍有固定展示内容，
+       且没有播放动画…当前播放动画过于生硬，且每个动画内容都一样」——
+       原来只有时钟 / 电视剧 / 游戏三档，六台机器只是**错开相位** ⇒ 同一时刻多数屏在放
+       同一个东西，而切换又是硬跳（没有过渡）。
+     ✅ 现在：每台一套**自己的档位顺序**（seed 决定起点与步进）+ 每档末尾 1.8 秒交叉溶解。
+     ⛔ 过渡的写法是「**新档半透明盖在旧档上**」——⛔ 不是两边各降一半：
+       那样两层叠加会发灰/过曝（尤其这些档都带自己的不透明底色）。 */
   // idle:【块标记】下面这一段是 idle 模式的绘制代码（判据面依赖这个标记定位）
   if (mode === "idle") {
-    const d = new Date();
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mm = String(d.getMinutes()).padStart(2, "0");
-    const px = innerCH >= 13 && innerW >= 34 ? 2 : 1;
-    const label2 = `${hh}:${mm}`;
-    const tw = microWidth(label2, px);
-    const ly = cy + Math.max(0, Math.round((innerCH - 5 * px) / 2) - px);
-    // 冒号按秒闪 ⇒ 即使分钟没变，屏面仍在动
-    drawMicroText(ctx, d.getSeconds() % 2 === 0 ? label2 : label2.replace(":", " "), x + Math.max(pad, Math.round((w - tw) / 2)), ly, PAL.idleNum, px);
-    // 秒条：60 秒走满一条 ⇒ 视线有明确落点
-    const secW = Math.round(innerW * (d.getSeconds() / 60));
-    ctx.fillStyle = PAL.idleBar;
-    ctx.fillRect(x + pad, cy + innerCH - 2, innerW, 2);
-    ctx.fillStyle = PAL.idleNum;
-    ctx.fillRect(x + pad, cy + innerCH - 2, Math.max(1, secW), 2);
+    const sa = screensaverAt(t, seed);
+    const box: SaBox = { ctx, t, seed, x, y: cy, w, h: bodyH, u, pad, innerW };
+    drawSaScene(box, sa.from);
+    if (sa.mix > 0.001) {
+      ctx.save();
+      ctx.globalAlpha = sa.mix;
+      drawSaScene(box, sa.to);
+      ctx.restore();
+    }
     return;
   }
-
-  /* ⭐ 摸鱼 · 电视剧（屏保轮播第 2 档，用户点名「摸鱼时播放电视剧」）。
-     画法：宽银幕黑边 + 画面里几个"人影"在动 + 底部字幕条按台词节拍跳 + 进度条推进。 */
+  /* ⛔ `video`（电视剧）的绘制体已搬进 `drawSaScene` 的 "tv" 档 ——
+     10-06 起屏保由 `idle` 一档统一承载（轮播 + 交叉过渡都在里面），
+     不再有独立的 video 模式传进来。这里留一个**薄壳**：
+     · 标记行保住（守卫 11d 靠它定位）；
+     · 类型 / 调色板 / 映射表里的 video 分支都保留（外部仍可能引用）；
+     · ⛔ 不是为了兼容旧调用而留死代码 —— 它现在**仍然可用**（直接传 video 就画 TV）。 */
   // video:【块标记】下面这一段是 video 模式的绘制代码（判据面依赖这个标记定位）
   if (mode === "video") {
-    const bar = Math.max(2, Math.round(bodyH * 0.16));
-    ctx.fillStyle = PAL.videoBar;
-    ctx.fillRect(x, cy, w, bar);
-    const screenTop = cy + bar;
-    const screenH = Math.max(4, bodyH - bar * 2);
-    ctx.fillStyle = PAL.videoBar;
-    ctx.fillRect(x, cy + bar + screenH, w, bar);
-    // 画面：两个"人影"（方块）在缓慢左右移动 —— 一眼看出是"有人在演"
-    for (let i = 0; i < 2; i += 1) {
-      const figW = Math.max(2, u);
-      const spanX = Math.max(1, innerW - figW * 2);
-      const fx = x + pad + Math.round((Math.sin(t * (0.5 + i * 0.23) + seed + i * 1.7) * 0.5 + 0.5) * spanX);
-      const fy = screenTop + Math.round(screenH * 0.35) + i * u;
-      ctx.fillStyle = PAL.videoFig;
-      ctx.fillRect(fx, fy, figW, Math.max(3, u * 2));
-      ctx.fillRect(fx - 1, fy - u, figW + 2, u - 1);   // 头
-    }
-    // 字幕条：按台词节拍闪烁（不是匀速闪 ⇒ 像有人在说话）
-    const talk = (t * 2.4 + seed) % 1 < 0.72;
-    if (talk) {
-      const subW = Math.max(4, Math.round(innerW * (0.4 + ((Math.floor(t * 2.4) + seed) % 3) * 0.16)));
-      ctx.fillStyle = PAL.videoSub;
-      ctx.fillRect(x + Math.round((w - subW) / 2), screenTop + screenH - u - 1, subW, Math.max(1, u - 1));
-    }
-    // 进度条：这一集一直在推进（每 90 秒走满一条 ⇒ 看得出"看到哪了"）
-    const prog = (t / 90 + seed * 0.13) % 1;
-    ctx.fillStyle = PAL.idleBar;
-    ctx.fillRect(x + pad, cy + bodyH - 2, innerW, 2);
-    ctx.fillStyle = PAL.videoSub;
-    ctx.fillRect(x + pad, cy + bodyH - 2, Math.max(1, Math.round(innerW * prog)), 2);
+    drawSaScene({ ctx, t, seed, x, y: cy, w, h: bodyH, u, pad, innerW }, "tv");
     return;
   }
-
-  /* ⭐ 摸鱼 · 像素小游戏（屏保轮播第 3 档）。
-     画法：地面线 + 一个**一直跳**的主角 + 迎面来的障碍块 + 右上角分数跳动 + 血条。 */
+  /* ⛔ `game`（像素小游戏）同上 —— 绘制体已搬进 `drawSaScene` 的 "game" 档。 */
   // game:【块标记】下面这一段是 game 模式的绘制代码（判据面依赖这个标记定位）
   if (mode === "game") {
-    const groundY = cy + bodyH - Math.max(3, u);
-    ctx.fillStyle = PAL.gameGround;
-    ctx.fillRect(x, groundY, w, Math.max(1, u - 1));
-    // 主角：正弦跳跃（幅度够大才看得出在玩）
-    const heroW = Math.max(2, u);
-    const jump = Math.abs(Math.sin(t * 2.2 + seed));
-    const heroX = x + pad + Math.round(innerW * 0.22);
-    ctx.fillStyle = PAL.gameHero;
-    ctx.fillRect(heroX, groundY - heroW - Math.round(jump * (innerCH * 0.55)), heroW, heroW);
-    // 障碍：从右往左扫（速度与跳跃不同步 ⇒ 看起来像在躲）
-    for (let i = 0; i < 2; i += 1) {
-      const speed = 0.55 + i * 0.18;
-      const ox = x + w - Math.round(((t * speed + seed * 0.31 + i * 0.5) % 1) * (w + innerW * 0.5));
-      ctx.fillStyle = PAL.gameBlock;
-      ctx.fillRect(ox, groundY - u * 2, Math.max(2, u - 1), Math.max(2, u * 2));
-    }
-    // 分数（真实在涨的数字）+ 血条
-    const score = String(Math.floor(t * 7 + seed * 3) % 1000).padStart(3, "0");
-    drawMicroText(ctx, score, x + w - microWidth(score, 1) - pad, cy, PAL.gameHero, 1);
-    ctx.fillStyle = PAL.idleBar;
-    ctx.fillRect(x + pad, cy, Math.max(3, Math.round(innerW * 0.34)), 1);
-    ctx.fillStyle = PAL.fileDel;
-    ctx.fillRect(x + pad, cy, Math.max(1, Math.round(innerW * 0.3)), 1);
+    drawSaScene({ ctx, t, seed, x, y: cy, w, h: bodyH, u, pad, innerW }, "game");
     return;
   }
-
   // code：【块标记】下面这一段是 code 模式的绘制代码（判据面依赖这个标记定位）
   if (mode === "code") {
     /*⛔⛔ 2026-10-04 用户报「显示器上没有动画」—— 动画**在跑**，但屏面只有 50×34，
