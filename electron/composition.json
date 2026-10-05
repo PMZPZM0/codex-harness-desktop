@@ -574,6 +574,13 @@
       "file": "features/knowledge-base-ipc.ts",
       "export": "knowledgeBaseFeature",
       "config": null
+    },
+    {
+      "id": "model-viewer",
+      "enabled": true,
+      "file": "features/model-viewer-ipc.ts",
+      "export": "modelViewerFeature",
+      "config": null
     }
   ]
 }

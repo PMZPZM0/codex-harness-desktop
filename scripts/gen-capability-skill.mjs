@@ -37,6 +37,7 @@ const DOMAIN_DESCRIPTIONS = {
   "capabilities": "宿主能力快照（当前环境支持什么，一次性拉取）",
   "bridge": "引擎桥连接状态",
   "prompt": "提示词增强（把用户草稿改写为更完整的 prompt）",
+  "model-viewer": "**3D 模型预览**（10-05）：read(path) 读会话工作区里的 .glb / .gltf 模型（可信根内、≤256MB，字节直传给预览弹窗）。通常不直接调 —— 引擎侧走 harness_tools 网关的 `preview_3d` 在应用内弹出可旋转的 3D 预览；本域通道是渲染层弹窗的取数后端",
   "kb": "**项目级本地知识库**（<项目>/.codex-harness/knowledge/）：list 列文档 / add-text·add-files 导入 md·txt·代码文档（自动分块）/ search 分块全文检索（带高亮片段）/ read 读全文 / remove 删除。用户要「把资料存进知识库 / 查项目资料」时用它；语义向量后端为按需下载项。⛔⚠️ 上面是 **IPC 桥（给设置页 UI 用），不是模型工具** —— 模型侧只有两个：`knowledge_search(query, limit?)` 检索（workspace 缺省 = 调用者 cwd；装了 Laya 时最相关的一条会被置顶标注）与 `knowledge_add(title, text, source?)` 写入（10-04 补，此前模型只能读不能写；⚠️ 同名不覆盖会堆重复条目、⚠️ 写入不做语义向量化、⚠️ 专家/被调度会话不许写、⚠️ 装了 Laya 时低价值内容会被拒写并说明原因——充实内容后重试即可）",
   "pet": "桌面宠物（官方 Codex 宠物格式：pet.json + 8×9 图集）：list 发现四目录宠物 / settings-get·set 开关与选择 / roots 目录清单 / open-dir / import 从只读目录导入用户区 / toggle·show·hide 显示控制。宠物本体渲染在独立透明置顶浮窗，宿主侧只做发现与设置",
   "laya": "Laya 智能判断（GitHub NandhaKishorM/laya，Apache-2.0，非自回归决策引擎 33ms）：status 安装与服务状态 / install 安装更新（pip 清华镜像 + 权重走 hf-mirror）/ decide-effort 思考等级自动判断（choice: low/medium/high/xhigh + 校准置信度，<0.45 弃权）——渲染层思考档「自动」开关的数据端；失败一律降级手选档，不是硬依赖",

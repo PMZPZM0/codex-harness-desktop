@@ -856,6 +856,7 @@ interface Window {
     queueTimerCancel(input: { queuedSubmissionId: string }): Promise<{ ok: boolean }>;
     /* 在系统资源管理器中定位文件（可信根校验同 fs:read）；画布生成产物「打开文件夹」 */
     revealInFolder(path: string): Promise<{ ok: boolean }>;
+    readModel(path: string): Promise<{ data: Uint8Array; size: number }>;
     /* 删分镜表的工作区文件（只删 .drama-canvas/storyboards/<name>.json 这一个文件；不存在时幂等返回 removed:false） */
     dramaCanvasStoryboardFileRemove(input: { workspace: string; name: string }): Promise<{ removed: boolean }>;
     /* 扫各项目的**工作日志与项目记忆**（<项目>/.codex-harness/memory/**：长期记忆 / 坑与纪律 / logs 日报 / archive / project）。项目清单来自 rollout 扫出的 cwd 集合。⛔ 这是项目里的工作记录，与会话本身的归档 / 删除（「归档管理」页）不是一回事 */
@@ -1005,6 +1006,9 @@ interface Window {
 
 
     onRuntimeProgress(listener: (event: { id: string; message?: string; percent?: number; stage?: string; speed?: string; done?: boolean; failed?: boolean; auto?: boolean }) => void): () => void;
+
+    /** 3D 预览弹窗打开推送（model-viewer 域，10-05）：手写桥（非 gen 段），引擎 preview_3d 触发 */
+    onModelViewerOpen(listener: (event: { path: string; title: string }) => void): () => void;
 
     onTerminalData(listener: (id: string, data: string) => void): () => void;
 

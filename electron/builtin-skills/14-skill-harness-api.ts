@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（83 个能力域 / 414 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（84 个能力域 / 415 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -232,6 +232,10 @@ Bot 会话（Bot 与会话的绑定与消息注入）
 ### fs（4 通道）
 受控文件系统访问（读写/存在性检查，路径受信任目录约束）
 通道：fs:write, fs:read, fs:exists, fs:reveal
+
+### model-viewer（1 通道）
+**3D 模型预览**（10-05）：read(path) 读会话工作区里的 .glb / .gltf 模型（可信根内、≤256MB，字节直传给预览弹窗）。通常不直接调 —— 引擎侧走 harness_tools 网关的 \`preview_3d\` 在应用内弹出可旋转的 3D 预览；本域通道是渲染层弹窗的取数后端
+通道：model-viewer:read
 
 ### dialog（6 通道）
 文件/目录选择对话框（含跨窗口）

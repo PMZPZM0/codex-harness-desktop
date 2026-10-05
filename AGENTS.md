@@ -535,3 +535,4 @@ FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）· Playwright 内核�
 - 🪟 任务栏图标 = AUMID 配对问题（09-24，守卫【2】新增 4 条）
 - （09-24 下午 ~ 09-25 的详细记录已迁往 `docs/CHANGELOG-ROUNDS.md`，2026-09-26 二次拆骨；本处只留索引）
 - 🧠 知识库 Laya 软增强（10-04 立项，10-05 校准定案）：knowledge_add 写入门禁（knowledge/chatter 问法）+ 重复内容拦截可用；**检索相关性过滤校准证明不可用已砍**；判定置信读 answer_confidence；校准脚本 scripts/calibrate-laya-kb.mjs；守卫【kb】判据 8 十条（docs/KNOWLEDGE-BASE.md §9）
+- 🧊 3D 模型预览（10-05 立项，model-viewer 域）：harness_tools 网关 preview_3d（.glb/.gltf，可信根+白名单+256MB 闸）→ 应用内可旋转弹窗（@google/model-viewer 懒加载 ~1MB 独立分块）；技能 3d-modeling + 鲁班种子同轮接入；守卫【mv】13 条（scripts/guards/12-model-viewer.mjs）

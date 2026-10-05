@@ -374,6 +374,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           + "knowledge_search / knowledge_add（项目知识库）；ui_component_search / ui_component_get（界面组件库）；"
           + "video_generate / video_status / video_concat（视频）；voice_generate（语音）；"
           + "workflow_read / workflow_writeback（工作流看板）；expert_list / expert_save / subagent_save（专家与子智能体管理）；"
+          + "preview_3d（3D 模型预览：拿到 .glb/.gltf 后在应用内弹出可旋转查看的弹窗）；"
           + "connector_register（注册 MCP 连接器）。传 name=\"list\" 可拿到每个能力的完整参数说明（不确定参数就先调它）。"
           + "⛔ 调度专家 / 专家团 / 子智能体请用专用工具 agent_invoke，不在这里。"
           + "⛔ 若你直接调用某个内置能力名（而不是走本工具）却报 unsupported call，说明**本会话的工具面是旧的**"

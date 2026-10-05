@@ -551,6 +551,22 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
       return { ok: false, error: String((error as Error)?.message ?? error) };
     }
   }
+  /* ── 3D 预览（2026-10-05）：模型文件路径过闸（可信根 + 扩展名白名单 + 大小上限，
+     与 model-viewer:read 同一道 resolveModelPath）→ 推送渲染层打开弹窗。⛔ 只推不读，
+     模型字节由渲染层经 model-viewer:read 自己拉（弹窗是用户主动看的界面）。 */
+  if (name === "preview_3d") {
+    const rawPath = String(args.path ?? "").trim();
+    if (!rawPath) return { ok: false, error: "缺少 path（.glb / .gltf 模型文件的绝对路径）" };
+    try {
+      const { resolveModelPath } = await import("./model-viewer-ipc");
+      const file = await resolveModelPath(rawPath);
+      const { sendToWindow } = await import("./window-bus");
+      sendToWindow("model-viewer:open", { path: file, title: String(args.title ?? "").trim() });
+      return { ok: true, output: `已在应用内打开 3D 预览：${file}（弹窗里可旋转/缩放；模型还在原路径，可继续用 Blender 等工具加工）` };
+    } catch (error) {
+      return { ok: false, error: `无法打开 3D 预览：${String((error as Error)?.message ?? error)}` };
+    }
+  }
   return { ok: false, error: `未知工具：${String(name)}` };
 }
 export async function ensureDispatchHttp(): Promise<void> {
