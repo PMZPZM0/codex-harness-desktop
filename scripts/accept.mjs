@@ -519,6 +519,10 @@ const CHECKS = [
          用 Range API 直接构造选区：不依赖真实拖拽。⛔ 必须挑**在视口里**的文本节点 ——
          时间线很长，第一个长文本节点常在滚动区外面，range 的 rect 是负数，
          浮条按视口坐标定位就会跑到屏幕外，测出来像"定位错了"其实是选错了节点（10-05 实测踩过）。 */
+      /* ⛔ 必须验 `sel.toString()` 真的取到了字：代码块 / 工具卡片这类区域带 `user-select:none`，
+         addRange 之后 isCollapsed 是 false、range.toString() 也有字，但**文档选区取不到内容**
+         （10-05 在 main profile 实测：选中 "chcp 65001>nul" 那段，sel.toString() 是空串）。
+         这种地方本来就不该弹浮条（没字可复制），所以是测试要跳过，不是应用要改。 */
       const selectIn = async () => h.eval(`(function(){
         const host=document.querySelector(".timeline"); if(!host) return {ok:false, why:"没有 .timeline"};
         const walker=document.createTreeWalker(host, NodeFilter.SHOW_TEXT); let node=null;
@@ -529,38 +533,58 @@ const CHECKS = [
           const raw=node.textContent||""; const start=raw.indexOf(trimmed);
           const range=document.createRange(); range.setStart(node, start+1); range.setEnd(node, start+15);
           const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
-          return {ok:true, chosen:sel.toString(), top:Math.round(box.top)};
+          const chosen=sel.toString();
+          if(chosen.trim().length<8) continue;
+          return {ok:true, chosen, top:Math.round(box.top)};
         }
-        return {ok:false, why:"找不到视口内足够长的文本节点"}; })()`);
+        return {ok:false, why:"找不到视口内、且真的可选（非 user-select:none）的文本节点"}; })()`);
       const selected = await selectIn();
       const barUp = await h.waitFor(`!!document.querySelector(".selection-action-bar")`, { label: "选区浮条弹出", timeoutMs: 4000 })
         .then(() => true).catch(() => false);
+      /* ⑨ 一次量四件事：portal 到 body（挂在时间线里会被祖先的 transform 改掉 fixed 的包含块）、
+         贴着**选区末行**（上一版取整个选区的 union rect，跨段选择时浮条会跑到离选区很远的地方）、
+         轻浮层档、完整在视口内。10-05 用户实测「按键在那么远」就是前两件事没做对。 */
       const bar = await h.eval(`(function(){ const b=document.querySelector(".selection-action-bar"); if(!b) return {found:false};
         const cs=getComputedStyle(b); const r=b.getBoundingClientRect();
-        return {found:true, pos:cs.position, z:cs.zIndex, labels:[...b.querySelectorAll("button")].map((x)=>(x.textContent||"").trim()),
-          inView:r.top>=0 && r.left>=0 && r.right<=window.innerWidth && r.height>0, scrim:!!document.querySelector(".selection-action-scrim")}; })()`);
+        const s=window.getSelection(); const rs=s&&s.rangeCount?s.getRangeAt(0).getClientRects():[];
+        const last=rs.length?rs[rs.length-1]:null;
+        return {found:true, pos:cs.position, z:cs.zIndex, parent:(b.parentElement&&b.parentElement.tagName)||"",
+          labels:[...b.querySelectorAll("button")].map((x)=>(x.textContent||"").trim()),
+          inView:r.top>=0 && r.left>=0 && r.right<=window.innerWidth && r.height>0,
+          gapToSel: last?Math.round(Math.abs(r.bottom-last.top)):null, scrim:!!document.querySelector(".selection-action-scrim")}; })()`);
       h.check("⑧ 在消息区选中文字会自动弹出浮条，两个动作齐全（复制 / 添加到对话）",
         selected?.ok === true && barUp === true && bar?.found === true
           && JSON.stringify(bar?.labels) === '["复制","添加到对话"]', JSON.stringify({ selected, bar }).slice(0, 220));
-      h.check("⑨ 浮条是轻浮层档（fixed + z-index 1001，高于全局模态 400）、完整在视口内、带收起垫层",
-        bar?.pos === "fixed" && bar?.z === "1001" && bar?.inView === true && bar?.scrim === true, JSON.stringify(bar));
+      h.check("⑨ 浮条 portal 到 body、贴着选区末行（≤44px）、轻浮层档且在视口内",
+        bar?.parent === "BODY" && bar?.pos === "fixed" && bar?.z === "1001" && bar?.inView === true
+          && Number(bar?.gapToSel) >= 0 && Number(bar?.gapToSel) <= 44 && bar?.scrim === true, JSON.stringify(bar));
       await h.screenshot("selection-bar");   // 留一张"浮条正浮在选区上"的图给人看
-      /* ⑩ 这一条钉的是最容易写错的地方：动作一触发就收浮条 ⇒ 反馈挂在即将卸载的按钮上，没人看得见。 */
-      const copyClicked = await h.eval(`(function(){ const b=document.querySelector(".selection-action-bar button"); if(!b) return {found:false}; b.click(); return {found:true}; })()`);
+      /* ⛔ 真鼠标点击（按坐标发 mousePressed/mouseReleased），不用 el.click()：
+         合成点击**绕过命中测试**，"浮条被别的东西盖住、点不动"这种问题它永远测不出来
+         —— 上一版就是因此全绿、用户一上手就点不动（10-05）。 */
+      const realClick = async (index) => {
+        const point = await h.eval(`(function(){ const b=[...document.querySelectorAll(".selection-action-bar button")][${index}];
+          if(!b) return null; const r=b.getBoundingClientRect(); return {x:Math.round(r.left+r.width/2), y:Math.round(r.top+r.height/2)}; })()`);
+        if (!point) return { point: null };
+        const hit = await h.eval(`(function(){ const e=document.elementFromPoint(${point.x},${point.y});
+          const bar=document.querySelector(".selection-action-bar"); if(!e||!bar) return {onBar:false, at:"无元素"};
+          return {onBar: bar.contains(e), at:(e.closest("button")&&e.closest("button").textContent||e.tagName).trim().slice(0,10)}; })()`);
+        await h._send("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", clickCount: 1 });
+        await h._send("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", clickCount: 1 });
+        return { point, ...hit };
+      };
+      const copyClicked = await realClick(0);
       const copyFeedback = await h.waitFor(`(function(){ const b=document.querySelector(".selection-action-bar button");
         return !!b && b.getAttribute("data-phase")==="done" && !!b.querySelector("svg.lucide-check"); })()`,
-        { label: "浮条上的第一段反馈", timeoutMs: 900 }).then(() => true).catch(() => false);
+        { label: "真点击后进入成功态", timeoutMs: 900 }).then(() => true).catch(() => false);
       await h.waitFor(`!document.querySelector(".selection-action-bar")`, { label: "反馈播完后自动收起", timeoutMs: 3000 })
         .then(() => true).catch(() => false);
-      h.check("⑩ 点复制：反馈在浮条上看得见（不是先卸载），播完才自动收起",
-        copyClicked?.found === true && copyFeedback === true, JSON.stringify({ copyClicked, copyFeedback }));
-      // 上一次动作的 hold 还要多盖 200ms 才失效（那是设计：反馈播完才收），
-      // 紧接着再选一次会被 measure 提前挡掉 ⇒ 这里等它过期，别误判成"浮条不再弹"。
-      await wait(500);
+      h.check("⑩ 真鼠标点得到（命中测试落在浮条自己的按钮上）+ 反馈看得见、播完才自动收起",
+        !!copyClicked?.point && copyClicked?.onBar === true && copyFeedback === true, JSON.stringify(copyClicked));
       const appended = await selectIn();
       const barUp2 = await h.waitFor(`!!document.querySelector(".selection-action-bar")`, { label: "第二次弹出浮条", timeoutMs: 4000 })
         .then(() => true).catch(() => false);
-      await h.eval(`(function(){ const b=[...document.querySelectorAll(".selection-action-bar button")][1]; b?.click(); return !!b; })()`);
+      const appendClicked = await realClick(1);
       const quoteUp = await h.waitFor(`!!document.querySelector(".quote-bar")`, { label: "引用条出现", timeoutMs: 4000 })
         .then(() => true).catch(() => false);
       const quoted = await h.text(".quote-bar-text").catch(() => "");
@@ -568,8 +592,8 @@ const CHECKS = [
       await wait(400);
       const quoteCleared = await h.eval(`!!document.querySelector(".quote-bar")`);
       h.check("⑪「添加到对话」= 复用输入框上方那条可取消的引用条（不另造第二份引用实现），取消后清干净",
-        appended?.ok === true && barUp2 === true && quoteUp === true && String(quoted).trim().length > 0 && quoteCleared === false,
-        JSON.stringify({ chosen: appended?.chosen, barUp2, quoted: String(quoted).slice(0, 30), quoteCleared }));
+        appended?.ok === true && barUp2 === true && appendClicked?.onBar === true && quoteUp === true && String(quoted).trim().length > 0 && quoteCleared === false,
+        JSON.stringify({ chosen: appended?.chosen, barUp2, appendClicked, quoted: String(quoted).slice(0, 30), quoteCleared }));
       // 收尾：清掉测试留下的选区，否则浮条会出现在截图里、也会挡后面几项
       await h.eval(`(function(){ window.getSelection()?.removeAllRanges(); return 1; })()`);
       await wait(400);
