@@ -569,7 +569,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           }}
         />
       )}
-      {/* 手机前端UI（10-05，嵌 m3e-canvas；展示名 10-05 夜从「界面草图」改来）：与画布同档的整屏浮层，从侧栏「···更多」开。
+      {/* 前端开发（10-05，嵌 m3e-canvas；两轮改名：界面草图 → 手机前端UI → 前端开发）：与画布同档的整屏浮层，从侧栏「···更多」开。
           「交给 Codex 实现」走的是画布那条已验证的通路 —— 关浮层 → 塞 pendingCommandTextRef
           （⛔ 它是 ref，不受 setPrompt 状态滞后影响）→ 直接发送；发送失败兜底成填输入框。 */}
       {uiSketchOpen && (

@@ -166,9 +166,10 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
 - ⚠️ **未经真机验证**：签名/公证与 Gatekeeper 放行、首次「辅助功能 + 屏幕录制」授权体验只能在 mac 上跑出来。
   产物层的三条硬校验（主程序存在 / 执行位 / 不残留别的平台二进制）已写进 `scripts/verify-packaged-tools.cjs`。
 
-### 🎨 手机前端UI（`ui-sketch` 板块 + `sketch://` 协议，2026-10-05 立；展示名 10-05 夜从「界面草图」按用户要求改来，守卫【283】149 条）
+### 🎨 前端开发（`ui-sketch` 板块 + `sketch://` 协议，2026-10-05 立；两轮改名：界面草图 → 手机前端UI → 前端开发，守卫【283】158 条）
 
 把开源 **m3e-canvas**（Material 3 Expressive 屏摄画布，MIT）嵌进应用：侧栏「···更多」开一整屏的界面画布，
+**手机 / 电脑 / 网页**三种形态都能拼（手机屏 412×892；电脑屏显式 1280×800；`platform` 选 android/web），
 摆好的界面可一键预览、直接变成前端提示词。要点如下：
 
 - ⛔ **不并源码**：上游 30,722 行 TS + 自己一套 Tailwind v4 与色板 ⇒ 并进本仓等于在设计体系里再塞一个
@@ -187,22 +188,27 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
   ⇒ 静默降级（同 pet:// 的 CSP 事故同型，最难发现的那类）。
 - ⛔ **CSP 的 `frame-src` 必须显式加 `sketch:`**：`*` 不覆盖自定义协议（`index.html` 里已写成纪律），漏写 = iframe 静默空白。
   这条链六个接缝（侧栏按钮 → bag 开关 → AppView 挂载 → 协议 → CSP → 产物+桥），**每一个都能在 tsc 与预检全绿时白屏**
-  ⇒ 验收项 `ui-sketch` 真跑「桥握手成功」（`data-bridge="ready"`）+ 写回往返（⑨真实上游接受分享哈希 / ⑩摘要变「1 屏 / 2 部件」/ ⑪原样还原 / ⑫一键预览点到真键）：
+  ⇒ 验收项 `ui-sketch`（10-06 轮重写为三形态探针）真跑「桥握手成功」（`data-bridge="ready"`）+ 写回往返（⑦真实上游接受分享哈希 / ⑧摘要变「2 屏 / 2 部件」= 手机屏 + 电脑屏 + platform web 真落盘 / ⑨一键预览点到真键 / ⑩原样还原）：
   跨源 iframe 读不到 DOM 也读不到存储，握手与回执是唯一可观测判据。
 - **读写通道 = `scripts/sketch-bridge.js` + postMessage**（构建时内联进产物的 index.html）：读 = 桥把草图同源的
   `localStorage["m3e:doc"]` 回传宿主（宿主据此显示「N 屏 / M 部件」、复制 JSON、合成任务）；**写回只走上游自己的导入通道** ——
   桥把文档编码成它的分享哈希（`#docz=` = deflate-raw + base64url；无 CompressionStream 回落 `#doc=`）挂 `location.hash`
   → 上游 `hashchange → arrive()` 落盘（有校验、可 Ctrl+Z 撤销）。⛔ 桥自己从不 `setItem/removeItem` —— 直接改存储
   会绕过上游校验与撤销栈（【283】静态断言 + VM 真跑两处都钉）。
-- **Codex 侧两个 dynamicTool**（10-05 下午立、10-05 夜改名，用户点名「涉及手机前端开发能主动调用这个工具做手机前端UI」）：
-  `mobile_ui_get_doc` / `mobile_ui_apply_doc`（注册 part08 → 分发 part05；窗口没开自动开 + 等桥就绪 ≤15s）。
+- **Codex 侧两个 dynamicTool**（10-05 立；两轮改名，用户点名「涉及手机前端开发能主动调用这个工具」+「手机电脑 网页前端UI都有」）：
+  `frontend_get_doc` / `frontend_apply_doc`（注册 part08 → 分发 part05；窗口没开自动开 + 等桥就绪 ≤15s）。
   写侧先过**上游同口径**前置校验（`validateSketchDoc`：kind 36 种 / variant 5 种 / 必填字段，口径抄自上游 bundle 的
   `fL`/`fz`/`fE`/`fT` + `lp`/`sZ` 两张表，守卫再从产物原文提取枚举逐字对账），失败不打开窗口、回中文原因；
   回执以桥的 `load-doc-result` 为准（没有回执不算成功）。渲染层 `sketch-session.mjs` 是唯一的就绪态与在飞请求持有者
   （弹窗 attach/feed；串行队列防两次 hash 写入互踩；StrictMode 重挂载不误杀在飞请求）。
-  ⛔ 配套**常驻指令第 13 条**（`electron/developer-instructions.ts` 的 `MOBILE_UI_INSTRUCTIONS`）与工具同在 ——
-  做手机端界面时明确让模型先 `get` 再在文档基础上 `apply`（工具在表里模型不主动用 = 白配，同第 12 条纪律）。
+  ⛔ 配套**常驻指令第 13 条**（`electron/developer-instructions.ts` 的 `FRONTEND_CANVAS_INSTRUCTIONS`）与工具同在 ——
+  做手机 / 电脑 / 网页界面时明确让模型先 `get` 再在文档基础上 `apply`（工具在表里模型不主动用 = 白配，同第 12 条纪律）；
+  工具描述**列全 36 种 kind 名字**（守卫钉住"一个都不许缺"），字段级说明在组件手册技能里（见下条）。
   改名代价：旧会话要切走再切回才出现新工具名（dynamicTools 只在 thread/start 与 resume 注入）。
+- **组件手册技能 `frontend-canvas`**（10-05 夜，用户「UI里面的组件…再丰富一些」）：内置技能，36 种组件的
+  字段速查（含 `bottomSheet` / `datePicker` / `timePicker` / `carousel` 这四种上游 agent.md 没写的）
+  + 手机 / 电脑 / 网页三形态 + 导航/主题/坐标/自查清单；`ensureBuiltinSkills` 落盘，指令第 13 条点名它。
+  ⛔ 画布本体仍是随包产物、**组件面板加不了新控件**（"照原样嵌"的既定纪律）——"丰富"落在让 Codex 把现有 36 种用全。
 - **一键预览**（10-05 夜，用户：「加一个对话框预览这个UI界面」）：弹窗头部「预览」按钮 → 桥**代点上游工具栏的
   play_arrow 键**（图标 ligature 是语言无关锚；跳过 disabled / 隐藏键）→ 上游自己的交互预览（点按跳转 / 滑动返回 /
   ESC 退出）在弹窗里全屏播放；桥回 `preview-result` 回执、宿主状态条同步。⛔ 预览界面是上游渲染的，宿主不造第二层；
@@ -410,7 +416,7 @@ FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）· Playwright 内核�
 | rpa_save / rpa_run | dynamicTools | 保存自动化流程为 RPA 配方 / 列出并执行已存配方（逐步复现） |
 | task_add / task_update | dynamicTools | 维护用户任务清单（新增/改状态/列出/删除） |
 | agent_ask | dynamicTools | 向用户展示选项卡等待选择（第一项为推荐），用于关键决策确认 |
-| mobile_ui_get_doc / mobile_ui_apply_doc | dynamicTools（手机前端UI，10-05；原名 sketch_*，10-05 夜改名） | 读/写应用内「手机前端UI」画布（m3e-canvas）：读回整份文档 JSON + 摘要；写回=在文档基础上改（追加屏/加部件/调坐标），走上游分享哈希导入、用户实时可见可 Ctrl+Z。写侧先过 `validateSketchDoc` 前置校验（失败回中文原因）；画布没开自动打开等桥就绪。做手机前端 UI 时主动用（常驻指令第 13 条配套） |
+| frontend_get_doc / frontend_apply_doc | dynamicTools（前端开发，10-05；两轮改名：sketch_* → mobile_ui_* → frontend_*） | 读/写应用内「前端开发」画布（m3e-canvas，手机 / 电脑 / 网页三种形态）：读回整份文档 JSON + 摘要；写回=在文档基础上改（追加屏/加部件/调坐标），走上游分享哈希导入、用户实时可见可 Ctrl+Z。写侧先过 `validateSketchDoc` 前置校验（失败回中文原因）；画布没开自动打开等桥就绪；描述列全 36 种 kind，字段速查在内置技能 frontend-canvas。做手机/电脑/网页界面时主动用（常驻指令第 13 条配套） |
 | harness_tools | dynamicTools（**能力网关**，10-05） | 调其余内置能力：`scheduler_*`（定时任务）/ `knowledge_*`（知识库）/ `ui_component_*`（组件库）/ `video_*` / `voice_generate` / `workflow_*` / `expert_list` / `expert_save` / `subagent_save` / `connector_register`。传 `name` + `args`；⛔ 参数拿不准先 `name="list"` 取清单。执行端 = IPC `agents:dispatch-call` → `dispatchRpcCall`（与内置 MCP 同一套）。⛔ `agent_invoke` / `agent_archive_sessions` / `image_generate` 有专用工具，**不在**网关里 |
 
 > ⛔⛔ **内置 MCP（harness-dispatch）的工具在引擎 0.157 里不再直接可调**（10-05 实测定性，用户报「调度工具用不了」的根因）：
@@ -554,5 +560,6 @@ FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）· Playwright 内核�
 - 🧠 知识库 Laya 软增强（10-04 立项，10-05 校准定案）：knowledge_add 写入门禁（knowledge/chatter 问法）+ 重复内容拦截可用；**检索相关性过滤校准证明不可用已砍**；判定置信读 answer_confidence；校准脚本 scripts/calibrate-laya-kb.mjs；守卫【kb】判据 8 十条（docs/KNOWLEDGE-BASE.md §9）
 - 🧊 3D 模型预览（10-05 立项，model-viewer 域）：harness_tools 网关 preview_3d（.glb/.gltf，可信根+白名单+256MB 闸）→ 应用内可旋转弹窗（@google/model-viewer 懒加载 ~1MB 独立分块）；技能 3d-modeling + 鲁班种子同轮接入；守卫【mv】13 条（scripts/guards/12-model-viewer.mjs）
 - 🖊 界面草图写入通道（10-05 下午）：dynamicTools 加 `sketch_get_doc` / `sketch_apply_doc`；写回只走上游分享哈希导入（`#docz=`，桥不碰 localStorage）；渲染层会话单例 `sketch-session.mjs`（串行队列 / 关窗拒绝 / StrictMode 语义）；守卫【283】67 → 131 条（含桥 VM 真跑三用例）；验收 ⑨⑩⑪ 真跑写回往返与还原
-- 📱 手机前端UI 改名 + 一键预览（10-05 夜，用户：「名字改一下叫手机前端UI…加一个对话框预览这个UI界面」）：展示名「界面草图」→「手机前端UI」全量改（域 id / 协议 / 存储键不动）；工具改名 `mobile_ui_get_doc` / `mobile_ui_apply_doc` + 描述改「手机前端开发主动用」；常驻指令第 13 条；弹窗「预览」按钮 → 桥代点上游 play_arrow（交互预览是上游自带）；守卫【283】131 → 148 条（VM 用例 D 预览触发真跑）；验收 ⑫ 真跑回执
+- 📱 手机前端UI 改名 + 一键预览（10-05 夜，用户：「名字改一下叫手机前端UI…加一个对话框预览这个UI界面」）：展示名「界面草图」→「手机前端UI」全量改（域 id / 协议 / 存储键不动）；工具改名 `mobile_ui_get_doc` / `mobile_ui_apply_doc` + 描述改「手机前端开发主动用」；常驻指令第 13 条；弹窗「预览」按钮 → 桥代点上游 play_arrow（交互预览是上游自带）；守卫【283】131 → 149 条（VM 用例 D 预览触发真跑 + 弱断言加强）；验收 ⑫ 真跑回执
+- 🌐 前端开发 再改名 + 组件手册（10-05 夜，用户：「网页版也有选项…名字就叫前端开发…把那个内置组件的，按照这个前端UI支持的展示和拓展效果更新进去」）：展示名「手机前端UI」→「前端开发」（手机/电脑/网页三形态；画布实测：手机屏 412×892、电脑屏显式 1280×800、platform 选 android/web）；工具改 `frontend_get_doc` / `frontend_apply_doc`，描述**列全 36 种 kind**（守卫钉"一个都不许缺"）；常驻指令第 13 条改 FRONTEND_CANVAS_INSTRUCTIONS 并点名技能；新增内置技能 `frontend-canvas`（36 种字段速查，含上游 agent.md 漏写的 bottomSheet / datePicker / timePicker / carousel）+ 中文导读；守卫【283】149 → 158 条。⛔ 同轮按用户令「验收的脚本重新写」把验收项 `ui-sketch` **重写成三形态探针**（11 条：手机屏 + 电脑屏 + platform web 真落盘 → 预览 → 还原；编号改执行顺序），轮次升 10-06、默认验收只跑新项（message-feedback 留作历史回归证据）
 - 🖼 应用壁纸（10-05 立项，wallpaper 域）：外观设置「壁纸」段五档（关/图案/粒子/3D 背景/自定义图）；图案 = 原创 SVG mask + --accent 上色；动效 = tsparticles + vanta（MIT，React.lazy 整块懒加载独立 chunk，vanta try/catch 降级）；层挂 timeline-wrap（absolute z-1 pointer-none，只在聊天区透出）；减动效偏好自动退回图案；守卫【wp】13 条（scripts/guards/14-wallpaper.mjs）

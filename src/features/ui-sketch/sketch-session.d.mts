@@ -1,4 +1,4 @@
-/** 手机前端UI 会话单例的类型面（真相源在 sketch-session.mjs，本文件只是它的声明）。 */
+/** 前端开发（域 id 仍为 `ui-sketch`）会话单例的类型面（真相源在 sketch-session.mjs，本文件只是它的声明）。 */
 import type { SketchDiag, SketchDoc } from "./sketch-doc.mjs";
 
 export const SKETCH_READY_TIMEOUT_MS: number;
