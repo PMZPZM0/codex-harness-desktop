@@ -102,7 +102,7 @@ bag.chooseModel = chooseModel as typeof bag.chooseModel;
   async function migrateThreadToProvider(threadId: string, target: { provider: string; model: string; name: string; baseUrl: string; wireApi?: string }): Promise<{ ok: boolean; error?: string }> {
     try {
       const officialTarget = target.provider === "openai-official";
-      const resumeParams: Record<string, unknown> = {
+      const resumeParams: { threadId: string } & Record<string, unknown> = {
         threadId,
         excludeTurns: true,
         model: target.model,
@@ -132,7 +132,7 @@ bag.chooseModel = chooseModel as typeof bag.chooseModel;
           },
         }),
       };
-      await window.codex.request("thread/resume", resumeParams);
+      await resumeThreadWithTurns(bag, resumeParams);
       await bag.updateThreadSettings({ model: target.model, ...(officialTarget ? {} : { model_provider: HARNESS_PROVIDER_ID }), effort: null });
       // 迁移成功：更新会话绑定供应商登记表（发送前检测依赖此表）
       bag.threadProviderRef.current.set(threadId, HARNESS_PROVIDER_ID);
@@ -268,7 +268,7 @@ bag.cancelPendingRestart = cancelPendingRestart as typeof bag.cancelPendingResta
     // codex app-server 偶尔会重启（切换供应商/启用禁用），重启后内存里没有旧任务，
     // 直接 thread/settings/update 会报 "thread not found"。自动 re-resume 一次再重试。
     const call = () => window.codex.request("thread/settings/update", { threadId: bag.thread!.id, ...values, ...(scope ? { collaborationMode: scope.collaborationMode } : {}) });
-    const resume = () => resumeThreadWithTurns({ threadId: bag.thread!.id, excludeTurns: false });
+    const resume = () => resumeThreadWithTurns(bag, { threadId: bag.thread!.id, excludeTurns: false });
     try {
       await call();
     } catch (error: any) {
@@ -319,7 +319,7 @@ bag.updateThreadSettings = updateThreadSettings as typeof bag.updateThreadSettin
     if (scope) bag.scopeSigRef.current[id] = scope.signature;
     try {
       await call();
-      await window.codex.request("thread/resume", { threadId: id, excludeTurns: true, sandbox: sandboxValue, approvalPolicy: approvalValue });
+      await resumeThreadWithTurns(bag, { threadId: id, excludeTurns: true, sandbox: sandboxValue, approvalPolicy: approvalValue });
     } catch (error: any) {
       const message = String(error?.message ?? "");
       // 空会话（还没发过首条消息）没有 rollout，settings/update 会报 "thread not found"——

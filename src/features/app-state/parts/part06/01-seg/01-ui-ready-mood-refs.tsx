@@ -178,7 +178,7 @@ bag.lastStreamTsRef = lastStreamTsRef as typeof bag.lastStreamTsRef;
       window.setTimeout(() => {
         bag.setSystemEvents((currentEvents) => currentEvents.filter((event) => event.hookKey !== `stream-stale-${staleTurnId}`));
       }, 25_000);
-      void window.codex.request("thread/resume", { threadId: current.id, excludeTurns: false }).then((result) => {
+      void resumeThreadWithTurns(bag, { threadId: current.id, excludeTurns: false }).then((result) => {
         if (!result?.thread) return;
         const serverLast = result.thread.turns[result.thread.turns.length - 1];
         const localLast = bag.threadRef.current?.turns[bag.threadRef.current.turns.length - 1];

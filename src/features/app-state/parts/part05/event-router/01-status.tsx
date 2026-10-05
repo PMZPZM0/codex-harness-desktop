@@ -33,7 +33,7 @@ export function handleEventRouter1(bag: Bag, event: any): boolean {
           const tid = bag.threadRef.current?.id;
           void bag.refreshThreads();
           if (tid) {
-            resumeThreadWithTurns({ threadId: tid, excludeTurns: false }).then((result) => {
+            resumeThreadWithTurns(bag, { threadId: tid, excludeTurns: false }).then((result) => {
               if (result?.thread && bag.threadRef.current?.id === tid) {
                 bag.threadRef.current = result.thread;
                 bag.threadCacheRef.current.set(tid, result.thread);
