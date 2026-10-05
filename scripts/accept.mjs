@@ -448,6 +448,79 @@ const CHECKS = [
       h.check("⑧ 关闭键真的收起浮层（关不掉的模态会挡住后面所有验收项）", closed === false, `stillOpen=${closed}`);
     },
   },
+  {
+    id: "message-feedback",
+    name: "㉒ 消息操作图标（用户消息复制贴右端 + 两段成功反馈，10-05 轮）",
+    run: async (h) => {
+      // 为什么真跑：这三件事全是"改坏了不会报错、只会悄悄变难看"的类型 ——
+      // 顺序靠 flex 排、动画靠属性选择器命中 DOM，tsc 与静态守卫都看不见最终像素。
+      /* 前置：应用启动时停在新任务（时间线是空的），必须先开一个**有历史**的会话。
+         ⛔ 点 `.thread-row` 那个 div 不生效 —— 真正绑 onClick 的是行里面的按钮（10-05 实测：
+         点 div 之后 .message 数量仍是 0，看着像"脚部没渲染"，其实根本没切会话）。
+         ⛔ 也不能按行索引点：侧栏按最近活动重排，索引下一轮就不是同一条（项目铁律）。 */
+      let footers = await h.eval(`document.querySelectorAll(".user-message-footer .message-footer").length`);
+      if (!Number(footers)) {
+        await h.eval(`(function(){ const rows=[...document.querySelectorAll(".thread-row")];
+          const target=rows.find((r)=>(r.textContent||"").trim().length>3) || rows[0];
+          if(!target) return 0; (target.querySelector("button")||target).click(); return 1; })()`);
+        await h.waitFor(`document.querySelectorAll(".user-message-footer .message-footer").length > 0`,
+          { label: "打开一个有历史消息的会话", timeoutMs: 15000 }).catch(() => undefined);
+        footers = await h.eval(`document.querySelectorAll(".user-message-footer .message-footer").length`);
+      }
+      h.check("① 当前会话里有用户消息脚部（前置条件；找不到就整项作废，不许假通过）", Number(footers) > 0, `footers=${footers}`);
+      /* ⛔ hover 才现身的项**仍占着 flex 位置**，所以"谁贴右端"取决于 DOM 顺序而非可见性 ——
+         这正是用户看到的毛病：常驻复制左边还留着两个空位，看着就是没靠右。 */
+      const order = await h.eval(`(function(){
+        const f=document.querySelector(".user-message-footer .message-footer"); if(!f) return {found:false};
+        const kids=[...f.children].map((el)=>({cls:String(el.className), right:Math.round(el.getBoundingClientRect().right)}));
+        const copy=kids.find((k)=>k.cls.includes("message-action-default"));
+        return {found:true, copyRight:copy?copy.right:-1, maxRight:Math.max(...kids.map((k)=>k.right)), n:kids.length}; })()`);
+      h.check("② 用户消息的常驻复制贴着右端（其余 hover 项排在它左边）",
+        order?.found === true && order.copyRight > 0 && order.copyRight === order.maxRight, JSON.stringify(order));
+      /* ⛔ 把要观察的那颗按钮**钉在 window 上**再取值：时间线会随 toast/滚动重排，
+         下一次 eval 的 `querySelector` 未必是同一个节点（10-05 在 main profile 上就这么读到过
+         另一条消息的 idle 态，看着像"反馈没生效"）。 */
+      const stage1 = await h.eval(`(function(){
+        const b=document.querySelector(".user-message-footer .message-footer .message-action-default");
+        if(!b) return {found:false}; window.__fbBtn=b; b.click(); return {found:true}; })()`);
+      /* 成功态窗口只有 1.1 秒，而 waitFor 每 300ms 轮询一次 ⇒ 不能"先等 done 再固定 sleep"，
+         要直接等到**样式稳定**（transition 120ms 走完、opacity 到 1），仍在窗口内。 */
+      const settled = await h.waitFor(`(function(){ const b=window.__fbBtn; if(!b) return false;
+        const cs=getComputedStyle(b); return b.getAttribute("data-phase")==="done" && cs.opacity==="1"; })()`,
+        { label: "第一段：成功态且样式已稳定", timeoutMs: 1000 }).then(() => true).catch(() => false);
+      const done = await h.eval(`(function(){ const b=window.__fbBtn; const cs=getComputedStyle(b);
+        return {phase:b.getAttribute("data-phase"), title:b.title, anim:cs.animationName, color:cs.color, opacity:cs.opacity,
+          hasCheck: !!b.querySelector("svg.lucide-check")}; })()`);
+      h.check("③ 第一段反馈：图标换成对勾、CSS 动画真的命中（选择器与 data-phase 对得上）",
+        stage1?.found === true && done?.phase === "done" && done?.anim === "message-action-pop" && done?.hasCheck === true, JSON.stringify(done));
+      h.check("④ 成功态文案改口 + 不 hover 也看得见（收藏/引用是 hover 项，点了之后鼠标移开也要能看到反馈）",
+        settled === true && /已复制/.test(String(done?.title ?? "")) && done?.opacity === "1"
+          && /47, 107, 221|124, 171, 248/.test(String(done?.color ?? "")), JSON.stringify(done).slice(0, 180));
+      await wait(1500);
+      const stage2 = await h.eval(`(function(){ const b=window.__fbBtn; const cs=getComputedStyle(b);
+        return {phase:b.getAttribute("data-phase"), anim:cs.animationName, title:b.title, hasCopy: !!b.querySelector("svg.lucide-copy")}; })()`);
+      h.check("⑤ 第二段回位：1.1 秒后换回原图标、动画不重播（否则'变回去'会再弹一次）",
+        stage2?.phase === "idle" && stage2?.anim === "none" && stage2?.hasCopy === true && /复制消息/.test(String(stage2?.title)), JSON.stringify(stage2));
+      /* agent 侧：常驻是 复制 → 分支 → 时间（顺序不动），复制在最左。 */
+      const agent = await h.eval(`(function(){
+        const f=document.querySelector(".codex-turn .message-footer, .assistant-message .message-footer"); if(!f) return {found:false};
+        const kids=[...f.children].map((el)=>({cls:String(el.className), left:Math.round(el.getBoundingClientRect().left)}));
+        const copy=kids.find((k)=>k.cls.includes("message-action-default"));
+        return {found:true, copyIsLeftmost: !!copy && copy.left === Math.min(...kids.map((k)=>k.left)), forkLabelled: [...f.querySelectorAll("button")].some((b)=>(b.textContent||"").includes("分支")), text:f.innerText.slice(0,40)}; })()`);
+      h.check("⑥ Codex 消息脚部也在同一套按钮上（复制仍在最左，顺序未被改动）", agent?.found === true && agent?.copyIsLeftmost === true, JSON.stringify(agent).slice(0, 200));
+      const agentStage = await h.eval(`(function(){ const b=document.querySelector(".codex-turn .message-footer .message-action-default, .assistant-message .message-footer .message-action-default");
+        if(!b) return {found:false}; window.__fbAgent=b; b.click(); return {found:true}; })()`);
+      const agentDone = await h.waitFor(`(function(){ const b=window.__fbAgent;
+        return !!b && b.getAttribute("data-phase")==="done" && !!b.querySelector("svg.lucide-check"); })()`,
+        { label: "agent 侧成功态", timeoutMs: 1000 }).then(() => true).catch(() => false);
+      h.check("⑦ 两段反馈对 agent 消息同样生效（用户原话：「Codex 消息下面也是所有图标做两段反馈」）",
+        agentStage?.found === true && agentDone === true, JSON.stringify({ agentStage, agentDone }));
+      // 截图前关掉宿主自己的引导浮层（环境体检），否则挡住时间线看不清
+      await h.clickByText("全部稍后再说").catch(() => undefined);
+      await wait(900);
+      await h.screenshot("message-feedback");
+    },
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -480,7 +553,8 @@ async function enterMain(h) {
 const LATEST_ROUND = "10-05";
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
-  "ui-sketch": "10-05",   // 本轮：侧栏「···更多」+ 嵌入的界面草图（协议 / CSP / 产物三处接缝只有真跑才算数）
+  "ui-sketch": "10-05",   // 侧栏「···更多」+ 嵌入的界面草图（协议 / CSP / 产物三处接缝只有真跑才算数）
+  "message-feedback": "10-05",   // 本轮：消息操作图标的两段反馈 + 用户消息复制贴右端
   "plugin-market-gitee": "10-03",
   "codex-official-market": "10-03",   // 本轮新项；Gitee 项同轮重跑（插件页加了源切换，两个源都得看一眼）
   "file-card-edit": "09-26",
