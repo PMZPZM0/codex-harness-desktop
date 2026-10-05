@@ -157,9 +157,12 @@ export async function runDelegatedTask(input: {
     workspace: input.cwd,
     query: String(input.query ?? ""),
     originThreadId: origin,
-    // 10-05 角色私有记忆：只注入**这个角色自己**的那份（互不串扰）
+    // 10-05 统一记忆：注入「项目共享段 + 本会话段 + 上一版角色记忆兼容段」，
+    // 与主会话**同一个 buildContext**（分两处拼装会出现"派出去的专家拿不到自己刚写的"）。
     role: roleRef ?? undefined,
-  }).catch((): { text: string; roleSection: string; roleKey: string } => ({ text: "", roleSection: "", roleKey: "" }));
+  }).catch((): { text: string; fabricSection: string; fabricCounts: { project: number; session: number; legacy: number }; roleKey: string } => (
+    { text: "", fabricSection: "", fabricCounts: { project: 0, session: 0, legacy: 0 }, roleKey: "" }
+  ));
 
   const finalQuery = [
     "[SYSTEM TASK · 调度会话]",

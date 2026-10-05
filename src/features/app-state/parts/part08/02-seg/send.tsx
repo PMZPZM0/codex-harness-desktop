@@ -291,9 +291,17 @@ export async function send(bag: Bag, event?: FormEvent) {
          ⛔ 普通会话没有角色归属 ⇒ 返回空段，行为与今天完全一致（不打扰既有链路）。
          ⛔ 标记沿用既有的 [Harness 常驻记忆] 体系：本段自身不带标记，由主进程拼好整段返回。 */
       try {
-        const roleCtx = await window.codex.readRoleMemoryContext({ threadId: bag.thread?.id ?? "", workspace: bag.workspace || "" });
+        /* ⛔⛔ 10-05 统一记忆：带 query ⇒ 主进程只注入**与本轮相关**的条目
+           （不相关的记忆挂在本轮开头是纯噪声，实跑验证过）。
+           ⛔ 走的是**同一个 handler**：主会话、被调度专家、用户亲自与某角色对话，
+              在这里完全同路 —— 这是「共用同一套实现」的关键。 */
+        const roleCtx = await window.codex.readRoleMemoryContext({
+          threadId: bag.thread?.id ?? "",
+          workspace: bag.workspace || "",
+          query: messageText.slice(0, 400),
+        });
         if (roleCtx?.text) memoryPrefix += `\n\n${roleCtx.text}`;
-      } catch { /* 角色记忆读不到不阻塞发送（与上面两段同纪律） */ }
+      } catch { /* 统一记忆读不到不阻塞发送（与上面两段同纪律） */ }
     }
     bag.dbg("send-memory", { ms: Math.round(performance.now() - memoryStartedAt) });
     const input = [

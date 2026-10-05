@@ -27,7 +27,9 @@ import { app } from "electron";
 import { saveAppSettings } from "../app-settings";
 import { ensureBuiltinSkills } from "../builtin-skills";
 import { bundledNodePath, memoryBackendStatus, memoryInstallerPath, type MemoryBackend } from "../memory-backend";
-import { lookupRoleSession, roleMemorySection } from "../role-memory";
+import { lookupRoleSession } from "../role-memory";
+import { agentOfRoleRef, handleFabricWrite } from "../memory-fabric-tool";
+import { buildContext, getMemoryHandles } from "../memory-fabric";
 import { syncLocalMemoryConnector } from "../memory-mcp-connector";
 import { CLEANUP_RULES, HYGIENE_ACTION_LABEL, isHygieneAction, planHygiene, suggestedActions } from "../memory-hygiene";
 import type { MemoryCategory, MemoryRemoteConfig } from "../memory-store";
@@ -201,15 +203,60 @@ export const memoryFeature = defineFeature<null>({
     /* 10-05 角色私有记忆（读）：渲染层发送路径用它把「当前会话所属角色」的私有记忆拼进上下文。
        ⛔ 按 threadId 反查归属（索引在主进程，模型/渲染层都伪造不了），查不到就返回空段 ——
           普通会话没有角色记忆，此时行为与今天完全一致。 */
-    ipcHost.handle("memory:role-context", async (_event, input: { threadId?: string; workspace?: string }) => {
+    /* ⛔⛔ 10-05 架构改造：统一记忆上下文的**读**入口。
+       ⛔ 主会话、被调度专家、用户亲自与某角色对话 —— **全部走这一个 handler**。
+       分两处拼装就会出现"派出去的专家拿不到自己刚写的东西"这类只在部分路径复现的 bug。
+
+       · session 段：按 threadId 寻址 ⇒ **只可能是本会话自己的**（别的会话读不到，物理隔离）
+       · project 段：全项目共享（主会话写的事实，角色也读得到 —— 这就是"共享"）
+       · legacy 段：上一轮 roles/<键>/MEMORY.md（架构文档 §7：不删，读得到）
+
+       ⛔ fabric 段**自带标题但不自带注入标记** —— 由渲染层拼进既有 [Harness 常驻记忆] 之内，
+          自己发明标记会让显示侧剥不掉（机器块漏进用户气泡）。 */
+    ipcHost.handle("memory:role-context", async (_event, input: { threadId?: string; workspace?: string; query?: string }) => {
       const threadId = String(input?.threadId ?? "");
-      if (!threadId) return { text: "", key: "" };
-      const found = await lookupRoleSession(app.getPath("userData"), threadId).catch(() => null);
-      if (!found) return { text: "", key: "" };
-      const workspace = String(input?.workspace ?? "") || found.workspace;
-      const section = await roleMemorySection(workspace, found.ref);
-      return { text: section.text, key: section.key };
-    });    ipcHost.handle("memory:workspace-enabled:set", (_event, input: { workspace?: string; enabled?: boolean }) => {
+      const workspace = String(input?.workspace ?? "");
+      if (!threadId && !workspace) return { text: "", key: "", counts: { project: 0, session: 0, legacy: 0 } };
+      /* 角色身份：查会话归属索引。查不到 = 普通会话（用 main 身份，仍有 session + project 两段）。 */
+      const found = threadId ? await lookupRoleSession(app.getPath("userData"), threadId).catch(() => null) : null;
+      const ws = workspace || found?.workspace || "";
+      const agent = found ? agentOfRoleRef(found.ref) : { kind: "main" as const, id: "main", label: "主会话" };
+      const handles = await getMemoryHandles({ sessionId: threadId, workspace: ws || undefined, agent });
+      const built = await buildContext({ handles, query: input?.query, legacyRole: found?.ref ?? null, workspace: ws || undefined });
+      return { text: built.text, key: handles.session?.namespace ?? "", counts: built.counts };
+    });
+
+    /* ⛔⛔ 统一记忆的**写**入口（10-05 架构改造）：主会话的 `memory_write` 与被调度角色的
+       走**同一个内核**（`handleFabricWrite`）——⛔ 不允许出现第二套写入语义。
+       ⛔ 身份用**引擎下发/渲染层带来的 threadId**，工作区以传入为准；
+         agent 身份由会话归属索引反查（查不到 = 主会话）。
+       ⚠️ 渲染层那条路拿不到**被委派会话**的事件（会被 filterForRenderer 裁掉），
+          所以被委派会话的写入由 boot.ts 的 handleRoleMemoryToolCall 应答 —— 同一个 handler。 */
+    ipcHost.handle("memory:fabric-write", async (_event, input: {
+      threadId?: string; workspace?: string; scope?: string; category?: string;
+      content: string; weight?: number; pinned?: boolean;
+    }) => {
+      const threadId = String(input?.threadId ?? "");
+      const found = threadId ? await lookupRoleSession(app.getPath("userData"), threadId).catch(() => null) : null;
+      const workspace = String(input?.workspace ?? "") || found?.workspace || "";
+      const agent = found ? agentOfRoleRef(found.ref) : { kind: "main" as const, id: "main", label: "主会话" };
+      return handleFabricWrite({
+        args: {
+          scope: input?.scope,
+          category: input?.category,
+          content: input?.content,
+          weight: input?.weight,
+          pinned: input?.pinned,
+          // ⛔⛔ promote 只由**主进程**在确认用户已同意后才可能为真；渲染层传什么都无效 ——
+          // 角色会话的 promote 只能由主进程应答路径（boot.ts）处理，那里有身份硬闸。
+        },
+        threadId,
+        workspace: workspace || undefined,
+        agent,
+      });
+    });
+
+    ipcHost.handle("memory:workspace-enabled:set", (_event, input: { workspace?: string; enabled?: boolean }) => {
       if (!input?.workspace) throw new Error("尚未选择工作区");
       return setWorkspaceMemoryEnabled(input.workspace, Boolean(input.enabled));
     });

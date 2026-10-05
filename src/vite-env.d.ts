@@ -591,8 +591,10 @@ interface Window {
     uninstallMemoryMcp(): Promise<{ code: number | null; result: any; log: string; status: any }>;
     /* 真跑一次 MCP 握手校验（不是只判文件存在） */
     verifyMemoryMcp(): Promise<{ code: number | null; result: any; log: string; status: any }>;
-    /* 10-05 角色私有记忆（读）：按 threadId 反查角色归属，返回该角色专属记忆段；普通会话返回空段 */
-    readRoleMemoryContext(input: { threadId?: string; workspace?: string }): Promise<{ text: string; key: string }>;
+    /* 10-05 统一记忆（读）：session 段按 threadId 硬隔离 + project 段全项目共享 + 上一版角色记忆兼容段。主会话与被调度角色走同一个 handler */
+    readRoleMemoryContext(input: { threadId?: string; workspace?: string; query?: string }): Promise<{ text: string; key: string; counts: { project: number; session: number; legacy: number } }>;
+    /* 10-05 统一记忆（写）：主会话的 memory_write 走这里；session=本会话私有 / project=全项目共享 */
+    writeFabricMemory(input: { threadId?: string; workspace?: string; scope?: string; category?: string; content: string; weight?: number; pinned?: boolean }): Promise<{ ok: boolean; text: string }>;
     saveMemory(input: unknown): Promise<any>;
     listRpaRecipes(): Promise<any[]>;
     saveRpaRecipe(input: unknown): Promise<any>;

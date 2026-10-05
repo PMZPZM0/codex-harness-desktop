@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-03",
-  "count": 416,
+  "count": 417,
   "channels": [
     {
       "name": "request",
@@ -1487,11 +1487,21 @@
       "name": "readRoleMemoryContext",
       "channel": "memory:role-context",
       "paramsImpl": "input: unknown",
-      "paramsDecl": "input: { threadId?: string; workspace?: string }",
-      "returns": "Promise<{ text: string; key: string }>",
+      "paramsDecl": "input: { threadId?: string; workspace?: string; query?: string }",
+      "returns": "Promise<{ text: string; key: string; counts: { project: number; session: number; legacy: number } }>",
       "invokeArgs": "input",
       "cast": null,
-      "note": "10-05 角色私有记忆（读）：按 threadId 反查角色归属，返回该角色专属记忆段；普通会话返回空段"
+      "note": "10-05 统一记忆（读）：session 段按 threadId 硬隔离 + project 段全项目共享 + 上一版角色记忆兼容段。主会话与被调度角色走同一个 handler"
+    },
+    {
+      "name": "writeFabricMemory",
+      "channel": "memory:fabric-write",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { threadId?: string; workspace?: string; scope?: string; category?: string; content: string; weight?: number; pinned?: boolean }",
+      "returns": "Promise<{ ok: boolean; text: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "10-05 统一记忆（写）：主会话的 memory_write 走这里；session=本会话私有 / project=全项目共享"
     },
     {
       "name": "saveMemory",

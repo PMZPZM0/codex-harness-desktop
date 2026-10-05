@@ -27,6 +27,7 @@ import { normalizeAutoCompactRatio, readAppSettings } from "../app-settings";
 import { broadcastCodexEvent, broadcastHarnessEvent } from "./window-bus";
 import { handleRoleMemoryToolCall } from "../role-memory-tool";
 import { forgetRoleSession } from "../role-memory";
+import { sweepFabric, pickWorkspacesToSweep, archiveSessionMemory } from "../memory-fabric";
 import { nuphusVisionEnvDrift } from "../nuphus-env";
 import { applyPersonalizationToAgentsMd, migrateGreetedForExistingUsers, readPersonalization } from "../personalization";
 
@@ -423,6 +424,16 @@ export async function bootApp() {
              且那个 threadId 永远查不到归属、也永远占着一条记录）。记忆内容本身**留着** —
              角色还在（专家/子智能体定义没删），下次派出会继续用它自己的记忆。 */
           if (event.method === "thread/deleted") void forgetRoleSession(app.getPath("userData"), goneId).catch(() => undefined);
+          /* 10-05 统一记忆：会话被删 ⇒ 给它的记忆条目**打归档标记**（⛔ 不删内容：
+             角色还在，下次派出同一角色继续用它积累的经验）。
+             ⛔ 这条必须有调用点 —— 上一轮 `prune()` 的教训：写了不接线 = 等于没写。
+             归档后的条目**不再参与召回**（memory-fabric 的 rankEntries 默认过滤）。 */
+          if (event.method === "thread/deleted") {
+            /* ⛔ 工作区从 `threadCwd` 反查（⛔ 不猜路径：归档到错目录比不归档更糟）。
+               ⛔ 查不到就跳过 —— 那说明这个会话本来就没有工作区记忆。 */
+            const goneCwd = threadCwd.get(goneId) || "";
+            if (goneCwd) void archiveSessionMemory(goneCwd, goneId, true).catch(() => undefined);
+          }
           /* 10-05：委托登记表里的记录**跟着会话一起走** —— 记录是「这个会话被委派过」的凭证，
              会话都没了它就只是幽灵 ⇒ 办公室里会多一个点不开的人（用户 10-05 报的那个）。
              ⛔ 归档**不清**：归档是"收起"（记录要留着防重复询问），删除才是"不存在了"。
@@ -634,6 +645,25 @@ export async function bootApp() {
       const expired = await delegateRegistry.prune();
       if (expired) console.log(`[delegate] 启动清理：${expired} 条过期（>7 天）委托记录已丢弃`);
     } catch (error) { console.warn("delegate registry cleanup failed:", error); }
+
+    /* ⛔⛔ 10-05 统一记忆生命周期清扫：**必须在启动路径上调用**才有意义。
+       教训来自上一轮：`DelegateRegistry.prune()` 方法写好了但**全仓无调用点**，
+       记录只增不减 ⇒ 等于没写。任何「清理器」不接到启动 = 不存在。
+       扫的是工作区记忆目录：① 会话记忆过 90 天 → **归档**（不删，见架构文档 §6）
+                              ② 单命名空间超量 → 裁掉最不重要且最久没用的（pinned 永不裁）
+       ⛔ 工作区来源 = 已知集合（会话 cwd + 委托登记表），**不猜路径** ——
+          对任意目录做读扫描等于越界。 */
+    try {
+      /* ⛔ 工作区来源 = `threadCwd` 的值（每个会话的 cwd，主进程侧的权威登记）。
+         ⛔ 不猜路径：DelegateRecord 里没有 workspace 字段，硬拼一个就是错的工作区
+            （清扫错目录比不清扫更糟）。 */
+      for (const ws of pickWorkspacesToSweep([...threadCwd.values()])) {
+        const swept = await sweepFabric(ws);
+        if (swept.archived || swept.trimmed) {
+          console.log(`[memory] 启动清扫 ${ws}：归档 ${swept.archived} 条、裁剪 ${swept.trimmed} 条（${swept.namespaces} 个命名空间）`);
+        }
+      }
+    } catch (error) { console.warn("[memory] 启动清扫失败:", error); }
     await server.start();
   } catch (error) {
     broadcastCodexEvent({ kind: "status", status: "error", message: String(error) });
