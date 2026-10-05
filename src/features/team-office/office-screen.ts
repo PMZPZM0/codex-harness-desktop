@@ -1,21 +1,34 @@
 /**
- * 显示器内容 · Canvas 逐帧绘制（2026-10-04）
+ * 显示器内容 · Canvas 逐帧绘制（2026-10-04 立，10-05 修）
  *
  * ⛔ 用户报「显示器内容像一张图，没有 CSS 动画」—— 真因：背景图 `bg.webp` 把六个显示器
  *   **烙死**了，只有角色是动态的。⇒ 在角色之前，**按每个座位叠画动态内容区**。
+ *
+ * ⛔⛔ **10-05 用户再报「显示器都还是固定的、你做的那个显示没对准、没显示」** ——
+ *   上一条修复**没真正生效**，两层原因（两个都已修）：
+ *     ① **坐标画错**：`SEATS[].screen` 是从 bg.webp 扫出来的，但判据同时命中了**椅背**
+ *        （椅背 rgb(47,65,95) 与屏幕玻璃同属"暗且偏蓝"）⇒ 屏面 y 全部落在椅背上，
+ *        而椅背随后会被"重贴"盖回人物身上 ⇒ 画上去的内容**被整块盖掉**。
+ *        修法见 `office-format.ts` 的 SEATS 注释（换亮度判据 + 限定 y 带）。
+ *     ② **待机 = 熄屏**：下面对 `idle` 的处理原来是直接画成 `off`（静态色块）。
+ *        委托真机 3.7s 就跑完 ⇒ 用户点开办公室时**全员待机** ⇒ 六块屏全黑静止。
+ *        ⇒ 现在 `idle` 有自己的**屏保**（见下方分支），`off` 只留给空座。
  *
  * ⛔ 为什么用原生 canvas 逐帧、而不是 CSS 动画：
  *   像素风要 `imageSmoothingEnabled=false` 的最近邻放大；内容是"代码行/光标"这类
  *   逐帧变化的小图形，CSS 做要一堆 div + 动画帧同步，反而更重也更难和人物动画对齐。
  *
- * ⛔ 坐标来自 `office-format.ts` 的 `SEATS[].screen`，那组值是**从用户截图量出来的**，
- *   不是猜的（那边注释写了量法）。改这里先改那边。
+ * ⛔ 坐标来自 `office-format.ts` 的 `SEATS[].screen`。改这里先改那边。
  */
 
 /** 一个屏幕的状态机：不同活动 ⇒ 不同内容。 */
 export type ScreenMode =
   /** 空座/没人 ⇒ 熄屏（只画深色底+一点反光） */
   | "off"
+  /** ⭐ 有人在座但没在跑 ⇒ **屏保**（2026-10-05 加）。
+   *  ⛔⛔ 为什么必须与 off 分开：原来两者共用 "off" ⇒ 委托跑完（真机 3.7s）后全员待机、
+   *  六块屏**全黑且静止**，用户看到的就是「显示器都还是固定的、没有动画」。 */
+  | "idle"
   /** 敲键盘写代码：逐行浮现 + 光标闪 */
   | "code"
   /** 思考中：跳动的思考点 + 缓慢扫描 */
@@ -33,6 +46,11 @@ export type ScreenMode =
 const PAL = {
   offBg: "#1b2530",
   offGlow: "#26313d",
+  /* 待机屏保：底色比 off 略亮（"开着但闲着"），方块低调不抢戏 */
+  idleBg: "#141c26",
+  idleBlock: "#2f4a68",
+  idleTrail: "#1d2b3c",
+  idleLamp: "#3f6b8f",
   codeBg: "#16212c",
   codeText: "#7fd6a8",
   codeKeyword: "#e8a13c",
@@ -86,6 +104,7 @@ export function drawScreen(
     : mode === "wait" ? PAL.waitBg
     : mode === "report" ? PAL.reportBg
     : mode === "rest" ? PAL.restBg
+    : mode === "idle" ? PAL.idleBg
     : PAL.offBg;
 
   /* ⛔⛔ 所有尺寸**必须从 w/h 推导**，⛔ 不许硬编码。
@@ -114,6 +133,33 @@ export function drawScreen(
     // 休息：屏幕暗下去，偶尔（很久一次）闪一下
     ctx.fillStyle = PAL.restFlash;
     if ((t * 0.4 + seed) % 7 < 0.08) ctx.fillRect(x, y, w, h);
+    return;
+  }
+
+  /* ⭐ idle（屏保）—— 2026-10-05 加。
+     ⛔⛔ 用户报「显示器都还是固定的、没有动画」，**两层原因**：
+       ① 屏面坐标画在了椅背上（已修，见 office-format.ts 的 SEATS 注释）；
+       ② 这里原先把"有人在座但没在跑"直接归到 "off" ⇒ 只画一个静态色块 ⇒
+          委托真机 3.7s 就跑完，用户点开办公室时**全员 idle** ⇒ 六块屏全黑静止。
+     ✅ 待机 ≠ 熄屏：给一个**屏保**（方块缓慢弹跳），保证"任何时候打开都在动"。
+     ⚠️ 屏面只有 ~50×34 ⇒ 位移幅度必须够大（同 10-04 那条教训：小位移肉眼看不出）。
+     ⚠️ 两轴用**不同周期**（5.2s / 3.7s）⇒ 轨迹不重复，不会看着像"卡住了在抖"。 */
+  if (mode === "idle") {
+    const bw = Math.max(u * 2, Math.round(innerW * 0.2));
+    const spanX = Math.max(1, innerW - bw);
+    const spanY = Math.max(1, innerH - bw);
+    const tri = (v: number) => (v < 1 ? v : 2 - v);          // 三角波：来回弹
+    const bx = x + pad + Math.round(tri(((t / 5.2) + seed * 0.11) % 2) * spanX);
+    const by = y + pad + Math.round(tri(((t / 3.7) + seed * 0.07) % 2) * spanY);
+    ctx.fillStyle = PAL.idleTrail;
+    ctx.fillRect(bx + Math.round(bw * 0.3), by + Math.round(bw * 0.3), Math.round(bw * 0.5), Math.round(bw * 0.5));
+    ctx.fillStyle = PAL.idleBlock;
+    ctx.fillRect(bx, by, bw, bw);
+    // 电源灯：极慢呼吸 ⇒ 即使方块恰好停在端点，屏面也不是完全静态
+    if ((t * 0.38 + seed) % 1 < 0.5) {
+      ctx.fillStyle = PAL.idleLamp;
+      ctx.fillRect(x + w - pad - u, y + h - pad - u, u, u);
+    }
     return;
   }
 
@@ -273,5 +319,9 @@ export function screenModeOf(input: {
   if (input.waiting) return "wait";
   if (input.thinking) return "thinking";
   if (input.mode === "work") return "code";
-  return "off";
+  /* ⛔ 有人坐着但没在跑 ⇒ **屏保**，⛔ 不是 "off"。
+     原来返回 "off" 的后果：委托跑完（真机 3.7s）后全员待机 ⇒ 六块屏全黑静止
+     ⇒ 用户报「显示器都还是固定的、没有动画」。
+     ⛔ "off" 从此**只表示空座**（没人），语义收窄 —— 改这里要同步 office-screen 顶部注释。 */
+  return "idle";
 }

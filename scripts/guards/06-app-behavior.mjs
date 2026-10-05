@@ -1528,9 +1528,15 @@ w.postMessage({id:1,op:"list",root});
         v1 折线组织图被否「歪歪扭扭」；v2 div 纯色块被否「不好看」⇒ 断言钉死 SVG 插画形态。
      数据零新 IPC（复用 teams / team-threads:map / runningThreadIds）—— 若有人给它加新通道，
      说明在重复造已有能力，打红。 */
-  /* ⛔ 办公室预览（team-office 域）09-30 用户要求整体下线、待重做 ⇒ 目录不在就不跑这组断言 */
-  if (!existsSync(join(ROOT, "src", "features", "team-office", "office-render.ts"))) { /* v18 起改为 Kenney CC0 资产版（office-render.ts 已删），这组旧断言作废 */ } else
-  {
+  /* ⛔⛔ 2026-10-05 修：这一组（以及紧随其后的【168】）原先整块被
+     `if (!existsSync(.../office-render.ts)) { 作废 } else { … }` 关掉 ——
+     而 `office-render.ts` **早在 v18 换成素材版时就删了**
+     ⇒ 两组 30+ 条断言**一直在空跑**（含与旧形态无关、至今仍然有效的
+       入口节点 / 数据面 / 样式接入）⇒ 用户 10-05 报「显示器没对准、没显示」时
+       没有任何守卫能拦下 —— 这道门就是假绿的根源。
+     ✅ 改为按**目录存在**判定；⛔ 已随实现换代而失效的形态断言（PixiJS / 导演 /
+        OfficeScene / office-art）在本轮**显式删除**，不留"注释说作废、代码还在"的中间态。 */
+  if (existsSync(join(ROOT, "src", "features", "team-office"))) {
     console.log(C.bold("\n【154】专家团办公室预览（team-office 域）"));
     /* 不得再有独立侧栏入口 */
     const shellSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "01-sidebar-shell.tsx"), "utf8");
@@ -1545,9 +1551,14 @@ w.postMessage({id:1,op:"list",root});
     /* 组件与数据面 */
     const viewPath = join(ROOT, "src", "features", "team-office", "TeamOfficePreview.tsx");
     const viewSrc = existsSync(viewPath) ? readFileSync(viewPath, "utf8") : "";
-    (viewSrc.includes("teamThreadsMap()") ? ok : fail)("【154】成员会话映射走既有 team-threads:map（⛔ 不得新增重复通道）");
-    (viewSrc.includes("runningThreadIds") ? ok : fail)("【154】角色运行态来自 runningThreadIds（回退路径）");
-    (viewSrc.includes("runningByMember") ? ok : fail)("【154】角色状态映射真实成员运行记录 runningByMember（优先）");
+    /* ⛔ 10-05 修订：原来两条断言的是"组件自己调 `teamThreadsMap()` / `runningThreadIds`"——
+       而当前实现已改为**纯 props 驱动**（成员运行态由宿主从引擎事件流归约后传入，
+       见该文件头「数据边界」注释）。⇒ 旧断言过时，且方向与新架构**相反**。
+       ⛔ 新判据：**组件不许自己拉数据 / 订阅引擎**（这才是域组件的规矩）。 */
+    (!/window\.codex|teamThreadsMap\(|runningThreadIds/.test(codeOnly(viewSrc)) ? ok : fail)(
+      "【154】⛔⛔ 预览是**纯 props 驱动**：不自己拉 IPC（成员状态由宿主归约后传入）"
+    );
+    (viewSrc.includes("runningByMember") ? ok : fail)("【154】角色状态映射真实成员运行记录 runningByMember（唯一数据源）");
     (viewSrc.includes("openThread") ? ok : fail)("【154】预览的「进入对话」真实跳到该成员会话");
     // ⛔ 10-03：负向断言也要双形态 —— 渲染层一旦出现 `ipcHost.handle` 同样是"视图组件内注册 IPC"，
     //    只禁 ipcMain 的话，改个名字就能绕过（负向断言最怕这种"换个写法就绿"）。
@@ -1558,137 +1569,83 @@ w.postMessage({id:1,op:"list",root});
     (bagSrc.includes("companyPreviewTeamId: string | null;") ? ok : fail)("【154】companyPreviewTeamId 已登记 bag-types");
     const cssEntry = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
     (cssEntry.includes("./styles/20-team-office") ? ok : fail)("【154】办公室样式已接入 styles.css（20-team-office）");
+    /* ⛔⛔ 10-05 加：**显示器内容区必须落在屏幕玻璃上，不是椅背上。**
+       背景（用户两次报「显示器还是固定的 / 没对准 / 没显示」）：
+         · 10-04 那版 screen 坐标是"扫 bg.webp"得到的，但判据同时命中了**椅背**
+           （椅背 rgb(47,65,95) 与屏幕玻璃同属"暗且偏蓝"）⇒ 六个屏面全落在椅背上；
+         · 而椅背随后会被**重贴**盖回人物身上（OfficeCanvas 的 backrest 重贴）
+           ⇒ 画上去的动态内容被整块盖掉 ⇒ 用户看到的仍是背景图里烙死的静态屏幕。
+       ⇒ 判据用**几何不可能性**：屏面底必须高于椅背顶（相对坐标 screen.y+h <= backrest.dy）。
+         ⛔ 无阈值可调、无需读图；坐标一旦写回椅背范围立刻变红。 */
+    const fmtSrc = existsSync(join(ROOT, "src", "features", "team-office", "office-format.ts"))
+      ? readFileSync(join(ROOT, "src", "features", "team-office", "office-format.ts"), "utf8") : "";
+    const seatRows = [...fmtSrc.matchAll(/y:\s*(-?\d+),\s*facing:\s*"up",\s*backrest:\s*\{\s*dx:\s*(-?\d+),\s*dy:\s*(-?\d+),\s*w:\s*\d+,\s*h:\s*\d+\s*\},\s*screen:\s*\{\s*x:\s*(-?\d+),\s*y:\s*(-?\d+),\s*w:\s*(\d+),\s*h:\s*(\d+)\s*\}/g)];
+    (seatRows.length === 6 ? ok : fail)(`【154】SEATS 六个座位都带 screen 矩形（解析到 ${seatRows.length} 个 —— ⛔ 0 个说明正则失配、断言在空跑）`);
+    const onChair = seatRows.filter((m) => Number(m[5]) + Number(m[7]) > Number(m[3]));
+    (onChair.length === 0 ? ok : fail)(`【154】⛔⛔ 每个屏面都**完全在椅背上方**（压到椅背上会被椅背重贴整块盖掉）—— 违例 ${onChair.length} 个`);
+    /* ⛔ 判据落在**注释里**（量法说明）⇒ ⛔ 不能先剥注释再找（那样必然恒红 —— 第一版就写错了）。 */
+    (/(is_glass|sum\s*<\s*190)/.test(fmtSrc) ? ok : fail)(
+      "【154】量法注释点名**亮度判据**（⛔ 旧的 `b>r+20` 类判据会把椅背一起收进来）");
     const officeCss = existsSync(join(ROOT, "src", "styles", "20-team-office.css")) ? readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8") : "";
     /* 形态守卫（09-27 v8「PixiJS 渲染」）：v1 折线图 / v2 div 色块 / v3 单张 SVG 插画
        三版都被用户否过（「歪歪扭扭」「不好看」「手绘人物和素材家具违和」）⇒ 断言钉死：
        画布 = PixiJS Application + 逐帧 animateScene，⛔ 不许退回任何一种被否形态。 */
-    const officePath = join(ROOT, "src", "features", "team-office", "OfficeScene.tsx");
-    const officeSrc = existsSync(officePath) ? readFileSync(officePath, "utf8") : "";
-    const officeCanvasPath = join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx");
-    const officeCanvasSrc = existsSync(officeCanvasPath) ? readFileSync(officeCanvasPath, "utf8") : "";
-    (/<OfficeCanvas\s/.test(officeSrc) && officeSrc.includes("snapshot: DirectorSnapshot") ? ok : fail)(
-      "【154】虚拟办公室场景存在（OfficeScene 薄壳 → OfficeCanvas，快照单源入参）"
+    /* ── 当前实现（原生 canvas 2D，v19 起）─────────────────────────────
+       ⛔ 这里原先断言的是 PixiJS 形态（`new Application` / `animateScene` /
+          `OfficeScene` / `pointertap`），那些文件已随 v19 换实现而删除
+          ⇒ 断言早已失效，本轮**显式移除**（⛔ 不留死断言）。
+       下面是**当下真实存在**的实现面。 */
+    const canvasPath154 = join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx");
+    const canvasSrc154 = existsSync(canvasPath154) ? readFileSync(canvasPath154, "utf8") : "";
+    const screenPath154 = join(ROOT, "src", "features", "team-office", "office-screen.ts");
+    const screenSrc154 = existsSync(screenPath154) ? readFileSync(screenPath154, "utf8") : "";
+    const cssSrc154 = existsSync(join(ROOT, "src", "styles", "20-team-office.css"))
+      ? readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8") : "";
+    (canvasSrc154.includes('getContext("2d")') && canvasSrc154.includes("drawScreen(") ? ok : fail)(
+      "【154】场景是原生 canvas 2D 且逐帧画显示器内容（v19 形态）"
     );
-    (/new Application\(/.test(officeCanvasSrc) && /function animateScene\(/.test(officeCanvasSrc) ? ok : fail)(
-      "【154】场景是 PixiJS 画布（new Application + 逐帧 animateScene，不是静态插画）"
+    (cssSrc154.includes(".office-pixel-canvas") ? ok : fail)(
+      "【154】画布宿主容器样式齐全（.office-pixel-canvas —— 类名是接口）"
     );
-    (!codeOnly(officeSrc + officeCanvasSrc).includes("<svg") ? ok : fail)(
-      "【154】⛔ 不许退回 SVG 手绘插画（v8 定稿 PixiJS；手绘人物与素材家具违和是换掉的起因）"
-    );
-    (/const state: "running" \| "idle" \| "never"/.test(officeCanvasSrc) ? ok : fail)(
-      "【154】三态仍在画面上（运行 / 空闲 / 空工位 never —— 状态收敛在画布层）"
-    );
-    (officeCanvasSrc.includes("pointertap") && officeCanvasSrc.includes("onOpenThread") ? ok : fail)(
-      "【154】点工位真实跳该成员会话（画布层事件 → onOpenThread，⛔ 不是装饰插画）"
-    );
-    (/\.office-scene\s*\{/.test(officeCss) ? ok : fail)(
-      "【154】画布宿主容器样式齐全（.office-scene —— 类名是接口，accept 的 CDP 选择器依赖它）"
-    );
-    (!/\.ofc-(desk|bubble|type-a|zzz|sip)/.test(officeCss) ? ok : fail)(
+    (!/\.ofc-(desk|bubble|type-a|zzz|sip)/.test(cssSrc154) ? ok : fail)(
       "【154】⛔ 场景级 .ofc-* 旧样式已清干净（留着 = 死样式，CSS 覆盖告警会一直报）"
     );
-  }
-
-  /* ══ 【168】办公室动画体系（09-26 v4「活起来」→ 09-27 v8 换 PixiJS 渲染）═════
-     用户要求：办公室要「好看 + 有动画 + 员工之间交接 + 预设动画和随机动画」。
-     形态钉死三件事：① 动画与数据解耦（导演是纯逻辑，不认识 DOM/React）
-                    ② 快照单源（弹窗持有导演，场景只画 → 右栏看板与画面必然一致）
-                    ③ 走路必须是**逐帧插值**（v8 在 PixiJS ticker 里做；
-                       v3 那种"直接写终点坐标/属性 = 人闪现到终点"依旧禁止）。 */
-  /* ⛔ 办公室预览（team-office 域）09-30 用户要求整体下线、待重做 ⇒ 目录不在就不跑这组断言 */
-  if (!existsSync(join(ROOT, "src", "features", "team-office", "office-render.ts"))) { /* v18 起改为 Kenney CC0 资产版（office-render.ts 已删），这组旧断言作废 */ } else
-  {
-    console.log(C.bold("\n【168】办公室动画体系（导演 / 姿势 / 交接 / 走路）"));
-    const directorPath = join(ROOT, "src", "features", "team-office", "office-director.ts");
-    const directorSrc = existsSync(directorPath) ? readFileSync(directorPath, "utf8") : "";
-    const sceneSrc2 = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeScene.tsx"), "utf8");
-    const previewSrc2 = readFileSync(join(ROOT, "src", "features", "team-office", "TeamOfficePreview.tsx"), "utf8");
-    const canvas2 = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
-    const renderSrc2 = readFileSync(join(ROOT, "src", "features", "team-office", "office-render.ts"), "utf8");
-
-    // ① 导演必须是纯逻辑：不认识 React / DOM（否则没法离线写断言，且渲染与决策会缠在一起）
-    (directorSrc.length > 0 && !/from "react"|document\.|window\./.test(directorSrc) ? ok : fail)(
-      "【168】动画导演是纯逻辑（不 import react、不碰 document/window）"
+    /* ⛔⛔ 显示器内容必须画在**背景之后**：画在背景前等于没画（会被背景盖掉）。 */
+    const drawIdx154 = canvasSrc154.indexOf("drawScreen(");
+    const bgIdx154 = canvasSrc154.indexOf("ctx.drawImage(bg, 0, 0, CANVAS_W, CANVAS_H)");
+    (bgIdx154 >= 0 && drawIdx154 > bgIdx154 ? ok : fail)(
+      "【154】⛔⛔ 显示器内容画在背景之后（画在背景前 = 被背景盖住 = 用户报的「没显示」）"
     );
-    // ② 随机源可注入（截图/断言用固定种子 ⇒ 结果可复现，判据不依赖 Math.random）
-    (/constructor\(private rand: \(\) => number = Math\.random\)/.test(directorSrc) ? ok : fail)(
-      "【168】随机源可注入（固定种子可复现，断言不许靠运气）"
+    (!canvasSrc154.includes("ipcRenderer") && !/window as any\)\.codex/.test(canvasSrc154) ? ok : fail)(
+      "【154】画布层零 IPC（事件驱动：成员状态由宿主 props 传入）"
     );
-    // ③ 真实的两个交接必须是**状态迁移**触发：被派任务 / 交成果
-    (/!wasRunning && nowRunning/.test(directorSrc) && /pushHandoff\(-1, i, "task"\)/.test(directorSrc) && /pushHandoff\(i, -1, "report"\)/.test(directorSrc) ? ok : fail)(
-      "【168】派任务 / 交成果由真实运行态迁移触发（不是纯装饰动画）"
+    /* ⛔⛔ 待机 ≠ 熄屏（10-05 用户报「显示器都还是固定的」的第二层原因）：
+       `idle` 必须有**自己的**屏保分支，⛔ 不许再让它落到 `off`。 */
+    (/if \(mode === "idle"\)/.test(screenSrc154) ? ok : fail)(
+      "【154】⛔⛔ idle 有自己的屏保分支（⛔ 退回 off ⇒ 委托跑完全员待机、六屏全黑静止）"
     );
-    // ④ 姿势池齐备：预设动画（工作/喝咖啡/伸懒腰/看手机/打盹/翻资料）
-    (["coffee", "stretch", "phone", "doze", "note"].every((k) => directorSrc.includes('kind: "' + k + '"')) ? ok : fail)(
-      "【168】空闲姿势池齐备（喝咖啡 / 伸懒腰 / 看手机 / 打盹 / 翻资料）"
+    (/return "code";[\s\S]{0,300}?return "idle";/.test(screenSrc154) ? ok : fail)(
+      "【154】⛔⛔ 有人坐工位但没在跑 ⇒ 映射到 idle（屏保），⛔ 不是 off"
     );
-    // ⑤ 快照单源：弹窗持导演，场景只收 snapshot prop（⛔ 场景内部不得再 new 一个）
-    (previewSrc2.includes("new OfficeDirector()") && /snapshot=\{snapshot\}/.test(previewSrc2) && !sceneSrc2.includes("new OfficeDirector()") ? ok : fail)(
-      "【168】快照单源：导演在弹窗、场景只画 prop（否则画面与右栏看板会不一致）"
+    (/if \(!input\.occupied\) return "off";/.test(screenSrc154) ? ok : fail)(
+      "【154】off 语义收窄为**空座**（⛔ 别再让「待机」共用它）"
     );
-    // ⑥ 走路必须是**逐帧插值**（v8：PixiJS ticker）—— 写终点坐标/属性 = 人闪现到终点
-    //   09-27 v12：位置改由 `pointOnPath(w, easeInOut(w.t))` 沿 BFS 路径取点 ⇒ 锚点跟着放宽
-    //   （只锚"每帧按缓动后的 t 求位置 + 真的 set 到容器"，不锚具体变量名 —— 否则换实现就假红）
-    (/easeInOut\(w\.t\)/.test(canvas2) && /w\.container\.position\.set\(/.test(canvas2) && !/--wk-x/.test(canvas2) ? ok : fail)(
-      "【168】走动小人逐帧插值（easeInOut(w.t) + position.set；⛔ 写终点坐标会让人「闪现」）"
-    );
-    // ⑦ 交接特效齐备：起点圆点 + 落点圆环 + 落点脉冲 + 飞行卡片 + 说明标签
-    (["view.pulse", "view.card", "handoff.label", "h.pulse.alpha", "Math.sin(Math.PI * e)"].every((k) => canvas2.includes(k)) ? ok : fail)(
-      "【168】交接特效齐备（起点圆点 / 落点圆环 / 脉冲 / 弧线飞行卡片 / 标签）"
-    );
-    // ⑧ 场景必须真的渲染交接与走动人（⛔ 防止退回「死插画」）
-    (canvas2.includes("scene.handoffs.forEach") && canvas2.includes("scene.walkers.forEach") && canvas2.includes("createWalker(") ? ok : fail)(
-      "【168】场景渲染交接飞行与走动小人（不许退回静止插画）"
-    );
-    // ⑨ 场景绘制必须是**程序化 Graphics**（09-27 v9 用户拍板）：参考实现
-    //    （workbzw/ai-office-react）的卖点是它那张 3D 渲染底图 + 白系桌椅，但作者自己在
-    //    README 标注「注意素材版权问题」⇒ 我们**不搬素材**，只复刻风格（office-render 画）。
-    (canvas2.includes("drawDeskStation(") && canvas2.includes("drawBackWall(") && canvas2.includes("drawSideProps(") ? ok : fail)(
-      "【168】房间与工位走程序化绘制（office-render 三件套已接线）"
-    );
-    // 素材路线（09-30 用户改口径：动物与显示内容都改由生图模型出）
-    // ① 素材 import 只允许出现在 office-art.ts 这一个注册表里（画布层直接 import 图片 = 红）
-    // ② 程序化路线必须保留：贴图缺失要回落手画、预设可整体退回 procedural
-    // ⛔ 本块注释里不许出现反引号（本文件是模板字符串拼装的，反引号会提前闭合）
-    const art168 = existsSync(join(ROOT, "src", "features", "team-office", "office-art.ts"))
-      ? readFileSync(join(ROOT, "src", "features", "team-office", "office-art.ts"), "utf8") : "";
-    (canvas2.indexOf("assets/") < 0 && art168.indexOf("assets/") >= 0
-      && art168.indexOf("procedural") >= 0 && art168.indexOf("artTexture(") >= 0
-      && canvas2.indexOf("preloadArt()") >= 0 ? ok : fail)(
-      "【168】素材集中在 office-art 注册表（画布层不许直接 import 图片）+ 保留程序化回退"
-    );
-    // ⑬ 办公设施与它们的动画（09-27 用户「饮水机、啥都配置动画，都做全」）：
-    //    设施位置必须挂在 director 的跑腿目标点上（人真能走到它旁边），
-    //    且每个设施都要有**在跑的**动画部件 —— ⛔ 只有静态画法没有 ticker = 恒真假绿。
-    (canvas2.includes("drawAmenities(") && canvas2.includes("scene.props.forEach") ? ok : fail)(
-      "【168】办公设施已接线并逐帧驱动（drawAmenities → scene.props）"
-    );
-    (["饮水机", "打印机", "资料架", "挂钟"].every((k) => renderSrc2.includes(k)) ? ok : fail)(
-      "【168】四类设施齐备（饮水机 / 打印机 / 资料架 / 挂钟）"
-    );
-    ((renderSrc2.match(/tickers\.push\(\{ update:/g) || []).length >= 3 ? ok : fail)(
-      "【168】设施动画部件 ≥3 组（水泡 / 吐纸 / 走针，每类都是独立 ticker）"
-    );
-    // ⑭ 标签表达（09-27 用户：「头上那个黑框框太丑」）—— 必须是**无描边**的浮起胶囊
-    //    ⛔ 负向断言：把深色描边加回来（stroke ISO.ink）这里必须红。
-    ((() => {
-      // ⛔ 锚**整条绘制语句**再看里面有没有 `.stroke(`：只查"有没有 stroke"会被
-      //    水泡/显示器等其它圆的描边顶成假绿（变异实测漏过一版）。
-      const m = canvas2.match(/g\.roundRect\(-w \/ 2, -h \/ 2, w, h, h \/ 2\)\.fill\([^;]*\);/);
-      return Boolean(m) && !m[0].includes(".stroke(") && !/roundRect\(-62, -8, 124, 36, 11\)/.test(canvas2);
-    })() ? ok : fail)(
-      "【168】头顶标签是无描边胶囊（去掉黑框；变异验证：加回 stroke 必须红）"
-    );
-
-    // ⑪ 姿势动画齐备（每个坐姿都要有自己的手臂/躯干姿态，否则「预设动画」是空话）
-    (["doze", "stretch", "coffee", "phone", "note"].every((k) => canvas2.includes('pose.kind === "' + k + '"')) && /const typing = /.test(canvas2) ? ok : fail)(
-      "【168】六种坐姿各有自己的动画（工作打字 / 咖啡 / 伸懒腰 / 手机 / 翻资料 / 打盹）"
-    );
-    // ⑫ 姿势必须**真的画在人身上**：抽公共函数，落座/走动同画风（⛔ 防止有状态没渲染）
-    (/function createWorkerGraphics\(/.test(canvas2) && /function createWalker\(/.test(canvas2) && /function buildAnimalHead\(/.test(canvas2) ? ok : fail)(
-      "【168】坐姿与走动小人各有绘制函数（状态 → 图形的映射真实存在）"
+    (/let officeSimSingletonRef/.test(canvasSrc154) ? ok : fail)(
+      "【154】sim 是模块级常驻单例（⛔ 组件级 ⇒ 每次打开预览都重播进场）"
     );
   }
+
+  /* ══ 【168】办公室动画体系 —— 2026-10-05 **整组移除** ═══════════════════
+     ⛔ 这组断言的对象是 PixiJS 版实现（`office-director.ts` 导演 / `OfficeScene.tsx`
+        场景 / `office-render.ts` 程序化绘制 / `office-art.ts` 素材注册表），
+        而这些文件**随 v19 换成「Kenney CC0 像素素材 + 原生 canvas 2D」时全部删除**。
+     ⛔⛔ 更糟的是它外面套了 `if (!existsSync(office-render.ts)) { …作废… } else { … }`
+        ⇒ 整组（约 30 条）**一直在空跑**，却让人以为"办公室有 30 条守卫在保护"。
+        10-05 用户报「显示器没对准、没显示」时没有任何守卫能拦下，根源就在这里。
+     现状（v19）的对应断言已迁到【154】：canvas 2D 形态 / 显示器内容绘制顺序 /
+        idle 屏保 / sim 常驻单例 / 屏面坐标几何（屏面必须在椅背上方）。
+     ⛔ 将来若想恢复"交接动画 / 姿势池 / 设施动画"这类断言，请按**当前实现**重写，
+        不要在这组旧断言上改 —— 它的锚点全是已删文件。 */
 
   /* ══ 【169】办公室渲染纵深（09-27 v9 程序化绘制 → v10 三层纵深）═══════════
      ⛔ v9 定稿（用户 09-27 拍板）：**不搬**参考实现的 3D 素材（作者自己标注「注意素材
@@ -1699,7 +1656,14 @@ w.postMessage({id:1,op:"list",root});
         三个对象必须**各按自己的地面基线 y 排 zIndex**（桌更靠后 / 椅子更靠观众），
         合成一件 Graphics 一定会错：要么人被桌挡住只露头顶，要么椅子被整个人盖住。 */
   /* ⛔ 办公室预览（team-office 域）09-30 用户要求整体下线、待重做 ⇒ 目录不在就不跑这组断言 */
-  if (!existsSync(join(ROOT, "src", "features", "team-office", "office-render.ts"))) { /* v18 起改为 Kenney CC0 资产版（office-render.ts 已删），这组旧断言作废 */ } else
+  if (!existsSync(join(ROOT, "src", "features", "team-office", "office-render.ts"))) {
+    /* ⛔⛔ 2026-10-05：本组断言的**对象**（PixiJS 程序化绘制 / office-director 导演 /
+       office-render 绘制）随 v19「像素素材 + 原生 canvas 2D」全部删除
+       ⇒ 本组**长期空跑**。⛔ 静默跳过 = 假绿（让人以为办公室有几十条断言在保护）
+       —— 用户 10-05 报「显示器没对准、没显示」时没有任何守卫拦下，根因就在这里。
+       ✅ 先改成**显式打印**；恢复方式 = 按当前实现重写断言（样板见【154】）。 */
+    console.log("  ! 【办公室】断言对象 office-render.ts 已随 v19 删除 ⇒ 本组跳过（⛔ 空跑=假绿，待按当前实现重写）");
+  } else
   {
     console.log(C.bold("\n【169】办公室渲染纵深（程序化绘制 / 桌-人-椅三层遮挡）"));
     const renderPath = join(ROOT, "src", "features", "team-office", "office-render.ts");
@@ -1776,7 +1740,14 @@ w.postMessage({id:1,op:"list",root});
        ③ 每个物种的耳朵分支与头型尺寸都齐备（少一个 case 就退化成认不出的黑团）；
        ④ 屏幕内容与姿势一致（人在打盹、屏幕上还跑着代码 = 一眼假）。 */
   /* ⛔ 办公室预览（team-office 域）09-30 用户要求整体下线、待重做 ⇒ 目录不在就不跑这组断言 */
-  if (!existsSync(join(ROOT, "src", "features", "team-office", "office-render.ts"))) { /* v18 起改为 Kenney CC0 资产版（office-render.ts 已删），这组旧断言作废 */ } else
+  if (!existsSync(join(ROOT, "src", "features", "team-office", "office-render.ts"))) {
+    /* ⛔⛔ 2026-10-05：本组断言的**对象**（PixiJS 程序化绘制 / office-director 导演 /
+       office-render 绘制）随 v19「像素素材 + 原生 canvas 2D」全部删除
+       ⇒ 本组**长期空跑**。⛔ 静默跳过 = 假绿（让人以为办公室有几十条断言在保护）
+       —— 用户 10-05 报「显示器没对准、没显示」时没有任何守卫拦下，根因就在这里。
+       ✅ 先改成**显式打印**；恢复方式 = 按当前实现重写断言（样板见【154】）。 */
+    console.log("  ! 【办公室】断言对象 office-render.ts 已随 v19 删除 ⇒ 本组跳过（⛔ 空跑=假绿，待按当前实现重写）");
+  } else
   {
     console.log(C.bold("\n【176】办公室角色外形（物种 / 项圈 / 屏幕内容）"));
     const palPath = join(ROOT, "src", "features", "team-office", "office-palette.ts");
@@ -2371,7 +2342,14 @@ w.postMessage({id:1,op:"list",root});
 // 背景：走动人原来是 from→to **直线插值**，从自己工位走到饮水机会直接穿过别人的桌子。
 // 参照 munder-difflin 的做法（作者博客：BFS 四方向寻路，明确说这规模不需要 A*）改成网格寻路。
   /* ⛔ 办公室预览（team-office 域）09-30 用户要求整体下线、待重做 ⇒ 目录不在就不跑这组断言 */
-  if (!existsSync(join(ROOT, "src", "features", "team-office", "office-render.ts"))) { /* v18 起改为 Kenney CC0 资产版（office-render.ts 已删），这组旧断言作废 */ } else
+  if (!existsSync(join(ROOT, "src", "features", "team-office", "office-render.ts"))) {
+    /* ⛔⛔ 2026-10-05：本组断言的**对象**（PixiJS 程序化绘制 / office-director 导演 /
+       office-render 绘制）随 v19「像素素材 + 原生 canvas 2D」全部删除
+       ⇒ 本组**长期空跑**。⛔ 静默跳过 = 假绿（让人以为办公室有几十条断言在保护）
+       —— 用户 10-05 报「显示器没对准、没显示」时没有任何守卫拦下，根因就在这里。
+       ✅ 先改成**显式打印**；恢复方式 = 按当前实现重写断言（样板见【154】）。 */
+    console.log("  ! 【办公室】断言对象 office-render.ts 已随 v19 删除 ⇒ 本组跳过（⛔ 空跑=假绿，待按当前实现重写）");
+  } else
 {
   const canvas181 = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
   const navPath181 = join(ROOT, "src", "features", "team-office", "office-nav.mjs");
@@ -2708,7 +2686,11 @@ w.postMessage({id:1,op:"list",root});
      官方声明可商用免署名）。本组断言钉的是"再次被否掉的坑"与资产授权。 */
   /* ⛔ 这组断言校验的是 v18（Kenney 版）的实现文件 office-assets.ts —— 09-30 晚该域已重做为
      v19 像素版（office-format.ts），v18 文件不在 ⇒ 跳过（⛔ 别只查目录：目录在、实现换代照样会炸） */
-  if (!existsSync(join(ROOT, "src", "features", "team-office", "office-assets.ts"))) { /* v18 实现不在 */ } else
+  if (!existsSync(join(ROOT, "src", "features", "team-office", "office-assets.ts"))) {
+    /* ⛔⛔ 同上一类：本组断言的是 v18（Kenney CC0 资产版）实现，v19 已换成像素素材版
+       ⇒ 文件不在、整组空跑。⛔ 不再静默跳过。 */
+    console.log("  ! 【231】断言对象 office-assets.ts 是 v18 实现、v19 已换 ⇒ 本组跳过（⛔ 空跑=假绿，待重写）");
+  } else
   {
     const taDir = join(ROOT, "src", "features", "team-office");
     /* ① 资产授权声明：CC0 + 可商用（⛔ 资产来源换成人人无许可的包时必须在这里显红） */
