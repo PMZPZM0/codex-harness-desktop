@@ -30,6 +30,7 @@
  * 项目记忆 / 背景 / 纪律 / 日志，也不做 L3 召回。
  */
 import { memoryLayers, memoryStore, threadCwd, workspaceMemoryEnabled } from "./main";
+import { roleMemorySection, type RoleRef } from "./role-memory";
 
 export type DelegateMemory = {
   /** 可直接追加到出站文本尾部的记忆段（空串 = 这次没拿到记忆） */
@@ -37,6 +38,10 @@ export type DelegateMemory = {
   chars: number;
   standingChars: number;
   recalledChars: number;
+  /** 该角色的私有记忆段（10-05 角色独立记忆；空串 = 该角色还没有私有记忆） */
+  roleSection: string;
+  /** 解析到的角色归属键（空 = 这次没有角色归属，如主会话直接委派外的场景） */
+  roleKey: string;
   /** 解析到的工作区（空 = 只注入了全局 L0 用户档案） */
   workspace: string;
   scope: "workspace" | "user-only";
@@ -63,6 +68,8 @@ export async function buildDelegateMemory(input: {
   query?: string;
   /** 发起方会话 id —— 没显式 cwd 时用它反查工作区 */
   originThreadId?: string;
+  /** 10-05 角色独立记忆：被委派者的角色归属（子智能体 / 专家 / 团主 / 团成员） */
+  role?: RoleRef;
 }): Promise<DelegateMemory> {
   const workspace = resolveDelegateWorkspace({ workspace: input?.workspace, originThreadId: input?.originThreadId });
   const includeWorkspace = workspace ? await workspaceMemoryEnabled(workspace).catch(() => false) : false;
@@ -81,6 +88,20 @@ export async function buildDelegateMemory(input: {
     }
   } catch {
     /* 记忆读取失败不阻塞委派 */
+  }
+
+  /* 10-05 角色私有记忆：只读**这个角色自己**的那份（别的角色看不到）。
+     ⛔ 放在常驻层之后、召回之前：它是"我是谁、我 Remember 我做过什么"的身份段，
+     排在共享的项目记忆之后 ⇒ 角色自己的经历最靠近当前任务（注入是拼成一整段的）。
+     ⛔ 角色记忆**不参与跨角色检索**（硬隔离），也不写进主会话记忆。 */
+  let roleSection: Awaited<ReturnType<typeof roleMemorySection>> | null = null;
+  try {
+    if (input?.role) {
+      const section = await roleMemorySection(workspace || undefined, input.role);
+      if (section.text) { roleSection = section; body += `\n\n${section.text}`; }
+    }
+  } catch {
+    /* 角色记忆读不到不影响委派（与上面两层同纪律） */
   }
 
   /* L3 按需召回：只在工作区记忆开启时做（与 send.tsx 的 if (bag.workspaceMemoryEnabled) 一致）。 */
@@ -103,6 +124,8 @@ export async function buildDelegateMemory(input: {
     chars: body.length,
     standingChars,
     recalledChars,
+    roleSection: roleSection?.text ?? "",
+    roleKey: roleSection?.key ?? "",
     workspace,
     scope: includeWorkspace ? "workspace" : "user-only",
   };

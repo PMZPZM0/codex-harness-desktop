@@ -18,7 +18,9 @@
 
 import { buildDefaultExpertTeams, buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, normalizeTeamConfig, readExpertTeams, writeExpertTeams } from "../expert-teams";
 import { memberThreadName } from "../team-runs";
+import { app } from "electron";
 import { buildDelegateMemory } from "../delegate-memory";
+import { buildRoleMemoryTool, noteRoleThread } from "../role-memory-tool";
 import { safeProviderId } from "../provider-id";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { readCustomModel } from "../main/01-model-catalog";
@@ -157,6 +159,8 @@ export const teamsFeature = defineFeature<null>({
         modelProvider: provider,
         personality: input.personality || null,
         config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+        // 10-05：成员会话能写自己的私有记忆（主进程侧应答，见 role-memory-tool.ts）
+        dynamicTools: [buildRoleMemoryTool({ kind: "team-member", id: team.teamId, memberId: member.id, label: `${team.displayName.zh}·${member.name}` })],
       });
       const systemPrefix = `[专家团「${team.displayName.zh}」${isLead ? "主理人" : "成员"} ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}\n\n`;
       threadCwd.set(String(started.thread.id), String(input.cwd || process.cwd())); /* 文件变更追踪 cwd 登记（10-01） */
@@ -165,6 +169,11 @@ export const teamsFeature = defineFeature<null>({
         // 会话标题只展示角色职能，不把成员真实姓名带到用户界面。
         const threadName = `${team.displayName.zh} · ${member.profession.zh || "成员"}`;
         try { await server.request("thread/name/set", { threadId: started.thread.id, name: threadName }); } catch { /* 命名失败不阻塞进入会话 */ }
+        /* 10-05：defer 分支（用户亲自与该成员对话）同样登记角色归属 ——
+           否则这个会话将来调 role_memory_save 会被判「无归属」而拒写。
+           ⚠️ 这条会话**能读到**该成员的私有记忆（注入在渲染层发送路径之外，
+              需在 send 侧补 —— 见守卫【role】的接线断言）。 */
+        await noteRoleThread(app.getPath("userData"), String(started.thread.id), { kind: "team-member", id: team.teamId, memberId: member.id, label: `${team.displayName.zh}·${member.name}` }, String(input.cwd ?? "")).catch(() => undefined);
         return {
           thread: { ...started.thread, name: threadName },
           turnId: null,
@@ -176,7 +185,11 @@ export const teamsFeature = defineFeature<null>({
       if (!firstTask) throw new Error(`请先在对话框描述你的需求`);
       /* 成员会话也要有记忆（09-23，同 delegation.ts 的理由）：这条路径由主进程直接 turn/start，
          不经过渲染层 send 路径 ⇒ 不补就永远读不到常驻记忆。见 electron/delegate-memory.ts（守卫【125】）。 */
-      const memberMemory = await buildDelegateMemory({ workspace: input.cwd, query: firstTask });
+      /* 10-05 角色私有记忆：这个成员自己的记忆（⛔ 与其他成员、与主理人互不可见）。
+         kind 用 team-member —— 成员的角色归属是「团 + 成员」两段，主理人是另一条（team-lead）。 */
+      const memberRole = { kind: "team-member" as const, id: team.teamId, memberId: member.id, label: `${team.displayName.zh}·${member.name}` };
+      const memberMemory = await buildDelegateMemory({ workspace: input.cwd, query: firstTask, role: memberRole });
+      await noteRoleThread(app.getPath("userData"), String(started.thread.id), memberRole, String(input.cwd ?? "")).catch(() => undefined);
       const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n${firstTask}\n=== END ===\n\n${systemPrefix}${MEMBER_TASK_INSTRUCTION}${memberMemory.text}`;
       const turn: any = await server.request("turn/start", {
         threadId: started.thread.id,
@@ -237,7 +250,9 @@ export const teamsFeature = defineFeature<null>({
       /* 主理人 → 成员这条路径同样要补记忆（09-23）。工作区用显式 cwd；拿不到就只注入 L0 用户档案。
          ⛔ 必须排在 `beginRun` **之前**：beginRun 会广播 started（点亮成员头像 + 自动弹成员工作窗），
             记忆在云模式要发一次召回请求，排在后面就会出现"面板已打开但没有任何进展"的空窗。 */
-      const invokedMemory = await buildDelegateMemory({ workspace: input.cwd, query: String(input.query ?? ""), originThreadId: String(input.leadThreadId ?? "") });
+      const invokedRole = { kind: "team-member" as const, id: team.teamId, memberId: member.id, label: `${team.displayName.zh}·${member.name}` };
+      const invokedMemory = await buildDelegateMemory({ workspace: input.cwd, query: String(input.query ?? ""), originThreadId: String(input.leadThreadId ?? ""), role: invokedRole });
+      await noteRoleThread(app.getPath("userData"), String(memberThreadId), invokedRole, String(input.cwd ?? "")).catch(() => undefined);
 
       // 运行记录：开始时广播 started（界面点亮头像 + 自动打开成员工作弹窗），
       // 跑的过程由 teamRunStore.handleEngineEvent 转发流式增量，结束时落盘并广播 finished。

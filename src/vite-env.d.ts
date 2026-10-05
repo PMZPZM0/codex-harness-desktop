@@ -591,6 +591,8 @@ interface Window {
     uninstallMemoryMcp(): Promise<{ code: number | null; result: any; log: string; status: any }>;
     /* 真跑一次 MCP 握手校验（不是只判文件存在） */
     verifyMemoryMcp(): Promise<{ code: number | null; result: any; log: string; status: any }>;
+    /* 10-05 角色私有记忆（读）：按 threadId 反查角色归属，返回该角色专属记忆段；普通会话返回空段 */
+    readRoleMemoryContext(input: { threadId?: string; workspace?: string }): Promise<{ text: string; key: string }>;
     saveMemory(input: unknown): Promise<any>;
     listRpaRecipes(): Promise<any[]>;
     saveRpaRecipe(input: unknown): Promise<any>;

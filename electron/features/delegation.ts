@@ -9,7 +9,7 @@
  */
 import { canDispatchFrom, clipDispatchOutput, delegateScopeBlock, dispatchKindAllowed, kindLabel, resolveDispatchTarget } from "../dispatch";
 import { buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, readExpertTeams } from "../expert-teams";
-import { safeStorage } from "electron";
+import { app, safeStorage } from "electron";
 import { safeProviderId } from "../provider-id";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { buildDelegateMemory } from "../delegate-memory";
@@ -22,6 +22,8 @@ import { readSubAgents } from "../main/09-agents-plugins";
 import { delegateRegistry, server, threadRuntimeStore } from "../runtime-refs";
 import { bridgeDial } from "../main";
 import { ensureProjectAgentsMd } from "../project-conventions";
+import type { RoleRef } from "../role-memory";
+import { buildRoleMemoryTool, noteRoleThread } from "../role-memory-tool";
 export async function runDelegatedTask(input: {
   kind: DispatchKind; name: string; query: string; originThreadId: string;
   cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string;
@@ -59,15 +61,19 @@ export async function runDelegatedTask(input: {
   if (!found.target) return { ok: false, output: "", error: found.error };
   const target = found.target;
 
-  // 解析角色提示词与（团队才有的）调度工具
+  // 解析角色提示词、角色归属（10-05 角色独立记忆）与（团队才有的）调度工具
   let rolePrompt = "";
   let displayName = target.name;
   let teamTools: unknown[] = [];
+  /* 10-05 角色私有记忆的归属键：四类角色各有稳定 id，显示名会改、id 不会。
+     ⛔ 归属只在这里算一次并往下传，别在下游各自拼（拼错 = 记忆写到别人名下）。 */
+  let roleRef: RoleRef | null = null;
   if (target.kind === "subagent") {
     const subs = await readSubAgents();
     const sub = subs.find((entry) => entry.id === target.key);
     if (!sub) return { ok: false, output: "", error: `子智能体「${input.name}」不存在` };
     rolePrompt = sub.systemPrompt ?? "";
+    roleRef = { kind: "subagent", id: target.key, label: target.name };
   } else {
     const teams = await readExpertTeams();
     const team = teams.find((entry) => entry.teamId === target.teamId);
@@ -76,11 +82,17 @@ export async function runDelegatedTask(input: {
       rolePrompt = buildTeamSystemPrompt(team);
       // 主理人靠这两个工具管**本团成员**（团队内部机制，不是对外委派，故不受 L3 限制）
       teamTools = [buildTeamTools(team), buildTeamPhaseTool(team)];
+      roleRef = { kind: "team-lead", id: team.teamId, label: team.displayName?.zh || target.name };
     } else {
       const member = [team.lead, ...team.members].find((m) => m.id === target.memberId);
       if (!member) return { ok: false, output: "", error: `成员「${input.name}」不在专家团里` };
       rolePrompt = member.systemPrompt ?? "";
       displayName = target.kind === "expert" ? team.displayName.zh : `${team.displayName.zh}·${member.name}`;
+      // ⛔ 单人专家 = 只含 lead 的团，按「专家」记；显式指到成员才记「团成员」——
+      //    同一个团的主理人直达与被派成员是两套记忆，不可混。
+      roleRef = target.kind === "expert"
+        ? { kind: "expert", id: team.teamId, label: team.displayName?.zh || target.name }
+        : { kind: "team-member", id: team.teamId, memberId: member.id, label: `${team.displayName?.zh || team.teamId}·${member.name}` };
     }
   }
 
@@ -101,10 +113,16 @@ export async function runDelegatedTask(input: {
     sandbox: input.sandbox || "workspace-write",
     modelProvider: provider,
     config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name: providerName, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
-    ...(teamTools.length ? { dynamicTools: teamTools } : {}),
+    // 10-05 角色私有记忆：被委派会话拿得到「写自己记忆」的工具（主进程侧应答，见 role-memory-tool）。
+    // ⛔ 与主会话的 memory_save **刻意不同名**：两个作用域，别让模型以为写的是同一份。
+    // ⛔ 团队工具 + 角色记忆工具**合在一个数组**里传（⛔ 别写两个 dynamicTools 键，后者会覆盖前者）。
+    ...((teamTools.length || roleRef) ? { dynamicTools: [...teamTools, ...(roleRef ? [buildRoleMemoryTool(roleRef)] : [])] } : {}),
   });
   const threadId = String(started?.thread?.id ?? "");
   if (!threadId) return { ok: false, output: "", error: "调度会话创建失败（未返回 threadId）" };
+  /* 10-05 登记「这个会话就是这个角色」——主进程应答 role_memory_save 时靠它反查归属
+     （⛔ 渲染层收不到被委派会话的工具事件，见 role-memory-tool.ts 文件头）。登记失败不阻塞调度。 */
+  if (roleRef) await noteRoleThread(app.getPath("userData"), threadId, roleRef, String(input.cwd ?? "")).catch(() => undefined);
   try { await server.request("thread/name/set", { threadId, name: `调度·${displayName}`.slice(0, 40) }); } catch { /* 命名失败不阻塞 */ }
 
   // ── L1：给被委派会话下发**会话级持久指令**（直接干活、不要转派）。
@@ -139,7 +157,9 @@ export async function runDelegatedTask(input: {
     workspace: input.cwd,
     query: String(input.query ?? ""),
     originThreadId: origin,
-  }).catch((): { text: string } => ({ text: "" }));
+    // 10-05 角色私有记忆：只注入**这个角色自己**的那份（互不串扰）
+    role: roleRef ?? undefined,
+  }).catch((): { text: string; roleSection: string; roleKey: string } => ({ text: "", roleSection: "", roleKey: "" }));
 
   const finalQuery = [
     "[SYSTEM TASK · 调度会话]",

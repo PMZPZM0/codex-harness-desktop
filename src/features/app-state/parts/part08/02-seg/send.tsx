@@ -285,6 +285,15 @@ export async function send(bag: Bag, event?: FormEvent) {
           if (recalled.context) memoryPrefix += `\n\n[Harness 相关记忆，仅供参考]\n${recalled.context}\n[记忆结束]\n`;
         } catch (error: any) { bag.setMemoryStatus(`记忆召回失败：${error.message}`); }
       }
+      /* 10-05 角色私有记忆：当前会话若属于某个角色（子智能体 / 专家 / 团主 / 团成员），
+         把**该角色自己**的私有记忆也拼进来 —— 这样"亲自跟某个专家对话"和"派他出去干活"
+         读到的是同一份角色记忆，交互与普通会话一致。
+         ⛔ 普通会话没有角色归属 ⇒ 返回空段，行为与今天完全一致（不打扰既有链路）。
+         ⛔ 标记沿用既有的 [Harness 常驻记忆] 体系：本段自身不带标记，由主进程拼好整段返回。 */
+      try {
+        const roleCtx = await window.codex.readRoleMemoryContext({ threadId: bag.thread?.id ?? "", workspace: bag.workspace || "" });
+        if (roleCtx?.text) memoryPrefix += `\n\n${roleCtx.text}`;
+      } catch { /* 角色记忆读不到不阻塞发送（与上面两段同纪律） */ }
     }
     bag.dbg("send-memory", { ms: Math.round(performance.now() - memoryStartedAt) });
     const input = [

@@ -253,6 +253,8 @@ contextBridge.exposeInMainWorld("codex", {
   uninstallMemoryMcp: () => __ipc("memory:mcp:uninstall", 0, []),
   /* 真跑一次 MCP 握手校验（不是只判文件存在） */
   verifyMemoryMcp: () => __ipc("memory:mcp:verify", 0, []),
+  /* 10-05 角色私有记忆（读）：按 threadId 反查角色归属，返回该角色专属记忆段；普通会话返回空段 */
+  readRoleMemoryContext: (input: unknown) => __ipc("memory:role-context", 1, [input]),
   saveMemory: (input: unknown) => __ipc("memory:save", 1, [input]),
   listRpaRecipes: () => __ipc("rpa:list", 0, []),
   saveRpaRecipe: (input: unknown) => __ipc("rpa:save", 1, [input]),
