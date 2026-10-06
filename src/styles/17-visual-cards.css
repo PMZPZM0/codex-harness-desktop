@@ -887,54 +887,49 @@
   to { opacity: 1; letter-spacing: normal; }
 }
 
-/* ── /plan 计划模式确认条 & /goal 目标模式状态条（composer 上方，与输入框同宽） ── */
-.mode-banner {
+/* ── /goal 目标条（10-06 夜五轮，用户对照 Qoder：贴输入框上方、与输入框同宽、软粉底圆角条）──
+   左「🎯 目标 · 计时 + 内容（单行省略）+ 状态词」；尾部 编辑 / 删除 / 暂停-继续 三个图标键。
+   ⛔ 计时与暂停的语义口径在 src/features/status/GoalBar.tsx 的注释里（隔离引擎实测）。 */
+.goal-bar {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 8px 12px;
   margin-bottom: 8px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel);
-  box-shadow: var(--shadow);
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--red) 24%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--red) 7%, var(--panel));
   color: var(--text);
   font-size: 12.5px;
   line-height: 1.4;
+  box-shadow: var(--shadow);
   animation: msg-appear 0.16s ease-out both;
 }
-.mode-banner .mode-banner-icon { flex: none; color: var(--muted); }
-.mode-banner .mode-banner-text {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mode-banner .mode-banner-text b { font-weight: 600; margin-right: 6px; }
-.mode-banner button {
-  flex: none;
-  border: 1px solid var(--line);
+.goal-bar-icon { flex: none; color: color-mix(in srgb, var(--red) 72%, var(--text)); }
+.goal-bar-title { flex: none; font-weight: 600; }
+.goal-bar-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.goal-bar-state { flex: none; color: var(--muted); font-size: 11.5px; }
+.goal-bar-actions { flex: none; display: inline-flex; gap: 2px; margin-left: 2px; }
+.goal-bar-btn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  border-radius: 7px;
-  padding: 4px 10px;
-  font-size: 12px;
-  line-height: 1.4;
 }
-.mode-banner button:hover { color: var(--text); background: var(--panel-2); }
-.mode-banner button.mode-banner-primary {
-  background: var(--accent, #3b82f6);
-  border-color: transparent;
-  color: #fff;
-}
-.mode-banner button.mode-banner-primary:hover { filter: brightness(1.08); background: var(--accent, #3b82f6); color: #fff; }
-.mode-banner.plan-confirm .mode-banner-icon { color: var(--accent); }
-.mode-banner.goal-loop .mode-banner-icon { color: var(--orange); }
-.mode-banner.goal-loop.done { opacity: 0.75; }
-.mode-banner.goal-loop.done .mode-banner-icon { color: var(--green); }
+.goal-bar-btn:hover { background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--text); }
+.goal-bar-btn.danger:hover { color: var(--red); }
+.goal-bar.paused { background: color-mix(in srgb, var(--muted) 9%, var(--panel)); border-color: var(--line); }
+.goal-bar.paused .goal-bar-icon { color: var(--muted); }
+.goal-bar.paused .goal-bar-state { color: var(--orange); }
+.goal-bar.done { opacity: 0.78; }
+.goal-bar.done .goal-bar-icon, .goal-bar.done .goal-bar-state { color: var(--green); }
 
 /* ── 输入框内模式小图标（计划/目标模式激活反馈，右上角浮动、点击退出） ── */
 .mode-chip-float {
@@ -957,11 +952,6 @@
   border: 1px solid color-mix(in srgb, var(--accent) 38%, transparent);
 }
 .mode-chip-float.chip-plan.running { animation: attention-pulse 1.6s ease-in-out infinite; }
-.mode-chip-float.chip-goal {
-  color: var(--orange);
-  background: color-mix(in srgb, var(--orange) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--orange) 38%, transparent);
-}
 .mode-chip-float:hover { filter: brightness(1.15); }
 .mode-chip-float + .mode-chip-float { right: 37px; }
 

@@ -1105,6 +1105,99 @@ const CHECKS = [
     },
   },
   {
+    id: "goal-bar",
+    name: "㉖ /goal 目标条：set 出现 / 引擎计时跳动 / 编辑往返 / 暂停·继续·删除（10-06 夜五轮 · 用户对照 Qoder）",
+    run: async (h) => {
+      /* 为什么真跑（用户对照 Qoder 提的形态 + 三条动作）：暂停/继续走的是 `thread/goal/set` 的
+         status 字段（10-06 隔离引擎实测支持；引擎**没有** goal/pause|resume RPC）——「编辑」的
+         状态保持、暂停对正在跑回合的 interrupt、删除=clear，全是静默失效型接线，只有真跑能证。
+         ⚠️ 本项放在默认轮**最后**：⑤ 的「继续」会拉起一个**真引擎的自动续跑回合**（我们会在
+         ⑥ 立刻暂停+中断它）；开头防御性 clear 残留目标，避免上一轮失败留下的活跃目标乱跑。 */
+      await h.waitFor(`!!document.querySelector(".thread-row.active") && !!document.querySelector(".composer-editor")`, { label: "界面就绪", timeoutMs: 40000 }).catch(() => undefined);
+      const threadId = await h.eval(`(function(){ var row=document.querySelector('.thread-row.active'); return row ? row.getAttribute('data-thread-id') : null; })()`);
+      h.check("① 前置：拿得到活动会话 id（拿不到整项作废）", typeof threadId === "string" && threadId.length > 8, `id=${String(threadId).slice(0, 20)}`);
+      if (typeof threadId !== "string" || threadId.length < 9) return;
+      const goalRequest = (method, params) => h.eval(`(async function(){ try { return await window.codex.request(${JSON.stringify(method)}, ${JSON.stringify(params)}); } catch (error) { return { error: String(error && error.message || error) }; } })()`);
+      await goalRequest("thread/goal/clear", { threadId });
+      await wait(500);
+      const barAbsent = await h.eval(`!document.querySelector('.goal-bar')`);
+      h.check("② 前置：无目标时目标条不渲染（先清残留——上一轮失败可能留下活跃目标）", barAbsent === true, `absent=${barAbsent}`);
+
+      /* ③ set(paused 起步：不触发自动续跑，保证本段确定性) ⇒ 目标条出现：🎯「目标 · N秒」+ 内容 + 已暂停 + 三键 */
+      await goalRequest("thread/goal/set", { threadId, objective: "验收目标条", status: "paused" });
+      let bar = null;
+      for (let i = 0; i < 25; i++) {
+        await wait(300);
+        bar = await h.eval(`(function(){ var b=document.querySelector('.goal-bar'); if(!b) return null;
+          return { title:(b.querySelector('.goal-bar-title')||{}).textContent||'', text:(b.querySelector('.goal-bar-text')||{}).textContent||'',
+            state:(b.querySelector('.goal-bar-state')||{}).textContent||'', btns:b.querySelectorAll('.goal-bar-btn').length }; })()`).catch(() => bar);
+        if (bar && /目标 · \d/.test(bar.title)) break;
+      }
+      h.check("③ set(paused) 后目标条出现：🎯「目标 · N秒」+ 内容 + 已暂停 + 编辑/删除/继续三键",
+        !!bar && /^目标 · \d+秒$/.test(bar.title) && bar.text === "验收目标条" && bar.state === "已暂停" && bar.btns === 3,
+        JSON.stringify(bar));
+      /* ④ 编辑往返：点编辑 → 弹窗改文本 → 确定 ⇒ 文本更新，且仍「已暂停」（编辑不动状态） */
+      await h.eval(`document.querySelectorAll('.goal-bar-btn')[0]?.click()`);
+      const modal = await h.waitFor(`!!document.querySelector('.app-prompt-form [name="promptText"]')`, { label: "编辑目标弹窗", timeoutMs: 6000 }).then(() => true).catch(() => false);
+      let edited = false;
+      if (modal) {
+        await h.eval(`(function(){ var el=document.querySelector('.app-prompt-form [name="promptText"]'); el.value="验收目标条（改）"; el.dispatchEvent(new Event('input', { bubbles: true })); return 1; })()`);
+        await h.eval(`document.querySelector('.app-prompt-form .app-prompt-actions button[type="submit"]')?.click()`);
+        for (let i = 0; i < 15; i++) {
+          await wait(300);
+          edited = await h.eval(`(document.querySelector('.goal-bar-text')||{}).textContent === "验收目标条（改）"`).catch(() => false);
+          if (edited) break;
+        }
+      }
+      h.check("④ 编辑往返：弹窗改文本 → 目标条更新，且状态仍「已暂停」（编辑保持原状态，不误触发续跑）",
+        modal === true && edited === true, JSON.stringify({ modal, edited }));
+      /* ⑤ 继续 ⇒ 引擎自动续跑：状态「自动推进中」+ 计时开始跳（两次读数不同）+ 真回合被拉起 */
+      await h.eval(`(function(){ var btns=[...document.querySelectorAll('.goal-bar-btn')]; var last=btns[btns.length-1]; last&&last.click(); return 1; })()`);
+      let live = null;
+      for (let i = 0; i < 30; i++) {
+        await wait(300);
+        live = await h.eval(`(function(){ var b=document.querySelector('.goal-bar'); if(!b) return null;
+          return { state:(b.querySelector('.goal-bar-state')||{}).textContent||'', title:(b.querySelector('.goal-bar-title')||{}).textContent||'',
+            running: !!document.querySelector('.send-button.is-pause') }; })()`).catch(() => live);
+        if (live && live.state === "自动推进中") break;
+      }
+      const tickA = live ? live.title : "";
+      await wait(2600);
+      const tickB = await h.eval(`(document.querySelector('.goal-bar-title')||{}).textContent || ""`).catch(() => "");
+      const ranForReal = await h.eval(`!!document.querySelector('.send-button.is-pause')`).catch(() => false);
+      h.check("⑤ 继续：状态回「自动推进中」且计时在跳（两次读数不同 = 引擎侧计时 + 活动态每秒跳）",
+        !!live && live.state === "自动推进中" && /目标 · \d/.test(tickA) && /目标 · \d/.test(tickB) && tickA !== tickB,
+        JSON.stringify({ live, tickA, tickB }));
+      await h.screenshot("goal-bar-live");
+      /* ⑥ 暂停 ⇒ 「已暂停」+ 正在跑的回合被中断（引擎的 paused 只停下一次续跑，回合要 interrupt） */
+      await h.eval(`(function(){ var btns=[...document.querySelectorAll('.goal-bar-btn')]; var last=btns[btns.length-1]; last&&last.click(); return 1; })()`);
+      let paused = false;
+      let stopped = false;
+      for (let i = 0; i < 60; i++) {
+        await wait(300);
+        const st = await h.eval(`(function(){ var b=document.querySelector('.goal-bar'); return { state: b ? ((b.querySelector('.goal-bar-state')||{}).textContent||'') : '',
+          running: !!document.querySelector('.send-button.is-pause') }; })()`).catch(() => null);
+        if (st && st.state === "已暂停") paused = true;
+        if (!ranForReal || (st && !st.running)) stopped = true;
+        if (paused && stopped) break;
+      }
+      h.check("⑥ 暂停：状态「已暂停」+ 正在跑的续跑回合被中断（interrupt 接线成立）",
+        paused === true && stopped === true, JSON.stringify({ paused, stopped, ranForReal }));
+      /* ⑦ 删除 ⇒ 目标条消失 + 引擎 goal 清空（stopGoalLoop → thread/goal/clear） */
+      await h.eval(`document.querySelectorAll('.goal-bar-btn')[1]?.click()`);
+      let gone = false;
+      for (let i = 0; i < 20; i++) {
+        await wait(300);
+        gone = await h.eval(`!document.querySelector('.goal-bar')`).catch(() => false);
+        if (gone) break;
+      }
+      const engineGoal = await goalRequest("thread/goal/get", { threadId });
+      h.check("⑦ 删除：目标条消失、引擎 goal 已清空（再开局也不会自动推进）",
+        gone === true && !(engineGoal && engineGoal.goal), JSON.stringify({ gone, engineGoal }).slice(0, 220));
+      await h.screenshot("goal-bar-deleted");
+    },
+  },
+  {
     id: "message-feedback",
     name: "㉒ 消息操作图标（用户消息复制贴右端 + 两段成功反馈，10-05 轮）",
     run: async (h) => {
@@ -1426,6 +1519,7 @@ const ROUND_OF = {
   "file-summary": "10-06",   // 文件更改汇报卡：运行中行/胶囊 + 收尾卡 + 悬停 diff 预览 + 交互（10-06 两次重写）
   "popup-fits": "10-06",   // ⛔ 10-06 新增：弹窗自适应普查（用户令「凡事弹窗类都要加自适应，不能被裁剪」）
   "composer-resize": "10-06",   // 10-06 夜三轮新增：输入框上下拖动把手（用户对照 Qoder 图二）
+  "goal-bar": "10-06",   // 10-06 夜五轮新增：/goal 目标条（用户对照 Qoder：计时 + 编辑/删除/暂停；默认轮最后一项，含真续跑回合）
   "message-feedback": "10-05",   // 10-05 轮：消息操作图标的两段反馈 + 用户消息复制贴右端（历史项，默认轮不再跑 —— 回归证据）
   "plugin-market-gitee": "10-03",
   "codex-official-market": "10-03",   // 本轮新项；Gitee 项同轮重跑（插件页加了源切换，两个源都得看一眼）

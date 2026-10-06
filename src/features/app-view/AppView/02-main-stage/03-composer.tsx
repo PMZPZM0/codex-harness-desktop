@@ -77,7 +77,6 @@ import {
   Sparkles,
   Store,
   TerminalSquare,
-  Target,
   Trash2,
   Type,
   Sun,
@@ -142,7 +141,7 @@ import {
 import VoiceWaveform from "../../../../components/VoiceWaveform";
 import { Markdown, MdCode, MdBlock, FilePreviewCode } from "../../../markdown";
 import { QueuedMessageList, FoldHandlers, TurnFoldStream } from "../../../session-queue";
-import { TurnStatusCapsule } from "../../../status";
+import { GoalBar, TurnStatusCapsule } from "../../../status";
 import { RequestCard, ToolCard, VoiceSettingsBridge, admitThreadRuntimeRef, ago, appendDelta, appendIndexedDelta, applyThreadEvent, approvalMenuOptions, armSendAnimationClaim, botChannelName, botOnlineOf, builtinCommandCatalog, categoryLabel, clampRruleNum, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, cronTemplates, deltaMethods, describeRrule, describeSchedule, displayPath, fmtImportTime, formatTimestamp, greetingForHour, groupThreadsByTime, hydrateTurnUserMessage, idleTemplates, imageExts, isActivityItem, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, localFormatDurationMs, locateMatchEl, markBufferedAgentReveal, markBufferedTurnReveal, matchSkillCatalog, mergeItem, mergeLongerStreams, mergeTurn, modelBadges, modelName, normSkillName, noticeTone, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDescription, pluginDisplayName, pluginMarketCategoryTabs, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, revealStepFor, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, settingsNav, shortSkillName, skillHubCategories, skillHubCategoryName, skillHubCategoryTabs, skillZhNote, slashCommands, stableItem, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, toFileUrl, uniqueModelCount, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../helpers";
 import type { HarnessAppApi } from "../../../app-state/useHarnessApp";
 import { ComposerComposerCardStack } from "./03-composer/01-composer-card-stack";
@@ -268,6 +267,7 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
     setSettingsOpen,
     setSettingsPage,
     setSkillMenuOpen,
+    openAppPrompt,
     setSkillQuery,
     setThreadFileQuery,
     setUpdateNotice,
@@ -299,6 +299,29 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
     archiveToast,
     setArchiveToast,
   } = app;
+  /* 目标条动作（10-06 夜五轮，用户对照 Qoder 的目标条）。⛔ 暂停/继续走 `thread/goal/set`
+     的 status 字段（10-06 隔离引擎实测支持；引擎**没有** thread/goal/pause|resume 两个方法，
+     别改回去）；暂停时若回合在跑补一发 interrupt —— 引擎的 paused 只停"下一次自动续跑"。 */
+  const editGoal = () => {
+    if (!thread || !goalText) return;
+    void openAppPrompt("编辑目标", goalText).then((next) => {
+      const text = String(next ?? "").trim();
+      if (!text || text === goalText) return;
+      void window.codex.request("thread/goal/set", { threadId: thread.id, objective: text, status: goalStatus === "paused" ? "paused" : "active" })
+        .then(() => showToast("目标已更新", text))
+        .catch((error: any) => showToast("目标更新失败", error?.message ?? String(error)));
+    });
+  };
+  const toggleGoalPause = () => {
+    if (!thread || !goalText) return;
+    const nextPaused = goalStatus !== "paused";
+    void window.codex.request("thread/goal/set", { threadId: thread.id, objective: goalText, status: nextPaused ? "paused" : "active" })
+      .then(() => {
+        showToast(nextPaused ? "目标已暂停" : "目标已继续", nextPaused ? "自动推进已停止；点「继续」随时恢复" : "引擎将继续朝目标自动推进");
+        if (nextPaused && activeThreadRunning) void interrupt();
+      })
+      .catch((error: any) => showToast(nextPaused ? "暂停失败" : "继续失败", error?.message ?? String(error)));
+  };
   return (
     <div ref={composerWrapRef} className={`composer-wrap ${isEmpty ? "docked-center" : ""}`}>
                   {/* 归档后提示浮层（09-17 建；09-23 用户三轮定稿：**窗口顶部居中** + 3 秒自动消失）：
@@ -332,13 +355,11 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                       </form>
                     </div>
                   )}
-                  {/* /goal 目标模式状态条：引擎原生自动续跑中，可随时停止 */}
+                  {/* /goal 目标条（10-06 夜五轮，用户对照 Qoder）：贴输入框上方、与输入框同宽、软粉底；
+                      左「🎯 目标 · 计时 + 内容」，尾部 编辑 / 删除 / 暂停-继续（动作处理在上方，画在 GoalBar） */}
                   {thread && goalText && (
-                    <div className={`mode-banner goal-loop ${goalStatus === "complete" ? "done" : ""}`} role="status" aria-label="目标模式">
-                      <Target size={14} className="mode-banner-icon" />
-                      <span className="mode-banner-text"><b>目标模式{goalStatus === "complete" ? " · 已完成" : goalStatus === "blocked" ? " · 受阻" : goalStatus === "paused" ? " · 已暂停" : " · 自动推进中"}</b>{goalText}</span>
-                      {goalStatus !== "complete" && <button onClick={stopGoalLoop}>停止</button>}
-                    </div>
+                    <GoalBar threadId={thread.id} goalText={goalText} goalStatus={goalStatus} running={Boolean(activeThreadRunning)}
+                      onEdit={editGoal} onTogglePause={toggleGoalPause} onDelete={stopGoalLoop} />
                   )}
                   {/* Agent 提问卡：贴输入框上方、与输入框同宽；只属于发起它的会话，不跨会话弹窗 */}
                   {agentAsk && agentAsk.threadId === thread?.id && (

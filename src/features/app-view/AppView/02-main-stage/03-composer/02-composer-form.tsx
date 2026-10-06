@@ -80,7 +80,6 @@ import {
   Sparkles,
   Store,
   TerminalSquare,
-  Target,
   Trash2,
   Type,
   Sun,
@@ -196,8 +195,6 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
     expertTeams,
     favoriteQuery,
     favorites,
-    goalStatus,
-    goalText,
     hasEnhanceBackup,
     images,
     insertComposerFiles,
@@ -259,7 +256,6 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
     skillCommandMatches,
     skillQuery,
     startMemberDirectSession,
-    stopGoalLoop,
     submenuFlip,
     submenuTop,
     thread,
@@ -395,7 +391,6 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                         {(contextItems.length > 0 || selectedSkills.length > 0) && <div className="context-chip-row" aria-label="已引用上下文与技能">{contextItems.map((item) => <span className="context-chip" key={item.id}><Quote size={12} /><b>{item.role}</b><em>{item.text}</em><button type="button" title="移除引用" onClick={() => removeContextItem(item.id)}><X size={12} /></button></span>)}{selectedSkills.map((skill) => <span className="context-chip" key={skill.name}><Zap size={12} /><b>技能</b><em>{skill.name}</em><button type="button" title="移除技能" onClick={() => setSelectedSkills((current) => current.filter((entry) => entry.name !== skill.name))}><X size={12} /></button></span>)}</div>}
                         <div className="composer-input-shell">
                         {(planArmed || planRunning) && <button type="button" className={`mode-chip-float chip-plan ${planRunning ? "running" : ""}`} title={planRunning ? "计划模式 · 方案生成中（点击中断）" : "计划模式 · 下一条消息先出方案（点击退出）"} onClick={() => { if (planRunning) { void interrupt(); } else { planOnceRef.current = false; setPlanArmed(false); showToast("计划模式已退出", "下一条消息按普通模式执行"); } }}><ListChecks size={13} /></button>}
-                          {thread && goalText && goalStatus !== "complete" && <button type="button" className="mode-chip-float chip-goal" title="目标模式 · 自动推进中（点击停止）" onClick={stopGoalLoop}><Target size={13} /></button>}
                           <ComposerEditor value={prompt} placeholder="向 Codex 提问，使用 / 选择命令、@ 引用上下文、# 引用技能" editorRef={composerInputRef} domValueRef={composerDomValueRef} makeChip={makeComposerChip} onValueInput={onPromptChange} onKeyDown={(event) => { if (skillCommandMatches.length && event.key === "Enter") { event.preventDefault(); addSkillReference(skillCommandMatches[0]); return; } if (skillCommandMatches.length && event.key === "Escape") { event.preventDefault(); setPrompt(""); return; } if (contextOpen && event.key === "Enter" && availableContextItems[0]) { event.preventDefault(); addContextItem(availableContextItems[0]); return; } if (event.key === "Escape" && contextOpen) { event.preventDefault(); setContextOpen(false); return; } onComposerKeyDown(event); }} onBlur={() => setTimeout(() => setContextOpen(false), 120)} onPasteImage={(text) => void pasteImage(text)}                   onPasteFiles={(paths) => {
                                 const added = paths.filter((p) => !attachedFiles.includes(p));
                                 if (!added.length) return;
