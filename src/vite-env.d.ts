@@ -1020,6 +1020,9 @@ interface Window {
     /** 3D 预览弹窗打开推送（model-viewer 域，10-05）：手写桥（非 gen 段），引擎 preview_3d 触发 */
     onModelViewerOpen(listener: (event: { path: string; title: string }) => void): () => void;
 
+    /** 壁纸应用推送（wallpaper 域，10-06）：手写桥，引擎 wallpaper_set 触发 */
+    onWallpaperApply(listener: (event: { mode: string; pattern: string; opacity: number; image: string }) => void): () => void;
+
     onTerminalData(listener: (id: string, data: string) => void): () => void;
 
     /** 「当前能力链路」：同一件事有多个后端时，现在实际走哪条（唯一来源见 electron/capability-registry.ts） */

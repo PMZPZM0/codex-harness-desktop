@@ -233,6 +233,25 @@ function dispatchMcpTools(): unknown[] {
         required: ["path"],
       },
     },
+    /* ── 壁纸设置（10-06 用户：「Codex 自己也能给自己做壁纸」）──
+       引擎可自助换壁纸：pattern/particles/vanta 直接切；custom 接 `preset:<id>`（内置精选渐变）
+       或**你自己生成的图片**（生图 → 写入工作区 → 传绝对路径，主进程过可信根闸）。
+       执行端 dispatch-rpc.ts：校验后 sendToWindow("wallpaper:apply") → 渲染层走 saveWallpaper
+       同一条链路（与设置页同源）。这就是壁纸的**免改码拓展接口**：做新图 = 新壁纸。 */
+    {
+      name: "wallpaper_set",
+      description: "设置应用壁纸（用户立刻可见）。四种用法：① mode=pattern + pattern=图案id（dots/scatter/grid/blueprint/waves/zigzag/diagonal/plus/rings/topo）；② mode=particles（粒子网络）；③ mode=vanta（3D 网格）；④ mode=custom + image=`preset:<id>`（内置精选渐变：sunrise/mint/dusk/ocean/graphite/ember）或 image=<图片绝对路径>。给自己做壁纸：用生图出图 → 写入工作区 → 调本工具传路径。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          mode: { type: "string", description: "off / pattern / particles / vanta / custom" },
+          pattern: { type: "string", description: "mode=pattern 时的图案 id（省略 = dots）" },
+          image: { type: "string", description: "mode=custom 时：`preset:<id>` 或图片绝对路径（须在工作区/应用数据目录内）" },
+          opacity: { type: "number", description: "浓度 2~40（省略 = 16；只作用于图案档）" },
+        },
+        required: ["mode"],
+      },
+    },
     /* ── 专家 / 子智能体管理三件套（09-29 用户：「让用户可以通过 Codex 会话新建专家和专家团还有子智能体」）──
        用户在会话里说「帮我建一个 XX 专家」⇒ 模型直接建，落盘 userData/expert-teams.json，
        重启后专家列表可见。normalizeTeamConfig 负责字段缺省与 id 规范；同 teamId 即更新。
