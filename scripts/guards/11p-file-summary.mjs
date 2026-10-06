@@ -65,5 +65,33 @@ ok(turnView.includes("<CompletedChanges turn={turn} onOpenFile={handlers.onOpenF
 ok(/\.completed-file\.clickable:hover/.test(css) && /\.completed-file-thumb img/.test(css) && /\.completed-more:hover/.test(css),
   "样式齐：行 hover / 缩略图裁切 / 折叠钮 hover（少一个 = 看着像坏了）");
 
+/* ── 四、数据链路：id 链 / 真投递通道 / 遍历顺序 ─────────────────────────────
+   ⛔ 10-06 用户真实场景暴露的三处静默缺陷，全在「注入假事件」式验收的盲区里（卡会画、链路是死的）：
+   ① 追踪器广播的是**线程 id**，汇总卡按 **turn.id** 取报告 ⇒ 永远对不上号、卡片空白；
+   ② 渲染层监听 window "message" 通道 —— 全仓没有任何发送方（真通道是 onHarnessEvent 裸 payload）；
+   ③ 工作区遍历是深度优先：大子目录（AppData…）先烧光 4000 文件预算，根级新文件永远进不了快照。
+   本节的断言逐条钉住这三处的**修法本身**（id 从哪来、走哪条通道、按什么顺序走盘）。 */
+
+const boot = codeOnly(read("electron/features/boot.ts"));
+const watch = codeOnly(read("electron/turn-file-watch.ts"));
+const changesMod = codeOnly(read("src/lib/turn-file-changes.mjs"));
+
+ok(/snapshotTurnWorkspace\(threadIdOf,\s*id,\s*startCwd\)/.test(boot),
+  "boot 把**回合 id**随快照传给追踪器（漏传/传 threadIdOf ⇒ 广播对不上 turn.id）");
+ok(boot.includes("const id = turnIdOf(p);") && /if \(id\) engineActiveTurnIds\.set\(id, threadIdOf\);/.test(boot),
+  "turn/started 分支里回合 id 仍是宽容三形态解析（id 记进活跃台账 + 快照共用同一个值）");
+ok(watch.includes('snaps.set(id, { turnId: String(turnId ?? ""), cwd: dir, snap: walk(dir) })'),
+  "快照条目存住 turnId（线程 id 只当快照键/结算键，两个 id 职责分开）");
+ok(/broadcastFn\(\{ type: "turn-file-changes", turnId: entry\.turnId, files: report \}\)/.test(watch) && !/turnId:\s*id\s*,/.test(watch),
+  "广播 turnId = entry.turnId（⛔ 不许退回线程键 id —— 对不上号 = 卡永远空白）");
+ok(changesMod.includes("window.codex.onHarnessEvent") && /payload\?\.type !== "turn-file-changes"/.test(changesMod),
+  "渲染层收件走真通道 onHarnessEvent（裸 payload 判 type）");
+ok(!/addEventListener\("message"/.test(changesMod),
+  "⛔ 不再监听 window \"message\"（死信道：全仓无发送方；改回来 = 卡静默空白）");
+ok(statusCode.includes("getTurnFileChanges(turn.id)") && statusCode.includes("subscribeTurnFileChanges((changedTurnId"),
+  "汇总卡按 turn.id 取报告并订阅刷新（取键与广播键同源）");
+ok(watch.includes("const dirs: string[] = [];") && watch.includes("for (const d of dirs) visit(d, depth + 1);"),
+  "工作区遍历文件优先：先收本层文件、再下潜子目录（DFS 会被大子目录烧光预算，根级新文件不见）");
+
 console.log(`\n【file-summary】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

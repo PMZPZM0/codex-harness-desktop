@@ -1,16 +1,18 @@
 // 回合文件变更报告的渲染层仓库（模块级单例，不进 bag——同 stream.ts 的 buffered 前例）。
 // 主进程广播 harness:event {type:"turn-file-changes", turnId, files}；本模块收下并供汇总卡读取。
+// ⛔ 收件通道 = `window.codex.onHarnessEvent`（preload 把 ipc `harness:event` 以**裸 payload** 递进来）。
+//   ⛔ 不走 `window.addEventListener("message")`：全仓没有任何地方向 window 派发带 channel 的
+//   MessageEvent（10-06 实证，旧写法是死信道——卡一直空白的根因之一）。
+// ⛔ turnId 是**回合 id**（渲染层按 `turn.id` / DOM `#turn-<uuid>` 取报告），不是线程 id。
 const reports = new Map();
 const listeners = new Set();
 
-if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
-  window.addEventListener("message", (event) => {
-    const data = event.data;
-    if (data?.channel !== "harness:event") return;
-    const payload = data.event;
+if (typeof window !== "undefined" && typeof window.codex?.onHarnessEvent === "function") {
+  window.codex.onHarnessEvent((payload) => {
     if (payload?.type !== "turn-file-changes") return;
-    reports.set(String(payload.turnId ?? ""), Array.isArray(payload.files) ? payload.files : []);
-    for (const fn of listeners) { try { fn(String(payload.turnId ?? "")); } catch { /* 订阅者异常互不影响 */ } }
+    const turnId = String(payload.turnId ?? "");
+    reports.set(turnId, Array.isArray(payload.files) ? payload.files : []);
+    for (const fn of listeners) { try { fn(turnId); } catch { /* 订阅者异常互不影响 */ } }
   });
 }
 

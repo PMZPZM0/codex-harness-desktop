@@ -1084,16 +1084,16 @@ export async function run() {
 
   /* ══ 【245】回合文件变更追踪（10-01 用户令：动了文件就要 ZCode 式 ± 汇报，触发条件齐全）══
      引擎只对 apply_patch 发 fileChange —— shell / exec_command / MCP / 浏览器自动化写文件
-     引擎毫无感知。宿主自己盯：turn/started|begin 记工作目录快照，turn/(completed|aborted|
-     failed|interrupted) + thread/status idle 兜底结算，广播 turn-file-changes 给汇总卡。 */
+     引擎毫无感知。宿主自己盯：turn/started|begin 记快照（含回合 id），turn/(completed|aborted|
+     failed|interrupted) 结算，广播 turn-file-changes（turnId=回合 id）给汇总卡（渲染层按 turn.id 取）。 */
   {
     const tfw = readFileSync(join(ROOT, "electron", "turn-file-watch.ts"), "utf8");
     const bootTfw = codeOnly(readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8"));
     (/export function snapshotTurnWorkspace/.test(tfw) && /export function emitTurnFileChanges/.test(tfw) && /setTurnFileWatchBroadcast/.test(tfw) ? ok : fail)(
       "【245】快照/结算/广播三件套齐备（引擎只报 apply_patch —— shell 与浏览器写文件必须宿主自己盯）"
     );
-    (/snapshotTurnWorkspace\(threadIdOf, startCwd\)/.test(bootTfw) && /emitTurnFileChanges\(threadIdOf\)/.test(bootTfw) ? ok : fail)(
-      "【245】触发条件齐全：turn/started 记快照 + 收尾族（completed/aborted/failed/interrupted）结算（少一处 = 那条路径的改动永远没汇报）"
+    (/snapshotTurnWorkspace\(threadIdOf, id, startCwd\)/.test(bootTfw) && /emitTurnFileChanges\(threadIdOf\)/.test(bootTfw) ? ok : fail)(
+      "【245】触发条件齐全：turn/started 记快照（含回合 id）+ 收尾族（completed/aborted/failed/interrupted）结算（少一处 = 那条路径的改动永远没汇报）"
     );
     (/turn-file-changes\.mjs/.test(codeOnly(readFileSync(join(ROOT, "src", "features", "status", "Status.tsx"), "utf8"))) ? ok : fail)(
       "【245】汇总卡合并宿主追踪结果（只认引擎 changes = shell/浏览器写的文件永远不进汇报）"
@@ -1489,7 +1489,7 @@ export async function run() {
         "electron/main.ts": 546,   // 10-05 界面草图：sketch 协议的特权声明 + 那段"为什么不用 file://、为什么必须 standard/secure"的注释（【283】钉），不是新逻辑
         "scripts/guards/03-runtime-boot.mjs": 917,
         "electron/voice/voice-service.ts": 800,
-        "src/vite-env.d.ts": 792,   // 生成物：通道数增加时自然变长（守卫【2】保证与 manifest 一致）；10-05 +2 = model-viewer 读，再 +1 = memory:role-context，再 +3 = 统一记忆 UI 的两个读通道 + 角色归属表通道 gen 方法 + onModelViewerOpen 手写桥声明
+        "src/vite-env.d.ts": 793,   // 生成物：通道数增加时自然变长（守卫【2】保证与 manifest 一致）；10-05 +2 = model-viewer 读，再 +1 = memory:role-context，再 +3 = 统一记忆 UI 的两个读通道 + 角色归属表通道 gen 方法 + onModelViewerOpen 手写桥声明
         "src/components/VoiceCallFloat/use-voice-call-float-state.tsx": 806,
         "scripts/guards/10-memory-audit.mjs": 848,
         "src/features/drama-canvas/DramaCanvas.tsx": 922,

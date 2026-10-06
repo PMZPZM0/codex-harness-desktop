@@ -484,9 +484,11 @@ export async function bootApp() {
       if (METHOD === "turn/started" || METHOD === "turn/begin") {
         const id = turnIdOf(p);
         if (id) engineActiveTurnIds.set(id, threadIdOf);
-        /* 文件变更追踪（10-01 用户令）：回合开始记工作目录快照；cwd 跟随会话（threadCwd）。 */
+        /* 文件变更追踪（10-01 用户令）：回合开始记工作目录快照；cwd 跟随会话（threadCwd）。
+           ⛔ 快照键 = 线程 id（一线程同时只有一个活跃回合，正好实现「新回合补算上一回合」），
+           但必须**把回合 id 一并存下**——结算广播的 turnId 要用它（渲染层按 turn.id 取报告，10-06 修）。 */
         const startCwd = threadCwd.get(threadIdOf);
-        if (startCwd) snapshotTurnWorkspace(threadIdOf, startCwd);
+        if (startCwd) snapshotTurnWorkspace(threadIdOf, id, startCwd);
       } else if (/^turn\/(completed|aborted|failed|interrupted)$/.test(METHOD)) {
         const id = turnIdOf(p);
         if (id) engineActiveTurnIds.delete(id);
