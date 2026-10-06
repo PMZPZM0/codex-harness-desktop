@@ -9,7 +9,10 @@ export /** 本地推理服务的常用端点（09-19 用户要求「做一下本
  *       （KV cache 随并发路数成倍增长），本地场景应该串行；
  *    ③ 协议用 **auto**：Ollama / LM Studio 只提供 Chat Completions（桥会自动转），
  *       vLLM 较新版本有原生 Responses（会直接透传）—— 让桥自己判定比写死更稳。 */
-/** 通知队列（09-20）：单条存活时长，以及同时最多显示几条（防多会话并发刷屏糊满一屏）。 */
+/** 通知浮层：单条存活时长。
+ *  ⚠️ 10-06 起**同时只显示最新一条**（用户：「通知只展示最新的，不要一下上下展示好几个通知叠加」）
+ *  ⇒ 下面的 `NOTICE_MAX` 已无消费方（保留常量是为了不动其它文件里的批量 import；
+ *  哪天又需要"多条并列"再启用它 —— 改动点在 part02/…/02-approval-notice-center.tsx 的 setNotice）。 */
 const NOTICE_TTL_MS = 2600;
 
 export const NOTICE_MAX = 4;

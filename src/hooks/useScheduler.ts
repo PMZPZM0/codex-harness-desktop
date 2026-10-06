@@ -61,6 +61,9 @@ export function emptyScheduleDraft(workspace = ""): ScheduleDraft {
   return { name: "", prompt: "", workspace, model: "", effort: DEFAULT_EFFORT, intervalMinutes: "60", kind: "interval", timeOfDay: "09:00", weekdays: [1, 2, 3, 4, 5], monthDay: "1", month: "1", biweekly: false, scheduledAt: toLocalDatetimeString(Date.now() + 3600_000), validUntil: "", threadId: "" };
 }
 
+/** 定时任务启停的结果（给调用方出回执用；失败带原因，绝不吞错 —— 见 toggleSchedule 上方说明）。 */
+export type ToggleScheduleResult = { ok: true; task: ScheduledTask } | { ok: false; error: string };
+
 export function useScheduler() {
   const [scheduledTasks, setScheduledTasks] = useState<ScheduledTask[]>([]);
   const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft>(() => emptyScheduleDraft(localStorage.getItem("workspace") ?? ""));
@@ -130,12 +133,20 @@ export function useScheduler() {
     setScheduleStatus("正在编辑：「" + task.name + "」");
   }
 
-  async function toggleSchedule(task: ScheduledTask) {
+  /* ⛔ 返回**结果**而不是 void（10-06 用户：「很多开发都没有通知提醒，全部检查一下」）：
+     设置页的那个启用/停用开关此前成功静默、失败只写页面状态行（页面状态行长在对话区的
+     任务面板上，人在设置页里根本看不见）。改成把结果交给调用方，让开关自己给回执。
+     ⛔ 别退回「catch 吞掉错误」：吞掉的话外层 `.then` 照跑，会报出假的「已启用」。 */
+  async function toggleSchedule(task: ScheduledTask): Promise<ToggleScheduleResult> {
     try {
       const saved = await window.codex.saveScheduledTask({ ...task, enabled: !task.enabled });
       setScheduledTasks((current) => current.map((entry) => entry.id === saved.id ? saved : entry));
+      setScheduleStatus(`定时任务「${saved.name}」已${saved.enabled ? "启用" : "停用"}`);
+      return { ok: true, task: saved };
     } catch (error: any) {
-      setScheduleStatus(error.message);
+      const message = String(error?.message ?? error);
+      setScheduleStatus(`切换失败：${message}`);
+      return { ok: false, error: message };
     }
   }
 

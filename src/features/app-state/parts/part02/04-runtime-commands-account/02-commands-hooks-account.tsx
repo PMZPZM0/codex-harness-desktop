@@ -212,7 +212,10 @@ bag.botStream = botStream as typeof bag.botStream; bag.setBotStream = setBotStre
 
   const updateBotStream = (next: { enabled: boolean; thinking: boolean; tools: boolean }) => {
     bag.setBotStream(next);
-    void window.codex.botStreamSet?.(next).then(bag.setBotStream).catch(() => undefined);
+    /* ⛔ 失败不许静默（10-06 用户：「很多开发都没有通知提醒，全部检查一下」）：
+       原来 `.catch(() => undefined)` 把落盘失败吞干净 —— 开关看着开了，重启后又是旧的。
+       ⛔ 成功不回执：这三个是纯展示偏好，勾选框本身就是即时反馈（与"要重启引擎"的开关不同类）。 */
+    void window.codex.botStreamSet?.(next).then(bag.setBotStream).catch((error: any) => bag.setNotice(`机器人流式设置保存失败：${error?.message ?? error}`));
   };
 bag.updateBotStream = updateBotStream as typeof bag.updateBotStream;
 
@@ -249,7 +252,7 @@ bag.activeBotId = activeBotId as typeof bag.activeBotId; bag.setActiveBotId = se
   const setBotsPersist = useCallback((updater: BotEntry[] | ((cur: BotEntry[]) => BotEntry[])) => {
     bag.setBots((cur) => {
       const next = typeof updater === "function" ? (updater as (c: BotEntry[]) => BotEntry[])(cur) : updater;
-      void window.codex.botsSet?.(next).catch(() => undefined);
+      void window.codex.botsSet?.(next).catch((error: any) => bag.setNotice(`机器人设置保存失败：${error?.message ?? error}`));
       return next;
     });
   }, []);

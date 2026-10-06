@@ -105,7 +105,7 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                         </article>;
                       };
                       return <div className="skill-installed-view">
-                        <SkillPoolSection projects={props.projects} />
+                        <SkillPoolSection projects={props.projects} onNotice={setNotice} />
                         <div className="resource-toolbar secondary">
                           <SelectAllToggle total={selectableFolders.length} selected={checkedFolders.length} unit="个技能" onSelectAll={() => setSkillChecked(selectableFolders)} onClear={() => setSkillChecked([])} />
                           <div className="skill-installed-summary">共 {installedTotalCount} 项 · 内置 {builtinSkills.length} · 市场 {localSkills.filter((entry: any) => entry.source === "cocoloop" || entry.source === "skillhub").length} · 本地 {localSkills.filter((entry: any) => entry.source !== "cocoloop" && entry.source !== "skillhub").length} · 停用 {localSkills.filter((entry: any) => entry.enabled === false).length}</div>

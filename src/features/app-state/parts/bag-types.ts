@@ -938,7 +938,7 @@ export interface Bag {
   setAutoFormVisible: React.Dispatch<React.SetStateAction<boolean>>;
   scheduleStatus: string;
   saveSchedule: () => Promise<boolean>;
-  toggleSchedule: (task: import("../../../hooks/useScheduler.ts").ScheduledTask) => Promise<void>;
+  toggleSchedule: (task: import("../../../hooks/useScheduler.ts").ScheduledTask) => Promise<import("../../../hooks/useScheduler.ts").ToggleScheduleResult>;
   deleteSchedule: (id: string) => Promise<void>;
   runSchedule: (id: string) => Promise<void>;
   editSchedule: (id: string) => void;
