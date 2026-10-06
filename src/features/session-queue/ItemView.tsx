@@ -16,6 +16,7 @@ import type { ActionStatus } from "../../components/CardShell";
 import { basename } from "../../lib/basename";
 import { ActionCard } from "../session-cards";
 import { FileCode2, Wrench, BookOpen, Search, Bot, ImagePlus, Clock3, LoaderCircle, CircleX, CircleCheck, Brain, ChevronDown } from "lucide-react";
+import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { itemStatusLabel } from "../../lib/item-status-label";
 import { resolveTeamMember, AVATAR_GRADIENTS, avatarToneOf } from "../../lib/entity-avatar";
 import { formatDuration } from "../../lib/format-duration";
@@ -194,7 +195,13 @@ function ChangeDiffRow({ id, path, diff, active, onStats }: { id: string; path: 
   useEffect(() => { onStats(id, stats); }, [id, stats.added, stats.deleted]);
   return (
     <div className="action-diff">
-      <strong>{path}</strong>
+      {/* 10-06 用户对照 WorkBuddy：「对应文件图标也加上」+「板块后面实时跳动 +- 数字」——
+          行头 = 文件类型图标 + 路径 + 本行自己的实时 +N -M（数字随流式揭示往上跳）。 */}
+      <div className="action-diff-head">
+        <FileTypeIcon path={path} size={12} />
+        <strong>{path}</strong>
+        <span className="action-diff-stats"><b>+{stats.added}</b><i>-{stats.deleted}</i></span>
+      </div>
       <ToolCodeBlock language="diff" text={displayed} revealing={revealing} />
     </div>
   );

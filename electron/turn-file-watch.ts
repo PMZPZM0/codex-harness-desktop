@@ -4,6 +4,11 @@
 //   · turn/started|begin → 记工作目录快照（内容只收文本文件，双上限防大目录）；
 //   · turn/(completed|aborted|failed|interrupted) → 算差异并广播 harness:event turn-file-changes；
 //   · 没等到结束事件的回合：下一回合开始时先补算再开新快照（防漏报；boot 只在回合结束事件里调 emit）。
+//   · 运行中实时喂（10-06 用户对照 WorkBuddy：「编辑文件板块要实时跳动 +N -M」）：快照存在期间每 2.5s
+//     做一次**轻量重扫**（只 stat 不读全文，异步并发），对比原始快照把「当前累计改动」广播成
+//     turn-file-changes-live；回合收尾时先发一条空 live 清场，再发最终 turn-file-changes。
+//     ⛔ 为什么必须宿主自报：本环境模型工具面没有 apply_patch（实测模型自己说「本会话没有这个工具」），
+//        写文件走 shell / node_repl —— 引擎一个 fileChange 都不发，运行中只能靠宿主自己盯目录。
 // ⛔ 两个 id 职责必须分清（10-06 修）：**快照键/结算键 = 线程 id**（一个线程同时只有一个活跃回合，
 //   按线程键正好实现「新回合开始时补算上一回合」）；**广播的 turnId = 回合 id**——渲染层的汇总卡
 //   是按 `turn.id`（回合 uuid，DOM 里 `#turn-<uuid>`）取报告的，广播线程 id 则永远对不上号 ⇒ 卡片空白。
@@ -91,6 +96,95 @@ function lineDelta(oldText: string, newText: string) {
   return { added, deleted, diff };
 }
 
+/** 轻量重扫（只 stat、不读全文；异步并发，别阻塞主进程）——运行中实时广播的数据源。
+ *  枚举顺序与同步 walk 对齐（同层文件优先、按 readdir 顺序、预算同口径），保证「可见集合」一致：
+ *  否则 4000 上限的截断点不同，边界文件会被 live 误报成「新增」（回合收尾的最终报告是同步 walk，
+ *  两边一致 ⇒ 最终卡永远是对的，live 只是过程视图）。 */
+async function walkLight(cwd: string): Promise<Map<string, { size: number; mtime: number }>> {
+  const out = new Map<string, { size: number; mtime: number }>();
+  const visit = async (dir: string, depth: number): Promise<void> => {
+    if (depth > 8 || out.size >= MAX_FILES) return;
+    let list: fs.Dirent[];
+    try { list = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return; }
+    const dirs: string[] = [];
+    const batch: Promise<void>[] = [];
+    let inflight = 0;
+    for (const e of list) {
+      if (IGNORE.has(e.name) || (e.name.startsWith(".") && e.name !== ".codex" && e.name !== ".env")) continue;
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { dirs.push(p); continue; }
+      if (out.size + inflight >= MAX_FILES) break;
+      inflight += 1;
+      batch.push(fs.promises.stat(p).then((st) => { out.set(p, { size: st.size, mtime: st.mtimeMs }); }).catch(() => undefined));
+    }
+    await Promise.all(batch);
+    for (const d of dirs) await visit(d, depth + 1);
+  };
+  await visit(cwd, 0);
+  return out;
+}
+
+const LIVE_POLL_MS = 2500;
+let liveTimer: ReturnType<typeof setInterval> | null = null;
+let liveBusy = false;
+const liveLastSent = new Map<string, string>();
+
+function ensureLiveTimer(): void {
+  if (liveTimer) return;
+  liveTimer = setInterval(() => { void pollLiveOnce(); }, LIVE_POLL_MS);
+  (liveTimer as unknown as { unref?: () => void }).unref?.();
+}
+
+function stopLiveTimerIfIdle(): void {
+  if (liveTimer && snaps.size === 0) { clearInterval(liveTimer); liveTimer = null; }
+}
+
+async function readLiveText(filePath: string): Promise<string | null> {
+  try {
+    const st = await fs.promises.stat(filePath);
+    if (st.size > MAX_FILE_BYTES || !TEXT_EXT.has(path.extname(filePath).toLowerCase())) return null;
+    return await fs.promises.readFile(filePath, "utf8");
+  } catch { return null; }
+}
+
+/** 一轮实时扫描：对每个活跃快照算出「自回合开始以来的累计改动」，变了才广播。 */
+async function pollLiveOnce(): Promise<void> {
+  if (liveBusy || snaps.size === 0) return;
+  liveBusy = true;
+  try {
+    for (const [threadId, entry] of [...snaps]) {
+      if (!entry.turnId) continue;
+      const next = await walkLight(entry.cwd);
+      const files: { path: string; status: string; added: number; deleted: number }[] = [];
+      for (const [p, after] of next) {
+        const before = entry.snap.get(p);
+        if (!before) {
+          const text = await readLiveText(p);
+          const d = text != null ? lineDelta("", text) : { added: 0, deleted: 0 };
+          files.push({ path: p, status: "added", added: d.added, deleted: 0 });
+        } else if (before.size !== after.size || before.mtime !== after.mtime) {
+          const text = await readLiveText(p);
+          const d = before.content != null && text != null ? lineDelta(before.content, text) : { added: 0, deleted: 0 };
+          files.push({ path: p, status: "modified", added: d.added, deleted: d.deleted });
+        }
+      }
+      for (const [p, before] of entry.snap) {
+        if (next.has(p)) continue;
+        const d = before.content != null ? lineDelta(before.content, "") : { added: 0, deleted: 0 };
+        files.push({ path: p, status: "deleted", added: 0, deleted: d.deleted });
+      }
+      files.sort((x, y) => y.added + y.deleted - (x.added + x.deleted));
+      const report = files.slice(0, MAX_REPORT);
+      const sig = report.map((f) => `${f.path}|${f.status}|${f.added}|${f.deleted}`).join("\n");
+      if (sig === liveLastSent.get(threadId)) continue;
+      liveLastSent.set(threadId, sig);
+      if (broadcastFn) broadcastFn({ type: "turn-file-changes-live", turnId: entry.turnId, files: report });
+    }
+  } catch { /* 扫描失败下一拍再试（轮询不抛） */ } finally {
+    liveBusy = false;
+  }
+}
+
 export function snapshotTurnWorkspace(threadId: string, turnId: string, cwd: string): void {
   const id = String(threadId ?? "");
   const dir = String(cwd ?? "").trim();
@@ -98,6 +192,8 @@ export function snapshotTurnWorkspace(threadId: string, turnId: string, cwd: str
   // 触发条件补全：上一轮没等到 completed（事件丢失/中断未报）⇒ 先补算再开新快照
   if (snaps.has(id)) emitTurnFileChanges(id);
   snaps.set(id, { turnId: String(turnId ?? ""), cwd: dir, snap: walk(dir) });
+  liveLastSent.delete(id);
+  ensureLiveTimer();
 }
 
 export function emitTurnFileChanges(threadId: string): void {
@@ -105,6 +201,10 @@ export function emitTurnFileChanges(threadId: string): void {
   const entry = snaps.get(id);
   if (!entry) return;
   snaps.delete(id);
+  liveLastSent.delete(id);
+  stopLiveTimerIfIdle();
+  // 回合收尾先清场：运行中的「正在编辑文件」板块（live）换成最终汇报卡（turn-file-changes）。
+  if (broadcastFn) broadcastFn({ type: "turn-file-changes-live", turnId: entry.turnId, files: [] });
   const next = walk(entry.cwd);
   const files: { path: string; status: string; added: number; deleted: number; diff: string }[] = [];
   for (const [p, after] of next) {

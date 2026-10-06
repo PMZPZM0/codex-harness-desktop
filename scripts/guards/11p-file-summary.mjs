@@ -84,8 +84,8 @@ ok(watch.includes('snaps.set(id, { turnId: String(turnId ?? ""), cwd: dir, snap:
   "快照条目存住 turnId（线程 id 只当快照键/结算键，两个 id 职责分开）");
 ok(/broadcastFn\(\{ type: "turn-file-changes", turnId: entry\.turnId, files: report \}\)/.test(watch) && !/turnId:\s*id\s*,/.test(watch),
   "广播 turnId = entry.turnId（⛔ 不许退回线程键 id —— 对不上号 = 卡永远空白）");
-ok(changesMod.includes("window.codex.onHarnessEvent") && /payload\?\.type !== "turn-file-changes"/.test(changesMod),
-  "渲染层收件走真通道 onHarnessEvent（裸 payload 判 type）");
+ok(changesMod.includes("window.codex.onHarnessEvent") && /type !== "turn-file-changes" && type !== "turn-file-changes-live"/.test(changesMod),
+  "渲染层收件走真通道 onHarnessEvent（裸 payload；最终报告与运行中 live 两类都收）");
 ok(!/addEventListener\("message"/.test(changesMod),
   "⛔ 不再监听 window \"message\"（死信道：全仓无发送方；改回来 = 卡静默空白）");
 ok(statusCode.includes("getTurnFileChanges(turn.id)") && statusCode.includes("subscribeTurnFileChanges((changedTurnId"),
