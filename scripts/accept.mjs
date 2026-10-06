@@ -594,16 +594,22 @@ const CHECKS = [
         h.check("① 前置：拿得到当前会话工作区（拿不到 = 追踪器无处快照，整项作废）",
           typeof cwd === "string" && cwd.length > 1, `cwd=${String(cwd).slice(0, 60)}`);
         if (typeof cwd !== "string" || cwd.length < 2) return;
-        /* ①b 任务清单播种（10-06 夜三轮）：「任务清单必须由 Codex 自己更新」的展示链 ——
-           真 IPC addTask → 主进程 tasks-changed 广播 → 渲染层 bag 刷新 → 胶囊出「步骤 0/2」。
-           （Codex 侧走 task_add 工具，走的是同一条广播。）先清上一轮可能的残留（幂等）；收尾时删除。
-           此刻无文件区（回合还没跑）⇒ 顺带验证「两区独立可显示、单独存在即居中」的规则。 */
+        /* ①b 任务清单播种（10-06 夜三轮；夜四轮加固）：真 IPC 链路 + **新一轮自动开新清单**验证 ——
+           先清空任务库 → 播一个「已完成的旧轮哨兵」→ 再 add 本轮两条：第一条 add 触发
+           「全完成清单自动清掉」（用户实测「旧清单叠进新任务」的修复），最终清单只该剩 [甲,乙]。
+           Codex 侧走 task_add 工具，走的是同一条广播。收尾时删除。 */
         const seededIds = await h.eval(`(async function(){
           const list = await window.codex.listTasks();
-          for (const t of list) { if (String(t.text||'').startsWith("验收步骤")) await window.codex.deleteTask(t.id); }
+          for (const t of list) { await window.codex.deleteTask(t.id); }
+          const old = await window.codex.addTask({ text: "旧轮哨兵" });
+          await window.codex.updateTask({ id: old.id, patch: { status: "done" } });
           const a = await window.codex.addTask({ text: "验收步骤甲", priority: "medium" });
           const b = await window.codex.addTask({ text: "验收步骤乙", priority: "low" });
           return [a && a.id, b && b.id].filter(Boolean); })()`).catch(() => null);
+        const sentinelState = await h.eval(`(async function(){ const list = await window.codex.listTasks();
+          return { sentinel: list.some(function(t){ return String(t.text||"").includes("旧轮哨兵"); }), count: list.length }; })()`).catch(() => null);
+        h.check("①b2 新一轮 task_add 自动开新清单：全完成清单被自动清掉（旧清单不叠进新任务 —— 用户 10-06 夜四轮实测）",
+          !!sentinelState && sentinelState.sentinel === false && sentinelState.count === 2, JSON.stringify(sentinelState));
         let soloSteps = null;
         for (let i = 0; i < 15; i++) {
           await wait(300);
@@ -905,27 +911,30 @@ const CHECKS = [
           window.addEventListener('scroll', function(){ window.__lastScroll = Date.now(); }, true); } return 1; })()`).catch(() => undefined);
         const waitScrollQuiet = async () => { for (let i = 0; i < 20; i++) { await wait(200); if (await h.eval(`Date.now() - (window.__lastScroll || 0) > 500`).catch(() => false)) break; } };
         await waitScrollQuiet();
-        /* ⛔ 悬停**重试至多 3 次**（10-06 夜实测：默认轮里紧随 ui-sketch 之后，CDP 真悬停会偶发
-           落空 —— 单跑本项稳定通过、功能本身有独立探针佐证）。重试不掩盖缺陷：预览真坏了三次
-           都中不了；全失败时输出 elementFromPoint 诊断便于下轮定位。 */
+        /* ⛔ 悬停目标 = **本回合自己的卡**（近在底部，无需长距离编程滚动）。10-06 夜四轮实测：
+           用全局首个 `.completed-changes`（= 最老的卡，视口上方 2000+px）会踩到时间线长列表的
+           布局/贴底逻辑 —— scrollIntoView 之后真实落点漂移，鼠标落在空处（mouseenter 一次都不触发，
+           重试也救不了）。作用域与 ⑧–⑭ 的 cardSel 同款。
+           ⛔ 悬停重试至多 3 次仍保留（短距离悬停的偶发落空兜底）；全失败时输出诊断。 */
+        const hoverRowSel = `#turn-${turnId} .completed-changes .completed-file`;
         let hoverPreview = null;
         let hoverAttempts = 0;
         for (; hoverAttempts < 3 && !hoverPreview; hoverAttempts++) {
           if (hoverAttempts > 0) { await h.moveMouseAway().catch(() => undefined); await wait(600); await waitScrollQuiet(); }
-          await h.hover(".completed-changes .completed-file").catch(() => undefined);
+          await h.hover(hoverRowSel).catch(() => undefined);
           await wait(900);
           hoverPreview = await h.eval(`(function(){
             var p = document.querySelector('.completed-diff-preview');
             if (!p) return null;
             var r = p.getBoundingClientRect();
-            var row = document.querySelector('.completed-changes .completed-file');
+            var row = document.querySelector(${JSON.stringify(hoverRowSel)});
             var rr = row ? row.getBoundingClientRect() : null;
             return { vis: getComputedStyle(p).visibility, fits: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth,
               aligned: rr ? Math.abs(r.left - rr.left) <= 2 : null, hasDiff: (p.innerText||'').includes('@@') };
           })()`).catch(() => null);
         }
         if (!hoverPreview) {
-          const diag = await h.eval(`(function(){ const row=document.querySelector('.completed-changes .completed-file');
+          const diag = await h.eval(`(function(){ const row=document.querySelector(${JSON.stringify(hoverRowSel)});
             if(!row) return 'no-row'; row.scrollIntoView({block:'center',behavior:'instant'}); const r=row.getBoundingClientRect();
             const el=document.elementFromPoint(Math.round(r.left+r.width/2), Math.round(r.top+r.height/2));
             return JSON.stringify({ top: el?(el.className||el.tagName).toString().slice(0,60):null, inRow: el?row.contains(el):null, scrollAgeMs: Date.now()-(window.__lastScroll||0) }); })()`).catch(() => 'diag-failed');
@@ -958,8 +967,19 @@ const CHECKS = [
         await wait(500);
         const previewGone = await h.eval(`!document.querySelector('.completed-diff-preview')`);
         h.check("⑰ 鼠标移开后预览自动收起（不残留浮层）", previewGone === true, `stillOpen=${!previewGone}`);
-        /* ⑱ 清理播种（10-06 夜三轮）：删掉两条任务 ⇒ 胶囊整体消失（两区都没有 = 不渲染，
-           不留占位）。⛔ 收尾必删：播种落在持久 profile 的任务库里，泄漏会污染后续轮次。 */
+        /* ⑱a 全部标记完成 ⇒ 胶囊自动隐藏（用户 10-06 夜四轮：「Codex 任务跑完，任务清单小胶囊没有
+           自动消失」）。此时无文件区（已收尾）⇒ 两区都没了 = 整卡不渲染。 */
+        await h.eval(`(async function(){ const list = await window.codex.listTasks();
+          for (const t of list) { if (String(t.text||'').startsWith("验收步骤")) await window.codex.updateTask({ id: t.id, patch: { status: "done" } }); } return 1; })()`).catch(() => undefined);
+        let hiddenAfterDone = false;
+        for (let i = 0; i < 10; i++) {
+          await wait(300);
+          hiddenAfterDone = await h.eval(`!document.querySelector('.edited-files-card')`).catch(() => false);
+          if (hiddenAfterDone) break;
+        }
+        h.check("⑱a 全部完成 ⇒ 胶囊自动隐藏（跑完自动消失）", hiddenAfterDone === true, `hidden=${hiddenAfterDone}`);
+        /* ⑱b 清理播种（10-06 夜三轮）：删掉两条任务 ⇒ 胶囊保持不渲染（清理 + 收口）。
+           ⛔ 收尾必删：播种落在持久 profile 的任务库里，泄漏会污染后续轮次。 */
         if (Array.isArray(seededIds) && seededIds.length) {
           await h.eval(`(async function(){ for (const id of ${JSON.stringify(seededIds)}) { await window.codex.deleteTask(id); } return 1; })()`).catch(() => undefined);
         }
@@ -969,7 +989,7 @@ const CHECKS = [
           capsuleGone = await h.eval(`!document.querySelector('.edited-files-card')`).catch(() => false);
           if (capsuleGone) break;
         }
-        h.check("⑱ 删除任务后胶囊整体消失（没有内容就不占位 —— 两区独立渲染规则的收口）", capsuleGone === true, `gone=${capsuleGone}`);
+        h.check("⑱b 删除任务后胶囊保持不渲染（没有内容就不占位 —— 两区独立渲染规则的收口）", capsuleGone === true, `gone=${capsuleGone}`);
         await h.screenshot("file-summary");
       } finally {
         /* 收尾：探针目录整体删掉（落在用户磁盘上的东西必须自己清干净；崩溃也不留）。 */

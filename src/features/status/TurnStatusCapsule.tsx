@@ -8,6 +8,9 @@
  *   · 两区都没有 ⇒ 整卡不渲染。⛔ 用户 10-06 夜定稿的展示规则：**两区各自都能独立居中展示
  *     （只有步骤 = 只显示「步骤 N/M」；只有文件 = 只显示「X 个文件已修改 +A -D」），只有在
  *     两区同时存在时才拼接成「步骤 N/M · X 个文件已修改 +A -D」** —— 别再改成强制同现。
+ *   · 生命周期（10-06 夜四轮，用户实测两条）：**步骤全部完成 = 这一轮收工 ⇒ 胶囊自动隐藏**；
+ *     **下一轮开工 = 全完成清单在 task_add 时被自动清掉（新清单替换旧清单），胶囊重新出现**——
+ *     旧清单不会叠进新任务（清逻辑在 electron/rpa-store.ts 的 addTask，批内补步不受影响）。
  * ⛔ 原「目标与进程」面板（tb-goals-entry + goals-pop + 顶栏 ··· 菜单里的清单入口）已按用户令
  *   撤掉 —— 任务清单的**唯一常驻入口**就是这条胶囊。
  * ⛔ 不许做成 portal 浮层：它是输入框卡片栈的普通一行（与排队消息 / 询问卡 / 审批卡
@@ -43,6 +46,12 @@ export function TurnStatusCapsule({ runningTurnId, taskList }: { runningTurnId: 
   }, [runningTurnId]);
   // 回合结束后文件区不再有数据 ⇒ 悬停分区若停在 files 需要清掉（steps 区照常）
   useEffect(() => { if (!runningTurnId) setZone((current) => (current === "files" ? null : current)); }, [runningTurnId]);
+  // 步骤全部完成 ⇒ 步骤区隐藏，悬停分区若停在 steps 也清掉（与上一行同款）
+  useEffect(() => {
+    if (Array.isArray(taskList) && taskList.length > 0 && taskList.every((task: any) => task?.status === "done")) {
+      setZone((current) => (current === "steps" ? null : current));
+    }
+  }, [taskList]);
   // 弹出位置自适应（用户 10-06：「别固定，固定容易截掉、展示不全」）：按卡片上下空间选边，
   // 内容超高时按所选边的可用空间收窄（内部滚动），左右钳进视口 —— 永不越界。
   useLayoutEffect(() => {
@@ -69,12 +78,17 @@ export function TurnStatusCapsule({ runningTurnId, taskList }: { runningTurnId: 
     pop.style.right = "auto";
   }, [zone]);
   const files = runningTurnId ? getTurnLiveFileChanges(runningTurnId) : [];
-  const steps: StepRow[] = (Array.isArray(taskList) ? taskList : []).map((task) => ({
-    id: String(task?.id ?? ""),
-    text: String(task?.text ?? ""),
-    state: String(task?.status ?? "todo"),
-  }));
-  const hasSteps = steps.length > 0;
+  // 步骤按**创建顺序**展示（①②③④ 从上往下读；store 接口的顺序是 updatedAt 倒序，这里重排）
+  const steps: StepRow[] = (Array.isArray(taskList) ? [...taskList] : [])
+    .sort((a, b) => Number(a?.createdAt ?? 0) - Number(b?.createdAt ?? 0))
+    .map((task) => ({
+      id: String(task?.id ?? ""),
+      text: String(task?.text ?? ""),
+      state: String(task?.status ?? "todo"),
+    }));
+  /* ⛔ 全完成 = 这一轮收工 ⇒ 步骤区隐藏（用户 10-06 夜四轮实测：「任务跑完，小胶囊没有自动消失」）。
+     下一轮开工时 rpa-store.addTask 会清掉全完成清单（新一轮自动开新清单），步骤区随之重新出现。 */
+  const hasSteps = steps.length > 0 && steps.some((step) => step.state !== "done");
   const hasFiles = Boolean(runningTurnId) && files.length > 0;
   if (!hasSteps && !hasFiles) return null;
   const doneCount = steps.filter((step) => step.state === "done").length;

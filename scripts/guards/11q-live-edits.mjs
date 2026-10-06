@@ -101,12 +101,19 @@ const capsule = codeOnly(read("src/features/status/TurnStatusCapsule.tsx"));
 const composer = codeOnly(read("src/features/app-view/AppView/02-main-stage/03-composer.tsx"));
 ok(capsule.includes("export function TurnStatusCapsule") && capsule.includes("getTurnLiveFileChanges(runningTurnId)") && capsule.includes("subscribeTurnFileChanges"),
   "回合状态胶囊：订阅 live、按运行中回合实时取数（文件区）");
-ok(capsule.includes("const steps: StepRow[] = (Array.isArray(taskList) ? taskList : []).map") && capsule.includes('setZone("steps")') && capsule.includes('setZone("files")'),
+ok(capsule.includes("const steps: StepRow[] = (Array.isArray(taskList) ? [...taskList] : [])") && capsule.includes('setZone("steps")') && capsule.includes('setZone("files")'),
   "步骤区取 Codex 的任务清单（taskList 入参）；左右悬停分区各自展开对应清单（用户令：放左边=步骤清单，放右边=文件）");
 ok(capsule.includes("if (!hasSteps && !hasFiles) return null;"),
   "两区都没有才整卡不渲染（有任务清单就有 —— 收尾后仍在；用户 10-06 夜令）");
 ok(capsule.includes("{hasSteps && (") && capsule.includes("{hasFiles && (") && capsule.includes('hasSteps && hasFiles && <span className="capsule-sep"'),
   "两区**各自独立可显示（单独存在即居中）**；同时在才拼出「·」拼接展示（用户 10-06 夜定稿，别改成强制同现）");
+ok(capsule.includes('const hasSteps = steps.length > 0 && steps.some((step) => step.state !== "done")'),
+  "⛔ 步骤全部完成 ⇒ 步骤区隐藏（用户 10-06 夜四轮：「任务跑完，小胶囊没有自动消失」）");
+ok(capsule.includes(".sort((a, b) => Number(a?.createdAt ?? 0) - Number(b?.createdAt ?? 0))"),
+  "步骤按**创建顺序**展示（①②③④ 自上而下；store 接口序是 updatedAt 倒序，别直接铺）");
+const taskStore = codeOnly(read("electron/rpa-store.ts"));
+ok(taskStore.includes('every((t) => t.status === "done")) this.tasks = []'),
+  "全完成清单在 task_add 时自动清掉 = 新一轮开新清单（用户 10-06 夜四轮「旧清单叠进新任务」；⛔ 只清全 done，批内 todo/doing 不许动）");
 ok(capsule.includes("turn-step-row") && capsule.includes("CircleCheck") && capsule.includes("Circle") && capsule.includes("LoaderCircle"),
   "步骤清单三态渲染（todo ○ / doing ⟳ / done ✓）");
 ok(/\.turn-step-row/.test(css) && /\.capsule-zone \{/.test(css),

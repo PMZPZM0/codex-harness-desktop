@@ -590,3 +590,8 @@ FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）· Playwright 内核�
   ③ **任务清单由 Codex 维护 + 实时同步**：tasks-ipc 每次 add/update/delete 后广播 `tasks-changed` → 渲染层（part02c1）订阅刷新 bag.taskList（胶囊即刻跟上；原来只有工具分发处手动重拉）；`developer-instructions.ts` 新增**第 14 条** TASK LIST（多步任务先建清单、开工标 doing、完成一步立刻 done、别攒最后）；task_add/task_update 工具描述同步强化。
   ④ **输入框上下拖动把手**（02-composer-form.tsx + CSS）：顶部细条 + 居中胶囊视觉，拖动改输入区高度；**下限 48px（=编辑器 min-height）/ 上限 min(55vh,560px)** 硬钳；`window` 级监听拖动（⛔ 不用 pointer capture —— 合成事件下 setPointerCapture 直接抛；真拖与合成同路径）；localStorage 持久化（重启恢复、读回也钳上限）、双击复位；高度经 `--composer-editor-h/-max` 两个 CSS 变量下发（未拖动 = 原「内容自适应 + min(42vh,360px)」行为不变）。
   ⑤ 判据：守卫 11q 32→38（胶囊双分区 / 独立-拼接 / 三态 / 负向防复活）+ 新建 **11s-composer-resize（9 条）** + 【48】上限判据接受 var 形态 + 【160】白名单 + 【265】棘轮 accept.mjs 1189→1304（实测）；验收 file-summary 扩 ①b（任务播种走 tasks-changed 真链路）/ ④b 拼接 / ④c 文件区 / ④d 步骤区 / ⑮ 改「文件区消失但步骤区保留」/ ⑱ 删净收口 + 新验收项 **`composer-resize`**（合成 PointerEvent 真拖 + 上下限钳制 + 落盘 + 双击复位）。
+- 🫧 任务清单生命周期修正（10-06 夜四轮，用户实测两条：「Codex 任务跑完，任务清单小胶囊没有自动消失」+「新的任务清单里叠着旧清单」）：
+  ① **全部完成 ⇒ 胶囊自动隐藏**（`TurnStatusCapsule`：`hasSteps = steps.length > 0 && steps.some(s => s.state !== "done")`；悬停分区同步清掉）；
+  ② **新一轮开工自动开新清单**（`rpa-store.addTask`：清单**全部完成**时再 add ⇒ 先清掉全完成清单，再落新任务；⛔ 只清全 done —— 批内 todo/doing 属同轮补步，不许动）；
+  ③ 步骤改按**创建顺序**展示（store 接口序是 updatedAt 倒序，胶囊里重排，①②③④ 自上而下）；常驻指令第 14 条补「新任务开工先清与本轮无关的旧项；全完成会自动隐藏、下一次 task_add 自动开新清单」。
+  ④ 判据：11q 38→41（全完成隐藏 / 创建序 / store 全完成清理）+ 验收 `file-summary` 扩 **①b2**（旧轮哨兵：全完成清单被新 task_add 自动清掉，count=2）+ **⑱a**（全部完成 ⇒ 胶囊自动隐藏）/ ⑱ 拆 a/b；⑯ 悬停目标改**本回合自己的卡**（⛔ 全局首个 `.completed-changes` 是最老历史、常在视口上方 2000+px，长列表布局漂移让 scrollIntoView 落点失真 —— 悬停假红三次全败的真根因，改作用域后 attempts=1 稳过）；【265】棘轮 accept.mjs 1310→1323。
