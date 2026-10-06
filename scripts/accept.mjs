@@ -553,6 +553,105 @@ const CHECKS = [
     },
   },
   {
+    id: "file-summary",
+    name: "㉓ 文件更改汇报卡（真事件驱动真卡：点行预览 / 右键两项 / 折叠 / 图片缩略图，10-06 轮）",
+    run: async (h) => {
+      // 为什么这样测：本特性的**数据链路**（主进程 turn-file-watch → `harness:event` 广播 →
+      // src/lib/turn-file-changes.mjs 收件）是 10-01 轮已验收的既有路径；本轮改动全在 UI 交互层
+      // （点行预览 / 右键菜单 / 折叠 / 图片缩略图），而 e2e profile 的历史会话没有带文件改动的回合。
+      // ⇒ 用**真事件形状**驱动真组件：从 DOM 取一个真回合 id，派发 window 的 message 事件
+      // （`channel: harness:event` / `type: turn-file-changes`）—— 订阅、渲染、交互全是真代码，
+      // 只有"主进程报告"这一环是注入的（事件形状与主进程广播逐字段一致）。
+      const turnId = await h.eval(`(function(){
+        const groups=[...document.querySelectorAll('.turn-group[id^="turn-"]')];
+        const el=groups[groups.length-1]; if(!el) return null;
+        return el.id.replace('turn-','');
+      })()`);
+      h.check("① 前置：当前会话里有一个真回合可挂卡（找不到 = 整项作废）", typeof turnId === "string" && turnId.length > 0, `turnId=${String(turnId).slice(0, 48)}`);
+      if (typeof turnId !== "string" || !turnId) return;
+      /* 八条 fixture：7 文本 + 1 图片（图片行验缩略图与「新增」徽标）；文件都真实存在 ——
+         点行打开预览时预览器会真去读盘，路径不存在就变"点了没反应"的假红。 */
+      const fixture = [
+        { path: join(ROOT, "package.json"), status: "modified", added: 21, deleted: 4 },
+        { path: join(ROOT, "AGENTS.md"), status: "modified", added: 88, deleted: 12 },
+        { path: join(ROOT, "index.html"), status: "modified", added: 3, deleted: 1 },
+        { path: join(ROOT, "tsconfig.json"), status: "modified", added: 2, deleted: 0 },
+        { path: join(ROOT, "electron", "main.ts"), status: "modified", added: 40, deleted: 9 },
+        { path: join(ROOT, "src", "App.tsx"), status: "modified", added: 5, deleted: 5 },
+        { path: join(ROOT, "public", "sketch", "CANVAS-BUILD.json"), status: "modified", added: 6, deleted: 0 },
+        { path: join(ROOT, "public", "sketch", "apple-icon.png"), status: "added", added: 0, deleted: 0 },
+      ];
+      await h.eval(`(function(){
+        window.dispatchEvent(new MessageEvent("message", { data: { channel: "harness:event",
+          event: { type: "turn-file-changes", turnId: ${JSON.stringify(turnId)}, files: ${JSON.stringify(fixture)} } } }));
+        return 1; })()`);
+      await wait(700);
+      const cardSel = `document.getElementById("turn-" + ${JSON.stringify(turnId)})?.querySelector(".completed-changes")`;
+      const head = await h.eval(`(function(){ const c=${cardSel};
+        return c ? { text:(c.querySelector('summary')?.textContent||'').trim(), files: c.querySelectorAll('.completed-file').length } : null; })()`);
+      h.check("② 报告一到，卡立刻出现且头对：已更改 8 个文件 + 增删数字", !!head && /已更改\s*8\s*个文件/.test(head.text) && head.text.includes("+") && head.text.includes("-") && head.files === 6, JSON.stringify(head));
+      if (!head) return;
+      /* ③ 点第一行（package.json）→ 文件预览弹窗出现（用户点名「直接打开预览就行」）。 */
+      await h.eval(`(function(){ const row=${cardSel}?.querySelector('.completed-file');
+        row?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true})); return !!row; })()`);
+      const previewOpened = await h.waitFor(`!!document.querySelector('.file-preview')`, { label: "文件预览弹窗", timeoutMs: 8000 }).then(() => true).catch(() => false);
+      const previewMeta = await h.text(".file-preview-meta").catch(() => "");
+      h.check("③ 点行直接打开预览（文件预览弹窗打开，且预览的就是这一行的文件）",
+        previewOpened === true && String(previewMeta).includes("package.json"), JSON.stringify({ previewOpened, previewMeta: String(previewMeta).slice(0, 80) }));
+      await h.eval(`(function(){ document.querySelector('.file-preview .relay-modal-close')?.click(); window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'})); return 1; })()`).catch(() => undefined);
+      await wait(400);
+      /* ④ 行右键 → 文件卡菜单两项点名（在文件夹中显示 = 「打开文件地址」/ 复制文件路径）。
+         ⛔ 不做真鼠标右键：用 JS 派发 contextmenu —— React 监听的正是这个原生事件。
+         ⛔ 派发后必须**等一拍**再读 DOM：React 的 setMenu 是异步状态更新，同一 tick 查不到菜单。 */
+      await h.eval(`(function(){ const row=${cardSel}?.querySelector('.completed-file');
+        if(!row) return false; const r=row.getBoundingClientRect();
+        row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:Math.round(r.left+40),clientY:Math.round(r.top+10)}));
+        return true; })()`);
+      await wait(300);
+      const menuShown = await h.eval(`(function(){ const menu=document.querySelector('.file-card-menu');
+        return { open: !!menu, items: menu? [...menu.querySelectorAll('button span')].map((s)=>(s.textContent||'').trim()) : [] }; })()`);
+      h.check("④ 行右键弹出文件卡菜单，且含「在文件夹中显示」+「复制文件路径」（用户点名的两项）",
+        menuShown?.open === true && (menuShown?.items ?? []).includes("在文件夹中显示") && (menuShown?.items ?? []).includes("复制文件路径"),
+        JSON.stringify(menuShown));
+      /* ⑤ 点「复制文件路径」：toast 是**成功路径专属**（.catch 只会给「复制失败」）⇒ toast 带
+         标题 + 完整路径 = 剪贴板真的写成功了（仓库没有读文本剪贴板的桥，用成功回执当判据）。 */
+      const copied = await h.eval(`(function(){ const b=[...document.querySelectorAll('.file-card-menu button')].find((x)=>(x.textContent||'').includes('复制文件路径'));
+        if(!b) return false; b.click(); return true; })()`);
+      await wait(600);
+      const copyToast = await h.eval(`(function(){
+        const nodes=[...document.querySelectorAll('.notice-toast, [class*="toast"]')];
+        return nodes.some((el)=>{ const text=el.innerText||''; return text.includes('已复制文件路径') && text.includes('package.json'); }); })()`).catch(() => false);
+      h.check("⑤ 点「复制文件路径」成功回执：toast 同时带标题与完整路径（成功路径专属，不是失败分支）",
+        copied === true && copyToast === true, JSON.stringify({ copied, copyToast }));
+      await h.eval(`(function(){ window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'})); return 1; })()`).catch(() => undefined);
+      await wait(300);
+      /* ⑥ 折叠展开：8 条 ⇒ 先显示 6 行 + 「再显示 2 个文件」，点开变 8 行（图片行在第 8 行）。 */
+      const collapse = await h.eval(`(function(){ const c=${cardSel}; if(!c) return null;
+        const more=c.querySelector('.completed-more');
+        const before=c.querySelectorAll('.completed-file').length;
+        const text=(more?.textContent||'').trim();
+        more?.click();
+        return { before, text }; })()`);
+      await wait(300);
+      const afterExpand = await h.eval(`(function(){ const c=${cardSel}; return c? c.querySelectorAll('.completed-file').length : 0; })()`);
+      h.check("⑥ 折叠展开：6 行 + 「再显示 2 个文件」→ 点开 8 行",
+        collapse?.before === 6 && /再显示\s*2\s*个文件/.test(collapse?.text || "") && afterExpand === 8,
+        JSON.stringify({ collapse, afterExpand }));
+      /* ⑦ 图片行（展开后才在 DOM）：缩略图 + 「新增」徽标（用户点名「还有生成的图片」）。 */
+      const imageRow = await h.eval(`(function(){ const c=${cardSel}; if(!c) return null;
+        const rows=[...c.querySelectorAll('.completed-file')];
+        const row=rows.find((r)=>r.querySelector('.completed-file-thumb'));
+        return row ? { thumb: !!row.querySelector('.completed-file-thumb img'), isNew: !!row.querySelector('.completed-file-new'), name: (row.querySelector('.completed-file-meta code')?.textContent||'').trim() } : null; })()`);
+      h.check("⑦ 图片文件显示缩略图 + 新增文件打「新增」徽标", imageRow?.thumb === true && imageRow?.isNew === true, JSON.stringify(imageRow));
+      /* ⑧ 收起重回 6 行（往返闭合）。 */
+      await h.eval(`(function(){ const c=${cardSel}; c?.querySelector('.completed-more')?.click(); return 1; })()`);
+      await wait(300);
+      const afterCollapse = await h.eval(`(function(){ const c=${cardSel}; return c? c.querySelectorAll('.completed-file').length : 0; })()`);
+      h.check("⑧ 收起重回 6 行（折叠往返闭合）", afterCollapse === 6, `afterCollapse=${afterCollapse}`);
+      await h.screenshot("file-summary");
+    },
+  },
+  {
     id: "message-feedback",
     name: "㉒ 消息操作图标（用户消息复制贴右端 + 两段成功反馈，10-05 轮）",
     run: async (h) => {
@@ -871,6 +970,7 @@ const LATEST_ROUND = "10-06";
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
   "ui-sketch": "10-06",   // ⛔ 10-06 重写：三形态探针（手机+电脑屏 / platform web 真落盘）+ 预览 + 还原；编号改执行顺序
+  "file-summary": "10-06",   // 文件更改汇报卡：点行预览 / 右键两项 / 折叠 / 图片缩略图（用户对照 Qoder 效果图点名）
   "message-feedback": "10-05",   // 10-05 轮：消息操作图标的两段反馈 + 用户消息复制贴右端（历史项，默认轮不再跑 —— 回归证据）
   "plugin-market-gitee": "10-03",
   "codex-official-market": "10-03",   // 本轮新项；Gitee 项同轮重跑（插件页加了源切换，两个源都得看一眼）

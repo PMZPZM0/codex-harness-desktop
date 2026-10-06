@@ -4,11 +4,12 @@ import type { ReactNode } from "react";
 import { resolveFilePath, lookupKnownFile, openImageLightbox, openFileTextEditor, notifyToast } from "../../lib/ui-channels";
 import { basename } from "../../lib/basename";
 import { isImagePath } from "../../lib/is-image-path";
-import { FileText, Zap, Quote, Pencil, FolderOpen, Save, ExternalLink } from "lucide-react";
+import { FileText, Zap, Quote, Pencil, FolderOpen, Save, ExternalLink, Copy } from "lucide-react";
 import type { ParsedUserRefs } from "../../lib/user-refs";
 import { imageDisplaySrc } from "../../lib/image-src.mjs";
 import { imageUrl } from "../../lib/image-url";
 import { IMAGE_EXTENSIONS, BINARY_EXTENSIONS } from "../../hooks/useFilePreview";
+import { copyTextToClipboard } from "../../lib/clipboard";
 
 /** 文本类文件才能弹窗编辑（二进制/图片写回即损坏）。口径与 useFilePreview 同源（导出复用，别抄第二份）。 */
 function isEditableTextFile(path: string): boolean {
@@ -17,10 +18,12 @@ function isEditableTextFile(path: string): boolean {
   return !IMAGE_EXTENSIONS.has(extension) && !BINARY_EXTENSIONS.has(extension);
 }
 
-/** 文件卡片右键菜单（09-26「像 WorkBuddy 那样」）：打开 / 在文件夹中显示 / 编辑 / 另存为… */
+/** 文件卡片右键菜单（09-26「像 WorkBuddy 那样」）：打开 / 在文件夹中显示 / 复制文件路径 / 编辑 / 另存为…
+ *  ⛔ 10-06 起**跨板块复用**（回合底部的「已更改 N 个文件」汇报行也用它）—— 改菜单项要连
+ *  `features/status` 的用法一起想（那边只是挂 onContextMenu，不复制第二份菜单）。 */
 type FileCardMenuState = { x: number; y: number; path: string; name: string };
 
-function FileCardMenu({ menu, onOpen, onClose }: { menu: FileCardMenuState; onOpen: () => void; onClose: () => void }) {
+export function FileCardMenu({ menu, onOpen, onClose }: { menu: FileCardMenuState; onOpen: () => void; onClose: () => void }) {
   useEffect(() => {
     const onDown = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
@@ -32,15 +35,24 @@ function FileCardMenu({ menu, onOpen, onClose }: { menu: FileCardMenuState; onOp
     return () => { window.removeEventListener("mousedown", onDown, true); window.removeEventListener("keydown", onKey, true); };
   }, [onClose]);
   // 视口边缘翻转：贴右/贴底时往回挪
-  const width = 168;
+  const width = 176;
   const itemH = 30, pad = 10;
   const editable = isEditableTextFile(menu.path);
-  const height = pad * 2 + (editable ? 4 : 3) * itemH;
+  const height = pad * 2 + (editable ? 5 : 4) * itemH;
   const left = menu.x + width > window.innerWidth ? Math.max(4, menu.x - width) : menu.x;
   const top = menu.y + height > window.innerHeight ? Math.max(4, menu.y - height) : menu.y;
   const items: { label: string; icon: ReactNode; run: () => void }[] = [
     { label: "打开", icon: <ExternalLink size={13} />, run: onOpen },
     { label: "在文件夹中显示", icon: <FolderOpen size={13} />, run: () => void window.codex.shellReveal(menu.path) },
+    {
+      label: "复制文件路径",
+      icon: <Copy size={13} />,
+      run: () => {
+        void copyTextToClipboard(menu.path)
+          .then(() => notifyToast("已复制文件路径", menu.path))
+          .catch(() => notifyToast("复制失败", menu.path));
+      },
+    },
     ...(editable ? [{ label: "编辑", icon: <Pencil size={13} />, run: () => openFileTextEditor(menu.path, menu.name) }] : []),
     {
       label: "另存为…",
