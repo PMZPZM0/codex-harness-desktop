@@ -104,6 +104,33 @@ ok(/\.settings-card-head svg \{[\s\S]{0,200}?color:\s*var\(--ic-page,\s*var\(--g
 ok(/\.settings-toggle-icon \{[\s\S]{0,260}?color:\s*var\(--ic-page,\s*var\(--muted\)\)/.test(read("src/styles/08-settings-engine-update.css")),
   "④ 设置开关行的图标盒也跟分类色相（只改 color，不动边框/底 —— 整块染色会很吵）");
 
+/* ── ④b 标题栏那一排（10-06 二轮：用户截图「这里你漏了」）───────────────── */
+/* `.icon-button` 是顶栏那排的统一容器 ⇒ 同样"只提供 --ic、各自读 var"。
+   ⛔ hover 必须回落 `--text`（原行为）而不是某个色 —— 挂了 `ic-*` 的常亮色相，没挂的一律零回归。 */
+const sbCss = read("src/styles/02-sidebar-threads.css");
+ok(/\.icon-button \{[\s\S]{0,400}?color:\s*var\(--ic,\s*var\(--muted\)\)/.test(sbCss),
+  "④b .icon-button 读 var(--ic, var(--muted))（全仓没挂 ic-* 的 icon-button 零回归）");
+ok(/\.icon-button:hover \{[\s\S]{0,200}?color:\s*var\(--ic,\s*var\(--text\)\)/.test(sbCss),
+  "④b .icon-button:hover 回落 --text 且**不刷掉色相**（一悬停就变灰会让人以为图标坏了）");
+
+/* 顶栏逐个按钮的色相：锚「按钮类 + ic-色名」的接线，不锚整行字面量。 */
+const TOPBAR = [
+  ["src/features/app-view/AppView.tsx", /className="[^"]*tb-workspace[^"]*ic-amber|ic-amber[^"]*tb-workspace/, "工作区 📁 → amber"],
+  ["src/features/app-view/AppView.tsx", /className="[^"]*sidebar-reveal[^"]*ic-blue|ic-blue[^"]*sidebar-reveal/, "展开侧边栏 → blue"],
+  ["src/features/app-state/parts/part09/02-seg.tsx", /className="[^"]*popout-open-btn[^"]*ic-violet|ic-violet[^"]*popout-open-btn/, "独立会话弹窗 → violet"],
+  ["src/features/app-state/parts/part09/02-seg.tsx", /className="[^"]*tb-task-menu[^"]*ic-green|ic-green[^"]*tb-task-menu/, "当前任务操作 → green"],
+  ["src/features/app-state/parts/part09/02-seg.tsx", /className="[^"]*tb-right-panel[^"]*ic-blue|ic-blue[^"]*tb-right-panel/, "右侧面板开关 → blue"],
+];
+for (const [file, re, label] of TOPBAR) ok(re.test(read(file)), `④b 标题栏「${label}」挂上了色相类`);
+ok(/className="icon-button ic-cyan"/.test(read("src/features/app-state/parts/part09/02-seg.tsx")),
+  "④b 标题栏「搜索当前会话」→ cyan（与侧栏搜索同色相）");
+
+/* ⛔ 负向：调度开关是**状态**控件（灰=关 / --accent=开 + 右上角圆点），不是装饰 ⇒ 不许挂 ic-*。 */
+ok(!/dispatch-topbar-btn[^"]*ic-|ic-[a-z]+[^"]*dispatch-topbar-btn/.test(read("src/features/dispatch/DispatchMenu.tsx")),
+  "④b 负向：调度开关**不挂** ic-*（它用主色表达开/关状态，染色就看不出来了）");
+ok(/\.dispatch-topbar-btn\.dispatch-on \{[\s\S]{0,60}?color:\s*var\(--accent\)/.test(read("src/styles/19-misc-hints.css")),
+  "④b 调度开关的开关状态仍靠主色表达（上一条负向的判据来源）");
+
 /* ── ⑤ 真相源：色相只在 settingsNav 声明一次 ────────────────────────── */
 const catalogs = read("src/features/app-view/helpers/catalogs.ts");
 const navItems = [...catalogs.matchAll(/\["([a-z-]+)",\s*"[^"]+",\s*\w+,\s*"(\w+)"\]/g)];
@@ -134,6 +161,11 @@ const documented = TONES.every((tone) => new RegExp(`--ic-${tone}\\b`).test(desi
 ok(documented, "⑥ DESIGN.md 已登记全部六个色相（⛔ 改了 CSS 变量就必须同步，否则文档会变成骗人的）");
 ok(/ic-<色名>|ic-\*/.test(design) && /--ic-page/.test(design),
   "⑥ DESIGN.md 写明了用法机制（容器挂 .ic-* / 页内读 --ic-page），不只是一张色值表");
+/* 覆盖边界也要写进文档：否则下一个人会去追"为什么窗口控制钮不跟着变色"。 */
+ok(/titleBarOverlay/.test(design) && /窗口控制钮/.test(design),
+  "⑥ DESIGN.md 声明了覆盖边界（窗口控制钮是 titleBarOverlay 原生绘制，CSS 够不着）");
+ok(/调度开关/.test(design) && /状态/.test(design),
+  "⑥ DESIGN.md 声明了调度开关为何故意不上色（状态色 vs 装饰色）");
 
 console.log(`\n  【icon-palette】${checks - fails}/${checks} 通过`);
 if (fails) process.exit(1);

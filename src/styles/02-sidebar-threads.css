@@ -562,7 +562,9 @@
   cursor: pointer;
   width: 32px;
   height: 32px;
-  color: var(--muted);
+  /* 10-06 用户「主界面其他图标也是」：.icon-button 是顶栏那一排的统一容器 ⇒ 挂 `ic-*` 即可上色。
+     ⛔ 回落是原来的 --muted ⇒ 全仓没挂 `ic-*` 的 icon-button 一律零回归（它们大多是关闭 × / 刷新 ↻）。 */
+  color: var(--ic, var(--muted));
   background: 0 0;
   border: 0;
   border-radius: 8px;
@@ -571,7 +573,9 @@
   display: grid;
 }
 .icon-button:hover {
-  color: var(--text);
+  /* ⛔ hover 不许把色相刷掉：回落 `--text` 保持原行为，挂了 `ic-*` 的则**常亮它的色相**
+     —— 一悬停就变灰/变黑，用户会以为这个图标坏了（与 .sidebar-tab 同口径）。 */
+  color: var(--ic, var(--text));
   background: var(--panel-2);
 }
 .mobile-menu {
