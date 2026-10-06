@@ -416,7 +416,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
             thread/start 与 resume 时定死，带条件 = 中途变化不生效）。
          ⛔ 画布没打开时工具会**自动打开界面窗**（等就绪最多 15s）—— 用户点的那一下与模型
             发起的这一次共用同一条会话（sketch-session.mjs 是唯一状态源）。
-         ⛔ 组件细节（36 种字段速查）在内置技能 frontend-canvas 里，描述只列名字 —— 全塞进
+         ⛔ 组件细节（44 种字段速查）在内置技能 frontend-canvas 里，描述只列名字 —— 全塞进
             description = 每轮请求都背着几 KB（渐进披露纪律，同第 12 条）。 */
       {
         type: "function",
@@ -434,7 +434,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           "把一份设计文档写回「前端开发」画布（用户实时看到，可继续手绘、可 Ctrl+Z 撤销）—— 拼装 / 迭代前端界面的正门。"
           + "用法：先 frontend_get_doc 拿当前文档，**在它的基础上改**（追加屏 / 加部件 / 调坐标 / 连导航），把改完的完整文档传回来。"
           + "要求：每屏 id/name/x/y（电脑屏另给 w:1280/h:800）；每组 id/x/y/axis(items 不能空)；每部件 id/kind/label/icon/variant。"
-          + "kind 共 36 种：topAppBar / bottomNav / navRail / tabs / searchBar / button / iconButton / fab / extendedFab / splitButton / fabMenu / toolbar / chip / card / listItem / box / bottomSheet / dialog / snackbar / textField / select / switch / checkbox / radio / slider / datePicker / timePicker / text / image / carousel / camera / map / divider / loadingIndicator / linearProgress / circularProgress；"
+          + "kind 共 44 种：topAppBar / bottomNav / navRail / tabs / searchBar / stepper / button / iconButton / fab / extendedFab / splitButton / fabMenu / chip / segmentedButton / toolbar / card / listItem / box / bottomSheet / dialog / snackbar / expansionPanel / tooltip / textField / select / switch / checkbox / radio / slider / datePicker / timePicker / rating / text / image / avatar / skeleton / timeline / carousel / camera / map / divider / loadingIndicator / linearProgress / circularProgress；"
           + "variant 只认 filled / tonal / elevated / outlined / text。"
           + "坐标是画布坐标：手机屏 412×892、电脑屏 1280×800、屏与屏间距 80（放不下就往右排）。"
           + "⛔ 一次传整份文档，别多次小修；⛔ 别编造 get_doc 没返回过的字段（get 返回里的 promptEdit / promptOptions / customPalette / dynamicColor / theme 属用户侧设置，原样带回去别改）。"

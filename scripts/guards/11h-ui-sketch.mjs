@@ -19,7 +19,7 @@
  * 上游播放键 → preview-result 回执，三处字面量任一漂移都是"点了没反应"；**改名链**
  * sketch_* → mobile_ui_* → **frontend_***（随展示名：界面草图 → 手机前端UI → 前端开发，第三代
  * 用户点名「手机电脑 网页前端UI都有」）；**组件手册技能 frontend-canvas**（用户：「UI里面的组件…
- * 再丰富一些」，36 种字段速查 + 手机/电脑/网页三形态）。工具名两侧同源之外，常驻指令（第 13 条）
+ * 再丰富一些」，44 种字段速查 + 手机/电脑/网页三形态）。工具名两侧同源之外，常驻指令（第 13 条）
  * 与技能名也必须点名同一份东西（名字漂移 = 模型去找不存在的东西）。
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -237,7 +237,10 @@ for (const file of readdirSync(chunkDir)) {
   if (!file.endsWith(".js")) continue;
   const text = readFileSync(join(chunkDir, file), "utf8");
   if (!bundleKinds) {
-    const hit = /\["button","iconButton","fab","extendedFab","splitButton","fabMenu","chip","topAppBar"[^\]]*\]/.exec(text);
+    /* ⛔ 10-06 补丁层改了 KIND_ORDER 的次序（chip 后面插了 segmentedButton）—— 旧的
+       `..."chip","topAppBar"...` 锚点匹配不到补丁后的产物（这条红是**故意**的：
+       产物与守卫的假设对不上就必须有人来看）。现在锚更稳的前缀。 */
+    const hit = /\["button","iconButton","fab","extendedFab","splitButton","fabMenu","chip",[^\]]*\]/.exec(text);
     if (hit) { try { bundleKinds = JSON.parse(hit[0]); } catch { bundleKinds = null; } }
   }
   if (!bundleVariants) {
@@ -249,6 +252,23 @@ for (const file of readdirSync(chunkDir)) {
 ok(!!bundleKinds && !!bundleVariants, "从产物原文提取到上游的 kind / variant 枚举（提取不到 = 上游产物结构变了，必须人工核对后更新本守卫，别静默放过）");
 ok(!!bundleKinds && JSON.stringify(bundleKinds) === JSON.stringify(doc.SKETCH_ITEM_KINDS), `kind 枚举与上游逐字同表（${doc.SKETCH_ITEM_KINDS.length} 种，顺序也要一致）`);
 ok(!!bundleVariants && JSON.stringify(bundleVariants) === JSON.stringify(doc.SKETCH_ITEM_VARIANTS), "variant 枚举与上游逐字同表（5 种 —— 上游 fz 里 variant 是必填且必须在表内）");
+
+/* ── 10-06 组件补丁层（用户：「3800个组件你从中调一些常用的组件做成图里面这些组件啊」）对账 ──
+   产物从此不是官方原样，而是「钉死提交 + 本仓 8 组件补丁」（scripts/sketch-fork/）——
+   来源记录 / 补丁源文件 / 产物里的中文面板名三处都要对得上：
+   ⛔ 记录丢了将来没人知道这版 4.2MB 产物是怎么来的；源文件丢了产物没法重建；
+   ⛔ 中文名只在源码里、产物里找不到 = 面板上根本没有（标签没编译进去 = 白干）。 */
+const canvasBuild = JSON.parse(read("public/sketch/CANVAS-BUILD.json"));
+const forkBuildScript = read("scripts/sketch-fork/build.mjs");
+const FORK_KINDS = ["avatar", "skeleton", "rating", "tooltip", "expansionPanel", "segmentedButton", "stepper", "timeline"];
+ok(!!canvasBuild.fork && JSON.stringify(canvasBuild.fork.extraKinds) === JSON.stringify(FORK_KINDS)
+  && forkBuildScript.includes(`const PINNED_COMMIT = "${canvasBuild.fork.pinnedCommit}"`),
+  "产物记录了补丁层来源（fork.extraKinds 8 个 + build.mjs 的 PINNED_COMMIT 与产物记录同源 —— 对不上 = 这版产物来历说不清）");
+ok(FORK_KINDS.every((k) => doc.SKETCH_ITEM_KINDS.includes(k)), "8 个补丁组件都在宿主认的枚举里（补丁加了、宿主没跟 = 工具写回会被自己的校验拦下）");
+const paletteZhNames = ["头像", "骨架屏", "评分", "提示气泡", "展开面板", "分段按钮", "步骤条", "时间线"];
+const bundleTextAll = readdirSync(chunkDir).filter((f) => f.endsWith(".js")).map((f) => readFileSync(join(chunkDir, f), "utf8")).join("\n");
+ok(paletteZhNames.every((n) => bundleTextAll.includes(n)), "产物 chunk 里能找到 8 个组件的中文名（面板标签真的编译进产物了，不是只躺在源码里）");
+ok(read("scripts/sketch-fork/extra-kinds.tsx").includes("ExtraNodeBody"), "补丁层 overlay 在位（渲染入口 ExtraNodeBody —— 源文件丢了产物就没法重建）");
 
 /* ───────────────────────── 八、工具面接线（part08 注册 ↔ part05 分发） ───────────────────────── */
 
@@ -281,7 +301,7 @@ const applyTool = applyToolAt >= 0 ? part08Code.slice(applyToolAt, applyToolAt +
 ok(applyToolAt >= 0 && /required: \["doc"\]/.test(applyTool), "写工具的 doc 必填（漏了 = 模型可能不带文档就调）");
 ok(applyTool.includes("先 frontend_get_doc"), "写工具描述要求先读再改（防模型凭记忆重写、把用户画布整个覆盖）");
 ok(getTool.includes("前端开发") && applyTool.includes("前端开发"), "两个工具描述都用「前端开发」的叫法（用户改名拍板：手机 / 电脑 / 网页都归它）");
-/* 组件覆盖（10-05 夜用户：「UI里面的组件…再丰富一些」）：**36 种 kind 全列进写工具描述**，
+/* 组件覆盖（10-05 夜用户：「UI里面的组件…再丰富一些」）：**44 种 kind 全列进写工具描述**，
    每个名字都要独立出现（词界正则 —— `fab` 是 `extendedFab` 的子串，裸 includes 会假绿）。
    ⛔ 只列名字；字段级说明在内置技能 frontend-canvas（拿 description 当手册 = 每轮背几 KB）。 */
 const missingKinds = doc.SKETCH_ITEM_KINDS.filter((kind) => !new RegExp(`(^|[^A-Za-z])${kind}([^A-Za-z]|$)`).test(applyTool));
@@ -347,16 +367,18 @@ ok(frontendInstrBlock.includes("1280×800") && frontendInstrBlock.includes("412�
 for (const toolName of mobileUiTools) {
   ok(frontendInstrBlock.includes(toolName), `指令块点名 ${toolName}（与 part08 注册名同源）`);
 }
-ok(frontendInstrBlock.includes("frontend-canvas"), "指令块指向组件手册技能 frontend-canvas（36 种字段速查的唯一落点）");
+ok(frontendInstrBlock.includes("frontend-canvas"), "指令块指向组件手册技能 frontend-canvas（44 种字段速查的唯一落点）");
 
 /* 组件手册技能（10-05 夜用户：「把那个内置组件的，按照这个前端UI支持的展示和拓展效果更新进去」）：
-   注册（entries 名单）+ 内容（工具名 / 三形态 / 36 种全表）+ 中文导读，三处缺一不可 ——
+   注册（entries 名单）+ 内容（工具名 / 三形态 / 44 种全表）+ 中文导读，三处缺一不可 ——
    技能没进 entries = 永远不落盘；内容缺 kind = 模型读到半份手册；没导读 = 用户看不懂。 */
 const builtinSkillsReg = read("electron/builtin-skills.ts");
 const frontendSkillSrc = read("electron/builtin-skills/20-skill-frontend-canvas.ts");
 ok(builtinSkillsReg.includes('["frontend-canvas", FRONTEND_CANVAS_SKILL]') && builtinSkillsReg.includes('from "./builtin-skills/20-skill-frontend-canvas"'), "frontend-canvas 注册进 ensureBuiltinSkills 的 entries 名单（不注册 = 永远不落盘，模型看不到）");
-const skillMissingKinds = doc.SKETCH_ITEM_KINDS.filter((kind) => !new RegExp(`(^|[^A-Za-z])${kind}([^A-Za-z]|$)`).test(frontendSkillSrc));
-ok(skillMissingKinds.length === 0, `组件手册覆盖全部 ${doc.SKETCH_ITEM_KINDS.length} 种 kind（缺：${skillMissingKinds.join(" / ") || "无"}）`);
+/* ⛔ 覆盖判据锚**表格行形态**（`| \`kind\` |`），不是"名字随便出现在哪"——10-06 变异实测：
+   只判名字时，把 stepper 那一行改坏、但散文里还点名过一次，断言照样绿（半份手册也过）。 */
+const skillMissingKinds = doc.SKETCH_ITEM_KINDS.filter((kind) => !frontendSkillSrc.includes(`| \\\`${kind}\\\` |`));
+ok(skillMissingKinds.length === 0, `组件手册每种 kind 都有字段速查行（缺：${skillMissingKinds.join(" / ") || "无"}）`);
 ok(frontendSkillSrc.includes("frontend_get_doc") && frontendSkillSrc.includes("frontend_apply_doc"), "手册点名两个工具（与注册名同源）");
 ok(frontendSkillSrc.includes("1280×800") && frontendSkillSrc.includes("platform"), "手册覆盖手机 / 电脑 / 网页三形态（屏尺寸 + platform）");
 ok(read("electron/builtin-skills/00-skill-zh-notes.ts").includes('"frontend-canvas":'), "中文导读补了 frontend-canvas 一条（守卫【229】要求与 entries 一一对应）");

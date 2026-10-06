@@ -37,8 +37,11 @@ export function isSketchDoc(value) {
  * 中文错误原文回给模型，它才能自己改对再试。
  * ⛔ 判定口径与上游**逐字对齐**（松了 = 坏文档到桥上才炸；严了 = 拦上游本来收的文档）。 */
 
-/** 36 种 item kind（= 上游 `lp`）。 */
-export const SKETCH_ITEM_KINDS = ["button", "iconButton", "fab", "extendedFab", "splitButton", "fabMenu", "chip", "topAppBar", "bottomNav", "navRail", "toolbar", "tabs", "searchBar", "card", "listItem", "box", "bottomSheet", "dialog", "snackbar", "textField", "select", "switch", "checkbox", "radio", "slider", "datePicker", "timePicker", "text", "image", "carousel", "camera", "map", "divider", "loadingIndicator", "linearProgress", "circularProgress"];
+/** 44 种 item kind（= 上游 `lp`；10-06 起**是我们打过补丁的上游** —— 比官方 36 种多 8 个
+ *  `avatar` / `skeleton` / `rating` / `tooltip` / `expansionPanel` / `segmentedButton` /
+ *  `stepper` / `timeline`，见 scripts/sketch-fork/。顺序与补丁后的 KIND_ORDER 逐字一致，
+ *  守卫【283】从产物原文提取枚举对账）。 */
+export const SKETCH_ITEM_KINDS = ["button", "iconButton", "fab", "extendedFab", "splitButton", "fabMenu", "chip", "segmentedButton", "topAppBar", "bottomNav", "navRail", "toolbar", "tabs", "searchBar", "stepper", "card", "listItem", "box", "bottomSheet", "dialog", "snackbar", "expansionPanel", "tooltip", "textField", "select", "switch", "checkbox", "radio", "slider", "datePicker", "timePicker", "rating", "text", "image", "avatar", "skeleton", "timeline", "carousel", "camera", "map", "divider", "loadingIndicator", "linearProgress", "circularProgress"];
 
 /** 5 种 variant（= 上游 `sZ`）——item.variant 是**必填**且必须在表内。 */
 export const SKETCH_ITEM_VARIANTS = ["filled", "tonal", "elevated", "outlined", "text"];

@@ -167,3 +167,19 @@ Icons are Material Symbols names (`home`, `search`, `add`, `favorite`, `settings
 - Every item has `id`, `kind`, `label`, `icon` (or `null`), `variant`.
 - Group coordinates include the screen offset.
 - You are replying with the link (or the JSON), not with a description of it.
+
+## Harness additions: eight more kinds
+
+This build of the canvas adds eight common components to the palette. They take the same document
+format — every item still needs `id` / `kind` / `label` / `icon` / `variant`.
+
+| kind | what it is | useful fields | default size |
+|---|---|---|---|
+| `avatar` | circular avatar | `label` initials (or `icon`), `size` diameter | 56 × 56 |
+| `skeleton` | loading placeholder with a shimmer | `size` width, `size2` height | 380 × 96 |
+| `rating` | five stars | `value` 0–5, `size` star size | 176 × 40 |
+| `tooltip` | hint bubble | `label`, `size` width | 180 × 36 |
+| `expansionPanel` | panel with a header and a body | `label` title, `supporting` body, `checked` = expanded, `icon` | 380 (56 / 148 tall) |
+| `segmentedButton` | connected segmented control | `tabs` segments, `selected`, `size` | 380 × 40 |
+| `stepper` | step progress | `tabs` step names, `value` current index | 380 × 64 |
+| `timeline` | dot-and-line entries | `tabs` entries, `size2` row height | 380 (56 per row) |

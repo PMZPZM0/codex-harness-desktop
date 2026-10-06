@@ -470,7 +470,9 @@ const CHECKS = [
               { id: 'acc-i1', kind: 'topAppBar', label: '验收', icon: null, variant: 'filled' }] },
             { id: 'acc-g2', x: 492, y: 0, axis: 'x', items: [
               { id: 'acc-i2', kind: 'navRail', label: '', icon: null, variant: 'filled',
-                tabs: [{ icon: 'home', label: '首页' }, { icon: 'search', label: '搜索' }, { icon: 'settings', label: '设置' }] }] }] };
+                tabs: [{ icon: 'home', label: '首页' }, { icon: 'search', label: '搜索' }, { icon: 'settings', label: '设置' }] }] },
+            { id: 'acc-g3', x: 16, y: 112, axis: 'x', items: [
+              { id: 'acc-i3', kind: 'avatar', label: '李', icon: null, variant: 'filled', size: 56 }] }] };
         const done = waitMsg('load-doc-result', 12000);
         f.contentWindow.postMessage({ source: SOURCE, type: 'load-doc', doc: probe }, '*');
         const result = await done;
@@ -479,10 +481,10 @@ const CHECKS = [
       h.check("⑦ 写回通道真跑：真实上游接受我们的分享哈希（load-doc-result ok:true —— 这一步只有真产物能证明）",
         written?.result?.ok === true, JSON.stringify(written?.result ?? written).slice(0, 220));
       const metaChanged = await h.waitFor(
-        `(document.querySelector('.ui-sketch-meta')?.textContent || '').indexOf("2 屏 / 2 部件") >= 0`,
+        `(document.querySelector('.ui-sketch-meta')?.textContent || '').indexOf("2 屏 / 3 部件") >= 0`,
         { label: "写入后宿主摘要更新", timeoutMs: 10000 }
       ).then(() => true).catch(() => false);
-      h.check("⑧ 三形态文档真的落盘了：宿主摘要显示「2 屏 / 2 部件」（手机屏 + 电脑屏 + platform web 全被上游收下；排除「哈希改了、画布没动」的静默拒收）",
+      h.check("⑧ 三形态 + 补丁组件都得真落盘：宿主摘要显示「2 屏 / 3 部件」（手机屏 + 电脑屏 + platform web + **补丁层的 avatar** 全被上游收下；排除「哈希改了、画布没动」的静默拒收）",
         metaChanged === true);
       /* ⑨ 一键预览（趁三形态探针还在 —— 手机屏 / 电脑屏都有内容；空画布时上游没什么可预览，
          所以这一项必须在探针落盘之后、还原之前跑）。上游那颗 play_arrow 键只有真实渲染出来

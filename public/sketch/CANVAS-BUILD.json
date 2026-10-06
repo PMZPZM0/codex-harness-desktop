@@ -3,11 +3,27 @@
   "license": "MIT",
   "upstreamVersion": "0.1.0",
   "next": "16.3.6",
-  "builtAt": "2026-10-04",
+  "builtAt": "2026-10-06",
   "fontsLocalized": true,
   "bridge": "scripts/sketch-bridge.js",
-  "rebuiltBy": "node scripts/build-sketch-bundle.mjs --from <next export out/>",
-  "files": 40,
-  "bytes": 4295983,
-  "indexHtmlBytes": 26003
+  "rebuiltBy": "node scripts/sketch-fork/build.mjs（上游源码 + 本仓补丁层）",
+  "fork": {
+    "repo": "https://github.com/lnkiai/m3e-canvas",
+    "pinnedCommit": "039ec311acc33dd0c76a54cbc16af4fc8ab9b491",
+    "patchedBy": "scripts/sketch-fork/build.mjs + patches/extra-kinds.tsx",
+    "extraKinds": [
+      "avatar",
+      "skeleton",
+      "rating",
+      "tooltip",
+      "expansionPanel",
+      "segmentedButton",
+      "stepper",
+      "timeline"
+    ],
+    "builtAt": "2026-10-06T00:08:14"
+  },
+  "files": 39,
+  "bytes": 4268512,
+  "indexHtmlBytes": 30682
 }

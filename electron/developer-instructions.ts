@@ -177,7 +177,7 @@ const UI_COMPONENT_INSTRUCTIONS =
    ⛔ 工具名与技能名（frontend-canvas）与守卫【283】同源；改名要三处一起改。 */
 const FRONTEND_CANVAS_INSTRUCTIONS =
   `\n13) FRONTEND UI CANVAS — when the task is building or iterating a frontend UI (手机 App 界面 / 电脑（桌面）界面 / 网页原型) and \`frontend_apply_doc\` is in your tool list, compose the interface in the app's built-in 「前端开发」 canvas instead of hand-drawing mockups:\n` +
-  `   \`frontend_get_doc\` reads the current design FIRST (frames = screens, groups = parts); \`frontend_apply_doc\` writes an edited FULL document back (edit what get returned — never rewrite from memory). The user watches it live, can keep hand-editing, preview it, and Ctrl+Z. Phone screens are 412×892; computer screens 1280×800 (set w/h); \`platform\` picks android app vs web page. The built-in skill \`frontend-canvas\` carries the full component manual (all 36 kinds with their fields + navigation + modes) — read it before composing.\n` +
+  `   \`frontend_get_doc\` reads the current design FIRST (frames = screens, groups = parts); \`frontend_apply_doc\` writes an edited FULL document back (edit what get returned — never rewrite from memory). The user watches it live, can keep hand-editing, preview it, and Ctrl+Z. Phone screens are 412×892; computer screens 1280×800 (set w/h); \`platform\` picks android app vs web page. The built-in skill \`frontend-canvas\` carries the full component manual (all 44 kinds with their fields + navigation + modes) — read it before composing.\n` +
   `   It doubles as the shared design surface: assemble/iterate screens there, then implement the frontend from that document. If the tools are absent (a session started before this feature), say so instead of inventing canvas contents.`;
 
 function gateAndReviewInstructions(): string {
