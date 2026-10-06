@@ -42,7 +42,12 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
   // 历史会话（turnActive=false 且没有 buffered 标记）保持直接展示，不重播动画。
   const initialReveal = useMemo(() => {
     const marked = bufferedReasoningRevealStarts.get(String(item.id));
-    if (marked != null && text.startsWith(marked)) return marked;
+    // ⛔⛔ 10-06 用户报「所有思考板块在回合结束时会重复播放一次缩放效果」的根因就在这里：
+    //    回合结束的大折叠会把思考卡**重挂载**；若卡上还留着续播标记（流式未播完时标记还没删），
+    //    重挂载会把 revealing 误复活 ⇒ 浮窗先按 spawn **放大放出**，同帧又被「回合已结束」
+    //    分支完成揭示 ⇒ 立刻 **缩回（suck）** —— 一次凭空的开-缩，每张卡各播一遍。
+    //    ⇒ 续播标记只在**本卡还在直播**（running）时可用；回合已结束的挂载一律走全量展示。
+    if (running && marked != null && text.startsWith(marked)) return marked;
     const progressed = revealReasoningProgress.get(String(item.id));
     // 单调下限（09-12 用户「切换一下就重复播放一次」）：进度表里只要有记录，就**取它**，
     // 不再要求 `text.startsWith(progressed)`——思考正文在 resume/流式合并后可能不是严格
@@ -64,7 +69,12 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
   //    那时浮窗已卸载，setDisplayed 只重渲染流内芯片，零成本。
   useEffect(() => {
     if (exiting) return;
-    const markedStart = bufferedReasoningRevealStarts.get(String(item.id));
+    // ⛔ 10-06「回合结束幻影浮窗」二修：非直播态**先清掉续播标记**——回合结束后的文本补写
+    //    （hydration 增补）会让 remaining>0，而下面的 shouldReveal 若还把过期标记算作"需要播"，
+    //    就会 setRevealing(true) ⇒ 浮窗又开又缩（实测同一张卡连播三次开-缩）。
+    //    标记的语义只在**直播续播**里成立；回合不在了就没有"续"可言。
+    if (!running && !revealing) bufferedReasoningRevealStarts.delete(String(item.id));
+    const markedStart = running ? bufferedReasoningRevealStarts.get(String(item.id)) : null;
     let start = displayedRef.current;
     if (markedStart != null && text.startsWith(markedStart) && start.length < markedStart.length) {
       start = markedStart;
@@ -186,7 +196,10 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
      ⚠️ 不要再引 `revealReasoningProgress`：它是**全局表跨卡片共享**，同一回合里上一张
         思考卡填过它 ⇒ 又变成"别的卡片在流"来决定这张开不开。 */
   const streamingNow = revealing;
-  const popupOpen = open && Boolean(displayed) && (streamingNow || manualOpen !== null);
+  // ⛔ 10-06「回合结束幻影浮窗」三修（前两修堵了两条路径，实测仍有残留揭示/状态翻转能凭空开窗）：
+  //    回合结束后，浮窗**只认用户显式点开**（manualOpen === true）——自动揭示、残留标记、
+  //    文本补写引起的任何 flicker 都不许再让浮窗出现，从而彻底消灭「凭空开一下再缩回」。
+  const popupOpen = open && Boolean(displayed) && (running ? (streamingNow || manualOpen !== null) : manualOpen === true);
   /* 芯片 ref：被下面那个 effect 用来判"元素是否还被父容器带着"
      （⛔ 必须声明在它的使用者之前 —— effect 回调虽在渲染后才跑，但依赖"后面才声明的
      const"太脆：谁把这段代码上移/下移就会变成 TDZ 崩。 */

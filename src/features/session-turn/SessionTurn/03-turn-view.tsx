@@ -13,7 +13,7 @@ import { RUN_CLOCK } from "../../../lib/run-clock-2";
 import { describeTurnStop } from "../../../lib/turn-stop-reason.mjs";
 import { formatDuration } from "../../../lib/format-duration";
 import { HookBadge } from "../../session-cards";
-import { RunningProcessTime, CompletedChanges, LiveFileChanges } from "../../status";
+import { RunningProcessTime, CompletedChanges } from "../../status";
 import { CircleStop, AlertTriangle, FileText, Brain, ChevronDown } from "lucide-react";
 import { MessageFooter } from "../../shared/MessageFooter";
 import { UserMessageView } from "../../shared/UserMessageView";
@@ -145,13 +145,10 @@ export function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForAp
           )}
           {/* inner 永远不渲染 finalAgent 的 footer（避免 running 时每个新 body 短暂成为 finalAgent 挂按钮 + 避免与外层 2129 行双排）。外层 turnFinished 决定最终是否独占渲染一份。CompletedChanges 仍需 completedTask（聊天回合没文件改动可显）。 */}
           <TurnFoldStream items={foldItems} turn={turn} running={running} fallbackWindow={fallbackWindow} waitingForApproval={waitingForApproval} handlers={handlers} finalAgentId={finalAgent?.id} usage={usage} tokenUsage={tokenUsage} keepProcessOpen={userStopped} />
-          {/* 运行中的实时「编辑 <文件> +N -M」行（10-06 用户对照 WorkBuddy，并纠正过一次：
-              **运行中是运行中的 —— 数字跟在编辑行对应文件后面；汇总是汇总（上面那张卡）—— 不许混**。
-              数据由主进程每 ~2.5s 轻量重扫广播（模型走 shell/MCP 写文件时引擎不发 fileChange，只能宿主自己盯）。
-              收尾时主进程先发空 live 清场，底部汇总卡接管。 */}
-          {!turnFinished && <LiveFileChanges turn={turn} />}
           {/* 文件更改汇报（汇总）：**任何收尾的回合**只要有文件改动就汇报（10-01 用户：「底部汇报改成跟 ZCode 一样」），不再限定 task 回合。
-              10-06：把 onOpenFile 递进去 —— 汇报行点击 = 直接打开文件预览（用户对照 Qoder 效果图点名）。 */}
+              10-06：把 onOpenFile 递进去 —— 汇报行点击 = 直接打开文件预览（用户对照 Qoder 效果图点名）。
+              ⛔ 运行中的实时「编辑」行**不在这里**（用户 10-06 二次纠正：「在哪个地方就展示在哪个地方，
+                 不是一直在新消息下面，这样多丑」）—— 它们由 TurnFoldStream 按锚点挂在对应工具项后面。 */}
           {turnFinished && <CompletedChanges turn={turn} onOpenFile={handlers.onOpenFile} />}
           {/* 「用户已停止」标记：落在**最新内容之后**（用户 09-18 明确定位）。
               ⛔ 不重复耗时：上方过程组的标题已经写着「已停止 · 耗时 36 秒」，这里再说一遍就是

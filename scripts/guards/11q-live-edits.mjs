@@ -56,16 +56,23 @@ ok(mod.includes('type !== "turn-file-changes-live"') && mod.includes("liveReport
 ok(mod.includes("export function getTurnLiveFileChanges") && mod.includes("export function getTurnFileChanges"),
   "live 与 final 两个 getter 并存（运行中与汇总各读各的）");
 
-/* ── 三、运行中行（⛔ 不是卡片！用户点名的形态）───────────────────────────── */
+/* ── 三、运行中行（⛔ 不是卡片！用户点名的形态）+ 就地锚定（10-06 二次纠正：在哪个地方发生就显示在哪个地方）─ */
 
-ok(status.includes("export function LiveFileChanges") && status.includes("getTurnLiveFileChanges(turn.id)"),
-  "LiveFileChanges 组件读 live 数据");
-ok(status.includes('className="live-edit-row"') && status.includes('className="live-edit-stats"') && status.includes("<Pencil"),
-  "行 = 铅笔 + 类型图标 + 文件名 + 目录 + 实时 +N -M（数字跟在文件后面）");
+const sessionQueue = codeOnly(read("src/features/session-queue/SessionQueue.tsx"));
+const sessionCards = codeOnly(read("src/features/session-cards/SessionCards.tsx"));
+
+ok(status.includes("export function LiveFileRows") && status.includes('className="live-edit-row"') && status.includes('className="live-edit-stats"') && status.includes("<Pencil"),
+  "LiveFileRows（哑渲染）：行 = 铅笔 + 类型图标 + 文件名 + 目录 + 实时 +N -M");
 ok(!status.includes('className="live-changes"') && !status.includes("live-changes-head") && !status.includes("live-changes-totals"),
   "⛔ 不许把运行中做成卡片 / 带总计头（用户 10-06 明确：运行中是运行中的，汇总是汇总）");
-ok(turnView.includes("{!turnFinished && <LiveFileChanges turn={turn} />}") && turnView.includes("{turnFinished && <CompletedChanges turn={turn} onOpenFile={handlers.onOpenFile} />}"),
-  "回合视图：运行中渲染实时行、收尾渲染汇总卡（两个入口分开接线）");
+ok(sessionQueue.includes("liveAnchorsRef") && sessionQueue.includes("getTurnLiveFileChanges(turn.id)") && sessionQueue.includes("subscribeTurnFileChanges"),
+  "TurnFoldStream 订阅 live 并按**首次出现时刻的最后一项**定锚（liveAnchorsRef）");
+ok(sessionQueue.includes("renderAfter={(unit) => liveRowsFor(unit.item.id)}") && (sessionQueue.match(/renderAfter=\{\(unit\) => liveRowsFor\(unit\.item\.id\)\}/g) ?? []).length >= 2,
+  "两个渲染口（折叠段 + 运行尾段）都把实时行挂在对应工具项**后面**（用户：不是一直在新消息下面）");
+ok(sessionCards.includes("renderAfter?: (unit: FoldUnit) => React.ReactNode") && sessionCards.includes("renderAfter ? renderAfter(unit) : null"),
+  "CappedToolSequence / CappedToolRun 支持 renderAfter（锚点行按序插在每条工具项后面）");
+ok(turnView && !turnView.includes("LiveFileChanges") && turnView.includes("{turnFinished && <CompletedChanges turn={turn} onOpenFile={handlers.onOpenFile} />}"),
+  "回合视图：底部只剩收尾汇总卡；运行中实时行**不在底部**（由折叠流锚定渲染）");
 
 /* ── 四、文件类型图标 ───────────────────────────────────────── */
 
