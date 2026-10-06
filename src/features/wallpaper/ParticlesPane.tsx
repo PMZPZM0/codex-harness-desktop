@@ -4,6 +4,7 @@
  *   只有把本文件作为独立 chunk（React.lazy），引擎才不占主包。
  */
 import Particles, { ParticlesProvider, useParticlesProvider } from "@tsparticles/react";
+import type { Engine } from "@tsparticles/engine";
 import type { FC } from "react";
 import { useEffect, useState } from "react";
 
@@ -58,20 +59,22 @@ function ParticlesInner({ color }: { color: string }) {
   );
 }
 
+/** ⛔ init 回调必须是模块级常量：tsparticles v4 校验「init across the app lifecycle」，
+ *  内联箭头函数每次渲染都是新引用 ⇒ 整树抛错（10-06 启动报错实录）。 */
+const initEngine = async (engine: Engine): Promise<void> => {
+  const { loadFull } = await import("tsparticles");
+  try {
+    await loadFull(engine);
+  } catch (err) {
+    (window as unknown as { __wpLoadErr?: string }).__wpLoadErr = String(err);
+    throw err;
+  }
+};
+
 const ParticlesPane: FC = () => {
   const color = accentHex();
   return (
-    <ParticlesProvider
-      init={async (engine) => {
-        const { loadFull } = await import("tsparticles");
-        try {
-          await loadFull(engine);
-        } catch (err) {
-          (window as unknown as { __wpLoadErr?: string }).__wpLoadErr = String(err);
-          throw err;
-        }
-      }}
-    >
+    <ParticlesProvider init={initEngine}>
       <ParticlesInner color={color} />
     </ParticlesProvider>
   );
