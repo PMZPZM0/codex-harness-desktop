@@ -285,6 +285,31 @@ bag.earlyView = earlyView as typeof bag.earlyView;
      ⚠️ 宽度要与 CSS 实际宽度一致：`.task-menu` 是 226px（见 02-sidebar-threads.css）。 */
   const ctxBtnRef = useRef<HTMLButtonElement | null>(null);
   const ctxMenuStyle = useAnchoredPopover(bag.ctxMenuOpen, ctxBtnRef, 226);
+  /* 工作区浮层「关得掉」+ **非阻塞**（10-06 夜八轮，用户实测「点图标都不会自动消失、其他地方
+     点不了、关都关不掉」）：
+       根因＝原来靠 `.menu-backdrop`（fixed inset:0）当遮罩 —— 它挂在顶栏 drag 子树里，
+       真实鼠标点击被 OS 拿去拖窗口、页面收不到 onClick；遮罩还把整个视口圈进拖拽区 ⇒ 全屏点不动。
+       修法＝**撤掉遮罩**，改用 DispatchMenu 同款「window mousedown 判外部」（守卫 11e ⑧ 钉过
+       那条范式）：点图标/别处 → 菜单关闭**且这次点击照常命中目标**（非阻塞，一步到位）。
+       ⛔ 判外部要问两处：📁 按钮（DOM 子树）+ 弹层自己 —— 弹层 portal 到 body 后不在按钮
+       子树里（DispatchMenu 的 10-04 事故：只判按钮 ⇒ 弹层内点一下就被当外部关掉）。
+       Esc 并列监听：键盘用户与遮罩失效环境的最后退路。 */
+  useEffect(() => {
+    if (!bag.ctxMenuOpen) return;
+    const onDown = (event: globalThis.MouseEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest?.(".ctx-menu")) return;          // 弹层内（portal 到 body，不在按钮子树）
+      if (ctxBtnRef.current?.contains(target as Node)) return; // 📁 按钮：交给自身 onClick 开关切
+      bag.setCtxMenuOpen(false);
+    };
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") bag.setCtxMenuOpen(false); };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [bag.ctxMenuOpen]);
   const taskBtnRef = useRef<HTMLButtonElement | null>(null);
   const taskMenuStyle = useAnchoredPopover(bag.taskMenuOpen, taskBtnRef, 226);
   const closeHistoryPanel = useCallback(() => {

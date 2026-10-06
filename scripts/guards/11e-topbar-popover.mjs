@@ -23,6 +23,7 @@
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { codeOnly } from "./_ctx.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 let checks = 0, fails = 0;
@@ -146,6 +147,32 @@ ok(
     new RegExp(`window\\.addEventListener\\("mousedown"`).test(dispatch),
     "点外面关闭仍监听在 window 上（改到 document 会在 portal 场景漏判）",
   );
+}
+
+// ── ⑨ 工作区浮层「关得掉」四件套（10-06 夜八轮，用户实测「点图标都不会自动消失、其他
+//    地方点不了、关都关不掉」）──
+//   ⛔ 根因：原来靠 `.menu-backdrop`（fixed inset:0）当遮罩，它挂在顶栏 drag 子树里 ——
+//   未豁免拖拽的子元素整块算**拖拽区**，真实鼠标点击被 OS 拿去拖窗口、页面收不到 onClick；
+//   遮罩还把**整个视口**圈进拖拽区 ⇒ 全屏点不动 + 菜单关不掉。
+//   ⛔⛔ 这类缺陷 CDP 探针永远测不出（合成点击绕开 OS 拖拽判定，验收全绿、用户真机一按就中）
+//   —— 靠结构判据钉。修法三处：① 撤掉遮罩，工作区菜单改「window mousedown 判外部」**非阻塞**
+//   关闭（DispatchMenu 同款范式）；② `.menu-backdrop` 全局豁免拖拽（搜索面板 / 任务菜单的
+//   遮罩共用此类，一并救回）；③ Esc 兜底。
+{
+  const appViewCode = codeOnly(appView);
+  const segCode = codeOnly(seg);
+  ok(/\.menu-backdrop\s*\{[^}]*-webkit-app-region:\s*no-drag/.test(cssTopbar),
+    "⛔ .menu-backdrop 豁免拖拽（顶栏 drag 子树里的 backdrop 不豁免 = 点击被吞成拖窗口；搜索面板/任务菜单的 backdrop 共用此类一并修复）");
+  ok(appViewCode.includes("打开项目地址") && /shellReveal\(workspace\)/.test(appViewCode),
+    "工作区菜单含「打开项目地址」行 → shellReveal(workspace)（目录走 openPath 在文件管理器打开；10-06 夜八轮用户点名加）");
+  ok(/addEventListener\("mousedown", onDown\)/.test(segCode)
+    && /target\?\.closest\?\.\("\.ctx-menu"\)/.test(segCode)
+    && /ctxBtnRef\.current\?\.contains\(target as Node\)/.test(segCode)
+    && /if \(!bag\.ctxMenuOpen\) return;[\s\S]{0,600}key === "Escape"/.test(segCode)
+    && /addEventListener\("keydown", onKey\)/.test(segCode),
+    "工作区菜单关闭 = window mousedown 判外部（**非阻塞**：点图标一次就关闭且图标照常生效；弹层内用 closest('.ctx-menu') 判、📁 按钮用 ctxBtnRef 判）+ Esc 兜底");
+  ok(!appViewCode.includes("menu-backdrop"),
+    "⛔ 工作区菜单不许再挂 menu-backdrop 遮罩（顶栏 drag 子树里的全屏遮罩 = 点击被吞成拖窗口、全屏点不动 —— 撤掉改非阻塞，别加回来）");
 }
 
 console.log(`\n【popover】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

@@ -998,6 +998,14 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       (/\.task-title strong \{[\s\S]*?text-overflow: ellipsis[\s\S]*?max-width: 300px[\s\S]*?\}/.test(threadsCss250) ? ok : fail)(
         "【250】标题定长 300px + 省略号（用户 10-06 夜七轮：「标题长度固定，太长的就省略，不要撑长」—— 原来是随窗口变的 min(42vw, 380px)）"
       );
+      /* 10-06 夜八轮追加（用户令：「那个会话窗口左上角那个字最多 6 个字，其他省略」）：
+         CSS 只能按像素裁（6em 在拉丁文下会放进十几个字符）⇒ 按 code point 截断。 */
+      (/function truncateThreadTitle\(text: string, max = 6\): string \{/.test(appViewJsx250)
+        && /const chars = \[\.\.\.value\];/.test(appViewJsx250)
+        && /chars\.slice\(0, max\)\.join\(""\) \+ "…"/.test(appViewJsx250)
+        && /truncateThreadTitle\(cleanThreadDisplayTitle\(/.test(appViewJsx250) ? ok : fail)(
+        "【250】顶栏标题按**字符数**截断：最多 6 个字、超出补「…」（用户 10-06 夜八轮；⛔ 用 […value] 展开不用 slice —— 会劈开 emoji 代理对；⛔ 只在顶栏 render 处包一层，别顺手套进 cleanThreadDisplayTitle 影响侧栏）"
+      );
     }
     // ⛔ 10-04 根因守卫：顶栏**必须**有溢出裁剪。缺了它，内容总宽超出可用宽度时
     //   flex 子项会溢出 padding 边界（margin-left:auto 在空间不足时归零）⇒

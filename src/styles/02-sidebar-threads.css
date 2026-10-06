@@ -581,6 +581,12 @@
   z-index: 20;
   position: fixed;
   inset: 0;
+  /* ⛔⛔ 10-06 夜八轮（用户实测「点图标不消失、其他地方点不了、关都关不掉」）：本 backdrop 挂在
+     顶栏（-webkit-app-region: drag）子树里 —— 未豁免拖拽的子元素整块算**拖拽区**，真实鼠标
+     的点击被 OS 拿去拖窗口、页面收不到 onClick；而它 fixed inset:0 又把整个视口圈进拖拽区
+     ⇒ 全屏点不动 + 菜单关不掉。豁免拖拽后点击照常落回 backdrop → onClick 关闭。
+     （共用这个类的顶栏搜索面板 / ⋯ 任务菜单 backdrop 同获修复。） */
+  -webkit-app-region: no-drag;
 }
 .task-menu {
   z-index: 21;
