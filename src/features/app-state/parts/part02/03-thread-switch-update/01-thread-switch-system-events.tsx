@@ -22,6 +22,13 @@ export function usePart02c1(bag: Bag) {
     void window.codex.listTasks().then(bag.setTaskList).catch(() => undefined);
   }, []);
 
+  /* 任务清单实时同步（10-06 夜三轮）：主进程在每次 task_add / task_update 之后广播
+     `tasks-changed` ⇒ 回合状态胶囊的「步骤 N/M」立刻反映 Codex 自己的清单更新，
+     不必等重进应用（用户令：任务清单必须由 Codex 自己更新、完成一步更新一步）。 */
+  useEffect(() => window.codex.onHarnessEvent((payload: any) => {
+    if (payload?.type === "tasks-changed") void window.codex.listTasks().then(bag.setTaskList).catch(() => undefined);
+  }), []);
+
   useEffect(() => window.codex.onConnectorOAuth((event) => {
     bag.setConnectorOAuth(event);
     if (event.phase === "authorized") {

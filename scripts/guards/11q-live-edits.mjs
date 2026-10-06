@@ -8,7 +8,7 @@
  * 行为由验收 `file-summary` 在真回合里跑（行出现 + 行数随批次写入增长 = 实时在更新）。
  * 独立守卫（不进 check-preflight 的 checks 计数）。
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { codeOnly } from "./_ctx.mjs";
@@ -93,17 +93,24 @@ ok(!/\.completed-file-chip\s*\{/.test(css), "⛔ 已删的彩色块样式不许�
 ok(/\.action-diff-head/.test(cssTurns) && /\.action-diff-stats/.test(cssTurns),
   "编辑卡行头样式在（图标 + 路径 + 徽章一行排）");
 
-/* ── 六、输入框上方「N 个文件已修改」胶囊（10-06 夜 · 用户对照 WorkBuddy 图三/图四）─────────
-   与排队/询问/审批卡**上下排序**、悬停展开清单、随运行实时刷新、回合结束自动消失；
-   弹层位置**自适应**（用户令：不能被裁剪）+ **居中展示**（用户令：胶囊不要靠左 → 居中；
-   弹层「放上去展示的那个」也要以胶囊中心居中）。 */
-
-const capsule = codeOnly(read("src/features/status/LiveEditedFilesCard.tsx"));
+/* ── 六、回合状态胶囊（10-06 夜三轮重构 · 用户对照 Qoder：「步骤 0/6 · 5 个文件已修改 +177 -8」
+   + 「步骤清单跟文件修改，都是可以独立居中展示的，只是多了另一方展示的时候，就拼接展示」）────────
+   与排队/询问/审批卡**上下排序**、悬停分区展开清单、随运行实时刷新；弹层位置**自适应 + 居中**。
+   任务清单区（步骤 N/M）由 Codex 自己维护（task_add/task_update → tasks-changed 广播 → bag）。 */
+const capsule = codeOnly(read("src/features/status/TurnStatusCapsule.tsx"));
 const composer = codeOnly(read("src/features/app-view/AppView/02-main-stage/03-composer.tsx"));
-ok(capsule.includes("export function LiveEditedFilesCard") && capsule.includes("getTurnLiveFileChanges(runningTurnId)") && capsule.includes("subscribeTurnFileChanges"),
-  "胶囊：订阅 live、按运行中回合实时取数");
-ok(capsule.includes("if (!runningTurnId || !files.length) return null;"),
-  "没在跑 / 没有改动时整卡不渲染（回合结束自动消失）");
+ok(capsule.includes("export function TurnStatusCapsule") && capsule.includes("getTurnLiveFileChanges(runningTurnId)") && capsule.includes("subscribeTurnFileChanges"),
+  "回合状态胶囊：订阅 live、按运行中回合实时取数（文件区）");
+ok(capsule.includes("const steps: StepRow[] = (Array.isArray(taskList) ? taskList : []).map") && capsule.includes('setZone("steps")') && capsule.includes('setZone("files")'),
+  "步骤区取 Codex 的任务清单（taskList 入参）；左右悬停分区各自展开对应清单（用户令：放左边=步骤清单，放右边=文件）");
+ok(capsule.includes("if (!hasSteps && !hasFiles) return null;"),
+  "两区都没有才整卡不渲染（有任务清单就有 —— 收尾后仍在；用户 10-06 夜令）");
+ok(capsule.includes("{hasSteps && (") && capsule.includes("{hasFiles && (") && capsule.includes('hasSteps && hasFiles && <span className="capsule-sep"'),
+  "两区**各自独立可显示（单独存在即居中）**；同时在才拼出「·」拼接展示（用户 10-06 夜定稿，别改成强制同现）");
+ok(capsule.includes("turn-step-row") && capsule.includes("CircleCheck") && capsule.includes("Circle") && capsule.includes("LoaderCircle"),
+  "步骤清单三态渲染（todo ○ / doing ⟳ / done ✓）");
+ok(/\.turn-step-row/.test(css) && /\.capsule-zone \{/.test(css),
+  "步骤行 / 悬停分区样式在（CSS 真值核验，不靠类名出现）");
 ok(/\.edited-files-card \{[^}]*text-align: center/.test(css),
   "胶囊居中展示（用户 10-06：「小胶囊在输入框上面，居中展示，不要靠左」）");
 ok(capsule.includes("desiredViewLeft - rect.left"),
@@ -112,9 +119,16 @@ ok(capsule.includes("pillRef.current.getBoundingClientRect()") && capsule.includ
   "弹层锚点=胶囊 + maxHeight 按所选边可用空间收窄（自适应不被裁）");
 ok(capsule.includes("anchorCenter - pr.width / 2"),
   "⛔ 弹层以**胶囊中心**居中（用户 10-06：「放上去展示的那个也要居中」；左缘对齐会看着偏向右）");
-ok(composer.includes("<LiveEditedFilesCard runningTurnId={activeThreadRunning")
-  && composer.indexOf("<LiveEditedFilesCard") < composer.indexOf('className="approval-stack"'),
-  "接进输入框卡片栈，且位置在**询问/审批卡之上**（卡片栈上下排序、不互相遮）");
+ok(composer.includes("<TurnStatusCapsule") && composer.includes("taskList={taskList}")
+  && composer.indexOf("<TurnStatusCapsule") < composer.indexOf('className="approval-stack"'),
+  "接进输入框卡片栈（taskList 入参），且位置在**询问/审批卡之上**（卡片栈上下排序、不互相遮）");
+
+/* ── 六-b、旧「目标与进程」UI 已撤（10-06 夜三轮用户令）——负向断言防复活 ────────────── */
+const seg9 = codeOnly(read("src/features/app-state/parts/part09/02-seg.tsx"));
+ok(!seg9.includes("tb-goals-entry") && !existsSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/02-goals-bar.tsx")),
+  "⛔ 旧「目标与进程」入口按钮与面板不许回来（任务清单的唯一常驻入口 = 回合状态胶囊）");
+ok(!/\.goals-pop\s*\{/.test(css) && !/\.tb-goals-entry\s*\{/.test(css) && !/\.goals-task-list/.test(css),
+  "⛔ goals-* / tb-goals-* 样式已随 UI 一并清理（别留死样式；@keyframes pulse 除外，它还有别的消费方）");
 
 /* ── 七、收尾冻结（10-06 夜二改 · 用户实测「运行结束后，我查看过程没有 [这些 +N -M]」）──────────
    收尾不再清场：行换成最终报告的定格数字，收成**一块始终可见**的 frozenEditRows（落在过程与

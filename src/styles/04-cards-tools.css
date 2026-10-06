@@ -506,6 +506,26 @@
 .edited-files-pill svg { color: var(--muted); }
 .edited-files-pill b { color: var(--add); font-weight: 500; }
 .edited-files-pill i { color: var(--del); font-style: normal; }
+/* 回合状态胶囊的悬停分区（10-06 夜三轮，用户对照 Qoder）：「步骤 N/M」左区 / 文件右区各自
+   悬停展开对应清单；两区独立可显示（只有一边就只显边，居中），同时在才拼接。 */
+.capsule-zone { display: inline-flex; align-items: center; gap: 6px; }
+.capsule-sep { color: var(--faint); }
+/* 步骤清单行（悬停左区展开）：todo / doing / done 三态（数据 = Codex 维护的任务清单） */
+.turn-step-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 4px 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  text-align: left;
+}
+.turn-step-row svg { flex: none; margin-top: 2px; color: var(--faint); }
+.turn-step-row span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.turn-step-row.done { color: var(--muted); }
+.turn-step-row.done svg { color: var(--ok); }
+.turn-step-row.doing svg { color: var(--accent); }
 .edited-files-pop {
   position: absolute;
   left: 0;
@@ -1291,6 +1311,26 @@
 .composer:focus-within {
   border-color: var(--faint);
 }
+/* ── 输入框上下拖动把手（10-06 夜三轮，用户对照 Qoder 图二：「输入框加一个上下拖动功能」）──
+   顶部细条 = 拖动改输入区高度（JS 把 --composer-editor-h/max 写到 form 上）；
+   居中一枚小胶囊作视觉把手；双击复位默认（恢复内容自适应）。 */
+.composer-resize-handle {
+  height: 12px;
+  margin: -6px 0 4px;
+  display: grid;
+  place-items: center;
+  cursor: ns-resize;
+  touch-action: none;   /* pointer 拖动必须：不开这个会被滚动手势吃掉 */
+  user-select: none;
+}
+.composer-resize-grip {
+  width: 40px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line);
+  transition: background 0.12s ease;
+}
+.composer-resize-handle:hover .composer-resize-grip { background: var(--faint); }
 .composer textarea {
   resize: vertical;
   width: 100%;
@@ -1312,7 +1352,10 @@
 .composer-editor {
   width: 100%;
   min-height: 48px;
-  max-height: min(42vh, 360px);
+  /* 拖动把手写入的两个变量（10-06 夜三轮）：未拖动时保持原「内容自适应 + 上限」行为；
+     拖动后高度固定（48 ~ min(55vh,560px)，上下限在 JS 里钳，见 02-composer-form.tsx） */
+  height: var(--composer-editor-h, auto);
+  max-height: var(--composer-editor-max, min(42vh, 360px));
   overflow-y: auto;
   color: var(--text);
   background: 0 0;

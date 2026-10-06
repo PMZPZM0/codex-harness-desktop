@@ -393,8 +393,9 @@ if (!existsSync(stylesEntry)) {
   const refs = new Set([...allStyles.matchAll(/var\((--[\w-]+)/g)].map((m) => m[1]));
   /* 白名单（各自有合法来源，不是「忘了定义」）：
      · --effort-color / --fill-color（EffortPicker 内联注入）· --t / --voice-level（VoiceCallFloat 注入）
-     · --submenu-top（composer-form 内联注入）· --vscode-scrollbar-shadow（xterm/VS Code 宿主约定，fallback #000） */
-  const whitelist = new Set(["--effort-color", "--fill-color", "--t", "--submenu-top", "--voice-level", "--vscode-scrollbar-shadow"]);
+     · --submenu-top（composer-form 内联注入）· --composer-editor-h / --composer-editor-max（10-06 夜三轮：
+       composer-form 的输入框拖动把手内联注入，CSS 侧都带结构 fallback）· --vscode-scrollbar-shadow（xterm/VS Code 宿主约定，fallback #000） */
+  const whitelist = new Set(["--effort-color", "--fill-color", "--t", "--submenu-top", "--voice-level", "--vscode-scrollbar-shadow", "--composer-editor-h", "--composer-editor-max"]);
   const orphan = [...refs].filter((v) => !defined.has(v) && !whitelist.has(v));
   (orphan.length === 0 ? ok : fail)(
     orphan.length

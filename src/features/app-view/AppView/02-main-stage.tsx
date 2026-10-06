@@ -4,7 +4,6 @@
  */
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 import { MainStageTimeline } from "./02-main-stage/01-timeline";
-import { MainStageGoalsBar } from "./02-main-stage/02-goals-bar";
 import { MainStageComposer } from "./02-main-stage/03-composer";
 
 export function AppViewMainStage({ app }: { app: HarnessAppApi }) {
@@ -253,10 +252,8 @@ export function AppViewMainStage({ app }: { app: HarnessAppApi }) {
     
             <MainStageTimeline app={app} />
     
-            {/* ⛔ 显示条件（09-15 放宽）：原条件只认 planSteps/goalText → 用 task_add 建的待办
-                永远唤不出面板（用户实测「让 Codex 创建任务清单也没有展示出来」）。现在 taskList
-                也算「有内容」。goalsOpen 仍由用户手动关闭，工具栏常驻入口可随时叫回。 */}
-            <MainStageGoalsBar app={app} />
+            {/* 10-06 夜三轮：原「目标与进程」面板（MainStageGoalsBar）已按用户令整块撤掉 ——
+                任务清单改由输入框上方的回合状态胶囊承载（「步骤 N/M · X 个文件已修改」，悬停展开）。 */}
     
             <MainStageComposer app={app} />
           </main>

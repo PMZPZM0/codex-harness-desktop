@@ -180,6 +180,14 @@ const FRONTEND_CANVAS_INSTRUCTIONS =
   `   \`frontend_get_doc\` reads the current design FIRST (frames = screens, groups = parts); \`frontend_apply_doc\` writes an edited FULL document back (edit what get returned — never rewrite from memory). The user watches it live, can keep hand-editing, preview it, and Ctrl+Z. Phone screens are 412×892; computer screens 1280×800 (set w/h); \`platform\` picks android app vs web page. The built-in skill \`frontend-canvas\` carries the full component manual (all 44 kinds with their fields + navigation + modes) — read it before composing.\n` +
   `   It doubles as the shared design surface: assemble/iterate screens there, then implement the frontend from that document. If the tools are absent (a session started before this feature), say so instead of inventing canvas contents.`;
 
+/* ── 第 14 条：任务清单（10-06 夜三轮，用户：「任务清单必须有 codex 自己更新，他自己完成任务清单后
+   就主动更新任务清单」；界面 = 输入框上方胶囊的「步骤 N/M」，悬停展开步骤清单）──
+   ⛔ 常驻原因与第 12/13 条同款：工具在表里模型未必主动用，而这份清单直接驱动用户可见的进度
+   显示（陈旧 = 主动误导）；写法条件式（旧会话没有这个工具，明确不要猜）。 */
+const TASK_LIST_INSTRUCTIONS =
+  `\n14) TASK LIST — keep the user's task list (\`task_add\` / \`task_update\`) current whenever \`task_add\` is in your tool list:\n` +
+  `   at the START of any multi-step task (3+ steps, or anything the user will follow along), put the steps into the list with \`task_add\`; while working, mark the current step \`doing\`; the MOMENT a step finishes, flip it to \`done\` — never batch the updates to the end. The app renders 「步骤 N/M」 in a capsule above the input box (hover shows the full list), so a stale list actively misleads the user. When everything is done every item must be \`done\`. Skip the list for one-shot questions, and if the tools are absent (an older session) just proceed without one.\n`;
+
 function gateAndReviewInstructions(): string {
   const mcpBackend = effectiveMemoryBackend() === "mcp";
   const memorySkill = mcpBackend ? MEMORY_MCP_BACKEND_SKILL : MEMORY_CLASSIFY_SKILL;
@@ -220,6 +228,8 @@ export function buildDevInstructions(input: { desktop?: boolean; browser?: boole
   text += UI_COMPONENT_INSTRUCTIONS;
   // 前端开发画布（10-05 夜：做手机/电脑/网页界面时把拼装搬进应用内画布，Codex 直接读写）
   text += FRONTEND_CANVAS_INSTRUCTIONS;
+  // 任务清单（10-06 夜三轮：输入框上方「步骤 N/M」胶囊的唯一数据源，完成一步更新一步）
+  text += TASK_LIST_INSTRUCTIONS;
   // 深层联动软约束：自动化能力被关闭时，在基础指令里明确告诉模型不要调用这些工具。
   // 09-20：MCP 工具（`desktop_*` / `browser_*`）现在会被 disabled_tools **硬移除**，所以这里
   // 重点变成「别用命令行兜底绕过总闸」—— nuphus-call / playwright-cli 仍在 PATH 上，

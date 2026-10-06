@@ -2,6 +2,7 @@
  * ComposerComposerForm —— MainStageComposer 的 JSX 第 2 段（09-22 从 03-composer.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { DEFAULT_EFFORT, pickDefaultEffort, normalizeEffort, ALL_EFFORTS, declaredModelEfforts } from "../../../../../lib/effort";
 import { RelayBalanceBadge, RelayCenterPage } from "../../../../relay";
 import { OpenaiBalanceBadge, OpenaiSubscriptionPage } from "../../../../openai";
@@ -270,8 +271,69 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
     welcomeScratchDir,
     workspace,
   } = app;
+  /* ── 输入框上下拖动（10-06 夜三轮，用户对照 Qoder 图二：「输入框加一个上下拖动功能，最高能拖动的
+     高度记得设置好，还有最低的」）──────────────────────────────────────────
+     把手 = 输入框顶部的细条；拖动改**输入区高度**（--composer-editor-h / --composer-editor-max
+     两个 CSS 变量写到 form 上，样式里 .composer-editor 消费）。
+     ⛔ 上下限是硬约束：MIN = 48（与 .composer-editor 的 min-height 同口径，拖不小）；
+     MAX = min(55vh, 560px)（半个窗多一点，别把消息区挤没）。持久化 localStorage、双击复位。 */
+  const COMPOSER_EDITOR_MIN = 48;
+  const composerEditorMax = () => Math.min(Math.round(window.innerHeight * 0.55), 560);
+  const [composerEditorHeight, setComposerEditorHeight] = useState<number | null>(() => {
+    try {
+      const raw = Number(localStorage.getItem("composer-editor-height"));
+      return Number.isFinite(raw) && raw >= COMPOSER_EDITOR_MIN ? Math.min(raw, composerEditorMax()) : null;
+    } catch { return null; }
+  });
+  const composerDragRef = useRef<{ startY: number; startH: number; last: number } | null>(null);
+  const [composerDragging, setComposerDragging] = useState(false);
+  /* ⛔ 拖动用 **window 级监听**（不在把手上用 pointer capture）：指针离开把手后事件仍被收到，
+     真实拖拽与合成派发（验收/e2e）走同一条路径；capture 在无活动指针的合成事件上会直接抛。
+     监听只在 dragging 期间挂（不常驻全局）。 */
+  useEffect(() => {
+    if (!composerDragging) return;
+    const move = (event: PointerEvent) => {
+      const drag = composerDragRef.current;
+      if (!drag) return;
+      const next = Math.max(COMPOSER_EDITOR_MIN, Math.min(drag.startH - (event.clientY - drag.startY), composerEditorMax()));
+      drag.last = next;
+      setComposerEditorHeight(next);
+    };
+    const up = () => {
+      const drag = composerDragRef.current;
+      composerDragRef.current = null;
+      setComposerDragging(false);
+      if (drag) { try { localStorage.setItem("composer-editor-height", String(drag.last)); } catch { /* 存储不可用：本次会话内有效 */ } }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+  }, [composerDragging]);
+  const onResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const form = event.currentTarget.closest(".composer") as HTMLElement | null;
+    const editor = form?.querySelector(".composer-editor") as HTMLElement | null;
+    const base = composerEditorHeight ?? Math.max(COMPOSER_EDITOR_MIN, editor?.offsetHeight ?? COMPOSER_EDITOR_MIN);
+    composerDragRef.current = { startY: event.clientY, startH: base, last: base };
+    setComposerDragging(true);
+    event.preventDefault();
+  };
+  const onResizeDoubleClick = () => {
+    setComposerEditorHeight(null);
+    try { localStorage.removeItem("composer-editor-height"); } catch { /* 同上 */ }
+  };
   return (
-    <form className="composer" onSubmit={send}>
+    <form className="composer" onSubmit={send}
+      style={composerEditorHeight ? ({ "--composer-editor-h": `${composerEditorHeight}px`, "--composer-editor-max": `${composerEditorHeight}px` } as CSSProperties) : undefined}>
+      {/* 上下拖动把手（10-06 夜三轮，用户对照 Qoder 图二）：拖 = 改输入区高度（48 ~ min(55vh,560px)），双击复位 */}
+      <div className="composer-resize-handle" role="separator" aria-orientation="horizontal" aria-label="拖动调整输入框高度（双击恢复默认）"
+        onPointerDown={onResizePointerDown} onDoubleClick={onResizeDoubleClick}>
+        <span className="composer-resize-grip" aria-hidden />
+      </div>
                         {/* ⛔ 09-19 用户明令删除输入框内的「还没配模型」提示条（原话：「排版太丑，不要吸在
                             输入框上面吧」「输入框里面的删了」）。入口改为**左侧栏的「模型配置」菜单**
                             （sidebar-tabs），那里才是配置类功能的固定位置。别再把它塞回输入框。 */}
@@ -372,11 +434,11 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                                 <button type="button" data-submenu-open={attachSubmenu === "favorites" || undefined} onMouseEnter={() => { scheduleSubmenu("favorites"); void refreshFavorites(); }} onMouseLeave={scheduleSubmenuClose} onClick={() => { setAttachSubmenu((current) => current === "favorites" ? "none" : "favorites"); setFavoriteQuery(""); void refreshFavorites(); }}><Star size={16} /><span>收藏夹</span>{favorites.length > 0 && <em className="submenu-count">{favorites.length}</em>}<ChevronDown size={14} className="submenu-chevron" /></button>
             
                             {/* 添加文件子菜单：暂只保留本地文件（云端入口待定，不留占位） */}
-                            {attachSubmenu === "files" && <div className={`composer-quick-pop submenu-pop files-submenu ${submenuFlip ? "flip-left" : ""}`} data-submenu-panel="files" style={{ "--submenu-top": `${submenuTop}px` } as React.CSSProperties}>
+                            {attachSubmenu === "files" && <div className={`composer-quick-pop submenu-pop files-submenu ${submenuFlip ? "flip-left" : ""}`} data-submenu-panel="files" style={{ "--submenu-top": `${submenuTop}px` } as CSSProperties}>
                               <button type="button" onClick={() => { setAttachmentMenuOpen(false); setAttachSubmenu("none"); void chooseFiles(); }}><FileUp size={15} /><span>本地文件</span></button>
                             </div>}
                             {/* 引用对话中的文件：带搜索框的子面板（过滤当前会话消息里出现过的文件路径） */}
-                            {attachSubmenu === "thread-files" && <div className={`composer-quick-pop submenu-pop thread-files-submenu ${submenuFlip ? "flip-left" : ""}`} data-submenu-panel="thread-files" style={{ "--submenu-top": `${submenuTop}px` } as React.CSSProperties}>
+                            {attachSubmenu === "thread-files" && <div className={`composer-quick-pop submenu-pop thread-files-submenu ${submenuFlip ? "flip-left" : ""}`} data-submenu-panel="thread-files" style={{ "--submenu-top": `${submenuTop}px` } as CSSProperties}>
                               <ThreadFilePicker
                                 query={threadFileQuery}
                                 onQuery={setThreadFileQuery}
@@ -386,7 +448,7 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                               />
                             </div>}
                             {/* 专家子面板：搜索 + 专家团成员列表 + 召唤更多（进专家团设置页） */}
-                            {attachSubmenu === "experts" && <div className={`composer-quick-pop submenu-pop experts-submenu ${submenuFlip ? "flip-left" : ""}`} data-submenu-panel="experts" style={{ "--submenu-top": `${submenuTop}px` } as React.CSSProperties}>
+                            {attachSubmenu === "experts" && <div className={`composer-quick-pop submenu-pop experts-submenu ${submenuFlip ? "flip-left" : ""}`} data-submenu-panel="experts" style={{ "--submenu-top": `${submenuTop}px` } as CSSProperties}>
                               <div className="submenu-search"><Search size={13} /><input autoFocus value={expertQuery} onChange={(event) => setExpertQuery(event.target.value)} placeholder="搜索专家" /></div>
                               <div className="submenu-list">
                                 {expertTeams.filter((team) => team.enabled).flatMap((team) => [team.lead, ...team.members].filter((member) => !expertQuery.trim() || expertRoleLabel(member, member.id === team.lead.id).includes(expertQuery.trim())).map((member) => (
@@ -401,7 +463,7 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                               <button type="button" className="submenu-manage" onClick={() => { setAttachmentMenuOpen(false); setAttachSubmenu("none"); setSettingsPage("teams"); setSettingsOpen(true); }}><ArrowUpRight size={14} /><span>召唤更多专家</span></button>
                             </div>}
                             {/* 技能子面板：搜索 + 已安装技能列表 + 管理入口（贴一级菜单，同专家面板形态） */}
-                            {attachSubmenu === "skills" && <div className={`composer-quick-pop submenu-pop skills-submenu ${submenuFlip ? "flip-left" : ""}`} data-submenu-panel="skills" style={{ "--submenu-top": `${submenuTop}px` } as React.CSSProperties}>
+                            {attachSubmenu === "skills" && <div className={`composer-quick-pop submenu-pop skills-submenu ${submenuFlip ? "flip-left" : ""}`} data-submenu-panel="skills" style={{ "--submenu-top": `${submenuTop}px` } as CSSProperties}>
                               <div className="submenu-search"><Search size={13} /><input autoFocus value={skillQuery} onChange={(event) => setSkillQuery(event.target.value)} placeholder="搜索已安装技能" /></div>
                               <div className="submenu-list">
                                 {(() => {
@@ -418,7 +480,7 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                               <button type="button" className="submenu-manage" onClick={() => { setAttachmentMenuOpen(false); setAttachSubmenu("none"); setSettingsPage("skills"); setSettingsOpen(true); }}><ArrowUpRight size={14} /><span>管理技能中心</span></button>
                             </div>}
                             {/* 连接器子面板：搜索 + 已配置连接器列表 + 管理入口 */}
-                            {attachSubmenu === "connectors" && <div className={`composer-quick-pop submenu-pop connectors-submenu ${submenuFlip ? "flip-left" : ""}`} data-submenu-panel="connectors" style={{ "--submenu-top": `${submenuTop}px` } as React.CSSProperties}>
+                            {attachSubmenu === "connectors" && <div className={`composer-quick-pop submenu-pop connectors-submenu ${submenuFlip ? "flip-left" : ""}`} data-submenu-panel="connectors" style={{ "--submenu-top": `${submenuTop}px` } as CSSProperties}>
                               <div className="submenu-search"><Search size={13} /><input autoFocus value={connectorSearch} onChange={(event) => setConnectorSearch(event.target.value)} placeholder="搜索已配置连接器" /></div>
                               <div className="submenu-list">
                                 {connectors.filter((connector) => connector.name.includes(connectorSearch) || connector.id.includes(connectorSearch)).slice(0, 8).map((connector) => <button type="button" key={connector.id} onClick={() => { setPrompt((current) => `${current}${current ? "\n" : ""}[本轮可使用连接器：${connector.name}]`); setAttachmentMenuOpen(false); setAttachSubmenu("none"); }}><Link2 size={15} /><span className="expert-menu-name">{connector.name}</span><small>{connector.transport === "stdio" ? connector.command : connector.url}</small></button>)}
@@ -428,7 +490,7 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                             </div>}
                             {/* 收藏架子面板（09-24）：搜索 + 列表（点行=插入，箭头=一键发送）+ 管理入口。
                                 形态刻意与技能/连接器面板一致 —— 同一套一级菜单里的子面板不该有三种交互语言。 */}
-                            {attachSubmenu === "favorites" && <div className={`composer-quick-pop submenu-pop favorites-submenu ${submenuFlip ? "flip-left" : ""}`} data-submenu-panel="favorites" style={{ "--submenu-top": `${submenuTop}px` } as React.CSSProperties}>
+                            {attachSubmenu === "favorites" && <div className={`composer-quick-pop submenu-pop favorites-submenu ${submenuFlip ? "flip-left" : ""}`} data-submenu-panel="favorites" style={{ "--submenu-top": `${submenuTop}px` } as CSSProperties}>
                               <div className="submenu-search"><Search size={13} /><input autoFocus value={favoriteQuery} onChange={(event) => setFavoriteQuery(event.target.value)} placeholder="搜索收藏（标题 / 内容 / 标签）" /></div>
                               <div className="submenu-list">
                                 {(() => {

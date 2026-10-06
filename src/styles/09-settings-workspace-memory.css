@@ -270,9 +270,6 @@
     max-width: 72px;
     overflow: hidden;
   }
-  .goals-pop {
-    width: 260px;
-  }
 }
 /* ⛔ 窗口缩小时顶栏按钮分级自动隐藏（09-13 用户反馈：缩到最小按键一直挤在、不跟随隐藏）。
    顺序 = 从次要到主要：右栏开关/新建终端 → ⋯ 任务菜单 → 工作区 📁 → 独立弹窗/返回。
@@ -288,14 +285,10 @@
 
   /* ⛔⛔ 10-04 用户纠正：**搜索（会话历史）与调度（目标）是两个完全不同的功能**，
      不该归到同一档自适应隐藏。此前把它们一起收进 980px 是错的 ——
-     `.history-search-wrap` = 搜当前会话的消息（高频、无替代入口）；
-     `.tb-goals-entry` = 目标/调度（低频）。搜索另有 Ctrl+Shift+F 快捷键，
-     但快捷键不等于可发现性，顶栏图标必须**无条件显示**。
-
-     ⇒ 这里只收调度。搜索不进任何断点。 */
-  .topbar-actions .tb-goals-entry {
-    display: none;
-  }
+     `.history-search-wrap` = 搜当前会话的消息（高频、无替代入口）；目标/调度 = 低频。
+     搜索另有 Ctrl+Shift+F 快捷键，但快捷键不等于可发现性，顶栏图标必须**无条件显示**。
+     ⇒ 这条渠道只留「搜索不进任何断点」的反向纪律（10-06 夜三轮：目标按钮与面板已整体
+     撤掉，任务清单改由输入框上方的回合状态胶囊承载）。 */
   /* ⛔ .task-menu-wrap 是上面那个 📋 按钮的**容器**（与 .ctx-picker 同构问题）：
      藏按钮但留容器 ⇒ 已打开的浮层 .task-menu 照样渲染、压住窗口钮。 */
   .topbar-actions .task-menu-wrap {
@@ -381,11 +374,6 @@
   .composer-left .icon-button,
   .model-controls {
     display: none;
-  }
-  .goals-pop {
-    width: auto;
-    left: 8px;
-    right: 8px;
   }
 }
 @media (width<=640px) {

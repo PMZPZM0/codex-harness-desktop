@@ -222,7 +222,8 @@ bag.knownFilesRef = knownFilesRef as typeof bag.knownFilesRef;
         () => { if (bag.commandEditor) { bag.setCommandEditor(null); return true; } return false; },
         () => { if (bag.subAgentEditorOpen) { bag.setSubAgentEditorOpen(false); return true; } return false; },
         () => { if (bag.expertTeamEditorOpen) { bag.setExpertTeamEditorOpen(false); return true; } return false; },
-        () => { if (bag.goalsOpen) { bag.setGoalsOpen(false); return true; } return false; },
+        // 10-06 夜三轮：原「目标面板开着先关它」的分支已随 goals-pop 撤掉 —— 留着会让每次
+        // 启动后的**第一次 Esc 被无声吞掉**（goalsOpen 初值 true 且再没人能把它置回 false）。
         () => { if (bag.memoryConfigOpen) { bag.setMemoryConfigOpen(false); return true; } return false; },
         () => { if (bag.memoryCenterOpen) { bag.setMemoryCenterOpen(false); return true; } return false; },
         () => { if (bag.infoModal) { bag.setInfoModal(null); return true; } return false; },

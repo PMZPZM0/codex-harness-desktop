@@ -85,7 +85,6 @@ import {
   Sparkles,
   Store,
   
-  Target,
   Type,
   Sun,
   User,
@@ -437,19 +436,9 @@ bag.earlyView = earlyView as typeof bag.earlyView;
           </>}
         </div>
         <div className="task-menu-wrap">
-          {/* ★ 常驻入口（09-15 用户要求 D）：面板被自动隐藏或手动关掉后，仍能从这里叫回。
-              只在「确实有内容」时出现（有执行计划 / 有目标 / 有待办），避免无意义占位。
-              点击 = 复位 goalsAutoGone（跑完自动隐藏的标记）+ 打开面板 + 展开内容。 */}
-          {(bag.planSteps.length > 0 || bag.goalText || bag.taskList.length > 0) && (
-            <button
-              className="icon-button tb-goals-entry"
-              title="目标与进程（执行计划 / 待办事项）"
-              onClick={() => { bag.setGoalsAutoGone(false); bag.setGoalsOpen(true); bag.setGoalsExpanded(true); bag.setGoalsDocked(false); }}
-            >
-              <Target size={17} />
-              <span className="tb-goals-badge">{bag.planSteps.filter((s) => s.status === "completed").length}/{bag.planSteps.length}</span>
-            </button>
-          )}
+          {/* 10-06 夜三轮：原「目标与进程」常驻入口（Target 图标 + goals-pop 面板）已按用户令撤掉 ——
+              任务清单改由输入框上方的回合状态胶囊承载（「步骤 N/M · X 个文件已修改」，悬停展开），
+              ⛔ 别再往这里加回目标/清单类入口。 */}
           <button ref={taskBtnRef} className="icon-button tb-task-menu" title="当前任务操作" onClick={() => bag.setTaskMenuOpen((current) => !current)}><MoreHorizontal size={18} /></button>
           {bag.taskMenuOpen && <>
             <div className="menu-backdrop" onClick={bag.closeTaskMenu} />

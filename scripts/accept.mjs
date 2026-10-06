@@ -594,6 +594,29 @@ const CHECKS = [
         h.check("① 前置：拿得到当前会话工作区（拿不到 = 追踪器无处快照，整项作废）",
           typeof cwd === "string" && cwd.length > 1, `cwd=${String(cwd).slice(0, 60)}`);
         if (typeof cwd !== "string" || cwd.length < 2) return;
+        /* ①b 任务清单播种（10-06 夜三轮）：「任务清单必须由 Codex 自己更新」的展示链 ——
+           真 IPC addTask → 主进程 tasks-changed 广播 → 渲染层 bag 刷新 → 胶囊出「步骤 0/2」。
+           （Codex 侧走 task_add 工具，走的是同一条广播。）先清上一轮可能的残留（幂等）；收尾时删除。
+           此刻无文件区（回合还没跑）⇒ 顺带验证「两区独立可显示、单独存在即居中」的规则。 */
+        const seededIds = await h.eval(`(async function(){
+          const list = await window.codex.listTasks();
+          for (const t of list) { if (String(t.text||'').startsWith("验收步骤")) await window.codex.deleteTask(t.id); }
+          const a = await window.codex.addTask({ text: "验收步骤甲", priority: "medium" });
+          const b = await window.codex.addTask({ text: "验收步骤乙", priority: "low" });
+          return [a && a.id, b && b.id].filter(Boolean); })()`).catch(() => null);
+        let soloSteps = null;
+        for (let i = 0; i < 15; i++) {
+          await wait(300);
+          soloSteps = await h.eval(`(function(){ var p = document.querySelector('.edited-files-pill');
+            if (!p) return null;
+            return { stepsZone: !!document.querySelector('.capsule-zone-steps'),
+              filesZone: !!document.querySelector('.capsule-zone-files'),
+              text: (p.textContent||'').replace(/\\s+/g,' ').trim() }; })()`).catch(() => soloSteps);
+          if (soloSteps && soloSteps.stepsZone && !soloSteps.filesZone && /步骤\s*0\/2/.test(soloSteps.text)) break;
+        }
+        h.check("①b 任务清单走真链路（真 IPC → tasks-changed 广播 → 胶囊出「步骤 0/2」）；此刻只有步骤区 = 独立居中展示",
+          Array.isArray(seededIds) && seededIds.length === 2 && !!soloSteps && soloSteps.stepsZone === true && soloSteps.filesZone === false && /步骤\s*0\/2/.test(soloSteps.text),
+          JSON.stringify({ seededIds, soloSteps }).slice(0, 220));
         probeDir = join(cwd, probeDirName);
         rmSync(probeDir, { recursive: true, force: true }); // 上轮崩溃残留先清，保证 seed 是干净基准
         mkdirSync(probeDir, { recursive: true });
@@ -694,20 +717,26 @@ const CHECKS = [
         h.check("④ 运行中·实时更新：第二批文件写入后实时行数量长出来（数字是跑着跳的，不是收尾才算）",
           ourLive(liveSecond).length > ourLive(liveFirst).length,
           JSON.stringify({ first: ourLive(liveFirst).length, second: ourLive(liveSecond).length, names: ourLive(liveSecond).map((r) => String(r.text).split(" ")[1] || ""), hint: ourLive(liveSecond).length === 0 ? "实时行整组消失 = 回合先结束了（模型这次没真 sleep，第二批广播赶不上）" : "" }).slice(0, 300));
-        /* ④b 输入框上方「N 个文件已修改」胶囊（10-06 用户对照 WorkBuddy 图三/图四 + 令「弹窗不能被裁剪」「不要靠左」）：
-           运行中出（与排队/询问/审批卡上下排序）、悬停展开清单（整矩形必须落视口内）、弹层以胶囊中心居中
-           （贴边被自适应钳住时豁免）、回合结束自动消失。 */
+        /* ④b-④d 回合状态胶囊（10-06 夜三轮重构 · 用户对照 Qoder：「步骤 0/6 · 5 个文件已修改
+           +177 -8」+「两区都可独立居中展示，多了另一方才拼接」+「放左边=步骤清单，放右边=文件」）：
+           ④b 拼接形态（两区同时在）；④c 悬停右区出文件清单；④d 悬停左区出步骤清单。 */
         let capsule = null;
-        for (let i = 0; i < 12; i++) {
+        for (let i = 0; i < 15; i++) {
           await wait(400);
           capsule = await h.eval(`(function(){
             var pill = document.querySelector('.edited-files-pill');
-            return pill ? { text: (pill.innerText||'').replace(/\\s+/g,' ').trim() } : null;
+            if (!pill) return null;
+            return { text: (pill.textContent||'').replace(/\\s+/g,' ').trim(),
+              stepsZone: !!document.querySelector('.capsule-zone-steps'),
+              filesZone: !!document.querySelector('.capsule-zone-files') };
           })()`).catch(() => capsule);
-          if (capsule) break;
+          if (capsule && capsule.stepsZone && capsule.filesZone) break;
           if (!await h.eval(`!!document.querySelector('.send-button.is-pause')`).catch(() => true)) break;
         }
-        if (capsule) await h.hover(".edited-files-pill").catch(() => undefined);
+        h.check("④b 胶囊拼接：任务清单 + 文件改动同时在 ⇒「步骤 N/M · X 个文件已修改 +N -M」（用户对照 Qoder 的形态）",
+          !!capsule && capsule.stepsZone === true && capsule.filesZone === true && /步骤\s*0\/2/.test(capsule.text) && /个文件已修改/.test(capsule.text),
+          JSON.stringify(capsule).slice(0, 220));
+        if (capsule?.filesZone) await h.hover(".capsule-zone-files").catch(() => undefined);
         await wait(500);
         const capsulePop = await h.eval(`(function(){
           var p = document.querySelector('.edited-files-pop');
@@ -723,9 +752,24 @@ const CHECKS = [
             names: [...p.querySelectorAll('.edited-files-row code')].map(function(c){ return (c.textContent||'').trim(); }) };
         })()`).catch(() => null);
         const capsuleOurs = capsulePop ? LIVE_OURS.filter((n) => (capsulePop.names ?? []).some((x) => String(x).toLowerCase().includes(n))).length : 0;
-        h.check("④b 运行中胶囊：输入框上方出「N 个文件已修改」、悬停展开清单（自适应不被裁、以胶囊中心居中、含我们写的文件）",
-          !!capsule && /个文件已修改/.test(capsule.text) && !!capsulePop && capsulePop.fits === true && capsulePop.centered === true && capsuleOurs >= 2,
-          JSON.stringify({ capsule, capsulePop: capsulePop ? { rows: capsulePop.rows, fits: capsulePop.fits, centered: capsulePop.centered, gap: capsulePop.gap } : null, capsuleOurs }).slice(0, 240));
+        h.check("④c 悬停右区（文件）：出文件清单（自适应不被裁、以胶囊中心居中、含我们写的文件）",
+          !!capsulePop && capsulePop.fits === true && capsulePop.centered === true && capsuleOurs >= 2,
+          JSON.stringify({ capsulePop: capsulePop ? { rows: capsulePop.rows, fits: capsulePop.fits, centered: capsulePop.centered, gap: capsulePop.gap } : null, capsuleOurs }).slice(0, 240));
+        await h.moveMouseAway().catch(() => undefined);
+        await wait(300);
+        await h.hover(".capsule-zone-steps").catch(() => undefined);
+        await wait(600);
+        const stepsPop = await h.eval(`(function(){
+          var p = document.querySelector('.edited-files-pop');
+          if (!p) return null;
+          var r = p.getBoundingClientRect();
+          return { rows: [...p.querySelectorAll('.turn-step-row span')].map(function(x){ return (x.textContent||'').trim(); }),
+            fits: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth,
+            hasTodo: !!p.querySelector('.turn-step-row:not(.done)') };
+        })()`).catch(() => null);
+        h.check("④d 悬停左区（步骤）：出步骤清单（两条播种任务原样在列、todo 态、自适应以内）",
+          !!stepsPop && (stepsPop.rows ?? []).some((t) => t.includes("验收步骤甲")) && (stepsPop.rows ?? []).some((t) => t.includes("验收步骤乙")) && stepsPop.fits === true,
+          JSON.stringify(stepsPop).slice(0, 240));
         await h.moveMouseAway().catch(() => undefined);
         /* ⑤ 等回合收尾（真 turn/completed → 主进程结算广播；收尾会先清 live 再发最终报告）。 */
         let ended = false;
@@ -842,9 +886,16 @@ const CHECKS = [
         await wait(300);
         const afterCollapse = await h.eval(`(function(){ const c=${cardSel}; return c? c.querySelectorAll('.completed-file').length : 0; })()`);
         h.check("⑭ 收起重回 2 行（收纳闭合往返）", afterCollapse === 2, `afterCollapse=${afterCollapse}`);
-        /* ⑮ 收尾后：输入框上方胶囊自动消失（收尾由汇总卡接管，不留悬挂浮层） */
-        const capsuleGone = await h.eval(`document.querySelectorAll('.edited-files-card').length`);
-        h.check("⑮ 回合结束后：输入框上方「N 个文件已修改」胶囊自动消失", capsuleGone === 0, `count=${capsuleGone}`);
+        /* ⑮ 收尾后：**文件区**消失（收尾由汇总卡接管）；**任务清单区保留**（有清单就有 —— 用户
+           10-06 夜口径：任务清单还在就得能看到；两区独立渲染规则的另一半）。 */
+        const afterSettle = await h.eval(`(function(){ var card = document.querySelector('.edited-files-card');
+          if (!card) return { card: false };
+          return { card: true, filesZone: !!document.querySelector('.capsule-zone-files'),
+            stepsZone: !!document.querySelector('.capsule-zone-steps'),
+            text: (document.querySelector('.edited-files-pill')?.textContent||'').replace(/\\s+/g,' ').trim() }; })()`);
+        h.check("⑮ 回合结束后：文件区消失（收尾由汇总卡接管）、任务清单区保留（步骤 N/M 仍在）",
+          !!afterSettle && afterSettle.card === true && afterSettle.filesZone === false && afterSettle.stepsZone === true && /步骤\s*0\/2/.test(afterSettle.text || ""),
+          JSON.stringify(afterSettle));
         /* ⑯ 汇总卡行悬停出 diff 预览（10-06 用户图一：「鼠标放到汇总的修改的文件名上」；
             自适应落位不许被裁、左缘与该行对齐、含 @@ 差分行）。
             ⛔ 悬停前等**滚动静默**：`.timeline` 是 scroll-behavior:smooth，前面 ⑪-⑭ 的折叠/弹窗
@@ -907,6 +958,18 @@ const CHECKS = [
         await wait(500);
         const previewGone = await h.eval(`!document.querySelector('.completed-diff-preview')`);
         h.check("⑰ 鼠标移开后预览自动收起（不残留浮层）", previewGone === true, `stillOpen=${!previewGone}`);
+        /* ⑱ 清理播种（10-06 夜三轮）：删掉两条任务 ⇒ 胶囊整体消失（两区都没有 = 不渲染，
+           不留占位）。⛔ 收尾必删：播种落在持久 profile 的任务库里，泄漏会污染后续轮次。 */
+        if (Array.isArray(seededIds) && seededIds.length) {
+          await h.eval(`(async function(){ for (const id of ${JSON.stringify(seededIds)}) { await window.codex.deleteTask(id); } return 1; })()`).catch(() => undefined);
+        }
+        let capsuleGone = false;
+        for (let i = 0; i < 10; i++) {
+          await wait(300);
+          capsuleGone = await h.eval(`!document.querySelector('.edited-files-card')`).catch(() => false);
+          if (capsuleGone) break;
+        }
+        h.check("⑱ 删除任务后胶囊整体消失（没有内容就不占位 —— 两区独立渲染规则的收口）", capsuleGone === true, `gone=${capsuleGone}`);
         await h.screenshot("file-summary");
       } finally {
         /* 收尾：探针目录整体删掉（落在用户磁盘上的东西必须自己清干净；崩溃也不留）。 */
@@ -960,6 +1023,65 @@ const CHECKS = [
       const leftovers = await h.eval(`document.querySelectorAll('.composer-menu-pop, .file-card-menu').length`);
       h.check("④ 普查后无悬挂菜单残留（都收干净）", leftovers === 0, `leftovers=${leftovers}`);
       await h.screenshot("popup-fits");
+    },
+  },
+  {
+    id: "composer-resize",
+    name: "㉕ 输入框上下拖动把手：真拖改高、钳上下限、双击复位、持久化（10-06 夜三轮 · 用户对照 Qoder 图二）",
+    run: async (h) => {
+      /* 为什么真跑（用户令：「输入框加一个上下拖动功能，最高能拖动的高度记得设置好，还有最低的」）：
+         拖动链路的失效方式全是静默的 —— 把手在但拖不动（监听没接）、上下限丢失（拖成 0px 或
+         吃掉整个消息区）、变量没被样式消费（拖了高度不动）—— 静态守卫只钉形态，这里真拖。
+         用**合成 PointerEvent**（pointerdown 打在把手上、move/up 打在 window —— 拖动实现就是
+         window 级监听；真实鼠标与合成走同一路径）。⛔ 不用 CDP mousePressed：本机实测它不产生
+         pointerdown（10-06 选区浮条排查的既有结论）。 */
+      await h.waitFor(`!!document.querySelector(".composer-resize-handle") && !!document.querySelector(".composer-editor")`, { label: "输入框与把手就绪", timeoutMs: 30000 }).catch(() => undefined);
+      const ready = await h.eval(`(function(){ var el=document.querySelector('.composer-resize-handle');
+        return !!(el && el.getBoundingClientRect().height > 0); })()`).catch(() => false);
+      h.check("① 前置：拖动把手在且可见（找不到整项作废，不许往下假通过）", ready === true, `ready=${ready}`);
+      if (!ready) return;
+      const heightOf = () => h.eval(`Math.round(document.querySelector('.composer-editor').getBoundingClientRect().height)`).catch(() => 0);
+      /* ⛔ 合成拖拽必须**分 tick 派发**（pointerdown → 等一拍 → move → 等一拍 → up）：
+         组件的 window 监听是在 pointerdown 之后的 effect 里才挂上的 —— 同一同步块连发会把
+         move/up 丢在监听挂上之前（真鼠标事件天然分 tick，不会踩到）。 */
+      const dragBy = async (dy) => {
+        const y = await h.eval(`(function(){ var el=document.querySelector('.composer-resize-handle'); var r=el.getBoundingClientRect();
+          return Math.round(r.top + r.height/2); })()`);
+        await h.eval(`(function(){ var el=document.querySelector('.composer-resize-handle');
+          el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientY: ${y} })); return 1; })()`);
+        await wait(150);
+        await h.eval(`window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientY: ${y + dy} }))`);
+        await wait(100);
+        await h.eval(`window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))`);
+        await wait(350);
+      };
+      /* 复位起点（上一轮可能留下固定高度）：双击 ⇒ 回到内容自适应。 */
+      await h.eval(`(function(){ document.querySelector('.composer-resize-handle').dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true })); return 1; })()`);
+      await wait(300);
+      const h0 = await heightOf();
+      /* ② 真拖向上 90px ⇒ 输入区变高（≈+90；若起点已近上限则等于上限 —— 用 ≥+60 判定）。 */
+      await dragBy(-90);
+      const h1 = await heightOf();
+      h.check("② 向上拖 90px ⇒ 输入区真的变高（拖动链路接通）", h1 >= h0 + 60 && h1 > h0, `h0=${h0} h1=${h1}`);
+      /* ③ 拖到极端高 ⇒ 钳在上限 min(55vh,560)；④ 拖到极端低 ⇒ 钳在下限 48。 */
+      await dragBy(-10000);
+      const maxH = await h.eval(`Math.min(Math.round(innerHeight*0.55), 560)`);
+      const h2 = await heightOf();
+      h.check("③ 拖到极端高度 ⇒ 钳在上限 min(55vh, 560px)（拖不爆，不挤没消息区）", Math.abs(h2 - maxH) <= 2, `h2=${h2} max=${maxH}`);
+      await dragBy(100000);
+      const h3 = await heightOf();
+      h.check("④ 向下拖到底 ⇒ 钳在下限 48px（拖不小、不塌成 0）", Math.abs(h3 - 48) <= 2, `h3=${h3}`);
+      const persisted = await h.eval(`localStorage.getItem('composer-editor-height')`);
+      h.check("⑤ 落盘：拖动结果写进 localStorage（重启后恢复同一高度）", String(persisted) === "48", `stored=${persisted}`);
+      /* ⑥ 双击复位：清存储 + 清固定高度（回到内容自适应）。 */
+      await h.eval(`(function(){ document.querySelector('.composer-resize-handle').dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true })); return 1; })()`);
+      await wait(300);
+      const afterReset = await h.eval(`(function(){ var f=document.querySelector('.composer');
+        return { stored: localStorage.getItem('composer-editor-height'),
+          hasVar: f ? (f.style.getPropertyValue('--composer-editor-h')||'').length > 0 : null }; })()`);
+      h.check("⑥ 双击复位：清除存储与固定高度（回到内容自适应）",
+        afterReset?.stored === null && afterReset?.hasVar === false, JSON.stringify(afterReset));
+      await h.screenshot("composer-resize");
     },
   },
   {
@@ -1283,6 +1405,7 @@ const ROUND_OF = {
   "ui-sketch": "10-06",   // ⛔ 10-06 重写：三形态探针（手机+电脑屏 / platform web 真落盘）+ 预览 + 还原；编号改执行顺序
   "file-summary": "10-06",   // 文件更改汇报卡：运行中行/胶囊 + 收尾卡 + 悬停 diff 预览 + 交互（10-06 两次重写）
   "popup-fits": "10-06",   // ⛔ 10-06 新增：弹窗自适应普查（用户令「凡事弹窗类都要加自适应，不能被裁剪」）
+  "composer-resize": "10-06",   // 10-06 夜三轮新增：输入框上下拖动把手（用户对照 Qoder 图二）
   "message-feedback": "10-05",   // 10-05 轮：消息操作图标的两段反馈 + 用户消息复制贴右端（历史项，默认轮不再跑 —— 回归证据）
   "plugin-market-gitee": "10-03",
   "codex-official-market": "10-03",   // 本轮新项；Gitee 项同轮重跑（插件页加了源切换，两个源都得看一眼）
