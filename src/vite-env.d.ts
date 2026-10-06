@@ -485,6 +485,10 @@ interface Window {
     describeSkillPool(input: { cwd: string }): Promise<{ skills: { name: string; globalDisabled: boolean; projectDisabled: boolean; active: boolean }[] }>;
     /* 设置全局停用/本项目禁用并立即投影 */
     setSkillPoolState(input: { cwd: string; name: string; globalDisabled?: boolean; projectDisabled?: boolean }): Promise<{ ok: boolean }>;
+    /* 内置技能的独立开关（10-06）：读某内置技能**全局**是否生效（设置 → 控制台用；与 skill-pool 同一真相源） */
+    getBuiltinSkillSwitch(input: { name: string }): Promise<{ name: string; enabled: boolean; available: boolean; error?: string }>;
+    /* 开关内置技能的**全局**生效态并立即投影磁盘（cwd 可空；只动全局集，不改项目集） */
+    setBuiltinSkillSwitch(input: { name: string; enabled: boolean; cwd?: string }): Promise<{ name: string; enabled: boolean; available: boolean; error?: string }>;
     setPluginEnabled(input: { pluginIds: string[]; enabled: boolean }): Promise<{ changed: number; failures: string[] }>;
     removeLocalSkill(input: { folder: string; name?: string }): Promise<{ ok: boolean; engineRemoved?: boolean; engineCheckMessage?: string }>;
     trustHooks(cwds?: string[]): Promise<{ total: number; trusted: number; alreadyTrusted: number; failures: string[] }>;

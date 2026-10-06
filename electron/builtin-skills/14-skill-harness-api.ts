@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（85 个能力域 / 422 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（85 个能力域 / 424 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -245,9 +245,9 @@ Bot 会话（Bot 与会话的绑定与消息注入）
 数据目录自定义（userData 重定向 + 启动期自动迁移；改后重启生效）
 通道：dataDir:read, dataDir:prepare
 
-### skills（10 通道）
+### skills（12 通道）
 技能经验包（导入/启停/市场安装/本地列表）
-通道：skills:import, skills:local-list, skills:local-remove, skills:market-install, skills:market-install-light, skills:market-list, skills:set-enabled, skills:set-enabled-batch, skills:pool-describe, skills:pool-set
+通道：skills:import, skills:local-list, skills:local-remove, skills:market-install, skills:market-install-light, skills:market-list, skills:set-enabled, skills:set-enabled-batch, skills:pool-describe, skills:pool-set, skills:builtin-switch-get, skills:builtin-switch-set
 
 ### skill-discipline（1 通道）
 技能纪律（写技能时必须遵守的硬规则查询）

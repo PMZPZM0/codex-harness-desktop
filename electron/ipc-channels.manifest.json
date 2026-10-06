@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-06",
-  "count": 422,
+  "count": 424,
   "channels": [
     {
       "name": "request",
@@ -612,6 +612,26 @@
       "invokeArgs": "input",
       "cast": null,
       "note": "设置全局停用/本项目禁用并立即投影"
+    },
+    {
+      "name": "getBuiltinSkillSwitch",
+      "channel": "skills:builtin-switch-get",
+      "paramsImpl": "input: { name: string }",
+      "paramsDecl": "input: { name: string }",
+      "returns": "Promise<{ name: string; enabled: boolean; available: boolean; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "内置技能的独立开关（10-06）：读某内置技能**全局**是否生效（设置 → 控制台用；与 skill-pool 同一真相源）"
+    },
+    {
+      "name": "setBuiltinSkillSwitch",
+      "channel": "skills:builtin-switch-set",
+      "paramsImpl": "input: { name: string; enabled: boolean; cwd?: string }",
+      "paramsDecl": "input: { name: string; enabled: boolean; cwd?: string }",
+      "returns": "Promise<{ name: string; enabled: boolean; available: boolean; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "开关内置技能的**全局**生效态并立即投影磁盘（cwd 可空；只动全局集，不改项目集）"
     },
     {
       "name": "setPluginEnabled",
