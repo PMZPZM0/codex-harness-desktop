@@ -5,7 +5,7 @@ kind: change
 area: ui
 title: 运行中文件改动胶囊 + 汇总行悬停 diff 预览（贴输入框卡片栈、居中、自适应）
 tags: [ui, composer, file-changes]
-commits: []
+commits: [2cb9ca8]
 files: [src/features/status/LiveEditedFilesCard.tsx, src/features/status/Status.tsx, src/features/app-view/AppView/02-main-stage/03-composer.tsx]
 importance: normal
 ---
