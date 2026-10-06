@@ -348,7 +348,7 @@ bag.earlyView = earlyView as typeof bag.earlyView;
   const topbarActionsNode = (
     <>
       {bag.popoutThreadId ? (
-        <button className="icon-button popout-return-btn" title="返回主应用（关闭本独立窗口）" onClick={() => void window.codex.popoutClose(bag.thread?.id ?? null)}><Minimize2 size={16} /></button>
+        <button className="icon-button popout-return-btn ic-violet" title="返回主应用（关闭本独立窗口）" onClick={() => void window.codex.popoutClose(bag.thread?.id ?? null)}><Minimize2 size={16} /></button>
       ) : (
         <>
           {/* 当前会话搜索（09-24）：顶栏 🔍 打开搜索条。只搜当前会话的消息，点结果跳到那条消息。 */}
@@ -356,7 +356,7 @@ bag.earlyView = earlyView as typeof bag.earlyView;
             <button
               ref={historySearchBtnRef}
               type="button"
-              className="icon-button"
+              className="icon-button ic-cyan"
               title="搜索当前会话（Ctrl+Shift+F）"
               aria-expanded={bag.chatSearchOpen}
               onClick={() => { if (bag.chatSearchOpen) closeHistoryPanel(); else bag.setChatSearchOpen(true); }}
@@ -443,7 +443,7 @@ bag.earlyView = earlyView as typeof bag.earlyView;
             restrictedLabel={bag.threadRole.restricted ? (bag.threadRole.label ?? "专家 / 专家团") : null}
             onChange={(next, opts) => { void bag.applyDispatch(next, opts); }}
           />
-          <button className="icon-button popout-open-btn" title="独立会话弹窗：把当前会话开到新窗口（可拖出应用外，支持多个同时存在）" disabled={!bag.thread} onClick={() => { if (bag.thread) void bag.popoutCurrentThread(bag.thread.id); }}><Maximize2 size={16} /></button>
+          <button className="icon-button popout-open-btn ic-violet" title="独立会话弹窗：把当前会话开到新窗口（可拖出应用外，支持多个同时存在）" disabled={!bag.thread} onClick={() => { if (bag.thread) void bag.popoutCurrentThread(bag.thread.id); }}><Maximize2 size={16} /></button>
         </>
       )}
         {/* ⛔ 工作区 📁（.ctx-picker）10-06 夜七轮已挪去**标题最前**（AppView.tsx 的 .task-title）——
@@ -453,7 +453,7 @@ bag.earlyView = earlyView as typeof bag.earlyView;
           {/* 10-06 夜三轮：原「目标与进程」常驻入口（Target 图标 + goals-pop 面板）已按用户令撤掉 ——
               任务清单改由输入框上方的回合状态胶囊承载（「步骤 N/M · X 个文件已修改」，悬停展开），
               ⛔ 别再往这里加回目标/清单类入口。 */}
-          <button ref={taskBtnRef} className="icon-button tb-task-menu" title="当前任务操作" onClick={() => bag.setTaskMenuOpen((current) => !current)}><MoreHorizontal size={18} /></button>
+          <button ref={taskBtnRef} className="icon-button tb-task-menu ic-green" title="当前任务操作" onClick={() => bag.setTaskMenuOpen((current) => !current)}><MoreHorizontal size={18} /></button>
           {bag.taskMenuOpen && <>
             <div className="menu-backdrop" onClick={bag.closeTaskMenu} />
             {createPortal(
@@ -481,7 +481,7 @@ bag.earlyView = earlyView as typeof bag.earlyView;
             ⛔ 同步清掉了 09-settings-workspace-memory.css 里的 `.tb-terminal` 规则 ——
                留着就是一条无主的死样式（守卫【160】那种"引用了但类没了"的方向相反：
                类没了规则还在）。*/}
-        <button className="icon-button tb-right-panel" title={bag.rightOpen ? "收起右侧面板" : "展开右侧面板"} onClick={() => bag.setRightOpen(!bag.rightOpen)}>{bag.rightOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button>
+        <button className="icon-button tb-right-panel ic-blue" title={bag.rightOpen ? "收起右侧面板" : "展开右侧面板"} onClick={() => bag.setRightOpen(!bag.rightOpen)}>{bag.rightOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button>
     </>
   );
 bag.topbarActionsNode = topbarActionsNode as typeof bag.topbarActionsNode;

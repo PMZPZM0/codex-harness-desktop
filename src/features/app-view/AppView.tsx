@@ -429,14 +429,14 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       <div className="reasoning-float-host" aria-hidden />
       {!popoutThreadId && sidebarCollapsed && <div className="sidebar-hotzone" aria-hidden onMouseEnter={() => setSidebarFlyout(true)} />}
         <header className="topbar">
-        {sidebarCollapsed && !narrow && <button className="icon-button sidebar-reveal" title="展开侧边栏" onClick={() => { setSidebarCollapsed(false); setSidebarFlyout(false); localStorage.setItem("sidebar-collapsed", "false"); }}><Menu size={18} /></button>}
-        <button className="icon-button mobile-menu" title="打开导航" onClick={() => setMobileNav(!mobileNav)}><Menu size={18} /></button>
+        {sidebarCollapsed && !narrow && <button className="icon-button sidebar-reveal ic-blue" title="展开侧边栏" onClick={() => { setSidebarCollapsed(false); setSidebarFlyout(false); localStorage.setItem("sidebar-collapsed", "false"); }}><Menu size={18} /></button>}
+        <button className="icon-button mobile-menu ic-blue" title="打开导航" onClick={() => setMobileNav(!mobileNav)}><Menu size={18} /></button>
         <div className={`task-title ${activeThreadRunning ? "running" : "ready"}`}>
           {/* 工作区上下文（📁）：10-06 夜七轮从右侧操作簇挪到**标题最前**（用户：「把文件图标放到最前面」，
               截图圈的就是右簇那个 📁）。点击开菜单 = 选择/切换工作区目录；窄屏（≤760px）隐藏规则
               见 09-settings-workspace-memory.css；守卫【250】的覆盖率清单跟着本位置走。 */}
           <div className="ctx-picker">
-            <button ref={ctxBtnRef} className="icon-button tb-workspace" title="工作区上下文（当前会话使用的项目目录）" onClick={() => setCtxMenuOpen((current) => !current)}><FolderOpen size={16} /></button>
+            <button ref={ctxBtnRef} className="icon-button tb-workspace ic-amber" title="工作区上下文（当前会话使用的项目目录）" onClick={() => setCtxMenuOpen((current) => !current)}><FolderOpen size={16} /></button>
             {ctxMenuOpen && (
               /* ⛔ 不渲染 menu-backdrop（10-06 夜八轮用户实测「点图标都不会自动消失、其他地方
                  点不了」）：全屏遮罩挂在顶栏拖拽区子树里，真实鼠标点击被 OS 吞成拖窗口 ⇒ 点击
