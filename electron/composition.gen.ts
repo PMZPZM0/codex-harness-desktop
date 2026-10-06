@@ -90,6 +90,7 @@ import { domainsFeature as feat_domains } from "./features/domains-ipc";
 import { declaredPluginsFeature as feat_declared_plugins } from "./features/declared-plugins-ipc";
 import { knowledgeBaseFeature as feat_kb } from "./features/knowledge-base-ipc";
 import { modelViewerFeature as feat_model_viewer } from "./features/model-viewer-ipc";
+import { whatsNewFeature as feat_whatsnew } from "./features/whats-new-ipc";
 
 import { app } from "electron";
 import { readAppSettingsSync } from "./app-settings";
@@ -185,6 +186,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "declared-plugins", plugin: feat_declared_plugins as Plugin<unknown>, config: null },
   { id: "kb", plugin: feat_kb as Plugin<unknown>, config: null },
   { id: "model-viewer", plugin: feat_model_viewer as Plugin<unknown>, config: null },
+  { id: "whatsnew", plugin: feat_whatsnew as Plugin<unknown>, config: null },
 ];
 
 /**

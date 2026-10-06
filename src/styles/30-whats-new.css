@@ -1,0 +1,36 @@
+/* 30-whats-new.css —— 更新后的「新功能介绍」弹窗（whats-new 域，2026-10-06 立）
+ * 基座复用 .agent-ask-card（与「应用询问/确认」同一张卡），这里只加本域自己的排布。
+ * ⛔ 属性全走既有 token（--panel/--line/--text/--muted/--accent），别写死颜色 ——
+ *   本应用有「控件皮肤」套装（23-ui-skin.css）会整体换色，写死就掉出套装之外。 */
+.whats-new-card { width: min(520px, 92vw); }
+.whats-new-card > header { color: var(--accent); }
+.whats-new-card > header strong { flex: 1; color: var(--text); }
+.whats-new-sub { margin: 0; color: var(--muted); font-size: 12.5px; }
+.whats-new-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  /* 要点多时列表自己滚，别把弹窗撑出屏幕（这条弹窗的按钮必须始终可见） */
+  max-height: min(46vh, 380px);
+  overflow-y: auto;
+}
+.whats-new-list > li { display: flex; gap: 10px; align-items: flex-start; }
+.whats-new-idx {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 11.5px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.whats-new-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.whats-new-body strong { font-size: 13px; color: var(--text); }
+.whats-new-body span { font-size: 12.5px; line-height: 1.62; color: var(--muted); }
+.whats-new-card .secondary-setting,
+.whats-new-card .primary-setting { display: inline-flex; align-items: center; gap: 5px; }

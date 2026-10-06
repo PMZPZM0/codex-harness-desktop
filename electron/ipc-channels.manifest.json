@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
-  "generatedAt": "2026-10-03",
-  "count": 420,
+  "generatedAt": "2026-10-06",
+  "count": 422,
   "channels": [
     {
       "name": "request",
@@ -4171,6 +4171,26 @@
       "invokeArgs": "",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "whatsNewState",
+      "channel": "whatsnew:state",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; version: string; entry: { version: string; date: string; items: { t: string; d?: string }[] } | null; shouldShow: boolean; reason: string; seen: boolean; releaseUrl: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "更新后首次启动的「新功能介绍」—— 该不该弹、弹什么由主进程判定（要点在 electron/whats-new-notes.ts，看过记录在 userData/whats-new.json）"
+    },
+    {
+      "name": "whatsNewAck",
+      "channel": "whatsnew:ack",
+      "paramsImpl": "version: string",
+      "paramsDecl": "version: string",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "version",
+      "cast": null,
+      "note": "「知道了」：记下「当前版本已看过」（⛔ 只接受当前版本号 —— 权威值在主进程，渲染层传别的值会被拒）"
     }
   ]
 }

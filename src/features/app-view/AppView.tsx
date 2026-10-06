@@ -159,6 +159,7 @@ import { AppViewMemoryPanel } from "./AppView/07-memory-panel";
 import { TeamOfficePreview } from "../team-office";
 import { DramaCanvas } from "../drama-canvas";
 import { UiSketchModal } from "../ui-sketch";
+import { WhatsNewDialog } from "../whats-new";
 import { AppViewSettingsSheet } from "./AppView/08-settings-sheet";
 import { AppViewFilePreviewEditor } from "./AppView/09-file-preview-editor";
 import { ModelViewerBridge } from "../model-viewer";
@@ -458,6 +459,9 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       <DeclaredPluginSlots />
       <AppViewRemoteApproval app={app} />
       <AppViewRemoteConsole app={app} />
+{/* 更新到新版本后的「新功能介绍」（whats-new 域）：自包含，该不该弹由主进程判定 ⇒
+    这里**无条件挂载**、组件自己决定画不画。⛔ 别在 AppView 里再判一次版本（判定只能一处）。 */}
+      <WhatsNewDialog />
 <AppViewTaskComposer app={app} />
       {appPrompt && <div className="modal-backdrop agent-ask-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) { appPrompt.resolve(null); setAppPrompt(null); } }}>
         <div className="agent-ask-card" role="dialog" aria-modal="true" aria-label={appPrompt.title}>

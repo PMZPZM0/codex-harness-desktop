@@ -25,6 +25,7 @@
 import { app, clipboard, nativeImage, ClipboardItem } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { imagesDir as resolveImagesDir } from "../user-data-paths";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
@@ -99,7 +100,13 @@ export const clipboardFeature = defineFeature<null>({
             try {
               const url = new URL(trimmed);
               if (url.protocol === "file:") {
-                paths.push(decodeURIComponent(trimmed.slice("file://".length)).replace(/\//g, "\\").replace(/^\\/, ""));
+                /* ⛔⛔ 必须走 `fileURLToPath`（10-06 mac 审计抓到的真缺口）：
+                   原来是手写 `slice("file://".length).replace(/\//g, "\\").replace(/^\\/, "")`
+                   —— 那是**Windows 专属**的写法：mac 上 `file:///Users/x/y.png`
+                   会被转成 `Users\x\y.png`（丢了根、还把分隔符换成反斜杠）⇒ 粘贴文件直接失效。
+                   `fileURLToPath` 自带平台正确性（win 去前导 `/` 得 `C:\…`；mac 保留 `/Users/…`），
+                   且会处理百分号转义 —— 比手写少一个 URL 解码环节。 */
+                paths.push(fileURLToPath(url));
               }
             } catch { /* 非 URL 行跳过 */ }
           }
