@@ -263,7 +263,9 @@
 .settings-toggle-icon {
   width: 30px;
   height: 30px;
-  color: var(--muted);
+  /* 10-06 用户「设置里面的图标也加点色彩」：开关行的图标盒跟当前分类色相。
+     ⛔ 只改 `color` 不动边框/底：这是个带描边的小盒子，整块染色会很吵，图标本身着色就够。 */
+  color: var(--ic-page, var(--muted));
   border: 1px solid var(--line);
   background: var(--bg);
   border-radius: 8px;

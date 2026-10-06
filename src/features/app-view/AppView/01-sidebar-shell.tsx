@@ -73,7 +73,7 @@ import {
   Upload,
   Search,
   Send,
-  Settings2,
+  Settings,
   Shield,
   Smartphone,
   ShieldCheck,
@@ -343,27 +343,27 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
               {!sidebarCollapsed && <div><strong>Codex Harness</strong><span>Desktop</span></div>}
             </div>
             <div className="sidebar-tabs" role="tablist" aria-label="导航">
-              <button className="sidebar-tab" onClick={() => { startNewThread(); }}><MessageSquarePlus size={15} /><span>新建任务</span><kbd>{hk("Ctrl+N")}</kbd></button>
+              <button className="sidebar-tab ic-blue" onClick={() => { startNewThread(); }}><MessageSquarePlus size={15} /><span>新建任务</span><kbd>{hk("Ctrl+N")}</kbd></button>
               {/* ⛔ 09-27 用户要求：「搜索任务选项放到新建任务下面」。原来是按钮区之外的独立一行，
                   现在挪进来紧随「新建任务」；样式沿用 .search-box（与 .sidebar-tab 同为 34px 行）。 */}
-              <button className="search-box" title={`搜索任务与操作（${hk("Ctrl+K")}）`} onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}><Search size={15} /><span>搜索任务</span><kbd>{hk("Ctrl+K")}</kbd></button>
+              <button className="search-box ic-cyan" title={`搜索任务与操作（${hk("Ctrl+K")}）`} onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}><Search size={15} /><span>搜索任务</span><kbd>{hk("Ctrl+K")}</kbd></button>
               {/* ⛔ 09-27 用户要求：侧栏「自动化」改名「定时任务」—— 它跳的本来就是 settingsPage="schedule"
                   （该页标题即「定时任务」），改名后入口与目标页同名，不再和设置页里那个真正叫
                   「自动化」的 automation 页混起来。配套：命令面板里的同名项一起改（part09）。
                   ⛔ 09-28 用户指定顺序：定时任务排在「···更多」前面（原来排在 AI 画布工作流前面，
                   10-04 该入口收进更多后同序）。 */}
-              <button className="sidebar-tab" onClick={() => { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); }}><Clock3 size={15} /><span>定时任务</span></button>
+              <button className="sidebar-tab ic-amber" onClick={() => { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); }}><Clock3 size={15} /><span>定时任务</span></button>
               {/* ⛔ 10-04 用户要求：「在主界面左侧栏加一个三个点更多选项，把 AI 画布工作流和知识库
                   和这个新的自定义 UI 放里面」+「把组件库也放一个到更多里面，还有人格市场」。
                   09-27 那条「它是与聊天并列的另一种工作台，不是设置项」仍然成立 —— 更多里既有
                   工作台（画布 / 草图），也有设置页跳转（知识库 / 组件库 / 人格市场），
                   所以这个入口叫「更多」而不叫「设置」。 */}
-              <button className="sidebar-tab" title="知识库 / AI 画布工作流 / 前端开发 / 组件库 / 人格市场" aria-expanded={moreHubOpen} onClick={() => setMoreHubOpen(true)}>
+              <button className="sidebar-tab ic-violet" title="知识库 / AI 画布工作流 / 前端开发 / 组件库 / 人格市场" aria-expanded={moreHubOpen} onClick={() => setMoreHubOpen(true)}>
                 <MoreHorizontal size={15} /><span>更多</span>
               </button>
               {/* ⛔ 09-27 用户要求：技能中心 / 插件市场 / 专家-专家团**合并成一个入口**，点击弹窗三选一
                   （原来三个独立按钮）。入口名按用户指定逐字写全。 */}
-              <button className="sidebar-tab" title="技能 / 插件 / 智能体" aria-expanded={extHubOpen} onClick={() => setExtHubOpen(true)}>
+              <button className="sidebar-tab ic-pink" title="技能 / 插件 / 智能体" aria-expanded={extHubOpen} onClick={() => setExtHubOpen(true)}>
                 <LayoutGrid size={15} /><span>技能-插件-专家/专家团</span>
               </button>
             </div>
@@ -592,8 +592,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   </>}
                 </div>
               )}
-              <button className="account-icon" title="移动端远程控制" onClick={() => { setMobileRemoteOpen(true); void window.codex.remoteStart().then((r) => setRemoteUrl(r.url)).catch(() => undefined); void window.codex.remoteStatus().then((s) => { setRemoteStatus(s.status); setRemoteDevices(s.devices); setRemoteUrl(s.url); }).catch(() => undefined); void window.codex.remoteQrcode().then((svg) => setRemoteQr(svg)).catch(() => undefined); void loadPairStates(); }}><Smartphone size={15} /></button>
-              <button className="sidebar-settings" title="设置" onClick={() => { setSettingsPage("appearance"); setSettingsOpen(true); setMobileNav(false); }}><Settings2 size={16} /></button>
+              <button className="account-icon ic-cyan" title="移动端远程控制" onClick={() => { setMobileRemoteOpen(true); void window.codex.remoteStart().then((r) => setRemoteUrl(r.url)).catch(() => undefined); void window.codex.remoteStatus().then((s) => { setRemoteStatus(s.status); setRemoteDevices(s.devices); setRemoteUrl(s.url); }).catch(() => undefined); void window.codex.remoteQrcode().then((svg) => setRemoteQr(svg)).catch(() => undefined); void loadPairStates(); }}><Smartphone size={15} /></button>
+              <button className="sidebar-settings ic-blue" title="设置" onClick={() => { setSettingsPage("appearance"); setSettingsOpen(true); setMobileNav(false); }}><Settings size={16} /></button>
             </div>
           </aside>
   );

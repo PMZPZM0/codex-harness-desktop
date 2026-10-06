@@ -259,6 +259,16 @@
   --link: #2f6bdd;
   --add: #1a7f37;
   --del: #d94f43;
+  /* 图标/身份色板（10-06 用户：「图标都加点色彩」）：导航条目、设置分类、卡头图标按色相区分归属。
+     ⛔ 与语义色分开是有意的 —— 它们表达「这是哪一类」，不是「成功/失败」；
+       设计师要「醒一点」仍用 --accent，语义色仍只表意（DESIGN.md）。
+     ⛔ 六色与 .skill-avatar / .plugin-avatar 的 tone-* 同相（那头像是按作者聚类用的同一套身份色）。 */
+  --ic-blue: #2f6bdd;
+  --ic-green: #1a7f37;
+  --ic-amber: #e8830c;
+  --ic-pink: #d6409f;
+  --ic-violet: #7048e8;
+  --ic-cyan: #0b7285;
   --shadow: 0 1px 2px #14140f0a, 0 10px 32px #14140f12;
   background: #fff;
   font-family:
@@ -289,6 +299,14 @@
   --link: #7cabf8;
   --add: #6cc281;
   --del: #ec7a70;
+  /* 图标/身份色板 · 暗色是**另一套手调值**（照 DESIGN.md：不是把亮色反过来 —— 反色会发脏）。
+     取值思路：与暗色主题既有的 --accent/--green/--orange/--purple/--red 同一亮度带（中高明度、低饱和）。 */
+  --ic-blue: #7cabf8;
+  --ic-green: #4ec27a;
+  --ic-amber: #f0a35c;
+  --ic-pink: #e879c0;
+  --ic-violet: #a78bfa;
+  --ic-cyan: #4bb8cc;
   --shadow: 0 1px 3px #00000059, 0 10px 30px #00000059;
   background: #1b1b1a;
 }
@@ -688,7 +706,7 @@ button.brand-mark.sidebar-toggle:hover {
   color: var(--text);
 }
 .search-box > svg {
-  color: var(--muted);
+  color: var(--ic, var(--muted));
   flex: none;
 }
 .search-box > span {
@@ -940,3 +958,21 @@ button.brand-mark.sidebar-toggle:hover {
 }
 .app-select-option.is-selected .app-select-option-label { color: var(--accent); }
 .app-select-check { flex: none; color: var(--accent); }
+
+/* ── 图标着色工具（10-06 用户：「图标都加点色彩，主界面其他图标和设置里面的图标也是」）──────
+   用法：给**容器**（按钮/行/卡头）挂 `ic-<色名>`，它只把 `--ic` 设成对应色板变量；
+   真正上色由各处的既有规则读 `var(--ic, <原色>)` —— 这样只有一条"取色"规则、色值仍全在变量里。
+
+   ⛔ 为什么用自定义属性而不是把 `color:` 直接写在 `.ic-blue` 里：图标既有的颜色规则分散在
+      各域样式表（`.sidebar-tab svg` / `.search-box > svg` / `.sidebar-settings` …），
+      直接写 `color` 就会和它们按权重打架；改成"提供 --ic + 各自读 var(--ic, 原值)"，
+      权重问题消失，且**没挂 ic-* 的地方自动保持原样**（零回归）。
+   ⛔ 语义色（--ok / --red / --orange）不在这套里：那三个只表意，不做装饰。 */
+.ic-blue { --ic: var(--ic-blue); }
+.ic-green { --ic: var(--ic-green); }
+.ic-amber { --ic: var(--ic-amber); }
+.ic-pink { --ic: var(--ic-pink); }
+.ic-violet { --ic: var(--ic-violet); }
+.ic-cyan { --ic: var(--ic-cyan); }
+/* 设置页的 `--ic-page` 由 08-settings-sheet 按当前分类写在弹窗根上 ⇒ 页内图标跟着分类色相走。
+   ⛔ 这里**不给全局默认值**：消费端写 `var(--ic-page, <原色>)`，没设置时自动回落到原来的颜色。 */
