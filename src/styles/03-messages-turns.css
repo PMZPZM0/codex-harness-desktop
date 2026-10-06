@@ -1129,6 +1129,30 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   font-size: 12px;
   display: block;
 }
+/* 10-06 编辑卡行头：文件类型图标 + 路径 + 本行实时 +N -M（数字随流式揭示跳动）。
+   ⛔ 本组规则必须排在上面 .action-diff strong 之后（同特异性，靠顺序覆盖 margin-bottom）。 */
+.action-card .action-diff-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.action-card .action-diff-head strong {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.action-card .action-diff-stats {
+  flex: none;
+  display: inline-flex;
+  gap: 6px;
+  font-size: 11px;
+}
+.action-card .action-diff-stats b { color: var(--add); font-weight: 500; font-style: normal; }
+.action-card .action-diff-stats i { color: var(--del); font-style: normal; }
 .action-card .action-diff pre {
   max-height: 240px;
   margin: 0;

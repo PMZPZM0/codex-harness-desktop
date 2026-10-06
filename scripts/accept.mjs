@@ -554,19 +554,21 @@ const CHECKS = [
   },
   {
     id: "file-summary",
-    name: "㉓ 文件更改汇报卡 · 真引擎回合全链路（真 run 一回合 → 追踪器 diff → 真广播 → 卡+交互，10-06 重写）",
+    name: "㉓ 文件更改汇报 · 真回合全链路（运行中实时编辑行 + 收尾汇总卡 + 交互，10-06 两次重写）",
     run: async (h) => {
-      /* 为什么这样测（10-06 重写，用户实况倒逼）：上一版用 window.dispatchEvent 注入假事件驱动卡片 ——
+      /* 为什么这样测（10-06 重写 + 二次扩充，用户实况倒逼）：上一版用 window.dispatchEvent 注入假事件驱动卡片 ——
          它证明了「卡会画」，却放过了两条真实链路缺陷：渲染层监听的是**死信道**（window "message"
          全仓无发送方）、主进程广播的 turnId 是**线程 id**（卡按回合 id 取）。用户真机一跑就是空卡。
          本版**零注入**，真链路全段：
-           · 真起一个引擎回合（模型只需一条 echo + 回 ok）——真 turn/started → 追踪器快照 → turn/completed → diff；
-           · 回合进行中由**测试进程**往会话工作区落 8 个文件 —— 谁写的文件不重要（追踪器只看目录差异），
+           · 真起一个引擎回合（模型 = echo + sleep 8 + 回 ok）——真 turn/started → 追踪器快照 → turn/completed → diff；
+           · 回合进行中由**测试进程分两批**往会话工作区落 8 个文件 —— 谁写的文件不重要（追踪器只看目录差异），
              "主进程报告"这一环必是真的；上一版的 8 条 fixture 在这里变成盘上真文件（预览能真读盘）；
-           · 广播必须从真通道 onHarnessEvent 到达、turnId 必须 == 真回合 id、卡片必须原样出现。
+           · ③④ 断言**运行中**就有「编辑 <文件> +N -M」实时行、且第二批写入后行数长出来
+             （用户 10-06 明确纠正的口径：**运行中是运行中的（数字跟在编辑行文件后面）；汇总是汇总** ——
+             实时行由主进程每 2.5s 轻量重扫广播，sleep 8 就是给两次采样留的窗口）；
+           · 广播必须从真通道 onHarnessEvent 到达、turnId 必须 == 真回合 id、汇总卡必须原样出现。
          ⛔ 偏离 09-12 「不发新消息」定稿一处的理由：不发消息就起不了真回合，而正是"注入式假回合"
-            放过了本轮的整条链路 bug；本项只往**已有会话**现有回合后追加一个小回合（不新建会话），
-            且用例极小（一次 echo 工具调用）。
+            放过了整条链路 bug；本项只往**已有会话**现有回合后追加一个小回合（不新建会话）。
          ⛔ 前置：e2e profile 需已配模型（custom-model.json + custom-models.json；缺失时 send 会被
             「请先配置模型」拦下 → 本项红并给出提示）。 */
       const probeDirName = "accept-card-probe";
@@ -577,7 +579,7 @@ const CHECKS = [
           window.__fswEvents = [];
           window.codex.onHarnessEvent(function(ev){ if (ev && ev.type === "turn-file-changes") window.__fswEvents.push(ev); });
           return 1; })()`);
-        /* ② 等界面就绪再解析工作区：验收在应用刚连上 CDP 时就开跑，侧栏会话行可能还没渲染
+        /* ① 等界面就绪再解析工作区：验收在应用刚连上 CDP 时就开跑，侧栏会话行可能还没渲染
            （实测 15ms 内直接查 = null 的假红）——先等「活跃会话行 + 输入框」出现。 */
         await h.waitFor(`!!document.querySelector(".thread-row.active") && !!document.querySelector(".composer-editor")`, { label: "界面就绪（活跃会话行 + 输入框）", timeoutMs: 30000 }).catch(() => undefined);
         const cwd = await h.eval(`(async function(){
@@ -594,9 +596,10 @@ const CHECKS = [
         rmSync(probeDir, { recursive: true, force: true }); // 上轮崩溃残留先清，保证 seed 是干净基准
         mkdirSync(probeDir, { recursive: true });
         writeFileSync(join(probeDir, "seed.txt"), "accept-seed-start\n");
-        /* ③ 起一个真回合（模型只做一条 echo —— 主要是"时钟"：给追踪器一对真 turn/started|completed）。 */
+        /* ② 起一个真回合（模型做一条 echo + sleep 8 —— echo 是真 shell 调用，sleep 给「运行中实时行」
+           留满采样窗口）。 */
         await h.clearInput(".composer-editor");
-        await h.typeInto(".composer-editor", "用 shell 运行 echo ready，然后只回复一个单词：ok");
+        await h.typeInto(".composer-editor", "先用 shell 运行 echo ready，再运行 sleep 8，最后只回复一个单词：ok");
         await h.click(".send-button");
         let started = false;
         for (let i = 0; i < 100; i++) {
@@ -606,27 +609,58 @@ const CHECKS = [
         h.check("② 前置：真回合真的跑起来了（没跑 = 模型未配置/引擎没起，本项作废）", started === true,
           started ? "" : "send 后 15s 未见运行态 —— 先确认 .e2e-profile/main 的 custom-model.json / custom-models.json 有可用模型");
         if (!started) return;
-        /* ④ 回合进行中落盘 8 个文件（6 文本 + 1 图片 + seed 追加）—— 追踪器 diff 的唯一来源。
-           ⛔ 必须在 turn/started（快照已拍）之后写：写入早于快照会进"改前状态"、diff 不报。 */
+        /* ③ 回合进行中**分两批**落盘 8 个文件 —— 追踪器 diff 的唯一来源。
+           ⛔ 必须在 turn/started（快照已拍）之后写：写入早于快照会进"改前状态"、diff 不报。
+           ⛔ 分两批是给「运行中实时行」两次采样窗口：第二批写入后行数必须长出来 = 真在实时更新
+             （运行中是运行中的、汇总是汇总 —— 用户 10-06 明确口径；实时行由主进程每 2.5s 轻量重扫广播）。 */
+        const LIVE_OURS = ["notes.md", "data.json", "seed.txt", "app.css", "index.html", "util.mjs", "readme.txt", "logo.svg"];
+        const liveRowsExpr = `(function(){
+          return [...document.querySelectorAll('.live-edit-row')].map(function(r){
+            return { text: (r.innerText||'').replace(/\\s+/g,' ').trim().slice(0,120),
+              stats: [...r.querySelectorAll('.live-edit-stats b, .live-edit-stats i')].map(function(x){ return x.textContent; }).join(' '),
+              icons: r.querySelectorAll('svg').length };
+          });
+        })()`;
+        const ourLive = (rows) => (rows || []).filter((r) => LIVE_OURS.some((n) => String(r.text).includes(n)));
+        writeFileSync(join(probeDir, "notes.md"), "# notes\n- alpha\n- beta\n");
+        writeFileSync(join(probeDir, "data.json"), '{ "k": 1 }\n');
+        writeFileSync(join(probeDir, "seed.txt"), "accept-seed-start\naccept-seed-append\n");
+        /* 轮询等第一批实时行出现（主进程 2.5s 一拍 + 轻量重扫耗时 ⇒ 单次固定采样会偶发早于首次广播）。 */
+        let liveFirst = [];
+        for (let i = 0; i < 16; i++) {
+          await wait(500);
+          liveFirst = await h.eval(liveRowsExpr).catch(() => liveFirst);
+          if (ourLive(liveFirst).length >= 2) break;
+        }
+        h.check("③ 运行中·实时行出现：回合进行中就有「编辑 <文件> +N -M」行（含刚写入的文件，且各自带数字与类型图标）",
+          ourLive(liveFirst).length >= 2 && ourLive(liveFirst).every((r) => /[+-]\d/.test(r.stats) && r.icons >= 2),
+          JSON.stringify(liveFirst). slice(0, 240));
+        /* ④ 第二批落盘（4 文本 + 1 图片），等行数长出来 —— 证明数字是**跑着跳的**，不是收尾才一次算出。 */
         for (const [fileName, body] of [
-          ["notes.md", "# notes\n- alpha\n- beta\n"],
-          ["data.json", '{ "k": 1 }\n'],
           ["app.css", ".a{color:red}\n"],
           ["index.html", "<!doctype html><title>t</title>\n"],
           ["util.mjs", "export const add = (a,b)=>a+b;\n"],
           ["readme.txt", "hello accept\n"],
         ]) writeFileSync(join(probeDir, fileName), body);
         writeFileSync(join(probeDir, "logo.svg"), '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="10" fill="#e53935"/></svg>');
-        writeFileSync(join(probeDir, "seed.txt"), "accept-seed-start\naccept-seed-append\n");
-        /* ⑤ 等回合收尾（真 turn/completed → 主进程结算广播）。 */
+        let liveSecond = liveFirst;
+        for (let i = 0; i < 30; i++) {
+          await wait(400);
+          liveSecond = await h.eval(liveRowsExpr).catch(() => liveSecond);
+          if (ourLive(liveSecond).length > ourLive(liveFirst).length) break;
+        }
+        h.check("④ 运行中·实时更新：第二批文件写入后实时行数量长出来（数字是跑着跳的，不是收尾才算）",
+          ourLive(liveSecond).length > ourLive(liveFirst).length,
+          JSON.stringify({ first: ourLive(liveFirst).length, second: ourLive(liveSecond).length, names: ourLive(liveSecond).map((r) => String(r.text).split(" ")[1] || "") }).slice(0, 260));
+        /* ⑤ 等回合收尾（真 turn/completed → 主进程结算广播；收尾会先清 live 再发最终报告）。 */
         let ended = false;
         for (let i = 0; i < 600; i++) {
           await wait(200);
           if (!await h.eval(`!!document.querySelector('.send-button.is-pause')`).catch(() => true)) { ended = true; break; }
         }
-        h.check("③ 前置：回合正常收尾（120s 内结束）", ended === true, ended ? "" : "超过 120s 仍在运行");
+        h.check("⑤ 前置：回合正常收尾（120s 内结束）", ended === true, ended ? "" : "超过 120s 仍在运行");
         await wait(1200); // 广播在 turn/completed 发出；给 UI 与 IPC 一拍
-        /* ⑥ 真广播：从 onHarnessEvent 到达，且 turnId == DOM 里那个真回合的 id（旧版 bug：广播的是线程 id）。 */
+        /* ⑦ 真广播：从 onHarnessEvent 到达，且 turnId == DOM 里那个真回合的 id（旧版 bug：广播的是线程 id）。 */
         const turnId = await h.eval(`(function(){ const g=[...document.querySelectorAll('.turn-group[id^="turn-"]')]; const el=g[g.length-1]; return el ? el.id.replace('turn-','') : null; })()`);
         const eventsRaw = await h.eval(`JSON.stringify((window.__fswEvents||[]).map(function(ev){ return { turnId: String(ev.turnId||""), files: (ev.files||[]).map(function(f){ return { path: String(f.path||""), status: String(f.status||"") }; }) }; }))`);
         const events = JSON.parse(eventsRaw || "[]");
@@ -635,19 +669,19 @@ const CHECKS = [
         const mineFiles = mine?.files ?? [];
         const hasFile = (n, status) => mineFiles.some((f) => norm(f.path).endsWith("/" + n) && (!status || f.status === status));
         const allPresent = ["notes.md", "data.json", "app.css", "index.html", "util.mjs", "readme.txt", "logo.svg"].every((n) => hasFile(n, "added")) && hasFile("accept-card-probe/seed.txt", "modified");
-        h.check("④ 真链路·广播到达：turnId == 真回合 id（10-06 修的 id 链；旧版发线程 id，永远对不上）",
+        h.check("⑥ 真链路·广播到达：turnId == 真回合 id（10-06 修的 id 链；旧版发线程 id，永远对不上）",
           mine !== null, `turnId=${String(turnId).slice(0, 40)} events=${JSON.stringify(events).slice(0, 220)}`);
-        h.check("⑤ 真链路·内容齐：广播里 7 个新文件(added) + seed.txt(modified) 全在",
+        h.check("⑦ 真链路·内容齐：广播里 7 个新文件(added) + seed.txt(modified) 全在",
           mine !== null && allPresent, JSON.stringify(mineFiles.map((f) => `${f.path.split("/").pop()}:${f.status}`)).slice(0, 260));
-        /* ⑦ 卡片：真广播驱动的真卡（数据链路已由 ④⑤ 证明为真，这里验渲染与交互）。 */
+        /* ⑧ 卡片：真广播驱动的真卡（数据链路已由 ⑥⑦ 证明为真，这里验渲染与交互）。 */
         const cardSel = `document.getElementById("turn-" + ${JSON.stringify(turnId)})?.querySelector(".completed-changes")`;
         const head = await h.eval(`(function(){ const c=${cardSel};
           return c ? { text:(c.querySelector('summary')?.textContent||'').trim(), visible: c.querySelectorAll('.completed-file').length } : null; })()`);
-        h.check("⑥ 「已更改 N 个文件」卡出现且折叠态先显 6 行（N = 卡内总行数，含环境噪声行）",
+        h.check("⑧ 「已更改 N 个文件」卡出现且折叠态先显 6 行（N = 卡内总行数，含环境噪声行）",
           !!head && /已更改\s*\d+\s*个文件/.test(head.text) && head.visible === 6, JSON.stringify(head));
         if (!head) return;
         const totalFiles = Number((head.text.match(/已更改\s*(\d+)\s*个文件/) || [])[1] ?? 0);
-        /* ⑧ 展开：6 → 全部（我们的 8 个文件一个都不许缺）。 */
+        /* ⑨ 展开：6 → 全部（我们的 8 个文件一个都不许缺）。 */
         const collapse = await h.eval(`(function(){ const c=${cardSel}; if(!c) return null;
           const more=c.querySelector('.completed-more');
           const before=c.querySelectorAll('.completed-file').length;
@@ -660,24 +694,24 @@ const CHECKS = [
             return { name: (r.querySelector('.completed-file-meta code')?.textContent||'').trim(),
               thumb: !!r.querySelector('.completed-file-thumb img'), isNew: !!r.querySelector('.completed-file-new') }; }); })()`);
         const names = (rowsAll ?? []).map((r) => r.name);
-        h.check("⑦ 展开：6 行 + 「再显示 N 个文件」→ 全部行可见，且我们落的 8 个文件一个不缺",
+        h.check("⑨ 展开：6 行 + 「再显示 N 个文件」→ 全部行可见，且我们落的 8 个文件一个不缺",
           collapse?.before === 6 && /再显示\s*\d+\s*个文件/.test(collapse?.text || "") && (rowsAll?.length ?? 0) === totalFiles
             && ["notes.md", "data.json", "app.css", "index.html", "util.mjs", "readme.txt", "logo.svg", "seed.txt"].every((n) => names.some((x) => String(x).toLowerCase() === n || String(x).toLowerCase().endsWith("/" + n))),
           JSON.stringify({ collapse, totalFiles, names }).slice(0, 320));
-        /* ⑨ 图片行：logo.svg 有缩略图 + 「新增」徽标（用户点名「还有生成的图片」）。 */
+        /* ⑩ 图片行：logo.svg 有缩略图 + 「新增」徽标（用户点名「还有生成的图片」）。 */
         const svgRow = (rowsAll ?? []).find((r) => String(r.name).toLowerCase().endsWith("logo.svg"));
-        h.check("⑧ logo.svg 行显示缩略图 + 「新增」徽标", svgRow?.thumb === true && svgRow?.isNew === true, JSON.stringify(svgRow));
-        /* ⑩ 点 notes.md 行 → 真文件预览弹窗（文件是盘上真货，预览器真读盘）。 */
+        h.check("⑩ logo.svg 行显示缩略图 + 「新增」徽标", svgRow?.thumb === true && svgRow?.isNew === true, JSON.stringify(svgRow));
+        /* ⑪ 点 notes.md 行 → 真文件预览弹窗（文件是盘上真货，预览器真读盘）。 */
         await h.eval(`(function(){ const c=${cardSel}; if(!c) return false;
           const row=[...c.querySelectorAll('.completed-file')].find((r)=>(r.querySelector('.completed-file-meta code')?.textContent||'').trim().toLowerCase()==='notes.md');
           if(!row) return false; row.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true})); return true; })()`);
         const previewOpened = await h.waitFor(`!!document.querySelector('.file-preview')`, { label: "文件预览弹窗", timeoutMs: 8000 }).then(() => true).catch(() => false);
         const previewMeta = await h.text(".file-preview-meta").catch(() => "");
-        h.check("⑨ 点行直接打开预览（弹窗打开，且预览的就是这一行的 notes.md）",
+        h.check("⑪ 点行直接打开预览（弹窗打开，且预览的就是这一行的 notes.md）",
           previewOpened === true && String(previewMeta).includes("notes.md"), JSON.stringify({ previewOpened, previewMeta: String(previewMeta).slice(0, 80) }));
         await h.eval(`(function(){ document.querySelector('.file-preview .relay-modal-close')?.click(); window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'})); return 1; })()`).catch(() => undefined);
         await wait(400);
-        /* ⑪ 行右键 → 文件卡菜单两项点名（在文件夹中显示 = 「打开文件地址」/ 复制文件路径）。
+        /* ⑫ 行右键 → 文件卡菜单两项点名（在文件夹中显示 = 「打开文件地址」/ 复制文件路径）。
            ⛔ 用 JS 派发 contextmenu（React 监听的正是这个原生事件）；派发后等一拍再读 DOM（setMenu 异步）。 */
         await h.eval(`(function(){ const c=${cardSel}; if(!c) return false;
           const row=[...c.querySelectorAll('.completed-file')].find((r)=>(r.querySelector('.completed-file-meta code')?.textContent||'').trim().toLowerCase()==='notes.md');
@@ -687,28 +721,28 @@ const CHECKS = [
         await wait(300);
         const menuShown = await h.eval(`(function(){ const menu=document.querySelector('.file-card-menu');
           return { open: !!menu, items: menu? [...menu.querySelectorAll('button span')].map((s)=>(s.textContent||'').trim()) : [] }; })()`);
-        h.check("⑩ 行右键弹出文件卡菜单，且含「在文件夹中显示」+「复制文件路径」（用户点名的两项）",
+        h.check("⑫ 行右键弹出文件卡菜单，且含「在文件夹中显示」+「复制文件路径」（用户点名的两项）",
           menuShown?.open === true && (menuShown?.items ?? []).includes("在文件夹中显示") && (menuShown?.items ?? []).includes("复制文件路径"),
           JSON.stringify(menuShown));
-        /* ⑫ 点「复制文件路径」：toast 是成功路径专属（.catch 只会给「复制失败」）。 */
+        /* ⑬ 点「复制文件路径」：toast 是成功路径专属（.catch 只会给「复制失败」）。 */
         const copied = await h.eval(`(function(){ const b=[...document.querySelectorAll('.file-card-menu button')].find((x)=>(x.textContent||'').includes('复制文件路径'));
           if(!b) return false; b.click(); return true; })()`);
         await wait(600);
         const copyToast = await h.eval(`(function(){
           const nodes=[...document.querySelectorAll('.notice-toast, [class*="toast"]')];
           return nodes.some((el)=>{ const text=el.innerText||''; return text.includes('已复制文件路径') && text.includes('notes.md'); }); })()`).catch(() => false);
-        h.check("⑪ 点「复制文件路径」成功回执：toast 同时带标题与文件名（成功路径专属）",
+        h.check("⑬ 点「复制文件路径」成功回执：toast 同时带标题与文件名（成功路径专属）",
           copied === true && copyToast === true, JSON.stringify({ copied, copyToast }));
         await h.eval(`(function(){ window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'})); return 1; })()`).catch(() => undefined);
         await wait(300);
-        /* ⑬ 收起重回 6 行（折叠往返闭合）。 */
+        /* ⑭ 收起重回 6 行（折叠往返闭合）。 */
         await h.eval(`(function(){ const c=${cardSel}; c?.querySelector('.completed-more')?.click(); return 1; })()`);
         await wait(300);
         const afterCollapse = await h.eval(`(function(){ const c=${cardSel}; return c? c.querySelectorAll('.completed-file').length : 0; })()`);
-        h.check("⑫ 收起重回 6 行（折叠往返闭合）", afterCollapse === 6, `afterCollapse=${afterCollapse}`);
+        h.check("⑭ 收起重回 6 行（折叠往返闭合）", afterCollapse === 6, `afterCollapse=${afterCollapse}`);
         await h.screenshot("file-summary");
       } finally {
-        /* ⑭ 收尾：探针目录整体删掉（落在用户磁盘上的东西必须自己清干净；崩溃也不留）。 */
+        /* ⑮ 收尾：探针目录整体删掉（落在用户磁盘上的东西必须自己清干净；崩溃也不留）。 */
         if (probeDir) { try { rmSync(probeDir, { recursive: true, force: true }); } catch { /* 尽力而为 */ } }
       }
     },

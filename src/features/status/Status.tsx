@@ -1,12 +1,13 @@
 /** 运行状态 / 上下文用量（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
 import { useState, useEffect, useRef } from "react";
-import { FileCode2, ChevronDown, CircleGauge, Minimize2 } from "lucide-react";
+import { FileCode2, ChevronDown, CircleGauge, Minimize2, Pencil } from "lucide-react";
 import { RUN_CLOCK } from "../../lib/run-clock-2";
 import { Turn } from "../../lib/turn";
 import { diffStats } from "../../lib/diff-stats";
 import { ToolCodeBlock } from "../shared/ToolCodeBlock";
 import { FileCardMenu } from "../shared/InlineCards";
-import { getTurnFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
+import { getTurnFileChanges, getTurnLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
+import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { openImageLightbox } from "../../lib/ui-channels";
 import { imageUrl } from "../../lib/image-url";
 import { isImagePath } from "../../lib/is-image-path";
@@ -18,27 +19,21 @@ export function StatusDot({ status }: { status: string }) {
   return <span className={`status-dot ${status}`} title={status === "ready" ? "Codex 已连接" : status === "error" ? "Codex 连接失败" : "Codex 正在启动"} />;
 }
 
-export function fileChip(path: string) {
-  const ext = (path.split(".").pop() ?? "").toLowerCase();
-  const map: Record<string, { label: string; color: string }> = {
-    ts: { label: "TS", color: "#2f74c0" }, tsx: { label: "TSX", color: "#2f74c0" },
-    js: { label: "JS", color: "#b8860b" }, jsx: { label: "JSX", color: "#b8860b" }, mjs: { label: "JS", color: "#b8860b" }, cjs: { label: "JS", color: "#b8860b" },
-    json: { label: "JSON", color: "#8a8a84" }, css: { label: "CSS", color: "#2965c8" }, html: { label: "HTML", color: "#c86a28" },
-    py: { label: "PY", color: "#2e8b6e" }, rs: { label: "RS", color: "#b4633a" }, go: { label: "GO", color: "#3a9bb4" },
-    md: { label: "MD", color: "#5a79b8" }, toml: { label: "TOML", color: "#8a8a84" }, yml: { label: "YML", color: "#8a8a84" }, yaml: { label: "YML", color: "#8a8a84" },
-    sh: { label: "SH", color: "#4e9a54" },
-  };
-  const hit = map[ext] ?? { label: (ext || "文件").slice(0, 3).toUpperCase(), color: "#8a8a84" };
-  return <span className="completed-file-chip" style={{ background: hit.color }} title={ext || "文件"}>{hit.label}</span>;
-}
-
 /** 回合结束的「文件更改汇报」（10-01 复刻 ZCode）：已更改 N 个文件 +X -Y；每行 = 类型图标 +
     文件名 + 所在目录 + 增删行数 + 「审查」（弹窗看完整 diff）与「打开」（资源管理器定位）。
     ⛔ 不再限定 task 回合——普通聊天回合里模型改了文件同样要汇报（用户按文件数核对改动）。
     10-06（用户对照 Qoder 效果图补交互）：行**点击直接打开预览**（图片走灯箱）、**右键复用文件卡菜单**
     （在文件夹中显示 / 复制文件路径）、超过 6 行折叠成「再显示 N 个文件」、图片文件显示缩略图、
-    宿主追踪的**新增文件**打「新增」徽标。 */
+    宿主追踪的**新增文件**打「新增」徽标。
+    10-06 二改（用户对照 WorkBuddy 截图）：「类型图标」从彩色文字块换成 FileTypeIcon（扩展名 → 图标+配色）。 */
 const COLLAPSE_LIMIT = 6;
+
+/** 路径 → 文件名 + 所在目录（正斜杠归一后以最后一个 / 切开；汇报卡与运行中板块共用）。 */
+function segments(full: string): { name: string; dir: string } {
+  const norm = full.replaceAll("\\", "/");
+  const cut = norm.lastIndexOf("/");
+  return { name: cut >= 0 ? norm.slice(cut + 1) : norm, dir: cut >= 0 ? norm.slice(0, cut) : "" };
+}
 
 export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?: (path: string) => void }) {
   const [review, setReview] = useState<{ path: string; diff: string } | null>(null);
@@ -66,11 +61,6 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
   }
   const files = [...byPath.values()];
   const totals = files.reduce((sum, file) => ({ added: sum.added + file.added, deleted: sum.deleted + file.deleted }), { added: 0, deleted: 0 });
-  const segments = (full: string) => {
-    const norm = full.replaceAll("\\", "/");
-    const cut = norm.lastIndexOf("/");
-    return { name: cut >= 0 ? norm.slice(cut + 1) : norm, dir: cut >= 0 ? norm.slice(0, cut) : "" };
-  };
   /** 行点击 / 菜单「打开」共用：图片走灯箱，其余交给文件预览弹窗（会话单例的统一入口）。 */
   const openPath = (path: string, name: string) => {
     if (isImagePath(path)) openImageLightbox(path, name);
@@ -91,7 +81,7 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
                 onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, path: file.path, name }); }}>
                 {isImagePath(file.path)
                   ? <span className="completed-file-thumb"><img src={imageUrl(file.path)} alt="" loading="lazy" onError={(event) => { (event.currentTarget as HTMLImageElement).style.display = "none"; }} /></span>
-                  : fileChip(file.path)}
+                  : <FileTypeIcon path={file.path} size={15} className="completed-file-icon" />}
                 <span className="completed-file-meta"><code title={file.path}>{name}</code><small title={file.path}>{dir}</small></span>
                 <span className="completed-file-stats">{file.deletedFile ? <i className="completed-file-gone">已删除</i> : file.newFile ? <b className="completed-file-new">新增</b> : <><b>+{file.added}</b> <i>-{file.deleted}</i></>}</span>
                 <button type="button" className="completed-file-btn" title="弹窗查看这个文件的完整 diff" onClick={(event) => { event.stopPropagation(); setReview({ path: file.path, diff: diffText }); }}>审查</button>
@@ -119,6 +109,43 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
         </div>
       )}
     </>
+  );
+}
+
+const LIVE_LIMIT = 8;
+
+/** 运行中的「编辑 <文件> +N -M」实时行（10-06 用户对照 WorkBuddy，并明确纠正过一次：
+    **运行中是运行中的 —— 数字跟在编辑行对应文件后面；汇总是汇总（回合结束那张卡）—— 两者不许混**。
+    所以这里**不是卡片、不带总计头**：就是嵌在运行过程里的一行行编辑记录，
+    每行 = 铅笔 + 文件类型图标 + 文件名 + 所在目录 + 该文件实时的 +N -M（数字变化重放一次 live-tick）。
+    数据源 = 主进程每 ~2.5s 一圈的轻量重扫（turn-file-changes-live，见 electron/turn-file-watch.ts）——
+    模型用 shell / MCP 写文件时引擎不发 fileChange，运行中的文件改动只能宿主自己盯。
+    ⛔ 只在回合运行中渲染；回合收尾主进程先发空 live 清场，再由底部汇总卡接管。 */
+export function LiveFileChanges({ turn }: { turn: Turn }) {
+  const [, bump] = useState(0);
+  useEffect(() => subscribeTurnFileChanges((changedTurnId: string) => { if (changedTurnId === turn.id) bump((v) => v + 1); }), [turn.id]);
+  const files = getTurnLiveFileChanges(turn.id);
+  if (!files.length) return null;
+  const visible = files.slice(0, LIVE_LIMIT);
+  return (
+    <div className="live-edits" role="status" aria-label="正在编辑文件">
+      {visible.map((file) => {
+        const { name, dir } = segments(file.path);
+        return (
+          <div className="live-edit-row" key={file.path} title={file.path}>
+            <span className="live-edit-action"><Pencil size={12} /><em>编辑</em></span>
+            <FileTypeIcon path={file.path} size={13} />
+            <code>{name}</code>
+            <small>{dir}</small>
+            {/* ⛔ key 带数字：数字一变就重挂载 ⇒ 重放 live-tick 动画（就是「实时跳动」的观感）。 */}
+            <span className="live-edit-stats" key={`${file.status}-${file.added}-${file.deleted}`}>
+              {file.status === "deleted" ? <i className="completed-file-gone">已删除</i> : <><b>+{file.added}</b><i>-{file.deleted}</i></>}
+            </span>
+          </div>
+        );
+      })}
+      {files.length > LIVE_LIMIT && <div className="live-edits-more">还有 {files.length - LIVE_LIMIT} 个文件…</div>}
+    </div>
   );
 }
 
