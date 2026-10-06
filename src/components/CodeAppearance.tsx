@@ -3,6 +3,7 @@ import { Check, ListOrdered, Palette, Type, WrapText } from "lucide-react";
 import { codeFonts, codePreviewSnippet, codeThemes } from "../lib/code-themes";
 import { ToggleSwitch } from "./SettingsWidgets";
 import { setCodeSettings, useCodeSettings, type CodeFontScale } from "../lib/code-settings";
+import { runVisualSwitch } from "../lib/visual-switch";
 
 /** 预览用的极简渲染：不引 highlighter 之外的新依赖，10 张卡片同时渲染也够快 */
 function ThemePreview({ style, background }: { style: Record<string, React.CSSProperties>; background: string }) {
@@ -27,7 +28,12 @@ function ThemePreview({ style, background }: { style: Record<string, React.CSSPr
  * 外观页的「代码显示」区块：高亮主题 / 代码字体 / 字号 / 行号 / 换行。
  * 全部走 lib/code-settings 的外部 store，改完对话里已渲染的代码块立即重绘。
  */
-export function CodeAppearanceSection() {
+/**
+ * @param onNotice 回执通道（10-07 用户：「切换完成后的通知提示」）。
+ *   ⛔ 可选而不是必填：本组件也被别处复用，拿不到通道时**静默**即可，
+ *      绝不能因为缺通道就抛错或阻止切换（回执是锦上添花，切换本身不能卡住）。
+ */
+export function CodeAppearanceSection({ onNotice }: { onNotice?: (text: string) => void }) {
   const settings = useCodeSettings();
   const scales: { value: CodeFontScale; label: string }[] = [
     { value: "small", label: "小" },
@@ -47,7 +53,9 @@ export function CodeAppearanceSection() {
             type="button"
             className={`code-theme-card ${settings.theme === theme.id ? "active" : ""}`}
             aria-pressed={settings.theme === theme.id}
-            onClick={() => setCodeSettings({ theme: theme.id })}
+            /* 10-07：与界面主题同一条切换链（过渡 + 完成后回执）。
+               ⛔ 高亮主题改的是代码块的行内色，同样走 `fx-theme` 那条颜色过渡。 */
+            onClick={() => runVisualSwitch("代码高亮", theme.label, () => setCodeSettings({ theme: theme.id }), onNotice)}
           >
             <ThemePreview style={theme.style} background={theme.background} />
             <span className="code-theme-label">

@@ -144,6 +144,7 @@ import {
 } from "lucide-react";
 import { basename } from "../../../lib/basename";
 import { copyTextToClipboard } from "../../../lib/clipboard";
+import { runVisualSwitch, themeLabelOf } from "../../../lib/visual-switch";
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 // 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
 import { Slot } from "../../../runtime/registry";
@@ -520,8 +521,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                     <div className="account-menu-item account-menu-theme" role="menuitem">
                       <Sun size={15} /><span>界面主题</span>
                       <span className="theme-quick">
-                        <button type="button" title="浅色" className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")}><Sun size={13} /></button>
-                        <button type="button" title="深色" className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")}><Moon size={13} /></button>
+                        {/* 10-07：与设置页主题卡同一条切换链（过渡 + 完成后回执）——见 lib/visual-switch */}
+                        <button type="button" title="浅色" className={theme === "light" ? "active" : ""} onClick={() => runVisualSwitch("主题", themeLabelOf("light"), () => setTheme("light"), showToast)}><Sun size={13} /></button>
+                        <button type="button" title="深色" className={theme === "dark" ? "active" : ""} onClick={() => runVisualSwitch("主题", themeLabelOf("dark"), () => setTheme("dark"), showToast)}><Moon size={13} /></button>
                       </span>
                     </div>
                     <button className="account-menu-item" onClick={() => setAccountMenuSub("zoom")}><ZoomIn size={15} /><span>界面缩放</span><ChevronRight size={14} className="account-menu-arrow" /></button>
@@ -540,7 +542,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   </>}
                   {accountMenuSub === "lang" && <>
                     <button className="account-menu-item account-menu-back" onClick={() => setAccountMenuSub(null)}><ChevronLeft size={14} /><span>界面语言</span></button>
-                    <button className={`account-menu-item ${uiLang === "zh" ? "current" : ""}`} onClick={() => { setUiLang("zh"); setAccountMenuSub(null); }}><span>简体中文</span>{uiLang === "zh" && <Check size={14} />}</button>
+                    {/* 10-07 审计补漏：English 那项早有回执（"英文界面即将上线"），
+                        「简体中文」却一直静默 —— 同类操作两种待遇。补上同一条 showToast。 */}
+                    <button className={`account-menu-item ${uiLang === "zh" ? "current" : ""}`} onClick={() => { setUiLang("zh"); setAccountMenuSub(null); showToast("界面语言已切换", "简体中文"); }}><span>简体中文</span>{uiLang === "zh" && <Check size={14} />}</button>
                     <button className={`account-menu-item ${uiLang === "en" ? "current" : ""}`} onClick={() => { setUiLang("en"); setAccountMenuSub(null); showToast("英文界面即将上线", "当前版本先提供简体中文"); }}><span>English</span>{uiLang === "en" && <Check size={14} />}</button>
                   </>}
                   {accountMenuSub === "zoom" && <>
