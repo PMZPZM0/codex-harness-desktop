@@ -96,7 +96,9 @@ ok(/\.action-diff-head/.test(cssTurns) && /\.action-diff-stats/.test(cssTurns),
 /* ── 六、回合状态胶囊（10-06 夜三轮重构 · 用户对照 Qoder：「步骤 0/6 · 5 个文件已修改 +177 -8」
    + 「步骤清单跟文件修改，都是可以独立居中展示的，只是多了另一方展示的时候，就拼接展示」）────────
    与排队/询问/审批卡**上下排序**、悬停分区展开清单、随运行实时刷新；弹层位置**自适应 + 居中**。
-   任务清单区（步骤 N/M）由 Codex 自己维护（task_add/task_update → tasks-changed 广播 → bag）。 */
+   任务清单区（步骤 N/M）由 Codex 自己维护（task_add/task_update → tasks-changed 广播 → bag）。
+   ⛔ 生命周期（夜四轮 + 夜六轮，用户实测三连）两区**都只活在回合运行中**：回合结束（跑完/被 stop）
+   ⇒ 整卡消失；步骤全完成 ⇒ 步骤区隐藏；新回合开工 ⇒ 宿主清上一轮清单（不许跨回合残留）。 */
 const capsule = codeOnly(read("src/features/status/TurnStatusCapsule.tsx"));
 const composer = codeOnly(read("src/features/app-view/AppView/02-main-stage/03-composer.tsx"));
 ok(capsule.includes("export function TurnStatusCapsule") && capsule.includes("getTurnLiveFileChanges(runningTurnId)") && capsule.includes("subscribeTurnFileChanges"),
@@ -104,11 +106,13 @@ ok(capsule.includes("export function TurnStatusCapsule") && capsule.includes("ge
 ok(capsule.includes("const steps: StepRow[] = (Array.isArray(taskList) ? [...taskList] : [])") && capsule.includes('setZone("steps")') && capsule.includes('setZone("files")'),
   "步骤区取 Codex 的任务清单（taskList 入参）；左右悬停分区各自展开对应清单（用户令：放左边=步骤清单，放右边=文件）");
 ok(capsule.includes("if (!hasSteps && !hasFiles) return null;"),
-  "两区都没有才整卡不渲染（有任务清单就有 —— 收尾后仍在；用户 10-06 夜令）");
+  "两区都没有才整卡不渲染（夜六轮起：非运行中两区都没内容 ⇒ 整卡消失 —— 用户「清单不会自动消失」的修法）");
 ok(capsule.includes("{hasSteps && (") && capsule.includes("{hasFiles && (") && capsule.includes('hasSteps && hasFiles && <span className="capsule-sep"'),
   "两区**各自独立可显示（单独存在即居中）**；同时在才拼出「·」拼接展示（用户 10-06 夜定稿，别改成强制同现）");
-ok(capsule.includes('const hasSteps = steps.length > 0 && steps.some((step) => step.state !== "done")'),
-  "⛔ 步骤全部完成 ⇒ 步骤区隐藏（用户 10-06 夜四轮：「任务跑完，小胶囊没有自动消失」）");
+ok(capsule.includes('const hasSteps = Boolean(runningTurnId) && steps.length > 0 && steps.some((step) => step.state !== "done")'),
+  "⛔ 步骤区**只在回合运行中显示**（用户夜四轮「跑完没消失」+ 夜六轮「清单不会自动消失」——含被 /stop 停掉的回合；全完成时同样隐藏）");
+ok(capsule.includes("if (!runningTurnId) setZone(null);"),
+  "回合结束清悬停分区（不清 ⇒ zone 残留在「渲染 null 的空档」里，下一回合一出现就凭空弹旧面板）");
 ok(capsule.includes(".sort((a, b) => Number(a?.createdAt ?? 0) - Number(b?.createdAt ?? 0))"),
   "步骤按**创建顺序**展示（①②③④ 自上而下；store 接口序是 updatedAt 倒序，别直接铺）");
 const taskStore = codeOnly(read("electron/rpa-store.ts"));
@@ -129,6 +133,25 @@ ok(capsule.includes("anchorCenter - pr.width / 2"),
 ok(composer.includes("<TurnStatusCapsule") && composer.includes("taskList={taskList}")
   && composer.indexOf("<TurnStatusCapsule") < composer.indexOf('className="approval-stack"'),
   "接进输入框卡片栈（taskList 入参），且位置在**询问/审批卡之上**（卡片栈上下排序、不互相遮）");
+
+/* ── 六-c、新回合开工清上一轮清单（10-06 夜六轮，用户实测「新回合，旧的任务清单还在」）────────
+   上一轮停下（todo/doing 残留）的清单不许跨回合冒出来：空闲直发 → 宿主 tasks:clear（真通道+广播）
+   → 模型在新回合 task_list 读到空清单、按需重建。⛔ 排队分支不清（旧回合还在跑，清单要用）；
+   goal 引擎自续回合不走 send() ⇒ 天然不受影响。 */
+const tasksFeature = codeOnly(read("electron/features/tasks-ipc.ts"));
+const taskStoreSrc = codeOnly(read("electron/rpa-store.ts"));
+const manifest = read("electron/ipc-channels.manifest.json");
+const sendSrc = codeOnly(read("src/features/app-state/parts/part08/02-seg/send.tsx"));
+ok(manifest.includes('"channel": "tasks:clear"') && tasksFeature.includes('ipcHost.handle("tasks:clear"') && taskStoreSrc.includes("async clearTasks()"),
+  "tasks:clear 通道贯通：manifest（单一真相源）→ tasks-ipc handler → rpa-store.clearTasks");
+ok(/ipcHost\.handle\("tasks:clear"[\s\S]{0,300}notifyTasksChanged\(\)/.test(tasksFeature) && tasksFeature.includes('"tasks:clear"]) ipcHost.removeHandler'),
+  "清空后广播 tasks-changed（胶囊即刻归零）+ ctx.effect 卸载时摘 handler");
+ok(read("electron/preload.ts").includes('clearTasks: () => __ipc("tasks:clear", 0, [])'),
+  "preload 桥接为 gen:ipc 生成物（手改生成物会被预检守卫【2】打红）");
+ok(sendSrc.includes("await window.codex.clearTasks()") && !sendSrc.includes('request("tasks:clear"')
+  && sendSrc.indexOf("await window.codex.clearTasks()") < sendSrc.indexOf("result = await startTurn(active)")
+  && sendSrc.indexOf("await window.codex.clearTasks()") > sendSrc.indexOf('window.codex.request("thread/queue/add"'),
+  "挂钩 = **空闲直发路径、首个 startTurn 之前 await 落地**（⛔ 走 window.codex.clearTasks() 类型化宿主方法 —— codex.request() 是引擎 RPC，真跑实测转给 app-server 报 unknown variant、被 catch 吞成「清了但没清」；顺序反了会清掉模型刚建的新清单；排在排队分支之后 = 排队时不清正在跑的清单）");
 
 /* ── 六-b、旧「目标与进程」UI 已撤（10-06 夜三轮用户令）——负向断言防复活 ────────────── */
 const seg9 = codeOnly(read("src/features/app-state/parts/part09/02-seg.tsx"));

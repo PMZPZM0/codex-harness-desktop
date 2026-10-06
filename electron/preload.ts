@@ -276,6 +276,7 @@ contextBridge.exposeInMainWorld("codex", {
   addTask: (input: { text: string; priority?: string }) => __ipc("tasks:add", 0, [input]),
   updateTask: (input: { id: string; patch: unknown }) => __ipc("tasks:update", 1, [input]),
   deleteTask: (id: string) => __ipc("tasks:delete", 1, [id]),
+  clearTasks: () => __ipc("tasks:clear", 0, []),
   deleteMemory: (id: string) => __ipc("memory:delete", 1, [id]),
   resetMemory: () => __ipc("memory:reset", 0, []),
   getMemoryGateway: () => __ipc("memory:gateway:read", 0, []),

@@ -8,9 +8,13 @@
  *   · 两区都没有 ⇒ 整卡不渲染。⛔ 用户 10-06 夜定稿的展示规则：**两区各自都能独立居中展示
  *     （只有步骤 = 只显示「步骤 N/M」；只有文件 = 只显示「X 个文件已修改 +A -D」），只有在
  *     两区同时存在时才拼接成「步骤 N/M · X 个文件已修改 +A -D」** —— 别再改成强制同现。
- *   · 生命周期（10-06 夜四轮，用户实测两条）：**步骤全部完成 = 这一轮收工 ⇒ 胶囊自动隐藏**；
- *     **下一轮开工 = 全完成清单在 task_add 时被自动清掉（新清单替换旧清单），胶囊重新出现**——
- *     旧清单不会叠进新任务（清逻辑在 electron/rpa-store.ts 的 addTask，批内补步不受影响）。
+ *   · 生命周期（10-06 夜四轮 + 夜六轮，用户实测三条）：
+ *     ① **回合结束（跑完/被停止）⇒ 步骤区随整卡消失**——步骤区与文件区一样**只在回合运行中显示**
+ *        （用户：「清单不会自动消失」；含被 /stop 停掉的回合）；
+ *     ② **步骤全部完成 ⇒ 步骤区隐藏**（跑着也一样，收工了没内容可跟）；
+ *     ③ **新回合开工（用户直发消息）⇒ 宿主清掉上一轮清单**（tasks:clear，见 send.tsx）——
+ *        旧清单不许跨回合冒出来（用户：「新回合，旧的任务清单还在」）；同轮内模型续建的
+ *        全完成清单在 task_add 时也会被自动清（electron/rpa-store.ts 的 addTask，批内补步不受影响）。
  * ⛔ 原「目标与进程」面板（tb-goals-entry + goals-pop + 顶栏 ··· 菜单里的清单入口）已按用户令
  *   撤掉 —— 任务清单的**唯一常驻入口**就是这条胶囊。
  * ⛔ 不许做成 portal 浮层：它是输入框卡片栈的普通一行（与排队消息 / 询问卡 / 审批卡
@@ -44,8 +48,9 @@ export function TurnStatusCapsule({ runningTurnId, taskList }: { runningTurnId: 
     if (!runningTurnId) return;
     return subscribeTurnFileChanges((changedTurnId: string) => { if (changedTurnId === runningTurnId) setTick((v) => v + 1); });
   }, [runningTurnId]);
-  // 回合结束后文件区不再有数据 ⇒ 悬停分区若停在 files 需要清掉（steps 区照常）
-  useEffect(() => { if (!runningTurnId) setZone((current) => (current === "files" ? null : current)); }, [runningTurnId]);
+  // 回合结束 ⇒ 两区都隐藏（见下方 hasSteps）⇒ 悬停分区一律清掉。⛔ 不清的话，zone 这个 state
+  // 会在「渲染 null 的空档」里留着旧值，下一回合一出现胶囊就凭空弹着旧面板（不悬停也开着）。
+  useEffect(() => { if (!runningTurnId) setZone(null); }, [runningTurnId]);
   // 步骤全部完成 ⇒ 步骤区隐藏，悬停分区若停在 steps 也清掉（与上一行同款）
   useEffect(() => {
     if (Array.isArray(taskList) && taskList.length > 0 && taskList.every((task: any) => task?.status === "done")) {
@@ -86,9 +91,13 @@ export function TurnStatusCapsule({ runningTurnId, taskList }: { runningTurnId: 
       text: String(task?.text ?? ""),
       state: String(task?.status ?? "todo"),
     }));
-  /* ⛔ 全完成 = 这一轮收工 ⇒ 步骤区隐藏（用户 10-06 夜四轮实测：「任务跑完，小胶囊没有自动消失」）。
-     下一轮开工时 rpa-store.addTask 会清掉全完成清单（新一轮自动开新清单），步骤区随之重新出现。 */
-  const hasSteps = steps.length > 0 && steps.some((step) => step.state !== "done");
+  /* ⛔ 步骤区 = **只在回合运行中显示**（用户 10-06 夜四轮 + 夜六轮实测：「任务跑完，清单不会自动
+     消失」「新回合，旧的任务清单还在」）：
+       · 回合结束（跑完/被 /stop 停止）⇒ 整卡消失（runningTurnId 由 composer 按活动回合传入，
+         会话切走/空闲时同样为 null）—— 与文件区同款「只活在运行中」；
+       · 步骤全部完成 ⇒ 隐藏（这轮收工了没内容可跟；running 中也一样，与夜四轮行为一致）。
+     下一轮开工时宿主 tasks:clear + 模型自己的 task_add 会带上新清单，步骤区随之重新出现。 */
+  const hasSteps = Boolean(runningTurnId) && steps.length > 0 && steps.some((step) => step.state !== "done");
   const hasFiles = Boolean(runningTurnId) && files.length > 0;
   if (!hasSteps && !hasFiles) return null;
   const doneCount = steps.filter((step) => step.state === "done").length;

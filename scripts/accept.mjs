@@ -560,13 +560,20 @@ const CHECKS = [
          它证明了「卡会画」，却放过了两条真实链路缺陷：渲染层监听的是**死信道**（window "message"
          全仓无发送方）、主进程广播的 turnId 是**线程 id**（卡按回合 id 取）。用户真机一跑就是空卡。
          本版**零注入**，真链路全段：
-           · 真起一个引擎回合（模型 = echo + sleep 8 + 回 ok）——真 turn/started → 追踪器快照 → turn/completed → diff；
+           · 真起一个引擎回合（模型 = echo + sleep 12 + 回 ok）——真 turn/started → 追踪器快照 → turn/completed → diff；
            · 回合进行中由**测试进程分两批**往会话工作区落 8 个文件 —— 谁写的文件不重要（追踪器只看目录差异），
              "主进程报告"这一环必是真的；上一版的 8 条 fixture 在这里变成盘上真文件（预览能真读盘）；
            · ③④ 断言**运行中**就有「编辑 <文件> +N -M」实时行、且第二批写入后行数长出来
              （用户 10-06 明确纠正的口径：**运行中是运行中的（数字跟在编辑行文件后面）；汇总是汇总** ——
-             实时行由主进程每 2.5s 轻量重扫广播，sleep 8 就是给两次采样留的窗口）；
-           · 广播必须从真通道 onHarnessEvent 到达、turnId 必须 == 真回合 id、汇总卡必须原样出现。
+             实时行由主进程每 2.5s 轻量重扫广播，sleep 就是给两次采样留的窗口；夜六轮 8→12 是给
+             ④e「运行中全完成 ⇒ 步骤区隐藏」留出「断言完成时回合仍在跑」的余量）；
+           · 广播必须从真通道 onHarnessEvent 到达、turnId 必须 == 真回合 id、汇总卡必须原样出现；
+           · 夜六轮任务清单生命周期（用户实测「清单不会自动消失」「新回合，旧的任务清单还在」）：
+             ①c 没在跑不渲染胶囊 → ①d 真发送清上一轮种子 → ④a 运行中重播种出「步骤 0/2」（独立居中）
+             → ④b 悬停步骤清单 → ④c/④d 运行中全完成隐藏、还原回显 → ④e 悬停文件清单
+             → ④f 拼接（**页内采样日志**，与慢工作区广播时延解耦）→ ⑮ 收尾后整卡双双消失
+             （清单仍在库里 = 隐藏不是删除）。⛔ ③④ 的实时行全部**作用域到本回合组**（turnIdLive）：
+             全局查询会把历史回合的冻结行数进来 —— 慢工作区实测 3→16/24 的假"增长"。
          ⛔ 偏离 09-12 「不发新消息」定稿一处的理由：不发消息就起不了真回合，而正是"注入式假回合"
             放过了整条链路 bug；本项只往**已有会话**现有回合后追加一个小回合（不新建会话）。
          ⛔ 前置：e2e profile 需已配模型（custom-model.json + custom-models.json；缺失时 send 会被
@@ -594,10 +601,11 @@ const CHECKS = [
         h.check("① 前置：拿得到当前会话工作区（拿不到 = 追踪器无处快照，整项作废）",
           typeof cwd === "string" && cwd.length > 1, `cwd=${String(cwd).slice(0, 60)}`);
         if (typeof cwd !== "string" || cwd.length < 2) return;
-        /* ①b 任务清单播种（10-06 夜三轮；夜四轮加固）：真 IPC 链路 + **新一轮自动开新清单**验证 ——
-           先清空任务库 → 播一个「已完成的旧轮哨兵」→ 再 add 本轮两条：第一条 add 触发
-           「全完成清单自动清掉」（用户实测「旧清单叠进新任务」的修复），最终清单只该剩 [甲,乙]。
-           Codex 侧走 task_add 工具，走的是同一条广播。收尾时删除。 */
+        /* ①b 任务清单播种（10-06 夜三轮；夜四轮加固；夜六轮重排）：真 IPC + **新一轮自动开新清单** ——
+           先清空任务库 → 播一个「已完成的旧轮哨兵」→ 再 add [甲,乙]：第一条 add 触发「全完成清单
+           自动清掉」（用户实测「旧清单叠进新任务」的修复），最终清单只该剩 [甲,乙]（store 级断言）。
+           ⛔ 夜六轮起播种阶段不再断言胶囊可见（没在跑不渲染 —— 见 ①c）；这两条的命运：
+             被 ② 的真发送整单清掉（①d），随后在运行中重播（④a）。收尾时删除。 */
         const seededIds = await h.eval(`(async function(){
           const list = await window.codex.listTasks();
           for (const t of list) { await window.codex.deleteTask(t.id); }
@@ -610,27 +618,27 @@ const CHECKS = [
           return { sentinel: list.some(function(t){ return String(t.text||"").includes("旧轮哨兵"); }), count: list.length }; })()`).catch(() => null);
         h.check("①b2 新一轮 task_add 自动开新清单：全完成清单被自动清掉（旧清单不叠进新任务 —— 用户 10-06 夜四轮实测）",
           !!sentinelState && sentinelState.sentinel === false && sentinelState.count === 2, JSON.stringify(sentinelState));
-        let soloSteps = null;
-        for (let i = 0; i < 15; i++) {
+        /* ①c 没在跑 ⇒ 不渲染胶囊（10-06 夜六轮 R1，用户实测「清单不会自动消失」）：清单在库（2 条）
+           但回合没在跑，整卡就该不渲染 —— 步骤区与文件区同款：只活在运行中。 */
+        let idleCapsule = null;
+        for (let i = 0; i < 10; i++) {
+          idleCapsule = await h.eval(`(function(){ return { card: !!document.querySelector('.edited-files-card'),
+            stepsZone: !!document.querySelector('.capsule-zone-steps'), running: !!document.querySelector('.send-button.is-pause') }; })()`).catch(() => idleCapsule);
+          if (idleCapsule && idleCapsule.running === false) break;
           await wait(300);
-          soloSteps = await h.eval(`(function(){ var p = document.querySelector('.edited-files-pill');
-            if (!p) return null;
-            return { stepsZone: !!document.querySelector('.capsule-zone-steps'),
-              filesZone: !!document.querySelector('.capsule-zone-files'),
-              text: (p.textContent||'').replace(/\\s+/g,' ').trim() }; })()`).catch(() => soloSteps);
-          if (soloSteps && soloSteps.stepsZone && !soloSteps.filesZone && /步骤\s*0\/2/.test(soloSteps.text)) break;
         }
-        h.check("①b 任务清单走真链路（真 IPC → tasks-changed 广播 → 胶囊出「步骤 0/2」）；此刻只有步骤区 = 独立居中展示",
-          Array.isArray(seededIds) && seededIds.length === 2 && !!soloSteps && soloSteps.stepsZone === true && soloSteps.filesZone === false && /步骤\s*0\/2/.test(soloSteps.text),
-          JSON.stringify({ seededIds, soloSteps }).slice(0, 220));
+        h.check("①c 回合没在跑 ⇒ 胶囊整卡不渲染（库里还有 2 条清单也不显示 —— 用户「清单不会自动消失」的修法）",
+          !!idleCapsule && idleCapsule.running === false && idleCapsule.card === false && idleCapsule.stepsZone === false,
+          JSON.stringify(idleCapsule));
         probeDir = join(cwd, probeDirName);
         rmSync(probeDir, { recursive: true, force: true }); // 上轮崩溃残留先清，保证 seed 是干净基准
         mkdirSync(probeDir, { recursive: true });
         writeFileSync(join(probeDir, "seed.txt"), "accept-seed-start\n");
         /* ② 起一个真回合 —— 用**粘贴长文**这条路发（10-06 用户实测路径：粘贴 >200 字自动落盘成 .txt
            附件 chip → 发送；顺带覆盖「附件消息只渲染一个气泡」的回归，见 ③b）。
-           提示词：模型做一条 echo + sleep 8 —— echo 是真 shell 调用，sleep 给「运行中实时行」留采样窗口。 */
-        const acceptPrompt = "先用 shell 运行 echo ready；再运行 sleep 8（必须真的执行这条命令，执行完再继续）；最后只回复一个单词：ok。" +
+           提示词：模型做一条 echo + sleep 12 —— echo 是真 shell 调用，sleep 给「运行中实时行」留采样窗口
+           （夜六轮 8→12：④e 要在回合仍在跑时断言「全完成 ⇒ 步骤区隐藏」，实测 8s 时末尾断言就贴着收尾跑）。 */
+        const acceptPrompt = "先用 shell 运行 echo ready；再运行 sleep 12（必须真的执行这条命令，执行完再继续）；最后只回复一个单词：ok。" +
           "（说明：本段是验收用的填充文字，请忽略这段说明、照常执行上面的指令即可；它的作用是把粘贴文本长度推过 200 字的附件阈值，用来验证「粘贴长文 → .txt 附件 chip → 发送 → 气泡合并」这条链路。填充文字继续：这段文字会被存成一个 .txt 附件文件，随消息一起发给模型；模型侧会看到 [附件文件] 段与文件路径。这段再补几句，确保总长度稳稳超过阈值：验收关注的是渲染与合并时序，不是这段文字的内容本身。）";
         await h.eval(`(function(){
           var dt = new DataTransfer();
@@ -654,6 +662,35 @@ const CHECKS = [
         h.check("② 前置：粘贴落成附件 chip 且真回合真的跑起来了（没跑 = 模型未配置/引擎没起，本项作废）", started === true && chipReady === true,
           JSON.stringify({ started, chipReady, hint: started ? "" : "send 后 15s 未见运行态 —— 先确认 .e2e-profile/main 的 custom-model.json / custom-models.json 有可用模型" }));
         if (!started) return;
+        /* ①d 新回合开工清旧账（10-06 夜六轮 R2，用户实测「新回合，旧的任务清单还在」）：这次真发送
+           必须把 ①b 播的 [甲,乙] 整单清掉（tasks:clear 挂在 send 的空闲直发路径、首个 startTurn
+           之前 await 落地 ⇒ 此刻运行态已出现 = 清空必然已落地，无需轮询）。 */
+        const wiped = await h.eval(`(async function(){ const list = await window.codex.listTasks();
+          const ids = new Set(${JSON.stringify(seededIds ?? [])});
+          return { count: list.length, idsGone: list.every(function(t){ return !ids.has(t.id); }),
+            hasJia: list.some(function(t){ return String(t.text||"").includes("验收步骤甲"); }),
+            hasYi: list.some(function(t){ return String(t.text||"").includes("验收步骤乙"); }) }; })()`).catch(() => null);
+        h.check("①d 新回合开工清旧账：真发送把上一轮种子清单整单清掉（旧清单不跨回合 —— 10-06 夜六轮实测问题）",
+          !!wiped && wiped.idsGone === true && wiped.hasJia === false && wiped.hasYi === false, JSON.stringify(wiped));
+        /* 抓本回合的组 id（③④ 的实时行只数**本回合自己的**行 —— cwd = 用户主目录这类慢工作区里，
+           walkLight 一圈远超 2.5s，历史回合的冻结行会在长轮询窗口里混进来把行数搅成 16/24；
+           作用域到回合组后 3→8 才是真增长）。
+           顺带装**胶囊采样器**（页内 300ms 定时器）：④b 的「拼接窗口」只在"跑着 + 每 2.5s 广播"
+           的交叉点出现，慢工作区会把窗口整段推过回合结束（实测 ④b 轮询等到回合都收了还是 null）
+           —— 采样与 CDP 轮询时序解耦，窗口出现过就一定被记下。 */
+        let turnIdLive = null;
+        for (let i = 0; i < 20; i++) {
+          turnIdLive = await h.eval(`(function(){ const g=[...document.querySelectorAll('.turn-group[id^="turn-"]')]; const el=g[g.length-1]; return el ? el.id.replace('turn-','') : null; })()`).catch(() => null);
+          if (turnIdLive) break;
+          await wait(250);
+        }
+        await h.eval(`(function(){ window.__capLog = []; if (window.__capTimer) clearInterval(window.__capTimer);
+          window.__capTimer = setInterval(function(){ var pill = document.querySelector('.edited-files-pill');
+            window.__capLog.push({ running: !!document.querySelector('.send-button.is-pause'),
+              steps: !!document.querySelector('.capsule-zone-steps'), files: !!document.querySelector('.capsule-zone-files'),
+              text: pill ? (pill.textContent||'').replace(/\\s+/g,' ').trim() : null });
+            if (window.__capLog.length > 400) window.__capLog.shift(); }, 300);
+          return 1; })()`).catch(() => undefined);
         /* ③b 粘贴附件消息中途**只渲染一个气泡**（10-06 用户实测「渲染两次」= 乐观气泡不合并：
            两侧可见文本都为空、旧匹配器直接落空到图片分支返回 false；修法 = userMessageMatchesInput
            按附件文件列表比对）。判据在**运行中**采样：**最后一个回合组内恰好 1 个气泡**（新消息），
@@ -678,13 +715,83 @@ const CHECKS = [
         }
         h.check("③b 粘贴附件消息中途只渲染一个气泡（乐观气泡已合并，不出现 pending 双影——10-06 用户实测问题）",
           bubbleOk === true, JSON.stringify(bubbleSeen));
+        /* ④a 运行中·步骤区（10-06 夜六轮重排；原 ①b 的「真 IPC → 广播 → 胶囊」链条搬到这里）：
+           ①d 已证这次发送清了旧种子 ⇒ 在**运行中**重播两条 = 「新回合自己的清单从零挂上来」的
+           真实形态；此刻还没有文件改动广播 ⇒ 胶囊应只出步骤区 = 两区独立渲染规则的现场证明。 */
+        const reseededIds = await h.eval(`(async function(){
+          const a = await window.codex.addTask({ text: "验收步骤甲", priority: "medium" });
+          const b = await window.codex.addTask({ text: "验收步骤乙", priority: "low" });
+          return [a && a.id, b && b.id].filter(Boolean); })()`).catch(() => null);
+        let soloSteps = null;
+        for (let i = 0; i < 12; i++) {
+          await wait(250);
+          soloSteps = await h.eval(`(function(){ var p = document.querySelector('.edited-files-pill');
+            if (!p) return null;
+            return { stepsZone: !!document.querySelector('.capsule-zone-steps'),
+              filesZone: !!document.querySelector('.capsule-zone-files'),
+              running: !!document.querySelector('.send-button.is-pause'),
+              text: (p.textContent||'').replace(/\\s+/g,' ').trim() }; })()`).catch(() => soloSteps);
+          if (soloSteps && soloSteps.stepsZone && !soloSteps.filesZone && /步骤\s*0\/2/.test(soloSteps.text)) break;
+        }
+        h.check("④a 运行中步骤区走真链路（真 IPC → tasks-changed 广播 → 胶囊出「步骤 0/2」）；此刻只有步骤区 = 独立居中展示",
+          Array.isArray(reseededIds) && reseededIds.length === 2 && !!soloSteps && soloSteps.stepsZone === true
+            && soloSteps.filesZone === false && soloSteps.running === true && /步骤\s*0\/2/.test(soloSteps.text),
+          JSON.stringify({ reseededIds, soloSteps }).slice(0, 220));
+        /* ④b 悬停左区（步骤）：出步骤清单（两条播种任务原样在列、todo 态、自适应以内）。
+           ⛔ 夜六轮搬到**落盘之前**：此刻回合必然还在跑（后面 ③④ 的慢轮询会滑过回合结束点，
+           旧位置等到那时悬停，胶囊可能已经随收尾消失 —— 实测整组假红）。 */
+        await h.hover(".capsule-zone-steps").catch(() => undefined);
+        await wait(600);
+        const stepsPop = await h.eval(`(function(){
+          var p = document.querySelector('.edited-files-pop');
+          if (!p) return null;
+          var r = p.getBoundingClientRect();
+          return { rows: [...p.querySelectorAll('.turn-step-row span')].map(function(x){ return (x.textContent||'').trim(); }),
+            fits: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth,
+            hasTodo: !!p.querySelector('.turn-step-row:not(.done)') };
+        })()`).catch(() => null);
+        h.check("④b 悬停左区（步骤）：出步骤清单（两条播种任务原样在列、todo 态、自适应以内）",
+          !!stepsPop && (stepsPop.rows ?? []).some((t) => t.includes("验收步骤甲")) && (stepsPop.rows ?? []).some((t) => t.includes("验收步骤乙")) && stepsPop.fits === true,
+          JSON.stringify(stepsPop).slice(0, 240));
+        await h.moveMouseAway().catch(() => undefined);
+        /* ④c/④d 运行中全完成 ⇒ 步骤区隐藏、还原 ⇒ 回来（10-06 夜四轮令；夜六轮把检验点从「收尾后」
+           搬到**运行中**并提到落盘之前 —— 旧位置在回合结束后标记完成，夜六轮起「没在跑就不显示」
+           会把那条断言顶成恒真；提前后 running=true 由同刻采样自证，且不依赖任何慢广播）。 */
+        const midDigest = await h.eval(`(async function(){
+          const list = await window.codex.listTasks();
+          for (const t of list) { await window.codex.updateTask({ id: t.id, patch: { status: "done" } }); }
+          return list.length; })()`).catch(() => 0);
+        let midHidden = null;
+        for (let i = 0; i < 10; i++) {
+          midHidden = await h.eval(`(function(){ return { stepsZone: !!document.querySelector('.capsule-zone-steps'),
+            running: !!document.querySelector('.send-button.is-pause') }; })()`).catch(() => midHidden);
+          if (midHidden && midHidden.stepsZone === false) break;
+          await wait(250);
+        }
+        h.check("④c 运行中全完成 ⇒ 步骤区隐藏（回合仍在跑时断言 —— 不是靠「收尾整卡消失」蹭过的恒真）",
+          midDigest >= 2 && !!midHidden && midHidden.stepsZone === false && midHidden.running === true, JSON.stringify(midHidden));
+        await h.eval(`(async function(){ const list = await window.codex.listTasks();
+          for (const t of list) { await window.codex.updateTask({ id: t.id, patch: { status: "todo" } }); }
+          return 1; })()`).catch(() => undefined);
+        let midBack = null;
+        for (let i = 0; i < 10; i++) {
+          midBack = await h.eval(`!!document.querySelector('.capsule-zone-steps')`).catch(() => midBack);
+          if (midBack === true) break;
+          await wait(250);
+        }
+        h.check("④d 全部还原 todo ⇒ 步骤区回来（证明 ④c 的隐藏是状态驱动，不是清单没了）",
+          midBack === true, `back=${midBack}`);
         /* ③ 回合进行中**分两批**落盘 8 个文件 —— 追踪器 diff 的唯一来源。
            ⛔ 必须在 turn/started（快照已拍）之后写：写入早于快照会进"改前状态"、diff 不报。
            ⛔ 分两批是给「运行中实时行」两次采样窗口：第二批写入后行数必须长出来 = 真在实时更新
              （运行中是运行中的、汇总是汇总 —— 用户 10-06 明确口径；实时行由主进程每 2.5s 轻量重扫广播）。 */
         const LIVE_OURS = ["notes.md", "data.json", "seed.txt", "app.css", "index.html", "util.mjs", "readme.txt", "logo.svg"];
+        /* ⛔ 作用域 = **本回合的组**（turnIdLive）：全局查询会把历史回合的冻结行一起数进来
+           （慢工作区下实测 3 → 16/24 的假"增长"，甚至可能把 ③ 顶成没广播也过的恒真）。 */
         const liveRowsExpr = `(function(){
-          return [...document.querySelectorAll('.live-edit-row')].map(function(r){
+          const g = document.getElementById("turn-" + ${JSON.stringify(turnIdLive)});
+          if (!g) return [];
+          return [...g.querySelectorAll('.live-edit-row')].map(function(r){
             return { text: (r.innerText||'').replace(/\\s+/g,' ').trim().slice(0,120),
               stats: [...r.querySelectorAll('.live-edit-stats b, .live-edit-stats i')].map(function(x){ return x.textContent; }).join(' '),
               icons: r.querySelectorAll('svg').length };
@@ -706,6 +813,31 @@ const CHECKS = [
         h.check("③ 运行中·实时行出现：回合进行中就有「编辑 <文件> +N -M」行（含刚写入的文件，且各自带数字与类型图标）",
           ourLive(liveFirst).length >= 2 && ourLive(liveFirst).every((r) => /[+-]\d/.test(r.stats) && r.icons >= 2),
           JSON.stringify(liveFirst). slice(0, 240));
+        /* ④e 悬停右区（文件）：出文件清单（自适应不被裁、以胶囊中心居中、含我们写的文件）。
+           ⛔ 夜六轮搬到 ③ 之后（首个带文件的实时广播刚落地、回合还在跑）：再晚就要排到 ④ 的
+           慢轮询之后，那时回合可能已收尾、胶囊整卡消失 —— 实测假红。 */
+        if (await h.eval(`!!document.querySelector('.capsule-zone-files')`).catch(() => false)) {
+          await h.hover(".capsule-zone-files").catch(() => undefined);
+          await wait(500);
+        }
+        const capsulePop = await h.eval(`(function(){
+          var p = document.querySelector('.edited-files-pop');
+          var pill = document.querySelector('.edited-files-pill');
+          if (!p) return null;
+          var r = p.getBoundingClientRect();
+          var pr = pill ? pill.getBoundingClientRect() : null;
+          var gap = pr ? Math.abs((r.left + r.width / 2) - (pr.left + pr.width / 2)) : 0;
+          var clamped = r.left <= 9 || r.right >= innerWidth - 9;
+          return { rows: p.querySelectorAll('.edited-files-row').length,
+            fits: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth,
+            centered: gap <= 2 || clamped, gap: Math.round(gap),
+            names: [...p.querySelectorAll('.edited-files-row code')].map(function(c){ return (c.textContent||'').trim(); }) };
+        })()`).catch(() => null);
+        const capsuleOurs = capsulePop ? LIVE_OURS.filter((n) => (capsulePop.names ?? []).some((x) => String(x).toLowerCase().includes(n))).length : 0;
+        h.check("④e 悬停右区（文件）：出文件清单（自适应不被裁、以胶囊中心居中、含我们写的文件）",
+          !!capsulePop && capsulePop.fits === true && capsulePop.centered === true && capsuleOurs >= 2,
+          JSON.stringify({ capsulePop: capsulePop ? { rows: capsulePop.rows, fits: capsulePop.fits, centered: capsulePop.centered, gap: capsulePop.gap } : null, capsuleOurs }).slice(0, 240));
+        await h.moveMouseAway().catch(() => undefined);
         /* ④ 第二批落盘（4 文本 + 1 图片），等行数长出来 —— 证明数字是**跑着跳的**，不是收尾才一次算出。 */
         for (const [fileName, body] of [
           ["app.css", ".a{color:red}\n"],
@@ -723,60 +855,15 @@ const CHECKS = [
         h.check("④ 运行中·实时更新：第二批文件写入后实时行数量长出来（数字是跑着跳的，不是收尾才算）",
           ourLive(liveSecond).length > ourLive(liveFirst).length,
           JSON.stringify({ first: ourLive(liveFirst).length, second: ourLive(liveSecond).length, names: ourLive(liveSecond).map((r) => String(r.text).split(" ")[1] || ""), hint: ourLive(liveSecond).length === 0 ? "实时行整组消失 = 回合先结束了（模型这次没真 sleep，第二批广播赶不上）" : "" }).slice(0, 300));
-        /* ④b-④d 回合状态胶囊（10-06 夜三轮重构 · 用户对照 Qoder：「步骤 0/6 · 5 个文件已修改
-           +177 -8」+「两区都可独立居中展示，多了另一方才拼接」+「放左边=步骤清单，放右边=文件」）：
-           ④b 拼接形态（两区同时在）；④c 悬停右区出文件清单；④d 悬停左区出步骤清单。 */
-        let capsule = null;
-        for (let i = 0; i < 15; i++) {
-          await wait(400);
-          capsule = await h.eval(`(function(){
-            var pill = document.querySelector('.edited-files-pill');
-            if (!pill) return null;
-            return { text: (pill.textContent||'').replace(/\\s+/g,' ').trim(),
-              stepsZone: !!document.querySelector('.capsule-zone-steps'),
-              filesZone: !!document.querySelector('.capsule-zone-files') };
-          })()`).catch(() => capsule);
-          if (capsule && capsule.stepsZone && capsule.filesZone) break;
-          if (!await h.eval(`!!document.querySelector('.send-button.is-pause')`).catch(() => true)) break;
-        }
-        h.check("④b 胶囊拼接：任务清单 + 文件改动同时在 ⇒「步骤 N/M · X 个文件已修改 +N -M」（用户对照 Qoder 的形态）",
-          !!capsule && capsule.stepsZone === true && capsule.filesZone === true && /步骤\s*0\/2/.test(capsule.text) && /个文件已修改/.test(capsule.text),
-          JSON.stringify(capsule).slice(0, 220));
-        if (capsule?.filesZone) await h.hover(".capsule-zone-files").catch(() => undefined);
-        await wait(500);
-        const capsulePop = await h.eval(`(function(){
-          var p = document.querySelector('.edited-files-pop');
-          var pill = document.querySelector('.edited-files-pill');
-          if (!p) return null;
-          var r = p.getBoundingClientRect();
-          var pr = pill ? pill.getBoundingClientRect() : null;
-          var gap = pr ? Math.abs((r.left + r.width / 2) - (pr.left + pr.width / 2)) : 0;
-          var clamped = r.left <= 9 || r.right >= innerWidth - 9;
-          return { rows: p.querySelectorAll('.edited-files-row').length,
-            fits: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth,
-            centered: gap <= 2 || clamped, gap: Math.round(gap),
-            names: [...p.querySelectorAll('.edited-files-row code')].map(function(c){ return (c.textContent||'').trim(); }) };
-        })()`).catch(() => null);
-        const capsuleOurs = capsulePop ? LIVE_OURS.filter((n) => (capsulePop.names ?? []).some((x) => String(x).toLowerCase().includes(n))).length : 0;
-        h.check("④c 悬停右区（文件）：出文件清单（自适应不被裁、以胶囊中心居中、含我们写的文件）",
-          !!capsulePop && capsulePop.fits === true && capsulePop.centered === true && capsuleOurs >= 2,
-          JSON.stringify({ capsulePop: capsulePop ? { rows: capsulePop.rows, fits: capsulePop.fits, centered: capsulePop.centered, gap: capsulePop.gap } : null, capsuleOurs }).slice(0, 240));
-        await h.moveMouseAway().catch(() => undefined);
-        await wait(300);
-        await h.hover(".capsule-zone-steps").catch(() => undefined);
-        await wait(600);
-        const stepsPop = await h.eval(`(function(){
-          var p = document.querySelector('.edited-files-pop');
-          if (!p) return null;
-          var r = p.getBoundingClientRect();
-          return { rows: [...p.querySelectorAll('.turn-step-row span')].map(function(x){ return (x.textContent||'').trim(); }),
-            fits: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth,
-            hasTodo: !!p.querySelector('.turn-step-row:not(.done)') };
-        })()`).catch(() => null);
-        h.check("④d 悬停左区（步骤）：出步骤清单（两条播种任务原样在列、todo 态、自适应以内）",
-          !!stepsPop && (stepsPop.rows ?? []).some((t) => t.includes("验收步骤甲")) && (stepsPop.rows ?? []).some((t) => t.includes("验收步骤乙")) && stepsPop.fits === true,
-          JSON.stringify(stepsPop).slice(0, 240));
-        await h.moveMouseAway().catch(() => undefined);
+        /* ④f 胶囊拼接（10-06 夜三轮重构 · 用户对照 Qoder「步骤 0/6 · 5 个文件已修改 +177 -8」；
+           夜六轮改为读**页内采样日志**）：两区同时在这一拍里的形态 —— 慢工作区（cwd=用户主目录）
+           会把"跑着 + 有文件广播"的窗口整段推过回合结束，CDP 轮询等到收尾也等不到（实测 ④b
+           整组假红）；采样器 300ms 一拍与回合时序解耦，窗口出现过就必被记下。 */
+        const capLog = await h.eval(`JSON.stringify(window.__capLog||[])`).then((raw) => JSON.parse(raw || "[]")).catch(() => []);
+        const concatSeen = capLog.find((e) => e.running === true && e.steps === true && e.files === true
+          && /步骤\s*0\/2/.test(e.text || "") && /个文件已修改/.test(e.text || ""));
+        h.check("④f 胶囊拼接：任务清单 + 文件改动同时在 ⇒「步骤 N/M · X 个文件已修改 +N -M」（采样日志命中；运行中形态）",
+          !!concatSeen, JSON.stringify({ samples: capLog.length, hit: concatSeen ?? null }).slice(0, 220));
         /* ⑤ 等回合收尾（真 turn/completed → 主进程结算广播；收尾会先清 live 再发最终报告）。 */
         let ended = false;
         for (let i = 0; i < 600; i++) {
@@ -892,15 +979,17 @@ const CHECKS = [
         await wait(300);
         const afterCollapse = await h.eval(`(function(){ const c=${cardSel}; return c? c.querySelectorAll('.completed-file').length : 0; })()`);
         h.check("⑭ 收起重回 2 行（收纳闭合往返）", afterCollapse === 2, `afterCollapse=${afterCollapse}`);
-        /* ⑮ 收尾后：**文件区**消失（收尾由汇总卡接管）；**任务清单区保留**（有清单就有 —— 用户
-           10-06 夜口径：任务清单还在就得能看到；两区独立渲染规则的另一半）。 */
-        const afterSettle = await h.eval(`(function(){ var card = document.querySelector('.edited-files-card');
-          if (!card) return { card: false };
-          return { card: true, filesZone: !!document.querySelector('.capsule-zone-files'),
-            stepsZone: !!document.querySelector('.capsule-zone-steps'),
-            text: (document.querySelector('.edited-files-pill')?.textContent||'').replace(/\\s+/g,' ').trim() }; })()`);
-        h.check("⑮ 回合结束后：文件区消失（收尾由汇总卡接管）、任务清单区保留（步骤 N/M 仍在）",
-          !!afterSettle && afterSettle.card === true && afterSettle.filesZone === false && afterSettle.stepsZone === true && /步骤\s*0\/2/.test(afterSettle.text || ""),
+        /* ⑮ 收尾后：**文件区与步骤区双双消失 = 胶囊整卡不渲染**（10-06 夜六轮，用户实测「清单不会
+           自动消失」「新回合，旧的任务清单还在」—— 两区同款：只活在回合运行中，与文件区的收尾
+           行为对齐）。此刻库里 [甲,乙] 仍是 todo（④e2 还原过）⇒ 消失只能来自「没在跑」这条规则，
+           不是全完成蹭出来的。⛔ 清单仍在库里 = 隐藏不是删除（跨回合残留由下一回合开工清）。 */
+        const afterSettle = await h.eval(`(async function(){
+          const list = await window.codex.listTasks();
+          return { card: !!document.querySelector('.edited-files-card'),
+            running: !!document.querySelector('.send-button.is-pause'),
+            stepsInStore: list.filter(function(t){ return String(t.text||"").startsWith("验收步骤"); }).length }; })()`);
+        h.check("⑮ 回合结束后：文件区与步骤区双双消失（胶囊整卡不渲染；清单仍在库里 2 条 = 隐藏不是删除）",
+          !!afterSettle && afterSettle.card === false && afterSettle.running === false && afterSettle.stepsInStore === 2,
           JSON.stringify(afterSettle));
         /* ⑯ 汇总卡行悬停出 diff 预览（10-06 用户图一：「鼠标放到汇总的修改的文件名上」；
             自适应落位不许被裁、左缘与该行对齐、含 @@ 差分行）。
@@ -967,22 +1056,14 @@ const CHECKS = [
         await wait(500);
         const previewGone = await h.eval(`!document.querySelector('.completed-diff-preview')`);
         h.check("⑰ 鼠标移开后预览自动收起（不残留浮层）", previewGone === true, `stillOpen=${!previewGone}`);
-        /* ⑱a 全部标记完成 ⇒ 胶囊自动隐藏（用户 10-06 夜四轮：「Codex 任务跑完，任务清单小胶囊没有
-           自动消失」）。此时无文件区（已收尾）⇒ 两区都没了 = 整卡不渲染。 */
+        /* ⑱a（10-06 夜六轮删除）：旧版「收尾后标记全完成 ⇒ 胶囊隐藏」在「没在跑就不渲染」生效后
+           退化成恒真断言（收尾本来就不显示）。「全部完成 ⇒ 步骤区隐藏」的唯一有效检验点搬到了
+           运行中的 ④e/④e2。 */
+        /* ⑱b 清理播种（10-06 夜三轮；夜六轮改为整库清）：任务库**全部清空** ⇒ 胶囊保持不渲染
+           （清理 + 收口）。⛔ 收尾必删：播种落在持久 profile 的任务库里，泄漏会污染后续轮次；
+           整库清是因为运行中可能混入模型自建的清单。 */
         await h.eval(`(async function(){ const list = await window.codex.listTasks();
-          for (const t of list) { if (String(t.text||'').startsWith("验收步骤")) await window.codex.updateTask({ id: t.id, patch: { status: "done" } }); } return 1; })()`).catch(() => undefined);
-        let hiddenAfterDone = false;
-        for (let i = 0; i < 10; i++) {
-          await wait(300);
-          hiddenAfterDone = await h.eval(`!document.querySelector('.edited-files-card')`).catch(() => false);
-          if (hiddenAfterDone) break;
-        }
-        h.check("⑱a 全部完成 ⇒ 胶囊自动隐藏（跑完自动消失）", hiddenAfterDone === true, `hidden=${hiddenAfterDone}`);
-        /* ⑱b 清理播种（10-06 夜三轮）：删掉两条任务 ⇒ 胶囊保持不渲染（清理 + 收口）。
-           ⛔ 收尾必删：播种落在持久 profile 的任务库里，泄漏会污染后续轮次。 */
-        if (Array.isArray(seededIds) && seededIds.length) {
-          await h.eval(`(async function(){ for (const id of ${JSON.stringify(seededIds)}) { await window.codex.deleteTask(id); } return 1; })()`).catch(() => undefined);
-        }
+          for (const t of list) { await window.codex.deleteTask(t.id); } return 1; })()`).catch(() => undefined);
         let capsuleGone = false;
         for (let i = 0; i < 10; i++) {
           await wait(300);

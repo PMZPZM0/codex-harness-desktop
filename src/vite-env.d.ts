@@ -614,6 +614,7 @@ interface Window {
     addTask(input: { text: string; priority?: string }): Promise<any>;
     updateTask(input: { id: string; patch: unknown }): Promise<any>;
     deleteTask(id: string): Promise<void>;
+    clearTasks(): Promise<void>;
     deleteMemory(id: string): Promise<void>;
     resetMemory(): Promise<void>;
     getMemoryGateway(): Promise<any>;

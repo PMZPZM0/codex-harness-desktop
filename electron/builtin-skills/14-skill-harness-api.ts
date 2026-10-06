@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（85 个能力域 / 424 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（85 个能力域 / 425 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -361,9 +361,9 @@ IM 通道 Bot（把某个会话接到 IM 机器人上）
 RPA 配方（录制好的桌面自动化流程）
 通道：rpa:delete, rpa:list, rpa:record, rpa:save
 
-### tasks（4 通道）
+### tasks（5 通道）
 任务清单（用户待办，可从对话生成）
-通道：tasks:add, tasks:delete, tasks:list, tasks:update
+通道：tasks:add, tasks:clear, tasks:delete, tasks:list, tasks:update
 
 ### scheduler（4 通道）
 定时任务（一次性/周期：创建/启停/列表/手动运行）。save 支持 deliver:{channel:'weixin',to?}——到点执行后把回合结论主动推给微信用户（to 缺省=最近对话用户）

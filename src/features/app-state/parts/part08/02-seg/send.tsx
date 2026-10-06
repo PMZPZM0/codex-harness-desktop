@@ -397,6 +397,15 @@ export async function send(bag: Bag, event?: FormEvent) {
       bag.setContextItems([]);
       bag.setImages([]);
       bag.activeModelRef.current = bag.selectedModel?.model ?? modelName(bag.modelId);
+      /* 新一轮开工先清上一轮的任务清单（10-06 夜六轮，用户实测「新回合，旧的任务清单还在」）：
+         步骤区只在回合运行中显示，不清的话，上一轮停下的 todo/doing 清单会在新回合里整段冒出来；
+         清空走 tasks:clear 真通道 + tasks-changed 广播（胶囊即刻归零，模型 task_list 读到空清单、
+         按需重建）。⛔ 必须用**类型化宿主方法** `window.codex.clearTasks()` —— `codex.request()`
+         是**引擎 RPC**（真跑实测把 tasks:clear 转给 app-server → unknown variant 报错、被 catch
+         吞掉，表现成"清了但没清"）；⛔ 必须在首个 startTurn 之前 await 落地（顺序反了会把模型
+         刚建的新清单清掉）；⛔ 只挂这条「空闲直发」路径 —— 上面排队分支此刻旧回合还在跑，
+         它的清单要保留；引擎自续的 goal 回合不走 send()，同样不受影响。 */
+      await window.codex.clearTasks().catch(() => undefined);
       let result: any;
       try {
         result = await startTurn(active);
