@@ -1164,6 +1164,16 @@ const CHECKS = [
         return !!(el && el.getBoundingClientRect().height > 0); })()`).catch(() => false);
       h.check("① 前置：拖动把手在且可见（找不到整项作废，不许往下假通过）", ready === true, `ready=${ready}`);
       if (!ready) return;
+      /* ①b 把手**骑在输入框顶边框上**（10-06 夜九轮用户令「放到输入框边框上，不要放里面，
+         可以稍微长一点点」）：把手中线 == .composer 顶边框线（±2px）；胶囊宽度按「加长后」查
+         （≥50px，内置旧版 40px 会红）。 */
+      const saddle = await h.eval(`(function(){ var el=document.querySelector('.composer-resize-handle');
+        var box=document.querySelector('.composer'); if(!el||!box) return null;
+        var hr=el.getBoundingClientRect(); var br=box.getBoundingClientRect();
+        var grip=el.querySelector('.composer-resize-grip'); var gr=grip?grip.getBoundingClientRect():null;
+        return { handleMid: Math.round((hr.top+hr.bottom)/2), borderY: Math.round(br.top), gripW: gr?Math.round(gr.width):0 }; })()`).catch(() => null);
+      h.check("①b 把手骑在输入框顶边框上（中点贴边框线 ±2px）+ 胶囊已加长（≥50px）",
+        !!saddle && Math.abs(saddle.handleMid - saddle.borderY) <= 2 && saddle.gripW >= 50, JSON.stringify(saddle));
       const heightOf = () => h.eval(`Math.round(document.querySelector('.composer-editor').getBoundingClientRect().height)`).catch(() => 0);
       /* ⛔ 合成拖拽必须**分 tick 派发**（pointerdown → 等一拍 → move → 等一拍 → up）：
          组件的 window 监听是在 pointerdown 之后的 effect 里才挂上的 —— 同一同步块连发会把
