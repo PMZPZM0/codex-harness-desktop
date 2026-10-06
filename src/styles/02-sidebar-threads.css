@@ -495,7 +495,8 @@
   white-space: nowrap;
   cursor: text;
   border-radius: 5px;
-  max-width: min(42vw, 380px);
+  /* 10-06 夜七轮：定长（用户「标题长度固定，太长的就省略，不要撑长」）—— 原来是随窗口变的 min(42vw,380px) */
+  max-width: 300px;
   font-size: 14px;
   overflow: hidden;
 }
@@ -512,7 +513,8 @@
 .task-title input {
   border: 1px solid var(--line);
   background: var(--panel);
-  width: min(42vw, 380px);
+  /* 与展示态 strong 同宽（重命名时不跳宽） */
+  width: 300px;
   height: 27px;
   color: var(--text);
   border-radius: 6px;

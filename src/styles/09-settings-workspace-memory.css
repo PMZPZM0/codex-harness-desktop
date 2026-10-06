@@ -319,14 +319,16 @@
        ⇒ 浮层继续渲染在顶栏右侧、压在原生窗口钮（最小化/最大化/关闭）上面。
        探针实测窗口 651px 宽时该浮层与右上 145px 预留区相交。
      同时兜底关掉状态位：浮层开着时按钮被隐藏，用户就再也点不掉了（卡死）。 */
-  .topbar-actions .ctx-picker,
-  .topbar-actions .tb-workspace,
+  /* 10-06 夜七轮：📁 工作区已挪进 .task-title 标题最前（AppView.tsx）—— 选择器前缀跟着换 */
+  .task-title .ctx-picker,
+  .task-title .tb-workspace,
   .topbar-actions .popout-open-btn,
   .topbar-actions .popout-return-btn {
     display: none;
   }
-  /* 防「开着浮层 → 缩窄 → 按钮消失 → 点不掉」的死角：窄屏下浮层一律不渲染 */
-  .topbar-actions .ctx-menu {
+  /* 防「开着浮层 → 缩窄 → 按钮消失 → 点不掉」的死角：窄屏下浮层一律不渲染
+     （逻辑兜底见 part01/06-goals-palette-commands.tsx 的 matchMedia 关状态，守卫【250】钉） */
+  .task-title .ctx-menu {
     display: none;
   }
 }

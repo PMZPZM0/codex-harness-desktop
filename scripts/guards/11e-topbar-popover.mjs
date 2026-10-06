@@ -29,6 +29,9 @@ let checks = 0, fails = 0;
 const ok = (c, m) => { checks++; console.log(`  ${c ? "✓" : "✗"} 【popover】${m}`); if (!c) fails++; };
 
 const seg = readFileSync(join(ROOT, "src/features/app-state/parts/part09/02-seg.tsx"), "utf8");
+/* 10-06 夜七轮：📁 工作区（.ctx-picker）+ 它的 ctx-menu 随按钮挪去 AppView.tsx 的**标题最前**
+   —— 下面「ctx-menu 必须 portal」与「portal 计数」两条覆盖源都扩到该文件。 */
+const appView = readFileSync(join(ROOT, "src/features/app-view/AppView.tsx"), "utf8");
 const dispatch = readFileSync(join(ROOT, "src/features/dispatch/DispatchMenu.tsx"), "utf8");
 const hook = readFileSync(join(ROOT, "src/features/app-view/hooks/useAnchoredPopover.ts"), "utf8");
 const cssTopbar = readFileSync(join(ROOT, "src/styles/02-sidebar-threads.css"), "utf8");
@@ -56,12 +59,14 @@ const portalledAfter = (src, marker) => {
   const viaBefore = before >= 0 && /document\.body/.test(src.slice(before, m));
   return after >= 0 || viaBefore;
 };
-ok(portalledAfter(seg, '"task-menu ctx-menu'), "ctx-menu 已 portal 到 body");
+ok(portalledAfter(seg, '"task-menu ctx-menu') || portalledAfter(appView, '"task-menu ctx-menu'),
+  "ctx-menu 已 portal 到 body（10-06 夜七轮起在 AppView.tsx 标题区 —— 顶栏 overflow 裁剪一样会裁它）");
 ok(portalledAfter(seg, '"task-menu task-menu'), "task-menu 已 portal 到 body");
 ok(portalledAfter(dispatch, "dispatch-pop"), "dispatch-pop 已 portal 到 body");
 // 兜底：三处都真的调了 createPortal（防止上面某个 marker 改名后静默通过）
 const portalCount = (src) => (src.match(/createPortal\(/g) || []).length;
-ok(portalCount(seg) >= 3, `顶栏段共 ${portalCount(seg)} 处 createPortal（搜索面板 + ctx + task）`);
+ok(portalCount(seg) >= 2 && portalCount(appView) >= 1,
+  `顶栏段共 ${portalCount(seg) + portalCount(appView)} 处 createPortal（搜索 + task 在 02-seg，ctx 随 📁 挪到 AppView）`);
 ok(portalCount(dispatch) >= 1, `DispatchMenu 有 ${portalCount(dispatch)} 处 createPortal`);
 
 // ── ②③ fixed 变体类 ──

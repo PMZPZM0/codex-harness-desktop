@@ -1033,6 +1033,8 @@
 }
 .ctx-picker {
   position: relative;
+  /* 10-06 夜七轮挪进 .task-title 标题最前（📁 工作区图标）：flex 行里不许被压扁 */
+  flex: none;
 }
 .ctx-menu {
   min-width: 220px;

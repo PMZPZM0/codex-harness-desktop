@@ -4,7 +4,9 @@
  * · 本文件持有原 App() 的 751 个解构绑定与 1,840 行 JSX，**逐字未改**。
  * · props 类型 = useHarnessApp() 的返回类型（type-only import ⇒ 运行时零依赖）。
  */
+import { createPortal } from "react-dom";
 import { hk } from "../../lib/hk";
+import { basename } from "../../lib/basename";
 import {
   AlertTriangle,
   Archive,
@@ -222,7 +224,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     connectorSaving, connectorSearch, connectorSecret, connectorStatusBusy,
     connectorTemplateModal, connectorTemplateSaving, connectorTemplateValues, connectorTemplates,
     connectors, connectorsManageOnly, contentTailTarget, contextItems,
-    contextOpen, copyImage, copyThreadReferenceId, currentModelId,
+    contextOpen, copyImage, copyThreadReferenceId, ctxBtnRef, ctxMenuOpen, ctxMenuStyle, currentModelId,
     currentProvider, customCommands, customDraft, customModel,
     delegatedPopupId, delegatedPopupRun, deleteExpertTeam,
     deleteMemoryGroup, deleteMemoryRecord, deleteQueued, deleteSchedule,
@@ -318,7 +320,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     setCommandSearch, setCompactEventState, setCompactToast, setConnectorChecked,
     setConnectorDraft, setConnectorEditorOpen, setConnectorEnabled, setConnectorMenuOpen,
     setConnectorOAuth, setConnectorSearch, setConnectorSecret, setConnectorTemplateModal,
-    setConnectorTemplateValues, setConnectorsManageOnly, setContextOpen, setCustomDraft,
+    setConnectorTemplateValues, setConnectorsManageOnly, setContextOpen, setCtxMenuOpen, setCustomDraft,
     setDelegatedPopupId, setDoneExpanded, setDramaCanvasOpen, setEditingProvider, setEnvCheckOpen,
     setExpertQuery, setExpertTeamDraft, setExpertTeamEditorOpen, setFileDraft,
     setFileEditing, setFilePreview, setGoalText, setGoalsDocked,
@@ -420,6 +422,22 @@ export function AppView({ app }: { app: HarnessAppApi }) {
         {sidebarCollapsed && !narrow && <button className="icon-button sidebar-reveal" title="展开侧边栏" onClick={() => { setSidebarCollapsed(false); setSidebarFlyout(false); localStorage.setItem("sidebar-collapsed", "false"); }}><Menu size={18} /></button>}
         <button className="icon-button mobile-menu" title="打开导航" onClick={() => setMobileNav(!mobileNav)}><Menu size={18} /></button>
         <div className={`task-title ${activeThreadRunning ? "running" : "ready"}`}>
+          {/* 工作区上下文（📁）：10-06 夜七轮从右侧操作簇挪到**标题最前**（用户：「把文件图标放到最前面」，
+              截图圈的就是右簇那个 📁）。点击开菜单 = 选择/切换工作区目录；窄屏（≤760px）隐藏规则
+              见 09-settings-workspace-memory.css；守卫【250】的覆盖率清单跟着本位置走。 */}
+          <div className="ctx-picker">
+            <button ref={ctxBtnRef} className="icon-button tb-workspace" title="工作区上下文（当前会话使用的项目目录）" onClick={() => setCtxMenuOpen((current) => !current)}><FolderOpen size={16} /></button>
+            {ctxMenuOpen && <>
+              <div className="menu-backdrop" onClick={() => setCtxMenuOpen(false)} />
+              {createPortal(
+                <div className="task-menu ctx-menu ctx-menu-fixed" role="menu" style={ctxMenuStyle}>
+                  <button onClick={() => { setCtxMenuOpen(false); void chooseWorkspace(); }}><FolderOpen size={14} />{workspace ? "选择其他目录…" : "选择工作区目录"}</button>
+                  {workspace && <button onClick={() => setCtxMenuOpen(false)}><FolderOpen size={14} /><span className="ctx-current-name">资源管理器 · {basename(workspace)}</span><Check size={14} className="ctx-check" /></button>}
+                </div>,
+                document.body,
+              )}
+            </>}
+          </div>
           {inlineRename ? <input ref={inlineRenameRef} value={renameDraft} aria-label="任务名称" onChange={(event) => setRenameDraft(event.target.value)} onBlur={saveInlineRename} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); saveInlineRename(); } if (event.key === "Escape") { event.preventDefault(); setInlineRename(false); } }} /> : <strong title="双击修改任务名称" onDoubleClick={() => { if (!thread) return; setRenameDraft(cleanThreadDisplayTitle(thread.name, { preview: thread.preview })); setInlineRename(true); queueMicrotask(() => { inlineRenameRef.current?.focus(); inlineRenameRef.current?.select(); }); }}>{cleanThreadDisplayTitle(thread?.name, { preview: thread?.preview, fallback: cleanThreadDisplayTitle(switchingMeta?.name, { preview: switchingMeta?.preview, fallback: "新任务" }) })}</strong>}
           <span>{workspace || "尚未选择工作区"}</span>
           {subAgentRunning && <span className="subagent-badge" title={`子智能体「${subAgentRunning}」执行中`}><Bot size={13} className="subagent-pulse" /><em>{subAgentRunning}</em><i>执行中</i></span>}
