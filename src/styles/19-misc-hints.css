@@ -353,9 +353,12 @@
   /* 与右栏开关同尺寸，视觉对称 */
 }
 .popout-open-btn:not(:disabled):hover {
-  color: var(--accent, #4f7cff);
+  /* 10-06：这条 (0,3,0) 比 `.icon-button:hover` 更具体 ⇒ 会把 ic-violet 刷成主色。
+     改成读 `--ic`（回落仍是原来的 --accent）⇒ 挂了色相的常亮，没挂的零回归。 */
+  color: var(--ic, var(--accent, #4f7cff));
 }
 .popout-return-btn {
+  /* ⛔ 这个按钮**故意**用主色（返回主应用是唯一动作，不是分类）⇒ 不挂 ic-*、不加 var(--ic)。 */
   color: var(--accent, #4f7cff);
 }
 .popout-return-btn:hover {

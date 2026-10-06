@@ -348,7 +348,7 @@ bag.earlyView = earlyView as typeof bag.earlyView;
   const topbarActionsNode = (
     <>
       {bag.popoutThreadId ? (
-        <button className="icon-button popout-return-btn ic-violet" title="返回主应用（关闭本独立窗口）" onClick={() => void window.codex.popoutClose(bag.thread?.id ?? null)}><Minimize2 size={16} /></button>
+        <button className="icon-button popout-return-btn" title="返回主应用（关闭本独立窗口）" onClick={() => void window.codex.popoutClose(bag.thread?.id ?? null)}><Minimize2 size={16} /></button>
       ) : (
         <>
           {/* 当前会话搜索（09-24）：顶栏 🔍 打开搜索条。只搜当前会话的消息，点结果跳到那条消息。 */}
