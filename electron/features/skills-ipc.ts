@@ -27,6 +27,8 @@ import type { InstalledMarketSkill, MarketSkill } from "../skills-market";
 import { describeSkillPool, readGlobalDisabled, setSkillPoolState } from "../skill-pool";
 import { sendToWindow } from "./window-bus";
 import { refreshSkillDiscipline, skillsRegistryFile, userSkillsDir } from "../main";
+import { refreshDeveloperInstructions } from "../main/12-skill-discipline";
+import { isOutputStyleSkill } from "../output-styles";
 import { codexHome, mainWindow, server } from "../runtime-refs";
 import { globalSkillsDir } from "../skill-pack";
 import { setSkillEnabledSilent } from "../skill-store";
@@ -275,6 +277,10 @@ export const skillsFeature = defineFeature<null>({
         });
         // 与全局启停同一刷新链（AGENTS.md 守则区间的 MCP 清单仍走这）
         await refreshSkillDiscipline().catch(() => undefined);
+        /* 输出风格类技能的启停 = developer_instructions 的内容变了 ⇒ 必须重下发
+           （见 ../output-styles.ts 的文件头）。⛔ 只对风格技能这么做：其余技能启停
+           与常驻指令无关，不该为此重启引擎。 */
+        if (isOutputStyleSkill(String(input?.name ?? ""))) await refreshDeveloperInstructions();
         return { ok: true };
       } catch (error: any) {
         return { ok: false, error: error?.message ?? String(error) };
@@ -286,7 +292,9 @@ export const skillsFeature = defineFeature<null>({
        池面板按项目管（globalDisabled + projectDisabled），控制台这个开关是**跨项目的总开关**。
        ⇒ 不新增第二份状态（否则两处会各说各话）。
        `cwd` 可空：控制台可能在还没打开工作区时就被点 —— 全局集与 cwd 无关，投影里那部分照常生效
-       （`readSkillPool("")` 已按"无项目 ⇒ 空集"处理，不读相对路径）。 */
+       （`readSkillPool("")` 已按"无项目 ⇒ 空集"处理，不读相对路径）。
+       ⛔ 开启 ≠ 生效（10-06 用户报障）：技能在磁盘上只代表引擎**能发现**它，用不用由模型判断
+       —— 风格类技能必须由宿主把开关翻成常驻指令才算生效（../output-styles.ts）。 */
     const builtinSwitchState = (name: string) => {
       if (!existsSync(path.join(globalSkillsDir(codexHome), name))) return { name, enabled: false, available: false };
       return { name, enabled: !readGlobalDisabled(codexHome).has(name), available: true };
@@ -307,6 +315,10 @@ export const skillsFeature = defineFeature<null>({
         setSkillPoolState(String(input?.cwd ?? ""), name, { globalDisabled: input?.enabled === false });
         // 与全局启停同一刷新链（守则区间的 MCP 清单仍走这）
         await refreshSkillDiscipline().catch(() => undefined);
+        /* ⛔⛔ 开关语义的最后一环（10-06 用户报障「要我点名才生效」）：
+           把新状态翻成常驻指令下发给引擎。没这一句，开关只管"技能文件在不在"——
+           模型照样不会主动用（渐进披露 + 该技能的 description 自称手动模式）。 */
+        if (isOutputStyleSkill(name)) await refreshDeveloperInstructions();
         return builtinSwitchState(name);
       } catch (error: any) {
         return { name: String(input?.name ?? ""), enabled: false, available: false, error: error?.message ?? String(error) };

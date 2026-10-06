@@ -65,8 +65,8 @@ export function BuiltinSkillSwitch({ skill, title, desc, onNotice }: {
         disabled={busy || state === null || missing}
         label={title}
         title={missing ? "技能目录不存在，无法切换"
-          : enabled ? "关闭后模型不再加载这份写作风格说明（只影响写法，不影响能力）"
-          : "开启后模型会加载这份写作风格说明"}
+          : enabled ? "开启中：每一轮回复都按这份风格写（只影响写法，不影响能力）。关闭后恢复默认写法"
+          : "开启后每一轮回复都按这份风格写，不需要点名（只影响写法，不影响能力）"}
         onChange={toggle}
       />
     </div>

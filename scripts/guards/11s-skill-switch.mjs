@@ -94,8 +94,40 @@ ok(/globalOff \? \{ globalDisabled: false \} : \{ projectDisabled: active \}/.te
 ok(!/disabled=\{globalOff/.test(codeOnly(poolUi)),
   "⛔ 负向：不许再把全局停用态的开关禁用掉（那就是没有恢复入口的死胡同）");
 
-/* ── ④ 通道与 registry 账本 ───────────────────────────────────────────── */
-const CHANNELS = ["skills:builtin-switch-get", "skills:builtin-switch-set"];
+/* ── ③c 输出风格：开关状态必须翻成**常驻指令**（10-06 用户报障后补）──────────────
+   用户原话：「这个没有自动生效，要我点名才生效」。根因不是开关坏了，而是开关只管
+   「技能文件在不在磁盘上」—— 引擎对技能是**渐进披露**的：技能清单只给 name + description
+   + 路径，读不读由模型自己判断；而这份技能的 description 开头就是 "Invoke with /i-have-adhd"，
+   模型把它当**手动模式**⇒ 只做磁盘改名永远不会自动生效。
+   ⛔ 所以判据不是「指令文案写得好不好」（测不了），而是**接线**：
+      开关 → 技能池真相源 → output-styles 名单 → developer_instructions → 重写 + 重启引擎。
+   ⛔ 顺带钉住一条被推翻的旧认知：技能的 `disable-model-invocation: true` **引擎不执行**
+      （10-06 二进制取证：该字段只出现在技能编写规范文本 + 校验**插件内**技能的 Python 脚本里，
+      而那条规则的内容是「必须是 false」；`$CODEX_HOME/skills/` 不走那个校验）。
+      它既不是不生效的原因，也不构成障碍 —— 别拿它当理由去改技能原文（【82】仍钉逐字保留）。 */
+const styleSrc = read("electron/output-styles.ts");
+const styleCode = codeOnly(styleSrc);
+const devInstSrc = read("electron/developer-instructions.ts");
+const skillDisciplineSrc = read("electron/main/12-skill-discipline.ts");
+ok(/skill:\s*"i-have-adhd"/.test(styleCode), "输出风格名单登记 i-have-adhd（单一真相源，新增风格只改这一行）");
+ok(/isOutputStyleSkill/.test(styleCode) && /readGlobalDisabled\(codexHome\)/.test(styleCode),
+  "⛔ 生效判据只认技能池的全局停用集（与控制台开关、池面板同一份真相源）");
+ok(!/writeFileSync|writeFile\(|localStorage|setItem/.test(styleCode),
+  "⛔ 负向：输出风格模块**只读**，不另存一份状态（两份状态必然各说各话）");
+ok(/outputStyleTargets\(codexHome\)/.test(codeOnly(skillDisciplineSrc)),
+  "⛔⛔ devInstructionsInput 把生效风格接进组装输入（漏这行 = 开关只在磁盘上改名，指令永远不动）");
+ok(/if \(input\.outputStyles\?\.length\) text \+= OUTPUT_STYLE_INSTRUCTIONS\(input\.outputStyles\)/.test(codeOnly(devInstSrc)),
+  "⛔ buildDevInstructions 真的消费 outputStyles（不是收下就丢）");
+ok(devInstSrc.indexOf("OUTPUT_STYLE_INSTRUCTIONS(input.outputStyles)") < devInstSrc.indexOf("if (desktop) text += DESKTOP_INSTRUCTIONS"),
+  "⛔ 风格段排在工具箱说明**之前**（排在一长串工具说明后面会被当成又一条可选建议）");
+ok((codeOnly(skillsIpcSrc).match(/refreshDeveloperInstructions\(\)/g) || []).length >= 2,
+  "⛔ 两个入口（控制台开关 + 技能池面板）改完都重下发常驻指令");
+ok(/if \(isOutputStyleSkill\(name\)\) await refreshDeveloperInstructions\(\)/.test(codeOnly(skillsIpcSrc)),
+  "⛔ 控制台那条按名字判据触发（不是无条件重启引擎：其余技能启停与常驻指令无关）");
+ok(/if \(model\) await applyCustomModel\(model\)/.test(codeOnly(skillDisciplineSrc)) && /await server\.restart\(\)/.test(codeOnly(skillDisciplineSrc)),
+  "⛔⛔ 重下发必须落到重写 config.toml / 重启引擎 —— 引擎只在 spawn 时读 config.toml，只改文件 = 改了没生效");
+
+/* ── ④ 通道与 registry 账本 ───────────────────────────────────────────── */const CHANNELS = ["skills:builtin-switch-get", "skills:builtin-switch-set"];
 for (const ch of CHANNELS) {
   const entry = manifest.channels.find((c) => c.channel === ch);
   ok(Boolean(entry), `manifest 登记 ${ch}`);
@@ -140,6 +172,9 @@ try {
   require(path.join(E, "runtime-paths.js")).initRuntimePaths();
   const builtin = require(path.join(E, "builtin-skills.js"));
   const pool = require(path.join(E, "skill-pool.js"));
+  const styles = require(path.join(E, "output-styles.js"));
+  const devInst = require(path.join(E, "developer-instructions.js"));
+  const home = path.join(userData, "codex-home");
 
   const skillsDir = path.join(userData, "codex-home", "skills");
   const dir = path.join(skillsDir, NAME);
@@ -153,10 +188,30 @@ try {
   const s1 = snap();
   ok(s1.on === true && s1.poolOff === false, "真跑：默认状态 = 开启");
 
+  /* ── 输出风格：开关 ⇄ 常驻指令的翻译（静态看不出对错，必须真跑）──────────────
+     「开启」的交付物不是磁盘上那个文件，而是**模型每轮都会读到的指令**。 */
+  const onTargets = styles.outputStyleTargets(home);
+  ok(onTargets.length === 1 && onTargets[0].skill === NAME,
+    "真跑：开启态下风格名单含该技能（1 条）");
+  ok(existsSync(onTargets[0].file), "真跑：指令点名的 SKILL.md 真实存在（不是读不到的空指引）");
+  ok(styles.isOutputStyleSkill(NAME) === true && styles.isOutputStyleSkill("humanizer") === false,
+    "真跑：只有登记过的技能算输出风格（其余技能启停不该重启引擎）");
+  const onLine = devInst.developerInstructionsLine({ desktop: false, browser: false, outputStyles: onTargets });
+  /* ⛔ Windows 路径写进 TOML 必须被转义（`tomlSafe`：裸的 `\C` 是非法转义，会让整份 config.toml
+     解析失败）⇒ 断言要比**转义后**的形态；引擎解析后模型看到的才是单反斜杠的原路径。
+     这条断言第一版就写错了（拿原路径比转义后的文本 ⇒ 假红），真跑当场抓出来。 */
+  const tomlEscaped = (value) => String(value).replaceAll("\\", "\\\\");
+  ok(onLine.includes(tomlEscaped(onTargets[0].file)) && /OUTPUT STYLE MODE/.test(onLine),
+    "真跑：下发的指令文本里真的带上了这份风格与它的绝对路径（TOML 转义形态）");
+  ok(!/OUTPUT STYLE MODE/.test(devInst.developerInstructionsLine({ desktop: false, browser: false, outputStyles: [] })),
+    "真跑：没有生效风格时指令里连这一段都不出现（不留残影）");
+
   /* 关掉 → 落盘持久化 */
   pool.setSkillPoolState(projectDir, NAME, { globalDisabled: true });
   const s2 = snap();
   ok(s2.on === false && s2.poolOff === true, "真跑：关掉后磁盘改名（引擎扫不到 = 不生效）");
+  ok(styles.outputStyleTargets(home).length === 0,
+    "真跑：关掉后风格名单为空（那条常驻指令跟着消失 = 真的不生效，而不是只藏了文件）");
   ok(readFileSync(path.join(userData, "codex-home", "skill-global-disabled.json"), "utf8").includes(NAME),
     "真跑：停用已写进全局停用集（唯一真相源）");
 
