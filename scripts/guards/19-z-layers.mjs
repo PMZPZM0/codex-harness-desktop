@@ -6,7 +6,7 @@
  * `.modal-backdrop`（帮助/插件配置/环境检查/模型引导）只有 30，同样低于画布 90。
  *
  * 层级带（DESIGN.md「层叠层级带」表）：
- *   主界面 <30 < 设置内 backdrop 80~97 < 画布 90 < 全局模态 400 < 轻浮层 1000/1001
+ *   主界面 <30 < **思考浮窗宿主 60** < 设置内 backdrop 80~97 < 画布 90 < 全局模态 400 < 轻浮层 1000/1001
  *   < 面板级 9500 < toast 9999~99999 < composer 10000~12000
  *
  * 判据（读 CSS 真值，不做「文件存在」检查）：
@@ -14,6 +14,8 @@
  *  ② 轻浮层必须高于全局模态（否则模态框里的下拉被遮罩盖住、点不动）
  *  ③ 画布域组件不许 createPortal（portal 出去就落主界面层，与画布 90 比大小必被盖）
  *  ④ 画布内弹层仍用 .drama-canvas-modal-mask（不许自造）
+ *  ⑤ 思考浮窗宿主 60 档 + 挂壳根 + 浮窗 portal 到它（10-06 用户实测「办公室预览被运行中的
+ *     思考板块盖住」：body 级 z 会压住 isolation 壳内的一切 z）
  */
 import { C, ROOT, join, ok, fail, readFileSync, readdirSync } from "./_ctx.mjs";
 
@@ -70,5 +72,24 @@ export async function run() {
   const projects = readFileSync(join(dir, "DramaProjectsPanel.tsx"), "utf8");
   (projects.includes('className="drama-canvas-modal-mask"') ? ok : fail)(
     "【198】项目面板用画布统一遮罩类（.drama-canvas-modal-mask —— 层级由画布 stacking context 决定）"
+  );
+
+  // ⑤ 思考浮窗宿主（10-06 夜，用户实测「办公室预览被运行中的思考板块盖住」）：
+  //    body 级 z-index 会压住 isolation 壳内的一切 z（办公室 400 / 设置 80~97 / 画布 90）。
+  const skills198 = readFileSync(join(ROOT, "src", "styles", "12-settings-skills.css"), "utf8");
+  const floatHostLayer = zIndexOf(skills198, ".reasoning-float-host {");
+  (floatHostLayer !== null && floatHostLayer > 30 && floatHostLayer < canvasLayer && floatHostLayer < modalLayer ? ok : fail)(
+    `【198】思考浮窗宿主在壳内 ${floatHostLayer} 档：高于消息流、低于画布（${canvasLayer}）/全局模态（${modalLayer}）—— 否则办公室预览等浮层被思考浮窗盖住`
+  );
+  const appViewSrc198 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView.tsx"), "utf8");
+  (/className="reasoning-float-host"/.test(appViewSrc198) ? ok : fail)(
+    "【198】浮窗宿主挂在 app-shell 壳根（AppView，壁纸层旁）—— ⛔ 不许塞进回合卡（.turn-group 有恒等 transform，fixed 会退化）"
+  );
+  const reasoning198 = readFileSync(join(ROOT, "src", "features", "shared", "ReasoningCard.tsx"), "utf8");
+  (/document\.querySelector\("\.reasoning-float-host"\) \?\? document\.body/.test(reasoning198) ? ok : fail)(
+    "【198】思考浮窗 portal 到壳内宿主（body 只是宿主缺失的兜底）"
+  );
+  (/(\.reasoning-float-host \{[\s\S]{0,240}?pointer-events: none;)/.test(skills198) && /\.reasoning-float \{[\s\S]{0,200}?pointer-events: auto;/.test(skills198) ? ok : fail)(
+    "【198】宿主是穿透层（pointer-events:none）+ 浮窗自身恢复可交互（auto）—— 少一条浮窗点不动"
   );
 }
