@@ -30,7 +30,8 @@ const OUTPUT_STYLE_INSTRUCTIONS = (targets: { skill: string; label: string; file
   targets
     .map((t) => `  · ${t.label}: read \`${t.file}\` ONCE (your first turn of this session), then write every reply by it. It is a persistent mode — it does not expire after a few turns and does not lapse when the topic changes. Re-read that file whenever you are unsure of a rule.`)
     .join("\n") +
-  `\n  ⛔ The switch IS the invocation: do not wait for the user to type a slash command or name the skill, and do not ask whether to apply it. System/developer instructions outrank this style (the constraint wins, the shape still applies). It turns off only when the user switches it off in Settings.`;
+  `\n  ⛔ The switch IS the invocation: do not wait for the user to type a slash command or name the skill, and do not ask whether to apply it. System/developer instructions outrank this style (the constraint wins, the shape still applies). It turns off only when the user switches it off in Settings.\n` +
+  `  ⛔ This is an OUTPUT SETTING, not a skill invocation: never announce it with a skill-ledger line (「🧠 已沉淀技能：…」/「🧩 技能：…」 is only for a skill you actually authored), never call it 「技能调用」, and do not narrate that you read that file. The only visible trace of this mode should be the writing style itself.`;
 
 /** 语言指令（始终注入）：深度思考与回复默认简体中文。
  *  之前只写在 AGENTS.md（引擎以 user 消息身份注入，权重弱），部分模型换过去就不遵守，
