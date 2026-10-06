@@ -154,6 +154,7 @@ export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
     setPairCode,
     setPairPending,
     setRemoteQr,
+    setNotice,
   } = app;
   return (
     mobileRemoteOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setMobileRemoteOpen(false); }}>
@@ -223,7 +224,15 @@ export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
                   </div>
                   <div className="remote-scan-row"><span>无法扫码？可以在手机上打开链接。</span>
                     <button className="remote-mini-btn" title="刷新二维码" onClick={() => void window.codex.remoteQrcode().then((svg) => setRemoteQr(svg))}><RefreshCw size={13} />刷新二维码</button>
-                    <button className="remote-mini-btn" title="复制链接" onClick={() => { if (remoteUrl) void copyTextToClipboard(remoteUrl); }}><Copy size={13} />复制链接</button>
+                    {/* 10-07 审计补漏：这是全仓唯一一个**完全静默**的复制点
+                        （其余复制点要么走 FeedbackIconButton 两段反馈、要么有 setNotice 回执）。
+                        ⛔ 没有链接时也要说话，否则点了没反应无从判断是"没复制"还是"没链接"。 */}
+                    <button className="remote-mini-btn" title="复制链接" onClick={() => {
+                      if (!remoteUrl) { setNotice("还没有可复制的链接（服务未启动）"); return; }
+                      void copyTextToClipboard(remoteUrl)
+                        .then(() => setNotice("远程控制链接已复制"))
+                        .catch((error: any) => setNotice(`复制失败：${String(error?.message ?? error)}`));
+                    }}><Copy size={13} />复制链接</button>
                   </div>
                   {remoteUrl ? (
                     <div className="remote-qr-box" dangerouslySetInnerHTML={{ __html: remoteQr }} />

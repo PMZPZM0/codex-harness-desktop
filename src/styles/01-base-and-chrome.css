@@ -270,6 +270,13 @@
   --ic-violet: #7048e8;
   --ic-cyan: #0b7285;
   --shadow: 0 1px 2px #14140f0a, 0 10px 32px #14140f12;
+  /* 主题 / 代码高亮切换的过渡时长（10-07）。⛔ 与 src/lib/visual-switch.ts 的
+     VISUAL_FX_MS **必须一致**：那边是 JS 摘过渡类与发回执的时点，不一致会出现
+     "提示弹了但颜色还在变"或"颜色变完了提示才来"。守卫 11w 钉这个同源关系。 */
+  --dur-theme: 240ms;
+  /* 交互反馈（hover / 选中 / 切换）的统一时长。
+     ⛔ 此前散着 .16s / .18s / .22s 好几档，同类控件观感对不齐 ⇒ 一律走这个变量。 */
+  --dur-ui: 160ms;
   background: #fff;
   font-family:
     Inter,
@@ -976,3 +983,43 @@ button.brand-mark.sidebar-toggle:hover {
 .ic-cyan { --ic: var(--ic-cyan); }
 /* 设置页的 `--ic-page` 由 08-settings-sheet 按当前分类写在弹窗根上 ⇒ 页内图标跟着分类色相走。
    ⛔ 这里**不给全局默认值**：消费端写 `var(--ic-page, <原色>)`，没设置时自动回落到原来的颜色。 */
+
+/* ── 主题 / 代码高亮切换的过渡（10-07 用户：「缺少过渡动画」）────────────────
+   生效方式：`src/lib/visual-switch.ts` 在切换的那 ~240ms 内给 `<html>` 挂 `.fx-theme`，
+   切完（并给完提示）摘掉 —— **用完即摘**。
+   ⛔ 为什么不常驻 `*{transition}`：常驻会把全站 hover/点击反馈一起拖慢，且大面积重绘影响滚动性能。
+   ⛔ 这里用**长写法**（transition-property / -duration / -timing）且**绝不加 `!important`**：
+      `02-sidebar-threads.css` 末尾那条 `@media (prefers-reduced-motion: reduce)` 用的是
+      `transition-duration: 0.001ms !important` —— 只有我不加 !important，无障碍兜底才压得住我
+      （两边都 !important 就退化成比源码顺序，等于把兜底废掉）。
+   ⛔ 不加 `transform` / `width` / `height`：颜色过渡就够了，尺寸类过渡会引起**布局跳动**。 */
+html.fx-theme,
+html.fx-theme *,
+html.fx-theme *::before,
+html.fx-theme *::after {
+  transition-property:
+    background-color, color, border-color, fill, stroke, box-shadow;
+  transition-duration: var(--dur-theme, 240ms);
+  transition-timing-function: ease;
+}
+
+/* ── 切换类控件的统一过渡（10-07 用户：「统一补齐…悬停/点击反馈」）────────────
+   这些控件此前**只有终态、没有过程**：点下去颜色瞬变，与已经做了"两段反馈"的按钮观感不一致。
+   ⛔ 只过渡**颜色 / 边框 / 阴影**：绝不碰 width / height / margin / padding / font-size /
+      transform —— 那些会引起**布局跳动**（用户明确要求"不引起布局跳动"）。
+   ⛔ 用 `transition` 简写而不是长写：这几个选择器原本都没有 transition（已核实），
+      不会盖掉谁；而长写 + `html.fx-theme *` 那条会互相打架。
+   ⛔ 不加 `!important` ⇒ `prefers-reduced-motion` 那条 `!important` 兜底照样压得住。 */
+.settings-nav .settings-group button,
+.view-tab,
+.account-menu-item,
+.theme-preview,
+.code-theme-card,
+.code-font-card,
+.theme-switch button {
+  transition:
+    background-color var(--dur-ui) ease,
+    color var(--dur-ui) ease,
+    border-color var(--dur-ui) ease,
+    box-shadow var(--dur-ui) ease;
+}
