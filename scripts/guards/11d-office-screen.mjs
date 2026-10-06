@@ -271,6 +271,15 @@ ok(/Math\.min\(len \* u,/.test(screen) || /Math\.min\(len,/.test(screen),
     "⛔⛔ 非专家团路径也走**真实阶段 + 真实事件**（⛔ 退回\"编一个默认活动\"就是「事件状态未接通」）");
   ok(!/thinking:\s*(true|false|act ===)/.test(esBody),
     "⛔⛔ 不许再出现**编造的** thinking/waiting/reporting 三布尔（上一版 `reporting: act === null` ⇒ code 屏永不出现）");
+  /* ⭐ 10-06 晚：**主会话**（= 专家团主理人）必须接上事件面。
+     ⛔ 根因：`railRunningByMember` 来自 `teamRuns`，而那张表**只记被委派的成员**
+       ⇒ 主会话查不到 run ⇒ 主理人工位恒为「待机」、屏幕恒为屏保
+       （用户 10-06 报「主会话没有事件渠道更新状态，一直显示停机」）。
+     ⛔ 判据钉**接线**（谁提供 running / 事件按哪个 threadId 取），不钉文案。 */
+  ok(/team\.lead\.id === memberId && self\?\.threadId/.test(preview) && /eventOf\(self\.threadId/.test(preview),
+    "⛔⛔ 专家团主理人 = 主会话：事件面按 self.threadId 取（⛔ 否则主会话永远显示待机）");
+  ok(/const selfLead = m\.id === team\.lead\.id/.test(preview) && /running: Boolean\(run\) \|\| \(selfLead && Boolean\(self\?\.running\)\)/.test(preview),
+    "⛔ 主理人的 running 取自 self.running（teamRuns 里没有主会话的记录）");
   // 随机取名：必须按 id 确定性取，不能每次渲染重随
   ok(/ROLE_NAMES/.test(preview) && /run\.threadId\.charCodeAt/.test(preview),
     "⛔ 随机名按 threadId 哈希取（同一人恒定同名，不会每帧改名）");

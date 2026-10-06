@@ -49,7 +49,13 @@ let blocked = 0, talking = 0, attempts = 0;
  *   用户 10-06 明确要求"删除体积碰撞"（太容易卡位）⇒ 人物重叠是**预期行为**，
  *   再拿"最近距离"当判据就是自己打自己。防重叠改由**渲染层微错位**（画布侧）负责。 */
 let maxStall = 0, deadMs = 0;
-const stall = {}, prevPos = {};
+/* ⭐ 「真卡位」指标（10-06 晚，用户第二次报「卡位一直走」后立）：
+   **既没换格子、path 也没缩短** —— 比"逐帧静止"准得多。
+   ⛔ 为什么必须加这条：贴边震荡时人每帧都在动（实测 0.68px/帧），
+     "移动小于 0.02px 才算静止"那种判据**一次都测不到**，而它 action 恒为 walk
+     （走路动画照播）、path 长度一格不减，实测僵持 **1692 秒**。 */
+let maxFrozen = 0;
+const stall = {}, prevPos = {}, frozen = {}, prevCell = {}, prevLen = {};
 const pairs = new Set();
 const origChat = sim.startChat.bind(sim);
 sim.startChat = (...a) => { attempts += 1; return origChat(...a); };
@@ -68,6 +74,15 @@ for (let t = 0; t < Math.round(1200000 / DT); t += 1) {
       if (stall[a.id] > maxStall) maxStall = stall[a.id];
     } else stall[a.id] = 0;
     if (a.action !== "sit" && a.onBreak && !a.chatWith && a.activityUntil <= 0 && a.path.length === 0) deadMs += DT;
+    const cell = Math.floor(a.y / 32) * 100 + Math.floor(a.x / 32);
+    if (a.action !== "sit" && a.path.length > 0) {
+      const progressed = cell !== prevCell[a.id] || a.path.length < (prevLen[a.id] === undefined ? 99 : prevLen[a.id]);
+      if (progressed) frozen[a.id] = 0;
+      else frozen[a.id] = (frozen[a.id] || 0) + DT;
+      if (frozen[a.id] > maxFrozen) maxFrozen = frozen[a.id];
+    } else frozen[a.id] = 0;
+    prevCell[a.id] = cell;
+    prevLen[a.id] = a.path.length;
     prevPos[a.id] = { x: a.x, y: a.y };
   }
   if (t % 30 !== 0) continue;
@@ -82,6 +97,7 @@ for (let t = 0; t < Math.round(1200000 / DT); t += 1) {
    拿它当穿模判据会把正常行为打成红。 */
 say(maxStall <= 5000, "卡位：仍在赶路却静止的最长时长 " + (maxStall / 1000).toFixed(1) + "s（<=5s。修复前实测 42~203 秒、甚至永久）");
 say(deadMs === 0, "卡位：死态（站着+无路径+无目标+onBreak=true）累计 " + (deadMs / 1000).toFixed(1) + "s（必须 =0）");
+say(maxFrozen <= 1500, "卡位：带路径却**既不换格也不缩短路径**的最长时长 " + (maxFrozen / 1000).toFixed(1) + "s（<=1.5s；修复前实测 1692 秒）");
 say(blocked === 0, "不越界：站进阻挡格的采样数 = " + blocked);
 say(attempts > 0 && pairs.size > 0 && talking > 0, "串门闲聊：发起 " + attempts + " 次 / 成对 " + [...pairs].join("|") + " / 说话采样 " + talking);
 
@@ -183,6 +199,35 @@ const place = (s, id, x, y, tx, ty) => {
   for (let t = 0; t < 1200; t += 1) { vnow += DT; s.tick(DT); }
   say(a.path.length === 0 && b.path.length === 0,
     "同格不互斥：两人从同一坐标出发都能到点（体积碰撞已删除）");
+}
+/* ⑤-5 「贴边僵持」定向复现（10-06 晚 用户第二次报「卡位一直走」→ 逐帧实测的原始现场）。
+   构造：把 m1 摆到「2 号桌下方 + 2 号位座位格左侧」的夹角 (479.9, 288.5)，给它一条
+   **头在饮水机**的路径（= 修复前那种陈旧 homePath 的形状）。
+   ⛔ 为什么单独立这条而不是只跑长时空转：这个夹角的触发要掷中随机出门（roll 0.18~0.80）
+     且路径恰好经过该角，长跑 30 分钟才撞到几次；定向构造是它的**最小复现**。 */
+{
+  const s = settled();
+  const a = s.agents.find((q) => q.id === "m1");
+  a.x = 479.9; a.y = 288.5; a.action = "walk"; a.onBreak = false;
+  a.dest = { x: 790, y: 146 };
+  a.path = [{ x: 790, y: 146 }, { x: 784, y: 176 }, { x: 784, y: 208 }];
+  a.tripAt = vnow; a.tripRetried = false;
+  const x0 = a.x, y0 = a.y;
+  let froze = 0, maxFroze = 0;
+  let lastCell = Math.floor(a.y / 32) * 100 + Math.floor(a.x / 32);
+  let lastLen = a.path.length;
+  for (let t = 0; t < 1200; t += 1) {
+    vnow += DT; s.tick(DT);
+    const cell = Math.floor(a.y / 32) * 100 + Math.floor(a.x / 32);
+    if (a.action === "sit" || cell !== lastCell || a.path.length < lastLen) {
+      froze = 0; lastCell = cell; lastLen = a.path.length;
+    } else froze += DT;
+    if (froze > maxFroze) maxFroze = froze;
+  }
+  const out = Math.hypot(a.x - x0, a.y - y0);
+  say(maxFroze <= 1500 && (a.action === "sit" || out > 20),
+    "贴边僵持：夹角处 0.5s 内脱困（最长僵 " + (maxFroze / 1000).toFixed(1) + "s，"
+    + (a.action === "sit" ? "已坐下" : "已走开 " + out.toFixed(0) + "px") + "；修复前 = 无限震荡）");
 }
 `;
 
