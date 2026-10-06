@@ -1594,7 +1594,10 @@ export async function run() {
       // ── ⑩ 输入框自适应高度：有下限（够写）+ 有上限（不顶掉正文）+ 到顶内部滚动
       const editorCss = (css48.match(/\.composer-editor \{[\s\S]*?\n\}/) || [""])[0];
       (/min-height: \d+px/.test(editorCss) ? ok : fail)("【48】输入框有最小高度");
-      (/max-height: min\([^)]+\)/.test(editorCss) ? ok : fail)("【48】输入框有高度上限");
+      /* 10-06 夜三轮：上限改为 var(--composer-editor-max, min(42vh, 360px)) —— 拖动把手的
+         拖动上限在 JS 里钳（48 ~ min(55vh,560)，守卫【composer-resize】钉常量），这里的
+         「有上限」判据两种形态都接受（裸 min(...) 或带 fallback 的 var）。 */
+      (/max-height: (?:min\([^)]+\)|var\(--composer-editor-max)/.test(editorCss) ? ok : fail)("【48】输入框有高度上限");
       (/overflow-y: auto/.test(editorCss) ? ok : fail)("【48】到达上限后内部滚动（不会把上方正文顶出视野）");
     }
   }
@@ -2145,8 +2148,11 @@ export async function run() {
   (/const RETIRED_SKILLS: \[string, string\]\[\] = \[\["browser-automation", RETIRED_BROWSER_SKILL\]\]/.test(bsSrc58) ? ok : fail)(
     "【58】旧技能进了退役名单（否则老用户磁盘上那份永远留着）"
   );
-  (/"SKILL\.md", "SKILL\.md\.disabled"/.test(bsSrc58) ? ok : fail)(
-    "【58】退役清理想到了 .disabled 形态（被总闸禁用过的旧技能不会被漏掉）"
+  /* ⛔ 判据锚「循环里把两种停用名都列了」这个**取值形态**，不锚某个固定数组写法 ——
+   * 10-06 改成常量数组（SKILL_FILE / SKILL_FILE_DISABLED / SKILL_FILE_POOL_DISABLED）后，
+   * 原先的字面量匹配立刻假红（内容没退化，只是写法换了）。 */
+  (/for \(const fn of \[[^\]]*SKILL_FILE_DISABLED[^\]]*SKILL_FILE_POOL_DISABLED[^\]]*\]/.test(bsSrc58) ? ok : fail)(
+    "【58】退役清理把两种停用形态都算进去（总闸 .disabled + 技能池 .pool-disabled）"
   );
   // ⛔ 判据锚「两边都归一化行尾」这个不变量本身，不锚具体语句形态（语句会被重构，不变量不会）
   (/existing\.replace\(\/\\r\\n\/g, "\\n"\)/.test(bsSrc58) && /original\.replace\(\/\\r\\n\/g, "\\n"\)/.test(bsSrc58) ? ok : fail)(
@@ -3167,8 +3173,11 @@ export async function run() {
   (/不可逆动作先问用户/.test(dSkill) ? ok : fail)("【74】desktop-skill 有不可逆动作先问用户的硬约束");
 
   // ③ 技能停用状态必须被尊重（09-20 修：总闸停用后每次启动被静默写回，总闸形同虚设）
-  (/existsSync\(disabledFile\) \? disabledFile : activeFile/.test(bs74) ? ok : fail)(
-    "【74】ensureBuiltinSkills 尊重 SKILL.md.disabled（否则用户停用的技能每次启动被写回）"
+  /* ⛔ 10-06 扩到技能池的 .pool-disabled（同型第二处，真跑实测）：只认 .disabled 且**优先看
+   * SKILL.md 在不在** ⇒ 被池停用的技能重启时被写回 SKILL.md（界面说已停用、引擎却在加载）。
+   * 判据锚「写入目标停用态优先」+「两种停用名都认」两处**取值形态**，不锚旧的单行三元写法。 */
+  (/disabledVariantOf\(dir\) \?\? activeFile/.test(bs74) && /for \(const fn of \[SKILL_FILE_DISABLED, SKILL_FILE_POOL_DISABLED\]\)/.test(bs74) ? ok : fail)(
+    "【74】ensureBuiltinSkills 尊重停用态（两种停用名都认 + 写入目标停用态优先，否则用户停用的技能每次启动被写回）"
   );
   (/existing\.replace\(\/\\r\\n\/g, "\\n"\) !== content\.replace\(\/\\r\\n\/g, "\\n"\)/.test(bs74) ? ok : fail)(
     "【74】技能内容比对归一化行尾（否则每次启动都白写一遍盘）"

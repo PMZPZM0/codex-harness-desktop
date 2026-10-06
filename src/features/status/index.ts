@@ -1,4 +1,4 @@
 export { RunningProcessTime, StatusDot, CompletedChanges, LiveFileRows, ContextRing, ContextUsageBadge } from "./Status";
-export { LiveEditedFilesCard } from "./LiveEditedFilesCard";
+export { TurnStatusCapsule } from "./TurnStatusCapsule";
 export type { LiveFileChange } from "./Status";
 export type { UsageCounterSnapshot } from "./Status";

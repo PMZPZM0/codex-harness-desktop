@@ -142,7 +142,7 @@ import {
 import VoiceWaveform from "../../../../components/VoiceWaveform";
 import { Markdown, MdCode, MdBlock, FilePreviewCode } from "../../../markdown";
 import { QueuedMessageList, FoldHandlers, TurnFoldStream } from "../../../session-queue";
-import { LiveEditedFilesCard } from "../../../status";
+import { TurnStatusCapsule } from "../../../status";
 import { RequestCard, ToolCard, VoiceSettingsBridge, admitThreadRuntimeRef, ago, appendDelta, appendIndexedDelta, applyThreadEvent, approvalMenuOptions, armSendAnimationClaim, botChannelName, botOnlineOf, builtinCommandCatalog, categoryLabel, clampRruleNum, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, cronTemplates, deltaMethods, describeRrule, describeSchedule, displayPath, fmtImportTime, formatTimestamp, greetingForHour, groupThreadsByTime, hydrateTurnUserMessage, idleTemplates, imageExts, isActivityItem, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, localFormatDurationMs, locateMatchEl, markBufferedAgentReveal, markBufferedTurnReveal, matchSkillCatalog, mergeItem, mergeLongerStreams, mergeTurn, modelBadges, modelName, normSkillName, noticeTone, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDescription, pluginDisplayName, pluginMarketCategoryTabs, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, revealStepFor, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, settingsNav, shortSkillName, skillHubCategories, skillHubCategoryName, skillHubCategoryTabs, skillZhNote, slashCommands, stableItem, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, toFileUrl, uniqueModelCount, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../helpers";
 import type { HarnessAppApi } from "../../../app-state/useHarnessApp";
 import { ComposerComposerCardStack } from "./03-composer/01-composer-card-stack";
@@ -282,6 +282,7 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
     submenuFlip,
     submenuTop,
     submitPlanFeedback,
+    taskList,
     thread,
     threadFileCandidates,
     threadFileQuery,
@@ -360,11 +361,11 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                       )}
                     </div>
                   )}
-                  {/* 运行中「N 个文件已修改 +X -Y」胶囊（10-06 夜，用户对照 WorkBuddy 图三/图四）：
-                      与排队消息 / 询问卡 / 审批卡是**上下排序关系**（栈里的一行，不互相遮），
-                      位置=这一组的首位（消息流之后、其余贴输入框卡片之上）；悬停展开文件清单、
-                      随运行实时刷新、回合结束自动消失（收尾由汇总卡接管）。 */}
-                  <LiveEditedFilesCard runningTurnId={activeThreadRunning ? (activeTurnId || thread?.turns?.[thread.turns.length - 1]?.id || null) : null} />
+                  {/* 回合状态胶囊（10-06 夜三轮，用户对照 Qoder）：「步骤 N/M · X 个文件已修改 +A -D」——
+                      左区悬停展开步骤清单（Codex 自己维护的 task_add/task_update 清单）、右区悬停展开
+                      文件清单；有任务清单就有（收尾后仍在），与排队/询问/审批卡是**上下排序关系**
+                      （栈里的一行，不互相遮）。原「目标与进程」面板已按用户令撤掉。 */}
+                  <TurnStatusCapsule taskList={taskList} runningTurnId={activeThreadRunning ? (activeTurnId || thread?.turns?.[thread.turns.length - 1]?.id || null) : null} />
                   {/* 审批卡：贴输入框上方（与 agent-ask 同款布局，09-13 从消息流大卡迁来）。
                       主窗口与独立会话窗口走同一渲染逻辑——各自的 pending 里属于本窗口当前会话的
                       请求都会在这里出现，弹窗里也能审批。 */}
