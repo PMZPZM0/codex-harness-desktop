@@ -114,6 +114,15 @@ for (const name of ["LICENSE", "NOTICE"]) {
   if (existsSync(src)) cpSync(src, join(OUT_DIR, name));
 }
 
+/* 补丁层标记（10-06）：`scripts/sketch-fork/build.mjs` 在 out/ 里留一份 .fork-build.json ——
+   记进 CANVAS-BUILD.json 的 fork 字段（这版产物 = 上游钉死提交 + 本仓 8 组件补丁），
+   标记本身不进随包产物。 */
+let forkMeta = null;
+try {
+  forkMeta = JSON.parse(readFileSync(join(from, ".fork-build.json"), "utf8"));
+} catch { forkMeta = null; }
+rmSync(join(OUT_DIR, ".fork-build.json"), { force: true });
+
 let html = readFileSync(join(OUT_DIR, "index.html"), "utf8");
 const before = html.length;
 /* ⛔ 字体改写与桥注入**只允许动 `</head>` 之前**：10-05 实测，整文件正则会把 body 里那段
@@ -164,7 +173,10 @@ writeFileSync(join(OUT_DIR, "CANVAS-BUILD.json"), JSON.stringify({
   builtAt: new Date().toISOString().slice(0, 10),
   fontsLocalized: wantFonts,
   bridge: "scripts/sketch-bridge.js",
-  rebuiltBy: "node scripts/build-sketch-bundle.mjs --from <next export out/>",
+  rebuiltBy: forkMeta
+    ? "node scripts/sketch-fork/build.mjs（上游源码 + 本仓补丁层）"
+    : "node scripts/build-sketch-bundle.mjs --from <next export out/>",
+  ...(forkMeta ? { fork: forkMeta } : {}),
   files: walk(OUT_DIR).length,
   bytes: walk(OUT_DIR).reduce((sum, file) => sum + statSync(file).size, 0),
   indexHtmlBytes: html.length,

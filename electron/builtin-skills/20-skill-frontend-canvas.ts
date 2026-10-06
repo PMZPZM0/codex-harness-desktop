@@ -2,7 +2,7 @@
  * builtin-skills 的「frontend-canvas」部分（10-05 夜，用户：「UI里面的组件，你可以根据（现有的）
  * 再丰富一些」）——「前端开发」画布（嵌 m3e-canvas）的组件手册。
  *
- * 为什么要做成技能而不是塞进工具描述：36 种组件每种都有自己的字段与默认尺寸，全塞进
+ * 为什么要做成技能而不是塞进工具描述：40+ 种组件每种都有自己的字段与默认尺寸，全塞进
  * `frontend_apply_doc` 的 description = **每一轮请求都背着几 KB**（本仓纪律：细节渐进披露，
  * 见第 12/13 条指令与 harness-api 的同款理由）。工具描述只列全 36 个**名字**（让模型知道
  * 有这些可用），字段级说明放这里，真要拼界面时按需读。
@@ -15,7 +15,7 @@
  */
 export const FRONTEND_CANVAS_SKILL = `---
 name: frontend-canvas
-description: 「前端开发」画布的操作手册。当用户要手机 App 界面 / 电脑（桌面）界面 / 网页原型 / 前端页面设计稿，或让你「拼界面 / 继续摆 UI / 加一屏 / 改一下这个稿」时使用。含 36 种 Material 组件的字段速查、手机 / 电脑 / 网页三种形态、导航动作、主题与坐标规则，以及 frontend_get_doc / frontend_apply_doc 的用法。
+description: 「前端开发」画布的操作手册。当用户要手机 App 界面 / 电脑（桌面）界面 / 网页原型 / 前端页面设计稿，或让你「拼界面 / 继续摆 UI / 加一屏 / 改一下这个稿」时使用。含 44 种 Material 组件的字段速查、手机 / 电脑 / 网页三种形态、导航动作、主题与坐标规则，以及 frontend_get_doc / frontend_apply_doc 的用法。
 ---
 # 前端开发画布手册（m3e-canvas）
 
@@ -95,7 +95,7 @@ description: 「前端开发」画布的操作手册。当用户要手机 App �
 - \`action\`：点击打开哪屏：\`{ "to": "<屏id>" | "back", "transition": "slide" | "slideLeft" | "slideUp" | "slideDown" | "fade" | "expand" | "none" }\`。
 - \`toggle\`（按钮）：点一下之后换成 \`{ "icon": "favorite", "variant": "filled", "label": "已收藏" }\`。
 
-## 五、36 种组件速查
+## 五、44 种组件速查
 
 尺寸单位是 dp；\`size\` 是宽（除非另注）。内容宽度（手机屏边距内）是 **380**。下表"默认尺寸"是画布替你补的值。
 
@@ -106,6 +106,7 @@ description: 「前端开发」画布的操作手册。当用户要手机 App �
 | \`navRail\` | 侧边导航栏（桌面） | \`tabs\`、\`selected\`、\`railExpanded\`（吸顶/展开态）、\`railModal\`（展开时盖一层遮罩）、\`size2\` 高 | 收起 96 / 展开 220 |
 | \`tabs\` | 标签页行 | \`tabs\`（任意个数，≥6 个横向滚动）、\`selected\` | 412 × 48 |
 | \`searchBar\` | 搜索栏 | \`label\` 占位文案、\`icon2\` 尾部图标 | 380 × 56 |
+| \`stepper\` | 步骤条 | \`tabs\` 当步骤名、\`value\` 当前步（0 起）、\`size\` 宽 | 380 × 64 |
 | \`button\` | 按钮 | \`label\`、\`icon\`、\`action\`、\`toggle\`、\`size\` 宽（省略=随文字；380=整行；182=并排半宽） | 随文字 × 56 |
 | \`iconButton\` | 图标按钮 | \`icon\`、\`action\` | 48 × 48 |
 | \`fab\` | 浮动按钮 | \`icon\`、\`size\` 40 / 56 / 96 | 56 × 56，右下 |
@@ -114,12 +115,15 @@ description: 「前端开发」画布的操作手册。当用户要手机 App �
 | \`fabMenu\` | 展开的浮动按钮菜单 | \`tabs\` 当条目 | 宽 220 |
 | \`toolbar\` | 浮动工具栏（桌面） | \`tabs\` 当图标按钮、\`variant\` tonal（标准）/ filled（醒目） | 高 64 |
 | \`chip\` | 标签片 | \`label\`、\`icon\`、\`checked\` | 随文字 × 32 |
+| \`segmentedButton\` | 分段按钮（相连的等宽分段） | \`tabs\` 当分段、\`selected\`、\`size\` 宽、\`variant\` | 380 × 40 |
 | \`card\` | 卡片（图区+标题+正文） | \`label\`、\`supporting\`、\`icon\`、\`fill\` 背景令牌、\`size\` 宽、\`size2\` 高、\`noImage\` 去掉图区、\`src\` https 图、\`action\` | 380 × 223 |
 | \`listItem\` | 列表项 | \`label\`、\`supporting\`、\`icon\` 前导、\`icon2\` 尾部、\`switch\`+\`checked\` 尾部开关、\`action\` | 380 × 72 |
 | \`box\` | 素容器 | \`size\` 宽、\`size2\` 高、\`fill\` 令牌、\`radiusTop\`、\`radiusBottom\` | 412 × 220 |
 | \`bottomSheet\` | 底部抽屉（贴底的弹层） | \`size\` 宽、\`size2\` 高、\`fill\` 令牌、\`radiusTop\` | 412 × 320 |
 | \`dialog\` | 对话框 | \`label\` 标题、\`supporting\` 正文、\`icon\` | 312 × 220，居中 |
 | \`snackbar\` | 底部提示条 | \`label\`、\`supporting\` 动作字 | 344 × 48 |
+| \`expansionPanel\` | 展开面板 | \`label\` 标题、\`supporting\` 展开正文、\`checked\` = 展开、\`icon\` | 380（收起 56 / 展开 148） |
+| \`tooltip\` | 提示气泡 | \`label\` 文案、\`size\` 宽 | 180 × 36 |
 | \`textField\` | 输入框 | \`label\`、\`supporting\` 帮助字、\`icon\`、\`variant\` outlined / filled | 380 × 56 |
 | \`select\` | 下拉选择 | \`label\`、\`tabs\` 当选项 \`{ "label" }\`、\`selected\` 初始项、\`supporting\`、\`icon\`、\`variant\` | 380 × 56 |
 | \`switch\` | 开关（带标签） | \`label\`、\`checked\`、\`size\` 宽（380 = 标签左、开关右） | 随文字 × 48 |
@@ -128,8 +132,12 @@ description: 「前端开发」画布的操作手册。当用户要手机 App �
 | \`slider\` | 滑杆 | \`value\` 0–100 | 380 × 44 |
 | \`datePicker\` | 日期选择器 | \`layout\`：modal（默认）/ docked / input | 328 × 484，居中 |
 | \`timePicker\` | 时间选择器 | \`layout\`：dial（默认）/ input | 328 × 420，居中 |
+| \`rating\` | 评分（5 星） | \`value\` 0–5、\`size\` 星大小 | 176 × 40 |
 | \`text\` | 一行文字 | \`label\`、\`size\` 字号（默认 28）、\`bold\` | — |
 | \`image\` | 图片 | \`size\` 边长、\`src\` https 链接（可省） | 200 × 200 |
+| \`avatar\` | 圆头像 | \`label\` 首字（或 \`icon\`）、\`size\` 直径、\`variant\` | 56 × 56 |
+| \`skeleton\` | 骨架屏占位（微光扫过） | \`size\` 宽、\`size2\` 高 | 380 × 96 |
+| \`timeline\` | 时间线（圆点 + 竖线 + 文案） | \`tabs\` 当条目、\`size2\` 行高 | 380（每行 56） |
 | \`carousel\` | 轮播 | \`layout\`：multiBrowse（默认）/ uncontained / hero / fullScreen、\`count\` 2–8（默认 4）、\`size2\` 高、\`tabs\` 当条目（\`actions\` 键 \`tab:0\`…） | 412 × 180 |
 | \`camera\` | 相机预览位 | \`size\` 宽、\`size2\` 高 | 380 × 507 |
 | \`map\` | 地图位 | \`size\` 宽、\`size2\` 高 | 380 × 285 |
@@ -137,6 +145,10 @@ description: 「前端开发」画布的操作手册。当用户要手机 App �
 | \`loadingIndicator\` | M3 加载指示器 | \`contained\` | 48 × 48 |
 | \`linearProgress\` | 线性进度 | \`value\`（省略 = 不定态）、\`wavy\`、\`trackThickness\` 2–16 | 380 × 24 |
 | \`circularProgress\` | 环形进度 | \`value\`（省略 = 不定态）、\`wavy\`、\`trackThickness\`、上限 = size 的 1/6 | 48 × 48 |
+
+其中 \`avatar\` / \`skeleton\` / \`rating\` / \`tooltip\` / \`expansionPanel\` / \`segmentedButton\` /
+\`stepper\` / \`timeline\` 八种是本画布**相对上游官方版额外新增**的（本仓补丁层 scripts/sketch-fork/，
+官方 36 种之外可直接用，写法与其它组件完全一致）。
 
 ⛔ 枚举之外没有别的 kind（旧文档里的 \`badge\` 已被上游移除，写了会被拒）。\`icon\` 用
 Material Symbols 图标名（\`home\` / \`search\` / \`add\` / \`favorite\` / \`settings\` / \`arrow_back\` /
