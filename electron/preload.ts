@@ -613,6 +613,10 @@ contextBridge.exposeInMainWorld("codex", {
   /* npm(npmmirror)+模型(hf-mirror)；进度经 runtime:progress(id=kb-embedding) 推送 */
   installKbEmbedBackend: () => __ipc("kb:embed-install", 0, []),
   uninstallKbEmbedBackend: () => __ipc("kb:embed-uninstall", 0, []),
+  /* 更新后首次启动的「新功能介绍」—— 该不该弹、弹什么由主进程判定（要点在 electron/whats-new-notes.ts，看过记录在 userData/whats-new.json） */
+  whatsNewState: () => __ipc("whatsnew:state", 0, []),
+  /* 「知道了」：记下「当前版本已看过」（⛔ 只接受当前版本号 —— 权威值在主进程，渲染层传别的值会被拒） */
+  whatsNewAck: (version: string) => __ipc("whatsnew:ack", 1, [version]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

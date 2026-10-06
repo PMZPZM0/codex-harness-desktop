@@ -26,7 +26,13 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 
 const GIT = process.env.GIT_BIN || "git";
-const git = (args) => execFileSync(GIT, args, { encoding: "utf8", maxBuffer: 200 * 1024 * 1024 });
+/* ⛔ `stdio: ["ignore","pipe","pipe"]` 是必需的，不是风格问题：本机（WorkBuddy 宿主）沙箱里
+   `execFileSync` 用默认 stdio 时**子进程直接 EBUSY**（errno -4082），报错位置在 spawnSync 内部，
+   看着像"git 不在 PATH"或"审计脚本坏了"——实测两次都误判过。
+   ⇒ 仓库其它真跑子进程的脚本（`scripts/guards/11o-office-sim.mjs` 等）统一带这一项，这里补齐。 */
+const git = (args) => execFileSync(GIT, args, {
+  encoding: "utf8", maxBuffer: 200 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"],
+});
 
 // ── 平台敏感模式 ────────────────────────────────────────────────────────────
 // `samples`: [应当命中的样本, ...] / `negatives`: [不应当命中的样本, ...]（自证用）

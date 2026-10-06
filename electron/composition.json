@@ -581,6 +581,13 @@
       "file": "features/model-viewer-ipc.ts",
       "export": "modelViewerFeature",
       "config": null
+    },
+    {
+      "id": "whatsnew",
+      "enabled": true,
+      "file": "features/whats-new-ipc.ts",
+      "export": "whatsNewFeature",
+      "config": null
     }
   ]
 }

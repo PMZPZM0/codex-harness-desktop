@@ -124,7 +124,10 @@ export const appFeature = defineFeature<null>({
       const configStat = fileStat(path.join(codexHome, "config.toml"));
       checks.push({
         label: "引擎配置", ok: Boolean(configStat),
-        detail: configStat ? `config.toml · ${sizeLabel(configStat.size)} · 更新于 ${new Date(configStat.mtimeMs).toLocaleString("zh-CN")}` : `${codexHome}\\config.toml 不存在`,
+        /* ⛔ 展示路径不能用 `\\` 拼（10-06 mac 审计抓到的真缺口）：
+           mac 上会显示成 `/Users/x/.codex-harness\config.toml`（正斜杠目录 + 反斜杠文件名）。
+           这个字符串是**用户可见**的（设置 → 诊断 面板那一行列的就是它）。 */
+        detail: configStat ? `config.toml · ${sizeLabel(configStat.size)} · 更新于 ${new Date(configStat.mtimeMs).toLocaleString("zh-CN")}` : `${path.join(codexHome, "config.toml")} 不存在`,
       });
       let modelOk = false;
       let modelDetail = "未配置自定义模型（/model 打开模型设置）";
