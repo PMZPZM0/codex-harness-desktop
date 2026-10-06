@@ -919,12 +919,14 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
      `display:none` 藏不住它 ⇒ 浮层压在 WCO 上面（探针实测窗口 651px 时相交）。
      两条断言分别钉「CSS 收浮层」「逻辑兜底关状态」「145px 预留」，缺任一都还会复现：
        只加 CSS⇒ 开着浮层缩窄后按钮消失，浮层永久糊在窗口钮上且**点不掉**（死角）；
-       只加逻辑⇒ 断点值与 CSS 不同源时两边打架，谁最后生效说不清。 */
+       只加逻辑⇒ 断点值与 CSS 不同源时两边打架，谁最后生效说不清。
+     ⛔ 10-06 夜七轮：📁 工作区（.ctx-picker）按用户令从操作簇挪去**标题最前**
+     （AppView.tsx 的 .task-title）—— 选择器前缀与 JSX 覆盖源都跟着换，别改回。 */
   {
     const topbarCss250 = readFileSync(join(ROOT, "src/styles/09-settings-workspace-memory.css"), "utf8");
     const narrowBlock250 = topbarCss250.slice(topbarCss250.indexOf("@media (width<=760px)"));
-    (/@media \(width<=760px\)[\s\S]*?\.ctx-picker,[\s\S]*?\.ctx-menu[\s\S]{0,200}display: none/.test(narrowBlock250) ? ok : fail)(
-      "【250】窄屏（<=760px）必须连.ctx-picker 容器与其.ctx-menu 浮层一起隐藏（浮层是容器孩子，display:none 藏不住它）"
+    (/@media \(width<=760px\)[\s\S]*?\.task-title \.ctx-picker,[\s\S]*?\.ctx-menu[\s\S]{0,200}display: none/.test(narrowBlock250) ? ok : fail)(
+      "【250】窄屏（<=760px）必须连 .task-title .ctx-picker 容器与其 .ctx-menu 浮层一起隐藏（浮层是容器孩子，display:none 藏不住它；前缀 10-06 夜七轮随按钮挪位换过）"
     );
     const goalPal250 = readFileSync(join(ROOT, "src/features/app-state/parts/part01/06-goals-palette-commands.tsx"), "utf8");
     (/matchMedia\("\(width<=760px\)"\)/.test(goalPal250) && /ctxMenuOpen\)[\s\S]{0,400}setCtxMenuOpen\(false\)/.test(goalPal250) ? ok : fail)(
@@ -944,7 +946,11 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
          CSS 里多个容器常写在**同一个选择器组**里（逗号分隔），删掉其中一个类名后
          「文件里还能搜到这个串」仍然成立 ⇒ 断言恒真、抓不到漏网。
          正确判据 = **逐个容器检查它自己那一行选择器**（行首匹配，排除逗号续行）。 */
-    const topbarJsx250 = readFileSync(join(ROOT, "src/features/app-state/parts/part09/02-seg.tsx"), "utf8");
+    const topbarJsx250 = codeOnly(readFileSync(join(ROOT, "src/features/app-state/parts/part09/02-seg.tsx"), "utf8"));
+    /* 10-06 夜七轮：📁 工作区（.ctx-picker）挪进了 AppView 的标题区 —— 覆盖源要看两个文件；
+       ⛔ 一律过 codeOnly：part09 里现在有一段「已挪走、别加回」的注释提到 .ctx-picker，
+       裸读会把注释当 JSX（负向断言当场假红 —— 项目方法论第 4 条同款坑）。 */
+    const appViewJsx250 = codeOnly(readFileSync(join(ROOT, "src/features/app-view/AppView.tsx"), "utf8"));
     /*⛔⛔ 10-04 用户改判：**搜索（.history-search-wrap）豁免，不进任何断点**。
        原判据（10-03）把它与"目标进程"同列 —— 但那是两个完全不同的功能：
        搜索搜当前会话的消息，是高频且**无替代入口**（快捷键不等于可发现性）；
@@ -955,10 +961,11 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     const EXEMPT_250 = ["history-search-wrap"];
     const CONTAINERS = ["ctx-picker", "task-menu-wrap"];
     const uncovered = CONTAINERS.filter((c) => {
-      const inJsx = topbarJsx250.includes(c);
+      const inJsx = topbarJsx250.includes(c) || appViewJsx250.includes(c);
       if (!inJsx) return false;                       // 已从 JSX 移除 ⇒ 不用管
       // 精确匹配「这一行就是它」：行首可有缩进，类名后面必须是逗号或 {（不是逗号续行里的第二个）
-      const ownLine = new RegExp("^\\s*\\.topbar-actions\\s+\\." + c + "\\s*[,{]", "m");
+      // 前缀二选一：旧位在 .topbar-actions，10-06 夜七轮后 📁 在 .task-title
+      const ownLine = new RegExp("^\\s*\\.(?:topbar-actions|task-title)\\s+\\." + c + "\\s*[,{]", "m");
       return !ownLine.test(topbarCss250);
     });
     // ⛔ 豁免控件若被人加回断点 ⇒ fail（这条是"不许回退"的防线）
@@ -973,6 +980,25 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
         + `被加回：${reExempted.join("、") || "无"}；`
         + `⚠️ 搜索无替代入口，用户 10-04 明确要求无条件显示，别按旧判据"顺手"收进窄屏档`
     );
+
+    /* 10-06 夜七轮（用户截图圈出右侧 📁 并令「把文件图标放到最前面」+「标题长度固定，太长省略」）：
+       三条钉住新布局 —— 位置（.task-title 内、重命名 strong 之前）、不许加回操作簇、标题定长。 */
+    {
+      const taskTitleAt = appViewJsx250.indexOf("`task-title ");
+      const pickerAt = appViewJsx250.indexOf('className="ctx-picker"');
+      const strongAt = appViewJsx250.indexOf('title="双击修改任务名称"');
+      (taskTitleAt >= 0 && pickerAt > taskTitleAt && strongAt > pickerAt ? ok : fail)(
+        "【250】📁 工作区（.ctx-picker）在**标题最前**：.task-title 内、重命名 strong 之前"
+          + "（10-06 夜七轮用户令「把文件图标放到最前面」；顺序反了 = 图标跑到名字后面）"
+      );
+      (!topbarJsx250.includes("ctx-picker") ? ok : fail)(
+        "【250】⛔ 操作簇（part09 topbarActionsNode）里不许再加回 .ctx-picker —— 📁 的唯一位置 = 标题最前，两份会叠出双菜单"
+      );
+      const threadsCss250 = readFileSync(join(ROOT, "src/styles/02-sidebar-threads.css"), "utf8");
+      (/\.task-title strong \{[\s\S]*?text-overflow: ellipsis[\s\S]*?max-width: 300px[\s\S]*?\}/.test(threadsCss250) ? ok : fail)(
+        "【250】标题定长 300px + 省略号（用户 10-06 夜七轮：「标题长度固定，太长的就省略，不要撑长」—— 原来是随窗口变的 min(42vw, 380px)）"
+      );
+    }
     // ⛔ 10-04 根因守卫：顶栏**必须**有溢出裁剪。缺了它，内容总宽超出可用宽度时
     //   flex 子项会溢出 padding 边界（margin-left:auto 在空间不足时归零）⇒
     //   操作簇直接落进 145px 原生钮预留区、盖在最小化/最大化/关闭上（用户实测截图）。

@@ -37,7 +37,6 @@ import {
   FileCode2,
   FileText,
   FileWarning,
-  FolderOpen,
   FolderPlus,
   FolderTree,
   ImagePlus,
@@ -142,7 +141,6 @@ import {
   CircleHelp,
   Video,
 } from "lucide-react";
-import { basename } from "../../../../lib/basename";
 import { locateMatchEl } from "../../../app-view/helpers";
 import { useAnchoredPopover } from "../../../app-view/hooks/useAnchoredPopover";
 import type { Bag } from "../bag-types";
@@ -318,7 +316,8 @@ bag.earlyView = earlyView as typeof bag.earlyView;
     return () => window.removeEventListener("keydown", onKey);
   }, [bag.chatSearchOpen, closeHistoryPanel]);
 
-  // 顶栏操作簇（📁 工作区 / ⋯ 任务菜单 / 新建终端 / 右栏开关）：右栏关闭时嵌在
+  // 顶栏操作簇（🔍 搜索 / 调度 / 独立弹窗 / ⋯ 任务菜单 / 右栏开关；📁 工作区 10-06 夜七轮
+  // 已挪去标题最前）：右栏关闭时嵌在
   // topbar 右端、开启时嵌在右栏顶条右端——两处都紧贴右上角原生窗口钮，且都是
   // 拖拽容器的【子元素】（no-drag 豁免），fixed 悬浮层会被拖拽区吞掉点击（实测）。
   const topbarActionsNode = (
@@ -422,19 +421,9 @@ bag.earlyView = earlyView as typeof bag.earlyView;
           <button className="icon-button popout-open-btn" title="独立会话弹窗：把当前会话开到新窗口（可拖出应用外，支持多个同时存在）" disabled={!bag.thread} onClick={() => { if (bag.thread) void bag.popoutCurrentThread(bag.thread.id); }}><Maximize2 size={16} /></button>
         </>
       )}
-                <div className="ctx-picker">
-          <button ref={ctxBtnRef} className="icon-button tb-workspace" title="工作区上下文（当前会话使用的项目目录）" onClick={() => bag.setCtxMenuOpen((current) => !current)}><FolderOpen size={16} /></button>
-          {bag.ctxMenuOpen && <>
-            <div className="menu-backdrop" onClick={() => bag.setCtxMenuOpen(false)} />
-            {createPortal(
-              <div className="task-menu ctx-menu ctx-menu-fixed" role="menu" style={ctxMenuStyle}>
-                <button onClick={() => { bag.setCtxMenuOpen(false); void bag.chooseWorkspace(); }}><FolderOpen size={14} />{bag.workspace ? "选择其他目录…" : "选择工作区目录"}</button>
-                {bag.workspace && <button onClick={() => bag.setCtxMenuOpen(false)}><FolderOpen size={14} /><span className="ctx-current-name">资源管理器 · {basename(bag.workspace)}</span><Check size={14} className="ctx-check" /></button>}
-              </div>,
-              document.body,
-            )}
-          </>}
-        </div>
+        {/* ⛔ 工作区 📁（.ctx-picker）10-06 夜七轮已挪去**标题最前**（AppView.tsx 的 .task-title）——
+            用户令「把文件图标放到最前面」。挪走后：窄屏隐藏规则与守卫【250】覆盖率清单都跟着改到
+            .task-title 前缀；不许再加回这个操作簇（会与标题前的那个重复）。 */}
         <div className="task-menu-wrap">
           {/* 10-06 夜三轮：原「目标与进程」常驻入口（Target 图标 + goals-pop 面板）已按用户令撤掉 ——
               任务清单改由输入框上方的回合状态胶囊承载（「步骤 N/M · X 个文件已修改」，悬停展开），
