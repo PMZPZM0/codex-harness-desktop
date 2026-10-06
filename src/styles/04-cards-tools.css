@@ -651,9 +651,13 @@
   background: rgba(0, 0, 0, 0.4);
 }
 .turn-diff-modal {
+  display: flex;
+  flex-direction: column;
   width: min(760px, 92vw);
   max-height: 84vh;
-  overflow: auto;
+  /* 10-06 用户实测「弹窗那个叉掉被遮住了 / 关不掉」：长 diff 让模态整体滚动，头部（含关闭键）
+     一滚就出视野、看着像被内容盖住。改成——外框不滚、header 常驻，代码区占满剩余高度自己滚。 */
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--panel);
@@ -661,11 +665,23 @@
   padding: 12px 14px;
 }
 .turn-diff-modal header {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 8px;
+}
+.turn-diff-modal .tool-code-block {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.turn-diff-modal .tool-code-block .tool-code-pre {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none !important; /* 内联 maxHeight 让位：由外框 max-height 84vh 统一约束 */
 }
 .turn-diff-modal header code {
   font-size: 12px;

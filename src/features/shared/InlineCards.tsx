@@ -1,6 +1,7 @@
 /** 内联文件卡片 / 引用行（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
 import { useMemo, useState, useEffect } from "react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { resolveFilePath, lookupKnownFile, openImageLightbox, openFileTextEditor, notifyToast } from "../../lib/ui-channels";
 import { basename } from "../../lib/basename";
 import { isImagePath } from "../../lib/is-image-path";
@@ -64,7 +65,9 @@ export function FileCardMenu({ menu, onOpen, onClose }: { menu: FileCardMenuStat
       },
     },
   ];
-  return (
+  // ⛔ createPortal 到 body（10-06）：菜单是 position:fixed 且坐标来自视口（clientX/Y）——
+  //    回合容器 `.turn-group` 上有恒等 transform（= containing block），留在原地会被整体偏移。
+  return createPortal((
     <div className="file-card-menu" role="menu" style={{ left, top }} onMouseDown={(event) => event.stopPropagation()}>
       {items.map((item) => (
         <button type="button" role="menuitem" key={item.label} onClick={() => { item.run(); onClose(); }}>
@@ -73,7 +76,7 @@ export function FileCardMenu({ menu, onOpen, onClose }: { menu: FileCardMenuStat
         </button>
       ))}
     </div>
-  );
+  ), document.body);
 }
 
 function looksLikeFilePath(candidate: string): boolean {

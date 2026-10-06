@@ -85,17 +85,25 @@ export const VirtualDiffLines = memo(function VirtualDiffLines({ text, maxHeight
   );
 });
 
-export function CappedToolRun({ label, units, renderUnit, limit = 3 }: {
+export function CappedToolRun({ label, units, renderUnit, renderAfter, limit = 3 }: {
   label: string;
   units: FoldUnit[];
   renderUnit: (unit: FoldUnit) => React.ReactNode;
+  /** 每项之后追加渲染（运行中实时「编辑」行按锚点挂在对应项后面——10-06）。 */
+  renderAfter?: (unit: FoldUnit) => React.ReactNode;
   limit?: number;
 }) {
   const [expanded, setExpanded] = useState(false);
   // 「同一工具连续调用超过 limit 条 ⇒ 只留最新 limit 条，较早的收进折叠行」。
   // ⚠️ 调用方传 limit=Infinity 时这里不会收起旧行（`hiddenCount` 恒 0 直接返回原序列）。
   const hiddenCount = Math.max(0, units.length - limit);
-  if (!hiddenCount) return <>{units.map(renderUnit)}</>;
+  const withTail = (unit: FoldUnit) => (
+    <Fragment key={unit.item.id}>
+      {renderUnit(unit)}
+      {renderAfter ? renderAfter(unit) : null}
+    </Fragment>
+  );
+  if (!hiddenCount) return <>{units.map(withTail)}</>;
   const hidden = units.slice(0, hiddenCount);
   const latest = units.slice(hiddenCount);
   return (
@@ -105,8 +113,8 @@ export function CappedToolRun({ label, units, renderUnit, limit = 3 }: {
         <span>{expanded ? `收起较早的 ${hiddenCount} 条${label}` : `已收起 ${hiddenCount} 条${label}`}</span>
         {!expanded && <small>最新 {limit} 条</small>}
       </button>
-      <Fold open={expanded}><div className="capped-tool-hidden">{hidden.map(renderUnit)}</div></Fold>
-      <div className="capped-tool-latest">{latest.map(renderUnit)}</div>
+      <Fold open={expanded}><div className="capped-tool-hidden">{hidden.map(withTail)}</div></Fold>
+      <div className="capped-tool-latest">{latest.map(withTail)}</div>
     </div>
   );
 }
@@ -118,14 +126,16 @@ export function CappedToolRun({ label, units, renderUnit, limit = 3 }: {
  *    用户明确要求避免这种重复；而且停止回合（`keepProcessOpen`）外层默认展开时，内层仍收着会让
  *    「点开也看不到做到哪了」（09-18 修过的老问题）复活。
  *  ⛔ 运行态没有外层折叠块 ⇒ 保持 `cap` 开启，它是那一阶段唯一的收敛机制（两种规则各管一段、不重叠）。 */
-export function CappedToolSequence({ units, renderUnit, cap = true }: {
+export function CappedToolSequence({ units, renderUnit, renderAfter, cap = true }: {
   units: FoldUnit[];
   renderUnit: (unit: FoldUnit) => React.ReactNode;
+  /** 每项之后追加渲染（运行中实时「编辑 <文件> +N -M」行按锚点挂在对应项后面——10-06 二改）。 */
+  renderAfter?: (unit: FoldUnit) => React.ReactNode;
   cap?: boolean;
 }) {
   const runs = useMemo(() => (cap ? buildOrderedToolRuns(units) : []), [units, cap]);
-  if (cap === false) return <>{units.map(renderUnit)}</>;
+  if (cap === false) return <>{units.map((unit) => <Fragment key={unit.item.id}>{renderUnit(unit)}{renderAfter ? renderAfter(unit) : null}</Fragment>)}</>;
   return <>{runs.map((run) => run.kind === "unit"
-    ? <Fragment key={run.key}>{renderUnit(run.units[0])}</Fragment>
-    : <CappedToolRun key={run.key} label={run.label} units={run.units} renderUnit={renderUnit} />)}</>;
+    ? <Fragment key={run.key}>{renderUnit(run.units[0])}{renderAfter ? renderAfter(run.units[0]) : null}</Fragment>
+    : <CappedToolRun key={run.key} label={run.label} units={run.units} renderUnit={renderUnit} renderAfter={renderAfter} />)}</>;
 }

@@ -93,5 +93,20 @@ ok(statusCode.includes("getTurnFileChanges(turn.id)") && statusCode.includes("su
 ok(watch.includes("const dirs: string[] = [];") && watch.includes("for (const d of dirs) visit(d, depth + 1);"),
   "工作区遍历文件优先：先收本层文件、再下潜子目录（DFS 会被大子目录烧光预算，根级新文件不见）");
 
+/* ── 五、浮层免疫（10-06 用户实测「弹窗那个叉掉被遮住了 / 关不掉」）─────────────────────────
+   `.turn-group` 上有**恒等 transform**（matrix(1,0,0,1,0,0)）——恒等也照样创建 containing block，
+   让 `position:fixed` 的「审查弹窗遮罩」退化成该回合的盒子（实测 481px），弹窗居中后被顶出屏幕、
+   头部（含关闭键）被切掉。修法 = createPortal 到 body（右键菜单同理：fixed + 视口坐标会被整体偏移）。 */
+
+ok(statusCode.includes("createPortal((") && statusCode.includes("), document.body)") && statusCode.includes('className="turn-diff-modal-mask"'),
+  "审查弹窗 createPortal 到 body（留在回合内 = fixed 退化、关闭键被切）");
+ok(statusCode.includes('event.key === "Escape"') && statusCode.includes("setReview(null)"),
+  "审查弹窗 Esc 可关（关闭键被切时的兜底）");
+ok(/\.turn-diff-modal \{[\s\S]{0,280}?display: flex;/.test(css) && /\.turn-diff-modal \{[\s\S]{0,280}?overflow: hidden;/.test(css) && /\.turn-diff-modal \.tool-code-block \{[\s\S]{0,120}?flex: 1 1 auto;/.test(css),
+  "审查弹窗外框不滚、头部常驻、代码区占满剩余高度自己滚（长 diff 不再把关闭键滚出视野）");
+const shared2 = codeOnly(read("src/features/shared/InlineCards.tsx"));
+ok(shared2.includes('return createPortal((') && shared2.includes('), document.body);'),
+  "文件卡右键菜单也 portal 到 body（position:fixed + 视口坐标，留在回合内会被整体偏移）");
+
 console.log(`\n【file-summary】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

@@ -1,12 +1,13 @@
 /** 运行状态 / 上下文用量（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { FileCode2, ChevronDown, CircleGauge, Minimize2, Pencil } from "lucide-react";
 import { RUN_CLOCK } from "../../lib/run-clock-2";
 import { Turn } from "../../lib/turn";
 import { diffStats } from "../../lib/diff-stats";
 import { ToolCodeBlock } from "../shared/ToolCodeBlock";
 import { FileCardMenu } from "../shared/InlineCards";
-import { getTurnFileChanges, getTurnLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
+import { getTurnFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { openImageLightbox } from "../../lib/ui-channels";
 import { imageUrl } from "../../lib/image-url";
@@ -44,6 +45,14 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
      这份差异由主进程快照对比得出 —— 与引擎 changes 合并（同路径引擎优先）。 */
   const [trackedVersion, setTrackedVersion] = useState(0);
   useEffect(() => subscribeTurnFileChanges((changedTurnId: string) => { if (changedTurnId === turn.id) setTrackedVersion((v) => v + 1); }), [turn.id]);
+  // 审查弹窗开着时 Esc 即关（10-06 用户：「这个文件审查关不掉」——关闭键在长 diff 里滚不见时的兜底）。
+  // ⛔ 必须排在下面的空态提前 return **之前**：hook 顺序不许随文件数变化。
+  useEffect(() => {
+    if (!review) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setReview(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [review]);
   void trackedVersion;
   const tracked = getTurnFileChanges(turn.id);
   if (!changes.length && !tracked.length) return null;
@@ -99,32 +108,34 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
       {/* 右键菜单：与文件卡（消息里的内联卡片）共用同一份（在文件夹中显示 / 复制文件路径 / …），
           ⛔ 不复制第二份菜单实现 —— 菜单项永远只有一处真相源。 */}
       {menu && <FileCardMenu menu={menu} onOpen={() => openPath(menu.path, menu.name)} onClose={() => setMenu(null)} />}
-      {/* 审查弹窗：完整 diff 就地可看（层级 950 = 模态之上的最后一层，见 DESIGN.md 层叠带） */}
-      {review && (
+      {/* 审查弹窗：完整 diff 就地可看（层级 950 = 模态之上的最后一层，见 DESIGN.md 层叠带）。
+          ⛔ 必须 createPortal 到 body（10-06 用户实测「弹窗那个叉掉被遮住了 / 关不掉」的真因）：
+          `.turn-group` 上有一个**恒等 transform**（matrix(1,0,0,1,0,0)）——恒等也照样创建
+          containing block，让 `position:fixed` 的遮罩退化成「这一回合的盒子」（实测 481px 高），
+          弹窗在盒子里居中后被顶出屏幕上方、头部（含关闭键）整个被切掉。portal 出去一劳永逸。 */}
+      {review && createPortal((
         <div className="turn-diff-modal-mask" onClick={() => setReview(null)}>
           <div className="turn-diff-modal" role="dialog" aria-label={`${review.path} 改动审查`} onClick={(event) => event.stopPropagation()}>
             <header><code>{review.path}</code><button type="button" onClick={() => setReview(null)}>关闭</button></header>
             <ToolCodeBlock language="diff" text={review.diff || "（这个文件的 diff 内容不可用——会话记录里只存了路径）"} maxHeight={560} />
           </div>
         </div>
-      )}
+      ), document.body)}
     </>
   );
 }
 
 const LIVE_LIMIT = 8;
 
-/** 运行中的「编辑 <文件> +N -M」实时行（10-06 用户对照 WorkBuddy，并明确纠正过一次：
-    **运行中是运行中的 —— 数字跟在编辑行对应文件后面；汇总是汇总（回合结束那张卡）—— 两者不许混**。
-    所以这里**不是卡片、不带总计头**：就是嵌在运行过程里的一行行编辑记录，
+/** 运行中「编辑 <文件> +N -M」实时行（10-06 用户对照 WorkBuddy，两次纠正后定型：
+    **运行中是运行中的 —— 数字跟在编辑行对应文件后面；汇总是汇总（回合结束那张卡）—— 不许混**；
+    **在哪个地方发生就显示在哪个地方** —— 行由 TurnFoldStream 按锚点挂在当时那条工具项后面渲染，
+    这里只负责画（哑组件：给什么画什么，订阅与锚点都在 session-queue）。
     每行 = 铅笔 + 文件类型图标 + 文件名 + 所在目录 + 该文件实时的 +N -M（数字变化重放一次 live-tick）。
-    数据源 = 主进程每 ~2.5s 一圈的轻量重扫（turn-file-changes-live，见 electron/turn-file-watch.ts）——
-    模型用 shell / MCP 写文件时引擎不发 fileChange，运行中的文件改动只能宿主自己盯。
-    ⛔ 只在回合运行中渲染；回合收尾主进程先发空 live 清场，再由底部汇总卡接管。 */
-export function LiveFileChanges({ turn }: { turn: Turn }) {
-  const [, bump] = useState(0);
-  useEffect(() => subscribeTurnFileChanges((changedTurnId: string) => { if (changedTurnId === turn.id) bump((v) => v + 1); }), [turn.id]);
-  const files = getTurnLiveFileChanges(turn.id);
+    数据源 = 主进程每 ~2.5s 一圈的轻量重扫（turn-file-changes-live，见 electron/turn-file-watch.ts）。 */
+export type LiveFileChange = { path: string; status: string; added: number; deleted: number };
+
+export function LiveFileRows({ files }: { files: LiveFileChange[] }) {
   if (!files.length) return null;
   const visible = files.slice(0, LIVE_LIMIT);
   return (

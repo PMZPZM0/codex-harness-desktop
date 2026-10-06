@@ -131,7 +131,7 @@ export function userDisplayText(rawText: string): string {
 
 /** 判断服务端落地的 userMessage 是否对应本地乐观 input。
  * 服务端可能剥掉记忆/技能/引用等内部段，因此文本必须按用户可见正文比较；
- * 没有文字的纯图片消息则按本地图片路径顺序比较。 */
+ * 没有文字的纯附件消息按**附件文件列表**逐项同序比较（10-06），纯图片消息按本地图片路径顺序比较。 */
 export function userMessageMatchesInput(
   item: any,
   input: any[],
@@ -140,7 +140,15 @@ export function userMessageMatchesInput(
   const inputRaw = input.filter((part: any) => part.type === "text").map((part: any) => part.text ?? "").join("\n");
   const serverText = userDisplayText(serverRaw).trim();
   const inputText = userDisplayText(inputRaw).trim();
-  if (serverText || inputText) return serverText === inputText;
+  // ⛔ 附件一致性（10-06 用户实测「渲染两次」的根因）：纯附件消息（粘贴长文成 .txt、只发文件）
+  //   两侧的可见文本**都为空** —— 旧逻辑 `if (serverText || inputText)` 不成立、直接落到图片分支
+  //   返回 false ⇒ 乐观气泡永远不合并，整个回合里同一条消息显示两遍（e2e 实测 pending 气泡）。
+  //   附件列表取自两侧的 [附件文件] 段（parseUserRefs 解出，路径逐项同序比较）。 */
+  const serverFiles = parseUserRefs(serverRaw).files;
+  const inputFiles = parseUserRefs(inputRaw).files;
+  const filesMatch = serverFiles.length === inputFiles.length && serverFiles.every((path, index) => path === inputFiles[index]);
+  if (!serverText && !inputText && (serverFiles.length || inputFiles.length)) return filesMatch;
+  if (serverText || inputText) return serverText === inputText && filesMatch;
   const serverImages = (item.content ?? []).filter((part: any) => part.type === "localImage").map((part: any) => String(part.path ?? ""));
   const inputImages = input.filter((part: any) => part.type === "localImage").map((part: any) => String(part.path ?? ""));
   return serverImages.length > 0 && serverImages.length === inputImages.length && serverImages.every((path: string, index: number) => path === inputImages[index]);

@@ -1,5 +1,5 @@
 /** 排队消息 / 折叠流 / 渐进体（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
-import { useState, useMemo, useEffect, memo, Fragment } from "react";
+import { useState, useMemo, useEffect, useRef, memo, Fragment } from "react";
 import { ChevronDown, ChevronRight, GripVertical, Clock3, Image, ArrowUp, PenLine, Trash2, TerminalSquare, FileCode2, Search, Bot, Brain, Wrench, AlarmClock, X } from "lucide-react";
 import { parseUserRefs } from "../../lib/user-refs";
 import type { ParsedUserRefs } from "../../lib/user-refs";
@@ -12,6 +12,9 @@ import { Turn } from "../../lib/turn";
 import { classifyUnit, buildSegments, foldItemStatus, computeFoldSummary, topToolGroup } from "../../lib/turn-fold";
 import type { FoldUnit } from "../../lib/turn-fold";
 import { CappedToolSequence } from "../session-cards";
+import { LiveFileRows } from "../status";
+import type { LiveFileChange } from "../status";
+import { getTurnLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
 import { formatDuration } from "../../lib/format-duration";
 import { describeTurnStop, turnHeadline } from "../../lib/turn-stop-reason.mjs";
 import { planCompletedFold } from "../../lib/turn-fold-plan.mjs";
@@ -287,6 +290,32 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
   [items]);
   const segments = useMemo(() => buildSegments(units, !running), [units, running]);
 
+  /* ── 运行中实时「编辑 <文件> +N -M」行的**就地锚定**（10-06 用户纠正：「在哪个地方就展示在
+     哪个地方，不是一直在新消息下面，这样多丑」）─────────────────────────────────
+     锚点 = 文件**首次出现在 live 数据里的那一刻、流里最后一条工具项**的 id；行就渲染在那一项后面。
+     live 每 ~2.5s 推一次（主进程轻量重扫），订阅在这里；渲染是哑组件 LiveFileRows（status 域）。 */
+  const [liveTick, setLiveTick] = useState(0);
+  useEffect(() => {
+    if (!running) return;
+    return subscribeTurnFileChanges((changedTurnId: string) => { if (changedTurnId === turn.id) setLiveTick((v) => v + 1); });
+  }, [running, turn.id]);
+  const liveAnchorsRef = useRef<Map<string, string | null>>(new Map());
+  useEffect(() => {
+    if (!running) { liveAnchorsRef.current.clear(); return; }
+    const files = getTurnLiveFileChanges(turn.id);
+    const anchorTarget = units.length ? units[units.length - 1].item.id : null;
+    for (const file of files) if (!liveAnchorsRef.current.has(file.path)) liveAnchorsRef.current.set(file.path, anchorTarget);
+    const alive = new Set(files.map((file) => file.path));
+    for (const key of [...liveAnchorsRef.current.keys()]) if (!alive.has(key)) liveAnchorsRef.current.delete(key);
+  }, [liveTick, running, turn.id, units]);
+  const liveRowsFor = (itemId: string) => {
+    if (!running) return null;
+    const files = getTurnLiveFileChanges(turn.id).filter((file) => liveAnchorsRef.current.get(file.path) === itemId);
+    return files.length ? <LiveFileRows files={files as LiveFileChange[]} /> : null;
+  };
+  // 还没轮到任何工具项就出现的文件（锚 = null）：落在流的最前面，不至于丢行。
+  const headLiveFiles = running ? getTurnLiveFileChanges(turn.id).filter((file) => liveAnchorsRef.current.get(file.path) === null) : [];
+
   const renderItem = (unit: FoldUnit, hideFooter?: boolean, reasoningActive?: boolean) => (
     <MemoItemView
       item={unit.item}
@@ -335,7 +364,7 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
         && !units.slice(index + 1).some((next) => next.item.type !== "reasoning");
       return renderItem(unit, unit.item.type === "agentMessage" ? true : undefined, reasoningActive);
     };
-    return <>{segments.map((seg) => (seg.kind === "foldable" && seg.shouldFold)
+    return <>{headLiveFiles.length ? <LiveFileRows files={headLiveFiles as LiveFileChange[]} /> : null}{segments.map((seg) => (seg.kind === "foldable" && seg.shouldFold)
       ? (
         <FoldGroup
           key={`fold-live-${seg.units[0].item.id}`}
@@ -347,10 +376,10 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
               这段已被折叠块收住 ⇒ cap={false}，不再叠「同一工具 >3 条」那层。 */
           autoFold
         >
-          <CappedToolSequence units={seg.units} cap={false} renderUnit={renderLiveUnit} />
+          <CappedToolSequence units={seg.units} cap={false} renderUnit={renderLiveUnit} renderAfter={(unit) => liveRowsFor(unit.item.id)} />
         </FoldGroup>
       )
-      : <CappedToolSequence key={`live-${seg.units[0]?.item.id ?? "tail"}`} units={seg.units} renderUnit={renderLiveUnit} />)}</>;
+      : <CappedToolSequence key={`live-${seg.units[0]?.item.id ?? "tail"}`} units={seg.units} renderUnit={renderLiveUnit} renderAfter={(unit) => liveRowsFor(unit.item.id)} />)}</>;
   }
 
   // ── 完成态：与流式态同构的分段折叠 ──

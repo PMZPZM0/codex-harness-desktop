@@ -596,19 +596,57 @@ const CHECKS = [
         rmSync(probeDir, { recursive: true, force: true }); // 上轮崩溃残留先清，保证 seed 是干净基准
         mkdirSync(probeDir, { recursive: true });
         writeFileSync(join(probeDir, "seed.txt"), "accept-seed-start\n");
-        /* ② 起一个真回合（模型做一条 echo + sleep 8 —— echo 是真 shell 调用，sleep 给「运行中实时行」
-           留满采样窗口）。 */
-        await h.clearInput(".composer-editor");
-        await h.typeInto(".composer-editor", "先用 shell 运行 echo ready，再运行 sleep 8，最后只回复一个单词：ok");
-        await h.click(".send-button");
+        /* ② 起一个真回合 —— 用**粘贴长文**这条路发（10-06 用户实测路径：粘贴 >200 字自动落盘成 .txt
+           附件 chip → 发送；顺带覆盖「附件消息只渲染一个气泡」的回归，见 ③b）。
+           提示词：模型做一条 echo + sleep 8 —— echo 是真 shell 调用，sleep 给「运行中实时行」留采样窗口。 */
+        const acceptPrompt = "先用 shell 运行 echo ready；再运行 sleep 8（必须真的执行这条命令，执行完再继续）；最后只回复一个单词：ok。" +
+          "（说明：本段是验收用的填充文字，请忽略这段说明、照常执行上面的指令即可；它的作用是把粘贴文本长度推过 200 字的附件阈值，用来验证「粘贴长文 → .txt 附件 chip → 发送 → 气泡合并」这条链路。填充文字继续：这段文字会被存成一个 .txt 附件文件，随消息一起发给模型；模型侧会看到 [附件文件] 段与文件路径。这段再补几句，确保总长度稳稳超过阈值：验收关注的是渲染与合并时序，不是这段文字的内容本身。）";
+        await h.eval(`(function(){
+          var dt = new DataTransfer();
+          dt.setData("text/plain", ${JSON.stringify(acceptPrompt)});
+          var el = document.querySelector('.composer-editor');
+          el.focus();
+          el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+          return 1; })()`);
+        let chipReady = false; // savePastedText IPC + chip 插入是异步的，轮询等它落地
+        for (let i = 0; i < 12; i++) {
+          await wait(400);
+          if (await h.eval(`!!document.querySelector('.composer-attach-chip-file')`).catch(() => false)) { chipReady = true; break; }
+        }
+        await h.eval(`document.querySelector('.composer-editor').focus()`);
+        await h.pressKey("Enter", { text: "\r" });
         let started = false;
         for (let i = 0; i < 100; i++) {
           await wait(150);
           if (await h.eval(`!!document.querySelector('.send-button.is-pause')`).catch(() => false)) { started = true; break; }
         }
-        h.check("② 前置：真回合真的跑起来了（没跑 = 模型未配置/引擎没起，本项作废）", started === true,
-          started ? "" : "send 后 15s 未见运行态 —— 先确认 .e2e-profile/main 的 custom-model.json / custom-models.json 有可用模型");
+        h.check("② 前置：粘贴落成附件 chip 且真回合真的跑起来了（没跑 = 模型未配置/引擎没起，本项作废）", started === true && chipReady === true,
+          JSON.stringify({ started, chipReady, hint: started ? "" : "send 后 15s 未见运行态 —— 先确认 .e2e-profile/main 的 custom-model.json / custom-models.json 有可用模型" }));
         if (!started) return;
+        /* ③b 粘贴附件消息中途**只渲染一个气泡**（10-06 用户实测「渲染两次」= 乐观气泡不合并：
+           两侧可见文本都为空、旧匹配器直接落空到图片分支返回 false；修法 = userMessageMatchesInput
+           按附件文件列表比对）。判据在**运行中**采样：**最后一个回合组内恰好 1 个气泡**（新消息），
+           且**全局无 pending**（没合并的乐观气泡就挂成 pending 双影）。⛔ 不数整屏总数：
+           会话里有历史消息、基线会被搅乱（10-06 实测踩过）。
+           ⛔ 本循环必须放在落盘之前且尽快结束（合并通常 1~2s 内完成）：它拖久了会把两批写入
+              拖到回合收尾之后（实测把 ③/④ 全拖红）。 */
+        let bubbleSeen = null;
+        let bubbleOk = false;
+        for (let i = 0; i < 15; i++) {
+          await wait(400);
+          bubbleSeen = await h.eval(`(function(){
+            var groups = [...document.querySelectorAll('.turn-group')];
+            var last = groups[groups.length - 1];
+            var all = [...document.querySelectorAll('.message.user-message')];
+            return { inLastTurn: last ? last.querySelectorAll('.message.user-message').length : 0,
+              pending: all.filter(function(n){ return n.classList.contains('pending'); }).length,
+              running: !!document.querySelector('.send-button.is-pause') };
+          })()`).catch(() => bubbleSeen);
+          if (bubbleSeen && bubbleSeen.running && bubbleSeen.pending === 0 && bubbleSeen.inLastTurn === 1) { bubbleOk = true; break; }
+          if (bubbleSeen && !bubbleSeen.running) break; // 回合都结束还没合并 = 真失败
+        }
+        h.check("③b 粘贴附件消息中途只渲染一个气泡（乐观气泡已合并，不出现 pending 双影——10-06 用户实测问题）",
+          bubbleOk === true, JSON.stringify(bubbleSeen));
         /* ③ 回合进行中**分两批**落盘 8 个文件 —— 追踪器 diff 的唯一来源。
            ⛔ 必须在 turn/started（快照已拍）之后写：写入早于快照会进"改前状态"、diff 不报。
            ⛔ 分两批是给「运行中实时行」两次采样窗口：第二批写入后行数必须长出来 = 真在实时更新
@@ -651,7 +689,7 @@ const CHECKS = [
         }
         h.check("④ 运行中·实时更新：第二批文件写入后实时行数量长出来（数字是跑着跳的，不是收尾才算）",
           ourLive(liveSecond).length > ourLive(liveFirst).length,
-          JSON.stringify({ first: ourLive(liveFirst).length, second: ourLive(liveSecond).length, names: ourLive(liveSecond).map((r) => String(r.text).split(" ")[1] || "") }).slice(0, 260));
+          JSON.stringify({ first: ourLive(liveFirst).length, second: ourLive(liveSecond).length, names: ourLive(liveSecond).map((r) => String(r.text).split(" ")[1] || ""), hint: ourLive(liveSecond).length === 0 ? "实时行整组消失 = 回合先结束了（模型这次没真 sleep，第二批广播赶不上）" : "" }).slice(0, 300));
         /* ⑤ 等回合收尾（真 turn/completed → 主进程结算广播；收尾会先清 live 再发最终报告）。 */
         let ended = false;
         for (let i = 0; i < 600; i++) {

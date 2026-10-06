@@ -4347,10 +4347,12 @@ export async function run() {
       ? ok : fail)("【112】运行态末段仍内联（还在长、还在跑的那段不进摘要）");
     /* 内层那层折叠本体仍必须在（改造不能把它删掉） */
     const cards112 = readFileSync(join(ROOT, "src", "features", "session-cards", "SessionCards.tsx"), "utf8");
-    (/export function CappedToolRun\(\{ label, units, renderUnit, limit = 3 \}/.test(cards112)
+    // ⛔ 10-06：两个签名多了可选的 renderAfter（运行中实时编辑行的锚点钩子）——判据按「含它也行、
+    //    核心默认值必须原样」放宽（limit = 3 / cap = true 仍是硬条件）。
+    (/export function CappedToolRun\(\{ label, units, renderUnit,( renderAfter,)? limit = 3 \}/.test(cards112)
       ? ok : fail)("【112】「相同工具连续调用超过 3 条」规则仍在（CappedToolRun 默认 limit = 3）");
     (/hiddenCount = Math\.max\(0, units\.length - limit\)/.test(cards112) ? ok : fail)("【112】超出 limit 的那部分才收进折叠行");
-    (/export function CappedToolSequence\(\{ units, renderUnit, cap = true \}/.test(cards112)
+    (/export function CappedToolSequence\(\{ units, renderUnit,( renderAfter,)? cap = true \}/.test(cards112)
       ? ok : fail)("【112】CappedToolSequence 有 cap 开关（默认开启 = 不改变既有行为）");
     (/if \(cap === false\) return/.test(cards112) ? ok : fail)("【112】cap=false 时逐条原序渲染（不再分组截断）");
   }
@@ -4805,6 +4807,19 @@ export async function run() {
   // ⑨ 面板身份色：左 accent 色条 + 头箭头主题蓝（09-26 用户要求加颜色区分；都在 CSS）。
   (/border-left: 3px solid var\(--accent\);/.test(styles54) && /color: var\(--accent\);/.test(styles54) ? ok : fail)(
     "【161】浮窗身份色 = 左 accent 色条 + 头箭头主题蓝（09-26 用户要求）"
+  );
+  // ⑪ 回合结束**幻影浮窗**（10-06 用户报「所有思考板块在回合结束时会重复播放一次缩放效果」；
+  //    animationstart 实测：大折叠重挂载 + 残留揭示标记会让浮窗凭空 spawn→suck 一遍）。
+  //    三处修法缺一不可：初始揭示不许用过期标记复活 / 揭示 effect 非直播态清标记且不认标记 /
+  //    回合结束后浮窗只认用户显式点开。
+  (/if \(running && marked != null && text\.startsWith\(marked\)\) return marked;/.test(itemSrc) ? ok : fail)(
+    "【161】⛔ 初始揭示：续播标记只在直播（running）时可用（回合结束重挂载不许复活 revealing）"
+  );
+  (/if \(!running && !revealing\) bufferedReasoningRevealStarts\.delete\(String\(item\.id\)\);\n\s*const markedStart = running \? bufferedReasoningRevealStarts\.get\(String\(item\.id\)\) : null;/.test(itemSrc) ? ok : fail)(
+    "【161】⛔ 揭示 effect：非直播态先清续播标记、且不读它（残留标记 + 文本补写 = 幻影开窗）"
+  );
+  (/const popupOpen = open && Boolean\(displayed\) && \(running \? \(streamingNow \|\| manualOpen !== null\) : manualOpen === true\);/.test(itemSrc) ? ok : fail)(
+    "【161】⛔ 回合结束后浮窗只认用户显式点开（自动揭示/状态 flicker 一律不许凭空开窗）"
   );
 }
 // ── 55. 压缩期间的运行态语义（09-26 用户截图：压缩后「正在生成回复 · 正在落笔」一直挂着）──
