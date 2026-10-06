@@ -3039,11 +3039,11 @@ export async function run() {
   (!/const \[notice, setNotice\] = useState\(""\)/.test(noticeHub73) ? ok : fail)(
     "【73】通知中枢不得回退成单槽 notice useState（多会话并发时会互相覆盖）"
   );
-  (/const setNotice = useCallback\(\(text: string, threadId\?: string\) => \{[\s\S]{0,1500}?setNotices\(\(current\) => \[\.\.\.current, \{ id, text, threadId, scope \}\]/.test(app73) ? ok : fail)(
-    "【73】setNotice 是「推一条入队」的兼容函数且引用稳定（useCallback——它被当 onNotice 传进子组件的 effect 依赖；空串仍=清空全部）"
+  (/const setNotice = useCallback\(\(text: string, threadId\?: string\) => \{[\s\S]{0,2000}?setNotices\(\[\{ id, text, threadId, scope \}\]\)/.test(app73) ? ok : fail)(
+    "【73】setNotice 保持兼容签名与稳定引用（useCallback；空串仍=清空全部），但浮层**只留最新一条**——10-06 用户改口径：「不要一下上下展示好几个通知叠加」，原「推一条入队」的叠加写法已废"
   );
   (/notice-stack/.test(app73) && /\.notice-stack \{/.test(css73) ? ok : fail)(
-    "【73】通知渲染走 .notice-stack 堆叠容器（多条并存、各自独立倒计时）"
+    "【73】通知渲染仍走 .notice-stack 锚定容器（贴 .settings-modal / main.workspace 各自的锚；容器里恒 1 条，见 11u）"
   );
   (/String\(threadId\)\.replace\(\/-\/g, ""\)\.slice\(-4\)/.test(app73) ? ok : fail)(
     "【73】会话名兜底用 id 后 4 位短码（常量「会话」会让所有未命名会话撞成同一个名字）"

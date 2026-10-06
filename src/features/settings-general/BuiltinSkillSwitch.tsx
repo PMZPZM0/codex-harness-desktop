@@ -10,6 +10,10 @@
  *     另一个入口是技能页的「共享技能池」。两处各存一份就会各说各话。
  *  3. **复用共享 `ToggleSwitch`**（守卫【234】⑧：新开关不许写散装实现），
  *     布局复用现成的 `settings-toggle-row` 语义类（⛔ 不新增 CSS 类，省掉样式覆盖那一串）。
+ *  4. **每次拨动都必须有回执**（10-06 用户报障「我开关就没反馈通知」）：先给一条「正在…」
+ *     （这段要重启引擎，按秒计），完成后再给「已开启/已关闭」或失败原因。
+ *     ⛔ 别只留失败回执 —— 成功静默 = 用户以为开关坏了（同类：技能页「共享技能池」的 patch 原来连
+ *     失败都被 `.catch(() => undefined)` 吞掉，本轮一并修）。
  */
 import { useCallback, useEffect, useState } from "react";
 import { MessageSquareText } from "lucide-react";
@@ -42,10 +46,17 @@ export function BuiltinSkillSwitch({ skill, title, desc, onNotice }: {
 
   const toggle = (next: boolean) => {
     setBusy(true);
+    /* ⛔ 先给一条"正在…"回执（10-06 用户报障：「我开关就没反馈通知」）：
+       风格开关的落地要**重写 config.toml + 重启引擎**（见 electron/output-styles.ts），
+       这段耗时按秒计，而开关自身只有"变灰"这一种状态 —— 不给回执就是"点了没反应"。
+       ⛔ 不能只等最终回执：那要好几秒才出现，用户会以为开关坏了。 */
+    onNotice?.(next ? `正在开启「${title}」并重启引擎…` : `正在关闭「${title}」并重启引擎…`);
     window.codex.setBuiltinSkillSwitch({ name: skill, enabled: next, cwd: readWorkspace() })
       .then((r) => {
         setState(r);
+        // 成功/失败都要有回执：这是"开关到底生效没有"的唯一可见口径（技能页/磁盘都看不见结果）
         if (r.error) onNotice?.(`「${title}」切换失败：${r.error}`);
+        else onNotice?.(next ? `「${title}」已开启：之后每一轮回复都按这套风格写` : `「${title}」已关闭：已恢复默认写法`);
       })
       .catch((error) => onNotice?.(`「${title}」切换失败：${String(error?.message ?? error)}`))
       .finally(() => setBusy(false));

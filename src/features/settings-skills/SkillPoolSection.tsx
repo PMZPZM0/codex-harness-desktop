@@ -42,7 +42,7 @@ function basename(cwd: string): string {
   return cwd.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || cwd;
 }
 
-export function SkillPoolSection({ projects }: { projects?: [string, unknown][] }) {
+export function SkillPoolSection({ projects, onNotice }: { projects?: [string, unknown][]; onNotice?: (message: string) => void }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [skills, setSkills] = useState<PoolSkill[]>([]);
@@ -84,13 +84,24 @@ export function SkillPoolSection({ projects }: { projects?: [string, unknown][] 
     return () => { document.removeEventListener("pointerdown", close, true); document.removeEventListener("keydown", onKeyDown, true); };
   }, [menuOpen]);
 
+  /* ⛔ 每次拨动都要回执（10-06 用户：「很多开发都没有通知提醒，全部检查一下」）。
+     此前这里是 `.catch(() => undefined)` —— **成功静默、失败也静默**：开关看着拨过去了，
+     磁盘/引擎那边成没成完全不知道（而"控制台·回复风格"是同一个技能的另一入口，同样静默）。
+     ⛔ 回执走父级穿透的 `onNotice`（本面板按 09-27 的设计**自取数据、不经 bag**，
+        所以不能直接拿 bag.setNotice；保持自包含的同时把结果报上去）。 */
   const patch = (name: string, p: { globalDisabled?: boolean; projectDisabled?: boolean }) => {
     if (!target) return;
     setBusy(name);
+    const what = p.globalDisabled === false ? "已全局恢复"
+      : p.globalDisabled === true ? "已全局停用"
+      : p.projectDisabled === true ? "已在该项目停用" : "已在该项目启用";
     window.codex.setSkillPoolState({ cwd: target, name, ...p })
       .then(() => window.codex.describeSkillPool({ cwd: target }))
-      .then((r) => setSkills(r.skills ?? []))
-      .catch(() => undefined)
+      .then((r) => {
+        setSkills(r.skills ?? []);
+        onNotice?.(`技能「${name}」${what}`);
+      })
+      .catch((error: any) => onNotice?.(`技能「${name}」切换失败：${error?.message ?? String(error)}`))
       .finally(() => setBusy(null));
   };
 

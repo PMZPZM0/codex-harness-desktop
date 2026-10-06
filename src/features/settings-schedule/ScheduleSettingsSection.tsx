@@ -30,7 +30,11 @@ export function ScheduleSettingsSection(props: ScheduleSettingsSectionProps) {
                               <div className="auto-card-head">
                                 <strong title={task.name}>{task.name}</strong>
                                 <span className="auto-card-tag">{task.kind === "once" || task.scheduleType === "once" ? "一次性任务" : (task.kind === "interval" || task.kind === undefined && !task.rrule ? "循环任务" : "周期任务")}</span>
-                                <ToggleSwitch checked={task.enabled} title={task.enabled ? "停用" : "启用"} onChange={() => void toggleSchedule(task)} />
+                                {/* ⛔ 拨动必须有回执（10-06 用户：「很多开发都没有通知提醒」）：
+                                    失败也不许静默 —— 状态行长在对话区的任务面板上，人在设置页看不见。 */}
+                                <ToggleSwitch checked={task.enabled} title={task.enabled ? "停用" : "启用"} onChange={() => void toggleSchedule(task).then((result: any) => setNotice(result?.ok
+                                  ? `定时任务「${result.task.name}」已${result.task.enabled ? "启用" : "停用"}`
+                                  : `定时任务「${task.name}」切换失败：${result?.error ?? "未知错误"}`))} />
                               </div>
                               <p className="auto-card-desc" title={task.prompt}>{task.prompt}</p>
                               <div className="auto-card-meta"><Clock3 size={13} /><span>运行计划</span><b>{describeSchedule(task)}</b></div>
@@ -48,7 +52,7 @@ export function ScheduleSettingsSection(props: ScheduleSettingsSectionProps) {
                         </div>
                       )}
                     </div>
-                    <div className="auto-awake"><Info size={14} /><span>Codex 运行会话时保持电脑唤醒。</span><input type="checkbox" checked={keepAwake} onChange={(event) => { const on = event.target.checked; setKeepAwake(on); localStorage.setItem("keep-awake", String(on)); void window.codex.setAwake(on); }} /></div>
+                    <div className="auto-awake"><Info size={14} /><span>Codex 运行会话时保持电脑唤醒。</span><input type="checkbox" checked={keepAwake} onChange={(event) => { const on = event.target.checked; setKeepAwake(on); localStorage.setItem("keep-awake", String(on)); /* ⛔ 勾选也要回执（10-06 用户：开关没反馈）；失败更要说 —— 主进程没开成功时电脑照样会睡。 */ void window.codex.setAwake(on).then(() => setNotice(on ? "已开启：会话运行期间保持电脑唤醒" : "已关闭：不再阻止电脑休眠")).catch((error: any) => setNotice(`保持唤醒设置失败：${error?.message ?? error}`)); }} /></div>
                     <div className="auto-templates"><h3>闲时任务模板</h3><div className="template-grid">
                       {idleTemplates.map((tpl: any) => <button className="template-card" key={tpl.name} onClick={() => { setAutoFormVisible(true); setScheduleDraft({ ...emptyScheduleDraft(workspace || ""), name: tpl.name, prompt: tpl.prompt, effort: "high" }); }}><strong><ListFilter size={13} />{tpl.name}</strong><p>{tpl.desc}</p><small>最早可用时段</small></button>)}
                     </div></div>

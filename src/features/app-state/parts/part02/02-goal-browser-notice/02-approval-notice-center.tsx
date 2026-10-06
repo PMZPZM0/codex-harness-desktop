@@ -8,7 +8,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { basename } from "../../../../../lib/basename";
-import { DELEGATE_RAIL_LINGER_MS, IDENTITY_ONBOARD_INSTRUCTIONS, IDENTITY_ONBOARD_TOOL, MEMBER_LABELS, NOTICE_MAX, NOTICE_TTL_MS, QUICK_SITES } from "../../../../app-view/constants";
+import { DELEGATE_RAIL_LINGER_MS, IDENTITY_ONBOARD_INSTRUCTIONS, IDENTITY_ONBOARD_TOOL, MEMBER_LABELS, NOTICE_TTL_MS, QUICK_SITES } from "../../../../app-view/constants";
 import type { Bag } from "../../bag-types";
 
 export function usePart02b2(bag: Bag) {
@@ -133,8 +133,21 @@ bag.dismissNotice = dismissNotice as typeof bag.dismissNotice;
     // ⛔ 「不准跨对话框展示」（09-20）：设置弹窗开着时，会话来源的通知**不再弹浮层**
     //    （否则会横跨盖在设置弹窗上面）——静默进通知中心，靠顶栏徽标提醒。
     if (scope === "chat" && bag.settingsOpenRef.current) return;
-    // 上限：多会话同时刷屏时只留最近几条，避免糊满一屏
-    bag.setNotices((current) => [...current, { id, text, threadId, scope }].slice(-NOTICE_MAX));
+    /* ⛔⛔ 浮层**只展示最新一条**（10-06 用户：「通知只展示最新的，不要一下上下展示好几个通知叠加」）：
+       新通知顶替场上所有旧通知（连它们的倒计时一起收掉），不再并列成 stack。
+       ⚠️ 这是用户对 09-20 口径的**反转**：那次是「单槽被后到的顶掉 ⇒ 多会话并发时看不见先到的那条」，
+          为此改成多条队列 + 每条独立 2.6s 倒计时（上限 NOTICE_MAX=4）。现在改回"只看最新"。
+       ⛔ **通知中心（noticeCenter）不动** —— 它是历史台账，本来就该留全量；用户要的是浮层不叠。
+       ⛔ 逐条清定时器不能省：旧条目被顶掉后它的 setTimeout 仍会触发（回调打在不存在的 id 上
+          虽无害，但定时器会一直挂到触发为止，也容易在下次调试时看花眼）。 */
+    for (const entry of bag.notices) {
+      const timer = bag.noticeTimersRef.current.get(entry.id);
+      if (timer) {
+        window.clearTimeout(timer);
+        bag.noticeTimersRef.current.delete(entry.id);
+      }
+    }
+    bag.setNotices([{ id, text, threadId, scope }]);
     bag.noticeTimersRef.current.set(id, window.setTimeout(() => bag.dismissNotice(id), NOTICE_TTL_MS));
   }, [bag.dismissNotice]);
 bag.setNotice = setNotice as typeof bag.setNotice;

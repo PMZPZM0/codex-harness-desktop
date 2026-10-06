@@ -51,7 +51,10 @@ export function RpaSettingsSection(props: RpaSettingsSectionProps) {
                           {taskList.length === 0 && <li className="muted">清单为空。让 Codex 跑通流程时自主安排待办，无需手动添加。</li>}
                           {taskList.map((task: any) => (
                             <li key={task.id} className={task.status}>
-                              <ToggleSwitch checked={task.status === "done"} title={task.status === "done" ? "标记待办" : "标记完成"} onChange={() => { const next = task.status === "done" ? "todo" : "done"; void window.codex.updateTask({ id: task.id, patch: { status: next } }).then((updated: any) => setTaskList((current: any) => current.map((entry: any) => entry.id === updated.id ? updated : entry))).catch(() => undefined); }} />
+                              {/* ⛔ 成败都要回执（10-06 用户：「很多开发都没有通知提醒」）：
+                                  原来是 `.catch(() => undefined)` —— 失败连一点响动都没有，
+                                  勾选框看着变了、盘上却没写成功。 */}
+                              <ToggleSwitch checked={task.status === "done"} title={task.status === "done" ? "标记待办" : "标记完成"} onChange={() => { const next = task.status === "done" ? "todo" : "done"; void window.codex.updateTask({ id: task.id, patch: { status: next } }).then((updated: any) => { setTaskList((current: any) => current.map((entry: any) => entry.id === updated.id ? updated : entry)); setNotice(next === "done" ? `待办已完成：${String(task.text ?? "").slice(0, 30)}` : `待办已恢复：${String(task.text ?? "").slice(0, 30)}`); }).catch((error: any) => setNotice(`更新待办失败：${error?.message ?? error}`)); }} />
                               <span className="rpa-task-text">{task.text}</span>
                               <span className={`rpa-task-priority ${task.priority}`}>{task.priority === "high" ? "高" : task.priority === "low" ? "低" : "中"}</span>
                               <button className="icon-button" title="删除" onClick={() => { void window.codex.deleteTask(task.id).then(() => { setTaskList((current: any) => current.filter((entry: any) => entry.id !== task.id)); setNotice(`任务「${task.name || task.id}」已删除`); }).catch((error: any) => setNotice(`删除任务失败：${error?.message ?? error}`)); }}><Trash2 size={13} /></button>

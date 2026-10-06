@@ -2125,8 +2125,8 @@ w.postMessage({id:1,op:"list",root});
     (uiPool.includes("describeSkillPool") && uiPool.includes("setSkillPoolState") ? ok : fail)(
       "【173】SkillPoolSection 自取池数据与动作（不经 bag，避开【92】顺序契约）"
     );
-    (centerPool.includes("<SkillPoolSection projects={props.projects} />") ? ok : fail)(
-      "【173】技能中心「我的技能」视图已挂共享技能池区块（穿 projects 供项目切换器）"
+    (/<SkillPoolSection\s+projects=\{props\.projects\}[^>]*\/>/.test(centerPool) ? ok : fail)(
+      "【173】技能中心「我的技能」视图已挂共享技能池区块（穿 projects 供项目切换器；⛔ 判据锚 props 接线，别锚整串字面量——10-06 加 onNotice 回执时旧字面量断言假红）"
     );
   }
 
