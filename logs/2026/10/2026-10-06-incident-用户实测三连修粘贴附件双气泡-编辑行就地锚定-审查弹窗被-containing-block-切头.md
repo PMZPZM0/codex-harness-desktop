@@ -5,7 +5,7 @@ kind: incident
 area: messages
 title: 用户实测三连修：粘贴附件双气泡 / 编辑行就地锚定 / 审查弹窗被 containing block 切头 + 思考浮窗幻影缩放
 tags: [user-repro, user-refs, portal, containing-block, reasoning-card]
-commits: []
+commits: [f290410]
 files: [src/lib/user-refs.ts, src/features/session-queue/SessionQueue.tsx, src/features/session-cards/SessionCards.tsx, src/features/status/Status.tsx, src/features/shared/InlineCards.tsx, src/features/shared/ReasoningCard.tsx, src/styles/04-cards-tools.css, scripts/accept.mjs, scripts/guards/11p-file-summary.mjs, scripts/guards/07-turn-fold.mjs]
 importance: normal
 ---
