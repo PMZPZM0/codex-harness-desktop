@@ -93,5 +93,28 @@ ok(!/\.completed-file-chip\s*\{/.test(css), "⛔ 已删的彩色块样式不许�
 ok(/\.action-diff-head/.test(cssTurns) && /\.action-diff-stats/.test(cssTurns),
   "编辑卡行头样式在（图标 + 路径 + 徽章一行排）");
 
+/* ── 六、输入框上方「N 个文件已修改」胶囊（10-06 夜 · 用户对照 WorkBuddy 图三/图四）─────────
+   与排队/询问/审批卡**上下排序**、悬停展开清单、随运行实时刷新、回合结束自动消失；
+   弹层位置**自适应**（用户令：不能被裁剪）+ **居中展示**（用户令：胶囊不要靠左 → 居中；
+   弹层「放上去展示的那个」也要以胶囊中心居中）。 */
+
+const capsule = codeOnly(read("src/features/status/LiveEditedFilesCard.tsx"));
+const composer = codeOnly(read("src/features/app-view/AppView/02-main-stage/03-composer.tsx"));
+ok(capsule.includes("export function LiveEditedFilesCard") && capsule.includes("getTurnLiveFileChanges(runningTurnId)") && capsule.includes("subscribeTurnFileChanges"),
+  "胶囊：订阅 live、按运行中回合实时取数");
+ok(capsule.includes("if (!runningTurnId || !files.length) return null;"),
+  "没在跑 / 没有改动时整卡不渲染（回合结束自动消失）");
+ok(/\.edited-files-card \{[^}]*text-align: center/.test(css),
+  "胶囊居中展示（用户 10-06：「小胶囊在输入框上面，居中展示，不要靠左」）");
+ok(capsule.includes("desiredViewLeft - rect.left"),
+  "⛔ 弹层 left 按**相对卡片的偏移**写（absolute 基准是卡片；写视口坐标会叠加卡片左缘、画歪——10-06 实测 358→716）");
+ok(capsule.includes("pillRef.current.getBoundingClientRect()") && capsule.includes("pop.style.maxHeight ="),
+  "弹层锚点=胶囊 + maxHeight 按所选边可用空间收窄（自适应不被裁）");
+ok(capsule.includes("anchorCenter - pr.width / 2"),
+  "⛔ 弹层以**胶囊中心**居中（用户 10-06：「放上去展示的那个也要居中」；左缘对齐会看着偏向右）");
+ok(composer.includes("<LiveEditedFilesCard runningTurnId={activeThreadRunning")
+  && composer.indexOf("<LiveEditedFilesCard") < composer.indexOf('className="approval-stack"'),
+  "接进输入框卡片栈，且位置在**询问/审批卡之上**（卡片栈上下排序、不互相遮）");
+
 console.log(`\n【live-edits】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

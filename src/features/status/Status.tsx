@@ -1,5 +1,5 @@
 /** 运行状态 / 上下文用量（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { FileCode2, ChevronDown, CircleGauge, Minimize2, Pencil } from "lucide-react";
 import { RUN_CLOCK } from "../../lib/run-clock-2";
@@ -39,6 +39,13 @@ function segments(full: string): { name: string; dir: string } {
 export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?: (path: string) => void }) {
   const [review, setReview] = useState<{ path: string; diff: string } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; name: string } | null>(null);
+  /* 行悬停 → diff 预览（10-06 夜，用户对照图一：「鼠标放到汇总的修改的文件名上，出来这种预览效果」）。
+     ⛔ 位置**自适应**（用户点名：「别固定，固定容易截掉、展示不全」）：开时按行上下空间选边 +
+     计算代码区上限，落位时再实测高度钳进视口；面板 portal 到 body（不受回合卡坐标系影响）。 */
+  const [diffHover, setDiffHover] = useState<{ row: DOMRect; path: string; added: number; deleted: number; diff: string; side: "above" | "below"; codeMax: number } | null>(null);
+  const hoverOpenTimerRef = useRef<number | null>(null);
+  const hoverCloseTimerRef = useRef<number | null>(null);
+  const hoverPanelRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
   const changes = turn.items.flatMap((item) => item.type === "fileChange" ? (item.changes ?? []) : []);
   /* 宿主追踪（10-01）：模型走 shell / MCP / 浏览器写文件时引擎不发 fileChange，
@@ -53,6 +60,30 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [review]);
+  // diff 悬停预览：打开期间一滚动就收起（行坐标已漂移，贴着旧坐标会错位）
+  useEffect(() => {
+    if (!diffHover) return;
+    const close = () => setDiffHover(null);
+    window.addEventListener("scroll", close, true);
+    return () => window.removeEventListener("scroll", close, true);
+  }, [diffHover]);
+  // diff 悬停预览：**自适应落位**（用户 10-06：「别固定，固定容易截掉、展示不全」）——
+  // 开时已按行上下空间选边/算代码区上限，这里实测面板高度后把整块钳进视口。
+  useLayoutEffect(() => {
+    const panel = hoverPanelRef.current;
+    if (!panel || !diffHover) return;
+    const M = 8, GAP = 8;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const width = Math.min(640, vw - M * 2);
+    panel.style.width = width + "px";
+    const rect = diffHover.row;
+    const h = panel.offsetHeight;
+    const top = diffHover.side === "above" ? Math.max(M, rect.top - GAP - h) : Math.min(vh - M - h, rect.bottom + GAP);
+    const left = Math.max(M, Math.min(rect.left, vw - width - M));
+    panel.style.top = Math.round(top) + "px";
+    panel.style.left = Math.round(left) + "px";
+    panel.style.visibility = "visible";
+  }, [diffHover]);
   void trackedVersion;
   const tracked = getTurnFileChanges(turn.id);
   if (!changes.length && !tracked.length) return null;
@@ -87,6 +118,25 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
             return (
               <div className="completed-file clickable" key={file.path} title={`点击预览：${file.path}`}
                 onClick={() => openPath(file.path, name)}
+                onMouseEnter={(event) => {
+                  if (hoverCloseTimerRef.current) { window.clearTimeout(hoverCloseTimerRef.current); hoverCloseTimerRef.current = null; }
+                  if (hoverOpenTimerRef.current) window.clearTimeout(hoverOpenTimerRef.current);
+                  if (!diffText.trim()) return; // 没有 diff 内容的不弹（悬停没反应好过弹空窗）
+                  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+                  // 悬停意图 260ms：扫过一行不弹，停住才弹
+                  hoverOpenTimerRef.current = window.setTimeout(() => {
+                    const vh = window.innerHeight;
+                    const spaceAbove = rect.top - 16;
+                    const spaceBelow = vh - rect.bottom - 16;
+                    const side = spaceAbove >= spaceBelow ? "above" : "below"; // 默认贴空间大的一侧
+                    const codeMax = Math.max(120, Math.min(360, (side === "above" ? spaceAbove : spaceBelow) - 52));
+                    setDiffHover({ row: rect, path: file.path, added: file.added, deleted: file.deleted, diff: diffText, side, codeMax });
+                  }, 260);
+                }}
+                onMouseLeave={() => {
+                  if (hoverOpenTimerRef.current) { window.clearTimeout(hoverOpenTimerRef.current); hoverOpenTimerRef.current = null; }
+                  hoverCloseTimerRef.current = window.setTimeout(() => setDiffHover(null), 160); // 给"移向预览面板"留路
+                }}
                 onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, path: file.path, name }); }}>
                 {isImagePath(file.path)
                   ? <span className="completed-file-thumb"><img src={imageUrl(file.path)} alt="" loading="lazy" onError={(event) => { (event.currentTarget as HTMLImageElement).style.display = "none"; }} /></span>
@@ -108,6 +158,15 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
       {/* 右键菜单：与文件卡（消息里的内联卡片）共用同一份（在文件夹中显示 / 复制文件路径 / …），
           ⛔ 不复制第二份菜单实现 —— 菜单项永远只有一处真相源。 */}
       {menu && <FileCardMenu menu={menu} onOpen={() => openPath(menu.path, menu.name)} onClose={() => setMenu(null)} />}
+      {/* 行悬停的 diff 预览（自适应定位；portal 到 body —— 回合卡的恒等 transform 不影响 fixed） */}
+      {diffHover && createPortal((
+        <div ref={hoverPanelRef} className="completed-diff-preview" style={{ visibility: "hidden", top: 0, left: 0 }}
+          onMouseEnter={() => { if (hoverCloseTimerRef.current) { window.clearTimeout(hoverCloseTimerRef.current); hoverCloseTimerRef.current = null; } }}
+          onMouseLeave={() => setDiffHover(null)}>
+          <header><code title={diffHover.path}>{diffHover.path}</code><span className="completed-diff-preview-stats"><b>+{diffHover.added}</b> <i>-{diffHover.deleted}</i></span></header>
+          <ToolCodeBlock language="diff" text={diffHover.diff} maxHeight={diffHover.codeMax} />
+        </div>
+      ), document.body)}
       {/* 审查弹窗：完整 diff 就地可看（层级 950 = 模态之上的最后一层，见 DESIGN.md 层叠带）。
           ⛔ 必须 createPortal 到 body（10-06 用户实测「弹窗那个叉掉被遮住了 / 关不掉」的真因）：
           `.turn-group` 上有一个**恒等 transform**（matrix(1,0,0,1,0,0)）——恒等也照样创建

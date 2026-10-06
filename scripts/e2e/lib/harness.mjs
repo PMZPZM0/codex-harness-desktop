@@ -664,6 +664,25 @@ export class ElectronHarness {
     await sleep(120);
   }
 
+  /** 真实鼠标悬停到元素中心（走 CDP）。
+   *  ⛔ **两步移动**：每次新页面里「第一次 mouseMoved」在实测中不产生 mouseover/mouseenter
+   *  （先挪到别处、再进靶才触发 React 的 onMouseEnter）。 */
+  async hover(selector) {
+    const c = await this.eval(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; el.scrollIntoView({ block: "nearest" }); const r = el.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+    if (!c) throw new Error(`悬停失败，元素不存在：${selector}`);
+    await this._send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 5, y: 400, buttons: 0 });
+    await sleep(120);
+    await this._send("Input.dispatchMouseEvent", { type: "mouseMoved", x: c.x, y: c.y, buttons: 0 });
+    await sleep(120);
+    return c;
+  }
+
+  /** 鼠标挪开（触发 mouseleave，收起悬停类浮层） */
+  async moveMouseAway() {
+    await this._send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 5, y: 400, buttons: 0 });
+    await sleep(120);
+  }
+
   /** 用 CDP 真实输入文本到指定元素（对 contenteditable 最可靠，会触发 React 的 onInput） */
   async typeInto(selector, text) {
     const ok = await this.eval(

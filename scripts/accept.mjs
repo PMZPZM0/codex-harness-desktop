@@ -663,9 +663,11 @@ const CHECKS = [
         writeFileSync(join(probeDir, "notes.md"), "# notes\n- alpha\n- beta\n");
         writeFileSync(join(probeDir, "data.json"), '{ "k": 1 }\n');
         writeFileSync(join(probeDir, "seed.txt"), "accept-seed-start\naccept-seed-append\n");
-        /* 轮询等第一批实时行出现（主进程 2.5s 一拍 + 轻量重扫耗时 ⇒ 单次固定采样会偶发早于首次广播）。 */
+        /* 轮询等第一批实时行出现（主进程 2.5s 一拍 + 轻量重扫耗时 ⇒ 单次固定采样会偶发早于首次广播）。
+           ⛔ 窗口按**慢工作区**取：本轮实测 cwd = 用户主目录这类大树时，一圈 walkLight 远超 2.5s，
+             8s 窗口会假红（当时 ④ 拿到 8 行、③ 仍是 0）⇒ 15s。 */
         let liveFirst = [];
-        for (let i = 0; i < 16; i++) {
+        for (let i = 0; i < 30; i++) {
           await wait(500);
           liveFirst = await h.eval(liveRowsExpr).catch(() => liveFirst);
           if (ourLive(liveFirst).length >= 2) break;
@@ -690,6 +692,39 @@ const CHECKS = [
         h.check("④ 运行中·实时更新：第二批文件写入后实时行数量长出来（数字是跑着跳的，不是收尾才算）",
           ourLive(liveSecond).length > ourLive(liveFirst).length,
           JSON.stringify({ first: ourLive(liveFirst).length, second: ourLive(liveSecond).length, names: ourLive(liveSecond).map((r) => String(r.text).split(" ")[1] || ""), hint: ourLive(liveSecond).length === 0 ? "实时行整组消失 = 回合先结束了（模型这次没真 sleep，第二批广播赶不上）" : "" }).slice(0, 300));
+        /* ④b 输入框上方「N 个文件已修改」胶囊（10-06 用户对照 WorkBuddy 图三/图四 + 令「弹窗不能被裁剪」「不要靠左」）：
+           运行中出（与排队/询问/审批卡上下排序）、悬停展开清单（整矩形必须落视口内）、弹层以胶囊中心居中
+           （贴边被自适应钳住时豁免）、回合结束自动消失。 */
+        let capsule = null;
+        for (let i = 0; i < 12; i++) {
+          await wait(400);
+          capsule = await h.eval(`(function(){
+            var pill = document.querySelector('.edited-files-pill');
+            return pill ? { text: (pill.innerText||'').replace(/\\s+/g,' ').trim() } : null;
+          })()`).catch(() => capsule);
+          if (capsule) break;
+          if (!await h.eval(`!!document.querySelector('.send-button.is-pause')`).catch(() => true)) break;
+        }
+        if (capsule) await h.hover(".edited-files-pill").catch(() => undefined);
+        await wait(500);
+        const capsulePop = await h.eval(`(function(){
+          var p = document.querySelector('.edited-files-pop');
+          var pill = document.querySelector('.edited-files-pill');
+          if (!p) return null;
+          var r = p.getBoundingClientRect();
+          var pr = pill ? pill.getBoundingClientRect() : null;
+          var gap = pr ? Math.abs((r.left + r.width / 2) - (pr.left + pr.width / 2)) : 0;
+          var clamped = r.left <= 9 || r.right >= innerWidth - 9;
+          return { rows: p.querySelectorAll('.edited-files-row').length,
+            fits: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth,
+            centered: gap <= 2 || clamped, gap: Math.round(gap),
+            names: [...p.querySelectorAll('.edited-files-row code')].map(function(c){ return (c.textContent||'').trim(); }) };
+        })()`).catch(() => null);
+        const capsuleOurs = capsulePop ? LIVE_OURS.filter((n) => (capsulePop.names ?? []).some((x) => String(x).toLowerCase().includes(n))).length : 0;
+        h.check("④b 运行中胶囊：输入框上方出「N 个文件已修改」、悬停展开清单（自适应不被裁、以胶囊中心居中、含我们写的文件）",
+          !!capsule && /个文件已修改/.test(capsule.text) && !!capsulePop && capsulePop.fits === true && capsulePop.centered === true && capsuleOurs >= 2,
+          JSON.stringify({ capsule, capsulePop: capsulePop ? { rows: capsulePop.rows, fits: capsulePop.fits, centered: capsulePop.centered, gap: capsulePop.gap } : null, capsuleOurs }).slice(0, 240));
+        await h.moveMouseAway().catch(() => undefined);
         /* ⑤ 等回合收尾（真 turn/completed → 主进程结算广播；收尾会先清 live 再发最终报告）。 */
         let ended = false;
         for (let i = 0; i < 600; i++) {
@@ -778,11 +813,82 @@ const CHECKS = [
         await wait(300);
         const afterCollapse = await h.eval(`(function(){ const c=${cardSel}; return c? c.querySelectorAll('.completed-file').length : 0; })()`);
         h.check("⑭ 收起重回 6 行（折叠往返闭合）", afterCollapse === 6, `afterCollapse=${afterCollapse}`);
+        /* ⑮ 收尾后：输入框上方胶囊自动消失（收尾由汇总卡接管，不留悬挂浮层） */
+        const capsuleGone = await h.eval(`document.querySelectorAll('.edited-files-card').length`);
+        h.check("⑮ 回合结束后：输入框上方「N 个文件已修改」胶囊自动消失", capsuleGone === 0, `count=${capsuleGone}`);
+        /* ⑯ 汇总卡行悬停出 diff 预览（10-06 用户图一：「鼠标放到汇总的修改的文件名上」；
+            自适应落位不许被裁、左缘与该行对齐、含 @@ 差分行） */
+        await h.hover(".completed-changes .completed-file").catch(() => undefined);
+        await wait(900);
+        const hoverPreview = await h.eval(`(function(){
+          var p = document.querySelector('.completed-diff-preview');
+          if (!p) return null;
+          var r = p.getBoundingClientRect();
+          var row = document.querySelector('.completed-changes .completed-file');
+          var rr = row ? row.getBoundingClientRect() : null;
+          return { vis: getComputedStyle(p).visibility, fits: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth,
+            aligned: rr ? Math.abs(r.left - rr.left) <= 2 : null, hasDiff: (p.innerText||'').includes('@@') };
+        })()`).catch(() => null);
+        h.check("⑯ 汇总卡行悬停出 diff 预览（整矩形在视口内、左缘贴行、含 @@ 差分行）",
+          !!hoverPreview && hoverPreview.vis === "visible" && hoverPreview.fits === true && hoverPreview.aligned === true && hoverPreview.hasDiff === true,
+          JSON.stringify(hoverPreview));
+        await h.moveMouseAway().catch(() => undefined);
+        await wait(500);
+        const previewGone = await h.eval(`!document.querySelector('.completed-diff-preview')`);
+        h.check("⑰ 鼠标移开后预览自动收起（不残留浮层）", previewGone === true, `stillOpen=${!previewGone}`);
         await h.screenshot("file-summary");
       } finally {
-        /* ⑮ 收尾：探针目录整体删掉（落在用户磁盘上的东西必须自己清干净；崩溃也不留）。 */
+        /* 收尾：探针目录整体删掉（落在用户磁盘上的东西必须自己清干净；崩溃也不留）。 */
         if (probeDir) { try { rmSync(probeDir, { recursive: true, force: true }); } catch { /* 尽力而为 */ } }
       }
+    },
+  },
+  {
+    id: "popup-fits",
+    name: "㉔ 弹窗自适应普查：各弹出层整矩形落在视口内（贴边不被裁 —— 10-06 用户令「凡事弹窗类都要加自适应」）",
+    run: async (h) => {
+      /* 为什么这样测（用户 10-06 令）：弹出层贴右/下边缘被裁掉、展示不全，是最典型的静默 UI 缺陷
+         （tsc 与静态守卫都看不见最终像素）。这里对**当轮可复现**的几类弹出层做运行时探针，
+         判据统一 = **整矩形完全落在视口内**（fits），并专门验证「贴右边缘右键」的翻转路径。
+         ⚠️ 顺序依赖：文件卡右键那两条依赖 file-summary 先跑（它建了「已更改」卡）。 */
+      const FIT = `(function(sel){ var el = document.querySelector(sel); if (!el) return null; var r = el.getBoundingClientRect();
+        return { fits: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth, t: Math.round(r.top), b: Math.round(r.bottom), l: Math.round(r.left), rr: Math.round(r.right), vw: innerWidth, vh: innerHeight }; })`;
+      await h.waitFor(`!!document.querySelector(".composer-editor")`, { label: "输入框就绪", timeoutMs: 30000 }).catch(() => undefined);
+      /* ① composer 侧菜单逐个开：模型 / 档位 / 权限（.composer-setting → .composer-menu-pop）。
+         「能开出来的」都必须是 fits —— 打不满 2 个算前置失败（选择器漂了）。 */
+      const chips = await h.eval(`document.querySelectorAll('.composer-setting').length`).catch(() => 0);
+      let opened = 0;
+      let bad = null;
+      for (let i = 0; i < Math.min(Number(chips) || 0, 6); i++) {
+        await h.eval(`(function(){ var b = document.querySelectorAll('.composer-setting')[${i}]; if (b && !b.disabled) b.click(); return 1; })()`);
+        await wait(350);
+        const r = await h.eval(`${FIT}('.composer-menu-pop')`).catch(() => null);
+        if (r) { opened += 1; if (!r.fits && !bad) bad = { i, r }; }
+        await h.pressKey("Escape");
+        await wait(250);
+      }
+      h.check("① composer 下拉菜单（模型/档位/权限…）整矩形落在视口内（开到几个查几个）",
+        opened >= 2 && bad === null, JSON.stringify({ chips, opened, bad }).slice(0, 220));
+      /* ② 文件卡右键菜单：**贴右边缘**右键 → 必须翻转（菜单往左展开）且整矩形 fits */
+      const hasRow = await h.eval(`!!document.querySelector('.completed-changes .completed-file')`);
+      h.check("② 前置：存在「已更改」卡可右键（默认轮里 file-summary 先跑会建卡；--only 单跑本项时没有属预期）", hasRow === true, `hasRow=${hasRow}`);
+      if (hasRow) {
+        await h.eval(`(function(){ var row = document.querySelector('.completed-changes .completed-file'); var r = row.getBoundingClientRect();
+          row.scrollIntoView({ block: 'center' });
+          var r2 = row.getBoundingClientRect();
+          row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: innerWidth - 4, clientY: Math.round(r2.top + 8) }));
+          return 1; })()`);
+        await wait(400);
+        const fm = await h.eval(`${FIT}('.file-card-menu')`).catch(() => null);
+        h.check("③ 文件卡菜单贴右边缘仍整矩形在视口内（翻转生效，不向右溢出被裁）",
+          !!fm && fm.fits === true, JSON.stringify(fm));
+        await h.pressKey("Escape");
+        await wait(250);
+      }
+      /* ④ 收尾：浮层都已收起（不留悬挂菜单挡后面的截图/验收） */
+      const leftovers = await h.eval(`document.querySelectorAll('.composer-menu-pop, .file-card-menu').length`);
+      h.check("④ 普查后无悬挂菜单残留（都收干净）", leftovers === 0, `leftovers=${leftovers}`);
+      await h.screenshot("popup-fits");
     },
   },
   {
@@ -1104,7 +1210,8 @@ const LATEST_ROUND = "10-06";
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
   "ui-sketch": "10-06",   // ⛔ 10-06 重写：三形态探针（手机+电脑屏 / platform web 真落盘）+ 预览 + 还原；编号改执行顺序
-  "file-summary": "10-06",   // 文件更改汇报卡：点行预览 / 右键两项 / 折叠 / 图片缩略图（用户对照 Qoder 效果图点名）
+  "file-summary": "10-06",   // 文件更改汇报卡：运行中行/胶囊 + 收尾卡 + 悬停 diff 预览 + 交互（10-06 两次重写）
+  "popup-fits": "10-06",   // ⛔ 10-06 新增：弹窗自适应普查（用户令「凡事弹窗类都要加自适应，不能被裁剪」）
   "message-feedback": "10-05",   // 10-05 轮：消息操作图标的两段反馈 + 用户消息复制贴右端（历史项，默认轮不再跑 —— 回归证据）
   "plugin-market-gitee": "10-03",
   "codex-official-market": "10-03",   // 本轮新项；Gitee 项同轮重跑（插件页加了源切换，两个源都得看一眼）

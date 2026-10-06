@@ -905,7 +905,14 @@ export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, thre
         ) : null}
 
         {menu ? (
-          <div className="drama-canvas-context" style={{ left: menu.x, top: menu.y }} role="menu">
+          /* ⛔ 右键菜单钳进视口（10-06 用户令「凡事弹窗类都要自适应，不能被裁剪」）：坐标来自
+             clientX/Y，贴右/下边缘右键会把菜单顶出屏幕。menuActions 每项 ~30px + 内边距。 */
+          <div className="drama-canvas-context"
+            style={{
+              left: Math.max(8, Math.min(menu.x, window.innerWidth - 168)),
+              top: Math.max(8, Math.min(menu.y, window.innerHeight - (menuActions.length * 30 + 12))),
+            }}
+            role="menu">
             {menuActions.map((item) => (
               <button key={item.key} className={item.danger ? "is-danger" : ""} onClick={() => { setMenu(null); item.run(); }}>{item.label}</button>
             ))}
