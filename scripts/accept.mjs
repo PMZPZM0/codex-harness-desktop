@@ -1120,9 +1120,32 @@ const CHECKS = [
         await h.pressKey("Escape");
         await wait(250);
       }
-      /* ④ 收尾：浮层都已收起（不留悬挂菜单挡后面的截图/验收） */
-      const leftovers = await h.eval(`document.querySelectorAll('.composer-menu-pop, .file-card-menu').length`);
-      h.check("④ 普查后无悬挂菜单残留（都收干净）", leftovers === 0, `leftovers=${leftovers}`);
+      /* ④-⑦ 工作区菜单（📁，10-06 夜八轮用户实测「点图标都不会自动消失、其他地方点不了、
+         关都关不掉」）：开 → 整矩形 fits → **点外面即关**（window mousedown 判外部，非阻塞）
+         → 重开 → Esc 关（双退路）。
+         ⛔ CDP 合成点击绕开 OS 拖拽判定 —— 这里证的是**关闭逻辑接线**；「顶栏拖拽区吞真实
+         鼠标点击」那类只有真机暴露，靠守卫 11e 的结构判据（backdrop 无拖拽豁免 / 非阻塞接线）钉。 */
+      const wsBtn = await h.eval(`!!document.querySelector('.tb-workspace')`);
+      h.check("④ 前置：工作区按钮（📁，标题最前）在", wsBtn === true, `wsBtn=${wsBtn}`);
+      if (wsBtn) {
+        await h.eval(`(function(){ document.querySelector('.tb-workspace').click(); return 1; })()`);
+        await wait(400);
+        const cm = await h.eval(`${FIT}('.ctx-menu')`).catch(() => null);
+        h.check("⑤ 工作区菜单整矩形落在视口内（自适应：贴边钳制由 useAnchoredPopover 兜底）", !!cm && cm.fits === true, JSON.stringify(cm));
+        await h.eval(`(function(){ document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true })); return 1; })()`);
+        await wait(300);
+        const closedByClick = await h.eval(`!document.querySelector('.ctx-menu')`);
+        h.check("⑥ 点菜单外即关（window mousedown 判外部 —— 非阻塞，点图标一次就关闭且图标照常生效）", closedByClick === true, `closed=${closedByClick}`);
+        await h.eval(`(function(){ document.querySelector('.tb-workspace').click(); return 1; })()`);
+        await wait(350);
+        await h.pressKey("Escape");
+        await wait(300);
+        const closedByEsc = await h.eval(`!document.querySelector('.ctx-menu')`);
+        h.check("⑦ Esc 关闭工作区菜单（键盘退路，守卫 11e ⑨ 钉接线）", closedByEsc === true, `closed=${closedByEsc}`);
+      }
+      /* ⑧ 收尾：浮层都已收起（不留悬挂菜单挡后面的截图/验收） */
+      const leftovers = await h.eval(`document.querySelectorAll('.composer-menu-pop, .file-card-menu, .ctx-menu').length`);
+      h.check("⑧ 普查后无悬挂菜单残留（都收干净）", leftovers === 0, `leftovers=${leftovers}`);
       await h.screenshot("popup-fits");
     },
   },

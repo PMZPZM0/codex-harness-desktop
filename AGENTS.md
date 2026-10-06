@@ -610,3 +610,8 @@ FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）· Playwright 内核�
   ① 工作区按钮（`.ctx-picker`，📁 FolderOpen）从右侧操作簇挪到 `.task-title` **最前**（AppView.tsx；part09 的 topbarActionsNode 不再渲染它，⛔ 不许加回 —— 两份会叠出双菜单）；点击行为不变（工作区上下文菜单，portal 到 body）。
   ② 标题定长 **300px** + 省略号（原 `min(42vw, 380px)` 随窗口变）；重命名输入框同宽（编辑时不跳宽）。
   ③ 搬家连带四处同步：窄屏（≤760px）隐藏规则前缀 `.topbar-actions` → `.task-title`；守卫【250】覆盖率清单与「窄屏收浮层」正则跟着换 + 新三条（📁 在 strong 之前 / 不许加回操作簇 / 定长 300px，4 处变异全抓）；守卫 11e 的 ctx-menu portal 断言与计数扩到 AppView（26/26）；part09 清掉 FolderOpen/basename 死导入（【94】）。
+- 🧭 工作区菜单三修 + 顶栏标题 6 字截断（10-06 夜八轮，用户实测连报 + 一条补充令）：
+  ① 用户报「项目地址弹窗一出来，点图标都不会自动消失、其他地方都点不了、关都关不掉」—— 根因＝原来靠 `.menu-backdrop`（fixed inset:0）当遮罩，而它挂在**顶栏拖拽区**（`-webkit-app-region: drag`）子树里：未豁免拖拽的子元素整块算拖拽区，真实鼠标点击被 OS 拿去拖窗口、页面收不到 onClick；遮罩又把整个视口圈进拖拽区 ⇒ 全屏点不动 + 菜单关不掉。修法＝工作区菜单**撤掉遮罩改非阻塞**（`window mousedown` 判外部：弹层内用 `closest('.ctx-menu')` 判、📁 按钮用 `ctxBtnRef` 判 —— DispatchMenu 同款范式；点图标一次就关闭**且图标照常生效**）+ Esc 兜底 + `.menu-backdrop` 全局豁免拖拽（搜索面板 / 任务菜单的遮罩共用此类一并救回）。⛔⛔ **这类缺陷 CDP 探针永远测不出**（合成点击绕开 OS 拖拽判定，验收全绿、真机一按就中）—— 守卫 11e ⑨ 四条结构判据钉（5 处变异全抓）。
+  ② 菜单新增「**打开项目地址**」行（用户点名）：`window.codex.shellReveal(workspace)` —— shell-ipc 对目录走 `shell.openPath` 在文件管理器打开（工作区在可信根内，主进程放行）。
+  ③ **顶栏标题按字符数截断：最多 6 个字、超出补「…」**（用户令「那个会话窗口左上角那个字最多 6 个字，其他省略」）—— AppView 模块级 `truncateThreadTitle`（`[...value]` 展截，⛔ 别用 slice 劈开 emoji 代理对；⛔ 只包顶栏 render 处，别套进 `cleanThreadDisplayTitle` 连侧栏一起截）；夜七轮的 300px 定宽保留为护栏。守护卫 04【250】第四条（3 处变异全抓）。
+  ④ 验收 `popup-fits` 扩 ④-⑧：工作区菜单开 → fits → **点外面即关** → 重开 → Esc 关 → 无残留；【265】棘轮 accept.mjs 1483→1505（实测）。真机探针亲验：给测试会话改名「一二三四五六七八九十」→ 顶栏显示「一二三四五六…」。

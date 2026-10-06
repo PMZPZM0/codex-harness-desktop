@@ -191,6 +191,16 @@ const OFFICE_PROBE_TEAM = {
   })),
 } as unknown as ExpertTeamConfig;
 
+/* 顶栏标题按**字符数**截断（10-06 夜八轮用户令：「那个会话窗口左上角那个字最多 6 个字，
+   其他省略」）：CSS 只能按像素裁，同样 6em 在拉丁文下会放进来十几个字符 —— 按 code point
+   截到 6 个，超出补「…」（用展开而非 slice：标题可能含 emoji，slice 会劈开代理对）。
+   ⛔ 只在**顶栏**用；侧栏会话行按自己的 ellipsis 显示，别顺手套过去。 */
+function truncateThreadTitle(text: string, max = 6): string {
+  const value = String(text ?? "");
+  const chars = [...value];
+  return chars.length > max ? chars.slice(0, max).join("") + "…" : value;
+}
+
 export function AppView({ app }: { app: HarnessAppApi }) {
 
 
@@ -427,18 +437,24 @@ export function AppView({ app }: { app: HarnessAppApi }) {
               见 09-settings-workspace-memory.css；守卫【250】的覆盖率清单跟着本位置走。 */}
           <div className="ctx-picker">
             <button ref={ctxBtnRef} className="icon-button tb-workspace" title="工作区上下文（当前会话使用的项目目录）" onClick={() => setCtxMenuOpen((current) => !current)}><FolderOpen size={16} /></button>
-            {ctxMenuOpen && <>
-              <div className="menu-backdrop" onClick={() => setCtxMenuOpen(false)} />
-              {createPortal(
+            {ctxMenuOpen && (
+              /* ⛔ 不渲染 menu-backdrop（10-06 夜八轮用户实测「点图标都不会自动消失、其他地方
+                 点不了」）：全屏遮罩挂在顶栏拖拽区子树里，真实鼠标点击被 OS 吞成拖窗口 ⇒ 点击
+                 关不掉、还把整个视口圈成拖拽区。关闭改走 part09 的「window mousedown 判外部」
+                 （非阻塞：点图标一次就关闭且图标照常生效）+ Esc，⛔ 别把遮罩加回来。 */
+              createPortal(
                 <div className="task-menu ctx-menu ctx-menu-fixed" role="menu" style={ctxMenuStyle}>
+                  {/* 「打开项目地址」（10-06 夜八轮，用户点名加）：目录走 shellReveal = shell.openPath
+                      在文件管理器里打开（shell-ipc 对目录的既定行为；工作区在可信根内，主进程放行）。 */}
+                  {workspace && <button onClick={() => { setCtxMenuOpen(false); void window.codex.shellReveal(workspace); }}><FolderOpen size={14} /><span>打开项目地址</span></button>}
                   <button onClick={() => { setCtxMenuOpen(false); void chooseWorkspace(); }}><FolderOpen size={14} />{workspace ? "选择其他目录…" : "选择工作区目录"}</button>
                   {workspace && <button onClick={() => setCtxMenuOpen(false)}><FolderOpen size={14} /><span className="ctx-current-name">资源管理器 · {basename(workspace)}</span><Check size={14} className="ctx-check" /></button>}
                 </div>,
                 document.body,
-              )}
-            </>}
+              )
+            )}
           </div>
-          {inlineRename ? <input ref={inlineRenameRef} value={renameDraft} aria-label="任务名称" onChange={(event) => setRenameDraft(event.target.value)} onBlur={saveInlineRename} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); saveInlineRename(); } if (event.key === "Escape") { event.preventDefault(); setInlineRename(false); } }} /> : <strong title="双击修改任务名称" onDoubleClick={() => { if (!thread) return; setRenameDraft(cleanThreadDisplayTitle(thread.name, { preview: thread.preview })); setInlineRename(true); queueMicrotask(() => { inlineRenameRef.current?.focus(); inlineRenameRef.current?.select(); }); }}>{cleanThreadDisplayTitle(thread?.name, { preview: thread?.preview, fallback: cleanThreadDisplayTitle(switchingMeta?.name, { preview: switchingMeta?.preview, fallback: "新任务" }) })}</strong>}
+          {inlineRename ? <input ref={inlineRenameRef} value={renameDraft} aria-label="任务名称" onChange={(event) => setRenameDraft(event.target.value)} onBlur={saveInlineRename} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); saveInlineRename(); } if (event.key === "Escape") { event.preventDefault(); setInlineRename(false); } }} /> : <strong title="双击修改任务名称" onDoubleClick={() => { if (!thread) return; setRenameDraft(cleanThreadDisplayTitle(thread.name, { preview: thread.preview })); setInlineRename(true); queueMicrotask(() => { inlineRenameRef.current?.focus(); inlineRenameRef.current?.select(); }); }}>{truncateThreadTitle(cleanThreadDisplayTitle(thread?.name, { preview: thread?.preview, fallback: cleanThreadDisplayTitle(switchingMeta?.name, { preview: switchingMeta?.preview, fallback: "新任务" }) }))}</strong>}
           <span>{workspace || "尚未选择工作区"}</span>
           {subAgentRunning && <span className="subagent-badge" title={`子智能体「${subAgentRunning}」执行中`}><Bot size={13} className="subagent-pulse" /><em>{subAgentRunning}</em><i>执行中</i></span>}
         </div>
