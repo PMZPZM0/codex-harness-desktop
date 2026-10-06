@@ -24,10 +24,11 @@ import { existsSync } from "node:fs";
 import { dialog } from "electron";
 import { auditSkill, installCocoLoopSkill, listSkillHubSkills, stripSkillBom } from "../skills-market";
 import type { InstalledMarketSkill, MarketSkill } from "../skills-market";
-import { describeSkillPool, setSkillPoolState } from "../skill-pool";
+import { describeSkillPool, readGlobalDisabled, setSkillPoolState } from "../skill-pool";
 import { sendToWindow } from "./window-bus";
 import { refreshSkillDiscipline, skillsRegistryFile, userSkillsDir } from "../main";
 import { codexHome, mainWindow, server } from "../runtime-refs";
+import { globalSkillsDir } from "../skill-pack";
 import { setSkillEnabledSilent } from "../skill-store";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
@@ -84,6 +85,7 @@ const SKILLS_CHANNELS = [
   "skills:import", "skills:market-list", "skills:market-install", "skills:market-install-light",
   "skills:local-list", "skills:set-enabled", "skills:set-enabled-batch", "skills:local-remove",
   "skills:pool-describe", "skills:pool-set",
+  "skills:builtin-switch-get", "skills:builtin-switch-set",
 ];
 
 export const skillsFeature = defineFeature<null>({
@@ -276,6 +278,38 @@ export const skillsFeature = defineFeature<null>({
         return { ok: true };
       } catch (error: any) {
         return { ok: false, error: error?.message ?? String(error) };
+      }
+    });
+
+    // ── 内置技能的独立开关（10-06）：设置 → 控制台用，只动**全局**生效集 ──────────────
+    /* ⛔ 与共享技能池**共用同一份真相源**（`codex-home/skill-global-disabled.json`），只是入口不同：
+       池面板按项目管（globalDisabled + projectDisabled），控制台这个开关是**跨项目的总开关**。
+       ⇒ 不新增第二份状态（否则两处会各说各话）。
+       `cwd` 可空：控制台可能在还没打开工作区时就被点 —— 全局集与 cwd 无关，投影里那部分照常生效
+       （`readSkillPool("")` 已按"无项目 ⇒ 空集"处理，不读相对路径）。 */
+    const builtinSwitchState = (name: string) => {
+      if (!existsSync(path.join(globalSkillsDir(codexHome), name))) return { name, enabled: false, available: false };
+      return { name, enabled: !readGlobalDisabled(codexHome).has(name), available: true };
+    };
+
+    ipcHost.handle("skills:builtin-switch-get", (_event, input: { name: string }) => {
+      try {
+        return builtinSwitchState(String(input?.name ?? ""));
+      } catch (error: any) {
+        return { name: String(input?.name ?? ""), enabled: false, available: false, error: error?.message ?? String(error) };
+      }
+    });
+
+    ipcHost.handle("skills:builtin-switch-set", async (_event, input: { name: string; enabled: boolean; cwd?: string }) => {
+      try {
+        const name = String(input?.name ?? "");
+        if (!builtinSwitchState(name).available) return { name, enabled: false, available: false, error: `技能不存在: ${name}` };
+        setSkillPoolState(String(input?.cwd ?? ""), name, { globalDisabled: input?.enabled === false });
+        // 与全局启停同一刷新链（守则区间的 MCP 清单仍走这）
+        await refreshSkillDiscipline().catch(() => undefined);
+        return builtinSwitchState(name);
+      } catch (error: any) {
+        return { name: String(input?.name ?? ""), enabled: false, available: false, error: error?.message ?? String(error) };
       }
     });
 

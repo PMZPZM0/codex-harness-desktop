@@ -35,6 +35,12 @@ export const PROJECT_SKILLS_SUBDIR = ".codex/skills";
 /** 技能定义文件名（停用态是 SKILL.md.disabled，与 main.ts / builtin-skills.ts 同源） */
 export const SKILL_FILE = "SKILL.md";
 export const SKILL_FILE_DISABLED = "SKILL.md.disabled";
+/** 共享技能池投影出来的停用态（10-06 立）。与 `.disabled` 分开是有原因的：
+ *  池停用由 `syncSkillPool` 自动还原，而用户手动的 `.disabled` 会被「收编」进池 —— 混用会打架。
+ *  ⛔⛔ 但**语义上两者都表示"该技能不生效"** ⇒ 凡判「这个技能启用没有」的地方必须**一起看**，
+ *    只认其中一个就会出现「用户关掉的技能下次启动自己又开了」（10-06 真跑实测：entries 循环
+ *    只认 .disabled 且优先看 SKILL.md 存不存在 ⇒ 池停用的技能被写回 SKILL.md）。 */
+export const SKILL_FILE_POOL_DISABLED = "SKILL.md.pool-disabled";
 
 export type SkillScope = "user" | "repo";
 export type SkillEntry = { name: string; desc: string; file: string; scope: SkillScope; enabled: boolean };

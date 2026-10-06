@@ -27,12 +27,33 @@ import { HARNESS_API_SKILL } from "./builtin-skills/14-skill-harness-api";
 import { FRONTEND_CANVAS_SKILL } from "./builtin-skills/20-skill-frontend-canvas";
 import { effectiveMemoryBackend } from "./memory-backend";
 import { BUILTIN_SKILL_ZH_NOTES } from "./builtin-skills/00-skill-zh-notes";
+import { SKILL_FILE, SKILL_FILE_DISABLED, SKILL_FILE_POOL_DISABLED } from "./skill-pack";
 
 /** 已退役的内置技能：磁盘上的内容仍是**我们当初写的那份**时，随升级清掉目录 ——
  *  否则引擎会同时加载两套浏览器说明（新的实操手册 + 旧的通道说明），模型读到自相矛盾的指引。
  *  ⛔ 只认逐字一致的指纹：用户改过、或自己建的目录**一律不碰**（不越界删用户文件）。
  *    被总闸禁用的技能文件名是 `SKILL.md.disabled`，两个名字都要比。 */
 const RETIRED_SKILLS: [string, string][] = [["browser-automation", RETIRED_BROWSER_SKILL]];
+
+/** 该技能目录里**已有的停用态文件**（无则 null）。⛔ 两种形态都要认：
+ *  `SKILL.md.disabled`（能力总闸 / 旧形态）与 `SKILL.md.pool-disabled`（共享技能池投影）。
+ *  只认其中一个，就会出现「用户关掉的技能下次启动自己又开了」。 */
+function disabledVariantOf(dir: string): string | null {
+  for (const fn of [SKILL_FILE_DISABLED, SKILL_FILE_POOL_DISABLED]) {
+    const p = path.join(dir, fn);
+    if (existsSync(p)) return p;
+  }
+  return null;
+}
+
+/** 自愈：停用态与 `SKILL.md` **同时存在**是旧 bug 留下的中间态 ——
+ *  此刻引擎照样能扫到 SKILL.md（= 关掉的技能还在生效）⇒ 把活跃那份收进停用态文件。 */
+async function retireActiveCopyIfOff(dir: string): Promise<void> {
+  const off = disabledVariantOf(dir);
+  if (!off) return;
+  const active = path.join(dir, SKILL_FILE);
+  if (existsSync(active)) await fs.rename(active, off).catch(() => undefined);
+}
 
 export async function ensureBuiltinSkills(skillsDir: string) {
   const entries: [string, string][] = [
@@ -84,16 +105,17 @@ export async function ensureBuiltinSkills(skillsDir: string) {
   ];
   for (const [name, content] of entries) {
     const dir = path.join(skillsDir, name);
-    const activeFile = path.join(dir, "SKILL.md");
-    const disabledFile = path.join(dir, "SKILL.md.disabled");
+    const activeFile = path.join(dir, SKILL_FILE);
     try {
-      // ⛔ 必须尊重用户的停用状态（09-20 修）：能力总闸停用技能时是把 SKILL.md 改名成
-      //    SKILL.md.disabled，而这里原先无条件写回 SKILL.md ⇒ **用户关掉的技能每次启动都被静默
-      //    重新启用**，总闸形同虚设；症状还特别隐蔽（界面显示「已停用」，引擎却照常加载）。
-      //    两个文件名与 main.ts 的 skills:local-list / set-skill-enabled 保持同源。
-      const target = existsSync(activeFile)
-        ? activeFile
-        : existsSync(disabledFile) ? disabledFile : activeFile;
+      // ⛔ 必须尊重用户的停用状态（09-20 修；10-06 扩到「池停用」形态）：
+      //    能力总闸把 SKILL.md 改名成 SKILL.md.disabled，共享技能池改名成 SKILL.md.pool-disabled。
+      //    旧实现**只认前者、且优先看 SKILL.md 在不在** ⇒ 被池停用的技能每次启动都被静默写回
+      //    SKILL.md（界面显示已停用、引擎却照常加载 —— 与 09-20 那次同一类事故）。
+      //    10-06 真跑实测：关掉 → 重启，磁盘上**同时**出现 SKILL.md 与 .pool-disabled，
+      //    要等下一次 syncSkillPool（首个 thread/start）才重新关上，中间那段时间引擎看得见它。
+      //    两个名字与 main.ts 的 skills:local-list / set-skill-enabled、skill-pool.ts 的投影保持同源。
+      await retireActiveCopyIfOff(dir);
+      const target = disabledVariantOf(dir) ?? activeFile;
       const existing = await fs.readFile(target, "utf8").catch(() => "");
       // 比对前归一化行尾：停用/启用会把文件重写成 LF，与常量里的行尾不同，
       // 逐字比会每次启动都重写一遍（无意义写盘，且让「内容未变就别动」的判据失效）。
@@ -144,11 +166,11 @@ export async function ensureBuiltinSkills(skillsDir: string) {
   //  ⛔ 内建写入是只增不删的：不清理的话，老用户磁盘上那份旧技能会继续被引擎加载，
   //    模型同时读到两套浏览器说明（自相矛盾的指引）。
   //  ⛔ 只认逐字一致的指纹：用户改过、或自己建的目录一律不碰（不越界删用户文件）。
-  //    被总闸禁用的技能文件名是 SKILL.md.disabled，两个名字都要比。
+  //    被总闸/技能池禁用的技能文件名有两种（SKILL.md.disabled / SKILL.md.pool-disabled），都要比。
   for (const [name, original] of RETIRED_SKILLS) {
     const dir = path.join(skillsDir, name);
     try {
-      for (const fn of ["SKILL.md", "SKILL.md.disabled"]) {
+      for (const fn of [SKILL_FILE, SKILL_FILE_DISABLED, SKILL_FILE_POOL_DISABLED]) {
         const existing = await fs.readFile(path.join(dir, fn), "utf8").catch(() => null);
         // ⛔ 比对必须归一化行尾：技能被总闸停用/启用过一次后，文件可能被重写成 LF，
         //    而常量是 CRLF —— 只用 trim() 会比出「被改过」而跳过清理（09-19 实测踩到：
@@ -195,10 +217,14 @@ export async function ensureBuiltinSkillDirs(skillsDir: string): Promise<void> {
       }
       return out;
     };
+    // 停用态与 SKILL.md 并存时先归位（同 entries 循环的坑：目录型技能也会被写回 SKILL.md）
+    await retireActiveCopyIfOff(target);
     for (const rel of await walk(source)) {
       const content = await fs.readFile(path.join(source, rel));
-      const disabled = rel === "SKILL.md" && existsSync(path.join(target, "SKILL.md.disabled"));
-      const dest = disabled ? path.join(target, "SKILL.md.disabled") : path.join(target, rel);
+      /* ⛔ 尊重停用态：**两种停用文件名都要认**（`.disabled` 与池投影的 `.pool-disabled`）——
+         只认前者的话，被池停用的目录型技能会在每次升级同步时被写回 SKILL.md。 */
+      const off = rel === SKILL_FILE ? disabledVariantOf(target) : null;
+      const dest = off ?? path.join(target, rel);
       const existing = await fs.readFile(dest).catch(() => null);
       if (existing && existing.equals(content)) continue;
       await fs.mkdir(path.dirname(dest), { recursive: true });

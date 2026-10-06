@@ -10,10 +10,11 @@
  */
 import { AppSelect } from "../../components/AppSelect";
 import { useEffect, useState } from "react";
-import { Code2, Copy, FolderOpen, FolderTree, Globe2, HelpCircle, Keyboard, Monitor, MonitorUp, PanelRightOpen, RefreshCw, Search, ShieldCheck, Zap } from "lucide-react";
+import { Code2, Copy, FolderOpen, FolderTree, Globe2, HelpCircle, Keyboard, Monitor, MonitorUp, PanelRightOpen, RefreshCw, Search, ShieldCheck, Sparkles, Zap } from "lucide-react";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { Spinner } from "../../components/CardShell";
+import { BuiltinSkillSwitch } from "./BuiltinSkillSwitch";
 
 export type GeneralSettingsSectionProps = { globalPermApproval: any; applyGlobalPermissionMode: any; workspace: any; chooseWorkspace: any; userDataPath: any; setNotice: any; rightOpen: any; setRightOpen: any; capabilityHint: any; desktopAuto: any; groupBusy: any; toggleDesktopAuto: any; browserAuto: any; toggleBrowserAuto: any; ponytailOn: any; applyGroup: any; hardwareAccel: any; changeHardwareAccel: any; restartPending: any; SHORTCUT_GROUPS: any; setShortcutsOpen: any; engineVersion: any; engineCheck: any; engineUpdating: any; checkEngineUpdateNow: any; performEngineUpdateNow: any; engineUpdatePercent: any; engineUpdateStageText: any; engineUpdateLog: any; engineUpdateResult: any; relaunchCountdown: any; downloadSource: any };
 
@@ -215,6 +216,23 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                           <ToggleSwitch checked={ponytailOn} disabled={groupBusy === "writing-code"} label="写代码模式（代码钩子）" onChange={(next) => void applyGroup("writing-code", next)} />
                         </div>
                         <p className="settings-card-hint">这两个是能力总闸：开关直接决定 Codex 引擎能不能用对应能力，并联动其下的 MCP、技能与插件（例如桌面自动化会一并启停 nuphus MCP 与 desktop-automation 技能）。在技能 / MCP / 插件页点关这些子项时会提示你回到这里操作，保证状态一致。</p>
+                      </div>
+                    </div>
+
+                    {/* 回复风格（10-06 用户需求）：内置写作风格技能的**独立开关**。
+                        ⛔ 真相源 = 技能池的全局停用集（electron/skill-pool.ts → skill-global-disabled.json）；
+                           本卡片只是它的一个入口，另一个入口是「技能 → 我的技能 → 共享技能池」。
+                        ⛔ 与上面的「能力总闸」不是一回事：关掉不摘任何工具/通道，只改输出写法。 */}
+                    <div className="settings-card">
+                      <div className="settings-card-head"><Sparkles size={15} /><strong>回复风格</strong><span className="settings-subhead-hint">只改模型怎么写，不改变它能做什么</span></div>
+                      <div className="settings-card-body settings-toggle-list">
+                        <BuiltinSkillSwitch
+                          skill="i-have-adhd"
+                          title="直白写作（ADHD 风格）"
+                          desc="内置写作风格技能 i-have-adhd（MIT）：结论先行、分步编号、抑制跑题、不说客套话。它在对话里由你显式调用 /i-have-adhd 生效。关闭后模型不再加载这份说明。默认开启，改动重启后保持。"
+                          onNotice={setNotice}
+                        />
+                        <p className="settings-card-hint">这一类开关管的是输出写法，不摘任何工具或通道。其余写作风格技能（去 AI 味 / AI 味检测）可在「技能」页单独启停。</p>
                       </div>
                     </div>
 

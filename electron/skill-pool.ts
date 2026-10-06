@@ -22,7 +22,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { globalSkillsDir, MEMORY_MCP_BACKEND_SKILL } from "./skill-pack";
+import { globalSkillsDir, MEMORY_MCP_BACKEND_SKILL, SKILL_FILE, SKILL_FILE_DISABLED, SKILL_FILE_POOL_DISABLED } from "./skill-pack";
 import { codexHome as codexHomeRef } from "./runtime-refs";
 
 export const SKILL_POOL_FILE = path.join(".codex-harness", "skill-pool.json");
@@ -47,13 +47,18 @@ export function skillPoolFile(cwd: string): string {
   return path.join(cwd, SKILL_POOL_FILE);
 }
 
-/** 读项目禁用集（文件缺失/损坏 = 空集合）。 */
+/** 读项目禁用集（文件缺失/损坏 = 空集合）。
+ *  ⛔ 空 cwd = 没有当前项目 ⇒ **直接返回空集**，不去读相对路径 ——
+ *     `path.join("", ".codex-harness", "skill-pool.json")` 是相对路径，会落到进程 cwd，
+ *     那是"读了一个碰巧在那儿的文件"的不确定行为（控制台的总开关就可能在没打开工作区时被点）。 */
 export function readSkillPool(cwd: string): Set<string> {
+  if (!String(cwd ?? "").trim()) return new Set();
   return new Set(readJson(skillPoolFile(cwd))?.disabled ?? []);
 }
 
-/** 写项目禁用集。 */
+/** 写项目禁用集。空 cwd 同理：没有项目就不该有"项目级禁用"，静默跳过（⛔ 不写相对路径）。 */
 export function writeSkillPool(cwd: string, disabled: Iterable<string>): void {
+  if (!String(cwd ?? "").trim()) return;
   writeJson(skillPoolFile(cwd), [...disabled].sort());
 }
 
@@ -105,9 +110,9 @@ export function syncSkillPool(cwd: string): void {
     for (const { dir, name, enabled } of dirs) {
       if (name === MEMORY_MCP_BACKEND_SKILL) continue; // 联动自管，不进池
       const shouldDisable = global.has(name) || project.has(name);
-      const skillMd = path.join(dir, "SKILL.md");
-      const poolOff = path.join(dir, "SKILL.md.pool-disabled");
-      const legacyOff = path.join(dir, "SKILL.md.disabled");
+      const skillMd = path.join(dir, SKILL_FILE);
+      const poolOff = path.join(dir, SKILL_FILE_POOL_DISABLED);
+      const legacyOff = path.join(dir, SKILL_FILE_DISABLED);
       if (shouldDisable && enabled) {
         fs.renameSync(skillMd, poolOff);
         changed = true;

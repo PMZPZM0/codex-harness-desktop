@@ -168,12 +168,18 @@ export function SkillPoolSection({ projects }: { projects?: [string, unknown][] 
                     </div>
                     <ToggleSwitch
                       checked={active}
-                      disabled={globalOff || busy === s.name}
+                      /* ⛔ 「全局停用」时**不再禁用开关**（10-06 修正）：原先这里 disable 掉并提示
+                         「先在上方『我的技能』卡片把它全局启用」，但**内置技能在「我的技能」里
+                         本来就不可停用/启用**（那张卡片的开关对 builtin 是 disabled）⇒ 死胡同。
+                         此前这个分支等于是死代码（界面上没有任何入口能产生 globalDisabled）；
+                         10-06 控制台加了「回复风格」开关后它成了活路径，所以在这里补上恢复入口：
+                         全局停用态下点开关 = **恢复全局启用**（清全局停用集），不是只改本项目。 */
+                      disabled={busy === s.name}
                       label={`${s.name} 项目生效开关`}
                       title={globalOff
-                        ? "该技能已全局停用（所有项目不可见）——如需使用，先在上方「我的技能」卡片把它全局启用"
+                        ? "该技能已全局停用（所有项目不可见）——点开即全局恢复；内置技能在「我的技能」里不可停用，这里是恢复入口"
                         : active ? (managingOther ? "在该项目停用该技能（其他项目不受影响）" : "在本项目停用该技能（其他项目不受影响）") : (managingOther ? "在该项目启用该技能" : "在本项目启用该技能")}
-                      onChange={() => patch(s.name, { projectDisabled: active })}
+                      onChange={() => patch(s.name, globalOff ? { globalDisabled: false } : { projectDisabled: active })}
                     />
                   </div>
                   <strong>{s.name}</strong>

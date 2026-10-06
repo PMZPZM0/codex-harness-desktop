@@ -147,6 +147,10 @@ contextBridge.exposeInMainWorld("codex", {
   describeSkillPool: (input: { cwd: string }) => __ipc("skills:pool-describe", 1, [input]),
   /* 设置全局停用/本项目禁用并立即投影 */
   setSkillPoolState: (input: { cwd: string; name: string; globalDisabled?: boolean; projectDisabled?: boolean }) => __ipc("skills:pool-set", 0, [input]),
+  /* 内置技能的独立开关（10-06）：读某内置技能**全局**是否生效（设置 → 控制台用；与 skill-pool 同一真相源） */
+  getBuiltinSkillSwitch: (input: { name: string }) => __ipc("skills:builtin-switch-get", 1, [input]),
+  /* 开关内置技能的**全局**生效态并立即投影磁盘（cwd 可空；只动全局集，不改项目集） */
+  setBuiltinSkillSwitch: (input: { name: string; enabled: boolean; cwd?: string }) => __ipc("skills:builtin-switch-set", 0, [input]),
   setPluginEnabled: (input: { pluginIds: string[]; enabled: boolean }) => __ipc("plugins:set-enabled", 1, [input]),
   removeLocalSkill: (input: { folder: string; name?: string }) => __ipc("skills:local-remove", 0, [input]),
   trustHooks: (cwds?: string[]) => __ipc("hooks:trust", 0, [{ cwds }]),
