@@ -148,6 +148,7 @@ import { runVisualSwitch, themeLabelOf } from "../../../lib/visual-switch";
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 // 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
 import { Slot } from "../../../runtime/registry";
+import { NewbieGuide } from "../../newbie-guide";
 
 export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppApi; onOpenSettings?: (page: string) => void }) {
   const {
@@ -512,6 +513,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 ⚠️ 这里空间紧（账户行固定高度），**插槽内容宜少不宜多** —— 一个统计数字、
                 一个开关那种；别往这里塞长列表。 */}
             <Slot id="sidebar.bottom" props={{ onOpenSettings }} loader={() => import("../../settings-devtools/DomainsPanel")} />
+            {/* 新手引导常驻入口（10-07 用户令）：会话列表之下、账户行之上 —— 与 sidebar.bottom 插槽同段位。
+                入口一行（空间紧），点开 = 迷你设置弹窗（.modal-backdrop fixed，不受行高影响）。 */}
+            <NewbieGuide onOpenSettings={onOpenSettings} />
             <div className="account-row">
               <button className="account-avatar" title="账户菜单" onClick={() => { setAccountMenuSub(null); setAccountMenuOpen(!accountMenuOpen); }}>{userAvatar?.type === "image" && userAvatar.value ? <img src={userAvatar.value} alt="头像" /> : userAvatar?.type === "emoji" && userAvatar.value ? <span className="account-avatar-emoji">{userAvatar.value}</span> : <span className="account-avatar-letter">{username.trim().charAt(0).toUpperCase() || "?"}</span>}</button>
               {accountEditing ? (

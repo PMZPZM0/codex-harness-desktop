@@ -1,6 +1,6 @@
 /**
  * 预检守卫组：04-misc-and-tools
- * 分节：【输入框草稿 + 通知会话名前缀】【多窗口事件过滤】【工具下载源】【首启体检】【工具安装验证】【15】【16】（原 L2432–L2892）
+ * 分节：【输入框草稿 + 通知会话名前缀】【多窗口事件过滤】【工具下载源】【首启体检（已删·负向）】【工具安装验证】【15】【16】（原 L2432–L2892）
  *
  * 09-22 从 scripts/check-preflight.mjs（8,997 行单文件）按域拆出，正文逐字未改；
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
@@ -215,18 +215,24 @@ console.log(C.bold("\n【工具下载源】设置持久化 + 三条下载通道�
 }
   }
 
-  /* ══ 【首启体检】原 L2499–L2509 ══ */
+  /* ══ 【首启体检】组件已删（10-07 用户令）—— 负向防复活 ══ */
   {
-console.log(C.bold("\n【首启体检】工作区已移出，不再有把弹窗带走的「去选择」岔路"));
+console.log(C.bold("\n【首启体检】已删（10-07 用户令：有新手引导入口了）—— 防复活"));
 {
-  const dialogSrc = readFileSync(join(ROOT, "src", "components", "EnvCheckDialog.tsx"), "utf8");
   const appE = readAppUi();
-  (!/id: "workspace"/.test(dialogSrc) && !dialogSrc.includes('"model" | "workspace"') && !dialogSrc.includes("FolderOpen"))
-    ? ok("体检清单已无工作区项（必选岔路连同「去选择」按钮一起移除）")
-    : fail("工作区又回到体检里了 —— 用户点「去选择」会带走弹窗，工具就没装");
-  (!appE.includes('id === "workspace"') || !/envItems[\s\S]{0,400}workspace.{0,200}go: "workspace"/.test(appE))
-    ? ok("App 侧体检状态不再构造工作区项（一键安装直奔工具下载）")
-    : fail("App 侧仍把工作区算进体检 —— 弹窗还会被工作区岔路带走");
+  (!existsSync(join(ROOT, "src", "components", "EnvCheckDialog.tsx")) ? ok : fail)(
+    "⛔ EnvCheckDialog 组件不许复活（首启弹窗已删；新手引导 = 侧栏常驻入口）"
+  );
+  (!/envCheckOpen|EnvCheckDialog|installEnvMissing/.test(codeOnly(appE)) ? ok : fail)(
+    "⛔ app-ui 层 env 体检状态/调用全清零（envCheckOpen 一族 / installEnvMissing / 弹窗渲染）"
+  );
+  (!/env-check|env-install-pill/.test(readStyles()) ? ok : fail)(
+    "⛔ env-check / env-install-pill 样式全清除（防死样式回头）"
+  );
+  const shellSrc = codeOnly(readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "01-sidebar-shell.tsx"), "utf8"));
+  (/<NewbieGuide/.test(shellSrc) ? ok : fail)(
+    "新手引导常驻入口在位（体检的替代物 —— 删旧必须有新：侧栏底部 NewbieGuide）"
+  );
 }
   }
 

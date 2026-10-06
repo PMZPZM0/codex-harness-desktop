@@ -8,54 +8,13 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { advanceMood, composeMoodInstructions, emptyMood, moodBlock, moodSignature, moodTone, normalizeMood, userSignalOf } from "../../../../../lib/agent-mood.mjs";
-import { EnvCheckDialog, ENV_CHECK_SPEC, ENV_CHECK_OPTOUT_KEY, type EnvCheckState } from "../../../../../components/EnvCheckDialog";
 import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, computeFoldSummary, topToolGroup, isTurnRunning, normalizeLoadedThread, type FoldUnit } from "../../../../../lib/turn-fold";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 
 export function usePart06a1(bag: Bag) {
-  // 首次启动「环境体检」（09-17）：等首屏数据与模型引导判断都落定后再检测，避免两个弹窗抢屏。
-  // ⛔ 只判一次（envCheckDoneRef）——否则下面 setDevRuntimes 刷新会把它反复触发。
-  // ⛔ 模型引导正在弹时不检测：没配模型是"发不出消息"级硬阻断，优先处理它；等它关掉本 effect 会重建。
-  // ⛔ 读了「不再提示」直接跳过：那是用户在体检里主动勾的，不该每次启动再问一遍。
-  useEffect(() => {
-    if (bag.envCheckDoneRef.current) return;
-    if (bag.threadsLoading || bag.showLogin) return;
-    // 诊断埋点（保留）：用户报「缺工具但没弹体检」时，直接看 window.__envCheckDbg 就知道卡在哪一步
-    // （effect 有没有跑 / timer 有没有触发 / optout 有没有被读到 / listRuntimes 看到的工具状态）。
-    (window as any).__envCheckDbg = { effectRan: true, threadsLoading: bag.threadsLoading, showLogin: bag.showLogin };
-    const timer = window.setTimeout(async () => {
-      // ⛔ done 标记必须在这里（**真正检查过**）才置位，绝不能放在 effect 开头。
-      //    effect 依赖里有 workspace / customModel，启动过程它们必然变化 → effect 重建 →
-      //    cleanup 把 timer 清掉；若 done 已被提前置 true，新 effect 会直接 return，
-      //    那个 timer 就永远不会执行 —— 体检永远不弹。
-      //    （09-17 真启动实测踩到：把 rg.exe 移走模拟缺工具，弹窗依然不出现。）
-      if (bag.envCheckDoneRef.current) return;
-      bag.envCheckDoneRef.current = true;
-      const dbg: Record<string, unknown> = { ...(window as any).__envCheckDbg, timerFired: true };
-      try {
-        dbg.optout = localStorage.getItem(ENV_CHECK_OPTOUT_KEY);
-        if (dbg.optout === "1") return;
-        const list = await window.codex.listRuntimes();
-        bag.setDevRuntimes(list);
-        dbg.listRuntimes = list.filter((entry) => ["git", "rg", "pwsh", "python", "jq", "sevenzip"].includes(entry.id))
-          .map((entry) => `${entry.id}:${entry.installed ? "ok" : "missing"}`);
-      const missingCore = bag.envSpecs.filter((spec) => spec.core).filter((spec) => {
-        return !list.find((entry) => entry.id === spec.id)?.installed;
-      });
-      dbg.missingCore = missingCore.map((spec) => spec.id);
-      // ⛔ 10-01 用户定稿：模型配置引导已删除，首启**只弹这一个**开发工具引导 —— 不再因
-      //   「没配模型」推迟（旧语义是给模型引导让路，那条路已不存在）。缺推荐项就弹。
-      if (missingCore.length > 0) bag.setEnvCheckOpen(true);
-      } catch (error: any) {
-        dbg.error = String(error?.message ?? error);
-      } finally {
-        (window as any).__envCheckDbg = dbg;
-      }
-    }, 1400);
-    return () => window.clearTimeout(timer);
-    // workspace 变化会重建本 effect（清掉旧计时器）→ 1.4s 后读到的一定是最新值
-  }, [bag.threadsLoading, bag.showLogin, bag.workspace, bag.envSpecs]);
+  /* ⛔ 首启「环境体检」自动弹出（09-17）已删（10-07 用户令）——启动不再有任何引导弹窗；
+     新手引导 = 侧栏底部常驻入口（点开才出现）。诊断埋点 __envCheckDbg 一并下线。 */
 
 
 

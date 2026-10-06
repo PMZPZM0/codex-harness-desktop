@@ -646,70 +646,21 @@ export async function run() {
       : fail("【32】有规则把 assistant 头像 display:none 了 —— 用户只会看到名字");
   }
 
-  // ⑰c 首次启动「环境体检」（09-17 用户：「新用户不知道该装什么，不装 Codex 啥也干不了」）。
-  //   最容易复发的四种失效形态（全部有可证伪的静态判据）：
-  //   ① 体检项被悄悄改少（用户拍板的是「必备 4 + 常用 3」共 7 项）
-  //   ② 弹窗没挂进渲染树 → 缺工具的新用户永远等不到提示（功能等于没做）
-  //   ③「一键安装」没接 installRuntime → 按钮是摆设
-  //   ④ installableIds 把 model/workspace 也当成可安装项 → 调 installRuntime("model") 必失败
+  // ⑰c 首启「环境体检」弹窗已删（10-07 用户令：「反正现在也新手引导选项了」）—— 负向防复活。
+  //   体检/一键补齐/后台角标整条链路全下线，替代物 = 侧栏底部「新手引导」常驻入口（newbie-guide 板块）。
+  //   保留一条与本弹窗无关的真链路断言：runtime:install 对 Laya/手机控制的分派
+  //   （那是「设置 → 开发工具」页的安装链路）。
   {
-    const envC = readFileSync(join(ROOT, "src", "components", "EnvCheckDialog.tsx"), "utf8");
     const appEnv = readAppUi();
-    const specIds = [...envC.matchAll(/\{ id: "([a-z-]+)"/g)].map((m) => m[1]);
-    // 09-20 用户定稿「工作区不要必选，就保留工具下载」：工作区/模型移出体检。
-    // ⛔ 10-01 用户定稿：首启推荐 = **Laya / 手机控制 / 文档转换 / PowerShell 7 / FFmpeg**；
-    //   随包内置的小件（rg/python/jq/ninja/7zip/yt-dlp/uv/cmake/adb）**一律不得进引导**
-    //   —— 让用户"下载"一个已经随包的东西 = 白等一遍。
-    const BUNDLED_IDS = ["rg", "python", "jq", "ninja", "sevenzip", "yt-dlp", "uv", "cmake", "platform-tools"];
-    const leakedBuiltin = specIds.filter((id) => BUNDLED_IDS.includes(id));
-    const wantIds = ["laya", "phone-harness", "markitdown", "pwsh", "ffmpeg"];
-    (specIds.length === wantIds.length && !envC.includes('id: "workspace"') && !envC.includes('id: "model"')
-      && leakedBuiltin.length === 0 && wantIds.every((id) => specIds.includes(id)))
-      ? ok("【32】首启推荐 5 项：Laya / 手机控制 / 文档转换 / PowerShell 7 / FFmpeg —— 内置项一项都没漏进引导")
-      : fail(`【32】首启推荐不对（${specIds.length} 项：${specIds.join("/")}；漏进引导的内置项：${leakedBuiltin.join("/") || "无"}）—— 10-01 定稿：Laya/手机控制/文档转换/pwsh/ffmpeg`);
-    const coreCount = (envC.match(/core: true/g) || []).length;
-    // ⛔ 五项全是「装上立刻多一项能力」，都进推荐组（弹窗一键安装的目标 = 缺的 core 项）。
-    (coreCount === 5)
-      ? ok("【32】推荐项 5 项（Laya / 手机控制 / 文档转换 / PowerShell 7 / FFmpeg）")
-      : fail(`【32】推荐项变成 ${coreCount} 项 —— 弹窗触发条件会跟着偏`);
-    // Laya / 手机控制是 pip 包（不在 install-runtimes 里）⇒ runtime:install 必须分派到各自的安装器，
-    // 否则引导里点「一键安装」会静默什么都不装（用户看到"装好了"但功能还是缺）。
+    const envGone = !existsSync(join(ROOT, "src", "components", "EnvCheckDialog.tsx"));
+    (!/EnvCheckDialog|envCheckOpen|installEnvMissing|env-install-pill|__envCheckDbg/.test(codeOnly(appEnv)) ? ok : fail)(
+      "【32】首启体检弹窗已删净（组件文件 + 渲染 + 状态 + 角标；⛔ 不许复活 —— 新手引导走侧栏常驻入口）"
+    );
+    (envGone ? ok : fail)("【32】⛔ EnvCheckDialog 组件文件不许回来（删的是整个功能，不是藏入口）");
     const instDispatch = readFileSync(join(ROOT, "electron", "features", "runtime-ipc.ts"), "utf8");
     (/if \(id === "laya" \|\| id === "phone-harness"\)[\s\S]{0,400}?layaInstall\(\)[\s\S]{0,200}?installPhoneHarness\(\)/.test(instDispatch))
-      ? ok("【32】runtime:install 对 Laya / 手机控制分派到各自的 pip 安装器（否则引导里的「一键安装」是空转）")
-      : fail("【32】runtime:install 没分派 laya / phone-harness —— 引导点一键安装会静默什么都不装");
-    (/id: "pwsh", fallbackName: "PowerShell 7", core: true/.test(envC))
-      ? ok("【32】PowerShell 7 在体检必备组（终端默认 shell，缺失会退回 5.1）")
-      : fail("【32】PowerShell 7 不在体检必备组 —— 新用户终端会静默退回 PowerShell 5.1");
-    (/spec\.id !== "pwsh" \|\| !isMacPlatform\(\)/.test(appEnv) && /envSpecs\.filter\(\(spec\) => spec\.core\)/.test(appEnv))
-      ? ok("【32】pwsh 体检项按平台门控（mac 终端用系统 shell，不把 pwsh 标成必备）")
-      : fail("【32】pwsh 体检项没做平台门控 —— mac 用户会被误导去装一个终端用不到的东西");
-    (/<EnvCheckDialog/.test(appEnv))
-      ? ok("【32】体检弹窗挂在渲染树里（缺工具时真的会弹）")
-      : fail("【32】体检弹窗没挂进渲染树 —— 缺工具的新用户永远等不到提示");
-    (/await window\.codex\.installRuntime\(id\)/.test(appEnv))
-      ? ok("【32】「一键安装」真的调了 installRuntime")
-      : fail("【32】一键安装没接 installRuntime —— 按钮是摆设");
-    (/!item\.skipped\)\.map\(\(item\) => item\.id\)/.test(envC))
-      ? ok("【32】installableIds 排除了跳过项（用户说不要的就不再硬塞进一键安装）")
-      : fail("【32】installableIds 没排除 skipped —— 跳过的工具会被一键安装硬塞回去");
-    (/ENV_CHECK_OPTOUT_KEY/.test(envC) && /localStorage\.getItem\(ENV_CHECK_OPTOUT_KEY\)/.test(appEnv))
-      ? ok("【32】「不再提示」真的被读（勾了就不再弹）")
-      : fail("【32】optout 标记没被读 —— 用户勾了「不再提示」还会每次被弹");
-    // 后台安装（09-18 用户：「加一个后台安装功能，弹窗要知道缩小，安装完成自动消失」；
-    // 起因：Python 下载挂住时弹窗卡死、安装中禁一切关闭，用户只能重启）
-    (/setEnvCheckOpen\(false\)/.test(appEnv))
-      ? ok("【32】批量安装转后台（弹窗收起、角标接管进度；单工具安装保持弹窗看自己的进度）")
-      : fail("【32】一键安装还是阻塞式弹窗 —— 下载一挂住整个界面被卡死只能重启");
-    (/envInstalling && !envCheckOpen/.test(appEnv) && /env-install-pill/.test(appEnv))
-      ? ok("【32】后台安装角标在渲染树里（进度实时显示、点开回弹窗、装完自动消失）")
-      : fail("【32】后台安装角标没挂进渲染树 —— 收起后安装进度不可见");
-    (/setEnvCheckOpen\(true\); \/\/ 有失败/.test(appEnv))
-      ? ok("【32】安装有失败时自动展开回弹窗（角标报不了哪项失败、也没法重试）")
-      : fail("【32】安装失败后弹窗没有展开回来 —— 用户不知道哪项没装上");
-    (!/安装期间禁用一切关闭动作/.test(envC) && /关闭 ≠ 取消/.test(envC))
-      ? ok("【32】安装中允许关闭弹窗（关闭 = 转后台，不再卡死界面）")
-      : fail("【32】体检弹窗又改成安装中禁关 —— 下载挂住时只能重启");
+      ? ok("【32】runtime:install 对 Laya / 手机控制分派到各自的 pip 安装器（开发工具页「一键安装」不空转）")
+      : fail("【32】runtime:install 没分派 laya / phone-harness —— 安装按钮会静默什么都不装");
   }
 
   // ⑰e 用户头像类型链（09-18）：UserCenter 的回调把 avatarType 放宽成 string，会逼 App 侧用
@@ -834,18 +785,10 @@ export async function run() {
   //   三处必须同时在位，缺一处就回到旧症状（且都是静默的：界面只显示一句"安装失败"）。
   {
     const mainSrc = readMainSource();
-    const appSrc = readAppUi();
-    const envSrc = readFileSync(join(ROOT, "src", "components", "EnvCheckDialog.tsx"), "utf8");
     (/const inFlight = runtimeInstalls\.get\(id\);[\s\S]{0,300}?await inFlight;[\s\S]{0,120}?joined: true/.test(mainSrc)
       && !/throw new Error\("该工具正在安装"\)/.test(mainSrc))
       ? ok("【37】同工具并发安装改为「等它跑完」（不再抛「该工具正在安装」）")
       : fail("【37】runtime:install 又会在并发时抛错 —— 用户点「一键安装」会撞上「该工具正在安装」并整批中断");
-    (/failed\[id\] = String\(/.test(appSrc) && /Promise\.all\(\[worker\(\), worker\(\)\]\)/.test(appSrc))
-      ? ok("【37】体检批量安装=并发 2 队列逐项容错（一项失败记到那一项头上，其余照常）")
-      : fail("【37】installEnvMissing 的队列结构被破坏 —— 回到串行整批中断或丢容错");
-    (/!item\.ok && !item\.installing && !item\.skipped/.test(envSrc))
-      ? ok("【37】安装中/已跳过的项都不算进「一键安装」（前者避免自撞并发守卫，后者尊重用户）")
-      : fail("【37】installableIds 没排除 installing/skipped —— 自撞并发守卫或违背用户意愿");
   }
 
   // ⑰j 微信流式：**受平台配额约束的追加 + 「对方正在输入」**（09-18 恢复）。
@@ -1043,12 +986,9 @@ export async function run() {
     //    的大写 S 会让小写正则恒真，正是这个恒真放过了 send.tsx 里那句悬空调用（真 bug）。
     (!/showModelGuide/i.test(codeOnly(appEnv)) ? ok : fail)("【32】模型引导状态全仓清零（app-ui 层不许再有 showModelGuide，含 setter）");
     (!/ModelSetupGuide/.test(appEnv) ? ok : fail)("【32】ModelSetupGuide 渲染清零（不许再有引导弹窗挂树）");
-    (/if \(missingCore\.length > 0\) setEnvCheckOpen\(true\);/.test(appEnv) && !/deferredByModel/.test(appEnv))
-      ? ok("【32】体检独立触发：缺推荐项就弹（不再因「没配模型」推迟 —— 旧语义已随引导删除）")
-      : fail("【32】体检触发链被破坏 —— 要么不再弹，要么还在等一个已删除的前置");
-    (/setEnvCheckOpen\(false\);[\s\S]{0,60}?setShowLogin\(true\);/.test(appEnv))
-      ? ok("【32】登出时体检弹窗收起（重登不重现）")
-      : fail("【32】登出没收起体检弹窗 —— 重新登录后旧弹窗会突然冒出来");
+    (!/setEnvCheckOpen|missingCore|envCheckDoneRef/.test(appEnv) ? ok : fail)(
+      "【32】体检触发链已清零（missingCore / setEnvCheckOpen / done 标记全删 —— 启动不再有任何引导弹窗）"
+    );
   }
 
   // ⑱ src/lib/*.mjs 是**纯 JS**（node 直接 import 执行），不得出现 TS 语法。
@@ -2582,10 +2522,6 @@ export async function run() {
   const appSrc66 = readAppUi();
   (/className="runtime-progress-bar"/.test(appSrc66) ? ok : fail)(
     "【66】渲染层用进度条展示安装进度（卡片 / 安装弹窗）"
-  );
-  const envSrc66 = readFileSync(join(ROOT, "src", "components", "EnvCheckDialog.tsx"), "utf8");
-  (/runtime-progress-bar/.test(envSrc66) ? ok : fail)(
-    "【66】环境体检弹窗（一键安装）也有进度条"
   );
   const cssSrc66 = readStyles();
   (/\.runtime-progress-bar\s*\{/.test(cssSrc66) ? ok : fail)(

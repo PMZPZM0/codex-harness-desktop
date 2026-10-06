@@ -25,11 +25,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
-import { whatsNewEntryOf } from "../whats-new-notes";
+import { WHATS_NEW_ENTRIES, whatsNewEntryOf } from "../whats-new-notes";
 import { GITHUB_REPO } from "../updates";
 
 /** 本域占用的通道（卸载时要逐个摘掉）。 */
-const WHATSNEW_CHANNELS = ["whatsnew:state", "whatsnew:ack"];
+const WHATSNEW_CHANNELS = ["whatsnew:state", "whatsnew:ack", "whatsnew:history"];
 
 /** 曾经启动过的旁证：这些都是本应用**自己**写进 userData 的状态文件（Chromium 的不算）。 */
 const PRIOR_STATE_FILES = ["boot-timing.json", "app-settings.json", "personalization.json", "memory-mode.json"];
@@ -119,6 +119,17 @@ export const whatsNewFeature = defineFeature<null>({
       const releaseUrl = entry ? `https://github.com/${GITHUB_REPO}/releases/tag/v${version}` : "";
       return { ok: true, version, entry, shouldShow, reason, seen, releaseUrl };
     });
+
+    /** 全量版本要点（10-07 新手引导 →「版本更新日志」页用）。
+     *  ⛔ 数据源仍是 `whats-new-notes.ts` 的同一份 WHATS_NEW_ENTRIES（单一真相源）——
+     *    渲染层不许抄一份自己的 changelog；Release 链接同样在主进程拼好（同 state 的口径）。 */
+    ipcHost.handle("whatsnew:history", () => ({
+      ok: true,
+      entries: WHATS_NEW_ENTRIES.map((entry) => ({
+        ...entry,
+        releaseUrl: `https://github.com/${GITHUB_REPO}/releases/tag/v${entry.version}`,
+      })),
+    }));
 
     /** 用户看过了（关闭 / 点"知道了"）⇒ 记下这个版本，之后不再弹。 */
     ipcHost.handle("whatsnew:ack", (_event, version: string) => {

@@ -880,7 +880,7 @@
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
 }
-.env-check-speed { color: var(--muted); font-variant-numeric: tabular-nums; }
+
 /* 「后台运行」说明：占满剩余宽度，按钮靠右（footer 为 flex 时自动生效） */
 .dev-runtime-modal-hint {
   flex: 1;

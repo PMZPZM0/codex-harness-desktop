@@ -960,6 +960,8 @@ interface Window {
     whatsNewState(): Promise<{ ok: boolean; version: string; entry: { version: string; date: string; items: { t: string; d?: string }[] } | null; shouldShow: boolean; reason: string; seen: boolean; releaseUrl: string }>;
     /* 「知道了」：记下「当前版本已看过」（⛔ 只接受当前版本号 —— 权威值在主进程，渲染层传别的值会被拒） */
     whatsNewAck(version: string): Promise<{ ok: boolean; error?: string }>;
+    /* 全量版本要点（新手引导 → 版本更新日志用）：数据同 whats-new-notes.ts 单一真相源；GitHub Release 链接在主进程拼好 */
+    whatsNewHistory(): Promise<{ ok: boolean; entries: { version: string; date: string; items: { t: string; d?: string }[]; releaseUrl: string }[] }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */
