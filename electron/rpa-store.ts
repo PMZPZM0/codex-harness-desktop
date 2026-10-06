@@ -127,6 +127,15 @@ export class RpaStore {
     await this.save();
   }
 
+  /* 整单清空（10-06 夜六轮）：新回合开工时宿主清掉上一轮的任务清单 ——
+     上一轮停下的清单（还有 todo/doing）不许跨回合冒出来（用户实测「新回合旧的任务清单还在」）。
+     ⛔ 与 addTask 的「全完成自动清」分工不同：那条管同轮内模型的续建，这条管回合边界。 */
+  async clearTasks() {
+    await this.load();
+    this.tasks = [];
+    await this.save();
+  }
+
   private async save() {
     await Promise.all([
       fs.writeFile(this.recipeFile, JSON.stringify(this.recipes, null, 2), "utf8"),

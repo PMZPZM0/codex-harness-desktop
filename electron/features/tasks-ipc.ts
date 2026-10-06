@@ -1,8 +1,8 @@
 /**
  * tasks-ipc（10-03 从 `features/memory-rpa-ipc.ts` 按前缀拆出，同时改为**插件形态**）
  *
- * 域：tasks(4)
- * 通道：tasks:list / tasks:add / tasks:update / tasks:delete
+ * 域：tasks(5)
+ * 通道：tasks:list / tasks:add / tasks:update / tasks:delete / tasks:clear
  *
  * 与 `rpa` 的关系：共用 `rpaStore` 这个基座层对象，但**职责不同**（rpa = 自动化配方，
  * tasks = 任务清单）⇒ 按前缀各自成板块。
@@ -39,9 +39,16 @@ export const tasksFeature = defineFeature<null>({
       notifyTasksChanged();
       return result;
     });
+    /* 整单清空（10-06 夜六轮）：渲染层在**新回合开工**（用户发消息、会话空闲即刻起跑）时调用 ——
+       上一轮的清单（含 todo/doing 残留）不许跨回合冒出来。清完照广播，胶囊即刻归零。 */
+    ipcHost.handle("tasks:clear", async () => {
+      const result = await rpaStore.clearTasks();
+      notifyTasksChanged();
+      return result;
+    });
 
     ctx.effect(() => {
-      for (const ch of ["tasks:list", "tasks:add", "tasks:update", "tasks:delete"]) ipcHost.removeHandler(ch);
+      for (const ch of ["tasks:list", "tasks:add", "tasks:update", "tasks:delete", "tasks:clear"]) ipcHost.removeHandler(ch);
     });
   },
 });
