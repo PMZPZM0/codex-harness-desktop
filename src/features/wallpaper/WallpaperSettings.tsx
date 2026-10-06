@@ -7,6 +7,8 @@ import { ImagePlus, Trash2 } from "lucide-react";
 import {
   WALLPAPER_MODES,
   WALLPAPER_PATTERNS,
+  WALLPAPER_PRESETS,
+  isPresetImage,
   patternMask,
   readWallpaper,
   saveWallpaper,
@@ -60,15 +62,33 @@ export function WallpaperSettingsSection() {
         </div>
       )}
       {cfg.mode === "custom" && (
-        <div className="wallpaper-custom-row">
-          <button type="button" className="btn" onClick={() => { void pickImage(); }}>选择图片…</button>
-          {cfg.image && (
-            <button type="button" className="btn" onClick={() => update({ image: "" })}><Trash2 size={12} />清除</button>
-          )}
-          {cfg.image && <span className="wallpaper-custom-path" title={cfg.image}>{cfg.image.split(/[\\/]/).pop()}</span>}
-        </div>
+        <>
+          {/* 内置精选渐变壁纸：点击即用，不需要用户自己找图（10-05 用户「内置几个好看一点的」） */}
+          <div className="wallpaper-preset-grid" role="group" aria-label="精选壁纸">
+            {WALLPAPER_PRESETS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={`wallpaper-preset-card ${cfg.image === `preset:${p.id}` ? "active" : ""}`}
+                aria-pressed={cfg.image === `preset:${p.id}`}
+                title={p.name}
+                onClick={() => update({ mode: "custom", image: `preset:${p.id}` })}
+              >
+                <span className="wallpaper-preset-face" style={{ backgroundImage: p.css }} />
+                <span className="wallpaper-preset-name">{p.name}</span>
+              </button>
+            ))}
+          </div>
+          <div className="wallpaper-custom-row">
+            <button type="button" className="btn" onClick={() => { void pickImage(); }}>选择图片…</button>
+            {cfg.image && !isPresetImage(cfg.image) && (
+              <button type="button" className="btn" onClick={() => update({ image: "" })}><Trash2 size={12} />清除</button>
+            )}
+            {cfg.image && !isPresetImage(cfg.image) && <span className="wallpaper-custom-path" title={cfg.image}>{cfg.image.split(/[\\/]/).pop()}</span>}
+          </div>
+        </>
       )}
-      {cfg.mode !== "off" && (
+      {cfg.mode === "pattern" && (
         <label className="wallpaper-opacity">
           <span>浓度</span>
           <input
