@@ -981,6 +981,10 @@ button.brand-mark.sidebar-toggle:hover {
 .ic-pink { --ic: var(--ic-pink); }
 .ic-violet { --ic: var(--ic-violet); }
 .ic-cyan { --ic: var(--ic-cyan); }
+/* 色相**直接挂在图标自身**上（容器不便挂类时）：比如项目行的文件夹、筛选 chip 的前缀文件夹 ——
+   这两处的容器还含"展开箭头 / 关闭 ×"等**不该染色**的邻居，只能精确点到那一个 svg。
+   ⛔ 必须**逐个枚举**：写 `[class*="ic-"]` 会误命中任何含 "ic-" 的类名（诸如 `topic-*` / `basic-*`）。 */
+svg.ic-blue, svg.ic-green, svg.ic-amber, svg.ic-pink, svg.ic-violet, svg.ic-cyan { color: var(--ic); }
 /* 设置页的 `--ic-page` 由 08-settings-sheet 按当前分类写在弹窗根上 ⇒ 页内图标跟着分类色相走。
    ⛔ 这里**不给全局默认值**：消费端写 `var(--ic-page, <原色>)`，没设置时自动回落到原来的颜色。 */
 

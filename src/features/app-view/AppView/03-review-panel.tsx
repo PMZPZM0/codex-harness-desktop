@@ -171,10 +171,11 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
     rightOpen && <aside className="context-panel">
             <div className="panel-tabstrip">
               <div className="tabstrip-tabs">
-                <button className={`panel-tab ${rightTab === "review" ? "active" : ""}`} title="变更" onClick={() => setRightTab("review")}><GitBranch size={12} /><span>变更</span></button>
-                <button className={`panel-tab ${rightTab === "terminal" ? "active" : ""}`} title="终端" onClick={() => setRightTab("terminal")}><TerminalSquare size={12} /><span>终端</span></button>
-                <button className={`panel-tab ${rightTab === "browser" ? "active" : ""}`} title="浏览器" onClick={() => setRightTab("browser")}><Globe2 size={12} /><span>浏览器</span></button>
-                <button className={`panel-tab ${rightTab === "tree" ? "active" : ""}`} title="项目树" onClick={() => setRightTab("tree")}><FolderTree size={12} /><span>项目树</span></button>
+                {/* 10-07 用户截图后补：与侧栏「项目/分类」同一口径 —— tab 的**前缀图标**按色相上色、文字中性。 */}
+                <button className={`panel-tab ${rightTab === "review" ? "active" : ""}`} title="变更" onClick={() => setRightTab("review")}><GitBranch size={12} className="ic-green" /><span>变更</span></button>
+                <button className={`panel-tab ${rightTab === "terminal" ? "active" : ""}`} title="终端" onClick={() => setRightTab("terminal")}><TerminalSquare size={12} className="ic-cyan" /><span>终端</span></button>
+                <button className={`panel-tab ${rightTab === "browser" ? "active" : ""}`} title="浏览器" onClick={() => setRightTab("browser")}><Globe2 size={12} className="ic-blue" /><span>浏览器</span></button>
+                <button className={`panel-tab ${rightTab === "tree" ? "active" : ""}`} title="项目树" onClick={() => setRightTab("tree")}><FolderTree size={12} className="ic-amber" /><span>项目树</span></button>
               </div>
             </div>
             <div className={`panel-page ${rightTab === "review" ? "" : "hidden"}`}>

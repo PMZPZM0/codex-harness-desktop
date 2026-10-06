@@ -503,7 +503,7 @@ export function AppViewSettingsSheet({ app }: { app: HarnessAppApi }) {
                 settingsNav 的 tone 决定（唯一真相源），页内卡头/开关行图标读它 ⇒ 左栏点哪个分类、
                 页内就是那一色，两处不会漂移。⛔ 变量值是 `var(--ic-*)`，不是写死色值（DESIGN.md）。 */}
             <div className="settings-modal" role="dialog" aria-modal="true" aria-label="设置" style={{ "--ic-page": `var(--ic-${settingsTone(settingsPage)})` } as CSSProperties}>
-              <header><div><Settings2 size={18} /><strong>设置</strong><span className="esc-hint" title="按 ESC 关闭弹窗">ESC</span></div><div className="settings-header-actions"><button type="button" className="help-entry" title="设置总览：每页是干什么的、新手该先看哪几个" onClick={() => setHelpKey("overview")}><CircleHelp size={14} />设置总览</button><button className="icon-button relay-modal-close" title="关闭" onClick={() => setSettingsOpen(false)}><X size={18} /></button></div></header>
+              <header><div><Settings2 size={18} className="ic-blue" /><strong>设置</strong><span className="esc-hint" title="按 ESC 关闭弹窗">ESC</span></div><div className="settings-header-actions"><button type="button" className="help-entry" title="设置总览：每页是干什么的、新手该先看哪几个" onClick={() => setHelpKey("overview")}><CircleHelp size={14} />设置总览</button><button className="icon-button relay-modal-close" title="关闭" onClick={() => setSettingsOpen(false)}><X size={18} /></button></div></header>
               <SettingsSheetSettingsLayout app={app} />
             </div>
           </div>
