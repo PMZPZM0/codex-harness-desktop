@@ -6,7 +6,11 @@
 //   · 没等到结束事件的回合：下一回合开始时先补算再开新快照（防漏报；boot 只在回合结束事件里调 emit）。
 //   · 运行中实时喂（10-06 用户对照 WorkBuddy：「编辑文件板块要实时跳动 +N -M」）：快照存在期间每 2.5s
 //     做一次**轻量重扫**（只 stat 不读全文，异步并发），对比原始快照把「当前累计改动」广播成
-//     turn-file-changes-live；回合收尾时先发一条空 live 清场，再发最终 turn-file-changes。
+//     turn-file-changes-live；回合收尾发最终报告（10-06 夜二改：**不再发空 live 清场** —— 渲染层
+//     收到 final 才清 live，编辑行由最终报告定格续命，见下条）。
+//   · 最终报告**落盘 + 重播**（10-06 夜二改，用户实测「重启应用后已修改的文件板块不见了」）：
+//     收尾报告按线程写 <storeDir>/<threadId>.json，codex-ipc 在 thread/resume 时把存量报告按
+//     原事件形态重播 —— 重启/切回会话后卡片与冻结编辑行仍在（渲染层收件零改动）。
 //     ⛔ 为什么必须宿主自报：本环境模型工具面没有 apply_patch（实测模型自己说「本会话没有这个工具」），
 //        写文件走 shell / node_repl —— 引擎一个 fileChange 都不发，运行中只能靠宿主自己盯目录。
 // ⛔ 两个 id 职责必须分清（10-06 修）：**快照键/结算键 = 线程 id**（一个线程同时只有一个活跃回合，
@@ -29,6 +33,72 @@ let broadcastFn: ((payload: unknown) => void) | null = null;
 
 export function setTurnFileWatchBroadcast(fn: (payload: unknown) => void): void {
   broadcastFn = fn;
+}
+
+/* ── 最终报告的**落盘**（10-06 夜二改：用户实测「重启应用，那个下面已修改的文件那个板块不见了」）──
+   <storeDir>/<threadId>.json = { v: 1, turns: { [turnId]: { at, files } } }；由 boot 注入目录
+   （userData 下的 turn-file-changes/，⛔ 不许在本模块顶层求值 app.getPath——import 早于 setPath）。
+   裁剪都是防呆上限：每线程最多 40 个回合；单文件超 1.5MB 从最老回合起丢。落盘失败静默（不影响广播链）。 */
+const MAX_TURNS_PER_THREAD = 40;
+const MAX_STORE_BYTES = 1_500_000;
+type StoredTurn = { at: number; files: unknown[] };
+let storeDir: string | null = null;
+const storeCache = new Map<string, Record<string, StoredTurn>>();
+
+export function setTurnFileWatchStore(dir: string): void {
+  storeDir = dir ? String(dir) : null;
+}
+
+function storeFileFor(threadId: string): string | null {
+  if (!storeDir) return null;
+  return path.join(storeDir, threadId.replace(/[^A-Za-z0-9_-]/g, "_") + ".json");
+}
+
+function readStore(threadId: string): Record<string, StoredTurn> {
+  const cached = storeCache.get(threadId);
+  if (cached) return cached;
+  let turns: Record<string, StoredTurn> = {};
+  const file = storeFileFor(threadId);
+  if (file) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (parsed && typeof parsed === "object" && parsed.turns && typeof parsed.turns === "object") turns = parsed.turns as Record<string, StoredTurn>;
+    } catch { /* 不存在 / 损坏：按空库起 */ }
+  }
+  storeCache.set(threadId, turns);
+  return turns;
+}
+
+function pruneAndPersistTurn(threadId: string, turns: Record<string, StoredTurn>): void {
+  const file = storeFileFor(threadId);
+  if (!file) return;
+  try {
+    const ids = Object.keys(turns).sort((a, b) => (turns[a]?.at ?? 0) - (turns[b]?.at ?? 0));
+    while (ids.length > MAX_TURNS_PER_THREAD) delete turns[ids.shift() as string];
+    while (ids.length > 1 && JSON.stringify(turns).length > MAX_STORE_BYTES) delete turns[ids.shift() as string];
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ v: 1, turns }), "utf8");
+  } catch { /* 落盘失败不影响广播链路 */ }
+}
+
+/** 本线程的存量报告（按时间升序）——codex-ipc 在 thread/resume 时按原事件形态重播给渲染层。 */
+export function storedReportsForThread(threadId: string): { turnId: string; files: unknown[] }[] {
+  const id = String(threadId ?? "");
+  if (!id) return [];
+  const turns = readStore(id);
+  return Object.entries(turns)
+    .sort((a, b) => (a[1]?.at ?? 0) - (b[1]?.at ?? 0))
+    .map(([turnId, entry]) => ({ turnId, files: Array.isArray(entry?.files) ? entry.files : [] }));
+}
+
+/** 会话被删 ⇒ 落盘报告跟着走（两个删除入口都调用：boot 的 thread/deleted 通知 + codex-ipc 的
+    渲染层删除——与 delegateRegistry.forget 同点，那两处注释点名"两处都要有"）。 */
+export function dropStoredReports(threadId: string): void {
+  const id = String(threadId ?? "");
+  if (!id) return;
+  storeCache.delete(id);
+  const file = storeFileFor(id);
+  if (file) { try { fs.rmSync(file, { force: true }); } catch { /* 尽力而为 */ } }
 }
 
 function walk(cwd: string): Map<string, Entry> {
@@ -203,8 +273,6 @@ export function emitTurnFileChanges(threadId: string): void {
   snaps.delete(id);
   liveLastSent.delete(id);
   stopLiveTimerIfIdle();
-  // 回合收尾先清场：运行中的「正在编辑文件」板块（live）换成最终汇报卡（turn-file-changes）。
-  if (broadcastFn) broadcastFn({ type: "turn-file-changes-live", turnId: entry.turnId, files: [] });
   const next = walk(entry.cwd);
   const files: { path: string; status: string; added: number; deleted: number; diff: string }[] = [];
   for (const [p, after] of next) {
@@ -229,8 +297,16 @@ export function emitTurnFileChanges(threadId: string): void {
   }
   files.sort((x, y) => y.added + y.deleted - (x.added + x.deleted));
   const report = files.slice(0, MAX_REPORT);
+  // 落盘（10-06 夜二改）：重启/切回会话后卡片与冻结编辑行还在（thread/resume 时重播）
+  if (report.length && entry.turnId) {
+    const store = readStore(id);
+    store[String(entry.turnId)] = { at: Date.now(), files: report };
+    pruneAndPersistTurn(id, store);
+  }
   // ⛔ turnId 必须用**快照时记下的回合 id**（渲染层按 turn.id 取报告）；线程键只用于本模块内部结算。
-  if (report.length && broadcastFn) broadcastFn({ type: "turn-file-changes", turnId: entry.turnId, files: report });
+  // ⛔ 最终报告**无条件广播**（10-06 夜二改）：渲染层收到 final 才清 `turn-file-changes-live` ——
+  //    若对空报告静默跳过，残留的 live 数据会让「编辑行」卡在屏幕上不走（冻结语义下更明显）。
+  if (broadcastFn) broadcastFn({ type: "turn-file-changes", turnId: entry.turnId, files: report });
 }
 
 /** 收尾兜底（10-06 夜，新机器实测「运行中行有、收尾汇总卡没有」）：部分引擎版本的结束事件

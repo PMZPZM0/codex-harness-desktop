@@ -4463,7 +4463,7 @@ export async function run() {
       (/<NestedProcessRuns[\s\S]{0,200}?units=\{entry\.units\}/.test(seq) ? ok : fail)(
         "【118】外层过程块内部做二次分段（NestedProcessRuns —— 外层收整轮、内层收正文之间）"
       );
-      (/key=\{`fold-completed-\$\{turn\.id\}-\$\{index\}`\}[\s\S]{0,2600}?defaultOpen=\{keepProcessOpen\}/.test(seq)
+      (/\? `fold-completed-\$\{turn\.id\}-\$\{index\}`[\s\S]{0,1600}?defaultOpen=\{keepProcessOpen\}/.test(seq)
         ? ok : fail)("【118】外层仍是「整段运行过程」折叠块（默认收起 ⇒ 旧消息只有一行）");
       (!/segStats \|\| computeFoldSummary/.test(seq) && !/statsTextOf\(entry\.units\) \|\| computeFoldSummary/.test(seq)
         ? ok : fail)("【118】旧的「统计优先」标题口径不许回来（标题一律取意图摘要 / 回合收尾皮肤）");

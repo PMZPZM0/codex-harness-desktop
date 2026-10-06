@@ -38,8 +38,8 @@ ok(statusCode.includes("openImageLightbox(path, name)") && statusCode.includes("
   "openPath 分流：图片走灯箱、其余走文件预览（与消息内联卡片同口径，别各写一套）");
 ok((statusCode.match(/event\.stopPropagation\(\)/g) ?? []).length >= 2,
   "行内按钮（审查 / 打开）各自 stopPropagation —— 否则点按钮连着行点击一起触发（预览 + 弹窗双开）");
-ok(statusCode.includes("const COLLAPSE_LIMIT = 6;") && statusCode.includes("files.slice(0, COLLAPSE_LIMIT)"),
-  "超过 6 行折叠（一口气铺满会把消息区顶飞；阈值常量要在）");
+ok(statusCode.includes("const COLLAPSE_LIMIT = 2;") && statusCode.includes("files.slice(0, COLLAPSE_LIMIT)"),
+  "默认只露 2 行、其余自动收纳（用户 10-06 夜令：「已修改那个文件，最多一次展示 2 行，多了的自动放进收纳里面」——一口气铺满会把消息区顶飞；阈值常量要在）");
 ok(/expanded \? "收起" : `再显示 \$\{files\.length - COLLAPSE_LIMIT\} 个文件`/.test(statusCode),
   "折叠钮文案：再显示 N 个文件 / 收起（用户点名的「再显示 12 个文件」式交互）");
 ok(statusCode.includes('className="completed-file-thumb"') && statusCode.includes("imageUrl(file.path)"),
@@ -122,6 +122,60 @@ ok(statusCode.includes('className="completed-diff-preview"') && statusCode.inclu
   "行悬停出 diff 预览（悬停意图定时器：扫过一行不弹、停住才弹）");
 ok(/Math\.max\(M, Math\.min\(rect\.left, vw - width - M\)\)/.test(statusCode) && statusCode.includes("maxHeight={diffHover.codeMax}"),
   "⛔ 预览位置自适应：上下按空间选边 + 钳进视口 + 代码区高度按所选边收窄（不许固定坐标）");
+
+/* ── 七、预览升级（10-06 夜二改 · 用户对照 Qoder：「他这种预览好看，鼠标放上去还能左右滚动和
+   上下滚动，我们现在的 diff 预览好丑」）────────────────────────────────
+   形态：双行号槽 + 彩色行 + 两轴滚动（overflow:auto + 行 white-space:pre 不折行）+
+   面板内滚动**不关窗**（旧实现在捕获阶段一律关窗 ⇒「想滚先关窗」，用户实测复现）。 */
+const diffPreview = read("src/features/status/DiffPreview.tsx");
+const diffView = read("src/lib/diff-view.mjs");
+ok(statusCode.includes('import { DiffPreviewBody } from "./DiffPreview"') && statusCode.includes("<DiffPreviewBody text={diffHover.diff} maxHeight={diffHover.codeMax} />"),
+  "悬停预览正文换成 DiffPreviewBody（带行号槽的渲染器；不再裸 ToolCodeBlock 文本）");
+ok(statusCode.includes("panel.contains(event.target)") && statusCode.includes("hoverPanelRef.current"),
+  "⛔ 面板内部滚动不关闭预览（用户令：鼠标放上去要能左右/上下滚动；缺了 = 想滚先关窗）");
+ok(statusCode.includes('className="completed-diff-expand"') && statusCode.includes("<Maximize2"),
+  "预览头带「打开完整 diff」钮（对照 Qoder 预览头的展开键）");
+ok(diffPreview.includes("parseDiffLines") && diffPreview.includes('className="diffp-no"') && diffPreview.includes("diffp-line"),
+  "DiffPreviewBody：双行号槽 + 差分行渲染（数据来自纯函数 parseDiffLines，一行一 div）");
+ok(/\.diffp \{[^}]*overflow: auto/.test(css) && /\.diffp-line \{[^}]*white-space: pre/.test(css),
+  "预览两轴滚动（overflow:auto + 行不折行 ⇒ 长行天然出横向滚动条）");
+ok(/\.diffp-line\.add \{[^}]*color-mix/.test(css) && /\.diffp-line\.del \{[^}]*color-mix/.test(css),
+  "增删行彩色行底（色值走主题变量 color-mix，深色/浅色都跟主题走）");
+ok(diffView.includes("export function parseDiffLines") && diffView.includes("inHunk"),
+  "parseDiffLines 纯函数在（hunk 头解析行号；`---`/`+++` 只在进 hunk 前算文件头——避免吞内容行）");
+
+/* ── 八、持久化（10-06 夜二改 · 用户实测「重启应用，那个下面已修改的文件那个板块不见了」）────
+   落盘：收尾报告按线程写 <userData>/turn-file-changes/<threadId>.json；
+   重播：codex-ipc 在 thread/resume 时按原事件形态重发（渲染层收件零改动）⇒ 重启后卡与冻结行都在。 */
+const ipcCode = codeOnly(read("electron/features/codex-ipc.ts"));
+ok(watch.includes("export function setTurnFileWatchStore") && watch.includes("export function storedReportsForThread") && watch.includes("const MAX_TURNS_PER_THREAD"),
+  "追踪器落盘 API：目录注入 + 存量读取 + 防呆上限（每线程 40 回合 / 单文件 1.5MB）");
+ok(watch.includes("store[String(entry.turnId)] = { at: Date.now(), files: report }") && watch.includes("pruneAndPersistTurn(id, store)"),
+  "收尾时把最终报告写进 <threadId>.json（重启后卡片与编辑行的数据源）");
+ok(boot.includes('setTurnFileWatchStore(path.join(app.getPath("userData"), "turn-file-changes"))')
+  && boot.indexOf("setTurnFileWatchStore(") > boot.indexOf("export async function bootApp"),
+  "boot 注入落盘目录，且**在 bootApp 内**求值（⛔ 模块顶层求值 app.getPath = 路径静默漂移，守卫【91】同款红线）");
+ok(ipcCode.includes("storedReportsForThread(String(r.thread.id))") && ipcCode.includes('type: "turn-file-changes", turnId: stored.turnId'),
+  "codex-ipc 在 thread/resume 时把存量报告按原事件形态重播（重启/切回会话后卡片与编辑行复活）");
+ok(watch.includes("export function dropStoredReports") && boot.includes("dropStoredReports(goneId)") && ipcCode.includes("dropStoredReports(purgeTarget)"),
+  "两处删除入口都清落盘报告（boot 的 thread/deleted 通知 + codex-ipc 的渲染层删除——与 delegateRegistry.forget 同点，别让 userData 越攒越多）");
+
+/* ── 九、parseDiffLines 真值表（纯函数**真跑**——行号/文件头判据出错的失效方式是静默的：
+   行号错位只是数字难看不会报错；`---` 判错会吞内容行，预览直接缺行）────────────────── */
+{
+  const { parseDiffLines } = await import("../../src/lib/diff-view.mjs");
+  const rows = parseDiffLines("@@ -5,2 +5,3 @@\n ctx\n-old\n+new1\n+new2");
+  ok(rows[0].kind === "hunk" && rows[1].kind === "ctx" && rows[1].oldNo === 5 && rows[1].newNo === 5
+    && rows[2].kind === "del" && rows[2].oldNo === 6 && rows[2].newNo === null
+    && rows[3].kind === "add" && rows[3].newNo === 6 && rows[4].kind === "add" && rows[4].newNo === 7,
+    `行号真值：hunk 头起算、旧/新各自计数（实得 ${JSON.stringify(rows.map((r) => [r.kind, r.oldNo, r.newNo]))}）`);
+  const inside = parseDiffLines("+++ b/x\n@@ -1 +1 @@\n---not-a-header");
+  ok(inside[0].kind === "meta" && inside[2].kind === "del" && inside[2].text === "--not-a-header",
+    "`--- `/`+++ ` 只在进 hunk 之前算文件头（进 hunk 后是内容行——判错会吞行）");
+  const fileHead = parseDiffLines("--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n keep");
+  ok(fileHead[0].kind === "meta" && fileHead[1].kind === "meta" && fileHead[3].oldNo === 1,
+    "未进 hunk 的 `---`/`+++` 是文件头（meta 且不占行号）");
+}
 
 console.log(`\n【file-summary】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

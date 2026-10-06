@@ -15,7 +15,7 @@ import { WeixinGateway } from "../weixin-gateway";
 import { markBoot } from "../boot-timing";
 import { debugMemoryCapture } from "../memory-capture-debug";
 import { sendToWindow } from "./window-bus";
-import { emitTurnFileChanges, setTurnFileWatchBroadcast, settleTurnByTurnId, snapshotTurnWorkspace } from "../turn-file-watch";
+import { dropStoredReports, emitTurnFileChanges, setTurnFileWatchBroadcast, setTurnFileWatchStore, settleTurnByTurnId, snapshotTurnWorkspace } from "../turn-file-watch";
 
 import { shouldRegisterNuphus } from "../automation-policy";
 import { SKETCH_SCHEME, sketchResponse } from "../sketch-protocol";
@@ -216,6 +216,9 @@ setTurnFileWatchBroadcast((payload: unknown) => sendToWindow("harness:event", pa
 export async function bootApp() {
   markBoot("app-ready");   // 启动耗时测量（见 electron/boot-timing.ts）
   await fs.mkdir(codexHome, { recursive: true });
+  // 回合文件变更报告的落盘目录（10-06 夜二改：重启后「已更改 N 个文件」卡与冻结编辑行还在）。
+  // ⛔ 必须在这个时点求值（app.setPath("userData") 之后）；模块顶层 import 期求值会静默漂移。
+  setTurnFileWatchStore(path.join(app.getPath("userData"), "turn-file-changes"));
   /* 启动自报（10-01，排查「改了没生效」）：把本次启动加载的产物路径 + 渲染层 bundle 文件名 +
      时间写进 userData/startup-report.json。排查脚本读它即可确定用户启动的是哪份产物，不必互相猜。
      ⛔ 只写自己的报告文件、只读 dist/index.html，不碰任何业务状态；失败不影响启动。 */
@@ -441,6 +444,8 @@ export async function bootApp() {
           if (event.method === "thread/deleted") void delegateRegistry.forget([goneId]).then((n: number) => {
             if (n) broadcastHarnessEvent({ type: "delegates-changed", threadId: goneId } as any);
           }).catch(() => undefined);
+          // 会话被删 ⇒ 文件变更报告的落盘也跟着走（否则 userData/turn-file-changes 越攒越多）
+          if (event.method === "thread/deleted") dropStoredReports(goneId);
           void (async () => {
             const changed = event.method === "thread/deleted"
               ? await threadRuntimeStore.remove(goneId)

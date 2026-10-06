@@ -14,7 +14,7 @@ import type { FoldUnit } from "../../lib/turn-fold";
 import { CappedToolSequence } from "../session-cards";
 import { LiveFileRows } from "../status";
 import type { LiveFileChange } from "../status";
-import { getTurnLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
+import { getTurnFileChanges, getTurnLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
 import { formatDuration } from "../../lib/format-duration";
 import { describeTurnStop, turnHeadline } from "../../lib/turn-stop-reason.mjs";
 import { planCompletedFold } from "../../lib/turn-fold-plan.mjs";
@@ -290,18 +290,18 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
   [items]);
   const segments = useMemo(() => buildSegments(units, !running), [units, running]);
 
-  /* ── 运行中实时「编辑 <文件> +N -M」行的**就地锚定**（10-06 用户纠正：「在哪个地方就展示在
-     哪个地方，不是一直在新消息下面，这样多丑」）─────────────────────────────────
-     锚点 = 文件**首次出现在 live 数据里的那一刻、流里最后一条工具项**的 id；行就渲染在那一项后面。
-     live 每 ~2.5s 推一次（主进程轻量重扫），订阅在这里；渲染是哑组件 LiveFileRows（status 域）。 */
+  /* ── 「编辑 <文件> +N -M」行的**就地锚定**（运行中）+ **收尾冻结块**（结束后常驻可见）─────────
+     一改（用户纠正）：「在哪个地方就展示在哪个地方，不是一直在新消息下面，这样多丑」——
+     **运行中**：锚点 = 文件**首次出现在 live 数据里的那一刻、流里最后一条工具项**的 id；
+     行就渲染在那一项后面（live 每 ~2.5s 由主进程轻量重扫推一次）。
+     二改（用户实测）：「运行结束后，我查看过程没有 [这些 +N -M]」——收尾**不清场**：行换成
+     最终报告的定格数字，收成**一块始终可见**的 `frozenEditRows`，落在过程与最终答复之间
+     （⛔ 不塞回折叠组 —— 收起状态下视觉/文本都是空的，等于没显示；截图实锤过）。 */
   const [liveTick, setLiveTick] = useState(0);
-  useEffect(() => {
-    if (!running) return;
-    return subscribeTurnFileChanges((changedTurnId: string) => { if (changedTurnId === turn.id) setLiveTick((v) => v + 1); });
-  }, [running, turn.id]);
+  useEffect(() => subscribeTurnFileChanges((changedTurnId: string) => { if (changedTurnId === turn.id) setLiveTick((v) => v + 1); }), [turn.id]);
   const liveAnchorsRef = useRef<Map<string, string | null>>(new Map());
   useEffect(() => {
-    if (!running) { liveAnchorsRef.current.clear(); return; }
+    if (!running) return;
     const files = getTurnLiveFileChanges(turn.id);
     const anchorTarget = units.length ? units[units.length - 1].item.id : null;
     for (const file of files) if (!liveAnchorsRef.current.has(file.path)) liveAnchorsRef.current.set(file.path, anchorTarget);
@@ -313,8 +313,12 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
     const files = getTurnLiveFileChanges(turn.id).filter((file) => liveAnchorsRef.current.get(file.path) === itemId);
     return files.length ? <LiveFileRows files={files as LiveFileChange[]} /> : null;
   };
-  // 还没轮到任何工具项就出现的文件（锚 = null）：落在流的最前面，不至于丢行。
+  // 还没轮到任何工具项就出现的文件（锚 = null）：落在流的最前面，不至于丢行（仅运行中）。
   const headLiveFiles = running ? getTurnLiveFileChanges(turn.id).filter((file) => liveAnchorsRef.current.get(file.path) === null) : [];
+  // 收尾冻结块：最终报告（含重启后重播的）→ 一整块「编辑 <文件> +N -M」，跟随「已更改 N 个文件」卡
+  // 一起跨重启存活（数据源：主进程落盘 + thread/resume 重播，见 electron/turn-file-watch.ts）。
+  const frozenFiles = !running ? (getTurnFileChanges(turn.id) as LiveFileChange[]) : [];
+  const frozenEditRows = frozenFiles.length ? <LiveFileRows files={frozenFiles} /> : null;
 
   const renderItem = (unit: FoldUnit, hideFooter?: boolean, reasoningActive?: boolean) => (
     <MemoItemView
@@ -440,38 +444,51 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
       // 收尾标记：第一个过程段（lead）挂回合收尾皮肤 + 回合总失败数，其余段用意图摘要标题。
       const leadFoldIndex = plan.findIndex((entry) => entry.kind === "fold");
       const turnFailedTotal = failedCountOf(units);
+      /* 冻结编辑块的落点（10-06 夜二改）：**最终答复之前**（回合过程之后）——不展开折叠也能看见，
+         也避免"吊在整个回合之后"（用户 Round J 明确嫌丑的形态）。 */
+      const frozenIndex = frozenEditRows ? plan.findIndex((entry) => entry.kind !== "fold" && entry.unit.item.id === finalUnit.item.id) : -1;
       return <>
-        {plan.map((entry, index) => entry.kind === "fold"
-          ? (
-            <FoldGroup
-              key={`fold-completed-${turn.id}-${index}`}
-              variant={index === leadFoldIndex ? "completed" : "summary"}
-              /* 非首段：标题用**意图摘要**（09-23 用户选定「收起那一行写意图词，如『运行命令』
-                 『修改文件、运行命令：<目标>』」）。首段仍是回合收尾皮肤（耗时/停止原因）——
-                 停止标记那边明确定过「耗时由过程组标题负责，同一屏只说一次」（守卫【50】）。
-                 ⛔ 右侧统计小字已删（见 FoldGroup 处注释）。 */
-              title={index === leadFoldIndex ? completedTitle : computeFoldSummary(entry.units, false, waitingForApproval)}
-              leadGroup={topToolGroup(entry.units)}
-              failedCount={(index === leadFoldIndex ? turnFailedTotal : failedCountOf(entry.units)) || undefined}
-              defaultOpen={keepProcessOpen}
-            >
-              {/* 内层二次分段：外层整段收起保证旧消息简短；展开后正文之间的每段过程再各自
-                  收成一个意图词芯片（图二口径）。cap={false}：芯片已负责收敛，
-                  再叠「同一工具 >3 条」就是对同一批内容折两次（用户明确要求避免）。 */}
-              <NestedProcessRuns
-                units={entry.units}
-                renderUnit={(unit) => renderItem(unit, unit.item.type === "agentMessage" ? true : undefined)}
-                waitingForApproval={waitingForApproval}
-                failedCountOf={failedCountOf}
-              />
-            </FoldGroup>
-          )
-          : renderItem(entry.unit, true))}
+        {plan.map((entry, index) => (
+          /* ⛔ key 必须与旧形态逐字一致（fold = fold-completed-…、正文/单元 = item id）——
+             换成新前缀会让运行→完成切换时这些元素**整块重挂**，重放揭示动画（用户最烦的
+             「回合结束又放一遍」同型问题；上游那段注释点名「相同的 key ⇒ 完成瞬间不重挂」）。 */
+          <Fragment key={entry.kind === "fold" ? `fold-completed-${turn.id}-${index}` : entry.unit.item.id}>
+            {index === frozenIndex ? frozenEditRows : null}
+            {entry.kind === "fold"
+              ? (
+                <FoldGroup
+                  variant={index === leadFoldIndex ? "completed" : "summary"}
+                  /* 非首段：标题用**意图摘要**（09-23 用户选定「收起那一行写意图词，如『运行命令』
+                     『修改文件、运行命令：<目标>』」）。首段仍是回合收尾皮肤（耗时/停止原因）——
+                     停止标记那边明确定过「耗时由过程组标题负责，同一屏只说一次」（守卫【50】）。
+                     ⛔ 右侧统计小字已删（见 FoldGroup 处注释）。 */
+                  title={index === leadFoldIndex ? completedTitle : computeFoldSummary(entry.units, false, waitingForApproval)}
+                  leadGroup={topToolGroup(entry.units)}
+                  failedCount={(index === leadFoldIndex ? turnFailedTotal : failedCountOf(entry.units)) || undefined}
+                  defaultOpen={keepProcessOpen}
+                >
+                  {/* 内层二次分段：外层整段收起保证旧消息简短；展开后正文之间的每段过程再各自
+                      收成一个意图词芯片（图二口径）。cap={false}：芯片已负责收敛，
+                      再叠「同一工具 >3 条」就是对同一批内容折两次（用户明确要求避免）。 */}
+                  <NestedProcessRuns
+                    units={entry.units}
+                    renderUnit={(unit) => renderItem(unit, unit.item.type === "agentMessage" ? true : undefined)}
+                    waitingForApproval={waitingForApproval}
+                    failedCountOf={failedCountOf}
+                  />
+                </FoldGroup>
+              )
+              : renderItem(entry.unit, true)}
+          </Fragment>
+        ))}
+        {frozenIndex < 0 ? frozenEditRows : null}
       </>;
     }
   }
   const out: React.ReactNode[] = [];
   let bodySeen = false;
+  let frozenInserted = false;
+  const pushFrozen = () => { if (frozenEditRows && !frozenInserted) { frozenInserted = true; out.push(<Fragment key="edit-frozen">{frozenEditRows}</Fragment>); } };
   for (const seg of segments) {
     if (seg.kind === "foldable") {
       const lead = !bodySeen;
@@ -493,10 +510,12 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
     }
     for (const u of seg.units) {
       if (u.kind === "body") bodySeen = true;
+      if (u.item.id === finalUnit?.item.id) pushFrozen();
       // 与流式态同构：finalAgent 的 footer 永远不在 inner 渲染，由 TurnView 外层 MessageFooter 统一渲染。
       out.push(renderItem(u, u.item.type === "agentMessage" ? true : undefined));
     }
   }
+  pushFrozen();
   return <>{out}</>;
 }
 
