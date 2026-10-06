@@ -1,5 +1,6 @@
 /* 28-wallpaper.css —— 应用壁纸（wallpaper 域，10-05 立）
-   颜色只用 token（--accent/--bg/--line），不写死色值（守卫【170】同源）。
+   颜色只用 token（--accent/--bg/--line），不写死色值（守卫【170】同源）；
+   ⛔ 例外 = 精选渐变壁纸：配色是「好看」本身（WALLPAPER_PRESETS 的艺术选择），自带可读性雾。
    层叠：本层 z-index:-1 挂在 .timeline-wrap（relative）内 ⇒ 永远在消息内容之下；
    pointer-events:none ⇒ 永不挡交互。 */
 
@@ -10,14 +11,25 @@
 
 .wallpaper-layer { position: absolute; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
 
-/* 图案档：SVG 走 mask（形状=alpha），颜色 = --accent */
-.wallpaper-pattern { position: absolute; inset: 0; background-color: var(--accent); mask-size: 24px 24px; -webkit-mask-size: 24px 24px; mask-repeat: repeat; -webkit-mask-repeat: repeat; }
+/* 图案档：SVG 走 mask（形状=alpha），颜色 = --accent；48px 大瓷砖（24px 铺出来像噪点） */
+.wallpaper-pattern { position: absolute; inset: 0; background-color: var(--accent); mask-size: 48px 48px; -webkit-mask-size: 48px 48px; mask-repeat: repeat; -webkit-mask-repeat: repeat; }
 
-/* 自定义图档：cover 铺满 + 顶部压一层 --bg 渐变保证文字可读 */
+/* 自定义图 / 精选渐变：cover 铺满 + 一层 --bg 雾保证文字可读（浅色壁纸几乎无损，深色壁纸被提亮） */
 .wallpaper-custom { position: absolute; inset: 0; background-size: cover; background-position: center; }
-.wallpaper-custom::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 55%, transparent), color-mix(in srgb, var(--bg) 20%, transparent)); }
+.wallpaper-custom::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 46%, transparent), color-mix(in srgb, var(--bg) 18%, transparent)); }
+
+/* 精选渐变壁纸：叠一层细噪点（feTurbulence），渐变才有质感不塑料 */
+.wallpaper-preset::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
 
 /* 粒子 / 3D 档：引擎容器铺满本层 */
+/* ⛔ 10-06 用户实测：粒子档在深色主题下整块发白 —— 引擎画布背景不可信，CSS 强制透明 */
+.wallpaper-layer canvas { background: transparent !important; }
 .wallpaper-vanta { position: absolute; inset: 0; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -26,11 +38,17 @@
 
 /* ── 外观设置段 ── */
 .theme-switch.five { grid-template-columns: repeat(5, 1fr); }
-.wallpaper-pattern-grid { display: grid; grid-template-columns: repeat(6, 44px); gap: 8px; }
-.wallpaper-swatch { width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 10px; cursor: pointer; }
+.wallpaper-pattern-grid { display: grid; grid-template-columns: repeat(10, 44px); gap: 8px; }
+.wallpaper-swatch { width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 9px; cursor: pointer; }
 .wallpaper-swatch:hover { border-color: var(--accent); }
 .wallpaper-swatch.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.wallpaper-swatch-face { display: block; width: 100%; height: 100%; background-color: var(--accent); mask-size: 12px 12px; -webkit-mask-size: 12px 12px; mask-repeat: repeat; -webkit-mask-repeat: repeat; opacity: 0.75; }
+.wallpaper-swatch-face { display: block; width: 100%; height: 100%; background-color: var(--accent); mask-size: 16px 16px; -webkit-mask-size: 16px 16px; mask-repeat: repeat; -webkit-mask-repeat: repeat; opacity: 0.75; }
+.wallpaper-preset-grid { display: grid; grid-template-columns: repeat(6, 96px); gap: 10px; }
+.wallpaper-preset-card { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; padding: 0; cursor: pointer; background: var(--panel); }
+.wallpaper-preset-card:hover { border-color: var(--accent); }
+.wallpaper-preset-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.wallpaper-preset-face { display: block; width: 100%; height: 52px; background-size: cover; background-position: center; }
+.wallpaper-preset-name { display: block; font-size: 11px; color: var(--text); padding: 4px 6px; text-align: left; }
 .wallpaper-custom-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .wallpaper-custom-path { color: var(--muted); font-size: 12px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wallpaper-opacity { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 12px; }

@@ -7,7 +7,7 @@
  */
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { localImageUrl } from "../../lib/image-src.mjs";
-import { patternMask, readWallpaper, subscribeWallpaper } from "../../lib/wallpaper.mjs";
+import { isPresetImage, patternMask, presetById, readWallpaper, subscribeWallpaper } from "../../lib/wallpaper.mjs";
 
 type WallpaperConfig = { mode: string; pattern: string; opacity: number; image: string };
 
@@ -62,9 +62,10 @@ export function WallpaperLayer() {
   if (cfg.mode === "off") return null;
   // ⛔ 减动效偏好下，粒子/3D 一律退回静态图案（accessibility 基本盘）
   const mode = (cfg.mode === "particles" || cfg.mode === "vanta") && prefersReducedMotion() ? "pattern" : cfg.mode;
-  /* ⛔ 浓度只作用于图案/自定义图：粒子/3D 有自己的强度语义，被 8% 层透明度压住 = 全部隐身
-     （10-05 用户实测「切了全没反应」的真凶之二——其一见 28-wallpaper.css 的 isolation 注释）。 */
-  const opacity = mode === "pattern" || mode === "custom" ? cfg.opacity / 100 : 1;
+  /* ⛔ 浓度只作用于图案（装饰层）：粒子/3D 有自己的强度语义；自定义图/精选渐变是完整壁纸
+     —— 被 12% 层透明度压住 = 全部隐身（10-05 用户实测「切了全没反应」的真凶之二）。 */
+  const opacity = mode === "pattern" ? cfg.opacity / 100 : 1;
+  const preset = isPresetImage(cfg.image) ? presetById(cfg.image.slice("preset:".length)) : null;
   return (
     <div className="wallpaper-layer" data-mode={mode} aria-hidden style={{ opacity }}>
       {mode === "pattern" && (
@@ -75,7 +76,8 @@ export function WallpaperLayer() {
       )}
       {mode === "particles" && <Suspense fallback={null}><ParticlesPane /></Suspense>}
       {mode === "vanta" && <VantaPane />}
-      {mode === "custom" && cfg.image && (
+      {mode === "custom" && preset && <div className="wallpaper-custom wallpaper-preset" style={{ backgroundImage: preset.css }} />}
+      {mode === "custom" && !preset && cfg.image && (
         <div className="wallpaper-custom" style={{ backgroundImage: `url("${localImageUrl(cfg.image)}")` }} />
       )}
     </div>
