@@ -165,12 +165,20 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
     return roster.map((m) => {
       const run = runningByMember[m.id];
       const last = lastByMember[m.id];
+      /* ⛔⛔ 主理人（= **主会话**）单独接一条线（10-06 用户报「主会话没有事件渠道更新状态，
+         一直显示停机」）：专家团的会话**就是主理人自己的会话**，而 `railRunningByMember`
+         来自 `teamRuns` —— 那张表**只记"被委派的成员"**（`team-runs.ts` 由
+         `team_member_invoke` 写入）⇒ 主理人查不到 run ⇒ 它的工位恒为「待机」、
+         屏幕恒为屏保，用户在对话框里干得再欢办公室也不动。
+         ⇒ 主理人的运行态取自 `self`（宿主传的本会话状态 = sending / activeTurnId）。
+         ⛔ 真被派出去当成员时（`run` 存在）优先用 run，那条更准。 */
+      const selfLead = m.id === team.lead.id && Boolean(self?.threadId);
       return {
         id: m.id,
         name: m.name,
         profession: m.profession?.zh ?? "",
-        running: Boolean(run),
-        hasThread: Boolean(run || last),
+        running: Boolean(run) || (selfLead && Boolean(self?.running)),
+        hasThread: Boolean(run || last) || selfLead,
       };
     });
   }, [team, runningByMember, lastByMember, delegatedRuns, self]);
@@ -231,6 +239,22 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
          否则用最近一次 —— 它带着"完成/失败 + 真实用时"，正是用户要的反馈。 */
     if (team) {
       const run = runningByMember[memberId] ?? lastByMember[memberId];
+      /* ⭐ 主理人 = **主会话**（见 members 里那段注释）：宿主手里根本没有它的
+         `TeamMemberRunRecord`，但它的会话就是当前会话 ⇒ 阶段按"本会话在不在跑"推、
+         事件面按**本会话的 threadId** 取。⛔ 只在它没有 run 记录时走这条
+         （主理人真被当成成员派出去时，`run.memberThreadId` 才是真正在跑的那个会话）。 */
+      if (!run && team.lead.id === memberId && self?.threadId) {
+        const running = Boolean(self.running);
+        return {
+          phase: running ? "thinking" : "none",
+          sinceMs: 0,
+          durationMs: 0,
+          chars: 0,
+          /* 「主会话」不接任务 ⇒ 没有派发身份（⛔ 别拿别的东西冒充，否则会凭空播一次派发动画） */
+          runId: "",
+          event: eventOf(self.threadId, now),
+        };
+      }
       const facts = phaseOfRun(run, now);
       return {
         phase: facts.phase, sinceMs: facts.sinceMs, durationMs: facts.durationMs, chars: facts.chars,

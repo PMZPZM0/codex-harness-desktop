@@ -165,8 +165,6 @@ export type Agent = {
   facing: 0 | 1 | 2; // 行号：0 朝下 1 朝上 2 侧面
   flip: boolean;
   path: Pt[];
-  /** 回工位的路径（休息走完按它回来） */
-  homePath: Pt[];
   seatIndex: number;
   frameClock: number;
   /** 休息倒计时（tick）；work 成员永不离席 */
@@ -300,7 +298,6 @@ export class OfficeSim {
         facing: 2,
         flip: false,
         path: [],
-        homePath: [],
         seatIndex,
         frameClock: Math.random() * 4,
         breakCooldown: 1800 + Math.floor(Math.random() * 3000),   // 30~80 秒（⛔ 原来 10~25 秒，太频繁）
@@ -351,7 +348,6 @@ export class OfficeSim {
         if (path.length > 0) {
           path.push({ x: seat.x, y: seat.y });
           agent.path = path;
-          agent.homePath = [...path];
           agent.dest = { x: seat.x, y: seat.y };
         } else {
           /* ⛔⛔ 寻不到路（理论上不该发生：自己座位格是放开的）⇒ **绝不能让他站着** ——
@@ -422,7 +418,6 @@ export class OfficeSim {
     a.poiSlot = slot;
     a.bubble = { text: hit.poi.label, until: now + 2600 };
     a.path = out;
-    a.homePath = [...out].reverse();
     a.dest = { x: target.x, y: target.y };
     /* ⛔⛔ 绝不能在"出发"就设站立截止（老代码是 `now + 6000`）：
        step 的 ⓪ 分支只看 activityUntil，于是**走了 6 秒还没到就被判成"站完了"拽回家**
@@ -479,7 +474,6 @@ export class OfficeSim {
         const back = findPath(this.pathGrid(a.seatIndex), a, seat) ?? [];
         if (back.length > 0) back.push({ x: seat.x, y: seat.y });
         a.path = back;
-        a.homePath = [...back];
         a.dest = { x: seat.x, y: seat.y };
         a.tripAt = 0;
       }
@@ -513,17 +507,21 @@ export class OfficeSim {
       if (Date.now() < a.activityUntil) return;
       a.activityUntil = 0;
       a.activity = null;
-      /* ⛔ 回工位终点必须**精确到座位像素**——homePath 的终点是「起身时所在格中心」，
-         比实测 seat.x 偏 ~8px（10-01 用户实测「第二次坐上去就偏右了」的根因）。 */
-      const seat = SEATS[a.seatIndex];
-      a.path = [...a.homePath, { x: seat.x, y: seat.y }];
-      a.dest = { x: seat.x, y: seat.y };
+      /* ⛔⛔ 回工位**当场 BFS 重新规划**，绝不复用"来时路线的反向"（`homePath` 已整体删除）。
+         这一段原来是 `a.path = [...a.homePath, { x: seat.x, y: seat.y }]` —— 而 homePath 的
+         头是**出发地**（饮水机 / 书架）⇒ 人从工位朝出发地走一条**直线**，撞进
+         「桌子行 + 别人的座位格」的夹角里（实测卡在 `(479.9, 288.5)`：右边是 2 号位
+         的座位格、上面是 2 号桌），而侧移只有纵向、正好把 0.68px 的步进原地顶回
+         ⇒ **无限震荡**（实测 1692 秒，`path` 长度 29 一格不减、`action` 一直是 walk
+         ⇒ 画面上就是"卡位一直走"）。用户原话「第一次正常，出去几次、回自己位置就卡位」
+         指的正是这条：随机出门掷中饮水机/书架（roll 0.18~0.80）才触发。 */
+      this.headHome(a);
+      /* 回来之后把冷却重新拉长（⛔ 否则 `breakCooldown` 早已 ≤0，一坐下就立刻再出门）。 */
+      a.breakCooldown = 3000 + Math.floor(Math.random() * 4800);
       return;
     }
     // ① 沿当前路径走（去工位 / 休息走动 / 回工位共用一条 path）
     if (a.path.length > 0) {
-      /* ⛔ 卡住自愈（10-05 晚）：被分离力/让行推到路径外之后，直线冲向下一路点可能
-         卡死或切角穿桌 ⇒ 连续 1.5 秒没挪窝就按**最终目的地**重新规划一条。 */
       /* ⛔ 出行超时兜底（10-05 晚）：不管什么原因走不到（被挤、被让行困住），
          30 秒后一律收场回工位 —— 否则那人会**永远挂在走路状态**
          ⇒ 后面派给他的任务全被拒（sendTo 要求"不在途"），屏面也永远停在上一件事。 */
@@ -539,52 +537,44 @@ export class OfficeSim {
           return;
         }
         this.endChat(a.id, false);
-        a.onBreak = false;
         a.activity = null;
         a.activityUntil = 0;
-        a.tripAt = 0;
-        a.tripRetried = false;
-        const home = SEATS[a.seatIndex];
-        const hp = findPath(this.pathGrid(a.seatIndex), a, home) ?? [];
-        if (hp.length > 0) hp.push({ x: home.x, y: home.y });
-        a.path = hp;
-        a.homePath = [...hp];
-        a.dest = { x: home.x, y: home.y };
+        this.headHome(a);
         return;
       }
-      if (a.stuck > 90 && a.dest) {
+      /* ⛔ 卡住自愈：**连续 0.5 秒没能靠近当前路点** ⇒ 当场按最终目的地重新规划一条。
+         阈值从 90 帧（1.5s）收紧到 30 帧，因为判据同时换了口径（见下面 movement 分支）：
+         旧判据是"这一帧有没有挪窝"，而"贴边震荡"每帧都挪 0.68px ⇒ 永远清零、永不触发
+         （这正是卡位能持续 28 分钟的原因）；新判据是"有没有**净靠近**路点"，不会误报。 */
+      if (a.stuck > 30) {
         a.stuck = 0;
         a.repathCount += 1;
-        /* ⛔⛔ 连续三次重规划还是挪不动 ⇒ **这条路在当前拥挤下走不通**，别再耗着：
-           （重规划用的是同一份网格，若是"被人挡住"⇒ 每次都会得到同一条路 ⇒ 死循环；
-             实测有人在行 14 椅子行上卡住，`mode=work` 正赶回工位，一直走不回去。）
-           ⇒ 回落到「坐下」：sync（≤250ms）会把坐姿成员**钉回自己的座位** ——
-             复用已有机制，不用另写瞬移。视觉上是一次"回到工位"，比永远杵在走廊里好得多。 */
-        if (a.repathCount >= 3) {
-          a.repathCount = 0;
+        const dest = a.dest ?? a.path[a.path.length - 1] ?? null;
+        const repath = dest ? findPath(this.gridTo(a, dest), a, dest) ?? [] : [];
+        /* ⛔ 重规划也拿不到路（或已连试 3 次）⇒ 判定**此路不通**：直接坐下，
+           `sync`（≤250ms）会把坐姿成员钉回自己的工位。复用已有机制，
+           比"在走廊里原地抖到天荒地老"好得多。 */
+        if (repath.length === 0 || a.repathCount >= 3) {
           if (a.chatWith) this.endChat(a.id, false);
+          a.path = [];
+          a.dest = null;
+          a.action = "sit";
           a.onBreak = false;
           a.activity = null;
           a.activityUntil = 0;
           a.tripAt = 0;
-          a.path = [];
-          a.dest = null;
-          a.action = "sit";
+          a.tripRetried = false;
           return;
         }
-        const repath = findPath(this.gridTo(a, a.dest), a, a.dest) ?? [];
-        if (repath.length > 0) { repath.push({ x: a.dest.x, y: a.dest.y }); a.path = repath; }
+        repath.push({ x: dest!.x, y: dest!.y });
+        a.path = repath;
       }
       a.action = "walk";
       const target = a.path[0];
       const dx = target.x - a.x;
       const dy = target.y - a.y;
       const dist = Math.hypot(dx, dy);
-      /* ⭐ 拥挤减速（10-05 晚）：身边 34px 内有人时步速减半。
-         ⛔ 这是把"分离力追不上接近速度"从**根上**解决的一招：
-           两人相向而行时接近速度 = 2×步速（2.7px/帧），而分离力上限 1.6×2 = 3.2
-           只勉强压住 ⇒ 采样到 14.4px（看着就是两人叠着走）。
-           减半后接近速度 ≤ 1.35 < 3.2，分离力始终有余量。
+      /* ⭐ 拥挤减速（10-05 晚）：身边 26px 内有人时步速减半。
          物理上也自然：走廊里有人，谁都会放慢。 */
       const crowded = this.agents.some((b) => b.id !== a.id && Math.hypot(a.x - b.x, (a.y - b.y) * 0.8) < 26);
       const spd = crowded ? WALK_SPEED * 0.5 : WALK_SPEED;
@@ -601,6 +591,8 @@ export class OfficeSim {
            那是"站在饮水机/书架正前方"的精度要求（`SEATS`/`POI` 坐标都是实测像素值），
            差 4~5px 肉眼就是"站偏了"。这些终点（自己的座位 / POI 槽位 / 串门站位）
            都是**空位**（选槽时已排除被占），瞬移过去不会叠人。 */
+        a.stuck = 0;
+        a.repathCount = 0;
         a.path.shift();
         if (a.path.length === 0) {
           a.x = target.x;
@@ -612,26 +604,27 @@ export class OfficeSim {
         const ny = a.y + (dy / dist) * spd;
         /* ⛔ 只判**环境碰撞**（墙 / 桌子 / 别人的座位格）。
            10-06 起不再判「有没有人挡着」—— 人物之间没有体积碰撞了。
-           ⛔ 目标格必须能走：被卡住自愈的重规划推离路径后，直线冲下一路点会
-             **切角穿桌**（实测采样到人在桌面格里：`(535,275) 格(16,8)` 就是 2 号桌）。 */
+           ⛔ 目标格必须能走：直线冲下一路点会**切角穿桌**（实测采样到人在桌面格里：
+             `(535,275) 格(16,8)` 就是 2 号桌）。 */
         if (this.cellFree(nx, ny, a.seatIndex)) {
           a.x = nx;
           a.y = ny;
+        }
+        /* ⛔⛔ 卡位判据 = **有没有向当前路点靠近**（不是"有没有挪窝"）。
+           为什么必须换口径（10-06 实测，用户连报两次"卡位一直走"）：
+             人被挡在「桌子行 + 座位格」的夹角处时，旧的纵向盲侧移会让它每帧<b>移动 0.68px</b>
+             然后在边界两侧来回 —— 逐帧看**一直在动**、`action` 一直是 walk（走路动画照播），
+             可它**一毫米都没靠近过路点**，`path` 长度 29 一格不减，实测僵持 **1692 秒**。
+             ⇒ 改成净靠近量：`gain = 移动前距离 − 移动后距离`。震荡时 gain ≈ 0 ⇒ 0.5 秒后
+               触发上面的重规划（BFS 会从**当前格**重新找路，天然绕开夹角）。
+           ⛔ 也**删掉了纵向盲侧移**：它正是震荡的来源（被挡时往下挪一步、下一帧又能往上挪
+             半步、再被挡 ⇒ 永远跨不过那道格边界）。重规划比盲挪可靠得多。 */
+        const gain = dist - Math.hypot(target.x - a.x, target.y - a.y);
+        if (gain > 0.05) {
           a.stuck = 0;
           a.repathCount = 0;
         } else {
-          /* ⛔ 侧移绕行：主方向被**格子**挡住时（路径格被占 / 贴墙），上下让一步。
-             俯视图里"往上/往下让一步"最自然；奇偶座位定先后，避免所有人同一侧绕。
-             ⛔ 10-06 起不再判「会不会撞人」—— 只判格子。 */
-          const sideOrder = a.seatIndex % 2 === 0 ? [1, -1] : [-1, 1];
-          let moved = false;
-          for (const s of sideOrder) {
-            const sx = a.x;
-            const sy = a.y + s * spd;
-            if (this.cellFree(sx, sy, a.seatIndex)) { a.x = sx; a.y = sy; moved = true; break; }
-          }
-          if (moved) { a.stuck = 0; a.repathCount = 0; }
-          else a.stuck += 1;
+          a.stuck += 1;
         }
         if (Math.abs(dy) > Math.abs(dx) * 1.2) {
           a.facing = dy < 0 ? 1 : 0;
@@ -692,7 +685,6 @@ export class OfficeSim {
       const out = findPath(this.gridTo(a, target), a, target) ?? [];
       if (out.length > 1) {
         a.path = out;
-        a.homePath = [...out].reverse();
         a.dest = { x: target.x, y: target.y };
         a.tripAt = Date.now();
         a.tripRetried = false;
@@ -725,6 +717,7 @@ export class OfficeSim {
            "先坐下、位置下一拍自动纠正"比"站着不坐"可靠得多。 */
       a.action = "sit";
       a.activity = null;
+      a.breakCooldown = 3000 + Math.floor(Math.random() * 4800);   // 50~130 秒（拉长）
       return;
     }
     if (a.activity) {
@@ -738,13 +731,42 @@ export class OfficeSim {
       a.tripAt = 0;
       return;
     }
-    // 休息走动完毕：站一会儿再回去
-    a.action = "stand";
+    /* 休息走动完毕（在工位附近走了一小圈）：**当场 BFS 规划一条回家的路**。
+       ⛔⛔ 这里原来是 `a.path = [...a.homePath, { x: seat.x, y: seat.y }]` ——
+         把"来时路线"整条反过来再走一遍，而 homePath 的头是**出发地** ⇒
+         人从工位朝出发地直线走、撞进桌角与座位格的夹角 ⇒ 无限震荡
+         （实测 1692 秒、`action` 恒为 walk、走路动画照播 = 用户说的"卡位一直走"）。
+         已随 `homePath` 一起删除，改走 `headHome`（当场规划）。
+       ⛔ 也**别**在这里直接 `action = "sit"`：那会让 `sync` 把刚从工位走出去的人
+         一帧瞬移回座位（画面上一跳），走回去才是对的。 */
+    this.headHome(a);
+  }
+
+  /**
+   * 让某人回**自己的工位**（当场 BFS 重规划）。
+   *
+   * ⛔⛔ 为什么必须"当场规划"而不是复用记录下来的路线：老实现保存了 `homePath`
+   *   （= 来时路线的反向），而它的头是**出发地**。只要还有一格没消化完，人就会朝
+   *   出发地走 —— 从工位看就是"朝饮水机直线穿越"，必然撞进桌椅夹角；再加上
+   *   旧的纵向盲侧移，人会在格边界两侧无限抖（实测 1692 秒、走路动画照播）。
+   *   用户 10-06 原话「第一次正常，出去几次、回自己位置就卡位一直走」。
+   */
+  private headHome(a: Agent) {
+    a.tripAt = Date.now();
+    a.tripRetried = false;
     a.onBreak = false;
-    a.breakCooldown = 3000 + Math.floor(Math.random() * 4800);   // 50~130 秒（拉长）
+    /* 已经在座位上（例如"原地喝茶"）⇒ 直接坐下，⛔ 别为 9px 的格中心差再走一趟。 */
     const seat = SEATS[a.seatIndex];
-    a.path = [...a.homePath, { x: seat.x, y: seat.y }];
-    a.dest = { x: seat.x, y: seat.y };
+    if (a.action === "sit" || Math.hypot(a.x - seat.x, a.y - seat.y) < 12) {
+      a.action = "sit";
+      a.path = [];
+      a.dest = null;
+      return;
+    }
+    const back = findPath(this.pathGrid(a.seatIndex), a, seat) ?? [];
+    if (back.length > 0) back.push({ x: seat.x, y: seat.y });
+    a.path = back;
+    a.dest = back.length > 0 ? { x: seat.x, y: seat.y } : null;
   }
 
   /* ─────────────────────────────────────────────────────────────────────
@@ -849,7 +871,6 @@ export class OfficeSim {
     a.activity = null;
     a.bubble = { text: "过去聊两句 💬", until: Date.now() + 2200 };
     a.path = out;
-    a.homePath = [...out].reverse();
     a.dest = { x: spot.x, y: spot.y };
     a.tripAt = Date.now();
     a.tripRetried = false;
@@ -942,17 +963,10 @@ export class OfficeSim {
     if (x.action === "sit") return;              // 坐着的不用管（sync 会钉回座位）
     if (!home && x.path.length > 0) return;      // 在途且不要求回家 ⇒ 让他走完这段
     if (x.activityUntil > 0) return;             // 正在 POI 前站着 ⇒ 让它自然结束
-    /* 站着没事做（或 home 要求）⇒ 一律回家。⛔ 拿不到路径也必须清 onBreak
-       —— 那样 step ② 的死态自愈会让他坐下，而不是永远站着。 */
-    const seat = SEATS[x.seatIndex];
-    const back = findPath(this.pathGrid(x.seatIndex), x, seat) ?? [];
-    if (back.length > 0) back.push({ x: seat.x, y: seat.y });
-    x.path = back;
-    x.homePath = [...back];
-    x.dest = { x: seat.x, y: seat.y };
-    x.onBreak = false;
-    x.tripAt = Date.now();
-    x.tripRetried = false;
+    /* 站着没事做（或 home 要求）⇒ 一律回家（当场 BFS，见 `headHome`）。
+       ⛔ 拿不到路径也必须清 onBreak —— 那样 step ② 的死态自愈会让他坐下，
+          而不是永远站着。 */
+    this.headHome(x);
   }
 
   /** 工位附近 2-4 格的随机点（休息走动不出远门）。 */
