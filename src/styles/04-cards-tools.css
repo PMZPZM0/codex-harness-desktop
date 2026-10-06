@@ -487,6 +487,81 @@
   to { opacity: 1; transform: none; }
 }
 
+/* ── 输入框上方「N 个文件已修改 +X -Y」胶囊（10-06 夜 · 用户对照 WorkBuddy 图三/图四）──
+   它是输入框卡片栈里的普通一行（与排队消息/询问/审批卡上下排序、不互相遮）；悬停向上/向下
+   自适应展开文件清单（JS 按空间选边 + 收窄 max-height，永不截掉）；回合结束自动消失。 */
+.edited-files-card { position: relative; margin: 0 0 8px; text-align: center; } /* 胶囊居中（用户 10-06：「居中展示，不要靠左」） */
+.edited-files-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  cursor: default;
+}
+.edited-files-pill svg { color: var(--muted); }
+.edited-files-pill b { color: var(--add); font-weight: 500; }
+.edited-files-pill i { color: var(--del); font-style: normal; }
+.edited-files-pop {
+  position: absolute;
+  left: 0;
+  z-index: 10000; /* composer 浮层带（DESIGN.md：10000~12000） */
+  width: min(440px, 86vw);
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  scrollbar-width: thin;
+}
+.edited-files-pop.pop-above { bottom: calc(100% + 6px); }
+.edited-files-pop.pop-below { top: calc(100% + 6px); }
+.edited-files-row { display: flex; align-items: center; gap: 7px; padding: 4px 6px; font-size: 12px; }
+.edited-files-row code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.edited-files-stats { flex: none; display: inline-flex; gap: 6px; }
+.edited-files-stats b { color: var(--add); font-style: normal; font-weight: 500; }
+.edited-files-stats i { color: var(--del); font-style: normal; }
+.edited-files-more { padding: 4px 6px; color: var(--muted); font-size: 11.5px; }
+
+/* ── 汇总卡行悬停的 diff 预览（10-06 夜 · 用户对照图一：「鼠标放到汇总的修改的文件名上」）──
+   ⛔ 位置自适应（用户点名「别固定，固定容易截掉」）：上下按空间选边、贴边钳进视口，
+   坐标由 JS 每开必算（InlineCards 里同款职责分工：CSS 只管外观）。z = 轻浮层带（同文件卡菜单）。 */
+.completed-diff-preview {
+  position: fixed;
+  z-index: 1000;
+  visibility: hidden;
+  overflow: hidden;
+  padding: 6px 8px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+}
+.completed-diff-preview header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 2px 6px; font-size: 12px; }
+.completed-diff-preview header code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.completed-diff-preview-stats { flex: none; }
+.completed-diff-preview-stats b { color: var(--add); font-weight: 500; }
+.completed-diff-preview-stats i { color: var(--del); font-style: normal; }
+
 /* ── 知识库设置页（kb 域，10-01）──────────────────────────── */
 .kb-embed-card {
   display: flex;

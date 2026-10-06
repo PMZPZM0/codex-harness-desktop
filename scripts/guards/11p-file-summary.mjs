@@ -115,5 +115,13 @@ const shared2 = codeOnly(read("src/features/shared/InlineCards.tsx"));
 ok(shared2.includes('return createPortal((') && shared2.includes('), document.body);'),
   "文件卡右键菜单也 portal 到 body（position:fixed + 视口坐标，留在回合内会被整体偏移）");
 
+/* ── 六、汇总卡行悬停的 diff 预览（10-06 夜 · 用户图一：「鼠标放到汇总的修改的文件名上」；
+   ⛔ 用户令「预览窗口要自适应展示位置，别固定，固定容易截掉、展示不全」）───────────────── */
+
+ok(statusCode.includes('className="completed-diff-preview"') && statusCode.includes("hoverOpenTimerRef.current"),
+  "行悬停出 diff 预览（悬停意图定时器：扫过一行不弹、停住才弹）");
+ok(/Math\.max\(M, Math\.min\(rect\.left, vw - width - M\)\)/.test(statusCode) && statusCode.includes("maxHeight={diffHover.codeMax}"),
+  "⛔ 预览位置自适应：上下按空间选边 + 钳进视口 + 代码区高度按所选边收窄（不许固定坐标）");
+
 console.log(`\n【file-summary】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
