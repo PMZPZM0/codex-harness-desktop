@@ -5,7 +5,11 @@ import { RUN_CLOCK } from "../../lib/run-clock-2";
 import { Turn } from "../../lib/turn";
 import { diffStats } from "../../lib/diff-stats";
 import { ToolCodeBlock } from "../shared/ToolCodeBlock";
+import { FileCardMenu } from "../shared/InlineCards";
 import { getTurnFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
+import { openImageLightbox } from "../../lib/ui-channels";
+import { imageUrl } from "../../lib/image-url";
+import { isImagePath } from "../../lib/is-image-path";
 import { usageBucket } from "../../lib/usage-bucket";
 import { usageInputTokens } from "../../lib/usage-input-tokens";
 import { usageCachedTokens } from "../../lib/usage-cached-tokens";
@@ -30,9 +34,16 @@ export function fileChip(path: string) {
 
 /** 回合结束的「文件更改汇报」（10-01 复刻 ZCode）：已更改 N 个文件 +X -Y；每行 = 类型图标 +
     文件名 + 所在目录 + 增删行数 + 「审查」（弹窗看完整 diff）与「打开」（资源管理器定位）。
-    ⛔ 不再限定 task 回合——普通聊天回合里模型改了文件同样要汇报（用户按文件数核对改动）。 */
-export function CompletedChanges({ turn }: { turn: Turn }) {
+    ⛔ 不再限定 task 回合——普通聊天回合里模型改了文件同样要汇报（用户按文件数核对改动）。
+    10-06（用户对照 Qoder 效果图补交互）：行**点击直接打开预览**（图片走灯箱）、**右键复用文件卡菜单**
+    （在文件夹中显示 / 复制文件路径）、超过 6 行折叠成「再显示 N 个文件」、图片文件显示缩略图、
+    宿主追踪的**新增文件**打「新增」徽标。 */
+const COLLAPSE_LIMIT = 6;
+
+export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?: (path: string) => void }) {
   const [review, setReview] = useState<{ path: string; diff: string } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string; name: string } | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const changes = turn.items.flatMap((item) => item.type === "fileChange" ? (item.changes ?? []) : []);
   /* 宿主追踪（10-01）：模型走 shell / MCP / 浏览器写文件时引擎不发 fileChange，
      这份差异由主进程快照对比得出 —— 与引擎 changes 合并（同路径引擎优先）。 */
@@ -41,7 +52,7 @@ export function CompletedChanges({ turn }: { turn: Turn }) {
   void trackedVersion;
   const tracked = getTurnFileChanges(turn.id);
   if (!changes.length && !tracked.length) return null;
-  const byPath = new Map<string, { path: string; added: number; deleted: number; diffs: string[]; deletedFile?: boolean }>();
+  const byPath = new Map<string, { path: string; added: number; deleted: number; diffs: string[]; deletedFile?: boolean; newFile?: boolean }>();
   for (const change of changes) {
     const path = change.path ?? change.filePath ?? "未知文件";
     const stats = diffStats(change.diff ?? "");
@@ -50,8 +61,8 @@ export function CompletedChanges({ turn }: { turn: Turn }) {
   }
   for (const entry of tracked) {
     const existing = byPath.get(entry.path);
-    if (existing) { if (!existing.added && !existing.deleted && (entry.added || entry.deleted || entry.status === "deleted")) byPath.set(entry.path, { path: entry.path, added: entry.added, deleted: entry.deleted, diffs: entry.diff ? [entry.diff] : existing.diffs, deletedFile: entry.status === "deleted" }); continue; }
-    byPath.set(entry.path, { path: entry.path, added: entry.status === "deleted" ? 0 : entry.added, deleted: entry.status === "deleted" ? entry.deleted : entry.deleted, diffs: entry.diff ? [entry.diff] : [], deletedFile: entry.status === "deleted" });
+    if (existing) { if (!existing.added && !existing.deleted && (entry.added || entry.deleted || entry.status === "deleted")) byPath.set(entry.path, { path: entry.path, added: entry.added, deleted: entry.deleted, diffs: entry.diff ? [entry.diff] : existing.diffs, deletedFile: entry.status === "deleted", newFile: entry.status === "added" }); continue; }
+    byPath.set(entry.path, { path: entry.path, added: entry.status === "deleted" ? 0 : entry.added, deleted: entry.deleted, diffs: entry.diff ? [entry.diff] : [], deletedFile: entry.status === "deleted", newFile: entry.status === "added" });
   }
   const files = [...byPath.values()];
   const totals = files.reduce((sum, file) => ({ added: sum.added + file.added, deleted: sum.deleted + file.deleted }), { added: 0, deleted: 0 });
@@ -60,26 +71,44 @@ export function CompletedChanges({ turn }: { turn: Turn }) {
     const cut = norm.lastIndexOf("/");
     return { name: cut >= 0 ? norm.slice(cut + 1) : norm, dir: cut >= 0 ? norm.slice(0, cut) : "" };
   };
+  /** 行点击 / 菜单「打开」共用：图片走灯箱，其余交给文件预览弹窗（会话单例的统一入口）。 */
+  const openPath = (path: string, name: string) => {
+    if (isImagePath(path)) openImageLightbox(path, name);
+    else onOpenFile?.(path);
+  };
+  const visible = expanded ? files : files.slice(0, COLLAPSE_LIMIT);
   return (
     <>
       <details className="completed-changes" open>
         <summary><FileCode2 size={15} /><strong>已更改 {files.length} 个文件</strong><span className="diff-add">+{totals.added}</span><span className="diff-delete">-{totals.deleted}</span><ChevronDown size={14} /></summary>
         <div>
-          {files.map((file) => {
+          {visible.map((file) => {
             const { name, dir } = segments(file.path);
             const diffText = file.diffs.join("\n");
             return (
-              <div className="completed-file" key={file.path}>
-                {fileChip(file.path)}
+              <div className="completed-file clickable" key={file.path} title={`点击预览：${file.path}`}
+                onClick={() => openPath(file.path, name)}
+                onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, path: file.path, name }); }}>
+                {isImagePath(file.path)
+                  ? <span className="completed-file-thumb"><img src={imageUrl(file.path)} alt="" loading="lazy" onError={(event) => { (event.currentTarget as HTMLImageElement).style.display = "none"; }} /></span>
+                  : fileChip(file.path)}
                 <span className="completed-file-meta"><code title={file.path}>{name}</code><small title={file.path}>{dir}</small></span>
-                <span className="completed-file-stats">{file.deletedFile ? <i className="completed-file-gone">已删除</i> : <><b>+{file.added}</b> <i>-{file.deleted}</i></>}</span>
-                <button type="button" className="completed-file-btn" title="弹窗查看这个文件的完整 diff" onClick={() => setReview({ path: file.path, diff: diffText })}>审查</button>
-                <button type="button" className="completed-file-btn" title="在资源管理器里定位该文件" onClick={() => { try { void window.codex.revealInFolder(file.path); } catch { /* 目录可能已删 */ } }}>打开</button>
+                <span className="completed-file-stats">{file.deletedFile ? <i className="completed-file-gone">已删除</i> : file.newFile ? <b className="completed-file-new">新增</b> : <><b>+{file.added}</b> <i>-{file.deleted}</i></>}</span>
+                <button type="button" className="completed-file-btn" title="弹窗查看这个文件的完整 diff" onClick={(event) => { event.stopPropagation(); setReview({ path: file.path, diff: diffText }); }}>审查</button>
+                <button type="button" className="completed-file-btn" title="在资源管理器里定位该文件" onClick={(event) => { event.stopPropagation(); try { void window.codex.revealInFolder(file.path); } catch { /* 目录可能已删 */ } }}>打开</button>
               </div>
             );
           })}
+          {files.length > COLLAPSE_LIMIT && (
+            <button type="button" className="completed-more" onClick={() => setExpanded((value) => !value)}>
+              {expanded ? "收起" : `再显示 ${files.length - COLLAPSE_LIMIT} 个文件`}
+            </button>
+          )}
         </div>
       </details>
+      {/* 右键菜单：与文件卡（消息里的内联卡片）共用同一份（在文件夹中显示 / 复制文件路径 / …），
+          ⛔ 不复制第二份菜单实现 —— 菜单项永远只有一处真相源。 */}
+      {menu && <FileCardMenu menu={menu} onOpen={() => openPath(menu.path, menu.name)} onClose={() => setMenu(null)} />}
       {/* 审查弹窗：完整 diff 就地可看（层级 950 = 模态之上的最后一层，见 DESIGN.md 层叠带） */}
       {review && (
         <div className="turn-diff-modal-mask" onClick={() => setReview(null)}>
