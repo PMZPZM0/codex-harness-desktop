@@ -625,13 +625,13 @@
   font-weight: 500;
 }
 .sidebar-tab svg {
-  color: var(--muted);
+  color: var(--ic, var(--muted));
   flex: none;
 }
-.sidebar-tab:hover svg,
-.sidebar-tab.active svg {
-  color: var(--accent);
-}
+/* ⛔ 10-06 用户口径「图标都加点色彩」：条目图标**按条目的色相常亮**，hover/active 不再刷成主色
+   —— 一悬停就换色会让人跟不住「这条是什么颜色」。原来那条
+   `.sidebar-tab:hover svg, .sidebar-tab.active svg { color: var(--accent); }` 已删除；
+   选中态仍靠 `.sidebar-tab.active` 的主色淡底表达（见上一条规则）。 */
 .sidebar-tab > span {
   text-align: left;
   flex: 1;

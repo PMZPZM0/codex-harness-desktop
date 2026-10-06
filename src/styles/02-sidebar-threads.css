@@ -334,7 +334,7 @@
 .sidebar-settings {
   width: 32px;
   height: 32px;
-  color: var(--muted);
+  color: var(--ic, var(--muted));
   cursor: pointer;
   background: 0 0;
   border: 0;

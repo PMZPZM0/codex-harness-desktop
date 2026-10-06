@@ -1489,7 +1489,9 @@
   display: flex;
 }
 .settings-card-head svg {
-  color: var(--green);
+  /* 10-06 用户「设置里面的图标也加点色彩」：卡头图标跟着**当前分类**的色相走（弹窗根 --ic-page）。
+     ⛔ 回落值必须是原来的 --green：没挂 --ic-page 的地方（比如别处复用这个卡头类）保持原样。 */
+  color: var(--ic-page, var(--green));
 }
 .settings-card-body {
   padding: 14px 16px 16px;

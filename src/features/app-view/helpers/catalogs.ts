@@ -82,15 +82,27 @@ export const cronTemplates = [
  *  ⛔ 归属必须与 components/HelpDialog.tsx 的 OVERVIEW_GROUPS **逐组一致** ——
  *    两处曾各分各的（截图/组件库/人格市场/收藏夹 在总览属「开发工具」、在侧栏属「常用」），
  *    用户看到的分类因此对不上。守卫【32】只钉页名集合，归属靠这条注释与人工同步。 */
-export const settingsNav: { group: string; items: [SettingsPage, string, any][] }[] = [
-  { group: "账户与模型", items: [["user", "用户中心", UserRound], ["model", "模型", Bot], ["relay", "中转站", Wallet], ["openai", "OpenAI 订阅", CircleGauge]] },
-  { group: "外观与体验", items: [["general", "控制台", Settings2], ["appearance", "外观", Sun], ["personalization", "个性化", Sparkles], ["pet", "桌面宠物", PawPrint], ["voice", "语音通话", Headphones], ["screenshot", "截图", Camera]] },
-  { group: "能力与内容", items: [["skills", "技能", Zap], ["plugins", "插件", Store], ["memory", "记忆", Archive], ["commands", "命令", TerminalSquare]] },
-  { group: "创意与知识", items: [["component-library", "组件库", LayoutGrid], ["soul-market", "人格市场", Heart], ["knowledge-base", "知识库", BookOpen]] },
-  { group: "自动化与智能体", items: [["automation", "自动化", Workflow], ["schedule", "定时任务", Clock3], ["mcp", "MCP", Wifi], ["hooks", "钩子", Wrench], ["ssh", "SSH 服务器", Server], ["agentteam", "专家/专家团", Users]] },
-  { group: "数据", items: [["usage", "使用统计", CircleGauge], ["storage", "数据管理", Database], ["backup", "会话备份", Download], ["archive", "归档管理", Archive], ["favorites", "收藏夹", Star]] },
-  { group: "开发", items: [["devtools", "开发工具", TerminalSquare], ["extensibility", "拓展接口", Blocks]] },
+/** 设置分类导航。第 4 位 = **图标色相**（10-06 用户：「图标都加点色彩，…设置里面的图标也是」）：
+ *  取值是 `--ic-<tone>` 的色名（见 01-base-and-chrome.css 的图标色板），渲染处挂 `ic-<tone>` 类。
+ *  ⛔ 同一分组内尽量不同色相、跨分组可以复用 —— 它表达的是「这一项属于哪一类」，不是状态。
+ *  ⛔ 色相声明的**唯一真相源**就是这里：设置页内的卡头图标也读它（08-settings-sheet 把当前项的
+ *     色相写成弹窗根上的 `--ic-page`）⇒ 左栏点哪一项，页内图标就跟着那一色，两处永不漂移。 */
+export const settingsNav: { group: string; items: [SettingsPage, string, any, string][] }[] = [
+  { group: "账户与模型", items: [["user", "用户中心", UserRound, "blue"], ["model", "模型", Bot, "violet"], ["relay", "中转站", Wallet, "cyan"], ["openai", "OpenAI 订阅", CircleGauge, "green"]] },
+  { group: "外观与体验", items: [["general", "控制台", Settings2, "blue"], ["appearance", "外观", Sun, "pink"], ["personalization", "个性化", Sparkles, "violet"], ["pet", "桌面宠物", PawPrint, "amber"], ["voice", "语音通话", Headphones, "cyan"], ["screenshot", "截图", Camera, "amber"]] },
+  { group: "能力与内容", items: [["skills", "技能", Zap, "violet"], ["plugins", "插件", Store, "amber"], ["memory", "记忆", Archive, "cyan"], ["commands", "命令", TerminalSquare, "green"]] },
+  { group: "创意与知识", items: [["component-library", "组件库", LayoutGrid, "pink"], ["soul-market", "人格市场", Heart, "pink"], ["knowledge-base", "知识库", BookOpen, "blue"]] },
+  { group: "自动化与智能体", items: [["automation", "自动化", Workflow, "violet"], ["schedule", "定时任务", Clock3, "amber"], ["mcp", "MCP", Wifi, "cyan"], ["hooks", "钩子", Wrench, "green"], ["ssh", "SSH 服务器", Server, "blue"], ["agentteam", "专家/专家团", Users, "pink"]] },
+  { group: "数据", items: [["usage", "使用统计", CircleGauge, "blue"], ["storage", "数据管理", Database, "cyan"], ["backup", "会话备份", Download, "green"], ["archive", "归档管理", Archive, "amber"], ["favorites", "收藏夹", Star, "pink"]] },
+  { group: "开发", items: [["devtools", "开发工具", TerminalSquare, "green"], ["extensibility", "拓展接口", Blocks, "violet"]] },
 ];
+
+/** 设置页 key → 图标色相（从 settingsNav 派生，不另立一份表）。
+ *  ⛔ 派生量而不是第二份真相源：加一页设置时只改上面那行，这里自动跟上。 */
+export function settingsTone(page: string): string {
+  for (const group of settingsNav) for (const item of group.items) if (item[0] === page) return item[3];
+  return "blue";
+}
 
 export const imageExts = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico"]);
 

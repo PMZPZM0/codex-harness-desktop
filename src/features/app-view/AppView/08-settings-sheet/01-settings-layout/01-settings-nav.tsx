@@ -15,7 +15,7 @@ export function SettingsLayoutSettingsNav({ app }: { app: HarnessAppApi }) {
                           {settingsNav.map((group) => (
                             <div key={group.group} className="settings-group">
                               <div className="settings-group-label">{group.group}</div>
-                              {group.items.map(([key, label, Icon]) => <button key={key} className={settingsPage === key ? "active" : ""} onClick={() => setSettingsPage(key)}><Icon size={15} />{label}</button>)}
+                              {group.items.map(([key, label, Icon, tone]) => <button key={key} className={`${settingsPage === key ? "active" : ""} ic-${tone}`.trim()} onClick={() => setSettingsPage(key)}><Icon size={15} />{label}</button>)}
                             </div>
                           ))}
                         </nav>
