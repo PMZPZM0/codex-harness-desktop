@@ -163,19 +163,11 @@ bag.helpKey = helpKey as typeof bag.helpKey; bag.setHelpKey = setHelpKey as type
   const [archiveToast, setArchiveToast] = useState<{ name: string; token: number } | null>(null);
 bag.archiveToast = archiveToast as typeof bag.archiveToast; bag.setArchiveToast = setArchiveToast as typeof bag.setArchiveToast;
 
-  // ⛔ 模型配置引导（09-17）已随弹窗整体删除（10-01 用户定稿：首启只弹「开发工具」引导）。
+  // ⛔ 首启引导弹窗两代都已删（模型引导 10-01、环境体检 10-07）——新手引导改走侧栏常驻入口。
   //    登录页快捷配置链路保留（part08 的 handleLogin/markModelConfigured）。
 
-  /** 首次启动「环境体检」（09-17 用户：「新用户不知道该装什么，不装 Codex 啥也干不了」）。
-   *  必备 4 项（模型 / 工作区 / Git / ripgrep）缺任一项就弹；装了或用户关掉都算本次完事。 */
-  const [envCheckOpen, setEnvCheckOpen] = useState(false);
-bag.envCheckOpen = envCheckOpen as typeof bag.envCheckOpen; bag.setEnvCheckOpen = setEnvCheckOpen as typeof bag.setEnvCheckOpen;
-
-  const [envInstalling, setEnvInstalling] = useState(false);
-bag.envInstalling = envInstalling as typeof bag.envInstalling; bag.setEnvInstalling = setEnvInstalling as typeof bag.setEnvInstalling;
-
-  const envCheckDoneRef = useRef(false);
-bag.envCheckDoneRef = envCheckDoneRef as typeof bag.envCheckDoneRef;
+  /* ⛔ 首启「环境体检」弹窗（09-17）已整体删除（10-07 用户令：「反正现在也新手引导选项了」）。
+     新手侧入口 = 侧栏底部「新手引导」（newbie-guide 板块）；别再复活 envCheckOpen 一族状态。 */
 
   /** Codex 的身份（名字+头像）：订阅外部 store，改设置时消息头会立刻跟着变。 */
   const codexIdentity = useSyncExternalStore(subscribeCodexIdentity, getCodexIdentity, getCodexIdentity);
@@ -204,5 +196,5 @@ bag.runtimePercent = runtimePercent as typeof bag.runtimePercent; bag.setRuntime
 
   const [runtimeStage, setRuntimeStage] = useState<Record<string, string>>({});
 bag.runtimeStage = runtimeStage as typeof bag.runtimeStage; bag.setRuntimeStage = setRuntimeStage as typeof bag.setRuntimeStage;
-  return { runUpdateCheck, runUpdateDownload, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, uiSketchOpen, setUiSketchOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, envCheckOpen, setEnvCheckOpen, envInstalling, setEnvInstalling, envCheckDoneRef, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
+  return { runUpdateCheck, runUpdateDownload, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, uiSketchOpen, setUiSketchOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
 }

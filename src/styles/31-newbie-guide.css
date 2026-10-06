@@ -1,0 +1,151 @@
+/* ── 新手引导（10-07 立）：侧栏常驻入口 + 「迷你设置」弹窗 ─────────────────────
+   用户令：侧栏底部常驻板块（截图红框 = sidebar.bottom 同位段），点开左选项 / 右内容；
+   弹窗层走 .modal-backdrop 的全局模态档（400），不新开层级带。 */
+
+/* 入口：一行（与 sidebar.bottom 插槽同段位，空间紧 —— 别加高、别塞列表）。
+   ⛔ flex:none = 常驻不被压扁（侧栏 flex 列里唯一允许收缩的是 .thread-list）；
+   位置在 .thread-list **之外**、账户行之上 —— 列表怎么滚都不会盖到它（用户 10-07：「不能被对话选项遮住」）。 */
+.guide-entry {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  margin: 4px 10px 6px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+}
+.guide-entry:hover { color: var(--text); background: var(--panel-2); border-color: var(--faint); }
+.guide-entry-label { font-weight: 600; }
+.guide-entry-sub { margin-left: auto; color: var(--faint); font-size: 11px; }
+
+/* 弹窗：迷你设置 = 左导航 + 右内容 */
+.guide-modal {
+  display: grid;
+  grid-template-columns: 176px minmax(0, 1fr);
+  width: min(760px, 100%);
+  height: min(560px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.guide-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 10px;
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+  overflow-y: auto;
+}
+.guide-nav-head { display: flex; align-items: center; gap: 6px; padding: 4px 8px 10px; color: var(--text); font-size: 13px; }
+.guide-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.guide-nav-item:hover { color: var(--text); background: var(--panel-2); }
+.guide-nav-item.active { color: var(--text); background: var(--panel-2); font-weight: 600; }
+
+.guide-body { padding: 18px 20px; overflow-y: auto; }
+.guide-body-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.guide-body-head h3 { margin: 0; color: var(--text); font-size: 15px; }
+.guide-close {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.guide-close:hover { color: var(--text); background: var(--panel-2); }
+
+.guide-intro { margin: 0 0 14px; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
+.guide-steps { display: grid; gap: 10px; margin: 0 0 16px; padding: 0; list-style: none; }
+.guide-steps li { display: flex; gap: 10px; }
+.guide-step-index {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 11px;
+}
+.guide-steps b { display: block; color: var(--text); font-size: 12.5px; }
+.guide-steps small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.guide-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.guide-action:hover { filter: brightness(1.08); }
+
+/* 版本更新日志（数据 = whatsnew:history） */
+.guide-status { display: flex; align-items: center; gap: 6px; padding: 8px 0; color: var(--muted); font-size: 12.5px; }
+.guide-status-error { flex-wrap: wrap; color: var(--red); }
+.guide-retry {
+  margin-left: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.guide-release {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.guide-release-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.guide-release-head b { color: var(--text); font-size: 13px; }
+.guide-release-head span { color: var(--faint); font-size: 11px; }
+.guide-release-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.guide-release-link:hover { color: var(--text); }
+.guide-release ul { display: grid; gap: 6px; margin: 0; padding-left: 16px; }
+.guide-release li { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.guide-release li b { color: var(--text); font-weight: 600; }
+.guide-release li span { display: block; margin-top: 1px; }

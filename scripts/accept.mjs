@@ -510,12 +510,7 @@ const CHECKS = [
       h.check("⑨ 一键预览真跑：真实产物里找到上游的播放键并点到（桥回执 ok:true，宿主状态条同步「预览已开始」）",
         preview?.result?.ok === true && String(previewStatus).includes("预览已开始"),
         JSON.stringify({ receipt: preview?.result ?? preview, status: String(previewStatus).slice(0, 80) }));
-      // 截图前关掉宿主自己的引导浮层（环境体检；它启动后**异步**才弹 ⇒ 单点容易漏，间隔点三遍）
-      await h.clickByText("全部稍后再说").catch(() => undefined);
-      await wait(900);
-      await h.clickByText("全部稍后再说").catch(() => undefined);
-      await wait(600);
-      await h.clickByText("全部稍后再说").catch(() => undefined);
+      // （10-07 起首启「环境体检」弹窗已删，以前这里的三连点「全部稍后再说」不再需要）
       await wait(700);
       await h.screenshot("uisketch");
       /* ⑩ 还原放在截图之后（截图拍的是"三形态内容 + 预览已开"的画面；还原是收尾不留痕）。 */
@@ -1312,26 +1307,118 @@ const CHECKS = [
     },
   },
   {
+    id: "newbie-guide",
+    name: "㉖ 新手引导：侧栏常驻入口 + 迷你设置弹窗（左选项/右内容/映射跳转/版本日志，10-07 轮）",
+    run: async (h) => {
+      /* 为什么真跑（用户 10-07 令 + 追问「这个新手引导不能被对话选项遮住」）：
+         入口位置（列表之外、账户行之上、不被滚动内容盖住）、点击开合、映射跳转（弹窗关 →
+         设置页真停在「模型」）、版本日志（真数据、来自 whatsnew:history）—— 全是最终态才成立的
+         东西，静态守卫只看结构，这里跑行为。 */
+      await h.waitFor(`!!document.querySelector(".guide-entry") && !!document.querySelector(".composer-editor")`, { label: "引导入口与界面就绪", timeoutMs: 30000 }).catch(() => undefined);
+      /* ⛔ ① 的命中测试必须等**启动页摘掉**：boot-splash 是全屏覆盖层，还在时 elementFromPoint
+         会命中它（实测假红一次）—— 入口本身没问题，是跑得比启动页退场早。 */
+      await h.waitFor(`!document.querySelector(".boot-splash")`, { label: "启动页已摘", timeoutMs: 60000 }).catch(() => undefined);
+      await wait(400);
+      /* ① 入口常驻：在 .thread-list 之外、账户行之上、可见且命中自身（不被任何东西遮住） */
+      const entryPos = await h.eval(`(function(){
+        var entry = document.querySelector('.guide-entry');
+        if (!entry) return null;
+        var list = document.querySelector('.thread-list');
+        var row = document.querySelector('.account-row');
+        var er = entry.getBoundingClientRect();
+        var lr = list ? list.getBoundingClientRect() : null;
+        var rr = row ? row.getBoundingClientRect() : null;
+        var el = document.elementFromPoint(Math.round(er.left + er.width / 2), Math.round(er.top + er.height / 2));
+        return { vis: er.height > 0 && er.width > 0,
+          belowList: lr ? er.top >= lr.bottom - 1 : null,
+          aboveRow: rr ? er.bottom <= rr.top + 1 : null,
+          hitSelf: el ? (el === entry || entry.contains(el)) : null };
+      })()`).catch(() => null);
+      h.check("① 入口常驻在会话列表之外、账户行之上、可见且可点（不被列表内容遮住 —— 用户点名的一条）",
+        !!entryPos && entryPos.vis === true && entryPos.belowList === true && entryPos.aboveRow === true && entryPos.hitSelf === true,
+        JSON.stringify(entryPos));
+      if (!entryPos?.vis) { h.check("①b 前置缺失：入口不存在，本项作废", false, "guide-entry 缺失"); return; }
+      /* ② 点击弹窗：左选项 ≥5 个 + 右内容区在；默认停在第一节（快速上手） */
+      await h.eval(`document.querySelector('.guide-entry').click()`);
+      let opened = null;
+      for (let i = 0; i < 12; i++) {
+        await wait(250);
+        opened = await h.eval(`(function(){
+          var modal = document.querySelector('.guide-modal');
+          if (!modal) return null;
+          var rect = modal.getBoundingClientRect();
+          return { fits: rect.top >= 0 && rect.bottom <= innerHeight && rect.left >= 0 && rect.right <= innerWidth,
+            nav: [...modal.querySelectorAll('.guide-nav-item')].map(function(b){ return (b.textContent||'').trim(); }),
+            active: (modal.querySelector('.guide-nav-item.active')?.textContent||'').trim(),
+            title: (modal.querySelector('.guide-body-head h3')?.textContent||'').trim() };
+        })()`).catch(() => opened);
+        if (opened) break;
+      }
+      h.check("② 点击弹出迷你设置（左选项/右内容、整矩形在视口内、默认停在第一节「快速上手」）",
+        !!opened && opened.fits === true && (opened.nav ?? []).length >= 5 && opened.active === "快速上手" && opened.title.length > 0,
+        JSON.stringify(opened).slice(0, 240));
+      if (!opened) return;
+      /* ③ 左选项：三个设置页映射 + 更新日志**置底**（用户：「版本更新日志默认在最下面」） */
+      const nav = opened.nav ?? [];
+      h.check("③ 左选项含 模型/开发工具/人格市场 三映射，且「更新日志」置底",
+        ["配置模型", "开发工具", "人格市场"].every((label) => nav.includes(label)) && nav[nav.length - 1] === "更新日志",
+        JSON.stringify(nav));
+      /* ④ 映射跳转：切到「配置模型」→ 点「打开设置」→ 引导弹窗关、真设置页打开且**停在模型页** */
+      await h.eval(`(function(){ var b=[...document.querySelectorAll('.guide-nav-item')].find(function(x){ return (x.textContent||'').trim()==='配置模型'; }); b?.click(); return 1; })()`);
+      await wait(300);
+      await h.eval(`document.querySelector('.guide-action')?.click()`);
+      let jumped = null;
+      for (let i = 0; i < 16; i++) {
+        await wait(300);
+        jumped = await h.eval(`(function(){
+          var guide = !!document.querySelector('.guide-modal');
+          var modal = document.querySelector('.settings-modal');
+          var active = modal ? (modal.querySelector('.settings-nav button.active')?.textContent||'').trim() : null;
+          return { guideClosed: !guide, settingsOpen: !!modal, activePage: active };
+        })()`).catch(() => jumped);
+        if (jumped && jumped.settingsOpen && jumped.activePage) break;
+      }
+      h.check("④ 映射跳转到位：弹窗关闭 + 设置页打开且左栏停在「模型」（不是只打开了设置）",
+        !!jumped && jumped.guideClosed === true && jumped.settingsOpen === true && jumped.activePage === "模型",
+        JSON.stringify(jumped));
+      await h.pressKey("Escape");
+      await wait(400);
+      /* ⑤ 版本更新日志：置底项 → 真数据列表（版本号 + 日期 + 条目；数据 = whatsnew:history 单源） */
+      await h.eval(`document.querySelector('.guide-entry').click()`);
+      await wait(350);
+      await h.eval(`(function(){ var b=[...document.querySelectorAll('.guide-nav-item')].find(function(x){ return (x.textContent||'').trim()==='更新日志'; }); b?.click(); return 1; })()`);
+      let releases = null;
+      for (let i = 0; i < 20; i++) {
+        await wait(300);
+        releases = await h.eval(`(function(){
+          var rows = [...document.querySelectorAll('.guide-release')];
+          if (!rows.length) return null;
+          var head = rows[0].querySelector('.guide-release-head');
+          return { count: rows.length, first: (head?.textContent||'').replace(/\\s+/g,' ').trim().slice(0, 40),
+            firstItems: rows[0].querySelectorAll('li').length,
+            linked: !!rows[0].querySelector('.guide-release-link') };
+        })()`).catch(() => releases);
+        if (releases) break;
+      }
+      h.check("⑤ 版本更新日志是真数据（≥1 条 vX.Y.Z + 条目列表 + 完整说明入口）",
+        !!releases && releases.count >= 1 && /^v\d+\.\d+\.\d+/.test(releases.first || "") && releases.firstItems >= 1,
+        JSON.stringify(releases).slice(0, 200));
+      /* ⑥ Esc 关闭 + 无残留 */
+      await h.pressKey("Escape");
+      await wait(350);
+      const closed = await h.eval(`!document.querySelector('.guide-modal')`);
+      h.check("⑥ Esc 关闭引导弹窗（与既有弹窗口径一致）", closed === true, `closed=${closed}`);
+      await h.screenshot("newbie-guide");
+    },
+  },
+  {
     id: "message-feedback",
     name: "㉒ 消息操作图标（用户消息复制贴右端 + 两段成功反馈，10-05 轮）",
     run: async (h) => {
       // 为什么真跑：这三件事全是"改坏了不会报错、只会悄悄变难看"的类型 ——
       // 顺序靠 flex 排、动画靠属性选择器命中 DOM，tsc 与静态守卫都看不见最终像素。
-      /* ⛔ 先把宿主自己的引导浮层关掉再测拖选：10-05 排查"松手不弹"排了半天，真因是
-         **环境体检弹窗盖在时间线上**，按坐标拖的那一下选到的是弹窗里的字（`.env-check-row`），
-         浮条按规则正确地没弹 —— 不是应用的错，是测试的前置状态脏了。
-         ⛔ 不能用 `h.clickByText("全部稍后再说")`：这一项**跑到拖选那一步才需要它**，而体检是
-         启动后异步扫完才弹的 —— 开头点的那一次常常还没出现（10-05 实测 covered 全是 env-check-row）。
-         所以做成可重入的：开头关一次，拖选前再关一次。 */
-      const dismissOverlays = async () => {
-        const closed = await h.eval(`(function(){ const box=document.querySelector(".env-check-modal");
-          if(!box) return 0; const b=[...box.querySelectorAll("button")].find((x)=>/全部稍后再说/.test(x.textContent||""));
-          if(!b) return -1; b.click(); return 1; })()`);
-        await h.waitFor(`!document.querySelector(".env-check-modal")`, { label: "环境体检弹窗已关闭", timeoutMs: 4000 })
-          .then(() => true).catch(() => false);
-        return closed;
-      };
-      await dismissOverlays();
+      /* （10-07：首启「环境体检」弹窗已整体删除 —— 以前它异步弹出来盖住时间线、拖选会选到
+         弹窗里的字（`.env-check-row`）；现在启动后不再有任何引导浮层，这段前置清理随之撤掉。） */
       /* 前置：应用启动时停在新任务（时间线是空的），必须先开一个**有历史**的会话。
          ⛔ 点 `.thread-row` 那个 div 不生效 —— 真正绑 onClick 的是行里面的按钮（10-05 实测：
          点 div 之后 .message 数量仍是 0，看着像"脚部没渲染"，其实根本没切会话）。
@@ -1591,9 +1678,6 @@ const CHECKS = [
       // 收尾：清掉测试留下的选区，否则浮条会出现在截图里、也会挡后面几项
       await h.eval(`(function(){ window.getSelection()?.removeAllRanges(); return 1; })()`);
       await wait(400);
-      // 截图前关掉宿主自己的引导浮层（环境体检），否则挡住时间线看不清
-      await dismissOverlays();
-      await wait(400);
       await h.screenshot("message-feedback");
     },
   },
@@ -1626,7 +1710,8 @@ async function enterMain(h) {
 //   历史项不删（它们仍然是回归证据），但**永远不会在默认路径上被执行** ——
 //   这样"每次只测最新改动"是机制保证的，不再依赖我记不记得。
 // ─────────────────────────────────────────────────────────────────────────────
-const LATEST_ROUND = "10-06";
+const LATEST_ROUND = "10-07";   // 10-07 轮：新手引导（侧栏常驻入口 + 迷你设置弹窗）*/
+// 上一轮（10-06）的五个验收项仍是回归证据：--only <id> 单跑，或 --all 全量。
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
   "ui-sketch": "10-06",   // ⛔ 10-06 重写：三形态探针（手机+电脑屏 / platform web 真落盘）+ 预览 + 还原；编号改执行顺序
@@ -1634,6 +1719,7 @@ const ROUND_OF = {
   "popup-fits": "10-06",   // ⛔ 10-06 新增：弹窗自适应普查（用户令「凡事弹窗类都要加自适应，不能被裁剪」）
   "composer-resize": "10-06",   // 10-06 夜三轮新增：输入框上下拖动把手（用户对照 Qoder 图二）
   "goal-bar": "10-06",   // 10-06 夜五轮新增：/goal 目标条（用户对照 Qoder：计时 + 编辑/删除/暂停；默认轮最后一项，含真续跑回合）
+  "newbie-guide": "10-07",   // 10-07 轮：新手引导（侧栏常驻入口 + 迷你设置弹窗；左选项/右内容/映射跳转/版本日志）
   "message-feedback": "10-05",   // 10-05 轮：消息操作图标的两段反馈 + 用户消息复制贴右端（历史项，默认轮不再跑 —— 回归证据）
   "plugin-market-gitee": "10-03",
   "codex-official-market": "10-03",   // 本轮新项；Gitee 项同轮重跑（插件页加了源切换，两个源都得看一眼）

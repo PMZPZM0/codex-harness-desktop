@@ -64,7 +64,6 @@ import {
   PenLine,
   Play,
   PowerOff,
-  RefreshCw,
   ArrowLeft,
   ArrowRight,
   Download,
@@ -143,7 +142,6 @@ import {
 import { CardStatusIcon, Spinner, useCardOpen, type ActionStatus } from "../../../../components/CardShell";
 import { BootSplash, type BootStage } from "../../../../components/BootSplash";
 import { HelpDialog, type HelpTopic } from "../../../../components/HelpDialog";
-import { EnvCheckDialog, ENV_CHECK_SPEC, ENV_CHECK_OPTOUT_KEY, type EnvCheckState } from "../../../../components/EnvCheckDialog";
 import { CodexAvatar, useCodexName } from "../../../../components/CodexAvatar";
 import { contentOffsetTop, jumpToBottom, scrollToOffsetInstant } from "../../../../components/scroll-utils";
 import { visibleTurnWindow, mergeTurnListsById } from "../../../../lib/turn-order.mjs";
@@ -195,24 +193,12 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     delegatedPopupRun,
     delegatedRailRuns,
     earlierLoadingId,
-    envCheckOpen,
-    envInstalling,
-    envItems,
-    envQueueDone,
-    envQueueTotal,
-    envSkipped,
-    skipEnvItem,
-    envPercent,
-    envProgress,
-    envSpeed,
-    envStage,
     forgetPendingImport,
     greetSub,
     greeting,
     helpKey,
     historyMemberRuns,
     hookPulse,
-    installEnvMissing,
     interruptedTurns,
     isEmpty,
     jumpToTurnInWindow,
@@ -238,7 +224,6 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     serverStatus,
     setCompactToast,
     setDelegatedPopupId,
-    setEnvCheckOpen,
     setHelpKey,
     setLightbox,
     setPastedText,
@@ -365,35 +350,8 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                   )}
                   {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}
                   {pastedText && <PastedTextEditor path={pastedText.path} name={pastedText.name} onClose={() => setPastedText(null)} transport={pastedText.kind === "file" ? fileEditTransport : undefined} />}
-                  {/* 首次启动「环境体检」（09-17 用户要求）：必备项缺失时列出「缺什么 / 为什么 / 多大」并一键补齐 */}
-                  {envCheckOpen && (
-                    <EnvCheckDialog
-                      items={envItems}
-                      installing={envInstalling}
-                      progress={envProgress}
-                      percent={envPercent}
-                      stage={envStage}
-                      speed={envSpeed}
-                      onInstall={(ids) => void installEnvMissing(ids)}
-                      onSkip={(id) => skipEnvItem(id)}
-                      queueDone={envQueueDone ?? undefined}
-                      queueTotal={envQueueTotal ?? undefined}
-                      onClose={(dontAsk) => {
-                        if (dontAsk) { try { localStorage.setItem(ENV_CHECK_OPTOUT_KEY, "1"); } catch { /* 隐私模式等写入失败不影响关闭 */ } }
-                        setEnvCheckOpen(false);
-                      }}
-                    />
-                  )}
-                  {/* 后台安装角标（09-18 用户要求）：一键安装点下去弹窗就收起，安装转后台；
-                      角标实时显示进度、点开可回到弹窗；装完随 envInstalling=false 自动消失。
-                      安装中途手动关掉弹窗也一样——关闭 ≠ 取消，角标还在、结果照常通知。 */}
-                  {envInstalling && !envCheckOpen && (
-                    <button type="button" className="env-install-pill" onClick={() => setEnvCheckOpen(true)}>
-                      <RefreshCw size={13} className="spin" />
-                      <span className="env-install-pill-text">{envProgress || "正在准备下载…"}</span>
-                      <em>后台安装中 · 点开查看</em>
-                    </button>
-                  )}
+                  {/* ⛔ 首启「环境体检」弹窗 + 后台安装角标已删（10-07 用户令：有新手引导入口了）。
+                     缺工具去「设置 → 开发工具」按需下载；别在这里复活 EnvCheckDialog。 */}
                   {/* 归档后提示浮层已挪到 composer（09-23 用户：「放对话框上方正中间」）——
                      见 02-main-stage/03-composer.tsx 里 `.composer-wrap` 内的 ArchiveToast。 */}
                   <HelpDialog helpKey={helpKey}
