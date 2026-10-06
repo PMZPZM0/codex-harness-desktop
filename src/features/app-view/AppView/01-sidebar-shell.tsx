@@ -431,17 +431,21 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 </div>
               </div>
             )}
-            {projectFilter && <button className="filter-chip" title="清除项目筛选" onClick={() => setProjectFilter(null)}><FolderOpen size={12} />{basename(projectFilter)}<X size={12} /></button>}
+            {/* ⛔ 只给前缀文件夹染色：这个 chip 里还有个"关闭 ×"，它是**动作**不是分类。 */}
+            {projectFilter && <button className="filter-chip" title="清除项目筛选" onClick={() => setProjectFilter(null)}><FolderOpen size={12} className="ic-amber" />{basename(projectFilter)}<X size={12} /></button>}
             <div className="view-tabs" role="tablist" aria-label="视图">
               {/* ⛔ 「分组」（按时间）视图已于 09-25 按用户要求删除（原话：「分组可以删了」）。
                   历史偏好值在 part03 里统一回落到「项目」。 */}
-              <button className={`view-tab ${viewTab === "projects" ? "active" : ""}`} onClick={() => setViewTab("projects")} title="按项目分组"><FolderOpen size={14} /><span>项目</span></button>
+              {/* 10-07 用户截图：`项目 / 分类` 这行与右侧工具条的图标也漏了彩色。
+                  色相分配：项目 = amber（与工作区 📁、项目行文件夹同色 —— 都是"文件夹/项目"语义）、
+                            分类 = cyan、刷新 = blue、全部折叠/展开 = violet。 */}
+              <button className={`view-tab ${viewTab === "projects" ? "active" : ""}`} onClick={() => setViewTab("projects")} title="按项目分组"><FolderOpen size={14} className="ic-amber" /><span>项目</span></button>
               {/* 分类视图（09-25 用户要求）：按**会话来源**归类 —— 主代理 / 专家团主理人 /
                   团队成员子任务 / 专家调度 / 子智能体调度 / 专家团调度（口径见 lib/thread-source.mjs） */}
-              <button className={`view-tab ${viewTab === "source" ? "active" : ""}`} onClick={() => setViewTab("source")} title="按会话来源分类"><Layers size={14} /><span>分类</span></button>
+              <button className={`view-tab ${viewTab === "source" ? "active" : ""}`} onClick={() => setViewTab("source")} title="按会话来源分类"><Layers size={14} className="ic-cyan" /><span>分类</span></button>
               <div className="view-toolbar">
-                <button className="view-toolbar-btn" title="刷新会话列表" onClick={() => { void refreshThreads().then(() => showToast("会话列表已刷新", "已重新读取全部会话")); }}><ListRestart size={14} /></button>
-                <button className="view-toolbar-btn" title={sidebarAllCollapsed ? "全部展开" : "全部折叠"} onClick={toggleAllSidebarSections} disabled={viewTab === "source" ? !sourcedThreads.length : !projectGroups.length}>{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
+                <button className="view-toolbar-btn ic-blue" title="刷新会话列表" onClick={() => { void refreshThreads().then(() => showToast("会话列表已刷新", "已重新读取全部会话")); }}><ListRestart size={14} /></button>
+                <button className="view-toolbar-btn ic-violet" title={sidebarAllCollapsed ? "全部展开" : "全部折叠"} onClick={toggleAllSidebarSections} disabled={viewTab === "source" ? !sourcedThreads.length : !projectGroups.length}>{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
               </div>
             </div>
             {/* 10-04 渲染层插槽：侧栏顶部（在会话列表之上）。插件放这里 = 常驻可见的入口
@@ -464,7 +468,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                         <div className="project-item-head" onMouseLeave={() => setProjectMenu((current) => current === cwd ? null : current)}>
                           <button className="project-item-toggle" title={expanded ? "折叠项目" : "展开项目"} onClick={() => toggleProjectExpanded(cwd)}>
                             <ChevronDown size={12} className={`project-item-chevron ${expanded ? "open" : ""}`} />
-                            <FolderOpen size={13} />
+                            {/* 色相只给文件夹；箭头保持中性（它是展开/折叠的**状态**指示，染色会跟文件夹抢注意力） */}
+                            <FolderOpen size={13} className="ic-amber" />
                             <strong>{basename(cwd)}</strong>
                             <em>{items.length}</em>
                           </button>
@@ -517,26 +522,26 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
               {accountMenuOpen && (
                 <div className="account-menu" role="menu" ref={accountMenuRef}>
                   {accountMenuSub === null && <>
-                    <button className="account-menu-item" onClick={() => setAccountMenuSub("lang")}><Globe2 size={15} /><span>界面语言</span><ChevronRight size={14} className="account-menu-arrow" /></button>
+                    <button className="account-menu-item" onClick={() => setAccountMenuSub("lang")}><Globe2 size={15} className="ic-cyan" /><span>界面语言</span><ChevronRight size={14} className="account-menu-arrow" /></button>
                     <div className="account-menu-item account-menu-theme" role="menuitem">
-                      <Sun size={15} /><span>界面主题</span>
+                      <Sun size={15} className="ic-pink" /><span>界面主题</span>
                       <span className="theme-quick">
                         {/* 10-07：与设置页主题卡同一条切换链（过渡 + 完成后回执）——见 lib/visual-switch */}
                         <button type="button" title="浅色" className={theme === "light" ? "active" : ""} onClick={() => runVisualSwitch("主题", themeLabelOf("light"), () => setTheme("light"), showToast)}><Sun size={13} /></button>
                         <button type="button" title="深色" className={theme === "dark" ? "active" : ""} onClick={() => runVisualSwitch("主题", themeLabelOf("dark"), () => setTheme("dark"), showToast)}><Moon size={13} /></button>
                       </span>
                     </div>
-                    <button className="account-menu-item" onClick={() => setAccountMenuSub("zoom")}><ZoomIn size={15} /><span>界面缩放</span><ChevronRight size={14} className="account-menu-arrow" /></button>
+                    <button className="account-menu-item" onClick={() => setAccountMenuSub("zoom")}><ZoomIn size={15} className="ic-violet" /><span>界面缩放</span><ChevronRight size={14} className="account-menu-arrow" /></button>
                     <button className="account-menu-item" onClick={() => setAccountMenuSub("update")}>
-                      <RefreshCw size={15} />
+                      <RefreshCw size={15} className="ic-green" />
                       <span>检查更新</span>
                       {updateInfo?.hasUpdate ? <span className="account-menu-dot" title={`v${updateInfo.version} 可用`} /> : null}
                       <ChevronRight size={14} className="account-menu-arrow" />
                     </button>
                     <div className="account-menu-sep" />
-                    <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); setSettingsPage("usage"); setSettingsOpen(true); }}><CircleGauge size={15} /><span>使用统计</span></button>
-                    <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); setSettingsPage("user"); setSettingsOpen(true); setMobileNav(false); }}><UserRound size={15} /><span>用户中心</span></button>
-                    <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); void window.codex.openExternal("https://www.jvszzp.ltd/feedback.html"); }}><MessageSquarePlus size={15} /><span>问题反馈</span><ExternalLink size={12} className="account-menu-arrow" /></button>
+                    <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); setSettingsPage("usage"); setSettingsOpen(true); }}><CircleGauge size={15} className="ic-blue" /><span>使用统计</span></button>
+                    <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); setSettingsPage("user"); setSettingsOpen(true); setMobileNav(false); }}><UserRound size={15} className="ic-blue" /><span>用户中心</span></button>
+                    <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); void window.codex.openExternal("https://www.jvszzp.ltd/feedback.html"); }}><MessageSquarePlus size={15} className="ic-amber" /><span>问题反馈</span><ExternalLink size={12} className="account-menu-arrow" /></button>
                     <div className="account-menu-sep" />
                     <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); handleLogout(); }}><LogOut size={15} /><span>退出登录</span></button>
                   </>}

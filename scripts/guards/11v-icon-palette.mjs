@@ -142,6 +142,73 @@ ok(/\.popout-open-btn:not\(:disabled\):hover \{[\s\S]{0,240}?color:\s*var\(--ic,
 ok(/\.popout-return-btn \{[\s\S]{0,240}?color:\s*var\(--accent/.test(codeOnly(misc)) && !/popout-return-btn[^}]*var\(--ic/.test(codeOnly(misc)),
   "④b 「返回主应用」**故意**保持主色（唯一动作不是分类）⇒ 不挂 ic-*、不加 var(--ic)（负向）");
 
+/* ── ④c 侧栏其余图标（10-07 二轮：用户截图「这些图标你还漏了彩色图标」）──────
+   分两类，处理方式不同：
+     ① **纯图标容器**（工具条两个钮）⇒ 容器挂 `ic-*`，规则读 `var(--ic, <原色>)`。
+     ② **图标与文字/其他图标混排**（视图 tab、项目行、面板 tab、账号菜单项、设置弹窗头）
+        ⇒ 只给**那一个 svg** 挂 `ic-*`，规则用 `svg.ic-*` 或 `容器 svg { color: var(--ic, …) }`
+           ⇒ 文字与邻居图标（展开箭头 / 关闭 × / 状态点）保持中性。 */
+const sidebar = read(SIDEBAR);
+const queue = read("src/styles/15-queued-messages.css");
+const composer = read("src/styles/05-composer-input.css");
+
+/* ① 纯图标容器 */
+ok(/view-toolbar-btn ic-blue/.test(sidebar) && /view-toolbar-btn ic-violet/.test(sidebar),
+  "④c 侧栏工具条两个钮（刷新 / 全部折叠）挂了色相类");
+ok(/\.view-toolbar-btn \{[\s\S]{0,400}?color:\s*var\(--ic,\s*var\(--muted\)\)/.test(codeOnly(queue))
+  && /\.view-toolbar-btn:hover:not\(:disabled\) \{[\s\S]{0,120}?color:\s*var\(--ic,\s*var\(--text\)\)/.test(codeOnly(queue)),
+  "④c .view-toolbar-btn 读 var(--ic, 原色)，hover 不刷掉色相");
+
+/* ② 只给那一个 svg 上色 —— 断言看的是「svg 标签上挂了 ic-*」，不是整行 */
+const SVG_OWN = [
+  ["项目视图 tab", sidebar, /<FolderOpen size=\{14\} className="ic-amber"/],
+  ["分类视图 tab", sidebar, /<Layers size=\{14\} className="ic-cyan"/],
+  ["项目行文件夹", sidebar, /<FolderOpen size=\{13\} className="ic-amber"/],
+  ["筛选 chip 前缀文件夹", sidebar, /<FolderOpen size=\{12\} className="ic-amber"/],
+];
+for (const [label, src, re] of SVG_OWN) ok(re.test(src), `④c ${label}的图标自己挂了色相类`);
+
+const ACCOUNT = [
+  ["界面语言", /<Globe2 size=\{15\} className="ic-cyan"/],
+  ["界面主题", /<Sun size=\{15\} className="ic-pink"/],
+  ["界面缩放", /<ZoomIn size=\{15\} className="ic-violet"/],
+  ["检查更新", /<RefreshCw size=\{15\} className="ic-green"/],
+  ["使用统计", /<CircleGauge size=\{15\} className="ic-blue"/],
+  ["用户中心", /<UserRound size=\{15\} className="ic-blue"/],
+];
+for (const [label, re] of ACCOUNT) ok(re.test(sidebar), `④c 账号菜单「${label}」图标挂了色相类`);
+
+/* 右侧面板四个 tab。
+   ⛔ 两个坑叠在一起（都是本项目反复踩的）：
+     ① `title="…"` 后面隔着 `onClick={() => …}`，**箭头函数的 `>` 会让 `[^>]*` 提前截断**；
+     ② `className="ic-x"` 在**子元素**上，不在按钮的属性里 ⇒ 顺序是 title → onClick → 子元素。
+   ⇒ 必须用惰性 `[\s\S]{0,200}?` 且锚「title … 紧跟一个带 ic-* 的子元素」。 */
+const PANEL_TABS = [["变更", "ic-green"], ["终端", "ic-cyan"], ["浏览器", "ic-blue"], ["项目树", "ic-amber"]];
+const panel = read("src/features/app-view/AppView/03-review-panel.tsx");
+for (const [label, tone] of PANEL_TABS) {
+  ok(new RegExp(`title="${label}"[\\s\\S]{0,200}?><\\w+ size=\\{12\\} className="${tone}"`).test(panel),
+    `④c 右侧面板「${label}」tab 图标挂了色相类（${tone}）`);
+}
+ok(/\.panel-tab > svg \{[\s\S]{0,160}?color:\s*var\(--ic,\s*currentColor\)/.test(codeOnly(composer)),
+  "④c .panel-tab 只给**直系** svg 上色（文字与关闭 × 保持中性）");
+ok(/\.view-tab svg \{[\s\S]{0,200}?color:\s*var\(--ic,\s*currentColor\)/.test(codeOnly(queue)),
+  "④c .view-tab 的图标读 var(--ic, currentColor)（文字不染色）");
+ok(/\.project-item-toggle svg \{[\s\S]{0,200}?color:\s*var\(--ic,\s*var\(--muted\)\)/.test(codeOnly(queue)),
+  "④c 项目行 svg 读 var(--ic, --muted) ⇒ 挂了的上色、展开箭头保持中性");
+
+/* ③ 图标自身挂色相的通用规则：必须逐个枚举 */
+const baseCode = codeOnly(base);
+ok(/svg\.ic-blue, svg\.ic-green, svg\.ic-amber, svg\.ic-pink, svg\.ic-violet, svg\.ic-cyan \{ color: var\(--ic\); \}/.test(baseCode),
+  "④c 存在 `svg.ic-*` 通用规则（容器不便挂类时精确点单个图标）");
+ok(!/\[class\*?=["']?ic-/.test(baseCode),
+  "④c 负向：⛔ 不许用 `[class*=ic-]` 之类的属性选择器 —— 会误命中任何含 \"ic-\" 的类名（topic-* / basic-*）");
+
+/* ④ 负向：状态与破坏性图标不许染色 */
+ok(!/LogOut size=\{15\} className="ic-/.test(sidebar), "④c 负向：「退出登录」是破坏性动作，不染色");
+ok(!/project-item-chevron[^"]*className="ic-|className="ic-[a-z]+"[^>]*ChevronDown/.test(sidebar),
+  "④c 负向：项目行的展开箭头是**状态**指示，不染色（只有文件夹上色）");
+ok(!/project-item-menu-btn ic-/.test(sidebar), "④c 负向：项目行的「⋯ 项目操作」是工具按钮，不染色");
+
 /* ── ⑤ 真相源：色相只在 settingsNav 声明一次 ────────────────────────── */
 const catalogs = read("src/features/app-view/helpers/catalogs.ts");
 const navItems = [...catalogs.matchAll(/\["([a-z-]+)",\s*"[^"]+",\s*\w+,\s*"(\w+)"\]/g)];

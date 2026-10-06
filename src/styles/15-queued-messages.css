@@ -714,7 +714,9 @@
 }
 .view-tab:hover { background: var(--panel-2); color: var(--text); }
 .view-tab.active { background: var(--panel-2); color: var(--text); font-weight: 600; }
-.view-tab svg { opacity: 0.75; }
+/* 10-07：色相只上**图标**、不上文字（与 `.sidebar-tab svg` 同口径 —— 文字染色会让整行变吵）。
+   回落 `currentColor` = 原先从按钮继承来的颜色（muted / hover 的 --text / active 的 --text）⇒ 零回归。 */
+.view-tab svg { opacity: 0.75; color: var(--ic, currentColor); }
 .view-tab.active svg { opacity: 1; }
 .view-toolbar {
   margin-left: auto;
@@ -731,12 +733,15 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--muted);
+  /* 10-07：这两个是**纯图标按钮**（刷新 / 全部折叠），挂 ic-* 就整块上色、没挂回落 --muted。
+     ⛔ 与 `.icon-button` 同一条机制（只提供 --ic、各自读 var），别改成写死 color。 */
+  color: var(--ic, var(--muted));
   border-radius: 5px;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
-.view-toolbar-btn:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
+/* ⛔ hover 不许把色相刷掉（同 `.icon-button:hover` 口径）：挂了的常亮，没挂的回落 --text 保原行为。 */
+.view-toolbar-btn:hover:not(:disabled) { background: var(--panel-2); color: var(--ic, var(--text)); }
 .view-toolbar-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .view-toolbar-btn.danger:hover:not(:disabled) { color: #d8443c; background: color-mix(in srgb, #d8443c 12%, transparent); }
 .view-toolbar-btn.active { background: var(--panel-2); color: var(--link); }
@@ -789,7 +794,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.project-item-toggle svg { flex: none; color: var(--muted); }
+/* ⛔ 10-07 用户截图「项目行的文件夹还漏了彩色」：读 `--ic` ⇒ 只有**挂了 ic-\* 的那个图标**上色。
+   行内的展开箭头（ChevronDown）与「项目操作 ⋯」不带 ic-*，`--ic` 取不到值 ⇒ 回落 --muted 保持中性
+   —— 这两个是**状态/工具**图标，不是分类，染色会让它们跟文件夹抢注意力。 */
+.project-item-toggle svg { flex: none; color: var(--ic, var(--muted)); }
 .project-item-toggle em {
   font-style: normal;
   font-size: 11px;
