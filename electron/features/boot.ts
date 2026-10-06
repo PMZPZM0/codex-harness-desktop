@@ -15,7 +15,7 @@ import { WeixinGateway } from "../weixin-gateway";
 import { markBoot } from "../boot-timing";
 import { debugMemoryCapture } from "../memory-capture-debug";
 import { sendToWindow } from "./window-bus";
-import { emitTurnFileChanges, setTurnFileWatchBroadcast, snapshotTurnWorkspace } from "../turn-file-watch";
+import { emitTurnFileChanges, setTurnFileWatchBroadcast, settleTurnByTurnId, snapshotTurnWorkspace } from "../turn-file-watch";
 
 import { shouldRegisterNuphus } from "../automation-policy";
 import { SKETCH_SCHEME, sketchResponse } from "../sketch-protocol";
@@ -492,8 +492,12 @@ export async function bootApp() {
       } else if (/^turn\/(completed|aborted|failed|interrupted)$/.test(METHOD)) {
         const id = turnIdOf(p);
         if (id) engineActiveTurnIds.delete(id);
-        /* 回合收尾 = 汇报时点：算工作目录差异并广播 turn-file-changes（ZCode 式汇总的数据源）。 */
+        /* 回合收尾 = 汇报时点：算工作目录差异并广播 turn-file-changes（ZCode 式汇总的数据源）。
+           ⛔ 双保险（10-06 夜，新机器实测「运行中行有、收尾卡没有」）：先按线程键结算；
+           再按**回合 id 反查**兜底——部分引擎版本的结束事件形态不同、拿不到 threadId 时，
+           没有这一发收尾就静默漏结算（运行中行不受影响，因为它用的是快照自存的回合 id）。 */
         emitTurnFileChanges(threadIdOf);
+        if (id) settleTurnByTurnId(id);
         // ⛔ 10-03 语法修复：58afb8b 把这里写成了 `else if (threadIdOf)`，但上面的
         //   `} else if (...)` 分支已闭合 ⇒ 整个文件解析失败（tsc TS1128），主进程编译不过。
         //   按本段注释的原意（"id 形态不认识 → 只释放该线程名下的回合"）补回条件：
