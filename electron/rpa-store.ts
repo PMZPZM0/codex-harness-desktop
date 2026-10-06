@@ -102,6 +102,11 @@ export class RpaStore {
     const now = Date.now();
     const task: TaskItem = { id: randomUUID(), text: input.text.trim(), priority: input.priority ?? "medium", status: "todo", createdAt: now, updatedAt: now };
     if (!task.text) throw new Error("任务内容不能为空");
+    /* 新一轮任务自动开新清单（10-06 夜四轮，用户实测「新的任务清单里还叠着旧清单」）：
+       清单**全部完成**时再 add = 上一轮已收工、这是新任务开工 ⇒ 先清掉全完成清单，
+       防止胶囊「步骤 N/M」越叠越多。⛔ 只清「全 done」：批内还有 todo/doing 时是同轮补步，
+       不许动（否则会把正在进行的清单清掉）。 */
+    if (this.tasks.length && this.tasks.every((t) => t.status === "done")) this.tasks = [];
     this.tasks = [task, ...this.tasks];
     await this.save();
     return task;
