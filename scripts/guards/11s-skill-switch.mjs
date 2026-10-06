@@ -120,6 +120,11 @@ ok(/if \(input\.outputStyles\?\.length\) text \+= OUTPUT_STYLE_INSTRUCTIONS\(inp
   "⛔ buildDevInstructions 真的消费 outputStyles（不是收下就丢）");
 ok(devInstSrc.indexOf("OUTPUT_STYLE_INSTRUCTIONS(input.outputStyles)") < devInstSrc.indexOf("if (desktop) text += DESKTOP_INSTRUCTIONS"),
   "⛔ 风格段排在工具箱说明**之前**（排在一长串工具说明后面会被当成又一条可选建议）");
+/* 10-06 追加：风格段必须自证"这不是技能调用"。实测背景：指令只写「读 SKILL.md 并按它写」时，
+   模型会把这次读文件当成"用了一个技能"，在回复末尾报出 🧩 技能台账行 —— 用户因此追问了一轮
+   （他以为那是技能被自动调用）。⛔ 判据是**语义声明**（不许报台账/不许自称技能调用），不是整句文案。 */
+ok(/OUTPUT SETTING, not a skill invocation/.test(devInstSrc) && /技能调用/.test(devInstSrc),
+  "⛔ 风格段声明「这是输出设置、不是技能调用」（否则模型会报 🧩 台账行、并主动解释自己读过那个文件）");
 ok((codeOnly(skillsIpcSrc).match(/refreshDeveloperInstructions\(\)/g) || []).length >= 2,
   "⛔ 两个入口（控制台开关 + 技能池面板）改完都重下发常驻指令");
 ok(/if \(isOutputStyleSkill\(name\)\) await refreshDeveloperInstructions\(\)/.test(codeOnly(skillsIpcSrc)),
