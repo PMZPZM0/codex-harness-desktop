@@ -5,7 +5,7 @@ kind: incident
 area: ui
 title: 思考浮窗层级账：body 级 z-index 压住 isolation 壳内一切浮层（办公室预览被盖住）
 tags: [z-index, isolation, reasoning-float, office]
-commits: []
+commits: [99d5381]
 files: [src/styles/12-settings-skills.css, src/features/app-view/AppView.tsx, src/features/shared/ReasoningCard.tsx, scripts/guards/19-z-layers.mjs, DESIGN.md]
 importance: normal
 ---
