@@ -7,7 +7,7 @@
  */
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { localImageUrl } from "../../lib/image-src.mjs";
-import { isPresetImage, patternMask, presetById, readWallpaper, subscribeWallpaper } from "../../lib/wallpaper.mjs";
+import { isPresetImage, patternMask, presetById, readWallpaper, saveWallpaper, subscribeWallpaper } from "../../lib/wallpaper.mjs";
 
 type WallpaperConfig = { mode: string; pattern: string; opacity: number; image: string };
 
@@ -59,6 +59,11 @@ function prefersReducedMotion(): boolean {
 export function WallpaperLayer() {
   const [cfg, setCfg] = useState<WallpaperConfig>(() => readWallpaper());
   useEffect(() => subscribeWallpaper(setCfg as (c: ReturnType<typeof readWallpaper>) => void), []);
+  /* 拓展接口（10-06）：引擎 harness_tools wallpaper_set → 主进程推送 → 这里落 localStorage
+     （与设置页同一条 saveWallpaper 链路）。 */
+  useEffect(() => window.codex.onWallpaperApply((event) => {
+    if (event?.mode) saveWallpaper(event);
+  }), []);
   /* ⛔ 铺满全应用（10-06 用户定稿）：层挂在 .app-shell 首子元素（fixed 定位铺满视口），
      app-shell 有 isolation ⇒ 负 z 层透出在所有表面之下、内容之上；
      data-wallpaper 属性驱动 CSS 把 app-shell/composer 表面变透明 —— 关掉时属性摘除、一切还原。 */

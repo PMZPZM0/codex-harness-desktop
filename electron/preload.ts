@@ -633,6 +633,10 @@ onRuntimeProgress: (listener: (event: unknown) => void) =>
      sendToWindow("model-viewer:open") → 渲染层 ModelViewerBridge 弹窗。推送类手写桥，不在 gen 段。 */
   onModelViewerOpen: (listener: (event: { path: string; title: string }) => void) =>
     __on("model-viewer:open", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload as { path: string; title: string })),
+  /* 壁纸应用推送（wallpaper 域，10-06）：引擎 harness_tools wallpaper_set → 主进程校验 →
+     sendToWindow("wallpaper:apply") → 渲染层 saveWallpaper（与设置页同一条链路）。 */
+  onWallpaperApply: (listener: (event: { mode: string; pattern: string; opacity: number; image: string }) => void) =>
+    __on("wallpaper:apply", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload as { mode: string; pattern: string; opacity: number; image: string })),
   /* ⛔ 这两处原先用 `removeAllListeners(channel)` 退订 —— 会把**同一通道上别人的监听一起清掉**
      （多订阅者场景下的真 bug）。改走 __on：按监听函数引用精确退订，重复注册幂等。 */
 onRemotePairRequest: (handler: (request: { rid: string; deviceId: string; name: string }) => void) =>

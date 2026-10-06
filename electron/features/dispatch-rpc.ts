@@ -567,6 +567,33 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
       return { ok: false, error: `无法打开 3D 预览：${String((error as Error)?.message ?? error)}` };
     }
   }
+  /* ── 壁纸设置（10-06）：Codex 自助换壁纸的拓展接口。⛔ image 为本地路径时必须过可信根
+     （与 model-viewer 同一套 isInsideTrustedRoots）；preset: 前缀交给渲染层校验 id。 */
+  if (name === "wallpaper_set") {
+    const mode = String(args.mode ?? "");
+    if (!["off", "pattern", "particles", "vanta", "custom"].includes(mode)) {
+      return { ok: false, error: "mode 只支持 off / pattern / particles / vanta / custom" };
+    }
+    const opacityNum = Number(args.opacity);
+    const opacity = Number.isFinite(opacityNum) ? Math.min(40, Math.max(2, Math.round(opacityNum))) : 16;
+    let image = String(args.image ?? "").trim();
+    if (mode === "custom") {
+      if (!image) return { ok: false, error: "mode=custom 需要 image（`preset:<id>` 或图片绝对路径）" };
+      if (!image.startsWith("preset:")) {
+        try {
+          const { isInsideTrustedRoots } = await import("../runtime-refs");
+          const candidate = image;
+          if (!/\.(png|jpe?g|webp|gif)$/i.test(candidate)) return { ok: false, error: "壁纸图片只支持 png / jpg / webp / gif" };
+          if (!isInsideTrustedRoots(candidate)) return { ok: false, error: "图片路径不在可信目录内（会话工作目录 / 应用数据目录）" };
+        } catch (error) {
+          return { ok: false, error: `壁纸图片校验失败：${String((error as Error)?.message ?? error)}` };
+        }
+      }
+    }
+    const { sendToWindow } = await import("./window-bus");
+    sendToWindow("wallpaper:apply", { mode, pattern: String(args.pattern ?? "dots"), opacity, image });
+    return { ok: true, output: `壁纸已切换（mode=${mode}${image ? `，image=${image}` : ""}），用户立即可见。` };
+  }
   return { ok: false, error: `未知工具：${String(name)}` };
 }
 export async function ensureDispatchHttp(): Promise<void> {

@@ -27,6 +27,10 @@ const styles = read("src/styles.css");
 const appearance = codeOnly(read("src/features/settings-appearance/AppearanceSettingsSection.tsx"));
 const timeline = codeOnly(read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx"));
 const appView = codeOnly(read("src/features/app-view/AppView.tsx"));
+const part08 = codeOnly(read("src/features/app-state/parts/part08/01-seg.tsx"));
+const core = read("dist-electron/features/dispatch-core.js");
+const rpc = read("dist-electron/features/dispatch-rpc.js");
+const preload = read("dist-electron/preload.js");
 
 /* ── 数据面 ── */
 ok(libSrc.includes("off") && libSrc.includes("particles") && libSrc.includes("vanta") && libSrc.includes("custom"), "模式注册表含 off/pattern/particles/vanta/custom（归一化白名单）");
@@ -59,6 +63,18 @@ ok(cssSrc.includes(':root[data-wallpaper="on"] .app-shell') && cssSrc.includes('
 ok(appearance.includes("WallpaperSettingsSection") && settingsSrc.includes("saveWallpaper") && settingsSrc.includes("chooseImages"), "外观页接了壁纸设置段（模式/图案/浓度/自定义图全部落到 saveWallpaper）");
 ok(libSrc.includes("WALLPAPER_EVENT") && libSrc.includes("dispatchEvent") && layerSrc.includes("subscribeWallpaper") && settingsSrc.includes("subscribeWallpaper"), "配置变更经 CustomEvent 广播（设置页与壁纸层同源联动，不走 bag 不走 IPC）");
 ok(layerSrc.includes("dataset.wallpaper"), "层挂载时驱动 data-wallpaper 属性（CSS 透明化的开关必须来自真实挂载状态）");
+
+/* ── 拓展接口：Codex 自助做壁纸（10-06 用户「留好拓展接口，Codex 自己也能给自己做壁纸」）── */
+ok(core.includes('"wallpaper_set"') && /wallpaper_set/.test(core), "网关有 wallpaper_set（免改码拓展接口：生图→写工作区→设壁纸）");
+ok(rpc.includes('"wallpaper:apply"') && /isInsideTrustedRoots/.test(rpc.slice(rpc.indexOf('"wallpaper_set"'), rpc.indexOf('"wallpaper_set"') + 1600)), "wallpaper_set 执行端：路径过可信根闸 → sendToWindow(wallpaper:apply)");
+ok(preload.includes("onWallpaperApply") && preload.includes('"wallpaper:apply"'), "preload 推送桥 onWallpaperApply → wallpaper:apply（手写桥）");
+ok(layerSrc.includes("onWallpaperApply") && layerSrc.includes("saveWallpaper"), "壁纸层接 apply 推送并落 saveWallpaper（与设置页同一条链路）");
+ok(part08.includes("wallpaper_set"), "harness_tools 网关描述列了 wallpaper_set（模型读不到 list 就靠这段常驻文本）");
+
+/* ── ？号制作教程：提示词卡 + 一键复制 ── */
+ok(settingsSrc.includes("GUIDE_PROMPTS") && (settingsSrc.match(/title: "/g) ?? []).length >= 4, "教程含 ≥4 类制作提示词（渐变/图案/图片/动效调参）");
+ok(settingsSrc.includes("copyTextToClipboard") && settingsSrc.includes("复制提示词"), "每条提示词带一键复制（用户点名「支持复制提示词」）");
+ok(settingsSrc.includes("WALLPAPER_SET_HINT") || settingsSrc.includes("wallpaper_set"), "教程提到 wallpaper_set（Codex 自助设壁纸的接口要在教程里可发现）");
 
 console.log(`\n【wp】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
