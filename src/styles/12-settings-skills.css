@@ -440,10 +440,21 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
    缩回芯片消失（macOS 最小化窗口的简化版）。
    ⛔ spawn/suck 的 keyframes 里必须带各自的 transform 终态（ Morning 教训：
    动画的 transform 整体覆盖静态位移，origin 补偿不能只写在外层）。
-   ⛔ 卸载延迟 240ms（.sucking forwards 停在消失帧）——直接卸载会跳过特效。 */
+   ⛔ 卸载延迟 240ms（.sucking forwards 停在消失帧）——直接卸载会跳过特效。
+   ⛔ 10-06 夜（用户实测「办公室预览被思考浮窗盖住，其他窗口也会」）：浮窗 portal 到 body 时
+   以 z-index:8 参加**根层**竞争 —— app-shell 是 isolation 层、壳内一切 z（办公室 400、
+   设置 80~97、画布 90）只在壳内比较 ⇒ 全被外面那个 8 压住。修法：浮窗改 portal 到**壳内
+   `.reasoning-float-host`**（60 档：高于消息流 <30、低于设置页/画布/整屏浮层）。 */
+.reasoning-float-host {
+  position: fixed;
+  inset: 0;
+  z-index: 60; /* 60 档：高于消息流（<30）、低于设置内 backdrop（80~97）/画布（90）/整屏浮层（400） */
+  pointer-events: none; /* 宿主是穿透层；浮窗自身恢复可交互（见下） */
+}
 .reasoning-float {
   position: fixed;
   z-index: 8;
+  pointer-events: auto; /* 宿主 pointer-events:none 的配套：浮窗自身可点 */
   display: flex;
   flex-direction: column;
   background: var(--bg);

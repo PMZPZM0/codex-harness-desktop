@@ -333,7 +333,10 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
             <div className="reasoning-body" ref={bodyRef}>{displayed}{revealing ? <span className="reasoning-stream-cursor" aria-hidden /> : null}</div>
           </div>
         </div>,
-        document.body,
+        /* ⛔ portal 到**壳内宿主**（不是 body，10-06 夜）：body 级 z-index 会压住壳内所有
+           z（办公室 400 / 设置 80~97 / 画布 90 —— 壳是 isolation 层，只跟壳内比）。
+           宿主缺失（理论不该发生）才回落 body。 */
+        document.querySelector(".reasoning-float-host") ?? document.body,
       )}
     </div>
   );

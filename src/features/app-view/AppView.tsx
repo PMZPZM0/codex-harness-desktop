@@ -408,6 +408,13 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       {/* 壁纸层（wallpaper 域）：app-shell 首子元素 + isolation 堆叠上下文，负 z 层透出在
           全应用表面（侧栏/聊天/输入框周边）之下、内容之上；用户关掉时不在 DOM。 */}
       <WallpaperLayer />
+      {/* 思考浮窗宿主（10-06 夜，用户实测「办公室预览被运行中的思考板块盖住」）：思考浮窗原来
+          portal 到 body、以 z-index:8 参加**根层**竞争 —— 而 app-shell 是 isolation 层，壳内
+          一切 z（办公室 400、设置 80~97、画布 90）都只在壳内比较 ⇒ 全被外面那个 8 压住。
+          修法：浮窗改 portal 到**壳内这个宿主**（60 档：高于消息流 <30、低于设置页/画布/整屏浮层）。
+          ⛔ 必须挂在壳根（壁纸层旁），不许塞进任何回合卡里 —— .turn-group 上有恒等 transform
+          （containing block），fixed 会当场退化（同本轮审查弹窗事故）。 */}
+      <div className="reasoning-float-host" aria-hidden />
       {!popoutThreadId && sidebarCollapsed && <div className="sidebar-hotzone" aria-hidden onMouseEnter={() => setSidebarFlyout(true)} />}
         <header className="topbar">
         {sidebarCollapsed && !narrow && <button className="icon-button sidebar-reveal" title="展开侧边栏" onClick={() => { setSidebarCollapsed(false); setSidebarFlyout(false); localStorage.setItem("sidebar-collapsed", "false"); }}><Menu size={18} /></button>}
