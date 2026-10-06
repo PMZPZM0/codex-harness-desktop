@@ -1305,32 +1305,41 @@
   box-shadow: var(--shadow);
   border-radius: 16px;
   flex-direction: column;
-  padding: 14px 14px 10px;
+  /* padding-top 24 = 原 14 + 拖动把手的净占位 10（夜九轮把手改绝对定位骑上边框、不再占流，
+     这里补回来 —— 编辑区与顶边框的距离保持原样） */
+  padding: 24px 14px 10px;
   display: flex;
+  /* 拖动把手（.composer-resize-handle）绝对定位的锚（骑在顶边框上） */
+  position: relative;
 }
 .composer:focus-within {
   border-color: var(--faint);
 }
-/* ── 输入框上下拖动把手（10-06 夜三轮，用户对照 Qoder 图二：「输入框加一个上下拖动功能」）──
-   顶部细条 = 拖动改输入区高度（JS 把 --composer-editor-h/max 写到 form 上）；
-   居中一枚小胶囊作视觉把手；双击复位默认（恢复内容自适应）。 */
+/* ── 输入框上下拖动把手（10-06 夜三轮建；夜九轮用户令：「放到输入框边框上，不要放里面，
+   稍微长一点点」）──
+   胶囊**骑在输入框顶边框上**（absolute + 水平居中 + 纵向一半在框外）—— 原先是框内顶部
+   一条内嵌细条；拖 = 改输入区高度（JS 把 --composer-editor-h/max 写到 form 上）；双击复位。 */
 .composer-resize-handle {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 96px;          /* 命中面（含胶囊两侧留白） */
   height: 12px;
-  margin: -6px 0 4px;
-  display: grid;
-  place-items: center;
   cursor: ns-resize;
   touch-action: none;   /* pointer 拖动必须：不开这个会被滚动手势吃掉 */
+  display: grid;
+  place-items: center;
   user-select: none;
 }
 .composer-resize-grip {
-  width: 40px;
+  width: 56px;          /* 40 → 56：用户「现在有点短」（夜九轮） */
   height: 4px;
   border-radius: 999px;
-  background: var(--line);
+  background: var(--faint);   /* 骑在 --line 的边框线上：默认色要比边框亮一档才看得见 */
   transition: background 0.12s ease;
 }
-.composer-resize-handle:hover .composer-resize-grip { background: var(--faint); }
+.composer-resize-handle:hover .composer-resize-grip { background: var(--muted); }
 .composer textarea {
   resize: vertical;
   width: 100%;

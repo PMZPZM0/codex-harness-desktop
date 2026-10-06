@@ -44,6 +44,16 @@ ok(/\.composer-resize-handle \{[\s\S]{0,240}?touch-action: none/.test(css),
   "把手 touch-action:none（不开会被滚动手势吃掉，真机拖不动）");
 ok(/\.composer-resize-grip \{/.test(css) && /\.composer-resize-handle:hover \.composer-resize-grip/.test(css),
   "把手视觉：居中胶囊 + hover 提色（找得到把手）");
+/* 10-06 夜九轮（用户令：「放到输入框边框上，不要放里面，可以稍微长一点点」）：把手从框内
+   内嵌细条改成**骑在顶边框上**的绝对定位胶囊；位置判据必须钉（改回内嵌 = 用户点名的形态没了）。 */
+/* ⛔ 三条一律用 `[^}]*`（**规则体内部**匹配）而不是 `[\s\S]{0,N}`：窗口跨过右括号后会撞上
+   旁边别的规则的同类属性 ⇒ 删掉本规则里的声明照样绿（M2 变异实测的假绿，当场收紧）。 */
+ok(/\.composer-resize-handle \{[^}]*position: absolute[^}]*top: 0[^}]*left: 50%[^}]*translate\(-50%, -50%\)/.test(css),
+  "把手**骑在输入框顶边框上**（absolute + 水平居中 + 纵向一半在框外）—— 用户「放到边框上，不要放里面」");
+ok(/\n\.composer \{[^}]*position: relative/.test(css),
+  ".composer 是定位锚（position: relative —— 少了它把手会锚到更外层祖先）");
+ok(/\.composer-resize-grip \{[^}]*width: 56px/.test(css),
+  "胶囊加长 40→56px（用户：「可以稍微长一点点，现在有点短」）");
 
 console.log(`\n【composer-resize】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
