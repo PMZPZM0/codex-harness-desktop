@@ -5,7 +5,7 @@ kind: incident
 area: messages
 title: 文件汇报卡三处静默缺陷：死信道 / 线程id当回合id / DFS 烧光文件预算
 tags: [turn-file-watch, accept, file-summary, harness-event]
-commits: []
+commits: [839f45c]
 files: [electron/turn-file-watch.ts, electron/features/boot.ts, src/lib/turn-file-changes.mjs, scripts/accept.mjs, scripts/guards/11p-file-summary.mjs, scripts/guards/09-structural.mjs]
 importance: normal
 ---
