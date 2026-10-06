@@ -417,10 +417,24 @@ export function effectivePhase(phase: RunPhase, sinceMs: number, now: number): R
  * ⛔ 绝不用 `Math.random()`：60fps 每帧换画面 = 噪点（且是癫痫风险）。
  *   所有变化都必须由 `t`（秒）与 `seed` **确定性**推导。
  */
-export type SaScene = "clock" | "weather" | "photo" | "music" | "bars" | "code" | "chart" | "tv" | "game";
+export type SaScene = "clock" | "photo" | "plasma" | "starfield" | "fire" | "moire" | "spectrum" | "tv" | "game";
 
-/** 屏保场景池（⛔ 顺序即档位顺序；**长度 9 是质数**——任何步进都能遍历全部且不撞档）。 */
-export const SA_SCENES: SaScene[] = ["clock", "weather", "photo", "music", "bars", "code", "chart", "tv", "game"];
+/** 屏保场景池（⛔ 顺序即档位顺序；**长度 9 是质数**——任何步进都能遍历全部且不撞档）。
+ *
+ * ⭐ 10-06 第二次重做（用户：「现在你显示不好看」）。参考了 GitHub 上几类项目后定的方向：
+ *   · **demo scene 经典效果**（`patriksporre/html5-typescript-canvas` 把 plasma / moire /
+ *     fire / zoom-fade 这些 90 年代 Amiga demo 效果在 canvas 上重做）—— 这类效果在
+ *     **几十像素的小屏**上表现力最强，因为它们本来就是为低分辨率设计的；
+ *   · **1-bit 抖动**（`surma.dev/lab/ditherpunk`、`pinsonn/1bit-Dither`、
+ *     `ticky/canvas-dither`）—— 在只有几档颜色的屏上，用 Bayer 抖动表现"渐变"，
+ *     比纯色块高级得多；
+ *   · **像素显示库**（`gra0007/pixel-display`）—— 低分辨率逻辑网格 + 最近邻放大的画法。
+ *   ⇒ 所以本版：**逻辑格网格（3px 一格）+ Bayer 4×4 抖动 + 每档自己的荧光色**。
+ *   ⛔ 保留 clock / photo / spectrum（信息与"锁屏感"），把原来的 weather/bars/code
+ *     换成 plasma / starfield / fire / moire（这些是"好看"的主力）。
+ *   ⛔ 仍然不许 `Math.random()`：60fps 每帧换画面 = 噪点 + 癫痫风险。
+ */
+export const SA_SCENES: SaScene[] = ["clock", "photo", "plasma", "starfield", "fire", "moire", "spectrum", "tv", "game"];
 /** 每档停留多久（秒）。⛔ 别太长：用户要的是"动态切换"。 */
 export const SA_SLOT_S = 11;
 /** 交叉淡入时长（秒）—— 落在每档的**末尾**。 */
@@ -570,209 +584,259 @@ function fileRows(ctx: CanvasRenderingContext2D, x: number, y: number, w: number
  * @param info   真实信息（计时 / 产出字数 / 事件细节）
  */
 /* ─────────────────────────────────────────────────────────────────────────
- * 屏保的 9 档画面（⭐ 10-06 新增；每档都**一直在动**，且各不相同）
+ * 屏保的 9 档画面（⭐ 10-06 第二次重做：逻辑格 + Bayer 抖动 + 统一荧光色）
  *
- * ⛔ 三条纪律（每一条都是踩过的坑）：
- *   · 每档**先铺自己的不透明底色** —— 交叉淡化是靠"新档半透明盖上"实现的，
- *     底色不铺 ⇒ 两层内容互相透出来，看着像花屏。
- *   · 只用 `t` 与 `seed` 推变化，⛔ 不用 `Math.random()`（60fps 每帧换 = 噪点 + 癫痫风险）。
- *   · 尺寸全从 `w/h/innerW/u` 推，⛔ 不写死像素（屏面实测 48~52 × 34~35，六台各不同）。
+ * ⛔ 四条纪律（每一条都对应用户的一句抱怨或一次实测事故）：
+ *   · **铺满**：每档先 clear() 铺满整块玻璃区（10-06 用户：「两侧仍有固定展示内容」
+ *     —— 根因是内容区实测偏窄 30%，且部分档只在左侧画东西 ⇒ 露出背景烙死的图标）。
+ *   · **逻辑格**：所有图形都按 cw×ch（≈3px）的格子画，⛔ 不写死像素坐标 ——
+ *     屏面实测 66×32（六台同构），换尺寸时自动适配。
+ *   · **抖动**：只有几档颜色，用 Bayer 4×4 表现渐变（参考 ditherpunk / 1bit-Dither），
+ *     比纯色块高级得多。
+ *   · **确定性**：只用 t 与 seed 推变化（hash01 是确定性伪随机），⛔ 不许 Math.random()。
  * ───────────────────────────────────────────────────────────────────────── */
+
+/** 屏保配色（低饱和深底 + 荧光前景；六台共用 ⇒ 一眼是"同一个产品"）。 */
+const SAPAL = {
+  bg: "#0b1118", bg2: "#101b26", dim: "#16222e", mid: "#294157",
+  ink: "#7fa8c8", white: "#e6eef6",
+  amber: "#e8c76a", orange: "#e08a4a", red: "#d8604f",
+  green: "#6ed49a", teal: "#4fb8a8", blue: "#6fb3d8",
+  violet: "#a98fe8", pink: "#d88fb8",
+};
+
+/** Bayer 4×4 有序抖动矩阵（0..15）—— 1-bit 抖动的基础。 */
+const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+
+/** 该格是否按 level(0..1) 点亮。Bayer 有序抖动 ⇒ 用 2 色表现渐变。 */
+function ditherOn(cx: number, cy: number, level: number): boolean {
+  return level * 16 > BAYER4[(((cy & 3) << 2) | (cx & 3))];
+}
+
+/** 确定性伪随机（0..1）：只由序号与 seed 推。⛔ 不用 Math.random。 */
+function hash01(i: number, seed: number): number {
+  const n = Math.sin((i + 1) * 127.1 + seed * 311.7) * 43758.5453;
+  return n - Math.floor(n);
+}
+
 type SaBox = {
   ctx: CanvasRenderingContext2D;
   t: number; seed: number;
-  /** 内容区（顶栏之下、字幕之上）：左上角 + 宽高 */
+  /** 玻璃区（整块） */
   x: number; y: number; w: number; h: number;
-  u: number; pad: number; innerW: number;
+  /** 逻辑格网格 */
+  cols: number; rows: number; cw: number; ch: number;
+  ox: number; oy: number;
+  /** 铺满整块玻璃区（底色）。 */
+  clear(color?: string): void;
+  /** 在逻辑格 (cx,cy) 填一块；level < 1 时走 Bayer 抖动。越界自动丢弃。 */
+  cell(cx: number, cy: number, color: string, level?: number): void;
 };
 
+function makeSaBox(ctx: CanvasRenderingContext2D, t: number, seed: number, x: number, y: number, w: number, h: number): SaBox {
+  const cw = Math.max(2, Math.round(h / 11));        // h=32 ⇒ 3px
+  const ch = cw;
+  const cols = Math.max(1, Math.floor(w / cw));
+  const rows = Math.max(1, Math.floor(h / ch));
+  const ox = x + Math.floor((w - cols * cw) / 2);    // 居中（余数留边）
+  const oy = y + Math.floor((h - rows * ch) / 2);
+  return {
+    ctx, t, seed, x, y, w, h, cols, rows, cw, ch, ox, oy,
+    clear(color = SAPAL.bg) { ctx.fillStyle = color; ctx.fillRect(x, y, w, h); },
+    cell(cx, cy, color, level = 1) {
+      if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) return;
+      if (level < 1 && !ditherOn(cx, cy, level)) return;
+      ctx.fillStyle = color;
+      ctx.fillRect(ox + cx * cw, oy + cy * ch, cw, ch);
+    },
+  };
+}
+
 function drawSaScene(b: SaBox, scene: SaScene) {
-  const { ctx, t, seed, x, y, w, h, u, pad, innerW } = b;
   switch (scene) {
-    /* ① 时钟：HH:MM（冒号按秒闪）+ 秒条 —— 最有"锁屏"感的一档 */
+    /* ① 时钟：大数字 + 抖动底纹 + 秒条（保留"锁屏感"与真实时间） */
     case "clock": {
-      ctx.fillStyle = PAL.idleBg;
-      ctx.fillRect(x, y, w, h);
+      b.clear();
+      for (let cy = 0; cy < b.rows; cy += 1) {
+        for (let cx = 0; cx < b.cols; cx += 1) {
+          const lv = 0.05 + 0.13 * ((cx + cy * 1.6) / (b.cols + b.rows));
+          if (ditherOn(cx, cy, lv)) b.cell(cx, cy, SAPAL.dim);
+        }
+      }
       const d = new Date();
-      const txt = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-      const px = h >= 13 && innerW >= 34 ? 2 : 1;
+      const txt = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+      const px = 2;
       const tw = microWidth(txt, px);
-      drawMicroText(
-        ctx, d.getSeconds() % 2 === 0 ? txt : txt.replace(":", " "),
-        x + Math.max(pad, Math.round((w - tw) / 2)),
-        y + Math.max(0, Math.round((h - 5 * px) / 2) - px),
-        PAL.idleNum, px,
-      );
-      ctx.fillStyle = PAL.idleBar;
-      ctx.fillRect(x + pad, y + h - 2, innerW, 2);
-      ctx.fillStyle = PAL.idleNum;
-      ctx.fillRect(x + pad, y + h - 2, Math.max(1, Math.round(innerW * (d.getSeconds() / 60))), 2);
+      const label = d.getSeconds() % 2 === 0 ? txt : txt.replace(":", " ");
+      drawMicroText(b.ctx, label, b.x + Math.round((b.w - tw) / 2), b.oy + Math.round((b.rows * b.ch - 5 * px) / 2), SAPAL.white, px);
+      b.ctx.fillStyle = SAPAL.dim;
+      b.ctx.fillRect(b.x, b.y + b.h - 2, b.w, 2);
+      b.ctx.fillStyle = SAPAL.blue;
+      b.ctx.fillRect(b.x, b.y + b.h - 2, Math.max(1, Math.round(b.w * (d.getSeconds() / 60))), 2);
       return;
     }
-    /* ② 天气：太阳缓升缓降 + 两朵云不同速度飘过 + 大号温度 */
-    case "weather": {
-      ctx.fillStyle = "#152232";
-      ctx.fillRect(x, y, w, h);
-      const sw = Math.max(2, u);
-      ctx.fillStyle = "#e8c76a";
-      ctx.fillRect(x + pad + Math.round(innerW * 0.16), y + Math.max(1, Math.round(h * 0.2 + Math.sin(t * 0.35 + seed) * u)), sw, sw);
-      for (let i = 0; i < 2; i += 1) {
-        const cw = Math.max(4, Math.round(innerW * 0.32));
-        const span = w + cw;
-        const cx = x - cw + ((t * (5 + i * 3.5) + seed * 7 + i * 37) % span);
-        const cy = y + Math.round(h * (0.16 + i * 0.2));
-        ctx.fillStyle = i === 0 ? "#93a7bd" : "#7d90a6";
-        ctx.fillRect(cx, cy, cw, Math.max(1, u - 1));
-        ctx.fillRect(cx + u, cy - Math.max(1, u - 1), Math.max(1, cw - u * 2), Math.max(1, u - 1));
-      }
-      const temp = String(18 + Math.round(Math.sin(t * 0.07 + seed) * 4));
-      drawMicroText(ctx, temp, x + w - microWidth(temp, 2) - pad, y + h - 10 - pad, "#dfe8f2", 2);
-      return;
-    }
-    /* ③ 照片（Windows 锁屏那味儿）：山脊逐列起伏 + 整体缓慢横移 + 太阳落山感 */
+    /* ② 照片（Windows 锁屏那味儿）：抖动天空渐变 + 太阳缓移 + 两层山脊横移 */
     case "photo": {
-      ctx.fillStyle = "#1d2b3a";
-      ctx.fillRect(x, y, w, h);
-      const horizon = y + Math.round(h * 0.62);
-      const drift = t * 0.6 + seed;
-      const layers = [
-        { color: "#2b3f52", amp: 0.26, speed: 1, off: 0 },
-        { color: "#22333f", amp: 0.16, speed: 1.7, off: 13 },
-      ];
-      for (const L of layers) {
-        ctx.fillStyle = L.color;
-        for (let c = 0; c < innerW; c += 1) {
-          const ph = Math.round(h * L.amp * (0.5 + 0.5 * Math.sin((c + drift * L.speed * 6 + L.off) * 0.17)));
-          ctx.fillRect(x + pad + c, horizon - ph, 1, h - (horizon - y) + ph);
+      b.clear();
+      for (let cy = 0; cy < b.rows; cy += 1) {
+        const lv = 0.05 + 0.34 * (cy / b.rows);
+        const col = cy < b.rows * 0.55 ? SAPAL.mid : SAPAL.blue;
+        for (let cx = 0; cx < b.cols; cx += 1) b.cell(cx, cy, col, lv);
+      }
+      const sunX = 1 + Math.round((Math.sin(b.t * 0.10 + b.seed) * 0.5 + 0.5) * (b.cols - 4));
+      const sunY = 1 + Math.round((Math.sin(b.t * 0.07 + b.seed * 1.7) * 0.5 + 0.5) * 2);
+      b.cell(sunX, sunY, SAPAL.amber); b.cell(sunX + 1, sunY, SAPAL.amber);
+      b.cell(sunX, sunY + 1, SAPAL.orange); b.cell(sunX + 1, sunY + 1, SAPAL.orange);
+      const ridge = (amp: number, speed: number, off: number, col: string, base: number) => {
+        for (let cx = 0; cx < b.cols; cx += 1) {
+          const k = cx * 0.55 + b.t * speed + b.seed + off;
+          const hgt = Math.max(1, Math.round(base + amp * (Math.sin(k) * 0.5 + Math.sin(k * 1.7) * 0.3 + 0.5)));
+          for (let cy = b.rows - hgt; cy < b.rows; cy += 1) b.cell(cx, cy, col);
         }
-      }
-      const sunPos = Math.sin(t * 0.09 + seed) * 0.5 + 0.5;
-      const ssz = Math.max(2, u - 1);
-      ctx.fillStyle = "#e8c76a";
-      ctx.fillRect(x + pad + Math.round(sunPos * Math.max(0, innerW - ssz)), y + Math.round(h * 0.22), ssz, ssz);
-      ctx.fillStyle = "rgba(232,199,106,0.34)";
-      ctx.fillRect(x + pad, horizon, innerW, 1);
+      };
+      ridge(2.2, 0.25, 0, SAPAL.mid, 3);
+      ridge(3.0, 0.45, 9, SAPAL.bg2, 2);
+      for (let cx = 0; cx < b.cols; cx += 1) b.cell(cx, b.rows - 1, SAPAL.teal, 0.45);
       return;
     }
-    /* ④ 音乐频谱：柱高各不相同地跳 + 底部节拍点扫过 */
-    case "music": {
-      ctx.fillStyle = "#1a1526";
-      ctx.fillRect(x, y, w, h);
-      const bars = 9;
-      const bw = Math.max(1, Math.floor(innerW / (bars * 1.8)));
-      const gap = Math.max(1, Math.floor(bw * 0.6));
-      for (let i = 0; i < bars; i += 1) {
-        const v = 0.5 + 0.5 * Math.sin(t * (2.4 + i * 0.21) + seed + i * 1.3);
-        const bh = Math.max(1, Math.round((h - pad) * Math.pow(v, 1.6) * 0.85));
-        ctx.fillStyle = i % 3 === 0 ? "#c58fd8" : "#8f7fe8";
-        ctx.fillRect(x + pad + i * (bw + gap), y + h - bh, bw, bh);
-      }
-      const step2 = bw + gap;
-      ctx.fillStyle = "#e8c76a";
-      ctx.fillRect(x + pad + (Math.floor(t * 2) % bars) * step2, y + h - 2, bw, 1);
-      return;
-    }
-    /* ⑤ 统计条：三条进度条各自推进（各自速度不同 ⇒ 不是整片一起动） */
-    case "bars": {
-      ctx.fillStyle = "#16212c";
-      ctx.fillRect(x, y, w, h);
-      const rowH = Math.max(3, Math.round(h / 4));
-      const colors = [PAL.svcPack, PAL.fileNew, "#c58fd8"];
-      for (let i = 0; i < 3; i += 1) {
-        const p = (t * (0.13 + i * 0.06) + seed * 0.11 + i * 0.3) % 1;
-        const ry = y + pad + i * rowH;
-        ctx.fillStyle = PAL.idleBar;
-        ctx.fillRect(x + pad, ry, innerW - pad, Math.max(1, u - 1));
-        ctx.fillStyle = colors[i];
-        ctx.fillRect(x + pad, ry, Math.max(1, Math.round((innerW - pad) * p)), Math.max(1, u - 1));
-      }
-      return;
-    }
-    /* ⑥ 代码雨：五列字符/短横下落，头部亮尾迹暗（科幻感，和"办公室"很配） */
-    case "code": {
-      ctx.fillStyle = "#0e1a14";
-      ctx.fillRect(x, y, w, h);
-      const cols = 5;
-      const cw = Math.max(2, Math.floor(innerW / cols));
-      for (let i = 0; i < cols; i += 1) {
-        const speed = 6 + ((seed + i * 3) % 5);
-        const yy = y - 6 + ((t * speed + seed * 5 + i * 9) % (h + 6));
-        const len = 3 + ((seed + i) % 3);
-        for (let k = 0; k < len; k += 1) {
-          ctx.fillStyle = k === 0 ? "#c8f0d0" : `rgba(110,212,154,${((1 - k / len) * 0.7).toFixed(2)})`;
-          ctx.fillRect(x + pad + i * cw, Math.round(yy - k * 3), Math.max(1, cw - 2), 1);
+    /* ③ 等离子（demo scene 经典）：四路正弦叠加 ⇒ 流动的色带 */
+    case "plasma": {
+      b.clear();
+      for (let cy = 0; cy < b.rows; cy += 1) {
+        for (let cx = 0; cx < b.cols; cx += 1) {
+          const v = Math.sin(cx * 0.42 + b.t * 1.15)
+            + Math.sin(cy * 0.58 - b.t * 0.9)
+            + Math.sin((cx + cy) * 0.28 + b.t * 0.65)
+            + Math.sin(Math.hypot(cx - b.cols / 2, cy - b.rows / 2) * 0.55 - b.t * 1.25);
+          const lv = (v + 4) / 8;
+          b.cell(cx, cy, lv > 0.74 ? SAPAL.white : lv > 0.56 ? SAPAL.blue : lv > 0.38 ? SAPAL.violet : SAPAL.mid);
         }
       }
       return;
     }
-    /* ⑦ 曲线：横向滚动的折线（确定性伪随机 ⇒ 像实时数据） */
-    case "chart": {
-      ctx.fillStyle = "#141d28";
-      ctx.fillRect(x, y, w, h);
-      ctx.fillStyle = PAL.idleBar;
-      for (let g = 1; g < 3; g += 1) ctx.fillRect(x + pad, y + Math.round((h * g) / 3), innerW, 1);
-      ctx.fillStyle = "#6ed49a";
-      for (let c = 0; c < innerW; c += 2) {
-        const k = c / 5 + t * 2.2 + seed;
-        const v = 0.5 + 0.34 * Math.sin(k) + 0.16 * Math.sin(k * 2.7);
-        const py = y + h - pad - Math.round(Math.max(0, Math.min(1, v)) * Math.max(1, h - pad * 2));
-        ctx.fillRect(x + pad + c, py, 2, 2);
+    /* ④ 星空飞行（经典）：星点从中心向外"飞"，越远越亮 + 拖尾 */
+    case "starfield": {
+      b.clear();
+      const cxc = b.cols / 2;
+      const cyc = b.rows / 2;
+      for (let i = 0; i < 56; i += 1) {
+        const ang = hash01(i, b.seed) * Math.PI * 2;
+        const r0 = hash01(i + 71, b.seed);
+        const spd = 0.05 + hash01(i + 133, b.seed) * 0.17;
+        const r = (r0 + b.t * spd) % 1;
+        const cx = Math.round(cxc + Math.cos(ang) * r * cxc * 1.08);
+        const cy = Math.round(cyc + Math.sin(ang) * r * cyc * 1.15);
+        b.cell(cx, cy, r > 0.78 ? SAPAL.white : r > 0.45 ? SAPAL.ink : SAPAL.mid);
+        if (r > 0.82) b.cell(cx - Math.round(Math.cos(ang)), cy - Math.round(Math.sin(ang)), SAPAL.mid);
       }
       return;
     }
-    /* ⑧ 电视剧（10-05 版原样搬进来）：宽银幕黑边 + 两个"人影" + 台词字幕条 + 集内进度 */
+    /* ⑤ 火焰（Doom fire 的确定性近似）：每列火高由两个正弦叠加，顶部用抖动做余晖 */
+    case "fire": {
+      b.clear();
+      /* 上部：飘散的火星（稀疏、缓慢上升）—— ⛔ 不加这段，火焰只占下半屏（实测铺满度 38%），
+         上半屏一片黑，看着就"半成品"。 */
+      for (let i = 0; i < 20; i += 1) {
+        const rise = (hash01(i, b.seed) + b.t * (0.06 + hash01(i + 9, b.seed) * 0.10)) % 1;
+        const cx = Math.floor((hash01(i + 31, b.seed) * 0.84 + 0.08) * b.cols);
+        const cy = b.rows - 1 - Math.round(rise * (b.rows - 1));
+        b.cell(cx, cy, cy > b.rows * 0.55 ? SAPAL.orange : SAPAL.amber, cy > b.rows * 0.55 ? 0.5 : 0.3);
+      }
+      for (let cx = 0; cx < b.cols; cx += 1) {
+        const k = cx * 0.5 + b.seed * 3;
+        const wob = Math.sin(k + b.t * 2.6) * 0.5 + Math.sin(k * 2.3 - b.t * 4.1) * 0.28;
+        const arc = 1 - Math.abs((cx / Math.max(1, b.cols - 1)) * 2 - 1) * 0.45;
+        const hgt = Math.max(1, Math.round(b.rows * (0.46 + wob * 0.24) * arc));
+        for (let cy = b.rows - 1; cy >= b.rows - hgt; cy -= 1) {
+          const up = (b.rows - 1 - cy) / b.rows;
+          const col = up < 0.22 ? SAPAL.amber : up < 0.45 ? SAPAL.orange : up < 0.7 ? SAPAL.red : SAPAL.dim;
+          b.cell(cx, cy, col, up > 0.7 ? 0.5 : 1);
+        }
+      }
+      for (let cx = 0; cx < b.cols; cx += 1) b.cell(cx, b.rows - 1, SAPAL.amber, 0.75);
+      return;
+    }
+    /* ⑥ 莫尔干涉：两个漂移焦点的同心圆叠加 ⇒ 会缓慢"呼吸"的条纹 */
+    case "moire": {
+      b.clear();
+      const c1x = b.cols / 2 + Math.cos(b.t * 0.6 + b.seed) * b.cols * 0.26;
+      const c1y = b.rows / 2 + Math.sin(b.t * 0.45 + b.seed) * b.rows * 0.30;
+      const c2x = b.cols / 2 + Math.cos(b.t * 0.38 + 2.1 + b.seed) * b.cols * 0.30;
+      const c2y = b.rows / 2 + Math.sin(b.t * 0.52 + 1.3 + b.seed) * b.rows * 0.34;
+      for (let cy = 0; cy < b.rows; cy += 1) {
+        for (let cx = 0; cx < b.cols; cx += 1) {
+          const d1 = Math.hypot(cx - c1x, (cy - c1y) * 1.5);
+          const d2 = Math.hypot(cx - c2x, (cy - c2y) * 1.5);
+          /* ⛔ 频率必须**低**（0.42 而不是 0.85）：22 格的宽度上，0.85 的条纹周期只有
+             ~7 格 ⇒ 叠上 3px 的抖动格子后看着就是"随机噪点"，完全不像莫尔条纹
+             （第一版实测就是这样）。0.42 ⇒ 周期 ~15 格，条纹肉眼可辨。 */
+          const v = Math.sin(d1 * 0.42) * Math.sin(d2 * 0.42);
+          const lv = (v + 1) / 2;
+          b.cell(cx, cy, lv > 0.5 ? SAPAL.violet : SAPAL.blue, lv > 0.5 ? 0.35 + (lv - 0.5) * 1.3 : 0.15 + lv * 0.5);
+          if (lv > 0.72) b.cell(cx, cy, SAPAL.white, (lv - 0.72) * 2.2);
+        }
+      }
+      return;
+    }
+    /* ⑦ 频谱：每列高度各不相同的柱 + 峰值标记下坠 + 底部节拍点 */
+    case "spectrum": {
+      b.clear();
+      for (let i = 0; i < b.cols; i += 1) {
+        const k = i * 0.42 + b.seed;
+        const v = 0.5 + 0.5 * Math.sin(b.t * 2.1 + k) * Math.sin(b.t * 0.9 + k * 1.7);
+        const hgt = Math.max(0, Math.round(v * (b.rows - 1)));
+        for (let cy = b.rows - 1; cy > b.rows - 1 - hgt; cy -= 1) {
+          b.cell(i, cy, cy < b.rows - 1 - hgt * 0.4 ? SAPAL.green : SAPAL.teal);
+        }
+        const peak = Math.max(0, Math.round((0.5 + 0.5 * Math.sin(b.t * 1.07 + k * 0.6)) * (b.rows - 2)));
+        b.cell(i, b.rows - 1 - peak, SAPAL.amber, 0.85);
+      }
+      b.cell(Math.floor(b.t * 6) % b.cols, b.rows - 1, SAPAL.white);
+      return;
+    }
+    /* ⑧ 电视剧：宽银幕黑边 + 场景色块缓慢切换 + 两个人影 + 字幕节拍 + 胶片噪点 */
     case "tv": {
-      ctx.fillStyle = PAL.videoBg;
-      ctx.fillRect(x, y, w, h);
-      const bar = Math.max(2, Math.round(h * 0.16));
-      ctx.fillStyle = PAL.videoBar;
-      ctx.fillRect(x, y, w, bar);
-      const sTop = y + bar;
-      const sH = Math.max(4, h - bar * 2);
-      ctx.fillStyle = PAL.videoBar;
-      ctx.fillRect(x, y + bar + sH, w, bar);
+      b.clear(SAPAL.bg);
+      const sceneIdx = Math.floor(b.t / 5.5) % 3;
+      const bgc = [SAPAL.mid, SAPAL.bg2, SAPAL.dim][sceneIdx];
+      /* ⛔ 黑边只留 1 行（上下各一）：原来留 2 行 ⇒ 内容只占 66% 高度，看着"上下两条大黑边" */
+      for (let cy = 1; cy < b.rows - 1; cy += 1) {
+        for (let cx = 0; cx < b.cols; cx += 1) b.cell(cx, cy, bgc);
+      }
       for (let i = 0; i < 2; i += 1) {
-        const figW = Math.max(2, u);
-        const spanX = Math.max(1, innerW - figW * 2);
-        const fx = x + pad + Math.round((Math.sin(t * (0.5 + i * 0.23) + seed + i * 1.7) * 0.5 + 0.5) * spanX);
-        const fy = sTop + Math.round(sH * 0.35) + i * u;
-        ctx.fillStyle = PAL.videoFig;
-        ctx.fillRect(fx, fy, figW, Math.max(3, u * 2));
-        ctx.fillRect(fx - 1, fy - u, figW + 2, u - 1);
+        const span = Math.max(1, b.cols - 4);
+        const x0 = 1 + Math.round((Math.sin(b.t * (0.32 + i * 0.17) + b.seed + i * 1.9) * 0.5 + 0.5) * span);
+        for (let k = 0; k < 2; k += 1) for (let j = 0; j < 3; j += 1) b.cell(x0 + k, b.rows - 3 - j, SAPAL.bg);
+        b.cell(x0, b.rows - 6, SAPAL.bg);
       }
-      if ((t * 2.4 + seed) % 1 < 0.72) {
-        const subW = Math.max(4, Math.round(innerW * (0.4 + ((Math.floor(t * 2.4) + seed) % 3) * 0.16)));
-        ctx.fillStyle = PAL.videoSub;
-        ctx.fillRect(x + Math.round((w - subW) / 2), sTop + sH - u - 1, subW, Math.max(1, u - 1));
+      if ((b.t * 2.4 + b.seed) % 1 < 0.7) {
+        const wsub = 4 + Math.round(((Math.floor(b.t * 2.4) + b.seed) % 3) * 3);
+        const xs = Math.round((b.cols - wsub) / 2);
+        for (let k = 0; k < wsub; k += 1) b.cell(xs + k, b.rows - 2, SAPAL.amber);
       }
-      ctx.fillStyle = PAL.idleBar;
-      ctx.fillRect(x + pad, y + h - 2, innerW, 2);
-      ctx.fillStyle = PAL.videoSub;
-      ctx.fillRect(x + pad, y + h - 2, Math.max(1, Math.round(innerW * ((t / 90 + seed * 0.13) % 1))), 2);
+      const frame = Math.floor(b.t * 8) + b.seed;
+      for (let i = 0; i < 16; i += 1) {
+        b.cell(Math.floor(hash01(i, frame) * b.cols), 1 + Math.floor(hash01(i + 40, frame) * (b.rows - 3)), SAPAL.white, 0.22);
+      }
       return;
     }
-    /* ⑨ 像素小游戏（10-05 版原样搬进来）：地面 + 一直跳的主角 + 迎面障碍 + 分数 + 血条 */
+    /* ⑨ 像素小游戏：星空 + 地面 + 一直跳的主角 + 迎面障碍 + 右上角分数 */
     default: {
-      ctx.fillStyle = PAL.gameBg;
-      ctx.fillRect(x, y, w, h);
-      const groundY = y + h - Math.max(3, u);
-      ctx.fillStyle = PAL.gameGround;
-      ctx.fillRect(x, groundY, w, Math.max(1, u - 1));
-      const heroW = Math.max(2, u);
-      const jump = Math.abs(Math.sin(t * 2.2 + seed));
-      ctx.fillStyle = PAL.gameHero;
-      ctx.fillRect(x + pad + Math.round(innerW * 0.22), groundY - heroW - Math.round(jump * Math.max(1, (h - pad) * 0.55)), heroW, heroW);
-      for (let i = 0; i < 2; i += 1) {
-        const ox = x + w - Math.round(((t * (0.55 + i * 0.18) + seed * 0.31 + i * 0.5) % 1) * (w + innerW * 0.5));
-        ctx.fillStyle = PAL.gameBlock;
-        ctx.fillRect(ox, groundY - u * 2, Math.max(2, u - 1), Math.max(2, u * 2));
+      b.clear(SAPAL.bg2);
+      for (let i = 0; i < 12; i += 1) {
+        b.cell(Math.floor(hash01(i, b.seed) * b.cols), 1 + Math.floor(hash01(i + 20, b.seed) * (b.rows - 4)), SAPAL.ink, 0.5);
       }
-      const score = String(Math.floor(t * 7 + seed * 3) % 1000).padStart(3, "0");
-      drawMicroText(ctx, score, x + w - microWidth(score, 1) - pad, y, PAL.gameHero, 1);
-      ctx.fillStyle = PAL.fileDel;
-      ctx.fillRect(x + pad, y, Math.max(1, Math.round(innerW * 0.3)), 1);
-      ctx.fillStyle = PAL.idleBar;
-      ctx.fillRect(x + pad, y, Math.max(3, Math.round(innerW * 0.34)), 1);
+      const groundY = b.rows - 2;
+      for (let cx = 0; cx < b.cols; cx += 1) b.cell(cx, groundY, SAPAL.mid);
+      const jump = Math.abs(Math.sin(b.t * 2.3 + b.seed));
+      const hy = groundY - 1 - Math.round(jump * (b.rows - 5));
+      b.cell(3, hy, SAPAL.green); b.cell(4, hy, SAPAL.green); b.cell(3, hy - 1, SAPAL.teal);
+      for (let i = 0; i < 2; i += 1) {
+        const ox = b.cols - 1 - Math.round((b.t * (3.4 + i * 1.1) + b.seed * 5 + i * 7) % (b.cols + 4));
+        b.cell(ox, groundY - 1, SAPAL.red); b.cell(ox, groundY - 2, SAPAL.red);
+      }
+      const score = String(Math.floor(b.t * 7 + b.seed * 3) % 1000).padStart(3, "0");
+      drawMicroText(b.ctx, score, b.x + b.w - microWidth(score, 1) - 2, b.oy, SAPAL.amber, 1);
       return;
     }
   }
@@ -809,12 +873,33 @@ export function drawScreen(
     return;
   }
 
+  // idle:【块标记】下面这一段是 idle 模式的绘制代码（判据面依赖这个标记定位）
+  /* ⭐ 屏保 = **占满整个玻璃区**（10-06 重做）。
+     ⛔⛔ 为什么放在顶栏之前：顶栏是"状态条"，属于**工作态的信息层**；屏保是装饰。
+       把两者叠在一起既浪费高度又难看 —— 实测顶栏吃掉 6/32 ≈ **19%** 的屏面
+       （用户 10-06：「不好看」「两侧仍有固定展示内容」）。
+     ✅ 现在屏保拿到整块 66×32：内容单位格更饱满、铺满，且**不再有 "IDLE" 字样**
+       （屏保时那块屏就该只是一幅画）。 */
+  if (mode === "idle") {
+    const sa = screensaverAt(t, seed);
+    const box = makeSaBox(ctx, t, seed, x, y, w, h);
+    drawSaScene(box, sa.from);
+    if (sa.mix > 0.001) {
+      ctx.save();
+      ctx.globalAlpha = sa.mix;
+      drawSaScene(box, sa.to);
+      ctx.restore();
+    }
+    return;
+  }
+
   /* ── 顶栏（状态条）───────────────────────────────────────────────
      ⭐ 2026-10-05 晚：屏面上永远有一行**真实信息** ——
         左侧是模式词（WORK/BROWSE/WRITE/FIND/OPEN/EDIT/TERM/API/TV/DONE…），
         右侧是真实秒数或产出字数。
      ⛔ 为什么值得占掉 6px：屏面只有 50×34，"这人在干嘛"全靠这一行；
-        只有图形没有文字时，用户（10-05 报"信息不完整"）看到的仍是一片抽象的色块。 */
+        只有图形没有文字时，用户（10-05 报"信息不完整"）看到的仍是一片抽象的色块。
+     ⚠️ 10-06：屏保已提前 return（不吃顶栏），所以这一行只服务**工作态**。 */
   const hudH = Math.max(5, Math.min(9, Math.round(h * 0.18)));
   const hudTextY = y + Math.max(0, Math.floor((hudH - 5) / 2));
   ctx.fillStyle = PAL.hudBg;
@@ -866,27 +951,6 @@ export function drawScreen(
     return;
   }
 
-  /* ⭐ 待机 = **屏保轮播**（10-06 重做：9 档内容 + 交叉淡入淡出，见 screensaverAt）。
-     ⛔⛔ 为什么不能像原来那样「一屏一个固定画面」：用户报「两侧仍有固定展示内容，
-       且没有播放动画…当前播放动画过于生硬，且每个动画内容都一样」——
-       原来只有时钟 / 电视剧 / 游戏三档，六台机器只是**错开相位** ⇒ 同一时刻多数屏在放
-       同一个东西，而切换又是硬跳（没有过渡）。
-     ✅ 现在：每台一套**自己的档位顺序**（seed 决定起点与步进）+ 每档末尾 1.8 秒交叉溶解。
-     ⛔ 过渡的写法是「**新档半透明盖在旧档上**」——⛔ 不是两边各降一半：
-       那样两层叠加会发灰/过曝（尤其这些档都带自己的不透明底色）。 */
-  // idle:【块标记】下面这一段是 idle 模式的绘制代码（判据面依赖这个标记定位）
-  if (mode === "idle") {
-    const sa = screensaverAt(t, seed);
-    const box: SaBox = { ctx, t, seed, x, y: cy, w, h: bodyH, u, pad, innerW };
-    drawSaScene(box, sa.from);
-    if (sa.mix > 0.001) {
-      ctx.save();
-      ctx.globalAlpha = sa.mix;
-      drawSaScene(box, sa.to);
-      ctx.restore();
-    }
-    return;
-  }
   /* ⛔ `video`（电视剧）的绘制体已搬进 `drawSaScene` 的 "tv" 档 ——
      10-06 起屏保由 `idle` 一档统一承载（轮播 + 交叉过渡都在里面），
      不再有独立的 video 模式传进来。这里留一个**薄壳**：
@@ -895,13 +959,13 @@ export function drawScreen(
      · ⛔ 不是为了兼容旧调用而留死代码 —— 它现在**仍然可用**（直接传 video 就画 TV）。 */
   // video:【块标记】下面这一段是 video 模式的绘制代码（判据面依赖这个标记定位）
   if (mode === "video") {
-    drawSaScene({ ctx, t, seed, x, y: cy, w, h: bodyH, u, pad, innerW }, "tv");
+    drawSaScene(makeSaBox(ctx, t, seed, x, cy, w, bodyH), "tv");
     return;
   }
   /* ⛔ `game`（像素小游戏）同上 —— 绘制体已搬进 `drawSaScene` 的 "game" 档。 */
   // game:【块标记】下面这一段是 game 模式的绘制代码（判据面依赖这个标记定位）
   if (mode === "game") {
-    drawSaScene({ ctx, t, seed, x, y: cy, w, h: bodyH, u, pad, innerW }, "game");
+    drawSaScene(makeSaBox(ctx, t, seed, x, cy, w, bodyH), "game");
     return;
   }
   // code：【块标记】下面这一段是 code 模式的绘制代码（判据面依赖这个标记定位）

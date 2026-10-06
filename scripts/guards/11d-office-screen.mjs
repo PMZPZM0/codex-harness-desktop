@@ -19,6 +19,21 @@
  *   **且必须先限定 y 带再逐列判**（上排 165-205、下排 355-400）——
  *   不限定 y 的话椅背会一起被收进来（这正是 10-04 出错的原因）。
  *
+ * ⛔⛔⛔ **10-06 第三次翻车（用户：「两侧仍有固定展示内容」）—— 这次最隐蔽**：
+ *   10-05 换的亮度判据**看似修好了**，其实把玻璃区**测窄了 30%**（50×34 vs 真实 66×32）：
+ *   它要求"该列 ≥35% 像素 sum<190"，而**屏幕右半有背景图里烙死的彩色界面**（亮）
+ *   ⇒ 右半列的暗占比达不到阈值 ⇒ **被整列切掉**，连"框的位置"都跟着偏到左边。
+ *   ⇒ 动态内容只盖住玻璃的左 3/4（右侧露出背景静态界面），再加上部分场景自己
+ *     也只用到内容区的左半 ⇒ 用户看到的就是"两侧没动画"。
+ *   ⛔ 教训（比前两次更深一层）：错误不在于"扫错了对象"，而在于**判据自己划定了
+ *     测量范围**——先假定"暗的才是玻璃"，再在暗像素里量宽度 ⇒ 结果必然 ≤ 真值，
+ *     而且六台读数很整齐（48~52），**自洽到完全看不出问题**。
+ *   ✅ 10-06 正解（三层交叉，缺一层就可能再错）：
+ *     ① 闭运算（MaxFilter→MinFilter）填掉屏内彩色内容 ⇒ 逐列取**最长连续段**（得上界）；
+ *     ② 把该区域**放大 8 倍 + 画 10px 网格**，人工读精确边界；
+ *     ③ 把最终框**画回 bg 上目视复核**（`verify-screen.py`）⇒ 必须正好套住玻璃。
+ *   现行值：**66×32**（玻璃 65×32 + 1px 边缘容差）。
+ *
  * ⭐ 教训（比坐标本身更重要）：**判据的参照值必须来自与断言对象相互独立的一次测量**。
  *   两边用同一个脚本同一次跑出来的结果 ⇒ 断言只能证明"自洽"，证明不了"对"。
  *   ⇒ 本文件另加一条**不依赖 TRUTH** 的几何判据（屏面必须在椅背上方），
@@ -33,17 +48,21 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 let checks = 0, fails = 0;
 const ok = (c, m) => { checks++; console.log(`  ${c ? "✓" : "✗"} 【screen】${m}`); if (!c) fails++; };
 
-/* 实测值（10-05 重测）：在 `src/features/team-office/assets/bg.webp`（960×640，与画布 1:1）上扫出来的
-   **屏幕玻璃**矩形。判据：`(r+g+b) < 190 and b >= r and r <= 75`，**且先限定 y 带**
-   （上排 165-205 / 下排 355-400）再逐列判（该列 ≥35% 是玻璃）。
-   重测方法见 `office-format.ts` 的 SEATS 注释。⛔ 改这里必须重新扫图，别照抄。 */
+/* 实测值（**10-06 第三次重测**）：在 `src/features/team-office/assets/bg.webp` 上测出的
+   **屏幕玻璃**矩形 = **66×32**。
+   ⛔ 前两版都测窄/测错（详见文件头），10-06 这次的判据是「闭运算填洞 + 逐列最长连续段」
+     **再加人工放大 8 倍读数**，并用 `.workbuddy/tmp/screen-verify.py` 把框画回 bg 上目视复核。
+   ⚠️ 这里的 x2 比"人工读到的玻璃右边界 300"多 1（= 301）：内容区**故意**比玻璃多 1px
+     盖住边缘的过渡像素（否则边缘会露出背景里的静态界面 —— 那正是用户报的现象）。
+     所以这一条不是"为适配代码而改"：**玻璃读数 236~300 是独立测的，+1 是明确的设计选择**。
+   重测方法见 `office-format.ts` 的 SEATS 注释。⛔ 改这里必须重新测图，别照抄。 */
 const TRUTH = [
-  { x1: 246, y1: 169, x2: 295, y2: 202 },
-  { x1: 471, y1: 169, x2: 521, y2: 202 },
-  { x1: 686, y1: 169, x2: 736, y2: 202 },
-  { x1: 246, y1: 362, x2: 293, y2: 396 },
-  { x1: 470, y1: 362, x2: 520, y2: 396 },
-  { x1: 685, y1: 362, x2: 736, y2: 396 },
+  { x1: 236, y1: 168, x2: 301, y2: 199 },
+  { x1: 462, y1: 168, x2: 527, y2: 199 },
+  { x1: 677, y1: 168, x2: 742, y2: 199 },
+  { x1: 236, y1: 366, x2: 301, y2: 397 },
+  { x1: 461, y1: 366, x2: 526, y2: 397 },
+  { x1: 677, y1: 366, x2: 742, y2: 397 },
 ];
 
 const fmt = readFileSync(join(ROOT, "src", "features", "team-office", "office-format.ts"), "utf8");
@@ -86,10 +105,12 @@ seats.forEach((s, i) => {
   }
 });
 
-//⛔ 尺寸合理性：屏面只有 ~50×35，内容区不能画成大块（那正是"大黑屏"的观感）
+//⛔ 尺寸合理性：屏面实测 **66×32**，内容区不能画成大块（那正是"大黑屏"的观感）。
+//  ⚠️ 10-06 从 ≤60×36 放宽到 ≤70×38：真实玻璃区就是 66×32（见 TRUTH 注释），
+//    旧阈值（≤60）来自那次**测窄了的**读数 ⇒ 继续用会把正确的值判成红。
 seats.forEach((s, i) => {
-  ok(s.w <= 60 && s.h <= 36,
-    `座位${i} 内容区 ${s.w}×${s.h} 不超过屏面尺度（≤60×36；10-05 实测 48-52 宽 × 34-35 高）`);
+  ok(s.w >= 60 && s.w <= 70 && s.h >= 28 && s.h <= 38,
+    `座位${i} 内容区 ${s.w}×${s.h} 在屏面尺度内（60~70 × 28~38；10-06 实测 66×32）`);
 });
 
 /* ⛔⛔ 交叉验证 —— **不依赖上面的 TRUTH**（10-05 教训的正解）。
@@ -392,6 +413,7 @@ console.log((saAll.size === SA_SCENES.length && saTiles.size >= 4 && mixOk ? "OK
     }) };
   };
   const missing = [];
+  const thin = [];
   for (const scene of SA_SCENES) {
     let hit = false;
     for (let s = 1; s <= 60 && !hit; s += 1) {
@@ -399,14 +421,22 @@ console.log((saAll.size === SA_SCENES.length && saTiles.size >= 4 && mixOk ? "OK
         const at = screensaverAt(tt, s);
         if (at.from !== scene || at.mix > 0) continue;
         const { ctx, rects } = mk();
-        drawScreen(ctx, tt, "idle", s, 216, 138, 50, 34, {});
-        hit = rects.some((r) => r.x === 216 && r.y === 138 && r.w === 50 && r.h === 34);
+        drawScreen(ctx, tt, "idle", s, 216, 138, 66, 32, {});
+        hit = rects.some((r) => r.x === 216 && r.y === 138 && r.w === 66 && r.h === 32);
+        /* ⭐ 内容**横向铺满**（10-06 用户报「两侧仍有固定展示内容」的正面判据）：
+           剔除"整块底色"后，剩余元素的并集宽度必须覆盖 ≥85%。
+           ⛔ 只查底色不够 —— 底色对、内容只画左半边，照样会露出右侧的背景静态界面。 */
+        const inner = rects.filter((r) => !(r.x === 216 && r.y === 138 && r.w >= 66 && r.h >= 32));
+        let x0 = 1e9, x1 = -1e9;
+        for (const r of inner) { x0 = Math.min(x0, r.x); x1 = Math.max(x1, r.x + r.w); }
+        if (inner.length && (x1 - x0) / 66 < 0.85) thin.push(scene + "(" + Math.round(((x1 - x0) / 66) * 100) + "%)");
         break;
       }
     }
     if (!hit) missing.push(scene);
   }
   console.log((missing.length === 0 ? "OK " : "NO ") + "屏保每档铺满屏面底色（缺：" + (missing.join(",") || "无") + "）");
+  console.log((thin.length === 0 ? "OK " : "NO ") + "屏保内容横向铺满 ≥85%（偏窄的档：" + (thin.join(",") || "无") + "）");
 }
 const long = marqueeText("NPM RUN BUILD ELECTRON", 46, 0);
 const moved = marqueeText("NPM RUN BUILD ELECTRON", 46, 1.4);
@@ -416,7 +446,7 @@ console.log(bad === 0 ? "OK 事件分类全部符合" : "NO " + bad + " 条分�
   const out = execFileSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", script],
     { cwd: ROOT, encoding: "utf8", timeout: 120000, stdio: ["ignore", "pipe", "pipe"] });
   const lines = out.split("\n").filter((line) => /^(OK|NO) /.test(line.trim()));
-  ok(lines.length >= 17, `事件面真跑出 ${lines.length} 条（⛔ 0 条 = 脚本没跑起来）`);
+  ok(lines.length >= 18, `事件面真跑出 ${lines.length} 条（⛔ 0 条 = 脚本没跑起来）`);
   for (const line of lines) {
     const good = line.trim().startsWith("OK ");
     checks += 1;
