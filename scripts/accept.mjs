@@ -22,7 +22,7 @@
 // ⛔ 新增验收项**必须**登记进 ROUND_OF（否则默认轮跑不到它 —— 09-24 踩过）。
 // 被测 profile：`.e2e-profile/<name>/`（已 gitignore，含真实对话内容，勿入库）
 
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ElectronHarness } from "./e2e/lib/harness.mjs";
@@ -554,101 +554,163 @@ const CHECKS = [
   },
   {
     id: "file-summary",
-    name: "㉓ 文件更改汇报卡（真事件驱动真卡：点行预览 / 右键两项 / 折叠 / 图片缩略图，10-06 轮）",
+    name: "㉓ 文件更改汇报卡 · 真引擎回合全链路（真 run 一回合 → 追踪器 diff → 真广播 → 卡+交互，10-06 重写）",
     run: async (h) => {
-      // 为什么这样测：本特性的**数据链路**（主进程 turn-file-watch → `harness:event` 广播 →
-      // src/lib/turn-file-changes.mjs 收件）是 10-01 轮已验收的既有路径；本轮改动全在 UI 交互层
-      // （点行预览 / 右键菜单 / 折叠 / 图片缩略图），而 e2e profile 的历史会话没有带文件改动的回合。
-      // ⇒ 用**真事件形状**驱动真组件：从 DOM 取一个真回合 id，派发 window 的 message 事件
-      // （`channel: harness:event` / `type: turn-file-changes`）—— 订阅、渲染、交互全是真代码，
-      // 只有"主进程报告"这一环是注入的（事件形状与主进程广播逐字段一致）。
-      const turnId = await h.eval(`(function(){
-        const groups=[...document.querySelectorAll('.turn-group[id^="turn-"]')];
-        const el=groups[groups.length-1]; if(!el) return null;
-        return el.id.replace('turn-','');
-      })()`);
-      h.check("① 前置：当前会话里有一个真回合可挂卡（找不到 = 整项作废）", typeof turnId === "string" && turnId.length > 0, `turnId=${String(turnId).slice(0, 48)}`);
-      if (typeof turnId !== "string" || !turnId) return;
-      /* 八条 fixture：7 文本 + 1 图片（图片行验缩略图与「新增」徽标）；文件都真实存在 ——
-         点行打开预览时预览器会真去读盘，路径不存在就变"点了没反应"的假红。 */
-      const fixture = [
-        { path: join(ROOT, "package.json"), status: "modified", added: 21, deleted: 4 },
-        { path: join(ROOT, "AGENTS.md"), status: "modified", added: 88, deleted: 12 },
-        { path: join(ROOT, "index.html"), status: "modified", added: 3, deleted: 1 },
-        { path: join(ROOT, "tsconfig.json"), status: "modified", added: 2, deleted: 0 },
-        { path: join(ROOT, "electron", "main.ts"), status: "modified", added: 40, deleted: 9 },
-        { path: join(ROOT, "src", "App.tsx"), status: "modified", added: 5, deleted: 5 },
-        { path: join(ROOT, "public", "sketch", "CANVAS-BUILD.json"), status: "modified", added: 6, deleted: 0 },
-        { path: join(ROOT, "public", "sketch", "apple-icon.png"), status: "added", added: 0, deleted: 0 },
-      ];
-      await h.eval(`(function(){
-        window.dispatchEvent(new MessageEvent("message", { data: { channel: "harness:event",
-          event: { type: "turn-file-changes", turnId: ${JSON.stringify(turnId)}, files: ${JSON.stringify(fixture)} } } }));
-        return 1; })()`);
-      await wait(700);
-      const cardSel = `document.getElementById("turn-" + ${JSON.stringify(turnId)})?.querySelector(".completed-changes")`;
-      const head = await h.eval(`(function(){ const c=${cardSel};
-        return c ? { text:(c.querySelector('summary')?.textContent||'').trim(), files: c.querySelectorAll('.completed-file').length } : null; })()`);
-      h.check("② 报告一到，卡立刻出现且头对：已更改 8 个文件 + 增删数字", !!head && /已更改\s*8\s*个文件/.test(head.text) && head.text.includes("+") && head.text.includes("-") && head.files === 6, JSON.stringify(head));
-      if (!head) return;
-      /* ③ 点第一行（package.json）→ 文件预览弹窗出现（用户点名「直接打开预览就行」）。 */
-      await h.eval(`(function(){ const row=${cardSel}?.querySelector('.completed-file');
-        row?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true})); return !!row; })()`);
-      const previewOpened = await h.waitFor(`!!document.querySelector('.file-preview')`, { label: "文件预览弹窗", timeoutMs: 8000 }).then(() => true).catch(() => false);
-      const previewMeta = await h.text(".file-preview-meta").catch(() => "");
-      h.check("③ 点行直接打开预览（文件预览弹窗打开，且预览的就是这一行的文件）",
-        previewOpened === true && String(previewMeta).includes("package.json"), JSON.stringify({ previewOpened, previewMeta: String(previewMeta).slice(0, 80) }));
-      await h.eval(`(function(){ document.querySelector('.file-preview .relay-modal-close')?.click(); window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'})); return 1; })()`).catch(() => undefined);
-      await wait(400);
-      /* ④ 行右键 → 文件卡菜单两项点名（在文件夹中显示 = 「打开文件地址」/ 复制文件路径）。
-         ⛔ 不做真鼠标右键：用 JS 派发 contextmenu —— React 监听的正是这个原生事件。
-         ⛔ 派发后必须**等一拍**再读 DOM：React 的 setMenu 是异步状态更新，同一 tick 查不到菜单。 */
-      await h.eval(`(function(){ const row=${cardSel}?.querySelector('.completed-file');
-        if(!row) return false; const r=row.getBoundingClientRect();
-        row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:Math.round(r.left+40),clientY:Math.round(r.top+10)}));
-        return true; })()`);
-      await wait(300);
-      const menuShown = await h.eval(`(function(){ const menu=document.querySelector('.file-card-menu');
-        return { open: !!menu, items: menu? [...menu.querySelectorAll('button span')].map((s)=>(s.textContent||'').trim()) : [] }; })()`);
-      h.check("④ 行右键弹出文件卡菜单，且含「在文件夹中显示」+「复制文件路径」（用户点名的两项）",
-        menuShown?.open === true && (menuShown?.items ?? []).includes("在文件夹中显示") && (menuShown?.items ?? []).includes("复制文件路径"),
-        JSON.stringify(menuShown));
-      /* ⑤ 点「复制文件路径」：toast 是**成功路径专属**（.catch 只会给「复制失败」）⇒ toast 带
-         标题 + 完整路径 = 剪贴板真的写成功了（仓库没有读文本剪贴板的桥，用成功回执当判据）。 */
-      const copied = await h.eval(`(function(){ const b=[...document.querySelectorAll('.file-card-menu button')].find((x)=>(x.textContent||'').includes('复制文件路径'));
-        if(!b) return false; b.click(); return true; })()`);
-      await wait(600);
-      const copyToast = await h.eval(`(function(){
-        const nodes=[...document.querySelectorAll('.notice-toast, [class*="toast"]')];
-        return nodes.some((el)=>{ const text=el.innerText||''; return text.includes('已复制文件路径') && text.includes('package.json'); }); })()`).catch(() => false);
-      h.check("⑤ 点「复制文件路径」成功回执：toast 同时带标题与完整路径（成功路径专属，不是失败分支）",
-        copied === true && copyToast === true, JSON.stringify({ copied, copyToast }));
-      await h.eval(`(function(){ window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'})); return 1; })()`).catch(() => undefined);
-      await wait(300);
-      /* ⑥ 折叠展开：8 条 ⇒ 先显示 6 行 + 「再显示 2 个文件」，点开变 8 行（图片行在第 8 行）。 */
-      const collapse = await h.eval(`(function(){ const c=${cardSel}; if(!c) return null;
-        const more=c.querySelector('.completed-more');
-        const before=c.querySelectorAll('.completed-file').length;
-        const text=(more?.textContent||'').trim();
-        more?.click();
-        return { before, text }; })()`);
-      await wait(300);
-      const afterExpand = await h.eval(`(function(){ const c=${cardSel}; return c? c.querySelectorAll('.completed-file').length : 0; })()`);
-      h.check("⑥ 折叠展开：6 行 + 「再显示 2 个文件」→ 点开 8 行",
-        collapse?.before === 6 && /再显示\s*2\s*个文件/.test(collapse?.text || "") && afterExpand === 8,
-        JSON.stringify({ collapse, afterExpand }));
-      /* ⑦ 图片行（展开后才在 DOM）：缩略图 + 「新增」徽标（用户点名「还有生成的图片」）。 */
-      const imageRow = await h.eval(`(function(){ const c=${cardSel}; if(!c) return null;
-        const rows=[...c.querySelectorAll('.completed-file')];
-        const row=rows.find((r)=>r.querySelector('.completed-file-thumb'));
-        return row ? { thumb: !!row.querySelector('.completed-file-thumb img'), isNew: !!row.querySelector('.completed-file-new'), name: (row.querySelector('.completed-file-meta code')?.textContent||'').trim() } : null; })()`);
-      h.check("⑦ 图片文件显示缩略图 + 新增文件打「新增」徽标", imageRow?.thumb === true && imageRow?.isNew === true, JSON.stringify(imageRow));
-      /* ⑧ 收起重回 6 行（往返闭合）。 */
-      await h.eval(`(function(){ const c=${cardSel}; c?.querySelector('.completed-more')?.click(); return 1; })()`);
-      await wait(300);
-      const afterCollapse = await h.eval(`(function(){ const c=${cardSel}; return c? c.querySelectorAll('.completed-file').length : 0; })()`);
-      h.check("⑧ 收起重回 6 行（折叠往返闭合）", afterCollapse === 6, `afterCollapse=${afterCollapse}`);
-      await h.screenshot("file-summary");
+      /* 为什么这样测（10-06 重写，用户实况倒逼）：上一版用 window.dispatchEvent 注入假事件驱动卡片 ——
+         它证明了「卡会画」，却放过了两条真实链路缺陷：渲染层监听的是**死信道**（window "message"
+         全仓无发送方）、主进程广播的 turnId 是**线程 id**（卡按回合 id 取）。用户真机一跑就是空卡。
+         本版**零注入**，真链路全段：
+           · 真起一个引擎回合（模型只需一条 echo + 回 ok）——真 turn/started → 追踪器快照 → turn/completed → diff；
+           · 回合进行中由**测试进程**往会话工作区落 8 个文件 —— 谁写的文件不重要（追踪器只看目录差异），
+             "主进程报告"这一环必是真的；上一版的 8 条 fixture 在这里变成盘上真文件（预览能真读盘）；
+           · 广播必须从真通道 onHarnessEvent 到达、turnId 必须 == 真回合 id、卡片必须原样出现。
+         ⛔ 偏离 09-12 「不发新消息」定稿一处的理由：不发消息就起不了真回合，而正是"注入式假回合"
+            放过了本轮的整条链路 bug；本项只往**已有会话**现有回合后追加一个小回合（不新建会话），
+            且用例极小（一次 echo 工具调用）。
+         ⛔ 前置：e2e profile 需已配模型（custom-model.json + custom-models.json；缺失时 send 会被
+            「请先配置模型」拦下 → 本项红并给出提示）。 */
+      const probeDirName = "accept-card-probe";
+      let probeDir = null;
+      try {
+        /* ① 订阅真通道：事件的到达与 turnId 对错，都靠它作证（这是真 IPC 通道，不是 window message）。 */
+        await h.eval(`(function(){
+          window.__fswEvents = [];
+          window.codex.onHarnessEvent(function(ev){ if (ev && ev.type === "turn-file-changes") window.__fswEvents.push(ev); });
+          return 1; })()`);
+        /* ② 等界面就绪再解析工作区：验收在应用刚连上 CDP 时就开跑，侧栏会话行可能还没渲染
+           （实测 15ms 内直接查 = null 的假红）——先等「活跃会话行 + 输入框」出现。 */
+        await h.waitFor(`!!document.querySelector(".thread-row.active") && !!document.querySelector(".composer-editor")`, { label: "界面就绪（活跃会话行 + 输入框）", timeoutMs: 30000 }).catch(() => undefined);
+        const cwd = await h.eval(`(async function(){
+          const row = document.querySelector(".thread-row.active");
+          const id = row ? row.getAttribute("data-thread-id") : null;
+          if (!id) return null;
+          const res = await window.codex.request("thread/list", { limit: 80, sortKey: "updated_at", sortDirection: "desc" });
+          const hit = (res && res.data ? res.data : []).find(function(t){ return t.id === id; });
+          return hit && hit.cwd ? String(hit.cwd) : null; })()`);
+        h.check("① 前置：拿得到当前会话工作区（拿不到 = 追踪器无处快照，整项作废）",
+          typeof cwd === "string" && cwd.length > 1, `cwd=${String(cwd).slice(0, 60)}`);
+        if (typeof cwd !== "string" || cwd.length < 2) return;
+        probeDir = join(cwd, probeDirName);
+        rmSync(probeDir, { recursive: true, force: true }); // 上轮崩溃残留先清，保证 seed 是干净基准
+        mkdirSync(probeDir, { recursive: true });
+        writeFileSync(join(probeDir, "seed.txt"), "accept-seed-start\n");
+        /* ③ 起一个真回合（模型只做一条 echo —— 主要是"时钟"：给追踪器一对真 turn/started|completed）。 */
+        await h.clearInput(".composer-editor");
+        await h.typeInto(".composer-editor", "用 shell 运行 echo ready，然后只回复一个单词：ok");
+        await h.click(".send-button");
+        let started = false;
+        for (let i = 0; i < 100; i++) {
+          await wait(150);
+          if (await h.eval(`!!document.querySelector('.send-button.is-pause')`).catch(() => false)) { started = true; break; }
+        }
+        h.check("② 前置：真回合真的跑起来了（没跑 = 模型未配置/引擎没起，本项作废）", started === true,
+          started ? "" : "send 后 15s 未见运行态 —— 先确认 .e2e-profile/main 的 custom-model.json / custom-models.json 有可用模型");
+        if (!started) return;
+        /* ④ 回合进行中落盘 8 个文件（6 文本 + 1 图片 + seed 追加）—— 追踪器 diff 的唯一来源。
+           ⛔ 必须在 turn/started（快照已拍）之后写：写入早于快照会进"改前状态"、diff 不报。 */
+        for (const [fileName, body] of [
+          ["notes.md", "# notes\n- alpha\n- beta\n"],
+          ["data.json", '{ "k": 1 }\n'],
+          ["app.css", ".a{color:red}\n"],
+          ["index.html", "<!doctype html><title>t</title>\n"],
+          ["util.mjs", "export const add = (a,b)=>a+b;\n"],
+          ["readme.txt", "hello accept\n"],
+        ]) writeFileSync(join(probeDir, fileName), body);
+        writeFileSync(join(probeDir, "logo.svg"), '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="10" fill="#e53935"/></svg>');
+        writeFileSync(join(probeDir, "seed.txt"), "accept-seed-start\naccept-seed-append\n");
+        /* ⑤ 等回合收尾（真 turn/completed → 主进程结算广播）。 */
+        let ended = false;
+        for (let i = 0; i < 600; i++) {
+          await wait(200);
+          if (!await h.eval(`!!document.querySelector('.send-button.is-pause')`).catch(() => true)) { ended = true; break; }
+        }
+        h.check("③ 前置：回合正常收尾（120s 内结束）", ended === true, ended ? "" : "超过 120s 仍在运行");
+        await wait(1200); // 广播在 turn/completed 发出；给 UI 与 IPC 一拍
+        /* ⑥ 真广播：从 onHarnessEvent 到达，且 turnId == DOM 里那个真回合的 id（旧版 bug：广播的是线程 id）。 */
+        const turnId = await h.eval(`(function(){ const g=[...document.querySelectorAll('.turn-group[id^="turn-"]')]; const el=g[g.length-1]; return el ? el.id.replace('turn-','') : null; })()`);
+        const eventsRaw = await h.eval(`JSON.stringify((window.__fswEvents||[]).map(function(ev){ return { turnId: String(ev.turnId||""), files: (ev.files||[]).map(function(f){ return { path: String(f.path||""), status: String(f.status||"") }; }) }; }))`);
+        const events = JSON.parse(eventsRaw || "[]");
+        const norm = (p) => String(p).replace(/\\/g, "/").toLowerCase();
+        const mine = (events || []).find((ev) => ev.turnId === turnId) ?? null;
+        const mineFiles = mine?.files ?? [];
+        const hasFile = (n, status) => mineFiles.some((f) => norm(f.path).endsWith("/" + n) && (!status || f.status === status));
+        const allPresent = ["notes.md", "data.json", "app.css", "index.html", "util.mjs", "readme.txt", "logo.svg"].every((n) => hasFile(n, "added")) && hasFile("accept-card-probe/seed.txt", "modified");
+        h.check("④ 真链路·广播到达：turnId == 真回合 id（10-06 修的 id 链；旧版发线程 id，永远对不上）",
+          mine !== null, `turnId=${String(turnId).slice(0, 40)} events=${JSON.stringify(events).slice(0, 220)}`);
+        h.check("⑤ 真链路·内容齐：广播里 7 个新文件(added) + seed.txt(modified) 全在",
+          mine !== null && allPresent, JSON.stringify(mineFiles.map((f) => `${f.path.split("/").pop()}:${f.status}`)).slice(0, 260));
+        /* ⑦ 卡片：真广播驱动的真卡（数据链路已由 ④⑤ 证明为真，这里验渲染与交互）。 */
+        const cardSel = `document.getElementById("turn-" + ${JSON.stringify(turnId)})?.querySelector(".completed-changes")`;
+        const head = await h.eval(`(function(){ const c=${cardSel};
+          return c ? { text:(c.querySelector('summary')?.textContent||'').trim(), visible: c.querySelectorAll('.completed-file').length } : null; })()`);
+        h.check("⑥ 「已更改 N 个文件」卡出现且折叠态先显 6 行（N = 卡内总行数，含环境噪声行）",
+          !!head && /已更改\s*\d+\s*个文件/.test(head.text) && head.visible === 6, JSON.stringify(head));
+        if (!head) return;
+        const totalFiles = Number((head.text.match(/已更改\s*(\d+)\s*个文件/) || [])[1] ?? 0);
+        /* ⑧ 展开：6 → 全部（我们的 8 个文件一个都不许缺）。 */
+        const collapse = await h.eval(`(function(){ const c=${cardSel}; if(!c) return null;
+          const more=c.querySelector('.completed-more');
+          const before=c.querySelectorAll('.completed-file').length;
+          const text=(more?.textContent||'').trim();
+          more?.click();
+          return { before, text }; })()`);
+        await wait(300);
+        const rowsAll = await h.eval(`(function(){ const c=${cardSel}; if(!c) return [];
+          return [...c.querySelectorAll('.completed-file')].map(function(r){
+            return { name: (r.querySelector('.completed-file-meta code')?.textContent||'').trim(),
+              thumb: !!r.querySelector('.completed-file-thumb img'), isNew: !!r.querySelector('.completed-file-new') }; }); })()`);
+        const names = (rowsAll ?? []).map((r) => r.name);
+        h.check("⑦ 展开：6 行 + 「再显示 N 个文件」→ 全部行可见，且我们落的 8 个文件一个不缺",
+          collapse?.before === 6 && /再显示\s*\d+\s*个文件/.test(collapse?.text || "") && (rowsAll?.length ?? 0) === totalFiles
+            && ["notes.md", "data.json", "app.css", "index.html", "util.mjs", "readme.txt", "logo.svg", "seed.txt"].every((n) => names.some((x) => String(x).toLowerCase() === n || String(x).toLowerCase().endsWith("/" + n))),
+          JSON.stringify({ collapse, totalFiles, names }).slice(0, 320));
+        /* ⑨ 图片行：logo.svg 有缩略图 + 「新增」徽标（用户点名「还有生成的图片」）。 */
+        const svgRow = (rowsAll ?? []).find((r) => String(r.name).toLowerCase().endsWith("logo.svg"));
+        h.check("⑧ logo.svg 行显示缩略图 + 「新增」徽标", svgRow?.thumb === true && svgRow?.isNew === true, JSON.stringify(svgRow));
+        /* ⑩ 点 notes.md 行 → 真文件预览弹窗（文件是盘上真货，预览器真读盘）。 */
+        await h.eval(`(function(){ const c=${cardSel}; if(!c) return false;
+          const row=[...c.querySelectorAll('.completed-file')].find((r)=>(r.querySelector('.completed-file-meta code')?.textContent||'').trim().toLowerCase()==='notes.md');
+          if(!row) return false; row.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true})); return true; })()`);
+        const previewOpened = await h.waitFor(`!!document.querySelector('.file-preview')`, { label: "文件预览弹窗", timeoutMs: 8000 }).then(() => true).catch(() => false);
+        const previewMeta = await h.text(".file-preview-meta").catch(() => "");
+        h.check("⑨ 点行直接打开预览（弹窗打开，且预览的就是这一行的 notes.md）",
+          previewOpened === true && String(previewMeta).includes("notes.md"), JSON.stringify({ previewOpened, previewMeta: String(previewMeta).slice(0, 80) }));
+        await h.eval(`(function(){ document.querySelector('.file-preview .relay-modal-close')?.click(); window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'})); return 1; })()`).catch(() => undefined);
+        await wait(400);
+        /* ⑪ 行右键 → 文件卡菜单两项点名（在文件夹中显示 = 「打开文件地址」/ 复制文件路径）。
+           ⛔ 用 JS 派发 contextmenu（React 监听的正是这个原生事件）；派发后等一拍再读 DOM（setMenu 异步）。 */
+        await h.eval(`(function(){ const c=${cardSel}; if(!c) return false;
+          const row=[...c.querySelectorAll('.completed-file')].find((r)=>(r.querySelector('.completed-file-meta code')?.textContent||'').trim().toLowerCase()==='notes.md');
+          if(!row) return false; const r=row.getBoundingClientRect();
+          row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:Math.round(r.left+40),clientY:Math.round(r.top+10)}));
+          return true; })()`);
+        await wait(300);
+        const menuShown = await h.eval(`(function(){ const menu=document.querySelector('.file-card-menu');
+          return { open: !!menu, items: menu? [...menu.querySelectorAll('button span')].map((s)=>(s.textContent||'').trim()) : [] }; })()`);
+        h.check("⑩ 行右键弹出文件卡菜单，且含「在文件夹中显示」+「复制文件路径」（用户点名的两项）",
+          menuShown?.open === true && (menuShown?.items ?? []).includes("在文件夹中显示") && (menuShown?.items ?? []).includes("复制文件路径"),
+          JSON.stringify(menuShown));
+        /* ⑫ 点「复制文件路径」：toast 是成功路径专属（.catch 只会给「复制失败」）。 */
+        const copied = await h.eval(`(function(){ const b=[...document.querySelectorAll('.file-card-menu button')].find((x)=>(x.textContent||'').includes('复制文件路径'));
+          if(!b) return false; b.click(); return true; })()`);
+        await wait(600);
+        const copyToast = await h.eval(`(function(){
+          const nodes=[...document.querySelectorAll('.notice-toast, [class*="toast"]')];
+          return nodes.some((el)=>{ const text=el.innerText||''; return text.includes('已复制文件路径') && text.includes('notes.md'); }); })()`).catch(() => false);
+        h.check("⑪ 点「复制文件路径」成功回执：toast 同时带标题与文件名（成功路径专属）",
+          copied === true && copyToast === true, JSON.stringify({ copied, copyToast }));
+        await h.eval(`(function(){ window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'})); return 1; })()`).catch(() => undefined);
+        await wait(300);
+        /* ⑬ 收起重回 6 行（折叠往返闭合）。 */
+        await h.eval(`(function(){ const c=${cardSel}; c?.querySelector('.completed-more')?.click(); return 1; })()`);
+        await wait(300);
+        const afterCollapse = await h.eval(`(function(){ const c=${cardSel}; return c? c.querySelectorAll('.completed-file').length : 0; })()`);
+        h.check("⑫ 收起重回 6 行（折叠往返闭合）", afterCollapse === 6, `afterCollapse=${afterCollapse}`);
+        await h.screenshot("file-summary");
+      } finally {
+        /* ⑭ 收尾：探针目录整体删掉（落在用户磁盘上的东西必须自己清干净；崩溃也不留）。 */
+        if (probeDir) { try { rmSync(probeDir, { recursive: true, force: true }); } catch { /* 尽力而为 */ } }
+      }
     },
   },
   {

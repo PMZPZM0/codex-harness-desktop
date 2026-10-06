@@ -3,7 +3,10 @@
 // 宿主自己盯文件系统：
 //   · turn/started|begin → 记工作目录快照（内容只收文本文件，双上限防大目录）；
 //   · turn/(completed|aborted|failed|interrupted) → 算差异并广播 harness:event turn-file-changes；
-//   · thread/status/changed idle → 兜底结算；turn/started 发现上一轮未结算 → 先补算再开新快照（防漏报）。
+//   · 没等到结束事件的回合：下一回合开始时先补算再开新快照（防漏报；boot 只在回合结束事件里调 emit）。
+// ⛔ 两个 id 职责必须分清（10-06 修）：**快照键/结算键 = 线程 id**（一个线程同时只有一个活跃回合，
+//   按线程键正好实现「新回合开始时补算上一回合」）；**广播的 turnId = 回合 id**——渲染层的汇总卡
+//   是按 `turn.id`（回合 uuid，DOM 里 `#turn-<uuid>`）取报告的，广播线程 id 则永远对不上号 ⇒ 卡片空白。
 // ⛔ 本模块是叶子：不 import 任何业务模块，广播函数由 boot 注入。
 import fs from "node:fs";
 import path from "node:path";
@@ -16,7 +19,7 @@ const MAX_FILES = 4000;
 const MAX_REPORT = 60;
 
 type Entry = { size: number; mtime: number; content?: string };
-const snaps = new Map<string, { cwd: string; snap: Map<string, Entry> }>();
+const snaps = new Map<string, { turnId: string; cwd: string; snap: Map<string, Entry> }>();
 let broadcastFn: ((payload: unknown) => void) | null = null;
 
 export function setTurnFileWatchBroadcast(fn: (payload: unknown) => void): void {
@@ -26,15 +29,20 @@ export function setTurnFileWatchBroadcast(fn: (payload: unknown) => void): void 
 function walk(cwd: string): Map<string, Entry> {
   const snap = new Map<string, Entry>();
   let total = 0;
+  // ⛔ 两趟遍历：**先收本层文件、再下潜子目录**。深度优先（10-01 原实现）在限流预算
+  //   （MAX_FILES/MAX_TOTAL_BYTES）下会被排在前面的大型子目录整段烧光（10-06 实证：
+  //   家目录工作区里 AppData 先被 DFS 走完，根级新文件永远进不了快照 ⇒ diff 恒 0、卡片空白）。
+  //   文件优先保证「模型最常写的根层/浅层文件」一定在预算内。
   const visit = (dir: string, depth: number): void => {
     if (depth > 8 || snap.size >= MAX_FILES) return;
     let list: fs.Dirent[];
     try { list = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    const dirs: string[] = [];
     for (const e of list) {
-      if (snap.size >= MAX_FILES) return;
       if (IGNORE.has(e.name) || (e.name.startsWith(".") && e.name !== ".codex" && e.name !== ".env")) continue;
       const p = path.join(dir, e.name);
-      if (e.isDirectory()) { visit(p, depth + 1); continue; }
+      if (e.isDirectory()) { dirs.push(p); continue; }
+      if (snap.size >= MAX_FILES) return;
       try {
         const st = fs.statSync(p);
         const ext = path.extname(e.name).toLowerCase();
@@ -47,6 +55,7 @@ function walk(cwd: string): Map<string, Entry> {
         }
       } catch { /* 无权限等：跳过 */ }
     }
+    for (const d of dirs) visit(d, depth + 1);
   };
   visit(cwd, 0);
   return snap;
@@ -82,13 +91,13 @@ function lineDelta(oldText: string, newText: string) {
   return { added, deleted, diff };
 }
 
-export function snapshotTurnWorkspace(threadId: string, cwd: string): void {
+export function snapshotTurnWorkspace(threadId: string, turnId: string, cwd: string): void {
   const id = String(threadId ?? "");
   const dir = String(cwd ?? "").trim();
   if (!id || !dir || !fs.existsSync(dir)) return;
   // 触发条件补全：上一轮没等到 completed（事件丢失/中断未报）⇒ 先补算再开新快照
   if (snaps.has(id)) emitTurnFileChanges(id);
-  snaps.set(id, { cwd: dir, snap: walk(dir) });
+  snaps.set(id, { turnId: String(turnId ?? ""), cwd: dir, snap: walk(dir) });
 }
 
 export function emitTurnFileChanges(threadId: string): void {
@@ -120,5 +129,6 @@ export function emitTurnFileChanges(threadId: string): void {
   }
   files.sort((x, y) => y.added + y.deleted - (x.added + x.deleted));
   const report = files.slice(0, MAX_REPORT);
-  if (report.length && broadcastFn) broadcastFn({ type: "turn-file-changes", turnId: id, files: report });
+  // ⛔ turnId 必须用**快照时记下的回合 id**（渲染层按 turn.id 取报告）；线程键只用于本模块内部结算。
+  if (report.length && broadcastFn) broadcastFn({ type: "turn-file-changes", turnId: entry.turnId, files: report });
 }
