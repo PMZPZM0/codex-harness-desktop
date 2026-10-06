@@ -92,6 +92,13 @@ ok(statusCode.includes("getTurnFileChanges(turn.id)") && statusCode.includes("su
   "汇总卡按 turn.id 取报告并订阅刷新（取键与广播键同源）");
 ok(watch.includes("const dirs: string[] = [];") && watch.includes("for (const d of dirs) visit(d, depth + 1);"),
   "工作区遍历文件优先：先收本层文件、再下潜子目录（DFS 会被大子目录烧光预算，根级新文件不见）");
+// 收尾双保险（10-06 夜，新机器实测「运行中行有、收尾卡没有」）：部分引擎版本的结束事件
+// 形态不同、拿不到 threadId ⇒ 按线程键找不到快照、静默漏结算。快照条目里存了 turnId →
+// 按回合 id 反查补结算。正常路径命中后本兜底是 no-op（快照已删）。
+ok(watch.includes("export function settleTurnByTurnId") && /if \(entry\.turnId === id\) \{ emitTurnFileChanges\(threadId\); return; \}/.test(watch),
+  "收尾兜底：settleTurnByTurnId 按回合 id 反查快照结算（结束事件缺 threadId 的引擎形态也能出卡）");
+ok(boot.includes("if (id) settleTurnByTurnId(id);"),
+  "boot 收尾分支调用反查兜底（先线程键、再回合键——防漏结算）");
 
 /* ── 五、浮层免疫（10-06 用户实测「弹窗那个叉掉被遮住了 / 关不掉」）─────────────────────────
    `.turn-group` 上有**恒等 transform**（matrix(1,0,0,1,0,0)）——恒等也照样创建 containing block，

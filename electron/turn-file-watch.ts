@@ -232,3 +232,16 @@ export function emitTurnFileChanges(threadId: string): void {
   // ⛔ turnId 必须用**快照时记下的回合 id**（渲染层按 turn.id 取报告）；线程键只用于本模块内部结算。
   if (report.length && broadcastFn) broadcastFn({ type: "turn-file-changes", turnId: entry.turnId, files: report });
 }
+
+/** 收尾兜底（10-06 夜，新机器实测「运行中行有、收尾汇总卡没有」）：部分引擎版本的结束事件
+ *  可能不带 threadId（宽容解析只拿到 turnId）⇒ 按线程键找不到快照、收尾静默漏结算。
+ *  快照条目里本来就存了 turnId（广播用）——这里按 **turnId 反查**并按其线程键结算。
+ *  ⛔ 双保险语义：正常路径 emitTurnFileChanges(threadIdOf) 先跑（命中即已删快照），
+ *  本函数随后 find 不到 = no-op；只有前者落空时才由这里兜住。不会重复结算。 */
+export function settleTurnByTurnId(turnId: string): void {
+  const id = String(turnId ?? "");
+  if (!id) return;
+  for (const [threadId, entry] of [...snaps]) {
+    if (entry.turnId === id) { emitTurnFileChanges(threadId); return; }
+  }
+}
