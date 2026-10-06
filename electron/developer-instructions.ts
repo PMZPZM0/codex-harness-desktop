@@ -17,6 +17,21 @@ import { MEMORY_DISTILL_SKILL, MEMORY_DISTILL_THRESHOLD } from "./memory-layers"
 const BASE_INSTRUCTIONS =
   "You are a fully capable autonomous engineering agent. Always retain and use your complete reasoning, coding, debugging, browser, search, tool, and planning capabilities regardless of the active sandbox or approval policy. Treat a lower permission setting only as an execution boundary: inspect, plan, diagnose, and prepare the required action normally; when an action needs permission beyond the active boundary, request approval through the provided approval flow, then immediately continue the same task after approval. Never downgrade into advice-only behavior merely because approval is required. When access is available, proactively carry out needed changes, commands, installations, research, and verification until the task is genuinely complete, then concisely report results and remaining external limitations. When checking whether a command-line dependency is available, resolve and execute the command from PATH (for example `Get-Command python` followed by `python --version`). Never infer Python availability by inspecting `%LOCALAPPDATA%\\Microsoft\\WindowsApps\\python.exe`; that file is only a Windows Store alias and is unrelated to the bundled Python. The bundled Python path is also exposed through `PYTHON`, `PYTHON_EXECUTABLE`, and `PYTHONHOME`.";
 
+/* ── 输出风格模式（10-06 用户报障：「这个没有自动生效，要我点名才生效」）──────────
+   ⛔ 为什么必须有这一段（而不是靠技能本身）：引擎对技能是**渐进披露**的 ——
+     技能清单只给 name + description + 路径，用不用由模型自己判断；而 i-have-adhd 的
+     description 开头就是「Invoke with /i-have-adhd」⇒ 模型把它当**手动模式**，永远等点名。
+      宿主把开关状态翻成硬指令，它才真的"生效"。
+   ⛔ 为什么放在**最前面**（紧跟语言指令、排在全部工具箱说明之前）：它是「怎么写」的全局
+      约束，跟在一长串工具说明后面会被当成又一条可选建议 —— 那正是用户报的"不点火"。
+   ⛔ 判据/名单在 electron/output-styles.ts（单一真相源，风格技能只在那里登记一行）。 */
+const OUTPUT_STYLE_INSTRUCTIONS = (targets: { skill: string; label: string; file: string }[]) =>
+  `\n\nOUTPUT STYLE MODE — switched ON by the user (Settings → 控制台 → 回复风格). It applies to EVERY reply of this session and needs NO trigger word:\n` +
+  targets
+    .map((t) => `  · ${t.label}: read \`${t.file}\` ONCE (your first turn of this session), then write every reply by it. It is a persistent mode — it does not expire after a few turns and does not lapse when the topic changes. Re-read that file whenever you are unsure of a rule.`)
+    .join("\n") +
+  `\n  ⛔ The switch IS the invocation: do not wait for the user to type a slash command or name the skill, and do not ask whether to apply it. System/developer instructions outrank this style (the constraint wins, the shape still applies). It turns off only when the user switches it off in Settings.`;
+
 /** 语言指令（始终注入）：深度思考与回复默认简体中文。
  *  之前只写在 AGENTS.md（引擎以 user 消息身份注入，权重弱），部分模型换过去就不遵守，
  *  深度思考回退英文（2026-09-04 用户反馈）；developer 角色指令权重更高，与 AGENTS.md 双保险。 */
@@ -200,11 +215,25 @@ function gateAndReviewInstructions(): string {
     memoryRule;
 }
 
+/** 组装输入（`devInstructionsInput()` 产出、两个写入/比对点共用同一形状）。
+ *  ⛔ 一处漏字段的代价是「配置里少了那一段，而两侧都以为是最新的」——所以类型只此一份。 */
+export type DevInstructionsInput = {
+  desktop?: boolean;
+  browser?: boolean;
+  imagePlugin?: boolean;
+  visionPlugin?: boolean;
+  mediaCommand?: string;
+  /** 已开启的输出风格（`electron/output-styles.ts` 的 outputStyleTargets）—— 见上方 OUTPUT_STYLE_INSTRUCTIONS */
+  outputStyles?: { skill: string; label: string; file: string }[];
+};
+
 /** 按开关组装完整的 developer_instructions 文本 */
-export function buildDevInstructions(input: { desktop?: boolean; browser?: boolean; imagePlugin?: boolean; visionPlugin?: boolean; mediaCommand?: string } = {}): string {
+export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   const desktop = input.desktop !== false;
   const browser = input.browser !== false;
   let text = BASE_INSTRUCTIONS + LANGUAGE_INSTRUCTIONS;
+  // 输出风格（用户开关打开的风格技能）：必须**早**出现，与语言指令同理（见上方那段说明）。
+  if (input.outputStyles?.length) text += OUTPUT_STYLE_INSTRUCTIONS(input.outputStyles);
   if (desktop) text += DESKTOP_INSTRUCTIONS;
   if (browser) text += BROWSER_INSTRUCTIONS;
   const mediaCommand = input.mediaCommand || "node harness-media.mjs";
@@ -259,6 +288,6 @@ export function tomlSafe(text: string) {
 }
 
 /** 生成 config.toml 的 developer_instructions 整行（只含基础工程指令，个性化走 AGENTS.md） */
-export function developerInstructionsLine(input: { desktop?: boolean; browser?: boolean; imagePlugin?: boolean; visionPlugin?: boolean; mediaCommand?: string } = {}, _personalization?: PersonalizationConfig): string {
+export function developerInstructionsLine(input: DevInstructionsInput = {}, _personalization?: PersonalizationConfig): string {
   return `developer_instructions = """${tomlSafe(buildDevInstructions(input))}"""`;
 }

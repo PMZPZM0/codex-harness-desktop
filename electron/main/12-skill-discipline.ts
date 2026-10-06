@@ -11,6 +11,9 @@ import { applyCustomModel } from "../features/custom-model-apply";
 import { readConnectors } from "./07-connectors-io";
 import { readBuiltinPlugins } from "./09-agents-plugins";
 import { codexHome } from "../runtime-paths";
+import { readCustomModel } from "./01-model-catalog";
+import { server } from "../runtime-refs";
+import { outputStyleTargets } from "../output-styles";
 /**
  * developer_instructions 的组装输入（**单一来源**）。
  * ⛔ applyCustomModel 的「写出」与启动自愈的「是否过期」判定必须共用这一个函数（09-20 修）。
@@ -37,6 +40,10 @@ export async function devInstructionsInput() {
     // 不是上面那个布尔。走同一个来源，改插件配置时两边一起变（见 nuphus-env.ts 的背景说明）。
     nuphusVision: builtinPlugins.vision,
     mediaCommand: bundledNodePath ? `"${bundledNodePath}" "${mediaHelper}"` : `node "${mediaHelper}"`,
+    /* 输出风格（10-06）：控制台「回复风格」开关打开的写作风格技能 —— 宿主把它翻译成
+       **常驻指令**下发，这样开关一开就每轮生效，不必用户点名（见 electron/output-styles.ts）。
+       ⛔ 判据是技能池的全局停用集（与开关同一份真相源），不在这里另存状态。 */
+    outputStyles: outputStyleTargets(codexHome),
   };
 }
 
@@ -53,5 +60,26 @@ export async function refreshSkillDiscipline() {
     await upsertSkillDiscipline(codexHome, mcp);
   } catch (error: any) {
     console.warn("技能纪律注入失败:", error?.message ?? error);
+  }
+}
+
+/**
+ * 把 developer_instructions **重新落地**（10-06：输出风格开关变化后调用）。
+ *
+ * ⛔⛔ 必须整份重写 config.toml + 重启引擎，不能只改文件：
+ *   引擎在 **spawn 时**读一次 config.toml，进程内改文件它完全看不见
+ *   ⇒ 只改文件 = 用户点开开关却毫无变化（正是 10-06 用户报的「开了没反应」的同族形态，
+ *     与本仓 09-25「删掉写入 ≠ 清掉已写下的值」一样，属"改了没生效"那一类）。
+ *   与「能力总闸」（桌面/浏览器自动化）完全同一条链：`applyCustomModel(model)`；没配模型时
+ *   退化为 `server.restart()`（口径抄自 connectors-ipc / mcp-servers-ipc，别自创第三条）。
+ * ⛔ 失败一律不抛：调用方是设置页开关，指令刷新失败不该让"开关本身"看上去失败。
+ */
+export async function refreshDeveloperInstructions(): Promise<void> {
+  try {
+    const model = await readCustomModel();
+    if (model) await applyCustomModel(model);
+    else await server.restart();
+  } catch (error: any) {
+    console.warn("developer_instructions 刷新失败:", error?.message ?? error);
   }
 }
