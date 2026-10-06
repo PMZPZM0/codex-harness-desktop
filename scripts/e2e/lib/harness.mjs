@@ -668,7 +668,11 @@ export class ElectronHarness {
    *  ⛔ **两步移动**：每次新页面里「第一次 mouseMoved」在实测中不产生 mouseover/mouseenter
    *  （先挪到别处、再进靶才触发 React 的 onMouseEnter）。 */
   async hover(selector) {
-    const c = await this.eval(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; el.scrollIntoView({ block: "nearest" }); const r = el.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+    /* ⛔ 滚动必须**瞬时**（behavior:"instant"）：`.timeline` 的 CSS 是 `scroll-behavior: smooth`，
+       默认 scrollIntoView 会走平滑动画 —— 坐标在动画前读出（旧位置），鼠标会追着"滑走中"的元素
+       落空（实测假红：悬停假失败/预览刚开就被动画的滚动事件关掉）。instant 当场生效、坐标即终值。
+       10-06 夜实测：file-summary ⑯ 在完整交互序列后 2/3 次假红，根因就是它。 */
+    const c = await this.eval(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; el.scrollIntoView({ block: "nearest", behavior: "instant" }); const r = el.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
     if (!c) throw new Error(`悬停失败，元素不存在：${selector}`);
     await this._send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 5, y: 400, buttons: 0 });
     await sleep(120);

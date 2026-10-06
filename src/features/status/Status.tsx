@@ -1,11 +1,12 @@
 /** 运行状态 / 上下文用量（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { FileCode2, ChevronDown, CircleGauge, Minimize2, Pencil } from "lucide-react";
+import { FileCode2, ChevronDown, CircleGauge, Maximize2, Minimize2, Pencil } from "lucide-react";
 import { RUN_CLOCK } from "../../lib/run-clock-2";
 import { Turn } from "../../lib/turn";
 import { diffStats } from "../../lib/diff-stats";
 import { ToolCodeBlock } from "../shared/ToolCodeBlock";
+import { DiffPreviewBody } from "./DiffPreview";
 import { FileCardMenu } from "../shared/InlineCards";
 import { getTurnFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
@@ -26,8 +27,10 @@ export function StatusDot({ status }: { status: string }) {
     10-06（用户对照 Qoder 效果图补交互）：行**点击直接打开预览**（图片走灯箱）、**右键复用文件卡菜单**
     （在文件夹中显示 / 复制文件路径）、超过 6 行折叠成「再显示 N 个文件」、图片文件显示缩略图、
     宿主追踪的**新增文件**打「新增」徽标。
-    10-06 二改（用户对照 WorkBuddy 截图）：「类型图标」从彩色文字块换成 FileTypeIcon（扩展名 → 图标+配色）。 */
-const COLLAPSE_LIMIT = 6;
+    10-06 二改（用户对照 WorkBuddy 截图）：「类型图标」从彩色文字块换成 FileTypeIcon（扩展名 → 图标+配色）。
+    10-06 三改（用户令）：「已修改那个文件…最多一次展示 2 行，多了的自动放进收纳里面」——
+    默认只露 2 行，其余收进「再显示 N 个文件」（收纳就是原来的折叠钮，别再改动它）。 */
+const COLLAPSE_LIMIT = 2;
 
 /** 路径 → 文件名 + 所在目录（正斜杠归一后以最后一个 / 切开；汇报卡与运行中板块共用）。 */
 function segments(full: string): { name: string; dir: string } {
@@ -60,10 +63,16 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [review]);
-  // diff 悬停预览：打开期间一滚动就收起（行坐标已漂移，贴着旧坐标会错位）
+  // diff 悬停预览：外部一滚动就收起（行坐标已漂移，贴着旧坐标会错位）。
+  // ⛔ 排除**预览面板内部的滚动**（用户 10-06：「鼠标放上去要能左右/上下滚动看」）——
+  //   面板改两轴滚动后，滚动事件在捕获阶段同样会到 window；不豁免就「想滚先关窗」。
   useEffect(() => {
     if (!diffHover) return;
-    const close = () => setDiffHover(null);
+    const close = (event: Event) => {
+      const panel = hoverPanelRef.current;
+      if (panel && event.target instanceof Node && panel.contains(event.target)) return;
+      setDiffHover(null);
+    };
     window.addEventListener("scroll", close, true);
     return () => window.removeEventListener("scroll", close, true);
   }, [diffHover]);
@@ -158,13 +167,22 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
       {/* 右键菜单：与文件卡（消息里的内联卡片）共用同一份（在文件夹中显示 / 复制文件路径 / …），
           ⛔ 不复制第二份菜单实现 —— 菜单项永远只有一处真相源。 */}
       {menu && <FileCardMenu menu={menu} onOpen={() => openPath(menu.path, menu.name)} onClose={() => setMenu(null)} />}
-      {/* 行悬停的 diff 预览（自适应定位；portal 到 body —— 回合卡的恒等 transform 不影响 fixed） */}
+      {/* 行悬停的 diff 预览（自适应定位；portal 到 body —— 回合卡的恒等 transform 不影响 fixed）。
+          10-06 夜二改（用户对照 Qoder）：正文换成带行号槽的 DiffPreviewBody，面板内可**左右/上下滚动**
+          （滚动豁免见上面的 close 监听）；右上角 ⤢ 一键开审查弹窗看完整 diff。 */}
       {diffHover && createPortal((
         <div ref={hoverPanelRef} className="completed-diff-preview" style={{ visibility: "hidden", top: 0, left: 0 }}
           onMouseEnter={() => { if (hoverCloseTimerRef.current) { window.clearTimeout(hoverCloseTimerRef.current); hoverCloseTimerRef.current = null; } }}
           onMouseLeave={() => setDiffHover(null)}>
-          <header><code title={diffHover.path}>{diffHover.path}</code><span className="completed-diff-preview-stats"><b>+{diffHover.added}</b> <i>-{diffHover.deleted}</i></span></header>
-          <ToolCodeBlock language="diff" text={diffHover.diff} maxHeight={diffHover.codeMax} />
+          <header>
+            <code title={diffHover.path}>{diffHover.path}</code>
+            <span className="completed-diff-preview-stats"><b>+{diffHover.added}</b> <i>-{diffHover.deleted}</i></span>
+            <button type="button" className="completed-diff-expand" title="打开完整 diff（审查弹窗）"
+              onClick={(event) => { event.stopPropagation(); setReview({ path: diffHover.path, diff: diffHover.diff }); setDiffHover(null); }}>
+              <Maximize2 size={12} />
+            </button>
+          </header>
+          <DiffPreviewBody text={diffHover.diff} maxHeight={diffHover.codeMax} />
         </div>
       ), document.body)}
       {/* 审查弹窗：完整 diff 就地可看（层级 950 = 模态之上的最后一层，见 DESIGN.md 层叠带）。

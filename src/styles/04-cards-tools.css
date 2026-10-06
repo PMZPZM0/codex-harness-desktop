@@ -561,6 +561,60 @@
 .completed-diff-preview-stats { flex: none; }
 .completed-diff-preview-stats b { color: var(--add); font-weight: 500; }
 .completed-diff-preview-stats i { color: var(--del); font-style: normal; }
+/* 预览头右上的「打开完整 diff」钮（10-06 夜二改，对照 Qoder 预览头的展开键） */
+.completed-diff-expand {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.completed-diff-expand:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ── diff 预览正文（10-06 夜二改：用户对照 Qoder —— 「他这种预览好看，鼠标放上去还能左右
+   滚动和上下滚动；我们现在的 diff 预览好丑」）────────────────────────────────
+   双行号槽（旧 / 新）+ 增删符号 + 彩色行底；overflow: auto 两轴滚动（行 white-space: pre
+   不折行 ⇒ 长行出横向滚动条）；行号与配色只做外观，数据来自 src/lib/diff-view.mjs。 */
+.diffp {
+  overflow: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--panel-2);
+  scrollbar-width: thin;
+}
+.diffp-inner { display: inline-block; min-width: 100%; padding: 4px 0; }
+.diffp-line {
+  display: flex;
+  align-items: stretch;
+  min-height: 20px;
+  line-height: 20px;
+  white-space: pre;
+}
+.diffp-line code { flex: none; padding-right: 12px; color: var(--text); font: inherit; }
+.diffp-no {
+  flex: none;
+  width: 38px;
+  padding-right: 8px;
+  text-align: right;
+  color: var(--faint);
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+.diffp-sign { flex: none; width: 16px; text-align: center; color: var(--faint); user-select: none; }
+.diffp-line.add { background: color-mix(in srgb, var(--add) 12%, transparent); }
+.diffp-line.del { background: color-mix(in srgb, var(--del) 12%, transparent); }
+.diffp-line.add .diffp-sign { color: var(--add); }
+.diffp-line.del .diffp-sign { color: var(--del); }
+.diffp-line.hunk { background: var(--panel); }
+.diffp-line.hunk code, .diffp-line.meta code { color: var(--muted); }
+.diffp-line.meta code { color: var(--faint); }
 
 /* ── 知识库设置页（kb 域，10-01）──────────────────────────── */
 .kb-embed-card {

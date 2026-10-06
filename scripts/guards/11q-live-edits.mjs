@@ -43,9 +43,9 @@ ok(watch.includes("ensureLiveTimer();"),
   "快照建立后立刻启动轮询（漏掉 = 运行中永远没有实时行）");
 ok(watch.includes('broadcastFn({ type: "turn-file-changes-live", turnId: entry.turnId, files: report })'),
   "live 广播带**回合 id**（与最终报告同一条 id 链，否则挂不到回合上）");
-ok(watch.includes('broadcastFn({ type: "turn-file-changes-live", turnId: entry.turnId, files: [] });')
-  && watch.indexOf('turn-file-changes-live", turnId: entry.turnId, files: []') < watch.indexOf('turn-file-changes", turnId: entry.turnId, files: report'),
-  "收尾先发空 live 清场、再发最终报告（顺序反了 = 运行中行残留 / 汇总被顶）");
+ok(!watch.includes('turn-file-changes-live", turnId: entry.turnId, files: []')
+  && watch.includes('if (broadcastFn) broadcastFn({ type: "turn-file-changes", turnId: entry.turnId, files: report });'),
+  "收尾**不再发空 live 清场**、最终报告无条件广播（10-06 夜二改：编辑行冻结续命；渲染层收到 final 才清 live）");
 ok(watch.includes("liveLastSent.set(threadId, sig)") && watch.includes("if (sig === liveLastSent.get(threadId)) continue;"),
   "同内容去重（没有它 = 每 2.5s 白广播一次）");
 
@@ -115,6 +115,21 @@ ok(capsule.includes("anchorCenter - pr.width / 2"),
 ok(composer.includes("<LiveEditedFilesCard runningTurnId={activeThreadRunning")
   && composer.indexOf("<LiveEditedFilesCard") < composer.indexOf('className="approval-stack"'),
   "接进输入框卡片栈，且位置在**询问/审批卡之上**（卡片栈上下排序、不互相遮）");
+
+/* ── 七、收尾冻结（10-06 夜二改 · 用户实测「运行结束后，我查看过程没有 [这些 +N -M]」）──────────
+   收尾不再清场：行换成最终报告的定格数字，收成**一块始终可见**的 frozenEditRows（落在过程与
+   最终答复之间——⛔ 不塞回折叠组：收起状态下视觉/文本都是空的，等于没显示，截图实锤过）。
+   运行中的就地锚定（liveAnchorsRef + renderAfter）保持不变。 */
+ok(sessionQueue.includes("const frozenFiles = !running ? (getTurnFileChanges(turn.id) as LiveFileChange[]) : []")
+  && sessionQueue.includes("const frozenEditRows = frozenFiles.length ? <LiveFileRows files={frozenFiles} /> : null"),
+  "收尾冻结块：取最终报告（含重启后重播的）渲染一整块「编辑 <文件> +N -M」");
+ok(sessionQueue.includes("const frozenIndex = frozenEditRows ? plan.findIndex") && sessionQueue.includes("pushFrozen"),
+  "冻结块落点在**最终答复之前**（过程之后；不展开折叠也可见，也避免吊在整个回合末尾）");
+ok(sessionQueue.includes("const liveRowsFor = (itemId: string) => {") && sessionQueue.includes("if (!running) return null;")
+  && (sessionQueue.match(/renderAfter=\{\(unit\) => liveRowsFor\(unit\.item\.id\)\}/g) ?? []).length === 2,
+  "运行中的就地锚定保持原样（仅运行态两处 renderAfter；收尾态不锚回折叠里）");
+ok(!sessionQueue.includes("saveEditAnchors") && !sessionQueue.includes("loadEditAnchors"),
+  "⛔ 锚点 localStorage 持久化已随冻结块方案撤掉（放进折叠的落位在收起状态下等于没显示）");
 
 console.log(`\n【live-edits】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

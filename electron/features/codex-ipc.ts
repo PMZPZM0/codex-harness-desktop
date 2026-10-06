@@ -23,6 +23,7 @@ import path from "node:path";
 import { safeProviderId } from "../provider-id";
 import { enrichThreadWithRolloutToolsAsync, listRolloutThreadsAsync } from "../rollout-pool";
 import { markMissingRollouts, mergeThreadList } from "../session-tools";
+import { dropStoredReports, storedReportsForThread } from "../turn-file-watch";
 import { rendererActiveByWindow } from "./renderer-fuse";
 import { deletedThreadIds, purgeDeletedThread } from "./thread-deletion";
 import { bridgeDial, mutableState, readCustomModel } from "../main";
@@ -139,6 +140,7 @@ export const codexFeature = defineFeature<null>({
         if (purgeTarget) {
           const dropped = await delegateRegistry.forget([purgeTarget]).catch(() => 0);
           if (dropped) broadcastHarnessEvent({ type: "delegates-changed", threadId: purgeTarget } as any);
+          dropStoredReports(purgeTarget); // 文件变更报告的落盘同样跟着会话走（另一个入口在 boot 的 thread/deleted）
         }
       }
       if (method === "thread/list") {
@@ -182,6 +184,14 @@ export const codexFeature = defineFeature<null>({
           mutableState.resumeEnrichMs += __enrich;
           if (__enrich > mutableState.resumeMaxMs) mutableState.resumeMaxMs = __enrich;
           threadCwd.set(String(r.thread.id), String(r.thread.cwd ?? r.cwd ?? p?.cwd ?? ""));
+          /* 文件变更报告**重播**（10-06 夜二改）：本线程的存量报告按原事件形态重发 ——
+             重启/切回会话后「已更改 N 个文件」卡与收尾冻结的编辑行仍在（渲染层收件零改动）。
+             失败静默：重播只是锦上添花，不影响 resume 本身。 */
+          try {
+            for (const stored of storedReportsForThread(String(r.thread.id))) {
+              broadcastHarnessEvent({ type: "turn-file-changes", turnId: stored.turnId, files: stored.files } as any);
+            }
+          } catch { /* 重播失败不影响 resume */ }
         } else if (method === "thread/settings/update" && p?.threadId && p?.cwd) {
           threadCwd.set(String(p.threadId), String(p.cwd));
         } else if (method === "thread/list" && Array.isArray(r?.data)) {

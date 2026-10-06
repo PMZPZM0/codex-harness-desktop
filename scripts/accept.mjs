@@ -582,13 +582,15 @@ const CHECKS = [
         /* ① 等界面就绪再解析工作区：验收在应用刚连上 CDP 时就开跑，侧栏会话行可能还没渲染
            （实测 15ms 内直接查 = null 的假红）——先等「活跃会话行 + 输入框」出现。 */
         await h.waitFor(`!!document.querySelector(".thread-row.active") && !!document.querySelector(".composer-editor")`, { label: "界面就绪（活跃会话行 + 输入框）", timeoutMs: 30000 }).catch(() => undefined);
-        const cwd = await h.eval(`(async function(){
+        const activeThread = await h.eval(`(async function(){
           const row = document.querySelector(".thread-row.active");
           const id = row ? row.getAttribute("data-thread-id") : null;
           if (!id) return null;
           const res = await window.codex.request("thread/list", { limit: 80, sortKey: "updated_at", sortDirection: "desc" });
           const hit = (res && res.data ? res.data : []).find(function(t){ return t.id === id; });
-          return hit && hit.cwd ? String(hit.cwd) : null; })()`);
+          return { id: String(id), cwd: hit && hit.cwd ? String(hit.cwd) : null }; })()`);
+        const cwd = activeThread && activeThread.cwd;
+        const activeThreadId = activeThread ? activeThread.id : null;
         h.check("① 前置：拿得到当前会话工作区（拿不到 = 追踪器无处快照，整项作废）",
           typeof cwd === "string" && cwd.length > 1, `cwd=${String(cwd).slice(0, 60)}`);
         if (typeof cwd !== "string" || cwd.length < 2) return;
@@ -746,12 +748,39 @@ const CHECKS = [
           mine !== null, `turnId=${String(turnId).slice(0, 40)} events=${JSON.stringify(events).slice(0, 220)}`);
         h.check("⑦ 真链路·内容齐：广播里 7 个新文件(added) + seed.txt(modified) 全在",
           mine !== null && allPresent, JSON.stringify(mineFiles.map((f) => `${f.path.split("/").pop()}:${f.status}`)).slice(0, 260));
+        /* ⑤b 收尾冻结（10-06 夜二改，用户实测「运行结束后，我查看过程没有 [这些 +N -M]」）：
+           回合结束后编辑行**不再清场** —— 收成一块始终可见的「编辑 <文件> +N -M」，落在过程与
+           最终答复之间。⛔ 读 textContent 而不是 innerText（折叠组收起时 innerText 是空串 ——
+           项目排查方法论第 4 条点名过的坑），并断言**可见**（rect 高度 > 0）而不是只断言在 DOM 里
+           （塞回折叠组里也能"存在"但看不见 —— 第一版就栽在这）。 */
+        const frozenRows = await h.eval(`(function(){ const g=document.getElementById("turn-"+${JSON.stringify(turnId)}); if(!g) return null;
+          return [...g.querySelectorAll('.live-edit-row')].map(function(r){ var rect = r.getBoundingClientRect();
+            return { text:(r.textContent||'').replace(/\\s+/g,' ').trim().slice(0,90), visible: rect.height > 0,
+              stats:[...r.querySelectorAll('.live-edit-stats b, .live-edit-stats i')].map(function(x){return x.textContent;}).join(' ') }; }); })()`).catch(() => null);
+        const frozenOurs = (frozenRows || []).filter((r) => LIVE_OURS.some((n) => String(r.text).includes(n)));
+        h.check("⑤b 收尾后编辑行冻结保留且可见（回合结束过程里仍有「编辑 <文件> +N -M」行；不展开折叠也看得见）",
+          frozenOurs.length >= 2 && frozenOurs.every((r) => /[+-]\d/.test(r.stats) && r.visible === true),
+          JSON.stringify({ rows: frozenRows, ours: frozenOurs.length }).slice(0, 260));
+        /* ⑤c 落盘（10-06 夜二改）：最终报告写进 <userData>/turn-file-changes/<threadId>.json ——
+           重启后「已更改」卡与编辑行靠它在 thread/resume 时重播复活（读盘对账，当真数据检查）。 */
+        let storeDetail = "";
+        let storeOk = false;
+        try {
+          const storePath = join(h.userDataDir, "turn-file-changes", `${activeThreadId}.json`);
+          const parsed = JSON.parse(readFileSync(storePath, "utf8"));
+          const entry = parsed?.turns?.[turnId];
+          const names = (entry?.files ?? []).map((f) => String(f.path).replace(/\\/g, "/").toLowerCase());
+          storeOk = !!entry && names.some((p) => p.endsWith("/notes.md")) && names.some((p) => p.endsWith("/seed.txt"));
+          storeDetail = `turns=${Object.keys(parsed?.turns ?? {}).length} files=${names.length}`;
+        } catch (error) { storeDetail = String(error?.message ?? error).slice(0, 140); }
+        h.check("⑤c 落盘：最终报告已写进 userData/turn-file-changes/<threadId>.json（重启后卡与编辑行复活的唯一数据源）",
+          storeOk === true, storeDetail);
         /* ⑧ 卡片：真广播驱动的真卡（数据链路已由 ⑥⑦ 证明为真，这里验渲染与交互）。 */
         const cardSel = `document.getElementById("turn-" + ${JSON.stringify(turnId)})?.querySelector(".completed-changes")`;
         const head = await h.eval(`(function(){ const c=${cardSel};
           return c ? { text:(c.querySelector('summary')?.textContent||'').trim(), visible: c.querySelectorAll('.completed-file').length } : null; })()`);
-        h.check("⑧ 「已更改 N 个文件」卡出现且折叠态先显 6 行（N = 卡内总行数，含环境噪声行）",
-          !!head && /已更改\s*\d+\s*个文件/.test(head.text) && head.visible === 6, JSON.stringify(head));
+        h.check("⑧ 「已更改 N 个文件」卡出现且折叠态先显 2 行（用户 10-06 夜令：最多一次展示 2 行，多的自动收纳；N = 卡内总行数，含环境噪声行）",
+          !!head && /已更改\s*\d+\s*个文件/.test(head.text) && head.visible === 2, JSON.stringify(head));
         if (!head) return;
         const totalFiles = Number((head.text.match(/已更改\s*(\d+)\s*个文件/) || [])[1] ?? 0);
         /* ⑨ 展开：6 → 全部（我们的 8 个文件一个都不许缺）。 */
@@ -767,8 +796,8 @@ const CHECKS = [
             return { name: (r.querySelector('.completed-file-meta code')?.textContent||'').trim(),
               thumb: !!r.querySelector('.completed-file-thumb img'), isNew: !!r.querySelector('.completed-file-new') }; }); })()`);
         const names = (rowsAll ?? []).map((r) => r.name);
-        h.check("⑨ 展开：6 行 + 「再显示 N 个文件」→ 全部行可见，且我们落的 8 个文件一个不缺",
-          collapse?.before === 6 && /再显示\s*\d+\s*个文件/.test(collapse?.text || "") && (rowsAll?.length ?? 0) === totalFiles
+        h.check("⑨ 展开：2 行 + 「再显示 N 个文件」→ 全部行可见，且我们落的 8 个文件一个不缺",
+          collapse?.before === 2 && /再显示\s*\d+\s*个文件/.test(collapse?.text || "") && (rowsAll?.length ?? 0) === totalFiles
             && ["notes.md", "data.json", "app.css", "index.html", "util.mjs", "readme.txt", "logo.svg", "seed.txt"].every((n) => names.some((x) => String(x).toLowerCase() === n || String(x).toLowerCase().endsWith("/" + n))),
           JSON.stringify({ collapse, totalFiles, names }).slice(0, 320));
         /* ⑩ 图片行：logo.svg 有缩略图 + 「新增」徽标（用户点名「还有生成的图片」）。 */
@@ -812,26 +841,68 @@ const CHECKS = [
         await h.eval(`(function(){ const c=${cardSel}; c?.querySelector('.completed-more')?.click(); return 1; })()`);
         await wait(300);
         const afterCollapse = await h.eval(`(function(){ const c=${cardSel}; return c? c.querySelectorAll('.completed-file').length : 0; })()`);
-        h.check("⑭ 收起重回 6 行（折叠往返闭合）", afterCollapse === 6, `afterCollapse=${afterCollapse}`);
+        h.check("⑭ 收起重回 2 行（收纳闭合往返）", afterCollapse === 2, `afterCollapse=${afterCollapse}`);
         /* ⑮ 收尾后：输入框上方胶囊自动消失（收尾由汇总卡接管，不留悬挂浮层） */
         const capsuleGone = await h.eval(`document.querySelectorAll('.edited-files-card').length`);
         h.check("⑮ 回合结束后：输入框上方「N 个文件已修改」胶囊自动消失", capsuleGone === 0, `count=${capsuleGone}`);
         /* ⑯ 汇总卡行悬停出 diff 预览（10-06 用户图一：「鼠标放到汇总的修改的文件名上」；
-            自适应落位不许被裁、左缘与该行对齐、含 @@ 差分行） */
-        await h.hover(".completed-changes .completed-file").catch(() => undefined);
-        await wait(900);
-        const hoverPreview = await h.eval(`(function(){
-          var p = document.querySelector('.completed-diff-preview');
-          if (!p) return null;
-          var r = p.getBoundingClientRect();
-          var row = document.querySelector('.completed-changes .completed-file');
-          var rr = row ? row.getBoundingClientRect() : null;
-          return { vis: getComputedStyle(p).visibility, fits: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth,
-            aligned: rr ? Math.abs(r.left - rr.left) <= 2 : null, hasDiff: (p.innerText||'').includes('@@') };
-        })()`).catch(() => null);
+            自适应落位不许被裁、左缘与该行对齐、含 @@ 差分行）。
+            ⛔ 悬停前等**滚动静默**：`.timeline` 是 scroll-behavior:smooth，前面 ⑪-⑭ 的折叠/弹窗
+            可能还留着平滑滚动在跑 —— 悬停后预览会被「外部滚动即关」正确关掉，造成假红
+            （10-06 夜实测：完整序列后 2/3 次假红）。 */
+        await h.eval(`(function(){ window.__lastScroll = Date.now(); if (!window.__scrollWatch) { window.__scrollWatch = 1;
+          window.addEventListener('scroll', function(){ window.__lastScroll = Date.now(); }, true); } return 1; })()`).catch(() => undefined);
+        const waitScrollQuiet = async () => { for (let i = 0; i < 20; i++) { await wait(200); if (await h.eval(`Date.now() - (window.__lastScroll || 0) > 500`).catch(() => false)) break; } };
+        await waitScrollQuiet();
+        /* ⛔ 悬停**重试至多 3 次**（10-06 夜实测：默认轮里紧随 ui-sketch 之后，CDP 真悬停会偶发
+           落空 —— 单跑本项稳定通过、功能本身有独立探针佐证）。重试不掩盖缺陷：预览真坏了三次
+           都中不了；全失败时输出 elementFromPoint 诊断便于下轮定位。 */
+        let hoverPreview = null;
+        let hoverAttempts = 0;
+        for (; hoverAttempts < 3 && !hoverPreview; hoverAttempts++) {
+          if (hoverAttempts > 0) { await h.moveMouseAway().catch(() => undefined); await wait(600); await waitScrollQuiet(); }
+          await h.hover(".completed-changes .completed-file").catch(() => undefined);
+          await wait(900);
+          hoverPreview = await h.eval(`(function(){
+            var p = document.querySelector('.completed-diff-preview');
+            if (!p) return null;
+            var r = p.getBoundingClientRect();
+            var row = document.querySelector('.completed-changes .completed-file');
+            var rr = row ? row.getBoundingClientRect() : null;
+            return { vis: getComputedStyle(p).visibility, fits: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth,
+              aligned: rr ? Math.abs(r.left - rr.left) <= 2 : null, hasDiff: (p.innerText||'').includes('@@') };
+          })()`).catch(() => null);
+        }
+        if (!hoverPreview) {
+          const diag = await h.eval(`(function(){ const row=document.querySelector('.completed-changes .completed-file');
+            if(!row) return 'no-row'; row.scrollIntoView({block:'center',behavior:'instant'}); const r=row.getBoundingClientRect();
+            const el=document.elementFromPoint(Math.round(r.left+r.width/2), Math.round(r.top+r.height/2));
+            return JSON.stringify({ top: el?(el.className||el.tagName).toString().slice(0,60):null, inRow: el?row.contains(el):null, scrollAgeMs: Date.now()-(window.__lastScroll||0) }); })()`).catch(() => 'diag-failed');
+          console.log("  [⑯ 悬停诊断]", diag);
+        }
         h.check("⑯ 汇总卡行悬停出 diff 预览（整矩形在视口内、左缘贴行、含 @@ 差分行）",
           !!hoverPreview && hoverPreview.vis === "visible" && hoverPreview.fits === true && hoverPreview.aligned === true && hoverPreview.hasDiff === true,
-          JSON.stringify(hoverPreview));
+          JSON.stringify(hoverPreview) + ` attempts=${hoverAttempts}`);
+        /* ⑯b 预览升级（10-06 夜二改，用户对照 Qoder：「他这种预览好看，鼠标放上去还能左右滚动和
+           上下滚动，我们现在的 diff 预览好丑」）：行号槽 + 两轴滚动容器 + **面板内滚动不关窗**
+           （合成 scroll 事件定向打到面板上——旧实现在捕获阶段一律关窗，这条会红）+ 展开钮在。 */
+        const previewUp = await h.eval(`(function(){
+          var p = document.querySelector('.completed-diff-preview');
+          if (!p) return null;
+          var body = p.querySelector('.diffp');
+          if (body) body.dispatchEvent(new Event('scroll', { bubbles: true }));
+          var line = p.querySelector('.diffp-line');
+          return { hasBody: !!body, gutter: p.querySelectorAll('.diffp-no').length, rows: p.querySelectorAll('.diffp-line').length,
+            overflow: body ? getComputedStyle(body).overflow : '', nowrap: line ? getComputedStyle(line).whiteSpace : '',
+            hasExpand: !!p.querySelector('.completed-diff-expand') };
+        })()`).catch(() => null);
+        await wait(350);
+        const previewStillOpen = await h.eval(`!!document.querySelector('.completed-diff-preview')`);
+        h.check("⑯b 预览升级：行号槽 + 两轴滚动 + 面板内滚动不关窗 + 展开钮在（用户对照 Qoder 的预览形态）",
+          !!previewUp && previewUp.hasBody === true && previewUp.gutter >= 2 && previewUp.rows >= 1
+            && /auto|scroll/.test(String(previewUp.overflow)) && previewUp.nowrap === "pre"
+            && previewUp.hasExpand === true && previewStillOpen === true,
+          JSON.stringify({ previewUp, previewStillOpen }).slice(0, 260));
         await h.moveMouseAway().catch(() => undefined);
         await wait(500);
         const previewGone = await h.eval(`!document.querySelector('.completed-diff-preview')`);
