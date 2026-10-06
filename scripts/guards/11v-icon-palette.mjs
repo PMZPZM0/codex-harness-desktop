@@ -131,6 +131,17 @@ ok(!/dispatch-topbar-btn[^"]*ic-|ic-[a-z]+[^"]*dispatch-topbar-btn/.test(read("s
 ok(/\.dispatch-topbar-btn\.dispatch-on \{[\s\S]{0,60}?color:\s*var\(--accent\)/.test(read("src/styles/19-misc-hints.css")),
   "④b 调度开关的开关状态仍靠主色表达（上一条负向的判据来源）");
 
+/* ⛔ 真跑抓到：「挂了 ic-* 还是没颜色」有时候不是漏挂，是被**更具体的规则**盖掉。
+   19-misc-hints.css 里 `.popout-open-btn:not(:disabled):hover`（0,3,0）比 `.icon-button:hover`（0,2,0）
+   更具体 ⇒ 它会把色相刷成主色。这类规则必须一起读 `var(--ic, …)`，否则"改了没生效"。 */
+const misc = read("src/styles/19-misc-hints.css");
+ok(/\.popout-open-btn:not\(:disabled\):hover \{[\s\S]{0,240}?color:\s*var\(--ic,\s*var\(--accent/.test(misc),
+  "④b 更具体的 hover 规则也读 var(--ic, …)（否则色相被主色盖掉 = 改了没生效）");
+/* ⛔ 负向断言必须**先剥注释**：19-misc-hints.css 那条规则上方的注释就写着「不挂 ic-*、不加 var(--ic)」，
+   不剥 ⇒ 断言读到自己注释里的字面量、自己把自己顶红（11u 里记过的同一个坑）。 */
+ok(/\.popout-return-btn \{[\s\S]{0,240}?color:\s*var\(--accent/.test(codeOnly(misc)) && !/popout-return-btn[^}]*var\(--ic/.test(codeOnly(misc)),
+  "④b 「返回主应用」**故意**保持主色（唯一动作不是分类）⇒ 不挂 ic-*、不加 var(--ic)（负向）");
+
 /* ── ⑤ 真相源：色相只在 settingsNav 声明一次 ────────────────────────── */
 const catalogs = read("src/features/app-view/helpers/catalogs.ts");
 const navItems = [...catalogs.matchAll(/\["([a-z-]+)",\s*"[^"]+",\s*\w+,\s*"(\w+)"\]/g)];
