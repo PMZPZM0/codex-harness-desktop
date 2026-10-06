@@ -26,6 +26,7 @@ const cssSrc = read("src/styles/28-wallpaper.css");
 const styles = read("src/styles.css");
 const appearance = codeOnly(read("src/features/settings-appearance/AppearanceSettingsSection.tsx"));
 const timeline = codeOnly(read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx"));
+const appView = codeOnly(read("src/features/app-view/AppView.tsx"));
 
 /* ── 数据面 ── */
 ok(libSrc.includes("off") && libSrc.includes("particles") && libSrc.includes("vanta") && libSrc.includes("custom"), "模式注册表含 off/pattern/particles/vanta/custom（归一化白名单）");
@@ -51,9 +52,13 @@ ok(layerSrc.includes("vanta/dist/vanta.net.min.js") && layerSrc.includes("catch"
 ok(layerSrc.includes("prefers-reduced-motion") && layerSrc.includes("pattern"), "减动效偏好下粒子/3D 退回静态图案（accessibility 基本盘）");
 
 /* ── 接线：挂载 + 设置段 ── */
-ok(timeline.includes("<WallpaperLayer />"), "timeline-wrap 内挂了 <WallpaperLayer />（壁纸只透出在聊天区）");
+// ⛔ 10-06 铺满全应用：挂载点从 timeline-wrap 上移到 app-shell 根（fixed 铺满视口）。
+ok(appView.includes("<WallpaperLayer />") && !timeline.includes("<WallpaperLayer />"), "WallpaperLayer 挂在 AppView 根（app-shell 内铺满全应用；timeline 内旧挂载已撤）");
+ok(cssSrc.includes(".app-shell { isolation: isolate; }") && cssSrc.includes("position: fixed"), "app-shell 是堆叠上下文 + 层 fixed 铺满（负 z 层画在 shell 背景上、内容下）");
+ok(cssSrc.includes(':root[data-wallpaper="on"] .app-shell') && cssSrc.includes(':root[data-wallpaper="on"] .composer') && cssSrc.includes(':root[data-wallpaper="on"] .workspace') && cssSrc.includes(':root[data-wallpaper="on"] .sidebar'), "data-wallpaper 驱动表面透明化（app-shell/workspace 透明 + composer/sidebar 半透明，漏一层 = 一块白底，10-06 真机遍历抓出）");
 ok(appearance.includes("WallpaperSettingsSection") && settingsSrc.includes("saveWallpaper") && settingsSrc.includes("chooseImages"), "外观页接了壁纸设置段（模式/图案/浓度/自定义图全部落到 saveWallpaper）");
 ok(libSrc.includes("WALLPAPER_EVENT") && libSrc.includes("dispatchEvent") && layerSrc.includes("subscribeWallpaper") && settingsSrc.includes("subscribeWallpaper"), "配置变更经 CustomEvent 广播（设置页与壁纸层同源联动，不走 bag 不走 IPC）");
+ok(layerSrc.includes("dataset.wallpaper"), "层挂载时驱动 data-wallpaper 属性（CSS 透明化的开关必须来自真实挂载状态）");
 
 console.log(`\n【wp】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

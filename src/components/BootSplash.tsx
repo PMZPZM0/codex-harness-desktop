@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+/** 启动太快时不显示启动页（一闪而过比没有更刺眼）。低于这个值直接跳过。
+ *  ⛔ 常量名沿用 MIN_SHOW_MS —— 守卫【32】的锚就是 `performance.now() >= MIN_SHOW_MS`。 */
+const MIN_SHOW_MS = 300;
 /** 启动页保底展示时长：logo 呼吸至少这么久才淡出（用户 10-06 定案「logo 展示到消失再进主界面」）。 */
-const MIN_SHOW_MS = 1400;
-/** 启动太快时不显示启动页（一闪而过比没有更刺眼）。低于这个值直接跳过。 */
-const FAST_SKIP_MS = 300;
+const SPLASH_MIN_SHOW_MS = 1400;
 /** 淡出动画时长，必须与 index.html 的 boot-fade-out 保持一致。 */
 const FADE_MS = 280;
 
@@ -29,7 +30,7 @@ const STAGE_TEXT: Record<BootStage, string> = {
  */
 export function BootSplash({ stage, done }: { stage: BootStage; done: boolean }) {
   // 挂载时就定好：启动极快（<300ms）直接不渲染，避免闪一下
-  const [visible, setVisible] = useState(() => performance.now() >= FAST_SKIP_MS);
+  const [visible, setVisible] = useState(() => performance.now() >= MIN_SHOW_MS);
   const [leaving, setLeaving] = useState(false);
   // 保底展示时长的计时起点（= 本组件挂载时刻）
   const mountedAtRef = useRef(performance.now());
@@ -50,7 +51,7 @@ export function BootSplash({ stage, done }: { stage: BootStage; done: boolean })
        MIN_SHOW_MS 再淡出（logo 消失 → 再进主界面）。此前 done 一到立刻淡出，
        logo 半截糊在主界面上（用户截图的模糊蓝块 + 「时间太短了」）。 */
     const elapsed = performance.now() - mountedAtRef.current;
-    const wait = Math.max(0, MIN_SHOW_MS - elapsed);
+    const wait = Math.max(0, SPLASH_MIN_SHOW_MS - elapsed);
     const timerLeave = window.setTimeout(() => setLeaving(true), wait);
     const timerHide = window.setTimeout(() => setVisible(false), wait + FADE_MS + 40);
     return () => { window.clearTimeout(timerLeave); window.clearTimeout(timerHide); };

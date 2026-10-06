@@ -1,15 +1,22 @@
 /* 28-wallpaper.css —— 应用壁纸（wallpaper 域，10-05 立）
    颜色只用 token（--accent/--bg/--line），不写死色值（守卫【170】同源）；
    ⛔ 例外 = 精选渐变壁纸：配色是「好看」本身（WALLPAPER_PRESETS 的艺术选择），自带可读性雾。
-   层叠：本层 z-index:-1 挂在 .timeline-wrap（relative）内 ⇒ 永远在消息内容之下；
-   pointer-events:none ⇒ 永不挡交互。 */
+   层叠：fixed 铺满视口、z-index:-1、pointer-events:none ⇒ 永不挡交互。
+   ⛔ 10-06 用户定稿「铺满全应用」：层挪到 .app-shell 首子元素（fixed 铺满视口），
+   .app-shell 加 isolation 成为堆叠上下文 ⇒ 负 z 层画在 app-shell 自己的背景之上、全部内容之下
+   —— 侧栏 / 聊天 / 输入框周边全部透出。
+   :root[data-wallpaper] 由 WallpaperLayer 挂载驱动：开着 = 表面变透明；关掉 = 属性摘除、一切还原。 */
+.app-shell { isolation: isolate; }
+:root[data-wallpaper="on"] .app-shell { background: transparent; }
+/* 输入框（.composer 画 var(--bg)）半透明：壁纸隐约透出、文字保持可读 */
+:root[data-wallpaper="on"] .composer { background: color-mix(in srgb, var(--bg) 55%, transparent); }
+/* ⛔ 中间层也要放行：.workspace（主列容器）白底、.sidebar 灰底都会盖死壁纸（10-06 真机遍历抓出） */
+:root[data-wallpaper="on"] .workspace { background: transparent; }
+:root[data-wallpaper="on"] .sidebar { background: color-mix(in srgb, var(--bg) 72%, transparent); }
+/* 消息滚动区不留自己的底色（无壁纸时透出 app-shell 的 --bg，观感不变） */
+:root[data-wallpaper="on"] .timeline { background: transparent; }
 
-/* ⛔⛔ 10-05 用户实测「切了没反应」：timeline-wrap 是 relative+z-auto ⇒ **不是堆叠上下文**，
-   壁纸层的 z-index:-1 落到根堆叠上下文 ⇒ 被 app-shell 的 var(--bg) 盖死（假功能观感）。
-   isolation 强制 timeline-wrap 成为堆叠上下文：负 z 层关在聊天区内 —— 背景透明之上、消息内容之下。 */
-.timeline-wrap { isolation: isolate; }
-
-.wallpaper-layer { position: absolute; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+.wallpaper-layer { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
 
 /* 图案档：SVG 走 mask（形状=alpha），颜色 = --accent；48px 大瓷砖（24px 铺出来像噪点） */
 .wallpaper-pattern { position: absolute; inset: 0; background-color: var(--accent); mask-size: 48px 48px; -webkit-mask-size: 48px 48px; mask-repeat: repeat; -webkit-mask-repeat: repeat; }

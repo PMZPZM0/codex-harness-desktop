@@ -59,6 +59,14 @@ function prefersReducedMotion(): boolean {
 export function WallpaperLayer() {
   const [cfg, setCfg] = useState<WallpaperConfig>(() => readWallpaper());
   useEffect(() => subscribeWallpaper(setCfg as (c: ReturnType<typeof readWallpaper>) => void), []);
+  /* ⛔ 铺满全应用（10-06 用户定稿）：层挂在 .app-shell 首子元素（fixed 定位铺满视口），
+     app-shell 有 isolation ⇒ 负 z 层透出在所有表面之下、内容之上；
+     data-wallpaper 属性驱动 CSS 把 app-shell/composer 表面变透明 —— 关掉时属性摘除、一切还原。 */
+  useEffect(() => {
+    if (cfg.mode === "off") delete document.documentElement.dataset.wallpaper;
+    else document.documentElement.dataset.wallpaper = "on";
+  }, [cfg.mode]);
+  useEffect(() => () => { delete document.documentElement.dataset.wallpaper; }, []);
   if (cfg.mode === "off") return null;
   // ⛔ 减动效偏好下，粒子/3D 一律退回静态图案（accessibility 基本盘）
   const mode = (cfg.mode === "particles" || cfg.mode === "vanta") && prefersReducedMotion() ? "pattern" : cfg.mode;
