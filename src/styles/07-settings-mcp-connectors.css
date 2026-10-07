@@ -1056,6 +1056,14 @@
   content-visibility: auto;
   contain-intrinsic-size: auto 600px;
 }
+/* ⛔⛔ 10-06 用户实测：content-visibility:auto 会创建 containment ⇒ 设置页里所有内联的
+   position:fixed 弹窗（安装进度等 12 处）被关进滚动容器，要滚动才能看到（「弹窗在容器内」）。
+   弹窗挂载期间放弃该区块的 containment（区块本就在屏上，视觉无差），弹窗一关立即恢复优化。 */
+.settings-content > section:has(.modal-backdrop),
+.settings-content > .plugin-market-block:has(.modal-backdrop),
+.settings-content > .skill-installed-view:has(.modal-backdrop) {
+  content-visibility: visible;
+}
 .resource-error {
   border: 1px solid color-mix(in srgb, var(--orange) 40%, transparent);
   background: color-mix(in srgb, var(--orange) 10%, transparent);
