@@ -5,7 +5,7 @@ kind: incident
 area: files
 title: 回合文件追踪：遍历预算截断污染（漏报真文件 + 误报已删除）+ mac 断点诊断落盘
 tags: [file-watch, budget, mac, diag]
-commits: []
+commits: [866b3c6]
 files: [electron/turn-file-watch.ts, electron/turn-files-debug.ts, electron/features/boot.ts, electron/features/codex-ipc.ts, scripts/accept.mjs]
 importance: normal
 ---
