@@ -98,6 +98,7 @@
       "build/tray.png",
       "build/trayTemplate.png",
       "build/trayTemplate@2x.png",
+      "electron/composition.json",
       "package.json",
       "!node_modules/mermaid/dist/*.map"
     ],

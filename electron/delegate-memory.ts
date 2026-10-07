@@ -104,7 +104,14 @@ export async function buildDelegateMemory(input: {
      · project 段 = 全项目共享（主会话写的事实，角色读得到）
      · session 段 = 这个委派会话自己的（threadId 命名空间 ⇒ 与别的会话硬隔离）
      · legacy 段 = 上一轮 roles/<键>/MEMORY.md（架构文档 §7：不删，读得到）
-     ⛔ 放在常驻层之后、召回之前：身份/项目段最靠近当前任务。 */
+     ⛔ 放在常驻层之后、召回之前：身份/项目段最靠近当前任务。
+     ⛔⛔ 10-07 修（用户实测「项目记忆每次消息都展示 + 同一条消息渲染两遍」）：原来这里写的是
+        `body += "\n\n" + built.text` 裸拼。buildContext 出来的是**不带注入标记**的裸机器串
+        （memory-fabric.section() 的注释 + 守卫【fabric】⑥：标记由调用方拼在整段外面），
+        裸拼 ⇒ 显示侧两条剥离规则全看不见它 ⇒ 机器串铺进被委派会话的用户气泡与串标题；
+        且服务端原文带它、本地乐观文本不带 ⇒ `userMessageMatchesInput` 判 false
+        ⇒ **乐观气泡永不合并、同一条消息显示两遍**（主会话那条在 send.tsx，同样已修）。
+        ⇒ 这里按契约包进**既有标记体系**（⛔ 别再退回裸拼）。 */
   let fabricSection = "";
   let fabricCounts = { project: 0, private: 0, team: 0, legacy: 0 };
   let roleKey = "";
@@ -112,7 +119,10 @@ export async function buildDelegateMemory(input: {
     const agent = agentOf(input?.role);
     const handles = await getMemoryHandles({ sessionId: delegateThreadId, workspace: workspace || undefined, agent });
     const built = await buildContext({ handles, query: input?.query, legacyRole: input?.role ?? null, workspace: workspace || undefined });
-    if (built.text) { fabricSection = built.text; body += `\n\n${built.text}`; }
+    if (built.text) {
+      fabricSection = built.text;
+      body += `\n\n[Harness 常驻记忆 · 统一记忆（项目 / 团内 / 私有）]\n${built.text}\n[常驻记忆结束]\n`;
+    }
     fabricCounts = built.counts;
     roleKey = roleKeyOf(input?.role);
   } catch {

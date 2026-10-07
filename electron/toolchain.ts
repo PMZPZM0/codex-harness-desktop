@@ -75,7 +75,23 @@ export function augmentedPath() {
 // 引擎侧用 CLOAKBROWSER_ENTRY 直连 dist/index.js 动态 import。
 export function npmGlobalRoot() {
   const tools = toolsRoot();
-  return tools ? path.join(tools, "npm-global", "node_modules") : "";
+  if (!tools) return "";
+  // ⛔⛔ mac 适配（10-07 用户实测「指纹浏览器安装后不刷新」「装了用不了」）：
+  //   npm 的 `--prefix` 布局按平台分叉 —— Windows 是 `<prefix>\node_modules`，
+  //   POSIX（mac/linux）是 `<prefix>/lib/node_modules`。打包期 prepare-mac-tools.cjs
+  //   会把 lib/node_modules 改名成 node_modules 并留一个 symlink，所以随包件两处等价；
+  //   但**运行期**（开发工具页）npm install 装的包（cloakbrowser）落在哪个，取决于
+  //   那个 symlink 是否随包存活 ⇒ 旧实现只认 Windows 布局，mac 上装完永远找不到。
+  //   探测两种布局：先认当前平台默认，不存在再看另一种；都不在按平台默认返回
+  //   （安装前的"预期落位"语义保持不变）。
+  const winLayout = path.join(tools, "npm-global", "node_modules");
+  const posixLayout = path.join(tools, "npm-global", "lib", "node_modules");
+  const [first, second] = process.platform === "win32" ? [winLayout, posixLayout] : [posixLayout, winLayout];
+  try {
+    if (fs.existsSync(first)) return first;
+    if (fs.existsSync(second)) return second;
+  } catch { /* 探测失败按平台默认布局返回 */ }
+  return first;
 }
 
 // cloakbrowser ESM 入口的 file:// URL（供引擎脚本 import；空串表示未安装）。

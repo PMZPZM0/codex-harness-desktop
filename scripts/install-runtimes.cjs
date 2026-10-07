@@ -11,6 +11,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const zlib = require("zlib");
 const { spawn, spawnSync } = require("child_process");
 
 const IS_MAC = process.platform === "darwin";
@@ -42,7 +43,19 @@ const MINGIT_URL = `https://github.com/git-for-windows/git/releases/download/v2.
 const PYTHON_VERSION = "3.13.15";
 const PBS_TAG = "20260929";
 const PYTHON_PBS_URL = `https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_TAG}/cpython-${PYTHON_VERSION}%2B${PBS_TAG}-x86_64-pc-windows-msvc-install_only.tar.gz`;
-const FFMPEG_URL = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip";
+/* ⛔⛔ 10-07 改（用户报「FFmpeg 不是国内源，太慢了，几十K」）：
+   原来唯一源是 gyan.dev（英国站）。gyan 的同一份构建**同时发布在 GitHub**
+   （GyanD/codexffmpeg，资产名 `ffmpeg-<版本>-essentials_build.zip`；内部结构与 gyan 那个 zip
+   逐层相同 —— 顶层一个 wrapper 目录 + `bin/ffmpeg.exe`、`bin/ffprobe.exe`
+   ⇒ 现有 `strip: true` 与 `marker: "bin\\ffmpeg.exe"` 一个字都不用改）。
+   ⇒ 主源改走 GitHub：auto 模式下能吃到 gh-proxy / ghfast 加速（`isGh` 判据自动生效）。
+   ⇒ 原来的 gyan.dev 地址降级为**兜底源**（见 install 的 altUrls）——gh 通道全挂时仍能装，
+     最坏情况 = 改之前的行为，不会更差。
+   ⛔ 版本必须钉住：GitHub 上没有 gyan 那种 `release-essentials` 动态地址。
+     升级时改 FFMPEG_VERSION，并让 archiveName 跟着版本走（否则旧缓存包会被复用）。 */
+const FFMPEG_VERSION = "9.0.2";
+const FFMPEG_URL = `https://github.com/GyanD/codexffmpeg/releases/download/${FFMPEG_VERSION}/ffmpeg-${FFMPEG_VERSION}-essentials_build.zip`;
+const FFMPEG_FALLBACK_URL = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip";
 const VSCODE_CLI_URL = "https://update.code.visualstudio.com/latest/cli-win32-x64/stable";
 // Android 平台工具（adb）：手机控制（phone-harness）的 Android 通道。
 // ⛔ 官方源，**没有国内镜像**（npmmirror 的 binaries 目录下没有该包，实测 404）——走不了 gh 加速，
@@ -71,6 +84,17 @@ const CMAKE_VERSION = "3.31.6";
 const CMAKE_URL = `https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-windows-x86_64.zip`;
 // 7-Zip 官网国内不稳定，走 github release（gh-proxy 可达）
 const SEVENZIP_GH_URL = "https://github.com/ip7z/7zip/releases/download/25.01/7z2501-extra.7z";
+/* mac FFmpeg 的两条源（10-07 用户报「FFmpeg 不是国内源，太慢了，几十K」）：
+   · ffmpeg-static（eugeneware）——单文件构建，npmmirror 同步了它的 release 资产（实测 302 → CDN）
+     ⇒ 国内直连快，是主源；同名 GitHub release 还能吃到 gh 加速。
+   · evermeet.cx —— 美国站，只作**兜底**（它同时提供 ffprobe，是唯一同时有两者的源）。
+   ⛔ ffmpeg-static **不含 ffprobe**；ffprobe 走 npmmirror 上的 @ffprobe-installer 平台包。
+   ⛔ 版本必须钉住：这些地址没有 "latest" 形态，改版本号要连资产名一起改。
+   ⛔⛔ ffprobe-installer 的版本**不能取 latest**：实测两个架构的 latest 不是同一个
+      （darwin-arm64 latest=5.0.1、darwin-x64 latest=5.1.0，且各自**都没有对方那个版本**），
+      取 latest 必有一个架构 404。5.0.0 是两者**唯一交集**（两个 tarball 实测都 200）⇒ 钉 5.0.0。 */
+const FFMPEG_STATIC_VERSION = "b6.1.1";
+const FFPROBE_INSTALLER_VERSION = "5.0.0";
 // Python 常用 Web/API 依赖（引擎自检缺失项）。走清华 PyPI 镜像，无需代理。
 const PIP_PACKAGES = "requests httpx flask fastapi playwright";
 // 文档转换依赖：让 Codex 能读 PDF / Word / Excel / PPT 附件（把二进制文档转成 Markdown 再喂给模型）。
@@ -85,8 +109,12 @@ const PIP_PACKAGES = "requests httpx flask fastapi playwright";
 //    方括号加引号：spawn 走 shell，mac 的 sh 会做 glob 展开（Windows cmd 不会），引号两边都安全。
 const DOC_PACKAGES = ['"markitdown[pdf,docx,pptx]"', "openpyxl"];
 // Miniconda：官方 exe 静默安装（/InstallationType=JustMe /RegisterPython=0 /S /D=目标目录）
+// ⛔⛔ 10-07 用户实测「miniconda 压根安装不了」：repo.anaconda.com 国内直连极慢/失败。
+//    清华 TUNA 镜像逐字节同步官方 miniconda 目录（实测两个平台资产都在，文件名一致），
+//    ⇒ **镜像打头、官方站兜底**（download() 的 extraSources 永远排最后）。
 const MINICONDA_VERSION = "py312_25.1.1-2";
 const MINICONDA_URL = `https://repo.anaconda.com/miniconda/Miniconda3-${MINICONDA_VERSION}-Windows-x86_64.exe`;
+const MINICONDA_TUNA_URL = `https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/Miniconda3-${MINICONDA_VERSION}-Windows-x86_64.exe`;
 // MinGW-w64 完整工具链（WinLibs：gcc/g++/make/gdb）。版本固定，资产名含编译器版本号。
 const WINLIBS_VERSION = "16.2.0posix-14.0.0-ucrt-r1";
 const WINLIBS_ZIP = "winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r1.zip";
@@ -192,6 +220,14 @@ function chinaMirrorUrl(url) {
   if (url.startsWith("https://github.com/git-for-windows/git/releases/download/")) return url.replace("https://github.com/git-for-windows/git/releases/download/", "https://cdn.npmmirror.com/binaries/git-for-windows/");
   // python-build-standalone（PBS）：npmmirror 同步了该构建的全部 release 资产（实测 302 → CDN）
   if (url.startsWith("https://github.com/astral-sh/python-build-standalone/releases/download/")) return url.replace("https://github.com/astral-sh/python-build-standalone/releases/download/", "https://registry.npmmirror.com/-/binary/python-build-standalone/");
+  /* ⛔⛔ 10-07 补两条（用户报「miniconda 压根安装不了」+「FFmpeg 不是国内源，太慢了，几十K」）：
+     两条都**实测过**镜像真的有对应文件，不是照着别人的镜像表抄的。
+     · Miniconda：官方 repo.anaconda.com 在国内常年龟速/被限速；清华 TUNA 的 anaconda 镜像
+       **文件名与官方逐字相同** ⇒ 只换域名，版本号/资产名一个字都不用改（实测 200）。
+     · ffmpeg-static（eugeneware）：npmmirror 同步了它的 release 资产，含 darwin-arm64/x64 两个
+       构建（实测 302 → CDN）；mac 侧 ffmpeg 的主源。 */
+  if (url.startsWith("https://repo.anaconda.com/miniconda/")) return url.replace("https://repo.anaconda.com/miniconda/", "https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/");
+  if (url.startsWith("https://github.com/eugeneware/ffmpeg-static/releases/download/")) return url.replace("https://github.com/eugeneware/ffmpeg-static/releases/download/", "https://registry.npmmirror.com/-/binary/ffmpeg-static/");
   return null;
 }
 
@@ -365,7 +401,7 @@ function downloadWithProgress(args, opts) {
  *  ⛔ 不能用命令行参数传：argv 里的裸词会被当成工具 id（want() 的 requested 集合）。 */
 const SOURCE = (process.env.DOWNLOAD_SOURCE || "auto").toLowerCase();
 
-async function download(url, file) {
+async function download(url, file, extraSources = []) {
   process.stdout.write("@@STAGE 下载\n");
   // 见 downloadWithProgress 的注释：进度与速度都靠采样文件大小，curl 这边只要「安静地下载」。
   const curlArgs = ["-L", "--fail", "--show-error", "--retry", "3", "--retry-all-errors",
@@ -394,6 +430,15 @@ async function download(url, file) {
       ...ghAccels,
       ...direct,
     ]; break;
+  }
+  /* ⛔ 兜底源（10-07 加）：**完全不同的源头**，永远排在最后 —— 它是"上面所有通道都挂了"才走的路，
+     不能插在前面抢通道。典型用法：Windows FFmpeg 主源是 GitHub（能吃 gh 加速），
+     兜底留回官方站 gyan.dev（本身可用，只是慢）。
+     ⛔ 显示名只取主机名：整条 URL 刷进进度区会把界面撑爆，用户也只需要知道"换到哪个站了"。 */
+  for (const extra of extraSources) {
+    let host = "备用源";
+    try { host = new URL(extra).host; } catch { /* 非法 URL：用兜底文案 */ }
+    attempts.push([`备用源 ${host}`, curlArgs.slice(), extra]);
   }
   if (SOURCE !== "auto") console.log(`[download] 指定下载源: ${SOURCE}`);
   let lastError;
@@ -544,6 +589,9 @@ async function install(label, url, destDir, opts = {}) {
   const marker = path.join(destDir, opts.marker || "node.exe");
   if (fs.existsSync(marker)) { console.log(`[skip] ${label} already at ${marker}`); return; }
   const zip = path.join(TMP, opts.archiveName || path.basename(url));
+  /* 兜底源（10-07）：主源的所有通道（镜像/代理/gh 加速/直连）都失败后，再逐个试这些**完全不同的源**。
+     ⛔ 只在 download() 里追加、**不改变主源的通道顺序** —— 主源该有的国内优先顺序原样保留。 */
+  const altUrls = Array.isArray(opts.altUrls) ? opts.altUrls : [];
   // ⛔⛔ 10-02 用户报障的**根因**：缓存校验不过时原来直接调 download()，而 download 用的是
   //   `curl --continue-at -`（断点续传）—— **续传只补尾巴，坏文件永远修不好**。用户机器上那份
   //   MinGit 体积已等于线上大小（第一趟就下坏了），于是每次点安装都是
@@ -556,7 +604,7 @@ async function install(label, url, destDir, opts = {}) {
   // 复用已下载的 zip（通过 archiveReady 才算完整）
   if (!archiveReady(zip)) {
     console.log(`[${label}] downloading ${url}`);
-    await download(url, zip);
+    await download(url, zip, altUrls);
   } else {
     console.log(`[${label}] reuse cached ${zip}`);
   }
@@ -565,7 +613,7 @@ async function install(label, url, destDir, opts = {}) {
   if (!archiveReady(zip)) {
     console.log(`[${label}] 下载完成的压缩包校验不通过，删除后重下一次`);
     fs.rmSync(zip, { force: true });
-    await download(url, zip);
+    await download(url, zip, altUrls);
     if (!archiveReady(zip)) {
       const size = fs.existsSync(zip) ? formatBytes(fs.statSync(zip).size) : "文件缺失";
       throw new Error(`${label}：下载的压缩包校验不通过（${size}）—— 多半是网络或代理把响应换成了错误页面（校园网 / 公司网关最常见）。请到「设置 → 开发工具」换一个下载源，或稍后重试`);
@@ -588,14 +636,64 @@ async function installFile(label, url, destDir, fileName) {
   console.log(`[${label}] installed to ${target}`);
 }
 
+/**
+ * mac 单文件二进制的**带解压**安装（10-07）。
+ *
+ * ⛔⛔ 为什么不能继续用 installFile：它是「下载即落盘」——
+ *   原写法 `installFile("https://evermeet.cx/ffmpeg/get/ffmpeg/zip", binDir, "ffmpeg")`
+ *   把 evermeet 的 **zip 原样写成 `tools/ffmpeg/bin/ffmpeg`**（实测该 URL 返回
+ *   `Content-Type: application/zip`、`Content-Disposition: filename="ffmpeg-….zip"`）
+ *   ⇒ 装出来的"ffmpeg"是个压缩包，一执行就报错。**装完不校验就永远发现不了**
+ *   （卡片只看文件在不在，`toolchain.ts` 找不到可执行文件才报）。
+ *
+ * sources = 有序源表，**前面的全失败才走后面**；每项：
+ *   · url         下载地址（download() 会按下载源设置再叠一层镜像/gh 加速）
+ *   · archiveName 落到临时目录的文件名 —— ⛔ 必须带真实后缀（extractArchive 靠后缀选解压器，
+ *                 evermeet 的 URL 结尾是 `/zip`、basename 取出来没有后缀）
+ *   · unpack      gz（单文件 gzip，用 Node zlib 解）｜zip（根目录就是二进制）｜npm（tgz 里在 package/ 下）
+ * ⛔ 解出来必须做**体积下限校验**：网络网关把响应换成错误页面时体积会小得离谱，
+ *   当场发现好过让用户拿着一个 300 字节的"ffmpeg"来报障。
+ */
+async function installMacBinary(label, destDir, name, sources) {
+  const target = path.join(destDir, name);
+  if (fs.existsSync(target) && fs.statSync(target).size > 1024 * 1024) { console.log(`[skip] ${label} already at ${target}`); return; }
+  fs.mkdirSync(destDir, { recursive: true });
+  let lastError;
+  for (const src of sources) {
+    const stage = fs.mkdtempSync(path.join(os.tmpdir(), `ch-${name}-`));
+    try {
+      const archive = path.join(stage, src.archiveName);
+      await download(src.url, archive);
+      if (src.unpack === "gz") {
+        fs.writeFileSync(target, zlib.gunzipSync(fs.readFileSync(archive)), { mode: 0o755 });
+      } else {
+        await extractArchive(archive, stage, false, label);
+        fs.copyFileSync(src.unpack === "npm" ? path.join(stage, "package", name) : path.join(stage, name), target);
+        fs.chmodSync(target, 0o755);
+      }
+      const size = fs.statSync(target).size;
+      if (size < 1024 * 1024) throw new Error(`解出来的文件只有 ${formatBytes(size)}，不像可执行文件`);
+      console.log(`[${label}] installed to ${target} (${formatBytes(size)})`);
+      return;
+    } catch (error) {
+      lastError = error;
+      try { fs.rmSync(target, { force: true }); } catch { /* 清不掉不影响换源重试 */ }
+      console.log(`[${label}] 源 ${src.url} 失败（${keyLine(error)}），换下一个源`);
+    } finally {
+      try { fs.rmSync(stage, { recursive: true, force: true }); } catch { /* 临时目录清不掉不影响安装 */ }
+    }
+  }
+  throw lastError ?? new Error(`${label}：所有源都失败`);
+}
+
 /** Miniconda 静默安装到目标目录：官方 exe + 静默参数（JustMe、不注册 Python、/S）。 */
 async function installConda(destDir) {
   const marker = path.join(destDir, "Scripts", "conda.exe");
   if (fs.existsSync(marker)) { console.log(`[skip] miniconda already at ${marker}`); return; }
   const installer = path.join(TMP, `Miniconda3-${MINICONDA_VERSION}-Windows-x86_64.exe`);
   if (!fs.existsSync(installer) || fs.statSync(installer).size < 20 * 1024 * 1024) {
-    console.log(`[miniconda] downloading ${MINICONDA_URL}`);
-    await download(MINICONDA_URL, installer);
+    console.log(`[miniconda] downloading ${MINICONDA_TUNA_URL}（官方站兜底）`);
+    await download(MINICONDA_TUNA_URL, installer, [MINICONDA_URL]);
   }
   fs.mkdirSync(destDir, { recursive: true });
   console.log(`[miniconda] silent installing to ${destDir}（约 1-2 分钟）`);
@@ -785,7 +883,12 @@ async function main() {
   // 文档转换依赖（按需安装，不并入 PIP_PACKAGES）：用户点「开发工具 → 文档转换」卡片才走这里。
   //  放在 if (want("python")) **之外** —— 只点这一张卡片时不该顺手把 Python 重装一遍。
   if (want("markitdown")) await installDocTools(pythonDir);
-  if (want("ffmpeg")) await install("ffmpeg", FFMPEG_URL, ffmpegDir, { marker: "bin\\ffmpeg.exe", strip: true, archiveName: "ffmpeg-release-essentials.zip" });
+  if (want("ffmpeg")) await install("ffmpeg", FFMPEG_URL, ffmpegDir, {
+    marker: "bin\\ffmpeg.exe",
+    strip: true,
+    archiveName: `ffmpeg-${FFMPEG_VERSION}-essentials_build.zip`,
+    altUrls: [FFMPEG_FALLBACK_URL],
+  });
   if (want("vscode-cli")) await install("vscode-cli", VSCODE_CLI_URL, vscodeCliDir, { marker: "code.exe", strip: false, archiveName: "vscode-cli-win32-x64.zip" });
   // adb（zip 内一层 platform-tools/ ⇒ strip 掉），装到 tools/platform-tools/adb.exe
   if (want("platform-tools")) await install("platform-tools", PLATFORM_TOOLS_URL, path.join(TOOLS, "platform-tools"), { marker: "adb.exe", strip: true, archiveName: "platform-tools-latest-windows.zip" });
@@ -928,10 +1031,36 @@ async function mainMac() {
   //  ⛔ 必须与 Windows 侧**对称存在**：预检【34】会比对两平台的安装表，只在一侧有的话，
   //    另一平台点「文档转换」卡片会静默什么都不装（用户以为装上了）。
   if (want("markitdown")) await installDocTools(path.join(TOOLS, "python"));
-  // evermeet.cx 的 mac 单文件构建（官方 gyan.dev 只有 Windows 包）
+  /* FFmpeg（mac）：**必须解压**，且走国内源（10-07 用户报「FFmpeg 不是国内源，太慢了，几十K」）。
+     · ffmpeg 主源 = ffmpeg-static 的单文件构建（npmmirror 优先 → gh 加速 → 直连），
+       兜底 = evermeet 的 zip（境外，慢但可用）。
+     · ffprobe 主源 = npmmirror 上的 @ffprobe-installer 平台包（tgz 里在 package/ffprobe），
+       兜底 = evermeet zip。
+     ⛔ ffprobe 是**可选**能力（toolchain.bundledFfprobe 取不到就返回空串，调用方按"探测不了"
+       保守处理）⇒ 它拿不到**不阻塞** ffmpeg 装好，但也**必须把失败打出来**，不假装成功。 */
   if (want("ffmpeg")) {
-    await installFile("ffmpeg", "https://evermeet.cx/ffmpeg/get/ffmpeg/zip", path.join(TOOLS, "ffmpeg", "bin"), "ffmpeg");
-    await installFile("ffprobe", "https://evermeet.cx/ffmpeg/get/ffprobe/zip", path.join(TOOLS, "ffmpeg", "bin"), "ffprobe");
+    const fmpegBin = path.join(TOOLS, "ffmpeg", "bin");
+    const ffTriple = process.arch === "arm64" ? "arm64" : "x64";
+    await installMacBinary("ffmpeg", fmpegBin, "ffmpeg", [
+      {
+        url: `https://github.com/eugeneware/ffmpeg-static/releases/download/${FFMPEG_STATIC_VERSION}/ffmpeg-darwin-${ffTriple}.gz`,
+        archiveName: `ffmpeg-darwin-${ffTriple}.gz`,
+        unpack: "gz",
+      },
+      { url: "https://evermeet.cx/ffmpeg/get/ffmpeg/zip", archiveName: "ffmpeg-evermeet.zip", unpack: "zip" },
+    ]);
+    try {
+      await installMacBinary("ffprobe", fmpegBin, "ffprobe", [
+        {
+          url: `https://registry.npmmirror.com/@ffprobe-installer/darwin-${ffTriple}/-/darwin-${ffTriple}-${FFPROBE_INSTALLER_VERSION}.tgz`,
+          archiveName: `ffprobe-darwin-${ffTriple}.tgz`,
+          unpack: "npm",
+        },
+        { url: "https://evermeet.cx/ffmpeg/get/ffprobe/zip", archiveName: "ffprobe-evermeet.zip", unpack: "zip" },
+      ]);
+    } catch (error) {
+      console.log(`[ffprobe] 可选组件安装失败（不影响 ffmpeg）：${keyLine(error)}`);
+    }
   }
   if (want("vscode-cli")) await install("vscode-cli", `https://update.code.visualstudio.com/latest/cli-darwin-${arch}/stable`, path.join(TOOLS, "vscode-cli"), { marker: "code", strip: false, archiveName: `vscode-cli-darwin-${arch}.zip` });
   if (want("jq")) await installFile("jq", `https://github.com/jqlang/jq/releases/latest/download/jq-macos-${jqArch}`, path.join(TOOLS, "jq"), "jq");
@@ -945,8 +1074,12 @@ async function mainMac() {
     const condaDir = path.join(TOOLS, "miniconda");
     if (fs.existsSync(path.join(condaDir, "bin", "conda"))) { console.log(`[skip] miniconda already at ${condaDir}`); }
     else {
-      const installer = path.join(TMP, `Miniconda3-py312_25.1.1-2-MacOSX-${arch === "arm64" ? "arm64" : "x86_64"}.sh`);
-      await download(`https://repo.anaconda.com/miniconda/Miniconda3-py312_25.1.1-2-MacOSX-${arch === "arm64" ? "arm64" : "x86_64"}.sh`, installer);
+      const mcName = `Miniconda3-py312_25.1.1-2-MacOSX-${arch === "arm64" ? "arm64" : "x86_64"}.sh`;
+      const installer = path.join(TMP, mcName);
+      // ⛔ 10-07：与 Windows 侧同一修法——清华镜像打头（国内直连官方站极慢 = 「miniconda
+      //    压根安装不了」），官方 repo.anaconda.com 留兜底。实测 TUNA 上两个 mac 资产都在。
+      await download(`https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/${mcName}`, installer,
+        [`https://repo.anaconda.com/miniconda/${mcName}`]);
       fs.mkdirSync(condaDir, { recursive: true });
       console.log(`[miniconda] batch installing to ${condaDir}`);
       runCommand(`bash "${installer}" -b -p "${condaDir}"`, { timeout: 900000 });

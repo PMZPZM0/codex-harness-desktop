@@ -261,6 +261,9 @@ export function snapshotTurnWorkspace(threadId: string, turnId: string, cwd: str
   if (!id || !dir || !fs.existsSync(dir)) return;
   // 触发条件补全：上一轮没等到 completed（事件丢失/中断未报）⇒ 先补算再开新快照
   if (snaps.has(id)) emitTurnFileChanges(id);
+  // ⛔ 诊断（10-07，mac「已编辑文件不展示」排查）：快照记不到回合 id ⇒ 最终报告按
+  //    turnId="" 广播，渲染层按 turn.id 对不上号 ⇒ 汇总卡空白。静默跳过点之三。
+  if (!String(turnId ?? "").trim()) console.warn("[turn-files-diag] 快照缺少回合 id：threadId=", id);
   snaps.set(id, { turnId: String(turnId ?? ""), cwd: dir, snap: walk(dir) });
   liveLastSent.delete(id);
   ensureLiveTimer();

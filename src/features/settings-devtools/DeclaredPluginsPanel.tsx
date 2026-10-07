@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { FolderOpen, Power, RefreshCw } from "lucide-react";
+import { registerSlot } from "../../runtime/registry";
 import { useDeclaredPlugins, useToggleDeclaredPlugin } from "../../runtime/declared-plugin-slots";
 
 export default function DeclaredPluginsPanel() {
@@ -131,3 +132,20 @@ export default function DeclaredPluginsPanel() {
     </section>
   );
 }
+
+/* ⛔⛔ 必须**自己注册**插槽，否则永远不显示（10-07 实测到的坑）。
+ *
+ * `Slot` 的 `loader` 只是「把注册方模块拉进来」这一步 —— 它**不会**把模块的 default
+ * export 当成内容渲染。模块必须调 `registerSlot(id, …)`，`Slot` 才拿得到 `reg.render`。
+ * 本面板此前没注册，消费点又错用了别人的 id（`settings.devtools.bottom`）⇒
+ * 用户看到的是「功能域面板画两遍、声明式插件面板一次都没有」。
+ *
+ * ⛔ 插槽 id 用**自己的**（每个面板一个 id，别共用）：`registerSlot` 按 id 覆盖式登记，
+ *   共用 id 就会有且仅有一个组件生效、另一个静默消失，而**两个 <Slot> 会把同一个组件画两遍**。
+ * ⛔ order 排在 DomainsPanel(900) 之后 ⇒ 声明式插件面板在功能域面板下方（保持原视觉顺序）。 */
+registerSlot("settings.devtools.declared-plugins", {
+  label: "声明式插件清单与启停",
+  pluginId: "declared-plugins",
+  order: 910,
+  render: () => <DeclaredPluginsPanel />,
+}, "declared-plugins");

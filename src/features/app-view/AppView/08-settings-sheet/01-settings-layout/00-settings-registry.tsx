@@ -477,8 +477,14 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
     /* ⛔ 这里用 `app.` 而不是往上面的逐字解构块里加名字：那段解构是「与搬迁前逐字一致」的
        （改它会让对照 diff 失真）。新增 props 直接取 app 上的同名状态即可。 */
     devtools: { render: () => <><DevtoolsSettingsSection capabilityRows={capabilityRows} capabilityError={capabilityError} VoiceDevToolsSection={VoiceDevToolsSection} setNotice={setNotice} devRuntimes={devRuntimes} runtimeInstalling={runtimeInstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} installDevRuntime={installDevRuntime} uninstallDevRuntime={uninstallDevRuntime} /><Slot id="settings.devtools.bottom" props={{ onNotice: setNotice }} loader={() => import("../../../../settings-devtools/DomainsPanel")} />
-      {/* B 档：声明式插件面板（自带loader，按需加载） */}
-      <Slot id="settings.devtools.bottom" loader={() => import("../../../../settings-devtools/DeclaredPluginsPanel")} /></> },
+      {/* B 档：声明式插件面板（自带 loader，按需加载）
+          ⛔⛔ 10-07 用户实测「开发工具最下面的功能域**重复展示两次**」根因就在这一行：
+          原来这里写的是 **同一个 id** `settings.devtools.bottom`，而 `registerSlot` 是
+          「按 id 覆盖式登记、一个 id 只对应一个组件」⇒ 两个 <Slot> 渲染的是**同一个**注册项，
+          于是「功能域」面板被画两遍；同时 DeclaredPluginsPanel 因为**自己没调 registerSlot**
+          （Slot 的 loader 只是把模块拉进来触发注册，不注册就什么都不渲染）⇒ **从来没显示过**。
+          ⇒ 每个面板必须有**自己的插槽 id**，由它自己的模块注册（样板见 DomainsPanel.tsx）。 */}
+      <Slot id="settings.devtools.declared-plugins" loader={() => import("../../../../settings-devtools/DeclaredPluginsPanel")} /></> },
     extensibility: { render: () => <ExtensibilitySettingsSection onNotice={setNotice} /> },
     screenshot: { render: () => <ScreenshotSettingsSection onNotice={setNotice} /> },
     /* 桌面宠物（09-30）：域只收显式 props（onNotice），状态全走自己的 IPC（pet:*），不占 app 字段面 */

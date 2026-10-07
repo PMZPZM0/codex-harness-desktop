@@ -433,6 +433,26 @@ export async function ensureRepo(
   const hosts = opts?.hosts?.length ? opts.hosts : MODEL_HOSTS;
   const total = repo.files.length;
   const concurrency = Math.max(1, Math.min(opts?.concurrency ?? 4, total));
+  /* ⛔⛔ 10-07 用户实测「MAC 安装音色模型 15 秒超时」的真根因：主机顺序**写死**。
+     MODEL_HOSTS 把 huggingface.co 排在第一，而 hf 官方站国内直连**挂起**——
+     每个文件都要先白等一个连接超时（12s）才轮到 hf-mirror，多个文件并行就是
+     十几秒毫无动静然后连环报超时。归档型资源（zipvoice/kws）早就有
+     orderCandidatesByLatency 的首字节探测排序，唯独基础模型这条 per-file 路没接。
+     ⛔ 修法 = 与归档路径**同一套判据**：安装开始时探测一次、整仓共用排序
+     （12 个文件不必各探各的）；探测失败不阻塞安装——按原顺序兜底。
+     ⛔ 探测的是**真实文件 URL**（Range 0-1），不是站点根路径：根路径 200 不代表
+     release 资产可达。 */
+  let orderedHosts = [...hosts];
+  if (hosts.length > 1 && repo.files.length > 0) {
+    try {
+      const probeFile = repo.files[0].name;
+      const probed = await orderCandidatesByLatency(
+        hosts.map((h) => modelUrl(h, repo.repo, probeFile)),
+        opts?.signal,
+      );
+      orderedHosts = probed.map((u) => u.split("/resolve/")[0]);
+    } catch { /* 探测失败：按调用方给的原顺序试 */ }
+  }
   const failures: string[] = [];
   let done = 0;
   const queue: VoiceModelFile[] = [...repo.files];
@@ -485,7 +505,7 @@ export async function ensureRepo(
     const dest = modelFilePath(modelsRoot, repo.repo, f.name);
     let lastError = "";
     let ok = false;
-    for (const host of hosts) {
+    for (const host of orderedHosts) {
       reportStart(f.name, host);
       const result = await downloadFile(host, repo.repo, f.name, f.bytes, dest, f.sha256, (received, bytes) => {
         reportProgress(f.name, received, bytes, host);
