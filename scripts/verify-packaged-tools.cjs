@@ -122,13 +122,27 @@ async function main() {
   //    ⚠️ dev 态从仓库读 resources/tools（npm 在）⇒ 本地永远不复现；0.0.32 就是这么流出去的。
   //    ⇒ 产物层必须验到 **npm-cli.js 真能跑起来**，不是只看文件存在（存在但缺依赖同样跑不动）。
   //    配套：package.json 里那条 from=resources/tools/node/node_modules 的映射（守卫【27】钉着）。
-  const npmCli = path.join(root, "node", "node_modules", "npm", "bin", "npm-cli.js");
-  assert.ok(fs.existsSync(npmCli),
-    "随包 Node 缺少 npm（tools/node/node_modules/npm/bin/npm-cli.js）—— 检查 package.json extraResources " +
-    "里那条 from=resources/tools/node/node_modules 的映射（electron-builder 会丢弃 from 根级的 node_modules）。" +
+  // ⛔⛔ 10-07 二次事故（**本断言自己把 mac job 打红**，v0.0.33 首轮 CI）：本文件验的是**两个平台**
+  //    （build-win 与 build-mac 都调它，见 .github/workflows/{build-win,build-mac}.yml），而两个平台的
+  //    随包 Node 是**两种解包布局**：
+  //      · Windows：`prepare-windows-tools.cjs` 解官方 **zip** ⇒ npm 在 `node/node_modules/npm/`
+  //      · macOS  ：`prepare-mac-tools.cjs` 解官方 **tar.gz** ⇒ npm 在 `node/lib/node_modules/npm/`
+  //        （见该脚本 `const npm = path.join(tools, "node/lib/node_modules/npm/bin/npm-cli.js")`）
+  //    第一版只写死 Windows 那一条 ⇒ mac 上 `resources/tools` 里永远找不到它 ⇒ 「Verify native
+  //    automation before packaging」必红。同一文件第 29 行的 node 本体**本来就是按平台分支的**
+  //    （`node.exe` vs `bin/node`）—— 我漏了这个既有模式。
+  //    ⇒ 一律**按候选列表探测**，别再按平台写死单条路径；断言消息里两种布局都点出来。
+  const npmCli = [
+    path.join(root, "node", "node_modules", "npm", "bin", "npm-cli.js"),        // Windows（官方 zip 布局）
+    path.join(root, "node", "lib", "node_modules", "npm", "bin", "npm-cli.js"), // macOS / Linux（官方 tar.gz 布局）
+  ].find(fs.existsSync);
+  assert.ok(npmCli,
+    "随包 Node 缺少 npm（找过两种布局：node/node_modules/npm/bin/npm-cli.js 与 " +
+    "node/lib/node_modules/npm/bin/npm-cli.js）—— 检查 package.json extraResources 里那条 " +
+    "from=resources/tools/node/node_modules 的映射（electron-builder 会丢弃 from 根级的 node_modules）。" +
     "缺了它，「开发工具」与知识库的全部安装动作都会失败。");
   const npmVersion = spawnSync(node, [npmCli, "--version"], { encoding: "utf8", windowsHide: true, env, timeout: 60000 });
-  assert.equal(npmVersion.status, 0, `随包 npm 跑不起来：${npmVersion.error?.message || npmVersion.stderr}`);
+  assert.equal(npmVersion.status, 0, `随包 npm 跑不起来（${npmCli}）：${npmVersion.error?.message || npmVersion.stderr}`);
   console.log("npm:", String(npmVersion.stdout).trim());
   console.log("MCP tools:", (await mcp()).length);
   const cli = spawnSync(node, [path.join(modules, "@playwright", "cli", "playwright-cli.js"), "--help"], {

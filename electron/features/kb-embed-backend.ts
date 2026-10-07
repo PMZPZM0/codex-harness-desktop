@@ -13,7 +13,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { CHINA_NPM_REGISTRY, bundledNode, toolchainEnv, toolsRoot } from "../toolchain";
+import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, toolchainEnv, toolsRoot } from "../toolchain";
 
 const PKG = "@huggingface/transformers";
 const MODEL_REPO = "Xenova/bge-small-zh-v1.5";
@@ -118,8 +118,9 @@ export async function installKbEmbedding(onProgress?: (p: KbInstallProgress) => 
 async function doInstall(onProgress: (p: KbInstallProgress) => void): Promise<void> {
   const node = bundledNode();
   if (!node) throw new Error("缺少内置 Node，无法安装知识库 embedding 后端");
-  const npmCli = path.join(toolsRoot(), "node", "node_modules", "npm", "bin", "npm-cli.js");
-  if (!existsSync(npmCli)) throw new Error(`内置 Node 缺少 npm（${npmCli}）`);
+  // ⛔ 按平台候选探测（Windows zip 布局 / mac tar.gz 布局）—— 别在这里复制路径字面量，见 toolchain.bundledNpmCli
+  const npmCli = bundledNpmCli();
+  if (!npmCli) throw new Error(`内置 Node 缺少 npm（候选中无 npm-cli.js，tools 根：${toolsRoot()}）`);
   const dir = kbBackendDir();
   await fs.mkdir(dir, { recursive: true });
 

@@ -241,6 +241,28 @@ export function bundledNode() {
   }
 }
 
+/** 内置 npm 的入口脚本（npm-cli.js 完整路径）；没有则返回空串。
+ *
+ *  ⛔⛔ 10-07 mac 适配实测缺口：两个平台的**随包 Node 是两种解包布局**（与上面 bundledGit 同型，必须按候选探测）：
+ *    · Windows：`prepare-windows-tools.cjs` 解官方 **zip** ⇒ npm 在 `node/node_modules/npm/`
+ *    · macOS  ：`prepare-mac-tools.cjs` 解官方 **tar.gz** ⇒ npm 在 `node/lib/node_modules/npm/`
+ *      （见该脚本 `const npm = path.join(tools, "node/lib/node_modules/npm/bin/npm-cli.js")`；
+ *        mac 侧 `build/copy-mac-tools.cjs` 是整目录 `fs.cp`，不做任何布局归一化。）
+ *  ⇒ 此前 runtime-ipc.ts / kb-embed-backend.ts **各自**写死了 Windows 那一条 ⇒ mac 上
+ *     「开发工具」装包与知识库语义后端安装一律抛「内置 Node 缺少 npm」，功能等于被阉割。
+ *     本函数是唯一真相源，两处消费方都改走它（别再复制字面量）。 */
+export function bundledNpmCli() {
+  const tools = toolsRoot();
+  const candidates = [
+    path.join(tools, "node", "node_modules", "npm", "bin", "npm-cli.js"), // Windows（官方 zip 布局）
+    path.join(tools, "node", "lib", "node_modules", "npm", "bin", "npm-cli.js"), // macOS / Linux（官方 tar.gz 布局）
+  ];
+  for (const candidate of candidates) {
+    try { if (tools && fs.existsSync(candidate)) return candidate; } catch { /* 不存在 */ }
+  }
+  return "";
+}
+
 /** 内置 MinGit 入口；没有安装时返回空串。 */
 export function bundledGit() {
   const tools = toolsRoot();

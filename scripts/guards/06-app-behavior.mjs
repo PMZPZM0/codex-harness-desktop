@@ -635,6 +635,35 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   // 产物层守卫：verify-packaged-tools 必须对「包体真的进包了」下断言（它是最靠近产物的那道网）。
   const verifyPackagedTools = readFileSync(join(ROOT, "scripts", "verify-packaged-tools.cjs"), "utf8");
   (verifyPackagedTools.includes("@nuphus/nuphus-mcp/package.json") && verifyPackagedTools.includes("@playwright/cli/package.json") && /from=resources\/tools\/npm-global\/node_modules/.test(verifyPackagedTools) ? ok : fail)("verify-packaged-tools：断言产物里真的有 nuphus-mcp 与 @playwright/cli（node_modules 没被打进包就红）");
+  /* ⛔⛔ 10-07 二次事故（v0.0.33 首轮 CI 的 mac job 就红在这条脚本上）：
+     本脚本是**两平台共用**的（build-win 验 resources/tools 与 win-unpacked；build-mac 验 resources/tools
+     与 .app/Contents/Resources/tools），而两个平台随包 Node 的**解包布局不同** ——
+       · Windows 解官方 **zip** ⇒ npm 在 `node/node_modules/npm/`
+       · macOS 解官方 **tar.gz** ⇒ npm 在 `node/lib/node_modules/npm/`
+     我给本脚本加 npm 断言时只写死了 Windows 那一条 ⇒ mac 上「Verify native automation before packaging」
+     必红（同一文件第 29 行的 node 本体本来就是按平台分支的 `node.exe` / `bin/node`，我漏了那个既有模式）。
+     ⇒ 钉住「按候选列表探测、两种布局都列出」，并负向钉住「不许退回写死单条」。 */
+  const npmCandidates = /const npmCli = \[\s*path\.join\(root, "node", "node_modules", "npm", "bin", "npm-cli\.js"\),[\s\S]{0,240}?path\.join\(root, "node", "lib", "node_modules", "npm", "bin", "npm-cli\.js"\),[\s\S]{0,240}?\]\.find\(fs\.existsSync\)/.test(verifyPackagedTools);
+  (npmCandidates ? ok : fail)("verify-packaged-tools：npm CLI 必须按「候选列表」探测两种解包布局（Windows zip 的 node/node_modules/npm + mac tar.gz 的 node/lib/node_modules/npm）；只写死一种会把另一平台的 CI job 打红");
+  (!/const npmCli = path\.join\(root, "node", "node_modules", "npm", "bin", "npm-cli\.js"\);/.test(verifyPackagedTools) ? ok : fail)("verify-packaged-tools：npm CLI 不许退回单平台硬编码路径（10-07 mac job 事故的复发形态）");
+  /* ⛔⛔ 10-07 mac **真缺口**（与上面同源，但严重程度不同 —— 这是**功能**缺口，不是 CI 失败）：
+     `runtime-ipc.ts`（开发工具装包）与 `kb-embed-backend.ts`（知识库语义后端安装）**各自**写死了
+     npm 的 Windows zip 布局路径；而 mac 的随包 Node 是官方 tar.gz 布局（npm 在 `node/lib/node_modules/npm`），
+     且 `build/copy-mac-tools.cjs` 是整目录 fs.cp、**不做任何布局归一化**
+     ⇒ mac 上这两个功能一律抛「内置 Node 缺少 npm」，等于被阉割（用户 09-18 定的发版第 0 步
+       就是 mac 适配审计，这条正属于「跨平台代码里写死某平台的东西」）。
+     已下沉成 `toolchain.bundledNpmCli()`（候选列表，与既有 `bundledGit()` 同型）。
+     下面两条：① 唯一真相源必须真的按候选探测；② 业务文件里不许再出现那条硬编码路径。 */
+  const toolchainSrc = readFileSync(join(ROOT, "electron", "toolchain.ts"), "utf8");
+  const npmHelper = /export function bundledNpmCli\(\)\s*\{[\s\S]{0,1200}?"node", "node_modules", "npm", "bin", "npm-cli\.js"[\s\S]{0,400}?"node", "lib", "node_modules", "npm", "bin", "npm-cli\.js"/.test(toolchainSrc);
+  (npmHelper ? ok : fail)("toolchain.bundledNpmCli：按候选列表探测两种解包布局（Windows zip 的 node/node_modules/npm + mac tar.gz 的 node/lib/node_modules/npm）—— 只认一种 = mac 上「开发工具 / 知识库」装不上");
+  /* ⛔ 上面那条负向判据用「字面量在主进程源码里的出现次数」实现 —— 比逐个文件 walk 简单也更强：
+     `mainSrc`（_ctx 的聚合面）已递归覆盖 electron/main.ts + electron/features/** + electron/main/**
+     + 顶层 electron/*.ts，正是「谁可能写死路径」的全部范围。
+     ⛔ 下限钉 1（不是 0）：toolchain.ts 里那条 Windows 候选**必须**在，它是唯一真相源；
+        钉 1 同时挡住「把 toolchain 那行也删了」与「业务文件又抄一份」两个方向。 */
+  const npmLiteralCount = mainSrc.split('"node", "node_modules", "npm", "bin", "npm-cli.js"').length - 1;
+  (npmLiteralCount === 1 ? ok : fail)(`npm CLI 路径字面量在主进程源码里只许出现 1 次（toolchain.ts 唯一真相源）；实际 ${npmLiteralCount} 次 —— 0 = 真相源被删，>1 = 又有业务文件写死了单平台路径（mac 上「开发工具 / 知识库」装不上）`);
   // 行为探针（不只看字符串）：给一个「有 npm-global 但没有那两个包」的假 tools 根，
   // 断言 before-pack 真的中止打包并点名缺什么；逃生阀仍可放行。
   {
