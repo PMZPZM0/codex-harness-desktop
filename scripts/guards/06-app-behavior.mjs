@@ -1560,6 +1560,28 @@ w.postMessage({id:1,op:"list",root});
     );
     (viewSrc.includes("runningByMember") ? ok : fail)("【154】角色状态映射真实成员运行记录 runningByMember（唯一数据源）");
     (viewSrc.includes("openThread") ? ok : fail)("【154】预览的「进入对话」真实跳到该成员会话");
+    /* ⭐ 10-07 用户要求：关闭钮**左侧**一组缩放按钮（放大 / 缩小 / 重置）+ 滚轮缩放。
+       ⛔ 判据锚「控制组存在 + 它排在关闭钮**之前**」这个**结构**，不锚图标名
+         （图标换了不算回归；缺按钮 / 顺序反了才算）。
+       ⛔ 只断言"有个 tools 容器"是不够的 —— 事件必须被**收回来**：顶栏整条是
+         `pointer-events: none`，托盘不写 `auto` 的话三个按钮全是死的。 */
+    const toolsIdx154 = viewSrc.indexOf("office-overlay-tools");
+    const closeIdx154 = viewSrc.indexOf("office-overlay-close");
+    (toolsIdx154 >= 0 && closeIdx154 > toolsIdx154 ? ok : fail)(
+      "【154】缩放控制组在关闭钮**左侧**（DOM 顺序：tools 先于 close）"
+    );
+    /* ⛔ 用带转义的锚点找 `zoomCtl.current?.zoomIn()` 这类调用，别用宽松的 includes */
+    (["zoomIn", "zoomOut", "reset"].every((k) => new RegExp(`zoomCtl\\.current\\?\\.${k}\\(\\)`).test(viewSrc)) ? ok : fail)(
+      "【154】放大 / 缩小 / 重置三个操作都接到画布的控制句柄"
+    );
+    (viewSrc.includes("onZoomChange") && viewSrc.includes("controlsRef") ? ok : fail)(
+      "【154】画布回报缩放倍率 + 接收控制句柄（缺回报 ⇒ 到上下限按钮不停用 = 点了没反应）"
+    );
+    const officeCss154 = existsSync(join(ROOT, "src", "styles", "20-team-office.css"))
+      ? readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8") : "";
+    (/\.office-overlay-tools\s*\{[\s\S]{0,400}?pointer-events:\s*auto/.test(officeCss154) ? ok : fail)(
+      "【154】⛔⛔ 缩放托盘自己收回点击（顶栏是 pointer-events:none，不收回 ⇒ 三个按钮全点不动）"
+    );
     // ⛔ 10-03：负向断言也要双形态 —— 渲染层一旦出现 `ipcHost.handle` 同样是"视图组件内注册 IPC"，
     //    只禁 ipcMain 的话，改个名字就能绕过（负向断言最怕这种"换个写法就绿"）。
     (!/ipcMain\.handle/.test(viewSrc) && !/ipcHost\.handle/.test(viewSrc) ? ok : fail)("【154】视图组件内不得直接注册 IPC");

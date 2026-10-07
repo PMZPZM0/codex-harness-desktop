@@ -4,7 +4,11 @@
  * 数据边界（⛔ 事件驱动的接法）：本组件**不订阅引擎** —— 成员运行态由宿主（AppView）
  * 传入，宿主的 railRuns 本身就是引擎事件流归约出来的，所以这里的画面会随任务
  * 开始/结束**实时变化**（开始 → 坐下敲键盘 + 气泡；结束 → 完成 ✓ → 待机时钟屏保）。
- * 交互只有一条：点角色 → 打开该成员会话。
+ *
+ * 交互：① 点角色 → 打开该成员会话；
+ *      ② 缩放（10-07 用户要求）—— 鼠标滚轮**以指针位置为中心**缩放，
+ *         顶栏关闭钮**左侧**另有「放大 / 缩小 / 重置」三个按钮（两条路径共用同一条实现，
+ *         见 `OfficeCanvas` 的 `zoomAt`）。画面基准是 **contain**：整个办公室完整可见。
  *
  * ⛔⛔ 2026-10-05 晚：**事件状态反馈链路补齐** —— 用户报「事件状态反馈未接通，
  *   导致操作后没有任何响应」。根因不是"没接线"，而是**线上传的是编造的信号**：
@@ -17,7 +21,11 @@
  *     并且**两条成员来源（专家团 / 普通会话委托）共用同一份推导**，不会各写一套。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { OfficeCanvas, type OfficeEventState } from "./OfficeCanvas";
+import { RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  OfficeCanvas, OFFICE_ZOOM_MAX, OFFICE_ZOOM_MIN,
+  type OfficeEventState, type OfficeZoomControls,
+} from "./OfficeCanvas";
 import { activityElapsedMs, officeActivityOf } from "./office-activity";
 import { REPORT_CHARS, WAIT_AFTER_MS, type RunPhase } from "./office-screen";
 import type { OfficeMemberState } from "./office-format";
@@ -129,6 +137,13 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
     hintTimer.current = window.setTimeout(() => setHint(""), 2800);
   }, []);
   useEffect(() => () => { if (hintTimer.current != null) window.clearTimeout(hintTimer.current); }, []);
+
+  /* ⭐ 缩放（10-07 用户要求：滚轮以鼠标位置为中心缩放 + 关闭钮左侧三个按钮）。
+     ⛔ 视图（zoom + 平移）归 `OfficeCanvas` —— 只有它知道舞台尺寸与指针锚点；
+        这里只持有**当前倍率**，用于显示百分比、以及到达上下限时禁用按钮
+        （⛔ 不回报倍率 ⇒ 已经放到最大、按钮却还亮着 = 点了没反应）。 */
+  const zoomCtl = useRef<OfficeZoomControls | null>(null);
+  const [zoom, setZoom] = useState(OFFICE_ZOOM_MIN);
 
   const members: OfficeMemberState[] = useMemo(() => {
     /* ── 普通会话模式（10-04 起）──
@@ -298,12 +313,56 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
           <span className="office-overlay-name">{title}</span>
           <span className="office-overlay-sub">{subtitle}</span>
         </div>
-        <button type="button" className="office-overlay-close" onClick={onClose} aria-label="关闭办公室预览">
-          ✕
-        </button>
+        {/* ⭐ 缩放控制组 + 关闭钮（10-07）。⛔ DOM 顺序 = 视觉顺序：控制组必须在关闭钮**左侧**。 */}
+        <div className="office-overlay-right">
+          <div className="office-overlay-tools" role="group" aria-label="画面缩放">
+            <button
+              type="button"
+              className="office-overlay-tool"
+              title="放大（也可用鼠标滚轮 —— 以指针所在位置为中心）"
+              aria-label="放大"
+              disabled={zoom >= OFFICE_ZOOM_MAX}
+              onClick={() => zoomCtl.current?.zoomIn()}
+            >
+              <ZoomIn size={15} />
+            </button>
+            <button
+              type="button"
+              className="office-overlay-tool"
+              title="缩小"
+              aria-label="缩小"
+              disabled={zoom <= OFFICE_ZOOM_MIN}
+              onClick={() => zoomCtl.current?.zoomOut()}
+            >
+              <ZoomOut size={15} />
+            </button>
+            <button
+              type="button"
+              className="office-overlay-tool"
+              title="重置为完整显示整个办公室"
+              aria-label="重置缩放"
+              disabled={zoom <= OFFICE_ZOOM_MIN}
+              onClick={() => zoomCtl.current?.reset()}
+            >
+              <RotateCcw size={15} />
+            </button>
+            {/* 倍率读数：让"现在放到了多大"可见 —— ⛔ 纯视觉，不加 aria-live
+                （滚轮缩放会逐档播报，屏幕阅读器会吵到没法用）。 */}
+            <span className="office-overlay-zoom">{Math.round(zoom * 100)}%</span>
+          </div>
+          <button type="button" className="office-overlay-close" onClick={onClose} aria-label="关闭办公室预览">
+            ✕
+          </button>
+        </div>
       </header>
       <div className="office-overlay-stage">
-        <OfficeCanvas members={members} onOpenMember={openMember} eventStateOf={eventStateOf} />
+        <OfficeCanvas
+          members={members}
+          onOpenMember={openMember}
+          eventStateOf={eventStateOf}
+          controlsRef={zoomCtl}
+          onZoomChange={setZoom}
+        />
         {members.length === 0 && (
           <p className="office-overlay-empty">
             {team ? "这个团队还没有成员。" : "还没有调度任何子会话 —— 派一个子智能体或专家出去，这里就会多一个人。"}

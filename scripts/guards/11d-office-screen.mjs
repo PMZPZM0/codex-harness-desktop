@@ -349,26 +349,51 @@ ok(/Math\.min\(len \* u,/.test(screen) || /Math\.min\(len,/.test(screen),
   ok(!distAssets.some((f) => /^bg-.*\.webp$/.test(f)), "dist/assets 不许出现 bg-*.webp 独立文件（出现 = 内联失效，构建版必白）");
 }
 
-/* ══ 组 G：全屏铺满（10-05 晚 用户报「画面未铺满全屏，只显示在中间区域」）═════
-   ⛔ 病根：画布只有 `max-width/max-height:100%` —— 那只**限制上限、不会放大**，
-     而画布固有尺寸就是 960×640 ⇒ 窗口一大就只剩中间一块，四周是浮层底色。
-   ✅ 判据钉三件事：① 舞台裁溢出；② 画布不许被 flex 压回去（flex:none）；
-     ③ 尺寸由 `fitCover` 按 cover 规则显式写死。
-   ⛔⛔ 另加一条**负向**断言：不许用 `object-fit` —— 那会让元素盒与实际渲染区不一致，
-     而点击命中算的是 `getBoundingClientRect()` ⇒ 人物点不中（比留边距更坏）。 */
+/* ══ 组 G：完整展示 + 用户缩放/平移（10-07）═══════════════════════════════
+   ⛔⛔ **需求在 10-07 变了**：上一版这组钉的是 **cover 铺满**（`Math.max`）——
+     而 cover 的定义就是"必然溢出"，溢出的部分被舞台 `overflow:hidden` 裁掉
+     （舞台 `align-items: flex-start` 只保上半）⇒ 缺的正好是**底部**。
+     用户原话：「预览画面过大，无法完整展示整个办公室，底部内容被裁剪掉了，
+     需要调整为完整呈现整个办公室」。
+     ⇒ 基准必须换成 **contain**（`Math.min`）。⛔ 别再改回 cover —— 那会精确复现这个 bug。
+   ✅ 判据：① contain 基准 + **负向**钉住不许回退 cover；② 缩放锚点 = 指针位置（滚轮）
+     与舞台中心（按钮），两条都走**同一个** `zoomAt`；③ 尺寸 + 平移显式写死。
+   ⛔ 与形态无关、**永远有效**的两条负向断言原样保留：
+     · 不许用 `object-fit`（元素盒≠渲染区 ⇒ 点击命中整体偏移、人物点不中）；
+     · 舞台必须裁溢出（放大后画布必然超出，不裁会盖住顶栏与原生窗口钮）。 */
 {
   const css = readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8");
   const canvasSrc = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
+  ok(/const s = Math\.min\(sw \/ CANVAS_W, sh \/ CANVAS_H\)/.test(canvasSrc),
+    "⛔⛔ 基准是 contain（Math.min）—— 整间办公室完整可见（cover 必然裁掉底部，正是用户 10-07 报的 bug）");
+  ok(!/Math\.max\(sw \/ CANVAS_W, sh \/ CANVAS_H\)/.test(canvasSrc),
+    "⛔⛔ 不得回退到 cover 取法 Math.max(...)（= 「底部被裁剪」的成因）");
   ok(/\.office-overlay-stage\s*\{[\s\S]{0,400}?overflow:\s*hidden/.test(css),
-    "⛔ 舞台容器裁溢出（cover 铺满靠它把画布多出来的部分裁掉）");
-  ok(/\.office-pixel-canvas\s*\{[\s\S]{0,300}?flex:\s*none/.test(css),
-    "⛔⛔ 画布 `flex: none`（不写的话 flex 会把超出容器的子项压回去 ⇒ cover 静默失效）");
+    "⛔ 舞台容器裁溢出（放大后画布必然超出舞台，不裁会盖到顶栏与原生窗口钮）");
+  ok(/\.office-pixel-canvas\s*\{[\s\S]{0,300}?position:\s*absolute/.test(css),
+    "⛔ 画布绝对定位（位置由视图状态写死；交给 flex 对齐就没法做「以指针为中心」的平移）");
   ok(!/\.office-pixel-canvas\s*\{[\s\S]{0,300}?object-fit/.test(css),
     "⛔⛔ 画布不许用 object-fit（元素盒≠渲染区 ⇒ 点击命中整体偏移、人物点不中）");
-  ok(/const scale = Math\.max\(sw \/ CANVAS_W, sh \/ CANVAS_H\)/.test(canvasSrc),
-    "⛔ 铺满用 cover 规则（取两轴较大缩放 ⇒ 永远铺满且保持 3:2，不拉伸像素）");
-  ok(/canvas\.style\.width = /.test(canvasSrc) && /canvas\.style\.height = /.test(canvasSrc),
-    "⛔ 画布尺寸**显式写死**（而不是交给 CSS 上限，那样只会缩不会放）");
+  ok(/canvas\.style\.width = /.test(canvasSrc) && /canvas\.style\.height = /.test(canvasSrc)
+    && /canvas\.style\.transform\s*=/.test(canvasSrc),
+    "⛔ 画布**尺寸 + 平移**都显式写死（像素风要整数倍最近邻放大，交给 CSS scale 会糊像素）");
+  /* 滚轮：以**指针所在位置**为中心 */
+  ok(/addEventListener\("wheel",[\s\S]{0,60}?\{\s*passive:\s*false\s*\}/.test(canvasSrc),
+    "⛔ 滚轮监听必须 `{ passive: false }`（否则 preventDefault 被静默忽略 ⇒ 缩放时宿主页面跟着滚）");
+  ok(/const ax = ev\.clientX - rect\.left/.test(canvasSrc) && /const ay = ev\.clientY - rect\.top/.test(canvasSrc),
+    "⛔ 滚轮锚点取**指针在舞台坐标系里的位置**（⛔ 不是画布中心 —— 那样就不叫「以鼠标位置为中心」）");
+  ok(/\(0\.5 - fx\)/.test(canvasSrc) && /\(0\.5 - fy\)/.test(canvasSrc),
+    "⛔ 缩放后按「锚点相对位置不变」重算视图中心（这才是「以鼠标位置为中心」的数学判据）");
+  /* 按钮与滚轮**同一条**实现 —— 各写一份必然漂（按钮能放大、滚轮不能之类） */
+  ok(/controlsRef/.test(canvasSrc)
+    && /zoomIn:\s*\(\)\s*=>/.test(canvasSrc)
+    && /zoomOut:\s*\(\)\s*=>/.test(canvasSrc)
+    && /reset:\s*resetView/.test(canvasSrc),
+    "⛔ 画布暴露缩放句柄（放大 / 缩小 / 重置），三个动作与滚轮共用同一条 view 写入路径");
+  ok(/OFFICE_ZOOM_MIN = 1/.test(canvasSrc) && /OFFICE_ZOOM_MAX = 4/.test(canvasSrc),
+    "⛔ 缩放范围常量外露（下限=contain 基准，父层按它禁用到达上下限的按钮）");
+  ok(/Math\.min\(OFFICE_ZOOM_MAX, Math\.max\(OFFICE_ZOOM_MIN/.test(canvasSrc),
+    "⛔ 倍率必须夹在 [MIN, MAX]（不夹 ⇒ 能缩到比舞台还小 / 无限放大）");
 }
 
 /* ══ 组 H：事件面 + 画面映射（10-05 晚 用户要求「把对话框里出现的所有事件接入显示器」）
