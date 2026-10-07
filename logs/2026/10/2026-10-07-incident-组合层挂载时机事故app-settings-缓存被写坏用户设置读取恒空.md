@@ -5,7 +5,7 @@ kind: incident
 area: architecture
 title: 组合层挂载时机事故：app-settings 缓存被写坏，用户设置读取恒空
 tags: [mount, settings, startup, composition]
-commits: []
+commits: [2edbb52]
 files: [electron/main.ts, electron/app-settings.ts, scripts/gen-domain-registry.mjs, electron/composition.gen.ts]
 importance: normal
 ---

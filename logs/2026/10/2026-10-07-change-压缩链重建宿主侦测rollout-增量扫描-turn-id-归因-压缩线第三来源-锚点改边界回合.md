@@ -5,7 +5,7 @@ kind: change
 area: context
 title: 压缩链重建：宿主侦测（rollout 增量扫描 + turn_id 归因）+ 压缩线第三来源 + 锚点改边界回合
 tags: [compaction, rollout, divider, engine]
-commits: []
+commits: [2edbb52]
 files: [electron/compaction-watch.ts, electron/rollout-worker.cjs, electron/features/boot.ts, src/features/app-view/AppView/02-main-stage/01-timeline.tsx, src/lib/compaction-records.mjs]
 importance: normal
 ---
