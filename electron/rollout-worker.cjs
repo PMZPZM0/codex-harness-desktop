@@ -19,6 +19,8 @@
  *   请求  { id, op: "enrich", thread, root }             → 回 { id, ok, data }
  *   请求  { id, op: "purge", root, ids }                 → 回 { id, ok, data:{ removed, failed, kept } }
  *   请求  { id, op: "healLineage", root }                → 回 { id, ok, data:{ healed, failed } }
+ *   请求  { id, op: "check-compaction", root, threadId } → 回 { id, ok, data:{ path, size, truncatedStart, records:[{turnId}] } }
+ *        （增量扫 rollout 新增段找引擎压缩记录，供压缩线侦测，10-07）
  *   出错  回 { id, ok: false, error }
  */
 
@@ -374,6 +376,54 @@ function findRolloutFile(root, threadId) {
   return "";
 }
 
+/** 压缩侦测的读取偏移（10-07）：`${root}|${threadId}` → 上次检查到的字节数。
+ *  增量口径的意义：压缩记录写在**回合开头**（引擎先压缩再调模型），之后同一回合还可以再写
+ *  几百 KB 的工具输出 —— 若每次只读"最后 N 字节"，忙回合会把压缩记录挤出窗口 ⇒ 漏判。
+ *  只读「上次之后新增的字节 + 8KB 重叠」（重叠防上一刀切在行中间）。 */
+const compactionScanOffsets = new Map();
+
+/** 扫 rollout **新增段**，找"归属某回合的 ContextCompaction"记录（引擎压缩 item 只落 rollout）。
+ *  首次（无偏移记录）读尾部 1MB 兜底；此后逐回合增量。
+ *  返回 { path, size, truncatedStart, records: [{ turnId }] }。 */
+function checkCompaction(root, threadId) {
+  const file = findRolloutFile(root, threadId);
+  if (!file) return { path: "", size: 0, truncatedStart: false, records: [] };
+  const key = `${root}|${threadId}`;
+  try {
+    const size = statSync(file).size;
+    const last = compactionScanOffsets.get(key);
+    // 文件变小/换文件（rollout 轮转等）⇒ 当首次处理
+    let start = (typeof last === "number" && last <= size) ? Math.max(0, last - 8192) : Math.max(0, size - 1024 * 1024);
+    const truncatedStart = start > 0;
+    const buf = Buffer.alloc(size - start);
+    const fd = openSync(file, "r");
+    try {
+      const read = readSync(fd, buf, 0, buf.length, start);
+      const text = buf.toString("utf8", 0, read);
+      compactionScanOffsets.set(key, size);
+      while (compactionScanOffsets.size > 500) {
+        const first = compactionScanOffsets.keys().next().value;
+        compactionScanOffsets.delete(first);
+      }
+      const records = [];
+      for (const line of text.split(/\r?\n/)) {
+        if (!line.includes("ContextCompaction")) continue;
+        try {
+          const parsed = JSON.parse(line);
+          const payload = parsed && parsed.payload;
+          const item = payload && payload.item;
+          if (payload && payload.type === "item_completed" && item && item.type === "ContextCompaction" && typeof payload.turn_id === "string" && payload.turn_id) {
+            records.push({ turnId: payload.turn_id });
+          }
+        } catch { /* 首行可能是上一刀切断的半行 —— 跳过 */ }
+      }
+      return { path: file, size, truncatedStart, records };
+    } finally { closeSync(fd); }
+  } catch (error) {
+    return { path: file, size: 0, truncatedStart: false, records: [], error: String((error && error.message) || error) };
+  }
+}
+
 function consumeRolloutLines(text, state) {
   const { turns, outputs, callTurns, turnAliases } = state;
   const push = (turnId, record) => {
@@ -542,6 +592,8 @@ if (parentPort) {
         parentPort.postMessage({ id, ok: true, data: purgeRolloutFiles(String(msg.root || ""), msg.ids) });
       } else if (msg.op === "healLineage") {
         parentPort.postMessage({ id, ok: true, data: healBrokenLineage(String(msg.root || "")) });
+      } else if (msg.op === "check-compaction") {
+        parentPort.postMessage({ id, ok: true, data: checkCompaction(String(msg.root || ""), String(msg.threadId || "")) });
       } else {
         parentPort.postMessage({ id, ok: false, error: `unknown op: ${msg.op}` });
       }

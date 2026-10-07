@@ -107,7 +107,8 @@ export type EnabledDomain = { id: string; plugin: Plugin<unknown>; config: unkno
 /** 已启用的域（顺序 = composition.json 里的顺序 = 挂载顺序）。
  *  ⛔⛔ 依赖方向恒为 **本生成物 → 域**：域**绝不 import 本文件** —— 反向就是环，
  *     CJS 下 domain 还没求值完 ⇒ plugin 为 undefined ⇒ 启动即崩（10-03 实测事故）。
- *     挂载在**模块作用域**执行 = 与原 import "./features/xxx" 同时机，不改变启动顺序。
+ *  ⛔⛔ 挂载**不在模块作用域**执行 —— 由壳（main.ts）在 app.setPath("userData", …) 之后
+ *     调用 mountEnabledDomains()。原因见该函数注释（10-07 设置缓存被写坏事故）。
  *  ⛔⛔ 本函数体是**模板字符串**：里面**绝不能出现反引号**（会把模板提前闭合 ⇒ 生成器语法错误）。 */
 export const ENABLED: EnabledDomain[] = [
 ${entries.join("\n")}
@@ -178,9 +179,24 @@ export function unmountDomainById(id: string): boolean {
   return true;
 }
 
-for (const row of ENABLED) {
-  if (_disabledDomainSet().has(row.id)) continue;   // 用户停用 ⇒ 本次不挂载
-  FIBERS.set(row.id, mountFeature(row.plugin, row.config) as never);
+/**
+ * 挂载全部启用域 —— ⛔ 必须由壳（main.ts）在 **app.setPath("userData", …) 之后**调用。
+ *
+ * ⛔⛔ 为什么禁止「模块作用域自动挂载」（10-07 事故根因）：
+ *   本模块被 main.ts 顶层 import ⇒ 模块体**先于 main.ts 句体执行**，那时 app.setName /
+ *   app.setPath 都还没跑，app.getPath("userData") 指向**默认目录**（实测连 setName 前的
+ *   包名目录都算）⇒ 下面 _disabledDomainSet() 读到空/陈旧设置，而且这次"读失败空对象"
+ *   被写进 app-settings 的**进程级缓存** ⇒ 此后所有读设置的地方（压缩阈值漂移检查、
+ *   设置页读取、记忆后端判定）全部拿到空对象 —— 用户设的自动压缩比例永远不生效
+ *   （config.toml 恒为默认值），停用域名单在启动时也恒为空。
+ *   ⇒ 挂载时机跟随「userData 已定」，不是「模块被求值」。幂等：重复调用不会重复挂。
+ */
+export function mountEnabledDomains(): void {
+  for (const row of ENABLED) {
+    if (FIBERS.has(row.id)) continue;
+    if (_disabledDomainSet().has(row.id)) continue;   // 用户停用 ⇒ 本次不挂载
+    FIBERS.set(row.id, mountFeature(row.plugin, row.config) as never);
+  }
 }
 `;
 }

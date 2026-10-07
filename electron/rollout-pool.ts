@@ -63,7 +63,7 @@ function failAll(error: Error) {
   worker = null;
 }
 
-function call(op: "list" | "enrich" | "purge" | "healLineage", payload: Record<string, unknown>): Promise<any> {
+function call(op: "list" | "enrich" | "purge" | "healLineage" | "check-compaction", payload: Record<string, unknown>): Promise<any> {
   const w = ensureWorker();
   if (!w) return Promise.reject(new Error("rollout worker unavailable"));
   const id = nextId++;
@@ -86,6 +86,13 @@ function call(op: "list" | "enrich" | "purge" | "healLineage", payload: Record<s
 /** 侧栏会话列表兜底扫描（worker 版：目录遍历与单文件解析都在 worker 线程里） */
 export function listRolloutThreadsAsync(codexHome: string): Promise<any[]> {
   return call("list", { root: codexHome });
+}
+
+/** 增量扫 rollout 新增段找引擎压缩记录（压缩线侦测用，2026-10-07）。worker 侧维护逐线程
+ *  读取偏移，每回合只读新增字节 —— 压缩记录写在回合开头，之后同回合还可写几百 KB 工具输出，
+ *  "只读尾部 N 字节"会被挤出窗口漏判。 */
+export function checkCompactionAsync(codexHome: string, threadId: string): Promise<{ path: string; size: number; truncatedStart: boolean; records: { turnId: string }[] }> {
+  return call("check-compaction", { root: codexHome, threadId }) as Promise<{ path: string; size: number; truncatedStart: boolean; records: { turnId: string }[] }>;
 }
 
 /** 把 rollout 里的工具调用补进 thread（worker 版） */

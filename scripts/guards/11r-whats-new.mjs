@@ -124,8 +124,8 @@ ok(/<WhatsNewDialog \/>/.test(appView) && /from "\.\.\/whats-new"/.test(appView)
 
 /* ── ④ 域已登记进 IPC 账本 ───────────────────────────────────────────── */
 const reg = read("electron/ipc-registry.ts");
-ok(/prefix: "whatsnew", count: 2/.test(reg) && /whatsnew:state/.test(reg) && /whatsnew:ack/.test(reg),
-  "域 whatsnew 已登记进 ipc-registry（count=2，两个通道名齐全）");
+ok(/prefix: "whatsnew", count: 3/.test(reg) && /whatsnew:state/.test(reg) && /whatsnew:ack/.test(reg) && /whatsnew:history/.test(reg),
+  "域 whatsnew 已登记进 ipc-registry（count=3：state / ack / history —— history 10-07 随新手引导「版本更新日志」页接入）");
 
 /* ── ⑤ 判定状态机：**真跑**编译产物（stub electron + 真 userData 目录）─────────
    ⛔ 为什么不能只靠上面那些静态判据：那几条只能证明"函数在、分支写了"，

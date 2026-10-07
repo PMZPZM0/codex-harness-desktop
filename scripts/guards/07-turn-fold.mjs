@@ -2644,8 +2644,19 @@ export async function run() {
      ⛔ 判据必须**带上 autoCompactRatio**：裸匹配 `?? 0.8` 会命中无关代码（语音 asr rule2、
      记忆 confidence 都有 `?? 0.8`）—— 第一版就这么写真红了，属「断言比文案宽」的典型。 */
   (!/autoCompactRatio \?\? [\d.]+/.test(mainSrc69) ? ok : fail)("【159】主进程不再有 `autoCompactRatio ?? 数字` 裸默认（全走 normalizeAutoCompactRatio）");
+  (/n < 0\.1 \|\| n > 0\.95/.test(mainSrc69) ? ok : fail)(
+    "【159】压缩比例下限 = 0.1（10-07 放宽：低比值用于实测运行中自动压缩；⛔ 不许退回 0 值区 —— 阈值变 0 会每轮都压）");
   (/normalizeAutoCompactRatio\(appSettings\.autoCompactRatio\)/.test(mainSrc69) ? ok : fail)(
     "【159】压缩阈值经归一化（0 / 负数 / 越界会被挡下 —— 否则阈值变 0，引擎每轮都压缩）"
+  );
+  /* ⛔ 10-07 事故（用户设置恒不生效）：app-settings 缓存必须按**文件路径**归属 ——
+     userData 重定向（app.setPath）之前的调用读过默认目录，读失败的空对象曾被缓存整个进程
+     （`if (cached)` 短路）⇒ 自动压缩比例等全部用户设置静默失效（config.toml 恒默认阈值）。
+     判据锚**语句本身**：两条读取路径都必须 `cached && cachedFor === file`、保存路径同款。 */
+  const keyedReads159 = (mainSrc69.match(/if \(cached && cachedFor === file\) return cached;/g) || []).length;
+  const keyedSave159 = /const current = cached && cachedFor === file \? cached : await readAppSettings\(userData\);/.test(mainSrc69);
+  (keyedReads159 === 2 && keyedSave159 ? ok : fail)(
+    `【159】app-settings 缓存按文件路径归属（读取 ${keyedReads159}/2 处、保存 ${keyedSave159 ? "已" : "未"}接 —— ⛔ 退回裸 if(cached) 会把重定向前的空读短路到整个进程）`
   );
   /* ⛔ 压缩阈值必须纳入**启动自愈的漂移判据**（09-25 code review 抓到）：
      config.toml 里的阈值是**写下来就不再变**的（除非有人重写整份配置）。只改设置 / 只改默认值
@@ -4819,8 +4830,9 @@ export async function run() {
   })() ? ok : fail)(
     "【163】thread/compacted 必须本地落平还挂着的 inProgress 压缩 item（分隔线停转不依赖引擎补发）"
   );
-    /* ── 【165】压缩线位置归位（09-26 两次修：回合中途自动压缩时引擎新开的压缩回合排在 turns 末尾，
-     只提「所在回合」顶部不够 ⇒ 归位逻辑上收到 timeline 层：线固定插在最后一条用户消息回合正上方） */
+    /* ── 【165】压缩线位置归位（09-26 两次修 + 10-07 改锚：09-26 把线固定在「最新一条用户消息」上方，
+     但它每帧重算 ⇒ 新消息一来线跟着往下跑、不随历史往上走（用户 10-07：「压缩线跟着历史消息往上走」）；
+     10-07 改锚 = 以**压缩 item 自己所在回合**为界，取该回合(含)之前最近一条用户消息回合的正上方） */
   {
     const turnView = readFileSync(join(ROOT, "src/features/session-turn/SessionTurn/03-turn-view.tsx"), "utf8");
     const timeline = readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/01-timeline.tsx"), "utf8");
@@ -4831,12 +4843,19 @@ export async function run() {
       "【165】timeline 层扫描最后一条已完成压缩 item（与 pruneSupersededCompactions 同口径）"
     );
     ((() => { const a = timeline.indexOf("compactionLine && i === insertBefore"); const b = timeline.indexOf("<MemoTurnView"); return a >= 0 && b >= 0 && a < b; })() ? ok : fail)(
-      "【165】压缩线插在目标回合**之前**（= 最后一条用户消息的上方，不是回合后面）"
+      "【165】压缩线插在目标回合**之前**（不是回合后面）"
+    );
+    (timeline.includes("const boundaryTurnId = lastCompactionTurnId || String(hostCompaction?.turnId ?? \"\")")
+      && /anchorFrom = boundaryTurnId \? ordered\.findIndex/.test(timeline) ? ok : fail)(
+      "【165】压缩线锚点 = **压缩 item 自己所在回合**（10-07：取该回合(含)之前最近一条用户消息的正上方）——"
+        + "新消息到来线**不动**（旧口径「永远黏最新一条用户消息」会让线跟着新消息往下跑，用户实测点出）"
     );
     // ⛔ 同屏最多一条「已完成」压缩线（09-26 用户截图「两条压缩线」）：settled 兜底必须在归位处
     //    （else-if 与 compactionLine 互斥），不许再单独挂在时间线尾部。
-    ((timeline.match(/compact-divider--settled/g) || []).length === 1 && /\} else if \(compactToast && compactToast\.state !== "running"/.test(timeline) ? ok : fail)(
-      "【165】已完成压缩线只有一处渲染（item 优先，否则 toast 兜底，同位置互斥）"
+    ((timeline.match(/compact-divider--settled/g) || []).length === 2
+      && /\} else if \(hostCompaction && insertBefore >= 0\)/.test(timeline)
+      && /\} else if \(compactToast && compactToast\.state !== "running"/.test(timeline) ? ok : fail)(
+      "【165】已完成压缩线两条渲染互相排斥（引擎 item 优先 → 宿主侦测记录 → toast 兜底；三源同一锚点，同屏只出一条）"
     );
     const part04Prune = readFileSync(join(ROOT, "src/features/app-state/parts/part04/01-seg.tsx"), "utf8");
     (/let keep = keepId;/.test(part04Prune) && /keep = String\(last\?\.id \?\? ""\);/.test(part04Prune) ? ok : fail)(
@@ -4844,6 +4863,42 @@ export async function run() {
     );
     (/status !== \"inProgress\" && it\?\.status !== \"running\"/.test(timeline) ? ok : fail)(
       "【165】归位只取**已完成**的压缩 item（进行中的转圈由 compact toast 负责，不抢位置）"
+    );
+    /* 10-07 新增链（当前引擎压缩不发 item 事件）：主进程侦测 → 落盘 → 广播 → resume 重播 → 渲染层第三源。
+       ⛔ 10-07 二次修正：首版「非渲染层回合才查」已被大会话实测证伪 —— 自动压缩是**内联**在用户回合里
+       完成的（记录 turn_id == 用户回合 id），必须按**记录本体**归因。 */
+    const watchSrc = existsSync(join(ROOT, "electron", "compaction-watch.ts"))
+      ? readFileSync(join(ROOT, "electron", "compaction-watch.ts"), "utf8") : "";
+    (watchSrc.includes("watchTurnCompleted") && watchSrc.includes("checkCompactionAsync") && watchSrc.includes("thread-compacted-host") && watchSrc.includes("record.turnId === id") ? ok : fail)(
+      "【165】主进程压缩侦测（compaction-watch：增量扫 rollout + 记录按 turn_id 归因 → 广播 thread-compacted-host）"
+    );
+    (!watchSrc.includes("rendererTurns") ? ok : fail)(
+      "【165】⛔ 不许退回「非渲染层回合才查」的旧判据（10-07 实测：自动压缩内联在用户回合里，那套会把真实压缩全部丢掉、存储恒空）"
+    );
+    const workerSrc165 = readFileSync(join(ROOT, "electron", "rollout-worker.cjs"), "utf8");
+    (workerSrc165.includes("compactionScanOffsets") && workerSrc165.includes("item_completed") && workerSrc165.includes('item.type === \"ContextCompaction\"') && workerSrc165.includes("turnId: payload.turn_id") ? ok : fail)(
+      "【165】rollout 增量扫描的记录归因（偏移表 + item_completed + item.type=ContextCompaction + 取 payload.turn_id —— 压缩记录写在回合开头，只读尾部 N 字节会被同回合的后续输出挤出窗口）"
+    );
+    const bootSrc165 = readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8");
+    (watchSrc.includes("persistThread") && /writeFileSync/.test(watchSrc)
+      && bootSrc165.includes('setCompactionWatchDirs(path.join(app.getPath("userData"), "compaction-records")') ? ok : fail)(
+      "【165】压缩侦测记录落盘（boot 注入 userData/compaction-records + watch 侧原子写；重启后 resume 重播的真相源）"
+    );
+    (bootSrc165.includes("watchTurnCompleted(String(p?.threadId ?? \"\"), turnIdOf(p))") ? ok : fail)(
+      "【165】boot 在 turn/completed 挂侦测钩子（每个回合结束都查 —— 内联压缩记在用户回合名下，不许只查引擎自发回合）"
+    );
+    const codexIpcSrc165 = readFileSync(join(ROOT, "electron", "features", "codex-ipc.ts"), "utf8");
+    (codexIpcSrc165.includes("storedCompactionsForThread") && codexIpcSrc165.includes("dropStoredCompactions") ? ok : fail)(
+      "【165】codex-ipc：resume 重播压缩记录 + 删除会话清落盘"
+    );
+    (!codexIpcSrc165.includes("noteRendererTurn") ? ok : fail)(
+      "【165】codex-ipc 不再登记渲染层回合（归因改走记录本体，登记表已删 —— 不许复活）"
+    );
+    (existsSync(join(ROOT, "src", "lib", "compaction-records.mjs")) && timeline.includes("compactionRecordFor(thread.id)") ? ok : fail)(
+      "【165】渲染层第三源接线（compaction-records.mjs + 时间线读 compactionRecordFor）"
+    );
+    (timeline.includes("useSyncExternalStore(subscribeCompactions, compactionVersion)") ? ok : fail)(
+      "【165】压缩记录订阅接线（记录一变即重渲染 —— 广播到达时无其它 state 更新，不许等被动重渲染 = 竞态）"
     );
   }
   /* ── 【166】压缩 item 判定唯一口径 + 挂载兜底（09-26 rollout 取证） ──

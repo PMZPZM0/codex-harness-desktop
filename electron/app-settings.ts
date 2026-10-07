@@ -31,7 +31,7 @@ export type AppSettings = {
   engineWatchdog?: boolean;
   /** 记忆后端："builtin"= 内置记忆金字塔（默认）；"mcp"= MCP 记忆服务（此时内置停止写入） */
   memoryBackend?: "builtin" | "mcp";
-  /** 全局自动压缩比例：上下文用量达到该比例时引擎自动压缩（0.5~0.95，默认见 DEFAULT_AUTO_COMPACT_RATIO） */
+  /** 全局自动压缩比例：上下文用量达到该比例时引擎自动压缩（0.1~0.95，默认见 DEFAULT_AUTO_COMPACT_RATIO） */
   autoCompactRatio?: number;
   /** Codex 引擎更新用的 HTTP 代理（如 http://127.0.0.1:7890）。空 = 国内镜像直连 */
   engineProxyUrl?: string;
@@ -95,50 +95,65 @@ export type AppSettings = {
       （autoCompactRatio）。守卫【159】逐字比对两侧取值，改一边忘另一边即红。
    ⛔ 归一化不是洁癖：`autoCompactRatio` 是被乘进 `model_auto_compact_token_limit` 的**乘数**，
       存档里出现 0 / 负数 / 字符串（手改 app-settings.json、旧版本残留）会让阈值变成 0
-      ⇒ 引擎每轮都在压缩，对话直接不可用（09-25 加归一化时顺手堵上）。 */
+      ⇒ 引擎每轮都在压缩，对话直接不可用（09-25 加归一化时顺手堵上）。
+   ⛔ 10-07 下限 0.5 → **0.1**（用户要在大会话上实测「运行中自动压缩」——1M 窗口 × 0.5 = 52 万
+      阈值对已有 32 万上下文的会话压不出来；0.1 仍远高于「0 = 每轮都压」的危险区）。 */
 export const DEFAULT_AUTO_COMPACT_RATIO = 0.6;
 
 export function normalizeAutoCompactRatio(value: unknown): number {
   const n = Number(value);
-  if (!Number.isFinite(n) || n < 0.5 || n > 0.95) return DEFAULT_AUTO_COMPACT_RATIO;
+  if (!Number.isFinite(n) || n < 0.1 || n > 0.95) return DEFAULT_AUTO_COMPACT_RATIO;
   return n;
 }
 
 let cached: AppSettings | null = null;
+/** 缓存归属的设置文件路径。
+ *  ⛔ 按**路径**归属（10-07 事故）：userData 重定向（app.setPath）之前的调用读过默认目录，
+ *     若那次读失败把空对象缓存下来，重定向后的正确读取会被 `if (cached)` 短路返回空
+ *     ⇒ **整个进程**的设置读取全部失效（用户设的 0.9 压缩比例从未生效，config.toml 恒为
+ *     默认 0.6 的阈值）。缓存命中必须同时满足「有缓存」且「路径一致」，不一致就重读。 */
+let cachedFor = "";
 
 function settingsFile(userData: string) {
   return path.join(userData, "app-settings.json");
 }
 
 export async function readAppSettings(userData: string): Promise<AppSettings> {
-  if (cached) return cached;
+  const file = settingsFile(userData);
+  if (cached && cachedFor === file) return cached;
   try {
-    const raw = await fs.readFile(settingsFile(userData), "utf8");
+    const raw = await fs.readFile(file, "utf8");
     cached = JSON.parse(raw) as AppSettings;
   } catch {
     cached = {};
   }
+  cachedFor = file;
   return cached;
 }
 
 export function readAppSettingsSync(userData: string): AppSettings {
-  if (cached) return cached;
+  const file = settingsFile(userData);
+  if (cached && cachedFor === file) return cached;
   try {
-    cached = JSON.parse(readFileSync(settingsFile(userData), "utf8")) as AppSettings;
+    cached = JSON.parse(readFileSync(file, "utf8")) as AppSettings;
   } catch {
     cached = {};
   }
+  cachedFor = file;
   return cached;
 }
 
 export async function saveAppSettings(userData: string, patch: Partial<AppSettings>): Promise<AppSettings> {
-  const current = cached ?? (await readAppSettings(userData));
+  const file = settingsFile(userData);
+  const current = cached && cachedFor === file ? cached : await readAppSettings(userData);
   cached = { ...current, ...patch };
+  cachedFor = file;
   await fs.mkdir(userData, { recursive: true });
-  await fs.writeFile(settingsFile(userData), JSON.stringify(cached, null, 2), "utf8");
+  await fs.writeFile(file, JSON.stringify(cached, null, 2), "utf8");
   return cached;
 }
 
 export function invalidateAppSettings() {
   cached = null;
+  cachedFor = "";
 }

@@ -26,7 +26,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                         <span className="model-global-label"><Zap size={13} />自动压缩比例</span>
                         {/* ⛔ 落盘失败必须推翻那句"已设置"（10-06 用户：「很多开发都没有通知提醒」）：
                             原来 `void …saveAppSettings(...)` 即发即忘 —— 盘上没写成功也照报成功。 */}
-                        <AppSelect value={String(autoCompactRatio)} onChange={(val) => { const v = Number(val); setAutoCompactRatio(v); void window.codex.saveAppSettings({ autoCompactRatio: v }).then(() => setNotice('自动压缩比例已设为 ' + Math.round(v * 100) + '% ，达到该用量时自动压缩上下文')).catch((error: any) => setNotice('自动压缩比例保存失败：' + (error?.message ?? error))); }} ariaLabel="自动压缩比例" options={[0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95].map((r) => ({ value: String(r), label: `${Math.round(r * 100)}%` }))} />
+                        <AppSelect value={String(autoCompactRatio)} onChange={(val) => { const v = Number(val); setAutoCompactRatio(v); void window.codex.saveAppSettings({ autoCompactRatio: v }).then(() => setNotice('自动压缩比例已设为 ' + Math.round(v * 100) + '% ，达到该用量时自动压缩上下文')).catch((error: any) => setNotice('自动压缩比例保存失败：' + (error?.message ?? error))); }} ariaLabel="自动压缩比例" options={[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95].map((r) => ({ value: String(r), label: `${Math.round(r * 100)}%` }))} />
                         <small>上下文用量达到此比例时引擎自动压缩较早对话</small>
                       </div>
                     </div>

@@ -1412,6 +1412,80 @@ const CHECKS = [
     },
   },
   {
+    id: "compact-line",
+    name: "㉗ 压缩线：真压缩 → 宿主侦测 → 压缩线出现（10-07 轮）",
+    run: async (h) => {
+      /* 为什么真跑（10-07 用户：「压缩线会常驻显示嘛…压缩完，自动继续会话」）：
+         当前引擎对压缩**不发 item 事件**（压缩 item 只落 rollout）⇒ 「rollout 对账 → 落盘 →
+         广播 → 渲染层画线」整条宿主侦测链都是运行期行为，tsc 与静态守卫全看不见。
+         这里用「新建会话 + 两条短回合 + 手动 thread/compact/start」走**真链路**（小上下文 =
+         秒级、低成本；自动压缩（阈值触发）由探针与守卫覆盖，手动压缩走的是同一条侦测链）。 */
+      /* ① 新建任务（避开历史会话的状态耦合；也保证 thread 有新 id 可追） */
+      const clicked = await h.eval(`(function(){ const b=[...document.querySelectorAll('.sidebar-tab')].find((x)=>(x.textContent||'').includes('新建任务')); if(!b) return 0; b.click(); return 1; })()`);
+      h.check("① 点到「新建任务」（前置；点不到则整项作废）", clicked === 1, `clicked=${clicked}`);
+      if (clicked !== 1) return;
+      await wait(1500);
+      const sendMsg = async (text) => {
+        await h.eval(`(function(){ const dt = new DataTransfer(); dt.setData("text/plain", ${JSON.stringify(text)}); const el = document.querySelector('.composer-editor'); el.focus(); el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); return 1; })()`);
+        await wait(600);
+        await h.pressKey("Enter", { text: "\r" });
+      };
+      const waitTurnIdle = async (timeoutMs) => {
+        let ran = false;
+        for (let i = 0; i < timeoutMs / 1000; i++) {
+          const busy = await h.eval(`!!document.querySelector('.send-button.is-pause')`).catch(() => false);
+          if (busy) ran = true;
+          if (ran && !busy) return true;
+          await wait(1000);
+        }
+        return false;
+      };
+      /* ② 两条短回合：给压缩一点可总结的内容（引擎对"完全空"的会话可能不产出压缩 item） */
+      await sendMsg("请只回复：收到一。不要调用任何工具。");
+      const d1 = await waitTurnIdle(120000);
+      await sendMsg("请只回复：收到二。不要调用任何工具。");
+      const d2 = await waitTurnIdle(120000);
+      h.check("② 新会话两条短回合都跑完（前置条件）", d1 === true && d2 === true, `d1=${d1} d2=${d2}`);
+      if (!(d1 && d2)) return;
+      /* ③ 取当前会话 id（真正的 id 从侧栏活动行读 —— 不猜） */
+      const tid = await h.eval(`(function(){ const row = document.querySelector('.thread-row.active'); return row ? row.getAttribute('data-thread-id') : null; })()`);
+      h.check("③ 读到活动会话 id（前置条件）", typeof tid === "string" && tid.length > 10, `tid=${tid}`);
+      if (typeof tid !== "string" || tid.length < 10) return;
+      /* ④ 手动压缩（与渲染层「压缩」按钮同一个引擎 RPC；手动压缩的回合不经 turn/start，
+         正是宿主侦测链的判据之一） */
+      await h.eval(`window.codex.request("thread/compact/start", { threadId: ${JSON.stringify(tid)} }).catch(() => undefined)`);
+      /* ⑤ 压缩线出现（宿主侦测 → 落盘 → 广播 → 渲染层）。小上下文秒级；上限 120s 防慢机。 */
+      let line = null;
+      for (let i = 0; i < 120; i++) {
+        await wait(1000);
+        line = await h.eval(`(function(){
+          const d = document.querySelector('.compact-divider');
+          if (!d) return null;
+          const msgs = [...document.querySelectorAll('.message.user-message')];
+          return { cls: d.className, text: (d.textContent||'').replace(/\\s+/g,' ').trim().slice(0, 60),
+            aboveLastUser: msgs.length ? d.getBoundingClientRect().top <= msgs[msgs.length-1].getBoundingClientRect().top : null,
+            userMsgs: msgs.length };
+        })()`).catch(() => null);
+        if (line) break;
+      }
+      h.check("④ 压缩线出现（宿主侦测链路真跑：rollout 对账 → 落盘 → 广播 → 渲染）",
+        !!line && line.cls.includes("compact-divider--settled") && line.text.includes("压缩"),
+        JSON.stringify(line).slice(0, 200));
+      if (!line) return;
+      /* ⑥ 锚点：线在用户消息**上方**（压缩线跟着历史往上走 —— 用户点名的一条） */
+      h.check("⑤ 压缩线锚在用户消息上方（不是挂在消息下面）",
+        line.aboveLastUser === true && line.userMsgs >= 2, JSON.stringify({ aboveLastUser: line.aboveLastUser, userMsgs: line.userMsgs }));
+      /* ⑦ 落盘：重启/切会话重播的真相源（presist 在广播之前，线出现即可读） */
+      const storeFile = join(h.userDataDir ?? join(ROOT, ".e2e-profile", "main"), "compaction-records", `${tid}.json`);
+      let stored = null;
+      try { stored = JSON.parse(readFileSync(storeFile, "utf8")); } catch { /* 缺失下面报 */ }
+      h.check("⑥ 侦测记录落盘（userData/compaction-records/<threadId>.json —— 重启后 resume 重播的真相源）",
+        !!stored && Array.isArray(stored.records) && stored.records.length >= 1 && typeof stored.records[stored.records.length - 1].turnId === "string",
+        existsSync(storeFile) ? JSON.stringify(stored).slice(0, 160) : `缺失：${storeFile}`);
+      await h.screenshot("compact-line");
+    },
+  },
+  {
     id: "message-feedback",
     name: "㉒ 消息操作图标（用户消息复制贴右端 + 两段成功反馈，10-05 轮）",
     run: async (h) => {
@@ -1720,6 +1794,7 @@ const ROUND_OF = {
   "composer-resize": "10-06",   // 10-06 夜三轮新增：输入框上下拖动把手（用户对照 Qoder 图二）
   "goal-bar": "10-06",   // 10-06 夜五轮新增：/goal 目标条（用户对照 Qoder：计时 + 编辑/删除/暂停；默认轮最后一项，含真续跑回合）
   "newbie-guide": "10-07",   // 10-07 轮：新手引导（侧栏常驻入口 + 迷你设置弹窗；左选项/右内容/映射跳转/版本日志）
+  "compact-line": "10-07",   // 10-07 夜十一轮：压缩线（新会话 + 短回合 + 手动压缩 → 宿主侦测真链路 → 线出现 + 落盘）
   "message-feedback": "10-05",   // 10-05 轮：消息操作图标的两段反馈 + 用户消息复制贴右端（历史项，默认轮不再跑 —— 回归证据）
   "plugin-market-gitee": "10-03",
   "codex-official-market": "10-03",   // 本轮新项；Gitee 项同轮重跑（插件页加了源切换，两个源都得看一眼）

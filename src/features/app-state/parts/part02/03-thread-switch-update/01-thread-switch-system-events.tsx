@@ -8,6 +8,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { normalizeThemeId } from "../../../../../lib/themes";
+import { noteCompactionRecord } from "../../../../../lib/compaction-records.mjs";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../app-view/types";
 import type { Bag } from "../../bag-types";
 
@@ -27,6 +28,9 @@ export function usePart02c1(bag: Bag) {
      不必等重进应用（用户令：任务清单必须由 Codex 自己更新、完成一步更新一步）。 */
   useEffect(() => window.codex.onHarnessEvent((payload: any) => {
     if (payload?.type === "tasks-changed") void window.codex.listTasks().then(bag.setTaskList).catch(() => undefined);
+    /* 压缩侦测（10-07）：当前引擎的压缩不发 item 事件 ⇒ 主进程用「非渲染层回合 + rollout 对账」
+       侦测后广播本事件；resume 时由 codex-ipc 重播存量 ⇒ 时间线的压缩线从这条记录里取锚点。 */
+    if (payload?.type === "thread-compacted-host") noteCompactionRecord(payload.threadId, payload.turnId, payload.at);
   }), []);
 
   useEffect(() => window.codex.onConnectorOAuth((event) => {

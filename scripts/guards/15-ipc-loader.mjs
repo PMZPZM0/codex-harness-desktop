@@ -64,9 +64,11 @@ export async function run() {
 
   /* 事故本体回归：queue-timer 域必须真的在启动链上（这条写死也值得 —— 它被真踩过）。
      ⛔ 10-03 P1：引用方式从「main.ts 直接 import 域」改成「main.ts import 组合表 → 组合表 import 域」，
-     断言跟着搬（两种形态都认），不变量不变：**该域必须在启动链上**。 */
+     断言跟着搬（两种形态都认），不变量不变：**该域必须在启动链上**。
+     ⛔ 10-07：组合表改「具名 import + setPath(userData) 后调用 mountEnabledDomains()」，
+     再认一种写法（from "./composition.gen"）；不变量仍不变。 */
   const mainText = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
-  (/import\s+"\.\/(features\/queue-timer-ipc|composition\.gen)"/.test(mainText) ? ok : fail)(
+  (/(?:import\s+"\.\/(features\/queue-timer-ipc|composition\.gen)"|from\s+"\.\/composition\.gen")/.test(mainText) ? ok : fail)(
     "【194】main.ts 引用了 queue-timer 的启动链（直接 import 域，或经组合表 composition.gen）"
   );
 

@@ -8,7 +8,6 @@
  */
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
-import { isMacPlatform } from "../../../../lib/is-mac-platform";
 import type { Bag } from "../bag-types";
 
 export function usePart05b(bag: Bag) {
