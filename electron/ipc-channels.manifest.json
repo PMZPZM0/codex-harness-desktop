@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-06",
-  "count": 426,
+  "count": 427,
   "channels": [
     {
       "name": "request",
@@ -2782,6 +2782,16 @@
       "invokeArgs": "id",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "cancelRuntime",
+      "channel": "runtime:cancel",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; reason?: string; killed?: number }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": "10-07 取消安装：杀子进程 + 清临时文件；reason=not-running 表示该工具没有在跑的安装"
     },
     {
       "name": "runtimeHealth",

@@ -469,8 +469,12 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
     hasMap
       ? ok("【242】npm 类工具的卸载落点是**包体目录**（node_modules/@nuphus、@playwright/cli、cloakbrowser），不是 marker 首段")
       : fail("【242】npm 类工具的卸载落点又退回 marker 首段推导 —— 删的是 shim 文件，包体还在 ⇒ 卸载后仍显示已装");
-    (/for \(const target of targets\)[\s\S]{0,400}?fs\.rm\(resolvedTarget, \{ recursive: true, force: true \}\)/.test(rt) && /allowedRoots\.includes\(resolvedTarget\)/.test(rt))
-      ? ok("【242】卸载逐个 target 删除，且每个都做「必须落在 tools/codexHome 之内、不得等于根」的安全校验")
+    // 10-07 重构：删除动作挪进 removeTargetsWithProgress（分批删 + 发进度，用户要求卸载也要有进度），
+    //   **安全校验仍在同一个 for 循环里逐 target 做**，且校验全部通过后才开始删 ——
+    //   判据因此改为「逐 target 校验循环 + 紧随其后的分批删除调用」两段都在。
+    //   ⛔ 负向不变：少了 allowedRoots.includes 那句（等于允许删 tools 根 / codexHome）必须红。
+    (/for \(const target of targets\)[\s\S]{0,600}?allowedRoots\.includes\(resolvedTarget\)[\s\S]{0,600}?await removeTargetsWithProgress\(id, targets\)/.test(rt))
+      ? ok("【242】卸载逐个 target 做「必须落在 tools/codexHome 之内、不得等于根」的安全校验，校验通过后才分批删除")
       : fail("【242】卸载没走「逐个 target + 逐个安全校验」—— 少校验会把 tools 根或 codexHome 整个删掉");
   }
   // 09-20 下载源选择：auto 通道序保持「镜像 → (代理) → 直连 → gh-proxy」，六种源在 switch 里分派

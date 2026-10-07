@@ -739,6 +739,8 @@ interface Window {
     voiceKwsStatus(): Promise<{ ready: boolean }>;
     installRuntime(id: string): Promise<{ ok: boolean; runtimes: DevRuntimeEntry[] }>;
     uninstallRuntime(id: string): Promise<{ ok: boolean; runtimes: DevRuntimeEntry[] }>;
+    /* 10-07 取消安装：杀子进程 + 清临时文件；reason=not-running 表示该工具没有在跑的安装 */
+    cancelRuntime(id: string): Promise<{ ok: boolean; reason?: string; killed?: number }>;
     /* 工具自检（10-02 用户要的「检查」）：逐个探测已装工具**能不能真跑**（跑一次版本命令/可执行性），返回逐项结果，界面直接列给人看 */
     runtimeHealth(): Promise<{ id: string; name: string; installed: boolean; ok: boolean; detail: string }[]>;
     weixinStartLogin(): Promise<{ qrcodeImg: string; qrcode: string } | null | undefined>;
@@ -1026,7 +1028,7 @@ interface Window {
 
 
 
-    onRuntimeProgress(listener: (event: { id: string; message?: string; percent?: number; stage?: string; speed?: string; done?: boolean; failed?: boolean; auto?: boolean }) => void): () => void;
+    onRuntimeProgress(listener: (event: { id: string; message?: string; percent?: number; stage?: string; speed?: string; done?: boolean; failed?: boolean; auto?: boolean; /** 已取消（10-07）：主进程杀完子进程清完临时文件后推来的收尾事件，≠ failed */ cancelled?: boolean }) => void): () => void;
 
     /** 3D 预览弹窗打开推送（model-viewer 域，10-05）：手写桥（非 gen 段），引擎 preview_3d 触发 */
     onModelViewerOpen(listener: (event: { path: string; title: string }) => void): () => void;

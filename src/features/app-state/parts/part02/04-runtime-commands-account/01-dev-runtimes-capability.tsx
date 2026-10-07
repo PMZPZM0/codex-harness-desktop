@@ -21,6 +21,11 @@ bag.runtimeSpeed = runtimeSpeed as typeof bag.runtimeSpeed; bag.setRuntimeSpeed 
 bag.runtimeActiveId = runtimeActiveId as typeof bag.runtimeActiveId; bag.setRuntimeActiveId = setRuntimeActiveId as typeof bag.setRuntimeActiveId;
 
 
+  // 正在卸载的工具 id（10-07 重构）：与安装共用进度条 UI；⛔ 取消按钮只对安装显示 —— 卸载不可取消。
+  const [runtimeUninstalling, setRuntimeUninstalling] = useState<string | null>(null);
+bag.runtimeUninstalling = runtimeUninstalling as typeof bag.runtimeUninstalling; bag.setRuntimeUninstalling = setRuntimeUninstalling as typeof bag.setRuntimeUninstalling;
+
+
   // 安装/卸载的内置弹窗（替代 window.confirm——浏览器原生 confirm 会抢焦点且打断输入框）
   const [runtimeModal, setRuntimeModal] = useState<{ id: string; name: string; mode: "install" | "uninstall"; done: boolean; failed: boolean } | null>(null);
 bag.runtimeModal = runtimeModal as typeof bag.runtimeModal; bag.setRuntimeModal = setRuntimeModal as typeof bag.setRuntimeModal;
@@ -61,6 +66,17 @@ bag.refreshCapabilities = refreshCapabilities as typeof bag.refreshCapabilities;
     // auto = 主进程监视到 tools 目录变化（引擎自己装了工具）→ 静默刷新清单与状态，
     // 不动「正在安装」指示（那是按钮安装路径的专属状态）
     if (event.auto) { bag.refreshDevRuntimes(); bag.refreshToolsStatus(); return; }
+    // 已取消（10-07）：主进程杀完子进程、清完临时文件后推来的收尾事件 —— 不算失败，
+    // 状态回落 + 明确提示，进度条停在原地由下一次操作覆盖。
+    if (event.cancelled) {
+      bag.setRuntimeSpeed((current) => ({ ...current, [event.id]: "" }));
+      bag.setRuntimeProgress((current) => ({ ...current, [event.id]: "已取消" }));
+      bag.setRuntimeInstalling(null);
+      bag.setRuntimeUninstalling(null);
+      bag.setNotice("已取消下载，临时文件已清理");
+      bag.refreshDevRuntimes();
+      return;
+    }
     bag.setRuntimeActiveId(event.id);
     if (typeof event.percent === "number") bag.setRuntimePercent((current) => ({ ...current, [event.id]: event.percent as number }));
     if (event.stage) bag.setRuntimeStage((current) => ({ ...current, [event.id]: String(event.stage) }));
@@ -117,12 +133,27 @@ bag.refreshCapabilities = refreshCapabilities as typeof bag.refreshCapabilities;
 bag.installDevRuntime = installDevRuntime as typeof bag.installDevRuntime;
 
 
+  /** 取消下载（10-07 用户要求「取消后需清理临时文件并给出提示」）：
+   *  主进程杀安装子进程 + 按 @@TARGET 记录删半截压缩包，再推 cancelled 事件回来。
+   *  ⛔ ok:false（没有在跑的安装）也要给提示 —— 不允许无响应。 */
+  async function cancelDevRuntime(id: string) {
+    try {
+      const result = await window.codex.cancelRuntime(id);
+      if (!result?.ok) bag.setNotice(result?.reason === "not-running" ? "该工具没有正在进行的安装" : "无法取消当前操作");
+    } catch (error: any) {
+      bag.setNotice(`取消失败：${error?.message ?? error}`);
+    }
+  }
+bag.cancelDevRuntime = cancelDevRuntime as typeof bag.cancelDevRuntime;
+
+
 
   async function uninstallDevRuntime(id: string) {
     const spec = bag.devRuntimes.find((r) => r.id === id);
     // 内置 / 随包资源 / 系统级安装都不允许卸载（UI 也不出按钮，这里是第二道防线）
     if (!spec || spec.builtIn || spec.noUninstall) return;
     bag.setRuntimeInstalling(id);
+    bag.setRuntimeUninstalling(id);
     bag.setRuntimeProgress((current) => ({ ...current, [id]: "正在卸载…" }));
     bag.setRuntimeModal({ id, name: spec.name, mode: "uninstall", done: false, failed: false });
     try {
@@ -138,6 +169,7 @@ bag.installDevRuntime = installDevRuntime as typeof bag.installDevRuntime;
       bag.setNotice(`卸载失败：${error.message}`);
     } finally {
       bag.setRuntimeInstalling(null);
+      bag.setRuntimeUninstalling(null);
     }
   }
 bag.uninstallDevRuntime = uninstallDevRuntime as typeof bag.uninstallDevRuntime;
@@ -255,5 +287,5 @@ bag.refreshCommands = refreshCommands as typeof bag.refreshCommands;
 
 
   useEffect(() => { if (bag.settingsOpen) void bag.refreshCommands(); }, [bag.settingsOpen, bag.workspace, bag.refreshCommands]);
-  return { runtimeSpeed, setRuntimeSpeed, runtimeActiveId, setRuntimeActiveId, runtimeModal, setRuntimeModal, refreshDevRuntimes, capabilityRows, setCapabilityRows, capabilityError, setCapabilityError, refreshCapabilities, installDevRuntime, uninstallDevRuntime, settingsResources, setSettingsResources, installedTotalCount, resourceLoading, setResourceLoading, resourceError, setResourceError, pluginSearch, setPluginSearch, pluginInstalledOnly, setPluginInstalledOnly, pluginBusy, setPluginBusy, pluginBatchBusy, setPluginBatchBusy, skillBatchBusy, setSkillBatchBusy, pluginChecked, setPluginChecked, skillChecked, setSkillChecked, skillManageSearch, setSkillManageSearch, customCommands, setCustomCommands, commandSearch, setCommandSearch, commandFilter, setCommandFilter, commandBusy, setCommandBusy, commandEditor, setCommandEditor, commandDelete, setCommandDelete, commandBusyKey, setCommandBusyKey, refreshCommands };
+  return { runtimeSpeed, setRuntimeSpeed, runtimeActiveId, setRuntimeActiveId, runtimeModal, setRuntimeModal, runtimeUninstalling, setRuntimeUninstalling, refreshDevRuntimes, capabilityRows, setCapabilityRows, capabilityError, setCapabilityError, refreshCapabilities, installDevRuntime, uninstallDevRuntime, cancelDevRuntime, settingsResources, setSettingsResources, installedTotalCount, resourceLoading, setResourceLoading, resourceError, setResourceError, pluginSearch, setPluginSearch, pluginInstalledOnly, setPluginInstalledOnly, pluginBusy, setPluginBusy, pluginBatchBusy, setPluginBatchBusy, skillBatchBusy, setSkillBatchBusy, pluginChecked, setPluginChecked, skillChecked, setSkillChecked, skillManageSearch, setSkillManageSearch, customCommands, setCustomCommands, commandSearch, setCommandSearch, commandFilter, setCommandFilter, commandBusy, setCommandBusy, commandEditor, setCommandEditor, commandDelete, setCommandDelete, commandBusyKey, setCommandBusyKey, refreshCommands };
 }

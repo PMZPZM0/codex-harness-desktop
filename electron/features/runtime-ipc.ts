@@ -2,8 +2,8 @@
  * runtime-ipc（10-03 从 `features/engine-ipc/03-dev-runtime` + `04-dev-runtime-install` 合并成单前缀板块，
  * 同时改为**插件形态**）
  *
- * 域：runtime(4)
- * 通道：runtime:list / install / uninstall / health
+ * 域：runtime(5)
+ * 通道：runtime:list / install / uninstall / cancel / health
  *
  * ⛔⛔ 四条实证口径（本次纯搬迁，一字未改）：
  *   1. **卸载落点不能按 marker 首段推导**（10-01 用户报「卸载不真」的根因）：首段会得到
@@ -20,13 +20,13 @@
  * ⛔ 待接缝化（阶段 2）：app / shell / spawn 为宿主能力。
  */
 import fs from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { app, shell } from "electron";
 import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, downloadEnv, npmGlobalRoot, pythonPipReady, toolchainEnv, toolsRoot } from "../toolchain";
 import { installKbEmbedding, kbEmbeddingInstalled } from "./kb-embed-backend";
-import { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, devRuntimeSpecs, emitRuntimeProgress, pythonSiteDir, readDownloadSource, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls } from "./dev-runtimes";
+import { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, cancelRuntimeInstall, cleanupRuntimeTempFiles, clearCancelRequest, devRuntimeSpecs, emitRuntimeProgress, isCancelRequested, pythonSiteDir, readDownloadSource, requestRuntimeCancel, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls, trackRuntimeProc } from "./dev-runtimes";
 import type { DevRuntimeId, DevRuntimeSpec } from "./dev-runtimes";
 import { sendToWindow } from "./window-bus";
 import { readAppSettings, saveAppSettings } from "../app-settings";
@@ -69,6 +69,69 @@ function runtimeList() {
       installedBySystem: runtimeInstalledBySystem(id),
       installing: runtimeInstalls.has(id),
     }));
+}
+
+/** 卸载也要有进度（10-07 用户要求「不允许出现无响应状态」）：pw-browsers ~170MB / ffmpeg ~300MB
+ *  这种大目录逐文件删要几秒，一句「正在卸载…」闷到结束就是无响应。
+ *  做法：先盘点（收集全部文件 + 字节数），再分批删（每批 ~4MB 或 200 个文件），按字节比例发
+ *  `runtime:progress`；删完文件再把（现在已空的）目录树整体摘掉。批次间 setImmediate 让事件循环
+ *  喘口气，进度事件才能真的发出去。 */
+async function removeTargetsWithProgress(id: DevRuntimeId, targets: string[]): Promise<void> {
+  const jobs: { file: string; size: number }[] = [];
+  let totalBytes = 0;
+  const collectDir = (dir: string) => {
+    let entries: import("node:fs").Dirent[];
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      const childPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) collectDir(childPath);
+      else {
+        let size = 0;
+        try { size = statSync(childPath).size; } catch { /* 竞态：文件刚没了 */ }
+        jobs.push({ file: childPath, size });
+        totalBytes += size;
+      }
+    }
+  };
+  const roots: string[] = [];
+  for (const target of targets) {
+    const resolved = path.resolve(target);
+    roots.push(resolved);
+    let stat;
+    try { stat = statSync(resolved); } catch { continue; } // 目标不在了 = 已经卸载好
+    if (stat.isDirectory()) collectDir(resolved);
+    else { jobs.push({ file: resolved, size: stat.size }); totalBytes += stat.size; }
+  }
+  sendToWindow("runtime:progress", { id, stage: "正在删除文件", percent: 0 });
+  const BATCH_BYTES = 4 * 1024 * 1024;
+  const BATCH_FILES = 200;
+  let batch: string[] = [];
+  let batchBytes = 0;
+  let removedBytes = 0;
+  const flush = async () => {
+    const pending = batch;
+    batch = [];
+    batchBytes = 0;
+    for (const file of pending) {
+      try { await fs.rm(file, { force: true }); } catch { /* 单文件失败不断整批 */ }
+    }
+    if (totalBytes > 0) {
+      const percent = Math.min(99, Math.round((removedBytes / totalBytes) * 100));
+      sendToWindow("runtime:progress", { id, stage: "正在删除文件", percent });
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+  };
+  for (const job of jobs) {
+    batch.push(job.file);
+    batchBytes += job.size;
+    removedBytes += job.size;
+    if (batchBytes >= BATCH_BYTES || batch.length >= BATCH_FILES) await flush();
+  }
+  if (batch.length) await flush();
+  // 文件删完后摘目录树（recursive 对已空目录是瞬时操作，顺带兜走漏网文件）
+  for (const root of roots) {
+    try { await fs.rm(root, { recursive: true, force: true }); } catch { /* 同上 */ }
+  }
 }
 
 /** npm 包（nuphus / playwright-cli / cloakbrowser）的卸载落点：**包体目录 + 它自己的 shim**。
@@ -140,6 +203,7 @@ async function runBrowserDownload(
     try {
       await new Promise<void>((resolve, reject) => {
         const child = spawn(node, [cli, ...args], { windowsHide: true, env: attempts[index].env });
+        trackRuntimeProc(id, child);
         let tail = "";
         const report = (chunk: Buffer | string) => {
           const text = String(chunk);
@@ -190,6 +254,7 @@ async function runNpmInstall(id: DevRuntimeId, pkg: string, label: string, sourc
         // 空串 = 不设 registry，npm 回落到官方源
         if (registry) env.npm_config_registry = registry;
         const child = spawn(node, [npmCli, "install", "--global", "--prefix", globalDir, pkg, "--no-audit", "--no-fund"], { windowsHide: true, env });
+        trackRuntimeProc(id, child);
         let tail = "";
         const report = (chunk: Buffer | string) => {
           const text = String(chunk);
@@ -302,7 +367,7 @@ async function devRuntimeHealth(): Promise<DevRuntimeHealth[]> {
   return rows;
 }
 
-const RUNTIME_CHANNELS = ["runtime:list", "runtime:install", "runtime:uninstall", "runtime:health"];
+const RUNTIME_CHANNELS = ["runtime:list", "runtime:install", "runtime:uninstall", "runtime:cancel", "runtime:health"];
 
 export const runtimeFeature = defineFeature<null>({
   id: "runtime",
@@ -333,9 +398,9 @@ export const runtimeFeature = defineFeature<null>({
         if (!resolvedTarget || allowedRoots.includes(resolvedTarget) || !underAllowed) {
           throw new Error("安装路径解析异常，已取消卸载");
         }
-        // 一些 marker 是文件而不是目录（如 npm-global 下的 shim）—— 逐个删：先包体、再 shim
-        await fs.rm(resolvedTarget, { recursive: true, force: true });
       }
+      // 逐个删（先包体、再 shim；marker 是文件还是目录都适用）—— 大目录按字节比例发卸载进度
+      await removeTargetsWithProgress(id, targets);
       // ponytail 卸载后要显式关掉 config.toml 里的注册段（否则引擎重启找不到已删的 cache）：
       // 插件 key 是 **"ponytail@ponytail"**（见 ponytail-plugin.ts 的 MARKETPLACE_SECTION）。
       // ⛔ 引擎必填 mergeStrategy：缺了整条请求被判 Invalid request，而这里是 catch 静默吞掉
@@ -348,7 +413,22 @@ export const runtimeFeature = defineFeature<null>({
           mergeStrategy: "replace",
         }).catch(() => undefined);
       }
+      sendToWindow("runtime:progress", { id, message: "卸载完成", percent: 100, done: true });
       return { ok: true, runtimes: runtimeList() };
+    });
+
+    // 取消安装（10-07 用户要求）：杀掉该工具名下的安装子进程 + 清半截下载产物。
+    // 「已取消」经 runtime:progress(cancelled) 推给界面；正在等的 install 调用随后会以
+    // 非零码 reject —— install handler 查 isCancelRequested 把它改判成 cancelled 回执。
+    ipcHost.handle("runtime:cancel", (_event, idValue: string) => {
+      const id = idValue as DevRuntimeId;
+      if (!devRuntimeSpecs[id]) return { ok: false, reason: "unknown" };
+      if (!runtimeInstalls.has(id)) return { ok: false, reason: "not-running" };
+      requestRuntimeCancel(id);
+      const killed = cancelRuntimeInstall(id);
+      cleanupRuntimeTempFiles(id);
+      sendToWindow("runtime:progress", { id, message: "已取消下载，临时文件已清理", cancelled: true, done: true });
+      return { ok: true, killed };
     });
 
     ipcHost.handle("runtime:health", () => devRuntimeHealth());
@@ -453,8 +533,13 @@ export const runtimeFeature = defineFeature<null>({
         await task;
         sendToWindow("runtime:progress", { id, message: "安装完成", percent: 100, speed: "", done: true });
         return { ok: true, runtimes: runtimeList() };
+      } catch (error) {
+        // 取消（杀进程导致的非零退出）不算错误：回执 cancelled，渲染层按「已取消」处理而不是报红
+        if (isCancelRequested(id)) return { ok: true, cancelled: true, runtimes: runtimeList() };
+        throw error;
       } finally {
         runtimeInstalls.delete(id);
+        clearCancelRequest(id);
       }
     });
 

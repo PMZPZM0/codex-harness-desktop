@@ -12,15 +12,18 @@ import { copyTextToClipboard } from "../../lib/clipboard";
 import { PhoneHarnessCard } from "./PhoneHarnessCard";
 import { LayaCard } from "./LayaCard";
 
-export type DevtoolsSettingsSectionProps = { downloadSource?: any; capabilityRows: any; capabilityError: any; VoiceDevToolsSection: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any };
+export type DevtoolsSettingsSectionProps = { downloadSource?: any; capabilityRows: any; capabilityError: any; VoiceDevToolsSection: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any };
 
 export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
-  const { capabilityRows, capabilityError, VoiceDevToolsSection, setNotice, devRuntimes, runtimeInstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime } = props;
+  const { capabilityRows, capabilityError, VoiceDevToolsSection, setNotice, devRuntimes, runtimeInstalling, runtimeUninstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime, cancelDevRuntime } = props;
   // 「检查工具」（10-02 用户要的）：卡片上的「已安装」只证明**文件在**，不证明**能跑**。
   // 点一次让主进程逐个真跑版本命令，把不可用的挑出来显示 —— 结果只存本组件（打开页面即清空）。
   const [health, setHealth] = useState<any[] | null>(null);
   const [healthBusy, setHealthBusy] = useState(false);
   const [healthError, setHealthError] = useState("");
+  // 卸载二次确认（10-07 重构）：点「卸载」先出**行内确认**（沿用插件市场页的既有范式），再点才真删 ——
+  // 卸载是真删本地文件，不可恢复，不该一击即中。
+  const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null);
   const runHealth = async () => {
     setHealthBusy(true);
     setHealthError("");
@@ -68,12 +71,21 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
                       // 09-16 用户「自动化工具拆开，拆详细一点」：不再一张「桌面与浏览器自动化」大卡，
                       // 拆成逐条能力卡（Nuphus / Playwright CLI / CloakBrowser / 两类内核 / ponytail）。
                       // bundled=true 的卡片显示「内置」（随包预装，无需安装；缺失时给「修复安装」）。
+                      // 10-07 重构（用户「对工具合理分类整理」）：按用途细分五类，末组兜底 ——
+                      // ⛔ 末组必须存在：将来新增工具忘了归类时落在「其它」而不是从界面上凭空消失。
                       const autoIds = ["nuphus", "playwright-cli", "cloakbrowser", "playwright-browsers", "cloak-browsers", "ponytail"];
+                      const devChainIds = ["pwsh", "git", "conda", "mingw"];
+                      const mediaIds = ["ffmpeg", "markitdown"];
+                      const aiIds = ["kb-embedding"];
+                      const notIn = (ids: string[]) => (r: any) => !ids.includes(r.id);
                       const groups = [
                         { key: "base", title: "基础运行时", hint: "随应用内置，离线可用", icon: <Wrench size={13} />, filter: (r: any) => r.builtIn },
                         { key: "auto", title: "桌面与浏览器自动化", hint: "Nuphus / Playwright CLI 随包内置，CloakBrowser 与浏览器内核按需下载", icon: <TerminalSquare size={13} />, filter: (r: any) => autoIds.includes(r.id) },
-                        { key: "ondemand", title: "按需下载", hint: "联网下载安装", icon: <Download size={13} />, filter: (r: any) => !r.builtIn && r.kind !== "guide" && !autoIds.includes(r.id) },
+                        { key: "devchain", title: "开发工具链", hint: "Git / PowerShell 7 / Miniconda 等，按需下载（国内镜像优先）", icon: <Download size={13} />, filter: (r: any) => devChainIds.includes(r.id) },
+                        { key: "media", title: "媒体与文档", hint: "音视频处理与文档格式转换", icon: <Activity size={13} />, filter: (r: any) => mediaIds.includes(r.id) },
+                        { key: "ai", title: "本地智能", hint: "本地推理 / 语义检索，模型走国内镜像", icon: <BookOpen size={13} />, filter: (r: any) => aiIds.includes(r.id) },
                         { key: "system", title: "系统级安装", hint: "打开官网手动安装", icon: <Globe2 size={13} />, filter: (r: any) => r.kind === "guide" },
+                        { key: "ondemand", title: "其它按需下载", hint: "联网下载安装（国内镜像优先）", icon: <Download size={13} />, filter: (r: any) => !r.builtIn && notIn(autoIds)(r) && notIn(devChainIds)(r) && notIn(mediaIds)(r) && notIn(aiIds)(r) && r.kind !== "guide" },
                       ];
                       return groups.map((g) => {
                         const items = devRuntimes.filter(g.filter);
@@ -107,6 +119,13 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
                                 </span>
                                 <span className="runtime-size">{runtime.size}</span>
                                 <div className="runtime-actions">
+                                  {/* 忙碌态（10-07 重构）：安装 → 给「取消」；卸载 → 不可取消，只给状态徽章。
+                                      ⛔ 两条路径都要有可见反馈，不允许按钮区空白（无响应状态）。 */}
+                                  {busy ? (
+                                    runtimeUninstalling === runtime.id
+                                      ? <span className="runtime-badge busy">卸载中…</span>
+                                      : <button className="secondary-setting runtime-cancel" onClick={() => void cancelDevRuntime(runtime.id)}>取消</button>
+                                  ) : (<>
                                   {builtinBadge ? <span className="runtime-badge">内置</span>
                                     : runtime.bundled
                                       ? <button className="primary-setting runtime-install" disabled={Boolean(runtimeInstalling)} onClick={() => void installDevRuntime(runtime.id)}>{busy ? <Spinner /> : <ArrowDown size={14} />}修复安装</button>
@@ -114,14 +133,22 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
                                           <span className="runtime-badge installed">{runtime.installedBySystem ? "系统已装" : "已安装"}</span>
                                           {/* 10-01 用户规则：**只有「内置」的不能卸载**，其余一律可真卸载
                                               （下载类工具 + npm 包 + pip 包都走 runtime:uninstall 真删；
-                                               内置项走上面的 builtinBadge 分支，显示「内置」不给卸载键） */}
-                                          {!runtime.installedBySystem && (
-                                            <button className="secondary-setting runtime-uninstall" disabled={Boolean(runtimeInstalling)} onClick={() => void uninstallDevRuntime(runtime.id)}>卸载</button>
-                                          )}
+                                               内置项走上面的 builtinBadge 分支，显示「内置」不给卸载键）
+                                              10-07 重构：卸载先行内**二次确认**（真删本地文件，不可恢复）。 */}
+                                          {!runtime.installedBySystem && (confirmUninstall === runtime.id ? (
+                                            <span className="runtime-confirm">
+                                              <em>删除本地文件，不可恢复？</em>
+                                              <button className="danger-setting runtime-uninstall" disabled={Boolean(runtimeInstalling)} onClick={() => { setConfirmUninstall(null); void uninstallDevRuntime(runtime.id); }}>确认卸载</button>
+                                              <button className="secondary-setting" onClick={() => setConfirmUninstall(null)}>取消</button>
+                                            </span>
+                                          ) : (
+                                            <button className="secondary-setting runtime-uninstall" onClick={() => setConfirmUninstall(runtime.id)}>卸载</button>
+                                          ))}
                                         </>
                                         : isGuide
                                           ? <button className="secondary-setting runtime-install" onClick={() => void installDevRuntime(runtime.id)}><ExternalLink size={13} />去官网安装</button>
                                           : <button className="primary-setting runtime-install" disabled={Boolean(runtimeInstalling)} onClick={() => void installDevRuntime(runtime.id)}>{busy ? <Spinner /> : <ArrowDown size={14} />}下载</button>}
+                                  </>)}
                                 </div>
                               </div>;
                             })}

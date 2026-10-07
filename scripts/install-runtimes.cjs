@@ -403,6 +403,8 @@ const SOURCE = (process.env.DOWNLOAD_SOURCE || "auto").toLowerCase();
 
 async function download(url, file, extraSources = []) {
   process.stdout.write("@@STAGE 下载\n");
+  // @@TARGET（10-07 取消功能配套）：把下载落盘路径报给主进程 —— 取消安装时按它删半截压缩包。
+  process.stdout.write("@@TARGET " + file + "\n");
   // 见 downloadWithProgress 的注释：进度与速度都靠采样文件大小，curl 这边只要「安静地下载」。
   const curlArgs = ["-L", "--fail", "--show-error", "--retry", "3", "--retry-all-errors",
     "--connect-timeout", "30", "--continue-at", "-", "-o", file];

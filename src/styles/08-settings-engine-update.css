@@ -199,6 +199,25 @@
   border-color: color-mix(in srgb, #c0392b 30%, var(--line));
 }
 .runtime-loading { display: flex; align-items: center; gap: 8px; padding: 16px; color: var(--muted); font-size: 11.5px; }
+/* 取消按钮（10-07 重构：下载可取消）：与 runtime-uninstall 同一套视觉，语义色中性 */
+.runtime-cancel {
+  display:inline-flex; align-items:center; gap:4px;
+  height:26px; padding:0 10px; border-radius:6px; font-size:11.5px; font-weight:500;
+  border:1px solid var(--line); background:var(--bg); color:var(--text);
+  cursor:pointer; white-space:nowrap;
+  transition: background .12s, border-color .12s, opacity .12s;
+}
+.runtime-cancel:hover {
+  border-color: color-mix(in srgb, #c0392b 30%, var(--line));
+  color: #c0392b;
+  background: color-mix(in srgb, #c0392b 8%, transparent);
+}
+/* 卸载二次确认（10-07 重构）：行内展开，说明 + 确认 + 取消，窄屏自动换行 */
+.runtime-confirm { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.runtime-confirm em { color: #c0392b; font-size: 10.5px; font-style: normal; white-space: nowrap; }
+.runtime-confirm .runtime-uninstall { color: #c0392b; border-color: color-mix(in srgb, #c0392b 35%, var(--line)); }
+/* 卸载中的徽章（忙碌态反馈，不允许按钮区空白） */
+.runtime-badge.busy { color: var(--link); background: color-mix(in srgb, var(--link) 10%, transparent); }
 .devtools-group { display: flex; flex-direction: column; gap: 6px; }
 .devtools-group .settings-subhead { margin: 2px 0 0; }
 /* 下载源选择行（09-20）：标题 + 下拉 + 说明横排，窄窗口自动折行 */

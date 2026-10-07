@@ -13,8 +13,8 @@
  *    ⇒ 不读 main 的任何值，被 main.ts 顶部 import 时不存在「读到未初始化常量」的时序问题。
  */
 import path from "node:path";
-import { existsSync, readdirSync, watch as watchFs } from "node:fs";
-import { spawn } from "node:child_process";
+import { existsSync, readdirSync, rmSync, watch as watchFs } from "node:fs";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { app } from "electron";
 import type { AppSettings } from "../app-settings";
 import { toolsRoot } from "../toolchain";
@@ -97,6 +97,63 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   "platform-tools": { name: "Android 平台工具（adb）", description: "让 Codex 通过 adb 控制 Android 手机（USB 或无线调试）：截图、点击、输入、读界面；随包内置，开箱即用", size: "随包 8 MB", marker: "platform-tools\\adb.exe", builtIn: true },
 };
 const runtimeInstalls = new Map<DevRuntimeId, Promise<void>>();
+
+/* ── 取消安装（10-07 用户要求「下载要有取消按钮，取消后清临时文件」）=====================
+ * 三个词根：
+ *   · runtimeProcs —— 该工具名下**活着**的安装子进程（安装器 → curl/7z 一串，所以是数组）。
+ *     spawn 处登记、close 处摘除；cancel 时逐个 kill。
+ *   · runtimeCancelRequested —— 取消请求登记。杀进程会让安装 promise 以非零码 reject，
+ *     install handler 据此把那次 reject 改判成「已取消」回执，而不是给用户报一句看不懂的错。
+ *   · runtimeTempFiles —— 下载落盘路径（install-runtimes.cjs 在下载前输出 `@@TARGET <路径>`）。
+ *     cancel 后按它删半截压缩包；删除失败不抛（残留在系统临时目录，无害）。 */
+const runtimeProcs = new Map<string, ChildProcess[]>();
+const runtimeCancelRequested = new Set<string>();
+const runtimeTempFiles = new Map<string, Set<string>>();
+
+/** spawn 处登记：同一工具可能先后/同时有多个子进程，全部记名下。 */
+function trackRuntimeProc(id: string, child: ChildProcess): void {
+  const list = runtimeProcs.get(id) ?? [];
+  list.push(child);
+  runtimeProcs.set(id, list);
+  child.once("close", () => {
+    const current = runtimeProcs.get(id);
+    if (!current) return;
+    const next = current.filter((entry) => entry !== child);
+    if (next.length) runtimeProcs.set(id, next);
+    else runtimeProcs.delete(id);
+  });
+}
+
+/** 取消某工具的安装：杀掉它名下全部子进程，返回杀掉的数量（0 = 没有在跑的进程）。
+ *  ⛔⛔ 必须**杀进程树**：安装器（node）下面还挂着 curl / 7z / tar 等孙进程，
+ *  只 kill 父进程会留孤儿 —— 孤儿 curl 继续写目标文件，「清理临时文件」就清不干净，
+ *  甚至出现「取消了还在占着磁盘跑」的怪象。win 用 taskkill /T；POSIX 先 pkill 子代再 kill 本体。 */
+function cancelRuntimeInstall(id: string): number {
+  const procs = runtimeProcs.get(id) ?? [];
+  let killed = 0;
+  for (const child of procs) {
+    try {
+      if (process.platform === "win32") {
+        spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true });
+      } else {
+        try { spawnSync("pkill", ["-P", String(child.pid)]); } catch { /* 没有子进程就算了 */ }
+        child.kill();
+      }
+      killed++;
+    } catch { /* 已退出就随它去 */ }
+  }
+  return killed;
+}
+
+/** 取消后清临时文件：删半截下载产物。逐个 try，失败不抛（临时目录残留无害）。 */
+function cleanupRuntimeTempFiles(id: string): void {
+  const files = runtimeTempFiles.get(id);
+  if (!files) return;
+  for (const file of files) {
+    try { if (existsSync(file)) rmSync(file, { force: true }); } catch { /* 同上 */ }
+  }
+  runtimeTempFiles.delete(id);
+}
 
 // ⛔ mac 适配（09-16）：上面 specs 的 marker 全按 Windows 布局写（反斜杠 + .exe）。
 // darwin 的目录布局不同（node/bin/node、python/bin/python3、pwsh/pwsh、CMake.app 包…），
@@ -271,6 +328,18 @@ function emitRuntimeProgress(id: string, chunk: string | Buffer, prefix = "") {
       if (text) sendToWindow("runtime:progress", { id, speed: text.slice(0, 48) });
       continue;
     }
+    // 下载落盘路径（10-07 取消功能配套）：install-runtimes.cjs 下载前输出 `@@TARGET <路径>`，
+    // 记下来 —— 取消安装时按它删半截压缩包（cleanupRuntimeTempFiles）。
+    const target = line.match(/^@@TARGET\s+(.+)/);
+    if (target) {
+      const file = target[1].trim();
+      if (file) {
+        const set = runtimeTempFiles.get(id) ?? new Set<string>();
+        set.add(file);
+        runtimeTempFiles.set(id, set);
+      }
+      continue;
+    }
     sendToWindow("runtime:progress", { id, message: `${prefix}${line}` });
   }
 }
@@ -281,6 +350,7 @@ function runRuntimeInstaller(id: DevRuntimeId, script: string, args: string[], n
       windowsHide: true,
       env: { ...process.env, ELECTRON_RUN_AS_NODE: node === process.execPath ? "1" : undefined, TOOLS_ROOT: toolsRoot(), ...extraEnv },
     });
+    trackRuntimeProc(id, child);
     let tail = "";
     const report = (chunk: Buffer | string) => {
       const message = String(chunk);
@@ -349,5 +419,16 @@ async function autoInstallGitIfNeeded(): Promise<void> {
   }
 }
 
-export { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, autoInstallGitIfNeeded, devRuntimeSpecs, emitRuntimeProgress, markerRel, pythonSiteDir, readDownloadSource, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls, toolsWatchDebounce };
+/** 登记取消请求：install handler 收尾时用它把「杀进程导致的 reject」改判成「已取消」。 */
+function requestRuntimeCancel(id: string): void {
+  runtimeCancelRequested.add(id);
+}
+function isCancelRequested(id: string): boolean {
+  return runtimeCancelRequested.has(id);
+}
+function clearCancelRequest(id: string): void {
+  runtimeCancelRequested.delete(id);
+}
+
+export { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, autoInstallGitIfNeeded, cancelRuntimeInstall, cleanupRuntimeTempFiles, clearCancelRequest, devRuntimeSpecs, emitRuntimeProgress, isCancelRequested, markerRel, pythonSiteDir, readDownloadSource, requestRuntimeCancel, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls, toolsWatchDebounce, trackRuntimeProc };
 export type { DevRuntimeId, DevRuntimeSpec };
