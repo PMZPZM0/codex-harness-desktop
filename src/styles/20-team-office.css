@@ -6,13 +6,15 @@
      `.team-rail-node.team-rail-office`（两条轨共用 `OfficeRailNode`）。
    ⛔ 别再往这里加浮动入口：那正是用户报的"位置和图标跟专家团不一样"。 */
 
-/* ⭐ 10-05 晚：**全屏铺满**（用户报「画面未铺满全屏，只显示在中间区域」）。
-   ⛔ 旧写法是 `.office-overlay` flex + body 居中 + 画布 `max-width/max-height:100%`
+/* ⭐ 10-05 晚：**满屏承载**（用户报「画面未铺满全屏，只显示在中间区域」）。
+   ⛔ 更早的写法是 `.office-overlay` flex + body 居中 + 画布 `max-width/max-height:100%`
      —— 那只**限制上限**、不会放大，而画布固有尺寸就是 960×640
      ⇒ 窗口一大就只剩中间一块，四周是浮层底色。
-   ✅ 新形态：浮层自己 `overflow:hidden`，画布由一个**满屏舞台**承载，
-     尺寸由 `OfficeCanvas` 的 `fitCover()` 按 cover 规则写死（见那边注释）；
-     顶栏改成**浮层压在画布上**，不再占掉画布的高度。 */
+   ✅ 形态：浮层自己 `overflow:hidden`，画布由一个**满屏舞台**承载，
+     尺寸/位置由 `OfficeCanvas` 的视图状态写死；顶栏改成**浮层压在画布上**，
+     不再占掉画布的高度。
+   ⭐ 10-07：基准由 cover 换成 **contain**（整间办公室完整可见）+ 用户缩放
+     （详见下面 `.office-overlay-stage` 与 `.office-pixel-canvas` 两处的注释）。 */
 .office-overlay {
   --office-top: 0px;
   position: fixed;
@@ -29,15 +31,15 @@
    （画布不会再伸到窗口钮底下）；darwin 红绿灯在左上，右上无钮，不必让。 */
 [data-os="win32"] .office-overlay { --office-top: 43px; }
 
-/* 舞台：铺满浮层、裁掉画布溢出部分（cover 铺满就靠这一层裁） */
+/* ⭐ 10-07：**完整展示 + 用户缩放**（用户报「预览画面过大，无法完整展示整个办公室，
+   底部内容被裁剪」）。
+   ⛔ 旧形态（10-05）是 cover 铺满 —— 而 cover 的定义就是"必然溢出"，溢出的部分被这一层
+     `overflow:hidden` 裁掉（旧写法 `align-items: flex-start` 只保上半）⇒ 缺的正是**底部**。
+   ✅ 现在基准是 contain（整间办公室完整可见），缩放/平移由 `OfficeCanvas` 的视图状态
+     写死画布尺寸与 `transform` ⇒ 舞台这一层**不再负责摆放**，只管裁掉放大后的溢出。 */
 .office-overlay-stage {
   position: absolute;
   inset: var(--office-top) 0 0 0;
-  display: flex;
-  /* ⛔ 顶对齐而不是居中：铺满时纵向溢出的部分**只从底部裁**，保住房间的上半
-     （书架 / 白板 / 饮水机 / 绿植都在上半）—— 居中的话两头各切一半，顶部装饰会缺角。 */
-  align-items: flex-start;
-  justify-content: center;
   overflow: hidden;
   min-height: 0;
 }
@@ -77,11 +79,64 @@
 }
 .office-overlay-close:hover { background: rgba(255, 255, 255, 0.16); }
 
-/* 画布：尺寸由 JS 按 cover 规则写死（⛔ 不能用 max-width/max-height —— 那只缩不放；
-   ⛔ 也不能用 object-fit:cover —— 元素盒与渲染区不一致会让点击命中整体偏移）。
-   `flex: none` 是必须的：否则 flex 会把超出容器的子项**压回去**，cover 就失效了。 */
+/* ⭐ 右侧一组：缩放控制 + 关闭钮（10-07）。⛔ 顺序 = `放大 / 缩小 / 重置 / 关闭`。 */
+.office-overlay-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* 控制组做成一个"胶囊托盘"：三个按钮同属一件事，视觉上要能读出这是一组。
+   ⛔ 顶栏整条是 `pointer-events: none`（不吃点击，否则画布最上沿的角色点不中）
+   ⇒ 托盘必须自己把事件**收回来**，否则三个按钮全是死的。 */
+.office-overlay-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  pointer-events: auto;
+}
+.office-overlay-tool {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #eef0f4;
+  cursor: pointer;
+  /* ⛔ 不加 `!important` ⇒ `prefers-reduced-motion` 的 `transition-duration: 0.001ms !important`
+     兜底才压得住（两边都 `!important` 会退化成比源码顺序，等于把无障碍兜底废掉）。 */
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.office-overlay-tool:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); }
+/* 到达上下限 ⇒ 禁用（⛔ 不是"点了没反应"：置灰本身就说清"已经到头了"） */
+.office-overlay-tool:disabled { opacity: 0.32; cursor: default; }
+/* 倍率读数（纯视觉）：等宽数字 ⇒ 从 100% 跳到 125% 时宽度不抖 */
+.office-overlay-zoom {
+  min-width: 38px;
+  padding-right: 4px;
+  text-align: center;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+  user-select: none;
+}
+
+/* 画布：**绝对定位**，尺寸与平移全部由 JS 的视图状态写死
+   （⛔ 不使用 flex 对齐 —— 对齐等于把位置写死成"居中/顶对齐"，就没法做"以指针为中心"的平移了；
+    ⛔ 也不用 `object-fit` —— 元素盒与渲染区不一致会让点击命中整体偏移；
+    ⛔ 也不靠 CSS `transform: scale` —— 那会让像素糊掉，像素风必须整数倍最近邻放大）。
+   基准 = contain，整个办公室完整可见；放大后溢出部分由 `.office-overlay-stage` 裁掉。 */
 .office-pixel-canvas {
-  flex: none;
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
   display: block;
   background: #dfe5ec;
   cursor: pointer;

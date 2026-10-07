@@ -5,7 +5,7 @@
  *   的最近邻放大，2D 足够；还躲开 Pixi v8 的空纹理/CSP 两个坑（上一版实测踩过）。
  * ⛔ 资产走 **Vite import**（可达闭包内，打包期裁剪不掉 —— 0.0.27 那条事故的教训）。
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 // ⛔ bg 必须 ?inline（强制 data: URI）：bg.webp 80KB 超过全局 assetsInlineLimit(64KB) 会被拆成
 //   独立文件 /assets/bg-*.webp，构建版 file:// 下绝对路径解析到盘根 ⇒ 404 ⇒ 画布白底
 //   （10-05 用户报「办公室白了」；09-30 v19 埋雷，办公室调试都在 dev 模式所以一直没暴露）。
@@ -98,7 +98,30 @@ export type OfficeCanvasProps = {
   /** 取某成员的真实事件状态（null = 该成员当下无运行信息）。
    *  ⛔ 由上层从 run 记录派生（不订阅引擎，见 TeamOfficePreview 注释）。 */
   eventStateOf?: (memberId: string) => OfficeEventState | null;
+  /** ⭐ 缩放控制句柄（10-07 用户要求：关闭钮**左侧**一组「放大 / 缩小 / 重置」）。
+   *  ⛔ 用**显式命名的 prop** 而不是 `ref`：这不是 DOM 元素，`ref` 的 DOM 语义在这里会误导。
+   *  视图状态（zoom + 平移）归本组件 —— 只有它知道舞台尺寸与指针锚点；
+   *  父层只是**下命令**，不持有坐标。 */
+  controlsRef?: RefObject<OfficeZoomControls | null>;
+  /** 缩放倍率变化回报：父层据此显示百分比、并在到达上下限时禁用对应按钮
+   *  （⛔ 不回报 ⇒ 滚轮已经放到最大、按钮却还亮着 = 点了没反应）。 */
+  onZoomChange?: (zoom: number) => void;
 };
+
+/** ⭐ 缩放控制句柄（10-07）。三个动作与滚轮走**同一条** view 写入路径。 */
+export type OfficeZoomControls = {
+  zoomIn: () => void;
+  zoomOut: () => void;
+  reset: () => void;
+};
+
+/** 缩放范围：1 = **contain 基准**（整间办公室完整可见），4 = 放大到 4 倍。
+ *  ⛔ 下限是 1 而不是更小：contain 已经完整可见，再缩只会多留浮层底色（纯负收益）。
+ *  ⛔ 上限不给更大：像素素材到 4× 已是 3840×2560 的画布像素，再放只剩巨大马赛克块。 */
+export const OFFICE_ZOOM_MIN = 1;
+export const OFFICE_ZOOM_MAX = 4;
+/** 每一档的倍率（滚轮一格 / 点一次按钮 = 同一档，两处观感必须一致）。 */
+export const OFFICE_ZOOM_STEP = 1.25;
 
 /** 加载一张图（resolve 后才用；失败 resolve null 绝不 reject —— 一张图挂了别拖死整层）。 */
 function loadImage(url: string): Promise<HTMLImageElement | null> {
@@ -133,17 +156,19 @@ function statusOf(a: Agent, nowMs: number): { text: string; color: string } {
   return { text: "待机", color: "#8ea3b8" };
 }
 
-export function OfficeCanvas({ members, onOpenMember, eventStateOf }: OfficeCanvasProps) {
+export function OfficeCanvas({ members, onOpenMember, eventStateOf, controlsRef, onZoomChange }: OfficeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const membersRef = useRef(members);
   const openRef = useRef(onOpenMember);
   const eventRef = useRef(eventStateOf);
+  const onZoomRef = useRef(onZoomChange);
   /* 悬停的成员 id（⭐ 10-05 晚新增）：画布上"能点"这件事原来**没有任何视觉提示**，
      用户点空处/点没会话的人 ⇒ 静默无反应，正是"操作后没有任何响应"的一半原因。 */
   const hoverRef = useRef<string | null>(null);
   membersRef.current = members;
   openRef.current = onOpenMember;
   eventRef.current = eventStateOf;
+  onZoomRef.current = onZoomChange;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -154,36 +179,97 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf }: OfficeCanv
     let disposed = false;
     let ro: ResizeObserver | null = null;
 
-    /* ── 全屏铺满（⭐ 10-05 晚）───────────────────────────────────────────
-     * ⛔ 用户报「画面未铺满全屏，只显示在中间区域」。根因：CSS 只给了
-     *   `max-width/max-height:100%` —— 那**只能缩小、不能放大**，而画布固有尺寸
-     *   就是 960×640 ⇒ 窗口一大就只是居中留黑边。
-     * ✅ 改成 cover：按 max(sw/960, sh/640) 算缩放，**显式写死画布 CSS 尺寸**，
-     *   溢出部分由舞台容器（overflow:hidden）裁掉 ⇒ 永远铺满、且保持 3:2 比例
-     *   （⛔ 不能拉伸：像素风一旦非等比缩放，像素就不是方块了）。
-     * ⛔⛔ 为什么不用 CSS `object-fit: cover`：那会让元素盒子与实际渲染区不一致，
-     *   而点击命中算的是 `getBoundingClientRect()` ⇒ 命中点会整体偏移（人物点不中）。
-     *   显式设置尺寸则 rect 就是渲染区，命中天然正确。 */
-    const fitCover = () => {
+    /* ── 视图：完整展示 + 用户缩放/平移（⭐ 10-07）─────────────────────────
+     * ⛔⛔ 用户报「预览画面过大，无法完整展示整个办公室，底部内容被裁剪」。
+     *   根因：上一版 `fitCover()` 用 `Math.max(sw/CANVAS_W, sh/CANVAS_H)` = **cover**，
+     *   而 cover 的定义就是"必然溢出" —— 溢出的部分由舞台 `overflow:hidden` 裁掉
+     *   （舞台 `align-items: flex-start` 只保上半 ⇒ 缺的一直是**底部**）。
+     * ✅ 基准改成 **contain**（`Math.min`）：整个房间（含底部地板与工位）完整可见，
+     *   四周留浮层底色。⛔ 别再改回 cover —— 那会精确复现用户报的这个 bug。
+     * ⛔ 依旧不用 CSS `object-fit`：那会让元素盒与实际渲染区不一致，而点击命中算的是
+     *   `getBoundingClientRect()` ⇒ 命中点整体偏移（人物点不中）。显式写死尺寸则天然正确。
+     *
+     * ⭐ 在基准之上叠一层**用户缩放/平移**：
+     *   视图 = `{ zoom, cx, cy }`，(cx,cy) = 画布中心在**舞台坐标系**里的位置。
+     *   · 尺寸走 `width/height`（像素风要的是整数倍最近邻放大，交给 CSS scale 会糊像素）；
+     *   · `transform` 只做**平移**（`translate`），`transform-origin: 0 0`。
+     *   ⛔ transform 只平移不缩放 ⇒ `getBoundingClientRect()` 的宽高就是渲染宽高，
+     *     命中换算（`(clientX - rect.left) / rect.width * CANVAS_W`）依然精确。 */
+    type OfficeView = { zoom: number; cx: number; cy: number };
+    let view: OfficeView = { zoom: OFFICE_ZOOM_MIN, cx: 0, cy: 0 };
+
+    const stageSize = () => {
       const stage = canvas.parentElement;
-      if (!stage) return;
-      const sw = stage.clientWidth;
-      const sh = stage.clientHeight;
-      if (sw <= 0 || sh <= 0) return;
-      const scale = Math.max(sw / CANVAS_W, sh / CANVAS_H);
-      const w = Math.round(CANVAS_W * scale);
-      const h = Math.round(CANVAS_H * scale);
-      if (canvas.style.width !== `${w}px`) canvas.style.width = `${w}px`;
-      if (canvas.style.height !== `${h}px`) canvas.style.height = `${h}px`;
+      return { sw: stage?.clientWidth ?? 0, sh: stage?.clientHeight ?? 0 };
     };
+
+    /** contain 基准尺寸（**整间办公室完整可见**）。resize 时重算；用户 zoom 是它的倍率。 */
+    const baseSize = (sw: number, sh: number) => {
+      if (sw <= 0 || sh <= 0) return { bw: CANVAS_W, bh: CANVAS_H };
+      const s = Math.min(sw / CANVAS_W, sh / CANVAS_H);
+      return { bw: CANVAS_W * s, bh: CANVAS_H * s };
+    };
+
+    /** 单轴夹取：比舞台小 ⇒ 该轴必须**居中**（不平移）；比舞台大 ⇒ 不许露出舞台的边。 */
+    const clampAxis = (c: number, size: number, span: number) =>
+      size <= span ? span / 2 : Math.min(size / 2, Math.max(span - size / 2, c));
+
+    /** 把 view 写到 DOM（尺寸 + 平移）。**所有**改变 view 的路径都必须走它，否则必然漂。 */
+    const applyView = () => {
+      const { sw, sh } = stageSize();
+      const { bw, bh } = baseSize(sw, sh);
+      const w = bw * view.zoom;
+      const h = bh * view.zoom;
+      /* ⛔ 夹取放在**写 DOM 之前**：越界时把视图拉回来，否则"以指针为中心"会把画面推出去。 */
+      view.cx = clampAxis(view.cx, w, sw);
+      view.cy = clampAxis(view.cy, h, sh);
+      canvas.style.width = `${Math.round(w)}px`;
+      canvas.style.height = `${Math.round(h)}px`;
+      canvas.style.transform =
+        `translate(${Math.round(view.cx - w / 2)}px, ${Math.round(view.cy - h / 2)}px)`;
+    };
+
+    /** ⭐ 以舞台上某点 `(ax, ay)` 为锚点缩放到 `nextZoom`（滚轮 / 按钮**共用**的唯一实现）。
+     *  ⛔ 判据是「锚点在**画布内容**里的相对位置缩放前后不变」⇒ 视觉上"指针底下那一点没动"。
+     *     按钮把锚点传舞台中心即可复用同一条链，⛔ 不另写一份"居中缩放"。 */
+    const zoomAt = (nextZoom: number, ax: number, ay: number) => {
+      const { sw, sh } = stageSize();
+      const { bw, bh } = baseSize(sw, sh);
+      const z = Math.min(OFFICE_ZOOM_MAX, Math.max(OFFICE_ZOOM_MIN, nextZoom));
+      const w0 = bw * view.zoom, h0 = bh * view.zoom;
+      const w1 = bw * z, h1 = bh * z;
+      const fx = w0 > 0 ? (ax - (view.cx - w0 / 2)) / w0 : 0.5;
+      const fy = h0 > 0 ? (ay - (view.cy - h0 / 2)) / h0 : 0.5;
+      view = { zoom: z, cx: ax + w1 * (0.5 - fx), cy: ay + h1 * (0.5 - fy) };
+      applyView();
+      onZoomRef.current?.(view.zoom);
+    };
+
+    const zoomTo = (z: number) => {
+      const { sw, sh } = stageSize();
+      zoomAt(z, sw / 2, sh / 2);
+    };
+
+    /** 重置 = 回到 contain 基准 + 居中（⛔ 不是"回到上一次的缩放"，用户要的是原样）。 */
+    const resetView = () => {
+      const { sw, sh } = stageSize();
+      view = { zoom: OFFICE_ZOOM_MIN, cx: sw / 2, cy: sh / 2 };
+      applyView();
+      onZoomRef.current?.(view.zoom);
+    };
+
+    /* ⛔ 立刻摆一次（**不等图片加载**）：否则加载期画布还停在 `width/height` 属性的
+       固有尺寸 960×640 上，且没有 transform ⇒ 会有一次可见的跳位。 */
+    applyView();
 
     void (async () => {
       const [bg, ...chars] = await Promise.all([loadImage(bgUrl), ...CHAR_URLS.map(loadImage)]);
       if (disposed) return;
 
-      fitCover();
+      resetView();
       if (typeof ResizeObserver !== "undefined") {
-        ro = new ResizeObserver(fitCover);
+        /* resize 只重算基准尺寸（contain），**保留**用户当前 zoom —— 窗口缩放不该把人的缩放吃掉。 */
+        ro = new ResizeObserver(() => applyView());
         if (canvas.parentElement) ro.observe(canvas.parentElement);
       }
 
@@ -571,13 +657,41 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf }: OfficeCanv
           canvas.style.cursor = "default";
         }
       };
+      /* ⭐ 滚轮缩放（10-07 用户要求「以鼠标所在位置为中心」）。
+       *  ⛔ 锚点取**指针在舞台坐标系**里的位置（`clientX - stageRect.left`），
+       *     ⛔ 不是画布中心 —— 锚在中心就不叫"以鼠标位置为中心"了。
+       *  ⛔⛔ 必须 `{ passive: false }`：默认 passive 下 `preventDefault()` 会被浏览器
+       *     **静默忽略** ⇒ 缩放的同时宿主页面跟着滚（整屏浮层上看着像"页面在跳"）。 */
+      const onWheel = (ev: WheelEvent) => {
+        const stage = canvas.parentElement;
+        if (!stage) return;
+        ev.preventDefault();
+        const rect = stage.getBoundingClientRect();
+        const ax = ev.clientX - rect.left;
+        const ay = ev.clientY - rect.top;
+        zoomAt(view.zoom * (ev.deltaY < 0 ? OFFICE_ZOOM_STEP : 1 / OFFICE_ZOOM_STEP), ax, ay);
+      };
       canvas.addEventListener("click", onClick);
       canvas.addEventListener("mousemove", onMove);
       canvas.addEventListener("mouseleave", onLeave);
+      canvas.addEventListener("wheel", onWheel, { passive: false });
+
+      /* ⭐ 暴露缩放句柄（父层的三个按钮 → 执行在**这里**）。
+         ⛔ 放大/缩小/重置与滚轮共用 `zoomTo`/`resetView`/`applyView` 这条唯一写入路径；
+           各写一份必然漂（按钮能放大、滚轮不能，或按钮不夹上下限之类）。 */
+      if (controlsRef) {
+        controlsRef.current = {
+          zoomIn: () => zoomTo(view.zoom * OFFICE_ZOOM_STEP),
+          zoomOut: () => zoomTo(view.zoom / OFFICE_ZOOM_STEP),
+          reset: resetView,
+        };
+      }
     })().catch(() => undefined);
 
     return () => {
       disposed = true;
+      /* ⛔ 卸载后把句柄摘掉：否则父层按钮还握着一个指向已销毁画布的闭包（点了没反应且难查）。 */
+      if (controlsRef) controlsRef.current = null;
       if (ro) ro.disconnect();
       if (raf) cancelAnimationFrame(raf);
     };
