@@ -94,6 +94,21 @@ export function npmGlobalRoot() {
   return first;
 }
 
+/** npm 全局包的**全部候选落位**（按平台优先级排序，第一个 = `npmGlobalRoot()`）。
+ *  ⛔⛔ 10-07 用户实测「卸载不更新状态，一直显示已安装」：判定侧（runtimeInstalled）
+ *   已经改成**双落位都查**（mac 上随包件在 node_modules、运行期装的在 lib/node_modules），
+ *   但卸载侧只删 `npmGlobalRoot()` 返回的**那一个** ⇒ 装在另一个落位的包**删不掉**，
+ *   界面永远显示「已安装」。
+ *   ⇒ 落位清单必须是**单一真相源**：这里给出全部候选，卸载逐个删（不存在的 fs.rm 是 no-op）。
+ *   ⛔ 别再在别处手拼 `npm-global/node_modules` 或 `npm-global/lib/node_modules` —— 那正是本 bug 的成因。 */
+export function npmGlobalRootCandidates(): string[] {
+  const tools = toolsRoot();
+  if (!tools) return [];
+  const winLayout = path.join(tools, "npm-global", "node_modules");
+  const posixLayout = path.join(tools, "npm-global", "lib", "node_modules");
+  return process.platform === "win32" ? [winLayout, posixLayout] : [posixLayout, winLayout];
+}
+
 // cloakbrowser ESM 入口的 file:// URL（供引擎脚本 import；空串表示未安装）。
 export function cloakEntryUrl() {
   const root = npmGlobalRoot();

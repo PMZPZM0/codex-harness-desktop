@@ -381,7 +381,7 @@ export function finish() {
 //    上界不设（新增守卫不该被拦）。
 // ⛔ 同步义务：**改动守卫后必须同步 EXPECTED_CHECKS**（含新增/删除断言）。数字对不上时
 //    报错信息会直接把实测值打出来，照抄回填即可 —— 这是刻意的「必须动手同步」设计。
-const EXPECTED_CHECKS = 3221;   // 10-07 夜二 = 3215 ＋ 6：04 的【工具取消/卸载】六条 = @@TARGET 落盘锚 / cancelRuntimeInstall 杀进程树 / runtime:cancel 通道+cancelled 改判 / removeTargetsWithProgress 分批卸载进度 / 渲染层取消按钮+行内二次确认+cancelled 分支 / ipc-registry runtime count=5（用户要求开发工具重构：实时进度+取消+卸载反馈，不允许无响应）。都在 04，属 18 个 MODULES，**要**计入。
+const EXPECTED_CHECKS = 3224;   // 10-07 夜三 = 3221 ＋ 3：06 的【285】三条 = 装/判/卸三处落点同源（kb-embedding 卸载落点显式给 kbBackendDir + 走自带 uninstallKbEmbedding 释放常驻 worker；npm 类卸载遍历 npmGlobalRootCandidates 全部候选落位、npmShimPaths 显式接根参数、包体 join 到 npm-global **前缀**否则拼出 node_modules/node_modules；分批删除失败抛错不吞）。起因：用户实测「知识库本地语义检索 / CloakBrowser 卸载不更新状态，一直显示已安装」—— **四个**根因（marker 推导出不存在的路径、判定认双落位而卸载只删一个、worker 占文件 EBUSY 被 try/catch 吞成成功、包体 join 多了一层 node_modules）。都在 06，属 18 个 MODULES，**要**计入。
 // 此前 3211 = 3207（= 3204 + 01 的【284】三条）＋ 4 = 09-structural【100】补**统一记忆（fabric）段**的剥离判据（注入端仍产机器串 / 真跑剥净 / 剥完==用户原文 / 用户同名小节不误伤）。⛔ 起因：用户实测「项目记忆每次消息都展示 + 出现两个用户消息」，而【100】原先只有常驻+召回两种样例 ⇒ 判据盲区。
 // 10-06 实测回填（三棵树均 = 3204：HEAD / ui-sketch 工作树 / 前端开发轮工作树）。
 // ⛔⛔ 10-06 三度复发（壁纸轮与办公室轮又把独立守卫的条数加了进来）：126 行里连着三次同款事故——

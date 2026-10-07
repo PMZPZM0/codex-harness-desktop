@@ -476,6 +476,36 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
     (/for \(const target of targets\)[\s\S]{0,600}?allowedRoots\.includes\(resolvedTarget\)[\s\S]{0,600}?await removeTargetsWithProgress\(id, targets\)/.test(rt))
       ? ok("【242】卸载逐个 target 做「必须落在 tools/codexHome 之内、不得等于根」的安全校验，校验通过后才分批删除")
       : fail("【242】卸载没走「逐个 target + 逐个安全校验」—— 少校验会把 tools 根或 codexHome 整个删掉");
+    /* ══ 【285】装 / 判 / 卸 三处落点必须**同源**（10-07 用户实测两位数事故）═════════
+       症状统一是「卸载不更新状态，一直显示已安装」，但根因是三个地方各写了一份落点：
+         ① kb-embedding 装在 <userData>/kb-backend，判定读 kbEmbeddingInstalled()，
+            卸载却按 marker 首段推导出 tools/kb-embedding —— **一个不存在的路径**，删了个空气；
+         ② npm 类的判定认**全部候选落位**（mac 双布局），卸载只删 npmGlobalRoot() 那一个
+            ⇒ 装在另一个落位的包（cloakbrowser）永远删不掉；
+         ③ kb-embedding 的常驻 embedding worker 抱着模型文件，通用分批删除在 Windows 上
+            EBUSY，而旧代码 try/catch 把失败吞成「删成功」。
+       ⇒ 判据：卸载落点必须显式给 kbBackendDir()、npm 落点必须遍历 npmGlobalRootCandidates()、
+          kb-embedding 必须走自己的卸载函数（含 dispose worker）、分批删除失败必须抛而不是吞。 */
+    (/if \(id === "kb-embedding"\) return \[kbBackendDir\(\)\];/.test(rt)
+      && /if \(id === "kb-embedding"\)[\s\S]{0,400}?await uninstallKbEmbedding\(\);/.test(rt)
+      && /npmGlobalRootCandidates\(\)\.flatMap/.test(rt)
+      && /if \(failedCount > 0\)[\s\S]{0,300}?throw new Error\(/.test(rt))
+      ? ok("【285】卸载落点与安装/判定同源（kb-embedding 走 kbBackendDir + 自带卸载；npm 类遍历全部候选落位；删除失败抛错不吞）")
+      : fail("【285】卸载落点与安装/判定不同源 —— 又会出现「卸载了但一直显示已安装」（kb-embedding / cloakbrowser 实测）");
+    /* 负向：判定侧既然认双落位，卸载侧就不许退回单落位（npmGlobalRoot() 单值）。
+       ⛔ 正向那条已覆盖，这里钉的是「别把 npmGlobalRootCandidates 改回 npmGlobalRoot」。 */
+    (!/npmGlobalRootCandidates\(\)\.flatMap\([\s\S]{0,300}?npmShimPaths\(\.\.\./.test(rt)
+      && /function npmShimPaths\(globalRoot: string/.test(rt))
+      ? ok("【285】npm 卸载遍历全部候选落位，且 npmShimPaths 显式接根参数（不再内部取单值）")
+      : fail("【285】npm 卸载又退回单落位了 —— 装在另一落位的包会「卸载了但仍显示已安装」");
+    /* ⛔⛔ 第四层（探针实测才抓到，静态判据看不出来）：`NPM_PACKAGE_ARTIFACTS` 的 dirs
+       是相对 **npm-global 前缀** 的（`node_modules/cloakbrowser`），而 npmGlobalRootCandidates()
+       返回的落位**已含 node_modules 一段** ⇒ 直接 join 会拼出
+       `node_modules/node_modules/cloakbrowser` ⇒ **包体从来就没被删过**（Windows 同样中招）。
+       判据 = 必须先取 `path.dirname(root)` 当前缀再 join dirs。 */
+    (/npmGlobalRootCandidates\(\)\.flatMap\(\(root\) => \{\s*const prefix = path\.dirname\(root\);[\s\S]{0,200}?pkg\.dirs\.map\(\(dir\) => path\.join\(prefix, dir\)\)/.test(rt))
+      ? ok("【285】npm 包体落点 join 到 npm-global 前缀（否则会拼出 node_modules/node_modules/…，包体永远删不掉）")
+      : fail("【285】npm 包体落点又直接 join 到含 node_modules 的落位上 ⇒ 拼出 node_modules/node_modules/… ⇒ 包体从未被删过（cloakbrowser 实测）");
   }
   // 09-20 下载源选择：auto 通道序保持「镜像 → (代理) → 直连 → gh-proxy」，六种源在 switch 里分派
   // 09-20 下载源选择：auto = 国内优先（镜像 → (代理) → gh 加速 → 直连兜底），六种源在 switch 里分派
@@ -702,7 +732,9 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   // ⛔ 10-01 改：卸载落点从「单条 if (id === "cloakbrowser")」升级为 NPM_PACKAGE_ARTIFACTS 映射
   //    （npm 包的包体在 node_modules/<pkg>，而 npm-global/<pkg> 那层是 shim 文件 —— 只删 shim 等于没卸干净）。
   (mainTs27.includes("NPM_PACKAGE_ARTIFACTS") && mainTs27.includes('cloakbrowser: { dirs: ["node_modules/cloakbrowser"]') ? ok : fail)("main.ts：卸载 CloakBrowser 删的是**包体目录** node_modules/cloakbrowser（按 marker 首段删会连 nuphus/playwright-cli 一起删光）");
-  (mainTs27.includes("shims: [\"cloakbrowser\"]") && mainTs27.includes("...npmShimPaths(...pkg.shims)") ? ok : fail)("main.ts：卸载时把该包的 shim 一起清掉（否则 PATH 留着指向空目录的 cloakbrowser.cmd）");
+  // ⛔ 10-07：npmShimPaths 改为**显式接根参数**（卸载要遍历全部候选落位，内部取单值会删不干净）
+  //   ⇒ 锚点跟着改成新调用形态，语义不变（shim 仍随包体一起清）。
+  (mainTs27.includes("shims: [\"cloakbrowser\"]") && mainTs27.includes("...npmShimPaths(root, ...pkg.shims)") ? ok : fail)("main.ts：卸载时把该包的 shim 一起清掉（否则 PATH 留着指向空目录的 cloakbrowser.cmd）");
   (mainTs27.includes('if (spec.bundled) throw new Error("该工具随应用内置') ? ok : fail)("main.ts：bundled 条目拒绝卸载（删了没有可靠重取途径）");
   (mainTs27.includes("if (spec.bundled && runtimeInstalled(id, spec)) return { ok: true, runtimes: runtimeList() };") ? ok : fail)("main.ts：bundled 条目已就位时「修复安装」是幂等空操作（判定与清单同源 runtimeInstalled）");
   const toolchainTs27 = readFileSync(join(ROOT, "electron", "toolchain.ts"), "utf8");
