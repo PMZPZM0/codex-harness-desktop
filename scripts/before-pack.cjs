@@ -60,7 +60,15 @@ function reachableAssets(assetsDir, entryNames) {
     //    ⛔ 09-30 实测踩到：ui-skin 组件库的 8 个 .gz 与办公室 bg.webp 全靠这条被引用，
     //    ①②③④ 都不认这种形态 ⇒ 被判「陈旧」待删（装出来的包里换肤/办公室背景全 404）。
     //    import.meta.url 相对资产自身目录（= assets/），basename 直解即可。
-    for (const m of body.matchAll(/new URL\(\s*[`'"]([A-Za-z0-9_$.\-]+\.(?:gz|webp|png|jpe?g|gif|svg|avif|ico|woff2?|ttf|otf|mp3|mp4|json|html))[`'"]\s*,\s*import\.meta\.url\s*\)/g)) if (existsIn(m[1])) queue.push(m[1]);
+    for (const m of body.matchAll(/new URL\(\s*[`'"]([A-Za-z0-9_$.\-]+\.(?:gz|webp|png|jpe?g|gif|svg|avif|ico|woff2?|ttf|otf|mp3|mp4|json|html|wasm))[`'"]\s*,\s*import\.meta\.url\s*\)/g)) if (existsIn(m[1])) queue.push(m[1]);
+    // ⑥ ⛔⛔ 10-07 实测同型事故（第三次了）：3D 模型查看器（model-viewer / draco）的三个
+    //   **.wasm** 解码器（draco_decoder×2 + basis_transcoder）被 ⑤ 漏掉 —— ⑤ 的扩展名清单里
+    //   没有 wasm ⇒ 打包期裁剪把它们当「陈旧」删掉 ⇒ **装出来的包里 3D 预览的 draco 解码 404**
+    //   （与 09-27 katex 字体、09-30 ui-skin .gz 同型：判据不完整 ⇒ 删活文件）。
+    //   形态：draco chunk 里是 `new URL("draco_decoder-xxx.wasm", import.meta.url)` 与
+    //   拼接式 `new URL(\`draco_decoder${x}.wasm\`, import.meta.url)`；后者带变量插值，
+    //   正则只能认到**带哈希的完整文件名**那一类（dist 里就是这种），所以两条都覆盖。
+    for (const m of body.matchAll(/[`'"]([A-Za-z0-9_$.\-]+\.wasm)[`'"]/g)) if (existsIn(m[1])) queue.push(m[1]);
   }
   return live;
 }

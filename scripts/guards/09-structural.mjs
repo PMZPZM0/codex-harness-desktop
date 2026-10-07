@@ -1542,7 +1542,7 @@ export async function run() {
         "electron/main.ts": 556,   // 10-07 轮 546→556（实测）：组合层改具名 import + setPath(userData) 后 process.nextTick(mountEnabledDomains)（挂载时机修复 + 循环 require 窗口规避，【253】钉）
         "scripts/guards/03-runtime-boot.mjs": 917,
         "electron/voice/voice-service.ts": 800,
-        "src/vite-env.d.ts": 799,   // 生成物：通道数增加时自然变长（守卫【2】保证与 manifest 一致）；10-05 +2 = model-viewer 读，再 +1 = memory:role-context，再 +3 = 统一记忆 UI 的两个读通道 + 角色归属表通道 gen 方法 + onModelViewerOpen 手写桥声明；10-06 +2 = whatsnew:state/whatsnew:ack（0.0.32 新功能介绍弹窗）；10-06 +2 = skills:builtin-switch-get/set（控制台的内置技能独立开关）；10-06 夜六轮 +1 = tasks:clear（新回合清上一轮清单）
+        "src/vite-env.d.ts": 800,   // 生成物：通道数增加时自然变长（守卫【2】保证与 manifest 一致）；10-05 +2 = model-viewer 读，再 +1 = memory:role-context，再 +3 = 统一记忆 UI 的两个读通道 + 角色归属表通道 gen 方法 + onModelViewerOpen 手写桥声明；10-06 +2 = whatsnew:state/whatsnew:ack（0.0.32 新功能介绍弹窗）；10-06 +2 = skills:builtin-switch-get/set（控制台的内置技能独立开关）；10-06 夜六轮 +1 = tasks:clear（新回合清上一轮清单）；10-07 夜 +1 = runtime:cancel（开发工具重构：取消安装）
         "src/components/VoiceCallFloat/use-voice-call-float-state.tsx": 806,
         "scripts/guards/10-memory-audit.mjs": 848,
         "src/features/drama-canvas/DramaCanvas.tsx": 928,   // 10-06 深夜 Round J +6 = 画布右键菜单加**视口钳制**（用户令「凡事弹窗类都要加自适应，不能被裁剪」）：坐标来自 clientX/Y，贴右/下边缘右键必被裁——Math.max(8, Math.min(…)) 两处

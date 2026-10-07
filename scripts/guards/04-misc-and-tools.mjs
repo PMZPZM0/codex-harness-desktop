@@ -251,6 +251,45 @@ console.log(C.bold("\n【工具安装验证】verify 只是快照，失败不得
 }
   }
 
+  /* ══ 【工具取消/卸载】10-07 重构（用户要求「实时进度+取消+卸载反馈，不允许无响应」）══ */
+  {
+console.log(C.bold("\n【工具取消/卸载】10-07 重构的四条不变量"));
+{
+  const runtimeSrc3 = readFileSync(join(ROOT, "scripts", "install-runtimes.cjs"), "utf8");
+  const drSrc3 = readFileSync(join(ROOT, "electron", "features", "dev-runtimes.ts"), "utf8");
+  const rtSrc3 = readFileSync(join(ROOT, "electron", "features", "runtime-ipc.ts"), "utf8");
+  const devtoolsSrc3 = readFileSync(join(ROOT, "src", "features", "settings-devtools", "DevtoolsSettingsSection.tsx"), "utf8");
+  const capSrc3 = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part02", "04-runtime-commands-account", "01-dev-runtimes-capability.tsx"), "utf8");
+  // ① @@TARGET：下载落盘路径报给主进程 —— 取消后按它清临时文件（锚「写出行」本身，防顺手改成 console.log）
+  (/process\.stdout\.write\("@@TARGET " \+ file \+ "\\n"\)/.test(runtimeSrc3))
+    ? ok("install-runtimes.cjs 下载前输出 @@TARGET（取消清临时文件的锚点）")
+    : fail("@@TARGET 被摘 —— 取消安装后找不到半截下载产物在哪，临时文件清不掉");
+  // ② 杀进程树：安装器(node) 下面挂着 curl/7z 孙进程，只 kill 父进程留孤儿
+  (/taskkill", \["\/pid", String\(child\.pid\), "\/T", "\/F"\]/.test(drSrc3) && /pkill", \["-P", String\(child\.pid\)\]/.test(drSrc3) && /@@TARGET/.test(drSrc3))
+    ? ok("cancelRuntimeInstall 杀进程树（win taskkill /T / POSIX pkill）+ 解析 @@TARGET 记临时文件")
+    : fail("取消安装没杀进程树或没记 @@TARGET —— 孤儿 curl 继续写文件，清理是句空话");
+  // ③ runtime:cancel 通道 + 取消改判：杀进程导致的 reject 要回执 cancelled 而不是报错
+  (/"runtime:cancel"/.test(rtSrc3) && /if \(isCancelRequested\(id\)\) return \{ ok: true, cancelled: true, runtimes: runtimeList\(\) \};/.test(rtSrc3) && /clearCancelRequest\(id\);/.test(rtSrc3))
+    ? ok("runtime:cancel 通道在位；install 收尾把「杀进程 reject」改判成 cancelled 回执")
+    : fail("runtime:cancel 没接全 —— 取消后用户看到的是一句安装报错而不是「已取消」");
+  // ④ 卸载进度：大目录逐文件删要几秒，必须分批发 percent（不允许无响应状态）
+  (/async function removeTargetsWithProgress/.test(rtSrc3) && /stage: "正在删除文件", percent/.test(rtSrc3) && /await removeTargetsWithProgress\(id, targets\);/.test(rtSrc3))
+    ? ok("卸载走 removeTargetsWithProgress（分批删 + 按字节比例发进度）")
+    : fail("卸载又变回一把 fs.rm 了 —— 大目录删几秒全程无反馈（用户明确点名不允许）");
+  // ⑤ 渲染层：取消按钮 + 卸载行内二次确认 + cancelled 事件处理，三件都在
+  (/runtime-cancel/.test(devtoolsSrc3) && /cancelDevRuntime\(runtime\.id\)/.test(devtoolsSrc3) && /confirmUninstall === runtime\.id/.test(devtoolsSrc3) && /确认卸载/.test(devtoolsSrc3))
+    ? ok("工具卡：安装中给「取消」，卸载先行内二次确认（真删不可恢复）")
+    : fail("工具卡取消/二次确认被摘 —— 卸载一击即删、下载停不下来都是回潮");
+  (/if \(event\.cancelled\)/.test(capSrc3) && /已取消下载，临时文件已清理/.test(capSrc3) && /bag\.setRuntimeUninstalling/.test(capSrc3))
+    ? ok("进度事件处理：cancelled 分支回落状态并提示（取消 ≠ 失败）")
+    : fail("渲染层没处理 cancelled 事件 —— 取消后「正在安装」挂着不动（无响应状态）");
+  // ⑥ 通道账本：runtime 前缀 5 条（【2】只验 manifest 自洽，这里钉人读的账本别漏登记）
+  (/prefix: "runtime", count: 5/.test(readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8")) && /"runtime:cancel"/.test(readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8")))
+    ? ok("ipc-registry runtime 账本 count=5 且含 runtime:cancel")
+    : fail("runtime 账本没登记 runtime:cancel —— 预检【2】会红，且读账本的人不知道有这条通道");
+}
+  }
+
   /* ══ 【15】原 L2524–L2545 ══ */
   {
 console.log(C.bold("\n【15】供应商列表：点开关（启用/停用）右侧详情必须跟随"));

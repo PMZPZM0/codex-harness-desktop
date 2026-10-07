@@ -720,6 +720,9 @@ export interface Bag {
   refreshCapabilities: () => void;
   installDevRuntime: (id: string) => Promise<void>;
   uninstallDevRuntime: (id: string) => Promise<void>;
+  cancelDevRuntime: (id: string) => Promise<void>;
+  runtimeUninstalling: string | null;
+  setRuntimeUninstalling: React.Dispatch<React.SetStateAction<string | null>>;
   settingsResources: { skills: any[]; hooks: any[]; plugins: any[]; mcp: any[]; };
   setSettingsResources: React.Dispatch<React.SetStateAction<{ skills: any[]; hooks: any[]; plugins: any[]; mcp: any[]; }>>;
   installedTotalCount: number;
