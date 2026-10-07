@@ -1226,11 +1226,23 @@ export async function run() {
     (missingImp.length === 0 && genFiles.length > 0 ? ok : fail)(
       `【253】生成物 import 了每个启用域（缺：${missingImp.join("/") || "无"}）—— 谁被挂载由组合表决定，域不自挂`
     );
-    // ② 生成物必须先 provide "ipc" 服务再挂载（顺序反了 ⇒ inject 门禁直接把启动打崩）
+    // ② 挂载时机两层钉死（10-07 事故：app-settings 缓存被写坏 ⇒ 用户设置全失效）：
+    //    · 生成物只**导出** mountEnabledDomains，模块作用域不许自动挂载 —— 模块体先于壳
+    //      句体执行，那时 setPath(userData) 还没跑 ⇒ 停用域判定读错目录的设置；
+    //    · 壳必须在 setPath("userData") **之后**显式调用 —— 早于重定向 = 同上。
+    const genCode253 = codeOnly(genSrc);
+    const mainSrc253 = codeOnly(readFileSync(join(ROOT, "electron", "main.ts"), "utf8"));
     const iHost = genSrc.indexOf('import "./ipc-host"');
-    const iMount = genSrc.indexOf("for (const row of ENABLED)");
-    (iHost >= 0 && iMount > iHost ? ok : fail)(
-      "【253】生成物先 provide ipc 服务、再挂载（⛔ 顺序反了 = 启动即崩）"
+    const hasMountFn = /export function mountEnabledDomains\s*\(/.test(genCode253);
+    const noTopLevelMount = !/^for \(const row of ENABLED\)/m.test(genCode253);
+    // 调用形态：`process.nextTick(mountEnabledDomains)`（推荐，避开"壳被域间接 require 时
+    // 组合层 ENABLED 表未赋值"的循环求值窗口）或裸调用 `mountEnabledDomains()` 都算。
+    const callMatch253 = /process\.nextTick\(mountEnabledDomains\)|(?:^|[^.\w])mountEnabledDomains\(\)/m.exec(mainSrc253);
+    const iCallMain = callMatch253 ? callMatch253.index : -1;
+    const iSetPathMain = mainSrc253.indexOf('app.setPath("userData"');
+    (iHost >= 0 && hasMountFn && noTopLevelMount && iSetPathMain >= 0 && iCallMain > iSetPathMain ? ok : fail)(
+      "【253】挂载时机：生成物只导出 mountEnabledDomains（模块作用域不自动挂载），壳在 setPath(userData) 之后显式调用"
+        + "（⛔ 早于重定向 = 停用域判定读错设置、app-settings 缓存被写坏 = 10-07 事故）"
     );
     // ③⛔⛔ 启动即崩事故守卫：域**绝不 import 组合层** —— 反向即成环 ⇒ plugin 为 undefined
     const offenders253 = [];
@@ -1242,8 +1254,9 @@ export async function run() {
       `【253】域不许 import 组合层（⛔ 反向 import = 成环 = 启动即崩；违规：${offenders253.join("/") || "无"}`
         + "）"
     );
-    // ④ 壳（main.ts）必须经组合表挂载（唯一入口）
-    (/import\s+"\.\/composition\.gen"/.test(readFileSync(join(ROOT, "electron", "main.ts"), "utf8")) ? ok : fail)(
+    // ④ 壳（main.ts）必须经组合表挂载（唯一入口；10-07 起是「具名 import + setPath 后调用」，
+    //    侧效应 import 两种形态都认 —— 判据不变：组合表必须在启动链上）
+    (/(?:import\s+"\.\/composition\.gen"|from\s+"\.\/composition\.gen")/.test(readFileSync(join(ROOT, "electron", "main.ts"), "utf8")) ? ok : fail)(
       "【253】壳 main.ts 经组合表挂载（域不再被壳直接 import）"
     );
     // ⑤⛔ 组合表的 id 必须与域文件里 `defineFeature` 的 id **逐字一致**。
@@ -1480,14 +1493,14 @@ export async function run() {
           }).length;
 
       const GIANT_CAP = {
-        "scripts/guards/07-turn-fold.mjs": 3697,   // 10-06 +8 = 思考卡幻影浮窗三修的三条断言（【161】）+ 两处【112】签名判据随 renderAfter 放宽——守卫载体，加规则基线随之上移；10-06 夜三轮 +2（3748→3750）= 【48】输入框高度上限判据接受 var(--composer-editor-max, min(...)) 形态（拖动把手）
-        "scripts/accept.mjs": 1593,   // 10-06 新登记：验收脚本本轮扩到「真回合全链路」后越过 1000 净行（file-summary 15 条 + 粘贴附件路径）——它是测试脚本不是业务逻辑，按协议登记。⛔ 同日 f290410 登记成 1018 而实测 1022（该提交自己 +37 净行却按 1018 记账，差 4 行）⇒ 本条按**实测**纠正，别再照抄提交说明里的数；10-06 深夜 Round J：file-summary 15→19 条（④b 胶囊 centered / ⑮ 消失 / ⑯ 悬停预览 / ⑰ 移开即关）+ 新验收项 popup-fits（弹窗自适应普查，登记 10-06 轮）+ ③ 实时行采样窗 8s→15s（慢工作区假红实测）——测试脚本仍按协议随实测上移；10-06 夜二改：file-summary 扩 ⑤b 冻结行 / ⑤c 落盘 / ⑯b 预览升级 + ⑧⑨⑭ 折叠 2 行口径，1122→1164→1177→1189→1304（实测；+13 等滚动静默（.timeline smooth）+12 ⑯ 悬停重试；10-06 夜三轮 +116 = 胶囊双分区（①b 播种/④b 拼接/④c 文件区/④d 步骤区/⑮ 保留步骤/⑱ 删净）+ 新验收项 composer-resize（拖动把手 6 条）；10-06 夜五轮 1304→1410（实测，+106 = 新验收项 goal-bar 7 条：目标条真回合全链路 set(paused)→编辑→继续→暂停→删除）；10-06 夜六轮 1410→1465→1483（实测；+55 = 清单生命周期重排：①c 没在跑不渲染 / ①d 真发送清旧账 / ④a 运行中重播种 / ④e+④e2 运行中全完成隐藏与还原 / ⑮ 改写「双消失+库里仍在」/ 删恒真化的 ⑱a / sleep 8→12 留断言余量；再 +18 = 慢工作区两处治本：胶囊采样器（④f 拼接改读页内 300ms 采样日志）、③④ 实时行作用域到本回合组（历史冻结行污染实测 3→16））；夜八轮 1483→1505（实测，+22 = popup-fits 扩工作区菜单四条：开→fits→点外面关→Esc 关）；夜九轮 1505→1514（实测，+9 = composer-resize 扩 ①b「把手骑在输入框顶边框上」）；10-07 轮 1514→1609（实测，+95 = 新验收项 newbie-guide 六条：入口不被遮 / 弹窗开合 / 三映射+日志置底 / 跳转落 model 页 / 日志真数据 / Esc 关））
-        "scripts/guards/06-app-behavior.mjs": 2572,   // 10-05 深夜+1 = 办公室轮（b0e83ff）修活【154】（删陈旧【168】门 + 换当前实现 23 条断言）留下的净增量，回填补账。此前：10-05：【29】防线二从「固定 900 字符窗口」改成按**同级分支边界**切片 + 加一条「切片确实跨到分支体」前置（净 +3）—— 本轮往 boot.ts 那个分支加了一条委托登记表清理，旧窗口立刻假红；窗口类判据一律按边界切，别调大数字。另：本文件 ok/fail 是**单参**版，写 ok(cond,msg) 会恒真
+        "scripts/guards/07-turn-fold.mjs": 3750,   // 10-07 轮 3697→3750（实测；+53 = 压缩链宿主侦测五条（watchTurnCompleted / rollout tail / 广播 / 渲染层记录 / timeline 第三来源）+【159】下限 0.1 与缓存按路径归属三条 + 【165】互斥链改三源 + 两处烂断言修复（锚点 regex 随 boundaryTurnId 更新 / persist 判据重写）+3 + 压缩侦测判据二次修正（记录按 turn_id 归因 / 不许退回非渲染层回合判据 / worker 增量扫描）+15）
+        "scripts/accept.mjs": 1660,   // 10-06 新登记：验收脚本本轮扩到「真回合全链路」后越过 1000 净行（file-summary 15 条 + 粘贴附件路径）——它是测试脚本不是业务逻辑，按协议登记。⛔ 同日 f290410 登记成 1018 而实测 1022（该提交自己 +37 净行却按 1018 记账，差 4 行）⇒ 本条按**实测**纠正，别再照抄提交说明里的数；10-06 深夜 Round J：file-summary 15→19 条（④b 胶囊 centered / ⑮ 消失 / ⑯ 悬停预览 / ⑰ 移开即关）+ 新验收项 popup-fits（弹窗自适应普查，登记 10-06 轮）+ ③ 实时行采样窗 8s→15s（慢工作区假红实测）——测试脚本仍按协议随实测上移；10-06 夜二改：file-summary 扩 ⑤b 冻结行 / ⑤c 落盘 / ⑯b 预览升级 + ⑧⑨⑭ 折叠 2 行口径，1122→1164→1177→1189→1304（实测；+13 等滚动静默（.timeline smooth）+12 ⑯ 悬停重试；10-06 夜三轮 +116 = 胶囊双分区（①b 播种/④b 拼接/④c 文件区/④d 步骤区/⑮ 保留步骤/⑱ 删净）+ 新验收项 composer-resize（拖动把手 6 条）；10-06 夜五轮 1304→1410（实测，+106 = 新验收项 goal-bar 7 条：目标条真回合全链路 set(paused)→编辑→继续→暂停→删除）；10-06 夜六轮 1410→1465→1483（实测；+55 = 清单生命周期重排：①c 没在跑不渲染 / ①d 真发送清旧账 / ④a 运行中重播种 / ④e+④e2 运行中全完成隐藏与还原 / ⑮ 改写「双消失+库里仍在」/ 删恒真化的 ⑱a / sleep 8→12 留断言余量；再 +18 = 慢工作区两处治本：胶囊采样器（④f 拼接改读页内 300ms 采样日志）、③④ 实时行作用域到本回合组（历史冻结行污染实测 3→16））；夜八轮 1483→1505（实测，+22 = popup-fits 扩工作区菜单四条：开→fits→点外面关→Esc 关）；夜九轮 1505→1514（实测，+9 = composer-resize 扩 ①b「把手骑在输入框顶边框上」）；10-07 轮 1514→1609（实测，+95 = 新验收项 newbie-guide 六条：入口不被遮 / 弹窗开合 / 三映射+日志置底 / 跳转落 model 页 / 日志真数据 / Esc 关）；10-07 夜十一轮 1609→1660（实测，+51 = 新验收项 compact-line：新会话两条短回合 + 手动 thread/compact/start 真链路 → 压缩线出现/锚点/落盘））
+        "scripts/guards/06-app-behavior.mjs": 2590,   // 10-07 并行会话在途 +18（【154】办公室缩放钮断言：控制组在关闭钮左 / 三个 zoom 调用 / 缩放回报与句柄 / 托盘 pointer-events），按实测记账。此前 10-05 深夜+1 = 办公室轮（b0e83ff）修活【154】（删陈旧【168】门 + 换当前实现 23 条断言）留下的净增量，回填补账。此前：10-05：【29】防线二从「固定 900 字符窗口」改成按**同级分支边界**切片 + 加一条「切片确实跨到分支体」前置（净 +3）—— 本轮往 boot.ts 那个分支加了一条委托登记表清理，旧窗口立刻假红；窗口类判据一律按边界切，别调大数字。另：本文件 ok/fail 是**单参**版，写 ok(cond,msg) 会恒真
         "scripts/guards/02-session-logic.mjs": 1229,   // 本文件是守卫载体（侧栏会话逻辑域）：每加一条规则基线随之上移 —— 10-04 新增【281】侧栏幽灵消失三条（兜底收编不吃 preview / memberIds 必须是派生量 / singles 与簇体同源）+20；10-04 新增【282】侧栏会话行不展示项目地址两条（渲染器不再引用 cwd / 两处小字各自锚定）+11
         "src/features/app-state/parts/bag-types.ts": 1414,   // 生成物（段内顶层声明的类型面）：本文件不承载任何逻辑，长度随「段内顶层声明数」变化 —— 10-04 补 5 条漏接线的声明（ctxBtnRef / ctxMenuStyle / taskBtnRef / taskMenuStyle / dispatchKey，守卫【93】报的 missing）；10-05 界面草图那一位（uiSketchOpen + setter，【283】钉）+2，非业务代码增长
-        "scripts/guards/09-structural.mjs": 1666,   // 本文件是守卫载体：每加一条规则基线随之上移（历史：→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916；10-06 净行口径实测回归 1665）；本轮 +1 = 棘轮名单新登记 scripts/accept.mjs 一行
+        "scripts/guards/09-structural.mjs": 1681,   // 本文件是守卫载体：每加一条规则基线随之上移（历史：→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916；10-06 净行口径实测回归 1665）；本轮 +1 = 棘轮名单新登记 scripts/accept.mjs 一行；10-07 轮 +15 = 【253】② 改「挂载时机」两段判据（生成物只导出 mountEnabledDomains + 壳在 setPath 后调用，调用形态认 nextTick/裸调用两种）+ 【270】③ require 不自动挂载的负向判据
         "scripts/guards/13-drama-gen.mjs": 1070,
-        "electron/main.ts": 546,   // 10-05 界面草图：sketch 协议的特权声明 + 那段"为什么不用 file://、为什么必须 standard/secure"的注释（【283】钉），不是新逻辑
+        "electron/main.ts": 556,   // 10-07 轮 546→556（实测）：组合层改具名 import + setPath(userData) 后 process.nextTick(mountEnabledDomains)（挂载时机修复 + 循环 require 窗口规避，【253】钉）
         "scripts/guards/03-runtime-boot.mjs": 917,
         "electron/voice/voice-service.ts": 800,
         "src/vite-env.d.ts": 799,   // 生成物：通道数增加时自然变长（守卫【2】保证与 manifest 一致）；10-05 +2 = model-viewer 读，再 +1 = memory:role-context，再 +3 = 统一记忆 UI 的两个读通道 + 角色归属表通道 gen 方法 + onModelViewerOpen 手写桥声明；10-06 +2 = whatsnew:state/whatsnew:ack（0.0.32 新功能介绍弹窗）；10-06 +2 = skills:builtin-switch-get/set（控制台的内置技能独立开关）；10-06 夜六轮 +1 = tasks:clear（新回合清上一轮清单）
@@ -1856,6 +1869,16 @@ export async function run() {
               return loadOrig.call(this, request, ...rest);
             };
             const g = moduleAny(genDist);
+            // ⛔ 10-07：挂载挪进显式函数 ⇒ 先钉「require 本身不挂任何域」（模块作用域自动挂载
+            //    正是 app-settings 缓存被写坏的事故源头），再调 mountEnabledDomains() 验装卸语义。
+            (typeof g.mountEnabledDomains === "function" ? ok : fail)(
+              "【270】生成物导出 mountEnabledDomains（挂载不再发生在模块作用域）"
+            );
+            const autoMounted = g.mountedDomainIds().length;
+            (autoMounted === 0 ? ok : fail)(
+              `【270】require 生成物本身不自动挂载（实测 ${autoMounted} 个；非 0 ⇒ 模块体先于壳句体执行、userData 未定就做停用域判定 = 10-07 设置缓存事故会复活）`
+            );
+            g.mountEnabledDomains();
             const ids0 = g.mountedDomainIds();
             const probe = ids0.find((id) => id !== "domains") || null;
             let ok270 = ids0.length > 0 && Boolean(probe);

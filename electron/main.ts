@@ -92,7 +92,10 @@ import { closePetWindow } from "./features/pet-window";
    「No handler registered」（用户现场实测）。handler 文件、manifest、registry、
    preload 四处都齐，唯一缺的就是这行引用 —— 缺它整条通道静默失效（不报编译错）。
    守卫【194】按 ipc-registry 逐个比对「in-features 的 file 必须被 main 引用」。 */
-import "./composition.gen"; // 组合层（P1）：读 electron/composition.json 决定挂哪些域；原位替换 = 不改启动顺序
+import { mountEnabledDomains } from "./composition.gen"; // 组合层（P1）：读 electron/composition.json 决定挂哪些域。
+/* ⛔ 10-07 起**挂载不在 import 时**，由下面 setPath(userData) 之后的显式调用触发 ——
+   原因：模块体先于本文件句体执行，那时 userData 还是默认目录，停用域判定会读到错设置、
+   并把读失败结果写进 app-settings 进程缓存（用户全部设置静默失效，见 mountEnabledDomains 注释）。 */
 /* 截图（全屏/框选）+ 收藏夹：用户素材链的两端（截图可收藏、收藏可发送/进记忆）。
    ⛔ 10-03 P2 批次 7 起，这两个域的 13 条通道改由组合层 `./composition.gen` 挂载（域不自挂）。 */
 /* 历史会话搜索：顶栏 🔍 → 扫 rollout 原档搜对话内容（真相源=rollout，见 history-search-ipc.ts） */
@@ -166,6 +169,16 @@ protocol.registerSchemesAsPrivileged([
 app.setName("Codex Harness Desktop");
 
 app.setPath("userData", resolveStartupUserData());
+
+/* ⛔ 域挂载点 = **此处**（userData 已定之后），不是 composition.gen 被 import 时 ——
+   10-07 事故：模块体先于句体执行 ⇒ 挂载时的停用域判定用默认目录的 app-settings.json
+   （读到空/陈旧）且把空对象写进进程级缓存 ⇒ 用户设置（如自动压缩比例）全部静默失效。
+   接缝 provide（ipc-host / runtime/seams）仍由组合层模块顶部的 import 完成，先于本调用。
+   ⛔ 用 nextTick 推迟到当前调用栈展开后：组合层的 ENABLED 表在模块体**后段**才赋值，而
+   本文件可能被域**间接 require**（域 → "../main" 的既有白名单依赖）而在组合层求值中途
+   提前跑完 —— 那样同步调用会拿到未就绪的表（守卫【270】真跑直接 require 生成物时实测
+   `exports.ENABLED is not iterable`）。nextTick 仍远早于 app ready / bootApp / 任何渲染 IPC。 */
+process.nextTick(mountEnabledDomains);
 
 /* 自定义 AUMID（AppUserModelID）—— **只在打包版设置，dev 一律不设**。
    Windows 用 AUMID 把"运行中的进程"与"注册了同一 AUMID 的快捷方式"配对：配对成功 ⇒ 任务栏取

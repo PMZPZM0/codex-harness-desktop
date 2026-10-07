@@ -47,7 +47,7 @@ const side = codeOnly(read("src/features/app-view/AppView/01-sidebar-shell.tsx")
 
 ok(/onClick=\{\(\) => setMoreHubOpen\(true\)\}/.test(side), "「···更多」按钮真的开窗（有 setMoreHubOpen(true)，不是只写着文案）");
 ok(/\{moreHubOpen && \(/.test(side), "更多弹窗挂在 moreHubOpen 条件上（⛔ 被改成恒假也算断言通过，所以两条都要钉）");
-ok(/className="sidebar-tab"[^>]*aria-expanded=\{moreHubOpen\}/.test(side), "按钮带 aria-expanded（无障碍状态与开窗同源）");
+ok(/className="sidebar-tab[^"]*"[^>]*aria-expanded=\{moreHubOpen\}/.test(side), "按钮带 aria-expanded（无障碍状态与开窗同源；⛔ className 允许挂 ic-* 色相后缀 —— 10-07 图标批把裸 sidebar-tab 全部带上了色相类）");
 
 /** hub 窗口：aria-label="更多" → 下一个稳定标记 {projectFilter（⛔ 不用固定字符窗口） */
 const hubAt = side.indexOf('aria-label="更多"');

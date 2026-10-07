@@ -3,7 +3,8 @@
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
 import { isCompactionItem } from "../../../../lib/compaction-item.mjs";
-import { Fragment, type ReactNode } from "react";
+import { compactionRecordFor, compactionVersion, subscribeCompactions } from "../../../../lib/compaction-records.mjs";
+import { Fragment, useSyncExternalStore, type ReactNode } from "react";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../lib/entity-avatar";
 import {
   AlertTriangle,
@@ -250,6 +251,10 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     waitingForApproval,
     waitingForInput,
   } = app;
+  /* 压缩记录变化 ⇒ 本组件主动重渲染（10-07）：广播/重播到达时若恰好没有其它 state 更新，
+     压缩线要等下一次被动重渲染才出现（竞态）。订阅记录模块的版本号，一变即重渲染；
+     线本体仍在下方的 IIFE 里按 thread 取（这里只负责触发）。 */
+  void useSyncExternalStore(subscribeCompactions, compactionVersion);
   return (
     <div className="timeline-wrap" ref={timelineWrapRef}>
                   {thread && <MemoMessageRuler turns={thread.turns} scrollRef={scrollRef} containerRef={timelineWrapRef} onJump={jumpToTurnInWindow} />}
@@ -282,21 +287,41 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                     // isLastTurn / 窗口切片都以规范序列为准
                     const { ordered, visible } = visibleTurnWindow(thread?.turns, thread ? (turnWindow[thread.id] ?? TURN_WINDOW) : TURN_WINDOW);
                     const lastId = String(ordered[ordered.length - 1]?.id ?? "");
-                    // ⛔ 压缩线 timeline 层归位（09-26 二次修：「旧消息上面，新的压缩线又在新消息下面」）：
-                    //    回合中途的自动压缩时，引擎新开的压缩回合排在 turns **末尾** ⇒ 只把线提到「它所在
-                    //    回合」的顶部还不够，回合本身在最后 ⇒ 线还是在新消息下面。语义上压缩针对的是
-                    //    「最后一条用户消息之前」的历史 ⇒ 线固定插在**最后一条用户消息回合**的正上方，
-                    //    任何事件时序都归位。与 pruneSupersededCompactions 同口径：只渲染最新一条。
+                    // ⛔ 压缩线 timeline 层归位（09-26 二次修 + 10-07 夜十一轮改锚点）：
+                    //    09-26 的修法 = 插在「**最新一条**用户消息回合」正上方 —— 当时解决了「线被引擎
+                    //    末尾的压缩回合带到新消息下面」；但它每帧重算 ⇒ 之后每来一条新消息，线都跟着
+                    //    往下跑（永远黏在最新消息上方），不随历史一起上移（用户 10-07：「这个压缩线跟着
+                    //    历史消息往上走」）。
+                    //    10-07 改锚 = **以压缩 item 自己所在回合为界**，取该回合（含）之前最近一条用户
+                    //    消息回合的正上方 —— 新消息到来时线**不动**（它是历史项，随内容一起被顶上去）；
+                    //    再次压缩时新 item 在后 => 锚点随新边界下移，语义正确。
+                    //    与 pruneSupersededCompactions 同口径：只渲染最新一条。
                     let compactionLine: ReactNode = null;
                     let insertBefore = -1;
                     if (thread) {
                       let lastCompaction: any = null;
-                      for (const t of ordered) for (const it of (t.items ?? []) as any[]) if (isCompactionItem(it) && it?.status !== "inProgress" && it?.status !== "running") lastCompaction = it;
-                      for (let i = ordered.length - 1; i >= 0; i--) {
+                      let lastCompactionTurnId = "";
+                      for (const t of ordered) for (const it of (t.items ?? []) as any[]) if (isCompactionItem(it) && it?.status !== "inProgress" && it?.status !== "running") { lastCompaction = it; lastCompactionTurnId = String(t.id ?? ""); }
+                      /* 压缩线第三源（10-07）：当前引擎的压缩 item 不进 turns API/事件流（实测）——
+                         引擎 item 找不到时，退回主进程 `compaction-watch` 的侦测记录（thread-compacted-host，
+                         宿主侧按 rollout 对账、落盘、resume 重播）。锚点语义与引擎 item 完全一致：以压缩
+                         所在回合为界、取该回合(含)之前最近一条用户消息的正上方。 */
+                      const hostCompaction = lastCompaction ? null : compactionRecordFor(thread.id);
+                      const boundaryTurnId = lastCompactionTurnId || String(hostCompaction?.turnId ?? "");
+                      const anchorFrom = boundaryTurnId ? ordered.findIndex((t) => String(t.id) === boundaryTurnId) : ordered.length - 1;
+                      for (let i = (anchorFrom >= 0 ? anchorFrom : ordered.length - 1); i >= 0; i--) {
                         if (((ordered[i].items ?? []) as any[]).some((it) => it?.type === "userMessage")) { insertBefore = visible.indexOf(ordered[i]); break; }
                       }
                       if (lastCompaction && insertBefore >= 0) {
                         compactionLine = <ItemView item={lastCompaction} onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} key={`compact-${lastCompaction.id}`} />;
+                      } else if (hostCompaction && insertBefore >= 0) {
+                        compactionLine = (
+                          <div className="compact-divider compact-divider--success compact-divider--settled" role="status" aria-label="上下文压缩状态" key={`compact-host-${hostCompaction.turnId}`}>
+                            <i className="compact-divider-line" aria-hidden />
+                            <span className="compact-divider-text"><CircleCheck size={13} />上下文已自动压缩</span>
+                            <i className="compact-divider-line" aria-hidden />
+                          </div>
+                        );
                       } else if (compactToast && compactToast.state !== "running" && compactToast.threadId === thread.id) {
                         // ⛔ 时间线里没有压缩 item 时才用 toast 兜底 —— 而且**渲染在同一个归位位置**，
                         //    不再单独挂在时间线尾部（09-26 两条线就是「归位的一条 + 尾部兜底一条」）。

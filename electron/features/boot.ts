@@ -16,6 +16,7 @@ import { markBoot } from "../boot-timing";
 import { debugMemoryCapture } from "../memory-capture-debug";
 import { sendToWindow } from "./window-bus";
 import { dropStoredReports, emitTurnFileChanges, setTurnFileWatchBroadcast, setTurnFileWatchStore, settleTurnByTurnId, snapshotTurnWorkspace } from "../turn-file-watch";
+import { dropStoredCompactions, loadCompactionStore, setCompactionWatchDirs, watchTurnCompleted } from "../compaction-watch";
 
 import { shouldRegisterNuphus } from "../automation-policy";
 import { SKETCH_SCHEME, sketchResponse } from "../sketch-protocol";
@@ -219,6 +220,9 @@ export async function bootApp() {
   // 回合文件变更报告的落盘目录（10-06 夜二改：重启后「已更改 N 个文件」卡与冻结编辑行还在）。
   // ⛔ 必须在这个时点求值（app.setPath("userData") 之后）；模块顶层 import 期求值会静默漂移。
   setTurnFileWatchStore(path.join(app.getPath("userData"), "turn-file-changes"));
+  // 压缩侦测的落盘目录 + rollout 根（10-07）——同一条"启动后求值"纪律（见上一行注释）。
+  setCompactionWatchDirs(path.join(app.getPath("userData"), "compaction-records"), codexHome);
+  loadCompactionStore();
   /* 启动自报（10-01，排查「改了没生效」）：把本次启动加载的产物路径 + 渲染层 bundle 文件名 +
      时间写进 userData/startup-report.json。排查脚本读它即可确定用户启动的是哪份产物，不必互相猜。
      ⛔ 只写自己的报告文件、只读 dist/index.html，不碰任何业务状态；失败不影响启动。 */
@@ -446,6 +450,8 @@ export async function bootApp() {
           }).catch(() => undefined);
           // 会话被删 ⇒ 文件变更报告的落盘也跟着走（否则 userData/turn-file-changes 越攒越多）
           if (event.method === "thread/deleted") dropStoredReports(goneId);
+          // 压缩侦测记录同理（否则 userData/compaction-records 越攒越多）
+          if (event.method === "thread/deleted") dropStoredCompactions(goneId);
           void (async () => {
             const changed = event.method === "thread/deleted"
               ? await threadRuntimeStore.remove(goneId)
@@ -555,6 +561,10 @@ export async function bootApp() {
         if (buffer) buffer.assistant = p.item.text;
       } else if (event.method === "turn/completed") {
         if (!internalThreads.has(String(p?.threadId))) for (const forward of remoteEventForwarders) forward({ threadId: p?.threadId, kind: "done", text: "" });
+        /* 引擎真压缩的宿主侦测（10-07）：当前引擎的压缩不发 item 事件（item 只落 rollout，
+           且自动压缩是**内联**在用户回合里完成的）——这里每个回合结束时增量扫 rollout 新增段、
+           按压缩记录自己的 turn_id 归因（== 刚完成回合 id 才认）→ 命中则落盘 + 广播（渲染层画线）。 */
+        void watchTurnCompleted(String(p?.threadId ?? ""), turnIdOf(p));
       }
       // ⛔ 中断 / 失败的回合也必须释放缓冲：否则它永久留在 Map 里，
       //    下一次兜底会错取到它（L2 记忆串台到上一回合）
