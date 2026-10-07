@@ -80,8 +80,8 @@ ok(/snapshotTurnWorkspace\(threadIdOf,\s*id,\s*startCwd\)/.test(boot),
   "boot 把**回合 id**随快照传给追踪器（漏传/传 threadIdOf ⇒ 广播对不上 turn.id）");
 ok(boot.includes("const id = turnIdOf(p);") && /if \(id\) engineActiveTurnIds\.set\(id, threadIdOf\);/.test(boot),
   "turn/started 分支里回合 id 仍是宽容三形态解析（id 记进活跃台账 + 快照共用同一个值）");
-ok(watch.includes('snaps.set(id, { turnId: String(turnId ?? ""), cwd: dir, snap: walk(dir) })'),
-  "快照条目存住 turnId（线程 id 只当快照键/结算键，两个 id 职责分开）");
+ok(watch.includes('snaps.set(id, { turnId: String(turnId ?? ""), cwd: dir, snap })'),
+  "快照条目存住 turnId（线程 id 只当快照键/结算键，两个 id 职责分开；10-07 起 walk 结果经诊断变量再存 —— 判据锚 turnId 仍被存下）");
 ok(/broadcastFn\(\{ type: "turn-file-changes", turnId: entry\.turnId, files: report \}\)/.test(watch) && !/turnId:\s*id\s*,/.test(watch),
   "广播 turnId = entry.turnId（⛔ 不许退回线程键 id —— 对不上号 = 卡永远空白）");
 ok(changesMod.includes("window.codex.onHarnessEvent") && /type !== "turn-file-changes" && type !== "turn-file-changes-live"/.test(changesMod),
@@ -159,6 +159,45 @@ ok(ipcCode.includes("storedReportsForThread(String(r.thread.id))") && ipcCode.in
   "codex-ipc 在 thread/resume 时把存量报告按原事件形态重播（重启/切回会话后卡片与编辑行复活）");
 ok(watch.includes("export function dropStoredReports") && boot.includes("dropStoredReports(goneId)") && ipcCode.includes("dropStoredReports(purgeTarget)"),
   "两处删除入口都清落盘报告（boot 的 thread/deleted 通知 + codex-ipc 的渲染层删除——与 delegateRegistry.forget 同点，别让 userData 越攒越多）");
+
+/* ── 八-b、追踪链诊断落盘 + cwd 权威取值（10-07 mac「消息汇总下没有已编辑文件」排查）────────
+   链路两侧全平台同构、无平台分支，断点只可能落在几个**静默跳过点**上；打包版 mac 应用
+   stdout 不可见 ⇒ 关键事实必须落盘（userData/turn-files-diag.log），mac 复现一次即可定位。
+   ⛔ 判据锚「诊断点真的接了落盘 + cwd 结果优先」，不是「有 debug 字样」。 */
+{
+  const diagMod = read("electron/turn-files-debug.ts");
+  ok(diagMod.includes('"turn-files-diag.log"') && diagMod.includes("MAX_BYTES") && diagMod.includes("appendFileSync"),
+    "诊断落盘模块存在（userData/turn-files-diag.log，JSON 行 + 上限清空重写 —— 与 memory-capture-debug 同款纪律）");
+  ok(watch.includes("export function setTurnFileWatchDiag") && watch.includes('point: "snapshot-skip"')
+    && watch.includes('"cwd-not-exists"') && watch.includes('point: "snapshot-empty"')
+    && watch.includes('point: "walk-root-error"') && watch.includes('point: "emit-no-snapshot"')
+    && watch.includes('point: "emit"'),
+    "追踪器诊断点齐全：快照跳过（空值/cwd 不在磁盘）/ 快照为空 / 根目录读取失败（mac 权限实锤点）/ 收尾无快照 / 收尾心跳");
+  ok(boot.includes('import { debugTurnFiles } from "../turn-files-debug"') && boot.includes("setTurnFileWatchDiag(debugTurnFiles)"),
+    "boot 注入诊断落盘（与 setTurnFileWatchStore 同一时机 —— bootApp 内、setPath 之后）");
+  ok(boot.includes('debugTurnFiles({ point: "started-no-cwd"') && boot.includes("回合开始未记快照"),
+    "回合开始未记快照时同时落一行文件诊断（打包版 mac stdout 不可见，console.warn 不够）");
+  ok(ipcCode.includes('threadCwd.set(String(r.thread.id), String(r.thread.cwd ?? p?.cwd ?? "")'),
+    "thread/start 登记 cwd 以**引擎回执**为权威（结果优先 —— 请求参数空串会让快照被静默跳过、文件追踪失明）");
+  ok(!ipcCode.includes("String(p?.cwd ?? r.thread.cwd"),
+    "⛔ 不许退回「请求参数优先」的旧取值（空串会赢 ⇒ cwd 登记为空 ⇒ 该线程的文件追踪全程失明）");
+}
+
+/* ── 八-c、遍历预算的两级闸 + 截断抑制（10-07，清档后实测复现「真写的文件看不见 + 深处文件被误报已删除」）──
+   根因：全局 4000 文件预算被巨型子树（release/win-unpacked 约 5 万文件）整段吃光 ⇒ 排在后面的
+   目录进不了快照；且前后两次遍历的截断点随本轮文件数漂移 ⇒ 边界文件被误报「已删除」。 */
+{
+  const perDirHits = (watch.match(/takenInDir >= MAX_PER_DIR/g) || []).length;
+  ok(watch.includes("const MAX_PER_DIR = 600") && perDirHits === 2,
+    `单目录文件上限同时钉在 walk 与 walkLight（实得 ${perDirHits}/2 —— ⛔ 两处口径必须一致：截断点不同 = live 把边界文件误报「新增」）`);
+  ok(watch.includes('"release"') && watch.includes('"win-unpacked"') && watch.includes('"dist-electron"'),
+    "打包/构建产物目录进 IGNORE（release / win-unpacked / dist-electron 这类巨型树不许吃光遍历预算）");
+  const suppressionHits = (watch.match(/if \(!truncated\) \{/g) || []).length;
+  ok(suppressionHits === 2,
+    `截断时抑制「已删除」判定（实得 ${suppressionHits}/2 —— walk 收尾 + walkLight 实时两处都钉：截断点漂移的边界文件会被误报，删除只能由"明确扫过却消失"证明）`);
+  ok(watch.includes("{ snap: next, rootError, truncated } = walk(entry.cwd)") && watch.includes("files: report.length, changed: files.length, truncated"),
+    "收尾心跳带截断标记（排查日志可区分「真的没改」与「被预算截断」—— mac 排查的关键字段）");
+}
 
 /* ── 九、parseDiffLines 真值表（纯函数**真跑**——行号/文件头判据出错的失效方式是静默的：
    行号错位只是数字难看不会报错；`---` 判错会吞内容行，预览直接缺行）────────────────── */

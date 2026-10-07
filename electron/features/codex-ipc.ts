@@ -172,7 +172,9 @@ export const codexFeature = defineFeature<null>({
         const p = params as any;
         const r = result as any;
         if (method === "thread/start" && r?.thread?.id) {
-          threadCwd.set(String(r.thread.id), String(p?.cwd ?? r.thread.cwd ?? ""));
+          // ⛔ 结果优先（10-07）：引擎回执里的 cwd 是**解析后的权威值**；请求参数可能是空串
+          //   （`?? ` 只挡 null/undefined，空串会赢）⇒ 空串会让快照被静默跳过（文件追踪失明）。
+          threadCwd.set(String(r.thread.id), String(r.thread.cwd ?? p?.cwd ?? ""));
         } else if (method === "thread/resume" && r?.thread?.id) {
           // 零阻塞宿主（09-12）：rollout 增强解析也在 worker 线程里，失败就退化为「不增强」。
           const __t0 = performance.now();

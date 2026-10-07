@@ -20,11 +20,17 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const IGNORE = new Set(["node_modules", ".git", ".codex", ".codex-harness", "dist", "build", "out", ".next", ".cache", "coverage", "venv", "__pycache__"]);
+const IGNORE = new Set(["node_modules", ".git", ".codex", ".codex-harness", "dist", "dist-electron", "build", "out", ".next", ".cache", "coverage", "venv", "__pycache__", "release", "win-unpacked", "linux-unpacked", "mac-arm64", "mac-x64", "mac-universal", "DerivedData", "Pods", "target"]);
 const TEXT_EXT = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json", ".md", ".txt", ".css", ".scss", ".html", ".py", ".rs", ".go", ".java", ".toml", ".yml", ".yaml", ".sh", ".xml", ".svg", ".csv", ".mdx"]);
 const MAX_FILE_BYTES = 512 * 1024;
 const MAX_TOTAL_BYTES = 24 * 1024 * 1024;
 const MAX_FILES = 4000;
+/* ⛔ 单目录文件上限（10-07）：全局 4000 预算下，一个巨型子树（打包产物 / 工具链目录）会把它
+   整段吃光 —— 排在它后面的目录（含模型真正在改的那几个）整段进不了快照，diff 变成
+   「预算边界抖动」的噪声（实测症状：真写的文件看不见 + 深处文件被误报成「已删除」）。
+   两级预算（每目录 600 + 全局 4000）保证再大的树也抢不完其他目录的份额。
+   ⛔ walk 与 walkLight 的枚举顺序/预算必须同口径（截断点不同会让 live 把边界文件误报成「新增」）。 */
+const MAX_PER_DIR = 600;
 const MAX_REPORT = 60;
 
 type Entry = { size: number; mtime: number; content?: string };
@@ -33,6 +39,17 @@ let broadcastFn: ((payload: unknown) => void) | null = null;
 
 export function setTurnFileWatchBroadcast(fn: (payload: unknown) => void): void {
   broadcastFn = fn;
+}
+
+/* 诊断落盘（10-07，mac「已编辑文件不展示」排查）：链路两侧全平台同构、无平台分支，断点只可能
+   落在几个**静默跳过点**上；打包版 mac 应用 stdout 不可见 ⇒ 关键事实必须落盘（boot 注入
+   debugTurnFiles → userData/turn-files-diag.log）。⛔ 诊断写失败绝不影响主流程。 */
+let diagFn: ((entry: Record<string, unknown>) => void) | null = null;
+export function setTurnFileWatchDiag(fn: (entry: Record<string, unknown>) => void): void {
+  diagFn = fn;
+}
+function diag(entry: Record<string, unknown>): void {
+  try { diagFn?.(entry); } catch { /* 诊断失败不影响主流程 */ }
 }
 
 /* ── 最终报告的**落盘**（10-06 夜二改：用户实测「重启应用，那个下面已修改的文件那个板块不见了」）──
@@ -101,23 +118,36 @@ export function dropStoredReports(threadId: string): void {
   if (file) { try { fs.rmSync(file, { force: true }); } catch { /* 尽力而为 */ } }
 }
 
-function walk(cwd: string): Map<string, Entry> {
+function walk(cwd: string): { snap: Map<string, Entry>; rootError: string; truncated: boolean } {
   const snap = new Map<string, Entry>();
   let total = 0;
+  let rootError = "";
+  let truncated = false;
   // ⛔ 两趟遍历：**先收本层文件、再下潜子目录**。深度优先（10-01 原实现）在限流预算
   //   （MAX_FILES/MAX_TOTAL_BYTES）下会被排在前面的大型子目录整段烧光（10-06 实证：
   //   家目录工作区里 AppData 先被 DFS 走完，根级新文件永远进不了快照 ⇒ diff 恒 0、卡片空白）。
   //   文件优先保证「模型最常写的根层/浅层文件」一定在预算内。
+  // ⛔ 根目录读取失败（mac TCC 权限 EPERM/EACCES 等）必须**带出来**（10-07）：原先 catch 一律
+  //   静默 ⇒ 快照恒空、diff 恒空，与「工作区本来就没有文件」不可区分。rootError 交给调用方落盘。
+  // ⛔ truncated（10-07 二次修）：命中任一预算而**跳过了文件** ⇒ 前后两次遍历的截断点会随
+  //   「本轮新增/删除的文件数」漂移（实测：本仓 release 被忽略后仍有 resources 图标集的深文件
+  //   被边界抖动误报成「已删除」）⇒ **截断时不做删除判定**（删除只能由"明确扫过却消失"证明）。
   const visit = (dir: string, depth: number): void => {
-    if (depth > 8 || snap.size >= MAX_FILES) return;
+    if (depth > 8 || snap.size >= MAX_FILES) { if (snap.size >= MAX_FILES) truncated = true; return; }
     let list: fs.Dirent[];
-    try { list = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    try { list = fs.readdirSync(dir, { withFileTypes: true }); } catch (error) {
+      if (depth === 0) rootError = String((error as NodeJS.ErrnoException)?.code ?? (error as Error)?.message ?? error);
+      return;
+    }
     const dirs: string[] = [];
+    let takenInDir = 0;
     for (const e of list) {
       if (IGNORE.has(e.name) || (e.name.startsWith(".") && e.name !== ".codex" && e.name !== ".env")) continue;
       const p = path.join(dir, e.name);
       if (e.isDirectory()) { dirs.push(p); continue; }
-      if (snap.size >= MAX_FILES) return;
+      if (snap.size >= MAX_FILES) { truncated = true; return; }
+      if (takenInDir >= MAX_PER_DIR) { truncated = true; continue; }   // 单目录上限：巨型子树不许吃光全局预算（见 MAX_PER_DIR 注释）
+      takenInDir += 1;
       try {
         const st = fs.statSync(p);
         const ext = path.extname(e.name).toLowerCase();
@@ -133,7 +163,7 @@ function walk(cwd: string): Map<string, Entry> {
     for (const d of dirs) visit(d, depth + 1);
   };
   visit(cwd, 0);
-  return snap;
+  return { snap, rootError, truncated };
 }
 
 /** 行级 ± 估算（多重集差）：added = 新有旧无的行数，deleted = 旧有新无的行数；
@@ -170,20 +200,34 @@ function lineDelta(oldText: string, newText: string) {
  *  枚举顺序与同步 walk 对齐（同层文件优先、按 readdir 顺序、预算同口径），保证「可见集合」一致：
  *  否则 4000 上限的截断点不同，边界文件会被 live 误报成「新增」（回合收尾的最终报告是同步 walk，
  *  两边一致 ⇒ 最终卡永远是对的，live 只是过程视图）。 */
-async function walkLight(cwd: string): Promise<Map<string, { size: number; mtime: number }>> {
+async function walkLight(cwd: string): Promise<{ map: Map<string, { size: number; mtime: number }>; truncated: boolean }> {
   const out = new Map<string, { size: number; mtime: number }>();
+  let truncated = false;
   const visit = async (dir: string, depth: number): Promise<void> => {
-    if (depth > 8 || out.size >= MAX_FILES) return;
+    if (depth > 8 || out.size >= MAX_FILES) { if (out.size >= MAX_FILES) truncated = true; return; }
     let list: fs.Dirent[];
-    try { list = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return; }
+    try { list = await fs.promises.readdir(dir, { withFileTypes: true }); } catch (error) {
+      if (depth === 0) {
+        // 根目录失败去重落盘（轮询每 2.5s 一拍，不去重会把日志刷爆）。
+        const key = `${dir}|${String((error as NodeJS.ErrnoException)?.code ?? (error as Error)?.message ?? error)}`;
+        if (key !== lightRootErrorLogged) {
+          lightRootErrorLogged = key;
+          diag({ point: "walk-root-error-live", cwd: dir, error: String((error as NodeJS.ErrnoException)?.code ?? (error as Error)?.message ?? error) });
+        }
+      }
+      return;
+    }
     const dirs: string[] = [];
     const batch: Promise<void>[] = [];
     let inflight = 0;
+    let takenInDir = 0;
     for (const e of list) {
       if (IGNORE.has(e.name) || (e.name.startsWith(".") && e.name !== ".codex" && e.name !== ".env")) continue;
       const p = path.join(dir, e.name);
       if (e.isDirectory()) { dirs.push(p); continue; }
-      if (out.size + inflight >= MAX_FILES) break;
+      if (out.size + inflight >= MAX_FILES) { truncated = true; break; }
+      if (takenInDir >= MAX_PER_DIR) { truncated = true; continue; }   // 与同步 walk 同口径（见 MAX_PER_DIR 注释）
+      takenInDir += 1;
       inflight += 1;
       batch.push(fs.promises.stat(p).then((st) => { out.set(p, { size: st.size, mtime: st.mtimeMs }); }).catch(() => undefined));
     }
@@ -191,8 +235,11 @@ async function walkLight(cwd: string): Promise<Map<string, { size: number; mtime
     for (const d of dirs) await visit(d, depth + 1);
   };
   await visit(cwd, 0);
-  return out;
+  return { map: out, truncated };
 }
+
+/** 轻量重扫根目录失败的**去重**记忆（见 walkLight）。 */
+let lightRootErrorLogged = "";
 
 const LIVE_POLL_MS = 2500;
 let liveTimer: ReturnType<typeof setInterval> | null = null;
@@ -224,7 +271,7 @@ async function pollLiveOnce(): Promise<void> {
   try {
     for (const [threadId, entry] of [...snaps]) {
       if (!entry.turnId) continue;
-      const next = await walkLight(entry.cwd);
+      const { map: next, truncated } = await walkLight(entry.cwd);
       const files: { path: string; status: string; added: number; deleted: number }[] = [];
       for (const [p, after] of next) {
         const before = entry.snap.get(p);
@@ -238,10 +285,14 @@ async function pollLiveOnce(): Promise<void> {
           files.push({ path: p, status: "modified", added: d.added, deleted: d.deleted });
         }
       }
-      for (const [p, before] of entry.snap) {
-        if (next.has(p)) continue;
-        const d = before.content != null ? lineDelta(before.content, "") : { added: 0, deleted: 0 };
-        files.push({ path: p, status: "deleted", added: 0, deleted: d.deleted });
+      // 截断时不做删除判定（10-07）：前后遍历的截断点会随本轮文件数漂移，边界文件会被
+      // 误报成「已删除」—— 删除只能由"明确扫过却消失"证明（见 walk 的 truncated 注释）。
+      if (!truncated) {
+        for (const [p, before] of entry.snap) {
+          if (next.has(p)) continue;
+          const d = before.content != null ? lineDelta(before.content, "") : { added: 0, deleted: 0 };
+          files.push({ path: p, status: "deleted", added: 0, deleted: d.deleted });
+        }
       }
       files.sort((x, y) => y.added + y.deleted - (x.added + x.deleted));
       const report = files.slice(0, MAX_REPORT);
@@ -258,13 +309,21 @@ async function pollLiveOnce(): Promise<void> {
 export function snapshotTurnWorkspace(threadId: string, turnId: string, cwd: string): void {
   const id = String(threadId ?? "");
   const dir = String(cwd ?? "").trim();
-  if (!id || !dir || !fs.existsSync(dir)) return;
+  if (!id || !dir) { diag({ point: "snapshot-skip", reason: "empty-id-or-dir", threadId: id, cwd: dir }); return; }
+  if (!fs.existsSync(dir)) { diag({ point: "snapshot-skip", reason: "cwd-not-exists", threadId: id, cwd: dir }); return; }
   // 触发条件补全：上一轮没等到 completed（事件丢失/中断未报）⇒ 先补算再开新快照
   if (snaps.has(id)) emitTurnFileChanges(id);
   // ⛔ 诊断（10-07，mac「已编辑文件不展示」排查）：快照记不到回合 id ⇒ 最终报告按
   //    turnId="" 广播，渲染层按 turn.id 对不上号 ⇒ 汇总卡空白。静默跳过点之三。
-  if (!String(turnId ?? "").trim()) console.warn("[turn-files-diag] 快照缺少回合 id：threadId=", id);
-  snaps.set(id, { turnId: String(turnId ?? ""), cwd: dir, snap: walk(dir) });
+  if (!String(turnId ?? "").trim()) {
+    console.warn("[turn-files-diag] 快照缺少回合 id：threadId=", id);
+    diag({ point: "snapshot-skip", reason: "no-turn-id", threadId: id, cwd: dir });
+  }
+  const { snap, rootError } = walk(dir);
+  if (rootError) diag({ point: "walk-root-error", threadId: id, cwd: dir, error: rootError });
+  snaps.set(id, { turnId: String(turnId ?? ""), cwd: dir, snap });
+  // 快照为空 = 空工作区或**读不到目录**（TCC/权限）——与「改了但没检测到」必须能区分（10-07）。
+  if (snap.size === 0) diag({ point: "snapshot-empty", threadId: id, cwd: dir });
   liveLastSent.delete(id);
   ensureLiveTimer();
 }
@@ -272,11 +331,17 @@ export function snapshotTurnWorkspace(threadId: string, turnId: string, cwd: str
 export function emitTurnFileChanges(threadId: string): void {
   const id = String(threadId ?? "");
   const entry = snaps.get(id);
-  if (!entry) return;
+  if (!entry) {
+    // 收尾时连快照都没有 = 开局就没记上（cwd 未登记 / 回合 id 缺失）——这条日志直接回答
+    // 「链路跑没跑」（10-07 mac 排查：有它无它即可二分到「主进程侧」还是「渲染层侧」）。
+    diag({ point: "emit-no-snapshot", threadId: id });
+    return;
+  }
   snaps.delete(id);
   liveLastSent.delete(id);
   stopLiveTimerIfIdle();
-  const next = walk(entry.cwd);
+  const { snap: next, rootError, truncated } = walk(entry.cwd);
+  if (rootError) diag({ point: "walk-root-error", threadId: id, cwd: entry.cwd, error: rootError });
   const files: { path: string; status: string; added: number; deleted: number; diff: string }[] = [];
   for (const [p, after] of next) {
     const before = entry.snap.get(p);
@@ -292,14 +357,23 @@ export function emitTurnFileChanges(threadId: string): void {
       files.push({ path: p, status: "modified", added: 0, deleted: 0, diff: "" });
     }
   }
-  for (const [p, before] of entry.snap) {
-    if (!next.has(p)) {
-      const d = before.content != null ? lineDelta(before.content, "") : { added: 0, deleted: 0, diff: "" };
-      files.push({ path: p, status: "deleted", added: 0, deleted: d.deleted, diff: d.diff });
+  // 截断时不做删除判定（10-07）：前后的截断点随本轮文件数漂移，边界文件会被误报「已删除」
+  // （实测：图标集深文件 +0 -22 排进汇总卡前列，真写的文件反被顶下去）。删除必须"明确扫过才消失"。
+  if (!truncated) {
+    for (const [p, before] of entry.snap) {
+      if (!next.has(p)) {
+        const d = before.content != null ? lineDelta(before.content, "") : { added: 0, deleted: 0, diff: "" };
+        files.push({ path: p, status: "deleted", added: 0, deleted: d.deleted, diff: d.diff });
+      }
     }
   }
   files.sort((x, y) => y.added + y.deleted - (x.added + x.deleted));
   const report = files.slice(0, MAX_REPORT);
+  // 收尾心跳（10-07）：每次结算都记一行 —— mac 上「没有这行」= 主进程侧链路断了；
+  // 「有这行但 files:0」= 检测正常但没发现改动（工作区之外写的 / 本来就没改）。
+  // truncated=true 表示工作区大到预算截断（本仓 workspace 就如此：resources 图标集）——此时
+  // 删除判定被抑制，files 数偏小属预期，不算异常。
+  diag({ point: "emit", threadId: id, turnId: entry.turnId, files: report.length, changed: files.length, truncated });
   // 落盘（10-06 夜二改）：重启/切回会话后卡片与冻结编辑行还在（thread/resume 时重播）
   if (report.length && entry.turnId) {
     const store = readStore(id);
