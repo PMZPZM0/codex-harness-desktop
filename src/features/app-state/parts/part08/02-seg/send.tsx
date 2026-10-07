@@ -289,7 +289,16 @@ export async function send(bag: Bag, event?: FormEvent) {
          把**该角色自己**的私有记忆也拼进来 —— 这样"亲自跟某个专家对话"和"派他出去干活"
          读到的是同一份角色记忆，交互与普通会话一致。
          ⛔ 普通会话没有角色归属 ⇒ 返回空段，行为与今天完全一致（不打扰既有链路）。
-         ⛔ 标记沿用既有的 [Harness 常驻记忆] 体系：本段自身不带标记，由主进程拼好整段返回。 */
+         ⛔ 标记沿用既有的 [Harness 常驻记忆] 体系：本段自身不带标记，**由调用方拼**。
+         ⛔⛔ 10-07 修（用户实测「项目记忆每次消息都展示」+「同一条消息渲染两遍」）：
+            上面那句注释原先只是**声称**——真实写法是 `memoryPrefix += "\n\n" + roleCtx.text`
+            直接裸拼，既不进既有块、又没自己的标记，于是显示侧的两条剥离规则全都看不见它：
+              · 机器串铺进用户气泡与左栏会话标题；
+              · 服务端原文带这一段、本地乐观气泡不带 ⇒ `userMessageMatchesInput` 判 false
+                ⇒ **乐观气泡永不合并 ⇒ 同一条消息在一轮里显示两遍**；
+              · 主进程的两处内联剥离（thread-backup / rollout-worker）同样只认标记
+                ⇒ 机器串被当成用户原话写进 L4 记忆档案。
+            ⇒ 在这里按契约**把整段包进既有标记体系**（⛔ 别再退回裸拼）。 */
       try {
         /* ⛔⛔ 10-05 统一记忆：带 query ⇒ 主进程只注入**与本轮相关**的条目
            （不相关的记忆挂在本轮开头是纯噪声，实跑验证过）。
@@ -300,7 +309,7 @@ export async function send(bag: Bag, event?: FormEvent) {
           workspace: bag.workspace || "",
           query: messageText.slice(0, 400),
         });
-        if (roleCtx?.text) memoryPrefix += `\n\n${roleCtx.text}`;
+        if (roleCtx?.text) memoryPrefix += `\n\n[Harness 常驻记忆 · 统一记忆（项目 / 团内 / 私有）]\n${roleCtx.text}\n[常驻记忆结束]\n`;
       } catch { /* 统一记忆读不到不阻塞发送（与上面两段同纪律） */ }
     }
     bag.dbg("send-memory", { ms: Math.round(performance.now() - memoryStartedAt) });

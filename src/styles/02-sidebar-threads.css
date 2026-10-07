@@ -441,8 +441,19 @@
 [data-os="darwin"] .app-shell.popout-shell .topbar {
   padding-left: 80px;
 }
+/* ⛔⛔ mac 适配（10-07 用户实测指定）：「把 Codex Harness 和 logo 放到**系统按键那一排下面**，
+   下面自适应往下挪一点点」。原做法是 `padding-left: 68px` 把品牌行推到红绿灯**右边**、与它们
+   **并排**——用户要的是**上下分层**：红绿灯独占窗口顶部那一排，品牌行整体落到它下方，
+   侧栏其余内容（侧栏 tabs / 会话列表）随 flex 列自然下移。
+   ⛔ 高度锚点**不是新拍的数**：win32 的 `titleBarOverlay.height = 43`（+ `.topbar::after` 1px
+      分隔线）= 顶栏 44px，就是「系统钮那一排」的高度（见 `electron/runtime-refs.ts`
+      `titleBarOverlayOptions()` 与上面 `.topbar { height: 44px }`）。mac 把**同一高度**还给红绿灯
+      ⇒ 品牌行顶边 12(侧栏 padding-top) + 32 = **44px**，与顶栏底边齐平。
+      两平台「系统 chrome 占多高」因此只有一个数，改一边要同时看另一边。
+   ⛔ 原 `padding-left: 68px` 已删：品牌行既然在红绿灯下方，横向无需再让位（回落到 .brand-row
+      自己的 `padding: 0 8px`）。⛔ 别再把它加回来 —— 加了就变回「并排」。 */
 [data-os="darwin"] .sidebar .brand-row {
-  padding-left: 68px;
+  margin-top: 32px;
 }
 /* 底部分隔线止于窗口钮左侧——原生 overlay 区域画不进线，避免「线断一截」 */
 .topbar::after {

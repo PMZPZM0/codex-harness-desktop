@@ -100,7 +100,9 @@ const runtimeInstalls = new Map<DevRuntimeId, Promise<void>>();
 
 // ⛔ mac 适配（09-16）：上面 specs 的 marker 全按 Windows 布局写（反斜杠 + .exe）。
 // darwin 的目录布局不同（node/bin/node、python/bin/python3、pwsh/pwsh、CMake.app 包…），
-// 这里集中覆盖；未列出的按「分隔符替换」兜底（npm-global 这类本身就是 posix 兼容布局）。
+// 这里集中覆盖；未列出的按「分隔符替换」兜底。⛔ 10-07 更正：npm-global **不是** posix 兼容
+// 布局 —— npm 的 --prefix 在 mac 落 lib/node_modules（打包期改名 + symlink 才让随包件两处等价），
+// 运行期装的包可能落 lib/node_modules ⇒ runtimeInstalled 对 npm-global marker 双落位都查。
 const IS_MAC = process.platform === "darwin";
 const DARWIN_MARKERS: Partial<Record<DevRuntimeId, string>> = {
   python: "python/bin/python3",
@@ -118,6 +120,10 @@ const DARWIN_MARKERS: Partial<Record<DevRuntimeId, string>> = {
   cmake: "cmake/CMake.app/Contents/bin/cmake",
   conda: "miniconda/bin/conda",
   docker: "docker/docker",
+  // ⛔ 10-07：platform-tools 漏登记 ⇒ 兜底「分隔符替换」会找 `platform-tools/adb.exe`，
+  //    而 darwin 安装面装的是 `platform-tools/adb`（install-runtimes.cjs 的 marker: "adb"）
+  //    ⇒ 手机控制依赖的 adb 永远显示「未安装」。与安装面的 marker 同字面量。
+  "platform-tools": "platform-tools/adb",
 };
 // darwin 上无意义 / 系统自带的工具：不显示安装卡（mingw 是 Windows 编译器；mac 用系统 clang）
 const DARWIN_HIDDEN = new Set<DevRuntimeId>(["mingw"]);
@@ -200,7 +206,17 @@ function runtimeInstalled(id: DevRuntimeId, spec: DevRuntimeSpec): boolean {
     //    （`Boolean(site) && …path.join(site…` 会报 TS2345，构建直接失败）。
     return site !== null && existsSync(path.join(site, PIP_PACKAGE_DIRS[id]!));
   }
-  return existsSync(path.join(root, markerRel(id, spec)));
+  // ⛔⛔ 10-07 mac（用户实测「指纹浏览器安装后不刷新」的根因）：npm 包类 marker 有**两个
+  //  可能落位** —— 打包期 prepare-mac-tools.cjs 把 lib/node_modules 改名成 node_modules
+  //  （随包件在 node_modules）；运行期 npm install --prefix 装的包（cloakbrowser）落在
+  //  lib/node_modules，除非打包期留下的 symlink 活到了用户机器上。只查一个落位 ⇒
+  //  装完永远显示「未安装」。两个都查：谁在算谁装了。
+  const rel = markerRel(id, spec);
+  if (IS_MAC && rel.startsWith("npm-global/node_modules/")) {
+    return existsSync(path.join(root, rel))
+      || existsSync(path.join(root, rel.replace("npm-global/node_modules/", "npm-global/lib/node_modules/")));
+  }
+  return existsSync(path.join(root, rel));
 }
 
 

@@ -342,6 +342,21 @@ export async function run() {
   /* 样例用注入端的真实措辞（含 ` · ` 与描述串）：剥离正则必须只锚语义锚点、不锚措辞 */
   const SAMPLE = `用户原话\n\n[Harness 常驻记忆 · 以下为已确认的长期上下文，与当前请求冲突时以当前请求为准]\n## 用户档案\n- 昵称：潘潘\n## 近期工作日志\n- x\n[常驻记忆结束]\n`;
   const RECALL_SAMPLE = `用户原话\n\n[Harness 相关记忆，仅供参考]\n- 记一条\n[记忆结束]\n`;
+  /* ⛔⛔ 10-07 用户实测（「每次消息里都展示项目记忆」+「出现两个用户消息」）：
+   * 注入侧还有**第三段** —— 统一记忆（fabric）段。它**刻意不带 [Harness …] 标记**
+   * （memory-fabric.section() 的注释 + 守卫【fabric】⑥ 都要求「标记由调用方拼」），
+   * 但两个调用方（delegate-memory.ts 的 body +=、memory-ipc.ts 的角色上下文）
+   * **都没拼** ⇒ 机器文本整段漏进用户气泡；且服务端文本 ≠ 本地乐观文本
+   * ⇒ `userMessageMatchesInput` 判 false ⇒ 乐观气泡永不合并 ⇒ 同一条消息显示两遍。
+   * ⛔ 本条样例原先只有「常驻 + 召回」两种 ⇒ 全绿也抓不到它：**判据盲区**，不是判据坏了。
+   * ⛔ 下面两个样例必须成对：正例（机器串在 ⇒ 剥）+ 负例（用户自己写的同名小节 ⇒ 不许剥）。
+   * ⛔ 本段续行一律带 ` * ` 前缀：本文件在【265】棘轮名单里，判据是**净代码行**（只把
+   *   trimmed 以 `//` `/*` `*` 开头的行算注释），续行不带前缀会被当成代码行计数、白白报红。 */
+  const FABRIC_SAMPLE = `用户原话\n\n## 项目记忆（全体会话与智能体共享）（本次注入 3 / 命名空间共 5 条）\n- （code_fact·主会话·2026-10-07·权重 0.80）内容 A\n- （decision·主会话·2026-10-07·权重 0.70）内容 B\n`;
+  const FABRIC_USER_OWN = `用户原话\n\n## 项目记忆\n- 我自己记的一条：下周发版`;
+  const fabricSrc = readFileSync(join(ROOT, "electron/memory-fabric.ts"), "utf8");
+  (fabricSrc.includes("本次注入") && fabricSrc.includes("命名空间共")
+    ? ok : fail)("【100】注入端 memory-fabric 仍产出「（本次注入 N / 命名空间共 M 条）」机器串（剥离锚点与它同源，改格式要两侧一起改）");
   /* 09-22：渲染层的剥离收口到共享纯函数 src/lib/harness-block-strip.mjs（气泡与标题共用一份，
      且它额外处理**残缺形态**——见【110】）⇒ 这里改为「真跑那个共享模块」，不再要求内联正则。 */
   {
@@ -354,6 +369,11 @@ export async function run() {
       (!stripped.includes("常驻记忆") ? ok : fail)("【100】src/lib/user-refs.ts 真跑剥离：常驻记忆块被吃掉（气泡/标题/复制/引用）");
       (stripped.includes("用户原话") ? ok : fail)("【100】src/lib/user-refs.ts 剥离不误伤用户正文（气泡/标题/复制/引用）");
       (!shared.stripHarnessBlocks(RECALL_SAMPLE).includes("记忆结束") ? ok : fail)("【100】src/lib/user-refs.ts 真跑剥离：召回块被吃掉");
+      /* fabric 段：正例（剥干净且等于用户原文）+ 负例（用户同名小节不许被误伤） */
+      const strippedFabric = shared.stripHarnessBlocks(FABRIC_SAMPLE);
+      (!strippedFabric.includes("## 项目记忆") ? ok : fail)("【100】真跑剥离：统一记忆（fabric）段被吃掉（10-07 用户实测：项目记忆铺进气泡）");
+      (strippedFabric.trim() === "用户原话" ? ok : fail)("【100】真跑剥离：fabric 段剥完**等于用户原文** ⇒ 乐观气泡会合并（不再出现两个用户消息）");
+      (shared.stripHarnessBlocks(FABRIC_USER_OWN).trim() === FABRIC_USER_OWN.trim() ? ok : fail)("【100】真跑剥离：用户自己写的「## 项目记忆」小节**不被误伤**（锚点只认机器串，不认裸标题）");
     } else fail("【100】src/lib/harness-block-strip.mjs 读不到（共享剥离实现缺失）");
   }
   /* 主进程侧两处仍是**内联正则**（主进程不能 import 渲染层 src/lib）⇒ 保持原「正则字面量真跑」口径 */
@@ -1226,6 +1246,25 @@ export async function run() {
     (missingImp.length === 0 && genFiles.length > 0 ? ok : fail)(
       `【253】生成物 import 了每个启用域（缺：${missingImp.join("/") || "无"}）—— 谁被挂载由组合表决定，域不自挂`
     );
+    /* ③ 10-07 用户实测「开发工具最下面的功能域**全是 0**」的根因防线。
+       · 现场：`domains:list` 的**全集真相源是 `electron/composition.json` 这个数据文件**
+         （不是生成物 —— 那会成循环依赖，见该文件注释），可它是**源目录里的 JSON、不被编译**，
+         而 electron-builder 的 `files` 是**白名单**（一旦写了 patterns，就不再套用默认的全量 glob）
+         ⇒ 打包后 asar 里没有它 ⇒ 两条候选路径全落空 ⇒ 返回 `[]` ⇒ 面板每行都是 0。
+         dev 态从项目根读得到 ⇒ **只在安装版复现**，本地自测永远看不见。
+       · 判据必须**同时**钉两头：文件在包里（打包白名单）+ 读取路径指向它（接线）。
+         少任何一头都还是空数组：只加白名单而读取路径写错、或路径对而文件没进包。 */
+    {
+      const pkgRaw = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+      const filesList = (pkgRaw?.build?.files ?? []).map(String);
+      (filesList.includes("electron/composition.json") ? ok : fail)(
+        "【253】打包白名单含 electron/composition.json（它是 domains:list 的全集真相源；漏了 ⇒ 安装版「功能域」面板全是 0）"
+      );
+      const domIpc = readFileSync(join(ROOT, "electron", "features", "domains-ipc.ts"), "utf8");
+      (/join\(app\.getAppPath\(\),\s*"electron",\s*"composition\.json"\)/.test(domIpc) ? ok : fail)(
+        "【253】domains-ipc 的候选路径指向 app.getAppPath()/electron/composition.json（与上面那条白名单是同一对契约）"
+      );
+    }
     // ② 挂载时机两层钉死（10-07 事故：app-settings 缓存被写坏 ⇒ 用户设置全失效）：
     //    · 生成物只**导出** mountEnabledDomains，模块作用域不许自动挂载 —— 模块体先于壳
     //      句体执行，那时 setPath(userData) 还没跑 ⇒ 停用域判定读错目录的设置；
@@ -1498,7 +1537,7 @@ export async function run() {
         "scripts/guards/06-app-behavior.mjs": 2622,   // 10-07 夜二 +26（2596→2606→2622）：1060 那段 = 【27】区补三条 npm 断言（verify-packaged-tools 必须按候选列表探测两种解包布局 + 不许单平台硬编码 + toolchain.bundledNpmCli 是唯一真相源），另 816 段 = 「npm CLI 字面量在主进程源码里只许出现 1 次」（mac 真缺口：runtime-ipc / kb-embed-backend 曾各自写死 Windows zip 布局 ⇒ mac 上「开发工具 / 知识库」装不上）。此前 2596 = 10-07 夜 +4 = 【27】补「resources/tools/node 也要一条独立 node_modules 映射」（实测事故：包内有 node.exe 却无 npm ⇒「开发工具」/知识库全部装不上；builder 只剪 from 根级 node_modules，dev 态不复现）+ 【29】随包源判据泛化（`<X>/node_modules` 姐妹条目的可造性由父条目 X 决定，别再逐条开后门）。此前 2592 / 2590 = 10-07 并行会话在途 +18（【154】办公室缩放钮断言：控制组在关闭钮左 / 三个 zoom 调用 / 缩放回报与句柄 / 托盘 pointer-events），按实测记账。此前 10-05 深夜+1 = 办公室轮（b0e83ff）修活【154】（删陈旧【168】门 + 换当前实现 23 条断言）留下的净增量，回填补账。此前：10-05：【29】防线二从「固定 900 字符窗口」改成按**同级分支边界**切片 + 加一条「切片确实跨到分支体」前置（净 +3）—— 本轮往 boot.ts 那个分支加了一条委托登记表清理，旧窗口立刻假红；窗口类判据一律按边界切，别调大数字。另：本文件 ok/fail 是**单参**版，写 ok(cond,msg) 会恒真
         "scripts/guards/02-session-logic.mjs": 1229,   // 本文件是守卫载体（侧栏会话逻辑域）：每加一条规则基线随之上移 —— 10-04 新增【281】侧栏幽灵消失三条（兜底收编不吃 preview / memberIds 必须是派生量 / singles 与簇体同源）+20；10-04 新增【282】侧栏会话行不展示项目地址两条（渲染器不再引用 cwd / 两处小字各自锚定）+11
         "src/features/app-state/parts/bag-types.ts": 1414,   // 生成物（段内顶层声明的类型面）：本文件不承载任何逻辑，长度随「段内顶层声明数」变化 —— 10-04 补 5 条漏接线的声明（ctxBtnRef / ctxMenuStyle / taskBtnRef / taskMenuStyle / dispatchKey，守卫【93】报的 missing）；10-05 界面草图那一位（uiSketchOpen + setter，【283】钉）+2，非业务代码增长
-        "scripts/guards/09-structural.mjs": 1681,   // 本文件是守卫载体：每加一条规则基线随之上移（历史：→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916；10-06 净行口径实测回归 1665）；本轮 +1 = 棘轮名单新登记 scripts/accept.mjs 一行；10-07 轮 +15 = 【253】② 改「挂载时机」两段判据（生成物只导出 mountEnabledDomains + 壳在 setPath 后调用，调用形态认 nextTick/裸调用两种）+ 【270】③ require 不自动挂载的负向判据
+        "scripts/guards/09-structural.mjs": 1735,   // 本文件是守卫载体：每加一条规则基线随之上移（历史：→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916；10-06 净行口径实测回归 1665）；+1 = 棘轮名单新登记 scripts/accept.mjs 一行；10-07 轮 +15 = 【253】② 改「挂载时机」两段判据（生成物只导出 mountEnabledDomains + 壳在 setPath 后调用，调用形态认 nextTick/裸调用两种）+ 【270】③ require 不自动挂载的负向判据；10-07 夜 +45（1681→1690→1735，**两次实测**）＝ ① +9 = 【100】补统一记忆（fabric）剥离的三条正例 + 一条负例 + 两个样例常量 + 一行读 memory-fabric 源（用户实测「项目记忆铺进气泡 + 同一条消息渲染两遍」的判据盲区）；② +36 = 【253】③ 打包白名单/读取路径两条 + 【268-c】同一 slot id 重复消费两条（含对照组）+ 复用【268-b】那趟扫描的 slotIdsOf 收集（用户实测「功能域全是 0」+「重复展示两次」两位数级事故，两条判据都是它们唯一的结构防线）
         "scripts/guards/13-drama-gen.mjs": 1070,
         "electron/main.ts": 556,   // 10-07 轮 546→556（实测）：组合层改具名 import + setPath(userData) 后 process.nextTick(mountEnabledDomains)（挂载时机修复 + 循环 require 窗口规避，【253】钉）
         "scripts/guards/03-runtime-boot.mjs": 917,
@@ -1714,6 +1753,18 @@ export async function run() {
         //   ⛔ 判据口径：只查**相邻两行**（trim 后完全相同 且 长于 40 字 且 以 < 或 { 开头
         //     且 含调用括号）—— 宁可不报也不误报，重复渲染一定会是相邻的。
         const dupRender = [];
+        /* ⛔【268-c】复用同一趟扫描：顺路收「同一个 slot id 被消费几次」。
+           ⛔ 必须 codeOnly 之后再匹配：`src/runtime/Slot.tsx` 的文档注释里**举例写着**
+           真实 slot id，不剥注释就会把文档当消费点、直接假红。这里 lines 已来自 codeOnly。 */
+        const slotIdsOf = (lines) => {
+          const m = new Map();
+          lines.forEach((line, i) => {
+            const hit = line.match(/<Slot\b[^>]*?\bid\s*=\s*["']([^"']+)["']/);
+            if (hit) m.set(hit[1], [...(m.get(hit[1]) ?? []), i + 1]);
+          });
+          return m;
+        };
+        const slotConsumers = new Map();
         {
           const walkTsx = (dir) => {
             for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -1729,6 +1780,10 @@ export async function run() {
                   dupRender.push(`${p.split(/[\\/]/).pop()}:${i + 1}`);
                 }
               }
+              const rel = relative(ROOT, p).replace(/\\/g, "/");
+              for (const [sid, lns] of slotIdsOf(lines)) {
+                slotConsumers.set(sid, [...(slotConsumers.get(sid) ?? []), ...lns.map((ln) => `${rel}:${ln}`)]);
+              }
             }
           };
           for (const d of ["electron", join("src")]) {
@@ -1739,6 +1794,33 @@ export async function run() {
           "【268-b】没有「连续两行完全相同的 JSX 调用」（那是同一个东西渲染两遍 —— "
             + "tsc/预检/build 全绿也抓不到，只有这条结构指纹能拦）"
             + `；命中：${dupRender.slice(0, 5).join("/") || "无"}`
+        );
+
+        // ⛔⛔⛔ 【268-c】**同一个 slot id 不许被 <Slot> 消费两次**（10-07 用户实测）。
+        //
+        //   · 现场：开发工具页最下面「功能域」面板**重复展示两次**，顺带让本该出现的
+        //     「声明式插件清单」面板**从来没显示过**。
+        //   · 根因：那两个 <Slot> 的 id **一模一样**（`settings.devtools.bottom`），而
+        //     `registerSlot` 是**按 id 覆盖式登记**（一个 id 只对应一个组件）⇒ 两个消费点
+        //     渲染的是同一个注册项、同一个面板画两遍；同时 `DeclaredPluginsPanel` 自己没调
+        //     `registerSlot` ⇒ 它注册的 id 无人消费 ⇒ 永远空白。
+        //   · ⛔ 为什么【268-b】没拦住：那条只查**相邻两行**完全相同，而本次两个消费点中间
+        //     隔着另一段 JSX ⇒ 结构指纹看不见。**同一 id 的重复消费与"行是否相邻"无关**
+        //     ⇒ 判据必须按 **id 全局去重**，不是按相邻行。
+        //   · 口径：只认**字面量** id（`id="x"` / `id='x'`）；动态写法 `id={x}` 不在判据内
+        //     —— 宁可不报也不误报。
+        const dupSlots = [...slotConsumers.entries()].filter(([, v]) => v.length > 1);
+        (dupSlots.length === 0 ? ok : fail)(
+          "【268-c】没有「同一个 slot id 被 <Slot> 消费两次」（registerSlot 按 id 覆盖式登记 ⇒ "
+            + "两个消费点把同一个面板画两遍，且真正该显示的面板永远无人消费 ⇒ 空白）"
+            + `；命中：${dupSlots.map(([sid, v]) => `${sid}(${v.join("+")})`).slice(0, 3).join(" / ") || "无"}`
+        );
+        /* ⛔ 对照组（必须）：全绿结论只有在「探针真会报红」时才可信 —— 喂一段**已知含重复**的
+           样本（两行 a.b 不相邻 + 一个动态 id 不该被认）。扫不出来就说明判据写坏了，上一条绿是假的。 */
+        const SLOT_CTRL = `<Slot id="a.b" />\n<Foo />\n<Slot id={"dyn"} />\n<Slot id='a.b' />\n<Slot id="c.d" />\n`;
+        const ctrlDup = [...slotIdsOf(SLOT_CTRL.split("\n")).entries()].filter(([, v]) => v.length > 1);
+        (ctrlDup.length === 1 && ctrlDup[0][0] === "a.b" ? ok : fail)(
+          `【268-c】对照组：样本里两行不相邻的 a.b 必须被认出、动态 id 不认（实测 ${ctrlDup.map(([k, v]) => `${k}×${v.length}`).join(",") || "空"}）`
         );
       }
     }

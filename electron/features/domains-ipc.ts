@@ -82,6 +82,12 @@ export type DomainRow = {
  *   而 `composition.json` **不被编译**（它在 electron/ 源目录）⇒ 打包后要从
  *   `app.getAppPath()/electron/` 找。两条路径都试，找不到就返回空数组（UI 显示"读不到域清单"
  *   而不是崩溃 —— 清单是辅助功能，不该拖垮整个应用）。
+ *
+ * ⛔⛔ 这个 JSON **必须进打包白名单**（package.json → build.files 的
+ *   `electron/composition.json`）。10-07 用户实测「开发工具最下面的功能域**全是 0**」的根因：
+ *   electron-builder 的 `files` 一旦写了 patterns 就不再套用默认全量 glob ⇒ 它没被装进 asar
+ *   ⇒ 上面两条候选路径全落空 ⇒ 返回 `[]`。**dev 态从项目根读得到 ⇒ 只在安装版复现**，
+ *   本地自测永远看不见。守卫【253】③ 同时钉住「白名单」与「本文件的读取路径」两头。
  */
 function listAllDomainIds(): string[] {
   const candidates = [

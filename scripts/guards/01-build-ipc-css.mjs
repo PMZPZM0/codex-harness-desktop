@@ -471,4 +471,34 @@ if (!existsSync(stylesEntry)) {
   (filesList.includes("src/lib/*.mjs") ? ok : fail)(
     "【240】build.files 用 src/lib/*.mjs 目录通配（⛔ 单文件白名单 = 新增 .mjs 必再炸启动；新 .mjs 一律放 src/lib/ 即自动随包）"
   );
+
+  /* ══ 【284】mac 窗口 chrome 让位（10-07 用户实测指定）══ */
+  {
+console.log(C.bold("\n【284】mac 窗口 chrome 让位（红绿灯那一排）"));
+
+/* 10-07 用户实测：「把 Codex Harness 和 logo 放到**系统按键那一排下面**，下面自适应往下挪
+   一点点」。原做法是 `[data-os="darwin"] .sidebar .brand-row { padding-left: 68px }` —— 把品牌行
+   推到红绿灯**右边**、与它们**并排**。用户要的是**上下分层**。
+   ⛔ 本条只认「下移」这个形状 + 「下移量」这个取值，不锚具体数字来源的写法 —— 取值本身由
+      两处已经存在的常量算出来（顶栏高 / 侧栏 padding-top），所以改任一处都会被这条抓住。 */
+const cssAll = readStyles();
+const px = (re) => { const m = cssAll.match(re); return m ? Number(m[1]) : Number.NaN; };
+
+/* 「系统钮那一排」的高度 = 顶栏高。win32 侧 = titleBarOverlay.height 43 + .topbar::after 1px
+   （见 electron/runtime-refs.ts 的 titleBarOverlayOptions() 与下面 .topbar 的 height）。 */
+const topbarH = px(/\.topbar\s*\{[^}]*?height:\s*(\d+)px/);
+const sidebarPadTop = px(/\.sidebar\s*\{[^}]*?padding:\s*(\d+)px\s+10px\s+10px/);
+const brandMarginTop = px(/\[data-os="darwin"\]\s+\.sidebar\s+\.brand-row\s*\{[^}]*?margin-top:\s*(\d+)px/);
+
+(Number.isFinite(brandMarginTop) && brandMarginTop > 0 ? ok : fail)(
+  `【284】mac 品牌行靠 margin-top **下移**到红绿灯下方（实测 margin-top=${brandMarginTop}；⛔ 0/缺失 = 退回与红绿灯并排）`
+);
+(Number.isFinite(topbarH) && Number.isFinite(sidebarPadTop) && sidebarPadTop + brandMarginTop === topbarH ? ok : fail)(
+  `【284】mac 品牌行顶边 == 顶栏底边（${sidebarPadTop}+${brandMarginTop}=${sidebarPadTop + brandMarginTop} vs 顶栏 ${topbarH}）—— mac 让位高度与 Windows titleBarOverlay 同源，只有一个数`
+);
+/* 负向：不许再用**横向**让位（那是「并排」形态的指纹），也防止有人"顺手加回去"。 */
+(!/\[data-os="darwin"\]\s+\.sidebar\s+\.brand-row\s*\{[^}]*padding-left/.test(cssAll) ? ok : fail)(
+  "【284】mac 品牌行不许再走横向让位（padding-left = 与红绿灯并排的旧形态）"
+);
+  }
 }

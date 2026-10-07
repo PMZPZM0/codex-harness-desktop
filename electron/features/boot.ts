@@ -500,6 +500,12 @@ export async function bootApp() {
            但必须**把回合 id 一并存下**——结算广播的 turnId 要用它（渲染层按 turn.id 取报告，10-06 修）。 */
         const startCwd = threadCwd.get(threadIdOf);
         if (startCwd) snapshotTurnWorkspace(threadIdOf, id, startCwd);
+        /* ⛔ 诊断（10-07，mac 实测「shell 改了文件但汇总下没有已编辑文件」）：链路两侧全平台
+           同构、无平台分支，断点只可能落在这三个静默跳过点之一 —— ① 回合开始事件拿不到
+           threadId；② 该线程 cwd 未登记；③ 回合 id 缺失（结算广播按 turnId 取报告，缺了
+           渲染层对不上号）。各打一行 warn（带前缀易 grep），mac 下一次复现即可定位断点。
+           ⛔ 只在「本该有快照却没有」时打，正常运行零输出。 */
+        else if (!startCwd && (id || threadIdOf)) console.warn("[turn-files-diag] 回合开始未记快照：threadId=", threadIdOf || "(空)", "turnId=", id || "(空)", "cwd 未登记");
       } else if (/^turn\/(completed|aborted|failed|interrupted)$/.test(METHOD)) {
         const id = turnIdOf(p);
         if (id) engineActiveTurnIds.delete(id);
