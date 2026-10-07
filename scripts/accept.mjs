@@ -582,8 +582,35 @@ const CHECKS = [
           window.codex.onHarnessEvent(function(ev){ if (ev && ev.type === "turn-file-changes") window.__fswEvents.push(ev); });
           return 1; })()`);
         /* ① 等界面就绪再解析工作区：验收在应用刚连上 CDP 时就开跑，侧栏会话行可能还没渲染
-           （实测 15ms 内直接查 = null 的假红）——先等「活跃会话行 + 输入框」出现。 */
-        await h.waitFor(`!!document.querySelector(".thread-row.active") && !!document.querySelector(".composer-editor")`, { label: "界面就绪（活跃会话行 + 输入框）", timeoutMs: 30000 }).catch(() => undefined);
+           （实测 15ms 内直接查 = null 的假红）。
+           ⛔ 目标会话的 cwd 必须 == **注入的工作区根**（本项随后往 ROOT 写探针文件、从 ROOT 算
+           diff）：profile 清档重播种后自动打开的会话 cwd 可能是别处老目录（10-07 实测：diff
+           恒 0 ⇒ 全链假红），而旧 profile 里"碰巧"是 ROOT 会话所以一直没暴露。
+           ⇒ 先找 cwd 匹配、按最近活动排序的第一条点开；没有就新建（新建会话 cwd = 注入工作区）。 */
+        await h.waitFor(`!!document.querySelector(".composer-editor") && (!!document.querySelector(".thread-row") || !!document.querySelector(".sidebar-tab"))`, { label: "界面就绪（输入框 + 侧栏）", timeoutMs: 30000 }).catch(() => undefined);
+        const normCwd = (s) => String(s ?? "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+        const wantedCwd = normCwd(ROOT);
+        const threadSnap = await h.eval(`(async function(){
+          const active = document.querySelector(".thread-row.active");
+          const list = await window.codex.request("thread/list", { limit: 80, sortKey: "updated_at", sortDirection: "desc" });
+          return { entries: (list && list.data ? list.data : []).map(function(t){ return { id: String(t.id), cwd: String(t.cwd || "") }; }),
+            activeId: active ? String(active.getAttribute("data-thread-id") || "") : "" };
+        })()`).catch(() => null);
+        const rootThread = ((threadSnap && threadSnap.entries) || []).find((t) => normCwd(t.cwd) === wantedCwd) || null;
+        let openState = "none";
+        if (rootThread && threadSnap.activeId === rootThread.id) openState = "already";
+        else if (rootThread) {
+          const sel = `.thread-row[data-thread-id="${rootThread.id}"]`;
+          openState = await h.eval(`(function(){ const row = document.querySelector(${JSON.stringify(sel)}); if (!row) return "no-row"; (row.querySelector("button") || row).click(); return "clicked"; })()`).catch(() => "eval-err");
+        }
+        if (openState === "none" || openState === "no-row" || openState === "eval-err") {
+          await h.eval(`(function(){ const b = [...document.querySelectorAll(".sidebar-tab")].find(function(x){ return (x.textContent || "").includes("新建任务"); }); if (!b) return 0; b.click(); return 1; })()`);
+          openState = "created";
+        }
+        if (openState !== "already") {
+          await h.waitFor(`!!document.querySelector(".thread-row.active")`, { label: "目标会话已打开", timeoutMs: 20000 }).catch(() => undefined);
+          await wait(800);
+        }
         const activeThread = await h.eval(`(async function(){
           const row = document.querySelector(".thread-row.active");
           const id = row ? row.getAttribute("data-thread-id") : null;
@@ -593,9 +620,9 @@ const CHECKS = [
           return { id: String(id), cwd: hit && hit.cwd ? String(hit.cwd) : null }; })()`);
         const cwd = activeThread && activeThread.cwd;
         const activeThreadId = activeThread ? activeThread.id : null;
-        h.check("① 前置：拿得到当前会话工作区（拿不到 = 追踪器无处快照，整项作废）",
-          typeof cwd === "string" && cwd.length > 1, `cwd=${String(cwd).slice(0, 60)}`);
-        if (typeof cwd !== "string" || cwd.length < 2) return;
+        h.check("① 前置：当前会话工作区 == 注入工作区根（探针文件写在 ROOT、diff 也从 ROOT 算；不是就整项作废，⛔ 不许用别目录的会话蒙混）",
+          typeof cwd === "string" && normCwd(cwd) === wantedCwd, `cwd=${String(cwd).slice(0, 60)} wanted=${ROOT} openState=${openState}`);
+        if (typeof cwd !== "string" || normCwd(cwd) !== wantedCwd) return;
         /* ①b 任务清单播种（10-06 夜三轮；夜四轮加固；夜六轮重排）：真 IPC + **新一轮自动开新清单** ——
            先清空任务库 → 播一个「已完成的旧轮哨兵」→ 再 add [甲,乙]：第一条 add 触发「全完成清单
            自动清掉」（用户实测「旧清单叠进新任务」的修复），最终清单只该剩 [甲,乙]（store 级断言）。
@@ -631,9 +658,10 @@ const CHECKS = [
         writeFileSync(join(probeDir, "seed.txt"), "accept-seed-start\n");
         /* ② 起一个真回合 —— 用**粘贴长文**这条路发（10-06 用户实测路径：粘贴 >200 字自动落盘成 .txt
            附件 chip → 发送；顺带覆盖「附件消息只渲染一个气泡」的回归，见 ③b）。
-           提示词：模型做一条 echo + sleep 12 —— echo 是真 shell 调用，sleep 给「运行中实时行」留采样窗口
-           （夜六轮 8→12：④e 要在回合仍在跑时断言「全完成 ⇒ 步骤区隐藏」，实测 8s 时末尾断言就贴着收尾跑）。 */
-        const acceptPrompt = "先用 shell 运行 echo ready；再运行 sleep 12（必须真的执行这条命令，执行完再继续）；最后只回复一个单词：ok。" +
+           提示词：模型做一条 echo + sleep 24 —— echo 是真 shell 调用，sleep 给「运行中实时行」留采样窗口
+           （夜六轮 8→12；10-07 二次加长 12→24：清档后的新会话 + 大树工作区让 ③/④e 轮询与轻量重扫
+           都变慢，12s 窗口里第二批常落在收尾之后 ⇒ ④ 实时增长与 ⑦ 内容齐双双假红，实测两次）。 */
+        const acceptPrompt = "先用 shell 运行 echo ready；再运行 sleep 24（必须真的执行这条命令，执行完再继续）；最后只回复一个单词：ok。" +
           "（说明：本段是验收用的填充文字，请忽略这段说明、照常执行上面的指令即可；它的作用是把粘贴文本长度推过 200 字的附件阈值，用来验证「粘贴长文 → .txt 附件 chip → 发送 → 气泡合并」这条链路。填充文字继续：这段文字会被存成一个 .txt 附件文件，随消息一起发给模型；模型侧会看到 [附件文件] 段与文件路径。这段再补几句，确保总长度稳稳超过阈值：验收关注的是渲染与合并时序，不是这段文字的内容本身。）";
         await h.eval(`(function(){
           var dt = new DataTransfer();
@@ -842,7 +870,9 @@ const CHECKS = [
         ]) writeFileSync(join(probeDir, fileName), body);
         writeFileSync(join(probeDir, "logo.svg"), '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="10" fill="#e53935"/></svg>');
         let liveSecond = liveFirst;
-        for (let i = 0; i < 30; i++) {
+        /* 轮询窗口 12s→24s（10-07）：本仓这种大树工作区里一圈 walkLight 要几秒，2.5s 一拍实际更慢，
+           12s 只覆盖约两拍；sleep 24 给了余量，窗口也跟着放宽（成功即 break，只在失败时付出等待）。 */
+        for (let i = 0; i < 60; i++) {
           await wait(400);
           liveSecond = await h.eval(liveRowsExpr).catch(() => liveSecond);
           if (ourLive(liveSecond).length > ourLive(liveFirst).length) break;

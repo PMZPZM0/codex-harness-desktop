@@ -14,8 +14,9 @@ import os from "node:os";
 import { WeixinGateway } from "../weixin-gateway";
 import { markBoot } from "../boot-timing";
 import { debugMemoryCapture } from "../memory-capture-debug";
+import { debugTurnFiles } from "../turn-files-debug";
 import { sendToWindow } from "./window-bus";
-import { dropStoredReports, emitTurnFileChanges, setTurnFileWatchBroadcast, setTurnFileWatchStore, settleTurnByTurnId, snapshotTurnWorkspace } from "../turn-file-watch";
+import { dropStoredReports, emitTurnFileChanges, setTurnFileWatchBroadcast, setTurnFileWatchDiag, setTurnFileWatchStore, settleTurnByTurnId, snapshotTurnWorkspace } from "../turn-file-watch";
 import { dropStoredCompactions, loadCompactionStore, setCompactionWatchDirs, watchTurnCompleted } from "../compaction-watch";
 
 import { shouldRegisterNuphus } from "../automation-policy";
@@ -220,6 +221,8 @@ export async function bootApp() {
   // 回合文件变更报告的落盘目录（10-06 夜二改：重启后「已更改 N 个文件」卡与冻结编辑行还在）。
   // ⛔ 必须在这个时点求值（app.setPath("userData") 之后）；模块顶层 import 期求值会静默漂移。
   setTurnFileWatchStore(path.join(app.getPath("userData"), "turn-file-changes"));
+  // 追踪链诊断落盘（10-07，mac「已编辑文件不展示」排查）：静默跳过点写 userData/turn-files-diag.log。
+  setTurnFileWatchDiag(debugTurnFiles);
   // 压缩侦测的落盘目录 + rollout 根（10-07）——同一条"启动后求值"纪律（见上一行注释）。
   setCompactionWatchDirs(path.join(app.getPath("userData"), "compaction-records"), codexHome);
   loadCompactionStore();
@@ -505,7 +508,10 @@ export async function bootApp() {
            threadId；② 该线程 cwd 未登记；③ 回合 id 缺失（结算广播按 turnId 取报告，缺了
            渲染层对不上号）。各打一行 warn（带前缀易 grep），mac 下一次复现即可定位断点。
            ⛔ 只在「本该有快照却没有」时打，正常运行零输出。 */
-        else if (!startCwd && (id || threadIdOf)) console.warn("[turn-files-diag] 回合开始未记快照：threadId=", threadIdOf || "(空)", "turnId=", id || "(空)", "cwd 未登记");
+        else if (id || threadIdOf) {
+          console.warn("[turn-files-diag] 回合开始未记快照：threadId=", threadIdOf || "(空)", "turnId=", id || "(空)", "cwd 未登记");
+          debugTurnFiles({ point: "started-no-cwd", threadId: threadIdOf || "(空)", turnId: id || "(空)" });
+        }
       } else if (/^turn\/(completed|aborted|failed|interrupted)$/.test(METHOD)) {
         const id = turnIdOf(p);
         if (id) engineActiveTurnIds.delete(id);
