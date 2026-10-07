@@ -58,7 +58,12 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
     return text;
   }, [item.id]);
   const [displayed, setDisplayed] = useState(initialReveal);
-  const [revealing, setRevealing] = useState(() => initialReveal.length < text.length);
+  /* ⛔⛔ 10-07 组件级探针实测：初值也必须**按本块是否还在直播**决定。
+     非直播挂载（完成态的卡被重挂/重播）时，若进度表里只留了半截（快速放完全文时
+     没写回进度），`initialReveal.length < text.length` 会算出 true ⇒ revealing 复活
+     ⇒ 浮窗先 spawn 放大、同帧又被 `!running && revealing` 分支收掉 ⇒ **凭空一次开-缩**。
+     与上面 initialReveal 的"续播标记只在 running 时可用"是同一条纪律。 */
+  const [revealing, setRevealing] = useState(() => Boolean(running) && initialReveal.length < text.length);
   // 吸入动画挂起态（声明在追字 effect 之前：它的依赖数组要引用）
   const [exiting, setExiting] = useState(false);
   const displayedRef = useRef(displayed);
@@ -109,6 +114,17 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
     }
     const remaining = text.length - start.length;
     if (remaining <= 0) {
+      /* ⛔⛔ 10-07 组件级探针实测（**单块思考直播期间放大 10 次 / 缩小 10 次**）：
+         追字缓冲追平只是「这一批大块放完了」，**不等于这一块思考结束了**。
+         引擎按大块交付 reasoning delta（项目注释：整段大块交付、追字步长大），两块之间
+         必然出现 remaining<=0。旧写法在这里无条件 setRevealing(false) ⇒ open 与 popupOpen
+         双双转假 ⇒ 浮窗卸载（suck）→ 下一块到达又 setRevealing(true) 重挂（spawn）……
+         实测序列 = `live open → live collapsed →（约 2s）→ live open → live collapsed` ×10，
+         而头部自始至终写着「深度思考中」—— 正是用户报的两条症状：
+           ·「经常缩小放大来回闪」= spawn/suck 逐块重放；
+           ·「明明一直在正在思考中，却不自动展开」= 大部分时间停在 collapsed。
+         ⇒ 还在直播就不收；**收不收只由下面 `!running && revealing` 那一条决定**（一处开关）。 */
+      if (running) return;
       setRevealing(false);
       bufferedReasoningRevealStarts.delete(String(item.id));
       return;
@@ -136,9 +152,13 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
       window.dispatchEvent(new Event("codex:packet-reveal"));
       if (end >= text.length) {
         window.clearInterval(timer);
-        bufferedReasoningRevealStarts.delete(String(item.id));
-        // 进度保留全文：回合未结束前切会话回来 active 仍 true，删了会二次重播
-        setRevealing(false);
+        // ⛔ 同 `remaining <= 0` 那条：直播期间追平了也**不收**（收由 `!running && revealing` 统一决定），
+        //    否则每批大块放完都会关一次浮窗、下一批再开一次 —— 就是「来回闪」。
+        //    进度表保留全文：回合未结束前切会话回来 active 仍 true，删了会二次重播。
+        if (!running) {
+          bufferedReasoningRevealStarts.delete(String(item.id));
+          setRevealing(false);
+        }
       }
     }, 16);
     return () => window.clearInterval(timer);
@@ -220,13 +240,21 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
     if (popupOpen) { prevOpenRef.current = true; setExiting(false); return; }
     if (prevOpenRef.current && Boolean(displayed)) {
       prevOpenRef.current = false;
-      // 已被父容器带走 ⇒ 不播吸入动画，直接收
-      if (!headRef.current?.isConnected) { setExiting(false); return; }
+      /* ⛔⛔ 10-07 用户报「上个思考板块已经输出完了，下个思考板块出来时，它还会闪一下缩放」：
+         本块**不再直播**（下一块/下一步接管）而自动收起时，用户并没有做任何操作，
+         却看到上一块缩成一个小点 —— 这就是那次多余的 suck。
+         ⇒ 判据收紧成**只有用户自己点收起才播吸入动画**（manualOpen === false 是 toggle 的唯一产出，
+            思考卡里没有别的地方写它）。
+         · 已被父容器带走（isConnected=false）⇒ 不播（10-04 旧判据，保留）
+         · 自动收起（本块直播结束、回合结束）⇒ 不播，静默消失
+         · 用户点收起 ⇒ 播（有"我做了个操作"的反馈）
+         ⚠️ 放大放出（spawn）不受影响：那是"开始直播"的反馈，用户没报过问题。 */
+      if (!headRef.current?.isConnected || manualOpen !== false) { setExiting(false); return; }
       setExiting(true);
       const t = setTimeout(() => setExiting(false), 240);
       return () => clearTimeout(t);
     }
-  }, [popupOpen, displayed]);
+  }, [popupOpen, displayed, manualOpen]);
   const reasoningBodyPointerMounted = (popupOpen || exiting) && Boolean(displayed);
   /* ── 浮窗定位：与输入框**同宽同列**（跟输入框一样长）；垂直方向**按空间自适应**
      （09-26 用户定稿「位置不是固定每次都在下方」）：下方够就贴芯片下方 4px；

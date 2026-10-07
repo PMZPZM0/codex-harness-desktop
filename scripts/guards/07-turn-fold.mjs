@@ -4777,6 +4777,24 @@ export async function run() {
   (/const popupOpen = open && Boolean\(displayed\) && \(running \? \(streamingNow \|\| manualOpen !== null\) : manualOpen === true\);/.test(itemSrc) ? ok : fail)(
     "【161】⛔ 回合结束后浮窗只认用户显式点开（自动揭示/状态 flicker 一律不许凭空开窗）"
   );
+  // ⑫ ⛔⛔ 10-07 组件级探针实测（**单块思考直播期间放大 10 次 / 缩小 10 次**，卡片在
+  //    `live open` 与 `live collapsed` 之间来回跳，而头部一直写着「深度思考中」）：
+  //    引擎按**大块**投递 reasoning delta，两块之间 16ms 追字定时器必然追平 ⇒ remaining<=0。
+  //    旧写法在这里无条件 setRevealing(false) ⇒ open 与 popupOpen 双双转假 ⇒ 浮窗卸载(suck)
+  //    → 下一块到达又重挂(spawn) ⇒ 用户报的「经常缩小放大来回闪」+「明明在思考却不自动展开」。
+  //    修法 = **直播期间追平了也不收**，收只由 `!running && revealing` 一条决定（两处必须都在）。
+  (/if \(running\) return;\n\s*setRevealing\(false\);\n\s*bufferedReasoningRevealStarts\.delete\(String\(item\.id\)\);/.test(itemSrc) ? ok : fail)(
+    "【161】⛔ 直播期间追字追平**不许收**（remaining<=0 只是这批大块放完，不是本块结束）"
+  );
+  (/if \(!running\) \{\n\s*bufferedReasoningRevealStarts\.delete\(String\(item\.id\)\);\n\s*setRevealing\(false\);\n\s*\}/.test(itemSrc) ? ok : fail)(
+    "【161】⛔ 追字定时器跑完同样只在非直播态才收（否则每批大块都会关一次浮窗）"
+  );
+  // ⑬ 10-07 用户报「上个思考板块已经输出完了，下个思考板块出来时，它还会闪一下缩放」：
+  //    本块直播结束而**自动**收起时用户没做任何操作，却看到上一块缩成一个小点。
+  //    ⇒ 吸入动画只留给用户自己点收起（manualOpen === false 是 toggle 的唯一产出）。
+  (/if \(!headRef\.current\?\.isConnected \|\| manualOpen !== false\) \{ setExiting\(false\); return; \}/.test(itemSrc) ? ok : fail)(
+    "【161】⛔ 吸入动画只在用户点收起来时播（自动收起/被父容器带走一律静默）"
+  );
 }
 // ── 55. 压缩期间的运行态语义（09-26 用户截图：压缩后「正在生成回复 · 正在落笔」一直挂着）──
 {
