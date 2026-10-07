@@ -24,8 +24,8 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { app, shell } from "electron";
-import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, downloadEnv, npmGlobalRoot, pythonPipReady, toolchainEnv, toolsRoot } from "../toolchain";
-import { installKbEmbedding, kbEmbeddingInstalled } from "./kb-embed-backend";
+import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, downloadEnv, npmGlobalRoot, npmGlobalRootCandidates, pythonPipReady, toolchainEnv, toolsRoot } from "../toolchain";
+import { installKbEmbedding, kbBackendDir, kbEmbeddingInstalled, uninstallKbEmbedding } from "./kb-embed-backend";
 import { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, cancelRuntimeInstall, cleanupRuntimeTempFiles, clearCancelRequest, devRuntimeSpecs, emitRuntimeProgress, isCancelRequested, pythonSiteDir, readDownloadSource, requestRuntimeCancel, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls, trackRuntimeProc } from "./dev-runtimes";
 import type { DevRuntimeId, DevRuntimeSpec } from "./dev-runtimes";
 import { sendToWindow } from "./window-bus";
@@ -108,12 +108,22 @@ async function removeTargetsWithProgress(id: DevRuntimeId, targets: string[]): P
   let batch: string[] = [];
   let batchBytes = 0;
   let removedBytes = 0;
+  let failedCount = 0;
+  let firstFailure = "";
   const flush = async () => {
     const pending = batch;
     batch = [];
     batchBytes = 0;
     for (const file of pending) {
-      try { await fs.rm(file, { force: true }); } catch { /* 单文件失败不断整批 */ }
+      // ⛔ 10-07：删除失败**必须计数**（原先一律 catch 掉）。Windows 上文件被占用（EBUSY/EPERM）
+      //   时旧实现会「假装删成功」⇒ 界面回到「已安装」，用户只看到「卸载了但没变」。
+      //   收尾时把失败样本抛给调用方 ⇒ 用户看到「卸载失败：文件被占用，请关闭占用它的程序后重试」。
+      try {
+        await fs.rm(file, { force: true });
+      } catch (error) {
+        failedCount++;
+        if (!firstFailure) firstFailure = `${file}（${String((error as Error)?.message ?? error).slice(0, 80)}）`;
+      }
     }
     if (totalBytes > 0) {
       const percent = Math.min(99, Math.round((removedBytes / totalBytes) * 100));
@@ -130,7 +140,18 @@ async function removeTargetsWithProgress(id: DevRuntimeId, targets: string[]): P
   if (batch.length) await flush();
   // 文件删完后摘目录树（recursive 对已空目录是瞬时操作，顺带兜走漏网文件）
   for (const root of roots) {
-    try { await fs.rm(root, { recursive: true, force: true }); } catch { /* 同上 */ }
+    try { await fs.rm(root, { recursive: true, force: true }); } catch (error) {
+      failedCount++;
+      if (!firstFailure) firstFailure = `${root}（${String((error as Error)?.message ?? error).slice(0, 80)}）`;
+    }
+  }
+  // ⛔ 如实报错而不是「假装卸载成功」——失败最常见的原因是文件被占用（Windows 常驻子进程、
+  //   浏览器内核缓存被引用），提示必须能指导用户下一步动作。
+  if (failedCount > 0) {
+    throw new Error(
+      `有 ${failedCount} 个文件删不掉（常见原因：被其它程序占用）。首个失败：${firstFailure}`
+      + " —— 请关闭占用它的程序（浏览器 / 后台工具）后重试，或重启应用再卸载。"
+    );
   }
 }
 
@@ -145,9 +166,11 @@ const NPM_PACKAGE_ARTIFACTS: Partial<Record<DevRuntimeId, { dirs: string[]; shim
   cloakbrowser: { dirs: ["node_modules/cloakbrowser"], shims: ["cloakbrowser"] },
 };
 
-/** npm 包在 npm-global 根与 node_modules/.bin 下留的 shim（不是包体，删完包体要顺手清掉）。 */
-function npmShimPaths(...pkgs: string[]): string[] {
-  const globalDir = path.join(toolsRoot(), "npm-global");
+/** npm 包在某个 npm-global 根下留的 shim（不是包体，删完包体要顺手清掉）。
+ *  ⛔ 10-07：显式接 `globalRoot` 参数，不再内部取 `npmGlobalRoot()` ——
+ *   卸载要遍历**全部候选落位**，内部只取一个就又回到「删不干净」的旧 bug。 */
+function npmShimPaths(globalRoot: string, ...pkgs: string[]): string[] {
+  const globalDir = path.dirname(globalRoot);
   const out: string[] = [];
   for (const pkg of pkgs) {
     out.push(
@@ -170,10 +193,28 @@ function npmShimPaths(...pkgs: string[]): string[] {
 function runtimeUninstallTargets(id: DevRuntimeId, spec: DevRuntimeSpec): string[] {
   // 引擎侧安装：ponytail 在 codex-home/plugins/cache/ponytail
   if (id === "ponytail") return [path.join(codexHome, "plugins", "cache", "ponytail")];
+  // ⛔⛔ 10-07 用户实测「知识库本地语义检索卸载不更新状态，一直显示已安装」：
+  //   kb-embedding 装在 **<userData>/kb-backend**（runtimeInstalled 的判据
+  //   kbEmbeddingInstalled() 读的就是这个目录），而通用分支按 marker 首段推出的是
+  //   `tools/kb-embedding` —— **一个根本不存在的路径** ⇒ 卸载「删成功」但文件原地不动，
+  //   界面永远显示已安装。⇒ 这类「装在 tools 之外」的项必须**显式给真实目录**，不能靠 marker 推导。
+  if (id === "kb-embedding") return [kbBackendDir()];
   const pkg = NPM_PACKAGE_ARTIFACTS[id];
   if (pkg) {
-    const global = npmGlobalRoot();
-    return [...pkg.dirs.map((dir) => path.join(global, dir)), ...npmShimPaths(...pkg.shims)];
+    // ⛔⛔ 同源纪律（10-07 同一批实测）：判定侧认**全部候选落位**（mac 双布局），
+    //   卸载侧也必须逐个删 —— 只删 npmGlobalRoot() 那一个，装在另一个落位的包会
+    //   「卸载了但仍显示已安装」（cloakbrowser 实测）。落位清单来自单一真相源，别手拼。
+    // ⛔⛔⛔ dirs 里的路径是相对 **npm-global 前缀**的（`node_modules/cloakbrowser`），
+    //   而候选落位 npmGlobalRootCandidates() 返回的**已含 node_modules 一段** ——
+    //   直接 join 会拼出 `node_modules/node_modules/cloakbrowser` ⇒ **包体从来就没被删过**
+    //   （Windows 同样中招，10-07 实测才抓到）。所以这里必须 join 到前缀（= 落位的上一级）。
+    return npmGlobalRootCandidates().flatMap((root) => {
+      const prefix = path.dirname(root);
+      return [
+        ...pkg.dirs.map((dir) => path.join(prefix, dir)),
+        ...npmShimPaths(root, ...pkg.shims),
+      ];
+    });
   }
   // ⛔ pip 包（markitdown / laya / phone-harness）：只能删**包目录本身**。按 marker 首段推导会得到
   //    `tools/python` —— 那是整个 Python 运行时（含 pip 与引擎依赖），卸载一个包会把 Python 一起删光。
@@ -390,16 +431,33 @@ export const runtimeFeature = defineFeature<null>({
       if (spec.noUninstall) throw new Error("该工具来自随包内置资源，删除后难以恢复，因此不支持卸载");
       const targets = runtimeUninstallTargets(id, spec);
       // 防御：marker 解析异常时 target 可能退化成某个根目录 —— 那会把**所有**工具/插件删光。
-      // 要求每个 target 必须落在 toolsRoot 或 codexHome 之内，且不等于这两者本身。
+      // 要求每个 target 必须落在允许根之内，且不等于这些根本身。
+      // ⛔ 10-07：kb-embedding 装在 <userData>/kb-backend（userData 下），需要放行。
+      //   ⛔⛔ 但它**不是「根」而是「恰好等于允许值的具体目录」** ⇒ 放进 allowedRoots 会与
+      //   上面「不得等于根」那条自相矛盾（target === 允许根 ⇒ 直接被拒，症状仍是卸不掉）。
+      //   ⇒ 故拆成两个概念：allowedRoots = 可以往里删的**根**（不得相等）；
+      //      exactAllowed = 允许**整体删除**的具体目录（target 就等于它）。
       const allowedRoots = [toolsRoot(), codexHome].filter(Boolean).map((r) => path.resolve(r));
+      const exactAllowed = new Set([path.resolve(kbBackendDir())]);
       for (const target of targets) {
         const resolvedTarget = path.resolve(target);
         const underAllowed = allowedRoots.some((r) => resolvedTarget.startsWith(r + path.sep));
-        if (!resolvedTarget || allowedRoots.includes(resolvedTarget) || !underAllowed) {
+        if (!resolvedTarget || allowedRoots.includes(resolvedTarget)
+          || (!underAllowed && !exactAllowed.has(resolvedTarget))) {
           throw new Error("安装路径解析异常，已取消卸载");
         }
       }
       // 逐个删（先包体、再 shim；marker 是文件还是目录都适用）—— 大目录按字节比例发卸载进度
+      // ⛔⛔ 10-07：kb-embedding 必须走它**自己的**卸载函数，不能用通用分批删除 ——
+      //   常驻 embedding worker 子进程正抱着模型文件，Windows 上文件被占用时 fs.rm 直接 EBUSY/EPERM
+      //   （try/catch 还把它吞成「删成功」）⇒ 又一个「卸载了但一直显示已安装」。
+      //   uninstallKbEmbedding() 内部先 disposeKbEmbedWorker() 再删，与 10-04 的安装/卸载设计同源。
+      if (id === "kb-embedding") {
+        sendToWindow("runtime:progress", { id, stage: "正在删除文件", percent: 0 });
+        await uninstallKbEmbedding();
+        sendToWindow("runtime:progress", { id, message: "卸载完成", percent: 100, done: true });
+        return { ok: true, runtimes: runtimeList() };
+      }
       await removeTargetsWithProgress(id, targets);
       // ponytail 卸载后要显式关掉 config.toml 里的注册段（否则引擎重启找不到已删的 cache）：
       // 插件 key 是 **"ponytail@ponytail"**（见 ponytail-plugin.ts 的 MARKETPLACE_SECTION）。
