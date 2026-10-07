@@ -114,6 +114,22 @@ async function mcp() {
 async function main() {
   assert.ok(fs.existsSync(node), "Missing bundled Node");
   console.log("Node:", spawnSync(node, ["--version"], { encoding: "utf8", windowsHide: true }).stdout.trim());
+  // ⛔⛔ 10-07 实测事故（用户报「开发工具 / 知识库全部安装失败」）：上面那条只验了 `node.exe` 在不在，
+  //    **从来没验过 npm**。而 Windows 包里 `tools/node/node_modules`（npm 本体 + 它自带的
+  //    npm/node_modules）被 builder 剪掉了（它只剪 extraResources `from` 根级的 node_modules，
+  //    见 app-builder-lib/out/util/filter.js）⇒ 装出来的应用里 `runtime-ipc.ts` / `kb-embed-backend.ts`
+  //    一律抛「内置 Node 缺少 npm（…/npm/bin/npm-cli.js）」，所有需要 npm 的安装全挂。
+  //    ⚠️ dev 态从仓库读 resources/tools（npm 在）⇒ 本地永远不复现；0.0.32 就是这么流出去的。
+  //    ⇒ 产物层必须验到 **npm-cli.js 真能跑起来**，不是只看文件存在（存在但缺依赖同样跑不动）。
+  //    配套：package.json 里那条 from=resources/tools/node/node_modules 的映射（守卫【27】钉着）。
+  const npmCli = path.join(root, "node", "node_modules", "npm", "bin", "npm-cli.js");
+  assert.ok(fs.existsSync(npmCli),
+    "随包 Node 缺少 npm（tools/node/node_modules/npm/bin/npm-cli.js）—— 检查 package.json extraResources " +
+    "里那条 from=resources/tools/node/node_modules 的映射（electron-builder 会丢弃 from 根级的 node_modules）。" +
+    "缺了它，「开发工具」与知识库的全部安装动作都会失败。");
+  const npmVersion = spawnSync(node, [npmCli, "--version"], { encoding: "utf8", windowsHide: true, env, timeout: 60000 });
+  assert.equal(npmVersion.status, 0, `随包 npm 跑不起来：${npmVersion.error?.message || npmVersion.stderr}`);
+  console.log("npm:", String(npmVersion.stdout).trim());
   console.log("MCP tools:", (await mcp()).length);
   const cli = spawnSync(node, [path.join(modules, "@playwright", "cli", "playwright-cli.js"), "--help"], {
     env, encoding: "utf8", windowsHide: true, timeout: 20000,

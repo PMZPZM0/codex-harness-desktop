@@ -107,6 +107,10 @@
         "to": "tools/node"
       },
       {
+        "from": "resources/tools/node/node_modules",
+        "to": "tools/node/node_modules"
+      },
+      {
         "from": "resources/tools/pwsh-headless",
         "to": "tools/pwsh-headless"
       },

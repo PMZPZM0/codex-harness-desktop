@@ -610,6 +610,15 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   //    必须**另加一条** from=.../npm-global/node_modules 的映射（那一层的相对路径不叫 node_modules，绕过剪枝）。
   const nodeModulesSet = extraResources27.find((entry) => entry?.from === "resources/tools/npm-global/node_modules");
   (nodeModulesSet && nodeModulesSet.to === "tools/npm-global/node_modules" ? ok : fail)("package.json：单独一条 from=resources/tools/npm-global/node_modules → tools/npm-global/node_modules 的映射（缺了它 builder 会把 node_modules 整个剪掉，「随包内置」落空）");
+  // ⛔⛔ 10-07 实测事故（用户报「开发工具/知识库全部安装失败」）：上面那条剪枝规则**不只是 npm-global 的事**。
+  //    `resources/tools/node` 同样带根级 node_modules（npm 本体 16M + 它自带的 npm/node_modules 12M），
+  //    而它**从来没有**配过独立映射 ⇒ 装出来的 Windows 包里有 `tools/node/node.exe` 却**没有 npm**，
+  //    `runtime-ipc.ts` / `kb-embed-backend.ts` 一律抛「内置 Node 缺少 npm（…/npm/bin/npm-cli.js）」。
+  //    ⚠️ dev 态从仓库读 `resources/tools`（npm 在）⇒ **本地永远不复现**，只在打包版爆。
+  //    ⚠️ mac 侧不受影响：`build/copy-mac-tools.cjs` 是整目录 `fs.cp`，不过 builder 的 filter。
+  //    ⇒ 只要 extraResources 里新增任何带根级 node_modules 的 from，**必须同轮补一条独立映射**。
+  const nodeNmSet = extraResources27.find((entry) => entry?.from === "resources/tools/node/node_modules");
+  (nodeNmSet && nodeNmSet.to === "tools/node/node_modules" ? ok : fail)("package.json：单独一条 from=resources/tools/node/node_modules → tools/node/node_modules 的映射（缺了它包内 Node 没有 npm ⇒「开发工具」与知识库的全部安装动作都报「内置 Node 缺少 npm」）");
   const nodeModulesFilter = Array.isArray(nodeModulesSet?.filter) ? nodeModulesSet.filter.map(String) : [];
   (nodeModulesFilter.some((pattern) => /^!cloakbrowser(\/\*\*\/\*)?$/.test(pattern)) && nodeModulesFilter.some((pattern) => pattern.startsWith("!.bin/cloakbrowser")) ? ok : fail)("package.json：node_modules 映射同样排除 cloakbrowser 包体与 .bin shim");
 
@@ -1078,7 +1087,12 @@ w.postMessage({id:1,op:"list",root});
     if (!from || !from.startsWith("resources/tools/")) continue;
     if (BY_DESIGN.has(from)) continue;
     const seg = from.slice("resources/tools/".length);
-    if (!prepWin.includes(seg)) uncovered.push(from);
+    /* ⛔ 10-07：`<X>/node_modules` 是绕过 builder 剪枝的**姐妹条目**（见【27】），它的可造性
+       完全由父条目 X 决定 —— 父条目 prep 脚本能造，姐妹条目就跟着有（node 的 npm 就是解压
+       官方 node zip 时一起出来的）。⇒ 按「父条目可造」判定，别为每条姐妹条目单独开后门。 */
+    const parent = seg.endsWith("/node_modules") ? seg.slice(0, -"/node_modules".length) : "";
+    if (prepWin.includes(seg) || (parent && prepWin.includes(parent))) continue;
+    uncovered.push(from);
   }
   (uncovered.length === 0 ? ok : fail)(`【29】Windows 随包源全部可由 CI 现造${uncovered.length ? "（未覆盖：" + uncovered.join(", ") + "）" : ""}`);
 
