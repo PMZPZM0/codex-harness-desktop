@@ -10,7 +10,8 @@ import { AppSelect } from "../../../components/AppSelect";
 import { useEffect, useState } from "react";
 import { Check, ChevronDown, Globe2, MessageSquarePlus, Monitor, Play, ShieldCheck, Wrench } from "lucide-react";
 import { ToolStatusEntry } from "../../../features/session-cards";
-import { setVoiceOpenSettingsHandler } from "../../../voice/wave-level";
+import { setVoiceCallNoticeHandler, setVoiceOpenSettingsHandler } from "../../../voice/wave-level";
+import { voiceCallNoticeText } from "../../../voice/voice-notice";
 import type { PendingRequest } from "../types";
 
 
@@ -169,5 +170,21 @@ function VoiceSettingsBridge({ onOpen }: { onOpen: () => void }): null {
     setVoiceOpenSettingsHandler(onOpen);
     return () => setVoiceOpenSettingsHandler(null);
   }, [onOpen]);
+  return null;
+}
+
+/**
+ * 把「语音通话开/关 → 往对话里发一条告知」注册给 VoiceCallFloat（10-08 用户要求）。
+ * ⛔ 文案由 `src/voice/voice-notice.ts` 生成（单一真相源），这里只管**发**：与调度开关的告知
+ *   同一条通路（pendingCommandTextRef + send），并同样做**会话闸** —— 通话绑定会话，
+ *   告知绝不能发到别的会话去。
+ */
+export /** 语音通话开关的告知桥（null 渲染）。 */
+function VoiceCallNoticeBridge({ onNotify }: { onNotify: (text: string, threadId: string) => void }): null {
+  useEffect(() => {
+    // 广播过来的是**状态**（开/关），这里翻成文案再交给 App（文案见 voice-notice.ts，单一真相源）
+    setVoiceCallNoticeHandler((active, threadId) => onNotify(voiceCallNoticeText(active), threadId));
+    return () => setVoiceCallNoticeHandler(null);
+  }, [onNotify]);
   return null;
 }

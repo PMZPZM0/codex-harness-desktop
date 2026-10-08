@@ -87,6 +87,33 @@ export function requestVoiceStop(): void {
   try { stopHandler?.(); } catch { /* 结束通话失败不冒泡到 UI */ }
 }
 
+// ── 「打断」回调（10-08）：通话面只保留舞台条之后，把原先右下角面板上的「打断」按钮搬到舞台上
+//    （跳过当前排队的播报，后续内容接着说）。与「结束通话」同一套广播范式 —— 两处不在同一子树。
+let skipHandler: (() => void) | null = null;
+
+export function setVoiceSkipHandler(fn: (() => void) | null): void {
+  skipHandler = fn;
+}
+
+export function requestVoiceSkip(): void {
+  try { skipHandler?.(); } catch { /* 打断失败不冒泡到 UI */ }
+}
+
+// ── 「通话开关 → 往对话里发一条告知」回调（10-08 用户要求）：让引擎明确感知实时语音何时开、何时关。
+//    采集/播报在 VoiceCallFloat（body portal），而「发消息进对话」的能力在 AppView 的 bag 里
+//    （pendingCommandTextRef + send）—— 两处不在同一子树，同样靠这条广播桥。
+//    ⛔ 回调带 threadId：语音通话是**绑定会话**的，IPC/状态变更期间用户可能已切走会话，
+//      把 A 会话的告知发进 B 是明确禁止的（与调度告知同款闸门）。
+let callNoticeHandler: ((active: boolean, threadId: string) => void) | null = null;
+
+export function setVoiceCallNoticeHandler(fn: ((active: boolean, threadId: string) => void) | null): void {
+  callNoticeHandler = fn;
+}
+
+export function requestVoiceCallNotice(active: boolean, threadId: string): void {
+  try { callNoticeHandler?.(active, threadId); } catch { /* 告知失败不影响通话本身 */ }
+}
+
 // ── 「跳转到语音设置」回调：悬浮球右键菜单用（悬浮球是 body portal，
 //    拿不到 App 里的 setSettingsPage，所以由 App 注册一个打开设置页的钩子）
 let openSettingsHandler: (() => void) | null = null;

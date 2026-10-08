@@ -14,7 +14,7 @@
  *   ./thread-list  —— 5 个符号
  *   ./paths  —— 3 个符号
  *   ./view-dom  —— 4 个符号
- *   ./components  —— 3 个符号
+ *   ./components  —— 4 个符号
  */
 
 /* ⛔ 这里只保留**副作用 import**（无绑定导入）。
@@ -33,4 +33,4 @@ export { fmtImportTime, prettifyHookLabel, noticeTone, modelName, botChannelName
 export { parseTeamMemberTitle, groupThreadsByTime, collectMessageTexts, locateMatchEl, resumeThreadWithTurns } from "./helpers/thread-list";
 export { collectKnownPaths, usageCounterSnapshot, toFileUrl } from "./helpers/paths";
 export { createInlineAttachmentChip, armSendAnimationClaim, jumpToTurn, revealStepFor } from "./helpers/view-dom";
-export { ToolCard, RequestCard, VoiceSettingsBridge } from "./helpers/components";
+export { ToolCard, RequestCard, VoiceSettingsBridge, VoiceCallNoticeBridge } from "./helpers/components";

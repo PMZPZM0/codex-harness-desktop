@@ -753,9 +753,22 @@ console.log(C.bold("\n【4c】语音链路（打断世代号 / 朗读视图 / �
     warn("找不到语音源码，跳过语音接线守卫");
   } else {
     // ① 打断：引擎把「被打断的回合」标出来，渲染层据此丢弃半句
+    /* ⛔⛔ 判据按**同级分支边界**切片，不用固定字符窗口（10-08 被真实改动撑破过：在 final 分支开头
+       插了一段外放回声剔除（约 8 行）⇒ 原来的 `[\s\S]{0,300}?` 立刻失效报假红）。
+       窗口类判据一律按边界切，别去调大那个数字 —— 本仓在【29】上已经学过同一课。
+       ⛔ 同时钉「切片确实跨到了分支体」：切空串会让断言恒真（最危险的那种假绿）。 */
+    const branchBody = (src, marker) => {
+      const start = src.indexOf(marker);
+      if (start < 0) return "";
+      const next = src.indexOf('event.type === "', start + marker.length);
+      return src.slice(start, next < 0 ? src.length : next);
+    };
+    const finalBranch = branchBody(floatSrc, 'event.type === "final"');
+    const turnDoneBranch = branchBody(floatSrc, 'event.type === "turnDone"');
     const statusChecked = /turn\/completed[\s\S]{0,600}?turn\?\.status/.test(serviceSrc) && /aborted/.test(serviceSrc);
-    const abortedHandled = /event\.type === "turnDone"[\s\S]{0,300}?event\.aborted[\s\S]{0,120}?bumpSpeechEpoch/.test(floatSrc);
-    const epochOnFinal = /event\.type === "final"[\s\S]{0,300}?bumpSpeechEpoch\(\)/.test(floatSrc);
+    const abortedHandled = finalBranch.length > 0 && turnDoneBranch.length > 0
+      && /event\.aborted/.test(turnDoneBranch) && /bumpSpeechEpoch/.test(turnDoneBranch);
+    const epochOnFinal = finalBranch.length > 0 && /bumpSpeechEpoch\(\)/.test(finalBranch);
     const epochGuard = /epoch !== speechEpochRef\.current/.test(floatSrc) && /if \(epoch !== speechEpochRef\.current\) return/.test(floatSrc);
     statusChecked && abortedHandled && epochOnFinal && epochGuard
       ? ok("① 打断：世代号 + turn.status=interrupted 双保险（在途合成与断句器半句都会被丢弃）")

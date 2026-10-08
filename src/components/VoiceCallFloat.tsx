@@ -3,9 +3,8 @@
  * ⛔ 解构名与 hook 返回键同名 ⇒ JSX 与搬迁前逐字一致。
  */
 import { createPortal } from "react-dom";
-import { AlertCircle, AudioLines, Download, EyeOff, LoaderCircle, Mic, Monitor, PhoneOff, Settings2, X } from "lucide-react";
+import { AlertCircle, AudioLines, Download, EyeOff, LoaderCircle, Mic, PhoneOff, Settings2, X } from "lucide-react";
 import VoiceMascot from "./VoiceMascot";
-import VoiceCallScreen from "./VoiceCallScreen";
 import { patchVoiceStage, requestVoiceDictationSend, requestVoiceOpenSettings, resetVoiceStage, setVoiceDictationHandler, setVoiceLevel, setVoiceStopHandler } from "../voice/wave-level";
 import { useVoiceCallFloatState } from "./VoiceCallFloat/use-voice-call-float-state";
 
@@ -118,83 +117,29 @@ export function readPos(): { right: number; bottom: number } {
 }
 
 export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
-  const { phase, setPhase, state, setState, expanded, setExpanded, levelRef, screenElRef, applyLevel, muted, setMuted, mutedRef, toggleMute, transcript, setTranscript, callStartedAt, setCallStartedAt, userText, setUserText, agentText, setAgentText, ballVisible, setBallVisible, hintsEnabled, setHintsEnabled, hint, setHint, menu, setMenu, callScreen, setCallScreen, agentTextRef, ballRef, notice, setNotice, endpointSec, setEndpointSec, models, setModels, download, setDownload, pos, setPos, mediaStreamRef, captureCtxRef, workletRef, playCtxRef, playQueueRef, playingCountRef, aecRef, bargeModeRef, micSettingsRef, volumeRef, gateRef, chunkerRef, speakFilterRef, prebufferRef, liveRef, refRingRef, refWriteRef, refReadRef, refDropsRef, endpointArmedRef, quietSinceRef, lastBargeAtRef, speakingRef, phaseRef, voiceModeRef, dragRef, refreshModels, busyElsewhere, setBusyElsewhere, onBallContextMenu, hideBall, pushRef, enqueuePlay, speechEpochRef, bumpSpeechEpoch, stopPlayback, skipCurrent, speakDelta, flushSpeech, startCapture, teardown, startCall, endCall, startCallRef, callToggleRef, pushTranscript, wakeCfg, setWakeCfg, installModels, draggedRef, onPointerDown, onPointerMove, onPointerUp, onBallClick, stateLabel, modelsReady, ballClass } = useVoiceCallFloatState({ threadId });
+  const { phase, setPhase, state, setState, expanded, setExpanded, levelRef, screenElRef, applyLevel, muted, setMuted, mutedRef, toggleMute, transcript, setTranscript, callStartedAt, setCallStartedAt, userText, setUserText, agentText, setAgentText, ballVisible, setBallVisible, hintsEnabled, setHintsEnabled, hint, setHint, menu, setMenu, agentTextRef, ballRef, notice, setNotice, endpointSec, setEndpointSec, models, setModels, download, setDownload, pos, setPos, mediaStreamRef, captureCtxRef, workletRef, playCtxRef, playQueueRef, playingCountRef, aecRef, bargeModeRef, micSettingsRef, volumeRef, gateRef, chunkerRef, speakFilterRef, prebufferRef, liveRef, refRingRef, refWriteRef, refReadRef, refDropsRef, endpointArmedRef, quietSinceRef, lastBargeAtRef, speakingRef, phaseRef, voiceModeRef, dragRef, refreshModels, busyElsewhere, setBusyElsewhere, onBallContextMenu, hideBall, pushRef, enqueuePlay, speechEpochRef, bumpSpeechEpoch, stopPlayback, skipCurrent, speakDelta, flushSpeech, startCapture, teardown, startCall, endCall, startCallRef, callToggleRef, pushTranscript, wakeCfg, setWakeCfg, installModels, draggedRef, onPointerDown, onPointerMove, onPointerUp, onBallClick, stateLabel, modelsReady, ballClass } = useVoiceCallFloatState({ threadId });
   return createPortal(
     <>
-      {/* 应用内通话界面：全屏遮罩，接通自动弹出、可收起（收起不挂断） */}
-      {callScreen && (
-        <VoiceCallScreen
-          phase={phase}
-          state={state}
-          userText={userText}
-          agentText={agentText}
-          notice={notice}
-          modelsReady={modelsReady}
-          muted={muted}
-          startedAt={callStartedAt}
-          transcript={transcript}
-          onToggleMute={toggleMute}
-          onSkip={() => skipCurrent()}
-          onStart={() => void startCall()}
-          onBarge={() => {
-            stopPlayback();
-            void window.codex.voiceBarge().catch(() => undefined);
-          }}
-          onHangup={() => void endCall()}
-          onMinimize={() => setCallScreen(false)}
-        />
-      )}
+      {/* ⛔ 10-08 用户要求「不要做两个实时语音弹窗，展示一个就行了」：通话语义只保留**输入框上方的舞台条**。
+          这里原先有两块重复面 —— ① 接通即自动弹出的全屏通话界面（`VoiceCallScreen` / `.voice-call-screen`）
+          ② 右下角通话面板（`.voice-panel` 的 `phase === "active"` 分支）。
+          ① 连状态一起删掉了（组件文件也已删除）；② 改为**只在待机时**出现（它还要承担
+          「开始通话 / 下载语音模型」的入口，不能整块删）。通话中唯一的面 = 舞台条。 */}
       <div className="voice-float-layer" style={{ right: pos.right, bottom: pos.bottom }}>
-      {expanded && (
+      {expanded && phase !== "active" && (
         <div className="voice-panel" role="dialog" aria-label="语音通话">
           <header className="voice-panel-head">
-            <span className={`voice-dot is-${phase === "active" ? state : "idle"}`} />
-            <strong>{phase === "active" ? stateLabel : "语音通话"}</strong>
+            <span className="voice-dot is-idle" />
+            <strong>语音通话</strong>
             <button className="voice-icon-btn" title="收起" onClick={() => setExpanded(false)}>
               <X size={14} />
             </button>
           </header>
 
-          {phase === "active" ? (
-            <>
-              <div className="voice-level" aria-hidden>
-                {Array.from({ length: 22 }).map((_, index) => {
-                  const threshold = (index % 11) / 11;
-                  return <i key={index} style={{ height: `${6 + (index % 6) * 3}px`, "--t": String(threshold) } as any} />;
-                })}
-              </div>
-              <div className="voice-caption">
-                <div className="voice-caption-row">
-                  <span className="voice-caption-tag">你说</span>
-                  <p>{userText || "…"}</p>
-                </div>
-                <div className="voice-caption-row agent">
-                  <span className="voice-caption-tag">回复</span>
-                  <p>{agentText || "…"}</p>
-                </div>
-              </div>
-              <div className="voice-panel-actions">
-                <button
-                  className="voice-secondary"
-                  onClick={() => {
-                    stopPlayback();
-                    void window.codex.voiceBarge().catch(() => undefined);
-                  }}
-                >
-                  <AudioLines size={14} />打断
-                </button>
-                <button className="voice-danger" onClick={() => void endCall()}>
-                  <PhoneOff size={14} />挂断
-                </button>
-              </div>
-              {/* 端点静音：说完了等多久算一句话（越小越跟手，太小会截断长句）。
-                  设置 → 语音通话 → 长句提前断句 可调；这里只做「可见」。 */}
-              <div className="voice-latency-hint">
-                说完停顿 {endpointSec.toFixed(1)}s 即回话（设置里可调）
-              </div>
-            </>
-          ) : (
-            <>
+          {/* ⛔ 10-08：这里原先是 `phase === "active" ? (通话态) : (待机态)` 的三元。
+              通话态整块删除（面板只在待机时渲染；留着的分支连 tsc 都会以 TS2367 挡下）。
+              待机入口（开始通话 / 下载语音模型）必须留着，所以只留待机这一支。 */}
+          <>
               <p className="voice-hint">
                 点一下麦克风开始通话：本机离线识别，开口即可打断。原有打字输入完全不受影响。
               </p>
@@ -235,8 +180,7 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
                   {phase === "starting" ? <LoaderCircle size={14} className="spin" /> : <Mic size={14} />}开始通话
                 </button>
               </div>
-            </>
-          )}
+          </>
 
           {notice && (
             <div className="voice-notice">
@@ -288,20 +232,17 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
               role="menu"
               onClick={(e) => e.stopPropagation()}
             >
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => { setMenu(null); setCallScreen(true); }}
-              >
-                <Monitor size={13} />打开通话界面
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => { setMenu(null); setExpanded((open) => !open); }}
-              >
-                <AudioLines size={13} />{expanded ? "收起通话面板" : "打开通话面板"}
-              </button>
+              {/* ⛔ 10-08：全屏通话界面已删 ⇒「打开通话界面」整项移除；「打开通话面板」只在**待机**时给
+                  （面板的通话态已按用户要求撤掉，通话中点了会毫无反应 —— 不让用户点到空动作）。 */}
+              {phase !== "active" && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setMenu(null); setExpanded((open) => !open); }}
+                >
+                  <AudioLines size={13} />{expanded ? "收起语音面板" : "打开语音面板"}
+                </button>
+              )}
               <button
                 type="button"
                 role="menuitem"

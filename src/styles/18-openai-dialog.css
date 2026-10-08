@@ -920,10 +920,13 @@
    现在 position:fixed 脱离输入区文档流：位置固定、不参与重排、不再跳动。 */
 .voice-stage {
   position: fixed;
-  top: 84px;
-  left: 50%;
-  transform: translate(-50%, 0);
-  width: min(760px, calc(100vw - 420px));
+  /* ⛔ 10-08：left / bottom / width 由 VoiceWaveform 按 composer 的实际矩形**行内**写入。
+     原来写的是 `top:84px; left:50%; width:min(760px, calc(100vw - 420px))` —— 那只能保证
+     「对着**窗口**居中」，而输入框在消息区里另有一个中心（实测差约 100px，截图可辨）⇒ 用户报
+     「没在对话框居中」。⛔ 这里不要再写 top/left/width：行内样式会赢，但留着会误导下一个改的人
+     并让「舞台跑到窗口顶部」的旧行为随时复活。 */
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
   min-width: 320px;
   max-height: min(46vh, 360px);
   overflow: hidden;
@@ -943,6 +946,9 @@
 .voice-stage-head {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
 }
+/* 舞台右上角的操作区（10-08：从撤掉的通话面板搬过来的「打断」+ 原有的「结束通话」） */
+.voice-stage-actions { display: flex; align-items: center; gap: 6px; }
+.voice-stage-skip:hover { color: var(--link); }
 .voice-stage-mode {
   font-size: 11.5px; font-weight: 600; color: var(--muted);
   display: inline-flex; align-items: center; gap: 6px;

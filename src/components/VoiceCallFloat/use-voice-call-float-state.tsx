@@ -9,7 +9,8 @@ import { createAec, createEchoGate, createSentenceChunker, resampleLinear, rmsOf
 import { createSpeakFilter } from "../../lib/speak-text.mjs";
 import { CAPTURE_WORKLET_SOURCE } from "../../voice/capture-worklet";
 import { decodeFloat32Base64 } from "../../voice/audio-transport";
-import { patchVoiceStage, requestVoiceDictationSend, requestVoiceOpenSettings, resetVoiceStage, setVoiceDictationHandler, setVoiceLevel, setVoiceStopHandler } from "../../voice/wave-level";
+import { patchVoiceStage, requestVoiceCallNotice, requestVoiceDictationSend, requestVoiceOpenSettings, resetVoiceStage, setVoiceDictationHandler, setVoiceLevel, setVoiceSkipHandler, setVoiceStopHandler } from "../../voice/wave-level";
+import { isLikelySelfEcho } from "../../lib/voice-echo.mjs";
 import { patchWakeState, resetWakeState } from "../../voice/wake-state";
 import { describeMicError } from "../../lib/mic-error.mjs";
 import { VoicePhase, VoiceState, ModelsStatus, POS_KEY, CAPTURE_RATE, BARGUE_COOLDOWN_MS, REF_RING_SECONDS, AEC_MAX_DELAY_SAMPLES, AEC_DEFAULT_DELAY_SAMPLES, PREBUFFER_MAX_SAMPLES, ENDPOINT_QUIET_RMS, ENDPOINT_QUIET_MS, pickHint, readPos } from "../VoiceCallFloat";
@@ -52,7 +53,12 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
   // 右键菜单位置：做视口边界检测（看用户截图：之前直接用 clientX/Y 会跑出屏幕）
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   // 应用内通话界面（全屏遮罩，像手机来电那样的界面；关掉 ≠ 挂断）
-  const [callScreen, setCallScreen] = useState(false);
+  /* ⛔ 10-08 用户明确要求「不要做两个实时语音弹窗，展示一个就行了」。
+     原先 startCall 会自动拉起**全屏通话界面**（VoiceCallScreen / `.voice-call-screen`），
+     再叠加右下角通话面板与输入框上方的舞台条 ⇒ 通话中同时有 **三个** 面。
+     现在通话面**只保留舞台条**（它贴着输入框居中，是用户点选保留的那个）：
+     `callScreen` 状态整体删除，`VoiceCallScreen.tsx` 组件文件一并删除。 */
+
   // 字幕广播用：delta 是逐字累加的，用 ref 拿累计值，避免依赖 state 更新时机
   const agentTextRef = useRef("");
   /** 悬浮球 DOM：每帧把音量写进 CSS 变量，让球跟着声音呼吸/发光 */
@@ -103,6 +109,11 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
   const quietSinceRef = useRef(0);
   const lastBargeAtRef = useRef(0);
   const speakingRef = useRef(false);
+  /* 外放回声剔除（10-08）用的两个状态：
+     · lastSpokenAtRef —— 「播报刚刚结束」的时刻（尾巴窗口内仍要判回声，否则刚播完那句的回灌会被收下）
+     · prevSpeakingRef —— 上一块的播报态，用来在音频块回调里抓下降沿（一处跟踪，不用改 3 个写入点） */
+  const lastSpokenAtRef = useRef(0);
+  const prevSpeakingRef = useRef(false);
   const phaseRef = useRef<VoicePhase>("idle");
   /** conversation=正常通话；dictation=只把识别内容回填输入框 */
   const voiceModeRef = useRef<"conversation" | "dictation">("conversation");
@@ -236,6 +247,17 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
         return;
       }
       if (event.type === "final") {
+        /* ★ 外放回声剔除（10-08 用户报「开外放时它把自己的声音录进去，当成我发的语音」）：
+           门控只管「要不要打断」，**不管「这段算不算用户的话」** —— 采集音频是无条件喂识别的，
+           所以 AEC 没消干净的喇叭声照样会被识别成文本、当成用户消息发出去。
+           这里补文本级判据：播报中 / 播报刚结束的尾巴窗口内，识别文本与正在朗读的文本高度相似 ⇒ 丢弃。
+           ⛔ 不能改成「播报期间一律不喂识别」：那会把「开口即打断」一起废掉。 */
+        if (isLikelySelfEcho({
+          heard: String(event.text ?? ""),
+          spoken: agentTextRef.current,
+          speaking: speakingRef.current,
+          msSinceSpoken: Date.now() - lastSpokenAtRef.current,
+        })) return;
         // ★ 新的一句（= 新一轮）开始：世代号 +1，把上一轮还在 TTS 线程里生成中的句子作废。
         //   手动模式下没有 barge 动作，就靠这一下保证「我说话时它必须闭嘴」。
         bumpSpeechEpoch();
@@ -611,6 +633,10 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
       // 广播给输入框上方的波浪（播报时不抢 Codex 的电平，避免两边互相抖动）
       if (!speakingRef.current) setVoiceLevel(nextLevel, "listening");
 
+      // 播报下降沿 → 记下时刻（回声尾巴窗口的起点；见 voice-echo.mjs 的 ECHO_TAIL_MS）
+      if (!speakingRef.current && prevSpeakingRef.current) lastSpokenAtRef.current = Date.now();
+      prevSpeakingRef.current = speakingRef.current;
+
       // 播报期门控：只有「能量显著高于回声地板」才算真人插话
       const doubleTalk = gateRef.current?.update(rms, speakingRef.current) ?? false;
       aecRef.current?.setFrozen(doubleTalk);
@@ -720,13 +746,17 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
       setMuted(false); mutedRef.current = false;
       // 输入框听写不弹右下角通话面板；只显示 composer 上方实时字幕。
       setExpanded(mode === "conversation");
-      // 通话接通即进「通话界面」（像接电话一样）；可收起，收起不挂断
-      if (mode === "conversation") setCallScreen(true);
+      // 10-08：不再自动拉起全屏通话界面 —— 通话面只留输入框上方的舞台条（用户要求只留一个）
       setUserText("");
       setAgentText("");
       agentTextRef.current = "";
       // 通知输入框上方的舞台：通话/听写开始（波浪 + 中文字幕由此显示）
       patchVoiceStage({ active: true, mode: "listening", level: 0, userText: "", agentText: "", dictating: mode === "dictation" });
+      /* 告知会话：实时语音已开启（10-08 用户要求：让 Codex 感知何时开了语音，并在语音场景下走
+         「快问快答：先给结论再说过程」）。⛔ 文案在 src/voice/voice-notice.ts（单一真相源），
+         引擎侧判据在 developer-instructions.ts —— 两边靠 VOICE_CALL_ON_TAG 对齐。
+         ⛔ 听写（dictation）不是「通话」，不发这一条。 */
+      if (mode === "conversation") requestVoiceCallNotice(true, threadId || "");
     } catch (error: any) {
       setPhase("idle");
       await teardown();
@@ -737,6 +767,9 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
   }, [threadId, models, startCapture, teardown]);
 
   const endCall = useCallback(async () => {
+    // 先记下这一通话是不是「正式通话」（听写没发过开启告知，也就无所谓撤销）—— 下面会把
+    // voiceModeRef 复位成 conversation，取晚了判据恒真 ⇒ 假绿（本仓踩过同型：before 取成 next）。
+    const wasConversation = voiceModeRef.current !== "dictation";
     setPhase("idle");
     voiceModeRef.current = "conversation";
     await teardown();
@@ -748,15 +781,20 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
     setTranscript([]);
     setMuted(false); mutedRef.current = false;
     // 通话界面随挂断一起退出
-    setCallScreen(false);
+    /* 10-08：全屏通话界面已移除，这里不需要再「收起」它了 */
     // 波浪/字幕随之收起
     resetVoiceStage();
+    // 告知会话：实时语音已结束（撤销「快问快答」那套要求；10-08 用户要求挂断也要有状态通知）
+    if (wasConversation) requestVoiceCallNotice(false, threadId || "");
   }, [teardown, applyLevel]);
 
   // 波浪舞台上的「结束通话」按钮调的是这里（注册进 store，跨组件调用）
   useEffect(() => {
     setVoiceStopHandler(() => { void endCall(); });
-    return () => setVoiceStopHandler(null);
+    // 舞台条上的「打断」（10-08）：跳过当前排队的播报。原先这个按钮只在右下角面板上，
+    // 面板的通话态已按用户要求撤掉 ⇒ 能力搬到舞台条，靠同一套广播注册。
+    setVoiceSkipHandler(() => { skipCurrent(); });
+    return () => { setVoiceStopHandler(null); setVoiceSkipHandler(null); };
   }, [endCall]);
 
   // ★ startCall 的最新闭包转发（与 09-12 快捷键那次同一个坑）：
@@ -1040,5 +1078,5 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
   // 他窗口通话中 → 球置灰（视觉 + 语义），挂断后轮询自动恢复
   const ballClass = `voice-ball ${phase === "active" ? `is-${state}` : ""} ${phase === "starting" ? "is-starting" : ""} ${busyElsewhere && phase === "idle" ? "is-busy-elsewhere" : ""}`;
 
-  return { threadId, phase, setPhase, state, setState, expanded, setExpanded, levelRef, screenElRef, applyLevel, muted, setMuted, mutedRef, toggleMute, transcript, setTranscript, callStartedAt, setCallStartedAt, userText, setUserText, agentText, setAgentText, ballVisible, setBallVisible, hintsEnabled, setHintsEnabled, hint, setHint, menu, setMenu, callScreen, setCallScreen, agentTextRef, ballRef, notice, setNotice, endpointSec, setEndpointSec, models, setModels, download, setDownload, pos, setPos, mediaStreamRef, captureCtxRef, workletRef, playCtxRef, playQueueRef, playingCountRef, aecRef, bargeModeRef, micSettingsRef, volumeRef, gateRef, chunkerRef, speakFilterRef, prebufferRef, liveRef, refRingRef, refWriteRef, refReadRef, refDropsRef, endpointArmedRef, quietSinceRef, lastBargeAtRef, speakingRef, phaseRef, voiceModeRef, dragRef, refreshModels, busyElsewhere, setBusyElsewhere, onBallContextMenu, hideBall, pushRef, enqueuePlay, speechEpochRef, bumpSpeechEpoch, stopPlayback, skipCurrent, speakDelta, flushSpeech, startCapture, teardown, startCall, endCall, startCallRef, callToggleRef, pushTranscript, wakeCfg, setWakeCfg, installModels, draggedRef, onPointerDown, onPointerMove, onPointerUp, onBallClick, stateLabel, modelsReady, ballClass };
+  return { threadId, phase, setPhase, state, setState, expanded, setExpanded, levelRef, screenElRef, applyLevel, muted, setMuted, mutedRef, toggleMute, transcript, setTranscript, callStartedAt, setCallStartedAt, userText, setUserText, agentText, setAgentText, ballVisible, setBallVisible, hintsEnabled, setHintsEnabled, hint, setHint, menu, setMenu, agentTextRef, ballRef, notice, setNotice, endpointSec, setEndpointSec, models, setModels, download, setDownload, pos, setPos, mediaStreamRef, captureCtxRef, workletRef, playCtxRef, playQueueRef, playingCountRef, aecRef, bargeModeRef, micSettingsRef, volumeRef, gateRef, chunkerRef, speakFilterRef, prebufferRef, liveRef, refRingRef, refWriteRef, refReadRef, refDropsRef, endpointArmedRef, quietSinceRef, lastBargeAtRef, speakingRef, phaseRef, voiceModeRef, dragRef, refreshModels, busyElsewhere, setBusyElsewhere, onBallContextMenu, hideBall, pushRef, enqueuePlay, speechEpochRef, bumpSpeechEpoch, stopPlayback, skipCurrent, speakDelta, flushSpeech, startCapture, teardown, startCall, endCall, startCallRef, callToggleRef, pushTranscript, wakeCfg, setWakeCfg, installModels, draggedRef, onPointerDown, onPointerMove, onPointerUp, onBallClick, stateLabel, modelsReady, ballClass };
 }

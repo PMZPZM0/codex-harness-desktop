@@ -204,6 +204,17 @@ const TASK_LIST_INSTRUCTIONS =
   `\n14) TASK LIST — keep the user's task list (\`task_add\` / \`task_update\`) current whenever \`task_add\` is in your tool list:\n` +
   `   at the START of any multi-step task (3+ steps, or anything the user will follow along), put the steps into the list with \`task_add\`; while working, mark the current step \`doing\`; the MOMENT a step finishes, flip it to \`done\` — never batch the updates to the end. The app renders 「步骤 N/M」 in a capsule above the input box (hover shows the full list), so a stale list actively misleads the user. When everything is done every item must be \`done\` — the capsule then hides itself, and your NEXT \`task_add\` starts a fresh list (a fully-done list is cleared automatically). ⛔ Before starting a new task, if the list still holds UNFINISHED leftovers unrelated to the current work (e.g. items stuck in todo/doing from an aborted run), remove them first via \`task_update\` (done:true). Skip the list for one-shot questions, and if the tools are absent (an older session) just proceed without one.\n`;
 
+/* 实时语音（10-08 用户要求：「增加开启与关闭语音通话的状态并在对话框中发送通知，让 Codex 感知何时
+   开启了实时语音」「实时语音场景下采用快问快答模式：先直接回答，再给出思考过程，不要先思考后回答」）。
+   ⛔ 判据只能是**会话里那条告知**（`【实时语音已开启】` / `【实时语音已结束】`，由应用在开/挂断时发出；
+     文案的单一真相源 = `src/voice/voice-notice.ts` 的 VOICE_CALL_ON_TAG / VOICE_CALL_OFF_TAG，
+     绑定关系由守卫【288】两边一起钉）。语音开着这件事**无法从任何工具表推断**，别去猜。 */
+const VOICE_INSTRUCTIONS =
+  `\n15) REALTIME VOICE — the app can run a live voice call on this session and posts a notice into the conversation whenever that state changes:\n` +
+  `   · 「【实时语音已开启】」⇒ from now on your answer is SPOKEN ALOUD to the user. Switch to QUICK-ANSWER MODE: put the ANSWER ITSELF in the FIRST sentence — one or two short spoken-language sentences that stand on their own — and only then, in a separate paragraph, give the reasoning / evidence / detail. NEVER open with filler like 「让我想想」/「我先分析一下」/「好的，我来看看」: the user hears sentence one first, and filler sounds like you froze. Code blocks and tables are SKIPPED by the reader (the user reads those on screen), so the answer must never exist only as code. Keep it short — this is a conversation, not a report.\n` +
+  `   · 「【实时语音已结束】」⇒ the call hung up; the quick-answer requirement is lifted, go back to your normal writing style.\n` +
+  `   ⛔ Judge ONLY by that notice — voice being on is NOT inferable from any tool list. Acknowledge the notice itself briefly (「收到」) and continue; do not treat it as a task.\n`;
+
 function gateAndReviewInstructions(): string {
   const mcpBackend = effectiveMemoryBackend() === "mcp";
   const memorySkill = mcpBackend ? MEMORY_MCP_BACKEND_SKILL : MEMORY_CLASSIFY_SKILL;
@@ -260,6 +271,8 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   text += FRONTEND_CANVAS_INSTRUCTIONS;
   // 任务清单（10-06 夜三轮：输入框上方「步骤 N/M」胶囊的唯一数据源，完成一步更新一步）
   text += TASK_LIST_INSTRUCTIONS;
+  // 实时语音状态（10-08 用户要求：让 Codex 感知语音何时开/关，并在语音场景走「快问快答」）
+  text += VOICE_INSTRUCTIONS;
   // 深层联动软约束：自动化能力被关闭时，在基础指令里明确告诉模型不要调用这些工具。
   // 09-20：MCP 工具（`desktop_*` / `browser_*`）现在会被 disabled_tools **硬移除**，所以这里
   // 重点变成「别用命令行兜底绕过总闸」—— nuphus-call / playwright-cli 仍在 PATH 上，
