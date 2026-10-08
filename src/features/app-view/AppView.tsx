@@ -165,6 +165,9 @@ import { WhatsNewDialog } from "../whats-new";
 import { AppViewSettingsSheet } from "./AppView/08-settings-sheet";
 import { AppViewFilePreviewEditor } from "./AppView/09-file-preview-editor";
 import { ModelViewerBridge } from "../model-viewer";
+/* 语音播报（10-08 新增域）：实时正文播报 + 结束汇总播报。⛔ 整个应用**只挂一次**
+   （它订阅模块级总线，挂两次会念两遍）；通话中由 VoiceCallFloat 接管，它自己避让。 */
+import { VoiceAnnounceBridge } from "../voice-announce";
 import { WallpaperLayer } from "../wallpaper";
 // 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
 import { Slot } from "../../runtime/registry";
@@ -653,6 +656,9 @@ export function AppView({ app }: { app: HarnessAppApi }) {
         pendingCommandTextRef.current = text;
         void send();
       }} />
+      {/* 语音播报（10-08）：非通话时的「只听」播报链路（实时正文 / 结束汇总，各自有开关）。
+          通话中的播报由 VoiceCallFloat 负责 —— 它会喂 AEC 参考环、走音量与打断那一套。 */}
+      <VoiceAnnounceBridge />
     </div>
     </HelpOpenContext.Provider>
   );

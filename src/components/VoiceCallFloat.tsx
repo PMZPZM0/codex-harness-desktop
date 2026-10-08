@@ -3,9 +3,11 @@
  * ⛔ 解构名与 hook 返回键同名 ⇒ JSX 与搬迁前逐字一致。
  */
 import { createPortal } from "react-dom";
-import { AlertCircle, AudioLines, Download, EyeOff, LoaderCircle, Mic, PhoneOff, Settings2, X } from "lucide-react";
+import { AlertCircle, AudioLines, Download, EyeOff, LoaderCircle, Mic, PhoneOff, Settings2, VolumeX, X } from "lucide-react";
 import VoiceMascot from "./VoiceMascot";
 import { patchVoiceStage, requestVoiceDictationSend, requestVoiceOpenSettings, resetVoiceStage, setVoiceDictationHandler, setVoiceLevel, setVoiceStopHandler } from "../voice/wave-level";
+// 非通话播报的「停止」出口（10-08）：播报域注册，这里只是触发 —— 基座不反向依赖域，走广播
+import { requestAnnounceStop } from "../voice/announce-bus";
 import { useVoiceCallFloatState } from "./VoiceCallFloat/use-voice-call-float-state";
 
 export type VoicePhase = "idle" | "starting" | "active";
@@ -243,6 +245,15 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
                   <AudioLines size={13} />{expanded ? "收起语音面板" : "打开语音面板"}
                 </button>
               )}
+              {/* ⛔ 10-08：非通话播报「只管说、不管听」，没有这个出口用户就没法让它闭嘴
+                  （一条长回复能被念好几分钟）。放在菜单第一项，最紧急的动作在最上面。 */}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setMenu(null); requestAnnounceStop(); }}
+              >
+                <VolumeX size={13} />停止播报
+              </button>
               <button
                 type="button"
                 role="menuitem"

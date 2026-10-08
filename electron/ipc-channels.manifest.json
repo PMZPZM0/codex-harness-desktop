@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-06",
-  "count": 427,
+  "count": 428,
   "channels": [
     {
       "name": "request",
@@ -2614,6 +2614,16 @@
       "note": null
     },
     {
+      "name": "voiceProfileUpload",
+      "channel": "voice:profile-upload",
+      "paramsImpl": "input?: { source?: \"base64\" | \"file\" | \"pack\"; name?: string; refText?: string; audioBase64?: string; sampleRate?: number }",
+      "paramsDecl": "input?: { source?: \"base64\" | \"file\" | \"pack\"; name?: string; refText?: string; audioBase64?: string; sampleRate?: number }",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
+      "cast": "Promise<any>",
+      "note": "10-08 音色上传接口：source=base64/file 已实现；pack（音色包）**预留**、明确返回未开放。走与导入同一条草稿链（落盘→ASR 转写参考文本→用户校对）"
+    },
+    {
       "name": "voiceProfilesRecord",
       "channel": "voice:profiles-record",
       "paramsImpl": "input: { samples: number[]; sampleRate: number }",
@@ -3339,7 +3349,7 @@
       "channel": "voice:settings-get",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ settings: { tts: { sid: number; speed: number; volume: number }; asr: { rule1: number; rule2: number; rule3: number; numThreads: number }; mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean }; barge: { gateDb: number; mode: \"auto\" | \"manual\" }; aec?: { mode: \"auto\" | \"on\" | \"off\" }; modelHost: \"auto\" | \"huggingface\" | \"hf-mirror\"; hotkey: { enabled: boolean; accelerator: string }; dictationHotkey: { enabled: boolean; accelerator: string }; wake: { enabled: boolean; phrase: string }; }; ttsVoices: Record<number, string>; modelHosts: Record<string, string>; modelHostOptions: string[]; }>",
+      "returns": "Promise<{ settings: { tts: { sid: number; speed: number; volume: number }; asr: { rule1: number; rule2: number; rule3: number; numThreads: number }; mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean }; barge: { gateDb: number; mode: \"auto\" | \"manual\" }; aec?: { mode: \"auto\" | \"on\" | \"off\" }; modelHost: \"auto\" | \"huggingface\" | \"hf-mirror\"; hotkey: { enabled: boolean; accelerator: string }; dictationHotkey: { enabled: boolean; accelerator: string }; wake: { enabled: boolean; phrase: string }; announce: { live: boolean; summary: boolean }; ball: { visible: boolean; hints: boolean }; }; ttsVoices: Record<number, string>; modelHosts: Record<string, string>; modelHostOptions: string[]; }>",
       "cast": null,
       "note": null
     },

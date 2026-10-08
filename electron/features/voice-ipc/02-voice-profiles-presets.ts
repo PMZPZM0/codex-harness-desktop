@@ -121,6 +121,73 @@ export function registerVoiceIpc2(ibA: ReturnType<typeof registerVoiceIpc1>) {
     }
   });
 
+  /**
+   * 音色上传接口（10-08 新增，用户要求「预留音色上传接口，方便用户自行上传音色」）。
+   *
+   * 三种来源 `source`：当前实现两种、第三种**预留**（接口形态已定，实现留待后续）——
+   *   · `"base64"` 渲染层 / 外部工具直接把音频样本（Float32 小端 + 采样率）传进来
+   *                （给「拖拽上传」与将来的音色市场用）；
+   *   · `"file"`   打开文件选择器挑一个 wav（UI 的「上传音色」按钮走这条，默认值）；
+   *   · `"pack"`   **预留**：音色包整体导入（zip：`ref.wav` + `ref.txt`/`profile.json`）。
+   *                现在明确返回「暂未开放」——**不静默失败**（本项目最忌讳「看着能用其实没接」）。
+   *
+   * ⛔ 与「导入音频」共用同一条草稿链（落盘 → 本机 ASR 转写参考文本 → 用户校对 → 保存），
+   *    差别只在入口（以及能否被外部程序调用）。所以复用 `draftProfileAudio`，不另写一套。
+   * ⛔ 返回的是**草稿**（`draftFile` + `refText`）：参考文本必须与音频内容一致（zeroshot 硬约束），
+   *    一律让用户核对后再保存 —— 绝不在这里直接落成音色。
+   */
+  ipcHost.handle("voice:profile-upload", async (_event, input?: {
+    source?: "base64" | "file" | "pack";
+    name?: string;
+    refText?: string;
+    audioBase64?: string;
+    sampleRate?: number;
+  }) => {
+    const source = String(input?.source ?? "file");
+    if (source === "pack") {
+      return { ok: false, error: "音色包（zip）上传暂未开放（接口已预留：source=\"pack\"）—— 请先用「上传音色」选一个 wav 音频" };
+    }
+    if (source === "base64") {
+      const b64 = String(input?.audioBase64 ?? "").trim();
+      if (!b64) return { ok: false, error: "缺少音频数据（audioBase64 为空）" };
+      const rate = Math.max(8000, Math.min(48000, Number(input?.sampleRate ?? 16000) || 16000));
+      let samples: Float32Array;
+      try {
+        const buf = Buffer.from(b64, "base64");
+        // 约定：base64 里是 **Float32 小端**原始样本（与 voice:speak 回传音频同一口径）
+        const copy = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length);
+        samples = new Float32Array(copy);
+      } catch (error: any) {
+        return { ok: false, error: `音频数据解码失败：${error?.message ?? error}` };
+      }
+      if (samples.length < rate) return { ok: false, error: "音频太短了，至少 1 秒" };
+      if (samples.length / rate > 60) return { ok: false, error: "参考音频请控制在 60 秒以内（10 秒左右效果最好）" };
+      return await draftProfileAudio(samples, rate, String(input?.name ?? "").trim() || "上传的音色");
+    }
+    const picked = await dialog.showOpenDialog({
+      title: "上传音色：选一段参考音频（16-bit PCM wav，10 秒左右效果最好）",
+      filters: [{ name: "音频 / 音色包", extensions: ["wav", "zip"] }],
+      properties: ["openFile"],
+    });
+    if (picked.canceled || !picked.filePaths?.[0]) return { ok: false, canceled: true };
+    const file = picked.filePaths[0];
+    if (/\.zip$/i.test(file)) {
+      return { ok: false, error: "音色包（zip）上传暂未开放（接口已预留）—— 请先用「上传音色」选一个 wav 音频" };
+    }
+    try {
+      const parsed = voiceProfiles.readWav(await fs.readFile(file));
+      if (!parsed || !parsed.samples.length) {
+        return { ok: false, error: "只能读取 16-bit PCM 的 wav 文件（mp3/m4a 请先用音频工具转成 wav）" };
+      }
+      if (parsed.samples.length / parsed.sampleRate > 60) {
+        return { ok: false, error: "参考音频请控制在 60 秒以内（10 秒左右效果最好）" };
+      }
+      return await draftProfileAudio(parsed.samples, parsed.sampleRate, String(input?.name ?? "").trim() || path.basename(file));
+    } catch (error: any) {
+      return { ok: false, error: String(error?.message ?? error) };
+    }
+  });
+
   /** 渲染层录制（麦克风）→ PCM 回传 → 与导入走同一条草稿链路。 */
   ipcHost.handle("voice:profiles-record", async (_event, input: { samples?: number[]; sampleRate?: number }) => {
     try {

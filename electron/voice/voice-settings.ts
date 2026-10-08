@@ -40,6 +40,17 @@ export type VoiceSettings = {
   dictationHotkey: { enabled: boolean; accelerator: string };
   /** 语音唤醒：持续聆听并匹配唤醒词（会持续占用 CPU，默认关） */
   wake: { enabled: boolean; phrase: string };
+  /**
+   * 语音播报（10-08 新增）—— 把 Codex 的输出念出来，两个**独立**开关：
+   *   - `live`    运行过程中的正文实时播报：正文流式生成时**逐句**念（就是通话原有的行为）；
+   *   - `summary` 运行结束后对最终消息的**汇总播报**：回合结束时念一段本地压缩出的要点
+   *               （压缩算法见 src/lib/voice-summary.mjs，不额外调模型、零延迟）。
+   *
+   * ⛔ 两者正交、可同时开：都开 = 边写边念 + 结束时再念一遍要点；都关 = 通话只做输入不念回复
+   *    （纯语音下指令的用法）。作用范围 = **通话中 + 非通话**（非通话走独立播放链路，不开麦）。
+   * ⛔ 语速不在这里另开一份：播报与通话共用 `tts.speed`（单一真相源，避免两处各调一次还互相打架）。
+   */
+  announce: { live: boolean; summary: boolean };
   /** 悬浮球：是否显示 + 是否弹出随机的短提示气泡 */
   ball: { visible: boolean; hints: boolean };
   /**
@@ -106,6 +117,9 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   hotkey: { enabled: false, accelerator: "CommandOrControl+Shift+M" },
   dictationHotkey: { enabled: false, accelerator: "Alt+Space" },
   wake: { enabled: false, phrase: "小柯小柯" },
+  // 10-08：live 默认 **true** = 保持通话既有行为（升级不改变任何现有体验）；
+  //       summary 默认 **false** = 新功能默认关，别让老用户突然多听一遍要点。
+  announce: { live: true, summary: false },
   ball: { visible: true, hints: true },
   // 10-03：资源默认全部启用（老档案缺这个字段时也是这个效果 ⇒ 升级不改变任何现有行为）
   resources: {},
@@ -188,6 +202,11 @@ export function migrateSettings(raw: Partial<VoiceSettings> | undefined): { sett
       changed = true;
     }
   }
+  /* 10-08 新增 `announce`（语音播报两个开关）**故意不 +1 版本**：这是**新增字段**、不是
+     「旧默认值变了」—— 老档案里没有它，`mergeSettings` 会填上新默认（live=true 正好等于
+     既有通话行为、summary=false 不引入新声音）⇒ 升级不改变任何现有体验，无需迁移。
+     ⛔ 反过来才需要迁移：像上面两条那样「字段已存在、只是默认值换了」——那时老档案里存的是旧值，
+       只改常量对他们完全无效（`loadVoiceSettings` 读的是文件里的值）。 */
   const settings = mergeSettings(source);
   if (Number(settings.version ?? 0) !== VOICE_SETTINGS_VERSION) {
     settings.version = VOICE_SETTINGS_VERSION;
@@ -214,6 +233,7 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
   const hotkey = raw.hotkey ?? d.hotkey;
   const dictationHotkey = raw.dictationHotkey ?? d.dictationHotkey;
   const wake = raw.wake ?? d.wake;
+  const announce = raw.announce ?? d.announce;
   const ball = raw.ball ?? d.ball;
   const modelHost = raw.modelHost && MODEL_HOST_PRESETS[raw.modelHost] ? raw.modelHost : d.modelHost;
   const aecMode = (raw as any).aec?.mode;
@@ -259,6 +279,12 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
       // 隐藏后仍要留入口：右键菜单/设置页都能再打开，所以允许 false
       visible: ball.visible !== false,
       hints: ball.hints !== false,
+    },
+    // ⛔ 显式字段映射（本文件第 N 次踩同款坑：显式映射漏字段 = 用户改了不生效、且不报错）。
+    //    缺省语义：live 缺省 true（老档案 = 保持既有通话行为）、summary 缺省 false（新功能默认关）。
+    announce: {
+      live: announce.live !== false,
+      summary: announce.summary === true,
     },
     aec: { mode: aecMode === "on" || aecMode === "off" ? aecMode : d.aec!.mode },
     modelHost,

@@ -86,6 +86,18 @@
 .voice-profile-draft { display: flex; flex-direction: column; gap: 8px; }
 .voice-profile-draft textarea { width: 100%; resize: vertical; font-family: inherit; }
 .voice-profile-draft .voice-input { min-width: 0; flex: 1; }
+/* 音色上传/克隆使用教程（10-08）：默认收起，出问题时点开就能照着做 */
+.voice-profile-guide { margin-top: 10px; font-size: 12px; color: var(--text); }
+.voice-profile-guide > summary {
+  cursor: pointer; color: var(--muted); padding: 2px 0; user-select: none;
+}
+.voice-profile-guide > summary:hover { color: var(--link); }
+.voice-profile-guide[open] > summary { color: var(--link); margin-bottom: 6px; }
+.voice-profile-guide ol { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.voice-profile-guide li { line-height: 1.6; }
+.voice-profile-guide code {
+  background: var(--panel-2); border-radius: 4px; padding: 0 4px; font-size: 11.5px;
+}
 
 /* ── 应用内实时通话界面（手机来电式全屏遮罩；收起 ≠ 挂断）──
    深色底是通话界面的行业惯例（微信/电话都如此），与主题无关——

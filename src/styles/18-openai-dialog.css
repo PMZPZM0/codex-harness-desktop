@@ -832,6 +832,21 @@
 }
 .voice-toggle input[type=checkbox] { accent-color: var(--link); width:15px; height:15px; }
 
+/* 语速档位选项（10-08 新增）：与滑块改的是**同一个值**（tts.speed），只是「一键到常用档」的快捷方式。
+   ⛔ 别再给它单独存一份状态 —— 两个语速迟早对不上（本项目「双真相源」踩过多次）。 */
+.voice-speed-presets { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:9px; }
+.voice-speed-chip {
+  padding: 3px 11px; border-radius: 999px; cursor: pointer;
+  font-size: 12px; line-height: 1.5;
+  background: var(--bg); color: var(--text); border: 1px solid var(--line);
+}
+.voice-speed-chip:hover { background: var(--panel-2); }
+.voice-speed-chip.is-active {
+  background: color-mix(in srgb, var(--link) 14%, transparent);
+  border-color: var(--link); color: var(--link); font-weight: 600;
+}
+.voice-speed-chip:disabled { opacity: .5; cursor: default; }
+
 
 /* ===== 开发工具：安装/卸载内置进度弹窗（取代 window.confirm） ===== */
 .modal-overlay {

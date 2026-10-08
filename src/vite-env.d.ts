@@ -722,6 +722,8 @@ interface Window {
     voiceResourceStatus(input: { kind: string }): Promise<any>;
     voiceStop(): Promise<{ ok: boolean }>;
     voiceProfilesImport(): Promise<any>;
+    /* 10-08 音色上传接口：source=base64/file 已实现；pack（音色包）**预留**、明确返回未开放。走与导入同一条草稿链（落盘→ASR 转写参考文本→用户校对） */
+    voiceProfileUpload(input?: { source?: "base64" | "file" | "pack"; name?: string; refText?: string; audioBase64?: string; sampleRate?: number }): Promise<any>;
     voiceProfilesRecord(input: { samples: number[]; sampleRate: number }): Promise<any>;
     voiceProfilesSave(input: { draftFile: string; name: string; refText: string }): Promise<any>;
     voiceProfilesDelete(id: string): Promise<{ ok: boolean }>;
@@ -800,7 +802,7 @@ interface Window {
     voiceZipvoiceInstall(): Promise<{ ok: boolean; error?: string }>;
     voiceModelsImport(input: { sourceDir: string }): Promise<{ ok: boolean; failures: string[] }>;
     voiceMicPermission(): Promise<{ status: string; error?: string }>;
-    voiceSettingsGet(): Promise<{ settings: { tts: { sid: number; speed: number; volume: number }; asr: { rule1: number; rule2: number; rule3: number; numThreads: number }; mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean }; barge: { gateDb: number; mode: "auto" | "manual" }; aec?: { mode: "auto" | "on" | "off" }; modelHost: "auto" | "huggingface" | "hf-mirror"; hotkey: { enabled: boolean; accelerator: string }; dictationHotkey: { enabled: boolean; accelerator: string }; wake: { enabled: boolean; phrase: string }; }; ttsVoices: Record<number, string>; modelHosts: Record<string, string>; modelHostOptions: string[]; }>;
+    voiceSettingsGet(): Promise<{ settings: { tts: { sid: number; speed: number; volume: number }; asr: { rule1: number; rule2: number; rule3: number; numThreads: number }; mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean }; barge: { gateDb: number; mode: "auto" | "manual" }; aec?: { mode: "auto" | "on" | "off" }; modelHost: "auto" | "huggingface" | "hf-mirror"; hotkey: { enabled: boolean; accelerator: string }; dictationHotkey: { enabled: boolean; accelerator: string }; wake: { enabled: boolean; phrase: string }; announce: { live: boolean; summary: boolean }; ball: { visible: boolean; hints: boolean }; }; ttsVoices: Record<number, string>; modelHosts: Record<string, string>; modelHostOptions: string[]; }>;
     voiceSettingsSet(patch: any): Promise<{ tts: { sid: number; speed: number; volume: number }; asr: { rule1: number; rule2: number; rule3: number; numThreads: number }; mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean }; barge: { gateDb: number; mode: "auto" | "manual" }; aec?: { mode: "auto" | "on" | "off" }; modelHost: "auto" | "huggingface" | "hf-mirror"; hotkey: { enabled: boolean; accelerator: string }; dictationHotkey: { enabled: boolean; accelerator: string }; wake: { enabled: boolean; phrase: string }; }>;
     voiceHotkeySet(input: { accelerator: string; enabled?: boolean }): Promise<{ ok: boolean; error?: string }>;
     voiceWakeStart(): Promise<{ ok: boolean; error?: string; phrase?: string; hint?: string }>;

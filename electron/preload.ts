@@ -384,6 +384,8 @@ contextBridge.exposeInMainWorld("codex", {
   voiceResourceStatus: (input: { kind: string }) => __ipc("voice:resource-status", 1, [input]) as Promise<any>,
   voiceStop: () => __ipc("voice:stop", 0, []) as Promise<{ ok: boolean }>,
   voiceProfilesImport: () => __ipc("voice:profiles-import", 0, []) as Promise<any>,
+  /* 10-08 音色上传接口：source=base64/file 已实现；pack（音色包）**预留**、明确返回未开放。走与导入同一条草稿链（落盘→ASR 转写参考文本→用户校对） */
+  voiceProfileUpload: (input?: { source?: "base64" | "file" | "pack"; name?: string; refText?: string; audioBase64?: string; sampleRate?: number }) => __ipc("voice:profile-upload", 0, [input]) as Promise<any>,
   voiceProfilesRecord: (input: { samples: number[]; sampleRate: number }) => __ipc("voice:profiles-record", 1, [input]) as Promise<any>,
   voiceProfilesSave: (input: { draftFile: string; name: string; refText: string }) => __ipc("voice:profiles-save", 1, [input]) as Promise<any>,
   voiceProfilesDelete: (id: string) => __ipc("voice:profiles-delete", 1, [id]) as Promise<{ ok: boolean }>,

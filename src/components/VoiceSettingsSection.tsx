@@ -16,6 +16,8 @@ import { VoiceSettingsSectionFloatingBall } from "./VoiceSettingsSection/06-floa
 import { VoiceSettingsSectionHotkeyStart } from "./VoiceSettingsSection/07-hotkey-start";
 import { VoiceSettingsSectionDictationHotkey } from "./VoiceSettingsSection/08-dictation-hotkey";
 import { VoiceSettingsSectionWakeWord } from "./VoiceSettingsSection/09-wake-word";
+import { VoiceSettingsSectionAnnounce } from "./VoiceSettingsSection/10-announce";
+import VoiceDevToolsSection from "./VoiceDevToolsSection";
 
 /** 渲染层平台（preload 透出的 process.platform，navigator 兜底）——
  *  语音快捷键的**录入**（⌘ 记 Command 还是 Super）与**显示**（⌘⇧M 还是 Ctrl+Shift+M）都按它分叉。
@@ -38,7 +40,16 @@ export type Settings = {
   dictationHotkey: { enabled: boolean; accelerator: string };
   wake: { enabled: boolean; phrase: string };
   ball: { visible: boolean; hints: boolean };
+  /** 语音播报（10-08）：live=运行过程中的正文实时播报、summary=运行结束后的汇总播报。
+   *  ⛔ 语速不在这里另开一份 —— 与通话共用 tts.speed（单一真相源）。 */
+  announce: { live: boolean; summary: boolean };
 };
+
+/**
+ * 语速档位选项（10-08 新增）—— 与滑块改的是同一个 `tts.speed`，只是「一键到常用档」。
+ * ⛔ 单一真相源：这里只放**候选值**，不存状态。
+ */
+export const VOICE_SPEED_PRESETS = [0.75, 1, 1.25, 1.5, 2] as const;
 export type Meta = {
   ttsVoices: Record<number, string>;
   modelHosts: Record<string, string>;
@@ -72,7 +83,7 @@ export async function playSamples(samples: Float32Array | undefined, sampleRate:
 }
 
 export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: string) => void }) {
-  const { settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, wakePhraseDraft, setWakePhraseDraft, wakeState, setWakeState, kws, setKws, kwsDownload, setKwsDownload, micTestRef, profiles, setProfiles, zipReady, setZipReady, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, wakePhraseSyncedRef, installKws, apply, audition, toggleMicTest, captureHotkey, commitWakePhrase, voiceOptions } = useVoiceSettingsSectionState({ onNotice });
+  const { settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, wakePhraseDraft, setWakePhraseDraft, wakeState, setWakeState, kws, setKws, kwsDownload, setKwsDownload, micTestRef, profiles, setProfiles, zipReady, setZipReady, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, wakePhraseSyncedRef, installKws, apply, audition, toggleMicTest, captureHotkey, commitWakePhrase, voiceOptions } = useVoiceSettingsSectionState({ onNotice });
     if (!settings || !meta) {
     return (
       <section className="settings-section stack voice-settings">
@@ -96,15 +107,40 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
       <VoiceSettingsSectionVoicePicker apply={apply} audition={audition} auditionPhase={auditionPhase} saving={saving} settings={settings} voiceOptions={voiceOptions} />
 
       {/* 我的音色（音色克隆）：导入/录制一段参考音频 → 本机识别原文 → 用那个嗓音说话 */}
-      <VoiceSettingsSectionVoiceCloneProfile applyPreset={applyPreset} draft={draft} draftName={draftName} importProfile={importProfile} presets={presets} previewProfile={previewProfile} profileBusy={profileBusy} profilePreview={profilePreview} profileRecording={profileRecording} profiles={profiles} recordingRef={recordingRef} removeProfile={removeProfile} saveDraft={saveDraft} selectProfile={selectProfile} setDraft={setDraft} setDraftName={setDraftName} setProfileBusy={setProfileBusy} settings={settings} startProfileRecord={startProfileRecord} zipReady={zipReady} />
+      <VoiceSettingsSectionVoiceCloneProfile applyPreset={applyPreset} draft={draft} draftName={draftName} importProfile={importProfile} uploadProfile={uploadProfile} presets={presets} previewProfile={previewProfile} profileBusy={profileBusy} profilePreview={profilePreview} profileRecording={profileRecording} profiles={profiles} recordingRef={recordingRef} removeProfile={removeProfile} saveDraft={saveDraft} selectProfile={selectProfile} setDraft={setDraft} setDraftName={setDraftName} setProfileBusy={setProfileBusy} settings={settings} startProfileRecord={startProfileRecord} zipReady={zipReady} />
 
-      {/* 语速 */}
+      {/* 语音模型 + 音色克隆模型（10-08 从「开发工具」页**迁移**过来）：
+          用户要求「将语音模型和音色克隆模型的选择项迁移到语音通话界面」——
+          语音相关的东西（音色 / 模型 / 播报 / 语速）现在全在本页，不用再跳到开发工具页找。
+          ⛔ 组件本身没动（同一个 VoiceDevToolsSection），只是换了渲染位置，
+            免得「同一份状态两处渲染」这类双真相源问题。 */}
+      <div className="settings-section-title" style={{ marginTop: 18 }}>语音模型</div>
+      <VoiceDevToolsSection onNotice={onNotice} />
+
+      {/* 语音播报：两个开关（实时正文 / 结束汇总） */}
+      <VoiceSettingsSectionAnnounce apply={apply} saving={saving} settings={settings} />
+
+      {/* 语速：档位 + 滑块（同一真相源 tts.speed —— 通话与语音播报共用） */}
       <div className="voice-card">
         <div className="voice-card-head">
           <span>语速</span>
           <span className="voice-card-value">{settings.tts.speed.toFixed(2)}×</span>
         </div>
         <div className="voice-card-body">
+          <div className="voice-speed-presets" role="group" aria-label="语速档位">
+            {VOICE_SPEED_PRESETS.map((speed) => (
+              <button
+                key={speed}
+                type="button"
+                className={`voice-speed-chip${Math.abs(settings.tts.speed - speed) < 0.001 ? " is-active" : ""}`}
+                onClick={() => apply({ tts: { ...settings.tts, speed } })}
+                disabled={saving}
+                title={`切到 ${speed}×`}
+              >
+                {speed}×
+              </button>
+            ))}
+          </div>
           <input
             className="voice-range"
             type="range"
@@ -115,7 +151,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
             onChange={(e) => apply({ tts: { ...settings.tts, speed: Number(e.target.value) } })}
             disabled={saving}
           />
-          <div className="voice-card-hint">慢 0.5× ↔ 快 2.0×</div>
+          <div className="voice-card-hint">慢 0.5× ↔ 快 2.0×；档位与滑块改的是同一个值（语音通话与语音播报共用）</div>
         </div>
       </div>
 

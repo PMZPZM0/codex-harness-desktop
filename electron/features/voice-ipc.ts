@@ -33,7 +33,7 @@ const VOICE_CHANNELS = [
   "voice:zipvoice-cancel", "voice:kws-install", "voice:kws-cancel", "voice:kws-status",
   "voice:profiles-list", "voice:preset-list", "voice:preset-apply", "voice:profiles-import",
   "voice:profiles-record", "voice:profiles-save", "voice:profiles-delete",
-  "voice:profiles-select", "voice:profiles-preview", "voice:models-install",
+  "voice:profiles-select", "voice:profiles-preview", "voice:profile-upload", "voice:models-install",
   "voice:models-cancel", "voice:models-import", "voice:models-reveal",
   "voice:models-uninstall", "voice:mic-permission", "voice:resource-set-enabled",
   "voice:resource-delete", "voice:resource-status",

@@ -10,6 +10,8 @@ type Props = {
   draft: { draftFile: string; refText: string; sourceName: string; durationSec: number; } | null;
   draftName: string;
   importProfile: () => Promise<void>;
+  /** 上传音色（10-08）：走主进程 voice:profile-upload，与「导入」同一条草稿/校对链 */
+  uploadProfile: () => Promise<void>;
   presets: { id: string; name: string; desc: string; lang: string; applied: boolean; }[];
   previewProfile: (id: string) => Promise<void>;
   profileBusy: string;
@@ -28,17 +30,20 @@ type Props = {
   zipReady: boolean;
 };
 
-export function VoiceSettingsSectionVoiceCloneProfile({ applyPreset, draft, draftName, importProfile, presets, previewProfile, profileBusy, profilePreview, profileRecording, profiles, recordingRef, removeProfile, saveDraft, selectProfile, setDraft, setDraftName, setProfileBusy, settings, startProfileRecord, zipReady }: Props) {
+export function VoiceSettingsSectionVoiceCloneProfile({ applyPreset, draft, draftName, importProfile, uploadProfile, presets, previewProfile, profileBusy, profilePreview, profileRecording, profiles, recordingRef, removeProfile, saveDraft, selectProfile, setDraft, setDraftName, setProfileBusy, settings, startProfileRecord, zipReady }: Props) {
   return (
     <div className="voice-card">
             <div className="voice-card-head"><Headphones size={15} /><span>我的音色（音色克隆）</span></div>
             <div className="voice-card-body">
               {!zipReady ? (
                 <div className="voice-card-hint">
-                  还没安装音色克隆模型：到「设置 → 开发工具 → 音色克隆模型」下载（约 156MB），装好后这里就能导入或录制音色。
+                  还没安装音色克隆模型：到本页下方「语音模型 → 音色克隆模型」点「下载音色克隆模型」（约 156MB），装好后这里就能导入、上传或录制音色。
                 </div>
               ) : !draft ? (
                 <div className="voice-row">
+                  <button className="secondary-setting" onClick={() => void uploadProfile()} disabled={Boolean(profileBusy) || profileRecording}>
+                    <Upload size={13} />上传音色
+                  </button>
                   <button className="secondary-setting" onClick={() => void importProfile()} disabled={Boolean(profileBusy) || profileRecording}>
                     <Upload size={13} />导入音频（wav）
                   </button>
@@ -121,6 +126,24 @@ export function VoiceSettingsSectionVoiceCloneProfile({ applyPreset, draft, draf
                   )}
                 </div>
               )}
+              {/* 使用教程（10-08 用户要求「配套提供相应的使用教程」）。
+                  ⛔ 放在卡片里而不是只进帮助弹窗：用户是在**出错的那一刻**才需要它
+                    （参考文本对不上、格式不对这类），帮助弹窗要点两次才能看到。
+                  更完整的版本同时进了帮助弹窗（HelpDialog 的 voice 段）—— 但正文只写一份，
+                  这里给的是「照着做」的步骤，别在这里另造一套说法。 */}
+              <details className="voice-profile-guide">
+                <summary>音色上传 / 克隆使用教程</summary>
+                <ol>
+                  <li>先装好<strong>音色克隆模型</strong>（本页下方「语音模型」区域那张卡，约 156MB）。</li>
+                  <li>准备一段<strong>参考音频</strong>：16-bit PCM 的 <code>.wav</code>，10 秒左右效果最好（上限 60 秒）；
+                      一个人连续说话、别叠背景音乐；mp3/m4a 请先转成 wav。</li>
+                  <li>三个入口任选其一：<strong>上传音色</strong>（选一个 wav 文件）、<strong>导入音频</strong>、
+                      <strong>录制 10 秒</strong>（直接对着麦克风念一段）。</li>
+                  <li>系统会自动识别出音频里念的那句话 —— <strong>务必核对成音频里真正念的内容</strong>：
+                      参考文本与音频对不上，克隆出来的音质会明显变差。</li>
+                  <li>起个名字 → 保存 → 在「音色」卡片里选中它。之后通话、播报都用这个嗓子。</li>
+                </ol>
+              </details>
             </div>
           </div>
   );

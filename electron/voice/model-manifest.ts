@@ -83,22 +83,52 @@ export const ZIPVOICE_ARCHIVE = {
   bytes: 109_162_785,
   /** 解压后必须存在的关键文件（相对模型目录），就绪判定用 */
   readyFiles: ["encoder.int8.onnx", "decoder.int8.onnx", "tokens.txt", "lexicon.txt"],
+  /**
+   * 每个关键文件的**最小合理体积**（字节）—— 10-08 新增，与 `readyFiles` 一一对应。
+   *
+   * ⛔ 为什么必须有：`statSync(...).size > 0` 挡不住「下了一半 / 解压中断」。用户实测
+   *    「音色克隆模型 15 秒内下载失败，状态却被刷新成『已安装』，其实不能用」，根因就是
+   *    判定只认「文件在且非空」。下限取本机实测完整文件的 **~20%~30%**（实测值见注释），
+   *    只用来判「残不残」——不同版本换了体积本来就会在 SHA256 上先失败。
+   */
+  readyFileMinBytes: {
+    "encoder.int8.onnx": 1_000_000,      // 实测完整 5,570,211
+    "decoder.int8.onnx": 20_000_000,     // 实测完整 124,657,100（这个大的是 decoder，别按名字想当然）
+    "tokens.txt": 200,                   // 实测完整 2,570
+    "lexicon.txt": 200_000,              // 实测完整 1,727,147
+  } as Record<string, number>,
   /** 声码器：不在主包里，单独下载到模型目录 */
   vocoder: {
     name: "vocos_24khz.onnx",
     url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/vocoder-models/vocos_24khz.onnx",
     sha256: "bcb3b970e384161c4d634f0bb9e999ff1c471b34c9bc0b1049a5014065ed3cc0",
     bytes: 54_157_409,
+    /** 最小合理体积 ≈ 声明体积的 95%（实测完整文件 = 54,157,409，与声明逐字节相等）。
+     *  它是「网络中断留下半截」的第一现场（直接下载到模型目录的那个文件），下限必查。 */
+    minBytes: 51_400_000,
   },
 } as const;
 
-/** 音色克隆模型是否就绪（关键文件 + 声码器都在）。 */
+/**
+ * 音色克隆模型是否就绪。
+ *
+ * 判据 = 关键文件都在 **且都达到最小合理体积** + 声码器在且够大。
+ * ⛔ 10-08 前这里只有 `size > 0` ⇒ 半截的声码器（网络中断的残留）会让状态显示「已安装」，
+ *    用户点进去却用不了。**配合 model-store 的原子下载（`.part` + rename）**，
+ *    最终路径从此只可能出现完整文件；体积下限是第二道网（挡历史遗留的残file 与解压中断）。
+ */
 export function zipvoiceReady(modelsRoot: string): boolean {
   const dir = path.join(modelsRoot, ZIPVOICE_DIR);
-  const need = [...ZIPVOICE_ARCHIVE.readyFiles, ZIPVOICE_ARCHIVE.vocoder.name];
-  return need.every((name) => {
-    try { return statSync(path.join(dir, name)).size > 0; } catch { return false; }
+  const minOf = ZIPVOICE_ARCHIVE.readyFileMinBytes;
+  const keyFilesOk = ZIPVOICE_ARCHIVE.readyFiles.every((name) => {
+    try {
+      return statSync(path.join(dir, name)).size >= (minOf[name] ?? 1);
+    } catch { return false; }
   });
+  if (!keyFilesOk) return false;
+  try {
+    return statSync(path.join(dir, ZIPVOICE_ARCHIVE.vocoder.name)).size >= ZIPVOICE_ARCHIVE.vocoder.minBytes;
+  } catch { return false; }
 }
 
 /**
@@ -124,13 +154,25 @@ export const KWS_ARCHIVE = {
     joiner: "joiner-epoch-12-avg-2-chunk-16-left-64.onnx",
     tokens: "tokens.txt",
   },
+  /**
+   * 最小合理体积（字节）—— 与 `model` 一一对应，口径同 zipvoice 的 `readyFileMinBytes`。
+   * ⚠️ 本机**没有**装 KWS（无法实测完整体积），所以这里取非常保守的下限（onnx 各 100KB）：
+   *    目的只是挡住「解压中断留下空壳/半截」，宁可能挡住 gross 截断，也不要误判正常安装为未装。
+   */
+  readyFileMinBytes: {
+    "encoder-epoch-12-avg-2-chunk-16-left-64.onnx": 100_000,
+    "decoder-epoch-12-avg-2-chunk-16-left-64.onnx": 100_000,
+    "joiner-epoch-12-avg-2-chunk-16-left-64.onnx": 100_000,
+    "tokens.txt": 200,
+  } as Record<string, number>,
 } as const;
 
-/** 关键词模型是否就绪（三个 onnx + tokens 都在且非空）。 */
+/** 关键词模型是否就绪（三个 onnx + tokens 都在且达到最小合理体积）。 */
 export function kwsReady(modelsRoot: string): boolean {
   const dir = path.join(modelsRoot, KWS_DIR);
+  const minOf = KWS_ARCHIVE.readyFileMinBytes;
   return Object.values(KWS_ARCHIVE.model).every((name) => {
-    try { return statSync(path.join(dir, name)).size > 0; } catch { return false; }
+    try { return statSync(path.join(dir, name)).size >= (minOf[name] ?? 1); } catch { return false; }
   });
 }
 
