@@ -524,11 +524,14 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
       "【241】旧的 embeddable zip / 官方 exe 安装器 / 联网 get-pip 三条链不许复活（exe 静默空转＝用户机器上 pip 装不上的根因）"
     );
     const dr241 = codeOnly(readFileSync(join(ROOT, "electron", "features", "dev-runtimes.ts"), "utf8"));
-    const pyBranchStart = dr241.indexOf('if (id === "python" && !IS_MAC)');
+    // ⛔ 10-08：锚点由 `if (id === "python" && !IS_MAC)` 改成平台无关的 `if (id === "python")`
+    //    （mac 半边补齐：原判据把 darwin 排除在外，只查 python/bin/python3 一个文件 ⇒
+    //     与 Windows 侧同一个「坏安装显示已安装」的坑在 mac 上原样存在）。
+    const pyBranchStart = dr241.indexOf('if (id === "python") {');
     const pyBranchEnd = dr241.indexOf("if (PIP_PACKAGE_DIRS[id])");
     const pyBranch = pyBranchStart >= 0 && pyBranchEnd > pyBranchStart ? dr241.slice(pyBranchStart, pyBranchEnd) : "";
-    (pyBranch.includes('"site-packages", "pip"') && pyBranch.includes("_tkinter.pyd") && pyBranch.includes("python.exe") ? ok : fail)(
-      "【241】「Python 装没装」必须含 pip 模块 + _tkinter（只看 python.exe ⇒ 坏安装显示「已安装」、卡片连修复入口都没有）"
+    (pyBranch.includes("pythonSiteDir(dir)") && pyBranch.includes('"pip", "__init__.py"') && pyBranch.includes("_tkinter.pyd") && pyBranch.includes("python.exe") && pyBranch.includes("IS_MAC") ? ok : fail)(
+      "【241】「Python 装没装」两平台都必须含 pip 模块（Windows 另需 _tkinter）—— 只看可执行文件 ⇒ 坏安装显示「已安装」、卡片连修复入口都没有"
     );
   }
   /* 【243】工具安装的两条硬不变量（10-02 外部用户报障：所有工具都卡在 `@STAGE 解压 [fail] "tar"`）。
@@ -595,6 +598,39 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
     (/(?:ipcMain|ipcHost)\.handle\("runtime:health"/.test(rt) ? ok : fail)("【244】存在工具自检 IPC（runtime:health）");
     (rt.includes("function probeTool(") && rt.includes("child.on(\"close\"") ? ok : fail)("【244】自检是真跑版本命令（不是只查文件在不在）");
     (rt.includes('if (spec.kind === "guide") continue;') ? ok : fail)("【244】自检跳过系统级安装项（Docker / OpenSSL 我们没装，无从探测）");
+  }
+  /* 【286】「装完不更新」的整类根因（10-08 用户报「开发工具安装完不更新」，markitdown 实测确证）。
+     ⛔⛔ 三个口径各自为政 ⇒ 卸载后进入**不可恢复**状态：
+        · 判定（runtimeInstalled）看 site-packages 里的**包目录**；
+        · 安装动作（pip install）看 **dist-info 元数据**；
+        · 卸载（runtimeUninstallTargets）只删**包目录**、留下 dist-info。
+     于是：卸载 → 只剩 <name>-<ver>.dist-info → 重装时 pip 回一句 `Requirement already satisfied`
+     然后 **exit 0 什么都不做** → 脚本/安装器一路报成功 → 界面「开发工具安装成功」+ 卡片仍显示
+     「下载」，**点多少次都一样**（实测：包目录 83 个文件全丢，`import markitdown` 报
+     ModuleNotFoundError 而 `pip show markitdown` 说装着）。markitdown / laya / phone-harness
+     三个 pip 包共用这条链。⇒ 判据锚**接线取值**（剥注释后仍出现的事实），不锚注释。 */
+  {
+    const dr286 = codeOnly(readFileSync(join(ROOT, "electron", "features", "dev-runtimes.ts"), "utf8"));
+    const rt286 = codeOnly(readFileSync(join(ROOT, "electron", "features", "runtime-ipc.ts"), "utf8"));
+    const ir286 = codeOnly(readFileSync(join(ROOT, "scripts", "install-runtimes.cjs"), "utf8"));
+    (dr286.includes("function pipMetadataDirs(") ? ok : fail)(
+      "【286】pip 包元数据目录有单一真相源（dev-runtimes.pipMetadataDirs：<name>-<ver>.dist-info / *.egg-info）"
+    );
+    const pipAnchor286 = rt286.indexOf("const pipDir = PIP_PACKAGE_DIRS[id]");
+    const pipBranch286 = pipAnchor286 >= 0 ? rt286.slice(pipAnchor286, pipAnchor286 + 400) : "";
+    (pipBranch286.includes("pipMetadataDirs(site, pipDir)") ? ok : fail)(
+      "【286】卸载 pip 包必须连元数据一起删（只删包目录 ⇒ 残留 dist-info ⇒ pip 判 already satisfied 空转 ⇒ 永远装不回来）"
+    );
+    (ir286.includes("function stalePipMetadata(") && /stalePipMetadata\(site, \["markitdown"\]\)/.test(ir286) ? ok : fail)(
+      "【286】安装脚本装前清孤儿元数据（与 dev-runtimes.pipMetadataDirs 同一套规则：主进程 TS 与纯 Node 脚本各一份，改一处必须同步另一处）"
+    );
+    (ir286.includes("仍没有 markitdown 包目录") ? ok : fail)(
+      "【286】安装脚本装完必须复核包目录（pip 的 exit 0 只说明命令跑完了，不说明东西装上了）"
+    );
+    const verifyCalls286 = (rt286.match(/assertInstallVerified\(id, spec\)/g) || []).length;
+    (rt286.includes("function assertInstallVerified(") && verifyCalls286 === 3 ? ok : fail)(
+      `【286】runtime:install 的三条真实安装路径都回读 runtimeInstalled（实际 ${verifyCalls286} 处，应为 3：kb-embedding / laya+phone-harness / 通用；guide 与 builtIn 早退不算）——「安装成功」必须与卡片同源`
+    );
   }
   // 09-16 下午：自动化包与 ponytail 改为「随包预解压直装」（用户「直接内置，不用解压啥的」）——
   // npm-global 必须进 extraResources（缺了等于回到「要点安装才解压」），zip 保留作修复备用；

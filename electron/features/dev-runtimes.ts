@@ -224,6 +224,23 @@ function pythonSiteDir(pythonDir: string): string | null {
   return null;
 }
 
+/** pip 包的**元数据目录**（`<name>-<ver>.dist-info` / `*.egg-info`）——卸载必须连它们一起删。
+ *  ⛔⛔ 10-08 用户实测事故（「开发工具装完不更新」，markitdown 复现）：只删包目录会留下 dist-info，
+ *    pip 据此认为「已安装」⇒ 重装时回一句 `Requirement already satisfied` 然后 **exit 0 什么都不做**；
+ *    而「装没装」的判定（runtimeInstalled）看的是**包目录** ⇒ 界面报「安装成功」、卡片永远显示
+ *    未安装，**点多少次都一样**（当场实测：包目录 83 个文件全丢、只剩 markitdown-0.1.8.dist-info，
+ *    `import markitdown` 报 ModuleNotFoundError 而 `pip show markitdown` 说装着）。
+ *  ⛔ 与 scripts/install-runtimes.cjs 的 stalePipMetadata 是同一套规则（一边主进程 TS、一边纯 Node
+ *    安装脚本，不共享模块）—— 改这里务必同步那边。 */
+function pipMetadataDirs(site: string, pkgDir: string): string[] {
+  try {
+    const re = new RegExp(`^${pkgDir.replace(/[-_]/g, "[-_]")}[-_].*\\.(dist-info|egg-info)$`, "i");
+    return readdirSync(site).filter((entry) => re.test(entry)).map((entry) => path.join(site, entry));
+  } catch {
+    return [];
+  }
+}
+
 /** pip 包类工具 → site-packages 下的**包目录名**（判定「装没装」+ 卸载只删包目录，绝不碰整个 Python）。
  *  ⛔ 单一真相源：runtimeInstalled、卸载落点、以及守卫都读它，别在别处再写一份包名。 */
 const PIP_PACKAGE_DIRS: Partial<Record<DevRuntimeId, string>> = {
@@ -242,18 +259,25 @@ function runtimeInstalled(id: DevRuntimeId, spec: DevRuntimeSpec): boolean {
   if (id === "kb-embedding") return kbEmbeddingInstalled();
   const root = toolsRoot();
   if (!root) return false;
-  // ⛔⛔ python：只有 `python.exe` 不算装好 —— 旧版 embeddable 安装就是「有 exe、无 pip 无 Tkinter」，
+  // ⛔⛔ python：只有可执行文件不算装好 —— 旧版 embeddable 安装就是「有 exe、无 pip 无 Tkinter」，
   //  按 marker 判会让坏安装显示「已安装」（卡片不给安装按钮）⇒ 用户连修复入口都没有
   //  （10-01 用户机器：Laya 报 `No module named pip`，而开发工具页 Python 显示已装）。
-  //  判据三件齐：python.exe + pip + _tkinter；缺一即「未装」→ 点「下载」走 install-runtimes 换装完整版。
+  //  ⛔ 10-08 补齐 **mac 半边**：原判据写成 `&& !IS_MAC` ⇒ darwin 只查 `python/bin/python3` 一个文件，
+  //   与 Windows 侧**同一个**「坏安装显示已安装」的坑原样存在（mac 的 PBS 也可能没有可用 pip，
+  //   且 mac 侧 ensurepip 失败被 try/catch 吞成 optional）。现在「pip 模块必须在」两平台共用。
+  //  三件齐（Windows：exe + pip + Tkinter）/ 两件齐（mac：exe + pip；PBS 的 Tkinter 布局与 Windows
+  //  不同，不做文件判据以免把好安装误判成未装）。
   //  ⛔ 与 scripts/install-runtimes.cjs 的 winPythonHealthy() 是同一套清单，改一处必须同步另一处。
-  if (id === "python" && !IS_MAC) {
+  if (id === "python") {
     const dir = path.join(root, "python");
     // pip 判**模块目录**而不是 Scripts/pip.exe：PBS install_only 自带 pip 包但无 .exe 外壳，
     // 而所有消费方走的都是 `python -m pip`（laya / 手机控制 / 文档转换）。
-    return existsSync(path.join(dir, "python.exe"))
-      && existsSync(path.join(dir, "Lib", "site-packages", "pip", "__init__.py"))
-      && existsSync(path.join(dir, "DLLs", "_tkinter.pyd"));
+    // ⛔ 路径经 pythonSiteDir 取（Windows = Lib/site-packages；mac = lib/pythonX.Y/site-packages，
+    //   版本号不能写死）—— 两平台同源，别在这里再写一遍平台分支。
+    const site = pythonSiteDir(dir);
+    if (!site || !existsSync(path.join(site, "pip", "__init__.py"))) return false;
+    if (IS_MAC) return existsSync(path.join(dir, "bin", "python3"));
+    return existsSync(path.join(dir, "python.exe")) && existsSync(path.join(dir, "DLLs", "_tkinter.pyd"));
   }
   // pip 包（markitdown / laya / phone-harness）装在 Python 的 site-packages 里，路径含版本号 ⇒ 不走 marker。
   //  判定「包目录在不在」：目录在就等于 import 拿得到（比查 dist-info 更抗 pip 元数据差异）。
@@ -430,5 +454,5 @@ function clearCancelRequest(id: string): void {
   runtimeCancelRequested.delete(id);
 }
 
-export { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, autoInstallGitIfNeeded, cancelRuntimeInstall, cleanupRuntimeTempFiles, clearCancelRequest, devRuntimeSpecs, emitRuntimeProgress, isCancelRequested, markerRel, pythonSiteDir, readDownloadSource, requestRuntimeCancel, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls, toolsWatchDebounce, trackRuntimeProc };
+export { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, autoInstallGitIfNeeded, cancelRuntimeInstall, cleanupRuntimeTempFiles, clearCancelRequest, devRuntimeSpecs, emitRuntimeProgress, isCancelRequested, markerRel, pipMetadataDirs, pythonSiteDir, readDownloadSource, requestRuntimeCancel, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls, toolsWatchDebounce, trackRuntimeProc };
 export type { DevRuntimeId, DevRuntimeSpec };

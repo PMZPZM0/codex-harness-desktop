@@ -26,7 +26,7 @@ import { spawn } from "node:child_process";
 import { app, shell } from "electron";
 import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, downloadEnv, npmGlobalRoot, npmGlobalRootCandidates, pythonPipReady, toolchainEnv, toolsRoot } from "../toolchain";
 import { installKbEmbedding, kbBackendDir, kbEmbeddingInstalled, uninstallKbEmbedding } from "./kb-embed-backend";
-import { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, cancelRuntimeInstall, cleanupRuntimeTempFiles, clearCancelRequest, devRuntimeSpecs, emitRuntimeProgress, isCancelRequested, pythonSiteDir, readDownloadSource, requestRuntimeCancel, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls, trackRuntimeProc } from "./dev-runtimes";
+import { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, cancelRuntimeInstall, cleanupRuntimeTempFiles, clearCancelRequest, devRuntimeSpecs, emitRuntimeProgress, isCancelRequested, pipMetadataDirs, pythonSiteDir, readDownloadSource, requestRuntimeCancel, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls, trackRuntimeProc } from "./dev-runtimes";
 import type { DevRuntimeId, DevRuntimeSpec } from "./dev-runtimes";
 import { sendToWindow } from "./window-bus";
 import { readAppSettings, saveAppSettings } from "../app-settings";
@@ -221,10 +221,31 @@ function runtimeUninstallTargets(id: DevRuntimeId, spec: DevRuntimeSpec): string
   const pipDir = PIP_PACKAGE_DIRS[id];
   if (pipDir) {
     const site = pythonSiteDir(path.join(toolsRoot(), "python"));
-    return [site ? path.join(site, pipDir) : path.join(toolsRoot(), pipDir)];
+    if (!site) return [path.join(toolsRoot(), pipDir)];
+    // ⛔⛔ 必须连**元数据目录**一起删（10-08 用户实测事故「开发工具装完不更新」）：只删包目录会留下
+    //   `<name>-<ver>.dist-info`，pip 据此认为「已安装」⇒ 重装时回 `Requirement already satisfied`
+    //   且 exit 0（什么都不做），而判定看的是包目录 ⇒ 界面报「安装成功」但卡片永远显示未安装。
+    //   markitdown / laya / phone-harness 三个 pip 包都在这个分支上，一起覆盖。
+    return [path.join(site, pipDir), ...pipMetadataDirs(site, pipDir)];
   }
   // 工具侧：安装根 = marker 路径的第一段（playwright-browsers -> pw-browsers / git -> git / …）
   return [path.join(toolsRoot(), spec.marker.split(/[\\/]/)[0])];
+}
+
+/** ⛔⛔ 安装成功后**必须回读「装没装」的判定**（10-08 用户报「开发工具安装完不更新」的整类根因）。
+ *  子进程 exit 0 只证明「命令跑完了」，不证明「东西真装上了」：pip 见到孤儿 `*.dist-info` 就会
+ *  回一句 `Requirement already satisfied` 然后**什么都不做**（同样 exit 0），安装脚本照样报到界面
+ *  ⇒ 用户看到「开发工具安装成功」的绿条 + 卡片仍显示「下载」，点多少次都一样（markitdown 实测：
+ *  包目录 83 个文件全丢、只剩 dist-info；`import` 报 ModuleNotFoundError 而 `pip show` 说装着）。
+ *  ⇒ 判据必须与卡片**同源**（就是同一个 runtimeInstalled），否则又造出第二套口径。
+ *  ⛔ 只在「真跑过安装」的分支调用：guide（去官网）/ builtIn（无需安装）/ 已就绪 三条不算。 */
+function assertInstallVerified(id: DevRuntimeId, spec: DevRuntimeSpec): void {
+  if (runtimeInstalled(id, spec)) return;
+  throw new Error(
+    `「${spec.name}」安装流程已结束，但复核未通过 —— 在预期位置找不到已安装产物`
+    + `（安装根目录：${toolsRoot()}）。这通常是安装器「假成功」（命令退出码 0 但没落盘），`
+    + "请把本页日志反馈给开发者；重复点「下载」不会自愈。"
+  );
 }
 
 /** 浏览器内核按需下载（09-16 起内核不再随包）：先走国内镜像，失败回落官方源直连。 */
@@ -529,6 +550,7 @@ export const runtimeFeature = defineFeature<null>({
         })();
         runtimeInstalls.set(id, task.finally(() => runtimeInstalls.delete(id)) as Promise<void>);
         await task.catch((error) => { throw error instanceof Error ? error : new Error(String(error)); });
+        assertInstallVerified(id, spec);
         return { ok: true, runtimes: runtimeList() };
       }
       if (id === "laya" || id === "phone-harness") {
@@ -538,6 +560,7 @@ export const runtimeFeature = defineFeature<null>({
         })();
         runtimeInstalls.set(id, task.finally(() => runtimeInstalls.delete(id)) as Promise<void>);
         await task.catch((error) => { throw error instanceof Error ? error : new Error(String(error)); });
+        assertInstallVerified(id, spec);
         return { ok: true, runtimes: runtimeList() };
       }
       const task = (async () => {
@@ -589,6 +612,8 @@ export const runtimeFeature = defineFeature<null>({
       runtimeInstalls.set(id, task);
       try {
         await task;
+        // ⛔ 成功绿条只在**复核通过**之后发 —— 否则界面会先报「安装完成」再报错，把一次假成功演成两次消息。
+        assertInstallVerified(id, spec);
         sendToWindow("runtime:progress", { id, message: "安装完成", percent: 100, speed: "", done: true });
         return { ok: true, runtimes: runtimeList() };
       } catch (error) {
