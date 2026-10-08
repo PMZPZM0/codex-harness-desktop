@@ -659,6 +659,24 @@ async function downloadOnce(
     }
     // 服务器不支持续传（回 200 而不是 206）：丢弃残file 从头来，避免拼出坏文件
     if (received > 0 && response.status !== 206) received = 0;
+    /* 416 = 续传起点已到文件末尾：`.part` 很可能**本身就是完整文件**（上一次 rename 失败留下的，
+       例如 Windows 上杀软/索引器临时占住目标文件）。⛔ 不处理它，这个完整文件就**永远无法被提拔**
+       成最终文件 —— 用户反复点下载都只会看到「HTTP 416」。判据与兄弟函数 `downloadOne` 同款：
+       先校验 SHA256，通过就 rename 收口。
+       ⛔ `sha256 &&` 不能省：调用方传空 sha 时，缺文件的 `fileShaOrEmpty` 也返回空串，会**假成功**。 */
+    if (response.status === 416) {
+      if (sha256 && (await fileShaOrEmpty(workPath)) === sha256) {
+        if (workPath === destPath) return { ok: true };
+        try {
+          await rename(workPath, destPath);
+          return { ok: true };
+        } catch (error: any) {
+          return { ok: false, error: `重命名失败：${error?.message ?? error}` };
+        }
+      }
+      await unlink(workPath).catch(() => undefined);
+      return { ok: false, error: "续传起点越界且校验不符，已清理，请重试", fatal: true };
+    }
     if (!response.ok || !response.body) return { ok: false, error: "下载失败 HTTP " + response.status };
 
     const total = (Number(response.headers.get("content-length") ?? 0) || 0) + received || bytes;
@@ -872,7 +890,13 @@ async function extractArchiveInto(
   targetName: string,
   resourcesToolsDir: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const staging = join(modelsRoot, `.staging-${targetName}-${Date.now().toString(36)}`);
+  /* ⛔ 暂存目录名**确定性**（不带时间戳，自行 code review 改的）：
+     ① 每次尝试开头就 `rm -rf` 它 ⇒ 上次崩溃留下的半成品被就地复用/清掉，**不会累积**
+        （带时间戳的话，进程被杀一次就在模型目录里留一堆 `.staging-xxx`，还会被
+        `modelsSizeOnDisk` 算进「语音模型占用」里）；
+     ② 同一资源不可能并发安装（zipvoice / kws 各有自己的 abort 守卫 + 「正在安装中」拒绝），
+        不同资源的名字里带各自的 targetName ⇒ 不会互相覆盖；整个应用是单实例。 */
+  const staging = join(modelsRoot, `.staging-${targetName}`);
   await rm(staging, { recursive: true, force: true }).catch(() => undefined);
   const extracted = await extractTarBz2(archivePath, staging, resourcesToolsDir);
   if (!extracted.ok) {

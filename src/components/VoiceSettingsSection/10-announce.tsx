@@ -19,7 +19,10 @@ type Props = {
 };
 
 export function VoiceSettingsSectionAnnounce({ apply, saving, settings }: Props) {
-  const announce = settings.announce;
+  /* ⛔ 兜底（与 VoiceDevToolsSection 的 `enabled !== false` 同一约定）：设置是**显式字段映射**
+     过的对象，老主进程（未重启 / 渲染层被单独 reload）回包可能没有 `announce` ——
+     直接读 `settings.announce.live` 会让整个语音设置页白屏。缺省 = 「保持通话既有行为」。 */
+  const announce = settings.announce ?? { live: true, summary: false };
   return (
     <div className="voice-card" data-voice-announce="1">
       <div className="voice-card-head"><Volume2 size={15} /><span>语音播报</span></div>

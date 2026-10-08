@@ -12,8 +12,7 @@
  * ⛔ 回声真值表是**真跑**（直接 import src/lib/voice-echo.mjs）——「注释声称有」在本仓是最危险的假象。
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync, existsSync, mkdtempSync, mkdirSync, rmSync, truncateSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { ROOT } from "./_ctx.mjs";
 import { isLikelySelfEcho, echoSimilarity, ECHO_TAIL_MS } from "../../src/lib/voice-echo.mjs";
@@ -282,6 +281,25 @@ ok(zv?.truncatedDecoder === false, "真跑：主包文件被截断 ⇒ 未安装
 ok(zv?.allGood === true && zv?.none === false, "真跑：文件齐备 ⇒ 已安装；目录不存在 ⇒ 未安装");
 ok(zv?.realReady !== false,
   "真跑：本机已装好的那套仍判已安装（加固判定不许制造假阴性 —— 那是更贵的错）");
+
+/* ── ⑪ 自我 code review 抓出并修掉的 5 处（把判据留下，防止下次又写回去）──────────
+   ⛔ 本组来自对 c75ab5f 的**自审**（dongming-code-review 技能六步闭环），
+      不是新功能 —— 每条都是「当时写错、已修」的东西，所以判据要钉住修好的形态。 */
+ok(/const chainRef = useRef<Promise<void>>\(Promise\.resolve\(\)\)/.test(announceHook)
+  && /enqueueTask\(\(\) => feedDelta\(event\.text\)\)/.test(announceHook)
+  && /enqueueTask\(\(\) => finishTurn\(event\.text\)\)/.test(announceHook),
+  "播报动作挂**串行链**：合成是异步的、delta 是并发到达的 ⇒ 不串行会念乱顺序（A 慢 B 快则 B 先出声）");
+ok(/summary\.sentences === 0 && String\(finalText \?\? ""\)\.trim\(\)/.test(announceHook),
+  "「整段是代码」的那句提示只在**原文非空**时念（finalText 为空 = 引擎没带 items，是数据缺失，不是代码）");
+ok(/response\.status === 416[\s\S]{0,420}?await rename\(workPath, destPath\)/.test(store),
+  "downloadOnce 处理 416：`.part` 已完整（上次 rename 失败）时校验后提拔成最终文件（否则那份完整文件永远卡住）");
+ok(/if \(sha256 && \(await fileShaOrEmpty\(workPath\)\) === sha256\)/.test(store),
+  "416 分支的先决条件是 sha256 非空（空 sha 时缺文件也返回空串 ⇒ 会假成功）");
+ok(/const staging = join\(modelsRoot, `\.staging-\$\{targetName\}`\)/.test(store)
+  && !/\.staging-\$\{targetName\}-\$\{Date\.now/.test(store),
+  "暂存目录名**确定性**（每次尝试开头就地清掉 ⇒ 崩溃残留不累积、也不被算进模型体积）");
+ok(/const announce = settings\.announce \?\? \{ live: true, summary: false \}/.test(announceCard),
+  "设置卡片对 announce 做兜底（老主进程回包缺字段时不许把整页打成白屏）");
 
 console.log(`\n【voice-call】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
