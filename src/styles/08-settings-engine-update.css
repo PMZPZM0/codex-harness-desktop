@@ -168,6 +168,22 @@
   font-size: 10.5px;
 }
 .runtime-badge.installed { color: var(--green); background: color-mix(in srgb, var(--green) 10%, transparent); }
+/* 装不上时的备用方案（10-08）：一行说明 + 一个「复制提示词交给 Codex」按钮，跟进度/失败行同列。 */
+.runtime-fallback { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; margin-top: 6px; }
+.runtime-fallback em {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-style: normal;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.runtime-fallback-copy {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 24px; padding: 0 9px; border-radius: 6px; font-size: 11px; font-weight: 500;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  cursor: pointer; white-space: nowrap;
+}
+.runtime-fallback-copy:hover { border-color: var(--link); color: var(--link); }
 .runtime-actions { display:flex; align-items:center; gap:5px; justify-content:flex-end; }
 .runtime-install,
 .runtime-uninstall {
