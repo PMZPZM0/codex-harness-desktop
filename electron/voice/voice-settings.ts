@@ -24,7 +24,7 @@ export type ModelHost = "auto" | "huggingface" | "hf-mirror";
 export type AecMode = "auto" | "on" | "off";
 
 /** 设置文件结构版本：每次「默认值语义变了、老档案需要迁移」就 +1（见 migrateSettings） */
-export const VOICE_SETTINGS_VERSION = 2;
+export const VOICE_SETTINGS_VERSION = 3;
 
 export type VoiceSettings = {
   tts: { sid: number; speed: number; volume: number; /** "我的音色"档案 id；空串/缺省 = 用内置预置音色 */ profileId?: string };
@@ -89,7 +89,11 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   // 它是端到端延迟里**唯一纯等待**的一块（审计 ④），每轮省 0.4s，且 0.8s 仍明显长于
   // 汉语自然停顿（~0.3s），不会把长句切碎。
   asr: { rule1: 2.4, rule2: 0.8, rule3: 20, numThreads: 2 },
-  mic: { deviceId: "", noiseSuppression: false, echoCancellation: true, autoGainControl: false },
+  // ⛔ 10-08 用户报「要很大声才录得进去」：`autoGainControl` 原先默认 **false** ⇒ 麦克风信号不做自动增益，
+  //    安静环境/小声说话时电平太低，识别基本拿不到东西。改成默认 **true**（浏览器/系统的标准 AGC）。
+  //    ⚠️ 只改这里对**已存过设置的老用户无效**（档案里有旧值）⇒ 同轮把 VOICE_SETTINGS_VERSION +1
+  //    并在 migrateSettings 里迁移（照 rule2 那次的同一套做法）。
+  mic: { deviceId: "", noiseSuppression: false, echoCancellation: true, autoGainControl: true },
   // ⛔ 10-03 用户报「自动打断太灵敏」：6dB 只比回声地板高一点，外放/键盘声都够得着。
   //    抬到 9（clamp 仍是 3–12，用户可自己调）。⚠️ 改了这里**只影响新装/未设过该项的用户** ——
   //    对已存设置的老用户真正生效的是 GATE_DEFAULTS 的 minFloor / holdBlocks（用户不可配）。
@@ -172,6 +176,15 @@ export function migrateSettings(raw: Partial<VoiceSettings> | undefined): { sett
     const rule2 = Number(source.asr?.rule2);
     if (!Number.isFinite(rule2) || Math.abs(rule2 - 1.2) < 1e-9) {
       source.asr = { ...(source.asr as any), rule2: DEFAULT_VOICE_SETTINGS.asr.rule2 };
+      changed = true;
+    }
+  }
+  /* v2 → v3（10-08）：`mic.autoGainControl` 的默认值由 false 改成 true（用户报「要很大声才录得进去」）。
+     ⛔ 老档案里存的是旧默认 false，只改常量对他们无效 ⇒ 与上面 rule2 同一套判据：
+       **值等于旧默认**（false 或没写过）才迁移；用户显式设过 true 的本来就对，不动。 */
+  if (version < 3) {
+    if (source.mic?.autoGainControl !== true) {
+      source.mic = { ...(source.mic as any), autoGainControl: true };
       changed = true;
     }
   }

@@ -8,7 +8,7 @@
  * 用 DOM 渲染（不是画在 canvas 上）——中英混排、换行、字体都交给浏览器，最省心也最清晰。
  */
 import { useEffect, useRef, useState } from "react";
-import { requestVoiceStop, subscribeVoiceStage, type VoiceWaveMode } from "../voice/wave-level";
+import { requestVoiceSkip, requestVoiceStop, subscribeVoiceStage, type VoiceWaveMode } from "../voice/wave-level";
 
 const BAR_COUNT = 44;
 
@@ -25,6 +25,13 @@ export default function VoiceWaveform() {
   const modeRef = useRef<VoiceWaveMode>("idle");
   const [stage, setStage] = useState({ mode: "idle" as VoiceWaveMode, userText: "", agentText: "", active: false, dictating: false });
   const rafRef = useRef(0);
+  /* 舞台定位（10-08 用户报「没在对话框居中」）：`.voice-stage` 走 `position: fixed` 脱离输入区文档流
+     （09-22 的既定决定 —— 挂进 composer 会让输入区一变它就跟着动），但那样**中心只能对着窗口**，
+     而输入框在消息区里另有一个中心（实测差约 100px，截图可辨）。⇒ 这里量一次 composer 的矩形，
+     把 left/bottom/width 写成行内样式，让它**贴在输入框上方、与输入框同宽同中心**。
+     ⛔ 只读 composer、只写自己的行内样式 ⇒ 不会触发 composer 那个「高度一变就重申贴底」的
+       ResizeObserver 循环（本项目在 .composer-wrap 上有贴底跟随逻辑）。 */
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => subscribeVoiceStage((s) => {
     levelRef.current = s.level;
@@ -35,6 +42,28 @@ export default function VoiceWaveform() {
         : { mode: s.mode, userText: s.userText, agentText: s.agentText, active: s.active, dictating: s.dictating }
     ));
   }), []);
+
+  // 贴合输入框：量 composer 的矩形 → 写自己的 left/bottom/width（见 rootRef 处的说明）
+  useEffect(() => {
+    if (!stage.active) return;
+    const el = rootRef.current;
+    if (!el) return;
+    const anchor = (el.closest(".composer-wrap") ?? el.parentElement) as HTMLElement | null;
+    if (!anchor) return;
+    const place = () => {
+      const rect = anchor.getBoundingClientRect();
+      if (!rect.width) return;
+      const width = Math.max(320, Math.min(rect.width, window.innerWidth - 32));
+      el.style.left = `${Math.round(rect.left + rect.width / 2)}px`;
+      el.style.bottom = `${Math.round(window.innerHeight - rect.top + 8)}px`;
+      el.style.width = `${Math.round(width)}px`;
+    };
+    place();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(place) : null;
+    observer?.observe(anchor);
+    window.addEventListener("resize", place);
+    return () => { observer?.disconnect(); window.removeEventListener("resize", place); };
+  }, [stage.active]);
 
   useEffect(() => {
     // 依赖 active：未激活时组件返回 null、canvas 还不存在，若用 [] 会在挂载那次
@@ -107,16 +136,24 @@ export default function VoiceWaveform() {
   if (!stage.active) return null;
 
   return (
-    <div className={`voice-stage voice-stage-${mode}`}>
+    <div className={`voice-stage voice-stage-${mode}`} ref={rootRef}>
       <div className="voice-stage-head">
         <span className="voice-stage-mode">{stage.dictating ? "语音输入中…" : MODE_LABEL[mode]}</span>
-        <button
-          type="button"
-          className="voice-stage-stop"
-          onClick={() => requestVoiceStop()}
-        >
-          {stage.dictating ? "结束输入" : "结束通话"}
-        </button>
+        <div className="voice-stage-actions">
+          {/* 打断（10-08）：原先只在右下角通话面板上，那块面板的通话态已按用户要求撤掉 ⇒ 能力搬到这里 */}
+          {mode === "speaking" && !stage.dictating && (
+            <button type="button" className="voice-stage-stop voice-stage-skip" onClick={() => requestVoiceSkip()}>
+              打断
+            </button>
+          )}
+          <button
+            type="button"
+            className="voice-stage-stop"
+            onClick={() => requestVoiceStop()}
+          >
+            {stage.dictating ? "结束输入" : "结束通话"}
+          </button>
+        </div>
       </div>
       <canvas ref={canvasRef} className="voice-wave-canvas" aria-hidden="true" />
       {showSubtitle && (
