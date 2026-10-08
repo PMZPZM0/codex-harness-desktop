@@ -342,6 +342,43 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     await fsp.writeFile(file, wav);
     return { ok: true, output: `配音已生成：${file}（${result.sampleRate}Hz，${(wav.length / 1024).toFixed(0)} KB）` };
   }
+  /* ── 语音播报（10-09 用户：「记得配套对应工具，没工具他调用不了」）──────────────────
+     此前模型在播报这件事上**只能被动**：内容写进 ```voice 稿里等回合结束，中途喊停没有闸。
+     这两个工具补上「现在就说」与「立刻闭嘴」。
+     ⛔ 为什么**不在主进程直接放音**：主进程没有扬声器出口（`voiceService.speak` 只到 PCM），
+        出声靠渲染层的 AudioContext 队列（语音播报 hook）——那边同时负责「播报中」状态条与
+        停止按钮。⇒ 主进程广播一条 harness:event由渲染层执行，**立刻返回**（等念完会把回合卡几秒）。
+     ⛔ 通话中拒绝（不是"可能冲突"而是**必然**出事）：通话链路独占扬声器且要喂 AEC 参考环，
+        两条同时放 ⇒ 用户听到自己改造的回声，且停止按钮管不到通话那一路。
+     ⛔ 返回值必须与事实相符：这里只证明"已提交"，没证明"听到了"⇒ 不说「已念给用户听」。 */
+  if (name === "voice_announce" || name === "voice_announce_stop") {
+    if (name === "voice_announce_stop") {
+      broadcastHarnessEvent({ type: "voice-announce", action: "stop", threadId: callerThreadId });
+      return { ok: true, output: "已请求停止播报：正在念的与排队待念的都已清掉（回复文字不受影响）。" };
+    }
+    const text = String(args.text ?? "").trim();
+    if (!text) return { ok: false, error: "text 必填（要念的那句话）" };
+    /* 上限刻意比 voice_generate 严得多（那边是配音合成，这里是**插播一句话**）：
+       120 字大概念 20 秒出头，再长就不是插播了 —— 用户既插不上话，也退不出排队。 */
+    if (text.length > 120) return { ok: false, error: `text 过长（${text.length} 字）：插播一句话即可，请压到 120 字以内（要念长内容就写进回复正文或回复末尾的播报稿）` };
+    let status: any = null;
+    try { status = voiceService?.status?.() ?? null; } catch { status = null; }
+    if (status?.active) {
+      return { ok: false, error: "当前正在实时语音通话中，扬声器由通话链路独占 —— 直接把话写进回复即可（通话会把回复念出来），不要用这个工具插播。" };
+    }
+    const speed = Number(args.speed);
+    broadcastHarnessEvent({
+      type: "voice-announce",
+      action: "speak",
+      text,
+      speed: Number.isFinite(speed) && speed > 0 ? speed : undefined,
+      threadId: callerThreadId,
+    });
+    return {
+      ok: true,
+      output: `已提交播报（本地合成 + 播放由界面完成）：「${text}」。⚠️ 这是即时发送、不等回执 —— 本地语音模型未下载或窗口不在前台时不会出声（工具不会报错），所以回复里请照常用文字把这句话写清楚，别指望它一定被听到。`,
+    };
+  }
   if (name === "connector_register") {
     const id = String(args.id ?? "").trim().replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
     const displayName = String(args.name ?? "").trim();

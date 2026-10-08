@@ -11,7 +11,8 @@ import { useEffect, useState } from "react";
 import { Check, ChevronDown, Globe2, MessageSquarePlus, Monitor, Play, ShieldCheck, Wrench } from "lucide-react";
 import { ToolStatusEntry } from "../../../features/session-cards";
 import { setVoiceCallNoticeHandler, setVoiceOpenSettingsHandler } from "../../../voice/wave-level";
-import { voiceCallNoticeText } from "../../../voice/voice-notice";
+import { setAnnounceNoticeHandler } from "../../../voice/announce-bus";
+import { voiceAnnounceNoticeText, voiceCallNoticeText } from "../../../voice/voice-notice";
 import type { PendingRequest } from "../types";
 
 
@@ -186,5 +187,22 @@ function VoiceCallNoticeBridge({ onNotify }: { onNotify: (text: string, threadId
     setVoiceCallNoticeHandler((active, threadId) => onNotify(voiceCallNoticeText(active), threadId));
     return () => setVoiceCallNoticeHandler(null);
   }, [onNotify]);
+  return null;
+}
+
+/**
+ * 语音播报开关的告知桥（10-09 用户：「让 Codex 知道这个功能与能力」）。
+ *
+ * ⛔ 为什么也要发告知（而不是让模型自己猜）：播报要不要念，决定权在用户的两个开关上，而这两个开关
+ *   只对 UI 可见 —— 模型不知道 ⇒ 要么每轮都写播报稿（关着的时候白烧篇幅），要么从来不写
+ *   （开着的时候功能形同不存在）。⇒ 开关一翻就把事实发进会话，判据与第 15 条（通话）完全一致。
+ * ⛔ `threadId` 由 App 传下来做会话闸：设置可能在**任意窗口**改，而告知只属于**当前会话**。
+ */
+export /** 语音播报开关的告知桥（null 渲染）。 */
+function VoiceAnnounceNoticeBridge({ threadId, onNotify }: { threadId: string; onNotify: (text: string, threadId: string) => void }): null {
+  useEffect(() => {
+    setAnnounceNoticeHandler((enabled) => onNotify(voiceAnnounceNoticeText(enabled), threadId));
+    return () => setAnnounceNoticeHandler(null);
+  }, [onNotify, threadId]);
   return null;
 }

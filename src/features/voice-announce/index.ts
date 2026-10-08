@@ -7,5 +7,7 @@
  *   总线的 `AnnounceEvent` 联合类型 + 本域 hook 的一个分支，对外接口不变。
  */
 export { VoiceAnnounceBridge } from "./VoiceAnnounceBridge";
+/** 「播报中」状态条（贴在输入框上方，带停止按钮）—— 挂载点＝ composer，因为它要按 `.composer-wrap` 定位。 */
+export { VoiceAnnounceIndicator } from "./VoiceAnnounceIndicator";
 /** 事件路由的接缝：把引擎事件翻成播报事件（当前会话才转发）。 */
 export { publishEngineAnnounce } from "./engine-bridge";

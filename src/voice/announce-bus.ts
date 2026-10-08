@@ -16,7 +16,12 @@ export type AnnounceEvent =
   /** 正文流式增量（只在**当前会话**上转发；后台会话的输出不该被念出来） */
   | { type: "delta"; threadId: string; text: string }
   /** 回合结束：带上**最终回复原文**，供「结束汇总播报」压缩后朗读 */
-  | { type: "turnDone"; threadId: string; text: string; aborted: boolean };
+  | { type: "turnDone"; threadId: string; text: string; aborted: boolean }
+  /**
+   * 模型**主动**插播一句话（`voice_announce` 工具，10-09）。
+   * ⛔ 它不受下面那两个开关管 —— 开关只决定"要不要自动念回复"，而这是显式调用，用户就要听这一句。
+   */
+  | { type: "toolSpeak"; threadId: string; text: string; speed?: number };
 
 type Listener = (event: AnnounceEvent) => void;
 
@@ -50,4 +55,58 @@ export function setAnnounceStopHandler(fn: (() => void) | null): void {
 
 export function requestAnnounceStop(): void {
   try { stopHandler?.(); } catch { /* 停止失败不影响别的功能 */ }
+}
+
+/* ── 「播报状态」广播（10-09 用户：「增加播报进行中的实时反馈」）────────────────────
+   为什么再起一条：执行端（合成 + 播放队列）在 hook 里，而显示层是贴在输入框上的那一条状态栏，
+   两者不在一个 React 子树 ⇒ 与 announce 事件、wave-level 完全同一套范式。
+   ⛔ 这里只转**事实**（有没有在念、正在念哪句、还排着几句），不做任何"该怎么显示"的判断。 */
+export type AnnounceStatus = {
+  /** 有东西要念（含还在合成的那句）⇒ 状态栏该出现 */
+  active: boolean;
+  /** 当前正在出声的那一句（没有则空串） */
+  current: string;
+  /** 还在排队的段数（不含正在念的这一句） */
+  pending: number;
+  /** 这一轮播报的来源：正文实时 / 结束汇总 / 模型主动插播 */
+  source: "" | "live" | "summary" | "tool";
+  /** 最近一次是否是被主动掐断的（用于文案切换；调用方自己复位） */
+  stopped: boolean;
+};
+
+export const IDLE_ANNOUNCE_STATUS: AnnounceStatus = { active: false, current: "", pending: 0, source: "", stopped: false };
+
+type StatusListener = (status: AnnounceStatus) => void;
+
+const statusListeners = new Set<StatusListener>();
+/** 最新一帧状态（新订阅者立刻拿到当前值，不用等下一次更新 —— 与 wave-level 的 stage 一致）。 */
+let announceStatus: AnnounceStatus = IDLE_ANNOUNCE_STATUS;
+
+export function publishAnnounceStatus(next: AnnounceStatus): void {
+  announceStatus = next;
+  for (const fn of statusListeners) {
+    try { fn(next); } catch { /* 单个订阅者出错不影响执行端 */ }
+  }
+}
+
+export function getAnnounceStatus(): AnnounceStatus {
+  return announceStatus;
+}
+
+export function subscribeAnnounceStatus(fn: StatusListener): () => void {
+  statusListeners.add(fn);
+  return () => { statusListeners.delete(fn); };
+}
+
+/* ── 「播报开关翻转」告知出口（10-09：让 Codex 知道播报开没开、该不该写 ```voice 稿）────
+   事件方向与上面相反：**说出去**（往会话里发一条告知）。文案的单一真相源在
+   `voice/voice-notice.ts`，这里只转发"开/关"这个布尔。 */
+let noticeHandler: ((enabled: boolean) => void) | null = null;
+
+export function setAnnounceNoticeHandler(fn: ((enabled: boolean) => void) | null): void {
+  noticeHandler = fn;
+}
+
+export function notifyAnnounceToggle(enabled: boolean): void {
+  try { noticeHandler?.(enabled); } catch { /* 告知失败不该影响播报 */ }
 }
