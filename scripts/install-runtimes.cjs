@@ -957,16 +957,43 @@ async function main() {
   if (want("uv")) await install("uv", UV_URL, path.join(TOOLS, "uv"), { marker: "uv.exe", strip: false, archiveName: `uv-${UV_VERSION}-x86_64-pc-windows-msvc.zip` });
   if (want("cmake")) await install("cmake", CMAKE_URL, path.join(TOOLS, "cmake"), { marker: "bin\\cmake.exe", strip: true, archiveName: `cmake-${CMAKE_VERSION}-windows-x86_64.zip` });
   if (want("conda")) await installConda(path.join(TOOLS, "miniconda"));
-  // WinLibs zip 解压后是 mingw64/ 一层目录，挪到 TOOLS/mingw 下
+  /* WinLibs zip 解压后是 mingw64/ 一层目录（marker = mingw/mingw64/bin/g++.exe）。
+     ⛔⛔ 10-08：这一支原先**绕开了本文件已有的三条纪律**，是它独有的短板。用户报「MinGW 下载失败」时
+       的现场特征正好指向它：临时目录里躺着一个**完整可用**的 zip（大小与线上 Content-Length 逐字节相等、
+       EOCD/中央目录都正常、tar 与 7za 都能列目录），而 `tools/mingw` **连目录都没建出来** ——
+       说明失败发生在 mkdir 之前，且重试拿到的可能是「续传修不好的坏缓存」。
+       对比 install()，它缺三样：
+       ① **坏缓存没有「先删再下」** —— 而 download() 一律 `--continue-at -` 续传，
+          **续传只补尾巴，坏文件永远修不好**（10-02 已踩过：用户点多少次都是「续传 0 字节 → 进度瞬间
+          100% → 失败」，重试一万次一模一样）；
+       ② **下载后没有再校验一次**（install() 有）；
+       ③ **解压直接调 BSDTAR、没有 extractArchive 的三级降级**（bsdtar → 7-Zip → PowerShell
+          Expand-Archive）⇒ 本机 bsdtar 不可用时，别的工具都能装、**只有 MinGW 必挂**。
+       现在四条都比照 install() 办理，并加「装完复核 marker」（与卡片判定同源）。 */
   if (want("mingw")) {
     const dir = path.join(TOOLS, "mingw");
-    if (fs.existsSync(path.join(dir, "mingw64", "bin", "g++.exe"))) { console.log(`[skip] mingw already at ${dir}`); }
+    const marker = path.join(dir, "mingw64", "bin", "g++.exe");
+    if (fs.existsSync(marker)) { console.log(`[skip] mingw already at ${dir}`); }
     else {
       const zip = path.join(TMP, WINLIBS_ZIP);
+      // ① 坏缓存先删（续传修不了坏文件；删掉让这次下载从 0 字节开始）
+      if (fs.existsSync(zip) && !archiveReady(zip)) {
+        console.log(`[mingw] 本地缓存的压缩包校验不通过（${formatBytes(fs.statSync(zip).size)}），已删除，改为完整重新下载`);
+        fs.rmSync(zip, { force: true });
+      }
       if (!archiveReady(zip)) { console.log(`[mingw] downloading ${WINLIBS_URL}`); await download(WINLIBS_URL, zip); }
       else console.log(`[mingw] reuse cached ${zip}`);
+      // ② 下载后再校验：代理劫持 / 中途断流会落下一个「体积对、内容坏」的包
+      if (!archiveReady(zip)) {
+        throw new Error("MinGW 压缩包校验不通过（下载完成仍读不出目录）—— 多半是网络或代理把响应换成了错误页面，请重试或换下载源");
+      }
       fs.mkdirSync(dir, { recursive: true });
-      runCommand(`"${BSDTAR}" -xf "${zip}" -C "${dir}"`, {});
+      // ③ 走共享的三级降级解压（不再只认 bsdtar）
+      await extractArchive(zip, dir, false, "mingw");
+      // ④ 装完复核 marker：解压成功 ≠ 归档布局与 marker 一致
+      if (!fs.existsSync(marker)) {
+        throw new Error(`MinGW 解压完成但找不到 ${marker} —— 归档布局与预期不符，请把本页日志反馈给开发者`);
+      }
       console.log(`[mingw] extracted to ${dir}`);
     }
   }

@@ -572,6 +572,15 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
     (arBody.length > 0 && !/1024 \* 1024/.test(arBody) ? ok : fail)(
       "【243】归档校验不拿「>1MB」当完整性判据（小体积归档会被误杀成坏包）"
     );
+    /* ⑥ 每个「手写解压」的工具分支都不许绕开共享纪律（10-08 用户报「MinGW 下载失败」）：
+       MinGW 那一支曾直接调 BSDTAR（无三级降级）、且对坏缓存走 `--continue-at -` 续传
+       （**续传只补尾巴，坏文件永远修不好**）⇒ 现场特征 = 临时目录里躺着完好的 zip、而
+       tools/mingw 连目录都没建。判据锚**接线取值**（剥注释后仍出现的事实），不锚注释。 */
+    const mingwBranch = ir.slice(ir.indexOf('if (want("mingw")) {'), ir.indexOf('if (fs.existsSync(path.join(nodeDir, "node.exe")))'));
+    (mingwBranch.includes("await extractArchive(zip, dir, false,") && mingwBranch.includes("已删除，改为完整重新下载")
+      && mingwBranch.includes("MinGW 解压完成但找不到") ? ok : fail)(
+      "【243】MinGW 安装支比照 install() 办理：坏缓存先删 → 下载后再校验 → 走共享三级降级 extractArchive → 装完复核 marker（不再只调 BSDTAR、不再对坏缓存续传）"
+    );
   }
 
   /* 【244】pip 多源兜底 + 工具自检（10-02 用户报障：清华镜像的 wheel 直链 403 ⇒ 文档转换 / 手机控制 /
