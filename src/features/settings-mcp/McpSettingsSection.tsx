@@ -12,10 +12,14 @@ import { BatchActions, CheckCard, SearchField, SelectAllToggle, ToggleSwitch } f
 import { MarketLogo } from "../../features/skills-market";
 import { ConnectorSetupModal, ConnectorTemplateModal } from "../../features/connectors";
 
-export type McpSettingsSectionProps = { connectors: any; connectorsManageOnly: any; settingsResources: any; connectorSearch: any; connectorChecked: any; setConnectorChecked: any; mcpOverrides: any; mcpServerSearch: any; mcpServerChecked: any; setMcpServerChecked: any; setConnectorSecret: any; setConnectorDraft: any; setConnectorEditorOpen: any; refreshSettingsResources: any; resourceLoading: any; mcpMarketCategory: any; setMcpMarketCategory: any; setMcpMarketSearch: any; mcpMarketSearch: any; setMarketPreview: any; installMcpServer: any; connectorTemplates: any; setConnectorTemplateValues: any; setConnectorTemplateModal: any; setConnectorOAuth: any; connectorTemplateModal: any; connectorTemplateValues: any; connectorTemplateSaving: any; connectorOAuth: any; saveConnectorFromTemplate: any; startConnectorOAuth: any; setConnectorsManageOnly: any; setConnectorSearch: any; connectorBatchBusy: any; batchSetConnectorsEnabled: any; connectorStatusBusy: any; setConnectorEnabled: any; removeConnector: any; connectorEditorOpen: any; connectorDraft: any; connectorSecret: any; connectorSaving: any; saveConnector: any; setMcpServerSearch: any; mcpServerBatchBusy: any; batchSetMcpServersEnabled: any; mcpServerStatusBusy: any; setMcpServerEnabled: any; mcpToolPermissions: any; setMcpToolPermission: any };
+export type McpSettingsSectionProps = { openAppConfirm: (title: string, text: string, confirmLabel?: string) => Promise<boolean>; connectors: any; connectorsManageOnly: any; settingsResources: any; connectorSearch: any; connectorChecked: any; setConnectorChecked: any; mcpOverrides: any; mcpServerSearch: any; mcpServerChecked: any; setMcpServerChecked: any; setConnectorSecret: any; setConnectorDraft: any; setConnectorEditorOpen: any; refreshSettingsResources: any; resourceLoading: any; mcpMarketCategory: any; setMcpMarketCategory: any; setMcpMarketSearch: any; mcpMarketSearch: any; setMarketPreview: any; installMcpServer: any; connectorTemplates: any; setConnectorTemplateValues: any; setConnectorTemplateModal: any; setConnectorOAuth: any; connectorTemplateModal: any; connectorTemplateValues: any; connectorTemplateSaving: any; connectorOAuth: any; saveConnectorFromTemplate: any; startConnectorOAuth: any; setConnectorsManageOnly: any; setConnectorSearch: any; connectorBatchBusy: any; batchSetConnectorsEnabled: any; connectorStatusBusy: any; setConnectorEnabled: any; removeConnector: any; connectorEditorOpen: any; connectorDraft: any; connectorSecret: any; connectorSaving: any; saveConnector: any; setMcpServerSearch: any; mcpServerBatchBusy: any; batchSetMcpServersEnabled: any; mcpServerStatusBusy: any; setMcpServerEnabled: any; mcpToolPermissions: any; setMcpToolPermission: any };
+
+/** 内置 MCP 服务器名单（10-06）：随应用/工具包分发，打「内置」标签且不提供移除入口。
+ *  ⛔ 名单是**功能事实**（这些服务器由宿主注册），改动必须同步 — 与 automation-policy 的内置项同源。 */
+const BUILTIN_MCP_SERVERS = new Set(["nuphus", "harness-dispatch"]);
 
 export function McpSettingsSection(props: McpSettingsSectionProps) {
-  const { connectors, connectorsManageOnly, settingsResources, connectorSearch, connectorChecked, setConnectorChecked, mcpOverrides, mcpServerSearch, mcpServerChecked, setMcpServerChecked, setConnectorSecret, setConnectorDraft, setConnectorEditorOpen, refreshSettingsResources, resourceLoading, mcpMarketCategory, setMcpMarketCategory, setMcpMarketSearch, mcpMarketSearch, setMarketPreview, installMcpServer, connectorTemplates, setConnectorTemplateValues, setConnectorTemplateModal, setConnectorOAuth, connectorTemplateModal, connectorTemplateValues, connectorTemplateSaving, connectorOAuth, saveConnectorFromTemplate, startConnectorOAuth, setConnectorsManageOnly, setConnectorSearch, connectorBatchBusy, batchSetConnectorsEnabled, connectorStatusBusy, setConnectorEnabled, removeConnector, connectorEditorOpen, connectorDraft, connectorSecret, connectorSaving, saveConnector, setMcpServerSearch, mcpServerBatchBusy, batchSetMcpServersEnabled, mcpServerStatusBusy, setMcpServerEnabled, mcpToolPermissions, setMcpToolPermission } = props;
+  const { openAppConfirm, connectors, connectorsManageOnly, settingsResources, connectorSearch, connectorChecked, setConnectorChecked, mcpOverrides, mcpServerSearch, mcpServerChecked, setMcpServerChecked, setConnectorSecret, setConnectorDraft, setConnectorEditorOpen, refreshSettingsResources, resourceLoading, mcpMarketCategory, setMcpMarketCategory, setMcpMarketSearch, mcpMarketSearch, setMarketPreview, installMcpServer, connectorTemplates, setConnectorTemplateValues, setConnectorTemplateModal, setConnectorOAuth, connectorTemplateModal, connectorTemplateValues, connectorTemplateSaving, connectorOAuth, saveConnectorFromTemplate, startConnectorOAuth, setConnectorsManageOnly, setConnectorSearch, connectorBatchBusy, batchSetConnectorsEnabled, connectorStatusBusy, setConnectorEnabled, removeConnector, connectorEditorOpen, connectorDraft, connectorSecret, connectorSaving, saveConnector, setMcpServerSearch, mcpServerBatchBusy, batchSetMcpServersEnabled, mcpServerStatusBusy, setMcpServerEnabled, mcpToolPermissions, setMcpToolPermission } = props;
   const visibleConnectors = connectors.filter((connector: any) => (!connectorsManageOnly || settingsResources.mcp.some((server: any) => server.name === connector.id)) && (!connectorSearch || `${connector.name} ${connector.id} ${connector.command ?? ""} ${connector.url ?? ""}`.includes(connectorSearch)));
   const selectableConnectorIds = visibleConnectors.map((connector: any) => connector.id);
   // 勾选集合取交集：筛选变化后已不可见的勾选项不计入批量
@@ -43,6 +47,9 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
     return {
       name,
       reported: Boolean(server),
+      /* ⛔ 10-06 用户定案：内置 MCP 打「内置」标签、随应用分发不能移除（拔仅随应用开关，不提供移除入口）。
+         harness-dispatch 是本应用内置的调度 MCP；nuphus 随「自动化工具包」内置。 */
+      builtin: BUILTIN_MCP_SERVERS.has(name),
       runtime: String(runtime || (server?.authStatus ?? "")),
       toolNames: tools.map((tool: any) => String(typeof tool === "string" ? tool : tool?.name ?? "")),
       auth: String(server?.authStatus ?? ""),
@@ -67,7 +74,9 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
         <SearchField value={mcpMarketSearch} onChange={setMcpMarketSearch} placeholder="搜索 MCP 服务名称或简介" />
       </div>
       <div className="skill-card-grid">
-        {SKILLHUB_MCP_CATALOG.filter((entry) => (mcpMarketCategory === "全部" || entry.category === mcpMarketCategory) && (!mcpMarketSearch || `${entry.name} ${entry.description} ${entry.category}`.toLowerCase().includes(mcpMarketSearch.toLowerCase()))).map((entry) => {
+        {SKILLHUB_MCP_CATALOG.filter((entry) => (mcpMarketCategory === "全部" || entry.category === mcpMarketCategory) && (!mcpMarketSearch || `${entry.name} ${entry.description} ${entry.category}`.toLowerCase().includes(mcpMarketSearch.toLowerCase()))
+          /* ⛔ 10-06 用户定案：市场里不再显示已接入的（与技能/插件页同一口径）——接入后去下方「已接入」管理。 */
+          && !connectors.some((connector: any) => connector.name === entry.id)).map((entry) => {
           const installed = connectors.some((connector: any) => connector.name === entry.id);
           return <article className={`skill-card ${installed ? "installed" : ""}`} key={entry.id} onClick={() => setMarketPreview({
             kind: "mcp",
@@ -125,7 +134,7 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
       <p className="connector-card-detail">{connector.transport === "stdio" ? `${connector.command} ${(connector.args ?? []).join(" ")}` : connector.url}</p>
       <div className="connector-card-foot">
         <small>{!isEnabled ? "已停用 · 引擎不会加载，配置与密钥保留" : status ? `引擎状态：${detail || "已发现"}` : "已写入配置，等待引擎状态返回"}</small>
-        <button className="icon-button" title="移除连接器" onClick={() => void removeConnector(connector.id)}><Trash2 size={14} /></button>
+        <button className="icon-button" title="移除连接器" onClick={() => { void openAppConfirm(`移除连接器 ${connector.name ?? connector.id}`, "将从配置中删除该 MCP 连接器并重启引擎，Codex 不再加载它提供的工具。", "移除").then((ok) => { if (ok) void removeConnector(connector.id); }); }}><Trash2 size={14} /></button>
       </div>
     </article>;
   })}{!connectors.length && <p className="muted">尚未配置连接器。请从服务提供方获取真实 MCP 启动命令或 HTTP MCP 地址后添加。</p>}</div>
@@ -153,8 +162,8 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
         <CheckCard checked={checked} label={`选择 ${row.name}`} title={checked ? `取消选择 ${row.name}` : `勾选 ${row.name}，纳入批量操作`} onChange={() => toggleMcpChecked(row.name)} />
         <div className="mcp-server-icon"><Wrench size={15} /></div>
         <div className="mcp-server-title">
-          <strong title={row.name}>{row.name}</strong>
-          <small>{row.managed ? "本应用管理的连接器" : "引擎直管服务器"}{row.auth ? ` · 认证 ${row.auth}` : ""}</small>
+          <strong title={row.name}>{row.name}{row.builtin ? <span className="plugin-channel ch-engine">内置</span> : null}</strong>
+          <small>{row.builtin ? "内置服务 · 随应用分发，不能移除" : row.managed ? "本应用管理的连接器" : "引擎直管服务器"}{row.auth ? ` · 认证 ${row.auth}` : ""}</small>
         </div>
         <span className={`mcp-server-state ${row.enabled ? (live ? "on" : failed ? "bad" : "idle") : "off"}`}>
           {!row.enabled ? "已停用" : live ? "运行中" : failed ? "启动失败" : row.reported ? (row.runtime || "已发现") : "等待回报"}

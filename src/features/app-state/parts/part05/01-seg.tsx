@@ -52,6 +52,20 @@ export function usePart05a(bag: Bag) {
         bag.setNotice(`已卸载本地插件：${plugin.displayName ?? plugin.name}`);
         return;
       }
+      // ⛔⛔ 10-08 收口：Codex 官方市场的插件**必须走专用卸载通道**。除引擎侧 plugin/uninstall 外，
+      //   它还要删落盘目录 + 摘 `<marketDir>/.agents/plugins/marketplace.json` 条目
+      //   （见 electron/codex-official-market.ts 的 removeOfficialMarketPluginFiles）。
+      //   ⚠️ 只调 plugin/uninstall 的后果：官方市场页用「扫本地目录」判已装 ⇒ 卸载后仍被判为已装，
+      //   而该页自 10-06 起又隐藏已装项、「已安装」屏也因引擎已卸而不显示 ⇒ 两处都没入口、磁盘却还在。
+      //   slug 必须取 `@` 前的 base 段：handler 内部会 safeFolder，传 `<slug>@codex-official-market` 会删错目录。
+      if (plugin.installed && /codex-official/i.test(String(plugin.marketplaceName ?? ""))) {
+        const slug = String(plugin.id ?? plugin.name ?? "").split("@")[0];
+        const removed = await window.codex.uninstallOfficialMarketPlugin(slug);
+        if (!removed?.ok) { bag.setNotice(`卸载失败：${removed?.reason ?? "未知原因"}`); return; }
+        await bag.refreshPluginsPage();
+        bag.setNotice(`已卸载插件：${pluginDisplayName(plugin)}`);
+        return;
+      }
       if (plugin.installed && plugin.id) {
         await window.codex.request("plugin/uninstall", { pluginId: plugin.id });
       } else {
