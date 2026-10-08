@@ -444,6 +444,32 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
     ? ok("fail() 在主动停止时直接返回（不再无条件 restart）")
     : fail("fail() 缺少 stopping 判断 —— 主动停止会被自动重启反转");
 
+  // ①-b 10-08 事故（用户实测「装技能/插件报安装失败，其实早就装好了」）是一条三连锁，
+  //     缺任何一环都会复发。⚠️ 别把这四条换成"常量存在"式断言（那是自洽地假绿）：
+  //     一律锚在**接线/取值**上 —— 摘哪个监听、等的是哪个事件、重试循环拿什么当退避。
+  //     现场：ENGINE 0.157 起启动时初始化 sqlite state runtime **偶发**失败并 exit 1
+  //     （`failed to initialize sqlite state runtime under <codexHome>`），紧接着的重启必定成功。
+  //     ⛔ 切片锚点必须是**唯一**标记：`"  /** 启动序列"` 会撞上 `launching` 字段那条同名注释
+  //        （出现得更早 ⇒ 切出空串 ⇒ 断言假红，10-08 实测踩过），所以锚在 `private async launch()`。
+  const restartBody = serverSrc.slice(serverSrc.indexOf("  private async doRestart()"), serverSrc.indexOf("  private async launch()"));
+  /removeAllListeners\("exit"\)/.test(restartBody)
+    && /once\("exit", finish\)/.test(restartBody)
+    && /ENGINE_EXIT_WAIT_MS/.test(restartBody)
+    && /this\.launchToken \+= 1/.test(restartBody)
+    ? ok("doRestart 等旧引擎进程真正退出后才 spawn（摘 exit 监听 + once('exit') + 超时兜底 + 作废在途启动）")
+    : fail("doRestart 杀掉旧进程就立刻 spawn：两个引擎在同一 codex-home 重叠，新进程会以 sqlite state runtime 初始化失败退出 1");
+  /for \(let attempt = 1; attempt <= ENGINE_START_ATTEMPTS; attempt\+\+\)/.test(serverSrc)
+    && /ENGINE_START_RETRY_MS\[attempt - 1\]/.test(serverSrc)
+    && /token !== this\.launchToken/.test(serverSrc)
+    ? ok("launch() 对「进程刚起就退出」自动重试（首次 + 2 次退避），且被取代的启动序列不再补 spawn")
+    : fail("launch() 缺启动重试 —— 引擎偶发启动失败会原样变成用户可见的「安装失败」");
+  /if \(this\.launching\) \{/.test(serverSrc)
+    ? ok("fail() 在启动序列进行中直接返回（交给重试循环，避免 start() 返回注定失败的 promise 而静默不重启）")
+    : fail("fail() 缺少 launching 判断 —— 启动失败后引擎会静默停在「已退出」（实测日志里 8 秒无 spawn）");
+  /this\.child === child/.test(serverSrc)
+    ? ok("引擎 child 的 exit/error 监听比对进程身份（过期进程的迟到 exit 不得把新 child 清成 undefined）")
+    : fail("引擎 exit/error 监听没比身份 —— 重试/重启时旧进程的迟到 exit 会把新引擎误判成已死");
+
   // ② 配置文件损坏不能让启动链断掉（曾导致"窗口根本不创建"，且进程持单实例锁，双击永远秒退）
   const readCustom = mainSrc.slice(mainSrc.indexOf("async function readCustomModel()"), mainSrc.indexOf("async function readCustomModels()"));
   !/throw error;/.test(readCustom)

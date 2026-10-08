@@ -16,6 +16,23 @@ const HEARTBEAT_TIMEOUT_MS = 6_000;
 const HEARTBEAT_MAX_FAILS = 3;
 const HEARTBEAT_MAX_RESTARTS = 3;
 
+// ── 引擎启动容错（10-08 用户实测「装技能/插件报安装失败」事故）────────────────
+// 现象：安装流程前 5 步全绿，最后一步「重启 Codex 引擎」报
+//   `[ERR_INVOKE_FAILED] skills:market-install: Error: Codex app-server exited (1)`
+//   —— 文件其实已经落盘装好了，用户却被判成"安装失败"。
+// 根因：引擎（0.157 起）启动时会在 CODEX_HOME 下初始化 sqlite state runtime，**偶发**失败：
+//   `Error: failed to initialize sqlite state runtime under <codexHome>`（进程直接 exit 1）。
+//   实测同一目录**紧接着的重启必定成功**（日志里失败后 26ms 的成功 spawn）⇒ 纯瞬时故障，
+//   不是磁盘损坏（引擎自身还有"损坏库挪到备份目录再重建"的兜底，那条路径没被走到）。
+// 宿主侧两处把瞬时故障放大成用户可见故障：
+//   ① `doRestart()` 杀掉旧引擎后**不等它真正退出**就 spawn ⇒ 两个进程在同一 codex-home 重叠；
+//   ② 这次瞬时失败被原样抛给 IPC ⇒ 已经成功的安装被报成失败。
+// 对策：启动失败自动重试（首次 + 2 次，退避 300ms / 900ms）。重试成功对上层完全透明。
+const ENGINE_START_ATTEMPTS = 3;
+const ENGINE_START_RETRY_MS = [300, 900];
+/** doRestart 等待旧引擎进程真正退出的上限（Windows 上 kill = TerminateProcess，实测毫秒级）。 */
+const ENGINE_EXIT_WAIT_MS = 3_000;
+
 export type CodexEvent = {
   kind: "notification" | "request" | "status" | "log";
   method?: string;
@@ -52,6 +69,11 @@ export class CodexServer extends EventEmitter {
   private pending = new Map<RpcId, Pending>();
   private nextId = 1;
   private starting?: Promise<void>;
+  /** 启动序列（含重试）进行中。`fail()` 据此避免并发再拉一次（见 fail() 注释）。 */
+  private launching = false;
+  /** 启动代次令牌：`doRestart()` 杀进程后自增，让在途启动序列的重试**立刻让位**，
+   *  否则它会把自己刚被杀的引擎再 spawn 一遍。 */
+  private launchToken = 0;
   private apiKey = "";
   private externalEnv: Record<string, string> = {};
   // ── 引擎健康看门狗 ──
@@ -209,20 +231,73 @@ export class CodexServer extends EventEmitter {
 
   private async doRestart() {
     this.stopping = false;   // 显式重启（不是退出）→ 恢复正常崩溃自愈
-    if (this.child) {
-      this.child.removeAllListeners("exit");
-      this.child.kill();
-      this.child = undefined;
+    // 作废在途启动序列的重试：它 spawn 的进程马上会被杀掉，不许它自己再补一个。
+    this.launchToken += 1;
+    const dying = this.child;
+    this.child = undefined;
+    if (dying) {
+      // ⛔⛔ 必须**等旧进程真的退出**再 spawn（10-08 事故）：引擎 0.157 起启动时要在
+      //   codex-home 下初始化 sqlite state runtime，两个进程重叠时新进程会以
+      //   `failed to initialize sqlite state runtime under …` 直接 exit 1。
+      //   摘掉 exit/error 监听（否则会触发 fail() 的自动重启）后 kill，用 once("exit")
+      //   等它落地；超时兜底 ENGINE_EXIT_WAIT_MS，绝不无限等。
+      dying.removeAllListeners("exit");
+      dying.removeAllListeners("error");
+      await new Promise<void>((resolve) => {
+        let settled = false;
+        const finish = () => { if (settled) return; settled = true; clearTimeout(timer); resolve(); };
+        const timer = setTimeout(finish, ENGINE_EXIT_WAIT_MS);
+        dying.once("exit", finish);
+        try { dying.kill(); } catch { finish(); }
+      });
     }
     for (const { reject, timer } of this.pending.values()) {
       clearTimeout(timer);
       reject(new Error("Codex app-server restarted"));
     }
     this.pending.clear();
-    await this.start();
+    // 在途启动序列（如果有）已被上面 reject 打断，等它真正收尾再 start ——
+    // 否则 `start()` 会因为 `this.starting` 仍被那个注定失败的 promise 占用而直接返回它，
+    // 结果既不 spawn 也不报错，引擎静默停在"已退出"（10-08 日志里 8 秒无 spawn 就是这个）。
+    await this.starting?.catch(() => undefined);
+    if (!this.child) await this.start();
   }
 
+  /** 启动序列（含瞬时失败重试）。`this.launching` 覆盖**整个**序列（含重试间隔）——
+   *  期间的进程退出由这里的重试负责，`fail()` 不得并发再拉一次（原因见 fail()）。 */
   private async launch() {
+    const token = ++this.launchToken;
+    this.launching = true;
+    try {
+      let lastError: unknown;
+      for (let attempt = 1; attempt <= ENGINE_START_ATTEMPTS; attempt++) {
+        try {
+          await this.launchOnce();
+          return;
+        } catch (error) {
+          lastError = error;
+          if (this.stopping) throw error;
+          // 已被更新的启动/重启取代（doRestart 刚杀掉本次 spawn 的进程）：立刻让位，
+          // 绝不重试出一个马上又会被杀掉的引擎。
+          if (token !== this.launchToken) throw error;
+          if (attempt < ENGINE_START_ATTEMPTS) {
+            const delay = ENGINE_START_RETRY_MS[attempt - 1];
+            this.debugLog(`[spawn] 引擎启动失败（第 ${attempt}/${ENGINE_START_ATTEMPTS} 次）：${(error as Error).message} → ${delay}ms 后重试`);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            if (token !== this.launchToken) throw lastError;
+          }
+        }
+      }
+      // 重试全部用尽：这时候才轮到上层看见"引擎起不来"（上面的每一次失败都被静默消化了）。
+      this.emitEvent({ kind: "status", status: "error", message: (lastError as Error)?.message ?? String(lastError) });
+      throw lastError;
+    } finally {
+      // 只在仍是本次序列时清标志：被取代时新序列已把 launching 置回 true。
+      if (token === this.launchToken) this.launching = false;
+    }
+  }
+
+  private async launchOnce() {
     this.emitEvent({ kind: "status", status: "starting" });
     const binary = codexBinaryPath();
     const spawnEnv: Record<string, string> = {
@@ -238,7 +313,7 @@ export class CodexServer extends EventEmitter {
     //   表现为"规章写了但 agent 不照做"。实测：加此参数后 129890 字节完整注入；且引擎会向上遍历
     //   拼接多级 AGENTS.md，这个上限卡的是**拼接总量**，必须留足余量。
     //   放在子命令之前（`codex -c k=v app-server`）—— app-server 只认全局 -c。
-    this.child = spawn(binary, ["-c", "project_doc_max_bytes=262144", "app-server", "--listen", "stdio://"], {
+    const child = spawn(binary, ["-c", "project_doc_max_bytes=262144", "app-server", "--listen", "stdio://"], {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
       // toolchainEnv：PATH 里带内置 node/pwsh/npm-global，NODE_PATH 指向 npm 全局
@@ -248,6 +323,7 @@ export class CodexServer extends EventEmitter {
       // 这是二进制里的官方内部开关（不在 --help 里），对非登录态环境是安全关闭。
       env: spawnEnv,
     });
+    this.child = child;
     this.debugLog(`[spawn] HTTPS_PROXY=${spawnEnv.HTTPS_PROXY ?? "(无)"} NO_PROXY=${spawnEnv.NO_PROXY ?? "(无)"} CODEX_HOME=${spawnEnv.CODEX_HOME} provider 相关 env 已注入 ${this.externalEnv.HTTPS_PROXY ? "externalEnv" : "externalEnv 无代理"}`);
     // ⛔ 进程级清账（09-19，用户：「每个会话都是绝对独立运行状态，互不影响」）：
     //   新引擎 = 旧进程里那些回合**全部不存在了**（它们的子进程/会话随进程销毁）。主进程那份
@@ -264,15 +340,24 @@ export class CodexServer extends EventEmitter {
       this.restartLog.push({ t: Date.now(), reason, busy: false, activeTurns: 0, action: "flush" });
       this.debugLog(`[restart] 新引擎启动即视为兑现被推迟的重启：${reason}`);
     }
-    this.child.stderr.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
     // stderr 只落盘、**不再转发渲染层**（多会话性能 09-12）：渲染层对 kind:"log" 的事件
     // 在 App.tsx 直接 return 丢弃，转发等于白付一次 IPC 序列化；而引擎 stderr 很密
     // （实测 4 小时 1.4 万条），多会话并行时是纯粹的开销。要排查仍看 engine-debug.log。
-    this.child.stderr.on("data", (message) => { this.debugLog(`[stderr] ${String(message).trim().slice(0, 600)}`); });
-    this.child.on("error", (error) => this.fail(error));
-    this.child.on("exit", (code) => this.fail(new Error(`Codex app-server exited (${code ?? "unknown"})`)));
+    child.stderr.on("data", (message) => { this.debugLog(`[stderr] ${String(message).trim().slice(0, 600)}`); });
+    // ⛔⛔ 监听里必须**比对进程身份**：启动重试/重启都会换新进程，旧进程的 exit 若迟到还照样
+    //   走 fail()，会把**新的** this.child 误清成 undefined —— 引擎明明活着却被判死，
+    //   紧接着的自动重启再叠一个进程上去。只处理"仍是当前那个 child"的事件。
+    child.on("error", (error) => {
+      if (this.child === child) this.fail(error);
+      else this.debugLog(`[spawn] 过期引擎进程 error（已忽略）：${error.message}`);
+    });
+    child.on("exit", (code) => {
+      if (this.child === child) this.fail(new Error(`Codex app-server exited (${code ?? "unknown"})`));
+      else this.debugLog(`[spawn] 过期引擎进程退出（已忽略）code=${code ?? "unknown"}`);
+    });
 
-    const lines = createInterface({ input: this.child.stdout });
+    const lines = createInterface({ input: child.stdout });
     lines.on("line", (line) => this.handleLine(line));
 
     await this.request("initialize", {
@@ -420,6 +505,17 @@ export class CodexServer extends EventEmitter {
       reject(error);
     }
     this.pending.clear();
+    // ⛔⛔ 启动序列进行中：由 `launch()` 自己的重试循环负责重拉，这里**必须直接返回**。
+    //   否则 `this.restart()` → `start()` 会因为 `this.starting` 仍被那个注定失败的 promise
+    //   占用而**把它原样返回**（既不 spawn 也不报错，更不会重试）—— 引擎就此静默停在
+    //   "已退出"状态。10-08 事故实测：07:17:17 引擎退出后日志里整整 8 秒没有任何 [spawn]，
+    //   期间应用是无引擎的（用户的"重启 Codex 引擎"这一步就是这么失败的）。
+    //   ⛔ 状态事件也一并推迟：重试期间的 status:"error" 会让渲染层把状态点打红并清掉
+    //   "正在跑"的记账（01-status.tsx），而引擎 300ms 后就会回来 —— 纯属误导。
+    if (this.launching) {
+      this.debugLog(`[spawn] 启动序列进行中，本次退出交给重试循环处理：${error.message}`);
+      return;
+    }
     this.emitEvent({ kind: "status", status: "error", message: error.message });
     // 看门狗已整体移除（2026-09-09 用户拍板）：心跳误判（MCP worker 慢/忙时 thread/list
     // 超时）会触发无意义重启，丢掉全部内存线程 → 用户会话莫名跳回欢迎页。

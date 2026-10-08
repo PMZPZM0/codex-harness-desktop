@@ -62,15 +62,20 @@ export const codexOfficialMarketFeature = defineFeature<null>({
         emit("pending", `引擎注册插件未成功：${error?.message ?? error}（文件已落盘，重启引擎后会重新扫描）`);
       }
       emit("engine", "正在重启 Codex 引擎并注册插件");
-      await server.restart();
+      // ⛔ 同 skills/plugins 两个市场：重启失败 ≠ 安装失败 —— 插件文件与 marketplace 段
+      //   都已经落盘，只是引擎这一次没起来（瞬时故障由 CodexServer 内置重试消化）。
+      let restartError = "";
+      try { await server.restart(); } catch (error: any) { restartError = error?.message ?? String(error); }
       emit("verify", "正在确认 Codex 是否已发现该插件");
-      const check = await findInstalledPlugin(plugin.slug);
+      const check = restartError ? { found: false, listFailed: true } : await findInstalledPlugin(plugin.slug);
       const engineRegistered = check.found;
-      const engineCheckMessage = engineRegistered
-        ? "Codex 已发现该插件"
-        : check.listFailed
-          ? "插件已安装且引擎已重启，但自动确认暂时不可用"
-          : "插件已写入本地插件目录；引擎已刷新，但当前列表未返回该插件，新建会话后仍会重新扫描。";
+      const engineCheckMessage = restartError
+        ? `插件已写入本地插件目录，但引擎本轮启动失败（${restartError}）。重启应用后即可生效。`
+        : engineRegistered
+          ? "Codex 已发现该插件"
+          : check.listFailed
+            ? "插件已安装且引擎已重启，但自动确认暂时不可用"
+            : "插件已写入本地插件目录；引擎已刷新，但当前列表未返回该插件，新建会话后仍会重新扫描。";
       emit(engineRegistered ? "complete" : "pending", engineCheckMessage);
       return { ...installed, engineRegistered, engineCheckMessage };
     });

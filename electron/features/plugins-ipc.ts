@@ -65,11 +65,18 @@ export const pluginsFeature = defineFeature<null>({
         emit("pending", `引擎注册插件未成功：${error?.message ?? error}（文件已落盘，重启引擎后会重新扫描）`);
       }
       emit("engine", "正在重启 Codex 引擎并注册插件");
-      await server.restart();
+      // ⛔⛔ 重启失败 ≠ 安装失败（10-08 用户实测）：插件文件/本地 marketplace 段都已落盘，
+      //   只是引擎这一次没起来（瞬时故障由 CodexServer 内置重试消化，这里是重试用尽的兜底）。
+      //   原样抛出会把"装好了"报成"安装失败"；降级成 pending 如实告知，并跳过引擎确认
+      //   （引擎没起来时 request 会再触发一次启动，白等 60s 超时）。
+      let restartError = "";
+      try { await server.restart(); } catch (error: any) { restartError = error?.message ?? String(error); }
       emit("verify", "正在确认 Codex 是否已发现该插件");
       let engineRegistered = false;
       let engineCheckMessage = "插件目录已写入，重启 Codex 后生效";
-      try {
+      if (restartError) {
+        engineCheckMessage = `插件已写入本地插件目录，但引擎本轮启动失败（${restartError}）。重启应用后即可生效。`;
+      } else try {
         const list: any = await server.request("plugin/list", { cwds: [], forceRefetch: false });
         const base = (value: string) => String(value ?? "").split("@")[0];
         const found = (list?.marketplaces ?? []).flatMap((marketplace: any) => marketplace.plugins ?? [])
