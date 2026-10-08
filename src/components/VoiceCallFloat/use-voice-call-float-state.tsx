@@ -11,6 +11,7 @@ import { CAPTURE_WORKLET_SOURCE } from "../../voice/capture-worklet";
 import { decodeFloat32Base64 } from "../../voice/audio-transport";
 import { patchVoiceStage, requestVoiceCallNotice, requestVoiceDictationSend, requestVoiceOpenSettings, resetVoiceStage, setVoiceDictationHandler, setVoiceLevel, setVoiceSkipHandler, setVoiceStopHandler } from "../../voice/wave-level";
 import { isLikelySelfEcho } from "../../lib/voice-echo.mjs";
+import { SUMMARY_EMPTY_NOTICE, summarizeForSpeech } from "../../lib/voice-summary.mjs";
 import { patchWakeState, resetWakeState } from "../../voice/wake-state";
 import { describeMicError } from "../../lib/mic-error.mjs";
 import { VoicePhase, VoiceState, ModelsStatus, POS_KEY, CAPTURE_RATE, BARGUE_COOLDOWN_MS, REF_RING_SECONDS, AEC_MAX_DELAY_SAMPLES, AEC_DEFAULT_DELAY_SAMPLES, PREBUFFER_MAX_SAMPLES, ENDPOINT_QUIET_RMS, ENDPOINT_QUIET_MS, pickHint, readPos } from "../VoiceCallFloat";
@@ -79,6 +80,14 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
   const playingCountRef = useRef(0);
   const aecRef = useRef<any>(null);
   const bargeModeRef = useRef<"auto" | "manual">("auto");
+  /**
+   * 语音播报开关（10-08，设置页「语音播报」卡片）：
+   *   · live    运行过程中的正文实时播报 —— 关掉 ⇒ 通话不再逐句念回复（纯语音下指令的用法）；
+   *   · summary 运行结束后的汇总播报 —— 打开 ⇒ 回合结束时再念一段本地压缩出的要点。
+   * 两个正交、可同时开；都关 = 通话只做输入不念回复。
+   * ⛔ 从设置读、并经 `voice:event` 的 settings 广播刷新（改完即时生效，不必重开通话）。
+   */
+  const announceRef = useRef<{ live: boolean; summary: boolean }>({ live: true, summary: false });
   /** 麦克风约束（设备选择 + 降噪/回声消除/自动增益），从设置读到后给 getUserMedia 用 */
   const micSettingsRef = useRef<{
     deviceId: string;
@@ -238,6 +247,9 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
           setBallVisible(b.visible !== false);
           setHintsEnabled(b.hints !== false);
         }
+        // 播报开关也走这条广播：设置页勾/取消后**当前通话立刻生效**（下一句起）
+        const a = event.settings?.announce;
+        if (a) announceRef.current = { live: a.live !== false, summary: a.summary === true };
         return;
       }
       if (event.type === "state") {
@@ -286,7 +298,8 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
         });
         // 舞台字幕用 ref 里的累计值（不依赖 state 更新时机）
         patchVoiceStage({ agentText: agentTextRef.current });
-        void speakDelta(piece);
+        // ★ 实时播报开关（10-08）：关掉就只出字幕、不出声（断句器不进内容，回合结束也不会补念）
+        if (announceRef.current.live) void speakDelta(piece);
         return;
       }
       if (event.type === "turnDone") {
@@ -297,7 +310,16 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
           return;
         }
         pushTranscript("agent", agentTextRef.current);
-        void flushSpeech();
+        const finalText = agentTextRef.current;
+        /* ★ 10-08 两个播报开关在这里收口：
+             · live 开 → 把断句器里的**尾句**念完（关掉时断句器是空的，flush 自然是空操作）；
+             · summary 开 → 再念一段本地压缩出的要点（压缩算法见 src/lib/voice-summary.mjs）。
+           ⛔ 必须**先 await flush** 再念汇总：两者共用一条播放队列，并发入队会把汇总插进半句中间
+             （队列按「上一个 source 的结束时刻」排期，谁后入队谁后播）。 */
+        void (async () => {
+          if (announceRef.current.live) await flushSpeech();
+          if (announceRef.current.summary) await speakSummary(finalText);
+        })();
         return;
       }
       if (event.type === "error") {
@@ -510,6 +532,29 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
     }
   }, [enqueuePlay]);
 
+  /**
+   * 结束汇总播报（10-08 新增）：把最终回复**本地压缩**成要点再念。
+   *
+   * ⛔ 压缩不调模型（用户选的就是「本地要点截取」）：取结论句，剩下的只报「另有 N 句」——
+   *    零延迟、零联网、零费用。算法是纯函数，见 `src/lib/voice-summary.mjs`（守卫真跑真值表）。
+   * ⛔ 与实时播报共用同一个世代号：被打断/挂断时这段也不会念出来。
+   */
+  const speakSummary = useCallback(async (finalText: string) => {
+    const epoch = speechEpochRef.current;
+    const summary = summarizeForSpeech(String(finalText ?? ""));
+    // 整段是代码时念一句说明，免得用户以为播报坏了（`sentences === 0` = 清洗后没内容可念）
+    const text = summary.text || (summary.sentences === 0 && String(finalText ?? "").trim() ? SUMMARY_EMPTY_NOTICE : "");
+    if (!text) return;
+    const result = await window.codex.voiceSpeak(text).catch(() => null);
+    if (epoch !== speechEpochRef.current) return;   // 期间被打断：这段不念
+    if (!result?.ok || !result.audioBase64 || !result.sampleRate) {
+      if (result && !result.ok && result.error) setNotice(result.error);
+      return;
+    }
+    const samples = decodeFloat32Base64(result.audioBase64);
+    if (samples.length) await enqueuePlay(samples, result.sampleRate);
+  }, [enqueuePlay]);
+
   // ---- 采集链路 ----
   const startCapture = useCallback(async () => {
     // ★ 设置必须在 getUserMedia **之前**读（审计 ⑥）：旧实现先开麦、后读设置，
@@ -524,6 +569,7 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
     // 打断方式 + 灵敏度从设置取：auto=能量门控自动打断，manual=仅手动按钮（外放场景避免误触发）
     gateRef.current = createEchoGate({ echoGateDb: s?.barge?.gateDb ?? 9 });
     bargeModeRef.current = s?.barge?.mode ?? "auto";
+    announceRef.current = { live: s?.announce?.live !== false, summary: s?.announce?.summary === true };
     if (typeof s?.asr?.rule2 === "number") setEndpointSec(s.asr.rule2);
 
     const permission = await window.codex.voiceMicPermission().catch(() => ({ status: "unknown" }));
@@ -1078,5 +1124,5 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
   // 他窗口通话中 → 球置灰（视觉 + 语义），挂断后轮询自动恢复
   const ballClass = `voice-ball ${phase === "active" ? `is-${state}` : ""} ${phase === "starting" ? "is-starting" : ""} ${busyElsewhere && phase === "idle" ? "is-busy-elsewhere" : ""}`;
 
-  return { threadId, phase, setPhase, state, setState, expanded, setExpanded, levelRef, screenElRef, applyLevel, muted, setMuted, mutedRef, toggleMute, transcript, setTranscript, callStartedAt, setCallStartedAt, userText, setUserText, agentText, setAgentText, ballVisible, setBallVisible, hintsEnabled, setHintsEnabled, hint, setHint, menu, setMenu, agentTextRef, ballRef, notice, setNotice, endpointSec, setEndpointSec, models, setModels, download, setDownload, pos, setPos, mediaStreamRef, captureCtxRef, workletRef, playCtxRef, playQueueRef, playingCountRef, aecRef, bargeModeRef, micSettingsRef, volumeRef, gateRef, chunkerRef, speakFilterRef, prebufferRef, liveRef, refRingRef, refWriteRef, refReadRef, refDropsRef, endpointArmedRef, quietSinceRef, lastBargeAtRef, speakingRef, phaseRef, voiceModeRef, dragRef, refreshModels, busyElsewhere, setBusyElsewhere, onBallContextMenu, hideBall, pushRef, enqueuePlay, speechEpochRef, bumpSpeechEpoch, stopPlayback, skipCurrent, speakDelta, flushSpeech, startCapture, teardown, startCall, endCall, startCallRef, callToggleRef, pushTranscript, wakeCfg, setWakeCfg, installModels, draggedRef, onPointerDown, onPointerMove, onPointerUp, onBallClick, stateLabel, modelsReady, ballClass };
+  return { threadId, phase, setPhase, state, setState, expanded, setExpanded, levelRef, screenElRef, applyLevel, muted, setMuted, mutedRef, toggleMute, transcript, setTranscript, callStartedAt, setCallStartedAt, userText, setUserText, agentText, setAgentText, ballVisible, setBallVisible, hintsEnabled, setHintsEnabled, hint, setHint, menu, setMenu, agentTextRef, ballRef, notice, setNotice, endpointSec, setEndpointSec, models, setModels, download, setDownload, pos, setPos, mediaStreamRef, captureCtxRef, workletRef, playCtxRef, playQueueRef, playingCountRef, aecRef, bargeModeRef, micSettingsRef, volumeRef, gateRef, chunkerRef, speakFilterRef, announceRef, prebufferRef, liveRef, refRingRef, refWriteRef, refReadRef, refDropsRef, endpointArmedRef, quietSinceRef, lastBargeAtRef, speakingRef, phaseRef, voiceModeRef, dragRef, refreshModels, busyElsewhere, setBusyElsewhere, onBallContextMenu, hideBall, pushRef, enqueuePlay, speechEpochRef, bumpSpeechEpoch, stopPlayback, skipCurrent, speakDelta, flushSpeech, speakSummary, startCapture, teardown, startCall, endCall, startCallRef, callToggleRef, pushTranscript, wakeCfg, setWakeCfg, installModels, draggedRef, onPointerDown, onPointerMove, onPointerUp, onBallClick, stateLabel, modelsReady, ballClass };
 }

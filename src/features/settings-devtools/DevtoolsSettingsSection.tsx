@@ -12,10 +12,10 @@ import { copyTextToClipboard } from "../../lib/clipboard";
 import { PhoneHarnessCard } from "./PhoneHarnessCard";
 import { LayaCard } from "./LayaCard";
 
-export type DevtoolsSettingsSectionProps = { downloadSource?: any; capabilityRows: any; capabilityError: any; VoiceDevToolsSection: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any };
+export type DevtoolsSettingsSectionProps = { downloadSource?: any; capabilityRows: any; capabilityError: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any };
 
 export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
-  const { capabilityRows, capabilityError, VoiceDevToolsSection, setNotice, devRuntimes, runtimeInstalling, runtimeUninstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime, cancelDevRuntime } = props;
+  const { capabilityRows, capabilityError, setNotice, devRuntimes, runtimeInstalling, runtimeUninstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime, cancelDevRuntime } = props;
   // 「检查工具」（10-02 用户要的）：卡片上的「已安装」只证明**文件在**，不证明**能跑**。
   // 点一次让主进程逐个真跑版本命令，把不可用的挑出来显示 —— 结果只存本组件（打开页面即清空）。
   const [health, setHealth] = useState<any[] | null>(null);
@@ -65,8 +65,14 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
                           </div>
                         ))}
                     </div>
-                    <div className="settings-subhead"><Download size={13} />语音模型<span className="settings-subhead-hint">sherpa-onnx · 本机推理 · 按需下载</span></div>
-                    <VoiceDevToolsSection onNotice={setNotice} />
+                    {/* 10-08 迁移：语音模型 / 音色克隆模型的选择项已搬到「设置 → 语音通话」——
+                        用户要求语音相关的东西集中在一处（音色 / 模型 / 播报 / 语速同页）。
+                        ⛔ 这里只留一句指路，不要再留第二份渲染（同一份状态两处渲染 = 双真相源）。 */}
+                    <div className="settings-subhead"><Download size={13} />语音模型<span className="settings-subhead-hint">已移到「语音通话」页</span></div>
+                    <div className="settings-card-hint">
+                      语音模型（识别 + 合成）与音色克隆模型现在统一在<strong>设置 → 语音通话</strong>里管理
+                      （下载 / 启用停用 / 删除），和音色、语速放在同一页。
+                    </div>
                     {(() => {
                       // 09-16 用户「自动化工具拆开，拆详细一点」：不再一张「桌面与浏览器自动化」大卡，
                       // 拆成逐条能力卡（Nuphus / Playwright CLI / CloakBrowser / 两类内核 / ponytail）。

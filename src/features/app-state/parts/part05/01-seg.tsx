@@ -27,6 +27,9 @@ import type { Bag } from "../bag-types";
 /* ⭐ 像素办公室 · 事件面（10-05 晚）：把引擎 item 事件按会话记给办公室显示器用。
    ⛔ 域边界：这里只**喂数据**，办公室域自己决定怎么演（渲染层域组件禁止反向依赖 app-state）。 */
 import { noteOfficeActivity } from "../../../team-office";
+/* ⭐ 语音播报（10-08 新增板块）：事件路由只**喂事件**，要不要念、怎么念由播报域自己决定。
+   ⛔ 同款域边界：与 noteOfficeActivity 一样，域之间只走 barrel，不深链内部文件。 */
+import { publishEngineAnnounce } from "../../../voice-announce";
 import { handleEventRouter1 } from "./event-router/01-status";
 import { handleEventRouter2 } from "./event-router/02-request";
 import { handleEventRouter3 } from "./event-router/03-thread-id";
@@ -335,6 +338,15 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
            放到过滤之后 ⇒ 它们的事件一条都到不了办公室 ⇒ 显示器只会演屏保。
          ⚠️ 内部先按方法名短路（只认 item/started|completed），不会成为流式热路径。 */
       if (params.threadId) noteOfficeActivity(params, event.method ?? "");
+      /* ⭐ 语音播报（10-08 新增）：正文 delta 与回合结束各喂一次，由播报域按开关决定念不念。
+         ⛔ 位置必须在下面 `threadStreamMethods` 那个分支**之前**：`item/agentMessage/delta` 与
+            `turn/completed` 都在 `threadStreamMethods` 里，`handleEventRouter4` 命中后会
+            `return`（当前会话事件流到此为止）⇒ 放到它后面等于**播报永不触发**
+            （症状是「开关打开了没反应」，且不报任何错）。
+            ⚠️ 实测口径：`handleEventRouter3`（跨会话生命周期）**恒返回 false**、不吃事件，
+            所以真正的约束来自 router4；写在这里是因为它同时满足「跨会话过滤之前」的位置要求。
+         ⛔ 只喂当前会话（域内自比 threadId）：后台会话（团队成员 / 被调度子会话）的输出不该被念。 */
+      publishEngineAnnounce(event.method ?? "", params, bag.threadRef.current?.id ?? "");
       // ── 跨会话生命周期事件：即使属于后台会话也要先处理，用于维护运行指示器 ──
       // 侧边栏转圈必须跟着「真正在运行的会话」，不能因为切到别的会话就跟着跑过去。
       // 这些事件不能被下面的 threadId 过滤挡掉，否则切走后后台会话的

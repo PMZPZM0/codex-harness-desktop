@@ -101,6 +101,31 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
   }, [onNotice]);
 
 
+  /**
+   * 上传音色（10-08 新增）：走主进程的 `voice:profile-upload`（source=file → 打开文件选择器选 wav）。
+   *
+   * ⛔ 与「导入音频」同一条草稿链、同一份校对 UI —— 差别只在入口：
+   *    「导入」= 从本地挑一段已有录音；「上传」= 把音频**交给本应用**（含外部程序调用那条接口，
+   *    见 electron/features/voice-ipc/02-voice-profiles-presets.ts 的 source=base64/pack 预留）。
+   *    两条都拿到 `draftFile`，用户核对参考文本后才保存成音色。
+   */
+  const uploadProfile = useCallback(async () => {
+    setProfileBusy("正在读取并识别音频…");
+    try {
+      const r: any = await window.codex.voiceProfileUpload({ source: "file" });
+      if (r?.canceled) { setProfileBusy(""); return; }
+      if (!r?.ok) { onNotice(`上传失败：${r?.error ?? "未知"}`); setProfileBusy(""); return; }
+      setDraft({ draftFile: r.draftFile, refText: r.refText ?? "", sourceName: r.sourceName ?? "上传的音频", durationSec: r.durationSec ?? 0 });
+      setDraftName("我的音色");
+      setProfileBusy(r.refText ? "" : "自动识别未成功，请手填原文");
+      if (!r.refText) onNotice("没能自动识别出音频内容，请在下方手填音频里念的那句话");
+    } catch (e: any) {
+      onNotice(`上传失败：${e?.message ?? e}`);
+      setProfileBusy("");
+    }
+  }, [onNotice]);
+
+
   const startProfileRecord = useCallback(async () => {
     setProfileBusy("正在录音…（最多 10 秒，说完点停止）");
     let stream: MediaStream;
@@ -478,5 +503,5 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
       .sort((a, b) => a.value - b.value);
   }, [meta]);
 
-  return { onNotice, settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, wakePhraseDraft, setWakePhraseDraft, wakeState, setWakeState, kws, setKws, kwsDownload, setKwsDownload, micTestRef, profiles, setProfiles, zipReady, setZipReady, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, wakePhraseSyncedRef, installKws, apply, audition, toggleMicTest, captureHotkey, commitWakePhrase, voiceOptions };
+  return { onNotice, settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, wakePhraseDraft, setWakePhraseDraft, wakeState, setWakeState, kws, setKws, kwsDownload, setKwsDownload, micTestRef, profiles, setProfiles, zipReady, setZipReady, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, wakePhraseSyncedRef, installKws, apply, audition, toggleMicTest, captureHotkey, commitWakePhrase, voiceOptions };
 }

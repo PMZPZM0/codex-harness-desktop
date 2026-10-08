@@ -12,7 +12,7 @@
 import { createHash } from "crypto";
 import { spawn } from "node:child_process";
 import { createReadStream, createWriteStream, existsSync, statSync } from "fs";
-import { copyFile, mkdir, open, readFile, rename, stat, unlink } from "fs/promises";
+import { copyFile, mkdir, open, readdir, readFile, rename, rm, stat, unlink } from "fs/promises";
 import { basename, dirname, join } from "path";
 import { MODEL_HOSTS, modelUrl, type VoiceModelFile, type VoiceModelRepo, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_DIR, ZIPVOICE_ARCHIVE, zipvoiceReady } from "./model-manifest";
 
@@ -609,7 +609,18 @@ export function modelsSizeOnDisk(modelsRoot: string): number {
  */
 const GITHUB_MIRROR_PREFIXES = ["https://ghfast.top/", "https://gh-proxy.com/"];
 
-/** 单次下载（可续传）。网络中断**保留**已下部分供下次续传；只有 SHA256 不符才删除。 */
+/**
+ * 单次下载（可续传）。网络中断**保留**已下部分（存在 `.part` 上）供下次续传；只有 SHA256 不符才删除。
+ *
+ * ⛔⛔ 10-08 修（用户实测「音色克隆模型 15 秒内下载失败，状态却被刷新成『已安装』，其实不能用」）：
+ *   **必须写 `.part` + 成功后 rename**。旧实现直接往最终路径写 —— 网络中断 / 卡死换镜像 /
+ *   用户取消时，「保留残file 供续传」这条规则会把**半截文件留在最终路径**，而就绪判定只看
+ *   「文件在且非空」⇒ 半个 54MB 的声码器也被当成装好了：界面显示已安装，真用起来 onnx 加载直接失败。
+ *   现在最终路径**只可能**出现 SHA256 校验通过的完整文件，半截一律躺在 `.part` 里等着续传。
+ *   （HF 逐文件仓库那条路 `downloadOne` / `downloadParallel` 早就是这个写法，这里补上同一套判据。）
+ *
+ * `atomic: false` 只给「目标本身就是临时件」的调用方用；默认原子。
+ */
 async function downloadOnce(
   url: string,
   destPath: string,
@@ -617,14 +628,16 @@ async function downloadOnce(
   bytes: number,
   onBytes?: (received: number, total: number) => void,
   signal?: AbortSignal,
-  options?: { headersTimeoutMs?: number; minSpeedBytesPerSec?: number },
+  options?: { headersTimeoutMs?: number; minSpeedBytesPerSec?: number; atomic?: boolean },
 ): Promise<{ ok: true } | { ok: false; error: string; fatal?: boolean; cancelled?: boolean }> {
   let received = 0;
+  /** 半截文件的落点（默认 `.part`，见上面的原子写说明） */
+  const workPath = options?.atomic === false ? destPath : `${destPath}.part`;
   /** 用户取消 ≠ 失败：取消要**保留**已下载的部分，下次点「下载」能接着传 */
   const cancelled = () => ({ ok: false as const, error: "已取消", cancelled: true as const });
   try {
     await mkdir(dirname(destPath), { recursive: true });
-    received = existsSync(destPath) ? statSync(destPath).size : 0;
+    received = existsSync(workPath) ? statSync(workPath).size : 0;
     const headers: Record<string, string> = {};
     if (received > 0) headers.Range = "bytes=" + received + "-";
     // ⚠️ fetch 自身没有超时：直连地址挂起时 TCP 连接会一直等下去（实测「下载很慢」的真凶之一）。
@@ -651,8 +664,8 @@ async function downloadOnce(
     const total = (Number(response.headers.get("content-length") ?? 0) || 0) + received || bytes;
     const hash = createHash("sha256");
     // 续传时先把已有部分喂进哈希，最后才能对整文件校验
-    if (received > 0 && received < total) hash.update(await readFile(destPath));
-    const outStream = createWriteStream(destPath, received > 0 && received < total ? { flags: "a" } : {});
+    if (received > 0 && received < total) hash.update(await readFile(workPath));
+    const outStream = createWriteStream(workPath, received > 0 && received < total ? { flags: "a" } : {});
     const reader = (response.body as any).getReader();
     let stallTimer: NodeJS.Timeout | null = null;
     const readChunk = () =>
@@ -694,14 +707,22 @@ async function downloadOnce(
     }
     await new Promise<void>((resolve, reject) => outStream.end(() => resolve()).on("error", reject));
     if (sha256 && hash.digest("hex") !== sha256) {
-      await unlink(destPath).catch(() => undefined);
+      await unlink(workPath).catch(() => undefined);
       return { ok: false, error: "SHA256 校验失败（下载损坏），已清理，请重试", fatal: true };
+    }
+    // 原子写的收口：只有校验通过，文件才出现在最终路径
+    if (workPath !== destPath) {
+      try {
+        await rename(workPath, destPath);
+      } catch (error: any) {
+        return { ok: false, error: `重命名失败：${error?.message ?? error}` };
+      }
     }
     return { ok: true };
   } catch (error: any) {
     if (signal?.aborted) return cancelled();
     if (error?.fatal) {
-      await unlink(destPath).catch(() => undefined);
+      await unlink(workPath).catch(() => undefined);
       return { ok: false, error: String(error?.message ?? error), fatal: true };
     }
     // 网络类失败：保留残file，供下一次续传
@@ -776,7 +797,10 @@ async function downloadUrlToFile(
       if (result.ok) return result;
       if (result.cancelled) {
         // 取消：**保留**已下载的部分，下次点下载从这里续传
-        const partial = existsSync(destPath) ? statSync(destPath).size : 0;
+        // ⛔ 10-08：半截文件现在在 `.part` 上（downloadOnce 原子写）⇒ 报体积要读 `.part`，
+        //    读最终路径会永远显示「已下载 0MB」（最终路径只有完整文件才存在）。
+        const partPath = `${destPath}.part`;
+        const partial = existsSync(partPath) ? statSync(partPath).size : 0;
         const mb = (partial / 1048576).toFixed(1);
         return { ok: false, error: partial > 0 ? `已取消（已下载 ${mb}MB，下次点「下载」会接着传）` : "已取消" };
       }
@@ -827,6 +851,59 @@ async function extractTarBz2(archivePath: string, destDir: string, resourcesTool
   return { ok: true };
 }
 
+/**
+ * 解压归档，并**原子落到** `<modelsRoot>/<targetName>`（10-08 新增）。
+ *
+ * 流程：解到 `<modelsRoot>/.staging-<名字>-<时间>/` → 成功后整体搬成目标目录 → 清掉临时目录。
+ *
+ * ⛔ 为什么不直接解到模型目录：中途失败/取消会留下「一半文件在里面」的目录，而
+ *    「是否已安装」的判定就长在同一个目录上（同一份数据既是产物又是判据）。
+ *    有了 staging：失败路径只留一个可随手删掉的临时目录，模型目录**要么没有、要么完整**。
+ *
+ * 归档顶层布局的三种真实形态都能落位（取目录、而不是取名字猜）：
+ *   A) 顶层就是同名目录（sherpa-onnx 的 release 资产就是这种）→ 直接改名；
+ *   B) 顶层是某个目录但名字不同 → 取那个唯一的目录；
+ *   C) 顶层散着文件（无目录）→ 逐个搬进目标目录。
+ * 顶层还夹带别的散文件（README 之类）时只搬目录 —— 模型目录里不需要它们。
+ */
+async function extractArchiveInto(
+  archivePath: string,
+  modelsRoot: string,
+  targetName: string,
+  resourcesToolsDir: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const staging = join(modelsRoot, `.staging-${targetName}-${Date.now().toString(36)}`);
+  await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+  const extracted = await extractTarBz2(archivePath, staging, resourcesToolsDir);
+  if (!extracted.ok) {
+    await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+    return extracted;
+  }
+  const target = join(modelsRoot, targetName);
+  try {
+    const entries = await readdir(staging);
+    const dirs: string[] = [];
+    for (const name of entries) {
+      try { if ((await stat(join(staging, name))).isDirectory()) dirs.push(name); } catch { /* 忽略单项读取失败 */ }
+    }
+    const pick = dirs.includes(targetName) ? targetName : dirs.length === 1 ? dirs[0] : "";
+    await rm(target, { recursive: true, force: true });
+    if (pick) {
+      await rename(join(staging, pick), target);
+    } else {
+      await mkdir(target, { recursive: true });
+      for (const name of entries) await rename(join(staging, name), join(target, name));
+    }
+  } catch (error: any) {
+    // ⛔ 搬迁失败必须把目标目录一起清掉：留着半成品会被「是否已就绪」当成候选（这正是本次事故的形状）
+    await rm(target, { recursive: true, force: true }).catch(() => undefined);
+    await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+    return { ok: false, error: `归档落位失败：${error?.message ?? error}` };
+  }
+  await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+  return { ok: true };
+}
+
 /** 安装/补齐音色克隆模型（ZipVoice + vocos 声码器）。已就绪时直接返回。 */
 export async function ensureZipvoice(
   modelsRoot: string,
@@ -839,8 +916,10 @@ export async function ensureZipvoice(
     onProgress?.({ repo: ZIPVOICE_DIR, file, doneFiles, totalFiles, percent, message });
 
   const dir = join(modelsRoot, ZIPVOICE_DIR);
+  /** 关键文件缺失**或体积不足**都算「需要重取主包」（体积判据口径与 zipvoiceReady 同源） */
+  const minOf = ZIPVOICE_ARCHIVE.readyFileMinBytes;
   const needMain = ZIPVOICE_ARCHIVE.readyFiles.some((name) => {
-    try { return statSync(join(dir, name)).size <= 0; } catch { return true; }
+    try { return statSync(join(dir, name)).size < (minOf[name] ?? 1); } catch { return true; }
   });
 
   if (needMain) {
@@ -860,9 +939,12 @@ export async function ensureZipvoice(
       if (!downloaded.ok) return downloaded;
     }
     report("模型包", 100, "正在解压音色克隆模型…", 0, 2);
-    const extracted = await extractTarBz2(archivePath, modelsRoot, resourcesToolsDir);
+    const extracted = await extractArchiveInto(archivePath, modelsRoot, ZIPVOICE_DIR, resourcesToolsDir);
     if (!extracted.ok) return extracted;
     await unlink(archivePath).catch(() => undefined);
+    if (!ZIPVOICE_ARCHIVE.readyFiles.every((name) => existsSync(join(dir, name)))) {
+      return { ok: false, error: `解压后缺关键模型文件（归档结构可能变了）：期望 ${ZIPVOICE_ARCHIVE.readyFiles.join("、")}` };
+    }
   }
 
   const vocoderPath = join(dir, ZIPVOICE_ARCHIVE.vocoder.name);
@@ -878,6 +960,14 @@ export async function ensureZipvoice(
       GITHUB_MIRROR_PREFIXES,
     );
     if (!result.ok) return result;
+  }
+
+  /* ⛔ 装完必须**回读一次就绪判定**（判据与界面同源）——「下载器说成功」不等于「模型能用」：
+     用户实测的 bug 正是「下载报失败、状态却显示已安装」，反向也不能错：
+     这里若是「下载报成功、其实不完整」，界面必须立刻显示未安装而不是等用户去踩。
+     到这一步仍不就绪 ⇒ 明确报错（不要静默返回 ok）。 */
+  if (!zipvoiceReady(modelsRoot)) {
+    return { ok: false, error: "音色克隆模型校验未通过（文件不完整），请重试下载（已下载的部分会续传）" };
   }
 
   report("完成", 100, "音色克隆模型就绪", 2, 2);
@@ -932,7 +1022,8 @@ export async function ensureKws(
     if (!downloaded.ok) return downloaded;
   }
   report(100, "正在解压语音唤醒模型…");
-  const extracted = await extractTarBz2(archivePath, modelsRoot, resourcesToolsDir);
+  // 与 zipvoice 同一条纪律：解到 staging 再整体落位（半成品目录不许出现在模型目录里）
+  const extracted = await extractArchiveInto(archivePath, modelsRoot, KWS_DIR, resourcesToolsDir);
   if (!extracted.ok) return extracted;
   await unlink(archivePath).catch(() => undefined);
   if (!kwsReady(modelsRoot)) {
