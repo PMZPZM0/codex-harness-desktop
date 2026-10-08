@@ -3217,8 +3217,22 @@ w.postMessage({id:1,op:"list",root});
       (officialUiCode.includes("<PluginInstallModal") && officialUiCode.includes("STAGE_POSITIONS") ? ok : fail)(
         "【255】安装中有六步弹层（复用 PluginInstallModal，同一套 DOM/CSS，装了看不到进度=没有反馈）"
       );
-      (officialUiCode.includes("if (confirmSlug !== plugin.slug) { setConfirmSlug(plugin.slug); return; }") ? ok : fail)(
-        "【255】卸载走两段式确认（第一次只武装确认条，第二次才真删 —— 删除不可逆）"
+      /* ⛔ 10-08 收口（行为已按 10-06 用户定案变更）：本页不再显示已安装项，
+         页内两段式确认条（confirmSlug / uninstallPlugin）随之删除 —— 卸载统一在「已安装」屏
+         走 openAppConfirm 确认框（全局模态层级另有【227】钉）。本条改为**负向**：
+         旧的页内两段式确认条不许复活，且本页必须真的隐藏已装项。 */
+      (!officialUiCode.includes("confirmSlug") && officialUiCode.includes("if (installed) return null") ? ok : fail)(
+        "【255】官方市场页不显示已安装项（10-06 定案）；页内两段式确认条（confirmSlug）不许复活 —— 卸载统一在「已安装」屏走确认框"
+      );
+      /* ⛔ 10-08 收口：官方市场来源的插件卸载**必须走专用通道**。半成品把卸载统一收进 changePlugin 后，
+         官方插件只调了引擎 plugin/uninstall —— 落盘目录与 `.agents/plugins/marketplace.json` 条目没清；
+         而官方市场页按「扫本地目录」判已装、又隐藏已装项 ⇒ 两处都没入口、磁盘却还在（幽灵残留）。
+         判据锚**调用接线**（剥注释后仍出现该 API 调用），不是"常量存在"。 */
+      ((() => {
+        const seg05 = codeOnly(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part05", "01-seg.tsx"), "utf8"));
+        return seg05.includes("window.codex.uninstallOfficialMarketPlugin(") && /marketplaceName/.test(seg05) && /codex-official/i.test(seg05);
+      })() ? ok : fail)(
+        "【255】官方市场插件卸载走专用通道（changePlugin /codex-official/i 分支调 uninstallOfficialMarketPlugin —— 只调 plugin/uninstall 会漏删落盘目录 + marketplace 清单条目）"
       );
       (officialUiCode.includes("!live &&") && officialUiCode.includes("codex-official-market-error") ? ok : fail)(
         "【255】快照模式与加载失败都在 UI 上明说（⛔ 静默空列表会被当成「官方源没有插件」）"

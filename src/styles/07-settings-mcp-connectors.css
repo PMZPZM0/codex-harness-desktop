@@ -1945,3 +1945,10 @@
   padding-top: 2px;
   gap: 8px;
 }
+
+/* 已安装插件的来源渠道标签（10-06 统一：与技能页 sourceLabel 同族形态） */
+.plugin-channel { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; font-size: 10px; line-height: 16px; margin-right: 6px; color: var(--muted); }
+.plugin-channel.ch-official { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); color: var(--accent); }
+.plugin-channel.ch-mirror { border-color: color-mix(in srgb, var(--link) 40%, var(--line)); color: var(--link); }
+.plugin-channel.ch-engine { border-color: color-mix(in srgb, var(--green) 40%, var(--line)); color: var(--green); }
+.plugin-channel.ch-local { border-color: var(--line); color: var(--muted); }

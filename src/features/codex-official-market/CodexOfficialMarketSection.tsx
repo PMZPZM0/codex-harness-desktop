@@ -11,13 +11,16 @@
  *      事件走 `official-plugin-install`（⛔ 不与 `plugin-install` 共用 type —— 两个源有重名 slug：
  *      linear / github 都撞，共用会让弹层认错插件）。
  *   2. **已安装**：判定取主进程本地 marker（真相源），不是引擎 plugin/list；
- *      卡片右上角 ✓，点 ✓ 走**两段式确认**再卸载（删除不可逆，第二次点击才真删）。
+ *      ⛔ 10-06 起本页**不再显示已安装项**（`if (installed) return null`）—— 装了的去「已安装」屏
+ *      统一管理与卸载。官方市场来源的插件在那边走 changePlugin 的专用分支（`/codex-official/i`
+ *      匹配 marketplaceName），会连落盘目录与 `.agents/plugins/marketplace.json` 条目一起清掉
+ *      （见 electron/codex-official-market.ts 的 removeOfficialMarketPluginFiles）。
  *   3. **装了不等于能用**：官方 65 条**全部要鉴权**（ON_INSTALL 58 / ON_USE 7），
  *      其中 15 条还依赖 ChatGPT 应用连接器 ⇒ 每张卡片都带 `authNote`，
  *      外部仓库源那 3 条直接标「不支持一键安装」，不给人点了才发现报错。
  */
 import { useCallback, useEffect, useState } from "react";
-import { Check, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { Plus, ShieldCheck } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { SearchField } from "../../components/SettingsWidgets";
 import { MarketLogo, PluginInstallModal } from "../skills-market";
@@ -42,8 +45,6 @@ export function CodexOfficialMarketSection({ onResourcesChanged }: Props) {
   const [error, setError] = useState("");
   const [installing, setInstalling] = useState("");
   const [install, setInstall] = useState<{ plugin: any; current: number; failed?: string; engineRegistered?: boolean; engineCheckMessage?: string } | null>(null);
-  const [confirmSlug, setConfirmSlug] = useState("");
-  const [uninstalling, setUninstalling] = useState("");
   const [notice, setNotice] = useState("");
 
   const reload = useCallback(async () => {
@@ -111,22 +112,6 @@ export function CodexOfficialMarketSection({ onResourcesChanged }: Props) {
     }
   };
 
-  const uninstallPlugin = async (plugin: any) => {
-    if (confirmSlug !== plugin.slug) { setConfirmSlug(plugin.slug); return; }   // 两段式：第一次只武装确认条
-    setUninstalling(plugin.slug);
-    try {
-      const result: any = await window.codex.uninstallOfficialMarketPlugin(plugin.slug);
-      setNotice(result?.ok ? `已卸载 ${plugin.displayName}${result.engineRemoved ? "（引擎已同步停用）" : "（引擎将在下次扫描后同步）"}` : `卸载失败：${result?.reason ?? "未知原因"}`);
-      await reload();
-      onResourcesChanged?.();
-    } catch (cause: any) {
-      setNotice(`卸载失败：${cause?.message ?? cause}`);
-    } finally {
-      setUninstalling("");
-      setConfirmSlug("");
-    }
-  };
-
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const tabs: [string, string][] = [["全部", "全部"], ...categories.map((entry) => [entry.displayName, entry.key] as [string, string])];
 
@@ -144,35 +129,23 @@ export function CodexOfficialMarketSection({ onResourcesChanged }: Props) {
     {items.length > 0 ? <div className="skill-card-grid">
       {items.map((plugin: any) => {
         const installed = plugin.installed === true || installedIds.includes(plugin.slug);
+        /* ⛔ 10-06 用户定案：市场里不再显示已安装的（装了的去「已安装」屏管理/卸载）。 */
+        if (installed) return null;
         const busy = installing === plugin.slug;
-        const confirming = confirmSlug === plugin.slug;
-        return <article className={`skill-card codex-official-market-card ${installed ? "installed" : ""}`} key={plugin.slug}>
+        return <article className="skill-card codex-official-market-card" key={plugin.slug}>
           <div className="skill-card-head">
             <MarketLogo url={plugin.logo} label={plugin.displayName} size={30} />
-            {installed ? <span className="codex-official-market-state">
-              <span className="codex-official-market-flag" title={`已安装${plugin.installedVersion ? ` v${plugin.installedVersion}` : ""}（真相源：本地插件目录里的来源清单）`}><Check size={13} />已安装</span>
-              <button
-                className={`codex-official-market-remove ${confirming ? "armed" : ""}`}
-                title={confirming ? "再次点击确认卸载（会删除本地插件目录）" : "卸载：删除本地插件目录"}
-                disabled={uninstalling === plugin.slug}
-                onClick={() => void uninstallPlugin(plugin)}
-              >{uninstalling === plugin.slug ? <Spinner /> : <Trash2 size={14} />}</button>
-            </span> : <button
+            <button
               className="skill-add"
               title={plugin.installable ? "一键安装到本地插件目录（国内镜像）" : plugin.unavailableReason ?? "暂不支持一键安装"}
               disabled={!plugin.installable || Boolean(installing)}
               onClick={() => void installPlugin(plugin)}
-            >{busy ? <Spinner /> : <Plus size={14} />}</button>}
+            >{busy ? <Spinner /> : <Plus size={14} />}</button>
           </div>
           <strong title={plugin.slug}>{plugin.displayName}</strong>
           <p>{plugin.description}</p>
           {/* ⛔ 鉴权提示不许省：官方 65 条全部要配凭据，只报「已安装」等于骗人 */}
           <em className="codex-official-market-auth"><ShieldCheck size={12} />{plugin.authNote}</em>
-          {confirming && <div className="codex-official-market-confirm">
-            <span>确认卸载？将删除本地插件目录 <code>plugins/{plugin.slug}</code>，需重新联网安装。</span>
-            <button className="primary-setting" onClick={() => void uninstallPlugin(plugin)}>确认卸载</button>
-            <button className="secondary-setting" onClick={() => setConfirmSlug("")}>取消</button>
-          </div>}
           <footer>
             <span>{plugin.categoryZh ?? plugin.category}</span>
             {plugin.version && <span title="上游版本">v{plugin.version}</span>}
@@ -190,6 +163,6 @@ export function CodexOfficialMarketSection({ onResourcesChanged }: Props) {
         <button className="secondary-setting" disabled={loading || page >= totalPages} onClick={() => setPage((current) => current + 1)}>下一页</button>
       </div>
     </div>
-    {install && <PluginInstallModal state={install as any} onClose={() => { setInstall(null); setConfirmSlug(""); }} />}
+    {install && <PluginInstallModal state={install as any} onClose={() => { setInstall(null); }} />}
   </div>;
 }

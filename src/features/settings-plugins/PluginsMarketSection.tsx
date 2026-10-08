@@ -16,10 +16,29 @@ import { MarketLogo } from "../../features/skills-market";
 import { CodexOfficialMarketSection } from "../codex-official-market";
 import { avatarToneOf } from "../../lib/entity-avatar";
 
-export type PluginsMarketSectionProps = { settingsResources: any; pluginSearch: any; pluginInstalledOnly: any; pluginDisplayName: any; pluginDescription: any; pluginChecked: any; setPluginChecked: any; refreshPluginsPage: any; resourceLoading: any; pluginMarketLoading: any; pluginMarketCategoryTabs: any; pluginMarketCategory: any; setPluginMarketCategory: any; setPluginMarketPage: any; pluginMarketSearch: any; setPluginMarketSearch: any; pluginMarketItems: any; installingMarketPlugin: any; setMarketPreview: any; installMarketPlugin: any; pluginMarketTotal: any; pluginMarketPage: any; pluginMarketPageSize: any; setPluginInstalledOnly: any; setPluginSearch: any; pluginBatchBusy: any; batchSetPluginEnabled: any; pluginBusy: any; setPluginEnabled: any; changePlugin: any };
+/** 已安装插件的**来源渠道标签**（10-06 用户：「每个市场安装的都要在已安装里打来源渠道标签」）。
+ *  marketplaceName 的取值由各市场注册时写入：官方源 = codex-official-market；Gitee 镜像 = 名字里带 gitee/claude；
+ *  引擎自带精选 = openai-api-curated。⛔ 未知来源原样显示勾选名，不猜。 */
+function pluginChannelLabel(plugin: any): string {
+  const market = String(plugin?.marketplaceName ?? "");
+  if (!market) return "本地";
+  if (/codex-official/i.test(market)) return "Codex 官方";
+  if (/gitee|claude/i.test(market)) return "Claude 镜像";
+  if (/curated/i.test(market)) return "引擎官方市场";
+  return market;
+}
+function pluginChannelTone(plugin: any): string {
+  const market = String(plugin?.marketplaceName ?? "");
+  if (/codex-official/i.test(market)) return "ch-official";
+  if (/gitee|claude/i.test(market)) return "ch-mirror";
+  if (/curated/i.test(market)) return "ch-engine";
+  return "ch-local";
+}
+
+export type PluginsMarketSectionProps = { openAppConfirm: (title: string, text: string, confirmLabel?: string) => Promise<boolean>; settingsResources: any; pluginSearch: any; pluginInstalledOnly: any; pluginDisplayName: any; pluginDescription: any; pluginChecked: any; setPluginChecked: any; refreshPluginsPage: any; resourceLoading: any; pluginMarketLoading: any; pluginMarketCategoryTabs: any; pluginMarketCategory: any; setPluginMarketCategory: any; setPluginMarketPage: any; pluginMarketSearch: any; setPluginMarketSearch: any; pluginMarketItems: any; installingMarketPlugin: any; setMarketPreview: any; installMarketPlugin: any; pluginMarketTotal: any; pluginMarketPage: any; pluginMarketPageSize: any; setPluginInstalledOnly: any; setPluginSearch: any; pluginBatchBusy: any; batchSetPluginEnabled: any; pluginBusy: any; setPluginEnabled: any; changePlugin: any };
 
 export function PluginsMarketSection(props: PluginsMarketSectionProps) {
-  const { settingsResources, pluginSearch, pluginInstalledOnly, pluginDisplayName, pluginDescription, pluginChecked, setPluginChecked, refreshPluginsPage, resourceLoading, pluginMarketLoading, pluginMarketCategoryTabs, pluginMarketCategory, setPluginMarketCategory, setPluginMarketPage, pluginMarketSearch, setPluginMarketSearch, pluginMarketItems, installingMarketPlugin, setMarketPreview, installMarketPlugin, pluginMarketTotal, pluginMarketPage, pluginMarketPageSize, setPluginInstalledOnly, setPluginSearch, pluginBatchBusy, batchSetPluginEnabled, pluginBusy, setPluginEnabled, changePlugin } = props;
+  const { openAppConfirm, settingsResources, pluginSearch, pluginInstalledOnly, pluginDisplayName, pluginDescription, pluginChecked, setPluginChecked, refreshPluginsPage, resourceLoading, pluginMarketLoading, pluginMarketCategoryTabs, pluginMarketCategory, setPluginMarketCategory, setPluginMarketPage, pluginMarketSearch, setPluginMarketSearch, pluginMarketItems, installingMarketPlugin, setMarketPreview, installMarketPlugin, pluginMarketTotal, pluginMarketPage, pluginMarketPageSize, setPluginInstalledOnly, setPluginSearch, pluginBatchBusy, batchSetPluginEnabled, pluginBusy, setPluginEnabled, changePlugin } = props;
   const all = settingsResources.plugins as any[];
   // 10-04：源切换器（Claude 镜像 / Codex 官方 / 已安装）。⛔ 必须声明在 visible 之前——
   //   visible 要按它过滤（已装屏只显示已装的）。
@@ -38,6 +57,9 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
     //   引擎请求、需要登录 ChatGPT 账号 ⇒ 没登录时点了必然失败。放在"已安装"这一屏里
     //   只会让人反复点一个注定失败的东西，所以这里**彻底不露出未安装的**。
     if (marketSource === "installed" && !plugin.installed) return false;
+    /* ⛔ 10-06 用户定案：**市场里不再显示已安装的**——装了的只在「已安装」屏出现，
+       与技能页「市场装的进已安装分组」同一口径（各市场不再各显一套 ✓/已装状态）。 */
+    if (marketSource !== "installed" && plugin.installed) return false;
     if (!keyword) return true;
     return `${pluginDisplayName(plugin)} ${pluginDescription(plugin)} ${plugin.marketplaceName ?? ""} ${plugin.name ?? ""}`.toLowerCase().includes(keyword);
   });
@@ -149,7 +171,7 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
           <div className="plugin-card-head">
             <CheckCard checked={checked} disabled={!isInstalled} label={`选择 ${displayName}`} title={!isInstalled ? "未安装的插件无法勾选" : checked ? `取消选择 ${displayName}` : `勾选 ${displayName}`} onChange={() => togglePluginChecked(String(plugin.id ?? ""))} />
             <span className={`plugin-avatar tone-${avatarToneOf(displayName)}`}>{initial}</span>
-            <div className="plugin-card-title"><strong title={displayName}>{displayName}</strong><small>{plugin.marketplaceName ? `来自 ${plugin.marketplaceName}` : "本地市场"}{plugin.interface?.developerName ? ` · ${plugin.interface.developerName}` : ""}</small></div>
+            <div className="plugin-card-title"><strong title={displayName}>{displayName}</strong><small><span className={`plugin-channel ${pluginChannelTone(plugin)}`}>{pluginChannelLabel(plugin)}</span>{plugin.interface?.developerName ? ` · ${plugin.interface.developerName}` : ""}</small></div>
             {!isInstalled && <span className="plugin-state off">未安装</span>}
             <ToggleSwitch
               checked={isEnabled}
@@ -163,7 +185,7 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
           {capabilities.length > 0 && <div className="plugin-tags">{capabilities.slice(0, 3).map((capability) => <span className="plugin-tag" key={capability}>{capability}</span>)}</div>}
           <div className="plugin-card-foot">
             <span className="plugin-source"><Store size={11} />{plugin.localVersion ? `v${plugin.localVersion}` : plugin.interface?.category ?? "plugin"}</span>
-            <button className={isInstalled ? "secondary-setting plugin-action danger" : "primary-setting plugin-action"} disabled={busy} onClick={() => void changePlugin(plugin)}>
+            <button className={isInstalled ? "secondary-setting plugin-action danger" : "primary-setting plugin-action"} disabled={busy} onClick={() => { if (!isInstalled) { void changePlugin(plugin); return; } void openAppConfirm(`卸载插件 ${pluginDisplayName(plugin)}`, "将删除本地插件目录，重启 Codex 后不再加载该插件。", "卸载").then((ok) => { if (ok) void changePlugin(plugin); }); }}>
               {busy ? <Spinner /> : isInstalled ? <><Trash2 size={13} />卸载</> : <><Plus size={13} />安装</>}
             </button>
           </div>
