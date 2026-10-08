@@ -139,6 +139,7 @@ import {
   CheckCheck,
 } from "lucide-react";
 import VoiceWaveform from "../../../../components/VoiceWaveform";
+import { VoiceAnnounceIndicator } from "../../../voice-announce";
 import { Markdown, MdCode, MdBlock, FilePreviewCode } from "../../../markdown";
 import { QueuedMessageList, FoldHandlers, TurnFoldStream } from "../../../session-queue";
 import { GoalBar, TurnStatusCapsule } from "../../../status";
@@ -507,6 +508,10 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                   )}
                   {/* 实时语音舞台：彩色波浪 + 中英字幕，只在通话中显示（状态来自 voice/wave-level 广播） */}
                   <VoiceWaveform />
+                  {/* 「语音播报中」状态条（10-09）：只出声不收音的场景（实时正文 / 结束汇总 / Codex 插播）
+                      用户看不见念到哪、也喊不停 ⇒ 这条给出当前句 + 待播数 + 停止按钮。
+                      播报一旦有东西在念就出现，念完自动收起 —— 平时不占任何 DOM。 */}
+                  <VoiceAnnounceIndicator />
                   <ComposerComposerForm app={app} />
                   {isEmpty && (
                     <div className="suggest-row">

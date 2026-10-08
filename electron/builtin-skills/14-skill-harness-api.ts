@@ -20,6 +20,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
   **内置调度 MCP 当前暴露的工具**（09-29 现状；实际以 tools/list 返回为准）：
   · 调度：\`scheduler_save\`（建定时任务，\`threadId:"current"\` = 就在当前会话里续聊执行）/ \`scheduler_list\` / \`scheduler_run\` / \`scheduler_delete\`
   · 媒体：\`image_generate\`（生图，\`count\` 1–4 并发出变体，落盘返回本地路径）/ \`video_generate\`（提交视频任务，**立即返回 jobId，不等待**；\`video\` 参数可传白模预演参考片的公网 URL，配 Seedance 2.0/2.5 渲染）/ \`video_status\`（查任务；成功会自动下载落盘）/ \`video_concat\`（把多镜片段按给定顺序拼成成片）/ \`voice_generate\`（台词合成配音 WAV，落盘返回路径；语音模型未下载时报错并指路「设置 → 语音」）
+  · 语音播报（10-09）：\`voice_announce\`（**立刻念一句话**给用户听 —— 插播，不必等本轮回复结束；≤120 字；实时语音通话中不可用，那时直接写进回复就会被念出来。⚠️ 即时发送、不等回执：没出声不会报错 ⇒ 别据此向用户声称「已经说了」，那句话照常用文字写出来）/ \`voice_announce_stop\`（立刻停止播报、清掉排队待念的内容）
   · 子智能体：\`agent_invoke\`（派一个干净上下文的自己）/ \`agent_archive_sessions\` / \`subagent_save\`（新建子智能体代理，name+systemPrompt 必填）
   · 专家：\`expert_save\`（创建/更新专家或专家团——displayNameZh + leadName + leadSystemPrompt 必填，多角色加 members；同 teamId 即更新）/ \`expert_list\`（列已有专家）。用户说「帮我建一个 XX 专家 / 专家团」时直接用它，建完复述 teamId；⛔ 内置六专家（知微/呈象/洞明/鲁班/画意/剪承团）有固定 teamId，别覆盖
   · 专家：\`expert_save\`（创建/更新专家或专家团——displayNameZh + leadName + leadSystemPrompt 必填，多角色加 members；同 teamId 即更新）/ \`expert_list\`（列已有专家）。用户说「帮我建一个 XX 专家 / 专家团」时直接用它，建完复述 teamId；⛔ 内置六专家（知微/呈象/洞明/鲁班/画意/剪承团）有固定 teamId，别覆盖

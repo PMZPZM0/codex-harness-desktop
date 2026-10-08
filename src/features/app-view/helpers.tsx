@@ -33,4 +33,4 @@ export { fmtImportTime, prettifyHookLabel, noticeTone, modelName, botChannelName
 export { parseTeamMemberTitle, groupThreadsByTime, collectMessageTexts, locateMatchEl, resumeThreadWithTurns } from "./helpers/thread-list";
 export { collectKnownPaths, usageCounterSnapshot, toFileUrl } from "./helpers/paths";
 export { createInlineAttachmentChip, armSendAnimationClaim, jumpToTurn, revealStepFor } from "./helpers/view-dom";
-export { ToolCard, RequestCard, VoiceSettingsBridge, VoiceCallNoticeBridge } from "./helpers/components";
+export { ToolCard, RequestCard, VoiceSettingsBridge, VoiceCallNoticeBridge, VoiceAnnounceNoticeBridge } from "./helpers/components";

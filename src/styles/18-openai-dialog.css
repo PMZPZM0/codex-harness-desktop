@@ -990,6 +990,53 @@
   background: color-mix(in srgb, #c0392b 8%, transparent);
 }
 
+/* ===== 「语音播报中」状态条（10-09）：非通话播报的实时反馈 + 停止按钮 =====
+   ⛔ 定位与 VoiceWaveform 同一套（fixed + 行内几何），这里**故意不写** left/top/width
+      —— 写了也赢不过行内样式，只会误导下一个人去改这里。
+   ⛔ z-index 略低于舞台（60）：两者不会同时出现（通话中由通话链路接管播报），
+      真撞上也让舞台压在上面。 */
+.voice-announce-bar {
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 58;
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px 6px 12px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 26px color-mix(in srgb, #000 20%, transparent);
+  font-size: 11.5px; color: var(--muted);
+  animation: voice-announce-in .18s cubic-bezier(.2,.8,.25,1);
+}
+@keyframes voice-announce-in {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+.voice-announce-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex: none;
+  background: #a855f7;
+  animation: voice-dot 1.4s ease-in-out infinite;
+}
+.voice-announce-icon { flex: none; color: #a855f7; }
+.voice-announce-mode { font-weight: 600; color: var(--text); flex: none; }
+.voice-announce-text {
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--muted);
+}
+.voice-announce-pending { flex: none; color: var(--muted); opacity: .8; }
+.voice-announce-stop {
+  flex: none; display: inline-flex; align-items: center; gap: 4px;
+  height: 22px; padding: 0 9px; border-radius: 999px; cursor: pointer;
+  font-size: 11.5px; font-weight: 500;
+  border: 1px solid var(--line); background: var(--panel); color: var(--muted);
+}
+.voice-announce-stop:hover {
+  color: #c0392b;
+  border-color: color-mix(in srgb, #c0392b 35%, var(--line));
+  background: color-mix(in srgb, #c0392b 8%, transparent);
+}
+
 .voice-wave-canvas {
   display: block; width: 100%; height: 56px;
 }

@@ -148,7 +148,7 @@ import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextI
 import { MarketLogo, MarketPreviewModal, SkillAvatar, SkillInstallModal, SkillRemoveModal, PluginInstallModal } from "../skills-market";
 import { ImagePreview, ImageLightbox, SearchPreviewModal, PastedTextEditor } from "../preview";
 import { APPROVAL_MODES, CHANNEL_STATUS_KEY, CJK_TEXT_RE, COMPOSER_FILE_CHIP_ICON, DELEGATE_RAIL_LINGER_MS, DIFF_VIRTUAL_THRESHOLD, EXPERT_CATEGORY_DEFS, EXPERT_CATEGORY_LABELS, HOOK_EVENT_LABELS, IDENTITY_ONBOARD_INSTRUCTIONS, IDENTITY_ONBOARD_TOOL, LOCAL_MODEL_PRESETS, MEMBER_LABELS, MEMORY_CATEGORIES, NOTICE_MAX, NOTICE_TTL_MS, QUICK_SITES, RRULE_DAY_NAMES, RUN_PHRASES, RUN_PHRASES_BY_ACTIVITY, SANDBOX_MODES, SHORTCUT_GROUPS, SKILL_ZH_NOTES } from "./constants";
-import { RequestCard, ToolCard, VoiceCallNoticeBridge, VoiceSettingsBridge, admitThreadRuntimeRef, ago, appendDelta, appendIndexedDelta, applyThreadEvent, approvalMenuOptions, armSendAnimationClaim, botChannelName, botOnlineOf, builtinCommandCatalog, categoryLabel, clampRruleNum, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, cronTemplates, deltaMethods, describeRrule, describeSchedule, displayPath, fmtImportTime, formatTimestamp, greetingForHour, groupThreadsByTime, hydrateTurnUserMessage, idleTemplates, imageExts, isActivityItem, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, localFormatDurationMs, locateMatchEl, markBufferedAgentReveal, markBufferedTurnReveal, matchSkillCatalog, mergeItem, mergeLongerStreams, mergeTurn, modelBadges, modelName, normSkillName, noticeTone, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDescription, pluginDisplayName, pluginMarketCategoryTabs, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, revealStepFor, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, settingsNav, shortSkillName, skillHubCategories, skillHubCategoryName, skillHubCategoryTabs, skillZhNote, slashCommands, stableItem, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, toFileUrl, uniqueModelCount, usageCounterSnapshot, writeThreadRuntimeMirror } from "./helpers";
+import { RequestCard, ToolCard, VoiceAnnounceNoticeBridge, VoiceCallNoticeBridge, VoiceSettingsBridge, admitThreadRuntimeRef, ago, appendDelta, appendIndexedDelta, applyThreadEvent, approvalMenuOptions, armSendAnimationClaim, botChannelName, botOnlineOf, builtinCommandCatalog, categoryLabel, clampRruleNum, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, cronTemplates, deltaMethods, describeRrule, describeSchedule, displayPath, fmtImportTime, formatTimestamp, greetingForHour, groupThreadsByTime, hydrateTurnUserMessage, idleTemplates, imageExts, isActivityItem, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, localFormatDurationMs, locateMatchEl, markBufferedAgentReveal, markBufferedTurnReveal, matchSkillCatalog, mergeItem, mergeLongerStreams, mergeTurn, modelBadges, modelName, normSkillName, noticeTone, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDescription, pluginDisplayName, pluginMarketCategoryTabs, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, revealStepFor, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, settingsNav, shortSkillName, skillHubCategories, skillHubCategoryName, skillHubCategoryTabs, skillZhNote, slashCommands, stableItem, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, toFileUrl, uniqueModelCount, usageCounterSnapshot, writeThreadRuntimeMirror } from "./helpers";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "./types";
 import type { HarnessAppApi } from "../app-state/useHarnessApp";
 import { AppViewSidebarShell } from "./AppView/01-sidebar-shell";
@@ -657,8 +657,16 @@ export function AppView({ app }: { app: HarnessAppApi }) {
         void send();
       }} />
       {/* 语音播报（10-08）：非通话时的「只听」播报链路（实时正文 / 结束汇总，各自有开关）。
-          通话中的播报由 VoiceCallFloat 负责 —— 它会喂 AEC 参考环、走音量与打断那一套。 */}
-      <VoiceAnnounceBridge />
+          通话中的播报由 VoiceCallFloat 负责 —— 它会喂 AEC 参考环、走音量与打断那一套。
+          ⛔ threadId = 会话闸：`voice_announce` 工具走主进程广播（全窗口），不能让别的会话插播到这里。 */}
+      <VoiceAnnounceBridge threadId={thread?.id ?? ""} />
+      {/* 播报开关翻转 → 往当前会话发一条告知（10-09：模型据此才知道要不要写结尾那段播报稿）。
+          ⛔ 同样要会话闸：设置可能在任意窗口改，告知只发给当前会话。 */}
+      <VoiceAnnounceNoticeBridge threadId={thread?.id ?? ""} onNotify={(text, targetThreadId) => {
+        if (!targetThreadId || thread?.id !== targetThreadId) return;
+        pendingCommandTextRef.current = text;
+        void send();
+      }} />
     </div>
     </HelpOpenContext.Provider>
   );

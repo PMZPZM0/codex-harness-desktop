@@ -22,6 +22,7 @@ import { markdownUrlTransform } from "../../lib/markdown-url";
 //   <li>，渲染上缩进到 marker 之后、左侧空出 marker 宽度（用户 09-24：「最后一个总是歪的，
 //   前面空那么多」）。详见 softenListTailLazyContinuation 注释。
 import { splitMarkdown } from "../../lib/markdown-blocks.mjs";
+import { stripVoiceScript } from "../../lib/voice-script.mjs";
 import { Globe2 } from "lucide-react";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
@@ -160,11 +161,17 @@ export const MdBlock = memo(function MdBlock({ text }: { text: string }) {
 });
 
 export const Markdown = memo(function Markdown({ children }: { children: string }) {
+  /* 10-09：先把**播报稿**整块剥掉再渲染 —— 那段是给耳朵的（`​`voice`​ 围栏，由模型写在回复末尾），
+     摊在对话里就是一段重复且莫名其妙的文字（用户只能听到念出来的那一版，看不到任何解释）。
+     ⛔ 文本层先行：这比在 markdown AST 里挖 `code` 节点稳 —— 围栏未闭合（流式中）也要整段吞掉，
+        否则用户会眼看着半句草稿在屏幕上成形然后消失。
+     ⛔ 这是**唯一**的去处： Markdown.tsx 是唯一的渲染入口（流式正文、历史消息、引用、弹窗都过这里）。 */
+  const text = useMemo(() => stripVoiceScript(children), [children]);
   // 若正文含可视化 fence（```show_widget / ```widget 等），混合渲染普通 markdown 块 + widget 卡片。
   // 流式阶段未闭合的 fence 用 loading 占位卡（streaming），闭合后替换为真实 iframe。
   const { blocks, widgets } = useMemo<{ blocks: string[]; widgets: Array<{ key: number; data: ShowWidgetData; streaming: boolean }> }>(() => {
-    if (!hasWidgetFence(children)) return { blocks: splitMarkdown(children), widgets: [] };
-    const result = extractStreamingWidget(children);
+    if (!hasWidgetFence(text)) return { blocks: splitMarkdown(text), widgets: [] };
+    const result = extractStreamingWidget(text);
     const bs: string[] = [];
     const ws: Array<{ key: number; data: ShowWidgetData; streaming: boolean }> = [];
     result.segments.forEach((seg, i) => {

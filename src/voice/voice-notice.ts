@@ -37,6 +37,42 @@ export function voiceCallOnNoticeText(): string {
   ].join("\n");
 }
 
+/**
+ * 语音播报的开关标签（10-09 用户：「让 Codex 知道这个功能与能力」）。
+ *
+ * ⛔ 同样是**跨文件契约**：引擎侧第 16 条指令按这两个标签判断「这一轮要不要写 ```voice 播报稿」
+ *    （`electron/developer-instructions.ts`），守卫 11z 两边一起钉。
+ * ⛔ 为什么也用告知而不是「每轮去重说一遍」：播报是两个**应用级**开关（设置 → 语音通话 → 语音播报），
+ *    开关一翻就该让当前会话立刻知道 —— 走与实时语音同一条已验证通路最省事，也让"什么时候该写"
+ *    这件事在会话里有据可查（模型看得到上下文）。
+ */
+export const VOICE_ANNOUNCE_ON_TAG = "【语音播报已开启】";
+export const VOICE_ANNOUNCE_OFF_TAG = "【语音播报已关闭】";
+
+/** 语音播报开关的那条告知（`voiceAnnounceNoticeText` 按真假二选一）。 */
+export function voiceAnnounceNoticeText(enabled: boolean): string {
+  /* ⛔ 这里（含本注释）**不能**写出真正的 voice 围栏做示例：这条告知会作为**用户消息**渲染，
+     而 `Markdown.tsx` 会把 voice 围栏整块剥掉（它对耳朵不对眼睛）⇒ 示例连同它前面的解释
+     一起在屏幕上消失，用户看到的是半截话。⇒ 用「三个反引号 + voice」的文字描述，
+     精确格式见 `electron/developer-instructions.ts` 第 16 条（那里不会被渲染）。
+     （守卫 11z ⑫ 直接检查本函数体里没有三个连续反引号。） */
+  return enabled
+    ? [
+        `${VOICE_ANNOUNCE_ON_TAG}从这一轮起，你的回复除了显示在屏幕上，还会**念出来给用户听**。`,
+        "请在每条回复的**最后**写一段「播报稿」：一个语言标 voice 的围栏块（三个反引号 + voice 开头，再",
+        "三个反引号收尾），块里写你要念的话 —— 它**只给耳朵**，屏幕上不会显示。",
+        "⛔ 要求：口语中文、一到三句、**按当时该有的语气说**（松了口气 / 抱歉 / 来劲都可以），别念成干巴巴的总结；",
+        "不要复述正文，说这次回答**到底给了什么**（结论 / 代价 / 下一步）；不要 markdown、列表、表格、代码。",
+        "用户随时可以停止播报，所以短而准比完整更重要。",
+        "收到请只回复「收到」两个字，不要展开。",
+      ].join("\n")
+    : [
+        `${VOICE_ANNOUNCE_OFF_TAG}本会话不再念你的回复，回复最后那段「播报稿」（voice 围栏块）也随之作废`,
+        "—— 请从这一轮起不要再写它（写了也不会被念，只会白费篇幅）。",
+        "除此之外照常回答即可。收到请只回复「收到」两个字，不要展开。",
+      ].join("\n");
+}
+
 /** 开启/关闭二选一（调用方只给布尔）。 */
 export function voiceCallNoticeText(active: boolean): string {
   return active ? voiceCallOnNoticeText() : voiceCallOffNoticeText();

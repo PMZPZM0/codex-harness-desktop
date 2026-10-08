@@ -215,6 +215,30 @@ const VOICE_INSTRUCTIONS =
   `   · 「【实时语音已结束】」⇒ the call hung up; the quick-answer requirement is lifted, go back to your normal writing style.\n` +
   `   ⛔ Judge ONLY by that notice — voice being on is NOT inferable from any tool list. Acknowledge the notice itself briefly (「收到」) and continue; do not treat it as a task.\n`;
 
+/* ── 第 16 条：语音播报（10-09 用户：「播报的语气过于平淡、缺乏表现力，改成让 Codex 根据上下文
+      自行决定并生成播报内容」「让 Codex 知道这个功能与能力」）────────────────────────────
+   ⛔ 为什么必须常驻 + 把**围栏契约**逐字写出来（第 11/12 条同款理由）：`​`voice`​ 块是我们和模型
+      之间唯一的内容通道，但它不在任何工具/技能清单里；不写清格式，模型最多"语气好一点"，
+      不可能知道"该往哪儿写"。格式与这里写的一致 ⇒ 由 `src/lib/voice-script.mjs` 解析。
+   ⛔ 判据同第 15 条（会话告知，不外推）：播报是两个**应用级开关**（设置 → 语音通话 → 语音播报），
+      开关翻转时应用会往当前会话发「【语音播报已开启】/【语音播报已关闭】」（文案真相源 =
+      `src/voice/voice-notice.ts`，审判两处同源由守卫 11z 钉）。没有这条告知就**不要写块**
+      —— 免得每轮白烧 token、用户屏幕上还多一段看不见的东西。
+   ⛔ 「对耳朵不对眼睛」是本条的核心：该块被 `Markdown.tsx` 剥掉后才渲染 ⇒ 屏幕上看不见，
+      所以禁止把只有结尾要看的内容塞进去（说出来的东西用户读不到，屏幕上的东西用户听不到）。 */
+const VOICE_ANNOUNCE_INSTRUCTIONS =
+  `\n16) VOICE ANNOUNCEMENT — besides a live call (15), this app can SPEAK your replies aloud on their own, and flips that on/off with a notice posted into the conversation: 「【语音播报已开启】」/「【语音播报已关闭】」. Judge ONLY by that notice.\n` +
+  `   WHEN IT IS ON: end EVERY reply with exactly ONE spoken-script block — a fenced block tagged \`voice\` (\`\`\`voice …\`\`\`) at the VERY END of your reply. That block is what the user HEARS as your closing line; the app strips it before rendering, so it never reaches the screen. Write it for the EAR.\n` +
+  `   HOW TO WRITE IT (the user asked expressly for liveliness over flat summaries — a monotone recap is a FAILURE here):\n` +
+  `   · Spoken Chinese, 1–3 sentences, said the way you would actually say it: keep the tone the moment deserves (relieved 「总算好了」, apologetic 「这块是我看走眼了」, excited, wry) and drop 「首先/其次/总的来说」 filler. First person, spoken contractions allowed, 「——」「！」 welcome.\n` +
+  `   · DO NOT read the reply back. Say what the reply ADDS: the verdict (「改完了，能跑」), the takeaway, the hidden cost or risk, or the next move. The user is often away from the screen — this sentence is the deliverable.\n` +
+  `   · NO markdown, NO bullet lists, NO tables, NO code, NO emoji-only lines: the reader either skips them or reads the marks aloud. Numbers and paths are fine (they get spoken).\n` +
+  `   · Keep it under ~80 Chinese characters. You CAN be silenced mid-sentence — the user has a 「停止播报」button — so be short and hit once, not complete and droning.\n` +
+  `   · Exactly one block per reply, at the end; nothing that must be READ comes after it.\n` +
+  `   WHEN IT IS OFF (or no such notice exists): do NOT write the block — do not narrate that you skipped it.\n` +
+  `   IF BOTH the call notice (15) and this one are present: 15 governs the reply body (answer first), this block is still your closing line.\n` +
+  `   TOOLS: if \`voice_announce\` appears in your tool list you can also SPEAK WITHOUT WAITING — \`voice_announce\`(text) says one sentence right now (keep it ≤120 characters; used to flag something mid-run, to warn before a risky step, or to report that a long task finished), and \`voice_announce_stop\` (no arguments) cuts off any announcement already playing. Both are unavailable while a live call is open (then just write it in the reply — the call reads it out). ⛔ \`voice_announce\` returns immediately WITHOUT confirming sound actually came out (no TTS model installed / window not focused ⇒ silence, no error): still write that sentence in your reply text, never tell the user 「我已经说给你听了」.\n`;
+
 function gateAndReviewInstructions(): string {
   const mcpBackend = effectiveMemoryBackend() === "mcp";
   const memorySkill = mcpBackend ? MEMORY_MCP_BACKEND_SKILL : MEMORY_CLASSIFY_SKILL;
@@ -273,6 +297,8 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   text += TASK_LIST_INSTRUCTIONS;
   // 实时语音状态（10-08 用户要求：让 Codex 感知语音何时开/关，并在语音场景走「快问快答」）
   text += VOICE_INSTRUCTIONS;
+  // 语音播报（10-09 用户要求：播报内容由 Codex 自己写 —— 这条下发 `voice` 围栏契约）
+  text += VOICE_ANNOUNCE_INSTRUCTIONS;
   // 深层联动软约束：自动化能力被关闭时，在基础指令里明确告诉模型不要调用这些工具。
   // 09-20：MCP 工具（`desktop_*` / `browser_*`）现在会被 disabled_tools **硬移除**，所以这里
   // 重点变成「别用命令行兜底绕过总闸」—— nuphus-call / playwright-cli 仍在 PATH 上，
