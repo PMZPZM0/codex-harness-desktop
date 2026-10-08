@@ -91,10 +91,13 @@ const FALLBACK_STEPS: Partial<Record<DevRuntimeId, string>> = {
   ponytail: "重跑一键脚本重新种插件（界面上的「修复安装」走的是同一条路）",
 };
 
-/** 发命令用的解释器与脚本路径：优先用随包 node（与主进程跑安装时同源）。 */
+/** 发命令用的解释器与脚本路径：优先用随包 node（与主进程跑安装时同源）。
+ *  ⛔ 10-08 自审改：**不要写成 `VAR="x" cmd`**（POSIX 写法在 Windows 的 cmd/PowerShell 里跑不了，
+ *    而这份提示词恰恰是给 Windows 机器准备的）。改成「命令 + 需要时先设哪个环境变量」的自然语言，
+ *    跨平台都读得懂，也不会让人照抄一条必然报错的命令。 */
 function fallbackRunner(): string {
   const node = bundledNode() || "node";
-  return `TOOLS_ROOT="${toolsRoot()}" "${node}" "${runtimeInstaller("install-runtimes.cjs")}"`;
+  return `"${node}" "${runtimeInstaller("install-runtimes.cjs")}"（若脚本要求指定工具目录，先设环境变量 TOOLS_ROOT=${toolsRoot()}）`;
 }
 
 /** 「装到哪个目录」——按工具类型给**语义正确**的落点（⛔ 不是 marker 首段推导）。 */
@@ -648,7 +651,10 @@ export const runtimeFeature = defineFeature<null>({
           if (kbEmbeddingInstalled()) return; // 已装好（三件齐）⇒ 幂等早退，不重下 463MB
           sendToWindow("runtime:progress", { id, message: "正在安装本地 embedding 运行库（npmmirror + hf-mirror）…" });
           await installKbEmbedding((p) => sendToWindow("runtime:progress", { id, ...p }));
-          sendToWindow("runtime:progress", { id, percent: 100, message: "安装完成", done: true });
+          // ⛔ 这里**不许**发 done:true 的「安装完成」：紧随其后的 assertInstallVerified 才是判据
+          //   （10-08 自审抓到：旧写法在这条分支上先报完成、再复核 —— 复核失败就成了
+          //   「先绿条后报错」，正是本次要根除的那类「假成功」。真正的那条完成消息在复核之后发。）
+          sendToWindow("runtime:progress", { id, message: "正在复核安装结果…" });
         })();
         runtimeInstalls.set(id, task.finally(() => runtimeInstalls.delete(id)) as Promise<void>);
         await task.catch((error) => { throw error instanceof Error ? error : new Error(String(error)); });

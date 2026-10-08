@@ -118,5 +118,22 @@ ok(/装到哪：.*mingw\b/.test(data?.mingw ?? "") && /g\+\+\.exe/.test(data?.mi
 ok(/site-packages/.test(data?.markitdown ?? ""),
   "真跑：markitdown 的验证行指向 python 的 site-packages 包目录（不是被占位 marker 拼出来的假路径）");
 
+/* ── ④ 自审（dongming-code-review 六步）抓出并修掉的两条 ──────────────────────
+   ⛔ 都是「同一类问题的漏网之鱼」：假成功与不可执行——判据留下，防止下次写回去。 */
+/* ⛔ 切片锚点必须取**安装分支**那一个：`if (id === "kb-embedding")` 在文件里出现两次
+   （卸载分支在前、安装分支在后），用 indexOf 会切到卸载分支 ⇒ 把卸载的 done:true 当成违规（假红，实测踩到）。
+   ⛔ 负向断言必须先**剥注释**：这段代码上方就写着「不许发 done:true…」的说明，裸匹配把注释顶成假红
+     （本仓已四次同型 —— 11z 里也有同一个 codeOnly 约定）。 */
+const codeOnlyTs = (source) => String(source).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+const kbVerifyAt = rt.indexOf("assertInstallVerified(id, spec);");
+const kbStart = rt.lastIndexOf('if (id === "kb-embedding")', kbVerifyAt);
+const kbSlice = kbStart >= 0 && kbVerifyAt > kbStart ? codeOnlyTs(rt.slice(kbStart, kbVerifyAt)) : "";
+ok(kbSlice.length > 0 && !/done:\s*true/.test(kbSlice),
+  "kb-embedding 分支在**复核之前**不许发 done:true 的「安装完成」（否则复核失败时先绿条后报错 —— 还是假成功）");
+ok(!/TOOLS_ROOT="\$\{|TOOLS_ROOT=\\"/.test(rt) && /若脚本要求指定工具目录/.test(rt),
+  "备用方案里的命令**不是** POSIX 的 `VAR=\"x\" cmd` 写法（那是给 Windows 机器用的提示词，cmd/PowerShell 跑不了）");
+ok(/const node = bundledNode\(\) \|\| "node"/.test(rt),
+  "发命令优先用随包 node（与主进程跑安装时同源），拿不到才回落 PATH 上的 node");
+
 console.log(`\n【devtools-fallback】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

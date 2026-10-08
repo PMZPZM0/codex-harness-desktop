@@ -195,7 +195,10 @@ export function migrateSettings(raw: Partial<VoiceSettings> | undefined): { sett
   }
   /* v2 → v3（10-08）：`mic.autoGainControl` 的默认值由 false 改成 true（用户报「要很大声才录得进去」）。
      ⛔ 老档案里存的是旧默认 false，只改常量对他们无效 ⇒ 与上面 rule2 同一套判据：
-       **值等于旧默认**（false 或没写过）才迁移；用户显式设过 true 的本来就对，不动。 */
+       **值等于旧默认**（false 或没写过）才迁移；用户显式设过 true 的本来就对，不动。
+     ⚠️ 取舍说清楚：布尔量**无法区分**「当年是默认值」与「用户显式关掉」（档案里都只是一个 false）
+       ⇒ 显式关过 AGC 的用户（例如嫌增益把环境噪声也放大）也会被改回 true。这是有意的取舍：
+       默认关着会让「正常音量识别不到」这类问题落到所有人头上，代价远大于少数人需要重新关一次。 */
   if (version < 3) {
     if (source.mic?.autoGainControl !== true) {
       source.mic = { ...(source.mic as any), autoGainControl: true };

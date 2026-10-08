@@ -46,6 +46,19 @@ export function useVoiceAnnounce(): void {
   const queueRef = useRef<AudioBufferSourceNode[]>([]);
   /** 世代号：回合结束/新一轮开始时 +1，让「已经在 TTS 里合成中」的那半句回来时被丢弃 */
   const epochRef = useRef(0);
+  /**
+   * 串行链（自行 code review 补的一处真缺陷）。
+   *
+   * ⛔ 合成是 async 的，而 delta 是**并发**到达的（每个 delta 一次订阅回调）。
+   *    不串行的话：A 句的合成慢一点、B 句的快一点 ⇒ B 先入队 ⇒ **念出来的顺序与正文顺序不一致**
+   *    （用户听到的是打乱的话）。同样地，`turnDone` 的收尾/汇总也会插到还在合成的那句之前。
+   *    做法：所有会「产出音频」的动作依次挂到同一条链上；`stopPlayback` **不进链**
+   *    （它必须立刻生效，否则「停止播报」会被排到几分钟后的队尾）。
+   */
+  const chainRef = useRef<Promise<void>>(Promise.resolve());
+  const enqueueTask = useCallback((task: () => Promise<void>) => {
+    chainRef.current = chainRef.current.then(task).catch(() => undefined);
+  }, []);
 
   const resetChunker = useCallback(() => {
     chunkerRef.current = null;
@@ -141,7 +154,10 @@ export function useVoiceAnnounce(): void {
     if (!cfgRef.current.summary) return;
     const summary = summarizeForSpeech(String(finalText ?? ""));
     if (summary.text) await speak(summary.text, epoch);
-    else if (summary.sentences === 0) await speak(SUMMARY_EMPTY_NOTICE, epoch);
+    /* ⛔ 只有「原文非空、但清洗后没内容」才念那句说明（真·整段代码）。
+       finalText 为空 = 引擎这次 turn/completed 没带 items ⇒ 那是**数据缺失**，
+       不是「这轮主要是代码」—— 照念等于向用户播报一句假信息（自行 code review 抓到）。 */
+    else if (summary.sentences === 0 && String(finalText ?? "").trim()) await speak(SUMMARY_EMPTY_NOTICE, epoch);
   }, [resetChunker, speak]);
 
   // ── 设置：挂载读一次 + 主进程保存时广播刷新（与悬浮球/唤醒同一套）──
@@ -172,7 +188,7 @@ export function useVoiceAnnounce(): void {
       if (getVoiceStage().active) return;
       if (event.type === "delta") {
         if (!cfgRef.current.live) return;
-        void feedDelta(event.text);
+        enqueueTask(() => feedDelta(event.text));
         return;
       }
       if (event.type === "turnDone") {
@@ -181,11 +197,11 @@ export function useVoiceAnnounce(): void {
            stopPlayback 会把断句器一起清掉，尾句就永远丢了（本项目「共享槽位两态」同型坑）。 */
         if (event.aborted) { stopPlayback(); return; }
         if (!cfgRef.current.live && !cfgRef.current.summary) { resetChunker(); return; }
-        void finishTurn(event.text);
+        enqueueTask(() => finishTurn(event.text));
       }
     });
     return off;
-  }, [feedDelta, finishTurn, resetChunker, stopPlayback]);
+  }, [enqueueTask, feedDelta, finishTurn, resetChunker, stopPlayback]);
 
   // 「停止播报」出口（悬浮球右键菜单）：非通话播报不开麦、也没有自己的界面，
   // 没有这个出口用户就只能等它念完 —— 与 wave-level 的结束通话/打断同一套广播注册。
