@@ -3248,6 +3248,25 @@ w.postMessage({id:1,op:"list",root});
       (/if \(!plugin\.installable \|\| installing\) return;/.test(officialUiCode) ? ok : fail)(
         "【255】外部仓库源（3 条）不许触发安装（只给查看来源，不给人点了才发现报错）"
       );
+      /* ⛔⛔ 10-08 事故（用户实测「装技能/插件报安装失败，其实已经装好了」）：四条安装链
+       * （技能市场 / 插件市场 / 官方市场 / 专家市场）最后一步都是 `await server.restart()`，
+       * 引擎的**瞬时**启动失败会原样抛出 ⇒ 把已经落盘的安装报成失败（SkillHub「编程专家.Skill」
+       * 与 Gitee「Agent SDK 开发套件」两次实测；codex-home/skills 与 plugins/codex-market 里文件都在）。
+       * 引擎侧已有自动重试兜底，但重试用尽时**不许**再把「装好了」说成「装失败」——
+       * 四条必须降级成 pending 如实告知。判据锚**接线取值**（剥注释后仍出现
+       * try{...restart()}catch 的降级写法），不是"文件里出现过 restart"。
+       * ⛔ 本段续行一律带 ` * ` 前缀：本文件在【265】棘轮名单里，判据是**净代码行**。 */
+      ((() => {
+        const chain = ["skills-ipc.ts", "plugins-ipc.ts", "codex-official-market-ipc.ts", "expert-market-ipc.ts"]
+          .map((name) => [name, join(ROOT, "electron", "features", name)]);
+        const missing = chain
+          .filter(([, file]) => !/try \{ await server\.restart\(\); \} catch/.test(codeOnly(readFileSync(file, "utf8"))))
+          .map(([name]) => name);
+        if (missing.length) console.log(`      未降级的安装链：${missing.join(" / ")}`);
+        return missing.length === 0;
+      })() ? ok : fail)(
+        "【255】四条安装链都不让「引擎重启失败」变成「安装失败」（文件已落盘 ⇒ 必须降级为 pending 如实告知）"
+      );
       // 板块三前缀同源：目录名 = IPC 前缀 = CSS 类前缀，且 CSS 独立成文件（不许塞进别人的分节尾部）
       (/\.codex-official-market/.test(readFileSync(join(ROOT, "src", "styles", "25-codex-official-market.css"), "utf8"))
         && readFileSync(join(ROOT, "src", "styles.css"), "utf8").includes('./styles/25-codex-official-market') ? ok : fail)(

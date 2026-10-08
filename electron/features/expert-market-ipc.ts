@@ -36,10 +36,14 @@ export const expertMarketFeature = defineFeature<null>({
         onProgress: (stage, message) => emit(stage, message),
       });
       // 技能落盘后重启引擎（与技能市场安装同链）；守则区间的技能清单一并刷新
+      // ⛔ 同技能市场：重启失败 ≠ 安装失败 —— 技能文件已经落盘，只是引擎这一次没起来
+      //   （瞬时故障由 CodexServer 内置重试消化）。降级成 pending 如实告知。
       emit("engine", "正在重启 Codex 引擎并注册技能");
-      await server.restart();
+      let restartError = "";
+      try { await server.restart(); } catch (error: any) { restartError = error?.message ?? String(error); }
       void refreshSkillDiscipline();
-      emit("complete", `已安装「${result.displayName}」，专家中心已新增对应专家卡片（${result.installedChildren.length} 个子技能${result.childFailures.length ? `，${result.childFailures.length} 个未跟上` : ""}）`);
+      const summary = `已安装「${result.displayName}」，专家中心已新增对应专家卡片（${result.installedChildren.length} 个子技能${result.childFailures.length ? `，${result.childFailures.length} 个未跟上` : ""}）`;
+      emit(restartError ? "pending" : "complete", restartError ? `${summary}；引擎本轮启动失败（${restartError}），重启应用后生效。` : summary);
       return result;
     });
 

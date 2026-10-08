@@ -139,11 +139,20 @@ export const skillsFeature = defineFeature<null>({
       await updateSkillRegistry({ name: installed.name, path: installed.path, source: "cocoloop", marketId: installed.marketId, sourceUrl: installed.sourceUrl, installedAt: new Date().toISOString() });
       // SKILL.md 落到 CODEX_HOME/skills 后重启进程，再强制刷新 skills/list；返回的状态才是 UI 的“Codex 已发现”依据。
       emit("engine", "正在重启 Codex 引擎并注册技能");
-      await server.restart();
+      // ⛔⛔ 重启失败 ≠ 安装失败（10-08 用户实测「装完报安装失败、其实已经装好了」）：
+      //   前 5 步（下载 / 解压 / 安检 / 落盘 / 登记来源）都已经成功，技能文件就在磁盘上；
+      //   这里只是引擎**这一次**没起来（瞬时故障由 CodexServer 内置重试消化，本分支是重试
+      //   也用尽的兜底）。原样抛出会让用户看到"安装失败"、反复重装却查不出问题。
+      //   降级成 pending 如实告知，并跳过引擎确认（引擎没起来时 request 会再触发一次启动，
+      //   白等 60s 超时）。
+      let restartError = "";
+      try { await server.restart(); } catch (error: any) { restartError = error?.message ?? String(error); }
       emit("verify", "正在确认 Codex 是否已发现该技能");
       let engineRegistered = false;
       let engineCheckMessage = "Codex 技能目录已刷新，下一轮任务可使用该技能";
-      try {
+      if (restartError) {
+        engineCheckMessage = `技能已写入 Codex 技能目录，但引擎本轮启动失败（${restartError}）。重启应用后即可使用。`;
+      } else try {
         const result: any = await server.request("skills/list", { cwds: [], forceReload: true });
         const discovered = (result.data ?? []).flatMap((entry: any) => entry.skills ?? []);
         engineRegistered = discovered.some((entry: any) => entry?.path === installed.path || entry?.name === installed.name || entry?.name === skill.name);
