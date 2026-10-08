@@ -831,6 +831,19 @@ function pythonSitePackages(pythonDir) {
   return null;
 }
 
+/** site-packages 里的**孤儿 pip 元数据**（`<name>-<ver>.dist-info` / `*.egg-info`）——即「包目录不在、
+ *  只剩安装记录」的那种残留。⛔⛔ 必须清掉，否则会永久卡死（10-08 用户实测事故）：
+ *    pip 只认这些元数据，见到就回一句 `Requirement already satisfied` 然后 **exit 0 什么都不做**；
+ *    而「装没装」的判定（主进程 runtimeInstalled）看的是**包目录** ⇒ 用户点多少次「下载」都得到
+ *    「安装成功」但卡片仍显示未安装，且**永远修不好**。残留来源 = 卸载只删包目录、没删元数据。
+ *  ⛔ 与 electron/features/dev-runtimes.ts 的 pipMetadataDirs 是同一套规则（一边主进程 TS、
+ *    一边纯 Node 安装脚本，不共享模块）—— 改这里务必同步那边。 */
+function stalePipMetadata(site, names) {
+  if (!site || !fs.existsSync(site)) return [];
+  const patterns = names.map((n) => new RegExp(`^${n.replace(/[-_]/g, "[-_]")}[-_].*\\.(dist-info|egg-info)$`, "i"));
+  return fs.readdirSync(site).filter((entry) => patterns.some((re) => re.test(entry))).map((entry) => path.join(site, entry));
+}
+
 /** 文档转换依赖（markitdown + openpyxl）——**按需安装**（约 120 MB；不内置的原因见 DOC_PACKAGES 处）。
  *  幂等：已装过就直接跳过（判定看 site-packages 里有没有 markitdown 包目录）。 */
 async function installDocTools(pythonDir) {
@@ -842,12 +855,26 @@ async function installDocTools(pythonDir) {
   if (!fs.existsSync(py)) {
     throw new Error("需要先安装「Python + Tkinter + pip」（在「基础运行时」分组里），再安装文档转换");
   }
+  if (!site) throw new Error("找不到 Python 的 site-packages 目录 —— Python 安装不完整，请先重装「Python + Tkinter + pip」");
+  // ⛔⛔ 先清孤儿元数据，再调 pip：不清的话 pip 会判 `Requirement already satisfied` 直接 exit 0，
+  //   整条安装变成空转（10-08 用户实测：包目录 83 个文件全没了、只剩 markitdown-0.1.8.dist-info，
+  //   点多少次「下载」都是「安装成功」但卡片一直显示未安装）。
+  const stale = stalePipMetadata(site, ["markitdown"]);
+  for (const entry of stale) {
+    try { fs.rmSync(entry, { recursive: true, force: true }); console.log("[markitdown] 清理残留元数据 " + path.basename(entry)); }
+    catch { console.log("[markitdown] 残留元数据清理失败（继续走 pip）: " + path.basename(entry)); }
+  }
   console.log("[markitdown] installing " + DOC_PACKAGES.join(" ") + " (mirror chain)");
   process.stdout.write("@@STAGE 安装文档转换依赖\n");
   const env = { ...process.env };
   // mac 的 python-build-standalone 不需要 PYTHONHOME（装了反而会打乱 sys.path）
   if (process.platform !== "darwin") env.PYTHONHOME = pythonDir;
   await pipInstall(py, DOC_PACKAGES.join(" "), "文档转换依赖安装", env);
+  // ⛔⛔ 不许只信「pip exit 0」：pip 的退出码只说明命令跑完了，不说明东西装上了（上面那条空转链
+  //   就是 exit 0）。装完必须回读判定用的那个东西 —— 包目录在不在。不在就是真失败，抛出去。
+  if (!fs.existsSync(path.join(site, "markitdown"))) {
+    throw new Error(`文档转换安装流程已结束，但 ${site} 里仍没有 markitdown 包目录 —— 安装未生效（pip 返回成功但没落盘）`);
+  }
   console.log("[markitdown] done");
 }
 
