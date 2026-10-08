@@ -1,6 +1,6 @@
 {
   "name": "codex-harness-desktop",
-  "version": "0.1.0",
+  "version": "0.0.35",
   "private": true,
   "description": "Independent desktop harness for OpenAI Codex",
   "main": "dist-electron/main.js",
