@@ -60,6 +60,103 @@ function runtimeInstalledBySystem(id: DevRuntimeId): boolean {
   return id === "docker" ? !!(process.env.PATH ?? "").split(path.delimiter).some((dir) => dir && existsSync(path.join(dir.trim(), "docker.exe"))) : false;
 }
 
+/* ── 「装不上就让 Codex 自己装」（10-08 用户要求）─────────────────────────────
+ * 用户原话：「加一个开发工具备用方案，每个工具后面如果安装不上，可以预置一个提示词，提示用户，
+ * 发 codex 自行安装就行，有的电脑网不好，容易下载报错」。
+ * ⛔ 文案**只在主进程生成**（单一真相源）：渲染层只负责展示 + 复制，不许再拼一份 —— 否则又是
+ *   「两处口径各自为政」（本项目当天刚栽过三次：见【286】/【241】）。
+ * ⛔ 路径一律取自与「判定 / 卸载」同源的来源（toolsRoot / codexHome / kbBackendDir / pythonSiteDir /
+ *   npmGlobalRoot），别再写第三套。
+ * ⛔ 网络兜底文案里的镜像站必须与实际代码里用的**同一批**（npmmirror / 清华 pypi / 清华 miniconda），
+ *   不要凭空发明源。 */
+
+/** 该工具的「首选做法」一句话；没登记的走通用的一键脚本文案。 */
+const FALLBACK_STEPS: Partial<Record<DevRuntimeId, string>> = {
+  python: "删掉损坏的 python 目录后重跑一键脚本 —— 脚本装的是 python-build-standalone 整包（自带 pip 与 Tkinter），走 npmmirror 镜像",
+  node: "重跑一键脚本装回内置 Node（体积不大，一般不会失败）",
+  git: "重跑一键脚本装 MinGit（约 90 MB）：npmmirror 镜像优先，失败自动回落官方源",
+  pwsh: "从 GitHub 的 PowerShell release 下 win-x64 的 zip（约 282 MB）后解压；下载慢就给链接加 gh-proxy / ghfast 加速前缀（一键脚本会自动这么干）",
+  ffmpeg: "从 BtbN/FFmpeg-Builds 或 gyan.dev 下 win64 构建，取出 ffmpeg.exe 与 ffprobe.exe 放进去",
+  mingw: "从 winlibs 的 release 下 winlibs-x86_64-posix-seh 的 zip（约 267 MB），解压后把里面的 mingw64 目录整体放进去",
+  conda: "用清华镜像的 Miniconda3 Windows 安装器静默装到目标目录（清华镜像实测比官方站快很多）",
+  markitdown: "在目标 python 下执行：python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple \"markitdown[pdf,docx,pptx]\" openpyxl",
+  laya: "在目标 python 下执行：python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple laya[serve]（含 PyTorch，约 800 MB，要耐心等）",
+  "phone-harness": "在目标 python 下执行：python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple phone-harness，装完把它的 CLI 注册成引擎技能",
+  cloakbrowser: "用内置 node 的 npm 装到目标目录：npm install --global --prefix \"<目标目录>\" cloakbrowser --registry=https://registry.npmmirror.com",
+  "playwright-browsers": "用 playwright CLI 自己下内核（环境变量 PLAYWRIGHT_BROWSERS_PATH 已经指向目标目录）",
+  "cloak-browsers": "用 cloakbrowser CLI 自己下内核（环境变量 CLOAKBROWSER_CACHE_DIR 已经指向目标目录）",
+  "kb-embedding": "让 Codex 读项目里的工具链文档，用 npmmirror 装 npm 运行库、用 hf-mirror 下模型，都放目标目录",
+  docker: "系统级安装：界面按钮会打开官网，按官网步骤装完需要重启电脑",
+  openssl: "系统级安装：界面按钮会打开官网（slproweb 的 Windows 版），按官网步骤装",
+  ponytail: "重跑一键脚本重新种插件（界面上的「修复安装」走的是同一条路）",
+};
+
+/** 发命令用的解释器与脚本路径：优先用随包 node（与主进程跑安装时同源）。 */
+function fallbackRunner(): string {
+  const node = bundledNode() || "node";
+  return `TOOLS_ROOT="${toolsRoot()}" "${node}" "${runtimeInstaller("install-runtimes.cjs")}"`;
+}
+
+/** 「装到哪个目录」——按工具类型给**语义正确**的落点（⛔ 不是 marker 首段推导）。 */
+function fallbackTargetDir(id: DevRuntimeId, spec: DevRuntimeSpec): string {
+  if (id === "ponytail") return path.join(codexHome, "plugins", "cache");
+  if (id === "kb-embedding") return kbBackendDir();
+  if (PIP_PACKAGE_DIRS[id]) return path.join(toolsRoot(), "python");
+  if (NPM_PACKAGE_ARTIFACTS[id]) return npmGlobalRoot() || path.join(toolsRoot(), "npm-global");
+  if (spec.kind === "guide") return "系统安装目录（不在应用目录里）";
+  // 其余落在 tools/<marker 首段> —— 与 runtimeUninstallTargets 的通用分支同源
+  return path.join(toolsRoot(), spec.marker.split(/[\\/]/)[0]);
+}
+
+/** 装完怎么确认：可执行文件型给一条**真能跑**的验证命令（与自检同口径）。
+ *  ⛔⛔ 不许按 marker 推导「该出现什么」：pip 包的 marker 是**占位**（见 dev-runtimes 的注释），
+ *    照它拼出来的 `tools\markitdown` 是一个**根本不存在的路径** —— 这正是 10-08 当天修过的
+ *    「marker 推导出不存在的路径」同款坑（探针真跑时当场抓到，不能只看类型通过就发）。 */
+function fallbackExpectLine(id: DevRuntimeId, spec: DevRuntimeSpec): string {
+  if (id === "ponytail") return `这个目录存在：${path.join(codexHome, "plugins", "cache", "ponytail")}`;
+  if (id === "kb-embedding") return `这个目录存在（npm 包 + worker + 模型三件齐）：${kbBackendDir()}`;
+  if (PIP_PACKAGE_DIRS[id]) {
+    const site = pythonSiteDir(path.join(toolsRoot(), "python"));
+    const pkg = PIP_PACKAGE_DIRS[id]!;
+    return site
+      ? `这个包目录存在：${path.join(site, pkg)}；也可以跑 python -c "import ${pkg}" 看能不能导入`
+      : `在 ${path.join(toolsRoot(), "python")} 下跑 python -m pip show ${pkg} 确认`;
+  }
+  if (spec.kind === "guide") {
+    return `在终端跑 ${id === "docker" ? "docker --version" : "openssl version"}，能打印版本就说明装好了`;
+  }
+  if (NPM_PACKAGE_ARTIFACTS[id]) {
+    const root = npmGlobalRoot() || path.join(toolsRoot(), "npm-global");
+    const rel = NPM_PACKAGE_ARTIFACTS[id]!.dirs[0].replace(/^node_modules[\\/]/, "");
+    return `这个目录存在：${path.join(root, rel)}`;
+  }
+  const args = HEALTH_ARGS[id];
+  const file = healthExecPath(id, spec);
+  if (!args) return `这个文件存在：${file}`;
+  return `"${file}" ${args.join(" ")}（能打印版本就说明装好了）`;
+}
+
+/** 拼出「发给 Codex 让它自己装」的提示词。⛔ 只在主进程生成（渲染层只展示 + 复制）。 */
+function fallbackPromptFor(id: DevRuntimeId, spec: DevRuntimeSpec): string {
+  const steps = FALLBACK_STEPS[id] ?? `重跑本机的一键安装脚本（一条命令只装这一个工具，脚本自带「国内镜像优先 + 逐通道回落 + 坏缓存先删」）：\n    ${fallbackRunner()} ${id}`;
+  const head = spec.description.split("；")[0];
+  const purpose = head.length > 70 ? `${head.slice(0, 70)}…` : head;
+  const lines = [
+    `帮我在这台电脑上装好开发工具「${spec.name}」。`,
+    "背景：应用里「设置 → 开发工具」的按需下载在这台机器上总是失败（网络不稳），请你直接用命令行装；装不上的话就换国内镜像或加速源多试几次。",
+    "",
+    `· 用途：${purpose}`,
+    `· 装到哪：${fallbackTargetDir(id, spec)}`,
+    `· 首选做法：${steps}`,
+    "· 网络兜底：npm 换 registry.npmmirror.com，pip 换 pypi.tuna.tsinghua.edu.cn，GitHub 直链加 gh-proxy / ghfast 加速前缀；下到一半失败就先删掉半截文件再完整重下（续传修不好坏文件）。",
+    `· 装完请验证：${fallbackExpectLine(id, spec)}，并把命令输出发给我。`,
+  ];
+  if (spec.builtIn || spec.bundled) {
+    lines.push("· 注意：这个工具本来是随应用内置的，如果只是文件损坏，优先从随包的备份/归档恢复，不要另外装一份不同版本。");
+  }
+  return lines.join("\n");
+}
+
 function runtimeList() {
   return (Object.entries(devRuntimeSpecs) as [DevRuntimeId, DevRuntimeSpec][])
     .filter(([id]) => !(IS_MAC && DARWIN_HIDDEN.has(id)))
@@ -68,6 +165,8 @@ function runtimeList() {
       installed: runtimeInstalled(id, spec),
       installedBySystem: runtimeInstalledBySystem(id),
       installing: runtimeInstalls.has(id),
+      // 装不上时的备用方案：预置一段可直接发给 Codex 的提示词（渲染层只展示 + 复制）
+      fallbackPrompt: fallbackPromptFor(id, spec),
     }));
 }
 
@@ -430,6 +529,9 @@ async function devRuntimeHealth(): Promise<DevRuntimeHealth[]> {
 }
 
 const RUNTIME_CHANNELS = ["runtime:list", "runtime:install", "runtime:uninstall", "runtime:cancel", "runtime:health"];
+
+/* 装不上的备用方案文案生成器：导出**只为可验证**（探针/守卫能真跑它），业务侧一律经 runtime:list 取。 */
+export { fallbackPromptFor };
 
 export const runtimeFeature = defineFeature<null>({
   id: "runtime",

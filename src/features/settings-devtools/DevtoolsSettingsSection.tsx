@@ -98,6 +98,10 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
                               const isDone = runtime.installed || runtime.installedBySystem;
                               const isGuide = runtime.kind === "guide";
                               const builtinBadge = runtime.builtIn || (runtime.bundled && isDone);
+                              /* 「这个工具刚装失败了」的判据 = app-state 写进 runtimeProgress 的那一行
+                                 （`安装失败：<原因>`，同一份数据本来就显示给用户看）。⛔ 前缀是**契约**：
+                                 另一侧写死的字符串在 01-dev-runtimes-capability.tsx，守卫【287】两边一起钉。 */
+                              const installFailed = String(runtimeProgress?.[runtime.id] ?? "").startsWith("安装失败");
                               return <div className={`runtime-row ${isDone ? "installed" : "missing"} ${busy ? "busy" : ""}`} key={runtime.id}>
                                 <span className="runtime-icon">{busy ? <Spinner /> : isDone ? <CircleCheck size={16} /> : <TerminalSquare size={16} />}</span>
                                 <span className="runtime-copy"><strong>{runtime.name}</strong><small>{runtime.description}</small>
@@ -117,6 +121,24 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
                                     : !isDone && runtime.id === "cloakbrowser" ? <em className="runtime-hint">按需下载 · 不装也能用内置浏览器与 playwright-cli</em>
                                     : null}
                                 </span>
+                                {/* 装不上时的备用方案（10-08 用户要求）：网差的机器按需下载常常失败，
+                                    给一段预置提示词，让用户复制到任意会话里交给 Codex 自己装。
+                                    ⛔ 提示词正文由**主进程**生成（runtimeList 的 fallbackPrompt）——
+                                      这里只展示 + 复制，不许再拼一份文案（否则又是两套口径）。 */}
+                                {installFailed && runtime.fallbackPrompt ? (
+                                  <span className="runtime-fallback">
+                                    <em>download 失败也可以不折腾：把提示词复制给 Codex，让它在这台机器上直接装（网络差时更靠谱）。</em>
+                                    <button
+                                      className="secondary-setting runtime-fallback-copy"
+                                      onClick={() => {
+                                        void copyTextToClipboard(runtime.fallbackPrompt);
+                                        setNotice(`已复制「${runtime.name}」的安装提示词 —— 到任意会话里发给 Codex 即可`);
+                                      }}
+                                    >
+                                      <Copy size={13} />复制提示词，交给 Codex 装
+                                    </button>
+                                  </span>
+                                ) : null}
                                 <span className="runtime-size">{runtime.size}</span>
                                 <div className="runtime-actions">
                                   {/* 忙碌态（10-07 重构）：安装 → 给「取消」；卸载 → 不可取消，只给状态徽章。
