@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（87 个能力域 / 435 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（87 个能力域 / 439 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -242,9 +242,9 @@ Bot 会话（Bot 与会话的绑定与消息注入）
 **3D 模型预览**（10-05）：read(path) 读会话工作区里的 .glb / .gltf 模型（可信根内、≤256MB，字节直传给预览弹窗）。通常不直接调 —— 引擎侧走 harness_tools 网关的 \`preview_3d\` 在应用内弹出可旋转的 3D 预览；本域通道是渲染层弹窗的取数后端
 通道：model-viewer:read
 
-### image-lab（1 通道）
-**图像工坊**（10-09，Windows/Mac 同一份实现）：read(path) 读图片字节（可信根内、图片扩展名白名单、≤128MB，直传给浮层预览）。⛔ 模型侧不直接调这条通道 —— 走 harness_tools 网关的 \`image_edit\`（修图：缩放 / 裁剪 / 旋转 / 翻转 / 转格式 / 明暗对比 / 灰度·棕褐 / 模糊 / 马赛克 / 水印合成 / 加英文文字——中文会画成空白）、\`image_info\`（读尺寸·格式·透明·字节数）、\`image_view\`（应用内弹浮层给用户看）；**生图**用独立的 \`image_generate\` 工具。生成与编辑都会弹「图像工坊」浮层，工具调用结束自动收起。⛔ 编辑引擎是 jimp（纯 JS），不许换成 sharp/canvas 这类原生库
-通道：image-lab:read
+### image-lab（5 通道）
+**图像工坊**（10-09，Windows/Mac 同一份实现）：read(path) 读图片字节（可信根内、图片扩展名白名单、≤128MB，直传给浮层预览）。⛔ 模型侧不直接调这条通道 —— 四个工具是**各自独立的 dynamicTool**（不走 harness_tools 网关），且各有一条自己的 IPC：\`image_generate\`→image-lab:generate（**唯一要生图插件凭证的**）、\`image_edit\`→image-lab:edit（修图：缩放 / 裁剪 / 旋转 / 翻转 / 转格式 / 明暗对比 / 灰度·棕褐 / 模糊 / 马赛克 / 水印合成 / 加英文文字——中文会画成空白；**零凭证**，产出不覆盖原图）、\`image_info\`→image-lab:info（读尺寸·格式·透明·字节数）、\`image_view\`→image-lab:view（应用内弹浮层给用户看）。改「形」用 image_edit、改「意」（换主体/风格）用 image_generate；只做小改动前先 agent_ask 问用户。生成与编辑都会弹「图像工坊」浮层，工具调用结束自动收起。⛔ 编辑引擎是 jimp（纯 JS），不许换成 sharp/canvas 这类原生库
+通道：image-lab:edit, image-lab:generate, image-lab:info, image-lab:read, image-lab:view
 
 ### dialog（6 通道）
 文件/目录选择对话框（含跨窗口）

@@ -3771,8 +3771,8 @@ export async function run() {
   (/return \{ path, url: \/\^https\?:\/i\.test\(url\) \? url : "" \};/.test(main84) ? ok : fail)(
     "【84】generateImageWith 回的是 { path, url }，且 url 仅真托管地址才有（data URL 绝不回传）"
   );
-  (/const text = result\.path[\s\S]{0,300}?: result\.url/.test(app84) ? ok : fail)(
-    "【84】生图工具返回文本优先用本地路径，托管地址只作兜底"
+  (/已生成 \$\{saved\.length\}/.test(main84) ? ok : fail)(
+    "【84】生图返回文本只用**本地落盘路径**（10-09 执行端搬进主进程 image-lab:generate；托管地址 / data URL 都不进返回文本）"
   );
   (!/\+\s*result\.url/.test(app84) ? ok : fail)(
     "【84】App 侧不得再把 result.url 直接拼进返回文本（一拼就有 MB 级 base64 进对话历史）"

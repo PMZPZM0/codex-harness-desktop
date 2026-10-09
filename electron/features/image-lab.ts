@@ -21,7 +21,9 @@
  */
 import path from "node:path";
 import fs from "node:fs/promises";
-import { isInsideTrustedRoots } from "../runtime-refs";
+import { isInsideTrustedRoots, threadCwd } from "../runtime-refs";
+import { readBuiltinPlugins } from "../main";
+import { generateImageResilient } from "./builtin-ipc";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { sendToWindow } from "./window-bus";
@@ -322,20 +324,163 @@ export function pushImageLabEvent(event: ImageLabEvent): void {
   try { sendToWindow("image-lab:event", event); } catch { /* 窗口在关闭过程中，忽略 */ }
 }
 
+/* ── 工具执行端（10-09：**图像族的 IPC 全部落在本前缀下**，与 agents / 能力网关零交集）────────
+   ⛔ 用户 10-09 两次点名：「工具区分开，不要共用一个工具」→「把生成和编辑的 IPC 也彻底分开，
+      不要混在一起」。⇒ 生图 / 修图 / 元信息 / 预览**各自一条通道**，全部是 `image-lab:`：
+        · image-lab:generate  生图 —— **唯一需要生图插件凭证的**（要调外部模型，会花钱）
+        · image-lab:edit      修图 —— 本地 jimp，**零配置**（生图没配 key 也照样能用）
+        · image-lab:info      读元信息（只读）
+        · image-lab:view      弹浮层预览（只读，不自动收起）
+        · image-lab:read      浮层取图片字节（既有读通道）
+      渲染层按工具名**分别**调它们（src/features/app-state/parts/part05/event-router/02-request.tsx），
+      **不再**经 `agents:dispatch-call` 转发 —— 那条通道只服务其余 25 个网关能力。
+   ⛔ 身份来源：这些通道由**渲染层**发起（引擎 `item/tool/call` 事件里带真实 threadId），
+      路由时原样传 `threadId` 过来，不接受模型自报。
+   ⛔ 返回值统一 `{ ok, output, error }`，与 dispatchRpcCall 同形 —— 渲染层分支不必分两套写法。 */
+type LabToolResult = { ok: boolean; output: string; error?: string };
+const labFail = (error: string): LabToolResult => ({ ok: false, output: "", error });
+const newLabTaskId = () => `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
 export const imageLabFeature = defineFeature<null>({
   id: "image-lab",
   inject: ["ipc", "host"],
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");
     if (!ipcHost) throw new Error("image-lab: 缺少 ipc 服务（宿主未提供）");
+
     ipcHost.handle("image-lab:read", async (_event, input: { path?: string } = {}) => {
       const file = await resolveImagePath(String(input?.path ?? ""));
       const data = await fs.readFile(file);
       // Uint8Array 走结构化克隆直传（不转 base64 —— 图片转码白多 33% 内存）
       return { data: new Uint8Array(data), size: data.byteLength };
     });
+
+    /* ── 生图（工具 image_generate）────────────────────────────────────────────────
+       ⛔ 与「修图」分属两条通道：这里要读生图插件凭证、要打外部网关、会花钱；
+          image-lab:edit 是纯本地像素运算、零凭证。混在一条通道上会让"没配 key 就整套不能用"的误解重现。
+       ⛔ 浮层「弹 → 亮产物 → 自动收起」与修图共用同一套事件协议（展示通道共用是合理的，
+          能力通道不共用）。 */
+    ipcHost.handle("image-lab:generate", async (_event, input: {
+      prompt?: string; count?: number; model?: string; size?: string; negative?: string;
+      workspace?: string; name?: string; threadId?: string;
+    } = {}): Promise<LabToolResult> => {
+      const prompt = String(input?.prompt ?? "").trim();
+      if (!prompt) return labFail("缺少 prompt（要画什么）");
+      const plugins = (await readBuiltinPlugins().catch(() => null)) as any;
+      const cfg = plugins?.image;
+      if (!cfg?.baseUrl || !cfg?.apiKey) return labFail("生图插件还没配置：到「设置 → 插件 → 内置插件」填 API 地址、密钥与模型");
+      const model = String(input.model || cfg.model || "").trim();
+      if (!model) return labFail("生图模型没配（设置 → 插件 → 内置插件 的模型字段）");
+      const count = Math.min(4, Math.max(1, Math.floor(Number(input.count) || 1)));
+      const cwd = String(input.workspace || threadCwd.get(String(input.threadId ?? "")) || "").trim();
+      const labTaskId = newLabTaskId();
+      pushImageLabEvent({ phase: "open", taskId: labTaskId, mode: "generate", title: "图像工坊 · 生成中", status: "running", images: [], note: prompt.slice(0, 100) });
+      const results = await Promise.allSettled(
+        Array.from({ length: count }, () => generateImageResilient({
+          baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model, prompt,
+          size: input.size ? String(input.size) : undefined,
+          negative: input.negative ? String(input.negative) : undefined,
+        })),
+      );
+      const saved: string[] = [];
+      const errors: string[] = [];
+      for (const [index, result] of results.entries()) {
+        if (result.status !== "fulfilled") { errors.push(String((result.reason as Error)?.message ?? result.reason).slice(0, 140)); continue; }
+        let filePath = String(result.value?.path || "");
+        // 落进工作区（与画布同一棵树 .drama-canvas/assets/image）；没有工作目录就用 userData/images 那份
+        if (cwd && filePath) {
+          try {
+            const dir = path.join(cwd, ".drama-canvas", "assets", "image");
+            await fs.mkdir(dir, { recursive: true });
+            const ext = path.extname(filePath) || ".png";
+            const base = String(input.name || "img").replace(/[\\/:*?"<>|]/g, "_").slice(0, 40) || "img";
+            const dest = path.join(dir, `${base}-${Date.now()}-${index + 1}${ext}`);
+            await fs.copyFile(filePath, dest);
+            filePath = dest;
+          } catch { /* 复制失败退回原路径，不影响"图已生成"这个事实 */ }
+        }
+        if (filePath) saved.push(filePath);
+      }
+      if (!saved.length) {
+        pushImageLabEvent({ phase: "update", taskId: labTaskId, mode: "generate", status: "error", images: [], note: String(errors[0] ?? "生成失败") });
+        pushImageLabEvent({ phase: "close", taskId: labTaskId });
+        return labFail(`生成失败：${errors[0] ?? "未知错误"}`);
+      }
+      pushImageLabEvent({ phase: "update", taskId: labTaskId, mode: "generate", status: "done", images: saved, note: `已生成 ${saved.length} 张` });
+      pushImageLabEvent({ phase: "close", taskId: labTaskId });
+      const lines = saved.map((file, i) => `${i + 1}. ${file}`).join("\n");
+      const tail = errors.length ? `\n（另有 ${errors.length} 张失败：${errors[0]}）` : "";
+      const where = cwd ? "" : "\n（未指定工作目录，文件在应用数据目录的 images/ 下）";
+      return { ok: true, output: `已生成 ${saved.length}/${count} 张：\n${lines}${tail}${where}` };
+    });
+
+    /* ── 修图（工具 image_edit）：零凭证，纯本地 ───────────────────────────────── */
+    ipcHost.handle("image-lab:edit", async (_event, input: {
+      path?: string; paths?: string[]; ops?: ImageOp[]; output?: string; format?: ImageFormat; quality?: number;
+    } = {}): Promise<LabToolResult> => {
+      const labTaskId = newLabTaskId();
+      const srcList = [
+        ...(Array.isArray(input?.paths) ? input.paths.map(String) : []),
+        ...(input?.path ? [String(input.path)] : []),
+      ].filter(Boolean);
+      try {
+        // 先亮源图（用户看得见"在改的是哪张"），编辑很快，出结果再换成产物
+        pushImageLabEvent({ phase: "open", taskId: labTaskId, mode: "edit", title: "图像工坊 · 编辑中", status: "running", images: srcList.slice(0, 1) });
+        const results = await imageEditCore({
+          path: input?.path ? String(input.path) : undefined,
+          paths: Array.isArray(input?.paths) ? input.paths.map((p) => String(p)) : undefined,
+          ops: (Array.isArray(input?.ops) ? input.ops : []) as ImageOp[],
+          output: input?.output ? String(input.output) : undefined,
+          format: input?.format ? (String(input.format) as ImageFormat) : undefined,
+          quality: input?.quality !== undefined ? Number(input.quality) : undefined,
+        });
+        pushImageLabEvent({ phase: "update", taskId: labTaskId, mode: "edit", status: "done", images: results.map((r) => r.path), note: `已编辑 ${results.length} 张` });
+        pushImageLabEvent({ phase: "close", taskId: labTaskId });
+        const lines = results.map((r) => `${r.path}（${r.width}×${r.height}，${r.format}，${Math.round(r.bytes / 1024)}KB）`).join("\n");
+        return { ok: true, output: `已编辑 ${results.length} 张，产出：\n${lines}` };
+      } catch (error) {
+        const message = String((error as Error)?.message ?? error);
+        pushImageLabEvent({ phase: "update", taskId: labTaskId, mode: "edit", status: "error", images: [], note: message });
+        pushImageLabEvent({ phase: "close", taskId: labTaskId });
+        return labFail(`图像编辑失败：${message}`);
+      }
+    });
+
+    /* ── 读元信息（工具 image_info）：只读，不弹浮层 ─────────────────────────────── */
+    ipcHost.handle("image-lab:info", async (_event, input: { path?: string; paths?: string[] } = {}): Promise<LabToolResult> => {
+      try {
+        const info = await imageInfoCore({
+          path: input?.path ? String(input.path) : undefined,
+          paths: Array.isArray(input?.paths) ? input.paths.map((p) => String(p)) : undefined,
+        });
+        return {
+          ok: true,
+          output: info
+            .map((i) => `${i.path}：${i.width}×${i.height}，${i.format}${i.hasAlpha ? "（带透明通道）" : ""}，${Math.round(i.bytes / 1024)}KB`)
+            .join("\n"),
+        };
+      } catch (error) {
+        return labFail(`读图片信息失败：${String((error as Error)?.message ?? error)}`);
+      }
+    });
+
+    /* ── 弹浮层预览（工具 image_view）：只读展示 ─────────────────────────────────── */
+    ipcHost.handle("image-lab:view", async (_event, input: { path?: string; title?: string } = {}): Promise<LabToolResult> => {
+      try {
+        const file = await resolveImagePath(String(input?.path ?? ""));
+        const labTaskId = newLabTaskId();
+        // ⛔ 这里**不发 close**：这是"把图亮给用户看"，由用户自己关（自动收掉等于没看）
+        pushImageLabEvent({ phase: "open", taskId: labTaskId, mode: "edit", title: String(input?.title ?? "").trim() || "图像预览", status: "done", images: [file] });
+        return { ok: true, output: `已在应用内打开图像工坊预览：${file}（用户可放大查看，看完自己关）` };
+      } catch (error) {
+        return labFail(`无法打开图像预览：${String((error as Error)?.message ?? error)}`);
+      }
+    });
+
     ctx.effect(() => {
-      ipcHost.removeHandler("image-lab:read");
+      for (const ch of ["image-lab:read", "image-lab:generate", "image-lab:edit", "image-lab:info", "image-lab:view"]) {
+        ipcHost.removeHandler(ch);
+      }
     });
   },
 });

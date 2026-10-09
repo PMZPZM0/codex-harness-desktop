@@ -35,26 +35,38 @@
 - 代价：比 libvips 慢（1024² 图的一次操作在百毫秒量级），基础编辑够用。
 - ⛔ 守卫 `12b-image-lab.mjs` 钉死这条：依赖里一旦出现 `sharp`/`canvas`/`@napi-rs/canvas` 立刻报红。
 
-## 2. 链路（七接缝，缺一即功能不可用）
+## 2. 链路（生图与编辑**两条独立通道**，缺一即功能不可用）
 
 ```
 引擎（Codex）
-  │  harness_tools 网关调用 image_edit / image_info / image_view（image_generate 是独立工具）
+  │  四个**各自独立**的 dynamicTool（模型工具面里一眼可见，不再包一层 harness_tools）
+  │  image_generate / image_edit / image_info / image_view
   ▼
-electron/features/dispatch-core.ts   ← 工具 schema（能力声明）
+src/features/app-state/parts/part08/01-seg.tsx          ← 工具 schema（渲染层持有）
+  │  每条 description 都写清「适用场景 / 使用时机 / 职责边界」——模型靠它选对工具
   ▼
-electron/features/dispatch-rpc.ts    ← 执行端：路径闸 → 调引擎 → 推浮层事件
+src/features/app-state/parts/part05/event-router/02-request.tsx  ← 按工具名**分别**路由
   │
-  ├─► electron/features/image-lab.ts ← 编辑引擎（jimp，纯函数 imageEditCore / imageInfoCore）
-  │                                    + 路径闸 resolveImagePath + IPC 读通道 image-lab:read
-  │                                    + 推送 pushImageLabEvent（sendToWindow "image-lab:event"）
+  ├─ image_generate ─► image-lab:generate ─┐
+  ├─ image_edit     ─► image-lab:edit     ─┤
+  ├─ image_info     ─► image-lab:info     ─┤
+  └─ image_view     ─► image-lab:view     ─┤
+                                          ▼
+electron/features/image-lab.ts   ← 执行端（**生图与编辑分属不同 handler，不共用一条通道**）
+  │  · generate     ：读生图插件凭证 → 打外部网关（**唯一要 API Key 的**，会花钱）
+  │  · edit/info/view：零凭证，本地 jimp（imageEditCore / imageInfoCore）+ 路径闸 resolveImagePath
+  │  · 浮层推送 pushImageLabEvent（sendToWindow "image-lab:event"）；读通道 image-lab:read
   ▼
-electron/preload.ts   ← 双桥：readImage（gen 段，来自 manifest）+ onImageLabEvent（手写推送桥）
+electron/preload.ts   ← 五条 gen 桥（read / generate / edit / info / view）+ onImageLabEvent（手写推送桥）
   ▼
 src/features/image-lab/ImageLabModal.tsx  ← 浮层（拉字节 → Blob → 显示；close 后延时自动卸载）
   ▼
 src/styles/33-image-lab.css + src/styles.css 引入
 ```
+
+⛔ **图像族不经过 `agents:dispatch-call` 能力网关** —— 那条通道只服务其余 25 个能力。
+   用户 10-09 两次点名：「工具区分开，不要共用一个工具」+「把生成和编辑的 IPC 也彻底分开」。
+   设计定稿见 `docs/IMAGE-TOOL-SPLIT.md`，守卫 = `12b-image-lab.mjs`（23 条）。
 
 **接线生成物**（都是"改一处、跑生成器"）：
 

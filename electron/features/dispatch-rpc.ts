@@ -25,12 +25,12 @@ import { boardsFileOf, readWorkflowBoards, writeWorkflowBoards } from "./drama-w
 import { readSubAgents, writeSubAgents } from "../main/09-agents-plugins";
 import { runDelegatedTask } from "../features/delegation";
 import { delegateRegistry, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
-import { mutableState, readBuiltinPlugins, scheduler } from "../main";
-import { generateImageResilient } from "./builtin-ipc";
+import { mutableState, scheduler } from "../main";
 import { uiverseSearch, uiverseGet } from "./uiverse-library";
 import { concatVideosCore, downloadVideoCore, findVideoJob, listVideoJobs, pollVideoCore, rememberVideoJob, submitVideoCore, updateVideoJob, videoProviderViews } from "./video-gen";
-/* 图像工坊（image-lab，10-09）：编辑核心 / 元信息 / 路径闸 / 弹窗推送 —— 与渲染层浮层同一份事件协议 */
-import { imageEditCore, imageInfoCore, resolveImagePath, pushImageLabEvent, type ImageOp, type ImageFormat } from "./image-lab";
+/* ⛔ 图像四件套（image_generate / image_edit / image_info / image_view）的执行端**已整体移出本文件**，
+   改由 image-lab 域自己的 IPC 承担（electron/features/image-lab.ts 的 image-lab:generate / :edit /
+   :info / :view）。这里不再有它们的分支 —— 用户 10-09 要求「生成和编辑的 IPC 彻底分开」。 */
 import { backoffMs, clearPollAbort, isPollAborted, normalizePollConfig, readPollConfig } from "../poll-config";
 /** 轮询等待用（10-09）：主进程里 sleep 不受 Chromium 后台节流影响，wait 循环的间隔才准。 */
 function sleepMs(ms: number): Promise<void> {
@@ -55,8 +55,8 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
   /* ── 调用者身份有两条来源，**都要**是引擎侧的事实，模型伪造不了：
      · 旁证路径（内置 MCP，`explicitCallerThreadId` 不传）：引擎把调用转发给 MCP 服务器的同一时刻
        会发 item/started 事件（含真实 threadId）。用「参数指纹」对上号。
-     · 显式路径（10-05 能力网关，见文件末尾 dispatchGatewayTools）：渲染层从 `item/tool/call` 的
-       `params.threadId` 直接带过来 —— **更硬**（不用等旁证、也不会被同名参数撞车），且省掉最多 10 秒等待。 */
+     · 显式路径（10-09 起：独立能力工具，见文件末尾 dispatchExposedTools）：渲染层从 `item/tool/call`
+       的 `params.threadId` 直接带过来 —— **更硬**（不用等旁证、也不会被同名参数撞车），且省掉最多 10 秒等待。 */
   const argsKey = stableKey(args);
   let callerThreadId = String(explicitCallerThreadId ?? "");
   if (!callerThreadId) {
@@ -489,114 +489,6 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     broadcastHarnessEvent({ type: "drama-canvas-writeback", name: canvasName, nodeId: String(node.id), updates: clean });
     return { ok: true, output: `已写回画布「${canvasName}」节点 ${nodeId}：${JSON.stringify(clean)}。用户画布打开着会实时看到并弹提示。` };
   }
-  if (name === "image_generate") {
-    const prompt = String(args.prompt ?? "").trim();
-    if (!prompt) return { ok: false, error: "缺少 prompt（要画什么）" };
-    const plugins = (await readBuiltinPlugins().catch(() => null)) as any;
-    const cfg = plugins?.image;
-    if (!cfg?.baseUrl || !cfg?.apiKey) return { ok: false, error: "生图插件还没配置：到「设置 → 插件 → 内置插件」填 API 地址、密钥与模型" };
-    const model = String(args.model || cfg.model || "").trim();
-    if (!model) return { ok: false, error: "生图模型没配（设置 → 插件 → 内置插件 的模型字段）" };
-    const count = Math.min(4, Math.max(1, Math.floor(Number(args.count) || 1)));
-    const cwd = String(args.workspace || threadCwd.get(callerThreadId) || "").trim();
-    /* 弹「图像工坊」浮层（10-09 用户要求：调用时弹出、完成自动消失）。生成是几十秒的长活，
-       浮层在这里有真实存在感：先亮提示词，出图后亮产物，随后由 close 事件自动收起。 */
-    const labTaskId = `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    pushImageLabEvent({ phase: "open", taskId: labTaskId, mode: "generate", title: "图像工坊 · 生成中", status: "running", images: [], note: prompt.slice(0, 100) });
-    const results = await Promise.allSettled(
-      Array.from({ length: count }, () => generateImageResilient({
-        baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model, prompt,
-        size: args.size ? String(args.size) : undefined,
-        negative: args.negative ? String(args.negative) : undefined,
-      })),
-    );
-    const saved: string[] = [];
-    const errors: string[] = [];
-    for (const [index, result] of results.entries()) {
-      if (result.status !== "fulfilled") { errors.push(String((result.reason as Error)?.message ?? result.reason).slice(0, 140)); continue; }
-      let filePath = String(result.value?.path || "");
-      // 落进工作区（与画布同一棵树 .drama-canvas/assets/image）；没有工作目录就用 userData/images 那份
-      if (cwd && filePath) {
-        try {
-          const dir = path.join(cwd, ".drama-canvas", "assets", "image");
-          await fsp.mkdir(dir, { recursive: true });
-          const ext = path.extname(filePath) || ".png";
-          const base = String(args.name || "img").replace(/[\\/:*?"<>|]/g, "_").slice(0, 40) || "img";
-          const dest = path.join(dir, `${base}-${Date.now()}-${index + 1}${ext}`);
-          await fsp.copyFile(filePath, dest);
-          filePath = dest;
-        } catch { /* 复制失败退回原路径，不影响"图已生成"这个事实 */ }
-      }
-      if (filePath) saved.push(filePath);
-    }
-    if (!saved.length) {
-      pushImageLabEvent({ phase: "update", taskId: labTaskId, mode: "generate", status: "error", images: [], note: String(errors[0] ?? "生成失败") });
-      pushImageLabEvent({ phase: "close", taskId: labTaskId });
-      return { ok: false, error: `生成失败：${errors[0] ?? "未知错误"}` };
-    }
-    pushImageLabEvent({ phase: "update", taskId: labTaskId, mode: "generate", status: "done", images: saved, note: `已生成 ${saved.length} 张` });
-    pushImageLabEvent({ phase: "close", taskId: labTaskId });
-    const lines = saved.map((file, i) => `${i + 1}. ${file}`).join("\n");
-    const tail = errors.length ? `\n（另有 ${errors.length} 张失败：${errors[0]}）` : "";
-    const where = cwd ? "" : "\n（未指定工作目录，文件在应用数据目录的 images/ 下）";
-    return { ok: true, output: `已生成 ${saved.length}/${count} 张：\n${lines}${tail}${where}` };
-  }
-  /* ── 图像工坊 · 编辑（10-09）：与 image_generate 共用同一套「弹→亮→收」浮层协议。 */
-  if (name === "image_edit") {
-    const labTaskId = `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const srcList = [
-      ...(Array.isArray(args.paths) ? (args.paths as unknown[]).map((p) => String(p)) : []),
-      ...(args.path ? [String(args.path)] : []),
-    ].filter(Boolean);
-    try {
-      // 先亮源图（用户看得见"在改的是哪张"），编辑很快，出结果再换成产物
-      pushImageLabEvent({ phase: "open", taskId: labTaskId, mode: "edit", title: "图像工坊 · 编辑中", status: "running", images: srcList.slice(0, 1) });
-      const results = await imageEditCore({
-        path: args.path ? String(args.path) : undefined,
-        paths: Array.isArray(args.paths) ? (args.paths as unknown[]).map((p) => String(p)) : undefined,
-        ops: (Array.isArray(args.ops) ? args.ops : []) as ImageOp[],
-        output: args.output ? String(args.output) : undefined,
-        format: args.format ? (String(args.format) as ImageFormat) : undefined,
-        quality: args.quality !== undefined ? Number(args.quality) : undefined,
-      });
-      pushImageLabEvent({ phase: "update", taskId: labTaskId, mode: "edit", status: "done", images: results.map((r) => r.path), note: `已编辑 ${results.length} 张` });
-      pushImageLabEvent({ phase: "close", taskId: labTaskId });
-      const lines = results.map((r) => `${r.path}（${r.width}×${r.height}，${r.format}，${Math.round(r.bytes / 1024)}KB）`).join("\n");
-      return { ok: true, output: `已编辑 ${results.length} 张，产出：\n${lines}` };
-    } catch (error) {
-      const message = String((error as Error)?.message ?? error);
-      pushImageLabEvent({ phase: "update", taskId: labTaskId, mode: "edit", status: "error", images: [], note: message });
-      pushImageLabEvent({ phase: "close", taskId: labTaskId });
-      return { ok: false, error: `图像编辑失败：${message}` };
-    }
-  }
-  if (name === "image_info") {
-    try {
-      const info = await imageInfoCore({
-        path: args.path ? String(args.path) : undefined,
-        paths: Array.isArray(args.paths) ? (args.paths as unknown[]).map((p) => String(p)) : undefined,
-      });
-      return {
-        ok: true,
-        output: info
-          .map((i) => `${i.path}：${i.width}×${i.height}，${i.format}${i.hasAlpha ? "（带透明通道）" : ""}，${Math.round(i.bytes / 1024)}KB`)
-          .join("\n"),
-      };
-    } catch (error) {
-      return { ok: false, error: `读图片信息失败：${String((error as Error)?.message ?? error)}` };
-    }
-  }
-  if (name === "image_view") {
-    try {
-      const file = await resolveImagePath(String(args.path ?? ""));
-      const labTaskId = `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-      // ⛔ 这里**不发 close**：这是"把图亮给用户看"，由用户自己关（自动收掉等于没看）
-      pushImageLabEvent({ phase: "open", taskId: labTaskId, mode: "edit", title: String(args.title ?? "").trim() || "图像预览", status: "done", images: [file] });
-      return { ok: true, output: `已在应用内打开图像工坊预览：${file}（用户可放大查看，看完自己关）` };
-    } catch (error) {
-      return { ok: false, error: `无法打开图像预览：${String((error as Error)?.message ?? error)}` };
-    }
-  }
   if (name === "video_generate") {
     const prompt = String(args.prompt ?? "").trim();
     if (!prompt) return { ok: false, error: "缺少 prompt（要拍什么）" };
@@ -914,29 +806,31 @@ async function writeDispatchPortFile(port: number): Promise<void> {
   } catch { /* 写失败不影响服务 */ }
 }
 
-/* ── 能力网关（10-05）：把内置 MCP 的工具面**重新**暴露给模型 ────────────────────────────
-   背景：引擎 0.157 起内置 MCP 的工具整批「延迟暴露」（`tool_search_always_defer_mcp_tools`
-   已是 `removed / true`，属永久默认），它们不再出现在发给模型的工具清单里 ⇒ 直接调用一律
-   `unsupported call`。宿主的唯一可见通道是 dynamicTools，而 dynamicTools 只在
-   `thread/start` / `thread/resume` 注册（覆盖不了"中途变化"，但覆盖得了所有新会话与切回的老会话）。
-   ⇒ 这里把 MCP 工具面**镜像成 1 个网关工具** `harness_tools`，执行端**原样复用**
-     `dispatchRpcCall`（同一套实现、同一套闸，不是第二份逻辑）。
+/* ── 能力网关（10-05 立 / 10-09 收窄）──────────────────────────────────────────────
+   背景（10-05 起未变）：引擎 0.157 起内置 MCP（harness-dispatch）的工具整批「延迟暴露」
+   （`tool_search_always_defer_mcp_tools` 已是 `removed / true`，属永久默认），它们不出现在发给
+   模型的工具清单里 ⇒ 直接调用一律 `unsupported call`。宿主的唯一可见通道是 dynamicTools，而
+   dynamicTools 只在 `thread/start` / `thread/resume` 注册（覆盖不了"中途变化"，但覆盖所有新会话
+   与切回的老会话）。
 
-   ⛔ 为什么是「一个网关」而不是「19 个独立工具」：
-     ① 工具面**每次请求**都要带上 ⇒ 19 份 schema 是常驻 token 成本，还会挤掉真正重要的工具；
-     ② 以后主进程新增 MCP 工具时，渲染层**不用改**；
-     ③ 参数说明按需取（`name="list"`），不占常驻提示词。
-   ⛔ 为什么排除这三个：`agent_invoke` / `agent_archive_sessions` / `image_generate` 已经有
-     **专用 dynamicTool**（`generate_image` 等）。同一个能力挂两个名字，模型只会用名字最直白的
-     那个、另一套被绕过 —— 项目**踩过一次**：`subagent_invoke` 与 `agent_invoke` 并存时专家/专家团
-     永远被绕过，最后整体删除。⛔ 别把这三个加回来。 */
-const GATEWAY_EXCLUDED = new Set(["agent_invoke", "agent_archive_sessions", "image_generate"]);
+   ⛔⛔ 10-09 用户三次点名的**最终分工**：
+     · 「工具区分开，不要共用一个工具」+「把生成和编辑的 IPC 也彻底分开」⇒ **图像四件套**
+       （生图 / 修图 / 读元信息 / 预览）既不走网关、也不在本文件的 MCP 工具面里 ——
+       它们已**整体搬去 image-lab 域**（执行端 = image-lab:generate / :edit / :info / :view，
+       工具面 = 渲染层自己那四个独立 dynamicTool）。本文件里已经没有它们的任何分支。
+     · 「工具不需要拆得那么细」⇒ **其余能力不逐个拆**，仍收在**这一个网关工具** `harness_tools`
+       里（10-09 实测 29 份 schema 全拆 = 每次请求常驻约 25KB，得不偿失）。
+     ⇒ 于是 `dispatchGatewayTools()` = 当前 MCP 工具面 − 渲染层自带专用工具的。 */
 
-/** 网关暴露的工具面（= MCP 工具面 − 已有专用工具的三个）。 */
+/** 渲染层另有**专用 dynamicTool** 的能力（同名会在 dynamicTools 里撞车 ⇒ 不进网关）。
+    ⛔ 图像四件套不在列 —— 它们已从 `dispatchMcpTools` 移除，不再属于本工具面。 */
+const RENDERER_DEDICATED = new Set(["agent_invoke", "agent_archive_sessions"]);
+
+/** 网关暴露的工具面（= MCP 工具面 − 渲染层自带专用工具的）。 */
 export function dispatchGatewayTools(): Array<{ name: string; description: string; inputSchema: unknown }> {
   const all = dispatchMcpTools() as Array<{ name?: unknown; description?: unknown; inputSchema?: unknown }>;
   return all
-    .filter((tool) => !GATEWAY_EXCLUDED.has(String(tool?.name ?? "")))
+    .filter((tool) => !RENDERER_DEDICATED.has(String(tool?.name ?? "")))
     .map((tool) => ({ name: String(tool?.name ?? ""), description: String(tool?.description ?? ""), inputSchema: tool?.inputSchema ?? {} }));
 }
 
@@ -944,5 +838,6 @@ export function dispatchGatewayTools(): Array<{ name: string; description: strin
 export function dispatchGatewayCatalogText(): string {
   const tools = dispatchGatewayTools();
   const body = tools.map((tool) => `【${tool.name}】${tool.description}\n参数：${JSON.stringify(tool.inputSchema)}`).join("\n\n");
-  return `共 ${tools.length} 个能力。调用方式：harness_tools({ name: "<工具名>", args: { … } })。\n\n${body}`;
+  return `共 ${tools.length} 个能力（图像四件套已是独立工具，不在此列）。调用方式：`
+    + `harness_tools({ name: "<工具名>", args: { … } })。\n\n${body}`;
 }

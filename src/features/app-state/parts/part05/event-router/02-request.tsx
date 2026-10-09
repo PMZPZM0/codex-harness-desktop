@@ -155,29 +155,6 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
               } else if (event.params?.tool === "team_phase_invoke") {
                 // 并行阶段：一次提交多名成员，宿主并发执行（Promise.all 同时发起）后一起返回
                 await bag.invokeTeamPhase(Array.isArray(args.tasks) ? args.tasks : [], String(event.params?.threadId ?? ""), event.id!);
-              } else if (event.params?.tool === "generate_image") {
-                const cfg: any = await window.codex.readBuiltinPlugins().catch(() => null);
-                const c = cfg?.image;
-                if (!c?.baseUrl || !c?.apiKey || !c?.model) {
-                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "生图插件未配置：请到 设置 → 插件 → 内置插件 填写 API 地址、密钥和模型。" }], success: false });
-                } else {
-                  try {
-                    const result = await window.codex.generateImage({ baseUrl: c.baseUrl, apiKey: c.apiKey, model: c.model, prompt: String(args.prompt ?? "") });
-                    // ⛔ 这段文本是**进对话历史**的，只能带路径或短托管地址，绝不能带 data URL：
-                    //    09-21 实测它曾等于单条 3.03 MB 的 base64 文本、且每轮重发
-                    //    （见 electron/main.ts 的 persistGeneratedImage）。给用户看走 markdown 图片语法。
-                    const text = result.path
-                      ? `图片已生成，本地文件：${result.path}\n展示给用户请用 markdown 图片语法引用该路径（![描述](路径)）；需要看图片内容用 view_image 传该路径。`
-                      : result.url
-                        ? `图片已生成（网关托管地址，可能很快失效）：${result.url}`
-                        // 走到这里只剩一种可能：网关只回了内联 base64、而落盘失败了 —— 别报成
-                        // 「没生成」（图其实生成了），否则用户会以为白等一场。
-                        : "图片已生成，但保存到本地失败（磁盘空间或权限问题）。请检查应用数据目录下的 images 目录后重试。";
-                    await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text }], success: Boolean(result.path || result.url) });
-                  } catch (error: any) {
-                    await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "生图失败：" + error.message }], success: false });
-                  }
-                }
               } else if (event.params?.tool === "describe_image") {
                 const cfg: any = await window.codex.readBuiltinPlugins().catch(() => null);
                 const c = cfg?.vision;
@@ -346,6 +323,58 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                     success: applied.ok,
                   });
                 }
+              } else if (event.params?.tool === "image_generate") {
+                /* ── 图像工坊 · 生图（10-09：走**自己的 IPC** `image-lab:generate`）──────────────────
+                   ⛔ 不再经 `harness_tools` 网关，也不再经 `agents:dispatch-call` —— 用户原话
+                      「工具区分开，不要共用一个工具」+「把生成和编辑的 IPC 也彻底分开，不要混在一起」。
+                   ⛔ threadId 取**引擎事件里的真实值**（模型伪造不了），主进程据此反查会话工作目录，
+                      决定图落盘到哪；不许用 args 里模型自报的值。 */
+                const gen: any = await window.codex.imageGenerate({
+                  prompt: String(args.prompt ?? ""),
+                  count: args.count !== undefined ? Number(args.count) : undefined,
+                  model: args.model ? String(args.model) : undefined,
+                  size: args.size ? String(args.size) : undefined,
+                  negative: args.negative ? String(args.negative) : undefined,
+                  workspace: args.workspace ? String(args.workspace) : undefined,
+                  name: args.name ? String(args.name) : undefined,
+                  threadId: String(event.params?.threadId ?? bag.threadRef.current?.id ?? ""),
+                });
+                await toolCallRespond.send(event.id!, {
+                  contentItems: [{ type: "inputText", text: gen?.ok ? String(gen.output ?? "") : `生图失败：${gen?.error ?? "未知原因"}` }],
+                  success: gen?.ok === true,
+                });
+              } else if (event.params?.tool === "image_edit") {
+                /* ── 图像工坊 · 修图（`image-lab:edit`，零凭证、本地 jimp）──────────────────── */
+                const edited: any = await window.codex.imageEdit({
+                  path: args.path ? String(args.path) : undefined,
+                  paths: Array.isArray(args.paths) ? args.paths.map(String) : undefined,
+                  ops: Array.isArray(args.ops) ? args.ops : [],
+                  output: args.output ? String(args.output) : undefined,
+                  format: args.format ? String(args.format) : undefined,
+                  quality: args.quality !== undefined ? Number(args.quality) : undefined,
+                });
+                await toolCallRespond.send(event.id!, {
+                  contentItems: [{ type: "inputText", text: edited?.ok ? String(edited.output ?? "") : `修图失败：${edited?.error ?? "未知原因"}` }],
+                  success: edited?.ok === true,
+                });
+              } else if (event.params?.tool === "image_info") {
+                const info: any = await window.codex.imageInfo({
+                  path: args.path ? String(args.path) : undefined,
+                  paths: Array.isArray(args.paths) ? args.paths.map(String) : undefined,
+                });
+                await toolCallRespond.send(event.id!, {
+                  contentItems: [{ type: "inputText", text: info?.ok ? String(info.output ?? "") : `读取失败：${info?.error ?? "未知原因"}` }],
+                  success: info?.ok === true,
+                });
+              } else if (event.params?.tool === "image_view") {
+                const viewed: any = await window.codex.imageView({
+                  path: String(args.path ?? ""),
+                  title: args.title ? String(args.title) : undefined,
+                });
+                await toolCallRespond.send(event.id!, {
+                  contentItems: [{ type: "inputText", text: viewed?.ok ? String(viewed.output ?? "") : `预览失败：${viewed?.error ?? "未知原因"}` }],
+                  success: viewed?.ok === true,
+                });
               } else {
                 await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `Dynamic tool ${event.params?.tool ?? "unknown"} is not registered by this harness.` }], success: false });
               }

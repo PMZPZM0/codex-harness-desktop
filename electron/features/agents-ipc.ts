@@ -5,7 +5,9 @@
  * 通道：agents:thread-role / catalog / tool-description / notice / off-notice / delegated / delegated-of /
  *       invoke / archive / dispatch-call
  *       （`dispatch-call` 是 10-05 的**能力网关**：内置 MCP 的工具面在引擎 0.157 后对模型不可见，
- *        渲染层用一个 dynamicTool `harness_tools` 把它们接回来 —— 执行端仍是 dispatchRpcCall）
+ *        渲染层用一个 dynamicTool `harness_tools` 把它们接回来 —— 执行端仍是 dispatchRpcCall。
+ *        ⛔ 图像四件套**不在**这里：它们有自己的 IPC（image-lab:generate / :edit / :info / :view），
+ *           10-09 用户要求「生成和编辑的 IPC 彻底分开」。）
  *
  * ⛔⛔ `agents:archive` 的**失败必须计数**（09-24 修，评估报告 §4.2）：原写法 `.catch(() => undefined)`
  *    吞掉引擎侧失败后**无条件** `archived += 1` ⇒ 弹「已归档 N 个」而会话其实还在列表里
