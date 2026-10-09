@@ -590,6 +590,13 @@
       "config": null
     },
     {
+      "id": "image-lab",
+      "enabled": true,
+      "file": "features/image-lab.ts",
+      "export": "imageLabFeature",
+      "config": null
+    },
+    {
       "id": "whatsnew",
       "enabled": true,
       "file": "features/whats-new-ipc.ts",

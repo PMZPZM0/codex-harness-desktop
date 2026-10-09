@@ -165,6 +165,9 @@ import { WhatsNewDialog } from "../whats-new";
 import { AppViewSettingsSheet } from "./AppView/08-settings-sheet";
 import { AppViewFilePreviewEditor } from "./AppView/09-file-preview-editor";
 import { ModelViewerBridge } from "../model-viewer";
+/* 图像工坊浮层（image-lab 域，10-09）：Codex 调用 image_generate / image_edit / image_view 时
+   弹出实时预览，工具结束自动收起。自挂载、订阅模块级总线，整个应用**只挂一次**。 */
+import { ImageLabBridge } from "../image-lab";
 /* 语音播报（10-08 新增域）：实时正文播报 + 结束汇总播报。⛔ 整个应用**只挂一次**
    （它订阅模块级总线，挂两次会念两遍）；通话中由 VoiceCallFloat 接管，它自己避让。 */
 import { VoiceAnnounceBridge } from "../voice-announce";
@@ -646,6 +649,8 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       <AppViewFilePreviewEditor app={app} />
       {/* 3D 预览弹窗（model-viewer 域）：自挂载，监听 model-viewer:open 推送（引擎 preview_3d） */}
       <ModelViewerBridge />
+      {/* 图像工坊浮层（image-lab 域，10-09）：Codex 的图像生成/编辑工具调用时弹出预览，结束自动收起 */}
+      <ImageLabBridge />
       {/* 悬浮球右键菜单里的「语音设置」：把「打开设置并跳到语音页」注册给 VoiceCallFloat
       （悬浮球是 body portal，拿不到这里的 setSettingsPage） */}
       <VoiceCallFloat threadId={thread?.id ?? ""} />

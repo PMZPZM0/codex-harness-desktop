@@ -21,10 +21,12 @@ export const BUILTIN_SKILL_ZH_NOTES: Record<string, string> = {
 各家支持什么（本地首帧 / 公网参考视频 / 分辨率时长上限）、失败怎么修。
 什么时候用：任何 video:* 工具调用之前；工具报错时按它的修复表对症处理。`,
 
-  "image-generation": `# 生图（中文导读）
-本应用生图通道（builtin:generate-image，OpenAI 兼容 /images/generations）的使用手册：
-参数与尺寸、多张数、产物落盘位置，以及提示词怎么组织。
-什么时候用：调用生图工具前；电商 / 场景 / 白底各类图都能走它。`,
+  "image-generation": `# 生图与修图（中文导读）
+本应用图像工坊（image-lab）的使用手册：
+· 生图 = image_generate（builtin:generate-image，OpenAI 兼容 /images/generations）：参数与尺寸、多张数、产物落盘位置、提示词怎么组织。
+· 修图 = image_edit：裁剪 / 缩放 / 旋转 / 转格式 / 明暗对比 / 灰度 / 模糊 / 马赛克 / 水印合成 / 加英文文字（⛔ 中文会画成空白）。
+· 看图 = image_info（尺寸格式）/ image_view（应用内弹浮层给用户看）。
+什么时候用：调用生图 / 修图工具前；电商 / 场景 / 白底各类图都能走它。生成与编辑都会弹「图像工坊」浮层，结束自动收起。`,
 
   "3d-modeling": `# 3D 建模（中文导读）
 Blender（python-bridge）做建模 / 场景 / 渲染的实操路径，外加「Aholo 管长什么样、Blender 管放哪与运镜」的分工。
