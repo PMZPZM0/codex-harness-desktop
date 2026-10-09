@@ -400,7 +400,10 @@ function dispatchMcpTools(): unknown[] {
     },
     {
       name: "video_status",
-      description: "查询 video_generate 提交的任务：pending（还在跑，稍后再查）/ succeeded（已好，会自动下载落盘并返回本地路径）/ failed（失败原因）。也可以不带参数查最近的任务列表。",
+      description:
+        "查询 video_generate 提交的任务：pending（还在跑，稍后再查）/ succeeded（已好，会自动下载落盘并返回本地路径）/ failed（失败原因）。也可以不带参数查最近的任务列表。"
+        + "**想等到出片为止就给 `wait: true`**：主进程按配置好的间隔一直查到出片/失败/超时（查询失败会自动重试，"
+        + "用户在界面上随时能中止），返回的就是最终结果 —— 别自己写循环反复调用这个工具。",
       inputSchema: {
         type: "object",
         properties: {
@@ -408,6 +411,10 @@ function dispatchMcpTools(): unknown[] {
           providerId: { type: "string", description: "厂商 id（缺省用该任务提交时记下的厂商）" },
           workspace: { type: "string", description: "成功时下载到哪个工作目录（缺省用提交时记下的工作目录）" },
           name: { type: "string", description: "成功时产物的文件名" },
+          wait: { type: "boolean", description: "true = 一直查到出片/失败/超时才返回（受「轮询超时上限」约束）；不给或 false = 只查这一次" },
+          intervalMs: { type: "number", description: "wait 时的查询间隔（毫秒，缺省用用户在界面上配的那档；会被钳到 0.5~120 秒）" },
+          timeoutMs: { type: "number", description: "wait 时的超时上限（毫秒，缺省用用户在界面上配的那档；会被钳到 5 秒~1 小时，且不小于间隔的两倍）" },
+          maxRetry: { type: "number", description: "wait 时连续查询失败最多重试几次（缺省用界面上配的那档）" },
         },
       },
     },

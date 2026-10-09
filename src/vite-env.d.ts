@@ -966,6 +966,12 @@ interface Window {
     whatsNewAck(version: string): Promise<{ ok: boolean; error?: string }>;
     /* 全量版本要点（新手引导 → 版本更新日志用）：数据同 whats-new-notes.ts 单一真相源；GitHub Release 链接在主进程拼好 */
     whatsNewHistory(): Promise<{ ok: boolean; entries: { version: string; date: string; items: { t: string; d?: string }[]; releaseUrl: string }[] }>;
+    /* 10-09 轮询板块：读「间隔 / 超时上限 / 失败重试次数」（真相源在 userData/poll-settings.json） */
+    pollConfigRead(): Promise<{ intervalMs: number; timeoutMs: number; maxRetry: number }>;
+    /* 10-09 保存轮询配置（会先过钳制：超时≥间隔×2）—— 返回**钳制后**的真值，渲染层照它回显 */
+    pollConfigSave(input: { intervalMs?: number; timeoutMs?: number; maxRetry?: number }): Promise<{ intervalMs: number; timeoutMs: number; maxRetry: number }>;
+    /* 10-09 用户在界面上按「中止」→ 主进程的 wait 循环停下（任务本身不会被撤销） */
+    pollAbort(input: { taskId: string }): Promise<{ ok: boolean; aborted: boolean }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */

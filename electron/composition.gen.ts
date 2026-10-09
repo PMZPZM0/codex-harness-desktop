@@ -85,6 +85,7 @@ import { appFeature as feat_app } from "./features/app-diagnostics";
 import { relayFeature as feat_relay } from "./features/relay-ipc";
 import { layaFeature as feat_laya } from "./features/laya-service";
 import { videoFeature as feat_video } from "./features/video-gen";
+import { pollFeature as feat_poll } from "./features/poll-ipc";
 import { voiceFeature as feat_voice } from "./features/voice-ipc";
 import { domainsFeature as feat_domains } from "./features/domains-ipc";
 import { declaredPluginsFeature as feat_declared_plugins } from "./features/declared-plugins-ipc";
@@ -182,6 +183,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "relay", plugin: feat_relay as Plugin<unknown>, config: null },
   { id: "laya", plugin: feat_laya as Plugin<unknown>, config: null },
   { id: "video", plugin: feat_video as Plugin<unknown>, config: null },
+  { id: "poll", plugin: feat_poll as Plugin<unknown>, config: null },
   { id: "voice", plugin: feat_voice as Plugin<unknown>, config: null },
   { id: "domains", plugin: feat_domains as Plugin<unknown>, config: null },
   { id: "declared-plugins", plugin: feat_declared_plugins as Plugin<unknown>, config: null },

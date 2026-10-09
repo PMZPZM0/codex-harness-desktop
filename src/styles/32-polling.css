@@ -1,0 +1,340 @@
+/* ===== 轮询板块（10-09 建）：对话流里的独立轮询卡 + 输入框左上角的后台任务胶囊 =====
+
+   ⛔ 视觉纪律：与 `.action-card` / `.reasoning-card`（thinking 板块）同一套语言 ——
+     · 无边框、无底色、12.5px、`--muted` 的默认色（流内卡片一律"像一行字"，不做色块）；
+     · 状态只用**细粒度颜色**表达（橙=进行中 / 绿=成功 / 红=失败 / 橙黄=超时 / 灰=已中止）；
+     · 展开动效与 `msg-appear` / `text-fade-in` 同档（0.16~0.18s ease-out，纯 opacity + 极小位移），
+       并同样尊重 `prefers-reduced-motion`。
+   ⛔ 别在这里写死颜色：全走主题变量，深色主题才不会变成黑底黑字。 */
+
+/* ── 流内轮询卡 ───────────────────────────────────────────────────────────── */
+.poll-card {
+  margin: 0 0 4px;
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+  font-size: 12.5px;
+  overflow: visible;
+  display: inline-flex;
+  flex-direction: column;
+  max-width: 100%;
+  transition: color 0.18s;
+}
+.poll-head-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+.poll-head {
+  cursor: pointer;
+  min-height: 26px;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: var(--muted);
+  font: inherit;
+  user-select: none;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  display: inline-flex;
+}
+.poll-head:hover { color: var(--text); }
+.poll-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  color: inherit;
+}
+.poll-verb {
+  flex: none;
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
+}
+/* 状态徽标：细边框胶囊，只染边框与文字 —— 与 `.turn-status-*` 那类胶囊同形态 */
+.poll-status {
+  flex: none;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  color: var(--muted);
+}
+.poll-metrics {
+  color: var(--faint);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.poll-progress {
+  color: var(--muted);
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.poll-caret {
+  flex: none;
+  opacity: 0.7;
+  transition: transform 0.18s, opacity 0.18s;
+}
+.poll-card.open .poll-caret { transform: rotate(180deg); opacity: 0.9; }
+.poll-head:hover .poll-caret { opacity: 1; }
+/* 「中止」：只在轮询中出现的小按钮（与 `.voice-stage-stop` 同款尺寸） */
+.poll-stop {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  gap: 4px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+}
+.poll-stop:hover {
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 35%, var(--line));
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+}
+/* 展开体：动效与对话流同档（0.18s ease-out，纯 opacity + 2px 位移） */
+.poll-body {
+  margin: 4px 0 2px;
+  color: var(--muted);
+  animation: poll-appear 0.18s ease-out both;
+}
+@keyframes poll-appear {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: none; }
+}
+.poll-detail {
+  color: var(--faint);
+  font-size: 11.5px;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.poll-conclusion {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
+.poll-conclusion > svg { flex: none; margin-top: 2px; }
+.poll-hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--faint);
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+/* 每轮记录：最近一轮在最上面（组件里已倒序），超 12 行内部滚动 —— 一轮一行，几十轮
+   会把回合撑出视口（与 `.reasoning-body` 的 max-height 同为"不占消息流布局"的思路） */
+.poll-rounds {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 216px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.poll-round {
+  display: grid;
+  grid-template-columns: 62px 34px minmax(0, 1fr);
+  gap: 6px;
+  align-items: baseline;
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+.poll-round-clock { color: var(--faint); font-variant-numeric: tabular-nums; }
+.poll-round-n { color: var(--faint); }
+.poll-round.ok .poll-round-text { color: var(--muted); }
+.poll-round.err .poll-round-text { color: var(--red); }
+.poll-round-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 状态色（卡片 / 胶囊共用）───────────────────────────────────────────────── */
+.poll-t-running { color: var(--orange); }
+.poll-t-ok { color: var(--green); }
+.poll-t-err { color: var(--red); }
+.poll-t-warn { color: var(--orange); }
+.poll-t-mute { color: var(--faint); }
+.poll-card.poll-t-running .poll-status { color: var(--orange); }
+.poll-card.poll-t-ok .poll-status { color: var(--green); }
+.poll-card.poll-t-err .poll-status { color: var(--red); }
+.poll-card.poll-t-warn .poll-status { color: var(--orange); }
+.poll-card.poll-t-mute .poll-status { color: var(--faint); }
+.poll-card.poll-t-running .poll-icon,
+.poll-card.poll-t-warn .poll-icon { color: var(--orange); }
+.poll-card.poll-t-ok .poll-icon { color: var(--green); }
+.poll-card.poll-t-err .poll-icon { color: var(--red); }
+.poll-card.poll-t-mute .poll-icon { color: var(--faint); }
+.poll-conclusion.poll-t-ok { color: var(--green); }
+.poll-conclusion.poll-t-err { color: var(--red); }
+.poll-conclusion.poll-t-warn { color: var(--orange); }
+.poll-conclusion.poll-t-mute { color: var(--faint); }
+
+/* ── 输入框左上角的后台任务胶囊 ──────────────────────────────────────────────
+   ⛔ 它是 `.composer-wrap` 的一个**普通子节点**（卡片栈的一行）：上下排序、不互相遮。
+   ⛔ 面板 `left:0/right:0` 相对 `.composer-wrap`（它 `position:relative`）⇒ 宽度恒等于输入框
+      —— 别写成视口坐标（输入框宽度随窗口变，写死就歪）。 */
+.poll-bg-wrap {
+  position: relative;
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+  margin-bottom: 6px;
+}
+.poll-bg-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 11.5px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: var(--panel);
+  color: var(--muted);
+}
+.poll-bg-pill:hover { color: var(--text); border-color: var(--accent); }
+.poll-bg-caret { transition: transform 0.18s; opacity: 0.7; }
+.poll-bg-caret.up { transform: rotate(180deg); }
+.poll-bg-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  /* ❼ 与同栈的 `.edited-files-pop`（回合状态胶囊的弹层）同档：DESIGN.md 的 **composer 浮层带
+     10000~12000**（高于命令面板/上下文选择器那两个 35 档的弹出层）。同值 ⇒ 比 DOM 顺序
+     （附录 D：同值 = 谁在后面谁在上面；本胶囊排在状态胶囊之后 ⇒ 同时开时本面板在上）。
+     两个都是瞬态（一个点击、一个悬停），不会长期并存。 */
+  z-index: 10000;
+  padding: 8px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: poll-appear 0.18s ease-out both;
+}
+.poll-bg-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text);
+}
+.poll-bg-head small { color: var(--faint); font-weight: 400; }
+/* 「最多展示 3 条、超出滚动」：max-height 由组件按行数写行内值（3×34px），这里只给滚动容器 */
+.poll-bg-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.poll-bg-row {
+  flex: none;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.poll-bg-row:hover { background: var(--panel-2); }
+.poll-bg-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.poll-bg-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.poll-bg-meta { flex: none; color: var(--faint); font-variant-numeric: tabular-nums; }
+.poll-bg-act {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+}
+.poll-bg-act:hover { color: var(--text); border-color: var(--muted); }
+.poll-bg-act.danger:hover {
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 35%, var(--line));
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+}
+.poll-bg-config {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 11px;
+  color: var(--faint);
+}
+.poll-bg-config-title { display: inline-flex; align-items: center; gap: 4px; }
+.poll-bg-config label { display: inline-flex; align-items: center; gap: 4px; }
+.poll-bg-config input {
+  width: 56px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 11px;
+  outline: 0;
+}
+.poll-bg-config input:focus-visible { border-color: var(--accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="force"]) .poll-body,
+  html:not([data-motion="force"]) .poll-bg-panel { animation: none; }
+}

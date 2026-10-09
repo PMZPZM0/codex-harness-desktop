@@ -168,6 +168,7 @@ import { ModelViewerBridge } from "../model-viewer";
 /* 语音播报（10-08 新增域）：实时正文播报 + 结束汇总播报。⛔ 整个应用**只挂一次**
    （它订阅模块级总线，挂两次会念两遍）；通话中由 VoiceCallFloat 接管，它自己避让。 */
 import { VoiceAnnounceBridge } from "../voice-announce";
+import { PollBridge } from "../polling";
 import { WallpaperLayer } from "../wallpaper";
 // 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
 import { Slot } from "../../runtime/registry";
@@ -667,6 +668,11 @@ export function AppView({ app }: { app: HarnessAppApi }) {
         pendingCommandTextRef.current = text;
         void send();
       }} />
+      {/* 轮询板块（10-09）：把主进程广播的异步任务轮询事件收进本地任务表。
+          卡挂在**回合**下（对话流里的独立分支），胶囊挂在输入框左上角 —— 两者读的是同一张表。
+          ⛔ turnId 用「正在跑的回合，没有就最后一个回合」：主进程只知道 threadId，
+             回合归属只能由本窗口补（少这一步卡就永远不显示）。 */}
+      <PollBridge threadId={thread?.id ?? ""} turnId={activeTurnId || String(thread?.turns?.[thread.turns.length - 1]?.id ?? "")} />
     </div>
     </HelpOpenContext.Provider>
   );

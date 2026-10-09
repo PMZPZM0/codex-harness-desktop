@@ -19,6 +19,7 @@ import { MessageFooter } from "../../shared/MessageFooter";
 import { UserMessageView } from "../../shared/UserMessageView";
 import { isTaskTurn } from "../SessionTurn";
 import { Slot } from "../../../runtime/Slot";
+import { PollTaskBoard } from "../../polling";
 export function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForApproval, interruptedAt, elapsedSeconds, handlers, hooks, isLastTurn }: { turn: Turn; usage?: any; tokenUsage?: any; fallbackWindow?: number; waitingForApproval?: boolean; interruptedAt?: number; elapsedSeconds?: number; handlers: FoldHandlers; hooks?: any[] | null; isLastTurn?: boolean }) {
   // Codex 的名字（09-17）：用户在用户中心取的；走外部 store 而不是逐层传 props
   // —— 回合标识（.turn-head）在 TurnView 渲染，这里取一次（见 codex-identity.mjs）。
@@ -172,6 +173,10 @@ export function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForAp
               working-indicator 的边界（记忆里「钉顶几何只看正文底 bodyBottomOf」），
               插在外面会落在折叠区之外，展开/收起时跟着错位。 */}
           <Slot id="turn.after-content" props={{ turnId: turn.id, running, status: turn.status }} />
+          {/* 轮询板块（10-09 新增的独立渲染分支）：本回合里「模型在等异步任务结果」的那些卡。
+              ⛔ 它是既有分支的**兄弟节点** —— 消息/工具/思考的渲染逻辑一行都没改；
+              没有轮询任务时它渲染 null（连 DOM 都不产生）。 */}
+          <PollTaskBoard turnId={turn.id} />
           </div>
         </div>
       </div>
