@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { ROOT } from "./_ctx.mjs";
 import { isLikelySelfEcho, echoSimilarity, ECHO_TAIL_MS } from "../../src/lib/voice-echo.mjs";
 import { splitSentences } from "../../src/lib/voice-summary.mjs";
+import { AUTO_TOOL_CALL_LIMIT, REWORK_REPEAT_LIMIT, createAutoSpeakTracker, isWorkItem } from "../../src/lib/voice-auto-speak.mjs";
 import { extractVoiceScript, stripVoiceScript, createVoiceScriptStripper, resolveAnnounceSummary, spokenDedupeKey, dedupeSpokenSentences, VOICE_FENCE_LANG } from "../../src/lib/voice-script.mjs";
 
 let checks = 0, fails = 0;
@@ -469,6 +470,69 @@ ok(/resolveAnnounceSummary\(String\(finalText/.test(announceHook) && /if \(scrip
 ok(/const tail = stripperRef\.current\?\.flush\(\) \?\? ""/.test(announceHook)
   && announceHook.indexOf("const tail = stripperRef.current?.flush()") < announceHook.indexOf("const script = resolveAnnounceSummary"),
   "念过正文的回合：**先把流式链的尾句念完**再念播报稿（否则尾句永远丢）");
+
+/* ── 两条硬规则：宿主侧自动播报兜底（10-09 第六轮，用户拍板「>10 次工具调用 / 返工 ≥2 次」）────
+   ⛔ 判据与阈值都在 `src/lib/voice-auto-speak.mjs`（纯函数）⇒ 直接 import 跑真值表。 */
+const cmdItem = (command) => ({ type: "commandExecution", command });
+const fileItem = (path) => ({ type: "fileChange", path });
+const toolItem = (tool, args) => ({ type: "dynamicToolCall", tool, arguments: args });
+ok(AUTO_TOOL_CALL_LIMIT === 10 && REWORK_REPEAT_LIMIT === 2,
+  `阈值与用户拍板逐字一致（工具调用 **>${AUTO_TOOL_CALL_LIMIT}** 次 / 返工 **≥${REWORK_REPEAT_LIMIT}** 次）—— 改这里先问用户`);
+{
+  const t = createAutoSpeakTracker();
+  for (let i = 0; i < AUTO_TOOL_CALL_LIMIT; i++) t.push(cmdItem(`echo ${i}`));
+  ok(t.state.fired === false && t.state.count === AUTO_TOOL_CALL_LIMIT,
+    `真跑：正好 ${AUTO_TOOL_CALL_LIMIT} 次**还不触发**（用户口径是"超过"）`);
+  const over = t.push(cmdItem("echo last"));
+  ok(typeof over === "string" && over.includes(String(AUTO_TOOL_CALL_LIMIT + 1)) && t.state.fired === true,
+    `真跑：第 ${AUTO_TOOL_CALL_LIMIT + 1} 次工具调用 ⇒ 强制播报（原因：${over}）`);
+
+  const t2 = createAutoSpeakTracker();
+  t2.push(cmdItem("npm test"));
+  const rework = t2.push(cmdItem("npm  test"));
+  ok(typeof rework === "string" && rework.includes("返工"),
+    "真跑：同一条命令跑第二遍 ⇒ 判返工（⛔ 空白差异不算两条，签名先压空白）");
+
+  const t3 = createAutoSpeakTracker();
+  t3.push(fileItem("src/a.ts"));
+  ok(t3.push(fileItem("src/a.ts")) !== null, "真跑：同一个文件被反复改动 ⇒ 判返工");
+
+  const t4 = createAutoSpeakTracker();
+  t4.push(toolItem("harness_tools", { name: "video_status", args: { jobId: "x" } }));
+  ok(t4.push(toolItem("harness_tools", { name: "video_status", args: { jobId: "x" } })) !== null,
+    "真跑：同一个工具 + 同样参数再调一次 ⇒ 判返工（重试）");
+
+  const t5 = createAutoSpeakTracker();
+  t5.push(toolItem("harness_tools", { name: "video_status", args: { jobId: "x" } }));
+  ok(t5.push(toolItem("harness_tools", { name: "video_status", args: { jobId: "y" } })) === null,
+    "⛔ 同一个工具但参数不同 ⇒ **不算**返工（正常的连续操作别误伤）");
+
+  const t6 = createAutoSpeakTracker();
+  t6.push({ type: "webSearch", query: "a" });
+  ok(t6.push({ type: "webSearch", query: "a" }) === null,
+    "⛔ 联网搜索不参与返工判定（查询本来就该互不相同）");
+  ok(isWorkItem({ type: "reasoning" }) === false && isWorkItem({ type: "agentMessage" }) === false
+    && isWorkItem({ type: "userMessage" }) === false,
+    "思考 / 正文 / 用户消息**不计入**工具调用次数（它们不是「干活」）");
+
+  const t7 = createAutoSpeakTracker();
+  t7.push(cmdItem("npm test"));
+  ok(t7.push(cmdItem("npm test")) !== null && t7.push(cmdItem("npm test")) === null,
+    "命中**只报一次**（调用方据此标记回合；同一回合不重复报）");
+  t7.reset();
+  ok(t7.state.count === 0 && t7.state.fired === false,
+    "reset() 清计数与标记（判据是**逐回合**的，回合边界必须复位）");
+}
+/* ⛔ 切片起点取**整个 effect**（含 `if (!threadId) return;` 与 threadId 比对那几行），
+   只从 `createAutoSpeakTracker()` 切会把会话闸挡在切片外 —— 那样它会变成恒真假绿。 */
+const autoRegion = announceHook.slice(announceHook.indexOf("两条硬规则：宿主侧的自动播报兜底"), announceHook.indexOf("[voice-announce] 自动播报"));
+ok(autoRegion.includes("cfgRef.current.enabled") && autoRegion.includes("getVoiceStage().active"),
+  "自动播报受**总开关**管、通话中不参与（更自动的东西更要尊重开关）");
+ok(/if \(!threadId\) return;/.test(autoRegion) && /params\.threadId \?\? ""\) !== threadId/.test(autoRegion),
+  "自动播报只认**当前会话**的工具项（别的会话的活儿不该在这里触发播报）");
+ok(/autoSpeakRef\.current\?\.reset\(\)/.test(announceHook)
+  && /speakLiveRef\.current = true;/.test(autoRegion),
+  "硬规则命中与工具走**同一条路**（标记 speakLiveRef），且计数在回合边界重置");
 ok(/stripVoiceScript\(children\)/.test(markdownTsx) && /hasWidgetFence\(text\)/.test(markdownTsx),
   "显示层在**渲染前**整块剥掉播报稿（Markdown 是唯一渲染入口；漏这一步 = 屏幕上多一段只有耳朵该听的话）");
 /* 真跑：播报稿解析 + 流式剥离（'alive' 版本 —— 注释声称能干的不算，跑出来算） */

@@ -19,8 +19,11 @@
  *     AudioContext 队列。**不开麦克风**（只听不说）。
  *
  * ── 念什么（10-09 第五轮定稿）────────────────────────────────────────────────
- *   ① **正文**（运行过程中逐句念）：⛔ **由 Codex 自己逐条决定**（`voice_speak_reply` 工具）——
- *      用户在催、反复没做好、当前步骤重要、它自己有话要说这些情况下才会调；不是每条都念。
+ *   ① **正文**（运行过程中逐句念）：两个入口，都只是把本回合标记成"念正文"——
+ *      · **Codex 自己判断**（`voice_speak_reply` 工具）：用户在催、反复没做好、当前步骤重要、
+ *        它自己有话要说时才会调；
+ *      · **宿主硬规则兜底**（10-09 第六轮用户拍板）：单回合工具调用 **> 10 次**、
+ *        或**同一个问题被返工 ≥2 次**（判据见 `src/lib/voice-auto-speak.mjs`）。
  *      用户把播报总开关关掉时正文也不念（比插播更"自动"，必须尊重开关）。
  *   ② **播报稿**：模型写在回复末尾的 `voice` 围栏块（契约见 `src/lib/voice-script.mjs`），
  *      回合结束时念一次；**它没写就什么都不念**（不回退到本机压缩摘要 —— 那条已删除）。
@@ -38,6 +41,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { createSentenceChunker } from "../../lib/voice-aec.mjs";
 import { createSpeakFilter } from "../../lib/speak-text.mjs";
 import { createVoiceScriptStripper, dedupeSpokenSentences, resolveAnnounceSummary } from "../../lib/voice-script.mjs";
+import { createAutoSpeakTracker } from "../../lib/voice-auto-speak.mjs";
 import {
   notifyAnnounceToggle,
   publishAnnounceEvent,
@@ -66,6 +70,8 @@ export function useVoiceAnnounce(threadId: string = ""): void {
    * 回合结束/被打断时复位（逐条生效，不会漏到下一轮）。
    */
   const speakLiveRef = useRef(false);
+  /** 两条硬规则的累计器（每回合重置）——判据与阈值在 `src/lib/voice-auto-speak.mjs`（纯函数可真跑） */
+  const autoSpeakRef = useRef<ReturnType<typeof createAutoSpeakTracker> | null>(null);
   const stripperRef = useRef<any>(null);
   const chunkerRef = useRef<any>(null);
   const filterRef = useRef<any>(null);
@@ -343,6 +349,7 @@ export function useVoiceAnnounce(threadId: string = ""): void {
         /* ⛔ 被打断的回合：**别再念了** —— 刚写出来的半句停在原地，等用户的新话。
            ⛔ 去重登记表是**回合级**的：收尾（含播报稿）也要参与本回合查重，所以清表必须
               排在 finishTurn **之后**；`speakLiveRef` 的复位在 finishTurn 内部（尾句要先念完）。 */
+        autoSpeakRef.current?.reset();   // 硬规则的计数是**逐回合**的
         if (event.aborted) { epochRef.current += 1; speakLiveRef.current = false; resetLive(); clearSpokenKeys(); publishStatus(); return; }
         if (!cfgRef.current.enabled && !speakLiveRef.current) { clearSpokenKeys(); return; }
         enqueueTask(() => finishTurn(event.text).finally(clearSpokenKeys));
@@ -382,6 +389,33 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     });
     return () => { off?.(); };
   }, [resetLive, stopPlayback, threadId]);
+
+  /* ── 两条硬规则：宿主侧的自动播报兜底（10-09 第六轮，用户拍板）──────────────────
+     ① 单回合工具调用 **> 10 次**；② **同一个问题被返工 ≥2 次**（同一命令/同一文件/同参数同工具）。
+     ⛔ 与 `voice_speak_reply` 走**同一条路**（标记本回合 `speakLiveRef`）—— 判据只有一份，
+        两个入口不会各判一半（本项目记过的「二房东」缺陷）。
+     ⛔ 受总开关管：用户关掉播报 ⇒ 自动播报也不生效（更"自动"的东西更要尊重开关）。
+     ⛔ 通话中不参与：那时由通话链路负责念回复。 */
+  useEffect(() => {
+    if (!threadId) return;
+    const tracker = createAutoSpeakTracker();
+    autoSpeakRef.current = tracker;
+    const off = window.codex.onEvent((event: any) => {
+      if (event?.kind !== "notification") return;
+      const params = event?.params ?? {};
+      if (String(params.threadId ?? "") !== threadId) return;
+      if (String(event.method ?? "") !== "item/started") return;
+      if (!cfgRef.current.enabled) return;
+      if (getVoiceStage().active) return;
+      const reason = tracker.push(params.item);
+      if (!reason) return;
+      speakLiveRef.current = true;
+      resetLive();
+      stoppedRef.current = false;
+      console.info("[voice-announce] 自动播报（硬规则命中）：", reason);
+    });
+    return () => { off?.(); tracker.reset(); autoSpeakRef.current = null; };
+  }, [resetLive, threadId]);
 
   // 「停止播报」出口（状态栏 / 悬浮球右键菜单）：非通话播报不开麦、界面很小，
   // 没有这个出口用户就只能等它念完 —— 与 wave-level 的结束通话/打断同一套广播注册。
