@@ -23,11 +23,13 @@
  *   · **主动插播**：模型调 `voice_announce` 工具（主进程广播 harness:event）⇒ 本 hook 立即念，
  *     ⛔ **不看两个开关**（显式调用就是用户要听这一句）。
  *
- * ── 同回合去重（10-09 用户报「同一段音频连续播放两次」）────────────────────────
+ * ── 同回合去重（10-09 用户报「同一段内容重复播放好几次」）──────────────────────
  *   上面三条入口（工具插播 / 正文实时 / 结束稿）会送来**同一段内容**——工具的返回值与
  *   developer-instructions 都要求模型把插播句写进回复，正文链就必然再念一遍。
- *   裁决点在 `speak()`：按 `spokenDedupeKey`（src/lib/voice-script.mjs）查重，同回合只念第一遍；
- *   回合结束/被打断整表清零 ⇒ 跨回合「再说一遍」不受影响。详见 `spokenKeysRef` 注释。
+ *   裁决点在 `speak()`：**逐句**查重（`dedupeSpokenSentences`，src/lib/voice-script.mjs），
+ *   同一句话在同回合只念第一遍；回合结束/被打断整表清零 ⇒ 跨回合「再说一遍」不受影响。
+ *   ⛔ 必须逐句而不是整段：三条入口的切分粒度不同（正文逐句 / 工具与结束稿整段），
+ *   整段比键对不上 ⇒ 同一句话会被念三遍（正是用户报的症状）。详见 `spokenKeysRef` 注释。
  *
  * ⛔ 语速/音色/音量取的都是**设置里的值**（不在这里另存一份）—— 单一真相源。
  * ⛔ 事件源是 `announce-bus`（由事件路由在**当前会话**上转发），不在本模块里解析引擎事件。
@@ -35,7 +37,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { createSentenceChunker } from "../../lib/voice-aec.mjs";
 import { createSpeakFilter } from "../../lib/speak-text.mjs";
-import { createVoiceScriptStripper, resolveAnnounceSummary, spokenDedupeKey } from "../../lib/voice-script.mjs";
+import { createVoiceScriptStripper, resolveAnnounceSummary, dedupeSpokenSentences } from "../../lib/voice-script.mjs";
 import { SUMMARY_EMPTY_NOTICE } from "../../lib/voice-summary.mjs";
 import {
   notifyAnnounceToggle,
@@ -80,14 +82,17 @@ export function useVoiceAnnounce(threadId: string = ""): void {
   const stoppedRef = useRef(false);
   const stoppedTimerRef = useRef(0);
   /**
-   * 同一回合内的「已播出」登记表（10-09 用户报「同一段音频连续播放两次」后加）。
+   * 同一回合内的「已播出」登记表（10-09 用户报「同一段音频连续播放两次」后加，
+   * 10-09 第二轮改成**句子级** —— 用户复报「重复播放好几次」）。
    *
    * ⛔ 根因：同一段内容有**三条互不知情的入口** —— ① `voice_announce` 工具插播；
    *    ② 回复正文实时播报（工具的返回值与 developer-instructions 第 16 条都**要求模型
    *    把插播的那句话写进回复**，作为合成失败时的兜底）；③ 结尾播报稿（汇总链）。
-   *    三条链最终都汇入同一个 `speak()`，而 speak 此前不查重 ⇒ 同一句话念两遍。
-   * 做法：speak 入口按 `spokenDedupeKey`（只留字母/数字，忽略标点空白大小写）查重，
-   *    命中即跳过；合成成功后才登记。**回合结束（含被打断）整表清零** ——
+   *    三条链最终都汇入同一个 `speak()`，而 speak 此前按**整段文本**查重 ——
+   *    可三条入口喂进来的切分粒度不同（正文逐句 / 工具与结束稿整段）⇒ 整段键永远对不上，
+   *    同一句话被念三遍。现在由 `dedupeSpokenSentences` **逐句**算键、逐句登记。
+   * ⛔ 键的算法 = `spokenDedupeKey`（只留字母/数字，忽略标点空白大小写）。
+   *    命中即跳过（连合成的钱都省）；合成成功后才登记。**回合结束（含被打断）整表清零** ——
    *    跨回合的「再说一遍」是新请求，必须照念，绝不能被误吞。
    * ⛔ 为什么登记在合成成功之后而不是入口：入口登的话，先到的那句合成失败（模型没下载），
    *    后到的兜底句也会被吞 ⇒ 用户一个字都听不到。
@@ -191,16 +196,18 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       console.warn("[voice-announce] 播报排队过长，丢弃这一句以保持跟手：", clean.slice(0, 24));
       return;
     }
-    // ⛔ 同回合去重：三条入口（工具插播 / 正文实时 / 结束稿）会送来同一段内容，只念第一遍
-    const dedupeKey = spokenDedupeKey(clean);
-    if (dedupeKey && spokenKeysRef.current.has(dedupeKey)) {
+    // ⛔ 同回合去重（**句子级**）：三条入口（工具插播 / 正文实时 / 结束稿）喂进来的文本
+    //    切分粒度不同 —— 正文是逐句、工具与结束稿是整段。只按整段比键永远对不上，
+    //    同一句话会被念好几遍（10-09 用户报的「重复播放好几次」）。按句切开后统一对齐。
+    const deduped = dedupeSpokenSentences(clean, spokenKeysRef.current);
+    if (!deduped.text) {
       console.warn("[voice-announce] 同一回合内这段内容已经播报过，跳过重复播放：", clean.slice(0, 24));
       return;
     }
     busyRef.current += 1;
     publishStatus();
     try {
-      const result: any = await window.codex.voicePreviewVoice({ text: clean, speed: opts.speed }).catch(() => null);
+      const result: any = await window.codex.voicePreviewVoice({ text: deduped.text, speed: opts.speed }).catch(() => null);
       if (epoch !== epochRef.current) return;   // 期间被打断/换轮：这句不念
       if (!result?.ok || !result.audioBase64 || !result.sampleRate) {
         // ⛔ 不静默吞：模型没下全 / worker 起不来时，用户会「开了播报却没声音」，日志是唯一线索
@@ -210,8 +217,8 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       const samples = decodeFloat32Base64(result.audioBase64);
       if (samples.length) {
         // ⛔ 登记必须放在「确认会出声」之后：合成失败不登记，后到的兜底句才不会被误吞
-        if (dedupeKey) spokenKeysRef.current.add(dedupeKey);
-        await play(samples, Number(result.sampleRate), epoch, clean);
+        for (const key of deduped.keys) spokenKeysRef.current.add(key);
+        await play(samples, Number(result.sampleRate), epoch, deduped.text);
       }
     } finally {
       busyRef.current = Math.max(0, busyRef.current - 1);

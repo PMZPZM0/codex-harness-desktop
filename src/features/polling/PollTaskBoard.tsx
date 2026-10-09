@@ -14,7 +14,9 @@ import { PollCard } from "./PollCard";
 
 export function PollTaskBoard({ turnId }: { turnId: string }) {
   const tasks = usePollTasks();
-  const mine = tasks.filter((task) => Boolean(turnId) && task.turnId === turnId);
+  /* ⛔ 只取 `kind === "poll"`：长命令 / 长工具调用那种后台任务**不在流里画卡**
+     （它在流里已经有自己的工具卡了）—— 它们只出现在输入框那颗胶囊里。 */
+  const mine = tasks.filter((task) => task.kind === "poll" && Boolean(turnId) && task.turnId === turnId);
   if (!mine.length) return null;
   return (
     <>

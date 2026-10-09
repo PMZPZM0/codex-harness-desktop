@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { ROOT } from "./_ctx.mjs";
 import { isLikelySelfEcho, echoSimilarity, ECHO_TAIL_MS } from "../../src/lib/voice-echo.mjs";
 import { summarizeForSpeech, splitSentences, SUMMARY_PREFIX } from "../../src/lib/voice-summary.mjs";
-import { extractVoiceScript, stripVoiceScript, createVoiceScriptStripper, resolveAnnounceSummary, spokenDedupeKey, VOICE_FENCE_LANG } from "../../src/lib/voice-script.mjs";
+import { extractVoiceScript, stripVoiceScript, createVoiceScriptStripper, resolveAnnounceSummary, spokenDedupeKey, dedupeSpokenSentences, VOICE_FENCE_LANG } from "../../src/lib/voice-script.mjs";
 
 let checks = 0, fails = 0;
 const ok = (c, m) => { checks++; console.log(`  ${c ? "✓" : "✗"} 【voice-call】${m}`); if (!c) fails++; };
@@ -168,18 +168,21 @@ ok(/subscribeVoiceStage\(\(stage\) => \{ if \(stage\.active\) stopPlayback\(\); 
    工具的返回值与 developer-instructions 都要求模型把插播句写进回复 ⇒ 正文链必然再念一遍。
    裁决点必须在 speak()（三条链的唯一汇合处），而不是任何一条入口上。 */
 const hookCode = codeOnlyTs(announceHook);
-const keyDecl = announceHook.indexOf("const dedupeKey = spokenDedupeKey(clean)");
+const keyDecl = announceHook.indexOf("const deduped = dedupeSpokenSentences(clean, spokenKeysRef.current)");
 const busyIdx = announceHook.indexOf("busyRef.current += 1");
-const keyAdd = announceHook.indexOf("spokenKeysRef.current.add(dedupeKey)");
-const keyCheck = announceHook.indexOf("spokenKeysRef.current.has(dedupeKey)");
+const skipIdx = announceHook.indexOf("if (!deduped.text)");
+const keyAdd = announceHook.indexOf("spokenKeysRef.current.add(key)");
 const okIdx = announceHook.indexOf("result?.ok");
-ok(/import \{[^}]*spokenDedupeKey[^}]*\} from "\.\.\/\.\.\/lib\/voice-script\.mjs"/.test(announceHook)
+ok(/import \{[^}]*dedupeSpokenSentences[^}]*\} from "\.\.\/\.\.\/lib\/voice-script\.mjs"/.test(announceHook)
   && keyDecl > 0,
-  "speak() 用 spokenDedupeKey 算去重键（三条播报入口的唯一汇合处就是这里，别把查重挂到某条入口上）");
-ok(keyCheck > 0 && keyDecl > 0 && keyCheck > keyDecl && keyCheck < busyIdx,
+  "speak() **逐句**查重（三条播报入口的唯一汇合处）。⛔ 整段比键会漏判：正文逐句喂、工具与结束稿整段喂，粒度不同 ⇒ 同一句念三遍");
+ok(skipIdx > 0 && keyDecl > 0 && skipIdx > keyDecl && skipIdx < busyIdx,
   "查重在合成（busy +1）**之前**——命中重复直接跳过，连合成费都不付");
-ok(keyAdd > 0 && okIdx > 0 && keyAdd > okIdx,
-  "登记在「确认会出声」**之后**——先到的那句合成失败不登记，后到的兜底句才不会被误吞");
+ok(keyAdd > 0 && okIdx > 0 && keyAdd > okIdx
+  && /for \(const key of deduped\.keys\) spokenKeysRef\.current\.add\(key\)/.test(announceHook),
+  "登记在「确认会出声」**之后**、且登记**这一批每个句子的键**——合成失败不登记，后到的兜底句才不会被误吞");
+ok(/window\.codex\.voicePreviewVoice\(\{ text: deduped\.text/.test(announceHook),
+  "合成用的是**去重后**的文本（拿原始 clean 去合成 = 查重白做）");
 ok(/\.finally\(clearSpokenKeys\)/.test(announceHook)
   && (announceHook.match(/clearSpokenKeys\(\)/g) || []).length >= 2,
   "去重登记表**回合级清零**（正常收尾排在 finishTurn 之后 / 被打断时同步清）——跨回合「再说一遍」必须照念");
@@ -197,6 +200,22 @@ const keyCases = [
 const keyWrong = keyCases.filter(([a, b, same]) => (spokenDedupeKey(a) === spokenDedupeKey(b)) !== same);
 ok(keyWrong.length === 0 && spokenDedupeKey(null) === "" && spokenDedupeKey(undefined) === "",
   `去重键真值表 ${keyCases.length - keyWrong.length}/${keyCases.length} 条符合预期${keyWrong.length ? `（错在：${keyWrong.map((c) => c[3]).join("；")}）` : ""}，null/undefined 安全`);
+/* 句子级去重真值表：**真跑** —— 三条入口切分粒度不同是本 bug 的根因，必须按「整段先念 / 再逐句喂」的顺序验 */
+const seenKeys = new Set();
+const dTool = dedupeSpokenSentences("都改完了。可以验收了。", seenKeys);   // 工具：整段喂
+for (const k of dTool.keys) seenKeys.add(k);
+const dLive1 = dedupeSpokenSentences("都改完了。", seenKeys);              // 正文：逐句喂
+const dLive2 = dedupeSpokenSentences("可以验收了。", seenKeys);
+const dSum = dedupeSpokenSentences("都改完了。可以验收了。辛苦了。", seenKeys); // 结束稿：整段（含新句）
+ok(dTool.text === "都改完了。可以验收了。" && dLive1.text === "" && dLive2.text === ""
+  && dSum.text === "辛苦了。" && dSum.keys.length === 1,
+  "真跑句子级去重：整段先念后，逐句喂与整段再喂都只剩新句（「重复播放好几次」的根因就在这里）");
+ok(dedupeSpokenSentences("第一个问题已修复。第一个问题已修复。", new Set()).keys.length === 1,
+  "同一次调用内部也去重（同段里重复的句子只念一次）");
+ok(dedupeSpokenSentences("你好世界。", new Set(["你好世界"])).text === "",
+  "同回合已念过的句子单独再喂也拦得住（键对齐与整段/逐句无关）");
+ok(dedupeSpokenSentences("", new Set()).text === "" && dedupeSpokenSentences(null, new Set()).keys.length === 0,
+  "空 / null 安全（返回空文本、零键，不抛）");
 
 /* 汇总播报：**真跑**纯函数（src/lib/voice-summary.mjs） */
 const longText = Array.from({ length: 20 }, (_, i) => `这是第 ${i + 1} 条说明内容。`).join("");

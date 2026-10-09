@@ -17,7 +17,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronUp, CircleStop, LoaderCircle, Settings2, Eye } from "lucide-react";
 import { POLL_LIMITS, formatPollDuration, pollStatusTone } from "../../lib/poll-config.mjs";
-import { abortPollTask, getPollConfig, setPollConfig } from "../../polling/poll-store";
+import { abortPollTask, getPollConfig, requestToolAbort, setPollConfig } from "../../polling/poll-store";
 import type { PollTask } from "../../polling/poll-store";
 import { usePollTasks } from "./use-poll-tasks";
 
@@ -72,11 +72,17 @@ export function BackgroundTaskCapsule({ threadId = "" }: { threadId?: string }) 
   if (!running.length) return null;
 
   const jumpTo = (task: PollTask) => {
-    document.getElementById(`poll-${task.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    /* 轮询任务 → 对话里那张轮询卡；长命令/长工具调用 → 它所在的那个回合
+       （它在流里是普通工具卡，没有 `poll-` 锚点）。 */
+    const anchor = task.kind === "tool" ? `turn-${task.turnId}` : `poll-${task.id}`;
+    document.getElementById(anchor)?.scrollIntoView({ behavior: "smooth", block: "center" });
     setOpen(false);
   };
   const stopOne = (task: PollTask) => {
     abortPollTask(task.id);
+    /* ⛔ 两条中止路径不同：轮询（视频）走 `poll:abort` —— 主进程那个等待循环才是真正要停的东西；
+       长命令只能**打断当前回合**（命令是引擎在跑），回调由 PollBridge 从 app 上注册进来。 */
+    if (task.kind === "tool") { requestToolAbort(task.id); return; }
     void window.codex.pollAbort({ taskId: task.id }).catch(() => undefined);
   };
   const applyConfig = (patch: Partial<{ intervalMs: number; timeoutMs: number; maxRetry: number }>) => {
@@ -105,8 +111,8 @@ export function BackgroundTaskCapsule({ threadId = "" }: { threadId?: string }) 
                 <span className={`poll-bg-dot poll-t-${pollStatusTone(task.status)}`} aria-hidden="true" />
                 <span className="poll-bg-title" title={task.title}>{task.title}</span>
                 <span className="poll-bg-meta">{formatPollDuration(now - task.startedAt)}</span>
-                <button type="button" className="poll-bg-act" onClick={() => jumpTo(task)} title="滚到对话里的这张轮询卡"><Eye size={11} />查看</button>
-                <button type="button" className="poll-bg-act danger" onClick={() => stopOne(task)} title="中止这次轮询"><CircleStop size={11} />中止</button>
+                <button type="button" className="poll-bg-act" onClick={() => jumpTo(task)} title="滚到它在对话里的位置"><Eye size={11} />查看</button>
+                <button type="button" className="poll-bg-act danger" onClick={() => stopOne(task)} title={task.kind === "tool" ? "中止这次工具调用（打断当前回合）" : "中止这次轮询"}><CircleStop size={11} />中止</button>
               </div>
             ))}
           </div>

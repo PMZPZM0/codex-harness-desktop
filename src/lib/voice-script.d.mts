@@ -31,6 +31,9 @@ export declare function cleanVoiceScript(text: unknown, options?: { maxChars?: n
 /** 播报去重键：只留字母/数字（含 CJK）、忽略大小写/空白/标点（三条播报入口查重用）。 */
 export declare function spokenDedupeKey(text: unknown): string;
 
+/** 句子级去重：剔掉本回合已念过的句子，返回仍需念的部分（三条入口切分粒度不同，必须按句对齐）。 */
+export declare function dedupeSpokenSentences(text: unknown, seen: Set<string>): { text: string; keys: string[] };
+
 /** 回合结束「该念什么」的唯一裁决点：模型播报稿 → 本机压缩回退 → 空。 */
 export declare function resolveAnnounceSummary(
   raw: unknown,
