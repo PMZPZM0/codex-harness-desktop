@@ -71,7 +71,12 @@ const BROWSER_INSTRUCTIONS =
  * mediaCommand 由 main.ts 组装（内置 node 绝对路径 + helper 脚本绝对路径）。
  */
 const IMAGE_INSTRUCTIONS = (mediaCommand: string) =>
-  `\n4) generate_image — text-to-image via the configured image plugin. ⛔ FIRST CHOICE: if the MCP tool \`image_generate\` is in your tool list, call it directly — it is the same plugin, with automatic retry, batch support (count 1-4, generated in parallel) and it lands files in the session workspace; do NOT write your own HTTP calls or shell scripts for image generation. CLI fallback: ${mediaCommand} image "<detailed prompt>". Either way the result is a DURABLE local file path — prefer it (view it with view_image(path), or reference the path); any gateway-hosted url is temporary (may expire within hours), so NEVER present url as a permanent link to the user. Use whenever the user asks to draw/generate/illustrate an image.`;
+  `\n4) IMAGE TOOLS — two SEPARATE families (10-09 用户要求：工具区分开、生成与编辑的 IPC 也分开)。Pick by what the user actually wants:\n`
+  + `   a) \`image_generate\` — DRAW a brand-new image (text-to-image via the configured plugin). First-class tool: retries automatically, supports batch (count 1-4, generated in parallel) and lands files in the session workspace. CLI fallback (only when the tool is absent): ${mediaCommand} image "<detailed prompt>".\n`
+  + `   b) \`image_edit\` — LOCAL deterministic editing of an EXISTING file: crop / resize / rotate / flip / format / brightness·contrast / grayscale·sepia·invert / blur / pixelate / composite (watermark) / ascii-only text / solid background. It needs NO API key, and it NEVER overwrites the source (writes \`<name>-edit.<ext>\`). Companion readers: \`image_info\` (size / format / alpha / bytes) and \`image_view\` (show a file to the user in-app, stays open until they close it). Use \`view_image\` when YOU need to look at pixels; use \`image_view\` when the USER should see it.\n`
+  + `   ⛔ RULE OF THUMB: change the SHAPE (geometry / color / encoding / overlay) → \`image_edit\`; change the MEANING (different subject / style / background content) → \`image_generate\` — image_edit cannot do semantic edits, so do not try to force them into ops.\n`
+  + `   ⛔ RIGHT AFTER an image was generated, if the user asks for a SMALL tweak, ASK FIRST with \`agent_ask\` — 「修图（保留这张，只改局部）」vs「重新生成」— never silently pick one for them.\n`
+  + `   Either way the result is a DURABLE local file path — prefer it (reference the path, or show it with \`image_view\`); any gateway-hosted url is temporary (may expire within hours), so NEVER present url as a permanent link to the user.`;
 
 /** 视频生成（09-29 用户：「让 Codex 能够直接调用这两个工作流」）。
  *  ⛔ 写成**条件式**（同 BROWSER / REVIEW 的纪律）：工具是全局 MCP 段，没配厂商的机器上

@@ -322,20 +322,18 @@ export async function run() {
     const rpcSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "dispatch-rpc.ts"), "utf8"));
     const videoSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "video-gen.ts"), "utf8"));
     const imageSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "builtin-ipc.ts"), "utf8"));
+    const labSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "image-lab.ts"), "utf8"));
     const storySrc = codeOnly(readFileSync(join(ROOT, "src", "features", "drama-canvas", "use-drama-story.ts"), "utf8"));
 
-    for (const tool of ["image_generate", "video_generate", "video_status"]) {
+    for (const tool of ["video_generate", "video_status"]) {
       (coreSrc.includes(`name: "${tool}"`) && rpcSrc.includes(`name === "${tool}"`) ? ok : fail)(
         `【202】媒体工具 ${tool} 的 schema 与执行端都在（只加 schema = 工具在清单里但调不动）`
       );
     }
-    // ① 共用 core
-    (rpcSrc.includes("generateImageResilient") && rpcSrc.includes("submitVideoCore") && rpcSrc.includes("pollVideoCore") ? ok : fail)(
-      "【202】执行端调 core（生图/视频逻辑只有一份 —— 与画布卡片共用）"
-    );
-    (!/await fetch\(/.test(rpcSrc) ? ok : fail)(
-      "【202】执行端不自己发 HTTP（发现 fetch 调用 = 有人另写了一份实现，两条路径必然漂移）"
-    );
+    /* 10-09：生图搬去 image-lab 域自己的通道（image-lab:generate）—— schema 在渲染层独立 dynamicTool，执行端在 features/image-lab.ts。 */
+    (labSrc.includes('"image-lab:generate"') && labSrc.includes("generateImageResilient") ? ok : fail)("【202】生图工具 image_generate 的 schema（渲染层独立 dynamicTool）与执行端（image-lab:generate）都在");
+    (labSrc.includes("generateImageResilient") && rpcSrc.includes("submitVideoCore") && rpcSrc.includes("pollVideoCore") ? ok : fail)("【202】执行端调 core（生图在 image-lab / 视频在 dispatch-rpc，逻辑只有一份 —— 与画布卡片共用）");
+    (!/await fetch\(/.test(rpcSrc) && !/await fetch\(/.test(labSrc) ? ok : fail)("【202】执行端不自己发 HTTP（发现 fetch 调用 = 有人另写了一份实现，两条路径必然漂移）");
     // ② 视频两段式：video_generate 段不许有轮询循环
     const submitCase = rpcSrc.slice(rpcSrc.indexOf('name === "video_generate"'), rpcSrc.indexOf('name === "video_status"'));
     (!/for \(;;\)|while \(/.test(submitCase) ? ok : fail)(

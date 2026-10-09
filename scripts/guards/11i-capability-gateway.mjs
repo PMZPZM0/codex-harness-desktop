@@ -1,10 +1,13 @@
-// 能力网关守卫（10-05）：内置 MCP 的工具面在引擎 0.157 后对模型**整批不可见**
+// 能力网关守卫（10-05 立 / 10-09 收窄）：内置 MCP 的工具面在引擎 0.157 后对模型**整批不可见**
 //   （`tool_search_always_defer_mcp_tools` 已是 removed/true，永久默认；直接调用一律 unsupported call），
 //   宿主用一个 dynamicTool `harness_tools` 把它们接回来。
+//   ⛔ 10-09 收窄：**图像四件套**（image_generate / image_edit / image_info / image_view）已搬去
+//      image-lab 域自己的 IPC —— 既不进网关、也不在 MCP 工具面里。本守卫只盯**其余**能力；
+//      那四个由 12b-image-lab.mjs 盯（用户要求「生成和编辑的 IPC 彻底分开」）。
 //
 // 判据形状（每条都打到「接线」而不是「常量存在」）：
 //   ① 执行端**复用** dispatchRpcCall（不许另写第二份实现）+ 它接受显式 callerThreadId；
-//   ② 工具面 = MCP − 三个已有专用工具的（负向：不许把 agent_invoke 之类加回网关）；
+//   ② 工具面 = MCP − 渲染层自带专用工具的（负向：不许把 agent_invoke 之类加回网关）；
 //   ③ 渲染层注册 + 分发；callerThreadId 必须取**引擎事件的 threadId**（负向：不许用 args 里模型自报的）；
 //   ④ 通道三处登记齐（handler / manifest / preload / ipc-registry 计数）。
 import { readFileSync } from "node:fs";
@@ -33,14 +36,21 @@ ok(/export function dispatchGatewayTools\(\)/.test(rpc) && /export function disp
 ok(/return dispatchRpcCall\(tool, args as Record<string, unknown>, caller\)/.test(agents),
   "⛔ agents:dispatch-call 把调用**原样转给 dispatchRpcCall**（同一套实现与闸，不是第二份逻辑）");
 
-/* ── ② 工具面：MCP − 已有专用工具的那三个 ──────────────────────────────── */
+/* ── ② 工具面：MCP − 渲染层自带专用工具的（10-09：图像四件套已搬去 image-lab 域自己的通道）── */
 {
-  const excluded = /const GATEWAY_EXCLUDED = new Set\(\[([^\]]*)\]\)/.exec(rpc);
+  const excluded = /const RENDERER_DEDICATED = new Set\(\[([^\]]*)\]\)/.exec(rpc);
   const list = excluded ? excluded[1] : "";
-  ok(["agent_invoke", "agent_archive_sessions", "image_generate"].every((n) => list.includes(`"${n}"`)),
-    "⛔ 网关排除 3 个已有专用工具的能力（同一个能力挂两个名字 ⇒ 模型只用最直白的那个、另一套被绕过）");
-  ok(/\.filter\(\(tool\) => !GATEWAY_EXCLUDED\.has/.test(rpc),
+  ok(["agent_invoke", "agent_archive_sessions"].every((n) => list.includes(`"${n}"`)),
+    "⛔ 网关排除渲染层自带专用工具的能力（同一个能力挂两个名字 ⇒ 模型只用最直白的那个、另一套被绕过）");
+  ok(/\.filter\(\(tool\) => !RENDERER_DEDICATED\.has/.test(rpc),
     "排除清单真的作用在工具面上（不是只声明了一个没人用的常量）");
+  // ⛔ 10-09 用户：「把生成和编辑的 IPC 也彻底分开，不要混在一起」⇒ 图像四件套必须**不在**工具面里
+  const core = readFileSync(join(ROOT, "electron", "features", "dispatch-core.ts"), "utf8");
+  ok(
+    !/name: "image_generate"/.test(core) && !/name: "image_edit"/.test(core)
+      && !/name: "image_info"/.test(core) && !/name: "image_view"/.test(core),
+    "⛔ 图像四件套已从 MCP 工具面移除（改由 image-lab 域自己的 IPC 承担，不再与网关混在一起）",
+  );
 }
 
 /* ── ③ 渲染层：注册 + 分发 + 身份来源 ──────────────────────────────────── */
@@ -84,7 +94,7 @@ ok(/callDispatchTool\(input: \{ name: string; args\?: Record<string, unknown>; c
   const end = core.indexOf("\n}", start);
   const body = start >= 0 ? core.slice(start, end > start ? end : undefined) : "";
   const names = [...new Set([...body.matchAll(/name: "([a-z_]+)"/g)].map((m) => m[1]))]
-    .filter((n) => !["agent_invoke", "agent_archive_sessions", "image_generate"].includes(n));
+    .filter((n) => !["agent_invoke", "agent_archive_sessions"].includes(n));   // 渲染层自带专用工具的（图像四件套已不在工具面里，无需过滤）
   // 渲染层：harness_tools 那个对象的描述段（两端锚点唯一 ⇒ 与中间写多少行无关）
   const descStart = seg08.indexOf('name: "harness_tools"');
   const descEnd = seg08.indexOf('required: ["name"]', descStart);

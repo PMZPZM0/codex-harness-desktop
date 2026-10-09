@@ -31,6 +31,134 @@ const DISPATCH_TOOL_DESC_FALLBACK =
   + "未勾选的类别**即使参数能拼出名字，调用也会被拒绝**（别反复试，白烧回合）。"
   + "本会话当前实际开启了哪几类、各有哪些对象，以会话里那条「调度已开启 / 调度范围已更新」的告知为准。";
 
+/** 图像四件套：各自独立的 dynamicTool（10-09）。
+ *  ⛔ 它们**不走** `harness_tools` 网关，也不共用一个执行通道 —— 每个工具调自己的 IPC：
+ *       image_generate → image-lab:generate（**唯一要生图凭证的**，会花钱）
+ *       image_edit     → image-lab:edit    （零凭证，本地 jimp，产出不覆盖原图）
+ *       image_info     → image-lab:info    （只读）
+ *       image_view     → image-lab:view    （只读，浮层不自动收）
+ *     （路由见 parts/part05/event-router/02-request.tsx。用户 10-09：「工具区分开，不要共用一个工具」
+ *       + 「把生成和编辑的 IPC 也彻底分开，不要混在一起」。）
+ *  ⛔⛔ 每条 description 都必须写清 **适用场景 / 使用时机 / 职责** —— 模型就是靠它选对工具的。
+ *      改这里等于改模型的行为，别只当成注释。 */
+function imageToolDefs(): any[] {
+  return [
+    {
+      type: "function",
+      name: "image_generate",
+      description:
+        "生成一张**全新的**图片（凭空造内容），落盘并返回本地文件路径。"
+        + "【适用场景】用户说「画一张 / 生成图片 / 配图 / 出图」，或需要一张**原本不存在**的画面。"
+        + "【使用时机】只在需要**新内容**时用 —— 换主体（狗换猫）、换风格、换构图、换姿势，都归这类。"
+        + "【职责边界】⛔ 若用户是**对已有图片做局部修改**（裁剪/缩放/调色/加水印/打码），用 image_edit，"
+        + "不要重新生成 —— 重画会换掉整张图，还白花一次额度。"
+        + "⛔ 刚生成过一张图、用户只想改个局部时，**先用 agent_ask 问一句**：「修图（保留这张，只改局部）」"
+        + "还是「重新生成」—— 不要自己替用户决定。"
+        + "【怎么用】返回的路径展示给用户请用 markdown 图片语法 ![描述](路径)。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "画面描述（主体 + 环境 + 光线 + 风格 + 质量词，越具体越好）" },
+          count: { type: "number", description: "生成张数 1-4（默认 1）。多张会并发，适合同一提示词的多个变体" },
+          model: { type: "string", description: "覆盖默认模型（一般不用填，留空走「设置 → 插件」里配的模型）" },
+          workspace: { type: "string", description: "落盘到哪个工作目录的 .drama-canvas/assets/image（缺省 = 调用者会话的工作目录）" },
+          name: { type: "string", description: "文件名前缀（缺省 img）" },
+          size: { type: "string", description: "画幅尺寸，如 1024x1024 / 1024x1536（竖）/ 1536x1024（横）。⛔ 不给就走网关默认 —— 各家接受的值不同，报错就把这个参数去掉" },
+          negative: { type: "string", description: "负面提示词（不想要什么：文字、畸形手指、水印…）。⛔ 不是每个网关都支持，无效时改用正面描述" },
+        },
+        required: ["prompt"],
+      },
+    },
+    {
+      type: "function",
+      name: "image_edit",
+      description:
+        "对**已有图片**做确定性编辑（修图），产出新文件并返回路径。**不改动原图**，**不需要任何 API Key**。"
+        + "【适用场景】裁剪 / 缩放 / 旋转 / 翻转 / 转格式 / 调明暗对比 / 灰度·棕褐·反相 / 模糊 / 马赛克 / "
+        + "叠水印 / 加一行英文文字 / 把透明底压成纯色。"
+        + "【使用时机】用户说「把这张图…」「裁一下 / 缩到 800 / 转成 jpg / 调亮点 / 加个水印 / 打码 / 加行字」，"
+        + "且诉求指向**某张已有的图**。"
+        + "【职责边界】⛔ 它改的是「形」（几何 / 色彩 / 编码 / 叠加），**改不了「意」** —— "
+        + "换主体、换风格、换背景内容这类语义修改做不到，那要用 image_generate 重画，别硬拼 ops。"
+        + "⛔ 用户给的诉求若是语义修改，直接说明并转 image_generate，不要先调本工具再报失败。"
+        + "【怎么用】只处理**可信目录**（会话工作目录 / 应用数据目录）内的图片；ops 按数组顺序依次执行，"
+        + "后一个接前一个的产物；缺省输出到源图同目录的 `<名字>-edit.<ext>`（所以原图天然可回退）。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "源图绝对路径（单张）。与 paths 至少给一个" },
+          paths: { type: "array", items: { type: "string" }, description: "多张源图（同一组 ops 逐张应用）" },
+          ops: {
+            type: "array",
+            description:
+              "编辑操作，**按顺序执行**。每项是一个对象，op 字段决定类型："
+              + "resize{width?,height?} 缩放（只给一边=等比）；scale{factor} 按倍率缩放；"
+              + "crop{x,y,width,height} 裁剪；rotate{degrees} 旋转；flip{axis:'horizontal'|'vertical'|'both'} 翻转；"
+              + "brightness{value:-1..1} / contrast{value:-1..1} 明暗对比；greyscale 灰度；invert 反相；sepia 棕褐；"
+              + "blur{radius} / gaussian{radius} 模糊；posterize{n} 色阶化；pixelate{size} 马赛克；normalize 自动色阶；"
+              + "opacity{value:0..1} 整体透明度；color{apply,params} 高级调色；"
+              + "composite{path,x,y,opacity?} 叠加另一张图（水印）；text{text,x,y,size?,color?} 加文字（⛔ 只支持英文/数字，中文会在图上显示成空白）；"
+              + "background{color:'#rrggbb'} 把透明底压成纯色。",
+            items: {
+              type: "object",
+              properties: {
+                op: { type: "string", description: "操作类型（见数组说明）" },
+                width: { type: "number" }, height: { type: "number" }, x: { type: "number" }, y: { type: "number" },
+                factor: { type: "number" }, degrees: { type: "number" }, radius: { type: "number" },
+                value: { type: "number" }, n: { type: "number" }, size: { type: "number" },
+                axis: { type: "string", enum: ["horizontal", "vertical", "both"] },
+                path: { type: "string", description: "composite 要叠加的图片路径" },
+                text: { type: "string", description: "text 操作要写的内容（仅 ASCII）" },
+                color: { type: "string", description: "text 的 black/white；background 的 #rrggbb" },
+                opacity: { type: "number" }, apply: { type: "string" }, params: { type: "array", items: { type: "number" } },
+              },
+              required: ["op"],
+            },
+          },
+          output: { type: "string", description: "输出文件路径（缺省 = 源图同目录 <名字>-edit.<ext>）；必须在可信目录内" },
+          format: { type: "string", enum: ["png", "jpeg", "bmp", "tiff"], description: "输出格式（缺省沿用源图；webp/gif 源回落 png）" },
+          quality: { type: "number", description: "输出 jpeg 的质量 1-100（缺省 90）" },
+        },
+        required: ["ops"],
+      },
+    },
+    {
+      type: "function",
+      name: "image_info",
+      description:
+        "读图片元信息：宽高 / 格式 / 是否带透明通道 / 文件字节数。"
+        + "【适用场景】需要先知道尺寸再决定怎么裁/缩放；用户问「这图多大 / 什么格式 / 有没有透明」。"
+        + "【使用时机】动手编辑**之前**核对原图，或用户单纯问图的属性。"
+        + "【职责边界】只读 —— 不弹浮层、不改文件。要看内容用 image_view。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "图片绝对路径（单张）" },
+          paths: { type: "array", items: { type: "string" }, description: "多张" },
+        },
+      },
+    },
+    {
+      type: "function",
+      name: "image_view",
+      description:
+        "在应用内弹出「图像工坊」浮层，把图片**展示给用户看**（可放大）。"
+        + "【适用场景】用户说「给我看看这张图 / 打开这张图」；或你要把刚生成/编辑的产物**亮给用户**。"
+        + "【使用时机】产物落地之后、或在回复里说明之前，让用户眼见为实。"
+        + "【职责边界】只读展示、**不自动关闭**（由用户自己关 —— 自动收掉等于没看）。"
+        + "⛔ 不要在回复里内联 base64 图片，本工具就是用来替代它的。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "图片绝对路径" },
+          title: { type: "string", description: "浮层标题（缺省用文件名）" },
+        },
+        required: ["path"],
+      },
+    },
+  ];
+}
+
 export function usePart08a(bag: Bag) {function openThread(id: string, freshThread?: Thread | null) {
   return openThreadImpl(bag, id, freshThread);
 }
@@ -292,12 +420,12 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
        起 MCP 工具整批延迟暴露、不可达 → 10-05 改回渲染层注册 dynamicTools）见下方
        `agent_invoke` / `agent_archive_sessions` 两处注册上方的注释，那里是唯一真相源。 */
     return [
-      ...(builtinCfg?.image?.enabled !== false && builtinCfg?.image?.baseUrl ? [{
-        type: "function",
-        name: "generate_image",
-        description: "生成一张图片，返回图片的本地文件路径。用于用户要求画图、配图、示意图等场景。展示给用户请用 markdown 图片语法引用该路径（![描述](路径)）；要看图片内容用 view_image 传该路径。",
-        inputSchema: { type: "object", properties: { prompt: { type: "string", description: "图片内容的详细描述（含风格、主体、构图）" } }, required: ["prompt"] },
-      }] : []),
+      /* 独立能力工具（10-09）：图像四件套各自注册成独立 dynamicTool（模型工具面里一眼可见，
+         不再包一层 `harness_tools`；也不共用执行通道 —— 见下面 imageToolDefs 的头注）。
+         ⛔ 原先的 `generate_image`（渲染层老实现）**已退役** —— 同一个能力挂两个名字，模型只会
+            挑直白的那个、另一套被绕过（项目踩过：subagent_invoke 与 agent_invoke 并存）。
+            生图统一走 `image_generate`（image-lab:generate，带「图像工坊」浮层联动）。 */
+      ...imageToolDefs(),
       ...(builtinCfg?.vision?.enabled !== false && builtinCfg?.vision?.baseUrl ? [{
         type: "function",
         name: "describe_image",
@@ -365,13 +493,15 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           required: [],
         },
       },
-      /* ⭐ 能力网关（10-05）：内置 MCP 的工具面在引擎 0.157 后整批「延迟暴露」，模型直接调用一律
-         `unsupported call` ⇒ 定时任务 / 知识库 / 组件库 / 视频 / 语音 / 工作流 / 专家与子智能体管理 /
-         连接器注册这些能力对模型**全不可达**。dynamicTools 是唯一可见通道，但 19 份 schema 常驻
-         每次请求（token 成本高、还会挤掉真正重要的工具）⇒ 收成**一个网关工具**：模型传 name + args
-         调它，主进程原样转发到既有执行端（同一套实现、同一套闸）。参数拿不准时先传 name="list"。
-         ⛔ 有专用工具的那几个（agent_invoke / agent_archive_sessions / generate_image）**不在**网关里
-            —— 一个能力挂两个名字，模型只会用最直白的那个、另一套被绕过（项目踩过一次：subagent_invoke）。 */
+      /* ⭐ 能力网关（10-05 立 / 10-09 收窄）：内置 MCP 的工具面在引擎 0.157 后整批「延迟暴露」，
+         模型直接调用一律 `unsupported call` ⇒ 定时任务 / 知识库 / 组件库 / 视频 / 语音 / 工作流 /
+         专家与子智能体管理 / 连接器注册这些能力对模型**全不可达**。dynamicTools 是唯一可见通道。
+         ⛔ 10-09 用户三次点名的**最终粒度**：图像四件套（生图/修图/元信息/预览）拆成**独立工具**
+            （见下面的 imageToolDefs，各自还有自己的 IPC）；**其余不逐个拆** —— 25 份 schema 全拆 =
+            每次请求常驻约 25KB，得不偿失 ⇒ 仍收在**这一个网关工具**里：模型传 name + args 调它，
+            主进程原样转发到既有执行端（同一套实现、同一套闸）。参数拿不准时先传 name="list"。
+         ⛔ 有专用工具的那几个（agent_invoke / agent_archive_sessions）**不在**网关里 —— 一个能力挂
+            两个名字，模型只会用最直白的那个、另一套被绕过（项目踩过一次：subagent_invoke）。 */
       {
         type: "function",
         name: "harness_tools",
@@ -383,9 +513,9 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           + "workflow_read / workflow_writeback（工作流看板）；expert_list / expert_save / subagent_save（专家与子智能体管理）；"
           + "preview_3d（3D 模型预览：拿到 .glb/.gltf 后在应用内弹出可旋转查看的弹窗）；"
           + "wallpaper_set（壁纸：pattern/particles/vanta/custom 四类，Codex 可自助做图设壁纸）；"
-          + "image_edit / image_info / image_view（图像工坊：修图编辑 —— 缩放/裁剪/旋转/翻转/转格式/明暗对比/灰度/模糊/马赛克/水印合成/加英文文字；读图片元信息；在应用内弹浮层预览。生图用独立的 image_generate 工具）；"
           + "connector_register（注册 MCP 连接器）。传 name=\"list\" 可拿到每个能力的完整参数说明（不确定参数就先调它）。"
           + "⛔ 调度专家 / 专家团 / 子智能体请用专用工具 agent_invoke，不在这里。"
+          + "⛔ 图像生成与编辑（image_generate / image_edit / image_info / image_view）是**各自独立的工具**，本工具里调不到 —— 直接按名字调它们。"
           + "⛔ 若你直接调用某个内置能力名（而不是走本工具）却报 unsupported call，说明**本会话的工具面是旧的**"
           + "（创建于能力网关之前）—— 直接告诉用户「这个任务需要新建一个才能用」，不要重试、不要换个名字再试。",
         inputSchema: {

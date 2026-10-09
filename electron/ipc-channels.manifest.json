@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 435,
+  "count": 439,
   "channels": [
     {
       "name": "request",
@@ -1931,7 +1931,7 @@
       "returns": "Promise<{ ok: boolean; output: string; error?: string }>",
       "invokeArgs": "input",
       "cast": null,
-      "note": "10-05 能力网关：把引擎 0.157 后对模型不可见的内置 MCP 工具面接回来（name=工具名，name=\"list\" 取清单）"
+      "note": "10-05 能力网关：把引擎 0.157 后对模型不可见的内置 MCP 工具面接回来（name=工具名，name=\"list\" 取清单）；10-09 起图像四件套已搬去 image-lab 域自己的通道，本网关只剩其余 25 个能力"
     },
     {
       "name": "listExpertTeams",
@@ -3800,7 +3800,47 @@
       "returns": "Promise<{ data: Uint8Array; size: number }>",
       "invokeArgs": "{ path }",
       "cast": null,
-      "note": "图像工坊读通道（image-lab 域，10-09）：渲染层浮层预览拉图片字节；路径闸 = resolveImagePath（可信根 + 图片扩展名 + 128MB），与网关的 image_generate/image_edit 共用"
+      "note": "图像工坊读通道（image-lab 域，10-09）：渲染层浮层预览拉图片字节；路径闸 = resolveImagePath（可信根 + 图片扩展名 + 128MB），与修图通道共用同一道闸"
+    },
+    {
+      "name": "imageGenerate",
+      "channel": "image-lab:generate",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { prompt: string; count?: number; model?: string; size?: string; negative?: string; workspace?: string; name?: string; threadId?: string }",
+      "returns": "Promise<{ ok: boolean; output: string; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "生图执行端（10-09 从 agents:dispatch-call 拆出）：**唯一需要生图插件凭证的**通道（读 builtin-plugins.json 的 image 段 → 打外部网关）。调用时弹「图像工坊」浮层，完成自动收起。⛔ 与 image-lab:edit 分属两条通道 —— 用户明确要求「生成和编辑的 IPC 彻底分开」"
+    },
+    {
+      "name": "imageEdit",
+      "channel": "image-lab:edit",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { path?: string; paths?: string[]; ops: unknown[]; output?: string; format?: string; quality?: number }",
+      "returns": "Promise<{ ok: boolean; output: string; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "修图执行端（10-09 从 agents:dispatch-call 拆出）：**零凭证**，纯本地 jimp（20 种 ops）。先亮源图 → 换产物 → 自动收起。⛔ 输出不覆盖原图（产出 <名字>-edit.<ext>），天然可回退"
+    },
+    {
+      "name": "imageInfo",
+      "channel": "image-lab:info",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { path?: string; paths?: string[] }",
+      "returns": "Promise<{ ok: boolean; output: string; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "读图片元信息（尺寸/格式/透明通道/字节数）。只读，不弹浮层。零凭证"
+    },
+    {
+      "name": "imageView",
+      "channel": "image-lab:view",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { path: string; title?: string }",
+      "returns": "Promise<{ ok: boolean; output: string; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "在应用内弹「图像工坊」浮层给用户看一张图。只读展示、**不自动收起**（由用户自己关）。零凭证"
     },
     {
       "name": "dramaCanvasStoryboardFileRemove",

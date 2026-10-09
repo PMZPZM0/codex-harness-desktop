@@ -1,7 +1,7 @@
 // 图像工坊浮层（image-lab 域，2026-10-09）：Codex 调用 image_generate / image_edit / image_view 时
 // 弹出「生成中 / 编辑中 → 产物」的实时预览，工具调用结束自动收起（用户明确要求的联动）。
 //
-// 联动链：引擎 harness_tools → 主进程 pushImageLabEvent（sendToWindow "image-lab:event"）→
+// 联动链：引擎各自的独立工具（image_generate / image_edit / image_view）→ 主进程 pushImageLabEvent（sendToWindow "image-lab:event"）→
 //   本浮层 onImageLabEvent → image-lab:read 拉字节 → Blob URL 显示。
 // ⛔ 自包含、本地 state、不进 bag（样板 = model-viewer / codex-official-market）。
 // ⛔ 单通道三态：open（弹出）/ update（换状态与图）/ close（收起）。close 后**先亮一下最终结果**
