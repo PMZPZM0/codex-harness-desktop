@@ -34,8 +34,8 @@ export declare function spokenDedupeKey(text: unknown): string;
 /** 句子级去重：剔掉本回合已念过的句子，返回仍需念的部分（三条入口切分粒度不同，必须按句对齐）。 */
 export declare function dedupeSpokenSentences(text: unknown, seen: Set<string>): { text: string; keys: string[] };
 
-/** 回合结束「该念什么」的唯一裁决点：模型播报稿 → 本机压缩回退 → 空。 */
+/** 回合结束「该念什么」的唯一裁决点：**只念模型写的播报稿**，没写就是空。 */
 export declare function resolveAnnounceSummary(
   raw: unknown,
   options?: { maxChars?: number },
-): { text: string; source: "script" | "fallback" | "empty"; sentences: number; kept: number; truncated: boolean };
+): { text: string; present: boolean };

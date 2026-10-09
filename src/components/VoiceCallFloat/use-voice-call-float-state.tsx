@@ -11,7 +11,7 @@ import { CAPTURE_WORKLET_SOURCE } from "../../voice/capture-worklet";
 import { decodeFloat32Base64 } from "../../voice/audio-transport";
 import { patchVoiceStage, requestVoiceCallNotice, requestVoiceDictationSend, requestVoiceOpenSettings, resetVoiceStage, setVoiceDictationHandler, setVoiceLevel, setVoiceSkipHandler, setVoiceStopHandler } from "../../voice/wave-level";
 import { isLikelySelfEcho } from "../../lib/voice-echo.mjs";
-import { SUMMARY_EMPTY_NOTICE, summarizeForSpeech } from "../../lib/voice-summary.mjs";
+import { createVoiceScriptStripper, resolveAnnounceSummary } from "../../lib/voice-script.mjs";
 import { patchWakeState, resetWakeState } from "../../voice/wake-state";
 import { describeMicError } from "../../lib/mic-error.mjs";
 import { VoicePhase, VoiceState, ModelsStatus, POS_KEY, CAPTURE_RATE, BARGUE_COOLDOWN_MS, REF_RING_SECONDS, AEC_MAX_DELAY_SAMPLES, AEC_DEFAULT_DELAY_SAMPLES, PREBUFFER_MAX_SAMPLES, ENDPOINT_QUIET_RMS, ENDPOINT_QUIET_MS, pickHint, readPos } from "../VoiceCallFloat";
@@ -81,13 +81,15 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
   const aecRef = useRef<any>(null);
   const bargeModeRef = useRef<"auto" | "manual">("auto");
   /**
-   * 语音播报开关（10-08，设置页「语音播报」卡片）：
-   *   · live    运行过程中的正文实时播报 —— 关掉 ⇒ 通话不再逐句念回复（纯语音下指令的用法）；
-   *   · summary 运行结束后的汇总播报 —— 打开 ⇒ 回合结束时再念一段本地压缩出的要点。
-   * 两个正交、可同时开；都关 = 通话只做输入不念回复。
+   * 语音播报总开关（10-08 立，10-09 第二轮收成一个，设置页「语音播报」卡片）：
+   *   · 关掉 ⇒ 通话只出字幕不出声（纯语音下指令的用法），结束也不念播报稿。
+   *   · 打开 ⇒ 通话**照常逐句念回复**（通话自身链路 —— 电话里必须把回复念出来），
+   *     并在回合结束念 **Codex 写的播报稿**。
+   * ⛔ 10-09 第二轮删除的两样：`summary` 那套**本机压缩摘要**（用户令「汇总正文不用播报了」；
+   *    压缩器 `summarizeForSpeech` 已整条删除），以及把 `voice` 围栏块当普通正文念出来（见 scriptStripperRef）。
    * ⛔ 从设置读、并经 `voice:event` 的 settings 广播刷新（改完即时生效，不必重开通话）。
    */
-  const announceRef = useRef<{ live: boolean; summary: boolean }>({ live: true, summary: false });
+  const announceRef = useRef<{ enabled: boolean }>({ enabled: true });
   /** 麦克风约束（设备选择 + 降噪/回声消除/自动增益），从设置读到后给 getUserMedia 用 */
   const micSettingsRef = useRef<{
     deviceId: string;
@@ -101,6 +103,10 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
   const chunkerRef = useRef<any>(null);
   /** 朗读视图过滤器（审计 ②）：跨句保持「代码围栏/表格」状态，随回合重建 */
   const speakFilterRef = useRef<any>(null);
+  /** 播报稿剥离器（10-09 第二轮）：把回复末尾的 `voice` 围栏块从**正文朗读**里摘掉 ——
+   *  ⛔ 少了它，通话会把围栏行与播报稿当普通正文念出来（「反引号反引号」那种），
+   *     而且那块随后还会在回合结束时被再念一遍（因为剧本稿本来就该在那时念）。 */
+  const scriptStripperRef = useRef<any>(null);
   /** ★ 先开麦暂存（审计 ③）：ASR 工作线程加载要 1~3 秒，这段时间的音频先攒着，就绪后回灌，
    *  否则「按下就说」的开头几个字必然丢。null = 不暂存。 */
   const prebufferRef = useRef<Float32Array[] | null>(null);
@@ -249,7 +255,7 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
         }
         // 播报开关也走这条广播：设置页勾/取消后**当前通话立刻生效**（下一句起）
         const a = event.settings?.announce;
-        if (a) announceRef.current = { live: a.live !== false, summary: a.summary === true };
+        if (a) announceRef.current = { enabled: typeof a.enabled === "boolean" ? a.enabled : (a.live !== false || a.summary === true) };
         return;
       }
       if (event.type === "state") {
@@ -298,8 +304,8 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
         });
         // 舞台字幕用 ref 里的累计值（不依赖 state 更新时机）
         patchVoiceStage({ agentText: agentTextRef.current });
-        // ★ 实时播报开关（10-08）：关掉就只出字幕、不出声（断句器不进内容，回合结束也不会补念）
-        if (announceRef.current.live) void speakDelta(piece);
+        // ★ 播报总开关（10-09 第二轮收成一个）：关掉就只出字幕、不出声（通话的正文朗读也由它门控）
+        if (announceRef.current.enabled) void speakDelta(piece);
         return;
       }
       if (event.type === "turnDone") {
@@ -311,14 +317,21 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
         }
         pushTranscript("agent", agentTextRef.current);
         const finalText = agentTextRef.current;
-        /* ★ 10-08 两个播报开关在这里收口：
-             · live 开 → 把断句器里的**尾句**念完（关掉时断句器是空的，flush 自然是空操作）；
-             · summary 开 → 再念一段本地压缩出的要点（压缩算法见 src/lib/voice-summary.mjs）。
-           ⛔ 必须**先 await flush** 再念汇总：两者共用一条播放队列，并发入队会把汇总插进半句中间
-             （队列按「上一个 source 的结束时刻」排期，谁后入队谁后播）。 */
+        /* ★ 10-09 第二轮两个播报改动在这里收口（用户：「运行的正文和汇总正文不用播报了，
+             只播报 Codex 写的内容」）：
+             · 正文朗读**保留**（电话里必须把回复念出来），由总开关门控；关掉时断句器是空的，flush 自然是空操作；
+             · 结束念的从「本机压缩摘要」换成 **Codex 写的播报稿**（它没写就不念）。
+           ⛔ 必须**先 flush 剥离器的尾巴 + 断句器** 再念播报稿：它们共用一条播放队列，
+             并发入队会把播报稿插进半句中间（队列按「上一个 source 的结束时刻」排期，谁后入队谁后播）。 */
         void (async () => {
-          if (announceRef.current.live) await flushSpeech();
-          if (announceRef.current.summary) await speakSummary(finalText);
+          if (!announceRef.current.enabled) return;
+          const tail = scriptStripperRef.current?.flush() ?? "";
+          if (tail) {
+            if (!chunkerRef.current) chunkerRef.current = createSentenceChunker({ maxChars: 60 });
+            chunkerRef.current.push(tail);
+          }
+          await flushSpeech();
+          await speakScript(finalText);
         })();
         return;
       }
@@ -456,10 +469,11 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
   const speechEpochRef = useRef(0);
   const bumpSpeechEpoch = useCallback(() => {
     speechEpochRef.current += 1;
-    // 同时丢掉断句器里的半句与朗读视图的跨句状态（代码围栏/表格），
+    // 同时丢掉断句器里的半句、朗读视图的跨句状态（代码围栏/表格）与剥离器按住的半行，
     // 否则它们会在下一轮被当成新内容念出来
     chunkerRef.current = null;
     speakFilterRef.current = null;
+    scriptStripperRef.current = null;
   }, []);
 
   const stopPlayback = useCallback(() => {
@@ -493,10 +507,16 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
   // ---- 断句 → 合成 → 播放 ----
   const speakDelta = useCallback(
     async (delta: string) => {
+      /* ⛔ 先过播报稿剥离器：`voice` 围栏块（含围栏行）必须从正文朗读里整块摘掉 ——
+         它随后由回合结束的 `speakScript` 念，混在正文里念 = 念两遍 + 读出反引号。
+         ⛔ 顺序是「先剥离再断句」：反过来的话半截围栏已经进了断句器，剥不掉。 */
+      if (!scriptStripperRef.current) scriptStripperRef.current = createVoiceScriptStripper();
+      const visible = scriptStripperRef.current.push(String(delta ?? ""));
+      if (!visible) return;
       if (!chunkerRef.current) chunkerRef.current = createSentenceChunker({ maxChars: 60 });
       if (!speakFilterRef.current) speakFilterRef.current = createSpeakFilter();
       const epoch = speechEpochRef.current;
-      const sentences: string[] = chunkerRef.current.push(delta);
+      const sentences: string[] = chunkerRef.current.push(visible);
       for (const sentence of sentences) {
         // ★ 朗读视图（审计 ②）：断句用的是**原文**（字幕照旧显示原文），送进 TTS 之前
         //   过一层「给人听」的清洗——代码块/表格整段跳过，markdown 记号/URL/路径/emoji 去掉，
@@ -533,19 +553,19 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
   }, [enqueuePlay]);
 
   /**
-   * 结束汇总播报（10-08 新增）：把最终回复**本地压缩**成要点再念。
+   * 结束播报（10-09 第二轮改写）：**只念 Codex 写的播报稿**。
    *
-   * ⛔ 压缩不调模型（用户选的就是「本地要点截取」）：取结论句，剩下的只报「另有 N 句」——
-   *    零延迟、零联网、零费用。算法是纯函数，见 `src/lib/voice-summary.mjs`（守卫真跑真值表）。
-   * ⛔ 与实时播报共用同一个世代号：被打断/挂断时这段也不会念出来。
+   * ⛔ 原来这里读的是「本机压缩摘要」（`summarizeForSpeech`，取结论句 + 「另有 N 句」）——
+   *    用户令「运行的正文和汇总正文不用播报了，只播报 Codex 写的内容」
+   *    ⇒ 那条回退连同压缩器（`src/lib/voice-summary.mjs` 的 `summarizeForSpeech`）一起**删除**。
+   *    现在只认模型写在回复末尾的 `voice` 围栏稿；它没写 ⇒ 什么都不念（不补任何兜底文案）。
+   * ⛔ 与正文朗读共用同一个世代号：被打断/挂断时这段也不会念出来。
    */
-  const speakSummary = useCallback(async (finalText: string) => {
+  const speakScript = useCallback(async (finalText: string) => {
     const epoch = speechEpochRef.current;
-    const summary = summarizeForSpeech(String(finalText ?? ""));
-    // 整段是代码时念一句说明，免得用户以为播报坏了（`sentences === 0` = 清洗后没内容可念）
-    const text = summary.text || (summary.sentences === 0 && String(finalText ?? "").trim() ? SUMMARY_EMPTY_NOTICE : "");
-    if (!text) return;
-    const result = await window.codex.voiceSpeak(text).catch(() => null);
+    const script = resolveAnnounceSummary(String(finalText ?? ""));
+    if (!script.text) return;
+    const result = await window.codex.voiceSpeak(script.text).catch(() => null);
     if (epoch !== speechEpochRef.current) return;   // 期间被打断：这段不念
     if (!result?.ok || !result.audioBase64 || !result.sampleRate) {
       if (result && !result.ok && result.error) setNotice(result.error);
@@ -569,7 +589,7 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
     // 打断方式 + 灵敏度从设置取：auto=能量门控自动打断，manual=仅手动按钮（外放场景避免误触发）
     gateRef.current = createEchoGate({ echoGateDb: s?.barge?.gateDb ?? 9 });
     bargeModeRef.current = s?.barge?.mode ?? "auto";
-    announceRef.current = { live: s?.announce?.live !== false, summary: s?.announce?.summary === true };
+    announceRef.current = { enabled: typeof s?.announce?.enabled === "boolean" ? s.announce.enabled : ((s as any)?.announce?.live !== false || (s as any)?.announce?.summary === true) };
     if (typeof s?.asr?.rule2 === "number") setEndpointSec(s.asr.rule2);
 
     const permission = await window.codex.voiceMicPermission().catch(() => ({ status: "unknown" }));
@@ -733,6 +753,7 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
     playCtxRef.current = null;
     chunkerRef.current = null;
     speakFilterRef.current = null;
+    scriptStripperRef.current = null;
     refWriteRef.current = 0;
     refReadRef.current = 0;
   }, [stopPlayback]);
@@ -1124,5 +1145,5 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
   // 他窗口通话中 → 球置灰（视觉 + 语义），挂断后轮询自动恢复
   const ballClass = `voice-ball ${phase === "active" ? `is-${state}` : ""} ${phase === "starting" ? "is-starting" : ""} ${busyElsewhere && phase === "idle" ? "is-busy-elsewhere" : ""}`;
 
-  return { threadId, phase, setPhase, state, setState, expanded, setExpanded, levelRef, screenElRef, applyLevel, muted, setMuted, mutedRef, toggleMute, transcript, setTranscript, callStartedAt, setCallStartedAt, userText, setUserText, agentText, setAgentText, ballVisible, setBallVisible, hintsEnabled, setHintsEnabled, hint, setHint, menu, setMenu, agentTextRef, ballRef, notice, setNotice, endpointSec, setEndpointSec, models, setModels, download, setDownload, pos, setPos, mediaStreamRef, captureCtxRef, workletRef, playCtxRef, playQueueRef, playingCountRef, aecRef, bargeModeRef, micSettingsRef, volumeRef, gateRef, chunkerRef, speakFilterRef, announceRef, prebufferRef, liveRef, refRingRef, refWriteRef, refReadRef, refDropsRef, endpointArmedRef, quietSinceRef, lastBargeAtRef, speakingRef, phaseRef, voiceModeRef, dragRef, refreshModels, busyElsewhere, setBusyElsewhere, onBallContextMenu, hideBall, pushRef, enqueuePlay, speechEpochRef, bumpSpeechEpoch, stopPlayback, skipCurrent, speakDelta, flushSpeech, speakSummary, startCapture, teardown, startCall, endCall, startCallRef, callToggleRef, pushTranscript, wakeCfg, setWakeCfg, installModels, draggedRef, onPointerDown, onPointerMove, onPointerUp, onBallClick, stateLabel, modelsReady, ballClass };
+  return { threadId, phase, setPhase, state, setState, expanded, setExpanded, levelRef, screenElRef, applyLevel, muted, setMuted, mutedRef, toggleMute, transcript, setTranscript, callStartedAt, setCallStartedAt, userText, setUserText, agentText, setAgentText, ballVisible, setBallVisible, hintsEnabled, setHintsEnabled, hint, setHint, menu, setMenu, agentTextRef, ballRef, notice, setNotice, endpointSec, setEndpointSec, models, setModels, download, setDownload, pos, setPos, mediaStreamRef, captureCtxRef, workletRef, playCtxRef, playQueueRef, playingCountRef, aecRef, bargeModeRef, micSettingsRef, volumeRef, gateRef, chunkerRef, speakFilterRef, scriptStripperRef, announceRef, prebufferRef, liveRef, refRingRef, refWriteRef, refReadRef, refDropsRef, endpointArmedRef, quietSinceRef, lastBargeAtRef, speakingRef, phaseRef, voiceModeRef, dragRef, refreshModels, busyElsewhere, setBusyElsewhere, onBallContextMenu, hideBall, pushRef, enqueuePlay, speechEpochRef, bumpSpeechEpoch, stopPlayback, skipCurrent, speakDelta, flushSpeech, speakScript, startCapture, teardown, startCall, endCall, startCallRef, callToggleRef, pushTranscript, wakeCfg, setWakeCfg, installModels, draggedRef, onPointerDown, onPointerMove, onPointerUp, onBallClick, stateLabel, modelsReady, ballClass };
 }

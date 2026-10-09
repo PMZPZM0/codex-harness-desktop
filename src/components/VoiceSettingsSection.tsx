@@ -40,9 +40,9 @@ export type Settings = {
   dictationHotkey: { enabled: boolean; accelerator: string };
   wake: { enabled: boolean; phrase: string };
   ball: { visible: boolean; hints: boolean };
-  /** 语音播报（10-08）：live=运行过程中的正文实时播报、summary=运行结束后的汇总播报。
+  /** 语音播报（10-09 第二轮收成一个总开关）：开 = 念 Codex 写的 `voice` 播报稿（通话里正文朗读也由它门控）。
    *  ⛔ 语速不在这里另开一份 —— 与通话共用 tts.speed（单一真相源）。 */
-  announce: { live: boolean; summary: boolean };
+  announce: { enabled: boolean };
 };
 
 /**
