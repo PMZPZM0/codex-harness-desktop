@@ -405,8 +405,30 @@ ok(devInstr16 && fenceInDevInstr && /VOICE_FENCE_LANG = "voice"/.test(scriptLib)
    ⇒ 工具返回值 / 第 16 条 / 生成器三处文案同轮改掉，这里钉死**两个方向**（该说的说了、不该说的没了）。 */
 const rpcSrcForContract = read("electron/features/dispatch-rpc.ts");
 const genSkillSrc = read("scripts/gen-capability-skill.mjs");
-ok(/PICK ONE POINT/.test(devInstr) && /ONE short sentence/.test(devInstr) && /under ~50 Chinese characters/.test(devInstr),
-  "第 16 条要求**只挑一个重点**、一句话（用户：代述式长篇播报没有意义）");
+ok(/CARRY THIS TURN'S IMPORTANT CONTENT/.test(devInstr) && /contentless/.test(devInstr)
+  && /~80 Chinese characters is the sweet spot/.test(devInstr),
+  "第 16 条要求播报稿装**本轮重要内容**（结果/关键数字/风险），并点名两种失败形态：逐句复述、只有「好了」");
+ok(!/PICK ONE POINT/.test(devInstr) && !/under ~50 Chinese characters/.test(devInstr),
+  "旧的「只挑一个点 / 50 字」口径已随本轮要求更新（要装得下重要内容，但仍不许长篇）");
+/* ⛔⛔ 10-09 第三轮（用户：「现在是我说一下，他才会播报，不说，他自己都不写当前回合总结播报内容」）：
+   开关状态必须由**宿主在指令里直接给出** —— 上一版让模型"只看会话里那条告知"，而告知只在
+   翻转开关时发一次，新会话里根本没有 ⇒ 模型按指令就一个字都不写。 */
+const skillDiscipline = read("electron/main/12-skill-discipline.ts");
+ok(/const VOICE_ANNOUNCE_INSTRUCTIONS = \(enabled: boolean\) =>/.test(devInstr)
+  && /text \+= VOICE_ANNOUNCE_INSTRUCTIONS\(input\.announceEnabled !== false\)/.test(devInstr),
+  "第 16 条按**入参**区分开/关（缺省按开），而不是让模型去猜或只等告知");
+ok(/announceEnabled: loadVoiceSettings\(app\.getPath\("userData"\)\)\.announce\.enabled !== false/.test(skillDiscipline)
+  && /announceEnabled\?: boolean;/.test(devInstr),
+  "宿主把语音设置的当前值喂给指令（真相源 = voice-settings.json 的 announce.enabled）");
+ok(/its state RIGHT NOW is|state RIGHT NOW/.test(devInstr) && /ON\*\*/.test(devInstr) && /OFF\*\*/.test(devInstr),
+  "指令里写明「现在开/关」（模型开局即知，不必等用户开口）");
+ok(/without being asked/.test(devInstr),
+  "开启分支明确要求**每轮都写、不必等用户点名**（用户报的正是「不说他就不写」）");
+/* ⛔ 只审第 16 条的正文区间：第 15 条（实时语音）**本来**就该"只看会话告知"（语音开没开
+   无法从工具表推断），裸匹配会把那条正确的判据顶成假红。 */
+const devInstr16Body = codeOnlyTs(devInstr).slice(codeOnlyTs(devInstr).indexOf("16) VOICE ANNOUNCEMENT"));
+ok(!/Judge ONLY by that notice/.test(devInstr16Body) && /notice is newer than this line/.test(devInstr16Body),
+  "⛔ 第 16 条删掉旧的「只看那条告知」判据（它就是根因），改成：告知仍生效但以**更新的那条**为准");
 ok(!/still write that sentence in your reply text/.test(codeOnlyTs(devInstr))
   && !/照常用文字把这句话写清楚/.test(codeOnlyTs(rpcSrcForContract))
   && !/那句话照常用文字写出来/.test(genSkillSrc),

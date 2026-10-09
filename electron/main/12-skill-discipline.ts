@@ -14,6 +14,7 @@ import { codexHome } from "../runtime-paths";
 import { readCustomModel } from "./01-model-catalog";
 import { server } from "../runtime-refs";
 import { outputStyleTargets } from "../output-styles";
+import { loadVoiceSettings } from "../voice/voice-settings";
 /**
  * developer_instructions 的组装输入（**单一来源**）。
  * ⛔ applyCustomModel 的「写出」与启动自愈的「是否过期」判定必须共用这一个函数（09-20 修）。
@@ -44,6 +45,10 @@ export async function devInstructionsInput() {
        **常驻指令**下发，这样开关一开就每轮生效，不必用户点名（见 electron/output-styles.ts）。
        ⛔ 判据是技能池的全局停用集（与开关同一份真相源），不在这里另存状态。 */
     outputStyles: outputStyleTargets(codexHome),
+    /* 语音播报开关（10-09 第三轮）：把**当前值**下发到常驻指令里 —— 模型在会话一开始就知道
+       该不该写回复末尾那段播报稿，不必等用户开口、也不必只靠"开关翻转时那一条告知"
+       （告知在新会话里根本不存在 ⇒ 用户报「不说他自己都不写」）。真相源是语音设置文件本身。 */
+    announceEnabled: loadVoiceSettings(app.getPath("userData")).announce.enabled !== false,
   };
 }
 
