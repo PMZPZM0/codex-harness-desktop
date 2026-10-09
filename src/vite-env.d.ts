@@ -703,6 +703,10 @@ interface Window {
     openaiAccountSwitch(id: string): Promise<{ ok: boolean; email: string }>;
     openaiImportFile(input: { contents: string[] }): Promise<{ total: number; imported: number; updated: number; failed: number; items: { index: number; name: string; id?: string; email?: string; loginable?: boolean; action: "imported" | "updated" | "failed"; message?: string }[] }>;
     relayKeysAll(): Promise<{ id: string; email: string; baseUrl: string; active: boolean; selectedKeyId: number | null; keys: any[]; error?: string }[]>;
+    /* 改已有密钥的分组（上游 PUT /api/v1/keys/:id）。⛔ 上游对 group_id=null 是「不修改」⇒ 解绑成无分组做不到，UI 只提供分组间切换；改当前生效密钥时同步 selectedGroupId */
+    relayUpdateKeyGroup(input: { id: number; groupId: number; accountId?: string }): Promise<any>;
+    /* 删除密钥（上游 DELETE /api/v1/keys/:id）。⛔ 正在使用的密钥（selectedKeyId）拒绝删除 —— 删掉后当前供应商拿着死 key 全部 401，先切再删 */
+    relayDeleteKey(input: { id: number; accountId?: string }): Promise<{ ok: boolean }>;
     relayOverview(id?: string): Promise<{ baseUrl: string; email: string; balance: number; subscriptions: any[]; keys: any[]; groups: any[]; selectedMode: "balance" | "plan" | null; selectedGroupId: number | null; selectedKeyId: number | null; selectedKeyName: string | null }>;
     relayCreateKey(input: { name: string; groupId?: number | null; accountId?: string }): Promise<{ id: number; key: string; name: string; group_id: number | null; status: string }>;
     relaySelect(input: { mode: "balance" | "plan"; groupId: number | null; keyId?: number; keyName?: string }): Promise<{ ok: boolean }>;

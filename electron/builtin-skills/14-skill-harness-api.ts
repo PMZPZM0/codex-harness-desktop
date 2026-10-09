@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（86 个能力域 / 432 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（86 个能力域 / 434 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -178,9 +178,9 @@ QQ 通道
 内置模型供应商目录（读/存/探测/图像模型）
 通道：builtin:describe-image, builtin:generate-image, builtin:probe, builtin:read, builtin:save
 
-### relay（14 通道）
+### relay（16 通道）
 账号库（OpenAI 账号多账号管理：导入/切换/启停/用量概览）
-通道：relay:login, relay:load-account, relay:accounts, relay:toggle-account, relay:switch-account, relay:remove-account, relay:overview, relay:create-key, relay:select, relay:key-billing, relay:register, relay:payment-plans, relay:open-purchase, relay:keys-all
+通道：relay:login, relay:load-account, relay:accounts, relay:toggle-account, relay:switch-account, relay:remove-account, relay:overview, relay:create-key, relay:select, relay:key-billing, relay:register, relay:payment-plans, relay:open-purchase, relay:keys-all, relay:delete-key, relay:update-key-group
 
 ### openai（12 通道）
 OpenAI 账号鉴权（登录/凭据/额度）

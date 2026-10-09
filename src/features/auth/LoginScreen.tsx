@@ -9,6 +9,7 @@ import { Rocket, CircleGauge, Wallet, Settings2, ChevronDown, Check, KeyRound, W
 import { Spinner } from "../../components/CardShell";
 import { createPortal } from "react-dom";
 import { performRelayLogin } from "../../lib/relay";
+import { normalizeCredential } from "../../lib/relay-input.mjs";
 import { useRef, useState, useLayoutEffect, useEffect, KeyboardEvent } from "react";
 
 export function FieldHelp({ text }: { text: string }) {
@@ -133,10 +134,18 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
   //   两处共用一份实现（含"无分组 key 被网关 403 时改绑套餐分组重试"的兜底），避免漂移。
   const relayLogin = async () => {
     setBusy(true); setStatus("");
+    /* ⛔ 提交前净化（10-09 自 PPcode 同步）：中文输入法的全角 `＠`、粘贴带进来的尾随
+       空白/换行，肉眼一样、字节不同，站点一律回 invalid email or password。 */
+    const email = normalizeCredential(relayDraft.email);
+    const password = normalizeCredential(relayDraft.password);
+    if (email !== relayDraft.email || password !== relayDraft.password) {
+      setRelayDraft((d) => ({ ...d, email, password }));
+      setStatus("已自动修正输入：全角字符已转半角 / 首尾空白已去除");
+    }
     const result = await performRelayLogin({
       baseUrl: relayDraft.baseUrl,
-      email: relayDraft.email,
-      password: relayDraft.password,
+      email,
+      password,
       username: username.trim() || undefined,
       onLogin,
     });

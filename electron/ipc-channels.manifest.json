@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 432,
+  "count": 434,
   "channels": [
     {
       "name": "request",
@@ -2452,6 +2452,26 @@
       "invokeArgs": "",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "relayUpdateKeyGroup",
+      "channel": "relay:update-key-group",
+      "paramsImpl": "input: { id: number; groupId: number; accountId?: string }",
+      "paramsDecl": "input: { id: number; groupId: number; accountId?: string }",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "改已有密钥的分组（上游 PUT /api/v1/keys/:id）。⛔ 上游对 group_id=null 是「不修改」⇒ 解绑成无分组做不到，UI 只提供分组间切换；改当前生效密钥时同步 selectedGroupId"
+    },
+    {
+      "name": "relayDeleteKey",
+      "channel": "relay:delete-key",
+      "paramsImpl": "input: { id: number; accountId?: string }",
+      "paramsDecl": "input: { id: number; accountId?: string }",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "删除密钥（上游 DELETE /api/v1/keys/:id）。⛔ 正在使用的密钥（selectedKeyId）拒绝删除 —— 删掉后当前供应商拿着死 key 全部 401，先切再删"
     },
     {
       "name": "relayOverview",
