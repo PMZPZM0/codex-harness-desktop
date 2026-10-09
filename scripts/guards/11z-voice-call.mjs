@@ -164,9 +164,10 @@ ok(/subscribeVoiceStage\(\(stage\) => \{ if \(stage\.active\) stopPlayback\(\); 
   "通话一开始就停掉独立播报（否则通话播报与排队音频同时出声）");
 
 /* ── ⑦b 同回合播报去重（10-09 用户报「同一段音频连续播放两次」）──────────────────
-   根因：同一段内容有三条互不知情的入口（voice_announce 工具 / 正文实时 / 结束稿）——
-   工具的返回值与 developer-instructions 都要求模型把插播句写进回复 ⇒ 正文链必然再念一遍。
-   裁决点必须在 speak()（三条链的唯一汇合处），而不是任何一条入口上。 */
+   根因（第一轮判定）：同一段内容有三条互不知情的入口（voice_announce 工具 / 正文实时 / 结束稿）。
+   ⛔ 第二轮修正（用户 + Codex 自查）：**文案层是病根** —— 工具返回值与指令都要求模型
+      「怕听不到就把这句话写进正文」，模型照办 ⇒ 自己给自己叠一遍。
+      两处一起治：文案不再要求复述（见上方 ⑯ 契约组），执行端仍然按**句子级**查重兜底。 */
 const hookCode = codeOnlyTs(announceHook);
 const keyDecl = announceHook.indexOf("const deduped = dedupeSpokenSentences(clean, spokenKeysRef.current)");
 const busyIdx = announceHook.indexOf("busyRef.current += 1");
@@ -373,6 +374,20 @@ const devInstr16 = /16\) VOICE ANNOUNCEMENT/.test(devInstr);
 const fenceInDevInstr = /(\\`){3}voice/.test(devInstr);
 ok(devInstr16 && fenceInDevInstr && /VOICE_FENCE_LANG = "voice"/.test(scriptLib),
   `引擎指令第 16 条写明了 voice 围栏契约，且与解析器的 VOICE_FENCE_LANG 同一个词（${VOICE_FENCE_LANG}）`);
+/* ── 播报内容契约（10-09 第二轮）：挑重点 + **反自我复述** ──────────────────────
+   用户定性（Codex 自查）：summary 开着时模型还硬把原句复述进正文（照搬工具提示「怕你听不到就写清楚」）
+   = 自己给自己叠一遍；且「播报要 Codex 挑重点，不是长篇大论」。
+   ⇒ 工具返回值 / 第 16 条 / 生成器三处文案同轮改掉，这里钉死**两个方向**（该说的说了、不该说的没了）。 */
+const rpcSrcForContract = read("electron/features/dispatch-rpc.ts");
+const genSkillSrc = read("scripts/gen-capability-skill.mjs");
+ok(/PICK ONE POINT/.test(devInstr) && /ONE short sentence/.test(devInstr) && /under ~50 Chinese characters/.test(devInstr),
+  "第 16 条要求**只挑一个重点**、一句话（用户：代述式长篇播报没有意义）");
+ok(!/still write that sentence in your reply text/.test(codeOnlyTs(devInstr))
+  && !/照常用文字把这句话写清楚/.test(codeOnlyTs(rpcSrcForContract))
+  && !/那句话照常用文字写出来/.test(genSkillSrc),
+  "⛔ 三处文案都不再要求「把播报句写进正文」—— 那正是用户报的「自己给自己叠一遍」（写进正文就会被念两遍）");
+ok(/do NOT also paste it into your reply/.test(devInstr) && /别再原样复述/.test(rpcSrcForContract),
+  "反向要求写清楚：这句是说给耳朵的，正文别再原样复述（只写在提示里不够 —— 模型看不到守卫，靠文案）");
 ok(/if \(!stripperRef\.current\) stripperRef\.current = createVoiceScriptStripper\(\)/.test(announceHook)
   && /stripperRef\.current\.push\(String\(delta/.test(announceHook)
   && /stripperRef\.current\?\.flush\(\)/.test(announceHook),
