@@ -127,6 +127,18 @@ const reg = read("electron/ipc-registry.ts");
 ok(/prefix: "whatsnew", count: 3/.test(reg) && /whatsnew:state/.test(reg) && /whatsnew:ack/.test(reg) && /whatsnew:history/.test(reg),
   "域 whatsnew 已登记进 ipc-registry（count=3：state / ack / history —— history 10-07 随新手引导「版本更新日志」页接入）");
 
+/* ── ④b clientInfo 版本不许硬编码（10-09 改；0.0.16 事故：只改了 package.json，
+      clientInfo 还停在 0.0.15 —— 引擎侧拿到的是旧版本号，排查时极难对上）────────
+   ⛔ 判据取**代码**（过 codeOnly）：本文件头注与下面这段注释里都有版本字面量，
+      不剥注释会被自己的注释打成假红。 */
+const srvCode = codeOnly(read("electron/codex-server.ts"));
+ok(/from "electron"/.test(srvCode) && /version: app\.getVersion\(\)/.test(srvCode),
+  "引擎 initialize 的 clientInfo.version 取 app.getVersion()（⛔ 不许回到硬编码字面量）");
+ok(!/version:\s*"\d+\.\d+\.\d+/.test(srvCode),
+  "codex-server.ts 代码里没有版本字面量（发版只改 package.json 一处 ⇒ 不会漂）");
+ok(!/tray\.ts[\s\S]*version:\s*"\d+\.\d+\.\d+/.test(codeOnly(read("electron/tray.ts"))),
+  "托盘提示同样走 app.getVersion()（同口径，别留第二处版本真相源）");
+
 /* ── ⑤ 判定状态机：**真跑**编译产物（stub electron + 真 userData 目录）─────────
    ⛔ 为什么不能只靠上面那些静态判据：那几条只能证明"函数在、分支写了"，
      证明不了"升级会弹、全新安装不弹、看过之后真不弹"—— 而这三条正是用户需求本身。
