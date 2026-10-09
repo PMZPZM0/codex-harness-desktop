@@ -37,7 +37,17 @@ export function minArgsOf(paramsImpl) {
   /* ⛔ 可选判定要认两种形态：`p = 默认值` 与 TS 可选参数 `p?: type`（带 ? 无默认值 ——
      remoteQrcode(botId?: string) 曾被算成必选，会把合法的零参调用拒掉）。
      判定方向故意偏松：回调类型里嵌的 `?:` 会把必选误判成可选 ⇒ 只会少校验，不会误伤合法调用。 */
-  return parts.filter((p) => p.trim() && !p.includes("=") && !/\?\s*:/.test(p)).length;
+  return parts.filter((p) => {
+    const t = p.trim();
+    if (!t) return false;
+    if (t.includes("=")) return false;
+    /* ⛔ 只看**参数名头部**（第一个冒号之前）—— 10-09 实测：内联对象类型
+       `input: { id: number; accountId?: string }` 的 `?:` 在花括号**里面**，
+       对整段测 `?:` 会把整个参数误判成可选 ⇒ minArgs 算成 0，参数个数前置校验形同虚设。
+       ⛔ 头部含 `?` 即可选（`input?: {…}` 的 `?` 挂在名字尾部，第一个冒号在它后面 ——
+       所以对头部测 `\?\s*:` 会漏掉它，把合法的零参调用拒掉；history:search 实测踩过）。 */
+    return !/\?/.test(t.split(":")[0]);
+  }).length;
 }
 
 /** manifest.channels → preload.ts 里 gen:begin…gen:end 之间的应有段落（成员内联，不再是独立文件）。

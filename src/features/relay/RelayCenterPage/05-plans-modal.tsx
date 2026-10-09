@@ -3,6 +3,7 @@
  * ⛔ props 类型由 TypeChecker 从**原作用域**推断（不是 any）⇒ 静态检查强度不降。
  */
 import { AlertTriangle, ArrowUpRight, Bot, Check, ChevronDown, Clock3, Copy, Eye, EyeOff, FolderTree, Plus, Play, RefreshCw, Settings2, Sparkles, Trash2, X, Zap, CircleCheck, ChevronRight, Wallet, LogIn } from "lucide-react";
+import { RelayModal } from "./relay-modal";
 import { Spinner } from "../../../components/CardShell";
 import { shortGroupName } from "../RelayCenterPage/01-balance-badge";
 
@@ -22,7 +23,7 @@ type Props = {
 export function RelayCenterPagePlansModal({ account, openPurchase, overview, plans, plansErr, plansLoading, plansOpen, setPlansOpen, subs, working }: Props) {
   return (
     plansOpen && (
-            <div className="relay-modal-backdrop relay-plans-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPlansOpen(false); }}>
+            <RelayModal onClose={() => setPlansOpen(false)} backdropClassName="relay-plans-backdrop">
               <div className="relay-plans-modal">
                 <div className="relay-keys-head">
                   <strong className="relay-modal-title"><Sparkles size={15} />订阅套餐</strong>
@@ -65,7 +66,7 @@ export function RelayCenterPagePlansModal({ account, openPurchase, overview, pla
                 )}
                 <p className="relay-plans-foot">付款在中转站收银台完成（支付宝 / 微信等）。支付成功后本页自动检测并生效，无需重启应用；多次购买同套餐 = 时长累加。</p>
               </div>
-            </div>
+            </RelayModal>
           )
   );
 }

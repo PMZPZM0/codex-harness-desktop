@@ -5,6 +5,7 @@
  *    （同一渲染周期、同一顺序）。组件侧用**同名解构**接回来，所以 JSX 一字不改。
  */
 import { resolveRelayTarget, writeRelayActive, readRelayActive, RelayActive } from "../../../lib/relay";
+import { buildRelayCandidates } from "../../../lib/relay-targets.mjs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { shortGroupName } from "../RelayCenterPage/01-balance-badge";
 
@@ -61,16 +62,19 @@ export function useRelayCenterPageState({ busy, activeProvider, onActivate, onNo
     const row = accounts.find((x: any) => x.id === id);
     return Boolean(row && row.active && !row.disabled);
   };
-  // 登录/切换账号后自动配置模型：已选中 key 优先 → 第一个套餐 → 余额（参数同步内置规格表在 onActivate 链路内）
+  // 登录/切换账号后自动配置模型：**候选链首位**（已生效套餐 → 余额分组 → 无分组）。
+  // ⛔ 顺序规则来自 `lib/relay-targets`（单一真相源）。这里原先自己写了一份 `subs[0]`
+  //    「取第一个订阅」，与登录链那份必然漂移（10-09 收口）——两处判定同源，才不会出现
+  //    「登录链选了 A 分组、面板却激活 B 分组」这种查不出原因的错位。
+  //    面板上仍可随时手动改：套餐卡「使用此套餐」、密钥列表「使用」。
   const autoConfigure = async () => {
     const ov = await window.codex.relayOverview().catch(() => null);
     setOverview(ov);
-    // 简单规则：有生效订阅 → 用第一个订阅套餐；没有 → 走余额计费。
-    // 匹配不到可复用的 key 时激活链路会自动新建（Harness-套餐名/Harness-余额），站点强制绑分组时自动改绑重试。
-    const subs: any[] = ov?.subscriptions ?? [];
     try {
-      if (subs.length) {
-        await onActivate("plan", { group_id: Number(subs[0].group_id), group_name: String(subs[0].group_name ?? "套餐") });
+      const candidates = buildRelayCandidates(ov?.subscriptions ?? [], Date.now(), ov?.groups ?? []);
+      const first = candidates[0] ?? { mode: "balance" as const, groupId: null, groupName: "", label: "余额" };
+      if (first.mode === "plan" && first.groupId) {
+        await onActivate("plan", { group_id: first.groupId, group_name: first.groupName || "套餐" });
       } else {
         await onActivate("balance");
       }
@@ -355,6 +359,30 @@ export function useRelayCenterPageState({ busy, activeProvider, onActivate, onNo
       void loadKeyGroups();
     } catch { /* switchTarget 已常驻报错 */ }
   };
+  /* ── 密钥管理（10-09 同步自 PPcode：已建的密钥要能删、能换分组）────────────────
+     ⛔ 上游 `PUT /keys/:id` 对 `group_id=null` 是「不修改」⇒ 解绑成无分组做不到。
+     ⛔ 交互形态：行内只留「管理」入口，改绑/删除在第三级弹窗里完成（不内嵌）。 */
+  const [keyManage, setKeyManage] = useState<{ accountId?: string; id: number; name: string; key: string; groupId: number | null } | null>(null);
+  const changeKeyGroup = async (group: any, k: any, groupId: string) => {
+    setWorking(`kg${k.id}`); setErr("");
+    try {
+      await window.codex.relayUpdateKeyGroup({ id: Number(k.id), groupId: Number(groupId), accountId: group?.id });
+      setKeyManage(null);
+      setOverview(await window.codex.relayOverview(group?.id).catch(() => null));
+      void loadKeyGroups();
+      onNotice(`密钥「${k.name || `#${k.id}`}」已改绑分组`);
+    } catch (e: any) { setErr("改分组失败：" + (e.message ?? e)); } finally { setWorking(""); }
+  };
+  const deleteKey = async (group: any, k: any) => {
+    setWorking(`kd${k.id}`); setErr("");
+    try {
+      await window.codex.relayDeleteKey({ id: Number(k.id), accountId: group?.id });
+      setKeyManage(null);
+      setOverview(await window.codex.relayOverview(group?.id).catch(() => null));
+      void loadKeyGroups();
+      onNotice("密钥已删除");
+    } catch (e: any) { setErr(String(e?.message ?? e).replace(/^Error invoking remote method '[^']+':\s*/i, "")); } finally { setWorking(""); }
+  };
   // 当前生效密钥：按已选 keyId / 计费方式与分组从密钥列表匹配（与 resolveRelayTarget 同规则）
   const [keyVisible, setKeyVisible] = useState(false);
   const currentKey = useMemo(() => {
@@ -370,5 +398,5 @@ export function useRelayCenterPageState({ busy, activeProvider, onActivate, onNo
   }, [overview]);
   const maskKey = (key: string) => key.length > 14 ? `${key.slice(0, 10)}••••••••${key.slice(-4)}` : key;
 
-  return { busy, activeProvider, onActivate, onNotice, onOpenModelSettings, openAppConfirm, account, setAccount, draft, setDraft, overview, setOverview, err, setErr, working, setWorking, active, isActiveProvider, refreshing, setRefreshing, load, accounts, setAccounts, manageOpen, setManageOpen, loginModalOpen, setLoginModalOpen, reloadAccounts, isLiveRow, autoConfigure, login, switchAccount, removeAccount, toggleAccount, openManage, switchTarget, subs, progress, showKeyForm, setShowKeyForm, newKey, setNewKey, creatingKey, setCreatingKey, keyGroups, setKeyGroups, collapsedGroups, setCollapsedGroups, keysCollapsed, setKeysCollapsed, loadKeyGroups, AFF_CODE, authTab, setAuthTab, regDraft, setRegDraft, plansOpen, setPlansOpen, plans, setPlans, plansLoading, setPlansLoading, plansErr, setPlansErr, watching, setWatching, watchRef, subChangeKey, stopWatch, verifyPayment, startWatch, openPurchase, openPlans, register, groupNameOf, createKey, useKeyFromGroup, keyVisible, setKeyVisible, currentKey, maskKey };
+  return { busy, activeProvider, onActivate, onNotice, onOpenModelSettings, openAppConfirm, account, setAccount, draft, setDraft, overview, setOverview, err, setErr, working, setWorking, active, isActiveProvider, refreshing, setRefreshing, load, accounts, setAccounts, manageOpen, setManageOpen, loginModalOpen, setLoginModalOpen, reloadAccounts, isLiveRow, autoConfigure, login, switchAccount, removeAccount, toggleAccount, openManage, switchTarget, subs, progress, showKeyForm, setShowKeyForm, newKey, setNewKey, creatingKey, setCreatingKey, keyGroups, setKeyGroups, collapsedGroups, setCollapsedGroups, keysCollapsed, setKeysCollapsed, loadKeyGroups, AFF_CODE, authTab, setAuthTab, regDraft, setRegDraft, plansOpen, setPlansOpen, plans, setPlans, plansLoading, setPlansLoading, plansErr, setPlansErr, watching, setWatching, watchRef, subChangeKey, stopWatch, verifyPayment, startWatch, openPurchase, openPlans, register, groupNameOf, createKey, useKeyFromGroup, keyManage, setKeyManage, changeKeyGroup, deleteKey, keyVisible, setKeyVisible, currentKey, maskKey };
 }

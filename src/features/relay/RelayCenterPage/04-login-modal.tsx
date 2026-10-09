@@ -3,10 +3,10 @@
  * ⛔ props 类型由 TypeChecker 从**原作用域**推断（不是 any）⇒ 静态检查强度不降。
  */
 import { AlertTriangle, ArrowUpRight, Bot, Check, ChevronDown, Clock3, Copy, Eye, EyeOff, FolderTree, Plus, Play, RefreshCw, Settings2, Sparkles, Trash2, X, Zap, CircleCheck, ChevronRight, Wallet, LogIn } from "lucide-react";
+import { RelayModal } from "./relay-modal";
 import { Spinner } from "../../../components/CardShell";
 
 type Props = {
-  AFF_CODE: string;
   authTab: "login" | "register";
   draft: { baseUrl: string; email: string; password: string; };
   login: () => Promise<void>;
@@ -21,10 +21,10 @@ type Props = {
   working: string;
 };
 
-export function RelayCenterPageLoginModal({ AFF_CODE, authTab, draft, login, loginModalOpen, regDraft, register, setAuthTab, setDraft, setErr, setLoginModalOpen, setRegDraft, working }: Props) {
+export function RelayCenterPageLoginModal({ authTab, draft, login, loginModalOpen, regDraft, register, setAuthTab, setDraft, setErr, setLoginModalOpen, setRegDraft, working }: Props) {
   return (
     loginModalOpen && (
-            <div className="relay-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setLoginModalOpen(false); }}>
+            <RelayModal onClose={() => setLoginModalOpen(false)}>
               <div className="relay-manage-modal relay-login-modal">
                 <div className="relay-keys-head">
                   <strong className="relay-modal-title"><Wallet size={15} />{authTab === "login" ? "登录中转站" : "注册中转站账号"}</strong>
@@ -49,11 +49,11 @@ export function RelayCenterPageLoginModal({ AFF_CODE, authTab, draft, login, log
                     <label className="se-field"><span>密码（至少 6 位）</span><input type="password" value={regDraft.password} onChange={(event) => setRegDraft({ ...regDraft, password: event.target.value })} placeholder="设置账号密码" autoComplete="new-password" /></label>
                     <label className="se-field"><span>确认密码</span><input type="password" value={regDraft.confirm} onChange={(event) => setRegDraft({ ...regDraft, confirm: event.target.value })} placeholder="再输入一次" autoComplete="new-password" onKeyDown={(event) => { if (event.key === "Enter" && regDraft.email && regDraft.password) void register(); }} /></label>
                     <button className="primary-setting relay-login-btn" disabled={working === "register" || !regDraft.email || !regDraft.password} onClick={() => void register()}>{working === "register" ? <><Spinner />正在注册…</> : <><Sparkles size={15} />注册并进入套餐选购</>}</button>
-                    <p className="relay-auth-note">注册成功后自动登录并打开套餐市场；邀请码 <code>{AFF_CODE}</code> 已自动携带。站点若要求验证码/邮箱验证，会自动打开站内注册页兜底。</p>
+                    <p className="relay-auth-note">注册成功后自动登录并打开套餐市场。站点若要求验证码/邮箱验证，会自动打开站内注册页兜底。</p>
                   </>
                 )}
               </div>
-            </div>
+            </RelayModal>
           )
   );
 }

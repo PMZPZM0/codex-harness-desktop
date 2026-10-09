@@ -11,6 +11,7 @@ import { DEFAULT_EFFORT, pickDefaultEffort, normalizeEffort, ALL_EFFORTS, declar
 import { matchModelSpec, loadExternalSpecs, formatTokenCount } from "../../../../../lib/model-specs";
 import { performRelayLogin, resolveRelayAutoTarget, resolveRelayTarget, resolveRelayKeyTarget, writeRelayActive, readRelayActive, type RelayActive } from "../../../../../lib/relay";
 import { OFFICIAL_MODELS } from "../../../../../lib/official-models";
+import { buildRelayCandidates } from "../../../../../lib/relay-targets.mjs";
 import { useFilePreview } from "../../../../../hooks/useFilePreview";
 import { effortLabels } from "../../../../../lib/effort-labels";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../app-view/types";
@@ -101,12 +102,14 @@ bag.pendingRestartRef = pendingRestartRef as typeof bag.pendingRestartRef;
         void bag.refreshActive();
       } catch (error: any) {
         probeError = String(error?.message ?? error);
-        // 部分站点（如 pptoken）要求 key 必须绑定分组：无分组 key 直接 403。自动改绑第一个订阅分组重试一次。
+        // 部分站点（如 pptoken）要求 key 必须绑定分组：无分组 key 直接 403。自动改绑**候选链首位**
+        // 的套餐分组重试一次。⛔ 分组挑选与登录链同源（lib/relay-targets）—— 这里原先自己取
+        // `subs[0]`，会与登录页那份漂移（可能挑到已过期/已用满的套餐，白试一轮）。
         if (!retried && resolved.active.groupId == null && /HTTP 40[13]|assigned to any group|分组/.test(probeError)) {
           const ov = await window.codex.relayOverview().catch(() => null);
-          const subs: any[] = ov?.subscriptions ?? [];
-          if (subs.length) {
-            const fallback = { group_id: Number(subs[0].group_id), group_name: String(subs[0].group_name ?? "默认分组") };
+          const first = buildRelayCandidates(ov?.subscriptions ?? [])[0];
+          if (first?.mode === "plan" && first.groupId) {
+            const fallback = { group_id: first.groupId, group_name: first.groupName || "默认分组" };
             bag.setNotice(`该站点要求密钥必须绑定分组，已自动改绑「${fallback.group_name}」重试…`);
             await relayActivate("plan", fallback, undefined, true);
             return;

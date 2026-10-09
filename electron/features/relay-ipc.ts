@@ -1,5 +1,5 @@
 /**
- * 中转站账户域（14 个 handler：登录 / 多账户 / 余额套餐密钥 / 订阅支付 / keys-all）
+ * 中转站账户域（16 个 handler：登录 / 多账户 / 余额套餐密钥 / **密钥管理（删·改分组）** / 订阅支付 / keys-all）
  *
  * ── 10-03：改为插件形态 + 接缝化（方案 §6 阶段 2/3）────────────────────────
  * 原为「函数式注册」：deps 由 main.ts 传参 + `main.ts` 那一行调 `registerRelayIpc()`。
@@ -65,6 +65,8 @@ const RELAY_CHANNELS = [
   "relay:switch-account", "relay:remove-account", "relay:overview", "relay:create-key",
   "relay:select", "relay:key-billing", "relay:register", "relay:payment-plans",
   "relay:open-purchase", "relay:keys-all",
+  // 10-09 密钥管理两条：删密钥 / 改密钥分组（上游 PUT 对 group_id=null 是「不修改」⇒ 只能分组间切换）
+  "relay:delete-key", "relay:update-key-group",
 ];
 
 /**
@@ -221,10 +223,11 @@ function registerRelayIpc(deps: RelayIpcDeps) {
     return data as { access_token: string; refresh_token?: string; expires_in?: number; user?: { balance?: number } };
   }
   // 认证请求：401 且本地存有加密密码时自动重登一次再重试
-  async function relayAuthedFetch(account: RelayAccount, urlPath: string, body?: unknown): Promise<any> {
+  async function relayAuthedFetch(account: RelayAccount, urlPath: string, body?: unknown, method?: "GET" | "POST" | "PUT" | "DELETE"): Promise<any> {
     const base = relayBase(account.baseUrl);
+    const verb = method ?? (body === undefined ? "GET" : "POST");
     const call = (token: string) => relayRequest(`${base}${urlPath}`, {
-      method: body === undefined ? "GET" : "POST",
+      method: verb,
       headers: { Authorization: `Bearer ${token}`, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
@@ -353,6 +356,34 @@ function registerRelayIpc(deps: RelayIpcDeps) {
     if (input.groupId != null) body.group_id = input.groupId;
     return relayAuthedFetch(account, "/api/v1/keys", body);
   });
+  // 密钥管理（10-09 自 PPcode 同步：已建的密钥要能删、能换分组）
+  // ⛔ 上游 `PUT /keys/:id` 对 `group_id=null` 是「不修改」（service 里 `req.GroupID != nil` 才写）
+  //    ⇒ 「解绑成无分组」**做不到**，UI 只提供分组间的切换。
+  ipcHost.handle("relay:update-key-group", async (_e, input: { id: number; groupId: number; accountId?: string }) => {
+    const account = input.accountId ? (await readRelayStore()).accounts.find((a) => a.id === String(input.accountId)) ?? null : await readRelayAccount();
+    if (!account?.accessToken) throw new Error("尚未登录中转站");
+    const id = Number(input.id);
+    const groupId = Number(input.groupId);
+    if (!Number.isInteger(id) || id <= 0 || !Number.isInteger(groupId) || groupId <= 0) throw new Error("密钥或分组不合法");
+    const updated = await relayAuthedFetch(account, `/api/v1/keys/${id}`, { group_id: groupId }, "PUT");
+    // 改的是当前生效密钥 ⇒ 让「已选分组」跟着走，概览/徽标立即对上（⛔ 不改 activeId）
+    if (account.selectedKeyId === id) {
+      account.selectedGroupId = groupId;
+      await writeRelayAccount(account, { activate: false });
+    }
+    return updated ?? { ok: true };
+  });
+  ipcHost.handle("relay:delete-key", async (_e, input: { id: number; accountId?: string }) => {
+    const account = input.accountId ? (await readRelayStore()).accounts.find((a) => a.id === String(input.accountId)) ?? null : await readRelayAccount();
+    if (!account?.accessToken) throw new Error("尚未登录中转站");
+    const id = Number(input.id);
+    if (!Number.isInteger(id) || id <= 0) throw new Error("密钥不合法");
+    // ⛔ 正在使用的密钥不许删：删掉后当前供应商拿着一把死 key，所有请求 401（先切再删）
+    if (account.selectedKeyId === id) throw new Error("该密钥正在使用中：请先切换到其它密钥或套餐，再删除。");
+    await relayAuthedFetch(account, `/api/v1/keys/${id}`, undefined, "DELETE");
+    return { ok: true };
+  });
+
   ipcHost.handle("relay:select", async (_e, input: { mode: "balance" | "plan"; groupId: number | null; keyId?: number; keyName?: string }) => {
     const account = await readRelayAccount();
     if (!account) throw new Error("尚未登录中转站");

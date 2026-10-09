@@ -146,13 +146,13 @@ contextBridge.exposeInMainWorld("codex", {
   /* 共享技能池（09-27）：按项目查看/管理全局技能生效集 */
   describeSkillPool: (input: { cwd: string }) => __ipc("skills:pool-describe", 1, [input]),
   /* 设置全局停用/本项目禁用并立即投影 */
-  setSkillPoolState: (input: { cwd: string; name: string; globalDisabled?: boolean; projectDisabled?: boolean }) => __ipc("skills:pool-set", 0, [input]),
+  setSkillPoolState: (input: { cwd: string; name: string; globalDisabled?: boolean; projectDisabled?: boolean }) => __ipc("skills:pool-set", 1, [input]),
   /* 内置技能的独立开关（10-06）：读某内置技能**全局**是否生效（设置 → 控制台用；与 skill-pool 同一真相源） */
   getBuiltinSkillSwitch: (input: { name: string }) => __ipc("skills:builtin-switch-get", 1, [input]),
   /* 开关内置技能的**全局**生效态并立即投影磁盘（cwd 可空；只动全局集，不改项目集） */
-  setBuiltinSkillSwitch: (input: { name: string; enabled: boolean; cwd?: string }) => __ipc("skills:builtin-switch-set", 0, [input]),
+  setBuiltinSkillSwitch: (input: { name: string; enabled: boolean; cwd?: string }) => __ipc("skills:builtin-switch-set", 1, [input]),
   setPluginEnabled: (input: { pluginIds: string[]; enabled: boolean }) => __ipc("plugins:set-enabled", 1, [input]),
-  removeLocalSkill: (input: { folder: string; name?: string }) => __ipc("skills:local-remove", 0, [input]),
+  removeLocalSkill: (input: { folder: string; name?: string }) => __ipc("skills:local-remove", 1, [input]),
   trustHooks: (cwds?: string[]) => __ipc("hooks:trust", 0, [{ cwds }]),
   setHookEnabled: (input: { hookKeys: string[]; enabled: boolean }) => __ipc("hooks:set-enabled", 1, [input]),
   /* 09-24 新增：顶栏 🔍 历史会话搜索。扫 codex-home rollout 原档（sessions/** + archived_sessions/**）搜对话内容；先 indexOf 快速否决再解析，>32MB 跳过并计数 */
@@ -175,14 +175,14 @@ contextBridge.exposeInMainWorld("codex", {
   /* 设置/清除某个 MCP 工具的权限档位；mode 传 null 清除。改动后引擎重启生效 */
   setMcpToolPermission: (server: string, tool: string, mode: "deny" | "ask" | "allow" | null) => __ipc("mcp-servers:set-tool-permission", 3, [{ server, tool, mode }]),
   readPersonalization: () => __ipc("personalization:read", 0, []),
-  savePersonalization: (input: { nickname?: string; customInstructions?: string }) => __ipc("personalization:save", 0, [input]),
+  savePersonalization: (input: { nickname?: string; customInstructions?: string }) => __ipc("personalization:save", 1, [input]),
   /* 数据目录（userData）现状：生效值 / 默认锚点 / 自定义值 / 待迁移标记 / 迁移进度 */
   readDataDir: () => __ipc("dataDir:read", 0, []),
   /* 写指路牌并就地完成基础迁移（异步分批 + 进度）；重启后只做秒级增量同步。重启复用既有 app:relaunch */
   prepareDataDir: (dir: string) => __ipc("dataDir:prepare", 1, [dir]),
   /* 应用级运行时开关（联网搜索等） */
   readAppSettings: () => __ipc("appSettings:read", 0, []),
-  saveAppSettings: (patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy" }) => __ipc("appSettings:save", 0, [patch]),
+  saveAppSettings: (patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy" }) => __ipc("appSettings:save", 1, [patch]),
   themeApply: (theme: string) => __ipc("theme:apply", 1, [theme]),
   updateReveal: (filePath: string) => __ipc("updates:reveal", 1, [filePath]) as Promise<{ ok: boolean }>,
   /* SSH 服务器连接管理：列表 CRUD、批量启停、连接测试、命令执行、交互式会话、导入导出 */
@@ -215,18 +215,18 @@ contextBridge.exposeInMainWorld("codex", {
   readCommand: (filePath: string) => __ipc("commands:read", 1, [filePath]),
   saveCommand: (input: unknown) => __ipc("commands:save", 1, [input]),
   deleteCommand: (filePath: string) => __ipc("commands:delete", 1, [filePath]),
-  expandCommand: (input: { filePath: string; argument?: string; cwd?: string }) => __ipc("commands:expand", 0, [input]),
+  expandCommand: (input: { filePath: string; argument?: string; cwd?: string }) => __ipc("commands:expand", 1, [input]),
   getCustomModel: () => __ipc("custom-model:read", 0, []),
   probeCustomModel: (config: unknown) => __ipc("custom-model:probe", 1, [config]),
   readModelSpecs: () => __ipc("model-specs:read", 0, []),
   saveCustomModel: (config: unknown) => __ipc("custom-model:save", 1, [config]),
   listCustomModels: () => __ipc("custom-model:list", 0, []),
   selectCustomModel: (providerId: string) => __ipc("custom-model:select", 1, [providerId]),
-  setProviderModel: (input: { provider: string; model: string; apply?: boolean; restart?: boolean }) => __ipc("custom-model:set-model", 0, [input]),
+  setProviderModel: (input: { provider: string; model: string; apply?: boolean; restart?: boolean }) => __ipc("custom-model:set-model", 1, [input]),
   setProviderEffort: (input: { provider: string; model: string; effort: string }) => __ipc("custom-model:set-effort", 1, [input]),
   listThreadRuntimes: () => __ipc("thread-runtime:list", 0, []),
   seedThreadRuntime: (input: { threadId: string; runtime: unknown }) => __ipc("thread-runtime:seed", 1, [input]),
-  patchThreadRuntime: (input: { threadId: string; patch: unknown; baseRev?: number; takeover?: boolean }) => __ipc("thread-runtime:patch", 0, [input]),
+  patchThreadRuntime: (input: { threadId: string; patch: unknown; baseRev?: number; takeover?: boolean }) => __ipc("thread-runtime:patch", 1, [input]),
   dispatchOwner: () => __ipc("thread-runtime:dispatch-owner", 0, []),
   releaseDispatch: (threadId: string) => __ipc("thread-runtime:release-dispatch", 1, [threadId]),
   threadRole: (threadId: string) => __ipc("agents:thread-role", 1, [threadId]),
@@ -271,9 +271,9 @@ contextBridge.exposeInMainWorld("codex", {
   listRpaRecipes: () => __ipc("rpa:list", 0, []),
   saveRpaRecipe: (input: unknown) => __ipc("rpa:save", 1, [input]),
   deleteRpaRecipe: (id: string) => __ipc("rpa:delete", 1, [id]),
-  recordRpaRun: (input: { id: string; ok: boolean; error?: string }) => __ipc("rpa:record", 0, [input]),
+  recordRpaRun: (input: { id: string; ok: boolean; error?: string }) => __ipc("rpa:record", 1, [input]),
   listTasks: () => __ipc("tasks:list", 0, []),
-  addTask: (input: { text: string; priority?: string }) => __ipc("tasks:add", 0, [input]),
+  addTask: (input: { text: string; priority?: string }) => __ipc("tasks:add", 1, [input]),
   updateTask: (input: { id: string; patch: unknown }) => __ipc("tasks:update", 1, [input]),
   deleteTask: (id: string) => __ipc("tasks:delete", 1, [id]),
   clearTasks: () => __ipc("tasks:clear", 0, []),
@@ -284,9 +284,9 @@ contextBridge.exposeInMainWorld("codex", {
   testMemoryGateway: (config: unknown) => __ipc("memory:gateway:test", 1, [config]),
   readMemoryLayers: (workspace?: string) => __ipc("memory:layers:read", 0, [workspace]),
   /* 执行清理动作：⛔ 必须 confirm: true（UI 二次确认后才置位） */
-  applyMemoryHygiene: (input: { action: "purge-archive" | "prune-pool" | "tidy-lessons"; workspace?: string; confirm: true }) => __ipc("memory:hygiene:apply", 0, [input]),
+  applyMemoryHygiene: (input: { action: "purge-archive" | "prune-pool" | "tidy-lessons"; workspace?: string; confirm: true }) => __ipc("memory:hygiene:apply", 1, [input]),
   readMemoryContext: (workspace?: string, includeWorkspace = true) => __ipc("memory:layers:context", 0, [workspace, includeWorkspace]),
-  writeMemoryLayer: (input: { scope: "user" | "background" | "project" | "lessons"; content: string; workspace?: string }) => __ipc("memory:layers:write", 0, [input]),
+  writeMemoryLayer: (input: { scope: "user" | "background" | "project" | "lessons"; content: string; workspace?: string }) => __ipc("memory:layers:write", 1, [input]),
   readWorkspaceMemoryEnabled: (workspace?: string) => __ipc("memory:workspace-enabled:read", 0, [workspace]),
   setWorkspaceMemoryEnabled: (input: { workspace: string; enabled: boolean }) => __ipc("memory:workspace-enabled:set", 1, [input]),
   distillMemory: (workspace?: string) => __ipc("memory:distill", 0, [workspace]),
@@ -346,8 +346,8 @@ contextBridge.exposeInMainWorld("codex", {
   saveBuiltinPlugins: (cfg: unknown) => __ipc("builtin:save", 1, [cfg]),
   probeBuiltinModels: (input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }) => __ipc("builtin:probe", 1, [input]),
   /* ⛔ `path` 是落盘后的本地路径（网关只回 b64_json 时也有值）；`url` **仅在网关给了 * 真托管地址时**才有值 —— data URL 绝不会回传（会把 3 MB base64 带进对话历史）。 */
-  generateImage: (input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string; outputDir?: string }) => __ipc("builtin:generate-image", 0, [input]),
-  describeImage: (input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }) => __ipc("builtin:describe-image", 0, [input]),
+  generateImage: (input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string; outputDir?: string }) => __ipc("builtin:generate-image", 1, [input]),
+  describeImage: (input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }) => __ipc("builtin:describe-image", 1, [input]),
   relayLogin: (input: { baseUrl: string; email: string; password: string }) => __ipc("relay:login", 1, [input]),
   relayLoadAccount: () => __ipc("relay:load-account", 0, []),
   relayAccounts: () => __ipc("relay:accounts", 0, []),
@@ -365,11 +365,15 @@ contextBridge.exposeInMainWorld("codex", {
   openaiAccountSwitch: (id: string) => __ipc("openai:account-switch", 1, [id]),
   openaiImportFile: (input: { contents: string[] }) => __ipc("openai:import-file", 1, [input]),
   relayKeysAll: () => __ipc("relay:keys-all", 0, []),
+  /* 改已有密钥的分组（上游 PUT /api/v1/keys/:id）。⛔ 上游对 group_id=null 是「不修改」⇒ 解绑成无分组做不到，UI 只提供分组间切换；改当前生效密钥时同步 selectedGroupId */
+  relayUpdateKeyGroup: (input: { id: number; groupId: number; accountId?: string }) => __ipc("relay:update-key-group", 1, [input]),
+  /* 删除密钥（上游 DELETE /api/v1/keys/:id）。⛔ 正在使用的密钥（selectedKeyId）拒绝删除 —— 删掉后当前供应商拿着死 key 全部 401，先切再删 */
+  relayDeleteKey: (input: { id: number; accountId?: string }) => __ipc("relay:delete-key", 1, [input]),
   relayOverview: (id?: string) => __ipc("relay:overview", 0, [id]),
-  relayCreateKey: (input: { name: string; groupId?: number | null; accountId?: string }) => __ipc("relay:create-key", 0, [input]),
-  relaySelect: (input: { mode: "balance" | "plan"; groupId: number | null; keyId?: number; keyName?: string }) => __ipc("relay:select", 0, [input]),
+  relayCreateKey: (input: { name: string; groupId?: number | null; accountId?: string }) => __ipc("relay:create-key", 1, [input]),
+  relaySelect: (input: { mode: "balance" | "plan"; groupId: number | null; keyId?: number; keyName?: string }) => __ipc("relay:select", 1, [input]),
   relayKeyBilling: (input: { baseUrl: string; apiKey: string }) => __ipc("relay:key-billing", 1, [input]),
-  relayRegister: (input: { baseUrl: string; email: string; password: string; affCode?: string }) => __ipc("relay:register", 0, [input]),
+  relayRegister: (input: { baseUrl: string; email: string; password: string; affCode?: string }) => __ipc("relay:register", 1, [input]),
   relayPaymentPlans: () => __ipc("relay:payment-plans", 0, []),
   relayOpenPurchase: () => __ipc("relay:open-purchase", 0, []),
   enhancePrompt: (text: string) => __ipc("prompt:enhance", 1, [{ text }]),
@@ -389,7 +393,7 @@ contextBridge.exposeInMainWorld("codex", {
   voiceProfilesRecord: (input: { samples: number[]; sampleRate: number }) => __ipc("voice:profiles-record", 1, [input]) as Promise<any>,
   voiceProfilesSave: (input: { draftFile: string; name: string; refText: string }) => __ipc("voice:profiles-save", 1, [input]) as Promise<any>,
   voiceProfilesDelete: (id: string) => __ipc("voice:profiles-delete", 1, [id]) as Promise<{ ok: boolean }>,
-  voiceProfilesPreview: (input: { id?: string; text?: string }) => __ipc("voice:profiles-preview", 0, [input]) as Promise<any>,
+  voiceProfilesPreview: (input: { id?: string; text?: string }) => __ipc("voice:profiles-preview", 1, [input]) as Promise<any>,
   voiceBarge: () => __ipc("voice:barge", 0, []) as Promise<{ ok: boolean }>,
   voicePlaybackDone: () => __ipc("voice:playback-done", 0, []) as Promise<{ ok: boolean }>,
   voiceZipvoiceCancel: () => __ipc("voice:zipvoice-cancel", 0, []) as Promise<{ ok: boolean }>,
@@ -420,7 +424,7 @@ contextBridge.exposeInMainWorld("codex", {
   wecomWebhookTest: (text?: string) => __ipc("wecom-webhook:test", 0, [text]),
   botBindingGet: () => __ipc("bot-binding:get", 0, []),
   botsSet: (list: any[]) => __ipc("bots:set", 1, [list]),
-  botBindingSet: (input: { channel: string; threadId: string | null; title?: string }) => __ipc("bot-binding:set", 0, [input]),
+  botBindingSet: (input: { channel: string; threadId: string | null; title?: string }) => __ipc("bot-binding:set", 1, [input]),
   botStreamGet: () => __ipc("bot-stream:get", 0, []),
   botStreamSet: (input: { enabled: boolean; thinking: boolean; tools: boolean }) => __ipc("bot-stream:set", 1, [input]),
   relayToggleAccount: (input: { id: string; disabled: boolean }) => __ipc("relay:toggle-account", 1, [input]),
@@ -433,7 +437,7 @@ contextBridge.exposeInMainWorld("codex", {
   readPastedText: (path: string) => __ipc("pasted-text:read", 1, [path]),
   updatePastedText: (path: string, content: string) => __ipc("pasted-text:update", 2, [{ path, content }]),
   updateCheck: () => __ipc("updates:check", 0, []),
-  updateDownload: (input: { downloadUrl: string; filename?: string }) => __ipc("updates:download", 0, [input]),
+  updateDownload: (input: { downloadUrl: string; filename?: string }) => __ipc("updates:download", 1, [input]),
   updateInstall: (filePath: string) => __ipc("updates:install", 1, [filePath]),
   bridgeStatus: () => __ipc("bridge:status", 0, []),
   getThreadRuntime: (threadId: string) => __ipc("thread-runtime:get", 1, [threadId]),
@@ -466,7 +470,7 @@ contextBridge.exposeInMainWorld("codex", {
   voiceMicPermission: () => __ipc("voice:mic-permission", 0, []),
   voiceSettingsGet: () => __ipc("voice:settings-get", 0, []),
   voiceSettingsSet: (patch: any) => __ipc("voice:settings-set", 1, [patch]),
-  voiceHotkeySet: (input: { accelerator: string; enabled?: boolean }) => __ipc("voice:hotkey-set", 0, [input]),
+  voiceHotkeySet: (input: { accelerator: string; enabled?: boolean }) => __ipc("voice:hotkey-set", 1, [input]),
   voiceWakeStart: () => __ipc("voice:wake-start", 0, []),
   voiceWakeAudio: (samples: Float32Array) => __ipc("voice:wake-audio", 1, [samples]),
   voiceKwsInstall: () => __ipc("voice:kws-install", 0, []),
@@ -475,7 +479,7 @@ contextBridge.exposeInMainWorld("codex", {
   /* 改完立刻重挂快捷键（不重启即生效） */
   screenshotSettingsSet: (patch: unknown) => __ipc("screenshot:settings-set", 1, [patch]),
   /* 先注册成功才落盘；冲突时保留原设置 */
-  screenshotHotkeySet: (input: { mode: "full" | "region"; accelerator?: string; enabled?: boolean }) => __ipc("screenshot:hotkey-set", 0, [input]),
+  screenshotHotkeySet: (input: { mode: "full" | "region"; accelerator?: string; enabled?: boolean }) => __ipc("screenshot:hotkey-set", 1, [input]),
   /* 成功时另推 screenshot:captured 事件给主窗口（渲染层只认事件，避免插两份） */
   screenshotCapture: (mode: "full" | "region") => __ipc("screenshot:capture", 1, [mode]),
   screenshotPickDir: () => __ipc("screenshot:pick-dir", 0, []),
@@ -490,7 +494,7 @@ contextBridge.exposeInMainWorld("codex", {
   /* 记一次使用（useCount/lastUsedAt），失败不阻断发送 */
   touchFavorite: (id: string) => __ipc("favorites:touch", 1, [id]),
   /* 只追加到记忆层（先读后写，不抹既有内容）；单行限长 300 字 */
-  favoritesToMemory: (input: { ids: string[]; scope?: "user" | "project" | "background" | "lessons"; workspace?: string }) => __ipc("favorites:to-memory", 0, [input]),
+  favoritesToMemory: (input: { ids: string[]; scope?: "user" | "project" | "background" | "lessons"; workspace?: string }) => __ipc("favorites:to-memory", 1, [input]),
   /* 手机控制状态（平台/pip 包/adb/技能/遥测） */
   phoneHarnessStatus: () => __ipc("phone:harness:status", 0, []) as Promise<{platform:string;python:string;pythonOk:boolean;installed:boolean;version:string;adb:boolean;skill:boolean;telemetryOff:boolean;iphoneEligible:boolean}>,
   /* 装 phone-harness + 关遥测 + 注册技能 */
@@ -506,19 +510,19 @@ contextBridge.exposeInMainWorld("codex", {
   /* 把工具链里的 adb 写进 phone-harness 配置（android.adb，不改系统 PATH） */
   phoneHarnessWireAdb: () => __ipc("phone:harness:wire-adb", 0, []) as Promise<{adb:string}>,
   /* 把一段生图提示词交给**用户已配置的模型**润色（一次性短请求，非流式，不开会话）：补主体细节/环境/光线/构图/风格，只回一行可直接用的提示词。⛔ 只支持 chat 协议供应商；官方订阅与 responses-only 网关明确报错 */
-  dramaCanvasPolishPrompt: (input: { text: string; context?: string }) => __ipc("drama-canvas:polish-prompt", 0, [input]) as Promise<{ text: string }>,
+  dramaCanvasPolishPrompt: (input: { text: string; context?: string }) => __ipc("drama-canvas:polish-prompt", 1, [input]) as Promise<{ text: string }>,
   /* 锁主体（09-29 电商出图工作流）：用已配置的**视觉模型**把商品参考图反推成一段固定主体描述，六类图（主图/SKU/详情/场景/白底/买家秀）共用，保证一套图是同一件商品。⛔ 当前生图通道 builtin:generate-image 是纯文生图（无图输入）⇒ 这是「参考图锁主体」的可行替代，不是图生图；模型须支持视觉输入，否则如实报错 */
-  dramaCanvasDescribeImage: (input: { image: string; context?: string }) => __ipc("drama-canvas:describe-image", 0, [input]) as Promise<{ text: string }>,
+  dramaCanvasDescribeImage: (input: { image: string; context?: string }) => __ipc("drama-canvas:describe-image", 1, [input]) as Promise<{ text: string }>,
   /* 产物目录（09-29 用户要求「在 codexharness 目录下面新增一个存的目录，也可以选择和修改目录」）：默认 <userData>/outputs，首次读取自动创建；返回当前目录与「是否为默认」。 */
   dramaCanvasOutputDir: () => __ipc("drama-canvas:output-dir", 0, []) as Promise<{ dir: string; isDefault: boolean }>,
   /* 设置产物目录：pick=true 弹系统目录选择框；dir 给绝对路径直接设；dir 为空串 = 恢复默认。目录不可用会明确报错（不静默回退）。 */
-  dramaCanvasOutputDirSet: (input: { dir?: string; pick?: boolean }) => __ipc("drama-canvas:output-dir-set", 0, [input]) as Promise<{ dir: string; isDefault: boolean }>,
+  dramaCanvasOutputDirSet: (input: { dir?: string; pick?: boolean }) => __ipc("drama-canvas:output-dir-set", 1, [input]) as Promise<{ dir: string; isDefault: boolean }>,
   /* 画布快照镜像（09-29「打通」）：渲染层把当前画布（名称/工作流类型/节点/连线）防抖推给主进程，存 userData/drama-canvas/boards.json —— workflow_read 工具的数据源 */
   dramaCanvasBoardSync: (input: { name: string; flow: string; nodes: unknown[]; edges: unknown[] }) => __ipc("drama-canvas:board-sync", 1, [input]) as Promise<{ ok: boolean }>,
   /* 把二进制素材（配音 WAV / 生成图）按字节写进工作区 .drama-canvas/assets/；工作区掉出可信根（会话已关/重启）时回退应用数据目录并置 fallback=true（09-29 修「参考图传不了」）。⛔ 渲染层唯一的写入通道 fs:write 是 utf8 字符串写，写不了二进制，WAV 必须走这里 */
-  dramaCanvasAssetWrite: (input: { workspace: string; name: string; base64: string; subdir?: string }) => __ipc("drama-canvas:asset-write", 0, [input]) as Promise<{ path: string; fallback?: boolean }>,
+  dramaCanvasAssetWrite: (input: { workspace: string; name: string; base64: string; subdir?: string }) => __ipc("drama-canvas:asset-write", 1, [input]) as Promise<{ path: string; fallback?: boolean }>,
   /* 主动推送一条微信消息给用户（to 缺省=最近对话用户）。⛔ 正文气泡依赖 context_token，对方近期发过消息才最可靠；机器人未登录时抛错 */
-  weixinSend: (input: { to?: string; text: string }) => __ipc("weixin:send", 0, [input]) as Promise<{ ok: boolean }>,
+  weixinSend: (input: { to?: string; text: string }) => __ipc("weixin:send", 1, [input]) as Promise<{ ok: boolean }>,
   /* 内置视频生成接口：国内外 8 家厂商清单 + 是否已配凭证（可灵/万相/Seedance/CogVideoX/MiniMax/Runway/Luma/Veo） */
   videoProviders: () => __ipc("video:providers", 0, []) as Promise<{id:string;name:string;region:string;modes:string[];imageInput:string;fields:string[];models:string[];defaultModel:string;configured:boolean}[]>,
   /* 各厂商凭证（userData/video-providers.json） */
@@ -526,11 +530,11 @@ contextBridge.exposeInMainWorld("codex", {
   /* 保存某厂商的 API 凭证 */
   videoConfigSave: (input: { providerId: string; values: Record<string,string> }) => __ipc("video:config-save", 1, [input]) as Promise<{ ok: boolean; configured: boolean }>,
   /* 提交视频生成异步任务（i2v 时 image 可为本地路径/URL，主进程转 base64） */
-  videoSubmit: (input: { providerId: string; mode: string; prompt: string; image?: string; model?: string; duration?: number; aspect?: string }) => __ipc("video:submit", 0, [input]) as Promise<{ jobId: string }>,
+  videoSubmit: (input: { providerId: string; mode: string; prompt: string; image?: string; model?: string; duration?: number; aspect?: string }) => __ipc("video:submit", 1, [input]) as Promise<{ jobId: string }>,
   /* 轮询任务状态（MiniMax 成功后自动两段式换下载地址） */
   videoPoll: (input: { providerId: string; jobId: string }) => __ipc("video:poll", 1, [input]) as Promise<{ status: string; url?: string; error?: string }>,
   /* 把产物视频拉回本地落 <workspace>/.drama-canvas/assets/（可信根校验） */
-  videoDownload: (input: { url: string; workspace: string; name: string; subdir?: string; outputDir?: string }) => __ipc("video:download", 0, [input]) as Promise<{ path: string; bytes: number }>,
+  videoDownload: (input: { url: string; workspace: string; name: string; subdir?: string; outputDir?: string }) => __ipc("video:download", 1, [input]) as Promise<{ path: string; bytes: number }>,
   /* 排队消息定时发送：主进程登记定时器（不受渲染层隐藏节流），到点广播 queue-timer:due */
   queueTimerSet: (input: { threadId: string; queuedSubmissionId: string; runAt: number }) => __ipc("queue-timer:set", 1, [input]) as Promise<{ ok: boolean; scheduled: boolean }>,
   /* 取消排队消息定时（删除消息/取消定时/到点清理时调） */
@@ -547,7 +551,7 @@ contextBridge.exposeInMainWorld("codex", {
   /* 删工作日志文件（销毁性，不会重建）：只删 .codex-harness/memory 之下的普通文件；目录、越界路径一律拒绝 */
   workLogsDelete: (input: { paths: string[] }) => __ipc("work-logs:delete", 1, [input]),
   /* 按顺序合并视频片段成一条成片（整片导出）：先 -c copy，失败回落统一重编码；输出 <workspace>/.drama-canvas/export/ */
-  videoConcat: (input: { workspace: string; name: string; files: string[]; width?: number; height?: number; fps?: number }) => __ipc("video:concat", 0, [input]) as Promise<{ path: string; bytes: number; mode: "copy" | "reencode"; parts: number }>,
+  videoConcat: (input: { workspace: string; name: string; files: string[]; width?: number; height?: number; fps?: number }) => __ipc("video:concat", 1, [input]) as Promise<{ path: string; bytes: number; mode: "copy" | "reencode"; parts: number }>,
   /* 扫描宠物目录（内置 dist/pets + userData/pets + ~/.codex/pets + ~/.petdex/pets）；同名 id 先到先得，内置优先 */
   petList: () => __ipc("pet:list", 0, []),
   /* 宠物设置 + 当前生效的宠物包（active 无效时回落第一只可用的） */
@@ -614,11 +618,11 @@ contextBridge.exposeInMainWorld("codex", {
   declaredPluginsOpenDirs: () => __ipc("declared-plugins:open-dirs", 0, []) as Promise<{ ok: boolean; error?: string; userDir?: string; builtinDir?: string }>,
   /* 10-01 新增：项目级本地知识库（<项目>/.codex-harness/knowledge/） */
   listKnowledgeDocs: (input?: { workspace?: string }) => __ipc("kb:list", 0, [input]),
-  addKnowledgeText: (input: { workspace?: string; title?: string; text?: string; source?: string }) => __ipc("kb:add-text", 0, [input]),
-  addKnowledgeFiles: (input: { workspace?: string; paths?: string[] }) => __ipc("kb:add-files", 0, [input]),
-  removeKnowledgeDoc: (input: { workspace?: string; docId?: string }) => __ipc("kb:remove", 0, [input]),
-  searchKnowledge: (input: { workspace?: string; query?: string; limit?: number }) => __ipc("kb:search", 0, [input]),
-  readKnowledgeDoc: (input: { workspace?: string; docId?: string }) => __ipc("kb:read", 0, [input]),
+  addKnowledgeText: (input: { workspace?: string; title?: string; text?: string; source?: string }) => __ipc("kb:add-text", 1, [input]),
+  addKnowledgeFiles: (input: { workspace?: string; paths?: string[] }) => __ipc("kb:add-files", 1, [input]),
+  removeKnowledgeDoc: (input: { workspace?: string; docId?: string }) => __ipc("kb:remove", 1, [input]),
+  searchKnowledge: (input: { workspace?: string; query?: string; limit?: number }) => __ipc("kb:search", 1, [input]),
+  readKnowledgeDoc: (input: { workspace?: string; docId?: string }) => __ipc("kb:read", 1, [input]),
   /* 10-04：本地语义后端改按需下载 —— 知识库页卡片据此显示安装入口 */
   getKbEmbedStatus: () => __ipc("kb:embed-status", 0, []),
   /* npm(npmmirror)+模型(hf-mirror)；进度经 runtime:progress(id=kb-embedding) 推送 */
@@ -633,7 +637,7 @@ contextBridge.exposeInMainWorld("codex", {
   /* 10-09 轮询板块：读「间隔 / 超时上限 / 失败重试次数」（真相源在 userData/poll-settings.json） */
   pollConfigRead: () => __ipc("poll:config-read", 0, []) as Promise<{ intervalMs: number; timeoutMs: number; maxRetry: number }>,
   /* 10-09 保存轮询配置（会先过钳制：超时≥间隔×2）—— 返回**钳制后**的真值，渲染层照它回显 */
-  pollConfigSave: (input: { intervalMs?: number; timeoutMs?: number; maxRetry?: number }) => __ipc("poll:config-save", 0, [input]) as Promise<{ intervalMs: number; timeoutMs: number; maxRetry: number }>,
+  pollConfigSave: (input: { intervalMs?: number; timeoutMs?: number; maxRetry?: number }) => __ipc("poll:config-save", 1, [input]) as Promise<{ intervalMs: number; timeoutMs: number; maxRetry: number }>,
   /* 10-09 用户在界面上按「中止」→ 主进程的 wait 循环停下（任务本身不会被撤销） */
   pollAbort: (input: { taskId: string }) => __ipc("poll:abort", 1, [input]) as Promise<{ ok: boolean; aborted: boolean }>,
   /* ═══ gen:end ═══ */
