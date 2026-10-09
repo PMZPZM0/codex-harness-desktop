@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 431,
+  "count": 432,
   "channels": [
     {
       "name": "request",
@@ -3921,6 +3921,16 @@
       "invokeArgs": "",
       "cast": null,
       "note": "隐藏宠物（置 enabled=false；下次启动不自动恢复）"
+    },
+    {
+      "name": "petIgnoreMouse",
+      "channel": "pet:ignore-mouse",
+      "paramsImpl": "ignore: boolean",
+      "paramsDecl": "ignore: boolean",
+      "returns": "Promise<{ ok: boolean; ignore: boolean }>",
+      "invokeArgs": "ignore",
+      "cast": null,
+      "note": "透明区域鼠标穿透开关：渲染层按「指针是否在宠物本体上」动态翻转；forward 让页面在穿透时仍收到 mousemove（仅 Windows 有 forward，mac 保持整块可点）"
     },
     {
       "name": "listExpertMarketPackages",

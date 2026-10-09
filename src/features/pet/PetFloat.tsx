@@ -128,6 +128,52 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
 
   const stopDrag = useCallback((event: React.MouseEvent) => { event.stopPropagation(); }, []);
 
+  /* ── 透明区域鼠标穿透（10-09 用户报「软件外面无法点」）────────────────────
+     窗口是透明矩形：图集帧四周、气泡区、落地余量都是看不见的窗口实体，整块默认
+     都吃鼠标（还是 drag 区）⇒ 压在底下的桌面图标 / 其它窗口点不到。主进程已默认
+     整块穿透（setIgnoreMouseEvents(true, {forward:true})）—— forward 让页面在穿透
+     状态下**仍收到 mousemove**，这里按「指针是否落在宠物本体上」动态翻转：
+     本体上 = 关穿透（可拖可点），四周 = 穿透放行。
+     ⛔ 命中判定用 elementFromPoint 取**最深处**元素再 closest —— pet-stage 铺满
+        整窗，直接拿它判会把四周也算进去（等于白修）。
+     ⛔ 精灵盒是**近似**命中（图集帧内可能有透明留白），不逐像素测 alpha ——
+        逐像素要常驻 canvas 采样，成本与收益不成比例；盒子已经把挡桌面的范围
+        从「整个窗口」缩到「宠物本体那一格」。 */
+  useEffect(() => {
+    let raf = 0;
+    let current: boolean | null = null;
+    const overPet = (x: number, y: number) => {
+      const el = document.elementFromPoint(x, y);
+      return Boolean(el && el.closest(".pet-sprite, .pet-missing"));
+    };
+    const apply = (over: boolean) => {
+      if (current === over) return;
+      current = over;
+      void window.codex.petIgnoreMouse(!over).catch(() => undefined);
+    };
+    const onMove = (event: MouseEvent) => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        if (document.hidden) return;
+        apply(overPet(event.clientX, event.clientY));
+      });
+    };
+    /* 光标离开窗口（透明态下页面可能收不到收尾的 mousemove）⇒ 必须回到穿透，
+       否则「从本体直接移出窗口」会把整块窗留在可交互态，继续挡桌面。 */
+    const onLeave = () => {
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      apply(false);
+    };
+    window.addEventListener("mousemove", onMove, { passive: true });
+    document.documentElement.addEventListener("mouseleave", onLeave);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      document.documentElement.removeEventListener("mouseleave", onLeave);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
   return (
     <div className="pet-float" ref={hostRef}>
       {signal.bubble && (

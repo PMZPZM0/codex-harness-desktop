@@ -27,6 +27,8 @@ const EDGE = 18;
 let petWindow: BrowserWindow | null = null;
 /** 拖动结束后写盘用的防抖句柄（拖动会连续触发 moved） */
 let moveTimer: NodeJS.Timeout | null = null;
+/** 当前是否处于「可交互」状态（false = 整块鼠标穿透）。仅诊断/守卫用。 */
+let petMouseInteractive = false;
 /** 「用户把宠物拖到哪了」的回调 —— 由 pet-ipc 登记（它才是设置的持有者）。
  *  ⛔ 用回调而不是让本模块 import pet-ipc：那会形成 pet-ipc ↔ pet-window 的运行时循环。 */
 let onMoved: ((pos: { x: number; y: number }) => void) | null = null;
@@ -37,6 +39,31 @@ export function setPetMoveHandler(fn: ((pos: { x: number; y: number }) => void) 
 
 function windowSize(scale: number) {
   return { width: Math.round(BASE_W * scale), height: Math.round(BASE_H * scale) };
+}
+
+/* ── 透明区域鼠标穿透（10-09 用户报「软件外面无法点」）────────────────────────
+   宠物窗是**透明矩形**：图集帧四周、气泡区、落地余量都是看不见的窗口实体，而
+   `.pet-float` 整块又是 `-webkit-app-region: drag` ⇒ 默认整个矩形都吃鼠标事件，
+   压在它底下的桌面图标 / 其它窗口就点不到（「部分用户」= 开了桌宠的人；
+   「打开应用后」= 桌宠随启动自动恢复，boot.ts 的 applyPetSettings）。
+   解法 = Electron 透明窗标准姿势：默认 `setIgnoreMouseEvents(true, {forward:true})`
+   整块穿透，渲染层在指针移到宠物本体上时关掉穿透（可拖可点）、离开时再打开。
+   ⛔ `forward` 只有 Windows 有实现（文档明言）：mac 上保持旧的整块可点行为 ——
+     贸然开穿透却收不到 mousemove，宠物会变得完全点不到（比挡桌面更糟）。 */
+export function setPetMouseIgnore(ignore: boolean): void {
+  if (!isPetWindowOpen()) return;
+  const win = petWindow!;
+  if (process.platform !== "win32") return;
+  try {
+    if (win.isDestroyed() || win.webContents.isDestroyed()) return;
+    win.setIgnoreMouseEvents(ignore, { forward: true });
+    petMouseInteractive = !ignore;
+  } catch { /* 窗口在关，忽略 */ }
+}
+
+/** 宠物窗当前是否可交互（false = 整块穿透）。诊断 / 守卫用。 */
+export function isPetMouseInteractive(): boolean {
+  return petMouseInteractive;
 }
 
 /** 把坐标夹到某块屏幕的工作区内（显示器拔掉/改分辨率后，旧坐标可能落在屏幕外 = 宠物消失）。 */
@@ -147,6 +174,8 @@ function createPetWindow(settings: PetSettings): BrowserWindow {
       win.setAlwaysOnTop(true);
       win.setOpacity(settings.opacity);
       win.showInactive();          // ⛔ showInactive：显示宠物**不抢当前应用的焦点**
+      // 默认整块穿透（指针进宠物本体后由渲染层关掉，见 setPetMouseIgnore 注释）
+      setPetMouseIgnore(true);
     } catch { /* 忽略 */ }
   });
 
@@ -209,6 +238,8 @@ export function showPetWindow(settings: PetSettings) {
 export function hidePetWindow() {
   if (!isPetWindowOpen()) return;
   try { petWindow!.hide(); } catch { /* 忽略 */ }
+  // 藏起来前回到穿透态：下次 showInactive 若指针恰好停在窗上，不至于一出现就挡住桌面
+  setPetMouseIgnore(true);
 }
 
 export function closePetWindow() {

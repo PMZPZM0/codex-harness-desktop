@@ -3037,6 +3037,26 @@ w.postMessage({id:1,op:"list",root});
     (readFileSync(join(ROOT, "src", "styles.css"), "utf8").includes("./styles/22-pet") ? ok : fail)(
       "【232】宠物样式接入 styles.css（22-pet.css）"
     );
+    /* ⑯ ⛔ 透明区域鼠标穿透（10-09 用户报「软件外面无法点」）：宠物窗是透明矩形，
+       `.pet-float` 整块又是 drag 区 ⇒ 默认整块矩形都吃鼠标，压在底下的桌面图标/其它窗口
+       点不到。修法 = 主进程默认整块穿透 + 渲染层按「指针是否在宠物本体上」动态翻转。
+       ⛔ 三条必须同时在：只默认穿透不翻转 = 宠物永远点不到（更糟）；
+         翻转不看「最深元素」= pet-stage 铺满整窗，判据恒真 = 白修。 */
+    const petFloatSrc = readFileSync(join(ROOT, "src", "features", "pet", "PetFloat.tsx"), "utf8");
+    (winSrc.includes("setIgnoreMouseEvents(ignore, { forward: true })")
+      && winSrc.includes("setPetMouseIgnore(true)") ? ok : fail)(
+      "【232】宠物窗默认整块鼠标穿透（ready-to-show / hide 都回到穿透态；forward 仅 Windows）"
+    );
+    (ipcSrc.includes('"pet:ignore-mouse"') && ipcSrc.includes("setPetMouseIgnore(Boolean(ignore))") ? ok : fail)(
+      "【232】穿透开关走 IPC（setIgnoreMouseEvents 只能主进程调，渲染层没有旁路）"
+    );
+    (petFloatSrc.includes("document.elementFromPoint") && petFloatSrc.includes('el.closest(".pet-sprite, .pet-missing")')
+      && petFloatSrc.includes("petIgnoreMouse(!over)") ? ok : fail)(
+      "【232】渲染层按指针命中宠物本体动态翻转穿透（elementFromPoint 取最深元素，stage 铺满整窗不能直接判）"
+    );
+    (petFloatSrc.includes('addEventListener("mouseleave"') ? ok : fail)(
+      "【232】光标离开窗口回到穿透态（否则从本体直接移出会把整块窗留在可交互态继续挡桌面）"
+    );
   }
 
 
