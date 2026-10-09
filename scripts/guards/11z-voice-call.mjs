@@ -169,8 +169,25 @@ ok(/&& \(!current \|\| threadId !== current\)/.test(engineBridge) || /threadId !
   "只转发**当前会话**的事件（后台会话 / 被调度子会话的输出不该被念出来）");
 ok(/aborted: status === "interrupted" \|\| status === "failed"/.test(engineBridge),
   "被打断的回合标成 aborted（与主进程 voice-service 同一口径：看 turn.status，不是看有没有 items）");
-ok(/if \(getVoiceStage\(\)\.active\) return;/.test(announceHook),
-  "非通话链路在通话中**主动避让**（否则两个播报器同时念）");
+/* ⛔⛔ 通话避让（用户 10-09 特意提醒「注意甄别实时语音通话哦，别两个重复播报了」）：
+   非通话播报的三条入口（正文 delta / 插播 toolSpeak / 回合结束 turnDone）**共用一处**避让，
+   而且必须是订阅回调的**第一条语句** —— 放到某条分支里，就会出现"新加的那条入口忘了避让"
+   （两个播报器同时念：通话链路念一份、独立播报再念一份）。
+   ⛔ 用切片断言顺序：全文件 `indexOf` 会被别的 effect 里的同名语句骗到（本仓踩过）。 */
+const announceSubscriber = announceHook.slice(
+  announceHook.indexOf("const off = subscribeAnnounce((event) => {"),
+  announceHook.indexOf("window.codex.onHarnessEvent("),
+);
+const stageIdx = announceSubscriber.indexOf("if (getVoiceStage().active) return;");
+ok(stageIdx > 0
+  && stageIdx < announceSubscriber.indexOf('event.type === "delta"')
+  && stageIdx < announceSubscriber.indexOf('event.type === "toolSpeak"')
+  && stageIdx < announceSubscriber.indexOf('event.type === "turnDone"'),
+  "通话避让是订阅回调的**第一条语句**（delta / toolSpeak / turnDone 三条入口全排在它后面 —— 谁也绕不过）");
+ok((announceSubscriber.match(/getVoiceStage\(\)\.active/g) || []).length === 1,
+  "避让**只判一处**（单一裁决点；每条分支各判一次就是本仓记过的「二房东」缺陷：改一边漏一边）");
+ok((read("electron/features/dispatch-rpc.ts").match(/if \(status\?\.active\) \{/g) || []).length >= 2,
+  "两个播报工具（插播 / 念正文）在通话中**都拒绝**（各自一处 —— 漏一个就得多一个避让点）");
 /* ⛔ 钉的是「RenderTree 里只出现一次」而不是某个字面量 —— 10-09 加了 threadId prop（会话闸），
    锚字符串一旦写死就变成"改个 prop 就假红"，这是本仓记过的锚点写法禁区。 */
 ok((appViewSrc.match(/<VoiceAnnounceBridge\b/g) || []).length === 1
