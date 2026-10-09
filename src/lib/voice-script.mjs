@@ -12,10 +12,12 @@
  *     ```
  *
  * 同一份契约被**三处**消费，所以本文件同时提供三种形态：
- *   ① **汇总播报**（`resolveAnnounceSummary`）：优先念这块（模型写的，语气由它决定）；
- *      块缺失才**回退**到本机压缩（`voice-summary.mjs`）—— 回退路径保留，行为降级但不消失。
- *   ② **实时正文播报**（`createVoiceScriptStripper`）：正文照念，但这块**必须整块跳过**
- *      —— 否则同一句话念两遍（正文播报 + 汇总播报），且围栏行会被当普通文本读出来。
+ *   ① **结束播报**（`resolveAnnounceSummary`）：**只**念这块（10-09 第二轮用户令
+ *      「运行的正文和汇总正文不用播报了，只播报 Codex 写的内容」⇒ 原来"块缺失就回退到本机
+ *      压缩摘要"那条路**整条删除**，压缩器也一并删了）；模型没写稿 ⇒ 什么都不念。
+ *   ② **通话的正文朗读**（`createVoiceScriptStripper`）：通话照念正文（电话里必须把回复念出来），
+ *      但这块**必须整块跳过** —— 它随后由结束播报念，混在正文里念 = 念两遍 + 读出反引号。
+ *      ⛔ 非通话链路**没有**正文朗读了（已删），剥离器只为通话保留。
  *   ③ **屏幕显示**（`stripVoiceScript`，由 `features/markdown/Markdown.tsx` 调用）：
  *      整块剥掉 —— 播报稿是**给耳朵的**，摊在对话里只会干扰阅读。
  *
@@ -29,7 +31,7 @@
  * （含 delta 切分形态）。
  */
 import { createSpeakFilter } from "./speak-text.mjs";
-import { splitSentences, summarizeForSpeech } from "./voice-summary.mjs";
+import { splitSentences } from "./voice-summary.mjs";
 
 /** 围栏语言标签。⛔ 这是**跨文件契约**的一部分：指令里写的、这里认的、守卫查的必须是同一个词。 */
 export const VOICE_FENCE_LANG = "voice";
@@ -239,18 +241,15 @@ export function dedupeSpokenSentences(text, seen) {
 /**
  * 回合结束时「该念什么」的唯一裁决点。
  *
- * 优先级：**模型写的播报稿** → 本机压缩（回退） → 空（调用方决定要不要念兜底提示）。
+ * ⛔ **只念模型写的播报稿**，没写就是空（调用方什么都不念）。
+ *    10-09 第二轮用户令：「运行的正文和汇总正文不用播报了 —— 只播报 Codex 写的内容」
+ *    ⇒ 原先把「本机压缩摘要」当回退的那条路**整条删除**（压缩器也已随之删掉）。
+ * ⛔ 清空成空串也要返回空（清洗后没内容 = 没得念，调用方别再拼别的兜底文案）。
  * @param {string} raw 最终回复原文
  * @param {{ maxChars?: number }} [options]
- * @returns {{ text: string; source: "script" | "fallback" | "empty"; sentences: number; kept: number; truncated: boolean }}
+ * @returns {{ text: string; present: boolean }} `present` = 回复里到底有没有那个围栏块
  */
 export function resolveAnnounceSummary(raw, options = {}) {
-  const text = String(raw ?? "");
-  const script = extractVoiceScript(text);
-  if (script.text) {
-    const spoken = cleanVoiceScript(script.text, options);
-    if (spoken) return { text: spoken, source: "script", sentences: 0, kept: 0, truncated: false };
-  }
-  const fallback = summarizeForSpeech(text);
-  return { ...fallback, source: fallback.text ? "fallback" : "empty" };
+  const script = extractVoiceScript(String(raw ?? ""));
+  return { text: script.text ? cleanVoiceScript(script.text, options) : "", present: script.present };
 }

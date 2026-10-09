@@ -24,7 +24,7 @@ export type ModelHost = "auto" | "huggingface" | "hf-mirror";
 export type AecMode = "auto" | "on" | "off";
 
 /** 设置文件结构版本：每次「默认值语义变了、老档案需要迁移」就 +1（见 migrateSettings） */
-export const VOICE_SETTINGS_VERSION = 3;
+export const VOICE_SETTINGS_VERSION = 4;
 
 export type VoiceSettings = {
   tts: { sid: number; speed: number; volume: number; /** "我的音色"档案 id；空串/缺省 = 用内置预置音色 */ profileId?: string };
@@ -41,16 +41,20 @@ export type VoiceSettings = {
   /** 语音唤醒：持续聆听并匹配唤醒词（会持续占用 CPU，默认关） */
   wake: { enabled: boolean; phrase: string };
   /**
-   * 语音播报（10-08 新增）—— 把 Codex 的输出念出来，两个**独立**开关：
-   *   - `live`    运行过程中的正文实时播报：正文流式生成时**逐句**念（就是通话原有的行为）；
-   *   - `summary` 运行结束后对最终消息的**汇总播报**：回合结束时念一段本地压缩出的要点
-   *               （压缩算法见 src/lib/voice-summary.mjs，不额外调模型、零延迟）。
+   * 语音播报（10-08 立，10-09 第二轮收成**一个总开关**）—— 把 **Codex 自己写的内容**念出来。
    *
-   * ⛔ 两者正交、可同时开：都开 = 边写边念 + 结束时再念一遍要点；都关 = 通话只做输入不念回复
-   *    （纯语音下指令的用法）。作用范围 = **通话中 + 非通话**（非通话走独立播放链路，不开麦）。
+   * 播报内容只有两个来源：
+   *   · ① 模型在回复末尾写的 `voice` 播报稿（解析见 `src/lib/voice-script.mjs`）；
+   *   · ② 模型主动调 `voice_announce` 插播的那句话（**显式调用，不看本开关**）。
+   *
+   * ⛔ 10-09 用户令「运行的正文和汇总正文不用播报了，只播报 Codex 写的内容」⇒ 原来那两个开关
+   *    （`live` 正文逐句播报 / `summary` 本机压缩汇总播报）连同那两条播报来源**一起删除**：
+   *    - 非通话：不再流式念正文、也不再念压缩摘要，只在回合结束念**播报稿**；
+   *    - 通话：正文朗读是通话自身的链路（电话里必须把回复念出来），仍由本开关门控
+   *      （关掉 = 只出字幕不出声，纯语音下指令的用法）；压缩摘要同样不再念。
    * ⛔ 语速不在这里另开一份：播报与通话共用 `tts.speed`（单一真相源，避免两处各调一次还互相打架）。
    */
-  announce: { live: boolean; summary: boolean };
+  announce: { enabled: boolean };
   /** 悬浮球：是否显示 + 是否弹出随机的短提示气泡 */
   ball: { visible: boolean; hints: boolean };
   /**
@@ -117,9 +121,9 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   hotkey: { enabled: false, accelerator: "CommandOrControl+Shift+M" },
   dictationHotkey: { enabled: false, accelerator: "Alt+Space" },
   wake: { enabled: false, phrase: "小柯小柯" },
-  // 10-08：live 默认 **true** = 保持通话既有行为（升级不改变任何现有体验）；
-  //       summary 默认 **false** = 新功能默认关，别让老用户突然多听一遍要点。
-  announce: { live: true, summary: false },
+  // 10-09 第二轮：`announce` 收成一个总开关。默认 **true** —— 与旧结构里 `live` 的默认一致
+  // （旧默认就是「播报开着」），升级不改老用户的开关状态，只改「念什么」（念播报稿，不再念正文/摘要）。
+  announce: { enabled: true },
   ball: { visible: true, hints: true },
   // 10-03：资源默认全部启用（老档案缺这个字段时也是这个效果 ⇒ 升级不改变任何现有行为）
   resources: {},
@@ -205,6 +209,19 @@ export function migrateSettings(raw: Partial<VoiceSettings> | undefined): { sett
       changed = true;
     }
   }
+  /* v3 → v4（10-09 第二轮）：`announce` 由两个开关（`live` 正文逐句 / `summary` 本机压缩汇总）
+     **收成一个** `enabled`（用户令：「运行的正文和汇总正文不用播报了，只播报 Codex 写的内容」）。
+     ⛔ 老档案里是 `{live, summary}`、没有 `enabled` ⇒ 不迁移的话这个字段读出来是 undefined。
+        判据：**任一为真即视为播报开着**（旧默认 live=true 正是「开着」，别把老用户的开关状态丢掉）。
+     ⛔ 念的东西变了（正文/摘要 → Codex 写的播报稿）是用户明确要的行为变更，不是迁移失误；
+        这里只负责把「开/关」这个状态平移过来。 */
+  if (version < 4) {
+    const a: any = (source as any).announce;
+    if (a && typeof a.enabled !== "boolean") {
+      (source as any).announce = { enabled: a.live !== false || a.summary === true };
+      changed = true;
+    }
+  }
   /* 10-08 新增 `announce`（语音播报两个开关）**故意不 +1 版本**：这是**新增字段**、不是
      「旧默认值变了」—— 老档案里没有它，`mergeSettings` 会填上新默认（live=true 正好等于
      既有通话行为、summary=false 不引入新声音）⇒ 升级不改变任何现有体验，无需迁移。
@@ -236,7 +253,13 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
   const hotkey = raw.hotkey ?? d.hotkey;
   const dictationHotkey = raw.dictationHotkey ?? d.dictationHotkey;
   const wake = raw.wake ?? d.wake;
-  const announce = raw.announce ?? d.announce;
+  /* ⛔ 显式字段映射（本文件第 N 次踩同款坑：显式映射漏字段 = 用户改了不生效、且不报错）。
+     10-09 第二轮：单开关 `enabled`，缺省 true（播报开着）。⛔ 兼容老档案的 `{live, summary}` ——
+     直接读 `.enabled` 会拿到 undefined，老用户一进设置页就把开关"看成关着的"。 */
+  const announceRaw: any = (raw as any).announce ?? d.announce;
+  const announceEnabled = typeof announceRaw?.enabled === "boolean"
+    ? announceRaw.enabled
+    : (announceRaw?.live !== false || announceRaw?.summary === true);   // 旧档案 {live, summary}：任一为真即开着
   const ball = raw.ball ?? d.ball;
   const modelHost = raw.modelHost && MODEL_HOST_PRESETS[raw.modelHost] ? raw.modelHost : d.modelHost;
   const aecMode = (raw as any).aec?.mode;
@@ -284,11 +307,8 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
       hints: ball.hints !== false,
     },
     // ⛔ 显式字段映射（本文件第 N 次踩同款坑：显式映射漏字段 = 用户改了不生效、且不报错）。
-    //    缺省语义：live 缺省 true（老档案 = 保持既有通话行为）、summary 缺省 false（新功能默认关）。
-    announce: {
-      live: announce.live !== false,
-      summary: announce.summary === true,
-    },
+    //    10-09 第二轮：单开关 `enabled`（缺省 true = 播报开着；老档案的 {live, summary} 已在上面平移）。
+    announce: { enabled: announceEnabled },
     aec: { mode: aecMode === "on" || aecMode === "off" ? aecMode : d.aec!.mode },
     modelHost,
     // ⛔ 必须显式透传（10-03）：这里是显式字段映射，漏写 resources 的后果是

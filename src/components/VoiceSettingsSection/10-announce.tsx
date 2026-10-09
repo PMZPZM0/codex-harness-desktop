@@ -1,13 +1,15 @@
 /**
- * VoiceSettingsSectionAnnounce —— 设置页「语音播报」卡片（10-08 新增）。
+ * VoiceSettingsSectionAnnounce —— 设置页「语音播报」卡片（10-08 立，10-09 第二轮收成一个总开关）。
  *
- * 用户需求：「新增两个播报功能：一是运行过程中的正文实时播报，二是运行结束后对最终消息进行汇总播报」
- * + 「在设置界面中为这两个播报功能分别添加对应的开关选项」。
+ * 用户需求演进：
+ *   · 10-08：「新增两个播报功能：一是运行过程中的正文实时播报，二是运行结束后对最终消息进行汇总播报」
+ *            + 「在设置界面中为这两个播报功能分别添加对应的开关选项」；
+ *   · 10-09 第一轮：「播报内容改由 Codex 自己写」（回复末尾的 `voice` 播报稿）；
+ *   · 10-09 第二轮：「运行的正文和汇总正文不用播报了，只播报 Codex 写的内容」
+ *            ⇒ 两个开关**收成一个**（`announce.enabled`）：正文逐句播报与本机压缩汇总整条删除。
  *
- * ⛔ 两个开关**正交**，都在 `settings.announce`（主进程 voice-settings.json）：
- *   · live    —— 正文流式生成时逐句念（就是通话原有的行为，默认开）；
- *   · summary —— 回合结束时念一段**本地压缩**出来的要点（默认关，见 src/lib/voice-summary.mjs）。
  * ⛔ 语速**不在这里另开一份**：与通话共用 `tts.speed`（单一真相源）—— 两个语速迟早对不上。
+ * ⛔ `voice_announce` 工具插播**不受这个开关管**（显式调用 = 用户就要听这一句）。
  */
 import { Volume2 } from "lucide-react";
 import { Settings } from "../VoiceSettingsSection";
@@ -20,9 +22,13 @@ type Props = {
 
 export function VoiceSettingsSectionAnnounce({ apply, saving, settings }: Props) {
   /* ⛔ 兜底（与 VoiceDevToolsSection 的 `enabled !== false` 同一约定）：设置是**显式字段映射**
-     过的对象，老主进程（未重启 / 渲染层被单独 reload）回包可能没有 `announce` ——
-     直接读 `settings.announce.live` 会让整个语音设置页白屏。缺省 = 「保持通话既有行为」。 */
-  const announce = settings.announce ?? { live: true, summary: false };
+     过的对象，老主进程（未重启 / 渲染层被单独 reload）回包可能还是旧形状 `{live, summary}` ——
+     直接读 `settings.announce.enabled` 会让开关显示成"关着"（甚至整页白屏）。
+     旧形状的判据与主进程迁移同源：**任一为真即视为开着**。 */
+  const announce: any = settings.announce ?? { enabled: true };
+  const enabled = typeof announce.enabled === "boolean"
+    ? announce.enabled
+    : (announce.live !== false || announce.summary === true);
   return (
     <div className="voice-card" data-voice-announce="1">
       <div className="voice-card-head"><Volume2 size={15} /><span>语音播报</span></div>
@@ -31,33 +37,24 @@ export function VoiceSettingsSectionAnnounce({ apply, saving, settings }: Props)
           <label className="voice-toggle">
             <input
               type="checkbox"
-              checked={announce.live}
-              onChange={(e) => apply({ announce: { live: e.target.checked, summary: announce.summary } })}
+              checked={enabled}
+              onChange={(e) => apply({ announce: { enabled: e.target.checked } })}
               disabled={saving}
             />
-            <span>运行过程中的正文实时播报</span>
-          </label>
-          <label className="voice-toggle">
-            <input
-              type="checkbox"
-              checked={announce.summary}
-              onChange={(e) => apply({ announce: { live: announce.live, summary: e.target.checked } })}
-              disabled={saving}
-            />
-            <span>运行结束后汇总播报</span>
+            <span>播报 Codex 写的内容</span>
           </label>
         </div>
         <div className="voice-card-hint">
-          「实时播报」= 正文一边生成一边<strong>逐句</strong>念出来；「汇总播报」= 这一轮跑完后，
-          念一段收尾<strong>由 Codex 当场写的播报稿</strong>（它写在回复末尾的一个特殊区块里，
-          屏幕上不显示 —— 念什么、什么语气都由它自己按上下文决定；它没写时才回退到本机压缩的要点，
-          不额外调用模型、不联网）。
+          开启后，应用会念 <strong>Codex 自己写的播报稿</strong> —— 它在回复末尾写一个小块
+          （屏幕上不显示），念什么、什么语气都由它按上下文自己定；<strong>写不写、写什么，由它决定</strong>，
+          没写就不念。此外它可以随时<strong>主动插一句话</strong>（那条不受本开关管）。
+          <br />
+          <strong>不再自动念正文、也不再念总结</strong>：跑的过程中不会逐句念回复，跑完也不会复述一遍要点 ——
+          省下的时间留给它挑的那一句重点。
           <br />
           通话中与非通话时都生效；<strong>非通话时只听不说话</strong>（不开麦克风），所以播报期间
           输入框上方会出现一条「语音播报中」的状态条（显示当前句与待播句数），<strong>点「停止」随时掐断</strong>，
-          也可以右键悬浮球选择停止播报。Codex 知道自己有这套能力：它可以主动插一句话，也能自己收声。
-          <br />
-          两个开关可以同开也可以都关（通话只做输入、不念回复）。语速见下方「语速」卡片（播报与通话共用同一档）。
+          也可以右键悬浮球选择停止播报。语速见下方「语速」卡片（播报与通话共用同一档）。
         </div>
       </div>
     </div>

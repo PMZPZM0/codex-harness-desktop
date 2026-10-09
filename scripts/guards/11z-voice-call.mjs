@@ -16,7 +16,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { ROOT } from "./_ctx.mjs";
 import { isLikelySelfEcho, echoSimilarity, ECHO_TAIL_MS } from "../../src/lib/voice-echo.mjs";
-import { summarizeForSpeech, splitSentences, SUMMARY_PREFIX } from "../../src/lib/voice-summary.mjs";
+import { splitSentences } from "../../src/lib/voice-summary.mjs";
 import { extractVoiceScript, stripVoiceScript, createVoiceScriptStripper, resolveAnnounceSummary, spokenDedupeKey, dedupeSpokenSentences, VOICE_FENCE_LANG } from "../../src/lib/voice-script.mjs";
 
 let checks = 0, fails = 0;
@@ -92,7 +92,7 @@ ok(/lastSpokenAtRef/.test(hook) && /prevSpeakingRef/.test(hook),
 /* ── ⑤ 麦克风灵敏度（默认 + 迁移）────────────────────────────────────── */
 ok(/mic: \{ deviceId: "", noiseSuppression: false, echoCancellation: true, autoGainControl: true \}/.test(voiceSettings),
   "默认开启自动增益（autoGainControl: true）—— 原先 false 是「要很大声才录得进去」的根因");
-ok(/VOICE_SETTINGS_VERSION = 3/.test(voiceSettings) && /if \(version < 3\)[\s\S]{0,200}?autoGainControl/.test(voiceSettings),
+ok(/VOICE_SETTINGS_VERSION = \d+/.test(voiceSettings) && /if \(version < 3\)[\s\S]{0,200}?autoGainControl/.test(voiceSettings),
   "老档案有迁移（只改默认对已存设置的用户无效 —— 必须走版本迁移，照 rule2 那次的同一套判据）");
 
 /* ── ⑥ 语音开/关的状态注入 + 快问快答 ─────────────────────────────────── */
@@ -120,21 +120,44 @@ const engineBridge = read("src/features/voice-announce/engine-bridge.ts");
 const seg05 = read("src/features/app-state/parts/part05/01-seg.tsx");
 const appViewSrc = read("src/features/app-view/AppView.tsx");
 
-ok(/announce: \{ live: true, summary: false \}/.test(voiceSettings),
-  "默认值：live=true（= 通话既有行为，升级不改体验）、summary=false（新功能默认关）");
-ok(/announce: \{[\s\S]{0,200}?live: announce\.live !== false[\s\S]{0,100}?summary: announce\.summary === true/.test(voiceSettings),
-  "mergeSettings **显式映射** announce（漏映射 = 用户改了不生效且不报错 —— 本文件已 N 次同款）");
-ok(/checked=\{announce\.live\}/.test(announceCard) && /checked=\{announce\.summary\}/.test(announceCard),
-  "设置页「语音播报」卡片上有**两个独立**开关（实时正文 / 结束汇总）");
-ok(/if \(announceRef\.current\.live\) void speakDelta\(piece\)/.test(hook),
-  "通话的实时播报受 live 门控（关掉 ⇒ 只出字幕不出声）");
-ok(/if \(announceRef\.current\.live\) await flushSpeech\(\);[\s\S]{0,140}?if \(announceRef\.current\.summary\) await speakSummary/.test(hook),
-  "汇总**在尾句念完之后**才念（两者共用播放队列，并发入队会把汇总插进半句中间）");
-ok(/const a = event\.settings\?\.announce/.test(hook),
-  "设置页改开关后经 voice:event 广播即时生效（不必重开通话）");
+ok(/announce: \{ enabled: true \}/.test(voiceSettings),
+  "默认值：`announce.enabled = true`（与旧结构 live 的默认一致 —— 播报默认开着）");
+ok(/announce: \{ enabled: announceEnabled \}/.test(voiceSettings) && /announceRaw\?\.live !== false \|\| announceRaw\?\.summary === true/.test(voiceSettings),
+  "mergeSettings **显式映射** announce.enabled，且把旧档案的 {live, summary} 平移过来（漏映射 = 用户改了不生效且不报错 —— 本文件已 N 次同款）");
+ok(/VOICE_SETTINGS_VERSION = 4/.test(voiceSettings) && /if \(version < 4\)/.test(voiceSettings),
+  "版本 3 → 4 且带迁移（字段形状变了：两个开关收成一个 —— 不迁移的话老档案读出来是 undefined）");
+ok(/checked=\{enabled\}/.test(announceCard) && /apply\(\{ announce: \{ enabled: e\.target\.checked \} \}\)/.test(announceCard)
+  && (announceCard.match(/type="checkbox"/g) || []).length === 1,
+  "设置页「语音播报」卡片上**只有一个**总开关（正文实时 / 汇总两个旧开关已删）");
+ok(/if \(announceRef\.current\.enabled\) void speakDelta\(piece\)/.test(hook),
+  "通话的正文朗读受总开关门控（关掉 ⇒ 只出字幕不出声）");
+ok(/await flushSpeech\(\);[\s\S]{0,120}?await speakScript\(finalText\)/.test(hook),
+  "结束播报**在尾句念完之后**才念（两者共用播放队列，并发入队会把播报稿插进半句中间）");
+ok(/const tail = scriptStripperRef\.current\?\.flush\(\) \?\? ""/.test(hook)
+  && hook.indexOf("scriptStripperRef.current?.flush()") < hook.indexOf("await flushSpeech()"),
+  "通话里先**定下剥离器按住的那半行**再 flush 断句器（否则尾句永远丢，且顺序反了会把尾巴当下一轮首句）");
+/* ⛔ 顺序判据必须**先确认两个锚都在**：`indexOf` 找不到时返回 -1，`-1 < x` 恒真 ——
+   变异测试实测过这个假绿形态（把剥离那一行删掉，顺序断言照样绿）。 */
+const stripPushIdx = hook.indexOf("scriptStripperRef.current.push(String(delta");
+const chunkPushIdx = hook.indexOf("chunkerRef.current.push(visible)");
+ok(/if \(!scriptStripperRef\.current\) scriptStripperRef\.current = createVoiceScriptStripper\(\)/.test(hook)
+  && stripPushIdx > 0 && chunkPushIdx > 0 && stripPushIdx < chunkPushIdx,
+  "通话里**先剥离播报稿再断句**（反过来的话半截围栏已经进了断句器，剥不掉 ⇒ 用户听到「反引号反引号」）");
+ok(/const a = event\.settings\?\.announce/.test(hook) && /const a: any = raw\.announce \?\? \{\}/.test(announceHook),
+  "设置页改开关后经 voice:event 广播即时生效（不必重开通话；两侧都兼容旧形状 {live, summary}）");
 ok(/export function publishAnnounceEvent/.test(bus) && /export function subscribeAnnounce/.test(bus)
   && !/summarizeForSpeech|chunker/.test(bus),
   "基座总线只做转发（开关判定/断句/合成全在播报域里，别把逻辑塞进基座）");
+/* 10-09 第二轮：正文 delta 从**总线与转发器**里一起消失（不是"没人订阅但还在发"的死契约）。
+   ⛔ 负向断言必须过 codeOnly：本仓注释里引用旧代码片段是常态，裸匹配会把注释顶成假红。 */
+ok(!/type: "delta"/.test(codeOnlyTs(bus)) && !/item\/agentMessage\/delta/.test(codeOnlyTs(engineBridge))
+  && /if \(method !== "turn\/completed"\) return;/.test(engineBridge),
+  "⛔ 总线没有 delta 事件、转发器也不再认正文 delta（正文实时播报已整条删除 ⇒ 不许留死契约）");
+ok(/\| "summary" \| "tool"/.test(bus) && !/\| "live" \|/.test(codeOnlyTs(bus)),
+  "状态来源只剩「播报稿 / 插播」（`live` 已从联合类型里删掉）");
+ok(/正在念播报稿/.test(read("src/features/voice-announce/VoiceAnnounceIndicator.tsx"))
+  && !/正在念正文|正在念小结/.test(read("src/features/voice-announce/VoiceAnnounceIndicator.tsx")),
+  "状态条文案跟着改（不再有「正在念正文 / 正在念小结」）");
 const pubIdx = seg05.indexOf("publishEngineAnnounce(event.method");
 const streamIdx = seg05.indexOf("if (threadStreamMethods.has(method))");
 ok(pubIdx > 0 && streamIdx > 0 && pubIdx < streamIdx,
@@ -218,25 +241,26 @@ ok(dedupeSpokenSentences("你好世界。", new Set(["你好世界"])).text === 
 ok(dedupeSpokenSentences("", new Set()).text === "" && dedupeSpokenSentences(null, new Set()).keys.length === 0,
   "空 / null 安全（返回空文本、零键，不抛）");
 
-/* 汇总播报：**真跑**纯函数（src/lib/voice-summary.mjs） */
-const longText = Array.from({ length: 20 }, (_, i) => `这是第 ${i + 1} 条说明内容。`).join("");
-const sLong = summarizeForSpeech(longText);
-const sEmpty = summarizeForSpeech("   ");
-const sCode = summarizeForSpeech("```\nconsole.log(1)\n```");
-const sTable = summarizeForSpeech("对比结果如下。\n| 项 | 值 |\n| --- | --- |\n| a | 1 |\n以上。");
-const sOne = summarizeForSpeech("只有一句。");
-ok(sLong.text.startsWith(SUMMARY_PREFIX) && sLong.truncated && sLong.kept < sLong.sentences
-  && sLong.text.includes("另有") && sLong.text.length <= 200,
-  `真跑汇总：长回复压成要点 + 「另有 N 句」（${sLong.sentences} 句 → 念 ${sLong.kept} 句 / ${sLong.text.length} 字）`);
-ok(sEmpty.text === "" && sCode.text === "",
-  "真跑汇总：空文本与「整段是代码」都返回空串（由调用方改念 SUMMARY_EMPTY_NOTICE，不合成空音频）");
-ok(sTable.text.includes("对比结果如下") && sTable.text.includes("以上") && !sTable.text.includes("|"),
-  "真跑汇总：表格整段丢掉、不念竖线（复用朗读视图的块级状态机，不另造一份清洗）");
-ok(sOne.text === `${SUMMARY_PREFIX}只有一句。`,
-  "真跑汇总：短回复原样念（不加「另有」、不截断）");
-ok(!/```/.test(sLong.text + sTable.text + sOne.text) && splitSentences("一。二！三？四").length === 4
+/* 汇总播报的**本机压缩**已整条删除（10-09 第二轮用户令「汇总正文不用播报了」）——
+   这里改成**负向**断言：压缩器与它的常量都不许回来（回来就意味着又在念"汇总正文"）。 */
+const summaryLib = read("src/lib/voice-summary.mjs");
+const summaryDts = read("src/lib/voice-summary.d.mts");
+ok(!/summarizeForSpeech/.test(codeOnlyTs(summaryLib)) && !/summarizeForSpeech/.test(summaryDts)
+  && !/SUMMARY_(PREFIX|MAX_CHARS|EMPTY_NOTICE)/.test(summaryLib + summaryDts),
+  "⛔ 本机压缩汇总（summarizeForSpeech / SUMMARY_*）已整条删除且不许复活 —— 它就是用户说的「汇总正文」");
+ok(/export function splitSentences/.test(summaryLib) && splitSentences("一。二！三？四").length === 4
   && splitSentences("版本 3.5 已发布。").length === 1,
-  "汇总输出不含 markdown 围栏；句级切分按中英句末标点，且**不切小数点**");
+  "句级切分保留（播报去重靠它按句对齐）；按中英句末标点切，且**不切小数点**");
+/* `resolveAnnounceSummary` = 唯一裁决点：**只认模型写的播报稿**，没写就是空（不再有 fallback 分支） */
+const sc = resolveAnnounceSummary("先说一句。\n\n```voice\n改完了，能跑。\n```");
+const scNone = resolveAnnounceSummary("这段回复里没有任何播报稿。");
+const scCodeOnly = resolveAnnounceSummary("```\nconsole.log(1)\n```");
+ok(sc.text === "改完了，能跑。" && sc.present === true && scNone.text === "" && scNone.present === false,
+  "真跑裁决点：有播报稿就只念那块；没写稿 ⇒ 空（**不回退**到本机压缩摘要）");
+ok(scCodeOnly.text === "" && resolveAnnounceSummary("").text === "" && resolveAnnounceSummary(null).text === "",
+  "真跑裁决点：只有代码块 / 空串 / null 都返回空且不抛（调用方什么都不念）");
+ok(!/source: "script"|source: "fallback"|\.sentences === 0/.test(codeOnlyTs(announceHook)),
+  "⛔ 调用端不再有 script/fallback 分支与「整段是代码」的兜底文案（那些都是被删掉的汇总播报残留）");
 
 /* ── ⑧ 音色上传接口（预留）+ 使用教程 ────────────────────────────────── */
 const ipcManifest = JSON.parse(read("electron/ipc-channels.manifest.json"));
@@ -345,11 +369,11 @@ ok(zv?.realReady !== false,
    ⛔ 本组来自对 c75ab5f 的**自审**（dongming-code-review 技能六步闭环），
       不是新功能 —— 每条都是「当时写错、已修」的东西，所以判据要钉住修好的形态。 */
 ok(/const chainRef = useRef<Promise<void>>\(Promise\.resolve\(\)\)/.test(announceHook)
-  && /enqueueTask\(\(\) => feedDelta\(event\.text\)\)/.test(announceHook)
+  && /enqueueTask\(\(\) => speakNow\(event\.text, event\.speed\)\)/.test(announceHook)
   && /enqueueTask\(\(\) => finishTurn\(event\.text\)(\.finally\(clearSpokenKeys\))?\)/.test(announceHook),
-  "播报动作挂**串行链**：合成是异步的、delta 是并发到达的 ⇒ 不串行会念乱顺序（A 慢 B 快则 B 先出声）");
-ok(/summary\.sentences === 0 && String\(finalText \?\? ""\)\.trim\(\)/.test(announceHook),
-  "「整段是代码」的那句提示只在**原文非空**时念（finalText 为空 = 引擎没带 items，是数据缺失，不是代码）");
+  "播报动作挂**串行链**：合成是异步的、多条入口会并发到达 ⇒ 不串行会念乱顺序（A 慢 B 快则 B 先出声）");
+ok(!/summary\.sentences === 0|SUMMARY_EMPTY_NOTICE/.test(codeOnlyTs(announceHook)),
+  "⛔ 「整段是代码就看屏幕」那句兜底文案已随汇总播报一起删除（现在没稿就不念，不补任何提示）");
 ok(/response\.status === 416[\s\S]{0,420}?await rename\(workPath, destPath\)/.test(store),
   "downloadOnce 处理 416：`.part` 已完整（上次 rename 失败）时校验后提拔成最终文件（否则那份完整文件永远卡住）");
 ok(/if \(sha256 && \(await fileShaOrEmpty\(workPath\)\) === sha256\)/.test(store),
@@ -357,8 +381,9 @@ ok(/if \(sha256 && \(await fileShaOrEmpty\(workPath\)\) === sha256\)/.test(store
 ok(/const staging = join\(modelsRoot, `\.staging-\$\{targetName\}`\)/.test(store)
   && !/\.staging-\$\{targetName\}-\$\{Date\.now/.test(store),
   "暂存目录名**确定性**（每次尝试开头就地清掉 ⇒ 崩溃残留不累积、也不被算进模型体积）");
-ok(/const announce = settings\.announce \?\? \{ live: true, summary: false \}/.test(announceCard),
-  "设置卡片对 announce 做兜底（老主进程回包缺字段时不许把整页打成白屏）");
+ok(/const announce: any = settings\.announce \?\? \{ enabled: true \}/.test(announceCard)
+  && /typeof announce\.enabled === "boolean"/.test(announceCard),
+  "设置卡片对 announce 做兜底（老主进程回包缺字段/还是旧形状时不许把整页打成白屏，也不许显示成「关着」）");
 
 /* ── ⑫ 播报稿：内容由 Codex 自己写（10-09 用户：「语气过于平淡」的解药）──────
    契约（`​`voice`​ 围栏）横跨 4 个文件：引擎指令（写什么）/ `voice-script.mjs`（怎么认）/
@@ -388,29 +413,27 @@ ok(!/still write that sentence in your reply text/.test(codeOnlyTs(devInstr))
   "⛔ 三处文案都不再要求「把播报句写进正文」—— 那正是用户报的「自己给自己叠一遍」（写进正文就会被念两遍）");
 ok(/do NOT also paste it into your reply/.test(devInstr) && /别再原样复述/.test(rpcSrcForContract),
   "反向要求写清楚：这句是说给耳朵的，正文别再原样复述（只写在提示里不够 —— 模型看不到守卫，靠文案）");
-ok(/if \(!stripperRef\.current\) stripperRef\.current = createVoiceScriptStripper\(\)/.test(announceHook)
-  && /stripperRef\.current\.push\(String\(delta/.test(announceHook)
-  && /stripperRef\.current\?\.flush\(\)/.test(announceHook),
-  "实时正文：流式剥离器接在**断句之前**（否则那块要么念两遍、要么把围栏符号念出来）");
-ok(/resolveAnnounceSummary\(String\(finalText/.test(announceHook) && /if \(summary\.text\) await speak/.test(announceHook),
-  "汇总播报：优先念模型写的稿（`resolveAnnounceSummary` = 唯一裁决点），没写才退回本机压缩");
+ok(!/stripperRef|chunkerRef|createSentenceChunker|feedDelta/.test(codeOnlyTs(announceHook)),
+  "⛔ 非通话链路**没有**正文流式链（剥离器/断句器/feedDelta 全删）—— 用户令「运行的正文不用播报了」");
+ok(/resolveAnnounceSummary\(String\(finalText/.test(announceHook) && /if \(script\.text\) await speak/.test(announceHook),
+  "结束只念模型写的播报稿（`resolveAnnounceSummary` = 唯一裁决点；没写 ⇒ 什么都不念）");
+ok(/if \(!cfgRef\.current\.enabled\) return;/.test(announceHook) && /if \(!cfgRef\.current\.enabled\) \{ clearSpokenKeys\(\); return; \}/.test(announceHook),
+  "播报稿受总开关门控（关掉连收尾都不做）");
 ok(/stripVoiceScript\(children\)/.test(markdownTsx) && /hasWidgetFence\(text\)/.test(markdownTsx),
   "显示层在**渲染前**整块剥掉播报稿（Markdown 是唯一渲染入口；漏这一步 = 屏幕上多一段只有耳朵该听的话）");
-/* 真跑：播报稿解析的三张真值表（'alive' 版本 —— 注释声称能干的不算，跑出来算） */
+/* 真跑：播报稿解析 + 流式剥离（'alive' 版本 —— 注释声称能干的不算，跑出来算） */
 {
   const withScript = "正文交代完了。\n\n```voice\n改完了，这回真能跑起来了。\n```\n";
-  const noScript = "正文交代完了，没有播报稿。";
   const okExtract = extractVoiceScript(withScript).text === "改完了，这回真能跑起来了。";
-  const okPriority = resolveAnnounceSummary(withScript).source === "script";
-  const okFallback = resolveAnnounceSummary(noScript).source === "fallback";
-  // token 切分（`​`​`​`​` / voice / 正文 分三帧到）：中间那帧不许把半截围栏当正文吐给 TTS
+  const okScriptOnly = resolveAnnounceSummary(withScript).text === "改完了，这回真能跑起来了。";
+  // token 切分（````` / voice / 正文 分三帧到）：中间那帧不许把半截围栏当正文吐给 TTS
   const stripper = createVoiceScriptStripper();
   const frames = [stripper.push("```"), stripper.push("voice"), stripper.push("\n背后的\n"), stripper.flush()];
   const okStream = frames.every((piece) => piece === "");
   /* ⛔ push() 是「整行才吐」的：没换行就按住（这正是半截围栏不会被念出来的原因）⇒ 这里必须带换行。 */
   const okKeepVisible = stripper.push("正文还在念。\n") === "正文还在念。\n";
-  ok(okExtract && okPriority && okFallback && okStream && okKeepVisible,
-    "真跑：提取 / 优先级（有稿念稿·无稿压缩）/ token 切分下的流式剥离 都对");
+  ok(okExtract && okScriptOnly && okStream && okKeepVisible,
+    "真跑：提取 / 只认播报稿 / token 切分下的流式剥离 都对（通话链靠这套剥离器不把围栏念出来）");
   ok(stripVoiceScript(withScript).trim() === "正文交代完了。" && !stripVoiceScript(withScript).includes("voice"),
     "真跑：屏幕显示只剩正文（围栏连同播报稿整块消失，不留半截草稿）");
   /* 告知文案本身会作为**用户消息**被渲染 ⇒ 里面绝不能出现真正的 voice 围栏
@@ -447,8 +470,8 @@ ok((/VOICE_ANNOUNCE_ON_TAG = "【语音播报已开启】"/.test(noticeTs) && /V
 ok(/setAnnounceNoticeHandler/.test(bus) && /setAnnounceNoticeHandler\(/.test(bridgeTsx) && /voiceAnnounceNoticeText\(enabled\)/.test(bridgeTsx)
   && /<VoiceAnnounceNoticeBridge/.test(appViewSrc) && /notifyAnnounceToggle\(/.test(announceHook),
   "开关翻转 → 告知进当前会话（总线 → 桥翻文案 → App 发送；Model 据此才知道要不要写那段稿）");
-ok(/if \(prev && \(prev\.live !== live \|\| prev\.summary !== summary\)\)/.test(announceHook),
-  "首次读到设置**不发**告知（否则每次开窗口都往会话里塞一条「已开启」，用户什么都没干却被告知）");
+ok(/let prev: boolean \| null = null;/.test(announceHook) && /if \(prev !== null && prev !== enabled\) notifyAnnounceToggle\(enabled\);/.test(announceHook),
+  "首次读到设置**不发**告知（初值 null 而不是 false —— 否则每次开窗口都往会话里塞一条「已开启」）");
 const coreTools = read("electron/features/dispatch-core.ts");
 const rpcExec = read("electron/features/dispatch-rpc.ts");
 ok(/name: "voice_announce"/.test(coreTools) && /name: "voice_announce_stop"/.test(coreTools),
