@@ -379,7 +379,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           "调用宿主的其余内置能力。可用：scheduler_list / scheduler_save / scheduler_run / scheduler_delete（定时任务）；"
           + "knowledge_search / knowledge_add（项目知识库）；ui_component_search / ui_component_get（界面组件库）；"
           + "video_generate / video_status / video_concat（视频）；voice_generate（配音 WAV）；"
-          + "voice_announce（**立刻念一句话**给用户听，≤120 字，不必等本轮回复结束；实时语音通话中不可用）/ voice_announce_stop（立刻停止播报、清掉排队）；"
+          + "voice_announce（**立刻念一句话**给用户听，≤120 字，不必等本轮回复结束；实时语音通话中不可用）/ voice_announce_stop（立刻停止播报、清掉排队）/ voice_speak_reply（把**本条回复的正文**边写边念 —— 不是每条都念，由你判断何时值得开口）；"
           + "workflow_read / workflow_writeback（工作流看板）；expert_list / expert_save / subagent_save（专家与子智能体管理）；"
           + "preview_3d（3D 模型预览：拿到 .glb/.gltf 后在应用内弹出可旋转查看的弹窗）；"
           + "wallpaper_set（壁纸：pattern/particles/vanta/custom 四类，Codex 可自助做图设壁纸）；"

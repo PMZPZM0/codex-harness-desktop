@@ -472,6 +472,17 @@ function dispatchMcpTools(): unknown[] {
         + "或你发现自己写得太长需要当场收声时调用。返回后仍可以继续正常回复（文字照常显示）。",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
     },
+    {
+      name: "voice_speak_reply",
+      description:
+        "把**这一条回复的正文**在生成过程中念出来（不用把文字传进来，读的就是你正在写的回复）。"
+        + "⛔ 不是每条回复都要念 —— 只在**值得开口**的时候用：用户在催 / 你已经改了好几轮还没做好 / "
+        + "当前步骤很关键（有风险、要花很久、需要用户盯着）/ 你有自己的判断想说给用户听。"
+        + "判定权在你：不必为了「礼貌」每轮都调，也别在该说的时候一声不响。"
+        + "⛔ 只在**运行过程中**生效（从调用那一刻起，本条回复后续生成的正文逐句念）；"
+        + "回合结束那段播报稿不受影响。用户把「语音播报」总开关关掉时本工具会被拒绝。",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    },
   ];
 }
 

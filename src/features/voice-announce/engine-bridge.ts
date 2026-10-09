@@ -23,22 +23,26 @@ export function finalAgentText(params: any): string {
 /**
  * 事件路由的接缝。`activeThreadId` = 当前正在看的会话 id（由调用方从自己的 ref 现取）。
  *
- * ⛔ 没人订阅时直接返回：这是**流式热路径**（每个引擎事件都会走到），不能白付字符串处理。
- * ⛔ 10-09 第二轮：正文 delta **不再转发**（流式逐句播报已删除）—— 这里只剩「回合结束」。
- *    保留函数而不是就地删掉：事件路由的调用点是**一处**（`part05`），引擎事件形态的变化
- *    收敛在这个文件里，路由那侧不必知道播报板块现在认什么。
+ * ⛔ 没人订阅时直接返回：这是**流式热路径**（每个 delta 都会走到），不能白付字符串处理。
  */
 export function publishEngineAnnounce(method: string, params: any, activeThreadId: string): void {
-  if (method !== "turn/completed") return;
   if (!announceListenerCount()) return;
   const threadId = String(params?.threadId ?? "");
   const current = String(activeThreadId ?? "");
   if (!threadId || !current || threadId !== current) return;
-  const status = String(params?.turn?.status ?? "");
-  publishAnnounceEvent({
-    type: "turnDone",
-    threadId,
-    text: finalAgentText(params),
-    aborted: status === "interrupted" || status === "failed",
-  });
+
+  if (method === "item/agentMessage/delta") {
+    const text = String(params?.delta ?? "");
+    if (text) publishAnnounceEvent({ type: "delta", threadId, text });
+    return;
+  }
+  if (method === "turn/completed") {
+    const status = String(params?.turn?.status ?? "");
+    publishAnnounceEvent({
+      type: "turnDone",
+      threadId,
+      text: finalAgentText(params),
+      aborted: status === "interrupted" || status === "failed",
+    });
+  }
 }

@@ -14,10 +14,13 @@
 
 export type AnnounceEvent =
   /**
-   * 回合结束：带上**最终回复原文**，供「结束播报稿」解析后朗读。
-   * ⛔ 10-09 第二轮起**没有 delta 事件**了：正文流式逐句播报整条删除（用户令「运行的正文…不用播报了」），
-   *    这里只留「回合结束」与「模型主动插播」两个来源。
+   * 正文流式增量（只在**当前会话**上转发；后台会话的输出不该被念出来）。
+   * ⛔ 10-09 第五轮恢复：正文朗读**由 Codex 逐条决定**（`voice_speak_reply` 工具标记本回合），
+   *    所以这条通道回来了 —— 但消费者只有"被标记的回合"才真的念（不是"有事件就念"）。
+   *    上一轮（第四轮）删它是因为当时正文一律不念；现在它有了受控的消费者，不再是死契约。
    */
+  | { type: "delta"; threadId: string; text: string }
+  /** 回合结束：带上**最终回复原文**，供「结束播报稿」解析后朗读 */
   | { type: "turnDone"; threadId: string; text: string; aborted: boolean }
   /**
    * 模型**主动**插播一句话（`voice_announce` 工具，10-09）。
@@ -70,8 +73,8 @@ export type AnnounceStatus = {
   current: string;
   /** 还在排队的段数（不含正在念的这一句） */
   pending: number;
-  /** 这一轮的来源：结束播报稿 / 模型主动插播（10-09 第二轮起没有「正文实时」了） */
-  source: "" | "summary" | "tool";
+  /** 这一轮的来源：正文实时（Codex 逐条决定）/ 结束播报稿 / 模型主动插播 */
+  source: "" | "live" | "summary" | "tool";
   /** 最近一次是否是被主动掐断的（用于文案切换；调用方自己复位） */
   stopped: boolean;
 };
