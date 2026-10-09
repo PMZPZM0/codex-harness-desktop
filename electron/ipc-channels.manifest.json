@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
-  "generatedAt": "2026-10-06",
-  "count": 428,
+  "generatedAt": "2026-10-09",
+  "count": 431,
   "channels": [
     {
       "name": "request",
@@ -4251,6 +4251,36 @@
       "invokeArgs": "",
       "cast": null,
       "note": "全量版本要点（新手引导 → 版本更新日志用）：数据同 whats-new-notes.ts 单一真相源；GitHub Release 链接在主进程拼好"
+    },
+    {
+      "name": "pollConfigRead",
+      "channel": "poll:config-read",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ intervalMs: number; timeoutMs: number; maxRetry: number }>",
+      "invokeArgs": "",
+      "cast": "Promise<{ intervalMs: number; timeoutMs: number; maxRetry: number }>",
+      "note": "10-09 轮询板块：读「间隔 / 超时上限 / 失败重试次数」（真相源在 userData/poll-settings.json）"
+    },
+    {
+      "name": "pollConfigSave",
+      "channel": "poll:config-save",
+      "paramsImpl": "input: { intervalMs?: number; timeoutMs?: number; maxRetry?: number }",
+      "paramsDecl": "input: { intervalMs?: number; timeoutMs?: number; maxRetry?: number }",
+      "returns": "Promise<{ intervalMs: number; timeoutMs: number; maxRetry: number }>",
+      "invokeArgs": "input",
+      "cast": "Promise<{ intervalMs: number; timeoutMs: number; maxRetry: number }>",
+      "note": "10-09 保存轮询配置（会先过钳制：超时≥间隔×2）—— 返回**钳制后**的真值，渲染层照它回显"
+    },
+    {
+      "name": "pollAbort",
+      "channel": "poll:abort",
+      "paramsImpl": "input: { taskId: string }",
+      "paramsDecl": "input: { taskId: string }",
+      "returns": "Promise<{ ok: boolean; aborted: boolean }>",
+      "invokeArgs": "input",
+      "cast": "Promise<{ ok: boolean; aborted: boolean }>",
+      "note": "10-09 用户在界面上按「中止」→ 主进程的 wait 循环停下（任务本身不会被撤销）"
     }
   ]
 }

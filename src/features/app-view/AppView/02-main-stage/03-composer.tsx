@@ -140,6 +140,7 @@ import {
 } from "lucide-react";
 import VoiceWaveform from "../../../../components/VoiceWaveform";
 import { VoiceAnnounceIndicator } from "../../../voice-announce";
+import { BackgroundTaskCapsule } from "../../../polling";
 import { Markdown, MdCode, MdBlock, FilePreviewCode } from "../../../markdown";
 import { QueuedMessageList, FoldHandlers, TurnFoldStream } from "../../../session-queue";
 import { GoalBar, TurnStatusCapsule } from "../../../status";
@@ -512,6 +513,11 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                       用户看不见念到哪、也喊不停 ⇒ 这条给出当前句 + 待播数 + 停止按钮。
                       播报一旦有东西在念就出现，念完自动收起 —— 平时不占任何 DOM。 */}
                   <VoiceAnnounceIndicator />
+                  {/* 后台任务胶囊（10-09）：输入框**左上角**「N 个后台任务运行中」，无任务时整块不渲染。
+                      ⛔ 放在卡片栈**最下面一行**（紧挨输入框上沿）：它和排队/审批/限流那些条一样是
+                      栈里的普通一行（上下排序、不互相遮），别做成浮层 —— 浮层会盖住上面那几条。
+                      面板向上展开、宽度随 `.composer-wrap`（= 输入框宽度），最多 3 行、超出滚动。 */}
+                  <BackgroundTaskCapsule threadId={thread?.id ?? ""} />
                   <ComposerComposerForm app={app} />
                   {isEmpty && (
                     <div className="suggest-row">

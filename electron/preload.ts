@@ -628,6 +628,12 @@ contextBridge.exposeInMainWorld("codex", {
   whatsNewAck: (version: string) => __ipc("whatsnew:ack", 1, [version]),
   /* 全量版本要点（新手引导 → 版本更新日志用）：数据同 whats-new-notes.ts 单一真相源；GitHub Release 链接在主进程拼好 */
   whatsNewHistory: () => __ipc("whatsnew:history", 0, []),
+  /* 10-09 轮询板块：读「间隔 / 超时上限 / 失败重试次数」（真相源在 userData/poll-settings.json） */
+  pollConfigRead: () => __ipc("poll:config-read", 0, []) as Promise<{ intervalMs: number; timeoutMs: number; maxRetry: number }>,
+  /* 10-09 保存轮询配置（会先过钳制：超时≥间隔×2）—— 返回**钳制后**的真值，渲染层照它回显 */
+  pollConfigSave: (input: { intervalMs?: number; timeoutMs?: number; maxRetry?: number }) => __ipc("poll:config-save", 0, [input]) as Promise<{ intervalMs: number; timeoutMs: number; maxRetry: number }>,
+  /* 10-09 用户在界面上按「中止」→ 主进程的 wait 循环停下（任务本身不会被撤销） */
+  pollAbort: (input: { taskId: string }) => __ipc("poll:abort", 1, [input]) as Promise<{ ok: boolean; aborted: boolean }>,
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

@@ -548,6 +548,13 @@
       "config": null
     },
     {
+      "id": "poll",
+      "enabled": true,
+      "file": "features/poll-ipc.ts",
+      "export": "pollFeature",
+      "config": null
+    },
+    {
       "id": "voice",
       "enabled": true,
       "file": "features/voice-ipc.ts",

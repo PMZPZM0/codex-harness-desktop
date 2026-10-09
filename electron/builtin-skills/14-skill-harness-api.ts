@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（85 个能力域 / 428 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（86 个能力域 / 431 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -19,7 +19,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 - ⛔⛔ **这些通道不是模型能直接调用的工具**（09-28 加：用户问「你会不会定时任务 / 为什么建不了」，模型据此误解过）。它们只有**应用界面**（按钮 / 设置页）会调。模型在会话里能用的只有三类：① 内置调度 MCP 暴露的**真工具**（下一段的清单）；② 各技能正文教的流程；③ 命令行（node 脚本 / \`codex\` 子命令）。
   **内置调度 MCP 当前暴露的工具**（09-29 现状；实际以 tools/list 返回为准）：
   · 调度：\`scheduler_save\`（建定时任务，\`threadId:"current"\` = 就在当前会话里续聊执行）/ \`scheduler_list\` / \`scheduler_run\` / \`scheduler_delete\`
-  · 媒体：\`image_generate\`（生图，\`count\` 1–4 并发出变体，落盘返回本地路径）/ \`video_generate\`（提交视频任务，**立即返回 jobId，不等待**；\`video\` 参数可传白模预演参考片的公网 URL，配 Seedance 2.0/2.5 渲染）/ \`video_status\`（查任务；成功会自动下载落盘）/ \`video_concat\`（把多镜片段按给定顺序拼成成片）/ \`voice_generate\`（台词合成配音 WAV，落盘返回路径；语音模型未下载时报错并指路「设置 → 语音」）
+  · 媒体：\`image_generate\`（生图，\`count\` 1–4 并发出变体，落盘返回本地路径）/ \`video_generate\`（提交视频任务，**立即返回 jobId，不等待**；\`video\` 参数可传白模预演参考片的公网 URL，配 Seedance 2.0/2.5 渲染）/ \`video_status\`（查任务；成功会自动下载落盘；给 \`wait: true\` 就**由宿主一直查到出片/失败/超时**再返回，别自己写循环反复调用）/ \`video_concat\`（把多镜片段按给定顺序拼成成片）/ \`voice_generate\`（台词合成配音 WAV，落盘返回路径；语音模型未下载时报错并指路「设置 → 语音」）
   · 语音播报（10-09）：\`voice_announce\`（**立刻念一句话**给用户听 —— 插播，不必等本轮回复结束；≤120 字；实时语音通话中不可用，那时直接写进回复就会被念出来。⚠️ 即时发送、不等回执：没出声不会报错 ⇒ 别据此向用户声称「已经说了」，那句话照常用文字写出来）/ \`voice_announce_stop\`（立刻停止播报、清掉排队待念的内容）
   · 子智能体：\`agent_invoke\`（派一个干净上下文的自己）/ \`agent_archive_sessions\` / \`subagent_save\`（新建子智能体代理，name+systemPrompt 必填）
   · 专家：\`expert_save\`（创建/更新专家或专家团——displayNameZh + leadName + leadSystemPrompt 必填，多角色加 members；同 teamId 即更新）/ \`expert_list\`（列已有专家）。用户说「帮我建一个 XX 专家 / 专家团」时直接用它，建完复述 teamId；⛔ 内置六专家（知微/呈象/洞明/鲁班/画意/剪承团）有固定 teamId，别覆盖
@@ -105,6 +105,10 @@ Bot 流式输出转发
 ### video（7 通道）
 内置视频生成接口（国内外 8 家：可灵/万相/Seedance/CogVideoX/MiniMax/Runway/Luma/Veo）：submit 提交 → poll 轮询 → download 落工作区；凭证存 userData/video-providers.json
 通道：video:providers, video:config-read, video:config-save, video:submit, video:poll, video:download, video:concat
+
+### poll（3 通道）
+轮询板块的配置与中止（间隔 / 超时上限 / 失败重试次数，存 userData/poll-settings.json；poll:abort = 用户在界面上按「中止」时停掉主进程的等待循环）。⛔ 这是**轮询行为**的配置，不是任务本身 —— 提交/查询任务走 video 域那套工具
+通道：poll:abort, poll:config-read, poll:config-save
 
 ### queue-timer（2 通道）
 排队消息的定时发送（主进程定时器；窗口最小化 / 被遮挡时不被 Chromium 节流）

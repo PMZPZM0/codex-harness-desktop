@@ -28,6 +28,26 @@ import { mutableState, readBuiltinPlugins, scheduler } from "../main";
 import { generateImageResilient } from "./builtin-ipc";
 import { uiverseSearch, uiverseGet } from "./uiverse-library";
 import { concatVideosCore, downloadVideoCore, findVideoJob, listVideoJobs, pollVideoCore, rememberVideoJob, submitVideoCore, updateVideoJob, videoProviderViews } from "./video-gen";
+import { backoffMs, clearPollAbort, isPollAborted, normalizePollConfig, readPollConfig } from "../poll-config";
+/** 轮询等待用（10-09）：主进程里 sleep 不受 Chromium 后台节流影响，wait 循环的间隔才准。 */
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Math.floor(Number(ms) || 0))));
+}
+
+/**
+ * 可打断的等待（10-09）：切成 250ms 小段，段间看一眼中止闸。
+ * ⛔ 不能一觉睡满整个间隔 —— 间隔可能配到 2 分钟，用户按了「中止」却要等两分钟才停，
+ *    那就不叫"随时中止"了（面板上的按钮会像点了没反应）。
+ */
+async function sleepUntilPolled(taskId: string, ms: number): Promise<void> {
+  const total = Math.max(0, Math.floor(Number(ms) || 0));
+  const step = 250;
+  for (let waited = 0; waited < total; waited += step) {
+    await sleepMs(Math.min(step, total - waited));
+    if (isPollAborted(taskId)) return;
+  }
+}
+
 export async function dispatchRpcCall(name: unknown, args: Record<string, unknown>, explicitCallerThreadId?: string): Promise<{ ok: boolean; output?: string; error?: string }> {
   /* ── 调用者身份有两条来源，**都要**是引擎侧的事实，模型伪造不了：
      · 旁证路径（内置 MCP，`explicitCallerThreadId` 不传）：引擎把调用转发给 MCP 服务器的同一时刻
@@ -518,7 +538,19 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
       submittedAt: Date.now(),
     });
     const providerName = providers.find((view) => view.id === providerId)?.name ?? providerId;
-    return { ok: true, output: `已提交给 ${providerName}（${mode === "i2v" ? "图生视频" : "文生视频"}），jobId=${jobId}。\n这是异步任务，通常要几分钟 —— 你可以先做别的事，之后用 video_status 查进度（给这个 jobId）。` };
+    /* 提交即开一张轮询卡（10-09）：任务从这一刻起就在厂商那边跑着，用户应该立刻能看见
+       「有个异步任务在跑」，而不是等模型第一次调 video_status 才冒出来。
+       ⛔ managed:false —— 此刻**没有人在等**（没人循环查询），间隔只能事后实测出来。 */
+    broadcastHarnessEvent({
+      type: "poll",
+      action: "start",
+      taskId: jobId,
+      threadId: callerThreadId,
+      title: `视频生成 · ${providerName}`,
+      detail: prompt.slice(0, 120),
+      managed: false,
+    });
+    return { ok: true, output: `已提交给 ${providerName}（${mode === "i2v" ? "图生视频" : "文生视频"}），jobId=${jobId}。\n这是异步任务，通常要几分钟 —— 你可以先做别的事，之后用 video_status 查进度（给这个 jobId）。想一直等到出片就加 wait: true（按「设置」里那套间隔/超时自动轮询，用户可随时中止）。` };
   }
   if (name === "video_status") {
     const jobId = String(args.jobId ?? "").trim();
@@ -538,30 +570,94 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     const job = findVideoJob(jobId);
     const providerId = String(args.providerId || job?.providerId || "");
     if (!providerId) return { ok: false, error: `找不到任务 ${jobId} 的厂商记录 —— 请带上 providerId 参数` };
-    const result = await pollVideoCore({ providerId, jobId });
-    // ⛔ queued / running / pending 都算"还在跑" —— 只有终态才往下走（源里状态枚举比 pending 多）
-    if (result.status !== "succeeded" && result.status !== "failed") {
-      return { ok: true, output: `任务 ${jobId} 还在生成中（${providerId}）—— 过一会儿再查一次。` };
-    }
-    if (result.status === "failed") {
-      updateVideoJob(jobId, { status: "failed", error: result.error });
-      return { ok: false, error: `生成失败：${result.error ?? "厂商未给原因"}` };
-    }
-    const url = String(result.url || "");
-    const workspace = String(args.workspace || job?.workspace || threadCwd.get(callerThreadId) || "").trim();
-    if (url && workspace) {
-      try {
-        const name = String(args.name || job?.name || `video-${jobId.slice(0, 8)}.mp4`);
-        const saved = await downloadVideoCore({ url, workspace, name });
-        updateVideoJob(jobId, { status: "succeeded", url, path: saved.path });
-        return { ok: true, output: `已生成并落盘：${saved.path}（${(saved.bytes / 1048576).toFixed(1)} MB）` };
-      } catch (error) {
-        updateVideoJob(jobId, { status: "succeeded", url });
-        return { ok: true, output: `视频已生成，但下载落盘失败（${(error as Error)?.message ?? error}）。原始地址：${url}` };
+    /* ── 轮询板块（10-09）：把"查一次"变成"看得见的一次查询"，并可选**托管等待** ──────────
+       ① 每一次查询都广播一轮（poll:round）⇒ 对话流里那张卡能逐轮记账 —— 模型自己循环调用
+          时也一样聚合到同一张卡上（这正是需求要的"轮询过程"，不是 N 张重复的工具卡）；
+       ② `wait: true` ⇒ 主进程按配置循环查到出片/失败/超时为止，**查询失败自动重试**
+          （指数退避，超过 maxRetry 才判失败），用户可随时中止（poll:abort）。
+       ⛔ 终态一律广播 poll:end：卡上要给出结论（成功产物 / 失败原因 / 超时 / 已中止），
+          而"还在跑"不广播 end —— 那不是结论。
+       ⛔ 成功后照常走原有的下载落盘分支 ⇒ 最终结果仍由模型**正常写进对话**（工具返回值不变）。 */
+    const cfg = readPollConfig();
+    const wait = args.wait === true || String(args.wait ?? "") === "true";
+    const local = normalizePollConfig({ intervalMs: Number(args.intervalMs) || undefined, timeoutMs: Number(args.timeoutMs) || undefined, maxRetry: Number.isFinite(Number(args.maxRetry)) ? Number(args.maxRetry) : undefined }, cfg);
+    const providerName = videoProviderViews().find((view) => view.id === providerId)?.name ?? providerId;
+    const startedAt = Date.now();
+    const emit = (payload: Record<string, unknown>) => broadcastHarnessEvent({ type: "poll", taskId: jobId, threadId: callerThreadId, ...payload });
+    emit({
+      action: "start",
+      title: `视频生成 · ${providerName}`,
+      detail: String(job?.prompt ?? "").slice(0, 120),
+      intervalMs: local.intervalMs,
+      timeoutMs: local.timeoutMs,
+      maxRetry: local.maxRetry,
+      managed: wait,
+    });
+    // ⛔ 开等之前先清一次中止登记：上一次 wait 被用户中止过的话，标记会留在表里 ⇒
+    //    这次一进来就"已被中止"（明明没人按）。中止只对**这一次**等待生效。
+    clearPollAbort(jobId);
+    let failures = 0;
+    for (;;) {
+      // 中止闸：每轮开头查一次（用户按了「中止」就立刻收，不再发下一次查询）
+      if (isPollAborted(jobId)) {
+        emit({ action: "end", status: "aborted", error: "用户中止了这次轮询" });
+        clearPollAbort(jobId);
+        return { ok: false, error: `已按用户要求中止轮询（jobId=${jobId}）。任务本身还在厂商那边，之后用同一个 jobId 再查即可，不会被重复提交。` };
       }
+      let result: { status: string; url?: string; error?: string } | null = null;
+      try {
+        result = await pollVideoCore({ providerId, jobId });
+        failures = 0;
+      } catch (error) {
+        failures += 1;
+        const reason = String((error as Error)?.message ?? error).slice(0, 160);
+        emit({ action: "round", ok: false, error: reason, summary: `查询失败（第 ${failures} 次）` });
+        if (failures > local.maxRetry) {
+          emit({ action: "end", status: "failed", error: `连续 ${failures} 次查询失败：${reason}` });
+          return { ok: false, error: `查询任务失败（已重试 ${local.maxRetry} 次）：${reason}` };
+        }
+        // 失败自动重试：间隔按指数退避拉长（对方在限流时我们不该继续猛打）
+        await sleepUntilPolled(jobId, backoffMs(local.intervalMs, failures));
+        continue;
+      }
+      const status = String(result?.status ?? "");
+      const progressText = status === "succeeded" ? "已生成" : status === "failed" ? "生成失败" : "生成中";
+      emit({ action: "round", ok: status !== "failed", summary: progressText, progress: progressText });
+      if (status === "failed") {
+        updateVideoJob(jobId, { status: "failed", error: result?.error });
+        emit({ action: "end", status: "failed", error: result?.error ?? "厂商未给原因" });
+        return { ok: false, error: `生成失败：${result?.error ?? "厂商未给原因"}` };
+      }
+      // ⛔ queued / running / pending 都算"还在跑" —— 只有终态才往下走（源里状态枚举比 pending 多）
+      if (status !== "succeeded") {
+        if (!wait) return { ok: true, output: `任务 ${jobId} 还在生成中（${providerId}）—— 过一会儿再查一次。` };
+        if (Date.now() - startedAt >= local.timeoutMs) {
+          const waited = Math.round(local.timeoutMs / 1000);
+          emit({ action: "end", status: "timeout", error: `已等 ${waited} 秒仍无结果` });
+          return { ok: false, error: `等了 ${waited} 秒还没出片（超时上限）。任务可能还在厂商那边跑着 —— 之后用同一个 jobId 再查一次即可，不会重复提交。` };
+        }
+        await sleepUntilPolled(jobId, local.intervalMs);
+        continue;
+      }
+      const url = String(result.url || "");
+      const workspace = String(args.workspace || job?.workspace || threadCwd.get(callerThreadId) || "").trim();
+      if (url && workspace) {
+        try {
+          const name = String(args.name || job?.name || `video-${jobId.slice(0, 8)}.mp4`);
+          const saved = await downloadVideoCore({ url, workspace, name });
+          updateVideoJob(jobId, { status: "succeeded", url, path: saved.path });
+          emit({ action: "end", status: "success", result: saved.path });
+          return { ok: true, output: `已生成并落盘：${saved.path}（${(saved.bytes / 1048576).toFixed(1)} MB）` };
+        } catch (error) {
+          updateVideoJob(jobId, { status: "succeeded", url });
+          emit({ action: "end", status: "success", result: url });
+          return { ok: true, output: `视频已生成，但下载落盘失败（${(error as Error)?.message ?? error}）。原始地址：${url}` };
+        }
+      }
+      updateVideoJob(jobId, { status: "succeeded", url });
+      emit({ action: "end", status: "success", result: url });
+      return { ok: true, output: `视频已生成：${url}${workspace ? "" : "（没有工作目录，未落盘；把工作目录给我可以再下载）"}` };
     }
-    updateVideoJob(jobId, { status: "succeeded", url });
-    return { ok: true, output: `视频已生成：${url}${workspace ? "" : "（没有工作目录，未落盘；把工作目录给我可以再下载）"}` };
   }
   if (name === "video_concat") {
     // 整片合并（09-29）：把各镜片段按**参数给的顺序**拼成一条成片。
