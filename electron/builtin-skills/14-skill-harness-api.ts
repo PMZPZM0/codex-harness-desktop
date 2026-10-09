@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（86 个能力域 / 431 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（86 个能力域 / 432 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -54,9 +54,9 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 ## 能力域
 
-### pet（10 通道）
+### pet（11 通道）
 桌面宠物（官方 Codex 宠物格式：pet.json + 8×9 图集）：list 发现四目录宠物 / settings-get·set 开关与选择 / roots 目录清单 / open-dir / import 从只读目录导入用户区 / toggle·show·hide 显示控制。宠物本体渲染在独立透明置顶浮窗，宿主侧只做发现与设置
-通道：pet:list, pet:settings-get, pet:settings-set, pet:state, pet:roots, pet:open-dir, pet:import, pet:toggle, pet:show, pet:hide
+通道：pet:list, pet:settings-get, pet:settings-set, pet:state, pet:roots, pet:open-dir, pet:import, pet:toggle, pet:show, pet:hide, pet:interactive-rect
 
 ### drama-canvas（7 通道）
 AI 短剧无限画布：把工作流拆成卡片摆在无限画布上（生图/短剧/白模/3D 建模/电商出图各类模板），连线表示「这份输入喂给下一步」。**画布可被模型读写**：board-sync 由画布自动镜像快照，模型用真工具 workflow_read 读内容、workflow_writeback 把产物写回节点（卡片实时显示）——「按画布搭的流程跑」是可行请求
