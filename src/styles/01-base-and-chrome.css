@@ -235,6 +235,10 @@
 
 :root {
   color: #23231f;
+  /* 品牌字流动渐变（10-09）：色序取自**本应用自己的图标母版**（build/icon-a-spark.svg 的
+     蓝色渐变 #4C8DF6 → #2F6BDD → #17439B，末段提亮制造可见的流动），末尾回起始色 ⇒ 循环无缝。
+     ⛔ 侧栏与登录页两处品牌字都引用这一个变量，别再各写一份色标。 */
+  --brand-ink: linear-gradient(100deg, #4c8df6, #2f6bdd, #17439b, #6fa8ff, #4c8df6);
   font-synthesis: none;
   text-rendering: optimizelegibility;
   letter-spacing: 0;
@@ -517,6 +521,12 @@ button.brand-mark.sidebar-toggle:hover {
   html:not([data-motion="force"]) .sidebar-toggle-arrow {
     transition: none !important;
   }
+  /* 10-09：品牌字的流动渐变也要静音 —— `animation` 不是 `transition`，上面那条关不掉它。
+     两处品牌字（侧栏 / 登录页）同一条规则，免得只关半边。 */
+  html:not([data-motion="force"]) .brand-row .brand-name,
+  html:not([data-motion="force"]) .login-brand strong {
+    animation: none !important;
+  }
 }
 
 .panel-divider {
@@ -581,6 +591,36 @@ button.brand-mark.sidebar-toggle:hover {
 .brand-row span {
   color: var(--faint);
   font-size: 11px;
+}
+
+/* ── 品牌字（10-09 用户令）：删掉「Desktop」副行，字改成与图标同色系的**流动渐变** ─────────
+   ① 仍是真文本节点（可选中 / 无障碍可读 / 缩放不糊），渐变只是染色；
+   ② ⛔ 三件套缺一不可：`background-clip:text` + `-webkit-background-clip:text`
+      + `-webkit-text-fill-color:transparent`（少最后一条会只剩一块渐变底、字消失）；
+      `color: var(--text)` 是兜底 —— 渐变万一不生效也是实心字，不会"字消失"；
+   ③ 盒子高 **30px == `.brand-mark` 的尺寸**（用户要求「与 logo 上下等大」）⇒ 两平台
+      （含 mac 品牌行下移 32px 之后）行高都不变，不会挤动下方导航；
+   ④ 字体族**不写死**、继承全局栈 ⇒ mac 上自然落到系统字体；
+   ⑤ `background-size` 拉宽到 220% 才看得出流动。 */
+.brand-row .brand-name {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: .2px;
+  background-image: var(--brand-ink);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: var(--text);   /* 兜底：渐变万一不生效也是实心字，不会"字消失" */
+  animation: brand-ink-flow 7s linear infinite;
+}
+@keyframes brand-ink-flow {
+  from { background-position: 0% 50%; }
+  to { background-position: -220% 50%; }
 }
 .status-dot {
   background: var(--orange);

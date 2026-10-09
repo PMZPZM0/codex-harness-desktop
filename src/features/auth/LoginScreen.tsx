@@ -194,7 +194,7 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
   return (
     <div className="login-screen">
       <div className="login-card">
-        <div className="login-brand"><div className="brand-mark login-logo"><b className="">CH</b></div><div><strong>Codex Harness</strong><span>Desktop</span></div></div>
+        <div className="login-brand"><div className="brand-mark login-logo"><b className="">CH</b></div><div><strong>Codex Harness</strong></div></div>
         <h1>欢迎使用 Codex Harness</h1>
         <p className="login-sub">配置 API 即可开始；暂不登录可直接体验主界面</p>
 

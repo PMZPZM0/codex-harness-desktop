@@ -98,6 +98,25 @@ hover 回落 `--text` 保原行为）。⛔ **窗口控制钮（— □ ✕）�
 3. **语义色只表意**：`--ok` 只用于成功态，`--red` 只用于失败/危险。想"醒一点"请加大字号或用 `--accent`。
 4. `--accent-text` 必须配 `--accent` 底用（亮色下是白字蓝底、暗色下是**深字**浅蓝底——它是专门为了对比度反转的）。
 
+
+### 品牌字（流动渐变，10-09 立）
+
+侧栏品牌行与登录页品牌区共用同一套「彩色流动字」，**两处必须同源**：
+
+- **变量**：`--brand-ink`（定义在 `01-base-and-chrome.css` 的 `:root`）—— 色序取自本应用的
+  图标母版（`build/icon-a-spark.svg` 的蓝渐变 `#4C8DF6 → #2F6BDD → #17439B`，末段提亮
+  制造可见的流动），**末尾回到起始色** ⇒ 循环无缝、看不到"跳一下"。
+- **类名**：侧栏 `strong.brand-name`、登录页 `.login-brand strong`；两处都靠
+  `background-clip:text` + `-webkit-text-fill-color:transparent` 染字。⛔ 三件套缺一不可，
+  且必须留 `color: var(--text)` 兜底 —— 渐变失效时显示实心字，**绝不允许"字消失"**。
+- **尺寸**：`.brand-name` 盒子高 **30px == `.brand-mark` 的尺寸**（用户要求「与 logo 上下等大」）
+  ⇒ 两平台（含 mac 品牌行下移 32px 之后）行高都不变，不会挤动下方导航。
+- ⛔ **字体族不写死**，继承全局栈 —— mac 上自然落到系统字体（写死 `"Segoe UI"` 会在 mac
+  掉到兜底衬线）。这是本条唯一的 mac 适配要点。
+- **动效**：`brand-ink-flow` 7s 线性循环；`prefers-reduced-motion` 下静音，静音块带
+  `html:not([data-motion="force"])` 前缀（沿用本仓既有约定）。
+- ⛔ 品牌**副行「Desktop」已删**（10-09 用户令）—— 别再往品牌行里加第二行小字。
+
 ---
 
 ## Typography
