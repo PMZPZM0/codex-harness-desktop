@@ -148,16 +148,16 @@ ok(/const a = event\.settings\?\.announce/.test(hook) && /const a: any = raw\.an
 ok(/export function publishAnnounceEvent/.test(bus) && /export function subscribeAnnounce/.test(bus)
   && !/summarizeForSpeech|chunker/.test(bus),
   "基座总线只做转发（开关判定/断句/合成全在播报域里，别把逻辑塞进基座）");
-/* 10-09 第二轮：正文 delta 从**总线与转发器**里一起消失（不是"没人订阅但还在发"的死契约）。
-   ⛔ 负向断言必须过 codeOnly：本仓注释里引用旧代码片段是常态，裸匹配会把注释顶成假红。 */
-ok(!/type: "delta"/.test(codeOnlyTs(bus)) && !/item\/agentMessage\/delta/.test(codeOnlyTs(engineBridge))
-  && /if \(method !== "turn\/completed"\) return;/.test(engineBridge),
-  "⛔ 总线没有 delta 事件、转发器也不再认正文 delta（正文实时播报已整条删除 ⇒ 不许留死契约）");
-ok(/\| "summary" \| "tool"/.test(bus) && !/\| "live" \|/.test(codeOnlyTs(bus)),
-  "状态来源只剩「播报稿 / 插播」（`live` 已从联合类型里删掉）");
-ok(/正在念播报稿/.test(read("src/features/voice-announce/VoiceAnnounceIndicator.tsx"))
-  && !/正在念正文|正在念小结/.test(read("src/features/voice-announce/VoiceAnnounceIndicator.tsx")),
-  "状态条文案跟着改（不再有「正在念正文 / 正在念小结」）");
+/* 10-09 第五轮：正文 delta **回来了** —— 但这次是**受控**的：只有 Codex 用 `voice_speak_reply`
+   标记过本回合，delta 才真的被念。判据要同时钉住「通道在」与「开关在」（不然就又变回"每条都念"）。 */
+ok(/type: "delta"/.test(bus) && /item\/agentMessage\/delta/.test(engineBridge)
+  && /publishAnnounceEvent\(\{ type: "delta", threadId, text \}\)/.test(engineBridge),
+  "总线与转发器恢复 delta（正文朗读由 Codex 逐条决定 ⇒ 它有了受控消费者，不再是死契约）");
+ok(/source: "" \| "live" \| "summary" \| "tool"/.test(bus),
+  "状态来源含 `live`（Codex 决定念的正文）/ `summary`（结束播报稿）/ `tool`（插播）");
+ok(/正在念正文/.test(read("src/features/voice-announce/VoiceAnnounceIndicator.tsx"))
+  && /正在念播报稿/.test(read("src/features/voice-announce/VoiceAnnounceIndicator.tsx")),
+  "状态条文案含「正在念正文 / 正在念播报稿」（少了哪个用户就不知道在念什么）");
 const pubIdx = seg05.indexOf("publishEngineAnnounce(event.method");
 const streamIdx = seg05.indexOf("if (threadStreamMethods.has(method))");
 ok(pubIdx > 0 && streamIdx > 0 && pubIdx < streamIdx,
@@ -435,12 +435,40 @@ ok(!/still write that sentence in your reply text/.test(codeOnlyTs(devInstr))
   "⛔ 三处文案都不再要求「把播报句写进正文」—— 那正是用户报的「自己给自己叠一遍」（写进正文就会被念两遍）");
 ok(/do NOT also paste it into your reply/.test(devInstr) && /别再原样复述/.test(rpcSrcForContract),
   "反向要求写清楚：这句是说给耳朵的，正文别再原样复述（只写在提示里不够 —— 模型看不到守卫，靠文案）");
-ok(!/stripperRef|chunkerRef|createSentenceChunker|feedDelta/.test(codeOnlyTs(announceHook)),
-  "⛔ 非通话链路**没有**正文流式链（剥离器/断句器/feedDelta 全删）—— 用户令「运行的正文不用播报了」");
+/* ── 运行中念正文：**由 Codex 逐条决定**（10-09 第五轮，用户：「正文输出也可以进行播报，
+      但不是每条都需要，完全由 codex 决定」）────────────────────────────────────
+   ⛔ 这条最容易退化成"每条都念"（那就是用户上一轮明确否掉的形态）⇒ 判据必须钉住**门控**：
+      正文流式链存在、但只有 `speakLiveRef` 为真才念；标记只由工具广播设置、回合边界复位。 */
+ok(/const feedDelta = useCallback/.test(announceHook)
+  && /if \(!stripperRef\.current\) stripperRef\.current = createVoiceScriptStripper\(\)/.test(announceHook)
+  && /chunkerRef\.current\.push\(visible\)/.test(announceHook),
+  "正文流式链在（剥离器 → 断句器 → 朗读清洗 → 逐句念）—— Codex 决定念时必须真的有这条链");
+ok(/if \(!speakLiveRef\.current\) return;/.test(announceHook)
+  && announceHook.indexOf("if (!speakLiveRef.current) return;") < announceHook.indexOf("enqueueTask(() => feedDelta(event.text))"),
+  "⛔ delta **先过 `speakLiveRef` 门控**再进串行链：没被 Codex 标记的回合一个字都不念");
+/* ⛔ 两个门必须在**同一条分支里**按序检查 —— 拿全文件 `indexOf` 比顺序会被别的函数里的
+   同名语句骗到（`finishTurn` 里也有一句 `if (!cfgRef.current.enabled) return;`，实测顶成假红）。 */
+const deltaBranch = announceHook.slice(announceHook.indexOf('if (event.type === "delta")'), announceHook.indexOf('if (event.type === "toolSpeak")'));
+ok(deltaBranch.includes("if (!speakLiveRef.current) return;") && deltaBranch.includes("if (!cfgRef.current.enabled) return;")
+  && deltaBranch.indexOf("speakLiveRef.current") < deltaBranch.indexOf("cfgRef.current.enabled")
+  && deltaBranch.includes("enqueueTask(() => feedDelta(event.text))"),
+  "delta 分支：先过 `speakLiveRef`、再过**总开关**，然后才进串行链（用户关掉播报 ⇒ 正文也不念）");
+ok(/if \(payload\.action === "speak-reply"\)/.test(announceHook) && /speakLiveRef\.current = true;/.test(announceHook)
+  && /const live = speakLiveRef\.current;\s*\n\s*speakLiveRef\.current = false;/.test(announceHook),
+  "工具广播把本回合标记成「念正文」，**回合结束复位**（逐条生效，不会漏到下一轮）");
+const coreToolsForVoice = read("electron/features/dispatch-core.ts");
+ok(/name: "voice_speak_reply"/.test(coreToolsForVoice) && /name === "voice_speak_reply"/.test(rpcSrcForContract)
+  && /action: "speak-reply"/.test(rpcSrcForContract),
+  "工具在能力网关里注册、执行端真的广播标记（主进程看不到正文 ⇒ 只发信号，正文由渲染层念）");
+ok(/loadVoiceSettings\(app\.getPath\("userData"\)\)\.announce\.enabled === false/.test(rpcSrcForContract),
+  "总开关关着时工具**明确拒绝**并说清原因（不然模型以为念了、用户什么都没听到 = 谎报成功）");
+ok(/在催|几个人在催|用户在催/.test(coreToolsForVoice) && /判定权在你/.test(coreToolsForVoice),
+  "工具描述写清**什么时候该用**（用户在催 / 反复没做好 / 步骤关键 / 自己有话说）且判定权在模型");
 ok(/resolveAnnounceSummary\(String\(finalText/.test(announceHook) && /if \(script\.text\) await speak/.test(announceHook),
   "结束只念模型写的播报稿（`resolveAnnounceSummary` = 唯一裁决点；没写 ⇒ 什么都不念）");
-ok(/if \(!cfgRef\.current\.enabled\) return;/.test(announceHook) && /if \(!cfgRef\.current\.enabled\) \{ clearSpokenKeys\(\); return; \}/.test(announceHook),
-  "播报稿受总开关门控（关掉连收尾都不做）");
+ok(/const tail = stripperRef\.current\?\.flush\(\) \?\? ""/.test(announceHook)
+  && announceHook.indexOf("const tail = stripperRef.current?.flush()") < announceHook.indexOf("const script = resolveAnnounceSummary"),
+  "念过正文的回合：**先把流式链的尾句念完**再念播报稿（否则尾句永远丢）");
 ok(/stripVoiceScript\(children\)/.test(markdownTsx) && /hasWidgetFence\(text\)/.test(markdownTsx),
   "显示层在**渲染前**整块剥掉播报稿（Markdown 是唯一渲染入口；漏这一步 = 屏幕上多一段只有耳朵该听的话）");
 /* 真跑：播报稿解析 + 流式剥离（'alive' 版本 —— 注释声称能干的不算，跑出来算） */

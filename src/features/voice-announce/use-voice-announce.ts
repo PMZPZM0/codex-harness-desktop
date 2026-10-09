@@ -18,24 +18,26 @@
  *     不必在通话中也能合成；`voice:speak` 那条只在通话里有 worker），播放走本模块自己的
  *     AudioContext 队列。**不开麦克风**（只听不说）。
  *
- * ── 念什么（10-09 第二轮定稿）────────────────────────────────────────────────
- *   ① **播报稿**：模型在回复末尾写的 `voice` 围栏块（契约见 `src/lib/voice-script.mjs`），
- *      回合结束时念一次；**它没写就什么都不念**（不再回退到本机压缩摘要）。
- *   ② **主动插播**：模型调 `voice_announce` 工具（主进程广播 harness:event）⇒ 立即念，
- *      ⛔ **不看开关**（显式调用就是用户要听这一句）。
- *   ⛔ 正文（流式 delta）**一律不念** —— 那条链整个删除了，不是"换个开关"。
+ * ── 念什么（10-09 第五轮定稿）────────────────────────────────────────────────
+ *   ① **正文**（运行过程中逐句念）：⛔ **由 Codex 自己逐条决定**（`voice_speak_reply` 工具）——
+ *      用户在催、反复没做好、当前步骤重要、它自己有话要说这些情况下才会调；不是每条都念。
+ *      用户把播报总开关关掉时正文也不念（比插播更"自动"，必须尊重开关）。
+ *   ② **播报稿**：模型写在回复末尾的 `voice` 围栏块（契约见 `src/lib/voice-script.mjs`），
+ *      回合结束时念一次；**它没写就什么都不念**（不回退到本机压缩摘要 —— 那条已删除）。
+ *   ③ **主动插播**：模型调 `voice_announce`（≤120 字一句）⇒ 立即念，⛔ **不看开关**。
  *
  * ── 同回合去重（10-09 用户报「同一段内容重复播放好几次」）──────────────────────
- *   两条入口（工具插播 / 结束播报稿）可能送来同一段内容。裁决点在 `speak()`：**逐句**查重
- *   （`dedupeSpokenSentences`），同一句话在同回合只念第一遍；回合结束/被打断整表清零 ⇒
- *   跨回合「再说一遍」不受影响。详见 `spokenKeysRef` 注释。
+ *   三条入口（正文实时 / 工具插播 / 结束播报稿）可能送来同一段内容。裁决点在 `speak()`：
+ *   **逐句**查重（`dedupeSpokenSentences`），同一句话在同回合只念第一遍；回合结束/被打断整表清零
+ *   ⇒ 跨回合「再说一遍」不受影响。详见 `spokenKeysRef` 注释。
  *
  * ⛔ 语速/音色/音量取的都是**设置里的值**（不在这里另存一份）—— 单一真相源。
  * ⛔ 事件源是 `announce-bus`（由事件路由在**当前会话**上转发），不在本模块里解析引擎事件。
  */
 import { useCallback, useEffect, useRef } from "react";
+import { createSentenceChunker } from "../../lib/voice-aec.mjs";
 import { createSpeakFilter } from "../../lib/speak-text.mjs";
-import { dedupeSpokenSentences, resolveAnnounceSummary } from "../../lib/voice-script.mjs";
+import { createVoiceScriptStripper, dedupeSpokenSentences, resolveAnnounceSummary } from "../../lib/voice-script.mjs";
 import {
   notifyAnnounceToggle,
   publishAnnounceEvent,
@@ -57,6 +59,16 @@ const MAX_ANNOUNCE_BACKLOG = 4;
 export function useVoiceAnnounce(threadId: string = ""): void {
   /** 开关/音量（从设置读、经 voice:event 广播刷新；放 ref 里避免每次变化重建订阅） */
   const cfgRef = useRef<AnnounceCfg>({ enabled: true, volume: 1 });
+  /**
+   * 「本回合要不要把正文边写边念」——⛔ **由 Codex 自己决定**（`voice_speak_reply` 工具，
+   * 运行中广播 `voice-announce` / `action:"speak-reply"`）。不是每条回复都念，也不是用户开关控制：
+   * 用户在催得急、反复没做好、当前步骤重要、或者它自己觉得有话要说这些情况下才会调。
+   * 回合结束/被打断时复位（逐条生效，不会漏到下一轮）。
+   */
+  const speakLiveRef = useRef(false);
+  const stripperRef = useRef<any>(null);
+  const chunkerRef = useRef<any>(null);
+  const filterRef = useRef<any>(null);
   const ctxRef = useRef<AudioContext | null>(null);
   const queueRef = useRef<AudioBufferSourceNode[]>([]);
   /** 世代号：回合结束/新一轮开始时 +1，让「已经在 TTS 里合成中」的那半句回来时被丢弃 */
@@ -109,12 +121,21 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     });
   }, []);
 
+  /** 清空流式链的跨句状态（回合边界 / 被打断 / 停播时都要做，否则按住的半句会在下一轮被念出来）。
+   *  ⛔ 声明位置必须在 `stopPlayback` **之前**：依赖数组在 render 期求值，放后面会 TDZ 报错。 */
+  const resetLive = useCallback(() => {
+    stripperRef.current = null;
+    chunkerRef.current = null;
+    filterRef.current = null;
+  }, []);
+
   const stopPlayback = useCallback((byUser = false) => {
     epochRef.current += 1;
     for (const source of queueRef.current) {
       try { source.stop(); } catch { /* 已经播完 */ }
     }
     queueRef.current = [];
+    resetLive();
     sourceRef.current = "";
     if (byUser) {
       stoppedRef.current = true;
@@ -128,7 +149,7 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       }, 1600);
     }
     publishStatus();
-  }, [publishStatus]);
+  }, [publishStatus, resetLive]);
 
   const ensureCtx = useCallback((): AudioContext => {
     if (!ctxRef.current) ctxRef.current = new AudioContext();
@@ -202,16 +223,57 @@ export function useVoiceAnnounce(threadId: string = ""): void {
   }, [play, publishStatus]);
 
   /**
-   * 回合结束：**只念模型写的播报稿**（10-09 第二轮：不再念正文、不再念本机压缩摘要）。
-   * ⛔ 唯一裁决点是 `resolveAnnounceSummary`（src/lib/voice-script.mjs）；它没写稿就返回空串，
-   *    这里**什么都不念** —— 别在这里补任何兜底文案（那正是用户要删掉的"汇总正文"）。
+   * 正文增量 → 剥掉播报稿 → 断句 → 朗读清洗 → 逐句合成（与通话链路共用同一套基座函数）。
+   * ⛔ 只在 **Codex 标记了本回合**时才被调用（`speakLiveRef`）—— 见总线订阅那处。
+   */
+  const feedDelta = useCallback(async (delta: string) => {
+    sourceRef.current = "live";
+    if (!stripperRef.current) stripperRef.current = createVoiceScriptStripper();
+    const visible = stripperRef.current.push(String(delta ?? ""));
+    if (!visible) return;
+    if (!chunkerRef.current) chunkerRef.current = createSentenceChunker({ maxChars: 60 });
+    if (!filterRef.current) filterRef.current = createSpeakFilter();
+    const epoch = epochRef.current;
+    const sentences: string[] = chunkerRef.current.push(visible);
+    for (const sentence of sentences) {
+      const spoken = filterRef.current.push(sentence);
+      if (!spoken) continue;
+      await speak(spoken, epoch);
+      if (epoch !== epochRef.current) return;
+    }
+  }, [speak]);
+
+  /**
+   * 回合结束：① 若本回合念过正文，先把流式链的尾句念完；② 再念模型写的播报稿。
+   * ⛔ 10-09 第二轮起**不再回退到本机压缩摘要**（那条整条删除了）；没写稿就什么都不念。
    */
   const finishTurn = useCallback(async (finalText: string) => {
+    const epoch = epochRef.current;
+    const live = speakLiveRef.current;
+    speakLiveRef.current = false;
+    if (live) {
+      /* ⛔ 剥离器 `flush()` 把按住的那半行定下来 —— 它一定**不是**播报稿（stripper 已把整块吃掉），
+         所以接回去当尾句念完；顺序必须「先喂 tail 再 flush 断句器」，反过来会把 tail 当成新一轮首句。 */
+      const tail = stripperRef.current?.flush() ?? "";
+      const tailSentences: string[] = [];
+      if (tail) {
+        if (!chunkerRef.current) chunkerRef.current = createSentenceChunker({ maxChars: 60 });
+        if (!filterRef.current) filterRef.current = createSpeakFilter();
+        tailSentences.push(...chunkerRef.current.push(tail), ...chunkerRef.current.flush());
+      }
+      for (const sentence of tailSentences) {
+        const spoken = filterRef.current?.push(sentence) ?? "";
+        if (!spoken) continue;
+        await speak(spoken, epoch);
+        if (epoch !== epochRef.current) return;
+      }
+      resetLive();
+    }
     if (!cfgRef.current.enabled) return;
     sourceRef.current = "summary";
     const script = resolveAnnounceSummary(String(finalText ?? ""));
-    if (script.text) await speak(script.text, epochRef.current);
-  }, [speak]);
+    if (script.text) await speak(script.text, epoch);
+  }, [resetLive, speak]);
 
   /** 模型主动插播（`voice_announce` 工具）：⛔ 不看开关 —— 显式调用就是用户想听这一句 */
   const speakNow = useCallback(async (text: string, speed?: number) => {
@@ -261,6 +323,14 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     const off = subscribeAnnounce((event) => {
       // 通话中由 VoiceCallFloat 播报（它有 AEC 参考环与打断链）⇒ 这里必须避让，否则两个播报器同时念
       if (getVoiceStage().active) return;
+      if (event.type === "delta") {
+        /* ⛔ 逐条判断（用户 10-09 第五轮）：**只有 Codex 标记过本回合**才念正文 ——
+           不是每条回复都念，也不是开关控制（开关管的是"念不念播报稿"这个默认行为）。 */
+        if (!speakLiveRef.current) return;
+        if (!cfgRef.current.enabled) return;   // 用户把播报关掉 ⇒ 正文也不念（比插播更"自动"，必须尊重开关）
+        enqueueTask(() => feedDelta(event.text));
+        return;
+      }
       if (event.type === "toolSpeak") {
         /* ⛔ 会话闸：`harness:event` 是**全窗口广播**，而这个 app 可以有多个窗口/多个会话。
            不比对 ⇒ 另一个窗口里那条群的插播会在当前窗口一起念出来（跨场合念 = 听起来像见鬼）。 */
@@ -270,18 +340,18 @@ export function useVoiceAnnounce(threadId: string = ""): void {
         return;
       }
       if (event.type === "turnDone") {
-        /* ⛔ 被打断的回合：**别再念了** —— 与通话链路一致（那里 bumpSpeechEpoch + 不 flush 断句器）。
+        /* ⛔ 被打断的回合：**别再念了** —— 刚写出来的半句停在原地，等用户的新话。
            ⛔ 去重登记表是**回合级**的：收尾（含播报稿）也要参与本回合查重，所以清表必须
-              排在 finishTurn **之后** —— 放这里同步清的话，播报稿里的重复句就拦不住了。 */
-        if (event.aborted) { epochRef.current += 1; clearSpokenKeys(); publishStatus(); return; }
-        if (!cfgRef.current.enabled) { clearSpokenKeys(); return; }
+              排在 finishTurn **之后**；`speakLiveRef` 的复位在 finishTurn 内部（尾句要先念完）。 */
+        if (event.aborted) { epochRef.current += 1; speakLiveRef.current = false; resetLive(); clearSpokenKeys(); publishStatus(); return; }
+        if (!cfgRef.current.enabled && !speakLiveRef.current) { clearSpokenKeys(); return; }
         enqueueTask(() => finishTurn(event.text).finally(clearSpokenKeys));
       }
     });
     return off;
-  }, [clearSpokenKeys, enqueueTask, finishTurn, publishStatus, speakNow, threadId]);
+  }, [clearSpokenKeys, enqueueTask, feedDelta, finishTurn, publishStatus, resetLive, speakNow, threadId]);
 
-  /* ── `voice_announce` / `voice_announce_stop` 工具（主进程 dispatch-rpc 广播）────────
+  /* ── `voice_announce` / `voice_announce_stop` / `voice_speak_reply` 工具（主进程 dispatch-rpc 广播）──
      为什么在**这里**收而不是新建一个组件：执行端本来就在这（队列 + AudioContext 只有一份），
      再开一个订阅者会出现两套播放队列。走 `harness:event` ⇒ 不需要新 IPC 通道。
      ⛔ 这里只做**翻译**（把广播翻成总线事件），不管说话 —— 「该不该念、避不避让、要不要进串行链」
@@ -292,6 +362,14 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       const target = String(payload.threadId ?? "");
       if (threadId && target && target !== threadId) return;   // 会话闸：别的会话的插播不许在这里念
       if (payload.action === "stop") { stopPlayback(true); return; }
+      if (payload.action === "speak-reply") {
+        /* ⛔ Codex 决定「这一条回复念出来」（运行中）。只**标记本回合**并把流式链重置到开头，
+           真正的念由总线订阅的 delta 分支做（那处判 speakLiveRef）—— 判据只有一份。 */
+        speakLiveRef.current = true;
+        resetLive();
+        stoppedRef.current = false;
+        return;
+      }
       const text = String(payload.text ?? "").trim();
       if (!text) return;
       const speed = Number(payload.speed);
@@ -303,7 +381,7 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       });
     });
     return () => { off?.(); };
-  }, [stopPlayback, threadId]);
+  }, [resetLive, stopPlayback, threadId]);
 
   // 「停止播报」出口（状态栏 / 悬浮球右键菜单）：非通话播报不开麦、界面很小，
   // 没有这个出口用户就只能等它念完 —— 与 wave-level 的结束通话/打断同一套广播注册。

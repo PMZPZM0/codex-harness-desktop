@@ -18,6 +18,7 @@ import { DISPATCH_FIXED_PORT, dispatchMcpTools, dispatchProbes, dispatchToken, e
 import { normalizeTeamConfig, readExpertTeams, writeExpertTeams } from "../expert-teams";
 import { readConnectors } from "../main";
 import { voiceService } from "../main";
+import { loadVoiceSettings } from "../voice/voice-settings";
 import { encodeWav16 } from "../voice/voice-profiles";
 import { writeConnectors } from "../connector-store";
 import { boardsFileOf, readWorkflowBoards, writeWorkflowBoards } from "./drama-workflow-boards";
@@ -397,6 +398,25 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     return {
       ok: true,
       output: `已提交播报（本地合成 + 播放由界面完成）：「${text}」。⚠️ 这是即时发送、不等回执 —— 本地语音模型未下载或窗口不在前台时不会出声（工具不会报错），也别据此向用户声称「已经说给你听了」。⛔ 这句是**说给耳朵**的：正文里**别再原样复述**（同一句会被念两遍，用户听着像复读）。`,
+    };
+  }
+  if (name === "voice_speak_reply") {
+    /* Codex 决定「这一条回复念出来」（10-09 第五轮，用户：「正文输出也可以进行播报，但不是每条
+       都需要，完全由 codex 决定」）。⛔ 传文本进来既浪费 token 又会与正文不一致 ⇒ 这里只广播一个
+       **标记本回合**的信号，正文由渲染层按流式增量念（它是唯一能看到正文的地方）。 */
+    let status: any = null;
+    try { status = voiceService?.status?.() ?? null; } catch { status = null; }
+    if (status?.active) {
+      return { ok: false, error: "当前正在实时语音通话中 —— 通话会自己把回复念出来，不需要这个工具。" };
+    }
+    /* ⛔ 总开关关着 ⇒ 拒绝并说清：不然模型以为念了、用户什么都没听到（比静默失败更糟的是"谎报成功"）。 */
+    if (loadVoiceSettings(app.getPath("userData")).announce.enabled === false) {
+      return { ok: false, error: "用户的「语音播报」总开关是关着的 —— 现在别念正文（用户不想听）。" };
+    }
+    broadcastHarnessEvent({ type: "voice-announce", action: "speak-reply", threadId: callerThreadId });
+    return {
+      ok: true,
+      output: "已请求：本条回复的正文会在生成过程中逐句念给用户听（本地语音模型未下载或窗口不在前台时不会出声；用户可以随时点「停止播报」掐断）。",
     };
   }
   if (name === "connector_register") {
