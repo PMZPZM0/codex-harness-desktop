@@ -568,8 +568,8 @@ contextBridge.exposeInMainWorld("codex", {
   petShow: () => __ipc("pet:show", 0, []),
   /* 隐藏宠物（置 enabled=false；下次启动不自动恢复） */
   petHide: () => __ipc("pet:hide", 0, []),
-  /* 透明区域鼠标穿透开关：渲染层按「指针是否在宠物本体上」动态翻转；forward 让页面在穿透时仍收到 mousemove（仅 Windows 有 forward，mac 保持整块可点） */
-  petIgnoreMouse: (ignore: boolean) => __ipc("pet:ignore-mouse", 1, [ignore]),
+  /* 上报「宠物本体」矩形（相对窗口内容左上角，CSS 像素；null = 无可交互区）——主进程按 screen.getCursorScreenPoint 轮询比对决定整块穿透/可交互。⛔ 翻转判据刻意不依赖页面鼠标事件：窗口整块是 app-region drag，drag 区属非客户区，Chromium 不派发 DOM mousemove（第一版挂在 mousemove 上 ⇒ 宠物直接拖不动） */
+  petInteractiveRect: (rect: { x: number; y: number; width: number; height: number } | null) => __ipc("pet:interactive-rect", 1, [rect]),
   /* SkillHub 专家市场包（skillhub.cn/skillspackage，总 55 包） */
   listExpertMarketPackages: (input: { page?: number; pageSize?: number; query?: string } = {}) => __ipc("expert-market:list", 0, [input]),
   /* 装包 = 元技能 + 子技能 + 专家中心新增对应专家卡片 */
