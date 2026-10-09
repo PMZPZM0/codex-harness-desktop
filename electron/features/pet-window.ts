@@ -27,8 +27,6 @@ const EDGE = 18;
 let petWindow: BrowserWindow | null = null;
 /** 拖动结束后写盘用的防抖句柄（拖动会连续触发 moved） */
 let moveTimer: NodeJS.Timeout | null = null;
-/** 当前是否处于「可交互」状态（false = 整块鼠标穿透）。仅诊断/守卫用。 */
-let petMouseInteractive = false;
 /** 「用户把宠物拖到哪了」的回调 —— 由 pet-ipc 登记（它才是设置的持有者）。
  *  ⛔ 用回调而不是让本模块 import pet-ipc：那会形成 pet-ipc ↔ pet-window 的运行时循环。 */
 let onMoved: ((pos: { x: number; y: number }) => void) | null = null;
@@ -41,24 +39,81 @@ function windowSize(scale: number) {
   return { width: Math.round(BASE_W * scale), height: Math.round(BASE_H * scale) };
 }
 
-/* ── 透明区域鼠标穿透（10-09 用户报「软件外面无法点」）────────────────────────
-   宠物窗是**透明矩形**：图集帧四周、气泡区、落地余量都是看不见的窗口实体，而
-   `.pet-float` 整块又是 `-webkit-app-region: drag` ⇒ 默认整个矩形都吃鼠标事件，
-   压在它底下的桌面图标 / 其它窗口就点不到（「部分用户」= 开了桌宠的人；
-   「打开应用后」= 桌宠随启动自动恢复，boot.ts 的 applyPetSettings）。
-   解法 = Electron 透明窗标准姿势：默认 `setIgnoreMouseEvents(true, {forward:true})`
-   整块穿透，渲染层在指针移到宠物本体上时关掉穿透（可拖可点）、离开时再打开。
-   ⛔ `forward` 只有 Windows 有实现（文档明言）：mac 上保持旧的整块可点行为 ——
-     贸然开穿透却收不到 mousemove，宠物会变得完全点不到（比挡桌面更糟）。 */
-export function setPetMouseIgnore(ignore: boolean): void {
+/* ── 透明区域鼠标穿透（10-09；第一版挂在渲染层 mousemove 上，**当天就被用户否掉**）────
+   报障 1「打开应用后软件外面无法点」：宠物窗是**透明矩形**（图集留白 / 气泡区 / 落地余量
+   都是看不见的窗口实体），而 `.pet-float` 整块是 `-webkit-app-region: drag` ⇒ 默认整个矩形
+   都吃鼠标事件，压在底下的桌面图标 / 其它窗口点不到。
+   报障 2「宠物现在直接挪不动」：第一版把翻转挂在渲染层 `mousemove + elementFromPoint` 上
+   —— ⛔ **drag 区域属于非客户区，Chromium 根本不往里派发 DOM mousemove** ⇒ 事件永远不来
+   ⇒ 窗口永远停在穿透态 ⇒ 宠物既拖不动也点不着。
+   ⇒ 现方案：**不依赖任何页面鼠标事件**。渲染层只在布局变化时上报「宠物本体矩形」
+   （相对窗口左上角），主进程按 `screen.getCursorScreenPoint()` 轮询比对，在/不在矩形内
+   决定整块穿透还是可交互。附带好处：不再需要 `forward`（它只有 Windows 有实现），
+   mac 也一并修好；拖动仍是原生 `app-region: drag`（鼠标在本体上时窗口已可交互）。 */
+type PetInteractiveRect = { x: number; y: number; width: number; height: number };
+
+/** 渲染层上报的「宠物本体」矩形（相对窗口内容左上角，CSS 像素）。null = 尚未上报 ⇒ 整块穿透。 */
+let petInteractiveRect: PetInteractiveRect | null = null;
+/** 轮询句柄（仅在窗口可见时跑）。 */
+let petMouseTimer: NodeJS.Timeout | null = null;
+/**
+ * **已经应用**到窗口上的穿透状态（null = 本窗口还没设过）。
+ * ⛔ 不能拿「目标状态」跟「可交互布尔」比：窗口**默认是可交互**的（不是穿透），
+ *    初值若按"目标 = 当前"短路，第一帧就一次 setIgnoreMouseEvents 都不调 ⇒ 默认仍挡桌面
+ *    （这正是 10-09 第一版的一个隐性坑：默认态与"没设过"必须分开记）。窗口销毁/重建时置回 null。
+ */
+let petMouseAppliedIgnore: boolean | null = null;
+/** 当前是否可交互（= 最近一次应用的状态取反）。诊断 / 守卫用。 */
+let petMouseInteractive = false;
+
+/** 命中容差（像素）：边界上抖动会让「可交互 ↔ 穿透」反复横跳。 */
+const PET_HIT_PADDING = 2;
+
+function applyPetMouseState(): void {
   if (!isPetWindowOpen()) return;
   const win = petWindow!;
-  if (process.platform !== "win32") return;
+  if (win.isDestroyed() || win.webContents.isDestroyed()) return;
+  let inside = false;
+  if (win.isVisible() && petInteractiveRect) {
+    try {
+      const b = win.getBounds();
+      const p = screen.getCursorScreenPoint();
+      const r = petInteractiveRect;
+      inside = p.x >= b.x + r.x - PET_HIT_PADDING
+        && p.x <= b.x + r.x + r.width + PET_HIT_PADDING
+        && p.y >= b.y + r.y - PET_HIT_PADDING
+        && p.y <= b.y + r.y + r.height + PET_HIT_PADDING;
+    } catch { inside = false; }
+  }
+  const ignore = !inside;
+  if (petMouseAppliedIgnore === ignore) return;   // 状态没变，不重复调（避免无谓的窗口属性写）
   try {
-    if (win.isDestroyed() || win.webContents.isDestroyed()) return;
-    win.setIgnoreMouseEvents(ignore, { forward: true });
-    petMouseInteractive = !ignore;
+    /* ⛔ forward 只在 Windows 有效：它的用途是把 mousemove 转给页面（悬停效果 / 光标形状），
+       翻转判据**不依赖它**（那正是第一版栽的地方）。 */
+    if (process.platform === "win32") win.setIgnoreMouseEvents(ignore, { forward: true });
+    else win.setIgnoreMouseEvents(ignore);
+    petMouseAppliedIgnore = ignore;
+    petMouseInteractive = inside;
   } catch { /* 窗口在关，忽略 */ }
+}
+
+function startPetMouseWatch(): void {
+  if (petMouseTimer) return;
+  // 100ms 足够跟手（人移动鼠标的判定粒度远粗于此），成本只是一次 DIP 坐标读取
+  petMouseTimer = setInterval(applyPetMouseState, 100);
+  if (typeof petMouseTimer.unref === "function") petMouseTimer.unref();
+  applyPetMouseState();
+}
+
+function stopPetMouseWatch(): void {
+  if (petMouseTimer) clearInterval(petMouseTimer);
+  petMouseTimer = null;
+}
+
+/** 渲染层上报宠物本体矩形（布局变化时调；null = 没有可交互区域 ⇒ 整块穿透）。 */
+export function setPetInteractiveRect(rect: PetInteractiveRect | null): void {
+  petInteractiveRect = rect && rect.width > 0 && rect.height > 0 ? rect : null;
+  applyPetMouseState();
 }
 
 /** 宠物窗当前是否可交互（false = 整块穿透）。诊断 / 守卫用。 */
@@ -174,8 +229,8 @@ function createPetWindow(settings: PetSettings): BrowserWindow {
       win.setAlwaysOnTop(true);
       win.setOpacity(settings.opacity);
       win.showInactive();          // ⛔ showInactive：显示宠物**不抢当前应用的焦点**
-      // 默认整块穿透（指针进宠物本体后由渲染层关掉，见 setPetMouseIgnore 注释）
-      setPetMouseIgnore(true);
+      // 光标轮询开跑；矩形尚未上报前**整块穿透**（fail-safe：绝不挡桌面）
+      startPetMouseWatch();
     } catch { /* 忽略 */ }
   });
 
@@ -200,6 +255,8 @@ function createPetWindow(settings: PetSettings): BrowserWindow {
   });
 
   win.on("closed", () => {
+    stopPetMouseWatch();
+    petMouseAppliedIgnore = null;
     petWindow = null;
     setPetSignalSink(null);
   });
@@ -231,6 +288,7 @@ export function showPetWindow(settings: PetSettings) {
     win.setOpacity(settings.opacity);
     win.setAlwaysOnTop(true);
     win.showInactive();
+    startPetMouseWatch();
   } catch { /* 忽略 */ }
   return win;
 }
@@ -238,12 +296,15 @@ export function showPetWindow(settings: PetSettings) {
 export function hidePetWindow() {
   if (!isPetWindowOpen()) return;
   try { petWindow!.hide(); } catch { /* 忽略 */ }
-  // 藏起来前回到穿透态：下次 showInactive 若指针恰好停在窗上，不至于一出现就挡住桌面
-  setPetMouseIgnore(true);
+  // 藏起来即停轮询并回到穿透态：下次 showInactive 若指针恰好停在窗上，不至于一出现就挡住桌面
+  stopPetMouseWatch();
+  applyPetMouseState();
 }
 
 export function closePetWindow() {
   if (!isPetWindowOpen()) return;
+  stopPetMouseWatch();
+  petMouseAppliedIgnore = null;
   try { petWindow!.destroy(); } catch { /* 忽略 */ }
   petWindow = null;
   setPetSignalSink(null);

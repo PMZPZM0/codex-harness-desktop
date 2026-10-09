@@ -3037,25 +3037,35 @@ w.postMessage({id:1,op:"list",root});
     (readFileSync(join(ROOT, "src", "styles.css"), "utf8").includes("./styles/22-pet") ? ok : fail)(
       "【232】宠物样式接入 styles.css（22-pet.css）"
     );
-    /* ⑯ ⛔ 透明区域鼠标穿透（10-09 用户报「软件外面无法点」）：宠物窗是透明矩形，
-       `.pet-float` 整块又是 drag 区 ⇒ 默认整块矩形都吃鼠标，压在底下的桌面图标/其它窗口
-       点不到。修法 = 主进程默认整块穿透 + 渲染层按「指针是否在宠物本体上」动态翻转。
-       ⛔ 三条必须同时在：只默认穿透不翻转 = 宠物永远点不到（更糟）；
-         翻转不看「最深元素」= pet-stage 铺满整窗，判据恒真 = 白修。 */
+    /* ⑯ ⛔ 透明区域鼠标穿透（10-09 用户报「软件外面无法点」；同一天第一版被打回「宠物拖不动」）：
+       宠物窗是透明矩形，`.pet-float` 整块又是 drag 区 ⇒ 默认整块矩形都吃鼠标，压在底下的
+       桌面图标/其它窗口点不到。⛔⛔ **翻转判据不许依赖页面鼠标事件**：drag 区属非客户区，
+       Chromium 不往里派发 DOM mousemove —— 第一版挂在渲染层 mousemove + elementFromPoint 上，
+       实测事件永远不来 ⇒ 窗口永远停在穿透态 ⇒ 宠物既拖不动也点不着。
+       现方案 = 渲染层只**上报矩形**，主进程按光标轮询决定整块穿透/可交互。 */
     const petFloatSrc = readFileSync(join(ROOT, "src", "features", "pet", "PetFloat.tsx"), "utf8");
-    (winSrc.includes("setIgnoreMouseEvents(ignore, { forward: true })")
-      && winSrc.includes("setPetMouseIgnore(true)") ? ok : fail)(
-      "【232】宠物窗默认整块鼠标穿透（ready-to-show / hide 都回到穿透态；forward 仅 Windows）"
+    (winSrc.includes("screen.getCursorScreenPoint()") && winSrc.includes("setInterval(applyPetMouseState")
+      && winSrc.includes("setIgnoreMouseEvents(ignore") ? ok : fail)(
+      "【232】穿透翻转在主进程按光标轮询判定（screen.getCursorScreenPoint + 100ms interval）"
     );
-    (ipcSrc.includes('"pet:ignore-mouse"') && ipcSrc.includes("setPetMouseIgnore(Boolean(ignore))") ? ok : fail)(
-      "【232】穿透开关走 IPC（setIgnoreMouseEvents 只能主进程调，渲染层没有旁路）"
+    (ipcSrc.includes('"pet:interactive-rect"') && ipcSrc.includes("setPetInteractiveRect(rect ?")
+      && petFloatSrc.includes("window.codex.petInteractiveRect(") && petFloatSrc.includes("getBoundingClientRect()") ? ok : fail)(
+      "【232】渲染层只上报「宠物本体矩形」（pet:interactive-rect + getBoundingClientRect），不参与命中判定"
     );
-    (petFloatSrc.includes("document.elementFromPoint") && petFloatSrc.includes('el.closest(".pet-sprite, .pet-missing")')
-      && petFloatSrc.includes("petIgnoreMouse(!over)") ? ok : fail)(
-      "【232】渲染层按指针命中宠物本体动态翻转穿透（elementFromPoint 取最深元素，stage 铺满整窗不能直接判）"
+    /* ⛔ 负向断言必须先**剥注释**：上面那条注释里就写着「第一版挂在 mousemove + elementFromPoint 上」
+       —— 裸匹配会被自己的注释顶成假红（本仓已多次同型：09-25 三次 + 11r 的 localStorage）。 */
+    const petFloatCode = String(petFloatSrc).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    (!petFloatCode.includes("elementFromPoint") && !petFloatCode.includes("petIgnoreMouse") ? ok : fail)(
+      "【232】渲染层不许再用 mousemove/elementFromPoint 翻转（第一版就是这么坏的：drag 区不派发 DOM 鼠标事件）"
     );
-    (petFloatSrc.includes('addEventListener("mouseleave"') ? ok : fail)(
-      "【232】光标离开窗口回到穿透态（否则从本体直接移出会把整块窗留在可交互态继续挡桌面）"
+    /* ⛔ 锚**位置**而不是"字符串存在"：`petMouseAppliedIgnore = null` 在 closePetWindow 里也有一处，
+       只判 includes 的话把 closed 处理器里那处删掉仍绿（变异测试当场抓到这个假绿）。
+       ⇒ 按 `win.on("closed"` 切片，只认**该处理器体内**的重置。 */
+    const petClosedIdx = winSrc.indexOf('win.on("closed"');
+    const petClosedBody = petClosedIdx >= 0 ? winSrc.slice(petClosedIdx, petClosedIdx + 320) : "";
+    (winSrc.includes("petInteractiveRect: PetInteractiveRect | null = null")
+      && petClosedBody.includes("petMouseAppliedIgnore = null") ? ok : fail)(
+      "【232】默认 fail-safe 穿透（矩形未上报 = 整块穿透）+ 窗口 closed 时重置「已应用状态」（不重置则重建后首帧不推状态、默认仍挡桌面）"
     );
   }
 

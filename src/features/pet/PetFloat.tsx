@@ -128,51 +128,46 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
 
   const stopDrag = useCallback((event: React.MouseEvent) => { event.stopPropagation(); }, []);
 
-  /* ── 透明区域鼠标穿透（10-09 用户报「软件外面无法点」）────────────────────
-     窗口是透明矩形：图集帧四周、气泡区、落地余量都是看不见的窗口实体，整块默认
-     都吃鼠标（还是 drag 区）⇒ 压在底下的桌面图标 / 其它窗口点不到。主进程已默认
-     整块穿透（setIgnoreMouseEvents(true, {forward:true})）—— forward 让页面在穿透
-     状态下**仍收到 mousemove**，这里按「指针是否落在宠物本体上」动态翻转：
-     本体上 = 关穿透（可拖可点），四周 = 穿透放行。
-     ⛔ 命中判定用 elementFromPoint 取**最深处**元素再 closest —— pet-stage 铺满
-        整窗，直接拿它判会把四周也算进去（等于白修）。
-     ⛔ 精灵盒是**近似**命中（图集帧内可能有透明留白），不逐像素测 alpha ——
-        逐像素要常驻 canvas 采样，成本与收益不成比例；盒子已经把挡桌面的范围
-        从「整个窗口」缩到「宠物本体那一格」。 */
+  /* ── 上报「宠物本体矩形」（10-09；修「透明罩挡桌面」+ 当天回归「宠物拖不动」）──────
+     窗口是透明矩形：图集帧四周、气泡区、落地余量都是看不见的窗口实体，整块默认都吃
+     鼠标（`.pet-float` 还是 app-region: drag）⇒ 压在底下的桌面图标 / 其它窗口点不到。
+     翻转由**主进程**做（按 `screen.getCursorScreenPoint()` 轮询比对本矩形）：
+     ⛔ 第一版把翻转挂在这里的 mousemove + elementFromPoint 上，实测**宠物直接拖不动** ——
+        drag 区域属非客户区，Chromium 不往里派发 DOM mousemove，事件永远不来 ⇒ 窗口永远停在
+        穿透态。所以本组件只**上报矩形**，不参与任何鼠标事件判定。
+     上报时机 = 会改变本体位置/尺寸的事件：挂载、换宠物包、帧高变化、窗口尺寸变化。
+     矩形取**并集**（精灵 / 缺包提示）——它们是互斥渲染的，同一时刻只有一个存在。 */
+  const spriteRef = useRef<HTMLDivElement>(null);
+  const missingRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let raf = 0;
-    let current: boolean | null = null;
-    const overPet = (x: number, y: number) => {
-      const el = document.elementFromPoint(x, y);
-      return Boolean(el && el.closest(".pet-sprite, .pet-missing"));
+    const report = () => {
+      raf = 0;
+      const boxes = [spriteRef.current, missingRef.current]
+        .filter((el): el is HTMLDivElement => Boolean(el))
+        .map((el) => el.getBoundingClientRect())
+        .filter((r) => r.width > 0 && r.height > 0);
+      if (!boxes.length) { void window.codex.petInteractiveRect(null).catch(() => undefined); return; }
+      const x = Math.min(...boxes.map((r) => r.left));
+      const y = Math.min(...boxes.map((r) => r.top));
+      const right = Math.max(...boxes.map((r) => r.right));
+      const bottom = Math.max(...boxes.map((r) => r.bottom));
+      void window.codex.petInteractiveRect({ x, y, width: right - x, height: bottom - y }).catch(() => undefined);
     };
-    const apply = (over: boolean) => {
-      if (current === over) return;
-      current = over;
-      void window.codex.petIgnoreMouse(!over).catch(() => undefined);
-    };
-    const onMove = (event: MouseEvent) => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
-        if (document.hidden) return;
-        apply(overPet(event.clientX, event.clientY));
-      });
-    };
-    /* 光标离开窗口（透明态下页面可能收不到收尾的 mousemove）⇒ 必须回到穿透，
-       否则「从本体直接移出窗口」会把整块窗留在可交互态，继续挡桌面。 */
-    const onLeave = () => {
-      if (raf) { cancelAnimationFrame(raf); raf = 0; }
-      apply(false);
-    };
-    window.addEventListener("mousemove", onMove, { passive: true });
-    document.documentElement.addEventListener("mouseleave", onLeave);
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(report); };
+    schedule();
+    const observer = new ResizeObserver(schedule);
+    if (spriteRef.current) observer.observe(spriteRef.current);
+    if (missingRef.current) observer.observe(missingRef.current);
+    window.addEventListener("resize", schedule);
     return () => {
-      window.removeEventListener("mousemove", onMove);
-      document.documentElement.removeEventListener("mouseleave", onLeave);
+      observer.disconnect();
+      window.removeEventListener("resize", schedule);
       if (raf) cancelAnimationFrame(raf);
+      // 卸载（窗口在关）时清空，避免主进程拿着过期矩形继续判命中
+      void window.codex.petInteractiveRect(null).catch(() => undefined);
     };
-  }, []);
+  }, [pkg, renderedFrameHeight]);
 
   return (
     <div className="pet-float" ref={hostRef}>
@@ -187,6 +182,7 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
         {pkg && pkg.spritesheet ? (
           <div
             className="pet-sprite"
+            ref={spriteRef}
             style={{
               ...style,
               backgroundImage: `url("${petAssetUrl(pkg.spritesheet)}")`,
@@ -194,7 +190,7 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
             onMouseDown={stopDrag}
           />
         ) : (
-          <div className="pet-missing">
+          <div className="pet-missing" ref={missingRef}>
             <span>没有可用的宠物包</span>
             <span>在「设置 → 桌面宠物」里查看目录或导入</span>
           </div>
