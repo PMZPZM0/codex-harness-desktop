@@ -342,7 +342,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 <img className="ch-logo ch-logo-img" src={`${import.meta.env.BASE_URL}icon.png`} alt="" aria-hidden="true" />
                 <span className="sidebar-toggle-arrow"><ArrowLeft size={13} strokeWidth={2.4} /></span>
               </button>
-              {!sidebarCollapsed && <div><strong>Codex Harness</strong><span>Desktop</span></div>}
+              {!sidebarCollapsed && <div><strong className="brand-name">Codex Harness</strong></div>}
             </div>
             <div className="sidebar-tabs" role="tablist" aria-label="导航">
               <button className="sidebar-tab ic-blue" onClick={() => { startNewThread(); }}><MessageSquarePlus size={15} /><span>新建任务</span><kbd>{hk("Ctrl+N")}</kbd></button>

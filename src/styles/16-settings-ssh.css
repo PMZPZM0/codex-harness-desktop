@@ -1039,7 +1039,19 @@
 @keyframes login-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 .login-brand { display: flex; align-items: center; gap: 10px; }
 .login-logo { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 9px; }
-.login-brand strong { font-size: 15px; }
+.login-brand strong {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: .2px;
+  /* 与侧栏品牌字同一套流动渐变（`--brand-ink` 在 01-base-and-chrome.css 的 :root，共用一份色标） */
+  background-image: var(--brand-ink);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: var(--text);   /* 兜底同侧栏 */
+  animation: brand-ink-flow 7s linear infinite;
+}
 .login-brand span { color: var(--faint); font-size: 11px; }
 .login-card h1 { margin: 4px 0 0; font-size: 20px; font-weight: 600; color: var(--text); }
 .login-sub { margin: 0; color: var(--muted); font-size: 12.5px; }
