@@ -198,6 +198,19 @@ export function cleanVoiceScript(text, options = {}) {
 }
 
 /**
+ * 播报**去重键**：同一段内容经不同触发源（`voice_announce` 工具 / 正文实时 / 结束汇总稿）
+ * 进入播报管线时，字面几乎必然有出入（句尾标点、空白、数字读法前的写法差异）——
+ * 直接拿原文比对永远对不上。这里归一成「只留字母与数字（含 CJK）、忽略大小写」的键：
+ *   「已修复 3 个问题。」 ≡ 「已修复3个问题」 ≡ 「已修复 3 个问题！」
+ * ⛔ 纯函数：守卫 11z 直接 import 跑真值表（10-09 用户报「同一段音频连续播放两次」后立）。
+ * @param {string} text
+ * @returns {string}
+ */
+export function spokenDedupeKey(text) {
+  return String(text ?? "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+/**
  * 回合结束时「该念什么」的唯一裁决点。
  *
  * 优先级：**模型写的播报稿** → 本机压缩（回退） → 空（调用方决定要不要念兜底提示）。

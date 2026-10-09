@@ -28,6 +28,9 @@ export declare function createVoiceScriptStripper(): {
 /** 播报稿清洗（朗读视图清洗 + 句边界截断）。 */
 export declare function cleanVoiceScript(text: unknown, options?: { maxChars?: number }): string;
 
+/** 播报去重键：只留字母/数字（含 CJK）、忽略大小写/空白/标点（三条播报入口查重用）。 */
+export declare function spokenDedupeKey(text: unknown): string;
+
 /** 回合结束「该念什么」的唯一裁决点：模型播报稿 → 本机压缩回退 → 空。 */
 export declare function resolveAnnounceSummary(
   raw: unknown,

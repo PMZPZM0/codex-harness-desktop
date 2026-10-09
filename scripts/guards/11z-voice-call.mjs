@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { ROOT } from "./_ctx.mjs";
 import { isLikelySelfEcho, echoSimilarity, ECHO_TAIL_MS } from "../../src/lib/voice-echo.mjs";
 import { summarizeForSpeech, splitSentences, SUMMARY_PREFIX } from "../../src/lib/voice-summary.mjs";
-import { extractVoiceScript, stripVoiceScript, createVoiceScriptStripper, resolveAnnounceSummary, VOICE_FENCE_LANG } from "../../src/lib/voice-script.mjs";
+import { extractVoiceScript, stripVoiceScript, createVoiceScriptStripper, resolveAnnounceSummary, spokenDedupeKey, VOICE_FENCE_LANG } from "../../src/lib/voice-script.mjs";
 
 let checks = 0, fails = 0;
 const ok = (c, m) => { checks++; console.log(`  ${c ? "✓" : "✗"} 【voice-call】${m}`); if (!c) fails++; };
@@ -163,6 +163,41 @@ ok(/queueRef\.current\.length >= MAX_ANNOUNCE_BACKLOG/.test(announceHook),
 ok(/subscribeVoiceStage\(\(stage\) => \{ if \(stage\.active\) stopPlayback\(\); \}\)/.test(announceHook),
   "通话一开始就停掉独立播报（否则通话播报与排队音频同时出声）");
 
+/* ── ⑦b 同回合播报去重（10-09 用户报「同一段音频连续播放两次」）──────────────────
+   根因：同一段内容有三条互不知情的入口（voice_announce 工具 / 正文实时 / 结束稿）——
+   工具的返回值与 developer-instructions 都要求模型把插播句写进回复 ⇒ 正文链必然再念一遍。
+   裁决点必须在 speak()（三条链的唯一汇合处），而不是任何一条入口上。 */
+const hookCode = codeOnlyTs(announceHook);
+const keyDecl = announceHook.indexOf("const dedupeKey = spokenDedupeKey(clean)");
+const busyIdx = announceHook.indexOf("busyRef.current += 1");
+const keyAdd = announceHook.indexOf("spokenKeysRef.current.add(dedupeKey)");
+const keyCheck = announceHook.indexOf("spokenKeysRef.current.has(dedupeKey)");
+const okIdx = announceHook.indexOf("result?.ok");
+ok(/import \{[^}]*spokenDedupeKey[^}]*\} from "\.\.\/\.\.\/lib\/voice-script\.mjs"/.test(announceHook)
+  && keyDecl > 0,
+  "speak() 用 spokenDedupeKey 算去重键（三条播报入口的唯一汇合处就是这里，别把查重挂到某条入口上）");
+ok(keyCheck > 0 && keyDecl > 0 && keyCheck > keyDecl && keyCheck < busyIdx,
+  "查重在合成（busy +1）**之前**——命中重复直接跳过，连合成费都不付");
+ok(keyAdd > 0 && okIdx > 0 && keyAdd > okIdx,
+  "登记在「确认会出声」**之后**——先到的那句合成失败不登记，后到的兜底句才不会被误吞");
+ok(/\.finally\(clearSpokenKeys\)/.test(announceHook)
+  && (announceHook.match(/clearSpokenKeys\(\)/g) || []).length >= 2,
+  "去重登记表**回合级清零**（正常收尾排在 finishTurn 之后 / 被打断时同步清）——跨回合「再说一遍」必须照念");
+ok(/const filter = createSpeakFilter\(\);\s*\n\s*const spoken = String\(filter\.push\(String\(text \?\? ""\)\) \?\? ""\)\.trim\(\);/.test(announceHook)
+  && /await speak\(spoken, epoch, \{ speed \}\);/.test(announceHook),
+  "工具插播文本过**同一套**朗读清洗（正文过滤后是「三个」、工具原文是「3」就永远对不上键；顺带 markdown 记号不再被当字念）");
+/* 去重键真值表：**真跑** import 纯函数（「注释声称有」在本仓是最危险的假象） */
+const keyCases = [
+  ["已修复 3 个问题。", "已修复3个问题！", true, "标点/空白差异必须算同一段"],
+  ["Done.", "done", true, "大小写不敏感"],
+  ["你好，世界。", "你好世界", true, "键里就是纯字母数字（含 CJK）"],
+  ["你好世界", "你好世界二", false, "不同内容不许误伤（键必须能区分）"],
+  ["", "", true, "空文本键为空"],
+];
+const keyWrong = keyCases.filter(([a, b, same]) => (spokenDedupeKey(a) === spokenDedupeKey(b)) !== same);
+ok(keyWrong.length === 0 && spokenDedupeKey(null) === "" && spokenDedupeKey(undefined) === "",
+  `去重键真值表 ${keyCases.length - keyWrong.length}/${keyCases.length} 条符合预期${keyWrong.length ? `（错在：${keyWrong.map((c) => c[3]).join("；")}）` : ""}，null/undefined 安全`);
+
 /* 汇总播报：**真跑**纯函数（src/lib/voice-summary.mjs） */
 const longText = Array.from({ length: 20 }, (_, i) => `这是第 ${i + 1} 条说明内容。`).join("");
 const sLong = summarizeForSpeech(longText);
@@ -291,7 +326,7 @@ ok(zv?.realReady !== false,
       不是新功能 —— 每条都是「当时写错、已修」的东西，所以判据要钉住修好的形态。 */
 ok(/const chainRef = useRef<Promise<void>>\(Promise\.resolve\(\)\)/.test(announceHook)
   && /enqueueTask\(\(\) => feedDelta\(event\.text\)\)/.test(announceHook)
-  && /enqueueTask\(\(\) => finishTurn\(event\.text\)\)/.test(announceHook),
+  && /enqueueTask\(\(\) => finishTurn\(event\.text\)(\.finally\(clearSpokenKeys\))?\)/.test(announceHook),
   "播报动作挂**串行链**：合成是异步的、delta 是并发到达的 ⇒ 不串行会念乱顺序（A 慢 B 快则 B 先出声）");
 ok(/summary\.sentences === 0 && String\(finalText \?\? ""\)\.trim\(\)/.test(announceHook),
   "「整段是代码」的那句提示只在**原文非空**时念（finalText 为空 = 引擎没带 items，是数据缺失，不是代码）");

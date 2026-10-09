@@ -23,13 +23,19 @@
  *   · **主动插播**：模型调 `voice_announce` 工具（主进程广播 harness:event）⇒ 本 hook 立即念，
  *     ⛔ **不看两个开关**（显式调用就是用户要听这一句）。
  *
+ * ── 同回合去重（10-09 用户报「同一段音频连续播放两次」）────────────────────────
+ *   上面三条入口（工具插播 / 正文实时 / 结束稿）会送来**同一段内容**——工具的返回值与
+ *   developer-instructions 都要求模型把插播句写进回复，正文链就必然再念一遍。
+ *   裁决点在 `speak()`：按 `spokenDedupeKey`（src/lib/voice-script.mjs）查重，同回合只念第一遍；
+ *   回合结束/被打断整表清零 ⇒ 跨回合「再说一遍」不受影响。详见 `spokenKeysRef` 注释。
+ *
  * ⛔ 语速/音色/音量取的都是**设置里的值**（不在这里另存一份）—— 单一真相源。
  * ⛔ 事件源是 `announce-bus`（由事件路由在**当前会话**上转发），不在本模块里解析引擎事件。
  */
 import { useCallback, useEffect, useRef } from "react";
 import { createSentenceChunker } from "../../lib/voice-aec.mjs";
 import { createSpeakFilter } from "../../lib/speak-text.mjs";
-import { createVoiceScriptStripper, resolveAnnounceSummary } from "../../lib/voice-script.mjs";
+import { createVoiceScriptStripper, resolveAnnounceSummary, spokenDedupeKey } from "../../lib/voice-script.mjs";
 import { SUMMARY_EMPTY_NOTICE } from "../../lib/voice-summary.mjs";
 import {
   notifyAnnounceToggle,
@@ -73,6 +79,21 @@ export function useVoiceAnnounce(threadId: string = ""): void {
   /** 是否刚被掐断过（状态栏显示「已停止」再自动收起，由下一次开播复位） */
   const stoppedRef = useRef(false);
   const stoppedTimerRef = useRef(0);
+  /**
+   * 同一回合内的「已播出」登记表（10-09 用户报「同一段音频连续播放两次」后加）。
+   *
+   * ⛔ 根因：同一段内容有**三条互不知情的入口** —— ① `voice_announce` 工具插播；
+   *    ② 回复正文实时播报（工具的返回值与 developer-instructions 第 16 条都**要求模型
+   *    把插播的那句话写进回复**，作为合成失败时的兜底）；③ 结尾播报稿（汇总链）。
+   *    三条链最终都汇入同一个 `speak()`，而 speak 此前不查重 ⇒ 同一句话念两遍。
+   * 做法：speak 入口按 `spokenDedupeKey`（只留字母/数字，忽略标点空白大小写）查重，
+   *    命中即跳过；合成成功后才登记。**回合结束（含被打断）整表清零** ——
+   *    跨回合的「再说一遍」是新请求，必须照念，绝不能被误吞。
+   * ⛔ 为什么登记在合成成功之后而不是入口：入口登的话，先到的那句合成失败（模型没下载），
+   *    后到的兜底句也会被吞 ⇒ 用户一个字都听不到。
+   */
+  const spokenKeysRef = useRef<Set<string>>(new Set());
+  const clearSpokenKeys = useCallback(() => { spokenKeysRef.current.clear(); }, []);
   /**
    * 串行链（自行 code review 补的一处真缺陷）。
    *
@@ -170,6 +191,12 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       console.warn("[voice-announce] 播报排队过长，丢弃这一句以保持跟手：", clean.slice(0, 24));
       return;
     }
+    // ⛔ 同回合去重：三条入口（工具插播 / 正文实时 / 结束稿）会送来同一段内容，只念第一遍
+    const dedupeKey = spokenDedupeKey(clean);
+    if (dedupeKey && spokenKeysRef.current.has(dedupeKey)) {
+      console.warn("[voice-announce] 同一回合内这段内容已经播报过，跳过重复播放：", clean.slice(0, 24));
+      return;
+    }
     busyRef.current += 1;
     publishStatus();
     try {
@@ -181,7 +208,11 @@ export function useVoiceAnnounce(threadId: string = ""): void {
         return;
       }
       const samples = decodeFloat32Base64(result.audioBase64);
-      if (samples.length) await play(samples, Number(result.sampleRate), epoch, clean);
+      if (samples.length) {
+        // ⛔ 登记必须放在「确认会出声」之后：合成失败不登记，后到的兜底句才不会被误吞
+        if (dedupeKey) spokenKeysRef.current.add(dedupeKey);
+        await play(samples, Number(result.sampleRate), epoch, clean);
+      }
     } finally {
       busyRef.current = Math.max(0, busyRef.current - 1);
       publishStatus();
@@ -243,8 +274,15 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     sourceRef.current = "tool";
     stoppedRef.current = false;
     const epoch = epochRef.current;
-    await speak(text, epoch, { speed });
-  }, [speak]);
+    /* ⛔ 工具文本也要过**同一套朗读清洗**（数字中文化 / markdown 剥除）：一来工具原文里的
+       记号不会被当字念出来，二来去重键必须与正文链同源 —— 正文那句过完滤是「已修复三个问题」、
+       工具原文是「已修复 3 个问题」，不过同一套滤就永远对不上（去重失效 = 白修）。 */
+    /* ⛔ 用**一次性**清洗器，不碰 filterRef：filter 是带块级状态的（代码围栏/表格），
+       正文流此刻可能正停在某个围栏里 —— 借共享状态会把手头的插播整段吞掉。
+       去重键需要的只是行内变换（toSpeakableText），它不依赖块级状态。 */
+    const filter = createSpeakFilter();
+    const spoken = String(filter.push(String(text ?? "")) ?? "").trim();
+    await speak(spoken, epoch, { speed });  }, [speak]);
 
   // ── 设置：挂载读一次 + 主进程保存时广播刷新（与悬浮球/唤醒同一套）──
   useEffect(() => {
@@ -297,13 +335,15 @@ export function useVoiceAnnounce(threadId: string = ""): void {
         /* ⛔ 被打断的回合：**别再念了** —— 与通话链路一致（那里 bumpSpeechEpoch + 不 flush 断句器），
            半句停在原地，等用户的新话。⛔ 这里**不能**先调 stopPlayback 再走正常收尾：
            stopPlayback 会把断句器一起清掉，尾句就永远丢了（本项目「共享槽位两态」同型坑）。 */
-        if (event.aborted) { epochRef.current += 1; resetChunker(); publishStatus(); return; }
-        if (!cfgRef.current.live && !cfgRef.current.summary) { resetChunker(); return; }
-        enqueueTask(() => finishTurn(event.text));
+        if (event.aborted) { epochRef.current += 1; resetChunker(); clearSpokenKeys(); publishStatus(); return; }
+        if (!cfgRef.current.live && !cfgRef.current.summary) { resetChunker(); clearSpokenKeys(); return; }
+        /* ⛔ 去重登记表是**回合级**的：收尾（含汇总稿）也要参与本回合查重，所以清表必须
+           排在 finishTurn **之后** —— 放这里同步清的话，汇总稿里的重复句就拦不住了。 */
+        enqueueTask(() => finishTurn(event.text).finally(clearSpokenKeys));
       }
     });
     return off;
-  }, [enqueueTask, feedDelta, finishTurn, publishStatus, resetChunker, speakNow, threadId]);
+  }, [clearSpokenKeys, enqueueTask, feedDelta, finishTurn, publishStatus, resetChunker, speakNow, threadId]);
 
   /* ── `voice_announce` / `voice_announce_stop` 工具（主进程 dispatch-rpc 广播）────────
      为什么在**这里**收而不是新建一个组件：执行端本来就在这（队列 + AudioContext 只有一份），
