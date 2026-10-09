@@ -170,16 +170,40 @@ ok(/个后台任务运行中/.test(capsule) && /if \(!running\.length\) return n
 ok(/task\.status === "polling"/.test(capsule), "只数**还在跑**的任务（已结束的不占这个数）");
 ok(/VISIBLE_ROWS = 3/.test(capsule) && /maxHeight: `\$\{VISIBLE_ROWS \* 34\}px`/.test(capsule) && /overflow-y: auto/.test(read("src/styles/32-polling.css")),
   "面板最多展示 3 条、超出滚动（容器高度按 3 行写死 + 内部滚动）");
-ok(/document\.getElementById\(`poll-\$\{task\.id\}`\)\?\.scrollIntoView/.test(capsule),
-  "单条「查看」= 滚到对话里那张卡（同一件事不在两个地方看，不再开一层弹窗）");
+ok(/task\.kind === "tool" \? `turn-\$\{task\.turnId\}` : `poll-\$\{task\.id\}`/.test(capsule)
+  && /scrollIntoView/.test(capsule),
+  "单条「查看」= 滚到它在对话里的位置（轮询→轮询卡 / 长命令→它所在的回合；同一件事不在两个地方看，不开弹窗）");
 ok(/onClick=\{\(\) => stopOne\(task\)\}/.test(capsule) && /abortPollTask\(task\.id\)/.test(capsule),
   "单条「中止」= 只停这一条（不是全部）");
+ok(/if \(task\.kind === "tool"\) \{ requestToolAbort\(task\.id\); return; \}/.test(capsule)
+  && /window\.codex\.pollAbort\(\{ taskId: task\.id \}\)/.test(capsule),
+  "中止分两条路：长命令 → **打断当前回合**（命令是引擎在跑）；轮询 → 主进程 poll:abort（停掉那个等待循环）");
 ok(/window\.codex\.pollConfigSave\(next\)/.test(capsule) && /setPollConfig\(patch\)/.test(capsule) && /applyConfig/.test(capsule),
   "间隔 / 超时 / 重试次数可配，且**两边都写**（本地立刻生效 + 主进程下一轮用新值）");
 ok(/BackgroundTaskCapsule threadId=\{thread\?\.id \?\? ""\}/.test(composer)
   && composer.indexOf("<BackgroundTaskCapsule") < composer.indexOf("<ComposerComposerForm")
   && composer.indexOf("<BackgroundTaskCapsule") > composer.indexOf("<VoiceAnnounceIndicator"),
   "⛔ 位置 = 卡片栈**最下面一行**（紧挨输入框上沿、在两个 fixed 浮层之后）—— 从上到下依次排列，不互相遮");
+
+/* ── ⑤b 长命令 / 长工具调用也算后台任务（10-09 用户追加）──────────────────────
+   「其它异步/长任务也要能看到并中止」——视频那条只是真轮询，日常长命令同样要有出口。
+   ⛔ 这条最容易糊的地方：**别把每个工具调用都塞进胶囊**（`read`/`ls` 几十毫秒也弹一个转圈），
+      所以必须有阈值，且提升动作放在看门狗（只有周期 tick 才知道"这一刻还在跑"）。 */
+const storeSrc = read("src/polling/poll-store.ts");
+ok(/export const SLOW_TOOL_MS = \d+/.test(storeSrc)
+  && /export function beginToolWatch\(/.test(storeSrc) && /export function endToolWatch\(/.test(storeSrc)
+  && /export function endToolWatchesOfTurn\(/.test(storeSrc),
+  "长命令追踪三件套（beginToolWatch / endToolWatch / endToolWatchesOfTurn）+ 阈值常量");
+ok(/kind: input\?\.kind === "tool" \? "tool" : "poll"/.test(storeSrc) && /const toolTaskId = \(itemId: string\) => `tool:\$\{itemId\}`/.test(storeSrc),
+  "长命令任务的 kind=\"tool\" 且 id 走 `tool:` 命名空间（与视频 jobId 分开，两套 id 都来自主进程会撞）");
+ok(/task\.kind === "poll" && task\.turnId === id/.test(storeSrc),
+  "对话流里只渲染 `kind:\"poll\"` 的卡（长命令在流里已有自己的工具卡，再画一张 = 同一件事两处看）");
+ok(/task\.status !== "polling" \|\| task\.kind !== "poll"\) return task;/.test(storeSrc),
+  "⛔ 轮询超时**不作用于**长命令（长命令跑多久是它自己的事，别拿轮询超时上限把它掐了）");
+ok(/watchingTools\.size > 0/.test(storeSrc),
+  "看门狗在「还有工具项在跑」时也要活着（否则长命令永远等不到提升那一刻）");
+ok(/export function setToolAbortHandler\(/.test(read("src/polling/poll-store.ts")) && /requestToolAbort/.test(read("src/polling/poll-store.ts")),
+  "长命令的「中止」出口：模块级 store 拿不到 bag.interrupt ⇒ 与 announce-bus 同款的回调注册范式");
 
 /* ── ⑥ 样式与层级 ─────────────────────────────────────────────────────────── */
 const stylesEntry = read("src/styles.css");
@@ -258,6 +282,39 @@ ok(/payload\.type !== "poll"/.test(bridge) && /if \(threadId && target && target
   "⛔ 会话闸：harness:event 广播到**所有窗口**，不比对 threadId 会把别的会话的轮询画到这里");
 ok(/backfillPollTurn\(threadId, turnId\)/.test(bridge), "回合补挂（主进程只知道 threadId，回合归属由本窗口补）");
 ok(/<PollBridge threadId=\{thread\?\.id \?\? ""\}/.test(appView), "整块只挂一次（模块级总线，挂两次会多一份订阅与一次 IPC）");
+/* ── ⑨b 桥：引擎工具项 → 长命令追踪（10-09 用户追加那条的第二半）────────────── */
+ok(/window\.codex\.onEvent\(/.test(bridge) && /"item\/started"/.test(bridge) && /"item\/completed"/.test(bridge),
+  "桥监听**引擎工具项**事件（不再加一条 harness:event 广播 —— 工具项本来就在引擎事件流里，多一处发射点就多一处会漏）");
+ok(/const WORK_ITEM_TYPES = new Set\(\[[\s\S]{0,240}?"commandExecution"/.test(bridge) && /beginToolWatch\(/.test(bridge) && /endToolWatch\(/.test(bridge),
+  "工具项起止配对计时（commandExecution 等算「长」；reasoning/agentMessage 不算）");
+ok(/method === "turn\/completed"[\s\S]{0,80}?endToolWatchesOfTurn\(/.test(bridge),
+  "回合结束兜底收尾（被打断的回合可能永远收不到 item/completed ⇒ 否则胶囊里挂一条永远在跑的幽灵）");
+ok(/setToolAbortHandler\(\(\) => \{ abortRef\.current\?\.\(\); \}\)/.test(bridge) && /setToolAbortHandler\(null\)/.test(bridge),
+  "「中止」回调注册/清理成对（回调走 ref：每次渲染都是新函数，直接进 deps 会让订阅反复重建）");
+ok(/onAbortTool=\{\(\) => \{ void interrupt\(\); \}\}/.test(appView) && /onAbortTool\?: \(\) => void/.test(bridge),
+  "AppView 把 `interrupt` 交给桥（长命令的中止 = 打断当前回合）—— 少了这行胶囊上那颗按钮点了没反应");
+/* 真跑：长命令跑过阈值 ⇒ 登记成 kind:\"tool\" 的后台任务；结束 ⇒ 收尾 */
+{
+  const realNow = Date.now;
+  const off2 = store.subscribePollStore(() => undefined);
+  try {
+    store.beginToolWatch({ id: "cmd-guard-1", threadId: "th-1", turnId: "tu-1", title: "命令 · npm run build" });
+    Date.now = () => realNow() + 9000;            // ⛔ 拨表必须在 beginToolWatch **之后**：startedAt 是那一刻记的
+    await new Promise((r) => setTimeout(r, 1250)); // 等一次看门狗 tick
+    const promoted = store.getPollTask("tool:cmd-guard-1");
+    ok(promoted?.status === "polling" && promoted?.kind === "tool" && promoted?.title === "命令 · npm run build",
+      "真跑：长命令跑过阈值 ⇒ 登记成后台任务（kind=\"tool\"，胶囊里出现、对话流里不出现）");
+    ok(Boolean(promoted) && !store.pollTasksOfTurn("tu-1").some((task) => task.kind === "tool"),
+      "真跑：同一张任务表里，长命令**不进对话流**（pollTasksOfTurn 只给 `poll` 类卡）");
+    Date.now = realNow;
+    store.endToolWatch("cmd-guard-1");
+    ok(store.getPollTask("tool:cmd-guard-1")?.status === "success",
+      "真跑：工具项结束 ⇒ 后台任务收尾（不再计入「运行中」）");
+  } finally {
+    Date.now = realNow;
+    off2();
+  }
+}
 
 console.log(`\n【poll-board】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 if (fails) process.exitCode = 1;

@@ -211,6 +211,32 @@ export function spokenDedupeKey(text) {
 }
 
 /**
+ * 句子级去重：把 `text` 按句切开，剔掉**本回合已经念过**的句子，返回「还剩哪些要念」。
+ *
+ * ⛔ 为什么不能只按「整段文本」比对（10-09 用户报「同一段播报内容重复播放好几次」的根因）：
+ *    三条入口喂给 `speak()` 的文本**切分粒度不同** —— 正文实时是**逐句**喂（断句器已经切好），
+ *    工具插播与结束稿是**整段**喂。整段算键时键是「好几句拼起来的串」，
+ *    永远对不上逐句喂时那句单独的键 ⇒ 同一句话先被工具念一遍、又被正文念一遍、结束稿再第三遍。
+ *    按句切分后，无论从哪条入口来，命中的都是同一把键。
+ * ⛔ 同一次调用内部也去重（`keys.includes`）：同一段里重复出现的句子只念一次。
+ * @param {string} text
+ * @param {Set<string>} seen 本回合已念过的键（调用方在**确认出声后**登记）
+ * @returns {{ text: string; keys: string[] }} `text` = 仍需念的句子（全重复则是空串）；`keys` = 它们的键
+ */
+export function dedupeSpokenSentences(text, seen) {
+  const kept = [];
+  const keys = [];
+  for (const sentence of splitSentences(String(text ?? ""))) {
+    const key = spokenDedupeKey(sentence);
+    if (!key) continue;
+    if ((seen && seen.has(key)) || keys.includes(key)) continue;
+    kept.push(sentence);
+    keys.push(key);
+  }
+  return { text: kept.join(""), keys };
+}
+
+/**
  * 回合结束时「该念什么」的唯一裁决点。
  *
  * 优先级：**模型写的播报稿** → 本机压缩（回退） → 空（调用方决定要不要念兜底提示）。

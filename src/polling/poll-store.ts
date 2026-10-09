@@ -19,6 +19,16 @@ import { POLL_DEFAULTS, normalizePollConfig, type PollConfig, type PollStatus } 
 
 export type { PollStatus, PollConfig };
 
+/**
+ * 任务来源（10-09 追加）：
+ *   · `poll` = 真正的轮询（视频生成那类：提交后跑到厂商那边，模型/主进程隔一会儿查一次）
+ *     —— 对话流里会为它渲染一张卡；
+ *   · `tool` = **长命令 / 长耗时工具调用**（用户 10-09 追加要求：「长命令、长工具调用也算一条
+ *     后台任务」）—— 只在输入框那颗「N 个后台任务运行中」胶囊里出现，**不进对话流**
+ *     （它在流里已经有自己的工具卡了，再画一张就是同一件事两个地方看）。
+ */
+export type PollKind = "poll" | "tool";
+
 export interface PollRound {
   /** 第几轮（1 起） */
   n: number;
@@ -32,6 +42,8 @@ export interface PollRound {
 
 export interface PollTask {
   id: string;
+  /** 来源：`poll` = 轮询（对话流里也有卡）；`tool` = 长命令 / 长工具调用（只在胶囊里） */
+  kind: PollKind;
   threadId: string;
   turnId: string;
   title: string;
@@ -122,7 +134,7 @@ function indexOfTask(id: string): number {
  *    那时若把任务从 success 拉回 polling，用户刚看到的「成功」会自己变回「轮询中」。
  */
 export function openPollTask(input: {
-  id: string; threadId?: string; turnId?: string; title?: string; detail?: string;
+  id: string; kind?: PollKind; threadId?: string; turnId?: string; title?: string; detail?: string;
   intervalMs?: number; timeoutMs?: number; maxRetry?: number; managed?: boolean;
 }): PollTask {
   const id = String(input?.id ?? "").trim();
@@ -151,6 +163,7 @@ export function openPollTask(input: {
   }
   const task: PollTask = {
     id,
+    kind: input?.kind === "tool" ? "tool" : "poll",
     threadId: String(input?.threadId ?? ""),
     turnId: String(input?.turnId ?? ""),
     title: String(input?.title ?? "后台任务"),
@@ -251,11 +264,11 @@ export function backfillPollTurn(threadId: string, turnId: string): void {
   if (changed) emit();
 }
 
-/** 某个回合里要显示的卡（turnId 精确匹配）。 */
+/** 某个回合里要显示的**卡**（turnId 精确匹配；⛔ 只取 `poll` 类 —— `tool` 类在流里已有自己的工具卡）。 */
 export function pollTasksOfTurn(turnId: string): PollTask[] {
   const id = String(turnId ?? "");
   if (!id) return [];
-  return snapshot.filter((task) => task.turnId === id);
+  return snapshot.filter((task) => task.kind === "poll" && task.turnId === id);
 }
 
 /** 某个会话里**还在跑**的任务（胶囊的数就来自这里）。 */
@@ -272,6 +285,80 @@ export function clearPollTasks(threadId?: string): void {
   ensureWatchdog();
 }
 
+/* ── 长命令 / 长工具调用 → 后台任务（10-09 用户追加：「长命令、长工具调用也算一条后台任务」）────
+   ⛔ 为什么要**阈值**（不是每个工具调用都弹）：一次 `read` / `ls` 也就几十毫秒，全弹进胶囊
+      等于给每个工具调用挂个转圈 —— 用户要的是"哪些活儿还在跑"，不是"刚刚跑了什么"。
+   ⛔ 为什么提升动作放在**看门狗**而不是 `beginToolWatch` 里定时：时间到了才登记的判据是"现在
+      这一刻还在跑"，只有周期 tick 知道；而且这样**空闲时一个定时器都不挂**（与轮询同一套）。
+   ⛔ 阈值是**判定门槛**不是任务寿命上限：过了门槛就登记，之后跑多久都留在胶囊里，直到
+      `item/completed` 或回合结束来收尾（长命令本来就可能跑十几分钟）。 */
+
+/** 跑多久才算"长"（毫秒）。不到这个时长的工具调用不占胶囊。 */
+export const SLOW_TOOL_MS = 8000;
+
+type ToolWatch = { id: string; threadId: string; turnId: string; title: string; startedAt: number };
+const watchingTools = new Map<string, ToolWatch>();
+
+/** 长命令任务的 id 前缀 —— ⛔ 必须与视频 jobId 分开命名空间（两套 id 都来自主进程，会撞）。 */
+const toolTaskId = (itemId: string) => `tool:${itemId}`;
+
+/** 一个工具项开始跑了（引擎 `item/started`）。幂等：同 id 再来一次不重置计时。 */
+export function beginToolWatch(input: { id: string; threadId?: string; turnId?: string; title?: string }): void {
+  const id = String(input?.id ?? "").trim();
+  if (!id || watchingTools.has(id)) return;
+  watchingTools.set(id, {
+    id,
+    threadId: String(input?.threadId ?? ""),
+    turnId: String(input?.turnId ?? ""),
+    title: String(input?.title ?? "正在执行").trim() || "正在执行",
+    startedAt: Date.now(),
+  });
+  ensureWatchdog();
+}
+
+/** 一个工具项结束了（引擎 `item/completed`）。没到阈值（从未登记成任务）时收尾是 no-op。 */
+export function endToolWatch(id: string, patch: { failed?: boolean } = {}): void {
+  const key = String(id ?? "");
+  const watch = watchingTools.get(key);
+  if (!watch) return;
+  watchingTools.delete(key);
+  settlePollTask(toolTaskId(key), patch?.failed ? { status: "failed", error: "工具调用失败" } : { status: "success" });
+  ensureWatchdog();
+}
+
+/** 回合整个结束了（`turn/completed`）：把这一回合还没收到 completed 的工具项一起收尾。
+ *  ⛔ 少了它：被打断/中途报错的回合里，工具项的 completed 可能永远不来 ⇒ 胶囊里挂一条
+ *    "永远在跑"的幽灵。
+ *  ⛔ 状态用 `failed` 不用 `aborted`：`aborted` 在本模块的语义是「**用户**按了中止」，
+ *    这里的收尾不代表用户动作（正常结束的回合里，工具项早已被 item/completed 收走 ⇒ 这里是 no-op）。 */
+export function endToolWatchesOfTurn(turnId: string): void {
+  const turn = String(turnId ?? "");
+  if (!turn) return;
+  let changed = false;
+  for (const [id, watch] of [...watchingTools]) {
+    if (watch.turnId !== turn) continue;
+    watchingTools.delete(id);
+    settlePollTask(toolTaskId(id), { status: "failed", error: "回合已结束，这次工具调用没有收到完成回执" });
+    changed = true;
+  }
+  if (changed) ensureWatchdog();
+}
+
+/* ── 「中止」出口（胶囊里那颗按钮）─────────────────────────────────────────────
+   长命令的中止 = 打断当前回合（命令是引擎在跑，宿主只能 interrupt），而 interrupt 在 app-state
+   的 bag 上 —— 模块级 store 拿不到。⇒ 与 `announce-bus.setAnnounceStopHandler` 同一套范式：
+   有 bag 的组件（PollBridge）把回调注册进来，store 只负责转调。
+   ⛔ 轮询任务（视频）不走这里：它有自己的 `poll:abort` 通道，能真正停掉厂商那边在等的循环。 */
+let toolAbortHandler: ((taskId: string) => void) | null = null;
+
+export function setToolAbortHandler(fn: ((taskId: string) => void) | null): void {
+  toolAbortHandler = fn;
+}
+
+export function requestToolAbort(taskId: string): void {
+  try { toolAbortHandler?.(String(taskId ?? "")); } catch { /* 中止失败不影响别的功能 */ }
+}
+
 function trimTasks() {
   if (tasks.length > MAX_TASKS) tasks = tasks.slice(tasks.length - MAX_TASKS);
 }
@@ -281,7 +368,8 @@ function trimTasks() {
    ⛔ 判据是 startedAt（总耗时），不是「距上一轮」——「超时上限」说的是"这件事最多等这么久"，
       用静默时长会让它永远等下去（模型每 9 分钟查一次就能无限续命）。 */
 function ensureWatchdog() {
-  const busy = tasks.some((task) => task.status === "polling");
+  // 忙 = 有轮询任务在跑，**或**还有工具项在跑（长命令得等它过阈值才登记成任务）
+  const busy = tasks.some((task) => task.status === "polling") || watchingTools.size > 0;
   if (busy && watchdog == null && listeners.size > 0) {
     watchdog = window.setInterval(tickWatchdog, 1000);
   } else if ((!busy || listeners.size === 0) && watchdog != null) {
@@ -293,13 +381,30 @@ function ensureWatchdog() {
 function tickWatchdog() {
   const now = Date.now();
   let changed = false;
+  /* ① 跑过阈值的长命令 / 长工具调用 ⇒ 提升成后台任务。
+     ⛔ kind:"tool" —— 只在胶囊里出现，**不进对话流**（它在流里已经有自己的工具卡了）。
+     ⛔ startedAt 用 watch 的真实起点：这样胶囊上的"已跑多久"是从命令开始算的，不是从登记算的。 */
+  for (const watch of watchingTools.values()) {
+    const id = toolTaskId(watch.id);
+    if (now - watch.startedAt < SLOW_TOOL_MS || indexOfTask(id) >= 0) continue;
+    tasks = [...tasks, {
+      id, kind: "tool", threadId: watch.threadId, turnId: watch.turnId,
+      title: watch.title, detail: "",
+      status: "polling", rounds: [],
+      intervalMs: config.intervalMs, timeoutMs: config.timeoutMs, maxRetry: config.maxRetry,
+      startedAt: watch.startedAt, retries: 0, managed: false,
+    }];
+    changed = true;
+  }
+  /* ② 超时判定（⛔ 只对 kind:"poll" —— 长命令跑多久是它自己的事，别拿轮询超时上限把它掐了） */
   tasks = tasks.map((task) => {
-    if (task.status !== "polling") return task;
+    if (task.status !== "polling" || task.kind !== "poll") return task;
     if (now - task.startedAt < task.timeoutMs) return task;
     changed = true;
     return { ...task, status: "timeout" as PollStatus, endedAt: now, error: `已等 ${Math.round(task.timeoutMs / 1000)} 秒仍无结果，按超时上限停了` };
   });
   if (changed) {
+    trimTasks();
     emit();
     ensureWatchdog();
   }
