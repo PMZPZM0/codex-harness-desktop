@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（86 个能力域 / 434 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（87 个能力域 / 435 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -19,7 +19,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 - ⛔⛔ **这些通道不是模型能直接调用的工具**（09-28 加：用户问「你会不会定时任务 / 为什么建不了」，模型据此误解过）。它们只有**应用界面**（按钮 / 设置页）会调。模型在会话里能用的只有三类：① 内置调度 MCP 暴露的**真工具**（下一段的清单）；② 各技能正文教的流程；③ 命令行（node 脚本 / \`codex\` 子命令）。
   **内置调度 MCP 当前暴露的工具**（09-29 现状；实际以 tools/list 返回为准）：
   · 调度：\`scheduler_save\`（建定时任务，\`threadId:"current"\` = 就在当前会话里续聊执行）/ \`scheduler_list\` / \`scheduler_run\` / \`scheduler_delete\`
-  · 媒体：\`image_generate\`（生图，\`count\` 1–4 并发出变体，落盘返回本地路径）/ \`video_generate\`（提交视频任务，**立即返回 jobId，不等待**；\`video\` 参数可传白模预演参考片的公网 URL，配 Seedance 2.0/2.5 渲染）/ \`video_status\`（查任务；成功会自动下载落盘；给 \`wait: true\` 就**由宿主一直查到出片/失败/超时**再返回，别自己写循环反复调用）/ \`video_concat\`（把多镜片段按给定顺序拼成成片）/ \`voice_generate\`（台词合成配音 WAV，落盘返回路径；语音模型未下载时报错并指路「设置 → 语音」）
+  · 媒体：\`image_generate\`（生图，\`count\` 1–4 并发出变体，落盘返回本地路径）/ \`video_generate\`（提交视频任务，**立即返回 jobId，不等待**；\`video\` 参数可传白模预演参考片的公网 URL，配 Seedance 2.0/2.5 渲染）/ \`video_status\`（查任务；成功会自动下载落盘；给 \`wait: true\` 就**由宿主一直查到出片/失败/超时**再返回，别自己写循环反复调用）/ \`video_concat\`（把多镜片段按给定顺序拼成成片）/ \`voice_generate\`（台词合成配音 WAV，落盘返回路径；语音模型未下载时报错并指路「设置 → 语音」）/ \`image_edit\`（**修图**：缩放·裁剪·旋转·翻转·转格式·明暗对比·灰度·模糊·马赛克·水印合成·加英文文字【中文会画成空白】，按 ops 顺序执行）/ \`image_info\`（读图片尺寸·格式·透明·字节数）/ \`image_view\`（在应用内弹浮层把这张图给用户看）
   · 语音播报（10-09）：\`voice_announce\`（**立刻念一句话**给用户听 —— 插播，不必等本轮回复结束；≤120 字；实时语音通话中不可用，那时直接写进回复就会被念出来。⚠️ 即时发送、不等回执：没出声不会报错 ⇒ 别据此向用户声称「已经说了」；⛔ 这句是**说给耳朵**的，正文里**别原样复述**，同一句会被念两遍）/ \`voice_announce_stop\`（立刻停止播报、清掉排队待念的内容）/ \`voice_speak_reply\`（把**本条回复的正文**在生成过程中念出来 —— 不是每条都念，由模型自己判断何时值得开口：用户在催 / 反复没做好 / 当前步骤关键 / 自己有话要说）
   · 子智能体：\`agent_invoke\`（派一个干净上下文的自己）/ \`agent_archive_sessions\` / \`subagent_save\`（新建子智能体代理，name+systemPrompt 必填）
   · 专家：\`expert_save\`（创建/更新专家或专家团——displayNameZh + leadName + leadSystemPrompt 必填，多角色加 members；同 teamId 即更新）/ \`expert_list\`（列已有专家）。用户说「帮我建一个 XX 专家 / 专家团」时直接用它，建完复述 teamId；⛔ 内置六专家（知微/呈象/洞明/鲁班/画意/剪承团）有固定 teamId，别覆盖
@@ -241,6 +241,10 @@ Bot 会话（Bot 与会话的绑定与消息注入）
 ### model-viewer（1 通道）
 **3D 模型预览**（10-05）：read(path) 读会话工作区里的 .glb / .gltf 模型（可信根内、≤256MB，字节直传给预览弹窗）。通常不直接调 —— 引擎侧走 harness_tools 网关的 \`preview_3d\` 在应用内弹出可旋转的 3D 预览；本域通道是渲染层弹窗的取数后端
 通道：model-viewer:read
+
+### image-lab（1 通道）
+**图像工坊**（10-09，Windows/Mac 同一份实现）：read(path) 读图片字节（可信根内、图片扩展名白名单、≤128MB，直传给浮层预览）。⛔ 模型侧不直接调这条通道 —— 走 harness_tools 网关的 \`image_edit\`（修图：缩放 / 裁剪 / 旋转 / 翻转 / 转格式 / 明暗对比 / 灰度·棕褐 / 模糊 / 马赛克 / 水印合成 / 加英文文字——中文会画成空白）、\`image_info\`（读尺寸·格式·透明·字节数）、\`image_view\`（应用内弹浮层给用户看）；**生图**用独立的 \`image_generate\` 工具。生成与编辑都会弹「图像工坊」浮层，工具调用结束自动收起。⛔ 编辑引擎是 jimp（纯 JS），不许换成 sharp/canvas 这类原生库
+通道：image-lab:read
 
 ### dialog（6 通道）
 文件/目录选择对话框（含跨窗口）

@@ -29,6 +29,8 @@ import { mutableState, readBuiltinPlugins, scheduler } from "../main";
 import { generateImageResilient } from "./builtin-ipc";
 import { uiverseSearch, uiverseGet } from "./uiverse-library";
 import { concatVideosCore, downloadVideoCore, findVideoJob, listVideoJobs, pollVideoCore, rememberVideoJob, submitVideoCore, updateVideoJob, videoProviderViews } from "./video-gen";
+/* 图像工坊（image-lab，10-09）：编辑核心 / 元信息 / 路径闸 / 弹窗推送 —— 与渲染层浮层同一份事件协议 */
+import { imageEditCore, imageInfoCore, resolveImagePath, pushImageLabEvent, type ImageOp, type ImageFormat } from "./image-lab";
 import { backoffMs, clearPollAbort, isPollAborted, normalizePollConfig, readPollConfig } from "../poll-config";
 /** 轮询等待用（10-09）：主进程里 sleep 不受 Chromium 后台节流影响，wait 循环的间隔才准。 */
 function sleepMs(ms: number): Promise<void> {
@@ -497,6 +499,10 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     if (!model) return { ok: false, error: "生图模型没配（设置 → 插件 → 内置插件 的模型字段）" };
     const count = Math.min(4, Math.max(1, Math.floor(Number(args.count) || 1)));
     const cwd = String(args.workspace || threadCwd.get(callerThreadId) || "").trim();
+    /* 弹「图像工坊」浮层（10-09 用户要求：调用时弹出、完成自动消失）。生成是几十秒的长活，
+       浮层在这里有真实存在感：先亮提示词，出图后亮产物，随后由 close 事件自动收起。 */
+    const labTaskId = `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    pushImageLabEvent({ phase: "open", taskId: labTaskId, mode: "generate", title: "图像工坊 · 生成中", status: "running", images: [], note: prompt.slice(0, 100) });
     const results = await Promise.allSettled(
       Array.from({ length: count }, () => generateImageResilient({
         baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model, prompt,
@@ -523,11 +529,73 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
       }
       if (filePath) saved.push(filePath);
     }
-    if (!saved.length) return { ok: false, error: `生成失败：${errors[0] ?? "未知错误"}` };
+    if (!saved.length) {
+      pushImageLabEvent({ phase: "update", taskId: labTaskId, mode: "generate", status: "error", images: [], note: String(errors[0] ?? "生成失败") });
+      pushImageLabEvent({ phase: "close", taskId: labTaskId });
+      return { ok: false, error: `生成失败：${errors[0] ?? "未知错误"}` };
+    }
+    pushImageLabEvent({ phase: "update", taskId: labTaskId, mode: "generate", status: "done", images: saved, note: `已生成 ${saved.length} 张` });
+    pushImageLabEvent({ phase: "close", taskId: labTaskId });
     const lines = saved.map((file, i) => `${i + 1}. ${file}`).join("\n");
     const tail = errors.length ? `\n（另有 ${errors.length} 张失败：${errors[0]}）` : "";
     const where = cwd ? "" : "\n（未指定工作目录，文件在应用数据目录的 images/ 下）";
     return { ok: true, output: `已生成 ${saved.length}/${count} 张：\n${lines}${tail}${where}` };
+  }
+  /* ── 图像工坊 · 编辑（10-09）：与 image_generate 共用同一套「弹→亮→收」浮层协议。 */
+  if (name === "image_edit") {
+    const labTaskId = `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const srcList = [
+      ...(Array.isArray(args.paths) ? (args.paths as unknown[]).map((p) => String(p)) : []),
+      ...(args.path ? [String(args.path)] : []),
+    ].filter(Boolean);
+    try {
+      // 先亮源图（用户看得见"在改的是哪张"），编辑很快，出结果再换成产物
+      pushImageLabEvent({ phase: "open", taskId: labTaskId, mode: "edit", title: "图像工坊 · 编辑中", status: "running", images: srcList.slice(0, 1) });
+      const results = await imageEditCore({
+        path: args.path ? String(args.path) : undefined,
+        paths: Array.isArray(args.paths) ? (args.paths as unknown[]).map((p) => String(p)) : undefined,
+        ops: (Array.isArray(args.ops) ? args.ops : []) as ImageOp[],
+        output: args.output ? String(args.output) : undefined,
+        format: args.format ? (String(args.format) as ImageFormat) : undefined,
+        quality: args.quality !== undefined ? Number(args.quality) : undefined,
+      });
+      pushImageLabEvent({ phase: "update", taskId: labTaskId, mode: "edit", status: "done", images: results.map((r) => r.path), note: `已编辑 ${results.length} 张` });
+      pushImageLabEvent({ phase: "close", taskId: labTaskId });
+      const lines = results.map((r) => `${r.path}（${r.width}×${r.height}，${r.format}，${Math.round(r.bytes / 1024)}KB）`).join("\n");
+      return { ok: true, output: `已编辑 ${results.length} 张，产出：\n${lines}` };
+    } catch (error) {
+      const message = String((error as Error)?.message ?? error);
+      pushImageLabEvent({ phase: "update", taskId: labTaskId, mode: "edit", status: "error", images: [], note: message });
+      pushImageLabEvent({ phase: "close", taskId: labTaskId });
+      return { ok: false, error: `图像编辑失败：${message}` };
+    }
+  }
+  if (name === "image_info") {
+    try {
+      const info = await imageInfoCore({
+        path: args.path ? String(args.path) : undefined,
+        paths: Array.isArray(args.paths) ? (args.paths as unknown[]).map((p) => String(p)) : undefined,
+      });
+      return {
+        ok: true,
+        output: info
+          .map((i) => `${i.path}：${i.width}×${i.height}，${i.format}${i.hasAlpha ? "（带透明通道）" : ""}，${Math.round(i.bytes / 1024)}KB`)
+          .join("\n"),
+      };
+    } catch (error) {
+      return { ok: false, error: `读图片信息失败：${String((error as Error)?.message ?? error)}` };
+    }
+  }
+  if (name === "image_view") {
+    try {
+      const file = await resolveImagePath(String(args.path ?? ""));
+      const labTaskId = `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      // ⛔ 这里**不发 close**：这是"把图亮给用户看"，由用户自己关（自动收掉等于没看）
+      pushImageLabEvent({ phase: "open", taskId: labTaskId, mode: "edit", title: String(args.title ?? "").trim() || "图像预览", status: "done", images: [file] });
+      return { ok: true, output: `已在应用内打开图像工坊预览：${file}（用户可放大查看，看完自己关）` };
+    } catch (error) {
+      return { ok: false, error: `无法打开图像预览：${String((error as Error)?.message ?? error)}` };
+    }
   }
   if (name === "video_generate") {
     const prompt = String(args.prompt ?? "").trim();

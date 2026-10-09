@@ -1,0 +1,21 @@
+/* 33-image-lab.css —— 图像工坊浮层（image-lab 域，2026-10-09 立）
+   Codex 调用 image_generate / image_edit / image_view 时弹出：生成中/处理中 → 产物实时预览，结束后自动收起。
+   视觉基调遵循 DESIGN.md：--panel/--line/--text 递进，唯一主色 --accent，不写死色值。
+   层叠层级带（守卫【198】）：全局模态 400 —— 与 model-viewer 同带（都盖主界面与设置 backdrop）。 */
+
+.image-lab-backdrop { position: fixed; inset: 0; z-index: 400; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center; justify-content: center; }
+.image-lab-dialog { width: min(820px, 92vw); max-height: min(680px, 88vh); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 18px 48px rgba(0, 0, 0, 0.3); display: flex; flex-direction: column; overflow: hidden; }
+.image-lab-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); flex: none; }
+.image-lab-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--text); }
+.image-lab-status { flex: none; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.image-lab-status.is-done { background: rgba(46, 160, 67, 0.14); color: #2ea043; }
+.image-lab-status.is-error { background: rgba(207, 34, 46, 0.14); color: #cf222e; }
+.image-lab-close { border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 6px; }
+.image-lab-close:hover { background: var(--accent-soft); color: var(--accent); }
+.image-lab-body { flex: 1; min-height: 0; overflow: auto; background: var(--panel-2, var(--panel)); display: flex; align-items: center; justify-content: center; padding: 14px; }
+.image-lab-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; width: 100%; }
+.image-lab-image { width: 100%; max-height: 60vh; object-fit: contain; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.image-lab-empty { display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; text-align: center; }
+.image-lab-note { color: var(--muted); font-size: 12px; max-width: 60ch; }
+.image-lab-error { color: #cf222e; font-size: 13px; text-align: center; padding: 20px; }
+.image-lab-foot { flex: none; padding: 8px 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }

@@ -378,6 +378,81 @@ function dispatchMcpTools(): unknown[] {
         required: ["prompt"],
       },
     },
+    /* ── 图像工坊（image-lab，10-09 用户：「把图像生成与编辑类工具内置进来，让 Codex 能直接作图修图」）──
+       生成 = image_generate（上面，走内置生图插件）；**编辑 = image_edit**（jimp 纯 JS 引擎，
+       electron/features/image-lab.ts）；读元信息 = image_info；在应用内打开看 = image_view。
+       ⛔ 编辑/预览都会在渲染层弹「图像工坊」浮层（image-lab:event 推送），完成自动消失 —— 用户要求的联动。
+       ⛔ 引擎必须纯 JS：Windows 打包 + mac 交叉构建下，带 .node 的库（sharp/canvas）是已知风险，见 image-lab.ts 头注。 */
+    {
+      name: "image_edit",
+      description:
+        "对本地图片做**基础编辑 / 修图**，产出新文件并返回其路径。用户说「把这张图裁一下 / 缩放 / 转成 jpg / "
+        + "调亮点 / 加个水印 / 打码 / 加行字」时用它。⛔ 只处理**可信目录**（会话工作目录 / 应用数据目录）内的图片。"
+        + "ops 按数组顺序依次执行，后一个接前一个的产物；缺省输出到源图同目录的 `<名字>-edit.<ext>`。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "源图绝对路径（单张）。与 paths 至少给一个" },
+          paths: { type: "array", items: { type: "string" }, description: "多张源图（同一组 ops 逐张应用）" },
+          ops: {
+            type: "array",
+            description:
+              "编辑操作，**按顺序执行**。每项是一个对象，op 字段决定类型："
+              + "resize{width?,height?} 缩放（只给一边=等比）；scale{factor} 按倍率缩放；"
+              + "crop{x,y,width,height} 裁剪；rotate{degrees} 旋转；flip{axis:'horizontal'|'vertical'|'both'} 翻转；"
+              + "brightness{value:-1..1} / contrast{value:-1..1} 明暗对比；greyscale 灰度；invert 反相；sepia 棕褐；"
+              + "blur{radius} / gaussian{radius} 模糊；posterize{n} 色阶化；pixelate{size} 马赛克；normalize 自动色阶；"
+              + "opacity{value:0..1} 整体透明度；color{apply,params} 高级调色；"
+              + "composite{path,x,y,opacity?} 叠加另一张图（水印）；text{text,x,y,size?,color?} 加文字（⛔ 只支持英文/数字，中文会在图上显示成空白）；"
+              + "background{color:'#rrggbb'} 把透明底压成纯色。",
+            items: {
+              type: "object",
+              properties: {
+                op: { type: "string", description: "操作类型（见数组说明）" },
+                width: { type: "number" }, height: { type: "number" }, x: { type: "number" }, y: { type: "number" },
+                factor: { type: "number" }, degrees: { type: "number" }, radius: { type: "number" },
+                value: { type: "number" }, n: { type: "number" }, size: { type: "number" },
+                axis: { type: "string", enum: ["horizontal", "vertical", "both"] },
+                path: { type: "string", description: "composite 要叠加的图片路径" },
+                text: { type: "string", description: "text 操作要写的内容（仅 ASCII）" },
+                color: { type: "string", description: "text 的 black/white；background 的 #rrggbb" },
+                opacity: { type: "number" }, apply: { type: "string" }, params: { type: "array", items: { type: "number" } },
+              },
+              required: ["op"],
+            },
+          },
+          output: { type: "string", description: "输出文件路径（缺省 = 源图同目录 <名字>-edit.<ext>）；必须在可信目录内" },
+          format: { type: "string", enum: ["png", "jpeg", "bmp", "tiff"], description: "输出格式（缺省沿用源图；webp/gif 源回落 png）" },
+          quality: { type: "number", description: "输出 jpeg 的质量 1-100（缺省 90）" },
+        },
+        required: ["ops"],
+      },
+    },
+    {
+      name: "image_info",
+      description: "读取图片的元信息：宽高、格式、是否带透明通道、文件字节数。用户问「这张图多大 / 什么格式 / 有没有透明」时用。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "图片绝对路径（单张）" },
+          paths: { type: "array", items: { type: "string" }, description: "多张" },
+        },
+      },
+    },
+    {
+      name: "image_view",
+      description:
+        "在应用内打开「图像工坊」浮层给用户看一张图（放大预览）。用户说「给我看看这张图 / 打开这张图」时用；"
+        + "也用于把刚生成/编辑的产物直接亮给用户。⛔ 只读展示，不改文件。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "图片绝对路径" },
+          title: { type: "string", description: "浮层标题（缺省用文件名）" },
+        },
+        required: ["path"],
+      },
+    },
     {
       name: "video_generate",
       description: "提交一个视频生成任务（异步），**立即**返回 jobId；随后用 video_status 查询进度。图生视频传 image（本地路径或公网 URL）。不要把本工具当同步接口反复等待 —— 提交完可以先做别的事，隔一会儿再查。",

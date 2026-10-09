@@ -1,0 +1,1 @@
+export { ImageLabBridge } from "./ImageLabModal";

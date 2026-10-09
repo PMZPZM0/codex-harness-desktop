@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 434,
+  "count": 435,
   "channels": [
     {
       "name": "request",
@@ -3791,6 +3791,16 @@
       "invokeArgs": "{ path }",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "readImage",
+      "channel": "image-lab:read",
+      "paramsImpl": "path: string",
+      "paramsDecl": "path: string",
+      "returns": "Promise<{ data: Uint8Array; size: number }>",
+      "invokeArgs": "{ path }",
+      "cast": null,
+      "note": "图像工坊读通道（image-lab 域，10-09）：渲染层浮层预览拉图片字节；路径闸 = resolveImagePath（可信根 + 图片扩展名 + 128MB），与网关的 image_generate/image_edit 共用"
     },
     {
       "name": "dramaCanvasStoryboardFileRemove",

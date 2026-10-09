@@ -383,6 +383,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           + "workflow_read / workflow_writeback（工作流看板）；expert_list / expert_save / subagent_save（专家与子智能体管理）；"
           + "preview_3d（3D 模型预览：拿到 .glb/.gltf 后在应用内弹出可旋转查看的弹窗）；"
           + "wallpaper_set（壁纸：pattern/particles/vanta/custom 四类，Codex 可自助做图设壁纸）；"
+          + "image_edit / image_info / image_view（图像工坊：修图编辑 —— 缩放/裁剪/旋转/翻转/转格式/明暗对比/灰度/模糊/马赛克/水印合成/加英文文字；读图片元信息；在应用内弹浮层预览。生图用独立的 image_generate 工具）；"
           + "connector_register（注册 MCP 连接器）。传 name=\"list\" 可拿到每个能力的完整参数说明（不确定参数就先调它）。"
           + "⛔ 调度专家 / 专家团 / 子智能体请用专用工具 agent_invoke，不在这里。"
           + "⛔ 若你直接调用某个内置能力名（而不是走本工具）却报 unsupported call，说明**本会话的工具面是旧的**"
