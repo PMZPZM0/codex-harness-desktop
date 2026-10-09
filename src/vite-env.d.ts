@@ -906,6 +906,8 @@ interface Window {
     petShow(): Promise<{ settings: PetSettings; open: boolean }>;
     /* 隐藏宠物（置 enabled=false；下次启动不自动恢复） */
     petHide(): Promise<{ settings: PetSettings; open: boolean }>;
+    /* 透明区域鼠标穿透开关：渲染层按「指针是否在宠物本体上」动态翻转；forward 让页面在穿透时仍收到 mousemove（仅 Windows 有 forward，mac 保持整块可点） */
+    petIgnoreMouse(ignore: boolean): Promise<{ ok: boolean; ignore: boolean }>;
     /* SkillHub 专家市场包（skillhub.cn/skillspackage，总 55 包） */
     listExpertMarketPackages(input?: { page?: number; pageSize?: number; query?: string }): Promise<{ items: { slug: string; displayName: string; summary: string; scene: string; subScene: string; children: string[] }[]; total: number; page: number; pageSize: number }>;
     /* 装包 = 元技能 + 子技能 + 专家中心新增对应专家卡片 */

@@ -30,9 +30,9 @@ export interface IpcDomainEntry {
 }
 
 export const IPC_DOMAINS: IpcDomainEntry[] = [
-  { prefix: "pet", count: 10, status: "in-features", file: "features/pet-ipc.ts",
-    channels: ["pet:list", "pet:settings-get", "pet:settings-set", "pet:state", "pet:roots", "pet:open-dir", "pet:import", "pet:toggle", "pet:show", "pet:hide"],
-    note: "09-30 新增：桌面宠物（官方 Codex 宠物格式的发现/校验/设置）。宠物本体渲染在独立透明置顶浮窗（features/pet-window.ts，**不登记 window-bus**）；图集经**窄口径 `pet://` 协议**读取（只放行宠物目录 + 图片扩展名；不放宽 harness-image 的可信根）；状态归约在 features/pet-state.ts（引擎事件 → 官方九态）",
+  { prefix: "pet", count: 11, status: "in-features", file: "features/pet-ipc.ts",
+    channels: ["pet:list", "pet:settings-get", "pet:settings-set", "pet:state", "pet:roots", "pet:open-dir", "pet:import", "pet:toggle", "pet:show", "pet:hide", "pet:ignore-mouse"],
+    note: "09-30 新增：桌面宠物（官方 Codex 宠物格式的发现/校验/设置）。宠物本体渲染在独立透明置顶浮窗（features/pet-window.ts，**不登记 window-bus**）；图集经**窄口径 `pet://` 协议**读取（只放行宠物目录 + 图片扩展名；不放宽 harness-image 的可信根）；状态归约在 features/pet-state.ts（引擎事件 → 官方九态）。10-09 +1 = pet:ignore-mouse（透明区域鼠标穿透开关，修「软件外面无法点」）",
   },
   { prefix: "drama-canvas", count: 7, status: "in-features", file: "features/drama-canvas.ts",
     channels: ["drama-canvas:asset-write", "drama-canvas:storyboard-file-remove", "drama-canvas:polish-prompt", "drama-canvas:describe-image", "drama-canvas:output-dir", "drama-canvas:output-dir-set", "drama-canvas:board-sync"],

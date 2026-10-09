@@ -26,7 +26,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { petSignal } from "./pet-state";
-import { applyPetSettings, hidePetWindow, isPetVisible, petWindowBounds, pushPetConfig, setPetMoveHandler, showPetWindow } from "./pet-window";
+import { applyPetSettings, hidePetWindow, isPetVisible, petWindowBounds, pushPetConfig, setPetMouseIgnore, setPetMoveHandler, showPetWindow } from "./pet-window";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
@@ -334,7 +334,14 @@ export const petFeature = defineFeature<null>({
 
     ipcHost.handle("pet:hide", () => hidePet());
 
-    // 生命期：卸载时摘掉本域十条通道（不摘 = 卸载后通道还在、实现已被回收 ⇒ 调用报错）
+    /* 透明区域鼠标穿透开关（渲染层按「指针是否在宠物本体上」动态翻转；见 pet-window 头注）。
+       ⛔ 高频通道但**必须走 IPC**：setIgnoreMouseEvents 只能主进程调，渲染层没有任何旁路。 */
+    ipcHost.handle("pet:ignore-mouse", (_event, ignore: boolean) => {
+      setPetMouseIgnore(Boolean(ignore));
+      return { ok: true, ignore: Boolean(ignore) };
+    });
+
+    // 生命期：卸载时摘掉本域十一条通道（不摘 = 卸载后通道还在、实现已被回收 ⇒ 调用报错）
     ctx.effect(() => {
       ipcHost.removeHandler("pet:list");
       ipcHost.removeHandler("pet:settings-get");
@@ -346,6 +353,7 @@ export const petFeature = defineFeature<null>({
       ipcHost.removeHandler("pet:toggle");
       ipcHost.removeHandler("pet:show");
       ipcHost.removeHandler("pet:hide");
+      ipcHost.removeHandler("pet:ignore-mouse");
     });
   },
 });
