@@ -1979,8 +1979,11 @@
   position: relative; /* 后台任务的面板锚到整行（= 输入框宽度），不随小胶囊缩宽 */
 }
 .composer-status-row:empty { display: none; }
-.composer-status-row .edited-files-card { grid-column: 2; justify-self: center; margin: 0; }
-.composer-status-row .poll-bg-wrap { grid-column: 1; justify-self: start; width: auto; margin: 0; position: static; }
+/* ⛔⛔ grid-row: 1 必须显式钉死（10-11 用户截图实测）：两个子项只指定列时，grid 的
+   sparse 自动放置会把后放的第 1 列项顺延到**第 2 行**（光标已越过第 1 列）——
+   症状正是「文件胶囊居中在上、后台胶囊另起一行靠左，不在同一行」。 */
+.composer-status-row .edited-files-card { grid-column: 2; grid-row: 1; justify-self: center; margin: 0; }
+.composer-status-row .poll-bg-wrap { grid-column: 1; grid-row: 1; justify-self: start; width: auto; margin: 0; position: static; }
 .composer-status-row .poll-bg-panel { left: 0; right: 0; } /* 面板仍与输入框同宽 */
 
 /* 询问/审批卡 = **临时覆盖层**（10-11 用户：「可以临时覆盖展示在这些元素之上」）：
