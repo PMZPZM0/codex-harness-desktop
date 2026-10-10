@@ -136,6 +136,15 @@ ok(composer.includes("<TurnStatusCapsule") && composer.includes("taskList={taskL
   && /composer-status-row[\s\S]{0,200}<TurnStatusCapsule[\s\S]{0,400}<BackgroundTaskCapsule/.test(composer),
   "⛔ 位置（10-11 用户改版）：在**状态行**里（composer-status-row）与后台任务胶囊**同一排**自适应排版、\n"
   + "紧挨输入框（ComposerComposerForm 之前）—— 不再各占一行留大片空白；行空时 :empty 整行隐藏");
+  /* ── 布局规则定稿（10-11 用户）：居中/靠左各归原位、同现同行、询问审批覆盖、排队在下 ── */
+  ok(/\.composer-status-row \{[^}]*grid-template-columns: 1fr auto 1fr/.test(css)
+    && /\.composer-status-row \.edited-files-card \{[^}]*grid-column: 2/.test(css)
+    && /\.composer-status-row \.poll-bg-wrap \{[^}]*grid-column: 1/.test(css),
+    "⛔ 三列网格：后台胶囊=首列**靠左**（原位）、回合胶囊=中列**居中**（原位）—— 单独出现各归原位、同现同一行");
+  ok(composer.includes("composer-status-zone") && composer.includes("composer-overlay-stack"),
+    "询问/审批卡 = **临时覆盖层**（composer-overlay-stack absolute 盖在状态区上，关掉即露出）");
+  ok(composer.indexOf("composer-status-row") < composer.indexOf("<QueuedMessageList"),
+    "⛔ 排队消息渲染在两胶囊**下方**（正常流、不覆盖任何元素）");
 
 /* ── 六-c、新回合开工清上一轮清单（10-06 夜六轮，用户实测「新回合，旧的任务清单还在」）────────
    上一轮停下（todo/doing 残留）的清单不许跨回合冒出来：空闲直发 → 宿主 tasks:clear（真通道+广播）
