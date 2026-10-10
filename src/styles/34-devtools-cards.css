@@ -1,0 +1,112 @@
+/* ── 开发工具页 · 两级信息架构（10-10 用户要求）──────────────────────────────
+   一级 = 分类卡片网格（.devtools-cards）；二级 = 弹窗（.settings-dialog*，内容不内嵌）。
+   ⛔ 颜色一律走主题变量（--line / --bg / --dim / --green），皮肤切换自动跟随，
+     不写死具体色值（本项目所有设置页同口径）。 */
+
+/* ── 一级：分类卡片 ─────────────────────────────────────────────── */
+.devtools-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  margin: 12px 0 4px;
+}
+
+.devtools-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  text-align: left;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  color: inherit;
+  cursor: pointer;
+  transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+.devtools-card:hover {
+  border-color: var(--accent, var(--green));
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px #00000012;
+}
+.devtools-card:focus-visible { outline: 2px solid var(--accent, var(--green)); outline-offset: 2px; }
+
+.devtools-card-logo {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--green) 13%, var(--bg));
+  color: var(--green);
+}
+.devtools-card-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.devtools-card-copy strong { font-size: 13px; }
+.devtools-card-copy small { color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+.devtools-card-stat { color: var(--muted); font-size: 11px; }
+.devtools-card-arrow { flex: none; margin-top: 2px; color: var(--muted); }
+.devtools-card:hover .devtools-card-arrow { color: var(--green); }
+
+/* ── 二级：弹窗（设置内档 z=900，与 .memory-center-modal 同规范）──────────── */
+.settings-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: #00000052;
+}
+.settings-dialog {
+  display: grid;
+  grid-template-rows: 60px minmax(0, 1fr);
+  width: min(720px, 100%);
+  height: min(720px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--bg);
+  box-shadow: 0 24px 70px #00000045;
+}
+.settings-dialog[data-size="lg"] { width: min(1080px, 100%); height: min(800px, 100%); }
+
+.settings-dialog-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+.settings-dialog-logo {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--green) 13%, var(--bg));
+  color: var(--green);
+}
+.settings-dialog-heading { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
+.settings-dialog-heading strong { font-size: 14px; }
+.settings-dialog-heading small { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.settings-dialog-close {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.settings-dialog-close:hover { color: inherit; border-color: var(--accent, var(--green)); }
+.settings-dialog-body { min-height: 0; overflow: auto; padding: 4px 16px 18px; }
+/* 弹窗内的面板：原来这些面板直接排在设置页里（靠 .settings-section 的间距），
+   进弹窗后由 body 提供边距 ⇒ 去掉自身的首尾外边距，避免翻倍留白。 */
+.settings-dialog-body > .settings-section { padding: 0; }
+.settings-dialog-body > .settings-section > :first-child { margin-top: 0; }

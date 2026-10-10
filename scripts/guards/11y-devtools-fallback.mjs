@@ -26,7 +26,9 @@ const read = (rel) => readFileSync(join(ROOT, rel), "utf8");
 
 const rt = read("electron/features/runtime-ipc.ts");
 const capability = read("src/features/app-state/parts/part02/04-runtime-commands-account/01-dev-runtimes-capability.tsx");
-const page = read("src/features/settings-devtools/DevtoolsSettingsSection.tsx");
+/* ⛔ 10-10 两级 IA：运行时列表搬进了「运行时与工具链」弹窗面板 —— 两条消费侧断言跟着走
+   （内容零改写，判据不变：失败前缀同名 + 「复制提示词」按钮用主进程下发的原文）。 */
+const page = read("src/features/settings-devtools/RuntimeToolsPanel.tsx");
 const css = read("src/styles/08-settings-engine-update.css");
 
 /* ── ① 单一真相源：文案在主进程生成，随 runtime:list 下发 ──────────────── */
