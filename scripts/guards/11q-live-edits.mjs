@@ -187,5 +187,20 @@ ok(sessionQueue.includes("const liveRowsFor = (itemId: string) => {") && session
 ok(!sessionQueue.includes("saveEditAnchors") && !sessionQueue.includes("loadEditAnchors"),
   "⛔ 锚点 localStorage 持久化已随冻结块方案撤掉（放进折叠的落位在收起状态下等于没显示）");
 
+/* ── 八、回合用量落账（10-11 用户报障：缓存输入输出/命中率只在重启后显示）──────────────
+   根因：completedTurns/latestCompletedTurn 的 memo 键 threadMemoKey 原来只有
+   「id:回合数:末 item id」—— 回合**完成瞬间三样都不变** ⇒ memo 陈旧，
+   latestCompletedTurn 停在上一个回合 ⇒ 刚完成的回合拿不到 lastUsage/tokenUsage
+   （时间线传 null）⇒ footer 的「N 入 / N 出 · N% 缓存」不显示；重启后引擎 thread
+   载入自带 usage 才出现。⇒ 键必须含**末回合 status**（完成瞬间 running→completed 必变）。 */
+console.log("\n【live-edits】⑱ 回合用量落账");
+{
+  const seg04 = codeOnly(read("src/features/app-state/parts/part04/01-seg.tsx"));
+  ok(/\$\{bag\.thread\.turns\[bag\.thread\.turns\.length - 1\]\?\.status \?\? ""\}`/.test(seg04),
+    "⛔ threadMemoKey 含**末回合 status**（⛔ 缺它 = 回合完成瞬间 memo 陈旧，用量页脚只在重启后出现）");
+  ok(/\[bag\.threadMemoKey\]/.test(seg04),
+    "completedTurns 确实以 threadMemoKey 为依赖（改键即生效）");
+}
+
 console.log(`\n【live-edits】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
