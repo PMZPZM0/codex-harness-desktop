@@ -306,6 +306,17 @@ export function AppViewMemoryPanel({ app }: { app: HarnessAppApi }) {
                         </section>
                       ))}
                     </div>
+                    {/* ── 出边（10-10 评审建议第 4 条）：技能与插件**不是记忆**（是能力面），
+                        它们与记忆只有一条关系 —— L2 纪律攒够了会**升级为技能**（脱离记忆预算、
+                        变成可复用能力）。⛔ 把它画成出边而不是与记忆并列的一块，否则"记忆架构"
+                        会变成大杂烩。 */}
+                    <div className="memory-center-block">
+                      <div className="memory-center-block-head"><div><strong>出边：记忆 → 能力</strong><span>记忆只往外送出一样东西 —— 攒够的纪律会升级成可复用的技能。</span></div></div>
+                      <article className="memory-rule-row">
+                        <header className="memory-rule-row-head"><b>L2 →</b><strong>技能库</strong><i className="memory-rule-tier">退出记忆预算</i></header>
+                        <p className="memory-rule-note">L2（纪律与记忆）在满水位之前，先按分类把反复出现的条目**升级为技能**：技能是可复用能力（全局或项目级），不再占用常驻注入预算；升级完再压缩 L2 原文。⛔ 技能 / 插件清单不放在记忆架构里（它们是能力面）。</p>
+                      </article>
+                    </div>
                     <div className="memory-center-block">
                       <div className="memory-center-block-head"><div><strong>会话级存储</strong><span>「其余记忆按会话独立存储」的落地形态：命名空间隔离，条目按来源会话标记。</span></div></div>
                       {MEMORY_SESSION_SCOPES.map((scope) => (

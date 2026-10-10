@@ -449,6 +449,15 @@ export function DispatchedTimelineView({
                   </button>
                   {open && (
                     <div className="mui-tl-body">
+                      {/* ── 派出者（10-10 评审建议）：被调度会话不是凭空出现的，它由某一路会话
+                          派出（可能是主会话、专家或团）。⛔ 不显示派出者就无法判断"它记得什么"。 */}
+                      <p className="mui-tl-parent">
+                        派出者：
+                        {d.originThreadId && d.originThreadId !== d.threadId
+                          ? <button type="button" className="mui-link" onClick={() => onOpenThread?.(d.originThreadId)}>{d.originThreadId.length > 24 ? d.originThreadId.slice(0, 12) + "…" + d.originThreadId.slice(-6) : d.originThreadId}</button>
+                          : <span>主会话（你自己发起）</span>}
+                        {d.depth > 1 ? <span className="mui-tl-parent-note"> · 嵌套第 {d.depth} 层：由另一个被调度会话再次派出</span> : null}
+                      </p>
                       <dl className="mui-tl-meta">
                         <div><dt>发起方会话</dt><dd><code>{String(d.originThreadId ?? "未知").slice(0, 12)}</code></dd></div>
                         <div><dt>调度层级</dt><dd>第 {d.depth ?? 1} 层</dd></div>

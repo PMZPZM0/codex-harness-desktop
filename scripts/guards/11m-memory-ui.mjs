@@ -308,5 +308,17 @@ console.log("\n【mui】⑪ 设置页「记忆」两级 IA");
     "记忆后端入口仍在（守卫【150】要求：用户得有地方切换后端）");
 }
 
+/* ── ⑫ 架构评审的三条落地（10-10 用户认可「按你的建议来修改执行」）─────────────────
+   评审结论：草图的"共享池 vs 独立记忆"方向对，但把**分层机制**复制到了每个会话
+   （"独立金字塔记忆 ×4"）⇒ 不采纳；技能/插件是能力面、应画出边；被调度会话要标派出者。 */
+console.log("\n【mui】⑫ 评审落地：派出者 / L2→技能出边 / 评审文档");
+{
+  ok(/mui-tl-parent/.test(VIEWS) && /派出者/.test(VIEWS), "被调度会话标注**派出者**（⛔ 不标就无法判断它记得什么）");
+  ok(/d\.depth > 1/.test(VIEWS) && /嵌套第/.test(VIEWS), "嵌套层数可见（由另一个被调度会话再次派出）");
+  ok(/出边：记忆 → 能力/.test(PANEL) && /L2 →/.test(PANEL), "记忆 → 技能库 画成**出边**（⛔ 技能不当记忆分类）");
+  ok(/架构评审与演进/.test(readFileSync(join(ROOT, "docs", "MEMORY-LAYERS.md"), "utf8")),
+    "评审结论沉淀在 docs/MEMORY-LAYERS.md §六（含被否掉的「独立金字塔」与依据）");
+}
+
 console.log("\n【mui】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));
 process.exit(fails ? 1 : 0);
