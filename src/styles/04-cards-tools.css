@@ -1967,21 +1967,36 @@
 .turn-diff-modal-stats b { color: var(--green); }
 .turn-diff-modal-stats i { color: var(--red); font-style: normal; }
 
-/* ── 状态行（10-11 用户要求）：回合状态胶囊 + 后台任务胶囊 **同一排**自适应排版 ──
-   原来两个胶囊各占一整行、行内大片空白（用户：「下面有空白的为啥要空着」）。
-   ⛔ 两个组件内容为空时都渲染 null ⇒ 行内无子节点，用 :empty 整行隐藏不留缝。 */
+/* ── 状态区（10-11 用户定稿）：回合胶囊居中 / 后台胶囊靠左 / 同现同一行；排队在下方 ──
+   grid 三列 `1fr auto 1fr`：后台胶囊锚首列 start（= 原位：输入框左上）、回合状态胶囊锚中列
+   （= 原位：居中）。单独出现时各在自己原本的位置（列空着就行），同现时天然同一行。
+   ⛔ 两个胶囊内容为空时都渲染 null ⇒ 行内无子节点，用 :empty 整行隐藏不留缝。 */
 .composer-status-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: 8px 10px;
   margin: 2px 0 8px;
-  position: relative; /* 后台任务的面板锚到整行（= 输入框宽度），不再随小胶囊缩宽 */
+  position: relative; /* 后台任务的面板锚到整行（= 输入框宽度），不随小胶囊缩宽 */
 }
 .composer-status-row:empty { display: none; }
-.composer-status-row .edited-files-card { margin: 0; text-align: left; } /* 行内靠左，与后台胶囊并排 */
-.composer-status-row .poll-bg-wrap { width: auto; margin-bottom: 0; position: static; flex: none; }
+.composer-status-row .edited-files-card { grid-column: 2; justify-self: center; margin: 0; }
+.composer-status-row .poll-bg-wrap { grid-column: 1; justify-self: start; width: auto; margin: 0; position: static; }
 .composer-status-row .poll-bg-panel { left: 0; right: 0; } /* 面板仍与输入框同宽 */
+
+/* 询问/审批卡 = **临时覆盖层**（10-11 用户：「可以临时覆盖展示在这些元素之上」）：
+   absolute 锚在状态区底部向上生长，盖住状态行/排队消息；关掉即露出底下元素，
+   不把任何流内元素挤走。⛔ 排队消息仍在正常流里（两胶囊下方），不参与覆盖。 */
+.composer-status-zone { position: relative; }
+.composer-overlay-stack {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 30; /* 盖过流内兄弟（状态行/排队）；低于胶囊弹出层的 10000 带 */
+}
 
 /* ── Agent 提问卡 · 多选形态（10-11 用户要求：单选/多选由 Codex 的 multiple 参数决定）── */
 .agent-ask-mode {

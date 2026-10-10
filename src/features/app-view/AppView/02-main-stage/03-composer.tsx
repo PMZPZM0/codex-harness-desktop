@@ -364,25 +364,6 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                     <GoalBar threadId={thread.id} goalText={goalText} goalStatus={goalStatus} running={Boolean(activeThreadRunning)}
                       onEdit={editGoal} onTogglePause={toggleGoalPause} onDelete={stopGoalLoop} />
                   )}
-                  {/* Agent 提问卡：贴输入框上方、与输入框同宽；只属于发起它的会话，不跨会话弹窗。
-                      10-11 抽成组件：单选（原形态）+ 多选（multiple=true，勾选后提交）由 Codex 决定。 */}
-                  {thread && agentAsk && agentAsk.threadId === thread.id && (
-                    <AgentAskCard ask={agentAsk} onClose={() => setAgentAsk(null)} />
-                  )}
-                  {/* 审批卡：贴输入框上方（与 agent-ask 同款布局，09-13 从消息流大卡迁来）。
-                      主窗口与独立会话窗口走同一渲染逻辑——各自的 pending 里属于本窗口当前会话的
-                      请求都会在这里出现，弹窗里也能审批。 */}
-                  {/* 09-14：多条审批收进 `.approval-stack`（整体限高 + 滚动）——以前每条都是一张
-                      大卡直接往下堆，两条就把输入框上方占满；现在一条只占一行，点摘要才展开看内容。 */}
-                  {(() => {
-                    const mine = thread ? pending.filter((request) => !request.params?.threadId || request.params.threadId === thread.id) : [];
-                    if (!mine.length) return null;
-                    return (
-                      <div className="approval-stack" data-count={mine.length}>
-                        {mine.map((request) => <RequestCard request={request} key={request.id} onDone={() => setPending((current) => current.filter((entry) => entry.id !== request.id))} />)}
-                      </div>
-                    );
-                  })()}
                   <ComposerComposerCardStack app={app} />
                   {/* 启动静默检查发现新版本 → 通知卡片（非阻塞，可稍后/关闭） */}
                   {updateNotice && createPortal(
@@ -450,7 +431,6 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                       </span>
                     </div>
                   )}
-                  {thread && <QueuedMessageList entries={queue} timers={queueTimers[thread.id] ?? {}} onSetTimer={(entry, runAt) => void setQueuedTimer(thread.id, entry.id, runAt)} onOpenFile={messageHandlers.onOpenFile} onQuote={messageHandlers.onQuote} onDelete={(id) => void deleteQueued(id)} onStart={(id) => void startQueued(id)} onSave={(entry, text) => void saveQueued(entry, text)} onReorder={(from, to) => void reorderQueued(from, to)} dragIndex={queueDragIndex} setDragIndex={setQueueDragIndex} />}
                   {/* 图片与文件都在输入框内联 chip 里展示（09-18 用户：「把文件展示不要在输入框上面了，
                       改成在输入框里面的 chip，跟图片一样的展示」）——原先这里那条 .attachment-strip
                       已删除，别再恢复。 */}
@@ -493,18 +473,32 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                       用户看不见念到哪、也喊不停 ⇒ 这条给出当前句 + 待播数 + 停止按钮。
                       播报一旦有东西在念就出现，念完自动收起 —— 平时不占任何 DOM。 */}
                   <VoiceAnnounceIndicator />
-                  {/* 后台任务胶囊（10-09）：输入框**左上角**「N 个后台任务运行中」，无任务时整块不渲染。
-                      ⛔ 放在卡片栈**最下面一行**（紧挨输入框上沿）：它和排队/审批/限流那些条一样是
-                      栈里的普通一行（上下排序、不互相遮），别做成浮层 —— 浮层会盖住上面那几条。
-                      面板向上展开、宽度随 `.composer-wrap`（= 输入框宽度），最多 3 行、超出滚动。 */}
-                  {/* 状态行（10-11 用户要求）：回合状态胶囊（步骤清单 / 文件修改）与后台任务胶囊
-                      **同一排**自适应排版 —— 原来各占一行、行内大片空白（用户：「下面有空白的为啥要空着」）。
-                      ⛔ 两个组件各自内容为空时都返回 null，行空时靠 `:empty` 整行隐藏，不留缝。
-                      面板向上展开：`.poll-bg-wrap` 在行内改 static，面板锚到整行（= 输入框宽度）。 */}
+                  {/* ── 状态区（10-11 用户定稿的布局规则）────────────────────────────────
+                      · 回合状态胶囊（步骤清单/文件修改）：输入框上方**居中**（grid 中列）；
+                      · 后台命令胶囊：输入框**左上**（grid 首列 start）；
+                      · 两者单独出现时各在自己原本的位置，同现时**同一行**（grid 三列 1fr auto 1fr）；
+                      · 询问/审批卡 = **临时覆盖层**（composer-overlay-stack，absolute 盖在状态区上，
+                        关掉即露出底下元素），不把状态行/排队挤走；
+                      · 排队消息：正常流排在两胶囊**下方**，不覆盖任何已有元素。
+                      ⛔ 两个胶囊内容为空时都渲染 null ⇒ 行 :empty 整行隐藏；区空时高度为 0。 */}
                   {thread && (
-                    <div className="composer-status-row">
-                      <TurnStatusCapsule taskList={taskList} runningTurnId={activeThreadRunning ? (activeTurnId || thread.turns[thread.turns.length - 1]?.id || null) : null} />
-                      <BackgroundTaskCapsule threadId={thread.id} />
+                    <div className="composer-status-zone">
+                      {(() => {
+                        const askCard = agentAsk && agentAsk.threadId === thread.id
+                          ? <AgentAskCard ask={agentAsk} onClose={() => setAgentAsk(null)} />
+                          : null;
+                        const mine = pending.filter((request) => !request.params?.threadId || request.params.threadId === thread.id);
+                        const approvals = mine.length
+                          ? <div className="approval-stack" data-count={mine.length}>{mine.map((request) => <RequestCard request={request} key={request.id} onDone={() => setPending((current) => current.filter((entry) => entry.id !== request.id))} />)}</div>
+                          : null;
+                        if (!askCard && !approvals) return null;
+                        return <div className="composer-overlay-stack">{askCard}{approvals}</div>;
+                      })()}
+                      <div className="composer-status-row">
+                        <TurnStatusCapsule taskList={taskList} runningTurnId={activeThreadRunning ? (activeTurnId || thread.turns[thread.turns.length - 1]?.id || null) : null} />
+                        <BackgroundTaskCapsule threadId={thread.id} />
+                      </div>
+                      <QueuedMessageList entries={queue} timers={queueTimers[thread.id] ?? {}} onSetTimer={(entry, runAt) => void setQueuedTimer(thread.id, entry.id, runAt)} onOpenFile={messageHandlers.onOpenFile} onQuote={messageHandlers.onQuote} onDelete={(id) => void deleteQueued(id)} onStart={(id) => void startQueued(id)} onSave={(entry, text) => void saveQueued(entry, text)} onReorder={(from, to) => void reorderQueued(from, to)} dragIndex={queueDragIndex} setDragIndex={setQueueDragIndex} />
                     </div>
                   )}
                   <ComposerComposerForm app={app} />
