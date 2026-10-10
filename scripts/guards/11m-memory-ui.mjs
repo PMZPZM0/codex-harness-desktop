@@ -320,5 +320,17 @@ console.log("\n【mui】⑫ 评审落地：派出者 / L2→技能出边 / 评�
     "评审结论沉淀在 docs/MEMORY-LAYERS.md §六（含被否掉的「独立金字塔」与依据）");
 }
 
+/* ── ⑬ 写入侧的「项目作用域」必须说清边界（10-10 核对工具面时发现）──────────────
+   工具描述与 SCOPE_HINTS 原文只说「全体会话与智能体共享」⇒ 模型可能以为 project 能跨项目读到，
+   于是把**项目私有**的事实当"可公开"写进去（或反过来不敢写）。实际实现是按工作区隔离的
+   （`namespaceOf("project", …)` 落在该工作区的 memory/ 下）⇒ 说明必须与实现一致。 */
+console.log("\n【mui】⑬ 写入侧作用域边界说明");
+{
+  const fabTool = readFileSync(join(ROOT, "electron", "memory-fabric-tool.ts"), "utf8");
+  ok(/本项目.*全体会话与智能体/.test(fabTool) && /别的项目读不到/.test(fabTool),
+    "⛔ 写入侧写明 project = **本项目**共享、别的项目读不到（⛔ 只说「全体共享」会让模型误判范围）");
+  ok(/跨项目的东西写 L0/.test(fabTool), "跨项目的东西指向 L0 用户档案（给模型一条明确出路）");
+}
+
 console.log("\n【mui】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));
 process.exit(fails ? 1 : 0);
