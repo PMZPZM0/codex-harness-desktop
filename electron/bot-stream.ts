@@ -178,7 +178,17 @@ export class BotStreamSession {
         }
         break;
       }
-      case "turn/completed": {
+      case "turn/completed":
+      case "turn/aborted":
+      case "turn/failed":
+      case "turn/interrupted": {
+        /* ⛔⛔ 四类结束事件都要收尾（10-10）：只认 turn/completed 时，被中断 / 失败的回合
+           finished 永远不被置位 ⇒ 流式气泡停在「进行中」、收尾补发（state=2 / finalize）不发
+           —— 微信用户看到的就是回复到一半再无下文（用户反馈截图正是它）。 */
+        if (method !== "turn/completed") {
+          const reason = String(p?.turn?.error?.message ?? "").trim();
+          this.compose(`\n\n⚠️（这个回合没有正常跑完${reason ? `：${reason}` : `，结束于 ${method}`} —— 以上是已产生的部分内容。）`);
+        }
         this.finished = true;
         void this.finish(p).catch(() => undefined);
         break;

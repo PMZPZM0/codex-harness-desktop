@@ -15,6 +15,27 @@ import { readCustomModel } from "../main/01-model-catalog";
 import { server } from "../runtime-refs";
 import { botPairing } from "../main";
 import { ensureProjectAgentsMd } from "../project-conventions";
+import { isTurnEndMethod } from "../turn-end";
+
+/** 渠道入站共用的「回合结束」兜底代理：流式会话缺席时把最终正文投给用户。
+ *  ⛔⛔ 四类结束事件都要摘除并投递 —— 只认 turn/completed 时，被中断 / 失败的回合
+ *  这个监听器**永远挂着**（泄漏）且渠道用户收不到任何下文（用户反馈截图正是它）。
+ *  非正常结束时要**说明**：半截文本不标注会被当成完整回复。 */
+function onTurnDone(threadId: string, send: (text: string) => void) {
+  const proxy = (event: any) => {
+    if (event.kind !== "notification" || !isTurnEndMethod(event.method) || event.params?.threadId !== threadId) return;
+    server.off("event", proxy);
+    if (botStreamSessions.has(threadId)) return; // 流式会话负责最终回复
+    const ok = event.method === "turn/completed";
+    const finalText = [...(event.params?.turn?.items ?? [])].reverse().find((item: any) => item.type === "agentMessage")?.text ?? "";
+    const text = ok ? finalText.trim() : (finalText.trim()
+      ? `${finalText.trim()}\n\n⚠️ 这个回合没有正常跑完，以上是已产生的部分内容。`
+      : `⚠️ Codex 的回合没有正常跑完，没有产出内容。`);
+    if (text.trim()) send(text);
+  };
+  server.on("event", proxy);
+}
+
 export async function handleWeixinMessage(message: { from: string; text: string; contextToken: string }) {
   if (!weixinGateway) return;
   // 配对门卫（09-13）：未批准的聊天只有发对 6 位授权码才放行，其余消息只收到配对引导
@@ -60,14 +81,7 @@ export async function handleWeixinMessage(message: { from: string; text: string;
     // 微信回复需要 context_token。最终回复优先由 bot-stream 流式会话发出（含思考/工具同步、
     // 流式关闭时的整段发送）；会话未建成功（绑定竞态等）时这里兜底发最终正文。
     const from = message.from;
-    const onDoneProxy = (event: any) => {
-      if (event.kind !== "notification" || event.method !== "turn/completed" || event.params?.threadId !== threadId) return;
-      server.off("event", onDoneProxy);
-      if (botStreamSessions.has(threadId)) return;
-      const finalText = [...(event.params?.turn?.items ?? [])].reverse().find((item: any) => item.type === "agentMessage")?.text ?? "";
-      if (finalText.trim()) weixinGateway?.sendText(from, finalText.trim()).catch((error) => console.warn("微信回信失败:", error.message));
-    };
-    server.on("event", onDoneProxy);
+    onTurnDone(threadId, (text) => weixinGateway?.sendText(from, text).catch((error) => console.warn("微信回信失败:", error.message)));
     await server.request("turn/start", { threadId, input: [{ type: "text", text: `[微信用户] ${message.text}`, text_elements: [] }], model: model.model, effort: "high" });
   } catch (error: any) {
     console.warn("微信消息处理失败:", error.message);
@@ -110,14 +124,7 @@ export async function handleTelegramMessage(message: { from: string; chatId: num
     weixinBindings.set("tg:" + message.from, threadId); // per-user 缓存：流式回复按 threadId 反查发送目标用
     const chatId = message.chatId;
     telegramBindings.set(threadId, chatId); // bot-stream 会话按 threadId 反查渠道
-    const onDoneProxy = (event: any) => {
-      if (event.kind !== "notification" || event.method !== "turn/completed" || event.params?.threadId !== threadId) return;
-      server.off("event", onDoneProxy);
-      if (botStreamSessions.has(threadId)) return; // 流式会话负责最终回复
-      const finalText = [...(event.params?.turn?.items ?? [])].reverse().find((item: any) => item.type === "agentMessage")?.text ?? "";
-      if (finalText.trim()) telegramGateway.sendText(chatId, finalText.trim()).catch(() => undefined);
-    };
-    server.on("event", onDoneProxy);
+    onTurnDone(threadId, (text) => telegramGateway.sendText(chatId, text).catch(() => undefined));
     await server.request("turn/start", { threadId, input: [{ type: "text", text: message.text, text_elements: [] }], model: model.model, effort: "high" });
   } catch (error: any) {
     telegramGateway.sendText(message.chatId, `处理失败：${error.message}`).catch(() => undefined);
@@ -178,14 +185,7 @@ export async function handleChannelMessage(channel: "feishu" | "dingtalk" | "qq"
     weixinBindings.set(prefix + from, threadId);
     // 流式回复目标登记（09-18）：飞书/钉钉/QQ 的 sink 需要 chatId 才能发进度消息
     channelThreadChat.set(threadId, chatId);
-    const onDoneProxy = (event: any) => {
-      if (event.kind !== "notification" || event.method !== "turn/completed" || event.params?.threadId !== threadId) return;
-      server.off("event", onDoneProxy);
-      if (botStreamSessions.has(threadId)) return;
-      const finalText = [...(event.params?.turn?.items ?? [])].reverse().find((item: any) => item.type === "agentMessage")?.text ?? "";
-      if (finalText.trim()) void reply(finalText.trim());
-    };
-    server.on("event", onDoneProxy);
+    onTurnDone(threadId, (text) => void reply(text));
     await server.request("turn/start", { threadId, input: [{ type: "text", text, text_elements: [] }], model: model.model, effort: "high" });
   } catch (error: any) {
     void reply(`处理失败：${error.message}`);

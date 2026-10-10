@@ -277,8 +277,8 @@ try {
     "团队成员等待到点 ⇒ 同样转后台");
   ok(/settleBackgroundRunsOnTurnEnd\(event\)/.test(bootSettle),
     "⛔ boot 在引擎事件流里收敛后台运行（宿主提前放手后，没有它记录会永远停在 running）");
-  ok(/turn\/aborted[\s\S]{0,90}?turn\/failed[\s\S]{0,90}?turn\/interrupted/.test(settleSrc),
-    "收敛点认**四类**结束事件（与 waitForTurnCompletion 同口径）");
+  ok(/isTurnEndMethod/.test(settleSrc) && !/TURN_END_METHODS = new Set/.test(settleSrc),
+    "收敛点认**四类**结束事件（走共享真相源 isTurnEndMethod —— 与 waitForTurnCompletion 同口径）");
   ok(/isRunningThread\(threadId\)/.test(settleSrc) && /activeRunOfThread\(threadId\)/.test(settleSrc),
     "⛔ 只在仍认为 running 时收敛（正常路径已收敛的不重复广播）");
 }
@@ -304,6 +304,26 @@ try {
     "回报有**额度闸**（防「回报 → 又派活 → 又超时 → 又回报」滚雪球烧钱）");
   ok(/markPendingReport\(/.test(delRepSrc) && /markPendingReportByThread\(/.test(teamRepSrc),
     "⛔ 两条链路（委派 / 团队成员）转后台时都打「待回报」标");
+}
+
+/* ── 渠道三件套的「回合收尾」必须认四类结束事件（10-10 用户反馈：渠道里回复到一半再无下文）────
+   channel-bot（飞书）· bot-stream（微信/Telegram 流式）· im-inbound ×3（兜底投递）原来都只认
+   turn/completed ⇒ 被中断 / 失败的回合：飞书用户收不到回复、微信流式气泡停在「进行中」、
+   兜底监听器永不摘除（泄漏）。⇒ 统一走 electron/turn-end.ts 的 isTurnEndMethod ——
+   本月同型缺陷共抓到 7 处后立的**唯一真相源**，⛔ 新代码不许再手写事件名枚举。 */
+{
+  const chSrc = codeOnly(readFileSync(join(ROOT, "electron/channel-bot.ts"), "utf8"));
+  const streamSrc = codeOnly(readFileSync(join(ROOT, "electron/bot-stream.ts"), "utf8"));
+  const inboundSrc = codeOnly(readFileSync(join(ROOT, "electron/features/im-inbound.ts"), "utf8"));
+  ok(/isTurnEndMethod\(/.test(chSrc) && /finishTurn\(params, /.test(chSrc),
+    "⛔ 渠道机器人收尾认四类（漏了 ⇒ 被中断的回合用户收不到任何下文）");
+  ok(/case "turn\/aborted":[\s\S]{0,60}?case "turn\/failed":[\s\S]{0,60}?case "turn\/interrupted"/.test(streamSrc),
+    "⛔ 流式会话收尾认四类（漏了 ⇒ 流式气泡停在「进行中」、收尾补发不发 —— 用户截图正是它）");
+  ok(!/event\.method !== "turn\/completed"/.test(inboundSrc)
+    && (inboundSrc.match(/onTurnDone\(/g) ?? []).length >= 4,
+    "⛔ 三条入站路径（微信/Telegram/通用）统一走 onTurnDone（裸写 completed 判据 = 监听器泄漏 + 无下文）");
+  const turnEndOk = existsSync(join(ROOT, "electron/turn-end.ts")) && /isTurnEndMethod/.test(readFileSync(join(ROOT, "electron/turn-end.ts"), "utf8"));
+  ok(turnEndOk, "共享真相源 electron/turn-end.ts 就位（本月同型缺陷共 7 处后立）");
 }
 
 console.log("\n【dpcat】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));

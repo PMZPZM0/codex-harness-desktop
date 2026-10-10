@@ -30,6 +30,7 @@ import { broadcastCodexEvent, broadcastHarnessEvent } from "./window-bus";
 import { handleRoleMemoryToolCall } from "../role-memory-tool";
 import { handleDelegateHarnessToolCall } from "../delegate-harness-tool";
 import { settleBackgroundRunsOnTurnEnd } from "../delegate-settle";
+import { isTurnEndMethod } from "../turn-end";
 import { forgetRoleSession } from "../role-memory";
 import { sweepFabric, pickWorkspacesToSweep, archiveSessionMemory } from "../memory-fabric";
 import { nuphusVisionEnvDrift } from "../nuphus-env";
@@ -562,8 +563,9 @@ export async function bootApp() {
           }
         }
       }
-      // 回合结束：流式会话负责最终回复；「正在输入」指示器这时要收掉
-      if (event.method === "turn/completed") stopWeixinTyping(String(p?.threadId ?? ""));
+      // 回合结束（四类，见 turn-end.ts）：流式会话负责最终回复；「正在输入」指示器这时要收掉
+      // ⛔ 只认 completed 时，被中断 / 失败的回合微信端「正在输入」永远不停（同型缺陷）
+      if (isTurnEndMethod(event.method)) stopWeixinTyping(String(p?.threadId ?? ""));
       const botStreamSession = botStreamSessions.get(String(p?.threadId ?? ""));
       if (botStreamSession) botStreamSession.handle(event.method, p);
       // 记忆捕获缓冲：turn/completed 不带完整 items，必须靠流式事件累积文本（同 channel-bot 的做法）
