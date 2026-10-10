@@ -12,7 +12,7 @@
  * ⛔⛔ 视觉质量**不由本守卫负责** —— 那是探针截图的活（人眼看 + DOM 取证）。
  *   守卫只能证明"结构对"，⛔ 证明不了"好看"（上一轮记忆里的教训）。
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
@@ -117,9 +117,11 @@ console.log("\n【mui】⑤ 状态与性能");
 ok(/export function MemoryState/.test(PRIM) && /state === "loading"/.test(PRIM) && /state === "error"/.test(PRIM),
   "⛔ 加载/错误/空三态统一在 primitives（⛔ 各视图不各写一套）");
 ok(/export function MemorySkeleton/.test(PRIM), "⛔ 有骨架屏（⛔ 比转圈更有用：用户知道马上会有内容）");
-/* ⛔⛔ 空态判据：必须同时看"真的没条目" —— 只看 state 会让空态与列表并存（探针抓到过） */
-const actorEmpty = (VIEWS.match(/state !== "ready" \|\| !entries\.length \? \(/) || [""])[0];
-ok(actorEmpty.length > 0, "⛔⛔ 执行体视图的空态判「state + 真的没条目」（⛔ 只看 state ⇒ 空态与列表并存）");
+/* ⛔⛔ 空态判据：必须同时看"真的没条目" —— 只看 state 会让空态与列表并存（探针抓到过）。
+   10-10 起可见集叫 `visible`（在 `entries` 之上再叠会话筛选）⇒ 判据更严：空态也要跟着筛选走，
+   ⛔ 否则"选了一个没有条目的会话"会同时看到空态与列表。 */
+const actorEmpty = (VIEWS.match(/state !== "ready" \|\| !(entries|visible)\.length \? \(/) || [""])[0];
+ok(actorEmpty.length > 0, "⛔⛔ 执行体视图的空态判「state + 真的没条目（含会话筛选后的可见集）」（⛔ 只看 state ⇒ 空态与列表并存）");
 ok(/!data\?\.entries\.length \? \(/.test(VIEWS),
   "⛔⛔ 团视图的空态也判条目数（同一坑，两处都要修）");
 /* ⛔ 虚拟列表：⛔ 不能假设固定行高（内容长度不可控 ⇒ 必然裁切） */
@@ -197,6 +199,55 @@ ok(!/name\.startsWith\("project__"\)[\s\S]{0,200}?content\.includes/.test(SHELL)
   "⛔⛔ 归属**只按命名空间前缀 + 角色登记表**，⛔ 绝不按条目内容/显示名猜（猜错不可见）");
 ok(/pushMain\(entries, "项目共享层"/.test(SHELL) && /pushMain\(entries, "未归属的会话"/.test(SHELL),
   "⛔ 公共层与孤儿空间**如实标注**（⛔ 不硬塞给某个人）");
+
+/* ── ⑩ 分层规则 / 记忆中心两级 IA / 会话↔记忆层级（10-10）─────────────────────
+   用户两条需求：
+   ① 「按记忆分层管理规则重构：项目规则、用户档案、工作纪要按项目维度共享并保持跨项目一致，
+      其余记忆按会话独立存储；明确各层存储范围/共享边界/隔离原则/优先级/引用继承同步」；
+   ② 「记忆主界面与二级界面重做：一级分类卡片 + 二级弹窗，弹窗内容不得内嵌」；
+   ③ 新增：「每个记忆分类下列出关联会话，可查看每个会话产生的记忆」（来源 → 会话 → 记忆）。 */
+console.log("\n【mui】⑩ 分层规则 / 两级 IA / 会话↔记忆层级");
+{
+  const RULES = readFileSync(join(ROOT, "src", "lib", "memory-scope-rules.mjs"), "utf8");
+  const pyramidSrc = readFileSync(join(ROOT, "electron", "memory-layers.ts"), "utf8");
+  const layerIds = [...RULES.matchAll(/layer: "(L\d)"/g)].map((m) => m[1]);
+  const pyramidIds = [...pyramidSrc.matchAll(/\{ id: "(L\d)"/g)].map((m) => m[1]);
+  ok(layerIds.length > 0 && layerIds.join(",") === pyramidIds.join(","),
+    `规则表的层 id 与 MEMORY_PYRAMID 逐字一致（规则表 ${layerIds.join("/")} vs 实现 ${pyramidIds.join("/")}）`);
+
+  /* 用户规则的三作用域分类：L0 跨项目一致、L1–L6 项目维度共享、L7 按会话独立 */
+  ok(/layer: "L0"[\s\S]{0,160}?scope: "cross-project"/.test(RULES), "L0 用户档案 = 跨项目一致（唯一一层）");
+  const projectLayers = ["L1", "L2", "L3", "L4", "L5", "L6"]
+    .filter((id) => new RegExp(`layer: "${id}"[\\s\\S]{0,220}?scope: "project"`).test(RULES));
+  ok(projectLayers.length === 6, `L1–L6 全部按项目维度共享（实测 ${projectLayers.join("/") || "无"}）`);
+  ok(/layer: "L7"[\s\S]{0,220}?scope: "session"/.test(RULES), "L7 碎片池 = 按会话独立");
+
+  /* 注入优先级档必须与实现一致：纪律最前 / 日志最后 / 归档层不进注入 */
+  ok(/layer: "L2"[\s\S]{0,320}?inject: "first"/.test(RULES), "L2 纪律排最前（被截断代价最大）");
+  ok(/layer: "L4"[\s\S]{0,320}?inject: "last"/.test(RULES), "L4 日志排最后（超预算按天先丢）");
+  const neverLayers = ["L5", "L6", "L7"]
+    .filter((id) => new RegExp(`layer: "${id}"[\\s\\S]{0,320}?inject: "never"`).test(RULES));
+  ok(neverLayers.length === 3, `L5–L7 不进注入（实测 ${neverLayers.join("/") || "无"}）`);
+  ok(/引用|inheritsFrom/.test(RULES) && /syncsTo/.test(RULES), "每层都写明引用（从哪来）与同步（去哪）");
+  ok(existsSync(join(ROOT, "docs", "MEMORY-LAYERS.md")), "规则文档 docs/MEMORY-LAYERS.md 在位（给人读的那份）");
+
+  /* 记忆中心两级 IA：一级卡片、内容只在弹窗里 */
+  ok(/memory-center-cards/.test(PANEL) && /memoryCards\.map/.test(PANEL), "一级渲染分类卡片网格");
+  ok(!/memory-center-tabs/.test(PANEL), "⛔ 页内 tab 已删除（10-10 起改用卡片导航）");
+  const dlgAt = PANEL.indexOf("<SettingsDialog");
+  const wbAt = PANEL.indexOf("<MemoryWorkbench");
+  ok(dlgAt > 0 && wbAt > dlgAt, "⛔ 内容只在二级弹窗里（MemoryWorkbench 出现在 SettingsDialog 之后）");
+  ok(/memory-rule-scope-list/.test(PANEL) && /MEMORY_LAYER_RULES/.test(PANEL),
+    "分层规则弹窗直接渲染规则表（⛔ 页面不另写一份层表）");
+
+  /* 会话↔记忆层级（新增需求） */
+  ok(/mui-sessions/.test(VIEWS) && /sessionGroups/.test(VIEWS), "来源视图列出**关联会话**（来源 → 会话 → 记忆）");
+  ok(/originThreadId/.test(VIEWS) && /originThreadId\?: string/.test(TYPES),
+    "会话分组键 originThreadId 已在类型契约里声明（后端一直在返回，类型此前漏声明）");
+  ok(/按条目数排序/.test(VIEWS), "会话的排序规则写在界面上（用户要求「明确排序」）");
+  ok(/sessionFilter/.test(VIEWS) && /visible/.test(VIEWS),
+    "点会话 = 只看它写下的记忆（空态也按筛选后的可见集判定）");
+}
 
 /* ── ⑨ 维度分离：金字塔 / 存储后端**不做 tab**（10-10 用户反馈修正）──────────────
    用户原话：「金字塔记忆不应作为单独的一个分类来呈现，而应体现在每一个选项当中。

@@ -147,9 +147,9 @@ export function ActorMemoryView({
   onOpenThread?: (threadId: string) => void;
 }) {
   const META = {
-    main: { title: "主会话记忆", hint: "只有你这个会话读得到 —— 派出去的智能体看不到", icon: <User size={14} />, empty: "这个会话还没有私有记忆" },
-    subagent: { title: "子智能体记忆", hint: "每个子智能体一份，彼此互不可见", icon: <Cpu size={14} />, empty: "还没有子智能体写下记忆" },
-    expert: { title: "专家记忆", hint: "每位专家一份，彼此互不可见", icon: <Sparkles size={14} />, empty: "还没有专家写下记忆" },
+    main: { title: "主会话记忆", hint: "只有你这个会话读得到 —— 派出去的智能体看不到", sessions: "会话来源：你这个会话 + 项目共享层（全体可见）", icon: <User size={14} />, empty: "这个会话还没有私有记忆" },
+    subagent: { title: "子智能体记忆", hint: "每个子智能体一份，彼此互不可见", sessions: "会话来源：每个子智能体各自一个会话", icon: <Cpu size={14} />, empty: "还没有子智能体写下记忆" },
+    expert: { title: "专家记忆", hint: "每位专家一份，彼此互不可见", sessions: "会话来源：每位专家自己的会话", icon: <Sparkles size={14} />, empty: "还没有专家写下记忆" },
   }[kind];
 
   const [scopeFilter, setScopeFilter] = useState<"all" | "private" | "team" | "project">("all");
@@ -160,6 +160,34 @@ export function ActorMemoryView({
   /* ⛔ stats 同型防御：它由 statOf 产出、必有值，⛔ 但 `data` 若来自别处（未来加第八类时）
      漏了 stats 就是 `undefined.total` 白屏。归一化 + 这里 = 两道。 */
   const stats = data?.stats ?? { total: 0, pinned: 0, archived: 0, chars: 0 };
+
+  /* ── 关联会话（10-10 新增需求）────────────────────────────────────────────
+     「每个记忆分类下列出关联会话，可查看每个会话产生的记忆」= 层级
+       **来源（本视图）→ 会话 → 记忆条目**。
+     · 分组键：originThreadId（这条记忆是谁写的）优先，回退 sessionId（属于哪路会话）；
+     · 排序：条目数降序 → 同数按最近更新降序（⛔ 排序规则写死在 UI 上要说明，见下面 hint）；
+     · 交互：点会话 = 只看它产出的记忆（再点取消）；会话名右侧可跳回对话。 */
+  const [sessionFilter, setSessionFilter] = useState("");
+  const sessionGroups = useMemo(() => {
+    const map = new Map();
+    for (const e of data?.entries ?? []) {
+      const id = String(e?.originThreadId || e?.sessionId || "");
+      if (!id) continue;
+      const row = map.get(id) ?? { id, count: 0, updatedAt: 0, pinned: 0 };
+      row.count += 1;
+      row.updatedAt = Math.max(row.updatedAt, Number(e?.updatedAt ?? 0));
+      if (e?.pinned) row.pinned += 1;
+      map.set(id, row);
+    }
+    return [...map.values()].sort((a, b) => b.count - a.count || b.updatedAt - a.updatedAt);
+  }, [data?.entries]);
+  const shortThread = (id: string) => (id.length > 24 ? id.slice(0, 12) + "…" + id.slice(-6) : id);
+  /* 会话筛选后的可见条目（⛔ 空态判据也用它 —— 否则"筛出来的会话没有条目"时会同时
+     显示空态与列表，10-05 探针抓到过同型问题）。 */
+  const visible = useMemo(
+    () => entries.filter((e) => !sessionFilter || String(e?.originThreadId || e?.sessionId || "") === sessionFilter),
+    [entries, sessionFilter],
+  );
 
   return (
     <MemorySection
@@ -196,16 +224,42 @@ export function ActorMemoryView({
       )}
       {/* ⛔⛔ 空态只在**真的没条目**时显示：state=ready 但 entries 非空时也显示它，
          会和下面的列表并存（探针抓到：标题说"还没有记忆"、下面列着 6 条）。 */}
-      {state !== "ready" || !entries.length ? (
+      {/* 关联会话：这一类记忆**分别由哪些会话产出**（点了只看它） */}
+      {state === "ready" && !!sessionGroups.length && (
+        <div className="mui-sessions" data-count={sessionGroups.length}>
+          <div className="mui-sessions-head">
+            <span>关联会话 · {sessionGroups.length}</span>
+            <span className="mui-sessions-hint">按条目数排序；点一个只看它写下的记忆</span>
+          </div>
+          <div className="mui-sessions-list">
+            {sessionGroups.map((g) => (
+              <div className={"mui-session" + (sessionFilter === g.id ? " is-on" : "")} key={g.id} data-session={g.id}>
+                <button type="button" className="mui-session-main" title={g.id}
+                  onClick={() => setSessionFilter(sessionFilter === g.id ? "" : g.id)}>
+                  <span className="mui-session-name">{shortThread(g.id)}</span>
+                  <span className="mui-session-meta">
+                    {g.count} 条{g.pinned ? ` · 钉住 ${g.pinned}` : ""}
+                    {g.updatedAt ? ` · 最后更新 ${new Date(g.updatedAt).toLocaleDateString("zh-CN")}` : ""}
+                  </span>
+                </button>
+                {onOpenThread && (
+                  <button type="button" className="mui-session-open" title="打开这个会话" onClick={() => onOpenThread(g.id)}>打开</button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {state !== "ready" || !visible.length ? (
       <MemoryState
         state={state === "ready" ? "ready" : state} error={error} onRetry={onRetry}
         empty={META.empty}
         emptyHint={kind === "main" ? "在对话里说「记住这个」，或让助手自己判断什么值得记。" : "派它去干活，它自己决定什么值得记 —— 你不能手动添加。"}
       />
       ) : null}
-      {state === "ready" && !!entries.length && (
+      {state === "ready" && !!visible.length && (
         <MemoryList
-          items={entries} estimateRow={92} keyOf={(e) => e.id}
+          items={visible} estimateRow={92} keyOf={(e) => e.id}
           renderItem={(e) => <MemoryEntryRow entry={e} onOpenThread={onOpenThread} />}
         />
       )}

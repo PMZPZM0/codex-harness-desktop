@@ -384,3 +384,50 @@
 .mui-overview-chevron { color: var(--muted); transition: transform .15s ease; }
 .mui-overview-chevron.is-open { transform: rotate(180deg); }
 .mui-overview-body { border-top: 1px solid var(--line); padding: 4px 11px 10px; }
+
+/* ── 记忆中心 · 两级 IA（10-10）：一级分类卡片 + 分层规则弹窗 ───────────────
+   卡片本体复用跨页通用的 .settings-card*（与开发工具页 / 拓展接口页同一份 CSS）。 */
+.memory-center-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(228px, 1fr));
+  gap: 10px;
+  margin: 4px 0 12px;
+}
+.memory-rule-scope-list { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; }
+.memory-rule-scope { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.memory-rule-scope-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 6px; }
+.memory-rule-scope-chip {
+  border-radius: 999px; padding: 1px 9px; font-size: 11px;
+  background: color-mix(in srgb, var(--green) 13%, transparent); color: var(--green);
+}
+.memory-rule-scope-hint { color: var(--muted); font-size: 11.5px; }
+.memory-rule-scope-layers { margin-left: auto; color: var(--muted); font-size: 11px; font-style: normal; }
+.memory-rule-row { border-top: 1px solid var(--line); padding: 8px 0 6px; }
+.memory-rule-row:first-of-type { border-top: 0; }
+.memory-rule-row-head { display: flex; align-items: baseline; gap: 8px; }
+.memory-rule-row-head b { font-family: var(--mono); font-size: 11px; color: var(--green); }
+.memory-rule-row-head strong { font-size: 12.5px; }
+.memory-rule-tier { margin-left: auto; color: var(--muted); font-size: 11px; font-style: normal; }
+.memory-rule-facts { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 3px 10px; margin: 6px 0 0; }
+.memory-rule-facts dt { color: var(--muted); font-size: 11.5px; }
+.memory-rule-facts dd { margin: 0; font-size: 11.5px; line-height: 1.55; }
+.memory-rule-note { margin: 4px 0 0; color: var(--muted); font-size: 11.5px; }
+
+/* ── 关联会话（10-10 新增需求）：来源 → 会话 → 记忆的中间层 ──────────────
+   列出"这一类记忆分别由哪些会话产出"，点一个只看它写的条目（再点取消）。 */
+.mui-sessions { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: 6px 0 10px; }
+.mui-sessions-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; font-size: 11.5px; }
+.mui-sessions-head > span:first-child { font-weight: 600; }
+.mui-sessions-hint { color: var(--muted); }
+.mui-sessions-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.mui-session {
+  display: flex; align-items: stretch; overflow: hidden;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg);
+}
+.mui-session.is-on { border-color: var(--accent, var(--green)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green) 30%, transparent); }
+.mui-session-main { display: flex; flex-direction: column; gap: 1px; padding: 5px 9px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.mui-session-main:hover { background: color-mix(in srgb, var(--green) 7%, transparent); }
+.mui-session-name { font-size: 11.5px; font-family: var(--mono); }
+.mui-session-meta { font-size: 10.5px; color: var(--muted); }
+.mui-session-open { border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 11px; padding: 0 8px; cursor: pointer; }
+.mui-session-open:hover { color: var(--green); }
