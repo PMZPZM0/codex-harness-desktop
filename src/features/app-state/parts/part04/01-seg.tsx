@@ -346,8 +346,13 @@ bag.skillCommandMatches = skillCommandMatches as typeof bag.skillCommandMatches;
    *  而下面几个 useMemo 会 `flatMap` **全部回合 × 全部 items**、还要对每条消息跑引用解析正则
    *  —— 依赖 `[thread]` 就等于**每帧全量扫描**（5000 回合的会话 = 每帧上万次正则）。
    *  它们的产物只在「会话换了 / 回合数变了 / 末尾条目变了」时才真正需要更新，
-   *  所以键取这三样（`turns.length` 覆盖新回合，末尾 item id 覆盖同一回合内的新条目）。 */
-  const threadMemoKey = bag.thread ? `${bag.thread.id}:${bag.thread.turns.length}:${bag.thread.turns[bag.thread.turns.length - 1]?.items.at(-1)?.id ?? ""}` : "";
+   *  所以键取这几样（`turns.length` 覆盖新回合，末尾 item id 覆盖同一回合内的新条目）。
+   *  ⛔⛔ 10-11 补第 4 样「末回合状态」：completedTurns/latestCompletedTurn 也吃这个键 ——
+   *    原键在**回合完成瞬间不变**（回合数不变、最后 item 也不变）⇒ memo 陈旧，
+   *    latestCompletedTurn 停在**上一个**回合 ⇒ 刚完成的回合拿不到 lastUsage/tokenUsage
+   *    （都是 null）⇒ 汇总消息下方的「N 入 / N 出 · N% 缓存」**正常结束时永远不显示**，
+   *    只有重启（引擎 thread 载入自带回合级 usage）才出现。键里加上末回合 status 即修。 */
+  const threadMemoKey = bag.thread ? `${bag.thread.id}:${bag.thread.turns.length}:${bag.thread.turns[bag.thread.turns.length - 1]?.items.at(-1)?.id ?? ""}:${bag.thread.turns[bag.thread.turns.length - 1]?.status ?? ""}` : "";
 bag.threadMemoKey = threadMemoKey as typeof bag.threadMemoKey;
 
   const availableContextItems = useMemo(() => {
