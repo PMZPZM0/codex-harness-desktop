@@ -442,3 +442,9 @@
 .memory-layer-need { color: var(--orange, var(--accent)); font-size: 11px; font-style: normal; }
 .memory-layer-bar { display: block; height: 4px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--green) 12%, transparent); }
 .memory-layer-bar i { display: block; height: 100%; background: var(--green); }
+
+/* 被调度会话的「派出者」行（10-10 评审建议）：展开后可见，可跳到派出者会话 */
+.mui-tl-parent { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px; margin: 4px 0 0; font-size: 11.5px; color: var(--muted); }
+.mui-tl-parent-note { color: var(--muted); }
+.mui-link { border: 0; background: transparent; padding: 0; font-size: 11.5px; color: var(--green); cursor: pointer; text-decoration: underline dotted; }
+.mui-link:hover { text-decoration: underline; }
