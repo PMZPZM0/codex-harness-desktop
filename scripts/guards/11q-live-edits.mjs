@@ -221,6 +221,15 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
   const seg08 = codeOnly(read("src/features/app-state/parts/part08/01-seg.tsx"));
   ok(/name: "agent_ask"[\s\S]{0,600}multiple: \{ type: "boolean"/.test(seg08),
     "⛔ agent_ask 工具 schema 仍带 multiple 参数（单/多选由 Codex 决定的通道不许丢）");
+  // 10-10 实测事故：调度器等主进程 resume 不带 dynamicTools ⇒ 工具面被冲掉回创建时快照
+  // ⇒ 模型 schema 里没有 multiple（提问卡退回单选）。守卫钉住 codex-server 的还原逻辑。
+  const serverCode = codeOnly(read("electron/codex-server.ts"));
+  ok(/threadToolSurface/.test(serverCode) && /thread\/resume/.test(serverCode) && /dynamicTools: cached/.test(serverCode),
+    "⛔ codex-server 请求漏斗对不带 dynamicTools 的 thread/resume 还原该会话最近一次工具面（⛔ 缺它 = 主进程 resume 冲掉工具面，agent_ask 退回单选/新工具全不可达）");
+  ok(/recordStartSurface/.test(serverCode),
+    "codex-server 对 thread/start 的响应按 thread.id 记录工具面（threadId 只在响应里）");
+  ok(/multiple === true \|\| args\.multiple === "true"/.test(codeOnly(read("src/features/app-state/parts/part05/event-router/02-request.tsx"))),
+    "agent_ask 的 multiple 解析容错字符串 \"true\"（个别模型会传字符串）");
 }
 
 console.log(`\n【live-edits】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
