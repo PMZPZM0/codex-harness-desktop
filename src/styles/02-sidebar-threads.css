@@ -283,7 +283,7 @@
     var(--panel-2) 90%
   );
   background-size: 220% 100%;
-  animation: 1.5s linear infinite shimmer;
+  animation: 1.5s steps(14) infinite shimmer; /* steps：骨架屏不需要逐帧，重绘降一个量级 */
 }
 @keyframes shimmer {
   to {

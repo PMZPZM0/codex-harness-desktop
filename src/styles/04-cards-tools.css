@@ -22,7 +22,11 @@
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   color: var(--text);
-  animation: shimmer-sweep 2.2s linear infinite;
+  /* ⛔⛔ 10-10 实测（.workbuddy/tmp/perf-probe/）：这条原来每帧都重绘 —— 9 个实例把
+     帧时间从 13.2ms 抬到 31.8ms（≈31fps），且**只留 1 个实例也一样卡**（软件渲染下
+     任何一个非合成属性在动 = 整窗每帧重绘）。⇒ steps(24)：重绘从 60 次/秒降到 11 次/秒，
+     实测回到 13.5ms / 0 长帧（与完全关掉动画持平），扫光外观不变。 */
+  animation: shimmer-sweep 2.2s steps(24) infinite;
 }
 @keyframes shimmer-sweep {
   0% { background-position: 200% 0; }
@@ -1940,3 +1944,25 @@
   cursor: pointer;
 }
 .favorite-send:hover { background: var(--accent-soft); color: var(--accent); }
+/* ── 胶囊弹层的可点交互（10-10 用户反馈：点击常驻 + 行点击看 diff + 「还有 N 个文件」可展开）── */
+.edited-files-row { cursor: pointer; }
+.edited-files-row:hover { background: color-mix(in srgb, var(--green) 9%, transparent); }
+.edited-files-row:hover code { color: var(--text); }
+/* 「还有 N 个文件/步…」从死 div 改成真按钮：点了展开全部（弹层本身有 maxHeight + 内部滚动） */
+.edited-files-more {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.edited-files-more:hover { color: var(--text); background: color-mix(in srgb, var(--green) 7%, transparent); }
+/* 改动预览弹窗头部的增删统计（与文件行同一套色） */
+.turn-diff-modal-stats { margin-left: auto; font-size: 12px; color: var(--muted); }
+.turn-diff-modal-stats b { color: var(--green); }
+.turn-diff-modal-stats i { color: var(--red); font-style: normal; }

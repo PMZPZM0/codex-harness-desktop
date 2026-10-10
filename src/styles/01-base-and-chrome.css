@@ -616,7 +616,9 @@ button.brand-mark.sidebar-toggle:hover {
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: var(--text);   /* 兜底：渐变万一不生效也是实心字，不会"字消失" */
-  animation: brand-ink-flow 7s linear infinite;
+  /* ⛔ 品牌字永远在屏：非合成属性逐帧重绘会压住整个窗口的帧率（实测同上）
+     ⇒ steps(32)：7 秒周期里只重绘 32 次（4.6 次/秒），流动感不变 */
+  animation: brand-ink-flow 7s steps(32) infinite;
 }
 @keyframes brand-ink-flow {
   from { background-position: 0% 50%; }

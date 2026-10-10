@@ -403,7 +403,8 @@
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  animation: cmd-shining 2.2s linear infinite;
+  /* 同 shimmer-sweep：steps(24) 把重绘降到 11 次/秒（实测 31.8ms → 13.5ms） */
+  animation: cmd-shining 2.2s steps(24) infinite;
 }
 @keyframes cmd-shining {
   0% {

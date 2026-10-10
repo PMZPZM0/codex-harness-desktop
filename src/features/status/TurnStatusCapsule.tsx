@@ -23,9 +23,13 @@
  *   按可用空间收窄、以胶囊中心居中、left 写相对卡片偏移——写视口坐标会叠卡片左缘画歪）。
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { CircleCheck, Circle, ListChecks, LoaderCircle } from "lucide-react";
 import { getTurnLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
+import { ToolCodeBlock } from "../shared/ToolCodeBlock";
+import { isImagePath } from "../../lib/is-image-path";
+import { openImageLightbox } from "../../lib/ui-channels";
 
 const POP_LIMIT = 8;
 const STEP_LIMIT = 10;
@@ -50,7 +54,38 @@ export function TurnStatusCapsule({ runningTurnId, taskList }: { runningTurnId: 
   }, [runningTurnId]);
   // 回合结束 ⇒ 两区都隐藏（见下方 hasSteps）⇒ 悬停分区一律清掉。⛔ 不清的话，zone 这个 state
   // 会在「渲染 null 的空档」里留着旧值，下一回合一出现胶囊就凭空弹着旧面板（不悬停也开着）。
-  useEffect(() => { if (!runningTurnId) setZone(null); }, [runningTurnId]);
+  useEffect(() => { if (!runningTurnId) { setZone(null); setPinned(false); setExpanded(false); } }, [runningTurnId]);
+  /* ── 常驻（10-10 用户反馈「点击没有常驻展示，没法点开更多文件」）────────────────
+     悬停展开的面板一移开就没了 ⇒ 想点里面的行根本点不到。⇒ **点击 = 钉住**：
+     钉住后 onMouseLeave 不再收起，点面板外部 / Esc 才收；再点同区段 = 取消钉住并收起。 */
+  const [pinned, setPinned] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [review, setReview] = useState<{ path: string; diff: string; added: number; deleted: number; status: string } | null>(null);
+  useEffect(() => {
+    if (!pinned && !review) return;
+    const close = () => { setPinned(false); setZone(null); setExpanded(false); };
+    const onDown = (event: MouseEvent) => {
+      const card = cardRef.current;
+      if (card && event.target instanceof Node && card.contains(event.target)) return;
+      close();
+    };
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") { close(); setReview(null); } };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
+  }, [pinned, review]);
+  const openZone = (next: "steps" | "files") => {
+    if (zone === next && pinned) { setPinned(false); setZone(null); setExpanded(false); return; }
+    setZone(next);
+    setPinned(true);
+  };
+  /* 行点击 → 改动预览（10-10 用户：「每个修改过的文件，要支持我点击打开预览 diff，查看改动区域」）。
+     数据源就是实时扫的伪 diff（turn-file-watch 的 lineDelta），已经在 payload 里，不用再拉。
+     图片没有行级 diff ⇒ 走灯箱看图。 */
+  const openDiff = (file: { path: string; diff?: string; added?: number; deleted?: number; status?: string }) => {
+    if (isImagePath(file.path)) { openImageLightbox(file.path, baseName(file.path)); return; }
+    setReview({ path: file.path, diff: String(file.diff ?? ""), added: file.added ?? 0, deleted: file.deleted ?? 0, status: String(file.status ?? "") });
+  };
   // 步骤全部完成 ⇒ 步骤区隐藏，悬停分区若停在 steps 也清掉（与上一行同款）
   useEffect(() => {
     if (Array.isArray(taskList) && taskList.length > 0 && taskList.every((task: any) => task?.status === "done")) {
@@ -103,23 +138,28 @@ export function TurnStatusCapsule({ runningTurnId, taskList }: { runningTurnId: 
   const doneCount = steps.filter((step) => step.state === "done").length;
   const totals = files.reduce((sum, file) => ({ added: sum.added + (file.added ?? 0), deleted: sum.deleted + (file.deleted ?? 0) }), { added: 0, deleted: 0 });
   return (
-    <div ref={cardRef} className="edited-files-card" onMouseLeave={() => setZone(null)}>
+    <div ref={cardRef} className="edited-files-card" onMouseLeave={() => { if (!pinned) setZone(null); }}>
       {zone && (
         <div ref={popRef} className={`edited-files-pop pop-${popSide}`} role="status" aria-label={zone === "steps" ? "任务清单" : "本次运行改动的文件"}>
           {zone === "steps" ? (
             <>
-              {steps.slice(0, STEP_LIMIT).map((step) => (
+              {(expanded ? steps : steps.slice(0, STEP_LIMIT)).map((step) => (
                 <div className={`turn-step-row ${step.state === "done" ? "done" : step.state === "doing" ? "doing" : ""}`} key={step.id} title={step.text}>
                   {step.state === "done" ? <CircleCheck size={13} /> : step.state === "doing" ? <LoaderCircle size={13} className="spin" /> : <Circle size={13} />}
                   <span>{step.text}</span>
                 </div>
               ))}
-              {steps.length > STEP_LIMIT && <div className="edited-files-more">还有 {steps.length - STEP_LIMIT} 步…</div>}
+              {steps.length > STEP_LIMIT && (
+                <button type="button" className="edited-files-more" onClick={() => setExpanded((v) => !v)}>
+                  {expanded ? "收起" : `还有 ${steps.length - STEP_LIMIT} 步…`}
+                </button>
+              )}
             </>
           ) : (
             <>
-              {files.slice(0, POP_LIMIT).map((file) => (
-                <div className="edited-files-row" key={file.path} title={file.path}>
+              {(expanded ? files : files.slice(0, POP_LIMIT)).map((file) => (
+                <div className="edited-files-row" key={file.path} title={`${file.path} · 点击查看改动区域`}
+                  role="button" tabIndex={0} onClick={() => openDiff(file)}>
                   <FileTypeIcon path={file.path} size={12} />
                   <code>{baseName(file.path)}</code>
                   <span className="edited-files-stats">
@@ -127,7 +167,11 @@ export function TurnStatusCapsule({ runningTurnId, taskList }: { runningTurnId: 
                   </span>
                 </div>
               ))}
-              {files.length > POP_LIMIT && <div className="edited-files-more">还有 {files.length - POP_LIMIT} 个文件…</div>}
+              {files.length > POP_LIMIT && (
+                <button type="button" className="edited-files-more" onClick={() => setExpanded((v) => !v)}>
+                  {expanded ? "收起" : `还有 ${files.length - POP_LIMIT} 个文件…`}
+                </button>
+              )}
             </>
           )}
         </div>
@@ -135,19 +179,39 @@ export function TurnStatusCapsule({ runningTurnId, taskList }: { runningTurnId: 
       <button ref={pillRef} type="button" className="edited-files-pill" title="回合状态：步骤清单 / 本次运行改动的文件（悬停对应区段展开）">
         {runningTurnId ? <LoaderCircle size={13} className="spin" /> : <ListChecks size={13} />}
         {hasSteps && (
-          <span className="capsule-zone capsule-zone-steps" onMouseEnter={() => setZone("steps")} title="悬停查看步骤清单">
+          <span className="capsule-zone capsule-zone-steps" role="button" tabIndex={0}
+            onMouseEnter={() => setZone("steps")} onClick={() => openZone("steps")}
+            title="悬停 / 点击查看步骤清单（点击后常驻，点外部或 Esc 收起）">
             步骤 {doneCount}/{steps.length}
           </span>
         )}
         {hasSteps && hasFiles && <span className="capsule-sep" aria-hidden>·</span>}
         {hasFiles && (
-          <span className="capsule-zone capsule-zone-files" onMouseEnter={() => setZone("files")} title="悬停查看已修改的文件">
+          <span className="capsule-zone capsule-zone-files" role="button" tabIndex={0}
+            onMouseEnter={() => setZone("files")} onClick={() => openZone("files")}
+            title="悬停 / 点击查看已修改的文件（点击后常驻，可点文件行看改动）">
             <span>{files.length} 个文件已修改</span>
             <b>+{totals.added}</b>
             <i>-{totals.deleted}</i>
           </span>
         )}
       </button>
+      {review && createPortal((
+        <div className="turn-diff-modal-mask" onClick={() => setReview(null)}>
+          <div className="turn-diff-modal" role="dialog" aria-label={`${review.path} 改动预览`} onClick={(event) => event.stopPropagation()}>
+            <header>
+              <code>{review.path}</code>
+              <span className="turn-diff-modal-stats">
+                {review.status === "deleted" ? "已删除" : <><b>+{review.added}</b><i>-{review.deleted}</i></>}
+              </span>
+              <button type="button" onClick={() => setReview(null)}>关闭</button>
+            </header>
+            {/* 实时扫的是伪 diff（共同前后缀裁剪）；没扫到内容时给一句可操作的话，⛔ 不是空白 */}
+            <ToolCodeBlock language="diff" maxHeight={560}
+              text={review.diff || "（这一圈还没扫到这个文件的改动内容 —— 稍等约 2.5 秒再点一次，或等回合结束后在汇总卡里看完整 diff。）"} />
+          </div>
+        </div>
+      ), document.body)}
     </div>
   );
 }

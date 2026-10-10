@@ -142,7 +142,7 @@
   height: 62px; border-radius: 8px;
   background: linear-gradient(90deg, var(--panel) 25%, var(--panel-2) 37%, var(--panel) 63%);
   background-size: 400% 100%;
-  animation: mui-shimmer 1.3s ease-in-out infinite;
+  animation: mui-shimmer 1.3s steps(16) infinite; /* steps：同 shimmer-sweep 的理由 */
 }
 @keyframes mui-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
 @media (prefers-reduced-motion: reduce) { .mui-skeleton-row { animation: none; } }
