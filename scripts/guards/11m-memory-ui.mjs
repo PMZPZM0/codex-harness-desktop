@@ -282,27 +282,24 @@ console.log("\n【mui】⑨ 维度分离（作用域 / 分层机制 / 存储后�
 console.log("\n【mui】⑪ 设置页「记忆」两级 IA");
 {
   const center = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryCenterSection.tsx"), "utf8");
-  const cardKeys = ["entries", "resident", "storage", "search", "delegated", "backend"];
+  const cardKeys = ["shared", "pyramid", "backend"];
   const missing = cardKeys.filter((k) => !center.includes(`key: "${k}"`));
-  ok(missing.length === 0, `一级 6 张分类卡片齐全（缺：${missing.join("/") || "无"}）`);
+  ok(missing.length === 0, `一级 3 个并列入口齐全（缺：${missing.join("/") || "无"}）`);
   ok(/className="settings-cards"/.test(center) && /cards\.map\(/.test(center),
     "一级用**跨页通用**卡片（.settings-card* —— 与开发工具页/拓展接口页/记忆中心同一份 CSS）");
   const dlgAt = center.indexOf("<SettingsDialog");
   const beAt = center.indexOf("<MemoryBackendSection");
-  ok(dlgAt > 0 && beAt > dlgAt, "⛔ 记忆后端整块只在弹窗里（原来内嵌在页面上）");
-  ok(dlgAt > 0 && center.indexOf('<p className="muted">子智能体') > dlgAt,
-    "⛔ 被委派会话的说明也在弹窗里（⛔ 不再内嵌）");
+  ok(dlgAt > 0 && center.indexOf("<BackendConsolePanel") > dlgAt,
+    "⛔ 记忆后端整块只在弹窗里（⛔ 原来内嵌在页面上；现在由控制台组件承载）");
   ok(!/className="memory-overview"/.test(center), "⛔ 旧的 4 张 overview 卡已替换（页内直排 = 不是两级 IA）");
   /* ⛔⛔ 10-10 用户反馈「每个卡片进去都是这个」：弹窗里只有一句说明 + 一个"再打开记忆中心"按钮
      = 让人多点一次。⇒ 弹窗必须**直接给内容**（条目给漏斗 / 常驻给层水位 / 存储搜索给状态）。 */
   {
     const dlgIdx = center.indexOf("<SettingsDialog");
-    ok(center.indexOf("<MemoryFunnel") > dlgIdx,
-      "⛔ 记忆条目弹窗里**直接渲染条目漏斗**（⛔ 不是只放一句说明 + 再点一次的入口）");
-    ok(/openCard === "resident" && <MemoryLayerLevels/.test(center),
-      "⛔ 常驻记忆弹窗里直接渲染层水位（MemoryLayerLevels）");
-    ok(/openCard === "storage" && \(/.test(center) && /openCard === "search" && \(/.test(center),
-      "存储与搜索弹窗里给状态/可检索面（⛔ 不是空白弹窗）");
+    ok(center.indexOf("<PyramidPanel") > dlgIdx,
+      "金字塔入口弹窗里直接渲染**金字塔面板**（⛔ 不是只放说明、也不是复用旧记忆库组件）");
+    ok(center.indexOf("<SharedLibraryPanel") > dlgIdx,
+      "项目共享入口弹窗里直接给**书架界面**（左选项目 + 右三层书架；⛔ 不是空白弹窗）");
   }
   ok(/MemoryBackendSection/.test(center) && /readMemoryBackend|setMemoryBackend/.test(center),
     "记忆后端入口仍在（守卫【150】要求：用户得有地方切换后端）");
@@ -330,6 +327,56 @@ console.log("\n【mui】⑬ 写入侧作用域边界说明");
   ok(/本项目.*全体会话与智能体/.test(fabTool) && /别的项目读不到/.test(fabTool),
     "⛔ 写入侧写明 project = **本项目**共享、别的项目读不到（⛔ 只说「全体共享」会让模型误判范围）");
   ok(/跨项目的东西写 L0/.test(fabTool), "跨项目的东西指向 L0 用户档案（给模型一条明确出路）");
+}
+
+/* ── ⑭ 设置页「记忆」= 三个并列入口（10-10 用户要求）──────────────────────────
+   ① 项目共享记忆库（可切项目，覆盖用户档案 / 项目规则 / 工作纪律）
+   ② 金字塔记忆架构（按会话展示：共享层同一份 + 独立层各异）
+   ③ 记忆后端选项（存储后端与保存位置）
+   ⛔ 三者**并列**（同级卡片），不是"总览 + 详情"的上下级。 */
+console.log("\n【mui】⑭ 设置页「记忆」三个并列入口");
+{
+  const center2 = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryCenterSection.tsx"), "utf8");
+  const dlgIdx2 = center2.indexOf("<SettingsDialog");
+  ok(/项目共享记忆库/.test(center2) && /金字塔记忆架构/.test(center2) && /记忆后端选项/.test(center2),
+    "三个入口齐备（项目共享记忆库 / 金字塔记忆架构 / 记忆后端选项）");
+  ok(/key: "shared"/.test(center2) && /key: "pyramid"/.test(center2) && /key: "backend"/.test(center2),
+    "三张卡片**同级并列**（同一卡片网格）");
+  const libSrc = readFileSync(join(ROOT, "src", "features", "settings-memory", "SharedLibraryPanel.tsx"), "utf8");
+  ok(/readMemoryLayers/.test(libSrc) && /lib-spine/.test(libSrc) && /<SharedLibraryPanel/.test(center2),
+    "① 可切换项目：切项目就重读该项目的层快照（书架组件内 readMemoryLayers）");
+  ok(/用户档案/.test(center2) && /项目规则/.test(center2) && /工作纪律/.test(center2),
+    "① 覆盖三类共享内容（用户档案 / 项目规则 / 工作纪律）");
+  ok(center2.indexOf("<PyramidPanel") > dlgIdx2,
+    "② 金字塔入口用**新做的 PyramidPanel**（⛔ 用户明确要求「别偷懒又用旧的记忆库界面」）");
+  ok(/listFabricNamespaces/.test(readFileSync(join(ROOT, "src", "features", "settings-memory", "PyramidPanel.tsx"), "utf8")),
+    "② 按会话给独立层计数（一次 IPC 取 private__ 命名空间计数，⛔ 不 N+1）");
+  ok(/共享层（L0–L6）/.test(center2) && /独立层（L7/.test(center2),
+    "② 如实标注：共享层所有会话同一份 / 独立层各异（⛔ 不谎称「每会话一套金字塔」）");
+  const bcSrc0 = readFileSync(join(ROOT, "src", "features", "settings-memory", "BackendConsolePanel.tsx"), "utf8");
+  ok(/<BackendConsolePanel/.test(center2) && /readMemoryBackend/.test(bcSrc0),
+    "③ 后端配置仍在（守卫【150】：能读能切 —— 现在由控制台组件自己调这组 IPC）");
+}
+
+/* ── ⑮ 三套界面各自独立（10-10 用户要求：不要复用同一套模板）────────────────────
+   ⛔ 判据不是「有没有用不同组件名」，而是**骨架不同**：书架是左右分栏、金字塔是纵向梯形、
+   控制台是状态灯 + 设备卡（各自独立的根类名 + 独立样式段）。 */
+console.log("\n【mui】⑮ 三套界面各自独立");
+{
+  const dir = join(ROOT, "src", "features", "settings-memory");
+  const shell = readFileSync(join(dir, "MemoryCenterSection.tsx"), "utf8");
+  const lib = readFileSync(join(dir, "SharedLibraryPanel.tsx"), "utf8");
+  const pyr = readFileSync(join(dir, "PyramidPanel.tsx"), "utf8");
+  const bc = readFileSync(join(dir, "BackendConsolePanel.tsx"), "utf8");
+  const css = readFileSync(join(ROOT, "src", "styles", "29-memory-ui.css"), "utf8");
+  ok(/<SharedLibraryPanel/.test(shell) && /<PyramidPanel/.test(shell) && /<BackendConsolePanel/.test(shell),
+    "三个入口各接一个**独立组件**（书架 / 金字塔 / 控制台）");
+  ok(/lib-root/.test(lib) && /lib-spines/.test(lib) && /lib-shelf/.test(lib), "① 书架：左书脊 + 右书架（左右分栏骨架）");
+  ok(/pyr-shape/.test(pyr) && /pyr-tier/.test(pyr), "② 金字塔：梯形层叠（纵向骨架）");
+  ok(/bc-statusbar/.test(bc) && /bc-device/.test(bc) && /bc-row/.test(bc), "③ 控制台：状态灯条 + 设备卡 + 控制行（面板骨架）");
+  ok(/\.lib-root/.test(css) && /\.pyr-shape/.test(css) && /\.bc-root/.test(css),
+    "三套骨架在样式上也是三段独立定义（⛔ 不是同一套类名换颜色）");
+  ok(!/^import[^\n]*MemoryBackendSection/m.test(bc), "③ 控制台**没有 import** 旧的后端组件（自己调同一组 IPC，功能不缩水）");
 }
 
 console.log("\n【mui】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));
