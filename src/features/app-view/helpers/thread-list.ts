@@ -126,10 +126,15 @@ export /** 调度头像轨（09-16 用户要求「跟专家团那个展示一样
 /** 只声明需要的那一个方法（⛔ 不 import Bag：app-view 不反向依赖 app-state）。 */
 type ResumeToolFace = { buildDynamicTools: () => Promise<unknown[]> };
 
-/* ⛔⛔ 10-05（用户报「定时任务/知识库等能力全挂了」的真凶之一）：**每一次** thread/resume 都必须
-   带上当前工具面。引擎侧是「最后那次 resume 决定这个会话的工具面」⇒ 任何一条不带 dynamicTools
-   的恢复路径（启动恢复 / 发送前探测 / 引擎重启恢复 / 改供应商 / 改权限 / 事件回流）都会把会话
-   工具面打回**创建时**的快照，老会话里新增的能力集体消失（模型直接调用 → unsupported call）。
+/* ⛔⛔ 10-05（用户报「定时任务/知识库等能力全挂了」的真凶之一）起：**每一次** thread/resume 都
+   带上当前工具面。
+   ⛔ 10-11 更正真机制（此前这里写「最后那次 resume 决定工具面」——**不成立**）：引擎的工具面
+   **只在 spawn 时定死**，来自 rollout 首行的 session_meta.dynamic_tools；resume 里的
+   dynamicTools 引擎**整份忽略**（协议 schema 无该字段，探针实测）。
+   ⇒ 这条参数现在的作用是**让主进程知道"当前工具面是什么"**，由它去改写老会话 rollout 的
+   首行（electron/rollout-worker.cjs 的 syncToolSurface，codex-ipc 的 resume 分支调用），
+   老会话才能拿到新工具。仍然**必须每次都带**：不带就等于告诉主进程"我不知道当前工具面"，
+   升级链断开，创建于旧版本的会话永远停在旧工具面（症状：agent_ask 写着"可多选"却只能选一个）。
    ⛔ 本函数是全应用唯一的恢复入口（守卫【gw】钉住：src/** 只允许 2 处直发 thread/resume，
    另一处是 resumeThreadLight，其调用方 open-thread 已显式传工具面）。 */
 export async function resumeThreadWithTurns(bag: ResumeToolFace, params: { threadId: string; excludeTurns?: boolean } & Record<string, unknown>): Promise<any> {

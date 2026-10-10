@@ -414,8 +414,8 @@ export interface Bag {
   setSubAgentRunning: React.Dispatch<React.SetStateAction<string | null>>;
   rpaRunning: string | null;
   setRpaRunning: React.Dispatch<React.SetStateAction<string | null>>;
-  agentAsk: { threadId: string; question: string; options: string[]; recommended: string | null; allowFree: boolean; multiple?: boolean; resolve: (answer: string) => void; } | null;
-  setAgentAsk: React.Dispatch<React.SetStateAction<{ threadId: string; question: string; options: string[]; recommended: string | null; allowFree: boolean; multiple?: boolean; resolve: (answer: string) => void; } | null>>;
+  agentAsk: { threadId: string; question: string; options: string[]; recommended: string | null; allowFree: boolean; multiple?: boolean|undefined; resolve: (answer: string) => void; } | null;
+  setAgentAsk: React.Dispatch<React.SetStateAction<{ threadId: string; question: string; options: string[]; recommended: string | null; allowFree: boolean; multiple?: boolean|undefined; resolve: (answer: string) => void; } | null>>;
   rpaRecipes: any[];
   setRpaRecipes: React.Dispatch<React.SetStateAction<any[]>>;
   taskList: any[];

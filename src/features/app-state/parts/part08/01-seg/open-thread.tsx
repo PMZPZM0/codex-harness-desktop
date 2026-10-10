@@ -221,8 +221,10 @@ export async function openThread(bag: Bag, id: string, freshThread?: Thread | nu
         : (localStorage.getItem("default-approval") ?? "never");
       // 轻量 resume（excludeTurns:true + 最新一页回合）：不再让引擎全量水合几千个回合——
       // 这是切会话慢的数据侧主因；更早的历史由「显示更早的消息」按需续拉
-      // resume 必带当前动态工具面：引擎 resume schema 接受 dynamicTools，恢复会话时
-      // 重注册——旧会话（创建于新工具上线前）也能用上 skill_search 等新增工具
+      // resume 必带当前动态工具面：⛔ 不是"让引擎重注册"（resume 里的 dynamicTools 引擎
+      // 整份忽略，10-11 实测）——它的作用是交给主进程去**改写老会话 rollout 首行的
+      // session_meta.dynamic_tools**（引擎 spawn 会话时读的就是那一行）。缺了它，创建于
+      // 旧版本的会话永远拿不到新工具（agent_ask.multiple 之类）。
       const dynamicTools = await bag.buildDynamicTools();
       const result = await bag.resumeThreadLight({ threadId: id, sandbox: resumeSandbox, approvalPolicy: resumeApproval, dynamicTools });
       // 残留运行态归一化（详见 normalizeLoadedThread）：旧会话丢过 turn/completed 的

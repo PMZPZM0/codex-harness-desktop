@@ -106,9 +106,13 @@ ok(/callDispatchTool\(input: \{ name: string; args\?: Record<string, unknown>; c
 }
 
 /* ── ⑥ 恢复会话必须携带工具面（10-05 用户报「能力全挂了」的第二真凶）────────────
-   引擎侧是「**最后那次 resume 决定这个会话的工具面**」⇒ 任何一条不带 dynamicTools 的
-   恢复路径都会把工具面打回创建时的快照，老会话里新增的能力集体消失（直接调用 → unsupported call）。
-   实测：修复前渲染层有 13 条恢复路径，只有 1 条带工具面（启动恢复那条最致命 —— 应用一开就抹掉）。
+   ⛔ 10-11 更正机制（此前这里写「最后那次 resume 决定工具面」——探针实测**不成立**）：
+   引擎的工具面**只在 spawn 时定死**，来源 = rollout 首行 session_meta.dynamic_tools；
+   thread/resume 与 thread/fork 里的 dynamicTools 被**整份忽略**（协议 schema 的
+   ThreadResumeParams 无该字段；独立探针实测上游请求体 tools 一个不多）。
+   ⇒ 渲染层仍然每次都带工具面，但作用变成"告诉主进程当前工具面是什么"，由主进程
+     改写老会话 rollout 首行（electron/rollout-worker.cjs 的 syncToolSurface）。
+     缺了它 ⇒ 创建于旧版本的会话永远停在旧工具面（模型 schema 里没有新参数）。
    ⇒ 判据：① 直发 thread/resume 只剩 2 处且都在允许清单；② 唯一入口强制附加 dynamicTools；
      ③ 所有入口调用都必须传 bag。 */
 {
@@ -131,9 +135,10 @@ ok(/callDispatchTool\(input: \{ name: string; args\?: Record<string, unknown>; c
     `⛔ 所有 resumeThreadWithTurns 调用都传 bag（${withBag.length}/${calls}）—— 少传就等于没带工具面`);
 
   /* ── ⑦ 分叉会话同样要带工具面（2026-10-10）───────────────────────────────
-     引擎的 dynamicTools 只在 `thread/start` 与 `thread/resume` 注册，而 `thread/fork` 也是
-     **建立新会话**。渲染层原来有 4 处直发 fork，其中 2 处只 `setThread`、不 resume ⇒
-     分叉出来的会话（用户视角就是"新会话"）继承的是**源会话创建时**的工具面快照，
+     ⛔ 10-11 实测：`thread/fork` 自己的 dynamicTools 也被忽略，**继承的是源会话 rollout 的
+     工具面**（源被升级后 fork 出来的新会话跟着拿新工具，已实证）。所以 fork 前先走 openThread
+     （它会把源会话的 rollout 同步成当前工具面）才是正解 —— 原来 4 处直发 fork 里 2 处只
+     setThread、不 resume ⇒ 分叉出来的会话继承的是源会话**创建时**的工具面快照，
      知识库 / 定时任务 / 视频 … 全部 `unsupported call`（用户报「知识库调不到」的真凶之一）。
      ⇒ 现在 fork 后一律走 openThread（内部带当前工具面 resume）。
      判据：每处 fork 的近邻必须出现 `openThread` —— fork 之后要做的动作本来就在紧邻几行，

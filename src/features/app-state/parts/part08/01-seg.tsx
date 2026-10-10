@@ -411,9 +411,14 @@ bag.releaseDispatchHolder = releaseDispatchHolder as typeof bag.releaseDispatchH
   }
 bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
 
-  /** 动态工具面（thread/start 与 thread/resume 共用）：引擎 resume 的 schema 实证也接受
-   *  dynamicTools——不带上 = 旧会话恢复的是创建时的工具快照，新工具（如技能纪律四件套）
-   *  永远进不去（Codex 反馈「我工具列表里没有 skill_search」的根因）。 */
+  /** 动态工具面（thread/start 与 thread/resume 共用）。
+   *  ⛔⛔ **10-11 反证并定案**（此前这里写着「引擎 resume 的 schema 实证也接受 dynamicTools」——**错的**）：
+   *     引擎（0.157.1）的工具面**只在 spawn 时定死**，thread/resume 与 thread/fork 里的
+   *     dynamicTools 被**整份忽略**（协议 schema 的 ThreadResumeParams 里根本没有该字段；
+   *     独立探针实测上游请求体 tools 一个不多）；真来源 = rollout **首行** session_meta.dynamic_tools。
+   *     ⇒ 这份数组在 resume 上的唯一作用：主进程拿它去**改写老会话 rollout 的首行**
+   *       （electron/rollout-worker.cjs 的 syncToolSurface，见 codex-ipc 的 thread/resume 分支），
+   *       否则创建于旧版本的会话永远拿不到新工具（症状：agent_ask 写着"可多选"却只能选一个）。 */
   const buildDynamicTools = useCallback(async (): Promise<any[]> => {
     const builtinCfg = await window.codex.readBuiltinPlugins().catch(() => null);
     /* ⛔ 调度工具面的**完整来龙去脉**（10-04 用户拍板"调度开关就要对应生效工具"→ 引擎 0.157

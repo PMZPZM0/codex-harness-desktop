@@ -399,57 +399,17 @@ export class CodexServer extends EventEmitter {
     } catch { /* 日志失败不影响主流程 */ }
   }
 
-  // ── 会话工具面缓存（10-10 实测事故：调度器跑完一次任务后，主窗口再提问 agent_ask 的
-  //    multiple 参数消失）──
-  //  引擎语义是「最后那次 thread/resume 决定这个会话的工具面」：任何一条**不带**
-  //  dynamicTools 的 resume 都会把工具面冲掉回会话创建时的快照。渲染层已在 10-05 全量
-  //  修复（唯一恢复入口必带工具面），但主进程还有一批 resume 调用方（scheduler.ts /
-  //  channel-bot.ts / im-inbound.ts / delegation.ts / delegate-report.ts / teams-ipc.ts /
-  //  bot-binding-ipc.ts / main.ts 恢复）不带工具面 —— 一次就把老会话打回旧快照。
-  //  对策：在唯一请求漏斗 request() 上做两件事：
-  //    ① 记录：thread/start 与带 dynamicTools 的 thread/resume，把工具面按 threadId 缓存；
-  //    ② 还原：不带 dynamicTools 的 thread/resume 自动补上该会话最近一次注册的工具面
-  //       （缓存为空时原样放行 —— 只「还原最后一次」、不发明，行为与旧版兼容）。
-  private threadToolSurface = new Map<string, unknown[]>();
-
   async request(method: string, params: unknown, timeoutMs = 60_000) {
     if (!this.child && method !== "initialize") await this.start();
     if (!this.child) throw new Error("Codex app-server is not running");
     const id = this.nextId++;
-    // 工具面还原：thread/resume 不带（或带空）dynamicTools 时补上缓存里该会话最近一次的面
-    let effectiveParams = params;
-    if (method === "thread/resume") {
-      const p = params as { threadId?: string; dynamicTools?: unknown[] } | null;
-      const hasTools = Array.isArray(p?.dynamicTools) && p!.dynamicTools!.length > 0;
-      if (p?.threadId) {
-        if (hasTools) {
-          this.threadToolSurface.set(String(p.threadId), p.dynamicTools!);
-        } else {
-          const cached = this.threadToolSurface.get(String(p.threadId));
-          if (cached?.length) effectiveParams = { ...(params as object), dynamicTools: cached };
-        }
-      }
-    }
-    // 工具面记录：thread/start 的 threadId 只在响应里，响应回来后按 thread.id 缓存
-    const recordStartSurface = (result: unknown) => {
-      try {
-        const p = params as { dynamicTools?: unknown[] } | null;
-        if (!Array.isArray(p?.dynamicTools) || !p!.dynamicTools!.length) return;
-        const threadId = (result as { thread?: { id?: string } } | null)?.thread?.id;
-        if (threadId) this.threadToolSurface.set(String(threadId), p!.dynamicTools!);
-      } catch { /* 缓存失败不影响主流程 */ }
-    };
     return new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`${method} timed out`));
       }, timeoutMs);
-      this.pending.set(id, {
-        resolve: (value: unknown) => { if (method === "thread/start") recordStartSurface(value); resolve(value); },
-        reject,
-        timer,
-      });
-      this.write({ id, method, params: effectiveParams });
+      this.pending.set(id, { resolve, reject, timer });
+      this.write({ id, method, params });
     });
   }
 
