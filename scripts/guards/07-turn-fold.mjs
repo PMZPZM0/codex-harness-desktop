@@ -816,8 +816,8 @@ export async function run() {
       ? ok("【38】网关按协议实现了 getconfig → sendtyping（typing_ticket + ilink_user_id）")
       : fail("【38】网关缺「对方正在输入」接口实现（getconfig/sendtyping）—— 长任务期间用户看不到任何进度");
     (/if \(event\.method === "turn\/started"\)/.test(mainSrc) && /startWeixinTyping\(streamThreadId, plan\.typingFrom\)/.test(mainSrc)
-      && /if \(event\.method === "turn\/completed"\) stopWeixinTyping\(/.test(mainSrc))
-      ? ok("【38】typing 随回合起停（turn/started 起、turn/completed 停）")
+      && /isTurnEndMethod\(event\.method\)\) stopWeixinTyping\(/.test(mainSrc))
+      ? ok("【38】typing 随回合起停（turn/started 起、**四类结束**都停 —— 10-10 修：只认 completed 时被中断的回合「正在输入」永不消失）")
       : fail("【38】typing 没接回合生命周期 —— 会出现「一直在输入」不消失");
     (/(minChars|maxFlushes|flushIntervalMs)/.test(streamSrc) && /this\.budget\.maxFlushes/.test(streamSrc) && /this\.budget\.minChars/.test(streamSrc))
       ? ok("【38】流式会话真的按预算节流（maxFlushes / minChars / flushIntervalMs 都参与判断）")

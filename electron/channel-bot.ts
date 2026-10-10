@@ -1,5 +1,6 @@
 import { createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
 import { safeProviderId } from "./provider-id";
+import { isTurnEndMethod } from "./turn-end";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import fs from "node:fs/promises";
 import type { CodexEvent, CodexServer } from "./codex-server";
@@ -120,9 +121,12 @@ export class ChannelBotService {
       if (bound) this.turnMessages.set(turnId, (this.turnMessages.get(turnId) ?? "") + (params.delta ?? ""));
     } else if (event.method === "item/completed" && params.item?.type === "agentMessage") {
       if (bound) this.turnMessages.set(turnId, params.item.text ?? this.turnMessages.get(turnId) ?? "");
-    } else if (event.method === "turn/completed") {
+    } else if (isTurnEndMethod(String(event.method ?? ""))) {
+      /* ⛔⛔ 四类结束事件都要收尾（10-10）：只认 turn/completed 时，被中断 / 失败的回合
+         这里**永远不走** ⇒ busyThreads 残留、turnMessages 残留、渠道用户**收不到任何下文**
+         （用户反馈截图：模型说「直接对比：」之后再无消息 —— 就是这个）。 */
       this.busyThreads.delete(params.threadId);
-      if (bound) void this.finishTurn(params).catch((error) => this.log("error", `飞书回复失败：${error.message}`));
+      if (bound) void this.finishTurn(params, String(event.method ?? "")).catch((error) => this.log("error", `飞书回复失败：${error.message}`));
       else this.turnMessages.delete(turnId);
     }
   }
@@ -219,16 +223,22 @@ export class ChannelBotService {
     }
   }
 
-  private async finishTurn(params: any) {
+  private async finishTurn(params: any, method: string) {
     const route = Object.values(this.bindings).find((binding) => binding.threadId === params.threadId);
     const turnId = String(params?.turn?.id ?? params.turnId ?? params.id ?? "");
     const final = [...(params.turn?.items ?? [])].reverse().find((item: any) => item.type === "agentMessage")?.text
       ?? this.turnMessages.get(turnId)
       ?? (params.turn?.error?.message ? `Codex 处理失败：${params.turn.error.message}` : "");
     this.turnMessages.delete(turnId);
+    /* ⛔ 非 completed 的收尾必须**说明**：被中断 / 失败的回合累积文本只有半截，
+       不标注的话用户会把它当成完整回复（跟「回合正常结束」无法区分）。 */
+    const ok = method === "turn/completed";
+    const text = ok ? final.trim() : (final.trim()
+      ? `${final.trim()}\n\n⚠️ 这个回合没有正常跑完，以上是已产生的部分内容。`
+      : `⚠️ Codex 的回合没有正常跑完（${method}），没有产出内容。`);
     if (!route || !this.config) return;
     try {
-      if (final.trim()) await this.sendFeishu(this.config, route.chatId, final.trim());
+      if (text.trim()) await this.sendFeishu(this.config, route.chatId, text.trim());
     } finally {
       const queued = await this.server.request("thread/queue/list", { threadId: params.threadId, limit: 1 }) as any;
       if (queued.data?.[0]) await this.server.request("thread/queue/start", { threadId: params.threadId, queuedSubmissionId: queued.data[0].id });

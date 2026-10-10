@@ -18,14 +18,13 @@ import { reportBackgroundResult } from "./delegate-report";
 import { broadcastHarnessEvent } from "./features/window-bus";
 import { turnOutputText } from "./main/03-turn-summary";
 import { delegateRegistry, teamRunStore } from "./runtime-refs";
-
-const TURN_END_METHODS = new Set(["turn/completed", "turn/aborted", "turn/failed", "turn/interrupted"]);
+import { isTurnEndMethod } from "./turn-end";
 
 /** 引擎事件 → 收敛后台运行。返回 true = 这次事件确实收敛了某条（委派 / 团队）运行。 */
 export function settleBackgroundRunsOnTurnEnd(event: any): boolean {
   if (!event || event.kind !== "notification") return false;
   const method = String(event.method ?? "");
-  if (!TURN_END_METHODS.has(method)) return false;
+  if (!isTurnEndMethod(method)) return false;
   const threadId = String(event.params?.threadId ?? "");
   if (!threadId) return false;
   const ok = method === "turn/completed";
