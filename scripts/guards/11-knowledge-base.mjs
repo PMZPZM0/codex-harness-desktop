@@ -260,6 +260,35 @@ try {
       "UI 手动路径（kb:add-text / kb:add-files）不接 Laya 门禁（用户手动导入是明确意图）",
     );
   }
+
+  /* ── 判据 9（2026-10-10 用户令「被委派会话也要能用知识库」）────────────────
+     ⛔ 为什么必须钉：被委派会话的工具面走的是**另一条路**（delegation / teams 在建会话时各自传
+     dynamicTools），与主会话的 `harness_tools` 网关**完全不同源** ⇒ 只改主会话那条，
+     子智能体 / 专家 / 团成员照样一条都读不到（模型会回「我读不到知识库」）。
+     ⛔ 同时钉住「只给只读」：写操作不许给被委派会话 —— 那是越权面。 */
+  {
+    const delegation = readFileSync(join(ROOT, "electron", "features", "delegation.ts"), "utf8");
+    const teams = readFileSync(join(ROOT, "electron", "features", "teams-ipc.ts"), "utf8");
+    const boot9 = readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8");
+    const dktSrc = readFileSync(join(ROOT, "electron", "delegate-knowledge-tool.ts"), "utf8");
+    ok(/dynamicTools: \[\.\.\.teamTools, buildDelegateKnowledgeTool\(\)/.test(delegation),
+      "被委派会话（子智能体 / 专家）拿到知识库只读工具");
+    const teamHits = teams.match(/buildDelegateKnowledgeTool\(\)/g) ?? [];
+    ok(teamHits.length >= 2,
+      `专家团两条建会话路径（团主 / 成员）都挂了只读知识库工具（实际 ${teamHits.length} 处）`);
+    ok(teams.includes('buildRoleMemoryTool({ kind: "team-member"') && teamHits.length >= 2,
+      "成员会话同时拿到「记忆写入 + 知识库检索」");
+    ok(/void handleDelegateKnowledgeToolCall\(\{ userDataDir/.test(boot9),
+      "⛔ 主进程应答知识库工具调用（被委派会话的事件会被 filterForRenderer 裁掉，不在这里应答 = 挂到超时）");
+    ok(/!== DELEGATE_KNOWLEDGE_TOOL\) return false/.test(dktSrc),
+      "⛔ 只认自己那一个工具名（返回 false 交回原流程，不吞别人的调用）");
+    ok(/params\?\.threadId/.test(dktSrc) && !/args\.threadId/.test(codeOnly(dktSrc)),
+      "⛔ 身份只取引擎下发的 threadId（⛔ 不用 args 里模型自报的值）");
+    ok(/searchDocs\(/.test(dktSrc),
+      "执行端复用 knowledge-base 的 searchDocs（⛔ 不另写一份检索 —— 两份必然漂）");
+    ok(!/harness_tools/.test(codeOnly(dktSrc)),
+      "⛔ 不给被委派会话 harness_tools 网关（里面装着写操作 = 越权面）");
+  }
 } finally {
   rmSync(ws, { recursive: true, force: true });
 }

@@ -715,9 +715,15 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
        10-05 角色私有记忆落地后，dynamicTools 的传参条件从「teamTools 非空」变成
        「teamTools 非空 **或** 有角色归属」（两类工具要合并进**同一个**数组，⛔ 不能写两个
        dynamicTools 键 —— 后者会覆盖前者，主理人反而丢掉自己的调度工具）。 */
-    /\(teamTools\.length \|\| roleRef\)/.test(mainSrc9) && /dynamicTools: \[\.\.\.teamTools, \.\.\.\(roleRef \? \[/.test(mainSrc9)
-      ? ok("dynamicTools 只给专家团主理人调度工具（+ 角色记忆工具），其余被调会话不带调度工具")
-      : fail("dynamicTools 传参条件变了 —— 确认没有给执行型会话挂调度工具");
+    /* 10-10：数组里多了一项**知识库只读检索**（用户令「被委派会话也要能用知识库」，
+       见 electron/delegate-knowledge-tool.ts）。⛔ 但语义没变：条件仍是「teamTools 非空
+       **或** 有角色归属」；⛔ 且**绝不给** `harness_tools` 网关 —— 那里面装着写操作
+       （存专家 / 建定时任务 / 注册连接器），给执行型会话 = 把越权面整个放开。 */
+    /\(teamTools\.length \|\| roleRef\)/.test(mainSrc9)
+      && /dynamicTools: \[\.\.\.teamTools, buildDelegateKnowledgeTool\(\), \.\.\.\(roleRef \? \[buildRoleMemoryTool\(roleRef\)\]/.test(mainSrc9)
+      && !/dynamicTools: \[[^\]]*harness_tools/.test(mainSrc9)
+      ? ok("dynamicTools 只给专家团主理人调度工具（+ 角色记忆写入 + 知识库只读），⛔ 不给 harness_tools 网关")
+      : fail("dynamicTools 传参条件变了 —— 确认没有给执行型会话挂调度工具 / 网关");
     // ⛔ 回归防线：两类工具必须**合并成一个数组**（写两个 dynamicTools 键会互相覆盖）
     (mainSrc9.match(/dynamicTools:/g) ?? []).length >= 1
       && !/\.\.\.\(teamTools\.length \? \{ dynamicTools: teamTools \}/.test(mainSrc9)

@@ -21,6 +21,7 @@ import { memberThreadName } from "../team-runs";
 import { app } from "electron";
 import { buildDelegateMemory } from "../delegate-memory";
 import { buildRoleMemoryTool, noteRoleThread } from "../role-memory-tool";
+import { buildDelegateKnowledgeTool } from "../delegate-knowledge-tool";
 import { safeProviderId } from "../provider-id";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { readCustomModel } from "../main/01-model-catalog";
@@ -109,7 +110,7 @@ export const teamsFeature = defineFeature<null>({
         modelProvider: provider,
         personality: input.personality || null,
         config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
-        dynamicTools: [teamTool, teamPhaseTool],
+        dynamicTools: [teamTool, teamPhaseTool, buildDelegateKnowledgeTool()],
       });
       threadCwd.set(String(started.thread.id), String(input.cwd || process.cwd())); /* 文件变更追踪 cwd 登记（10-01） */
       // 线程 → 团队映射落主进程并持久化：任何窗口（含 popout）据此才知道这个会话属于哪个团
@@ -160,7 +161,8 @@ export const teamsFeature = defineFeature<null>({
         personality: input.personality || null,
         config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
         // 10-05：成员会话能写自己的私有记忆（主进程侧应答，见 role-memory-tool.ts）
-        dynamicTools: [buildRoleMemoryTool({ kind: "team-member", id: team.teamId, memberId: member.id, label: `${team.displayName.zh}·${member.name}` })],
+        // 10-10：+ 知识库只读检索（用户令「他们也要能用知识库」；见 delegate-knowledge-tool.ts）
+        dynamicTools: [buildRoleMemoryTool({ kind: "team-member", id: team.teamId, memberId: member.id, label: `${team.displayName.zh}·${member.name}` }), buildDelegateKnowledgeTool()],
       });
       const systemPrefix = `[专家团「${team.displayName.zh}」${isLead ? "主理人" : "成员"} ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}\n\n`;
       threadCwd.set(String(started.thread.id), String(input.cwd || process.cwd())); /* 文件变更追踪 cwd 登记（10-01） */
