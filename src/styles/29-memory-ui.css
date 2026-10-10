@@ -345,3 +345,42 @@
   .mui-tab-count { display: none; }        /* ⛔ 极窄时隐藏计数，⛔ 标签本身已说明类型 */
   .mui-weight-text { display: none; }     /* ⛔ 只留权重条 */
 }
+
+/* ── 机制概览条（10-10）：金字塔层水位 + 存储后端，**常驻**在每个作用域视图上方 ──────
+   ⛔ 它不是 tab：金字塔（分层机制）与存储后端跟"这是谁的记忆"（作用域维度）正交，
+     并列成 tab 会让用户以为"记忆全归到了金字塔那一类"（用户 10-10 反馈）。
+     默认一行摘要，点开才是完整七层水位与后端详情。 */
+.mui-overview {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel, var(--bg)) 60%, transparent);
+  margin: 2px 0 10px;
+  overflow: hidden;
+}
+.mui-overview-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 11px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.mui-overview-head:hover { background: color-mix(in srgb, var(--green) 6%, transparent); }
+.mui-overview-head strong { font-size: 11.5px; }
+.mui-overview-summary { color: var(--muted); }
+.mui-overview-warn {
+  color: var(--orange, var(--accent));
+  border: 1px solid color-mix(in srgb, var(--orange, var(--accent)) 35%, transparent);
+  border-radius: 999px;
+  padding: 0 7px;
+  font-size: 10.5px;
+}
+.mui-overview-backend { margin-left: auto; color: var(--muted); font-size: 11px; }
+.mui-overview-chevron { color: var(--muted); transition: transform .15s ease; }
+.mui-overview-chevron.is-open { transform: rotate(180deg); }
+.mui-overview-body { border-top: 1px solid var(--line); padding: 4px 11px 10px; }

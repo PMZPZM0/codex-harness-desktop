@@ -56,9 +56,12 @@ ok(!/ipcRenderer|require\("electron"\)|window as any\)\.codex/.test(VIEWS),
   + "⛔ 而 `window.codex` 这条真路径能绕过去 —— 变异验证时才发现）");
 const ipcHits = (SHELL.match(/window as any\)\.codex|\.codex\./g) || []).length;
 ok(ipcHits > 0, `⛔ 外壳是唯一碰 IPC 的地方（${ipcHits} 处调用，其余文件 0 处）`);
-ok(/const TABS: \{ kind: MemoryKind; label: string \}\[\]/.test(SHELL)
-  && (SHELL.match(/\{ kind: "/g) || []).length === 7,
-  "⛔ 类型切换表一处 7 项（⛔ 加新类型只改这张表）");
+/* 10-10 修正：TABS 从 7 项收成 **5 个作用域**（金字塔 / MCP 后端改走常驻概览条，见 ⑨）——
+   这条断言的**意图**没变：tab 表仍然只有这一处定义，加一个作用域只改这张表。
+   ⛔ 七类**数据源**的齐全性由 ①（MemoryKind 类型）继续钉着，两件事不要混。 */
+ok(/const TABS: \{ kind: ScopeTabKind; label: string \}\[\]/.test(SHELL)
+  && (SHELL.match(/\{ kind: "/g) || []).length === 5,
+  "⛔ 类型切换表一处 5 项作用域（⛔ 加新作用域只改这张表；分层/后端不做 tab 见 ⑨）");
 ok(/createContext/.test(SHELL) === false && /createContext/.test(PRIM) === false,
   "⛔ 不用 context（视图间无共享状态 ⇒ context 只会带来耦合）");
 
@@ -194,6 +197,31 @@ ok(!/name\.startsWith\("project__"\)[\s\S]{0,200}?content\.includes/.test(SHELL)
   "⛔⛔ 归属**只按命名空间前缀 + 角色登记表**，⛔ 绝不按条目内容/显示名猜（猜错不可见）");
 ok(/pushMain\(entries, "项目共享层"/.test(SHELL) && /pushMain\(entries, "未归属的会话"/.test(SHELL),
   "⛔ 公共层与孤儿空间**如实标注**（⛔ 不硬塞给某个人）");
+
+/* ── ⑨ 维度分离：金字塔 / 存储后端**不做 tab**（10-10 用户反馈修正）──────────────
+   用户原话：「金字塔记忆不应作为单独的一个分类来呈现，而应体现在每一个选项当中。
+   当前实现将记忆全部归入"金字塔记忆"这一类，其他类目均为空」。
+   根因 = **两个正交维度被摆进同一排 tab**（作用域 vs 分层机制/存储位置），
+   且计数口径串味：pyramid 那格填的是**层数**（L0–L7 恒 8）、mcp 那格是**布尔**，
+   而作用域几格是**条目数** ⇒ 读起来就是"记忆全归到金字塔"。
+   ⇒ 钉死：tab 只含作用域；金字塔与后端走**常驻概览条**；计数只统计条目数。 */
+console.log("\n【mui】⑨ 维度分离（作用域 / 分层机制 / 存储后端各归其位）");
+{
+  const tabsBlock = (SHELL.match(/const TABS[\s\S]*?\];/) || [""])[0];
+  ok(["main", "subagent", "expert", "team", "dispatched"].every((k) => tabsBlock.includes(`kind: "${k}"`)),
+    "tab 覆盖五个作用域维度");
+  ok(!/kind: "pyramid"/.test(tabsBlock) && !/kind: "mcp-backend"/.test(tabsBlock),
+    "⛔ 金字塔与 MCP 后端**不在 tab 里**（它们是正交维度，不是记忆分类）");
+  const countsBlock = (SHELL.match(/const counts = useMemo[\s\S]*?\}\), \[data\]\)/) || [""])[0];
+  ok(!/layers\.length/.test(countsBlock) && !/\? 1 : 0/.test(countsBlock),
+    "⛔ 计数口径统一为条目数（⛔ 不许再把层数 / 布尔塞进同一排 tab —— 那是在骗人）");
+  ok(/function MemoryOverview\(/.test(SHELL) && /<MemoryOverview/.test(SHELL),
+    "机制概览（金字塔水位 + 存储后端）存在且已挂载 —— 每个作用域视图下都看得到");
+  ok(!/\{tab === "pyramid"\}/.test(SHELL) && !/\{tab === "mcp-backend"\}/.test(SHELL),
+    "⛔ 两个视图不再挂在 tab 分支上（只在概览里渲染）");
+  ok(/\.mui-overview\b/.test(CSS) && /\.mui-overview-head\b/.test(CSS),
+    "概览条样式已定义（缺了会退化成裸按钮）");
+}
 
 console.log("\n【mui】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));
 process.exit(fails ? 1 : 0);

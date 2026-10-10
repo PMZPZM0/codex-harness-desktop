@@ -10,7 +10,7 @@
  *   带来"谁在提供、谁在消费"的耦合。状态留在外壳 + 显式 props 更清楚。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { ChevronDown, Layers, RefreshCw } from "lucide-react";
 import {
   ActorMemoryView, DispatchedTimelineView, McpBackendView, PyramidView, TeamMemoryView,
 } from "./views";
@@ -232,14 +232,25 @@ async function buildActorViews(bridge: any, workspace: string, namespaces: any[]
 
 /* ══ 外壳 ═════════════════════════════════════════════════════════════ */
 
-const TABS: { kind: MemoryKind; label: string }[] = [
+/** tab 用的 kind 子集 = **作用域维度**（⛔ 不是 MemoryKind 全集：pyramid / mcp-backend
+ *  仍是独立数据源，但它们不做 tab —— 见下面 TABS 的注释）。类型收窄还有个好处：
+ *  counts 与 TABS 的键对不上时**编译期就报错**（这次修正就是它先把问题顶出来的）。 */
+type ScopeTabKind = "main" | "subagent" | "expert" | "team" | "dispatched";
+
+const TABS: { kind: ScopeTabKind; label: string }[] = [
   { kind: "main", label: MEMORY_KIND_META.main.label },
   { kind: "subagent", label: MEMORY_KIND_META.subagent.label },
   { kind: "expert", label: MEMORY_KIND_META.expert.label },
   { kind: "team", label: MEMORY_KIND_META.team.label },
   { kind: "dispatched", label: MEMORY_KIND_META.dispatched.label },
-  { kind: "pyramid", label: MEMORY_KIND_META.pyramid.label },
-  { kind: "mcp-backend", label: MEMORY_KIND_META["mcp-backend"].label },
+  /* ⛔⛔ 这里**只放作用域维度**（「这是谁的记忆」）。← 10-10 用户反馈修正：
+     原来把 `pyramid` 与 `mcp-backend` 也并列成 tab，是**把两个正交维度混在一起**了 ——
+     金字塔（L0–L7）是**横切分层机制**、MCP 是**存储位置**，它们跟"谁的记忆"不是一回事。
+     更糟的是计数口径：其它 tab 显示**条目数**，而 pyramid 显示的是**层数**（L0–L7 恒为 8）、
+     mcp-backend 是**布尔转 1** ⇒ 用户看到"金字塔 8、其它全 0"，读出来的结论是
+     「记忆全被归到了金字塔这一类」（用户原话）。
+     ⇒ 两者改为**常驻概览条**（见 MemoryOverview）：切到任一作用域都看得到层水位与后端，
+       而不再是并列分类。⛔ MemoryKind 类型层的七类数据源**不变**（它们仍是独立数据源）。 */
 ];
 
 export function MemoryWorkbench({ workspace, onOpenThread }: {
@@ -249,14 +260,15 @@ export function MemoryWorkbench({ workspace, onOpenThread }: {
   const { data, state, error, reload } = useMemorySources(workspace, true);
   const [tab, setTab] = useState<MemoryKind>("main");
 
+  /* ⛔ 计数**只统计条目数**（口径统一）。10-10 修正：原来 pyramid 填的是 `layers.length`
+     （层数，恒 8）、mcp-backend 填的是 `data.mcp ? 1 : 0`（布尔转数字）—— 量与意义都不同，
+     摆在同一排 tab 上就是在骗人。两者已移出 tab（见 MemoryOverview）。 */
   const counts = useMemo(() => ({
     main: data.main?.stats.total ?? 0,
     subagent: data.subagents.reduce((s, a) => s + a.stats.total, 0),
     expert: data.experts.reduce((s, a) => s + a.stats.total, 0),
     team: data.teams.reduce((s, a) => s + a.stats.total, 0),
     dispatched: data.dispatched.length,
-    pyramid: data.pyramid?.layers.length ?? 0,
-    "mcp-backend": data.mcp ? 1 : 0,
   }), [data]);
 
   if (!workspace) {
@@ -292,6 +304,15 @@ export function MemoryWorkbench({ workspace, onOpenThread }: {
 
       <p className="mui-blurb">{MEMORY_KIND_META[tab].blurb}</p>
 
+      {/* 机制概览（**常驻**）：金字塔层水位 + 存储后端。
+          ⛔ 它不是 tab —— 金字塔与后端跟"谁的记忆"是两个正交维度（见 TABS 上的注释）；
+            放在这里 ⇒ 切到任一作用域都看得到"金字塔现在什么水位、记忆存在哪"。 */}
+      <MemoryOverview
+        pyramid={data.pyramid ?? emptyPyramid()}
+        mcp={data.mcp ?? emptyMcp()}
+        state={state} error={error} onRetry={reload}
+      />
+
       {state === "loading" && !hasAnyData(data) && <MemorySkeleton rows={4} />}
       {state === "error" && <MemoryState state="error" error={error} empty="读取失败" onRetry={reload} />}
 
@@ -315,9 +336,46 @@ export function MemoryWorkbench({ workspace, onOpenThread }: {
       {tab === "dispatched" && (
         <DispatchedTimelineView items={data.dispatched} state={state} error={error} onRetry={reload} onOpenThread={open} />
       )}
-      {tab === "pyramid" && <PyramidView data={data.pyramid ?? emptyPyramid()} />}
-      {tab === "mcp-backend" && (
-        <McpBackendView data={data.mcp ?? emptyMcp()} state={state} error={error} onRetry={reload} />
+    </div>
+  );
+}
+
+/**
+ * 「机制概览」—— 金字塔（L0–L7 分层）与存储后端**常驻**在每个作用域视图上方。
+ *
+ * ⛔⛔ 为什么不做成并列 tab（10-10 用户反馈修正）：金字塔是**横切分层机制**、后端是
+ * **存储位置**，两者与「这是谁的记忆」（作用域维度）正交。并列成 tab 时的实际后果是
+ * 计数口径串了味 —— pyramid 那格填的是**层数**（L0–L7 恒 8）、mcp 那格是**布尔**，
+ * 而作用域那几格是**条目数** ⇒ 用户看到「金字塔 8、其它全 0」，读出来就是
+ * 「记忆全归到了金字塔这一类」。⇒ 改成概览条：默认一行摘要（有内容的层 + 需蒸馏 + 后端），
+ * 点开才是完整的七层水位与后端详情（能力一点没少）。
+ */
+function MemoryOverview({ pyramid, mcp, state, error, onRetry }: {
+  pyramid: PyramidMemory; mcp: McpBackendMemory;
+  state: LoadState; error: string; onRetry: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const layers = Array.isArray(pyramid?.layers) ? pyramid.layers : [];
+  const withContent = layers.filter((l) => (l.used ?? 0) > 0);
+  const needDistill = layers.filter((l) => l.needDistill).length;
+  const summary = withContent.length
+    ? withContent.map((l) => `${l.id} ${Math.round((l.ratio ?? 0) * 100)}%`).join(" · ")
+    : "七层还没有内容";
+  return (
+    <div className="mui-overview" data-layers={layers.length}>
+      <button type="button" className="mui-overview-head" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <Layers size={13} />
+        <strong>金字塔记忆</strong>
+        <span className="mui-overview-summary">{summary}</span>
+        {needDistill ? <span className="mui-overview-warn">{needDistill} 层需蒸馏</span> : null}
+        <span className="mui-overview-backend">存储：{mcp?.active ? "本地 MCP" : "内置分层"}</span>
+        <ChevronDown size={14} className={"mui-overview-chevron" + (open ? " is-open" : "")} />
+      </button>
+      {open && (
+        <div className="mui-overview-body">
+          <PyramidView data={pyramid} />
+          <McpBackendView data={mcp} state={state} error={error} onRetry={onRetry} />
+        </div>
       )}
     </div>
   );
