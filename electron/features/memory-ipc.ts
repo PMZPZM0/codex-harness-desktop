@@ -41,6 +41,7 @@ import { MEMORY_SCALE_OPTIONS } from "../memory-layers";
 import { userSkillsDir } from "../main";
 import type { MemoryMode, StoredMemoryGateway } from "../main";
 import { defineFeature } from "../context";
+import { sendToWindow } from "./window-bus";
 import type { IpcHost } from "../ipc-host";
 import type { HostCaps } from "../runtime/seams";
 
@@ -72,6 +73,50 @@ async function saveMemoryGateway(input: any) {
 
 let memoryMcpBusy = false; // ⛔ 防连点并发（npm install 很重，并发会互相踩 node_modules）
 
+/* ── 安装/卸载/检测的进度上报（10-10 用户反馈「安装、连通性检查和卸载都缺少反馈效果」）──────
+   通道复用既有的 `runtime:progress`（开发工具页装运行时、知识库装语义后端都走它）——
+   ⛔ 不新开通道：渲染层已有 `onRuntimeProgress` 订阅与 `runtime-progress-bar` 样式，新开一套
+     就要再写一遍分栏、再写一遍进度条，两处必然漂移。
+   id 按动作区分（渲染层按 `memory-mcp` 前缀过滤），一个 id 只对应一个动作。
+   ⛔ 为什么由主进程**收尾发终态**（而不是等安装器自己 emit 完就行）：安装器的失败路径
+     （npm 挂 / 握手失败）也是 `process.exit(1)`，界面必须能区分"跑完了"与"跑挂了"——
+     终态事件带 `done + failed`，渲染层据此收起进度条并弹出成功/失败横幅。 */
+const MCP_PROGRESS = { install: "memory-mcp:install", uninstall: "memory-mcp:uninstall", verify: "memory-mcp:verify" } as const;
+
+/** 安装器 stderr 的进度标记 → runtime:progress。
+ *  约定与 scripts/install-runtimes.cjs **同一套**：`@@PROGRESS <0-100>` / `@@STAGE <阶段名>`；
+ *  其余行（`[memory-mcp] xxx` 诊断）原样作为进度说明，让用户看到"正在做什么"。
+ *  ⛔ 只解析 **stderr**：stdout 是本安装器的**单行 JSON 结果协议**，把结果行当消息推出去
+ *    会在界面上打印一大段 JSON。 */
+function emitMemoryMcpProgress(id: string, chunk: string | Buffer) {
+  for (const raw of String(chunk).replace(/\r/g, "\n").split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    const progress = line.match(/^@@PROGRESS\s+(\d{1,3})/);
+    if (progress) {
+      sendToWindow("runtime:progress", { id, percent: Math.max(0, Math.min(100, Number(progress[1]))) });
+      continue;
+    }
+    const stageLine = line.match(/^@@STAGE\s+(.+)/);
+    if (stageLine) {
+      const text = stageLine[1].trim().slice(0, 80);
+      sendToWindow("runtime:progress", { id, stage: text, message: text });
+      continue;
+    }
+    const text = line.replace(/^\[memory-mcp\]\s*/, "").trim();
+    if (text) sendToWindow("runtime:progress", { id, message: text.slice(0, 120) });
+  }
+}
+
+/** 从安装器回执里提炼一句给用户看的原因（失败横幅/tooltip 用）。 */
+function memoryMcpFailureReason(r: { code: number | null; result: any; log: string }): string {
+  const fromResult = String(r.result?.error ?? "").trim();
+  if (fromResult) return fromResult;
+  const tail = String(r.log ?? "").split("\n").map((l) => l.trim()).filter(Boolean).pop();
+  if (tail) return tail;
+  return r.code === null ? "安装器进程起不来" : `安装器退出码 ${r.code}`;
+}
+
 /** 记忆容量倍率的读回体：read / set **同一形状** —— 渲染层拿它整体替换状态，少一个字段就会出现
  *  「设置完水位条不更新」那类安静 bug（09-22 的 layers:write 踩过同型）。 */
 function memoryScalePayload() {
@@ -83,13 +128,14 @@ function memoryScalePayload() {
   };
 }
 
-async function runMemoryInstaller(extra: string[]): Promise<{ code: number | null; result: any; log: string }> {
+async function runMemoryInstaller(extra: string[], progressId: string): Promise<{ code: number | null; result: any; log: string }> {
   if (memoryMcpBusy) throw new Error("已有安装/卸载正在进行，请稍候");
   const nodeExe = bundledNodePath();
   const script = memoryInstallerPath();
   if (!existsSync(nodeExe)) throw new Error(`找不到应用自带的 node：${nodeExe}`);
   if (!existsSync(script)) throw new Error(`找不到安装器：${script}`);
   memoryMcpBusy = true;
+  sendToWindow("runtime:progress", { id: progressId, percent: 2, stage: "启动安装器", message: "启动安装器…" });
   try {
     return await new Promise((resolve, reject) => {
       const child = spawn(nodeExe, [script, ...extra], {
@@ -108,7 +154,7 @@ async function runMemoryInstaller(extra: string[]): Promise<{ code: number | nul
         reject(new Error("安装超时（10 分钟）：可能是网络取不到 npm registry"));
       }, 10 * 60 * 1000);
       child.stdout.on("data", (d) => { out += d.toString(); });
-      child.stderr.on("data", (d) => { err += d.toString(); });
+      child.stderr.on("data", (d) => { err += d.toString(); emitMemoryMcpProgress(progressId, d); });
       child.on("error", (e) => { clearTimeout(timer); reject(e); });
       child.on("close", (code) => {
         clearTimeout(timer);
@@ -121,6 +167,16 @@ async function runMemoryInstaller(extra: string[]): Promise<{ code: number | nul
   } finally {
     memoryMcpBusy = false;
   }
+}
+
+/** 收尾：把安装器回执翻译成「成功/失败」终态事件 + 回执字段（⛔ 一次判定，两处消费同源）。
+ *  返回 `{ ok, message }` 一并进 IPC 回执 ⇒ 渲染层的横幅**直接用它**，不在前端重判一遍
+ *  （两处各判一次，迟早出现「进度条说成功、横幅说失败」这种自相矛盾）。 */
+function settleMemoryMcp(id: string, r: { code: number | null; result: any; log: string }, extra: { ok?: boolean; successMessage: string; failMessage?: string }) {
+  const ok = extra.ok ?? (r.code === 0 && r.result?.installed !== false);
+  const message = ok ? extra.successMessage : `${extra.failMessage ?? "失败"}：${memoryMcpFailureReason(r)}`;
+  sendToWindow("runtime:progress", { id, percent: 100, done: true, failed: !ok, message });
+  return { ok, message };
 }
 
 const MEMORY_CHANNELS = [
@@ -222,17 +278,42 @@ export const memoryFeature = defineFeature<null>({
       return memoryBackendStatus();
     });
     ipcHost.handle("memory:mcp:install", async (_event, options?: { force?: boolean }) => {
-      const r = await runMemoryInstaller(options?.force ? ["--force"] : []);
-      await syncLocalMemoryConnector(); // 装完立刻把连接器同步成正确形态（自带 node 当 runner）
-      return { ...r, status: memoryBackendStatus() };
+      try {
+        const r = await runMemoryInstaller(options?.force ? ["--force"] : [], MCP_PROGRESS.install);
+        await syncLocalMemoryConnector(); // 装完立刻把连接器同步成正确形态（自带 node 当 runner）
+        // 把实际用到的镜像带进成功文案（安装器默认 npmmirror，失败才依次换源）
+        const via = typeof r.result?.registry === "string" ? `（源：${String(r.result.registry).replace(/^https?:\/\//, "")}）` : "";
+        const verdict = settleMemoryMcp(MCP_PROGRESS.install, r, { successMessage: `安装完成，MCP 握手已通过 ${via}`.trim(), failMessage: "安装失败" });
+        return { ...r, ...verdict, status: memoryBackendStatus() };
+      } catch (error: any) {
+        sendToWindow("runtime:progress", { id: MCP_PROGRESS.install, percent: 100, done: true, failed: true, message: `安装失败：${String(error?.message ?? error).slice(0, 160)}` });
+        throw error;
+      }
     });
     ipcHost.handle("memory:mcp:uninstall", async () => {
-      const r = await runMemoryInstaller(["--uninstall"]);
-      return { ...r, status: memoryBackendStatus() };
+      try {
+        const r = await runMemoryInstaller(["--uninstall"], MCP_PROGRESS.uninstall);
+        // ⛔ 卸载的判据是**目录真被删掉**（`removed: true`），不是退出码为 0 —— 只认退出码时
+        //    「rmSync 抛错但进程仍 exit 0」这类情况会被报成"卸载完成"，而服务其实还在。
+        const verdict = settleMemoryMcp(MCP_PROGRESS.uninstall, r, { ok: r.code === 0 && r.result?.removed === true, successMessage: "已卸载：记忆服务目录已删除", failMessage: "卸载失败" });
+        return { ...r, ...verdict, status: memoryBackendStatus() };
+      } catch (error: any) {
+        sendToWindow("runtime:progress", { id: MCP_PROGRESS.uninstall, percent: 100, done: true, failed: true, message: `卸载失败：${String(error?.message ?? error).slice(0, 160)}` });
+        throw error;
+      }
     });
     ipcHost.handle("memory:mcp:verify", async () => {
-      const r = await runMemoryInstaller(["--verify"]);
-      return { ...r, status: memoryBackendStatus() };
+      try {
+        const r = await runMemoryInstaller(["--verify"], MCP_PROGRESS.verify);
+        // ⛔ 连通性的判据是**真的完成了一次 MCP initialize 握手**（`verified`），不是进程退出码 ——
+        //    服务装上了但起不来时退出码同样非 0，报"检测通过"就是假绿。
+        const verified = r.result?.verified === true;
+        const verdict = settleMemoryMcp(MCP_PROGRESS.verify, r, { ok: verified, successMessage: "连通性检查通过：服务能正常完成 MCP 握手", failMessage: "连通性检查未通过" });
+        return { ...r, ...verdict, verified, status: memoryBackendStatus() };
+      } catch (error: any) {
+        sendToWindow("runtime:progress", { id: MCP_PROGRESS.verify, percent: 100, done: true, failed: true, message: `连通性检查未通过：${String(error?.message ?? error).slice(0, 160)}` });
+        throw error;
+      }
     });
     ipcHost.handle("memory:save", (_event, input: unknown) => memoryStore.upsert(input as { content: string; category: MemoryCategory; sourceThreadId?: string; sourceTurnId?: string; confidence?: number }));
     ipcHost.handle("memory:delete", (_event, id: string) => memoryStore.remove(id));

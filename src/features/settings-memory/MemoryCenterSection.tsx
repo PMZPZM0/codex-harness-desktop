@@ -192,30 +192,6 @@ function MemoryBackendSection() {
   );
 }
 
-/** 常驻记忆的层水位（弹窗内直接渲染）。⛔ 数据来自 memoryLayers（主进程快照），⛔ 不在这里算。 */
-function MemoryLayerLevels({ snapshot }: { snapshot: any }) {
-  const layers = Array.isArray(snapshot?.layers) ? snapshot.layers : [];
-  if (!layers.length) return <p className="muted">正在读取记忆分层…（打开本页时会自动刷新）</p>;
-  return (
-    <div className="memory-rule-facts" style={{ gridTemplateColumns: "1fr", gap: "8px" }}>
-      {layers.map((layer: any) => {
-        const pct = Math.round((layer.ratio ?? 0) * 100);
-        return (
-          <div className="memory-layer-line" key={layer.id}>
-            <div className="memory-layer-line-head">
-              <b>{layer.id}</b><strong>{layer.name}</strong>
-              <span className="muted">{layer.used.toLocaleString()} / {layer.budget ? layer.budget.toLocaleString() : "—"} 字{pct ? ` · ${pct}%` : ""}</span>
-              {layer.needDistill ? <em className="memory-layer-need">需要蒸馏</em> : null}
-            </div>
-            <span className="memory-layer-bar"><i style={{ width: `${Math.min(100, pct)}%` }} /></span>
-            <small className="muted">{layer.where} · 写入：{layer.writer} · 去向：{layer.sink}</small>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 export function MemoryCenterSection(props: MemoryCenterSectionProps) {
   const { memoryEnabled, setMemoryEnabled, setMemoryCenterTab, setMemoryCenterOpen, memories, memoryGroups, memoryLayers, memoryMode, workspaceMemoryEnabled, threads, scheduledTasks, localSkills, memoryStatus, memoryConfigOpen, memoryGateway, setMemoryGateway, memoryGatewayAction, setMemoryConfigOpen, testMemoryGateway, saveMemoryGateway, setMemoryPreview, openThread } = props;
     /* ── 两级信息架构（10-10 用户要求，与开发工具页 / 拓展接口页 / 记忆中心同一套规范）──
@@ -230,16 +206,7 @@ export function MemoryCenterSection(props: MemoryCenterSectionProps) {
   const [openCard, setOpenCard] = useState<string | null>(null);
   /* 项目共享记忆库里切换的项目（默认当前工作区；为空则跟随页面工作区） */
   const [sharedProject, setSharedProject] = useState<string>("");
-  const [sharedLayers, setSharedLayers] = useState<any>(null);
   const effectiveSharedProject = sharedProject || threads.find((t: any) => t?.cwd)?.cwd || "";
-  useEffect(() => {
-    if (openCard !== "shared" || !effectiveSharedProject) return;
-    let alive = true;
-    Promise.resolve((window as any).codex?.readMemoryLayers?.(effectiveSharedProject))
-      .then((snapshot: any) => { if (alive) setSharedLayers(snapshot ?? null); })
-      .catch(() => { if (alive) setSharedLayers(null); });
-    return () => { alive = false; };
-  }, [openCard, effectiveSharedProject]);
   const cardMeta: Record<string, { title: string; hint: string; tab: string; detail: string }> = {
     shared: { title: "项目共享记忆库", hint: "切换项目 · 用户档案 / 项目规则 / 工作纪律", tab: "layers", detail: "按**项目**维度共享的记忆：用户档案（跨项目一致，全项目共用一份）、项目规则（项目宪法 L1 + 项目背景 L3）、工作纪律（L2，注入时排最前）。切换上面的项目即可看别的项目。" },
     pyramid: { title: "金字塔记忆架构", hint: "每个会话独立 · 共享层只读 + 独立层自持", tab: "library", detail: "金字塔是**分层机制**：项目级共享层（L0–L6，本项目所有会话读同一份）+ 会话独立层（L7 碎片池与命名空间条目，别的会话读不到）。下面按**会话**展示：每个会话签到的共享层是同一份，独立层各不相同。" },
@@ -293,22 +260,12 @@ return (
                       </SettingsDialog>
                     )}
                     {openCard === "pyramid" && openMeta && (
-                      <SettingsDialog title="金字塔记忆架构" icon={<Layers size={15} />} hint="共享层所有会话同一份 · 独立层只有自己读得到" size="lg" onClose={() => setOpenCard(null)}>
-                        <div className="settings-section stack">
-                          <div className="memory-rule-scope">
-                            <header className="memory-rule-scope-head">
-                              <span className="memory-rule-scope-chip">共享层（L0–L6）</span>
-                              <span className="memory-rule-scope-hint">本项目所有会话读的是**同一份** —— 换个会话看，这部分内容不变</span>
-                            </header>
-                            <header className="memory-rule-scope-head">
-                              <span className="memory-rule-scope-chip">独立层（L7 + 命名空间）</span>
-                              <span className="memory-rule-scope-hint">每个会话各自一份 —— 换个会话看，这部分**完全不同**</span>
-                            </header>
-                          </div>
-                          {/* ⛔ 不复用旧记忆库组件（MemoryWorkbench）：那个回答的是"有哪些记忆"，
-                              这里要回答的是"金字塔长什么样、每个会话独立在哪" —— 形态不同。 */}
-                          <PyramidPanel snapshot={memoryLayers} workspace={effectiveSharedProject} onOpenThread={(id: string) => openThread?.(id)} />
-                        </div>
+                      <SettingsDialog title="金字塔记忆架构" icon={<Layers size={15} />} hint="先选项目 · 再选会话 · 共享层同一份 / 独立层各自一份" size="lg" onClose={() => setOpenCard(null)}>
+                        {/* ⛔ 不复用旧记忆库组件（MemoryWorkbench）：那个回答的是"有哪些记忆"，
+                            这里要回答的是"金字塔长什么样、每个会话独立在哪" —— 形态不同。
+                          ⛔ 项目与会话都在面板内部切（10-10 二轮反馈：原来没有项目切换、
+                            会话也只认"写过记忆的"）—— 面板自己按项目读层快照，不靠外层传。 */}
+                        <PyramidPanel workspace={effectiveSharedProject} threads={threads} onOpenThread={(id: string) => openThread?.(id)} />
                       </SettingsDialog>
                     )}
                     {openCard === "backend" && openMeta && (

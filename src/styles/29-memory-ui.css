@@ -620,3 +620,61 @@
 .bc-row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .bc-switch { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
 .bc-path, .bc-hint { margin: 2px 12px 0; color: var(--muted); font-size: 11px; }
+
+/* ── 记忆后端控制台 · 操作反馈（10-10 用户反馈「安装/连通性检查/卸载都缺少反馈效果」）──
+   ① 进行中：进度条 + 当前阶段（复用跨页通用的 .runtime-progress-bar，与开发工具页装运行时、
+      知识库装语义后端同一条通道、同一套样式）；
+   ② 完成：明确的成功 / 失败 / 未就绪横幅（三色区分，role=alert 也会被读屏立刻播报）。 */
+.bc-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 2px 12px 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--panel, var(--bg)) 55%, transparent);
+}
+.bc-progress-meta { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 11.5px; }
+.bc-progress-meta strong { font-size: 11.5px; }
+.bc-progress-meta small { color: var(--muted); font-size: 11px; }
+
+.bc-verdict {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 2px 12px 6px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 9px;
+  font-size: 11.5px;
+}
+.bc-verdict.is-ok { border-left-color: var(--green); background: color-mix(in srgb, var(--green) 9%, transparent); }
+.bc-verdict.is-ok .bc-verdict-icon { color: var(--green); }
+.bc-verdict.is-bad { border-left-color: var(--red); background: color-mix(in srgb, var(--red) 9%, transparent); }
+.bc-verdict.is-bad .bc-verdict-icon { color: var(--red); }
+.bc-verdict.is-warn { border-left-color: var(--orange); background: color-mix(in srgb, var(--orange) 10%, transparent); }
+.bc-verdict.is-warn .bc-verdict-icon { color: var(--orange); }
+.bc-verdict-icon { flex: none; margin-top: 1px; }
+.bc-verdict-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.bc-verdict-copy strong { font-size: 12px; }
+.bc-verdict-copy small { color: var(--muted); font-size: 11px; line-height: 1.5; word-break: break-word; }
+.bc-verdict-close {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.bc-verdict-close:hover { color: var(--text); background: color-mix(in srgb, var(--line) 60%, transparent); }
+
+/* 金字塔面板顶部的**项目切换**行（10-10 二轮反馈：原来没有项目维度） */
+.pyr-projects { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 2px 0 6px; }
+/* 没有独立记忆的会话仍然列出来（⛔ 不隐藏 —— 用户要"认出我已有的会话"），只是弱化显示 */
+.memory-funnel-chip.is-empty { opacity: .68; }
