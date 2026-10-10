@@ -349,9 +349,13 @@ console.log("\n【mui】⑭ 设置页「记忆」三个并列入口");
     "① 覆盖三类共享内容（用户档案 / 项目规则 / 工作纪律）");
   ok(center2.indexOf("<PyramidPanel") > dlgIdx2,
     "② 金字塔入口用**新做的 PyramidPanel**（⛔ 用户明确要求「别偷懒又用旧的记忆库界面」）");
-  ok(/listFabricNamespaces/.test(readFileSync(join(ROOT, "src", "features", "settings-memory", "PyramidPanel.tsx"), "utf8")),
-    "② 按会话给独立层计数（一次 IPC 取 private__ 命名空间计数，⛔ 不 N+1）");
-  ok(/共享层（L0–L6）/.test(center2) && /独立层（L7/.test(center2),
+  const pyrSrc = readFileSync(join(ROOT, "src", "features", "settings-memory", "PyramidPanel.tsx"), "utf8");
+  ok(/listFabricNamespaces/.test(pyrSrc), "② 按会话给独立层计数（一次 IPC 取 private__ 命名空间计数，⛔ 不 N+1）");
+  ok(/data-pyr-project/.test(pyrSrc) && /readMemoryLayers\?\.\(project\)/.test(pyrSrc),
+    "② 面板顶部有**项目切换**，切了就重读该项目的层快照（⛔ 10-10 二轮反馈：原来没有项目维度，共享层会显示上一个项目的数字）");
+  ok(/threads/.test(pyrSrc) && /String\(t\.cwd/.test(pyrSrc) && /=== project/.test(pyrSrc),
+    "⛔ 会话清单来自**真实会话**（threads × cwd 归属项目）—— ⛔ 只列 private__ 命名空间会把没写过记忆的会话全漏掉（用户二轮反馈「已有的会话没识别出来」）");
+  ok(/共享层 L0–L6/.test(pyrSrc) && /独立层 L7/.test(pyrSrc),
     "② 如实标注：共享层所有会话同一份 / 独立层各异（⛔ 不谎称「每会话一套金字塔」）");
   const bcSrc0 = readFileSync(join(ROOT, "src", "features", "settings-memory", "BackendConsolePanel.tsx"), "utf8");
   ok(/<BackendConsolePanel/.test(center2) && /readMemoryBackend/.test(bcSrc0),
@@ -380,4 +384,45 @@ console.log("\n【mui】⑮ 三套界面各自独立");
 }
 
 console.log("\n【mui】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));
+/* ── ⑯ MCP 安装 / 连通性检查 / 卸载的**反馈链路**（10-10 用户反馈「都缺少反馈效果」）────
+   ⛔ 用户看到的症状：点下去只有一行灰字，中间几分钟像卡死，**失败也报「完成」**。
+   这条链路横跨三处，缺一处就退化：
+     安装器（产出阶段标记）→ 主进程（转发进度 + 终态判定）→ 界面（进度条 + 横幅）。 */
+console.log("\n【mui】⑯ 记忆服务操作的反馈链路");
+{
+  const installer = readFileSync(join(ROOT, "scripts", "install-memory-mcp.cjs"), "utf8");
+  ok(/@@PROGRESS/.test(installer) && /@@STAGE/.test(installer),
+    "安装器按约定产出阶段标记（@@PROGRESS / @@STAGE —— 与 install-runtimes.cjs 同一套协议）");
+  ok(/process\.stderr\.write\(`@@STAGE/.test(installer),
+    "⛔ 进度标记走 **stderr**：stdout 是单行 JSON 结果协议，混进去会把回执解析搅浑");
+  ok((installer.match(/stage\(/g) || []).length >= 8 && /正在删除记忆服务目录/.test(installer) && /正在启动服务并做 MCP 握手/.test(installer),
+    "三个动作都有阶段标记（安装按阶段推进 / 卸载 / 握手检测）");
+
+  const memIpc = readFileSync(join(ROOT, "electron", "features", "memory-ipc.ts"), "utf8");
+  ok(/runtime:progress/.test(memIpc) && /sendToWindow/.test(memIpc),
+    "主进程把进度转发给界面（复用 runtime:progress 通道 —— 不新开一套，否则两处样式必然漂移）");
+  ok(/emitMemoryMcpProgress/.test(memIpc) && /child\.stderr\.on\("data"[\s\S]{0,140}?emitMemoryMcpProgress/.test(memIpc),
+    "⛔ 只解析 stderr（stdout 是结果协议）；child.stderr 挂钩转发");
+  ok(/memory-mcp:install/.test(memIpc) && /memory-mcp:uninstall/.test(memIpc) && /memory-mcp:verify/.test(memIpc),
+    "三个动作各有进度 id（渲染层按前缀过滤，一次只跑一个）");
+  ok(/function settleMemoryMcp/.test(memIpc) && /done: true, failed: !ok/.test(memIpc),
+    "⛔ 终态事件带 done + failed —— 界面才能区分「跑完了」与「跑挂了」");
+  ok(/result\?\.verified === true/.test(memIpc) && /result\?\.removed === true/.test(memIpc),
+    "⛔ 判据是**真实结果**（握手 verified / 目录 removed），⛔ 不是进程退出码 —— 只认退出码会把失败报成完成");
+  ok(/return \{ \.\.\.r, \.\.\.verdict/.test(memIpc),
+    "判定结果随回执一并返回（ok + message）⇒ 前端不重判一遍（两处各判迟早自相矛盾）");
+
+  const bc = readFileSync(join(ROOT, "src", "features", "settings-memory", "BackendConsolePanel.tsx"), "utf8");
+  ok(/onRuntimeProgress/.test(bc) && /PROGRESS_PREFIX/.test(bc),
+    "界面订阅进度事件（按 memory-mcp 前缀过滤）");
+  ok(/runtime-progress-bar/.test(bc) && /role="progressbar"/.test(bc),
+    "进行中显示进度条（复用通用 .runtime-progress-bar 样式）");
+  ok(/bc-verdict/.test(bc) && /role="alert"/.test(bc),
+    "完成给明确横幅（role=alert ⇒ 读屏也会立刻播报）");
+  ok(/setVerdict\(\{ tone: "bad"/.test(bc) && /tone: ok \? "ok" : "bad"/.test(bc),
+    "成功 / 失败两态都落到横幅（⛔ 不是一行灰字）");
+  ok(/setProg\(\{ percent: 2/.test(bc),
+    "⛔ 点下去立刻上进度条（不等第一条事件）—— 否则头一两秒界面毫无变化，像点空了");
+}
+
 process.exit(fails ? 1 : 0);

@@ -916,8 +916,8 @@ export interface Bag {
   memoryLayers: MemoryLayersSnapshot | null;
   setMemoryLayers: React.Dispatch<React.SetStateAction<MemoryLayersSnapshot | null>>;
   /** 记忆容量倍率（10-10，×1 基准；可选 1/2/4/8/10/16）：当前倍率 + 可选项 + 放大后的预算。 */
-  memoryCapacity: { scale: number; options: number[]; budget: { user: number; background: number; project: number; lessons: number; logs: number; total: number } } | null;
-  setMemoryCapacity: React.Dispatch<React.SetStateAction<{ scale: number; options: number[]; budget: { user: number; background: number; project: number; lessons: number; logs: number; total: number } } | null>>;
+  memoryCapacity: { scale: number; options: number[]; budget: { user: number; background: number; project: number; lessons: number; logs: number; total: number; }; } | null;
+  setMemoryCapacity: React.Dispatch<React.SetStateAction<{ scale: number; options: number[]; budget: { user: number; background: number; project: number; lessons: number; logs: number; total: number; }; } | null>>;
   memoryScaleBusy: boolean;
   setMemoryScaleBusy: React.Dispatch<React.SetStateAction<boolean>>;
   /** 按当前倍率重读常驻记忆快照（改倍率后水位条要跟着重画，⛔ 不然进度条还按旧预算）。 */

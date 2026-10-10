@@ -74,6 +74,18 @@ function log(msg) {
   process.stderr.write(`[memory-mcp] ${msg}\n`);
 }
 
+/* ── 进度上报（10-10）───────────────────────────────────────────────────────
+   主进程按 `@@PROGRESS <0-100>` / `@@STAGE <阶段名>` 解析后转发给界面（与
+   scripts/install-runtimes.cjs 同一套约定，渲染层复用同一个 runtime:progress 通道）。
+   ⛔ 走 **stderr**：stdout 是本安装器的**单行 JSON 结果协议**（主进程取最后一行解析），
+     往里写进度行会把协议搅浑；stderr 本来就是诊断流，混入进度标记是安全的。
+   ⛔ 不打「假字节进度」：npm 不给字节级进度，这里上报的是**阶段完成度**（诚实的粗进度），
+     界面文案同步说明"按阶段推进"。 */
+function stage(msg, pct) {
+  process.stderr.write(`@@STAGE ${msg}\n`);
+  if (typeof pct === "number") process.stderr.write(`@@PROGRESS ${Math.max(0, Math.min(100, Math.round(pct)))}\n`);
+}
+
 function status() {
   const installed = fs.existsSync(serverPath);
   let version = null;
@@ -335,7 +347,7 @@ async function installViaRegistries(nodeExe) {
   if (!anyReachable) {
     log("所有通道的可达性预检都失败（裸 https 不带代理，可能你只能通过代理出网）⇒ 忽略预检，逐个真试 npm");
   }
-  for (const registry of NPM_REGISTRIES) {
+  for (const [attempt, registry] of NPM_REGISTRIES.entries()) {
     const reach = probes.get(registry);
     if (anyReachable && !reach.ok) {
       log(`跳过不可达通道 ${registry}（${reach.note}）`);
@@ -351,6 +363,9 @@ async function installViaRegistries(nodeExe) {
       `--registry=${registry}`, "--fetch-retries=1", "--fetch-timeout=60000",
     ];
     log(`安装通道：${registry}`);
+    // 阶段进度：依赖安装是本流程最长的环节（几十秒~几分钟）⇒ 给 20→58 的粗刻度，
+    // 并带上"第 N 个通道"，让用户看得出是在重试而不是卡死。
+    stage(`正在安装依赖（${new URL(registry).host}${attempt ? ` · 第 ${attempt + 1} 个通道` : ""}）`, 20 + Math.min(30, attempt * 12));
     const r = await runNpmInstall(nodeExe, npmArgs);
     if (r.status === 0) return { ok: true, via: registry };
     const tail = String(r.out || "").concat(String(r.err || "")).split("\n").filter(Boolean).slice(-6).join(" | ");
@@ -368,7 +383,9 @@ async function main() {
 
   if (doUninstall) {
     try {
+      stage("正在删除记忆服务目录", 30);
       fs.rmSync(ROOT, { recursive: true, force: true });
+      stage("卸载完成：服务目录已清空", 100);
       emit({ installed: false, removed: true, root: ROOT });
       process.exit(0);
     } catch (e) {
@@ -385,7 +402,9 @@ async function main() {
   const abi = process.versions.modules;
 
   if (doVerify) {
+    stage("正在启动服务并做 MCP 握手", 45);
     const r = await verifySync(nodeExe);
+    stage(r.verified ? "握手通过：服务可用" : `握手失败：${r.error || "未通过"}`, 100);
     emit({ ...r, node: nodeExe, abi });
     process.exit(r.verified ? 0 : 1);
   }
@@ -393,15 +412,18 @@ async function main() {
   const before = status();
   if (before.installed && !doForce) {
     // 已装：顺手确保原生绑定在（老安装可能缺），再握手确认
+    stage("检测到已安装：复核原生绑定与握手", 40);
     const nat = await ensureNativeBinding();
     const v = await verifySync(nodeExe);
     if (v.verified) {
+      stage("已安装且握手通过（无需重装）", 100);
       emit({ ...v, node: nodeExe, abi, skipped: true, native: nat });
       process.exit(0);
     }
     log(`已装但握手失败（${v.error}）⇒ 尝试修复安装`);
   }
 
+  stage("准备安装目录", 6);
   fs.mkdirSync(ROOT, { recursive: true });
   const manifestPath = path.join(ROOT, "package.json");
   if (!fs.existsSync(manifestPath)) {
@@ -418,6 +440,7 @@ async function main() {
      ⛔ registry 走多通道（见 installViaRegistries）：国内直连 npmjs 基本必失败。 */
   log(`安装到 ${ROOT}`);
   log(`registry 通道（按序）：${NPM_REGISTRIES.join(" → ")}`);
+  stage("解析依赖通道（国内镜像优先）", 12);
   const inst = await installViaRegistries(nodeExe);
   if (!inst.ok) {
     log(`安装失败（${NPM_REGISTRIES.length} 个通道全挂）：\n${inst.failures.join("\n")}`);
@@ -435,6 +458,7 @@ async function main() {
   }
   log(`安装成功（registry=${inst.via}）`);
 
+  stage("补齐原生绑定（better-sqlite3 预编译）", 74);
   const nat = await ensureNativeBinding();
   log(nat.ok ? `原生绑定就位（ABI ${abi}）` : `原生绑定缺失：${nat.error}`);
 
@@ -444,18 +468,21 @@ async function main() {
     process.exit(1);
   }
 
+  stage("握手验证：启动服务并完成 MCP initialize", 90);
   const v = await verifySync(nodeExe);
   if (!v.verified) {
     emit({ ...v, node: nodeExe, abi, native: nat, error: v.error || "握手失败", hint: "服务装上了但起不来：看 detail（常见=原生绑定 ABI 不匹配 / 缺预编译包）" });
     process.exit(1);
   }
   log(`安装完成 v${after.version}，握手通过（ABI ${abi}）`);
+  stage(`安装完成（v${after.version || "?"}，握手通过）`, 100);
   // 带上实际使用的 registry：诊断/UI 要能看到「走的是哪个镜像」
   emit({ ...v, node: nodeExe, abi, native: nat, registry: inst.via, installedAt: new Date().toISOString() });
   process.exit(0);
 }
 
 main().catch((e) => {
+  stage(`安装器异常：${e && e.message ? e.message : e}`, 100);
   emit({ installed: false, error: String(e && e.message ? e.message : e), root: ROOT });
   process.exit(1);
 });
