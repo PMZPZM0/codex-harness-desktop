@@ -219,6 +219,9 @@ export async function runDelegatedTask(input: {
          （见 `electron/delegate-settle.ts`），结果落进它会话；
          同步返回值改成**说明**而不是错误，让主理人如实转述。 */
     if (error?.code === TURN_WAIT_TIMEOUT_CODE) {
+      /* ⛔ 打「待回报」标：完成时要把结果**自动投回 origin 会话**（见 delegate-report.ts）。
+         ⛔ 只对走转后台分支的这次打标 —— 同步跑通的结果已随返回值交回主会话，再投就是两份。 */
+      await delegateRegistry.markPendingReport(threadId).catch(() => undefined);
       broadcastHarnessEvent({ type: "delegates-changed", threadId } as any);
       return { ok: true, threadId, name: displayName, output: TURN_WAIT_BACKGROUND_NOTE };
     }

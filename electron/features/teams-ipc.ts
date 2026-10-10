@@ -300,6 +300,8 @@ export const teamsFeature = defineFeature<null>({
            成员的回合在引擎里还在跑 ⇒ 保持这次 run **活跃**，由 boot 的引擎事件在回合真正
            结束时收敛（见 `electron/delegate-settle.ts`）；这里只把「已转后台」的说明交回主理人。 */
         if (error?.code === TURN_WAIT_TIMEOUT_CODE) {
+          /* ⛔ 打「待回报」标：完成时自动把结果投回**主理人会话**（见 delegate-report.ts）。 */
+          teamRunStore.markPendingReportByThread(memberThreadId);
           return {
             threadId: memberThreadId, turnId: turnId ?? null, teamId: team.teamId, memberId: member.id,
             name: member.name, profession: member.profession.zh,
