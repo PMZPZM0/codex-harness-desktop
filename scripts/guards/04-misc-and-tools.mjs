@@ -258,7 +258,9 @@ console.log(C.bold("\n【工具取消/卸载】10-07 重构的四条不变量"))
   const runtimeSrc3 = readFileSync(join(ROOT, "scripts", "install-runtimes.cjs"), "utf8");
   const drSrc3 = readFileSync(join(ROOT, "electron", "features", "dev-runtimes.ts"), "utf8");
   const rtSrc3 = readFileSync(join(ROOT, "electron", "features", "runtime-ipc.ts"), "utf8");
-  const devtoolsSrc3 = readFileSync(join(ROOT, "src", "features", "settings-devtools", "DevtoolsSettingsSection.tsx"), "utf8");
+  /* ⛔ 10-10 两级 IA：运行时列表搬进了「运行时与工具链」弹窗面板 —— 锚点跟着走
+     （内容零改写，四个串仍在同一份实现里；断言语义不变：取消键 + 卸载行内二次确认）。 */
+  const devtoolsSrc3 = readFileSync(join(ROOT, "src", "features", "settings-devtools", "RuntimeToolsPanel.tsx"), "utf8");
   const capSrc3 = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part02", "04-runtime-commands-account", "01-dev-runtimes-capability.tsx"), "utf8");
   // ① @@TARGET：下载落盘路径报给主进程 —— 取消后按它清临时文件（锚「写出行」本身，防顺手改成 console.log）
   (/process\.stdout\.write\("@@TARGET " \+ file \+ "\\n"\)/.test(runtimeSrc3))
@@ -279,14 +281,57 @@ console.log(C.bold("\n【工具取消/卸载】10-07 重构的四条不变量"))
   // ⑤ 渲染层：取消按钮 + 卸载行内二次确认 + cancelled 事件处理，三件都在
   (/runtime-cancel/.test(devtoolsSrc3) && /cancelDevRuntime\(runtime\.id\)/.test(devtoolsSrc3) && /confirmUninstall === runtime\.id/.test(devtoolsSrc3) && /确认卸载/.test(devtoolsSrc3))
     ? ok("工具卡：安装中给「取消」，卸载先行内二次确认（真删不可恢复）")
-    : fail("工具卡取消/二次确认被摘 —— 卸载一击即删、下载停不下来都是回潮");
-  (/if \(event\.cancelled\)/.test(capSrc3) && /已取消下载，临时文件已清理/.test(capSrc3) && /bag\.setRuntimeUninstalling/.test(capSrc3))
+    : fail("工具卡取消/二次确认被摘 —— 卸载一击即删、下载停不下来都是回潮");  (/if \(event\.cancelled\)/.test(capSrc3) && /已取消下载，临时文件已清理/.test(capSrc3) && /bag\.setRuntimeUninstalling/.test(capSrc3))
     ? ok("进度事件处理：cancelled 分支回落状态并提示（取消 ≠ 失败）")
     : fail("渲染层没处理 cancelled 事件 —— 取消后「正在安装」挂着不动（无响应状态）");
   // ⑥ 通道账本：runtime 前缀 5 条（【2】只验 manifest 自洽，这里钉人读的账本别漏登记）
   (/prefix: "runtime", count: 5/.test(readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8")) && /"runtime:cancel"/.test(readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8")))
     ? ok("ipc-registry runtime 账本 count=5 且含 runtime:cancel")
     : fail("runtime 账本没登记 runtime:cancel —— 预检【2】会红，且读账本的人不知道有这条通道");
+}
+
+/* ── 【dtIA】开发工具页 = 两级信息架构（10-10 用户要求）──────────────────────────
+   「一级主界面以分类卡片展示各功能板块，点击卡片后通过二级弹窗展示对应内容，
+    弹窗内容**不得内嵌**到主界面中」。
+   ⛔ 为什么必须钉：这类"看起来只是排版"的改版最容易在后续维护里被顺手退回 ——
+   往一级页里塞回一块面板只是一行 JSX 的事，而 tsc 与视觉测试都看不出来
+   （退回去就是用户 10-10 反馈的那条长滚动堆叠）。 */
+console.log(C.bold("\n【dtIA】开发工具页两级 IA 契约"));
+{
+  const dtPage = readFileSync(join(ROOT, "src", "features", "settings-devtools", "DevtoolsSettingsSection.tsx"), "utf8");
+  const dtReg = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8");
+  const dtCss = readFileSync(join(ROOT, "src", "styles", "34-devtools-cards.css"), "utf8");
+  const dtStylesEntry = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+
+  /* ① 一级 = 卡片网格：6 张分类卡，且每张卡都有对应的弹窗分支（key 一一对应） */
+  const CARD_KEYS = ["runtime", "capability", "phone", "laya", "domains", "plugins"];
+  const missingCard = CARD_KEYS.filter((k) => !new RegExp(`key: "${k}"`).test(dtPage));
+  (missingCard.length === 0 ? ok : fail)(`一级页 6 张分类卡片齐全（缺：${missingCard.join("/") || "无"}）`);
+  /* 结构指纹：卡片用 `data-card={card.key}` 渲染（DOM 上可定位）—— 后续 UI 断言靠它选元素。 */
+  (/data-card=\{card\.key\}/.test(dtPage) ? ok : fail)("卡片网格以 card.key 渲染 data-card（DOM 定位锚）");
+  const missingDialog = CARD_KEYS.filter((k) => !new RegExp(`openCard === "${k}"`).test(dtPage));
+  (missingDialog.length === 0 ? ok : fail)(`每张卡片都有对应的二级弹窗分支（缺：${missingDialog.join("/") || "无"}）`);
+
+  /* ② ⛔⛔ 内容只在弹窗里：四个面板组件 + 两个声明式插槽都必须紧跟在自己的弹窗分支内 */
+  const inDialog = (name) => new RegExp(`openCard === "[a-z]+"[\\s\\S]{0,700}?${name}`).test(dtPage);
+  const panelNames = ["RuntimeToolsPanel", "CapabilityChainPanel", "PhoneHarnessCard", "LayaCard"];
+  const leaked = panelNames.filter((n) => !inDialog(n));
+  (leaked.length === 0 ? ok : fail)(`⛔ 四个面板只在弹窗分支里渲染（漏回一级页的：${leaked.join("/") || "无"}）`);
+  (inDialog("settings.devtools.bottom") && inDialog("settings.devtools.declared-plugins") ? ok : fail)(
+    "⛔ 两个声明式插槽的消费点也在弹窗里（一级页不放 ⇒ 同一 id 全局只消费一次）"
+  );
+  (/<SettingsDialog/.test(dtPage) ? ok : fail)("二级载体统一走 SettingsDialog（⛔ 不许各面板自造弹窗 —— 规范要一致）");
+
+  /* ③ 注册表不再消费这两个插槽（消费点已移进弹窗；id 与注册方式不变 ⇒ 声明式插件照旧能挂） */
+  (!/settings\.devtools\.(bottom|declared-plugins)/.test(codeOnly(dtReg)) ? ok : fail)(
+    "⛔ 注册表不再渲染这两个插槽（否则同一 id 被消费两次 ——【268-c】红，且功能域会画两遍）"
+  );
+
+  /* ④ 视觉规范：卡片 / 弹窗样式在独立样式表里，且已接进入口（⛔ @import 次序即级联优先级） */
+  (/\.devtools-card\b/.test(dtCss) && /\.settings-dialog-backdrop\b/.test(dtCss) && /z-index:\s*900/.test(dtCss) ? ok : fail)(
+    "卡片与弹窗样式齐备（弹窗遮罩 z=900 —— 设置内弹窗档，与 memory 系弹窗同规范）"
+  );
+  (/styles\/34-devtools-cards/.test(dtStylesEntry) ? ok : fail)("样式表已接进 src/styles.css");
 }
   }
 

@@ -477,15 +477,12 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
     general: { render: () => <><GeneralSettingsSection globalPermApproval={globalPermApproval} applyGlobalPermissionMode={applyGlobalPermissionMode} workspace={workspace} chooseWorkspace={chooseWorkspace} userDataPath={userDataPath} setNotice={setNotice} rightOpen={rightOpen} setRightOpen={setRightOpen} capabilityHint={capabilityHint} desktopAuto={desktopAuto} groupBusy={groupBusy} toggleDesktopAuto={toggleDesktopAuto} browserAuto={browserAuto} toggleBrowserAuto={toggleBrowserAuto} ponytailOn={ponytailOn} applyGroup={applyGroup} hardwareAccel={hardwareAccel} changeHardwareAccel={changeHardwareAccel} restartPending={restartPending} SHORTCUT_GROUPS={SHORTCUT_GROUPS} setShortcutsOpen={setShortcutsOpen} engineVersion={engineVersion} engineCheck={engineCheck} engineUpdating={engineUpdating} checkEngineUpdateNow={checkEngineUpdateNow} performEngineUpdateNow={performEngineUpdateNow} engineUpdatePercent={engineUpdatePercent} engineUpdateStageText={engineUpdateStageText} engineUpdateLog={engineUpdateLog} engineUpdateResult={engineUpdateResult} relaunchCountdown={relaunchCountdown} downloadSource={downloadSource} /><Slot id="settings.general.bottom" /></> },
     /* ⛔ 这里用 `app.` 而不是往上面的逐字解构块里加名字：那段解构是「与搬迁前逐字一致」的
        （改它会让对照 diff 失真）。新增 props 直接取 app 上的同名状态即可。 */
-    devtools: { render: () => <><DevtoolsSettingsSection capabilityRows={capabilityRows} capabilityError={capabilityError} setNotice={setNotice} devRuntimes={devRuntimes} runtimeInstalling={runtimeInstalling} runtimeUninstalling={runtimeUninstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} installDevRuntime={installDevRuntime} uninstallDevRuntime={uninstallDevRuntime} cancelDevRuntime={cancelDevRuntime} /><Slot id="settings.devtools.bottom" props={{ onNotice: setNotice }} loader={() => import("../../../../settings-devtools/DomainsPanel")} />
-      {/* B 档：声明式插件面板（自带 loader，按需加载）
-          ⛔⛔ 10-07 用户实测「开发工具最下面的功能域**重复展示两次**」根因就在这一行：
-          原来这里写的是 **同一个 id** `settings.devtools.bottom`，而 `registerSlot` 是
-          「按 id 覆盖式登记、一个 id 只对应一个组件」⇒ 两个 <Slot> 渲染的是**同一个**注册项，
-          于是「功能域」面板被画两遍；同时 DeclaredPluginsPanel 因为**自己没调 registerSlot**
-          （Slot 的 loader 只是把模块拉进来触发注册，不注册就什么都不渲染）⇒ **从来没显示过**。
-          ⇒ 每个面板必须有**自己的插槽 id**，由它自己的模块注册（样板见 DomainsPanel.tsx）。 */}
-      <Slot id="settings.devtools.declared-plugins" loader={() => import("../../../../settings-devtools/DeclaredPluginsPanel")} /></> },
+    /* 10-10 两级 IA：开发工具页改成「一级卡片 + 二级弹窗」，两个插槽的**消费点**已移进
+       DevtoolsSettingsSection 的对应弹窗（守卫【268-c】要求同一 slot id 全局只许被消费一次
+       ⇒ 一级页不再放插槽）。⛔ id 与注册方式都没变：DomainsPanel / DeclaredPluginsPanel 仍
+       各自 registerSlot，声明式插件照旧能挂到这些位置 —— 10-07 那次「同一 id 写成两处 ⇒
+       功能域画两遍、声明式插件从不显示」的坑，继续由【268-c】按 id 全局去重钉着。 */
+    devtools: { render: () => <DevtoolsSettingsSection capabilityRows={capabilityRows} capabilityError={capabilityError} setNotice={setNotice} devRuntimes={devRuntimes} runtimeInstalling={runtimeInstalling} runtimeUninstalling={runtimeUninstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} installDevRuntime={installDevRuntime} uninstallDevRuntime={uninstallDevRuntime} cancelDevRuntime={cancelDevRuntime} /> },
     extensibility: { render: () => <ExtensibilitySettingsSection onNotice={setNotice} /> },
     screenshot: { render: () => <ScreenshotSettingsSection onNotice={setNotice} /> },
     /* 桌面宠物（09-30）：域只收显式 props（onNotice），状态全走自己的 IPC（pet:*），不占 app 字段面 */
