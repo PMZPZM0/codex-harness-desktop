@@ -270,7 +270,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     lightbox, linkedBusy, listThreads, loadEarlierTurns,
     loadPairStates, loadTree, loading, localSkills,
     makeComposerChip, marketLoading, marketPage, marketPageSize,
-    marketPreview, marketSkills, marketTotal, mcpMarketCategory,
+    marketPreview, marketSkills, marketTotal, maybeAutoContinueAfterPoll, mcpMarketCategory,
     mcpMarketSearch, mcpOverrides, mcpServerBatchBusy, mcpServerChecked,
     mcpServerSearch, mcpServerStatusBusy, mcpToolPermissions, memories,
     memoryCategory, memoryCenterOpen, memoryCenterTab, memoryConfigOpen,
@@ -677,7 +677,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           卡挂在**回合**下（对话流里的独立分支），胶囊挂在输入框左上角 —— 两者读的是同一张表。
           ⛔ turnId 用「正在跑的回合，没有就最后一个回合」：主进程只知道 threadId，
              回合归属只能由本窗口补（少这一步卡就永远不显示）。 */}
-      <PollBridge threadId={thread?.id ?? ""} turnId={activeTurnId || String(thread?.turns?.[thread.turns.length - 1]?.id ?? "")} onAbortTool={() => { void interrupt(); }} />
+      <PollBridge threadId={thread?.id ?? ""} turnId={activeTurnId || String(thread?.turns?.[thread.turns.length - 1]?.id ?? "")} onAbortTool={() => { void interrupt(); }} onPollSettled={maybeAutoContinueAfterPoll} />
     </div>
     </HelpOpenContext.Provider>
   );

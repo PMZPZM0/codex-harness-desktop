@@ -12,7 +12,10 @@ import { imageToken, splitPromptSegments, promptImagePaths, stripImageTokens, is
 import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, computeFoldSummary, topToolGroup, isTurnRunning, normalizeLoadedThread, type FoldUnit } from "../../../../../lib/turn-fold";
 import { QueueItem } from "../../../../../lib/queue-item";
 import { isQueueAlreadyStartedError } from "../../../../../lib/queue-errors.mjs";
+import { POLL_AUTO_CONTINUE_MAX_ATTEMPTS, POLL_AUTO_CONTINUE_WINDOW_MS, pollContinuePrompt } from "../../../../../lib/poll-config.mjs";
 import { inputText } from "../../../../../lib/input-text";
+import { notePollAutoContinue } from "../../../../../polling/poll-store";
+import type { PollTask } from "../../../../../polling/poll-store";
 import type { Bag } from "../../bag-types";
 
 export function usePart04c2(bag: Bag) {
@@ -372,6 +375,54 @@ bag.disarmPinIntent = disarmPinIntent as typeof bag.disarmPinIntent;
   }
 bag.maybeAutoContinueTruncated = maybeAutoContinueTruncated as typeof bag.maybeAutoContinueTruncated;
 
+  /** 轮询任务**成功返回结果**后的自动继续（10-10 用户要求：「回合结束后，轮询还在的话，
+   *  如果返回结果了…现在是不会自动继续」）。
+   *  场景：模型发起轮询（视频生成那类）后本回合已经结束（等待超时 / 被中断 / 模型自己不再等），
+   *  稍后厂商才返回结果 —— 此前结果只落在卡片与胶囊上，**没有任何人接着推进**，用户看到的就是
+   *  "任务停了、结果出来了也没人管"。
+   *  ⛔ 与 `maybeAutoContinueTruncated` 是**两件事**（那个由 `turn/completed` 触发、判据是"截断空转"），
+   *    但**投递方式完全复用**：`thread/queue/add` → `list` → `start`，同一套竞态处理 + 钉顶 + 429 武装。
+   *  ⛔ 四道闸缺一不可（判据集中在 lib/poll-config.mjs 的 `pollContinuePrompt` 段注释）：
+   *    ① 只认 `poll` 类且**成功**（长命令的结果就在对话里的工具卡上，不需要替它发言）；
+   *    ② 必须是**当前会话**（用户没在看就不擅自替他发言 —— 同截断续接的先例）；
+   *    ③ 该会话此刻**空闲**（有回合在跑 ⇒ 模型自己就在等结果，插一条就是重复推进）；
+   *    ④ 同会话窗口内次数上限（`notePollAutoContinue`，防"结果 → 续跑 → 又开一个轮询"滚雪球烧钱）。 */
+  function maybeAutoContinueAfterPoll(task: PollTask) {
+    if (!task || task.kind !== "poll" || task.status !== "success") return;
+    const threadId = String(task.threadId ?? "");
+    if (!threadId || bag.threadRef.current?.id !== threadId) return;
+    if (!notePollAutoContinue(threadId, POLL_AUTO_CONTINUE_WINDOW_MS, POLL_AUTO_CONTINUE_MAX_ATTEMPTS)) return;
+    const prompt = pollContinuePrompt(task);
+    window.setTimeout(() => {
+      // 二次闸：延迟这几秒里用户又发了一条 / 引擎自己恢复了 ⇒ 放弃（同截断续接的二次防误判）
+      if (bag.threadRef.current?.id !== threadId) return;
+      if (bag.runningThreadIdsRef.current.has(threadId)) return;
+      if ((bag.threadRef.current?.turns ?? []).some((entry) => isTurnRunning(entry))) return;
+      void window.codex.request("thread/queue/add", {
+        threadId,
+        input: [{ type: "text", text: prompt }],
+        clientUserMessageId: crypto.randomUUID(),
+      }).then(async () => {
+        bag.showToast("后台任务已返回", "正在把结果交给 Codex 继续处理…", threadId);
+        const list = await window.codex.request("thread/queue/list", { threadId, limit: 1 }).catch(() => null);
+        const head = list?.data?.[0];
+        if (!head) return;
+        const armed = bag.armPinForReleasedQueue(threadId, "poll-continue");
+        bag.armRetryForQueueRelease(threadId, head.input ?? [{ type: "text", text: prompt }]);
+        try {
+          await window.codex.request("thread/queue/start", { threadId, queuedSubmissionId: head.id });
+        } catch (error: any) {
+          const message = String(error?.message ?? error);
+          // ⛔ 引擎已自行启动这条（上一回合结束后约 9ms 就清空队列）⇒ 是**伪失败**：别撤意图、别报错。
+          //   成因与判据同 `lib/queue-errors.mjs`（见上方 maybeAutoContinueTruncated 的同一处理）。
+          if (isQueueAlreadyStartedError(message)) bag.dbg("poll-continue-raced-by-engine", { threadId, message });
+          else if (armed) bag.disarmPinIntent("poll-continue-fail");
+        }
+      }).catch((error: any) => bag.showToast("自动继续失败", String(error?.message ?? error)));
+    }, 1500);
+  }
+bag.maybeAutoContinueAfterPoll = maybeAutoContinueAfterPoll as typeof bag.maybeAutoContinueAfterPoll;
+
   async function startQueued(id?: string) {
     if (!bag.thread) return;
     const entry = id ? bag.queue.find((q) => q.id === id) : undefined;
@@ -572,5 +623,5 @@ bag.setHookEnabled = setHookEnabled as typeof bag.setHookEnabled;
     finally { bag.setLinkedBusy(null); }
   }
 bag.setLinkedEnabled = setLinkedEnabled as typeof bag.setLinkedEnabled;
-  return { queueTimers, setQueueTimers, setQueuedTimer, openBrowser, toggleBookmark, deleteQueued, reorderQueued, editQueued, saveQueued, armPinForReleasedQueue, disarmPinIntent, maybeAutoContinueTruncated, startQueued, refreshSettingsResources, trustAllHooks, setHookEnabled, setLinkedEnabled };
+  return { queueTimers, setQueueTimers, setQueuedTimer, openBrowser, toggleBookmark, deleteQueued, reorderQueued, editQueued, saveQueued, armPinForReleasedQueue, disarmPinIntent, maybeAutoContinueTruncated, maybeAutoContinueAfterPoll, startQueued, refreshSettingsResources, trustAllHooks, setHookEnabled, setLinkedEnabled };
 }
