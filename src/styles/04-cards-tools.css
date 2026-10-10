@@ -2017,6 +2017,11 @@
   border: 1px solid var(--line);
   border-radius: 9px;
   cursor: pointer;
+  /* ⛔ 这是原生 <button>：UA 默认自带给浅色底/浅色字（10-10 用户截图：暗色主题下未选中项
+     白底白字不可读）—— 必须显式透明底 + 继承正文颜色与字体，选中态再各自覆盖。 */
+  background: transparent;
+  color: inherit;
+  font: inherit;
   font-size: 12.5px;
   transition: border-color .12s ease, background .12s ease;
 }
