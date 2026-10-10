@@ -102,6 +102,10 @@ export type MemoryEntry = {
   content: string;
   scope: "private" | "team" | "project";
   sessionId: string | null;
+  /** 这条记忆**是谁写的**（来源会话 id）—— 新增需求「按会话看记忆」的分组键。
+   *  ⛔ 后端 memory-fabric 一直在返回它（normalize 也一直在读），此前只是**类型没声明**
+   *     ⇒ 属于契约缺口，不是新增字段。 */
+  originThreadId?: string;
   projectKey: string;
   sourceAgent: { kind: string; id: string; label?: string };
   category: string;
