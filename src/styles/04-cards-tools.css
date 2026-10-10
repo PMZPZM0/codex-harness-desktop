@@ -2033,3 +2033,20 @@
   cursor: pointer;
 }
 .agent-ask-option-text { flex: 1; min-width: 0; text-align: left; line-height: 1.45; }
+
+/* ── 提问卡 · 统一「先选中、再确认」（10-11 用户：选项点击只选中，点提交才生效）──────── */
+.agent-ask-mark { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 17px; height: 17px; color: var(--muted); }
+.agent-ask-mark.box {
+  border: 1.5px solid var(--line);
+  border-radius: 4px;
+  color: transparent;
+  transition: border-color .12s ease, background .12s ease, color .12s ease;
+}
+.agent-ask-option-row.checked .agent-ask-mark.box {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.agent-ask-mark.radio { border: 0; }
+.agent-ask-option-row.checked .agent-ask-mark.radio { color: var(--accent); }
+.agent-ask-option-row .agent-ask-badge { margin-left: auto; }
