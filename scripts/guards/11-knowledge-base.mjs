@@ -261,33 +261,37 @@ try {
     );
   }
 
-  /* ── 判据 9（2026-10-10 用户令「被委派会话也要能用知识库」）────────────────
+  /* ── 判据 9（2026-10-10 立；同日二改：用户令「全开 harness_tools」）────────────────
      ⛔ 为什么必须钉：被委派会话的工具面走的是**另一条路**（delegation / teams 在建会话时各自传
      dynamicTools），与主会话的 `harness_tools` 网关**完全不同源** ⇒ 只改主会话那条，
-     子智能体 / 专家 / 团成员照样一条都读不到（模型会回「我读不到知识库」）。
-     ⛔ 同时钉住「只给只读」：写操作不许给被委派会话 —— 那是越权面。 */
+     子智能体 / 专家 / 团成员照样一条能力都调不到（用户反馈的「scheduler 工具 unsupported call」）。
+     ⇒ 10-10 定案：给它们**同一个网关**（`buildDelegateHarnessTool`，含 knowledge_search）。
+     ⛔⛔ 权限边界**不收在"给不给工具"上**，收在**执行端**（`dispatchRpcCall` 的 canDispatchFrom /
+     restrictedThreadRole）—— 所以"给了网关"不等于"放开了写权限"。 */
   {
     const delegation = readFileSync(join(ROOT, "electron", "features", "delegation.ts"), "utf8");
     const teams = readFileSync(join(ROOT, "electron", "features", "teams-ipc.ts"), "utf8");
     const boot9 = readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8");
-    const dktSrc = readFileSync(join(ROOT, "electron", "delegate-knowledge-tool.ts"), "utf8");
-    ok(/dynamicTools: \[\.\.\.teamTools, buildDelegateKnowledgeTool\(\)/.test(delegation),
-      "被委派会话（子智能体 / 专家）拿到知识库只读工具");
-    const teamHits = teams.match(/buildDelegateKnowledgeTool\(\)/g) ?? [];
+    const dhtSrc = readFileSync(join(ROOT, "electron", "delegate-harness-tool.ts"), "utf8");
+    ok(/dynamicTools: \[\.\.\.teamTools, buildDelegateHarnessTool\(\)/.test(delegation),
+      "被委派会话（子智能体 / 专家）拿到能力网关");
+    const teamHits = teams.match(/buildDelegateHarnessTool\(\)/g) ?? [];
     ok(teamHits.length >= 2,
-      `专家团两条建会话路径（团主 / 成员）都挂了只读知识库工具（实际 ${teamHits.length} 处）`);
+      `专家团两条建会话路径（团主 / 成员）都挂了能力网关（实际 ${teamHits.length} 处）`);
     ok(teams.includes('buildRoleMemoryTool({ kind: "team-member"') && teamHits.length >= 2,
-      "成员会话同时拿到「记忆写入 + 知识库检索」");
-    ok(/void handleDelegateKnowledgeToolCall\(\{ userDataDir/.test(boot9),
-      "⛔ 主进程应答知识库工具调用（被委派会话的事件会被 filterForRenderer 裁掉，不在这里应答 = 挂到超时）");
-    ok(/!== DELEGATE_KNOWLEDGE_TOOL\) return false/.test(dktSrc),
+      "成员会话同时拿到「记忆写入 + 能力网关」");
+    ok(/void handleDelegateHarnessToolCall\(\{ userDataDir/.test(boot9),
+      "⛔ 主进程应答网关调用（被委派会话的事件会被 filterForRenderer 裁掉，不在这里应答 = 挂到超时）");
+    ok(/!== DELEGATE_HARNESS_TOOL\) return false/.test(dhtSrc),
       "⛔ 只认自己那一个工具名（返回 false 交回原流程，不吞别人的调用）");
-    ok(/params\?\.threadId/.test(dktSrc) && !/args\.threadId/.test(codeOnly(dktSrc)),
+    ok(/params\?\.threadId/.test(dhtSrc) && !/args\.threadId/.test(codeOnly(dhtSrc)),
       "⛔ 身份只取引擎下发的 threadId（⛔ 不用 args 里模型自报的值）");
-    ok(/searchDocs\(/.test(dktSrc),
-      "执行端复用 knowledge-base 的 searchDocs（⛔ 不另写一份检索 —— 两份必然漂）");
-    ok(!/harness_tools/.test(codeOnly(dktSrc)),
-      "⛔ 不给被委派会话 harness_tools 网关（里面装着写操作 = 越权面）");
+    /* ⛔ 网关必须**同源**：能力名从 dispatchMcpTools() 现取、执行端复用 dispatchRpcCall ——
+       另写一份清单 / 另写一个执行端 = 必然漂（本项目反复踩过"两处各写一份"）。 */
+    ok(/dispatchMcpTools\(\)/.test(dhtSrc) && /dispatchRpcCall\(/.test(dhtSrc),
+      "⛔ 能力清单取自 dispatchMcpTools、执行端复用 dispatchRpcCall（⛔ 不另写一份）");
+    ok(/GATEWAY_EXCLUDED[\s\S]{0,140}?agent_invoke/.test(dhtSrc),
+      "⛔ 调度类工具不进网关（被委派会话不许再套娃 —— 与执行端 canDispatchFrom 同口径）");
   }
 } finally {
   rmSync(ws, { recursive: true, force: true });

@@ -9,19 +9,44 @@ import { readCustomModel } from "./01-model-catalog";
 import { internalThreads, server } from "../runtime-refs";
 import { bridgeDial } from "../bridge-dial";
 import { ensureProjectAgentsMd } from "../project-conventions";
+/** 「等待到点」的专用错误码（10-10）。⛔ 调用方据此区分**超时**与**回合真失败**：
+ *  超时后成员的回合在引擎里**还在跑**（宿主只是不再同步等），不该标成 failed
+ *  —— 用户反馈的"会话停在停止、其实活儿还在干"正是这个矛盾（见 delegation.ts / teams-ipc.ts 的 catch）。 */
+export const TURN_WAIT_TIMEOUT_CODE = "TURN_WAIT_TIMEOUT";
+
+/** 「等待到点 → 转后台」时交回调用方的**说明**（不是错误）。
+ *  ⛔ 措辞要求讲清三件事：没失败 / 还在跑 / 结果会去哪（用户 10-10 反馈的核心误解就是
+ *    "面板显示停止 = 活儿停了"）。委派与团队两条链路共用这一份，⛔ 不各写一句话。 */
+export const TURN_WAIT_BACKGROUND_NOTE =
+  "（该任务耗时超过同步等待上限，已**转入后台继续执行** —— 它没有失败。完成后结果会落进它的会话，"
+  + "右侧头像轨与「办公室」也会同步显示；你可以先继续别的事。）";
+
 /** 等待 app-server 的某个回合完成，返回 turn 对象；用于子智能体同步取回结果。 */
 export function waitForTurnCompletion(threadId: string, turnId: string, timeoutMs = 600_000) {
   return new Promise<any>((resolve, reject) => {
     const handler = (event: any) => {
       if (event.kind !== "notification") return;
       const method = String(event.method ?? "");
-      if (!["turn/completed", "turn/aborted", "turn/failed"].includes(method)) return;
+      /* ⛔⛔ 四类结束事件都要认（10-10 修）：引擎按结束原因分别投递 turn/completed /
+         turn/aborted / turn/failed / **turn/interrupted**（见渲染层事件路由 03-thread-id.tsx，
+         那里四类都处理）。原来只认前三类 ⇒ 回合以 **interrupted** 结束时，这个 Promise
+         **永不 settle**，只能白等满 timeoutMs 才报"超时"——用户看到的就是
+         "每次调用都撞 10 分钟硬超时"（反馈原文）。与 PollBridge 的"只认 turn/completed"
+         是**同型缺陷**（那处漏了三类，这处漏了一类）。 */
+      if (!["turn/completed", "turn/aborted", "turn/failed", "turn/interrupted"].includes(method)) return;
       if (event.params?.threadId !== threadId || event.params?.turn?.id !== turnId) return;
       cleanup();
       if (method === "turn/completed") resolve(event.params.turn);
       else reject(new Error(`子智能体回合未正常完成（${method}）`));
     };
-    const timer = setTimeout(() => { cleanup(); reject(new Error("子智能体执行超时（10 分钟）")); }, timeoutMs);
+    /* ⛔ 文案必须反映**实际的**超时值（原来写死"10 分钟"，而 distillSummarize 传的是 300_000）。
+       ⛔ 带上 TURN_WAIT_TIMEOUT_CODE：调用方要能区分「等待到点」与「回合真失败」。 */
+    const timer = setTimeout(() => {
+      cleanup();
+      const error: any = new Error(`等待回合完成超时（${Math.round(timeoutMs / 60_000)} 分钟）`);
+      error.code = TURN_WAIT_TIMEOUT_CODE;
+      reject(error);
+    }, timeoutMs);
     const cleanup = () => { clearTimeout(timer); server.off("event", handler); };
     server.on("event", handler);
   });

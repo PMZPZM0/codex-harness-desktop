@@ -17,14 +17,14 @@ import { broadcastHarnessEvent } from "../features/window-bus";
 import type { DispatchKind } from "../dispatch";
 import { buildDispatchCatalog, restrictedThreadRole } from "../features/dispatch-core";
 import { readCustomModel } from "../main/01-model-catalog";
-import { turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
+import { TURN_WAIT_BACKGROUND_NOTE, TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
 import { readSubAgents } from "../main/09-agents-plugins";
-import { delegateRegistry, server, threadRuntimeStore } from "../runtime-refs";
+import { delegateRegistry, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
 import { bridgeDial } from "../main";
 import { ensureProjectAgentsMd } from "../project-conventions";
 import type { RoleRef } from "../role-memory";
 import { buildRoleMemoryTool, noteRoleThread } from "../role-memory-tool";
-import { buildDelegateKnowledgeTool } from "../delegate-knowledge-tool";
+import { buildDelegateHarnessTool } from "../delegate-harness-tool";
 export async function runDelegatedTask(input: {
   kind: DispatchKind; name: string; query: string; originThreadId: string;
   cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string;
@@ -116,10 +116,12 @@ export async function runDelegatedTask(input: {
     config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name: providerName, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
     // 10-05 角色私有记忆：被委派会话拿得到「写自己记忆」的工具（主进程侧应答，见 role-memory-tool）。
     // ⛔ 与主会话的 memory_save **刻意不同名**：两个作用域，别让模型以为写的是同一份。
-    // ⛔ 团队工具 + 角色记忆工具 + **知识库只读检索**合在一个数组里传（⛔ 别写两个 dynamicTools 键，后者会覆盖前者）。
-    // 10-10 用户令「被委派会话也要能用知识库」：只给 `knowledge_search`（读）—— ⛔ 不给 harness_tools 网关，
-    // 那里面装着写操作（存专家 / 建定时任务 / 注册连接器），给它们等于放开越权面。
-    ...((teamTools.length || roleRef) ? { dynamicTools: [...teamTools, buildDelegateKnowledgeTool(), ...(roleRef ? [buildRoleMemoryTool(roleRef)] : [])] } : {}),
+    // ⛔ 团队工具 + 角色记忆工具 + **能力网关**合在一个数组里传（⛔ 别写两个 dynamicTools 键，后者会覆盖前者）。
+    // 10-10 用户令「全开 harness_tools」：被委派会话也能调宿主内置能力（网关里本来就含 knowledge_search）。
+    // ⛔ 不再单独挂 knowledge_search —— 同一能力挂两个名字，模型只会挑最直白的那个、另一套被绕过。
+    // ⛔ 权限边界在**执行端**（canDispatchFrom / restrictedThreadRole），不靠"给不给工具"
+    //    （详见 delegate-harness-tool.ts 文件头）；⛔ 无条件挂（带开关条件 = 中途变化不生效）。
+    dynamicTools: [...teamTools, buildDelegateHarnessTool(), ...(roleRef ? [buildRoleMemoryTool(roleRef)] : [])],
   });
   const threadId = String(started?.thread?.id ?? "");
   if (!threadId) return { ok: false, output: "", error: "调度会话创建失败（未返回 threadId）" };
@@ -143,6 +145,10 @@ export async function runDelegatedTask(input: {
   } catch { /* 下发失败不阻塞执行：L3 硬闸仍在主进程把关 */ }
 
   const record = await delegateRegistry.register({ threadId, originThreadId: origin, kind: target.kind, name: displayName, depth: (originRecord?.depth ?? 0) + 1 });
+  /* ⛔ cwd 登记（10-10）：网关里的 `knowledge_search` 等能力要靠它定位**项目级**资源。
+     团队那条链（teams-ipc）一直有，被委派这条链漏了 ⇒ "网关能查知识库"会栽在
+     "无法确定工作目录"上。（delegate-harness-tool 里另有一层角色表兜底。） */
+  threadCwd.set(threadId, String(input.cwd || process.cwd()));
   broadcastHarnessEvent({ type: "delegates-changed", threadId } as any);
   // 右侧「调度头像轨」：开始即点亮头像（弹窗打开后能看到实时产出流）
   broadcastHarnessEvent({ type: "delegate-run", phase: "started", threadId, record, at: Date.now() } as any);
@@ -206,6 +212,16 @@ export async function runDelegatedTask(input: {
     return { ok: true, threadId, name: displayName, output: text };
   } catch (error: any) {
     const message = error?.message ?? String(error);
+    /* ★★ 10-10 用户令「超时不判失败，转后台等」：**等待到点 ≠ 任务失败** ——
+       成员的回合在引擎里还在跑，只是宿主不再同步等它。原来这里直接标 failed
+       （面板显示"停止/失败"，而活儿其实还在干 —— 用户反馈的正是这个矛盾）。
+       ⇒ 保持 running，由 boot 的引擎事件在回合**真正结束**时收敛
+         （见 `electron/delegate-settle.ts`），结果落进它会话；
+         同步返回值改成**说明**而不是错误，让主理人如实转述。 */
+    if (error?.code === TURN_WAIT_TIMEOUT_CODE) {
+      broadcastHarnessEvent({ type: "delegates-changed", threadId } as any);
+      return { ok: true, threadId, name: displayName, output: TURN_WAIT_BACKGROUND_NOTE };
+    }
     await delegateRegistry.setOutput(threadId, "").catch(() => undefined);
     await delegateRegistry.markStatus(threadId, "failed", { error: message }).catch(() => undefined);
     broadcastHarnessEvent({ type: "delegates-changed", threadId } as any);

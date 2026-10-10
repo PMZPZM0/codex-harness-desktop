@@ -276,6 +276,20 @@ export class TeamRunStore {
     return [...this.activeRuns.values()];
   }
 
+  /** 该成员线程当前是否还有**活跃**运行（10-10：供 boot 在回合结束时判定要不要收敛）。 */
+  activeRunOfThread(threadId: string): TeamMemberRun | null {
+    const runId = this.activeByThread.get(String(threadId ?? ""));
+    return runId ? (this.activeRuns.get(runId) ?? null) : null;
+  }
+
+  /** 按**成员线程 id**收敛一次运行（10-10：「超时转后台」后靠它在回合真正结束时收尾）。
+   *  ⛔ 与 `finishRun` 的唯一区别是入口：这里用 memberThreadId 反查 runId
+   *    （boot 手里只有引擎下发的 threadId，没有 runId）。 */
+  settleRunByThread(threadId: string, patch: { status: TeamRunStatus; output?: string; error?: string }): TeamMemberRun | null {
+    const runId = this.activeByThread.get(String(threadId ?? ""));
+    return runId ? this.finishRun(runId, patch) : null;
+  }
+
   /** 读该团队会话的历史委托记录（成员历史工作记录面板用）。
    *  ⛔ 09-14 用户实测 bug：活跃中的委托只进内存（activeRuns），落盘发生在结束时——
    *  用户在成员运行中关掉工作弹窗再点开历史，listRuns 只读落盘文档 → 显示「还没有
