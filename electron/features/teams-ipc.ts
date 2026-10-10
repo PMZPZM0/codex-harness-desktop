@@ -21,11 +21,11 @@ import { memberThreadName } from "../team-runs";
 import { app } from "electron";
 import { buildDelegateMemory } from "../delegate-memory";
 import { buildRoleMemoryTool, noteRoleThread } from "../role-memory-tool";
-import { buildDelegateKnowledgeTool } from "../delegate-knowledge-tool";
+import { buildDelegateHarnessTool } from "../delegate-harness-tool";
 import { safeProviderId } from "../provider-id";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { readCustomModel } from "../main/01-model-catalog";
-import { turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
+import { TURN_WAIT_BACKGROUND_NOTE, TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
 import { server, teamRunStore, threadCwd } from "../runtime-refs";
 import { bridgeDial } from "../main";
 import { ensureProjectAgentsMd } from "../project-conventions";
@@ -110,7 +110,7 @@ export const teamsFeature = defineFeature<null>({
         modelProvider: provider,
         personality: input.personality || null,
         config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
-        dynamicTools: [teamTool, teamPhaseTool, buildDelegateKnowledgeTool()],
+        dynamicTools: [teamTool, teamPhaseTool, buildDelegateHarnessTool()],
       });
       threadCwd.set(String(started.thread.id), String(input.cwd || process.cwd())); /* 文件变更追踪 cwd 登记（10-01） */
       // 线程 → 团队映射落主进程并持久化：任何窗口（含 popout）据此才知道这个会话属于哪个团
@@ -161,8 +161,9 @@ export const teamsFeature = defineFeature<null>({
         personality: input.personality || null,
         config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
         // 10-05：成员会话能写自己的私有记忆（主进程侧应答，见 role-memory-tool.ts）
-        // 10-10：+ 知识库只读检索（用户令「他们也要能用知识库」；见 delegate-knowledge-tool.ts）
-        dynamicTools: [buildRoleMemoryTool({ kind: "team-member", id: team.teamId, memberId: member.id, label: `${team.displayName.zh}·${member.name}` }), buildDelegateKnowledgeTool()],
+        // 10-10：+ 能力网关（用户令「全开 harness_tools」；见 delegate-harness-tool.ts。
+        //        ⛔ 权限边界在执行端，被拒时工具会如实回报原因）
+        dynamicTools: [buildRoleMemoryTool({ kind: "team-member", id: team.teamId, memberId: member.id, label: `${team.displayName.zh}·${member.name}` }), buildDelegateHarnessTool()],
       });
       const systemPrefix = `[专家团「${team.displayName.zh}」${isLead ? "主理人" : "成员"} ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}\n\n`;
       threadCwd.set(String(started.thread.id), String(input.cwd || process.cwd())); /* 文件变更追踪 cwd 登记（10-01） */
@@ -275,6 +276,7 @@ export const teamsFeature = defineFeature<null>({
       // 09-14：包上 [SYSTEM TASK · 成员会话] 壳——渲染端 userDisplayText 只认这个壳，
       // 不包壳的话用户打开成员会话时整段角色提示词会裸露在首条气泡里（用户实测反馈）。
       const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n主理人分配的子任务：${input.query}\n=== END ===\n\n${systemPrefix}请直接给出你的专业产出（关键结论 + 依据 + 建议）。你的最终回答文本会被完整回传给主理人，无需调用任何回传工具。不要发起破坏性操作。${invokedMemory.text}`;
+      let turnId: string | undefined;   // ⛔ 提到 try 外：catch 里也要能带上它（超时转后台那条返回值）
       try {
         const turn: any = await server.request("turn/start", {
           threadId: memberThreadId,
@@ -282,7 +284,7 @@ export const teamsFeature = defineFeature<null>({
           model: effectiveModel,
           effort: input.effort || member.effort || "high",
         });
-        const turnId = turn.turn?.id;
+        turnId = turn.turn?.id;
         if (!turnId) throw new Error("成员调度失败：未返回 turnId");
         const completed = await waitForTurnCompletion(memberThreadId, turnId);
         let output = turnOutputText(completed);
@@ -294,6 +296,16 @@ export const teamsFeature = defineFeature<null>({
         teamRunStore.finishRun(run.runId, { status: "done", output: text });
         return { threadId: memberThreadId, turnId, teamId: team.teamId, memberId: member.id, name: member.name, profession: member.profession.zh, output: text, runId: run.runId, reused: Boolean(existingThreadId) };
       } catch (error: any) {
+        /* ★ 同 delegation：**等待到点 ≠ 失败**（10-10 用户令「超时不判失败，转后台等」）。
+           成员的回合在引擎里还在跑 ⇒ 保持这次 run **活跃**，由 boot 的引擎事件在回合真正
+           结束时收敛（见 `electron/delegate-settle.ts`）；这里只把「已转后台」的说明交回主理人。 */
+        if (error?.code === TURN_WAIT_TIMEOUT_CODE) {
+          return {
+            threadId: memberThreadId, turnId: turnId ?? null, teamId: team.teamId, memberId: member.id,
+            name: member.name, profession: member.profession.zh,
+            output: TURN_WAIT_BACKGROUND_NOTE, runId: run.runId, reused: Boolean(existingThreadId),
+          };
+        }
         teamRunStore.finishRun(run.runId, { status: "failed", output: run.output, error: error?.message ?? String(error) });
         throw error;
       }

@@ -799,7 +799,9 @@ export class Scheduler {
     return true;
   }
 
-  /** 等待某线程首回合结束（turn/completed / turn/aborted / turn/failed） */
+  /** 等待某线程首回合结束（turn/completed / turn/aborted / turn/failed / turn/interrupted）。
+   *  ⛔ 四类缺一不可（10-10 修）：引擎按结束原因分别投递；漏 `turn/interrupted` ⇒ 被中断的
+   *    定时任务回合**永不 settle**，只能白等满 `AUTOMATION_RUN_TIMEOUT_MS`（**90 分钟**）才收场。 */
   private waitForTurnCompletion(threadId: string, timeoutMs: number): Promise<{ outcome: "completed" | "aborted" | "failed" | "timeout"; replyText: string }> {
     return new Promise((resolve) => {
       // ⛔ agentMessage 的正文主要在 item/agentMessage/delta 里**增量**到达——完成事件经常只回
@@ -825,14 +827,17 @@ export class Scheduler {
           }
           return;
         }
-        if (!["turn/completed", "turn/aborted", "turn/failed"].includes(method)) return;
+        if (!["turn/completed", "turn/aborted", "turn/failed", "turn/interrupted"].includes(method)) return;
         if (params.threadId !== threadId) return;
         cleanup();
-        const turnId = String(params.turnId ?? "");
+        /* ⛔ 回合 id 在 `params.turn.id`（turn 类事件**没有** `params.turnId` —— 那是 item 类事件的
+           字段，见上面的 delta 分支）。原来取 `params.turnId` ⇒ 恒空串 ⇒ 增量聚合 `textByTurn`
+           这条路**永远是死的**（一直靠 finals 回退兜着，看不出坏）。与 PollBridge 同型。 */
+        const turnId = String(params.turn?.id ?? params.turnId ?? "");
         const aggregated = turnId ? (textByTurn.get(turnId) ?? "") : "";
         const finals = [...finalByItem.values()].sort((a, b) => b.length - a.length);
         const replyText = aggregated || finals[0] || "";
-        resolve({ outcome: method === "turn/completed" ? "completed" : method === "turn/aborted" ? "aborted" : "failed", replyText });
+        resolve({ outcome: method === "turn/completed" ? "completed" : (method === "turn/aborted" || method === "turn/interrupted") ? "aborted" : "failed", replyText });
       };
       const timer = setTimeout(() => { cleanup(); resolve({ outcome: "timeout", replyText: "" }); }, timeoutMs);
       const cleanup = () => { clearTimeout(timer); this.server.off("event", handler); };

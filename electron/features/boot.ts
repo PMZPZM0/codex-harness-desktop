@@ -28,7 +28,8 @@ import { developerInstructionsLine } from "../developer-instructions";
 import { normalizeAutoCompactRatio, readAppSettings } from "../app-settings";
 import { broadcastCodexEvent, broadcastHarnessEvent } from "./window-bus";
 import { handleRoleMemoryToolCall } from "../role-memory-tool";
-import { handleDelegateKnowledgeToolCall } from "../delegate-knowledge-tool";
+import { handleDelegateHarnessToolCall } from "../delegate-harness-tool";
+import { settleBackgroundRunsOnTurnEnd } from "../delegate-settle";
 import { forgetRoleSession } from "../role-memory";
 import { sweepFabric, pickWorkspacesToSweep, archiveSessionMemory } from "../memory-fabric";
 import { nuphusVisionEnvDrift } from "../nuphus-env";
@@ -404,11 +405,15 @@ export async function bootApp() {
        ⛔ 只处理 role_memory_save 这一个工具；返回 false = 不是它，照原流程往下走。 */
     void handleRoleMemoryToolCall({ userDataDir: app.getPath("userData"), event, respond: (id, result) => server.respond(id as any, result) })
       .catch(() => false);
-    /* 10-10 被委派会话的知识库**只读**检索（用户令「他们也要能用知识库」）：同上，
-       被委派会话的事件会被 filterForRenderer 裁掉 ⇒ 必须在主进程应答。
-       ⛔ 只回答 `knowledge_search` 一个工具名；返回 false = 不是它，照原流程往下走。 */
-    void handleDelegateKnowledgeToolCall({ userDataDir: app.getPath("userData"), event, respond: (id, result) => server.respond(id as any, result) })
+    /* 10-10 被委派会话的**能力网关**（用户令「全开 harness_tools」）：同上，被委派会话的事件会被
+       filterForRenderer 裁掉 ⇒ 必须在主进程应答。
+       ⛔ 只回答 `harness_tools` 一个工具名；返回 false = 不是它，照原流程往下走。 */
+    void handleDelegateHarnessToolCall({ userDataDir: app.getPath("userData"), event, respond: (id, result) => server.respond(id as any, result) })
       .catch(() => false);
+    /* 10-10「委派超时转后台」的**收尾点**：宿主提前放手后，记录要保持 running 直到回合真正结束
+       ⇒ 必须在引擎事件流里收敛（原来只有 delegation/teams-ipc 的 await 路径会做，一旦放手就永远
+       停在 running）。幂等：正常路径早已收敛的记录这里直接跳过。详见 electron/delegate-settle.ts。 */
+    try { settleBackgroundRunsOnTurnEnd(event); } catch { /* 收敛失败不影响事件流向 */ }
     // 桌面宠物：旁听同一份事件流归约成九态（不改事件流向、也不消费正文内容）。
     // ⛔ 无条件喂：状态要一直维护着，用户中途打开宠物时才能立刻是对的状态（窗口关着时
     //    归约只写一个对象、不产生任何推送，成本可忽略）。

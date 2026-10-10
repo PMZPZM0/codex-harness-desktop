@@ -239,5 +239,48 @@ try {
   }
 }
 
+/* ── 「等回合结束」必须认**四类**结束事件（10-10 用户反馈：委派"每次调用都撞 10 分钟硬超时"）──
+   ⛔ 同型缺陷主进程出现两处：`main/03-turn-summary.ts` 与 `scheduler.ts` 都只认
+   completed/aborted/failed、漏 `turn/interrupted` ⇒ 那个 Promise **永不 settle**，
+   只能白等满超时（委派 10 分钟 / 定时任务 90 分钟）才收场 —— 用户看到的正是
+   "会话停在停止" / "撞 10 分钟硬超时"。
+   ⛔ 另：turn 类事件的回合 id 在 `params.turn.id`（`params.turnId` 只是 item 类事件的字段），
+   取错 = 增量聚合那条路恒空（被 finals 回退掩盖，看不出坏）。 */
+{
+  const summarySrc = readFileSync(join(ROOT, "electron/main/03-turn-summary.ts"), "utf8");
+  const schedSrc = readFileSync(join(ROOT, "electron/scheduler.ts"), "utf8");
+  const FOUR = /\["turn\/completed", "turn\/aborted", "turn\/failed", "turn\/interrupted"\]/;
+  ok(FOUR.test(summarySrc),
+    "⛔ 委派/共享等待器认四类结束事件（漏 turn/interrupted ⇒ 被中断的委派永不 settle，白等满超时）");
+  ok(FOUR.test(schedSrc), "⛔ 定时任务等待器认四类结束事件（漏了 ⇒ 被中断的回合白等 90 分钟才收场）");
+  ok(/params\.turn\?\.id \?\? params\.turnId/.test(schedSrc),
+    "⛔ 定时任务的回合 id 取 `params.turn.id`（turn 类事件没有 params.turnId —— 取错 = 增量聚合恒空）");
+  ok(/\$\{Math\.round\(timeoutMs \/ 60_000\)\} 分钟/.test(summarySrc),
+    "⛔ 超时文案用**实际**值（写死「10 分钟」而实际传 300_000 就是撒谎）");
+}
+
+/* ── 「委派超时 ⇒ 转后台」（10-10 用户令：超时不判失败）──────────────────────────
+   ⛔ 关键不变量：等待到点**不能**标 failed —— 成员的回合在引擎里还在跑，
+   原来标 failed 会让面板显示"停止/失败"而活儿还在干（用户看到的正是这个矛盾）。
+   ⇒ 保持 running，由引擎事件在回合真正结束时收敛（delegate-settle）。
+   ⛔ 那个收敛点必须独立于 await —— 只靠 delegation/teams-ipc 的 await 路径的话，
+   宿主一提前放手，记录就永远停在 running（下次启动自愈会把它误标成"应用重启中断"）。 */
+{
+  const delSrc = readFileSync(join(ROOT, "electron/features/delegation.ts"), "utf8");
+  const teamSrc = readFileSync(join(ROOT, "electron/features/teams-ipc.ts"), "utf8");
+  const settleSrc = readFileSync(join(ROOT, "electron/delegate-settle.ts"), "utf8");
+  const bootSettle = readFileSync(join(ROOT, "electron/features/boot.ts"), "utf8");
+  ok(/error\?\.code === TURN_WAIT_TIMEOUT_CODE/.test(delSrc) && /TURN_WAIT_BACKGROUND_NOTE/.test(delSrc),
+    "委派等待到点 ⇒ 转后台（⛔ 不标 failed —— 否则面板显示「停止」而活儿还在干）");
+  ok(/error\?\.code === TURN_WAIT_TIMEOUT_CODE/.test(teamSrc) && /TURN_WAIT_BACKGROUND_NOTE/.test(teamSrc),
+    "团队成员等待到点 ⇒ 同样转后台");
+  ok(/settleBackgroundRunsOnTurnEnd\(event\)/.test(bootSettle),
+    "⛔ boot 在引擎事件流里收敛后台运行（宿主提前放手后，没有它记录会永远停在 running）");
+  ok(/turn\/aborted[\s\S]{0,90}?turn\/failed[\s\S]{0,90}?turn\/interrupted/.test(settleSrc),
+    "收敛点认**四类**结束事件（与 waitForTurnCompletion 同口径）");
+  ok(/isRunningThread\(threadId\)/.test(settleSrc) && /activeRunOfThread\(threadId\)/.test(settleSrc),
+    "⛔ 只在仍认为 running 时收敛（正常路径已收敛的不重复广播）");
+}
+
 console.log("\n【dpcat】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));
 process.exit(fails ? 1 : 0);

@@ -715,19 +715,18 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
        10-05 角色私有记忆落地后，dynamicTools 的传参条件从「teamTools 非空」变成
        「teamTools 非空 **或** 有角色归属」（两类工具要合并进**同一个**数组，⛔ 不能写两个
        dynamicTools 键 —— 后者会覆盖前者，主理人反而丢掉自己的调度工具）。 */
-    /* 10-10：数组里多了一项**知识库只读检索**（用户令「被委派会话也要能用知识库」，
-       见 electron/delegate-knowledge-tool.ts）。⛔ 但语义没变：条件仍是「teamTools 非空
-       **或** 有角色归属」；⛔ 且**绝不给** `harness_tools` 网关 —— 那里面装着写操作
-       （存专家 / 建定时任务 / 注册连接器），给执行型会话 = 把越权面整个放开。 */
-    /\(teamTools\.length \|\| roleRef\)/.test(mainSrc9)
-      && /dynamicTools: \[\.\.\.teamTools, buildDelegateKnowledgeTool\(\), \.\.\.\(roleRef \? \[buildRoleMemoryTool\(roleRef\)\]/.test(mainSrc9)
-      && !/dynamicTools: \[[^\]]*harness_tools/.test(mainSrc9)
-      ? ok("dynamicTools 只给专家团主理人调度工具（+ 角色记忆写入 + 知识库只读），⛔ 不给 harness_tools 网关")
-      : fail("dynamicTools 传参条件变了 —— 确认没有给执行型会话挂调度工具 / 网关");
-    // ⛔ 回归防线：两类工具必须**合并成一个数组**（写两个 dynamicTools 键会互相覆盖）
+    /* 10-10 用户令「全开 harness_tools」：数组里再挂**能力网关**（`buildDelegateHarnessTool`），
+       且**无条件挂**（带开关条件 ⇒ 中途变化不生效，本项目已踩过）。
+       ⛔⛔ 权限边界在执行端（`canDispatchFrom` / `restrictedThreadRole`），**不靠"给不给工具"**
+       —— 所以这里不再有"绝不给 harness_tools"的负向断言；"给了网关 = 越权"是个**假命题**
+       （工具可见 ≠ 操作被允许）。 */
+    /dynamicTools: \[\.\.\.teamTools, buildDelegateHarnessTool\(\), \.\.\.\(roleRef \? \[buildRoleMemoryTool\(roleRef\)\]/.test(mainSrc9)
+      ? ok("dynamicTools = 调度工具 + 能力网关（+ 角色记忆写入）；⛔ 权限边界在执行端而非工具面")
+      : fail("dynamicTools 的组装变了 —— 确认被委派会话拿得到网关、且调度工具仍只给主理人");
+    // ⛔ 回归防线：这些工具必须**合并成一个数组**（写两个 dynamicTools 键会互相覆盖）
     (mainSrc9.match(/dynamicTools:/g) ?? []).length >= 1
       && !/\.\.\.\(teamTools\.length \? \{ dynamicTools: teamTools \}/.test(mainSrc9)
-      ? ok("⛔ 调度工具与角色记忆工具合并在同一个 dynamicTools 数组（没写第二个键）")
+      ? ok("⛔ 团队工具 / 能力网关 / 角色记忆工具合并在同一个 dynamicTools 数组（没写第二个键）")
       : fail("⛔ dynamicTools 写了两个键 —— 后者覆盖前者，主理人会丢掉调度工具");
     // .d.mts 同步守卫（09-15 踩坑：allowJs=false，改了 .mjs 不改 .d.mts 会报 has no exported member）
     const dmts9 = readFileSync(join(ROOT, "src/lib/thread-runtime.d.mts"), "utf8");
