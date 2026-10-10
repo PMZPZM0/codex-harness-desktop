@@ -8,7 +8,7 @@ import { diffStats } from "../../lib/diff-stats";
 import { ToolCodeBlock } from "../shared/ToolCodeBlock";
 import { DiffPreviewBody } from "./DiffPreview";
 import { FileCardMenu } from "../shared/InlineCards";
-import { getTurnFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
+import { getTurnFileChanges, getTurnLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { openImageLightbox } from "../../lib/ui-channels";
 import { imageUrl } from "../../lib/image-url";
@@ -94,7 +94,12 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
     panel.style.visibility = "visible";
   }, [diffHover]);
   void trackedVersion;
-  const tracked = getTurnFileChanges(turn.id);
+  /* ⛔ 兜底（10-10 终端用户两轮反馈）：①「板块凭空消失」——收尾广播没到（中断/异常漏结算）
+     时最终报告是空的，但运行中的 live 数据**还在**（只在最终报告落地时才清场）⇒ 拿它顶上；
+     ②「位置/形态」——这块卡由 03-turn-view 渲染在**汇总消息下面**（富卡片：头部计数 + 文件行 +
+     悬停 diff 预览），SessionQueue 里那块插在汇总上面的裸行已于同日删除，别再加回去。 */
+  const finalReport = getTurnFileChanges(turn.id);
+  const tracked = finalReport.length ? finalReport : getTurnLiveFileChanges(turn.id);
   if (!changes.length && !tracked.length) return null;
   const byPath = new Map<string, { path: string; added: number; deleted: number; diffs: string[]; deletedFile?: boolean; newFile?: boolean }>();
   for (const change of changes) {

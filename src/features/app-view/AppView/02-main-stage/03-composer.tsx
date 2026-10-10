@@ -342,7 +342,7 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                     document.body,
                   )}
                   {/* /plan 计划模式确认条：方案回合结束后出现，确认后才执行 */}
-                  {planConfirm && planConfirm.threadId === thread?.id && (
+                  {thread && planConfirm && planConfirm.threadId === thread.id && (
                     <div className="agent-ask-inline plan-review" role="dialog" aria-label="方案确认">
                       <header><ListChecks size={15} /><strong>方案已生成，请审阅</strong></header>
                       {planConfirm.text && <p className="plan-review-summary" title="点击查看方案全文" onClick={() => setInfoModal({ title: "执行方案预览", body: planConfirm.text || "未捕获到方案正文，请查看对话中最后一条回复。", markdown: true })}>{planConfirm.text}</p>}
@@ -364,7 +364,7 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                       onEdit={editGoal} onTogglePause={toggleGoalPause} onDelete={stopGoalLoop} />
                   )}
                   {/* Agent 提问卡：贴输入框上方、与输入框同宽；只属于发起它的会话，不跨会话弹窗 */}
-                  {agentAsk && agentAsk.threadId === thread?.id && (
+                  {thread && agentAsk && agentAsk.threadId === thread.id && (
                     <div className="agent-ask-inline" role="dialog" aria-label="Agent 提问">
                       <header><Sparkles size={15} /><strong>Agent 想问你</strong></header>
                       <p className="agent-ask-question">{agentAsk.question}</p>
@@ -395,7 +395,7 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                   {/* 09-14：多条审批收进 `.approval-stack`（整体限高 + 滚动）——以前每条都是一张
                       大卡直接往下堆，两条就把输入框上方占满；现在一条只占一行，点摘要才展开看内容。 */}
                   {(() => {
-                    const mine = pending.filter((request) => !request.params?.threadId || request.params.threadId === thread?.id);
+                    const mine = thread ? pending.filter((request) => !request.params?.threadId || request.params.threadId === thread.id) : [];
                     if (!mine.length) return null;
                     return (
                       <div className="approval-stack" data-count={mine.length}>
@@ -517,7 +517,7 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                       ⛔ 放在卡片栈**最下面一行**（紧挨输入框上沿）：它和排队/审批/限流那些条一样是
                       栈里的普通一行（上下排序、不互相遮），别做成浮层 —— 浮层会盖住上面那几条。
                       面板向上展开、宽度随 `.composer-wrap`（= 输入框宽度），最多 3 行、超出滚动。 */}
-                  <BackgroundTaskCapsule threadId={thread?.id ?? ""} />
+                  {thread && <BackgroundTaskCapsule threadId={thread.id} />}
                   <ComposerComposerForm app={app} />
                   {isEmpty && (
                     <div className="suggest-row">
