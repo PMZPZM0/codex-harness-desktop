@@ -359,7 +359,9 @@ console.log(C.bold("\n【extIA】拓展接口页两级 IA 契约"));
     "⛔ 拓展点明细只渲染在二级弹窗里（⛔ 不内嵌回一级页 —— 那正是用户反馈的长滚动堆叠）"
   );
   (dialogAt > 0 ? ok : fail)("二级载体统一走 SettingsDialog（⛔ 不许自造弹窗：与开发工具页共用一套规范）");
-  (/\.settings-card,\n\.devtools-card \{/.test(extCss) ? ok : fail)(
+  /* ⛔ 换行必须容错（`\r?\n`）：主仓工作区是 LF、PPcode 副本是 CRLF —— 锚死 `\n` 会让
+     同一条断言在主仓绿、在副本红（10-10 实测：PPcode check 多出这一条红）。 */
+  (/\.settings-card,\r?\n\.devtools-card \{/.test(extCss) ? ok : fail)(
     "⛔ 两页卡片样式**同源**（.settings-card / .devtools-card 是同一份 CSS 的并列选择器）"
   );
 }
