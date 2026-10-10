@@ -274,5 +274,28 @@ console.log("\n【mui】⑨ 维度分离（作用域 / 分层机制 / 存储后�
     "概览条样式已定义（缺了会退化成裸按钮）");
 }
 
+/* ── ⑪ 设置页「记忆」两级 IA（10-10 用户反馈：「这个界面为什么没有按照要求改」）──────────
+   ⛔ 用户看到的第一个记忆界面是**设置 → 记忆**（`settings-memory/MemoryCenterSection.tsx`），
+    不是「记忆中心」模态 —— 别改错对象（这次先改错了，被截图纠正）。
+   它原来把「记忆后端」整块与「被委派会话的记忆」说明**内嵌在页面上** ⇒ 现在进二级弹窗。
+   ⛔ 位置说明：本块放 11m 而不是 10-memory-audit —— 后者在【265】"只许缩不许长"棘轮名单里。 */
+console.log("\n【mui】⑪ 设置页「记忆」两级 IA");
+{
+  const center = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryCenterSection.tsx"), "utf8");
+  const cardKeys = ["entries", "resident", "storage", "search", "delegated", "backend"];
+  const missing = cardKeys.filter((k) => !center.includes(`key: "${k}"`));
+  ok(missing.length === 0, `一级 6 张分类卡片齐全（缺：${missing.join("/") || "无"}）`);
+  ok(/className="settings-cards"/.test(center) && /cards\.map\(/.test(center),
+    "一级用**跨页通用**卡片（.settings-card* —— 与开发工具页/拓展接口页/记忆中心同一份 CSS）");
+  const dlgAt = center.indexOf("<SettingsDialog");
+  const beAt = center.indexOf("<MemoryBackendSection");
+  ok(dlgAt > 0 && beAt > dlgAt, "⛔ 记忆后端整块只在弹窗里（原来内嵌在页面上）");
+  ok(dlgAt > 0 && center.indexOf('<p className="muted">子智能体') > dlgAt,
+    "⛔ 被委派会话的说明也在弹窗里（⛔ 不再内嵌）");
+  ok(!/className="memory-overview"/.test(center), "⛔ 旧的 4 张 overview 卡已替换（页内直排 = 不是两级 IA）");
+  ok(/MemoryBackendSection/.test(center) && /readMemoryBackend|setMemoryBackend/.test(center),
+    "记忆后端入口仍在（守卫【150】要求：用户得有地方切换后端）");
+}
+
 console.log("\n【mui】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));
 process.exit(fails ? 1 : 0);
