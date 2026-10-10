@@ -608,15 +608,19 @@
 .team-rail.is-flowing .team-rail-line::after {
   content: "";
   position: absolute;
+  top: 0; /* ⛔ 原来动画的是 top（每帧 layout+paint，重排最贵）⇒ 改动 transform：
+             transform 走合成器（真机 GPU 下不触发重绘），几何结果与原来逐帧等价
+             （轨高 H、块高 0.42H ⇒ translateY(-100%) = 顶端在 -0.42H，translateY(238%) = 顶端在 H）。 */
   left: 0;
   width: 100%;
   height: 42%;
   background: linear-gradient(180deg, transparent, var(--accent), transparent);
+  will-change: transform;
   animation: teamRailFlow 1.9s linear infinite;
 }
 @keyframes teamRailFlow {
-  from { top: -42%; }
-  to { top: 100%; }
+  from { transform: translateY(-100%); }
+  to { transform: translateY(238%); }
 }
 .team-rail-node {
   position: relative;

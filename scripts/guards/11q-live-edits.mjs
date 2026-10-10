@@ -111,8 +111,8 @@ ok(capsule.includes("{hasSteps && (") && capsule.includes("{hasFiles && (") && c
   "两区**各自独立可显示（单独存在即居中）**；同时在才拼出「·」拼接展示（用户 10-06 夜定稿，别改成强制同现）");
 ok(capsule.includes('const hasSteps = Boolean(runningTurnId) && steps.length > 0 && steps.some((step) => step.state !== "done")'),
   "⛔ 步骤区**只在回合运行中显示**（用户夜四轮「跑完没消失」+ 夜六轮「清单不会自动消失」——含被 /stop 停掉的回合；全完成时同样隐藏）");
-ok(capsule.includes("if (!runningTurnId) setZone(null);"),
-  "回合结束清悬停分区（不清 ⇒ zone 残留在「渲染 null 的空档」里，下一回合一出现就凭空弹旧面板）");
+ok(capsule.includes("if (!runningTurnId) { setZone(null); setPinned(false); setExpanded(false); }"),
+  "回合结束清悬停分区与钉住/展开态（不清 ⇒ zone 残留在「渲染 null 的空档」里，下一回合一出现就凭空弹旧面板）");
 ok(capsule.includes(".sort((a, b) => Number(a?.createdAt ?? 0) - Number(b?.createdAt ?? 0))"),
   "步骤按**创建顺序**展示（①②③④ 自上而下；store 接口序是 updatedAt 倒序，别直接铺）");
 const taskStore = codeOnly(read("electron/rpa-store.ts"));
