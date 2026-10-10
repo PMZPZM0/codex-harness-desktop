@@ -27,7 +27,8 @@ bag.runtimeUninstalling = runtimeUninstalling as typeof bag.runtimeUninstalling;
 
 
   // 安装/卸载的内置弹窗（替代 window.confirm——浏览器原生 confirm 会抢焦点且打断输入框）
-  const [runtimeModal, setRuntimeModal] = useState<{ id: string; name: string; mode: "install" | "uninstall"; done: boolean; failed: boolean } | null>(null);
+  // error（10-11）：失败时的完整报错原文（可能多行）——开发工具页据此弹「完整报错」弹窗，toast 只承载一行摘要。
+  const [runtimeModal, setRuntimeModal] = useState<{ id: string; name: string; mode: "install" | "uninstall"; done: boolean; failed: boolean; error: string } | null>(null);
 bag.runtimeModal = runtimeModal as typeof bag.runtimeModal; bag.setRuntimeModal = setRuntimeModal as typeof bag.setRuntimeModal;
 
 
@@ -113,7 +114,7 @@ bag.refreshCapabilities = refreshCapabilities as typeof bag.refreshCapabilities;
   async function installDevRuntime(id: string) {
     bag.setRuntimeInstalling(id);
     bag.setRuntimeProgress((current) => ({ ...current, [id]: "准备下载…" }));
-    bag.setRuntimeModal({ id, name: bag.devRuntimes.find((r) => r.id === id)?.name ?? id, mode: "install", done: false, failed: false });
+    bag.setRuntimeModal({ id, name: bag.devRuntimes.find((r) => r.id === id)?.name ?? id, mode: "install", done: false, failed: false, error: "" });
     try {
       const result = await window.codex.installRuntime(id);
       bag.setDevRuntimes(result.runtimes);
@@ -123,7 +124,8 @@ bag.refreshCapabilities = refreshCapabilities as typeof bag.refreshCapabilities;
       bag.setRuntimeProgress((current) => ({ ...current, [id]: "安装完成" }));
       bag.setNotice("开发工具安装成功，Codex 引擎已刷新");
     } catch (error: any) {
-      bag.setRuntimeModal((m) => m ? { ...m, done: true, failed: true } : m);
+      // 完整报错原文进 runtimeModal（开发工具页弹「完整报错」弹窗）；toast 只发一行摘要
+      bag.setRuntimeModal((m) => m ? { ...m, done: true, failed: true, error: String(error?.message ?? error) } : m);
       bag.setRuntimeProgress((current) => ({ ...current, [id]: `安装失败：${error.message}` }));
       bag.setNotice(`开发工具安装失败：${error.message}`);
     } finally {
@@ -155,7 +157,7 @@ bag.cancelDevRuntime = cancelDevRuntime as typeof bag.cancelDevRuntime;
     bag.setRuntimeInstalling(id);
     bag.setRuntimeUninstalling(id);
     bag.setRuntimeProgress((current) => ({ ...current, [id]: "正在卸载…" }));
-    bag.setRuntimeModal({ id, name: spec.name, mode: "uninstall", done: false, failed: false });
+    bag.setRuntimeModal({ id, name: spec.name, mode: "uninstall", done: false, failed: false, error: "" });
     try {
       const result = await window.codex.uninstallRuntime(id);
       bag.setDevRuntimes(result.runtimes);
@@ -164,7 +166,7 @@ bag.cancelDevRuntime = cancelDevRuntime as typeof bag.cancelDevRuntime;
       bag.setRuntimeProgress((current) => ({ ...current, [id]: "卸载完成" }));
       bag.setNotice(`已卸载「${spec.name}」`);
     } catch (error: any) {
-      bag.setRuntimeModal((m) => m ? { ...m, done: true, failed: true } : m);
+      bag.setRuntimeModal((m) => m ? { ...m, done: true, failed: true, error: String(error?.message ?? error) } : m);
       bag.setRuntimeProgress((current) => ({ ...current, [id]: `卸载失败：${error.message}` }));
       bag.setNotice(`卸载失败：${error.message}`);
     } finally {

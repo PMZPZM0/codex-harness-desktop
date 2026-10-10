@@ -168,22 +168,72 @@
   font-size: 10.5px;
 }
 .runtime-badge.installed { color: var(--green); background: color-mix(in srgb, var(--green) 10%, transparent); }
-/* 装不上时的备用方案（10-08）：一行说明 + 一个「复制提示词交给 Codex」按钮，跟进度/失败行同列。 */
-.runtime-fallback { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; margin-top: 6px; }
-.runtime-fallback em {
-  color: var(--muted);
-  font-size: 10.5px;
-  font-style: normal;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
+/* ── 失败呈现（10-11 改版）：卡片一行失败摘要 + 「完整报错」弹窗 ──────────────────
+   旧版（10-08）失败后内联一大块说明 + 复制按钮，多行报错在单行 toast/进度行里被裁剪展示不全
+   （用户令「报错和失败做成弹窗」）。现在：完整报错进弹窗（.devtools-error-backdrop），卡片只留
+   一行可点的失败摘要；「复制提示词」改成**常驻图标**（不用等失败才出现）。 */
+/* 常驻「复制安装提示词」图标（每个可下载工具都有；提示词正文 = 主进程 runtime:list 的 fallbackPrompt，
+   渲染层只复制 —— 单一真相源）。命中区 26px 方正，与同排按钮同高。 */
+.runtime-prompt-copy {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--muted);
+  cursor: pointer; flex: none;
+  transition: background .12s, border-color .12s, color .12s;
 }
-.runtime-fallback-copy {
-  display: inline-flex; align-items: center; gap: 4px;
-  height: 24px; padding: 0 9px; border-radius: 6px; font-size: 11px; font-weight: 500;
-  border: 1px solid var(--line); background: var(--bg); color: var(--text);
-  cursor: pointer; white-space: nowrap;
+.runtime-prompt-copy:hover { border-color: var(--link); color: var(--link); background: var(--accent-soft); }
+.runtime-prompt-copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* 卡片上的失败摘要行：一行红字，点开重看「完整报错」弹窗（弹窗关掉后报错不丢）。
+   ⛔ .runtime-row 是 4 列 grid（22px / 1fr / auto / auto），本行是第 5 个子元素 ——
+   必须 grid-column 全跨，否则被自动摆进第二行第 1 列（22px 宽）挤成一字一行的细条
+   （旧版 .runtime-fallback 就踩了这一坑，失败态少见所以一直没被发现）。 */
+.runtime-failed {
+  grid-column: 1 / -1;
+  display: inline-flex; align-items: center; gap: 5px;
+  justify-self: start;
+  margin-top: 2px; padding: 0; border: none; background: none;
+  color: var(--red); font-size: 11px; font-weight: 500; line-height: 1.5;
+  cursor: pointer; text-align: left; font-family: inherit;
 }
-.runtime-fallback-copy:hover { border-color: var(--link); color: var(--link); }
+.runtime-failed:hover { text-decoration: underline; }
+.runtime-failed:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+/* 「完整报错」弹窗。⛔ 弹窗顺序（用户令）：必须压过二级 SettingsDialog（.settings-dialog-backdrop
+   z-index:900，34-devtools-cards.css）⇒ 取 DESIGN.md 层级带的 950 档「模态之上的最后一层」，
+   并 createPortal 到 body（挂在设置页树里会被 sheet 的 stacking context 压住）。 */
+.devtools-error-backdrop {
+  position: fixed; inset: 0; z-index: 950;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px; background: #00000059;
+}
+.devtools-error-modal {
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(560px, 100%); max-height: min(560px, 100%);
+  overflow: hidden; border: 1px solid var(--line); border-radius: 14px;
+  background: var(--bg); box-shadow: var(--shadow);
+}
+.devtools-error-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; }
+.devtools-error-head > svg { color: var(--red); flex: none; }
+.devtools-error-title { flex: 1; min-width: 0; }
+.devtools-error-title strong { display: block; font-size: 13.5px; color: var(--text); }
+.devtools-error-title small { display: block; margin-top: 1px; color: var(--muted); font-size: 11px; }
+.devtools-error-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 6px; border: none; background: none;
+  color: var(--muted); cursor: pointer; flex: none;
+}
+.devtools-error-close:hover { color: var(--text); background: var(--panel-2); }
+.devtools-error-body { padding: 0 16px; overflow-y: auto; }
+.devtools-error-body > p { margin: 0 0 10px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+/* 报错正文 = 完整原文：pre-wrap + 断词，多行/长路径都不裁剪；等宽字体贴近终端观感。 */
+.devtools-error-text {
+  margin: 0 0 14px; padding: 10px 12px;
+  max-height: 40vh; overflow-y: auto;
+  background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 8px;
+  color: var(--text); font-size: 11.5px; line-height: 1.6;
+  font-family: var(--mono);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.devtools-error-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 16px 14px; border-top: 1px solid var(--line-soft); }
 .runtime-actions { display:flex; align-items:center; gap:5px; justify-content:flex-end; }
 .runtime-install,
 .runtime-uninstall {

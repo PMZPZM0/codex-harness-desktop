@@ -483,7 +483,7 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
        ⇒ 一级页不再放插槽）。⛔ id 与注册方式都没变：DomainsPanel / DeclaredPluginsPanel 仍
        各自 registerSlot，声明式插件照旧能挂到这些位置 —— 10-07 那次「同一 id 写成两处 ⇒
        功能域画两遍、声明式插件从不显示」的坑，继续由【268-c】按 id 全局去重钉着。 */
-    devtools: { render: () => <DevtoolsSettingsSection capabilityRows={capabilityRows} capabilityError={capabilityError} setNotice={setNotice} devRuntimes={devRuntimes} runtimeInstalling={runtimeInstalling} runtimeUninstalling={runtimeUninstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} installDevRuntime={installDevRuntime} uninstallDevRuntime={uninstallDevRuntime} cancelDevRuntime={cancelDevRuntime} /> },
+    devtools: { render: () => <DevtoolsSettingsSection capabilityRows={capabilityRows} capabilityError={capabilityError} setNotice={setNotice} devRuntimes={devRuntimes} runtimeInstalling={runtimeInstalling} runtimeUninstalling={runtimeUninstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} installDevRuntime={installDevRuntime} uninstallDevRuntime={uninstallDevRuntime} cancelDevRuntime={cancelDevRuntime} runtimeModal={runtimeModal} setRuntimeModal={setRuntimeModal} /> },
     extensibility: { render: () => <ExtensibilitySettingsSection onNotice={setNotice} /> },
     screenshot: { render: () => <ScreenshotSettingsSection onNotice={setNotice} /> },
     /* 桌面宠物（09-30）：域只收显式 props（onNotice），状态全走自己的 IPC（pet:*），不占 app 字段面 */

@@ -17,24 +17,46 @@
  *   移进对应弹窗（守卫【268-c】要求同一 id 全局只被消费一次 —— 所以一级页**不**再放插槽）。
  * ⛔ 面板组件一律**挂在弹窗分支里**（守卫【dtIA】钉：一级渲染分支里不许出现面板组件名）。
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { PageInfo } from "../../components/SettingsHead";
-import { Boxes, Brain, ChevronRight, CircleCheck, Puzzle, Smartphone, Wrench } from "lucide-react";
+import { AlertTriangle, Boxes, Brain, ChevronRight, CircleCheck, Copy, Puzzle, Smartphone, Wrench, X } from "lucide-react";
 import { SettingsDialog } from "../../components/SettingsDialog";
+import { copyTextToClipboard } from "../../lib/clipboard";
 import { Slot } from "../../runtime/Slot";
 import { RuntimeToolsPanel } from "./RuntimeToolsPanel";
 import { CapabilityChainPanel } from "./CapabilityChainPanel";
 import { PhoneHarnessCard } from "./PhoneHarnessCard";
 import { LayaCard } from "./LayaCard";
 
-export type DevtoolsSettingsSectionProps = { downloadSource?: any; capabilityRows: any; capabilityError: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any };
+export type DevtoolsSettingsSectionProps = { downloadSource?: any; capabilityRows: any; capabilityError: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any; runtimeModal: any; setRuntimeModal: any; };
 
 /** 一级卡片的 key —— 也是弹窗的开关值（同时只开一个）。 */
 type DevtoolsCardKey = "runtime" | "capability" | "phone" | "laya" | "domains" | "plugins";
 
 export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
-  const { capabilityRows, capabilityError, setNotice, devRuntimes, runtimeInstalling, runtimeUninstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime, cancelDevRuntime } = props;
+  const { capabilityRows, capabilityError, setNotice, devRuntimes, runtimeInstalling, runtimeUninstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime, cancelDevRuntime, runtimeModal, setRuntimeModal } = props;
   const [openCard, setOpenCard] = useState<DevtoolsCardKey | null>(null);
+
+  /* 安装/卸载失败的「完整报错」弹窗（10-11，用户令「报错和失败做成弹窗，注意弹窗顺序」）：
+     多行报错原文在这里完整展示（pre-wrap 可滚动），单行 toast 只承载摘要。
+     ⛔ 弹窗顺序：必须压过二级 SettingsDialog（遮罩 z=900）⇒ 950 档 + portal 到 body。
+     ⛔ Esc 在**捕获阶段**拦截并 stopPropagation —— 否则同一个 Esc 会把底下的 SettingsDialog
+       一起关掉（两个都是 window keydown 监听，冒泡阶段分不出先后归属）。 */
+  useEffect(() => {
+    if (!runtimeModal?.failed) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      setRuntimeModal(null);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [runtimeModal?.failed, setRuntimeModal]);
+
+  /* 「复制提示词」用的原文仍来自 runtime:list 下发的 fallbackPrompt（单一真相源，守卫 11y）。
+     卸载失败与「交给 Codex 装」无关 ⇒ 不出那个按钮，只给「复制错误信息」。 */
+  const failedPrompt: string = runtimeModal?.failed ? (devRuntimes.find((r: any) => r.id === runtimeModal.id)?.fallbackPrompt ?? "") : "";
 
   /* 卡片摘要只放**算得出来**的：运行时统计来自 devRuntimes；其余给功能定位（不编造数字，
      数字拿不到的就不显示 —— 卡片上写错的状态比不写更糟）。 */
@@ -81,7 +103,7 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
             devRuntimes={devRuntimes} runtimeInstalling={runtimeInstalling} runtimeUninstalling={runtimeUninstalling}
             runtimePercent={runtimePercent} runtimeStage={runtimeStage} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress}
             installDevRuntime={installDevRuntime} uninstallDevRuntime={uninstallDevRuntime} cancelDevRuntime={cancelDevRuntime}
-            setNotice={setNotice}
+            setNotice={setNotice} setRuntimeModal={setRuntimeModal}
           />
         </SettingsDialog>
       )}
@@ -115,6 +137,38 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
           {/* ⛔ 同上：`settings.devtools.declared-plugins` 是 KNOWN_SLOTS 白名单项，id 不动。 */}
           <Slot id="settings.devtools.declared-plugins" loader={() => import("./DeclaredPluginsPanel")} />
         </SettingsDialog>
+      )}
+
+      {/* ── 安装/卸载失败 · 完整报错弹窗（10-11）──────────────────────────────────
+          报错原文完整展示（多行 pre-wrap，可滚动可复制）—— 修掉旧版「多行报错在单行 toast 里被剪切」。
+          ⛔ 层级：z-index 950 > SettingsDialog 的 900（弹窗顺序，用户令）；portal 到 body。 */}
+      {runtimeModal?.failed && createPortal(
+        <div className="devtools-error-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setRuntimeModal(null); }}>
+          <div className="devtools-error-modal" role="alertdialog" aria-modal="true" aria-label={`${runtimeModal.name}${runtimeModal.mode === "uninstall" ? "卸载" : "安装"}失败`}>
+            <div className="devtools-error-head">
+              <AlertTriangle size={17} />
+              <span className="devtools-error-title">
+                <strong>{runtimeModal.name} {runtimeModal.mode === "uninstall" ? "卸载" : "安装"}失败</strong>
+                <small>{runtimeModal.mode === "uninstall" ? "本地文件没有被改动，可以重试或先留着" : "报错原文在下面，完整可复制；网络不好就让 Codex 帮你装"}</small>
+              </span>
+              <button type="button" className="devtools-error-close" aria-label="关闭" autoFocus onClick={() => setRuntimeModal(null)}><X size={15} /></button>
+            </div>
+            <div className="devtools-error-body">
+              <p>{runtimeModal.mode === "uninstall"
+                ? "错误详情如下（完整原文，可滚动、可复制）。"
+                : "错误详情如下（完整原文，可滚动、可复制）。网络差时不用反复重试：点下面的「复制提示词」发给任意会话里的 Codex，让它直接在这台机器上装。"}</p>
+              <pre className="devtools-error-text">{runtimeModal.error}</pre>
+            </div>
+            <div className="devtools-error-actions">
+              <button type="button" className="secondary-setting" onClick={() => { void copyTextToClipboard(runtimeModal.error); setNotice("错误信息已复制"); }}><Copy size={13} />复制错误信息</button>
+              {runtimeModal.mode === "install" && failedPrompt ? (
+                <button type="button" className="primary-setting" onClick={() => { void copyTextToClipboard(failedPrompt); setNotice(`已复制「${runtimeModal.name}」的安装提示词 —— 到任意会话里发给 Codex 即可`); }}><Copy size={13} />复制提示词，交给 Codex 装</button>
+              ) : null}
+              <button type="button" className="secondary-setting" onClick={() => setRuntimeModal(null)}>关闭</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
     </>
   );
