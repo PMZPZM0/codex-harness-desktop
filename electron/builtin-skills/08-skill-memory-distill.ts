@@ -19,10 +19,10 @@ description: 记忆金字塔的蒸馏操作手册：当注入的常驻记忆里�
 
 | 层 | 落点（相对 memory/） | 是什么 | 预算 | 满了沉到 |
 |---|---|---|---|---|
-| **L0** | \`USER.md\`（在应用 userData 下，跨项目） | 用户档案：偏好 / 禁忌 / 是谁 | 4000 | 人工精简（**不自动删**） |
-| **L1** | \`project/MEMORY.md\` | 项目宪法：约定 / 选型与理由 / 结论 | 12000 | 同层压缩：合并同主题、删过时 |
-| **L2** | \`lessons/corrections.md\`（**用户纠错**）· \`lessons/pitfalls.md\`（任务经验）· \`lessons/sop.md\`（工作流/SOP）· \`lessons/preferences.md\`（用户偏好） | 纪律与记忆：**一个分类一个文件** | 8000 | **先升级为技能**（skill-authoring）再压缩 |
-| **L3** | \`project/BACKGROUND.md\` | 项目背景：快速入门 | 6000 | 稳定下来的升格进 L1 |
+| **L0** | \`USER.md\`（在应用 userData 下，跨项目） | 用户档案：偏好 / 禁忌 / 是谁 | 8000 | 人工精简（**不自动删**） |
+| **L1** | \`project/MEMORY.md\` | 项目宪法：约定 / 选型与理由 / 结论 | 24000 | 同层压缩：合并同主题、删过时 |
+| **L2** | \`lessons/corrections.md\`（**用户纠错**）· \`lessons/pitfalls.md\`（任务经验）· \`lessons/sop.md\`（工作流/SOP）· \`lessons/preferences.md\`（用户偏好） | 纪律与记忆：**一个分类一个文件** | 16000 | **先升级为技能**（skill-authoring）再压缩 |
+| **L3** | \`project/BACKGROUND.md\` | 项目背景：快速入门 | 12000 | 稳定下来的升格进 L1 |
 | **L4** | \`logs/YYYY-MM-DD.md\` | 每日日志（自动捕获） | 40000（每天 8000 × 回灌 5 天） | 沉 L5 月卷，原文进 L6 |
 | **L5** | \`rollups/YYYY-MM.md\` | 月度卷宗（比日志短、比 L1 细） | 12000 | 沉 L1 |
 | **L6** | \`archive/*.md\` | 冷存档（原文，可回溯） | — | 终态，**不进注入** |

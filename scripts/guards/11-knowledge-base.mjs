@@ -89,6 +89,27 @@ try {
   const before = searchDocs(ws, "第5段", 8);
   ok(before.length > 0, `常见查询仍能召回（${before.length} 条）`);
 
+  // ── 判据 4b（2026-10-10 新增）：**中文无空格查询必须能召回** ──────────────
+  // ⛔⛔ 这是实测抓到的真 bug 的回归防线：全文档档原来用 `query.toLowerCase().split(/\s+/)`
+  //   分词 ⇒ 中文没有空格，"记忆库容量" 切出来是一个整串 token，`indexOf` 只能命中
+  //   **完全连续**的同一串；而文档里写的是「记忆库**的**容量」⇒ 实测召回 **0 条**
+  //   （查询里手动加个空格才有 1 条）。⇒ 夹具故意让**查询用词 ≠ 文档用词**且**不含空格**，
+  //   这正是用户最自然的提问方式。0 条 = 那个 bug 回来了。
+  {
+    const zhWs = mkdtempSync(join(tmpdir(), "kb-guard-zh-"));
+    mkdirSync(join(zhWs, ".codex-harness", "knowledge"), { recursive: true });
+    try {
+      addDocument(zhWs, { title: "中文召回样本", text: "记忆库的容量上限是三万字。超过之后尾部内容会被截断。", source: "guard" });
+      const zhHits = searchDocs(zhWs, "记忆库容量", 5);
+      ok(zhHits.length > 0, `中文无空格查询能召回（"记忆库容量" → ${zhHits.length} 条）`);
+      // ⛔ 反向：放宽分词最容易引入的副作用是"什么都能召回" —— 库里没有的词必须 0 条。
+      const missHits = searchDocs(zhWs, "量子纠缠西瓜糖", 5);
+      ok(missHits.length === 0, `库里没有的词不召回（防分词放宽 ⇒ 噪声召回，实际 ${missHits.length} 条）`);
+    } finally {
+      rmSync(zhWs, { recursive: true, force: true });
+    }
+  }
+
   // ── 判据 5（2026-10-04 补）：**语义档**的 snippet 也必须围绕命中词 ──
   //⛔ 之前只测了 searchDocs（全文档档），而真正的 bug 在 searchDocsSemantic里
   //   （`chunk.slice(0,260)` 取块首）。两条档的 snippet 定位必须各自被测到。

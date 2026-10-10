@@ -8,6 +8,10 @@
 // ⛔ 本模块是叶子：不 import 业务模块；workspace/cwd 由 IPC 层传入。
 import fs from "node:fs";
 import path from "node:path";
+/* 中文友好的分词 / 相关性门槛 / 加权评分 / snippet 定位（纯函数）。
+   ⛔⛔ 2026-10-10：原实现用 split(/\s+/) 分词 ⇒ 中文无空格查询召回 **0 条**（实测），
+   两档（全文档 / 语义）口径也不一致 ⇒ 统一收敛到 electron/text-match.ts。 */
+import { bestHitIndex, isChunkRelevant, maxChunkScore, scoreChunk, tokenizeQuery } from "./text-match";
 
 export type KbDocMeta = { id: string; title: string; source: string; chunks: number; addedAt: string; bytes: number };
 export type KbHit = { docId: string; title: string; chunkIndex: number; score: number; snippet: string };
@@ -123,33 +127,30 @@ export function removeDocument(workspace: string, docId: string): void {
   fs.rmSync(docDir, { recursive: true, force: true });
 }
 
-/** query → 命中词列表（全文档档与语义档**共用一套**，否则两档 snippet 定位会不一致）。
- *  ⛔ 中文没有空格：只按空格切等于"整句当一个词"，`indexOf` 只能命中整句，
- *  而整句几乎不会出现在块里 ⇒ snippet 永远定位不到 ⇒ 回退到块首（等于没修）。 */
-function queryTerms(query: string): string[] {
-  return String(query ?? "")
-    .toLowerCase()
-    .split(/[\s,.;:!?，。；：！？、"'“”‘’（）()\[\]【】/\\]+/)
-    .map((t) => t.trim())
-    .filter((t) => t.length > 0);
+/* query → token 列表 / 命中定位：**全文档档与语义档共用一套**（electron/text-match.ts）。
+   ⛔⛔ 原来两档各写一套：全文档档 `split(/\s+/)`、语义档按标点切 —— 同一个 query 在两档里
+   定位到不同位置（规范 §6 第 3 条明令违规），且中文无空格时**两档都召不回**。
+   ⇒ 现在只有 tokenizeQuery / bestHitIndex 这两个唯一实现。 */
+
+/** 统一的 snippet 取法：围绕命中词取 260 字（命中位置找不到时退回块首，并如实留"…"）。 */
+function snippetAround(chunk: string, tokens: string[], radius = 60): string {
+  const at = bestHitIndex(chunk, tokens);
+  const from = at < 0 ? 0 : Math.max(0, at - radius);
+  return (from > 0 ? "…" : "")
+    + chunk.slice(from, from + 260).replace(/\s+/g, " ")
+    + (chunk.length > from + 260 ? "…" : "");
 }
 
-/** chunk 里第一个命中词的位置；全不命中返回 -1。 */
-function firstHitIndex(chunk: string, terms: string[]): number {
-  const lower = chunk.toLowerCase();
-  let best = -1;
-  for (const t of terms) {
-    const i = lower.indexOf(t);
-    if (i >= 0 && (best < 0 || i < best)) best = i;
-  }
-  return best;
-}
-
-/** v1 检索：分块全文评分（命中词覆盖 + 词频密度），返回带高亮片段的命中列表。零依赖。 */
+/** 全文检索（零依赖、离线可用）：分块加权评分 + 相关性门槛，返回带命中位置的片段。
+ *  ⛔⛔ 2026-10-10 修：原来用 `query.toLowerCase().split(/\s+/)` 分词 ⇒ **中文无空格查询
+ *  召回 0 条**（实测 "记忆库容量" → 0 命中；而文档里写的是「记忆库的注入预算」）。
+ *  现在走 tokenizeQuery 的「整词 + 中文双字 bigram」：按 token 长度加权、过 isChunkRelevant 门槛，
+ *  snippet 围绕**最长命中 token** 取。score 归一化到 0..1 ⇒ 与语义档（cosine）同量纲，
+ *  两档才能放进同一张表排序（规范 §6 第 2 条）。 */
 export function searchDocs(workspace: string, query: string, limit = 8): KbHit[] {
-  const q = String(query ?? "").trim();
-  if (!q) return [];
-  const terms = q.toLowerCase().split(/\s+/).filter((t) => t.length > 0);
+  const tokens = tokenizeQuery(query);
+  if (!tokens.length) return [];
+  const full = maxChunkScore(tokens);
   const hits: KbHit[] = [];
   for (const meta of listDocs(workspace)) {
     const file = path.join(docsDir(workspace), meta.id, "source.md");
@@ -157,20 +158,13 @@ export function searchDocs(workspace: string, query: string, limit = 8): KbHit[]
     try { text = fs.readFileSync(file, "utf8"); } catch { continue; }
     const chunks = chunkText(text);
     chunks.forEach((chunk, chunkIndex) => {
-      const lower = chunk.toLowerCase();
-      let score = 0;
-      for (const term of terms) {
-        let count = 0;
-        let at = lower.indexOf(term);
-        while (at >= 0) { count += 1; at = lower.indexOf(term, at + term.length); }
-        if (count > 0) score += 1 + Math.min(count, 8) * 0.25 + Math.min(term.length, 12) * 0.1;
-      }
-      if (score > 0) {
-        const first = terms.map((term) => lower.indexOf(term)).filter((at) => at >= 0).sort((a, b) => a - b)[0] ?? 0;
-        const from = Math.max(0, first - 60);
-        const snippet = (from > 0 ? "…" : "") + chunk.slice(from, from + 260).replace(/\s+/g, " ") + (chunk.length > from + 260 ? "…" : "");
-        hits.push({ docId: meta.id, title: meta.title, chunkIndex, score, snippet });
-      }
+      /* ⛔ 不相关的一块都不返回 —— 只把 score 排到后面是**不够**的：调用方按 limit 截取，
+         噪声照样出现在结果里（记忆侧实跑抓到过同型）。 */
+      if (!isChunkRelevant(chunk, tokens)) return;
+      const raw = scoreChunk(chunk, tokens);
+      if (raw <= 0) return;
+      const score = full > 0 ? Math.min(1, raw / full) : 0;
+      hits.push({ docId: meta.id, title: meta.title, chunkIndex, score, snippet: snippetAround(chunk, tokens) });
     });
   }
   return hits.sort((a, b) => b.score - a.score).slice(0, Math.max(1, Math.min(20, limit)));
@@ -226,6 +220,8 @@ export async function searchDocsSemantic(workspace: string, query: string, limit
   let queryVector: number[];
   try { queryVector = (await embed([q]))[0]; } catch { return null; }
   if (!queryVector?.length) return null;
+  /* 分词只算一次，供所有块的 snippet 定位复用（与全文档档同一套，见 text-match.ts）。 */
+  const tokens = tokenizeQuery(q);
   const hits: KbHit[] = [];
   for (const meta of listDocs(workspace)) {
     let vectors: number[][] = [];
@@ -238,17 +234,13 @@ export async function searchDocsSemantic(workspace: string, query: string, limit
       const score = cosine(queryVector, vector);
       if (score < 0.25) return; // 低相似度不凑数（余弦对短文本噪声大）
       const chunk = chunks[chunkIndex] ?? "";
-      // ⛔⛔ 2026-10-04 修「召回不准」：原来这里 `chunk.slice(0, 260)` **取块首**，
-      //   而语义档的命中位置恰恰**多半不在块首**（向量是整块算的，相似的是整块的意思，
-      //   不是它的开头）⇒ 返回给调用方的snippet 与 query 无关，精准度被自己拖垮。
-      //   改成与全文档档一致：**围绕 query 的命中词取**，并在头���标出命中的词。
-      const terms = queryTerms(q);
-      const at = terms.length ? firstHitIndex(chunk, terms) : -1;
-      const start = at < 0 ? 0 : Math.max(0, at - 90);
-      const snippet = (start > 0 ? "…" : "")
-        + chunk.slice(start, start + 260).replace(/\s+/g, " ")
-        + (start + 260 < chunk.length ? "…" : "");
-      hits.push({ docId: meta.id, title: meta.title, chunkIndex, score: score * 10, snippet });
+      /* ⛔⛔ 2026-10-04 修「召回不准」：原来这里 `chunk.slice(0, 260)` **取块首**，
+         而语义档的命中位置恰恰**多半不在块首**（向量是整块算的，相似的是整块的意思，
+         不是它的开头）⇒ 返回给调用方的 snippet 与 query 无关，精准度被自己拖垮。
+         ⛔ 2026-10-10 再修：定位改走与全文档档**同一套** snippetAround（tokenizeQuery +
+         bestHitIndex）—— 原来两档各写一套分词，同一个 query 定位到不同位置（规范 §6 第 3 条违规）。
+         ⛔ score 直接用 cosine（0..1），不再 `*10`：全文档档已归一到 0..1，两档同量纲才可混排。 */
+      hits.push({ docId: meta.id, title: meta.title, chunkIndex, score, snippet: snippetAround(chunk, tokens) });
     });
   }
   return hits.sort((a, b) => b.score - a.score).slice(0, Math.max(1, Math.min(20, limit)));

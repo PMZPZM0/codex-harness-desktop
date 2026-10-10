@@ -37,6 +37,7 @@ import { applyMemoryMode, readMemoryMode, readWorkspaceMemorySettings, workspace
 import { distillSummarize } from "../main/03-turn-summary";
 import { readMemoryGateway } from "../main/08-channel-bot-io";
 import { memoryGatewayFile, memoryLayers, memoryStore, memoryWorkspaceFile } from "../runtime-refs";
+import { MEMORY_SCALE_OPTIONS } from "../memory-layers";
 import { userSkillsDir } from "../main";
 import type { MemoryMode, StoredMemoryGateway } from "../main";
 import { defineFeature } from "../context";
@@ -70,6 +71,17 @@ async function saveMemoryGateway(input: any) {
 }
 
 let memoryMcpBusy = false; // ⛔ 防连点并发（npm install 很重，并发会互相踩 node_modules）
+
+/** 记忆容量倍率的读回体：read / set **同一形状** —— 渲染层拿它整体替换状态，少一个字段就会出现
+ *  「设置完水位条不更新」那类安静 bug（09-22 的 layers:write 踩过同型）。 */
+function memoryScalePayload() {
+  const b = memoryLayers.budget;
+  return {
+    scale: memoryLayers.getScale(),
+    options: [...MEMORY_SCALE_OPTIONS],
+    budget: { user: b.user, background: b.background, project: b.project, lessons: b.lessons, logs: b.logs, total: b.total },
+  };
+}
 
 async function runMemoryInstaller(extra: string[]): Promise<{ code: number | null; result: any; log: string }> {
   if (memoryMcpBusy) throw new Error("已有安装/卸载正在进行，请稍候");
@@ -113,6 +125,7 @@ async function runMemoryInstaller(extra: string[]): Promise<{ code: number | nul
 
 const MEMORY_CHANNELS = [
   "memory:list", "memory:search", "memory:recall", "memory:mode-read", "memory:mode-set",
+  "memory:scale:read", "memory:scale:set",
   "memory:backend:read", "memory:backend:set", "memory:mcp:install", "memory:mcp:uninstall", "memory:mcp:verify",
   "memory:save", "memory:delete", "memory:reset", "memory:gateway:read", "memory:gateway:save", "memory:gateway:test",
   "memory:layers:read", "memory:layers:context", "memory:layers:write",
@@ -227,6 +240,16 @@ export const memoryFeature = defineFeature<null>({
     ipcHost.handle("memory:gateway:read", async () => { const value = await readMemoryGateway(); return { ...memoryStore.remoteStatus(), sessionKey: value?.sessionKey ?? "", userId: value?.userId ?? "codex-harness", hasApiKey: Boolean(value?.apiKey) }; });
     ipcHost.handle("memory:gateway:save", (_event, input: unknown) => saveMemoryGateway(input));
     ipcHost.handle("memory:layers:read", async (_event, workspace?: string) => ({ ...(await memoryLayers.snapshot(workspace)), entries: await memoryStore.stats() }));
+    /* 记忆容量倍率（10-10 用户要求「记忆库容量增加倍率功能」）：×1 基准按 1/2/4/8/10/16 放大。
+       ⛔ 改完**当场生效**（setScale）后再落盘 —— 只落盘不应用就是"用户以为改了其实没改"
+          （本项目点过名的那类 bug）。下次启动由 main.ts 从 app-settings 读回。
+       ⛔ 归一化在 setScale 里做：乱传（0 / 3 / "8" / NaN）一律回退基准，返回**实际生效值**。 */
+    ipcHost.handle("memory:scale:read", () => memoryScalePayload());
+    ipcHost.handle("memory:scale:set", async (_event, scale: unknown) => {
+      const applied = memoryLayers.setScale(scale);
+      await saveAppSettings(app.getPath("userData"), { memoryScale: applied });
+      return memoryScalePayload();
+    });
     ipcHost.handle("memory:layers:context", (_event, workspace?: string, includeWorkspace = true) => memoryLayers.context(workspace, includeWorkspace));
     ipcHost.handle("memory:workspace-enabled:read", (_event, workspace?: string) => workspaceMemoryEnabled(workspace));
     /* 10-05 角色私有记忆（读）：渲染层发送路径用它把「当前会话所属角色」的私有记忆拼进上下文。

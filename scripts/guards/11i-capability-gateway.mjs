@@ -129,6 +129,23 @@ ok(/callDispatchTool\(input: \{ name: string; args\?: Record<string, unknown>; c
   const withBag = appUi.match(/resumeThreadWithTurns\(bag,/g) ?? [];
   ok(calls > 0 && calls === withBag.length,
     `⛔ 所有 resumeThreadWithTurns 调用都传 bag（${withBag.length}/${calls}）—— 少传就等于没带工具面`);
+
+  /* ── ⑦ 分叉会话同样要带工具面（2026-10-10）───────────────────────────────
+     引擎的 dynamicTools 只在 `thread/start` 与 `thread/resume` 注册，而 `thread/fork` 也是
+     **建立新会话**。渲染层原来有 4 处直发 fork，其中 2 处只 `setThread`、不 resume ⇒
+     分叉出来的会话（用户视角就是"新会话"）继承的是**源会话创建时**的工具面快照，
+     知识库 / 定时任务 / 视频 … 全部 `unsupported call`（用户报「知识库调不到」的真凶之一）。
+     ⇒ 现在 fork 后一律走 openThread（内部带当前工具面 resume）。
+     判据：每处 fork 的近邻必须出现 `openThread` —— fork 之后要做的动作本来就在紧邻几行，
+     正常写法不会离得远；这条能抓住"新加一处裸 fork"。 */
+  const forks = [...appUi.matchAll(/request\("thread\/fork"/g)];
+  const naked = forks.filter((m) => {
+    const from = m.index ?? 0;
+    return !/openThread\(/.test(appUi.slice(from, from + 1200));
+  });
+  ok(forks.length > 0 && naked.length === 0,
+    `⛔ 每处 thread/fork 之后都要 openThread（带工具面 resume）—— 裸 fork ${naked.length}/${forks.length} 处`
+    + "（只 setThread 不 resume ⇒ 新分支继承源会话的旧工具面）");
 }
 
 console.log("\n【gw】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));

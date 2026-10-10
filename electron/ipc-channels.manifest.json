@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 439,
+  "count": 441,
   "channels": [
     {
       "name": "request",
@@ -1432,6 +1432,26 @@
       "invokeArgs": "query, workspace",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "readMemoryScale",
+      "channel": "memory:scale:read",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ scale: number; options: number[]; budget: { user: number; background: number; project: number; lessons: number; logs: number; total: number } }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "记忆容量倍率（×1 基准，可选 1/2/4/8/10/16）：返回当前倍率、可选项与放大后的预算"
+    },
+    {
+      "name": "setMemoryScale",
+      "channel": "memory:scale:set",
+      "paramsImpl": "scale: number",
+      "paramsDecl": "scale: number",
+      "returns": "Promise<{ scale: number; options: number[]; budget: { user: number; background: number; project: number; lessons: number; logs: number; total: number } }>",
+      "invokeArgs": "scale",
+      "cast": null,
+      "note": "设置记忆容量倍率（当场生效 + 落 app-settings；非法值归一化回基准）"
     },
     {
       "name": "readMemoryMode",

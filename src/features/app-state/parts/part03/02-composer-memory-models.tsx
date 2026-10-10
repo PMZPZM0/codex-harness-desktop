@@ -282,6 +282,40 @@ bag.saveMemoryLayer = saveMemoryLayer as typeof bag.saveMemoryLayer;
   }
 bag.runMemoryDistill = runMemoryDistill as typeof bag.runMemoryDistill;
 
+  /* ── 记忆容量倍率（10-10 用户要求「记忆库容量增加倍率功能」）──────────────────
+     ×1 基准按 1/2/4/8/10/16 放大常驻注入预算（各层与总闸**同比**放大）。
+     ⛔ 设置完**当场生效**（主进程 setScale）并**重读快照** —— 不重读的话水位条还按旧预算画，
+        用户会看到"容量变了但百分比没变"，以为没生效（本项目点名过的那类假象）。 */
+  type MemoryCapacity = Awaited<ReturnType<typeof window.codex.setMemoryScale>>;
+  const [memoryCapacity, setMemoryCapacity] = useState<MemoryCapacity | null>(null);
+bag.memoryCapacity = memoryCapacity as typeof bag.memoryCapacity; bag.setMemoryCapacity = setMemoryCapacity as typeof bag.setMemoryCapacity;
+
+  const [memoryScaleBusy, setMemoryScaleBusy] = useState(false);
+bag.memoryScaleBusy = memoryScaleBusy as typeof bag.memoryScaleBusy; bag.setMemoryScaleBusy = setMemoryScaleBusy as typeof bag.setMemoryScaleBusy;
+
+  const reloadMemoryLayers = useCallback(() => {
+    void window.codex.readMemoryLayers(bag.memoryManagementWorkspace || undefined)
+      .then((snapshot) => bag.applyMemoryLayers(snapshot, bag.memoryLayerScope))
+      .catch(() => undefined);
+  }, []);
+bag.reloadMemoryLayers = reloadMemoryLayers as typeof bag.reloadMemoryLayers;
+
+  useEffect(() => {
+    if (bag.settingsPage !== "memory") return;
+    void window.codex.readMemoryScale().then(bag.setMemoryCapacity).catch(() => undefined);
+  }, [bag.settingsPage]);
+
+  async function applyMemoryCapacity(scale: number) {
+    bag.setMemoryScaleBusy(true);
+    try {
+      bag.setMemoryCapacity(await window.codex.setMemoryScale(scale));
+      bag.reloadMemoryLayers();
+      bag.setMemoryStatus(`记忆容量已切到 ×${scale} —— 下一条消息起按新预算注入`);
+    } catch (error: any) { bag.setMemoryStatus(error?.message ?? String(error)); }
+    finally { bag.setMemoryScaleBusy(false); }
+  }
+bag.applyMemoryCapacity = applyMemoryCapacity as typeof bag.applyMemoryCapacity;
+
   async function togglePinned(id: string) {
     const entry = bag.memories.find((item) => item.id === id);
     if (!entry) return;
@@ -357,5 +391,5 @@ bag.activeProviderRef = activeProviderRef as typeof bag.activeProviderRef;
   useEffect(() => {
     if (bag.settingsOpen && (bag.settingsPage === "relay" || bag.settingsPage === "openai" || bag.settingsPage === "model")) bag.refreshActive();
   }, [bag.settingsOpen, bag.settingsPage, bag.refreshActive]);
-  return { scrollRef, timelineWrapRef, searchRef, composerInputRef, composerWrapRef, composerDomValueRef, makeComposerChip, syncComposerFromDom, messageHandlersRef, messageHandlers, memoryEnabled, memories, setMemories, memoryCategory, setMemoryCategory, memorySaveCategory, setMemorySaveCategory, memorySavedAt, memoryDraft, setMemoryDraft, memoryStatus, setMemoryStatus, memoryGateway, setMemoryGateway, memoryGatewayAction, memoryMode, updateMemoryMode, workspaceMemoryEnabled, updateWorkspaceMemory, saveMemoryRecord, deleteMemoryRecord, deleteMemoryGroup, resetMemory, testMemoryGateway, saveMemoryGateway, setMemoryEnabled, memoryProjectOptions, memoryManagementWorkspace, memoryEntryBelongsToProject, memoryVisibleRecords, memoryTitleById, memoryGroups, memoryGroupsFiltered, memoryLayers, setMemoryLayers, memoryLayerScope, setMemoryLayerScope, memoryLayerDraft, setMemoryLayerDraft, memoryLayerSavedAt, setMemoryLayerSavedAt, memoryDistilling, setMemoryDistilling, applyMemoryLayers, memoryLayerDirty, saveMemoryLayer, runMemoryDistill, togglePinned, clearSelectedMemory, scheduledTasks, setScheduledTasks, scheduleDraft, setScheduleDraft, autoFormVisible, setAutoFormVisible, scheduleStatus, saveSchedule, toggleSchedule, deleteSchedule, runSchedule, editSchedule, channelBot, setChannelBot, channelDraft, setChannelDraft, channelAction, channelStatus, setChannelStatus, saveChannelBot, testChannelBot, chooseChannelWorkspace, customModel, setCustomModel, customDraft, setCustomDraft, providersList, currentProvider, editingProvider, setEditingProvider, savingSettings, providerModels, modelSourceProvider, refreshActive, probingProvider, providerStatus, switchingModel, saveCustomModel, probeProvider, probeActiveProvider, selectProvider, removeProvider, setProviderModel, removeProviderModel, upsertProviderModel, setProviderEnabled, probeOneModel, adoptSavedProvider, saveCustomDraft, activeProviderRef };
+  return { scrollRef, timelineWrapRef, searchRef, composerInputRef, composerWrapRef, composerDomValueRef, makeComposerChip, syncComposerFromDom, messageHandlersRef, messageHandlers, memoryEnabled, memories, setMemories, memoryCategory, setMemoryCategory, memorySaveCategory, setMemorySaveCategory, memorySavedAt, memoryDraft, setMemoryDraft, memoryStatus, setMemoryStatus, memoryGateway, setMemoryGateway, memoryGatewayAction, memoryMode, updateMemoryMode, workspaceMemoryEnabled, updateWorkspaceMemory, saveMemoryRecord, deleteMemoryRecord, deleteMemoryGroup, resetMemory, testMemoryGateway, saveMemoryGateway, setMemoryEnabled, memoryProjectOptions, memoryManagementWorkspace, memoryEntryBelongsToProject, memoryVisibleRecords, memoryTitleById, memoryGroups, memoryGroupsFiltered, memoryLayers, setMemoryLayers, memoryCapacity, setMemoryCapacity, memoryScaleBusy, setMemoryScaleBusy, reloadMemoryLayers, applyMemoryCapacity, memoryLayerScope, setMemoryLayerScope, memoryLayerDraft, setMemoryLayerDraft, memoryLayerSavedAt, setMemoryLayerSavedAt, memoryDistilling, setMemoryDistilling, applyMemoryLayers, memoryLayerDirty, saveMemoryLayer, runMemoryDistill, togglePinned, clearSelectedMemory, scheduledTasks, setScheduledTasks, scheduleDraft, setScheduleDraft, autoFormVisible, setAutoFormVisible, scheduleStatus, saveSchedule, toggleSchedule, deleteSchedule, runSchedule, editSchedule, channelBot, setChannelBot, channelDraft, setChannelDraft, channelAction, channelStatus, setChannelStatus, saveChannelBot, testChannelBot, chooseChannelWorkspace, customModel, setCustomModel, customDraft, setCustomDraft, providersList, currentProvider, editingProvider, setEditingProvider, savingSettings, providerModels, modelSourceProvider, refreshActive, probingProvider, providerStatus, switchingModel, saveCustomModel, probeProvider, probeActiveProvider, selectProvider, removeProvider, setProviderModel, removeProviderModel, upsertProviderModel, setProviderEnabled, probeOneModel, adoptSavedProvider, saveCustomDraft, activeProviderRef };
 }

@@ -204,7 +204,7 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
   catch (error) { fail(`【104】记忆分层产物读不到（先 npm run build）：${error?.message ?? error}`); }
 
   if (mem) {
-    const { MEMORY_PYRAMID, MEMORY_DISTILL_THRESHOLD, layerWatermarks, splitDistill, MemoryLayers, MEMORY_DISTILL_SKILL } = mem;
+    const { MEMORY_PYRAMID, MEMORY_DISTILL_THRESHOLD, layerWatermarks, splitDistill, MemoryLayers, MEMORY_DISTILL_SKILL, MEMORY_BUDGET, MEMORY_SCALE_OPTIONS, scaledMemoryBudget, normalizeMemoryScale } = mem;
 
     /* ① 层表 */
     (MEMORY_PYRAMID.length === 8 ? ok : fail)(`【104】金字塔八层齐全（实际 ${MEMORY_PYRAMID.length}）`);
@@ -212,6 +212,31 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     (ids === "L0,L1,L2,L3,L4,L5,L6,L7" ? ok : fail)(`【104】层 id 顺序为 L0..L7（实际 ${ids}）`);
     (MEMORY_PYRAMID.every((l) => l.budget >= 0 && l.sink && l.writer && l.where) ? ok : fail)("【104】每层都有 落点 / 预算 / 谁写 / 蒸馏去向");
     (MEMORY_DISTILL_THRESHOLD === 0.9 ? ok : fail)(`【104】蒸馏线 = 90%（实际 ${MEMORY_DISTILL_THRESHOLD}）`);
+
+    /* ①b 注入预算**算术自洽**（2026-10-10 修「记忆很快被占满」的回归防线）──────────
+     * ⛔⛔ 改前 total=30000 **恰好等于**常驻四层之和（4000+6000+12000+8000）⇒ 日志段从来没进过
+     * 注入：超限时 `body.slice(0, total)` 砍的正是**排在最后**的日志（用户症状 =「容量小、
+     * 很快占满、新日志看不见」）。⛔ 这类 bug 光看代码看不出来 —— 每个数字各自都"合理"，
+     * 必须用**算术断言**盯住。倍率只做同比放大 ⇒ 自洽关系在**任意倍率**下都应成立（逐档验算）。 */
+    {
+      const sum = MEMORY_BUDGET.user + MEMORY_BUDGET.background + MEMORY_BUDGET.project + MEMORY_BUDGET.lessons + MEMORY_BUDGET.logs;
+      (sum <= MEMORY_BUDGET.total ? ok : fail)(
+        `【104】注入预算自洽（常驻四层 ${sum - MEMORY_BUDGET.logs} + 日志段 ${MEMORY_BUDGET.logs} = ${sum} ≤ total ${MEMORY_BUDGET.total}）`);
+      const badScale = MEMORY_SCALE_OPTIONS.filter((k) => {
+        const b = scaledMemoryBudget(k);
+        return b.user + b.background + b.project + b.lessons + b.logs > b.total;
+      });
+      (badScale.length === 0 ? ok : fail)(
+        `【104】倍率下预算仍自洽（${MEMORY_SCALE_OPTIONS.length} 档逐档验算；坏档：${badScale.join(",") || "无"}）`);
+      (MEMORY_SCALE_OPTIONS.includes(2) && MEMORY_SCALE_OPTIONS.includes(4) && MEMORY_SCALE_OPTIONS.includes(8)
+        && MEMORY_SCALE_OPTIONS.includes(10) && MEMORY_SCALE_OPTIONS.includes(16)
+        ? ok : fail)(`【104】倍率档含 ×2/×4/×8/×10/×16（实际 ${MEMORY_SCALE_OPTIONS.join("/")}）`);
+      (normalizeMemoryScale(8) === 8 && normalizeMemoryScale("3") === 1 && normalizeMemoryScale(0) === 1 && normalizeMemoryScale("x") === 1
+        ? ok : fail)("【104】倍率归一化：只认 1/2/4/8/10/16，其余回基准（手改配置也写不出 NaN 预算）");
+      const wm8 = layerWatermarks({ L1: MEMORY_PYRAMID.find((l) => l.id === "L1").budget * 8 * 0.5 }, 8);
+      (Math.abs((wm8.find((s) => s.id === "L1").ratio ?? -1) - 0.5) < 1e-9 ? ok : fail)(
+        "【104】水位按倍率算（×8 下用到一半 = 50%，⛔ 不是按基准算出的 400% 假警报）");
+    }
 
     /* ② 水位纯函数（边界 + 外部层 + 一致性） */
     const budgets = Object.fromEntries(MEMORY_PYRAMID.map((l) => [l.id, l.budget]));
@@ -233,8 +258,12 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     const memDir = join(ws, ".codex-harness", "memory");
     mkdirSync(memDir, { recursive: true });
     const inst = new MemoryLayers(join(ws, ".codex-harness", "userdata"));
-    const day = (n) => `2026-09-${String(10 + n).padStart(2, "0")}`;
-    /* 6 天日志（v2 布局：logs/），合计 6×8000=48000 字 > L4 预算 40000（logPerDay 8000×logDays 5，重度口径）的 90%（36000）⇒ 必然触发水位 */
+    /* ⛔ 日期必须**相对今天**生成（2026-10-10 修）：原来写死 `2026-09-10..15`，随着真实时间
+     * 推移落到 30 天前 ⇒ 走 age 触发而非 watermark ⇒「取最老一半」判据**恒红**
+     * （假红把真断言盖住了：实测 `trigger=age / 1 天`）。现在取「今天往前 6 天」⇒ 永远落在
+     * 30 天窗口内，稳定走 watermark 路径。 */
+    const day = (n) => new Date(Date.now() - (6 - n) * 86_400_000).toISOString().slice(0, 10);
+    /* 6 天日志（v2 布局：logs/），合计 6×8000=48000 字 > L4 预算（logPerDay × logDays）的 90% ⇒ 必然触发水位 */
     mkdirSync(join(memDir, "logs"), { recursive: true });
     for (let i = 0; i < 6; i += 1) writeFileSync(join(memDir, "logs", `${day(i)}.md`), `## ${day(i)}\n${"日志内容".repeat(2000)}\n`, "utf8");
     const hint = await inst.watermarkHint(ws);
@@ -244,7 +273,8 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     (pick && pick.trigger === "watermark" && pick.dates.length === 3 ? ok : fail)(`【104】水位触发取最老一半（实际 ${pick?.trigger} / ${pick?.dates?.length} 天）`);
     const res = await inst.distill(ws, async () => "## 核心\n- 结论：约定 A\n\n## 纪要\n- 阶段纪要：做了 B\n", true);
     (res.ok ? ok : fail)(`【104】蒸馏真跑成功（${res.reason ?? "ok"}）`);
-    (res.rollup === "rollups/2026-09.md" && existsSync(join(memDir, "rollups", "2026-09.md")) ? ok : fail)(`【104】L5 月度卷宗真落盘（${res.rollup}）`);
+    const expectRollup = `rollups/${day(5).slice(0, 7)}.md`;   // 月卷取「那批日志里最新一天」的月份
+    (res.rollup === expectRollup && existsSync(join(memDir, "rollups", expectRollup.replace("rollups/", ""))) ? ok : fail)(`【104】L5 月度卷宗真落盘（${res.rollup}）`);
     (readFileSync(join(memDir, "project", "MEMORY.md"), "utf8").includes("约定 A") ? ok : fail)("【104】L1 项目宪法写入蒸馏「核心」段（project/MEMORY.md）");
     (pick && existsSync(join(memDir, "archive", `${pick.dates[0]}.md`)) ? ok : fail)("【104】L6 冷存档拿到原文（移动而非删除）");
     (pick && !existsSync(join(memDir, "logs", `${pick.dates[0]}.md`)) ? ok : fail)("【104】被蒸日志已从 L4（logs/）移走（否则水位永远降不下来）");
@@ -543,9 +573,12 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
       const memDir = join(ws, ".codex-harness", "memory");
       const inst = new MemoryLayers(join(ws, ".codex-harness", "userdata"));
 
-      /* ④ 截断可见化：L1 超预算 → 注入块里必须有「被截断」标记，引擎不得在盲区里干活 */
+      /* ④ 截断可见化：L1 超预算 → 注入块里必须有「被截断」标记，引擎不得在盲区里干活
+       * ⛔ 夹具按**当前预算**生成（2026-10-10 修）：原来写死 13000 字（配当时 12000 的预算），
+       * 预算翻到 24000 之后夹具不再超限 ⇒ 判据**恒红**。写死字数的夹具 = 改预算必漏。 */
       mkdirSync(join(memDir, "project"), { recursive: true });
-      writeFileSync(join(memDir, "project", "MEMORY.md"), `# 项目记忆\n\n${"宪法条目。".repeat(2600)}`, "utf8"); // 13000 字 > 12000
+      const l1Over = Math.ceil(mem.MEMORY_BUDGET.project / 5) + 400;   // 「宪法条目。」= 5 字
+      writeFileSync(join(memDir, "project", "MEMORY.md"), `# 项目记忆\n\n${"宪法条目。".repeat(l1Over)}`, "utf8");
       const ctx = (await inst.context(ws)).text;
       (/被截断 \d+ 字/.test(ctx) && /盲区/.test(ctx) ? ok : fail)("【108】L1 超预算注入时带截断标记（不再静默丢内容）");
 

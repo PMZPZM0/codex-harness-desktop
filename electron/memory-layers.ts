@@ -63,19 +63,69 @@ const LEGACY_MARK = ".layout-v2-done";
 
 /** 注入预算（字符）：超出即提示蒸馏，不做静默截断丢失。
  *  口径 = **重度开发者**（2026-09-22 用户定：一天几十轮、多会话并行、大项目），
- *  旧值（800/1500/…）六七轮就触 90% 蒸馏线，太紧。各层不会同时满，total 是总闸。 */
+ *  旧值（800/1500/…）六七轮就触 90% 蒸馏线，太紧。各层不会同时满，total 是总闸。
+ *
+ *  ⛔⛔ 2026-10-10 修「记忆库很快被占满」：改前 total=30000 **恰好等于**常驻四层之和
+ *  （4000+6000+12000+8000）⇒ **日志段从来没有过预算** —— 超限时走 `body.slice(0, total)`，
+ *  而日志拼在**最后**，于是每一轮注入被砍掉的都是日志（用户症状：容量小、很快占满、
+ *  新日志/新记忆看不见）。根因不是"总量小"，是**两个数字不自洽**：各层独立预算之和
+ *  远大于总闸。⇒ 现在 total 显式 = 常驻四层上限 + 日志段上限（logs），三者算术自洽
+ *  （守卫【104】有算术断言盯住，防止以后再把它们改到互相打架）。
+ *  ⛔ 2026-10-10 同日（用户：「现在初始容量太小了，先扩大一下」）：常驻四层与日志段
+ *  **整体翻倍**（基准容量），total 随之 = 60000 + 30000 = 90000。用户级倍率（见
+ *  MEMORY_SCALE_OPTIONS）在这个基准上继续放大 —— 改基准时两处一起看。 */
 export const MEMORY_BUDGET = {
-  user: 4000,
-  background: 6000,
-  project: 12000,
+  user: 8000,
+  background: 12000,
+  project: 24000,
   /** L1.5 坑与纪律：独立预算，注入时排在最前（纪律比背景更容易被反复踩） */
-  lessons: 8000,
+  lessons: 16000,
   /** L4 每日日志：注入时每天钳 logPerDay、回灌最近 logDays 天；
    *  L4 水位预算 = logPerDay × logDays（满了自动蒸最老一半，不丢内容） */
   logPerDay: 8000,
   logDays: 5,
-  total: 30000,
+  /** 日志段**整体**注入上限（区别于 L4 的「存储水位」logPerDay×logDays：存储可以攒满 5 天，
+   *  注入只给 logs 这么多 —— 超了**按天从最旧丢**，⛔ 不按字符砍尾）。 */
+  logs: 30000,
+  /** 总闸 = 常驻四层（user+background+project+lessons = 60000）+ 日志段（logs）。 */
+  total: 90000,
 } as const;
+
+/* ── 容量倍率（2026-10-10 用户：「记忆库容量增加倍率功能」）────────────────────────
+   用途：**按倍数扩展记忆库容量**（长周期 / 大项目一次性把预算放宽，不必逐层手改）。
+   ⛔ 只放大**字符**类预算：`logDays`（回灌几天）不参与放大 —— ×16 会变成 80 天日志，
+   那是"回灌窗口"不是"容量"。各层与 total **同比**放大 ⇒ 预算自洽关系
+   （四层之和 + logs = total）在任意倍率下都成立（守卫【104】按倍率逐档验算）。 */
+export const MEMORY_SCALE_OPTIONS = [1, 2, 4, 8, 10, 16] as const;
+export const DEFAULT_MEMORY_SCALE = 1;
+
+/** 倍率归一化：只接受选项里的值，其余（手改配置 / 旧版本残留 / NaN）一律回基准。 */
+export function normalizeMemoryScale(value: unknown): number {
+  const n = Math.round(Number(value));
+  return (MEMORY_SCALE_OPTIONS as readonly number[]).includes(n) ? n : DEFAULT_MEMORY_SCALE;
+}
+
+/** 注入预算的形状（基准 MEMORY_BUDGET 与放大后的版本共用）。 */
+export type MemoryBudget = {
+  user: number; background: number; project: number; lessons: number;
+  logPerDay: number; logDays: number; logs: number; total: number;
+};
+
+/** 按倍率放大后的预算（基准 = MEMORY_BUDGET；k=1 时与基准逐字段相同）。 */
+export function scaledMemoryBudget(scale: unknown = DEFAULT_MEMORY_SCALE): MemoryBudget {
+  const k = normalizeMemoryScale(scale);
+  if (k === 1) return { ...MEMORY_BUDGET };
+  return {
+    user: MEMORY_BUDGET.user * k,
+    background: MEMORY_BUDGET.background * k,
+    project: MEMORY_BUDGET.project * k,
+    lessons: MEMORY_BUDGET.lessons * k,
+    logPerDay: MEMORY_BUDGET.logPerDay * k,
+    logDays: MEMORY_BUDGET.logDays,            // ⛔ 不放大（回灌窗口，不是容量）
+    logs: MEMORY_BUDGET.logs * k,
+    total: MEMORY_BUDGET.total * k,
+  };
+}
 
 /** 纪律文件行数上限：超了不自动删（用户数据），只在文件头提示整理/蒸馏 */
 const LESSONS_MAX_LINES = 120;
@@ -132,14 +182,18 @@ export const MEMORY_PYRAMID: readonly PyramidLayerDef[] = [
 
 export type PyramidLayerStatus = PyramidLayerDef & { used: number; ratio: number | null; needDistill: boolean };
 
-/** 按「层 id → 当前字符数」算水位（**纯函数**：预检【104】直接真跑它，不依赖文件系统） */
-export function layerWatermarks(used: Partial<Record<PyramidLayerId, number>> = {}): PyramidLayerStatus[] {
+/** 按「层 id → 当前字符数」算水位（**纯函数**：预检【104】直接真跑它，不依赖文件系统）。
+ *  ⛔ scale 只作用于**输出**的 budget（MEMORY_PYRAMID 仍是基准值）—— 水位统一按当前倍率算，
+ *  否则容量放大后水位条还按旧预算画，会出现"明明没用多少却报 95%"的假警报。 */
+export function layerWatermarks(used: Partial<Record<PyramidLayerId, number>> = {}, scale: unknown = DEFAULT_MEMORY_SCALE): PyramidLayerStatus[] {
+  const k = normalizeMemoryScale(scale);
   return MEMORY_PYRAMID.map((layer) => {
     const cur = Math.max(0, Math.round(used[layer.id] ?? 0));
+    const budget = layer.budget > 0 ? layer.budget * k : 0;
     /* 外部层（budget 0：冷存档 / 碎片池）不按字符算比例，也就永远不触发蒸馏 */
-    if (layer.budget <= 0) return { ...layer, used: cur, ratio: null, needDistill: false };
-    const ratio = cur / layer.budget;
-    return { ...layer, used: cur, ratio, needDistill: ratio >= MEMORY_DISTILL_THRESHOLD };
+    if (budget <= 0) return { ...layer, budget, used: cur, ratio: null, needDistill: false };
+    const ratio = cur / budget;
+    return { ...layer, budget, used: cur, ratio, needDistill: ratio >= MEMORY_DISTILL_THRESHOLD };
   });
 }
 
@@ -264,9 +318,30 @@ export function isScratchWorkspace(workspace: string): boolean {
 
 export class MemoryLayers {
   private readonly userFile: string;
+  /** 用户选择的容量倍率（×1 基准）。⛔ 由外部注入 —— 本模块是纯逻辑，不读设置文件。 */
+  private scale: number = DEFAULT_MEMORY_SCALE;
+  private budgetCache: { scale: number; value: MemoryBudget } | null = null;
 
   constructor(private readonly userDataDir: string) {
     this.userFile = path.join(userDataDir, MEMORY_SUB, "USER.md");
+  }
+
+  /** 设置容量倍率（设置页改完调它）。非法值回退基准；返回实际生效的倍率。 */
+  setScale(scale: unknown): number {
+    this.scale = normalizeMemoryScale(scale);
+    this.budgetCache = null;
+    return this.scale;
+  }
+
+  getScale(): number { return this.scale; }
+
+  /** 当前生效的注入预算（按倍率放大）。⛔ 本模块**只从这里取预算**，不直接读 MEMORY_BUDGET
+   *  —— 直接读会绕过倍率（改一处漏一处，正是"设置改了没生效"那类 bug 的温床）。 */
+  get budget(): MemoryBudget {
+    if (!this.budgetCache || this.budgetCache.scale !== this.scale) {
+      this.budgetCache = { scale: this.scale, value: scaledMemoryBudget(this.scale) };
+    }
+    return this.budgetCache.value;
   }
 
   private projectDir(workspace?: string): string | null {
@@ -538,12 +613,13 @@ export class MemoryLayers {
     return fresh;
   }
 
-  /** 最近 N 天日志，供注入回灌（不回灌全部，否则上下文爆炸） */
-  async recentLogs(workspace: string | undefined, days = MEMORY_BUDGET.logDays): Promise<{ date: string; text: string }[]> {
+  /** 最近 N 天日志，供注入回灌（不回灌全部，否则上下文爆炸）。
+   *  ⛔ 缺省天数取自**当前倍率下的预算**（logDays 本身不随倍率变，但口径统一从这里来）。 */
+  async recentLogs(workspace: string | undefined, days?: number): Promise<{ date: string; text: string }[]> {
     const dir = this.projectDir(workspace);
     if (!dir) return [];
     await this.migrateLayout(dir);
-    const dates = (await this.listLogDates(dir)).slice(-days);
+    const dates = (await this.listLogDates(dir)).slice(-(days ?? this.budget.logDays));
     const out: { date: string; text: string }[] = [];
     for (const date of dates) {
       const text = await this.readText(await this.logFilePath(dir, date));
@@ -593,7 +669,10 @@ export class MemoryLayers {
    * 这是「引擎自己知道什么时候该蒸馏」的唯一通道 —— 它每轮都随常驻记忆注入。
    */
   async watermarkHint(workspace?: string): Promise<string> {
-    const [statuses, pending] = await Promise.all([this.layerUsage(workspace).then(layerWatermarks), this.pickDistill(workspace)]);
+    const [statuses, pending] = await Promise.all([
+      this.layerUsage(workspace).then((used) => layerWatermarks(used, this.scale)),
+      this.pickDistill(workspace),
+    ]);
     const hot = statuses.filter((s) => s.needDistill);
     if (!hot.length) return "";
     const lines = hot.map((s) => {
@@ -683,15 +762,17 @@ export class MemoryLayers {
   // ── 注入上下文 ─────────────────────────────────────────────────
   /** 拼装常驻记忆块：L1.5 坑与纪律（最前）+ L0 + L1 常驻，L2 只回灌最近 3 天 */
   async context(workspace?: string, includeWorkspace = true): Promise<{ text: string; stats: { chars: number; over: boolean } }> {
+    /* 按当前倍率取一次预算（⛔ 全函数共用一个局部变量 —— 到处各读一次必然漏掉某一处）。 */
+    const budget = this.budget;
     const userRaw = (await this.readUser()).trim();
     const backgroundRaw = includeWorkspace ? (await this.readBackground(workspace)).trim() : "";
     const projectRaw = includeWorkspace ? (await this.readProject(workspace)).trim() : "";
     const lessonsRaw = includeWorkspace ? (await this.readLessons(workspace)).trim() : "";
-    const user = clamp(userRaw, MEMORY_BUDGET.user);
-    const background = clamp(backgroundRaw, MEMORY_BUDGET.background);
-    const project = clamp(projectRaw, MEMORY_BUDGET.project);
+    const user = clamp(userRaw, budget.user);
+    const background = clamp(backgroundRaw, budget.background);
+    const project = clamp(projectRaw, budget.project);
     /* 注入前按分类重排（**纠错最前**）；⛔ 只重排注入文本，磁盘上的顺序不动（用户的手工组织不被覆盖） */
-    const lessons = clamp(includeWorkspace && lessonsRaw ? sortLessonSections(lessonsRaw) : "", MEMORY_BUDGET.lessons);
+    const lessons = clamp(includeWorkspace && lessonsRaw ? sortLessonSections(lessonsRaw) : "", budget.lessons);
     const logs = includeWorkspace ? await this.recentLogs(workspace) : [];
 
     const blocks: string[] = [];
@@ -703,11 +784,31 @@ export class MemoryLayers {
     if (background.text) blocks.push(`## 项目背景${background.cut ? clipped("项目背景", background.cut) : ""}\n${background.text}`);
     if (project.text) blocks.push(`## 项目记忆${project.cut ? clipped("项目记忆", project.cut) : ""}\n${project.text}`);
     if (logs.length) {
-      const logBlocks = logs.map((entry) => {
-        const trimmed = clamp(entry.text, MEMORY_BUDGET.logPerDay);
-        return `### ${entry.date}${trimmed.cut ? clipped(`${entry.date} 日志`, trimmed.cut) : ""}\n${trimmed.text}`;
-      });
-      blocks.push(`## 近期工作日志（最近 ${logs.length} 天）\n${logBlocks.join("\n\n")}`);
+      /* ⛔⛔ 日志段单独占预算（2026-10-10 修「记忆很快被占满」）：原来这段**没有任何上限**，
+         它把前四层之外的剩余字符全吃掉，再被下面的 `body.slice(0, total)` 一刀切 ——
+         而日志拼在**最后**，于是每轮被砍掉的恰好是日志（用户症状：容量小、很快占满）。
+         现在：先量出前四层实际占了多少，剩下的（且不超过 MEMORY_BUDGET.logs）才给日志；
+         日志内部**按天从最旧开始丢**（recentLogs 是日期升序 = 最旧在前，故从尾往前装）
+         —— ⛔ 不按字符砍尾：那会把某一天切成半截，读起来像文件损坏。 */
+      const room = Math.max(0, Math.min(budget.logs, budget.total - blocks.join("\n\n").length));
+      const kept: string[] = [];
+      let used = 0;
+      for (let i = logs.length - 1; i >= 0; i -= 1) {
+        const trimmed = clamp(logs[i].text, budget.logPerDay);
+        const block = `### ${logs[i].date}${trimmed.cut ? clipped(`${logs[i].date} 日志`, trimmed.cut) : ""}\n${trimmed.text}`;
+        /* ⛔ 至少留一天（单天已被 logPerDay 钳过，不会超 room）—— 否则日志段整段消失，
+           那正是修复前的老症状。 */
+        if (kept.length && used + block.length > room) break;
+        kept.unshift(block);
+        used += block.length;
+      }
+      if (kept.length) {
+        const dropped = logs.length - kept.length;
+        const note = dropped > 0
+          ? `\n> ⛔ 更早的 ${dropped} 天日志本轮未注入（日志段预算 ${budget.logs} 字）—— 原文仍在 logs/ 里，需要时直接读。`
+          : "";
+        blocks.push(`## 近期工作日志（最近 ${kept.length} 天）\n${kept.join("\n\n")}${note}`);
+      }
     }
     /* 水位提示：只在某层到 90% 线时才非空 —— 引擎据此自己决定"先蒸馏再干活"。
        ⛔ 必须放在 [Harness 常驻记忆 …] 标记**之内**：这段是注入给引擎的，不是给用户看的，
@@ -716,8 +817,11 @@ export class MemoryLayers {
     if (!blocks.length) return hint ? { text: `\n\n[Harness 常驻记忆]\n${hint}\n[常驻记忆结束]\n`, stats: { chars: hint.length, over: true } } : { text: "", stats: { chars: 0, over: false } };
 
     let body = blocks.join("\n\n");
-    const over = lessons.over || user.over || background.over || project.over || body.length > MEMORY_BUDGET.total || Boolean(hint);
-    if (body.length > MEMORY_BUDGET.total) body = `${body.slice(0, MEMORY_BUDGET.total).trimEnd()}\n\n> ⛔ 常驻记忆超出总预算，尾部约 ${body.length - MEMORY_BUDGET.total} 字被截断（大概率是工作日志）。先蒸馏（指令第 9 条）再干活 —— 你现在看不到全部记忆。`;
+    const over = lessons.over || user.over || background.over || project.over || body.length > budget.total || Boolean(hint);
+    /* ⛔ 兜底（正常不会触发：各层与日志段都已按各自预算 clamp ⇒ 四层之和 + logs 恒 ≤ total）。
+       真触发说明**预算配置不自洽**了 —— 提示必须指向这一点，别含糊说"尾部被截断"，
+       否则下次又会被当成"容量不够"去调大 total（该修的是不自洽本身）。 */
+    if (body.length > budget.total) body = `${body.slice(0, budget.total).trimEnd()}\n\n> ⛔ 常驻记忆仍超出总预算 ${body.length - budget.total} 字（各层都已按预算钳制 ⇒ 是预算配置不自洽）。先蒸馏（指令第 9 条）再干活。`;
     const tail = hint ? `\n\n${hint}` : "";
     return { text: `\n\n[Harness 常驻记忆 · 以下为已确认的长期上下文，与当前请求冲突时以当前请求为准]\n${body}${tail}\n[常驻记忆结束]\n`, stats: { chars: body.length + hint.length, over } };
   }
@@ -752,9 +856,9 @@ export class MemoryLayers {
     let trigger: DistillPick["trigger"] = "age";
     let dates = all.filter((date) => daysBetween(date, base) >= DISTILL_AFTER_DAYS);
     if (!dates.length) {
-      const budget = MEMORY_BUDGET.logPerDay * MEMORY_BUDGET.logDays;
+      const logBudget = this.budget.logPerDay * this.budget.logDays;
       const used = await this.logChars(dir);
-      if (all.length >= 4 && budget > 0 && used / budget >= MEMORY_DISTILL_THRESHOLD) {
+      if (all.length >= 4 && logBudget > 0 && used / logBudget >= MEMORY_DISTILL_THRESHOLD) {
         dates = all.slice(0, Math.ceil(all.length / 2));
         trigger = "watermark";
       }
@@ -878,6 +982,7 @@ export class MemoryLayers {
 
   // ── 设置页快照 ─────────────────────────────────────────────────
   async snapshot(workspace?: string): Promise<MemoryLayersSnapshot> {
+    const budget = this.budget;   // 按当前倍率（水位与 over 判定都要用它）
     const dir = this.projectDir(workspace);
     const user = await this.readUser();
     const background = await this.readBackground(workspace);
@@ -913,10 +1018,11 @@ export class MemoryLayers {
         lessons: lessonsChars,
         logs: logsChars,
         total,
-        over: user.length > MEMORY_BUDGET.user || background.length > MEMORY_BUDGET.background || project.length > MEMORY_BUDGET.project || lessonsChars > MEMORY_BUDGET.lessons || total > MEMORY_BUDGET.total,
+        over: user.length > budget.user || background.length > budget.background || project.length > budget.project || lessonsChars > budget.lessons || total > budget.total,
       },
-      /* 金字塔八层水位（needDistill = 已达 90% 线）—— 设置页据此展示漏斗与"该蒸馏了" */
-      layers: layerWatermarks(await this.layerUsage(workspace)),
+      /* 金字塔八层水位（needDistill = 已达 90% 线）—— 设置页据此展示漏斗与"该蒸馏了"
+         ⛔ 必须带当前倍率：容量放大后水位条若还按基准预算画，会出现"没用多少却报 95%"的假警报。 */
+      layers: layerWatermarks(await this.layerUsage(workspace), this.scale),
       /* 纪律与坑的分类计数（纠错单独一类，用户 09-22 要求） */
       lessonGroups: groupLessonSections(lessons),
       pendingDistill: { dates: pending?.dates ?? [], chars: pending?.chars ?? 0 },
