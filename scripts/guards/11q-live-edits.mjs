@@ -160,15 +160,15 @@ ok(!seg9.includes("tb-goals-entry") && !existsSync(join(ROOT, "src/features/app-
 ok(!/\.goals-pop\s*\{/.test(css) && !/\.tb-goals-entry\s*\{/.test(css) && !/\.goals-task-list/.test(css),
   "⛔ goals-* / tb-goals-* 样式已随 UI 一并清理（别留死样式；@keyframes pulse 除外，它还有别的消费方）");
 
-/* ── 七、收尾冻结（10-06 夜二改 · 用户实测「运行结束后，我查看过程没有 [这些 +N -M]」）──────────
-   收尾不再清场：行换成最终报告的定格数字，收成**一块始终可见**的 frozenEditRows（落在过程与
-   最终答复之间——⛔ 不塞回折叠组：收起状态下视觉/文本都是空的，等于没显示，截图实锤过）。
-   运行中的就地锚定（liveAnchorsRef + renderAfter）保持不变。 */
-ok(sessionQueue.includes("const frozenFiles = (finalFiles.length ? finalFiles : liveLeftover) as LiveFileChange[];")
-  && sessionQueue.includes("const frozenEditRows = frozenFiles.length ? <LiveFileRows files={frozenFiles} /> : null"),
-  "收尾冻结块：取最终报告渲染一整块「编辑 <文件> +N -M」；⛔ 报告缺失时由 live 兜底顶上（10-10 终端用户：板块凭空消失）");
-ok(sessionQueue.includes("const frozenIndex = frozenEditRows ? plan.findIndex") && sessionQueue.includes("pushFrozen"),
-  "冻结块落点在**最终答复之前**（过程之后；不展开折叠也可见，也避免吊在整个回合末尾）");
+/* ── 七、收尾汇报（10-10 三改 · 用户定稿：**汇总消息下面**的富卡片，⛔ 别再挪位置）──────────
+   收尾的「已编辑文件」只由 03-turn-view 的 `<CompletedChanges>`（汇总消息下面）负责，富卡片形态
+   （头部计数 + 文件行 + 悬停 diff）；SessionQueue 里**不许**再插任何收尾编辑块 —— 曾插在
+   「过程与最终答复之间」，折叠口径改掉后跑到汇总上面，用户截图痛骂（10-10 二轮）。
+   ⛔ 兜底在 CompletedChanges 里：最终报告缺失（中断/异常漏结算）时用还在的 live 数据顶上。 */
+ok(!sessionQueue.includes("frozenEditRows") && !sessionQueue.includes("frozenFiles"),
+  "⛔ SessionQueue 不再有任何收尾编辑块（曾插在汇总上面 —— 用户 10-10 截图痛骂后撤除）");
+ok(status.includes("const tracked = finalReport.length ? finalReport : getTurnLiveFileChanges(turn.id);"),
+  "⛔ 汇报卡兜底：最终报告缺失时由 live 数据顶上（板块不凭空消失；富卡片形态不变）");
 ok(sessionQueue.includes("const liveRowsFor = (itemId: string) => {") && sessionQueue.includes("if (!running) return null;")
   && (sessionQueue.match(/renderAfter=\{\(unit\) => liveRowsFor\(unit\.item\.id\)\}/g) ?? []).length === 2,
   "运行中的就地锚定保持原样（仅运行态两处 renderAfter；收尾态不锚回折叠里）");

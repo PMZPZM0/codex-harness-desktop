@@ -32,7 +32,9 @@ export function BackgroundTaskCapsule({ threadId = "" }: { threadId?: string }) 
   const [config, setLocalConfig] = useState(getPollConfig);
 
   const running = useMemo(
-    () => tasks.filter((task) => task.status === "polling" && (!threadId || !task.threadId || task.threadId === threadId)),
+    /* ⛔ threadId 为空（欢迎页/新任务，还没有会话）⇒ 直接不显示任何后台任务 ——
+     原来的 `!threadId` 恒真会把**别的会话**的后台任务整包带进欢迎页（10-10 用户截图：「串到欢迎界面」）。 */
+    () => (threadId ? tasks.filter((task) => task.status === "polling" && (!task.threadId || task.threadId === threadId)) : []),
     [tasks, threadId],
   );
 

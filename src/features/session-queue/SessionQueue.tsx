@@ -315,16 +315,10 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
   };
   // 还没轮到任何工具项就出现的文件（锚 = null）：落在流的最前面，不至于丢行（仅运行中）。
   const headLiveFiles = running ? getTurnLiveFileChanges(turn.id).filter((file) => liveAnchorsRef.current.get(file.path) === null) : [];
-  // 收尾冻结块：最终报告（含重启后重播的）→ 一整块「编辑 <文件> +N -M」，跟随「已更改 N 个文件」卡
-  // 一起跨重启存活（数据源：主进程落盘 + thread/resume 重播，见 electron/turn-file-watch.ts）。
-  // （最终报告缺失时由下面的 live 兜底顶上 —— 10-10 终端用户反馈「板块凭空消失」。）
-  // ⛔ 兜底（10-10 终端用户反馈「最后的编辑文件展示板块也没有了」）：收尾广播没到（中断/异常
-  //    路径漏了结算）时，运行中的 live 数据**还在** —— 只有最终报告落地才会清场 ⇒ 拿它顶上，
-  //    板块不再凭空消失；最终报告有内容时以它为准（定格数字）。
-  const finalFiles = !running ? (getTurnFileChanges(turn.id) as LiveFileChange[]) : [];
-  const liveLeftover = !running && !finalFiles.length ? (getTurnLiveFileChanges(turn.id) as LiveFileChange[]) : [];
-  const frozenFiles = (finalFiles.length ? finalFiles : liveLeftover) as LiveFileChange[];
-  const frozenEditRows = frozenFiles.length ? <LiveFileRows files={frozenFiles} /> : null;
+  /* ⛔⛔ 10-10 二改（用户发火纠正）：收尾的「已编辑文件」**富卡片**只由 03-turn-view 的
+     `<CompletedChanges>`（汇总消息**下面**）负责 —— 兜底也已搬进它（最终报告缺失时用 live 数据）。
+     这里**不要再插**任何收尾编辑块：曾插在「过程与最终答复之间」，折叠口径改掉后它跑到
+     汇总**上面**，用户截图痛骂；运行中的就地锚定行（liveRowsFor）不受影响。 */
 
   const renderItem = (unit: FoldUnit, hideFooter?: boolean, reasoningActive?: boolean) => (
     <MemoItemView
@@ -450,16 +444,12 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
       // 收尾标记：第一个过程段（lead）挂回合收尾皮肤 + 回合总失败数，其余段用意图摘要标题。
       const leadFoldIndex = plan.findIndex((entry) => entry.kind === "fold");
       const turnFailedTotal = failedCountOf(units);
-      /* 冻结编辑块的落点（10-06 夜二改）：**最终答复之前**（回合过程之后）——不展开折叠也能看见，
-         也避免"吊在整个回合之后"（用户 Round J 明确嫌丑的形态）。 */
-      const frozenIndex = frozenEditRows ? plan.findIndex((entry) => entry.kind !== "fold" && entry.unit.item.id === finalUnit.item.id) : -1;
       return <>
         {plan.map((entry, index) => (
           /* ⛔ key 必须与旧形态逐字一致（fold = fold-completed-…、正文/单元 = item id）——
              换成新前缀会让运行→完成切换时这些元素**整块重挂**，重放揭示动画（用户最烦的
              「回合结束又放一遍」同型问题；上游那段注释点名「相同的 key ⇒ 完成瞬间不重挂」）。 */
           <Fragment key={entry.kind === "fold" ? `fold-completed-${turn.id}-${index}` : entry.unit.item.id}>
-            {index === frozenIndex ? frozenEditRows : null}
             {entry.kind === "fold"
               ? (
                 <FoldGroup
@@ -487,14 +477,11 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
               : renderItem(entry.unit, true)}
           </Fragment>
         ))}
-        {frozenIndex < 0 ? frozenEditRows : null}
       </>;
     }
   }
   const out: React.ReactNode[] = [];
   let bodySeen = false;
-  let frozenInserted = false;
-  const pushFrozen = () => { if (frozenEditRows && !frozenInserted) { frozenInserted = true; out.push(<Fragment key="edit-frozen">{frozenEditRows}</Fragment>); } };
   for (const seg of segments) {
     if (seg.kind === "foldable") {
       const lead = !bodySeen;
@@ -516,12 +503,10 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
     }
     for (const u of seg.units) {
       if (u.kind === "body") bodySeen = true;
-      if (u.item.id === finalUnit?.item.id) pushFrozen();
       // 与流式态同构：finalAgent 的 footer 永远不在 inner 渲染，由 TurnView 外层 MessageFooter 统一渲染。
       out.push(renderItem(u, u.item.type === "agentMessage" ? true : undefined));
     }
   }
-  pushFrozen();
   return <>{out}</>;
 }
 
