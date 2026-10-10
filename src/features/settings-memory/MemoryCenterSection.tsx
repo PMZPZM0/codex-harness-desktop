@@ -7,18 +7,23 @@
  * 09-25 新增「记忆后端」区块（`MemoryBackendSection`）—— 这不是搬迁，是本轮新加的功能：
  * 二选一（内置记忆金字塔 / MCP 记忆服务）。它自持状态，不占 App 的 props。
  */
-import { useEffect, useState, type CSSProperties } from "react";
-import { MemoryFunnel } from "../memory";
+import { type CSSProperties, useEffect, useState } from "react";
+import { MEMORY_LAYER_RULES } from "../../lib/memory-scope-rules.mjs";
+import { PyramidPanel } from "./PyramidPanel";
+import { SharedLibraryPanel } from "./SharedLibraryPanel";
+import { BackendConsolePanel } from "./BackendConsolePanel";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { PageInfo } from "../../components/SettingsHead";
-import { Archive, BookOpen, Bot, Cloud, Database, LayoutGrid, Search, Server } from "lucide-react";
+import { Archive, BookOpen, Bot, Cloud, Database, Layers, LayoutGrid, Search, Server } from "lucide-react";
 import { MemoryConfigModal } from "../../features/memory";
 
 export type MemoryCenterSectionProps = {
   /** 查看某条记忆的全文（10-10：弹窗里直接能给内容，⛔ 不再只是"再打开记忆中心"） */
   setMemoryPreview?: (entry: any) => void;
   /** 跳到某个来源会话 */
-  openThread?: (threadId: string) => void; memoryEnabled: any; setMemoryEnabled: any; setMemoryCenterTab: any; setMemoryCenterOpen: any; memories: any; memoryGroups: any; memoryLayers: any; memoryMode: any; workspaceMemoryEnabled: any; threads: any; scheduledTasks: any; localSkills: any; memoryStatus: any; memoryConfigOpen: any; memoryGateway: any; setMemoryGateway: any; memoryGatewayAction: any; setMemoryConfigOpen: any; testMemoryGateway: any; saveMemoryGateway: any };
+  openThread?: (threadId: string) => void;
+  /** 工作区记忆开关（控制台里的那一行控制项） */
+  setWorkspaceMemoryEnabled?: (workspace: string, enabled: boolean) => void; memoryEnabled: any; setMemoryEnabled: any; setMemoryCenterTab: any; setMemoryCenterOpen: any; memories: any; memoryGroups: any; memoryLayers: any; memoryMode: any; workspaceMemoryEnabled: any; threads: any; scheduledTasks: any; localSkills: any; memoryStatus: any; memoryConfigOpen: any; memoryGateway: any; setMemoryGateway: any; memoryGatewayAction: any; setMemoryConfigOpen: any; testMemoryGateway: any; saveMemoryGateway: any };
 
 /* ══ 记忆后端（09-25）════════════════════════════════════════════════════════
  * 二选一：内置记忆金字塔（默认）/ MCP 记忆服务（@vheins/local-memory-mcp）。
@@ -216,22 +221,38 @@ export function MemoryCenterSection(props: MemoryCenterSectionProps) {
     /* ── 两级信息架构（10-10 用户要求，与开发工具页 / 拓展接口页 / 记忆中心同一套规范）──
      一级只放**分类卡片**（含原先内嵌在主界面里的「记忆后端」与「被委派会话的记忆」两块）；
      内容一律进 SettingsDialog。⛔ 卡片复用跨页通用的 .settings-card*（⛔ 不再自造卡片样式）。 */
+  /* ── 三个并列功能入口（10-10 用户要求：「重构为三个并列的功能入口」）──────────────
+     ① 项目共享记忆库 —— 可切换项目，看该项目的共享记忆（用户档案 / 项目规则 / 工作纪律）
+     ② 金字塔记忆架构 —— 每个会话独立的金字塔式结构（共享层只读 + 独立层可写）
+     ③ 记忆后端选项   —— 存储后端与保存位置（含工作区开关）
+     ⛔ 三者是**并列**关系（同一行卡片、各自独立弹窗），⛔ 不是"总览 + 详情"的上下级。
+     ⛔ 分类与字段全部来自 src/lib/memory-scope-rules.mjs（唯一真相源），页面不另写层表。 */
   const [openCard, setOpenCard] = useState<string | null>(null);
+  /* 项目共享记忆库里切换的项目（默认当前工作区；为空则跟随页面工作区） */
+  const [sharedProject, setSharedProject] = useState<string>("");
+  const [sharedLayers, setSharedLayers] = useState<any>(null);
+  const effectiveSharedProject = sharedProject || threads.find((t: any) => t?.cwd)?.cwd || "";
+  useEffect(() => {
+    if (openCard !== "shared" || !effectiveSharedProject) return;
+    let alive = true;
+    Promise.resolve((window as any).codex?.readMemoryLayers?.(effectiveSharedProject))
+      .then((snapshot: any) => { if (alive) setSharedLayers(snapshot ?? null); })
+      .catch(() => { if (alive) setSharedLayers(null); });
+    return () => { alive = false; };
+  }, [openCard, effectiveSharedProject]);
   const cardMeta: Record<string, { title: string; hint: string; tab: string; detail: string }> = {
-    entries: { title: "记忆条目", hint: "按重要度与来源会话整理", tab: "library", detail: "记忆条目按重要度 P0–P3 分层、按来源会话分组：可逐条查看全文、置顶（★ 不会被自动清理）或删除。条目由智能体在干活时自己写下 —— 这里只做查看与整理。" },
-    resident: { title: "常驻记忆", hint: "每轮对话自动注入", tab: "layers", detail: "常驻记忆 = 用户档案（跨项目一致）+ 项目记忆（本项目全体共享）+ 近期日志，每轮对话自动注入。分层规则、水位与容量倍率都在弹窗内的「记忆中心 → 常驻记忆」里。" },
-    storage: { title: "存储与同步", hint: "本地 / 云端 · 工作区记忆", tab: "storage", detail: "决定记忆条目保存在本机还是通过云端网关召回；工作区记忆开关控制当前项目的背景 / 项目记忆 / 日志是否注入与捕获。" },
-    search: { title: "全局搜索", hint: "跨会话 / 记忆 / 任务 / 技能", tab: "search", detail: "一次检索会话、记忆条目、定时任务与技能；命中按会话分组，可直接预览全文或跳到那个会话。" },
+    shared: { title: "项目共享记忆库", hint: "切换项目 · 用户档案 / 项目规则 / 工作纪律", tab: "layers", detail: "按**项目**维度共享的记忆：用户档案（跨项目一致，全项目共用一份）、项目规则（项目宪法 L1 + 项目背景 L3）、工作纪律（L2，注入时排最前）。切换上面的项目即可看别的项目。" },
+    pyramid: { title: "金字塔记忆架构", hint: "每个会话独立 · 共享层只读 + 独立层自持", tab: "library", detail: "金字塔是**分层机制**：项目级共享层（L0–L6，本项目所有会话读同一份）+ 会话独立层（L7 碎片池与命名空间条目，别的会话读不到）。下面按**会话**展示：每个会话签到的共享层是同一份，独立层各不相同。" },
+    backend: { title: "记忆后端选项", hint: "内置金字塔 ⇄ MCP 记忆服务", tab: "storage", detail: "决定记忆**存在哪**：内置记忆金字塔（随包、离线）或可选的 MCP 记忆服务；以及条目保存在本机还是云端、当前项目是否开启工作区记忆。" },
   };
   const cards = [
-    { key: "entries", icon: <Archive size={15} />, title: "记忆条目", desc: "按重要度与来源会话整理，可逐条查看 / 置顶 / 删除", stat: `${memories.length} 条 · ${memoryGroups.length} 个会话 · ${memoryGroups.reduce((sum: any, g: any) => sum + g.items.filter((it: any) => (it as any).pinned).length, 0)} 置顶` },
-    { key: "resident", icon: <BookOpen size={15} />, title: "常驻记忆", desc: "用户档案 · 项目记忆 · 近期日志，每轮对话自动注入", stat: `用户 ${memoryLayers?.budget.user ?? 0} 字 · 背景 ${memoryLayers?.budget.background ?? 0} 字 · 项目 ${memoryLayers?.budget.project ?? 0} 字` },
-    { key: "storage", icon: <Cloud size={15} />, title: "存储与同步", desc: "记忆保存在本地或云端；工作区记忆跨会话复用", stat: `${memoryMode === "cloud" ? "云端同步" : "本地"}${workspaceMemoryEnabled ? " · 工作区已开启" : ""}` },
-    { key: "search", icon: <Search size={15} />, title: "全局搜索", desc: "检索会话、记忆、任务与技能，命中按会话分组", stat: `${threads.length} 会话 · ${scheduledTasks.length} 任务 · ${localSkills.length} 技能` },
-    { key: "delegated", icon: <Bot size={15} />, title: "被委派会话的记忆", desc: "子智能体 / 专家 / 专家团拿到与主会话同口径的记忆", stat: "委派回合同样会写入" },
-    { key: "backend", icon: <Database size={15} />, title: "记忆后端", desc: "内置记忆金字塔 ⇄ MCP 记忆服务，二选一", stat: "服务没装好会自动回退内置" },
+    { key: "shared", icon: <BookOpen size={15} />, title: "项目共享记忆库", desc: "切换项目，查看该项目的共享记忆：用户档案 · 项目规则 · 工作纪律", stat: `${(effectiveSharedProject.split(/[\\/]/).filter(Boolean).pop() || "未选项目")} · 3 类共享内容` },
+    { key: "pyramid", icon: <Layers size={15} />, title: "金字塔记忆架构", desc: "每个会话独立的金字塔结构：共享层只读、独立层自持", stat: "按会话查看" },
+    { key: "backend", icon: <Database size={15} />, title: "记忆后端选项", desc: "配置存储后端：内置金字塔 / MCP 记忆服务，本地或云端", stat: memoryMode === "cloud" ? "云端同步" : "本地" },
   ];
   const openMeta = openCard ? cardMeta[openCard] : null;
+  /* 项目清单：从会话的 cwd 去重（⛔ 不新增 IPC —— 页面已有 threads） */
+  const projects = Array.from(new Set((threads ?? []).map((t: any) => String(t?.cwd ?? "")).filter(Boolean))) as string[];
 return (
     <>
       <section className="settings-section stack memory-center">
@@ -260,59 +281,43 @@ return (
                     {/* 记忆后端（09-25 新增）：内置金字塔 ⇄ MCP 记忆服务二选一。 */}
                   
                     {/* ── 二级弹窗（⛔ 内容一律在这里，不得内嵌到主界面）──────────────────── */}
-                    {openCard && openMeta && (
-                      <SettingsDialog title={openMeta.title} icon={cards.find((c) => c.key === openCard)?.icon} hint={openMeta.hint} size="lg" onClose={() => setOpenCard(null)}>
+                    {openCard === "shared" && openMeta && (
+                      <SettingsDialog title="项目共享记忆库" icon={<BookOpen size={15} />} hint="左边选项目 · 右边三层书架" size="lg" onClose={() => setOpenCard(null)}>
+                        {/* ⛔ 这一套用**书架**形态（左书脊 + 右书架），与金字塔（梯形）和
+                            控制台（设备面板）刻意区分 —— 用户要求三套界面各自独立、不复用同一模板。 */}
+                        <SharedLibraryPanel
+                          workspace={effectiveSharedProject}
+                          projects={projects}
+                          onOpenCenter={() => { setMemoryCenterTab("layers" as any); setMemoryCenterOpen(true); setOpenCard(null); }}
+                        />
+                      </SettingsDialog>
+                    )}
+                    {openCard === "pyramid" && openMeta && (
+                      <SettingsDialog title="金字塔记忆架构" icon={<Layers size={15} />} hint="共享层所有会话同一份 · 独立层只有自己读得到" size="lg" onClose={() => setOpenCard(null)}>
                         <div className="settings-section stack">
-                          <p className="muted">{openMeta.detail}</p>
-                          {/* ⛔⛔ 10-10 用户反馈「每个卡片进去都是这个」= 弹窗里只有一句说明 + 一个按钮，
-                              等于让人再点一次。⇒ 弹窗必须**直接给内容**：条目给漏斗、常驻给层水位、
-                              存储给状态、搜索给统计；「在记忆中心打开」降级成次要入口。 */}
-                          {openCard === "entries" && (memoryGroups.length
-                            ? <MemoryFunnel
-                                groups={memoryGroups}
-                                readOnly
-                                onPreview={(entry: any) => setMemoryPreview?.(entry)}
-                                onTogglePin={() => undefined}
-                                onDeleteOne={() => undefined}
-                                onDeleteGroup={() => undefined}
-                                onOpenThread={(id: string) => openThread?.(id)}
-                              />
-                            : <p className="muted">还没有记忆条目 —— 智能体在干活时写下第一条之后，这里会按来源会话分组列出。</p>)}
-
-                          {openCard === "resident" && <MemoryLayerLevels snapshot={memoryLayers} />}
-
-                          {openCard === "storage" && (
-                            <div className="memory-rule-facts" style={{ gridTemplateColumns: "110px minmax(0, 1fr)", gap: "4px 10px" }}>
-                              <b>保存位置</b><span>{memoryMode === "cloud" ? `云端同步（网关${memoryGateway?.endpoint ? "已配置" : "未配置"}），本机保留缓存` : "本地（只存在本机）"}</span>
-                              <b>工作区记忆</b><span>{workspaceMemoryEnabled ? "已开启：背景 / 项目记忆 / 日志会注入并捕获" : "已关闭：只会注入用户档案，不做捕获"}</span>
-                              <b>已存条目</b><span>{memories.length} 条 · {memoryGroups.length} 个来源会话</span>
-                            </div>
-                          )}
-
-                          {openCard === "search" && (
-                            <div className="memory-rule-facts" style={{ gridTemplateColumns: "110px minmax(0, 1fr)", gap: "4px 10px" }}>
-                              <b>可检索</b><span>{threads.length} 个会话 · {memories.length} 条记忆 · {scheduledTasks.length} 个定时任务 · {localSkills.length} 个技能</span>
-                              <b>结果分组</b><span>按命中来源分组（会话 / 记忆 / 任务 / 技能），可预览全文</span>
-                            </div>
-                          )}
-
-                          <div className="memory-overview-actions">
-                            <button className="secondary-setting" onClick={() => { setMemoryCenterTab(openMeta.tab as any); setMemoryCenterOpen(true); setOpenCard(null); }}><LayoutGrid size={15} />在记忆中心打开完整视图</button>
+                          <div className="memory-rule-scope">
+                            <header className="memory-rule-scope-head">
+                              <span className="memory-rule-scope-chip">共享层（L0–L6）</span>
+                              <span className="memory-rule-scope-hint">本项目所有会话读的是**同一份** —— 换个会话看，这部分内容不变</span>
+                            </header>
+                            <header className="memory-rule-scope-head">
+                              <span className="memory-rule-scope-chip">独立层（L7 + 命名空间）</span>
+                              <span className="memory-rule-scope-hint">每个会话各自一份 —— 换个会话看，这部分**完全不同**</span>
+                            </header>
                           </div>
+                          {/* ⛔ 不复用旧记忆库组件（MemoryWorkbench）：那个回答的是"有哪些记忆"，
+                              这里要回答的是"金字塔长什么样、每个会话独立在哪" —— 形态不同。 */}
+                          <PyramidPanel snapshot={memoryLayers} workspace={effectiveSharedProject} onOpenThread={(id: string) => openThread?.(id)} />
                         </div>
                       </SettingsDialog>
                     )}
-                    {openCard === "backend" && (
-                      <SettingsDialog title="记忆后端" icon={<Database size={15} />} hint="内置金字塔 ⇄ MCP 记忆服务（二选一）" size="lg" onClose={() => setOpenCard(null)}>
-                        <MemoryBackendSection />
-                      </SettingsDialog>
-                    )}
-                    {openCard === "delegated" && (
-                      <SettingsDialog title="被委派会话的记忆" icon={<Bot size={15} />} hint="子智能体 / 专家 / 专家团主理人 / 成员" onClose={() => setOpenCard(null)}>
-                        <div className="settings-section stack">
-                          <p className="muted">子智能体 / 专家 / 专家团主理人 / 成员在被发起时，会拿到与主会话同样的常驻记忆（用户档案 · 项目记忆 · 纪律 · 近期日志），并按本次任务召回相关条目；工作区记忆关掉时只注入用户档案、不做召回。</p>
-                          <p className="muted">委派会话同样会写入记忆：回合结束时照常捕获进当日日志，检出纠错时另记一条坑。同一成员的成员会话会被复用，所以它自己也记得之前做过什么。</p>
-                        </div>
+                    {openCard === "backend" && openMeta && (
+                      <SettingsDialog title="记忆后端选项" icon={<Database size={15} />} hint="状态灯 · 设备大卡 · 控制行" size="lg" onClose={() => setOpenCard(null)}>
+                        {/* ⛔ 这一套用**设备控制台**形态（状态灯条 + 两个设备大卡 + 控制行）。 */}
+                        <BackendConsolePanel
+                          workspace={effectiveSharedProject}
+                          workspaceEnabled={workspaceMemoryEnabled}
+                        />
                       </SettingsDialog>
                     )}
   </section>

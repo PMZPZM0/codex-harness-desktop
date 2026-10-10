@@ -448,3 +448,175 @@
 .mui-tl-parent-note { color: var(--muted); }
 .mui-link { border: 0; background: transparent; padding: 0; font-size: 11.5px; color: var(--green); cursor: pointer; text-decoration: underline dotted; }
 .mui-link:hover { text-decoration: underline; }
+
+/* 项目共享记忆库：项目切换行（10-10 三个并列入口之一） */
+.memory-shared-picker { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 2px 0 4px; }
+.memory-shared-picker-label { font-size: 11.5px; color: var(--muted); }
+
+/* ── 金字塔记忆架构（10-10 重做）：梯形层叠 + 共享/独立双色 ─────────────────── */
+.pyr-root { display: flex; flex-direction: column; }
+.pyr-sessions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 2px 0 8px; }
+.pyr-sessions-label { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--muted); }
+.pyr-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; font-size: 11.5px; color: var(--muted); }
+.pyr-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.pyr-dot { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+.pyr-dot.shared { background: color-mix(in srgb, var(--green) 55%, transparent); }
+.pyr-dot.own { background: color-mix(in srgb, var(--orange, var(--accent)) 60%, transparent); }
+.pyr-stack { list-style: none; margin: 0 auto; padding: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.pyr-layer {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 12px; border-radius: 9px; border: 1px solid var(--line);
+  transition: transform .12s ease;
+}
+.pyr-layer.is-shared { background: color-mix(in srgb, var(--green) 9%, var(--bg)); }
+.pyr-layer.is-own { background: color-mix(in srgb, var(--orange, var(--accent)) 11%, var(--bg)); border-color: color-mix(in srgb, var(--orange, var(--accent)) 30%, var(--line)); }
+.pyr-layer:hover { transform: translateX(2px); }
+.pyr-layer-id { font-family: var(--mono); font-size: 11px; color: var(--muted); width: 20px; flex: none; }
+.pyr-layer-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.pyr-layer-name { font-size: 12.5px; }
+.pyr-layer-meta { font-size: 10.5px; color: var(--muted); }
+.pyr-layer-count { flex: none; font-size: 11px; }
+.pyr-layer-count em { font-style: normal; color: var(--muted); }
+.pyr-layer-count em.own { color: var(--orange, var(--accent)); }
+.pyr-layer-bar { position: relative; flex: none; width: 96px; height: 5px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--green) 12%, transparent); }
+.pyr-layer-bar i { display: block; height: 100%; background: var(--green); }
+.pyr-need { position: absolute; right: 0; top: -13px; font-size: 10px; color: var(--orange, var(--accent)); font-style: normal; }
+.pyr-note { margin: 12px 0 0; font-size: 11.5px; color: var(--muted); line-height: 1.7; }
+
+/* ── 金字塔层级效果（10-10 重做）：**真梯形层叠** —— 上窄下宽、上下紧贴 ──────────
+   ⛔ 不再是"逐层一行"的列表：每层是一个 clip-path 梯形，宽度逐层递增 ⇒ 整体就是金字塔。
+   层内那条填充就是该层水位（background-size 由组件按 ratio 写入）。 */
+.pyr-shape { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 0 4px; }
+.pyr-tier-wrap { width: 100%; display: flex; flex-direction: column; }
+.pyr-tier {
+  position: relative;
+  margin: 0 auto;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+  overflow: hidden;
+  clip-path: polygon(6.5% 0, 93.5% 0, 100% 100%, 0 100%);
+  background: var(--pyr-bg);
+  transition: filter .12s ease;
+}
+.pyr-tier:hover { filter: brightness(1.06); }
+.pyr-tier.is-shared {
+  --pyr-bg: color-mix(in srgb, var(--green) 15%, var(--bg));
+  --pyr-fill: color-mix(in srgb, var(--green) 46%, transparent);
+}
+.pyr-tier.is-own {
+  --pyr-bg: color-mix(in srgb, var(--orange, var(--accent)) 17%, var(--bg));
+  --pyr-fill: color-mix(in srgb, var(--orange, var(--accent)) 48%, transparent);
+}
+.pyr-tier.is-open { filter: brightness(1.1); }
+.pyr-tier-fill {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(90deg, var(--pyr-fill), var(--pyr-fill));
+  background-repeat: no-repeat;
+  background-position: left center;
+}
+.pyr-tier-body {
+  position: relative;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  font-size: 11.5px;
+}
+.pyr-tier-id { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.pyr-tier-name { font-size: 12.5px; }
+.pyr-tier-badge {
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  border-radius: 999px;
+  padding: 0 7px;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.pyr-tier.is-own .pyr-tier-badge { color: var(--orange, var(--accent)); border-color: color-mix(in srgb, var(--orange, var(--accent)) 35%, transparent); }
+.pyr-tier-need { font-size: 10.5px; color: var(--orange, var(--accent)); font-style: normal; }
+.pyr-tier-pct { font-size: 10.5px; color: var(--muted); min-width: 30px; text-align: right; }
+.pyr-detail {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 3px 10px;
+  margin: 6px 0 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  font-size: 11.5px;
+}
+.pyr-detail dt { color: var(--muted); }
+.pyr-detail dd { margin: 0; line-height: 1.55; }
+.pyr-note-hint { display: block; margin-top: 3px; }
+
+/* ══ 三套记忆界面各自独立的骨架（10-10 用户要求「不要复用现有设计或套用同一套模板」）══
+   书架：左书脊 + 右书架（横向分栏）· 金字塔：纵向梯形层叠 · 控制台：状态灯 + 设备卡 + 控制行 */
+
+/* ── ① 项目共享记忆库 · 书架 ───────────────────────────────────────── */
+.lib-root { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 12px; align-items: start; }
+.lib-spines { display: flex; flex-direction: column; gap: 4px; border-right: 1px solid var(--line); padding-right: 10px; }
+.lib-spine {
+  text-align: left; padding: 9px 10px; border: 1px solid transparent; border-left: 3px solid var(--line);
+  border-radius: 0 8px 8px 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px;
+}
+.lib-spine:hover { background: color-mix(in srgb, var(--green) 6%, transparent); color: inherit; }
+.lib-spine.is-pulled { border-left-color: var(--green); background: color-mix(in srgb, var(--green) 10%, var(--bg)); color: inherit; }
+.lib-spine-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-empty { color: var(--muted); font-size: 11.5px; }
+.lib-shelves { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.lib-head { display: flex; align-items: center; gap: 9px; }
+.lib-head-icon { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; background: color-mix(in srgb, var(--green) 13%, var(--bg)); color: var(--green); }
+.lib-head-copy { display: flex; flex-direction: column; min-width: 0; }
+.lib-head-copy small { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-loading { margin-left: auto; color: var(--muted); font-size: 11px; font-style: normal; }
+.lib-shelf { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.lib-shelf-head { display: flex; align-items: center; gap: 9px; padding: 8px 11px; background: color-mix(in srgb, var(--green) 7%, transparent); }
+.lib-shelf-head strong { font-size: 12.5px; }
+.lib-shelf-hint { color: var(--muted); font-size: 11px; }
+.lib-shelf-gauge { margin-left: auto; width: 68px; height: 4px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--green) 14%, transparent); }
+.lib-shelf-gauge i { display: block; height: 100%; background: var(--green); }
+.lib-shelf-pct { color: var(--muted); font-size: 11px; font-style: normal; min-width: 30px; text-align: right; }
+.lib-books { display: flex; flex-direction: column; }
+.lib-book { display: grid; grid-template-columns: 34px minmax(0, 1fr) 84px; align-items: center; gap: 10px; padding: 8px 11px; border-top: 1px solid var(--line); }
+.lib-book-spine { font-family: var(--mono); font-size: 11px; color: var(--green); border-left: 2px solid color-mix(in srgb, var(--green) 45%, transparent); padding-left: 6px; }
+.lib-book-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.lib-book-body strong { font-size: 12.5px; }
+.lib-book-body small { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-book-meta { color: var(--muted); font-size: 10.5px; }
+.lib-book-bar { height: 4px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--green) 12%, transparent); }
+.lib-book-bar i { display: block; height: 100%; background: var(--green); }
+.lib-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.lib-foot-note { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11.5px; }
+
+/* ── ③ 记忆后端选项 · 设备控制台 ──────────────────────────────────── */
+.bc-root { display: flex; flex-direction: column; gap: 12px; }
+.bc-statusbar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--panel, var(--bg)) 60%, transparent); }
+.bc-statusbar-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.bc-statusbar-copy strong { font-size: 12.5px; }
+.bc-statusbar-copy small { color: var(--muted); font-size: 11px; }
+.bc-lamp { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.bc-lamp.is-ok { background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 18%, transparent); }
+.bc-lamp.is-warn { background: var(--orange, var(--accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--orange, var(--accent)) 18%, transparent); }
+.bc-iconbtn { width: 26px; height: 26px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+.bc-devices { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.bc-device { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--bg); color: inherit; cursor: pointer; }
+.bc-device:hover:not(:disabled) { border-color: var(--accent, var(--green)); }
+.bc-device.is-on { border-color: var(--green); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green) 30%, transparent); }
+.bc-device-top { display: flex; align-items: center; gap: 8px; }
+.bc-device-icon { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; background: color-mix(in srgb, var(--green) 12%, var(--bg)); color: var(--green); }
+.bc-device-tag { margin-left: auto; color: var(--muted); font-size: 10.5px; font-style: normal; }
+.bc-device-check { display: inline-flex; align-items: center; gap: 3px; color: var(--green); font-size: 10.5px; }
+.bc-device strong { font-size: 12.5px; }
+.bc-device small { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.bc-rows { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.bc-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-top: 1px solid var(--line); font-size: 11.5px; }
+.bc-row:first-child { border-top: 0; }
+.bc-row-label { color: var(--muted); flex: none; width: 76px; }
+.bc-row-value { min-width: 0; }
+.bc-row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.bc-switch { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+.bc-path, .bc-hint { margin: 2px 12px 0; color: var(--muted); font-size: 11px; }
