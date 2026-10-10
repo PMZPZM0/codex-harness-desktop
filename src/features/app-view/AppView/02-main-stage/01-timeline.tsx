@@ -415,7 +415,10 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                   )}
                   {/* ⛔ 审批卡已迁到 composer-wrap（贴输入框上方，09-13 用户定稿：原消息流内的大卡
                       太占屏、弹窗窗口里也看不到——贴输入框的卡片与 agent-ask 同款布局，主窗/弹窗一致） */}
-                  {activityLabel && <div className={`working-indicator ${waitingForApproval || waitingForInput ? "paused" : ""}`}>
+                  {/* ⛔ thread 在场才渲染（10-10 用户截图「欢迎界面串别的会话的状态」同型）：
+                      activityLabel 是**全局**状态（等待确认/子智能体执行中来自任意会话），
+                      欢迎页（还没有会话）显示它就是把别的会话的状态串进来。 */}
+                  {thread && activityLabel && <div className={`working-indicator ${waitingForApproval || waitingForInput ? "paused" : ""}`}>
                     {activeMember
                       ? <span className="expert-working-avatar" style={{ background: AVATAR_GRADIENTS[avatarToneOf(activeMember.id || activeMember.name)] }} aria-hidden="true">{expertRoleLabel(activeMember, activeMember.id === activeMemberTeam?.lead.id).slice(0, 1)}</span>
                       : waitingForApproval ? <ShieldCheck size={15} />
