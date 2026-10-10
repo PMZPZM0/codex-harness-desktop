@@ -14,6 +14,7 @@
  * ⛔ 四类结束事件都要认（completed / aborted / failed / interrupted）—— 与
  *   `waitForTurnCompletion` 同口径；漏一个就漏一种收尾（同型缺陷本月已踩过三次）。
  */
+import { reportBackgroundResult } from "./delegate-report";
 import { broadcastHarnessEvent } from "./features/window-bus";
 import { turnOutputText } from "./main/03-turn-summary";
 import { delegateRegistry, teamRunStore } from "./runtime-refs";
@@ -42,11 +43,31 @@ export function settleBackgroundRunsOnTurnEnd(event: any): boolean {
       type: "delegate-run", phase: "finished", threadId,
       status: ok ? "done" : "failed", output: text, ...(error ? { error } : {}), at: Date.now(),
     } as any);
+    /* ★★ 10-10 用户令「像轮询那样自动喂回主会话」：转后台的那次完成后，把结果**自动投回
+       origin 会话**（宿主代投 —— 被委派会话是回合制，结果回来时它早就停了，没法自己开口）。
+       ⛔ 去重闸 = `pendingReport`（只有走过"转后台"分支的才有这个标 ⇒ 同步跑通的委派
+       结果已随 agent_invoke 返回值交回主会话，再投就是两份）。 */
+    if (ok) {
+      void delegateRegistry.infoOf(threadId)
+        .then((record) => record?.pendingReport
+          ? reportBackgroundResult({ originThreadId: record.originThreadId, label: record.name, output: text })
+          : false)
+        .catch(() => false);
+    }
   }
   /* ② 专家团成员会话（状态与广播由 TeamRunStore 负责） */
   if (teamRunStore.activeRunOfThread(threadId)) {
     settled = true;
-    teamRunStore.settleRunByThread(threadId, { status: ok ? "done" : "failed", output: text, ...(error ? { error } : {}) });
+    const finished = teamRunStore.settleRunByThread(threadId, { status: ok ? "done" : "failed", output: text, ...(error ? { error } : {}) });
+    /* ★ 同上：只对打过「待回报」标的投回**主理人会话**（成员的发起方 = 主理人，不是用户主会话 ——
+       主理人拿到后若自己也是被派来的，会沿委托链继续向上）。 */
+    if (ok && finished?.pendingReport) {
+      void reportBackgroundResult({
+        originThreadId: finished.leadThreadId,
+        label: `${finished.memberName}（${finished.profession}）`,
+        output: text,
+      }).catch(() => false);
+    }
   }
   return settled;
 }

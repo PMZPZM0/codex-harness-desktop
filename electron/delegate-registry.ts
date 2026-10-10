@@ -33,6 +33,10 @@ export type DelegateRecord = {
   error?: string;
   /** 实时产出（流式累积；跑完是完整产出）。只用于右侧头像弹窗的实时展示与收尾展示。 */
   output?: string;
+  /** 「已转后台、完成后要回报 origin 会话」标记（10-10，见 delegate-report.ts）。
+   *  ⛔ 同步跑通的委派**不打**这个标 —— 结果已经通过 agent_invoke 的返回值交回主会话了，
+   *  再投一次就是两份（去重）。 */
+  pendingReport?: boolean;
 };
 
 /** 超过这个时间的已完成记录会被清理（避免文件无限增长）；运行中的永不清理。 */
@@ -137,6 +141,17 @@ export class DelegateRegistry {
     }
     if (count) this.scheduleSave();
     return count;
+  }
+
+  /** 标记「这次委派已转后台，完成后要回报 origin 会话」（10-10，见 delegate-report.ts）。
+   *  ⛔ 只在**走转后台分支**时打标：同步跑通的委派结果已经随 agent_invoke 的返回值交回主会话。 */
+  async markPendingReport(threadId: string): Promise<void> {
+    await this.load();
+    const key = String(threadId ?? "");
+    const current = this.map[key];
+    if (!current) return;
+    this.map[key] = { ...current, pendingReport: true };
+    this.scheduleSave();
   }
 
   async markStatus(threadId: string, status: DelegateStatus, extra: { error?: string } = {}): Promise<void> {

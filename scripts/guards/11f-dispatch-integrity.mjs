@@ -13,6 +13,7 @@ import { mkdtempSync, copyFileSync, existsSync, readFileSync, rmSync } from "nod
 import { tmpdir, homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { codeOnly } from "./_ctx.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 let checks = 0, fails = 0;
@@ -280,6 +281,29 @@ try {
     "收敛点认**四类**结束事件（与 waitForTurnCompletion 同口径）");
   ok(/isRunningThread\(threadId\)/.test(settleSrc) && /activeRunOfThread\(threadId\)/.test(settleSrc),
     "⛔ 只在仍认为 running 时收敛（正常路径已收敛的不重复广播）");
+}
+
+/* ── 「转后台 ⇒ 完成后自动回报发起会话」（10-10 用户令「像轮询那样自动喂回主会话」）────────
+   ⛔ 执行者不可能是被委派会话自己 —— 它也是回合制，结果回来时它早停了 ⇒ 只能宿主代投。
+   ⛔ 去重闸：只有打过 pendingReport 标（= 走过转后台分支）的才投 —— 同步跑通的委派，结果
+   已经随 agent_invoke 返回值交回主会话，再投就是两份。
+   ⛔ 载体必须走**引擎队列**（发起会话空闲立即启动 / 忙则排队，不用判断忙闲）；
+   ⛔ 绝不能 thread/start + turn/start（那会打断发起会话正在跑的回合）。 */
+{
+  const delRepSrc = readFileSync(join(ROOT, "electron/features/delegation.ts"), "utf8");
+  const teamRepSrc = readFileSync(join(ROOT, "electron/features/teams-ipc.ts"), "utf8");
+  const reportSrc = readFileSync(join(ROOT, "electron/delegate-report.ts"), "utf8");
+  const settleRepSrc = readFileSync(join(ROOT, "electron/delegate-settle.ts"), "utf8");
+  ok(/reportBackgroundResult\(/.test(settleRepSrc) && /pendingReport/.test(settleRepSrc),
+    "⛔ 收敛点只在 pendingReport（= 走过转后台分支）时投回报（同步跑通的委派去重，不投第二份）");
+  ok(/thread\/queue\/add/.test(reportSrc) && /thread\/queue\/start/.test(reportSrc) && !/turn\/start/.test(codeOnly(reportSrc)),
+    "⛔ 回报载体 = 引擎**队列**（空闲立即跑 / 忙则排队）；⛔ 绝不能 turn/start（会打断正在跑的回合）");
+  ok(/thread\/resume/.test(reportSrc),
+    "投递前先 resume（发起会话的回合可能早已结束、线程已被引擎卸载 ⇒ 不加载就投不进队列）");
+  ok(/DELEGATE_REPORT_MAX_PER_WINDOW/.test(reportSrc) && /DELEGATE_REPORT_WINDOW_MS/.test(reportSrc),
+    "回报有**额度闸**（防「回报 → 又派活 → 又超时 → 又回报」滚雪球烧钱）");
+  ok(/markPendingReport\(/.test(delRepSrc) && /markPendingReportByThread\(/.test(teamRepSrc),
+    "⛔ 两条链路（委派 / 团队成员）转后台时都打「待回报」标");
 }
 
 console.log("\n【dpcat】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));

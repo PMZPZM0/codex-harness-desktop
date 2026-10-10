@@ -36,6 +36,8 @@ export interface TeamMemberRun {
   startedAt: number;
   endedAt?: number;
   error?: string;
+  /** 「已转后台、完成后要回报主理人会话」标记（10-10）—— ⛔ 同步跑通的委托不打这个标（去重）。 */
+  pendingReport?: boolean;
 }
 
 export interface TeamRunsDoc {
@@ -280,6 +282,15 @@ export class TeamRunStore {
   activeRunOfThread(threadId: string): TeamMemberRun | null {
     const runId = this.activeByThread.get(String(threadId ?? ""));
     return runId ? (this.activeRuns.get(runId) ?? null) : null;
+  }
+
+  /** 标记该成员线程这次运行「已转后台、完成后要回报主理人会话」（10-10）。
+   *  ⛔ 只对**走转后台分支**的那次打标：同步跑通的委托结果已经通过 agent_invoke 的返回值
+   *  交回主理人了，再投一次就是两份。 */
+  markPendingReportByThread(threadId: string): void {
+    const runId = this.activeByThread.get(String(threadId ?? ""));
+    const run = runId ? this.activeRuns.get(runId) : undefined;
+    if (run) run.pendingReport = true;
   }
 
   /** 按**成员线程 id**收敛一次运行（10-10：「超时转后台」后靠它在回合真正结束时收尾）。
