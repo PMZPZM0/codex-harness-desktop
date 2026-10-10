@@ -4,6 +4,7 @@
      不写死具体色值（本项目所有设置页同口径）。 */
 
 /* ── 一级：分类卡片 ─────────────────────────────────────────────── */
+.settings-cards,
 .devtools-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -11,6 +12,7 @@
   margin: 12px 0 4px;
 }
 
+.settings-card,
 .devtools-card {
   display: flex;
   align-items: flex-start;
@@ -24,13 +26,16 @@
   cursor: pointer;
   transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
 }
+.settings-card:hover,
 .devtools-card:hover {
   border-color: var(--accent, var(--green));
   transform: translateY(-1px);
   box-shadow: 0 6px 18px #00000012;
 }
+.settings-card:focus-visible,
 .devtools-card:focus-visible { outline: 2px solid var(--accent, var(--green)); outline-offset: 2px; }
 
+.settings-card-logo,
 .devtools-card-logo {
   flex: none;
   width: 32px;
@@ -41,11 +46,17 @@
   background: color-mix(in srgb, var(--green) 13%, var(--bg));
   color: var(--green);
 }
+.settings-card-copy,
 .devtools-card-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.settings-card-copy strong,
 .devtools-card-copy strong { font-size: 13px; }
+.settings-card-copy small,
 .devtools-card-copy small { color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+.settings-card-stat,
 .devtools-card-stat { color: var(--muted); font-size: 11px; }
+.settings-card-arrow,
 .devtools-card-arrow { flex: none; margin-top: 2px; color: var(--muted); }
+.settings-card:hover .settings-card-arrow,
 .devtools-card:hover .devtools-card-arrow { color: var(--green); }
 
 /* ── 二级：弹窗（设置内档 z=900，与 .memory-center-modal 同规范）──────────── */
