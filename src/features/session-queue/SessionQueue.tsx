@@ -317,7 +317,13 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
   const headLiveFiles = running ? getTurnLiveFileChanges(turn.id).filter((file) => liveAnchorsRef.current.get(file.path) === null) : [];
   // 收尾冻结块：最终报告（含重启后重播的）→ 一整块「编辑 <文件> +N -M」，跟随「已更改 N 个文件」卡
   // 一起跨重启存活（数据源：主进程落盘 + thread/resume 重播，见 electron/turn-file-watch.ts）。
-  const frozenFiles = !running ? (getTurnFileChanges(turn.id) as LiveFileChange[]) : [];
+  // （最终报告缺失时由下面的 live 兜底顶上 —— 10-10 终端用户反馈「板块凭空消失」。）
+  // ⛔ 兜底（10-10 终端用户反馈「最后的编辑文件展示板块也没有了」）：收尾广播没到（中断/异常
+  //    路径漏了结算）时，运行中的 live 数据**还在** —— 只有最终报告落地才会清场 ⇒ 拿它顶上，
+  //    板块不再凭空消失；最终报告有内容时以它为准（定格数字）。
+  const finalFiles = !running ? (getTurnFileChanges(turn.id) as LiveFileChange[]) : [];
+  const liveLeftover = !running && !finalFiles.length ? (getTurnLiveFileChanges(turn.id) as LiveFileChange[]) : [];
+  const frozenFiles = (finalFiles.length ? finalFiles : liveLeftover) as LiveFileChange[];
   const frozenEditRows = frozenFiles.length ? <LiveFileRows files={frozenFiles} /> : null;
 
   const renderItem = (unit: FoldUnit, hideFooter?: boolean, reasoningActive?: boolean) => (

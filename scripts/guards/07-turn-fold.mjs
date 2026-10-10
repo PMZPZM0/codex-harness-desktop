@@ -4368,11 +4368,12 @@ export async function run() {
       );
     }
 
-    /* ③ 正文锚点判据（真跑 planCompletedFold）：⛔ **短过渡正文必须算过程**——
-       09-23 试过「有正文就是正文锚点」，结果一整轮的过程被切成一堆小折叠块、过渡正文全裸，
-       用户当天否掉（「你先加了一个正文中间折叠，运行过程不折叠吗」）。
-       现行口径：只有长正文（≥ FOLD_BODY_ANCHOR_CHARS）与最终答复留在折叠组外，
-       其余（工具/思考/一句话过渡）收进**同一个**折叠块，旧消息才保持简短。 */
+    /* ③ 折叠口径（真跑 planCompletedFold）—— ⛔⛔ 10-10 用户定稿（原话）：
+       「不管回合时间多长，运行过程中有多少步骤，在结束的时候，运行过程必须完全折叠进去，
+       只保留汇总结果和汇总消息下面的已修改文件板块」。
+       ⇒ **废除长正文锚点**（09-12/09-23 的「≥200 字留在外面」把超长回合的过程切成多段，
+       用户 10-10 截图反馈「不会折叠整个运行过程」）—— 折叠组外只留：用户消息 + 最终汇总。
+       已知并接受的代价：结尾「长汇报 → 工具 → 一句话收尾」时，长汇报也进折叠组（点开可见）。 */
     {
       const unit = (id, type, text = "") => ({ item: { id, type, text }, kind: type === "agentMessage" ? "body" : "foldable" });
       const units = [
@@ -4387,23 +4388,18 @@ export async function run() {
       const out = foldPlan.planCompletedFold(units, "bodyFinal");
       const bodies = out.filter((entry) => entry.kind === "body").map((entry) => entry.unit.item.id);
       const folds = out.filter((entry) => entry.kind === "fold").map((entry) => entry.units.map((u) => u.item.id));
-      (folds.some((group) => group.includes("bodyShort")) ? ok : fail)(
-        `【118】短过渡正文算过程、收进折叠组（旧消息靠它保持"整段运行过程折叠"；实得 ${JSON.stringify(folds)}）`
+      (bodies.length === 1 && bodies[0] === "bodyFinal" ? ok : fail)(
+        `【118】折叠组外只留汇总结果（bodies=${bodies.join(",")}）`
       );
-      (bodies.includes("bodyLong") ? ok : fail)(
-        `【118】长正文（712 字）仍是正文锚点、留在折叠组外（bodies=${bodies.join(",")}）`
-      );
-      (!folds.some((group) => group.includes("bodyLong") || group.includes("bodyFinal")) ? ok : fail)(
-        `【118】长正文与最终答复不进过程组（实得 ${JSON.stringify(folds)}）`
-      );
-      (foldPlan.FOLD_BODY_ANCHOR_CHARS === 200 ? ok : fail)(
-        `【118】长正文阈值仍是 200 字（实得 ${foldPlan.FOLD_BODY_ANCHOR_CHARS} —— 别顺手改）`
+      (folds.length === 1 ? ok : fail)(`【118】整个运行过程收成一块折叠（实得 ${folds.length} 组：${JSON.stringify(folds)}）`);
+      (folds[0]?.includes("bodyLong") && folds[0]?.includes("bodyShort") && folds[0]?.includes("toolA") && folds[0]?.includes("toolD") ? ok : fail)(
+        "【118】长正文/短过渡/工具/思考全部进折叠组（过程不切碎）"
       );
       const empty = foldPlan.planCompletedFold(
         [unit("toolX", "commandExecution"), unit("bodyEmpty", "agentMessage", "   ")], "none",
       );
       ((empty.find((entry) => entry.kind === "fold")?.units ?? []).some((u) => u.item.id === "bodyEmpty") ? ok : fail)(
-        "【118】空正文的 agentMessage 不算正文锚点（仍按过程处理）"
+        "【118】空正文的 agentMessage 不算汇总结果（仍按过程处理）"
       );
     }
 

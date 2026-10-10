@@ -164,9 +164,9 @@ ok(!/\.goals-pop\s*\{/.test(css) && !/\.tb-goals-entry\s*\{/.test(css) && !/\.go
    收尾不再清场：行换成最终报告的定格数字，收成**一块始终可见**的 frozenEditRows（落在过程与
    最终答复之间——⛔ 不塞回折叠组：收起状态下视觉/文本都是空的，等于没显示，截图实锤过）。
    运行中的就地锚定（liveAnchorsRef + renderAfter）保持不变。 */
-ok(sessionQueue.includes("const frozenFiles = !running ? (getTurnFileChanges(turn.id) as LiveFileChange[]) : []")
+ok(sessionQueue.includes("const frozenFiles = (finalFiles.length ? finalFiles : liveLeftover) as LiveFileChange[];")
   && sessionQueue.includes("const frozenEditRows = frozenFiles.length ? <LiveFileRows files={frozenFiles} /> : null"),
-  "收尾冻结块：取最终报告（含重启后重播的）渲染一整块「编辑 <文件> +N -M」");
+  "收尾冻结块：取最终报告渲染一整块「编辑 <文件> +N -M」；⛔ 报告缺失时由 live 兜底顶上（10-10 终端用户：板块凭空消失）");
 ok(sessionQueue.includes("const frozenIndex = frozenEditRows ? plan.findIndex") && sessionQueue.includes("pushFrozen"),
   "冻结块落点在**最终答复之前**（过程之后；不展开折叠也可见，也避免吊在整个回合末尾）");
 ok(sessionQueue.includes("const liveRowsFor = (itemId: string) => {") && sessionQueue.includes("if (!running) return null;")
