@@ -157,7 +157,6 @@ import { AppViewReviewPanel } from "./AppView/03-review-panel";
 import { AppViewRemoteApproval } from "./AppView/04-remote-approval";
 import { AppViewRemoteConsole } from "./AppView/05-remote-console";
 import { AppViewTaskComposer } from "./AppView/06-task-composer";
-import { AppViewMemoryPanel } from "./AppView/07-memory-panel";
 import { TeamOfficePreview } from "../team-office";
 import { DramaCanvas } from "../drama-canvas";
 import { UiSketchModal } from "../ui-sketch";
@@ -273,7 +272,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     marketPreview, marketSkills, marketTotal, maybeAutoContinueAfterPoll, mcpMarketCategory,
     mcpMarketSearch, mcpOverrides, mcpServerBatchBusy, mcpServerChecked,
     mcpServerSearch, mcpServerStatusBusy, mcpToolPermissions, memories,
-    memoryCategory, memoryCenterOpen, memoryCenterTab, memoryConfigOpen,
+    memoryCategory, memoryConfigOpen,
     memoryDistilling, memoryDraft, memoryEnabled, memoryGateway,
     memoryGatewayAction, memoryGroups, memoryGroupsFiltered, memoryLayerDirty,
     memoryLayerDraft, memoryLayerSavedAt, memoryLayerScope, memoryLayers,
@@ -342,8 +341,8 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     setInfoModal, setInlineRename, setKeepAwake, setLightbox,
     setLinkedEnabled, setLocalSkills, setMarketPage, setMarketPreview,
     setMcpMarketCategory, setMcpMarketSearch, setMcpServerChecked, setMcpServerEnabled,
-    setMcpServerSearch, setMcpToolPermission, setMemoryCategory, setMemoryCenterOpen,
-    setMemoryCenterTab, setMemoryConfigOpen, setMemoryDraft, setMemoryEnabled,
+    setMcpServerSearch, setMcpToolPermission, setMemoryCategory, 
+    setMemoryConfigOpen, setMemoryDraft, setMemoryEnabled,
     setMemoryGateway, setMemoryLayerDraft, setMemoryLayerScope, setMemoryPreview,
     setMemoryProjectEnabled, setMemoryProjectMenuOpen, setMemoryProjectWorkspace, setMemorySaveCategory,
     setMemoryStatus, setMobileNav, setMobileRemoteOpen, setModelEditor,
@@ -467,7 +466,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
             插件按钮会落进窗口拖拽区右侧，不影响拖动）。守卫【268】盯它有真实消费点。 */}
         <Slot id="topbar.end" loader={() => import("../../runtime/plugin-slots")} />
       </header>
-      <AppViewSidebarShell app={app} onOpenSettings={(page) => { setSearchPreview(null); setMemoryCenterOpen(false); setSettingsPage(page as SettingsPage); setSettingsOpen(true); }} />
+      <AppViewSidebarShell app={app} onOpenSettings={(page) => { setSearchPreview(null); setSettingsPage(page as SettingsPage); setSettingsOpen(true); }} />
       {popoutThreadId && <div className="" aria-hidden />}
 
       <AppViewMainStage app={app} />
@@ -550,13 +549,11 @@ export function AppView({ app }: { app: HarnessAppApi }) {
         <SearchPreviewModal
           target={searchPreview}
           onClose={() => setSearchPreview(null)}
-          onOpenThread={(id) => { setSearchPreview(null); setMemoryCenterOpen(false); setSettingsOpen(false); void openThread(id); }}
-          onOpenSettings={(page) => { setSearchPreview(null); setMemoryCenterOpen(false); setSettingsPage(page as SettingsPage); }}
+          onOpenThread={(id) => { setSearchPreview(null); setSettingsOpen(false); void openThread(id); }}
+          onOpenSettings={(page) => { setSearchPreview(null); setSettingsPage(page as SettingsPage); }}
           onCopyThreadId={(id) => { void copyThreadReferenceId({ id }); }}
         />
       )}
-      {/* 记忆中心：设置页「记忆」只做总览，条目浏览 / 常驻记忆编辑 / 存储切换都在这个大弹窗里完成 */}
-      <AppViewMemoryPanel app={app} />
       <AppViewSettingsSheet app={app} />
       {/* 专家团像素办公室（v19）：成员流转轨「办公室」按钮进入。数据面 = teams + railRuns 的
           运行态（引擎事件流归约），无新 IPC；交互只有「点角色 → 打开该成员会话」。 */}

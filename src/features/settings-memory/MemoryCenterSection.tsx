@@ -4,196 +4,37 @@
  * 纯搬迁：返回的 JSX 与原块逐字一致（仅去掉外层缩进）。
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  *
- * 09-25 新增「记忆后端」区块（`MemoryBackendSection`）—— 这不是搬迁，是本轮新加的功能：
- * 二选一（内置记忆金字塔 / MCP 记忆服务）。它自持状态，不占 App 的 props。
+ * ── 10-10 二轮改版（用户要求）────────────────────────────────────────────
+ * ① 一级 = 三个**并列**功能入口（项目共享记忆库 / 金字塔记忆架构 / 记忆后端选项），
+ *    二级 = 各自的弹窗（内容不内嵌）。
+ * ② ⛔ 旧「记忆中心」弹窗与它的入口一并删除：那个弹窗里还压着 5 项能力
+ *    （条目浏览 / 全局搜索 / 常驻记忆编辑 / 容量倍率 / 整洁清理），已整块迁进三个弹窗
+ *    （见 ./MemoryPanes.tsx）—— ⛔ 不是"删掉功能"，是把它们搬到新家。
+ * ③ 旧的 `MemoryBackendSection`（自持状态的记忆后端区块）已删 —— 角色由
+ *    `BackendConsolePanel` 接手（同样能读、能切、能装/卸/检测，守卫【150】仍满足）。
  */
-import { type CSSProperties, useEffect, useState } from "react";
-import { MEMORY_LAYER_RULES } from "../../lib/memory-scope-rules.mjs";
+import { useState } from "react";
 import { PyramidPanel } from "./PyramidPanel";
 import { SharedLibraryPanel } from "./SharedLibraryPanel";
 import { BackendConsolePanel } from "./BackendConsolePanel";
+import { LayerRulesPane, MemoryEntriesPane, MemoryModePane, MemorySearchPane, MemorySourcesPane, ResidentMemoryPane } from "./MemoryPanes";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { PageInfo } from "../../components/SettingsHead";
-import { Archive, BookOpen, Bot, Cloud, Database, Layers, LayoutGrid, Search, Server } from "lucide-react";
+import { BookOpen, Database, Layers } from "lucide-react";
 import { MemoryConfigModal } from "../../features/memory";
-
+import type { HarnessAppApi } from "../app-view/types";
 export type MemoryCenterSectionProps = {
-  /** 查看某条记忆的全文（10-10：弹窗里直接能给内容，⛔ 不再只是"再打开记忆中心"） */
+  /** App 状态与回调（10-10：迁移后的几个内容页直接吃 app —— 与旧弹窗 `AppViewMemoryPanel({ app })`
+   *  同源，避免在注册表里再接 30 条扁平线；那种接线漏一条就是静默 bug）。 */
+  app: HarnessAppApi;
+  /** 查看某条记忆的全文 */
   setMemoryPreview?: (entry: any) => void;
   /** 跳到某个来源会话 */
   openThread?: (threadId: string) => void;
-  /** 工作区记忆开关（控制台里的那一行控制项） */
-  setWorkspaceMemoryEnabled?: (workspace: string, enabled: boolean) => void; memoryEnabled: any; setMemoryEnabled: any; setMemoryCenterTab: any; setMemoryCenterOpen: any; memories: any; memoryGroups: any; memoryLayers: any; memoryMode: any; workspaceMemoryEnabled: any; threads: any; scheduledTasks: any; localSkills: any; memoryStatus: any; memoryConfigOpen: any; memoryGateway: any; setMemoryGateway: any; memoryGatewayAction: any; setMemoryConfigOpen: any; testMemoryGateway: any; saveMemoryGateway: any };
-
-/* ══ 记忆后端（09-25）════════════════════════════════════════════════════════
- * 二选一：内置记忆金字塔（默认）/ MCP 记忆服务（@vheins/local-memory-mcp）。
- * ⛔ 该服务**不内置**在安装包里（不进依赖、不随包发布）—— 用户明确要求「自主选择 + 命令安装」，
- *    所以这里**只展示安装命令 + 复制**，不做一键安装。
- * ⛔ 选了 MCP 但服务没装好时**不会丢记忆**：主进程 `effectiveMemoryBackend()` 会回退内置，
- *    并把原因经 `fallbackReason` 带回来显示（口径见 electron/memory-backend.ts，守卫【150】）。
- * ⛔ 状态每次挂载时读一次盘（readMemoryBackend 惰性求值），不在渲染层缓存真相。 */
-type MemoryBackendStatus = {
-  backend: "builtin" | "mcp";
-  effective: "builtin" | "mcp";
-  installed: boolean;
-  serverPath: string;
-  installRoot: string;
-  installCommand: string;
-  fallbackReason: string | null;
-};
-
-function MemoryBackendSection() {
-  const [status, setStatus] = useState<MemoryBackendStatus | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [busyLabel, setBusyLabel] = useState("");
-  const [note, setNote] = useState("");
-
-  useEffect(() => {
-    let alive = true;
-    void window.codex
-      .readMemoryBackend()
-      .then((value) => {
-        if (alive) setStatus(value as MemoryBackendStatus);
-      })
-      .catch(() => {
-        if (alive) setStatus(null);
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  const pick = async (next: "builtin" | "mcp") => {
-    setBusy(true);
-    setNote("");
-    try {
-      const value = await window.codex.setMemoryBackend(next);
-      const status = value as MemoryBackendStatus;
-      setStatus(status);
-      /* ⛔ 文案必须说清「什么时候生效」（09-25 用户实测困惑：切了后端但技能清单还是旧的）。
-         事实：切换会**当场**同步技能文件与连接器；但引擎侧（config.toml 的指令与 MCP 服务注册）
-         由启动自愈在下次启动时重写 ⇒ 要重启应用；模型实际改口径还要**新开会话**（引擎把指令
-         钉在会话上，已在跑的会话读的是旧的那份）。
-         ⛔ 选了 MCP 但服务没装好时 effective 仍是 builtin ⇒ **不能说"已切到 MCP"**（那是假话，
-            技能也仍保持 memory-classify）——退回内置口径的说明，并指向上面的回退原因。 */
-      const notEffective = next === "mcp" && status.effective !== "mcp";
-      setNote(next !== "mcp"
-        ? "已切回内置记忆金字塔，技能与连接器已同步落盘。重启应用后引擎侧生效。"
-        : notEffective
-          ? "已记下选择，但 MCP 服务尚未装好 ⇒ 当前仍走内置金字塔（技能保持 memory-classify）。先装服务，重启应用后才会真正切过去。"
-          : "已切到 MCP 记忆后端，技能与连接器已同步落盘。重启应用后引擎侧生效；之后新开一个会话，模型就会按 MCP 写法记记忆（不再往 lessons/ 手写）。");
-    } catch (error) {
-      setNote(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const copyCommand = async () => {
-    if (!status) return;
-    try {
-      await navigator.clipboard.writeText(status.installCommand);
-      setNote("安装命令已复制到剪贴板（想自己装时用）。");
-    } catch {
-      setNote("复制失败，请手动选中命令复制。");
-    }
-  };
-
-  /* 一键安装 / 卸载 / 检测（09-25 用户要求「加个安装功能」）。
-     主进程用**应用自带的 node** 跑安装器 —— 新电脑不用预装 Node.js，装与跑同 ABI。
-     ⛔ 首次安装要下依赖 + 原生绑定，可能几分钟 ⇒ busyLabel 让用户知道在动、不是卡了。 */
-  const runAction = async (kind: "install" | "uninstall" | "verify") => {
-    setBusy(true);
-    setNote("");
-    setBusyLabel(kind === "install" ? "正在安装…（默认走国内镜像；首次几分钟：下载依赖 + 原生绑定）" : kind === "uninstall" ? "正在卸载…" : "正在检测…");
-    try {
-      const r = kind === "install"
-        ? await window.codex.installMemoryMcp()
-        : kind === "uninstall"
-          ? await window.codex.uninstallMemoryMcp()
-          : await window.codex.verifyMemoryMcp();
-      if (r?.status) setStatus(r.status as MemoryBackendStatus);
-      if (kind === "uninstall") {
-        setNote("已卸载：记忆服务目录已删除。");
-      } else if (r?.result?.verified) {
-        // 把实际用到的镜像显示出来（安装器默认 npmmirror，失败才依次换源）
-        const via = typeof r?.result?.registry === "string" ? `（源：${r.result.registry.replace(/^https?:\/\//, "")}）` : "";
-        setNote(kind === "install" ? `安装完成，MCP 握手已通过 ✅ ${via}`.trim() : "检测通过：服务能正常握手 ✅");
-      } else {
-        const why = r?.result?.error ?? r?.log?.split("\n").filter(Boolean).pop() ?? "未知原因";
-        setNote(`失败：${why}`);
-      }
-    } catch (error) {
-      setNote(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-      setBusyLabel("");
-    }
-  };
-
-  const radioRow: CSSProperties = { display: "flex", gap: 8, alignItems: "flex-start", cursor: "pointer" };
-  void radioRow; // 09-25 排版返工后 radioRow 已不再使用；保留 void 防止 lint 报未用（后续清理时一并删）
-
-  return (
-    <>
-      <div className="settings-copy channel-heading"><div><h2>记忆后端<PageInfo text={<>二选一：内置记忆金字塔，或可选的 MCP 记忆服务。两者**不会同时写入** —— 选了 MCP，内置金字塔就停止捕获，避免同一件事记两份。</>} /></h2></div></div>
-      <p className="muted">MCP 记忆服务（@vheins/local-memory-mcp）<strong>不内置</strong>在安装包里，需要按下面的按钮或命令安装（装到 userData 下的独立目录，卸载就是删目录）。服务没装好时记忆不会被丢弃 —— 会自动回退到内置金字塔。</p>
-
-      {/* 09-25 排版返工：原生 radio ⇒ 可点击选择卡片（选中态绿框 + 浅绿底 + 右上角勾） */}
-      <div className="memory-backend-options" role="radiogroup" aria-label="记忆后端">
-        <button type="button" role="radio" aria-checked={status?.backend === "builtin"} className="memory-backend-option" disabled={busy || !status} onClick={() => void pick("builtin")}>
-          <span className="memory-backend-icon"><Database size={16} /></span>
-          <span className="memory-backend-body">
-            <strong>内置记忆金字塔<em>默认</em></strong>
-            <small>L0~L7 分层与纠错/坑分类写入；自包含零依赖。</small>
-          </span>
-        </button>
-        <button type="button" role="radio" aria-checked={status?.backend === "mcp"} className="memory-backend-option" disabled={busy || !status} onClick={() => void pick("mcp")}>
-          <span className="memory-backend-icon"><Server size={16} /></span>
-          <span className="memory-backend-body">
-            <strong>MCP 记忆服务</strong>
-            <small>{status?.installed ? "服务已安装，切换后重启生效。" : "服务未安装 —— 选中它会先回退到内置（不丢记忆）。"}</small>
-          </span>
-        </button>
-      </div>
-
-      {status && (
-        <div className="memory-backend-meta">
-          <span className={`memory-backend-state${status.backend !== status.effective ? " warn" : ""}`}>当前生效：{status.effective === "mcp" ? "MCP 记忆服务" : "内置记忆金字塔"}{status.backend !== status.effective ? " · 所选后端未就绪" : ""}</span>
-          {status.fallbackReason && <span className="memory-backend-fallback">{status.fallbackReason}</span>}
-        </div>
-      )}
-
-      <div className="memory-backend-actions">
-        {!status?.installed ? (
-          <button className="primary-setting" disabled={busy || !status} onClick={() => void runAction("install")}>安装 MCP 记忆服务</button>
-        ) : (
-          <>
-            <button className="secondary-setting" disabled={busy} onClick={() => void runAction("verify")}>检测连通性</button>
-            <button className="secondary-setting" disabled={busy} onClick={() => void runAction("install")}>重新安装 / 修复</button>
-            <button className="secondary-setting" disabled={busy} onClick={() => void runAction("uninstall")}>卸载</button>
-          </>
-        )}
-        {status && <span className="memory-backend-path">装到 <code>{status.installRoot}</code></span>}
-        {/* 让用户放心：不需要自己配镜像/挂代理（09-25 用户：「记忆 mcp 安装默认使用国内镜像」） */}
-        <span className="memory-backend-note">安装默认走国内镜像（registry.npmmirror.com），依赖与原生绑定同理；镜像不可用时自动换源，无需你配置。</span>
-      </div>
-      {busyLabel && <p className="settings-status">{busyLabel}</p>}
-      {note && <p className="settings-status">{note}</p>}
-
-      {status && (
-        <details className="memory-backend-manual">
-          <summary>想自己用命令装？（走同一套：应用自带 node，不需要你预装 Node.js）</summary>
-          <p className="memory-backend-cmd">{status.installCommand}</p>
-          <button className="secondary-setting" onClick={() => void copyCommand()}>复制命令</button>
-        </details>
-      )}
-    </>
-  );
-}
+  memoryEnabled: any; setMemoryEnabled: any; memories: any; memoryGroups: any; memoryLayers: any; memoryMode: any; workspaceMemoryEnabled: any; threads: any; scheduledTasks: any; localSkills: any; memoryStatus: any; memoryConfigOpen: any; memoryGateway: any; setMemoryGateway: any; memoryGatewayAction: any; setMemoryConfigOpen: any; testMemoryGateway: any; saveMemoryGateway: any };
 
 export function MemoryCenterSection(props: MemoryCenterSectionProps) {
-  const { memoryEnabled, setMemoryEnabled, setMemoryCenterTab, setMemoryCenterOpen, memories, memoryGroups, memoryLayers, memoryMode, workspaceMemoryEnabled, threads, scheduledTasks, localSkills, memoryStatus, memoryConfigOpen, memoryGateway, setMemoryGateway, memoryGatewayAction, setMemoryConfigOpen, testMemoryGateway, saveMemoryGateway, setMemoryPreview, openThread } = props;
+  const { app, memoryEnabled, setMemoryEnabled, memories, memoryGroups, memoryLayers, memoryMode, workspaceMemoryEnabled, threads, scheduledTasks, localSkills, memoryStatus, memoryConfigOpen, memoryGateway, setMemoryGateway, memoryGatewayAction, setMemoryConfigOpen, testMemoryGateway, saveMemoryGateway, setMemoryPreview, openThread } = props;
     /* ── 两级信息架构（10-10 用户要求，与开发工具页 / 拓展接口页 / 记忆中心同一套规范）──
      一级只放**分类卡片**（含原先内嵌在主界面里的「记忆后端」与「被委派会话的记忆」两块）；
      内容一律进 SettingsDialog。⛔ 卡片复用跨页通用的 .settings-card*（⛔ 不再自造卡片样式）。 */
@@ -238,10 +79,10 @@ return (
                       ))}
                     </div>
 
-                    <div className="memory-overview-actions">
-                      <button className="primary-setting" onClick={() => { setMemoryCenterTab("library"); setMemoryCenterOpen(true); }}><LayoutGrid size={15} />打开记忆中心</button>
-                      <span className="muted">浏览条目、编辑常驻记忆、切换存储都在记忆中心里完成，这里只做总览。</span>
-                    </div>
+                    {/* ⛔⛔ 10-10 用户二轮反馈「还保留了旧的记忆板块入口，为什么没有清理干净」：
+                        这里原来挂着「打开记忆中心」按钮（指向旧的记忆中心弹窗）。
+                        旧弹窗的内容已全部迁进上面三张卡片的二级弹窗
+                        （见 ./MemoryPanes.tsx），**入口与旧弹窗一并删除**。 */}
                     {memoryStatus && <p className="settings-status">{memoryStatus}</p>}
                     {memoryConfigOpen && <MemoryConfigModal gateway={memoryGateway} setGateway={setMemoryGateway} action={memoryGatewayAction} onClose={() => setMemoryConfigOpen(false)} onTest={() => void testMemoryGateway()} onSave={() => void saveMemoryGateway()} />}
 
@@ -249,14 +90,15 @@ return (
                   
                     {/* ── 二级弹窗（⛔ 内容一律在这里，不得内嵌到主界面）──────────────────── */}
                     {openCard === "shared" && openMeta && (
-                      <SettingsDialog title="项目共享记忆库" icon={<BookOpen size={15} />} hint="左边选项目 · 右边三层书架" size="lg" onClose={() => setOpenCard(null)}>
+                      <SettingsDialog title="项目共享记忆库" icon={<BookOpen size={15} />} hint="切项目看书架 · 常驻记忆 · 记忆条目 · 全局搜索" size="lg" onClose={() => setOpenCard(null)}>
                         {/* ⛔ 这一套用**书架**形态（左书脊 + 右书架），与金字塔（梯形）和
                             控制台（设备面板）刻意区分 —— 用户要求三套界面各自独立、不复用同一模板。 */}
-                        <SharedLibraryPanel
-                          workspace={effectiveSharedProject}
-                          projects={projects}
-                          onOpenCenter={() => { setMemoryCenterTab("layers" as any); setMemoryCenterOpen(true); setOpenCard(null); }}
-                        />
+                        <SharedLibraryPanel workspace={effectiveSharedProject} projects={projects} />
+                        {/* ── 旧「记忆中心」搬来的三块（10-10 迁移）：常驻记忆 / 记忆条目 / 全局搜索 ──
+                            ⛔ 内容零改写，只是换了宿主；⛔ 它们**必须在这里**，否则删掉旧弹窗就是丢功能。 */}
+                        <MemoryEntriesPane app={app} />
+                        <ResidentMemoryPane app={app} />
+                        <MemorySearchPane app={app} />
                       </SettingsDialog>
                     )}
                     {openCard === "pyramid" && openMeta && (
@@ -266,15 +108,21 @@ return (
                           ⛔ 项目与会话都在面板内部切（10-10 二轮反馈：原来没有项目切换、
                             会话也只认"写过记忆的"）—— 面板自己按项目读层快照，不靠外层传。 */}
                         <PyramidPanel workspace={effectiveSharedProject} threads={threads} onOpenThread={(id: string) => openThread?.(id)} />
+                        {/* ── 旧「记忆中心」搬来的两块（10-10 迁移）：分层规则 / 按来源看会话记忆 ── */}
+                        <LayerRulesPane />
+                        <MemorySourcesPane app={app} />
                       </SettingsDialog>
                     )}
                     {openCard === "backend" && openMeta && (
-                      <SettingsDialog title="记忆后端选项" icon={<Database size={15} />} hint="状态灯 · 设备大卡 · 控制行" size="lg" onClose={() => setOpenCard(null)}>
+                      <SettingsDialog title="记忆后端选项" icon={<Database size={15} />} hint="状态灯 · 设备大卡 · 控制行 · 保存在哪" size="lg" onClose={() => setOpenCard(null)}>
                         {/* ⛔ 这一套用**设备控制台**形态（状态灯条 + 两个设备大卡 + 控制行）。 */}
                         <BackendConsolePanel
                           workspace={effectiveSharedProject}
                           workspaceEnabled={workspaceMemoryEnabled}
                         />
+                        {/* ── 旧「记忆中心」的「存储与同步」里的**保存位置**（10-10 迁移）──
+                            ⛔ 只搬这一段：工作区开关面板里已经有，不重复渲染同一个开关。 */}
+                        <MemoryModePane app={app} />
                       </SettingsDialog>
                     )}
   </section>

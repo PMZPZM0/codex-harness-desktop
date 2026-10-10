@@ -34,10 +34,13 @@ if (m) {
 }
 
 // ── 产物层：CSS 的形态（box-shadow 点阵 + steps(8) 旋转） ──
-const cssFile = readdirSync(join(ROOT, "dist", "assets")).find((f) => f.endsWith(".css"));
-ok(Boolean(cssFile), "找得到产物 CSS");
-if (cssFile) {
-  const css = readFileSync(join(ROOT, "dist", "assets", cssFile), "utf8");
+/* ⛔⛔ 10-10：产物可能**不止一个 CSS 资产**（按 chunk 分包 —— 例：xterm 的 constants-*.css）。
+   原来只读"第一个 .css"，那是与构建分包方式绑死的假设：多出一个资产就整组假红（实测 3 条全红，
+   而产物根本没坏）。⇒ 合并**全部** CSS 资产再判，判据才只看"样式在不在"。 */
+const cssFiles = readdirSync(join(ROOT, "dist", "assets")).filter((f) => f.endsWith(".css"));
+ok(cssFiles.length > 0, "找得到产物 CSS");
+if (cssFiles.length) {
+  const css = cssFiles.map((f) => readFileSync(join(ROOT, "dist", "assets", f), "utf8")).join("\n");
   const block = /\.thread-running-indicator i\s*\{[\s\S]*?\}/.exec(css);
   ok(Boolean(block), "产物里有 .thread-running-indicator i 规则");
   if (block) {

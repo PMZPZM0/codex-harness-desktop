@@ -430,10 +430,6 @@ export interface Bag {
   setMemoryPreview: React.Dispatch<any>;
   searchPreview: import("../../../components/IndexLibrary.tsx").SearchPreviewTarget | null;
   setSearchPreview: React.Dispatch<React.SetStateAction<import("../../../components/IndexLibrary.tsx").SearchPreviewTarget | null>>;
-  memoryCenterOpen: boolean;
-  setMemoryCenterOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  memoryCenterTab: "library" | "search" | "layers" | "storage";
-  setMemoryCenterTab: React.Dispatch<React.SetStateAction<"library" | "search" | "layers" | "storage">>;
   memoryProjectWorkspace: string;
   setMemoryProjectWorkspace: React.Dispatch<React.SetStateAction<string>>;
   memoryProjectEnabled: boolean;

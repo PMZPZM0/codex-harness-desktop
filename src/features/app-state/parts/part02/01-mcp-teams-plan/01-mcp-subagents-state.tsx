@@ -79,13 +79,8 @@ bag.memoryPreview = memoryPreview as typeof bag.memoryPreview; bag.setMemoryPrev
   // 全局搜索命中预览（记忆中心→全局搜索）：会话全文由主进程读 rollout 原档提供
   const [searchPreview, setSearchPreview] = useState<SearchPreviewTarget | null>(null);
 bag.searchPreview = searchPreview as typeof bag.searchPreview; bag.setSearchPreview = setSearchPreview as typeof bag.setSearchPreview;
-
-  // 记忆中心大弹窗：设置页「记忆」只做总览，条目浏览/常驻记忆编辑/存储切换都在这里完成
-  const [memoryCenterOpen, setMemoryCenterOpen] = useState(false);
-bag.memoryCenterOpen = memoryCenterOpen as typeof bag.memoryCenterOpen; bag.setMemoryCenterOpen = setMemoryCenterOpen as typeof bag.setMemoryCenterOpen;
-
-  const [memoryCenterTab, setMemoryCenterTab] = useState<"library" | "search" | "layers" | "storage">("library");
-bag.memoryCenterTab = memoryCenterTab as typeof bag.memoryCenterTab; bag.setMemoryCenterTab = setMemoryCenterTab as typeof bag.setMemoryCenterTab;
+/* ⛔ 10-10：`memoryCenterOpen` / `memoryCenterTab` 已随旧「记忆中心」弹窗一起删除 ——
+   那个弹窗的内容全部迁进设置页「记忆」三张卡片的二级弹窗（settings-memory/MemoryPanes.tsx）。 */
 
   const [memoryProjectWorkspace, setMemoryProjectWorkspace] = useState(() => bag.workspace || "__all__");
 bag.memoryProjectWorkspace = memoryProjectWorkspace as typeof bag.memoryProjectWorkspace; bag.setMemoryProjectWorkspace = setMemoryProjectWorkspace as typeof bag.setMemoryProjectWorkspace;
@@ -201,5 +196,5 @@ bag.teamFlushRef = teamFlushRef as typeof bag.teamFlushRef;
   /** 正在跑的成员委托数（并行阶段会 >1）：活动指示器按计数收敛，不能在单个任务结束时清空 */
   const teamRunningCountRef = useRef(0);
 bag.teamRunningCountRef = teamRunningCountRef as typeof bag.teamRunningCountRef;
-  return { mcpOverrides, setMcpOverrides, mcpToolPermissions, setMcpToolPermissions, mcpServerChecked, setMcpServerChecked, mcpServerStatusBusy, setMcpServerStatusBusy, mcpServerBatchBusy, setMcpServerBatchBusy, mcpServerSearch, setMcpServerSearch, subAgents, setSubAgents, subAgentDraft, setSubAgentDraft, subAgentEditorOpen, setSubAgentEditorOpen, subAgentRunning, setSubAgentRunning, rpaRunning, setRpaRunning, agentAsk, setAgentAsk, rpaRecipes, setRpaRecipes, taskList, setTaskList, threadPermPushAtRef, appPromptInputRef, appConfirm, setAppConfirm, appPrompt, setAppPrompt, memoryPreview, setMemoryPreview, searchPreview, setSearchPreview, memoryCenterOpen, setMemoryCenterOpen, memoryCenterTab, setMemoryCenterTab, memoryProjectWorkspace, setMemoryProjectWorkspace, memoryProjectEnabled, setMemoryProjectEnabled, memoryProjectMenuOpen, setMemoryProjectMenuOpen, memoryProjectPickerRef, openAppPrompt, openAppConfirm, expertTeams, setExpertTeams, expertMarketOpen, setExpertMarketOpen, refreshExpertCenterData, expertTeamDraft, setExpertTeamDraft, expertTeamEditorOpen, setExpertTeamEditorOpen, expertTeamRunning, setExpertTeamRunning, expertTeamMemberRunning, setExpertTeamMemberRunning, teamRuns, setTeamRuns, teamPopupRunId, setTeamPopupRunId, teamHistoryMember, setTeamHistoryMember, threadTeamId, setThreadTeamId, teamHistoryRuns, setTeamHistoryRuns, teamRunsRef, teamDeltaRef, teamFlushRef, teamRunningCountRef };
+  return { mcpOverrides, setMcpOverrides, mcpToolPermissions, setMcpToolPermissions, mcpServerChecked, setMcpServerChecked, mcpServerStatusBusy, setMcpServerStatusBusy, mcpServerBatchBusy, setMcpServerBatchBusy, mcpServerSearch, setMcpServerSearch, subAgents, setSubAgents, subAgentDraft, setSubAgentDraft, subAgentEditorOpen, setSubAgentEditorOpen, subAgentRunning, setSubAgentRunning, rpaRunning, setRpaRunning, agentAsk, setAgentAsk, rpaRecipes, setRpaRecipes, taskList, setTaskList, threadPermPushAtRef, appPromptInputRef, appConfirm, setAppConfirm, appPrompt, setAppPrompt, memoryPreview, setMemoryPreview, searchPreview, setSearchPreview, memoryProjectWorkspace, setMemoryProjectWorkspace, memoryProjectEnabled, setMemoryProjectEnabled, memoryProjectMenuOpen, setMemoryProjectMenuOpen, memoryProjectPickerRef, openAppPrompt, openAppConfirm, expertTeams, setExpertTeams, expertMarketOpen, setExpertMarketOpen, refreshExpertCenterData, expertTeamDraft, setExpertTeamDraft, expertTeamEditorOpen, setExpertTeamEditorOpen, expertTeamRunning, setExpertTeamRunning, expertTeamMemberRunning, setExpertTeamMemberRunning, teamRuns, setTeamRuns, teamPopupRunId, setTeamPopupRunId, teamHistoryMember, setTeamHistoryMember, threadTeamId, setThreadTeamId, teamHistoryRuns, setTeamHistoryRuns, teamRunsRef, teamDeltaRef, teamFlushRef, teamRunningCountRef };
 }
