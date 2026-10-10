@@ -287,8 +287,18 @@ ok(/window\.codex\.onEvent\(/.test(bridge) && /"item\/started"/.test(bridge) && 
   "桥监听**引擎工具项**事件（不再加一条 harness:event 广播 —— 工具项本来就在引擎事件流里，多一处发射点就多一处会漏）");
 ok(/const WORK_ITEM_TYPES = new Set\(\[[\s\S]{0,240}?"commandExecution"/.test(bridge) && /beginToolWatch\(/.test(bridge) && /endToolWatch\(/.test(bridge),
   "工具项起止配对计时（commandExecution 等算「长」；reasoning/agentMessage 不算）");
-ok(/method === "turn\/completed"[\s\S]{0,80}?endToolWatchesOfTurn\(/.test(bridge),
-  "回合结束兜底收尾（被打断的回合可能永远收不到 item/completed ⇒ 否则胶囊里挂一条永远在跑的幽灵）");
+/* 10-10 修「命令没有回传结果，就一直挂着」：旧断言只要求 `method === "turn/completed"` 后面跟着
+   endToolWatchesOfTurn —— **它把 bug 当契约固化了**（① 只认一类结束事件；② turnId 取的是
+   `params.turnId`，而 turn 类事件的 id 在 `params.turn.id` ⇒ 恒空串 ⇒ 兜底从未生效）。
+   ⇒ 改成三条**正向**断言钉住正确形态。 */
+ok(/TURN_END_METHODS = new Set\(\[[\s\S]{0,160}?"turn\/completed"[\s\S]{0,40}?"turn\/aborted"[\s\S]{0,40}?"turn\/failed"[\s\S]{0,40}?"turn\/interrupted"/.test(bridge)
+  && /TURN_END_METHODS\.has\(method\)[\s\S]{0,240}?endToolWatchesOfTurn\(/.test(bridge),
+  "回合结束兜底收尾认**四类**事件（只认 turn/completed ⇒ 被中断 / 失败 / 中止的回合留下永远在跑的幽灵 watch）");
+ok(/endToolWatchesOfTurn\(String\(params\.turn\?\.id \?\? params\.turnId \?\? ""\)/.test(bridge),
+  "⛔ turn 类事件的回合 id 在 `params.turn.id`（`params.turnId` 只是 item 类事件的字段）—— 取错 = 兜底恒不生效");
+ok(/export function endToolWatchesOfTurn\(turnId: string, threadId\?: string\)/.test(storeSrc)
+  && /orphanOfThread/.test(storeSrc),
+  "store 侧按会话收孤儿 watch（事件的 turnId 缺省时也能收，否则永久残留 —— 长命令没有超时兜底）");
 ok(/setToolAbortHandler\(\(\) => \{ abortRef\.current\?\.\(\); \}\)/.test(bridge) && /setToolAbortHandler\(null\)/.test(bridge),
   "「中止」回调注册/清理成对（回调走 ref：每次渲染都是新函数，直接进 deps 会让订阅反复重建）");
 ok(/onAbortTool=\{\(\) => \{ void interrupt\(\); \}\}/.test(appView) && /onAbortTool\?: \(\) => void/.test(bridge),
@@ -314,6 +324,61 @@ ok(/onAbortTool=\{\(\) => \{ void interrupt\(\); \}\}/.test(appView) && /onAbort
     Date.now = realNow;
     off2();
   }
+}
+/* 真跑：**孤儿 watch**（事件的 turnId 缺省 ⇒ watch 记的是空串）也能被「按会话收尾」收掉 ——
+   这是 10-10 修「命令没有回传结果，就一直挂着」的二级兜底；顺带验证**不跨会话误收**。 */
+{
+  const realNow = Date.now;
+  const off3 = store.subscribePollStore(() => undefined);
+  try {
+    store.beginToolWatch({ id: "cmd-guard-2", threadId: "th-2", title: "命令 · 无回合 id" });
+    Date.now = () => realNow() + 9000;
+    await new Promise((r) => setTimeout(r, 1250));
+    ok(store.getPollTask("tool:cmd-guard-2")?.status === "polling", "真跑：孤儿 watch（turnId 缺省）照样登记成后台任务");
+    store.endToolWatchesOfTurn("tu-other", "th-3");   // 别的会话的回合结束
+    ok(store.getPollTask("tool:cmd-guard-2")?.status === "polling", "⛔ 按会话收尾**不跨会话误收**（别的会话跑完不影响本会话挂着的命令）");
+    Date.now = realNow;
+    store.endToolWatchesOfTurn("tu-other", "th-2");   // 本会话的回合结束（turnId 对不上，纯靠会话兜底）
+    ok(store.getPollTask("tool:cmd-guard-2")?.status === "failed", "真跑：本会话回合结束 ⇒ 孤儿 watch 被收尾（挂着的命令不再永久残留）");
+  } finally {
+    Date.now = realNow;
+    off3();
+  }
+}
+
+/* ── ⑨c 轮询完成后「自动继续」（10-10 用户反馈：回合结束后轮询还在，返回结果却没人推进）──────
+   失效方式是**静默**的（界面看不出坏），所以三段都钉：
+     ① 纯函数（文案 + 防循环常量，真跑）；② 桥把「成功终结」这一个事实通知出去；
+     ③ 上层四道闸（只认 poll+成功 / 当前会话 / 空闲 / 额度）。 */
+ok(typeof cfg.pollContinuePrompt === "function"
+  && Number(cfg.POLL_AUTO_CONTINUE_WINDOW_MS) > 0 && Number(cfg.POLL_AUTO_CONTINUE_MAX_ATTEMPTS) > 0,
+  "自动继续的文案与防循环常量在轮询纯函数库里（能被本守卫真跑 —— 判据不靠读代码猜）");
+{
+  const p = cfg.pollContinuePrompt({ title: "视频生成 · 可灵", result: "/workspace/a.mp4" });
+  ok(/后台任务完成/.test(p) && /\/workspace\/a\.mp4/.test(p), "真值：续跑指令把**结果**带上（让模型接着干，不是重做一遍）");
+  ok(/没有返回可读的结果文本/.test(cfg.pollContinuePrompt({ title: "x" })), "真值：结果为空也有明确交代（不能投一条空气进去）");
+}
+ok(/if \(status === "success"\)[\s\S]{0,220}?settledRef\.current\?\.\(settled\)/.test(bridge),
+  "桥**只在轮询成功终结**时通知上层（失败 / 超时 / 中止没有可继续的结果）");
+ok(/onPollSettled\?: \(task: PollTask\) => void/.test(bridge) && /const settledRef = useRef\(onPollSettled\)/.test(bridge),
+  "onPollSettled 走 ref（每次渲染都是新函数，直接进 deps 会让订阅反复重建 —— 同 onAbortTool）");
+ok(/onPollSettled=\{maybeAutoContinueAfterPoll\}/.test(appView),
+  "AppView 把自动继续交给桥 —— 少了这行，结果到了也没人推进（用户报的正是这个）");
+const queueSrc = codeOnly(read("src/features/app-state/parts/part04/03-seg/02-browser-queue-settings.tsx"));
+ok(/function maybeAutoContinueAfterPoll\(task: PollTask\)/.test(queueSrc)
+  && /task\.kind !== "poll"/.test(queueSrc) && /task\.status !== "success"/.test(queueSrc),
+  "只对 `poll` 类且**成功**的任务续跑（长命令的结果就在对话里的工具卡上，不需要替它发言）");
+ok(/bag\.threadRef\.current\?\.id !== threadId/.test(queueSrc) && /isTurnRunning\(entry\)/.test(queueSrc),
+  "⛔ 两道会话闸：只对**当前会话**、且该会话**空闲**（有回合在跑 ⇒ 模型自己就在等结果，插队 = 重复推进）");
+ok(/notePollAutoContinue\(threadId, POLL_AUTO_CONTINUE_WINDOW_MS, POLL_AUTO_CONTINUE_MAX_ATTEMPTS\)/.test(queueSrc),
+  "自动继续有**次数闸**（防「结果 → 续跑 → 又开一个轮询」滚雪球烧钱）");
+/* 真跑：防循环额度 —— 同会话窗口内到上限即停手；⛔ 额度**按会话隔离**（A 用满不能连累 B）。 */
+{
+  const w = cfg.POLL_AUTO_CONTINUE_WINDOW_MS, m = cfg.POLL_AUTO_CONTINUE_MAX_ATTEMPTS;
+  let allowed = 0;
+  for (let i = 0; i < m + 2; i += 1) if (store.notePollAutoContinue("th-quota-a", w, m)) allowed += 1;
+  ok(allowed === m, `真跑：同会话窗口内放行 ${allowed}/${m} 次，到上限静默停手`);
+  ok(store.notePollAutoContinue("th-quota-b", w, m) === true, "真跑：额度按会话隔离（一个会话卡死不会锁住别的会话）");
 }
 
 console.log(`\n【poll-board】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

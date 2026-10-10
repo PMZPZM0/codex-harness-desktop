@@ -35,3 +35,6 @@ export declare function formatPollClock(at: number): string;
 export declare function measuredIntervalMs(rounds: Array<{ at?: number }> | null): number | null;
 export declare function pollMetricText(task: { status?: string; rounds?: unknown[]; intervalMs?: number; managed?: boolean; startedAt?: number; endedAt?: number } | null | undefined, nowMs?: number): string;
 export declare function roundSummaryText(round: { ok?: boolean; summary?: string; progress?: string; error?: string } | null | undefined): string;
+export declare const POLL_AUTO_CONTINUE_WINDOW_MS: number;
+export declare const POLL_AUTO_CONTINUE_MAX_ATTEMPTS: number;
+export declare function pollContinuePrompt(task: { title?: string; result?: string } | null | undefined): string;

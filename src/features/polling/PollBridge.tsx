@@ -17,13 +17,18 @@
  *      ⛔ 这条只在胶囊里出现（`kind:"tool"`）：流里它已经有自己的工具卡，再画一张就是
  *        同一件事两个地方看。判定门槛见 `SLOW_TOOL_MS`（不到阈值不登记，免得给每个
  *        `read` / `ls` 都挂个转圈）。
+ *
+ * ── 两个出口（都走 ref，回调每次渲染都是新函数）─────────────────────────────────
+ *   · `onAbortTool`    —— 胶囊上的「中止」（长命令只能打断当前回合）；
+ *   · `onPollSettled`  —— 轮询**成功**拿到结果时通知上层。⛔ 本组件**不判**要不要自动续跑
+ *     （那是上层 `maybeAutoContinueAfterPoll` 的事：是不是当前会话 / 空闲否 / 额度剩不剩）。
  */
 import { useEffect, useRef } from "react";
 import {
-  abortPollTask, backfillPollTurn, beginToolWatch, endToolWatch, endToolWatchesOfTurn,
+  abortPollTask, backfillPollTurn, beginToolWatch, endToolWatch, endToolWatchesOfTurn, getPollTask,
   hydratePollConfig, openPollTask, pushPollRound, setPollConfig, setToolAbortHandler, settlePollTask,
 } from "../../polling/poll-store";
-import type { PollStatus } from "../../polling/poll-store";
+import type { PollStatus, PollTask } from "../../polling/poll-store";
 
 const SETTLEABLE: PollStatus[] = ["success", "failed", "timeout", "aborted"];
 
@@ -32,6 +37,11 @@ const WORK_ITEM_TYPES = new Set([
   "commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall",
   "webSearch", "collabAgentToolCall", "subAgentActivity", "imageGeneration",
 ]);
+
+/** 引擎的**回合结束**事件（四类，按结束原因分别投递，见 app-state 的事件路由 03-thread-id.tsx）。
+ *  ⛔ 只认 `turn/completed` 会让「被中断 / 失败 / 中止」的回合留下**永远在跑**的幽灵 watch
+ *    —— 那些回合里命令的 `item/completed` 可能永远不来，而长命令任务**没有超时兜底**。 */
+const TURN_END_METHODS = new Set(["turn/completed", "turn/aborted", "turn/failed", "turn/interrupted"]);
 
 /** 胶囊那一行显示什么（够认出来是哪件事即可；详情看对话里那张工具卡）。 */
 function titleOfItem(item: any): string {
@@ -45,14 +55,17 @@ function titleOfItem(item: any): string {
   return "工具调用";
 }
 
-export function PollBridge({ threadId = "", turnId = "", onAbortTool }: {
-  threadId?: string; turnId?: string; onAbortTool?: () => void;
+export function PollBridge({ threadId = "", turnId = "", onAbortTool, onPollSettled }: {
+  threadId?: string; turnId?: string; onAbortTool?: () => void; onPollSettled?: (task: PollTask) => void;
 }): null {
   /** 「中止」回调放 ref：它每次渲染都是新函数，直接进 effect deps 会让订阅反复重建。
    *  ⛔ 只在 effect 里同步（不在渲染期赋值）——渲染期写 ref 在并发渲染下不可靠。
    *    初值由 `useRef(onAbortTool)` 给出 ⇒ 首次点击读到的就是当前那个，不会有一帧的滞后。 */
   const abortRef = useRef(onAbortTool);
   useEffect(() => { abortRef.current = onAbortTool; });
+  /** 同上：轮询**成功终结**时的回调（上层据此决定要不要自动续跑 —— 见 `onPollSettled`）。 */
+  const settledRef = useRef(onPollSettled);
+  useEffect(() => { settledRef.current = onPollSettled; });
 
   // 配置：先读本地镜像（立刻可用），再用主进程的真相源覆盖（另一窗口改过的情况）
   useEffect(() => {
@@ -115,6 +128,14 @@ export function PollBridge({ threadId = "", turnId = "", onAbortTool }: {
           result: payload.result ? String(payload.result) : undefined,
           error: payload.error ? String(payload.error) : undefined,
         });
+        /* ★ 只在**轮询成功**时通知上层（10-10 用户要求「回合结束后轮询还在、返回结果了要自动继续」）：
+           失败/超时/中止没有可继续的结果；渲染层看门狗判的超时走不到这里（那是本地 settle）。
+           ⛔ 只**通知**，不在这里决定要不要续跑 —— 判据（是不是当前会话、空闲否、额度剩不剩）
+              全在上层（`maybeAutoContinueAfterPoll`），本组件只负责"结果到了"这一个事实。 */
+        if (status === "success") {
+          const settled = getPollTask(taskId);
+          if (settled) settledRef.current?.(settled);
+        }
         return;
       }
       if (action === "aborted") abortPollTask(taskId);
@@ -126,8 +147,9 @@ export function PollBridge({ threadId = "", turnId = "", onAbortTool }: {
      ⛔ 为什么监听 `onEvent`（引擎事件）而不是再加一条 harness:event：工具项本来就在引擎事件流里，
         再加一条广播通道 = 主进程多一处发射点、多一处会漏的地方（本项目记过的「二房东」缺陷）。
      ⛔ 判据用 `item/started` + `item/completed` 配对：前者开始计时（可能到最后都不登记），
-        后者收尾（没到阈值就是 no-op）。`turn/completed` 兜底收掉本回合的残余（被打断的回合
-        可能永远收不到 completed）。 */
+        后者收尾（没到阈值就是 no-op）。**回合结束事件**（四类，见 `TURN_END_METHODS`）兜底收掉
+        本回合的残余 —— 被打断 / 失败的回合可能永远收不到 completed，而长命令**没有超时兜底**
+        （见 poll-store 的 tickWatchdog），所以这里是唯一的收尾通道。 */
   useEffect(() => {
     if (!threadId) return;
     const off = window.codex.onEvent((event: any) => {
@@ -135,7 +157,21 @@ export function PollBridge({ threadId = "", turnId = "", onAbortTool }: {
       const params = event?.params ?? {};
       if (String(params.threadId ?? "") !== threadId) return;
       const method = String(event?.method ?? "");
-      if (method === "turn/completed") { endToolWatchesOfTurn(String(params.turnId ?? "")); return; }
+      /* ⛔⛔ 2026-10-10 修「命令没有回传结果，就一直挂着」（用户反馈）：两个 bug 叠在一起 ——
+         ① **回合 id 取错字段**：turn 类事件的回合 id 在 `params.turn.id`，**不在** `params.turnId`
+            （`params.turnId` 是 item 类事件的字段 —— 见 app-view/helpers/stream.ts 的
+            applyThreadEvent：`turn/*` 取 `params.turn`、`item/*` 取 `params.turnId`；事件路由也按
+            `params.turn?.id ?? params.turnId` 取）。旧写法 `String(params.turnId ?? "")` 对
+            turn/completed **恒为空串** ⇒ `endToolWatchesOfTurn("")` 里 `if (!turn) return` 直接返回
+            ⇒ **这条兜底从上线起从未生效过**。
+         ② **只认 turn/completed**：`turn/aborted` / `turn/failed` / `turn/interrupted` 三种收尾全漏
+            （事件路由 03-thread-id.tsx 三处都处理了）。被中断 / 失败的回合里，命令的 `item/completed`
+            可能永远不来 ⇒ 既没有 item/completed、又没有兜底 ⇒ **永久挂在胶囊里**。
+         ⛔ 顺带把 threadId 传下去作二级兜底（watch 的 turnId 缺省时按会话收）。 */
+      if (TURN_END_METHODS.has(method)) {
+        endToolWatchesOfTurn(String(params.turn?.id ?? params.turnId ?? ""), String(params.threadId ?? ""));
+        return;
+      }
       const item = params.item;
       if (!item || !WORK_ITEM_TYPES.has(String(item.type ?? ""))) return;
       const id = String(item.id ?? params.itemId ?? "");

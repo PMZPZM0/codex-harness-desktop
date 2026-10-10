@@ -146,3 +146,25 @@ export function roundSummaryText(round) {
   const oneLine = raw.replace(/\s+/g, " ").trim();
   return oneLine.length > 120 ? `${oneLine.slice(0, 120)}…` : oneLine;
 }
+
+/* ── 轮询完成后「自动继续」（10-10 用户反馈：回合结束后轮询还在跑，拿到结果却没人接着推进）────
+   ⛔ 与「截断续接」（`turn-truncation.mjs`）是**两件事**，别混：
+     · 截断续接 = 回合**内**被上游单次输出上限截断，由 `turn/completed` 触发；
+     · 这里   = 回合**已结束**、外部任务（视频生成那类）稍后才返回结果，由**轮询终结事件**触发。
+   ⛔ 触发条件缺一不可：① 该任务是 `poll` 类（长命令不算，它的结果就在对话里的工具卡上）；
+     ② 成功且有结果；③ 属于**当前会话**；④ 该会话此刻**空闲**（没有回合在跑 —— 否则模型
+     本来就在等结果，再插一条就是重复推进）。⑤ 同一会话在窗口内没超次数（防「结果 → 续跑 →
+     又开一个轮询 → 又续跑」的死循环烧钱）。 判据集中在调用方（PollBridge 的 onPollSettled）。 */
+
+/** 同一会话在多少毫秒内最多因「后台任务完成」自动续跑几次。 */
+export const POLL_AUTO_CONTINUE_WINDOW_MS = 15 * 60 * 1000;
+export const POLL_AUTO_CONTINUE_MAX_ATTEMPTS = 3;
+
+/** 自动续跑时投给模型的指令：把**结果**交给它，让它接着原来的任务往下做（不是重新做一遍）。 */
+export function pollContinuePrompt(task) {
+  const title = String(task?.title ?? "").trim() || "后台任务";
+  const result = String(task?.result ?? "").trim() || "（任务已成功完成，但厂商没有返回可读的结果文本）";
+  return `（后台任务完成）你之前发起并等待的「${title}」已经返回结果：\n\n${result}\n\n`
+    + "请基于这个结果继续你之前的工作。如果这件事已经全部做完，用一句话向用户汇报结论即可；"
+    + "⛔ 不要为同一件事再开一次等待轮询。";
+}

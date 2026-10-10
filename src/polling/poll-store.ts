@@ -326,17 +326,25 @@ export function endToolWatch(id: string, patch: { failed?: boolean } = {}): void
   ensureWatchdog();
 }
 
-/** 回合整个结束了（`turn/completed`）：把这一回合还没收到 completed 的工具项一起收尾。
+/** 回合结束了（`turn/completed` / `turn/aborted` / `turn/failed` / `turn/interrupted`）：
+ *  把这一回合还没收到 completed 的工具项一起收尾。
  *  ⛔ 少了它：被打断/中途报错的回合里，工具项的 completed 可能永远不来 ⇒ 胶囊里挂一条
- *    "永远在跑"的幽灵。
+ *    "永远在跑"的幽灵（**长命令任务没有任何超时兜底** —— 见 tickWatchdog ② 显式只收 `poll` 类，
+ *    理由是"长命令跑多久是它自己的事"⇒ 唯一收尾通道就是这里，一旦漏掉即永久残留）。
+ *  ⛔ 2026-10-10 加 `threadId` 二级兜底（用户反馈「命令没有回传结果，就一直挂着」）：
+ *    万一某条 watch 的 `turnId` 缺省（事件的 turnId 字段缺省时 watch 记的是空串），
+ *    回合级匹配会永远落空 ⇒ 按**会话**收掉它。只在事件确实带了 threadId 时启用，不跨会话误收。
  *  ⛔ 状态用 `failed` 不用 `aborted`：`aborted` 在本模块的语义是「**用户**按了中止」，
  *    这里的收尾不代表用户动作（正常结束的回合里，工具项早已被 item/completed 收走 ⇒ 这里是 no-op）。 */
-export function endToolWatchesOfTurn(turnId: string): void {
+export function endToolWatchesOfTurn(turnId: string, threadId?: string): void {
   const turn = String(turnId ?? "");
-  if (!turn) return;
+  const thread = String(threadId ?? "");
+  if (!turn && !thread) return;
   let changed = false;
   for (const [id, watch] of [...watchingTools]) {
-    if (watch.turnId !== turn) continue;
+    const sameTurn = Boolean(turn) && watch.turnId === turn;
+    const orphanOfThread = Boolean(thread) && !watch.turnId && watch.threadId === thread;
+    if (!sameTurn && !orphanOfThread) continue;
     watchingTools.delete(id);
     settlePollTask(toolTaskId(id), { status: "failed", error: "回合已结束，这次工具调用没有收到完成回执" });
     changed = true;
@@ -357,6 +365,28 @@ export function setToolAbortHandler(fn: ((taskId: string) => void) | null): void
 
 export function requestToolAbort(taskId: string): void {
   try { toolAbortHandler?.(String(taskId ?? "")); } catch { /* 中止失败不影响别的功能 */ }
+}
+
+/* ── 「后台任务完成 → 自动续跑」的防循环记录（10-10）──────────────────────────────
+   ⛔ 为什么放模块级（而不是某个组件的 useRef）：任务表本来就在这里，配额与它同源；
+      放模块级还让**守卫能直接 import 真跑**（本项目纪律：判据要能实测，不靠读代码猜）。
+   ⛔ 为什么要有它：自动续跑 = 应用**替用户发消息**（烧 token）。没有闸就可能
+      「结果 → 续跑 → 模型又开一个轮询 → 又续跑」地滚下去。
+   返回 false = 本会话在窗口内已达上限，调用方**静默停手**（不弹错、不打扰）。 */
+const pollContinueLog = new Map<string, { count: number; firstAt: number }>();
+
+export function notePollAutoContinue(threadId: string, windowMs: number, maxAttempts: number): boolean {
+  const key = String(threadId ?? "");
+  if (!key) return false;
+  const now = Date.now();
+  const rec = pollContinueLog.get(key);
+  if (!rec || now - rec.firstAt > Number(windowMs)) {
+    pollContinueLog.set(key, { count: 1, firstAt: now });
+    return true;
+  }
+  if (rec.count >= Number(maxAttempts)) return false;
+  rec.count += 1;
+  return true;
 }
 
 function trimTasks() {

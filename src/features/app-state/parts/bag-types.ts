@@ -8,6 +8,7 @@
 import type * as React from "react";
 import type { RateLimitCtx, BotEntry } from "./types";
 import type { FavoriteRequest } from "../../../lib/favorite-bridge";
+import type { PollTask } from "../../../polling/poll-store";
 
 export interface Bag {
   serverStatus: string;
@@ -1139,6 +1140,8 @@ export interface Bag {
   armPinForReleasedQueue: (threadId: string | null | undefined, why: string) => boolean;
   disarmPinIntent: (why: string) => void;
   maybeAutoContinueTruncated: (threadId: string) => void;
+  /** 轮询任务成功返回结果后的自动继续（10-10）—— 判据与防循环见实现处（part04/03-seg 的 maybeAutoContinueAfterPoll）。 */
+  maybeAutoContinueAfterPoll: (task: PollTask) => void;
   startQueued: (id?: string | undefined) => Promise<void>;
   refreshSettingsResources: (opts?: { mcpDetail?: boolean | undefined; }) => Promise<void>;
   trustAllHooks: () => Promise<void>;
