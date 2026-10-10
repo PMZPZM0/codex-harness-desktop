@@ -221,13 +221,23 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
   const seg08 = codeOnly(read("src/features/app-state/parts/part08/01-seg.tsx"));
   ok(/name: "agent_ask"[\s\S]{0,600}multiple: \{ type: "boolean"/.test(seg08),
     "⛔ agent_ask 工具 schema 仍带 multiple 参数（单/多选由 Codex 决定的通道不许丢）");
-  // 10-10 实测事故：调度器等主进程 resume 不带 dynamicTools ⇒ 工具面被冲掉回创建时快照
-  // ⇒ 模型 schema 里没有 multiple（提问卡退回单选）。守卫钉住 codex-server 的还原逻辑。
-  const serverCode = codeOnly(read("electron/codex-server.ts"));
-  ok(/threadToolSurface/.test(serverCode) && /thread\/resume/.test(serverCode) && /dynamicTools: cached/.test(serverCode),
-    "⛔ codex-server 请求漏斗对不带 dynamicTools 的 thread/resume 还原该会话最近一次工具面（⛔ 缺它 = 主进程 resume 冲掉工具面，agent_ask 退回单选/新工具全不可达）");
-  ok(/recordStartSurface/.test(serverCode),
-    "codex-server 对 thread/start 的响应按 thread.id 记录工具面（threadId 只在响应里）");
+  /* ⛔⛔ 10-11 实测定案：引擎的工具面**只在 spawn 时定死**（来源 = rollout 首行
+     session_meta.dynamic_tools）—— thread/resume / thread/fork 里的 dynamicTools 被整份忽略
+     （协议 schema 里 ThreadResumeParams 没有该字段；独立探针实测上游 tools 一个不多）。
+     ⇒ 老会话升级工具面**只有**一条路：resume 前把 rollout 首行改成当前这一份。
+     这条链断掉 = 创建于旧版本的会话永远看不见新工具（用户症状：agent_ask 写着"可多选"、
+     界面只能选一个）。守卫钉三层：worker 实现 / 池导出 / resume 前的 await 调用点。 */
+  const workerCode = read("electron/rollout-worker.cjs");
+  ok(/function syncToolSurface\(/.test(workerCode) && /session_meta/.test(workerCode) && /payload\.dynamic_tools = tools/.test(workerCode),
+    "⛔ rollout worker 有 syncToolSurface（改写首行 session_meta.dynamic_tools = 会话工具面）");
+  ok(/renameSync\(tmpFile, file\)/.test(workerCode) && /tools\.bak/.test(workerCode),
+    "⛔ 工具面改写走「临时文件 + rename 原子替换」且留 .bak 备份（⛔ 直接覆盖写会在被杀时留下半截 JSONL = 历史损坏）");
+  const poolCode = codeOnly(read("electron/rollout-pool.ts"));
+  ok(/export function syncToolSurfaceAsync\(/.test(poolCode) && /call\("syncTools"/.test(poolCode),
+    "rollout-pool 暴露 syncToolSurfaceAsync（传到 worker 的 syncTools op）");
+  const ipcCode = codeOnly(read("electron/features/codex-ipc.ts"));
+  ok(/method === "thread\/resume"[\s\S]{0,900}await syncToolSurfaceAsync\(codexHome, resumeThreadId, resumeTools\)/.test(ipcCode),
+    "⛔ codex-ipc 在 thread/resume **之前** await 工具面同步（引擎就是在这条 resume 上 spawn 会话并读首行；晚一步就白做）");
   ok(/multiple === true \|\| args\.multiple === "true"/.test(codeOnly(read("src/features/app-state/parts/part05/event-router/02-request.tsx"))),
     "agent_ask 的 multiple 解析容错字符串 \"true\"（个别模型会传字符串）");
 }

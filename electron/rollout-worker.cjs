@@ -358,8 +358,7 @@ function findRolloutFile(root, threadId) {
   const roots = [path.join(root, "sessions"), path.join(root, "archived_sessions")];
   for (const base of roots) {
     if (!existsSync(base)) continue;
-    const stack = [base];
-    while (stack.length) {
+    const stack = [base];    while (stack.length) {
       const current = stack.pop();
       let entries;
       try { entries = readdirSync(current, { withFileTypes: true }); } catch { continue; }
@@ -376,8 +375,76 @@ function findRolloutFile(root, threadId) {
   return "";
 }
 
-/** 压缩侦测的读取偏移（10-07）：`${root}|${threadId}` → 上次检查到的字节数。
- *  增量口径的意义：压缩记录写在**回合开头**（引擎先压缩再调模型），之后同一回合还可以再写
+/* ── 会话工具面同步（10-11 实测：老会话拿不到新工具的真根因与真出路）───────────────
+   实证（引擎 0.157.1 · 独立 CODEX_HOME + mock provider 截获真实上游请求体）：
+     · thread/start 带 dynamicTools → 生效（上游 tools 里看得见）；
+     · thread/resume 带 dynamicTools → **整份忽略**（上游 tools 一个不多；协议 schema
+       ThreadResumeParams 里根本没有 dynamicTools 字段）；
+     · thread/fork 同理忽略（继承源会话创建时的快照）。
+   ⇒ 会话的工具面**只在 spawn 时定死**，来源 = rollout **首行** `session_meta.dynamic_tools`
+     （把首行改掉 + 引擎重启 → resume 立刻拿到新工具面，已实证）。
+   用户可感的症状：10-09 建的会话永远看不见 10-10 才加的 agent_ask.multiple ⇒
+   「明明写着可多选，界面只能选一个」。同类事故还有 10-05「定时任务/知识库全部 unsupported call」。
+   ⇒ 这里的职责：**把该会话的工具面同步成调用方（渲染层）当前那一份**，赶在 thread/resume
+     之前写完 —— 若该会话在本引擎进程里还没 spawn 过，这次 resume 就按新工具面起；已经
+     spawn 过的，下次引擎重启后生效。
+   ⛔ 只改首行的 dynamic_tools 一个字段，其余字节原样保留；备份 + 校验 + 临时文件 rename 原子替换，
+     任何一步不通过就**原样保留**（宁可不升级，也不许毁掉用户的历史）。 */
+const syncedToolHash = new Map(); // rollout 路径 -> 已同步的工具面指纹（同一进程内短路重复比较）
+
+/** 工具面指纹：按 name 排序后连 description/inputSchema 一起比（顺序无关，内容相关）。 */
+function toolSurfaceFingerprint(list) {
+  return JSON.stringify((Array.isArray(list) ? list : [])
+    .map((tool) => [String(tool && tool.name), String(tool && tool.description), tool && tool.inputSchema])
+    .sort((left, right) => left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0));
+}
+
+function syncToolSurface(root, threadId, tools) {
+  if (!threadId || !Array.isArray(tools) || !tools.length) return { patched: false, reason: "no-tools" };
+  const file = findRolloutFile(root, String(threadId));
+  if (!file) return { patched: false, reason: "no-rollout" };
+  const fingerprint = toolSurfaceFingerprint(tools);
+  if (syncedToolHash.get(file) === fingerprint) return { patched: false, reason: "already-synced" };
+  const first = readFirstLine(file);
+  if (!first) return { patched: false, reason: "no-first-line" };
+  let row;
+  try { row = JSON.parse(first); } catch { return { patched: false, reason: "bad-first-line" }; }
+  const payload = row && row.payload;
+  if (row.type !== "session_meta" || !payload || typeof payload !== "object") return { patched: false, reason: "not-session-meta" };
+  if (toolSurfaceFingerprint(payload.dynamic_tools) === fingerprint) {
+    syncedToolHash.set(file, fingerprint); // 已经是当前工具面：记下指纹，后续 resume 不再比对
+    return { patched: false, reason: "already-current" };
+  }
+  payload.dynamic_tools = tools;
+  let patchedFirst;
+  try { patchedFirst = JSON.stringify(row); } catch { return { patched: false, reason: "serialize-failed" }; }
+  // 整文件只在需要改写时读一次：首行之后的所有字节原样拼回（历史一个字节都不能动）
+  let text;
+  try { text = readFileSync(file, "utf8"); } catch { return { patched: false, reason: "read-failed" }; }
+  const nl = text.indexOf("\n");
+  const merged = nl >= 0 ? patchedFirst + text.slice(nl) : patchedFirst;
+  // 兜底自检：改完的产物必须仍是合法 JSONL 且工具面已是新的
+  try {
+    const head = nl >= 0 ? merged.slice(0, merged.indexOf("\n")) : merged;
+    const check = JSON.parse(head);
+    if (toolSurfaceFingerprint(check.payload && check.payload.dynamic_tools) !== fingerprint) {
+      return { patched: false, reason: "verify-failed" };
+    }
+  } catch { return { patched: false, reason: "verify-failed" }; }
+  try {
+    const backup = `${file}.tools.bak`;
+    if (!existsSync(backup)) writeFileSync(backup, text, "utf8"); // 首次升级留一份原文（.bak 不被任何扫描认作 rollout）
+    const tmpFile = `${file}.tools.tmp`;
+    writeFileSync(tmpFile, merged, "utf8");
+    renameSync(tmpFile, file); // 原子替换：写一半被杀也只留原文件
+  } catch { return { patched: false, reason: "write-failed" }; }
+  syncedToolHash.set(file, fingerprint);
+  rolloutListCache.delete(file);
+  rolloutParseCache.delete(file);
+  return { patched: true, reason: "patched", path: file };
+}
+
+/** 压缩侦测的读取偏移（10-07）：`${root}|${threadId}` → 上次检查到的字节数。 *  增量口径的意义：压缩记录写在**回合开头**（引擎先压缩再调模型），之后同一回合还可以再写
  *  几百 KB 的工具输出 —— 若每次只读"最后 N 字节"，忙回合会把压缩记录挤出窗口 ⇒ 漏判。
  *  只读「上次之后新增的字节 + 8KB 重叠」（重叠防上一刀切在行中间）。 */
 const compactionScanOffsets = new Map();
@@ -594,6 +661,8 @@ if (parentPort) {
         parentPort.postMessage({ id, ok: true, data: healBrokenLineage(String(msg.root || "")) });
       } else if (msg.op === "check-compaction") {
         parentPort.postMessage({ id, ok: true, data: checkCompaction(String(msg.root || ""), String(msg.threadId || "")) });
+      } else if (msg.op === "syncTools") {
+        parentPort.postMessage({ id, ok: true, data: syncToolSurface(String(msg.root || ""), String(msg.threadId || ""), msg.tools) });
       } else {
         parentPort.postMessage({ id, ok: false, error: `unknown op: ${msg.op}` });
       }

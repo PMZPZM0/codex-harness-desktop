@@ -21,7 +21,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { safeProviderId } from "../provider-id";
-import { enrichThreadWithRolloutToolsAsync, listRolloutThreadsAsync } from "../rollout-pool";
+import { enrichThreadWithRolloutToolsAsync, listRolloutThreadsAsync, syncToolSurfaceAsync } from "../rollout-pool";
 import { markMissingRollouts, mergeThreadList } from "../session-tools";
 import { dropStoredReports, storedReportsForThread } from "../turn-file-watch";
 import { dropStoredCompactions, storedCompactionsForThread } from "../compaction-watch";
@@ -74,6 +74,26 @@ export const codexFeature = defineFeature<null>({
       if (method === "thread/start") {
         const startCwd = String((params as any)?.cwd ?? "");
         if (startCwd) ensureProjectAgentsMd(startCwd);
+      }
+      /* ⛔⛔ 老会话的工具面升级（10-11 实测定案，与「resume 会重注册工具」的旧认知相反）：
+         引擎的工具面**只在 spawn 时定死**，来源 = rollout 首行 `session_meta.dynamic_tools`
+         —— thread/resume / thread/fork 里的 dynamicTools 会被**整份忽略**（协议 schema 里
+         ThreadResumeParams 根本没这个字段；探针实证上游请求体的 tools 一个不多）。
+         后果：创建于旧版本的会话永远拿不到新工具（agent_ask.multiple、新能力…），症状就是
+         「明明写着可多选，界面只能选一个」。
+         修法：resume 前先把首行改成调用方当前这份工具面（worker 里原子替换 + 备份）。
+         ⛔ 必须 await 完再发 resume：引擎就是在这条 resume 上 spawn 会话、读首行。
+         失败静默：升级是锦上添花，不许挡住 resume。 */
+      if (method === "thread/resume") {
+        const resumeThreadId = String((params as any)?.threadId ?? "");
+        const resumeTools = (params as any)?.dynamicTools;
+        if (resumeThreadId && Array.isArray(resumeTools) && resumeTools.length) {
+          try {
+            await syncToolSurfaceAsync(codexHome, resumeThreadId, resumeTools);
+          } catch (error: any) {
+            console.warn("[tool-surface] 工具面同步失败（不影响 resume）：", String(error?.message ?? error).slice(0, 200));
+          }
+        }
       }
       try {
         result = await server.request(method, params);

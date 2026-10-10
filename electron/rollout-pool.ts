@@ -63,7 +63,7 @@ function failAll(error: Error) {
   worker = null;
 }
 
-function call(op: "list" | "enrich" | "purge" | "healLineage" | "check-compaction", payload: Record<string, unknown>): Promise<any> {
+function call(op: "list" | "enrich" | "purge" | "healLineage" | "check-compaction" | "syncTools", payload: Record<string, unknown>): Promise<any> {
   const w = ensureWorker();
   if (!w) return Promise.reject(new Error("rollout worker unavailable"));
   const id = nextId++;
@@ -113,4 +113,14 @@ export function purgeRolloutFilesAsync(codexHome: string, ids: string[]): Promis
  *  ⛔ 只修**已断链**的（源还在的不动）——源在的会话保留血缘才有完整历史。 */
 export function healRolloutLineageAsync(codexHome: string): Promise<{ healed: { path: string; id: string; lostFrom: string }[]; failed: { path: string; error: string }[] }> {
   return call("healLineage", { root: codexHome });
+}
+
+/** 会话工具面同步（worker 版，10-11）：把 rollout 首行 `session_meta.dynamic_tools` 改成
+ *  调用方当前那份 —— 引擎的工具面**只在 spawn 时定死**（实证：thread/resume、thread/fork 里的
+ *  dynamicTools 被整份忽略，协议 schema 里 ThreadResumeParams 根本没有该字段），来源就是这个
+ *  首行。⇒ 老会话（创建时工具面还是旧的）靠这一句才能拿到新工具（agent_ask.multiple 等）。
+ *  ⛔ 必须在调用 thread/resume **之前** await 完：resume 会立刻 spawn 会话并读首行。
+ *  失败一律静默（{patched:false}）——升级是锦上添花，绝不许挡住 resume。 */
+export function syncToolSurfaceAsync(codexHome: string, threadId: string, tools: unknown[]): Promise<{ patched: boolean; reason: string; path?: string }> {
+  return call("syncTools", { root: codexHome, threadId, tools }) as Promise<{ patched: boolean; reason: string; path?: string }>;
 }
