@@ -2007,3 +2007,6 @@
   padding-top: 0;
 }
 .team-rail-node.team-rail-office:only-child::before { display: none; }
+
+/* 10-10 两级 IA：拓展接口的明细列表移进弹窗 ⇒ 只需给条目之间留间距（卡片自身样式不变）。 */
+.ext-dialog { display: flex; flex-direction: column; gap: 12px; padding-top: 8px; }

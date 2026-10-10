@@ -333,6 +333,36 @@ console.log(C.bold("\n【dtIA】开发工具页两级 IA 契约"));
   );
   (/styles\/34-devtools-cards/.test(dtStylesEntry) ? ok : fail)("样式表已接进 src/styles.css");
 }
+
+/* ── 【extIA】拓展接口页 = 两级信息架构（10-10 用户要求，与开发工具页同一套规范）────────
+   「一级主界面以分类卡片展示各功能板块，点击卡片后通过二级弹窗展示对应内容，
+    弹窗内容**不得内嵌**到主界面中」。
+   ⛔ 为什么钉：往一级页塞回一块明细只是一行 JSX 的事，tsc 与视觉测试都看不出来；
+     而且这是**第二个**做两级 IA 的页面 —— 顺带钉住"两页共用同一套组件与 CSS"
+     （各写一套 = 从第一天起埋下规范漂移的种子）。
+   ⛔ 位置说明：本块**不能**放 09-structural（它在【265】"只许缩不许长"的棘轮名单里，
+     加断言会把行数顶上去直接红）—— 与【dtIA】同族，统一放在这里。 */
+console.log(C.bold("\n【extIA】拓展接口页两级 IA 契约"));
+{
+  const extSrc = readFileSync(join(ROOT, "src", "features", "settings-extensibility", "ExtensibilitySettingsSection.tsx"), "utf8");
+  const extCss = readFileSync(join(ROOT, "src", "styles", "34-devtools-cards.css"), "utf8");
+  (/className="settings-cards"/.test(extSrc) && /className="settings-card"/.test(extSrc) ? ok : fail)(
+    "一级用通用分类卡片（.settings-card*）"
+  );
+  (/data-group=\{card\.group\}/.test(extSrc) && /EXTENSIBILITY_GROUPS/.test(extSrc) ? ok : fail)(
+    "卡片按 catalog 的分组生成（⛔ 分类不许在页面里另写一份）"
+  );
+  /* ⛔⛔ 明细只在弹窗里：ext-item 必须出现在 <SettingsDialog> 之后（即弹窗分支内）。 */
+  const dialogAt = extSrc.indexOf("<SettingsDialog");
+  const itemAt = extSrc.indexOf('className="ext-item"');
+  (dialogAt > 0 && itemAt > dialogAt ? ok : fail)(
+    "⛔ 拓展点明细只渲染在二级弹窗里（⛔ 不内嵌回一级页 —— 那正是用户反馈的长滚动堆叠）"
+  );
+  (dialogAt > 0 ? ok : fail)("二级载体统一走 SettingsDialog（⛔ 不许自造弹窗：与开发工具页共用一套规范）");
+  (/\.settings-card,\n\.devtools-card \{/.test(extCss) ? ok : fail)(
+    "⛔ 两页卡片样式**同源**（.settings-card / .devtools-card 是同一份 CSS 的并列选择器）"
+  );
+}
   }
 
   /* ══ 【15】原 L2524–L2545 ══ */
