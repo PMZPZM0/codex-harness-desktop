@@ -8,8 +8,9 @@
  * 二选一（内置记忆金字塔 / MCP 记忆服务）。它自持状态，不占 App 的 props。
  */
 import { useEffect, useState, type CSSProperties } from "react";
+import { SettingsDialog } from "../../components/SettingsDialog";
 import { PageInfo } from "../../components/SettingsHead";
-import { Archive, BookOpen, Cloud, Database, LayoutGrid, Search, Server } from "lucide-react";
+import { Archive, BookOpen, Bot, Cloud, Database, LayoutGrid, Search, Server } from "lucide-react";
 import { MemoryConfigModal } from "../../features/memory";
 
 export type MemoryCenterSectionProps = { memoryEnabled: any; setMemoryEnabled: any; setMemoryCenterTab: any; setMemoryCenterOpen: any; memories: any; memoryGroups: any; memoryLayers: any; memoryMode: any; workspaceMemoryEnabled: any; threads: any; scheduledTasks: any; localSkills: any; memoryStatus: any; memoryConfigOpen: any; memoryGateway: any; setMemoryGateway: any; memoryGatewayAction: any; setMemoryConfigOpen: any; testMemoryGateway: any; saveMemoryGateway: any };
@@ -183,51 +184,77 @@ function MemoryBackendSection() {
 
 export function MemoryCenterSection(props: MemoryCenterSectionProps) {
   const { memoryEnabled, setMemoryEnabled, setMemoryCenterTab, setMemoryCenterOpen, memories, memoryGroups, memoryLayers, memoryMode, workspaceMemoryEnabled, threads, scheduledTasks, localSkills, memoryStatus, memoryConfigOpen, memoryGateway, setMemoryGateway, memoryGatewayAction, setMemoryConfigOpen, testMemoryGateway, saveMemoryGateway } = props;
-  return (
+    /* ── 两级信息架构（10-10 用户要求，与开发工具页 / 拓展接口页 / 记忆中心同一套规范）──
+     一级只放**分类卡片**（含原先内嵌在主界面里的「记忆后端」与「被委派会话的记忆」两块）；
+     内容一律进 SettingsDialog。⛔ 卡片复用跨页通用的 .settings-card*（⛔ 不再自造卡片样式）。 */
+  const [openCard, setOpenCard] = useState<string | null>(null);
+  const cardMeta: Record<string, { title: string; hint: string; tab: string; detail: string }> = {
+    entries: { title: "记忆条目", hint: "按重要度与来源会话整理", tab: "library", detail: "记忆条目按重要度 P0–P3 分层、按来源会话分组：可逐条查看全文、置顶（★ 不会被自动清理）或删除。条目由智能体在干活时自己写下 —— 这里只做查看与整理。" },
+    resident: { title: "常驻记忆", hint: "每轮对话自动注入", tab: "layers", detail: "常驻记忆 = 用户档案（跨项目一致）+ 项目记忆（本项目全体共享）+ 近期日志，每轮对话自动注入。分层规则、水位与容量倍率都在弹窗内的「记忆中心 → 常驻记忆」里。" },
+    storage: { title: "存储与同步", hint: "本地 / 云端 · 工作区记忆", tab: "storage", detail: "决定记忆条目保存在本机还是通过云端网关召回；工作区记忆开关控制当前项目的背景 / 项目记忆 / 日志是否注入与捕获。" },
+    search: { title: "全局搜索", hint: "跨会话 / 记忆 / 任务 / 技能", tab: "search", detail: "一次检索会话、记忆条目、定时任务与技能；命中按会话分组，可直接预览全文或跳到那个会话。" },
+  };
+  const cards = [
+    { key: "entries", icon: <Archive size={15} />, title: "记忆条目", desc: "按重要度与来源会话整理，可逐条查看 / 置顶 / 删除", stat: `${memories.length} 条 · ${memoryGroups.length} 个会话 · ${memoryGroups.reduce((sum: any, g: any) => sum + g.items.filter((it: any) => (it as any).pinned).length, 0)} 置顶` },
+    { key: "resident", icon: <BookOpen size={15} />, title: "常驻记忆", desc: "用户档案 · 项目记忆 · 近期日志，每轮对话自动注入", stat: `用户 ${memoryLayers?.budget.user ?? 0} 字 · 背景 ${memoryLayers?.budget.background ?? 0} 字 · 项目 ${memoryLayers?.budget.project ?? 0} 字` },
+    { key: "storage", icon: <Cloud size={15} />, title: "存储与同步", desc: "记忆保存在本地或云端；工作区记忆跨会话复用", stat: `${memoryMode === "cloud" ? "云端同步" : "本地"}${workspaceMemoryEnabled ? " · 工作区已开启" : ""}` },
+    { key: "search", icon: <Search size={15} />, title: "全局搜索", desc: "检索会话、记忆、任务与技能，命中按会话分组", stat: `${threads.length} 会话 · ${scheduledTasks.length} 任务 · ${localSkills.length} 技能` },
+    { key: "delegated", icon: <Bot size={15} />, title: "被委派会话的记忆", desc: "子智能体 / 专家 / 专家团拿到与主会话同口径的记忆", stat: "委派回合同样会写入" },
+    { key: "backend", icon: <Database size={15} />, title: "记忆后端", desc: "内置记忆金字塔 ⇄ MCP 记忆服务，二选一", stat: "服务没装好会自动回退内置" },
+  ];
+  const openMeta = openCard ? cardMeta[openCard] : null;
+return (
     <>
       <section className="settings-section stack memory-center">
                     <div className="settings-copy channel-heading"><div><h2>记忆<PageInfo text={<>记忆分「常驻记忆」与「记忆条目」两部分：常驻记忆每轮对话自动注入；条目按需召回，按重要度分 P0–P3 管理。</>} /></h2></div><label className="channel-enable"><input type="checkbox" checked={memoryEnabled} onChange={(event) => void setMemoryEnabled(event.target.checked)} /><span>{memoryEnabled ? "已启用" : "已停用"}</span></label></div>
 
-                    <div className="memory-overview">
-                      <button className="memory-overview-card" onClick={() => { setMemoryCenterTab("library"); setMemoryCenterOpen(true); }} title="浏览记忆条目">
-                        <span className="memory-overview-top"><span className="memory-overview-icon"><Archive size={16} /></span>
-                        <span className="memory-overview-body"><strong>记忆条目</strong><small>按重要度与来源会话整理，可逐条查看/置顶/删除</small></span></span>
-                        <span className="memory-overview-stat"><b>{memories.length}</b> 条 · {memoryGroups.length} 个会话 · {memoryGroups.reduce((s: any, g: any) => s + g.items.filter((it: any) => (it as any).pinned).length, 0)} 置顶</span>
-                      </button>
-                      <button className="memory-overview-card" onClick={() => { setMemoryCenterTab("layers"); setMemoryCenterOpen(true); }} title="编辑常驻记忆">
-                        <span className="memory-overview-top"><span className="memory-overview-icon"><BookOpen size={16} /></span>
-                        <span className="memory-overview-body"><strong>常驻记忆</strong><small>用户档案 · 项目记忆 · 近期日志，每轮对话自动注入</small></span></span>
-                        <span className="memory-overview-stat"><b>L0/L1/L2</b> 用户 {memoryLayers?.budget.user ?? 0} 字 · 背景 {memoryLayers?.budget.background ?? 0} 字 · 项目 {memoryLayers?.budget.project ?? 0} 字</span>
-                      </button>
-                      <button className="memory-overview-card" onClick={() => { setMemoryCenterTab("storage"); setMemoryCenterOpen(true); }} title="选择记忆保存位置">
-                        <span className="memory-overview-top"><span className="memory-overview-icon"><Cloud size={16} /></span>
-                        <span className="memory-overview-body"><strong>存储与同步</strong><small>记忆保存在本地或云端；工作区记忆跨会话复用</small></span></span>
-                        <span className="memory-overview-stat"><b>{memoryMode === "cloud" ? "云端同步" : "本地"}</b>{workspaceMemoryEnabled ? " · 工作区已开启" : ""}</span>
-                      </button>
-                      <button className="memory-overview-card" onClick={() => { setMemoryCenterTab("search"); setMemoryCenterOpen(true); }} title="跨会话检索历史内容">
-                        <span className="memory-overview-top"><span className="memory-overview-icon"><Search size={16} /></span>
-                        <span className="memory-overview-body"><strong>全局搜索</strong><small>检索会话、记忆、任务与技能，命中按会话分组、可预览全文</small></span></span>
-                        <span className="memory-overview-stat"><b>{threads.length}</b> 会话 · {scheduledTasks.length} 任务 · {localSkills.length} 技能</span>
-                      </button>
+                    <div className="settings-cards" data-count={cards.length}>
+                      {cards.map((card) => (
+                        <button type="button" className="settings-card" key={card.key} data-memory-card={card.key} onClick={() => setOpenCard(card.key)}>
+                          <span className="settings-card-logo">{card.icon}</span>
+                          <span className="settings-card-copy">
+                            <strong>{card.title}</strong>
+                            <small>{card.desc}</small>
+                            <span className="settings-card-stat">{card.stat}</span>
+                          </span>
+                        </button>
+                      ))}
                     </div>
 
                     <div className="memory-overview-actions">
                       <button className="primary-setting" onClick={() => { setMemoryCenterTab("library"); setMemoryCenterOpen(true); }}><LayoutGrid size={15} />打开记忆中心</button>
                       <span className="muted">浏览条目、编辑常驻记忆、切换存储都在记忆中心里完成，这里只做总览。</span>
                     </div>
-
-                    {/* 被委派会话的记忆（09-23 加）：子智能体 / 专家 / 专家团主理人 / 成员的委派回合由**主进程**
-                        直接 turn/start 发起（不经过渲染层的发送路径）⇒ 此前读不到任何记忆。现在按主会话同口径
-                        注入常驻记忆 + 按本次任务召回；口径 / 门禁 / 三条硬约束见 electron/delegate-memory.ts
-                        （守卫【125】）。 */}
-                    <div className="settings-copy channel-heading"><div><h2>被委派会话的记忆<PageInfo text={<>子智能体 / 专家 / 专家团主理人 / 成员在被发起时，会拿到与主会话同样的常驻记忆（用户档案 · 项目记忆 · 纪律 · 近期日志），并按本次任务召回相关条目。工作区记忆关掉时只注入用户档案、不做召回。这条链路此前是缺的，09-23 补上。</>} /></h2></div></div>
-                    <p className="muted">委派会话同样会写入记忆：回合结束时照常捕获进当日日志，检出纠错时另记一条坑。同一成员的成员会话会被复用，所以它自己也记得之前做过什么。</p>
                     {memoryStatus && <p className="settings-status">{memoryStatus}</p>}
                     {memoryConfigOpen && <MemoryConfigModal gateway={memoryGateway} setGateway={setMemoryGateway} action={memoryGatewayAction} onClose={() => setMemoryConfigOpen(false)} onTest={() => void testMemoryGateway()} onSave={() => void saveMemoryGateway()} />}
 
                     {/* 记忆后端（09-25 新增）：内置金字塔 ⇄ MCP 记忆服务二选一。 */}
-                    <MemoryBackendSection />
-                  </section>
+                  
+                    {/* ── 二级弹窗（⛔ 内容一律在这里，不得内嵌到主界面）──────────────────── */}
+                    {openCard && openMeta && (
+                      <SettingsDialog title={openMeta.title} icon={cards.find((c) => c.key === openCard)?.icon} hint={openMeta.hint} size="lg" onClose={() => setOpenCard(null)}>
+                        <div className="settings-section stack">
+                          <p className="muted">{openMeta.detail}</p>
+                          <div className="memory-overview-actions">
+                            <button className="primary-setting" onClick={() => { setMemoryCenterTab(openMeta.tab as any); setMemoryCenterOpen(true); setOpenCard(null); }}><LayoutGrid size={15} />在记忆中心打开</button>
+                          </div>
+                        </div>
+                      </SettingsDialog>
+                    )}
+                    {openCard === "backend" && (
+                      <SettingsDialog title="记忆后端" icon={<Database size={15} />} hint="内置金字塔 ⇄ MCP 记忆服务（二选一）" size="lg" onClose={() => setOpenCard(null)}>
+                        <MemoryBackendSection />
+                      </SettingsDialog>
+                    )}
+                    {openCard === "delegated" && (
+                      <SettingsDialog title="被委派会话的记忆" icon={<Bot size={15} />} hint="子智能体 / 专家 / 专家团主理人 / 成员" onClose={() => setOpenCard(null)}>
+                        <div className="settings-section stack">
+                          <p className="muted">子智能体 / 专家 / 专家团主理人 / 成员在被发起时，会拿到与主会话同样的常驻记忆（用户档案 · 项目记忆 · 纪律 · 近期日志），并按本次任务召回相关条目；工作区记忆关掉时只注入用户档案、不做召回。</p>
+                          <p className="muted">委派会话同样会写入记忆：回合结束时照常捕获进当日日志，检出纠错时另记一条坑。同一成员的成员会话会被复用，所以它自己也记得之前做过什么。</p>
+                        </div>
+                      </SettingsDialog>
+                    )}
+  </section>
     </>
   );
 }
