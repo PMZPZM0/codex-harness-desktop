@@ -28,7 +28,11 @@ const SHELL = readFileSync(join(ROOT, "src", "features", "memory-ui", "MemoryWor
 /* ⛔ 10-05：归一化层是跨进程字段对齐的真相源（守卫 11n 负责真跑它，这里只做结构判定） */
 const NORM_SRC = readFileSync(join(ROOT, "src", "features", "memory-ui", "normalize.ts"), "utf8");
 const CSS = readFileSync(join(ROOT, "src", "styles", "29-memory-ui.css"), "utf8");
-const PANEL = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "07-memory-panel.tsx"), "utf8");
+/* ⛔ 10-10：旧「记忆中心」弹窗（app-view/AppView/07-memory-panel.tsx）**已删除** ——
+   它的内容整体迁进设置页「记忆」的三个弹窗（settings-memory/MemoryPanes.tsx）。
+   ⇒ 下面所有"旧记忆库以只读方式使用 / 不许有手动保存表单"的断言改看**新家**。 */
+const PANEL = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryPanes.tsx"), "utf8");
+const CENTER = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryCenterSection.tsx"), "utf8");
 const FUNNEL = readFileSync(join(ROOT, "src", "features", "memory", "MemoryPanels.tsx"), "utf8");
 
 /* ── ① 七类记忆齐全 + 判别联合 ────────────────────────────────────────── */
@@ -232,13 +236,13 @@ console.log("\n【mui】⑩ 分层规则 / 两级 IA / 会话↔记忆层级");
   ok(existsSync(join(ROOT, "docs", "MEMORY-LAYERS.md")), "规则文档 docs/MEMORY-LAYERS.md 在位（给人读的那份）");
 
   /* 记忆中心两级 IA：一级卡片、内容只在弹窗里 */
-  ok(/memory-center-cards/.test(PANEL) && /memoryCards\.map/.test(PANEL), "一级渲染分类卡片网格");
-  ok(!/memory-center-tabs/.test(PANEL), "⛔ 页内 tab 已删除（10-10 起改用卡片导航）");
-  const dlgAt = PANEL.indexOf("<SettingsDialog");
-  const wbAt = PANEL.indexOf("<MemoryWorkbench");
-  ok(dlgAt > 0 && wbAt > dlgAt, "⛔ 内容只在二级弹窗里（MemoryWorkbench 出现在 SettingsDialog 之后）");
-  ok(/memory-rule-scope-list/.test(PANEL) && /MEMORY_LAYER_RULES/.test(PANEL),
-    "分层规则弹窗直接渲染规则表（⛔ 页面不另写一份层表）");
+  ok(/className="settings-cards"/.test(CENTER) && /cards\.map\(/.test(CENTER), "一级渲染分类卡片网格（三张并列入口）");
+  ok(!/memory-center-tabs/.test(CENTER), "⛔ 页内 tab 已删除（10-10 起改用卡片导航）");
+  const dlgAt = CENTER.indexOf("<SettingsDialog");
+  ok(dlgAt > 0 && CENTER.indexOf("<MemorySourcesPane") > dlgAt,
+    "⛔ 内容只在二级弹窗里（迁移过来的会话记忆面板出现在 SettingsDialog 之后）");
+  ok(/memory-rule-scope-list/.test(PANEL) && /layersByScope/.test(PANEL),
+    "分层规则块直接渲染规则表（⛔ 不另写一份层表；规则来自 memory-scope-rules.mjs 唯一真相源）");
 
   /* 会话↔记忆层级（新增需求） */
   ok(/mui-sessions/.test(VIEWS) && /sessionGroups/.test(VIEWS), "来源视图列出**关联会话**（来源 → 会话 → 记忆）");
@@ -288,7 +292,6 @@ console.log("\n【mui】⑪ 设置页「记忆」两级 IA");
   ok(/className="settings-cards"/.test(center) && /cards\.map\(/.test(center),
     "一级用**跨页通用**卡片（.settings-card* —— 与开发工具页/拓展接口页/记忆中心同一份 CSS）");
   const dlgAt = center.indexOf("<SettingsDialog");
-  const beAt = center.indexOf("<MemoryBackendSection");
   ok(dlgAt > 0 && center.indexOf("<BackendConsolePanel") > dlgAt,
     "⛔ 记忆后端整块只在弹窗里（⛔ 原来内嵌在页面上；现在由控制台组件承载）");
   ok(!/className="memory-overview"/.test(center), "⛔ 旧的 4 张 overview 卡已替换（页内直排 = 不是两级 IA）");
@@ -301,7 +304,9 @@ console.log("\n【mui】⑪ 设置页「记忆」两级 IA");
     ok(center.indexOf("<SharedLibraryPanel") > dlgIdx,
       "项目共享入口弹窗里直接给**书架界面**（左选项目 + 右三层书架；⛔ 不是空白弹窗）");
   }
-  ok(/MemoryBackendSection/.test(center) && /readMemoryBackend|setMemoryBackend/.test(center),
+  /* ⛔ 后端入口的"真能读能切"由控制台组件自己保证（旧的 MemoryBackendSection 已删）——
+     守卫【150】在 10-memory-audit 里按同一口径核对，这里只钉"它确实被渲染进弹窗"。 */
+  ok(/<BackendConsolePanel/.test(center) && /BackendConsolePanel\.tsx|from "\.\/BackendConsolePanel"/.test(center),
     "记忆后端入口仍在（守卫【150】要求：用户得有地方切换后端）");
 }
 
@@ -381,6 +386,29 @@ console.log("\n【mui】⑮ 三套界面各自独立");
   ok(/\.lib-root/.test(css) && /\.pyr-shape/.test(css) && /\.bc-root/.test(css),
     "三套骨架在样式上也是三段独立定义（⛔ 不是同一套类名换颜色）");
   ok(!/^import[^\n]*MemoryBackendSection/m.test(bc), "③ 控制台**没有 import** 旧的后端组件（自己调同一组 IPC，功能不缩水）");
+}
+
+/* ── ⑰ 旧「记忆中心」弹窗**已彻底删除**（10-10 用户二轮反馈）────────────────────
+   用户原话：「还保留了旧的记忆板块入口，为什么没有清理干净」。
+   ⛔⛔ 这条守卫的**真正价值不在"文件删了没"**，而在钉住"**删除前先把能力迁走**"：
+     旧弹窗里还压着 5 项能力（条目浏览 / 全局搜索 / 常驻记忆编辑 / 容量倍率 / 整洁清理）
+     + 分层规则那一页 —— 直接删文件就是丢功能。⇒ 下面同时钉"新家都在、且都已挂载"。 */
+console.log("\n【mui】⑰ 旧记忆中心已删干净（内容迁进三个弹窗）");
+{
+  ok(!existsSync(join(ROOT, "src", "features", "app-view", "AppView", "07-memory-panel.tsx")),
+    "⛔ 旧弹窗文件已删除（⛔ 不要再引回来 —— 两个记忆界面并存会让「该改哪个」变成问题）");
+  /* ⛔ 剥注释再判 —— 本文件里就有一句"这里原来挂着「打开记忆中心」按钮"的说明注释，
+     不剥会把注释当成入口（同型坑：注释里的字样会绊倒断言）。 */
+  ok(!/打开记忆中心/.test(CENTER.replace(/\/\*[\s\S]*?\*\//g, "")), "⛔ 设置页不再有「打开记忆中心」入口（旧的记忆板块入口）");
+  ok(!/memoryCenterTab|memoryCenterOpen/.test(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "bag-types.ts"), "utf8")),
+    "⛔ 旧弹窗的开合状态已从 bag 摘掉（留着一个没人读的状态位 = 下次有人照着它把弹窗建回来）");
+  const panes = ["LayerRulesPane", "MemoryEntriesPane", "ResidentMemoryPane", "MemorySearchPane", "MemoryModePane", "MemorySourcesPane"];
+  const missingPane = panes.filter((n) => !new RegExp(`export function ${n}\\(`).test(PANEL));
+  ok(missingPane.length === 0, `迁走的六个内容页都在（缺：${missingPane.join("/") || "无"}）`);
+  const missingMount = panes.filter((n) => !new RegExp(`<${n}[ /]`).test(CENTER));
+  ok(missingMount.length === 0, `⛔ 六个内容页都**真的挂在弹窗里**（缺挂载：${missingMount.join("/") || "无"}）—— 迁了却不挂 = 功能凭空消失`);
+  ok(/<MemoryHygienePanel/.test(PANEL) && /<MemoryLayersEditor/.test(PANEL) && /<GlobalSearchView/.test(PANEL) && /<MemoryFunnel/.test(PANEL),
+    "⛔ 五项能力逐个在位：整洁清理 / 常驻记忆编辑 / 全局搜索 / 记忆条目");
 }
 
 console.log("\n【mui】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));

@@ -225,7 +225,6 @@ bag.knownFilesRef = knownFilesRef as typeof bag.knownFilesRef;
         // 10-06 夜三轮：原「目标面板开着先关它」的分支已随 goals-pop 撤掉 —— 留着会让每次
         // 启动后的**第一次 Esc 被无声吞掉**（goalsOpen 初值 true 且再没人能把它置回 false）。
         () => { if (bag.memoryConfigOpen) { bag.setMemoryConfigOpen(false); return true; } return false; },
-        () => { if (bag.memoryCenterOpen) { bag.setMemoryCenterOpen(false); return true; } return false; },
         () => { if (bag.infoModal) { bag.setInfoModal(null); return true; } return false; },
         () => { if (bag.autoFormVisible) { bag.setAutoFormVisible(false); return true; } return false; },
         () => { if (bag.reviewReport) { bag.setReviewReport(""); return true; } return false; },
@@ -252,7 +251,7 @@ bag.knownFilesRef = knownFilesRef as typeof bag.knownFilesRef;
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [bag.showLogin, bag.skillInstall, bag.skillRemove, bag.agentAsk, bag.appConfirm, bag.appPrompt, bag.memoryPreview, bag.searchPreview, bag.filePreview, bag.lightbox, bag.pastedText, bag.modelEditor, bag.connectorEditorOpen, bag.connectorTemplateModal, bag.commandEditor, bag.subAgentEditorOpen, bag.expertTeamEditorOpen, bag.goalsOpen, bag.memoryCenterOpen, bag.memoryConfigOpen, bag.infoModal, bag.reviewReport, bag.settingsOpen, bag.shortcutsOpen, bag.paletteOpen, bag.skillMenuOpen, bag.connectorMenuOpen, bag.attachmentMenuOpen, bag.contextOpen, bag.switcherOpen, bag.mobileNav, bag.sidebarFlyout, bag.autoFormVisible, bag.taskMenuOpen, bag.botManagerOpen, bag.mobileRemoteOpen, bag.ctxMenuOpen, bag.accountMenuOpen, bag.rightOpen]);
+  }, [bag.showLogin, bag.skillInstall, bag.skillRemove, bag.agentAsk, bag.appConfirm, bag.appPrompt, bag.memoryPreview, bag.searchPreview, bag.filePreview, bag.lightbox, bag.pastedText, bag.modelEditor, bag.connectorEditorOpen, bag.connectorTemplateModal, bag.commandEditor, bag.subAgentEditorOpen, bag.expertTeamEditorOpen, bag.goalsOpen, bag.memoryConfigOpen, bag.infoModal, bag.reviewReport, bag.settingsOpen, bag.shortcutsOpen, bag.paletteOpen, bag.skillMenuOpen, bag.connectorMenuOpen, bag.attachmentMenuOpen, bag.contextOpen, bag.switcherOpen, bag.mobileNav, bag.sidebarFlyout, bag.autoFormVisible, bag.taskMenuOpen, bag.botManagerOpen, bag.mobileRemoteOpen, bag.ctxMenuOpen, bag.accountMenuOpen, bag.rightOpen]);
 
   // （原 App 层每秒 nowTick 定时器已移除：无读取点，纯重渲染开销，见 nowTick 处注释。）
 

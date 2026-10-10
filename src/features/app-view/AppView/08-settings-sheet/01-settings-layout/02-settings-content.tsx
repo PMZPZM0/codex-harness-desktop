@@ -387,8 +387,8 @@ export function SettingsLayoutSettingsContent({ app }: { app: HarnessAppApi }) {
     setMcpServerEnabled,
     setMcpServerSearch,
     setMcpToolPermission,
-    setMemoryCenterOpen,
-    setMemoryCenterTab,
+    
+    
     setMemoryConfigOpen,
     setMemoryEnabled,
     setMemoryGateway,

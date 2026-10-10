@@ -6,6 +6,11 @@
 
 import "@xterm/xterm/css/xterm.css";
 import { Turn } from "../../lib/turn";
+
+/* 组合根 API 类型（10-10）：由**组装层**转发给其它域用。
+   ⛔ 别的域不许直接深链 app-state/useHarnessApp（守卫【130】只豁免 app-view）——
+     设置页要拿它，走这里。type-only 导出 ⇒ 编译期擦除，不产生运行时环。 */
+export type { HarnessAppApi } from "../app-state/useHarnessApp";
 export type Model = {
   id: string;
   model: string;

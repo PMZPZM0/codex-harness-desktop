@@ -556,8 +556,8 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     const panelsSrc = readFileSync(join(ROOT, "src", "features", "memory", "MemoryPanels.tsx"), "utf8");
     (/export function MemoryHygienePanel/.test(panelsSrc) ? ok : fail)("【107】整洁面板组件存在");
     (/pending === action/.test(panelsSrc) && /确认执行/.test(panelsSrc) ? ok : fail)("【107】UI 危险动作走二次确认（点一次只展开确认条）");
-    const panelUse = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "07-memory-panel.tsx"), "utf8");
-    (/<MemoryHygienePanel/.test(panelUse) ? ok : fail)("【107】整洁面板挂进了记忆中心（否则用户看不见）");
+    const panelUse = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryPanes.tsx"), "utf8");
+    (/<MemoryHygienePanel/.test(panelUse) ? ok : fail)("【107】整洁面板挂进了记忆页弹窗（否则用户看不见）");
   }
 
   {
@@ -1015,8 +1015,8 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     const ipcSrc150 = readFileSync(join(ROOT, "electron", "features", "memory-ipc.ts"), "utf8");
     (/bundledNodePath\(\)/.test(ipcSrc150) ? ok : fail)("【150】一键安装用自带 node 跑安装器（新电脑无需预装 Node.js）");
     const centerSrc = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryCenterSection.tsx"), "utf8");
-    (centerSrc.includes("MemoryBackendSection") && centerSrc.includes("readMemoryBackend") && centerSrc.includes("setMemoryBackend") ? ok : fail)("【150】设置页「记忆」有后端入口（MemoryBackendSection：能读、能切；否则用户无处开启）");
-    (/installMemoryMcp|uninstallMemoryMcp|verifyMemoryMcp/.test(centerSrc) ? ok : fail)("【150】设置页提供安装/卸载/检测入口（用户明确要求「加个安装功能」）");
+    (centerSrc.includes("BackendConsolePanel") ? ok : fail)("【150】设置页「记忆」有后端入口（BackendConsolePanel：能读、能切；否则用户无处开启）");
+    (/installMemoryMcp|uninstallMemoryMcp|verifyMemoryMcp/.test(readFileSync(join(ROOT, "src", "features", "settings-memory", "BackendConsolePanel.tsx"), "utf8")) ? ok : fail)("【150】设置页提供安装/卸载/检测入口（用户明确要求「加个安装功能」）");
     /* 09-25 用户报「多数用户装不了：npm install 失败（取不到 npm registry）」⇒ 安装器必须多 registry 兜底。
        ⛔ 只用 registry.npmjs.org 在国内基本必失败；GitHub 直连下载原生绑定同理。 */
     const installerSrc150 = readFileSync(join(ROOT, "scripts", "install-memory-mcp.cjs"), "utf8");
