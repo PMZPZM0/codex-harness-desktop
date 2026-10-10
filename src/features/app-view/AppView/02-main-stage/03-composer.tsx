@@ -14,7 +14,7 @@ import {
   Brain,
   QrCode,
   Star,
-  Check,
+  
   ChevronDown,
   CircleGauge,
   Clock3,
@@ -74,7 +74,7 @@ import {
   Shield,
   Smartphone,
   ShieldCheck,
-  Sparkles,
+  
   Store,
   TerminalSquare,
   Trash2,
@@ -147,6 +147,7 @@ import { GoalBar, TurnStatusCapsule } from "../../../status";
 import { RequestCard, ToolCard, VoiceSettingsBridge, admitThreadRuntimeRef, ago, appendDelta, appendIndexedDelta, applyThreadEvent, approvalMenuOptions, armSendAnimationClaim, botChannelName, botOnlineOf, builtinCommandCatalog, categoryLabel, clampRruleNum, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, cronTemplates, deltaMethods, describeRrule, describeSchedule, displayPath, fmtImportTime, formatTimestamp, greetingForHour, groupThreadsByTime, hydrateTurnUserMessage, idleTemplates, imageExts, isActivityItem, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, localFormatDurationMs, locateMatchEl, markBufferedAgentReveal, markBufferedTurnReveal, matchSkillCatalog, mergeItem, mergeLongerStreams, mergeTurn, modelBadges, modelName, normSkillName, noticeTone, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDescription, pluginDisplayName, pluginMarketCategoryTabs, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, revealStepFor, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, settingsNav, shortSkillName, skillHubCategories, skillHubCategoryName, skillHubCategoryTabs, skillZhNote, slashCommands, stableItem, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, toFileUrl, uniqueModelCount, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../helpers";
 import type { HarnessAppApi } from "../../../app-state/useHarnessApp";
 import { ComposerComposerCardStack } from "./03-composer/01-composer-card-stack";
+import { AgentAskCard } from "./03-composer/03-agent-ask-card";
 import { ArchiveToast } from "../../../../components/ArchiveToast";
 import { ComposerComposerForm } from "./03-composer/02-composer-form";
 
@@ -363,32 +364,11 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                     <GoalBar threadId={thread.id} goalText={goalText} goalStatus={goalStatus} running={Boolean(activeThreadRunning)}
                       onEdit={editGoal} onTogglePause={toggleGoalPause} onDelete={stopGoalLoop} />
                   )}
-                  {/* Agent 提问卡：贴输入框上方、与输入框同宽；只属于发起它的会话，不跨会话弹窗 */}
+                  {/* Agent 提问卡：贴输入框上方、与输入框同宽；只属于发起它的会话，不跨会话弹窗。
+                      10-11 抽成组件：单选（原形态）+ 多选（multiple=true，勾选后提交）由 Codex 决定。 */}
                   {thread && agentAsk && agentAsk.threadId === thread.id && (
-                    <div className="agent-ask-inline" role="dialog" aria-label="Agent 提问">
-                      <header><Sparkles size={15} /><strong>Agent 想问你</strong></header>
-                      <p className="agent-ask-question">{agentAsk.question}</p>
-                      <div className="agent-ask-options">
-                        {agentAsk.options.map((option, index) => (
-                          <button key={index} className={option === agentAsk.recommended ? "agent-ask-option recommended" : "agent-ask-option"} onClick={() => { agentAsk.resolve(option); setAgentAsk(null); }}>
-                            {option === agentAsk.recommended && <span className="agent-ask-badge">推荐</span>}
-                            {option}
-                          </button>
-                        ))}
-                      </div>
-                      {agentAsk.allowFree && (
-                        <form className="agent-ask-free" onSubmit={(e) => { e.preventDefault(); const input = (e.currentTarget.elements.namedItem("freeText") as HTMLInputElement); if (input.value.trim()) { agentAsk.resolve(input.value.trim()); setAgentAsk(null); } }}>
-                          <input name="freeText" placeholder="或者输入你的想法…" />
-                          <button type="submit" className="primary-setting"><Check size={14} />回复</button>
-                        </form>
-                      )}
-                    </div>
+                    <AgentAskCard ask={agentAsk} onClose={() => setAgentAsk(null)} />
                   )}
-                  {/* 回合状态胶囊（10-06 夜三轮，用户对照 Qoder）：「步骤 N/M · X 个文件已修改 +A -D」——
-                      左区悬停展开步骤清单（Codex 自己维护的 task_add/task_update 清单）、右区悬停展开
-                      文件清单；有任务清单就有（收尾后仍在），与排队/询问/审批卡是**上下排序关系**
-                      （栈里的一行，不互相遮）。原「目标与进程」面板已按用户令撤掉。 */}
-                  <TurnStatusCapsule taskList={taskList} runningTurnId={activeThreadRunning ? (activeTurnId || thread?.turns?.[thread.turns.length - 1]?.id || null) : null} />
                   {/* 审批卡：贴输入框上方（与 agent-ask 同款布局，09-13 从消息流大卡迁来）。
                       主窗口与独立会话窗口走同一渲染逻辑——各自的 pending 里属于本窗口当前会话的
                       请求都会在这里出现，弹窗里也能审批。 */}
@@ -517,7 +497,16 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                       ⛔ 放在卡片栈**最下面一行**（紧挨输入框上沿）：它和排队/审批/限流那些条一样是
                       栈里的普通一行（上下排序、不互相遮），别做成浮层 —— 浮层会盖住上面那几条。
                       面板向上展开、宽度随 `.composer-wrap`（= 输入框宽度），最多 3 行、超出滚动。 */}
-                  {thread && <BackgroundTaskCapsule threadId={thread.id} />}
+                  {/* 状态行（10-11 用户要求）：回合状态胶囊（步骤清单 / 文件修改）与后台任务胶囊
+                      **同一排**自适应排版 —— 原来各占一行、行内大片空白（用户：「下面有空白的为啥要空着」）。
+                      ⛔ 两个组件各自内容为空时都返回 null，行空时靠 `:empty` 整行隐藏，不留缝。
+                      面板向上展开：`.poll-bg-wrap` 在行内改 static，面板锚到整行（= 输入框宽度）。 */}
+                  {thread && (
+                    <div className="composer-status-row">
+                      <TurnStatusCapsule taskList={taskList} runningTurnId={activeThreadRunning ? (activeTurnId || thread.turns[thread.turns.length - 1]?.id || null) : null} />
+                      <BackgroundTaskCapsule threadId={thread.id} />
+                    </div>
+                  )}
                   <ComposerComposerForm app={app} />
                   {isEmpty && (
                     <div className="suggest-row">
