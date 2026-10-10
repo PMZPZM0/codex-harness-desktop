@@ -14,7 +14,7 @@ import type { FoldUnit } from "../../lib/turn-fold";
 import { CappedToolSequence } from "../session-cards";
 import { LiveFileRows } from "../status";
 import type { LiveFileChange } from "../status";
-import { getTurnFileChanges, getTurnLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
+import { getTurnLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
 import { formatDuration } from "../../lib/format-duration";
 import { describeTurnStop, turnHeadline } from "../../lib/turn-stop-reason.mjs";
 import { planCompletedFold } from "../../lib/turn-fold-plan.mjs";
