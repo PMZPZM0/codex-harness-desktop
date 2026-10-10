@@ -431,3 +431,14 @@
 .mui-session-meta { font-size: 10.5px; color: var(--muted); }
 .mui-session-open { border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 11px; padding: 0 8px; cursor: pointer; }
 .mui-session-open:hover { color: var(--green); }
+
+/* ── 设置页「记忆」弹窗内的层水位（10-10）：弹窗直接给内容，⛔ 不再只放一句说明 */
+.memory-layer-line { display: flex; flex-direction: column; gap: 3px; border-top: 1px solid var(--line); padding-top: 7px; }
+.memory-layer-line:first-child { border-top: 0; padding-top: 0; }
+.memory-layer-line-head { display: flex; align-items: baseline; gap: 8px; }
+.memory-layer-line-head b { font-family: var(--mono); font-size: 11px; color: var(--green); }
+.memory-layer-line-head strong { font-size: 12.5px; }
+.memory-layer-line-head .muted { margin-left: auto; font-size: 11px; }
+.memory-layer-need { color: var(--orange, var(--accent)); font-size: 11px; font-style: normal; }
+.memory-layer-bar { display: block; height: 4px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--green) 12%, transparent); }
+.memory-layer-bar i { display: block; height: 100%; background: var(--green); }

@@ -293,6 +293,17 @@ console.log("\n【mui】⑪ 设置页「记忆」两级 IA");
   ok(dlgAt > 0 && center.indexOf('<p className="muted">子智能体') > dlgAt,
     "⛔ 被委派会话的说明也在弹窗里（⛔ 不再内嵌）");
   ok(!/className="memory-overview"/.test(center), "⛔ 旧的 4 张 overview 卡已替换（页内直排 = 不是两级 IA）");
+  /* ⛔⛔ 10-10 用户反馈「每个卡片进去都是这个」：弹窗里只有一句说明 + 一个"再打开记忆中心"按钮
+     = 让人多点一次。⇒ 弹窗必须**直接给内容**（条目给漏斗 / 常驻给层水位 / 存储搜索给状态）。 */
+  {
+    const dlgIdx = center.indexOf("<SettingsDialog");
+    ok(center.indexOf("<MemoryFunnel") > dlgIdx,
+      "⛔ 记忆条目弹窗里**直接渲染条目漏斗**（⛔ 不是只放一句说明 + 再点一次的入口）");
+    ok(/openCard === "resident" && <MemoryLayerLevels/.test(center),
+      "⛔ 常驻记忆弹窗里直接渲染层水位（MemoryLayerLevels）");
+    ok(/openCard === "storage" && \(/.test(center) && /openCard === "search" && \(/.test(center),
+      "存储与搜索弹窗里给状态/可检索面（⛔ 不是空白弹窗）");
+  }
   ok(/MemoryBackendSection/.test(center) && /readMemoryBackend|setMemoryBackend/.test(center),
     "记忆后端入口仍在（守卫【150】要求：用户得有地方切换后端）");
 }
