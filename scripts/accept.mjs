@@ -1516,6 +1516,55 @@ const CHECKS = [
     },
   },
   {
+    id: "devtools-install-ux",
+    name: "㉘ 开发工具安装体验：常驻提示词复制图标 + 失败完整报错弹窗（10-11 轮）",
+    run: async (h) => {
+      /* 为什么真跑（10-11 用户令）：常驻图标在不在、点了有没有反馈，是运行期才成立的最终态；
+         失败弹窗的真触发需要真装失败（不可确定性地复现），其结构与层级顺序由守卫 11y 钉死，
+         这里验**用户能走到的部分**：图标常驻在卡上、点击出确认 toast、失败摘要行平时不出现。 */
+      /* ① 前置：开设置 → 开发工具 → 打开「运行时与工具链」二级弹窗 */
+      await h.waitFor(`!!document.querySelector('.topbar-actions, .task-title')`, { label: "主界面就绪", timeoutMs: 30000 }).catch(() => undefined);
+      await h.eval(`(function(){ var b=[...document.querySelectorAll('.icon-button, [title*="设置"]')].find(function(x){ return (x.getAttribute('aria-label')||x.title||'').includes('设置'); }); if(b){ b.click(); return 1; } return 0; })()`);
+      await wait(600);
+      await h.eval(`(function(){ var b=[...document.querySelectorAll('.settings-nav button')].find(function(x){ return (x.textContent||'').trim()==='开发工具'; }); if(b){ b.click(); return 1; } return 0; })()`);
+      await wait(700);
+      const card = await h.eval(`!!document.querySelector('.devtools-card[data-card="runtime"]')`);
+      h.check("① 开发工具页打开且「运行时与工具链」卡片在（前置条件）", card === true, `card=${card}`);
+      if (card !== true) return;
+      await h.eval(`document.querySelector('.devtools-card[data-card="runtime"]').click()`);
+      let dialog = null;
+      for (let i = 0; i < 10; i++) {
+        await wait(300);
+        dialog = await h.eval(`!!document.querySelector('.settings-dialog')`);
+        if (dialog) break;
+      }
+      h.check("② 二级弹窗「运行时与工具链」打开（前置条件）", dialog === true, `dialog=${dialog}`);
+      if (!dialog) return;
+      /* ③ 前置：无失败残留（失败摘要行不该凭空出现）；错误弹窗也不该自动弹出 */
+      const pre = await h.eval(`({ failedRows: document.querySelectorAll('.runtime-failed').length, errModal: !!document.querySelector('.devtools-error-backdrop') })`);
+      h.check("③ 无失败残留：失败摘要与错误弹窗初始都不出现（前置条件，防上一步状态污染）",
+        pre.failedRows === 0 && pre.errModal === false, JSON.stringify(pre));
+      /* ④ 常驻图标：可下载工具的卡片上有「复制安装提示词」图标（≥1 个） */
+      const icons = await h.eval(`(function(){ var b=[...document.querySelectorAll('.runtime-prompt-copy')]; return { count: b.length, sample: b.length ? (b[0].getAttribute('aria-label')||'') : "" }; })()`);
+      h.check("④ 常驻「复制安装提示词」图标在卡上（≥1 个，带可读 aria-label）",
+        icons.count >= 1 && icons.sample.length > 0, JSON.stringify(icons).slice(0, 160));
+      if (icons.count < 1) return;
+      /* ⑤ 点击 → 可见反馈（确认 toast：.notice-text 出现「安装提示词」字样） */
+      await h.eval(`document.querySelector('.runtime-prompt-copy').click()`);
+      let toast = null;
+      for (let i = 0; i < 8; i++) {
+        await wait(250);
+        toast = await h.eval(`(function(){ var t=[...document.querySelectorAll('.notice-text')].find(function(x){ return (x.textContent||'').includes('安装提示词'); }); return t ? (t.textContent||'').trim().slice(0, 80) : null; })()`);
+        if (toast) break;
+      }
+      h.check("⑤ 点图标有可见反馈：确认 toast 出现（复制成功用户看得见）", typeof toast === "string" && toast.includes("安装提示词"), `toast=${toast}`);
+      await h.screenshot("devtools-install-ux");
+      /* 每步自收尾：Esc 关掉二级弹窗（错误弹窗未开，不涉及层叠） */
+      await h.pressKey("Escape");
+      await wait(400);
+    },
+  },
+  {
     id: "message-feedback",
     name: "㉒ 消息操作图标（用户消息复制贴右端 + 两段成功反馈，10-05 轮）",
     run: async (h) => {
@@ -1814,7 +1863,7 @@ async function enterMain(h) {
 //   历史项不删（它们仍然是回归证据），但**永远不会在默认路径上被执行** ——
 //   这样"每次只测最新改动"是机制保证的，不再依赖我记不记得。
 // ─────────────────────────────────────────────────────────────────────────────
-const LATEST_ROUND = "10-07";   // 10-07 轮：新手引导（侧栏常驻入口 + 迷你设置弹窗）*/
+const LATEST_ROUND = "10-11";   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗）；10-07 两项转回归证据 */
 // 上一轮（10-06）的五个验收项仍是回归证据：--only <id> 单跑，或 --all 全量。
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
@@ -1825,6 +1874,7 @@ const ROUND_OF = {
   "goal-bar": "10-06",   // 10-06 夜五轮新增：/goal 目标条（用户对照 Qoder：计时 + 编辑/删除/暂停；默认轮最后一项，含真续跑回合）
   "newbie-guide": "10-07",   // 10-07 轮：新手引导（侧栏常驻入口 + 迷你设置弹窗；左选项/右内容/映射跳转/版本日志）
   "compact-line": "10-07",   // 10-07 夜十一轮：压缩线（新会话 + 短回合 + 手动压缩 → 宿主侦测真链路 → 线出现 + 落盘）
+  "devtools-install-ux": "10-11",   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）
   "message-feedback": "10-05",   // 10-05 轮：消息操作图标的两段反馈 + 用户消息复制贴右端（历史项，默认轮不再跑 —— 回归证据）
   "plugin-market-gitee": "10-03",
   "codex-official-market": "10-03",   // 本轮新项；Gitee 项同轮重跑（插件页加了源切换，两个源都得看一眼）

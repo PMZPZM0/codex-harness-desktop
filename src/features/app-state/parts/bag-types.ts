@@ -707,8 +707,8 @@ export interface Bag {
   setRuntimeSpeed: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   runtimeActiveId: string;
   setRuntimeActiveId: React.Dispatch<React.SetStateAction<string>>;
-  runtimeModal: { id: string; name: string; mode: "install" | "uninstall"; done: boolean; failed: boolean; } | null;
-  setRuntimeModal: React.Dispatch<React.SetStateAction<{ id: string; name: string; mode: "install" | "uninstall"; done: boolean; failed: boolean; } | null>>;
+  runtimeModal: { id: string; name: string; mode: "install" | "uninstall"; done: boolean; failed: boolean; error: string; } | null;
+  setRuntimeModal: React.Dispatch<React.SetStateAction<{ id: string; name: string; mode: "install" | "uninstall"; done: boolean; failed: boolean; error: string; } | null>>;
   refreshDevRuntimes: () => void;
   capabilityRows: { id: string; label: string; purpose: string; activeId: string | null; activeLabel: string; activeWhy: string; alternatives: { id: string; label: string; available: boolean; }[]; note: string; }[];
   setCapabilityRows: React.Dispatch<React.SetStateAction<{ id: string; label: string; purpose: string; activeId: string | null; activeLabel: string; activeWhy: string; alternatives: { id: string; label: string; available: boolean; }[]; note: string; }[]>>;

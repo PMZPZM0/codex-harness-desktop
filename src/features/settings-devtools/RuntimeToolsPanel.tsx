@@ -25,10 +25,11 @@ export type RuntimeToolsPanelProps = {
   uninstallDevRuntime: any;
   cancelDevRuntime: any;
   setNotice: any;
+  setRuntimeModal: any;
 };
 
 export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
-  const { devRuntimes, runtimeInstalling, runtimeUninstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime, cancelDevRuntime, setNotice } = props;
+  const { devRuntimes, runtimeInstalling, runtimeUninstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime, cancelDevRuntime, setNotice, setRuntimeModal } = props;
   // 「检查工具」（10-02 用户要的）：卡片上的「已安装」只证明**文件在**，不证明**能跑**。
   // 点一次让主进程逐个真跑版本命令，把不可用的挑出来显示 —— 结果只存本组件（打开页面即清空）。
   const [health, setHealth] = useState<any[] | null>(null);
@@ -86,9 +87,11 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
                 const isGuide = runtime.kind === "guide";
                 const builtinBadge = runtime.builtIn || (runtime.bundled && isDone);
                 /* 「这个工具刚装失败了」的判据 = app-state 写进 runtimeProgress 的那一行
-                   （`安装失败：<原因>`，同一份数据本来就显示给用户看）。⛔ 前缀是**契约**：
-                   另一侧写死的字符串在 01-dev-runtimes-capability.tsx，守卫【287】两边一起钉。 */
+                   （`安装失败：<原因>`）。⛔ 前缀是**契约**：产出侧写死的字符串在
+                   01-dev-runtimes-capability.tsx，守卫【287】两边一起钉。
+                   10-11：完整报错改走「完整报错」弹窗，卡片只留一行摘要，点开重看（弹窗关了报错不丢）。 */
                 const installFailed = String(runtimeProgress?.[runtime.id] ?? "").startsWith("安装失败");
+                const uninstallFailed = String(runtimeProgress?.[runtime.id] ?? "").startsWith("卸载失败");
                 return <div className={`runtime-row ${isDone ? "installed" : "missing"} ${busy ? "busy" : ""}`} key={runtime.id}>
                   <span className="runtime-icon">{busy ? <Spinner /> : isDone ? <CircleCheck size={16} /> : <TerminalSquare size={16} />}</span>
                   <span className="runtime-copy"><strong>{runtime.name}</strong><small>{runtime.description}</small>
@@ -108,26 +111,36 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
                       : !isDone && runtime.id === "cloakbrowser" ? <em className="runtime-hint">按需下载 · 不装也能用内置浏览器与 playwright-cli</em>
                       : null}
                   </span>
-                  {/* 装不上时的备用方案（10-08 用户要求）：网差的机器按需下载常常失败，
-                      给一段预置提示词，让用户复制到任意会话里交给 Codex 自己装。
-                      ⛔ 提示词正文由**主进程**生成（runtimeList 的 fallbackPrompt）——
-                        这里只展示 + 复制，不许再拼一份文案（否则又是两套口径）。 */}
-                  {installFailed && runtime.fallbackPrompt ? (
-                    <span className="runtime-fallback">
-                      <em>download 失败也可以不折腾：把提示词复制给 Codex，让它在这台机器上直接装（网络差时更靠谱）。</em>
-                      <button
-                        className="secondary-setting runtime-fallback-copy"
-                        onClick={() => {
-                          void copyTextToClipboard(runtime.fallbackPrompt);
-                          setNotice(`已复制「${runtime.name}」的安装提示词 —— 到任意会话里发给 Codex 即可`);
-                        }}
-                      >
-                        <Copy size={13} />复制提示词，交给 Codex 装
-                      </button>
-                    </span>
+                  {/* 10-11 改版：失败不再内联一大块 —— 完整报错进「完整报错」弹窗（DevtoolsSettingsSection 渲染），
+                      卡片只留一行摘要，点开重看。⛔ 失败判据与产出侧同一前缀（守卫 11y 两边同名钉）。 */}
+                  {installFailed ? (
+                    <button type="button" className="runtime-failed"
+                      onClick={() => setRuntimeModal({ id: runtime.id, name: runtime.name, mode: "install", done: true, failed: true, error: String(runtimeProgress?.[runtime.id] ?? "").replace(/^安装失败：/, "") })}>
+                      <AlertTriangle size={12} />安装失败 · 点开完整报错与备用方案
+                    </button>
+                  ) : uninstallFailed ? (
+                    <button type="button" className="runtime-failed"
+                      onClick={() => setRuntimeModal({ id: runtime.id, name: runtime.name, mode: "uninstall", done: true, failed: true, error: String(runtimeProgress?.[runtime.id] ?? "").replace(/^卸载失败：/, "") })}>
+                      <AlertTriangle size={12} />卸载失败 · 点开完整报错
+                    </button>
                   ) : null}
                   <span className="runtime-size">{runtime.size}</span>
                   <div className="runtime-actions">
+                    {/* 10-11 用户令：**常驻**「复制安装提示词」图标 —— 不用等失败才出现，任何可下载工具
+                        随时都能复制一段提示词发给 Codex、让它在这台机器上直接装（网差时的正路）。
+                        ⛔ 提示词正文 = 主进程 runtime:list 下发的 fallbackPrompt，这里只复制（单一真相源）。
+                        系统级安装（kind=guide，点按钮开官网）不走 Codex 安装，不出这个图标。 */}
+                    {runtime.fallbackPrompt && !isGuide ? (
+                      <button type="button" className="runtime-prompt-copy"
+                        title={`复制「${runtime.name}」的安装提示词 —— 发到任意会话里，Codex 就能帮你装`}
+                        aria-label={`复制 ${runtime.name} 的安装提示词`}
+                        onClick={() => {
+                          void copyTextToClipboard(runtime.fallbackPrompt);
+                          setNotice(`已复制「${runtime.name}」的安装提示词 —— 到任意会话里发给 Codex 即可`);
+                        }}>
+                        <Copy size={14} />
+                      </button>
+                    ) : null}
                     {/* 忙碌态（10-07 重构）：安装 → 给「取消」；卸载 → 不可取消，只给状态徽章。
                         ⛔ 两条路径都要有可见反馈，不允许按钮区空白（无响应状态）。 */}
                     {busy ? (
