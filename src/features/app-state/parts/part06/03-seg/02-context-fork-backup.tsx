@@ -95,8 +95,12 @@ bag.onPromptChange = onPromptChange as typeof bag.onPromptChange;
         // ⛔ 分支后我们离开了源会话：源会话的重试链/提示必须彻底重置（否则它到点会继续
         //   对着源会话重发，用户视角就是"分支出去以后那边还在自己动"）。新会话 id 天然干净。
         bag.resetSessionRetryState(sourceId);
-        bag.threadRef.current = result.thread;
-        bag.setThread(result.thread);
+        /* ⛔⛔ 必须走「打开会话」正门，⛔ 不能只 `setThread`（2026-10-10 修）：
+           引擎的 dynamicTools **只在 `thread/start` 与 `thread/resume` 注册** ⇒ 只把新会话塞进
+           渲染状态、不 resume，它继承的就是**源会话创建时**的工具面快照 —— 之后新增的能力
+           （知识库 / 定时任务 / 视频 / 语音 …）在这个分支里全部报 `unsupported call`
+           （用户报「知识库调不到」的一条真凶）。openThread 内部会带当前工具面 resume。 */
+        await bag.openThread(result.thread.id, result.thread);
         bag.setModelId(`custom:${bag.customModel?.provider ?? "custom"}:${result.model ?? bag.selectedModel?.model ?? bag.customModel?.model ?? ""}`);
         await bag.refreshThreads();
         bag.showToast("任务已分支", "已从选定消息创建新的任务分支（新分支状态独立）");

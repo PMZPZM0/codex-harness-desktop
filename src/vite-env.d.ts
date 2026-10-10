@@ -583,6 +583,10 @@ interface Window {
     listMemory(category?: string): Promise<any[]>;
     searchMemory(query: string): Promise<any[]>;
     recallMemory(query: string, workspace?: string): Promise<{ context: string; remote: boolean; memoryCount?: number }>;
+    /* 记忆容量倍率（×1 基准，可选 1/2/4/8/10/16）：返回当前倍率、可选项与放大后的预算 */
+    readMemoryScale(): Promise<{ scale: number; options: number[]; budget: { user: number; background: number; project: number; lessons: number; logs: number; total: number } }>;
+    /* 设置记忆容量倍率（当场生效 + 落 app-settings；非法值归一化回基准） */
+    setMemoryScale(scale: number): Promise<{ scale: number; options: number[]; budget: { user: number; background: number; project: number; lessons: number; logs: number; total: number } }>;
     readMemoryMode(): Promise<"local" | "cloud">;
     setMemoryMode(mode: "local" | "cloud"): Promise<"local" | "cloud">;
     /* 记忆后端二选一：用户选的值 + 实际生效值（装了 MCP 服务才让位）+ 安装命令 */

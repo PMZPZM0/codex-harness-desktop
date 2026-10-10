@@ -155,6 +155,8 @@ export function AppViewMemoryPanel({ app }: { app: HarnessAppApi }) {
     memories,
     memoryCategory,
     memoryCenterOpen,
+    applyMemoryCapacity,
+    memoryCapacity,
     memoryCenterTab,
     memoryDistilling,
     memoryDraft,
@@ -174,6 +176,7 @@ export function AppViewMemoryPanel({ app }: { app: HarnessAppApi }) {
     memoryProjectWorkspace,
     memorySaveCategory,
     memorySavedAt,
+    memoryScaleBusy,
     memoryStatus,
     memoryVisibleRecords,
     openAppConfirm,
@@ -291,6 +294,26 @@ export function AppViewMemoryPanel({ app }: { app: HarnessAppApi }) {
                   />
                 )}
                 {memoryCenterTab === "layers" && <div className="memory-center-pane">
+                    {/* 记忆容量倍率（10-10 用户要求）：×1 基准按倍数放大常驻注入预算。
+                        ⛔ 放在「常驻记忆」页最上面 —— 它改的就是这一页所有水位条的分母。 */}
+                    {memoryCapacity && (
+                      <div className="memory-center-block">
+                        <div className="memory-center-block-head">
+                          <div>
+                            <strong>容量倍率</strong>
+                            <span>把常驻记忆的注入预算按倍数放大（×1 = 基准）。当前总预算 {memoryCapacity.budget.total.toLocaleString()} 字；切换后下一条消息起生效。</span>
+                          </div>
+                        </div>
+                        <div className="memory-funnel-chips" role="tablist" aria-label="记忆容量倍率">
+                          {memoryCapacity.options.map((n) => (
+                            <button key={n} role="tab" aria-selected={memoryCapacity.scale === n}
+                              disabled={memoryScaleBusy}
+                              className={`memory-funnel-chip ${memoryCapacity.scale === n ? "active" : ""}`}
+                              onClick={() => void applyMemoryCapacity(n)}>×{n}</button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <MemoryPyramid
                       snapshot={memoryLayers}
                       distilling={memoryDistilling}

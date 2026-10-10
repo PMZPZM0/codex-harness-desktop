@@ -107,9 +107,14 @@ export function usePart07a1(bag: Bag) {
           else await bag.renameThread(bag.thread.id, argument);
         } else if (name === "fork") {
           const result = await window.codex.request("thread/fork", { threadId: bag.thread.id, excludeTurns: false });
-          bag.setThread(result.thread);
+          const forked = result?.thread;
+          if (!forked?.id) { bag.showToast("无法执行", "引擎未返回新的任务分支"); return true; }
           bag.setModelId(`custom:${bag.customModel?.provider}:${bag.customModel?.model}`);
           await bag.refreshThreads();
+          /* ⛔⛔ 分叉会话必须走 openThread（带当前工具面 resume）—— 只 `setThread` 会让新分支
+             继承源会话创建时的工具面快照，知识库 / 定时任务等新增能力在这里全 `unsupported call`
+             （引擎的 dynamicTools 只在 thread/start 与 thread/resume 注册）。 */
+          await bag.openThread(forked.id, forked);
           bag.showToast("任务已分叉", "接下来的对话会写入新的任务分支");
         } else if (name === "compact") {
           bag.compactPendingRef.current.add(bag.thread.id);

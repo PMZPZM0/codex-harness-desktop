@@ -490,6 +490,9 @@ setMemoryStore(new MemoryStore(memoryFile));
 
 setMemoryLayers(new MemoryLayers(app.getPath("userData")));
 
+/* 记忆容量倍率（10-10）：从 app-settings 读并应用（⛔ 本模块体里必须**同步**读 —— 异步会晚于下面的 setLayers 生效；读不到 = 基准 ×1）。 */
+memoryLayers.setScale(readAppSettingsSync(app.getPath("userData")).memoryScale);
+
 // 自动捕获的出口接到 L2 日志层：从此对话原文不再进检索池
 memoryStore.setLayers(memoryLayers);
 

@@ -245,6 +245,10 @@ contextBridge.exposeInMainWorld("codex", {
   listMemory: (category?: string) => __ipc("memory:list", 0, [category]),
   searchMemory: (query: string) => __ipc("memory:search", 1, [query]),
   recallMemory: (query: string, workspace?: string) => __ipc("memory:recall", 1, [query, workspace]),
+  /* 记忆容量倍率（×1 基准，可选 1/2/4/8/10/16）：返回当前倍率、可选项与放大后的预算 */
+  readMemoryScale: () => __ipc("memory:scale:read", 0, []),
+  /* 设置记忆容量倍率（当场生效 + 落 app-settings；非法值归一化回基准） */
+  setMemoryScale: (scale: number) => __ipc("memory:scale:set", 1, [scale]),
   readMemoryMode: () => __ipc("memory:mode-read", 0, []),
   setMemoryMode: (mode: "local" | "cloud") => __ipc("memory:mode-set", 1, [mode]),
   /* 记忆后端二选一：用户选的值 + 实际生效值（装了 MCP 服务才让位）+ 安装命令 */
