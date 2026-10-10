@@ -24,6 +24,7 @@ import { bridgeDial } from "../main";
 import { ensureProjectAgentsMd } from "../project-conventions";
 import type { RoleRef } from "../role-memory";
 import { buildRoleMemoryTool, noteRoleThread } from "../role-memory-tool";
+import { buildDelegateKnowledgeTool } from "../delegate-knowledge-tool";
 export async function runDelegatedTask(input: {
   kind: DispatchKind; name: string; query: string; originThreadId: string;
   cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string;
@@ -115,8 +116,10 @@ export async function runDelegatedTask(input: {
     config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name: providerName, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
     // 10-05 角色私有记忆：被委派会话拿得到「写自己记忆」的工具（主进程侧应答，见 role-memory-tool）。
     // ⛔ 与主会话的 memory_save **刻意不同名**：两个作用域，别让模型以为写的是同一份。
-    // ⛔ 团队工具 + 角色记忆工具**合在一个数组**里传（⛔ 别写两个 dynamicTools 键，后者会覆盖前者）。
-    ...((teamTools.length || roleRef) ? { dynamicTools: [...teamTools, ...(roleRef ? [buildRoleMemoryTool(roleRef)] : [])] } : {}),
+    // ⛔ 团队工具 + 角色记忆工具 + **知识库只读检索**合在一个数组里传（⛔ 别写两个 dynamicTools 键，后者会覆盖前者）。
+    // 10-10 用户令「被委派会话也要能用知识库」：只给 `knowledge_search`（读）—— ⛔ 不给 harness_tools 网关，
+    // 那里面装着写操作（存专家 / 建定时任务 / 注册连接器），给它们等于放开越权面。
+    ...((teamTools.length || roleRef) ? { dynamicTools: [...teamTools, buildDelegateKnowledgeTool(), ...(roleRef ? [buildRoleMemoryTool(roleRef)] : [])] } : {}),
   });
   const threadId = String(started?.thread?.id ?? "");
   if (!threadId) return { ok: false, output: "", error: "调度会话创建失败（未返回 threadId）" };
