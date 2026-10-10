@@ -8,12 +8,17 @@
  * 二选一（内置记忆金字塔 / MCP 记忆服务）。它自持状态，不占 App 的 props。
  */
 import { useEffect, useState, type CSSProperties } from "react";
+import { MemoryFunnel } from "../memory";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { PageInfo } from "../../components/SettingsHead";
 import { Archive, BookOpen, Bot, Cloud, Database, LayoutGrid, Search, Server } from "lucide-react";
 import { MemoryConfigModal } from "../../features/memory";
 
-export type MemoryCenterSectionProps = { memoryEnabled: any; setMemoryEnabled: any; setMemoryCenterTab: any; setMemoryCenterOpen: any; memories: any; memoryGroups: any; memoryLayers: any; memoryMode: any; workspaceMemoryEnabled: any; threads: any; scheduledTasks: any; localSkills: any; memoryStatus: any; memoryConfigOpen: any; memoryGateway: any; setMemoryGateway: any; memoryGatewayAction: any; setMemoryConfigOpen: any; testMemoryGateway: any; saveMemoryGateway: any };
+export type MemoryCenterSectionProps = {
+  /** 查看某条记忆的全文（10-10：弹窗里直接能给内容，⛔ 不再只是"再打开记忆中心"） */
+  setMemoryPreview?: (entry: any) => void;
+  /** 跳到某个来源会话 */
+  openThread?: (threadId: string) => void; memoryEnabled: any; setMemoryEnabled: any; setMemoryCenterTab: any; setMemoryCenterOpen: any; memories: any; memoryGroups: any; memoryLayers: any; memoryMode: any; workspaceMemoryEnabled: any; threads: any; scheduledTasks: any; localSkills: any; memoryStatus: any; memoryConfigOpen: any; memoryGateway: any; setMemoryGateway: any; memoryGatewayAction: any; setMemoryConfigOpen: any; testMemoryGateway: any; saveMemoryGateway: any };
 
 /* ══ 记忆后端（09-25）════════════════════════════════════════════════════════
  * 二选一：内置记忆金字塔（默认）/ MCP 记忆服务（@vheins/local-memory-mcp）。
@@ -182,8 +187,32 @@ function MemoryBackendSection() {
   );
 }
 
+/** 常驻记忆的层水位（弹窗内直接渲染）。⛔ 数据来自 memoryLayers（主进程快照），⛔ 不在这里算。 */
+function MemoryLayerLevels({ snapshot }: { snapshot: any }) {
+  const layers = Array.isArray(snapshot?.layers) ? snapshot.layers : [];
+  if (!layers.length) return <p className="muted">正在读取记忆分层…（打开本页时会自动刷新）</p>;
+  return (
+    <div className="memory-rule-facts" style={{ gridTemplateColumns: "1fr", gap: "8px" }}>
+      {layers.map((layer: any) => {
+        const pct = Math.round((layer.ratio ?? 0) * 100);
+        return (
+          <div className="memory-layer-line" key={layer.id}>
+            <div className="memory-layer-line-head">
+              <b>{layer.id}</b><strong>{layer.name}</strong>
+              <span className="muted">{layer.used.toLocaleString()} / {layer.budget ? layer.budget.toLocaleString() : "—"} 字{pct ? ` · ${pct}%` : ""}</span>
+              {layer.needDistill ? <em className="memory-layer-need">需要蒸馏</em> : null}
+            </div>
+            <span className="memory-layer-bar"><i style={{ width: `${Math.min(100, pct)}%` }} /></span>
+            <small className="muted">{layer.where} · 写入：{layer.writer} · 去向：{layer.sink}</small>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function MemoryCenterSection(props: MemoryCenterSectionProps) {
-  const { memoryEnabled, setMemoryEnabled, setMemoryCenterTab, setMemoryCenterOpen, memories, memoryGroups, memoryLayers, memoryMode, workspaceMemoryEnabled, threads, scheduledTasks, localSkills, memoryStatus, memoryConfigOpen, memoryGateway, setMemoryGateway, memoryGatewayAction, setMemoryConfigOpen, testMemoryGateway, saveMemoryGateway } = props;
+  const { memoryEnabled, setMemoryEnabled, setMemoryCenterTab, setMemoryCenterOpen, memories, memoryGroups, memoryLayers, memoryMode, workspaceMemoryEnabled, threads, scheduledTasks, localSkills, memoryStatus, memoryConfigOpen, memoryGateway, setMemoryGateway, memoryGatewayAction, setMemoryConfigOpen, testMemoryGateway, saveMemoryGateway, setMemoryPreview, openThread } = props;
     /* ── 两级信息架构（10-10 用户要求，与开发工具页 / 拓展接口页 / 记忆中心同一套规范）──
      一级只放**分类卡片**（含原先内嵌在主界面里的「记忆后端」与「被委派会话的记忆」两块）；
      内容一律进 SettingsDialog。⛔ 卡片复用跨页通用的 .settings-card*（⛔ 不再自造卡片样式）。 */
@@ -235,8 +264,40 @@ return (
                       <SettingsDialog title={openMeta.title} icon={cards.find((c) => c.key === openCard)?.icon} hint={openMeta.hint} size="lg" onClose={() => setOpenCard(null)}>
                         <div className="settings-section stack">
                           <p className="muted">{openMeta.detail}</p>
+                          {/* ⛔⛔ 10-10 用户反馈「每个卡片进去都是这个」= 弹窗里只有一句说明 + 一个按钮，
+                              等于让人再点一次。⇒ 弹窗必须**直接给内容**：条目给漏斗、常驻给层水位、
+                              存储给状态、搜索给统计；「在记忆中心打开」降级成次要入口。 */}
+                          {openCard === "entries" && (memoryGroups.length
+                            ? <MemoryFunnel
+                                groups={memoryGroups}
+                                readOnly
+                                onPreview={(entry: any) => setMemoryPreview?.(entry)}
+                                onTogglePin={() => undefined}
+                                onDeleteOne={() => undefined}
+                                onDeleteGroup={() => undefined}
+                                onOpenThread={(id: string) => openThread?.(id)}
+                              />
+                            : <p className="muted">还没有记忆条目 —— 智能体在干活时写下第一条之后，这里会按来源会话分组列出。</p>)}
+
+                          {openCard === "resident" && <MemoryLayerLevels snapshot={memoryLayers} />}
+
+                          {openCard === "storage" && (
+                            <div className="memory-rule-facts" style={{ gridTemplateColumns: "110px minmax(0, 1fr)", gap: "4px 10px" }}>
+                              <b>保存位置</b><span>{memoryMode === "cloud" ? `云端同步（网关${memoryGateway?.endpoint ? "已配置" : "未配置"}），本机保留缓存` : "本地（只存在本机）"}</span>
+                              <b>工作区记忆</b><span>{workspaceMemoryEnabled ? "已开启：背景 / 项目记忆 / 日志会注入并捕获" : "已关闭：只会注入用户档案，不做捕获"}</span>
+                              <b>已存条目</b><span>{memories.length} 条 · {memoryGroups.length} 个来源会话</span>
+                            </div>
+                          )}
+
+                          {openCard === "search" && (
+                            <div className="memory-rule-facts" style={{ gridTemplateColumns: "110px minmax(0, 1fr)", gap: "4px 10px" }}>
+                              <b>可检索</b><span>{threads.length} 个会话 · {memories.length} 条记忆 · {scheduledTasks.length} 个定时任务 · {localSkills.length} 个技能</span>
+                              <b>结果分组</b><span>按命中来源分组（会话 / 记忆 / 任务 / 技能），可预览全文</span>
+                            </div>
+                          )}
+
                           <div className="memory-overview-actions">
-                            <button className="primary-setting" onClick={() => { setMemoryCenterTab(openMeta.tab as any); setMemoryCenterOpen(true); setOpenCard(null); }}><LayoutGrid size={15} />在记忆中心打开</button>
+                            <button className="secondary-setting" onClick={() => { setMemoryCenterTab(openMeta.tab as any); setMemoryCenterOpen(true); setOpenCard(null); }}><LayoutGrid size={15} />在记忆中心打开完整视图</button>
                           </div>
                         </div>
                       </SettingsDialog>
