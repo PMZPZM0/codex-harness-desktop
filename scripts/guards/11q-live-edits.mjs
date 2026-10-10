@@ -138,9 +138,10 @@ ok(composer.includes("<TurnStatusCapsule") && composer.includes("taskList={taskL
   + "紧挨输入框（ComposerComposerForm 之前）—— 不再各占一行留大片空白；行空时 :empty 整行隐藏");
   /* ── 布局规则定稿（10-11 用户）：居中/靠左各归原位、同现同行、询问审批覆盖、排队在下 ── */
   ok(/\.composer-status-row \{[^}]*grid-template-columns: 1fr auto 1fr/.test(css)
-    && /\.composer-status-row \.edited-files-card \{[^}]*grid-column: 2/.test(css)
-    && /\.composer-status-row \.poll-bg-wrap \{[^}]*grid-column: 1/.test(css),
-    "⛔ 三列网格：后台胶囊=首列**靠左**（原位）、回合胶囊=中列**居中**（原位）—— 单独出现各归原位、同现同一行");
+    && /\.composer-status-row \.edited-files-card \{[^}]*grid-column: 2[^}]*grid-row: 1/.test(css)
+    && /\.composer-status-row \.poll-bg-wrap \{[^}]*grid-column: 1[^}]*grid-row: 1/.test(css),
+    "⛔ 三列网格：后台胶囊=首列**靠左**（原位）、回合胶囊=中列**居中**（原位）—— 单独出现各归原位、同现同一行；\n"
+    + "⛔ 两项必须显式 `grid-row: 1` —— 只指定列时 grid sparse 放置会把后放的第 1 列项顺延到第 2 行（10-11 用户截图实测：两胶囊各占一行）");
   ok(composer.includes("composer-status-zone") && composer.includes("composer-overlay-stack"),
     "询问/审批卡 = **临时覆盖层**（composer-overlay-stack absolute 盖在状态区上，关掉即露出）");
   ok(composer.indexOf("composer-status-row") < composer.indexOf("<QueuedMessageList"),
