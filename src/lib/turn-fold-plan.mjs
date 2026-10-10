@@ -2,28 +2,20 @@
 //
 // 「完成态过程折叠」的纯逻辑：决定哪些单元收进折叠组、哪些作为正文锚点留在外面。
 //
-// 为什么单独放 .mjs（而不是留在 App.tsx 或 turn-fold.ts）：
-//   tsconfig 关着 allowJs —— 渲染层 import `.mjs` 走同名 `.d.mts` 拿类型，
-//   预检（纯 node）则能**直接 import 真实现**跑行为断言，一份实现两处用，不复制粘贴。
-//   这与 src/lib/model-scope.mjs 是同一套做法。
+// ⛔⛔ 现行口径（10-10 用户定稿，原话：「不管回合时间多长，运行过程中有多少步骤，
+//   在结束的时候，运行过程必须完全折叠进去，只保留汇总结果和汇总消息下面的已修改文件板块」）：
+//   **收尾时整个运行过程（工具 / 思考 / 过渡正文 / 长正文，一视同仁）收成折叠组**；
+//   留在折叠组外的只有：① 用户消息（含中途插入的 steer，09-13 定稿）；
+//   ② 最终汇总结果（finalAgent）。已修改文件板块由调用方插在两者之间（frozenEditRows）。
 //
-// 由来（09-12 用户反馈「折叠消息把 codex 最后汇报的也折叠进去了」）：
-//   实测某会话 rollout 的条目序列是
-//     … AgentMessage(712字) → DynamicToolCall → Reasoning → AgentMessage(80字)
-//   而「最终答复 = 最后一条有正文的消息」只会挑中那条 **80 字的收尾**；
-//   旧的完成态又把「除最后一条正文以外的全部内容」塞进一个折叠组
-//   → 真正的**汇报本身（712 字）被当成过程收了起来**，用户点开才看得到。
-//   规则改成：**长正文是正文，短正文（一两句过渡/收尾）才算过程**。
-//
-// ⛔⛔ 09-23 试过一次「有正文就是正文锚点」（让每段正文之间的过程各自成一个折叠块，
-//   对标用户给的图二），**当天就被否了** —— 用户原话：「你先加了一个正文中间折叠，
-//   运行过程不折叠吗」。原因：过渡正文一旦留在外面，一整轮的过程就被切成一堆小折叠块、
-//   过渡正文全部裸露 ⇒ **旧消息再没有"整段运行过程折叠"**，时间线瞬间膨胀。
-//   ⇒ 需求有冲突，只能二选一，**现行口径 = 保留整段运行过程折叠**（过渡正文算过程）。
-//   想再试"正文之间各自成块"必须先跟用户确认，并接受旧消息变长的代价。
-
-/** 长正文阈值：≥ 这个字数的 agentMessage 一律当正文锚点，永不折叠。 */
-export const FOLD_BODY_ANCHOR_CHARS = 200;
+// 演进史（⛔ 别按旧口径"改回来"，每一版都是用户的明确表态）：
+//   · 09-12「折叠把最后汇报也收了」→ 当时的修法是「≥200 字的长正文留在外面」（治标：
+//     只护住最长的那几段，超长回合的过程仍被切成多段）；
+//   · 09-23 试「有正文就是锚点」（每段正文之间的过程各自成块）→ 当天被否（过程被切碎）；
+//   · 10-10 用户实测超长回合：**长正文锚点把运行过程切成多段 = 没有折叠整个运行过程**
+//     ⇒ 废除长正文锚点，改为"只认汇总结果"。
+//   已知并接受的代价：结尾若是「长汇报 → 工具 → 一句话收尾」，那段长汇报也收进折叠组
+//   （点开可见；汇总结果 = 最后那条仍在外面）。再改这条必须先问用户。
 
 /** 取 agentMessage 的正文文本（其它类型一律空串） */
 function bodyTextOf(item) {
@@ -31,42 +23,33 @@ function bodyTextOf(item) {
 }
 
 /**
- * 完成态折叠计划：输入单元序列（按引擎事件顺序）与最终答复的 item id，
- * 输出渲染计划数组（顺序与输入一致）：
- *   { kind: "fold", units } —— 连续的过程单元 → 收进一个折叠组
- *   { kind: "body", unit }  —— 正文锚点 → 内联常驻在折叠组外
- *
- * 正文锚点的判据（三条，任一命中即锚点）：
- *   ① **就是用户消息**（userMessage）—— 用户中途插进来的消息（队列「立即」/ steer）必须原样
- *      留在外面、按流序显示。用户 09-13 定稿：「折叠还是一样的原理，过程都折叠，展示总结，
- *      用户中间发的消息不折叠进去」：折叠只收过程（工具/思考/过渡正文），用户消息永远不是过程；
- *   ② 就是最终答复（finalAgentId）—— 哪怕它很短，收尾那一条也要看得见；
- *   ③ 正文长度 ≥ FOLD_BODY_ANCHOR_CHARS —— 长正文本身就是结论/汇报，不该被折叠吞掉。
- *      短正文（一两句过渡/收尾）**算过程**，跟着工具一起收进折叠组 —— 见文件头那条被否掉的尝试。
+ * 完成态折叠计划：输入单元序列与最终答复的 item id，输出渲染计划（顺序与输入一致）：
+ *   { kind: "fold", units } —— 连续的过程单元 → 收进折叠组
+ *   { kind: "body", unit }  —— 锚点 → 常驻在折叠组外（用户消息 / 最终汇总结果）
  */
 export function planCompletedFold(units, finalAgentId) {
   const list = Array.isArray(units) ? units : [];
-  const isAnchor = (unit) => {
-    // ① 用户消息永不折叠
-    if (unit?.item?.type === "userMessage") return true;
-    if (!unit || unit.item?.type !== "agentMessage") return false;
-    if (finalAgentId && unit.item.id === finalAgentId) return true;
-    return bodyTextOf(unit.item).length >= FOLD_BODY_ANCHOR_CHARS;
-  };
-  const plan = [];
-  let buffer = [];
-  const flush = () => {
-    if (buffer.length) plan.push({ kind: "fold", units: buffer });
-    buffer = [];
-  };
-  for (const unit of list) {
-    if (isAnchor(unit)) {
-      flush();
-      plan.push({ kind: "body", unit });
-    } else {
-      buffer.push(unit);
+  const isUser = (unit) => unit?.item?.type === "userMessage";
+  const isAgentWithBody = (unit) => unit?.item?.type === "agentMessage" && Boolean(bodyTextOf(unit.item));
+  // 最终汇总：优先按 id 匹配；id 对不上（上游快照丢 id 的既有形态）→ 以最后一条有正文的消息兜底
+  let finalIndex = -1;
+  if (finalAgentId) {
+    for (let index = list.length - 1; index >= 0; index--) {
+      if (list[index]?.item?.id === finalAgentId && isAgentWithBody(list[index])) { finalIndex = index; break; }
     }
   }
+  if (finalIndex < 0) {
+    for (let index = list.length - 1; index >= 0; index--) {
+      if (isAgentWithBody(list[index])) { finalIndex = index; break; }
+    }
+  }
+  const plan = [];
+  let buffer = [];
+  const flush = () => { if (buffer.length) plan.push({ kind: "fold", units: buffer }); buffer = []; };
+  list.forEach((unit, index) => {
+    if (isUser(unit) || index === finalIndex) { flush(); plan.push({ kind: "body", unit }); }
+    else buffer.push(unit);
+  });
   flush();
   return plan;
 }
