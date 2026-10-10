@@ -45,7 +45,7 @@ const SCOPES: MemoryScope[] = ["private", "team", "project"];
 const SCOPE_ECHO: Record<MemoryScope, string> = {
   private: "私有记忆（只有你自己读得到）",
   team: "团内记忆（同团成员共享）",
-  project: "项目记忆（全体共享）",
+  project: "项目记忆（本项目全体共享）",
 };
 
 /** 拿不到句柄时给模型看的**可执行**理由（⛔ 别只说"失败"，它要能转达给用户）。 */
@@ -59,7 +59,7 @@ const SCOPE_DENY_TEXT: Record<MemoryScope, string> = {
 const SCOPE_HINTS: Record<MemoryScope, string> = {
   private: "private（默认）= 只有你自己读得到，别人的事你看不到，也没人看得到你的",
   team: "team = 同一个专家团内的成员互通，团外读不到",
-  project: "project = 全体会话与智能体共享 —— ⛔ 写它需要先征得用户同意",
+  project: "project = **本项目**的全体会话与智能体共享（⛔ 别的项目读不到）—— 写它需要先征得用户同意",
 };
 
 /** 写入工具定义（注册给需要写记忆的会话）。 */
@@ -72,7 +72,7 @@ export function buildFabricWriteTool(agent: MemorySourceAgent): unknown {
       "保存一条记忆。三种作用域：",
       "· private（默认）= 只有**你自己**读得到 —— 适合记「这次任务的中间结论」。",
       "· team = **同一个专家团内**的成员互通，团外读不到。",
-      "· project = **全体**会话与智能体都能读到 —— 适合记可复用的事实与经验。",
+      "· project = **本项目**的全体会话与智能体都能读到（⛔ 别的项目读不到 —— 跨项目的东西写 L0 用户档案）—— 适合记可复用的事实与经验。",
       isRole
         ? "⛔ 你是被派出来干活的：写 team/project 属于**共享**（团内 / 全体），需要先征得用户同意 —— 请先问用户「这段经验值得让其他会话都记住吗？」，用户同意后带 promote=true 重写。"
         : "⛔ 写 project 前先想清楚：这是所有会话都会读到的公共知识，别把一次性的中间结论写进去。",
