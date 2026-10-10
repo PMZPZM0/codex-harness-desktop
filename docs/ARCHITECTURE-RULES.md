@@ -29,7 +29,7 @@
 | `electron/main.ts` | **1171 行**（10-05 实测 `wc -l`；⛔ 行数随域下沉变动，改动后请重测本节；纯副作用 import **5** 行） | 余 5 handler（`theme:apply` + `window:popout-*`×4，已证搬不动）+ 系统托盘（`electron/tray.ts` 接线）+ 启动链 + 模块级单例；10-05 只多了一条 `sketch` 协议的特权声明 |
 | `electron/features/` | **102 个条目**（10-03 实测：101 顶层文件 + 1 子目录 `voice-ipc/`） | IPC handler 实现。⛔ **一个板块 = 一个域前缀**（10-03 用户令）：10 处多前缀欠账已全部拆完，守卫【253】⑥ 棘轮名单清零。域组合表启用 **78 个域**（10-03 实测 `composition.json`） |
 | `electron/ipc-registry.ts` | 账本 | `prefix / count / status(in-main\|in-features\|shell) / file / channels` |
-| `electron/ipc-channels.manifest.json` | **413 个通道**（IPC 桥单一真相源；10-05 实测） | `preload.ts` gen 段 + `vite-env.d.ts` gen 段由它生成：`npm run gen:ipc`（**自动**同步 `count` 并**体检账本登记**，缺了直接打印可粘贴条目）；**生成物禁手改**（守卫【2】22 条）。09-24 起所有 invoke 走 `__ipc`：参数个数校验 + 错误归一化（`[ERR_*]` 消息前缀）+ 通道级超时表 |
+| `electron/ipc-channels.manifest.json` | **441 个通道**（IPC 桥单一真相源；10-11 实测） | `preload.ts` gen 段 + `vite-env.d.ts` gen 段由它生成：`npm run gen:ipc`（**自动**同步 `count` 并**体检账本登记**，缺了直接打印可粘贴条目）；**生成物禁手改**（守卫【2】22 条）。09-24 起所有 invoke 走 `__ipc`：参数个数校验 + 错误归一化（`[ERR_*]` 消息前缀）+ 通道级超时表 |
 | `src/styles/` | 26 分节（`styles.css` 28 行 `@import`） | 界面区域样式；10-03 新增 `25-codex-official-market.css`；10-05 新增 `26-ui-sketch.css` |
 | 跨域活绑定 | **22 个** `electron/features/*` 从 `../main` 取值 | 架构层真残留，纪律 +【91】守着（见 §8） |
 | `electron/builtin-skills/` | **20 个内置技能**（含元技能 `skill-authoring` / `memory-distill` / `self-review` / `memory-hygiene` / `memory-classify` / `skill-audit`；09-29 新增 `image-generation` 与重写后的 `video-generation`；10-05 新增 `frontend-canvas`（前端开发画布组件手册，44 种字段速查）） | 启动时 `ensureBuiltinSkills` 落盘到 `$CODEX_HOME/skills`（守卫【103】；中文导读与 entries 一一对应，守卫【229】） |
