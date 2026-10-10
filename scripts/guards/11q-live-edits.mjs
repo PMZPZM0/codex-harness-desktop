@@ -203,5 +203,25 @@ console.log("\n【live-edits】⑱ 回合用量落账");
     "completedTurns 确实以 threadMemoKey 为依赖（改键即生效）");
 }
 
+/* ── 九、提问卡「先选中、再确认」（10-11 用户：点击选项只是选中，提交按钮才生效）────────
+   ⛔ 选项**不许**再点击即回（旧行为 resolve(option) 内联在 onClick 里）；单选/多选都走
+   AgentAskCard 的选中态（role=radio/checkbox + aria-checked）+ 提交按钮；
+   工具 schema 的 multiple 参数必须还在（单/多选由 Codex 决定的通道）。 */
+console.log("\n【live-edits】⑲ 提问卡先选中再确认");
+{
+  const askCard = codeOnly(read("src/features/app-view/AppView/02-main-stage/03-composer/03-agent-ask-card.tsx"));
+  ok(!/onClick=\{\(\) => \{ ask\.resolve\(option\)/.test(askCard),
+    "⛔ 选项**不许**点击立即 resolve（旧行为：点一项就直接回给引擎，没有选中态）");
+  ok(/role=\{multi \? "checkbox" : "radio"\}/.test(askCard) && /aria-checked=\{checked\}/.test(askCard),
+    "选项带选中语义（role=radio/checkbox + aria-checked）与勾选视觉（.agent-ask-mark）");
+  ok(/disabled=\{!canSubmit\}/.test(askCard) && /parts\.join\("；"\)/.test(askCard),
+    "⛔ 提交按钮在「有选中或自定义输入」前禁用；答案 = 勾选 + 自定义输入拼接（单/多选同规则）");
+  ok(/!multi && ask\.recommended \? \[ask\.recommended\]/.test(askCard),
+    "单选**预选推荐项**（推荐路径保持一键确认，不因两步交互变麻烦）");
+  const seg08 = codeOnly(read("src/features/app-state/parts/part08/01-seg.tsx"));
+  ok(/name: "agent_ask"[\s\S]{0,600}multiple: \{ type: "boolean"/.test(seg08),
+    "⛔ agent_ask 工具 schema 仍带 multiple 参数（单/多选由 Codex 决定的通道不许丢）");
+}
+
 console.log(`\n【live-edits】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
