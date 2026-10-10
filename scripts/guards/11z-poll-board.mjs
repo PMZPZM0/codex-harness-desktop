@@ -180,10 +180,11 @@ ok(/if \(task\.kind === "tool"\) \{ requestToolAbort\(task\.id\); return; \}/.te
   "中止分两条路：长命令 → **打断当前回合**（命令是引擎在跑）；轮询 → 主进程 poll:abort（停掉那个等待循环）");
 ok(/window\.codex\.pollConfigSave\(next\)/.test(capsule) && /setPollConfig\(patch\)/.test(capsule) && /applyConfig/.test(capsule),
   "间隔 / 超时 / 重试次数可配，且**两边都写**（本地立刻生效 + 主进程下一轮用新值）");
-ok(/\{thread && <BackgroundTaskCapsule threadId=\{thread\.id\} \/>\}/.test(composer)
+/* 10-11 用户改版：与回合状态胶囊（文件修改/任务清单）合并成 `.composer-status-row` 一排自适应排版 */
+ok(/composer-status-row"[\s\S]{0,300}<BackgroundTaskCapsule threadId=\{thread\.id\} \/>/.test(composer)
   && composer.indexOf("<BackgroundTaskCapsule") < composer.indexOf("<ComposerComposerForm")
   && composer.indexOf("<BackgroundTaskCapsule") > composer.indexOf("<VoiceAnnounceIndicator"),
-  "⛔ 位置 = 卡片栈**最下面一行**（紧挨输入框上沿、在两个 fixed 浮层之后）—— 从上到下依次排列，不互相遮；\n"
+  "⛔ 位置 = **状态行**（composer-status-row，与回合状态胶囊同排自适应）紧挨输入框上沿 —— 从上到下依次排列，不互相遮；\n"
   + "⛔ 必须包在 `{thread && …}` 里 —— 欢迎页（无会话）绝不渲染，否则别的会话的后台任务串进来（10-10 用户截图）");
 
 /* ── ⑤b 长命令 / 长工具调用也算后台任务（10-09 用户追加）──────────────────────

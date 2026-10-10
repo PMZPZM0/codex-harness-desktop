@@ -131,8 +131,11 @@ ok(capsule.includes("pillRef.current.getBoundingClientRect()") && capsule.includ
 ok(capsule.includes("anchorCenter - pr.width / 2"),
   "⛔ 弹层以**胶囊中心**居中（用户 10-06：「放上去展示的那个也要居中」；左缘对齐会看着偏向右）");
 ok(composer.includes("<TurnStatusCapsule") && composer.includes("taskList={taskList}")
-  && composer.indexOf("<TurnStatusCapsule") < composer.indexOf('className="approval-stack"'),
-  "接进输入框卡片栈（taskList 入参），且位置在**询问/审批卡之上**（卡片栈上下排序、不互相遮）");
+  && composer.indexOf("<TurnStatusCapsule") > composer.indexOf('className="approval-stack"')
+  && composer.indexOf("<TurnStatusCapsule") < composer.indexOf("<ComposerComposerForm")
+  && /composer-status-row[\s\S]{0,200}<TurnStatusCapsule[\s\S]{0,400}<BackgroundTaskCapsule/.test(composer),
+  "⛔ 位置（10-11 用户改版）：在**状态行**里（composer-status-row）与后台任务胶囊**同一排**自适应排版、\n"
+  + "紧挨输入框（ComposerComposerForm 之前）—— 不再各占一行留大片空白；行空时 :empty 整行隐藏");
 
 /* ── 六-c、新回合开工清上一轮清单（10-06 夜六轮，用户实测「新回合，旧的任务清单还在」）────────
    上一轮停下（todo/doing 残留）的清单不许跨回合冒出来：空闲直发 → 宿主 tasks:clear（真通道+广播）

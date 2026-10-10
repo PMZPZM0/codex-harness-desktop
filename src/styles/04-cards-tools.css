@@ -1966,3 +1966,52 @@
 .turn-diff-modal-stats { margin-left: auto; font-size: 12px; color: var(--muted); }
 .turn-diff-modal-stats b { color: var(--green); }
 .turn-diff-modal-stats i { color: var(--red); font-style: normal; }
+
+/* ── 状态行（10-11 用户要求）：回合状态胶囊 + 后台任务胶囊 **同一排**自适应排版 ──
+   原来两个胶囊各占一整行、行内大片空白（用户：「下面有空白的为啥要空着」）。
+   ⛔ 两个组件内容为空时都渲染 null ⇒ 行内无子节点，用 :empty 整行隐藏不留缝。 */
+.composer-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 2px 0 8px;
+  position: relative; /* 后台任务的面板锚到整行（= 输入框宽度），不再随小胶囊缩宽 */
+}
+.composer-status-row:empty { display: none; }
+.composer-status-row .edited-files-card { margin: 0; text-align: left; } /* 行内靠左，与后台胶囊并排 */
+.composer-status-row .poll-bg-wrap { width: auto; margin-bottom: 0; position: static; flex: none; }
+.composer-status-row .poll-bg-panel { left: 0; right: 0; } /* 面板仍与输入框同宽 */
+
+/* ── Agent 提问卡 · 多选形态（10-11 用户要求：单选/多选由 Codex 的 multiple 参数决定）── */
+.agent-ask-mode {
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 10.5px;
+  color: var(--accent);
+}
+.agent-ask-option-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 12.5px;
+  transition: border-color .12s ease, background .12s ease;
+}
+.agent-ask-option-row:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.agent-ask-option-row.checked {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.agent-ask-option-row input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.agent-ask-option-text { flex: 1; min-width: 0; text-align: left; line-height: 1.45; }

@@ -49,7 +49,7 @@ bag.subAgentRunning = subAgentRunning as typeof bag.subAgentRunning; bag.setSubA
   const [rpaRunning, setRpaRunning] = useState<string | null>(null);
 bag.rpaRunning = rpaRunning as typeof bag.rpaRunning; bag.setRpaRunning = setRpaRunning as typeof bag.setRpaRunning;
 
-  const [agentAsk, setAgentAsk] = useState<{ threadId: string; question: string; options: string[]; recommended: string | null; allowFree: boolean; resolve: (answer: string) => void } | null>(null);
+  const [agentAsk, setAgentAsk] = useState<{ threadId: string; question: string; options: string[]; recommended: string | null; allowFree: boolean; multiple?: boolean; resolve: (answer: string) => void } | null>(null);
 bag.agentAsk = agentAsk as typeof bag.agentAsk; bag.setAgentAsk = setAgentAsk as typeof bag.setAgentAsk;
 
   const [rpaRecipes, setRpaRecipes] = useState<any[]>([]);
