@@ -18,7 +18,7 @@ export declare function writeBootIntroMode(storage: BootIntroStorage | null | un
 export declare function bootIntroModeLabel(mode: unknown): string;
 export declare function shouldPlayBootIntro(
   mode: unknown,
-  ctx?: { reducedMotion?: boolean; petWindow?: boolean }
+  ctx?: { reducedMotion?: boolean; petWindow?: boolean; popoutWindow?: boolean }
 ): boolean;
 export declare function bootIntroPlayMode(mode: unknown): "simple" | "full";
 

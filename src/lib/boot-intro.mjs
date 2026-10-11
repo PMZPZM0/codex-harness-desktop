@@ -62,6 +62,9 @@ export function shouldPlayBootIntro(mode, ctx) {
   if (normalizeBootIntroMode(mode) === "off") return false;
   if (ctx && ctx.reducedMotion) return false;
   if (ctx && ctx.petWindow) return false;
+  /* 独立会话弹窗（`?popout=<会话>`）：它是从主窗口里分出去的第二块屏，不是"开机" ⇒ 不播片头。
+     ⛔ 用户实测报过：「我开的对话框独立弹窗，怎么也播放这个动画了」。 */
+  if (ctx && ctx.popoutWindow) return false;
   return true;
 }
 

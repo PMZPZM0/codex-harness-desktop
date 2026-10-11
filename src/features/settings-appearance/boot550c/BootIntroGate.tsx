@@ -1,9 +1,11 @@
 /**
  * 启动页分派：用不用 550C 片头。
  *
- * 判据（三选一成立就**不播**，走既有的 BootSplash）：
- *   · 档位 = 关闭；· 系统「减弱动效」；· 桌面宠物浮窗 `?pet=1`。
+ * 判据（四选一成立就**不播**，走既有的 BootSplash）：
+ *   · 档位 = 关闭；· 系统「减弱动效」；· 桌面宠物浮窗 `?pet=1`；· **独立会话弹窗 `?popout=<会话>`**。
  *
+ * ⛔ 独立弹窗为什么也不播：它是从主窗口分出去的第二块屏（用户实测报过「我开的对话框独立弹窗，
+ *    怎么也播放这个动画了」）—— 片头只在**应用启动**时该出现一次。
  * ⛔ 决策只在挂载时算一次（useState 初值）：档位读 localStorage、动效偏好读 matchMedia，
  *    中途变化不该把正在播的片头掐掉或凭空唤起。
  */
@@ -19,9 +21,12 @@ export function BootIntroGate({ stage, done }: { stage: BootStage; done: boolean
       typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
     const petWindow =
       typeof location !== "undefined" && new URLSearchParams(location.search).get("pet") === "1";
+    /* ⛔ 只认"有没有这个参数"，不认它是不是空：`?popout=` 也是弹窗（会话 id 缺省时照样是分出去的窗口）。 */
+    const popoutWindow =
+      typeof location !== "undefined" && new URLSearchParams(location.search).has("popout");
     const mode = readBootIntroMode(storage);
     return {
-      play: shouldPlayBootIntro(mode, { reducedMotion, petWindow }),
+      play: shouldPlayBootIntro(mode, { reducedMotion, petWindow, popoutWindow }),
       mode: bootIntroPlayMode(mode),
       scheme: readBootIntroScheme(storage),
     };

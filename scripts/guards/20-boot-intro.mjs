@@ -7,7 +7,7 @@
  *   ② 四套配色的 CSS 在**增强层** ENHANCE_CSS 里（`:host([data-scheme=…])`），不能只搬 CSS_550C；
  *   ③ 增强层样式必须**排在移植 CSS 之后**注入（上游口径）—— 反了会被前者的 :host 变量盖掉；
  *   ④ 简易/完整两档的标记不能挂错（简易档挂上 APP_MARKUP 会让驱动找不到外壳元素）；
- *   ⑤ 跳过（点击 / Esc）与三条不播判据（关闭档 / 减弱动效 / 宠物浮窗）必须都在；
+ *   ⑤ 跳过（点击 / Esc）与**四条**不播判据（关闭档 / 减弱动效 / 宠物浮窗 / 独立会话弹窗）必须都在；
  *   ⑥ ⛔ logo 用 clip-path 描绘、**不给 logo path 设 transform** —— 连续缩放会让 GPU 每帧重采样
  *      大位图，壁纸/three 抢 GPU 时肉眼发糊（10-06 启动页实拍事故的因果面；弹窗上的 scale 不在此列）。
  */
@@ -43,9 +43,35 @@ ok(libSrc.includes("BOOT_INTRO_MODES.includes(value) ? value : BOOT_INTRO_DEFAUL
 ok(
   libSrc.includes('if (normalizeBootIntroMode(mode) === "off") return false') &&
     libSrc.includes("ctx.reducedMotion") &&
-    libSrc.includes("ctx.petWindow"),
-  "三条不播判据齐全：关闭档 / 减弱动效 / 宠物浮窗"
+    libSrc.includes("ctx.petWindow") &&
+    libSrc.includes("ctx.popoutWindow"),
+  "四条不播判据齐全：关闭档 / 减弱动效 / 宠物浮窗 / 独立会话弹窗"
 );
+/* ⛔ 独立会话弹窗（用户 10-11 实测报过：「我开的对话框独立弹窗，怎么也播放这个动画了」）：
+   弹窗走的就是 <App/>（main.tsx 只对 ?pet=1 分流），所以它一定会经过这个闸门 ⇒ 闸门必须自己挡。
+   ⛔ 判据用 `has("popout")` 而不是取值：`?popout=`（会话 id 缺省）照样是分出去的窗口。 */
+ok(
+  gateSrc.includes('new URLSearchParams(location.search).has("popout")') &&
+    /shouldPlayBootIntro\(mode, \{ reducedMotion, petWindow, popoutWindow \}\)/.test(gateSrc),
+  "闸门把「独立会话弹窗」算进不播判据（只认参数在不在 —— 空值也是弹窗）"
+);
+/* 真跑：四种 ctx 组合逐条比对（'alive' 版 —— 只读源码文本会漏掉"判据写错方向"） */
+{
+  const { shouldPlayBootIntro } = await import("../../src/lib/boot-intro.mjs");
+  const cases = [
+    ["full", {}, true, "默认档 + 主窗口 ⇒ 播"],
+    ["off", {}, false, "关闭档 ⇒ 不播"],
+    ["full", { reducedMotion: true }, false, "系统减弱动效 ⇒ 不播"],
+    ["full", { petWindow: true }, false, "桌面宠物浮窗 ⇒ 不播"],
+    ["full", { popoutWindow: true }, false, "⛔ 独立会话弹窗 ⇒ 不播"],
+    ["simple", { popoutWindow: true }, false, "简易档在弹窗里同样不播"],
+  ];
+  const bad = cases.filter(([m, ctx, want]) => shouldPlayBootIntro(m, ctx) !== want);
+  ok(
+    bad.length === 0,
+    `真跑不播判据 ${cases.length - bad.length}/${cases.length} 条符合预期${bad.length ? `（错在：${bad.map((c) => c[3]).join("；")}）` : ""}`
+  );
+}
 ok(libSrc.includes("BOOT_INTRO_STORAGE_KEY = \"boot-intro\""), "存储键 boot-intro（index.html 内联脚本写死了同名字面量，两处必须同源）");
 
 /* ── 纯函数口径（配色）── */
