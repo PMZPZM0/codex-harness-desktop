@@ -88,5 +88,6 @@
 | python-build-standalone（内置 Python 运行时本体，2026-10-01 起） | PSF-2.0（构建自 CPython；随附 Tcl/Tk 等组件，许可文本见包内 `LICENSE.txt`） | 「设置 → 开发工具 → Python + Tkinter + pip」按需下载（约 45 MB），一个包自带 pip 与 Tkinter；上游 <https://github.com/astral-sh/python-build-standalone>。**替代**了此前的官方 embeddable 包 + Tcl/Tk 安装器方案（后者在部分机器上静默失败，导致 pip 缺失） |
 | Nuphus MCP | MIT | 桌面 / 浏览器自动化 MCP（`resources/tools/npm-global`） |
 | zy-cinematic-realism（造梦师） | CC BY-NC 4.0 | 电影视觉 Prompt 工作流技能包（`resources/expert-skills/zy-cinematic-realism`，源自 <https://github.com/popopo-99/zy-cinematic-realism>，SKILL.md 与 references/ 逐字未改；中文导读为旁挂 README.zh-CN.md）。⛔ NC = 仅限非商业用途，署名见包内 NOTICE.md |
+| dsh-550c-boot 的 550C 开机动画（2026-10-11 移植为「外观 → 开机动画」） | MIT | DSH 插件 `dsh-550c-boot@0.3.3` 的启动片头 —— 动画与 HTML 原稿 **Voidpoket**（<https://github.com/Voidpoket>），插件工程与移植 **Ziyang Song**（<https://github.com/yannicksong0106>）。本应用**逐字移植**其样式表 / 标记 / 驱动：`src/features/settings-appearance/boot550c/assets.ts`（CSS_550C / ENHANCE_CSS / BOOT_MARKUP / APP_MARKUP）与 `show.mjs`（动画驱动，仅加 `export`），零改写。上游 <https://github.com/yannicksong0106/dsh-550c-boot> |
 
 （本表只列「我们主动引入且有明确上游」的组件；上述工具各自的完整许可文本随其自身目录分发。）

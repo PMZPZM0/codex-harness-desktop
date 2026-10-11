@@ -343,7 +343,9 @@ export class ElectronHarness {
     // 「尚未选择工作区」，发送链路在部分路径下会被拦（实测：点了发送键消息仍留在输入框）。
     // 用 addScriptToEvaluateOnNewDocument 在**每次新文档**执行前注入，所以首次加载 + 后续 reload 都生效。
     if (this.workspace) {
-      const src = `try { localStorage.setItem("workspace", ${JSON.stringify(this.workspace)}); } catch (e) {}`;
+      // ⛔ 同时把「550C 开机动画」档位钉为 off：默认档是**完整 16 秒片头**，每次启动都会盖住整屏 ——
+      //    在验收里会被当成「界面没出来」，`elementFromPoint` 类断言还会命中这层浮窗。测试实例一律不播。
+      const src = `try { localStorage.setItem("workspace", ${JSON.stringify(this.workspace)}); localStorage.setItem("boot-intro", "off"); } catch (e) {}`;
       // 新文档注入（覆盖后续 reload）+ 当前文档直接写
       await this._send("Page.addScriptToEvaluateOnNewDocument", { source: src }).catch(() => undefined);
       await this.eval(src).catch(() => undefined);

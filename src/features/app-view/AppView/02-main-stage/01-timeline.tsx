@@ -141,7 +141,8 @@ import {
   CheckCheck,
 } from "lucide-react";
 import { CardStatusIcon, Spinner, useCardOpen, type ActionStatus } from "../../../../components/CardShell";
-import { BootSplash, type BootStage } from "../../../../components/BootSplash";
+// 启动页分派（10-11）：档位开启时播 550C 片头，否则回落既有启动页。逻辑属外观域，经其 barrel 消费。
+import { BootIntroGate } from "../../../settings-appearance";
 import { HelpDialog, type HelpTopic } from "../../../../components/HelpDialog";
 import { CodexAvatar, useCodexName } from "../../../../components/CodexAvatar";
 import { contentOffsetTop, jumpToBottom, scrollToOffsetInstant } from "../../../../components/scroll-utils";
@@ -390,7 +391,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                   {/* 启动加载页（渲染层接手段）：挂载瞬间从 index.html 那份手里接过来，
                       盖到首屏会话数据到达（或需要登录）才淡出。实测挂载后还要等 1.3~2.1s，
                       此前这段界面上什么反馈都没有。阶段由真实状态驱动，不是放假进度条。 */}
-                  <BootSplash
+                  <BootIntroGate
                     stage={!serverStatus || serverStatus === "starting" ? "starting" : serverStatus !== "ready" ? "engine" : threadsLoading ? "threads" : "ready"}
                     done={bootReady || Boolean(showLogin)}
                   />

@@ -1,0 +1,34 @@
+/* 550C 开机动画（2026-10-11 立项）—— 外观设置页的「开机动画」行 + 片头宿主。
+   ⛔ 片头本体（样式表 / 标记 / 驱动）是**逐字移植**的上游资产（dsh-550c-boot，MIT），
+      活在 Shadow DOM 里、不进本表，见 src/features/settings-appearance/boot550c/。
+      本表只有本仓的宿主与设置行样式。 */
+
+/* 设置行：档位三选一（复用 .theme-switch.three）下方的动作条 —— 预览按钮 + 不可播提示 */
+.boot550c-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.boot550c-actions .secondary-setting {
+  margin: 0;
+}
+
+/* 配色四选一（与 .three / .five 同族，补一个四列变体） */
+.theme-switch.four {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+/* 片头宿主：影子树里的 #boot / #app 自己 fixed 撑满视口，宿主节点只负责「盖在最上层」。
+   ⛔ 定位放这里、不放影子树的 :host —— 上游 CSS_550C 也有一套 :host 规则，两边别争同一批属性。
+   z-index 取 9999 与既有启动页同档（压过主界面 / 设置 / 画布 / 全局模态）。
+   ⛔ `background` 是第二道保险：React 首帧里宿主可能还没塞进影子内容（见 BootIntro550c 的 useLayoutEffect），
+      底色写成动画自己的黑，避免那一瞬间透出底下的主界面 = 「先闪一下主界面」。 */
+.boot550c-host {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #050403;
+}

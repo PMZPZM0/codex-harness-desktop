@@ -51,6 +51,19 @@
         } catch (e) {
           document.documentElement.setAttribute("data-theme", "light");
         }
+        /* ⛔ 550C 开机动画档位（默认 full）：开启时首帧只用**动画自己的底色**占屏，
+           不显示 logo/文案，避免先闪一眼白底启动页再跳黑（上游同款口径：「首帧是一块纯色」）。
+           档位键与 src/lib/boot-intro.mjs 的 BOOT_INTRO_STORAGE_KEY 同源；这里内联脚本
+           不能用 import，所以是写死的同名字面量。判定与 shouldPlayBootIntro 一致：
+           关闭档 / 减弱动效 / 宠物浮窗 都回落既有启动页。 */
+        try {
+          var bi = localStorage.getItem("boot-intro");
+          var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+          var isPet = new URLSearchParams(location.search).get("pet") === "1";
+          if (bi !== "off" && !reduced && !isPet) {
+            document.documentElement.setAttribute("data-boot-intro", "1");
+          }
+        } catch (e) { /* 忽略：读不到就走既有启动页 */ }
         /* ⛔ 桌面宠物浮窗（?pet=1）必须在**首帧之前**就打上这个标记：
            下面 body 里的启动页是**静态 HTML**，若等到 React 挂载再隐藏，
            透明浮窗上会先闪一整块不透明白底（渲染层判定太晚）。 */
@@ -68,6 +81,15 @@
         background: transparent;
       }
       html[data-pet-window="1"] .boot-splash {
+        display: none;
+      }
+      /* 550C 档位开启时：首帧 = 动画底色纯黑（#050403），logo 与文案先不显示 ——
+         React 挂载后由 BootIntro550c 接管整段片头（见 src/features/settings-appearance/boot550c/）。 */
+      html[data-boot-intro="1"] .boot-splash {
+        background: #050403;
+      }
+      html[data-boot-intro="1"] .boot-splash-logo,
+      html[data-boot-intro="1"] .boot-splash p {
         display: none;
       }
       /* 启动加载页：JS/CSS 还没加载时也要能显示，所以样式必须内联在这里。
