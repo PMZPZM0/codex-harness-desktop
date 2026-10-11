@@ -31,7 +31,7 @@ type GatewayStatus = {
 };
 
 /** 供应商列表里的常驻推荐卡（与 PPtoken 推荐卡同一族的观感）。 */
-export function FreeGatewayRecommendCard({ registered, onSelect, setNotice }: { registered?: boolean; onSelect?: () => void; onRegistered?: () => void; setNotice?: (msg: string) => void } = {}) {
+export function FreeGatewayRecommendCard({ registered, onSelect, setNotice, onUninstalled }: { registered?: boolean; onSelect?: () => void; onRegistered?: () => void; setNotice?: (msg: string) => void; onUninstalled?: () => void } = {}) {
   const [open, setOpen] = useState(false);
   const [managing, setManaging] = useState(false);
   return (
@@ -64,13 +64,13 @@ export function FreeGatewayRecommendCard({ registered, onSelect, setNotice }: { 
           >管理</span>
         )}
       </button>
-      {open && <FreeGatewayDialog onClose={() => setOpen(false)} onRegistered={() => { setOpen(false); onSelect?.(); onRegistered?.(); }} setNotice={setNotice} />}
+      {open && <FreeGatewayDialog onClose={() => setOpen(false)} onRegistered={() => { setOpen(false); onSelect?.(); onRegistered?.(); }} onUninstalled={onUninstalled} setNotice={setNotice} />}
       {managing && <FreeGatewayDialog onClose={() => setManaging(false)} />}
     </>
   );
 }
 
-export function FreeGatewayDialog({ onClose, onRegistered, setNotice }: { onClose: () => void; onRegistered?: () => void; setNotice?: (msg: string) => void }) {
+export function FreeGatewayDialog({ onClose, onRegistered, setNotice, onUninstalled }: { onClose: () => void; onRegistered?: () => void; setNotice?: (msg: string) => void; onUninstalled?: () => void }) {
   const [status, setStatus] = useState<GatewayStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [busy, setBusy] = useState("");
@@ -203,7 +203,8 @@ export function FreeGatewayDialog({ onClose, onRegistered, setNotice }: { onClos
               onClick={() => void run("uninstall", async () => {
                 await window.codex.freeGatewayUninstall();
                 try { await window.codex.removeCustomModel("free-gateway"); } catch { /* 未注册时忽略 */ }
-                setNotice?.("免费模型网关已卸载");
+                setNotice?.("免费模型网关已卸载（供应商已从列表移除）");
+                onUninstalled?.();
               }, () => setSuccess("✅ 已卸载免费模型网关"))}>
               <Trash2 size={13} />卸载
             </button>

@@ -244,8 +244,23 @@ export const freeGatewayFeature = defineFeature<null>({
       return { ok: true, port, hasForwardKey: Boolean(readGatewaySettings().forwardKey) };
     });
 
+    /** ⛔ 杀整棵进程树：上游网关 spawn 了 Worker 子进程，child.kill() 只杀直接子进程
+     *  会留孤儿 Worker 占端口（10-12 用户实测「卸载了网关还没自动停止」）。Windows 用
+     *  taskkill /F /T 杀进程树；非 Windows 用 SIGKILL。 */
+    const killGatewayTree = () => {
+      if (child?.pid) {
+        try {
+          if (process.platform === "win32") {
+            spawn("taskkill", ["/F", "/T", "/PID", String(child.pid)], { stdio: "ignore", windowsHide: true });
+          } else {
+            child.kill("SIGKILL");
+          }
+        } catch { /* 进程已退出 */ }
+      }
+      child = null;
+    };
     ipcHost.handle("free-gateway:stop", async () => {
-      if (child) { child.kill(); child = null; }
+      killGatewayTree();
       return { ok: true };
     });
 
@@ -269,7 +284,7 @@ export const freeGatewayFeature = defineFeature<null>({
 
     // 卸载：停侧车 + 删本体 + 删数据目录（供应商注册由渲染层调 custom-model:remove 移除）
     ipcHost.handle("free-gateway:uninstall", async () => {
-      if (child) { child.kill(); child = null; }
+      killGatewayTree();
       let errors: string[] = [];
       for (const dir of [appDir(), dataDir()]) {
         try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e: any) { errors.push(e?.message ?? String(e)); }
@@ -280,7 +295,7 @@ export const freeGatewayFeature = defineFeature<null>({
     });
 
     // 应用退出时收掉侧车进程（不 detached：随宿主走，避免留孤儿服务占端口）
-    app.on("will-quit", () => { try { child?.kill(); } catch { /* 已退出 */ } });
+    app.on("will-quit", () => { killGatewayTree(); });
 
     /* ⛔ 网关跟随应用启停联动（10-12 用户令）：应用启动 → 如果之前用过（settings.json 有
        forwardKey = 网关曾被启动过）→ 自动启动网关（用户不需要每次手动点「启动网关」）。

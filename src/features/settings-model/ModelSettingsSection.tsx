@@ -122,6 +122,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                           });
                           if (setProviderEnabled) setProviderEnabled("free-gateway", true);
                         }}
+                        onUninstalled={() => removeProvider("free-gateway")}
                       />
                     </div>
                     <div className="provider-form">
