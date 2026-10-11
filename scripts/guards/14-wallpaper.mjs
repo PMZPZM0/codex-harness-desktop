@@ -83,6 +83,13 @@ ok(
   libSrc.includes("starScale") && layerSrc.includes("scale / 100") && layerSrc.includes("StarfieldPane scale={cfg.starScale}"),
   "比例真正作用到密度（不是摆设）：密度 = 面积基线 × 比例/100"
 );
+ok(
+  settingsSrc.includes("RangeSlider") &&
+    settingsSrc.includes('{live && <span className="wallpaper-range-bubble"') &&
+    (settingsSrc.match(/<RangeSlider /g) ?? []).length >= 2,
+  "两个滑杆（浓度 / 比例）共用带数字气泡的 RangeSlider，且气泡由 live 条件渲染（拖动或聚焦时跟手）—— 用户 10-11「再改个显示数字，别只看滑杆拖动」"
+);
+ok(cssSrc.includes(".wallpaper-range-bubble") && cssSrc.includes("bottom: calc(100% + 6px)"), "气泡样式在（贴滑块上方、pointer-events:none 不挡交互）");
 ok(!/const color = accentHex\(\)/.test(particlesSrc) && particlesSrc.includes("useThemeColor()"), "粒子档接上 useThemeColor()（原来那个 hook 是死代码 —— 挂载取一次色，切主题不换色）");
 
 /* ── 接线：挂载 + 设置段 ── */

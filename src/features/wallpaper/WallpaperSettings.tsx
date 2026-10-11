@@ -24,6 +24,32 @@ const MODE_LABELS: Record<string, string> = {
   custom: "自定义图片",
 };
 
+/** 带「拖动浮出数字气泡」的滑杆（用户 10-11：「再改个显示数字，别只看滑杆拖动」）。
+ *  气泡只在拖动 / 键盘聚焦时出现，位置按比例贴在滑块上方；行尾另有一个常驻数值。
+ *  ⛔ 两个滑杆（图案的「浓度」与星空的「比例」）共用它 —— 只给一个加气泡会不一致。 */
+function RangeSlider({ min, max, step, value, onChange }: { min: number; max: number; step: number; value: number; onChange: (v: number) => void }) {
+  const [live, setLive] = useState(false);
+  const pct = ((value - min) / (max - min)) * 100;
+  return (
+    <span className="wallpaper-range">
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        onPointerDown={() => setLive(true)}
+        onPointerUp={() => setLive(false)}
+        onPointerCancel={() => setLive(false)}
+        onFocus={() => setLive(true)}
+        onBlur={() => setLive(false)}
+      />
+      {live && <span className="wallpaper-range-bubble" style={{ left: `${pct}%` }}>{value}%</span>}
+    </span>
+  );
+}
+
 /** 制作教程提示词（10-06 用户：「怎么做壁纸几个类型都做好提示词，放 ? 号教程，支持复制」）。
  *  每条都能整段复制后直接发给 Codex 执行；⛔ 提示词里提到的 id 清单必须与本文件注册表一致。 */
 const GUIDE_PROMPTS: { id: string; title: string; prompt: string }[] = [
@@ -146,14 +172,7 @@ export function WallpaperSettingsSection() {
       {cfg.mode === "pattern" && (
         <label className="wallpaper-opacity">
           <span>浓度</span>
-          <input
-            type="range"
-            min={2}
-            max={40}
-            step={1}
-            value={cfg.opacity}
-            onChange={(event) => update({ opacity: Number(event.target.value) })}
-          />
+          <RangeSlider min={2} max={40} step={1} value={cfg.opacity} onChange={(v) => update({ opacity: v })} />
           <span className="wallpaper-opacity-value">{cfg.opacity}%</span>
         </label>
       )}
@@ -161,14 +180,7 @@ export function WallpaperSettingsSection() {
       {cfg.mode === "stars" && (
         <label className="wallpaper-opacity">
           <span>比例</span>
-          <input
-            type="range"
-            min={20}
-            max={300}
-            step={5}
-            value={cfg.starScale}
-            onChange={(event) => update({ starScale: Number(event.target.value) })}
-          />
+          <RangeSlider min={20} max={300} step={5} value={cfg.starScale} onChange={(v) => update({ starScale: v })} />
           <span className="wallpaper-opacity-value">{cfg.starScale}%</span>
         </label>
       )}

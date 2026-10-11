@@ -65,6 +65,24 @@
 .wallpaper-custom-path { color: var(--muted); font-size: 12px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wallpaper-opacity { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 12px; }
 .wallpaper-opacity-value { color: var(--muted); min-width: 34px; }
+/* 带数字气泡的滑杆（用户 10-11：「再改个显示数字，别只看滑杆拖动」）——
+   气泡在拖动 / 键盘聚焦时出现，按比例贴在滑块上方；行尾另有常驻数值。 */
+.wallpaper-range { position: relative; flex: 1 1 auto; display: flex; min-width: 0; }
+.wallpaper-range input { width: 100%; }
+.wallpaper-range-bubble {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  pointer-events: none;
+}
 
 /* ── ？号制作教程（提示词卡 + 一键复制）── */
 .wallpaper-guide-toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 8px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
