@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 441,
+  "count": 447,
   "channels": [
     {
       "name": "request",
@@ -4381,6 +4381,66 @@
       "invokeArgs": "input",
       "cast": "Promise<{ ok: boolean; aborted: boolean }>",
       "note": "10-09 用户在界面上按「中止」→ 主进程的 wait 循环停下（任务本身不会被撤销）"
+    },
+    {
+      "name": "freeGatewayStatus",
+      "channel": "free-gateway:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ downloaded: boolean; version: string; running: boolean; port: number; forwardKey: string; hasForwardKey: boolean; adminUrl: string; stage: string | null; stageError: string | null; lastStartError: string | null }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "免费模型网关（free-gateway 域，10-12）：第三方开源侧车服务的状态。⛔ 免责：上游与本项目开发者无关，渠道合规性与可用性由使用者自担"
+    },
+    {
+      "name": "freeGatewayDownload",
+      "channel": "free-gateway:download",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; version: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "免费模型网关：从 gh 镜像下载上游仓库 zip 并用随包 7za 解压到 userData/free-gateway/app"
+    },
+    {
+      "name": "freeGatewayStart",
+      "channel": "free-gateway:start",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; port: number; hasForwardKey: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "免费模型网关：用随包 node 启动 standalone 网关（OFM_HOME 指向 userData/free-gateway/data），等 /health 就绪"
+    },
+    {
+      "name": "freeGatewayStop",
+      "channel": "free-gateway:stop",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "免费模型网关：停掉本应用拉起的侧车进程"
+    },
+    {
+      "name": "freeGatewayOpenAdmin",
+      "channel": "free-gateway:open-admin",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ url: string; port: number }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "免费模型网关：返回管理台地址（启动期捕获的一次性登录链接优先）"
+    },
+    {
+      "name": "freeGatewayModels",
+      "channel": "free-gateway:models",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ models: string[] }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "免费模型网关：主进程带 forwardKey 拉 /v1/models（⛔ 渲染层 fetch 会被 CORS 拦）"
     }
   ]
 }

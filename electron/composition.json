@@ -597,6 +597,13 @@
       "config": null
     },
     {
+      "id": "free-gateway",
+      "enabled": true,
+      "file": "features/free-gateway-ipc.ts",
+      "export": "freeGatewayFeature",
+      "config": null
+    },
+    {
       "id": "whatsnew",
       "enabled": true,
       "file": "features/whats-new-ipc.ts",

@@ -92,6 +92,7 @@ import { declaredPluginsFeature as feat_declared_plugins } from "./features/decl
 import { knowledgeBaseFeature as feat_kb } from "./features/knowledge-base-ipc";
 import { modelViewerFeature as feat_model_viewer } from "./features/model-viewer-ipc";
 import { imageLabFeature as feat_image_lab } from "./features/image-lab";
+import { freeGatewayFeature as feat_free_gateway } from "./features/free-gateway-ipc";
 import { whatsNewFeature as feat_whatsnew } from "./features/whats-new-ipc";
 
 import { app } from "electron";
@@ -191,6 +192,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "kb", plugin: feat_kb as Plugin<unknown>, config: null },
   { id: "model-viewer", plugin: feat_model_viewer as Plugin<unknown>, config: null },
   { id: "image-lab", plugin: feat_image_lab as Plugin<unknown>, config: null },
+  { id: "free-gateway", plugin: feat_free_gateway as Plugin<unknown>, config: null },
   { id: "whatsnew", plugin: feat_whatsnew as Plugin<unknown>, config: null },
 ];
 
