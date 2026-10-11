@@ -201,7 +201,9 @@ export const freeGatewayFeature = defineFeature<null>({
           cwd: appDir(),
           env: { ...process.env, OFM_HOME: dataDir() },
           stdio: ["ignore", "pipe", "pipe"],
+          detached: true,
         });
+        child.unref();
         child.stdout?.on("data", (chunk: Buffer) => {
           // 启动横幅里有一条**一次性管理登录链接**（10 分钟有效）——捕获最后一行 http 地址当管理台入口
           const text = String(chunk);
@@ -295,7 +297,7 @@ export const freeGatewayFeature = defineFeature<null>({
     });
 
     // 应用退出时收掉侧车进程（不 detached：随宿主走，避免留孤儿服务占端口）
-    app.on("will-quit", () => { killGatewayTree(); });
+    app.on("will-quit", () => { try { killGatewayTree(); } catch { /* detached 进程可能已独立 */ } });
 
     /* ⛔ 网关跟随应用启停联动（10-12 用户令）：应用启动 → 如果之前用过（settings.json 有
        forwardKey = 网关曾被启动过）→ 自动启动网关（用户不需要每次手动点「启动网关」）。
