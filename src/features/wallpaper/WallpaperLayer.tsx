@@ -66,16 +66,26 @@ function StarfieldPane() {
     if (motion) window.addEventListener("mousemove", onMove, { passive: true });
     let stars: { x: number; y: number; r: number; a: number; p: number; d: number }[] = [];
     const seed = () => {
-      const n = Math.max(28, Math.min(240, Math.round((canvas.width * canvas.height) / (dark ? 13000 : 20000))));
-      stars = Array.from({ length: n }, () => ({
-        x: Math.random(),
-        y: Math.random(),
-        r: dark ? 0.5 + Math.random() * 1.3 : 0.7 + Math.random() * 1.0,
-        a: dark ? 0.35 + Math.random() * 0.6 : 0.16 + Math.random() * 0.24,
-        p: Math.random() * Math.PI * 2,
-        // 纵深：越"近"的点视差位移越大（0.35 远层 ~ 1 近层）
-        d: 0.35 + Math.random() * 0.65,
-      }));
+      // ⛔ 密度按**面积**自适应（换窗口/换屏自动跟上）：10-11 用户报「星空太差了、太少了」
+      //    —— 首版 1280×800 才 51 颗，确实不像星空；现在深色约 1000 颗、浅色约 650 颗（上限 1600 防超大屏卡顿）。
+      const n = Math.max(120, Math.min(1600, Math.round((canvas.width * canvas.height) / (dark ? 1000 : 1600))));
+      stars = Array.from({ length: n }, () => {
+        // 约 8% 是"亮星"：又大又亮，其余是背景细星 —— 有层次才像星空
+        const bright = Math.random() < 0.08;
+        return {
+          x: Math.random(),
+          y: Math.random(),
+          r: bright
+            ? (dark ? 1.6 : 1.4) + Math.random() * 1.1
+            : (dark ? 0.45 : 0.7) + Math.random() * 1.05,
+          a: bright
+            ? (dark ? 0.75 : 0.42) + Math.random() * 0.25
+            : (dark ? 0.3 : 0.16) + Math.random() * (dark ? 0.45 : 0.22),
+          p: Math.random() * Math.PI * 2,
+          // 纵深：越"近"的点视差位移越大（0.35 远层 ~ 1 近层）
+          d: 0.35 + Math.random() * 0.65,
+        };
+      });
     };
     const resize = () => {
       canvas.width = Math.max(1, Math.round(canvas.clientWidth * dpr));

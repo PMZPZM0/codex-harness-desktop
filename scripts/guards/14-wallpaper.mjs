@@ -70,6 +70,11 @@ ok(
     layerSrc.includes('removeEventListener("mousemove"'),
   "星野跟鼠标动（缓动视差 + 纵深系数）+ 卸载时摘监听（用户 10-11「都要动态星空、跟着鼠标动，不是静态的」）"
 );
+ok(
+  /Math\.max\(120,\s*Math\.min\(1600/.test(layerSrc) && layerSrc.includes("dark ? 1000 : 1600"),
+  "星野密度按面积自适应且有下限（用户 10-11「星空太差了、太少了」——首版 1280×800 才 51 颗，不像星空）"
+);
+ok(layerSrc.includes("bright") && /Math\.random\(\) < 0\.08/.test(layerSrc), "约 8% 亮星做层次（全是均匀细点看着像噪点、不像星空）");
 ok(!/const color = accentHex\(\)/.test(particlesSrc) && particlesSrc.includes("useThemeColor()"), "粒子档接上 useThemeColor()（原来那个 hook 是死代码 —— 挂载取一次色，切主题不换色）");
 
 /* ── 接线：挂载 + 设置段 ── */
