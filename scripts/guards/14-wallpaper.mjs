@@ -4,7 +4,8 @@
  * ⛔ 三条铁律（都是"看起来接好了、其实会出事"的接缝）：
  *   ① 壁纸层必须 pointer-events:none + z-index:-1 —— 纯视觉层永不挡交互、永不盖内容；
  *   ② tsparticles 的 fullScreen 必须关 —— 默认全屏会劫持 body，壁纸只属于聊天区；
- *   ③ vanta 初始化必须 try/catch + destroy 清理 —— 它对 three 版本敏感，炸了要静默降级。
+ *   ③ 星野是**自绘 canvas**、点之间**零连线**（用户 10-11：「黑夜→星空、白天→动态点，点不要连线」；
+ *      原 vanta NET 只能画"点+连线"的网 ⇒ 整体退役，负向断言防复活）。
  * 附：懒加载（import()）是主包体积红线；素材颜色一律 token（mask + --accent），不写死色值。
  */
 import { readFileSync } from "node:fs";
@@ -33,7 +34,8 @@ const rpc = read("dist-electron/features/dispatch-rpc.js");
 const preload = read("dist-electron/preload.js");
 
 /* ── 数据面 ── */
-ok(libSrc.includes("off") && libSrc.includes("particles") && libSrc.includes("vanta") && libSrc.includes("custom"), "模式注册表含 off/pattern/particles/vanta/custom（归一化白名单）");
+ok(libSrc.includes("off") && libSrc.includes("particles") && libSrc.includes("stars") && libSrc.includes("custom"), "模式注册表含 off/pattern/particles/stars/custom（归一化白名单）");
+ok(libSrc.includes('r.mode === "vanta" ? "stars"'), "旧值 vanta 迁移到 stars（老档案里存着 vanta 的用户不会突然没壁纸）");
 ok(libSrc.includes("Math.min(40, Math.max") && libDts.includes("normalizeWallpaper"), "浓度归一夹在 2~40%（避免满壁纸盖脸 / 0% 看不见）");
 ok(layerSrc.includes("cfg.opacity / 100 : 1"), "浓度只压图案/自定义图（粒子/3D 被层透明度压住 = 全部隐身，10-05 实测「假功能」观感的真凶之一）");
 const patternCount = (libSrc.split("WALLPAPER_PRESETS")[0].match(/id: "/g) ?? []).length;
@@ -52,14 +54,22 @@ ok(styles.includes("styles/28-wallpaper"), "styles.css 已接入 28-wallpaper");
 /* ── 动效引擎：铁律②③ + 懒加载 ── */
 ok(layerSrc.includes("lazy(() => import(\"./ParticlesPane\")") && layerSrc.includes("Suspense"), "tsparticles 整块 React.lazy（包装器会静态拖进 @tsparticles/engine，顶层 import = 主包变大）");
 ok(particlesSrc.includes("fullScreen: { enable: false }"), "tsparticles fullScreen 已关（默认全屏劫持 body = 壁纸铺满整窗）");
-ok(layerSrc.includes("vanta/dist/vanta.net.min.js") && layerSrc.includes("catch") && layerSrc.includes("destroy()"), "vanta 懒加载 + try/catch 静默降级 + destroy 清理（three 版本敏感，炸了不许白屏）");
+ok(layerSrc.includes("wallpaper-stars") && layerSrc.includes('getContext("2d")') && layerSrc.includes("ResizeObserver"), "星野 = 自绘 2D canvas（铺满 + 跟随容器尺寸），不依赖第三方引擎");
+ok(!/(moveTo|lineTo|stroke)\(/.test(layerSrc), "⛔ 点之间不画任何连线（用户 10-11「黑点直接不要连线」）—— canvas 绘制里不许出现 moveTo/lineTo/stroke");
+ok(!/vanta/.test(layerSrc) && !/"three"/.test(layerSrc), "vanta / three 整体退役且不许复活（它只能画「点+连线」的网；负向）");
 ok(layerSrc.includes("prefers-reduced-motion") && layerSrc.includes("pattern"), "减动效偏好下粒子/3D 退回静态图案（accessibility 基本盘）");
 
 /* ── 主题色适配（10-11 用户实测：「3D 背景跟自定义的主题有些没做主题色适配，太丑了」）──
    ⛔ 三条都是"看着能跑、其实切主题就露馅"的接缝，静态断言正是它们唯一的防线。 */
 ok(cssSrc.includes(':root[data-theme="dark"] .wallpaper-custom::after'), "自定义图/精选渐变的「雾」按主题分档（深色主题压更狠 —— 浅色壁纸在深色界面下会把主内容区整片染亮，侧栏顶栏却是黑的）");
-ok((layerSrc.match(/attributeFilter: \["data-theme"\]/g) ?? []).length >= 1 && layerSrc.includes("vantaTheme"), "3D 档监听 data-theme 变化并重建（原实现只在挂载时取一次色，切主题后底色/线色都不跟）");
-ok(layerSrc.includes("mixHex") && layerSrc.includes("spacing: 26"), "3D 档深色主题：线色往 --bg 压 + 网放稀（原来的纯 accent 白网在深色下糊满全屏、文字读不了）");
+ok((layerSrc.match(/attributeFilter: \["data-theme"\]/g) ?? []).length >= 1 && layerSrc.includes('readHex("--text"'), "星野跟随主题：监听 data-theme 重绘 + 颜色取 --text（浅色=深色点 / 深色=浅色星）");
+ok(layerSrc.includes("prefersReducedMotion()") && layerSrc.includes("if (motion && !disposed)"), "减动效偏好下星野只画一帧、不起 rAF（accessibility）");
+ok(
+  layerSrc.includes('addEventListener("mousemove"') &&
+    layerSrc.includes("curX += (targetX - curX)") &&
+    layerSrc.includes('removeEventListener("mousemove"'),
+  "星野跟鼠标动（缓动视差 + 纵深系数）+ 卸载时摘监听（用户 10-11「都要动态星空、跟着鼠标动，不是静态的」）"
+);
 ok(!/const color = accentHex\(\)/.test(particlesSrc) && particlesSrc.includes("useThemeColor()"), "粒子档接上 useThemeColor()（原来那个 hook 是死代码 —— 挂载取一次色，切主题不换色）");
 
 /* ── 接线：挂载 + 设置段 ── */

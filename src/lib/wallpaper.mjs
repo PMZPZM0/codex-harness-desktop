@@ -4,7 +4,7 @@
 
 export const WALLPAPER_KEY = "wallpaper";
 export const WALLPAPER_EVENT = "wallpaper-change";
-export const WALLPAPER_MODES = ["off", "pattern", "particles", "vanta", "custom"];
+export const WALLPAPER_MODES = ["off", "pattern", "particles", "stars", "custom"];
 
 /* ── 图案库（原创几何，hero-patterns 风格）────────────────────────
    ⛔ 瓷砖一律 48px：24px 的小瓷砖铺出来密密麻麻像噪点（10-05 首版实测「都不好看」的主因），
@@ -71,7 +71,10 @@ export function isPresetImage(image) {
 
 export function normalizeWallpaper(raw) {
   const r = raw && typeof raw === "object" ? raw : {};
-  const mode = WALLPAPER_MODES.includes(r.mode) ? r.mode : "off";
+  // ⛔ 旧值迁移：`vanta`（vanta NET，只会画"点+连线"的网）已退役，换成自绘的星野 `stars`
+  //    （用户 10-11：「黑夜→星空、白天→动态点且不要连线」）。老档案里存着 "vanta" 的按 stars 生效。
+  const raw2 = r.mode === "vanta" ? "stars" : r.mode;
+  const mode = WALLPAPER_MODES.includes(raw2) ? raw2 : "off";
   const pattern = WALLPAPER_PATTERNS.some((p) => p.id === r.pattern) ? r.pattern : "dots";
   const opacityNum = Number(r.opacity);
   const opacity = Number.isFinite(opacityNum) ? Math.min(40, Math.max(2, Math.round(opacityNum))) : 16;

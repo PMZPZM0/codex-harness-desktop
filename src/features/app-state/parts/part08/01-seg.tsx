@@ -517,7 +517,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           + "voice_announce（**立刻念一句话**给用户听，≤120 字，不必等本轮回复结束；实时语音通话中不可用）/ voice_announce_stop（立刻停止播报、清掉排队）/ voice_speak_reply（把**本条回复的正文**边写边念 —— 不是每条都念，由你判断何时值得开口）；"
           + "workflow_read / workflow_writeback（工作流看板）；expert_list / expert_save / subagent_save（专家与子智能体管理）；"
           + "preview_3d（3D 模型预览：拿到 .glb/.gltf 后在应用内弹出可旋转查看的弹窗）；"
-          + "wallpaper_set（壁纸：pattern/particles/vanta/custom 四类，Codex 可自助做图设壁纸）；"
+          + "wallpaper_set（壁纸：pattern/particles/stars/custom 四类，Codex 可自助做图设壁纸）；"
           + "connector_register（注册 MCP 连接器）。传 name=\"list\" 可拿到每个能力的完整参数说明（不确定参数就先调它）。"
           + "⛔ 调度专家 / 专家团 / 子智能体请用专用工具 agent_invoke，不在这里。"
           + "⛔ 图像生成与编辑（image_generate / image_edit / image_info / image_view）是**各自独立的工具**，本工具里调不到 —— 直接按名字调它们。"

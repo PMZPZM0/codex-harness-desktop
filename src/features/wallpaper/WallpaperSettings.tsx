@@ -20,7 +20,7 @@ const MODE_LABELS: Record<string, string> = {
   off: "关闭",
   pattern: "图案",
   particles: "粒子",
-  vanta: "3D 背景",
+  stars: "星空",
   custom: "自定义图片",
 };
 
@@ -44,8 +44,8 @@ const GUIDE_PROMPTS: { id: string; title: string; prompt: string }[] = [
   },
   {
     id: "motion",
-    title: "调粒子 / 3D 背景的效果参数",
-    prompt: "请调整壁纸粒子效果：编辑 src/features/wallpaper/ParticlesPane.tsx 的 options——数量 number.value、点半径 size.value、连线距离 links.distance 与透明度 links.opacity（数值越大越热闹）。改完跑 npm run build:vite 重启生效。想要 3D 网格背景就选壁纸模式里的「3D 背景」（vanta NET，基于 three.js）。",
+    title: "调粒子 / 星空的效果参数",
+    prompt: "请调整壁纸粒子效果：编辑 src/features/wallpaper/ParticlesPane.tsx 的 options——数量 number.value、点半径 size.value、连线距离 links.distance 与透明度 links.opacity（数值越大越热闹）。改完跑 npm run build:vite 重启生效。想要「星空」就选壁纸模式里的星空档（自绘 canvas 点阵：深色主题=星、浅色主题=动态点，点之间没有连线）。",
   },
 ];
 
