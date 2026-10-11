@@ -3222,8 +3222,9 @@ w.postMessage({id:1,op:"list",root});
         "【254】官方源锚定 GitHub openai/plugins 的 .agents/plugins/{marketplace,api_marketplace}.json（清单形态与上游一致）"
       );
       // 镜像顺序 = 实测可用性（gh-proxy 通、直连兜底）；顺序反了国内首屏就要等三轮超时
-      (/const MIRROR_PREFIXES = \["https:\/\/gh-proxy\.com\/", "https:\/\/ghfast\.top\/", ""\]/.test(officialSrc) ? ok : fail)(
-        "【254】镜像优先级 gh-proxy → ghfast → 直连（⛔ api.github.com 也走代理：未登录直连限 60 次/小时）"
+      //（10-11 表收敛进 ./gh-mirror 单一真相源 —— 这里锚「别名引用 + 源头顺序」两处）
+      (/const MIRROR_PREFIXES = GH_MIRROR_PREFIXES/.test(officialSrc) && /export const GH_MIRROR_PREFIXES = \["https:\/\/gh-proxy\.com\/", "https:\/\/ghfast\.top\/", ""\] as const/.test(codeOnly(readFileSync(join(ROOT, "electron", "gh-mirror.ts"), "utf8"))) ? ok : fail)(
+        "【254】镜像优先级 gh-proxy → ghfast → 直连（表在 gh-mirror.ts 单一真相源；⛔ api.github.com 也走代理：未登录直连限 60 次/小时）"
       );
       (officialSrc.includes("const MAX_FILES = 1_200") && officialSrc.includes("MAX_SINGLE_FILE_BYTES = 20 * 1024 * 1024") ? ok : fail)(
         "【254】文件数上限按实测放宽到 1200（上游 zoom 单插件 795 个文件；沿用 Gitee 源的 300 会拒装 4 个合法插件）"

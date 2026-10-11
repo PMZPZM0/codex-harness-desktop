@@ -6,8 +6,12 @@
  *     （发布站只负责应用介绍与问题反馈），web 更新源代码整段删除
  *   - channel 固定 stable，不暴露 beta/canary 选项
  *   - 桌面端只有一个动作：检查更新 → 有新版本 → 下载并打开安装程序
+ *   - 10-11 起网络走**国内镜像优先**（gh-proxy → ghfast → 直连，见 ./gh-mirror）：
+ *     检查与下载都按候选序尝试、失败自动落下一档；安装包完整性由 asset.digest 的
+ *     sha256 强制比对兜底（GitHub 对资产自带 digest，镜像篡改包体会在校验处被删掉）。
  *
- * 流程：checkLatestUpdate() 拉 GitHub Releases API → downloadUpdate() 流式落盘（https+sha256）→ installUpdate() 运行安装包
+ * 流程：checkLatestUpdate() 拉 GitHub Releases API（镜像序）→ downloadUpdate() 流式落盘
+ *      （https + sha256 + 镜像序重试）→ installUpdate() 运行安装包
  */
 import fs from "node:fs/promises";
 import { existsSync, createWriteStream, createReadStream } from "node:fs";
@@ -16,6 +20,7 @@ import path from "node:path";
 import https from "node:https";
 import { shell } from "electron";
 import { URL } from "node:url";
+import { mirrorCandidates } from "./gh-mirror";
 
 /** GitHub 开源仓库（唯一更新源，走 Releases API） */
 export const GITHUB_REPO = "PMZPZM0/codex-harness-desktop";
@@ -112,8 +117,14 @@ function requestJson(
   });
 }
 
+/** GitHub 资产的 `digest` 形如 `sha256:abcd…`（10-11 实测 release 资产都带）；取不出则 undefined（跳过校验）。 */
+function sha256Of(value: unknown): string | undefined {
+  const m = String(value ?? "").trim().match(/(?:sha256:)?([0-9a-f]{64})/i);
+  return m ? m[1].toLowerCase() : undefined;
+}
+
 /**
- * 检查更新（GitHub Releases，唯一源）
+ * 检查更新（GitHub Releases，唯一源；网络走镜像序 —— gh-proxy → ghfast → 直连）
  * @param currentVersion 当前应用版本（形如 0.4.1，可带 v 前缀）
  * @param platform 按平台挑资产：win32→exe，darwin→mac zip
  * @param arch mac 下区分 x64/arm64
@@ -123,16 +134,38 @@ export async function checkLatestUpdate(
   platform: NodeJS.Platform = process.platform,
   arch = process.arch,
 ): Promise<LatestInfo> {
-  const res = await requestJson(GITHUB_RELEASES_API);
-  if (res.status < 200 || res.status >= 300) {
-    throw new Error(`HTTP ${res.status}`);
+  // ⛔ 镜像序逐个试：第一个 2xx 的候选生效（10-11 实测 gh-proxy 通、ghfast API 403 秒返、直连兜底）。
+  //    全挂才抛最后一条错误 —— 检查更新失败要让用户看到「试过三条路都不行」而不是只看到第一档的错。
+  let lastError: unknown = new Error("no_candidate");
+  for (const candidate of mirrorCandidates(GITHUB_RELEASES_API)) {
+    try {
+      const res = await requestJson(candidate);
+      if (res.status < 200 || res.status >= 300) {
+        lastError = new Error(`HTTP ${res.status}`);
+        continue;
+      }
+      let release: any;
+      try {
+        release = JSON.parse(res.body) as any;
+      } catch {
+        lastError = new Error("invalid_json");
+        continue;
+      }
+      return pickLatestFrom(release, currentVersion, platform, arch);
+    } catch (error) {
+      lastError = error;
+    }
   }
-  let release: any;
-  try {
-    release = JSON.parse(res.body) as any;
-  } catch {
-    throw new Error("invalid_json");
-  }
+  throw lastError;
+}
+
+/** 从 release JSON 挑出本平台的资产并做版本判断（网络与解析分离，镜像重试不重复这段逻辑）。 */
+function pickLatestFrom(
+  release: any,
+  currentVersion: string,
+  platform: NodeJS.Platform,
+  arch: string,
+): LatestInfo {
   if (!release?.tag_name) throw new Error("no_release");
   const version = String(release.tag_name).replace(/^v/i, "");
   // ⛔ 09-24 修：改为 semver 比较 —— 旧写法「字符串不等即更新」会把**更旧的 tag** 也报成有更新。
@@ -147,8 +180,8 @@ export async function checkLatestUpdate(
     return { hasUpdate: false, reason: "up_to_date", channel: UPDATE_CHANNEL, version };
   }
   // 按平台选资产：Windows → *.exe；mac → 按架构 *-mac-arm64.zip / *-mac-x64.zip（含 mac 即可）
-  const assets: { name: string; browser_download_url: string; size?: number }[] = Array.isArray(release.assets) ? release.assets : [];
-  let match: { name: string; browser_download_url: string; size?: number } | undefined;
+  const assets: { name: string; browser_download_url: string; size?: number; digest?: string }[] = Array.isArray(release.assets) ? release.assets : [];
+  let match: { name: string; browser_download_url: string; size?: number; digest?: string } | undefined;
   if (platform === "darwin") {
     match = assets.find((a) => a.name.includes("mac") && a.name.endsWith(".zip") && a.name.includes(arch));
   } else {
@@ -162,6 +195,9 @@ export async function checkLatestUpdate(
     version,
     filename: match.name,
     size: match.size,
+    // ⛔ asset.digest（GitHub 自带的 sha256）→ updates-ipc 存进 lastUpdateInfo → 下载完强制比对。
+    //   走镜像后这是「包体没被第三方换过」的唯一证据，摘掉 = 镜像可以静默换安装包。
+    sha256: sha256Of(match.digest),
     changelog: release.body?.slice(0, 2000) || "",
     downloadUrl: match.browser_download_url,
   };
@@ -249,19 +285,34 @@ export async function downloadUpdate(
     });
   };
   await fs.mkdir(path.dirname(destPath), { recursive: true });
-  const result = await hop(releaseUrl, 0);
-
-  // ⛔ 完整性校验（09-13 审计 P0）：`sha256` 字段以前从下发到使用**全链路没人比对** ——
-  // 下载 → `shell.openPath()` 直接执行，等于"发布站被换掉就静默装上攻击者的包"。
-  // 现在：有期望哈希就必须匹配，不匹配**删文件并报错**；没有期望哈希则只接受 https（上面已强制）。
-  if (expectedSha256) {
-    const actual = await sha256OfFile(result.path);
-    if (actual.toLowerCase() !== expectedSha256.toLowerCase()) {
-      await fs.rm(result.path, { force: true }).catch(() => undefined);
-      throw new Error(`更新包校验失败（期望 ${expectedSha256.slice(0, 12)}…，实际 ${actual.slice(0, 12)}…），已删除下载文件`);
+  // ⛔ 镜像序逐条下载（10-11）：网络错 / HTTP 错 / sha256 校验不过都**删掉半截文件换下一档**；
+  //    校验不过也换通道 —— 镜像是第三方反代，比对失败最可能是它动了包体，直连 GitHub 是基准真相
+  //    （候选最后一条恒为直连）。非 GitHub 地址（自定义清单等）mirrorCandidates 只给一条，行为不变。
+  const candidates = mirrorCandidates(releaseUrl);
+  let lastError: unknown = new Error("no_candidate");
+  for (const candidate of candidates) {
+    await fs.rm(destPath, { force: true }).catch(() => undefined);
+    try {
+      const result = await hop(candidate, 0);
+      if (expectedSha256) {
+        const actual = await sha256OfFile(result.path);
+        if (actual.toLowerCase() !== expectedSha256.toLowerCase()) {
+          await fs.rm(result.path, { force: true }).catch(() => undefined);
+          lastError = new Error(`更新包校验失败（期望 ${expectedSha256.slice(0, 12)}…，实际 ${actual.slice(0, 12)}…），已删除下载文件`);
+          continue;
+        }
+      }
+      return result;
+    } catch (error) {
+      lastError = error;
     }
   }
-  return result;
+  if (candidates.length > 1) {
+    const detail = lastError instanceof Error ? lastError.message : String(lastError);
+    await fs.rm(destPath, { force: true }).catch(() => undefined);
+    throw new Error(`全部下载通道（gh-proxy / ghfast / 直连）都失败了；最后一次：${detail}`);
+  }
+  throw lastError;
 }
 
 /** 流式计算文件 sha256（大安装包不整份读进内存）。 */

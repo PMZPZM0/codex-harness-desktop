@@ -19,10 +19,11 @@ import path from "node:path";
 import { bundledNode, toolsRoot } from "../toolchain";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
+import { GH_MIRROR_PREFIXES } from "../gh-mirror";
 
 const REPO_ZIP = "https://codeload.github.com/Ebony-Vinyl/dsh-our-free-model/zip/refs/heads/main";
-/** 镜像前缀（空串 = 直连），与 codex-official-market 同序（gh-proxy → ghfast → 直连）。 */
-const MIRRORS = ["https://gh-proxy.com/", "https://ghfast.top/", ""];
+/** 镜像前缀（空串 = 直连）：单一真相源在 ../gh-mirror（10-11 收敛，顺序 gh-proxy → ghfast → 直连）。 */
+const MIRRORS = GH_MIRROR_PREFIXES;
 const CHANNELS = ["free-gateway:status", "free-gateway:download", "free-gateway:start", "free-gateway:stop", "free-gateway:open-admin", "free-gateway:models", "free-gateway:uninstall"];
 /** 生命周期状态（模块级单例；路径一律**运行期**求值 —— ⛔ 模块顶层不许求值 app.getPath）。 */
 let child: ChildProcess | null = null;

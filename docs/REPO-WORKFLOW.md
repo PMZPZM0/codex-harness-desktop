@@ -18,6 +18,10 @@
 - PPcode 应用内更新源：`electron/update-source.ts` → `DEFAULT_UPDATE_REPO = "PMZPZM0/PPcode"`
   （匿名拉 `/releases/latest`）。
 - 主应用更新源：`electron/updates.ts` → `GITHUB_REPO = "PMZPZM0/codex-harness-desktop"`。
+- **两仓更新链的网络都走国内镜像优先**（10-11）：`electron/gh-mirror.ts` 是镜像表单一真相源
+  （gh-proxy → ghfast → 直连，10-11 实测 gh-proxy API/资产均通、ghfast API 已 403 只当下载通道、
+  直连兜底）；安装包完整性靠 asset.digest 的 sha256 强制比对（镜像篡改包体在校验处被删）。
+  ⛔ 带令牌的请求绝不过镜像（令牌泄露面）。守卫 12e。
 - 两仓 `.gitignore` 都忽略 `.workbuddy/`（含密临时文件、AI 记忆永不入库）。
 - PPcode 与主仓的差异是**有意的品牌差异**，同步时按 §二.3 的例外清单处理，⛔ 不要"顺手统一"。
 
