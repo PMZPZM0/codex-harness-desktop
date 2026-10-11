@@ -97,19 +97,25 @@ export function PersonalizationPage({
         <p>决定 Codex 怎么称呼你、用什么语气说话、以及永远要遵守的约定。保存后写入引擎指令并自动重启，下一次对话生效。</p>
       </div>
 
-      <div className="settings-subhead"><UserRound size={13} />称呼<span className="settings-subhead-hint">留空则不指定</span></div>
-      <div className="personalization-field">
-        <input
-          value={nickname}
-          maxLength={60}
-          placeholder="例如：老王 / Alice / 老板"
-          onChange={(event) => setNickname(event.target.value)}
-        />
-        <span className="personalization-field-hint">{nickname.trim() ? `Codex 会称呼你「${nickname.trim()}」` : "未设置称呼"}</span>
+      {/* 分组规则（10-11 重排）：一处设置 = 一张组卡；组卡自带标题行（.settings-subhead）与 1px 边界，
+          组间只用一个间距值 ⇒ 不再靠标题的零散 margin 撑版式。 */}
+      <div className="personalization-group">
+        <div className="settings-subhead"><UserRound size={13} />称呼<span className="settings-subhead-hint">留空则不指定</span></div>
+        <div className="personalization-field">
+          <input
+            value={nickname}
+            maxLength={60}
+            aria-label="称呼"
+            placeholder="例如：老王 / Alice / 老板"
+            onChange={(event) => setNickname(event.target.value)}
+          />
+          <span className="personalization-field-hint">{nickname.trim() ? `Codex 会称呼你「${nickname.trim()}」` : "未设置称呼"}</span>
+        </div>
       </div>
 
-      <div className="settings-subhead"><MessageSquare size={13} />回复风格<span className="settings-subhead-hint">原输入框里的「务实」入口已移到这里</span></div>
-      <div className="personalization-style-grid" role="group" aria-label="回复风格">
+      <div className="personalization-group">
+        <div className="settings-subhead"><MessageSquare size={13} />回复风格<span className="settings-subhead-hint">原输入框里的「务实」入口已移到这里</span></div>
+        <div className="personalization-style-grid" role="group" aria-label="回复风格">
         {stylePresets.map((preset) => (
           <button
             key={preset.value}
@@ -126,25 +132,30 @@ export function PersonalizationPage({
             <span className="personalization-style-sample">{preset.sample}</span>
           </button>
         ))}
+        </div>
       </div>
 
-      <div className="settings-subhead"><Wrench size={13} />自定义指令<span className="settings-subhead-hint">每次对话都生效，优先级高于风格默认</span></div>
-      <textarea
-        className="personalization-instructions"
-        value={instructions}
-        spellCheck={false}
-        maxLength={8000}
-        placeholder={"例如：\n· 回复一律用简体中文，代码注释用中文\n· 修改前先说明影响范围，再动手\n· 不要自动执行 git push"}
-        onChange={(event) => setInstructions(event.target.value)}
-      />
-      <div className="personalization-actions">
-        <span className="personalization-counter">{instructions.length} / 8000</span>
-        <button type="button" className="primary-setting" disabled={saving || !dirty} onClick={() => void save()}>
-          {saving ? <span className="spinner" aria-hidden /> : <Check size={14} />}保存并重启引擎
-        </button>
+      <div className="personalization-group">
+        <div className="settings-subhead"><Wrench size={13} />自定义指令<span className="settings-subhead-hint">每次对话都生效，优先级高于风格默认</span></div>
+        <textarea
+          className="personalization-instructions"
+          value={instructions}
+          spellCheck={false}
+          maxLength={8000}
+          aria-label="自定义指令"
+          placeholder={"例如：\n· 回复一律用简体中文，代码注释用中文\n· 修改前先说明影响范围，再动手\n· 不要自动执行 git push"}
+          onChange={(event) => setInstructions(event.target.value)}
+        />
+        <div className="personalization-actions">
+          <span className="personalization-counter">{instructions.length} / 8000</span>
+          <button type="button" className="primary-setting" disabled={saving || !dirty} onClick={() => void save()}>
+            {saving ? <span className="spinner" aria-hidden /> : <Check size={14} />}保存并重启引擎
+          </button>
+        </div>
       </div>
 
-      <div className={`personalization-verify ${verify ? (verify.inSync ? "ok" : "warn") : ""}`}>
+      {/* 校验条独立成块：它汇报的是「称呼 + 指令」两者共同的落盘结果，不并入上面任何一组。 */}
+      <div className={`personalization-verify ${verify ? (verify.inSync ? "ok" : "warn") : ""}`} role="status">
         {verifying ? <RefreshCw size={14} className="spin" />
           : verify?.inSync ? <ShieldCheck size={14} />
           : <TriangleAlert size={14} />}

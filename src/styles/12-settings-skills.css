@@ -964,58 +964,154 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 }
 
 /* ══ 个性化设置页（PersonalizationPage.tsx） ════════════════════════════ */
+/* 内容列 660 上限 —— 与 .appearance-page 同值（项目既有惯例）。⛔ 别再让单个控件自己定宽
+   （旧版 input 写死 max-width:380px ⇒ 它与下方撑满的网格/文本域右边缘永远对不齐）。 */
 .personalization-page {
-  gap: 14px;
+  max-width: 660px;
+  /* ⛔ 原来是 .settings-section 的 min-height:100%：整页被撑成「两段各一屏高」，
+     两段之间凭空多出一屏留白。本页是长表单，高度交给内容。 */
+  min-height: auto;
+}
+/* 第二段（语气自适应）：同一条内容列、同一套水平内边距 ⇒ 与上一段左边界对在同一条线上 */
+.personalization-section {
+  max-width: 660px;
+  min-height: auto;
+  padding: 0 28px 26px;
+}
+
+/* ── 组卡：一处设置一张卡，标题行 + 内容，1px 边界 ─────────────────────────
+   版式刻度（全部为 4 的倍数）：卡内 12 / 卡间 16；标题行到内容 10；控件到说明 6；控件到操作区 12。 */
+.personalization-group {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 14px 16px 16px;
+}
+.personalization-page > .personalization-group,
+.personalization-page > .personalization-verify,
+.personalization-page > .personalization-note,
+.personalization-section > .personalization-group {
+  margin-top: 16px;
+}
+/* 卡内标题行：抵消 .settings-subhead 的全局 margin:14px 0 2px（那正是旧版间距忽大忽小的来源） */
+.personalization-group > .settings-subhead {
+  margin: 0 0 12px;
+}
+/* 组标题排版统一到 13px/600（与 .personalization-group-title 的 h3 同款）。
+   ⛔ 卡的直接子级 subhead 都是「组标题」；要当「行标签」用就挂 .personalization-row-label 降回去。 */
+.personalization-group > .settings-subhead,
+.personalization-group-title > h3 {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.personalization-group > .settings-subhead.personalization-row-label {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+/* ⛔ 长提示会把标题挤成竖排（中文可在任意字间断行，flex 收缩不分青红皂白：
+   实测「开关」被压成一列一个字的竖排）。把提示的基准宽度设成 0 再让它长满剩余空间，
+   标题就能保持自然宽度 —— 不用改任何文案。 */
+.personalization-group > .settings-subhead > .settings-subhead-hint {
+  min-width: 0;
+  margin-left: 12px;
+  flex: 1 1 0%;
+  text-align: right;
+}
+.personalization-group-title {
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+  display: flex;
+}
+.personalization-group-title > svg {
+  color: var(--green);
+  flex: none;
+}
+.personalization-group-title h3 {
+  color: var(--text);
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.personalization-group-desc {
+  color: var(--muted);
+  margin: 4px 0 12px;
+  font-size: 11.5px;
+  line-height: 1.6;
 }
 .personalization-field {
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
   display: flex;
 }
 .personalization-field input {
   border: 1px solid var(--line);
   background: var(--bg);
-  border-radius: 9px;
+  border-radius: 8px;
   width: 100%;
-  max-width: 380px;
-  height: 34px;
-  padding: 0 11px;
+  height: 36px;
+  padding: 0 12px;
   color: var(--text);
+  /* ⛔ font: 是简写，必须写在 font-size 之前，否则字号被一起重置成继承值 */
+  font: inherit;
   font-size: 12.5px;
-  font-family: inherit;
 }
-.personalization-field input:focus {
+/* 焦点：保留边框变色，另给可见焦点环（键盘用户必须看得见落在哪；outline 不占布局，无位移） */
+.personalization-field input:focus-visible,
+.personalization-instructions:focus-visible {
   border-color: var(--green);
-  outline: 0;
+  outline: 2px solid color-mix(in srgb, var(--green) 38%, transparent);
+  outline-offset: 2px;
 }
 .personalization-field-hint {
-  color: var(--faint);
-  font-size: 11px;
+  /* --faint 在暗色下只有约 3.9:1（低于正文 4.5:1）⇒ 正文性说明一律 --muted */
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+/* ⛔ 未声明全局 color-scheme 时，Chromium 会按「浅色 UA 样式」绘制原生 <button>：
+   实测本页风格卡在暗色下被画成 #efefef（浅底 + 浅字 = 不可读），computed style 却是暗色值
+   ⇒ 这是绘制层的事，改变量救不了。项目其它页的既有做法就是逐处 appearance:none（08/13/18），
+   照此办理。全站级 color-scheme 是更大的议题（会影响滚动条/所有原生控件），另行报告、不在这动。 */
+.personalization-page button,
+.personalization-section button,
+.personalization-field input,
+.personalization-instructions {
+  appearance: none;
+  -webkit-appearance: none;
 }
 .personalization-style-grid {
-  grid-template-columns: repeat(auto-fit, minmax(196px, 1fr));
+  /* 176px 是让 3 张卡在 660 内容列里仍能排成一行的上限（3×176+2×10 = 548 ≤ 可用 572）；
+     min(…, 100%) 兜住更窄的容器 ⇒ auto-fit 不会把网格顶出横向溢出 */
+  grid-template-columns: repeat(auto-fit, minmax(min(176px, 100%), 1fr));
   gap: 10px;
   display: grid;
 }
 .personalization-style-card {
+  /* 三行网格 = 头 / 说明 / 样例三段各自对齐 ⇒ 三张卡等高、样例贴同一条底线
+     （旧版 flex column：文案长短不同 ⇒ 卡高参差、内部的虚线分隔线也高低不齐） */
+  grid-template-rows: auto 1fr auto;
+  gap: 8px;
+  padding: 12px 14px;
   border: 1px solid var(--line);
-  background: var(--panel);
-  border-radius: 12px;
-  flex-direction: column;
-  gap: 6px;
-  padding: 12px 13px;
+  background: var(--bg);
+  border-radius: 10px;
   text-align: left;
   cursor: pointer;
-  transition: border-color .15s, box-shadow .15s, transform .15s, background .15s;
-  display: flex;
+  color: var(--text);
+  font: inherit;
+  transition: border-color var(--dur-ui) ease, background var(--dur-ui) ease;
+  display: grid;
 }
+/* hover 只提一档边界色：⛔ 去掉原来的 translateY(-1px)（位移会让整行卡视觉上跳一下） */
 .personalization-style-card:hover {
-  transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--green) 32%, var(--line));
 }
 .personalization-style-card.active {
   border-color: var(--green);
-  background: color-mix(in srgb, var(--green) 5%, var(--panel));
+  background: color-mix(in srgb, var(--green) 5%, var(--bg));
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--green) 38%, transparent);
 }
 .personalization-style-head {
@@ -1026,6 +1122,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .personalization-style-head strong {
   color: var(--text);
   font-size: 13px;
+  font-weight: 600;
 }
 .personalization-style-head em {
   margin-left: auto;
@@ -1035,55 +1132,54 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .personalization-style-desc {
   color: var(--muted);
   font-size: 11.5px;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 .personalization-style-sample {
   border-top: 1px dashed var(--line);
-  margin-top: 2px;
   padding-top: 8px;
-  color: var(--faint);
-  font-size: 11px;
-  line-height: 1.55;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.6;
 }
 /* textarea/input 不写 width 会退回浏览器默认的 20 字符宽（~180px），右侧整片留白。
-   这里必须显式撑满，并用 tab-size 让多行指令里的缩进可控。 */
+   这里显式撑满，并用 tab-size 让多行指令里的缩进可控。 */
 .personalization-instructions {
   border: 1px solid var(--line);
   background: var(--bg);
-  border-radius: 11px;
+  border-radius: 8px;   /* 控件档 —— 与上方 input 同一档，不再各写一个值 */
   display: block;
   width: 100%;
-  min-height: 190px;
+  min-height: 160px;
   padding: 12px 14px;
   color: var(--text);
+  /* ⛔ font: 是简写，必须写在 font-size 之前 */
+  font: inherit;
   font-size: 12.5px;
   line-height: 1.7;
   tab-size: 2;
-  font-family: inherit;
   resize: vertical;
-}
-.personalization-instructions:focus {
-  border-color: var(--green);
-  outline: 0;
 }
 .personalization-actions {
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  margin-top: 12px;
+  flex-wrap: wrap;   /* 窄屏：主按钮整行落下去，不去挤压左边的计数 */
   display: flex;
 }
 .personalization-counter {
-  color: var(--faint);
+  color: var(--muted);
   margin-left: auto;
-  font-size: 11px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;   /* 数字等宽 ⇒ 计数增长时宽度不抖 */
 }
 /* 引擎配置回读校验条：直接读 config.toml 得出的结论，绿=已生效，黄=没写进去 */
 .personalization-verify {
   border: 1px solid var(--line);
   background: var(--panel);
-  border-radius: 11px;
+  border-radius: 12px;   /* 容器档 —— 与组卡同档 */
   align-items: flex-start;
-  gap: 10px;
-  padding: 11px 13px;
+  gap: 12px;
+  padding: 12px 14px;
   display: flex;
 }
 .personalization-verify > svg {
@@ -1131,45 +1227,95 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
 .personalization-verify-path {
-  color: var(--faint);
+  color: var(--muted);
   margin-top: 6px;
-  font-size: 10.5px;
+  font-size: 11.5px;
   display: block;
   overflow-wrap: anywhere;
 }
 .personalization-verify > button {
   flex: none;
 }
+/* 说明块降为脚注（10-11）：旧版是又一张 panel 卡 ⇒ 与上面的组卡抢同一层级。
+   现在只用一条竖线 + 弱化文字，层级落在「补充说明」这一档。 */
 .personalization-note {
-  border: 1px solid var(--line-soft);
-  background: var(--panel);
-  border-radius: 11px;
-  gap: 9px;
-  padding: 11px 13px;
+  border-left: 2px solid var(--line);
+  gap: 8px;
+  padding: 2px 0 2px 12px;
   display: flex;
 }
 .personalization-note > svg {
   color: var(--muted);
   flex: none;
-  margin-top: 2px;
+  margin-top: 1px;
 }
 .personalization-note strong {
   color: var(--text);
-  margin-bottom: 3px;
-  font-size: 12px;
+  margin-bottom: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
   display: block;
 }
 .personalization-note p {
   color: var(--muted);
   margin: 0;
   font-size: 11.5px;
-  line-height: 1.6;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
 }
 .personalization-note code {
   background: var(--panel-2);
   border-radius: 4px;
   padding: 1px 4px;
-  font-size: 11px;
+  font-size: 11.5px;
+  font-family: var(--mono);
+}
+/* 页脚状态行：与脚注同档，只留竖排节奏 */
+.personalization-page > .settings-status {
+  margin-top: 12px;
+  font-size: 11.5px;
+}
+
+/* ── 窄屏：内容列与导航列挤在一起时（设置弹窗宽度 min(920px,100%)）────────────
+   720 是项目既有断点档。此页只保证「不溢出、不遮挡、不错位」：
+   水平内边距收到 16、风格卡改单列、标题行允许换行、主按钮整行落下。 */
+@media (max-width: 720px) {
+  .personalization-page {
+    padding: 16px;
+  }
+  .personalization-section {
+    padding: 0 16px 16px;
+  }
+  .personalization-group {
+    padding: 12px 12px 14px;
+  }
+  .personalization-style-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .personalization-group > .settings-subhead {
+    flex-wrap: wrap;
+  }
+  /* 长提示不再和标题挤在一行：换行后左对齐独占一行，右侧「漂着」的观感消失 */
+  .personalization-group > .settings-subhead > .settings-subhead-hint {
+    margin-left: 0;
+    flex-basis: 100%;
+    text-align: left;
+  }
+  .personalization-actions .primary-setting {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+  .personalization-counter {
+    margin-left: 0;
+  }
+  .personalization-verify {
+    flex-wrap: wrap;
+  }
+  .personalization-verify > button {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
 }
 
 /* ══ 全局搜索（IndexLibrary.tsx / GlobalSearchView，记忆中心内按会话分组） ═══ */
