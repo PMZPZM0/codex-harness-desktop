@@ -609,6 +609,13 @@
       "file": "features/whats-new-ipc.ts",
       "export": "whatsNewFeature",
       "config": null
-    }
+    },
+  {
+    "id": "html-video",
+    "enabled": true,
+    "file": "features/html-video-ipc.ts",
+    "export": "htmlVideoFeature",
+    "config": null
+  }
   ]
 }

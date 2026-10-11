@@ -884,6 +884,8 @@ interface Window {
     /* 在系统资源管理器中定位文件（可信根校验同 fs:read）；画布生成产物「打开文件夹」 */
     revealInFolder(path: string): Promise<{ ok: boolean }>;
     readModel(path: string): Promise<{ data: Uint8Array; size: number }>;
+    /* P1（10-11）：把本地 HTML/URL 动画在本地渲成 MP4 —— Chromium 抓帧 + 运行时自带 MP4 编码器，零 ffmpeg 依赖；源须为 http(s) 或可信根内 .html */
+    htmlVideoRender(input: { source?: string; seconds?: number; fps?: number; width?: number; height?: number; outPath?: string }): Promise<any>;
     /* 图像工坊读通道（image-lab 域，10-09）：渲染层浮层预览拉图片字节；路径闸 = resolveImagePath（可信根 + 图片扩展名 + 128MB），与修图通道共用同一道闸 */
     readImage(path: string): Promise<{ data: Uint8Array; size: number }>;
     /* 生图执行端（10-09 从 agents:dispatch-call 拆出）：**唯一需要生图插件凭证的**通道（读 builtin-plugins.json 的 image 段 → 打外部网关）。调用时弹「图像工坊」浮层，完成自动收起。⛔ 与 image-lab:edit 分属两条通道 —— 用户明确要求「生成和编辑的 IPC 彻底分开」 */

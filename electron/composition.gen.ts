@@ -94,6 +94,7 @@ import { modelViewerFeature as feat_model_viewer } from "./features/model-viewer
 import { imageLabFeature as feat_image_lab } from "./features/image-lab";
 import { freeGatewayFeature as feat_free_gateway } from "./features/free-gateway-ipc";
 import { whatsNewFeature as feat_whatsnew } from "./features/whats-new-ipc";
+import { htmlVideoFeature as feat_html_video } from "./features/html-video-ipc";
 
 import { app } from "electron";
 import { readAppSettingsSync } from "./app-settings";
@@ -194,6 +195,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "image-lab", plugin: feat_image_lab as Plugin<unknown>, config: null },
   { id: "free-gateway", plugin: feat_free_gateway as Plugin<unknown>, config: null },
   { id: "whatsnew", plugin: feat_whatsnew as Plugin<unknown>, config: null },
+  { id: "html-video", plugin: feat_html_video as Plugin<unknown>, config: null },
 ];
 
 /**

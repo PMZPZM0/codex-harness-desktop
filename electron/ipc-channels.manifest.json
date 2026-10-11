@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 448,
+  "count": 449,
   "channels": [
     {
       "name": "request",
@@ -3811,6 +3811,16 @@
       "invokeArgs": "{ path }",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "htmlVideoRender",
+      "channel": "html-video:render",
+      "paramsImpl": "input: { source?: string; seconds?: number; fps?: number; width?: number; height?: number; outPath?: string }",
+      "paramsDecl": "input: { source?: string; seconds?: number; fps?: number; width?: number; height?: number; outPath?: string }",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
+      "cast": "Promise<any>",
+      "note": "P1（10-11）：把本地 HTML/URL 动画在本地渲成 MP4 —— Chromium 抓帧 + 运行时自带 MP4 编码器，零 ffmpeg 依赖；源须为 http(s) 或可信根内 .html"
     },
     {
       "name": "readImage",

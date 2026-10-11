@@ -680,12 +680,37 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
       return { ok: false, error: `无法打开 3D 预览：${String((error as Error)?.message ?? error)}` };
     }
   }
+  /* ── 本地 HTML/CSS → MP4（10-11，P1）：源与输出都过可信根闸；渲染在 electron/html-video.ts。
+     ⛔ 这是长操作（N 秒实时抓帧）—— 大时长时调用方要有耐心，别当卡死。 */
+  if (name === "video_render_html") {
+    const source = String(args.source ?? "").trim();
+    if (!source) return { ok: false, error: "缺少 source（本地 .html 路径或 http(s) URL）" };
+    try {
+      const { renderHtmlToVideo } = await import("../html-video");
+      const path = await import("node:path");
+      const { app } = await import("electron");
+      const { isInsideTrustedRoots } = await import("../runtime-refs");
+      const wanted = String(args.outPath ?? "").trim();
+      let outPath: string;
+      if (wanted) {
+        const abs = path.resolve(wanted);
+        if (!isInsideTrustedRoots(abs)) return { ok: false, error: "输出路径不在可信目录内（会话工作目录 / 应用数据目录）" };
+        outPath = abs.endsWith(".mp4") ? abs : `${abs}.mp4`;
+      } else {
+        outPath = path.join(app.getPath("userData"), "renders", `html-video-${Date.now()}.mp4`);
+      }
+      const r = await renderHtmlToVideo({ source, outPath, seconds: Number(args.seconds ?? 3), fps: Number(args.fps ?? 30), width: Number(args.width ?? 1280), height: Number(args.height ?? 720) });
+      return r.ok ? { ok: true, output: `已渲染 MP4：${r.path}（${r.frames} 帧 / ${Math.round(r.bytes / 1024)} KB）` } : { ok: false, error: r.error };
+    } catch (error) {
+      return { ok: false, error: `渲染失败：${String((error as Error)?.message ?? error)}` };
+    }
+  }
   /* ── 壁纸设置（10-06）：Codex 自助换壁纸的拓展接口。⛔ image 为本地路径时必须过可信根
      （与 model-viewer 同一套 isInsideTrustedRoots）；preset: 前缀交给渲染层校验 id。 */
   if (name === "wallpaper_set") {
     const mode = String(args.mode ?? "");
-    if (!["off", "pattern", "particles", "vanta", "custom"].includes(mode)) {
-      return { ok: false, error: "mode 只支持 off / pattern / particles / vanta / custom" };
+    if (!["off", "pattern", "particles", "stars", "custom"].includes(mode)) {
+      return { ok: false, error: "mode 只支持 off / pattern / particles / stars / custom" };
     }
     const opacityNum = Number(args.opacity);
     const opacity = Number.isFinite(opacityNum) ? Math.min(40, Math.max(2, Math.round(opacityNum))) : 16;

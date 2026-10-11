@@ -233,6 +233,24 @@ function dispatchMcpTools(): unknown[] {
         required: ["path"],
       },
     },
+    /* ── 本地 HTML/CSS → MP4（10-11，P1）：把工作区里的 HTML 动画成品化。
+       ⛔ 零 ffmpeg 依赖（Chromium 抓帧 + 运行时自带 MP4 编码器）；源与输出都过可信根闸。 */
+    {
+      name: "video_render_html",
+      description: "把一段 HTML/CSS 动画在**本地**渲成 MP4（不联网、不花厂商额度、不需要 ffmpeg）。传一个 .html 文件的绝对路径（须在工作区或应用数据目录内）或 http(s) URL，指定时长与帧率，产出 mp4 并返回路径。适合把工作区里做好的界面 / 动画 / 分镜 HTML 成品化成视频。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          source: { type: "string", description: "本地 .html 文件绝对路径（须在会话工作目录或应用数据目录内）或 http(s) URL" },
+          seconds: { type: "number", description: "渲染时长秒数（0.5~120，默认 3）" },
+          fps: { type: "number", description: "帧率（5~60，默认 30）" },
+          width: { type: "number", description: "画布宽（默认 1280）" },
+          height: { type: "number", description: "画布高（默认 720）" },
+          outPath: { type: "string", description: "输出 mp4 路径（可选；须在可信目录内，不传则落 <userData>/renders/）" },
+        },
+        required: ["source"],
+      },
+    },
     /* ── 壁纸设置（10-06 用户：「Codex 自己也能给自己做壁纸」）──
        引擎可自助换壁纸：pattern/particles/vanta 直接切；custom 接 `preset:<id>`（内置精选渐变）
        或**你自己生成的图片**（生图 → 写入工作区 → 传绝对路径，主进程过可信根闸）。

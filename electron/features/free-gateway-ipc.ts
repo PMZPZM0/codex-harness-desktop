@@ -197,6 +197,8 @@ export const freeGatewayFeature = defineFeature<null>({
       /** 一次「spawn + 等健康」；失败抛出带 stderr 尾巴的错误。 */
       const bootOnce = async (): Promise<number> => {
         let errTail = "";
+        // 残锁清理：无健康实例但有锁 = 残锁（10-12 用户实测「重启后网关起不来」）
+        try { fs.rmSync(path.join(dataDir(), "service.lock"), { force: true }); } catch { /* 锁不存在 */ }
         child = spawn(nodeExe, [markerPath()], {
           cwd: appDir(),
           env: { ...process.env, OFM_HOME: dataDir() },
@@ -308,6 +310,8 @@ export const freeGatewayFeature = defineFeature<null>({
           const port = await pickPort();
           if (port) { adminUrl = adminUrl || `http://127.0.0.1:${port}/`; return; }
           const nodeExe = bundledNode() || "node";
+          // 残锁清理：无健康实例但有锁 = 残锁（10-12 用户实测「重启后网关起不来」）
+          try { fs.rmSync(path.join(dataDir(), "service.lock"), { force: true }); } catch { /* 锁不存在 */ }
           child = spawn(nodeExe, [markerPath()], {
             cwd: appDir(),
             env: { ...process.env, OFM_HOME: dataDir() },
@@ -322,6 +326,8 @@ export const freeGatewayFeature = defineFeature<null>({
       }, 5000);
       // 重试：5s 失败（app 还在初始化）→ 15s 再试一次
       setTimeout(async () => {
+        // 残锁清理：无健康实例但有锁 = 残锁（10-12 用户实测「重启后网关起不来」）
+        try { fs.rmSync(path.join(dataDir(), "service.lock"), { force: true }); } catch { /* 锁不存在 */ }
         try { if (child) return; const port = await pickPort(); if (port) return; const nodeExe = bundledNode() || "node"; child = spawn(nodeExe, [markerPath()], { cwd: appDir(), env: { ...process.env, OFM_HOME: dataDir() }, stdio: ["ignore", "pipe", "pipe"] }); child.on("exit", () => { child = null; }); } catch { /* 静默 */ }
       }, 15000);
     }
