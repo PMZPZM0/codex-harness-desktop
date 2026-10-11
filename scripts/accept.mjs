@@ -1340,10 +1340,7 @@ const CHECKS = [
     id: "status-lights",
     name: "㉗ 输入框底栏动态状态灯：空闲无灯 / 目标灯（tone）/ 最多一盏 / 窗口自适应隐藏（10-12 轮）",
     run: async (h) => {
-      /* 为什么真跑：灯亮不亮是纯渲染接线，但「空闲必须干净」「goal 清了灯跟着灭」「窄窗自动让位」
-         都是最终态断言 —— 静态守卫 12d 钉结构，这里跑行为。
-         ⛔ 挂起消息灯不走真队列：空闲态 thread/queue/add 可能触发排队自动启动真回合（污染验收），
-         它的接线（queue/queueTimers → 计数）由守卫 12d 钉结构。 */
+      /* 真跑理由：行为级断言（结构由守卫 12d 钉）；挂起灯不走真队列防污染，接线由 12d 钉 */
       await h.waitFor(`!!document.querySelector(".thread-row.active") && !!document.querySelector(".composer-editor")`, { label: "界面就绪", timeoutMs: 40000 }).catch(() => undefined);
       const threadId = await h.eval(`(function(){ var row=document.querySelector('.thread-row.active'); return row ? row.getAttribute('data-thread-id') : null; })()`);
       h.check("① 前置：拿得到活动会话 id（拿不到整项作废）", typeof threadId === "string" && threadId.length > 8, `id=${String(threadId).slice(0, 20)}`);
@@ -1359,8 +1356,7 @@ const CHECKS = [
       await wait(900);
       const idle = await h.eval(`document.querySelector('.composer-status-lights') === null`);
       h.check("② 空闲时一盏都不亮（无状态 = 无节点，不是隐藏的空壳）", idle === true, `queuedResidual=${((queued && queued.data) || []).length}`);
-      /* ③ 目标灯（走真引擎 thread/goal/set；paused 起步不触发自动续跑，保证确定性）：
-         灯出现 + tone-muted（已暂停）+ 「最多一盏」（单节点轮换制，不是一排）。 */
+      /* ③ 目标灯：goal/set(paused) → 灯出现 + tone-muted + 最多一盏（单节点轮换制） */
       await rpc("thread/goal/set", { threadId, objective: "验收状态灯", status: "paused" });
       let light = null;
       for (let i = 0; i < 30; i++) {
