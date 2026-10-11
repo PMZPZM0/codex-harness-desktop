@@ -1337,6 +1337,74 @@ const CHECKS = [
     },
   },
   {
+    id: "status-lights",
+    name: "㉗ 输入框底栏动态状态灯：空闲无灯 / 目标灯（tone）/ 最多一盏 / 窗口自适应隐藏（10-12 轮）",
+    run: async (h) => {
+      /* 为什么真跑：灯亮不亮是纯渲染接线，但「空闲必须干净」「goal 清了灯跟着灭」「窄窗自动让位」
+         都是最终态断言 —— 静态守卫 12d 钉结构，这里跑行为。
+         ⛔ 挂起消息灯不走真队列：空闲态 thread/queue/add 可能触发排队自动启动真回合（污染验收），
+         它的接线（queue/queueTimers → 计数）由守卫 12d 钉结构。 */
+      await h.waitFor(`!!document.querySelector(".thread-row.active") && !!document.querySelector(".composer-editor")`, { label: "界面就绪", timeoutMs: 40000 }).catch(() => undefined);
+      const threadId = await h.eval(`(function(){ var row=document.querySelector('.thread-row.active'); return row ? row.getAttribute('data-thread-id') : null; })()`);
+      h.check("① 前置：拿得到活动会话 id（拿不到整项作废）", typeof threadId === "string" && threadId.length > 8, `id=${String(threadId).slice(0, 20)}`);
+      if (typeof threadId !== "string" || threadId.length < 9) return;
+      const rpc = (method, params) => h.eval(`(async function(){ try { return await window.codex.request(${JSON.stringify(method)}, ${JSON.stringify(params)}); } catch (error) { return { error: String(error && error.message || error) }; } })()`);
+      /* 防御性清场：持久 profile 可能残留排队消息（上一轮失败留下的）—— ② 要断言"空闲无灯"，
+         残留队列会让它假红。清干净再断言。 */
+      const queued = await rpc("thread/queue/list", { threadId, limit: 100 });
+      for (const entry of (queued && queued.data) || []) {
+        await rpc("thread/queue/delete", { threadId, queuedSubmissionId: entry.id ?? entry.queuedSubmissionId });
+      }
+      await rpc("thread/goal/clear", { threadId });
+      await wait(900);
+      const idle = await h.eval(`document.querySelector('.composer-status-lights') === null`);
+      h.check("② 空闲时一盏都不亮（无状态 = 无节点，不是隐藏的空壳）", idle === true, `queuedResidual=${((queued && queued.data) || []).length}`);
+      /* ③ 目标灯（走真引擎 thread/goal/set；paused 起步不触发自动续跑，保证确定性）：
+         灯出现 + tone-muted（已暂停）+ 「最多一盏」（单节点轮换制，不是一排）。 */
+      await rpc("thread/goal/set", { threadId, objective: "验收状态灯", status: "paused" });
+      let light = null;
+      for (let i = 0; i < 30; i++) {
+        await wait(300);
+        light = await h.eval(`(function(){ var el=document.querySelector('.composer-status-light'); if(!el) return null;
+          return { cls: el.className, title: el.getAttribute('title')||'', label: (el.querySelector('.light-label')||{}).textContent||'',
+            count: document.querySelectorAll('.composer-status-light').length }; })()`).catch(() => light);
+        if (light && /目标模式/.test(light.title)) break;
+      }
+      h.check("③ 目标灯亮：目标模式 · 已暂停（tone-muted）+ 同一时刻只有一盏（单节点轮换制）",
+        !!light && light.count === 1 && /tone-muted/.test(light.cls) && /目标模式/.test(light.title) && /已暂停/.test(light.title) && light.label === "目标模式",
+        JSON.stringify(light));
+      /* ④ 窗口自适应（用户令「跟着窗口大小自适应隐藏」）：CDP 视口模拟 —— ≤1060px 整块隐藏、
+         1240px 收文字只留图标、复原后原样。用 Emulation 不真改窗口：断言完即复原。 */
+      await h._send("Emulation.setDeviceMetricsOverride", { width: 1000, height: 800, deviceScaleFactor: 1, mobile: false });
+      await wait(500);
+      const narrow = await h.eval(`(function(){ var el=document.querySelector('.composer-status-lights'); return el ? getComputedStyle(el).display : 'gone'; })()`);
+      await h._send("Emulation.setDeviceMetricsOverride", { width: 1240, height: 800, deviceScaleFactor: 1, mobile: false });
+      await wait(500);
+      const mid = await h.eval(`(function(){ var wrap=document.querySelector('.composer-status-lights'); var label=wrap?wrap.querySelector('.light-label'):null;
+        return { wrap: wrap?getComputedStyle(wrap).display:'gone', label: label?getComputedStyle(label).display:'visible' }; })()`);
+      await h._send("Emulation.clearDeviceMetricsOverride", {});
+      await wait(500);
+      const restored = await h.eval(`(function(){ var el=document.querySelector('.composer-status-light'); return el ? getComputedStyle(el).display !== 'none' : false; })()`);
+      h.check("④ 窗口自适应：≤1060px 整块隐藏 → 1240px 收文字只留图标 → 复原后可见",
+        narrow === "none" && mid && mid.wrap !== "none" && mid.wrap !== "gone" && mid.label === "none" && restored === true,
+        JSON.stringify({ narrow, mid, restored }));
+      await h.screenshot("status-lights");
+      /* ⑤ 清目标 ⇒ 灯灭（状态源是唯一真相源，清了不残留）。
+         ⛔ 走 UI 删除键（stopGoalLoop = 本地清 + RPC clear），不走裸 RPC：引擎对 clear
+         不一定广播事件，宿主自己的删除路径才同时清两处（goal-bar ⑦ 同款）。 */
+      await h.eval(`document.querySelectorAll('.goal-bar-btn')[1]?.click()`);
+      let gone = false;
+      for (let i = 0; i < 25; i++) {
+        await wait(300);
+        gone = await h.eval(`document.querySelector('.composer-status-lights') === null`).catch(() => false);
+        if (gone) break;
+      }
+      const engineGoalAfter = await rpc("thread/goal/get", { threadId });
+      h.check("⑤ 点目标条删除键：灯跟着灭、引擎 goal 已清空（不残留）",
+        gone === true && !(engineGoalAfter && engineGoalAfter.goal), JSON.stringify({ gone, engineGoalAfter }).slice(0, 200));
+    },
+  },
+  {
     id: "newbie-guide",
     name: "㉖ 新手引导：侧栏常驻入口 + 迷你设置弹窗（左选项/右内容/映射跳转/版本日志，10-07 轮）",
     run: async (h) => {
@@ -2002,6 +2070,7 @@ const ROUND_OF = {
   "devtools-install-ux": "10-11",   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）
   "free-gateway": "10-12",   // 10-12 轮：免费模型网关（第三方开源侧车 + 一键注册供应商；免责声明为契约）   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）
   "boot-intro": "10-12",   // 10-12 轮：550C 开机动画（外观页设置行 + Shadow DOM 预览 + Esc 跳过 + 档位落盘；启动首帧与三不播判据由守卫 20-boot-intro 钉）⛔ 必须跟着 LATEST_ROUND 走，否则默认轮跑不到它 = 保护关着
+  "status-lights": "10-12",   // 10-12 轮：输入框底栏动态状态灯（最多一盏 + 轮换 + 窗口自适应隐藏；结构由守卫 12d 钉）
   "message-feedback": "10-05",   // 10-05 轮：消息操作图标的两段反馈 + 用户消息复制贴右端（历史项，默认轮不再跑 —— 回归证据）
   "plugin-market-gitee": "10-03",
   "codex-official-market": "10-03",   // 本轮新项；Gitee 项同轮重跑（插件页加了源切换，两个源都得看一眼）

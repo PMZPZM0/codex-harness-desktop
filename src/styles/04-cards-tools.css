@@ -1461,6 +1461,54 @@
 .composer-right {
   flex: none;
 }
+/* ── 输入框底栏「动态状态灯」（10-12）：权限胶囊右侧空位的浮动状态图标 ──
+   色彩纪律（DESIGN.md）：--accent=进行中 / --orange=待处理（挂起、等待选择）/ --red=受阻 /
+   --ok=成功 / --muted=暂停。呼吸动画只给"活着"的灯，静态灯不闪。 */
+.composer-status-lights {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.composer-status-light {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  animation: 0.18s menu-pop;
+}
+.composer-status-light > em {
+  font-style: normal;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.composer-status-light > i.light-label {
+  font-style: normal;
+}
+.composer-status-light.tone-pending { color: var(--orange); background: color-mix(in srgb, var(--orange) 12%, transparent); }
+.composer-status-light.tone-danger { color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent); }
+.composer-status-light.tone-ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.composer-status-light.tone-muted { color: var(--muted); background: color-mix(in srgb, var(--muted) 12%, transparent); }
+.composer-status-light.pulse {
+  animation: 0.18s menu-pop, status-light-pulse 2.2s ease-in-out infinite;
+}
+@keyframes status-light-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+/* 自适应（用户令「跟着窗口大小自适应隐藏」）：窗口变窄先收文字只留图标 + 徽标，
+   再窄整块隐藏，把位置还给权限胶囊与右侧控件。两档都给余量 —— 侧栏/右栏展开时同样生效。 */
+@media (max-width: 1280px) {
+  .composer-status-light > i.light-label { display: none; }
+}
+@media (max-width: 1060px) {
+  .composer-status-lights { display: none; }
+}
 .composer-quick-menu {
   position: relative;
 }

@@ -147,7 +147,7 @@ import { ComposerEditor, ComposerMenu, ThreadFilePicker } from "../../../../comp
 import { basename } from "../../../../../lib/basename";
 import { effortLabels } from "../../../../../lib/effort-labels";
 import { expertRoleLabel } from "../../../../../lib/expert-role-label";
-import { RunningProcessTime, CompletedChanges, ContextRing, UsageCounterSnapshot, ContextUsageBadge } from "../../../../status";
+import { ComposerStatusLights, RunningProcessTime, CompletedChanges, ContextRing, UsageCounterSnapshot, ContextUsageBadge } from "../../../../status";
 import { requestVoiceDictation, setVoiceDictationSendHandler, setVoiceOpenSettingsHandler, subscribeVoiceStage } from "../../../../../voice/wave-level";
 import { RequestCard, ToolCard, VoiceSettingsBridge, admitThreadRuntimeRef, ago, appendDelta, appendIndexedDelta, applyThreadEvent, approvalMenuOptions, armSendAnimationClaim, botChannelName, botOnlineOf, builtinCommandCatalog, categoryLabel, clampRruleNum, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, cronTemplates, deltaMethods, describeRrule, describeSchedule, displayPath, fmtImportTime, formatTimestamp, greetingForHour, groupThreadsByTime, hydrateTurnUserMessage, idleTemplates, imageExts, isActivityItem, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, localFormatDurationMs, locateMatchEl, markBufferedAgentReveal, markBufferedTurnReveal, matchSkillCatalog, mergeItem, mergeLongerStreams, mergeTurn, modelBadges, modelName, normSkillName, noticeTone, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDescription, pluginDisplayName, pluginMarketCategoryTabs, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, revealStepFor, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, settingsNav, shortSkillName, skillHubCategories, skillHubCategoryName, skillHubCategoryTabs, skillZhNote, slashCommands, stableItem, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, toFileUrl, uniqueModelCount, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../helpers";
 import type { HarnessAppApi } from "../../../../app-state/useHarnessApp";
@@ -158,6 +158,7 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
     activeThreadRunning,
     addContextItem,
     addSkillReference,
+    agentAsk,
     allModels,
     approvalPolicy,
     attachSubmenu,
@@ -193,8 +194,11 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
     enhanceHint,
     expertQuery,
     expertTeams,
+    expertTeamRunning,
     favoriteQuery,
     favorites,
+    goalStatus,
+    goalText,
     hasEnhanceBackup,
     images,
     insertComposerFiles,
@@ -216,6 +220,8 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
     planRunning,
     plusSpinTick,
     prompt,
+    queue,
+    queueTimers,
     quickMenuFlipUp,
     quickMenuPanelRef,
     quickMenuRef,
@@ -224,6 +230,7 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
     refreshFavorites,
     relayActive,
     removeContextItem,
+    rpaRunning,
     runPromptEnhance,
     sandbox,
     scheduleSubmenu,
@@ -256,6 +263,7 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
     skillCommandMatches,
     skillQuery,
     startMemberDirectSession,
+    subAgentRunning,
     submenuFlip,
     submenuTop,
     thread,
@@ -512,6 +520,19 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                               </div>}
                             </div>
                             <ComposerMenu icon={ShieldCheck} label="权限" title="权限模式" tone={sandbox === "danger-full-access" ? "danger" : undefined} value={sandbox === "danger-full-access" ? "never" : approvalPolicy} options={approvalMenuOptions(sandbox === "danger-full-access")} onChange={changePermissionMode} />
+                            {/* 动态状态灯（10-12）：权限胶囊右侧的空位 —— 后台有状态就亮一盏小图标
+                                （目标模式 / 等待选择 / 挂起消息 / 配方 / 子智能体 / 专家团）。
+                                最多亮一盏、多盏每 3s 轮流（组件内）；窗口变窄 CSS 自适应隐藏。 */}
+                            <ComposerStatusLights
+                              goalText={goalText}
+                              goalStatus={goalStatus}
+                              agentAskThreadId={agentAsk && (!thread || agentAsk.threadId === thread.id) ? agentAsk.threadId : null}
+                              queuedCount={queue.length}
+                              scheduledCount={thread ? Object.values(queueTimers[thread.id] ?? {}).filter(Boolean).length : 0}
+                              rpaRunning={rpaRunning}
+                              subAgentRunning={subAgentRunning}
+                              expertTeamRunning={expertTeamRunning}
+                            />
                           </div>
                           <div className="composer-right">
                             <div className="model-controls">
