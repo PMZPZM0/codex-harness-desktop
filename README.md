@@ -23,6 +23,13 @@
 - **应用版客户端**：[cloud-v0.0.1 下载](../../releases/tag/cloud-v0.0.1)（Windows 安装包 + macOS 双架构），双击即用、开机常驻
 - **实时推送**：消息与事件全走 SSE 推送，非轮询
 
+## 🍴 定制版：PPcode
+
+同源代码的独立品牌定制款 **[PPcode](https://github.com/PMZPZM0/PPcode)** —— AI 工作台（Windows / mac）：多智能体调度 · 图像工坊 · 自动化。
+
+- 📦 功能介绍与安装包：<https://github.com/PMZPZM0/PPcode>（Windows 安装包 + macOS 双架构 zip）
+- 🔗 与本项目的关系：同一条产品线（引擎、界面、守卫体系一致），**独立品牌与独立发布节奏**，功能更新双向同步
+
 ## 🎯 核心能力速览
 
 | | 能力 | 一句话说明 |
