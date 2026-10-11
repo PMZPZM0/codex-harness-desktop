@@ -119,7 +119,7 @@ export const freeGatewayFeature = defineFeature<null>({
       const forwardKey = readGatewaySettings().forwardKey ?? "";
       return {
         downloaded, version, running, port,
-        forwardKey: forwardKey ? "已保存（注册供应商时自动带入）" : "",
+        forwardKey,
         lastStartError: lastStartError || null,
         dlBytes, dlTotal,
         hasForwardKey: Boolean(forwardKey),
