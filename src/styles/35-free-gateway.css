@@ -63,3 +63,17 @@
 @media (prefers-reduced-motion: reduce) {
   .free-gateway-progress i.indeterminate { animation: none; width: 100% !important; }
 }
+/* 注册后的「管理」小链接（卡片右侧）—— 与正文颜色区分，不跟卡片的 hover 冲突 */
+.free-gateway-manage-link {
+  flex: none;
+  margin-left: auto;
+  color: var(--accent);
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.free-gateway-manage-link:hover {
+  background: var(--accent-soft, color-mix(in srgb, var(--accent) 10%, transparent));
+}

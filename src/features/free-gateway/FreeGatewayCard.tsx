@@ -24,31 +24,46 @@ type GatewayStatus = {
 };
 
 /** 供应商列表里的常驻推荐卡（与 PPtoken 推荐卡同一族的观感）。 */
-export function FreeGatewayRecommendCard() {
+export function FreeGatewayRecommendCard({ registered, onSelect }: { registered?: boolean; onSelect?: () => void; onRegistered?: () => void } = {}) {
   const [open, setOpen] = useState(false);
+  const [managing, setManaging] = useState(false);
   return (
     <>
       <button
         type="button"
         className="provider-item sponsor free-gateway-entry"
-        title="免费模型网关：下载并启动本地 OpenAI 兼容网关，免 Key 用多家前沿模型（第三方开源，与本项目开发者无关）"
-        onClick={() => setOpen(true)}
+        title={registered
+          ? "免费模型网关已注册 —— 点此选中它，在右侧模型列表里挑选要用的模型；「管理」链接可启停网关"
+          : "免费模型网关：下载并启动本地 OpenAI 兼容网关，免 Key 用多家前沿模型（第三方开源，与本项目开发者无关）"}
+        onClick={() => { if (registered) { onSelect?.(); return; } setOpen(true); }}
       >
         <span className="provider-item-icon" style={{ background: "linear-gradient(135deg, #2f6bdd, #7048e8)" }}><Store size={13} /></span>
         <div className="provider-item-main">
           <span className="provider-name-row">
             <strong>免费模型网关</strong>
-            <b className="provider-sponsor-badge">推荐插件</b>
+            <b className="provider-sponsor-badge">{registered ? "已注册" : "推荐插件"}</b>
           </span>
-          <small>免 Key 用 DeepSeek V4.1 Flash、Kimi K3 等 · {DISCLAIMER_SHORT}</small>
+          <small>{registered
+            ? "已注册为供应商 · 点此选中并在右侧挑模型 · 「管理」可启停网关"
+            : `免 Key 用 DeepSeek V4.1 Flash、Kimi K3 等 · ${DISCLAIMER_SHORT}`}</small>
         </div>
+        {registered && (
+          <span
+            role="button" tabIndex={0}
+            className="free-gateway-manage-link"
+            title="网关生命周期管理：启停 / 管理台 / 重新注册"
+            onClick={(e) => { e.stopPropagation(); setManaging(true); }}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); setManaging(true); } }}
+          >管理</span>
+        )}
       </button>
-      {open && <FreeGatewayDialog onClose={() => setOpen(false)} />}
+      {open && <FreeGatewayDialog onClose={() => setOpen(false)} onRegistered={() => { setOpen(false); onSelect?.(); }} />}
+      {managing && <FreeGatewayDialog onClose={() => setManaging(false)} />}
     </>
   );
 }
 
-export function FreeGatewayDialog({ onClose }: { onClose: () => void }) {
+export function FreeGatewayDialog({ onClose, onRegistered }: { onClose: () => void; onRegistered?: () => void }) {
   const [status, setStatus] = useState<GatewayStatus | null>(null);
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState("");
@@ -88,7 +103,10 @@ export function FreeGatewayDialog({ onClose }: { onClose: () => void }) {
         apiKey: status.forwardKey || "",
         models: ids.map((id) => ({ id, contextWindow: 128000 })),
       });
-      setMsg(`已注册「免费模型网关」供应商（${ids.length} 个模型）。左侧列表若未立即出现，切走再切回设置页即可；保持网关运行，模型才能用。`);
+      setMsg(`已注册「免费模型网关」供应商（${ids.length} 个模型）。正在为你选中它 —— 在右侧模型列表里勾选要用的模型即可。`);
+      // ⛔ 注册成功 = 供应商已在列表里，用户要的是右侧出模型清单而不是再看管理窗 ——
+      //    关弹窗 + 选中供应商（onRegistered 由模型页传入，行为同点列表行）。
+      setTimeout(() => { onClose(); onRegistered?.(); }, 600);
     } catch (e: any) {
       setError(String(e?.message ?? e));
     } finally { setBusy(""); }
