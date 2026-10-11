@@ -12,8 +12,14 @@
   margin: 12px 0 4px;
 }
 
-.settings-card,
-.devtools-card {
+/* ⛔⛔ 10-11 作用域收窄：可点击分类卡的 flex 样式只许命中 **button**.settings-card。
+   教训：这组规则原先裸写 `.settings-card`，把**所有页面**的 `.settings-card` 都变成
+   「窄标签列 + hover 上浮 + 手型光标」—— 控制台页（GeneralSettingsSection）与
+   DomainsPanel 的信息卡是 div.settings-card（head 在上、body 在下的竖向结构），
+   被压成竖排标签（用户截图「排版坏了」）。信息卡与可点击卡是两个家族：
+   button = 分类卡（devtools / extensibility / 记忆中心），div = 信息卡（控制台等）。 */
+.devtools-card,
+button.settings-card {
   display: flex;
   align-items: flex-start;
   gap: 11px;
@@ -26,14 +32,14 @@
   cursor: pointer;
   transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
 }
-.settings-card:hover,
-.devtools-card:hover {
+.devtools-card:hover,
+button.settings-card:hover {
   border-color: var(--accent, var(--green));
   transform: translateY(-1px);
   box-shadow: 0 6px 18px #00000012;
 }
-.settings-card:focus-visible,
-.devtools-card:focus-visible { outline: 2px solid var(--accent, var(--green)); outline-offset: 2px; }
+.devtools-card:focus-visible,
+button.settings-card:focus-visible { outline: 2px solid var(--accent, var(--green)); outline-offset: 2px; }
 
 .settings-card-logo,
 .devtools-card-logo {
@@ -56,8 +62,8 @@
 .devtools-card-stat { color: var(--muted); font-size: 11px; }
 .settings-card-arrow,
 .devtools-card-arrow { flex: none; margin-top: 2px; color: var(--muted); }
-.settings-card:hover .settings-card-arrow,
-.devtools-card:hover .devtools-card-arrow { color: var(--green); }
+.devtools-card:hover .devtools-card-arrow,
+button.settings-card:hover .settings-card-arrow { color: var(--green); }
 
 /* ── 二级：弹窗（设置内档 z=900，与 .memory-center-modal 同规范）──────────── */
 .settings-dialog-backdrop {
