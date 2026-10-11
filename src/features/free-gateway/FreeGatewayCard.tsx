@@ -64,7 +64,7 @@ export function FreeGatewayRecommendCard({ registered, onSelect, setNotice }: { 
           >管理</span>
         )}
       </button>
-      {open && <FreeGatewayDialog onClose={() => setOpen(false)} onRegistered={() => { setOpen(false); onSelect?.(); }} setNotice={setNotice} />}
+      {open && <FreeGatewayDialog onClose={() => setOpen(false)} onRegistered={() => { setOpen(false); onSelect?.(); onRegistered?.(); }} setNotice={setNotice} />}
       {managing && <FreeGatewayDialog onClose={() => setManaging(false)} />}
     </>
   );
