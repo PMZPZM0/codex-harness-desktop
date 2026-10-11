@@ -657,7 +657,7 @@ contextBridge.exposeInMainWorld("codex", {
   /* 免费模型网关（free-gateway 域，10-12）：第三方开源侧车服务的状态。⛔ 免责：上游与本项目开发者无关，渠道合规性与可用性由使用者自担 */
   freeGatewayStatus: () => __ipc("free-gateway:status", 0, []),
   /* 免费模型网关：从 gh 镜像下载上游仓库 zip 并用随包 7za 解压到 userData/free-gateway/app */
-  freeGatewayDownload: () => __ipc("free-gateway:download", 0, []),
+  freeGatewayDownload: (input: { force?: boolean }) => __ipc("free-gateway:download", 1, [input]),
   /* 免费模型网关：用随包 node 启动 standalone 网关（OFM_HOME 指向 userData/free-gateway/data），等 /health 就绪 */
   freeGatewayStart: () => __ipc("free-gateway:start", 0, []),
   /* 免费模型网关：停掉本应用拉起的侧车进程 */

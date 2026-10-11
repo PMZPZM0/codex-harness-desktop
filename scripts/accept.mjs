@@ -1526,19 +1526,30 @@ const CHECKS = [
       await h.eval(`(function(){ var b=[...document.querySelectorAll('.icon-button, [title*="设置"]')].find(function(x){ return (x.getAttribute('aria-label')||x.title||'').includes('设置'); }); b&&b.click(); return 1; })()`);
       await wait(600);
       await h.eval(`(function(){ var b=[...document.querySelectorAll('.settings-nav button')].find(function(x){ return (x.textContent||'').trim()==='模型'; }); b&&b.click(); return 1; })()`);
-      await wait(700);
+      /* ⛔ 模型页是 lazy chunk，700ms 后可能还没挂载（10-12 连续两轮 null 假红实测）——waitFor 推荐卡真出现 */
+      await h.waitFor(`!!document.querySelector('.free-gateway-entry')`, { label: "免费模型网关推荐卡出现", timeoutMs: 15000 }).catch(() => undefined);
+      await wait(300);
       const card = await h.eval(`(function(){ var c=document.querySelector('.free-gateway-entry'); return c ? { present: true, disclaimer: (c.textContent||'').includes('与本项目开发者无关') } : null; })()`);
       h.check("① 推荐卡在场且带免责声明（与本项目开发者无关）", !!card && card.present === true && card.disclaimer === true, JSON.stringify(card));
       if (!card) return;
       const st0 = await h.eval(`window.codex.freeGatewayStatus().then(function(r){ return JSON.stringify(r); }, function(e){ return "ERR " + (e.message || e); })`);
       h.check("② 状态通道真通（downloaded/running 字段在）", typeof st0 === "string" && st0.includes("downloaded"), String(st0).slice(0, 160));
-      const dl = await h.eval(`window.codex.freeGatewayDownload().then(function(r){ return JSON.stringify(r); }, function(e){ return "ERR " + (e.message || e); })`);
-      h.check("③ 下载本体成功（幂等；首次约 12MB 走 gh 镜像）", typeof dl === "string" && dl.includes("\"ok\":true"), String(dl).slice(0, 160));
-      if (!(typeof dl === "string" && dl.includes("\"ok\":true"))) return;
+      /* ⛔ 下载同启动：不在 CDP eval 里 await（首下 12MB 慢网络可超 20s）——触发后轮询 downloaded。 */
+      const dlKick = await h.eval(`(function(){ try { window.codex.freeGatewayDownload(); return "kicked"; } catch (e) { return "ERR " + (e.message || e); } })()`);
+      h.check("③ 下载已触发（幂等短路：已下载秒回）", dlKick === "kicked", String(dlKick));
+      if (dlKick !== "kicked") return;
+      let downloaded = false;
+      for (let i = 0; i < 120; i++) {
+        await wait(1000);
+        const st = await h.eval(`window.codex.freeGatewayStatus().then(function(r){ return JSON.stringify({ downloaded: r.downloaded, stage: r.stage }); }).catch(function(){ return "{}"; })`).catch(() => "{}");
+        if (String(st).includes("\"downloaded\":true")) { downloaded = true; break; }
+      }
+      h.check("④ 本体下载完成（gh 镜像真链路）", downloaded, "120s 内未完成则上游通道全挂");
+      if (!downloaded) return;
       /* ⛔ 不在 CDP eval 里 await 启动（冷启动可超 20s，Runtime.evaluate 会超时）——
          触发后轮询状态，等 /health 就绪。 */
       const kick = await h.eval(`(function(){ try { window.codex.freeGatewayStart(); return "kicked"; } catch (e) { return "ERR " + (e.message || e); } })()`);
-      h.check("④ 启动已触发（幂等：已有健康实例则直接复用）", kick === "kicked", String(kick));
+      h.check("⑤ 启动已触发（幂等：已有健康实例则直接复用）", kick === "kicked", String(kick));
       if (kick !== "kicked") return;
       let running = false, stRunning = "";
       for (let i = 0; i < 75; i++) {
@@ -1546,10 +1557,10 @@ const CHECKS = [
         stRunning = await h.eval(`window.codex.freeGatewayStatus().then(function(r){ return JSON.stringify({ running: r.running, port: r.port }); }).catch(function(){ return "{}"; })`).catch(() => "{}");
         if (String(stRunning).includes("\"running\":true")) { running = true; break; }
       }
-      h.check("⑤ 网关运行中（真进程 /health 就绪 + 端口在）", running, String(stRunning).slice(0, 160));
+      h.check("⑥ 网关运行中（真进程 /health 就绪 + 端口在）", running, String(stRunning).slice(0, 160));
       if (!running) return;
       const models = await h.eval(`window.codex.freeGatewayModels().then(function(r){ return JSON.stringify(r); }, function(e){ return "ERR " + (e.message || e); })`);
-      h.check("⑤ 模型清单通道真通（返回数组；是否非空取决于上游渠道）", typeof models === "string" && models.includes("models"), String(models).slice(0, 200));
+      h.check("⑦ 模型清单通道真通（返回数组；是否非空取决于上游渠道）", typeof models === "string" && models.includes("models"), String(models).slice(0, 200));
       await h.eval(`window.codex.freeGatewayStop().catch(function(){ return 1; })`);
       await h.screenshot("free-gateway");
     },

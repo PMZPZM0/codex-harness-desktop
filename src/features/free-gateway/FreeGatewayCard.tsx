@@ -19,7 +19,8 @@ const DISCLAIMER_FULL = "「免费模型网关」是第三方开源项目 dsh-ou
 type GatewayStatus = {
   downloaded: boolean; version: string; running: boolean; port: number;
   forwardKey: string; hasForwardKey: boolean; adminUrl: string;
-  stage: string | null; stageError: string | null;
+  stage: string | null; stageError: string | null; lastStartError: string | null;
+  dlBytes: number; dlTotal: number;
 };
 
 /** 供应商列表里的常驻推荐卡（与 PPtoken 推荐卡同一族的观感）。 */
@@ -57,6 +58,12 @@ export function FreeGatewayDialog({ onClose }: { onClose: () => void }) {
     void window.codex.freeGatewayStatus().then((s) => setStatus(s as GatewayStatus)).catch((e) => setError(String(e?.message ?? e)));
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
+  /* 下载/解压期间轮询状态（500ms）—— 进度条与阶段文案的实时数据源（10-12 用户实测「转半天没反馈」后加） */
+  useEffect(() => {
+    if (!status?.stage) return;
+    const t = setInterval(refresh, 500);
+    return () => clearInterval(t);
+  }, [status?.stage, refresh]);
 
   const run = async (label: string, fn: () => Promise<unknown>, after?: () => void) => {
     setBusy(label); setMsg(""); setError("");
@@ -88,6 +95,8 @@ export function FreeGatewayDialog({ onClose }: { onClose: () => void }) {
   };
 
   const s = status;
+  const dlMB = (n: number) => (n / 1024 / 1024).toFixed(1);
+  const dlPercent = s?.dlTotal ? Math.min(100, Math.round((s.dlBytes / s.dlTotal) * 100)) : 0;
   return createPortal(
     <SettingsDialog title="免费模型网关（推荐插件）" icon={<Store size={15} />} hint="第三方开源 · MIT · 与本项目开发者无关" onClose={onClose}>
       <div className="free-gateway-panel">
@@ -104,9 +113,15 @@ export function FreeGatewayDialog({ onClose }: { onClose: () => void }) {
 
         <div className="free-gateway-actions">
           {!s?.downloaded && (
-            <button className="primary-setting" disabled={busy !== ""} onClick={() => void run("download", () => window.codex.freeGatewayDownload())}>
-              {busy === "download" ? <Spinner /> : <Download size={14} />}下载本体（约 12 MB）
+            <button className="primary-setting" disabled={busy !== "" || s?.stage === "downloading"} onClick={() => void run("download", () => window.codex.freeGatewayDownload({}))}>
+              {busy === "download" || s?.stage === "downloading" ? <Spinner /> : <Download size={14} />}
+              {s?.stage === "downloading" ? (s.dlTotal ? `下载中 ${dlMB(s.dlBytes)} / ${dlMB(s.dlTotal)} MB（${dlPercent}%）` : `已下载 ${dlMB(s.dlBytes)} MB`) : "下载本体（约 12 MB）"}
             </button>
+          )}
+          {s?.stage === "downloading" && (
+            <div className="free-gateway-progress" role="progressbar" aria-label="网关本体下载进度" aria-valuenow={dlPercent} aria-valuemin={0} aria-valuemax={100}>
+              <i style={{ width: `${s.dlTotal ? dlPercent : Math.min(95, Math.round((s.dlBytes / 12 / 1024 / 1024) * 100))}%` }} className={s.dlTotal ? "" : "indeterminate"} />
+            </div>
           )}
           {s?.downloaded && !s.running && (
             <button className="primary-setting" disabled={busy !== ""} onClick={() => void run("start", () => window.codex.freeGatewayStart())}>
@@ -131,7 +146,7 @@ export function FreeGatewayDialog({ onClose }: { onClose: () => void }) {
           <button className="icon-button" title="刷新状态" onClick={refresh}><RefreshCw size={14} /></button>
         </div>
 
-        {s?.stage && <p className="free-gateway-note">正在{ s.stage === "downloading" ? "下载" : "解压" }上游仓库…</p>}
+        {s?.stage && s.stage !== "downloading" && <p className="free-gateway-note">正在解压上游仓库…</p>}
         <p className="free-gateway-note">使用顺序：下载本体 → 启动网关 → 打开管理台登录你想用的渠道账号 → 回这里「一键注册为供应商」→ 到左侧供应商列表选模型。保持网关运行，模型才可用。</p>
         {msg && <p className="free-gateway-msg">{msg}</p>}
         {(error || s?.stageError) && <p className="free-gateway-error">{error || s?.stageError}</p>}

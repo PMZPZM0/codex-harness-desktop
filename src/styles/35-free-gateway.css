@@ -43,3 +43,23 @@
   border-radius: 8px; color: var(--text); font-size: 11.5px; line-height: 1.6;
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
+/* 下载进度条（10-12 用户实测「转半天没反馈」后加）：与 runtime-progress-bar 同族观感 */
+.free-gateway-progress {
+  height: 6px; border-radius: 999px; overflow: hidden;
+  background: var(--line-soft);
+}
+.free-gateway-progress i {
+  display: block; height: 100%; border-radius: 999px;
+  background: var(--accent); transition: width .3s;
+}
+.free-gateway-progress i.indeterminate {
+  width: 40% !important;
+  animation: free-gateway-indeterminate 1.2s ease-in-out infinite;
+}
+@keyframes free-gateway-indeterminate {
+  0% { margin-left: -40%; }
+  100% { margin-left: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .free-gateway-progress i.indeterminate { animation: none; width: 100% !important; }
+}

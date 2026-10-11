@@ -52,16 +52,44 @@ async function pickPort(): Promise<number> {
   return 0;
 }
 
-/** 下载一个 URL 到文件（net.fetch 自动跟随重定向；失败返回 null 让调用方换下一镜像）。 */
+/** 下载进度（状态通道轮询消费；10-12 用户实测「没进度条转半天」后加）*/
+let dlBytes = 0;
+let dlTotal = 0;
+
+/**
+ * 下载一个 URL 到文件（流式落盘，字节实时计入 dlBytes/dlTotal）。
+ * ⛔ 必须带超时（10-12 用户实测：第一通道在自己的网络/代理下挂起时，无超时 = 无限转圈）——
+ *   headers 25s / 整体 120s，超时或失败返回 false 让调用方切下一镜像。
+ */
 async function downloadTo(url: string, dest: string): Promise<boolean> {
   try {
-    const r = await net.fetch(url);
+    const r = await net.fetch(url, { signal: AbortSignal.timeout(120_000) });
     if (!r.ok || !r.body) return false;
-    const buf = Buffer.from(await r.arrayBuffer());
+    const totalHeader = Number(r.headers.get("content-length") ?? 0);
+    dlBytes = 0;
+    dlTotal = totalHeader > 0 ? totalHeader : 0;
+    const chunks: Buffer[] = [];
+    const reader = r.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(Buffer.from(value));
+      dlBytes += value.byteLength;
+    }
+    const buf = Buffer.concat(chunks);
     if (buf.length < 1_000_000) return false; // 太小说明是错误页
+    dlTotal = dlTotal || buf.length;
     fs.writeFileSync(dest, buf);
     return true;
   } catch { return false; }
+}
+
+/** 读上次实测最快的镜像前缀（空串 = 直连；没有记录 = -1 走默认序）。 */
+function lastGoodMirror(): number {
+  try { const v = Number(fs.readFileSync(path.join(gatewayRoot(), "mirror.txt"), "utf8").trim()); return Number.isInteger(v) && v >= 0 && v < 3 ? v : -1; } catch { return -1; }
+}
+function saveLastGoodMirror(i: number) {
+  try { fs.mkdirSync(gatewayRoot(), { recursive: true }); fs.writeFileSync(path.join(gatewayRoot(), "mirror.txt"), String(i)); } catch { /* 记不住就按默认序 */ }
 }
 
 /** 用随包 7-Zip（完整版 7za）解 zip；缺 7za 时给可执行的中文名报错。 */
@@ -93,6 +121,7 @@ export const freeGatewayFeature = defineFeature<null>({
         downloaded, version, running, port,
         forwardKey: forwardKey ? "已保存（注册供应商时自动带入）" : "",
         lastStartError: lastStartError || null,
+        dlBytes, dlTotal,
         hasForwardKey: Boolean(forwardKey),
         adminUrl: adminUrl || (port ? `http://127.0.0.1:${port}/` : ""),
         stage: stage || null,
@@ -100,7 +129,13 @@ export const freeGatewayFeature = defineFeature<null>({
       };
     });
 
-    ipcHost.handle("free-gateway:download", async () => {
+    ipcHost.handle("free-gateway:download", async (_event, input: { force?: boolean } = {}) => {
+      // 幂等短路：本体已在盘上就直接返回（⛔ 不重下 12MB —— 用户重复点击/验收重跑都秒回；force 预留重下能力）
+      if (!input?.force && fs.existsSync(markerPath())) {
+        let version = "";
+        try { version = JSON.parse(fs.readFileSync(path.join(appDir(), "package.json"), "utf8")).version ?? ""; } catch { /* 宽松 */ }
+        return { ok: true, version, already: true };
+      }
       if (stage) throw new Error(`正在${stage === "downloading" ? "下载" : "解压"}中，请稍候`);
       const root = gatewayRoot();
       fs.mkdirSync(root, { recursive: true });
@@ -108,8 +143,12 @@ export const freeGatewayFeature = defineFeature<null>({
       stage = "downloading"; stageError = "";
       try {
         let done = false;
-        for (const prefix of MIRRORS) {
-          if (await downloadTo(prefix + REPO_ZIP, zipPath)) { done = true; break; }
+        // ⛔ 通道顺序：上次实测最快的排最前（10-12 用户实测「转半天」——第一通道挂起又没超时切换）
+        const last = lastGoodMirror();
+        const order = last >= 0 ? [MIRRORS[last], ...MIRRORS.filter((_, i) => i !== last)] : MIRRORS;
+        for (let mi = 0; mi < order.length && !done; mi++) {
+          done = await downloadTo(order[mi] + REPO_ZIP, zipPath);
+          if (done) saveLastGoodMirror(MIRRORS.indexOf(order[mi]));
         }
         if (!done) throw new Error("三个下载通道（gh-proxy / ghfast / 直连）都失败了，请检查网络后重试");
         stage = "extracting";
