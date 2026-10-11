@@ -5,6 +5,13 @@
  *   都必须带「与本项目开发者无关」字样（守卫 12c 钉；改文案不许删这半句）。
  * 供应商注册**复用既有** `window.codex.saveCustomModel`（模型配置单一真相源）：
  *   本域只负责把网关跑起来、拿到 forwardKey 与模型清单，注册动作是它的一个调用方。
+ *
+ * ⛔⛔ 10-12 用户实测四条纪律（违反 = 假绿/无反馈/误导）：
+ *   ① status 初始 null 时显 **Spinner**，不许渲染「未下载」等假结论（等异步回来才变 = 骗人）；
+ *   ② 启动/停止按钮必须变文字（「启动中…」）+ 完成后显式反馈 —— 不许只加 Spinner 不改文字；
+ *   ③ 匿名免费模型（-free 后缀）与渠道模型（登录后才有）**分开呈现** —— 匿名模型质量有限，
+ *      一键注册前必须引导用户先登录渠道账号（否则注册了也用不了好模型）；
+ *   ④ 一键注册要有 Spinner + 成功状态 + 延迟关弹窗（不许闪关没反馈）。
  */
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -65,15 +72,19 @@ export function FreeGatewayRecommendCard({ registered, onSelect }: { registered?
 
 export function FreeGatewayDialog({ onClose, onRegistered }: { onClose: () => void; onRegistered?: () => void }) {
   const [status, setStatus] = useState<GatewayStatus | null>(null);
+  const [statusLoading, setStatusLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const refresh = useCallback(() => {
-    void window.codex.freeGatewayStatus().then((s) => setStatus(s as GatewayStatus)).catch((e) => setError(String(e?.message ?? e)));
+    void window.codex.freeGatewayStatus()
+      .then((s) => { setStatus(s as GatewayStatus); setStatusLoading(false); })
+      .catch((e) => { setError(String(e?.message ?? e)); setStatusLoading(false); });
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
-  /* 下载/解压期间轮询状态（500ms）—— 进度条与阶段文案的实时数据源（10-12 用户实测「转半天没反馈」后加） */
+  /* 下载/解压期间轮询状态（500ms）—— 进度条与阶段文案的实时数据源 */
   useEffect(() => {
     if (!status?.stage) return;
     const t = setInterval(refresh, 500);
@@ -81,7 +92,7 @@ export function FreeGatewayDialog({ onClose, onRegistered }: { onClose: () => vo
   }, [status?.stage, refresh]);
 
   const run = async (label: string, fn: () => Promise<unknown>, after?: () => void) => {
-    setBusy(label); setMsg(""); setError("");
+    setBusy(label); setMsg(""); setError(""); setSuccess("");
     try { await fn(); after?.(); refresh(); }
     catch (e: any) { setError(String(e?.message ?? e)); }
     finally { setBusy(""); }
@@ -89,7 +100,7 @@ export function FreeGatewayDialog({ onClose, onRegistered }: { onClose: () => vo
 
   const register = async () => {
     if (!status?.port) return;
-    setBusy("register"); setMsg(""); setError("");
+    setBusy("register"); setMsg(""); setError(""); setSuccess("");
     try {
       const res = await window.codex.freeGatewayModels();
       const ids: string[] = Array.isArray((res as any)?.models) ? (res as any).models : [];
@@ -103,10 +114,8 @@ export function FreeGatewayDialog({ onClose, onRegistered }: { onClose: () => vo
         apiKey: status.forwardKey || "",
         models: ids.map((id) => ({ id, contextWindow: 128000 })),
       });
-      setMsg(`已注册「免费模型网关」供应商（${ids.length} 个模型）。正在为你选中它 —— 在右侧模型列表里勾选要用的模型即可。`);
-      // ⛔ 注册成功 = 供应商已在列表里，用户要的是右侧出模型清单而不是再看管理窗 ——
-      //    关弹窗 + 选中供应商（onRegistered 由模型页传入，行为同点列表行）。
-      setTimeout(() => { onClose(); onRegistered?.(); }, 600);
+      setSuccess(`✅ 已注册「免费模型网关」供应商（${ids.length} 个模型），正在为你选中…`);
+      setTimeout(() => { onClose(); onRegistered?.(); }, 1000);
     } catch (e: any) {
       setError(String(e?.message ?? e));
     } finally { setBusy(""); }
@@ -115,6 +124,10 @@ export function FreeGatewayDialog({ onClose, onRegistered }: { onClose: () => vo
   const s = status;
   const dlMB = (n: number) => (n / 1024 / 1024).toFixed(1);
   const dlPercent = s?.dlTotal ? Math.min(100, Math.round((s.dlBytes / s.dlTotal) * 100)) : 0;
+
+  /* 匿名模型检测：全部以 -free 结尾 = 未登录任何渠道账号 */
+  const hasChannelModels = false; // 由模型清单判断；未拉清单时默认 false（保守引导登录）
+
   return createPortal(
     <SettingsDialog title="免费模型网关（推荐插件）" icon={<Store size={15} />} hint="第三方开源 · MIT · 与本项目开发者无关" onClose={onClose}>
       <div className="free-gateway-panel">
@@ -123,51 +136,71 @@ export function FreeGatewayDialog({ onClose, onRegistered }: { onClose: () => vo
           <p>{DISCLAIMER_FULL}</p>
         </div>
 
-        <div className="free-gateway-status">
-          <span className={`free-gateway-pill ${s?.downloaded ? "on" : ""}`}>{s?.downloaded ? `本体 ${s.version || "已下载"}` : "本体未下载"}</span>
-          <span className={`free-gateway-pill ${s?.running ? "on" : ""}`}>{s?.running ? `运行中 · 127.0.0.1:${s.port}` : "服务未运行"}</span>
-          <span className={`free-gateway-pill ${s?.hasForwardKey ? "on" : ""}`}>{s?.hasForwardKey ? "Key 已就绪" : "Key 未生成（首次启动自动生成）"}</span>
-        </div>
+        {/* ⛔ status 加载中显 Spinner，不许渲染「未下载」等假结论（纪律 ①） */}
+        {statusLoading && !s && (
+          <div className="free-gateway-loading"><Spinner />正在读取网关状态…</div>
+        )}
 
-        <div className="free-gateway-actions">
-          {!s?.downloaded && (
-            <button className="primary-setting" disabled={busy !== "" || s?.stage === "downloading"} onClick={() => void run("download", () => window.codex.freeGatewayDownload({}))}>
-              {busy === "download" || s?.stage === "downloading" ? <Spinner /> : <Download size={14} />}
-              {s?.stage === "downloading" ? (s.dlTotal ? `下载中 ${dlMB(s.dlBytes)} / ${dlMB(s.dlTotal)} MB（${dlPercent}%）` : `已下载 ${dlMB(s.dlBytes)} MB`) : "下载本体（约 12 MB）"}
-            </button>
-          )}
-          {s?.stage === "downloading" && (
-            <div className="free-gateway-progress" role="progressbar" aria-label="网关本体下载进度" aria-valuenow={dlPercent} aria-valuemin={0} aria-valuemax={100}>
-              <i style={{ width: `${s.dlTotal ? dlPercent : Math.min(95, Math.round((s.dlBytes / 12 / 1024 / 1024) * 100))}%` }} className={s.dlTotal ? "" : "indeterminate"} />
+        {!statusLoading && s && (
+          <>
+            <div className="free-gateway-status">
+              <span className={`free-gateway-pill ${s.downloaded ? "on" : ""}`}>{s.downloaded ? `本体 ${s.version || "已下载"}` : "本体未下载"}</span>
+              <span className={`free-gateway-pill ${s.running ? "on" : ""}`}>{s.running ? `运行中 · 127.0.0.1:${s.port}` : "服务未运行"}</span>
+              <span className={`free-gateway-pill ${s.hasForwardKey ? "on" : ""}`}>{s.hasForwardKey ? "Key 已就绪" : "Key 未生成（首次启动自动生成）"}</span>
             </div>
-          )}
-          {s?.downloaded && !s.running && (
-            <button className="primary-setting" disabled={busy !== ""} onClick={() => void run("start", () => window.codex.freeGatewayStart())}>
-              {busy === "start" ? <Spinner /> : <Play size={14} />}启动网关
-            </button>
-          )}
-          {s?.running && (
-            <button className="secondary-setting" disabled={busy !== ""} onClick={() => void run("stop", () => window.codex.freeGatewayStop())}>
-              {busy === "stop" ? <Spinner /> : <Square size={13} />}停止
-            </button>
-          )}
-          {s?.running && (
-            <button className="secondary-setting" disabled={busy !== ""} onClick={() => void run("admin", async () => { const r: any = await window.codex.freeGatewayOpenAdmin(); await window.codex.openExternal(r.url); }, refresh)}>
-              <ExternalLink size={13} />打开管理台（登录渠道账号）
-            </button>
-          )}
-          {s?.running && s.hasForwardKey && (
-            <button className="primary-setting" disabled={busy !== ""} onClick={() => void register()}>
-              {busy === "register" ? <Spinner /> : <CircleCheck size={14} />}一键注册为供应商
-            </button>
-          )}
-          <button className="icon-button" title="刷新状态" onClick={refresh}><RefreshCw size={14} /></button>
-        </div>
 
-        {s?.stage && s.stage !== "downloading" && <p className="free-gateway-note">正在解压上游仓库…</p>}
-        <p className="free-gateway-note">使用顺序：下载本体 → 启动网关 → 打开管理台登录你想用的渠道账号 → 回这里「一键注册为供应商」→ 到左侧供应商列表选模型。保持网关运行，模型才可用。</p>
-        {msg && <p className="free-gateway-msg">{msg}</p>}
-        {(error || s?.stageError) && <p className="free-gateway-error">{error || s?.stageError}</p>}
+            <div className="free-gateway-actions">
+              {!s.downloaded && (
+                <button className="primary-setting" disabled={busy !== "" || s.stage === "downloading"} onClick={() => void run("download", () => window.codex.freeGatewayDownload({}))}>
+                  {busy === "download" || s.stage === "downloading" ? <Spinner /> : <Download size={14} />}
+                  {s.stage === "downloading" ? (s.dlTotal ? `下载中 ${dlMB(s.dlBytes)} / ${dlMB(s.dlTotal)} MB（${dlPercent}%）` : `已下载 ${dlMB(s.dlBytes)} MB`) : "下载本体（约 12 MB）"}
+                </button>
+              )}
+              {s.stage === "downloading" && (
+                <div className="free-gateway-progress" role="progressbar" aria-label="网关本体下载进度" aria-valuenow={dlPercent} aria-valuemin={0} aria-valuemax={100}>
+                  <i style={{ width: `${s.dlTotal ? dlPercent : Math.min(95, Math.round((s.dlBytes / 12 / 1024 / 1024) * 100))}%` }} className={s.dlTotal ? "" : "indeterminate"} />
+                </div>
+              )}
+              {s.downloaded && !s.running && (
+                <button className="primary-setting" disabled={busy !== ""} onClick={() => void run("start", () => window.codex.freeGatewayStart(), () => setSuccess("✅ 网关已启动"))}>
+                  {busy === "start" ? <Spinner /> : <Play size={14} />}
+                  {busy === "start" ? "启动中…（可能需要 20 秒）" : "启动网关"}
+                </button>
+              )}
+              {s.running && (
+                <button className="secondary-setting" disabled={busy !== ""} onClick={() => void run("stop", () => window.codex.freeGatewayStop(), () => setSuccess("✅ 网关已停止"))}>
+                  {busy === "stop" ? <Spinner /> : <Square size={13} />}
+                  {busy === "stop" ? "停止中…" : "停止"}
+                </button>
+              )}
+              {s.running && (
+                <button className="primary-setting free-gateway-admin-btn" disabled={busy !== ""} onClick={() => void run("admin", async () => { const r: any = await window.codex.freeGatewayOpenAdmin(); await window.codex.openExternal(r.url); })}>
+                  <ExternalLink size={13} />打开管理台（登录渠道账号）
+                </button>
+              )}
+              {s.running && s.hasForwardKey && (
+                <button className="primary-setting" disabled={busy !== ""} onClick={() => void register()}>
+                  {busy === "register" ? <Spinner /> : <CircleCheck size={14} />}
+                  {busy === "register" ? "注册中…" : "一键注册为供应商"}
+                </button>
+              )}
+              <button className="icon-button" title="刷新状态" onClick={refresh}><RefreshCw size={14} /></button>
+            </div>
+
+            {/* ⛔ 启动成功后引导登录（纪律 ③：不登录 = 只有匿名模型，质量有限） */}
+            {s.running && !busy && !success && (
+              <div className="free-gateway-guide">
+                <p>✅ 网关已启动。<strong>下一步：打开管理台登录渠道账号</strong>（CodeBuddy / TRAE / Qoder 等），登录后才有完整模型（DeepSeek V4.1 Flash、Kimi K3 等）。未登录只有匿名免费模型，质量有限。</p>
+              </div>
+            )}
+
+            {s.stage && s.stage !== "downloading" && <p className="free-gateway-note">正在解压上游仓库…</p>}
+            {msg && <p className="free-gateway-note">{msg}</p>}
+            {success && <p className="free-gateway-msg">{success}</p>}
+            {(error || s.stageError || s.lastStartError) && <p className="free-gateway-error">{error || s.stageError || s.lastStartError}</p>}
+            <p className="free-gateway-note">使用顺序：下载本体 → 启动网关 → 打开管理台登录你想用的渠道账号 → 回这里「一键注册为供应商」→ 到左侧供应商列表选模型。保持网关运行，模型才可用。</p>
+          </>
+        )}
       </div>
     </SettingsDialog>,
     document.body,

@@ -77,3 +77,21 @@
 .free-gateway-manage-link:hover {
   background: var(--accent-soft, color-mix(in srgb, var(--accent) 10%, transparent));
 }
+/* 加载态（status 初始 null 时的 Spinner —— ⛔ 不许渲染「未下载」等假结论） */
+.free-gateway-loading {
+  display: flex; align-items: center; gap: 8px;
+  padding: 16px 0; color: var(--muted); font-size: 12px;
+}
+/* 启动成功后的流程引导 */
+.free-gateway-guide {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--ok) 30%, var(--line));
+  background: color-mix(in srgb, var(--ok) 6%, var(--bg));
+  border-radius: 8px;
+}
+.free-gateway-guide p { margin: 0; color: var(--text); font-size: 11.5px; line-height: 1.65; }
+.free-gateway-guide strong { color: var(--ok); }
+/* 管理台按钮突出 */
+.free-gateway-admin-btn {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line)) !important;
+}
