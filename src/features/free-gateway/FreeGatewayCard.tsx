@@ -15,7 +15,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { CircleCheck, Download, ExternalLink, Play, RefreshCw, ShieldAlert, Square, Store } from "lucide-react";
+import { CircleCheck, Download, ExternalLink, Play, RefreshCw, ShieldAlert, Square, Store, Trash2 } from "lucide-react";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { Spinner } from "../../components/CardShell";
 
@@ -31,7 +31,7 @@ type GatewayStatus = {
 };
 
 /** 供应商列表里的常驻推荐卡（与 PPtoken 推荐卡同一族的观感）。 */
-export function FreeGatewayRecommendCard({ registered, onSelect }: { registered?: boolean; onSelect?: () => void; onRegistered?: () => void } = {}) {
+export function FreeGatewayRecommendCard({ registered, onSelect, setNotice }: { registered?: boolean; onSelect?: () => void; onRegistered?: () => void; setNotice?: (msg: string) => void } = {}) {
   const [open, setOpen] = useState(false);
   const [managing, setManaging] = useState(false);
   return (
@@ -64,13 +64,13 @@ export function FreeGatewayRecommendCard({ registered, onSelect }: { registered?
           >管理</span>
         )}
       </button>
-      {open && <FreeGatewayDialog onClose={() => setOpen(false)} onRegistered={() => { setOpen(false); onSelect?.(); }} />}
+      {open && <FreeGatewayDialog onClose={() => setOpen(false)} onRegistered={() => { setOpen(false); onSelect?.(); }} setNotice={setNotice} />}
       {managing && <FreeGatewayDialog onClose={() => setManaging(false)} />}
     </>
   );
 }
 
-export function FreeGatewayDialog({ onClose, onRegistered }: { onClose: () => void; onRegistered?: () => void }) {
+export function FreeGatewayDialog({ onClose, onRegistered, setNotice }: { onClose: () => void; onRegistered?: () => void; setNotice?: (msg: string) => void }) {
   const [status, setStatus] = useState<GatewayStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [busy, setBusy] = useState("");
@@ -151,7 +151,7 @@ export function FreeGatewayDialog({ onClose, onRegistered }: { onClose: () => vo
 
             <div className="free-gateway-actions">
               {!s.downloaded && (
-                <button className="primary-setting" disabled={busy !== "" || s.stage === "downloading"} onClick={() => void run("download", () => window.codex.freeGatewayDownload({}))}>
+                <button className="primary-setting" disabled={busy !== "" || s.stage === "downloading"} onClick={() => void run("download", () => window.codex.freeGatewayDownload({}), () => setNotice?.("网关本体下载完成"))}>
                   {busy === "download" || s.stage === "downloading" ? <Spinner /> : <Download size={14} />}
                   {s.stage === "downloading" ? (s.dlTotal ? `下载中 ${dlMB(s.dlBytes)} / ${dlMB(s.dlTotal)} MB（${dlPercent}%）` : `已下载 ${dlMB(s.dlBytes)} MB`) : "下载本体（约 12 MB）"}
                 </button>
@@ -168,7 +168,7 @@ export function FreeGatewayDialog({ onClose, onRegistered }: { onClose: () => vo
                 </button>
               )}
               {s.running && (
-                <button className="secondary-setting" disabled={busy !== ""} onClick={() => void run("stop", () => window.codex.freeGatewayStop(), () => setSuccess("✅ 网关已停止"))}>
+                <button className="secondary-setting" disabled={busy !== ""} onClick={() => void run("stop", () => window.codex.freeGatewayStop(), () => { setSuccess("✅ 网关已停止"); setNotice?.("免费模型网关已停止"); })}>
                   {busy === "stop" ? <Spinner /> : <Square size={13} />}
                   {busy === "stop" ? "停止中…" : "停止"}
                 </button>
@@ -185,6 +185,17 @@ export function FreeGatewayDialog({ onClose, onRegistered }: { onClose: () => vo
                 </button>
               )}
               <button className="icon-button" title="刷新状态" onClick={refresh}><RefreshCw size={14} /></button>
+          {s?.downloaded && (
+            <button className="secondary-setting free-gateway-uninstall-btn" title="卸载网关（停侧车 + 删本体 + 删数据 + 移除已注册供应商）"
+              disabled={busy !== ""}
+              onClick={() => void run("uninstall", async () => {
+                await window.codex.freeGatewayUninstall();
+                try { await window.codex.removeCustomModel("free-gateway"); } catch { /* 未注册时忽略 */ }
+                setNotice?.("免费模型网关已卸载");
+              }, () => setSuccess("✅ 已卸载免费模型网关"))}>
+              <Trash2 size={13} />卸载
+            </button>
+          )}
             </div>
 
             {/* ⛔ 启动成功后引导登录（纪律 ③：不登录 = 只有匿名模型，质量有限） */}

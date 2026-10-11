@@ -666,6 +666,8 @@ contextBridge.exposeInMainWorld("codex", {
   freeGatewayOpenAdmin: () => __ipc("free-gateway:open-admin", 0, []),
   /* 免费模型网关：主进程带 forwardKey 拉 /v1/models（⛔ 渲染层 fetch 会被 CORS 拦） */
   freeGatewayModels: () => __ipc("free-gateway:models", 0, []),
+  /* 免费模型网关：卸载（停侧车 + 删本体 + 删数据目录；供应商注册由渲染层调 custom-model:remove 移除） */
+  freeGatewayUninstall: () => __ipc("free-gateway:uninstall", 0, []),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

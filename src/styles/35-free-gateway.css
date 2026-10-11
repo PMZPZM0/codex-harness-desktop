@@ -95,3 +95,6 @@
 .free-gateway-admin-btn {
   border-color: color-mix(in srgb, var(--accent) 40%, var(--line)) !important;
 }
+/* 卸载按钮（danger 色调提示不可逆） */
+.free-gateway-uninstall-btn { color: var(--red) !important; border-color: color-mix(in srgb, var(--red) 30%, var(--line)) !important; }
+.free-gateway-uninstall-btn:hover { border-color: var(--red) !important; background: color-mix(in srgb, var(--red) 8%, var(--bg)) !important; }

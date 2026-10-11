@@ -106,6 +106,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                       {/* 免费模型网关推荐卡（free-gateway 域，10-12）：第三方开源侧车，⛔ 免责声明是契约（守卫 12c）——
                           自包含组件（本地 state + SettingsDialog），不占 bag；注册走既有 custom-model:save。 */}
                       <FreeGatewayRecommendCard
+                        setNotice={setNotice}
                         registered={providersList.some((p: any) => p.provider === "free-gateway")}
                         onSelect={() => {
                           const fg = providersList.find((p: any) => p.provider === "free-gateway");

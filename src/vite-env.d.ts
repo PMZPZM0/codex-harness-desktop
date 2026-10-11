@@ -1004,6 +1004,8 @@ interface Window {
     freeGatewayOpenAdmin(): Promise<{ url: string; port: number }>;
     /* 免费模型网关：主进程带 forwardKey 拉 /v1/models（⛔ 渲染层 fetch 会被 CORS 拦） */
     freeGatewayModels(): Promise<{ models: string[] }>;
+    /* 免费模型网关：卸载（停侧车 + 删本体 + 删数据目录；供应商注册由渲染层调 custom-model:remove 移除） */
+    freeGatewayUninstall(): Promise<{ ok: boolean }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */

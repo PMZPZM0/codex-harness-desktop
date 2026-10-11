@@ -23,7 +23,7 @@ import type { IpcHost } from "../ipc-host";
 const REPO_ZIP = "https://codeload.github.com/Ebony-Vinyl/dsh-our-free-model/zip/refs/heads/main";
 /** 镜像前缀（空串 = 直连），与 codex-official-market 同序（gh-proxy → ghfast → 直连）。 */
 const MIRRORS = ["https://gh-proxy.com/", "https://ghfast.top/", ""];
-const CHANNELS = ["free-gateway:status", "free-gateway:download", "free-gateway:start", "free-gateway:stop", "free-gateway:open-admin", "free-gateway:models"];
+const CHANNELS = ["free-gateway:status", "free-gateway:download", "free-gateway:start", "free-gateway:stop", "free-gateway:open-admin", "free-gateway:models", "free-gateway:uninstall"];
 /** 生命周期状态（模块级单例；路径一律**运行期**求值 —— ⛔ 模块顶层不许求值 app.getPath）。 */
 let child: ChildProcess | null = null;
 let adminUrl = "";
@@ -267,8 +267,43 @@ export const freeGatewayFeature = defineFeature<null>({
       return { models: ids };
     });
 
+    // 卸载：停侧车 + 删本体 + 删数据目录（供应商注册由渲染层调 custom-model:remove 移除）
+    ipcHost.handle("free-gateway:uninstall", async () => {
+      if (child) { child.kill(); child = null; }
+      let errors: string[] = [];
+      for (const dir of [appDir(), dataDir()]) {
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e: any) { errors.push(e?.message ?? String(e)); }
+      }
+      adminUrl = "";
+      if (errors.length) throw new Error("卸载失败（部分目录被占用）：" + errors.join("；"));
+      return { ok: true };
+    });
+
     // 应用退出时收掉侧车进程（不 detached：随宿主走，避免留孤儿服务占端口）
     app.on("will-quit", () => { try { child?.kill(); } catch { /* 已退出 */ } });
+
+    /* ⛔ 网关跟随应用启停联动（10-12 用户令）：应用启动 → 如果之前用过（settings.json 有
+       forwardKey = 网关曾被启动过）→ 自动启动网关（用户不需要每次手动点「启动网关」）。
+       应用退出 → will-quit 收掉侧车（上面已有）。⛔ 延迟 5 秒 —— 等 userData 重定向完成。 */
+    if (fs.existsSync(markerPath()) && fs.existsSync(settingsPath())) {
+      setTimeout(async () => {
+        try {
+          const port = await pickPort();
+          if (port) { adminUrl = adminUrl || `http://127.0.0.1:${port}/`; return; }
+          const nodeExe = bundledNode() || "node";
+          child = spawn(nodeExe, [markerPath()], {
+            cwd: appDir(),
+            env: { ...process.env, OFM_HOME: dataDir() },
+            stdio: ["ignore", "pipe", "pipe"],
+          });
+          child.stdout?.on("data", (chunk: Buffer) => {
+            const hit = /https?:\/\/127\.0\.0\.1:\d+\/\S*/.exec(String(chunk));
+            if (hit) adminUrl = hit[0];
+          });
+          child.on("exit", () => { child = null; });
+        } catch { /* 静默失败 —— 用户可从模型设置页手动启动 */ }
+      }, 5000);
+    }
 
     ctx.effect(() => {
       for (const ch of CHANNELS) ipcHost.removeHandler(ch);
