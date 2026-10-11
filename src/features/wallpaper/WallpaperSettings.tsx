@@ -157,6 +157,21 @@ export function WallpaperSettingsSection() {
           <span className="wallpaper-opacity-value">{cfg.opacity}%</span>
         </label>
       )}
+      {/* 星野密度比例（用户 10-11「星空加一个比例拉动板块」）：100% = 默认，20%~300% 可调 */}
+      {cfg.mode === "stars" && (
+        <label className="wallpaper-opacity">
+          <span>比例</span>
+          <input
+            type="range"
+            min={20}
+            max={300}
+            step={5}
+            value={cfg.starScale}
+            onChange={(event) => update({ starScale: Number(event.target.value) })}
+          />
+          <span className="wallpaper-opacity-value">{cfg.starScale}%</span>
+        </label>
+      )}
     </>
   );
 }

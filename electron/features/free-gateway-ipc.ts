@@ -300,7 +300,7 @@ export const freeGatewayFeature = defineFeature<null>({
     /* ⛔ 网关跟随应用启停联动（10-12 用户令）：应用启动 → 如果之前用过（settings.json 有
        forwardKey = 网关曾被启动过）→ 自动启动网关（用户不需要每次手动点「启动网关」）。
        应用退出 → will-quit 收掉侧车（上面已有）。⛔ 延迟 5 秒 —— 等 userData 重定向完成。 */
-    if (fs.existsSync(markerPath()) && fs.existsSync(settingsPath())) {
+    if (fs.existsSync(markerPath())) {
       setTimeout(async () => {
         try {
           const port = await pickPort();
@@ -318,6 +318,10 @@ export const freeGatewayFeature = defineFeature<null>({
           child.on("exit", () => { child = null; });
         } catch { /* 静默失败 —— 用户可从模型设置页手动启动 */ }
       }, 5000);
+      // 重试：5s 失败（app 还在初始化）→ 15s 再试一次
+      setTimeout(async () => {
+        try { if (child) return; const port = await pickPort(); if (port) return; const nodeExe = bundledNode() || "node"; child = spawn(nodeExe, [markerPath()], { cwd: appDir(), env: { ...process.env, OFM_HOME: dataDir() }, stdio: ["ignore", "pipe", "pipe"] }); child.on("exit", () => { child = null; }); } catch { /* 静默 */ }
+      }, 15000);
     }
 
     ctx.effect(() => {

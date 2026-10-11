@@ -121,6 +121,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                             if (fg) setCustomDraft({ provider: "free-gateway", name: fg.name, model: fg.model, baseUrl: fg.baseUrl, contextWindow: String(fg.contextWindow ?? 128000), wireApi: "responses" as const, apiKey: "", models: fg.models ?? [], enabled: true });
                           });
                           if (setProviderEnabled) setProviderEnabled("free-gateway", true);
+                          (window as any).__refreshProviders?.();
                         }}
                         onUninstalled={() => removeProvider("free-gateway")}
                       />

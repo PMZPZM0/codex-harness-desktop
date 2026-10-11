@@ -71,10 +71,18 @@ ok(
   "星野跟鼠标动（缓动视差 + 纵深系数）+ 卸载时摘监听（用户 10-11「都要动态星空、跟着鼠标动，不是静态的」）"
 );
 ok(
-  /Math\.max\(120,\s*Math\.min\(1600/.test(layerSrc) && layerSrc.includes("dark ? 1000 : 1600"),
-  "星野密度按面积自适应且有下限（用户 10-11「星空太差了、太少了」——首版 1280×800 才 51 颗，不像星空）"
+  /Math\.max\(120,\s*Math\.min\(3000/.test(layerSrc) && layerSrc.includes("dark ? 1000 : 1600"),
+  "星野密度按面积自适应且有下限（用户 10-11「星空太差了、太少了」——首版 1280×800 才 51 颗，不像星空）；上限 3000 让「比例」滑杆全量程有效（1600 时 300% 会被截）"
 );
 ok(layerSrc.includes("bright") && /Math\.random\(\) < 0\.08/.test(layerSrc), "约 8% 亮星做层次（全是均匀细点看着像噪点、不像星空）");
+ok(
+  settingsSrc.includes('cfg.mode === "stars"') && settingsSrc.includes("starScale") && /min=\{20\}[\s\S]{0,120}?max=\{300\}/.test(settingsSrc),
+  "星空档有「比例」滑杆（20%~300%，默认 100%）—— 用户 10-11「星空加一个比例拉动板块」"
+);
+ok(
+  libSrc.includes("starScale") && layerSrc.includes("scale / 100") && layerSrc.includes("StarfieldPane scale={cfg.starScale}"),
+  "比例真正作用到密度（不是摆设）：密度 = 面积基线 × 比例/100"
+);
 ok(!/const color = accentHex\(\)/.test(particlesSrc) && particlesSrc.includes("useThemeColor()"), "粒子档接上 useThemeColor()（原来那个 hook 是死代码 —— 挂载取一次色，切主题不换色）");
 
 /* ── 接线：挂载 + 设置段 ── */

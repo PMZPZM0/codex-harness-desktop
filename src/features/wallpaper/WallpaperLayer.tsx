@@ -9,7 +9,7 @@ import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { localImageUrl } from "../../lib/image-src.mjs";
 import { isPresetImage, patternMask, presetById, readWallpaper, saveWallpaper, subscribeWallpaper } from "../../lib/wallpaper.mjs";
 
-type WallpaperConfig = { mode: string; pattern: string; opacity: number; image: string };
+type WallpaperConfig = { mode: string; pattern: string; opacity: number; starScale: number; image: string };
 
 // ⛔ tsparticles 必须是 lazy chunk（引擎+插件 ~1MB），不许静态进主包
 const ParticlesPane = lazy(() => import("./ParticlesPane"));
@@ -34,7 +34,7 @@ function readHex(name: string, fallback: string): string {
  *  两档同一套点阵，只换配色与明灭：深色主题 = 浅色星（带缓慢明灭），浅色主题 = 深色点（稳定可见）；
  *  颜色取 `--text`，并监听 `data-theme` 重绘。
  *  运动 = **鼠标视差（近层位移大、远层位移小 ⇒ 纵深）+ 缓速自主漂移**，鼠标不动时也不静止。 */
-function StarfieldPane() {
+function StarfieldPane({ scale }: { scale: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   // 主题变化 ⇒ 递增 key 重绘（canvas 已按旧主题着色，重画是唯一可靠的跟随方式）
   const [themeKey, setThemeKey] = useState(0);
@@ -66,9 +66,9 @@ function StarfieldPane() {
     if (motion) window.addEventListener("mousemove", onMove, { passive: true });
     let stars: { x: number; y: number; r: number; a: number; p: number; d: number }[] = [];
     const seed = () => {
-      // ⛔ 密度按**面积**自适应（换窗口/换屏自动跟上）：10-11 用户报「星空太差了、太少了」
-      //    —— 首版 1280×800 才 51 颗，确实不像星空；现在深色约 1000 颗、浅色约 650 颗（上限 1600 防超大屏卡顿）。
-      const n = Math.max(120, Math.min(1600, Math.round((canvas.width * canvas.height) / (dark ? 1000 : 1600))));
+      // ⛔ 密度按**面积**自适应（换窗口/换屏自动跟上），再乘设置页的「比例」(20%~300%，100 是默认)：
+      //    10-11 用户报「星空太差了、太少了」—— 首版 1280×800 才 51 颗；改后深色约 1000 颗、浅色约 650 颗。
+      const n = Math.max(120, Math.min(3000, Math.round(((canvas.width * canvas.height) / (dark ? 1000 : 1600)) * (scale / 100))));
       stars = Array.from({ length: n }, () => {
         // 约 8% 是"亮星"：又大又亮，其余是背景细星 —— 有层次才像星空
         const bright = Math.random() < 0.08;
@@ -122,7 +122,7 @@ function StarfieldPane() {
       ro.disconnect();
       window.removeEventListener("mousemove", onMove);
     };
-  }, [themeKey]);
+  }, [themeKey, scale]);
   return <canvas ref={ref} className="wallpaper-stars" aria-hidden />;
 }
 
@@ -158,7 +158,7 @@ export function WallpaperLayer() {
         />
       )}
       {mode === "particles" && <Suspense fallback={null}><ParticlesPane /></Suspense>}
-      {mode === "stars" && <StarfieldPane />}
+      {mode === "stars" && <StarfieldPane scale={cfg.starScale} />}
       {mode === "custom" && preset && <div className="wallpaper-custom wallpaper-preset" style={{ backgroundImage: preset.css }} />}
       {mode === "custom" && !preset && cfg.image && (
         <div className="wallpaper-custom" style={{ backgroundImage: `url("${localImageUrl(cfg.image)}")` }} />

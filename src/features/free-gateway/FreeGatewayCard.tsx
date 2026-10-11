@@ -31,7 +31,7 @@ type GatewayStatus = {
 };
 
 /** 供应商列表里的常驻推荐卡（与 PPtoken 推荐卡同一族的观感）。 */
-export function FreeGatewayRecommendCard({ registered, onSelect, setNotice, onUninstalled }: { registered?: boolean; onSelect?: () => void; onRegistered?: () => void; setNotice?: (msg: string) => void; onUninstalled?: () => void } = {}) {
+export function FreeGatewayRecommendCard({ registered, onSelect, setNotice, onUninstalled, onRegistered }: { registered?: boolean; onSelect?: () => void; onRegistered?: () => void; setNotice?: (msg: string) => void; onUninstalled?: () => void } = {}) {
   const [open, setOpen] = useState(false);
   const [managing, setManaging] = useState(false);
   return (
@@ -127,6 +127,7 @@ export function FreeGatewayDialog({ onClose, onRegistered, setNotice, onUninstal
         models: ids.map((id) => ({ id, contextWindow: 128000 })),
       });
       setSuccess(`✅ 已注册「免费模型网关」供应商（${ids.length} 个模型），正在为你选中…`);
+      (window as any).__refreshProviders?.(); // 刷新左侧供应商列表（useModelProviders 暴露）
       setTimeout(() => { onClose(); onRegistered?.(); }, 1000);
     } catch (e: any) {
       setError(String(e?.message ?? e));

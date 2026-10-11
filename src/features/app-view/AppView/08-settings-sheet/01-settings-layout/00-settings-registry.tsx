@@ -250,7 +250,6 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
     expertMarketOpen,
     setExpertMarketOpen,
     refreshExpertCenterData,
-    refreshActive,
     refreshCommands,
     refreshExpertTeams,
     refreshMarketSkills,

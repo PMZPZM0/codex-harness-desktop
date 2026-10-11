@@ -78,8 +78,11 @@ export function normalizeWallpaper(raw) {
   const pattern = WALLPAPER_PATTERNS.some((p) => p.id === r.pattern) ? r.pattern : "dots";
   const opacityNum = Number(r.opacity);
   const opacity = Number.isFinite(opacityNum) ? Math.min(40, Math.max(2, Math.round(opacityNum))) : 16;
+  // 星野密度比例（100 = 默认）。20%~300% —— 用户 10-11「星空加一个比例拉动板块」。
+  const scaleNum = Number(r.starScale);
+  const starScale = Number.isFinite(scaleNum) ? Math.min(300, Math.max(20, Math.round(scaleNum))) : 100;
   const image = typeof r.image === "string" ? r.image : "";
-  return { mode, pattern, opacity, image };
+  return { mode, pattern, opacity, starScale, image };
 }
 
 export function readWallpaper() {
