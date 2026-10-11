@@ -345,12 +345,13 @@ bag.earlyView = earlyView as typeof bag.earlyView;
   // 已挪去标题最前）：右栏关闭时嵌在
   // topbar 右端、开启时嵌在右栏顶条右端——两处都紧贴右上角原生窗口钮，且都是
   // 拖拽容器的【子元素】（no-drag 豁免），fixed 悬浮层会被拖拽区吞掉点击（实测）。
+  // ⛔ 10-11：🔍 与调度**独立弹窗里也渲染**（此前弹窗分支把整簇换成只剩「返回主应用」，
+  //    用户报「弹窗里少了两个图标」）—— 所以它们在这条三元之外，别再加回分支里。
   const topbarActionsNode = (
     <>
-      {bag.popoutThreadId ? (
-        <button className="icon-button popout-return-btn" title="返回主应用（关闭本独立窗口）" onClick={() => void window.codex.popoutClose(bag.thread?.id ?? null)}><Minimize2 size={16} /></button>
-      ) : (
-        <>
+      {/* ⛔ 顶栏操作簇顺序：🔍 搜索 → 调度开关 → 「独立弹窗 / 返回主应用」→ ⋯ 任务菜单 → 右栏开关。
+          🔍 与调度 **主窗口与独立弹窗都渲染**（10-11 用户报「独立弹窗里少了两个图标」）；
+          只有最右那个按钮按窗口类型二选一（弹窗里是「返回主应用」）。 */}
           {/* 当前会话搜索（09-24）：顶栏 🔍 打开搜索条。只搜当前会话的消息，点结果跳到那条消息。 */}
           <div className="history-search-wrap">
             <button
@@ -443,9 +444,11 @@ bag.earlyView = earlyView as typeof bag.earlyView;
             restrictedLabel={bag.threadRole.restricted ? (bag.threadRole.label ?? "专家 / 专家团") : null}
             onChange={(next, opts) => { void bag.applyDispatch(next, opts); }}
           />
-          <button className="icon-button popout-open-btn ic-violet" title="独立会话弹窗：把当前会话开到新窗口（可拖出应用外，支持多个同时存在）" disabled={!bag.thread} onClick={() => { if (bag.thread) void bag.popoutCurrentThread(bag.thread.id); }}><Maximize2 size={16} /></button>
-        </>
-      )}
+          {bag.popoutThreadId ? (
+            <button className="icon-button popout-return-btn" title="返回主应用（关闭本独立窗口）" onClick={() => void window.codex.popoutClose(bag.thread?.id ?? null)}><Minimize2 size={16} /></button>
+          ) : (
+            <button className="icon-button popout-open-btn ic-violet" title="独立会话弹窗：把当前会话开到新窗口（可拖出应用外，支持多个同时存在）" disabled={!bag.thread} onClick={() => { if (bag.thread) void bag.popoutCurrentThread(bag.thread.id); }}><Maximize2 size={16} /></button>
+          )}
         {/* ⛔ 工作区 📁（.ctx-picker）10-06 夜七轮已挪去**标题最前**（AppView.tsx 的 .task-title）——
             用户令「把文件图标放到最前面」。挪走后：窄屏隐藏规则与守卫【250】覆盖率清单都跟着改到
             .task-title 前缀；不许再加回这个操作簇（会与标题前的那个重复）。 */}

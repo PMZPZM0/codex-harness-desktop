@@ -663,8 +663,23 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       ? ok("★ 调度开关唯一渲染点＝顶栏（App.tsx 里只有一处 <DispatchMenu topbar>）")
       : fail(`调度开关渲染点 ${dispatchEntry9} 处 / 未用 topbar 变体 —— 双入口会让「在哪开」说不清`);
     /顶栏/.test(dpSrc9) && !/输入框的调度开关/.test(dpSrc9)
-      ? ok("★ L3 拒绝文案指向真实入口（顶栏调度开关）")
-      : fail("调度权限恢复文案未指向顶栏 —— 开关只在顶栏渲染，用户找不到");
+      ? ok("★ L3 拒绝文案指向真实入口（顶栏调度开关）")      : fail("调度权限恢复文案未指向顶栏 —— 开关只在顶栏渲染，用户找不到");
+    /* ⛔ 10-11 用户报「独立弹窗里少了两个图标」⇒ 🔍 搜索与调度开关改为**主窗口与独立弹窗都渲染**
+       （此前弹窗分支把整簇换成只剩「返回主应用」）。判据打在**位置关系**上：这两处必须在
+       弹窗三元 `{bag.popoutThreadId ? (` **之外** —— 放回分支里就又会只剩一个按钮。
+       ⛔ 顺序类断言先确认两个锚都在，别被 `indexOf` 的 -1 骗成恒真（本仓踩过这个假绿形态）。
+       ⛔ 这里读**该文件原文**而不是 `readAppUi()`：聚合器对 `app-state/parts/**` 会剥掉 `bag.` 前缀
+          （见 `_ctx.mjs` 的说明），带前缀的字面量在聚合面上永远匹配不到 —— 位置类断言本就该锚本文件。 */
+    const seg09 = codeOnly(readFileSync(join(ROOT, "src/features/app-state/parts/part09/02-seg.tsx"), "utf8"));
+    const ternIdx9 = seg09.indexOf("{bag.popoutThreadId ? (");
+    const searchIdx9 = seg09.indexOf('className="history-search-wrap"');
+    const dispatchIdx9 = seg09.indexOf("<DispatchMenu");
+    ternIdx9 > 0 && searchIdx9 > 0 && dispatchIdx9 > 0 && searchIdx9 < ternIdx9 && dispatchIdx9 < ternIdx9
+      ? ok("★ 🔍 搜索与调度开关在弹窗三元**之外**（两个窗口都渲染）")
+      : fail("搜索/调度又回到 popout 分支里了 —— 独立弹窗会只剩「返回主应用」");
+    /bag\.popoutThreadId \? \(\s*<button className="icon-button popout-return-btn"[\s\S]{0,400}?popout-open-btn/.test(seg09)
+      ? ok("★ 弹窗三元只二选一「返回主应用 / 独立弹窗」两个按钮（别的按钮别塞回分支里）")
+      : fail("弹窗三元里塞了别的按钮 —— 两个窗口的顶栏会不一致");
     !dp.canDispatchFrom({ depth: dp.MAX_DEPTH }).ok
       ? ok(`L3 深度闸：depth >= MAX_DEPTH(${dp.MAX_DEPTH}) 拒绝`)
       : fail("深度闸失效 —— 调用链可以无限延长");
