@@ -13,7 +13,7 @@
  *      一键注册前必须引导用户先登录渠道账号（否则注册了也用不了好模型）；
  *   ④ 一键注册要有 Spinner + 成功状态 + 延迟关弹窗（不许闪关没反馈）。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CircleCheck, Download, ExternalLink, Play, RefreshCw, ShieldAlert, Square, Store, Trash2 } from "lucide-react";
 import { SettingsDialog } from "../../components/SettingsDialog";
@@ -84,6 +84,18 @@ export function FreeGatewayDialog({ onClose, onRegistered, setNotice }: { onClos
       .catch((e) => { setError(String(e?.message ?? e)); setStatusLoading(false); });
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
+  /* ⛔ 自动启动兜底：对话框打开 → status 回来 → 已下载但未运行 → 自动拉起网关。
+     domain 的 5s 延迟启动可能因 userData 路径时序静默失败 —— 这是第二道保底。 */
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (statusLoading || !status || autoStartedRef.current || busy) return;
+    if (status.downloaded && !status.running && status.hasForwardKey) {
+      autoStartedRef.current = true;
+      void window.codex.freeGatewayStart()
+        .then(() => { setSuccess("✅ 网关已自动启动（跟随应用）"); refresh(); })
+        .catch(() => { autoStartedRef.current = false; /* 失败允许重试 */ });
+    }
+  }, [statusLoading, status, busy, refresh]);
   /* 下载/解压期间轮询状态（500ms）—— 进度条与阶段文案的实时数据源 */
   useEffect(() => {
     if (!status?.stage) return;
@@ -168,7 +180,7 @@ export function FreeGatewayDialog({ onClose, onRegistered, setNotice }: { onClos
                 </button>
               )}
               {s.running && (
-                <button className="secondary-setting" disabled={busy !== ""} onClick={() => void run("stop", () => window.codex.freeGatewayStop(), () => { setSuccess("✅ 网关已停止"); setNotice?.("免费模型网关已停止"); })}>
+                <button className="secondary-setting" disabled={busy !== ""} onClick={() => void run("stop", () => window.codex.freeGatewayStop(), () => { setSuccess("✅ 网关已停止"); setNotice?.("免费模型网关已停止"); autoStartedRef.current = false; })}>
                   {busy === "stop" ? <Spinner /> : <Square size={13} />}
                   {busy === "stop" ? "停止中…" : "停止"}
                 </button>

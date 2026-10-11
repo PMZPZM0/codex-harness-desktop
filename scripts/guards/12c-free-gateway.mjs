@@ -47,7 +47,7 @@ for (const ch of ["status", "download", "start", "stop", "open-admin", "models"]
   ok(manifest.includes(`"channel": "free-gateway:${ch}"`) && domain.includes(`"free-gateway:${ch}"`),
     `通道 free-gateway:${ch} 在 manifest 与域两侧都在`);
 }
-ok(/prefix: "free-gateway", count: 6,/.test(registry) && /file: "features\/free-gateway-ipc\.ts"/.test(registry),
+ok(/prefix: "free-gateway", count: 7,/.test(registry) && /file: "features\/free-gateway-ipc\.ts"/.test(registry),
   "ipc-registry 账本登记（count 6 + 域文件指向）");
 ok(/"id": "free-gateway"/.test(composition) && /"export": "freeGatewayFeature"/.test(composition),
   "composition.json 域组合表登记（域不自挂，由组合层挂载）");
