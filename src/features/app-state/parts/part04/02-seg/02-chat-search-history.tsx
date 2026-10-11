@@ -176,6 +176,17 @@ export function usePart04b2(bag: Bag) {
   const [chatSearchOpen, setChatSearchOpen] = useState(false);
 bag.chatSearchOpen = chatSearchOpen as typeof bag.chatSearchOpen; bag.setChatSearchOpen = setChatSearchOpen as typeof bag.setChatSearchOpen;
 
+  /* ⛔ 缩到最窄档（≤640px）时顶栏 🔍 会被 CSS 隐藏（10-11 用户令「这一排图标按窗口大小自适应隐藏，
+     搜索也一起收」）⇒ 必须**同时逻辑关掉状态**：只藏按钮而面板还开着，用户就再也点不掉它
+     （与 `.ctx-menu` 同款死角，守卫【250】钉的那条范式）。 */
+  useEffect(() => {
+    const NARROW = window.matchMedia("(width<=640px)");
+    if (NARROW.matches) { setChatSearchOpen(false); return; }
+    const onChange = (event: MediaQueryListEvent) => { if (event.matches) setChatSearchOpen(false); };
+    NARROW.addEventListener("change", onChange);
+    return () => NARROW.removeEventListener("change", onChange);
+  }, [chatSearchOpen]);
+
   const [chatSearchQuery, setChatSearchQuery] = useState("");
 bag.chatSearchQuery = chatSearchQuery as typeof bag.chatSearchQuery; bag.setChatSearchQuery = setChatSearchQuery as typeof bag.setChatSearchQuery;
 

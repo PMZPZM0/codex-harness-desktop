@@ -1095,15 +1095,24 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
        ⛔ 一律过 codeOnly：part09 里现在有一段「已挪走、别加回」的注释提到 .ctx-picker，
        裸读会把注释当 JSX（负向断言当场假红 —— 项目方法论第 4 条同款坑）。 */
     const appViewJsx250 = codeOnly(readFileSync(join(ROOT, "src/features/app-view/AppView.tsx"), "utf8"));
-    /*⛔⛔ 10-04 用户改判：**搜索（.history-search-wrap）豁免，不进任何断点**。
-       原判据（10-03）把它与"目标进程"同列 —— 但那是两个完全不同的功能：
-       搜索搜当前会话的消息，是高频且**无替代入口**（快捷键不等于可发现性）；
-       目标是低频辅助。⇒豁免必须写进断言，否则下一个人又会"顺手"把它加回断点。
-
-       豁免机制：EXEMPT 里的是**"必须不出现在任何断点里"**的控件
-       （出现即fail —— 防止"当年那个决定又回来了"）。 */
-    const EXEMPT_250 = ["history-search-wrap"];
-    const CONTAINERS = ["ctx-picker", "task-menu-wrap"];
+    /* ⛔⛔ 10-11 用户**改判**（原话「这一排图标要根据窗口大小自适应隐藏，主界面上面这一排和
+       独立弹窗这一排都要自适应隐藏」+ 追问「搜索也一起收」）：
+       · 搜索（.history-search-wrap）**进最窄档 ≤640** —— 10-04 那条「豁免、不进任何断点」
+         就此作废（原理由是"无替代入口"；Ctrl+Shift+F 仍在，用户接受）；
+       · 调度（.dispatch-topbar-btn）此前**任何断点里都没有**（09-13 只列了当时存在的按钮）⇒ 补进 ≤860。
+       ⛔ 两条都必须"CSS 收按钮 + 逻辑关状态"成对：只靠 CSS 会留下「按钮没了 ⇒ 浮层点不掉」的死角。 */
+    const searchSrc250 = readFileSync(join(ROOT, "src/features/app-state/parts/part04/02-seg/02-chat-search-history.tsx"), "utf8");
+    (/@media \(width<=640px\)[\s\S]*?\.topbar-actions \.history-search-wrap,[\s\S]{0,160}?\.history-search-panel[\s\S]{0,120}?display: none/.test(topbarCss250)
+      && /matchMedia\("\(width<=640px\)"\)/.test(searchSrc250) && /setChatSearchOpen\(false\)/.test(searchSrc250) ? ok : fail)(
+      "【250】搜索在 ≤640 最窄档：CSS 连按钮与 portal 浮层一起收 **且** 逻辑关掉面板（10-11 用户令；只靠 CSS = 点不掉的死角）"
+    );
+    (/^\s*\.topbar-actions \.dispatch-topbar-btn\s*[,{]/m.test(topbarCss250) ? ok : fail)(
+      "【250】调度开关（.dispatch-topbar-btn）必须落在某个断点里（10-11：它此前一直漏在档外，用户报「窄了也不隐藏」）"
+    );
+    /* 覆盖名单（**每个控件都必须落在某个断点里**）：10-11 起把调度与搜索也纳入 ——
+       搜索此前被"豁免"（10-04 口径），用户 10-11 改判后不再有豁免项。
+       ⛔ 判据 = 它自己那一行选择器（行首锚定），不是"文件里出现过这个串"（本仓踩过这个假绿）。 */
+    const CONTAINERS = ["ctx-picker", "task-menu-wrap", "dispatch-topbar-btn", "history-search-wrap"];
     const uncovered = CONTAINERS.filter((c) => {
       const inJsx = topbarJsx250.includes(c) || appViewJsx250.includes(c);
       if (!inJsx) return false;                       // 已从 JSX 移除 ⇒ 不用管
@@ -1112,17 +1121,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       const ownLine = new RegExp("^\\s*\\.(?:topbar-actions|task-title)\\s+\\." + c + "\\s*[,{]", "m");
       return !ownLine.test(topbarCss250);
     });
-    // ⛔ 豁免控件若被人加回断点 ⇒ fail（这条是"不许回退"的防线）
-    const reExempted = EXEMPT_250.filter((c) => {
-      const inJsx = topbarJsx250.includes(c);
-      if (!inJsx) return false;
-      const ownLine = new RegExp("^\\s*\\.topbar-actions\\s+\\." + c + "\\s*[,{]", "m");
-      return ownLine.test(topbarCss250);
-    });
-    (reExempted.length === 0 ? ok : fail)(
-      `【250】豁免控件不得回到断点里（${EXEMPT_250.join("、")}）—— `
-        + `被加回：${reExempted.join("、") || "无"}；`
-        + `⚠️ 搜索无替代入口，用户 10-04 明确要求无条件显示，别按旧判据"顺手"收进窄屏档`
+    (uncovered.length === 0 ? ok : fail)(
+      `【250】顶栏控件覆盖率：每个控件都必须落在某个断点里（缺：${uncovered.join("、") || "无"}）—— `
+        + `09-13 那套只列了当时存在的按钮，新增控件会静默漏在档外（10-03 用户截图即此因）`
     );
 
     /* 10-06 夜七轮（用户截图圈出右侧 📁 并令「把文件图标放到最前面」+「标题长度固定，太长省略」）：
@@ -1170,13 +1171,11 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       `【250】顶栏新增控件必须补进断点（漏：${uncovered.join("、") || "无"}）`
     );
     // 目标进程按钮是 .task-menu-wrap 的**孩子**，父容器藏了它自然一起藏；单独钉它不存在反而是错的
-    // ⛔⛔ 10-04 用户改判：这条断言**整条废弃**。它原来要求"搜索🔍 必须在 <=980px 被隐藏"
-    //   （10-03 的判断），而用户 10-04 明确指出搜索与调度是两个不同功能、搜索必须无条件显示
-    //   （它搜当前会话的消息，是高频且无替代入口）。⇒ 反向断言已加在上面的 EXEMPT_250 里。
-    //   保留一条反向检查：搜索**不得**出现在 <=980px 那条断点规则里（防止旧判据复活）。
-    (/^\s*\.topbar-actions \.history-search-wrap\s*,?$/m.test(topbarCss250) ? fail : ok)(
-      "【250】搜索🔍 不得回到 <=980px 档的隐藏规则里（10-04 用户改判：无条件显示，它与调度是两个功能）"
-    );
+    // ⛔⛔ 10-11 用户再次改判（第三条口径，以本条为准）：原先这里有一条"搜索🔍 必须**不**出现在
+    //   断点里"的反向断言（10-04 定的"无条件显示"）。用户 10-11 令「这一排图标要根据窗口大小
+    //   自适应隐藏」+ 追问「搜索也一起收」⇒ 那条反向断言**整条删除**（留着会把新实现判红）。
+    //   现在的正向要求在上面：搜索必须落在 **≤640 最窄档**，且与逻辑关状态成对。
+    //   ⛔ 历史脉络（别再回退）：10-03 要求 980px 藏 → 10-04 改判"无条件显示" → 10-11 改判"最窄档藏"。
 
     const botChan250 = readFileSync(join(ROOT, "src/features/app-state/parts/part03/01-remote-bot-pin/01-bot-remote-channel.tsx"), "utf8");
     (/matchMedia\("\(width<=980px\)"\)/.test(botChan250) && /taskMenuOpen\)[\s\S]{0,400}setTaskMenuOpen\(false\)/.test(botChan250) ? ok : fail)(
