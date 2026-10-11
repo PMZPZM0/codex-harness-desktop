@@ -6,8 +6,33 @@
 import "@xterm/xterm/css/xterm.css";
 import { isRateLimitError } from "../../../../../lib/rate-limit-retry";
 import { contentOffsetTop, jumpToBottom, scrollToOffsetInstant } from "../../../../../components/scroll-utils";
-import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
+import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror, releaseTurnOverlays } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
+
+/**
+ * 回合结束（完成 / 失败 / 被中止 / 被中断）⇒ 把「等用户操作」的覆盖层一起收掉（10-11）。
+ *
+ * ⛔ 用户报障：手动停止后审批卡与询问卡留在界面上。根因是**这两块覆盖层原先没有任何"回合结束"的
+ *    清理路径** —— 它们只在用户自己点「允许/拒绝/提交」或按 ESC 时才消失。
+ *    单靠停止按钮那一处收口不够：**引擎侧中止**（超时 / 内部错误）、**手机端与语音打断**
+ *    都是主进程直接发 `turn/interrupt`、根本不经过渲染层的 `interrupt()`，
+ *    所以这里（所有回合结束事件的汇合处）才是真正的兜底。
+ *
+ * ⛔ `includeUnattributed` 只在「结束的就是用户正看着的这个会话」时为真：legacy 的
+ *    `execCommandApproval` / `applyPatchApproval` 参数里**没有** threadId（只有 conversationId，
+ *    见 codex-schema），那种卡在界面上是当前视图的一份；后台会话结束时不该去动它。
+ */
+function releaseOverlaysOf(bag: Bag, threadId: string) {
+  releaseTurnOverlays({
+    threadId,
+    pending: bag.pending,
+    agentAsk: bag.agentAsk,
+    includeUnattributed: String(threadId) === String(bag.threadRef.current?.id ?? ""),
+    respond: (id, payload) => window.codex.respond(id, payload),
+    clearPending: (ids) => bag.setPending((current) => current.filter((request) => !ids.includes(request.id))),
+    clearAsk: () => bag.setAgentAsk(null),
+  });
+}
 
 export function handleEventRouter3(bag: Bag, event: any, params: any): boolean {
         const method0 = event.method ?? "";
@@ -64,6 +89,10 @@ export function handleEventRouter3(bag: Bag, event: any, params: any): boolean {
           // 位置刻意放在**跨会话**这一段：后台会话跑完也要记进它自己的状态（各自独立）。
           bag.bumpMood(params.threadId, "turn-ok");
           bag.markThreadStopped(params.threadId);
+          // 回合收尾 ⇒ 覆盖层不该再留着（引擎可能自己把请求解决了 —— 例如
+          // `item/tool/requestUserInput` 带 autoResolutionMs 自动作答后继续跑完这一回合，
+          // 而渲染层收不到"已解决"的信号 ⇒ 卡会一直挂在输入框上方）。
+          releaseOverlaysOf(bag, String(params.threadId ?? ""));
           // ⛔⛔ 09-19 用户实测「消息发出去立马切走 → 显示绿点 → 切回来 agent 回复没了」：
           //   根因是**后台会话的回复内容从来不落缓存** —— 落缓存的两条链路（流式 delta 的
           //   applyThreadEvent + turn/completed 的 mergeTurn）都在下面 threadId 过滤**之后**，
@@ -169,6 +198,13 @@ export function handleEventRouter3(bag: Bag, event: any, params: any): boolean {
           //   （`params.threadId !== threadRef.current?.id → return`），后台会话的完成事件
           //   走不到那里 —— 第一版把点亮挂在那边，真机验收当场红（绿点永不出现）。
           if (!params.threadId || params.threadId !== bag.threadRef.current?.id) bag.markThreadDoneUnread(params.threadId);
+          // ★ 10-11 兜底：被中断/失败/中止的回合，界面上「等用户操作」的覆盖层（询问卡 / 审批卡）
+          //   必须跟着消失 —— 它们是阻塞式的，回合都没了就没有"答复"的语义了。
+          //   ⛔ 这条路径覆盖**停止按钮之外**的所有结束方式：引擎侧中止、手机端停止、语音打断
+          //      （主进程直接 turn/interrupt，不经过渲染层的 interrupt()）。
+          //   ⛔ 位置放在绿点点亮的**后面**：`【60】` 锚的是 `markThreadStopped` 与绿点那段相邻代码，
+          //      插在中间会打断别人的守卫（实测踩过：check 从 19 项基线变 20 项）。
+          releaseOverlaysOf(bag, String(params.threadId ?? ""));
           // 失败/被中断的回合也要落缓存（同 turn/completed 的修复）：部分回复同样是用户的
           // 可见内容，切走期间同样拿不到流式事件 —— 不落缓存则切回即丢。
           // ⛔ 与 turn/completed 同一条规则：**只有缓存里已有该回合时才合并**；缓存缺这一轮就

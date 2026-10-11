@@ -34,3 +34,4 @@ export { parseTeamMemberTitle, groupThreadsByTime, collectMessageTexts, locateMa
 export { collectKnownPaths, usageCounterSnapshot, toFileUrl } from "./helpers/paths";
 export { createInlineAttachmentChip, armSendAnimationClaim, jumpToTurn, revealStepFor } from "./helpers/view-dom";
 export { ToolCard, RequestCard, VoiceSettingsBridge, VoiceCallNoticeBridge, VoiceAnnounceNoticeBridge } from "./helpers/components";
+export { releaseTurnOverlays } from "./helpers/turn-overlays";
