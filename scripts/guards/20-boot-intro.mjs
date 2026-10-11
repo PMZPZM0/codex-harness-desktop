@@ -125,6 +125,12 @@ ok(
   "index.html 首帧：读 boot-intro 键 ⇒ setAttribute 打 data-boot-intro ⇒ 底色用动画自己的 #050403（断言锚代码形态，不锚注释）"
 );
 ok(html.includes('get("pet") === "1"') && html.includes("prefers-reduced-motion"), "首帧判定也带宠物浮窗与减弱动效（否则透明窗上会闪一块黑）");
+/* ⛔⛔ 首帧内联脚本**必须与 shouldPlayBootIntro 逐条一致** —— 它比 React 闸门早，
+   漏一条的后果是"还没轮到闸门就已经画错了"。实测事故：漏了独立会话弹窗 ⇒
+   点开花出去的会话窗口**先黑一下**（首帧被涂成动画底色 #050403），而 React 那侧早就改对了。
+   ⛔ 判据要打到**代码形态**（`!isPet && !isPopout` 这个合取式）—— 只查"出现过 popout"会命中注释。 */
+ok(html.includes('new URLSearchParams(location.search).has("popout")') && /!isPet\s*&&\s*!isPopout/.test(html),
+  "首帧判定也排除**独立会话弹窗**（漏了就是「点弹窗先黑一下」，React 闸门救不回来）");
 ok(
   css.includes("position: fixed") && css.includes("z-index: 9999") && /\.boot550c-host\s*\{[^}]*background:\s*#050403/.test(css),
   "宿主 .boot550c-host 固定定位 + z-index 9999（压过主界面 / 设置 / 画布 / 模态）+ 底色与动画同色（内容未塞进去的那一瞬也不透出主界面）"

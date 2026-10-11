@@ -54,13 +54,18 @@
         /* ⛔ 550C 开机动画档位（默认 full）：开启时首帧只用**动画自己的底色**占屏，
            不显示 logo/文案，避免先闪一眼白底启动页再跳黑（上游同款口径：「首帧是一块纯色」）。
            档位键与 src/lib/boot-intro.mjs 的 BOOT_INTRO_STORAGE_KEY 同源；这里内联脚本
-           不能用 import，所以是写死的同名字面量。判定与 shouldPlayBootIntro 一致：
-           关闭档 / 减弱动效 / 宠物浮窗 都回落既有启动页。 */
+           不能用 import，所以是写死的同名字面量。判定必须与 shouldPlayBootIntro **逐条一致**：
+           关闭档 / 减弱动效 / 宠物浮窗 / **独立会话弹窗** 四者都回落既有启动页。
+           ⛔⛔ 漏掉"独立会话弹窗"的后果是**首帧就黑一下**：弹窗本不该播片头，却在首帧被涂上
+             动画底色 #050403（React 闸门改得再对也来不及 —— 它比内联脚本晚）。用户实测报过
+             「点对话框的独立弹窗现在还是会黑一下，之前都不会」。 */
         try {
           var bi = localStorage.getItem("boot-intro");
           var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
           var isPet = new URLSearchParams(location.search).get("pet") === "1";
-          if (bi !== "off" && !reduced && !isPet) {
+          /* ⛔ 只认参数在不在：`?popout=` 空值也是分出去的窗口（与 BootIntroGate 同口径）。 */
+          var isPopout = new URLSearchParams(location.search).has("popout");
+          if (bi !== "off" && !reduced && !isPet && !isPopout) {
             document.documentElement.setAttribute("data-boot-intro", "1");
           }
         } catch (e) { /* 忽略：读不到就走既有启动页 */ }
