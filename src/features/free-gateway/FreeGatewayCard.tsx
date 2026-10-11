@@ -204,6 +204,7 @@ export function FreeGatewayDialog({ onClose, onRegistered, setNotice, onUninstal
               onClick={() => void run("uninstall", async () => {
                 await window.codex.freeGatewayUninstall();
                 try { await window.codex.removeCustomModel("free-gateway"); } catch { /* 未注册时忽略 */ }
+                (window as any).__refreshProviders?.(); // 卸载后刷新供应商列表
                 setNotice?.("免费模型网关已卸载（供应商已从列表移除）");
                 onUninstalled?.();
               }, () => setSuccess("✅ 已卸载免费模型网关"))}>
@@ -235,6 +236,7 @@ export function FreeGatewayDialog({ onClose, onRegistered, setNotice, onUninstal
                     <li className="ok">✓ 文字对话、问答</li>
                     <li className="bad">✗ 工具调用（搜索 / 文件 / 命令 / 浏览器）</li>
                     <li className="bad">✗ 思考 / 推理过程</li>
+                    <li className="bad">✗ 重启后消息消失（rollout 不持久化）</li>
                   </ul>
                   <small>模型名带 <code>-free</code> 后缀的属于这一档 —— 这是上游免费通道的固有限制，<strong>不是本软件的 bug</strong>。</small>
                 </div>
