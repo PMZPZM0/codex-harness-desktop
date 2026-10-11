@@ -224,6 +224,32 @@ export function FreeGatewayDialog({ onClose, onRegistered, setNotice, onUninstal
             {success && <p className="free-gateway-msg">{success}</p>}
             {(error || s.stageError || s.lastStartError) && <p className="free-gateway-error">{error || s.stageError || s.lastStartError}</p>}
             <p className="free-gateway-note">使用顺序：下载本体 → 启动网关 → 打开管理台登录你想用的渠道账号 → 回这里「一键注册为供应商」→ 到左侧供应商列表选模型。保持网关运行，模型才可用。</p>
+
+            {/* ⛔ 模型能力边界说明（用户令：写清楚别让人以为是软件问题）—— 填满弹窗空白区域 */}
+            <div className="free-gateway-caps">
+              <div className="free-gateway-caps-head"><Store size={13} /><strong>模型能力边界（重要）</strong></div>
+              <div className="free-gateway-caps-grid">
+                <div className="free-gateway-caps-tier">
+                  <div className="free-gateway-caps-label"><span className="free-gateway-caps-tag free">免登录</span>匿名免费模型</div>
+                  <ul>
+                    <li className="ok">✓ 文字对话、问答</li>
+                    <li className="bad">✗ 工具调用（搜索 / 文件 / 命令 / 浏览器）</li>
+                    <li className="bad">✗ 思考 / 推理过程</li>
+                  </ul>
+                  <small>模型名带 <code>-free</code> 后缀的属于这一档 —— 这是上游免费通道的固有限制，<strong>不是本软件的 bug</strong>。</small>
+                </div>
+                <div className="free-gateway-caps-tier">
+                  <div className="free-gateway-caps-label"><span className="free-gateway-caps-tag full">需登录</span>渠道完整模型</div>
+                  <ul>
+                    <li className="ok">✓ 文字对话、问答</li>
+                    <li className="ok">✓ 工具调用（搜索 / 文件 / 命令 / 浏览器）</li>
+                    <li className="ok">✓ 思考 / 推理过程</li>
+                  </ul>
+                  <small>在上方<b>管理台</b>登录 CodeBuddy / TRAE / Qoder 等渠道账号后解锁 —— 登录谁的账号就用谁的免费额度。</small>
+                </div>
+              </div>
+              <p className="free-gateway-caps-foot">结论：匿名免费模型只能打字聊天。<strong>要工具调用和思考，必须先去管理台登录渠道账号</strong>，注册后选不带 <code>-free</code> 后缀的模型。这是上游免费通道的能力边界，与本软件无关。</p>
+            </div>
           </>
         )}
       </div>
