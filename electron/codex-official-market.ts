@@ -28,6 +28,7 @@ import { net } from "electron";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { GH_MIRROR_PREFIXES } from "./gh-mirror";
 import { OFFICIAL_CATALOG_GENERATED_AT, OFFICIAL_PLUGIN_CATALOG } from "./codex-official-catalog.gen";
 
 const GH_OWNER = "openai";
@@ -37,8 +38,8 @@ const GH_RAW_BASE = `https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${
 const GH_API_TREE = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/git/trees/${GH_BRANCH}?recursive=1`;
 const MARKET_MANIFEST = ".agents/plugins/marketplace.json";
 const API_MANIFEST = ".agents/plugins/api_marketplace.json";
-/** 镜像前缀（空串 = 直连）。顺序即实测可用性，改动前先确认本机还通。 */
-const MIRROR_PREFIXES = ["https://gh-proxy.com/", "https://ghfast.top/", ""];
+/** 镜像前缀（空串 = 直连）：单一真相源在 ./gh-mirror（10-11 收敛，顺序 gh-proxy → ghfast → 直连）。 */
+const MIRROR_PREFIXES = GH_MIRROR_PREFIXES;
 const MARKET_SOURCE_LABEL = "Codex 官方";
 /** ⛔ 上限不是拍脑袋：上游 zoom 单插件就有 795 个文件，沿用 codex-market 的 300 会直接拒装 4 个合法插件 */
 const MAX_FILES = 1_200;
