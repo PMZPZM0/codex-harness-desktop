@@ -72,7 +72,9 @@ const initEngine = async (engine: Engine): Promise<void> => {
 };
 
 const ParticlesPane: FC = () => {
-  const color = accentHex();
+  // ⛔ 挂载时取一次（accentHex()）会让切主题后粒子仍是旧色 —— 那个 useThemeColor hook 早就写好了，
+  //    但一直没人用（10-11 用户实测「有些没做主题色适配」时翻出来的死代码）。这里接上。
+  const color = useThemeColor();
   return (
     <ParticlesProvider init={initEngine}>
       <ParticlesInner color={color} />

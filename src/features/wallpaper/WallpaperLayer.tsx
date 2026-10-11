@@ -14,11 +14,46 @@ type WallpaperConfig = { mode: string; pattern: string; opacity: number; image: 
 // ⛔ 两个动效引擎都必须是 lazy chunk：tsparticles（引擎+插件 ~1MB）、vanta+three（~700KB）
 const ParticlesPane = lazy(() => import("./ParticlesPane"));
 
+/** 主题主色转 hex（vanta 只吃具体色值，不吃 CSS 变量）。 */
+function readHex(name: string, fallback: string): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return /^#[0-9a-fA-F]{3,8}$/.test(v) ? v : fallback;
+}
+
+/** 两个 hex 按比例混合（ratioB = b 的占比）。3 位缩写先展成 6 位。 */
+function mixHex(a: string, b: string, ratioB: number): string {
+  const six = (h: string) => (h.length === 4 ? "#" + h[1] + h[1] + h[2] + h[2] + h[3] + h[3] : h);
+  const ch = (h: string, i: number) => parseInt(six(h).slice(1 + i * 2, 3 + i * 2), 16);
+  const out = [0, 1, 2].map((i) => Math.round(ch(a, i) * (1 - ratioB) + ch(b, i) * ratioB));
+  return "#" + out.map((n) => n.toString(16).padStart(2, "0")).join("");
+}
+
+/** 3D 档的主题配色 + 密度。
+ *  ⛔ 10-11 用户实测「3D 背景有些没做主题色适配，太丑了」：原实现**只在挂载时取一次色**
+ *    （代码注释自己写着「运行中换主题不跟随」）⇒ 深色界面里挂着一张按浅色主题画的网。
+ *    现在改为按 data-theme 重取，并且**深色主题把线色往 --bg 压、把网放稀**——
+ *    原来的纯 accent 白网在深色下糊满全屏、文字读不了。 */
+function vantaTheme(): { line: string; bg: string; spacing: number; maxDistance: number } {
+  const dark = document.documentElement.dataset.theme === "dark";
+  const bg = readHex("--bg", dark ? "#1b1b1a" : "#ffffff");
+  const accent = readHex("--accent", "#7a9e7e");
+  return dark
+    ? { line: mixHex(accent, bg, 0.55), bg, spacing: 26, maxDistance: 15 }
+    : { line: accent, bg, spacing: 18, maxDistance: 22 };
+}
+
 /** vanta（MIT，tengbao/vanta）：NET 效果；⛔ vanta 对 three 版本敏感 ——
  *  整个初始化包 try/catch，失败静默降级成空层（宁可没壁纸不许白屏/报错弹窗）。 */
 function VantaPane() {
   const ref = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
+  // 主题变化 ⇒ 递增 key 重建（vanta 没有"改色"接口，重建是唯一可靠的跟随方式）
+  const [themeKey, setThemeKey] = useState(0);
+  useEffect(() => {
+    const ob = new MutationObserver(() => setThemeKey((n) => n + 1));
+    ob.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => ob.disconnect();
+  }, []);
   useEffect(() => {
     let disposed = false;
     let effect: { destroy: () => void } | null = null;
@@ -28,16 +63,16 @@ function VantaPane() {
         (window as unknown as { THREE: unknown }).THREE = THREE;
         const net = (await import("vanta/dist/vanta.net.min.js")).default;
         if (disposed || !ref.current) return;
+        const theme = vantaTheme();
         effect = net({
           el: ref.current,
           THREE,
           mouseControls: { touch: false, mouse: true },
-          // 主题主色转 hex（vanta 只吃具体色值）；ponytail: 挂载时取一次，运行中换主题不跟随
-          color: (getComputedStyle(document.documentElement).getPropertyValue("--accent").trim().match(/^#[0-9a-fA-F]{3,8}$/) ?? ["#7a9e7e"])[0],
-          // ⛔ vanta 不支持透明背景（实测渲染成黑底、跟浅色主题打架）—— 背景色取主题 --bg
-          backgroundColor: (getComputedStyle(document.documentElement).getPropertyValue("--bg").trim().match(/^#[0-9a-fA-F]{3,8}$/) ?? ["#f6f6f4"])[0],
-          maxDistance: 22,
-          spacing: 18,
+          color: theme.line,
+          // ⛔ vanta 不支持透明背景（渲染成黑底、跟浅色主题打架）—— 背景色取主题 --bg
+          backgroundColor: theme.bg,
+          spacing: theme.spacing,
+          maxDistance: theme.maxDistance,
         }) as { destroy: () => void };
       } catch {
         if (!disposed) setFailed(true);
@@ -47,7 +82,7 @@ function VantaPane() {
       disposed = true;
       try { effect?.destroy(); } catch { /* 已销毁 */ }
     };
-  }, []);
+  }, [themeKey]);
   if (failed) return null;
   return <div ref={ref} className="wallpaper-vanta" />;
 }

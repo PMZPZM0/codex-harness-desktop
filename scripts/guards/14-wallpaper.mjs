@@ -55,6 +55,13 @@ ok(particlesSrc.includes("fullScreen: { enable: false }"), "tsparticles fullScre
 ok(layerSrc.includes("vanta/dist/vanta.net.min.js") && layerSrc.includes("catch") && layerSrc.includes("destroy()"), "vanta 懒加载 + try/catch 静默降级 + destroy 清理（three 版本敏感，炸了不许白屏）");
 ok(layerSrc.includes("prefers-reduced-motion") && layerSrc.includes("pattern"), "减动效偏好下粒子/3D 退回静态图案（accessibility 基本盘）");
 
+/* ── 主题色适配（10-11 用户实测：「3D 背景跟自定义的主题有些没做主题色适配，太丑了」）──
+   ⛔ 三条都是"看着能跑、其实切主题就露馅"的接缝，静态断言正是它们唯一的防线。 */
+ok(cssSrc.includes(':root[data-theme="dark"] .wallpaper-custom::after'), "自定义图/精选渐变的「雾」按主题分档（深色主题压更狠 —— 浅色壁纸在深色界面下会把主内容区整片染亮，侧栏顶栏却是黑的）");
+ok((layerSrc.match(/attributeFilter: \["data-theme"\]/g) ?? []).length >= 1 && layerSrc.includes("vantaTheme"), "3D 档监听 data-theme 变化并重建（原实现只在挂载时取一次色，切主题后底色/线色都不跟）");
+ok(layerSrc.includes("mixHex") && layerSrc.includes("spacing: 26"), "3D 档深色主题：线色往 --bg 压 + 网放稀（原来的纯 accent 白网在深色下糊满全屏、文字读不了）");
+ok(!/const color = accentHex\(\)/.test(particlesSrc) && particlesSrc.includes("useThemeColor()"), "粒子档接上 useThemeColor()（原来那个 hook 是死代码 —— 挂载取一次色，切主题不换色）");
+
 /* ── 接线：挂载 + 设置段 ── */
 // ⛔ 10-06 铺满全应用：挂载点从 timeline-wrap 上移到 app-shell 根（fixed 铺满视口）。
 ok(appView.includes("<WallpaperLayer />") && !timeline.includes("<WallpaperLayer />"), "WallpaperLayer 挂在 AppView 根（app-shell 内铺满全应用；timeline 内旧挂载已撤）");

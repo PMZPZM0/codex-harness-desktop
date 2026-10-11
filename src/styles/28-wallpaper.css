@@ -21,9 +21,14 @@
 /* 图案档：SVG 走 mask（形状=alpha），颜色 = --accent；48px 大瓷砖（24px 铺出来像噪点） */
 .wallpaper-pattern { position: absolute; inset: 0; background-color: var(--accent); mask-size: 48px 48px; -webkit-mask-size: 48px 48px; mask-repeat: repeat; -webkit-mask-repeat: repeat; }
 
-/* 自定义图 / 精选渐变：cover 铺满 + 一层 --bg 雾保证文字可读（浅色壁纸几乎无损，深色壁纸被提亮） */
+/* 自定义图 / 精选渐变：cover 铺满 + 一层 --bg 雾保证文字可读。
+   ⛔ 雾必须**按主题分档**（10-11 用户实测「3D 背景跟自定义的主题有些没做主题色适配，太丑了」）：
+      浅色主题只淡淡压一层（壁纸通透好看）；深色主题压得狠得多 ——
+      否则浅色壁纸（精选渐变 sunrise/mint/dusk / 用户自己的亮图）会把深色界面整片染亮，
+      侧栏顶栏是黑的、主内容区是米黄的，很难看。 */
 .wallpaper-custom { position: absolute; inset: 0; background-size: cover; background-position: center; }
 .wallpaper-custom::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 46%, transparent), color-mix(in srgb, var(--bg) 18%, transparent)); }
+:root[data-theme="dark"] .wallpaper-custom::after { background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 82%, transparent), color-mix(in srgb, var(--bg) 54%, transparent)); }
 
 /* 精选渐变壁纸：叠一层细噪点（feTurbulence），渐变才有质感不塑料 */
 .wallpaper-preset::before {
