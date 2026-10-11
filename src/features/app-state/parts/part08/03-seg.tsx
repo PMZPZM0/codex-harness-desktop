@@ -9,7 +9,7 @@
 import "@xterm/xterm/css/xterm.css";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../lib/user-refs";
 import { Turn } from "../../../../lib/turn";
-import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
+import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror, releaseTurnOverlays } from "../../../app-view/helpers";
 import type { Bag } from "../bag-types";
 
 export function usePart08c(bag: Bag) {
@@ -72,6 +72,22 @@ bag.stopGoalLoop = stopGoalLoop as typeof bag.stopGoalLoop;
     //   （part05/event-router/07-turn-completed-settle.tsx 的 `wasManualStop` 分支）。
     const stopThreadId = bag.thread.id;
     bag.manualStopRef.current.set(stopThreadId, turnId);
+    // ★ 10-11 用户报障「手动停止后审批/询问弹窗不消失」：这两类卡都是**阻塞式**的（引擎在等回包），
+    //   停止 = 这个会话到此为止 ⇒ 覆盖层必须一起收掉，而且要**先给引擎一份合法回包**，
+    //   否则那条请求在引擎侧永远悬着（询问卡更狠：await 不落地 = 工具调用挂死）。
+    //   位置刻意在 await **之前**：即使 turn/interrupt 自己失败（回合其实已经结束，
+    //   见下面的「expected active turn id」分支），界面上也不会留下死卡。
+    //   ⛔ 同一件事在回合结束事件里还有一份（覆盖引擎侧中止 / 手机端停止 / 语音打断 —— 那些路径
+    //     不经过本函数）；两处都调、且本函数幂等。
+    releaseTurnOverlays({
+      threadId: stopThreadId,
+      pending: bag.pending,
+      agentAsk: bag.agentAsk,
+      includeUnattributed: true,
+      respond: (id, payload) => window.codex.respond(id, payload),
+      clearPending: (ids) => bag.setPending((current) => current.filter((request) => !ids.includes(request.id))),
+      clearAsk: () => bag.setAgentAsk(null),
+    });
     try {
       await window.codex.request("turn/interrupt", { threadId: bag.thread.id, turnId });
       bag.setInterruptedTurns((current) => ({ ...current, [turnId]: Date.now() }));
