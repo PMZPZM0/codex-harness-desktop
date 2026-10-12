@@ -666,6 +666,19 @@ export interface Bag {
   accountMenuRef: React.RefObject<HTMLDivElement | null>;
   runUpdateCheck: () => Promise<void>;
   runUpdateDownload: () => Promise<void>;
+  /** 10-12：更新包已就绪（后台静默下载完成 / 手动检查发现已下好）⇒ 左下角弹窗。 */
+  updateReady: boolean;
+  setUpdateReady: React.Dispatch<React.SetStateAction<boolean>>;
+  updateReadyVersion: string;
+  setUpdateReadyVersion: React.Dispatch<React.SetStateAction<string>>;
+  updateRestarting: boolean;
+  setUpdateRestarting: React.Dispatch<React.SetStateAction<boolean>>;
+  /** 用户「取消」时记下压住的是**哪个版本**（换版本仍会重新弹）。 */
+  dismissedVersionRef: React.RefObject<string>;
+  armUpdateReady: (version?: string|undefined) => void;
+  dismissUpdateReady: () => void;
+  restartAndInstall: () => Promise<void>;
+  tryArmUpdateReady: () => Promise<void>;
   openFeedbackPage: () => void;
   uiLang: string;
   setUiLang: React.Dispatch<React.SetStateAction<string>>;

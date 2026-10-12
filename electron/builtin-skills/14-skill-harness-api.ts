@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（89 个能力域 / 457 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（89 个能力域 / 459 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -194,9 +194,9 @@ OpenAI 账号鉴权（登录/凭据/额度）
 内置终端（创建/输入/缩放/重启）
 通道：terminal:input, terminal:list, terminal:ready, terminal:resize, terminal:restart
 
-### updates（4 通道）
+### updates（6 通道）
 应用自更新（检查/下载/安装，GitHub Release 单源）
-通道：updates:check, updates:download, updates:reveal, updates:install
+通道：updates:check, updates:download, updates:reveal, updates:install, updates:download-silent, updates:restart-install
 
 ### plugin（1 通道）
 插件卸载入口

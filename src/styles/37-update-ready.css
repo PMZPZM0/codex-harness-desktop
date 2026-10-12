@@ -1,0 +1,98 @@
+/* ══════════════════════════════════════════════════════════════════════════
+ * 更新就绪提示（10-12）—— 左下角「更新已就绪 / 取消 · 重启安装」
+ *
+ * ⛔ 渲染点必须 portal 到 `document.body`（调用处见 sidebar-shell 的 UpdateReadyToast）：
+ *   聊天区的滚动容器 `.timeline` 有 `overflow` 裁剪，而输入框那层
+ *   `.composer-wrap.docked-center` 带 `transform` —— **带 transform 的祖先会成为
+ *   `fixed` 的包含块**，不 portal 的话这个浮层会变成「按输入框定位」（跟着输入框跑）。
+ *   （与 `.archive-toast` 同一条纪律，见 14-model-onboarding.css 的注释。）
+ *
+ * ⛔ z-index 对齐既有层级表：确认框 950 > 引导/帮助 900 > 全局模态 400 > 画布 90。
+ *   本弹窗是「非阻断提示」，但用户可能正开着设置页（80~97）⇒ 取 400 以上即可，
+ *   不去挤确认框那一档，避免它盖住真正需要用户决策的东西。
+ * ══════════════════════════════════════════════════════════════════════════ */
+.update-ready-toast {
+  position: fixed;
+  left: 18px;
+  bottom: 18px;
+  z-index: 420;
+  width: min(360px, calc(100vw - 36px));
+  box-sizing: border-box;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.28);
+  animation: update-ready-in 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes update-ready-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ⛔ 尊重系统「减弱动效」：只保留出现，不做位移（与全站动效纪律一致）。 */
+@media (prefers-reduced-motion: reduce) {
+  .update-ready-toast { animation: none; }
+}
+
+.update-ready-icon {
+  flex: none;
+  margin-top: 1px;
+  color: var(--text);
+}
+
+.update-ready-body { flex: 1; min-width: 0; }
+
+.update-ready-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.update-ready-desc {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  /* 版本号等长串在窄屏不换行会把按钮挤出可视区 */
+  overflow-wrap: anywhere;
+}
+
+.update-ready-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.update-ready-btn {
+  box-sizing: border-box;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+  /* ⛔ 最小点击区 32px —— 比视觉高度高，用 padding 撑开，不靠放大字号。 */
+  min-height: 32px;
+}
+
+.update-ready-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.update-ready-btn:disabled { opacity: 0.55; cursor: default; }
+
+.update-ready-btn.primary {
+  border-color: transparent;
+  background: var(--text);
+  color: var(--panel);
+}
+
+.update-ready-btn:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}

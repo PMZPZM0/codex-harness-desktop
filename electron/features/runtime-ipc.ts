@@ -36,6 +36,7 @@ import { layaInstall } from "./laya-service";
 import { installPhoneHarness } from "./phone-harness";
 import { codexHome, server } from "../runtime-refs";
 import { defineFeature } from "../context";
+import { recordToolRemoved } from "./tool-persistence";
 import type { IpcHost } from "../ipc-host";
 // 版本比较统一走 `../updates`（含预发布语义：1.2.3-beta < 1.2.3）——⛔ 别再写第二份。
 import { compareVersions } from "../updates";
@@ -669,6 +670,9 @@ export const runtimeFeature = defineFeature<null>({
         }).catch(() => undefined);
       }
       sendToWindow("runtime:progress", { id, message: "卸载完成", percent: 100, done: true });
+      // ⛔ 10-12 同步清账：留着记录的话，更新后的「你装过哪些工具」会把一个**用户主动卸载**的
+      //   工具算成「待重装」并提示恢复 —— 账本必须跟着真实状态走，不是只增不减。
+      try { recordToolRemoved(id); } catch { /* 记账失败不影响卸载结果 */ }
       return { ok: true, runtimes: runtimeList() };
     });
 

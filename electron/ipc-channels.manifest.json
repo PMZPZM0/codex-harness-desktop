@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 457,
+  "count": 459,
   "channels": [
     {
       "name": "request",
@@ -3181,6 +3181,26 @@
       "invokeArgs": "filePath",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "updateDownloadSilent",
+      "channel": "updates:download-silent",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; error?: string; version?: string; path?: string; alreadyDone?: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "10-12 后台静默下载：零参数（地址只认主进程自己的检查结果，绝不接受渲染层指定）"
+    },
+    {
+      "name": "updateRestartInstall",
+      "channel": "updates:restart-install",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "10-12 重启安装：零参数（先 spawn 已校验的安装包、再 quit 自己，顺序反了会被文件锁挡住）"
     },
     {
       "name": "bridgeStatus",

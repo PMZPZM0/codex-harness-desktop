@@ -149,6 +149,7 @@ import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 // 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
 import { Slot } from "../../../runtime/registry";
 import { NewbieGuide } from "../../newbie-guide";
+import { UpdateReadyToast } from "./UpdateReadyToast";
 
 export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppApi; onOpenSettings?: (page: string) => void }) {
   const {
@@ -232,6 +233,12 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     updateError,
     updateInfo,
     updateProgress,
+    // ⛔ 10-12 更新就绪弹窗（需求 3）：与设置页无关，独立挂在左下角。
+    updateReady,
+    updateReadyVersion,
+    updateRestarting,
+    dismissUpdateReady,
+    restartAndInstall,
     userAvatar,
     username,
     viewTab,
@@ -337,7 +344,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   };
 
   return (
-    !popoutThreadId && <aside className={`sidebar ${mobileNav ? "mobile-open" : ""} ${sidebarFlyout ? "flyout-open" : ""}`} onMouseEnter={() => sidebarCollapsed && setSidebarFlyout(true)} onMouseLeave={() => sidebarCollapsed && setSidebarFlyout(false)}>        <div className="brand-row">
+    <>
+    {!popoutThreadId ? (
+      <aside className={`sidebar ${mobileNav ? "mobile-open" : ""} ${sidebarFlyout ? "flyout-open" : ""}`} onMouseEnter={() => sidebarCollapsed && setSidebarFlyout(true)} onMouseLeave={() => sidebarCollapsed && setSidebarFlyout(false)}>        <div className="brand-row">
               <button className={`brand-mark sidebar-toggle ${sidebarCollapsed ? "is-collapsed" : "is-expanded"}`} aria-label={narrow ? "Codex Harness" : sidebarCollapsed ? "展开侧栏" : "收起侧栏"} title={narrow ? "Codex Harness" : sidebarCollapsed ? "展开侧栏" : "收起侧栏"} onClick={() => { if (narrow) return; const next = !sidebarCollapsed; setSidebarCollapsed(next); localStorage.setItem("sidebar-collapsed", String(next)); }}>
                 <img className="ch-logo ch-logo-img" src={`${import.meta.env.BASE_URL}icon.png`} alt="" aria-hidden="true" />
                 <span className="sidebar-toggle-arrow"><ArrowLeft size={13} strokeWidth={2.4} /></span>
@@ -609,5 +618,17 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
               <button className="sidebar-settings ic-blue" title="设置" onClick={() => { setSettingsPage("appearance"); setSettingsOpen(true); setMobileNav(false); }}><Settings size={16} /></button>
             </div>
           </aside>
+    ) : null}
+    {/* ⛔ 10-12 更新就绪弹窗（需求 3）：挂在 sidebar 之外、Fragment 之内 ——
+        它自己 portal 到 body（输入框那层带 transform，不 portal 会被定位成"跟着输入框跑"）。 */}
+    {updateReady ? (
+      <UpdateReadyToast
+        version={updateReadyVersion}
+        restarting={updateRestarting}
+        onCancel={dismissUpdateReady}
+        onRestartInstall={() => void restartAndInstall()}
+      />
+    ) : null}
+    </>
   );
 }
