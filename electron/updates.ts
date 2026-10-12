@@ -25,6 +25,22 @@ import { mirrorCandidates } from "./gh-mirror";
 /** GitHub 开源仓库（唯一更新源，走 Releases API） */
 export const GITHUB_REPO = "PMZPZM0/codex-harness-desktop";
 export const GITHUB_RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
+export const GITHUB_RELEASES_LIST_API = `https://api.github.com/repos/${GITHUB_REPO}/releases`;
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 产品线隔离（10-12 用户拍板：「codex harness 就抓 codexharness 的更新源，
+ * 云助手就只抓云助手的更新源，不要混」）：
+ *   桌面版：tag `v*`、资产 `Codex.Harness.Desktop-*`
+ *   云助手：tag `cloud-v*`、资产 `CodexHarnessAssistant-*`
+ * ⛔⛔ 为什么不能再用 /releases/latest：GitHub 的 latest 是**按发布时间**取最近一个
+ *   stable，**不是 semver 最高**。10-11 助手线先踩（0.0.1 抓到桌面版 v0.0.38），
+ *   10-12 桌面版反过来踩（v0.0.39 抓到刚发的 cloud-v0.0.3 ⇒ 用户点更新会装上助手！）。
+ *   ⇒ **两条线都走 releases 列表 + 各自 tag 前缀过滤**，永不碰 latest。
+ * ══════════════════════════════════════════════════════════════════════════ */
+export const DESKTOP_TAG_PREFIX = "v";
+export const ASSISTANT_TAG_PREFIX = "cloud-v";
+export const ASSISTANT_ASSET_PREFIX = "CodexHarnessAssistant-";
+export const ASSISTANT_CHANNEL = "assistant";
 
 /** 订阅通道（固定 stable） */
 export const UPDATE_CHANNEL = "stable";
@@ -137,21 +153,36 @@ export async function checkLatestUpdate(
   // ⛔ 镜像序逐个试：第一个 2xx 的候选生效（10-11 实测 gh-proxy 通、ghfast API 403 秒返、直连兜底）。
   //    全挂才抛最后一条错误 —— 检查更新失败要让用户看到「试过三条路都不行」而不是只看到第一档的错。
   let lastError: unknown = new Error("no_candidate");
-  for (const candidate of mirrorCandidates(GITHUB_RELEASES_API)) {
+  for (const candidate of mirrorCandidates(GITHUB_RELEASES_LIST_API)) {
     try {
       const res = await requestJson(candidate);
       if (res.status < 200 || res.status >= 300) {
         lastError = new Error(`HTTP ${res.status}`);
         continue;
       }
-      let release: any;
+      let releases: any[];
       try {
-        release = JSON.parse(res.body) as any;
+        const parsed = JSON.parse(res.body) as unknown;
+        releases = Array.isArray(parsed) ? parsed : [parsed];
       } catch {
         lastError = new Error("invalid_json");
         continue;
       }
-      return pickLatestFrom(release, currentVersion, platform, arch);
+      // 只认桌面版产品线：`v*` tag、非草稿、非预发布；按 semver 从高到低试
+      // （最高版本可能没有本平台资产 ⇒ 继续往下找，别让 mac 用户卡在"无资产"上）。
+      const line = releases
+        .filter((r: any) => String(r?.tag_name ?? "").startsWith(DESKTOP_TAG_PREFIX) && !r?.draft && !r?.prerelease)
+        .sort((a: any, b: any) =>
+          compareVersions(String(b.tag_name).replace(/^v/i, ""), String(a.tag_name).replace(/^v/i, "")),
+        );
+      if (line.length === 0) return { hasUpdate: false, reason: "no_desktop_release_yet", channel: UPDATE_CHANNEL, version: currentVersion };
+      for (const rel of line) {
+        const info = pickLatestFrom(rel, currentVersion, platform, arch);
+        // 这个版本没有本平台资产 / 解析不出版本 ⇒ 不是"没有更新"，继续试下一个更早的
+        if (info.reason === "no_asset_for_platform" || info.reason === "no_release") continue;
+        return info;
+      }
+      return { hasUpdate: false, reason: "no_asset_for_platform", channel: UPDATE_CHANNEL, version: currentVersion };
     } catch (error) {
       lastError = error;
     }
@@ -180,12 +211,14 @@ function pickLatestFrom(
     return { hasUpdate: false, reason: "up_to_date", channel: UPDATE_CHANNEL, version };
   }
   // 按平台选资产：Windows → *.exe；mac → 按架构 *-mac-arm64.zip / *-mac-x64.zip（含 mac 即可）
+  // ⛔ 10-12 产品线隔离：资产名也必须认 `Codex.Harness.Desktop-` 前缀 —— 云助手的资产
+  //   同样是 .exe / *-mac.zip，光靠 tag 前缀过滤挡不住（同仓两条线，资产名形制雷同）。
   const assets: { name: string; browser_download_url: string; size?: number; digest?: string }[] = Array.isArray(release.assets) ? release.assets : [];
   let match: { name: string; browser_download_url: string; size?: number; digest?: string } | undefined;
   if (platform === "darwin") {
-    match = assets.find((a) => a.name.includes("mac") && a.name.endsWith(".zip") && a.name.includes(arch));
+    match = assets.find((a) => a.name.startsWith("Codex.Harness.Desktop-") && a.name.includes("mac") && a.name.endsWith(".zip") && a.name.includes(arch));
   } else {
-    match = assets.find((a) => a.name.endsWith(".exe"));
+    match = assets.find((a) => a.name.startsWith("Codex.Harness.Desktop-") && a.name.endsWith(".exe"));
   }
   if (!match) return { hasUpdate: false, reason: "no_asset_for_platform", channel: UPDATE_CHANNEL, version };
   return {
