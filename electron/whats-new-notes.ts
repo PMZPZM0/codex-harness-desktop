@@ -43,6 +43,16 @@ export type WhatsNewEntry = {
 /** 全部版本的要点，**最新在最前**（弹窗按数组顺序展示）。 */
 export const WHATS_NEW_ENTRIES: WhatsNewEntry[] = [
   {
+    version: "0.0.40",
+    date: "2026-10-12",
+    items: [
+      {
+        t: "更新源按产品线隔离",
+        d: "同仓库还有云助手（Codex Harness Assistant）产品线。本版起桌面版只认自己的版本（v* / Codex.Harness.Desktop-*），不会再把云助手的包当成本版的更新——之前个别版本会误报「有新版本 0.0.3」。",
+      },
+    ],
+  },
+  {
     version: "0.0.39",
     date: "2026-10-11",
     items: [
