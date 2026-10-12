@@ -389,34 +389,6 @@ bag.disarmPinIntent = disarmPinIntent as typeof bag.disarmPinIntent;
   }
 bag.maybeAutoContinueTruncated = maybeAutoContinueTruncated as typeof bag.maybeAutoContinueTruncated;
 
-  /** 回合「没干完就收工」的宿主自动接手（10-12 用户报障「运行过程总是自动中断」+ 拍板
-   *  「宿主自动接手」）。判据与文案在 `src/lib/turn-unfinished.mjs`（纯函数，守卫跑真值表）：
-   *  末条正文只「宣布下一步」且没在问用户，或最后一次工具输出是引擎的半截标记
-   *  （`Process running with session ID …` / `write_stdin failed: stdin is closed`）。
-   *  ⛔ 与截断续接**共用同一份记账**（`autoContinueLogRef`）⇒ 同一会话 15 分钟内合计最多
-   *    `AUTO_CONTINUE_MAX_ATTEMPTS` 次，防「续了又停、停了又续」滚雪球烧钱。 */
-  function maybeAutoContinueUnfinished(threadId: string, prompt: string) {
-    const now = Date.now();
-    const rec = bag.autoContinueLogRef.current.get(threadId);
-    if (!rec || now - rec.firstAt > AUTO_CONTINUE_WINDOW_MS) {
-      bag.autoContinueLogRef.current.set(threadId, { count: 1, firstAt: now });
-    } else {
-      if (rec.count >= AUTO_CONTINUE_MAX_ATTEMPTS) {
-        bag.showToast("自动接手已达上限", "同一会话 15 分钟内已自动接手多次，先停手 —— 这条任务可能需要你补一句更明确的指令。", threadId);
-        return;
-      }
-      rec.count++;
-    }
-    deliverAutoContinue(bag, threadId, String(prompt ?? ""), {
-      delayMs: 1500,
-      toastTitle: "已自动接手",
-      toastBody: "上一回合只说了下一步、没有真的去做，正在让它接着执行…",
-      pinTag: "unfinished-continue",
-      dbgTag: "unfinished-continue-raced-by-engine",
-      failTitle: "自动接手失败",
-    });
-  }
-bag.maybeAutoContinueUnfinished = maybeAutoContinueUnfinished as typeof bag.maybeAutoContinueUnfinished;
 
   /** 轮询任务**成功返回结果**后的自动继续（10-10 用户要求：「回合结束后，轮询还在的话，
    *  如果返回结果了…现在是不会自动继续」）。
@@ -666,5 +638,5 @@ bag.setHookEnabled = setHookEnabled as typeof bag.setHookEnabled;
     finally { bag.setLinkedBusy(null); }
   }
 bag.setLinkedEnabled = setLinkedEnabled as typeof bag.setLinkedEnabled;
-  return { queueTimers, setQueueTimers, setQueuedTimer, openBrowser, toggleBookmark, deleteQueued, reorderQueued, editQueued, saveQueued, armPinForReleasedQueue, disarmPinIntent, maybeAutoContinueTruncated, maybeAutoContinueUnfinished, maybeAutoContinueAfterPoll, startQueued, refreshSettingsResources, trustAllHooks, setHookEnabled, setLinkedEnabled };
+  return { queueTimers, setQueueTimers, setQueuedTimer, openBrowser, toggleBookmark, deleteQueued, reorderQueued, editQueued, saveQueued, armPinForReleasedQueue, disarmPinIntent, maybeAutoContinueTruncated, maybeAutoContinueAfterPoll, startQueued, refreshSettingsResources, trustAllHooks, setHookEnabled, setLinkedEnabled };
 }
