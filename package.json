@@ -36,7 +36,7 @@
     "@google/model-viewer": "^4.3.1",
     "@larksuiteoapi/node-sdk": "^1.73.3",
     "@lydell/node-pty": "^1.2.0-beta.15",
-    "@openai/codex": "^0.153.4",
+    "@openai/codex": "^0.162.1",
     "@tsparticles/react": "^4.4.0",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/ws": "^8.18.1",
