@@ -4,7 +4,7 @@
 
 ## 🔁 多仓协作与发版（**AI 协作者必读**：跨仓改动的同步、推送、PPcode 发版全流程）
 
-完整步骤见 **`docs/REPO-WORKFLOW.md`** —— 要点：本仓（主应用源码）与 `D://PPcode`（= 私有仓 ppcode-src，PPcode 源码）同步走「主仓 diff → 逐文件 apply 预检 → 副本验证」；公开仓 `PMZPZM0/PPcode` 只放 PPcode 的 README 与安装包（应用内检查更新匿名拉它，⛔ 不放源码）；PPcode 发版 = 版本对齐 4 处 → mac 审计 → check → tag → CI 三端构建并跨仓发布；两仓 `AGENTS.md` 逐字镜像，改一边必须同步另一边。
+完整步骤见 **`docs/REPO-WORKFLOW.md`** —— 要点：本仓（主应用源码）与 `D://PPcode`（PPcode 副本，远端 = `PMZPZM0/PPcode`，源码与发布页**合一**；旧私有仓 ppcode-src 已删，10-13 换仓）同步走「主仓 diff → 逐文件 apply 预检 → 副本验证」；PPcode 发版 = 版本对齐 4 处 → mac 审计 → check → tag → CI 三端构建发布到本仓 Release；两仓 `AGENTS.md` 逐字镜像，改一边必须同步另一边。
 
 ## 📐 架构改造计划（2026-09-21 立项，**已基本完成**：计划与盘点存档见 `docs/archive/`）
 
