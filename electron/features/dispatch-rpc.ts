@@ -381,9 +381,10 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     }
     const text = String(args.text ?? "").trim();
     if (!text) return { ok: false, error: "text 必填（要念的那句话）" };
-    /* 上限刻意比 voice_generate 严得多（那边是配音合成，这里是**插播一句话**）：
-       120 字大概念 20 秒出头，再长就不是插播了 —— 用户既插不上话，也退不出排队。 */
-    if (text.length > 120) return { ok: false, error: `text 过长（${text.length} 字）：插播一句话即可，请压到 120 字以内（要念长内容就写进回复正文或回复末尾的播报稿）` };
+    /* 上限刻意比 voice_generate 严得多（那边是配音合成，这里是**插播一句话**），
+       ⛔ 10-12 由 120 收到 **80 字**：约 15 秒。用户原话「这个语音播报，不用这么长」——
+       再长就不是插播了，用户既插不上话、也退不出排队（而插播的本质是"打断前一句"）。 */
+    if (text.length > 80) return { ok: false, error: `text 过长（${text.length} 字）：插播一句话即可，请压到 80 字以内（要念长内容就写进回复末尾的播报稿，或干脆别念）` };
     let status: any = null;
     try { status = voiceService?.status?.() ?? null; } catch { status = null; }
     if (status?.active) {
@@ -399,7 +400,7 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     });
     return {
       ok: true,
-      output: `已提交播报（本地合成 + 播放由界面完成）：「${text}」。⚠️ 这是即时发送、不等回执 —— 本地语音模型未下载或窗口不在前台时不会出声（工具不会报错），也别据此向用户声称「已经说给你听了」。⛔ 这句是**说给耳朵**的：正文里**别再原样复述**（同一句会被念两遍，用户听着像复读）。`,
+      output: `已提交播报（本地合成 + 播放由界面完成）：「${text}」。⚠️ 这是即时发送、不等回执 —— 本地语音模型未下载或窗口不在前台时不会出声（工具不会报错），也别据此向用户声称「已经说给你听了」。⛔ 用户按过「停止播报」之后本回合再调会被静默拦下（界面显示「已停止播报 · 恢复」＝用户不想听，别再试）。⛔ 这句是**说给耳朵**的：正文里**别再原样复述**（同一句会被念两遍，用户听着像复读）。`,
     };
   }
   if (name === "voice_speak_reply") {

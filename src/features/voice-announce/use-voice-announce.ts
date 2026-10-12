@@ -34,6 +34,14 @@
  *   **逐句**查重（`dedupeSpokenSentences`），同一句话在同回合只念第一遍；回合结束/被打断整表清零
  *   ⇒ 跨回合「再说一遍」不受影响。详见 `spokenKeysRef` 注释。
  *
+ * ── 10-12 三条用户反馈的落点（本文件的判据都集中在这里，别在别处再判一遍）────
+ *   ① 「停止都停止不了，一直播报」⇒ **静音闩锁**（`mutedRef`）：按停时同时清掉 `speakLiveRef`、
+ *      `autoSpeakRef`，并在 `speak()` **唯一入口**拦下后续一切播报（正文 / 插播 / 播报稿）。
+ *      解除只有两条路：状态条上的「恢复」按钮，或用户把总开关重新打开。
+ *   ② 「不用这么长」⇒ **每回合 160 字预算**（`MAX_ANNOUNCE_CHARS_PER_TURN`，在 `speak()` 里扣）：
+ *      队列长度背压管不住 `live` 那条无界正文流，必须按字数封顶；超了顺带关掉本回合正文朗读。
+ *   ③ 「语音播报有点丑」⇒ 视觉整改在 `VoiceAnnounceIndicator.tsx` + `18-openai-dialog.css`。
+ *
  * ⛔ 语速/音色/音量取的都是**设置里的值**（不在这里另存一份）—— 单一真相源。
  * ⛔ 事件源是 `announce-bus`（由事件路由在**当前会话**上转发），不在本模块里解析引擎事件。
  */
@@ -47,6 +55,7 @@ import {
   publishAnnounceEvent,
   publishAnnounceStatus,
   setAnnounceNoticeHandler,
+  setAnnounceResumeHandler,
   setAnnounceStopHandler,
   subscribeAnnounce,
   IDLE_ANNOUNCE_STATUS,
@@ -58,7 +67,21 @@ import { getVoiceStage, subscribeVoiceStage } from "../../voice/wave-level";
 type AnnounceCfg = { enabled: boolean; volume: number };
 
 /** 排队上限（段数）。超过就**不再为这一句合成**（丢弃它，保持跟手）。 */
-const MAX_ANNOUNCE_BACKLOG = 4;
+const MAX_ANNOUNCE_BACKLOG = 3;
+
+/**
+ * 本回合播报的**总量预算**（字符，10-12 用户：「这个语音播报，不用这么长」）。
+ *
+ * ⛔ 根因：在此之前只有「队列长度」背压（`MAX_ANNOUNCE_BACKLOG`），**没有总量上限** ——
+ *    而 `live`（正文逐句念）是一条**无界流**：Codex 调一次 `voice_speak_reply`、或触发
+ *    「工具调用 > 10 次 / 同一处返工 ≥2 次」硬规则之后，`speakLiveRef` 会一直为真，
+ *    正文后续吐多少就念多少 ⇒ 一次长回合能被念一两分钟，且队列永远不满、背压形同虚设。
+ *    这正是用户说的「一直播报」。
+ * ⛔ 判据放在**唯一汇合处 `speak()`**：三条入口（正文实时 / 工具插播 / 结束播报稿）都过那里，
+ *    在入口按字数扣预算 ⇒ 超了就直接丢弃这一句，**当回合剩下的内容一律不念**。
+ * ⛔ 回合级清零（与 `spokenKeysRef` 同一时机）：预算不能跨回合累加，否则第二轮必然沉默。
+ */
+const MAX_ANNOUNCE_CHARS_PER_TURN = 160;
 
 export function useVoiceAnnounce(threadId: string = ""): void {
   /** 开关/音量（从设置读、经 voice:event 广播刷新；放 ref 里避免每次变化重建订阅） */
@@ -79,13 +102,33 @@ export function useVoiceAnnounce(threadId: string = ""): void {
   const queueRef = useRef<AudioBufferSourceNode[]>([]);
   /** 世代号：回合结束/新一轮开始时 +1，让「已经在 TTS 里合成中」的那半句回来时被丢弃 */
   const epochRef = useRef(0);
+  /**
+   * 静音闩锁（10-12 用户：「停止都停止不了，一直播报」）。
+   *
+   * ⛔⛔ **这是「停止」真正生效的地方**。此前的 `stopPlayback()` 只掐断了「此刻正在响的音频 +
+   *   队列里已排好的」，但三条入口仍然活着：
+   *     ① `speakLiveRef` 没被清 ⇒ 下一句正文 delta 到达，`feedDelta` 照旧合成照旧念；
+   *     ② `autoSpeakRef` 没被 reset ⇒ 硬规则下一帧又命中，重新把本回合标成「念正文」；
+   *     ③ 模型再调一次 `voice_announce` 插播工具 ⇒ `toolSpeak` 分支无条件入链。
+   *   三条加起来的效果就是「点了停止它还在念」，而且模型越勤快插播越停不下来。
+   * ⛔ 置位后由 **`speak()` 入口一处**拦下所有播报（正文实时 / 工具插播 / 结束播报稿全过那里），
+   *   不在三个分支各判一次 —— 那就是本仓记过的「二房东」缺陷（改了这边漏那边）。
+   * ⛔ 解除**只有一条路**：用户点状态条上的「恢复播报」（`requestAnnounceResume`）。
+   *   ⛔ 刻意**不**跟着回合结束自动解除：用户按停的语义是「我现在不想听」，
+   *   下一回合又自动开口 = 白按。开关翻转也会解除（见设置订阅处）。
+   */
+  const mutedRef = useRef(false);
   /** 状态栏要显示「来源」：这一轮是结束播报稿 / 还是模型主动插播 */
   const sourceRef = useRef<AnnounceStatus["source"]>("");
   /** 还有多少句在「合成中/排队合成」（不含已经排进 AudioContext 的那些） */
   const busyRef = useRef(0);
-  /** 是否刚被掐断过（状态栏显示「已停止」再自动收起，由下一次开播复位） */
+  /**
+   * 用户已按停（状态栏显示「已停止播报 · 恢复」并**常驻**，直到用户点恢复或重新打开总开关）。
+   * ⛔ 10-12 起它不再有「1.6 秒后自动收起」的定时器：那条自动收起是「回执」语义，
+   *    而按停现在同时意味着**静音闩锁**（`mutedRef`）—— 提示条若自己消失了，
+   *    用户就再也找不到恢复入口（等于永久失去播报，比"停不下来"更糟）。
+   */
   const stoppedRef = useRef(false);
-  const stoppedTimerRef = useRef(0);
   /**
    * 同一回合内的「已播出」登记表（10-09 用户报「同一段音频连续播放两次 / 好几次」后加）。
    *
@@ -101,6 +144,15 @@ export function useVoiceAnnounce(threadId: string = ""): void {
    */
   const spokenKeysRef = useRef<Set<string>>(new Set());
   const clearSpokenKeys = useCallback(() => { spokenKeysRef.current.clear(); }, []);
+  /**
+   * 本回合已播字数（10-12「不用这么长」的判据）。与 `spokenKeysRef` 同为**回合级**，
+   * 收尾/被打断时一起清零。
+   */
+  const spentCharsRef = useRef(0);
+  const resetTurnBudget = useCallback(() => {
+    spentCharsRef.current = 0;
+    clearSpokenKeys();
+  }, [clearSpokenKeys]);
   /**
    * 串行链（自行 code review 补的一处真缺陷）。
    *
@@ -124,6 +176,7 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       pending: Math.max(0, queueRef.current.length - 1),
       source: active ? sourceRef.current : "",
       stopped: !active && stoppedRef.current,
+      muted: mutedRef.current,
     });
   }, []);
 
@@ -143,19 +196,31 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     queueRef.current = [];
     resetLive();
     sourceRef.current = "";
+    /* ⛔⛔ 主动停止必须**同时掐掉三条入口的活儿**（10-12「停止都停止不了」的根因修复）：
+       · `speakLiveRef = false` —— 否则下一句正文 delta 到达照样合成、照样念；
+       · `autoSpeakRef.reset()` —— 否则硬规则下一帧又命中，把本回合重新标成「念正文」；
+       · `mutedRef = true`（仅 `byUser`）—— 之后模型再调插播工具也进不来（`speak()` 入口拦）。
+       前两条对**任何**停止都该做（通话开始 / 回合边界也要断干净），第三条只对用户主动按停生效
+       —— 通话接管与回合切换不该顺手把用户静音闩锁也置上。 */
+    speakLiveRef.current = false;
+    autoSpeakRef.current?.reset();
     if (byUser) {
+      mutedRef.current = true;
       stoppedRef.current = true;
-      /* ⛔ 「已停止」只是一句**回执**，不是常驻状态：留着不动的话状态条会永远挂在输入框上。
-         给个短暂停留让用户看见自己按的那一下生效了，然后自动收起。 */
-      if (stoppedTimerRef.current) clearTimeout(stoppedTimerRef.current);
-      stoppedTimerRef.current = window.setTimeout(() => {
-        stoppedRef.current = false;
-        stoppedTimerRef.current = 0;
-        publishStatus();
-      }, 1600);
+      /* ⛔ 「已停止」现在**常驻**到用户点「恢复播报」为止（10-12：状态条上必须留着那个出口，
+         否则按一次就永久失去播报）。原先那个 1.6s 自动收起定时器已整条删除 ——
+         它是「回执」语义，而按停现在同时意味着**静音闩锁**，提示条不该自己消失。 */
     }
     publishStatus();
   }, [publishStatus, resetLive]);
+
+  /** 「恢复播报」：解除静音闩锁，让后续播报重新可用（状态条上的按钮 → announce-bus → 这里）。 */
+  const resumePlayback = useCallback(() => {
+    if (!mutedRef.current) return;
+    mutedRef.current = false;
+    stoppedRef.current = false;
+    publishStatus();
+  }, [publishStatus]);
 
   const ensureCtx = useCallback((): AudioContext => {
     if (!ctxRef.current) ctxRef.current = new AudioContext();
@@ -194,6 +259,11 @@ export function useVoiceAnnounce(threadId: string = ""): void {
   const speak = useCallback(async (text: string, epoch: number, opts: { speed?: number } = {}) => {
     const clean = String(text ?? "").trim();
     if (!clean) return;
+    /* ⛔⛔ 静音闩锁（10-12「停止都停止不了」）：**唯一裁决点**，放在 `speak()` 最前面。
+       三条入口（正文实时 delta / 工具插播 toolSpeak / 结束播报稿 finishTurn）全都汇合到这里，
+       所以置位一次就等于把整条播报链静默 —— 不需要在三个分支各判一遍（三处各判一半就是
+       本仓记过的「二房东」缺陷：改了这边漏那边，下条入口又冒出来念）。 */
+    if (mutedRef.current) return;
     // 背压：排太长就丢弃这一句（保持跟手，不变成停不下来的复读机）
     if (queueRef.current.length >= MAX_ANNOUNCE_BACKLOG) {
       console.warn("[voice-announce] 播报排队过长，丢弃这一句以保持跟手：", clean.slice(0, 24));
@@ -206,11 +276,21 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       console.warn("[voice-announce] 同一回合内这段内容已经播报过，跳过重复播放：", clean.slice(0, 24));
       return;
     }
+    /* ⛔ 本回合总量预算（10-12「不用这么长」）：队列长度背压管不住 `live` 那条无界正文流，
+       必须按**字数**封顶。超出即丢弃本句并**顺手关掉本回合的正文朗读** ——
+       否则模型继续吐正文，它就一直尝试合成（每句一次 TTS 往返，纯浪费）。 */
+    if (spentCharsRef.current + deduped.text.length > MAX_ANNOUNCE_CHARS_PER_TURN) {
+      spentCharsRef.current = MAX_ANNOUNCE_CHARS_PER_TURN;
+      speakLiveRef.current = false;
+      console.info("[voice-announce] 本回合播报已达字数上限（", MAX_ANNOUNCE_CHARS_PER_TURN, "字），后续内容不再播报");
+      return;
+    }
     busyRef.current += 1;
     publishStatus();
     try {
       const result: any = await window.codex.voicePreviewVoice({ text: deduped.text, speed: opts.speed }).catch(() => null);
       if (epoch !== epochRef.current) return;   // 期间被打断/换轮：这句不念
+      if (mutedRef.current) return;              // 合成期间用户按了停止：这句不念
       if (!result?.ok || !result.audioBase64 || !result.sampleRate) {
         // ⛔ 不静默吞：模型没下全 / worker 起不来时，用户会「开了播报却没声音」，日志是唯一线索
         console.warn("[voice-announce] 合成失败：", result?.error ?? "未知错误");
@@ -220,6 +300,7 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       if (samples.length) {
         // ⛔ 登记必须放在「确认会出声」之后：合成失败不登记，后到的兜底句才不会被误吞
         for (const key of deduped.keys) spokenKeysRef.current.add(key);
+        spentCharsRef.current += deduped.text.length;
         await play(samples, Number(result.sampleRate), epoch, deduped.text);
       }
     } finally {
@@ -283,6 +364,10 @@ export function useVoiceAnnounce(threadId: string = ""): void {
 
   /** 模型主动插播（`voice_announce` 工具）：⛔ 不看开关 —— 显式调用就是用户想听这一句 */
   const speakNow = useCallback(async (text: string, speed?: number) => {
+    /* ⛔ 静音闩锁期间直接返回（10-12）：**「用户按了停止」优先于「模型想插播」**。
+       此处必须早于 `stoppedRef = false` —— 否则状态条会被翻回「正在念」，
+       而 `speak()` 入口又会把声音拦掉 ⇒ 界面显示在念、实际没声，更让人以为"停止坏了"。 */
+    if (mutedRef.current) return;
     sourceRef.current = "tool";
     stoppedRef.current = false;
     const epoch = epochRef.current;
@@ -300,6 +385,9 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     /* ⛔ `prevRef` = 上一次**已知**的开关状态，初值为 null ⇒ 首次读到设置**不发**告知
        （否则每次开窗口/刷新都会往会话里塞一条「语音播报已开启」，用户什么都没干却被告知）。 */
     let prev: boolean | null = null;
+    /* ⛔ 这里的解除动作走 ref 而不是 `resumePlayback`：本 effect 的依赖是 `[]`（只跑一次），
+       直接引 `resumePlayback` 会拿到首帧的闭包。`mutedRef` / `stoppedRef` / `publishStatus`
+       全是 ref 或稳定引用，读到的永远是最新值 —— 不制造过期闭包这个坑。 */
     const applySettings = (raw: any) => {
       if (!raw) return;
       const a: any = raw.announce ?? {};
@@ -312,6 +400,13 @@ export function useVoiceAnnounce(threadId: string = ""): void {
         enabled,
         volume: typeof raw.tts?.volume === "number" ? raw.tts.volume : cfgRef.current.volume,
       };
+      /* ⛔ 用户把总开关**重新打开** = 明确表示"我又想听了" ⇒ 顺手解除静音闩锁（10-12）。
+         否则会出现最别扭的一种状态：设置页显示"播报已开启"，但界面上永远不出声
+         （闩锁还挂着），用户完全不知道该怎么恢复 —— 这正是"停止按钮不可信"的另一种形态。 */
+      if (enabled && mutedRef.current) {
+        mutedRef.current = false;
+        stoppedRef.current = false;
+      }
       if (prev !== null && prev !== enabled) notifyAnnounceToggle(enabled);
       prev = enabled;
     };
@@ -341,22 +436,25 @@ export function useVoiceAnnounce(threadId: string = ""): void {
         /* ⛔ 会话闸：`harness:event` 是**全窗口广播**，而这个 app 可以有多个窗口/多个会话。
            不比对 ⇒ 另一个窗口里那条群的插播会在当前窗口一起念出来（跨场合念 = 听起来像见鬼）。 */
         if (threadId && event.threadId && event.threadId !== threadId) return;
-        stoppedRef.current = false;
+        /* ⛔ 静音闩锁期间**不许**把 `stoppedRef` 复位（10-12）：用户刚按了停止，模型紧接着又插播，
+           复位 = 状态条从「已停止」跳回「正在念」—— 用户看到的是「我明明按了它还在念」。
+           真正的拦截在 `speak()` 入口，这里只保证**显示**不撒谎。 */
+        if (!mutedRef.current) stoppedRef.current = false;
         enqueueTask(() => speakNow(event.text, event.speed));
         return;
       }
       if (event.type === "turnDone") {
         /* ⛔ 被打断的回合：**别再念了** —— 刚写出来的半句停在原地，等用户的新话。
-           ⛔ 去重登记表是**回合级**的：收尾（含播报稿）也要参与本回合查重，所以清表必须
-              排在 finishTurn **之后**；`speakLiveRef` 的复位在 finishTurn 内部（尾句要先念完）。 */
+           ⛔ 去重登记表与**字数预算是回合级**的：收尾（含播报稿）也要参与本回合查重/扣字数，
+              所以清表必须排在 finishTurn **之后**；`speakLiveRef` 的复位在 finishTurn 内部（尾句要先念完）。 */
         autoSpeakRef.current?.reset();   // 硬规则的计数是**逐回合**的
-        if (event.aborted) { epochRef.current += 1; speakLiveRef.current = false; resetLive(); clearSpokenKeys(); publishStatus(); return; }
-        if (!cfgRef.current.enabled && !speakLiveRef.current) { clearSpokenKeys(); return; }
-        enqueueTask(() => finishTurn(event.text).finally(clearSpokenKeys));
+        if (event.aborted) { epochRef.current += 1; speakLiveRef.current = false; resetLive(); resetTurnBudget(); publishStatus(); return; }
+        if (!cfgRef.current.enabled && !speakLiveRef.current) { resetTurnBudget(); return; }
+        enqueueTask(() => finishTurn(event.text).finally(resetTurnBudget));
       }
     });
     return off;
-  }, [clearSpokenKeys, enqueueTask, feedDelta, finishTurn, publishStatus, resetLive, speakNow, threadId]);
+  }, [enqueueTask, feedDelta, finishTurn, publishStatus, resetLive, resetTurnBudget, speakNow, threadId]);
 
   /* ── `voice_announce` / `voice_announce_stop` / `voice_speak_reply` 工具（主进程 dispatch-rpc 广播）──
      为什么在**这里**收而不是新建一个组件：执行端本来就在这（队列 + AudioContext 只有一份），
@@ -371,7 +469,10 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       if (payload.action === "stop") { stopPlayback(true); return; }
       if (payload.action === "speak-reply") {
         /* ⛔ Codex 决定「这一条回复念出来」（运行中）。只**标记本回合**并把流式链重置到开头，
-           真正的念由总线订阅的 delta 分支做（那处判 speakLiveRef）—— 判据只有一份。 */
+           真正的念由总线订阅的 delta 分支做（那处判 speakLiveRef）—— 判据只有一份。
+           ⛔ 静音期间**不许**重新开口（10-12）：用户刚按了停止，模型紧接着就要念正文 =
+           "停止按钮是假的"。状态条也不许翻回「正在念」（`speakLiveRef` 保持 false ⇒ 显示一致）。 */
+        if (mutedRef.current) return;
         speakLiveRef.current = true;
         resetLive();
         stoppedRef.current = false;
@@ -407,6 +508,9 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       if (String(event.method ?? "") !== "item/started") return;
       if (!cfgRef.current.enabled) return;
       if (getVoiceStage().active) return;
+      /* ⛔ 静音闩锁期间硬规则**不许**再把本回合标成「念正文」（10-12）：用户已明确喊停，
+         自动兜底这时继续开口 = 直接违抗用户。计数照样累计（用户中途恢复后仍能正常命中）。 */
+      if (mutedRef.current) return;
       const reason = tracker.push(params.item);
       if (!reason) return;
       speakLiveRef.current = true;
@@ -421,14 +525,18 @@ export function useVoiceAnnounce(threadId: string = ""): void {
   // 没有这个出口用户就只能等它念完 —— 与 wave-level 的结束通话/打断同一套广播注册。
   useEffect(() => {
     setAnnounceStopHandler(() => { stopPlayback(true); });
+    /* ⛔ 「恢复播报」出口（10-12）：静音闩锁必须可解除，否则用户按一次停止就永久失去播报
+       （比"停不下来"更糟：他想听的时候再也听不到了）。与停止出口成对注册、一起注销 ——
+       两个出口的生命周期必须绑在同一个 effect，否则卸载时容易只清掉一个（留下一个指向
+       已卸载 hook 的回调 = 下次点击报 "Cannot read properties of null"）。 */
+    setAnnounceResumeHandler(() => { resumePlayback(); });
     // 通话一开始就停掉独立播报：否则通话的播报与这里排队的音频会同时出声
     const offStage = subscribeVoiceStage((stage) => { if (stage.active) stopPlayback(); });
-    return () => { setAnnounceStopHandler(null); offStage(); };
-  }, [stopPlayback]);
+    return () => { setAnnounceStopHandler(null); setAnnounceResumeHandler(null); offStage(); };
+  }, [resumePlayback, stopPlayback]);
 
   // 卸载：释放音频上下文（不留后台播放）
   useEffect(() => () => {
-    if (stoppedTimerRef.current) clearTimeout(stoppedTimerRef.current);
     epochRef.current += 1;
     publishAnnounceStatus(IDLE_ANNOUNCE_STATUS);
     void ctxRef.current?.close().catch(() => undefined);
