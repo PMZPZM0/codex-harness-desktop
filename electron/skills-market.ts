@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { createHash } from "node:crypto";
 
 const execFileAsync = promisify(execFile);
 const API_BASE = "https://api.cocoloop.cn";
@@ -219,6 +220,82 @@ async function expandZip(zipPath: string, outputDir: string) {
 
 export type InstallProgress = { stage: "download" | "extract" | "audit" | "install" | "register"; message: string };
 
+/** 技能包下载 —— **安装与更新共用同一条口径**：SkillHub COS 直链 404 时回退官方下载 API，
+ *  并统一施加体积闸门。⛔ 别在更新路径上另写一份下载逻辑 —— 白名单与体积规则会漂移。 */
+async function fetchSkillArchive(skill: MarketSkill, market: "cocoloop" | "skillhub"): Promise<Buffer> {
+  let response = await net.fetch(skill.downloadUrl, { signal: AbortSignal.timeout(45_000) });
+  if (!response.ok && market === "skillhub" && response.status === 404) {
+    response = await net.fetch(`${SKILLHUB_API}/api/v1/download?slug=${encodeURIComponent(skill.id)}`, { signal: AbortSignal.timeout(45_000) });
+  }
+  if (!response.ok) throw new Error(`技能下载失败（HTTP ${response.status}）`);
+  const declaredSize = Number(response.headers.get("content-length") || 0);
+  if (declaredSize > MAX_ARCHIVE_BYTES) throw new Error("技能压缩包超过 50 MB，已拒绝安装");
+  const archive = Buffer.from(await response.arrayBuffer());
+  if (!archive.length || archive.length > MAX_ARCHIVE_BYTES) throw new Error("技能压缩包为空或超过 50 MB，已拒绝安装");
+  return archive;
+}
+
+/* ── 技能更新（10-12 用户要求「技能和插件加一个更新功能」）────────────────────────
+ * ⛔⛔ **技能市场不提供版本号**（cocoloop 与 SkillHub 两套接口都翻过：只有 id / 名称 / 简介 /
+ *   下载量 / 安全等级，没有任何 version 或 updated_at）⇒ 「有没有更新」**不能靠版本比**，
+ *   只能靠**内容比对**：把市场当前的包下下来，与磁盘上已装的逐文件对齐。
+ * ⛔ 两侧指纹**必须用同一个函数**（skillFingerprint），否则比对恒为「有更新」。
+ * ⛔ 定位下载地址走**市场搜索**（按已装技能的 marketId 命中原技能），不自己拼 URL ——
+ *   installCocoLoopSkill 对 downloadUrl 有前缀白名单，拼错会被判「无效的技能下载地址」。
+ */
+
+/** 目录指纹：递归收集文件，**跳过以 `.` 开头的应用内清单**（.cocoloop.json / .skillhub.json
+ *  是安装时我们自己写进去的，市场包里没有 —— 不过滤掉会让比对恒为「有差异」），
+ *  然后按「相对路径 + 内容 sha256」排序聚合。⛔ 市场包与已装目录都走它。 */
+export async function skillFingerprint(root: string): Promise<string> {
+  const files = (await collectFiles(root))
+    .filter((rel) => !rel.split(/[\\/]/).some((segment) => segment.startsWith(".")));
+  const lines: string[] = [];
+  for (const rel of files.sort()) {
+    let buf = await fs.readFile(path.join(root, rel));
+    // ⛔ 必须与安装链的 stripSkillBom 同口径：安装时 SKILL.md 的 UTF-8 BOM 会被剥掉，
+    //   这里不剥就会与市场包「恒有差异」⇒ 误报「有更新」。
+    if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) buf = buf.subarray(3);
+    lines.push(`${rel.replace(/\\/g, "/")} ${createHash("sha256").update(buf).digest("hex")}`);
+  }
+  return createHash("sha256").update(lines.join("\n")).digest("hex");
+}
+
+/** 市场当前技能包的内容指纹（下载 + 解压 + 只对 SKILL.md 所在的源目录算）。 */
+export async function marketSkillFingerprint(skill: MarketSkill): Promise<string> {
+  const isSkillHubUrl = /^https:\/\/skillhub-1388575217\.cos\.ap-guangzhou\.myqcloud\.com\//i.test(skill.downloadUrl ?? "");
+  const market: "cocoloop" | "skillhub" = isSkillHubUrl ? "skillhub" : "cocoloop";
+  const archive = await fetchSkillArchive(skill, market);
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), "codex-harness-skill-upd-"));
+  try {
+    const zipPath = path.join(temp, "skill.zip");
+    const extracted = path.join(temp, "extracted");
+    await fs.mkdir(extracted);
+    await fs.writeFile(zipPath, archive);
+    await expandZip(zipPath, extracted);
+    const files = await collectFiles(extracted);
+    const skillFiles = files.filter((file) => path.basename(file).toLowerCase() === "skill.md");
+    if (skillFiles.length !== 1) throw new Error("技能包必须且只能包含一个 SKILL.md");
+    return await skillFingerprint(path.dirname(path.join(extracted, skillFiles[0])));
+  } finally {
+    await fs.rm(temp, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+/** 按已装技能的 marketId 去市场搜回它当前的 MarketSkill（更新用）。搜不到返回 null ——
+ *  调用方要如实标「无法判定」，**不许拿「搜不到」当「已是最新」**。 */
+export async function resolveMarketSkill(input: { marketId: string; name: string; source: "cocoloop" | "skillhub" }): Promise<MarketSkill | null> {
+  const query = input.name || input.marketId;
+  const pick = (items: MarketSkill[]) => items.find((entry) => entry.id === input.marketId) ?? items.find((entry) => entry.name === input.name) ?? null;
+  try {
+    if (input.source === "skillhub") {
+      const hit = pick((await listSkillHubSkills({ query, limit: 40 })).items);
+      if (hit) return hit;
+    }
+    return pick((await listCocoLoopSkills({ query, pageSize: 30 })).items);
+  } catch { return null; }
+}
+
 export async function installCocoLoopSkill(input: { skill: MarketSkill; destinationRoot: string; onProgress?: (progress: InstallProgress) => void }) {
   const skill = input.skill;
   const progress = (stage: InstallProgress["stage"], message: string) => input.onProgress?.({ stage, message });
@@ -227,16 +304,7 @@ export async function installCocoLoopSkill(input: { skill: MarketSkill; destinat
   const market = isSkillHubUrl ? "skillhub" : "cocoloop";
   if (!skill?.id || !skill?.name || (!isCocoLoopUrl && !isSkillHubUrl)) throw new Error("无效的技能下载地址");
   progress("download", market === "skillhub" ? "正在从 SkillHub 下载技能包" : "正在从 CocoLoop 下载技能包");
-  let response = await net.fetch(skill.downloadUrl, { signal: AbortSignal.timeout(45_000) });
-  // SkillHub 部分带 namespace 的技能不在 COS 直链上，404 时回退官方下载 API
-  if (!response.ok && isSkillHubUrl && response.status === 404) {
-    response = await net.fetch(`${SKILLHUB_API}/api/v1/download?slug=${encodeURIComponent(skill.id)}`, { signal: AbortSignal.timeout(45_000) });
-  }
-  if (!response.ok) throw new Error(`技能下载失败（HTTP ${response.status}）`);
-  const declaredSize = Number(response.headers.get("content-length") || 0);
-  if (declaredSize > MAX_ARCHIVE_BYTES) throw new Error("技能压缩包超过 50 MB，已拒绝安装");
-  const archive = Buffer.from(await response.arrayBuffer());
-  if (!archive.length || archive.length > MAX_ARCHIVE_BYTES) throw new Error("技能压缩包为空或超过 50 MB，已拒绝安装");
+  const archive = await fetchSkillArchive(skill, market);
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), "codex-harness-skill-"));
   try {
     const zipPath = path.join(temp, "skill.zip");

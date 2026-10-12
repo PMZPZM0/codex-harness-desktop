@@ -478,6 +478,10 @@ interface Window {
     uninstallMarketPlugin(slug: string): Promise<{ ok: boolean; reason?: string; engineRemoved?: boolean }>;
     /* 10-03：本地已装市场插件清单（**只扫本地目录、零网络**；供「已安装」列表补齐引擎没认领的那批 —— 不能走 market-list，那条会拉远端 48 个插件） */
     listInstalledMarketPlugins(): Promise<{ slug: string; version: string; description: string }[]>;
+    /* 10-12 新增：插件**有版本号**（marketplace.json 的 version vs 本地 .codex-market.json）⇒ 走真版本比对。⛔ 只读、零副作用；版本缺失的一律 comparable:false 交给界面如实显示，不许演成「已是最新」 */
+    checkPluginUpdates(): Promise<{ slug: string; name: string; current: string; latest: string; hasUpdate: boolean; comparable: boolean }[]>;
+    /* 10-12 新增：按 slug 取市场最新对象、重跑**同一条安装链**覆盖更新（含引擎注册与重启）。市场已下架时明确报错，不静默跳过 */
+    updatePlugin(slug: string): Promise<{ ok?: boolean; from: string; to: string; engineRegistered: boolean; engineCheckMessage: string }>;
     listLocalSkills(): Promise<LocalSkillEntry[]>;
     setEnabledSkill(input: { folder: string; enabled: boolean }): Promise<{ ok: boolean }>;
     setEnabledSkillBatch(input: { folders: string[]; enabled: boolean }): Promise<{ ok: boolean; changed: number; failures: string[] }>;
@@ -753,6 +757,10 @@ interface Window {
     cancelRuntime(id: string): Promise<{ ok: boolean; reason?: string; killed?: number }>;
     /* 工具自检（10-02 用户要的「检查」）：逐个探测已装工具**能不能真跑**（跑一次版本命令/可执行性），返回逐项结果，界面直接列给人看 */
     runtimeHealth(): Promise<{ id: string; name: string; installed: boolean; ok: boolean; detail: string }[]>;
+    /* 10-12 新增（用户要求「nuphus 和 browser 留国内镜像源更新入口」）：查 npm 最新版（国内镜像优先、回落官方源）并读磁盘已装版，给出 hasUpdate。传 id 返回单条、不传返回全部可更新工具 —— 包名与落位的真相源在主进程 UPDATEABLE_TOOLS / npmGlobalRootCandidates */
+    checkRuntimeUpdate(id?: string): Promise<{ id: string; name: string; pkg: string; current: string; latest: string; registry: string; hasUpdate: boolean; error: string } | { id: string; name: string; pkg: string; current: string; latest: string; registry: string; hasUpdate: boolean; error: string }[]>;
+    /* 10-12 新增：从 npm 国内镜像装 <pkg>@latest 到 tools/npm-global（进度走 runtime:progress），装完**复核磁盘版本**、再按闸门重启引擎。⛔ 与「修复安装」不同：后者从随包 zip 重解压（版本回到包内版本，属降级） */
+    updateRuntime(id: string): Promise<{ ok: boolean; joined?: boolean; cancelled?: boolean; from?: string; to?: string; runtimes: DevRuntimeEntry[] }>;
     weixinStartLogin(): Promise<{ qrcodeImg: string; qrcode: string } | null | undefined>;
     weixinPollLogin(): Promise<{ status: string; verifyCodeRequired?: boolean; connected?: boolean } | null | undefined>;
     feishuConnect(appId: string, appSecret: string): Promise<{ ok: boolean; name?: string; error?: string }>;
@@ -774,6 +782,10 @@ interface Window {
     channelsStatus(): Promise<{ weixin: boolean; telegram: boolean; feishu?: boolean; dingtalk?: boolean; qq?: boolean; "wecom-webhook"?: boolean }>;
     telegramConnect(token: string): Promise<{ ok: boolean; username?: string; error?: string }>;
     installMarketSkillLight(skill: unknown): Promise<{ name: string; discovered: boolean; engineCheckMessage: string }>;
+    /* 10-12 新增（用户要求「技能和插件加一个更新功能」）：技能市场**没有版本号** ⇒ 判据是**内容比对**（把市场当前的包下下来，与磁盘上已装的逐文件对齐，相对路径 + 内容 sha256，两侧同一函数）。三态：update / current / unresolved（市场搜不到、比对失败、或本地导入无市场来源）——⛔ unresolved 绝不演成 current */
+    checkSkillUpdates(): Promise<{ folder: string; name: string; marketId?: string; marketSource?: "cocoloop" | "skillhub"; state: "update" | "current" | "unresolved"; detail: string }[]>;
+    /* 10-12 新增：把某个已装的市场技能重新拉取覆盖（复用市场安装链：下载/安检/解压/落盘/来源清单），再刷新 skills/list。folder = 技能目录名 */
+    updateSkill(folder: string): Promise<{ ok: boolean; name: string; folder: string; discovered: boolean }>;
     skillDisciplineGet(): Promise<{ present: boolean; section: string }>;
     savePastedText(text: string): Promise<string | null>;
     readPastedText(path: string): Promise<{ editable: boolean; content?: string | null }>;
@@ -958,6 +970,10 @@ interface Window {
     uninstallOfficialMarketPlugin(slug: string): Promise<{ ok: boolean; reason?: string; engineRemoved?: boolean }>;
     /* 本地已装官方插件（**只扫本地目录、零网络**）：补齐「引擎没认领、但文件已落盘」的那批，不能走 list（那条要拉上游 65 条） */
     listInstalledOfficialMarketPlugins(): Promise<{ slug: string; version: string; description: string }[]>;
+    /* 10-12 新增：Codex 官方插件市场（GitHub openai/plugins 国内镜像）的更新检查。与 plugins 域同构：**有版本号** ⇒ 真版本比对；只读零副作用；版本缺失标 comparable:false */
+    checkOfficialPluginUpdates(): Promise<{ slug: string; name: string; current: string; latest: string; hasUpdate: boolean; comparable: boolean }[]>;
+    /* 10-12 新增：按 slug 取官方市场最新对象、重跑**同一条安装链**覆盖更新（含引擎注册与重启）。已下架时明确报错 */
+    updateOfficialPlugin(slug: string): Promise<{ from: string; to: string; engineRegistered: boolean; engineCheckMessage: string }>;
     /* 10-04 阶段 6 宿主域清单（启用/停用状态 + 是否 essential） */
     domainsList(): Promise<{ domains: Array<{ id: string; mounted: boolean; disabled: boolean; essential: boolean }>; essentialDomains: string[]; requiresRestart: boolean }>;
     /* 10-04 阶段 6 停用/启用宿主域（下次启动生效，essential 域拒绝） */

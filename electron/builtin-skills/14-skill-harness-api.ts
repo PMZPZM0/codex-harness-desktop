@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（89 个能力域 / 449 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（89 个能力域 / 457 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -222,9 +222,9 @@ Bot 会话（Bot 与会话的绑定与消息注入）
 引擎工具面状态（动态工具是否注册）
 通道：tools:status
 
-### runtime（5 通道）
+### runtime（7 通道）
 随包运行时管理（node/python 等的安装/卸载/列表）
-通道：runtime:health, runtime:install, runtime:list, runtime:uninstall, runtime:cancel
+通道：runtime:health, runtime:install, runtime:list, runtime:uninstall, runtime:cancel, runtime:update-check, runtime:update
 
 ### browser（3 通道）
 浏览器自动化开关（cloak 状态/打开/弹窗）
@@ -262,21 +262,21 @@ Bot 会话（Bot 与会话的绑定与消息注入）
 数据目录自定义（userData 重定向 + 启动期自动迁移；改后重启生效）
 通道：dataDir:read, dataDir:prepare
 
-### skills（12 通道）
+### skills（14 通道）
 技能经验包（导入/启停/市场安装/本地列表）
-通道：skills:import, skills:local-list, skills:local-remove, skills:market-install, skills:market-install-light, skills:market-list, skills:set-enabled, skills:set-enabled-batch, skills:pool-describe, skills:pool-set, skills:builtin-switch-get, skills:builtin-switch-set
+通道：skills:import, skills:local-list, skills:local-remove, skills:market-install, skills:market-install-light, skills:market-list, skills:set-enabled, skills:set-enabled-batch, skills:pool-describe, skills:pool-set, skills:builtin-switch-get, skills:builtin-switch-set, skills:update-check, skills:update
 
 ### skill-discipline（1 通道）
 技能纪律（写技能时必须遵守的硬规则查询）
 通道：skill-discipline:get
 
-### plugins（6 通道）
+### plugins（8 通道）
 插件市场（安装/启停/列表）
-通道：plugins:market-install, plugins:market-installed, plugins:market-list, plugins:market-uninstall, plugins:set-enabled, plugins:set-linked-enabled
+通道：plugins:market-install, plugins:market-installed, plugins:market-list, plugins:market-uninstall, plugins:set-enabled, plugins:set-linked-enabled, plugins:update-check, plugins:update
 
-### codex-official-market（5 通道）
+### codex-official-market（7 通道）
 Codex 官方插件市场（GitHub openai/plugins 走国内镜像：清单/分类/一键安装/卸载/本地已装）
-通道：codex-official-market:categories, codex-official-market:install, codex-official-market:installed, codex-official-market:list, codex-official-market:uninstall
+通道：codex-official-market:categories, codex-official-market:install, codex-official-market:installed, codex-official-market:list, codex-official-market:uninstall, codex-official-market:update-check, codex-official-market:update
 
 ### hooks（2 通道）
 钩子（会话生命周期挂钩配置）

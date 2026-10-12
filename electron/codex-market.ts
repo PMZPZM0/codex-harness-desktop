@@ -13,6 +13,7 @@
 import { net } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { compareVersions } from "./updates";
 
 const GITEE_OWNER = "yuqiaodi";
 const GITEE_REPO = "claude-plugins-official-gitee";
@@ -262,6 +263,43 @@ export async function listMarketPlugins(input: { category?: string; query?: stri
     page,
     pageSize,
   };
+}
+
+/** 已装插件 vs 市场最新版：逐条给出版本对比结论（10-12 用户要求「技能和插件加一个更新功能」）。
+ *  ⛔ 判据来源：本地版本 = `.codex-market.json`（`listInstalledMarketPlugins`，权威、零网络）；
+ *    市场版本 = marketplace.json 的 `entry.version`。
+ *  ⛔ 版本缺失（旧清单没填 / 市场未收录）一律 `comparable: false`，由界面**如实标注** ——
+ *    绝不把「判不了」演成「已是最新」（本项目栽过多次「假成功」）。
+ *  ⛔ 本函数**只读**：检查更新必须可随时点、无任何副作用。 */
+export async function checkMarketPluginUpdates(marketDir: string): Promise<{
+  slug: string; name: string; current: string; latest: string; hasUpdate: boolean; comparable: boolean;
+}[]> {
+  const installed = await listInstalledMarketPlugins(marketDir);
+  const plugins = await loadMarketPlugins();
+  const bySlug = new Map(plugins.map((entry) => [entry.slug, entry]));
+  return [...installed.entries()].map(([slug, info]) => {
+    const remote = bySlug.get(slug);
+    const current = info.version || "";
+    const latest = remote?.version || "";
+    const comparable = Boolean(current && latest);
+    return {
+      slug,
+      name: remote?.displayName || slug,
+      current,
+      latest,
+      comparable,
+      hasUpdate: comparable && compareVersions(latest, current) > 0,
+    };
+  });
+}
+
+/** 按 slug 取市场里的插件对象（更新时复用**同一份**对象走既有安装链，避免第二条安装路径）。
+ *  找不到返回 null —— 调用方要如实报错，不许静默跳过。 */
+export async function findMarketPlugin(slug: string): Promise<CodexMarketPlugin | null> {
+  const key = String(slug ?? "").trim();
+  if (!key) return null;
+  const plugins = await loadMarketPlugins();
+  return plugins.find((entry) => entry.slug === key) ?? null;
 }
 
 type RepoRef = { owner: string; repo: string };

@@ -10,6 +10,7 @@ import { Spinner } from "../../components/CardShell";
 import { BatchActions, CheckCard, SearchField, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
 import { SkillAvatar } from "../../features/skills-market";
 import { SkillPoolSection } from "./SkillPoolSection";
+import { MarketUpdatePanel } from "../market-updates/MarketUpdatePanel";
 
 export type SkillsCenterSectionProps = { openAppConfirm: (title: string, text: string, confirmLabel?: string) => Promise<boolean>; userDataPath: any; displayPath: any; projects?: [string, unknown][]; skillsManageOnly: any; setSkillsManageOnly: any; installedTotalCount: any; importSkill: any; refreshMarketSkills: any; skillHubCategory: any; skillHubSearch: any; marketPage: any; marketLoading: any; skillHubCategories: any; setSkillHubCategory: any; setMarketPage: any; skillManageSearch: any; setSkillManageSearch: any; setSkillHubSearch: any; skillHubCategoryTabs: any; skillHubFilterCategory: any; setSkillHubFilterCategory: any; marketSkills: any; skillHubCategoryName: any; localSkills: any; settingsResources: any; skillChecked: any; setSkillChecked: any; skillZhNote: any; toggleSkillEnabled: any; setSelectedSkills: any; setSettingsOpen: any; removeLocalSkill: any; skillBatchBusy: any; batchSetSkillEnabled: any; marketPageSize: any; setMarketPreview: any; setNotice: any; installMarketSkill: any; installingMarketSkill: any };
 
@@ -105,6 +106,9 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                         </article>;
                       };
                       return <div className="skill-installed-view">
+                        {/* 市场更新（10-12 用户要求「技能和插件加一个更新功能」）：技能市场**没有版本号**，
+                            判据是内容比对（主进程 skills:update-check），三态如实显示。 */}
+                        <MarketUpdatePanel kind="skills" hint="对照市场上的当前内容检查已装技能，内容有变化才提示；更新走与安装完全相同的链路（含安全检查）。" />
                         <SkillPoolSection projects={props.projects} onNotice={setNotice} />
                         <div className="resource-toolbar secondary">
                           <SelectAllToggle total={selectableFolders.length} selected={checkedFolders.length} unit="个技能" onSelectAll={() => setSkillChecked(selectableFolders)} onClear={() => setSkillChecked([])} />

@@ -14,6 +14,7 @@ import { Spinner } from "../../components/CardShell";
 import { BatchActions, CheckCard, SearchField, SegmentedTabs, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
 import { MarketLogo } from "../../features/skills-market";
 import { CodexOfficialMarketSection } from "../codex-official-market";
+import { MarketUpdatePanel } from "../market-updates/MarketUpdatePanel";
 import { avatarToneOf } from "../../lib/entity-avatar";
 
 /** 已安装插件的**来源渠道标签**（10-06 用户：「每个市场安装的都要在已安装里打来源渠道标签」）。
@@ -136,6 +137,12 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
       </div> : <p className="muted">{pluginMarketLoading ? "正在加载插件市场…" : "没有匹配的插件，换个关键词试试。"}</p>}
       <div className="skill-market-pagination"><span>共 {pluginMarketTotal} 个插件 · 第 {pluginMarketPage} / {Math.max(1, Math.ceil(pluginMarketTotal / pluginMarketPageSize))} 页</span><div><button className="secondary-setting" disabled={pluginMarketLoading || pluginMarketPage <= 1} onClick={() => setPluginMarketPage((page: any) => Math.max(1, page - 1))}><ArrowLeft size={14} />上一页</button><button className="secondary-setting" disabled={pluginMarketLoading || pluginMarketPage >= Math.max(1, Math.ceil(pluginMarketTotal / pluginMarketPageSize))} onClick={() => setPluginMarketPage((page: any) => page + 1)}>下一页<ArrowRight size={14} /></button></div></div>
     </div>}
+
+    {/* 市场更新（10-12 用户要求「技能和插件加一个更新功能」）：
+        与市场列表**并列**而不是塞进去 —— 它管的是「已装的那批要不要更新」，
+        两个源各自独立比对（gitee 镜像 / Codex 官方），在「已安装」屏两块都出。 */}
+    {marketSource === "gitee" || marketSource === "installed" ? <MarketUpdatePanel kind="plugins" hint="对照 Gitee 镜像市场的当前版本检查已装插件，有新版才提示；更新走与安装完全相同的链路。" /> : null}
+    {marketSource === "official" || marketSource === "installed" ? <MarketUpdatePanel kind="official" hint="对照 Codex 官方市场的当前版本检查已装插件，有新版才提示。" /> : null}
 
     {marketSource === "installed" ? <><div className="plugin-market-title">已安装插件<small>本机已安装的插件 · 停用后 Codex 不再加载它提供的指令、技能与钩子（文件仍在，不占不到磁盘）</small></div>    <div className="plugin-stats">
       <div className="plugin-stat"><span>已安装</span><strong>{installed.length}</strong></div>
