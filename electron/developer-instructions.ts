@@ -39,13 +39,49 @@ const OUTPUT_STYLE_INSTRUCTIONS = (targets: { skill: string; label: string; file
 const LANGUAGE_INSTRUCTIONS =
   "\n\nLANGUAGE: The user speaks Simplified Chinese. Produce BOTH your internal reasoning (thinking steps) and your final replies in Simplified Chinese by default, regardless of which model is active. Keep code, identifiers, file paths, CLI output, and established technical terms in their original form. Use English only when the user explicitly requests it.";
 
-/** 桌面自动化说明（nuphus MCP 的 desktop_* 工具；nuphus-call 是等价命令行兜底）
- *  ⛔ 这里的文案要**与事实一致**（09-20 修）：desktop_* 是通过 [mcp_servers.nuphus] 注册的
- *  MCP 工具，**已经在模型工具列表里**，直接调用即可 —— 旧文案只提 nuphus-call 命令行，
- *  把「直接调用」这条路藏起来了（模型被迫走 CLI，每步多一次进程往返）。
- *  细节留在技能里（渐进披露），这里只给优先级与判据，避免每轮多花几百 token。 */
+/**
+ * 回合连续性与长命令（10-12 加）—— 用户报障「任务跑到一半自己断」。
+ *
+ * ⛔⛔ 证据（会话 01a12e1b 的 rollout，逐行核过，不是推断）：
+ *   4 个回合里 3 个的**末条消息都是一句"我要继续做 X"**，而**没有任何工具调用** ⇒
+ *   引擎立即 `task_complete` 把回合判为完成 ⇒ 用户看到的就是"自动中断"。
+ *   两次出现 `Process running with session ID <id>`（命令超过 yield 窗口）时，
+ *   模型下一步**都是"发条消息、没有工具调用"** ⇒ 拿到半截输出就收工。
+ *   ⛔ 这不是宿主打断了回合（时长 57/125/133/183s 无固定超时；rollout 里没有 abort 事件）——
+ *      是模型把"叙述下一步"当成了"已完成"。弱模型（deepseek-flash 档）尤其如此。
+ *
+ * ⛔ 为什么必须写进指令：引擎的回合语义是「没有工具调用 = 交还控制权」，模型不会自发意识到
+ *   "说出计划" 等于 "结束回合"。工具侧没法修（不能替用户按下一次调用），只能把机制写明。
+ *
+ * (c) 的落盘+轮询写法选的是**实测见过能用**的形态（本会话里模型已成功用过
+ *   `Start-Process … -WindowStyle Normal` 起分离进程）；⛔ 刻意不点名"续读会话"的具体工具名
+ *   —— 引擎二进制里只有 `write_stdin` 这个内部 ToolCallKind，模型侧真名没验出来，写错就是
+ *   又一次"声称能力"（本仓栽过多次）。所以 (b) 只写机制事实（进程还活着、要去读），
+ *   (c) 给一条不依赖该工具名的确定性做法。
+ */
+const CONTINUITY_INSTRUCTIONS =
+  "\n\nTURN CONTINUITY & LONG COMMANDS (hard rule — 10-12 加，修「任务跑到一半自己断」):\n" +
+  "   (a) **The moment you end a reply that contains NO tool call, the engine marks the turn COMPLETED and hands control back to the user.** From their side the task \"stopped by itself\". So NEVER end a reply with a promise of future work — 「我接下来…」「继续…」「改串行重跑」「继续压 X 通道」 — that text does nothing and looks like a crash. Either emit the next tool call in the SAME reply and keep working, or, if you are genuinely blocked, write the concrete blocker plus what you need from the user, and only then stop.\n" +
+  "   (b) A local command that runs past its yield window returns `Process running with session ID <id>` with only PARTIAL output. **That is not a result and the step is NOT done** — never summarize it as success, never treat the partial text as the answer, and never stop there. The engine keeps that process alive: go back to that session id and read its remaining output until you see the final line or the exit code.\n" +
+  "   (c) For anything that can take minutes (OCR model downloads, browser launches, npm installs, builds): do NOT fire it synchronously and hope it fits in one window. Launch it DETACHED with its output redirected to a file — on Windows PowerShell `Start-Process -FilePath <exe> -ArgumentList <args> -RedirectStandardOutput out.txt -RedirectStandardError err.txt -PassThru` returns immediately — then read `Get-Content out.txt -Tail 40` on the next step until the end marker shows up. Prefer several short commands over one long one.\n" +
+  "   (d) Before you stop, re-read your own last sentence: if it says you WILL do something, you have not done it yet — do it now.";
+
+/** 桌面自动化说明（nuphus 的 desktop_* 工具；`nuphus-call` 是等价命令行兜底）
+ *  ⛔⛔ 10-12 改（引擎日志实证 `ERROR codex_core::tools::router: error=unsupported call: desktop_windows_list`
+ *     + 用户与真实用户同报「任务跑到一半自己断」）：**旧文案的判据已经恒假，必须换掉**。
+ *     · 旧文案：「IF `desktop_windows_list` is in your tool list … IF the tools are NOT in your list,
+ *       桌面自动化是关掉的（硬移除，不是坏了），别调 `desktop_*`、也别用 `nuphus-call` 绕过，
+ *       直接告诉用户在设置里关了」。
+ *     · 事实：引擎 0.157 起**内置 MCP 工具整批「延迟暴露」**（永久默认；同结论见
+ *       features/dispatch-rpc.ts 顶部那段）⇒ 开关开不开，`desktop_*` **都不在模型工具表里**。
+ *       于是模型读到的是「自动化被关了」，可开关实际开着、CLI 明明能用 ⇒ 它只能违规绕行或反复试错，
+ *       每步多起一次进程、又常超过 30s 的 yield 窗口 ⇒ 拿到半截输出就收工（用户看到的「自动断」）。
+ *     · 现在：**通道事实直接写进文案，判据交给宿主** —— 开关关掉时这段根本不注入（改由
+ *       AUTOMATION DISABLED NOTE 明确禁止 nuphus-call）⇒ 这里可以放心把 CLI 写成主线。
+ *     · `nuphus-call.cmd` 确认在 PATH 上（resources/tools/npm-global，已核对）。
+ *  细节留在技能里（渐进披露），这里只给通道与优先级，避免每轮多花几百 token。 */
 const DESKTOP_INSTRUCTIONS =
-  "\n\nAUTOMATION TOOLKIT (pre-installed; use ONLY when the task actually needs it — the tools themselves are NOT described in your context by default):\n1) Desktop automation — IF `desktop_windows_list` is in your tool list, the nuphus MCP desktop tools are already registered; call them directly, no script needed. CHANNEL PRIORITY on Windows: for native apps (Explorer / Office / Win32 / WPF) prefer the control-list channel when `desktop_ui_snapshot` is in your tool list — snapshot once, then `desktop_ui_invoke` / `desktop_ui_set_value` by element index (no coordinates, survives window moves and DPI scaling, writes still need confirm=true); use `browser_*` for web content and for Electron/Tauri windows (their UIA tree is shallow, often single digits); fall back to OCR coordinates (`desktop_perceive` + `desktop_mouse`) only when neither gives you a usable list, and re-perceive after any window move. Never hand-roll PowerShell UIA calls to bypass the switch — if `desktop_ui_*` is absent that channel is off. Loop: `desktop_windows_list` → `desktop_window_activate` → observe (`desktop_screenshot` / `desktop_perceive`) → act (`desktop_mouse` / `desktop_input`, pass confirm=true) → verify with another screenshot. Take click coordinates from `desktop_perceive` (runs locally, free); `desktop_vision` coordinates are explicitly unreliable — never click with them. For long text (>500 chars) write the clipboard first and paste (Ctrl+V on Windows, Cmd+V on macOS — never hardcode one platform). `nuphus-call` (on PATH) is the equivalent CLI fallback: `nuphus-call <tool> key=value ...`; run it with no args to list every tool. IF the tools are NOT in your list, desktop automation is switched off (the tools are hard-removed, not broken): do not call `desktop_*`, do not fall back to `nuphus-call` to bypass the switch, and just tell the user it is disabled in Settings → Automation. Never automate a UAC / privilege-elevation prompt — stop and ask the user.";
+  "\n\nAUTOMATION TOOLKIT (pre-installed; use ONLY when the task actually needs it — the tools themselves are NOT described in your context by default):\n1) Desktop automation — the nuphus MCP tools (`desktop_*`) are registered as an MCP server, but on current engine builds MCP tools are NOT delivered to you: a direct call such as `desktop_windows_list` fails with `unsupported call`. ⛔ That is NOT \"the switch is off\" — do NOT retry it, and do NOT tell the user the feature is disabled. **Drive desktop automation through the CLI instead: `nuphus-call <tool> key=value …`** (on PATH; run it with no args to list every tool — e.g. `nuphus-call desktop_perceive`, `nuphus-call desktop_windows_list`). The UIA channel (`desktop_ui_*`, from the harness-uia MCP server) has the same limitation: if a direct call fails, use the CLI path rather than reporting it broken.\n   CHANNEL PRIORITY on Windows: for native apps (Explorer / Office / Win32 / WPF) prefer the control-list channel (UIA) when your skill gives you a working way to it — read the list once, then act by element index (no coordinates, survives window moves and DPI scaling; writes still need confirm=true); use playwright-cli (see your browser-skill) for web content and for Electron/Tauri windows (their UIA tree is shallow, often single digits); fall back to OCR coordinates (`desktop_perceive` + `desktop_mouse`) only when neither gives you a usable list, and re-perceive after any window move.\n   Loop: list windows → activate the target window → observe (`desktop_screenshot` / `desktop_perceive`) → act (`desktop_mouse` / `desktop_input`, pass confirm=true) → verify with another screenshot. Take click coordinates from `desktop_perceive` (runs locally, free); `desktop_vision` coordinates are explicitly unreliable — never click with them. For long text (>500 chars) write the clipboard first and paste (Ctrl+V on Windows, Cmd+V on macOS — never hardcode one platform).\n   ⛔ `desktop_perceive` downloads its OCR models ON FIRST USE (tens of seconds to a couple of minutes). That is a one-time cost, not a hang — launch it the way the TURN CONTINUITY rule describes for long commands, then continue. ⛔ Run automation calls ONE AT A TIME: nuphus serializes them, and parallel calls collide with `Automation is busy` — that error means \"wait for the other call\", not \"retry harder\". ⛔ Never automate a UAC / privilege-elevation prompt — stop and ask the user.";
 
 /**
  * 浏览器自动化说明。
@@ -59,10 +95,22 @@ const DESKTOP_INSTRUCTIONS =
  *    所以必须写成条件式，否则模型会去调不存在的工具、把「没开」误判成「坏了」。
  *  - playwright-cli 降级为**兜底**通道（nuphus 不可用时仍能干活）。
  *  - cloakbrowser 仍是可选增强，可能根本没装 —— 必须先看环境变量再决定。
+ * ⛔⛔ 10-12 改（引擎日志实证 + 用户与真实用户同报「任务跑不完、自动断」）：
+ *  - **首选改为 `playwright-cli`**。原因：`browser_*` 走引擎内置 MCP 注册，而**引擎 0.157 起
+ *    内置 MCP 工具面对模型是「延迟暴露」** —— 列表里看得到、**调用必报 `unsupported call`**
+ *    （实证：`ERROR codex_core::tools::router: error=unsupported call: browser_navigate`）；
+ *    宿主的能力网关 `harness_tools`（25 个能力）也**不含**浏览器工具 ⇒ 该通道当前对模型不可达。
+ *  - 旧文案把 `browser_*` 写成 PREFERRED、把 CLI 写成 fallback：弱模型（deepseek 系）不会去核对
+ *    工具列表，直接照 PREFERRED 调 ⇒ 失败 ⇒ 换招重试 ⇒ **整个回合耗死在工具选择上**
+ *    （用户看到的就是「跑一半自己断」）。
+ *  - 现在：主线写 playwright-cli（PATH 上有、确定可用）；`browser_*` 只留一句「首次调用成功才继续」
+ *    并要求**失败立即转 CLI、绝不重试**。
  */
 const BROWSER_INSTRUCTIONS =
-  "\n2) Browser automation — two channels; pick by what is ACTUALLY in your tool list:\n   a) PREFERRED — the nuphus MCP browser tools (prefix `browser_`). If `browser_navigate` appears in your tool list, use these: one call per action instead of a process spawn per action, `browser_snapshot` returns only the accessibility tree's interactive elements (token-cheap), `browser_exec` batches several steps into ONE round trip, `browser_import_cookies` can reuse the user's existing Chrome login (use only with their knowledge). Loop: snapshot → act → `browser_wait_for`/re-snapshot to verify.\n   b) FALLBACK — `playwright-cli` (on PATH), for when the `browser_*` tools are NOT present (e.g. desktop automation is switched off in app settings, so nuphus is not registered). Workflow: `playwright-cli open <url>` → `playwright-cli snapshot` for element refs → `click e12` / `type` / `fill` / `press` / `screenshot`; named sessions with -s=name; consult `playwright-cli --help`.\n3) cloakbrowser — OPTIONAL anti-detection fingerprint Chromium (drop-in Playwright replacement that passes Cloudflare Turnstile, reCAPTCHA, FingerprintJS). It is downloadable on demand and may NOT be installed: check `process.env.CLOAKBROWSER_ENTRY` first. If it is unset, cloakbrowser is not installed — do NOT try to install it and do NOT treat it as broken; use the channel from (2) instead and tell the user it can be downloaded from Settings → Developer Tools. When it is set: `const { launch } = await import(process.env.CLOAKBROWSER_ENTRY)` then `await launch({ headless: false, humanize: true })`, driven with the standard Playwright API. Use it ONLY for bot-protected sites.\nBROWSERS: default browsing surface is the app's BUILT-IN browser view (right-side Chromium panel); CloakBrowser only opens its own separate fingerprint window. Full usage guides live in your skills `desktop-automation` and `browser-skill`. Do NOT wrap `require(\"playwright\")` yourself — the CLI and MCP channels are the only supported entry points.";
-
+  "\n2) Browser automation — use playwright-cli (on PATH) for ALL web work: it is the ONLY channel that works on current engine builds. " +
+  "⛔ Do NOT call browser_* (the nuphus MCP tools) even if those names appear in your tool list — every such call fails with unsupported call; " +
+  "if one already failed, do not retry it and do not keep switching channels: continue with playwright-cli immediately. " +
+  "Detailed commands, per-action cheat sheet, login/cookie reuse and the cloakbrowser upgrade path are in your skill browser-skill — load it when the task actually needs a browser.";
 /**
  * 内置媒体插件说明（生图 / 视觉辅助）。只在用户配置并启用对应插件后注入——
  * 引擎从而「知道」这些能力并通过 harness-media.mjs 命令行真实调用。
@@ -292,7 +340,7 @@ export type DevInstructionsInput = {
 export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   const desktop = input.desktop !== false;
   const browser = input.browser !== false;
-  let text = BASE_INSTRUCTIONS + LANGUAGE_INSTRUCTIONS;
+  let text = BASE_INSTRUCTIONS + LANGUAGE_INSTRUCTIONS + CONTINUITY_INSTRUCTIONS;
   // 输出风格（用户开关打开的风格技能）：必须**早**出现，与语言指令同理（见上方那段说明）。
   if (input.outputStyles?.length) text += OUTPUT_STYLE_INSTRUCTIONS(input.outputStyles);
   if (desktop) text += DESKTOP_INSTRUCTIONS;

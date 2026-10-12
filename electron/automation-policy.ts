@@ -17,7 +17,13 @@
  *  2. **掩码是 deny（硬）**，优先于用户显式规则 —— 总闸关着时，用户把某个工具设成 allow 也不生效。
  */
 
-/** nuphus 0.2.3 的桌面组工具（15 个，实测枚举，非文档推测）。 */
+/**
+ * nuphus **0.3.2** 的桌面组工具（22 个，实测枚举：`nuphus-mcp.exe` 走 MCP `tools/list`，非文档推测）。
+ * ⛔ 10-12 更新：0.2.3 → 0.3.2 后桌面组从 15 涨到 22 —— 新增 7 个**语义化/目标化**工具
+ *   （semantic_* / target_* / verify_state）。**这份清单是开关掩码（disabled_tools）的唯一来源**
+ *   ⇒ 漏登记就等于「关掉桌面自动化后这些工具仍可由模型调用」（安全缺口），
+ *   所以每次升 nuphus 都必须重新实测枚举并对齐本表。
+ */
 export const NUPHUS_DESKTOP_TOOLS: readonly string[] = [
   "desktop_screen_size",
   "desktop_screenshot",
@@ -34,9 +40,17 @@ export const NUPHUS_DESKTOP_TOOLS: readonly string[] = [
   "desktop_input",
   "desktop_clipboard_clean",
   "desktop_clipboard_write",
+  // ↓ 0.3.2 新增（0.2.3 没有）
+  "desktop_semantic_observe",
+  "desktop_semantic_candidate",
+  "desktop_semantic_action",
+  "desktop_semantic_execute",
+  "desktop_targets_list",
+  "desktop_target_bind",
+  "desktop_verify_state",
 ];
 
-/** nuphus 0.2.3 的浏览器组工具（23 个，实测枚举）。 */
+/** nuphus **0.3.2** 的浏览器组工具（23 个，实测枚举 —— 0.3.2 与 0.2.3 数量与名称均一致，已核对）。 */
 export const NUPHUS_BROWSER_TOOLS: readonly string[] = [
   "browser_navigate",
   "browser_snapshot",

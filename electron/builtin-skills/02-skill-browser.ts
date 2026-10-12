@@ -67,18 +67,21 @@ await browser.close();
 
 export const BROWSER_SKILL = `---
 name: browser-skill
-description: 浏览器自动化技能：首选内置 nuphus 的 browser_* MCP 工具（元素快照、多步批处理、登录态复用），退化通道为 playwright-cli；含通道判存在、失败排查与 CloakBrowser 反爬升级。任务需要打开网页、抓数据、填表或做端到端验证时使用。
+description: 浏览器自动化技能：走 playwright-cli（当前引擎下唯一可用通道）完成打开网页、抓数据、填表、端到端验证；含命令速查、失败排查与 CloakBrowser 反爬升级。⛔ 当前引擎版本下 nuphus 的 browser_* 工具不可调用（调用即 unsupported call），不要尝试。
 ---
 
 # 浏览器自动化
 
-## 0. 通道选型：先判用哪条（第一步就要判对）
+## 0. 通道选型：直接用 \`playwright-cli\`（当前唯一可用通道）
 
-**① 首选：nuphus 的 \`browser_*\` MCP 工具** —— 已注册在你的工具列表里（前缀 \`browser_\`）。
-为什么是它：**单次调用直达**（CLI 每个动作要起一次进程）、\`browser_snapshot\` 只回 AX 树上的可交互元素（**省 token**）、\`browser_exec\` 能把多步合并成**一次 CDP 往返**、可复用你已登录的浏览器。
+> ⛔⛔ **当前引擎版本下 nuphus 的 \`browser_*\` 工具不可调用**：引擎 0.157 起内置 MCP 工具面对模型是
+> 「延迟暴露」—— 名字在工具列表里看得见、路由里不认，调用必返 \`unsupported call\`
+> （实证日志：\`error=unsupported call: browser_navigate\`）。本技能下文出现的 \`browser_*\` 字样
+> **只作历史对照**；需要浏览器能力时一律改用 \`playwright-cli\`。一个回合内最多试一次 \`browser_*\`，
+> 失败立刻转 CLI —— **绝不在两条通道间反复横跳**（那会把整个回合耗死在工具选择上）。
 
-**判存在**：工具列表里有 \`browser_navigate\` 就用它。
-**没有**（用户在设置里关了自动化、或单独停了 nuphus）→ 落到 ②。
+**① 默认且唯一可靠通道：\`playwright-cli\`** —— 命令行工具，已在 PATH，当前引擎下它真的能用。
+为什么是它：每步一个 CLI 动作、\`snapshot\` 只回可交互元素引用（**省 token**），链路简单不会卡在选择上。
 
 **② 退化通道：\`playwright-cli\`** —— 命令行工具，已在 PATH。仅在 nuphus 不可用时使用。
 
