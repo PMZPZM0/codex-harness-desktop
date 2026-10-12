@@ -16,7 +16,6 @@
  *   「最近一次检查」的结果，可能是另一个版本（旧检查比静默下载早）。
  */
 import { createPortal } from "react-dom";
-import { Fragment } from "react";
 import { Sparkles } from "lucide-react";
 
 export function UpdateReadyToast({

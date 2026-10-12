@@ -16,6 +16,8 @@ import { isImagePath } from "../../lib/is-image-path";
 import { usageBucket } from "../../lib/usage-bucket";
 import { usageInputTokens } from "../../lib/usage-input-tokens";
 import { usageCachedTokens } from "../../lib/usage-cached-tokens";
+import { collectTurnWebSources } from "../../lib/turn-web-sources.mjs";
+import { TurnWebSources } from "./TurnWebSources";
 
 export function StatusDot({ status }: { status: string }) {
   return <span className={`status-dot ${status}`} title={status === "ready" ? "Codex 已连接" : status === "error" ? "Codex 连接失败" : "Codex 正在启动"} />;
@@ -100,7 +102,11 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
      悬停 diff 预览），SessionQueue 里那块插在汇总上面的裸行已于同日删除，别再加回去。 */
   const finalReport = getTurnFileChanges(turn.id);
   const tracked = finalReport.length ? finalReport : getTurnLiveFileChanges(turn.id);
-  if (!changes.length && !tracked.length) return null;
+  /* 回合网页来源（10-12 用户令）：模型这轮搜过/开过哪些网站 —— webSearch query 与结果、
+     浏览器工具与命令行里的 URL，按 host 去重。有来源时**即使零文件改动**也要显示
+     （纯检索回合同样有"搜了哪里"可汇报）。 */
+  const webSources = collectTurnWebSources(turn);
+  if (!changes.length && !tracked.length && !webSources.length) return null;
   const byPath = new Map<string, { path: string; added: number; deleted: number; diffs: string[]; deletedFile?: boolean; newFile?: boolean }>();
   for (const change of changes) {
     const path = change.path ?? change.filePath ?? "未知文件";
@@ -121,6 +127,8 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
     else onOpenFile?.(path);
   };
   const visible = expanded ? files : files.slice(0, COLLAPSE_LIMIT);
+  /* 零文件改动但搜过网页：不渲染文件卡（头部"已更改 N 个文件"不成立），只渲染来源条。 */
+  if (!files.length) return <TurnWebSources sources={webSources} />;
   return (
     <>
       <details className="completed-changes" open>
@@ -167,6 +175,8 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
               {expanded ? "收起" : `再显示 ${files.length - COLLAPSE_LIMIT} 个文件`}
             </button>
           )}
+          {/* 右下角网页来源（10-12 用户令）：favicon 圆标 ≤3 + 「···」看全部，点条目默认浏览器打开。 */}
+          <TurnWebSources sources={webSources} />
         </div>
       </details>
       {/* 右键菜单：与文件卡（消息里的内联卡片）共用同一份（在文件夹中显示 / 复制文件路径 / …），
