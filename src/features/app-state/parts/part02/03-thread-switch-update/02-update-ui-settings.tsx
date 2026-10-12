@@ -20,6 +20,97 @@ export function usePart02c2(bag: Bag) {
     return () => { off?.(); };
   }, []);
 
+  /* ══════════════════════════════════════════════════════════════════════
+   * 更新就绪状态机（10-12）—— 需求 2/3/4
+   *
+   *   idle ──(后台静默下载完成 / 手动检查发现已下好)──▶ ready
+   *   ready ──「取消」──▶ dismissed ──(下次更新事件)──▶ ready
+   *   ready ──「重启安装」──▶ 调 restart-install（主进程 spawn 安装包后 quit 自己）
+   *
+   * ⛔ 版本号存两处是**故意的**：`updateInfo.version`（检查结果）与 `updateReadyVersion`
+   *   （静默下载完成时主进程推来的）可能不是同一次检查来的；弹窗只显示"已就绪"的
+   *   那一个，所以独立存，别在弹窗里读 updateInfo（会显示成旧版本）。
+   * ⛔ dismissed 只压**这一版**：换版本后仍会重新弹（否则用户永远看不到新版本）。
+   * ══════════════════════════════════════════════════════════════════════ */
+  const [updateReady, setUpdateReady] = useState(false);
+  const [updateReadyVersion, setUpdateReadyVersion] = useState("");
+  const [updateRestarting, setUpdateRestarting] = useState(false);
+  const dismissedVersionRef = useRef<string>("");
+  bag.updateReady = updateReady as typeof bag.updateReady;
+  bag.updateReadyVersion = updateReadyVersion as typeof bag.updateReadyVersion;
+  bag.updateRestarting = updateRestarting as typeof bag.updateRestarting;
+
+  /** 已就绪 ⇒ 弹窗出现；被用户取消过的这一版不再打扰。 */
+  const armUpdateReady = (version?: string) => {
+    const v = String(version ?? "").trim();
+    if (dismissedVersionRef.current && v && dismissedVersionRef.current === v) return;
+    if (v) setUpdateReadyVersion(v);
+    setUpdateReady(true);
+  };
+  bag.armUpdateReady = armUpdateReady as typeof bag.armUpdateReady;
+
+  /** 「取消」= 延后，不是永久忽略（记下版本号，同版本不再弹）。 */
+  const dismissUpdateReady = () => {
+    dismissedVersionRef.current = updateReadyVersion;
+    setUpdateReady(false);
+  };
+  bag.dismissUpdateReady = dismissUpdateReady as typeof bag.dismissUpdateReady;
+
+  /** 「重启安装」：主进程先起安装包再退出自己；失败要如实告知（不静默吞）。 */
+  const restartAndInstall = async () => {
+    setUpdateRestarting(true);
+    try {
+      const r = await window.codex.updateRestartInstall?.();
+      if (!r?.ok) {
+        // macOS 上没有 NSIS 覆盖安装这条路 ⇒ 如实降级到"打开文件夹"，并说明原因
+        if (r?.error === "unsupported_platform") {
+          await window.codex.updateReveal?.("");
+          bag.showToast?.("macOS 请打开下载的压缩包，把 PPcode 拖进「应用程序」", "");
+        } else {
+          bag.setUpdateError(`重启安装失败：${r?.error || "未知原因"}`);
+        }
+        return;
+      }
+      // ok ⇒ 主进程会 quit，这里不再收尾（进程即将退出）。
+    } finally {
+      setUpdateRestarting(false);
+    }
+  };
+  bag.restartAndInstall = restartAndInstall as typeof bag.restartAndInstall;
+
+  /**
+   * 需求 2/4 的共同入口：确保「更新包已就绪」。
+   * ⛔ 幂等 —— 主进程已下好时直接回 alreadyDone，不会重复下载。
+   * ⛔ **静默**：后台调用时不弹任何进度；只有真就绪了才弹窗（网络失败一律静默，
+   *    静默检查失败不该在用户没要求时打扰）。
+   */
+  const tryArmUpdateReady = async () => {
+    try {
+      const r = await window.codex.updateDownloadSilent?.();
+      if (r?.ok) armUpdateReady(r.version || bag.updateInfo?.version);
+    } catch {
+      /* 静默失败不打扰用户 */
+    }
+  };
+  bag.tryArmUpdateReady = tryArmUpdateReady as typeof bag.tryArmUpdateReady;
+
+  // 需求 2：发布新版本后**后台静默下载**。延后一小段启动，避开首屏最忙的时候。
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void tryArmUpdateReady(); }, 8000);
+    return () => window.clearTimeout(timer);
+    // ⛔ 依赖置空：只在本段挂载时触发一次。放进依赖会在每次重渲染重下几百 MB。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 需求 3：主进程下载完成后主动推 `updates:ready` ⇒ 弹窗（与是否开着设置页无关）。
+  useEffect(() => {
+    const off = window.codex.updateOnReady?.((info: { version?: string }) => {
+      armUpdateReady(info?.version);
+    });
+    return () => { off?.(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const runUpdateCheck = async () => {
     bag.setUpdateChecking(true);
     bag.setUpdateError("");
@@ -29,6 +120,10 @@ export function usePart02c2(bag: Bag) {
       if (!r.ok) throw new Error(r.error || "检查失败");
       bag.setUpdateInfo(r.info ?? null);
       bag.setUpdateCurrentVersion(r.currentVersion ?? "");
+      // ⛔⛔ 10-12 需求 4：手动「检查更新」若发现**更新包已经下好**，要弹同一个重启安装框。
+      //   这里不自己判断"下好了没"（渲染层没有这个权威状态）⇒ 直接问主进程要：
+      //   `download-silent` 是幂等的（已下好直接回 alreadyDone，不会重复下几百 MB）。
+      if (r.info?.hasUpdate) void tryArmUpdateReady();
     } catch (err: any) {
       bag.setUpdateError(err?.message || String(err));
     } finally {
@@ -196,5 +291,5 @@ bag.runtimePercent = runtimePercent as typeof bag.runtimePercent; bag.setRuntime
 
   const [runtimeStage, setRuntimeStage] = useState<Record<string, string>>({});
 bag.runtimeStage = runtimeStage as typeof bag.runtimeStage; bag.setRuntimeStage = setRuntimeStage as typeof bag.setRuntimeStage;
-  return { runUpdateCheck, runUpdateDownload, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, uiSketchOpen, setUiSketchOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
+  return { runUpdateCheck, runUpdateDownload, updateReady, updateReadyVersion, updateRestarting, armUpdateReady, dismissUpdateReady, restartAndInstall, tryArmUpdateReady, openFeedbackPage, uiLang, setUiLang, uiZoom, setUiZoom, uiFont, setUiFont, settingsOpen, setSettingsOpen, companyPreviewTeamId, setCompanyPreviewTeamId, dramaCanvasOpen, setDramaCanvasOpen, uiSketchOpen, setUiSketchOpen, pptokenCardOff, setPptokenCardOff, settingsPage, setSettingsPage, shortcutsOpen, setShortcutsOpen, helpKey, setHelpKey, archiveToast, setArchiveToast, codexIdentity, toolsStatus, setToolsStatus, refreshToolsStatus, devRuntimes, setDevRuntimes, runtimeInstalling, setRuntimeInstalling, runtimeProgress, setRuntimeProgress, runtimePercent, setRuntimePercent, runtimeStage, setRuntimeStage };
 }

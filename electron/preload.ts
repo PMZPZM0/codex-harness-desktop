@@ -455,6 +455,10 @@ contextBridge.exposeInMainWorld("codex", {
   updateCheck: () => __ipc("updates:check", 0, []),
   updateDownload: (input: { downloadUrl: string; filename?: string }) => __ipc("updates:download", 1, [input]),
   updateInstall: (filePath: string) => __ipc("updates:install", 1, [filePath]),
+  /* 10-12 后台静默下载：零参数（地址只认主进程自己的检查结果，绝不接受渲染层指定） */
+  updateDownloadSilent: () => __ipc("updates:download-silent", 0, []),
+  /* 10-12 重启安装：零参数（先 spawn 已校验的安装包、再 quit 自己，顺序反了会被文件锁挡住） */
+  updateRestartInstall: () => __ipc("updates:restart-install", 0, []),
   bridgeStatus: () => __ipc("bridge:status", 0, []),
   getThreadRuntime: (threadId: string) => __ipc("thread-runtime:get", 1, [threadId]),
   planMemoryHygiene: (workspace?: string) => __ipc("memory:hygiene:plan", 0, [workspace]),
@@ -730,6 +734,10 @@ onConnectorOAuth: (listener: (event: unknown) => void) =>
   // 粘贴的长文本落盘成 .txt（超过阈值时输入框显示为文件 chip，见 composer-attachments.mjs）
   updateOnProgress: (callback: (percent: number) => void) => {
     __on("updates:download-progress", callback, (callback) => (_event: unknown, percent: number) => callback(percent));
+  },
+  // ⛔ 10-12：后台静默下载完成事件。渲染层可能压根没开设置页，只能靠事件弹窗。
+  updateOnReady: (callback: (info: { version?: string; path?: string }) => void) => {
+    __on("updates:ready", callback, (callback) => (_event: unknown, payload: { version?: string; path?: string }) => callback(payload ?? {}));
   },
 onSshData: (listener: (payload: { data: string }) => void) =>
     __on("ssh:data", listener, (listener) => (_event: Electron.IpcRendererEvent, payload: { data: string }) => listener(payload)),

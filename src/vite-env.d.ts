@@ -793,6 +793,10 @@ interface Window {
     updateCheck(): Promise<{ ok: boolean; info?: { hasUpdate: boolean; reason: string; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string }; currentVersion?: string; source?: string; error?: string }>;
     updateDownload(input: { downloadUrl: string; filename?: string }): Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>;
     updateInstall(filePath: string): Promise<{ ok: boolean; error?: string }>;
+    /* 10-12 后台静默下载：零参数（地址只认主进程自己的检查结果，绝不接受渲染层指定） */
+    updateDownloadSilent(): Promise<{ ok: boolean; error?: string; version?: string; path?: string; alreadyDone?: boolean }>;
+    /* 10-12 重启安装：零参数（先 spawn 已校验的安装包、再 quit 自己，顺序反了会被文件锁挡住） */
+    updateRestartInstall(): Promise<{ ok: boolean; error?: string }>;
     bridgeStatus(): Promise<{ running: boolean; port: number; targets: number; requests: number; converted: number; forwarded: number; failures: number; modes: Record<string, "responses" | "chat"> }>;
     getThreadRuntime(threadId: string): Promise<{ model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number } | null>;
     planMemoryHygiene(workspace?: string): Promise<{ rules: { layer: string; name: string; when: string; action: string; protect: string; trace: string }[]; labels: Record<string, { title: string; danger: string }>; actions: string[]; issues: { severity: "info" | "warn"; layer: string; code: string; message: string; count?: number }[]; archive: { files: number; bytes: number }; pool: { total: number; pinned: number; expiring: number; max: number; ttlDays: number }; }>;
@@ -1174,6 +1178,12 @@ interface Window {
 
     /** 订阅下载进度（0~1），返回取消订阅函数 */
     updateOnProgress(callback: (percent: number) => void): () => void;
+
+    /**
+     * 订阅「更新包已就绪」（10-12 后台静默下载完成）。
+     * ⛔ 与设置页无关 —— 用户可能压根没打开设置页，只能靠事件弹窗。
+     */
+    updateOnReady(callback: (info: { version?: string; path?: string }) => void): () => void;
 
 
   };

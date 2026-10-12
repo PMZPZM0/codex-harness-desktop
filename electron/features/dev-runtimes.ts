@@ -20,6 +20,7 @@ import type { AppSettings } from "../app-settings";
 import { toolsRoot } from "../toolchain";
 import { sendToWindow } from "./window-bus";
 import { kbEmbeddingInstalled } from "./kb-embed-backend";
+import { recordToolInstalled, recordToolRemoved } from "./tool-persistence";
 import { codexHome, engineActiveTurnIds, server } from "../runtime-refs";
 // 自动化工具链状态：nuphus-mcp（桌面）/ playwright-cli（浏览器）/ cloakbrowser（指纹浏览器）。
 // 静态检测安装目录与缓存，不 spawn 进程，打开设置页即时返回。
@@ -385,7 +386,21 @@ function runRuntimeInstaller(id: DevRuntimeId, script: string, args: string[], n
     child.stdout?.on("data", report);
     child.stderr?.on("data", report);
     child.on("error", reject);
-    child.on("close", (code) => code === 0 ? resolve() : reject(new Error(tail.trim().slice(-1200) || `安装进程退出（${code}）`)));
+    child.on("close", (code) => {
+      if (code !== 0) return reject(new Error(tail.trim().slice(-1200) || `安装进程退出（${code}）`));
+      // ⛔⛔ 10-12 记一笔「用户装过它」：**安装目录在覆盖安装时会被整体重建**，
+      //   按需下载的工具（git/ffmpeg/pwsh/…）连同目录一起没了，而清单只描述
+      //   「有哪些工具」不描述「装过哪些」⇒ 更新后一律回到未安装且无人补偿。
+      //   账本落在 userData（不在安装目录内，见 ./tool-persistence.ts），因此能跨更新存活。
+      //   ⚠️ 只在**内置/随包项**之外记账：那些随安装包回来，记账只会让界面误报「需重装」。
+      try {
+        const spec = devRuntimeSpecs[id];
+        if (spec && !spec.builtIn && !spec.bundled) recordToolInstalled(id, markerRel(id, spec));
+      } catch {
+        /* 记账失败绝不影响安装结果（账本不是关键路径） */
+      }
+      resolve();
+    });
   });
 }
 

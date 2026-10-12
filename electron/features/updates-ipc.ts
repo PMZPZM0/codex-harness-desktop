@@ -20,8 +20,11 @@
  */
 import { app, shell } from "electron";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
+import { sendToWindow } from "./window-bus";
+
 import {
   checkLatestUpdate,
   defaultDownloadDir,
@@ -48,6 +51,8 @@ export const updatesFeature = defineFeature<null>({
     //   安装只接受"刚刚校验通过的那个文件"——渲染层即使被注入也换不掉安装包。
     let lastUpdateInfo: { downloadUrl?: string; sha256?: string; version?: string; filename?: string } | null = null;
     let lastVerifiedUpdatePath = "";
+    /** 10-12：静默下载并发闸（重复触发时不重复下几百 MB）。 */
+    let silentDownloading = false;
 
     ipcHost.handle("updates:check", async () => {
       try {
@@ -111,8 +116,91 @@ export const updatesFeature = defineFeature<null>({
       return { ok: started, error: started ? undefined : "open_failed" };
     });
 
+    /* ══════════════════════════════════════════════════════════════════════
+     * 10-12 新增：后台静默下载 + 「重启安装」通道（修「下载完还要自己找安装包」）
+     *
+     * ⛔⛔ **为什么 `updates:install` 不够用**：它只 `shell.openPath(exe)` 把安装向导
+     *   拉起来，而应用进程还在跑 —— NSIS 覆盖安装要求先关掉旧进程，于是安装向导
+     *   弹出「无法关闭，请手动关闭」，或干脆被浏览器/安全软件抢了打开方式而失败。
+     *   旧逻辑失败即静默退回「打开文件夹」（界面只弹一句"请手动安装"）⇒ 用户体验
+     *   就是「下载完还得自己找包、自己装」。**正解是 quit-and-install**：
+     *   先退出应用（清干净引擎与文件占用），再拉起安装包。
+     *
+     * ⛔ 安全口径**沿用** `updates:install` 那条（09-13 审计 P0）：只接受
+     *   「刚刚下载并 sha256 校验通过的那个文件」，渲染层传任意路径一律拒。
+     *   静默下载走的是**主进程自己取的地址**（lastUpdateInfo），不接受渲染层指定。
+     * ══════════════════════════════════════════════════════════════════════ */
+
+    /** 后台静默下载 → 校验通过后置位；已就绪时再次调用直接返回（幂等）。 */
+    ipcHost.handle("updates:download-silent", async () => {
+      // ⛔ 幂等：已经下好并校验过就别重复下几百 MB。
+      if (lastVerifiedUpdatePath && fileExists(lastVerifiedUpdatePath)) {
+        return { ok: true, alreadyDone: true, version: lastUpdateInfo?.version, path: lastVerifiedUpdatePath };
+      }
+      if (silentDownloading) return { ok: false, error: "already_downloading" };
+      // ⛔ 没检查过就没有权威地址：静默下载**自己检查一次**，绝不接受渲染层给的 URL。
+      if (!lastUpdateInfo?.downloadUrl) {
+        try {
+          const currentVersion = String(app.getVersion() || "0.0.0");
+          const info = await checkLatestUpdate(currentVersion, process.platform, process.arch);
+          lastUpdateInfo = info ? { downloadUrl: (info as any).downloadUrl, sha256: (info as any).sha256, version: (info as any).version, filename: (info as any).filename } : null;
+        } catch {
+          return { ok: false, error: "check_failed" };
+        }
+      }
+      const url = lastUpdateInfo?.downloadUrl;
+      if (!url) return { ok: false, error: "no_update" };
+      silentDownloading = true;
+      try {
+        const dir = defaultDownloadDir(app.getPath("downloads"));
+        const safeName = String(lastUpdateInfo?.filename || "codex-harness-update.bin").replace(/[\\/:*?"<>|]/g, "_");
+        const info = await downloadUpdate(url, path.join(dir, safeName), undefined, lastUpdateInfo?.sha256);
+        lastVerifiedUpdatePath = info.path;
+        // ⛔ 主动推一条事件：渲染层可能没打开设置页，只能靠事件弹窗（需求 3）。
+        sendToWindow("updates:ready", { version: lastUpdateInfo?.version, path: info.path });
+        return { ok: true, version: lastUpdateInfo?.version, path: info.path };
+      } catch (err: any) {
+        return { ok: false, error: err?.message || String(err) };
+      } finally {
+        silentDownloading = false;
+      }
+    });
+
+    /**
+     * 「重启安装」：退出应用并拉起已校验的安装包。
+     *
+     * ⛔ 顺序至关重要：**先起安装包、再退出自己**。反过来（先 quit 再 spawn）的话，
+     *   本进程持有的 exe 锁没释放，安装包会撞上「无法关闭」。
+     *   ⛔ macOS 上 NSIS 不适用，走的是 dmg 拖拽；这里只在 win32 上提供此通道，
+     *   其余平台返回明确错误让界面改用「打开文件夹」。
+     */
+    ipcHost.handle("updates:restart-install", async () => {
+      if (!lastVerifiedUpdatePath) return { ok: false, error: "no_verified_update" };
+      if (!fileExists(lastVerifiedUpdatePath)) return { ok: false, error: "file_not_found" };
+      if (process.platform !== "win32") {
+        return { ok: false, error: "unsupported_platform" };
+      }
+      try {
+        // ⚠️ 等一小会儿让调用方（渲染层）先把 toast 收起来，否则退出瞬间还在闪。
+        await new Promise((r) => setTimeout(r, 120));
+        // ⛔ spawn 不 wait：安装包是独立进程，等它结束就等于永远不退出。
+        spawn(lastVerifiedUpdatePath, [], { detached: true, stdio: "ignore" }).unref();
+        // ⛔ 引擎与各子进程的收尾**不在这里手写**：`app.quit()` 会触发 main.ts 的
+        //    `before-quit`，那里已经统一做 cleanupAll / 停看门狗 / 断 SSH / 销毁语音工作线程。
+        //    （原先这里写了一个 `server.stop?.().catch()` —— `server` 上根本没有 stop 方法，
+        //      TS 直接报错；而且即便有，手写收尾也会与 before-quit 的那套**重复执行**。）
+        app.quit();
+        return { ok: true };
+      } catch (err: any) {
+        return { ok: false, error: err?.message || String(err) };
+      }
+    });
+
     ctx.effect(() => {
       for (const channel of UPDATE_CHANNELS) ipcHost.removeHandler(channel);
+      // 新增通道也要在卸载时摘掉（否则热重载会叠 handler）。
+      ipcHost.removeHandler("updates:download-silent");
+      ipcHost.removeHandler("updates:restart-install");
     });
   },
 });
