@@ -63,7 +63,8 @@ if (IS_PPCODE) {
   ok(/const candidates = token \? \[releaseUrl\] : mirrorCandidates\(releaseUrl\)/.test(updates),
     "下载安装包走镜像序（匿名）；⛔ 带令牌恒直连");
 } else {
-  ok(updates.includes("mirrorCandidates(GITHUB_RELEASES_API)") && /for \(const candidate of mirrorCandidates\(GITHUB_RELEASES_API\)\)/.test(updates),
+  // ⛔ 10-12 对账修正：更新链改走 releases **LIST** API（取全部资产匹配 digest），镜像序判定跟着换锚点
+  ok(updates.includes("mirrorCandidates(GITHUB_RELEASES_LIST_API)") && /for \(const candidate of mirrorCandidates\(GITHUB_RELEASES_LIST_API\)\)/.test(updates),
     "检查更新走镜像序逐条尝试（第一个 2xx 生效）");
   ok(updates.includes("const candidates = mirrorCandidates(releaseUrl)") && /for \(const candidate of candidates\)/.test(updates),
     "下载安装包走镜像序（失败/校验不过换下一档）");

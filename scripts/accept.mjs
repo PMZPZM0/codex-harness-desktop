@@ -1630,6 +1630,79 @@ const CHECKS = [
     },
   },
   {
+    id: "web-sources",
+    name: "㉙' 汇总卡右下角「网页来源」：favicon 圆标 ≤3 + 「···」全量弹层 + 默认浏览器打开（10-12 轮）",
+    run: async (h) => {
+      /* 为什么真跑：来源条的数据来自**回合 items 的真实工具调用**（commandExecution 命令里的 URL），
+         注入造不出引擎事件 —— 与 file-summary 同口径，用真回合真 curl。断言打最后一条来源条
+         （会话里可能有旧回合的条，querySelector 全局首个会打错回合 —— 10-06 悬停假红同款坑）。 */
+      await h.waitFor(`!!document.querySelector('.composer-editor')`, { label: "输入框就绪", timeoutMs: 30000 }).catch(() => undefined);
+      /* ① 新会话 + 发一条含 4 个 URL 的真回合（模型逐条 curl ⇒ 4 host ⇒ 3 圆标 + 「···」） */
+      await h.eval(`(function(){ var b=[...document.querySelectorAll('.sidebar-tab')].find(function(x){ return (x.textContent||'').includes('新建任务'); }); if(b) b.click(); return 1; })()`);
+      await wait(1200);
+      const prompt = "请用 shell 依次真的运行这4条 curl 并各用一行汇报返回里的标题：curl -s https://example.com 、curl -s https://www.wikipedia.org 、curl -s https://github.com 、curl -s https://registry.npmmirror.com 。不要做别的事情。";
+      await h.eval(`(function(){
+        var dt = new DataTransfer();
+        dt.setData("text/plain", ${JSON.stringify(prompt)});
+        var el = document.querySelector('.composer-editor');
+        el.focus();
+        el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+        return 1; })()`);
+      await wait(500);
+      await h.eval(`document.querySelector('.composer-editor').focus()`);
+      await h.pressKey("Enter", { text: "\r" });
+      let started = false;
+      for (let i = 0; i < 20; i++) {
+        await wait(750);
+        if (await h.eval(`!!document.querySelector('.send-button.is-pause')`).catch(() => false)) { started = true; break; }
+      }
+      h.check("① 真回合跑起来了（前置：模型未配置则本项作废）", started === true, `started=${started}`);
+      if (!started) return;
+      /* ② 等来源条满足「3 圆标 + 更多钮」（≤180s：4 条 curl 的真回合）；⛔ 锚最后一条（最新回合） */
+      let ready = false;
+      for (let i = 0; i < 180; i++) {
+        await wait(1000);
+        ready = await h.eval(`(function(){
+          var rows = document.querySelectorAll('.completed-web-row');
+          var row = rows[rows.length - 1];
+          if (!row) return false;
+          return !!row.querySelector('.web-favicon-more');
+        })()`).catch(() => false);
+        if (ready) break;
+      }
+      const rowInfo = await h.eval(`(function(){
+        var rows = document.querySelectorAll('.completed-web-row');
+        var row = rows[rows.length - 1];
+        if (!row) return { row: false };
+        return { row: true,
+          icons: [...row.querySelectorAll('.web-favicon:not(.web-favicon-more)')].length,
+          more: !!row.querySelector('.web-favicon-more'),
+          rightAligned: Math.abs(row.getBoundingClientRect().right - document.querySelector('.composer-editor').getBoundingClientRect().right) < 400 };
+      })()`).catch(() => ({ row: false }));
+      h.check("② 最新回合的来源条出现：3 圆标 + 「···」更多钮（用户定稿口径）",
+        ready === true && rowInfo.row === true && rowInfo.icons === 3 && rowInfo.more === true, JSON.stringify(rowInfo));
+      if (!rowInfo.more) { await h.screenshot("web-sources"); return; }
+      /* ③ 点「···」→ 全量弹层（portal 到 body），条目覆盖全部 4 站；Esc 可关 */
+      await h.eval(`(function(){ var rows=document.querySelectorAll('.completed-web-row'); rows[rows.length-1].querySelector('.web-favicon-more').click(); return 1; })()`);
+      await wait(600);
+      const pop = await h.eval(`(function(){
+        var pops = document.body.querySelectorAll(':scope > .completed-web-pop');
+        var p = pops[pops.length - 1];
+        if (!p) return { pop: false };
+        var items = [...p.querySelectorAll('.completed-web-item code')].map(function(c){ return c.textContent; });
+        return { pop: true, items: items, visible: p.getBoundingClientRect().width > 100 };
+      })()`).catch(() => ({ pop: false }));
+      h.check("③ 「···」弹出全量弹层：≥4 条网页条目（hosts 在列）",
+        pop.pop === true && pop.visible === true && (pop.items ?? []).length >= 4
+          && pop.items.some((x) => /example\.com|wikipedia|github|npmmirror/.test(x ?? "")), JSON.stringify(pop).slice(0, 260));
+      await h.pressKey("Escape");
+      await wait(400);
+      const closed = await h.eval(`document.body.querySelectorAll(':scope > .completed-web-pop').length === 0`).catch(() => false);
+      h.check("④ Esc 关闭全量弹层", closed === true, `closed=${closed}`);
+      await h.screenshot("web-sources");
+    },
+  },
+  {
     id: "devtools-install-ux",
     name: "㉘ 开发工具安装体验：常驻提示词复制图标 + 失败完整报错弹窗（10-11 轮）",
     run: async (h) => {
@@ -2066,6 +2139,7 @@ const ROUND_OF = {
   "devtools-install-ux": "10-11",   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）
   "free-gateway": "10-12",   // 10-12 轮：免费模型网关（第三方开源侧车 + 一键注册供应商；免责声明为契约）   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）
   "boot-intro": "10-12",   // 10-12 轮：550C 开机动画（外观页设置行 + Shadow DOM 预览 + Esc 跳过 + 档位落盘；启动首帧与三不播判据由守卫 20-boot-intro 钉）⛔ 必须跟着 LATEST_ROUND 走，否则默认轮跑不到它 = 保护关着
+  "web-sources": "10-12",   // 10-12 轮：汇总卡右下角网页来源条（真回合 4 curl → 3 圆标 + 「···」全量弹层；提取真值表由守卫 12g 钉）
   "status-lights": "10-12",   // 10-12 轮：输入框底栏动态状态灯（最多一盏 + 轮换 + 窗口自适应隐藏；结构由守卫 12d 钉）
   "message-feedback": "10-05",   // 10-05 轮：消息操作图标的两段反馈 + 用户消息复制贴右端（历史项，默认轮不再跑 —— 回归证据）
   "plugin-market-gitee": "10-03",

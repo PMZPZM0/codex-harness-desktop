@@ -437,6 +437,110 @@
   color: var(--accent);
 }
 
+/* ── 汇总卡右下角「网页来源」条（10-12，用户令：当前回合搜索了哪些网站 ——
+   favicon 圆标最多 3 个紧挨着，多了 3 logo + 三点，点击看全部 / 默认浏览器打开）──── */
+.completed-web-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end; /* 右下角 */
+  gap: 8px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--line);
+  margin-top: 2px;
+}
+.completed-web-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.completed-web-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.web-favicon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  padding: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: pointer;
+  flex: none;
+  transition: border-color 0.12s, transform 0.12s;
+}
+.web-favicon:hover { border-color: var(--accent); transform: translateY(-1px); }
+.web-favicon img { width: 100%; height: 100%; object-fit: contain; border-radius: 50%; }
+/* 两级 favicon 源都取不到 → 首字母色块（仍可点、不破版） */
+.web-favicon-fallback {
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel-2));
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+/* 「···」三点 = 还有更多 */
+.web-favicon-more { padding: 0; }
+.web-favicon-more i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--muted);
+  display: inline-block;
+}
+.web-favicon-more i + i { margin-left: 2px; }
+.web-favicon-more:hover i { background: var(--accent); }
+/* 全量弹层：portal 到 body、fixed 定位（JS 实测落位，visibility 起始 hidden 防闪） */
+.completed-web-pop {
+  position: fixed;
+  z-index: 1000; /* 轻浮层档（DESIGN.md 层叠带：> 模态 400） */
+  max-height: 320px;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.18);
+  padding: 6px;
+}
+.completed-web-pop header {
+  font-size: 11.5px;
+  color: var(--muted);
+  padding: 4px 8px 6px;
+}
+.completed-web-list { display: grid; gap: 2px; }
+.completed-web-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+.completed-web-item:hover { background: var(--panel-2); }
+.completed-web-item-main { min-width: 0; display: grid; gap: 1px; }
+.completed-web-item-main code { font-size: 12px; color: var(--text); }
+.completed-web-item-main small {
+  font-size: 10.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── 文件类型图标（10-06，FileTypeIcon：运行中板块 / 编辑卡行 / 汇报卡行三处共用）──── */
 .file-type-icon {
   display: inline-flex;

@@ -581,7 +581,8 @@ ok(/stripVoiceScript\(children\)/.test(markdownTsx) && /hasWidgetFence\(text\)/.
   /* 告知文案本身会作为**用户消息**被渲染 ⇒ 里面绝不能出现真正的 voice 围栏
      （出现就会被上面那条"渲染前剥离"吃掉，用户屏幕上只剩半截话）。
      ⛔ 这里读源文件而不是 import：voice-notice.ts 是 TS，守卫（裸 node）认不了。 */
-  const noticeBody = (noticeTs.match(/function voiceAnnounceNoticeText[\s\S]*?\n}\n/) || [""])[0];
+  /* ⛔ 工作区文件可能是 CRLF（autocrlf 检出），`\n}\n` 会失配成空体 ⇒ 断言恒红 —— 先归一再抓（10-12 实测）。 */
+  const noticeBody = (noticeTs.replace(/\r\n/g, "\n").match(/function voiceAnnounceNoticeText[\s\S]*?\n}\n/) || [""])[0];
   ok(Boolean(noticeBody) && !/(\x60){3}/.test(noticeBody) && /VOICE_ANNOUNCE_ON_TAG/.test(noticeBody),
     "告知文案里不写真围栏（原文注水讲究：写了会被当成播报稿剥掉，用户看到的是半截话）；格式由 ASR 指令兜底");
 }

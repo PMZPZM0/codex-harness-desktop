@@ -139,7 +139,7 @@ for (const ch of CHANNELS) {
   if (entry) ok(/cwd\?:/.test(entry.paramsDecl) === ch.endsWith("-set"), `${ch} 的 cwd 可选性符合设计（set 可空、get 不需要）`);
 }
 const skillsInManifest = manifest.channels.filter((c) => String(c.channel).startsWith("skills:")).map((c) => c.channel);
-ok(skillsInManifest.length === 12, `skills 域在 manifest 里共 ${skillsInManifest.length} 条（10 + 新增 2）`);
+ok(skillsInManifest.length === 14, `skills 域在 manifest 里共 ${skillsInManifest.length} 条（12 + 在线更新 2 条：update / update-check，a54580a 加通道时漏改本断言，10-12 对账修正）`);
 const regLine = (registrySrc.match(/\{ prefix: "skills", count: (\d+),[\s\S]*?channels: \[([^\]]*)\]/) || []);
 ok(regLine[1] === String(skillsInManifest.length),
   `⛔ ipc-registry 的 skills count（${regLine[1]}）== manifest 实际条数（${skillsInManifest.length}）`);
