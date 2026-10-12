@@ -18,6 +18,58 @@ import { notePollAutoContinue } from "../../../../../polling/poll-store";
 import type { PollTask } from "../../../../../polling/poll-store";
 import type { Bag } from "../../bag-types";
 
+/**
+ * 「回合结束 → 应用替用户补一条续接」的**投递部分**（二次确认 + 入队 + 启动 + 钉顶 + 429 武装）。
+ * 供两条判据共用（09-19 的「截断空转」与 10-12 的「没干完就收工」）：
+ * 回合已 task_complete（引擎侧无 active turn，`turn/steer` 不可用 —— 它的前置条件是 "active turn id"），
+ * 承接只能落成**新回合** ⇒ 延迟等 turn/completed 收尾（mergeTurn / auto-start / markThreadStopped）跑完
+ * → `thread/queue/add` 一条承接指令 → `thread/queue/start` 启动。
+ * ⛔ 10-12 从 `maybeAutoContinueTruncated` **原样抽出**（两处共用，行为逐位不变）：延迟后二次确认
+ *   「还在本会话 / 该会话没在跑」（防误判多出一个应用自己发的回合）→ 入队 → 取队头 →
+ *   建钉顶意图 → 武装 429 兜底 → 启动；「已被引擎启动」的伪失败按成功处理（lib/queue-errors.mjs）。
+ * ⛔ 放**模块级**而不是 hook 体内：hook 体里的顶层声明会被 bag-types 生成器当成跨段 API
+ *   （实测会把内部辅助函数收进 `bag`）—— 它只是本文件内部实现，且已带 bag 入参。
+ */
+function deliverAutoContinue(bag: Bag, threadId: string, prompt: string, opts: { delayMs: number; toastTitle: string; toastBody: string; pinTag: string; dbgTag: string; failTitle: string }) {
+  window.setTimeout(() => {
+    if (bag.threadRef.current?.id !== threadId) return; // 用户已切走：不再自动动那个会话
+    // ⛔ 二次防误判（判据已收紧为"严格零产出"，这里是最后一道闸）：延迟期间若该会话已经
+    //   有回合在跑（用户手动续了 / 引擎自己恢复 / 队列已启动），就放弃自动续接——
+    //   绝不让"正常收尾"因为误判而多出一个应用自己发的回合（那才是真正的空转）。
+    if (bag.runningThreadIdsRef.current.has(threadId)) return;
+    const liveTurn = (bag.threadRef.current?.turns ?? []).find((entry) => isTurnRunning(entry));
+    if (liveTurn) return;
+    void window.codex.request("thread/queue/add", {
+      threadId,
+      input: [{ type: "text", text: prompt }],
+      clientUserMessageId: crypto.randomUUID(),
+    }).then(async () => {
+      bag.showToast(opts.toastTitle, opts.toastBody);
+      const list = await window.codex.request("thread/queue/list", { threadId, limit: 1 }).catch(() => null);
+      const head = list?.data?.[0];
+      if (!head) return;
+      const armed = bag.armPinForReleasedQueue(threadId, opts.pinTag);
+      // 429 兜底也要覆盖这条续接回合（续接场景正是上游不稳的高发区）
+      bag.armRetryForQueueRelease(threadId, head.input ?? [{ type: "text", text: prompt }]);
+      try {
+        await window.codex.request("thread/queue/start", { threadId, queuedSubmissionId: head.id });
+      } catch (error: any) {
+        const message = String(error?.message ?? error);
+        // ⛔ 引擎已自行启动这条（上一回合结束后约 9ms 就发 queue/changed 并清空队列）⇒
+        //   「找不到 / 队列空」是**伪失败**：续接其实正在发生，别撤意图、别报错。
+        //   成因与判据见 lib/queue-errors.mjs（用户 09-24 截图反馈的正是这一类噪声）。
+        if (isQueueAlreadyStartedError(message)) {
+          bag.dbg(opts.dbgTag, { threadId, message });
+        } else {
+          // 启动失败 ⇒ 那条续接不会出现：撤回钉顶意图（否则去钉列表里别的消息），并告知
+          if (armed) bag.disarmPinIntent(`${opts.pinTag}-fail`);
+          bag.showToast(opts.failTitle, message);
+        }
+      }
+    }).catch((error: any) => bag.showToast(opts.failTitle, String(error?.message ?? error)));
+  }, opts.delayMs);
+}
+
 export function usePart04c2(bag: Bag) {
   /* ── 排队消息定时发送（09-28） ─────────────────────────────────────────────
    * queueTimers：`{[threadId]: {[queuedSubmissionId]: runAt 毫秒}}`。UI 徽标与持久化都认它。
@@ -314,14 +366,6 @@ bag.armPinForReleasedQueue = armPinForReleasedQueue as typeof bag.armPinForRelea
   }
 bag.disarmPinIntent = disarmPinIntent as typeof bag.disarmPinIntent;
 
-  /** 回合级「截断空转」的自动续接（09-19 用户实测「思考内容过长会被截断，运行状态就断了」）。
-   *  机制：回合已 task_complete（引擎侧无 active turn，`turn/steer` 不可用——它的前置条件是
-   *  "active turn id"，引擎自己也不做 finish_reason=length 的续写），承接只能落成**新回合**。
-   *  所以：延迟等 turn/completed 收尾（mergeTurn / auto-start / markThreadStopped）跑完 →
-   *  `thread/queue/add` 一条「从断点承接续写」指令 → `thread/queue/start` 启动。
-   *  ⛔ 指令语义是**承接**（接着上次没写完的往下输出、不重新思考），不是"重新做一遍任务"。
-   *  ⛔ 防死循环：同一会话 AUTO_CONTINUE_WINDOW_MS 内最多 AUTO_CONTINUE_MAX_ATTEMPTS 次；
-   *     达到上限停手并提示换供应商（本地部署模型同样受单次输出上限约束）。 */
   function maybeAutoContinueTruncated(threadId: string) {
     const now = Date.now();
     const rec = bag.autoContinueLogRef.current.get(threadId);
@@ -334,46 +378,45 @@ bag.disarmPinIntent = disarmPinIntent as typeof bag.disarmPinIntent;
       }
       rec.count++;
     }
-    window.setTimeout(() => {
-      if (bag.threadRef.current?.id !== threadId) return; // 用户已切走：不再自动动那个会话
-      // ⛔ 二次防误判（判据已收紧为"严格零产出"，这里是最后一道闸）：延迟期间若该会话已经
-      //   有回合在跑（用户手动续了 / 引擎自己恢复 / 队列已启动），就放弃自动续接——
-      //   绝不让"正常收尾"因为误判而多出一个应用自己发的回合（那才是真正的空转）。
-      if (bag.runningThreadIdsRef.current.has(threadId)) return;
-      const liveTurn = (bag.threadRef.current?.turns ?? []).find((entry) => isTurnRunning(entry));
-      if (liveTurn) return;
-      void window.codex.request("thread/queue/add", {
-        threadId,
-        input: [{ type: "text", text: autoContinuePrompt() }],
-        clientUserMessageId: crypto.randomUUID(),
-      }).then(async () => {
-        bag.showToast("已自动续接", "检测到被供应商截断，正在从断点继续输出…");
-        const list = await window.codex.request("thread/queue/list", { threadId, limit: 1 }).catch(() => null);
-        const head = list?.data?.[0];
-        if (head) {
-          const armedForCont = bag.armPinForReleasedQueue(threadId, "auto-continue");
-          // 429 兜底也要覆盖这条续接回合（续接场景正是上游不稳的高发区）
-          bag.armRetryForQueueRelease(threadId, head.input ?? [{ type: "text", text: autoContinuePrompt() }]);
-          try {
-            await window.codex.request("thread/queue/start", { threadId, queuedSubmissionId: head.id });
-          } catch (error: any) {
-            const message = String(error?.message ?? error);
-            // ⛔ 引擎已自行启动这条（上一回合结束后约 9ms 就发 queue/changed 并清空队列）⇒
-            //   「找不到 / 队列空」是**伪失败**：续接其实正在发生，别撤意图、别报错。
-            //   成因与判据见 lib/queue-errors.mjs（用户 09-24 截图反馈的正是这一类噪声）。
-            if (isQueueAlreadyStartedError(message)) {
-              bag.dbg("auto-continue-raced-by-engine", { threadId, message });
-            } else {
-              // 启动失败 ⇒ 那条续接不会出现：撤回钉顶意图（否则去钉列表里别的消息），并告知
-              if (armedForCont) bag.disarmPinIntent("auto-continue-fail");
-              bag.showToast("自动续接失败", message);
-            }
-          }
-        }
-      }).catch((error: any) => bag.showToast("自动续接失败", String(error?.message ?? error)));
-    }, 2500);
+    deliverAutoContinue(bag, threadId, autoContinuePrompt(), {
+      delayMs: 2500,
+      toastTitle: "已自动续接",
+      toastBody: "检测到被供应商截断，正在从断点继续输出…",
+      pinTag: "auto-continue",
+      dbgTag: "auto-continue-raced-by-engine",
+      failTitle: "自动续接失败",
+    });
   }
 bag.maybeAutoContinueTruncated = maybeAutoContinueTruncated as typeof bag.maybeAutoContinueTruncated;
+
+  /** 回合「没干完就收工」的宿主自动接手（10-12 用户报障「运行过程总是自动中断」+ 拍板
+   *  「宿主自动接手」）。判据与文案在 `src/lib/turn-unfinished.mjs`（纯函数，守卫跑真值表）：
+   *  末条正文只「宣布下一步」且没在问用户，或最后一次工具输出是引擎的半截标记
+   *  （`Process running with session ID …` / `write_stdin failed: stdin is closed`）。
+   *  ⛔ 与截断续接**共用同一份记账**（`autoContinueLogRef`）⇒ 同一会话 15 分钟内合计最多
+   *    `AUTO_CONTINUE_MAX_ATTEMPTS` 次，防「续了又停、停了又续」滚雪球烧钱。 */
+  function maybeAutoContinueUnfinished(threadId: string, prompt: string) {
+    const now = Date.now();
+    const rec = bag.autoContinueLogRef.current.get(threadId);
+    if (!rec || now - rec.firstAt > AUTO_CONTINUE_WINDOW_MS) {
+      bag.autoContinueLogRef.current.set(threadId, { count: 1, firstAt: now });
+    } else {
+      if (rec.count >= AUTO_CONTINUE_MAX_ATTEMPTS) {
+        bag.showToast("自动接手已达上限", "同一会话 15 分钟内已自动接手多次，先停手 —— 这条任务可能需要你补一句更明确的指令。", threadId);
+        return;
+      }
+      rec.count++;
+    }
+    deliverAutoContinue(bag, threadId, String(prompt ?? ""), {
+      delayMs: 1500,
+      toastTitle: "已自动接手",
+      toastBody: "上一回合只说了下一步、没有真的去做，正在让它接着执行…",
+      pinTag: "unfinished-continue",
+      dbgTag: "unfinished-continue-raced-by-engine",
+      failTitle: "自动接手失败",
+    });
+  }
+bag.maybeAutoContinueUnfinished = maybeAutoContinueUnfinished as typeof bag.maybeAutoContinueUnfinished;
 
   /** 轮询任务**成功返回结果**后的自动继续（10-10 用户要求：「回合结束后，轮询还在的话，
    *  如果返回结果了…现在是不会自动继续」）。
@@ -623,5 +666,5 @@ bag.setHookEnabled = setHookEnabled as typeof bag.setHookEnabled;
     finally { bag.setLinkedBusy(null); }
   }
 bag.setLinkedEnabled = setLinkedEnabled as typeof bag.setLinkedEnabled;
-  return { queueTimers, setQueueTimers, setQueuedTimer, openBrowser, toggleBookmark, deleteQueued, reorderQueued, editQueued, saveQueued, armPinForReleasedQueue, disarmPinIntent, maybeAutoContinueTruncated, maybeAutoContinueAfterPoll, startQueued, refreshSettingsResources, trustAllHooks, setHookEnabled, setLinkedEnabled };
+  return { queueTimers, setQueueTimers, setQueuedTimer, openBrowser, toggleBookmark, deleteQueued, reorderQueued, editQueued, saveQueued, armPinForReleasedQueue, disarmPinIntent, maybeAutoContinueTruncated, maybeAutoContinueUnfinished, maybeAutoContinueAfterPoll, startQueued, refreshSettingsResources, trustAllHooks, setHookEnabled, setLinkedEnabled };
 }

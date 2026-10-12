@@ -5,6 +5,7 @@
  */
 import "@xterm/xterm/css/xterm.css";
 import { AUTO_CONTINUE_MAX_ATTEMPTS, AUTO_CONTINUE_WINDOW_MS, autoContinuePrompt, isTruncatedEmptyTurn, truncationNotice } from "../../../../../lib/turn-truncation.mjs";
+import { unfinishedContinuePrompt, unfinishedNotice, unfinishedTurnReason } from "../../../../../lib/turn-unfinished.mjs";
 import { isQueueAlreadyStartedError } from "../../../../../lib/queue-errors.mjs";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../lib/user-refs";
 import { ThreadItem } from "../../../../../lib/thread-item";
@@ -64,6 +65,22 @@ export function handleEventRouter7(bag: Bag, params: any): boolean {
           if (isTruncatedEmptyTurn(localTurn ?? params.turn) && !wasManualStop) {
             bag.showToast("回合可能被上游截断", truncationNotice());
             bag.maybeAutoContinueTruncated(String(params.threadId ?? ""));
+          } else if (!wasManualStop && !params.turn.error?.message) {
+            /* ⛔⛔ 10-12 用户报障「运行过程总是自动中断」：引擎的回合语义是「回复里没有工具调用 =
+               回合完成、交还控制权」，而模型常把**宣布下一步**当成干完了（实证：会话 01a12e1b
+               的 4/5 个回合末条正文都是一句「继续…/重跑…/验证一下。」，prompt 侧已加硬规则，
+               但弱模型保不住）。这里做**宿主侧兜底**：判出来就自动补一条「接着执行」。
+               ⛔ 四道短路缺一不可：① 用户手动停止的回合绝不自动发（同上方截断续接的理由）；
+                 ② 回合本身带错误（失败有自己的重试链）；③ **方案回合**本来就该停在「等用户确认
+                 执行」这一步（下面的 planTurnRef 分支负责弹确认条）——替它续跑等于抢用户点确认；
+                 ④ 只对**当前会话**判（后台会话的 items 不在 threadRef 里，用户也没在看它）。
+                 再往下的闸在 maybeAutoContinueUnfinished：空闲才发 + 同会话窗口内次数上限。 */
+            const isPlanTurn = Boolean(bag.planTurnRef.current && bag.planTurnRef.current.turnId === String(params.turn?.id ?? ""));
+            const reason = isPlanTurn ? "" : unfinishedTurnReason(localTurn ?? params.turn);
+            if (reason) {
+              bag.showToast("上一回合没干完", unfinishedNotice(reason));
+              bag.maybeAutoContinueUnfinished(String(params.threadId ?? ""), unfinishedContinuePrompt(reason));
+            }
           }
         }
         // 图片模态自愈（09-18 用户反馈：升级上来的模型配置标了「视觉」，但接入点实际不支持图片
