@@ -13,8 +13,10 @@
  *   写完文件必须 `plugin/install` + 重启引擎、已装真相源是本地 marker。
  */
 import {
+  checkOfficialPluginUpdates,
   codexOfficialMarketDir,
   ensureOfficialMarketplaceSection,
+  findOfficialMarketPlugin,
   installOfficialMarketPlugin,
   listInstalledOfficialPlugins,
   listOfficialMarketCategories,
@@ -30,6 +32,7 @@ import type { IpcHost } from "../ipc-host";
 const OFFICIAL_MARKET_CHANNELS = [
   "codex-official-market:list", "codex-official-market:categories", "codex-official-market:install",
   "codex-official-market:uninstall", "codex-official-market:installed",
+  "codex-official-market:update-check", "codex-official-market:update",
 ];
 const MARKETPLACE_NAME = "codex-official-market";
 
@@ -46,7 +49,9 @@ export const codexOfficialMarketFeature = defineFeature<null>({
 
     ipcHost.handle("codex-official-market:categories", async () => listOfficialMarketCategories());
 
-    ipcHost.handle("codex-official-market:install", async (_event, plugin: OfficialMarketPlugin) => {
+    /** 安装与更新**共用同一条链**（更新 = 拿市场里的最新版对象再走一遍）——
+     *  ⛔ 与 `plugins` 域（Gitee 镜像源）同一个口径，别写第二条安装路径。 */
+    async function installOfficialPlugin(plugin: OfficialMarketPlugin) {
       const emit = (stage: string, message: string) => sendToWindow("harness:event", { type: "official-plugin-install", pluginId: plugin?.slug, stage, message, at: Date.now() });
       // 幂等注册本地 marketplace 段（缺才写），返回插件落盘根目录
       const marketDir = await ensureOfficialMarketplaceSection(codexHome);
@@ -78,6 +83,23 @@ export const codexOfficialMarketFeature = defineFeature<null>({
             : "插件已写入本地插件目录；引擎已刷新，但当前列表未返回该插件，新建会话后仍会重新扫描。";
       emit(engineRegistered ? "complete" : "pending", engineCheckMessage);
       return { ...installed, engineRegistered, engineCheckMessage };
+    }
+
+    ipcHost.handle("codex-official-market:install", (_event, plugin: OfficialMarketPlugin) => installOfficialPlugin(plugin));
+
+    /* ── 官方插件更新（10-12 与 plugins 域同批新增）────────────────────────────────
+     * 与 Gitee 镜像源那个市场同构：**有版本号** ⇒ 真版本比对（无需内容哈希）。
+     * ⛔ check 零副作用；版本缺失一律 `comparable:false` 交给界面如实显示。 */
+    ipcHost.handle("codex-official-market:update-check", () => checkOfficialPluginUpdates(codexOfficialMarketDir(codexHome)));
+
+    ipcHost.handle("codex-official-market:update", async (_event, slug: string) => {
+      const key = String(slug ?? "").trim();
+      if (!key) throw new Error("缺少插件标识");
+      const before = (await listInstalledOfficialPlugins(codexOfficialMarketDir(codexHome))).get(key)?.version ?? "";
+      const plugin = await findOfficialMarketPlugin(key);
+      if (!plugin) throw new Error(`市场清单里找不到插件「${key}」，无法更新（可能已下架）`);
+      const result = await installOfficialPlugin(plugin);
+      return { ...result, from: before, to: plugin.version || "" };
     });
 
     ipcHost.handle("codex-official-market:uninstall", async (_event, slug: string) => {

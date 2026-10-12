@@ -19,7 +19,7 @@
  */
 import path from "node:path";
 import fs from "node:fs/promises";
-import { codexMarketDir, ensureCodexMarketplaceSection, installCodexMarketPlugin, listInstalledMarketPlugins, listMarketPlugins, removeCodexMarketPluginFiles } from "../codex-market";
+import { codexMarketDir, checkMarketPluginUpdates, ensureCodexMarketplaceSection, findMarketPlugin, installCodexMarketPlugin, listInstalledMarketPlugins, listMarketPlugins, removeCodexMarketPluginFiles } from "../codex-market";
 import type { CodexMarketPlugin } from "../codex-market";
 import { sendToWindow } from "./window-bus";
 import { escapeHookKey, writeHookEnabled } from "./hooks-ipc";
@@ -31,7 +31,7 @@ import type { IpcHost } from "../ipc-host";
 
 const PLUGINS_CHANNELS = [
   "plugins:market-list", "plugins:market-install", "plugins:market-uninstall", "plugins:market-installed",
-  "plugins:set-linked-enabled", "plugins:set-enabled",
+  "plugins:set-linked-enabled", "plugins:set-enabled", "plugins:update-check", "plugins:update",
 ];
 
 export const pluginsFeature = defineFeature<null>({
@@ -46,7 +46,9 @@ export const pluginsFeature = defineFeature<null>({
     //   不传就退化成"只看引擎 plugin/list"，引擎没认领时用户装完仍看到「+」（原报障）。
     ipcHost.handle("plugins:market-list", (_event, input: { category?: string; query?: string; page?: number; pageSize?: number } = {}) => listMarketPlugins({ ...input, installedDir: codexMarketDir(codexHome) }));
 
-    ipcHost.handle("plugins:market-install", async (_event, plugin: CodexMarketPlugin) => {
+    /** 安装与更新**共用同一条链**（更新 = 拿市场里的最新版对象再走一遍）——
+     *  ⛔ 不另写第二条安装路径，否则「装」与「更新」的口径迟早漂移。 */
+    async function installMarketPlugin(plugin: CodexMarketPlugin) {
       const emit = (stage: string, message: string) => sendToWindow("harness:event", { type: "plugin-install", pluginId: plugin.slug, stage, message, at: Date.now() });
       // ⛔ Gitee 镜像源的插件全部自带 .claude-plugin/plugin.json（清单里 pluginPath 已定位），无需再探。
       // 幂等注册本地 marketplace 段（缺才写），返回插件落盘目录
@@ -88,6 +90,25 @@ export const pluginsFeature = defineFeature<null>({
       }
       emit(engineRegistered ? "complete" : "pending", engineCheckMessage);
       return { ...installed, engineRegistered, engineCheckMessage };
+    }
+
+    ipcHost.handle("plugins:market-install", (_event, plugin: CodexMarketPlugin) => installMarketPlugin(plugin));
+
+    /* ── 插件更新（10-12 用户要求「技能和插件加一个更新功能」）───────────────────
+     * 插件**有版本号**（marketplace.json 的 `version` vs 本地 `.codex-market.json`）
+     * ⇒ 可以走**真版本比对**，不需要内容哈希那套。
+     * ⛔ check 必须零副作用（可随时点、不写盘、不改配置）；
+     * ⛔ 版本缺失的一律标 `comparable:false` 交给界面如实显示，**不许演成「已是最新」**。 */
+    ipcHost.handle("plugins:update-check", () => checkMarketPluginUpdates(codexMarketDir(codexHome)));
+
+    ipcHost.handle("plugins:update", async (_event, slug: string) => {
+      const key = String(slug ?? "").trim();
+      if (!key) throw new Error("缺少插件标识");
+      const before = (await listInstalledMarketPlugins(codexMarketDir(codexHome))).get(key)?.version ?? "";
+      const plugin = await findMarketPlugin(key);
+      if (!plugin) throw new Error(`市场清单里找不到插件「${key}」，无法更新（可能已从市场下架）`);
+      const result = await installMarketPlugin(plugin);
+      return { ...result, from: before, to: plugin.version || "" };
     });
 
     ipcHost.handle("plugins:market-uninstall", async (_event, slug: string) => {

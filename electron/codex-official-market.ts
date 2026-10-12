@@ -30,6 +30,7 @@ import os from "node:os";
 import path from "node:path";
 import { GH_MIRROR_PREFIXES } from "./gh-mirror";
 import { OFFICIAL_CATALOG_GENERATED_AT, OFFICIAL_PLUGIN_CATALOG } from "./codex-official-catalog.gen";
+import { compareVersions } from "./updates";
 
 const GH_OWNER = "openai";
 const GH_REPO = "plugins";
@@ -306,6 +307,42 @@ export async function listOfficialMarketCategories(): Promise<{ key: string; dis
   return [...counts.entries()]
     .map(([key, count]) => ({ key, displayName: OFFICIAL_CATEGORY_ZH[key] ?? key, count }))
     .sort((a, b) => b.count - a.count);
+}
+
+/** 已装官方插件 vs 市场最新版（10-12 与 plugins 域同批新增：用户要求「技能和插件加一个更新功能」）。
+ *  ⛔ 本地版本 = 本地 marker（`listInstalledOfficialPlugins`，权威、零网络）；市场版本 = 目录项的 version。
+ *  ⛔ 版本缺失一律 `comparable: false`，由界面如实标注，**不许演成「已是最新」**。
+ *  ⚠️ 上游不通时 `loadLiveEntries` 会回落到**内置快照**：快照偏旧最多是「漏报更新」，
+ *    不会误报（本地版本只会 ≥ 快照版本），所以这里照常比对，不做额外拦截。
+ *  ⛔ 本函数只读。 */
+export async function checkOfficialPluginUpdates(marketDir: string): Promise<{
+  slug: string; name: string; current: string; latest: string; hasUpdate: boolean; comparable: boolean;
+}[]> {
+  const installed = await listInstalledOfficialPlugins(marketDir);
+  const items = (await loadLiveEntries()).entries.map(buildPlugin);
+  const bySlug = new Map(items.map((item) => [item.slug, item]));
+  return [...installed.entries()].map(([slug, info]) => {
+    const remote = bySlug.get(slug);
+    const current = info.version || "";
+    const latest = remote?.version || "";
+    const comparable = Boolean(current && latest);
+    return {
+      slug,
+      name: remote?.displayName || slug,
+      current,
+      latest,
+      comparable,
+      hasUpdate: comparable && compareVersions(latest, current) > 0,
+    };
+  });
+}
+
+/** 按 slug 取官方市场里的插件对象（更新时复用**同一份**对象走既有安装链）。找不到返回 null。 */
+export async function findOfficialMarketPlugin(slug: string): Promise<OfficialMarketPlugin | null> {
+  const key = String(slug ?? "").trim();
+  if (!key) return null;
+  const items = (await loadLiveEntries()).entries.map(buildPlugin);
+  return items.find((item) => item.slug === key) ?? null;
 }
 
 export async function listOfficialMarketPlugins(input: { category?: string; query?: string; page?: number; pageSize?: number; installedDir?: string } = {}) {

@@ -2,8 +2,8 @@
  * runtime-ipc（10-03 从 `features/engine-ipc/03-dev-runtime` + `04-dev-runtime-install` 合并成单前缀板块，
  * 同时改为**插件形态**）
  *
- * 域：runtime(5)
- * 通道：runtime:list / install / uninstall / cancel / health
+ * 域：runtime(7)
+ * 通道：runtime:list / install / uninstall / cancel / health / update-check / update
  *
  * ⛔⛔ 四条实证口径（本次纯搬迁，一字未改）：
  *   1. **卸载落点不能按 marker 首段推导**（10-01 用户报「卸载不真」的根因）：首段会得到
@@ -20,7 +20,7 @@
  * ⛔ 待接缝化（阶段 2）：app / shell / spawn 为宿主能力。
  */
 import fs from "node:fs/promises";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { app, shell } from "electron";
@@ -37,6 +37,8 @@ import { installPhoneHarness } from "./phone-harness";
 import { codexHome, server } from "../runtime-refs";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
+// 版本比较统一走 `../updates`（含预发布语义：1.2.3-beta < 1.2.3）——⛔ 别再写第二份。
+import { compareVersions } from "../updates";
 
 function specFor(id: DevRuntimeId, spec: DevRuntimeSpec): DevRuntimeSpec {
   if (!IS_MAC) return spec;
@@ -531,7 +533,76 @@ async function devRuntimeHealth(): Promise<DevRuntimeHealth[]> {
   return rows;
 }
 
-const RUNTIME_CHANNELS = ["runtime:list", "runtime:install", "runtime:uninstall", "runtime:cancel", "runtime:health"];
+/* ── 工具链「检查更新 / 升级」（10-12 用户要求）────────────────────────────────
+ * 用户原话：「nuphus 和 browser 能不能留好国内镜像源更新入口，这个界面加上两个更新功能」。
+ * ⛔ 与「修复安装」的分工（两者不可互相替代，界面文案也要分清）：
+ *   · 修复安装 = 从**随包 zip** 重解压 ⇒ 版本回到「包内版本」（离线、永远可用）；
+ *   · 在线更新 = 从 **npm 国内镜像**装 `<pkg>@latest` ⇒ 真升级（联网、版本跟着 npm 走）。
+ *   ⇒ 用户点过在线更新后，日后再点修复安装会**降级**回包内版本 —— 这是设计使然，不是 bug。
+ * ⛔ 包名与落位都取既有真相源（npmGlobalRootCandidates），别在这里手拼 `npm-global/node_modules`。
+ * ⛔ 装完必须**复核磁盘上的版本**，读不到就报错 —— 不许「看起来装好了」。
+ * ⛔ 必须重启引擎：nuphus 是引擎 spawn 的 MCP 子进程，CLI 也在引擎的 PATH 上。
+ * ⛔ 新增可更新工具时，**同时**改这里与界面侧清单（界面侧从 runtime:update-check 全量拉，不用改）。
+ */
+const UPDATEABLE_TOOLS: Record<string, { pkg: string; label: string }> = {
+  nuphus: { pkg: "@nuphus/nuphus-mcp", label: "Nuphus 桌面自动化" },
+  "playwright-cli": { pkg: "@playwright/cli", label: "Playwright 浏览器自动化" },
+};
+
+/** 读磁盘上已装的版本号（双落位都查；读不到返回空串 = 当未安装）。 */
+function installedVersionOf(id: string): string {
+  const tool = UPDATEABLE_TOOLS[id];
+  if (!tool) return "";
+  const segments = tool.pkg.split("/");
+  for (const root of npmGlobalRootCandidates()) {
+    try {
+      const pkgJson = path.join(root, ...segments, "package.json");
+      if (!existsSync(pkgJson)) continue;
+      const parsed = JSON.parse(readFileSync(pkgJson, "utf8")) as { version?: unknown };
+      if (typeof parsed.version === "string" && parsed.version) return parsed.version;
+    } catch { /* 读不到就换下一个落位 */ }
+  }
+  return "";
+}
+
+/** 查 npm 上某包的最新版：国内镜像优先、失败回落官方源（与 runNpmInstall 同序、同口径）。 */
+async function fetchRegistryLatest(
+  pkg: string,
+  source: NonNullable<AppSettings["downloadSource"]>,
+  timeoutMs = 20000,
+): Promise<{ version: string; registry: string }> {
+  const userRegistry = process.env.npm_config_registry || process.env.NPM_CONFIG_REGISTRY || "";
+  const registries = userRegistry
+    ? [userRegistry]
+    : source === "direct"
+      ? ["https://registry.npmjs.org", CHINA_NPM_REGISTRY]
+      : [CHINA_NPM_REGISTRY, "https://registry.npmjs.org"];
+  let lastError = "";
+  for (const registry of registries) {
+    // ⛔ 必须带超时：镜像站偶发挂住时不能让「检查更新」按钮永远转圈
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(`${registry}/${pkg.replace("/", "%2F")}`, {
+        signal: controller.signal,
+        // 精简 packument：只要 dist-tags，不要每个版本的完整元数据（镜像与官方源都支持）
+        headers: { accept: "application/vnd.npm.install-v1+json, application/json" },
+      });
+      if (!res.ok) { lastError = `${registry} 返回 HTTP ${res.status}`; continue; }
+      const json = (await res.json()) as { "dist-tags"?: { latest?: unknown } };
+      const latest = json?.["dist-tags"]?.latest;
+      if (typeof latest === "string" && latest) return { version: latest, registry };
+      lastError = `${registry} 的响应里没有 dist-tags.latest`;
+    } catch (error) {
+      lastError = `${registry}：${(error as Error)?.message ?? String(error)}`;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw new Error(`查最新版本失败（国内镜像与官方源都试过了）：${lastError}`);
+}
+
+const RUNTIME_CHANNELS = ["runtime:list", "runtime:install", "runtime:uninstall", "runtime:cancel", "runtime:health", "runtime:update-check", "runtime:update"];
 
 /* 装不上的备用方案文案生成器：导出**只为可验证**（探针/守卫能真跑它），业务侧一律经 runtime:list 取。 */
 export { fallbackPromptFor };
@@ -726,6 +797,62 @@ export const runtimeFeature = defineFeature<null>({
         return { ok: true, runtimes: runtimeList() };
       } catch (error) {
         // 取消（杀进程导致的非零退出）不算错误：回执 cancelled，渲染层按「已取消」处理而不是报红
+        if (isCancelRequested(id)) return { ok: true, cancelled: true, runtimes: runtimeList() };
+        throw error;
+      } finally {
+        runtimeInstalls.delete(id);
+        clearCancelRequest(id);
+      }
+    });
+
+    /* ── 工具链更新（10-12 新增；界面在「设置 → 自动化」）───────────────────────
+     * runtime:update-check —— 只读：查 npm 最新版 + 读盘上已装版，给 hasUpdate。
+     * runtime:update       —— 真装：`<pkg>@latest` 从国内镜像进 tools/npm-global，复核版本后重启引擎。
+     * ⛔ 传 id 返回单条；不传返回**全部**可更新工具（界面一次拿全，免得渲染层再抄一份清单）。 */
+    ipcHost.handle("runtime:update-check", async (_event, idValue?: string) => {
+      const source = await readDownloadSource();
+      const ids = idValue ? [idValue] : Object.keys(UPDATEABLE_TOOLS);
+      const rows = await Promise.all(ids.map(async (id) => {
+        const tool = UPDATEABLE_TOOLS[id];
+        if (!tool) throw new Error(`该工具不支持在线更新：${id}`);
+        const current = installedVersionOf(id);
+        try {
+          const { version: latest, registry } = await fetchRegistryLatest(tool.pkg, source);
+          return { id, name: tool.label, pkg: tool.pkg, current, latest, registry, hasUpdate: !current || compareVersions(latest, current) > 0, error: "" };
+        } catch (error) {
+          // ⛔ 查不到最新版**不是致命错**：界面照常显示已装版本，错误原文给人看（网络问题用户自己能判断）
+          return { id, name: tool.label, pkg: tool.pkg, current, latest: "", registry: "", hasUpdate: false, error: (error as Error)?.message ?? String(error) };
+        }
+      }));
+      return idValue ? rows[0] : rows;
+    });
+
+    ipcHost.handle("runtime:update", async (_event, idValue: string) => {
+      const id = idValue as DevRuntimeId;
+      const tool = UPDATEABLE_TOOLS[id];
+      if (!tool) throw new Error(`该工具不支持在线更新：${idValue}`);
+      // 同一工具并发：等它跑完（与 runtime:install 同语义），不要抛「正在安装」
+      const inFlight = runtimeInstalls.get(id);
+      if (inFlight) { await inFlight; return { ok: true, joined: true, runtimes: runtimeList() }; }
+      const from = installedVersionOf(id);
+      const downloadSource = await readDownloadSource();
+      const task = (async () => {
+        emitRuntimeProgress(id, `@@STAGE 更新 ${tool.label}`);
+        emitRuntimeProgress(id, `正在从国内镜像更新 ${tool.pkg}@latest（当前 ${from || "未知"}）…`);
+        await runNpmInstall(id, `${tool.pkg}@latest`, tool.label, downloadSource);
+        // 引擎重启会等当前任务跑完（闸门），期间界面显示「等待任务结束后刷新引擎」
+        await restartServerWhenIdle(id);
+      })();
+      runtimeInstalls.set(id, task);
+      try {
+        await task;
+        const to = installedVersionOf(id);
+        // ⛔ 复核：命令退出码 0 ≠ 装上了（落位/权限/半截网络都可能「成功退出」）
+        if (!to) throw new Error(`${tool.label} 更新命令已跑完，但读不到已装版本 —— 请点「修复安装」回到随包版本`);
+        sendToWindow("runtime:progress", { id, message: `已更新到 ${to}`, percent: 100, speed: "", done: true });
+        return { ok: true, from, to, runtimes: runtimeList() };
+      } catch (error) {
+        // 取消（杀进程导致的非零退出）不算错误：回执 cancelled，与 install 同一口径
         if (isCancelRequested(id)) return { ok: true, cancelled: true, runtimes: runtimeList() };
         throw error;
       } finally {

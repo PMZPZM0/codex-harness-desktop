@@ -140,6 +140,10 @@ contextBridge.exposeInMainWorld("codex", {
   uninstallMarketPlugin: (slug: unknown) => __ipc("plugins:market-uninstall", 1, [slug]),
   /* 10-03：本地已装市场插件清单（**只扫本地目录、零网络**；供「已安装」列表补齐引擎没认领的那批 —— 不能走 market-list，那条会拉远端 48 个插件） */
   listInstalledMarketPlugins: () => __ipc("plugins:market-installed", 0, []),
+  /* 10-12 新增：插件**有版本号**（marketplace.json 的 version vs 本地 .codex-market.json）⇒ 走真版本比对。⛔ 只读、零副作用；版本缺失的一律 comparable:false 交给界面如实显示，不许演成「已是最新」 */
+  checkPluginUpdates: () => __ipc("plugins:update-check", 0, []),
+  /* 10-12 新增：按 slug 取市场最新对象、重跑**同一条安装链**覆盖更新（含引擎注册与重启）。市场已下架时明确报错，不静默跳过 */
+  updatePlugin: (slug: string) => __ipc("plugins:update", 1, [slug]),
   listLocalSkills: () => __ipc("skills:local-list", 0, []),
   setEnabledSkill: (input: { folder: string; enabled: boolean }) => __ipc("skills:set-enabled", 1, [input]),
   setEnabledSkillBatch: (input: { folders: string[]; enabled: boolean }) => __ipc("skills:set-enabled-batch", 1, [input]),
@@ -415,6 +419,10 @@ contextBridge.exposeInMainWorld("codex", {
   cancelRuntime: (id: string) => __ipc("runtime:cancel", 1, [id]),
   /* 工具自检（10-02 用户要的「检查」）：逐个探测已装工具**能不能真跑**（跑一次版本命令/可执行性），返回逐项结果，界面直接列给人看 */
   runtimeHealth: () => __ipc("runtime:health", 0, []),
+  /* 10-12 新增（用户要求「nuphus 和 browser 留国内镜像源更新入口」）：查 npm 最新版（国内镜像优先、回落官方源）并读磁盘已装版，给出 hasUpdate。传 id 返回单条、不传返回全部可更新工具 —— 包名与落位的真相源在主进程 UPDATEABLE_TOOLS / npmGlobalRootCandidates */
+  checkRuntimeUpdate: (id?: string) => __ipc("runtime:update-check", 0, [id]),
+  /* 10-12 新增：从 npm 国内镜像装 <pkg>@latest 到 tools/npm-global（进度走 runtime:progress），装完**复核磁盘版本**、再按闸门重启引擎。⛔ 与「修复安装」不同：后者从随包 zip 重解压（版本回到包内版本，属降级） */
+  updateRuntime: (id: string) => __ipc("runtime:update", 1, [id]),
   weixinStartLogin: () => __ipc("weixin:start-login", 0, []),
   weixinPollLogin: () => __ipc("weixin:poll-login", 0, []),
   feishuConnect: (appId: string, appSecret: string) => __ipc("feishu:connect", 2, [appId, appSecret]),
@@ -436,6 +444,10 @@ contextBridge.exposeInMainWorld("codex", {
   channelsStatus: () => __ipc("channels:status", 0, []),
   telegramConnect: (token: string) => __ipc("telegram:connect", 1, [token]),
   installMarketSkillLight: (skill: unknown) => __ipc("skills:market-install-light", 1, [skill]),
+  /* 10-12 新增（用户要求「技能和插件加一个更新功能」）：技能市场**没有版本号** ⇒ 判据是**内容比对**（把市场当前的包下下来，与磁盘上已装的逐文件对齐，相对路径 + 内容 sha256，两侧同一函数）。三态：update / current / unresolved（市场搜不到、比对失败、或本地导入无市场来源）——⛔ unresolved 绝不演成 current */
+  checkSkillUpdates: () => __ipc("skills:update-check", 0, []),
+  /* 10-12 新增：把某个已装的市场技能重新拉取覆盖（复用市场安装链：下载/安检/解压/落盘/来源清单），再刷新 skills/list。folder = 技能目录名 */
+  updateSkill: (folder: string) => __ipc("skills:update", 1, [folder]),
   skillDisciplineGet: () => __ipc("skill-discipline:get", 0, []),
   savePastedText: (text: string) => __ipc("pasted-text:save", 1, [text]),
   readPastedText: (path: string) => __ipc("pasted-text:read", 1, [path]),
@@ -620,6 +632,10 @@ contextBridge.exposeInMainWorld("codex", {
   uninstallOfficialMarketPlugin: (slug: unknown) => __ipc("codex-official-market:uninstall", 1, [slug]),
   /* 本地已装官方插件（**只扫本地目录、零网络**）：补齐「引擎没认领、但文件已落盘」的那批，不能走 list（那条要拉上游 65 条） */
   listInstalledOfficialMarketPlugins: () => __ipc("codex-official-market:installed", 0, []),
+  /* 10-12 新增：Codex 官方插件市场（GitHub openai/plugins 国内镜像）的更新检查。与 plugins 域同构：**有版本号** ⇒ 真版本比对；只读零副作用；版本缺失标 comparable:false */
+  checkOfficialPluginUpdates: () => __ipc("codex-official-market:update-check", 0, []),
+  /* 10-12 新增：按 slug 取官方市场最新对象、重跑**同一条安装链**覆盖更新（含引擎注册与重启）。已下架时明确报错 */
+  updateOfficialPlugin: (slug: string) => __ipc("codex-official-market:update", 1, [slug]),
   /* 10-04 阶段 6 宿主域清单（启用/停用状态 + 是否 essential） */
   domainsList: () => __ipc("domains:list", 0, []) as Promise<{ domains: Array<{ id: string; mounted: boolean; disabled: boolean; essential: boolean }>; essentialDomains: string[]; requiresRestart: boolean }>,
   /* 10-04 阶段 6 停用/启用宿主域（下次启动生效，essential 域拒绝） */
