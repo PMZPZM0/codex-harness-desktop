@@ -148,6 +148,19 @@ async function main() {
   tar(`https://github.com/DietrichGebert/ponytail/archive/refs/tags/${TOOLS_VERSIONS.ponytail}.tar.gz`,
     "ponytail.tar.gz", path.join(tools, "ponytail-plugin"), true);
 
+  // 免费模型网关本体（10-12 用户令；≤50MB 口径随包，与 Windows 侧同口径同布局）。
+  // 运行时安装走本地解压（零网络）；缺了才回落 gh 镜像下载。
+  {
+    const fgDir = path.join(tools, "free-gateway");
+    fs.mkdirSync(fgDir, { recursive: true });
+    const fgTarget = path.join(fgDir, "ofm-main.zip");
+    if (fs.existsSync(fgTarget) && fs.statSync(fgTarget).size > 1_000_000) {
+      console.log("[free-gateway] 已存在，跳过下载");
+    } else {
+      fs.copyFileSync(download("https://github.com/Ebony-Vinyl/dsh-our-free-model/archive/refs/heads/main.zip", "ofm-main.zip"), fgTarget);
+    }
+  }
+
   // ⛔ 10-01 用户定稿「50m 以内的工具都内置」：与 Windows 侧**同一份清单**（下载体积 ≤50MB），
   //    复用应用内 install-runtimes.cjs 的 **darwin 分支**（mac 资产名/解压器/执行位都在那边统一处理）。
   //    幂等：已就位的条目脚本自己会 skip（python 上一段已装好，这里只会走 pip 依赖的 skip 分支）。

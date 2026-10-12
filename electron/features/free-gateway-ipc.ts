@@ -24,6 +24,10 @@ import { GH_MIRROR_PREFIXES } from "../gh-mirror";
 const REPO_ZIP = "https://codeload.github.com/Ebony-Vinyl/dsh-our-free-model/zip/refs/heads/main";
 /** 镜像前缀（空串 = 直连）：单一真相源在 ../gh-mirror（10-11 收敛，顺序 gh-proxy → ghfast → 直连）。 */
 const MIRRORS = GH_MIRROR_PREFIXES;
+/** 随包内置本体（10-12 用户令「12M 的插件能不能内置啊，下载太慢了」；≤50MB 口径必内置）：
+ *  打包期由 prepare-windows/mac-tools.cjs 现造到 tools/free-gateway/ofm-main.zip，
+ *  安装时直接本地解压（秒装、零网络）；缺了（老包/被裁）才回落网络三镜像。 */
+function bundledZipPath() { return path.join(toolsRoot(), "free-gateway", "ofm-main.zip"); }
 const CHANNELS = ["free-gateway:status", "free-gateway:download", "free-gateway:start", "free-gateway:stop", "free-gateway:open-admin", "free-gateway:models", "free-gateway:uninstall"];
 /** 生命周期状态（模块级单例；路径一律**运行期**求值 —— ⛔ 模块顶层不许求值 app.getPath）。 */
 let child: ChildProcess | null = null;
@@ -121,6 +125,7 @@ export const freeGatewayFeature = defineFeature<null>({
       return {
         downloaded, version, running, port,
         forwardKey,
+        bundled: fs.existsSync(bundledZipPath()),
         lastStartError: lastStartError || null,
         dlBytes, dlTotal,
         hasForwardKey: Boolean(forwardKey),
@@ -140,19 +145,27 @@ export const freeGatewayFeature = defineFeature<null>({
       if (stage) throw new Error(`正在${stage === "downloading" ? "下载" : "解压"}中，请稍候`);
       const root = gatewayRoot();
       fs.mkdirSync(root, { recursive: true });
-      const zipPath = path.join(root, "ofm-main.zip");
-      stage = "downloading"; stageError = "";
+      const bundled = fs.existsSync(bundledZipPath());
+      const zipPath = bundled ? bundledZipPath() : path.join(root, "ofm-main.zip");
+      if (!bundled) {
+        stage = "downloading"; stageError = "";
+        try {
+          let done = false;
+          // ⛔ 通道顺序：上次实测最快的排最前（10-12 用户实测「转半天」——第一通道挂起又没超时切换）
+          const last = lastGoodMirror();
+          const order = last >= 0 ? [MIRRORS[last], ...MIRRORS.filter((_, i) => i !== last)] : MIRRORS;
+          for (let mi = 0; mi < order.length && !done; mi++) {
+            done = await downloadTo(order[mi] + REPO_ZIP, zipPath);
+            if (done) saveLastGoodMirror(MIRRORS.indexOf(order[mi]));
+          }
+          if (!done) throw new Error("内置本体缺失且三个下载通道（gh-proxy / ghfast / 直连）都失败了，请检查网络后重试");
+        } finally { stage = ""; }
+      } else {
+        // 内置包：零网络，进度直接给满（无下载阶段）
+        dlBytes = dlTotal = fs.statSync(zipPath).size;
+      }
+      stage = "extracting";
       try {
-        let done = false;
-        // ⛔ 通道顺序：上次实测最快的排最前（10-12 用户实测「转半天」——第一通道挂起又没超时切换）
-        const last = lastGoodMirror();
-        const order = last >= 0 ? [MIRRORS[last], ...MIRRORS.filter((_, i) => i !== last)] : MIRRORS;
-        for (let mi = 0; mi < order.length && !done; mi++) {
-          done = await downloadTo(order[mi] + REPO_ZIP, zipPath);
-          if (done) saveLastGoodMirror(MIRRORS.indexOf(order[mi]));
-        }
-        if (!done) throw new Error("三个下载通道（gh-proxy / ghfast / 直连）都失败了，请检查网络后重试");
-        stage = "extracting";
         const staging = path.join(root, "staging");
         fs.rmSync(staging, { recursive: true, force: true });
         fs.mkdirSync(staging, { recursive: true });
@@ -170,7 +183,8 @@ export const freeGatewayFeature = defineFeature<null>({
           }
         }
         fs.rmSync(staging, { recursive: true, force: true });
-        fs.rmSync(zipPath, { force: true });
+        // ⛔ 内置包是随包资产，绝不删（只有网络下载的临时 zip 才清理）
+        if (!bundled) fs.rmSync(zipPath, { force: true });
         let version = "";
         try { version = JSON.parse(fs.readFileSync(path.join(appDir(), "package.json"), "utf8")).version ?? ""; } catch { /* 宽松 */ }
         return { ok: true, version };
@@ -183,7 +197,7 @@ export const freeGatewayFeature = defineFeature<null>({
     });
 
     ipcHost.handle("free-gateway:start", async () => {
-      if (!fs.existsSync(markerPath())) throw new Error("尚未下载网关本体，请先点「下载」");
+      if (!fs.existsSync(markerPath())) throw new Error("尚未安装网关本体，请先点「安装本体」");
       // 幂等：已有健康实例（本应用上次拉起的 / 用户自起的）就直接复用，不双开
       //（上游单数据目录限一个实例，service.lock 会让第二实例秒退）
       const existing = await pickPort();

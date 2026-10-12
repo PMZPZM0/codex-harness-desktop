@@ -76,7 +76,27 @@ ok(/app\.getPath\("userData"\), "free-gateway"\)/.test(domain) && /"app"\)/.test
 ok(stylesEntry.includes('@import "./styles/35-free-gateway"') && /\.free-gateway-disclaimer \{/.test(css),
   "样式分节 35-free-gateway.css 存在且被 barrel 引入");
 
-/* ── 五、check 链登记（本文件必须被跑）────────────────────────────────── */
+/* ── 五、随包内置（10-12 用户令「12M 的插件能不能内置啊，下载太慢了」；≤50MB 口径必内置）── */
+{
+  const extraFrom = (pkg.build?.extraResources ?? []).map((e) => e.from ?? e);
+  ok(extraFrom.includes("resources/tools/free-gateway"), "extraResources 随包内置 free-gateway 本体 zip");
+  ok(/toolsRoot\(\), "free-gateway", "ofm-main\.zip"/.test(domain), "域按 toolsRoot/free-gateway/ofm-main.zip 解析内置包");
+  ok(/if \(!bundled\) \{/.test(domain) && /MIRRORS\[last\]/.test(domain) && /内置本体缺失且三个下载通道/.test(domain),
+    "内置缺失回落网络三镜像（下载逻辑保留，老包也能装）");
+  ok(/bundled: fs\.existsSync\(bundledZipPath\(\)\)/.test(domain), "status 上报 bundled（渲染层文案切换的数据源）");
+  ok(/if \(!bundled\) fs\.rmSync\(zipPath/.test(domain), "⛔ 收尾不删内置包（只清理网络下载的临时 zip）");
+  ok(/bundled\??: boolean/.test(card) && /s\.bundled \? "安装本体（已内置，秒装）" : "下载本体（约 12 MB）"/.test(card),
+    "渲染层按钮按内置态切文案");
+  const prepWin = read("scripts/prepare-windows-tools.cjs");
+  const prepMac = read("scripts/prepare-mac-tools.cjs");
+  for (const [src, label] of [[prepWin, "win"], [prepMac, "mac"]]) {
+    ok(src.includes("dsh-our-free-model/archive/refs/heads/main.zip") && src.includes('fgDir, "ofm-main.zip"'),
+      `prepare-${label} 构建期现造内置 zip（CI 干净检出必命中）`);
+  }
+  ok(prepWin.includes('["free-gateway/ofm-main.zip"'), "win 硬校验清单钉住本体（缺了 = 发坏包）");
+}
+
+/* ── 六、check 链登记（本文件必须被跑）────────────────────────────────── */
 ok(pkg.scripts.check.includes("12c-free-gateway.mjs"), "package.json check 链已登记本守卫");
 
 console.log(`\n【free-gateway】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
