@@ -14,7 +14,7 @@ import { Spinner } from "../../components/CardShell";
 import { BatchActions, CheckCard, SearchField, SegmentedTabs, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
 import { MarketLogo } from "../../features/skills-market";
 import { CodexOfficialMarketSection } from "../codex-official-market";
-import { MarketUpdatePanel } from "../market-updates/MarketUpdatePanel";
+import { MarketUpdatePanel } from "../market-updates";
 import { avatarToneOf } from "../../lib/entity-avatar";
 
 /** 已安装插件的**来源渠道标签**（10-06 用户：「每个市场安装的都要在已安装里打来源渠道标签」）。

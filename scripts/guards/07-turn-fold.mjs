@@ -3108,7 +3108,8 @@ export async function run() {
   );
   (/单次 CDP 往返/.test(bSkill) ? ok : fail)("【74】browser-skill 点明 browser_exec 的价值（多步合并成单次 CDP 往返）");
   (/三段循环/.test(bSkill) ? ok : fail)("【74】browser-skill 有「观察 → 动作 → 验证」三段协议");
-  (/判存在/.test(bSkill) ? ok : fail)("【74】browser-skill 有判存在规则（nuphus 随桌面总闸注册，通道不能写死）");
+  // ⛔ 10-12：MCP 工具对模型不可达 ⇒ 技能不再讲「判存在」，讲「当前唯一可用通道」。
+  (/唯一可用通道/.test(bSkill) && /unsupported call/.test(bSkill) ? ok : fail)("【74】browser-skill 讲明当前引擎下唯一可用通道（0.157 起 MCP 工具不下发，旧「判存在」那套已失效）");
 
   // ② 桌面技能：perceive/vision 分工 + 平台降级（Intel Mac 无本地 OCR）
   (/desktop_perceive/.test(dSkill) && /never click with them/.test(dSkill) ? ok : fail)(
@@ -3145,8 +3146,8 @@ export async function run() {
   );
 
   // ⑤ 桌面指令不得只说命令行（否则模型不会直接调已注册的 desktop_* 工具）
-  (/the nuphus MCP desktop tools are already registered/.test(di74) ? ok : fail)(
-    "【74】developer_instructions 明说 desktop_* 已注册、可直接调用（旧文案只提 nuphus-call）"
+  (/are NOT delivered to you/.test(di74) && /nuphus-call <tool> key=value/.test(di74) ? ok : fail)(
+    "【74】developer_instructions 明说 MCP 工具**不会**下发给模型、主线是 nuphus-call CLI（10-12 引擎实证）"
   );
   (!/on-demand CLI bridge to desktop automation tools/.test(di74) ? ok : fail)(
     "【74】不得回退成「桌面只有 nuphus-call 命令行」的旧文案"
@@ -3172,8 +3173,8 @@ export async function run() {
   if (pol) {
     const D = pol.NUPHUS_DESKTOP_TOOLS || [];
     const B = pol.NUPHUS_BROWSER_TOOLS || [];
-    (D.length === 15 && B.length === 23 && new Set([...D, ...B]).size === 38 ? ok : fail)(
-      `【75】nuphus 工具分组与实测枚举一致（桌面 15 + 浏览器 23 = 38；实际 ${D.length}+${B.length}）`
+    (D.length === 22 && B.length === 23 && new Set([...D, ...B]).size === 45 ? ok : fail)(
+      `【75】nuphus 工具分组与实测枚举一致（桌面 22 + 浏览器 23 = 45；实际 ${D.length}+${B.length}）`
     );
     (pol.shouldRegisterNuphus({ desktop: false, browser: true })
       && pol.shouldRegisterNuphus({ desktop: true, browser: false })
@@ -3182,7 +3183,7 @@ export async function run() {
     );
     const onlyBrowser = pol.nuphusDisabledTools({ desktop: false, browser: true });
     const onlyDesktop = pol.nuphusDisabledTools({ desktop: true, browser: false });
-    (onlyBrowser.length === 15 && !onlyBrowser.some((t) => t.startsWith("browser_")) ? ok : fail)(
+    (onlyBrowser.length === 22 && !onlyBrowser.some((t) => t.startsWith("browser_")) ? ok : fail)(
       "【75】只开浏览器 ⇒ 掩掉整组桌面工具（真实键鼠拿不到）且不误伤 browser_*"
     );
     (onlyDesktop.length === 23 && !onlyDesktop.some((t) => t.startsWith("desktop_")) ? ok : fail)(
@@ -3235,11 +3236,12 @@ export async function run() {
   (/判存在（必做的第一步）/.test(bs75) ? ok : fail)(
     "【75】desktop-skill 有「判存在」小节（总闸关着时别去调不存在的 desktop_*，也别用命令行绕）"
   );
-  (/IF `desktop_windows_list` is in your tool list/.test(di75) ? ok : fail)(
-    "【75】基础指令里桌面能力也按「工具列表里有没有 desktop_windows_list」判存在"
+  (/are NOT delivered to you/.test(di75) && /nuphus-call <tool> key=value/.test(di75) ? ok : fail)(
+    "【75】桌面能力改走 nuphus-call CLI（MCP 工具不下发给模型，0.157 起；旧的「看工具表判存在」恒假）"
   );
-  (/do not fall back to `nuphus-call` to bypass the switch/.test(di75) ? ok : fail)(
-    "【75】明确禁止用命令行绕过总闸（nuphus-call 仍在 PATH 上，配置管不到这一层）"
+  // ⛔ 10-12：开关关掉时该段桌面文案根本不注入，禁令改由 AUTOMATION DISABLED NOTE 承载（宿主判据）。
+  (/不得用 `nuphus-call` 从命令行绕过/.test(di75) ? ok : fail)(
+    "【75】总闸关闭时仍明确禁止命令行绕过（禁令在 AUTOMATION DISABLED NOTE，由宿主按开关下发）"
   );
 }
 
@@ -3299,7 +3301,7 @@ export async function run() {
   const skill272 = codeOnly(readBuiltinSkillsSource());
   const di272 = codeOnly(readFileSync(join(ROOT, "electron", "developer-instructions.ts"), "utf8"));
   (skill272.includes("desktop_ui_snapshot") && skill272.includes("desktop_ui_invoke")
-    && /Chromium 无障碍默认不展开/.test(skill272) && di272.includes("desktop_ui_set_value")
+    && /Chromium 无障碍默认不展开/.test(skill272) && di272.includes("desktop_ui_*")
     && di272.includes("CHANNEL PRIORITY on Windows") ? ok : fail)(
     "【273】选路指引两处都在（技能讲清「原生用清单 / 网页用 browser_* / 坐标只兜底」，常驻指令给优先级）"
   );

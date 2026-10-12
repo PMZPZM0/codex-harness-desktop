@@ -10,7 +10,7 @@ import { Spinner } from "../../components/CardShell";
 import { BatchActions, CheckCard, SearchField, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
 import { SkillAvatar } from "../../features/skills-market";
 import { SkillPoolSection } from "./SkillPoolSection";
-import { MarketUpdatePanel } from "../market-updates/MarketUpdatePanel";
+import { MarketUpdatePanel } from "../market-updates";
 
 export type SkillsCenterSectionProps = { openAppConfirm: (title: string, text: string, confirmLabel?: string) => Promise<boolean>; userDataPath: any; displayPath: any; projects?: [string, unknown][]; skillsManageOnly: any; setSkillsManageOnly: any; installedTotalCount: any; importSkill: any; refreshMarketSkills: any; skillHubCategory: any; skillHubSearch: any; marketPage: any; marketLoading: any; skillHubCategories: any; setSkillHubCategory: any; setMarketPage: any; skillManageSearch: any; setSkillManageSearch: any; setSkillHubSearch: any; skillHubCategoryTabs: any; skillHubFilterCategory: any; setSkillHubFilterCategory: any; marketSkills: any; skillHubCategoryName: any; localSkills: any; settingsResources: any; skillChecked: any; setSkillChecked: any; skillZhNote: any; toggleSkillEnabled: any; setSelectedSkills: any; setSettingsOpen: any; removeLocalSkill: any; skillBatchBusy: any; batchSetSkillEnabled: any; marketPageSize: any; setMarketPreview: any; setNotice: any; installMarketSkill: any; installingMarketSkill: any };
 
