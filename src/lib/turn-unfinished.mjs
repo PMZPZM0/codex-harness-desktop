@@ -73,8 +73,10 @@ export const PARTIAL_OUTPUT_MARKERS = [
   /write_stdin failed: stdin is closed/i,
 ];
 
-/** 「宣布下一步」的意图词（续做 / 重做 / 补做）。 */
-const INTENT_LEAD = /(继续|接着|接下来|下一步|随后|稍后|马上|立刻|这就|再去|再抓|再看|再读|再查|再跑|重跑|重试|重新跑|重新来|补齐|跟进|往下|照着)/;
+/** 「宣布下一步」的意图词（续做 / 重做 / 补做）。
+ *  ⛔⛔ 10-12 15:51 补词实证：模型写的是「**换成** CSS selector **再试**」—— 两个词都不在原词表里
+ *    （原表只有 重试/再跑/重跑），于是 intent 判定落空 ⇒ 漏判（用户再报"还在自动断"）。 */
+const INTENT_LEAD = /(继续|接着|接下来|下一步|随后|稍后|马上|立刻|这就|再去|再抓|再看|再读|再查|再跑|再试|重跑|重试|重新跑|重新来|换成|改成|改为|补齐|跟进|往下|照着)/;
 /** 「…一下 / …一次」式收尾（「验证一下。」「再核对一遍。」）——必须带动作词才算，光「一下」不算。 */
 const INTENT_ONCE = /(一下|一次|一遍)$/;
 const ACTION_WORD = /(验证|确认|核对|复现|检查|排查|看|读|试|跑|抓|测|查|修|改|补|清理|重装|再建)/;
@@ -82,20 +84,33 @@ const ACTION_WORD = /(验证|确认|核对|复现|检查|排查|看|读|试|跑|
 const ASK_TAIL = /[？?]\s*$|(吗|呢)\s*[。！!]?\s*$|(要不要|是不是|行不行|可以吗|请你|你来|你选|你定|请确认|需要我)/;
 /** 明确的收尾语（用户自己要求结束/等用户），别自作多情去续跑。 */
 const CLOSER = /(先这样|就这样|先到这儿|先到这|回头再|明天再|等你|待你|静候|随时叫我)/;
+/** ⛔⛔ 10-12 15:51 漏判实录（这次判定的真正来源）：模型末条正文是
+ *   「ref 不能跨进程复用（CLI 每次调用是新连接）—— 换成 CSS selector 再试。**这是个关键坑。**」
+ *   —— 宣布下一步在**倒数第二句**，末句是一句无关的评价 ⇒ 只看末句的旧写法漏判（用户又报"还在自动断"）。
+ *   ⇒ 回看末 3 句。但**放宽必须有护栏**：下面 DONE_MARKERS 先拦掉"已完成 + 建议…"这类结论，
+ *   否则「已完成。下次建议重试。」会被 INTENT_LEAD 的「重试」误判 ⇒ 替用户多发回合（比漏判更糟）。 */
+const DONE_MARKERS = /(已完成|做完了|完成了|已修复|修好了|搞定|全部完成|任务完成|收工|交付完成|已改|已换|已替换|已更新)/;
+/** 回看几句（末句 + 往前 2 句）。再多就容易把结论里的"建议"当成计划。 */
+const LOOKBACK_SENTENCES = 3;
 
 /** 末句是不是「宣布下一步」式收尾（不含问句、不含明确收尾语）。 */
 export function isPromiseEnding(text) {
   const raw = String(text ?? "").trim();
   if (!raw) return false;
-  // ⛔ 只切 。！!；;\n（**不切 ？**）—— 问号要留在末句里给 ASK_TAIL 判。
+  // ⛔ 三道护栏都在**全篇**上判（旧的只在末句判）：任一命中就当"正常收尾"，宁可漏判不误判。
+  if (DONE_MARKERS.test(raw)) return false;   // 已完成/搞定 + 后面再建议什么，都不算没干完
+  if (ASK_TAIL.test(raw) || CLOSER.test(raw)) return false; // 在问用户 / 用户要求停 ⇒ 不该替他续
+  // ⛔ 只切 。！!；;\n（**不切 ？**）—— 问号要留在句子里给 ASK_TAIL 判。
   const parts = raw.split(/[。！!；;\n]+/).map((part) => part.trim()).filter(Boolean);
-  const tail = parts.length ? parts[parts.length - 1] : "";
-  if (!tail) return false;
-  if (ASK_TAIL.test(tail) || CLOSER.test(tail)) return false;
-  // 末句带第二人称（「你继续用吧」）= 在跟用户说话，不是"我还要接着干"
-  if (/(你|您)/.test(tail)) return false;
-  if (INTENT_LEAD.test(tail)) return true;
-  if (INTENT_ONCE.test(tail) && ACTION_WORD.test(tail)) return true;
+  if (!parts.length) return false;
+  // 从末句往前回看 LOOKBACK_SENTENCES 句，命中即判「宣布下一步」
+  for (let i = parts.length - 1, seen = 0; i >= 0 && seen < LOOKBACK_SENTENCES; i -= 1, seen += 1) {
+    const sentence = parts[i];
+    // 末句带第二人称（「你继续用吧」）= 在跟用户说话，不是"我还要接着干"；逐句各判各的
+    if (/(你|您)/.test(sentence)) continue;
+    if (INTENT_LEAD.test(sentence)) return true;
+    if (INTENT_ONCE.test(sentence) && ACTION_WORD.test(sentence)) return true;
+  }
   return false;
 }
 
