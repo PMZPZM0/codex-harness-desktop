@@ -790,12 +790,14 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   // ⛔ 09-20 修正方向：浏览器通道**首选已注册的 nuphus browser_* MCP 工具**，playwright-cli 降为兜底。
   //    旧断言写的是「playwright-cli 是默认通道」——那正是要修的问题：24 个 browser_* 工具已注册、
   //    占着约 10k 前缀，指令却一次不提、还把 CLI 说成默认（每步一次进程往返）。
-  (devInstr.includes("PREFERRED — the nuphus MCP browser tools") && devInstr.includes("FALLBACK — `playwright-cli`") && devInstr.includes("CLOAKBROWSER_ENTRY") ? ok : fail)("developer_instructions：浏览器通道首选 nuphus browser_* MCP 工具、playwright-cli 为兜底；cloakbrowser 先探 CLOAKBROWSER_ENTRY");
+  // ⛔⛔ 10-12 改（引擎 0.157 起内置 MCP 工具延迟暴露，直调必返 unsupported call）：主线已改成
+  //    playwright-cli，browser_* 是「名字在表里、路由不认」。断言随之改成钉新事实。
+  (devInstr.includes("it is the ONLY channel that works on current engine builds") && devInstr.includes("Do NOT call browser_*") && /cloakbrowser upgrade path/.test(devInstr) ? ok : fail)("developer_instructions：浏览器主线 = playwright-cli（browser_* 直调必 unsupported call）；cloakbrowser 增强提法保留探 CLOAKBROWSER_ENTRY");
   (!devInstr.includes("DEFAULT browser channel") ? ok : fail)("developer_instructions：不得回退成「playwright-cli 是默认通道」（会让已注册的 browser_* 工具白占上下文）");
-  (devInstr.includes("If `browser_navigate` appears in your tool list") ? ok : fail)("developer_instructions：通道按「工具列表里有没有 browser_navigate」判存在（nuphus 随桌面总闸注册，写成绝对会调不存在的工具）");
+  (/Do NOT call browser_\*/.test(devInstr) && /unsupported call/.test(devInstr) ? ok : fail)("developer_instructions：明确禁止直调 browser_* 并写明报错（不再按「工具表里有没有」判存在 —— 那是 0.157 前的旧机制）");
   (!/The in-app browser panel is CloakBrowser/.test(devInstr) ? ok : fail)("developer_instructions：不再声称应用内面板就是 CloakBrowser（默认是内置浏览器视图）");
   const skillsTs = readBuiltinSkillsSource();
-  (!/本机内置的浏览器就是 CloakBrowser/.test(skillsTs) && /## 0\. 通道选型/.test(skillsTs) && /首选：nuphus 的/.test(skillsTs) && /MCP 工具/.test(skillsTs) ? ok : fail)("browser-skill：通道选型首选 nuphus browser_*（CloakBrowser 仅在已安装且需过反爬时用）");
+  (!/本机内置的浏览器就是 CloakBrowser/.test(skillsTs) && /## 0\. 通道选型/.test(skillsTs) && /唯一可用通道/.test(skillsTs) && /playwright-cli/.test(skillsTs) ? ok : fail)("browser-skill：通道选型写明当前唯一可用通道 = playwright-cli（CloakBrowser 仅在已安装且需过反爬时用）");
   const appTs = readAppUi();
   (appTs.includes('const [browserMode] = useState<"cloak" | "internal">("internal")') ? ok : fail)("App.tsx：浏览器模式默认内置视图（不再是 cloak）");
   (appTs.includes('const autoIds = ["nuphus", "playwright-cli", "cloakbrowser", "playwright-browsers", "cloak-browsers", "ponytail"]') ? ok : fail)("App.tsx：开发工具分组按拆分后的条目 id 归类");
