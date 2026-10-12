@@ -1136,9 +1136,6 @@ export interface Bag {
   armPinForReleasedQueue: (threadId: string | null | undefined, why: string) => boolean;
   disarmPinIntent: (why: string) => void;
   maybeAutoContinueTruncated: (threadId: string) => void;
-  /** 回合「没干完就收工」（只宣布下一步、没发工具调用 / 长命令只剩半截输出）的宿主自动接手（10-12）——
-   *  判据与文案见 `src/lib/turn-unfinished.mjs`，实现见 part04/03-seg 的 maybeAutoContinueUnfinished。 */
-  maybeAutoContinueUnfinished: (threadId: string, prompt: string) => void;
   /** 轮询任务成功返回结果后的自动继续（10-10）—— 判据与防循环见实现处（part04/03-seg 的 maybeAutoContinueAfterPoll）。 */
   maybeAutoContinueAfterPoll: (task: PollTask) => void;
   startQueued: (id?: string | undefined) => Promise<void>;
