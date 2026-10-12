@@ -990,51 +990,90 @@
   background: color-mix(in srgb, #c0392b 8%, transparent);
 }
 
-/* ===== 「语音播报中」状态条（10-09）：非通话播报的实时反馈 + 停止按钮 =====
-   ⛔ 定位与 VoiceWaveform 同一套（fixed + 行内几何），这里**故意不写** left/top/width
-      —— 写了也赢不过行内样式，只会误导下一个人去改这里。
+/* ===== 「语音播报中」状态条（10-09 立 / 10-12 重做视觉）======================
+   ⛔ 定位与 VoiceWaveform 同一套（fixed + 行内几何）：**left / bottom / max-width 全部由 JS
+      按 composer 的实际矩形写成行内样式**，这里一个字都不写 ——
+      写了也赢不过行内样式，只会误导下一个人去改这里（守卫 11z 钉的就是这条）。
+   ⛔ 唯独 `width: max-content` 写在 CSS 里（10-12 新增，见下 ①）：它是"贴合内容"的**意图**，
+      交给 JS 去量反而要再加一次 ResizeObserver；而上限（不超过输入框宽度）由 JS 的 maxWidth 管。
    ⛔ z-index 略低于舞台（60）：两者不会同时出现（通话中由通话链路接管播报），
-      真撞上也让舞台压在上面。 */
+      真撞上也让舞台压在上面。
+   ── 10-12 视觉整改（用户：「这个语音播报，真的有点丑」），逐条对应：
+      ① **宽度贴合内容**（`width: max-content`）—— 原先 JS 固定 280px 起，条子被拉满、
+         正文被挤成一条省略号；上限交给 JS 写的 maxWidth。
+      ② **停止/恢复按钮补 `appearance:none`** —— 本项目铁律：全站无 `color-scheme`，
+         暗色下原生 `<button>` 按浅色 UA 绘制（浅底浅字），不重置就是一块突兀的白疙瘩。
+         （08/13/18 三处同款惯例。）
+      ③ **点击区 22 → 32px**（桌面密集区下限；11.5px 字与 22px 高都低于规范）。
+      ④ 背景从 `var(--bg)` 改 `var(--panel)`：播报条浮在输入框**上方**，同底色会与输入框糊成一块。
+      ⑤ 紫色圆点与喇叭图标语义重复（都在说"正在出声"）⇒ 保留喇叭做主标识，
+         圆点降级为纯装饰（`aria-hidden`），不再抢视觉焦点。 */
 .voice-announce-bar {
   position: fixed;
   transform: translateX(-50%);
   z-index: 58;
   display: flex; align-items: center; gap: 8px;
-  padding: 6px 8px 6px 12px;
+  width: max-content;
+  min-width: 0;
+  padding: 4px 4px 4px 10px;
   border-radius: 999px;
-  background: var(--bg);
+  background: var(--panel);
   border: 1px solid var(--line);
-  box-shadow: 0 10px 26px color-mix(in srgb, #000 20%, transparent);
-  font-size: 11.5px; color: var(--muted);
+  box-shadow: var(--shadow);
+  font-size: 12px; line-height: 1.6; color: var(--muted);
   animation: voice-announce-in .18s cubic-bezier(.2,.8,.25,1);
 }
+.voice-announce-bar.is-stopped { padding-right: 4px; }
 @keyframes voice-announce-in {
   from { opacity: 0; transform: translate(-50%, 6px); }
   to   { opacity: 1; transform: translate(-50%, 0); }
 }
 .voice-announce-dot {
-  width: 6px; height: 6px; border-radius: 50%; flex: none;
-  background: #a855f7;
+  width: 5px; height: 5px; border-radius: 50%; flex: none;
+  background: var(--purple);
   animation: voice-dot 1.4s ease-in-out infinite;
 }
-.voice-announce-icon { flex: none; color: #a855f7; }
-.voice-announce-mode { font-weight: 600; color: var(--text); flex: none; }
+.voice-announce-icon { flex: none; color: var(--purple); }
+.voice-announce-mode { font-weight: 500; color: var(--text); flex: none; }
 .voice-announce-text {
-  flex: 1 1 auto; min-width: 0;
+  flex: 0 1 auto; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--muted);
 }
-.voice-announce-pending { flex: none; color: var(--muted); opacity: .8; }
+.voice-announce-pending {
+  flex: none; padding: 0 6px; border-radius: 999px;
+  background: var(--panel-2); color: var(--faint);
+  font-size: 11px; font-variant-numeric: tabular-nums;
+}
 .voice-announce-stop {
-  flex: none; display: inline-flex; align-items: center; gap: 4px;
-  height: 22px; padding: 0 9px; border-radius: 999px; cursor: pointer;
-  font-size: 11.5px; font-weight: 500;
-  border: 1px solid var(--line); background: var(--panel); color: var(--muted);
+  flex: none;
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  height: 32px; min-width: 64px; padding: 0 12px;
+  border-radius: 999px; cursor: pointer;
+  /* ⛔⛔ `appearance:none` 不是洁癖，是本项目记过的坑：全站没声明 `color-scheme`，
+     暗色下原生按钮由 UA 画成 #efefef 浅底（computed 却报暗色值），在这个深色胶囊上
+     就是一块白斑。字体简写必须写在 `font-size` 之前，否则会把字号一起重置掉。 */
+  appearance: none; -webkit-appearance: none;
+  font: inherit; font-size: 12px; font-weight: 500;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--muted);
+  transition: background var(--dur-ui) ease-out, color var(--dur-ui) ease-out, border-color var(--dur-ui) ease-out;
 }
 .voice-announce-stop:hover {
-  color: #c0392b;
-  border-color: color-mix(in srgb, #c0392b 35%, var(--line));
-  background: color-mix(in srgb, #c0392b 8%, transparent);
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 35%, var(--line));
+  background: color-mix(in srgb, var(--red) 8%, var(--panel-2));
+}
+.voice-announce-stop:focus-visible {
+  outline: 2px solid var(--link); outline-offset: 2px;
+}
+/* 「已停止」态：喇叭图标降为中性色（不再暗示"正在出声"），整条偏安静 */
+.voice-announce-bar.is-stopped .voice-announce-icon { color: var(--faint); }
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="force"]) .voice-announce-bar,
+  html:not([data-motion="force"]) .voice-announce-dot {
+    animation: none !important;
+  }
+  html:not([data-motion="force"]) .voice-announce-stop { transition: none !important; }
 }
 
 .voice-wave-canvas {

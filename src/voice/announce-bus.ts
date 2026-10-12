@@ -48,11 +48,12 @@ export function announceListenerCount(): number {
   return listeners.size;
 }
 
-// ── 「停止播报」回调：悬浮球右键菜单调用，执行端（播报域）注册 ──
+// ── 「停止播报」回调：悬浮球右键菜单 / 状态条按钮调用，执行端（播报域）注册 ──
 //    ⛔ 为什么必须有这个出口：非通话播报是**只管说、不管听**的（不开麦克风），
 //      没有它用户就**没有任何办法让它闭嘴** —— 一条长回复能被念上好几分钟。
 //      与 wave-level 的 setVoiceStopHandler / setVoiceSkipHandler 同一套广播范式。
 let stopHandler: (() => void) | null = null;
+let resumeHandler: (() => void) | null = null;
 
 export function setAnnounceStopHandler(fn: (() => void) | null): void {
   stopHandler = fn;
@@ -60,6 +61,19 @@ export function setAnnounceStopHandler(fn: (() => void) | null): void {
 
 export function requestAnnounceStop(): void {
   try { stopHandler?.(); } catch { /* 停止失败不影响别的功能 */ }
+}
+
+/* ── 「恢复播报」出口（10-12 用户：「停止都停止不了，一直播报」）────────────────────
+   ⛔ 为什么必须有**反向**出口：用户按「停止」之后，执行端会置**静音闩锁**（在 `speak()` 入口
+      拦下后续所有播报——正文实时 / 工具插播 / 结束播报稿三条入口全过那一处）。
+      只有闩锁没有解除口 = 用户按一次就把播报永久废了（比"停不下来"更糟：他再也听不到了）。
+      出口放在**状态条**上（按停后它本来就不消失 ⇒ 那里正是用户手指刚离开的地方）。 */
+export function setAnnounceResumeHandler(fn: (() => void) | null): void {
+  resumeHandler = fn;
+}
+
+export function requestAnnounceResume(): void {
+  try { resumeHandler?.(); } catch { /* 恢复失败不影响别的功能 */ }
 }
 
 /* ── 「播报状态」广播（10-09 用户：「增加播报进行中的实时反馈」）────────────────────
@@ -77,9 +91,17 @@ export type AnnounceStatus = {
   source: "" | "live" | "summary" | "tool";
   /** 最近一次是否是被主动掐断的（用于文案切换；调用方自己复位） */
   stopped: boolean;
+  /**
+   * 用户已按「停止」⇒ **静音闩锁**已置位（10-12：「停止都停止不了，一直播报」）。
+   * ⛔ 与 `stopped` 的区别不是"多一个布尔"：`stopped` 只是 1.6 秒的回执，
+   *    而 `muted` 是**真的把后续播报全拦下来**（`speak()` 入口那一处）——
+   *    模型再调插播工具、下一句正文 delta 到达、回合结束的播报稿，全都念不出来。
+   *    状态条靠它显示「恢复播报」按钮（否则用户按一次就永久失去播报）。
+   */
+  muted: boolean;
 };
 
-export const IDLE_ANNOUNCE_STATUS: AnnounceStatus = { active: false, current: "", pending: 0, source: "", stopped: false };
+export const IDLE_ANNOUNCE_STATUS: AnnounceStatus = { active: false, current: "", pending: 0, source: "", stopped: false, muted: false };
 
 type StatusListener = (status: AnnounceStatus) => void;
 

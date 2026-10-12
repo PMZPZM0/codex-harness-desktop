@@ -156,9 +156,13 @@ ok(/type: "delta"/.test(bus) && /item\/agentMessage\/delta/.test(engineBridge)
   "总线与转发器恢复 delta（正文朗读由 Codex 逐条决定 ⇒ 它有了受控消费者，不再是死契约）");
 ok(/source: "" \| "live" \| "summary" \| "tool"/.test(bus),
   "状态来源含 `live`（Codex 决定念的正文）/ `summary`（结束播报稿）/ `tool`（插播）");
-ok(/正在念正文/.test(read("src/features/voice-announce/VoiceAnnounceIndicator.tsx"))
-  && /正在念播报稿/.test(read("src/features/voice-announce/VoiceAnnounceIndicator.tsx")),
-  "状态条文案含「正在念正文 / 正在念播报稿」（少了哪个用户就不知道在念什么）");
+ok(/live: "念正文"/.test(read("src/features/voice-announce/VoiceAnnounceIndicator.tsx"))
+  && /summary: "播报"/.test(read("src/features/voice-announce/VoiceAnnounceIndicator.tsx"))
+  && /tool: "插播"/.test(read("src/features/voice-announce/VoiceAnnounceIndicator.tsx"))
+  && /SOURCE_LABEL\[status\.source \?\? ""\] \?\? "语音播报中"/.test(read("src/features/voice-announce/VoiceAnnounceIndicator.tsx")),
+  "状态条文案**三种来源都覆盖**（少了哪个用户就不知道在念什么）——⛔ 钉的是 SOURCE_LABEL 的键与\n"
+  + "     兜底文案，不是「正在念正文」这几个字（10-12 视觉整改把它们缩成了「念正文/播报/插播」：\n"
+  + "     前面已有呼吸圆点 + 喇叭图标表示「正在」，「正在」三字是重复信息）");
 const pubIdx = seg05.indexOf("publishEngineAnnounce(event.method");
 const streamIdx = seg05.indexOf("if (threadStreamMethods.has(method))");
 ok(pubIdx > 0 && streamIdx > 0 && pubIdx < streamIdx,
@@ -225,9 +229,11 @@ ok(keyAdd > 0 && okIdx > 0 && keyAdd > okIdx
   "登记在「确认会出声」**之后**、且登记**这一批每个句子的键**——合成失败不登记，后到的兜底句才不会被误吞");
 ok(/window\.codex\.voicePreviewVoice\(\{ text: deduped\.text/.test(announceHook),
   "合成用的是**去重后**的文本（拿原始 clean 去合成 = 查重白做）");
-ok(/\.finally\(clearSpokenKeys\)/.test(announceHook)
-  && (announceHook.match(/clearSpokenKeys\(\)/g) || []).length >= 2,
-  "去重登记表**回合级清零**（正常收尾排在 finishTurn 之后 / 被打断时同步清）——跨回合「再说一遍」必须照念");
+ok(/const resetTurnBudget = useCallback/.test(announceHook)
+  && (announceHook.match(/resetTurnBudget\(\)/g) || []).length >= 2
+  && /finishTurn\(event\.text\)\.finally\(resetTurnBudget\)/.test(announceHook),
+  "去重登记表与字数预算**回合级清零**（正常收尾 `.finally(resetTurnBudget)` / 被打断时同步清 /\n"
+  + "     没开开关时也要清）——⛔ 跨回合「再说一遍」必须照念，预算也不能跨回合累加（否则第二轮必然沉默）");
 ok(/const filter = createSpeakFilter\(\);\s*\n\s*const spoken = String\(filter\.push\(String\(text \?\? ""\)\) \?\? ""\)\.trim\(\);/.test(announceHook)
   && /await speak\(spoken, epoch, \{ speed \}\);/.test(announceHook),
   "工具插播文本过**同一套**朗读清洗（正文过滤后是「三个」、工具原文是「3」就永远对不上键；顺带 markdown 记号不再被当字念）");
@@ -388,7 +394,7 @@ ok(zv?.realReady !== false,
       不是新功能 —— 每条都是「当时写错、已修」的东西，所以判据要钉住修好的形态。 */
 ok(/const chainRef = useRef<Promise<void>>\(Promise\.resolve\(\)\)/.test(announceHook)
   && /enqueueTask\(\(\) => speakNow\(event\.text, event\.speed\)\)/.test(announceHook)
-  && /enqueueTask\(\(\) => finishTurn\(event\.text\)(\.finally\(clearSpokenKeys\))?\)/.test(announceHook),
+  && /enqueueTask\(\(\) => finishTurn\(event\.text\)\.finally\(resetTurnBudget\)\)/.test(announceHook),
   "播报动作挂**串行链**：合成是异步的、多条入口会并发到达 ⇒ 不串行会念乱顺序（A 慢 B 快则 B 先出声）");
 ok(!/summary\.sentences === 0|SUMMARY_EMPTY_NOTICE/.test(codeOnlyTs(announceHook)),
   "⛔ 「整段是代码就看屏幕」那句兜底文案已随汇总播报一起删除（现在没稿就不念，不补任何提示）");
@@ -424,8 +430,13 @@ ok(devInstr16 && fenceInDevInstr && /VOICE_FENCE_LANG = "voice"/.test(scriptLib)
 const rpcSrcForContract = read("electron/features/dispatch-rpc.ts");
 const genSkillSrc = read("scripts/gen-capability-skill.mjs");
 ok(/CARRY THIS TURN'S IMPORTANT CONTENT/.test(devInstr) && /contentless/.test(devInstr)
-  && /~80 Chinese characters is the sweet spot/.test(devInstr),
+  && /~50 Chinese characters is the sweet spot/.test(devInstr),
   "第 16 条要求播报稿装**本轮重要内容**（结果/关键数字/风险），并点名两种失败形态：逐句复述、只有「好了」");
+ok(/160-character budget shared by everything spoken this turn/.test(devInstr)
+  && /10-12 the user said/.test(devInstr)
+  && /VOICE_SCRIPT_MAX_CHARS = 120/.test(scriptLib) && /VOICE_SCRIPT_HARD_CAP = 220/.test(scriptLib),
+  "⛔ 10-12「不用这么长」三处同步收紧：指令口径（~50 字 + 每回合 160 字预算）、\n"
+  + "     解析层上限（120 / 硬顶 220）—— 只改一处会出现「模型写短了但硬顶还放行一大段」或反之");
 ok(!/PICK ONE POINT/.test(devInstr) && !/under ~50 Chinese characters/.test(devInstr),
   "旧的「只挑一个点 / 50 字」口径已随本轮要求更新（要装得下重要内容，但仍不许长篇）");
 /* ⛔⛔ 10-09 第三轮（用户：「现在是我说一下，他才会播报，不说，他自己都不写当前回合总结播报内容」）：
@@ -586,12 +597,57 @@ ok(/待播 \{status\.pending\}/.test(indicatorTsx) && /voice-announce-stop/.test
 ok(/<VoiceAnnounceIndicator \/>/.test(composerTsx) && /VoiceAnnounceIndicator/.test(read("src/features/voice-announce/index.ts")),
   "状态条挂在 composer 里（它要 `closest('.composer-wrap')` 才能贴输入框；挂错地方就掉到别的位置）");
 ok(/closest\("\.composer-wrap"\)/.test(indicatorTsx) && /el\.style\.bottom =/.test(indicatorTsx) && /ResizeObserver/.test(indicatorTsx),
-  "状态条定位与舞台条同套：按 composer 实际矩形行内写 left/bottom/width + 跟随尺寸变化");
+  "状态条定位与舞台条同套：按 composer 实际矩形行内写 left/bottom + 跟随尺寸变化");
 ok(/\.voice-announce-bar\s*\{/.test(codeOnlyCss(stageCss)) && !/(?<![-\w])(top|left)\s*:/.test(
     (codeOnlyCss(stageCss).match(/\.voice-announce-bar\s*\{[^}]*\}/) || [""])[0]),
   "`.voice-announce-bar` 的 CSS 块里不写 top/left（与舞台条同款纪律：几何由 JS 按 composer 写）");
-ok(/if \(stoppedTimerRef\.current\) clearTimeout/.test(announceHook) && /stoppedRef\.current = false/.test(announceHook),
-  "「已停止」只是一句**回执**、会自动收起（留在那儿它就变成一条永远挂着的空提示）");
+/* ── ⑬′ 10-12 三条用户反馈的钉死（「停止都停止不了，一直播报」「不用这么长」「有点丑」）──
+   ⛔ 这三条都是**用户当面试出来的**，形态也各自特殊，所以每条都钉"判据所在的那一处"而不是
+      某个字面量：静音要在 speak() 入口（唯一点）、字数要在 speak() 里扣（回合级）、
+      恢复出口必须存在（否则按一次就永久失去播报 —— 比"停不下来"更糟）。 */
+/* ① 静音闩锁：三处入口条件（speak / speakNow / speak-reply）都必须读 mutedRef，
+      且必须**真的清掉** speakLiveRef 与 autoSpeakRef —— 少任一条，用户按停后正文流会接着念。 */
+ok(/const mutedRef = useRef\(false\)/.test(announceHook)
+  && /if \(mutedRef\.current\) return;/.test(announceHook)
+  && /if \(mutedRef\.current\) return;\s*\n\s*sourceRef\.current = "tool";/.test(announceHook)
+  && /if \(mutedRef\.current\) return;\s*\n\s*speakLiveRef\.current = true;/.test(announceHook),
+  "静音闩锁在**三条入口**都生效：speak() 唯一裁决点 / 工具插播 speakNow / speak-reply 标记（漏任一条就有入口绕过）");
+ok(/speakLiveRef\.current = false;\s*\n\s*autoSpeakRef\.current\?\.reset\(\);/.test(announceHook),
+  "⛔⛔ 主动停止必须**同时**清 speakLiveRef 与 autoSpeakRef（10-12「停止都停止不了」的根因：\n"
+  + "     原来只停了队列 —— 正文流下一句 delta 照念、硬规则下一帧又重新标记本回合）");
+/* 闩锁的裁决点必须唯一：speak() 里那一处是全部入口的汇合，若再在别处各判一次就成了「二房东」。 */
+ok((announceHook.match(/if \(mutedRef\.current\) return;/g) || []).length === 5
+  && announceHook.indexOf("if (mutedRef.current) return;") < announceHook.indexOf("busyRef.current += 1"),
+  "闩锁判据恰好五处、五处缺一不可：speak 入口 / speak 合成**回来后**再查一次（用户在 TTS 往返期间按停）/\n"
+  + "     工具插播 / speak-reply 标记 / 自动播报硬规则。⛔ 少一处就有入口绕过它继续出声 ——\n"
+  + "     「只在 speak 里判」不够（插播会先把 stoppedRef 翻回「正在念」，界面撒谎比不出声更坏）");
+/* 解除出口：必须成对存在（set + clear），否则卸载后留下指向已卸载 hook 的回调。 */
+ok(/export function setAnnounceResumeHandler/.test(bus) && /export function requestAnnounceResume/.test(bus)
+  && /setAnnounceResumeHandler\(\(\) => \{ resumePlayback\(\); \}\)/.test(announceHook)
+  && /setAnnounceResumeHandler\(null\)/.test(announceHook)
+  && /requestAnnounceResume\(\)/.test(indicatorTsx),
+  "「恢复播报」出口与停止出口**成对**注册/注销，且状态条上真的有那个按钮（只有闩锁没有解除口 = 用户按一次永久失去播报）");
+ok(/muted: mutedRef\.current/.test(announceHook) && /muted: false/.test(bus),
+  "状态广播带 `muted`（区分「1.6 秒回执」与「真的静了」—— 显示层靠它决定要不要给恢复按钮）");
+/* ② 长度：每回合字数预算必须在 speak() 里扣，且与去重登记表**同一清零时机**（回合级）。 */
+ok(/MAX_ANNOUNCE_CHARS_PER_TURN = 160/.test(announceHook)
+  && /spentCharsRef\.current \+ deduped\.text\.length > MAX_ANNOUNCE_CHARS_PER_TURN/.test(announceHook)
+  && /spentCharsRef\.current \+= deduped\.text\.length/.test(announceHook),
+  "⛔ 每回合播报**字数预算**（10-12「不用这么长」）：队列长度背压管不住 live 那条无界正文流，必须按字数封顶");
+ok(/const resetTurnBudget = useCallback/.test(announceHook)
+  && /resetTurnBudget\(\);/.test(announceHook)
+  && /finishTurn\(event\.text\)\.finally\(resetTurnBudget\)/.test(announceHook),
+  "字数预算**回合级**清零，且收尾排在 finishTurn **之后**（播报稿本身也要从预算里扣）；⛔ 不能跨回合累加，否则第二轮必然沉默");
+/* ③ 视觉：按钮是原生 <button>，暗色下必须 appearance:none（本项目铁律：无 color-scheme ⇒ UA 画浅底），
+   且点击区不得低于 32px。 */
+ok(/appearance:\s*none/.test((codeOnlyCss(stageCss).match(/\.voice-announce-stop\s*\{[^}]*\}/) || [""])[0])
+  && /font:\s*inherit/.test((codeOnlyCss(stageCss).match(/\.voice-announce-stop\s*\{[^}]*\}/) || [""])[0]),
+  "⛔ 停止/恢复按钮补 `appearance:none` + `font: inherit`（本项目铁律：全站无 color-scheme，暗色下原生按钮被 UA 画成浅底白块；`font` 简写必须写在 font-size 之前）");
+ok(/height:\s*32px/.test((codeOnlyCss(stageCss).match(/\.voice-announce-stop\s*\{[^}]*\}/) || [""])[0]),
+  "停止按钮点击区 32px（原先 22px，低于桌面密集区下限 —— 难点中）");
+ok(/width:\s*max-content/.test((codeOnlyCss(stageCss).match(/\.voice-announce-bar\s*\{[^}]*\}/) || [""])[0])
+  && /el\.style\.maxWidth =/.test(indicatorTsx) && !/el\.style\.width =/.test(indicatorTsx),
+  "⛔ 播报条宽度改为**贴合内容**（原先固定 280px 起 ⇒ 没有正文时也是一条空胶囊）；上限由 JS 的 maxWidth 管（CSS 块不写几何）");
 
 /* ── ⑭ 让 Codex 知晓 + 有可用工具（10-09 用户：「记得配套对应工具，没工具他调用不了」）── */
 ok(/16\) VOICE ANNOUNCEMENT/.test(devInstr) && /【语音播报已开启】/.test(devInstr) && /【语音播报已关闭】/.test(devInstr),
