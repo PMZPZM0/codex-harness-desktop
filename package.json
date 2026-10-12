@@ -193,6 +193,10 @@
         "to": "tools/automation-tools.zip"
       },
       {
+        "from": "resources/tools/free-gateway",
+        "to": "tools/free-gateway"
+      },
+      {
         "from": "resources/tools/npm-global",
         "to": "tools/npm-global",
         "filter": [

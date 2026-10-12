@@ -213,6 +213,24 @@ async function main() {
   writeNuphusCallShim(prefix);
   buildHeadlessBridge();
 
+  // 6.55) 免费模型网关本体（10-12 用户令「12M 的插件能不能内置啊，下载太慢了」；≤50MB 口径必内置）。
+  //  dsh-our-free-model 源码 zip —— 运行时安装走**本地解压**（零网络秒装），缺了才回落 gh 镜像下载。
+  //  走 github.com/archive 形态：download() 只对 github.com 前缀加 gh-proxy 回落，codeload 不吃这套。
+  {
+    const fgDir = path.join(tools, "free-gateway");
+    const fgTarget = path.join(fgDir, "ofm-main.zip");
+    if (fs.existsSync(fgTarget) && fs.statSync(fgTarget).size > 1_000_000) {
+      console.log("[free-gateway] 已存在，跳过下载");
+    } else {
+      fs.mkdirSync(fgDir, { recursive: true });
+      const fgArchive = download(
+        "https://github.com/Ebony-Vinyl/dsh-our-free-model/archive/refs/heads/main.zip",
+        "ofm-main.zip",
+      );
+      fs.copyFileSync(fgArchive, fgTarget);
+    }
+  }
+
   // 6.5) 内置小工具（10-01 用户定稿：「把那些 50m 以内的工具都内置，不然安装麻烦」）。
   //  纳入判据 = **下载体积 ≤50MB**（python 45 / cmake 45 / yt-dlp 20 / uv 12 / adb 8 / rg 5 / jq·ninja·7zip 各 1）。
   //  ⛔ 单一真相源：URL、国内镜像链、解压布局全在 `install-runtimes.cjs` —— 这里只负责**在构建期**
@@ -232,6 +250,7 @@ async function main() {
     ["vscode-cli/code.exe", "VS Code CLI"],
     ["cloudflared.exe", "cloudflared"],
     ["ponytail-plugin/.codex-plugin", "ponytail 插件源"],
+    ["free-gateway/ofm-main.zip", "免费模型网关本体"],
     ["pwsh-headless/pwsh.exe", "pwsh 无窗口桥"],
     // 6.5 内置小工具：逐个钉死（少一个 = 用户端卡片显示未安装却下不动，因为它是内置口径）
     ["python/python.exe", "随包 Python"],

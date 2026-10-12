@@ -26,6 +26,8 @@ const DISCLAIMER_FULL = "「免费模型网关」是第三方开源项目 dsh-ou
 type GatewayStatus = {
   downloaded: boolean; version: string; running: boolean; port: number;
   forwardKey: string; hasForwardKey: boolean; adminUrl: string;
+  /** 随包内置本体在（10-12 起 ≤50MB 口径随包）：安装走本地解压，按钮文案随之切换 */
+  bundled: boolean;
   stage: string | null; stageError: string | null; lastStartError: string | null;
   dlBytes: number; dlTotal: number;
 };
@@ -166,7 +168,7 @@ export function FreeGatewayDialog({ onClose, onRegistered, setNotice, onUninstal
               {!s.downloaded && (
                 <button className="primary-setting" disabled={busy !== "" || s.stage === "downloading"} onClick={() => void run("download", () => window.codex.freeGatewayDownload({}), () => setNotice?.("网关本体下载完成"))}>
                   {busy === "download" || s.stage === "downloading" ? <Spinner /> : <Download size={14} />}
-                  {s.stage === "downloading" ? (s.dlTotal ? `下载中 ${dlMB(s.dlBytes)} / ${dlMB(s.dlTotal)} MB（${dlPercent}%）` : `已下载 ${dlMB(s.dlBytes)} MB`) : "下载本体（约 12 MB）"}
+                  {s.stage === "downloading" ? (s.dlTotal ? `下载中 ${dlMB(s.dlBytes)} / ${dlMB(s.dlTotal)} MB（${dlPercent}%）` : `已下载 ${dlMB(s.dlBytes)} MB`) : s.bundled ? "安装本体（已内置，秒装）" : "下载本体（约 12 MB）"}
                 </button>
               )}
               {s.stage === "downloading" && (
@@ -224,7 +226,7 @@ export function FreeGatewayDialog({ onClose, onRegistered, setNotice, onUninstal
             {msg && <p className="free-gateway-note">{msg}</p>}
             {success && <p className="free-gateway-msg">{success}</p>}
             {(error || s.stageError || s.lastStartError) && <p className="free-gateway-error">{error || s.stageError || s.lastStartError}</p>}
-            <p className="free-gateway-note">使用顺序：下载本体 → 启动网关 → 打开管理台登录你想用的渠道账号 → 回这里「一键注册为供应商」→ 到左侧供应商列表选模型。保持网关运行，模型才可用。</p>
+            <p className="free-gateway-note">使用顺序：安装本体 → 启动网关 → 打开管理台登录你想用的渠道账号 → 回这里「一键注册为供应商」→ 到左侧供应商列表选模型。保持网关运行，模型才可用。</p>
 
             {/* ⛔ 模型能力边界说明（用户令：写清楚别让人以为是软件问题）—— 填满弹窗空白区域 */}
             <div className="free-gateway-caps">
