@@ -71,8 +71,18 @@ const readCh = manifest.slice(manifest.indexOf('"channel": "appSettings:read"'),
 const saveCh = manifest.slice(manifest.indexOf('"channel": "appSettings:save"'), manifest.indexOf('"channel": "appSettings:save"') + 900);
 ok(/skillAutoUpdate\?: boolean/.test(readCh), "appSettings:read 返回类型含 skillAutoUpdate");
 ok(/skillAutoUpdate\?: boolean/.test(saveCh), "appSettings:save 参数类型含 skillAutoUpdate");
-ok(/ToggleSwitch checked=\{skillAutoUpdate\}/.test(skillsPage), "界面用共享 ToggleSwitch（原生 checkbox 会画错）");
-ok(/saveAppSettings\?\.\(\{ skillAutoUpdate: next \}\)/.test(skillsPage), "开关写回 appSettings（失败回滚本地状态）");
+// ⛔ 10-13 用户令「开关统一到控制台」之后，技能那把开关**搬出了技能中心**，落到控制台的
+//    AutoUpdateCard（同一状态的第二个入口会让用户以为两边不一致）。保证没丢，落点变了。
+const consoleCard = read("src/features/settings-general/AutoUpdateCard.tsx");
+ok(/ToggleSwitch checked=\{row\.enabled\}|checked=\{row\.enabled\}/.test(consoleCard),
+  "开关仍用共享 ToggleSwitch（原生 checkbox 会画错）—— 落点在控制台卡片");
+ok(!/ToggleSwitch checked=\{skillAutoUpdate\}/.test(skillsPage),
+  "⛔ 技能中心**不再**各放一个开关（控制台是唯一入口）");
+ok(/window\.codex\.setAutoUpdate\(row\.id, enabled\)/.test(consoleCard)
+  && /setRows\(\(current\) => current\.map\(\(entry\) => \(entry\.id === row\.id \? \{ \.\.\.entry, enabled: !enabled \} : entry\)\)\)/.test(consoleCard),
+  "开关经由统一的 setAutoUpdate 写回，失败回滚本地状态");
+ok(/AUTO_UPDATE_ROW_OWNER/.test(settings) && /"market-skill": "skillAutoUpdate"/.test(settings),
+  "market-skill 动态行归属技能内容开关（同一把开关，不再有第二套判据）");
 
 console.log("【⑤ 台账同步（AGENTS.md 硬规则）】");
 const ledger = read("docs/FEATURE-LEDGER.md");

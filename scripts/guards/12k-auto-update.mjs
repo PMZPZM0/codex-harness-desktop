@@ -50,6 +50,8 @@ const sliceEntry = (text, anchor) => {
 };
 
 const board = read("electron/features/auto-update-ipc.ts");
+const backends = read("electron/update-backends.ts");
+const backendsCode = stripComments(backends);
 const runtimeIpc = read("electron/features/runtime-ipc.ts");
 const engineIpc = read("electron/features/engine-ipc.ts");
 const settings = read("electron/app-settings.ts");
@@ -67,8 +69,9 @@ for (const key of ["autoUpdateDesktop", "autoUpdateBrowser", "autoUpdateComputer
 }
 ok(/function autoUpdateEnabled[\s\S]{0,400}\?\.\[key\] !== false/.test(settings),
   "缺省判据是 `!== false`（字段不存在 = 开；⛔ 用 === true 会让老用户升级后静默关闭）");
-ok(/readAutoUpdateSwitch\(settings, item\.key\)/.test(board), "后台循环逐个读自己的开关字段");
-ok(/saveAppSettings\(userData, \{ \[item\.key\]: Boolean\(enabled\) \}\)/.test(board),
+ok(/readAutoUpdateRowSwitch\(settings, row\.id\)/.test(board),
+  "后台循环逐行读自己的开关（10-13 统一体系后：行白可由 readAutoUpdateRowSwitch 一处裁决）");
+ok(/saveAppSettings\(userData, \{ \[owner\]: Boolean\(enabled\) \}/.test(board),
   "⛔ autoUpdate:set 只 patch 单键（写整份会互相覆盖 ⇒ 开关不独立）");
 const keysBlock = board.match(/const toolKeys[\s\S]*?\};/)?.[0] ?? "";
 ok(/nuphus: "autoUpdateDesktop"/.test(keysBlock) && /"playwright-cli": "autoUpdateBrowser"/.test(keysBlock)
@@ -81,13 +84,16 @@ ok(/export async function checkRuntimeUpdateRow/.test(runtimeIpc) && /export asy
 ok(/ipcHost\.handle\("runtime:update-check"[\s\S]{0,300}checkRuntimeUpdateRow/.test(runtimeIpc)
   && /ipcHost\.handle\("runtime:update"[\s\S]{0,200}performRuntimeUpdate/.test(runtimeIpc),
   "界面「检查更新 / 更新」按钮只是这两个函数的薄包装");
-ok(/checkRuntimeUpdateRow/.test(board) && /performRuntimeUpdate\(item\.id\)/.test(board),
-  "后台自动更新调的也是这两个函数（⛔ 不许在主进程再抄一遍判据）");
+// ⛔ 10-13 统一体系后，编排层不再直接调各家函数，而是经 update-backends 的 updateComponent；
+//    统一后的判据在 backends 里，**仍然必须是同一批导出函数**（换位置可以，抄第二份不行）。
+ok(/import \{ checkRuntimeUpdateRow, performRuntimeUpdate/.test(backendsCode)
+  && /performRuntimeUpdate\(spec\.id\)/.test(backendsCode),
+  "执行层调的是 runtime-ipc 导出的同一批函数（⛔ 不许在别处再抄一遍判据）");
 ok(/export async function checkEngineUpdateInfo/.test(engineIpc) && /export async function performEngineUpdateFlow/.test(engineIpc),
   "engine-ipc 导出 checkEngineUpdateInfo / performEngineUpdateFlow");
 ok(/ipcHost\.handle\("engine:check-update", \(\) => checkEngineUpdateInfo\(\)\)/.test(engineIpc),
   "engine:check-update 走同一实现");
-ok(/performEngineUpdateFlow\(\)/.test(engineIpc) && /performEngineUpdateFlow\(async \(\) =>/.test(board),
+ok(/performEngineUpdateFlow\(/.test(engineIpc) && /performEngineUpdateFlow\(async \(\) =>/.test(backendsCode),
   "引擎手动与后台都走 performEngineUpdateFlow（唯一接缝 = 成功后怎么办）");
 
 console.log("【③ 更新源不另抄（统一国内镜像）】");
@@ -111,7 +117,7 @@ ok(/updateableToolMeta/.test(boardCode)
 
 console.log("【⑤ 后台三道闸】");
 ok(/if \(running\) return;[\s\S]{0,80}running = true;/.test(board), "闸 1 防重入（上轮没跑完不开新一轮）");
-ok(/for \(const item of autoUpdateItems\(\)\)[\s\S]{0,600}console\.warn/.test(board),
+ok(/for \(const row of rows\)[\s\S]{0,900}console\.warn/.test(board),
   "闸 2 单类失败只 warn 跳过、继续跑其余（一个包挂了不拖垮全部）");
 ok(/finally \{[\s\S]{0,120}running = false;/.test(board), "闸 3 finally 放闸");
 ok(/clearInterval\(timer\)/.test(board) && /clearTimeout\(first\)/.test(board) && /ctx\.effect\(/.test(board),
@@ -120,9 +126,9 @@ ok(/clearInterval\(timer\)/.test(board) && /clearTimeout\(first\)/.test(board) &
 console.log("【⑥ 通知 + 引擎必须拉回来】");
 ok(/new Notification\(\{/.test(board) && /notifyUpdated\(/.test(board), "更新成功发系统通知");
 ok(/Notification\.isSupported\(\)/.test(board), "通知在不支持的环境静默跳过（后台任务不许因通知失败而失败）");
-const engineSuccess = board.match(/performEngineUpdateFlow\(async \(\) =>[\s\S]{0,300}?\n {8}\}\)/)?.[0] ?? "";
+const engineSuccess = backendsCode.match(/performEngineUpdateFlow\(async \(\) =>[\s\S]{0,400}?\n {8}\}\)/)?.[0] ?? "";
 ok(/server\.restart\(\)/.test(engineSuccess),
-  "⛔ 引擎后台更新成功后 server.restart() 把引擎拉回来（不拉 = 引擎一直停着，应用残废）");
+  "⛔ 引擎更新成功后必须 server.restart() 把引擎拉回来（更新流程会先 stop 掉引擎，不拉 = 应用残废）");
 
 console.log("【⑦ 界面：开关统一在控制台 + 版本号】");
 const card = read("src/features/settings-general/AutoUpdateCard.tsx");
@@ -144,18 +150,18 @@ ok(!/Object\.keys\(UPDATEABLE_TOOLS\)|nuphus.*@nuphus/.test(page) && !/@nuphus|@
   "⛔ 界面不另抄工具清单与包名");
 
 console.log("【⑦b 技能那条：一个端点给全部开关】");
-ok(/id: "skill", kind: "skill"/.test(boardCode) && /key: "skillAutoUpdate"/.test(boardCode),
-  "技能项并入同一条清单（界面一次请求拿全五个开关）");
-ok(/if \(item\.kind === "skill"\) continue;/.test(boardCode),
-  "⛔ 技能循环仍在 skills-ipc（本板块只承载开关与显示），不重复起调度器");
-ok(/if \(!readAutoUpdateSwitch\(settings, item\.key\)\) continue;[\s\S]{0,200}await updateOne\(item\)/.test(boardCode),
-  "⛔ 关掉就不**发起检查**：开关判定在 updateOne（查版本）之前 continue 掉");
+ok(/"market-skill": "skillAutoUpdate"/.test(settings) && /skill: "skillAutoUpdate"/.test(settings),
+  "市场技能行归属技能内容开关（界面一次请求仍能拿全开关）");
+ok(/if \(row\.specId === "market-skill"\) continue;/.test(boardCode),
+  "⛔ 技能的后台循环仍在 skills-ipc（本板块只承载开关与显示），不重复起调度器");
+ok(/if \(!readAutoUpdateRowSwitch\(settings, row\.id\)\) continue;[\s\S]{0,200}await updateRow\(row/.test(boardCode),
+  "⛔ 关掉就不**发起检查**：开关判定在「更新」之前 continue 掉（连比对都不做）");
 ok(/autoUpdateRunning\) return;/.test(read("electron/features/skills-ipc.ts"))
   && /if \(!enabled\) return;[\s\S]{0,120}checkSkillUpdateRows\(\)/.test(read("electron/features/skills-ipc.ts")),
   "⛔ 技能同理：关着时在 checkSkillUpdateRows 之前返回（连内容比对都不做）");
 
 console.log("【⑦c 每行有名称 / 说明 / tooltip / 状态反馈】");
-ok(/<strong>\{row\.label\}<\/strong>/.test(card) && /<small>\{describe\(row\)\}<\/small>/.test(card),
+ok(/<strong>\{row\.label\}<\/strong>/.test(card) && /<small>\{(describeComponent\(row\)|text)\}<\/small>/.test(card),
   "每行 = 名称 + 简要说明");
 ok(/title=\{row\.enabled \? `关闭/.test(card), "每行有 tooltip（说明开/关会做什么）");
 ok(/不会发起更新检查/.test(card), "关闭态明确写出「不会发起更新检查」（开关的语义，不是装饰）");
@@ -167,7 +173,7 @@ ok(/readAutoUpdateSwitch/.test(settings) && /skillAutoUpdate === true/.test(sett
 console.log("【⑧ 域登记闭环 + 台账】");
 ok(/"id": "autoUpdate"/.test(composition) && /features\/auto-update-ipc\.ts/.test(composition) && /autoUpdateFeature/.test(composition),
   "composition.json 登记 autoUpdate 域");
-ok(/prefix: "autoUpdate", count: 2/.test(registry), "ipc-registry 记账 autoUpdate(2)");
+ok(/prefix: "autoUpdate", count: 5/.test(registry), "ipc-registry 记账 autoUpdate(5)");
 ok(/autoUpdate:status/.test(manifest) && /autoUpdate:set/.test(manifest), "manifest 有两条通道");
 ok(/readAutoUpdateStatus/.test(preload) && /setAutoUpdate/.test(preload), "preload 暴露两个方法");
 ok(/自动更新/.test(ledger) && /autoUpdate/.test(ledger), "FEATURE-LEDGER 有对应条目");

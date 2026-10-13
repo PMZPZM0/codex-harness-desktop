@@ -708,10 +708,16 @@ contextBridge.exposeInMainWorld("codex", {
   freeGatewayModels: () => __ipc("free-gateway:models", 0, []),
   /* 免费模型网关：卸载（停侧车 + 删本体 + 删数据目录；供应商注册由渲染层调 custom-model:remove 移除） */
   freeGatewayUninstall: () => __ipc("free-gateway:uninstall", 0, []),
-  /* 10-13 新增：全部自动更新开关（技能 / 桌面自动化 / 浏览器自动化 / Mac 电脑操作 / Codex 引擎）的状态与版本号 —— 开关统一在「控制台」页。⛔ 清单与包名来自 runtime-ipc 的 UPDATEABLE_TOOLS 单一真相源（按平台过滤，非 mac 不出 computer-use）；引擎项由 engine-ipc 的 checkEngineUpdateInfo 供数 */
+  /* 10-13 新增：主要组件的自动更新开关与版本号（技能 / 桌面 / 浏览器 / Mac 电脑操作 / 引擎）。⛔ 版本数据与 autoUpdate:scan 同源（都走 scanRows），两个端点不可能给出矛盾的结论 */
   readAutoUpdateStatus: () => __ipc("autoUpdate:status", 0, []),
   /* 10-13 新增：单独开关某一类自动更新（四个开关互相独立，patch 只写对应那一个 AppSettings 字段）；缺省值判据统一走 autoUpdateEnabled（!== false ⇒ 默认开） */
   setAutoUpdate: (id: string, enabled: boolean) => __ipc("autoUpdate:set", 2, [id, enabled]),
+  /* 10-13 统一更新体系：全量组件清单与版本状态（工具 / 引擎 / 技能 / 插件 / ponytail / 钩子等）。清单单一真相源在 electron/update-registry.ts（含「不支持更新」的条目及其原因）；动态类目（市场技能/插件/专家包/人格包）按已装实例展开成多行。传 id 可只扫某一類 */
+  scanAutoUpdateComponents: (id?: string) => __ipc("autoUpdate:scan", 0, [id]),
+  /* 10-13 统一更新体系：按行 id 更新指定组件。幂等（内容一致 ⇒ unchanged，不重装）；有目标目录的一律先快照、失败自动回滚（electron/update-safety.ts）。更新源一律国内镜像：npm→npmmirror、pip→清华、GitHub→gh-mirror 通道 */
+  runAutoUpdateComponent: (id: string) => __ipc("autoUpdate:run", 1, [id]),
+  /* 10-13 统一更新体系：一键更新全部组件（手动入口，不按开关过滤 —— 用户点了就是授权）。逐项返回结��，单项失败不影响其余 */
+  runAllAutoUpdateComponents: () => __ipc("autoUpdate:run-all", 0, []),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

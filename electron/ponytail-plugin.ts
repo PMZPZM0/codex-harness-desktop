@@ -37,14 +37,14 @@ async function copyDir(src: string, dst: string): Promise<void> {
  * 把随包 ponytail 插件种子到引擎安装落点。目标目录已有完整插件（plugin.json 存在且
  * plugin.yaml 版本一致）则跳过；版本不一致（升级内置包）则整目录覆盖。
  */
-async function seedPluginCache(bundledDir: string, codexHome: string): Promise<string | null> {
-  const destRoot = path.join(codexHome, "plugins", "cache", "ponytail", "ponytail", PONYTAIL_VERSION);
+async function seedPluginCache(bundledDir: string, codexHome: string, version: string): Promise<string | null> {
+  const destRoot = path.join(codexHome, "plugins", "cache", "ponytail", "ponytail", version);
   try {
     const srcPluginYaml = await fs.readFile(path.join(bundledDir, "plugin.yaml"), "utf8").catch(() => "");
     const srcVersion = /^version:\s*(\S+)/m.exec(srcPluginYaml)?.[1];
     const destPluginYaml = await fs.readFile(path.join(destRoot, "plugin.yaml"), "utf8").catch(() => "");
     const destVersion = /^version:\s*(\S+)/m.exec(destPluginYaml)?.[1];
-    if (destVersion === PONYTAIL_VERSION && srcVersion === PONYTAIL_VERSION) {
+    if (destVersion === version && srcVersion === version) {
       return destRoot; // 已就位，幂等跳过
     }
     // 版本不符：先清掉旧内容再拷贝（引擎对同名同版本目录的残留会误判已安装）
@@ -98,11 +98,13 @@ async function seedConfigSections(codexHome: string, bundledDir: string): Promis
  * 插件 cache 列出技能（实测 cache 就位即出现 6 个 ponytail-*，plugin 标记正确）；
  * 额外种全局只会让技能列表重复（每个 ponytail-* 出现两遍，像假的）。
  */
-export async function ensurePonytailPlugin(codexHome: string, bundledDir: string): Promise<void> {
+export async function ensurePonytailPlugin(codexHome: string, bundledDir: string, version: string = PONYTAIL_VERSION): Promise<void> {
   if (!bundledDir || !fsSync.existsSync(bundledDir)) {
     // dev 未放置内置目录时静默跳过（不阻塞启动），生产包必有
     return;
   }
-  await seedPluginCache(bundledDir, codexHome);
+  // ⛔ version 参数：在线更新下载来的新标签版本不等于随包的 PONYTAIL_VERSION，
+  //    必须按实际版本建目录 —— 落错目录名引擎就当没装（同样的目录存在过一个，但版本对不上）。
+  await seedPluginCache(bundledDir, codexHome, version);
   await seedConfigSections(codexHome, bundledDir);
 }

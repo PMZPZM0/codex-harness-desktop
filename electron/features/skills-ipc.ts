@@ -92,6 +92,99 @@ const SKILLS_CHANNELS = [
   "skills:update-check", "skills:update",
 ];
 
+/**
+ * 检查全部市场安装技能的内容状态（10-13 从 `skills:update-check` 处理器里抽出）。
+ * ⛔ 手动面板与后台自动更新**必须走同一个函数**——判据漂移 =「面板说最新、后台又更新」这类怪象。
+ */
+export type SkillUpdateRow = {
+  folder: string; name: string; marketId?: string; marketSource?: "cocoloop" | "skillhub";
+  state: "update" | "current" | "unresolved"; detail: string;
+};
+
+/** 读已装技能目录的市场来源清单（cocoloop / skillhub 两种文件名都认，与 local-list 同口径）。 */
+async function readInstalledMarketManifest(dir: string): Promise<{ manifest: any; source: "cocoloop" | "skillhub" } | null> {
+  for (const [file, source] of [[".cocoloop.json", "cocoloop"], [".skillhub.json", "skillhub"]] as const) {
+    try { return { manifest: JSON.parse(await fs.readFile(path.join(dir, file), "utf8")), source }; } catch { /* 换下一个命名 */ }
+  }
+  return null;
+}
+
+/** 技能名以 SKILL.md frontmatter 的 name 为准（与 local-list 同口径，避免显示成两条）。 */
+async function declaredSkillName(dir: string, fallback: string): Promise<string> {
+  for (const file of ["SKILL.md", "SKILL.md.disabled"]) {
+    try {
+      const content = await fs.readFile(path.join(dir, file), "utf8");
+      const declared = content.match(/^name:\s*["']?(.+?)["']?\s*$/mi)?.[1]?.trim();
+      if (declared) return declared;
+    } catch { /* 换下一个文件 */ }
+  }
+  return fallback;
+}
+
+export async function checkSkillUpdateRows(): Promise<SkillUpdateRow[]> {
+  const rows: SkillUpdateRow[] = [];
+  let entries: any[] = [];
+  try { entries = await fs.readdir(userSkillsDir, { withFileTypes: true }); } catch { return rows; }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(userSkillsDir, entry.name);
+    const found = await readInstalledMarketManifest(dir);
+    // 本地导入的技能没有市场来源 ⇒ 不参与（也不为它发网络请求）
+    if (!found?.manifest?.marketId) continue;
+    const name = await declaredSkillName(dir, entry.name);
+    const marketId = String(found.manifest.marketId);
+    const remote = await resolveMarketSkill({ marketId, name, source: found.source });
+    if (!remote) {
+      rows.push({ folder: entry.name, name, marketId, marketSource: found.source, state: "unresolved", detail: "市场里搜不到该技能（可能已下架或改名）" });
+      continue;
+    }
+    try {
+      const remoteFp = await marketSkillFingerprint(remote);
+      const localFp = await skillFingerprint(dir);
+      const same = remoteFp === localFp;
+      rows.push({ folder: entry.name, name, marketId, marketSource: found.source, state: same ? "current" : "update", detail: same ? "与市场当前内容一致" : "市场内容已有变化" });
+    } catch (error: any) {
+      rows.push({ folder: entry.name, name, marketId, marketSource: found.source, state: "unresolved", detail: `比对失败：${error?.message ?? error}` });
+    }
+  }
+  return rows;
+}
+
+/**
+ * 更新单个市场技能（10-13 从 `skills:update` 处理器里抽出；链路与安全检查一字未改）。
+ * 进度事件仍发 `skill-install` type——只有装完即走的安装弹窗在听，静默更新不会弹任何东西。
+ */
+export async function updateSkillFolder(key: string) {
+  const folder = String(key ?? "").trim();
+  if (!folder) throw new Error("缺少技能目录名");
+  // 防目录穿越（与 skills:local-remove 同一口径）
+  const root = path.resolve(userSkillsDir);
+  const dir = path.resolve(userSkillsDir, folder);
+  if (!dir.startsWith(root + path.sep)) throw new Error("非法技能路径");
+  const found = await readInstalledMarketManifest(dir);
+  if (!found?.manifest?.marketId) throw new Error("该技能不是从市场安装的，无法在线更新");
+  const name = await declaredSkillName(dir, folder);
+  const remote = await resolveMarketSkill({ marketId: String(found.manifest.marketId), name, source: found.source });
+  if (!remote) throw new Error("市场清单里找不到该技能（可能已下架），无法更新");
+  // ⛔ 复用市场安装链（含安全检查 / 解压 / 落盘 / 来源清单），不另写一条覆盖逻辑；
+  //   进度事件与 skills:market-install 同一 type（skill-install），界面才能复用同一套展示。
+  const installed = await installCocoLoopSkill({
+    skill: remote,
+    destinationRoot: userSkillsDir,
+    onProgress: ({ stage, message }) => sendToWindow("harness:event", { type: "skill-install", skillId: folder, stage, message, at: Date.now() }),
+  });
+  await updateSkillRegistry({ name: installed.name, path: installed.path, source: "cocoloop", marketId: installed.marketId, sourceUrl: installed.sourceUrl, installedAt: new Date().toISOString() });
+  let discovered = false;
+  try {
+    const result: any = await server.request("skills/list", { cwds: [], forceReload: true });
+    discovered = (result.data ?? []).flatMap((entry: any) => entry.skills ?? [])
+      .some((entry: any) => entry?.name === installed.name || entry?.path === installed.path);
+  } catch { /* 重扫失败不阻塞：下一回合引擎自己会重新扫描 */ }
+  void refreshSkillDiscipline();
+  return { ok: true, name: installed.name, folder: installed.id, discovered };
+}
+
+
 export const skillsFeature = defineFeature<null>({
   id: "skills",
   inject: ["ipc"],
@@ -186,97 +279,6 @@ export const skillsFeature = defineFeature<null>({
      * ⛔ 三态如实上报，**没有第四态**：`update`（市场包与本地不一致）/ `current`（一致）/
      *   `unresolved`（市场搜不到、比对失败、或本地导入无市场来源）——
      *   **绝不把 unresolved 演成 current**（本项目反复栽在「假成功」上）。 */
-    type SkillUpdateRow = {
-      folder: string; name: string; marketId?: string; marketSource?: "cocoloop" | "skillhub";
-      state: "update" | "current" | "unresolved"; detail: string;
-    };
-
-    /** 读已装技能目录的市场来源清单（cocoloop / skillhub 两种文件名都认，与 local-list 同口径）。 */
-    async function readInstalledMarketManifest(dir: string): Promise<{ manifest: any; source: "cocoloop" | "skillhub" } | null> {
-      for (const [file, source] of [[".cocoloop.json", "cocoloop"], [".skillhub.json", "skillhub"]] as const) {
-        try { return { manifest: JSON.parse(await fs.readFile(path.join(dir, file), "utf8")), source }; } catch { /* 换下一个命名 */ }
-      }
-      return null;
-    }
-
-    /** 技能名以 SKILL.md frontmatter 的 name 为准（与 local-list 同口径，避免显示成两条）。 */
-    async function declaredSkillName(dir: string, fallback: string): Promise<string> {
-      for (const file of ["SKILL.md", "SKILL.md.disabled"]) {
-        try {
-          const content = await fs.readFile(path.join(dir, file), "utf8");
-          const declared = content.match(/^name:\s*["']?(.+?)["']?\s*$/mi)?.[1]?.trim();
-          if (declared) return declared;
-        } catch { /* 换下一个文件 */ }
-      }
-      return fallback;
-    }
-
-    /**
-     * 检查全部市场安装技能的内容状态（10-13 从 `skills:update-check` 处理器里抽出）。
-     * ⛔ 手动面板与后台自动更新**必须走同一个函数**——判据漂移 =「面板说最新、后台又更新」这类怪象。
-     */
-    async function checkSkillUpdateRows(): Promise<SkillUpdateRow[]> {
-      const rows: SkillUpdateRow[] = [];
-      let entries: any[] = [];
-      try { entries = await fs.readdir(userSkillsDir, { withFileTypes: true }); } catch { return rows; }
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        const dir = path.join(userSkillsDir, entry.name);
-        const found = await readInstalledMarketManifest(dir);
-        // 本地导入的技能没有市场来源 ⇒ 不参与（也不为它发网络请求）
-        if (!found?.manifest?.marketId) continue;
-        const name = await declaredSkillName(dir, entry.name);
-        const marketId = String(found.manifest.marketId);
-        const remote = await resolveMarketSkill({ marketId, name, source: found.source });
-        if (!remote) {
-          rows.push({ folder: entry.name, name, marketId, marketSource: found.source, state: "unresolved", detail: "市场里搜不到该技能（可能已下架或改名）" });
-          continue;
-        }
-        try {
-          const remoteFp = await marketSkillFingerprint(remote);
-          const localFp = await skillFingerprint(dir);
-          const same = remoteFp === localFp;
-          rows.push({ folder: entry.name, name, marketId, marketSource: found.source, state: same ? "current" : "update", detail: same ? "与市场当前内容一致" : "市场内容已有变化" });
-        } catch (error: any) {
-          rows.push({ folder: entry.name, name, marketId, marketSource: found.source, state: "unresolved", detail: `比对失败：${error?.message ?? error}` });
-        }
-      }
-      return rows;
-    }
-
-    /**
-     * 更新单个市场技能（10-13 从 `skills:update` 处理器里抽出；链路与安全检查一字未改）。
-     * 进度事件仍发 `skill-install` type——只有装完即走的安装弹窗在听，静默更新不会弹任何东西。
-     */
-    async function updateSkillFolder(key: string) {
-      const folder = String(key ?? "").trim();
-      if (!folder) throw new Error("缺少技能目录名");
-      // 防目录穿越（与 skills:local-remove 同一口径）
-      const root = path.resolve(userSkillsDir);
-      const dir = path.resolve(userSkillsDir, folder);
-      if (!dir.startsWith(root + path.sep)) throw new Error("非法技能路径");
-      const found = await readInstalledMarketManifest(dir);
-      if (!found?.manifest?.marketId) throw new Error("该技能不是从市场安装的，无法在线更新");
-      const name = await declaredSkillName(dir, folder);
-      const remote = await resolveMarketSkill({ marketId: String(found.manifest.marketId), name, source: found.source });
-      if (!remote) throw new Error("市场清单里找不到该技能（可能已下架），无法更新");
-      // ⛔ 复用市场安装链（含安全检查 / 解压 / 落盘 / 来源清单），不另写一条覆盖逻辑；
-      //   进度事件与 skills:market-install 同一 type（skill-install），界面才能复用同一套展示。
-      const installed = await installCocoLoopSkill({
-        skill: remote,
-        destinationRoot: userSkillsDir,
-        onProgress: ({ stage, message }) => sendToWindow("harness:event", { type: "skill-install", skillId: folder, stage, message, at: Date.now() }),
-      });
-      await updateSkillRegistry({ name: installed.name, path: installed.path, source: "cocoloop", marketId: installed.marketId, sourceUrl: installed.sourceUrl, installedAt: new Date().toISOString() });
-      let discovered = false;
-      try {
-        const result: any = await server.request("skills/list", { cwds: [], forceReload: true });
-        discovered = (result.data ?? []).flatMap((entry: any) => entry.skills ?? [])
-          .some((entry: any) => entry?.name === installed.name || entry?.path === installed.path);
-      } catch { /* 重扫失败不阻塞：下一回合引擎自己会重新扫描 */ }
-      void refreshSkillDiscipline();
-      return { ok: true, name: installed.name, folder: installed.id, discovered };
-    }
 
     ipcHost.handle("skills:update-check", async () => checkSkillUpdateRows());
 

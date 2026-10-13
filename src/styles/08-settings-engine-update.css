@@ -1904,3 +1904,66 @@
   white-space: pre-wrap;
   color: var(--faint);
 }
+
+/* ══ 控制台 · 组件更新（10-13 统一更新体系）══════════════════════════════════
+   为什么自建一组类：控制台这张卡既要「开关行」又要「按组分的组件清单」还要「日志区」，
+   三种结构在别处没有完全同款的组合可复用。样式跟随既有语义变量（--line / --panel / --faint），
+   暗色模式与全局一致（⛔ 不写死颜色值）。
+   ──────────────────────────────────────────────────────────────────────── */
+.auto-update-groups { display: grid; gap: 10px; margin-top: 4px; }
+.auto-update-group { display: grid; gap: 4px; }
+.auto-update-group h4 {
+  display: flex; align-items: baseline; gap: 8px;
+  margin: 0 0 2px; font-size: 12px; font-weight: 600; color: var(--text);
+}
+.auto-update-group h4 small { font-size: 10.5px; font-weight: 400; color: var(--faint); }
+.auto-update-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.auto-update-row-text { display: grid; gap: 2px; min-width: 0; }
+.auto-update-row-text strong { font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.auto-update-row-text small { font-size: 10.5px; line-height: 1.55; color: var(--faint); }
+.auto-update-badge {
+  font-style: normal; font-size: 10px; font-weight: 500;
+  padding: 1px 6px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--muted);
+}
+/* ⛔ 告警色用项目实际存在的 --orange（01-base-and-chrome.css 定义了亮/暗两套），
+   不是 --warn / --warning —— 后两者项目里都没有，守卫【160】会报"被引用但从未定义"，
+   且暗色主题下会静默落成 fallback 的亮色（25-codex-official-market.css 先踩过这个坑）。 */
+.auto-update-badge.warn { color: var(--orange); border-color: var(--orange); }
+.auto-update-log {
+  max-height: 140px; overflow: auto;
+  padding: 8px 10px; border-radius: 8px;
+  background: var(--panel); border: 1px solid var(--line);
+  font-size: 11px; line-height: 1.65; color: var(--faint);
+  font-family: var(--mono, ui-monospace, Consolas, monospace);
+}
+.auto-update-log-empty { color: var(--faint); opacity: 0.8; }
+/* 卡片内的小尺寸文字按钮（与 .icon-button 同一套 hover 语义，宽度自适应内容） */
+.auto-update-row button.ghost-button,
+.settings-card-head button.ghost-button {
+  padding: 3px 9px;
+  font-size: 11px;
+  line-height: 1.5;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.auto-update-row button.ghost-button:hover:not(:disabled),
+.settings-card-head button.ghost-button:hover:not(:disabled) {
+  border-color: var(--accent, #6b8afd);
+  color: var(--accent, #6b8afd);
+}
+.auto-update-row button.ghost-button:disabled,
+.settings-card-head button.ghost-button:disabled { opacity: 0.5; cursor: default; }
