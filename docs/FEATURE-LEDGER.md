@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-13 | 网页来源条挪进消息操作行 | 改动 | `MessageFooter.tsx`、`TurnWebSources.tsx`、`Status.tsx`、`04-cards-tools.css` | 用户令「跟下面这个在一行」：来源条从汇总卡内挪到回合末操作行（复制/分支/耗时/token/收藏）最右端，汇总卡回归纯文件卡；守卫 12g 19→20 条（3 处变异全抓）+ 验收 web-sources 4/4 复跑 | 2837023 |
 | 2026-10-13 | 功能更新清单 = 发布数据源 | 流程 | `AGENTS.md`、`docs/FEATURE-LEDGER.md`（对所有 Agent 生效） | 每次功能新增/改动同轮在本文末尾追加六列条目（漏记 = 工作未完成）；发布日志 / Release Notes / whats-new 要点一律从本台账搬，不重翻 commit | 557f06a |
 | 2026-10-12 | 汇总卡网页来源 · PPcode 同步 | 流程 | PPcode 仓（`PMZPZM0/PPcode`） | 网页来源条全套同步至 PPcode（守卫 12g / 验收项 web-sources / 副本棘轮 1911→1981 按实测），顺手解锁副本三笔存量红；原版 f6577f11（工具持久化+静默更新）留归属会话自同步 | c4d572a |
 | 2026-10-12 | 本地 HTML/CSS → MP4 渲染通道 | 新增 | `electron/html-video.ts`、`html-video-ipc.ts`、`video_render_html` 工具、`scripts/render-html-video.cjs` | 零 ffmpeg：隐藏窗口 canvas + MediaRecorder（本引擎 runtime 原生支持 MP4/avc1）+ CDP 逐帧馈帧，本地 HTML 文件或 http(s) URL 渲成 MP4（默认落 `<userData>/renders/`）；模型经能力网关 `video_render_html` 可调，命令行 `scripts/render-html-video.cjs` 同引擎；守卫 21 十六条（6 处变异全抓） | 4d9f20c |
