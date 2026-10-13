@@ -35,7 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
-| 2026-10-13 | 自动化与引擎的后台自动更新 | 新增 | `electron/features/auto-update-ipc.ts`（新板块，域 `autoUpdate`）、`runtime-ipc.ts`、`engine-ipc.ts`、`app-settings.ts`、`settings-automation/AutomationSettingsSection.tsx` | 桌面自动化（nuphus）、浏览器自动化（playwright-cli）、Mac 电脑操作（open-computer-use，仅 macOS）与 Codex 引擎四类各自一个自动更新开关，**默认开启**、持久化在 app-settings.json、互不影响；开启后主进程启动 20s + 每 6h 静默从国内镜像（npmmirror 优先）检查并更新，成功发系统通知；自动化卡片显示桌面/浏览器当前版本号。手动更新与后台更新**共用同一批函数**（`checkRuntimeUpdateRow`/`performRuntimeUpdate`/`performEngineUpdateFlow`） | - |
+| 2026-10-13 | 自动化与引擎的后台自动更新 | 新增 | `electron/features/auto-update-ipc.ts`（新板块，域 `autoUpdate`）、`runtime-ipc.ts`、`engine-ipc.ts`、`app-settings.ts`、`settings-automation/AutomationSettingsSection.tsx` | 桌面自动化（nuphus）、浏览器自动化（playwright-cli）、Mac 电脑操作（open-computer-use，仅 macOS）与 Codex 引擎四类各自一个自动更新开关，**默认开启**、持久化在 app-settings.json、互不影响；开启后主进程启动 20s + 每 6h 静默从国内镜像（npmmirror 优先）检查并更新，成功发系统通知；自动化卡片显示桌面/浏览器当前版本号。手动更新与后台更新**共用同一批函数**（`checkRuntimeUpdateRow`/`performRuntimeUpdate`/`performEngineUpdateFlow`） | e6fec1e |
 | 2026-10-13 | 网页来源条挪进消息操作行 | 改动 | `MessageFooter.tsx`、`TurnWebSources.tsx`、`Status.tsx`、`04-cards-tools.css` | 用户令「跟下面这个在一行」：来源条从汇总卡内挪到回合末操作行（复制/分支/耗时/token/收藏）最右端，汇总卡回归纯文件卡；守卫 12g 19→20 条（3 处变异全抓）+ 验收 web-sources 4/4 复跑 | 2837023 |
 | 2026-10-13 | 功能更新清单 = 发布数据源 | 流程 | `AGENTS.md`、`docs/FEATURE-LEDGER.md`（对所有 Agent 生效） | 每次功能新增/改动同轮在本文末尾追加六列条目（漏记 = 工作未完成）；发布日志 / Release Notes / whats-new 要点一律从本台账搬，不重翻 commit | 557f06a |
 | 2026-10-12 | 汇总卡网页来源 · PPcode 同步 | 流程 | PPcode 仓（`PMZPZM0/PPcode`） | 网页来源条全套同步至 PPcode（守卫 12g / 验收项 web-sources / 副本棘轮 1911→1981 按实测），顺手解锁副本三笔存量红；原版 f6577f11（工具持久化+静默更新）留归属会话自同步 | c4d572a |
