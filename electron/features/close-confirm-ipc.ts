@@ -29,7 +29,8 @@ export const closeConfirmFeature = defineFeature<null>({
       if (!pending) return { ok: false, error: "no-pending-close" };
       const kind = action === "tray" || action === "quit" ? action : "cancel";
       if (remember && kind !== "cancel") rememberCloseChoice(kind === "tray");
-      closeConfirmBridge.respond?.(kind, Boolean(remember));
+      /* ⛔ 10-13 晚：按 pending.source 分发 —— 助手窗口（云助手形态）的回包走 respondAssistant */
+      closeConfirmBridge.respond?.(kind, Boolean(remember), pending.source ?? "main");
       return { ok: true };
     });
 
