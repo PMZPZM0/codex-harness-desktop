@@ -1,8 +1,8 @@
 /**
  * 设置页 · automation（09-21 从 App.tsx 内联块搬出）。
  *
- * ⛔ 10-13 改版：原「工具链更新」区块升级为**「自动更新」卡片**（用户要求：桌面 / 浏览器 /
- *    Mac 电脑操作 / Codex 引擎四类各自一个自动更新开关，默认开启、持久化、互相独立）。
+ * ⛔ 10-13 改版：本页只负责**版本号 / 手动更新 / 进度**；**自动更新开关统一在「控制台」页**
+ *    （用户令：「开关都统一放到控制台里面」）—— ⛔ 别在这里再放一个开关（同一状态两个入口）。
  *    与「开发工具」页的**修复安装**分工不同，界面文案必须分清：
  *      · 修复安装 = 从随包 zip 重解压 ⇒ 版本回到「包内版本」（离线，永远可用；相对已升级版本属**降级**）；
  *      · 在线更新 = 从 npm 国内镜像装 `<pkg>@latest` ⇒ 真升级（联网，版本跟着 npm 走）。
@@ -16,13 +16,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowDown, CircleCheck, Globe2, RefreshCw, ShieldCheck, Workflow } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
-import { ToggleSwitch } from "../../components/SettingsWidgets";
 
 export type AutomationSettingsSectionProps = { setSettingsPage: any };
 
 type AutoUpdateRow = {
   id: string;
-  kind: "tool" | "engine";
+  kind: "tool" | "engine" | "skill";
   label: string;
   pkg: string;
   enabled: boolean;
@@ -39,7 +38,6 @@ export function AutomationSettingsSection(props: AutomationSettingsSectionProps)
   const [rows, setRows] = useState<AutoUpdateRow[]>([]);
   const [checking, setChecking] = useState(false);
   const [busyId, setBusyId] = useState("");
-  const [toggling, setToggling] = useState<Record<string, boolean>>({});
   const [percent, setPercent] = useState<Record<string, number>>({});
   const [stage, setStage] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<Record<string, string>>({});
@@ -49,7 +47,8 @@ export function AutomationSettingsSection(props: AutomationSettingsSectionProps)
     setChecking(true);
     try {
       const list: AutoUpdateRow[] = await window.codex.readAutoUpdateStatus();
-      const safe = Array.isArray(list) ? list : [];
+      // 本页只关心装包类（工具 + 引擎）：技能那条没有版本号，展示与开关都在控制台/技能页
+      const safe = (Array.isArray(list) ? list : []).filter((row) => row.kind !== "skill");
       setRows(safe);
       watched.current = new Set(safe.map((row) => row.id));
       setRowError(Object.fromEntries(safe.filter((row) => row.error).map((row) => [row.id, row.error])));
@@ -73,22 +72,6 @@ export function AutomationSettingsSection(props: AutomationSettingsSectionProps)
     });
     return () => { try { off?.(); } catch { /* 忽略 */ } };
   }, []);
-
-  /** 切换某一类的自动更新开关。⛔ 四类**各自一次调用、只写自己那个字段** ⇒ 互不影响。 */
-  async function toggleAutoUpdate(id: string, enabled: boolean) {
-    setToggling((current) => ({ ...current, [id]: true }));
-    // 先本地乐观更新（开关手感），失败再回滚 —— 后台开关不该让用户等一次磁盘往返
-    setRows((current) => current.map((row) => (row.id === id ? { ...row, enabled } : row)));
-    try {
-      const result: any = await window.codex.setAutoUpdate(id, enabled);
-      setRows((current) => current.map((row) => (row.id === id ? { ...row, enabled: Boolean(result?.enabled) } : row)));
-    } catch (error: any) {
-      setRows((current) => current.map((row) => (row.id === id ? { ...row, enabled: !enabled } : row)));
-      setRowError((current) => ({ ...current, [id]: `开关保存失败：${error?.message ?? error}` }));
-    } finally {
-      setToggling((current) => ({ ...current, [id]: false }));
-    }
-  }
 
   async function runUpdate(id: string) {
     setBusyId(id);
@@ -150,8 +133,8 @@ export function AutomationSettingsSection(props: AutomationSettingsSectionProps)
 
                     <section className="settings-section stack">
                       <div className="settings-copy">
-                        <h2>自动更新</h2>
-                        <p>开启后主进程在后台静默检查并从国内镜像更新（启动后一次 + 每 6 小时一次），更新成功会发系统通知；四类开关互相独立，关掉哪一类都不影响其它。Mac 电脑操作只在 macOS 上出现（它由 mac 专属工具链提供，其它平台不列也不检查）。</p>
+                        <h2>版本与手动更新</h2>
+                        <p>这里显示各工具链的当前/最新版本并可手动升级（走国内镜像）。<b>自动更新开关已统一移到「设置 → 控制台」</b>，和技能内容更新放在一起。Mac 电脑操作只在 macOS 上出现（它由 mac 专属工具链提供，其它平台不列也不检查）。</p>
                       </div>
                       <div className="runtime-list">
                         {rows.map((row) => {
@@ -182,13 +165,8 @@ export function AutomationSettingsSection(props: AutomationSettingsSectionProps)
                                 : <em className="runtime-hint">已是最新</em>}
                             </span>
                             <span className="runtime-actions">
-                              <ToggleSwitch
-                                checked={row.enabled}
-                                disabled={Boolean(toggling[row.id])}
-                                label="自动更新"
-                                title={`${row.label}：开启后后台自动从国内镜像更新`}
-                                onChange={(value: boolean) => void toggleAutoUpdate(row.id, value)}
-                              />
+                              {/* ⛔ 自动更新开关**不在这里**（10-13 用户令：统一到「控制台」）。
+                                  本页只负责版本号、手动更新与进度 —— 同一状态两个入口会让人以为不一致。 */}
                               {row.kind === "tool"
                                 ? (busy
                                   ? <button className="secondary-setting runtime-cancel" onClick={() => void cancelUpdate(row.id)}>取消</button>

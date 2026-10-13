@@ -160,6 +160,9 @@
 .runtime-copy small { color: var(--muted); font-size: 11px; line-height: 1.4; }
 .runtime-copy em { color: var(--link); font-size: 10.5px; font-style: normal; overflow-wrap: anywhere; }
 .runtime-size { color: var(--faint); font-size: 10.5px; white-space: nowrap; }
+/* 控制台「自动更新」卡片卡头右侧的刷新按钮（10-13）：margin-left:auto 把它顶到最右，
+   与 .settings-card-head 的 flex 布局配合；⛔ 别用绝对定位（卡头高度随文案变）。 */
+.auto-update-refresh { margin-left: auto; color: var(--muted); }
 .runtime-badge {
   color: var(--muted);
   background: var(--panel-2);

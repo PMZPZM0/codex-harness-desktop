@@ -708,7 +708,7 @@ contextBridge.exposeInMainWorld("codex", {
   freeGatewayModels: () => __ipc("free-gateway:models", 0, []),
   /* 免费模型网关：卸载（停侧车 + 删本体 + 删数据目录；供应商注册由渲染层调 custom-model:remove 移除） */
   freeGatewayUninstall: () => __ipc("free-gateway:uninstall", 0, []),
-  /* 10-13 新增：四类自动更新（桌面自动化 / 浏览器自动化 / Mac 电脑操作 / Codex 引擎）的开关状态与版本号。⛔ 清单与包名来自 runtime-ipc 的 UPDATEABLE_TOOLS 单一真相源（按平台过滤，非 mac 不出 computer-use）；引擎项由 engine-ipc 的 checkEngineUpdateInfo 供数 */
+  /* 10-13 新增：全部自动更新开关（技能 / 桌面自动化 / 浏览器自动化 / Mac 电脑操作 / Codex 引擎）的状态与版本号 —— 开关统一在「控制台」页。⛔ 清单与包名来自 runtime-ipc 的 UPDATEABLE_TOOLS 单一真相源（按平台过滤，非 mac 不出 computer-use）；引擎项由 engine-ipc 的 checkEngineUpdateInfo 供数 */
   readAutoUpdateStatus: () => __ipc("autoUpdate:status", 0, []),
   /* 10-13 新增：单独开关某一类自动更新（四个开关互相独立，patch 只写对应那一个 AppSettings 字段）；缺省值判据统一走 autoUpdateEnabled（!== false ⇒ 默认开） */
   setAutoUpdate: (id: string, enabled: boolean) => __ipc("autoUpdate:set", 2, [id, enabled]),
