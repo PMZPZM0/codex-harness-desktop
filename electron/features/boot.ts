@@ -38,6 +38,7 @@ import { nuphusVisionEnvDrift } from "../nuphus-env";
 import { applyPersonalizationToAgentsMd, migrateGreetedForExistingUsers, readPersonalization } from "../personalization";
 
 import { repairSkillBomScan } from "../skills-market";
+import { migrateBuiltinPluginSecrets, builtinPluginEnv, readBuiltinPlugins } from "../main/09-agents-plugins";
 import { augmentedPath, nuphusBinary } from "../toolchain";
 import { net, safeStorage, session } from "electron";
 import { pathToFileURL } from "node:url";
@@ -319,6 +320,17 @@ export async function bootApp() {
     const bomFixed = await repairSkillBomScan(userSkillsDir);
     if (bomFixed > 0) console.log(`[skills] 修复 ${bomFixed} 个带 BOM 的 SKILL.md`);
   } catch (error) { console.warn("skill BOM repair failed:", error); }
+  // 启动自愈：内置插件（生图 / 视觉）的密钥从**明文**升级成加密存储（10-13 体检 P0-1）。
+  // 存量用户的 builtin-plugins.json 里 apiKey 是明文，而同一应用的 custom-models 早就
+  // 走 safeStorage 加密了 —— 这里把老口径一次性收口。加密不可用时原样留着，绝不冒险改写。
+  try {
+    if (await migrateBuiltinPluginSecrets()) console.log("[builtin] 内置插件密钥已从明文升级为加密存储");
+  } catch (error) { console.warn("builtin plugin secret migration failed:", error); }
+  // 内置插件密钥 → 引擎进程 env（**必须在 server.start 之前**：spawn 之后再设对已起的进程无效）。
+  // 这是命令行兜底 `harness-media.mjs` 取密钥的唯一途径 —— 配置文件里现在是密文，它解不开。
+  try {
+    server.setBuiltinPluginEnv(builtinPluginEnv(await readBuiltinPlugins()));
+  } catch (error) { console.warn("builtin plugin env injection failed:", error); }
   // 启动即补齐 AGENTS.md（emoji + 中文语言规范基础段）：老版本升级后没有这些段，
   // 重写让模型默认用中文思考与回复；AGENTS.md 引擎每请求动态重读，无需重启即生效。
   try {

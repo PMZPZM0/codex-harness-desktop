@@ -77,6 +77,8 @@ export class CodexServer extends EventEmitter {
   private launchToken = 0;
   private apiKey = "";
   private externalEnv: Record<string, string> = {};
+  /** 内置插件密钥（生图/视觉）→ 引擎进程 env；见 setBuiltinPluginEnv。 */
+  private builtinEnv: Record<string, string> = {};
   // ── 引擎健康看门狗 ──
   // 引擎子进程可能「活着但不响应」（interrupt 打断慢速上游请求时偶发死锁），
   // 表现为回都不回。心跳用 thread/list（轻量秒回、无需 experimentalApi），
@@ -151,6 +153,16 @@ export class CodexServer extends EventEmitter {
 
   setExternalEnv(value: Record<string, string>) {
     this.externalEnv = value;
+  }
+
+  /**
+   * 内置插件（生图 / 视觉）的密钥 → 只进**引擎进程的环境变量**，不落盘（10-13 体检 P0-1）。
+   * ⛔ 为什么单独一格而不并进 `externalEnv`：后者由 connector 组装在**多处**各自整体替换
+   *    （connectors-ipc / custom-model-apply / boot），并进去会被下一次替换冲掉。
+   *    这里是**叠加**关系，与那套组装互不干扰。
+   */
+  setBuiltinPluginEnv(value: Record<string, string>) {
+    this.builtinEnv = value;
   }
 
   // ── 重启闸门（09-19 用户：「又莫名其妙断了，能一次性从根上解决嘛」）────────────
@@ -304,6 +316,9 @@ export class CodexServer extends EventEmitter {
     const spawnEnv: Record<string, string> = {
       ...toolchainEnv(),
       ...this.externalEnv,
+      // 内置插件密钥（生图/视觉）：只走 env —— `harness-media.mjs` 那条命令行兜底拿不到
+      // Electron safeStorage，只能从这里取（配置文件里现在是密文）。
+      ...this.builtinEnv,
       CODEX_HOME: this.codexHome,
       CODEX_HARNESS_API_KEY: this.apiKey,
       CODEX_INTERNAL_APP_SERVER_REMOTE_CONTROL_DISABLED: "1",

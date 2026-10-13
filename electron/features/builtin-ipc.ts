@@ -20,14 +20,11 @@ import { app } from "electron";
 import { existsSync } from "node:fs";
 import { describeNetworkError, readBuiltinPlugins, readCustomModel, applyCustomModel } from "../main";
 import type { BuiltinPluginConfig } from "../main";
-import { builtinPluginsFile } from "../main";
+// ⛔ 落盘走 09-agents-plugins 的唯一写入点（本域不再自己 JSON.stringify —— 那里负责把密钥加密）
+import { writeBuiltinPlugins, builtinPluginEnv } from "../main/09-agents-plugins";
 import { server } from "../runtime-refs";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
-
-async function writeBuiltinPlugins(cfg: BuiltinPluginConfig) {
-  await fs.writeFile(builtinPluginsFile, JSON.stringify(cfg, null, 2), "utf8");
-}
 
 async function probeBuiltinModels(input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }) {
   const base = input.baseUrl.trim().replace(/\/$/, "");
@@ -174,6 +171,9 @@ export const builtinFeature = defineFeature<null>({
     ipcHost.handle("builtin:read", async () => readBuiltinPlugins());
     ipcHost.handle("builtin:save", async (_e, cfg: BuiltinPluginConfig) => {
       await writeBuiltinPlugins(cfg);
+      // ⛔ 密钥只走 env（配置文件里已是密文）：命令行兜底 `harness-media.mjs` 拿不到 safeStorage。
+      //    必须在 restart 之前 set —— spawn 之后再设对已起的进程无效。
+      server.setBuiltinPluginEnv(builtinPluginEnv(await readBuiltinPlugins()));
       // 保存后重写 config.toml 并重启引擎：developer_instructions 的生图/视觉段与
       // dynamicTools 都依赖这份配置，不重启的话引擎和已有会话感知不到配置变化。
       const model = await readCustomModel();
