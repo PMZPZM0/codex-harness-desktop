@@ -10,7 +10,7 @@ import { usageCachedTokens } from "../../lib/usage-cached-tokens";
 import { Quote, PenLine, Copy, GitBranch, Clock3, Star, Check } from "lucide-react";
 import { requestFavorite } from "../../lib/favorite-bridge";
 import { FeedbackIconButton } from "./FeedbackIconButton";
-import { TurnWebSources } from "../status/TurnWebSources";
+import { TurnWebSources } from "./TurnWebSources";
 
 export function MessageFooter({ item, turn, usage, tokenUsage, fallbackWindow, onCopy, onQuote, onFork, onEdit, extraIcon, webSources }: { item: ThreadItem; turn?: Turn; usage?: any; tokenUsage?: any; fallbackWindow?: number; onCopy: (text: string) => void; onQuote: (text: string) => void; onFork?: () => void; onEdit?: () => void; extraIcon?: any; webSources?: Array<{ url: string; host: string }> }) {
   const rawText = itemText(item);

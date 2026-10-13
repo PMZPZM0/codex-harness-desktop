@@ -3329,7 +3329,7 @@ export async function run() {
     "【274】产物层三条校验在位（主程序存在 + 执行位 + 不许残留 windows/linux 二进制）"
   );
   (/shouldRegisterComputerUse\(\{ desktop: desktopAuto, binaryReady: Boolean\(launcher\) \}\)/.test(apply274)
-    && apply274.includes("COMPUTER_USE_MCP_SERVER, ...connectors") ? ok : fail)(
+    && (/COMPUTER_USE_MCP_SERVER,/.test(apply274) && /...connectors)/.test(apply274)) /* 10-13 ownedMcpServers 插入 rea，字面量切片放宽为两端都在 */ ? ok : fail)(
     "【274】注册处真接线（调 shouldRegisterComputerUse + 服务器名进 ownedMcpServers）"
   );
   (/args = \["\$\{escapeToml\(launcher\)\}", "mcp"\]/.test(apply274) ? ok : fail)(

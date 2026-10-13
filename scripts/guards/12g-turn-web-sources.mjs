@@ -64,7 +64,7 @@ const ok = (condition, message) => {
 /* ── 二、静态接线（渲染层；10-13 用户令「放到下面吧，跟下面这个在一行」→ 迁到 MessageFooter）── */
 {
   const status = read("src/features/status/Status.tsx");
-  const comp = read("src/features/status/TurnWebSources.tsx");
+  const comp = read("src/features/shared/TurnWebSources.tsx");
   const footer = read("src/features/shared/MessageFooter.tsx");
   const turnView = read("src/features/session-turn/SessionTurn/03-turn-view.tsx");
   const css = read("src/styles/04-cards-tools.css");
