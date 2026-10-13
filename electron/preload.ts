@@ -718,6 +718,8 @@ contextBridge.exposeInMainWorld("codex", {
   runAutoUpdateComponent: (id: string) => __ipc("autoUpdate:run", 1, [id]),
   /* 10-13 统一更新体系：一键更新全部组件（手动入口，不按开关过滤 —— 用户点了就是授权）。逐项返回结��，单项失败不影响其余 */
   runAllAutoUpdateComponents: () => __ipc("autoUpdate:run-all", 0, []),
+  /* 10-13 关闭确认弹窗的回包：tray=隐藏主窗口 / quit=置 closeConfirmed 后二次 close / cancel=不动。remember=true 写 closeToTray（动作）+ closePromptSeen（不再弹）。⛔ ask 方向是推送类手写桥（preload onCloseConfirmAsk），不在本清单 */
+  respondCloseConfirm: (action: "tray" | "quit" | "cancel", remember: boolean) => __ipc("close-confirm:respond", 2, [action, remember]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。
@@ -753,6 +755,9 @@ onRemotePairRequest: (handler: (request: { rid: string; deviceId: string; name: 
     __on("remote:pair-request", handler, (handler) => (_event, request) => handler(request)),
 onBotPairRequest: (handler: (request: { rid: string; channel: string; chatId: string; name: string }) => void) =>
     __on("bot:pair-request", handler, (handler) => (_event, request) => handler(request)),
+/* 关闭确认弹窗（10-13）：主进程拦截 X 后把「要不要关」推给渲染层（应用内卡片，替代原生系统框） */
+onCloseConfirmAsk: (handler: (payload: { busy: number; appName: string }) => void) =>
+    __on("close-confirm:ask", handler, (handler) => (_e: unknown, payload: { busy: number; appName: string }) => handler(payload)),
 onRemoteCommand: (listener: (cmd: string) => void) =>
     __on("remote:command", listener, (listener) => (_e: any, cmd: string) => listener(cmd)),
 onRemoteDevice: (listener: (device: { id: string; name: string }) => void) =>

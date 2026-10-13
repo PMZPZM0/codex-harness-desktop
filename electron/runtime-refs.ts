@@ -189,6 +189,16 @@ export function rememberCloseChoice(action: boolean): void {
   void saveAppSettings(app.getPath("userData"), { closeToTray: action, closePromptSeen: true }).catch(() => undefined);
 }
 
+/* 关闭确认弹窗的**跨域桥**（10-13）：关窗守卫在 window-factory、弹窗 UI 在渲染层、
+   回包处理在 close-confirm-ipc —— 三方经这个可变桥对接（与 mutableState 同一纪律：
+   ESM 的 import 绑定不可赋值 ⇒ 用对象属性读写，跨模块改值才不会静默丢失）。 */
+export const closeConfirmBridge: {
+  /** 待决的关窗（preventDefault 后等用户选）；null = 没有在等的 */
+  pending: { busy: number } | null;
+  /** 渲染层回包后执行（hide / 二次 close）；由 window-factory 在建窗时注入 */
+  respond: ((action: "tray" | "quit" | "cancel", remember: boolean) => void) | null;
+} = { pending: null, respond: null };
+
 /* 记忆后端判定在 ./memory-backend（⛔ 不能定义在这里：本文件已 import memory-layers，
    在此定义再被 memory-layers 反向 import 会形成 require 环）。这里只做转发。 */
 export { memoryBackend, type MemoryBackend } from "./memory-backend";

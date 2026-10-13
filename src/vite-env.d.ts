@@ -1056,19 +1056,103 @@ interface Window {
     runAutoUpdateComponent(id: string): Promise<{ id: string; label: string; action: "updated" | "unchanged" | "failed" | "skipped"; before: string; after: string; message: string }>;
     /* 10-13 统一更新体系：一键更新全部组件（手动入口，不按开关过滤 —— 用户点了就是授权）。逐项返回结��，单项失败不影响其余 */
     runAllAutoUpdateComponents(): Promise<{ id: string; label: string; action: "updated" | "unchanged" | "failed" | "skipped"; before: string; after: string; message: string }>[];
+    /* 10-13 关闭确认弹窗的回包：tray=隐藏主窗口 / quit=置 closeConfirmed 后二次 close / cancel=不动。remember=true 写 closeToTray（动作）+ closePromptSeen（不再弹）。⛔ ask 方向是推送类手写桥（preload onCloseConfirmAsk），不在本清单 */
+    respondCloseConfirm(action: "tray" | "quit" | "cancel", remember: boolean): Promise<{ ok: boolean; error?: string }>;
+/* ═══ gen:end ═══ */
+
+
+    /* 10-03 资源停用/启用（不删文件，可逆） */
+    voiceResourceSetEnabled(input: { kind: string; enabled: boolean }): Promise<{ ok: boolean; error?: string; enabled?: boolean }>;
+
+    /* 10-03 按资源删除（物理删文件，渲染层二次确认） */
+    voiceResourceDelete(input: { kind: string }): Promise<{ ok: boolean; error?: string }>;
+
+    /* 手机控制状态（平台/pip 包/adb/技能/遥测） */
+    phoneHarnessStatus(): Promise<{platform:string;python:string;pythonOk:boolean;installed:boolean;version:string;adb:boolean;skill:boolean;telemetryOff:boolean;iphoneEligible:boolean}>;
+
+    /* 装 phone-harness + 关遥测 + 注册技能 */
+    phoneHarnessInstall(): Promise<{ok:boolean;log:string}>;
+
+    /* 卸载 phone-harness 与技能 */
+    phoneHarnessUninstall(): Promise<{ok:boolean;log:string}>;
+
+    /* 跑上游 --doctor 体检 */
+    phoneHarnessDoctor(): Promise<{ok:boolean;log:string}>;
+
+    /* 按平台返回权限引导步骤 */
+    phoneHarnessGuides(): Promise<{id:string;title:string;steps:string[]}[]>;
+
+    /* 产物目录（09-29 用户要求「在 codexharness 目录下面新增一个存的目录，也可以选择和修改目录」）：默认 <userData>/outputs，首次读取自动创建；返回当前目录与「是否为默认」。 */
+    dramaCanvasOutputDir(): Promise<{ dir: string; isDefault: boolean }>;
+
+    /* 设置产物目录：pick=true 弹系统目录选择框；dir 给绝对路径直接设；dir 为空串 = 恢复默认。目录不可用会明确报错（不静默回退）。 */
+    dramaCanvasOutputDirSet(input: { dir?: string; pick?: boolean }): Promise<{ dir: string; isDefault: boolean }>;
+
+    /* 把二进制素材（配音 WAV / 生成图）按字节写进工作区 .drama-canvas/assets/；工作区掉出可信根（会话已关/重启）时回退应用数据目录并置 fallback=true（09-29 修「参考图传不了」）。⛔ 渲染层唯一的写入通道 fs:write 是 utf8 字符串写，写不了二进制，WAV 必须走这里 */
+    dramaCanvasAssetWrite(input: { workspace: string; name: string; base64: string; subdir?: string }): Promise<{ path: string; fallback?: boolean }>;
+
+    /* 内置视频生成接口：国内外 8 家厂商清单 + 是否已配凭证（可灵/万相/Seedance/CogVideoX/MiniMax/Runway/Luma/Veo） */
+    videoProviders(): Promise<{id:string;name:string;region:string;modes:string[];imageInput:string;fields:string[];models:string[];defaultModel:string;configured:boolean}[]>;
+
+    /* 保存某厂商的 API 凭证 */
+    videoConfigSave(input: { providerId: string; values: Record<string,string> }): Promise<{ ok: boolean; configured: boolean }>;
+
+    /* 轮询任务状态（MiniMax 成功后自动两段式换下载地址） */
+    videoPoll(input: { providerId: string; jobId: string }): Promise<{ status: string; url?: string; error?: string }>;
+
+    /* 把产物视频拉回本地落 <workspace>/.drama-canvas/assets/（可信根校验） */
+    videoDownload(input: { url: string; workspace: string; name: string; subdir?: string; outputDir?: string }): Promise<{ path: string; bytes: number }>;
+
+    /* 排队消息定时发送：主进程登记定时器（不受渲染层隐藏节流），到点广播 queue-timer:due */
+    queueTimerSet(input: { threadId: string; queuedSubmissionId: string; runAt: number }): Promise<{ ok: boolean; scheduled: boolean }>;
+
+    /* 按顺序合并视频片段成一条成片（整片导出）：先 -c copy，失败回落统一重编码；输出 <workspace>/.drama-canvas/export/ */
+    videoConcat(input: { workspace: string; name: string; files: string[]; width?: number; height?: number; fps?: number }): Promise<{ path: string; bytes: number; mode: "copy" | "reencode"; parts: number }>;
+
+    /* 10-04 阶段 6 宿主域清单（启用/停用状态 + 是否 essential） */
+    domainsList(): Promise<{ domains: Array<{ id: string; mounted: boolean; disabled: boolean; essential: boolean }>; essentialDomains: string[]; requiresRestart: boolean }>;
+
+    /* 10-04 阶段 6 停用/启用宿主域（下次启动生效，essential 域拒绝） */
+    domainsSetEnabled(input: { id: string; enabled: boolean }): Promise<{ ok: boolean; error?: string; id?: string; enabled?: boolean; requiresRestart?: boolean }>;
+
+    /* 10-04 「重启才生效」的话术由主进程出，禁在前端硬编码 */
+    domainsReloadHint(): Promise<{ requiresRestart: boolean; text: string }>;
+
+    /* 10-04 启停声明式插件（插槽即时生效，无需重启） */
+    declaredPluginsToggle(input: { id: string; enabled: boolean }): Promise<{ ok: boolean; error?: string; id?: string; enabled?: boolean; requiresRestart?: boolean }>;
+
+    /* 10-04 打开用户插件目录（不存在则创建） */
+    declaredPluginsOpenDirs(): Promise<{ ok: boolean; error?: string; userDir?: string; builtinDir?: string }>;
+
+    /* 10-09 轮询板块：读「间隔 / 超时上限 / 失败重试次数」（真相源在 userData/poll-settings.json） */
+    pollConfigRead(): Promise<{ intervalMs: number; timeoutMs: number; maxRetry: number }>;
+
+    /* 10-09 保存轮询配置（会先过钳制：超时≥间隔×2）—— 返回**钳制后**的真值，渲染层照它回显 */
+    pollConfigSave(input: { intervalMs?: number; timeoutMs?: number; maxRetry?: number }): Promise<{ intervalMs: number; timeoutMs: number; maxRetry: number }>;
+
+    /* 10-09 用户在界面上按「中止」→ 主进程的 wait 循环停下（任务本身不会被撤销） */
+    pollAbort(input: { taskId: string }): Promise<{ ok: boolean; aborted: boolean }>;
+
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */
     onPetSignal(listener: (signal: PetSignal) => void): () => void;
 
+
     /** 桌面宠物配置推送（当前宠物包 + 设置）：换宠物 / 改缩放时用它让已开着的浮窗立刻跟上 */
     onPetConfig(listener: (config: PetStatus) => void): () => void;
 
+
     onQueueTimerDue(listener: (event: { threadId: string; queuedSubmissionId: string }) => void): () => void;
+
 
     onRemotePairRequest(handler: (request: { rid: string; deviceId: string; name: string }) => void): () => void;
 
+
     onBotPairRequest(handler: (request: { rid: string; channel: string; chatId: string; name: string }) => void): () => void;
+    /* 关闭确认弹窗（10-13）：主进程拦截 X 后推「要不要关」，渲染层画应用内卡片并回包 */
+    onCloseConfirmAsk(handler: (payload: { busy: number; appName: string }) => void): () => void;
+
 
 
 
@@ -1090,13 +1174,17 @@ interface Window {
 
 
 
+
     onRemoteCommand(listener: (payload: { command: string; device: { id: string; name: string } }) => void): () => void;
+
 
     onRemoteDevice(listener: (device: { id: string; name: string }) => void): () => void;
 
 
 
+
     onConnectorOAuth(listener: (event: ConnectorOAuthEvent) => void): () => void;
+
 
     /** 粘贴的长文本（超过阈值）落盘成 .txt，返回绝对路径；空文本返回 null。按内容哈希去重。 */
 
@@ -1109,7 +1197,9 @@ interface Window {
 
     onSshData(listener: (payload: { data: string }) => void): () => void;
 
+
     onSshExit(listener: (payload: { code?: number; signal?: string; error?: string }) => void): () => void;
+
 
     /** 本地协议桥状态：引擎只发 Responses，上游只支持 Chat 时由桥转换（port/running/各 provider 实际协议） */
 
@@ -1122,17 +1212,22 @@ interface Window {
 
     onRuntimeProgress(listener: (event: { id: string; message?: string; percent?: number; stage?: string; speed?: string; done?: boolean; failed?: boolean; auto?: boolean; /** 已取消（10-07）：主进程杀完子进程清完临时文件后推来的收尾事件，≠ failed */ cancelled?: boolean }) => void): () => void;
 
+
     /** 3D 预览弹窗打开推送（model-viewer 域，10-05）：手写桥（非 gen 段），引擎 preview_3d 触发 */
     onModelViewerOpen(listener: (event: { path: string; title: string }) => void): () => void;
 
+
     /** 壁纸应用推送（wallpaper 域，10-06）：手写桥，引擎 wallpaper_set 触发 */
     onWallpaperApply(listener: (event: { mode: string; pattern: string; opacity: number; image: string }) => void): () => void;
+
 
     /** 图像工坊浮层推送（image-lab 域，10-09）：手写桥（非 gen 段），单通道三态
      *  open（弹出）/ update（换状态与图）/ close（收起）。引擎 image_generate / image_edit / image_view 触发。 */
     onImageLabEvent(listener: (event: { phase: "open" | "update" | "close"; taskId: string; mode?: "generate" | "edit"; title?: string; status?: "running" | "done" | "error"; images?: string[]; note?: string }) => void): () => void;
 
+
     onTerminalData(listener: (id: string, data: string) => void): () => void;
+
 
     /** 「当前能力链路」：同一件事有多个后端时，现在实际走哪条（唯一来源见 electron/capability-registry.ts） */
 
@@ -1155,7 +1250,9 @@ interface Window {
     /** 引擎重启被闸门推迟/已补做：渲染层提示「改动将在当前任务结束后生效」。 */
     onEngineRestartDeferred(listener: (event: { waiting: boolean; reason?: string; activeTurns?: number }) => void): () => void;
 
+
     onEngineUpdateProgress(listener: (event: { stage: string; detail?: string; percent?: number }) => void): () => void;
+
 
     /** 截图完成（快捷键或设置页「试试截图」触发）。**渲染层唯一插入路径**：
      *  成功截图一定会走这里 ⇒ 输入框把图放进草稿；不要再按 invoke 的返回值各插一次。 */
@@ -1163,11 +1260,15 @@ interface Window {
 
 
 
+
     onEvent(listener: (event: CodexEvent) => void): () => void;
+
 
     onChannelBotEvent(listener: (event: any) => void): () => void;
 
+
     onHarnessEvent(listener: (event: any) => void): () => void;
+
 
     // ---- 语音通话（本机离线识别与合成，旁挂新增） ----
 
@@ -1190,10 +1291,13 @@ interface Window {
 
 
 
+
     onVoiceEvent(listener: (event: any) => void): () => void;
 
 
+
     onVoiceHotkey(listener: (event: { accelerator: string }) => void): () => void;
+
 
 
     /** 只回「命中没命中」：识别文本与匹配都在主进程做 */
@@ -1207,13 +1311,12 @@ interface Window {
     /** 订阅下载进度（0~1），返回取消订阅函数 */
     updateOnProgress(callback: (percent: number) => void): () => void;
 
+
     /**
      * 订阅「更新包已就绪」（10-12 后台静默下载完成）。
      * ⛔ 与设置页无关 —— 用户可能压根没打开设置页，只能靠事件弹窗。
      */
     updateOnReady(callback: (info: { version?: string; path?: string }) => void): () => void;
-
-
   };
 }
 

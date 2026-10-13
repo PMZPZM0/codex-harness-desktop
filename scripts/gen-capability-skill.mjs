@@ -54,6 +54,7 @@ const DOMAIN_DESCRIPTIONS = {
   "subagents": "子智能体——**可创建**：用户要「新建一个子智能体/代理」时，**直接用真工具 `subagent_save`**（name+systemPrompt 必填；同 name 即更新）→ `agent_invoke` 派活",
   "teams": "专家团/专家的定义与成员管理——**可创建**：用户要「新建一个专家/专家团」时，**直接用真工具 `expert_save`**（先 `expert_list` 查重；normalize 自动补默认与 id 规范；teamId 相同即覆盖更新）。字段：displayName/profession/description（zh+en）/category/tags(≤3)/quickPrompts(≤3)/sop；lead 必带 name+systemPrompt；多角色协作加 members[]（每人 name+profession+description+systemPrompt）。⛔ 内置专家（知微/呈象/洞明/鲁班/画意/剪承团）每次启动确保存在——不要用与内置相同的 teamId 去覆盖内置定义，新建用独有 teamId；建完向用户复述 teamId 与成员名单",
   "team-runs": "专家团运行记录查询",
+  "close-confirm": "关闭确认弹窗的回包（最小化到托盘 / 完全退出 / 取消，可勾不再询问）",
   "team-threads": "专家团成员会话映射",
   "bot": "Bot 会话（Bot 与会话的绑定与消息注入）",
   "bots": "Bot 定义管理",

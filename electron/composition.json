@@ -324,6 +324,13 @@
       "config": null
     },
     {
+      "id": "close-confirm",
+      "enabled": true,
+      "file": "features/close-confirm-ipc.ts",
+      "export": "closeConfirmFeature",
+      "config": null
+    },
+    {
       "id": "team-threads",
       "enabled": true,
       "file": "features/team-threads-ipc.ts",

@@ -150,6 +150,7 @@ import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 import { Slot } from "../../../runtime/registry";
 import { NewbieGuide } from "../../newbie-guide";
 import { UpdateReadyToast } from "./UpdateReadyToast";
+import { CloseConfirmDialog } from "../../../components/CloseConfirmDialog";
 
 export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppApi; onOpenSettings?: (page: string) => void }) {
   const {
@@ -629,6 +630,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         onRestartInstall={() => void restartAndInstall()}
       />
     ) : null}
+    {/* ⛔ 10-13 关闭确认弹窗（应用内卡片，替代原生系统框）：自包含组件（自己订阅
+        close-confirm:ask / 自己回包），主进程关窗守卫 preventDefault 后推事件到这里。 */}
+    <CloseConfirmDialog />
     </>
   );
 }
