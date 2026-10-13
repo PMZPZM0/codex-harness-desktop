@@ -33,21 +33,31 @@ type AutoUpdateRow = {
 /** 行图标：纯外观，不是真相源（清单/标签/包名全在主进程）。未知 id 回落到通用图标。 */
 const ICONS: Record<string, any> = { nuphus: Monitor, "playwright-cli": Globe2, "computer-use": ShieldCheck, engine: Cpu, skill: Sparkles };
 
-/** 每行的说明文案：版本信息由主进程给，这里只负责组织语言（技能那条没有版本号，说明也不一样）。 */
+/**
+ * 每行的说明文案 = 名称之外的**状态反馈**（版本信息由主进程给，这里只组织语言）。
+ * ⛔ 关闭态必须写清「不会发起更新检查」——这是开关的**语义**，不是装饰：
+ *    关掉之后后台连版本比对都不做（不是「查到了但不装」）。
+ */
 function describe(row: AutoUpdateRow): string {
   if (row.error) return row.error;
+  const noCheck = "已关闭 —— 后台不会发起更新检查（既不比版本也不下载）。";
   if (row.kind === "skill") {
-    return "后台静默比对市场技能的内容变化（技能没有版本号，比的是文件内容），有变化才更新；本地导入的技能不参与。默认关闭——它会覆盖你技能目录里的文件。";
+    const on = "后台静默比对市场技能的内容变化（技能没有版本号，比的是文件内容），有变化才更新；本地导入的技能不参与。";
+    return row.enabled
+      ? `${on}开启后会覆盖你技能目录里的已装技能。`
+      : `${noCheck}开启后会覆盖你技能目录里的已装技能。`;
   }
   const version = row.current ? `已装 ${row.current}` : "未检测到已装版本";
   const latest = row.latest ? ` · 最新 ${row.latest}` : "";
+  const pkg = row.pkg ? ` · ${row.pkg}` : "";
+  if (!row.enabled) return `${version}${latest}${pkg} —— ${noCheck}`;
   const suffix = row.kind === "engine"
     ? "；更新时先等正在跑的任务结束，装完自动重启引擎"
     : "；装完自动刷新引擎";
-  return `${version}${latest}${row.pkg ? ` · ${row.pkg}` : ""}${suffix}。`;
+  return `${version}${latest}${pkg}${suffix}。`;
 }
 
-export function AutoUpdateCard() {
+export function AutoUpdateCard({ onNotice }: { onNotice?: (text: string) => void }) {
   const [rows, setRows] = useState<AutoUpdateRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
@@ -74,10 +84,14 @@ export function AutoUpdateCard() {
     setRows((current) => current.map((entry) => (entry.id === row.id ? { ...entry, enabled } : entry)));
     try {
       const result: any = await window.codex.setAutoUpdate(row.id, enabled);
-      setRows((current) => current.map((entry) => (entry.id === row.id ? { ...entry, enabled: Boolean(result?.enabled) } : entry)));
+      const applied = Boolean(result?.enabled);
+      setRows((current) => current.map((entry) => (entry.id === row.id ? { ...entry, enabled: applied } : entry)));
+      // 状态反馈：写盘成功才提示，且文案直接说清「关掉之后不再检查」
+      onNotice?.(applied ? `已开启「${row.label}」的自动更新` : `已关闭「${row.label}」的自动更新，后台不再检查`);
     } catch (err: any) {
       setRows((current) => current.map((entry) => (entry.id === row.id ? { ...entry, enabled: !enabled } : entry)));
       setError(`「${row.label}」开关保存失败：${err?.message ?? err}`);
+      onNotice?.(`「${row.label}」开关保存失败，已恢复原状态`);
     } finally {
       setBusy((current) => ({ ...current, [row.id]: false }));
     }
