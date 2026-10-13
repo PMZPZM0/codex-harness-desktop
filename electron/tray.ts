@@ -16,7 +16,7 @@
  */
 import { app, nativeImage, Menu, Tray, shell, type BrowserWindow, type MenuItemConstructorOptions } from "electron";
 import path from "node:path";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 
 export type AppTrayDeps = {
   /** 主窗口（可能尚未创建 / 已销毁 ⇒ 调用方每次都现取） */
@@ -125,6 +125,22 @@ export function createAppTray(deps: AppTrayDeps): Tray {
   }
   tray.on("right-click", () => tray?.popUpContextMenu(Menu.buildFromTemplate(buildAppTrayMenu(deps))));
   tray.on("double-click", () => deps.showMainWindow());
+  // ⛔ Windows 新应用的托盘图标**默认收进「隐藏的图标 ^」溢出区** —— 用户以为"没有托盘"是最常见的反馈。
+  //    首次运行弹一条系统通知：displayBalloon 会让图标临时出现在可见区，同时把"去哪找"说清楚。
+  //    只在首次提示（userData 里落一个标记文件），之后不再打扰。
+  if (process.platform === "win32") {
+    const seenFile = path.join(app.getPath("userData"), "tray-balloon-shown");
+    if (!existsSync(seenFile)) {
+      try {
+        writeFileSync(seenFile, "1");
+        tray.displayBalloon({
+          iconType: "info",
+          title: "Codex Harness Desktop 已在后台运行",
+          content: "图标在屏幕右下角；若没看到，点任务栏的 ^ 展开隐藏的图标。关窗只是最小化到托盘，程序会继续运行。",
+        });
+      } catch { /* 通知失败不影响功能 */ }
+    }
+  }
   return tray;
 }
 
