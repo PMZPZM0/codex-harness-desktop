@@ -151,6 +151,7 @@ import { Slot } from "../../../runtime/registry";
 import { NewbieGuide } from "../../newbie-guide";
 import { UpdateReadyToast } from "./UpdateReadyToast";
 import { CloseConfirmDialog } from "../../../components/CloseConfirmDialog";
+import { CloudManageDialog } from "../../../components/CloudManageDialog";
 
 export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppApi; onOpenSettings?: (page: string) => void }) {
   const {
@@ -252,6 +253,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   // ⛔ 10-04 用户要求：知识库 / AI 画布工作流 / 组件库 / 人格市场 / 前端开发**收进「···更多」**，
   //   侧栏导航区不再逐个平铺。同上同款纯局部 UI 状态（不跨组件共享、不进 bag）。
   const [moreHubOpen, setMoreHubOpen] = useState(false);
+  // ⛔ 10-13 云端管理（云助手形态专属）：同款纯局部 UI 状态（不进 bag）。
+  //    入口只在 `__CHC_ACCOUNT_GATE__`（headless 注入）为真时出现 —— 桌面版/PPcode 不显示。
+  const [cloudManageOpen, setCloudManageOpen] = useState(false);
 
   /** 复制「我正在跑的是哪一份构建」的诊断信息（09-23）。
    *  目的很具体：用户报「改了没生效」时，第一件要排除的就是**跑的产物不是最新构建**（09-23 真实事故，
@@ -555,6 +559,10 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                     <div className="account-menu-sep" />
                     <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); setSettingsPage("usage"); setSettingsOpen(true); }}><CircleGauge size={15} className="ic-blue" /><span>使用统计</span></button>
                     <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); setSettingsPage("user"); setSettingsOpen(true); setMobileNav(false); }}><UserRound size={15} className="ic-blue" /><span>用户中心</span></button>
+                    {/* ⛔ 10-13 云端管理（云助手形态专属）：闸标记由 headless 注入，桌面/PPcode 没有 ⇒ 入口不出现 */}
+                    {window.__CHC_ACCOUNT_GATE__ === true ? (
+                      <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); setCloudManageOpen(true); setMobileNav(false); }}><Cloud size={15} className="ic-cyan" /><span>云端管理</span></button>
+                    ) : null}
                     <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); void window.codex.openExternal("https://www.jvszzp.ltd/feedback.html"); }}><MessageSquarePlus size={15} className="ic-amber" /><span>问题反馈</span><ExternalLink size={12} className="account-menu-arrow" /></button>
                     <div className="account-menu-sep" />
                     <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); handleLogout(); }}><LogOut size={15} /><span>退出登录</span></button>
@@ -633,6 +641,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     {/* ⛔ 10-13 关闭确认弹窗（应用内卡片，替代原生系统框）：自包含组件（自己订阅
         close-confirm:ask / 自己回包），主进程关窗守卫 preventDefault 后推事件到这里。 */}
     <CloseConfirmDialog />
+    {/* ⛔ 10-13 云端管理面板（云助手形态专属，入口在账户菜单）：自包含组件，portal 到 body。 */}
+    {cloudManageOpen ? <CloudManageDialog onClose={() => setCloudManageOpen(false)} /> : null}
     </>
   );
 }
