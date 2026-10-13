@@ -97,7 +97,22 @@ const categories: Record<MarketCategory, { sort: string }> = {
 };
 
 function text(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
-function safeFolder(value: string) { return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 72) || "skill"; }
+/**
+ * 技能落点目录名（安装 ID）。
+ *
+ * ⛔⛔ 归一后**绝不许以点开头**：本应用里「点开头的目录」是「不是用户技能」的通用标记 ——
+ *    技能池（skill-pool）、技能包扫描（skill-pack）、两个插件市场（codex-market /
+ *    codex-official-market）、命令目录（commands）五处扫描都直接 `continue`。
+ *    10-13 体检实测：`李白.Skill` 经 CJK→`-` 折叠、再剥前导 `-` 之后**暴露出一个 `.`**，
+ *    于是装成 `.Skill-libai` —— 落盘成功，但谁都看不见（只有设置页那份 local-list 认它）。
+ *    修法：首尾的**点与连字符一起**剥，而不是只剥连字符。
+ */
+export function skillFolderSlug(value: string) {
+  return value
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^[.-]+|[.-]+$/g, "")
+    .slice(0, 72) || "skill";
+}
 function psLiteral(value: string) { return value.replaceAll("'", "''"); }
 function psEncoded(command: string) { return Buffer.from(command, "utf16le").toString("base64"); }
 
@@ -322,7 +337,7 @@ export async function installCocoLoopSkill(input: { skill: MarketSkill; destinat
     progress("audit", "正在进行安全检查");
     const findings = auditSkill(content, files);
     if (findings.length) throw new Error(`安全检查未通过：${findings.join("；")}`);
-    const folder = `${safeFolder(skill.name)}-${safeFolder(skill.id)}`;
+    const folder = `${skillFolderSlug(skill.name)}-${skillFolderSlug(skill.id)}`;
     const target = path.join(input.destinationRoot, folder);
     progress("install", "正在写入 Codex 技能目录");
     await fs.mkdir(input.destinationRoot, { recursive: true });
