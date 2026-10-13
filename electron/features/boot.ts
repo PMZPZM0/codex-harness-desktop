@@ -112,6 +112,18 @@ function backupTurnIfEnabled(threadId: string, turnId: string): Promise<unknown>
         dir: normalizeBackupDir(settings.changeBackupDir).dir,
       };
     },
+    // ⛔ 容量裁剪要把最旧的备份**移进回收站**（10-13 用户令「最大 3G，超了删除旧的放回收站」）——
+    //   备份是用户代码的唯一副本，直接 rm = 不可恢复地删掉别人写的东西。
+    //   `shell.trashItem` 只有主进程有 ⇒ 在这里注入；change-backup 本模块不 import electron，
+    //   因此仍能被纯 Node 环境真跑测试（守卫 12i 依赖这一点）。
+    trash: async (target: string) => {
+      try {
+        await shell.trashItem(target);
+        return true;
+      } catch {
+        return false;   // ⛔ 失败就**保留**那份，绝不退化成硬删
+      }
+    },
   });
 }
 

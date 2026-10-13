@@ -43,6 +43,14 @@ const DETAIL_VERSION = 1;
 const DETAIL_MAX_BYTES = 8 * 1024 * 1024;
 /** 索引里最多保留的变更条数（超出丢最旧的；明细文件不删，避免误删用户唯一副本）。 */
 const INDEX_MAX_CHANGES = 200;
+/**
+ * 备份总容量上限（10-13 用户令「最大 3G 备份，超过就删除旧的」）。
+ * ⛔ **3G 指磁盘占用总和**（索引 + 明细），不是条数 —— 单条明细最大 8MB，
+ *    200 条上限之下也可能堆到几百 MB，只按条数裁剪不构成容量约束。
+ */
+export const BACKUP_MAX_BYTES = 3 * 1024 * 1024 * 1024;
+/** 单次清理最多搬多少条进回收站（防一次扫描/搬移卡住主进程；剩下的留给下一次写入再清）。 */
+const PRUNE_MAX_PER_WRITE = 50;
 
 export type BackupFileAction = "create" | "modify" | "delete";
 
@@ -197,7 +205,7 @@ export async function writeChangeBackup(
   conversationId: string,
   requestId: string,
   files: any[],
-  opts: { root?: string; checkpointId?: string; revision?: string } = {},
+  opts: { root?: string; checkpointId?: string; revision?: string; trash?: (p: string) => Promise<boolean> } = {},
 ): Promise<BackupWriteResult> {
   const conv = String(conversationId ?? "").trim();
   const req = String(requestId ?? "").trim();
@@ -263,7 +271,113 @@ export async function writeChangeBackup(
   if (index.changes.length > INDEX_MAX_CHANGES) index.changes.splice(0, index.changes.length - INDEX_MAX_CHANGES);
 
   if (!writeIndex(root, conv, index)) return { ok: false, error: "index_write_failed" };
+
+  // 容量裁剪（10-13：最大 3G，超了把最旧的搬进回收站）。
+  // ⛔ **必须在写完之后做**（不是写之前预估）：先裁再写会白裁一遍（写完又超了）。
+  // ⛔ 裁剪失败不影响本次备份的成功返回 —— 备份已落盘，裁剪只是 housekeeping。
+  if (opts.trash) {
+    try {
+      const pruned = await pruneBackupsBySize(root, { trash: opts.trash });
+      if (pruned.prunedConversations > 0) {
+        console.warn(
+          `[change-backup] 超出 ${Math.round(BACKUP_MAX_BYTES / 1024 ** 3)}G 上限：已把 ${pruned.prunedConversations} 个最旧会话移入回收站（释放 ${(pruned.freedBytes / 1024 ** 2).toFixed(1)} MB）`,
+        );
+      }
+    } catch { /* 旁路：裁剪失败不牵连本次备份 */ }
+  }
   return { ok: true, detailRef };
+}
+
+/**
+ * 容量裁剪：超过 `BACKUP_MAX_BYTES` 时把**最旧的**备份移进回收站，直到降回上限内。
+ *
+ * ⛔⛔ **进回收站而不是 `rm`**（10-13 用户令「删除旧的放回收站」）：
+ *   备份是**用户代码的唯一副本**，直接 `rmSync` = 不可恢复地删掉别人写的东西。
+ *   `shell.trashItem`（主进程）才是"用户能自己捞回来"的那条路。
+ *   ⛔ `shell` 只有主进程有 ⇒ 这里通过注入的 `trash` 回调拿，模块本身不 import electron shell
+ *      （顺带让本模块能被纯 Node 环境真跑测试）。
+ *
+ * ⚠️ 裁剪口径：**按会话**为单位删（同一会话的索引 + 明细一起走）——
+ *   只删明细会让索引指向不存在的文件（点开就是"文件已被清理"，比删干净更让人困惑）。
+ *
+ * @param deps.trash 把路径移进回收站；返回是否成功（失败则**保留**该会话，绝不退化成硬删）
+ * @returns 被裁掉的会话数与释放的字节数（供界面/日志如实回报）
+ */
+export function pruneBackupsBySize(
+  root: string,
+  deps: {
+    trash: (targetPath: string) => Promise<boolean>;
+    maxBytes?: number;
+  },
+): Promise<{ prunedConversations: number; freedBytes: number; skipped: number }> {
+  const maxBytes = deps.maxBytes ?? BACKUP_MAX_BYTES;
+  const result = { prunedConversations: 0, freedBytes: 0, skipped: 0 };
+  return (async () => {
+    try {
+      const indexRoot = path.join(root, "changes-index");
+      const detailRoot = path.join(root, "changes-detail");
+      if (!fsSync.existsSync(indexRoot)) return result;
+
+      // 逐会话汇总大小 + 最早时间（"最旧"= 索引里 createdAt 最小的那条；索引全空则退回目录 mtime）
+      type Entry = { conv: string; bytes: number; oldest: number };
+      const entries: Entry[] = [];
+      let total = 0;
+      for (const name of fsSync.readdirSync(indexRoot)) {
+        if (!name.endsWith(".json")) continue;
+        const conv = name.replace(/\.json$/, "");
+        let bytes = 0;
+        try { bytes += fsSync.statSync(path.join(indexRoot, name)).size; } catch { /* 读不到就当 0 */ }
+        let oldest = 0;
+        try {
+          const parsed = JSON.parse(fsSync.readFileSync(path.join(indexRoot, name), "utf8")) as BackupIndex;
+          const changes = Array.isArray(parsed?.changes) ? parsed.changes : [];
+          oldest = changes.reduce((min, c) => Math.min(min, Number(c?.createdAt ?? Infinity)), Infinity);
+        } catch { /* 坏索引：退回 mtime */ }
+        const detailDir = path.join(detailRoot, conv);
+        try {
+          for (const f of fsSync.readdirSync(detailDir)) {
+            try { bytes += fsSync.statSync(path.join(detailDir, f)).size; } catch { /* 尽力而为 */ }
+          }
+        } catch { /* 没有明细目录 */ }
+        let mtime = 0;
+        try { mtime = fsSync.statSync(path.join(indexRoot, name)).mtimeMs; } catch { /* 尽力而为 */ }
+        entries.push({ conv, bytes, oldest: Number.isFinite(oldest) && oldest > 0 ? oldest : mtime });
+        total += bytes;
+      }
+      if (total <= maxBytes) return result;
+
+      entries.sort((a, b) => a.oldest - b.oldest);   // 最旧在前
+      for (const entry of entries) {
+        if (total <= maxBytes) break;
+        if (result.prunedConversations >= PRUNE_MAX_PER_WRITE) break;   // 单次限量，别卡住主进程
+        const indexFilePath = path.join(indexRoot, `${entry.conv}.json`);
+        const detailDir = path.join(detailRoot, entry.conv);
+        // ⛔ **先搬明细、后搬索引**：反了的话，中途失败会留下一个"有索引无明细"的孤儿会话。
+        const okDetail = await moveToTrash(detailDir, deps.trash, result);
+        const okIndex = await moveToTrash(indexFilePath, deps.trash, result);
+        if (okDetail && okIndex) {
+          total -= entry.bytes;
+          result.prunedConversations++;
+        }
+      }
+      return result;
+    } catch {
+      return result;   // 裁剪失败不影响备份本身（旁路能力）
+    }
+  })();
+}
+
+/** 把一个路径移进回收站；**失败返回 false 且不硬删**（保留数据优先）。 */
+async function moveToTrash(target: string, trash: (p: string) => Promise<boolean>, result: { skipped: number }): Promise<boolean> {
+  if (!fsSync.existsSync(target)) return true;   // 已经不在了（可能是上轮裁过的）
+  try {
+    const ok = await trash(target);
+    if (!ok) result.skipped++;
+    return ok;
+  } catch {
+    result.skipped++;
+    return false;
+  }
 }
 
 /** 读某个会话的备份索引（供界面回显/查看）。 */
@@ -309,6 +423,138 @@ export function clearChangeBackups(root?: string): boolean {
   return true;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * 10-13：给 Codex 自己用的操作面（不只是"自动备份"，还要**能被 agent 驱动**）
+ *
+ * 场景：用户报「昨天那次改动我找不回来」时，模型应该能自己
+ *   ① 看有哪些备份（list）② 读某条备份到底改了什么（read，含 hunks 全文）
+ *   ③ 把某个文件**回滚**到备份里的内容（restore）④ 手动触发一次容量裁剪（prune）。
+ * ⛔ 全部**只读优先**：restore 写的是工作区文件，必须显式指定文件路径与备份条目，
+ *   不做"整条一键回滚"（那会连带覆盖用户之后的所有改动）。
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/** 列出全部会话的备份概览（供 agent 判断"有没有可捞的"）。 */
+export function listAllBackups(root?: string): {
+  conversations: { conversationId: string; changes: number; newest: number; oldest: number }[];
+  total: number;
+  bytes: number;
+} {
+  const base = root ? normalizeBackupDir(root).dir : defaultRoot();
+  const conversations: { conversationId: string; changes: number; newest: number; oldest: number }[] = [];
+  const out = { conversations, total: 0, bytes: 0 };
+  const indexRoot = path.join(base, "changes-index");
+  try {
+    for (const name of fsSync.readdirSync(indexRoot)) {
+      if (!name.endsWith(".json")) continue;
+      try {
+        const parsed = JSON.parse(fsSync.readFileSync(path.join(indexRoot, name), "utf8")) as BackupIndex;
+        const changes = Array.isArray(parsed?.changes) ? parsed.changes : [];
+        if (!changes.length) continue;
+        const times = changes.map((c) => Number(c?.createdAt ?? 0)).filter((n) => n > 0);
+        out.conversations.push({
+          conversationId: name.replace(/\.json$/, ""),
+          changes: changes.length,
+          newest: times.length ? Math.max(...times) : 0,
+          oldest: times.length ? Math.min(...times) : 0,
+        });
+        out.total += changes.length;
+      } catch { /* 坏索引跳过 */ }
+    }
+  } catch { /* 没有备份目录 */ }
+  out.conversations.sort((a, b) => b.newest - a.newest);
+  const detailRoot = path.join(base, "changes-detail");
+  try {
+    for (const conv of fsSync.readdirSync(detailRoot)) {
+      for (const f of fsSync.readdirSync(path.join(detailRoot, conv))) {
+        try { out.bytes += fsSync.statSync(path.join(detailRoot, conv, f)).size; } catch { /* 尽力而为 */ }
+      }
+    }
+  } catch { /* 没有明细目录 */ }
+  return out;
+}
+
+/** 读某条备份的**全文**（索引里的条目 + 明细里的 hunks）。找不到返回 null。 */
+export function readBackupChange(
+  conversationId: string,
+  requestId: string,
+  root?: string,
+): { index: BackupChange; detail: BackupChange | null } | null {
+  const base = root ? normalizeBackupDir(root).dir : defaultRoot();
+  const index = readIndex(base, String(conversationId ?? "").trim());
+  const hit = index.changes.find((c) => c.requestId === String(requestId ?? "").trim());
+  if (!hit) return null;
+  let detail: BackupChange | null = null;
+  if (hit.detailRef) {
+    try {
+      const raw = fsSync.readFileSync(path.join(detailDir(base, String(conversationId).trim()), hit.detailRef), "utf8");
+      detail = (JSON.parse(raw) as any)?.change ?? null;
+    } catch { /* 明细缺失或坏了：索引仍可用 */ }
+  }
+  return { index: hit, detail };
+}
+
+/**
+ * 把某个文件回滚成备份里那一版的内容。
+ *
+ * ⛔ **必须能从备份里取出完整正文** —— 只有 hunks（差异片段）是不够的，
+ *   重建整个文件需要「原文件内容 + 补丁」。因此本函数只在**明细里带完整正文**时可用；
+ *   `writeChangeBackup` 默认只存 hunks（省空间）⇒ 多数情况下这里会返回
+ *   `needs_full_content`，**如实告诉调用方"备份里有这次改动的差异，但没有整份正文"**，
+ *   绝不假装成功、也不去乱猜文件现在的内容。
+ *
+ * ⛔ 目标文件必须落在**当前工作区**内（防路径穿越把用户文件写到任意位置）。
+ */
+export function restoreFileFromBackup(input: {
+  conversationId: string;
+  requestId: string;
+  filePath: string;
+  root?: string;
+  workspace?: string;
+}): { ok: boolean; error?: string; note?: string } {
+  const conv = String(input?.conversationId ?? "").trim();
+  const req = String(input?.requestId ?? "").trim();
+  const filePath = String(input?.filePath ?? "").trim();
+  if (!conv || !req || !filePath) return { ok: false, error: "bad_arguments" };
+  const base = input.root ? normalizeBackupDir(input.root).dir : defaultRoot();
+  const found = readBackupChange(conv, req, base);
+  if (!found) return { ok: false, error: "backup_not_found" };
+  // 明细里带的是 hunks（差异），不是整份正文 ⇒ 无法据此重建文件。
+  const full = (found.detail as any)?.files?.find((f: any) => f?.filePath === filePath && typeof f?.content === "string");
+  if (!full) {
+    return {
+      ok: false,
+      error: "needs_full_content",
+      note: `备份里有这次改动对 ${filePath} 的差异（hunks），但没有整份正文，无法自动回滚。可据 hunk 定位后手工改，或用「保留版本副本」的方式对照。`,
+    };
+  }
+  // 路径穿越防线：目标必须落在工作区内
+  const ws = String(input.workspace ?? "").trim();
+  if (ws) {
+    const abs = path.resolve(filePath);
+    const rootWs = path.resolve(ws);
+    if (abs !== rootWs && !abs.startsWith(rootWs + path.sep)) return { ok: false, error: "outside_workspace" };
+  }
+  try {
+    fsSync.mkdirSync(path.dirname(filePath), { recursive: true });
+    fsSync.writeFileSync(filePath, String(full.content), "utf8");
+    return { ok: true };
+  } catch (error: any) {
+    return { ok: false, error: error?.message || String(error) };
+  }
+}
+
+/** 手动触发一次容量裁剪（agent 也能用，不必等下一次写备份才触发）。 */
+export async function pruneBackups(
+  root: string | undefined,
+  trash: (p: string) => Promise<boolean>,
+  maxBytes?: number,
+): Promise<{ prunedConversations: number; freedBytes: number; skipped: number; bytes: number }> {
+  const base = root ? normalizeBackupDir(root).dir : defaultRoot();
+  const before = backupSummary(base).bytes;
+  const r = await pruneBackupsBySize(base, { trash, maxBytes });
+  return { ...r, bytes: backupSummary(base).bytes };
+}
+
 /**
  * 回合收尾时落备份（**唯一入口**，由 boot 的 turn/completed 分支调）。
  *
@@ -327,6 +573,8 @@ export async function backupTurnIfEnabled(
     filesForTurn: (threadId: string, turnId: string) => any[];
     /** 读设置（开关 + 目录） */
     readSettings: () => { enabled: boolean; dir: string };
+    /** 把路径移进系统回收站（⛔ 容量裁剪专用；不给则不做裁剪） */
+    trash?: (targetPath: string) => Promise<boolean>;
   },
 ): Promise<BackupWriteResult | null> {
   try {
@@ -339,7 +587,7 @@ export async function backupTurnIfEnabled(
     const files = deps.filesForTurn(tid, rid);
     if (!Array.isArray(files) || !files.length) return { ok: true };  // 这回合没改文件
 
-    return await writeChangeBackup(tid, rid, files, { root: settings.dir });
+    return await writeChangeBackup(tid, rid, files, { root: settings.dir, trash: deps.trash });
   } catch (error) {
     // ⛔ 旁路能力：备份失败绝不能打断回合
     console.warn("[change-backup] 回合备份失败：", error);

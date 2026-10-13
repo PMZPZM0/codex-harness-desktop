@@ -10,17 +10,34 @@
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import fsSync from "node:fs";
+import { shell } from "electron";
 import { saveAppSettings, readAppSettingsSync } from "../app-settings";
 import {
+  BACKUP_MAX_BYTES,
   backupSummary,
   clearChangeBackups,
   ensureBackupDir,
+  listAllBackups,
   normalizeBackupDir,
+  pruneBackups,
+  readBackupChange,
   readChangeBackups,
+  restoreFileFromBackup,
 } from "./change-backup";
 import { sendToWindow } from "./window-bus";
 
-const BACKUP_CHANNELS = ["backup:config-get", "backup:config-set", "backup:list", "backup:summary", "backup:clear"];
+const BACKUP_CHANNELS = [
+  "backup:config-get",
+  "backup:config-set",
+  "backup:list",
+  "backup:summary",
+  "backup:clear",
+  // ── 10-13：给 agent 自己操作备份的一整套工具（用户「配套好工具，让 Codex 自己完成」）──
+  "backup:list-all",
+  "backup:read-change",
+  "backup:restore-file",
+  "backup:prune",
+];
 
 type Host = { app: { getPath(name: "userData"): string } };
 
@@ -127,6 +144,79 @@ export const backupFeature = defineFeature<null>({
         clearChangeBackups(root);
         sendToWindow("backup:cleared", { at: Date.now() });
         return { ok: true, summary: backupSummary(root) };
+      } catch (err: any) {
+        return { ok: false, error: err?.message || String(err) };
+      }
+    });
+
+    /* ══════════════════════════════════════════════════════════════════════
+     * 10-13：agent 工具面 —— 让 Codex 自己完成「找回改动 / 查备份 / 清容量」
+     *
+     * 为什么要有：用户报「昨天那次改动找不回来」时，模型应该能自己查、自己比对、
+     *   自己触发清理，而不是只会说"你去设置里看看"。
+     * ⛔ 写操作只有 `restore-file`（且必须显式给文件路径 + 受工作区约束）与 `prune`
+     *   （只往回收站搬，不硬删）—— 没有"一键整条回滚"，那会连带覆盖用户之后的改动。
+     * ══════════════════════════════════════════════════════════════════════ */
+
+    /** 当前生效的备份根目录（各 handler 共用，避免每处重写一遍 normalize）。 */
+    const currentRoot = (): string => normalizeBackupDir(readAppSettingsSync(host.app.getPath("userData")).changeBackupDir).dir;
+
+    /** 移进系统回收站（⛔ 失败就保留，绝不硬删）。 */
+    const toTrash = async (target: string): Promise<boolean> => {
+      try {
+        await shell.trashItem(target);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    /** 列出全部会话的备份概览 —— agent 判断"有没有可捞的"的第一入口。 */
+    ipcHost.handle("backup:list-all", async () => {
+      try {
+        return { ok: true, list: listAllBackups(currentRoot()), maxBytes: BACKUP_MAX_BYTES };
+      } catch (err: any) {
+        return { ok: false, error: err?.message || String(err) };
+      }
+    });
+
+    /** 读某条备份的全文（索引 + 明细 hunks）—— 用来告诉用户"当时到底改了什么"。 */
+    ipcHost.handle("backup:read-change", async (_event: unknown, input: { conversationId?: string; requestId?: string } = {}) => {
+      try {
+        const found = readBackupChange(String(input?.conversationId ?? ""), String(input?.requestId ?? ""), currentRoot());
+        if (!found) return { ok: false, error: "backup_not_found" };
+        return { ok: true, change: found.detail ?? found.index };
+      } catch (err: any) {
+        return { ok: false, error: err?.message || String(err) };
+      }
+    });
+
+    /**
+     * 把某文件回滚到备份里的那一版。
+     * ⛔ 明细默认只存 hunks（省空间）⇒ 大多数情况会回 `needs_full_content`，
+     *    **如实回报**而不是假装成功；此时 agent 应据 hunk 定位后手工改。
+     */
+    ipcHost.handle("backup:restore-file", async (_event: unknown, input: { conversationId?: string; requestId?: string; filePath?: string; workspace?: string } = {}) => {
+      try {
+        const r = restoreFileFromBackup({
+          conversationId: String(input?.conversationId ?? ""),
+          requestId: String(input?.requestId ?? ""),
+          filePath: String(input?.filePath ?? ""),
+          workspace: String(input?.workspace ?? ""),
+          root: currentRoot(),
+        });
+        return r;
+      } catch (err: any) {
+        return { ok: false, error: err?.message || String(err) };
+      }
+    });
+
+    /** 手动触发容量裁剪（超 3G 时把最旧的搬进回收站）。 */
+    ipcHost.handle("backup:prune", async (_event: unknown, input: { maxBytes?: number } = {}) => {
+      try {
+        const max = Number(input?.maxBytes) > 0 ? Number(input.maxBytes) : BACKUP_MAX_BYTES;
+        const r = await pruneBackups(currentRoot(), toTrash, max);
+        return { ok: true, ...r, maxBytes: max };
       } catch (err: any) {
         return { ok: false, error: err?.message || String(err) };
       }
