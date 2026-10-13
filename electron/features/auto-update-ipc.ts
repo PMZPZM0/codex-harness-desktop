@@ -40,14 +40,17 @@
  * 生命周期：通道在 `setup` 内注册、`ctx.effect` 内摘除；挂载时机由组合表决定（本文件不自挂载）。
  */
 import { Notification, app } from "electron";
-import { readAppSettings, readAutoUpdateSwitch, saveAppSettings, type AutoUpdateSettingKey } from "../app-settings";
-import { checkEngineUpdateInfo, performEngineUpdateFlow } from "./engine-ipc";
-import { checkRuntimeUpdateRow, performRuntimeUpdate, updateableToolIds, updateableToolMeta } from "./runtime-ipc";
-import { server } from "../runtime-refs";
+import { AUTO_UPDATE_ROW_OWNER, readAppSettings, readAutoUpdateRowSwitch, readAutoUpdateSwitch, saveAppSettings, writeAutoUpdateRowSwitch, type AutoUpdateSettingKey } from "../app-settings";
+import { checkEngineUpdateInfo } from "./engine-ipc";
+import { updateableToolIds, updateableToolMeta } from "./runtime-ipc";
+import { componentSpec, visibleSpecs, type ComponentSpec, type DownloadSourceSetting } from "../update-registry";
+import { scanRows, updateComponent, type ComponentRow, type UpdateOutcome } from "../update-backends";
+import { sendToWindow } from "./window-bus";
+import { codexHome } from "../runtime-refs";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
-const AUTO_UPDATE_CHANNELS = ["autoUpdate:status", "autoUpdate:set"];
+const AUTO_UPDATE_CHANNELS = ["autoUpdate:status", "autoUpdate:set", "autoUpdate:scan", "autoUpdate:run", "autoUpdate:run-all"];
 
 /** 后台自动更新的首个周期（启动后延迟，避开启动期的密集 IO）与周期间隔。 */
 const FIRST_DELAY_MS = 20_000;
@@ -104,24 +107,6 @@ export type AutoUpdateStatusRow = {
   error: string;
 };
 
-async function statusOf(item: AutoUpdateItem, enabled: boolean): Promise<AutoUpdateStatusRow> {
-  const base: AutoUpdateStatusRow = { id: item.id, kind: item.kind, label: item.label, pkg: item.pkg, enabled, current: "", latest: "", hasUpdate: false, error: "" };
-  // 技能**没有版本号**（市场技能靠内容比对判变化）⇒ 不在这里做比对：
-  // 那要把市场包下下来逐个 sha256，代价远高于「看一眼开关」。要逐项比对走技能页的 skills:update-check。
-  if (item.kind === "skill") return base;
-  try {
-    if (item.kind === "engine") {
-      const info = await checkEngineUpdateInfo();
-      return { ...base, current: info.current, latest: info.latest, hasUpdate: info.hasUpdate };
-    }
-    const row = await checkRuntimeUpdateRow(item.id);
-    return { ...base, current: row.current, latest: row.latest, hasUpdate: row.hasUpdate, error: row.error };
-  } catch (error) {
-    // ⛔ 查不到版本**不是致命错**：界面照常显示开关与已装版本，错误原文给人看
-    return { ...base, error: (error as Error)?.message ?? String(error) };
-  }
-}
-
 /** 发系统通知（更新成功的反馈）。不支持通知的环境静默跳过 —— 后台任务不许因为通知失败而失败。 */
 function notifyUpdated(title: string, body: string): void {
   try {
@@ -140,48 +125,63 @@ export const autoUpdateFeature = defineFeature<null>({
 
     let running = false;
 
-    /** 更新一类（工具或引擎）。返回是否真的更新了（用于决定是否发通知）。 */
-    async function updateOne(item: AutoUpdateItem): Promise<boolean> {
-      if (item.kind === "engine") {
-        const info = await checkEngineUpdateInfo();
-        if (!info.hasUpdate) return false;
-        const result = await performEngineUpdateFlow(async () => {
-          // ⛔ 后台无人值守：必须自己把引擎拉起来（新二进制已落位，重启即生效）
-          await server.restart().catch(() => undefined);
-        });
-        if (!result.ok) throw new Error(result.message || "引擎更新失败");
-        notifyUpdated("Codex 引擎已自动更新", `${info.current || "旧版本"} → ${result.version}（引擎已重启生效）`);
-        return true;
-      }
-      const row = await checkRuntimeUpdateRow(item.id);
-      if (!row.hasUpdate) return false;
-      const result = await performRuntimeUpdate(item.id);
-      if (!result.ok || !result.to || result.to === result.from) return false;
-      notifyUpdated(`${item.label}已自动更新`, `${result.from || "旧版本"} → ${result.to}`);
-      return true;
+    /** 本次周期用的执行上下文（一路传进棋盘，避免每处再读一次配置）。 */
+    function makeCtx(source: DownloadSourceSetting, settings: Awaited<ReturnType<typeof readAppSettings>>): Parameters<typeof scanRows>[1] {
+      return {
+        userData: app.getPath("userData"),
+        codexHome,
+        source,
+        // ⛔ 开关的生效值**只由主进程算**（readAutoUpdateRowSwitch）：界面不持有默认值，
+        //    否则「界面显示开着、后台却跳过」这类漂移只是时间问题（guard 12l 钉）。
+        enabledOf: (rowId) => readAutoUpdateRowSwitch(settings, rowId),
+        // 进度走既有的 runtime:progress 事件（渲染层已订阅），不新增事件通道
+        progress: (id, message, percent) => {
+          sendToWindow("runtime:progress", { id: String(id), message, percent, done: false, auto: true });
+        },
+      };
     }
 
-    /** 一轮后台检查：按开关逐个跑；单类失败只跳过该类。 */
+    /**
+     * 更新一行 —— 无论手动还是后台，都走 `updateComponent`（各后端已在里面接好既有安装链）。
+     * ⛔ 别在这里按 kind 再写一遍判据：那是本项目反复栽过的坑（手动说最新、后台却在装）。
+     */
+    async function updateRow(row: ComponentRow, source: DownloadSourceSetting, settings: Awaited<ReturnType<typeof readAppSettings>>): Promise<UpdateOutcome> {
+      const spec = componentSpec(row.specId);
+      if (!spec) return { id: row.id, label: row.label, action: "skipped", before: "", after: "", message: "未登记在组件清单里" };
+      return updateComponent(spec, row.id, makeCtx(source, settings));
+    }
+
+    /** 一轮后台更新：**扫描全部行** → 只更新「开关开着 且 有可判定更新」的那些。 */
     async function runCycle(): Promise<void> {
       // 闸 1：防重入
       if (running) return;
       running = true;
       try {
         const settings = await readAppSettings(app.getPath("userData"));
-        for (const item of autoUpdateItems()) {
-          // ⛔ 技能那条**不在这里跑**：它的检查/更新流程在 skills-ipc（checkSkillUpdateRows /
-          //    updateSkillFolder，含安全检查）里已有独立调度器。本板块只**承载它的开关与显示**，
-          //    免得同一件事出现两个调度器互相打架。它出现在列表里 = 控制台能一次看全所有开关。
-          if (item.kind === "skill") continue;
-          // 闸的一部分：开关关了就整类跳过（每个开关互不影响）
-          if (!readAutoUpdateSwitch(settings, item.key)) continue;
+        const source = (settings.downloadSource ?? "auto") as DownloadSourceSetting;
+        const rows = await scanAll(makeCtx(source, settings));
+        let updated = 0;
+        for (const row of rows) {
+          // ⛔⛔ 市场技能**不在这里跑**：skills-ipc 里本来就有一个技能自动更新调度器
+          //    （checkSkillUpdateRows / updateSkillFolder，含安全检查）。两个调度器跑同一件事
+          //    迟早互相打架（重复下载、互相覆盖）；本体系的循环只**承载它的开关与显示**，
+          //    手动更新入口仍然能点到它 ⇒ 技能行在控制台里可见、可手点，但后台只有那一个 owner。
+          if (row.specId === "market-skill") continue;
+          // ⛔ 开关判定在**检查之前**（不是"查到了不装"）：关掉 ⇒ 连版本/内容都不比
+          if (!readAutoUpdateRowSwitch(settings, row.id)) continue;
+          if (!row.hasUpdate) continue;
           try {
-            await updateOne(item);
+            const outcome = await updateRow(row, source, settings);
+            if (outcome.action === "updated") {
+              updated += 1;
+              notifyUpdated(`${row.label} 已自动更新`, outcome.message || "内容已更新到最新");
+            }
           } catch (error) {
-            // 闸 2：单类失败不拖垮其余 —— 下个周期再试
-            console.warn(`[auto-update] ${item.label} 自动更新失败，下个周期再试：${(error as Error)?.message ?? error}`);
+            // 闸 2：单个失败不拖垮其余 —— 下个周期再试
+            console.warn(`[auto-update] ${row.label} 自动更新失败，下个周期再试：${(error as Error)?.message ?? error}`);
           }
         }
+        if (updated) console.log(`[auto-update] 本轮更新了 ${updated} 个组件`);
       } catch (error) {
         console.warn(`[auto-update] 本轮自动更新未能开始：${(error as Error)?.message ?? error}`);
       } finally {
@@ -190,20 +190,120 @@ export const autoUpdateFeature = defineFeature<null>({
       }
     }
 
+    async function scanAll(ctx: ReturnType<typeof makeCtx>): Promise<ComponentRow[]> {
+      const results = await Promise.all(visibleSpecs().map((spec) => scanRows(spec, ctx).catch((error) => [{
+        id: spec.id,
+        specId: spec.id,
+        label: spec.label,
+        group: spec.group,
+        pkg: spec.pkg,
+        mirror: spec.mirror,
+        reason: spec.reason,
+        enabled: ctx.enabledOf(spec.id),
+        installed: false,
+        current: "",
+        latest: "",
+        hasUpdate: false,
+        detectable: false,
+        unsupported: "",
+        error: (error as Error)?.message ?? String(error),
+      }])));
+      return results.flat();
+    }
+
     ipcHost.handle("autoUpdate:status", async () => {
       const settings = await readAppSettings(app.getPath("userData"));
-      const items = autoUpdateItems();
-      const rows = await Promise.all(items.map((item) => statusOf(item, readAutoUpdateSwitch(settings, item.key))));
+      const source = (settings.downloadSource ?? "auto") as DownloadSourceSetting;
+      // ⛔ 版本信息来源与 `autoUpdate:scan` **同一份**（scanRows）⇒ 两个端点不可能给出矛盾的结论
+      const scanned = await scanAll(makeCtx(source, settings));
+      const byId = new Map(scanned.map((row) => [row.id, row]));
+      const rows = autoUpdateItems().map<AutoUpdateStatusRow>((item) => {
+        const row = byId.get(item.id);
+        return {
+          id: item.id,
+          kind: item.kind,
+          label: item.label,
+          pkg: item.pkg,
+          enabled: readAutoUpdateSwitch(settings, item.key),
+          current: row?.current ?? "",
+          latest: row?.latest ?? "",
+          hasUpdate: Boolean(row?.hasUpdate),
+          error: row?.error ?? row?.unsupported ?? "",
+        };
+      });
       return rows;
     });
 
+    /** 全量清单（含不支持更新的那批 —— 它们带 reason，界面显示原因而不是悄悄消失）。 */
+    ipcHost.handle("autoUpdate:scan", async (_event, id?: string) => {
+      const settings = await readAppSettings(app.getPath("userData"));
+      const source = (settings.downloadSource ?? "auto") as DownloadSourceSetting;
+      const rows = await scanAll(makeCtx(source, settings));
+      const key = String(id ?? "").trim();
+      return key ? rows.filter((row) => row.id === key || row.specId === key) : rows;
+    });
+
+    /** 更新指定组件（行 id）。 */
+    ipcHost.handle("autoUpdate:run", async (_event, id: string) => {
+      const settings = await readAppSettings(app.getPath("userData"));
+      const source = (settings.downloadSource ?? "auto") as DownloadSourceSetting;
+      const key = String(id ?? "").trim();
+      const rows = await scanAll(makeCtx(source, settings));
+      const row = rows.find((entry) => entry.id === key);
+      if (!row) throw new Error(`未知组件：${key}`);
+      const outcome = await updateRow(row, source, settings);
+      if (outcome.action === "updated") notifyUpdated(`${row.label} 已更新`, outcome.message);
+      return outcome;
+    });
+
+    /**
+     * 一键更新全部。
+     * ⛔ **手动入口不看开关**：开关约束的是「无人值守时动不动手」，用户自己点了"全部更新"
+     *    就是明确授权。若这里也按开关过滤，关掉的那几类会永远装不回来，用户还得再找别处入口。
+     */
+    ipcHost.handle("autoUpdate:run-all", async () => {
+      const settings = await readAppSettings(app.getPath("userData"));
+      const source = (settings.downloadSource ?? "auto") as DownloadSourceSetting;
+      const ctx = makeCtx(source, settings);
+      const rows = await scanAll(ctx);
+      const outcomes: UpdateOutcome[] = [];
+      for (const row of rows) {
+        if (row.unsupported) {
+          outcomes.push({ id: row.id, label: row.label, action: "skipped", before: "", after: "", message: row.unsupported });
+          continue;
+        }
+        try {
+          outcomes.push(await updateRow(row, source, settings));
+        } catch (error) {
+          // 单个失败**必须记录成一行结果**，不能让整批变成一次异常 —— 用户要知道哪一项没成
+          outcomes.push({ id: row.id, label: row.label, action: "failed", before: "", after: "", message: (error as Error)?.message ?? String(error) });
+        }
+      }
+      const done = outcomes.filter((entry) => entry.action === "updated").length;
+      if (done) notifyUpdated("组件更新完成", `${done} 个组件已更新，${outcomes.length - done} 项无需更新或跳过`);
+      return outcomes;
+    });
+
+    /**
+     * 开关写入。**既支持具名那四类，也支持任意组件行 id**（统一更新体系纳入了十几类组件）。
+     * ⛔ 归属具名开关的行写具名字段（保持既有契约），其余行写 `autoUpdateOverrides[行id]`
+     *    —— 都由 `writeAutoUpdateRowSwitch` / `AUTO_UPDATE_ROW_OWNER` 一处裁决。
+     */
     ipcHost.handle("autoUpdate:set", async (_event, id: string, enabled: boolean) => {
-      const item = autoUpdateItems().find((entry) => entry.id === String(id ?? "").trim());
-      if (!item) throw new Error(`未知的自动更新项：${id}`);
+      const key = String(id ?? "").trim();
       const userData = app.getPath("userData");
-      // ⛔ 只写这一个字段（patch 单键）⇒ 各开关物理独立，互不影响
-      const next = await saveAppSettings(userData, { [item.key]: Boolean(enabled) });
-      return { id: item.id, enabled: readAutoUpdateSwitch(next, item.key) };
+      const settings = await readAppSettings(userData);
+      const owner: AutoUpdateSettingKey | undefined = AUTO_UPDATE_ROW_OWNER[key] ?? AUTO_UPDATE_ROW_OWNER[key.split("/")[0]];
+      if (owner) {
+        // ⛔ 只写这一个字段（patch 单键）⇒ 各开关物理独立，互不影响
+        const next = await saveAppSettings(userData, { [owner]: Boolean(enabled) } as never);
+        return { id: key, enabled: readAutoUpdateSwitch(next, owner) };
+      }
+      // 非具名：写 map。⛔ 只允许出现在 table 里的 id（防任意键污染配置）
+      const exists = visibleSpecs().some((spec) => spec.id === key || key.startsWith(`${spec.id}/`));
+      if (!exists) throw new Error(`未知的自动更新项：${id}`);
+      const next = await saveAppSettings(userData, { autoUpdateOverrides: writeAutoUpdateRowSwitch(settings, key, enabled) });
+      return { id: key, enabled: readAutoUpdateRowSwitch(next, key) };
     });
 
     const timer = setInterval(() => { void runCycle(); }, INTERVAL_MS);

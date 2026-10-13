@@ -93,6 +93,8 @@ export type AppSettings = {
    *   下个周期再试，绝不打断启动。
    */
   skillAutoUpdate?: boolean;
+  /** 统一更新体系：每个组件行的独立偏好（键 = 组件行 id）。缺省语义见 readAutoUpdateRowSwitch。 */
+  autoUpdateOverrides?: Record<string, boolean>;
   /**
    * 自动化能力与引擎的自动更新（10-13 用户令）：四类**各自独立、互不影响**，缺省即**开启**。
    *   · autoUpdateDesktop     = 桌面自动化（nuphus MCP，`@nuphus/nuphus-mcp`）
@@ -213,7 +215,60 @@ export function autoUpdateEnabled(
 }
 
 /** 自动更新项在 AppSettings 上的开关字段（含技能那条，它缺省判据不同，见下）。 */
-export type AutoUpdateSettingKey = "autoUpdateDesktop" | "autoUpdateBrowser" | "autoUpdateComputerUse" | "autoUpdateEngine" | "skillAutoUpdate";
+export type AutoUpdateSettingKey =
+  | "autoUpdateDesktop" | "autoUpdateBrowser" | "autoUpdateComputerUse" | "autoUpdateEngine" | "skillAutoUpdate";
+
+/**
+ * 每个组件行的独立偏好（键 = 组件行 id，见 electron/update-registry.ts 与动态行的 `<spec>/<slug>`）。
+ *
+ * 为什么要有它：四个历史命名开关只覆盖了桌面/浏览器/电脑操作/引擎四类。统一更新体系纳入了
+ * 十几类组件（市场技能、市场插件、官方插件、专家包、人格包、ponytail、pip 工具……），
+ * 给每一类都加一个具名字段会让 AppSettings 无限膨胀 ⇒ 用一张 map 承载，键即组件 id。
+ * ⛔ 具名那四个**保持优先**：它们已经落进用户配置并被界面引用，迁移它们得不偿失。
+ */
+export type AutoUpdateOverrides = Record<string, boolean>;
+
+/** 每一行「属于哪个具名开关」（没有归属的走组件自身的默认），解析唯一入口在 readAutoUpdateSwitch。 */
+export const AUTO_UPDATE_ROW_OWNER: Record<string, AutoUpdateSettingKey> = {
+  nuphus: "autoUpdateDesktop",
+  "playwright-cli": "autoUpdateBrowser",
+  "computer-use": "autoUpdateComputerUse",
+  engine: "autoUpdateEngine",
+  skill: "skillAutoUpdate",
+  // ⛔ 「技能内容更新」那把历史开关管的就是市场技能 ⇒ 动态行 `market-skill/<folder>` 也归属它。
+  //    不接上的话用户把那把开关打开，技能却依然默认关、不检查 —— 界面说开了、后台没动。
+  "market-skill": "skillAutoUpdate",
+};
+
+/** 默认 **关** 的行：它们会在无人值守时改写用户自己的文件/技能目录，必须用户点头。 */
+const AUTO_UPDATE_DEFAULT_OFF = new Set(["market-skill", "expert-skill", "soul"]);
+
+/**
+ * 统一读「某一行」自动更新的生效值 —— **界面、后台循环、手动入口三处共用这一个判据**。
+ *
+ * 解析顺序（⛔ 只此一处，别在别处再写一份默认值）：
+ *   1. 该行自己的显式偏好（settings.autoUpdateOverrides[行id]）；
+ *   2. 该行归属的具名开关（如 nuphus → autoUpdateDesktop）；
+ *   3. 组件默认值：会改写用户文件的三类（市场技能 / 专家包 / 人格包）默认 **关**，其余默认 **开**。
+ *
+ * @param rowId 组件行 id（静态=spec.id，动态=`<spec.id>/<slug>`）
+ */
+export function readAutoUpdateRowSwitch(settings: AppSettings, rowId: string): boolean {
+  const id = String(rowId ?? "").trim();
+  const overrides = settings?.autoUpdateOverrides;
+  if (overrides && typeof overrides === "object" && id in overrides) return overrides[id] === true;
+  const owner = AUTO_UPDATE_ROW_OWNER[id] ?? AUTO_UPDATE_ROW_OWNER[id.split("/")[0]];
+  if (owner) return readAutoUpdateSwitch(settings, owner);
+  return !AUTO_UPDATE_DEFAULT_OFF.has(id.split("/")[0]);
+}
+
+/** 写某一行的偏好（⛔ 只 patch 这一个键，其余行的偏好不动 —— 各行物理独立）。 */
+export function writeAutoUpdateRowSwitch(settings: AppSettings, rowId: string, enabled: boolean): AutoUpdateOverrides {
+  const id = String(rowId ?? "").trim();
+  const next = { ...(settings?.autoUpdateOverrides ?? {}) };
+  next[id] = Boolean(enabled);
+  return next;
+}
 
 /**
  * 统一读一个自动更新开关的**生效值**。
