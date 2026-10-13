@@ -395,7 +395,7 @@ async function runBrowserDownload(
 }
 
 /** npm 包按需安装：用**内置 node 自带的 npm**，registry 国内镜像优先、失败回落官方源。 */
-async function runNpmInstall(id: DevRuntimeId, pkg: string, label: string, source: NonNullable<AppSettings["downloadSource"]> = "auto"): Promise<void> {
+async function runNpmInstall(id: string, pkg: string, label: string, source: NonNullable<AppSettings["downloadSource"]> = "auto"): Promise<void> {
   const node = bundledNode();
   if (!node) throw new Error(`缺少内置 Node，无法安装 ${label}`);
   // ⛔ 按平台候选探测（Windows zip 布局 / mac tar.gz 布局）—— 别在这里复制路径字面量，见 toolchain.bundledNpmCli
@@ -545,10 +545,40 @@ async function devRuntimeHealth(): Promise<DevRuntimeHealth[]> {
  * ⛔ 必须重启引擎：nuphus 是引擎 spawn 的 MCP 子进程，CLI 也在引擎的 PATH 上。
  * ⛔ 新增可更新工具时，**同时**改这里与界面侧清单（界面侧从 runtime:update-check 全量拉，不用改）。
  */
-const UPDATEABLE_TOOLS: Record<string, { pkg: string; label: string }> = {
+const UPDATEABLE_TOOLS: Record<string, { pkg: string; label: string; platforms?: NodeJS.Platform[] }> = {
   nuphus: { pkg: "@nuphus/nuphus-mcp", label: "Nuphus 桌面自动化" },
   "playwright-cli": { pkg: "@playwright/cli", label: "Playwright 浏览器自动化" },
+  // ⛔ mac 专属：open-computer-use 只在 mac 随包工具链里（scripts/prepare-mac-tools.cjs 装进
+  //    <tools>/npm-global），Windows/Linux 上既没装也不该提示 —— 列出来会永远显示「未检测到已装版本」，
+  //    后台自动更新还会为它白跑一次 npm 安装。故带 platforms 约束，由 updateableToolIds() 统一过滤。
+  "computer-use": { pkg: "open-computer-use", label: "Mac 电脑操作（Computer Use）", platforms: ["darwin"] },
 };
+
+/** 单个可更新工具的包名 / 显示名（**唯一真相源**）：自动更新板块从这里取，⛔ 不许另抄一份包名。 */
+export function updateableToolMeta(id: string): { pkg: string; label: string } | null {
+  const tool = UPDATEABLE_TOOLS[id];
+  return tool ? { pkg: tool.pkg, label: tool.label } : null;
+}
+
+export type RuntimeUpdateRow = {
+  id: string;
+  name: string;
+  pkg: string;
+  current: string;
+  latest: string;
+  registry: string;
+  hasUpdate: boolean;
+  error: string;
+};
+
+/** 当前平台**真正**可更新的工具 id（桌面 → 浏览器 → 电脑操作，顺序稳定）。
+ *  ⛔ 界面与后台调度都必须走这里，别各写一份清单（本项目反复栽在两处各写一套上）。 */
+export function updateableToolIds(): string[] {
+  return Object.keys(UPDATEABLE_TOOLS).filter((id) => {
+    const platforms = UPDATEABLE_TOOLS[id].platforms;
+    return !platforms || platforms.includes(process.platform);
+  });
+}
 
 /** 读磁盘上已装的版本号（双落位都查；读不到返回空串 = 当未安装）。 */
 function installedVersionOf(id: string): string {
@@ -601,6 +631,60 @@ async function fetchRegistryLatest(
     }
   }
   throw new Error(`查最新版本失败（国内镜像与官方源都试过了）：${lastError}`);
+}
+
+/* ── 手动/自动共用的两条链路（10-13 抽出）────────────────────────────────────
+ * ⛔⛔ **手动链 = 自动链，物理同一份函数**：后台自动更新（auto-update-ipc）必须调这两个函数，
+ *    不许在主进程再抄一遍「查最新版 → 装 → 复核 → 重启引擎」——两处各写判据必漂移
+ *    （症状：界面说「已是最新」、后台却在偷偷装，或反之）。界面按钮只是这两个函数的薄包装。
+ */
+export async function checkRuntimeUpdateRow(id: string): Promise<RuntimeUpdateRow> {
+  const tool = UPDATEABLE_TOOLS[id];
+  if (!tool) throw new Error(`该工具不支持在线更新：${id}`);
+  const source = await readDownloadSource();
+  const current = installedVersionOf(id);
+  try {
+    const { version: latest, registry } = await fetchRegistryLatest(tool.pkg, source);
+    return { id, name: tool.label, pkg: tool.pkg, current, latest, registry, hasUpdate: !current || compareVersions(latest, current) > 0, error: "" };
+  } catch (error) {
+    // ⛔ 查不到最新版**不是致命错**：照常返回已装版本，错误原文给人看（网络问题用户自己能判断）
+    return { id, name: tool.label, pkg: tool.pkg, current, latest: "", registry: "", hasUpdate: false, error: (error as Error)?.message ?? String(error) };
+  }
+}
+
+/** 返回 `joined` = 同一工具已有更新在跑，本次只是等它跑完（与 install 同语义，不抛「正在安装」）。 */
+export async function performRuntimeUpdate(
+  id: string,
+): Promise<{ ok: boolean; from: string; to: string; cancelled?: boolean; joined?: boolean }> {
+  const tool = UPDATEABLE_TOOLS[id];
+  if (!tool) throw new Error(`该工具不支持在线更新：${id}`);
+  const inFlight = runtimeInstalls.get(id);
+  if (inFlight) { await inFlight; return { ok: true, joined: true, from: "", to: installedVersionOf(id) }; }
+  const from = installedVersionOf(id);
+  const downloadSource = await readDownloadSource();
+  const task = (async () => {
+    emitRuntimeProgress(id, `@@STAGE 更新 ${tool.label}`);
+    emitRuntimeProgress(id, `正在从国内镜像更新 ${tool.pkg}@latest（当前 ${from || "未知"}）…`);
+    await runNpmInstall(id, `${tool.pkg}@latest`, tool.label, downloadSource);
+    // 引擎重启会等当前任务跑完（闸门），期间界面显示「等待任务结束后刷新引擎」
+    await restartServerWhenIdle(id);
+  })();
+  runtimeInstalls.set(id, task);
+  try {
+    await task;
+    const to = installedVersionOf(id);
+    // ⛔ 复核：命令退出码 0 ≠ 装上了（落位/权限/半截网络都可能「成功退出」）
+    if (!to) throw new Error(`${tool.label} 更新命令已跑完，但读不到已装版本 —— 请点「修复安装」回到随包版本`);
+    sendToWindow("runtime:progress", { id, message: `已更新到 ${to}`, percent: 100, speed: "", done: true });
+    return { ok: true, from, to };
+  } catch (error) {
+    // 取消（杀进程导致的非零退出）不算错误：回执 cancelled，与 install 同一口径
+    if (isCancelRequested(id)) return { ok: true, cancelled: true, from, to: "" };
+    throw error;
+  } finally {
+    runtimeInstalls.delete(id);
+    clearCancelRequest(id);
+  }
 }
 
 const RUNTIME_CHANNELS = ["runtime:list", "runtime:install", "runtime:uninstall", "runtime:cancel", "runtime:health", "runtime:update-check", "runtime:update"];
@@ -814,55 +898,15 @@ export const runtimeFeature = defineFeature<null>({
      * runtime:update       —— 真装：`<pkg>@latest` 从国内镜像进 tools/npm-global，复核版本后重启引擎。
      * ⛔ 传 id 返回单条；不传返回**全部**可更新工具（界面一次拿全，免得渲染层再抄一份清单）。 */
     ipcHost.handle("runtime:update-check", async (_event, idValue?: string) => {
-      const source = await readDownloadSource();
-      const ids = idValue ? [idValue] : Object.keys(UPDATEABLE_TOOLS);
-      const rows = await Promise.all(ids.map(async (id) => {
-        const tool = UPDATEABLE_TOOLS[id];
-        if (!tool) throw new Error(`该工具不支持在线更新：${id}`);
-        const current = installedVersionOf(id);
-        try {
-          const { version: latest, registry } = await fetchRegistryLatest(tool.pkg, source);
-          return { id, name: tool.label, pkg: tool.pkg, current, latest, registry, hasUpdate: !current || compareVersions(latest, current) > 0, error: "" };
-        } catch (error) {
-          // ⛔ 查不到最新版**不是致命错**：界面照常显示已装版本，错误原文给人看（网络问题用户自己能判断）
-          return { id, name: tool.label, pkg: tool.pkg, current, latest: "", registry: "", hasUpdate: false, error: (error as Error)?.message ?? String(error) };
-        }
-      }));
+      // ⛔ 清单走 updateableToolIds()（按平台过滤），别用 Object.keys(UPDATEABLE_TOOLS)
+      const ids = idValue ? [idValue] : updateableToolIds();
+      const rows = await Promise.all(ids.map((id) => checkRuntimeUpdateRow(id)));
       return idValue ? rows[0] : rows;
     });
 
     ipcHost.handle("runtime:update", async (_event, idValue: string) => {
-      const id = idValue as DevRuntimeId;
-      const tool = UPDATEABLE_TOOLS[id];
-      if (!tool) throw new Error(`该工具不支持在线更新：${idValue}`);
-      // 同一工具并发：等它跑完（与 runtime:install 同语义），不要抛「正在安装」
-      const inFlight = runtimeInstalls.get(id);
-      if (inFlight) { await inFlight; return { ok: true, joined: true, runtimes: runtimeList() }; }
-      const from = installedVersionOf(id);
-      const downloadSource = await readDownloadSource();
-      const task = (async () => {
-        emitRuntimeProgress(id, `@@STAGE 更新 ${tool.label}`);
-        emitRuntimeProgress(id, `正在从国内镜像更新 ${tool.pkg}@latest（当前 ${from || "未知"}）…`);
-        await runNpmInstall(id, `${tool.pkg}@latest`, tool.label, downloadSource);
-        // 引擎重启会等当前任务跑完（闸门），期间界面显示「等待任务结束后刷新引擎」
-        await restartServerWhenIdle(id);
-      })();
-      runtimeInstalls.set(id, task);
-      try {
-        await task;
-        const to = installedVersionOf(id);
-        // ⛔ 复核：命令退出码 0 ≠ 装上了（落位/权限/半截网络都可能「成功退出」）
-        if (!to) throw new Error(`${tool.label} 更新命令已跑完，但读不到已装版本 —— 请点「修复安装」回到随包版本`);
-        sendToWindow("runtime:progress", { id, message: `已更新到 ${to}`, percent: 100, speed: "", done: true });
-        return { ok: true, from, to, runtimes: runtimeList() };
-      } catch (error) {
-        // 取消（杀进程导致的非零退出）不算错误：回执 cancelled，与 install 同一口径
-        if (isCancelRequested(id)) return { ok: true, cancelled: true, runtimes: runtimeList() };
-        throw error;
-      } finally {
-        runtimeInstalls.delete(id);
-        clearCancelRequest(id);
-      }
+      const result = await performRuntimeUpdate(idValue);
+      return { ...result, runtimes: runtimeList() };
     });
 
     ctx.effect(() => {

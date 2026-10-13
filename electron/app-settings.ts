@@ -93,6 +93,21 @@ export type AppSettings = {
    *   下个周期再试，绝不打断启动。
    */
   skillAutoUpdate?: boolean;
+  /**
+   * 自动化能力与引擎的自动更新（10-13 用户令）：四类**各自独立、互不影响**，缺省即**开启**。
+   *   · autoUpdateDesktop     = 桌面自动化（nuphus MCP，`@nuphus/nuphus-mcp`）
+   *   · autoUpdateBrowser     = 浏览器自动化（playwright-cli，`@playwright/cli`）
+   *   · autoUpdateComputerUse = Mac 电脑操作（`open-computer-use`，仅 macOS 生效，其它平台恒跳过）
+   *   · autoUpdateEngine      = Codex 引擎本体（`@openai/codex`）
+   * ⛔ 缺省值判据统一走 `autoUpdateEnabled(settings, key)`（**`!== false`**）—— 字段不存在 = 开；
+   *   ⛔ 别在别处另写一份默认判断（本项目反复栽在两处各写一套上）。
+   * ⛔ 更新源统一走国内镜像（npmmirror），失败回落官方源 —— 与手动更新**同一条链路**。
+   * ⛔ 后台更新只在「开关开 + 确有新版」时才动盘；单类失败只跳过该类，下周期再试，绝不打断启动。
+   */
+  autoUpdateDesktop?: boolean;
+  autoUpdateBrowser?: boolean;
+  autoUpdateComputerUse?: boolean;
+  autoUpdateEngine?: boolean;
   /** 语气自适应（默认开）：按会话维护少量状态（心情/精力/默契），随会话自己的
    *  developer instructions 下发一句「只影响说法、不影响内容」的语气指引。
    *  状态按会话各自一份（agent-mood-<threadId>），关掉即停止更新与注入。 */
@@ -180,4 +195,19 @@ export async function saveAppSettings(userData: string, patch: Partial<AppSettin
 export function invalidateAppSettings() {
   cached = null;
   cachedFor = "";
+}
+
+/**
+ * 自动化 / 引擎自动更新开关的**唯一默认判据**（10-13）。
+ *
+ * ⛔ 缺省 = 开启（`!== false`）：用户要求「开关默认状态为开启」，而老配置的 JSON 里根本没有这些字段，
+ *    若用 `=== true` 判定，升级后所有人的自动更新会**静默关闭** —— 与需求相反。
+ * ⛔ 只有显式写成 `false` 才算关；任何其它假值（undefined / null 之外的脏数据）一律按开启处理，
+ *    不做「脏值回退默认」的花活，因为这里没有需要保护的边界（最坏结果是多查一次 registry）。
+ */
+export function autoUpdateEnabled(
+  settings: AppSettings,
+  key: "autoUpdateDesktop" | "autoUpdateBrowser" | "autoUpdateComputerUse" | "autoUpdateEngine",
+): boolean {
+  return settings?.[key] !== false;
 }

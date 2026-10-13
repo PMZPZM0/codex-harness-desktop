@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（90 个能力域 / 468 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（91 个能力域 / 470 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -415,4 +415,8 @@ RPA 配方（录制好的桌面自动化流程）
 ### history（1 通道）
 跨会话历史搜索（全文检索会话与消息，命中按会话分组）
 通道：history:search
+
+### autoUpdate（2 通道）
+自动化能力与引擎的**后台自动更新**：四类（桌面自动化 nuphus / 浏览器自动化 playwright-cli / Mac 电脑操作 open-computer-use / Codex 引擎）各一个独立开关（缺省即开，存 app-settings.json），开启后主进程定时静默拉取国内镜像最新版并更新，成功发系统通知。⛔ 手动更新与后台更新走**同一批函数**，不存在两套判据
+通道：autoUpdate:status, autoUpdate:set
 `;

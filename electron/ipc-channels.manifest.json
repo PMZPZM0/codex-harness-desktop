@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 468,
+  "count": 470,
   "channels": [
     {
       "name": "request",
@@ -4651,6 +4651,26 @@
       "invokeArgs": "",
       "cast": null,
       "note": "免费模型网关：卸载（停侧车 + 删本体 + 删数据目录；供应商注册由渲染层调 custom-model:remove 移除）"
+    },
+    {
+      "name": "readAutoUpdateStatus",
+      "channel": "autoUpdate:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ id: string; kind: \"tool\" | \"engine\"; label: string; pkg: string; enabled: boolean; current: string; latest: string; hasUpdate: boolean; error: string }[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "10-13 新增：四类自动更新（桌面自动化 / 浏览器自动化 / Mac 电脑操作 / Codex 引擎）的开关状态与版本号。⛔ 清单与包名来自 runtime-ipc 的 UPDATEABLE_TOOLS 单一真相源（按平台过滤，非 mac 不出 computer-use）；引擎项由 engine-ipc 的 checkEngineUpdateInfo 供数"
+    },
+    {
+      "name": "setAutoUpdate",
+      "channel": "autoUpdate:set",
+      "paramsImpl": "id: string, enabled: boolean",
+      "paramsDecl": "id: string, enabled: boolean",
+      "returns": "Promise<{ id: string; enabled: boolean }>",
+      "invokeArgs": "id, enabled",
+      "cast": null,
+      "note": "10-13 新增：单独开关某一类自动更新（四个开关互相独立，patch 只写对应那一个 AppSettings 字段）；缺省值判据统一走 autoUpdateEnabled（!== false ⇒ 默认开）"
     }
   ]
 }

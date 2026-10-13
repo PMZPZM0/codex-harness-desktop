@@ -1301,6 +1301,14 @@
   font-size: 12px;
   line-height: 1.6;
 }
+/* 10-13 自动化卡片上的版本号（桌面 / 浏览器自动化）：版本号只在读到时才渲染，
+   所以这行不能占位 —— 由内容自己撑开，读不到就整行不存在。 */
+.hub-card-version {
+  color: var(--faint);
+  font-size: 10.5px;
+  font-style: normal;
+  letter-spacing: 0.02em;
+}
 .settings-back-row {
   cursor: pointer;
   color: var(--muted);

@@ -386,6 +386,10 @@ export const IPC_DOMAINS: IpcDomainEntry[] = [
     channels: ["history:search"],
     note: "09-24 新增：顶栏 🔍 历史会话搜索。真相源 = rollout 原档（sessions/** + archived_sessions/**）；indexOf 快速否决 + >32MB 跳过计数 + mtime 倒序提前收工",
   },
+  { prefix: "autoUpdate", count: 2, status: "in-features", file: "features/auto-update-ipc.ts",
+    channels: ["autoUpdate:status", "autoUpdate:set"],
+    note: "10-13 新增：四类能力的后台自动更新（桌面自动化 nuphus / 浏览器自动化 playwright-cli / Mac 电脑操作 open-computer-use / Codex 引擎）。⛔ 手动链与自动链**共用** runtime-ipc、engine-ipc 导出的同一批函数；四个开关各自一个 AppSettings 字段、缺省即开；更新源沿用各链路既有的「国内镜像优先」",
+  },
 ];
 
 /** 按通道（完整 channel 名）查所属域条目 */
