@@ -111,6 +111,20 @@ export const COMPONENT_SPECS: readonly ComponentSpec[] = [
     dynamic: false,
   },
   {
+    id: "computer-use",
+    kind: "npm-tool",
+    label: "Mac 电脑操作（Computer Use）",
+    group: "工具",
+    pkg: "open-computer-use",
+    channel: "npm",
+    mirror: true,
+    reason: "npm 包，走 npmmirror",
+    dynamic: false,
+    // ⛔ 只在 mac 随包安装；Windows 上既没装也不该提示（列出来会永远显示「未检测到已装版本」，
+    //    后台还会为它白跑一次 npm 安装）—— 由 visibleSpecs() 按平台过滤掉。
+    platforms: ["darwin"],
+  },
+  {
     id: "cloakbrowser",
     kind: "npm-tool",
     label: "指纹浏览器（CloakBrowser）",
@@ -123,13 +137,17 @@ export const COMPONENT_SPECS: readonly ComponentSpec[] = [
   },
   {
     id: "kb-embedding",
-    kind: "npm-tool",
-    label: "知识库语义检索后端",
-    group: "工具",
+    kind: "unsupported",
+    label: "知识库语义检索后端（kb-embedding）",
+    group: "不可单独更新",
     pkg: "@huggingface/transformers",
-    channel: "npm",
-    mirror: true,
-    reason: "npm 包 + hf-mirror 模型源，均为国内可用镜像",
+    channel: "none",
+    mirror: false,
+    // ⛔ 诚实标注：它**不是**「装一个 npm 包」这么简单 —— 安装链还包含模型权重预下载
+    //    （hf-mirror）、按平台裁剪 onnxruntime 二进制、落 worker。把它塞进普通的
+    //    npm 更新路径会跳过裁剪，重装后多出几百 MB 无用二进制。要更新请走知识库页的
+    //    「卸载 → 重新安装」，那条路能完整跑完三步。
+    reason: "安装链是「npm 装包 + 模型权重预下载 + 按平台裁剪二进制 + 落 worker」四步，不是单包 npm install；走通用 npm 更新会跳过裁剪步骤。需要新版本请用知识库页的「卸载 → 重新安装」，那条路会完整跑完四步",
     dynamic: false,
   },
   {

@@ -552,6 +552,9 @@ const UPDATEABLE_TOOLS: Record<string, { pkg: string; label: string; platforms?:
   //    <tools>/npm-global），Windows/Linux 上既没装也不该提示 —— 列出来会永远显示「未检测到已装版本」，
   //    后台自动更新还会为它白跑一次 npm 安装。故带 platforms 约束，由 updateableToolIds() 统一过滤。
   "computer-use": { pkg: "open-computer-use", label: "Mac 电脑操作（Computer Use）", platforms: ["darwin"] },
+  // 10-13 统一更新体系纳入：指纹浏览器就是个普通的 npm 包，装在同一套 npm-global 落位里，
+  //   installedVersionOf / runNpmInstall 对它完全成立 ⇒ 不需要为它单写一条路径。
+  cloakbrowser: { pkg: "cloakbrowser", label: "CloakBrowser 指纹浏览器" },
 };
 
 /** 单个可更新工具的包名 / 显示名（**唯一真相源**）：自动更新板块从这里取，⛔ 不许另抄一份包名。 */
