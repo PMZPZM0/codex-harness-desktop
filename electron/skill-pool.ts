@@ -24,6 +24,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { globalSkillsDir, MEMORY_MCP_BACKEND_SKILL, SKILL_FILE, SKILL_FILE_DISABLED, SKILL_FILE_POOL_DISABLED } from "./skill-pack";
 import { codexHome as codexHomeRef } from "./runtime-refs";
+import { skillFolderSlug } from "./skills-market";
 
 export const SKILL_POOL_FILE = path.join(".codex-harness", "skill-pool.json");
 
@@ -90,6 +91,34 @@ function listGlobalSkillDirs(codexHome: string): { dir: string; name: string; en
 }
 
 /**
+ * 自愈：把**本应用自己装出来的**「点开头」技能目录改成合法名（10-13 体检 P1-2）。
+ *
+ * ⛔ 为什么必须自愈而不是只修安装器：`李白.Skill` 那类「CJK + 拉丁后缀」的名字，旧
+ *    `safeFolder` 会把 CJK 折成 `-`、再剥前导 `-` ⇒ **暴露出一个 `.`** ⇒ 落成 `.Skill-libai`。
+ *    点开头的目录在本应用里等于「不是用户技能」（本文件、skill-pack、两个插件市场、
+ *    commands 五处扫描都直接 continue）⇒ 技能装了但谁都看不见。修安装器只能防新的，
+ *    已经装下去的那些必须就地改名才救得回来。
+ * ⛔ 范围**只限带我们自己的市场清单**（`.skillhub.json` / `.cocoloop.json`）的目录 ——
+ *    那是我们的落点；用户自己建的 `.xxx` 一律不碰。目标名与安装器同一函数（`skillFolderSlug`），
+ *    幂等（改完就不再以点开头）、目标已存在就跳过、失败静默（启动链旁路纪律）。
+ */
+function healMisnamedSkillDirs(root: string): void {
+  let entries: fs.Dirent[];
+  try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { return; }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.startsWith(".")) continue;
+    const from = path.join(root, entry.name);
+    const isOurs = fs.existsSync(path.join(from, ".skillhub.json")) || fs.existsSync(path.join(from, ".cocoloop.json"));
+    if (!isOurs) continue;
+    const next = skillFolderSlug(entry.name);
+    if (!next || next.startsWith(".") || next === entry.name) continue;
+    const to = path.join(root, next);
+    if (fs.existsSync(to)) continue; // 目标名已被占：留给用户处理，绝不覆盖
+    try { fs.renameSync(from, to); } catch { /* 单个失败不影响其它，也不阻塞会话启动 */ }
+  }
+}
+
+/**
  * 把「全局停用集 ∪ 项目禁用集」投影到磁盘改名状态。幂等；失败静默（启动链旁路纪律）。
  *
  * ⛔ 磁盘形态区分（变异实测踩出来的竞态）：池投影停用用**专属后缀 `.pool-disabled`**，
@@ -102,6 +131,8 @@ function listGlobalSkillDirs(codexHome: string): { dir: string; name: string; en
 export function syncSkillPool(cwd: string): void {
   const codexHome = codexHomeRef;
   try {
+    // 先修历史落点（点开头的技能对技能池不可见 ⇒ 不修的话下面的投影永远漏掉它们）
+    healMisnamedSkillDirs(globalSkillsDir(codexHome));
     const dirs = listGlobalSkillDirs(codexHome);
     let global = readGlobalDisabled(codexHome);
     const project = readSkillPool(cwd);

@@ -408,7 +408,12 @@ export async function installCodexMarketPlugin(input: { plugin: CodexMarketPlugi
   }
 }
 
-function safeFolder(value: string) { return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 72) || "plugin"; }
+/* ⛔ 归一后不许以点开头：点开头的目录被本文件上面的扫描当成「非插件」直接跳过
+   （同日同型坑：市场技能 `李白.Skill` 被折成 `.Skill-libai`，装了但谁都不认）。
+   修法：首尾的 `.` 与 `-` 一起剥，而不是只剥 `-`。 */
+function safeFolder(value: string) {
+  return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^[.-]+|[.-]+$/g, "").slice(0, 72) || "plugin";
+}
 
 /**
  * 维护本地 marketplace 的 .claude-plugin/marketplace.json（引擎认可的三种 manifest 之一，

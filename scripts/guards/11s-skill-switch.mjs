@@ -19,7 +19,7 @@
  * ⛔ 负向断言一律先剥注释（`codeOnly`）：本文件头注就在讲这些坑，裸 `!/…/` 会被自己打成假红。
  */
 import Module, { createRequire } from "node:module";
-import { existsSync, mkdtempSync, readFileSync, rmSync, copyFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, copyFileSync, mkdirSync, writeFileSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ROOT } from "./_ctx.mjs";
@@ -132,6 +132,31 @@ ok(/if \(isOutputStyleSkill\(name\)\) await refreshDeveloperInstructions\(\)/.te
 ok(/if \(model\) await applyCustomModel\(model\)/.test(codeOnly(skillDisciplineSrc)) && /await server\.restart\(\)/.test(codeOnly(skillDisciplineSrc)),
   "⛔⛔ 重下发必须落到重写 config.toml / 重启引擎 —— 引擎只在 spawn 时读 config.toml，只改文件 = 改了没生效");
 
+/* ── ③d 技能落点目录名：**绝不许以点开头**（10-13 体检 P1-2 实测）─────────────
+   实测形状：市场技能名 `李白.Skill`。旧归一（CJK→`-`，再剥前导 `-`）会把 CJK 段折成 `-`，
+   剥掉后又**暴露出后面的 `.`** ⇒ 落成 `.Skill-libai`。而「点开头的目录」在本应用里等于
+   「不是用户技能」—— 技能池、skill-pack 扫描、两个插件市场、commands 五处都直接 `continue`
+   ⇒ 技能装了但**谁都看不见**（只有设置页那份 local-list 认它），用户看到的是"装了不生效"。
+   ⛔ 两层判据：① 写入侧归一不再产出点开头；② 已有落点要**自愈**（只修安装器救不回旧的）。 */
+const marketSrc = read("electron/skills-market.ts");
+ok(/export function skillFolderSlug/.test(codeOnly(marketSrc)) && marketSrc.includes("/^[.-]+|[.-]+$/g"),
+  "⛔ skillFolderSlug 把**首尾的 . 与 - 一起**剥掉（不是只剥 -）");
+ok(!marketSrc.includes("/^-+|-+$/g"),
+  "⛔ 负向：旧的「只剥连字符」归一规则已消失（那正是 `.Skill-libai` 的来源）");
+ok(/skillFolderSlug\(skill\.name\)/.test(codeOnly(marketSrc)) && /skillFolderSlug\(skill\.id\)/.test(codeOnly(marketSrc)),
+  "⛔ 市场技能安装落点走 skillFolderSlug（唯一口径）");
+for (const [label, file] of [["codex-market", "electron/codex-market.ts"], ["codex-official-market", "electron/codex-official-market.ts"]]) {
+  const src = read(file);
+  ok(src.includes("/^[.-]+|[.-]+$/g") && !src.includes("/^-+|-+$/g"),
+    `⛔ ${label} 的 safeFolder 同样归一后不许以点开头（插件目录吃同一条规则，同型坑）`);
+}
+ok(/healMisnamedSkillDirs\(globalSkillsDir\(codexHome\)\)/.test(codeOnly(poolSrc)),
+  "⛔ 池投影前先**自愈**历史落点（只修安装器救不回已经装下去的那些）");
+ok(/skillFolderSlug\(entry\.name\)/.test(codeOnly(poolSrc)),
+  "⛔ 自愈的目标名与安装器**同函数**（不给第二份归一规则）");
+ok(/\.skillhub\.json/.test(codeOnly(poolSrc)) && /\.cocoloop\.json/.test(codeOnly(poolSrc)),
+  "⛔ 自愈只针对带我们市场清单的目录（用户自己建的 `.xxx` 一律不碰）");
+
 /* ── ④ 通道与 registry 账本 ───────────────────────────────────────────── */const CHANNELS = ["skills:builtin-switch-get", "skills:builtin-switch-set"];
 for (const ch of CHANNELS) {
   const entry = manifest.channels.find((c) => c.channel === ch);
@@ -151,7 +176,6 @@ ok(regChannels.length === skillsInManifest.length && regChannels.every((c) => sk
 const root = mkdtempSync(path.join(os.tmpdir(), "skills-switch-"));
 const userData = path.join(root, "userData");
 const projectDir = path.join(root, "project");
-const { mkdirSync } = await import("node:fs");
 mkdirSync(userData, { recursive: true });
 mkdirSync(projectDir, { recursive: true });
 
@@ -250,6 +274,23 @@ try {
   await builtin.ensureBuiltinSkills(skillsDir);
   const s7 = snap();
   ok(s7.on === false && s7.poolOff === true, "真跑：并存态被**自愈**（关了就是关了，不让引擎再扫到）");
+  /* ── 自愈：点开头的市场技能落点（10-13 体检实测形状，用真目录跑）─────────────
+     ⛔ 造的是**线上用户磁盘上的真实形态**：目录名带前导点 + 我们自己的市场清单。 */
+  const dotSkill = path.join(skillsDir, ".Skill-libai");
+  mkdirSync(dotSkill, { recursive: true });
+  writeFileSync(path.join(dotSkill, "SKILL.md"), "---\nname: 李白.Skill\n---\nbody\n", "utf8");
+  writeFileSync(path.join(dotSkill, ".skillhub.json"), JSON.stringify({ marketId: "libai" }), "utf8");
+  const userDotSkill = path.join(skillsDir, ".我的私有目录");
+  mkdirSync(userDotSkill, { recursive: true });
+  writeFileSync(path.join(userDotSkill, "SKILL.md"), "---\nname: mine\n---\nbody\n", "utf8");
+  pool.syncSkillPool(projectDir);
+  ok(existsSync(path.join(skillsDir, "Skill-libai", "SKILL.md")) && !existsSync(dotSkill),
+    "真跑：点开头的市场技能落点被自愈成 Skill-libai（改名后技能池/市场扫描才看得到它）");
+  ok(existsSync(path.join(userDotSkill, "SKILL.md")),
+    "真跑：用户自己建的点开头目录**不碰**（自愈只认带我们市场清单的）");
+  const leftoverDotDirs = readdirSync(skillsDir).filter((n) => n.startsWith(".") && n !== ".system" && n !== ".我的私有目录");
+  ok(leftoverDotDirs.length === 0,
+    `真跑：除 .system 与用户自建目录外，技能根下不再有点开头目录（实际：${leftoverDotDirs.join(" / ") || "无"}）`);
 } catch (error) {
   ok(false, `真跑段抛异常：${String(error && error.stack || error).slice(0, 300)}`);
 } finally {
