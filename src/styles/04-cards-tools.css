@@ -540,6 +540,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 内嵌形态（10-13 用户令「网页来源放到下面吧，跟下面这个在一行」）：贴 MessageFooter 行尾 */
+.message-footer .completed-web-inline {
+  margin-left: auto;
+  border-top: none;
+  padding: 0 0 0 8px;
+}
 
 /* ── 文件类型图标（10-06，FileTypeIcon：运行中板块 / 编辑卡行 / 汇报卡行三处共用）──── */
 .file-type-icon {

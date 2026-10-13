@@ -16,6 +16,7 @@ import { HookBadge } from "../../session-cards";
 import { RunningProcessTime, CompletedChanges } from "../../status";
 import { CircleStop, AlertTriangle, FileText, Brain, ChevronDown } from "lucide-react";
 import { MessageFooter } from "../../shared/MessageFooter";
+import { collectTurnWebSources } from "../../../lib/turn-web-sources.mjs";
 import { UserMessageView } from "../../shared/UserMessageView";
 import { isTaskTurn } from "../SessionTurn";
 import { Slot } from "../../../runtime/Slot";
@@ -164,7 +165,7 @@ export function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForAp
               </div>
             </div>
           )}
-          {turnFinished && finalAgent && <MessageFooter item={finalAgent} turn={turn} usage={usage} tokenUsage={tokenUsage} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onFork={() => handlers.onFork(turn.id)} extraIcon={hookBadge} />}
+          {turnFinished && finalAgent && <MessageFooter item={finalAgent} turn={turn} usage={usage} tokenUsage={tokenUsage} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onFork={() => handlers.onFork(turn.id)} extraIcon={hookBadge} webSources={collectTurnWebSources(turn)} />}
           {/* 10-04 第 9 个插槽位：**回合内容之下**（codex-turn 之内、气泡区末尾）。
               行级插槽 —— 每个回合渲染一次。⛔ 必须传 turnId：插件拿到才知道
               自己作用在哪一回合（与 sidebar.thread-row-actions 同一条纪律：拿不到 id

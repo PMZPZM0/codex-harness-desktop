@@ -61,32 +61,41 @@ const ok = (condition, message) => {
     "空回合 / 缺字段安全（不抛）");
 }
 
-/* ── 二、静态接线（渲染层）────────────────────────────────────────────── */
+/* ── 二、静态接线（渲染层；10-13 用户令「放到下面吧，跟下面这个在一行」→ 迁到 MessageFooter）── */
 {
   const status = read("src/features/status/Status.tsx");
   const comp = read("src/features/status/TurnWebSources.tsx");
+  const footer = read("src/features/shared/MessageFooter.tsx");
+  const turnView = read("src/features/session-turn/SessionTurn/03-turn-view.tsx");
   const css = read("src/styles/04-cards-tools.css");
   const compCode = codeOnly(comp);
 
-  ok(status.includes('from "../../lib/turn-web-sources.mjs"') && status.includes("collectTurnWebSources(turn)"),
-    "汇总卡从纯函数模块取回合网页来源（单一口径）");
-  ok(status.includes("!webSources.length) return null") && status.includes("!files.length) return <TurnWebSources"),
-    "零文件改动但有网页来源时也显示（纯检索回合同样有得汇报）");
-  ok((status.match(/<TurnWebSources sources=\{webSources\} \/>/g) ?? []).length >= 2,
-    "TurnWebSources 接进汇总卡（卡内 + 零文件两处）");
+  ok(turnView.includes('from "../../../lib/turn-web-sources.mjs"') && turnView.includes("webSources={collectTurnWebSources(turn)}"),
+    "回合视图把纯函数提取的来源传进 MessageFooter（单一口径）");
+  ok(/webSources\?: Array<\{ url: string; host: string \}>/.test(footer),
+    "MessageFooter 挂 webSources 插槽 prop");
+  ok(/\{isAgent && webSources && webSources\.length > 0 && <TurnWebSources sources=\{webSources\} inline \/>\}/.test(footer),
+    "MessageFooter 行尾渲染来源条（跟 分支/耗时/token/收藏 同一行）；⛔ 有来源才渲染");
+  ok(footer.indexOf("{extraIcon}") < footer.indexOf("<TurnWebSources sources={webSources} inline />"),
+    "来源条贴 footer 最右端（extraIcon 之后）");
+  const statusCode = codeOnly(status);
+  ok(!statusCode.includes("TurnWebSources") && !statusCode.includes("turn-web-sources"),
+    "⛔ 汇总卡不再渲染来源条（挪进 footer 后别留两份 —— 单一挂载点）");
 
   ok(/export const WEB_SOURCE_VISIBLE = 3/.test(compCode), "最多直显 3 个圆标（用户定稿）");
   ok(compCode.includes("createPortal(") && compCode.includes("document.body"), "全量弹层 portal 到 body（回合卡恒等 transform 会降级 fixed）");
   ok(compCode.includes("window.codex.openExternal"), "点击走默认浏览器（openExternal）");
-  ok(compCode.includes("s2/favicons") && compCode.includes("favicon.im") && compCode.includes("web-favicon-fallback"),
+  ok(compCode.includes("favicon.im") && compCode.includes("s2/favicons") && compCode.includes("web-favicon-fallback"),
     "favicon 两级远程源 + 首字母色块兜底");
   ok(compCode.indexOf("const [openAll, setOpenAll] = useState(false);") < compCode.indexOf("if (!sources.length) return null;"),
     "⛔ hooks 在 early return 之前（运行中 sources 从 0 长出来时不崩 hook 序）");
   ok(compCode.includes('aria-label={`查看全部 ${sources.length} 个网页来源`}') && compCode.includes("web-favicon-more"),
     "「···」三点钮 = 查看全部（多出 rest 个）");
 
-  ok(/\.completed-web-row \{[^}]*justify-content: flex-end;/.test(css) && /\.web-favicon \{[^}]*border-radius: 50%;/.test(css),
-    "来源条右下角对齐 + 圆标形态");
+  ok(/\.web-favicon \{[^}]*border-radius: 50%;/.test(css) && /completed-web-inline/.test(comp),
+    "圆标形态 + inline 形态类");
+  ok(/\.message-footer \.completed-web-inline \{[^}]*margin-left: auto;[^}]*border-top: none;/.test(css),
+    "footer 内嵌：margin-left auto 贴行尾 + 去掉卡片里的分隔线");
   ok(/\.completed-web-pop \{[^}]*position: fixed;[^}]*z-index: 1000;/.test(css), "弹层 fixed + 轻浮层档 z-index 1000");
 }
 
