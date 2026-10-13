@@ -144,7 +144,7 @@ out.absOk=m.normalizeBackupDir(root).dir===root && m.normalizeBackupDir(root).fa
 out.notCreatedYet=!fs.existsSync(root);
 out.ensureWorks=m.ensureBackupDir(root)===true && fs.existsSync(root);
 // ⑤ 落一份备份并回读结构
-m.writeChangeBackup("conv-1","req-1",[{filePath:"D:/x/a.ts",action:"modify",additions:10,deletions:2,hunks:[{oldStart:1,oldLines:2,newStart:1,newLines:3,lines:["a","b"]}]}]).then((r)=>{
+m.writeChangeBackup("conv-1","req-1",[{filePath:"D:/x/a.ts",action:"modify",additions:10,deletions:2,hunks:[{oldStart:1,oldLines:2,newStart:1,newLines:3,lines:["a","b"]}]}], { root }).then((r)=>{
   out.writeOk=r.ok===true;
   out.idx=fs.existsSync(path.join(root,"changes-index","conv-1.json"));
   const idx=JSON.parse(fs.readFileSync(path.join(root,"changes-index","conv-1.json"),"utf8"));
@@ -155,7 +155,7 @@ m.writeChangeBackup("conv-1","req-1",[{filePath:"D:/x/a.ts",action:"modify",addi
   out.detailName=/^cd_[0-9a-f-]{36}\\.[0-9a-f-]{36}\\.json$/.test(det);
   out.detailHasHunks=JSON.parse(fs.readFileSync(path.join(root,"changes-detail","conv-1",det),"utf8")).change.files[0].hunks.length===1;
   // 同 requestId 重跑 ⇒ 原地替换不重复
-  return m.writeChangeBackup("conv-1","req-1",[{filePath:"D:/x/a.ts",action:"modify",additions:1,deletions:0}]).then(()=>{
+  return m.writeChangeBackup("conv-1","req-1",[{filePath:"D:/x/a.ts",action:"modify",additions:1,deletions:0}], { root }).then(()=>{
     const idx2=JSON.parse(fs.readFileSync(path.join(root,"changes-index","conv-1.json"),"utf8"));
     out.dedup=idx2.changes.length===1;
     out.readBack=m.readChangeBackups("conv-1",root).length===1;
@@ -163,7 +163,7 @@ m.writeChangeBackup("conv-1","req-1",[{filePath:"D:/x/a.ts",action:"modify",addi
     out.summaryCount=s.changes===1 && s.conversations===1 && s.bytes>0;
     // 空变更不写
     const before=m.readChangeBackups("conv-1",root).length;
-    return m.writeChangeBackup("conv-1","req-2",[]).then((r2)=>{
+    return m.writeChangeBackup("conv-1","req-2",[], { root }).then((r2)=>{
       out.emptySkipped=r2.ok===true && m.readChangeBackups("conv-1",root).length===before;
       // 清空
       out.cleared=m.clearChangeBackups(root)===true && m.readChangeBackups("conv-1",root).length===0;
