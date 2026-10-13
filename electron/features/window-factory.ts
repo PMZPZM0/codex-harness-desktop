@@ -15,7 +15,7 @@ import { applyRoundedCorners } from "../win-rounded-corners";
 import { popoutBusWindows, registerBusWindow, unregisterBusWindow } from "../features/window-bus";
 import { flushBootTiming, markBoot } from "../boot-timing";
 import { installContextMenu } from "../main/10-window-menu";
-import { closeToTrayEnabled, engineActiveTurnIds, notifyPopoutClosed, popoutThreadIds, titleBarOverlayOptions } from "../runtime-refs";
+import { closeToTrayEnabled, closePromptSeen, engineActiveTurnIds, rememberCloseChoice, notifyPopoutClosed, popoutThreadIds, titleBarOverlayOptions } from "../runtime-refs";
 import { closePetWindow } from "./pet-window";
 import { mutableState } from "../main";
 export function createWindow() {
@@ -119,12 +119,13 @@ export function createWindow() {
   // 没有 task_complete（半截），排队中的消息随引擎内存一起消失。
   // 只做一件事：**有在跑回合时先问一句**。不阻塞主进程（异步对话框 + preventDefault + 二次 close）。
   mutableState.mainWindow.on("close", (event) => {
+    // ⛔ 退出路径（托盘「退出」/ Cmd+Q / 系统关机 → before-quit 置 closeConfirmed=true）
+    //    一律直接放行 —— 这里再弹任何确认框都会让应用退不出去。
+    if (mutableState.closeConfirmed) return;
     // ⛔ 托盘「关闭窗口时最小化到托盘」（09-23 用户要求托盘常驻）：开着时 X 只隐藏窗口 ——
-    //    引擎 / 调度器 / 渠道机器人 / 正在跑的回合全都不中断。**必须排在下面的"还有任务在跑"确认框之前**：
+    //    引擎 / 调度器 / 渠道机器人 / 正在跑的回合全都不中断。必须排在其它分支之前：
     //    隐藏不中断任何东西，这时再弹"关闭会中断回合"的警告只会吓人。
-    //    ⛔ 退出路径（托盘「退出」/ Cmd+Q / 系统关机）由 `before-quit` 置 closeConfirmed=true 绕开这里，
-    //      否则会退不出去（点了退出却只是把窗口藏起来）。
-    if (!mutableState.closeConfirmed && closeToTrayEnabled()) {
+    if (closeToTrayEnabled()) {
       event.preventDefault();
       mutableState.mainWindow?.hide();
       // 留一行日志：这条分支是"点了 X 却不退出"的地方，出问题时**必须能从日志里看出它到底走没走**
@@ -132,20 +133,40 @@ export function createWindow() {
       console.log("[tray] 关闭被拦截 → 隐藏主窗口（closeToTray 开启；退出走托盘「退出」/ Cmd+Q）");
       return;
     }
-    if (mutableState.closeConfirmed || engineActiveTurnIds.size === 0) return;
+    // ⛔ 「不再询问」已记住动作（10-13）：到这里 = 用户记住的是**完全退出**（选「最小化到托盘」
+    //    的情形已被上一条拦下 —— 记住的动作就是 closeToTray=true）⇒ 直接放行 close。
+    //    ⛔ 不再看"任务在跑"：勾了「不再询问」= 明确说了别再问，跑着也照退（弹窗里已说明会停工作）。
+    if (closePromptSeen()) return;
+    // ⛔ 关闭确认弹窗（10-13 用户需求）：点 X 时弹「最小化到托盘 / 完全退出 / 取消」+「不再询问」——
+    //    此前点 X 直接退出，而应用其实驻留托盘继续跑（"以为关了其实没关"是最常见的投诉）。
+    //    ⛔ 不阻塞主进程：preventDefault + 异步对话框 + 二次 close（与"任务在跑"确认同款）。
     event.preventDefault();
     const busy = engineActiveTurnIds.size;
     void dialog.showMessageBox(mutableState.mainWindow!, {
-      type: "warning",
-      buttons: ["继续运行（取消关闭）", "仍然关闭"],
-      defaultId: 0,
+      type: "none",
+      buttons: ["取消", "退出应用", "最小化到托盘"],
+      defaultId: 2,
       cancelId: 0,
-      message: `还有 ${busy} 个任务在运行`,
-      detail: "关闭应用会中断正在运行的回合，未完成的内容不会写入会话记录；排队中的消息也会丢失。",
-    }).then(({ response }) => {
-      if (response !== 1) return;
-      mutableState.closeConfirmed = true;
-      mutableState.mainWindow?.close();
+      checkboxLabel: "不再询问",
+      checkboxChecked: false,
+      message: `关闭 ${app.getName()} 窗口？`,
+      detail: busy > 0
+        ? `还有 ${busy} 个任务在运行。最小化到托盘后它们会继续；退出应用会停止正在进行的工作。`
+        : "最小化到托盘后，Agent 和后台任务会继续运行；退出应用会停止正在进行的工作。",
+    }).then(({ response, checkboxChecked }) => {
+      // 记住动作：勾了「不再询问」才写 —— 写的就是 closeToTray（true=托盘 / false=退出）
+      if (checkboxChecked) rememberCloseChoice(response === 2);
+      if (response === 2) {
+        // 最小化到托盘：只隐藏窗口，引擎 / 调度器 / 渠道机器人全都不中断
+        mutableState.mainWindow?.hide();
+        return;
+      }
+      if (response === 1) {
+        // 完全退出：弹窗里已明确告知会停止正在进行的工作 ⇒ 置旗后二次 close（绕过所有确认）
+        mutableState.closeConfirmed = true;
+        mutableState.mainWindow?.close();
+      }
+      // 取消：什么都不做
     }).catch(() => undefined);
   });
   // 主窗口真正关闭后，独立会话弹窗跟着一起关（用户 09-13 明确要求「跟着主应用关闭」）。

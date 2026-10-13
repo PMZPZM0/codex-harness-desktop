@@ -25,7 +25,7 @@ import { RpaStore } from "./rpa-store";
 import { readCustomModel, readCustomModels, writeCustomModels } from "./main/01-model-catalog";
 import { describeNetworkError } from "./main/11-maintenance";
 import type { CustomModelFile } from "./features/custom-model-types";
-import { readAppSettings, readAppSettingsSync } from "./app-settings";
+import { readAppSettings, readAppSettingsSync, saveAppSettings } from "./app-settings";
 import { broadcastHarnessEvent } from "./features/window-bus";
 
 /* ── 域插件化后跨域取用的基座门面（10-03 阶段 2/3）───────────────────────────
@@ -175,6 +175,18 @@ export function notifyPopoutClosed(threadId: string) {
 /** 「关闭窗口时最小化到托盘」（托盘右键菜单里的开关）。默认关。 */
 export function closeToTrayEnabled(): boolean {
   return Boolean(readAppSettingsSync(app.getPath("userData")).closeToTray);
+}
+
+/* 关闭确认弹窗（10-13）：点 X 弹「最小化到托盘 / 完全退出 / 取消」+「不再询问」。
+   记住的是**动作**：勾选「不再询问」时把动作写进 closeToTray（true=托盘 / false=退出）
+   并置 closePromptSeen=true，此后点 X 不再弹窗、直接按 closeToTray 走。 */
+/** 「不再询问」是否已勾选过（勾过就不再弹窗）。默认否。 */
+export function closePromptSeen(): boolean {
+  return Boolean(readAppSettingsSync(app.getPath("userData")).closePromptSeen);
+}
+/** 记住用户在关闭确认弹窗里选的动作（action=true = 最小化到托盘 / false = 完全退出）。 */
+export function rememberCloseChoice(action: boolean): void {
+  void saveAppSettings(app.getPath("userData"), { closeToTray: action, closePromptSeen: true }).catch(() => undefined);
 }
 
 /* 记忆后端判定在 ./memory-backend（⛔ 不能定义在这里：本文件已 import memory-layers，
