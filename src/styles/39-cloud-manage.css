@@ -1,0 +1,162 @@
+/* ══════════════════════════════════════════════════════════════════════════
+ * 云端管理面板（10-13 二期）—— 账户菜单「云端管理」入口的应用内卡片
+ *
+ * ⛔ 渲染点必须 portal 到 `document.body`（同 CloseConfirmDialog 纪律）。
+ * ⛔ z-index 950（确认框档）：它会盖住设置页 80~97 与全局模态 400。
+ * ⛔ 样式只用主题变量（--line/--panel/--text/--muted/--red）—— 暗色/亮色自适应。
+ * ══════════════════════════════════════════════════════════════════════════ */
+.cloud-manage-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: color-mix(in srgb, var(--text) 24%, transparent);
+  animation: cloud-manage-fade 0.16s ease-out;
+}
+
+.cloud-manage-card {
+  width: min(440px, calc(100vw - 40px));
+  max-height: calc(100vh - 60px);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 18px 20px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+  animation: cloud-manage-in 0.2s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes cloud-manage-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cloud-manage-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cloud-manage-backdrop { animation: none; }
+  .cloud-manage-card { animation: none; }
+}
+
+.cloud-manage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.cloud-manage-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.cloud-manage-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.cloud-manage-x:hover { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
+
+.cloud-manage-sec { padding: 10px 0; border-top: 1px solid var(--line); }
+.cloud-manage-sec:first-of-type { border-top: none; }
+
+.cloud-manage-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+.cloud-manage-kv div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+  line-height: 1.9;
+}
+.cloud-manage-kv span { color: var(--muted); }
+.cloud-manage-code { letter-spacing: 2px; overflow-wrap: anywhere; }
+
+.cloud-manage-devices { display: flex; flex-direction: column; gap: 4px; }
+.cloud-manage-device {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  line-height: 1.8;
+}
+.cloud-manage-device .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.cloud-manage-device .fp { color: var(--muted); font-size: 11px; }
+.cloud-manage-device button {
+  border: 1px solid color-mix(in srgb, var(--red) 55%, transparent);
+  background: transparent;
+  color: var(--red);
+  border-radius: 7px;
+  padding: 2px 9px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.cloud-manage-device button:hover { background: color-mix(in srgb, var(--red) 10%, transparent); }
+
+.cloud-manage-actions { display: flex; gap: 8px; }
+
+.cloud-manage-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 13px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.5;
+  cursor: pointer;
+  min-height: 32px;
+}
+.cloud-manage-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.cloud-manage-btn:disabled { opacity: 0.55; cursor: default; }
+
+.cloud-manage-btn.danger {
+  border-color: color-mix(in srgb, var(--red) 55%, transparent);
+  color: var(--red);
+}
+.cloud-manage-btn.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--red) 10%, transparent); }
+
+.cloud-manage-note {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.cloud-manage-note.ok { color: var(--text); }
+
+.cloud-manage-muted { font-size: 12px; color: var(--muted); line-height: 1.6; }
+
+.spin { animation: cloud-manage-spin 0.9s linear infinite; }
+@keyframes cloud-manage-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+
+.cloud-manage-btn:focus-visible,
+.cloud-manage-x:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
