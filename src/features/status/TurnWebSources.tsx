@@ -35,7 +35,7 @@ function WebFavicon({ host, size = 20 }: { host: string; size?: number }) {
   );
 }
 
-export function TurnWebSources({ sources }: { sources: Array<{ url: string; host: string }> }) {
+export function TurnWebSources({ sources, inline = false }: { sources: Array<{ url: string; host: string }>; inline?: boolean }) {
   const [openAll, setOpenAll] = useState(false);
   const moreRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
@@ -83,7 +83,7 @@ export function TurnWebSources({ sources }: { sources: Array<{ url: string; host
   const rest = sources.length - visible.length;
 
   return (
-    <div className="completed-web-row">
+    <div className={inline ? "completed-web-row completed-web-inline" : "completed-web-row"}>
       <span className="completed-web-label" title="这个回合访问过的网页（点击用默认浏览器打开）"><Globe size={12} />网页来源</span>
       <span className="completed-web-icons">
         {visible.map((source) => (
