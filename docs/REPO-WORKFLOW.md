@@ -1,7 +1,8 @@
-# 仓库拓扑与协作流程（Codex Harness Desktop ↔ PPcode）
+# 仓库拓扑与协作流程（Codex Harness Desktop ↔ PPcode ↔ 云助手）
 
 > 本文档是**多仓协作的唯一上手入口**：仓库拓扑、核心功能更新后的同步流程、GitHub 推送规范、
-> PPcode 发版全流程。步骤全部经过实跑验证（2026-10-10；拓扑 10-13 随「源码合入发布仓」重构更新），按本文操作即可，无需额外口头说明。
+> PPcode 发版全流程。步骤全部经过实跑验证（2026-10-10；拓扑 10-13 随「源码合入发布仓」重构更新，
+> 同日补入云助手仓与「改动必须同轮同步全部三仓」硬规则），按本文操作即可，无需额外口头说明。
 > ⛔ 两仓的 `AGENTS.md` 是**逐字节镜像** —— 改任何一边必须同内容同步另一边（含本文档的指针行）。
 
 ## 一、仓库拓扑（先搞清这几个"仓"）
@@ -10,8 +11,9 @@
 |---|---|---|---|
 | `D:\Codex Harness Desktop` | `PMZPZM0/codex-harness-desktop` | 私有 | **主应用**（Codex Harness Desktop）源码；主应用自身的发版也在这里（tag → 本仓 CI → 本仓 Release） |
 | `D:\PPcode` | **`PMZPZM0/PPcode`（origin，唯一远端）** | 公开 | **PPcode 产品：源码 + 发布页合一**（10-12 重构 `9b58ee0 源码合入发布仓`）。应用内「检查更新」匿名拉它的 `/releases/latest`；CI 的 `PUBLISH_REPO` 也指向本仓（发布 = 本仓 Release，无跨仓 token） |
+| `D:\Codex Assistant` | **`PMZPZM0/codex-harness-cloud-src`（remote 名 `cloud`）** | 公开 | **云助手**：headless 跑真 `main.ts`、浏览器渲染桌面版 dist（登录门 + admin）。⛔ 与桌面版**彻底拆开**（独立 userData / AUMID / 安装目录 / 助手形态不建主窗）。⛔ 本仓 `origin` 历史遗留指向**桌面版仓** —— 推代码一律 `git push cloud main`，推 origin 会污染主线 |
 | —— | ~~`PMZPZM0/ppcode-src`~~ | **已删除**（2026-10-13 用户告知「PPCode 换 GitHub 仓库了」） | 旧私有源仓，⛔ 别再推 —— `git remote -v` 核对远端是 `PMZPZM0/PPcode` 再推 |
-| —— | 远端凭据 | — | 两仓远端都是 **SSH deploy key：只能推代码与 tag**。建 Release / 传资产只能在 Actions 里做（本机无 gh CLI、无 API token） |
+| —— | 远端凭据 | — | 三仓远端都是 **SSH deploy key：只能推代码与 tag**。建 Release / 传资产只能在 Actions 里做（本机无 gh CLI、无 API token） |
 
 关键事实（都有代码锚点，别凭记忆）：
 
@@ -25,18 +27,23 @@
 - 两仓 `.gitignore` 都忽略 `.workbuddy/`（含密临时文件、AI 记忆永不入库）。
 - PPcode 与主仓的差异是**有意的品牌差异**，同步时按 §二.3 的例外清单处理，⛔ 不要"顺手统一"。
 
-## 二、核心功能更新后的同步流程（主仓 → PPcode 副本）
+## 二、核心功能更新后的同步流程（主仓 → PPcode / 云助手 两个副本仓）
 
-方向恒定：**主仓是开发主线，PPcode 副本是接收方**（反向需求 = 先在主仓实现再同步）。
+方向恒定：**主仓是开发主线，两个副本仓是接收方**（反向需求 = 先在主仓实现再同步）。
+⛔⛔ **一轮功能改动必须同轮同步到两个副本仓并各自推送**（2026-10-13 用户令）——
+只改主仓就收尾 = 这一轮工作**未完成**。两仓流程完全同构，差异只有两点：
+云助手推 **`cloud`**（⛔ 它的 `origin` 指向桌面版仓，推错就污染主线）；
+副本侧生成物一律**各仓自己**跑 `gen:ipc` / `gen:domains`，⛔ 不套主仓产物。
 
 ```
 主仓改动（check 绿 + 已提交）
 → ① 找上次同步点 → ② 生成补丁 → ③ 逐文件预检 → ④ 应用（品牌文件手工）
-→ ⑤ ppcode 侧验证（tsc + 守卫 + check）→ ⑥ 提交 fix/feat(sync) → ⑦ 两仓推 origin
+→ ⑤ 副本侧验证（build + 受影响守卫 + check-preflight）→ ⑥ 提交 feat(sync) → ⑦ 三仓推各自远端
 ```
 
-1. **找上次同步点**：`cd /d/PPcode && git log --grep="同步主仓" -1` —— 提交信息里写的
-   `同步主仓 X..Y` 的 **Y** 就是上次同步点（主仓 commit）。
+1. **找上次同步点**：`cd /d/PPcode && git log --grep="自桌面版" -1`（云助手同理：
+   `cd "/d/Codex Assistant" && git log --grep="自桌面版" -1`）—— 提交信息里写的
+   「自桌面版 X..Y」的 **Y** 就是上次同步点（主仓 commit）。
 2. **生成补丁**（主仓）：
    `git diff <上次同步点>..HEAD > .workbuddy/tmp/sync-ppcodeN.patch`
    （临时产物一律放 `.workbuddy/tmp/`，它已 gitignore，永不入库）。
@@ -62,7 +69,8 @@
 6. **提交**：`feat(sync)/fix(sync): 同步原版<主题>`，正文写明：同步区间（主仓 X..Y）、
    文件数与"全部直接套 / 哪些手工"、副本差异、判据（tsc / check / 守卫计数）。
    ⛔ 提交信息含反引号或 `$(` 时必须 `Write` 落盘 + `git commit -F`（bash 会当命令替换）。
-7. **两仓都推**：`git push origin main`（见 §三）。
+7. **三仓都推**：主仓与 PPcode 用 `git push origin main`；云助手用 `git push cloud main`
+   （⛔ 云助手的 `origin` 指向桌面版仓，推它 = 污染主线）。见 §三。
 
 ### 同步时的已知坑位清单（每条都真实踩过）
 
