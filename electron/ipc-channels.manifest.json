@@ -878,7 +878,7 @@
       "channel": "appSettings:read",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: \"auto\" | \"force\" | \"off\"; adaptiveTone?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\" }>",
+      "returns": "Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: \"auto\" | \"force\" | \"off\"; adaptiveTone?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\"; skillAutoUpdate?: boolean }>",
       "invokeArgs": "",
       "cast": null,
       "note": "应用级运行时开关（联网搜索等）"
@@ -887,8 +887,8 @@
       "name": "saveAppSettings",
       "channel": "appSettings:save",
       "paramsImpl": "patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\" }",
-      "paramsDecl": "patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: \"auto\" | \"force\" | \"off\"; adaptiveTone?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\" }",
-      "returns": "Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; adaptiveTone?: boolean }>",
+      "paramsDecl": "patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: \"auto\" | \"force\" | \"off\"; adaptiveTone?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\"; skillAutoUpdate?: boolean }",
+      "returns": "Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; adaptiveTone?: boolean; skillAutoUpdate?: boolean }>",
       "invokeArgs": "patch",
       "cast": null,
       "note": null

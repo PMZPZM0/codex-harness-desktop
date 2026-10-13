@@ -86,6 +86,13 @@ export type AppSettings = {
    */
   changeBackupEnabled?: boolean;
   changeBackupDir?: string;
+  /**
+   * 技能自动更新（10-13 用户令）：开启后主进程后台静默检查市场技能内容变化并自动更新
+   * （启动 15s 后一次 + 每 6 小时一次；走与手动更新完全相同的链路，含安全检查）。
+   * ⛔ **默认关** —— 会改用户技能目录里的文件，属可见行为变化；单技能失败静默跳过，
+   *   下个周期再试，绝不打断启动。
+   */
+  skillAutoUpdate?: boolean;
   /** 语气自适应（默认开）：按会话维护少量状态（心情/精力/默契），随会话自己的
    *  developer instructions 下发一句「只影响说法、不影响内容」的语气指引。
    *  状态按会话各自一份（agent-mood-<threadId>），关掉即停止更新与注入。 */
