@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（91 个能力域 / 473 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（92 个能力域 / 474 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -73,6 +73,10 @@ Laya 智能判断（GitHub NandhaKishorM/laya，Apache-2.0，非自回归决策�
 ### team-runs（1 通道）
 专家团运行记录查询
 通道：team-runs:list
+
+### close-confirm（1 通道）
+关闭确认弹窗的回包（最小化到托盘 / 完全退出 / 取消，可勾不再询问）
+通道：close-confirm:respond
 
 ### team-threads（2 通道）
 专家团成员会话映射

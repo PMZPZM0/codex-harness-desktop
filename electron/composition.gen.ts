@@ -53,6 +53,7 @@ import { pastedTextFeature as feat_pasted_text } from "./features/pasted-text-ip
 import { appSettingsFeature as feat_appSettings } from "./features/app-settings-ipc";
 import { personalizationFeature as feat_personalization } from "./features/personalization-ipc";
 import { teamRunsFeature as feat_team_runs } from "./features/team-runs-ipc";
+import { closeConfirmFeature as feat_close_confirm } from "./features/close-confirm-ipc";
 import { teamThreadsFeature as feat_team_threads } from "./features/team-threads-ipc";
 import { teamsFeature as feat_teams } from "./features/teams-ipc";
 import { subagentsFeature as feat_subagents } from "./features/subagents-ipc";
@@ -156,6 +157,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "appSettings", plugin: feat_appSettings as Plugin<unknown>, config: null },
   { id: "personalization", plugin: feat_personalization as Plugin<unknown>, config: null },
   { id: "team-runs", plugin: feat_team_runs as Plugin<unknown>, config: null },
+  { id: "close-confirm", plugin: feat_close_confirm as Plugin<unknown>, config: null },
   { id: "team-threads", plugin: feat_team_threads as Plugin<unknown>, config: null },
   { id: "teams", plugin: feat_teams as Plugin<unknown>, config: null },
   { id: "subagents", plugin: feat_subagents as Plugin<unknown>, config: null },

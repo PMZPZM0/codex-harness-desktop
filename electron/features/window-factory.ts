@@ -15,7 +15,7 @@ import { applyRoundedCorners } from "../win-rounded-corners";
 import { popoutBusWindows, registerBusWindow, unregisterBusWindow } from "../features/window-bus";
 import { flushBootTiming, markBoot } from "../boot-timing";
 import { installContextMenu } from "../main/10-window-menu";
-import { closeToTrayEnabled, closePromptSeen, engineActiveTurnIds, rememberCloseChoice, notifyPopoutClosed, popoutThreadIds, titleBarOverlayOptions } from "../runtime-refs";
+import { closeToTrayEnabled, closePromptSeen, closeConfirmBridge, engineActiveTurnIds, notifyPopoutClosed, popoutThreadIds, titleBarOverlayOptions } from "../runtime-refs";
 import { closePetWindow } from "./pet-window";
 import { mutableState } from "../main";
 export function createWindow() {
@@ -137,38 +137,32 @@ export function createWindow() {
     //    的情形已被上一条拦下 —— 记住的动作就是 closeToTray=true）⇒ 直接放行 close。
     //    ⛔ 不再看"任务在跑"：勾了「不再询问」= 明确说了别再问，跑着也照退（弹窗里已说明会停工作）。
     if (closePromptSeen()) return;
-    // ⛔ 关闭确认弹窗（10-13 用户需求）：点 X 时弹「最小化到托盘 / 完全退出 / 取消」+「不再询问」——
-    //    此前点 X 直接退出，而应用其实驻留托盘继续跑（"以为关了其实没关"是最常见的投诉）。
-    //    ⛔ 不阻塞主进程：preventDefault + 异步对话框 + 二次 close（与"任务在跑"确认同款）。
+    // ⛔ 关闭确认弹窗（10-13 用户需求）：点 X 时弹**应用内**卡片「最小化到托盘 / 完全退出 / 取消」
+    //    +「不再询问」—— 不再用原生系统框（要与整体界面风格一致，而不是一个突兀的系统窗）。
+    //    实现：preventDefault 后把「要不要关」经 `close-confirm:ask` 推给渲染层，
+    //    用户在应用内卡片上选，回包走 `close-confirm:respond`（close-confirm-ipc 域）→ respond 执行。
     event.preventDefault();
-    const busy = engineActiveTurnIds.size;
-    void dialog.showMessageBox(mutableState.mainWindow!, {
-      type: "none",
-      buttons: ["取消", "退出应用", "最小化到托盘"],
-      defaultId: 2,
-      cancelId: 0,
-      checkboxLabel: "不再询问",
-      checkboxChecked: false,
-      message: `关闭 ${app.getName()} 窗口？`,
-      detail: busy > 0
-        ? `还有 ${busy} 个任务在运行。最小化到托盘后它们会继续；退出应用会停止正在进行的工作。`
-        : "最小化到托盘后，Agent 和后台任务会继续运行；退出应用会停止正在进行的工作。",
-    }).then(({ response, checkboxChecked }) => {
-      // 记住动作：勾了「不再询问」才写 —— 写的就是 closeToTray（true=托盘 / false=退出）
-      if (checkboxChecked) rememberCloseChoice(response === 2);
-      if (response === 2) {
-        // 最小化到托盘：只隐藏窗口，引擎 / 调度器 / 渠道机器人全都不中断
-        mutableState.mainWindow?.hide();
-        return;
-      }
-      if (response === 1) {
-        // 完全退出：弹窗里已明确告知会停止正在进行的工作 ⇒ 置旗后二次 close（绕过所有确认）
-        mutableState.closeConfirmed = true;
-        mutableState.mainWindow?.close();
-      }
-      // 取消：什么都不做
-    }).catch(() => undefined);
+    closeConfirmBridge.pending = { busy: engineActiveTurnIds.size };
+    mutableState.mainWindow?.webContents.send("close-confirm:ask", {
+      busy: engineActiveTurnIds.size,
+      appName: app.getName(),
+    });
   });
+
+  // 关窗回包的**执行端**：close-confirm-ipc 收到渲染层的选择后调这里（跨域桥，见 runtime-refs）。
+  closeConfirmBridge.respond = (action) => {
+    if (action === "tray") {
+      // 最小化到托盘：只隐藏窗口，引擎 / 调度器 / 渠道机器人全都不中断
+      mutableState.mainWindow?.hide();
+      return;
+    }
+    if (action === "quit") {
+      // 完全退出：弹窗里已明确告知会停止正在进行的工作 ⇒ 置旗后二次 close（绕过所有确认）
+      mutableState.closeConfirmed = true;
+      mutableState.mainWindow?.close();
+    }
+    // cancel：什么都不做
+  };
   // 主窗口真正关闭后，独立会话弹窗跟着一起关（用户 09-13 明确要求「跟着主应用关闭」）。
   mutableState.mainWindow.on("closed", () => {
     for (const win of popoutBusWindows()) { if (!win.isDestroyed()) win.close(); }

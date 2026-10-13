@@ -1,0 +1,157 @@
+/* ══════════════════════════════════════════════════════════════════════════
+ * 关闭确认弹窗（10-13）—— 点 X 时的**应用内**确认卡片（替代原生系统框）
+ *
+ * ⛔ 渲染点必须 portal 到 `document.body`（同 UpdateReadyToast / archive-toast 纪律）：
+ *   带 transform 的祖先会成为 `fixed` 的包含块，不 portal 会跟着输入框跑、被 timeline 裁掉。
+ *
+ * ⛔ z-index 对齐既有层级表（【227】）：确认框 950 > 引导/帮助 900 > 全局模态 400 > 画布 90。
+ *   本弹窗**就是确认框** ⇒ 取 950 那一档（要盖住设置页 80~97 与全局模态 400）。
+ * ══════════════════════════════════════════════════════════════════════════ */
+.close-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: color-mix(in srgb, var(--text) 24%, transparent);
+  animation: close-confirm-fade 0.16s ease-out;
+}
+
+.close-confirm-card {
+  width: min(400px, calc(100vw - 40px));
+  box-sizing: border-box;
+  padding: 18px 20px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+  animation: close-confirm-in 0.2s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes close-confirm-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes close-confirm-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ⛔ 尊重系统「减弱动效」：只保留出现，不做位移（与全站动效纪律一致）。 */
+@media (prefers-reduced-motion: reduce) {
+  .close-confirm-backdrop { animation: none; }
+  .close-confirm-card { animation: none; }
+}
+
+.close-confirm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.close-confirm-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.close-confirm-x {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.close-confirm-x:hover { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
+
+.close-confirm-desc {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.close-confirm-remember {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.close-confirm-remember input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--text);
+  cursor: pointer;
+}
+
+.close-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.close-confirm-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 13px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.5;
+  cursor: pointer;
+  /* ⛔ 最小点击区 32px —— 用 padding 撑开，不靠放大字号。 */
+  min-height: 32px;
+}
+
+.close-confirm-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.close-confirm-btn:disabled { opacity: 0.55; cursor: default; }
+
+.close-confirm-btn.primary {
+  border-color: transparent;
+  background: var(--text);
+  color: var(--panel);
+}
+
+.close-confirm-btn.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 88%, var(--panel));
+}
+
+/* 退出应用 = 破坏性动作：红字描边，与全站 danger 纪律一致（不做红底大按钮，避免吓人）。 */
+.close-confirm-btn.danger {
+  border-color: color-mix(in srgb, var(--red) 55%, transparent);
+  color: var(--red);
+}
+
+.close-confirm-btn.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+
+.close-confirm-btn:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}

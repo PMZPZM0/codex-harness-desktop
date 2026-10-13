@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 473,
+  "count": 474,
   "channels": [
     {
       "name": "request",
@@ -4701,6 +4701,16 @@
       "invokeArgs": "",
       "cast": null,
       "note": "10-13 统一更新体系：一键更新全部组件（手动入口，不按开关过滤 —— 用户点了就是授权）。逐项返回结��，单项失败不影响其余"
+    },
+    {
+      "name": "respondCloseConfirm",
+      "channel": "close-confirm:respond",
+      "paramsImpl": "action: \"tray\" | \"quit\" | \"cancel\", remember: boolean",
+      "paramsDecl": "action: \"tray\" | \"quit\" | \"cancel\", remember: boolean",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "action, remember",
+      "cast": null,
+      "note": "10-13 关闭确认弹窗的回包：tray=隐藏主窗口 / quit=置 closeConfirmed 后二次 close / cancel=不动。remember=true 写 closeToTray（动作）+ closePromptSeen（不再弹）。⛔ ask 方向是推送类手写桥（preload onCloseConfirmAsk），不在本清单"
     }
   ]
 }

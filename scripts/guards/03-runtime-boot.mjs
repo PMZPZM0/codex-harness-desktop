@@ -528,15 +528,11 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   //    直接报 HTTP 302。这个坑直到 v0.0.18 才暴露（09-15 才切 GitHub 单源，而当时仓库 0 个 release，
   //    检查更新拿不到东西，从没走到下载这步）。守卫锚定「确实存在跟随重定向的分支」。
   //    反证（本地 HTTPS mock，不依赖外网）：摘掉该分支 → 下载报 HTTP 302，见 tmp 验收脚本。
-  (/res\.headers\.location/.test(updSrc) && /MAX_REDIRECTS/.test(updSrc) && /new URL\(res\.headers\.location, url\)/.test(updSrc) ? ok : fail)(
-    "updates.ts 下载跟随重定向（GitHub 资产是 302 → release-assets.githubusercontent.com）"
-  );
+  (/res\.headers\.location/.test(updSrc) && /MAX_REDIRECTS/.test(updSrc) && /new URL\(res\.headers\.location, url\)/.test(updSrc) ? ok : fail)("updates.ts 下载跟随重定向（GitHub 资产是 302 → release-assets.githubusercontent.com）");
   // ⛔ 第二条必须锚定「重定向分支**内部**确实调用了 hop（即下一跳会重新过协议校验）」——
   //    第一版只查 `const hop = async (url: string, depth: number)` 与 https 抛错两段文本存在，
   //    把整个重定向分支摘掉后这两段仍在，守卫照样绿（反证时发现的假绿）。
-  (/hop\(next, depth \+ 1\)\.then\(resolve, reject\);/.test(updSrc) && /const hop = async \(url: string, depth: number\)/.test(updSrc) && /if \(parsed\.protocol !== "https:"\) throw/.test(updSrc) ? ok : fail)(
-    "updates.ts 重定向逐跳校验 https（下一跳走 hop 重新校验，防降级到明文替换安装包）"
-  );
+  (/hop\(next, depth \+ 1\)\.then\(resolve, reject\);/.test(updSrc) && /const hop = async \(url: string, depth: number\)/.test(updSrc) && /if \(parsed\.protocol !== "https:"\) throw/.test(updSrc) ? ok : fail)("updates.ts 重定向逐跳校验 https（下一跳走 hop 重新校验，防降级到明文替换安装包）");
   /lastVerifiedUpdatePath/.test(mainSrc) && /path_not_verified/.test(mainSrc)
     ? ok("updates:install 只接受刚校验通过的那个文件（渲染层给不了任意路径）")
     : fail("updates:install 又能被渲染层指定任意安装路径了");
@@ -1015,13 +1011,14 @@ const appSrc4 = readAppUi();
     const winFactory = readFileSync(join(ROOT, "electron", "features", "window-factory.ts"), "utf8").replace(/\r/g, "");
     const closeHandler = winFactory.slice(winFactory.indexOf('on("close"'), winFactory.indexOf('on("closed"'));
     const atHide = closeHandler.indexOf("closeToTrayEnabled()");
-    const atDialog = closeHandler.indexOf("dialog.showMessageBox");
-    (atHide >= 0 && atDialog >= 0 && atHide < atDialog ? ok : fail)(
-      "【123】closeToTray 分支排在「还有任务在跑」确认框之前（隐藏不中断回合，不该弹警告）"
-    );
-    (/mutableState\.mainWindow\?\.hide\(\)/.test(closeHandler) ? ok : fail)(
-      "【123】开启后 close 是 hide 而不是 close（引擎/调度器/渠道机器人继续跑）"
-    );
+    const atAsk = closeHandler.indexOf("close-confirm:ask");
+    (atHide >= 0 && atAsk >= 0 && atHide < atAsk ? ok : fail)("【123】closeToTray 分支排在关闭确认弹窗（close-confirm:ask）之前（隐藏不中断回合，不该弹任何框）");
+    (/mutableState\.mainWindow\?\.hide\(\)/.test(closeHandler) ? ok : fail)("【123】开启后 close 是 hide 而不是 close（引擎/调度器/渠道机器人继续跑）");
+    // 10-13 关闭确认弹窗：**应用内卡片**（替代原生 dialog）+「不再询问」+ 回包通道
+    (closeHandler.includes("dialog.showMessageBox") ? fail : ok)("【123】关窗守卫不再用原生 dialog.showMessageBox（应用内卡片，与整体风格一致）");
+    (/closePromptSeen\(\)/.test(closeHandler) ? ok : fail)("【123】「不再询问」已记住 ⇒ 不再弹窗（closePromptSeen 分支，动作按 closeToTray 走）");
+    (/closeConfirmBridge\.pending = \{ busy/.test(closeHandler) ? ok : fail)("【123】未记住动作 ⇒ preventDefault 并推 close-confirm:ask 给渲染层画应用内卡片");
+    (/closeConfirmBridge\.respond = /.test(winFactory) ? ok : fail)("【123】回包执行端已接线（close-confirm-ipc 回包后 hide / 二次 close）");
   }
 
   /* ══ 【136】委派并发闸不得被"残留运行中记录"永久占满（09-24，评估报告 §4.3）══
