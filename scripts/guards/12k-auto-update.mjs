@@ -67,7 +67,7 @@ for (const key of ["autoUpdateDesktop", "autoUpdateBrowser", "autoUpdateComputer
 }
 ok(/function autoUpdateEnabled[\s\S]{0,400}\?\.\[key\] !== false/.test(settings),
   "缺省判据是 `!== false`（字段不存在 = 开；⛔ 用 === true 会让老用户升级后静默关闭）");
-ok(/autoUpdateEnabled\(settings, item\.key\)/.test(board), "后台循环逐个读自己的开关字段");
+ok(/readAutoUpdateSwitch\(settings, item\.key\)/.test(board), "后台循环逐个读自己的开关字段");
 ok(/saveAppSettings\(userData, \{ \[item\.key\]: Boolean\(enabled\) \}\)/.test(board),
   "⛔ autoUpdate:set 只 patch 单键（写整份会互相覆盖 ⇒ 开关不独立）");
 const keysBlock = board.match(/const toolKeys[\s\S]*?\};/)?.[0] ?? "";
@@ -124,15 +124,32 @@ const engineSuccess = board.match(/performEngineUpdateFlow\(async \(\) =>[\s\S]{
 ok(/server\.restart\(\)/.test(engineSuccess),
   "⛔ 引擎后台更新成功后 server.restart() 把引擎拉回来（不拉 = 引擎一直停着，应用残废）");
 
-console.log("【⑦ 界面：卡片开关 + 版本号】");
-ok(/ToggleSwitch/.test(page) && /onChange=\{\(value: boolean\) => void toggleAutoUpdate/.test(page),
-  "自动化卡片用共享 ToggleSwitch（⛔ 原生 checkbox 暗色下会画成浅底）");
-ok(/window\.codex\.setAutoUpdate\(/.test(page) && /window\.codex\.readAutoUpdateStatus\(\)/.test(page),
-  "开关读走 autoUpdate:status、写走 autoUpdate:set（持久化在 app-settings.json）");
+console.log("【⑦ 界面：开关统一在控制台 + 版本号】");
+const card = read("src/features/settings-general/AutoUpdateCard.tsx");
+const general = read("src/features/settings-general/GeneralSettingsSection.tsx");
+const skillsPage = read("src/features/settings-skills/SkillsCenterSection.tsx");
+ok(/<AutoUpdateCard \/>/.test(general) && /from "\.\/AutoUpdateCard"/.test(general),
+  "「控制台」页挂上了统一开关卡片");
+ok(/ToggleSwitch/.test(card) && /window\.codex\.setAutoUpdate\(row\.id, enabled\)/.test(card)
+  && /window\.codex\.readAutoUpdateStatus\(\)/.test(card),
+  "卡片用共享 ToggleSwitch，读 autoUpdate:status、写 autoUpdate:set（⛔ 原生 checkbox 暗色下画成浅底）");
+ok(!/ToggleSwitch/.test(page) && !/skillAutoUpdate/.test(skillsPage),
+  "⛔ 自动化页与技能页**不再各放一个开关**（同一状态两个入口 ⇒ 用户会以为两边不一致）");
+ok(/控制台/.test(read("src/features/settings-automation/AutomationSettingsSection.tsx"))
+  && /控制台/.test(skillsPage),
+  "两处都留了指向「控制台」的说明（不是静默消失）");
 ok(/versionOf\("nuphus"\)/.test(page) && /versionOf\("playwright-cli"\)/.test(page),
   "桌面自动化 / 浏览器自动化卡片显示当前版本号");
-ok(!/Object\.keys\(UPDATEABLE_TOOLS\)|nuphus.*@nuphus/.test(page),
+ok(!/Object\.keys\(UPDATEABLE_TOOLS\)|nuphus.*@nuphus/.test(page) && !/@nuphus|@playwright/.test(card),
   "⛔ 界面不另抄工具清单与包名");
+
+console.log("【⑦b 技能那条：一个端点给全部开关】");
+ok(/id: "skill", kind: "skill"/.test(boardCode) && /key: "skillAutoUpdate"/.test(boardCode),
+  "技能项并入同一条清单（界面一次请求拿全五个开关）");
+ok(/if \(item\.kind === "skill"\) continue;/.test(boardCode),
+  "⛔ 技能循环仍在 skills-ipc（本板块只承载开关与显示），不重复起调度器");
+ok(/readAutoUpdateSwitch/.test(settings) && /skillAutoUpdate === true/.test(settings),
+  "缺省值分档只写一处：四类装包缺省开、技能内容更新缺省关");
 
 console.log("【⑧ 域登记闭环 + 台账】");
 ok(/"id": "autoUpdate"/.test(composition) && /features\/auto-update-ipc\.ts/.test(composition) && /autoUpdateFeature/.test(composition),

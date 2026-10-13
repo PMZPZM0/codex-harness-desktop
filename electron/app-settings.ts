@@ -211,3 +211,19 @@ export function autoUpdateEnabled(
 ): boolean {
   return settings?.[key] !== false;
 }
+
+/** 自动更新项在 AppSettings 上的开关字段（含技能那条，它缺省判据不同，见下）。 */
+export type AutoUpdateSettingKey = "autoUpdateDesktop" | "autoUpdateBrowser" | "autoUpdateComputerUse" | "autoUpdateEngine" | "skillAutoUpdate";
+
+/**
+ * 统一读一个自动更新开关的**生效值**。
+ *
+ * ⛔⛔ 缺省语义**分两档**，这是刻意的，不是不一致：
+ *   · 四类「装包/换二进制」的更新（桌面 / 浏览器 / Mac 电脑操作 / 引擎）缺省 = **开**（用户令）；
+ *   · **技能内容更新缺省 = 关**：它会改用户技能目录里的文件（覆盖已装技能），
+ *     属可见行为变化，必须用户主动打开（10-13 上一轮的定稿）。
+ *   ⇒ 判据只此一处，界面与后台都走它 —— ⛔ 别在别处再写一份默认值。
+ */
+export function readAutoUpdateSwitch(settings: AppSettings, key: AutoUpdateSettingKey): boolean {
+  return key === "skillAutoUpdate" ? settings?.skillAutoUpdate === true : autoUpdateEnabled(settings, key);
+}

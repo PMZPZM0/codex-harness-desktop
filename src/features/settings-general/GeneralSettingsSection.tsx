@@ -15,6 +15,7 @@ import { copyTextToClipboard } from "../../lib/clipboard";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { Spinner } from "../../components/CardShell";
 import { BuiltinSkillSwitch } from "./BuiltinSkillSwitch";
+import { AutoUpdateCard } from "./AutoUpdateCard";
 
 export type GeneralSettingsSectionProps = { globalPermApproval: any; applyGlobalPermissionMode: any; workspace: any; chooseWorkspace: any; userDataPath: any; setNotice: any; rightOpen: any; setRightOpen: any; capabilityHint: any; desktopAuto: any; groupBusy: any; toggleDesktopAuto: any; browserAuto: any; toggleBrowserAuto: any; ponytailOn: any; applyGroup: any; hardwareAccel: any; changeHardwareAccel: any; restartPending: any; SHORTCUT_GROUPS: any; setShortcutsOpen: any; engineVersion: any; engineCheck: any; engineUpdating: any; checkEngineUpdateNow: any; performEngineUpdateNow: any; engineUpdatePercent: any; engineUpdateStageText: any; engineUpdateLog: any; engineUpdateResult: any; relaunchCountdown: any; downloadSource: any };
 
@@ -226,6 +227,13 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                         ⛔⛔ 「开启」的语义是**生效**，不是「可被点名」（10-06 用户报障后定稿）：
                            开关状态由 electron/output-styles.ts 翻成 developer_instructions 的常驻段
                            （开关一变即重写 + 重启引擎——引擎只在 spawn 时读 config.toml）。 */}
+                    {/* 自动更新（10-13 用户令：「开关都统一放到控制台里面」）：
+                        ⛔ 技能 / 桌面自动化 / 浏览器自动化 / Mac 电脑操作 / Codex 引擎五类开关的
+                        **唯一入口**（技能中心与自动化页只剩版本与手动更新）。
+                        ⛔ 别在本页外层再传 props —— 卡片自己走 autoUpdate:status / autoUpdate:set，
+                        清单、包名与每个开关的缺省值都在主进程（一处判据）。 */}
+                    <AutoUpdateCard />
+
                     <div className="settings-card">
                       <div className="settings-card-head"><Sparkles size={15} /><strong>回复风格</strong><span className="settings-subhead-hint">只改模型怎么写，不改变它能做什么</span></div>
                       <div className="settings-card-body settings-toggle-list">

@@ -5,7 +5,6 @@
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
 import { PageInfo } from "../../components/SettingsHead";
-import { useEffect, useState } from "react";
 import { ArrowUpRight, Check, CircleStop, LayoutGrid, Paperclip, Play, Plus, Quote, RefreshCw, Trash2 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { BatchActions, CheckCard, SearchField, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
@@ -16,18 +15,6 @@ export type SkillsCenterSectionProps = { openAppConfirm: (title: string, text: s
 
 export function SkillsCenterSection(props: SkillsCenterSectionProps) {
   const { openAppConfirm, userDataPath, displayPath, skillsManageOnly, setSkillsManageOnly, installedTotalCount, importSkill, refreshMarketSkills, skillHubCategory, skillHubSearch, marketPage, marketLoading, skillHubCategories, setSkillHubCategory, setMarketPage, skillManageSearch, setSkillManageSearch, setSkillHubSearch, skillHubCategoryTabs, skillHubFilterCategory, setSkillHubFilterCategory, marketSkills, skillHubCategoryName, localSkills, settingsResources, skillChecked, setSkillChecked, skillZhNote, toggleSkillEnabled, setSelectedSkills, setSettingsOpen, removeLocalSkill, skillBatchBusy, batchSetSkillEnabled, marketPageSize, setMarketPreview, setNotice, installMarketSkill, installingMarketSkill } = props;
-  // 技能自动更新（10-13 用户令）：开关持久化在 app-settings（默认关）；开启后主进程
-  // 启动 15s 后 + 每 6 小时静默检查并更新市场技能（链路/安全检查与手动更新同一套）。
-  const [skillAutoUpdate, setSkillAutoUpdate] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    void window.codex.readAppSettings?.().then((settings) => { if (alive) setSkillAutoUpdate(Boolean(settings?.skillAutoUpdate)); }).catch(() => undefined);
-    return () => { alive = false; };
-  }, []);
-  const saveSkillAutoUpdate = (next: boolean) => {
-    setSkillAutoUpdate(next);
-    void window.codex.saveAppSettings?.({ skillAutoUpdate: next }).catch(() => { setSkillAutoUpdate(!next); });
-  };
   return (
     <>
       <section className="settings-section stack skill-center">
@@ -118,19 +105,11 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                         </article>;
                       };
                       return <div className="skill-installed-view">
-                        {/* 技能自动更新（10-13 用户令）：替代原「技能更新」大卡片——那张占界面太多。
-                            开关只写 app-settings；真正的检查/更新在主进程后台跑（skills-ipc 的
-                            runSkillAutoUpdate），与本页是否打开无关。手动逐项更新入口 = 卡片上的
-                            「重新安装」（同一条市场安装链）。 */}
-                        <section className="settings-section stack skill-auto-update">
-                          <div className="settings-copy">
-                            <h2>技能自动更新</h2>
-                            <p>开启后后台静默检查市场技能的内容变化并自动更新（启动后与每 6 小时各一次，走与手动更新完全相同的链路，含安全检查）。本地导入的技能不参与。</p>
-                          </div>
-                          <div className="settings-heading-actions">
-                            <ToggleSwitch checked={skillAutoUpdate} onChange={saveSkillAutoUpdate} title="开启后技能在后台静默自动更新，无需手动操作" />
-                          </div>
-                        </section>
+                        {/* 技能自动更新开关**已移到「控制台」**（10-13 用户令：所有自动更新开关统一到控制台）。
+                            ⛔ 这里只留一句指路，**不再放开关** —— 同一状态两个入口，用户会以为两边不一致。
+                            真正的检查/更新在主进程后台跑（skills-ipc 的 runSkillAutoUpdate），与本页是否打开无关；
+                            手动逐项更新入口 = 卡片上的「重新安装」（同一条市场安装链）。 */}
+                        <p className="settings-card-hint">「技能内容更新」的自动更新开关已统一移到<b>设置 → 控制台</b>的「自动更新」里（和桌面自动化、浏览器自动化、Mac 电脑操作、Codex 引擎放在一起）。</p>
                         <SkillPoolSection projects={props.projects} onNotice={setNotice} />
                         <div className="resource-toolbar secondary">
                           <SelectAllToggle total={selectableFolders.length} selected={checkedFolders.length} unit="个技能" onSelectAll={() => setSkillChecked(selectableFolders)} onClear={() => setSkillChecked([])} />
