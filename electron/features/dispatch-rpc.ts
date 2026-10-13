@@ -15,7 +15,7 @@ import { canDispatchFrom } from "../dispatch";
 import { broadcastHarnessEvent } from "../features/window-bus";
 import type { DispatchKind } from "../dispatch";
 import { DISPATCH_FIXED_PORT, dispatchMcpTools, dispatchProbes, dispatchToken, ensureDispatchToken, restrictedThreadRole, stableKey } from "../features/dispatch-core";
-import { normalizeTeamConfig, readExpertTeams, writeExpertTeams } from "../expert-teams";
+import { normalizeTeamConfig, readExpertTeams, readUsableExpertTeams, writeExpertTeams } from "../expert-teams";
 import { readConnectors } from "../main";
 import { voiceService } from "../main";
 import { loadVoiceSettings } from "../voice/voice-settings";
@@ -324,7 +324,7 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     return { ok: true, output: `已${existed ? "更新" : "创建"}专家「${team.displayName?.zh}」（teamId: ${team.teamId}，主理人: ${team.lead?.name}${memberCount ? `，成员 ${memberCount} 名` : ""}）。专家列表在重启应用后可见；用相同 teamId 再次调用即更新。` };
   }
   if (name === "expert_list") {
-    const list = await readExpertTeams();
+    const list = await readUsableExpertTeams();
     if (!list.length) return { ok: true, output: "（还没有任何专家/专家团）" };
     const lines = list.map((t) => `- ${t.teamId}｜${t.displayName?.zh ?? "?"}｜${t.profession?.zh ?? ""}｜主理人 ${t.lead?.name ?? "?"}${Array.isArray(t.members) && t.members.length ? `（+${t.members.length} 成员）` : ""}`);
     return { ok: true, output: lines.join("\n") };

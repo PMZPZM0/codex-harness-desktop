@@ -46,6 +46,9 @@ export type ExpertTeamConfig = {
   members: ExpertTeamMember[];
   /** 标准工作流程（SOP 编排文本，注入主理人会话） */
   sop: string;
+  /** ⛔ 依赖的按需工具（如 "rea"）：对应「开发工具」runtime 未安装时，该专家**整队不出现** ——
+   *  用户令（2026-10-13）：「下载后，才可以用这个专家」。过滤点在 readExpertTeams（单点覆盖全部消费方）。 */
+  requiresTool?: string;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;

@@ -8,7 +8,7 @@
  * 会被重新赋值的符号经 `mutableState` 访问器读写（ESM 里 import 的绑定不可赋值）。
  */
 import { canDispatchFrom, clipDispatchOutput, delegateScopeBlock, dispatchKindAllowed, kindLabel, resolveDispatchTarget } from "../dispatch";
-import { buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, readExpertTeams } from "../expert-teams";
+import { buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, readUsableExpertTeams } from "../expert-teams";
 import { app, safeStorage } from "electron";
 import { safeProviderId } from "../provider-id";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
@@ -76,7 +76,7 @@ export async function runDelegatedTask(input: {
     rolePrompt = sub.systemPrompt ?? "";
     roleRef = { kind: "subagent", id: target.key, label: target.name };
   } else {
-    const teams = await readExpertTeams();
+    const teams = await readUsableExpertTeams();
     const team = teams.find((entry) => entry.teamId === target.teamId);
     if (!team) return { ok: false, output: "", error: `专家「${input.name}」不存在` };
     if (target.kind === "team") {

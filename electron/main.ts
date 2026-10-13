@@ -51,7 +51,7 @@ import { ensureBuiltinSkills, ensureExpertSkillsMarketplace, expertSkillsSourceD
 import { NUPHUS_VISION_ENV_TABLE, nuphusVisionEnv, nuphusVisionEnvDrift } from "./nuphus-env";
 import { SKETCH_SCHEME } from "./sketch-protocol";
 import {
-  buildChengxiangExpertTeam, buildDefaultExpertTeams, buildDongmingExpertTeam, buildModel3dExpertTeam, buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, buildZhiweiExpertTeam, imageGenExpert, normalizeTeamConfig, videoProductionTeam,
+  buildChengxiangExpertTeam, buildDefaultExpertTeams, buildDongmingExpertTeam, buildModel3dExpertTeam, buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, buildZhiweiExpertTeam, imageGenExpert, normalizeTeamConfig, reverseEngineeringExpert, videoProductionTeam,
   readExpertTeams, setExpertTeamsFile, syncSkillsPathInTeam, writeExpertTeams, type ExpertTeamConfig, type ExpertTeamMember,
 } from "./expert-teams";
 import { applyCustomModel } from "./features/custom-model-apply";
@@ -268,7 +268,7 @@ void (async () => {
     /* ⛔ 内置专家（每次启动确保存在；用户删掉后重启可找回，老用户也能拿到 —— 09-27 的画意/视频团
    曾只进 buildDefaultExpertTeams（仅全新安装写入），老用户永远看不到，就是「新增专家都没有」的原因）：
    知微 / 呈象 / 洞明（带技能包路径兜底）/ 鲁班（3D 建模）/ 画意（生图）/ 剪承团（视频制作）。 */
-    const builtinTeams = [buildZhiweiExpertTeam(), buildChengxiangExpertTeam(), buildDongmingExpertTeam(expertSkillsSourceDir()), buildModel3dExpertTeam(), imageGenExpert(normalizeTeamConfig, expertSkillsSourceDir()), videoProductionTeam(normalizeTeamConfig, expertSkillsSourceDir())];
+    const builtinTeams = [buildZhiweiExpertTeam(), buildChengxiangExpertTeam(), buildDongmingExpertTeam(expertSkillsSourceDir()), buildModel3dExpertTeam(), imageGenExpert(normalizeTeamConfig, expertSkillsSourceDir()), videoProductionTeam(normalizeTeamConfig, expertSkillsSourceDir()), reverseEngineeringExpert(normalizeTeamConfig)];
     let teams = existing.length ? existing : await readExpertTeams();
     // 一次性清理：审查专家曾用过 `mingjian-code-review` 这个临时 id（未随包发布，改名窗口内
     // 启动过的 profile 可能把它播进去）。留着会在专家中心多出一张「明鉴」孤儿卡，删掉。

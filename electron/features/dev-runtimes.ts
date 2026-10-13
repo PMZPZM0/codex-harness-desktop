@@ -25,7 +25,7 @@ import { codexHome, engineActiveTurnIds, server } from "../runtime-refs";
 // 自动化工具链状态：nuphus-mcp（桌面）/ playwright-cli（浏览器）/ cloakbrowser（指纹浏览器）。
 // 静态检测安装目录与缓存，不 spawn 进程，打开设置页即时返回。
 
-type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "playwright-cli" | "cloakbrowser" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "cloak-browsers" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown" | "platform-tools" | "laya" | "phone-harness" | "kb-embedding";
+type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "playwright-cli" | "cloakbrowser" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "cloak-browsers" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown" | "platform-tools" | "laya" | "phone-harness" | "kb-embedding" | "rea";
 // bundled：随包内置（zip / 预解压目录是来源，不是联网下载）。界面显示「内置」徽标；
 // 缺失时允许「修复安装」（从随包 zip 重新解压），但不允许卸载（删了没有可靠重取途径）。
 // hidden：**不在「开发工具」页出卡**（它有自己的专用卡片），但注册成正式工具项 ⇒
@@ -59,6 +59,10 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   nuphus: { name: "Nuphus 桌面自动化", description: "35 个桌面自动化工具（屏幕截取、窗口控制、键鼠输入、剪贴板、OCR 感知），经 nuphus-call 按需调用，不占模型上下文；随包内置，开箱即用", size: "随包 30 MB", marker: "npm-global\\node_modules\\@nuphus\\nuphus-mcp\\package.json", bundled: true, noUninstall: true },
   "playwright-cli": { name: "Playwright 浏览器自动化", description: "命令行浏览器自动化 CLI（open / snapshot / click / type / screenshot），浏览器内核单独按需下载；随包内置，开箱即用", size: "随包 18 MB", marker: "npm-global\\node_modules\\@playwright\\cli\\package.json", bundled: true, noUninstall: true },
   cloakbrowser: { name: "CloakBrowser 指纹浏览器", description: "反检测指纹浏览器 npm 包（过 Cloudflare Turnstile / reCAPTCHA / FingerprintJS），默认不用、需要时再装；npm 国内镜像下载，失败自动回落官方源", size: "约 4 MB", marker: "npm-global\\node_modules\\cloakbrowser\\package.json" },
+  // REA 逆向分析（10-13，源自 morluto/rea「REA: Reverse Engineer Anything」，npm rea-agents，MIT）：
+  // 100MB > 50MB 内置线 ⇒ 按需下载（npm 国内镜像，失败回落官方源）。装完自动注册 [mcp_servers.rea]，
+  // 配套内置专家「洞见 · 逆向工程专家」（requiresTool="rea"，未装时整队隐藏 —— readExpertTeams 口径）。
+  rea: { name: "REA 逆向分析", description: "逆向工程 MCP（morluto/rea，MIT）：拆解 Electron/JS 应用、.NET 程序集、网站、SQLite 的实现并给证据链；内置专家「洞见」专用，装完重启应用生效；npm 国内镜像下载、重跑同卡即更新到最新版", size: "约 100 MB", marker: "npm-global\\node_modules\\rea-agents\\package.json" },
   // ⛔ 10-01 用户定稿：「50m 以内的工具都内置」—— 以下 7 项下载体积 ≤50MB，随包内置（builtIn），
   //    用户开箱即用、卡片显示「内置」徽标，不再进首启引导的下载清单。
   jq: { name: "jq", description: "命令行查询、筛选和转换 JSON；随包内置，开箱即用", size: "随包 1 MB", marker: "jq\\jq.exe", builtIn: true },
