@@ -18,7 +18,7 @@
  * ⛔ 进度复用既有的 `runtime:progress` 事件通道（主进程按行 id 推），不为此单开一条。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Boxes, Check, Cpu, Globe2, Monitor, Package, Puzzle, RefreshCw, ShieldCheck, Sparkles, Wand2 } from "lucide-react";
+import { Boxes, Check, Cpu, Globe2, Monitor, Package, Puzzle, RefreshCw, ScanSearch, ShieldCheck, Sparkles, Wand2 } from "lucide-react";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
 
 type SwitchRow = {
@@ -63,7 +63,7 @@ type Outcome = {
 
 /** 行图标：纯外观，不对清单做判断（未知 id 回落通用图标）。 */
 const ICONS: Record<string, any> = {
-  nuphus: Monitor, "playwright-cli": Globe2, "computer-use": ShieldCheck, cloakbrowser: ShieldCheck,
+  nuphus: Monitor, "playwright-cli": Globe2, "computer-use": ShieldCheck, cloakbrowser: ShieldCheck, rea: ScanSearch,
   engine: Cpu, skill: Sparkles, "market-skill": Sparkles, "expert-skill": Wand2, ponytail: Package,
   "market-plugin": Puzzle, "official-plugin": Puzzle, soul: Wand2,
   markitdown: Boxes, laya: Boxes, "phone-harness": Boxes,

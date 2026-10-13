@@ -136,6 +136,20 @@ export const COMPONENT_SPECS: readonly ComponentSpec[] = [
     dynamic: false,
   },
   {
+    // REA 逆向分析（10-13 内置专家「洞见」配套）：npm-tool 后端自动复用 UPDATEABLE_TOOLS 的
+    // checkRuntimeUpdateRow / performRuntimeUpdate（npmmirror 优先 + 官方回落），开发工具页装好后
+    // 这里才出现「更新」入口与自动更新开关（未安装显示「未安装」—— 与「下载后才可以用」同口径）。
+    id: "rea",
+    kind: "npm-tool",
+    label: "REA 逆向分析（洞见专用）",
+    group: "工具",
+    pkg: "rea-agents",
+    channel: "npm",
+    mirror: true,
+    reason: "npm 包，走 npmmirror",
+    dynamic: false,
+  },
+  {
     id: "kb-embedding",
     kind: "unsupported",
     label: "知识库语义检索后端（kb-embedding）",
