@@ -35,6 +35,13 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-13 | 功能更新清单 = 发布数据源 | 流程 | `AGENTS.md`、`docs/FEATURE-LEDGER.md`（对所有 Agent 生效） | 每次功能新增/改动同轮在本文末尾追加六列条目（漏记 = 工作未完成）；发布日志 / Release Notes / whats-new 要点一律从本台账搬，不重翻 commit | 557f06a |
+| 2026-10-12 | 汇总卡网页来源 · PPcode 同步 | 流程 | PPcode 仓（`PMZPZM0/PPcode`） | 网页来源条全套同步至 PPcode（守卫 12g / 验收项 web-sources / 副本棘轮 1911→1981 按实测），顺手解锁副本三笔存量红；原版 f6577f11（工具持久化+静默更新）留归属会话自同步 | c4d572a |
+| 2026-10-12 | 本地 HTML/CSS → MP4 渲染通道 | 新增 | `electron/html-video.ts`、`html-video-ipc.ts`、`video_render_html` 工具、`scripts/render-html-video.cjs` | 零 ffmpeg：隐藏窗口 canvas + MediaRecorder（本引擎 runtime 原生支持 MP4/avc1）+ CDP 逐帧馈帧，本地 HTML 文件或 http(s) URL 渲成 MP4（默认落 `<userData>/renders/`）；模型经能力网关 `video_render_html` 可调，命令行 `scripts/render-html-video.cjs` 同引擎；守卫 21 十六条（6 处变异全抓） | 4d9f20c |
+| 2026-10-12 | 壁纸星野：比例滑杆 + 拖动数字气泡 | 改动 | `WallpaperSettings.tsx`、`28-wallpaper.css`、`wallpaper.mjs` | 星野浓度用户可调（20~300%），滑杆拖动时浮出数字气泡（用户点名「别只看滑杆」）；密度实测提高约 20 倍 + 8% 亮星层次 | a5ece2c、d44ec8f |
+| 2026-10-12 | 壁纸 3D 背景换「星野」（vanta 退役） | 改动 | `WallpaperLayer.tsx`、`wallpaper.mjs`、`28-wallpaper.css` | 黑夜→星空/白天→动态点、点间无连线（vanta 网状形态调不出，整体退役防复活）；自绘 canvas 零依赖，鼠标缓动视差 + 纵深系数 + 缓速自漂；旧值 `vanta` 自动迁移；守卫 14-wallpaper 37 条 | 03cd0a7 |
+| 2026-10-12 | 壁纸主题色完全适配 | 修复 | `WallpaperLayer.tsx`、`28-wallpaper.css` | 3D/自定义图/粒子档未跟随主题色：vanta 深色降亮降密、自定义图与精选渐变的雾按主题分档（深 82→54% / 浅 46→18%）、粒子接上 `useThemeColor`（原切主题不换色） | c23fbf0 |
+| 2026-10-12 | 550C 开机动画 | 新增 | `src/features/settings-appearance/boot550c/`、`src/lib/boot-intro.mjs`、`36-boot-550c.css`、外观设置 | 移植 DSH 插件 dsh-550c-boot（MIT）：完整 16 秒/简易 4 秒/关三档 × 琥珀/绿/青/白四配色，外观页一行可切换+预览；Shadow DOM + portal body + useLayoutEffect（防闪主帧）；`?popout=` / `?pet=1` / 减弱动效不播；守卫 20 共 34 条 + 验收 boot-intro 八条 | b072389、7a8d706 |
 | 2026-10-13 | 汇总消息右下角网页来源 | 新增 | `src/features/status/Status.tsx`、`TurnWebSources.tsx`、`src/lib/turn-web-sources.mjs` | 回合完成后在状态卡右下角显示本轮引用的网页来源（favicon 条，悬停看标题/链接），从回合事件流提取域名去重 | 6b098cb |
 | 2026-10-13 | 开发工具持久化 | 修复 | `electron/features/tool-persistence.ts`、`dev-runtimes.ts`、`runtime-ipc.ts` | 修复「应用更新后手动安装的非内置工具（git/ffmpeg 等）全部丢失」：安装/卸载记账到 `<userData>/installed-tools.json`（原子写、只记非内置项、退出码 0 才记） | 2f757e7 |
 | 2026-10-13 | 更新后台静默下载 + 重启安装 | 新增 | `electron/features/updates-ipc.ts`、`UpdateReadyToast.tsx`、`01-sidebar-shell.tsx` | 发新版后启动 8s 自动静默检查下载（sha256 校验），下好左下角弹「更新已就绪」（取消=延后 / 重启安装=先 spawn 安装包再退自己）；手动检查更新发现已下好的包同样弹窗 | 2f757e7 |
