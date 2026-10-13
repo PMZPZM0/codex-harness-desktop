@@ -76,7 +76,7 @@ export function ExpertMarketSection({ onBack, onInstalled, onNotice, localSkills
             </article>
           ))}
         </div> : <p className="muted">还没有安装技能包——去「市场浏览」挑一个。</p>
-      ) : items.length > 0 ? <div className="skill-card-grid">
+      ) : items.length > 0 ? <div className="skill-card-grid page-turn" key={page}>
         {items.map((entry) => {
           const installed = installedSlugs.has(entry.slug);
           const busy = installing === entry.slug;

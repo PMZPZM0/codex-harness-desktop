@@ -10,7 +10,7 @@
  *   · 插件市场**有版本号** ⇒ 显示「已装 x → 最新 y」，版本缺失标「无法判定」。
  *   **绝不允许**把 `unresolved` / `无法判定` 显示成「已是最新」。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, CircleCheck, Download, RefreshCw } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 
@@ -66,7 +66,10 @@ function apiOf(kind: MarketUpdateKind) {
 }
 
 export function MarketUpdatePanel(props: MarketUpdatePanelProps) {
-  const api = apiOf(props.kind);
+  // ⛔ 必须 useMemo：apiOf 每次渲染都返回新对象 ⇒ 下方 check 的 useCallback 依赖随之每轮变化
+  //   ⇒ useEffect([check]) 每轮渲染重新触发检查 → setState → 再渲染 → **无限检查循环**
+  //   （实测症状：按钮常驻「检查中…」+ 行列表反复闪 = 鬼畜跳动，10-13 用户报障）。
+  const api = useMemo(() => apiOf(props.kind), [props.kind]);
   const [rows, setRows] = useState<Row[]>([]);
   const [checking, setChecking] = useState(false);
   const [busyKey, setBusyKey] = useState("");
