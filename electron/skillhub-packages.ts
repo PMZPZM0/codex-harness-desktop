@@ -1,7 +1,7 @@
 // SkillHub 专家市场包（skillhub.cn/skillspackage）——列表 + 一键安装 + 专家卡片。
 //
 // 数据源：https://api.skillhub.cn/api/v1/skillsets（公开 JSON，总 55 包）。
-//   列表 { skillSets: [...], total }；翻页参数是 pageNum/pageSize（实测 page/page_size 不生效）。
+//   列表 { skillSets: [...], total }；翻页参数是 page/pageSize（⛔ 10-13 实测：pageNum 被服务端忽略 —— page 1/2 返回同 6 条，「下一页没变化」的根因；page=2 正常翻页）。
 //   条目自带 content = 整份 SKILL.md（meta-skill：frontmatter 里 orchestration.children
 //   列出该包编排的子技能 slugs）——装包 = 落盘这份元技能 + 逐个装子技能 + 建专家卡片。
 // 子技能安装：复用 installCocoLoopSkill 既有通道（COS zip，404 自动回退 /api/v1/download?slug=）。
@@ -64,12 +64,12 @@ export function stripFrontmatter(content: string): string {
   return (match ? content.slice(match[0].length) : content).trim();
 }
 
-/** 包列表：有搜索词时服务端不支持（实测只有 pageNum/pageSize），拉全量本地过滤 */
+/** 包列表：有搜索词时服务端不支持（只有 page/pageSize 生效），拉全量本地过滤 */
 export async function listSkillHubSkillsets(input: { page?: number; pageSize?: number; query?: string } = {}) {
   const page = Math.max(1, Math.floor(Number(input.page) || 1));
   const pageSize = Math.min(20, Math.max(1, Math.floor(Number(input.pageSize) || 12)));
   const query = input.query?.trim().toLowerCase();
-  const response = await net.fetch(`${API}/api/v1/skillsets?pageNum=${page}&pageSize=${pageSize}`, { signal: AbortSignal.timeout(15_000) });
+  const response = await net.fetch(`${API}/api/v1/skillsets?page=${page}&pageSize=${pageSize}`, { signal: AbortSignal.timeout(15_000) });
   if (!response.ok) throw new Error(`SkillHub 技能包请求失败（HTTP ${response.status}）`);
   const payload: any = await response.json();
   const sets: any[] = Array.isArray(payload?.skillSets) ? payload.skillSets : [];
@@ -79,7 +79,7 @@ export async function listSkillHubSkillsets(input: { page?: number; pageSize?: n
     const all: SkillHubSkillset[] = [...items];
     const seen = new Set(items.map((entry) => entry.slug));
     for (let p = 2; all.length < total && p <= Math.ceil(total / pageSize); p += 1) {
-      const next = await net.fetch(`${API}/api/v1/skillsets?pageNum=${p}&pageSize=${pageSize}`, { signal: AbortSignal.timeout(15_000) });
+      const next = await net.fetch(`${API}/api/v1/skillsets?page=${p}&pageSize=${pageSize}`, { signal: AbortSignal.timeout(15_000) });
       if (!next.ok) break;
       const nextPayload: any = await next.json();
       for (const entry of (Array.isArray(nextPayload?.skillSets) ? nextPayload.skillSets : []).map(mapSkillset)) {

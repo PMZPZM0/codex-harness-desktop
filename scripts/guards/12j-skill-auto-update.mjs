@@ -13,6 +13,7 @@
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { codeOnly } from "./_ctx.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 let checks = 0;
@@ -35,6 +36,12 @@ ok(/MarketUpdatePanel kind="plugins"/.test(pluginsPage) && /MarketUpdatePanel ki
   "⛔ 插件页的两个更新面板仍在（共用组件不得误伤）");
 const panel = read("src/features/market-updates/MarketUpdatePanel.tsx");
 ok(panel.length > 0, "market-updates 板块本体保留（插件页还要用）");
+/* ⛔ 10-13 鬼畜循环修复的防回归：apiOf 每次渲染返回新对象 ⇒ check 的 useCallback 依赖每轮变
+   ⇒ useEffect([check]) 每轮渲染重新检查 → setState → 再渲染（无限循环，按钮常驻「检查中…」）。
+   断言锚 useMemo 接线本身 + 负向禁裸调用（改回去 = 循环回来）。 */
+ok(/const api = useMemo\(\(\) => apiOf\(props\.kind\), \[props\.kind\]\)/.test(panel),
+  "⛔ api 按 kind 记忆化（裸 apiOf 每轮新对象 = 检查无限循环，实测「一直检查中+鬼畜」）");
+ok(!/const api = apiOf\(/.test(codeOnly(panel)), "负向：不许退回裸 apiOf 调用");
 
 console.log("【② 手动链 = 自动链（单一真相源）】");
 const ipc = read("electron/features/skills-ipc.ts");

@@ -102,7 +102,7 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
         <div className="skill-tabs">{pluginMarketCategoryTabs.map(([label, value]: any) => <button key={value} className={pluginMarketCategory === value ? "active" : ""} onClick={() => { setPluginMarketCategory(value); setPluginMarketPage(1); }}>{label}</button>)}</div>
         <SearchField value={pluginMarketSearch} onChange={(next) => { setPluginMarketSearch(next); setPluginMarketPage(1); }} placeholder="搜索插件名称、简介或作者" />
       </div>
-      {pluginMarketItems.length > 0 ? <div className="skill-card-grid">
+      {pluginMarketItems.length > 0 ? <div className="skill-card-grid page-turn" key={pluginMarketPage}>
         {pluginMarketItems.map((plugin: any) => {
           // ⛔⛔ 10-03 用户报障「插件安装后没有更新状态，已安装里还是 +」：
           //   权威判定 = 主进程按**本地 manifest**（.codex-market.json）回传的 plugin.installed；

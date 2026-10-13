@@ -126,7 +126,7 @@ export function CodexOfficialMarketSection({ onResourcesChanged }: Props) {
       <SearchField value={query} onChange={(next) => { setQuery(next); setPage(1); }} placeholder="搜索官方插件名称、简介或分类" />
     </div>
     {notice && <p className="codex-official-market-note">{notice}</p>}
-    {items.length > 0 ? <div className="skill-card-grid">
+    {items.length > 0 ? <div className="skill-card-grid page-turn" key={page}>
       {items.map((plugin: any) => {
         const installed = plugin.installed === true || installedIds.includes(plugin.slug);
         /* ⛔ 10-06 用户定案：市场里不再显示已安装的（装了的去「已安装」屏管理/卸载）。 */
