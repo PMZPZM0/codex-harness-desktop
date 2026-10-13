@@ -128,7 +128,7 @@ console.log("【⑦ 界面：开关统一在控制台 + 版本号】");
 const card = read("src/features/settings-general/AutoUpdateCard.tsx");
 const general = read("src/features/settings-general/GeneralSettingsSection.tsx");
 const skillsPage = read("src/features/settings-skills/SkillsCenterSection.tsx");
-ok(/<AutoUpdateCard \/>/.test(general) && /from "\.\/AutoUpdateCard"/.test(general),
+ok(/<AutoUpdateCard[^>]*\/>/.test(general) && /from "\.\/AutoUpdateCard"/.test(general),
   "「控制台」页挂上了统一开关卡片");
 ok(/ToggleSwitch/.test(card) && /window\.codex\.setAutoUpdate\(row\.id, enabled\)/.test(card)
   && /window\.codex\.readAutoUpdateStatus\(\)/.test(card),
@@ -148,6 +148,19 @@ ok(/id: "skill", kind: "skill"/.test(boardCode) && /key: "skillAutoUpdate"/.test
   "技能项并入同一条清单（界面一次请求拿全五个开关）");
 ok(/if \(item\.kind === "skill"\) continue;/.test(boardCode),
   "⛔ 技能循环仍在 skills-ipc（本板块只承载开关与显示），不重复起调度器");
+ok(/if \(!readAutoUpdateSwitch\(settings, item\.key\)\) continue;[\s\S]{0,200}await updateOne\(item\)/.test(boardCode),
+  "⛔ 关掉就不**发起检查**：开关判定在 updateOne（查版本）之前 continue 掉");
+ok(/autoUpdateRunning\) return;/.test(read("electron/features/skills-ipc.ts"))
+  && /if \(!enabled\) return;[\s\S]{0,120}checkSkillUpdateRows\(\)/.test(read("electron/features/skills-ipc.ts")),
+  "⛔ 技能同理：关着时在 checkSkillUpdateRows 之前返回（连内容比对都不做）");
+
+console.log("【⑦c 每行有名称 / 说明 / tooltip / 状态反馈】");
+ok(/<strong>\{row\.label\}<\/strong>/.test(card) && /<small>\{describe\(row\)\}<\/small>/.test(card),
+  "每行 = 名称 + 简要说明");
+ok(/title=\{row\.enabled \? `关闭/.test(card), "每行有 tooltip（说明开/关会做什么）");
+ok(/不会发起更新检查/.test(card), "关闭态明确写出「不会发起更新检查」（开关的语义，不是装饰）");
+ok(/onNotice\?\.\(applied \?/.test(card) && /onNotice=\{setNotice\}/.test(general),
+  "写盘成功后有状态反馈（对齐控制台既有的 notice 用法）");
 ok(/readAutoUpdateSwitch/.test(settings) && /skillAutoUpdate === true/.test(settings),
   "缺省值分档只写一处：四类装包缺省开、技能内容更新缺省关");
 

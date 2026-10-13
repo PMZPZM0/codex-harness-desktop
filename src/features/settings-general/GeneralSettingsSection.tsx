@@ -232,7 +232,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                         **唯一入口**（技能中心与自动化页只剩版本与手动更新）。
                         ⛔ 别在本页外层再传 props —— 卡片自己走 autoUpdate:status / autoUpdate:set，
                         清单、包名与每个开关的缺省值都在主进程（一处判据）。 */}
-                    <AutoUpdateCard />
+                    <AutoUpdateCard onNotice={setNotice} />
 
                     <div className="settings-card">
                       <div className="settings-card-head"><Sparkles size={15} /><strong>回复风格</strong><span className="settings-subhead-hint">只改模型怎么写，不改变它能做什么</span></div>
