@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-13 | ponytail 更新完版本号不刷新（当前版本误报随包常量） | 修复 | `electron/ponytail-plugin.ts`（新增 `listInstalledPonytailVersions` 实读已装版本）、`electron/update-backends.ts`（检测 / 更新前两个分支改用实装版本，判更新走 `compareVersions`）、`scripts/guards/12l-component-update.mjs`（新增第 ⑪ 节 9 项，含夹具行为断言） | 用户实测：控制台「组件更新」里 ponytail 那行点更新后 toast 说「已更新」，但版本号与「有更新」徽标一直不动（看着像没刷新）。根因 = 当前版本直接报随包常量 `PONYTAIL_VERSION`（4.9.0），而在线更新装进的是按标签命名的目录（`…/ponytail/ponytail/5.2.0`）⇒ 更新其实成功了，界面仍报 4.9.0、`hasUpdate` 恒真。改为从引擎安装落点实读已装版本（取最高；一个都没装才回落随包常量），"有没有新版"改用 semver 比较 | 3146188 |
 | 2026-10-13 | 同步面明确包含 `logs/` 结论档案 | 流程 | `AGENTS.md` 规则块（三仓同内容）、`logs/` 结论档案（条目文件 + `index.jsonl`） | 「改动必须同轮同步全部三个仓」补一句：同步面含 `logs/` 结论档案。起因：`logs/` 此前从未进入同步批次（同步批次对 `logs/` 的 diffstat 为空）⇒ 三仓日志库漂移（PPcode 落后 19 条、云助手落后 8 条）；同日把三仓结论档案补齐到 115 条并各自 `reindex` 重建索引（⛔ sha256 与文件字节含行尾绑定，直接拷索引会哈希不符） | 16c97be |
 | 2026-10-13 | 跨仓同步硬规则：改动必须同轮同步全部三仓 | 流程 | `AGENTS.md`（多仓协作段）、`docs/REPO-WORKFLOW.md`，以及 PPcode / 云助手两仓的同名文件（同内容落地） | 用户令「在项目规则里面写一下，改动必须要同步 ppcode 和云助手」：明确三仓清单（桌面版主线 + PPcode + 云助手）、任一仓改动都要同轮同步另外两仓并各推 `main`（⛔ 云助手推 `cloud`，它的 origin 指向桌面版仓）、漏同步 = 该轮工作未完成；配套流程文档补入云助手拓扑与三仓差异（生成物各仓自产、手写源逐项合并、棘轮按实测更新） | 6286030 |
 | 2026-10-13 | 改动同步到 PPcode 与云助手（本轮 14 提交） | 流程 | `D:/PPcode`、`D:/Codex Assistant`（两个副本仓） | 自桌面版 8cafc37..f07f73f 逐文件 git apply --check 预检后落地：PPcode 33 项（提交 b9ffddc + 台账回填 b782c0d，已推 origin）、云助手 38 项；副本侧各跑 gen:ipc 与 gen:domains（⛔ 不套主仓生成物）、manifest 手工合并 autoUpdate 域 5 通道与 appSettings 类型串、行数棘轮按副本实测对齐；同一轮把「改动必须同轮同步全部三仓」写成 AGENTS.md 硬规则 | ae22757 |
