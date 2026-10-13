@@ -21,7 +21,7 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { dialog } from "electron";
+import { dialog, app } from "electron";
 import { auditSkill, installCocoLoopSkill, listSkillHubSkills, marketSkillFingerprint, resolveMarketSkill, skillFingerprint, stripSkillBom } from "../skills-market";
 import type { InstalledMarketSkill, MarketSkill } from "../skills-market";
 import { describeSkillPool, readGlobalDisabled, setSkillPoolState } from "../skill-pool";
@@ -32,6 +32,7 @@ import { isOutputStyleSkill } from "../output-styles";
 import { codexHome, mainWindow, server } from "../runtime-refs";
 import { globalSkillsDir } from "../skill-pack";
 import { setSkillEnabledSilent } from "../skill-store";
+import { readAppSettingsSync } from "../app-settings";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
@@ -210,7 +211,11 @@ export const skillsFeature = defineFeature<null>({
       return fallback;
     }
 
-    ipcHost.handle("skills:update-check", async () => {
+    /**
+     * 检查全部市场安装技能的内容状态（10-13 从 `skills:update-check` 处理器里抽出）。
+     * ⛔ 手动面板与后台自动更新**必须走同一个函数**——判据漂移 =「面板说最新、后台又更新」这类怪象。
+     */
+    async function checkSkillUpdateRows(): Promise<SkillUpdateRow[]> {
       const rows: SkillUpdateRow[] = [];
       let entries: any[] = [];
       try { entries = await fs.readdir(userSkillsDir, { withFileTypes: true }); } catch { return rows; }
@@ -237,18 +242,22 @@ export const skillsFeature = defineFeature<null>({
         }
       }
       return rows;
-    });
+    }
 
-    ipcHost.handle("skills:update", async (_event, folder: string) => {
-      const key = String(folder ?? "").trim();
-      if (!key) throw new Error("缺少技能目录名");
+    /**
+     * 更新单个市场技能（10-13 从 `skills:update` 处理器里抽出；链路与安全检查一字未改）。
+     * 进度事件仍发 `skill-install` type——只有装完即走的安装弹窗在听，静默更新不会弹任何东西。
+     */
+    async function updateSkillFolder(key: string) {
+      const folder = String(key ?? "").trim();
+      if (!folder) throw new Error("缺少技能目录名");
       // 防目录穿越（与 skills:local-remove 同一口径）
       const root = path.resolve(userSkillsDir);
-      const dir = path.resolve(userSkillsDir, key);
+      const dir = path.resolve(userSkillsDir, folder);
       if (!dir.startsWith(root + path.sep)) throw new Error("非法技能路径");
       const found = await readInstalledMarketManifest(dir);
       if (!found?.manifest?.marketId) throw new Error("该技能不是从市场安装的，无法在线更新");
-      const name = await declaredSkillName(dir, key);
+      const name = await declaredSkillName(dir, folder);
       const remote = await resolveMarketSkill({ marketId: String(found.manifest.marketId), name, source: found.source });
       if (!remote) throw new Error("市场清单里找不到该技能（可能已下架），无法更新");
       // ⛔ 复用市场安装链（含安全检查 / 解压 / 落盘 / 来源清单），不另写一条覆盖逻辑；
@@ -256,7 +265,7 @@ export const skillsFeature = defineFeature<null>({
       const installed = await installCocoLoopSkill({
         skill: remote,
         destinationRoot: userSkillsDir,
-        onProgress: ({ stage, message }) => sendToWindow("harness:event", { type: "skill-install", skillId: key, stage, message, at: Date.now() }),
+        onProgress: ({ stage, message }) => sendToWindow("harness:event", { type: "skill-install", skillId: folder, stage, message, at: Date.now() }),
       });
       await updateSkillRegistry({ name: installed.name, path: installed.path, source: "cocoloop", marketId: installed.marketId, sourceUrl: installed.sourceUrl, installedAt: new Date().toISOString() });
       let discovered = false;
@@ -267,7 +276,34 @@ export const skillsFeature = defineFeature<null>({
       } catch { /* 重扫失败不阻塞：下一回合引擎自己会重新扫描 */ }
       void refreshSkillDiscipline();
       return { ok: true, name: installed.name, folder: installed.id, discovered };
-    });
+    }
+
+    ipcHost.handle("skills:update-check", async () => checkSkillUpdateRows());
+
+    ipcHost.handle("skills:update", async (_event, folder: string) => updateSkillFolder(folder));
+
+    /** 后台静默自动更新（10-13 用户令）：开关关着 / 已在跑 / 网络挂了都安静退出。 */
+    let autoUpdateRunning = false;
+    async function runSkillAutoUpdate() {
+      if (autoUpdateRunning) return;
+      let enabled = false;
+      try { enabled = Boolean(readAppSettingsSync(app.getPath("userData")).skillAutoUpdate); } catch { return; }
+      if (!enabled) return;
+      autoUpdateRunning = true;
+      try {
+        const rows = await checkSkillUpdateRows();
+        for (const row of rows) {
+          if (row.state !== "update") continue;
+          try { await updateSkillFolder(row.folder); }
+          catch { /* 单个失败（下架/网络/审查不过）不影响其余；下个周期再试 */ }
+        }
+      } catch { /* 检查失败：静默，下个周期再试 */ }
+      finally { autoUpdateRunning = false; }
+    }
+    // 启动 15s 后一次 + 每 6 小时一次；定时器随 feature 释放摘除
+    const autoUpdateKick = setTimeout(() => { void runSkillAutoUpdate(); }, 15_000);
+    const autoUpdateTimer = setInterval(() => { void runSkillAutoUpdate(); }, 6 * 60 * 60 * 1000);
+    ctx.effect(() => { clearTimeout(autoUpdateKick); clearInterval(autoUpdateTimer); });
 
     ipcHost.handle("skills:local-list", async () => {
       try {
