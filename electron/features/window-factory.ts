@@ -150,7 +150,13 @@ export function createWindow() {
   });
 
   // 关窗回包的**执行端**：close-confirm-ipc 收到渲染层的选择后调这里（跨域桥，见 runtime-refs）。
-  closeConfirmBridge.respond = (action) => {
+  closeConfirmBridge.respond = (action, _remember, source) => {
+    /* ⛔ 10-13 晚：助手窗口（云助手形态）的回包由 assistant-window 注入的 respondAssistant 执行；
+       桌面/PPcode 没有 assistant-window ⇒ respondAssistant 恒 null ⇒ 走主窗逻辑（行为不变）。 */
+    if (source === "assistant" && closeConfirmBridge.respondAssistant) {
+      closeConfirmBridge.respondAssistant(action);
+      return;
+    }
     if (action === "tray") {
       // 最小化到托盘：只隐藏窗口，引擎 / 调度器 / 渠道机器人全都不中断
       mutableState.mainWindow?.hide();

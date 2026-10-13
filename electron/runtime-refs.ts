@@ -191,13 +191,18 @@ export function rememberCloseChoice(action: boolean): void {
 
 /* 关闭确认弹窗的**跨域桥**（10-13）：关窗守卫在 window-factory、弹窗 UI 在渲染层、
    回包处理在 close-confirm-ipc —— 三方经这个可变桥对接（与 mutableState 同一纪律：
-   ESM 的 import 绑定不可赋值 ⇒ 用对象属性读写，跨模块改值才不会静默丢失）。 */
+   ESM 的 import 绑定不可赋值 ⇒ 用对象属性读写，跨模块改值才不会静默丢失）。
+   10-13 晚：**助手窗口（云助手形态）的 X 也走同一弹窗** ⇒ 加 source 与 respondAssistant ——
+   回包按 pending.source 分发；桌面/PPcode 没有 assistant-window ⇒ respondAssistant 恒 null，
+   行为与之前完全一致。 */
 export const closeConfirmBridge: {
-  /** 待决的关窗（preventDefault 后等用户选）；null = 没有在等的 */
-  pending: { busy: number } | null;
-  /** 渲染层回包后执行（hide / 二次 close）；由 window-factory 在建窗时注入 */
-  respond: ((action: "tray" | "quit" | "cancel", remember: boolean) => void) | null;
-} = { pending: null, respond: null };
+  /** 待决的关窗（preventDefault 后等用户选）；null = 没有在等的。source = 哪个窗口在问 */
+  pending: { busy: number; source?: "main" | "assistant" } | null;
+  /** 渲染层回包后执行（hide / 二次 close）；由 window-factory 在建窗时注入（按 source 分发） */
+  respond: ((action: "tray" | "quit" | "cancel", remember: boolean, source?: "main" | "assistant") => void) | null;
+  /** 助手窗口的回包执行端（assistant-window.ts 注入；仅云助手形态存在） */
+  respondAssistant: ((action: "tray" | "quit" | "cancel") => void) | null;
+} = { pending: null, respond: null, respondAssistant: null };
 
 /* 记忆后端判定在 ./memory-backend（⛔ 不能定义在这里：本文件已 import memory-layers，
    在此定义再被 memory-layers 反向 import 会形成 require 环）。这里只做转发。 */
