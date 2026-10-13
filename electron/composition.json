@@ -464,6 +464,13 @@
       "config": null
     },
     {
+      "id": "autoUpdate",
+      "enabled": true,
+      "file": "features/auto-update-ipc.ts",
+      "export": "autoUpdateFeature",
+      "config": null
+    },
+    {
       "id": "skills",
       "enabled": true,
       "file": "features/skills-ipc.ts",

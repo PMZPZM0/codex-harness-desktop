@@ -73,6 +73,7 @@ import { engineFeature as feat_engine } from "./features/engine-ipc";
 import { builtinFeature as feat_builtin } from "./features/builtin-ipc";
 import { pluginFeature as feat_plugin } from "./features/plugin-ipc";
 import { toolsFeature as feat_tools } from "./features/tools-ipc";
+import { autoUpdateFeature as feat_autoUpdate } from "./features/auto-update-ipc";
 import { skillsFeature as feat_skills } from "./features/skills-ipc";
 import { skillDisciplineFeature as feat_skill_discipline } from "./features/skill-discipline-ipc";
 import { pluginsFeature as feat_plugins } from "./features/plugins-ipc";
@@ -175,6 +176,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "builtin", plugin: feat_builtin as Plugin<unknown>, config: null },
   { id: "plugin", plugin: feat_plugin as Plugin<unknown>, config: null },
   { id: "tools", plugin: feat_tools as Plugin<unknown>, config: null },
+  { id: "autoUpdate", plugin: feat_autoUpdate as Plugin<unknown>, config: null },
   { id: "skills", plugin: feat_skills as Plugin<unknown>, config: null },
   { id: "skill-discipline", plugin: feat_skill_discipline as Plugin<unknown>, config: null },
   { id: "plugins", plugin: feat_plugins as Plugin<unknown>, config: null },

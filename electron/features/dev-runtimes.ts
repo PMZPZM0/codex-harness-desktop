@@ -97,7 +97,10 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   //  卡片里如实说明，不假装有镜像。装到 tools/platform-tools/adb.exe，phone-harness 用 android.adb 指过去。
   "platform-tools": { name: "Android 平台工具（adb）", description: "让 Codex 通过 adb 控制 Android 手机（USB 或无线调试）：截图、点击、输入、读界面；随包内置，开箱即用", size: "随包 8 MB", marker: "platform-tools\\adb.exe", builtIn: true },
 };
-const runtimeInstalls = new Map<DevRuntimeId, Promise<void>>();
+// ⛔ 键放宽到 string：可更新工具清单（runtime-ipc 的 UPDATEABLE_TOOLS）含 mac 专属的
+//    "computer-use"，它**不是**开发工具规格表里的 id（DevRuntimeId 是封闭联合，加它会牵动整张
+//    规格表）。安装/取消这套机制本身不依赖规格表 ⇒ 放宽键类型比给假 cast 诚实。
+const runtimeInstalls = new Map<string, Promise<void>>();
 
 /* ── 取消安装（10-07 用户要求「下载要有取消按钮，取消后清临时文件」）=====================
  * 三个词根：
@@ -404,7 +407,7 @@ function runRuntimeInstaller(id: DevRuntimeId, script: string, args: string[], n
   });
 }
 
-async function restartServerWhenIdle(id: DevRuntimeId) {
+async function restartServerWhenIdle(id: string) {
   if (engineActiveTurnIds.size) sendToWindow("runtime:progress", { id, message: "安装完成，等待当前任务结束后刷新引擎" });
   const deadline = Date.now() + 10 * 60_000;
   while (engineActiveTurnIds.size && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 500));

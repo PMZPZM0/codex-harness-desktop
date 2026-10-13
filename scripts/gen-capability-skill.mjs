@@ -69,6 +69,7 @@ const DOMAIN_DESCRIPTIONS = {
   "channels": "IM 通道总开关与状态",
   "memory": "记忆金字塔全链路（L0~L7 分层读写、召回、蒸馏、清理计划/执行、云端网关、工作区开关、记忆后端二选一）",
   "skills": "技能经验包（导入/启停/市场安装/本地列表）",
+  "autoUpdate": "自动化能力与引擎的**后台自动更新**：四类（桌面自动化 nuphus / 浏览器自动化 playwright-cli / Mac 电脑操作 open-computer-use / Codex 引擎）各一个独立开关（缺省即开，存 app-settings.json），开启后主进程定时静默拉取国内镜像最新版并更新，成功发系统通知。⛔ 手动更新与后台更新走**同一批函数**，不存在两套判据",
   "commands": "斜杠命令（自定义 / 命令的定义与管理）",
   "skill-discipline": "技能纪律（写技能时必须遵守的硬规则查询）",
   "plugins": "插件市场（安装/启停/列表）",
