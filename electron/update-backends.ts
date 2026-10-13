@@ -31,7 +31,8 @@ import { checkMarketPluginUpdates, codexMarketDir, findMarketPlugin, installCode
 import { checkOfficialPluginUpdates, codexOfficialMarketDir, findOfficialMarketPlugin, installOfficialMarketPlugin } from "./codex-official-market";
 import { installSkillHubSkillset } from "./skillhub-packages";
 import { applySkillHubSoul, currentSkillHubSoul } from "./skillhub-souls";
-import { PONYTAIL_VERSION } from "./ponytail-plugin";
+import { PONYTAIL_VERSION, listInstalledPonytailVersions } from "./ponytail-plugin";
+import { compareVersions } from "./updates";
 import { mirrorOrder, withPrefix, type ComponentSpec, type DownloadSourceSetting } from "./update-registry";
 import { dirFingerprint, withRollback } from "./update-safety";
 import { bundledPython } from "./toolchain";
@@ -191,6 +192,19 @@ async function ponytailLatestTag(source: DownloadSourceSetting): Promise<string>
   return tag;
 }
 
+/**
+ * 「当前已装」的 ponytail 版本 = **引擎落点里实际存在的最高版本**；一个都没装才回落随包常量。
+ *
+ * ⛔ 别拿随包常量 `PONYTAIL_VERSION` 当当前版本：在线更新装的是**按标签命名**的目录
+ *    （`…/ponytail/ponytail/5.2.0`），与随包版本（4.9.0）不同名 —— 只报常量会让控制台
+ *    永远停在「4.9.0 → v5.2.0（有可用更新）」，更新成功了也不刷新（10-13 用户实测）。
+ * 版本大小比较走 `updates.ts` 的 `compareVersions`（单一真相源，别在这里手写第二份）。
+ */
+async function installedPonytailVersion(codexHome: string): Promise<string> {
+  const versions = await listInstalledPonytailVersions(codexHome);
+  return versions.sort(compareVersions).pop() ?? PONYTAIL_VERSION;
+}
+
 /** ponytail 更新：下载标签归档 → 校验 → 落到 cache → 重跑注册（幂等）。 */
 async function updatePonytail(ctx: UpdateContext, tag: string): Promise<void> {
   const prefixes = mirrorOrder("github", ctx.source);
@@ -303,13 +317,14 @@ export async function scanRows(spec: ComponentSpec, ctx: UpdateContext): Promise
         })];
       }
       case "ponytail": {
+        const current = await installedPonytailVersion(ctx.codexHome);
         let latest = "";
         let error = "";
         try { latest = await ponytailLatestTag(ctx.source); }
         catch (err) { error = (err as Error)?.message ?? String(err); }
         return [row(spec.id, spec.label, {
-          installed: true, current: PONYTAIL_VERSION, latest, error,
-          hasUpdate: Boolean(latest) && latest.replace(/^v/, "") !== PONYTAIL_VERSION.replace(/^v/, ""),
+          installed: true, current, latest, error,
+          hasUpdate: Boolean(latest) && compareVersions(latest, current) > 0,
         })];
       }
       case "market-skill": {
@@ -433,9 +448,9 @@ export async function updateComponent(spec: ComponentSpec, rowId: string, ctx: U
           : outcome("updated", `${before} → ${after}`, before, after);
       }
       case "ponytail": {
-        const before = PONYTAIL_VERSION;
+        const before = await installedPonytailVersion(ctx.codexHome);
         const tag = await ponytailLatestTag(ctx.source);
-        if (tag.replace(/^v/, "") === before.replace(/^v/, "")) return outcome("unchanged", "已经是最新版", before, before);
+        if (compareVersions(tag, before) <= 0) return outcome("unchanged", "已经是最新版", before, before);
         ctx.progress(rowId, `下载 ${tag} 归档…`, 30);
         await updatePonytail(ctx, tag);
         ctx.progress(rowId, "已更新并重新注册", 95);

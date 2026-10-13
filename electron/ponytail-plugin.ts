@@ -17,6 +17,36 @@ import path from "node:path";
 // 随包插件的固定版本目录名（引擎安装落点 = plugins/cache/<市场>/<插件>/<版本>）。
 export const PONYTAIL_VERSION = "4.9.0";
 
+/** ponytail 在引擎安装落点下的版本根目录（`<codexHome>/plugins/cache/<市场>/<插件>/<版本>`）。 */
+export function ponytailCacheRoot(codexHome: string): string {
+  return path.join(codexHome, "plugins", "cache", "ponytail", "ponytail");
+}
+
+/**
+ * 读**引擎安装落点里实际存在**的 ponytail 版本（不排序；空数组 = 一个都没装）。
+ *
+ * ⛔⛔ 别拿随包常量 `PONYTAIL_VERSION` 当「当前版本」：在线更新装的是**按标签命名**的目录
+ *    （`…/ponytail/ponytail/5.2.0`），与随包版本（4.9.0）不同名。只报常量会让控制台的
+ *    那一行永远停在「4.9.0 → v5.2.0（有可用更新）」——更新成功了也不刷新、版本号不动
+ *    （10-13 用户实测：磁盘上只剩 5.2.0，界面仍报 4.9.0）。
+ *    随包常量只回答「随包的是什么」，不回答「**装的是什么**」。
+ *    版本大小比较不在本文件做：单一真相源是 `electron/updates.ts` 的 `compareVersions`。
+ */
+export async function listInstalledPonytailVersions(codexHome: string): Promise<string[]> {
+  const root = ponytailCacheRoot(codexHome);
+  const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
+  const versions: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const yaml = await fs.readFile(path.join(root, entry.name, "plugin.yaml"), "utf8").catch(() => "");
+    // 优先读插件自报版本；yaml 缺失/损坏时退回目录名（目录名就是版本，引擎按它装）
+    const version = /^version:\s*(\S+)/m.exec(yaml)?.[1];
+    if (version) versions.push(version);
+    else if (/^\d/.test(entry.name)) versions.push(entry.name);
+  }
+  return Array.from(new Set(versions));
+}
+
 // 钩子脚本的 sha256（引擎按内容算，4.9.0 固定）。来源：开发机 config.toml 已验证值。
 const PONYTAIL_HOOK_TRUSTED_HASH =
   "sha256:5f81d38f47448a1581c08ec877e044d9e04dd6f814dce3f2671f7a8edadd719b";
