@@ -416,11 +416,6 @@ type PetBounds = { x: number; y: number; width: number; height: number };
 type PetStatus = { settings: PetSettings; active: PetPackage | null };
 
 interface Window {
-  /* ⛔ 10-13 云助手形态的注入字段（headless 外壳注入；桌面/PPcode 没有这些 ⇒ 相关 UI 按位隐藏）。
-     云通道方法（cloud:device/list 等）只存在于云助手仓的 manifest，桌面仓不声明（组件侧走防御性类型）。 */
-  __CHC_ACCOUNT_GATE__?: boolean;
-  __CHC_PAIR_CODE__?: string;
-  __CHC_WEB_ENTRY__?: string;
   codex: {
     /* ⛔ invoke 方法签名由 scripts/gen-ipc-bridge.mjs 生成（两标记之间勿手改）。 */
 /* ═══ gen:begin（由 scripts/gen-ipc-bridge.mjs 生成，源 ipc-channels.manifest.json，勿手改）═══ */
