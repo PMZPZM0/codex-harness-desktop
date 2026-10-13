@@ -724,6 +724,16 @@ interface Window {
     relayOpenPurchase(): Promise<{ ok: boolean; url: string }>;
     enhancePrompt(text: string): Promise<{ ok: boolean; text?: string; error?: string }>;
     listTerminals(): Promise<{ id: string; alive: boolean; cwd: string }[]>;
+    /* 读改动备份配置（enabled/目录/是否被回退/目录是否存在） */
+    backupConfigGet(): Promise<{ ok: boolean; error?: string; config?: any }>;
+    /* 写改动备份配置；启用时才创建目录 */
+    backupConfigSet(input: { enabled?: boolean; dir?: string }): Promise<{ ok: boolean; error?: string; config?: any; dirReady?: boolean }>;
+    /* 读某会话的备份索引（回合级） */
+    backupList(conversationId?: string): Promise<{ ok: boolean; error?: string; changes?: any[] }>;
+    /* 备份产物概览（会话数/条数/字节数） */
+    backupSummary(): Promise<{ ok: boolean; error?: string; summary?: any }>;
+    /* 清空备份（⚠ 不可恢复，渲染层须先确认） */
+    backupClear(): Promise<{ ok: boolean; error?: string; summary?: any }>;
     validatePlugin(target: string): Promise<{ ok: boolean; root: string; manifestPath?: string; issues: string[]; inventory: { skills: number; commands: number; agents: number; hooks: number }; name?: string }>;
     chooseDirectoryAt(startPath: string): Promise<string | null>;
     /* 10-03 资源停用/启用（不删文件，可逆） */

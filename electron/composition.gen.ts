@@ -82,6 +82,7 @@ import { remoteFeature as feat_remote } from "./features/remote-ipc";
 import { fsFeature as feat_fs } from "./features/fs-ipc";
 import { dialogFeature as feat_dialog } from "./features/dialog-ipc";
 import { appFeature as feat_app } from "./features/app-diagnostics";
+import { backupFeature as feat_backup } from "./features/change-backup-ipc";
 import { relayFeature as feat_relay } from "./features/relay-ipc";
 import { layaFeature as feat_laya } from "./features/laya-service";
 import { videoFeature as feat_video } from "./features/video-gen";
@@ -183,6 +184,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "fs", plugin: feat_fs as Plugin<unknown>, config: null },
   { id: "dialog", plugin: feat_dialog as Plugin<unknown>, config: null },
   { id: "app", plugin: feat_app as Plugin<unknown>, config: null },
+  { id: "backup", plugin: feat_backup as Plugin<unknown>, config: null },
   { id: "relay", plugin: feat_relay as Plugin<unknown>, config: null },
   { id: "laya", plugin: feat_laya as Plugin<unknown>, config: null },
   { id: "video", plugin: feat_video as Plugin<unknown>, config: null },

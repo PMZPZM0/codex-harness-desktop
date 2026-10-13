@@ -73,6 +73,19 @@ export type AppSettings = {
    * ⛔ 缺省 = 启用（不在名单里就是启用）⇒ 升级不改变任何现有行为。
    */
   disabledDeclaredPlugins?: string[];
+  /**
+   * 改动备份（10-13 用户令，与 WorkBuddy 的「改动备份」同构）。
+   *
+   * - `changeBackupEnabled`：每回合结束把该回合改过的文件落一份可回看的档案
+   *   （新增/修改/删除 + 增删行数 + 变更块全文）。⛔ **默认关** ——
+   *   用户没主动开之前不写盘（属可见行为变化：磁盘占用与备份目录）。
+   * - `changeBackupDir`：备份根目录；空串 = 用默认 `<userData>/change-backups`。
+   *   ⛔ **开启时才创建**（关闭状态下不预先建目录）。
+   * ⛔ 相对路径 / 文件系统根 / 空值一律回退默认（见 change-backup 的 normalizeBackupDir），
+   *   配置写错不得让应用起不来。
+   */
+  changeBackupEnabled?: boolean;
+  changeBackupDir?: string;
   /** 语气自适应（默认开）：按会话维护少量状态（心情/精力/默契），随会话自己的
    *  developer instructions 下发一句「只影响说法、不影响内容」的语气指引。
    *  状态按会话各自一份（agent-mood-<threadId>），关掉即停止更新与注入。 */
