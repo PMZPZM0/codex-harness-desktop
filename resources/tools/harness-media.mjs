@@ -14,13 +14,24 @@ const userData = process.env.CODEX_HARNESS_USERDATA
   || path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Codex Harness Desktop");
 const configPath = path.join(userData, "builtin-plugins.json");
 
+// ⛔ 密钥来源（10-13 体检 P0-1 之后）：**优先引擎进程的环境变量**。
+//   配置文件里现在只存 safeStorage 密文（`encryptedKey`）——本 CLI 是纯 Node，解不开它 ⇒
+//   主进程把明文密钥注入**引擎进程 env**（`CODEX_HARNESS_IMAGE_API_KEY` /
+//   `CODEX_HARNESS_VISION_API_KEY`，见 `electron/main/09-agents-plugins.ts` 的 builtinPluginEnv），
+//   我们作为它的子进程继承得到。文件里的明文 `apiKey` 仍兼容读取
+//   （老版本、以及 `scripts/verify-image-plugin.mjs` 的端到端夹具都写它），两个来源取先有的那个。
+const ENV_KEY = { image: "CODEX_HARNESS_IMAGE_API_KEY", vision: "CODEX_HARNESS_VISION_API_KEY" };
 function loadConfig() {
-  try { return JSON.parse(fs.readFileSync(configPath, "utf8")); } catch { return {}; }
+  let raw = {};
+  try { raw = JSON.parse(fs.readFileSync(configPath, "utf8")); } catch { raw = {}; }
+  const out = {};
+  for (const kind of ["image", "vision"]) {
+    const conf = raw?.[kind];
+    if (!conf || typeof conf !== "object") continue;
+    out[kind] = { ...conf, apiKey: process.env[ENV_KEY[kind]] || conf.apiKey || "" };
+  }
+  return out;
 }
-
-// Electron safeStorage 加密的密钥以 base64 存在配置里（encryptedKey 字段可选）；
-// 明文 apiKey 优先。这里不解密（CLI 拿不到 Electron safeStorage key），
-// 因此主进程在保存配置时同时写一份「引擎可读」的明文密钥到 builtin-plugins.json。
 function readStdinText() { try { return fs.readFileSync(0, "utf8"); } catch { return ""; } }
 
 // 生图可选参数（内置示例）：
