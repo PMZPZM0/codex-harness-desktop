@@ -386,6 +386,16 @@ contextBridge.exposeInMainWorld("codex", {
   relayOpenPurchase: () => __ipc("relay:open-purchase", 0, []),
   enhancePrompt: (text: string) => __ipc("prompt:enhance", 1, [{ text }]),
   listTerminals: () => __ipc("terminal:list", 0, []),
+  /* 读改动备份配置（enabled/目录/是否被回退/目录是否存在） */
+  backupConfigGet: () => __ipc("backup:config-get", 0, []),
+  /* 写改动备份配置；启用时才创建目录 */
+  backupConfigSet: (input: { enabled?: boolean; dir?: string }) => __ipc("backup:config-set", 1, [input]),
+  /* 读某会话的备份索引（回合级） */
+  backupList: (conversationId?: string) => __ipc("backup:list", 0, [conversationId]),
+  /* 备份产物概览（会话数/条数/字节数） */
+  backupSummary: () => __ipc("backup:summary", 0, []),
+  /* 清空备份（⚠ 不可恢复，渲染层须先确认） */
+  backupClear: () => __ipc("backup:clear", 0, []),
   validatePlugin: (target: string) => __ipc("plugin:validate", 1, [{ path: target }]),
   chooseDirectoryAt: (startPath: string) => __ipc("dialog:directory-at", 1, [startPath]),
   /* 10-03 资源停用/启用（不删文件，可逆） */

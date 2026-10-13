@@ -16,7 +16,7 @@ import { markBoot } from "../boot-timing";
 import { debugMemoryCapture } from "../memory-capture-debug";
 import { debugTurnFiles } from "../turn-files-debug";
 import { sendToWindow } from "./window-bus";
-import { dropStoredReports, emitTurnFileChanges, setTurnFileWatchBroadcast, setTurnFileWatchDiag, setTurnFileWatchStore, settleTurnByTurnId, snapshotTurnWorkspace } from "../turn-file-watch";
+import { dropStoredReports, emitTurnFileChanges, setTurnFileWatchBroadcast, setTurnFileWatchDiag, setTurnFileWatchStore, settleTurnByTurnId, snapshotTurnWorkspace, storedReportsForThread } from "../turn-file-watch";
 import { dropStoredCompactions, loadCompactionStore, setCompactionWatchDirs, watchTurnCompleted } from "../compaction-watch";
 
 import { shouldRegisterNuphus } from "../automation-policy";
@@ -25,7 +25,8 @@ import { BotStreamSession, readBotStreamSettingsSync } from "../bot-stream";
 import { ensureBuiltinSkills, ensureExpertSkillsMarketplace } from "../builtin-skills";
 import { syncLocalMemoryConnector } from "../memory-mcp-connector";
 import { developerInstructionsLine } from "../developer-instructions";
-import { normalizeAutoCompactRatio, readAppSettings } from "../app-settings";
+import { normalizeAutoCompactRatio, readAppSettings, readAppSettingsSync } from "../app-settings";
+import { backupTurnIfEnabled as backupTurnIfEnabledImpl, normalizeBackupDir } from "./change-backup";
 import { broadcastCodexEvent, broadcastHarnessEvent } from "./window-bus";
 import { handleRoleMemoryToolCall } from "../role-memory-tool";
 import { handleDelegateHarnessToolCall } from "../delegate-harness-tool";
@@ -83,6 +84,35 @@ let captureBuffers!: any;
  */
 function turnIdOf(params: any): string {
   return String(params?.turn?.id ?? params?.turnId ?? params?.id ?? "");
+}
+
+/**
+ * 回合收尾落「改动备份」（10-13）。
+ *
+ * ⛔ **阶梯第 2 级「本仓已有吗」**：`turn-file-watch` 已经把工作区走完并算出这回合改了哪些
+ *   文件（带 additions/deletions，跑过 IGNORE 表与 4000 全局 / 600 单目录两级预算），
+ *   这里**只搬运不重算** —— 自己再写一遍遍历就是两处真相源，且忽略规则必然与它漂移。
+ * ⛔ 开关关闭 ⇒ 直接返回、一行不落盘（用户没主动开之前不该产生任何产物）。
+ * ⛔ 内部线程（记忆蒸馏等）不备份：那不是用户的代码，备份它只会污染回看列表。
+ * ⛔ 永不抛：磁盘满/路径失效只记日志（旁路能力，打断回合才是真损失）。
+ */
+function backupTurnIfEnabled(threadId: string, turnId: string): Promise<unknown> {
+  return backupTurnIfEnabledImpl(threadId, turnId, {
+    filesForTurn: (tid, rid) => {
+      // ⚠️ emitTurnFileChanges 会清掉快照；这里紧接着读，取的是**同一批**文件条目。
+      // 取不到就退成该会话最后一个回合的报告（引擎形态差异时 turnId 可能对不上）。
+      const reports = storedReportsForThread(tid);
+      const hit = reports.find((r) => r.turnId === rid) ?? reports[reports.length - 1];
+      return (hit?.files ?? []) as any[];
+    },
+    readSettings: () => {
+      const settings = readAppSettingsSync(app.getPath("userData"));
+      return {
+        enabled: Boolean(settings.changeBackupEnabled),
+        dir: normalizeBackupDir(settings.changeBackupDir).dir,
+      };
+    },
+  });
 }
 
 /**
@@ -533,6 +563,13 @@ export async function bootApp() {
            没有这一发收尾就静默漏结算（运行中行不受影响，因为它用的是快照自存的回合 id）。 */
         emitTurnFileChanges(threadIdOf);
         if (id) settleTurnByTurnId(id);
+        /* 改动备份（10-13）：把上面那份「这回合改了哪些文件」落成可回看的备份档案。
+           ⛔ **不重写 diff、不重写遍历** —— 直接复用 turn-file-watch 已算好的结果
+           （它带 additions/deletions，还跑过 IGNORE 表与 4000/600 两级预算），
+           再写一套 walker 就是两处真相源，且必然与它的忽略规则漂移。
+           ⛔ 开关关闭 ⇒ 一行都不落盘（用户没主动开之前不产生任何产物）。
+           ⛔ 备份失败只记日志，永不打断回合（旁路能力，用户正在写的东西比备份重要）。 */
+        if (!internalThreads.has(String(threadIdOf))) void backupTurnIfEnabled(threadIdOf, id);
         // ⛔ 10-03 语法修复：58afb8b 把这里写成了 `else if (threadIdOf)`，但上面的
         //   `} else if (...)` 分支已闭合 ⇒ 整个文件解析失败（tsc TS1128），主进程编译不过。
         //   按本段注释的原意（"id 形态不认识 → 只释放该线程名下的回合"）补回条件：

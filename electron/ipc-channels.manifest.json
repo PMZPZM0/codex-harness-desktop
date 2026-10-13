@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 459,
+  "count": 464,
   "channels": [
     {
       "name": "request",
@@ -2602,6 +2602,56 @@
       "invokeArgs": "",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "backupConfigGet",
+      "channel": "backup:config-get",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; error?: string; config?: any }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "读改动备份配置（enabled/目录/是否被回退/目录是否存在）"
+    },
+    {
+      "name": "backupConfigSet",
+      "channel": "backup:config-set",
+      "paramsImpl": "input: { enabled?: boolean; dir?: string }",
+      "paramsDecl": "input: { enabled?: boolean; dir?: string }",
+      "returns": "Promise<{ ok: boolean; error?: string; config?: any; dirReady?: boolean }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "写改动备份配置；启用时才创建目录"
+    },
+    {
+      "name": "backupList",
+      "channel": "backup:list",
+      "paramsImpl": "conversationId?: string",
+      "paramsDecl": "conversationId?: string",
+      "returns": "Promise<{ ok: boolean; error?: string; changes?: any[] }>",
+      "invokeArgs": "conversationId",
+      "cast": null,
+      "note": "读某会话的备份索引（回合级）"
+    },
+    {
+      "name": "backupSummary",
+      "channel": "backup:summary",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; error?: string; summary?: any }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "备份产物概览（会话数/条数/字节数）"
+    },
+    {
+      "name": "backupClear",
+      "channel": "backup:clear",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; error?: string; summary?: any }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "清空备份（⚠ 不可恢复，渲染层须先确认）"
     },
     {
       "name": "validatePlugin",
