@@ -20,7 +20,7 @@ import { app } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
-import { readExpertTeams } from "../expert-teams";
+import { readUsableExpertTeams } from "../expert-teams";
 import type { DispatchTarget } from "../dispatch";
 import { readSubAgents } from "../main/09-agents-plugins";
 import { delegateRegistry, teamRunStore } from "../runtime-refs";
@@ -494,7 +494,7 @@ let dispatchHttpReady: Promise<void> | null = null;
 
 
 /** 组装「可调度对象目录」（只含已启用的；单人专家 = 只有 lead 的团队，结构同型） */
-async function buildDispatchCatalog(): Promise<DispatchTarget[]> {  const [teams, subs] = await Promise.all([readExpertTeams(), readSubAgents()]);
+async function buildDispatchCatalog(): Promise<DispatchTarget[]> {  const [teams, subs] = await Promise.all([readUsableExpertTeams(), readSubAgents()]);
   const targets: DispatchTarget[] = [];
   for (const team of teams) {
     if (!team.enabled) continue;

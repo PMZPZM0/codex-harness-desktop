@@ -188,6 +188,22 @@ export function computerUseLauncher() {
   }
 }
 
+/**
+ * REA 逆向分析（10-13 内置专家配套）：`rea-agents`（npm，MIT）装在 tools/npm-global，
+ * 返回它的 MCP 启动脚本路径（`rea.mjs mcp`）。包缺失 ⇒ 空串（不注册，而不是注册一个起不来的服务器）。
+ * ⛔ command 不能写裸 `rea`：装进安装包后 PATH 里没有它（nuphus / computer-use 同款坑）。
+ */
+export function reaServerScript() {
+  const root = npmGlobalRoot();
+  if (!root) return "";
+  const script = path.join(root, "rea-agents", "scripts", "rea.mjs");
+  try {
+    return fs.existsSync(script) ? script : "";
+  } catch {
+    return "";
+  }
+}
+
 // 国内下载加速（09-16 打包瘦身配套）：浏览器内核不随包，按需下载时默认走国内镜像。
 // ① Playwright 内核：npmmirror 的 binaries 镜像（淘宝系，国内直连快）；
 // ② CloakBrowser 内核：官方只发 GitHub Releases，国内直连慢/不稳，走 gh 代理前缀

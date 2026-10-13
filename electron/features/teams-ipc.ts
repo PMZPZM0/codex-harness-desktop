@@ -16,7 +16,7 @@
  * ⛔ 待接缝化（阶段 2）：safeStorage 为宿主能力。
  */
 
-import { buildDefaultExpertTeams, buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, normalizeTeamConfig, readExpertTeams, writeExpertTeams } from "../expert-teams";
+import { buildDefaultExpertTeams, buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, normalizeTeamConfig, readExpertTeams, readUsableExpertTeams, writeExpertTeams } from "../expert-teams";
 import { memberThreadName } from "../team-runs";
 import { app } from "electron";
 import { buildDelegateMemory } from "../delegate-memory";
@@ -52,7 +52,7 @@ export const teamsFeature = defineFeature<null>({
     if (!ipcHost) throw new Error("teams: 缺少 ipc 服务（宿主未提供）");
 
     ipcHost.handle("teams:list", async () => {
-      return await readExpertTeams();
+      return await readUsableExpertTeams();
     });
     ipcHost.handle("teams:save", async (_event, input: any) => {
       const list = await readExpertTeams();
@@ -70,22 +70,22 @@ export const teamsFeature = defineFeature<null>({
     });
     ipcHost.handle("teams:reset-defaults", async () => {
       await writeExpertTeams(buildDefaultExpertTeams());
-      return await readExpertTeams();
+      return await readUsableExpertTeams();
     });
     ipcHost.handle("teams:tools", async (_event, teamId: string) => {
-      const list = await readExpertTeams();
+      const list = await readUsableExpertTeams();
       const team = list.find((entry) => entry.teamId === teamId);
       if (!team) throw new Error(`专家团「${teamId}」不存在`);
       return { tools: team.members.map((m) => ({ id: m.id, name: m.name, profession: m.profession.zh, description: m.description })), teamSystemPrompt: buildTeamSystemPrompt(team), teamTool: buildTeamTools(team) };
     });
     ipcHost.handle("teams:session-config", async (_event, teamId: string) => {
-      const list = await readExpertTeams();
+      const list = await readUsableExpertTeams();
       const team = list.find((entry) => entry.teamId === teamId);
       if (!team) throw new Error(`专家团「${teamId}」不存在`);
       return { team, systemPrompt: buildTeamSystemPrompt(team), teamTool: buildTeamTools(team) };
     });
     ipcHost.handle("teams:start-session", async (_event, input: { teamId: string; task?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null; defer?: boolean }) => {
-      const list = await readExpertTeams();
+      const list = await readUsableExpertTeams();
       const team = list.find((entry) => entry.teamId === String(input.teamId ?? ""));
       if (!team) throw new Error(`专家团「${input.teamId}」不存在`);
       if (!team.enabled) throw new Error(`专家团「${team.displayName.zh}」已停用`);
@@ -135,7 +135,7 @@ export const teamsFeature = defineFeature<null>({
       return { thread: started.thread, turnId: turn.turn?.id ?? null };
     });
     ipcHost.handle("teams:member-session", async (_event, input: { teamId: string; memberId: string; task?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null; defer?: boolean }) => {
-      const list = await readExpertTeams();
+      const list = await readUsableExpertTeams();
       const team = list.find((entry) => entry.teamId === String(input.teamId ?? ""));
       if (!team) throw new Error(`专家团「${input.teamId}」不存在`);
       if (!team.enabled) throw new Error(`专家团「${team.displayName.zh}」已停用`);
@@ -203,7 +203,7 @@ export const teamsFeature = defineFeature<null>({
       return { thread: started.thread, turnId: turn.turn?.id ?? null, member: { id: member.id, name: member.name, profession: member.profession.zh } };
     });
     ipcHost.handle("teams:invoke-member", async (_event, input: { teamId: string; memberId: string; query: string; leadThreadId?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }) => {
-      const list = await readExpertTeams();
+      const list = await readUsableExpertTeams();
       const team = list.find((entry) => entry.teamId === String(input.teamId ?? ""));
       if (!team) throw new Error(`专家团「${input.teamId}」不存在`);
       if (!team.enabled) throw new Error(`专家团「${team.displayName.zh}」已停用`);
