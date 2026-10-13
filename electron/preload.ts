@@ -396,6 +396,14 @@ contextBridge.exposeInMainWorld("codex", {
   backupSummary: () => __ipc("backup:summary", 0, []),
   /* 清空备份（⚠ 不可恢复，渲染层须先确认） */
   backupClear: () => __ipc("backup:clear", 0, []),
+  /* agent 工具：列出全部会话的备份概览（会话id/条数/最新最旧/总字节）+ 容量上限 */
+  backupListAll: () => __ipc("backup:list-all", 0, []),
+  /* agent 工具：读某条备份全文（索引 + 明细 hunks），用来回答「当时到底改了什么」 */
+  backupReadChange: (input: { conversationId?: string; requestId?: string }) => __ipc("backup:read-change", 1, [input]),
+  /* agent 工具：把某文件回滚到备份那一版；⛔ 明细只存 hunks 时回 needs_full_content（如实说，不假装成功）；目标须在工作区内 */
+  backupRestoreFile: (input: { conversationId?: string; requestId?: string; filePath?: string; workspace?: string }) => __ipc("backup:restore-file", 1, [input]),
+  /* agent 工具：手动触发容量裁剪（超上限把最旧的移进回收站，不硬删） */
+  backupPrune: (input: { maxBytes?: number }) => __ipc("backup:prune", 1, [input]),
   validatePlugin: (target: string) => __ipc("plugin:validate", 1, [{ path: target }]),
   chooseDirectoryAt: (startPath: string) => __ipc("dialog:directory-at", 1, [startPath]),
   /* 10-03 资源停用/启用（不删文件，可逆） */

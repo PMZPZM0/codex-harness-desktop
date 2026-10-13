@@ -78,7 +78,52 @@ ok(/content-omitted-size/.test(cb), "detailStatus 同名（明细超限省略正
 ok(/findIndex\(\(c\) => c\.requestId === req\)/.test(cb),
   "⛔ 同 requestId 原地替换而非追加（引擎重放同一回合会再触发一次 completed，追加就重复了）");
 
-console.log("【⑥ 真跑：编译产物上的行为】");
+console.log("【⑦ 容量上限 3G + 回收站（10-13 用户令）】");
+ok(/BACKUP_MAX_BYTES = 3 \* 1024 \* 1024 \* 1024/.test(cb), "容量上限 = 3G");
+ok(/pruneBackupsBySize/.test(cb), "有独立的裁剪单元");
+ok(/deps\.trash/.test(cb) && /moveToTrash/.test(cb),
+  "⛔ 删除走**注入的 trash 回调**，不是模块内直接 rm（备份是用户代码唯一副本）");
+ok(!/rmSync\([^)]*detailDir|rmSync\([^)]*indexFilePath/.test(cb),
+  "⛔ 裁剪路径里不得出现 rmSync（硬删 = 不可恢复地删掉别人写的代码）");
+const pruneSlice = cb.slice(cb.indexOf("export function pruneBackupsBySize"), cb.indexOf("async function moveToTrash"));
+ok(pruneSlice.indexOf("detailDir") < pruneSlice.indexOf("indexFilePath") && /moveToTrash\(detailDir/.test(pruneSlice),
+  "⛔ 同一会话**明细先于索引**搬（反了会留「有索引无明细」的孤儿会话）");
+ok(/sort\(\(a, b\) => a\.oldest - b\.oldest\)/.test(pruneSlice), "按最旧优先裁剪");
+ok(/if \(!ok\) result\.skipped\+\+/.test(cb) && /return false/.test(cb),
+  "⛔ 搬移失败**保留**该份数据（不退化成硬删），只计 skipped");
+ok(/PRUNE_MAX_PER_WRITE/.test(cb), "单次裁剪限量（别让一次扫描/搬移卡住主进程）");
+ok(/pruneBackupsBySize\(root/.test(cb) && /必须在写完之后做/.test(cb),
+  "⛔ 裁剪在**写完之后**做（先裁再写会白裁一遍）");
+ok(/shell\.trashItem/.test(bt), "boot 注入 shell.trashItem（只有主进程有这个能力）");
+ok(/return false;   \/\/ ⛔ 失败就\*\*保留\*\*/.test(bt) || /失败就\*\*保留\*\*/.test(bt),
+  "boot 的 trash 回调失败时返回 false 而不是硬删");
+
+console.log("【⑧ agent 工具面（用户「配套好工具让 Codex 自己完成」）】");
+ok(/export function listAllBackups/.test(cb), "有 list-all（有哪些备份可捞）");
+ok(/export function readBackupChange/.test(cb), "有 read-change（当时到底改了什么）");
+ok(/export function restoreFileFromBackup/.test(cb), "有 restore-file（回滚某文件）");
+ok(/export async function pruneBackups/.test(cb), "有 prune（手动触发容量清理）");
+const restoreSlice = cb.slice(cb.indexOf("export function restoreFileFromBackup"));
+ok(/needs_full_content/.test(restoreSlice),
+  "⛔ 备份里没有整份正文时**如实回 needs_full_content**（不假装成功、不重试瞎猜）");
+ok(/outside_workspace/.test(restoreSlice) && /startsWith\(rootWs \+ path\.sep\)/.test(restoreSlice),
+  "⛔ restore 目标必须在工作区内（防路径穿越把用户文件写到任意位置）");
+// ⛔ 只查**代码里有没有**整条回滚的导出，别去匹配注释（本守卫第一版就栽在这：
+//    注释里写的正是「不做整条一键回滚」，被 `/一键/` 命中 ⇒ 恒假红）。
+//    判据 = 除 restoreFileFromBackup / readBackupChange 等单文件与只读导出外，
+//    不存在任何「按 conversationId+requestId 批量写回」的导出。
+const exportsList = [...cb.matchAll(/export (?:async )?function (\w+)/g)].map((m) => m[1]);
+const bulkWrites = exportsList.filter((name) => /restore|rollback|revert|apply/i.test(name));
+ok(bulkWrites.length === 1 && bulkWrites[0] === "restoreFileFromBackup",
+  `⛔ 不提供「整条一键回滚」（会连带覆盖用户之后的改动）—— 现有写类导出：${bulkWrites.join("、") || "无"}`);
+ok(/backup:list-all/.test(bi) && /backup:read-change/.test(bi) && /backup:restore-file/.test(bi) && /backup:prune/.test(bi),
+  "四个工具都已注册为 IPC 通道（模型够得着）");
+ok(/count: 9/.test(readFileSync(join(ROOT, "electron/ipc-registry.ts"), "utf8")), "ipc-registry 的 count 已同步为 9");
+const genSkill = readFileSync(join(ROOT, "scripts/gen-capability-skill.mjs"), "utf8");
+ok(/backupListAll/.test(genSkill) && /backupRestoreFile/.test(genSkill) && /backupPrune/.test(genSkill),
+  "⛔ 能力清单里写了用法（含 needs_full_content 的处置）——不写模型不知道有这些工具、也不会去 grep 源码");
+
+console.log("【⑨ 真跑：编译产物上的行为】");
 const script = `
 const fs=require("fs"),os=require("os"),path=require("path"),Module=require("module");
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),"bk-"));
