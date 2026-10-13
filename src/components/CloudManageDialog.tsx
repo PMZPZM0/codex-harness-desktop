@@ -90,7 +90,10 @@ export function CloudManageDialog({ onClose }: { onClose: () => void }) {
     void fetch("/api/cloud-disconnect", { method: "POST" })
       .then(() => {
         try { localStorage.removeItem("chc-token"); } catch { /* 忽略 */ }
-        onClose();          // 回到配对卡（主进程已清空绑定与设备 token）
+        /* ⛔ 必须**整页重载**：界面内存里还揣着旧令牌/旧状态，只关弹窗会让各处加载
+           陆续 401（收藏读取失败…）甚至反复自刷卡在启动页（用户实测）。
+           重载 = 走全新未配对启动的同一条路径 ⇒ 配对卡正常出现。 */
+        setTimeout(() => location.reload(), 300);
       })
       .catch(() => setDisconnecting(false));
   };
