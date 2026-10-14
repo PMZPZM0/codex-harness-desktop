@@ -96,6 +96,14 @@ bag.stopGoalLoop = stopGoalLoop as typeof bag.stopGoalLoop;
       bag.setStoppedElapsed((current) => ({ ...current, [turnId]: elapsed }));
       bag.setSending(false);
       bag.setInterrupting(false);
+      /* ⛔⛔ 必须清 activeTurnId —— 状态条由 `taskRunning = sending || activeTurnId` 驱动
+         （part06/02-seg/01-turn-runtime-activity.tsx:23）。停一个**尚未开始回复**的回合时
+         （「你在 N 秒后停止了 / Codex 尚未开始回复」），引擎**不发 turn/aborted**
+         （它那边没有真正开始的回合可中止）⇒ 事件路径不会来清，只能靠这里。
+         旧实现只清 sending ⇒ 会留下永久不熄的「正在生成回复」状态条。
+         catch 的两个复位分支（本文件 123 / 142 行）早就清了这一条，唯独**正常分支漏了**。
+         ⛔ 云助手（headless，事件路径不可靠）上这个漏清必现，用户截图实证。 */
+      bag.setActiveTurnId(null);
       bag.markThreadStopped(bag.thread.id);
       bag.setWorkStartedAt(null);
       // 保留乐观消息（避免"停止后消息消失"）：从服务端重新拉回合恢复已生成内容
