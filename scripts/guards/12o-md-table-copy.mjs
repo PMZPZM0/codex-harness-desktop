@@ -72,12 +72,14 @@ const btnRule = ruleOf(".md-table-copy");
 ok(/position:\s*relative/.test(wrapRule), "锚点容器 `.md-table-wrap` 是 relative（否则绝对定位的按钮跑到别处）");
 ok(/position:\s*absolute/.test(btnRule) && /top:\s*\d+px/.test(btnRule) && /right:\s*\d+px/.test(btnRule),
   "按钮绝对定位在**右上角**（top/right 都给了值）");
-ok(/opacity:\s*0/.test(btnRule) && /pointer-events:\s*none/.test(btnRule),
-  "默认不可见**且不可点**（看不见却点得到 = 误触）");
-ok(/\.md-table-wrap:hover \.md-table-copy[\s\S]{0,80}\{[\s\S]{0,120}opacity:\s*1/.test(css) && /\.md-table-copy:focus-visible/.test(css),
-  "悬停（与键盘 focus）才显形 —— `:focus-visible` 是键盘用户的入口，不许省");
-ok(/@media \(hover: none\)[\s\S]{0,160}\.md-table-copy[\s\S]{0,120}pointer-events:\s*auto/.test(css),
-  "触屏（无 hover）里常驻可点 —— 否则移动端永远点不到");
+// ⛔ 10-14 二改（用户口径「常驻且更醒目」）：**常驻可见**，不再 hover 才显形。
+//   负向断言直接钉住"不许退回 dot 里的 hover-only 隐藏"——用户报「旧消息我没看见」就是它造成的。
+ok(/background:\s*var\(--panel\)/.test(btnRule) && /border:\s*1px solid var\(--line\)/.test(btnRule),
+  "常驻醒目：**不透明底色**（--panel）+ 明显边框（--line）—— 压在表头文字上也看得清");
+ok(!/opacity:\s*0\s*;/.test(btnRule) && !/pointer-events:\s*none/.test(btnRule),
+  "⛔ 不许退回 hover-only 隐藏（`opacity: 0` / `pointer-events: none` 都不许出现在默认态）");
+ok(/\.md-table-copy:hover[\s\S]{0,120}\{[\s\S]{0,160}color:\s*var\(--text\)/.test(css),
+  "悬停时配色加重（不是显隐开关）");
 const doneBlock = css.slice(css.indexOf("两段反馈"), css.indexOf("@keyframes message-action-pop"));
 ok(/\.md-table-copy\[data-phase="done"\]/.test(doneBlock),
   "两段动画的 `[data-phase=\"done\"]` 选择器**带上了这颗按钮**（漏了就只有变色、没有弹动）");
