@@ -21,7 +21,7 @@ let checks = 0;
 let fails = 0;
 const ok = (condition, message) => {
   checks++;
-  console.log(`  ${condition ? "✓" : "✗"} 【md-table-copy】${message}`);
+  console.log(`  ${condition ? "✓" : "✗"} 【md-block-copy】${message}`);
   if (!condition) fails++;
 };
 
@@ -44,6 +44,15 @@ ok(/tableToTsv\(table\.rows\)/.test(mdSrc),
   "把**原始 HTMLCollection** 交给 tableToTsv（它自己 `Array.from`）—— 在组件里先 Array.isArray 判会整表变空（10-14 真机实测）");
 ok(/if \(!text\) return false;/.test(mdSrc),
   "空表 / 取不到内容时返回 false ⇒ 不演成功（不假装复制了）");
+/* ── ①b 代码块（10-14 二改：用户截图「上面没有，下面有了」—— 上面那块是围栏/代码块，不是表格） ── */
+ok(/className="md-code-wrap"/.test(mdSrc) && /className="md-code-copy"/.test(mdSrc),
+  "代码块（`MdCode`）也包进 .md-code-wrap + 挂复制按钮（表格与代码块是两种块，两种都要入口）");
+ok(/window\.codex\.writeClipboard\(code\)/.test(mdSrc),
+  "代码块复制的是**代码原文**（`code` 变量就在手上，不从 DOM 反推 —— 行号会混进 DOM 文本）");
+ok(/<FeedbackIconButton[\s\S]{0,400}className="md-code-copy"[\s\S]{0,600}writeClipboard\(code\)/.test(mdSrc),
+  "代码块的按钮同样**复用** FeedbackIconButton（同一套两段反馈，不许自造）");
+ok(/\.markdown pre:has\(\.md-code-wrap\)\s*\{[\s\S]{0,60}position:\s*relative/.test(css),
+  "代码块按钮锚在**外层 `pre`**（`:has` 规则）—— 锚在包裹层上，横向滚动时按钮会被一起滚出可视区");
 
 /* ── ② TSV 拼装：跑真实现（不是抄一份正则） ── */
 const cell = (t) => ({ textContent: t });
@@ -68,7 +77,12 @@ const ruleOf = (sel) => {
   return at < 0 ? "" : css.slice(at, css.indexOf("}", at));
 };
 const wrapRule = ruleOf(".md-table-wrap");
-const btnRule = ruleOf(".md-table-copy");
+const btnRule = (() => {
+  const at = css.indexOf(".md-table-copy,");
+  const solo = css.indexOf(".md-table-copy {");
+  const i = at >= 0 ? at : solo;
+  return i < 0 ? "" : css.slice(i, css.indexOf("}", i));
+})();
 ok(/position:\s*relative/.test(wrapRule), "锚点容器 `.md-table-wrap` 是 relative（否则绝对定位的按钮跑到别处）");
 ok(/position:\s*absolute/.test(btnRule) && /top:\s*\d+px/.test(btnRule) && /right:\s*\d+px/.test(btnRule),
   "按钮绝对定位在**右上角**（top/right 都给了值）");
@@ -81,15 +95,15 @@ ok(!/opacity:\s*0\s*;/.test(btnRule) && !/pointer-events:\s*none/.test(btnRule),
 ok(/\.md-table-copy:hover[\s\S]{0,120}\{[\s\S]{0,160}color:\s*var\(--text\)/.test(css),
   "悬停时配色加重（不是显隐开关）");
 const doneBlock = css.slice(css.indexOf("两段反馈"), css.indexOf("@keyframes message-action-pop"));
-ok(/\.md-table-copy\[data-phase="done"\]/.test(doneBlock),
-  "两段动画的 `[data-phase=\"done\"]` 选择器**带上了这颗按钮**（漏了就只有变色、没有弹动）");
+ok(/\.md-table-copy\[data-phase="done"\]/.test(doneBlock) && /\.md-code-copy\[data-phase="done"\]/.test(doneBlock),
+  "两段动画的 `[data-phase=\"done\"]` 选择器**两个按钮都带上了**（表格 + 代码块，漏一个就只有变色没有弹动）");
 const reduceBlock = css.slice(css.indexOf("prefers-reduced-motion"), css.indexOf("prefers-reduced-motion") + 600);
-ok(/\.md-table-copy\[data-phase="done"\]/.test(reduceBlock),
-  "减弱动效里也列了它（关掉弹动但保留对勾与颜色 —— 反馈是信息、动效才是装饰）");
+ok(/\.md-table-copy\[data-phase="done"\]/.test(reduceBlock) && /\.md-code-copy\[data-phase="done"\]/.test(reduceBlock),
+  "减弱动效里两个按钮也都列了（关掉弹动但保留对勾与颜色 —— 反馈是信息、动效才是装饰）");
 
 /* ── ④ 验收项登记（新增项必须登记轮次，否则默认轮跑不到） ── */
-ok(/id:\s*"md-table-copy"/.test(acceptSrc) && /"md-table-copy":\s*"10-12"/.test(acceptSrc),
-  "验收项 `md-table-copy` 已建并登记进 ROUND_OF（默认轮跑得到）");
+ok(/id:\s*"md-block-copy"/.test(acceptSrc) && /"md-block-copy":\s*"10-12"/.test(acceptSrc),
+  "验收项 `md-block-copy` 已建并登记进 ROUND_OF（默认轮跑得到）");
 
-console.log(fails ? `\n【md-table-copy】${checks} 条断言 / ${fails} 条失败` : `\n【md-table-copy】${checks} 条断言全部通过`);
+console.log(fails ? `\n【md-block-copy】${checks} 条断言 / ${fails} 条失败` : `\n【md-block-copy】${checks} 条断言全部通过`);
 process.exit(fails ? 1 : 0);

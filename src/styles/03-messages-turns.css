@@ -483,16 +483,22 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   text-align: left;
   padding: 6px 8px;
 }
-/* 表格右上角的「复制表格」（10-14 用户：「汇总输出里类似这种格式内容的时候，在右上角加一个复制小图标，
-   图标两段过渡动画」）。
-   ⛔ 10-14 二改（用户口径：「常驻且更醒目」）：**不再 hover 才显形** —— 用户原话「旧消息我没看见」，
+/* 表格 / 代码块右上角的「复制」（10-14 用户：「汇总输出里类似这种格式内容的时候，在右上角加一个复制
+   小图标，图标两段过渡动画」，随后截图补刀「上面没有，下面有了」—— 上面那块是**代码块**）。
+   ⛔ 10-14 二改（用户口径「常驻且更醒目」）：**不再 hover 才显形** —— 用户原话「旧消息我没看见」，
       悬停显形等于"不知道有这功能的人永远发现不了"。现在常驻，配色跟主题按钮一样（不透明底 + 明显边框 +
-      一点阴影，压在表头文字上也看得清）。⛔ 不许再退回 hover-only 隐藏（守卫 12o 有负向断言）。
-   ⛔ 两段反馈的动画选择器在下面 `[data-phase="done"]` 那条里**一并列了它**（漏了就只有变色、没有弹动）。 */
+      一点阴影，压在内容上也看得清）。⛔ 不许再退回 hover-only 隐藏（守卫 12o 有负向断言）。
+   ⛔ 两段反馈的动画选择器在下面 `[data-phase="done"]` 那条里**一并列了它们**（漏了就只有变色、没有弹动）。
+   ⛔ 代码块的按钮锚在**外层 `.markdown pre`**（`:has` 规则）而不是包裹层：`pre` 是横向滚动容器，
+      锚在包裹层上按钮会跟着代码一起被滚出可视区。 */
 .md-table-wrap {
   position: relative;
 }
-.md-table-copy {
+.markdown pre:has(.md-code-wrap) {
+  position: relative;
+}
+.md-table-copy,
+.md-code-copy {
   position: absolute;
   top: 4px;
   right: 4px;
@@ -510,7 +516,13 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   cursor: pointer;
   transition: color 0.12s, background 0.12s, border-color 0.12s;
 }
-.md-table-copy:hover {
+.md-code-copy {
+  top: 8px;
+  right: 8px;
+  background: var(--panel-2);
+}
+.md-table-copy:hover,
+.md-code-copy:hover {
   color: var(--text);
   background: var(--panel-2);
   border-color: var(--muted);
@@ -574,7 +586,8 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
       成功反馈不能被 `.message-action-extra { opacity: 0 }` 抹掉（这条选择器权重更高，正好压住）。 */
 .message-footer button[data-phase="done"],
 .selection-action-bar button[data-phase="done"],
-.md-table-copy[data-phase="done"] {
+.md-table-copy[data-phase="done"],
+.md-code-copy[data-phase="done"] {
   color: var(--accent);
   opacity: 1;
   pointer-events: auto;
@@ -590,7 +603,8 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   /* 关掉弹动，但**保留对勾与颜色**：反馈是信息，动效才是装饰（同本文件其他 reduce 块的口径） */
   .message-footer button[data-phase="done"],
   .selection-action-bar button[data-phase="done"],
-  .md-table-copy[data-phase="done"] {
+  .md-table-copy[data-phase="done"],
+  .md-code-copy[data-phase="done"] {
     animation: none;
   }
 }
