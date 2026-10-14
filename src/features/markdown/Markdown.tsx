@@ -22,8 +22,10 @@ import { markdownUrlTransform } from "../../lib/markdown-url";
 //   <li>，渲染上缩进到 marker 之后、左侧空出 marker 宽度（用户 09-24：「最后一个总是歪的，
 //   前面空那么多」）。详见 softenListTailLazyContinuation 注释。
 import { splitMarkdown } from "../../lib/markdown-blocks.mjs";
+import { tableToTsv } from "../../lib/md-table-text.mjs";
 import { stripVoiceScript } from "../../lib/voice-script.mjs";
-import { Globe2 } from "lucide-react";
+import { Globe2, Copy, Check } from "lucide-react";
+import { FeedbackIconButton } from "../shared/FeedbackIconButton";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 // 数学公式（09-27，对齐引擎 0.156/0.157 的公式渲染能力）：remark-math 负责把 `$…$` / `$$…$$`
@@ -132,6 +134,41 @@ export const FilePreviewCode = memo(function FilePreviewCode({ language, content
   );
 });
 
+/**
+ * 表格的「右上角复制」（10-14 用户：「汇总输出里类似这种格式内容的时候，在右上角加一个复制小图标，
+ * 图标两段过渡动画」—— 截图里那份提交汇总就是一张 markdown 表格，此前正文里没有任何复制入口）。
+ *
+ * ⛔ 两段反馈**必须复用** `FeedbackIconButton`（10-05 立的共用件）：变对勾 + 1.1s 淡回原样的时序
+ *   在它里面，动画本体在 CSS 的 `[data-phase="done"]`。自己写一套 setTimeout = 全仓两套反馈。
+ * ⛔ 复制内容是**从已渲染的 DOM 反推的 TSV**（单元格 Tab、行换行）—— 贴进 Excel / 表格 / 文档
+ *   就是一张表；贴 markdown 源码则要拿到 raw 文本，而这里离 react-markdown 的源码很远。
+ * ⛔ 拿不到表格 / 内容全空时 `onFire` 返回 false ⇒ 不演成功（不假装复制了）。
+ */
+const MdTable = memo(function MdTable({ children }: { children?: React.ReactNode }) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const copyTable = () => {
+    const table = wrapRef.current?.querySelector("table");
+    if (!table || !table.rows.length) return false;
+    const text = tableToTsv(table.rows);
+    if (!text) return false;
+    void window.codex.writeClipboard(text);
+    return true;
+  };
+  return (
+    <div className="md-table-wrap" ref={wrapRef}>
+      <FeedbackIconButton
+        className="md-table-copy"
+        title="复制表格"
+        doneTitle="已复制表格"
+        icon={<Copy size={13} />}
+        doneIcon={<Check size={13} />}
+        onFire={copyTable}
+      />
+      <table>{children}</table>
+    </div>
+  );
+});
+
 export const MD_COMPONENTS: Components = {
   p: ({ children }) => {
     const list = Array.isArray(children) ? children : [children];
@@ -154,6 +191,7 @@ export const MD_COMPONENTS: Components = {
     <img className="message-image" src={src} alt={alt ?? ""} onClick={() => src && openImageLightbox(src, alt ?? "")} />
   ),
   code: MdCode,
+  table: ({ children }) => <MdTable>{children}</MdTable>,
 };
 
 export const MdBlock = memo(function MdBlock({ text }: { text: string }) {
