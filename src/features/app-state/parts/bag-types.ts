@@ -36,6 +36,7 @@ export interface Bag {
   switchStartRef: React.RefObject<number>;
   switchModeRef: React.RefObject<"cached" | "fresh">;
   switchTurnsRef: React.RefObject<number>;
+  threadsRetryRef: React.RefObject<number>;
   scrollMemoRef: React.RefObject<Map<string, number>>;
   threadRef: React.RefObject<import("../../app-view/types.ts").Thread | null>;
   popoutThreadIdRef: React.RefObject<string | null>;
