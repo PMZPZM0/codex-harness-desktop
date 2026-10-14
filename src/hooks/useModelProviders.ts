@@ -124,21 +124,9 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
     setModelSourceProvider(saved.provider);
   }
 
-  useEffect(() => {
-    void window.codex.listCustomModels()
-      .then(({ providers, current }) => { setProvidersList(providers); setCurrentProvider(current); })
-      .catch(() => undefined);
-  }, []);
-
-  // 引入 refreshActive：供外部在设置页打开等时机刷新生效供应商（防状态过期导致互斥误判）
-  const refreshActive = useCallback(() => {
-    void window.codex.listCustomModels()
-      .then(({ providers, current }) => { setProvidersList(providers); setCurrentProvider(current); })
-      .catch(() => undefined);
-    void window.codex.getCustomModel().then((result) => { setCustomModel(result); }).catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
+  /* 生效模型的加载（原 141-154 的 useEffect 逻辑，提取成函数以便复用：
+     启动竞态下第一次读到的可能只是"配置还没写完"，供应商列表就绪后需要**补读一次**）。 */
+  const loadActiveModel = useCallback(() => {
     void window.codex.getCustomModel()
       .then((result) => {
         if (!result) return;
@@ -151,7 +139,55 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
         void window.codex.probeCustomModel(result).then((probe) => setProviderModels(probe.models)).catch(() => undefined);
       })
       .catch(() => undefined);
+  }, [onAutoSelect]);
+
+  useEffect(() => {
+    /* ⛔⛔ 启动竞态（10-14 用户实测：「保存后重启，第一次进应用啥也没有，第二次进就有」）：
+       宿主启动时引擎会被 spawn **两次**——boot.ts:895 发现自定义模型会 applyCustomModel
+       ⇒ 重写 config.toml 并再次重启引擎。这个窗口期里 listCustomModels 返回**空**，
+       而这里原本只读一次 ⇒ 读到空就永远空（侧栏"暂无项目"、模型按钮无名字都源于此）。
+       修法：读到**空列表**时指数退避重试（400ms 起、最多 6 次）；拿到非空立即停。
+       ⛔ 只对**空列表**重试 —— "用户确实没配任何供应商"最终也会走到上限，行为兜底不变。
+       拿到非空后再补读一次生效模型（此时 getCustomModel 的 null 才真的可信）。 */
+    let cancelled = false;
+    let attempt = 0;
+    let activeLoaded = false;
+    const loadProviders = () => {
+      attempt += 1;
+      void window.codex.listCustomModels()
+        .then(({ providers, current }) => {
+          if (cancelled) return;
+          setProvidersList(providers);
+          setCurrentProvider(current);
+          const ready = Array.isArray(providers) && providers.length > 0;
+          if (ready && !activeLoaded) {
+            activeLoaded = true;
+            loadActiveModel();
+            return;
+          }
+          if (!ready && attempt <= 6) window.setTimeout(loadProviders, 400 * attempt);
+          else if (!ready && !activeLoaded) { activeLoaded = true; loadActiveModel(); }   // 重试到顶：最后一次兜底
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (attempt <= 6) window.setTimeout(loadProviders, 400 * attempt);
+          else if (!activeLoaded) { activeLoaded = true; loadActiveModel(); }
+        });
+    };
+    loadProviders();
+    return () => { cancelled = true; };
+  }, [loadActiveModel]);
+
+  // 引入 refreshActive：供外部在设置页打开等时机刷新生效供应商（防状态过期导致互斥误判）
+  const refreshActive = useCallback(() => {
+    void window.codex.listCustomModels()
+      .then(({ providers, current }) => { setProvidersList(providers); setCurrentProvider(current); })
+      .catch(() => undefined);
+    void window.codex.getCustomModel().then((result) => { setCustomModel(result); }).catch(() => undefined);
   }, []);
+
+  // （原「useEffect([]) 里读一次 getCustomModel」已并入上方 loadProviders 的重试链：
+  //   启动竞态下它第一次会读到 null/旧值，读两次不如按"供应商就绪"的时机读一次准。）
 
   async function saveCustomModel() {
     return await saveCustomDraft();
