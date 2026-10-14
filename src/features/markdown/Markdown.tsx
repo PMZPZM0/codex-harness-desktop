@@ -74,15 +74,37 @@ export const MdCode = memo(function MdCode({ className, children, ...props }: an
   if (language === "mermaid") return <MermaidDiagram code={String(children)} />;
   const fontSize = codeFontSize(settings.fontScale);
   const fontFamily = codeFontStack(settings.font);
+  /* ⛔ 10-14 二改（用户截图：「上面没有，下面有了」—— 上面那块是**代码块**、不是表格）：
+     代码块与表格共用同一个复制按钮（同一套两段反馈 + 同一套 CSS）。
+     ⛔ 复制内容是**代码原文**（`code` 变量就在手上，不用从 DOM 反推）。
+     ⛔ 按钮的定位锚是外层 `.markdown pre`（见 CSS 的 `:has` 规则）—— 锚在包裹层上的话，
+        横向滚动时按钮会跟着代码一起被滚出可视区。 */
+  const withCopy = (node: React.ReactNode) => (
+    <div className="md-code-wrap">
+      <FeedbackIconButton
+        className="md-code-copy"
+        title="复制代码"
+        doneTitle="已复制代码"
+        icon={<Copy size={13} />}
+        doneIcon={<Check size={13} />}
+        onFire={() => {
+          if (!code.trim()) return false;
+          void window.codex.writeClipboard(code);
+          return true;
+        }}
+      />
+      {node}
+    </div>
+  );
   if (lazy && !nearViewport) {
     const styles = plainCodeStyles(codeThemeStyle(settings.theme));
-    return (
+    return withCopy(
       <div ref={wrapRef} className="code-highlight" data-lazy-highlight="pending">
         <div style={{ ...styles.pre, fontSize, fontFamily, margin: 0 }}><code style={styles.code}>{code}</code></div>
       </div>
     );
   }
-  return (
+  return withCopy(
     <SyntaxHighlighter
       language={language}
       style={codeThemeStyle(settings.theme)}
