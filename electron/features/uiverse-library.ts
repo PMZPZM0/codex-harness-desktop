@@ -100,7 +100,9 @@ export function uiverseGet(args: { cat: string; id: string }): { item?: UiverseI
   if (!CAT_LABEL[cat]) return { error: `未知类目「${cat}」；先用 ui_component_search 拿到合法的 cat/id` };
   const hit = itemsOf(cat).find((it) => it.id === id);
   if (!hit) return { error: `类目 ${cat} 里没有 id=${id} 的组件；先用 ui_component_search 查` };
-  return { item: hit };
+  // ⛔ 落盘的类目 gz 每条只有 id/author/name/html（**类目由文件名承载**，条目里没有 cat 字段）
+  //   ⇒ 这里把 cat 补回去，否则工具回执头会打出 `cat=undefined`（10-15 实测）。
+  return { item: { ...hit, cat } };
 }
 
 /** 引擎提示用的一句话统计（给 developer instructions / 工具描述复用）。 */
