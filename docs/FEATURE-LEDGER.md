@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-15 | 裸围栏代码块补上复制图标 | 修复 | `src/features/markdown/Markdown.tsx`、`scripts/guards/12o`、`scripts/accept.mjs` | 用户截图「三块里就中间的没有」：中间那块是 ``` 后**不写语言**的提交列表，此前与**行内 code** 共用 `if (!className) return <code>` 提前返回 ⇒ 既不高亮也没有复制按钮（10-14 只补了**带语言**的代码块）。判据实测（react-markdown 探针）：块级围栏文本恒以 `\n` 结尾（带语言 / 裸围栏 / 四空格缩进块皆然），行内 code 不然 ⇒ 据此分出 `isBlockCode`，裸围栏走纯文本渲染 + 同一个复制按钮（样式复用 plainCodeStyles）；守卫 12o 23→27 条（4 处变异全抓）+ 验收 `md-block-copy` 扩 ⑤e（AGENTS.md 有 4 处裸围栏 ⇒ 非恒真：渲染出的每个 `pre` 都要有入口） | 2a584e7 |
 | 2026-10-13 | REA 纳入控制台「组件更新」 | 改动 | `electron/update-registry.ts`、`AutoUpdateCard.tsx` | 逆向分析工具进控制台组件更新清单（工具组）：npm-tool 后端自动复用镜像更新链（npmmirror 优先+官方回落），逐项「更新」按钮 + 后台自动更新开关（默认随全局策略）；未安装显示「未安装」、装后自动出现入口（「下载后才可以用」同口径）；守卫 12h 24→25 条 | 6c5bcde |
 | 2026-10-13 | 专家市场翻页根因修复 + 四市场统一翻页动画 | 修复 | `skillhub-packages.ts`、四个市场组件、`11-settings-secrets.css` | 「下一页没变化」根因 = SkillHub 技能包 API 只认 page=、pageNum 被忽略（实测 page1/2 同 6 条）；改对参数（搜索全量循环同修）+ 四个市场网格统一 key={页码}+page-turn 过渡动画（减动效偏好自动关）；守卫 12n 9 条（3 处变异全抓）| - |
 | 2026-10-13 | 修更新面板「一直检查中+鬼畜」无限循环 | 修复 | `market-updates/MarketUpdatePanel.tsx` | apiOf 每次渲染返回新对象 ⇒ useEffect([check]) 每轮重跑检查 → setState 死循环（两面板同时转、行反复闪）；api 改 useMemo 按 kind 记忆化，12j 加防回归断言（裸调用负向）；实测 15s 采样稳定 | - |
