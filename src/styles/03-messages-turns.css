@@ -484,10 +484,11 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   padding: 6px 8px;
 }
 /* 表格右上角的「复制表格」（10-14 用户：「汇总输出里类似这种格式内容的时候，在右上角加一个复制小图标，
-   图标两段过渡动画」）。形态与消息操作条同口径：**悬停才显形** —— 常驻会盖住最后一列表头文字。
-   ⛔ 隐藏时 `pointer-events: none`：看不见却能被点到 = 误触。
-   ⛔ 两段反馈的动画选择器在下面 `[data-phase="done"]` 那条里**一并列了它**（漏了就只有变色、没有弹动）。
-   ⛔ 触屏没有 hover：`@media (hover: none)` 里常驻半透明，否则永远点不到。 */
+   图标两段过渡动画」）。
+   ⛔ 10-14 二改（用户口径：「常驻且更醒目」）：**不再 hover 才显形** —— 用户原话「旧消息我没看见」，
+      悬停显形等于"不知道有这功能的人永远发现不了"。现在常驻，配色跟主题按钮一样（不透明底 + 明显边框 +
+      一点阴影，压在表头文字上也看得清）。⛔ 不许再退回 hover-only 隐藏（守卫 12o 有负向断言）。
+   ⛔ 两段反馈的动画选择器在下面 `[data-phase="done"]` 那条里**一并列了它**（漏了就只有变色、没有弹动）。 */
 .md-table-wrap {
   position: relative;
 }
@@ -498,32 +499,21 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: var(--panel-2);
+  background: var(--panel);
   color: var(--muted);
+  box-shadow: 0 1px 2px #00000014;
   cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s, color 0.12s, background 0.12s;
-}
-.md-table-wrap:hover .md-table-copy,
-.md-table-copy:focus-visible {
-  opacity: 1;
-  pointer-events: auto;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
 }
 .md-table-copy:hover {
   color: var(--text);
-  background: var(--panel);
-}
-@media (hover: none) {
-  .md-table-copy {
-    opacity: 0.55;
-    pointer-events: auto;
-  }
+  background: var(--panel-2);
+  border-color: var(--muted);
 }
 .message-image {
   object-fit: contain;

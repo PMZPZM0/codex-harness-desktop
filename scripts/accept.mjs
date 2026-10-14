@@ -2147,26 +2147,34 @@ const CHECKS = [
 
       await h.moveMouseAway().catch(() => undefined);
       await wait(400);
-      const hidden = await h.eval(`(function(){
+      const idle = await h.eval(`(function(){
         var w=document.querySelector('.file-preview-markdown .md-table-wrap');
         var b=w && w.querySelector('.md-table-copy'); if(!b) return { found:false };
         var cs=getComputedStyle(b), wr=w.getBoundingClientRect(), br=b.getBoundingClientRect();
-        return { found:true, opacity:cs.opacity, pe:cs.pointerEvents, position:cs.position,
+        // 底色必须**不透明**（rgba(...,0) 会漏出表头文字 = 压在字上看不清）
+        var solid = !!cs.backgroundColor && !/rgba\\(.*,\\s*0\\)$/.test(cs.backgroundColor);
+        return { found:true, opacity:cs.opacity, pe:cs.pointerEvents, position:cs.position, color:cs.color,
+          bg:cs.backgroundColor, solid:solid, border:cs.borderTopWidth, shadow:cs.boxShadow,
           dRight:Math.round(wr.right-br.right), dTop:Math.round(br.top-wr.top) }; })()`);
-      h.check("③ 按钮钉在表格容器右上角、默认不可见且不可点（看不见却点得到 = 误触）",
-        hidden?.found === true && hidden.position === "absolute" && Math.abs(hidden.dRight) <= 10 && Math.abs(hidden.dTop) <= 10
-          && Number(hidden.opacity) === 0 && hidden.pe === "none",
-        JSON.stringify(hidden));
+      h.check("③ 常驻可见且醒目（用户 10-14：「旧消息我没看见」⇒ 不许 hover 才显形）：不 hover 也在，可点、右上角 ≤10px、不透明底色 + 边框 + 阴影",
+        idle?.found === true && idle.position === "absolute" && Math.abs(idle.dRight) <= 10 && Math.abs(idle.dTop) <= 10
+          && Number(idle.opacity) === 1 && idle.pe === "auto" && idle.solid === true
+          && parseFloat(idle.border) >= 1 && String(idle.shadow) !== "none",
+        JSON.stringify(idle));
 
-      await h.hover(".file-preview-markdown .md-table-wrap").catch(() => undefined);
+      // ⛔ 悬停必须悬到**按钮自己**身上：悬到容器中心时 `:hover` 只命中容器，
+      //   按钮自己的 `:hover` 规则不生效（10-14 实测：读到前后配色一模一样）。
+      await h.hover(".file-preview-markdown .md-table-copy").catch(() => undefined);
       await wait(500);
-      const shown = await h.eval(`(function(){
+      const hovered = await h.eval(`(function(){
         var w=document.querySelector('.file-preview-markdown .md-table-wrap'); var b=w && w.querySelector('.md-table-copy');
         if(!b) return { found:false };
         var prev=b.style.transition; b.style.transition='none'; var cs=getComputedStyle(b); b.style.transition=prev;
-        return { found:true, opacity:cs.opacity, pe:cs.pointerEvents }; })()`);
-      h.check("④ 鼠标真移到表格上 ⇒ 按钮显形（`:hover` 对合成事件不响应，必须是真鼠标移动）",
-        shown?.found === true && Number(shown.opacity) > 0.9 && shown.pe === "auto", JSON.stringify(shown));
+        return { found:true, opacity:cs.opacity, color:cs.color, bg:cs.backgroundColor }; })()`);
+      h.check("④ 悬停是「配色加重」而不是显隐开关：hover 时颜色/底色变化、但始终可见可点",
+        hovered?.found === true && Number(hovered.opacity) === 1
+          && (String(hovered.color) !== String(idle?.color) || String(hovered.bg) !== String(idle?.bg)),
+        JSON.stringify({ idle: { color: idle?.color, bg: idle?.bg }, hovered }).slice(0, 240));
 
       // 记下这张表的行列形状（一会儿对剪贴板文本的形状）
       const shape = await h.eval(`(function(){
