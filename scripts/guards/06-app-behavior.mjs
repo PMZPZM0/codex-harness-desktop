@@ -2202,13 +2202,18 @@ w.postMessage({id:1,op:"list",root});
     );
     // ② relaunch 必须优雅退（app.quit 而非 app.exit）——保证 before-quit 清理与图标不被打断
     // ⛔ 10-03：双形态锚点（域改插件形态后写 ipcHost.handle）
-    const relaunchBlock = sliceHandle(diagSrc, "app:relaunch", 1200);
+    // ⛔ 10-14：窗口 2000 → 4000。handler 里新增了「为什么不用 app.relaunch」的实证注释，
+    //    长度超过 2000 ⇒ quit() / spawn / unref 被切出窗口，**四条断言一起假红**
+    //    （实测：注释一变长就红，与代码对错无关）。窗口必须留得住 handler 全文 + 合理注释余量；
+    //    下一个 handler 若有则优先切到那里（真正的边界），故放大不会串到隔壁域。
+    const relaunchBlock = sliceHandle(diagSrc, "app:relaunch", 4000);
     // ⛔ 10-03：域接缝化后写的是 `host.app.relaunch()` / `host.app.quit()`。
     //    判据必须**认接缝形态** —— 只写 /app\.relaunch\(\)/ 的话，此刻仍能过是因为它恰好是
     //    `host.app.relaunch()` 的子串（**碰巧匹配**，不是设计）。将来若改成别的接缝名
     //    （如 `caps.app`）就会静默假红/假绿。判据要显式列出两种形态。
-    const relaunchGraceful = /(?:\bhost\.app|app)\.relaunch\(\)/.test(relaunchBlock)
-      && /(?:\bhost\.app|app)\.quit\(\)/.test(relaunchBlock)
+    // ⛔ 10-14：重启改为**显式分离 spawn**（见下方⑤），`.relaunch()` 不再是必须品；
+    //    这里只钉"优雅退"，spawn 的判据在⑤。
+    const relaunchGraceful = /(?:\bhost\.app|app)\.quit\(\)/.test(relaunchBlock)
       && !/(?:\bhost\.app|app)\.exit\(0\)/.test(relaunchBlock);
     (relaunchGraceful ? ok : fail)(
       "【174】app:relaunch 用 app.quit() 优雅退出（app.exit 会跳过 before-quit 清理并打断任务栏图标）"
@@ -2218,9 +2223,50 @@ w.postMessage({id:1,op:"list",root});
       "【174】dev URL 加载失败回落本地 dist（白屏第二道保险）"
     );
     // ④ 图标路径必须多源兜底（只认 app.getAppPath() 一条会在 relaunch 后丢图标）
-    (/iconCandidates/.test(winSrc) && /process\.execPath/.test(winSrc) && /iconCandidates\.find\(/.test(winSrc) ? ok : fail)(
-      "【174】窗口图标多源兜底（appPath / execPath 上溯 / cwd，取首个存在的）"
-    );
+    // ⛔ 10-12 云助手抽出真相源 electron/app-icon.ts（findBuildAsset / resolveWindowIcon），
+    //    主窗 / 助手窗 / 托盘三处共用；桌面版仍内联在 window-factory.ts。
+    //    判据**认两种形态**（抽出前 / 抽出后），否则同步守卫时必有一仓假红。
+    const iconPath = join(ROOT, "electron", "app-icon.ts");
+    if (existsSync(iconPath)) {
+      const iconSrc = readFileSync(iconPath, "utf8");
+      (/findBuildAsset/.test(iconSrc) && /process\.execPath/.test(iconSrc) && /candidates\.find\(/.test(iconSrc) ? ok : fail)(
+        "【174】图标多源兜底在 app-icon.ts 唯一真相源（appPath / __dirname 上溯 / execPath 上溯 / cwd）"
+      );
+      (/resolveWindowIcon\(\)/.test(winSrc) ? ok : fail)(
+        "【174】主窗经 resolveWindowIcon() 取图标（不许各自拼路径）"
+      );
+    } else {
+      (/iconCandidates/.test(winSrc) && /process\.execPath/.test(winSrc) && /iconCandidates\.find\(/.test(winSrc) ? ok : fail)(
+        "【174】窗口图标多源兜底（appPath / execPath 上溯 / cwd，取首个存在的）"
+      );
+    }
+    /* ⑤ 重启的两条合法形态（10-14 用户实测「保存重启，怎么就关掉了应用，没有自动重启呢」）：
+         启动形态决定用哪条路 —— **两条都要认，按形态判**：
+           · `electron .`（桌面版，package.json main + 可见窗口）：`host.app.relaunch()` 即可。
+           · `electron dist-electron/headless.js`（云助手无头 + 自起静态服务）：同一行
+             `app.relaunch()` **spawn 不出新进程**（对照实验：relaunch() 返回 200 不抛错，
+             进程表 1 秒内从 3 归零，20 秒无新进程、8917 一直 ECONNREFUSED）⇒ 只关不开。
+             必须改用 `spawn(execPath, argv.slice(1), {detached:true}).unref()`（实测 t+2s 起恢复）。
+         ⛔ 判据：出现 spawn 形态 ⇒ 必须 detached+unref 且前缀 releaseSingleInstanceLock；
+                  否则必须出现 `host.app.relaunch()`（朴素形态也要有优雅退，②已钉）。 */
+    {
+      const isSpawnForm = /spawn\(\s*process\.execPath\s*,\s*process\.argv\.slice\(1\)/.test(relaunchBlock);
+      if (isSpawnForm) {
+        const detached = /detached:\s*true/.test(relaunchBlock) && /\.unref\(\)/.test(relaunchBlock);
+        const releaseFirst = (() => {
+          const r = relaunchBlock.indexOf("releaseSingleInstanceLock");
+          const s = relaunchBlock.indexOf("spawn(");
+          return r >= 0 && s > r;
+        })();
+        ok("【174】app:relaunch 用 spawn(execPath, argv.slice(1)) 显式重启（无头形态：app.relaunch 起不来）");
+        (detached ? ok : fail)("【174】重启子进程必须 detached:true + unref()（否则旧进程退出会带走它）");
+        (releaseFirst ? ok : fail)("【174】app:relaunch 先释放单实例锁再起新实例（否则新实例抢不到锁会自杀）");
+      } else {
+        (/(?:\bhost\.app|app)\.relaunch\(/.test(relaunchBlock) ? ok : fail)(
+          "【174】app:relaunch 走朴素 host.app.relaunch()（窗口形态；无头形态须改 spawn —— 见⑤注释）"
+        );
+      }
+    }
   }
 
   /* ══ 【173】共享技能池（09-27 用户需求：按项目选择生效的全局技能）══════════
