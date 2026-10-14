@@ -98,11 +98,11 @@ bag.stopGoalLoop = stopGoalLoop as typeof bag.stopGoalLoop;
       bag.setInterrupting(false);
       /* ⛔⛔ 必须清 activeTurnId —— 状态条由 `taskRunning = sending || activeTurnId` 驱动
          （part06/02-seg/01-turn-runtime-activity.tsx:23）。停一个**尚未开始回复**的回合时
-         （「你在 N 秒后停止了 / Codex 尚未开始回复」），引擎**不发 turn/aborted**
+         （截图实证：「你在 N 秒后停止了 / Codex 尚未开始回复」），引擎**不发 turn/aborted**
          （它那边没有真正开始的回合可中止）⇒ 事件路径不会来清，只能靠这里。
-         旧实现只清 sending ⇒ 会留下永久不熄的「正在生成回复」状态条。
-         catch 的两个复位分支（本文件 123 / 142 行）早就清了这一条，唯独**正常分支漏了**。
-         ⛔ 云助手（headless，事件路径不可靠）上这个漏清必现，用户截图实证。 */
+         旧实现只清 sending ⇒ 云助手（headless，事件路径不可靠）上「正在生成回复」**永久挂着**，
+         用户反复点停止都无效。catch 的两个复位分支（本文件 123 / 142 行）早就清了这一条，
+         唯独**正常分支漏了** —— 这就是那个残留状态条的根因。 */
       bag.setActiveTurnId(null);
       bag.markThreadStopped(bag.thread.id);
       bag.setWorkStartedAt(null);
@@ -145,17 +145,28 @@ bag.stopGoalLoop = stopGoalLoop as typeof bag.stopGoalLoop;
       // ⛔ 09-24 用户反馈（老版本截图）：这类失败原来只 setNotice **不复位运行态** ⇒ 界面永远
       //    「运行中」，用户以为停止无效反复点 ⇒ 反复弹错误。语义上「回合已经不在了」就等于
       //    用户要的「停下」——按 not found 同款复位，给一句温和提示而不是原始报错。
-      if (/not found|no such thread|unloaded|expected active turn/i.test(message)) {
+      // ⛔⛔ 10-14 补 `no active turn`：引擎在「回合其实早已结束」时回的原话是
+      //    `no active turn to interrupt`（用户截图顶部那条）—— 它**一个词都不匹配**上面那串
+      //    ⇒ 落进 else，而 else 当时只清 sending、**不清 activeTurnId** ⇒ 状态条
+      //    （taskRunning = sending || activeTurnId）**永久挂着**，正是「停都停不了」。
+      //    同一个坑换了个错误文案又犯一次，所以这次**两处都补**（正则 + else 兜底）。
+      if (/not found|no such thread|unloaded|expected active turn|no active turn/i.test(message)) {
         bag.setSending(false);
         bag.setActiveTurnId(null);
         bag.markThreadStopped(bag.thread.id);
         bag.setWorkStartedAt(null);
         bag.setNotice(/expected active turn/i.test(message)
           ? "回合已结束，已停止。（引擎侧活跃回合已切换）"
-          : "原会话已失效，已停止。重新发送会自动重建会话。");
+          : /no active turn/i.test(message)
+            ? "回合已结束，已停止。"
+            : "原会话已失效，已停止。重新发送会自动重建会话。");
       } else {
-        // 其它真失败也必须让界面停下来（可以报错，但不许挂着「运行中」）
+        // 其它真失败也必须让界面停下来（可以报错，但不许挂着「运行中」）——
+        // ⛔ 光清 sending 不够：状态条读的是 `sending || activeTurnId`，两个都得清。
         bag.setSending(false);
+        bag.setActiveTurnId(null);
+        bag.markThreadStopped(bag.thread.id);
+        bag.setWorkStartedAt(null);
         bag.setNotice(error.message);
       }
     }
