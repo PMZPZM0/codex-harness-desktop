@@ -2269,6 +2269,21 @@ const CHECKS = [
       h.check("⑤d 剪贴板里是**代码原文**（非空，且首行能在渲染出的代码里找到同一段 —— 不是把行号或别的块复制走了）",
         codeFirstLine.length > 3 && String(codeDom).includes(codeFirstLine.slice(0, 20)),
         JSON.stringify({ clipChars: String(codeClip).length, firstLine: codeFirstLine.slice(0, 40) }).slice(0, 200));
+      /* ⑤e 裸围栏（10-15 用户截图：「三块里就中间的没有」—— 中间那块是 ``` 后**不写语言**的提交列表，
+         上面/下面是表格、它是代码块 ⇒ 此前与行内 code 一起被提前 return 掉，既不高亮也没按钮）。
+         ⛔ AGENTS.md 里有 4 处裸围栏 ⇒ 这条断言不是恒真；再要求**每个** pre 都拿到入口。 */
+      const allBlocks = await h.eval(`(function(){
+        var root=document.querySelector('.file-preview-markdown'); if(!root) return { found:false };
+        var pres=[...root.querySelectorAll('pre')];
+        var plain=[...root.querySelectorAll('.md-code-wrap [data-plain-code]')];
+        return { found:true, pres:pres.length,
+          withoutWrap:pres.filter(function(p){ return !p.querySelector('.md-code-wrap'); }).length,
+          plain:plain.length,
+          plainWithButton:plain.filter(function(w){ var wr=w.closest('.md-code-wrap'); return !!(wr && wr.querySelector('.md-code-copy')); }).length }; })()`);
+      h.check("⑤e 裸围栏（``` 不写语言）也有复制按钮，且渲染出的**每个** pre 都拿到了入口",
+        allBlocks?.found === true && allBlocks.pres > 0 && allBlocks.withoutWrap === 0
+          && allBlocks.plain >= 1 && allBlocks.plainWithButton === allBlocks.plain,
+        JSON.stringify(allBlocks));
       await h.screenshot("md-block-copy");
       // 收尾：关掉预览，别把右栏占着影响后面的项
       await h.pressKey("Escape");
