@@ -62,15 +62,24 @@ export const MdCode = memo(function MdCode({ className, children, ...props }: an
   const prevCodeRef = useRef("");
   const appended = prevCodeRef.current.length > 0 && code.length > prevCodeRef.current.length && code.startsWith(prevCodeRef.current);
   useEffect(() => { prevCodeRef.current = code; }, [code]);
-  // ⛔ hooks 必须无条件调用（下面 !className / mermaid 会提前 return）
+  // ⛔ hooks 必须无条件调用（下面 !isBlockCode / !language / mermaid 会提前 return）
   const cacheKey = highlightCacheKey({ language: String(className ?? "").replace("language-", ""), code, theme: settings.theme, lineNumbers: settings.lineNumbers, wrapLongLines: settings.wrap });
   const renderer = useMemo(() => (!appended && HIGHLIGHT_CACHE.shouldCache(code) ? makeCachedHighlightRenderer(cacheKey) : undefined), [cacheKey, code, appended]);
   // 懒高亮：只对"大块"启用（小块高亮本来就便宜，不值得冒颜色跳变的风险）
   const wrapRef = useRef<HTMLDivElement>(null);
   const lazy = deservesLazyHighlight(code) && !appended;
   const nearViewport = useNearViewport(wrapRef, lazy);
-  if (!className) return <code {...props}>{children}</code>;
-  const language = className.replace("language-", "");
+  /* ⛔ 10-15：**块级围栏 vs 行内 code** 的判据（用户截图：「三块里就中间的没有[复制按钮]」）。
+     原先这里是 `if (!className) return <code>` —— 本意只让**行内** code 不套外壳，但「``` 后面
+     不写语言」的围栏 className 同样是空 ⇒ 跟着行内代码一起被提前 return：既不高亮、也没有复制
+     按钮（10-14 那轮只给**带语言**的代码块补了按钮，漏的正是这一类：提交列表这类裸围栏）。
+     判据（10-15 探针实测，react-markdown + remark-gfm）：**块级围栏的文本恒以 \n 结尾**
+     —— 带语言 / 不带语言 / 四空格缩进代码块都如此；**行内 code 不会**（CommonMark 把行内跨行的
+     换行折成空格，末尾也不留 \n）。⛔ 空的裸围栏（``` 后立刻闭围栏）文本为空 ⇒ 判成行内、没有
+     按钮，但它本来也没内容可复制。 */
+  const isBlockCode = Boolean(className) || /\n$/.test(String(children ?? ""));
+  if (!isBlockCode) return <code {...props}>{children}</code>;
+  const language = String(className ?? "").replace("language-", "");
   if (language === "mermaid") return <MermaidDiagram code={String(children)} />;
   const fontSize = codeFontSize(settings.fontScale);
   const fontFamily = codeFontStack(settings.font);
@@ -96,6 +105,16 @@ export const MdCode = memo(function MdCode({ className, children, ...props }: an
       {node}
     </div>
   );
+  /* 无语言围栏（10-15）：没有语法可高亮（SyntaxHighlighter 拿空 language 也只是当纯文本），
+     直接走纯文本渲染 + **同一个**复制按钮 —— 与下面的懒加载分支共用 plainCodeStyles，样式同源。 */
+  if (!language) {
+    const styles = plainCodeStyles(codeThemeStyle(settings.theme));
+    return withCopy(
+      <div ref={wrapRef} className="code-highlight" data-plain-code="1">
+        <div style={{ ...styles.pre, fontSize, fontFamily, margin: 0 }}><code style={styles.code}>{code}</code></div>
+      </div>
+    );
+  }
   if (lazy && !nearViewport) {
     const styles = plainCodeStyles(codeThemeStyle(settings.theme));
     return withCopy(

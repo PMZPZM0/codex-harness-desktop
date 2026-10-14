@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tableToTsv } from "../../src/lib/md-table-text.mjs";
+import { codeOnly } from "./_ctx.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel) => readFileSync(join(ROOT, rel), "utf8");
@@ -53,6 +54,16 @@ ok(/<FeedbackIconButton[\s\S]{0,400}className="md-code-copy"[\s\S]{0,600}writeCl
   "代码块的按钮同样**复用** FeedbackIconButton（同一套两段反馈，不许自造）");
 ok(/\.markdown pre:has\(\.md-code-wrap\)\s*\{[\s\S]{0,60}position:\s*relative/.test(css),
   "代码块按钮锚在**外层 `pre`**（`:has` 规则）—— 锚在包裹层上，横向滚动时按钮会被一起滚出可视区");
+/* ── ①c 无语言围栏（10-15 用户截图：「三块里就中间的没有」—— 中间那块正是 ``` 后**不写语言**的
+   提交列表：上面/下面是表格、它是裸围栏） ── */
+ok(/const isBlockCode = Boolean\(className\) \|\| \/\\n\$\/\.test\(String\(children \?\? ""\)\)/.test(mdSrc),
+  "块级/行内判据 = 带语言 **或** 文本以 \\n 结尾（10-15 探针实测：围栏恒以 \\n 结尾、行内 code 不会）");
+ok(/if \(!isBlockCode\) return <code \{\.\.\.props\}>\{children\}<\/code>;/.test(mdSrc),
+  "提前 return 由 `isBlockCode` 把关 —— 不再是 `!className`（那会把裸围栏与行内 code 一起放走）");
+ok(!/if \(!className\) return <code \{\.\.\.props\}/.test(codeOnly(mdSrc)),
+  "⛔ 负向：`if (!className) return <code …` 不许复活（它就是把裸围栏的按钮漏掉的那一行；过 codeOnly 剥注释防假红）");
+ok(/if \(!language\) \{[\s\S]{0,220}withCopy\(/.test(mdSrc) && /data-plain-code="1"/.test(mdSrc),
+  "裸围栏走**纯文本 + 同一个 withCopy**（无语法可高亮，但复制入口必须在；样式复用 plainCodeStyles）");
 
 /* ── ② TSV 拼装：跑真实现（不是抄一份正则） ── */
 const cell = (t) => ({ textContent: t });
