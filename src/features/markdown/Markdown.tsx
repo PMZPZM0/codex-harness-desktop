@@ -23,6 +23,7 @@ import { markdownUrlTransform } from "../../lib/markdown-url";
 //   前面空那么多」）。详见 softenListTailLazyContinuation 注释。
 import { splitMarkdown } from "../../lib/markdown-blocks.mjs";
 import { tableToTsv } from "../../lib/md-table-text.mjs";
+import { isBlockCode } from "../../lib/md-code-block.mjs";
 import { stripVoiceScript } from "../../lib/voice-script.mjs";
 import { Globe2, Copy, Check } from "lucide-react";
 import { FeedbackIconButton } from "../shared/FeedbackIconButton";
@@ -73,12 +74,8 @@ export const MdCode = memo(function MdCode({ className, children, ...props }: an
      原先这里是 `if (!className) return <code>` —— 本意只让**行内** code 不套外壳，但「``` 后面
      不写语言」的围栏 className 同样是空 ⇒ 跟着行内代码一起被提前 return：既不高亮、也没有复制
      按钮（10-14 那轮只给**带语言**的代码块补了按钮，漏的正是这一类：提交列表这类裸围栏）。
-     判据（10-15 探针实测，react-markdown + remark-gfm）：**块级围栏的文本恒以 \n 结尾**
-     —— 带语言 / 不带语言 / 四空格缩进代码块都如此；**行内 code 不会**（CommonMark 把行内跨行的
-     换行折成空格，末尾也不留 \n）。⛔ 空的裸围栏（``` 后立刻闭围栏）文本为空 ⇒ 判成行内、没有
-     按钮，但它本来也没内容可复制。 */
-  const isBlockCode = Boolean(className) || /\n$/.test(String(children ?? ""));
-  if (!isBlockCode) return <code {...props}>{children}</code>;
+     判据与实测证据见 `src/lib/md-code-block.mjs`（纯函数，守卫 12o 跑真值表 + react-markdown 真跑）。 */
+  if (!isBlockCode(className, children)) return <code {...props}>{children}</code>;
   const language = String(className ?? "").replace("language-", "");
   if (language === "mermaid") return <MermaidDiagram code={String(children)} />;
   const fontSize = codeFontSize(settings.fontScale);

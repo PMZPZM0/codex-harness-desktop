@@ -13,7 +13,12 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tableToTsv } from "../../src/lib/md-table-text.mjs";
+import { isBlockCode } from "../../src/lib/md-code-block.mjs";
 import { codeOnly } from "./_ctx.mjs";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel) => readFileSync(join(ROOT, rel), "utf8");
@@ -56,14 +61,34 @@ ok(/\.markdown pre:has\(\.md-code-wrap\)\s*\{[\s\S]{0,60}position:\s*relative/.t
   "代码块按钮锚在**外层 `pre`**（`:has` 规则）—— 锚在包裹层上，横向滚动时按钮会被一起滚出可视区");
 /* ── ①c 无语言围栏（10-15 用户截图：「三块里就中间的没有」—— 中间那块正是 ``` 后**不写语言**的
    提交列表：上面/下面是表格、它是裸围栏） ── */
-ok(/const isBlockCode = Boolean\(className\) \|\| \/\\n\$\/\.test\(String\(children \?\? ""\)\)/.test(mdSrc),
-  "块级/行内判据 = 带语言 **或** 文本以 \\n 结尾（10-15 探针实测：围栏恒以 \\n 结尾、行内 code 不会）");
-ok(/if \(!isBlockCode\) return <code \{\.\.\.props\}>\{children\}<\/code>;/.test(mdSrc),
+ok(/isBlockCode\(className, children\)/.test(mdSrc) && /from "\.\.\/\.\.\/lib\/md-code-block\.mjs"/.test(mdSrc),
+  "判据走**纯函数模块** `lib/md-code-block.mjs`（组件内不许再内联同名表达式 —— 改一处漏一处）");
+ok(!/Boolean\(className\) \|\|/.test(codeOnly(mdSrc)),
+  "⛔ 负向：组件里不许内联 `Boolean(className) || …`（判据只此一份）");
+ok(/if \(!isBlockCode\(className, children\)\) return <code \{\.\.\.props\}>\{children\}<\/code>;/.test(mdSrc),
   "提前 return 由 `isBlockCode` 把关 —— 不再是 `!className`（那会把裸围栏与行内 code 一起放走）");
 ok(!/if \(!className\) return <code \{\.\.\.props\}/.test(codeOnly(mdSrc)),
   "⛔ 负向：`if (!className) return <code …` 不许复活（它就是把裸围栏的按钮漏掉的那一行；过 codeOnly 剥注释防假红）");
 ok(/if \(!language\) \{[\s\S]{0,220}withCopy\(/.test(mdSrc) && /data-plain-code="1"/.test(mdSrc),
   "裸围栏走**纯文本 + 同一个 withCopy**（无语法可高亮，但复制入口必须在；样式复用 plainCodeStyles）");
+
+/* ── ①d 判据真值表 + react-markdown **真跑**（判据若与 Markdown 解析器的实际行为脱钩，这里就红） ── */
+ok(isBlockCode("", "line1\nline2\n") === true && isBlockCode("language-bash", "ls -la\n") === true
+  && isBlockCode("", "   缩进块\n") === true,
+  "真值表：裸围栏 / 带语言围栏 / 缩进代码块都判成**块级**（三者文本都以 \\n 结尾）");
+ok(isBlockCode("", "行内代码") === false && isBlockCode(undefined, undefined) === false,
+  "真值表：行内 code / 空串判成**行内**（不进 withCopy 分支）");
+{
+  const md = ["| a | b |", "|---|---|", "| 1 | 2 |", "", "```", "裸围栏第一行", "第二行", "```", "",
+    "```bash", "ls -la", "```", "", "　　有 `行内` 与另一个 `x`。", "", "    缩进代码块"].join("\n");
+  const seen = [];
+  const stub = { code: (props) => { seen.push({ cls: props.className ?? "", text: String(props.children ?? "") }); return null; }, pre: (props) => props.children };
+  renderToStaticMarkup(createElement(ReactMarkdown, { remarkPlugins: [remarkGfm], components: stub }, md));
+  const blocks = seen.filter((n) => isBlockCode(n.cls, n.text));
+  const inlines = seen.filter((n) => !isBlockCode(n.cls, n.text));
+  ok(seen.length === 5 && blocks.length === 3 && inlines.length === 2,
+    `真跑：三个块级形态（裸围栏 / 带语言围栏 / 缩进块）都判成块级、两处行内 code 判成行内（实测 ${seen.length} 个 code 节点 → 块级 ${blocks.length} / 行内 ${inlines.length}）`);
+}
 
 /* ── ② TSV 拼装：跑真实现（不是抄一份正则） ── */
 const cell = (t) => ({ textContent: t });
