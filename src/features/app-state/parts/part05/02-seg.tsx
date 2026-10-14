@@ -44,7 +44,26 @@ bag.popoutFromQuery = popoutFromQuery as typeof bag.popoutFromQuery;
 
 
 
-  useEffect(() => { if (!bag.loading) void bag.refreshThreads(); }, [bag.loading]);
+  /* ⛔⛔ 启动竞态（10-14 用户实测「保存重启后第一次进，项目记录没了，第二次进就有」）：
+     宿主启动时引擎会被 spawn 两次（boot.ts:895 applyCustomModel 会重写配置并重启引擎），
+     窗口期里 thread/list 返回**空** ⇒ setThreads([]) ⇒ 「项目」视图按会话分组 ⇒ 空列表
+     显示「暂无项目」。与 useModelProviders 的供应商列表同款问题、同款修法：
+     首次加载读到空时指数退避重试（400ms 起、最多 6 次），拿到非空立即停；
+     重试到顶仍空 = 用户确实没有未归档会话，行为兜底不变。⛔ 只重试首次加载，
+     用户手动的 refreshThreads（切 tab / 新会话后）不重试。 */
+  const threadsRetryRef = useRef(0);
+  useEffect(() => {
+    if (bag.loading) return;
+    const load = () => {
+      threadsRetryRef.current += 1;
+      const attempt = threadsRetryRef.current;
+      void bag.refreshThreads().then(() => {
+        const empty = (bag.threadsRef.current ?? []).length === 0;
+        if (empty && attempt <= 6) window.setTimeout(load, 400 * attempt);
+      }).catch(() => { if (attempt <= 6) window.setTimeout(load, 400 * attempt); });
+    };
+    load();
+  }, [bag.loading]);
 
 
 
