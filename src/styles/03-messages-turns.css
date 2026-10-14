@@ -483,6 +483,48 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   text-align: left;
   padding: 6px 8px;
 }
+/* 表格右上角的「复制表格」（10-14 用户：「汇总输出里类似这种格式内容的时候，在右上角加一个复制小图标，
+   图标两段过渡动画」）。形态与消息操作条同口径：**悬停才显形** —— 常驻会盖住最后一列表头文字。
+   ⛔ 隐藏时 `pointer-events: none`：看不见却能被点到 = 误触。
+   ⛔ 两段反馈的动画选择器在下面 `[data-phase="done"]` 那条里**一并列了它**（漏了就只有变色、没有弹动）。
+   ⛔ 触屏没有 hover：`@media (hover: none)` 里常驻半透明，否则永远点不到。 */
+.md-table-wrap {
+  position: relative;
+}
+.md-table-copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+.md-table-wrap:hover .md-table-copy,
+.md-table-copy:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.md-table-copy:hover {
+  color: var(--text);
+  background: var(--panel);
+}
+@media (hover: none) {
+  .md-table-copy {
+    opacity: 0.55;
+    pointer-events: auto;
+  }
+}
 .message-image {
   object-fit: contain;
   border: 1px solid var(--line);
@@ -541,9 +583,11 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
    ⛔ 同时把 opacity 抬到 1：hover 才现身的收藏/引用，点了之后鼠标可能立刻移开，
       成功反馈不能被 `.message-action-extra { opacity: 0 }` 抹掉（这条选择器权重更高，正好压住）。 */
 .message-footer button[data-phase="done"],
-.selection-action-bar button[data-phase="done"] {
+.selection-action-bar button[data-phase="done"],
+.md-table-copy[data-phase="done"] {
   color: var(--accent);
   opacity: 1;
+  pointer-events: auto;
   animation: message-action-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 @keyframes message-action-pop {
@@ -555,7 +599,8 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
 @media (prefers-reduced-motion: reduce) {
   /* 关掉弹动，但**保留对勾与颜色**：反馈是信息，动效才是装饰（同本文件其他 reduce 块的口径） */
   .message-footer button[data-phase="done"],
-  .selection-action-bar button[data-phase="done"] {
+  .selection-action-bar button[data-phase="done"],
+  .md-table-copy[data-phase="done"] {
     animation: none;
   }
 }

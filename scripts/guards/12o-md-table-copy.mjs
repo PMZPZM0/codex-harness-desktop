@@ -1,0 +1,93 @@
+/**
+ * 正文表格「右上角复制」的判据（10-14 立，用户：「汇总输出里类似这种格式内容的时候，在右上角加一个
+ * 复制小图标，图标两段过渡动画」—— 截图里那份提交汇总正是一张 markdown 表格，此前正文里没有任何复制入口）。
+ *
+ * 三个失效点全是静默的，静态守卫 + 真值表各自钉一半：
+ *   ① 两段反馈的 CSS 动画选择器漏掉这颗按钮 ⇒ 点了**只变色、不弹动**（看着像"动画没做"）；
+ *   ② 复制内容拼错（内嵌换行把表撕开 / 空表也演成功）；
+ *   ③ 悬停显形的隐藏态没关 `pointer-events` ⇒ 看不见却点得到（误触）。
+ * ⛔ 独立守卫（不进 check-preflight 的 checks 计数），与 11y/11z/12* 同款：新断言自成一个文件，
+ *   不许把在册大文件继续撑长（守卫【265】行数棘轮只许缩不许长）。
+ */
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { tableToTsv } from "../../src/lib/md-table-text.mjs";
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const read = (rel) => readFileSync(join(ROOT, rel), "utf8");
+
+let checks = 0;
+let fails = 0;
+const ok = (condition, message) => {
+  checks++;
+  console.log(`  ${condition ? "✓" : "✗"} 【md-table-copy】${message}`);
+  if (!condition) fails++;
+};
+
+const mdSrc = read("src/features/markdown/Markdown.tsx");
+const css = read("src/styles/03-messages-turns.css");
+const acceptSrc = read("scripts/accept.mjs");
+
+/* ── ① 渲染层接线：表格被包一层 + 复制走共用两段反馈组件 ── */
+ok(/table: \(\{ children \}\) => <MdTable>\{children\}<\/MdTable>/.test(mdSrc),
+  "MD_COMPONENTS 覆盖了 `table`（正文表格才拿得到复制入口；不覆盖 = 只有裸 <table>）");
+ok(/className="md-table-wrap"/.test(mdSrc) && /querySelector\("table"\)/.test(mdSrc),
+  "表格被包进 .md-table-wrap（绝对定位的锚），复制时从**容器内**取 table（不抓全页第一张）");
+ok((() => {
+  const body = mdSrc.slice(mdSrc.indexOf("const MdTable = memo"), mdSrc.indexOf("export const MD_COMPONENTS"));
+  return /<FeedbackIconButton/.test(body) && !/useState/.test(body) && !/setTimeout/.test(body);
+})(), "两段反馈**复用** `FeedbackIconButton`（变对勾 + 1.1s 回位是它的时序；自己写 useState/setTimeout = 全仓两套反馈）");
+ok(/window\.codex\.writeClipboard\(text\)/.test(mdSrc),
+  "真写剪贴板走主进程通道 `window.codex.writeClipboard`（不是 navigator.clipboard 直写 —— 全应用同一口径）");
+ok(/tableToTsv\(table\.rows\)/.test(mdSrc),
+  "把**原始 HTMLCollection** 交给 tableToTsv（它自己 `Array.from`）—— 在组件里先 Array.isArray 判会整表变空（10-14 真机实测）");
+ok(/if \(!text\) return false;/.test(mdSrc),
+  "空表 / 取不到内容时返回 false ⇒ 不演成功（不假装复制了）");
+
+/* ── ② TSV 拼装：跑真实现（不是抄一份正则） ── */
+const cell = (t) => ({ textContent: t });
+ok(tableToTsv([{ cells: [cell("项"), cell("值")] }, { cells: [cell("甲"), cell("1")] }]) === "项\t值\n甲\t1",
+  "真值表：单元格 Tab、行换行（贴进表格/文档就是一张表）");
+ok(tableToTsv([{ cells: [cell("多\n行"), cell(" 空格  多  ")] }]) === "多 行\t空格 多",
+  "真值表：单元格内换行/多空格压成单空格（内嵌换行会把 TSV 撕成两条记录）");
+ok(tableToTsv([]) === "" && tableToTsv(null) === "" && tableToTsv([{ cells: [] }]) === "",
+  "真值表：空表 / 坏入参 → 空串（调用方据此不演成功）");
+ok(tableToTsv([{ cells: [{}, cell("x")] }]) === "\tx",
+  "真值表：缺 textContent 的单元格当空串（不吐 undefined 字面量）");
+// ⛔ 这条是**真机 bug 的原样复现**（10-14 实测：预览里点复制没反应，诊断标记 `empty-text`）：
+//   真 DOM 的 `row.cells` / `table.rows` 都是 **HTMLCollection（类数组）**，不是 Array ——
+//   用 `Array.isArray` 判会静默整表变空。这里喂类数组，实现里必须走 `Array.from`。
+const arrayLike = (items) => ({ length: items.length, ...Object.fromEntries(items.map((v, i) => [i, v])) });
+ok(tableToTsv(arrayLike([{ cells: arrayLike([cell("项"), cell("值")]) }])) === "项\t值",
+  "真值表：rows / cells 是**类数组**（真 DOM 形态）也拼得出 TSV —— 用 Array.isArray 判会整表变空");
+
+/* ── ③ CSS：位置 / 显隐 / 两段动画选择器 ── */
+const ruleOf = (sel) => {
+  const at = css.indexOf(`${sel} {`);
+  return at < 0 ? "" : css.slice(at, css.indexOf("}", at));
+};
+const wrapRule = ruleOf(".md-table-wrap");
+const btnRule = ruleOf(".md-table-copy");
+ok(/position:\s*relative/.test(wrapRule), "锚点容器 `.md-table-wrap` 是 relative（否则绝对定位的按钮跑到别处）");
+ok(/position:\s*absolute/.test(btnRule) && /top:\s*\d+px/.test(btnRule) && /right:\s*\d+px/.test(btnRule),
+  "按钮绝对定位在**右上角**（top/right 都给了值）");
+ok(/opacity:\s*0/.test(btnRule) && /pointer-events:\s*none/.test(btnRule),
+  "默认不可见**且不可点**（看不见却点得到 = 误触）");
+ok(/\.md-table-wrap:hover \.md-table-copy[\s\S]{0,80}\{[\s\S]{0,120}opacity:\s*1/.test(css) && /\.md-table-copy:focus-visible/.test(css),
+  "悬停（与键盘 focus）才显形 —— `:focus-visible` 是键盘用户的入口，不许省");
+ok(/@media \(hover: none\)[\s\S]{0,160}\.md-table-copy[\s\S]{0,120}pointer-events:\s*auto/.test(css),
+  "触屏（无 hover）里常驻可点 —— 否则移动端永远点不到");
+const doneBlock = css.slice(css.indexOf("两段反馈"), css.indexOf("@keyframes message-action-pop"));
+ok(/\.md-table-copy\[data-phase="done"\]/.test(doneBlock),
+  "两段动画的 `[data-phase=\"done\"]` 选择器**带上了这颗按钮**（漏了就只有变色、没有弹动）");
+const reduceBlock = css.slice(css.indexOf("prefers-reduced-motion"), css.indexOf("prefers-reduced-motion") + 600);
+ok(/\.md-table-copy\[data-phase="done"\]/.test(reduceBlock),
+  "减弱动效里也列了它（关掉弹动但保留对勾与颜色 —— 反馈是信息、动效才是装饰）");
+
+/* ── ④ 验收项登记（新增项必须登记轮次，否则默认轮跑不到） ── */
+ok(/id:\s*"md-table-copy"/.test(acceptSrc) && /"md-table-copy":\s*"10-12"/.test(acceptSrc),
+  "验收项 `md-table-copy` 已建并登记进 ROUND_OF（默认轮跑得到）");
+
+console.log(fails ? `\n【md-table-copy】${checks} 条断言 / ${fails} 条失败` : `\n【md-table-copy】${checks} 条断言全部通过`);
+process.exit(fails ? 1 : 0);
