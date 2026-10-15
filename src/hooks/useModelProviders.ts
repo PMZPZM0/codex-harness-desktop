@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_EFFORT, ALL_EFFORTS } from "../lib/effort";
 import { matchModelSpec } from "../lib/model-specs";
 
@@ -141,6 +141,14 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
       .catch(() => undefined);
   }, [onAutoSelect]);
 
+  /* ⛔⛔ 10-15 用户实测「模型删不掉 + API Key 一进界面就掉」的真凶：
+     本 effect 原依赖 [loadActiveModel]，而 loadActiveModel 依赖 onAutoSelect（每次渲染
+     都是新函数）⇒ effect 被反复重跑 ⇒ 每次重跑 activeLoaded 局部变量重置为 false
+     ⇒ 再次 loadActiveModel() ⇒ setCustomDraft 用服务端旧档案覆盖用户正在编辑的草稿
+     （删除被冲掉 = 删不掉；apiKey 被清 = "key 掉了"）。
+     原实现是独立 useEffect([])（空依赖、只跑一次），语义就是"只读一次" —— 必须保持等价：
+     ① activeLoaded 提到 useRef（跨渲染只放行一次）；② 依赖回归 []。 */
+  const activeLoadedRef = useRef(false);
   useEffect(() => {
     /* ⛔⛔ 启动竞态（10-14 用户实测：「保存后重启，第一次进应用啥也没有，第二次进就有」）：
        宿主启动时引擎会被 spawn **两次**——boot.ts:895 发现自定义模型会 applyCustomModel
@@ -151,7 +159,6 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
        拿到非空后再补读一次生效模型（此时 getCustomModel 的 null 才真的可信）。 */
     let cancelled = false;
     let attempt = 0;
-    let activeLoaded = false;
     const loadProviders = () => {
       attempt += 1;
       void window.codex.listCustomModels()
@@ -160,23 +167,25 @@ export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuc
           setProvidersList(providers);
           setCurrentProvider(current);
           const ready = Array.isArray(providers) && providers.length > 0;
-          if (ready && !activeLoaded) {
-            activeLoaded = true;
+          if (ready && !activeLoadedRef.current) {
+            activeLoadedRef.current = true;
             loadActiveModel();
             return;
           }
           if (!ready && attempt <= 6) window.setTimeout(loadProviders, 400 * attempt);
-          else if (!ready && !activeLoaded) { activeLoaded = true; loadActiveModel(); }   // 重试到顶：最后一次兜底
+          else if (!ready && !activeLoadedRef.current) { activeLoadedRef.current = true; loadActiveModel(); }   // 重试到顶：最后一次兜底
         })
         .catch(() => {
           if (cancelled) return;
           if (attempt <= 6) window.setTimeout(loadProviders, 400 * attempt);
-          else if (!activeLoaded) { activeLoaded = true; loadActiveModel(); }
+          else if (!activeLoadedRef.current) { activeLoadedRef.current = true; loadActiveModel(); }
         });
     };
     loadProviders();
     return () => { cancelled = true; };
-  }, [loadActiveModel]);
+    // ⛔ 依赖必须是 []（见上方真凶注释）；onAutoSelect 变化不得重跑本 effect。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 引入 refreshActive：供外部在设置页打开等时机刷新生效供应商（防状态过期导致互斥误判）
   const refreshActive = useCallback(() => {
