@@ -218,3 +218,38 @@ export async function runBaseMigration(source: string, target: string): Promise<
     if (activeProgress && !activeProgress.error) activeProgress = { ...activeProgress, running: false };
   }
 }
+
+/**
+ * ⛔ 10-15 幂等加固「项目信任门禁」：引擎 0.157+ 对 cwd 里的项目本地配置/钩子/exec 策略
+ * 做信任门禁 —— 宿主 cwd（appPath，即应用目录/仓库根）不在 [projects] 信任表里时，
+ * **每个回合**都会弹 configWarning「Project-local config, hooks, and exec policies are
+ * disabled until the project is trusted」（云助手 10-15 用户报障；主仓 10-13 手工加过
+ * [projects] 段但只是当时补丁，config.toml 重置即复发）。本函数把它变成启动自愈：
+ * 幂等追加 appPath（大小写各一条，命中引擎的路径归一化口径）+ `.codex` 子目录一条；
+ * 只写缺失条目，不动用户已有的任何配置；读/写失败静默跳过（加固失败不影响启动）。
+ *
+ * 调用时机：main.ts 在 initRuntimePaths() 之后（userData 已定、config.toml 路径可求值）。
+ */
+export function ensureTrustedProject(engineConfigFile: string, appDir: string): void {
+  try {
+    const norm = (s: string) => s.replace(/\//g, "\\");
+    const variants = Array.from(new Set([
+      norm(appDir),
+      norm(appDir.toLowerCase()),
+      norm(path.join(appDir, ".codex")),
+    ]));
+    let text = "";
+    try { text = fs.readFileSync(engineConfigFile, "utf8"); } catch { text = ""; }
+    const missing = variants.filter((v) => {
+      const escaped = v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return !new RegExp(`\\[projects\\.'${escaped}'\\]`, "i").test(text);
+    });
+    if (!missing.length) return;
+    const block = missing.map((v) => `\n[projects.'${v}']\ntrust_level = "trusted"\n`).join("");
+    fs.mkdirSync(path.dirname(engineConfigFile), { recursive: true });
+    fs.appendFileSync(engineConfigFile, `\n# 10-15 自动加固：宿主 cwd 的项目信任门禁（ensureTrustedProject 幂等追加，缺失才写）${block}`);
+    console.log(`[trusted-projects] 已补信任条目 ×${missing.length} → ${engineConfigFile}`);
+  } catch (error) {
+    console.warn("[trusted-projects] 信任表加固失败（不影响启动）：", error instanceof Error ? error.message : String(error));
+  }
+}
