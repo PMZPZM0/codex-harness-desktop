@@ -9,7 +9,7 @@ import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readF
 import path from "node:path";
 import http from "node:http";
 import { ChannelBotService, type ChannelBotConfig } from "./channel-bot";
-import { resolveStartupUserData } from "./data-dir";
+import { ensureTrustedProject, resolveStartupUserData } from "./data-dir";
 import { CodexServer, codexBinaryPath } from "./codex-server";
 import { BotPairingService } from "./bot-pairing";
 import { MemoryStore, type MemoryCategory, type MemoryRemoteConfig } from "./memory-store";
@@ -238,6 +238,11 @@ if (process.env.CODEX_HARNESS_IN_PROCESS_GPU) {
 installCrashDiagnostics();
 
 initRuntimePaths();
+
+/* ⛔ 10-15 启动自愈：宿主 cwd 的项目信任门禁（幂等）—— config.toml 缺 [projects] 信任条目时
+   引擎每个回合都弹 configWarning「Project-local config … disabled until the project is trusted」。
+   在 initRuntimePaths 之后调用（userData/codexHome 已可求值）。 */
+ensureTrustedProject(path.join(codexHome, "config.toml"), app.getAppPath());
 
 
 
