@@ -1153,6 +1153,10 @@ interface Window {
     /* 关闭确认弹窗（10-13）：主进程拦截 X 后推「要不要关」，渲染层画应用内卡片并回包 */
     onCloseConfirmAsk(handler: (payload: { busy: number; appName: string }) => void): () => void;
 
+    /* 10-16 主题变更广播：主进程 theme:apply 后推给所有窗口 ——
+       独立会话弹窗的界面主题实时跟随主界面（preload 手写桥，不在 manifest 清单） */
+    onThemeChanged(listener: (theme: string) => void): () => void;
+
 
 
 

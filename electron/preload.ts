@@ -804,6 +804,11 @@ onBotBindingChanged: (handler: (bindings: unknown) => void) =>
     __on("bot-binding:changed", handler, (handler) => (_event: Electron.IpcRendererEvent, value: unknown) => handler(value)),
 onHarnessEvent: (listener: (event: unknown) => void) =>
     __on("harness:event", listener, (listener) => (_event: Electron.IpcRendererEvent, value: unknown) => listener(value)),
+  /* 主题变更广播（10-16）：主进程 theme:apply 之后推给**所有窗口** ——
+     独立会话弹窗的界面主题因此实时跟随主界面（用户令「独立窗口的主题色要跟着主界面变」）。
+     渲染层在 01-thread-switch-system-events 里订阅。事件通道不进 manifest（见 manifest 顶部注释）。 */
+  onThemeChanged: (listener: (theme: string) => void) =>
+    __on("theme:changed", listener, (listener) => (_event: Electron.IpcRendererEvent, value: unknown) => listener(String(value ?? ""))),
   // ---- 语音通话（旁挂新增，不影响任何既有方法） ----
 voiceAudio: (samples: Float32Array) => ipcRenderer.send("voice:audio", samples),
   // 排队消息定时发送到点：主进程定时器广播（不受渲染层隐藏节流），渲染层据此启动那条排队消息

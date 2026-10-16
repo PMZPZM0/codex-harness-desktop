@@ -186,6 +186,15 @@ bag.switchHardTimerRef = switchHardTimerRef as typeof bag.switchHardTimerRef;
   const [theme, setTheme] = useState(() => normalizeThemeId(localStorage.getItem("theme")));
 bag.theme = theme as typeof bag.theme; bag.setTheme = setTheme as typeof bag.setTheme;
 
+  /* 主题实时跟随（10-16 用户令「独立窗口的主题色要跟着主界面变」）：主进程换主题后广播，
+     本窗口（独立会话弹窗 / 主窗口）据此改自己的主题状态 —— 下面的 effect 再把它落到
+     dataset 与 localStorage，于是所有窗口视觉一致。
+     ⛔ 只改本地状态、**不回推**主进程（主进程就是发起方；同值 setState 也不会重渲染）。 */
+  useEffect(() => {
+    const off = window.codex.onThemeChanged?.((next) => setTheme(normalizeThemeId(next)));
+    return () => { try { off?.(); } catch { /* 窗口销毁中，退订失败无所谓 */ } };
+  }, []);
+
   // 账户菜单（点左下角头像/名字弹出）：界面语言 / 界面主题 / 界面缩放 / 使用统计 / 用户中心 / 退出登录
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
 bag.accountMenuOpen = accountMenuOpen as typeof bag.accountMenuOpen; bag.setAccountMenuOpen = setAccountMenuOpen as typeof bag.setAccountMenuOpen;
