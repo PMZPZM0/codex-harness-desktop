@@ -8,11 +8,12 @@ import { PageInfo } from "../../components/SettingsHead";
 import { Spinner } from "../../components/CardShell";
 import { RefreshCw, ShieldCheck, Wrench } from "lucide-react";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
-export type HooksSettingsSectionProps = { settingsResources: any; pluginDisplayName: any; localSkills: any; hookTrusting: any; trustAllHooks: any; refreshSettingsResources: any; resourceLoading: any; linkedBusy: any; setLinkedEnabled: any; hookBusy: any; setHookEnabled: any };
+export type HooksSettingsSectionProps = { settingsResources: any; pluginDisplayName: any; localSkills: any; hookTrusting: any; trustAllHooks: any; refreshSettingsResources: any; resourceLoading: any; linkedBusy: any; setLinkedEnabled: any; hookBusy: any; setHookEnabled: any; setNotice: any };
 
 export function HooksSettingsSection(props: HooksSettingsSectionProps) {
-  const { settingsResources, pluginDisplayName, localSkills, hookTrusting, trustAllHooks, refreshSettingsResources, resourceLoading, linkedBusy, setLinkedEnabled, hookBusy, setHookEnabled } = props;
+  const { settingsResources, pluginDisplayName, localSkills, hookTrusting, trustAllHooks, refreshSettingsResources, resourceLoading, linkedBusy, setLinkedEnabled, hookBusy, setHookEnabled, setNotice } = props;
   const hooks = settingsResources.hooks as any[];
   const untrusted = hooks.filter((hook: any) => hook.trustStatus && hook.trustStatus !== "trusted");
   const enabledCount = hooks.filter((hook: any) => hook.enabled !== false).length;
@@ -54,7 +55,7 @@ export function HooksSettingsSection(props: HooksSettingsSectionProps) {
   // 插件组的开关状态由插件本身决定（钩子列表可能为空），自定义组则由钩子决定
   const groupEnabled = (group: typeof groups[number]) => group.pluginId ? group.pluginEnabled !== false : group.hooks.some((hook: any) => hook.enabled !== false);
   return <section className="settings-section stack hook-center">
-    <div className="settings-copy channel-heading"><div><h2>钩子<PageInfo text={<>钩子的启停会<b>联动所属插件与它提供的技能</b>。另外 Codex <b>不会执行未信任的钩子</b>——新装后必须点一次「信任」，否则装了等于没装。</>} /></h2></div><div className="settings-heading-actions">{untrusted.length > 0 && <button className="primary-setting" disabled={hookTrusting} onClick={() => void trustAllHooks()}>{hookTrusting ? <Spinner /> : <ShieldCheck size={14} />}信任全部 {untrusted.length}</button>}<button className="icon-button" title="刷新钩子" onClick={() => void refreshSettingsResources()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+    <div className="settings-copy channel-heading"><div><h2>钩子<PageInfo text={<>钩子的启停会<b>联动所属插件与它提供的技能</b>。另外 Codex <b>不会执行未信任的钩子</b>——新装后必须点一次「信任」，否则装了等于没装。</>} /></h2></div><div className="settings-heading-actions">{untrusted.length > 0 && <button className="primary-setting" disabled={hookTrusting} onClick={() => void trustAllHooks()}>{hookTrusting ? <Spinner /> : <ShieldCheck size={14} />}信任全部 {untrusted.length}</button>}<button className="icon-button" title="刷新钩子" onClick={() => void refreshWithReceipt(setNotice, "刷新钩子", () => refreshSettingsResources())}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
 
     <div className="hook-stats">
       <div className="hook-stat"><span>钩子总数</span><strong>{hooks.length}</strong></div>

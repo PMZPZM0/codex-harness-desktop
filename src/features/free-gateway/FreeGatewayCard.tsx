@@ -18,6 +18,7 @@ import { createPortal } from "react-dom";
 import { CircleCheck, Download, ExternalLink, Play, RefreshCw, ShieldAlert, Square, Store, Trash2 } from "lucide-react";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { Spinner } from "../../components/CardShell";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 /** ⛔ 免责声明（单一文案源；卡片摘要与弹窗全文都从这里拼）。 */
 export const DISCLAIMER_SHORT = "第三方开源项目，与本项目开发者无关";
@@ -80,10 +81,15 @@ export function FreeGatewayDialog({ onClose, onRegistered, setNotice, onUninstal
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const refresh = useCallback(() => {
-    void window.codex.freeGatewayStatus()
-      .then((s) => { setStatus(s as GatewayStatus); setStatusLoading(false); })
-      .catch((e) => { setError(String(e?.message ?? e)); setStatusLoading(false); });
+  const refresh = useCallback(async () => {
+    try {
+      setStatus((await window.codex.freeGatewayStatus()) as GatewayStatus);
+      return "";
+    } catch (error: any) {
+      setError(String(error?.message ?? error));
+      // ⛔ 失败原因交回调用方（吞异常了，按钮侧回执靠它区分成败）
+      return String(error?.message ?? error);
+    } finally { setStatusLoading(false); }
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
   /* ⛔ 自动启动兜底：对话框打开 → status 回来 → 已下载但未运行 → 自动拉起网关。
@@ -199,7 +205,7 @@ export function FreeGatewayDialog({ onClose, onRegistered, setNotice, onUninstal
                   {busy === "register" ? "注册中…" : "一键注册为供应商"}
                 </button>
               )}
-              <button className="icon-button" title="刷新状态" onClick={refresh}><RefreshCw size={14} /></button>
+              <button className="icon-button" title="刷新状态" onClick={() => void refreshWithReceipt(setNotice, "刷新网关状态", refresh)}><RefreshCw size={14} /></button>
           {s?.downloaded && (
             <button className="secondary-setting free-gateway-uninstall-btn" title="卸载网关（停侧车 + 删本体 + 删数据 + 移除已注册供应商）"
               disabled={busy !== ""}

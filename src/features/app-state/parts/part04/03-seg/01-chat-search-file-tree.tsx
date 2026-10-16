@@ -332,6 +332,8 @@ bag.toggleTreeDir = toggleTreeDir as typeof bag.toggleTreeDir;
       bag.setTreeChildren((current) => ({ ...current, [path]: entries }));
     } catch (error: any) {
       bag.setNotice(`读取项目树失败：${error.message}`);
+      // ⛔ 失败原因交回调用方（吞异常了，按钮侧回执靠它区分成败）
+      return String(error?.message ?? error);
     } finally {
       bag.setTreeLoading(false);
     }

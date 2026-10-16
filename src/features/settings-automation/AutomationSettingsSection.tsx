@@ -14,10 +14,11 @@
  *   ⛔ 后台自动更新在主进程跑（不开设置页也执行），本页只是**状态与开关的视图**。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 import { ArrowDown, CircleCheck, Globe2, RefreshCw, ShieldCheck, Workflow } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 
-export type AutomationSettingsSectionProps = { setSettingsPage: any };
+export type AutomationSettingsSectionProps = { setSettingsPage: any; setNotice: any };
 
 type AutoUpdateRow = {
   id: string;
@@ -32,7 +33,7 @@ type AutoUpdateRow = {
 };
 
 export function AutomationSettingsSection(props: AutomationSettingsSectionProps) {
-  const { setSettingsPage } = props;
+  const { setSettingsPage, setNotice } = props;
   // 只认本区块关心的工具：id 集合来自主进程返回的行，不硬编码第二份清单。
   const watched = useRef<Set<string>>(new Set());
   const [rows, setRows] = useState<AutoUpdateRow[]>([]);
@@ -54,6 +55,8 @@ export function AutomationSettingsSection(props: AutomationSettingsSectionProps)
       setRowError(Object.fromEntries(safe.filter((row) => row.error).map((row) => [row.id, row.error])));
     } catch (error: any) {
       setRowError({ all: `读取自动更新状态失败：${error?.message ?? error}` });
+      // ⛔ 失败原因交回调用方（吞异常了，按钮侧回执靠它区分成败）
+      return String(error?.message ?? error);
     } finally {
       setChecking(false);
     }
@@ -172,7 +175,7 @@ export function AutomationSettingsSection(props: AutomationSettingsSectionProps)
                                   ? <button className="secondary-setting runtime-cancel" onClick={() => void cancelUpdate(row.id)}>取消</button>
                                   : row.hasUpdate
                                     ? <button className="primary-setting runtime-install" disabled={Boolean(busyId)} onClick={() => void runUpdate(row.id)}><ArrowDown size={14} />更新到 {row.latest}</button>
-                                    : <button className="secondary-setting runtime-install" disabled={checking} onClick={() => void checkAll()}><RefreshCw size={13} />{checking ? "检查中…" : "检查更新"}</button>)
+                                    : <button className="secondary-setting runtime-install" disabled={checking} onClick={() => void refreshWithReceipt(setNotice, "检查自动更新", checkAll)}><RefreshCw size={13} />{checking ? "检查中…" : "检查更新"}</button>)
                                 : null}
                             </span>
                           </div>;

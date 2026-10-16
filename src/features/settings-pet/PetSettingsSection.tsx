@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Check, Download, FolderOpen, Image as ImageIcon, PawPrint, RefreshCw, TriangleAlert } from "lucide-react";
 import { petAssetUrl } from "../pet";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 export type PetSettingsSectionProps = { onNotice?: (message: string) => void };
 
@@ -68,6 +69,8 @@ export function PetSettingsSection({ onNotice }: PetSettingsSectionProps) {
       setError("");
     } catch (reason: any) {
       setError(String(reason?.message ?? reason));
+      // ⛔ 失败原因交回调用方（吞异常了，按钮侧回执靠它区分成败）
+      return String(reason?.message ?? reason);
     }
   }, []);
 
@@ -217,7 +220,7 @@ export function PetSettingsSection({ onNotice }: PetSettingsSectionProps) {
         </ul>
         <div className="pet-actions">
           <button type="button" onClick={() => void openDir()}><FolderOpen size={13} />打开用户宠物目录</button>
-          <button type="button" disabled={busy} onClick={() => void refresh()}><RefreshCw size={13} />重新扫描</button>
+          <button type="button" disabled={busy} onClick={() => void refreshWithReceipt(onNotice, "重新扫描宠物目录", () => refresh())}><RefreshCw size={13} />重新扫描</button>
         </div>
         {external.length > 0 && (
           <div className="pet-import">

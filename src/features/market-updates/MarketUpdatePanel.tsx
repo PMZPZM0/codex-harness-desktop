@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, CircleCheck, Download, RefreshCw } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 export type MarketUpdateKind = "skills" | "plugins" | "official";
 
@@ -20,6 +21,8 @@ export type MarketUpdatePanelProps = {
   kind: MarketUpdateKind;
   /** 面板标题下的一句话说明（各页可微调措辞） */
   hint?: string;
+  /** 回执通道（10-16 刷新回执）：缺省 = 只走行内状态，不报错 */
+  onNotice?: (text: string) => void;
 };
 
 type Row = {
@@ -102,9 +105,12 @@ export function MarketUpdatePanel(props: MarketUpdatePanelProps) {
       });
       setRows(next);
       liveKeys.current = new Set(next.map((row) => row.key));
+      return "";
     } catch (err: any) {
       setError(`检查更新失败：${err?.message ?? err}`);
       setRows([]);
+      // ⛔ 失败原因交回调用方（吞异常了，按钮侧回执靠它区分成败）
+      return String(err?.message ?? err);
     } finally {
       setChecking(false);
     }
@@ -152,7 +158,7 @@ export function MarketUpdatePanel(props: MarketUpdatePanelProps) {
         <p>{props.hint ?? "对照市场当前内容检查你已装的那些，有变化才提示；更新走与安装完全相同的链路。"}</p>
       </div>
       <div className="settings-heading-actions">
-        <button className="secondary-setting" disabled={checking || Boolean(busyKey)} onClick={() => void check()}>
+        <button className="secondary-setting" disabled={checking || Boolean(busyKey)} onClick={() => void refreshWithReceipt(props.onNotice, `检查${api.title}更新`, check)}>
           {checking ? <Spinner /> : <RefreshCw size={13} />}{checking ? "检查中…" : "检查更新"}
         </button>
         {updatable > 1

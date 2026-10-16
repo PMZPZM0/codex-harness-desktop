@@ -9,15 +9,16 @@ import { Bot, Check, Code2, PenLine, Plus, RefreshCw, ShieldCheck, Sparkles, Tra
 import { Spinner } from "../../components/CardShell";
 import { effortLabels } from "../../lib/effort-labels";
 import { SubAgentEditorModal } from "../../features/experts-teams";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
-export type AgentsSettingsSectionProps = { openNewSubAgent: any; refreshSubAgents: any; resourceLoading: any; subAgents: any; toggleSubAgentEnabled: any; openEditSubAgent: any; deleteSubAgent: any; subAgentEditorOpen: any; subAgentDraft: any; setSubAgentDraft: any; setSubAgentEditorOpen: any; saveSubAgent: any };
+export type AgentsSettingsSectionProps = { openNewSubAgent: any; refreshSubAgents: any; resourceLoading: any; subAgents: any; toggleSubAgentEnabled: any; openEditSubAgent: any; deleteSubAgent: any; subAgentEditorOpen: any; subAgentDraft: any; setSubAgentDraft: any; setSubAgentEditorOpen: any; saveSubAgent: any; setNotice: any };
 
 export function AgentsSettingsSection(props: AgentsSettingsSectionProps) {
-  const { openNewSubAgent, refreshSubAgents, resourceLoading, subAgents, toggleSubAgentEnabled, openEditSubAgent, deleteSubAgent, subAgentEditorOpen, subAgentDraft, setSubAgentDraft, setSubAgentEditorOpen, saveSubAgent } = props;
+  const { openNewSubAgent, refreshSubAgents, resourceLoading, subAgents, toggleSubAgentEnabled, openEditSubAgent, deleteSubAgent, subAgentEditorOpen, subAgentDraft, setSubAgentDraft, setSubAgentEditorOpen, saveSubAgent, setNotice } = props;
   return (
     <>
       <section className="settings-section stack subagent-center">
-                    <div className="settings-copy channel-heading"><div><h2>子智能体<PageInfo text={<>用户自定义角色；Codex 通过统一调度工具 <code>agent_invoke</code>（kind=subagent）调用它们完成子任务 —— 需在会话顶栏「调度」面板里勾选「子智能体」。</>} /></h2></div><div className="settings-heading-actions"><button className="primary-setting" onClick={openNewSubAgent}><Plus size={14} />新建子智能体</button><button className="icon-button" title="刷新子智能体" onClick={() => void refreshSubAgents()}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+                    <div className="settings-copy channel-heading"><div><h2>子智能体<PageInfo text={<>用户自定义角色；Codex 通过统一调度工具 <code>agent_invoke</code>（kind=subagent）调用它们完成子任务 —— 需在会话顶栏「调度」面板里勾选「子智能体」。</>} /></h2></div><div className="settings-heading-actions"><button className="primary-setting" onClick={openNewSubAgent}><Plus size={14} />新建子智能体</button><button className="icon-button" title="刷新子智能体" onClick={() => void refreshWithReceipt(setNotice, "刷新子智能体", () => refreshSubAgents())}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
 
                     <div className="subagent-banner"><Sparkles size={16} /><div><strong>让 Codex 真正会叫子智能体干活</strong><p>每个子智能体保存后即可被调度：在会话顶栏的「调度」面板里勾选「子智能体」，主对话就能把独立子任务派给它（走统一工具 <code>agent_invoke</code>），返回结构化结果。</p></div></div>
 

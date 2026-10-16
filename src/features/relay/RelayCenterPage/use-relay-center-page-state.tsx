@@ -28,10 +28,12 @@ export function useRelayCenterPageState({ busy, activeProvider, onActivate, onNo
         try {
           setOverview(await window.codex.relayOverview(accountId));
           setErr("");
+          return "";
         } catch (e: any) {
           setErr(e.message ?? "刷新失败");
+          // ⛔ 失败原因交回调用方（吞异常了，按钮侧回执靠它区分成败）
+          return String(e?.message ?? "刷新失败");
         }
-        return;
       }
       const acc = await window.codex.relayLoadAccount();
       if (acc?.loggedIn) {
@@ -40,12 +42,15 @@ export function useRelayCenterPageState({ busy, activeProvider, onActivate, onNo
           setOverview(await window.codex.relayOverview());
           setErr("");
           if (!silent) onNotice("已刷新余额与套餐");
+          return "";
         } catch (e: any) {
           // 保留旧数据不闪空，错误显示在页面
           setErr(e.message ?? "刷新失败");
+          return String(e?.message ?? "刷新失败");
         }
       } else if (acc) setDraft((d) => ({ ...d, baseUrl: acc.baseUrl, email: acc.email }));
     } catch { /* 未登录过 */ } finally { if (!silent) setRefreshing(false); }
+    return "";
   }, []);
   useEffect(() => { void load(); }, [load]);
   // 账户列表（多账号管理）

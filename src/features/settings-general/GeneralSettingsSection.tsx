@@ -16,6 +16,7 @@ import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { Spinner } from "../../components/CardShell";
 import { BuiltinSkillSwitch } from "./BuiltinSkillSwitch";
 import { AutoUpdateCard } from "./AutoUpdateCard";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 export type GeneralSettingsSectionProps = { globalPermApproval: any; applyGlobalPermissionMode: any; workspace: any; chooseWorkspace: any; userDataPath: any; setNotice: any; rightOpen: any; setRightOpen: any; capabilityHint: any; desktopAuto: any; groupBusy: any; toggleDesktopAuto: any; browserAuto: any; toggleBrowserAuto: any; ponytailOn: any; applyGroup: any; hardwareAccel: any; changeHardwareAccel: any; restartPending: any; SHORTCUT_GROUPS: any; setShortcutsOpen: any; engineVersion: any; engineCheck: any; engineUpdating: any; checkEngineUpdateNow: any; performEngineUpdateNow: any; engineUpdatePercent: any; engineUpdateStageText: any; engineUpdateLog: any; engineUpdateResult: any; relaunchCountdown: any; downloadSource: any };
 
@@ -288,7 +289,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                             {engineCheck.state === "available" && `官方已发布新版 ${engineCheck.latest}`}
                             {engineCheck.state === "error" && `检查失败：${engineCheck.message}`}
                           </span>
-                          <button className="secondary-setting engine-check-btn" disabled={engineCheck.state === "checking" || engineUpdating} onClick={() => void checkEngineUpdateNow()}>
+                          <button className="secondary-setting engine-check-btn" disabled={engineCheck.state === "checking" || engineUpdating} onClick={() => void refreshWithReceipt(setNotice, "检查引擎更新", checkEngineUpdateNow)}>
                             {engineCheck.state === "checking" ? <Spinner /> : <Search size={14} />}{engineCheck.state === "checking" ? "检查中…" : "检查更新"}
                           </button>
                         </div>

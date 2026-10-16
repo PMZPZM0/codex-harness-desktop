@@ -36,7 +36,8 @@ bag.chooseFiles = chooseFiles as typeof bag.chooseFiles;
       const result = await window.codex.listMarketSkills({ category, page, pageSize: bag.marketPageSize, query });
       bag.setMarketSkills(result.items);
       bag.setMarketTotal(result.total);
-    } catch (error: any) { bag.setNotice(`技能市场读取失败：${error.message}`); }
+      // ⛔ 失败把原因交回调用方（吞异常了，按钮侧回执靠它区分成败）
+    } catch (error: any) { bag.setNotice(`技能市场读取失败：${error.message}`); return String(error?.message ?? error); }
     finally { bag.setMarketLoading(false); }
   }
 bag.refreshMarketSkills = refreshMarketSkills as typeof bag.refreshMarketSkills;
@@ -50,7 +51,7 @@ bag.refreshMarketSkills = refreshMarketSkills as typeof bag.refreshMarketSkills;
       bag.setPluginMarketItems(result.items);
       bag.setPluginMarketTotal(result.total);
       bag.setPluginMarketPage(result.page);
-    } catch (error: any) { bag.setNotice(`插件市场读取失败：${error.message}`); }
+    } catch (error: any) { bag.setNotice(`插件市场读取失败：${error.message}`); return String(error?.message ?? error); }
     finally { bag.setPluginMarketLoading(false); }
   }
 bag.refreshMarketPlugins = refreshMarketPlugins as typeof bag.refreshMarketPlugins;
@@ -62,10 +63,13 @@ bag.refreshMarketPlugins = refreshMarketPlugins as typeof bag.refreshMarketPlugi
    *  市场工具栏那个只刷市场列表（当前分类/搜索/页码）——功能不重复但用户分不清。
    *  合成一个：点一次，两处数据一起重取（市场沿用当前筛选与页码，与旧工具栏按钮行为一致）。 */
   async function refreshPluginsPage() {
-    await Promise.all([
+    const [resources, market] = await Promise.all([
       bag.refreshSettingsResources(),
       bag.refreshMarketPlugins(bag.pluginMarketCategory, bag.pluginMarketSearch, bag.pluginMarketPage),
     ]);
+    // ⛔ 两个子刷新各自把失败原因带回来（见 refreshSettingsResources / refreshMarketPlugins），
+    //   这里必须继续往上带 —— 否则插件页的刷新按钮会把失败报成「完成」。
+    return market || resources || "";
   }
 bag.refreshPluginsPage = refreshPluginsPage as typeof bag.refreshPluginsPage;
 

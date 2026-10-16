@@ -7,6 +7,7 @@ import { OFFICIAL_MODELS } from "../../lib/official-models";
 import { PageInfo } from "../../components/SettingsHead";
 import { Spinner } from "../../components/CardShell";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { parseOpenaiUsagePanel, openaiResetText, extractQuotaBars } from "./OpenaiSubscriptionPage/01-usage-parsers";
 export { OpenaiBalanceBadge } from "./OpenaiSubscriptionPage/02-official-cards";
@@ -69,7 +70,12 @@ export function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, o
     try {
       const raw = JSON.stringify(await window.codex.openaiUsage({ email }), null, 1);
       setUsageMap((m) => ({ ...m, [email]: raw }));
-    } catch (e: any) { setUsageMap((m) => ({ ...m, [email]: "ERR:" + (e.message ?? e) })); }
+      return "";
+    } catch (e: any) {
+      setUsageMap((m) => ({ ...m, [email]: "ERR:" + (e.message ?? e) }));
+      // ⛔ 失败原因交回调用方（吞异常了，按钮侧回执靠它区分成败）
+      return String(e?.message ?? e);
+    }
   }, []);
   useEffect(() => { void reload(); }, [reload]);
   useEffect(() => () => { if (timerRef.current) window.clearInterval(timerRef.current); }, []);
@@ -304,7 +310,7 @@ export function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, o
               {usageRaw && !usageRaw.startsWith("ERR:") && bars.length === 0 && <p className="openai-sub-line">官方未返回百分比额度数据（可能尚未产生用量）。</p>}
               {usageRaw && usageRaw.startsWith("ERR:") && <p className="openai-sub-line openai-quota-err">{usageRaw.slice(4)}</p>}
               <div className="relay-plan-card-foot">
-                <button className="secondary-setting" disabled={working !== ""} onClick={() => void loadUsage(a.email)}><RefreshCw size={13} />刷新额度</button>
+                <button className="secondary-setting" disabled={working !== ""} onClick={() => void refreshWithReceipt(onNotice, "刷新额度", () => loadUsage(a.email))}><RefreshCw size={13} />刷新额度</button>
                 {a.active && !a.disabled
                   ? <button className="secondary-setting" disabled={working !== ""} onClick={() => void onActivate(OFFICIAL_MODELS)}>{working === "en" + a.id ? <Spinner /> : <Play size={13} />}重新启用</button>
                   : <button className="secondary-setting" disabled={working !== "" || a.disabled || Boolean(activeProvider)} title={a.disabled ? "已停用的账号不能启用订阅，请先在卡片上重新启用" : (activeProvider ? `已有供应商「${activeProvider}」生效，请先停用再启用 OpenAI 订阅` : undefined)} onClick={() => void enableSubscription(a.id)}>{working === "en" + a.id ? <Spinner /> : <Play size={13} />}启用订阅</button>}

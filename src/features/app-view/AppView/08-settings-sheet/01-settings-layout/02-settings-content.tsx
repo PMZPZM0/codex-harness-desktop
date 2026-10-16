@@ -145,6 +145,7 @@ import {
   CheckCheck,
 } from "lucide-react";
 import { Spinner } from "../../../../../components/CardShell";
+import { refreshWithReceipt } from "../../../../../lib/refresh-receipt.mjs";
 import { HarnessAppApi } from "../../../../app-state/useHarnessApp";
 
 /* ⛔ 懒加载（09-22）：以下组件全部只在 settingsPage === "…" 分支渲染（02-settings-content 内），
@@ -508,7 +509,7 @@ export function SettingsLayoutSettingsContent({ app }: { app: HarnessAppApi }) {
     <div className="settings-content">
                         {/* 骨架先行：弹窗框架先绘制一帧，分区内容延后挂载（详见 settingsContentReady 注释） */}
                         {!settingsContentReady ? <div className="settings-boot" role="status"><Spinner /><span>正在载入…</span></div> : <>
-                        {resourceError && <div className="resource-error"><AlertTriangle size={14} /><span>{resourceError}</span><button className="secondary-setting" onClick={() => void refreshSettingsResources()}>重试</button></div>}
+                        {resourceError && <div className="resource-error"><AlertTriangle size={14} /><span>{resourceError}</span><button className="secondary-setting" onClick={() => void refreshWithReceipt(setNotice, "刷新设置资源", () => refreshSettingsResources())}>重试</button></div>}
                         <Suspense fallback={<div className="settings-boot" role="status"><Spinner /><span>正在载入…</span></div>}>
                         {/* 二级入口页：自动化（浏览器/桌面/RPA）与智能体团队（子智能体/专家团）。
                             点卡片进入真实页面；进入的是二级成员页时顶部提供「返回」。 */}

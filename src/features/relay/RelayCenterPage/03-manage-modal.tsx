@@ -6,6 +6,7 @@ import { AlertTriangle, ArrowUpRight, Bot, Check, ChevronDown, Clock3, Copy, Eye
 import { Spinner } from "../../../components/CardShell";
 import { AppSelect } from "../../../components/AppSelect";
 import { copyTextToClipboard } from "../../../lib/clipboard";
+import { refreshWithReceipt } from "../../../lib/refresh-receipt.mjs";
 import { shortGroupName } from "../RelayCenterPage/01-balance-badge";
 import { RelayModal } from "./relay-modal";
 import { useEffect, useRef, useState } from "react";
@@ -28,7 +29,7 @@ type Props = {
   keyGroups: any[];
   keyVisible: boolean;
   keysCollapsed: boolean;
-  load: (silent?: boolean, accountId?: string | undefined) => Promise<void>;
+  load: (silent?: boolean, accountId?: string | undefined) => Promise<string>;
   manageOpen: boolean;
   maskKey: (key: string) => string;
   newKey: { name: string; groupId: string; };
@@ -91,7 +92,7 @@ export function RelayCenterPageManageModal({ account, accounts, active, busy, ch
                     )}
                   </div>
                   <div className="relay-hero-actions">
-                    <button className="icon-button" title="刷新余额与套餐" disabled={refreshing} onClick={() => void load(false, account?.id)}>{refreshing ? <Spinner /> : <RefreshCw size={14} />}</button>
+                    <button className="icon-button" title="刷新余额与套餐" disabled={refreshing} onClick={() => void refreshWithReceipt(onNotice, "刷新账号余额与套餐", () => load(false, account?.id))}>{refreshing ? <Spinner /> : <RefreshCw size={14} />}</button>
                     <button className="secondary-setting" onClick={() => onOpenModelSettings()}><Bot size={13} />模型配置</button>
                     {/* 删除作用于**本面板这个账号**（不再是按 activeId 删当前账号，见 openManage 上方说明）。
                         面板里的 account 只有 baseUrl/email（relayLoadAccount 的结构），id 从账号列表按 email 反查。 */}

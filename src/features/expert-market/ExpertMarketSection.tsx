@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, Check, Package, Plus, RefreshCw, Search } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { SegmentedTabs } from "../../components/SettingsWidgets";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 export type ExpertMarketSectionProps = { onBack: () => void; onInstalled: () => void; onNotice: (message: string) => void; localSkills: any[] };
 
@@ -34,7 +35,8 @@ export function ExpertMarketSection({ onBack, onInstalled, onNotice, localSkills
       const result = await window.codex.listExpertMarketPackages({ page: nextPage, pageSize, query: nextQuery });
       setItems(result.items);
       setTotal(result.total);
-    } catch (error: any) { onNotice(`专家市场包读取失败：${error.message}`); }
+    // ⛔ 失败原因交回调用方（吞异常了，按钮侧回执靠它区分成败）
+    } catch (error: any) { onNotice(`专家市场包读取失败：${error.message}`); return String(error?.message ?? error); }
     finally { setLoading(false); }
   };
 
@@ -56,7 +58,7 @@ export function ExpertMarketSection({ onBack, onInstalled, onNotice, localSkills
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   return (
     <section className="settings-section stack expert-market-page">
-      <div className="settings-copy channel-heading"><div><h2>专家市场包</h2></div><div className="settings-heading-actions"><button className="secondary-setting" onClick={onBack}><ArrowLeft size={14} />返回专家列表</button><button className="icon-button" title="刷新技能包列表" onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+      <div className="settings-copy channel-heading"><div><h2>专家市场包</h2></div><div className="settings-heading-actions"><button className="secondary-setting" onClick={onBack}><ArrowLeft size={14} />返回专家列表</button><button className="icon-button" title="刷新技能包列表" onClick={() => void refreshWithReceipt(onNotice, "刷新技能包列表", () => load())}>{loading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
 
       <div className="resource-toolbar">
         <SegmentedTabs value={view} onChange={(next) => setView(next as "browse" | "installed")} options={[{ value: "browse", label: "市场浏览" }, { value: "installed", label: "我的技能包", count: installedPackages.length }]} />

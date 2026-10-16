@@ -9,6 +9,7 @@ import { MemoryGroup, MemoryRecord, MemoryPriority, MemoryGatewayState } from ".
 import { Spinner } from "../../components/CardShell";
 import { createPortal } from "react-dom";
 import { useState, useMemo, useEffect } from "react";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 /** 记忆整洁报告（来自主进程 memory:hygiene:plan；规则表也在里面 —— 唯一真相源在 electron/memory-hygiene.ts） */
 type HygienePlan = {
@@ -572,7 +573,7 @@ export function MemoryPyramid({ snapshot, distilling, records, onJump, onDistill
 /** 常驻记忆注入预览（09-23 新增）：把 `memory:layers:context` 的真实输出摊开给用户看。
  *  此前前端从不调它 ⇒ 用户看不到「这一轮到底往模型里塞了什么」，只能靠猜。
  *  分节展示 + 字数 + 超预算提示 + 一键复制。 */
-export function MemoryInjectPreview({ workspace }: { workspace?: string }) {
+export function MemoryInjectPreview({ workspace, onNotice }: { workspace?: string; onNotice?: (message: string) => void }) {
   const [data, setData] = useState<{ text: string; stats: { chars: number; over: boolean } } | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -588,12 +589,17 @@ export function MemoryInjectPreview({ workspace }: { workspace?: string }) {
     return () => { cancelled = true; };
   }, [workspace]);
 
-  const reload = () => {
+  const reload = async () => {
     setBusy(true);
-    void window.codex.readMemoryContext(workspace || undefined, true)
-      .then((result) => setData(result))
-      .catch(() => setData(null))
-      .finally(() => setBusy(false));
+    try {
+      setData(await window.codex.readMemoryContext(workspace || undefined, true));
+      return "";
+    } catch (error: any) {
+      setData(null);
+      // ⛔ 原来这里 `.catch(() => setData(null))` 静默：点「重新读取」失败时界面只是变空，一个字都没有。
+      onNotice?.(`读取常驻记忆失败：${error?.message ?? error}`);
+      return String(error?.message ?? error);
+    } finally { setBusy(false); }
   };
 
   const text = data?.text ?? "";
@@ -612,7 +618,7 @@ export function MemoryInjectPreview({ workspace }: { workspace?: string }) {
         <div className="memory-inject-stats">
           <span>{chars} 字</span>
           {data?.stats.over && <span className="memory-budget-warn">超预算</span>}
-          <button className="secondary-setting" disabled={busy} onClick={reload} title="重新读取"><RefreshCw size={13} /></button>
+          <button className="secondary-setting" disabled={busy} onClick={() => void refreshWithReceipt(onNotice, "重新读取常驻记忆", reload)} title="重新读取"><RefreshCw size={13} /></button>
           {!!text && <button className="secondary-setting" onClick={() => setOpen((value) => !value)}>{open ? "收起" : "展开全文"}</button>}
           {!!text && (
             <button

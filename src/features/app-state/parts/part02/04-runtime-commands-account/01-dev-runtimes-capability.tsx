@@ -282,7 +282,8 @@ bag.commandBusyKey = commandBusyKey as typeof bag.commandBusyKey; bag.setCommand
   const refreshCommands = useCallback(async () => {
     bag.setCommandBusy(true);
     try { bag.setCustomCommands(await window.codex.listCommands({ cwd: bag.workspace ?? undefined })); }
-    catch (error: any) { bag.setNotice(`命令列表加载失败：${error.message}`); }
+    // ⛔ 失败原因交回调用方（吞异常了，按钮侧回执靠它区分成败）
+    catch (error: any) { bag.setNotice(`命令列表加载失败：${error.message}`); return String(error?.message ?? error); }
     finally { bag.setCommandBusy(false); }
   }, [bag.workspace, bag.setNotice]);
 bag.refreshCommands = refreshCommands as typeof bag.refreshCommands;

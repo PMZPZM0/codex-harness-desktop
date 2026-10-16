@@ -2288,6 +2288,66 @@ const CHECKS = [
       await wait(400);
     },
   },
+  {
+    id: "refresh-receipt",
+    name: "⑳ 刷新回执：点刷新 ⇒「正在刷新…」⇒ 覆盖「完成 / 失败：原因」（不再是点了没反应）",
+    run: async (h) => {
+      // 为什么断言这一条（10-16 用户）：「检查一下应用现在有的一些，刷新，现在很多刷新都没有弹窗
+      // 反馈刷新状态」—— 清点下来全应用 30 处刷新里 27 处**成功静默**、其中 6 处连失败都静默。
+      // 本项真点一次设置页的刷新钮，把通知浮层的变化**序列**录下来：
+      // ⛔ 定时轮询会漏掉「正在…」那一帧（它可能只存在几十毫秒）⇒ 用 MutationObserver 录 DOM 变化。
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await wait(1500);
+      const opened = await h.eval(`(function(){
+        var b=[...document.querySelectorAll('.settings-nav button')].find(function(x){ return (x.textContent||'').trim()==='MCP'; });
+        if (!b) return 0; b.click(); return 1; })()`);
+      h.check("① 前置：设置页打开并停在「MCP」页", opened === 1, `opened=${opened}`);
+      if (opened !== 1) return;
+      await wait(1200);
+      const hasBtn = await h.eval(`document.querySelector('button[title="刷新 MCP 状态"]') ? 1 : 0`);
+      h.check("② 前置：刷新按钮在位（title=刷新 MCP 状态）", hasBtn === 1, `hasBtn=${hasBtn}`);
+      if (hasBtn !== 1) return;
+      // 开始录制通知浮层文案（装 observer 在点击之前）
+      await h.eval(`(function(){
+        window.__receiptSeq = [];
+        var grab = function(){
+          var t = document.querySelector('.notice-text');
+          var s = t ? (t.textContent||'').trim() : '';
+          if (!s) return;
+          if (window.__receiptSeq[window.__receiptSeq.length-1] !== s) window.__receiptSeq.push(s);
+        };
+        grab();
+        window.__receiptObs = new MutationObserver(grab);
+        window.__receiptObs.observe(document.body, { childList: true, subtree: true, characterData: true });
+        return 1; })()`);
+      await h.eval(`(function(){ document.querySelector('button[title="刷新 MCP 状态"]').click(); return 1; })()`);
+      // 刷新走引擎 RPC（逐个连接器查状态）⇒ 终态可能好几秒才到；轮询等它，别用固定 sleep 猜。
+      const deadline = Date.now() + 25000;
+      let seqNow = [];
+      while (Date.now() < deadline) {
+        seqNow = await h.eval(`window.__receiptSeq || []`);
+        const arr = Array.isArray(seqNow) ? seqNow : [];
+        if (arr.some((x) => /^刷新 MCP 状态(完成|失败：)/.test(x))) break;
+        await wait(400);
+      }
+      const rec = await h.eval(`(function(){
+        try { window.__receiptObs && window.__receiptObs.disconnect(); } catch (e) {}
+        var t = document.querySelector('.notice-text');
+        return { seq: window.__receiptSeq || [], now: t ? (t.textContent||'').trim() : '' }; })()`);
+      const list = Array.isArray(rec?.seq) ? rec.seq : [];
+      const shown = list.join(" → ") || String(rec?.now || "(无)");
+      h.check("③ 点刷新弹出回执（成功不再静默 —— 这就是用户报的那个）",
+        list.some((x) => x.includes("刷新 MCP 状态")), shown.slice(0, 140));
+      h.check("④ 运行中可见：「正在刷新 MCP 状态…」",
+        list.includes("正在刷新 MCP 状态…"), shown.slice(0, 140));
+      h.check("⑤ 结束态覆盖为终态回执（「完成」或「失败：原因」，不留「正在」挂着）",
+        list.some((x) => /^刷新 MCP 状态(完成|失败：)/.test(x)) && !list[list.length - 1].startsWith("正在"),
+        shown.slice(0, 140));
+      await h.screenshot("刷新回执");
+      await h.pressKey("Escape");
+      await wait(300);
+    },
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2317,7 +2377,7 @@ async function enterMain(h) {
 //   历史项不删（它们仍然是回归证据），但**永远不会在默认路径上被执行** ——
 //   这样"每次只测最新改动"是机制保证的，不再依赖我记不记得。
 // ─────────────────────────────────────────────────────────────────────────────
-const LATEST_ROUND = "10-12";   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗）；10-07 两项转回归证据 */
+const LATEST_ROUND = "10-16";   // 10-16 轮：刷新回执（30 处刷新入口补齐三态回执）；10-12 四项转回归证据 */
 // 上一轮（10-06）的五个验收项仍是回归证据：--only <id> 单跑，或 --all 全量。
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
@@ -2335,6 +2395,7 @@ const ROUND_OF = {
   "status-lights": "10-12",   // 10-12 轮：输入框底栏动态状态灯（最多一盏 + 轮换 + 窗口自适应隐藏；结构由守卫 12d 钉）
   "md-block-copy": "10-12",   // 10-14 加：块级复制（表格 + 代码块）—— 常驻可见 + 两段反馈 + 剪贴板拿到 TSV/代码原文；结构由守卫 12o 钉
                               // ⛔ 登记在**当前轮**（LATEST_ROUND 仍是 10-12）⇒ 默认轮跑得到它，且不动别人的覆盖
+  "refresh-receipt": "10-16",   // 10-16 轮：刷新回执（设置页刷新钮真点一次，MutationObserver 录「正在… → 完成/失败」序列；结构面由守卫 11u ⑤ 逐个登记）
   "message-feedback": "10-05",   // 10-05 轮：消息操作图标的两段反馈 + 用户消息复制贴右端（历史项，默认轮不再跑 —— 回归证据）
   "plugin-market-gitee": "10-03",
   "codex-official-market": "10-03",   // 本轮新项；Gitee 项同轮重跑（插件页加了源切换，两个源都得看一眼）

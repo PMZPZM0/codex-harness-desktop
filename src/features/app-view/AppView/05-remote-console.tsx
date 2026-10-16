@@ -142,6 +142,7 @@ import {
 import { BotBindCard } from "../../bot";
 import { RequestCard, ToolCard, VoiceSettingsBridge, admitThreadRuntimeRef, ago, appendDelta, appendIndexedDelta, applyThreadEvent, approvalMenuOptions, armSendAnimationClaim, botChannelName, botOnlineOf, builtinCommandCatalog, categoryLabel, clampRruleNum, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, cronTemplates, deltaMethods, describeRrule, describeSchedule, displayPath, fmtImportTime, formatTimestamp, greetingForHour, groupThreadsByTime, hydrateTurnUserMessage, idleTemplates, imageExts, isActivityItem, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, localFormatDurationMs, locateMatchEl, markBufferedAgentReveal, markBufferedTurnReveal, matchSkillCatalog, mergeItem, mergeLongerStreams, mergeTurn, modelBadges, modelName, normSkillName, noticeTone, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDescription, pluginDisplayName, pluginMarketCategoryTabs, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, revealStepFor, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, settingsNav, shortSkillName, skillHubCategories, skillHubCategoryName, skillHubCategoryTabs, skillZhNote, slashCommands, stableItem, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, toFileUrl, uniqueModelCount, usageCounterSnapshot, writeThreadRuntimeMirror } from "../helpers";
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
+import { refreshWithReceipt } from "../../../lib/refresh-receipt.mjs";
 
 export function AppViewRemoteConsole({ app }: { app: HarnessAppApi }) {
   const {
@@ -167,6 +168,13 @@ export function AppViewRemoteConsole({ app }: { app: HarnessAppApi }) {
     threads,
     updateBotStream,
   } = app;
+
+  /* 换一个配对码（10-16 刷新回执）：原来是 `.catch(() => undefined)` —— 失败静默，
+     用户看到码没变根本分不清"这个词就是旧的"还是"这次没换成功"。 */
+  const rotatePairCode = async () => {
+    try { setPairCode((await window.codex.remotePairRotate()).code); return ""; }
+    catch (error: any) { return String(error?.message ?? error); }
+  };
   return (
     botManagerOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setBotManagerOpen(false); }}>
             <div className="bot-manager" role="dialog" aria-label="机器人">
@@ -177,7 +185,7 @@ export function AppViewRemoteConsole({ app }: { app: HarnessAppApi }) {
                 <div className="bot-pair-main">
                   <span className="bot-pair-label">首次连接配对码</span>
                   <strong className="bot-pair-code" data-pair-code>{pairCode ? pairCode.replace(/(\d{3})(\d{3})/, "$1 $2") : "······"}</strong>
-                  <button className="remote-mini-btn" title="换一个配对码" onClick={() => void window.codex.remotePairRotate().then((r) => setPairCode(r.code)).catch(() => undefined)}><RefreshCw size={12} />刷新</button>
+                  <button className="remote-mini-btn" title="换一个配对码" onClick={() => void refreshWithReceipt((text: string) => showToast(text), "刷新配对码", rotatePairCode)}><RefreshCw size={12} />刷新</button>
                 </div>
                 <small className="bot-pair-hint">机器人首次对话时，在聊天里发这个 6 位码（5 分钟内有效）；收到「等待批准」后回到这里点允许。</small>
                 {pairPending.length > 0 && (

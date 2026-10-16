@@ -5,12 +5,13 @@
 import { AlertTriangle, ArrowUpRight, Bot, Check, ChevronDown, Clock3, Copy, Eye, EyeOff, FolderTree, Plus, Play, RefreshCw, Settings2, Sparkles, Trash2, X, Zap, CircleCheck, ChevronRight, Wallet, LogIn } from "lucide-react";
 import { Spinner } from "../../../components/CardShell";
 import { shortGroupName } from "../RelayCenterPage/01-balance-badge";
+import { refreshWithReceipt } from "../../../lib/refresh-receipt.mjs";
 
 type Props = {
   account: { id?: string | undefined; baseUrl: string; email: string; } | null;
   accounts: any[];
   busy: boolean;
-  load: (silent?: boolean, accountId?: string | undefined) => Promise<void>;
+  load: (silent?: boolean, accountId?: string | undefined) => Promise<string>;
   onNotice: (m: string) => void;
   openManage: (a: any) => Promise<void>;
   openPlans: () => Promise<void>;
@@ -101,7 +102,7 @@ export function RelayCenterPageSubscriptionBanner({ account, accounts, busy, loa
                   ) : state === "expired" ? (
                     <>
                       <button className="primary-setting" onClick={() => void openPlans()}><Sparkles size={14} />重新订阅</button>
-                      <button className="secondary-setting" onClick={() => void load(false)} disabled={refreshing}>{refreshing ? <Spinner /> : <RefreshCw size={13} />}刷新状态</button>
+                      <button className="secondary-setting" onClick={() => void refreshWithReceipt(onNotice, "刷新中转站状态", () => load(false))} disabled={refreshing}>{refreshing ? <Spinner /> : <RefreshCw size={13} />}刷新状态</button>
                     </>
                   ) : (
                     <>

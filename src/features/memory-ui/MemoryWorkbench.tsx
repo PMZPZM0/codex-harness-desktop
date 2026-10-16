@@ -10,6 +10,7 @@
  *   带来"谁在提供、谁在消费"的耦合。状态留在外壳 + 显式 props 更清楚。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 import { ChevronDown, Layers, RefreshCw } from "lucide-react";
 import {
   ActorMemoryView, DispatchedTimelineView, McpBackendView, PyramidView, TeamMemoryView,
@@ -50,7 +51,7 @@ async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
 }
 
 export function useMemorySources(workspace: string, enabled: boolean): {
-  data: MemorySources; state: LoadState; error: string; reload: () => void;
+  data: MemorySources; state: LoadState; error: string; reload: () => Promise<string>;
 } {
   const [data, setData] = useState<MemorySources>(EMPTY);
   const [state, setState] = useState<LoadState>("idle");
@@ -58,7 +59,7 @@ export function useMemorySources(workspace: string, enabled: boolean): {
 
   const load = useCallback(async () => {
     /* ⛔ 没工作区就不取：主进程**不猜路径**，前端也不该拿“全部项目”糊过去。 */
-    if (!enabled || !workspace) { setData(EMPTY); setState("ready"); return; }
+    if (!enabled || !workspace) { setData(EMPTY); setState("ready"); return ""; }
     setState("loading");
     setError("");
     try {
@@ -92,15 +93,18 @@ export function useMemorySources(workspace: string, enabled: boolean): {
           nsIndex.get("private__" + threadId) ?? 0),
       });
       setState("ready");
+      return "";
     } catch (e: any) {
       setError(String(e?.message ?? e));
       setState("error");
+      // ⛔ 失败原因交回调用方（吞异常了，按钮侧回执靠它区分成败）
+      return String(e?.message ?? e);
     }
   }, [workspace, enabled]);
 
   useEffect(() => { void load(); }, [load]);
 
-  return { data, state, error, reload: () => void load() };
+  return { data, state, error, reload: () => load() };
 }
 
 function num(v: unknown): number {
@@ -253,9 +257,10 @@ const TABS: { kind: ScopeTabKind; label: string }[] = [
        而不再是并列分类。⛔ MemoryKind 类型层的七类数据源**不变**（它们仍是独立数据源）。 */
 ];
 
-export function MemoryWorkbench({ workspace, onOpenThread }: {
+export function MemoryWorkbench({ workspace, onOpenThread, onNotice }: {
   workspace: string;
   onOpenThread?: (id: string) => void;
+  onNotice?: (message: string) => void;
 }) {
   const { data, state, error, reload } = useMemorySources(workspace, true);
   const [tab, setTab] = useState<MemoryKind>("main");
@@ -297,7 +302,7 @@ export function MemoryWorkbench({ workspace, onOpenThread }: {
           );
         })}
         <span className="mui-tabs-spacer" />
-        <button type="button" className="mui-refresh" onClick={reload} title="重新读取" aria-label="重新读取">
+        <button type="button" className="mui-refresh" onClick={() => void refreshWithReceipt(onNotice, "重新读取记忆", reload)} title="重新读取" aria-label="重新读取">
           <RefreshCw size={13} className={state === "loading" ? "mui-spin" : ""} />
         </button>
       </nav>

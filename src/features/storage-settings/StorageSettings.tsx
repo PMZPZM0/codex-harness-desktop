@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from "react";
 import { PageInfo } from "../../components/SettingsHead";
 import { Database, ChevronDown, Check, RefreshCw, FileCode2, Search } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 import { basename } from "../../lib/basename";
 import { Markdown } from "../markdown";
 import { ReviewScope } from "../../lib/review-scope";
@@ -66,7 +67,7 @@ export function StorageSection({ onNotice, onClearMemoryCache, openAppConfirm }:
 
 const reviewScopes: [ReviewScope, string][] = [["unstaged", "未暂存"], ["staged", "已暂存"], ["head", "全部分支更改"], ["last", "上一轮更改"]];
 
-export function ReviewPanel({ workspace, lastDiff, disabled, busy, report, onReview }: { workspace: string; lastDiff: string; disabled: boolean; busy: boolean; report: string; onReview: (instructions: string) => void }) {
+export function ReviewPanel({ workspace, lastDiff, disabled, busy, report, onReview, onNotice }: { workspace: string; lastDiff: string; disabled: boolean; busy: boolean; report: string; onReview: (instructions: string) => void; onNotice?: (message: string) => void }) {
   const [scope, setScope] = useState<ReviewScope>("unstaged");
   const [menuOpen, setMenuOpen] = useState(false);
   const [output, setOutput] = useState("");
@@ -74,16 +75,19 @@ export function ReviewPanel({ workspace, lastDiff, disabled, busy, report, onRev
   const [loading, setLoading] = useState(false);
   const [custom, setCustom] = useState("");
   const refresh = async () => {
-    if (scope === "last") { setOutput(lastDiff); setGitMissing(false); return; }
-    if (!workspace) { setGitMissing(true); setOutput(""); return; }
+    if (scope === "last") { setOutput(lastDiff); setGitMissing(false); return ""; }
+    if (!workspace) { setGitMissing(true); setOutput(""); return "还没有工作区 —— 先在会话里选一个项目"; }
     setLoading(true);
     try {
       const result = await window.codex.gitDiff(workspace, scope);
       setGitMissing(false);
       setOutput(result.output ?? "");
-    } catch {
+      return "";
+    } catch (error: any) {
       setGitMissing(true);
       setOutput("");
+      // ⛔ 原来这里 `catch { … }` 只把界面切成「没有可用的 Git」，连失败原因都不留一行
+      return String(error?.message ?? error);
     } finally {
       setLoading(false);
     }
@@ -112,7 +116,7 @@ export function ReviewPanel({ workspace, lastDiff, disabled, busy, report, onRev
             {reviewScopes.map(([value, label]) => <button key={value} onClick={() => { setScope(value); setMenuOpen(false); }}>{label}{scope === value && <Check size={13} />}</button>)}
           </div>}
         </div>
-        <button className="review-refresh" title="刷新" onClick={() => void refresh()}>{loading ? <Spinner /> : <RefreshCw size={14} />}<span>刷新</span></button>
+        <button className="review-refresh" title="刷新" onClick={() => void refreshWithReceipt(onNotice, "刷新变更列表", () => refresh())}>{loading ? <Spinner /> : <RefreshCw size={14} />}<span>刷新</span></button>
       </div>
       {gitMissing ? <div className="git-missing"><FileCode2 size={36} /><strong>当前环境没有可用的 Git</strong><p>请先安装 Git，或确认当前运行环境里可以执行 git 命令。</p></div>
         : files.length ? <div className="diff-file-list">{files.map((file) => <div key={file.path}><code title={file.path}>{basename(file.path)}</code><span><b>+{file.added}</b> <i>-{file.deleted}</i></span></div>)}</div>

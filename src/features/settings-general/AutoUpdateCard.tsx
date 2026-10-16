@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Boxes, Check, Cpu, Globe2, Monitor, Package, Puzzle, RefreshCw, ScanSearch, ShieldCheck, Sparkles, Wand2 } from "lucide-react";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 type SwitchRow = {
   id: string;
@@ -120,8 +121,11 @@ export function AutoUpdateCard({ onNotice }: { onNotice?: (text: string) => void
       const list = await window.codex.scanAutoUpdateComponents();
       setRows(Array.isArray(list) ? list : []);
       push(`检测完成：共 ${Array.isArray(list) ? list.length : 0} 个组件`);
+      return "";
     } catch (err: any) {
       setError(`检测更新失败：${err?.message ?? err}`);
+      // ⛔ 失败原因交回调用方（吞异常了，按钮侧回执靠它区分成败）
+      return String(err?.message ?? err);
     } finally {
       setScanning(false);
       setLoading(false);
@@ -221,7 +225,7 @@ export function AutoUpdateCard({ onNotice }: { onNotice?: (text: string) => void
           {pendingCount ? `${pendingCount} 项有可用更新` : "全部已是最新"}
         </span>
         <span className="settings-heading-actions">
-          <button type="button" className="icon-button" disabled={scanning} title="重新检测全部组件的版本" onClick={() => void scan()}>
+          <button type="button" className="icon-button" disabled={scanning} title="重新检测全部组件的版本" onClick={() => void refreshWithReceipt(onNotice, "重新检测组件版本", scan)}>
             {scanning ? <RefreshCw size={13} className="spin" /> : <RefreshCw size={13} />}
           </button>
           <button type="button" className="ghost-button" disabled={Boolean(busy.__all) || loading} onClick={() => void updateAll()}>
