@@ -32,7 +32,7 @@ import {
 } from "./ssh-servers";
 import {
   allBusWindows, broadcastCodexEvent, broadcastHarnessEvent, isPopoutWindow,
-  popoutBusWindows, registerBusWindow, sendToWindow, unregisterBusWindow,
+  popoutBusWindows, registerBusWindow, broadcastToAll, sendToWindow, unregisterBusWindow,
 } from "./features/window-bus";
 import type { CustomModelFile, ProviderModel } from "./features/custom-model-types";
 import { bindCustomModelProbe } from "./features/custom-model-probe";
@@ -661,6 +661,12 @@ ipcMain.handle("theme:apply", (_event, theme: string) => {
   setAppThemeDark(dark);
   nativeTheme.themeSource = dark ? "dark" : "light";
   applyWindowChrome(dark);
+  /* ⛔ 广播给所有窗口（10-16，与云助手同轮同步）：独立会话弹窗当初只在**创建时**取主题，
+     主窗口之后换主题它不会跟着变（用户令「独立窗口的主题色要跟着主界面变」）。
+     推给全部窗口后，渲染层订阅 onThemeChanged 改自己的主题状态，
+     再由 theme effect 落到 dataset/localStorage ⇒ 全窗口一致。
+     同值重复推送无副作用（React 同值 setState 不重渲染）。 */
+  broadcastToAll("theme:changed", dark ? "dark" : "light");
   return { ok: true };
 });
 
