@@ -15,7 +15,7 @@ import { applyRoundedCorners } from "../win-rounded-corners";
 import { popoutBusWindows, registerBusWindow, unregisterBusWindow } from "../features/window-bus";
 import { flushBootTiming, markBoot } from "../boot-timing";
 import { installContextMenu } from "../main/10-window-menu";
-import { closeToTrayEnabled, closePromptSeen, closeConfirmBridge, engineActiveTurnIds, notifyPopoutClosed, popoutThreadIds, titleBarOverlayOptions } from "../runtime-refs";
+import { applyThemeToWindow, closeToTrayEnabled, closePromptSeen, closeConfirmBridge, engineActiveTurnIds, notifyPopoutClosed, popoutThreadIds, titleBarOverlayOptions } from "../runtime-refs";
 import { closePetWindow } from "./pet-window";
 import { mutableState } from "../main";
 export function createWindow() {
@@ -272,6 +272,11 @@ export function createPopoutWindow(threadId: string) {
   });
   registerBusWindow(win);
   popoutThreadIds.set(win, threadId);
+  /* ⛔ 弹窗原生外观（暗色下右上角系统钮看不见的真修法）：构造参数里那次
+     titleBarOverlayOptions() 是**读一次**，而 Windows 会在窗口首次显示时做边框延展、
+    把构造期设好的属性覆盖回系统值 ⇒ 补设两次（建窗 + show 之后），见 runtime-refs.applyThemeToWindow。 */
+  applyThemeToWindow(win);
+  win.once("show", () => applyThemeToWindow(win));
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   const query = `?popout=${encodeURIComponent(threadId)}`;
   if (devUrl) {
