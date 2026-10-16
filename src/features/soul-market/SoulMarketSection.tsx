@@ -13,6 +13,7 @@ import { createPortal } from "react-dom";
 import { Check, RefreshCw, UserRound, X } from "lucide-react";
 import { PageInfo } from "../../components/SettingsHead";
 import { Spinner } from "../../components/CardShell";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 type SoulEntry = { slug: string; displayName: string; summary: string; version: string };
 type SoulDetail = SoulEntry & { content: string };
@@ -44,6 +45,8 @@ export function SoulMarketSection({ onNotice }: SoulMarketSectionProps) {
     } catch (err: any) {
       setError(err?.message ?? String(err));
       onNotice(`人格市场读取失败：${err?.message ?? err}`);
+      // ⛔ 失败原因交回调用方（吞异常了，按钮侧回执靠它区分成败）
+      return String(err?.message ?? err);
     } finally { setLoading(false); }
   };
 
@@ -97,7 +100,7 @@ export function SoulMarketSection({ onNotice }: SoulMarketSectionProps) {
 
       {error && <p className="soul-market-error comp-lib-error">⚠️ {error}</p>}
       <div className="settings-heading-actions">
-        <button className="secondary-setting" title="刷新人格列表与生效状态" onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw size={14} />}刷新</button>
+        <button className="secondary-setting" title="刷新人格列表与生效状态" onClick={() => void refreshWithReceipt(onNotice, "刷新人格列表", () => load())}>{loading ? <Spinner /> : <RefreshCw size={14} />}刷新</button>
       </div>
 
       {applied && <p className="muted soul-market-applied"><Check size={12} /> {applied}</p>}

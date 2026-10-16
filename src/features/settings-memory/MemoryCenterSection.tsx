@@ -119,6 +119,7 @@ return (
                         <BackendConsolePanel
                           workspace={effectiveSharedProject}
                           workspaceEnabled={workspaceMemoryEnabled}
+                          onNotice={app.setNotice}
                         />
                         {/* ── 旧「记忆中心」的「存储与同步」里的**保存位置**（10-10 迁移）──
                             ⛔ 只搬这一段：工作区开关面板里已经有，不重复渲染同一个开关。 */}

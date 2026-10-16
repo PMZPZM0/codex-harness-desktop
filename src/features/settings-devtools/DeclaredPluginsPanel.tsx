@@ -22,9 +22,11 @@ export default function DeclaredPluginsPanel() {
 
   // 目录变化（用户刚放了 JSON 进来）⇒ 给一个显式刷新按钮。
   // ⛔ 不做自动轮询：那是无谓的常驻开销，且这个面板本来就只在设置页里打开。
+  // ⛔ 这条刷新是**同步、无失败路径**的（重读两个目录 + 重渲染），且本面板是插槽挂载、
+  //    拿不到宿主通知通道 ⇒ 回执落它自己的行内提示（不是弹窗；守卫 11u 有登记）。
   const refresh = useCallback(() => {
     forceReload((n) => n + 1);
-    setNotice("");
+    setNotice("已重新读取两个目录");
   }, []);
 
   const onToggle = useCallback(

@@ -593,6 +593,9 @@ bag.startQueued = startQueued as typeof bag.startQueued;
     bag.setMcpToolPermissions(await window.codex.readMcpToolPermissions().catch(() => ({})));
     bag.setResourceError(failures.length ? `以下数据读取失败：${failures.join("、")}` : "");
     bag.setResourceLoading(false);
+    // ⛔ 把失败原因交回调用方：本函数把每一项的异常都吞进 `failures`（只写行内错误），
+    //   按钮侧的回执只能靠这个返回值区分「完成」与「失败」。
+    return failures.length ? failures.join("、") : "";
   }
 bag.refreshSettingsResources = refreshSettingsResources as typeof bag.refreshSettingsResources;
 

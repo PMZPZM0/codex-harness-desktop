@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Power, RefreshCw } from "lucide-react";
 import { registerSlot } from "../../runtime/registry";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 type DomainRow = { id: string; mounted: boolean; disabled: boolean; essential: boolean };
 type ListResp = { domains: DomainRow[]; essentialDomains: string[]; requiresRestart: boolean };
@@ -33,6 +34,8 @@ function DomainsPanel({ onNotice }: { onNotice: (m: string) => void }) {
       setData(await window.codex.domainsList());
     } catch (e: any) {
       onNotice(`读取功能域清单失败：${e?.message ?? e}`);
+      // ⛔ 失败原因交回调用方（吞异常了，按钮侧回执靠它区分成败）
+      return String(e?.message ?? e);
     }
   }, [onNotice]);
 
@@ -98,7 +101,7 @@ function DomainsPanel({ onNotice }: { onNotice: (m: string) => void }) {
           })}
         </div>
 
-        <button className="secondary-setting" style={{ marginTop: 10 }} onClick={() => void load()}>
+        <button className="secondary-setting" style={{ marginTop: 10 }} onClick={() => void refreshWithReceipt(onNotice, "刷新功能域清单", () => load())}>
           <RefreshCw size={13} />刷新
         </button>
       </div>

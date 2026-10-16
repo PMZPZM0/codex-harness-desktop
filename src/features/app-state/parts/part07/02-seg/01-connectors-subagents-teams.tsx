@@ -92,7 +92,9 @@ bag.setMcpToolPermission = setMcpToolPermission as typeof bag.setMcpToolPermissi
 
   async function refreshSubAgents() {
     try { bag.setSubAgents(await window.codex.listSubAgents()); }
-    catch (error: any) { bag.setNotice(`读取子智能体失败：${error.message}`); }
+    // ⛔ 失败必须把原因**交回调用方**：这里把异常吞了，按钮侧的回执就没别的办法知道成败
+    //    （不返回 ⇒ 刷新按钮会照报「完成」，把失败提示顶掉）。挂载时的首屏加载仍只看这条通知。
+    catch (error: any) { bag.setNotice(`读取子智能体失败：${error.message}`); return String(error?.message ?? error); }
   }
 bag.refreshSubAgents = refreshSubAgents as typeof bag.refreshSubAgents;
 
@@ -140,7 +142,8 @@ bag.openEditSubAgent = openEditSubAgent as typeof bag.openEditSubAgent;
   // —— 专家团（Team 型专家）操作 ——
   async function refreshExpertTeams() {
     try { bag.setExpertTeams(await window.codex.listExpertTeams()); }
-    catch (error: any) { bag.setNotice(`读取专家团失败：${error.message}`); }
+    // 同上：失败原因交回调用方，按钮侧才能把「完成」改成「失败：原因」
+    catch (error: any) { bag.setNotice(`读取专家团失败：${error.message}`); return String(error?.message ?? error); }
   }
 bag.refreshExpertTeams = refreshExpertTeams as typeof bag.refreshExpertTeams;
 

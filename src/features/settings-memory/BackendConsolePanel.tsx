@@ -23,6 +23,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Database, Server, CircleDot, Check, Download, RefreshCw, Trash2, Copy, CheckCircle2, XCircle, AlertTriangle, X } from "lucide-react";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 type BackendStatus = {
   backend?: string;
@@ -44,9 +45,10 @@ const ACTION_LABEL: Record<ActionKey, string> = { install: "安装", uninstall: 
 /** 主进程进度事件的 id 前缀（与 electron/features/memory-ipc.ts 的 MCP_PROGRESS 同源）。 */
 const PROGRESS_PREFIX = "memory-mcp";
 
-export function BackendConsolePanel({ workspace, workspaceEnabled }: {
+export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice }: {
   workspace: string;
   workspaceEnabled: boolean;
+  onNotice?: (message: string) => void;
 }) {
   /* ⛔ 工作区开关直接走 IPC（与记忆中心同一条通道）—— 不依赖 app 的 state setter。 */
   const [wsEnabled, setWsEnabled] = useState(workspaceEnabled);
@@ -68,8 +70,14 @@ export function BackendConsolePanel({ workspace, workspaceEnabled }: {
     try {
       const raw = await api()?.readMemoryBackend?.();
       setStatus((raw ?? null) as BackendStatus | null);
-    } catch { setStatus(null); }
-  }, []);
+      return "";
+    } catch (error: any) {
+      setStatus(null);
+      // ⛔ 原来 `catch { setStatus(null) }` 静默：点「重新读取后端状态」失败时没有任何提示。
+      onNotice?.(`读取记忆后端状态失败：${error?.message ?? error}`);
+      return String(error?.message ?? error);
+    }
+  }, [onNotice]);
   useEffect(() => { void refresh(); }, [refresh]);
 
   /* ── 进度订阅（10-10）─────────────────────────────────────────────
@@ -156,7 +164,7 @@ export function BackendConsolePanel({ workspace, workspaceEnabled }: {
               : "写入落在本机分层文件里，无需额外依赖"}
           </small>
         </span>
-        <button type="button" className="bc-iconbtn" title="重新读取后端状态" onClick={() => void refresh()}>
+        <button type="button" className="bc-iconbtn" title="重新读取后端状态" onClick={() => void refreshWithReceipt(onNotice, "重新读取后端状态", refresh)}>
           <RefreshCw size={13} className={busy ? "mui-spin" : ""} />
         </button>
       </div>

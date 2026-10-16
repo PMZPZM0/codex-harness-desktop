@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { BrainCircuit, Download, CircleCheck, AlertTriangle, RefreshCw } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 type Progress = { phase: string; current: string; percent: number; speed: string; detail: string } | null;
 
@@ -34,7 +35,14 @@ export function LayaCard({ setNotice }: { setNotice: (text: string) => void }) {
   const [logOpen, setLogOpen] = useState(false);
 
   const refresh = useCallback(async () => {
-    try { setStatus(await window.codex.layaStatus()); } catch { setStatus(null); }
+    try {
+      setStatus(await window.codex.layaStatus());
+      return "";
+    } catch (error: any) {
+      setStatus(null);
+      // ⛔ 原来这里 `catch { setStatus(null) }` 一个字都不留 —— 点「刷新」失败时界面只是"没变化"。
+      return String(error?.message ?? error);
+    }
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
@@ -117,7 +125,7 @@ export function LayaCard({ setNotice }: { setNotice: (text: string) => void }) {
       </span>
       <div className="runtime-actions">
         {status?.ready ? <span className="runtime-badge installed">就绪</span>
-          : status?.installed ? <button className="secondary-setting" onClick={() => void refresh()}><RefreshCw size={13} />刷新</button>
+          : status?.installed ? <button className="secondary-setting" onClick={() => void refreshWithReceipt(setNotice, "刷新 Laya 状态", () => refresh())}><RefreshCw size={13} />刷新</button>
           : <button className="primary-setting runtime-install" disabled={busy || Boolean(status?.installing)} onClick={() => void install()}>{busy ? <Spinner /> : <Download size={14} />}安装</button>}
         {/* 10-01 用户：「Laya 的卸载按键呢」—— 装上就必须能真卸载（先停服务再 pip uninstall） */}
         {status?.installed && (

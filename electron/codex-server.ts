@@ -329,7 +329,11 @@ export class CodexServer extends EventEmitter {
     //   表现为"规章写了但 agent 不照做"。实测：加此参数后 129890 字节完整注入；且引擎会向上遍历
     //   拼接多级 AGENTS.md，这个上限卡的是**拼接总量**，必须留足余量。
     //   放在子命令之前（`codex -c k=v app-server`）—— app-server 只认全局 -c。
-    const child = spawn(binary, ["-c", "project_doc_max_bytes=262144", "app-server", "--listen", "stdio://"], {
+    // ⛔ 10-16 262144 → 524288：AGENTS.md 已长到 131,109 字节（顶部新增「本地产物 vs 云端界面」
+    //   判定表后越过了 262144 的一半）⇒ 【172】的 2× 余量判据（引擎还要向上拼接多级 AGENTS.md）
+    //   只剩 1.99×，预检在 **HEAD 上就是红的**（非本轮刷新回执引入）。抬到 512KB = 4× 当前文档，
+    //   留出继续增长的余量；⛔ 这只是"读得到"，文档仍应克制增长（关键规则往前放）。
+    const child = spawn(binary, ["-c", "project_doc_max_bytes=524288", "app-server", "--listen", "stdio://"], {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
       // toolchainEnv：PATH 里带内置 node/pwsh/npm-global，NODE_PATH 指向 npm 全局

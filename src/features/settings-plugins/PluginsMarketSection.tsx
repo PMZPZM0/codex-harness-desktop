@@ -16,6 +16,7 @@ import { MarketLogo } from "../../features/skills-market";
 import { CodexOfficialMarketSection } from "../codex-official-market";
 import { MarketUpdatePanel } from "../market-updates";
 import { avatarToneOf } from "../../lib/entity-avatar";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 /** 已安装插件的**来源渠道标签**（10-06 用户：「每个市场安装的都要在已安装里打来源渠道标签」）。
  *  marketplaceName 的取值由各市场注册时写入：官方源 = codex-official-market；Gitee 镜像 = 名字里带 gitee/claude；
@@ -36,10 +37,10 @@ function pluginChannelTone(plugin: any): string {
   return "ch-local";
 }
 
-export type PluginsMarketSectionProps = { openAppConfirm: (title: string, text: string, confirmLabel?: string) => Promise<boolean>; settingsResources: any; pluginSearch: any; pluginInstalledOnly: any; pluginDisplayName: any; pluginDescription: any; pluginChecked: any; setPluginChecked: any; refreshPluginsPage: any; resourceLoading: any; pluginMarketLoading: any; pluginMarketCategoryTabs: any; pluginMarketCategory: any; setPluginMarketCategory: any; setPluginMarketPage: any; pluginMarketSearch: any; setPluginMarketSearch: any; pluginMarketItems: any; installingMarketPlugin: any; setMarketPreview: any; installMarketPlugin: any; pluginMarketTotal: any; pluginMarketPage: any; pluginMarketPageSize: any; setPluginInstalledOnly: any; setPluginSearch: any; pluginBatchBusy: any; batchSetPluginEnabled: any; pluginBusy: any; setPluginEnabled: any; changePlugin: any };
+export type PluginsMarketSectionProps = { openAppConfirm: (title: string, text: string, confirmLabel?: string) => Promise<boolean>; settingsResources: any; pluginSearch: any; pluginInstalledOnly: any; pluginDisplayName: any; pluginDescription: any; pluginChecked: any; setPluginChecked: any; refreshPluginsPage: any; resourceLoading: any; pluginMarketLoading: any; pluginMarketCategoryTabs: any; pluginMarketCategory: any; setPluginMarketCategory: any; setPluginMarketPage: any; pluginMarketSearch: any; setPluginMarketSearch: any; pluginMarketItems: any; installingMarketPlugin: any; setMarketPreview: any; installMarketPlugin: any; pluginMarketTotal: any; pluginMarketPage: any; pluginMarketPageSize: any; setPluginInstalledOnly: any; setPluginSearch: any; pluginBatchBusy: any; batchSetPluginEnabled: any; pluginBusy: any; setPluginEnabled: any; changePlugin: any; setNotice: any };
 
 export function PluginsMarketSection(props: PluginsMarketSectionProps) {
-  const { openAppConfirm, settingsResources, pluginSearch, pluginInstalledOnly, pluginDisplayName, pluginDescription, pluginChecked, setPluginChecked, refreshPluginsPage, resourceLoading, pluginMarketLoading, pluginMarketCategoryTabs, pluginMarketCategory, setPluginMarketCategory, setPluginMarketPage, pluginMarketSearch, setPluginMarketSearch, pluginMarketItems, installingMarketPlugin, setMarketPreview, installMarketPlugin, pluginMarketTotal, pluginMarketPage, pluginMarketPageSize, setPluginInstalledOnly, setPluginSearch, pluginBatchBusy, batchSetPluginEnabled, pluginBusy, setPluginEnabled, changePlugin } = props;
+  const { openAppConfirm, settingsResources, pluginSearch, pluginInstalledOnly, pluginDisplayName, pluginDescription, pluginChecked, setPluginChecked, refreshPluginsPage, resourceLoading, pluginMarketLoading, pluginMarketCategoryTabs, pluginMarketCategory, setPluginMarketCategory, setPluginMarketPage, pluginMarketSearch, setPluginMarketSearch, pluginMarketItems, installingMarketPlugin, setMarketPreview, installMarketPlugin, pluginMarketTotal, pluginMarketPage, pluginMarketPageSize, setPluginInstalledOnly, setPluginSearch, pluginBatchBusy, batchSetPluginEnabled, pluginBusy, setPluginEnabled, changePlugin, setNotice } = props;
   const all = settingsResources.plugins as any[];
   // 10-04：源切换器（Claude 镜像 / Codex 官方 / 已安装）。⛔ 必须声明在 visible 之前——
   //   visible 要按它过滤（已装屏只显示已装的）。
@@ -77,7 +78,7 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
   // 两个市场数据源（10-03）：Gitee 上的 Claude Code 官方镜像 ⇄ Codex 官方 openai/plugins（GitHub 国内镜像读取）。
   // 各自的分类表、卡片与安装进度互不相干 ⇒ 切的是**整块**（用户拍板「按源给各自的分类 tab」），不是把 18 个分类混排。
   return <section className="settings-section stack plugin-center">
-    <div className="settings-copy channel-heading"><div><h2>插件<PageInfo text={<>上方卡片来自两个插件市场源：<b>Claude 插件镜像</b>（Gitee 国内源，48 个，全部与 Codex 兼容）与 <b>Codex 官方源</b>（GitHub <code>openai/plugins</code>，65 个官方插件，走国内镜像下载）。一键安装写入本地插件目录；官方源全部需要授权/配置服务凭据（其中 15 个依赖 ChatGPT 应用连接器），卡片上的提示就是这一条。下方为已安装插件管理（含引擎自带的 openai-api-curated 官方市场），停用后 Codex 不再加载该插件提供的指令、技能与钩子。</>} helpKey="plugins" label="插件" /></h2></div><div className="settings-heading-actions"><button className="secondary-setting" title={marketSource === "official" ? "打开 GitHub 上的 Codex 官方插件仓库" : "打开 Gitee 插件市场镜像"} onClick={() => void window.codex.openExternal(marketSource === "official" ? "https://github.com/openai/plugins" : "https://gitee.com/yuqiaodi/claude-plugins-official-gitee")}><ArrowUpRight size={14} />在线市场</button><button className="icon-button" title="刷新：已装插件 / 技能 / 钩子 / 记忆 / 任务 / MCP + 插件市场（沿用当前分类与搜索）" onClick={() => void refreshPluginsPage()}>{(resourceLoading || pluginMarketLoading) ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+    <div className="settings-copy channel-heading"><div><h2>插件<PageInfo text={<>上方卡片来自两个插件市场源：<b>Claude 插件镜像</b>（Gitee 国内源，48 个，全部与 Codex 兼容）与 <b>Codex 官方源</b>（GitHub <code>openai/plugins</code>，65 个官方插件，走国内镜像下载）。一键安装写入本地插件目录；官方源全部需要授权/配置服务凭据（其中 15 个依赖 ChatGPT 应用连接器），卡片上的提示就是这一条。下方为已安装插件管理（含引擎自带的 openai-api-curated 官方市场），停用后 Codex 不再加载该插件提供的指令、技能与钩子。</>} helpKey="plugins" label="插件" /></h2></div><div className="settings-heading-actions"><button className="secondary-setting" title={marketSource === "official" ? "打开 GitHub 上的 Codex 官方插件仓库" : "打开 Gitee 插件市场镜像"} onClick={() => void window.codex.openExternal(marketSource === "official" ? "https://github.com/openai/plugins" : "https://gitee.com/yuqiaodi/claude-plugins-official-gitee")}><ArrowUpRight size={14} />在线市场</button><button className="icon-button" title="刷新：已装插件 / 技能 / 钩子 / 记忆 / 任务 / MCP + 插件市场（沿用当前分类与搜索）" onClick={() => void refreshWithReceipt(setNotice, "刷新插件与市场", () => refreshPluginsPage())}>{(resourceLoading || pluginMarketLoading) ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
 
     <div className="market-source-switch">
       <SegmentedTabs
@@ -141,8 +142,8 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
     {/* 市场更新（10-12 用户要求「技能和插件加一个更新功能」）：
         与市场列表**并列**而不是塞进去 —— 它管的是「已装的那批要不要更新」，
         两个源各自独立比对（gitee 镜像 / Codex 官方），在「已安装」屏两块都出。 */}
-    {marketSource === "gitee" || marketSource === "installed" ? <MarketUpdatePanel kind="plugins" hint="对照 Gitee 镜像市场的当前版本检查已装插件，有新版才提示；更新走与安装完全相同的链路。" /> : null}
-    {marketSource === "official" || marketSource === "installed" ? <MarketUpdatePanel kind="official" hint="对照 Codex 官方市场的当前版本检查已装插件，有新版才提示。" /> : null}
+    {marketSource === "gitee" || marketSource === "installed" ? <MarketUpdatePanel kind="plugins" onNotice={setNotice} hint="对照 Gitee 镜像市场的当前版本检查已装插件，有新版才提示；更新走与安装完全相同的链路。" /> : null}
+    {marketSource === "official" || marketSource === "installed" ? <MarketUpdatePanel kind="official" onNotice={setNotice} hint="对照 Codex 官方市场的当前版本检查已装插件，有新版才提示。" /> : null}
 
     {marketSource === "installed" ? <><div className="plugin-market-title">已安装插件<small>本机已安装的插件 · 停用后 Codex 不再加载它提供的指令、技能与钩子（文件仍在，不占不到磁盘）</small></div>    <div className="plugin-stats">
       <div className="plugin-stat"><span>已安装</span><strong>{installed.length}</strong></div>

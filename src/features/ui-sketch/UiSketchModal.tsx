@@ -93,6 +93,14 @@ export function UiSketchModal({ onClose, onAskAgent }: { onClose: () => void; on
   };
 
   const syncDoc = () => {
+    /* ⛔ 桥没就绪时不能假装成功：原来无条件 `setStatus("已取回当前画布")`，
+       画布还在加载时点「取回画布」= 什么都没发生却报「已取回」（同 previewNow 的前置判定）。
+       ⛔ 这条用的是弹窗**自己的状态行**（不是全局浮层）：整个前端开发弹窗是覆盖式满屏的，
+         在它上面再弹一条 toast 反而被它压住/遮住内容 —— 回执落状态行是同 preview / 复制 的既定形态。 */
+    if (!readyRef.current) {
+      setStatus("画布还没准备好 —— 稍等片刻再点");
+      return;
+    }
     post({ type: "get-doc" });
     setStatus("已取回当前画布");
   };

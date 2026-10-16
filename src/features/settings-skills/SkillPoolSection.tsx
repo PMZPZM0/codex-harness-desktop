@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, FolderKanban, FolderOpen, RefreshCw, X } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 import { SearchField, ToggleSwitch } from "../../components/SettingsWidgets";
 import { CJK_TEXT_RE, SKILL_ZH_NOTES } from "../app-view/constants";
 
@@ -54,14 +55,18 @@ export function SkillPoolSection({ projects, onNotice }: { projects?: [string, u
   const [menuOpen, setMenuOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
 
-  const refresh = useCallback((cwd = target) => {
+  const refresh = useCallback(async (cwd = target) => {
     setCurrentWs(readWorkspace());
-    if (!open || !cwd) return;
+    if (!open || !cwd) return "还没选项目 —— 先在下方选一个项目再刷新";
     setLoading(true);
-    window.codex.describeSkillPool({ cwd })
-      .then((r) => setSkills(r.skills ?? []))
-      .catch(() => setSkills([]))
-      .finally(() => setLoading(false));
+    try {
+      setSkills((await window.codex.describeSkillPool({ cwd })).skills ?? []);
+      return "";
+    } catch (error: any) {
+      setSkills([]);
+      // ⛔ 原来这里 `.catch(() => setSkills([]))` 静默清空 —— 用户点刷新失败时一个字都看不到。
+      return String(error?.message ?? error);
+    } finally { setLoading(false); }
   }, [open, target]);
 
   useEffect(() => { refresh(target); }, [refresh, target]);
@@ -133,7 +138,7 @@ export function SkillPoolSection({ projects, onNotice }: { projects?: [string, u
           生效 {activeCount}/{skills.length}{target ? <> · 管理对象 <code>{basename(target)}</code></> : null}
         </small>
         <div className="skill-card-compact-tools">
-          <button className="icon-button" title="刷新" onClick={() => refresh()}>{loading ? <Spinner /> : <RefreshCw size={13} />}</button>
+          <button className="icon-button" title="刷新" onClick={() => void refreshWithReceipt(onNotice, "刷新共享技能池", () => refresh())}>{loading ? <Spinner /> : <RefreshCw size={13} />}</button>
           <button className="icon-button" title="收起面板" onClick={() => setOpen(false)}><X size={13} /></button>
         </div>
       </header>

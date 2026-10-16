@@ -139,6 +139,7 @@ import {
   CheckCheck,
 } from "lucide-react";
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
+import { refreshWithReceipt } from "../../../lib/refresh-receipt.mjs";
 
 export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
   const {
@@ -156,6 +157,17 @@ export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
     setRemoteQr,
     setNotice,
   } = app;
+
+  /* 刷新配对码 / 二维码（10-16 刷新回执）：原来配对码那条是 `.catch(() => undefined)` —— 失败静默；
+     二维码那条连 catch 都没有（失败 = 未处理的 rejection，界面上二维码纹丝不动，用户以为点了没用）。 */
+  const rotatePairCode = async () => {
+    try { setPairCode((await window.codex.remotePairRotate()).code); return ""; }
+    catch (error: any) { return String(error?.message ?? error); }
+  };
+  const refreshQrcode = async () => {
+    try { setRemoteQr(await window.codex.remoteQrcode()); return ""; }
+    catch (error: any) { return String(error?.message ?? error); }
+  };
   return (
     mobileRemoteOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setMobileRemoteOpen(false); }}>
             <div className="remote-panel2" role="dialog" aria-label="移动端远程控制">
@@ -167,7 +179,7 @@ export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
                 {/* 6 位配对码：手机扫码后要输它，之后还要在下面这张卡里点「允许」 */}
                 <div className="remote-pair-card">
                   <div className="remote-pair-head"><KeyRound size={15} /><strong>首次连接需要配对码</strong>
-                    <button className="remote-mini-btn" title="换一个配对码" onClick={() => void window.codex.remotePairRotate().then((r) => setPairCode(r.code)).catch(() => undefined)}><RefreshCw size={13} />刷新</button>
+                    <button className="remote-mini-btn" title="换一个配对码" onClick={() => void refreshWithReceipt(setNotice, "刷新配对码", rotatePairCode)}><RefreshCw size={13} />刷新</button>
                   </div>
                   <div className="remote-pair-code" data-pair-code>{pairCode ? pairCode.replace(/(\d{3})(\d{3})/, "$1 $2") : "······"}</div>
                   <small>手机扫码后输入这 6 位数字，再回到这里点「允许」。配对码 5 分钟内有效，错 10 次自动作废。</small>
@@ -223,7 +235,7 @@ export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
                     <button className="remote-stop-btn" title="停止服务" onClick={async () => { await window.codex.remoteStop(); setMobileRemoteOpen(false); }}><Link2 size={13} />停止</button>
                   </div>
                   <div className="remote-scan-row"><span>无法扫码？可以在手机上打开链接。</span>
-                    <button className="remote-mini-btn" title="刷新二维码" onClick={() => void window.codex.remoteQrcode().then((svg) => setRemoteQr(svg))}><RefreshCw size={13} />刷新二维码</button>
+                    <button className="remote-mini-btn" title="刷新二维码" onClick={() => void refreshWithReceipt(setNotice, "刷新二维码", refreshQrcode)}><RefreshCw size={13} />刷新二维码</button>
                     {/* 10-07 审计补漏：这是全仓唯一一个**完全静默**的复制点
                         （其余复制点要么走 FeedbackIconButton 两段反馈、要么有 setNotice 回执）。
                         ⛔ 没有链接时也要说话，否则点了没反应无从判断是"没复制"还是"没链接"。 */}

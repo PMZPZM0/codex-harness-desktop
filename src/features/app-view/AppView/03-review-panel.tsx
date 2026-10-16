@@ -141,6 +141,7 @@ import {
 import { CardStatusIcon, Spinner, useCardOpen, type ActionStatus } from "../../../components/CardShell";
 import BrowserPane from "../../../components/BrowserPane";
 import { isImagePath } from "../../../lib/is-image-path";
+import { refreshWithReceipt } from "../../../lib/refresh-receipt.mjs";
 import { CommandExecutionCard, TerminalPanel } from "../../terminal";
 import { StorageSection, ReviewPanel } from "../../storage-settings";
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
@@ -151,6 +152,7 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
     diff,
     highlightedFilePath,
     loadTree,
+    setNotice,
     openFile,
     openPanelTab,
     reviewBusy,
@@ -179,11 +181,11 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
               </div>
             </div>
             <div className={`panel-page ${rightTab === "review" ? "" : "hidden"}`}>
-              <ReviewPanel workspace={workspace} lastDiff={diff} disabled={!thread} busy={reviewBusy} report={reviewReport} onReview={startReview} />
+              <ReviewPanel workspace={workspace} lastDiff={diff} disabled={!thread} busy={reviewBusy} report={reviewReport} onReview={startReview} onNotice={setNotice} />
             </div>
             <div className={`panel-page ${rightTab === "tree" ? "" : "hidden"}`}>
             <section className="tree-section">
-              <div className="panel-section-heading"><h2>项目树</h2><div className="panel-section-actions"><button className="icon-button" title="查看项目变更" onClick={() => openPanelTab("review", "变更")}><GitBranch size={14} /></button><button className="icon-button" title="刷新项目树" onClick={() => void loadTree(treePath || workspace)}>{treeLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+              <div className="panel-section-heading"><h2>项目树</h2><div className="panel-section-actions"><button className="icon-button" title="查看项目变更" onClick={() => openPanelTab("review", "变更")}><GitBranch size={14} /></button><button className="icon-button" title="刷新项目树" onClick={() => void refreshWithReceipt(setNotice, "刷新项目树", () => loadTree(treePath || workspace))}>{treeLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
               <div className="tree-location" title={treePath || workspace}>{treePath || workspace || "未选择工作区"}</div>
               {treeLoading ? <div className="panel-loading"><Spinner />读取中</div> : (() => {
                 const normSep = (s: string) => s.replace(/\\/g, "/").toLowerCase();

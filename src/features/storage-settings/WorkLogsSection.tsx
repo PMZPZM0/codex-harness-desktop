@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, FileText, FolderOpen, RotateCw, Trash2 } from "lucide-react";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 /**
  * 工作日志管理（09-30 用户：「记忆，有记忆管理，会话有归档管理，现在就是工作日志这个没有地方管理懂吗」）。
@@ -40,10 +41,15 @@ export function WorkLogsSection({ onNotice, openAppConfirm }: {
   const [preview, setPreview] = useState<{ path: string; text: string } | null>(null);
   const [loadingPreview, setLoadingPreview] = useState("");
 
-  const refresh = () => {
-    window.codex.workLogsScan()
-      .then((res) => setData(res as Scan))
-      .catch((error: any) => onNotice("读取工作日志失败：" + (error?.message ?? error)));
+  const refresh = async () => {
+    try {
+      setData((await window.codex.workLogsScan()) as Scan);
+      return "";
+    } catch (error: any) {
+      onNotice("读取工作日志失败：" + (error?.message ?? error));
+      // ⛔ 失败原因交回调用方（吞异常了，按钮侧回执靠它区分成败）
+      return String(error?.message ?? error);
+    }
   };
   useEffect(() => { refresh(); }, []);
 
@@ -112,7 +118,7 @@ export function WorkLogsSection({ onNotice, openAppConfirm }: {
           {data ? ` · ${withLogs.length} 个项目` : ""}
         </span>
         <div className="settings-actions">
-          <button className="secondary-setting" disabled={busy} onClick={refresh}><RotateCw size={12} />重新扫描</button>
+          <button className="secondary-setting" disabled={busy} onClick={() => void refreshWithReceipt(onNotice, "重新扫描工作日志", () => refresh())}><RotateCw size={12} />重新扫描</button>
           <button className="secondary-setting" disabled={busy || !total.length} onClick={() => toggle(allPaths, !allPicked)}>
             {allPicked ? "取消全选" : "全选"}
           </button>

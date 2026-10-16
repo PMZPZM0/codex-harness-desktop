@@ -71,8 +71,11 @@ bag.relaunchCountdown = relaunchCountdown as typeof bag.relaunchCountdown; bag.s
       const info = await window.codex.engineCheckUpdate();
       bag.setEngineVersion(info.current);
       bag.setEngineCheck(info.hasUpdate ? { state: "available", latest: info.latest } : { state: "latest", latest: info.latest });
+      return "";
     } catch (error: any) {
       bag.setEngineCheck({ state: "error", message: error?.message ?? "检查失败" });
+      // ⛔ 失败原因交回调用方（吞异常了，按钮侧回执靠它区分成败）
+      return String(error?.message ?? "检查失败");
     }
   };
 bag.checkEngineUpdateNow = checkEngineUpdateNow as typeof bag.checkEngineUpdateNow;

@@ -327,7 +327,7 @@ export interface Bag {
   setEngineUpdateResult: React.Dispatch<React.SetStateAction<{ ok: boolean; message: string; } | null>>;
   relaunchCountdown: number | null;
   setRelaunchCountdown: React.Dispatch<React.SetStateAction<number | null>>;
-  checkEngineUpdateNow: () => Promise<void>;
+  checkEngineUpdateNow: () => Promise<string>;
   performEngineUpdateNow: () => Promise<void>;
   emptySshJump: () => SshJumpHost;
   emptySshDraft: () => SshServer;
@@ -771,7 +771,7 @@ export interface Bag {
   setCommandDelete: React.Dispatch<React.SetStateAction<CustomCommandEntry | null>>;
   commandBusyKey: string | null;
   setCommandBusyKey: React.Dispatch<React.SetStateAction<string | null>>;
-  refreshCommands: () => Promise<void>;
+  refreshCommands: () => Promise<string | undefined>;
   persistCommand: () => Promise<void>;
   confirmDeleteCommand: () => Promise<void>;
   useCommand: (name: string, kind: "custom" | "builtin" | "skill", skill?: any) => void;
@@ -1138,7 +1138,7 @@ export interface Bag {
   runEnvironmentCheck: () => Promise<void>;
   fetchChildren: (path: string) => Promise<void>;
   toggleTreeDir: (dir: string) => void;
-  loadTree: (path: string) => Promise<void>;
+  loadTree: (path: string) => Promise<string | undefined>;
   describeCloakEvent: (event: { event?: string | undefined; message?: string | undefined; url?: string | undefined; title?: string | undefined; }) => string;
   openInCloak: (url: string) => Promise<void>;
   openBrowser: () => void;
@@ -1153,7 +1153,7 @@ export interface Bag {
   /** 轮询任务成功返回结果后的自动继续（10-10）—— 判据与防循环见实现处（part04/03-seg 的 maybeAutoContinueAfterPoll）。 */
   maybeAutoContinueAfterPoll: (task: PollTask) => void;
   startQueued: (id?: string | undefined) => Promise<void>;
-  refreshSettingsResources: (opts?: { mcpDetail?: boolean | undefined; }) => Promise<void>;
+  refreshSettingsResources: (opts?: { mcpDetail?: boolean | undefined; }) => Promise<string>;
   trustAllHooks: () => Promise<void>;
   setHookEnabled: (hook: any, enabled: boolean) => Promise<void>;
   setLinkedEnabled: (pluginId: string, enabled: boolean, label: string) => Promise<void>;
@@ -1290,9 +1290,9 @@ export interface Bag {
   chooseWorkspace: () => Promise<void>;
   chooseImages: () => Promise<void>;
   chooseFiles: () => Promise<void>;
-  refreshMarketSkills: (category?: string, query?: string, page?: number) => Promise<void>;
-  refreshMarketPlugins: (category?: string, query?: string, page?: number) => Promise<void>;
-  refreshPluginsPage: () => Promise<void>;
+  refreshMarketSkills: (category?: string, query?: string, page?: number) => Promise<string | undefined>;
+  refreshMarketPlugins: (category?: string, query?: string, page?: number) => Promise<string | undefined>;
+  refreshPluginsPage: () => Promise<string>;
   installMarketPlugin: (plugin: PluginMarketEntry) => Promise<void>;
   installMarketSkill: (skill: MarketSkillEntry) => Promise<void>;
   toggleSkillEnabled: (entry: LocalSkillEntry) => Promise<void>;
@@ -1306,13 +1306,13 @@ export interface Bag {
   setMcpServerEnabled: (name: string, enabled: boolean) => Promise<void>;
   batchSetMcpServersEnabled: (ids: string[], enabled: boolean) => Promise<void>;
   setMcpToolPermission: (server: string, tool: string, mode: "deny" | "ask" | "allow" | null) => Promise<void>;
-  refreshSubAgents: () => Promise<void>;
+  refreshSubAgents: () => Promise<string | undefined>;
   saveSubAgent: (draft: SubAgentEntry) => Promise<void>;
   toggleSubAgentEnabled: (agent: SubAgentEntry) => Promise<void>;
   deleteSubAgent: (id: string) => Promise<void>;
   openNewSubAgent: () => void;
   openEditSubAgent: (agent: SubAgentEntry) => void;
-  refreshExpertTeams: () => Promise<void>;
+  refreshExpertTeams: () => Promise<string | undefined>;
   saveExpertTeam: (draft: ExpertTeamConfig) => Promise<void>;
   toggleExpertTeamEnabled: (team: ExpertTeamConfig) => Promise<void>;
   deleteExpertTeam: (teamId: string) => Promise<void>;

@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import { Eye, FilePlus2, FolderOpen, Library, RefreshCw, Search, Trash2, X, ArrowDown } from "lucide-react";
 import { PageInfo } from "../../components/SettingsHead";
 import { Spinner } from "../../components/CardShell";
+import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 type KbDoc = { id: string; title: string; source: string; chunks: number; addedAt: string; bytes: number };
 type KbHit = { docId: string; title: string; chunkIndex: number; score: number; snippet: string };
@@ -62,10 +63,11 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
   };
 
   const load = useCallback(async () => {
-    if (!workspace) return;
+    if (!workspace) return "先在会话里选择工作目录——知识库是项目级的";
     setLoading(true);
     try { setDocs(await window.codex.listKnowledgeDocs({ workspace })); }
-    catch (error: any) { setNotice(`知识库读取失败：${error?.message ?? error}`); }
+    // ⛔ 失败原因交回调用方（本函数吞了异常，按钮侧的回执靠它区分「完成」与「失败」）
+    catch (error: any) { setNotice(`知识库读取失败：${error?.message ?? error}`); return String(error?.message ?? error); }
     finally { setLoading(false); }
   }, [workspace, setNotice]);
 
@@ -164,7 +166,7 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
         <button className="secondary-setting" disabled={busy === "search"} onClick={() => void doSearch()}>{busy === "search" ? <Spinner /> : <Search size={13} />}检索</button>
         <button className="secondary-setting" disabled={Boolean(busy)} title="从本机选择一个或多个文本文件（md / txt / 代码等）导入" onClick={() => void importFiles()}>{busy === "import" ? <Spinner /> : <FilePlus2 size={13} />}导入文件</button>
         <button className="secondary-setting" disabled={Boolean(busy)} onClick={() => setPasteOpen((v) => !v)}><Library size={13} />粘贴文本</button>
-        <button className="icon-button" title="刷新" onClick={() => void load()}>{loading ? <Spinner /> : <RefreshCw size={14} />}</button>
+        <button className="icon-button" title="刷新" onClick={() => void refreshWithReceipt(setNotice, "刷新知识库", () => load())}>{loading ? <Spinner /> : <RefreshCw size={14} />}</button>
       </div>
 
       {pasteOpen && (

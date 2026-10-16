@@ -88,6 +88,7 @@ export function MemorySourcesPane({ app }: { app: HarnessAppApi }) {
             "这条会不会被别的会话读到"。 */}
       <MemoryWorkbench
         workspace={app.memoryManagementWorkspace}
+        onNotice={app.setNotice}
         onOpenThread={(id: string) => { app.setSettingsOpen(false); void app.openThread(id); }}
       />
     </div>
@@ -166,7 +167,7 @@ export function ResidentMemoryPane({ app }: { app: HarnessAppApi }) {
         onOpenThread={(threadId: string) => { app.setSettingsOpen(false); void app.openThread(threadId); }}
         onReveal={(path: string) => void window.codex.shellReveal(path)}
       />
-      <MemoryInjectPreview workspace={app.memoryManagementWorkspace} />
+      <MemoryInjectPreview workspace={app.memoryManagementWorkspace} onNotice={app.setNotice} />
       <MemoryLayersEditor
         snapshot={app.memoryLayers}
         scope={app.memoryLayerScope}

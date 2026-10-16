@@ -145,6 +145,7 @@ import {
 import { basename } from "../../../lib/basename";
 import { copyTextToClipboard } from "../../../lib/clipboard";
 import { runVisualSwitch, themeLabelOf } from "../../../lib/visual-switch";
+import { refreshWithReceipt } from "../../../lib/refresh-receipt.mjs";
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 // 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
 import { Slot } from "../../../runtime/registry";
@@ -455,7 +456,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   团队成员子任务 / 专家调度 / 子智能体调度 / 专家团调度（口径见 lib/thread-source.mjs） */}
               <button className={`view-tab ${viewTab === "source" ? "active" : ""}`} onClick={() => setViewTab("source")} title="按会话来源分类"><Layers size={14} className="ic-cyan" /><span>分类</span></button>
               <div className="view-toolbar">
-                <button className="view-toolbar-btn ic-blue" title="刷新会话列表" onClick={() => { void refreshThreads().then(() => showToast("会话列表已刷新", "已重新读取全部会话")); }}><ListRestart size={14} /></button>
+                <button className="view-toolbar-btn ic-blue" title="刷新会话列表" onClick={() => void refreshWithReceipt((text: string) => showToast(text), "刷新会话列表", refreshThreads)}><ListRestart size={14} /></button>
                 <button className="view-toolbar-btn ic-violet" title={sidebarAllCollapsed ? "全部展开" : "全部折叠"} onClick={toggleAllSidebarSections} disabled={viewTab === "source" ? !sourcedThreads.length : !projectGroups.length}>{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
               </div>
             </div>
