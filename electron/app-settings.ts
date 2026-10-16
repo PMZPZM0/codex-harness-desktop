@@ -44,6 +44,12 @@ export type AppSettings = {
    *  - "force"：忽略 GPU 黑名单 + 强制 GPU 光栅化/零拷贝——低配机上软件渲染卡顿时可选
    *  - "off"：完全关闭硬件加速（极个别驱动与 GPU 通道冲突时用） */
   hardwareAcceleration?: "auto" | "force" | "off";
+  /** 应用主题（10-16，与云助手同轮同步）：渲染层选的主题**主进程也必须知道** ——
+   *  窗口创建时要读 `titleBarOverlayOptions()` 决定标题栏 overlay 的符号色，而渲染层把主题
+   *  存在 localStorage（主进程读不到）⇒ 不落盘就只能按**系统**主题画：
+   *  系统亮 + 应用暗时，深色符号画在深色顶栏上 = 用户报的「暗色下独立窗口右上角系统钮看不见」。
+   *  由 theme:apply 顺带写入，启动早期（窗口创建前）同步读回并应用。 */
+  theme?: "light" | "dark";
   /**
    * 被用户停用的宿主域（10-04 阶段 6）。
    *
