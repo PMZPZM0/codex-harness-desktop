@@ -195,6 +195,21 @@ bag.theme = theme as typeof bag.theme; bag.setTheme = setTheme as typeof bag.set
     return () => { try { off?.(); } catch { /* 窗口销毁中，退订失败无所谓 */ } };
   }, []);
 
+  /* 主题跟随·第二路保险（10-16 主仓实测「弹窗主题不跟随」）：同源窗口之间 localStorage
+     变更会触发 `storage` 事件 —— 主窗口写 `localStorage["theme"]` 时，独立会话弹窗即便
+     跑着**旧 preload**（没有 onThemeChanged）也能跟上；也覆盖「新通道没接上」的降级场景。
+     ⛔ 只认注册表里的合法 id（空值/脏值忽略，否则会把主题刷成兜底的 light）。 */
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== "theme") return;
+      const value = String(event.newValue ?? "");
+      if (!value || normalizeThemeId(value) !== value) return;
+      setTheme(value);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
   // 账户菜单（点左下角头像/名字弹出）：界面语言 / 界面主题 / 界面缩放 / 使用统计 / 用户中心 / 退出登录
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
 bag.accountMenuOpen = accountMenuOpen as typeof bag.accountMenuOpen; bag.setAccountMenuOpen = setAccountMenuOpen as typeof bag.setAccountMenuOpen;
