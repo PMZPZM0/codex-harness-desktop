@@ -20,7 +20,7 @@ type AccountView = { id: string; username: string; role: string; baseUrl: string
 type AuthStatus = { loggedIn: boolean; baseUrl: string; active: AccountView | null; accounts: AccountView[]; defaultBaseUrl: string };
 type ModelStatus = { loggedIn: boolean; registered: boolean; enabled: boolean; active: boolean; models: number; hasToken: boolean; lastSyncAt: number };
 type KbStatus = { exists: boolean; enabled: boolean; url: string; hasToken: boolean };
-type MemoryStatus = { mode: string; hasCredentials: boolean; note: string };
+type MemoryStatus = { mode: string; hasCredentials: boolean; note: string; upstream?: "memory" | "model"; connectorId?: string };
 type PointTxn = { id?: string; at?: number; delta?: number; kind?: string; note?: string; after?: number };
 type Points = { ok: boolean; balance: number; signupGrant: number; txns: PointTxn[]; error?: string };
 
@@ -46,7 +46,7 @@ type CloudApi = {
   cloudModelsStatus?: () => Promise<ModelStatus>;
   cloudKbSync?: () => Promise<{ ok: boolean; action: string; url?: string; kbName?: string; error?: string }>;
   cloudKbStatus?: () => Promise<KbStatus>;
-  cloudMemorySync?: () => Promise<{ ok: boolean; mode: string; error?: string }>;
+  cloudMemorySync?: () => Promise<{ ok: boolean; mode: string; error?: string; upstream?: "memory" | "model"; upstreamChanged?: boolean }>;
   cloudMemoryStatus?: () => Promise<MemoryStatus>;
 };
 
@@ -181,7 +181,9 @@ export function CloudAccountSection() {
     setMsg(null);
     const r = await api.cloudMemorySync();
     setMsg(r.mode === "rest-only"
-      ? { kind: "ok", text: "已取回云端记忆凭据并加密缓存。记忆中枢目前没有 MCP 端点，暂不能作为 MCP 工具使用（见下方说明）。" }
+      ? (r.upstream === "memory"
+          ? { kind: "ok", text: "云端记忆已接通：对话上游已切到记忆端点，记忆在请求层自动注入与写入（无需工具调用）。" }
+          : { kind: "ok", text: "记忆凭据已取回并加密缓存；再刷新一次或重启应用即可切到记忆上游。" })
       : r.ok ? { kind: "ok", text: "云端记忆已接通。" } : { kind: "err", text: r.error === "not-activated" ? "云端记忆未开通权益 —— 先在云用户中心开通。" : `失败：${r.error || "未知原因"}` });
     await refresh();
   });
@@ -437,7 +439,13 @@ export function CloudAccountSection() {
             <div className="cloud-acct-head">
               <TriangleAlert size={16} />
               <strong>云端记忆</strong>
-              <span className="cloud-acct-tag off">{memory?.mode === "mcp" ? "已接通" : memory?.mode === "rest-only" ? "仅凭据（REST）" : "未开通"}</span>
+              <span className={`cloud-acct-tag ${memory?.mode === "mcp" || memory?.upstream === "memory" ? "" : "off"}`}>
+                {memory?.mode === "mcp"
+                  ? "已接通（MCP）"
+                  : memory?.mode === "rest-only"
+                    ? (memory?.upstream === "memory" ? "已接通（请求层）" : "凭据就绪（未生效）")
+                    : "未开通"}
+              </span>
             </div>
             <div className="cloud-acct-metrics">
               <span>凭据 <b>{memory?.hasCredentials ? "已缓存" : "无"}</b></span>
@@ -449,7 +457,20 @@ export function CloudAccountSection() {
               {busyIcon("memory")}
             </div>
             <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-              ⛔ 记忆中枢目前<b>没有 MCP 端点</b>（实测 /mcp、/v1/mcp、/sse 均 404，只有 REST），因此本页只取回并加密缓存凭据，暂不能作为 MCP 工具使用。等适配器或服务端补上端点后会自动接通。
+              {memory?.upstream === "memory" ? (
+                <>
+                  ✅ 记忆<b>已接通</b>：对话上游已切到记忆端点，记忆在<b>请求层</b>自动注入与写入
+                  （每账号独立命名空间，<b>不需要工具调用</b>）。MCP 工具面仍待中枢提供端点 ——
+                  2026-10-17 复测：/mcp、/v1/mcp、/sse、/v1/sse 均为前端兜底页（无 MCP 路由），
+                  补上后会自动切换成连接器。
+                </>
+              ) : memory?.mode === "rest-only" ? (
+                <>凭据已就绪但<b>尚未生效</b>：再点一次「获取 / 刷新记忆凭据」会把它切到对话上游
+                  （重启应用也会自动生效）。</>
+              ) : (
+                <>记忆中枢的 MCP 端点尚未提供（2026-10-17 复测：/mcp、/v1/mcp、/sse、/v1/sse 均为前端
+                  兜底页）；REST 通道正常，开通权益并刷新凭据后按<b>请求层注入</b>生效。</>
+              )}
             </p>
           </div>
           <div className="cloud-acct-card">

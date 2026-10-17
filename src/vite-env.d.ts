@@ -1081,9 +1081,9 @@ interface Window {
     /* 云端知识库连接器状态（只读本地，不联网） */
     cloudKbStatus(): Promise<{ exists: boolean; enabled: boolean; url: string; hasToken: boolean } & { connectorId: string; tool: string }>;
     /* 取云端记忆凭据（加密缓存）。⛔ 记忆中枢当前**没有 MCP 端点**（实测 /mcp、/v1/mcp、/sse 全 404），故 mode 恒为 rest-only 且不建连接器 —— 等本地 stdio 适配器 */
-    cloudMemorySync(): Promise<{ ok: boolean; mode: string; action?: string; error?: string }>;
+    cloudMemorySync(): Promise<{ ok: boolean; mode: string; action?: string; error?: string; upstream?: "memory" | "model"; upstreamChanged?: boolean }>;
     /* 云端记忆状态（只读本地，不联网） */
-    cloudMemoryStatus(): Promise<{ connectorId: string; connector: { exists: boolean; enabled: boolean; url: string; hasToken: boolean }; hasCredentials: boolean; mode: string; note: string }>;
+    cloudMemoryStatus(): Promise<{ connectorId: string; connector: { exists: boolean; enabled: boolean; url: string; hasToken: boolean }; hasCredentials: boolean; mode: string; note: string; upstream?: "memory" | "model" }>;
     /* 云账号积分（服务端 /points/me）：余额 + 最近 30 条变动明细。⛔ 账户级数据，故挂在 cloud-auth 域而不是另开板块 */
     cloudAuthPoints(): Promise<{ ok: boolean; balance: number; signupGrant: number; txns: Array<{ id?: string; at?: number; delta?: number; kind?: string; note?: string; after?: number }>; error?: string }>;
     /* 把「云端模型」设为当前生效供应商（用户显式点击）。⛔ 自动同步绝不抢生效位，只有这条会；切换会重启引擎以让新 Key/地址生效 */
