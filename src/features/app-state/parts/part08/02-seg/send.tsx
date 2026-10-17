@@ -29,7 +29,11 @@ import type { Bag } from "../../bag-types";
    但**模型名跟着会话走** —— 旧会话绑的模型可能已在当前网关下架/不在清单 ⇒ 上游报「模型不存在」
    ⇒ 表现为"旧会话用不了、新会话正常"。⇒ 不在清单就自动落到当前生效模型，并提示一句（迁移而非静默换）。 */
 function resolveStartModel(bag: { selectedModel?: { model?: string } | null; modelId: string; customModel?: { model?: string; models?: { id: string; enabled?: boolean }[] } | null; showToast?: (title: string, text?: unknown, threadId?: string) => void }): string {
-  const wantedModel = resolveStartModel(bag);
+  /* ⛔⛔ 这一行**绝不能再写成 `resolveStartModel(bag)`** —— 10-17 实测事故：
+     上一版补丁在全局替换取模型表达式时，把**函数体里的这一行**也一起替换了 ⇒ 函数自我递归
+     ⇒ 每次发送都 `Maximum call stack size exceeded`（连空的新任务也发不出去）。
+     ⛔ 判据：任何"把某表达式替换成调用某函数"的批量改动，**必须排除该函数自身的定义体**。 */
+  const wantedModel: string = bag.selectedModel?.model ?? modelName(bag.modelId);
   const offered = bag.customModel?.models ?? [];
   const ok = !offered.length || offered.some((m) => m.id === wantedModel && m.enabled !== false);
   const resolved = ok ? wantedModel : (bag.customModel?.model || offered.find((m) => m.enabled !== false)?.id || wantedModel);
