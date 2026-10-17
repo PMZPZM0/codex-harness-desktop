@@ -203,6 +203,21 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                 //    agent 建完清单前端完全不知道 → 「让 Codex 创建任务清单也没展示出来」（09-15 实测）
                 void window.codex.listTasks().then(bag.setTaskList).catch(() => undefined);
                 await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `已加入任务清单：${task.text}（优先级：${task.priority}）` }], success: true });
+              } else if (event.params?.tool === "compact_context") {
+                /* 10-17：与手动「压缩上下文」按钮**同一实现**（thread/compact/start）——
+                   先记 pending + 点亮 running（引擎可能不落 item 事件，不能只靠事件点亮），
+                   失败则落 error 并如实回给模型。 */
+                const compactThread = String(event.params?.threadId ?? bag.threadRef.current?.id ?? "");
+                try {
+                  if (compactThread) bag.compactPendingRef.current.add(compactThread);
+                  bag.setCompactEventState("running");
+                  await window.codex.request("thread/compact/start", { threadId: compactThread });
+                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "已发起上下文压缩（引擎原生压缩，后台执行）。压缩完成后历史会被摘要、上下文显著缩短，界面会出现压缩状态线；你可以继续当前任务。" }], success: true });
+                } catch (error: any) {
+                  if (compactThread) bag.compactPendingRef.current.delete(compactThread);
+                  bag.setCompactEventState("error", error?.message ?? String(error));
+                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `压缩发起失败：${error?.message ?? error}` }], success: false });
+                }
               } else if (event.params?.tool === "task_update") {
                 if (!args.id && args.status === undefined && args.text === undefined && !args.done) {
                   const tasks = await window.codex.listTasks();
