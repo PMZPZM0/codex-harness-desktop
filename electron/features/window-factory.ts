@@ -9,6 +9,7 @@
  */
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { BrowserWindow, app, dialog, shell } from "electron";
 import { existsSync } from "node:fs";
 import { applyRoundedCorners } from "../win-rounded-corners";
@@ -18,6 +19,7 @@ import { installContextMenu } from "../main/10-window-menu";
 import { applyThemeToWindow, closeToTrayEnabled, closePromptSeen, closeConfirmBridge, engineActiveTurnIds, notifyPopoutClosed, popoutThreadIds, titleBarOverlayOptions } from "../runtime-refs";
 import { closePetWindow } from "./pet-window";
 import { mutableState } from "../main";
+import { isInsideTrustedRoots } from "../runtime-refs";
 export function createWindow() {
   // Windows 任务栏图标必须用 .ico 才可靠（PNG 会被 electron.exe 默认图标顶掉）；
   // ⛔ 资源定位锚在 app.getAppPath()（dev = 仓库根 / 打包 = app.asar 根），**不要用 __dirname**：
@@ -111,7 +113,20 @@ export function createWindow() {
     delete (webPreferences as any).preload;
     (webPreferences as any).nodeIntegration = false;
     (webPreferences as any).contextIsolation = true;
-    if (!/^https?:/i.test(String(params.src ?? ""))) delete (params as any).src;
+    /* ⛔⛔ guest 的 src 收敛（09-13 审计）：http(s) 放行；
+       **可信本地 HTML 也放行**（10-17 用户令「文件预览『浏览器打开』空白页」的根因 ——
+       此前 file: 的 src 在这里被删 ⇒ guest 从未导航 ⇒ 空白且无任何失败事件）。
+       ⛔ 不是放开 file: —— 与 external:open 同一把闸的口径：.html + fileURLToPath 可解 +
+       isInsideTrustedRoots（会话 cwd / userData / 用户亲选路径之内），其余照旧删 src。 */
+    const attachSrc = String(params.src ?? "");
+    if (/^https?:/i.test(attachSrc)) return;
+    if (/^file:/i.test(attachSrc)) {
+      try {
+        const previewPath = fileURLToPath(new URL(attachSrc));
+        if (/\.html?$/i.test(previewPath) && isInsideTrustedRoots(previewPath)) return;
+      } catch { /* 非法 URL → 照旧删 */ }
+    }
+    delete (params as any).src;
   });
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   // ⛔ 关窗守卫（09-13 审计第 5 条）：此前全 `main.ts` **没有 `mainWindow.on("close")`、没有确认框**，
