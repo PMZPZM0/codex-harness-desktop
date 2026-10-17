@@ -18,11 +18,11 @@ import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from "nod
 import { spawn } from "node:child_process";
 import { app } from "electron";
 import { plainTextForChannel } from "../channel-text";
-import { DingtalkGateway } from "../dingtalk-gateway";
+import { DingtalkGateway } from "../im-gateway/dingtalk-gateway";
 import { FeishuGateway } from "../feishu-gateway";
 import { QqGateway } from "../qq-gateway";
-import { TelegramGateway } from "../telegram-gateway";
-import { WecomWebhookGateway } from "../wecom-webhook-gateway";
+import { TelegramGateway } from "../im-gateway/telegram-gateway";
+import { WecomWebhookGateway } from "../im-gateway/wecom-webhook-gateway";
 import { WeixinGateway } from "../weixin-gateway";
 import { resolveFfmpegPath, toolsRoot } from "../toolchain";
 import { type BotStreamBudget, BotStreamSession, type BotStreamSink } from "../bot-stream";
