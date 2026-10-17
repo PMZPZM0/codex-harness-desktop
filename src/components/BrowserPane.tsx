@@ -125,6 +125,21 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
     });
   }, [active.url]);
 
+  /* 10-17 用户令「按键都是假的」②：收藏夹此前只有"打开首项"（空列表时禁用 = 看着像假按钮）。
+     ⇒ 菜单里改为**真实收藏列表**（逐条打开 / 单条删除），配套 removeBookmark。 */
+  const removeBookmark = useCallback((url: string) => {
+    setBookmarks((current) => {
+      const next = current.filter((entry) => entry !== url);
+      localStorage.setItem(BOOKMARK_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+  /** 收藏项的展示名：file URL 取解码后的文件名，其余原样截断。 */
+  const bookmarkLabel = useCallback((url: string) => {
+    if (url.startsWith("file:///")) return decodeURIComponent(url.split("/").pop() ?? "") || url;
+    return url.length > 42 ? url.slice(0, 41) + "…" : url;
+  }, []);
+
   // webview 事件：回写地址栏/标题/加载态。只渲染激活标签，切标签时元素会重建，
   // 依赖里带上 activeId 保证重建后重新绑定。
   useEffect(() => {
@@ -217,9 +232,21 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
               <button role="menuitem" disabled={!active.url} onClick={() => { setMenuOpen(false); if (active.url) { try { void window.codex.openExternal(active.url); } catch (error: any) { setStealthHint(error?.message ?? "打开失败"); } } }}>
                 <ExternalLink size={13} /><span>在系统浏览器打开</span>
               </button>
-              <button role="menuitem" disabled={!bookmarks.length} onClick={() => { setMenuOpen(false); const first = bookmarks[0]; if (first) navigate(first); }}>
-                <Star size={13} /><span>打开收藏夹首项</span><em>{bookmarks.length}</em>
-              </button>
+              {bookmarks.length > 0 && (
+                /* 10-17：收藏夹 = 真实列表（逐条打开 / 单条删除），不再是"只开首项" */
+                <div className="browser-pane-bookmarks" role="group" aria-label="收藏夹">
+                  <div className="browser-pane-bookmarks-head"><Star size={11} />收藏夹（{bookmarks.length}）</div>
+                  {bookmarks.slice(0, 10).map((b) => (
+                    <div key={b} className="browser-pane-bookmark-row">
+                      <button role="menuitem" title={b} onClick={() => { setMenuOpen(false); navigate(b); }}>
+                        <span>{bookmarkLabel(b)}</span>
+                      </button>
+                      <button type="button" className="browser-pane-bookmark-del" title="删除此收藏" aria-label={`删除收藏 ${bookmarkLabel(b)}`}
+                        onClick={(event) => { event.stopPropagation(); removeBookmark(b); }}><X size={11} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <button role="menuitem" onClick={() => { setMenuOpen(false); addTab(); }}><Plus size={13} /><span>新建标签页</span></button>
             </div>
           </>}

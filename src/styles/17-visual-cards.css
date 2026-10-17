@@ -1232,6 +1232,14 @@
 }
 .browser-pane-omni::placeholder { color: var(--faint); }
 .browser-pane-menu-wrap { position: relative; display: flex; }
+/* 收藏夹列表（10-17：从“只开首项”改为真实列表——逐条打开 / 单条删除） */
+.browser-pane-bookmarks { border-top: 1px solid var(--line-soft); margin-top: 4px; padding-top: 4px; }
+.browser-pane-bookmarks-head { display: flex; align-items: center; gap: 5px; padding: 4px 12px 2px; font-size: 10.5px; color: var(--faint); }
+.browser-pane-bookmark-row { display: flex; align-items: center; gap: 2px; }
+.browser-pane-bookmark-row > button[role=menuitem] { flex: 1; min-width: 0; }
+.browser-pane-bookmark-row > button[role=menuitem] > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.browser-pane-bookmark-del { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 6px; color: var(--faint); }
+.browser-pane-bookmark-del:hover { background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--red); }
 .browser-pane-menu {
   position: absolute;
   top: calc(100% + 4px);
