@@ -164,11 +164,17 @@ export const cloudModelsFeature = defineFeature<null>({
        ⛔ 静默：纠偏失败不影响启动（下次同步还会再试）。 */
     void (async () => {
       try {
-        if (await repairCloudProviderProtocol()) {
-          console.log("[cloud-models] 已把云模型协议纠正为 responses（上游 chat 交给本地桥）");
-          await refreshEngineProviders();
-        }
-      } catch { /* 静默 */ }
+        const repaired = await repairCloudProviderProtocol();
+        /* ⛔⛔ **无条件**把 config.toml 对齐到模型档案（10-17 实测事故）：
+           它们是**两份状态** —— 界面/档案是 `cloud` + `space-bunny`，而 config.toml 还停在
+           `model_provider = "custom"` / `model = "gpt-6.1-sol"` / `cn.pptoken.cc`。
+           引擎按 config.toml 发请求 ⇒ **拿旧供应商发** ⇒ 全部失败（而"测试连接"是渲染层按档案
+           探的，所以显示成功，极具误导性）。
+           ⛔ 只在协议不对时才对齐是不够的 —— 这次协议是对的、只有"档案例外"漂了。
+           `applyCustomModel` 是幂等的；启动时对齐一次，代价是一次小文件写。 */
+        const refreshed = await refreshEngineProviders();
+        if (repaired || refreshed) console.log(`[cloud-models] 启动对齐：协议纠偏=${repaired} · config.toml 重写=${refreshed}`);
+      } catch { /* 静默：对齐失败不影响启动 */ }
     })();
 
     /* 目录（面板展示用）：原始回执透传，渲染层按 provider/models 自行渲染。 */
