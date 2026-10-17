@@ -3,6 +3,7 @@
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
 import { isCompactionItem } from "../../../../lib/compaction-item.mjs";
+import { compactionStateOf, reportCompactionState } from "../../../../lib/compaction-state.mjs";
 import { compactionRecordFor, compactionVersion, subscribeCompactions } from "../../../../lib/compaction-records.mjs";
 import { Fragment, useSyncExternalStore, type ReactNode } from "react";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../lib/entity-avatar";
@@ -300,18 +301,14 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                     let compactionLine: ReactNode = null;
                     let insertBefore = -1;
                     if (thread) {
-                      let lastCompaction: any = null;
-                      let lastCompactionTurnId = "";
-                      /* ⛔ 运行中的压缩也要有线（10-17 用户令「触发压缩时界面没有任何提示，会误以为卡住」）：
-                         回合中途的自动压缩是 **in-progress** 项，此前只认"已完成" ⇒ 压缩期间时间线
-                         什么线都没有，用户只能看到一个转了几分钟的"生成中"。这里把运行中压缩的
-                         **所在回合**记下来，在归位处渲染 --running 线（见下方 compactionRunning 分支）。 */
-                      let runningCompactionTurnId = "";
-                      for (const t of ordered) for (const it of (t.items ?? []) as any[]) {
-                        if (!isCompactionItem(it)) continue;
-                        if (it?.status === "inProgress" || it?.status === "running") { if (!runningCompactionTurnId) runningCompactionTurnId = String(t.id ?? ""); }
-                        else { lastCompaction = it; lastCompactionTurnId = String(t.id ?? ""); }
-                      }
+                      /* ⛔ 压缩状态统一由 compaction-state.mjs 推导（10-17 用户令：四态可观测）。
+                         之前这里自己扫一遍 item 判 in-progress，与 ItemView / compactToast 三处各写一份 ⇒
+                         形状一变只有一处断（症状：没有压缩线、只剩通用工具卡）。 */
+                      const cs = compactionStateOf(ordered, compactToast?.state);
+                      reportCompactionState(thread.id, cs);
+                      const lastCompaction: any = cs.state === "done" ? cs.item : null;
+                      const lastCompactionTurnId = cs.state === "done" ? cs.turnId : "";
+                      const runningCompactionTurnId = cs.state === "compacting" ? cs.turnId : "";
                       /* 压缩线第三源（10-07）：当前引擎的压缩 item 不进 turns API/事件流（实测）——
                          引擎 item 找不到时，退回主进程 `compaction-watch` 的侦测记录（thread-compacted-host，
                          宿主侧按 rollout 对账、落盘、resume 重播）。锚点语义与引擎 item 完全一致：以压缩

@@ -4857,7 +4857,7 @@ export async function run() {
     (turnView.includes("!isCompactionItem(item)") && !turnView.includes("items={responseItems}") ? ok : fail)(
       "【165】回合内容区剔除压缩线（TurnFoldStream 只吃 foldItems，线不许再落回内容末尾）"
     );
-    (timeline.includes("let lastCompaction: any = null;") && timeline.includes("isCompactionItem(it)") ? ok : fail)(
+    (timeline.includes("compactionStateOf(ordered, compactToast?.state)") && timeline.includes("cs.state === \"done\" ? cs.item : null") ? ok : fail)(
       "【165】timeline 层扫描最后一条已完成压缩 item（与 pruneSupersededCompactions 同口径）"
     );
     ((() => { const a = timeline.indexOf("compactionLine && i === insertBefore"); const b = timeline.indexOf("<MemoTurnView"); return a >= 0 && b >= 0 && a < b; })() ? ok : fail)(
@@ -4881,7 +4881,7 @@ export async function run() {
     );
     /* 10-17 用户令推翻旧契约：压缩期**必须有可见线**（in-progress 项归位渲染 running 线），否则像卡死；
        compact toast 转圈只兜"引擎没落 in-progress 项"的底（两者条件互斥，不同屏）。 */
-    ((/runningCompactionTurnId/.test(timeline) && /it\?\.status === "inProgress" \|\| it\?\.status === "running"/.test(timeline)) ? ok : fail)(
+    ((/runningCompactionTurnId/.test(timeline) && /compactionStateOf\(/.test(timeline) && /cs\.state === "compacting"/.test(timeline)) ? ok : fail)(
       "【165】归位**优先**渲染运行中的压缩线（in-progress 项所在回合）——压缩期必须有可见提示，否则像卡死"
     );
     ((/compact-divider--running/.test(timeline) && /停止压缩/.test(timeline)) ? ok : fail)(

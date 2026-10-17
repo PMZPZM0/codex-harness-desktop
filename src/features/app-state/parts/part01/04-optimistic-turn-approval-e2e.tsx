@@ -178,7 +178,10 @@ bag.tokenUsageByThreadRef = tokenUsageByThreadRef as typeof bag.tokenUsageByThre
       const map = bag.tokenUsageByThreadRef.current;
       if (threadId) {
         map.delete(threadId);   // ⛔ 先删再插 = 挪到末尾（真 LRU 的关键）
-        map.set(threadId, usage);
+        /* 10-17：usage 传 null = **作废快照**（只删不写回）。压缩后要用 —— 压缩前那份快照
+           留在盘上时，回合结束/重载会话会把压缩前的更大值恢复回来 ⇒ 上下文环「回到 50%」
+           （用户实测）。作废后由下一条实时用量重新落盘。 */
+        if (usage) map.set(threadId, usage);
       }
       const entries = [...map.entries()].slice(-TOKEN_SNAPSHOT_MAX);
       bag.tokenUsageByThreadRef.current = new Map(entries);
