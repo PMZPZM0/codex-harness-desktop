@@ -8,6 +8,19 @@ import type { OutputItem } from "./01-sse-items";
 
 /** 最近一次请求的配对修复统计（10-17）：供桥日志打印"这次修掉了多少条不成对"，
  *  ⛔ 只用于诊断，不进入请求体。 */
+/** 缓存/推理字段的透传（10-17）：上游 chat usage 里这些字段的**三种方言**——
+ *  OpenAI 兼容 `prompt_tokens_details.cached_tokens`、DeepSeek `prompt_cache_hit_tokens`、
+ *  Anthropic `cache_read_input_tokens`。Responses 侧统一映射进 `input_tokens_details.cached_tokens`；
+ *  ⛔ 上一版只写 input/output/total ⇒ 命中信息整块丢失，界面「缓存输入 0 / 命中率 0%」恒成立。 */
+function usageDetailsOf(u: any) {
+  const det = u?.prompt_tokens_details ?? u?.promptTokensDetails ?? {};
+  const cached = Number(det?.cached_tokens ?? det?.cachedTokens ?? u?.prompt_cache_hit_tokens ?? u?.cache_read_input_tokens ?? 0) || 0;
+  const reasoning = Number((u?.completion_tokens_details ?? u?.completionTokensDetails ?? {})?.reasoning_tokens ?? 0) || 0;
+  return {
+    ...(cached > 0 ? { input_tokens_details: { cached_tokens: cached } } : {}),
+    ...(reasoning > 0 ? { output_tokens_details: { reasoning_tokens: reasoning } } : {}),
+  };
+}
 export let lastRepair = { droppedCalls: 0, droppedResults: 0 };
 /** 把 Responses 请求体转成 Chat Completions 请求体（纯函数，可离线断言）。 */
 export function toChatRequest(body: any): any {
@@ -236,6 +249,7 @@ export class ChatStreamTranslator {
       input_tokens: this.usage?.prompt_tokens ?? 0,
       output_tokens: this.usage?.completion_tokens ?? 0,
       total_tokens: this.usage?.total_tokens ?? 0,
+      ...usageDetailsOf(this.usage),   // 10-17：缓存/推理字段透传（否则界面恒 0%）
     };
     return out + finalizeItems(this.items, this.responseId, this.model, usage);
   }
@@ -264,6 +278,7 @@ export function chatJsonToResponses(json: any, model: string): any {
       input_tokens: json?.usage?.prompt_tokens ?? 0,
       output_tokens: json?.usage?.completion_tokens ?? 0,
       total_tokens: json?.usage?.total_tokens ?? 0,
+      ...usageDetailsOf(json?.usage),   // 10-17：同上
     },
   };
 }
