@@ -204,20 +204,12 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                 void window.codex.listTasks().then(bag.setTaskList).catch(() => undefined);
                 await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `已加入任务清单：${task.text}（优先级：${task.priority}）` }], success: true });
               } else if (event.params?.tool === "compact_context") {
-                /* 10-17：与手动「压缩上下文」按钮**同一实现**（thread/compact/start）——
-                   先记 pending + 点亮 running（引擎可能不落 item 事件，不能只靠事件点亮），
-                   失败则落 error 并如实回给模型。 */
+                /* ⛔ 10-17 用户实测「他自动停止了，我也没点」：**回合运行中**调 thread/compact/start
+                   会让引擎**中断当前回合**再压缩（压缩不跨回合）⇒ 表现就是 status=interrupted。
+                   ⇒ 这里只**排队**，等 turn/completed（引擎空闲）再真正发起。 */
                 const compactThread = String(event.params?.threadId ?? bag.threadRef.current?.id ?? "");
-                try {
-                  if (compactThread) bag.compactPendingRef.current.add(compactThread);
-                  bag.setCompactEventState("running");
-                  await window.codex.request("thread/compact/start", { threadId: compactThread });
-                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "已发起上下文压缩（引擎原生压缩，后台执行）。压缩完成后历史会被摘要、上下文显著缩短，界面会出现压缩状态线；你可以继续当前任务。" }], success: true });
-                } catch (error: any) {
-                  if (compactThread) bag.compactPendingRef.current.delete(compactThread);
-                  bag.setCompactEventState("error", error?.message ?? String(error));
-                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `压缩发起失败：${error?.message ?? error}` }], success: false });
-                }
+                if (compactThread) bag.deferredCompactRef.current.add(compactThread);
+                await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "已把压缩加入队列：**本回合结束后**自动执行（回合中压缩会中断当前回合，所以不能立刻做）。届时界面会出现压缩状态线，压缩完成后上下文显著缩短。" }], success: true });
               } else if (event.params?.tool === "task_update") {
                 if (!args.id && args.status === undefined && args.text === undefined && !args.done) {
                   const tasks = await window.codex.listTasks();

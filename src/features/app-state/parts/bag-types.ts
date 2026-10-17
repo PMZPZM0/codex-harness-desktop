@@ -234,6 +234,9 @@ export interface Bag {
   executeEffortFallbackRetry: () => Promise<void>;
   scheduleRateLimitRetry: (threadId: string, attempt: number) => void;
   compactPendingRef: React.RefObject<Set<string>>;
+  /* 排队待压缩的会话（10-17）：回合运行中不能调 thread/compact/start（会中断回合），
+     先入队，turn/completed（引擎空闲）时再发起。 */
+  deferredCompactRef: React.RefObject<Set<string>>;
   interrupting: boolean;
   setInterrupting: React.Dispatch<React.SetStateAction<boolean>>;
   optimisticInput: import("../../../lib/thread-item.ts").ThreadItem | null;
