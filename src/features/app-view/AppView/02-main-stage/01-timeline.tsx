@@ -302,7 +302,16 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                     if (thread) {
                       let lastCompaction: any = null;
                       let lastCompactionTurnId = "";
-                      for (const t of ordered) for (const it of (t.items ?? []) as any[]) if (isCompactionItem(it) && it?.status !== "inProgress" && it?.status !== "running") { lastCompaction = it; lastCompactionTurnId = String(t.id ?? ""); }
+                      /* ⛔ 运行中的压缩也要有线（10-17 用户令「触发压缩时界面没有任何提示，会误以为卡住」）：
+                         回合中途的自动压缩是 **in-progress** 项，此前只认"已完成" ⇒ 压缩期间时间线
+                         什么线都没有，用户只能看到一个转了几分钟的"生成中"。这里把运行中压缩的
+                         **所在回合**记下来，在归位处渲染 --running 线（见下方 compactionRunning 分支）。 */
+                      let runningCompactionTurnId = "";
+                      for (const t of ordered) for (const it of (t.items ?? []) as any[]) {
+                        if (!isCompactionItem(it)) continue;
+                        if (it?.status === "inProgress" || it?.status === "running") { if (!runningCompactionTurnId) runningCompactionTurnId = String(t.id ?? ""); }
+                        else { lastCompaction = it; lastCompactionTurnId = String(t.id ?? ""); }
+                      }
                       /* 压缩线第三源（10-07）：当前引擎的压缩 item 不进 turns API/事件流（实测）——
                          引擎 item 找不到时，退回主进程 `compaction-watch` 的侦测记录（thread-compacted-host，
                          宿主侧按 rollout 对账、落盘、resume 重播）。锚点语义与引擎 item 完全一致：以压缩
@@ -313,7 +322,30 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                       for (let i = (anchorFrom >= 0 ? anchorFrom : ordered.length - 1); i >= 0; i--) {
                         if (((ordered[i].items ?? []) as any[]).some((it) => it?.type === "userMessage")) { insertBefore = visible.indexOf(ordered[i]); break; }
                       }
-                      if (lastCompaction && insertBefore >= 0) {
+                      /* ⛔ 运行中的压缩线（优先于"已完成"线）：锚在压缩所在回合的用户消息之上；
+                         找不到用户消息回合就锚在最后一回合之上。⛔ 不与底部兜底线同屏 ——
+                         底部那条的条件已排除"存在 in-progress 压缩项"的情况。 */
+                      if (runningCompactionTurnId) {
+                        const afRun = ordered.findIndex((t) => String(t.id) === runningCompactionTurnId);
+                        insertBefore = -1;
+                        for (let i = (afRun >= 0 ? afRun : ordered.length - 1); i >= 0; i--) {
+                          if (((ordered[i].items ?? []) as any[]).some((it) => it?.type === "userMessage")) { insertBefore = visible.indexOf(ordered[i]); break; }
+                        }
+                        if (insertBefore < 0) insertBefore = Math.max(0, visible.length - 1);
+                        compactionLine = (
+                          <div className="compact-divider compact-divider--running" role="status" aria-label="上下文压缩状态" key={`compact-running-${thread.id}`}>
+                            <i className="compact-divider-line" aria-hidden />
+                            <span className="compact-divider-text">
+                              <LoaderCircle size={13} className="spin" />
+                              {compactToast?.state === "running" && compactToast.threadId === thread.id ? compactToast.message : "正在自动压缩上下文…（完成后自动继续，无需操作）"}
+                            </span>
+                            <button type="button" className="compact-divider-cancel" title="停止压缩" onClick={() => app.cancelCompaction()}>
+                              <CircleStop size={12} />停止
+                            </button>
+                            <i className="compact-divider-line" aria-hidden />
+                          </div>
+                        );
+                      } else if (lastCompaction && insertBefore >= 0) {
                         compactionLine = <ItemView item={lastCompaction} onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} key={`compact-${lastCompaction.id}`} />;
                       } else if (hostCompaction && insertBefore >= 0) {
                         compactionLine = (
