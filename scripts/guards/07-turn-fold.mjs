@@ -632,7 +632,9 @@ export async function run() {
       && /executeEffortFallbackRetry\(\)/.test(appNC))
       ? ok("【32】档位不被支持时自动降档重发（删掉手动声明后的兜底）")
       : fail("【32】没有「档位不支持 → 自动降档重发」的兜底 —— 用户选到不支持的档位只能干瞪眼");
-    (/clearEffortUnsupported\(selectedModel\?\.model \?\? modelName\(modelId\), effort\)/.test(appNC))
+/* 10-17：取模型表达式已统一为 resolveStartModel(bag)（模型迁移校验，见 send.tsx）⇒ 锚点跟着走。
+   ⛔ appNC 会剥 `bag.` 前缀（旧锚点没有 bag. 就是证据）⇒ 两种形态都要认。 */
+    (/clearEffortUnsupported\(resolveStartModel\((bag)?\), (bag\.)?effort\)/.test(appNC))
       ? ok("【32】发送成功即清掉该档位的「不支持」记录（自愈，不永久标灰）")
       : fail("【32】没有自愈：一次失败会把档位永久标灰，用户强制选回成功也抹不掉");
     (/modelId=\{currentModelId\}/.test(appNC)
