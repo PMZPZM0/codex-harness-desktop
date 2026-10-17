@@ -10,7 +10,7 @@
  *
  * ⛔ 断言一律锚**行为**（真跑判据取值），不锚注释文本。
  */
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -174,8 +174,18 @@ if (mod && typeof mod.scanSensitive === "function") {
   catch (error) { fail(`【memGate】记忆分层产物读不到：${error?.message ?? error}`); }
   if (layersMod) {
     const ws = mkdtempSync(join(tmpdir(), "memgate-"));
-    const fileOf = (cat) => join(ws, ".codex-harness", "memory", "lessons", cat === "用户纠错" ? "corrections.md" : cat === "任务经验" ? "pitfalls.md" : cat === "工作流/SOP" ? "sop.md" : "preferences.md");
-    const read = (cat) => { const p = fileOf(cat); return existsSync(p) ? readFileSync(p, "utf8") : ""; };
+    /* ⛔⛔ 品牌无关：harness 目录名**两仓不同**（主仓 `.codex-harness` / PPcode `.ppcode-harness`，
+       由各仓 `memory-layers.ts` 的 `MEMORY_DIR` 决定）。写死任一个 ⇒ 副本假红（实测踩到）。
+       ⇒ 扫工作区里的 `.*-harness/memory/lessons/`，不猜名字。 */
+    const lessonsDir = () => {
+      const base = readdirSync(ws).find((n) => /^\.\w[\w-]*-harness$/.test(n));
+      return base ? join(ws, base, "memory", "lessons") : null;
+    };
+    const read = () => {
+      const d = lessonsDir();
+      if (!d || !existsSync(d)) return "";
+      return readdirSync(d).map((f) => readFileSync(join(d, f), "utf8")).join("\n");
+    };
     try {
       const L = () => new layersMod.MemoryLayers(ws);
       const KEY = "网络抖动被当成删除会重复建库";   // ⛔ 真实 dedupeKey = 现象归一化后的切片，必须能在行里找到
@@ -183,16 +193,15 @@ if (mod && typeof mod.scanSensitive === "function") {
       ok((await L().appendLesson(ws, line, KEY, "任务经验")) === true, "P1-1 首次写入成功");
       /* 同现象同结论 ⇒ 就地记数，不新增行 */
       ok((await L().appendLesson(ws, line, KEY, "任务经验")) === false, "P1-1 重复不再产生新行");
-      ok(/（再次 \d{4}-\d{2}-\d{2}/.test(read("任务经验")), "P1-1 就地记下「再次出现」（⛔ 不再静默丢弃）");
+      ok(/（再次 \d{4}-\d{2}-\d{2}/.test(read()), "P1-1 就地记下「再次出现」（⛔ 不再静默丢弃）");
       /* 同现象不同结论 ⇒ 冲突/更新：新行标 ⟳，旧行**保留** */
       const updated = `- 2026-10-17 ⚠️ 坑：${KEY} → 改成先核验归属再删`;
       await L().appendLesson(ws, updated, KEY, "任务经验");
-      const body = read("任务经验");
+      const body = read();
       ok(/⟳ 更新：/.test(body), "P1-1 结论变了 ⇒ 落「⟳ 更新」新行");
-      ok(/先问 alive/.test(body), "P1-1 旧条目**保留**（可回溯「当时是这么定的」）");
-      /* P1-2 遗忘：主题粒度 */
+      ok(/先问 alive/.test(body), "P1-1 旧条目**保留**（可回溯「当时是这么定的」");
+      /* P1-2 遗忘粒度：主题 / 分类 / 单条，且纠错类只许单条 */
       ok((await L().forgetLessons(ws, { key: KEY })) === 1, "P1-2 按主题遗忘（键命中 1 条）");
-      /* P1-2 纠错类只许单条 */
       const corr = "- 2026-10-17 ⚠️ 纠错：不该顺手改权限 → 先问";
       await L().appendLesson(ws, corr, "perm", "用户纠错");
       ok((await L().forgetLessons(ws, { key: "perm" })) === 0, "P1-2 ⛔ 纠错类**按主题**拒绝（保护项）");
