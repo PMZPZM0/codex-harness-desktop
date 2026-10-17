@@ -2,7 +2,7 @@
  * responses-bridge 的「chat-convert」部分（09-22 从同目录 responses-bridge.ts 按顶层声明分出，纯搬迁、零改写）。
  * ⛔ 逻辑与原地逐字一致，只补了顶部 import 与 `export`。
  */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { sseLine, finalizeItems, newItem, newToolItem } from "./01-sse-items";
 import type { OutputItem } from "./01-sse-items";
 
@@ -23,6 +23,22 @@ function usageDetailsOf(u: any) {
 }
 export let lastRepair = { droppedCalls: 0, droppedResults: 0 };
 /** 把 Responses 请求体转成 Chat Completions 请求体（纯函数，可离线断言）。 */
+/** 会话级粘性标识（10-17 实测）：wb2api 用 19 个上游账号池 + 主动轮转，**粘性按会话标识**；
+ *  不带标识 ⇒ 每次挑新账号 ⇒ 上游 KV 缓存不共享 ⇒ 命中率恒 ≈0（实测 hit=0/0/0）。
+ *  带**固定** conversationId ⇒ 第二次请求 hit=2688/2787 = 96.4%。
+ *  ⛔ 取值必须**会话内恒定、跨会话不同**：用 system 指令 + **首条 user 消息**的摘要 ——
+ *     首条 user 消息在整段历史里始终排第一，所以同一会话每一轮算出来都一样。
+ *  ⛔ 不引入随机/时间：那等于没带（每轮都换号）。 */
+function conversationKeyOf(body: any, messages: Array<{ role: string; content: any }>): string {
+  const explicit = String(body?.prompt_cache_key ?? "").trim();
+  if (explicit) return explicit;
+  const instructions = String(body?.instructions ?? "").slice(0, 4000);
+  const firstUser = messages.find((m) => m.role === "user");
+  const anchor = typeof firstUser?.content === "string" ? firstUser.content : JSON.stringify(firstUser?.content ?? "");
+  const digest = createHash("sha1").update(instructions).update("\u0000").update(anchor.slice(0, 2000)).digest("hex").slice(0, 24);
+  return `harness-${digest}`;
+}
+
 export function toChatRequest(body: any): any {
   const messages: any[] = [];
   if (typeof body?.instructions === "string" && body.instructions.trim()) {
@@ -122,6 +138,9 @@ export function toChatRequest(body: any): any {
   const effort = body?.reasoning?.effort;
   // chat 上游一般只认标准档：xhigh/ultra（UI 的「极高/最高」）压到 high，其余原样
   if (effort) chat.reasoning_effort = effort === "xhigh" || effort === "ultra" ? "high" : effort;
+  /* ⛔ 10-17：粘性会话标识（见 conversationKeyOf 注释）—— 这是缓存命中的**前提**。
+     环境变量 BRIDGE_CONV_ID=0 可关闭（给不认未知字段的严格网关用）。 */
+  if (process.env.BRIDGE_CONV_ID !== "0") chat.conversationId = conversationKeyOf(body, messages);
   if (body?.max_output_tokens) chat.max_tokens = body.max_output_tokens;
   if (body?.temperature !== undefined) chat.temperature = body.temperature;
   if (body?.top_p !== undefined) chat.top_p = body.top_p;
