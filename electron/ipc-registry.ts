@@ -394,6 +394,22 @@ export const IPC_DOMAINS: IpcDomainEntry[] = [
     channels: ["autoUpdate:status", "autoUpdate:set", "autoUpdate:scan", "autoUpdate:run", "autoUpdate:run-all"],
     note: "10-13 统一更新体系：组件清单在 electron/update-registry.ts（单一真相源，含不支持更新的条目及原因），执行层在 electron/update-backends.ts，安全网（快照/回滚/幂等）在 electron/update-safety.ts。status/set 管开关，scan 给全量清单，run / run-all 是手动更新入口。⛔ 手动链与自动链**共用**同一个 updateComponent，不写第二套判据；⛔ 所有远端一律国内镜像（npm→npmmirror、pip→清华、GitHub→gh-mirror）",
   },
+  { prefix: "cloud-auth", count: 5, status: "in-features", file: "features/cloud-auth-ipc.ts",
+    channels: ["cloud-auth:login", "cloud-auth:logout", "cloud-auth:switch", "cloud-auth:status", "cloud-auth:points"],
+    note: "10-16 新增：云账号登录/登出/切换/状态。⛔ 令牌读写与 accountsBase 全部委托基座 electron/cloud-api.ts（全仓唯一一份，此前有两处各解析一份的漂移隐患）",
+  },
+  { prefix: "cloud-models", count: 6, status: "in-features", file: "features/cloud-models-ipc.ts",
+    channels: ["cloud-models:catalog", "cloud-models:sync", "cloud-models:token", "cloud-models:set-enabled", "cloud-models:status", "cloud-models:activate"],
+    note: "10-16 新增：云端模型目录同步 + 保持更新（默认 10 分钟轮询，HARNESS_CLOUD_SYNC_MINUTES 可调）。落盘委托基座 electron/cloud-provider.ts（⛔ 同时写单数与复数两份档案）",
+  },
+  { prefix: "cloud-kb", count: 2, status: "in-features", file: "features/cloud-kb-ipc.ts",
+    channels: ["cloud-kb:sync", "cloud-kb:status"],
+    note: "10-16 新增：云端知识库 → MCP 连接器 cloud-kb（WeKnora 自带 MCP 端点，streamable_http）。令牌经环境变量注入引擎，⛔ 不落 config.toml",
+  },
+  { prefix: "cloud-memory", count: 2, status: "in-features", file: "features/cloud-memory-ipc.ts",
+    channels: ["cloud-memory:sync", "cloud-memory:status"],
+    note: "10-16 新增：云端记忆凭据（加密缓存）。⛔ 记忆中枢实测无 MCP 端点（/mcp、/v1/mcp、/sse 全 404），故不建连接器、如实回报 rest-only，等本地 stdio 适配器；服务端将来补 mcpUrl 即自动切换",
+  },
 ];
 
 /** 按通道（完整 channel 名）查所属域条目 */

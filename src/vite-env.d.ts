@@ -1058,6 +1058,36 @@ interface Window {
     runAllAutoUpdateComponents(): Promise<{ id: string; label: string; action: "updated" | "unchanged" | "failed" | "skipped"; before: string; after: string; message: string }>[];
     /* 10-13 关闭确认弹窗的回包：tray=隐藏主窗口 / quit=置 closeConfirmed 后二次 close / cancel=不动。remember=true 写 closeToTray（动作）+ closePromptSeen（不再弹）。⛔ ask 方向是推送类手写桥（preload onCloseConfirmAsk），不在本清单 */
     respondCloseConfirm(action: "tray" | "quit" | "cancel", remember: boolean): Promise<{ ok: boolean; error?: string }>;
+    /* 云账号登录（10-16）：账号密码换云端 Bearer 会话令牌，safeStorage 加密后落 userData/cloud/auth.json。⛔ 不是配对流程 —— 服务端 accountWho() 同时认会话令牌与设备令牌 */
+    cloudAuthLogin(input: { baseUrl?: string; username?: string; password?: string }): Promise<{ ok: boolean; account?: { id: string; username: string; role: string; baseUrl: string; active: boolean; savedAt: number }; error?: string }>;
+    /* 退出云账号（缺省 = 当前生效那个）。⛔ 最后一个账号被删时才收摊（停用云供应商行与两个 MCP 连接器，都只停用不删除） */
+    cloudAuthLogout(id?: string): Promise<{ ok: boolean; loggedIn: boolean; baseUrl: string; active: { id: string; username: string; role: string; baseUrl: string; active: boolean; savedAt: number } | null }>;
+    /* 切换生效云账号（多账号并存时用） */
+    cloudAuthSwitch(id: string): Promise<{ ok: boolean; loggedIn: boolean; baseUrl: string; active: { id: string; username: string; role: string; baseUrl: string; active: boolean; savedAt: number } | null }>;
+    /* 云账号登录态（⛔ 只回账号与「有没有」，不回任何令牌） */
+    cloudAuthStatus(): Promise<{ loggedIn: boolean; baseUrl: string; active: { id: string; username: string; role: string; baseUrl: string; active: boolean; savedAt: number } | null; accounts: Array<{ id: string; username: string; role: string; baseUrl: string; active: boolean; savedAt: number }>; defaultBaseUrl: string }>;
+    /* 云端模型目录（服务端 /models 原样透传）：含逐模型勾选状态 enabled 与积分倍率 credits。⛔ 不返回任何密钥与上游地址 */
+    cloudModelsCatalog(): Promise<{ ok?: boolean; provider?: { id?: string; name?: string; baseUrl?: string; ready?: boolean; hasProxyToken?: boolean }; models?: Array<{ id: string; name?: string; credits?: string; enabled?: boolean; contextLength?: number; maxOutputTokens?: number; supportsImages?: boolean; supportsReasoning?: boolean }>; error?: string }>;
+    /* 把云端目录同步成本机供应商行（登录成功后 / 手动刷新 / 定时轮询都调它）。⛔ 同时写复数列表与单数生效档案（10-16「勾 5 个下拉 15 个」事故的防线）；force=true 会重签代理令牌 */
+    cloudModelsSync(input?: { force?: boolean }): Promise<{ ok: boolean; models: number; changed: boolean; promoted: boolean; error?: string }>;
+    /* 取云代理令牌（/proxy/token，明文**仅此一次**）。⛔ 供「Key 掉了」的修复入口用；落盘一律加密 */
+    cloudModelsToken(input?: { force?: boolean }): Promise<{ ok: boolean; token: string; reused: boolean; error?: string }>;
+    /* 勾选云端模型（写**服务端** /models/enabled，权威在云端）→ 写完后立刻同步到本机下拉框。勾选语义：勾上 = 下拉框可见 */
+    cloudModelsSetEnabled(input: { ids: string[] }): Promise<{ ok: boolean; enabledCount?: number; sync?: { ok: boolean; models: number; changed: boolean; promoted: boolean; error?: string }; error?: string }>;
+    /* 本机云供应商状态（只读本地，不联网）：是否已注册 / 模型数 / 是否已有 Key / 上次同步时间 */
+    cloudModelsStatus(): Promise<{ loggedIn: boolean; baseUrl: string; registered: boolean; enabled: boolean; models: number; hasToken: boolean; lastSyncAt: number }>;
+    /* 把云端知识库接成 MCP 连接器 cloud-kb（streamable_http + 令牌走环境变量，⛔ 不落 config.toml）。未开通权益时只停用连接器并回报原因 */
+    cloudKbSync(): Promise<{ ok: boolean; action: string; url?: string; kbName?: string; error?: string }>;
+    /* 云端知识库连接器状态（只读本地，不联网） */
+    cloudKbStatus(): Promise<{ exists: boolean; enabled: boolean; url: string; hasToken: boolean } & { connectorId: string; tool: string }>;
+    /* 取云端记忆凭据（加密缓存）。⛔ 记忆中枢当前**没有 MCP 端点**（实测 /mcp、/v1/mcp、/sse 全 404），故 mode 恒为 rest-only 且不建连接器 —— 等本地 stdio 适配器 */
+    cloudMemorySync(): Promise<{ ok: boolean; mode: string; action?: string; error?: string }>;
+    /* 云端记忆状态（只读本地，不联网） */
+    cloudMemoryStatus(): Promise<{ connectorId: string; connector: { exists: boolean; enabled: boolean; url: string; hasToken: boolean }; hasCredentials: boolean; mode: string; note: string }>;
+    /* 云账号积分（服务端 /points/me）：余额 + 最近 30 条变动明细。⛔ 账户级数据，故挂在 cloud-auth 域而不是另开板块 */
+    cloudAuthPoints(): Promise<{ ok: boolean; balance: number; signupGrant: number; txns: Array<{ id?: string; at?: number; delta?: number; kind?: string; note?: string; after?: number }>; error?: string }>;
+    /* 把「云端模型」设为当前生效供应商（用户显式点击）。⛔ 自动同步绝不抢生效位，只有这条会；切换会重启引擎以让新 Key/地址生效 */
+    cloudModelsActivate(): Promise<{ ok: boolean; model: string; error?: string }>;
 /* ═══ gen:end ═══ */
 
 

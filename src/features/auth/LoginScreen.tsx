@@ -5,11 +5,13 @@
  */
 
 import { PPTokenEndpoints } from "../../lib/pptoken-endpoints";
-import { Rocket, CircleGauge, Wallet, Settings2, ChevronDown, Check, KeyRound, WifiOff, ExternalLink } from "lucide-react";
+import { Rocket, CircleGauge, Wallet, Settings2, ChevronDown, Check, KeyRound, WifiOff, ExternalLink, Cloud } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { createPortal } from "react-dom";
 import { performRelayLogin } from "../../lib/relay";
 import { normalizeCredential } from "../../lib/relay-input.mjs";
+/* 云端用户中心的地址由账号服务基址派生（⛔ 不写死域名）—— 见 src/lib/cloud-links.mjs。 */
+import { cloudUserCenterUrl } from "../../lib/cloud-links.mjs";
 import { useRef, useState, useLayoutEffect, useEffect, KeyboardEvent } from "react";
 
 export function FieldHelp({ text }: { text: string }) {
@@ -90,7 +92,7 @@ export function FieldHelp({ text }: { text: string }) {
 }
 
 export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: (info: { provider: string; name: string; baseUrl: string; apiKey: string; model: string; username?: string }) => Promise<boolean> }) {
-  const [mode, setMode] = useState<"custom" | "pptoken" | "relay" | "openai">("pptoken");
+  const [mode, setMode] = useState<"custom" | "pptoken" | "relay" | "openai" | "cloud">("pptoken");
   const [username, setUsername] = useState(() => localStorage.getItem("username") || "");
   const [apiBase, setApiBase] = useState("https://api.pptoken.cc/v1");
   const [apiKey, setApiKey] = useState("");
@@ -104,6 +106,19 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
   const [showPw, setShowPw] = useState(false);
   // 中转站账户登录（sub2api 兼容）
   const [relayDraft, setRelayDraft] = useState({ baseUrl: "https://api.pptoken.cc", email: "", password: "" });
+  /* 云账号登录（10-16）：用云账号的账号密码换云端令牌，登录后把云端勾选的模型同步成本机供应商。
+     ⛔ 与「中转站账户」是两条独立的登录线：那套是 sub2api 网关（余额/套餐 + 自建 Key），
+        这套是云账号服务（云端勾选模型 + 代理令牌 + 云端知识库/记忆）。 */
+  const [cloudDraft, setCloudDraft] = useState({ baseUrl: "", username: "", password: "" });
+  /** 云端用户中心地址：登录前拿不到账号库，只能问一次账号服务基址（拿不到就不显示入口）。 */
+  const [userCenter, setUserCenter] = useState("");
+  useEffect(() => {
+    if (mode !== "cloud" || userCenter) return;
+    const api = window.codex as unknown as { cloudAuthStatus?: () => Promise<{ baseUrl?: string }> };
+    api.cloudAuthStatus?.()
+      .then((s) => setUserCenter(cloudUserCenterUrl(s?.baseUrl)))
+      .catch(() => undefined);
+  }, [mode, userCenter]);
   // OpenAI 官方订阅登录（设备码流程）
   const [openaiDevice, setOpenaiDevice] = useState<{ url: string; code: string; raw?: string } | null>(null);
   const [openaiProxy, setOpenaiProxy] = useState(() => localStorage.getItem("openai-proxy") ?? "");
@@ -151,6 +166,54 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
     });
     if (!result.ok) setStatus(result.message ?? "中转站登录失败");
     setBusy(false);
+  };
+
+  /**
+   * 云账号登录（10-16）：账号密码 → 云端会话令牌 → 把云端勾选的模型同步成本机供应商 → 进主界面。
+   *
+   * ⛔ 分工：**写档案**是主进程 `cloud-models` 域的活（含云端目录里的真实上下文额度与代理令牌），
+   *   这里只负责「登录 + 让它生效 + 进主界面」。所以流程是
+   *   ① cloudAuthLogin → ② cloudModelsSync（主进程落盘）→ ③ 把 baseUrl / 令牌交给 onLogin，
+   *   沿用与其它登录方式**完全相同**的收尾（选中生效 + 标记已配置 + 进主界面，⛔ 不另写一套）；
+   *   ④ 再 sync 一次，把云端目录的真实规格覆盖掉 ③ 按内置规格表回填的那份。
+   */
+  const cloudLogin = async () => {
+    setBusy(true); setStatus("");
+    try {
+      const api = window.codex as unknown as {
+        cloudAuthLogin?: (input: { baseUrl?: string; username: string; password: string }) => Promise<{ ok: boolean; error?: string }>;
+        cloudAuthStatus?: () => Promise<{ baseUrl: string; active: { baseUrl: string } | null }>;
+        cloudModelsSync?: (input?: { force?: boolean }) => Promise<{ ok: boolean; models: number; error?: string }>;
+        cloudModelsToken?: (input?: { force?: boolean }) => Promise<{ ok: boolean; token: string }>;
+      };
+      if (!api.cloudAuthLogin) { setStatus("当前构建未包含云账号接口，请更新后再试"); return; }
+      const r = await api.cloudAuthLogin({
+        baseUrl: cloudDraft.baseUrl.trim() || undefined,
+        username: cloudDraft.username.trim(),
+        password: cloudDraft.password,
+      });
+      if (!r.ok) { setStatus(r.error || "云账号登录失败"); return; }
+      const sync = await api.cloudModelsSync?.({ force: false });
+      if (!sync?.ok || !sync.models) {
+        setStatus(sync?.ok
+          ? "已登录，但云端当前没有勾选任何模型 —— 去云用户中心勾选后，在「设置 → 云账号」点「立即同步模型」"
+          : `已登录，但模型同步失败（${sync?.error || "未知原因"}）—— 稍后在「设置 → 云账号」重试`);
+        onSkip(); // 账号已经登上了，别把人卡在登录页
+        return;
+      }
+      const st = await api.cloudAuthStatus?.();
+      const tok = await api.cloudModelsToken?.({ force: false });
+      const base = String(st?.active?.baseUrl || "").replace(/\/+$/, "");
+      if (!base || !tok?.token) {
+        setStatus("已登录，但取代理凭据失败 —— 请到「设置 → 云账号」点「重签密钥并同步」");
+        onSkip();
+        return;
+      }
+      const ok = await onLogin({ provider: "cloud", name: "云端模型", baseUrl: `${base}/proxy`, apiKey: tok.token, model: "", username: username.trim() || undefined });
+      if (!ok) { setStatus("云账号已登录，但启用供应商失败 —— 到「设置 → 云账号」点「立即同步模型」即可"); return; }
+      void api.cloudModelsSync?.({ force: false }).catch(() => undefined);
+    } catch (error: any) { setStatus("云账号登录失败：" + (error?.message ?? error)); }
+    finally { setBusy(false); }
   };
 
   // OpenAI 官方订阅：设备码登录 → 收进账号库 → 写 auth.json + 重启引擎 → 自动配置进主界面
@@ -220,6 +283,9 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
           <button type="button" className={`login-option ${mode === "custom" ? "active" : ""}`} onClick={() => { setMode("custom"); setEndpointOpen(false); queueMicrotask(() => { apiBaseRef.current?.focus(); apiBaseRef.current?.select(); }); }}>
             <Settings2 size={16} /><span className="login-option-title">自定义 API</span><small>任意 OpenAI 兼容端点</small>
           </button>
+          <button type="button" className={`login-option ${mode === "cloud" ? "active" : ""}`} onClick={() => { setMode("cloud"); setEndpointOpen(false); }}>
+            <Cloud size={16} /><span className="login-option-title">云账号</span><small>登录后自动同步云端模型</small>
+          </button>
         </div>
 
         {mode === "openai" ? (
@@ -251,6 +317,19 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
               <input type="password" value={relayDraft.password} onChange={(e) => setRelayDraft({ ...relayDraft, password: e.target.value })} placeholder="中转站账号密码" onKeyDown={(e) => { if (e.key === "Enter" && relayDraft.email && relayDraft.password && !busy) void relayLogin(); }} />
             </label>
             <p className="relay-login-hint">登录后自动同步余额与订阅套餐，优先使用生效中的套餐（无套餐走余额），并生成好供应商直接开聊；后续可在 设置 → 中转站 切换计费方式。</p>
+          </div>
+        ) : mode === "cloud" ? (
+          <div className="login-fields">
+            <label className="se-field"><span>云账号</span>
+              <input value={cloudDraft.username} onChange={(e) => setCloudDraft({ ...cloudDraft, username: e.target.value })} placeholder="你在云端的账号（与网页端同一个）" />
+            </label>
+            <label className="se-field"><span>密码</span>
+              <input type="password" value={cloudDraft.password} onChange={(e) => setCloudDraft({ ...cloudDraft, password: e.target.value })} placeholder="云账号密码" onKeyDown={(e) => { if (e.key === "Enter" && cloudDraft.username.trim() && cloudDraft.password.trim() && !busy) void cloudLogin(); }} />
+            </label>
+            <label className="se-field"><span>服务地址（可选）</span>
+              <input value={cloudDraft.baseUrl} onChange={(e) => setCloudDraft({ ...cloudDraft, baseUrl: e.target.value })} placeholder="留空用默认云端；自建部署才需要填" />
+            </label>
+            <p className="relay-login-hint">登录后自动把云端勾选的模型同步成本机供应商并保持更新，云端知识库也会接成 MCP 连接器。之后可在 设置 → 云账号 里切换账号 / 手动同步 / 退出。</p>
           </div>
         ) : (
         <div className="login-fields">
@@ -288,6 +367,10 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
         ) : mode === "relay" ? (
           <button className="primary-setting login-btn" disabled={!relayDraft.baseUrl.trim() || !relayDraft.email.trim() || !relayDraft.password.trim() || busy} onClick={() => void relayLogin()}>
             {busy ? <><Spinner />正在登录中转站…</> : <><Wallet size={15} />登录并自动配置</>}
+          </button>
+        ) : mode === "cloud" ? (
+          <button className="primary-setting login-btn" disabled={!cloudDraft.username.trim() || !cloudDraft.password.trim() || busy} onClick={() => void cloudLogin()}>
+            {busy ? <><Spinner />正在登录云账号…</> : <><Cloud size={15} />登录并同步云端模型</>}
           </button>
         ) : (
         <button className="primary-setting login-btn" disabled={!apiBase.trim() || !apiKey.trim() || busy} onClick={() => { const selected = PPTokenEndpoints[endpoint]; void doLogin(mode === "pptoken" ? selected.id : `custom-login-${Date.now()}`, mode === "pptoken" ? selected.name : "自定义 API", apiBase.trim().replace(/\/$/, ""), apiKey.trim()); }}>

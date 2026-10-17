@@ -1,0 +1,203 @@
+/* ══════════════════════════════════════════════════════════════════════════
+ * 设置页 · 云账号（10-16）—— 中转站式云账号登录 + 云端模型同步 + 云端知识库/记忆
+ *
+ * ⛔ 只使用主题变量（--line / --panel / --text / --muted / --red / --green）——
+ *    写死色值会在暗色主题下瞎掉。类名前缀 `cloud-acct-` 与本页一一对应，
+ *    ⛔ 不往通用设置类上挂钩（避免影响别的设置页）。
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+.cloud-acct-msg {
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  padding: 9px 13px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.cloud-acct-msg.ok { border-color: var(--green, #3B6D11); }
+.cloud-acct-msg.err { border-color: var(--red); }
+
+.cloud-acct-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cloud-acct-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 14px;
+}
+.cloud-acct-head .cloud-acct-sub {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.cloud-acct-tag {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.cloud-acct-tag.on { border-color: var(--green, #3B6D11); }
+.cloud-acct-tag.off { border-color: var(--line); color: var(--muted); }
+
+.cloud-acct-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cloud-acct-row > label {
+  flex: 0 0 68px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.cloud-acct-row > .field,
+.cloud-acct-row > input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cloud-acct-kv {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.cloud-acct-kv code {
+  color: var(--text);
+  font-family: var(--mono);
+  word-break: break-all;
+}
+
+.cloud-acct-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.cloud-acct-metrics b {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.cloud-acct-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cloud-acct-actions .danger { color: var(--red); }
+
+.cloud-acct-adv {
+  font-size: 12px;
+  color: var(--muted);
+}
+.cloud-acct-adv > summary {
+  cursor: pointer;
+  user-select: none;
+}
+.cloud-acct-adv > input { margin-top: 6px; width: 100%; }
+
+/* 积分变动明细：四列（时间 / 类型 / 备注 / 增减），窄屏折行 */
+.cloud-acct-txns {
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+}
+.cloud-acct-txn {
+  display: grid;
+  grid-template-columns: 76px 62px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 12px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.cloud-acct-txn:last-child { border-bottom: 0; }
+.cloud-acct-txn-when { color: var(--muted); font-variant-numeric: tabular-nums; }
+.cloud-acct-txn-kind { color: var(--text); }
+.cloud-acct-txn-note {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-acct-txn-delta {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+/* ── 输入框里的**云端积分徽标**（10-16 用户令：与中转站/OpenAI 两枚同位置、同外观）──
+   ⛔ 位置由 JSX 决定（`.model-controls` 里、`.context-ring` 上下文环**左边**）——
+      这里只管外观，不改布局顺序。 */
+.cloud-points-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 4px;
+  border-radius: 8px;
+  color: var(--faint);
+  cursor: default;
+}
+.cloud-points-badge:hover,
+.cloud-points-badge:focus-within {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+/* 悬停浮层：⛔ 平时 display:none —— 不占正文宽度（积分是"扫一眼"的信息）。
+   定位/层级/阴影**对齐既有 `.ctx-pop`**（bottom:100%+8px / right:0 / z-index:30 / var(--shadow)），
+   ⛔ 不新造一档 z-index（层叠层级带【198】有约定）。 */
+.cloud-points-tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  display: none;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 160px;
+  max-width: 280px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+  text-align: left;
+}
+.cloud-points-badge:hover .cloud-points-tip,
+.cloud-points-badge:focus-within .cloud-points-tip {
+  display: flex;
+}
+.cloud-points-tip b {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+}
+.cloud-points-tip small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.cloud-points-tip-foot {
+  color: var(--faint) !important;
+}

@@ -637,6 +637,34 @@
     "file": "features/html-video-ipc.ts",
     "export": "htmlVideoFeature",
     "config": null
+  },
+  {
+    "id": "cloud-auth",
+    "enabled": true,
+    "file": "features/cloud-auth-ipc.ts",
+    "export": "cloudAuthFeature",
+    "config": null
+  },
+  {
+    "id": "cloud-models",
+    "enabled": true,
+    "file": "features/cloud-models-ipc.ts",
+    "export": "cloudModelsFeature",
+    "config": null
+  },
+  {
+    "id": "cloud-kb",
+    "enabled": true,
+    "file": "features/cloud-kb-ipc.ts",
+    "export": "cloudKbFeature",
+    "config": null
+  },
+  {
+    "id": "cloud-memory",
+    "enabled": true,
+    "file": "features/cloud-memory-ipc.ts",
+    "export": "cloudMemoryFeature",
+    "config": null
   }
   ]
 }
