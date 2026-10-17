@@ -206,7 +206,12 @@ export async function applyCloudProvider(
     /* model 只保留"原本就选中且仍在勾选列表里"的那个，否则留空（留空 = 不抢任何人的生效位）。 */
     model: previous && models.some((m) => m.id === previous.model) ? previous.model : "",
     baseUrl: effective.baseUrl,
-    wireApi: "chat",
+    /* ⛔⛔ `wireApi` 是**写给引擎**的字段 —— 引擎只会发 **Responses**（0.163 起更严格：
+       写 `chat` 会让整份配置拒载，表现为「测试连接成功、发送却失败」）。
+       上游（memapi 网关）真实只认 Chat ⇒ 用 `upstreamProtocol` 告诉**本地桥**去翻
+       （`bridge-dial` + `upstream-protocols`），⛔ 不要往引擎字段里塞 chat。 */
+    wireApi: "responses",
+    upstreamProtocol: "chat",
     models,
     /* enabled 必须为真，否则**下拉框不显示它的模型**（成员遍历会整行跳过 enabled===false 的行）。 */
     enabled: models.length > 0 ? true : (previous?.enabled ?? false),
@@ -232,6 +237,23 @@ export async function applyCloudProvider(
 /**
  * 云端供应商是否是**当前生效**的那个（界面据此决定要不要显示「设为当前供应商」）。
  */
+/** 一次性纠偏（10-17）：旧版本把云模型的 `wireApi` 写成了 `chat`。
+ *  ⛔ 引擎只会发 **Responses**，`wireApi: "chat"` 会让整份配置拒载 —— 用户侧表现为
+ *     「测试连接成功（那是按 Chat 探的）、真正发送却报错」。
+ *  ⛔ 只改**两个协议字段**；⛔ 不碰 key / 模型列表 / 生效位（那是别的写入者的地盘）。 */
+export async function repairCloudProviderProtocol(): Promise<boolean> {
+  try {
+    const list = await readCustomModels();
+    const i = list.findIndex((row) => row.provider === CLOUD_PROVIDER_ID);
+    if (i < 0) return false;
+    const row = list[i] as CustomModelFile & { upstreamProtocol?: string };
+    if (row.wireApi === "responses" && row.upstreamProtocol === "chat") return false;
+    list[i] = { ...row, wireApi: "responses", upstreamProtocol: "chat" } as CustomModelFile;
+    await writeCustomModels(list);
+    return true;
+  } catch { return false; }
+}
+
 export async function isCloudActive(): Promise<boolean> {
   const active = await readCustomModel();
   return active?.provider === CLOUD_PROVIDER_ID;
