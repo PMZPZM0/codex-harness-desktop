@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（92 个能力域 / 474 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（96 个能力域 / 489 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -423,4 +423,20 @@ RPA 配方（录制好的桌面自动化流程）
 ### autoUpdate（5 通道）
 自动化能力与引擎的**后台自动更新**：四类（桌面自动化 nuphus / 浏览器自动化 playwright-cli / Mac 电脑操作 open-computer-use / Codex 引擎）各一个独立开关（缺省即开，存 app-settings.json），开启后主进程定时静默拉取国内镜像最新版并更新，成功发系统通知。⛔ 手动更新与后台更新走**同一批函数**，不存在两套判据
 通道：autoUpdate:status, autoUpdate:set, autoUpdate:scan, autoUpdate:run, autoUpdate:run-all
+
+### cloud-auth（5 通道）
+**云账号**的登录 / 登出 / 切换（10-16）：用账号密码换云端会话令牌（⛔ 不是配对流程）；令牌在 safeStorage 里，⛔ 渲染层与模型侧都拿不到明文。用户说「登录云端 / 退出云账号 / 换个云账号」时用它。⛔ 与本机「中转站账号」是两条独立的登录线，别混
+通道：cloud-auth:login, cloud-auth:logout, cloud-auth:switch, cloud-auth:status, cloud-auth:points
+
+### cloud-models（6 通道）
+**云端模型目录同步**（10-16）：登录后自动把云端「已勾选」的模型写成本机供应商 \`cloud\`（勾选 = 下拉框可见），并默认每 10 分钟自动保持更新。用户说「云端模型没同步 / 拉一下云端模型 / 勾了模型选不到」时用它（sync 是唯一同步入口，force=true 会重签代理令牌）
+通道：cloud-models:catalog, cloud-models:sync, cloud-models:token, cloud-models:set-enabled, cloud-models:status, cloud-models:activate
+
+### cloud-kb（2 通道）
+**云端知识库**（跨设备共享的那一份）→ 本机 MCP 连接器 \`cloud-kb\`（10-16）。⛔ 与「本地项目级知识库」（kb 域，随项目走）**不是一回事**：这份存在服务端，换台机器登录也在。未开通权益时服务端不建库不发钥匙，本域只会如实报 not-activated
+通道：cloud-kb:sync, cloud-kb:status
+
+### cloud-memory（2 通道）
+**云端记忆**的凭据获取与缓存（10-16）。⛔ 记忆中枢目前**没有 MCP 端点**（实测 /mcp、/v1/mcp、/sse 全 404，只有 REST），所以本域不建连接器、如实回报 \`rest-only\`，等本地 stdio 适配器落地；服务端将来补上 mcpUrl 即自动切换
+通道：cloud-memory:sync, cloud-memory:status
 `;

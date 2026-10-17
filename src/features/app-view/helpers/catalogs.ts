@@ -6,7 +6,7 @@
  *
  * 代码与拆分前逐字一致；依赖边经 AST 依赖图核对，**不跨模块** ⇒ 本文件不 import 同目录其他模块。
  */
-import { Archive, BookOpen, Blocks, Bot, Camera, CircleGauge, Clock3, Download, Heart, LayoutGrid, PawPrint, Settings2, Sparkles, Star, Store, TerminalSquare, Sun, Wrench, Wifi, Zap, Server, UserRound, Users, Workflow, Wallet, Database, Headphones } from "lucide-react";
+import { Archive, BookOpen, Blocks, Bot, Camera, CircleGauge, Clock3, Cloud, Download, Heart, LayoutGrid, PawPrint, Settings2, Sparkles, Star, Store, TerminalSquare, Sun, Wrench, Wifi, Zap, Server, UserRound, Users, Workflow, Wallet, Database, Headphones } from "lucide-react";
 import { BuiltinCommandDef } from "../../../features/commands";
 import type { SettingsPage } from "../types";
 
@@ -88,7 +88,7 @@ export const cronTemplates = [
  *  ⛔ 色相声明的**唯一真相源**就是这里：设置页内的卡头图标也读它（08-settings-sheet 把当前项的
  *     色相写成弹窗根上的 `--ic-page`）⇒ 左栏点哪一项，页内图标就跟着那一色，两处永不漂移。 */
 export const settingsNav: { group: string; items: [SettingsPage, string, any, string][] }[] = [
-  { group: "账户与模型", items: [["user", "用户中心", UserRound, "blue"], ["model", "模型", Bot, "violet"], ["relay", "中转站", Wallet, "cyan"], ["openai", "OpenAI 订阅", CircleGauge, "green"]] },
+  { group: "账户与模型", items: [["user", "用户中心", UserRound, "blue"], ["model", "模型", Bot, "violet"], ["relay", "中转站", Wallet, "cyan"], ["cloud", "云账号", Cloud, "pink"], ["openai", "OpenAI 订阅", CircleGauge, "green"]] },
   { group: "外观与体验", items: [["general", "控制台", Settings2, "blue"], ["appearance", "外观", Sun, "pink"], ["personalization", "个性化", Sparkles, "violet"], ["pet", "桌面宠物", PawPrint, "amber"], ["voice", "语音通话", Headphones, "cyan"], ["screenshot", "截图", Camera, "amber"]] },
   { group: "能力与内容", items: [["skills", "技能", Zap, "violet"], ["plugins", "插件", Store, "amber"], ["memory", "记忆", Archive, "cyan"], ["commands", "命令", TerminalSquare, "green"]] },
   { group: "创意与知识", items: [["component-library", "组件库", LayoutGrid, "pink"], ["soul-market", "人格市场", Heart, "pink"], ["knowledge-base", "知识库", BookOpen, "blue"]] },

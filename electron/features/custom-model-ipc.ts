@@ -67,7 +67,21 @@ export const customModelFeature = defineFeature<null>({
 
     ipcHost.handle("custom-model:read", async () => publicCustomModel(await readCustomModel()));
 
-    ipcHost.handle("custom-model:probe", (_event, input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" | "auto" }) => probeCustomModel(input));
+    /* ⛔ 调用方没带 apiKey 时**回落到已保存的那把**：设置页的模型行「测试」与「测试当前供应商」
+       用的是编辑器**草稿**（`customDraft.apiKey`），而草稿里的 Key 栏永远显示"已安全保存，留空则不修改"
+       ⇒ 草稿里其实是空串 ⇒ 探测请求**不带 Authorization** ⇒ 网关一律 401。
+       对**自动生成的供应商**（云端模型）用户更没法手填 —— 那把 Key 是主进程签发的，界面上根本看不到
+       ⇒ 永远测得通不了（10-16 用户实测「自动生成供应商没有生成 key」+ 每条模型 401）。
+       判据：只在**空串**时回落；用户真填了值（哪怕是错的）就按用户填的走。 */
+    const withSavedKey = async <T extends { provider?: string; apiKey?: string }>(input: T): Promise<T> => {
+      if (String(input.apiKey || "").trim() || !input.provider) return input;
+      const row = (await readCustomModels()).find((entry) => entry.provider === input.provider);
+      const saved = row?.encryptedKey && secure.isEncryptionAvailable()
+        ? secure.decryptString(Buffer.from(row.encryptedKey, "base64"))
+        : "";
+      return saved ? { ...input, apiKey: saved } : input;
+    };
+    ipcHost.handle("custom-model:probe", async (_event, input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" | "auto" }) => probeCustomModel(await withSavedKey(input)));
 
     ipcHost.handle("custom-model:save", async (_event, input: { provider: string; name: string; model: string; baseUrl: string; contextWindow?: string | number; wireApi?: "responses" | "chat"; apiKey?: string; models?: ProviderModel[]; enabled?: boolean; upstreamProtocol?: BridgeMode }) => {
       const provider = safeProviderId(input.provider.trim());

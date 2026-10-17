@@ -5,6 +5,8 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { DEFAULT_EFFORT, pickDefaultEffort, normalizeEffort, ALL_EFFORTS, declaredModelEfforts } from "../../../../../lib/effort";
 import { RelayBalanceBadge, RelayCenterPage } from "../../../../relay";
+/* 云账号板块经它自己的 barrel 取（⛔ 不深链内部文件 —— 分层契约）。 */
+import { CloudPointsBadge } from "../../../../settings-cloud";
 import { OpenaiBalanceBadge, OpenaiSubscriptionPage } from "../../../../openai";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../../lib/entity-avatar";
 import {
@@ -538,6 +540,8 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                             <div className="model-controls">
                               {relayActive && customModel?.provider === relayActive.provider && <RelayBalanceBadge active={relayActive} />}
                               {customModel?.provider === "openai-official" && <OpenaiBalanceBadge accountKey={openaiActiveAcct ?? "openai-official"} />}
+                              {/* 云端积分：与上面两枚同位置（上下文环**左边**），未登录云账号时不占位。 */}
+                              <CloudPointsBadge />
                               <ContextUsageBadge tokenUsage={tokenUsage} fallbackWindow={customModel?.models?.find((m) => m.id === customModel?.model)?.contextWindow ?? customModel?.contextWindow} recentCompaction={recentCompaction} onCompact={() => { if (thread?.id) { compactPendingRef.current.add(thread.id); setCompactEventState("running"); window.codex.request("thread/compact/start", { threadId: thread.id }).catch((error: any) => { compactPendingRef.current.delete(thread.id); setCompactEventState("error", error.message); }); } }} />
                               <ComposerMenu icon={Bot} label="模型" title="模型" disabled={!customModel} value={modelId} width={330} options={[...allModels.map((model) => ({
                                 value: model.id,

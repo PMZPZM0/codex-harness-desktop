@@ -38,6 +38,7 @@ export const OVERVIEW_GROUPS: OverviewGroup[] = [
       { page: "用户中心", what: "你的昵称、头像、个性和使用偏好", when: "想让 Codex 认识你、说话更合口味时" },
       { page: "模型", what: "供应商与模型的添加、测试、切换", when: "第一次用必须配（否则发不出消息）" },
       { page: "中转站", what: "一键接入常见中转服务", when: "手上有中转站账号、不想手填地址时" },
+      { page: "云账号", what: "登录云端账号，自动同步云端模型与云端知识库", when: "有云账号、想让模型列表自动跟上云端时" },
       { page: "OpenAI 订阅", what: "登录 ChatGPT 账号用官方额度", when: "有订阅、想直接用官方模型时" },
     ],
   },
