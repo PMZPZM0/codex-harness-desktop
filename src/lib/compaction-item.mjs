@@ -13,7 +13,12 @@ export const COMPACTION_TYPE = "contextCompaction";
 /** 是否压缩 item（类型名大小写不敏感：camelCase / PascalCase 都认）。 */
 export function isCompactionItem(item) {
   const type = String(item && item.type != null ? item.type : "").toLowerCase();
-  if (type === COMPACTION_TYPE) return true;
+  /* ⛔⛔ 10-17 **真跑抓到**（node 直接 import 模块断言）：type 已 toLowerCase，却与混合大小写的
+     COMPACTION_TYPE（"contextCompaction"）比较 ⇒ "contextcompaction" !== "contextCompaction"
+     ⇒ **按 type 的判定恒为 false**（09-26 那次大小写修复只改了一边）。
+     这就是整条压缩显示链的总根因：连**已完成**的压缩项都被判成普通工具卡 ⇒ 归位压缩线永不出现。
+     ⇒ 两侧统一小写后再比（常量对外仍是 camelCase，⛔ 别把常量改成小写——别处按它展示）。 */
+  if (type === COMPACTION_TYPE.toLowerCase()) return true;
   /* 10-17 实测补充：进行中的压缩项在渲染层收到的形状与完成态**不同**——
      type 不是 contextCompaction，工具名挂在 name/toolName 上（用户截图：通用工具卡
      显示原始类型名 + 转圈，整条压缩链对它不命中 ⇒ 既没有运行中压缩线，也不被 foldItems 排除）。
