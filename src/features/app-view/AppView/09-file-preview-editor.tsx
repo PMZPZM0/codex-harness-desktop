@@ -185,7 +185,7 @@ export function AppViewFilePreviewEditor({ app }: { app: HarnessAppApi }) {
                 <div>{filePreview.kind === "image" ? <Image size={17} /> : filePreview.kind === "binary" ? <FileWarning size={17} /> : filePreview.kind === "pdf" ? <FileText size={17} /> : <FileCode2 size={17} />}<strong>{basename(filePreview.path)}</strong></div>
                 <div className="file-preview-actions">
                   {filePreview.kind === "text" && /\.(html?|htm)$/i.test(filePreview.path) && <>
-                    <button className="secondary-setting" title="在内置浏览器中打开这个网页" onClick={() => openInBrowserPane(toFileUrl(filePreview.path))}><Globe2 size={14} />浏览器打开</button>
+                    <button className="secondary-setting" title="在内置浏览器中打开这个网页（预览编辑器自动收起）" onClick={() => { openInBrowserPane(toFileUrl(filePreview.path)); setFilePreview(null); }}><Globe2 size={14} />浏览器打开</button>
                     <button className="secondary-setting" title="在独立大窗口预览（可自由调整大小）" onClick={() => void window.codex.browserPopout(toFileUrl(filePreview.path)).catch((error: any) => setNotice(`放大预览失败：${error?.message ?? ""}`))}><Maximize2 size={14} />放大预览</button>
                   </>}
                   {!fileEditing && filePreview.kind === "text" && !fileTruncated && workspace && <button className="secondary-setting" onClick={() => { setFileDraft(filePreview.content); setFileEditing(true); }}><PenLine size={14} />编辑</button>}
