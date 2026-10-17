@@ -220,5 +220,15 @@ ok(/自动更新/.test(ledger) && /autoUpdate/.test(ledger), "FEATURE-LEDGER 有
   ok(/pruneOldInstallers\(defaultDownloadDir/.test(updIpc), "在 updates 域 setup 里**启动即清**（重启后才是安全清理点）");
 }
 
+/* ⑫ **只保留最新版本，旧的自动清理**（10-17 用户定的通用规则，不只是安装包）。
+   ⛔ 引擎的旧版本（`vendor/*.bak-1`，~437MB）也是"旧版本"——它在**本次更新内**是回滚备份，
+     但复验一旦通过就该删；否则每次更新都白占 437MB。
+   ⛔ 顺序不能反：必须 **先 rm(backupDir) 再 report(done)** —— 反过来就丢了"失败可回滚"的窗口。 */
+{
+  const eu2 = read("electron/engine-updater.ts");
+  ok(/fs\.rm\(backupDir[\s\S]{0,240}?report\(\{ stage: "done"/.test(eu2), "引擎复验通过后删旧版本（只留最新；且删除发生在报告完成之前）");
+  ok(/fs\.rm\(backupDir[^)]*maxRetries: 10/.test(eu2), "删旧引擎带 maxRetries（Windows 占用重试，与其它清理同口径）");
+}
+
 console.log(fails ? `\n✗ 12k 未通过：${fails}/${checks}` : `\n✓ 12k 通过：${checks}/${checks}`);
 process.exit(fails ? 1 : 0);
