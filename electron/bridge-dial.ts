@@ -10,6 +10,27 @@
  */
 import { ResponsesBridge } from "./responses-bridge";
 import { upstreamProtocols } from "./upstream-protocols";
+import { app } from "electron";
+import { appendFileSync, mkdirSync } from "node:fs";
+import path from "node:path";
+
+/* ⛔⛔ 桥的日志必须**落文件**（10-17 实测教训）：桥在主进程里，`console.log` 只进终端 ——
+   应用以 GUI 方式启动时终端不存在 ⇒ 「旧会话 59 秒零输出」时**一行可查的证据都没有**，
+   只能来回猜（浪费了整轮）。这里把同一条日志再写一份到 `userData/logs/bridge.log`。
+   ⛔ 路径必须**惰性求值**（`app.getPath` 不能在模块体调，那时 userData 还没重定向）。
+   ⛔ 日志失败一律静默：诊断能力不能反过来影响转发。 */
+let bridgeLogPath = "";
+function bridgeLog(line: string): void {
+  console.log(line);
+  try {
+    if (!bridgeLogPath) {
+      const dir = path.join(app.getPath("userData"), "logs");
+      mkdirSync(dir, { recursive: true });
+      bridgeLogPath = path.join(dir, "bridge.log");
+    }
+    appendFileSync(bridgeLogPath, `${new Date().toISOString()} ${line}\n`, "utf8");
+  } catch { /* 日志失败不影响转发 */ }
+}
 
 /**
  * 本地协议桥（09-16）：引擎只会发 Responses（POST /v1/responses），而不少第三方网关
@@ -36,7 +57,7 @@ import { upstreamProtocols } from "./upstream-protocols";
  */
 export const responsesBridge = new ResponsesBridge({
   preferredPort: 47121,
-  log: (line) => console.log(line),
+  log: bridgeLog,
   emitReasoning: true,
 });
 
