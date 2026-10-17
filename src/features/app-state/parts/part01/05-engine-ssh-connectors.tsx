@@ -47,13 +47,25 @@ bag.relaunchCountdown = relaunchCountdown as typeof bag.relaunchCountdown; bag.s
   useEffect(() => { void window.codex.engineInfo().then((info) => bag.setEngineVersion(info.version)).catch(() => undefined); }, []);
 
 
+  /* ⛔⛔ 进度事件**不是**日志行：下载阶段每 tick 都发一次、换源还会重来一轮 0→100%。
+     旧实现逐条 append ⇒ 实测留下 6 条「下载引擎包 100%」，把真正的阶段记录挤没了。
+     ⇒ **同一阶段只原地更新最后一行**，阶段变了才新起一行；完全相同文本再挡一道。
+     （监听器本身没泄漏：__on 返回 disposer，effect 会清理 —— 已核实。） */
+  const lastProgressStageRef = useRef<string>("");
+bag.lastProgressStageRef = lastProgressStageRef as typeof bag.lastProgressStageRef;
   useEffect(() => window.codex.onEngineUpdateProgress((event) => {
     const stageTextMap: Record<string, string> = { wait: "等待当前任务结束…", query: "查询最新版本…", download: `下载引擎包 ${Math.round((event.percent ?? 0) * 100)}%`, extract: "解压引擎包…", verify: "校验新引擎…", replace: "替换引擎文件…", done: "更新完成" };
     const text = event.stage === "download" ? stageTextMap.download : (stageTextMap[event.stage] || event.detail || event.stage);
     bag.setEngineUpdateStageText(text);
     bag.setEngineUpdatePercent(event.stage === "download" ? (event.percent ?? 0) : null);
     const logText = event.stage === "download" ? text : (event.detail || event.stage);
-    bag.setEngineUpdateLog((current) => [...current.slice(-9), logText]);
+    bag.setEngineUpdateLog((current) => {
+      const sameStage = lastProgressStageRef.current === event.stage;
+      lastProgressStageRef.current = event.stage;
+      if (current[current.length - 1] === logText) return current;          // 完全相同：不重复记
+      if (sameStage && current.length) return [...current.slice(0, -1), logText]; // 同阶段：原地更新（数字在变）
+      return [...current.slice(-9), logText];
+    });
   }), []);
 
 
@@ -383,5 +395,5 @@ bag.switcherQuery = switcherQuery as typeof bag.switcherQuery; bag.setSwitcherQu
 
   const [goalsExpanded, setGoalsExpanded] = useState(false);
 bag.goalsExpanded = goalsExpanded as typeof bag.goalsExpanded; bag.setGoalsExpanded = setGoalsExpanded as typeof bag.setGoalsExpanded;
-  return { engineVersion, setEngineVersion, engineCheck, setEngineCheck, engineUpdating, setEngineUpdating, engineUpdateLog, setEngineUpdateLog, engineUpdatePercent, setEngineUpdatePercent, engineUpdateStageText, setEngineUpdateStageText, engineUpdateResult, setEngineUpdateResult, relaunchCountdown, setRelaunchCountdown, checkEngineUpdateNow, performEngineUpdateNow, emptySshJump, emptySshDraft, sshDraftIssues, sshDraftValid, sshVisible, sshCheckedSet, sshToggleChecked, saveSshEntry, testSshDraft, toggleSshEntry, toggleSshBatch, testSshEntry, testSshBatch, removeSshEntries, duplicateSshEntry, toggleSshFavorite, exportSshEntries, importSshEntries, sidebarCollapsed, setSidebarCollapsed, rightTab, setRightTab, openTabs, setOpenTabs, recentlyClosed, setRecentlyClosed, switcherOpen, setSwitcherOpen, switcherQuery, setSwitcherQuery, goalsExpanded, setGoalsExpanded };
+  return { lastProgressStageRef, engineVersion, setEngineVersion, engineCheck, setEngineCheck, engineUpdating, setEngineUpdating, engineUpdateLog, setEngineUpdateLog, engineUpdatePercent, setEngineUpdatePercent, engineUpdateStageText, setEngineUpdateStageText, engineUpdateResult, setEngineUpdateResult, relaunchCountdown, setRelaunchCountdown, checkEngineUpdateNow, performEngineUpdateNow, emptySshJump, emptySshDraft, sshDraftIssues, sshDraftValid, sshVisible, sshCheckedSet, sshToggleChecked, saveSshEntry, testSshDraft, toggleSshEntry, toggleSshBatch, testSshEntry, testSshBatch, removeSshEntries, duplicateSshEntry, toggleSshFavorite, exportSshEntries, importSshEntries, sidebarCollapsed, setSidebarCollapsed, rightTab, setRightTab, openTabs, setOpenTabs, recentlyClosed, setRecentlyClosed, switcherOpen, setSwitcherOpen, switcherQuery, setSwitcherQuery, goalsExpanded, setGoalsExpanded };
 }

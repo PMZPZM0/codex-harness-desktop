@@ -322,6 +322,8 @@ export interface Bag {
   engineUpdatePercent: number | null;
   setEngineUpdatePercent: React.Dispatch<React.SetStateAction<number | null>>;
   engineUpdateStageText: string;
+  /* 引擎更新进度：**同阶段原地更新最后一行**用（否则每个进度 tick 都 append ⇒ 日志刷成同一行）。 */
+  lastProgressStageRef: React.RefObject<string>;
   setEngineUpdateStageText: React.Dispatch<React.SetStateAction<string>>;
   engineUpdateResult: { ok: boolean; message: string; } | null;
   setEngineUpdateResult: React.Dispatch<React.SetStateAction<{ ok: boolean; message: string; } | null>>;
