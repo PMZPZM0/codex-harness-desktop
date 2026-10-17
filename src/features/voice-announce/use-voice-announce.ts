@@ -214,6 +214,17 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     publishStatus();
   }, [publishStatus, resetLive]);
 
+  /* ⛔⛔ 10-17 用户令「语音播报切换会话会串会话」：`threadId` 一直在参数里，但**没有任何 effect
+     监听它变化** ⇒ 切走之后 A 会话的播报继续在 B 会话里响。⇒ 切会话 = 立即停播（同一套 stopPlayback，
+     ⛔ 不置静音闩锁 —— 那不是用户按停）+ 清句子级去重表（避免跨会话误判「这句念过了」）。 */
+  const prevAnnounceThreadRef = useRef(threadId);
+  useEffect(() => {
+    if (prevAnnounceThreadRef.current === threadId) return;
+    prevAnnounceThreadRef.current = threadId;
+    stopPlayback(false);
+    clearSpokenKeys();
+  }, [threadId, stopPlayback, clearSpokenKeys]);
+
   /** 「恢复播报」：解除静音闩锁，让后续播报重新可用（状态条上的按钮 → announce-bus → 这里）。 */
   const resumePlayback = useCallback(() => {
     if (!mutedRef.current) return;

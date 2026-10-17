@@ -401,9 +401,16 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
         bag.persistTokenUsageSnapshot(tid0, null);
       }
       if (method === "turn/plan/updated") {
-        bag.setPlanSteps((params.plan ?? []).map((step: any) => ({ step: step.step ?? "", status: step.status ?? "pending" })));
+        /* ⛔ 10-17 串会话闸：事件带 threadId 且不是当前会话 ⇒ 丢弃（不带则维持原行为）。 */
+        const planThreadGate = String(params.threadId ?? "");
+        if (!planThreadGate || planThreadGate === String(bag.threadRef.current?.id ?? "")) {
+          bag.setPlanSteps((params.plan ?? []).map((step: any) => ({ step: step.step ?? "", status: step.status ?? "pending" })));
+        }
       } else if (method === "thread/goal/updated" || method === "thread/goal/set") {
-        if (params.goal?.objective) {
+        /* ⛔ 10-17 串会话闸（同上）。 */
+        const goalThreadGate = String(params.threadId ?? "");
+        const goalSameThread = !goalThreadGate || goalThreadGate === String(bag.threadRef.current?.id ?? "");
+        if (goalSameThread && params.goal?.objective) {
           bag.setGoalText(params.goal.objective);
           bag.setGoalStatus(params.goal.status ?? "active");
         } else {
@@ -441,7 +448,9 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
       } else if (event.method === "autoApprovalReview/strictReviewRequired") {
         bag.showToast("需要严格审批", "后续命令将逐项请求确认");
       } else if (event.method === "turn/diff/updated") {
-        bag.setDiff(params.diff ?? "");
+        /* ⛔ 10-17 串会话闸：别的会话的 diff 不许顶掉当前会话的面板。 */
+        const diffThreadGate = String(params.threadId ?? "");
+        if (!diffThreadGate || diffThreadGate === String(bag.threadRef.current?.id ?? "")) bag.setDiff(params.diff ?? "");
       } else if (event.method === "thread/tokenUsage/updated") {
         /* ⛔ 用量按**会话**归属（09-25）：只有当前正在看的会话才进上下文环；后台会话
            （团队成员 / 被委派的子会话）的推送只存进它自己那一份快照，不污染当前的环
