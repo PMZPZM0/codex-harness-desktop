@@ -170,12 +170,20 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
       setLoadError({ code: info.errorCode ?? 0, desc: info.errorDescription ?? "未知错误", url: info.url ?? "" });
     };
     const clearFail = () => setLoadError(null);
+    const onGone = (event: Event) => {
+      const d = (event as unknown as { details?: { reason?: string; exitCode?: number } }).details ?? {};
+      setLoadError({ code: d.exitCode ?? -1, desc: `渲染进程崩溃（${d.reason ?? "unknown"}）`, url: "" });
+    };
     wv.addEventListener("did-navigate", onNavigate);
     wv.addEventListener("did-navigate-in-page", onNavigate);
     wv.addEventListener("page-title-updated", onTitle);
     wv.addEventListener("did-start-loading", onStart);
     wv.addEventListener("did-stop-loading", onStop);
     wv.addEventListener("did-fail-load", onFail);
+    wv.addEventListener("render-process-gone", (event: Event) => {
+      const d = (event as unknown as { details?: { reason?: string; exitCode?: number } }).details ?? {};
+      setLoadError({ code: d.exitCode ?? -1, desc: `渲染进程崩溃（${d.reason ?? "unknown"}）`, url: "" });
+    });
     wv.addEventListener("did-navigate", clearFail);
     return () => {
       wv.removeEventListener("did-navigate", onNavigate);
@@ -184,6 +192,7 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
       wv.removeEventListener("did-start-loading", onStart);
       wv.removeEventListener("did-stop-loading", onStop);
       wv.removeEventListener("did-fail-load", onFail);
+      wv.removeEventListener("render-process-gone", onGone);
       wv.removeEventListener("did-navigate", clearFail);
     };
   }, [activeId, active.url, patchActive]);
