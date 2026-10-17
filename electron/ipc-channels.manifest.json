@@ -4827,7 +4827,7 @@
       "channel": "cloud-memory:sync",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; mode: string; action?: string; error?: string }>",
+      "returns": "Promise<{ ok: boolean; mode: string; action?: string; error?: string; upstream?: \"memory\" | \"model\"; upstreamChanged?: boolean }>",
       "invokeArgs": "",
       "cast": null,
       "note": "取云端记忆凭据（加密缓存）。⛔ 记忆中枢当前**没有 MCP 端点**（实测 /mcp、/v1/mcp、/sse 全 404），故 mode 恒为 rest-only 且不建连接器 —— 等本地 stdio 适配器"
@@ -4837,7 +4837,7 @@
       "channel": "cloud-memory:status",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ connectorId: string; connector: { exists: boolean; enabled: boolean; url: string; hasToken: boolean }; hasCredentials: boolean; mode: string; note: string }>",
+      "returns": "Promise<{ connectorId: string; connector: { exists: boolean; enabled: boolean; url: string; hasToken: boolean }; hasCredentials: boolean; mode: string; note: string; upstream?: \"memory\" | \"model\" }>",
       "invokeArgs": "",
       "cast": null,
       "note": "云端记忆状态（只读本地，不联网）"
