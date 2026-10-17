@@ -25,6 +25,7 @@ import { SKILL_AUDIT_SKILL } from "./builtin-skills/12-skill-skill-audit";
 import { MEMORY_MCP_SKILL } from "./builtin-skills/13-skill-memory-mcp";
 import { HARNESS_API_SKILL } from "./builtin-skills/14-skill-harness-api";
 import { FRONTEND_CANVAS_SKILL } from "./builtin-skills/20-skill-frontend-canvas";
+import { VISUALIZATION_SKILL } from "./builtin-skills/21-skill-visualization";
 import { effectiveMemoryBackend } from "./memory-backend";
 import { BUILTIN_SKILL_ZH_NOTES } from "./builtin-skills/00-skill-zh-notes";
 import { SKILL_FILE, SKILL_FILE_DISABLED, SKILL_FILE_POOL_DISABLED } from "./skill-pack";
@@ -102,6 +103,9 @@ export async function ensureBuiltinSkills(skillsDir: string) {
     //  36 种组件的字段速查 + 手机/电脑/网页三种形态 + 导航/主题；与工具 frontend_* 及
     //  指令第 13 条（FRONTEND_CANVAS_INSTRUCTIONS）同源，名字改了要一起改（守卫【283】钉）。
     ["frontend-canvas", FRONTEND_CANVAS_SKILL],
+    // 10-17：可视化输出规范（用户立项「Codex 画可视化只会随手写 HTML」）——
+    //  形态选择/硬性输出要求（单文件零外部依赖）/设计 token；输出走文件卡→预览→浏览器打开通道。
+    ["visualization-guide", VISUALIZATION_SKILL],
   ];
   for (const [name, content] of entries) {
     const dir = path.join(skillsDir, name);
