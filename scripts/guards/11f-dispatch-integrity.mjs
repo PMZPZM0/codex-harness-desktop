@@ -269,7 +269,7 @@ try {
 {
   const delSrc = readFileSync(join(ROOT, "electron/features/delegation.ts"), "utf8");
   const teamSrc = readFileSync(join(ROOT, "electron/features/teams-ipc.ts"), "utf8");
-  const settleSrc = readFileSync(join(ROOT, "electron/delegate-settle.ts"), "utf8");
+  const settleSrc = readFileSync(join(ROOT, "electron/delegation/delegate-settle.ts"), "utf8");
   const bootSettle = readFileSync(join(ROOT, "electron/features/boot.ts"), "utf8");
   ok(/error\?\.code === TURN_WAIT_TIMEOUT_CODE/.test(delSrc) && /TURN_WAIT_BACKGROUND_NOTE/.test(delSrc),
     "委派等待到点 ⇒ 转后台（⛔ 不标 failed —— 否则面板显示「停止」而活儿还在干）");
@@ -292,8 +292,8 @@ try {
 {
   const delRepSrc = readFileSync(join(ROOT, "electron/features/delegation.ts"), "utf8");
   const teamRepSrc = readFileSync(join(ROOT, "electron/features/teams-ipc.ts"), "utf8");
-  const reportSrc = readFileSync(join(ROOT, "electron/delegate-report.ts"), "utf8");
-  const settleRepSrc = readFileSync(join(ROOT, "electron/delegate-settle.ts"), "utf8");
+  const reportSrc = readFileSync(join(ROOT, "electron/delegation/delegate-report.ts"), "utf8");
+  const settleRepSrc = readFileSync(join(ROOT, "electron/delegation/delegate-settle.ts"), "utf8");
   ok(/reportBackgroundResult\(/.test(settleRepSrc) && /pendingReport/.test(settleRepSrc),
     "⛔ 收敛点只在 pendingReport（= 走过转后台分支）时投回报（同步跑通的委派去重，不投第二份）");
   ok(/thread\/queue\/add/.test(reportSrc) && /thread\/queue\/start/.test(reportSrc) && !/turn\/start/.test(codeOnly(reportSrc)),

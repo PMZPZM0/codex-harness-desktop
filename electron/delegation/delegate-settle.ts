@@ -15,10 +15,10 @@
  *   `waitForTurnCompletion` 同口径；漏一个就漏一种收尾（同型缺陷本月已踩过三次）。
  */
 import { reportBackgroundResult } from "./delegate-report";
-import { broadcastHarnessEvent } from "./features/window-bus";
-import { turnOutputText } from "./main/03-turn-summary";
-import { delegateRegistry, teamRunStore } from "./runtime-refs";
-import { isTurnEndMethod } from "./turn-end";
+import { broadcastHarnessEvent } from "../features/window-bus";
+import { turnOutputText } from "../main/03-turn-summary";
+import { delegateRegistry, teamRunStore } from "../runtime-refs";
+import { isTurnEndMethod } from "../turn-end";
 
 /** 引擎事件 → 收敛后台运行。返回 true = 这次事件确实收敛了某条（委派 / 团队）运行。 */
 export function settleBackgroundRunsOnTurnEnd(event: any): boolean {

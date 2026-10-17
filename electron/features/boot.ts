@@ -30,7 +30,7 @@ import { backupTurnIfEnabled as backupTurnIfEnabledImpl, normalizeBackupDir } fr
 import { broadcastCodexEvent, broadcastHarnessEvent } from "./window-bus";
 import { handleRoleMemoryToolCall } from "../role-memory-tool";
 import { handleDelegateHarnessToolCall } from "../delegate-harness-tool";
-import { settleBackgroundRunsOnTurnEnd } from "../delegate-settle";
+import { settleBackgroundRunsOnTurnEnd } from "../delegation/delegate-settle";
 import { isTurnEndMethod } from "../turn-end";
 import { forgetRoleSession } from "../role-memory";
 import { sweepFabric, pickWorkspacesToSweep, archiveSessionMemory } from "../memory-fabric";
