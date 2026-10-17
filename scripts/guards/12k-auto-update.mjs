@@ -208,5 +208,17 @@ ok(/自动更新/.test(ledger) && /autoUpdate/.test(ledger), "FEATURE-LEDGER 有
   ok(/lastProgressStage/.test(view) && /sameStage/.test(view), "渲染层同阶段原地更新最后一行（⛔ 不再逐条 append）");
 }
 
+/* ⑪ 旧安装包必须清理（10-17 用户令：「更新重启完成后把旧的安装包去了，否则越积越大」）。
+   ⛔ 安装包按**版本命名**、每更新一次一个新文件；不清理就永久累积（实测下载目录全仓无任何清理）。
+   ⛔ 清理点必须是**启动时**（安装包拉起后本进程马上退出，那一刻删不掉）。 */
+{
+  const upd = read("electron/updates.ts");
+  const updIpc = read("electron/features/updates-ipc.ts");
+  ok(/export function pruneOldInstallers/.test(upd), "有旧安装包清理函数");
+  ok(/files\.slice\(1\)/.test(upd), "清理保留**最新一个**（手动重装兜底），不团灭");
+  ok(/\.\(exe\|msi\|dmg\|pkg\|zip\|appimage\|deb\|rpm\)/.test(upd), "只认安装包扩展名（⛔ 不误删用户其它文件）");
+  ok(/pruneOldInstallers\(defaultDownloadDir/.test(updIpc), "在 updates 域 setup 里**启动即清**（重启后才是安全清理点）");
+}
+
 console.log(fails ? `\n✗ 12k 未通过：${fails}/${checks}` : `\n✓ 12k 通过：${checks}/${checks}`);
 process.exit(fails ? 1 : 0);

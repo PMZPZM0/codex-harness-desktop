@@ -14,7 +14,7 @@
  *      （https + sha256 + 镜像序重试）→ installUpdate() 运行安装包
  */
 import fs from "node:fs/promises";
-import { existsSync, createWriteStream, createReadStream } from "node:fs";
+import { existsSync, createWriteStream, createReadStream, readdirSync, statSync, unlinkSync } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import https from "node:https";
@@ -362,6 +362,34 @@ async function sha256OfFile(filePath: string): Promise<string> {
 /** 默认下载目录 = app.getPath('downloads') 下的 codex-harness 子目录 */
 export function defaultDownloadDir(appDownloads: string): string {
   return path.join(appDownloads, "codex-harness");
+}
+
+/** 清理下载目录里**旧的安装包**（10-17 用户令：「更新重启完成后把旧的安装包去了，否则更新一次就多一份」）。
+ *
+ *  ⛔ 为什么需要：安装包按**版本命名**（`Codex-Harness-Setup-<ver>.exe`），每个版本一个新文件，
+ *     而下载目录全仓**没有任何清理** ⇒ 每更新一次就永久多一份，越积越大。
+ *  ⛔ 保留**最新一个**：手动重装/回退时还能用；再旧的没有价值。
+ *  ⛔ 只在**本应用自己的下载目录**（`Downloads/codex-harness`）里动手：⛔ 不递归、不越界 ——
+ *     那是用户的下载目录，删错东西是重罪。只认安装包扩展名。
+ *  ⛔ 静默 + 幂等：清不掉（被占用）就留着，⛔ 绝不影响启动。 */
+export function pruneOldInstallers(dir: string): { removed: number; bytes: number } {
+  const INSTALLER = /\.(exe|msi|dmg|pkg|zip|appimage|deb|rpm)$/i;
+  const out = { removed: 0, bytes: 0 };
+  try {
+    if (!existsSync(dir)) return out;
+    const files = readdirSync(dir, { withFileTypes: true })
+      .filter((d) => d.isFile() && INSTALLER.test(d.name))
+      .map((d) => {
+        const p = path.join(dir, d.name);
+        try { const st = statSync(p); return { p, size: st.size, m: st.mtimeMs }; } catch { return null; }
+      })
+      .filter((x): x is { p: string; size: number; m: number } => x !== null)
+      .sort((a, b) => b.m - a.m);           // 新的在前
+    for (const f of files.slice(1)) {        // 保留最新一个
+      try { unlinkSync(f.p); out.removed += 1; out.bytes += f.size; } catch { /* 单个失败不影响其它 */ }
+    }
+  } catch { /* 目录读不了就跳过（静默） */ }
+  return out;
 }
 
 /**
