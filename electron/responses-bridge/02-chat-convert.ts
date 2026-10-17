@@ -21,22 +21,31 @@ export function toChatRequest(body: any): any {
     : typeof body?.input === "string"
       ? [{ type: "message", role: "user", content: [{ type: "input_text", text: body.input }] }]
       : [];
+  /* ⛔⛔ 并行工具调用必须合并：引擎会连续给多个 function_call（call A、call B…），
+     而 Chat 协议要求**同一条 assistant 的多个 tool_calls 的结果紧跟在它之后**。
+     拆成 assistant[A] assistant[B] tool[A] tool[B] 会被严格网关判为
+     "tool calls and tool results do not match"（code 11148 —— 10-17 实测，整个请求被拒）。 */
+  let openToolMsg: any = null;
+
   for (const item of parts) {
     if (!item || typeof item !== "object") continue;
     if (item.type === "reasoning") continue; // 推理项对 chat 无对应结构，回传只会污染上下文
     if (item.type === "function_call") {
-      messages.push({
-        role: "assistant",
-        content: null,
-        tool_calls: [{
-          id: item.call_id ?? item.id ?? `call_${randomUUID().slice(0, 8)}`,
-          type: "function",
-          function: { name: item.name ?? "", arguments: typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments ?? {}) },
-        }],
-      });
+      const call = {
+        id: item.call_id ?? item.id ?? `call_${randomUUID().slice(0, 8)}`,
+        type: "function",
+        function: { name: item.name ?? "", arguments: typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments ?? {}) },
+      };
+      if (openToolMsg) {
+        openToolMsg.tool_calls.push(call);   // 连续调用 ⇒ 并进同一轮 assistant
+      } else {
+        openToolMsg = { role: "assistant", content: null, tool_calls: [call] };
+        messages.push(openToolMsg);
+      }
       continue;
     }
     if (item.type === "function_call_output") {
+      openToolMsg = null;   // 结果开始 ⇒ 不再往上一条 assistant 追加
       messages.push({
         role: "tool",
         tool_call_id: item.call_id ?? item.id ?? "",
@@ -44,6 +53,7 @@ export function toChatRequest(body: any): any {
       });
       continue;
     }
+    openToolMsg = null;
     if (item.type === "message" || item.role) {
       // developer 是 Responses 独有角色：一律降级成 system，多数学网关只认 system/user/assistant
       const role = item.role === "developer" ? "system" : (item.role ?? "user");
