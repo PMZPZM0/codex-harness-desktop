@@ -11,6 +11,7 @@
  * ⛔ `filePreviewAllowed` 经 `../main` 活绑定取用，且**只在 handler 回调内求值**（【91】防线）。
  */
 import { shell } from "electron";
+import { fileURLToPath } from "node:url";
 import { filePreviewAllowed } from "../main";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
@@ -24,6 +25,17 @@ export const externalFeature = defineFeature<null>({
 
     ipcHost.handle("external:open", async (_event, value: string) => {
       const url = new URL(value);
+      /* ⛔ file: 协议**不走 openExternal**：ShellExecute **不解码 percent-encoding**，
+         中文路径的 file URL 会拿「%E6%B5%8B…」这串字面量去找文件 ⇒ 0x2 系统找不到指定的文件
+         （10-17 实测：内置浏览器「在系统浏览器打开」）。⇒ 解码回本地路径走 openPath
+         （默认关联程序打开，.html = 默认浏览器）。安全闸 filePreviewAllowed 原样保留。 */
+      if (url.protocol === "file:") {
+        if (!filePreviewAllowed(url)) throw new Error("Unsupported URL");
+        const localPath = fileURLToPath(url);
+        const openErr = await shell.openPath(localPath);
+        if (openErr) throw new Error(openErr);
+        return;
+      }
       if (url.protocol !== "https:" && url.protocol !== "http:" && !filePreviewAllowed(url)) throw new Error("Unsupported URL");
       await shell.openExternal(url.toString());
     });
