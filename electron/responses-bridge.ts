@@ -13,6 +13,19 @@ export { SseParser, toChatRequest, ChatStreamTranslator, chatJsonToResponses, an
 
 export type BridgeMode = "auto" | "responses" | "chat" | "anthropic";
 
+/* ⛔⛔ 上游**空闲看门狗**（10-17 实测事故定的值）：
+   旧会话（56 次工具调用 / 约 6.7 万 tokens）发给网关后，**59 秒零字节**，界面只有"生成中"，
+   桥没有任何日志、引擎也收不到错误 —— 因为流是"正常结束但无内容"。
+   ⇒ ① 超时必须**主动报错**（SSE error 事件），别让用户干等；
+      ② 阈值给到 120s：长上下文首字本来就可能 60~90s，⛔ 别把"慢"误杀成"错"；
+      ③ 可用 `HARNESS_BRIDGE_IDLE_MS` 覆盖（调试用）。 */
+const BRIDGE_IDLE_MS = Math.max(30_000, Number(process.env.HARNESS_BRIDGE_IDLE_MS) || 120_000);
+
+/** Responses 流的错误事件（引擎侧会把它当成本轮失败并显示原因，而不是静默空回复）。 */
+function sseError(message: string): string {
+  return `event: error\ndata: ${JSON.stringify({ type: "error", code: "upstream_error", message })}\n\n`;
+}
+
 export type BridgeTarget = { baseUrl: string; mode: BridgeMode; label?: string };
 
 /** Anthropic 官方要求的版本头（不带会被拒；中转站普遍也认这个值）。 */
@@ -290,7 +303,26 @@ export class ResponsesBridge {
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
       res.write(translator.begin());
       up.setEncoding("utf8");
+      /* ⛔ 空闲看门狗：上游连上了但一个字节都不发时，主动超时 + 如实报错（见文件头 BRIDGE_IDLE_MS） */
+      let idleTimer: ReturnType<typeof setTimeout> | null = null;
+      let finished = false;
+      const disarm = () => { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } };
+      const arm = () => {
+        if (finished) return;
+        disarm();
+        idleTimer = setTimeout(() => {
+          if (finished) return;
+          finished = true;
+          this.counters.failures += 1;
+          this.log(`[bridge] ${target.label ?? ""} 上游 ${Math.round(BRIDGE_IDLE_MS / 1000)}s 无任何数据（首字超时）· 请求体 ${payload.byteLength} 字节 · 上游 ${target.baseUrl}`);
+          try { up.destroy(); } catch { /* ignore */ }
+          try { res.write(sseError(`上游 ${Math.round(BRIDGE_IDLE_MS / 1000)} 秒未返回任何数据（首字超时）：${target.baseUrl}`)); } catch { /* ignore */ }
+          try { res.end(); } catch { /* ignore */ }
+        }, BRIDGE_IDLE_MS);
+      };
+      arm();
       up.on("data", (chunk: string) => {
+        arm();
         for (const data of parser.push(chunk)) {
           if (data === "[DONE]") continue;
           let parsed: any = null;
@@ -299,11 +331,19 @@ export class ResponsesBridge {
           if (out) res.write(out);
         }
       });
-      up.once("end", () => { res.write(translator.finish()); res.end(); });
+      up.once("end", () => {
+        if (finished) return;
+        finished = true; disarm();
+        res.write(translator.finish()); res.end();
+      });
       up.once("error", (error) => {
+        if (finished) return;
+        finished = true; disarm();
         this.counters.failures += 1;
-        this.log(`[bridge] ${target.label ?? ""} 上游流中断：${error.message}`);
-        res.write(translator.finish());
+        this.log(`[bridge] ${target.label ?? ""} 上游流中断：${error.message} · 请求体 ${payload.byteLength} 字节`);
+        /* ⛔ 必须发 error 事件：只 write(finish()) 的话引擎拿到的是"正常结束但无内容" ⇒
+           不报错、不重试、界面一直"生成中"（这正是 10-17 追了整轮的那个现象）。 */
+        try { res.write(sseError(`上游流中断：${error.message}`)); } catch { /* ignore */ }
         res.end();
       });
     });
