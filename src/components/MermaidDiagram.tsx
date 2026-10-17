@@ -37,6 +37,8 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
   const ref = useRef<HTMLDivElement>(null);      // svg 注入点（transform 作用其上）
   const [state, setState] = useState<"loading" | "ok" | "error">("loading");
   const [error, setError] = useState("");
+  /* ⛔ 10-17：流式中间态不报错（与流程图同口径）——半截代码渲染失败不代表最终代码有问题。 */
+  const [settledError, setSettledError] = useState("");
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(1);
 
@@ -70,6 +72,12 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
       });
     return () => { cancelled = true; };
   }, [code]);
+
+  useEffect(() => {
+    if (!error) { setSettledError(""); return; }
+    const timer = window.setTimeout(() => setSettledError(error), 900);
+    return () => window.clearTimeout(timer);
+  }, [code, error]);
 
   const applyZoom = useCallback((next: number) => {
     const v = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(next.toFixed(2))));
@@ -158,10 +166,12 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
       )}
       {state === "loading" && <div className="mermaid-loading">⏳ 渲染流程图…</div>}
       {state === "error" && (
-        <div className="mermaid-error">
-          <div>⚠️ Mermaid 渲染失败：{error}</div>
-          <pre className="mermaid-source">{code}</pre>
-        </div>
+        (settledError ? (
+          <div className="mermaid-error">
+            <div>⚠️ Mermaid 渲染失败：{settledError}</div>
+            <pre className="mermaid-source">{code}</pre>
+          </div>
+        ) : <div className="mermaid-loading">⏳ 渲染流程图…</div>)
       )}
       <div
         ref={boxRef}
