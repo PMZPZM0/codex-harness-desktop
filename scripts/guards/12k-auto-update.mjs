@@ -187,6 +187,10 @@ ok(/自动更新/.test(ledger) && /autoUpdate/.test(ledger), "FEATURE-LEDGER 有
   ok(!/path\.join\(os\.tmpdir\(\), `codex-engine-update-/.test(eu), "引擎更新暂存目录不再用 os.tmpdir()（跨卷 rename 必 EXDEV）");
   ok(/function movePath\(/.test(eu) && /EXDEV/.test(eu) && /fs\.cp\(from, to/.test(eu), "落位有 EXDEV 兜底（复制 + 删源），不是把 EXDEV 原样抛给用户");
   ok(!/await fs\.rename\(newVendorDir, vendorDir\)/.test(eu), "落位不再直接 rename（必须走 movePath）");
+  /* ⛔ 10-17 第二次实测：跨盘修掉后立刻撞上 Windows **EPERM 文件占用** ——
+     前面刚用 runCommand 执行过要搬的那棵树里的 exe，Windows 短暂持有进程映像；
+     再叠加杀软/索引器扫新解压的 ~100MB 树。⇒ movePath 必须对 EPERM/EBUSY 重试（同 free-gateway 的先例）。 */
+  ok(/attempt < 5/.test(eu) && /EPERM\|EBUSY\|ENOTEMPTY/.test(eu), "落位对 Windows 文件占用（EPERM/EBUSY）重试，不重试就会「下载 100% 却装不上」");
 }
 
 /* ⑩ 进度日志不许被刷成同一行（10-17 实测：留下 6 条「下载引擎包 100%」）。
