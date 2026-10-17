@@ -12,7 +12,7 @@ import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
 import { BrowserWindow, app, dialog, shell } from "electron";
 import { existsSync } from "node:fs";
-import { applyRoundedCorners } from "../win-rounded-corners";
+import { applyRoundedCorners } from "../window/win-rounded-corners";
 import { popoutBusWindows, registerBusWindow, unregisterBusWindow } from "../features/window-bus";
 import { flushBootTiming, markBoot } from "../boot-timing";
 import { installContextMenu } from "../main/10-window-menu";
