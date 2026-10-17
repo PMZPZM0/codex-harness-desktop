@@ -53,6 +53,8 @@ if (cfg.error) { fail("tsconfig.app.json 读取失败"); process.exit(1); }
 const parsed = ts.parseJsonConfigFileContent(cfg.config, ts.sys, ROOT);
 const program = ts.createProgram(parsed.fileNames, parsed.options);
 const checker = program.getTypeChecker();
+/* ⛔ 类型串比较**两侧必须用同一套 flags**（见 existing 取样处）。 */
+const FLAG = ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.UseFullyQualifiedType;
 
 /* ---------- 归一化 ---------- */
 /* ① 剥 `import("…").` 限定符 ② 折叠空白 ③ **联合类型成员排序** ——
@@ -65,6 +67,28 @@ const norm = (s) => String(s)
   .trim()
   .split("|").map((x) => x.trim()).sort().join("|");
 
+/* ── 顺序无关的类型串比较 ─────────────────────────────────────
+   ⛔ 只做**联合成员**的顺序归一：`A | B` ≡ `B | A`。
+   ⛔ 深度感知：只在 `{}()<>[]` 之外按顶层 `|` 切 —— 对象/函数签名里的 `|` 不参与切分。 */
+const splitTopUnion = (s) => {
+  const out = [];
+  let depth = 0, cur = "";
+  for (const ch of s) {
+    if ("{}()<>[]".includes(ch)) depth++;
+    else if ("})>]".includes(ch)) depth--;
+    if (ch === "|" && depth === 0) { out.push(cur.trim()); cur = ""; continue; }
+    cur += ch;
+  }
+  out.push(cur.trim());
+  return out;
+};
+const sameType = (a, b) => {
+  if (a === b) return true;
+  const A = splitTopUnion(a), B = splitTopUnion(b);
+  if (A.length !== B.length) return false;
+  return [...A].sort().join("|") === [...B].sort().join("|");
+};
+
 /* ---------- 现有 Bag ---------- */
 const bs = program.getSourceFile(BAG);
 if (!bs) { fail("bag-types.ts 不在 tsconfig.app.json 的 program 里"); process.exit(1); }
@@ -73,6 +97,7 @@ if (!/自动生成，请勿手改/.test(bagSrc)) fail("bag-types.ts 头部的「
 
 let bagIface = null;
 const existing = new Map();
+const existingType = new Map(); /* 与 existing 平行：类型节点（用于结构等价比较） */
 for (const st of bs.statements) {
   if (ts.isInterfaceDeclaration(st) && st.name.text === "Bag") bagIface = st;
 }
@@ -82,7 +107,13 @@ if (!bagIface) {
   for (const m of bagIface.members) {
     if (ts.isPropertySignature(m) && m.name) {
       const nm = ts.isStringLiteral(m.name) ? m.name.text : m.name.getText(bs);
+      /* ⛔⛔ 两侧必须是**同一个字符串化器**才比得起来：原来这里用 `getText()`（源码文本），
+         而实现侧用 `typeToString()` —— 对「**对象联合类型**」（如按状态区分字段的 updateState）
+         两者结构必然不同 ⇒ 恒红，且误导成"bag-types 已过期"。
+         实测（云助手）：`useState<Bag["updateState"]>` 的类型**就是从 Bag 取的**、不可能漂移，
+         却一直被报不一致 ⇒ 是这条取样方式的问题。改用 checker 的 typeToString。 */
       existing.set(nm, m.type ? m.type.getText(bs) : "");
+      existingType.set(nm, m.type ? checker.getTypeAtLocation(m.type) : null);
     }
   }
 }
@@ -95,7 +126,7 @@ else ok(`Bag 属性 ${existing.size} 个`);
 /* ---------- 从当前 parts 重新推断 ---------- */
 const EXTS = ["", ".ts", ".tsx", ".mjs", ".mts", ".js", ".d.ts", "/index.ts", "/index.tsx"];
 const probe = (abs) => { for (const e of EXTS) { try { if (existsSync(abs + e) && statSync(abs + e).isFile()) return e; } catch { /* 忽略 */ } } return null; };
-const FLAG = ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.UseFullyQualifiedType;
+
 function collectNames(n, out) {
   if (ts.isIdentifier(n)) { out.push(n); return; }
   if (ts.isObjectBindingPattern(n) || ts.isArrayBindingPattern(n))
@@ -144,6 +175,7 @@ function isCombiner(fn) {
 }
 
 const inferred = new Map();
+const inferredType = new Map(); /* 与 inferred 平行：类型对象（用于结构等价比较） */
 let combiners = 0, nonHook = 0;
 for (const hf of hookFiles) {
   const sf = program.getSourceFile(hf);
@@ -175,6 +207,7 @@ for (const hf of hookFiles) {
         return 'import("' + rel + '")';
       });
       inferred.set(nm, s);
+      inferredType.set(nm, checker.getTypeAtLocation(id));
     }
   }
 }
@@ -184,7 +217,24 @@ ok(`从当前 parts 推断出 ${inferred.size} 个名字（跳过 ${combiners} �
 const missing = [], extra = [], mismatch = [];
 for (const [nm, s] of inferred) {
   if (!existing.has(nm)) { missing.push(nm); continue; }
-  if (norm(existing.get(nm)) !== norm(s)) mismatch.push({ nm, bag: norm(existing.get(nm)), now: norm(s) });
+  /* ⛔⛔ **联合类型的成员顺序不影响类型**，但两个字符串化器渲染顺序不同 ——
+     源码 `getText()` 按**书写顺序**，`typeToString()` 按**内部类型 id** 排。
+     实测（云助手 updateState）：Bag 写 `…"installing" | "done" | "error"`，
+     类型串给 `…"error" | "downloading" | …` —— **同一个类型**，却被判"已过期"。
+     ⇒ 比较改成**顺序无关**：按顶层 `|` 切分后各自排序再比（深度感知，不会把对象里的
+       `|` 当成分隔符）。⛔ 只放宽"顺序"，不放宽"成员集合"或"字段" —— 真漂移照样红。 */
+  /* ⛔⛔ 判据 = **结构等价**（双向可赋值），不是字符串相等：
+     字符串比较受"书写顺序 / 字符串化器"影响 —— 联合成员换个顺序就误报（实测云助手 updateState）。
+     ⛔ 拿不到类型对象（或 TS 未暴露 isTypeAssignableTo）时才退回字符串比较。 */
+  let structurallyEqual = null;
+  try {
+    const a = existingType.get(nm), b = inferredType.get(nm);
+    if (a && b && typeof checker.isTypeAssignableTo === "function") {
+      structurallyEqual = checker.isTypeAssignableTo(a, b) && checker.isTypeAssignableTo(b, a);
+    }
+  } catch { structurallyEqual = null; }
+  const eq = structurallyEqual === true || (structurallyEqual === null && sameType(norm(existing.get(nm)), norm(s)));
+  if (!eq) mismatch.push({ nm, bag: norm(existing.get(nm)), now: norm(s) });
 }
 for (const nm of existing.keys()) if (!inferred.has(nm)) extra.push(nm);
 
