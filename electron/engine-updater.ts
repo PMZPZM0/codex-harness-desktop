@@ -377,7 +377,10 @@ export async function performEngineUpdate(
       await movePath(backupDir, vendorDir).catch(() => undefined);
       /* ⛔ 提示要指向真因：EXDEV = 跨盘，不是「文件坏了」。旧文案只丢原始错误串，用户看不懂。 */
       const moveCode = (err as NodeJS.ErrnoException)?.code;
-      const moveHint = moveCode === "EXDEV" ? "（跨盘移动：暂存目录与安装目录不在同一个卷）" : "";
+      const moveHint =
+        moveCode === "EXDEV" ? "（跨盘移动：暂存目录与安装目录不在同一个卷）"
+        : /^(EPERM|EBUSY|ENOTEMPTY)$/.test(String(moveCode ?? "")) ? "（文件被占用：引擎进程/杀软/索引器仍握着句柄，稍后重试即可）"
+        : "";
       throw new Error(`落位失败${moveHint}（已回滚）：${err instanceof Error ? err.message : String(err)}`);
     }
 
@@ -406,14 +409,32 @@ export async function performEngineUpdate(
  *     旧目录已经被移到 `.bak-1`、新目录又落不过去 ⇒ 引擎暂时不可用，只能靠回滚救回来，
  *     用户看到的是「下载 100%、装不上」。⛔ 这属于"防丢数据/可用性"的硬要求，不许省。 */
 async function movePath(from: string, to: string): Promise<void> {
-  try {
-    await fs.rename(from, to);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException)?.code !== "EXDEV") throw err;
-    /* 跨卷：复制整棵树再删源。⛔ `dereference:false` —— 保留符号链接语义，别把链接展开成实体。 */
-    await fs.cp(from, to, { recursive: true, force: true, errorOnExist: false, dereference: false });
-    await fs.rm(from, { recursive: true, force: true });
+  /* ⛔⛔ 为什么必须重试（10-17 第二次实测）：跨盘问题修掉后，**同一台机器**立刻撞上
+     `EPERM: operation not permitted, rename …` —— 两边都在 D: 盘，纯粹是 **Windows 文件占用**。
+     真因：本函数前面刚用 `runCommand(newBin, ["--version"])` **执行过**要搬的那棵树里的 exe，
+     Windows 会**短暂持有刚退出的进程映像**（此外还有杀软 / 索引器扫新解压的 ~100MB 树），
+     此刻 rename 它的父目录就 EPERM。⇒ 与 `free-gateway-ipc.ts` 同款（那里 10-12 验收实测过），
+     重试 5 次、间隔递增。⛔ 不重试的表现就是：下载/解压/自检全绿，落位一步失败并回滚。 */
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      await fs.rename(from, to);
+      return;
+    } catch (err) {
+      lastErr = err;
+      const code = String((err as NodeJS.ErrnoException)?.code ?? "");
+      if (code === "EXDEV") {
+        /* 跨卷：复制整棵树再删源。⛔ `dereference:false` —— 保留符号链接语义，别把链接展开成实体。 */
+        await fs.cp(from, to, { recursive: true, force: true, errorOnExist: false, dereference: false });
+        await fs.rm(from, { recursive: true, force: true });
+        return;
+      }
+      /* ⛔ 只重试"瞬时占用"这一类；ENOENT / EACCES(权限) 等真错误立刻抛，别掩盖。 */
+      if (attempt === 4 || !/^(EPERM|EBUSY|ENOTEMPTY)$/.test(code)) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+    }
   }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
 
 /** TLS 校验开关（09-13 审计 P0）：默认**校验证书**。旧实现无条件 `rejectUnauthorized:false`，
