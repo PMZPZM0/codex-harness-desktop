@@ -176,6 +176,8 @@ export class AnthropicStreamTranslator {
   private blocks = new Map<number, OutputItem>();
   private created = false;
   private usage: { input_tokens: number; output_tokens: number } = { input_tokens: 0, output_tokens: 0 };
+  /** 10-17：Anthropic 的缓存命中字段（cache_read_input_tokens），透传后界面才有命中率 */
+  private cacheReadTokens = 0;
   private model: string;
   private failed: string | null = null;
   private emitReasoning: boolean;
@@ -216,6 +218,7 @@ export class AnthropicStreamTranslator {
       if (message.usage) {
         this.usage.input_tokens = Number(message.usage.input_tokens ?? 0) || 0;
         if (message.usage.output_tokens) this.usage.output_tokens = Number(message.usage.output_tokens) || 0;
+        if (message.usage.cache_read_input_tokens) this.cacheReadTokens = Number(message.usage.cache_read_input_tokens) || 0;
       }
       return out;
     }
@@ -295,6 +298,7 @@ export class AnthropicStreamTranslator {
       input_tokens: this.usage.input_tokens,
       output_tokens: this.usage.output_tokens,
       total_tokens: this.usage.input_tokens + this.usage.output_tokens,
+      ...(this.cacheReadTokens > 0 ? { input_tokens_details: { cached_tokens: this.cacheReadTokens } } : {}),
     };
     return out + finalizeItems(this.items, this.responseId, this.model, usage);
   }
