@@ -37,7 +37,8 @@ function resolveStartModel(bag: { selectedModel?: { model?: string } | null; mod
   const offered = bag.customModel?.models ?? [];
   const ok = !offered.length || offered.some((m) => m.id === wantedModel && m.enabled !== false);
   const resolved = ok ? wantedModel : (bag.customModel?.model || offered.find((m) => m.enabled !== false)?.id || wantedModel);
-  if (!ok) bag.showToast?.("模型已迁移", `「${wantedModel}」不在当前供应商的可用清单里，本会话已改用「${resolved}」`);
+  /* ⛔ 纯函数：⛔ 不在这里弹提示 —— 本函数被 7 处调用（turn/start、plan、限流重试、档位兜底…），
+     在这里弹会一次发送弹 7 条相同提示。提示统一在发送入口弹一次（见 startTurn 前）。 */
   return resolved;
 }
 
@@ -394,6 +395,12 @@ export async function send(bag: Bag, event?: FormEvent) {
           // 透出生效档（10-01 用户要求）：判定档或回落的手选档，显示在思考强度芯片上
           bag.setAutoEffortApplied?.(effectiveEffort);
         }
+      }
+      /* ⛔ 模型迁移提示：**只在发送入口弹一次**（resolveStartModel 是纯函数，被多处调用）。 */
+      const wantedModelNow = bag.selectedModel?.model ?? modelName(bag.modelId);
+      const startModelNow = resolveStartModel(bag);
+      if (startModelNow !== wantedModelNow) {
+        bag.showToast?.("模型已迁移", `「${wantedModelNow}」不在当前供应商的可用清单里，本会话已改用「${startModelNow}」`);
       }
       const startTurn = async (target: Thread) => window.codex.request("turn/start", {
         threadId: target.id,
