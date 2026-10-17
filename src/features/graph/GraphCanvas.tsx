@@ -64,6 +64,10 @@ const nodeTypes = { flow: FlowNode };
 
 export const GraphCanvas = memo(function GraphCanvas({ code }: { code: string }) {
   const spec = useMemo(() => parseFlowchartSpec(code), [code]);
+  /* ⛔ 流式中间态（10-17 用户截图）：模型还在写围栏时 JSON 是半截，解析必失败。
+     这里把「失败」延后 900ms 确认：期间继续变化 = 还在生成 ⇒ 只显示「正在生成」；
+     停止变化后仍失败才是真的坏。 */
+  const [settledError, setSettledError] = useState<string | null>(null);
   const [direction, setDirection] = useState<"TD" | "LR">(() => (("error" in spec ? "TD" : spec.direction) === "LR" ? "LR" : "TD"));
   const instRef = useRef<ReactFlowInstance | null>(null);
 
@@ -99,13 +103,21 @@ export const GraphCanvas = memo(function GraphCanvas({ code }: { code: string })
     return { nodes, edges, width: laid.width, height: laid.height };
   }, [spec, direction]);
 
+  useEffect(() => {
+    if (!("error" in spec)) { setSettledError(null); return; }
+    const timer = window.setTimeout(() => setSettledError(spec.error), 900);
+    return () => window.clearTimeout(timer);
+  }, [code, spec]);
+
   const fit = useCallback(() => { void instRef.current?.fitView({ padding: 0.15, duration: 240 }); }, []);
   useEffect(() => { const t = window.setTimeout(fit, 60); return () => window.clearTimeout(t); }, [built, fit]);
 
   if ("error" in spec) {
+    /* 还在生成（错误尚未确认）⇒ 中性占位，⛔ 不亮红框 —— 半截 JSON 报错会让人以为坏了 */
+    if (!settledError) return <div className="flow-loading">正在生成流程图…</div>;
     return (
       <div className="flow-error">
-        <div>⚠️ 流程图规格无效：{spec.error}</div>
+        <div>⚠️ 流程图规格无效：{settledError}</div>
         <pre>{code}</pre>
       </div>
     );
