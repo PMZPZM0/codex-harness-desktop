@@ -1238,8 +1238,25 @@
 .browser-pane-bookmark-row { display: flex; align-items: center; gap: 2px; }
 .browser-pane-bookmark-row > button[role=menuitem] { flex: 1; min-width: 0; }
 .browser-pane-bookmark-row > button[role=menuitem] > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.browser-pane-bookmark-del { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 6px; color: var(--faint); }
+.browser-pane-bookmark-del { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: none; background: transparent; padding: 0; border-radius: 6px; color: var(--muted); }
 .browser-pane-bookmark-del:hover { background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--red); }
+/* 加载失败诊断条（10-17）：空白页必须变成可读错误 + 可用退路 */
+.browser-pane-loaderror {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin: 10px; padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--red) 45%, transparent);
+  border-radius: 10px; background: color-mix(in srgb, var(--red) 8%, var(--panel));
+  color: var(--text);
+}
+.browser-pane-loaderror-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.browser-pane-loaderror-body strong { font-size: 12.5px; font-weight: 600; }
+.browser-pane-loaderror-body small { color: var(--muted); font-size: 11px; word-break: break-all; }
+.browser-pane-loaderror-actions { display: flex; flex-direction: column; gap: 6px; }
+.browser-pane-loaderror-actions button {
+  padding: 4px 10px; font-size: 11.5px; border-radius: 8px;
+  border: 1px solid var(--line-soft); background: var(--panel); color: var(--text); cursor: pointer;
+}
+.browser-pane-loaderror-actions button:hover { border-color: color-mix(in srgb, var(--green) 45%, var(--line-soft)); }
 .browser-pane-menu {
   position: absolute;
   top: calc(100% + 4px);
