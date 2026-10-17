@@ -246,6 +246,9 @@ bag.scheduleRateLimitRetry = scheduleRateLimitRetry as typeof bag.scheduleRateLi
 
 
   const compactPendingRef = useRef(new Set<string>());
+  /* 10-17：排队压缩（回合中只入队，回合结束再执行 —— 否则引擎会中断当前回合）。 */
+  const deferredCompactRef = useRef<Set<string>>(new Set());
+bag.deferredCompactRef = deferredCompactRef as typeof bag.deferredCompactRef;
 bag.compactPendingRef = compactPendingRef as typeof bag.compactPendingRef;
 
 

@@ -418,6 +418,15 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
         bag.setCompactToast((current) => (current?.state === "running"
           ? { state: "success", message: "上下文压缩成功", threadId: current.threadId }
           : current));
+        /* 10-17：回合刚结束、引擎已空闲 ⇒ 执行模型排队的 compact_context（回合中调会中断回合）。 */
+        if (bag.threadRef.current?.id && bag.deferredCompactRef.current.delete(bag.threadRef.current.id)) {
+          bag.compactPendingRef.current.add(bag.threadRef.current.id);
+          bag.setCompactEventState("running");
+          void window.codex.request("thread/compact/start", { threadId: bag.threadRef.current.id }).catch((error: any) => {
+            bag.compactPendingRef.current.delete(String(bag.threadRef.current?.id ?? ""));
+            bag.setCompactEventState("error", error?.message ?? String(error));
+          });
+        }
         if (handleEventRouter5(bag, params)) return;
       }
       if (method === "turn/started") { if (handleEventRouter6(bag, params)) return; } else if (method === "turn/completed") { if (handleEventRouter7(bag, params)) return; } else if (method === "item/started" || method === "item/completed") {
