@@ -22,8 +22,9 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { LayoutGrid, ArrowDownUp, ArrowRight } from "lucide-react";
+import { LayoutGrid, ArrowDownUp, ArrowRight, Camera, Download } from "lucide-react";
 import { layoutFlowchart, parseFlowchartSpec } from "./flowchart-spec.mjs";
+import { buildFlowHtml, buildFlowJson, buildFlowSvg, FLOW_EXPORT_FORMATS } from "./export-flow.mjs";
 
 const TONE: Record<string, { bg: string; bd: string; tx: string }> = {
   blue: { bg: "#E6F1FB", bd: "#185FA5", tx: "#0C447C" },
@@ -109,6 +110,58 @@ export const GraphCanvas = memo(function GraphCanvas({ code }: { code: string })
     return () => window.clearTimeout(timer);
   }, [code, spec]);
 
+  /* ── 截图 / 导出（10-17 用户令：右上角两项）──────────────────────────
+     截图 = 一键 PNG（当前节点位置整体出图，不受缩放视口裁剪）；
+     导出 = 菜单选格式（PNG / SVG / HTML / JSON，各带适用场景提示）。 */
+  const [exportOpen, setExportOpen] = useState(false);
+  /** 取当前画布上的真实节点位置（用户拖过就用拖过的），拼成布局结果供导出复用。 */
+  const currentLayout = useCallback(() => {
+    const rfNodes = (instRef.current?.getNodes?.() ?? []) as Array<{ id: string; position: { x: number; y: number }; width?: number; height?: number }>;
+    if (!rfNodes.length) return { nodes: [], width: 640, height: 320 };
+    const nodes = rfNodes.map((n) => ({ id: n.id, x: Math.round(n.position.x), y: Math.round(n.position.y), w: Math.round(n.width ?? 160), h: Math.round(n.height ?? 46) }));
+    const width = Math.max(...nodes.map((n) => n.x + n.w)) + 40;
+    const height = Math.max(...nodes.map((n) => n.y + n.h)) + 40;
+    return { nodes, width, height };
+  }, []);
+  const flowSlug = useCallback(() => {
+    const base = ("error" in spec ? "" : spec.title) || "flowchart";
+    return String(base).replace(/[\\/:*?"<>|\s]+/g, "-").slice(0, 40) || "flowchart";
+  }, [spec]);
+  const download = useCallback((blob: Blob, name: string) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    window.setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }, []);
+  const svgToPng = useCallback((svg: string, name: string) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = 2;
+      const w = Math.max(1, Math.round((img.width || 800) * scale));
+      const h = Math.max(1, Math.round((img.height || 600) * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob((blob) => { if (blob) download(blob, name); }, "image/png");
+    };
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  }, [download]);
+  const exportAs = useCallback((format: string) => {
+    if ("error" in spec) return;
+    const layout = currentLayout();
+    const svg = buildFlowSvg(spec, layout);
+    const slug = flowSlug();
+    if (format === "png") return svgToPng(svg, `${slug}.png`);
+    if (format === "svg") return download(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }), `${slug}.svg`);
+    if (format === "html") return download(new Blob([buildFlowHtml(spec, svg)], { type: "text/html;charset=utf-8" }), `${slug}.html`);
+    return download(new Blob([buildFlowJson(spec)], { type: "application/json;charset=utf-8" }), `${slug}.json`);
+  }, [currentLayout, download, flowSlug, spec, svgToPng]);
+
   const fit = useCallback(() => { void instRef.current?.fitView({ padding: 0.15, duration: 240 }); }, []);
   useEffect(() => { const t = window.setTimeout(fit, 60); return () => window.clearTimeout(t); }, [built, fit]);
 
@@ -132,6 +185,24 @@ export const GraphCanvas = memo(function GraphCanvas({ code }: { code: string })
           {direction === "TD" ? "纵向" : "横向"}
         </button>
         <button type="button" title="适应画布" onClick={fit}><LayoutGrid size={13} />适应</button>
+        <span className="flow-toolbar-spacer" />
+        {/* 右上角两项：截图（一键 PNG）/ 导出（多格式菜单） */}
+        <button type="button" title="截图：把整张流程图存成 PNG（当前节点位置，2x 清晰）" onClick={() => exportAs("png")}><Camera size={13} />截图</button>
+        <div className="flow-export-wrap">
+          <button type="button" className={exportOpen ? "active-tool" : ""} title="导出：PNG / SVG / HTML / JSON" onClick={() => setExportOpen((v) => !v)}><Download size={13} />导出</button>
+          {exportOpen && (
+            <>
+              <div className="flow-export-backdrop" onClick={() => setExportOpen(false)} />
+              <div className="flow-export-menu" role="menu">
+                {FLOW_EXPORT_FORMATS.map((f) => (
+                  <button key={f.id} role="menuitem" title={f.hint} onClick={() => { setExportOpen(false); exportAs(f.id); }}>
+                    <b>{f.label}</b><small>{f.hint}</small>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
         {spec.title ? <span className="flow-title">{spec.title}</span> : null}
       </div>
       <div className="flow-stage" style={{ height: Math.min(520, Math.max(240, built.height + 24)) }}>
