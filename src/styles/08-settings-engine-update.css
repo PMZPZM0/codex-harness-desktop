@@ -1458,6 +1458,9 @@
 .memory-funnel-toolbar { align-items: center; gap: 10px; display: flex; }
 .memory-funnel-toolbar-label { color: var(--muted); font-size: 11.5px; }
 .memory-funnel-chips { flex-wrap: wrap; gap: 6px; display: flex; }
+/* 会话筛选下拉（10-17：金字塔页由并排 chips 改为 AppSelect，会话多时不再横向铺开）。
+   视觉样式由 AppSelect 自带（与全站下拉一致）；这里只给宽度。 */
+.memory-funnel-select { min-width: 220px; max-width: 420px; }
 .memory-funnel-chip {
   border: 1px solid var(--line-soft);
   background: var(--panel);

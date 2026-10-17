@@ -22,6 +22,7 @@
  *   · 每会话独立条目数：`listFabricNamespaces(项目)` 的 `private__<threadId>` 计数（一次 IPC）
  */
 import { useEffect, useMemo, useState } from "react";
+import { AppSelect } from "../../components/AppSelect";
 import { Layers, Users, FolderOpen } from "lucide-react";
 import { MEMORY_LAYER_RULES, MEMORY_INJECT_LABEL, MEMORY_SCOPE_LABEL } from "../../lib/memory-scope-rules.mjs";
 
@@ -136,19 +137,22 @@ export function PyramidPanel({ workspace, threads, onOpenThread }: {
         {sessions.length === 0 ? (
           <p className="lib-empty">{project ? "这个项目下还没有会话记录。" : "先选一个项目。"}</p>
         ) : (
-          <div className="memory-funnel-chips" role="tablist" aria-label="选择会话">
-            <button role="tab" aria-selected={activeSession === "__all__"} data-pyr-session="__all__"
-              className={`memory-funnel-chip ${activeSession === "__all__" ? "active" : ""}`}
-              onClick={() => setActiveSession("__all__")}>全部会话（{totalOwn} 条）</button>
-            {sessions.map((row) => (
-              <button role="tab" key={row.threadId} aria-selected={activeSession === row.threadId} data-pyr-session={row.threadId}
-                className={`memory-funnel-chip ${activeSession === row.threadId ? "active" : ""} ${row.entries ? "" : "is-empty"}`}
-                title={`${row.threadId}\n${row.turns} 轮对话${row.entries ? "" : " · 还没有独立记忆"}`}
-                onClick={() => setActiveSession(row.threadId)}>
-                {row.name.length > 18 ? row.name.slice(0, 17) + "…" : row.name}（{row.entries} 条）
-              </button>
-            ))}
-          </div>
+          /* 10-17 用户令：会话筛选由并排 chips 改为**下拉框**（会话多时不再横向铺开）。
+             ⛔ 用项目统一的 `AppSelect`（守卫【197】禁原生 select）；数据与过滤逻辑不变：
+             同一个 `activeSession` 状态、同一份选项（含条数），选中即过滤"独立层"内容。 */
+          <AppSelect
+            className="memory-funnel-select"
+            ariaLabel="选择会话"
+            value={activeSession}
+            onChange={(value) => setActiveSession(value)}
+            options={[
+              { value: "__all__", label: `全部会话（${totalOwn} 条）` },
+              ...sessions.map((row) => ({
+                value: row.threadId,
+                label: `${row.name.length > 18 ? row.name.slice(0, 17) + "…" : row.name}（${row.entries} 条）`,
+              })),
+            ]}
+          />
         )}
       </div>
 
