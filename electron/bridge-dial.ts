@@ -65,17 +65,35 @@ export const responsesBridge = new ResponsesBridge({
  * 生成「下发给引擎」的 base_url：桥已启动时换成桥地址并登记上游目标；
  * 桥未启动（启动失败等）时原样返回 → 直连，行为与旧版本完全一致（降级安全）。
  */
+const isBridgeUrl = (url: string) => /^https?:\/\/(?:127\.0\.0\.1|localhost):\d+\/p\//.test(url);
+
+/* ⛔⛔ 上游**真实地址**登记表（10-17 回归修复 —— 用户口径「不管怎么切换供应商，旧会话都能用」）。
+ *
+ * `bridgeDial` 会被两种 URL 调用：
+ *   · **raw**（档案里的真实上游）—— `applyCustomModel` / `applyCloudProvider` 走这条路；
+ *   · **已拨号**（`http://127.0.0.1:47121/p/<id>`）—— `codex-ipc` 读回 config.toml 再走一遍桥。
+ * 两条路都必须让注册表**始终等于当前生效供应商的上游**，否则：
+ *   · 把已拨号地址注册成上游 ⇒ 桥转发给自己 ⇒ 10061 / 502 / 栈溢出（10-17 实测）；
+ *   · 只 `return` 而不刷新注册表 ⇒ **切换供应商后注册表停在旧上游** ⇒ 旧会话（所有 provider 段
+ *     统一指向 `/p/<id>`）拿**新模型**去打**旧网关** ⇒ 400 或挂死（用户口径「一换供应商旧会话马上死」）。
+ * ⇒ 用记住的 raw **重新登记**：raw 记下来，拨号时一律用它注册。 */
+const rawUpstreams = new Map<string, string>();
+
 export function bridgeDial(id: string, upstreamBaseUrl: string | undefined): string | undefined {
   if (!upstreamBaseUrl) return upstreamBaseUrl;
-  /* ⛔⛔ **幂等防护**：上游绝不能是桥自己（或任何「桥地址」形状的 URL）——
-     一旦有人拿着**已拨号**的地址再来 dial（例如从 config.toml 读回的 base_url 再走一遍桥），
-     就会把「桥自己/旧端口」注册成上游 ⇒ 转发必 10061 拒绝 ⇒ 全部 502 ⇒ 引擎零输出无限重试
-     （10-17 实测：云模型发送 62s 零输出，curl 桥端点回 502 upstream connect failed）。
-     ⇒ 已经是桥地址的，原样返回、**不再注册**。 */
-  if (/^http:\/\/127\.0\.0\.1:\d+\/p\//.test(upstreamBaseUrl) || /^http:\/\/localhost:\d+\/p\//.test(upstreamBaseUrl)) {
-    return upstreamBaseUrl;
-  }
   const dialed = responsesBridge.urlFor(id);
+
+  if (isBridgeUrl(upstreamBaseUrl)) {
+    /* 已拨号：⛔ 绝不当上游（自环）；但必须**用已知 raw 刷新注册表**，否则切供应商后仍旧上游。 */
+    const raw = rawUpstreams.get(id);
+    if (raw && dialed) {
+      responsesBridge.register(id, { baseUrl: raw, mode: upstreamProtocols.get(id) ?? "auto", label: id });
+      return dialed;
+    }
+    return upstreamBaseUrl;   // 没见过 raw（桥刚起）⇒ 原样返回，等下一条 raw 调用注册
+  }
+
+  rawUpstreams.set(id, upstreamBaseUrl);
   if (!dialed) return upstreamBaseUrl;
   responsesBridge.register(id, { baseUrl: upstreamBaseUrl, mode: upstreamProtocols.get(id) ?? "auto", label: id });
   return dialed;
