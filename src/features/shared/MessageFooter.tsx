@@ -58,8 +58,9 @@ export function MessageFooter({ item, turn, usage, tokenUsage, fallbackWindow, o
   ) : null;
   const timeNode = isAgent && turn?.startedAt ? <span key="time"><Clock3 size={12} />{formatTimestamp(turn.completedAt ?? turn.startedAt)}</span> : null;
   const tokenNodes = isAgent && showTokenInfo ? [
-    <span key="tokens" className="message-action-extra">{input.toLocaleString()} 入 / {output.toLocaleString()} 出{total > 0 ? ` · ${total.toLocaleString()} 总` : ""}</span>,
-    cacheRate != null ? <span key="cache" className="message-action-extra">· {cacheRate}% 缓存</span> : null,
+    /* 10-17 用户令：页脚展示**最新回合**的 输入/输出/缓存输入（缓存命中括注）；
+       ⛔ 不再展示累计「总」—— 累计口径在「上下文容量」弹层里看（那里用户要的就是总）。 */
+    <span key="tokens" className="message-action-extra">{input.toLocaleString()} 入 / {output.toLocaleString()} 出 / 缓存 {cached.toLocaleString()}{cacheRate != null ? ` · 命中 ${cacheRate}%` : ""}</span>,
   ] : [];
 
   return (
