@@ -340,7 +340,7 @@ export async function performEngineUpdate(
     } catch (err) { lastDownloadError = err; }
   }
   if (!downloaded) {
-    await fs.rm(workRoot, { recursive: true, force: true }).catch(() => undefined);
+    await fs.rm(workRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }).catch(() => undefined);
     return { ok: false, version: "", message: `下载失败：${lastDownloadError instanceof Error ? lastDownloadError.message : String(lastDownloadError)}` };
   }
 
@@ -398,7 +398,7 @@ export async function performEngineUpdate(
   } catch (err) {
     return { ok: false, version: current, message: err instanceof Error ? err.message : String(err) };
   } finally {
-    await fs.rm(workRoot, { recursive: true, force: true }).catch(() => undefined);
+    await fs.rm(workRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }).catch(() => undefined);
   }
 }
 
