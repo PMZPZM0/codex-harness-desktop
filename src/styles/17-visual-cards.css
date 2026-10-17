@@ -1458,3 +1458,20 @@
 .relay-keys-toggle small {
   font-weight: 400;
 }
+
+/* ===== 交互式流程图（@xyflow/react，10-17）===== */
+.flow-canvas { border: 1px solid var(--line-soft); border-radius: 12px; overflow: hidden; background: var(--panel); margin: 6px 0; }
+.flow-toolbar { display: flex; align-items: center; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--line-soft); }
+.flow-toolbar button { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; font-size: 11.5px; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 7px; cursor: pointer; }
+.flow-toolbar button:hover { border-color: var(--line-soft); color: var(--text); background: color-mix(in srgb, var(--green) 8%, transparent); }
+.flow-title { margin-left: auto; font-size: 11.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flow-stage { width: 100%; }
+.flow-stage .react-flow__attribution { display: none; }
+.flow-node { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 6px 10px; border: 1px solid; box-sizing: border-box; cursor: grab; }
+.flow-node:active { cursor: grabbing; }
+.flow-node-label { font-size: 13px; font-weight: 500; line-height: 1.3; text-align: center; }
+.flow-node-note { font-size: 11px; opacity: .85; text-align: center; }
+.flow-handle { width: 6px; height: 6px; background: transparent; border: none; }
+.flow-loading { color: var(--muted); font-size: 12px; padding: 10px 4px; }
+.flow-error { color: var(--red); font-size: 12.5px; }
+.flow-error pre { margin: 6px 0 0; padding: 8px; background: color-mix(in srgb, var(--red) 8%, transparent); border-radius: 8px; overflow-x: auto; font-family: var(--mono); font-size: 11.5px; }

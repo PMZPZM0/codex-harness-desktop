@@ -24,6 +24,9 @@ import { markdownUrlTransform } from "../../lib/markdown-url";
 import { splitMarkdown } from "../../lib/markdown-blocks.mjs";
 import { tableToTsv } from "../../lib/md-table-text.mjs";
 import { isBlockCode } from "../../lib/md-code-block.mjs";
+import { lazy, Suspense } from "react";
+/** 交互式流程图（React Flow）：按需加载，避免把图画布打进首屏。 */
+const GraphCanvas = lazy(() => import("../graph/GraphCanvas"));
 import { stripVoiceScript } from "../../lib/voice-script.mjs";
 import { Globe2, Copy, Check } from "lucide-react";
 import { FeedbackIconButton } from "../shared/FeedbackIconButton";
@@ -78,6 +81,9 @@ export const MdCode = memo(function MdCode({ className, children, ...props }: an
   if (!isBlockCode(className, children)) return <code {...props}>{children}</code>;
   const language = String(className ?? "").replace("language-", "");
   if (language === "mermaid") return <MermaidDiagram code={String(children)} />;
+  /* 10-17 用户令：```flowchart 围栏 = **交互式流程图**（真实节点/连线，可拖拽缩放），
+     与 mermaid 的静态 SVG 区分开。懒加载：React Flow 只在真有该围栏时才进包。 */
+  if (language === "flowchart" || language === "flow") return <Suspense fallback={<div className="flow-loading">正在渲染交互流程图…</div>}><GraphCanvas code={String(children)} /></Suspense>;
   const fontSize = codeFontSize(settings.fontScale);
   const fontFamily = codeFontStack(settings.font);
   /* ⛔ 10-14 二改（用户截图：「上面没有，下面有了」—— 上面那块是**代码块**、不是表格）：

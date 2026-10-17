@@ -21,7 +21,8 @@ description: Produce visual outputs (flowcharts, architecture diagrams, sequence
 
 | 用户要的东西 | 形态 | 说明 |
 |---|---|---|
-| 流程图 / 判定图 / 时序图 / 状态图 / 甘特图 / 思维导图 / 饼图 | **回复里直接输出 \`\`\`mermaid 代码块** | 宿主对话内**交互渲染**（缩放/拖拽）+ 一键导出 SVG/PNG —— ⛔ 优先走这条，不要另写 HTML |
+| 流程图 / 状态机 / 架构依赖 / 任务编排（要**交互**） | **输出 \`\`\`flowchart 围栏 + JSON** | 宿主用 React Flow **实时渲染**：节点可拖、画布可缩放、连线按语义上色、TD/LR 布局切换 |
+| 时序图 / 甘特图 / 思维导图 / 饼图（静态即可） | \`\`\`mermaid 代码块 | 静态 SVG 渲染 + 导出 PNG/SVG |
 | 架构图 | 单文件 SVG 或 \`\`\`mermaid（graph TD/LR） | 节点少用 mermaid；节点多/要精确排版用手写 SVG |
 | 路线图 / 行程 / 时间线 / 海报式信息图 | **单文件 HTML**（内联 CSS） | 固定宽度画布（如 1200px）+ 大标题 + 分区卡片 |
 | 甘特图 | 单文件 HTML/SVG | 按天/周刻度画条带，标注依赖 |
@@ -46,6 +47,27 @@ description: Produce visual outputs (flowcharts, architecture diagrams, sequence
 - **留白与对齐**：区块间距 26–34px；卡片内边距 20–28px；对齐只用网格（左对齐为主，居中仅用于标题/图例）。
 - **信息密度**：一屏一个焦点；单块文字 ≤6 行；列表条目带序号；关键数字放大加粗。
 - **图例齐全**：颜色/形状有含义就必须给图例；时间轴要有刻度和方向。
+
+## 二·五、交互式流程图协议（\`\`\`flowchart 围栏）
+
+\`\`\`flowchart
+{ "title": "可选标题", "direction": "TD",
+  "nodes": [
+    { "id": "idle", "label": "未压缩", "note": "上下文增长", "tone": "blue" },
+    { "id": "compacting", "label": "压缩中", "note": "转圈+停止", "tone": "amber" },
+    { "id": "done", "label": "完成", "tone": "green" }
+  ],
+  "edges": [
+    { "from": "idle", "to": "compacting", "label": "越过阈值" },
+    { "from": "compacting", "to": "done", "label": "完成" }
+  ] }
+\`\`\`
+
+- \`direction\`: \`TD\`（纵向，默认）/ \`LR\`（横向）。
+- \`tone\`: \`blue\` / \`amber\` / \`green\` / \`red\` / \`gray\` / \`teal\` / \`purple\` —— 决定节点底色与连线颜色（同一语义用同一 tone）。
+- \`shape\`: \`rect\`（默认）/ \`pill\`（起止）/ \`diamond\`（判定）。
+- \`edges[].label\` 写条件或动作；条件分支加 \`"dashed": true\`。
+- ⛔ 只产**结构**，不写坐标 —— 宿主按 DAG 分层实时布局；⛔ 节点 id 用英文/数字，别用中文。
 
 ## 三、工作流
 
