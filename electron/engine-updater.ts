@@ -3,7 +3,8 @@
  *
  * 流程：registry 查最新稳定版 → 下载 @openai/codex@<ver>-win32-x64 tgz →
  * tar 解压到临时目录 → 校验新二进制 --version → 停引擎 → 替换 vendor 目录
- * （旧目录保留一代做回滚）→ 校验落位版本。失败自动回滚并重启引擎。
+ * （旧目录仅作**本次更新内**的回滚备份，**复验通过即删** → 只留最新版本）
+ * → 校验落位版本。失败自动回滚并重启引擎。
  *
  * 网络配套（09-27 与「开发工具」页的下载源统一）：
  * - 下载源 `app-settings.downloadSource`：auto / mirror → **国内镜像（npmmirror）在前**，
@@ -393,6 +394,11 @@ export async function performEngineUpdate(
       await movePath(backupDir, vendorDir).catch(() => undefined);
       throw new Error("替换后自检失败，已回滚旧版本");
     }
+    /* ⛔⛔ 复验通过 ⇒ **旧引擎不再保留**（10-17 用户令：「只保留最新版本，旧的自动清理」）。
+      回滚窗口到这一行为止：此前任何一步失败都还能用 .bak-1 还原；成功之后它就是纯占地方
+      的 ~437MB。⛔ 删不掉（杀软/索引器瞬时占用）就留着 —— 下次更新开头会先 rm 它，
+      所以**最差也只是多留一代**，不会累积。 */
+    await fs.rm(backupDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }).catch(() => undefined);
     report({ stage: "done", detail: `引擎已更新到 ${latest}` });
     return { ok: true, version: latest, message: `引擎已更新到 ${latest}` };
   } catch (err) {
