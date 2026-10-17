@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, ChevronDown, ExternalLink, Globe2, Maximize2, MoreHorizontal, Plus, RefreshCw, ShieldCheck, Star, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronDown, ExternalLink, Globe2, Maximize2, MoreHorizontal, Plus, RefreshCw, FileWarning, ShieldCheck, Star, X } from "lucide-react";
 
 /**
  * 中央主区「浏览器」视图（sidebar 顶部「浏览器」入口切换进来）。
@@ -43,6 +43,9 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
   const [menuOpen, setMenuOpen] = useState(false);
   const [bookmarks, setBookmarks] = useState<string[]>(readBookmarks);
   const [stealthHint, setStealthHint] = useState("");
+  /* 加载失败诊断（10-17 用户令「空白页排查」）：did-fail-load 主框架失败落这里，
+     界面上给错误条 + 「改用新窗口打开」退路 —— ⛔ 不再静默空白。 */
+  const [loadError, setLoadError] = useState<{ code: number; desc: string; url: string } | null>(null);
   const wvRef = useRef<HTMLElement | null>(null);
   const seqRef = useRef(1);
 
@@ -157,17 +160,31 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
     };
     const onStart = () => patchActive({ loading: true });
     const onStop = () => patchActive({ loading: false });
+    /* ⛔ 加载失败必须可见（10-17 用户令）：此前 did-fail-load 没人听 ⇒ webview 加载失败
+       就是"一片空白"，用户只能以为程序坏了。主框架失败（忽略 -3 ABORTED）落成错误条，
+       并给出「改用新窗口打开」的可用退路（browserPopout 走主进程正规 URL，实测可用）。 */
+    const onFail = (event: Event) => {
+      const info = event as unknown as { errorCode?: number; errorDescription?: string; url?: string; isMainFrame?: boolean };
+      if (info.isMainFrame === false) return;
+      if (info.errorCode === -3) return; // ABORTED：用户主动停止/跳转，不算失败
+      setLoadError({ code: info.errorCode ?? 0, desc: info.errorDescription ?? "未知错误", url: info.url ?? "" });
+    };
+    const clearFail = () => setLoadError(null);
     wv.addEventListener("did-navigate", onNavigate);
     wv.addEventListener("did-navigate-in-page", onNavigate);
     wv.addEventListener("page-title-updated", onTitle);
     wv.addEventListener("did-start-loading", onStart);
     wv.addEventListener("did-stop-loading", onStop);
+    wv.addEventListener("did-fail-load", onFail);
+    wv.addEventListener("did-navigate", clearFail);
     return () => {
       wv.removeEventListener("did-navigate", onNavigate);
       wv.removeEventListener("did-navigate-in-page", onNavigate);
       wv.removeEventListener("page-title-updated", onTitle);
       wv.removeEventListener("did-start-loading", onStart);
       wv.removeEventListener("did-stop-loading", onStop);
+      wv.removeEventListener("did-fail-load", onFail);
+      wv.removeEventListener("did-navigate", clearFail);
     };
   }, [activeId, active.url, patchActive]);
 
@@ -229,7 +246,7 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
               <button role="menuitem" disabled={!active.url} onClick={() => { setMenuOpen(false); if (active.url) void window.codex.browserPopout(active.url).catch((error: any) => setStealthHint(error?.message ?? "放大查看失败")); }}>
                 <Maximize2 size={13} /><span>放大查看（新窗口）</span>
               </button>
-              <button role="menuitem" disabled={!active.url} onClick={() => { setMenuOpen(false); if (active.url) { try { void window.codex.openExternal(active.url); } catch (error: any) { setStealthHint(error?.message ?? "打开失败"); } } }}>
+              <button role="menuitem" disabled={!active.url} onClick={() => { setMenuOpen(false); if (active.url) { try { void window.codex.openExternal(active.url).catch((error: any) => setStealthHint(`系统浏览器打开失败：${error?.message ?? "URL 不被允许"}`)); } catch (error: any) { setStealthHint(error?.message ?? "打开失败"); } } }}>
                 <ExternalLink size={13} /><span>在系统浏览器打开</span>
               </button>
               {bookmarks.length > 0 && (
@@ -255,7 +272,23 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
 
       <div className="browser-pane-content">
         {active.url ? (
-          <WebviewTag ref={wvRef} src={active.url} className="browser-pane-webview" allowpopups="true" />
+          <>
+            {loadError && (
+              /* 加载失败诊断条（10-17）：把"空白页"变成可读错误 + 可用退路（新窗口打开已证可用） */
+              <div className="browser-pane-loaderror" role="alert">
+                <FileWarning size={15} />
+                <div className="browser-pane-loaderror-body">
+                  <strong>页面加载失败（{loadError.code}）：{loadError.desc}</strong>
+                  <small>{loadError.url}</small>
+                </div>
+                <div className="browser-pane-loaderror-actions">
+                  <button type="button" onClick={() => { setLoadError(null); go("reload"); }}>重试</button>
+                  <button type="button" onClick={() => { setLoadError(null); void window.codex.browserPopout(active.url).catch((error: any) => setStealthHint(error?.message ?? "新窗口打开失败")); }}>改用新窗口打开</button>
+                </div>
+              </div>
+            )}
+            <WebviewTag ref={wvRef} src={active.url} className="browser-pane-webview" allowpopups="true" />
+          </>
         ) : (
           <div className="browser-pane-empty">
             <Globe2 size={56} strokeWidth={0.75} />
