@@ -26,6 +26,19 @@ import path from "node:path";
 /** 云账号服务基址默认值。可用 `HARNESS_ACCOUNTS_BASE` 覆盖（自建部署）。 */
 export const DEFAULT_ACCOUNTS_BASE = "https://ppz123.asia/cloud-api";
 
+/** 服务端**自报**的对外基址（登录回包里的 server.baseUrl）。
+ *  ⛔ 只用于**显示**（cloud-auth:status 的 defaultBaseUrl）—— 让界面别把编译期常量当固定事实。
+ *  ⛔⛔ **不参与地址解析**：accountsBase() 仍按「环境变量 → 账号记录 → 常量」，
+ *     否则一次自报就能把连接地址悄悄改掉（安全与可排障性都会崩）。换地址请显式重登。 */
+let serverReportedBase = "";
+export function rememberServerBase(input: unknown): void {
+  const v = String((input as { baseUrl?: unknown })?.baseUrl ?? "").trim();
+  if (/^https?:\/\//i.test(v)) serverReportedBase = v.replace(/\/+$/, "");
+}
+export function serverBaseUrl(): string {
+  return serverReportedBase;
+}
+
 /** 一条已登录的云账号。`encryptedToken` 加密落盘，⛔ 明文只在 login 那一跳的内存里存在。 */
 export type CloudAccount = {
   id: string;
@@ -167,8 +180,10 @@ export function switchAccount(id: string): boolean {
 
 export type LoginResult = { ok: boolean; account?: CloudAccountView; error?: string };
 
-/** 服务端 `POST /login` 的回执。 */
-type LoginReply = { ok?: boolean; token?: string; account?: { username?: string; role?: string }; error?: string };
+/** 服务端 `POST /login` 的回执。
+ *  ⛔ `server.baseUrl` = 服务端**自报**的对外基址（由反代头推出来）—— 界面上"服务地址"显示它，
+ *     而不是把编译期常量当固定事实。⛔ 它只用于显示，不参与地址解析（见 rememberServerBase）。 */
+type LoginReply = { ok?: boolean; token?: string; account?: { username?: string; role?: string }; server?: { baseUrl?: string }; error?: string };
 
 /**
  * 账号密码登录云账号服务。
@@ -198,6 +213,7 @@ export async function login(baseUrlRaw: string, usernameRaw: string, password: s
   } catch (error) {
     return { ok: false, error: `连不上账号服务：${(error as Error).message.slice(0, 80)}` };
   }
+  rememberServerBase(payload?.server);
   const token = String(payload?.token || "");
   if (!payload?.ok || !token) {
     return { ok: false, error: payload?.error || `登录失败（HTTP ${status}）` };

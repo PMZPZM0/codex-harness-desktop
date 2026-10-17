@@ -12,7 +12,7 @@
  */
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
-import { DEFAULT_ACCOUNTS_BASE, accountViews, cloudFetch, forgetAccount, login, loginState, switchAccount } from "../cloud-api";
+import { DEFAULT_ACCOUNTS_BASE, accountViews, cloudFetch, forgetAccount, login, loginState, switchAccount, serverBaseUrl } from "../cloud-api";
 import { disableCloudProvider } from "../cloud-provider";
 import { CLOUD_KB_CONNECTOR_ID, CLOUD_MEMORY_CONNECTOR_ID, syncCloudMcpConnector } from "../cloud-mcp";
 
@@ -58,7 +58,8 @@ export const cloudAuthFeature = defineFeature<null>({
     ipcHost.handle("cloud-auth:status", async () => ({
       ...loginState(),
       accounts: accountViews(),
-      defaultBaseUrl: DEFAULT_ACCOUNTS_BASE,
+      /* ⛔ 登录过就用服务端**自报**的地址（用户令：别把编译期常量固定展示）；没登录过才回落到常量。 */
+      defaultBaseUrl: serverBaseUrl() || DEFAULT_ACCOUNTS_BASE,
     }));
 
     /* 积分（服务端 /points/me）：余额 + 最近变动明细。
