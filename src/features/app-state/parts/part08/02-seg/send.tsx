@@ -24,6 +24,19 @@ import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntr
 import { saveMessageOriginal } from "../../../../../lib/user-message-originals.mjs";
 import type { Bag } from "../../bag-types";
 
+/* ⛔⛔ 发送前校验：模型 id 必须属于**当前生效供应商**的可用清单（10-17 用户实测：旧会话全坏、新会话正常）。
+   设计上所有供应商段都指向同一地址（统一桥，见 custom-model-apply「所有 id 一律指向当前生效」），
+   但**模型名跟着会话走** —— 旧会话绑的模型可能已在当前网关下架/不在清单 ⇒ 上游报「模型不存在」
+   ⇒ 表现为"旧会话用不了、新会话正常"。⇒ 不在清单就自动落到当前生效模型，并提示一句（迁移而非静默换）。 */
+function resolveStartModel(bag: { selectedModel?: { model?: string } | null; modelId: string; customModel?: { model?: string; models?: { id: string; enabled?: boolean }[] } | null; showToast?: (title: string, text?: unknown, threadId?: string) => void }): string {
+  const wantedModel = resolveStartModel(bag);
+  const offered = bag.customModel?.models ?? [];
+  const ok = !offered.length || offered.some((m) => m.id === wantedModel && m.enabled !== false);
+  const resolved = ok ? wantedModel : (bag.customModel?.model || offered.find((m) => m.enabled !== false)?.id || wantedModel);
+  if (!ok) bag.showToast?.("模型已迁移", `「${wantedModel}」不在当前供应商的可用清单里，本会话已改用「${resolved}」`);
+  return resolved;
+}
+
 export async function send(bag: Bag, event?: FormEvent) {
     event?.preventDefault();
     // 自定义命令展开文本优先消费（跳过 / 前缀解析，避免展开结果被二次当命令处理）
@@ -381,7 +394,7 @@ export async function send(bag: Bag, event?: FormEvent) {
       const startTurn = async (target: Thread) => window.codex.request("turn/start", {
         threadId: target.id,
         input: sendInput,
-        model: bag.selectedModel?.model ?? modelName(bag.modelId),
+        model: resolveStartModel(bag),
         effort: effectiveEffort,
         personality: bag.selectedModel?.supportsPersonality ? bag.personality : null,
         // 审批档位逐回合下发（TurnStartParams.approvalPolicy，协议 schema 实证 09-06）：
@@ -393,7 +406,7 @@ export async function send(bag: Bag, event?: FormEvent) {
         // 工作区外、权限总是掉」），每轮按 UI 当前权限下发是唯一稳的做法。
         sandboxPolicy: sandboxPolicy(bag.sandbox, target.cwd ?? bag.workspace ?? ""),
         // 协作模式的 settings 优先于顶层 effort；漏传时计划模式会回落 medium。
-        ...(bag.planOnceRef.current ? { collaborationMode: { mode: "plan", settings: { model: bag.selectedModel?.model ?? modelName(bag.modelId), reasoning_effort: effectiveEffort } } } : {}),
+        ...(bag.planOnceRef.current ? { collaborationMode: { mode: "plan", settings: { model: resolveStartModel(bag), reasoning_effort: effectiveEffort } } } : {}),
       });
       let active = bag.thread;
       if (!active) {
@@ -405,7 +418,7 @@ export async function send(bag: Bag, event?: FormEvent) {
       bag.setQuoteItem(null);
       bag.setContextItems([]);
       bag.setImages([]);
-      bag.activeModelRef.current = bag.selectedModel?.model ?? modelName(bag.modelId);
+      bag.activeModelRef.current = resolveStartModel(bag);
       /* 新一轮开工先清上一轮的任务清单（10-06 夜六轮，用户实测「新回合，旧的任务清单还在」）：
          步骤区只在回合运行中显示，不清的话，上一轮停下的 todo/doing 清单会在新回合里整段冒出来；
          清空走 tasks:clear 真通道 + tasks-changed 广播（胶囊即刻归零，模型 task_list 读到空清单、
@@ -467,7 +480,7 @@ export async function send(bag: Bag, event?: FormEvent) {
         // 记录限流重试上下文（**按会话**）：该回合若以 429 失败，可用原输入在原会话自动重发
         bag.armRateLimitRetry(active.id, {
           input: sendInput,
-          model: bag.selectedModel?.model ?? modelName(bag.modelId),
+          model: resolveStartModel(bag),
           effort: bag.effort || null,
           personality: bag.selectedModel?.supportsPersonality ? bag.personality : null,
         });
@@ -506,7 +519,7 @@ export async function send(bag: Bag, event?: FormEvent) {
       void bag.refreshThreads();
       // **自愈**（09-18）：这次用当前档位发送**成功**了 → 清掉「该档位不被支持」的记录。
       // 没有这一步，用户强制选回被标灰的档位、或网关后来放开了，标记会永久留着（一直标灰）。
-      if (bag.effort) clearEffortUnsupported(bag.selectedModel?.model ?? modelName(bag.modelId), bag.effort);
+      if (bag.effort) clearEffortUnsupported(resolveStartModel(bag), bag.effort);
     } catch (error: any) {
       // turn/start RPC 直接以限流失败：安排应用层自动重试（10 次退避，按会话独立）
       if (isRateLimitError(error?.message)) {
@@ -518,7 +531,7 @@ export async function send(bag: Bag, event?: FormEvent) {
           bag.markThreadStopped(retryThreadId);
           bag.armRateLimitRetry(retryThreadId, {
             input: sendInput,
-            model: bag.selectedModel?.model ?? modelName(bag.modelId),
+            model: resolveStartModel(bag),
             effort: bag.effort || null,
             personality: bag.selectedModel?.supportsPersonality ? bag.personality : null,
           });
@@ -530,7 +543,7 @@ export async function send(bag: Bag, event?: FormEvent) {
       // 不再让用户提前勾掉，而是**报错时自动学会**：记住这一档 + 自动降一档重发一次）。
       // 判定要"档位语义 + 否定语义"双命中，否则 invalid api key 之类会被误判（见 effort-support.ts）。
       if (isUnsupportedEffortError(error?.message) && bag.effort) {
-        const fallbackModelId = bag.selectedModel?.model ?? modelName(bag.modelId);
+        const fallbackModelId = resolveStartModel(bag);
         const fallback = pickEffortFallback(bag.effort, blockedEffortsOf(fallbackModelId));
         const retryThreadId = createdThreadId ?? bag.optimisticBaselineRef.current.threadId ?? bag.threadRef.current?.id;
         if (fallback && fallback !== bag.effort && retryThreadId) {
