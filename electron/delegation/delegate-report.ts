@@ -20,7 +20,7 @@
  * 主会话收到回报 → 又派活 → 又超时 → 又回报 …… 同一会话在窗口内最多 N 次，到上限静默停手。
  */
 import { randomUUID } from "node:crypto";
-import { server } from "./runtime-refs";
+import { server } from "../runtime-refs";
 
 /** 同一发起会话在多少毫秒内最多自动回投几次（防「回报 → 又派活 → 又超时 → 又回报」滚雪球）。 */
 export const DELEGATE_REPORT_WINDOW_MS = 15 * 60 * 1000;
