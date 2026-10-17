@@ -65,7 +65,7 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
 (/appendUserProfile\(/.test(readFileSync(join(ROOT, "electron/memory-store.ts"), "utf8")) ? ok : fail)("【102】L0 画像已接线（捕获链真的会调 appendUserProfile）");
     /* ⑤ 日志条目形态：需求 + 结论 */
     const entry = buildLogEntry("改一下发送逻辑", "结论：已改好，验证通过。");
-    (/- 需求：/.test(entry) && /- 结论：/.test(entry) ? ok : fail)("【102】日志条目 = 需求 + 结论（不再是「结果」取开头）");
+    (/- 需求：/.test(entry) && /- 重点/.test(entry) ? ok : fail)("【102】日志条目 = 需求 + 回合重点摘要（10-17 起，不再取「最后一段」）");
   }
 
   if (layersMod) {

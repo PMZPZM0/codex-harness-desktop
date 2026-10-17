@@ -118,6 +118,17 @@ function healMisnamedSkillDirs(root: string): void {
   }
 }
 
+/* ── 不可停用的技能（10-17，用户令：「记忆技能默认启用、不能关」）──────────────
+   ⛔ 与 `essential-domains.ts`（不可停用的域）**同性质、同理由**：它们承载的是
+   「**每轮都必须生效的纪律**」——被关掉不会有任何报错，只会**静默失效**，
+   而失效的后果（记忆退化成流水账）要过很久才被发现。这一类东西不该交给开关。
+   ⛔ 与联动技能（`MEMORY_MCP_BACKEND_SKILL`）的区别：那个是"看后端二选一"（**会**被停用），
+   这个是"永远启用"（**不许**被停用）—— 所以这里不只是跳过投影，还要**强制恢复**。 */
+export const PROTECTED_SKILLS: readonly string[] = ["memory-classify", "memory-hygiene", "memory-distill"];
+export function isProtectedSkill(name: string): boolean {
+  return PROTECTED_SKILLS.includes(name);
+}
+
 /**
  * 把「全局停用集 ∪ 项目禁用集」投影到磁盘改名状态。幂等；失败静默（启动链旁路纪律）。
  *
@@ -140,6 +151,19 @@ export function syncSkillPool(cwd: string): void {
     let changed = false;
     for (const { dir, name, enabled } of dirs) {
       if (name === MEMORY_MCP_BACKEND_SKILL) continue; // 联动自管，不进池
+      /* ⛔ 保护技能：无条件启用 —— 池/全局里就算写了停用也**不认**，磁盘上若已是停用态**强制恢复**。
+         这就是「不能关」的落地点：UI 拦一道（见 setSkillPoolState），投影再兜一道（这里）。 */
+      if (isProtectedSkill(name)) {
+        const on = path.join(dir, SKILL_FILE);
+        if (!enabled) {
+          for (const fn of [SKILL_FILE_POOL_DISABLED, SKILL_FILE_DISABLED]) {
+            const off = path.join(dir, fn);
+            if (fs.existsSync(off)) { fs.renameSync(off, on); changed = true; break; }
+          }
+        }
+        if (!fs.existsSync(on)) { /* 连活跃文件都没有：交给 ensureBuiltinSkills 落盘，这里不造 */ }
+        continue;
+      }
       const shouldDisable = global.has(name) || project.has(name);
       const skillMd = path.join(dir, SKILL_FILE);
       const poolOff = path.join(dir, SKILL_FILE_POOL_DISABLED);
@@ -199,6 +223,11 @@ export function setSkillPoolState(
   const codexHome = codexHomeRef;
   const dirs = listGlobalSkillDirs(codexHome);
   if (!dirs.some((d) => d.name === name)) throw new Error(`技能不存在: ${name}`);
+  /* ⛔ UI 这道也要拦：只靠投影兜底的话，开关会**看起来关掉了**（状态写进配置了）却不生效，
+     比直接拒绝更让人困惑。拒绝要说清原因。 */
+  if (isProtectedSkill(name) && (patch.globalDisabled === true || patch.projectDisabled === true)) {
+    throw new Error(`技能 ${name} 是记忆纪律技能，默认启用且不可停用（关掉不会报错、只会静默失效）`);
+  }
   if (patch.globalDisabled !== undefined) {
     const global = readGlobalDisabled(codexHome);
     if (patch.globalDisabled) global.add(name);

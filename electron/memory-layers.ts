@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   CORRECTION_CATEGORY, PITFALL_CATEGORY, PREFERENCE_CATEGORY, SOP_CATEGORY,
-  appendLessonLine, groupLessonSections, lessonSectionTitle, sortLessonSections, splitLessonSections,
+  appendLessonLine, groupLessonSections, lessonSectionTitle, sortLessonSections, splitLessonSections, shouldRememberLine,
 } from "./memory-lessons";
 import { effectiveMemoryBackend } from "./memory-backend";
 
@@ -562,14 +562,38 @@ export class MemoryLayers {
        非贪婪成对正则在它内部提前闭合 ⇒ 只剥前半段、后半段铺进 L4「需求」/L2「现象」，并继续喂出新的垃圾行。
        在**写入这一刻**拦住，而不是事后靠自检发现。 */
     if (/\[Harness\s*(?:常驻记忆|相关记忆)|\[(?:常驻记忆结束|记忆结束)\]/.test(text)) return false;
+    /* ⛔ 10-17 新增写入判据：这是一条**可以改变未来行为**的纪律，还是一条流水？
+       本方法此前只去重、不做价值判断（自动捕获链有 buildLessonLine 把门，但收藏 / 引擎手写 /
+       记忆工具这些**直接调用方**绕过了它）。判据本体在 memory-lessons（与分类同源，⛔ 不另起一套）。
+       ⛔ 被拒时**必须留痕**：判据是启发式，拒错要能复盘 —— ⛔ 不许静默吞。 */
+    const verdict = shouldRememberLine(text, category);
+    if (!verdict.keep) {
+      console.log(`[memory] 未写入纪律（${verdict.reason}）：${text.slice(0, 80)}`);
+      return false;
+    }
     await this.migrateLayout(dir);
     const file = this.lessonFile(dir, category || PITFALL_CATEGORY);
     const existing = await this.readText(file);
     const key = String(dedupeKey ?? "").trim();
     /* 去重跨全部文件（同一条纪律不许在两个分类里各存一份） */
     const all = await this.readLessons(workspace);
-    if (key && all.replace(/[\s，。！？、,.!?:：；;""''（）()【】\[\]]/g, "").includes(key)) return false;
-    const body = appendLessonLine(existing, category || PITFALL_CATEGORY, text);
+    const norm = (s: string) => String(s ?? "").replace(/[\s，。！？、,.!?:：；;""''（）()【】\[\]]/g, "");
+    let textOut = text;
+    if (key && norm(all).includes(key)) {
+      /* ⛔⛔ 10-17（P1）：同一去重键再次出现**不再静默丢弃**。
+         老行为是 `return false` —— 信息直接消失，且**没人知道它被丢了**（09-22 起一直如此）。
+         但"同一条纪律又出现一次"本身是有信息的：说明它还在犯、措辞该强化、或该升级成技能。
+         两条分支：
+           ① 正文与既有条目**实质相同** ⇒ 就地记一次出现（可在面板里数"又犯了几次"）；
+           ② 正文**不同** ⇒ 这是**冲突/更新**，不是重复 ⇒ 新行照写并标 \`⟳ 更新\`，
+              旧行**原样保留**（可回溯"当时是这么定的"——这就是最轻的时间维度）。 */
+      const hit = await this.markRepeatOrConflict(dir, category || PITFALL_CATEGORY, key, text, norm);
+      if (hit === "duplicate") return false;            // 已就地记数，不新增行
+      if (hit === "conflict") textOut = `⟳ 更新：${text}`; // 冲突 ⇒ 新增一行，旧行保留
+      /* hit === "not-found"（键在别的分类文件里）⇒ 按老规矩拦住，跨文件不重复存 */
+      if (hit === "not-found") return false;
+    }
+    const body = appendLessonLine(existing, category || PITFALL_CATEGORY, textOut);
     const lines = body.split("\n").length;
     const out = lines > LESSONS_MAX_LINES && !body.includes("已超过")
       ? body.replace("# 纪律与记忆", `# 纪律与记忆\n\n> ⚠️ 条目已超过 ${LESSONS_MAX_LINES} 行，请在设置 → 记忆里整理/并入 MEMORY.md（不自动删除）。`)
@@ -578,8 +602,81 @@ export class MemoryLayers {
     return true;
   }
 
-  // ── L4 每日日志（logs/YYYY-MM-DD.md）─────────────────────────────
-  /** 自动捕获的唯一落点：往当天日志追加一行摘要 */
+  /** 同键再次出现：区分「重复」与「冲突」（细节见 appendLesson 的说明）。
+   *  返回 `duplicate`（已就地记数，调用方不要再加行）/ `conflict`（调用方新增一行并标 ⟳）/ `not-found`（键不在本分类文件里）。 */
+  private async markRepeatOrConflict(dir: string, category: string, key: string, text: string, norm: (s: string) => string): Promise<"duplicate" | "conflict" | "not-found"> {
+    const file = this.lessonFile(dir, category);
+    const raw = await this.readText(file);
+    if (!raw) return "not-found";
+    const lines = raw.split(/\r?\n/);
+    const idx = lines.findIndex((l) => /^\s*[-*]\s+\S/.test(l) && norm(l).includes(key));
+    if (idx < 0) return "not-found";
+    /* 比较「现象」**与「结论」**两段（都去掉日期与历次标记）：
+       现象相同 + 结论相同 ⇒ **又犯了一次**（就地记数）；
+       现象相同但**结论不同** ⇒ **冲突/更新**（保留两条，旧的可回溯"当时是这么定的"）。
+       ⛔ 只比现象是不够的 —— 那样"结论改了"会被判成"重复"、新结论直接丢掉（实测发现）。 */
+    const partsOf = (s: string) => String(s).split("→");
+    const phenOf = (s: string) => norm(partsOf(s)[0]).replace(/\d{4}\d{2}\d{2}/g, "").replace(/再次[^）]*/g, "").replace(/[⟳更新：]/g, "");
+    const concOf = (s: string) => { const p = partsOf(s); return p.length > 1 ? norm(p.slice(1).join("→")) : ""; };
+    const a = phenOf(lines[idx]);
+    const b = phenOf(text);
+    const samePhen = Boolean(a && b) && (a.includes(b) || b.includes(a));
+    /* ⛔ 「一边有结论、一边没有」**不算冲突** —— 那只是"又提了一次、信息更少"，判成更新会白长一行
+       （预检【102】的旧用例就是这种：首写有 `→ 结论`、重复那行没有）。只有**两边都有结论且不同**才算冲突。 */
+    const ca = concOf(lines[idx]);
+    const cb = concOf(text);
+    if (!samePhen || (ca && cb && ca !== cb)) return "conflict";
+    const stamp = new Date().toISOString().slice(0, 10);
+    const seen = lines[idx].match(/（再次 [\d-]+/g) || [];
+    if (lines[idx].includes(`（再次 ${stamp}`)) return "duplicate"; // 同一天记过就不再叠
+    lines[idx] = `${lines[idx].replace(/\s*（再次 [^）]*）/g, "")}（再次 ${stamp}${seen.length ? `，第 ${seen.length + 2} 次` : ""}）`;
+    await this.writeText(file, lines.join("\n"));
+    return "duplicate";
+  }
+
+  /** 按粒度遗忘（10-17，P1-2）。三种粒度：
+   *  ① `line`     —— 单条（按内容子串定位，最精确）；
+   *  ② `key`      —— 主题（同一去重键的全部条目）；
+   *  ③ `category` —— 整个分类。
+   *  ⛔ **只从 lessons 移除**，不删文件、不碰 `logs/`（流水归日志，本来就该留）。
+   *  ⛔ `corrections`（用户纠错）**只允许单条粒度** —— 防"按主题一把清掉全部纠错"（那是保护项）。
+   *  返回移除的条数。 */
+  async forgetLessons(workspace: string, target: { line?: string; key?: string; category?: string }): Promise<number> {
+    const dir = this.projectDir(workspace);
+    if (!dir) return 0;
+    const want = String(target.line || "").trim();
+    const key = String(target.key || "").trim();
+    const cat = String(target.category || "").trim();
+    if (!want && !key && !cat) return 0;
+    const norm = (s: string) => String(s ?? "").replace(/[\s，。！？、,.!?:：；;""''（）()【】\[\]]/g, "");
+    /* ⛔ 纠错类是**保护项**：只允许**单条**粒度（必须给 `line`）——
+       防"按主题一把清掉全部纠错"（那正是当初把它单列一类的原因：注入最前、永不自动淘汰）。 */
+    if (!want) {
+      if (cat === CORRECTION_CATEGORY) return 0;
+      if (key) {
+        const corr = await this.readText(this.lessonFile(dir, CORRECTION_CATEGORY));
+        if (corr && norm(corr).includes(key)) return 0;
+      }
+    }
+    const files = cat ? [cat] : [CORRECTION_CATEGORY, PITFALL_CATEGORY, SOP_CATEGORY, PREFERENCE_CATEGORY];
+    let removed = 0;
+    for (const c of files) {
+      const file = this.lessonFile(dir, c);
+      const raw = await this.readText(file);
+      if (!raw) continue;
+      const lines = raw.split(/\r?\n/);
+      const kept = lines.filter((l) => {
+        if (!/^\s*[-*]\s+\S/.test(l)) return true;
+        const hit = (want && l.includes(want)) || (key && norm(l).includes(key));
+        if (hit) { removed += 1; return false; }
+        return true;
+      });
+      if (kept.length !== lines.length) await this.writeText(file, kept.join("\n"));
+    }
+    return removed;
+  }
+
+  // ── L4 每日日志（logs/YYYY-MM-DD.md）─────────────────────────────  /** 自动捕获的唯一落点：往当天日志追加一行摘要 */
   async appendLog(workspace: string, summary: string): Promise<void> {
     const dir = this.projectDir(workspace);
     if (!dir || !summary.trim()) return;
