@@ -68,13 +68,13 @@ export async function handleRoleMemoryToolCall(input: {
 
   /* 身份硬闸：只用引擎下发的 threadId 反查归属，⛔ 不用 args 里的任何东西当身份。 */
   const found = await lookupRoleSession(userDataDir, threadId).catch(() => null);
-  if (!found) {
-    respond(id, {
-      contentItems: [{ type: "inputText", text: "记忆写入失败：这个会话没有角色归属（索引缺失），已拒绝写入以免写错地方。" }],
-      success: false,
-    });
-    return true;
-  }
+  /* ⛔⛔ 10-17 修（用户两次被拒：「记忆写入失败：这个会话没有角色归属（索引缺失）」）：
+     本 handler 用**统一工具名 memory_write** 匹配，但它只服务**被委派会话**。普通主会话也会
+     命中这里，而主会话在角色反查表里天然没有条目（索引为空 `{}`）——上一版**直接拒绝并吞掉**
+     （return true），主会话的写入永远到不了渲染层，等于「主会话根本不能写记忆」。
+     ⇒ 非角色会话一律 return false，交回原流程（渲染层 02-request 的 memory_write 分支负责
+     主会话写入，走 memory:write IPC；该分支本来就在，只是被这里截胡了）。 */
+  if (!found) return false;
   /* ⛔ 二次核对：这个 threadId 必须确实是一条**被委派**的会话 —— 否则一个普通会话
      （理论上不该有这个工具，但引擎侧的 bug 也会到这里）就能往记忆里写。 */
   const isDelegate = await delegateRegistry.infoOf(threadId).catch(() => null);
