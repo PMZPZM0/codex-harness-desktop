@@ -141,10 +141,15 @@ function usageCounterSnapshot(usage: any): UsageCounterSnapshot {
 
 export /** 卸载技能进度（与安装对称）：folder=目录名、name=展示名；engineRemoved=引擎是否已确认移除。 */
 /** 本地绝对路径 → file:// URL（webview 内置浏览器可直接渲染本地 HTML）
- *  ⛔⛔ 必须逐段 percent-encode（10-17 实测：中文路径原样拼进 webview ⇒ 页面空白，
- *  地址栏里连反斜杠都原样在 —— 这份 URL 从未经过正规编码）。只编码路径段、保留 `/`。 */
+ *  ⛔⛔ 两个坑（10-17 实测，各吃过一次）：
+ *   ① 中文不编码 ⇒ webview 加载失败/空白（地址栏里中文原文 + 反斜杠原样）；
+ *   ② 整段 encodeURIComponent 会把**盘符冒号**也编码成 `D%3A` ⇒ `file://D%3A/…`
+ *      变成非法 authority ⇒ 同样空白（截图实证）。「放大预览」走主进程正规 URL 所以一直正常。
+ *  ⇒ 正确形态：反斜杠归一；**盘符冒号保留**；其余路径段逐段 encodeURIComponent。 */
 function toFileUrl(p: string): string {
   const norm = p.replace(/\\/g, "/");
-  const encoded = norm.split("/").map((seg) => encodeURIComponent(seg)).join("/");
+  const segs = norm.split("/");
+  const drive = /^([a-zA-Z]):$/.test(segs[0]) ? segs[0] : encodeURIComponent(segs[0]);
+  const encoded = [drive, ...segs.slice(1).map((seg) => encodeURIComponent(seg))].join("/");
   return norm.startsWith("/") ? `file://${encoded}` : `file:///${encoded}`;
 }
