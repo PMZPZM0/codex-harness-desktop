@@ -6,7 +6,7 @@ import * as http from "node:http";
 import * as https from "node:https";
 import { URL } from "node:url";
 import { SseParser } from "./responses-bridge/01-sse-items";
-import { toChatRequest, ChatStreamTranslator, chatJsonToResponses } from "./responses-bridge/02-chat-convert";
+import { toChatRequest, lastRepair, ChatStreamTranslator, chatJsonToResponses } from "./responses-bridge/02-chat-convert";
 import { anthropicMessagesUrl, toAnthropicRequest, AnthropicStreamTranslator, anthropicJsonToResponses } from "./responses-bridge/03-anthropic-convert";
 export { SseParser, toChatRequest, ChatStreamTranslator, chatJsonToResponses, anthropicMessagesUrl, toAnthropicRequest, AnthropicStreamTranslator, anthropicJsonToResponses };
 
@@ -334,7 +334,7 @@ export class ResponsesBridge {
         /* ⛔ 首字耗时：这是"太慢"最关键的指标（握手 vs 首字 vs 生成，三者要能分开看） */
         if (ttftMs === null) {
           ttftMs = Date.now() - t0;
-          this.log(`[bridge] ${target.label ?? ""} 首字 ${ttftMs}ms · 请求体 ${payload.byteLength}B · messages=${chatItems} tools=${toolCount} · 上游 ${target.baseUrl}`);
+          this.log(`[bridge] ${target.label ?? ""} 首字 ${ttftMs}ms · 配对修复 call=${lastRepair.droppedCalls} result=${lastRepair.droppedResults} · 请求体 ${payload.byteLength}B · messages=${chatItems} tools=${toolCount} · 上游 ${target.baseUrl}`);
         }
         for (const data of parser.push(chunk)) {
           if (data === "[DONE]") continue;

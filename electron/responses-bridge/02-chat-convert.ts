@@ -5,6 +5,10 @@
 import { randomUUID } from "node:crypto";
 import { sseLine, finalizeItems, newItem, newToolItem } from "./01-sse-items";
 import type { OutputItem } from "./01-sse-items";
+
+/** 最近一次请求的配对修复统计（10-17）：供桥日志打印"这次修掉了多少条不成对"，
+ *  ⛔ 只用于诊断，不进入请求体。 */
+export let lastRepair = { droppedCalls: 0, droppedResults: 0 };
 /** 把 Responses 请求体转成 Chat Completions 请求体（纯函数，可离线断言）。 */
 export function toChatRequest(body: any): any {
   const messages: any[] = [];
@@ -74,9 +78,13 @@ export function toChatRequest(body: any): any {
       },
     }));
 
+  /* ⛔ 发送前兜底修复工具配对（见 repairToolPairing 注释）——放在最末尾，所有分支都已落进 messages。 */
+  const repaired = repairToolPairing(messages);
+  lastRepair = { droppedCalls: repaired.droppedCalls, droppedResults: repaired.droppedResults };
+
   const chat: any = {
     model: body?.model,
-    messages,
+    messages: repaired.messages,
     stream: body?.stream !== false,
   };
   if (tools.length) {
@@ -248,4 +256,41 @@ export function chatJsonToResponses(json: any, model: string): any {
       total_tokens: json?.usage?.total_tokens ?? 0,
     },
   };
+}
+
+/** ⛔⛔ 工具配对修复（10-17 实测：上游 503 + `code 11148 tool calls and tool results do not match`）。
+ *  引擎发来的历史里，`assistant.tool_calls` 与 `role: "tool"` 可能**不成对** —— 历史被裁剪/压缩、
+ *  或某轮被中断没落结果。严格网关会**直接拒收整份请求**：表现为 503 + 引擎无限重试
+ *  （实测 2 分钟 / 8 次 / 每次握手 16s）⇒ 用户看到"发不出去或太慢"。
+ *  ⇒ 发送前双向收敛，保证任何网关都收得下：
+ *    ① `assistant.tool_calls` 里**没有结果**的，从数组摘掉（摘空则降级为普通 assistant 文本）；
+ *    ② `role: "tool"` 里**没有对应 call** 的，整条丢掉。
+ *  ⛔ 只动"不成对"的那些；成对的一条不碰（顺序天然保持：tool 消息本就紧跟其 call）。 */
+export function repairToolPairing(messages: any[]): { messages: any[]; droppedCalls: number; droppedResults: number } {
+  const resultIds = new Set<string>();
+  for (const m of messages) {
+    if (m && m.role === "tool" && m.tool_call_id) resultIds.add(String(m.tool_call_id));
+  }
+  let droppedCalls = 0;
+  const keptCallIds = new Set<string>();
+  for (const m of messages) {
+    if (!m || m.role !== "assistant" || !Array.isArray(m.tool_calls)) continue;
+    const kept = m.tool_calls.filter((c: any) => c && c.id && resultIds.has(String(c.id)));
+    droppedCalls += m.tool_calls.length - kept.length;
+    if (kept.length) {
+      m.tool_calls = kept;
+      for (const c of kept) keptCallIds.add(String(c.id));
+    } else {
+      delete m.tool_calls;
+      if (m.content === null || m.content === undefined) m.content = "";
+    }
+  }
+  let droppedResults = 0;
+  const out = messages.filter((m: any) => {
+    if (!m || m.role !== "tool") return true;
+    if (m.tool_call_id && keptCallIds.has(String(m.tool_call_id))) return true;
+    droppedResults += 1;
+    return false;
+  });
+  return { messages: out, droppedCalls, droppedResults };
 }
