@@ -191,6 +191,11 @@ ok(/自动更新/.test(ledger) && /autoUpdate/.test(ledger), "FEATURE-LEDGER 有
      前面刚用 runCommand 执行过要搬的那棵树里的 exe，Windows 短暂持有进程映像；
      再叠加杀软/索引器扫新解压的 ~100MB 树。⇒ movePath 必须对 EPERM/EBUSY 重试（同 free-gateway 的先例）。 */
   ok(/attempt < 5/.test(eu) && /EPERM\|EBUSY\|ENOTEMPTY/.test(eu), "落位对 Windows 文件占用（EPERM/EBUSY）重试，不重试就会「下载 100% 却装不上」");
+
+  /* ⛔ 10-17 实测：更新**成功**后 vendor/ 里仍留着 ~160MB 的 .engine-update-* ——
+      里的 fs.rm 被 Windows 占用打回、又被 .catch 静默吞掉。
+     ⇒ 必须给 fs.rm 原生的 maxRetries（它就是为 EBUSY/EPERM 设计的）。 */
+  ok(/maxRetries: 10/.test(eu), "临时目录清理带 maxRetries（否则每次更新残留 ~160MB）");
 }
 
 /* ⑩ 进度日志不许被刷成同一行（10-17 实测：留下 6 条「下载引擎包 100%」）。
