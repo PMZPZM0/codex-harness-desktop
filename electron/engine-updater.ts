@@ -307,7 +307,11 @@ export async function performEngineUpdate(
   if (latest === current) return { ok: true, version: current, message: "已是最新版本" };
 
   const tarballVersion = `${latest}-${PLATFORM_SUFFIX}`;
-  const workRoot = path.join(os.tmpdir(), `codex-engine-update-${Date.now()}`);
+  /* ⛔⛔ 暂存目录**必须与目标同卷**：`os.tmpdir()` 通常在 C:，而引擎可能装在 D:
+     （系统盘 C: + 应用装 D: 是极常见的布局）⇒ 跨卷 `rename` 直接 `EXDEV: cross-device link
+     not permitted`。实测现象就是「能下载、装不上」——因为**只有落位那一步失败**，下载/解压/自检全过。
+     ⇒ 放到 `vendorDir` 的**父目录**下（必然同卷），rename 才有意义；跨卷仍由 `movePath` 兜底。 */
+  const workRoot = path.join(path.dirname(vendorDir), `.engine-update-${Date.now()}`);
   await fs.mkdir(workRoot, { recursive: true });
 
   // 1) 下载 tarball：与 registry 同一套源顺序（镜像在前 / direct 时官方在前），配代理则都走隧道
@@ -316,9 +320,18 @@ export async function performEngineUpdate(
     .map(({ base, proxy }) => ({ url: `${base}/${PKG_NAME}/-/${TARBALL}-${tarballVersion}.tgz`, proxy }));
   let downloaded = false;
   let lastDownloadError: unknown = null;
-  for (const cand of candidates) {
+  /* ⛔⛔ 换源**必须自解释**：这里是"依次试多个下载源"，每个候选失败都会重来一轮 0→100%。
+     旧实现每轮只报「开始下载引擎包…」+ 进度 ⇒ 界面上看起来是**同一个下载重复了 6 次**
+     （用户实测报「下载记录重复显示多次」）。⇒ 从第二个源起，明确写清"第几个源失败、为什么"。 */
+  for (const [candIndex, cand] of candidates.entries()) {
     try {
-      report({ stage: "download", detail: `开始下载引擎包 ${tarballVersion}…`, percent: 0 });
+      report({
+        stage: "download",
+        detail: candIndex === 0
+          ? `开始下载引擎包 ${tarballVersion}…`
+          : `第 ${candIndex} 个下载源失败（${(lastDownloadError as Error)?.message?.slice(0, 80) || "未知原因"}），换源重试…`,
+        percent: 0,
+      });
       await downloadTo(cand.url, tarballPath, cand.proxy, (percent) => report({ stage: "download", detail: "下载中", percent }));
       const stat = await fs.stat(tarballPath);
       if (stat.size < 1024 * 1024) throw new Error(`下载文件异常过小（${stat.size} 字节）`);
@@ -354,15 +367,18 @@ export async function performEngineUpdate(
     const backupDir = `${vendorDir}.bak-1`;
     await fs.rm(backupDir, { recursive: true, force: true }).catch(() => undefined);
     try {
-      await fs.rename(vendorDir, backupDir);
+      await movePath(vendorDir, backupDir);
     } catch (err) {
       throw new Error(`引擎文件被占用（引擎未完全退出？）：${err instanceof Error ? err.message : String(err)}`);
     }
     try {
-      await fs.rename(newVendorDir, vendorDir);
+      await movePath(newVendorDir, vendorDir);
     } catch (err) {
-      await fs.rename(backupDir, vendorDir).catch(() => undefined);
-      throw new Error(`落位失败（已回滚）：${err instanceof Error ? err.message : String(err)}`);
+      await movePath(backupDir, vendorDir).catch(() => undefined);
+      /* ⛔ 提示要指向真因：EXDEV = 跨盘，不是「文件坏了」。旧文案只丢原始错误串，用户看不懂。 */
+      const moveCode = (err as NodeJS.ErrnoException)?.code;
+      const moveHint = moveCode === "EXDEV" ? "（跨盘移动：暂存目录与安装目录不在同一个卷）" : "";
+      throw new Error(`落位失败${moveHint}（已回滚）：${err instanceof Error ? err.message : String(err)}`);
     }
 
     // 5) 落位复验
@@ -371,7 +387,7 @@ export async function performEngineUpdate(
     if (!finalProbe.ok || !trimVersion(finalProbe.out).includes(latest)) {
       // 回滚
       await fs.rm(vendorDir, { recursive: true, force: true }).catch(() => undefined);
-      await fs.rename(backupDir, vendorDir).catch(() => undefined);
+      await movePath(backupDir, vendorDir).catch(() => undefined);
       throw new Error("替换后自检失败，已回滚旧版本");
     }
     report({ stage: "done", detail: `引擎已更新到 ${latest}` });
@@ -380,6 +396,23 @@ export async function performEngineUpdate(
     return { ok: false, version: current, message: err instanceof Error ? err.message : String(err) };
   } finally {
     await fs.rm(workRoot, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+/** 目录移动：先 `rename`（同卷零拷贝、原子）；**跨卷（EXDEV）退化为复制 + 删除**。
+ *
+ *  ⛔ 为什么必须兜这个：`rename` 是**唯一**会因"跨盘"失败的文件操作，而
+ *     「系统盘 C: + 应用装 D:」是极常见布局。不兜的后果不是报个错就完了 ——
+ *     旧目录已经被移到 `.bak-1`、新目录又落不过去 ⇒ 引擎暂时不可用，只能靠回滚救回来，
+ *     用户看到的是「下载 100%、装不上」。⛔ 这属于"防丢数据/可用性"的硬要求，不许省。 */
+async function movePath(from: string, to: string): Promise<void> {
+  try {
+    await fs.rename(from, to);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code !== "EXDEV") throw err;
+    /* 跨卷：复制整棵树再删源。⛔ `dereference:false` —— 保留符号链接语义，别把链接展开成实体。 */
+    await fs.cp(from, to, { recursive: true, force: true, errorOnExist: false, dereference: false });
+    await fs.rm(from, { recursive: true, force: true });
   }
 }
 

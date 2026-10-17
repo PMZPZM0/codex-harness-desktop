@@ -178,5 +178,26 @@ ok(/autoUpdate:status/.test(manifest) && /autoUpdate:set/.test(manifest), "manif
 ok(/readAutoUpdateStatus/.test(preload) && /setAutoUpdate/.test(preload), "preload 暴露两个方法");
 ok(/自动更新/.test(ledger) && /autoUpdate/.test(ledger), "FEATURE-LEDGER 有对应条目");
 
+/* ⑨ 引擎更新的**落位必须跨卷安全**（10-17 实测事故，用户报「能下载、装不上」）。
+   ⛔ 真因：暂存目录建在 `os.tmpdir()`（几乎总在 C:），而引擎可能装在 D: ⇒
+      `rename` 跨卷直接 `EXDEV: cross-device link not permitted`，下载/解压/自检全过、**只有落位失败**。
+   ⛔ 手动链与自动链调的是**同一个** `performEngineUpdate` ⇒ 一处修好两边都好，一处不修两边都挂。 */
+{
+  const eu = read("electron/engine-updater.ts");
+  ok(!/path\.join\(os\.tmpdir\(\), `codex-engine-update-/.test(eu), "引擎更新暂存目录不再用 os.tmpdir()（跨卷 rename 必 EXDEV）");
+  ok(/function movePath\(/.test(eu) && /EXDEV/.test(eu) && /fs\.cp\(from, to/.test(eu), "落位有 EXDEV 兜底（复制 + 删源），不是把 EXDEV 原样抛给用户");
+  ok(!/await fs\.rename\(newVendorDir, vendorDir\)/.test(eu), "落位不再直接 rename（必须走 movePath）");
+}
+
+/* ⑩ 进度日志不许被刷成同一行（10-17 实测：留下 6 条「下载引擎包 100%」）。
+   ⛔ 两个成因：① 主进程"依次换源"每轮从 0 重报；② 渲染层逐条 append 每个进度事件。
+   ⇒ 都要在：换源时写明第几个源失败；渲染层同阶段只原地更新最后一行。 */
+{
+  const eu = read("electron/engine-updater.ts");
+  const view = read("src/features/app-state/parts/part01/05-engine-ssh-connectors.tsx");
+  ok(/candidates\.entries\(\)/.test(eu) && /换源重试/.test(eu), "主进程换源时自解释（第几个源失败 + 原因），不再只报「开始下载」");
+  ok(/lastProgressStage/.test(view) && /sameStage/.test(view), "渲染层同阶段原地更新最后一行（⛔ 不再逐条 append）");
+}
+
 console.log(fails ? `\n✗ 12k 未通过：${fails}/${checks}` : `\n✓ 12k 通过：${checks}/${checks}`);
 process.exit(fails ? 1 : 0);
