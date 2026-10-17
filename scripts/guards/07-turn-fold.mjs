@@ -897,15 +897,15 @@ export async function run() {
     const mainProbe = readMainSource();
     const appProbe = readAppUi();
     const hookProbe = readFileSync(join(ROOT, "src", "hooks", "useModelProviders.ts"), "utf8");
-    (/requestedWire === "chat" \? \["chat"\] : \["responses", "chat"\]/.test(mainProbe))
-      ? ok("【39】探针 responses 被拒时自动回落 chat（显式 responses 也回落——单协议误报连接失败）")
-      : fail("【39】探针又只试单协议 —— 火山 Coding Plan 类网关会把能用的模型误报成连接失败");
+    (/probingViaBridge \? \["responses"\] : \["responses", "chat"\]/.test(mainProbe))
+      ? ok("【39】探针：非桥路径 responses 被拒仍回落 chat；**走桥路径只探 responses**（桥负责翻译，绕桥去测 chat 是在测一条引擎不走的路）")
+      : fail("【39】探针协议顺序丢了「走桥/直连」的区分 —— 火山 Coding Plan 类网关会误报，云模型也会误报");
     (/coding plan\/i\.test\(body\)/.test(mainProbe) && /白话：供应商表示这个模型不在其 Coding Plan/.test(mainProbe))
       ? ok("【39】coding-plan 404 带白话提示（告知换通用接入点/换模型，不再只有供应商原话）")
       : fail("【39】coding-plan 404 没有白话提示 —— 用户看到 404 无从下手");
-    (/wireMismatch: wireUsed !== requestedWire/.test(mainProbe) && /wireMismatch/.test(hookProbe))
-      ? ok("【39】实际连通协议与配置不同时如实标注（wireMismatch → 探针结果提示）")
-      : fail("【39】探针协议差异没有上报/展示 —— 连接成功与发送报错会对不上");
+    (/wireMismatch: !probingViaBridge && wireUsed !== requestedWire/.test(mainProbe) && /wireMismatch/.test(hookProbe))
+      ? ok("【39】直连路径如实标注协议差异；**走桥路径不报**（桥负责翻译，报了就是把用户吓死）")
+      : fail("【39】探针协议差异的上报规则丢了（直连要报、走桥不报）");
     (/void healImageModalityIfUnsupported\(params\.turn\.error\?\.message\)/.test(appProbe)
       && /async function healImageModalityIfUnsupported/.test(appProbe)
       && /inputTypes: \(m\.inputTypes \?\? \[\]\)\.filter\(\(t\) => t !== \"image\"\)/.test(appProbe))
