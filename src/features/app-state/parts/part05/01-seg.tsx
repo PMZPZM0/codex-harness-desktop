@@ -395,6 +395,10 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
         bag.pruneSupersededCompactions(String(params.item?.id ?? ""));
         bag.setCompactEventState("success");
         bag.settleAfterCompaction(tid0);
+        /* 10-17（「回合结束回落 50%」的根因修法）：压缩生效后**作废该会话的用量快照** ——
+           盘上那份是压缩前的更大值，回合结束/重载时会被恢复回来，环就弹回 50%。
+           作废后由下一条 thread/tokenUsage/updated 用压缩后的真实值重新落盘。 */
+        bag.persistTokenUsageSnapshot(tid0, null);
       }
       if (method === "turn/plan/updated") {
         bag.setPlanSteps((params.plan ?? []).map((step: any) => ({ step: step.step ?? "", status: step.status ?? "pending" })));

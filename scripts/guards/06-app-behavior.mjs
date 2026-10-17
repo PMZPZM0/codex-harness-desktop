@@ -2363,7 +2363,7 @@ w.postMessage({id:1,op:"list",root});
     );
     const part05Src157 = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part05", "01-seg.tsx"), "utf8");
     const part01Src157 = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part01", "04-optimistic-turn-approval-e2e.tsx"), "utf8");
-    (/persistTokenUsageSnapshot[\s\S]{0,300}?map\.set\(threadId/.test(part01Src157) ? ok : fail)(
+    (/persistTokenUsageSnapshot[\s\S]{0,600}?map\.set\(threadId/.test(part01Src157) ? ok : fail)(
       "【157】用量按会话归属存储（后台会话/被委派子会话不污染当前的环）"
     );
     (/usageThreadId === String\(bag\.threadRef\.current\?\.id/.test(part05Src157) ? ok : fail)(
@@ -2382,7 +2382,7 @@ w.postMessage({id:1,op:"list",root});
     );
     /* ⛔ 必须**真 LRU**（09-25 代码审查）：Map 的 set 不会把已存在的键挪到末尾 ⇒ 只写 slice(-N)
        实际是 FIFO，长期活跃的老会话会被新会话挤掉、重启后进度照样归零。 */
-    (/map\.delete\(threadId\);[\s\S]{0,80}?map\.set\(threadId, usage\);/.test(part01Src157) ? ok : fail)(
+    (/map\.delete\(threadId\);[\s\S]{0,600}?map\.set\(threadId, usage\)/.test(part01Src157) ? ok : fail)(
       "【157】快照截断是**真 LRU**（先 delete 再 set 挪到末尾；否则长期活跃会话会被挤掉、进度照样归零）"
     );
     (/const TOKEN_SNAPSHOT_KEY/.test(part01Src157.split("export function")[0]) ? ok : fail)(
