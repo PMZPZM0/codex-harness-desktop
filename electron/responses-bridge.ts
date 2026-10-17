@@ -269,6 +269,12 @@ export class ResponsesBridge {
     this.counters.converted += 1;
     const chatBody = toChatRequest(body);
     const payload = Buffer.from(JSON.stringify(chatBody), "utf8");
+    /* ⛔⛔ 分段计时（10-17 用户口径「能回复，就是太慢了」）：
+       必须能量出**握手 / 首字 / 完成**各花多久，否则永远在猜"是网关慢还是我们慢"。
+       只在 bridge.log 里落一行，用户复现一次就有数据（⛔ 不打 Authorization/正文）。 */
+    const t0 = Date.now();
+    const chatItems = Array.isArray(chatBody?.messages) ? chatBody.messages.length : 0;
+    const toolCount = Array.isArray(chatBody?.tools) ? chatBody.tools.length : 0;
     const upstream = this.upstreamRequest(req, target, rest.replace(/\/responses$/, "/chat/completions"), payload);
 
     upstream.once("response", (up) => {
@@ -282,6 +288,7 @@ export class ResponsesBridge {
           const text = Buffer.concat(parts).toString("utf8");
           if (status >= 400) {
             this.counters.failures += 1;
+            this.log(`[bridge] ${target.label ?? ""} 上游 ${status} · 握手 ${Date.now() - t0}ms · 请求体 ${payload.byteLength}B · messages=${chatItems} tools=${toolCount} · ${text.slice(0, 240).replace(/\s+/g, " ")}`);
             res.writeHead(status, { "content-type": contentType || "application/json" });
             return res.end(text);
           }
@@ -303,6 +310,7 @@ export class ResponsesBridge {
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
       res.write(translator.begin());
       up.setEncoding("utf8");
+      let ttftMs: number | null = null;
       /* ⛔ 空闲看门狗：上游连上了但一个字节都不发时，主动超时 + 如实报错（见文件头 BRIDGE_IDLE_MS） */
       let idleTimer: ReturnType<typeof setTimeout> | null = null;
       let finished = false;
@@ -323,6 +331,11 @@ export class ResponsesBridge {
       arm();
       up.on("data", (chunk: string) => {
         arm();
+        /* ⛔ 首字耗时：这是"太慢"最关键的指标（握手 vs 首字 vs 生成，三者要能分开看） */
+        if (ttftMs === null) {
+          ttftMs = Date.now() - t0;
+          this.log(`[bridge] ${target.label ?? ""} 首字 ${ttftMs}ms · 请求体 ${payload.byteLength}B · messages=${chatItems} tools=${toolCount} · 上游 ${target.baseUrl}`);
+        }
         for (const data of parser.push(chunk)) {
           if (data === "[DONE]") continue;
           let parsed: any = null;
@@ -334,6 +347,7 @@ export class ResponsesBridge {
       up.once("end", () => {
         if (finished) return;
         finished = true; disarm();
+        this.log(`[bridge] ${target.label ?? ""} 完成 ${Date.now() - t0}ms · 首字 ${ttftMs ?? -1}ms`);
         res.write(translator.finish()); res.end();
       });
       up.once("error", (error) => {
