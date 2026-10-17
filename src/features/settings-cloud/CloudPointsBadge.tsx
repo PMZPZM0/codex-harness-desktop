@@ -36,7 +36,9 @@ function fmt(value: number): string {
   return Math.abs(n) >= 1000 ? n.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : String(Math.round(n * 100) / 100);
 }
 
-export function CloudPointsBadge() {
+/** @param active 云端模型是否为**当前供应商**。⛔ 10-17 用户令：停用/切走后必须隐藏，
+ *  不再常驻（此前只判「已登录」⇒ 模型停用了徽标还在）。非活跃时**也不轮询**（省一次网络）。 */
+export function CloudPointsBadge({ active }: { active: boolean }) {
   const [points, setPoints] = useState<PointsReply | null>(null);
 
   const refresh = useCallback(() => {
@@ -48,12 +50,13 @@ export function CloudPointsBadge() {
   }, []);
 
   useEffect(() => {
+    if (!active) { setPoints(null); return; }
     refresh();
     const timer = window.setInterval(refresh, POLL_MS);
     return () => window.clearInterval(timer);
-  }, [refresh]);
+  }, [active, refresh]);
 
-  if (!points) return null;
+  if (!active || !points) return null;
   const last = points.txns?.[0];
   return (
     <span className="cloud-points-badge" tabIndex={0} aria-label={`云端积分 ${fmt(points.balance)}`}>

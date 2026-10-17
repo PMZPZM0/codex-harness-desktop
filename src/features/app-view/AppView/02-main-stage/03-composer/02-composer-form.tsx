@@ -541,7 +541,9 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                               {relayActive && customModel?.provider === relayActive.provider && <RelayBalanceBadge active={relayActive} />}
                               {customModel?.provider === "openai-official" && <OpenaiBalanceBadge accountKey={openaiActiveAcct ?? "openai-official"} />}
                               {/* 云端积分：与上面两枚同位置（上下文环**左边**），未登录云账号时不占位。 */}
-                              <CloudPointsBadge />
+                              {/* ⛔ 10-17：只有**云端模型是当前供应商**时才占位（与其他两枚余额徽标同规则）；
+                                  停用或切到别的供应商 ⇒ 组件返回 null，不占位也不轮询。 */}
+                              <CloudPointsBadge active={customModel?.provider === "cloud"} />
                               <ContextUsageBadge tokenUsage={tokenUsage} fallbackWindow={customModel?.models?.find((m) => m.id === customModel?.model)?.contextWindow ?? customModel?.contextWindow} recentCompaction={recentCompaction} onCompact={() => { if (thread?.id) { compactPendingRef.current.add(thread.id); setCompactEventState("running"); window.codex.request("thread/compact/start", { threadId: thread.id }).catch((error: any) => { compactPendingRef.current.delete(thread.id); setCompactEventState("error", error.message); }); } }} />
                               <ComposerMenu icon={Bot} label="模型" title="模型" disabled={!customModel} value={modelId} width={330} options={[...allModels.map((model) => ({
                                 value: model.id,
