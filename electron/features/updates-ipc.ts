@@ -28,6 +28,7 @@ import { sendToWindow } from "./window-bus";
 import {
   checkLatestUpdate,
   defaultDownloadDir,
+  pruneOldInstallers,
   downloadUpdate,
   fileExists,
   installUpdate,
@@ -45,6 +46,17 @@ export const updatesFeature = defineFeature<null>({
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");
     if (!ipcHost) throw new Error("updates: 缺少 ipc 服务（宿主未提供）");
+
+    /* ⛔⛔ 启动即清**旧安装包**（10-17 用户令：「更新重启完成后把旧的安装包去了，否则越积越大」）。
+      为什么放在"重启后"而不是"安装完立刻"：安装包拉起后本进程马上退出，那一刻删不掉
+      （自己还握着句柄）；**新版本跑起来的这一刻**才是安全的清理点。
+      ⛔ 静默 + 幂等：清不掉就留着，绝不影响启动（这里**不许抛**，也不许拖慢首屏）。 */
+    try {
+      const swept = pruneOldInstallers(defaultDownloadDir(app.getPath("downloads")));
+      if (swept.removed > 0) {
+        console.log(`[updates] 已清理 ${swept.removed} 个旧安装包（约 ${Math.round(swept.bytes / 1048576)}MB）`);
+      }
+    } catch { /* 清不掉不影响启动 */ }
 
     // ★ 更新链的主进程侧权威（09-13 审计 P0）：下载地址与安装路径**不再由渲染层决定**。
     //   `updates:check` 拿到的 info 存在这里，下载用它自己的 downloadUrl + sha256 校验，
