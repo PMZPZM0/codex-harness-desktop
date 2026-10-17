@@ -21,7 +21,7 @@ import path from "node:path";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { accountsBase, cloudFetch, cloudHome, decrypt, encrypt, loginState } from "../cloud-api";
-import { applyCloudProvider, activateCloudProvider, isCloudActive, readCloudProviderRow, type CloudCatalogModel } from "../cloud-provider";
+import { applyCloudProvider, activateCloudProvider, isCloudActive, readCloudProviderRow, type CloudCatalogModel, repairCloudProviderProtocol, refreshEngineProviders } from "../cloud-provider";
 
 /** 域内 IPC 通道。 */
 const CHANNELS = [
@@ -157,6 +157,19 @@ export const cloudModelsFeature = defineFeature<null>({
     const ipcHost = ctx.get<IpcHost>("ipc");
     if (!ipcHost) throw new Error("cloud-models: 缺少 ipc 服务（宿主未提供）");
     void CHANNELS;
+
+    /* ⛔⛔ 启动即纠偏（10-17）：旧版本把云模型的 `wireApi` 写成 `chat`，而**引擎只会发 Responses**
+       ⇒ 整份配置拒载，用户看到「测试连接成功、发送却报错」。改成 responses + 让本地桥按 chat 翻。
+       ⛔ 改完必须 `refreshEngineProviders()` 重写 config.toml —— 只改 json 引擎读不到。
+       ⛔ 静默：纠偏失败不影响启动（下次同步还会再试）。 */
+    void (async () => {
+      try {
+        if (await repairCloudProviderProtocol()) {
+          console.log("[cloud-models] 已把云模型协议纠正为 responses（上游 chat 交给本地桥）");
+          await refreshEngineProviders();
+        }
+      } catch { /* 静默 */ }
+    })();
 
     /* 目录（面板展示用）：原始回执透传，渲染层按 provider/models 自行渲染。 */
     ipcHost.handle("cloud-models:catalog", async () => {
