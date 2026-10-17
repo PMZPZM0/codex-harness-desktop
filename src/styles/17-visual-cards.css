@@ -1475,3 +1475,13 @@
 .flow-loading { color: var(--muted); font-size: 12px; padding: 10px 4px; }
 .flow-error { color: var(--red); font-size: 12.5px; }
 .flow-error pre { margin: 6px 0 0; padding: 8px; background: color-mix(in srgb, var(--red) 8%, transparent); border-radius: 8px; overflow-x: auto; font-family: var(--mono); font-size: 11.5px; }
+
+/* 截图 / 导出 菜单（10-17）：与工具栏同一套 token */
+.flow-toolbar-spacer { flex: 1; }
+.flow-export-wrap { position: relative; }
+.flow-export-backdrop { position: fixed; inset: 0; z-index: 20; }
+.flow-export-menu { position: absolute; top: calc(100% + 4px); right: 0; z-index: 21; min-width: 248px; max-width: 320px; padding: 4px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--panel); box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+.flow-export-menu button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; padding: 7px 10px; border: none; background: transparent; border-radius: 8px; text-align: left; cursor: pointer; }
+.flow-export-menu button:hover { background: color-mix(in srgb, var(--green) 8%, transparent); }
+.flow-export-menu button b { font-size: 12px; font-weight: 500; color: var(--text); }
+.flow-export-menu button small { font-size: 11px; color: var(--faint); line-height: 1.45; }
