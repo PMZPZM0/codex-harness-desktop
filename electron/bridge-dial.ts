@@ -46,6 +46,14 @@ export const responsesBridge = new ResponsesBridge({
  */
 export function bridgeDial(id: string, upstreamBaseUrl: string | undefined): string | undefined {
   if (!upstreamBaseUrl) return upstreamBaseUrl;
+  /* ⛔⛔ **幂等防护**：上游绝不能是桥自己（或任何「桥地址」形状的 URL）——
+     一旦有人拿着**已拨号**的地址再来 dial（例如从 config.toml 读回的 base_url 再走一遍桥），
+     就会把「桥自己/旧端口」注册成上游 ⇒ 转发必 10061 拒绝 ⇒ 全部 502 ⇒ 引擎零输出无限重试
+     （10-17 实测：云模型发送 62s 零输出，curl 桥端点回 502 upstream connect failed）。
+     ⇒ 已经是桥地址的，原样返回、**不再注册**。 */
+  if (/^http:\/\/127\.0\.0\.1:\d+\/p\//.test(upstreamBaseUrl) || /^http:\/\/localhost:\d+\/p\//.test(upstreamBaseUrl)) {
+    return upstreamBaseUrl;
+  }
   const dialed = responsesBridge.urlFor(id);
   if (!dialed) return upstreamBaseUrl;
   responsesBridge.register(id, { baseUrl: upstreamBaseUrl, mode: upstreamProtocols.get(id) ?? "auto", label: id });
