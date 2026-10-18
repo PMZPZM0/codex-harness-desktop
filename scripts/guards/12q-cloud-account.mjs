@@ -285,8 +285,15 @@ ok(
 );
 const storeSrc = read("src/lib/cloud-credit-store.ts");
 ok(
-  /cloudModelsCatalog/.test(storeSrc) && /cloudModelsCatalog\) return Promise\.resolve/.test(storeSrc),
-  "积分 store 的倍率来源是 cloudModelsCatalog（⛔ 拿不到目录一律不显示，不猜倍率）",
+  /* ⛔ 锚**代码形态**而不是裸路径/裸方法名 —— 上面 store 的注释里就写着 `/api/cloud-models`
+     与 `cloudModelsCatalog`，用裸串判定会被注释顶成假绿（实测：删掉整条 HTTP 回落仍全绿）。 */
+  /if \(api && api\.cloudModelsCatalog\) return api\.cloudModelsCatalog\(\)/.test(storeSrc)
+  && /fetch\("\/api\/cloud-models"/.test(storeSrc),
+  "积分 store 的倍率来源是云端目录（桌面/PPcode 走 IPC `cloud-models:catalog`，云助手走同源 HTTP `/api/cloud-models` —— ⛔ 两条路回执同形，只解析一次，不做二套字段映射）",
+);
+ok(
+  /\{ models: new Map\(\), offPeak: null \}/.test(storeSrc) && /snap\.models\.has\(name\)/.test(storeSrc),
+  "拿不到目录就返回空目录、且不记任何回合（⛔ 不猜倍率、不写死 0 —— 页脚据此不占位）",
 );
 const turnDoneSrc = read("src/features/app-state/parts/part05/event-router/05-turn-completed-notify.tsx");
 ok(

@@ -6,8 +6,10 @@
  *   · **读取点**有两个 —— 消息页脚（按 turnId 查本轮消耗）、输入框积分徽标（要闲时快照）。
  *   两点之间隔着好几层组件，⛔ 不往中间层加 props（本项目既有做法：走桥，不走透传）。
  *
- * 数据从哪来：`cloudModelsCatalog()`（服务端 `GET /models` 原样透传）里每个模型的 `credits`
- * + 全局 `offPeak` 快照。⛔ 拿不到目录 ⇒ 一律**不显示**（宁可不显示，也不显示错的数字）。
+ * 数据从哪来：云端模型目录（服务端 `GET /models` 原样透传）里每个模型的 `credits` + 全局
+ * `offPeak` 快照。目录有**两条取法**（回执形状同一份，见 fetchCatalog）：桌面版/PPcode 走 IPC
+ * 通道 `cloud-models:catalog`，云助手（浏览器形态）走同源 HTTP `/api/cloud-models`。
+ * ⛔ 拿不到目录 ⇒ 一律**不显示**（宁可不显示，也不显示错的数字）。
  *
  * ⛔ 目录带 TTL 缓存：管理员改倍率后，最多 TTL 过期后的下一次用时才反映到本地显示。
  *   （账本以服务端为准，这里只是"提前告诉你大概会扣多少"。）
@@ -47,10 +49,24 @@ function subscribe(listener: () => void) {
   return () => { listeners.delete(listener); };
 }
 
-function readCatalog(): Promise<CatalogSnapshot> {
+/**
+ * 取目录（两条路，返回**同一形状**的回执）。
+ *  · 桌面版 / PPcode：IPC 通道 `cloud-models:catalog`（`window.codex.cloudModelsCatalog`）。
+ *  · 云助手（界面跑在浏览器 / 云端资源 + 本机伴生服务）：manifest 里**没有**这个通道
+ *    （它把目录开在同源 HTTP `/api/cloud-models`，见该仓 electron/headless.ts）
+ *    ⇒ 走相对路径 fetch。同源相对路径在桌面版是 `file://`，永远走不到这里（有 IPC）。
+ * ⛔ 两路回执都是账号服务 `/models` 原样透传 ⇒ 下游只解析一次，不做二套字段映射。
+ */
+function fetchCatalog(): Promise<CatalogReply | null> {
   const api = (window as unknown as { codex?: CatalogApi }).codex;
-  if (!api || !api.cloudModelsCatalog) return Promise.resolve({ models: new Map(), offPeak: null });
-  return api.cloudModelsCatalog()
+  if (api && api.cloudModelsCatalog) return api.cloudModelsCatalog().catch(() => null);
+  return fetch("/api/cloud-models", { cache: "no-store" })
+    .then((r) => (r.ok ? (r.json() as Promise<CatalogReply>) : null))
+    .catch(() => null);
+}
+
+function readCatalog(): Promise<CatalogSnapshot> {
+  return fetchCatalog()
     .then((reply) => {
       const models = new Map<string, string>();
       if (reply && reply.ok && Array.isArray(reply.models)) {
