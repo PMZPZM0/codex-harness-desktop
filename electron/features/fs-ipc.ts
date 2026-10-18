@@ -69,8 +69,22 @@ export const fsFeature = defineFeature<null>({
       // 读全盘文件（含系统敏感目录）。收敛到可信根：会话工作目录、userData、用户选过的路径。
       // 口径与 harness-image 协议（09-13 审计 S5）完全一致，合法预览不受影响。
       if (!isInsideTrustedRoots(target)) {
-        /* ⛔ 机器可读前缀（渲染层据此弹「允许并预览」）：越界 = 待授权，不是硬失败。 */
-        throw new Error(`OUTSIDE_TRUST:${path.dirname(target)}`);
+        /* 10-18：越界 ⇒ 主进程弹一次确认（用户看得到真实目录），同意就把该目录加进可信根并**持久化**，
+           然后继续读 —— ⛔ 不静默放行（XSS 可直接调 IPC，静默放行等于恢复「任意路径读」）。 */
+        const dir = path.dirname(target);
+        const parent = host.window.getAll()[0] as any;
+        const picked: any = await (host.dialog.showMessageBox as any)(parent, {
+          type: "question",
+          buttons: ["允许并预览", "取消"],
+          defaultId: 0,
+          cancelId: 1,
+          noLink: true,
+          title: "文件在工作区之外",
+          message: "是否允许预览该目录？",
+          detail: `${dir}\n\n允许后，这个目录下的文件以后都能直接预览（可在设置里清空）。`,
+        }).catch(() => null);
+        if (!picked || picked.response !== 0) throw new Error(`已取消：${dir} 不在可信目录内`);
+        allowUserPath(dir);
       }
       const stat = fileStat(target);
       if (!stat || !stat.isFile()) throw new Error(`文件不存在或不可读：${input.path}`);
