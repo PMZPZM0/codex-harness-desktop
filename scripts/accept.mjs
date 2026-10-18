@@ -1560,6 +1560,37 @@ const CHECKS = [
     },
   },
   {
+    id: "laya-judge",
+    name: "㉘ Laya 判断工具：装了才暴露；未装时执行端明确拒绝（10-18 轮）",
+    run: async (h) => {
+      /* 为什么真跑：条件暴露与执行端「未安装 / 预热 / 判断」都是运行期行为；Laya 是否安装随机器不同，
+         所以两条路径都要成立：未装 ⇒ 直接调用必须拒绝且不偷偷安装；已装 ⇒ 至少真判一次或明确回报预热。 */
+      const status = await h.eval(`window.codex.layaStatus()`).catch(() => null);
+      h.check("① Laya 状态可读（前置）", !!status && typeof status.installed === "boolean", JSON.stringify(status).slice(0, 200));
+      if (!status) return;
+      if (!status.installed) {
+        const missing = await h.eval(`window.codex.layaJudge({ preset: "knowledge_gate", state: "项目约定：提交前必须运行 npm run check。" })`).catch((error) => ({ ok: false, error: String(error?.message ?? error) }));
+        h.check("② 未安装：直接调用执行端返回「未安装」，且说明工具需要装了才出现",
+          missing?.ok === false && /未安装/.test(String(missing?.error ?? "")) && /laya_judge/.test(String(missing?.error ?? "")),
+          JSON.stringify(missing).slice(0, 260));
+        const after = await h.eval(`window.codex.layaStatus()`).catch(() => null);
+        h.check("③ 未安装路径没有偷偷安装（installed 仍为 false）", after?.installed === false, JSON.stringify(after).slice(0, 160));
+        return;
+      }
+      let result = null;
+      for (let i = 0; i < 3; i++) {
+        result = await h.eval(`window.codex.layaJudge({ preset: "knowledge_gate", state: "项目约定：所有提交前必须运行 npm run check；这是团队必须遵守的工程规范。", timeoutMs: 8000 })`).catch((error) => ({ ok: false, error: String(error?.message ?? error) }));
+        if (result?.ok) break;
+        await wait(3000);
+      }
+      const judged = result?.ok === true && /Laya (判断|弃权)/.test(String(result?.output ?? ""));
+      const warming = result?.ok === false && /正在预热/.test(String(result?.error ?? ""));
+      h.check("② 已安装：执行端可达（真判一次，或明确回报正在预热）", judged || warming, JSON.stringify(result).slice(0, 260));
+      const invalid = await h.eval(`window.codex.layaJudge({ preset: "custom", state: "x", instructions: "判断", criteria: { only: "一个选项" } })`).catch((error) => ({ ok: false, error: String(error?.message ?? error) }));
+      h.check("③ 参数校验：custom 少于 2 个选项会被明确拒绝", invalid?.ok === false && /2~6/.test(String(invalid?.error ?? "")), JSON.stringify(invalid).slice(0, 220));
+    },
+  },
+  {
     id: "compact-line",
     name: "㉗ 压缩线：真压缩 → 宿主侦测 → 压缩线出现（10-07 轮）",
     run: async (h) => {
@@ -2576,7 +2607,7 @@ async function enterMain(h) {
 //   历史项不删（它们仍然是回归证据），但**永远不会在默认路径上被执行** ——
 //   这样"每次只测最新改动"是机制保证的，不再依赖我记不记得。
 // ─────────────────────────────────────────────────────────────────────────────
-const LATEST_ROUND = "10-16";   // 10-16 轮：刷新回执（30 处刷新入口补齐三态回执）；10-12 四项转回归证据 */
+const LATEST_ROUND = "10-18";   // 10-18 轮：Laya 判断工具（装了才暴露；未装拒绝且不自动安装）；10-16 刷新回执转回归证据
 // 上一轮（10-06）的五个验收项仍是回归证据：--only <id> 单跑，或 --all 全量。
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
@@ -2586,6 +2617,7 @@ const ROUND_OF = {
   "composer-resize": "10-06",   // 10-06 夜三轮新增：输入框上下拖动把手（用户对照 Qoder 图二）
   "goal-bar": "10-06",   // 10-06 夜五轮新增：/goal 目标条（用户对照 Qoder：计时 + 编辑/删除/暂停；默认轮最后一项，含真续跑回合）
   "newbie-guide": "10-07",   // 10-07 轮：新手引导（侧栏常驻入口 + 迷你设置弹窗；左选项/右内容/映射跳转/版本日志）
+  "laya-judge": "10-18",   // 10-18 轮：Laya 判断工具（装了才暴露；未装拒绝且不自动安装；纯函数真值表由守卫 12s 钉）
   "compact-line": "10-07",   // 10-07 夜十一轮：压缩线（新会话 + 短回合 + 手动压缩 → 宿主侦测真链路 → 线出现 + 落盘）
   "devtools-install-ux": "10-11",   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）
   "free-gateway": "10-12",   // 10-12 轮：免费模型网关（第三方开源侧车 + 一键注册供应商；免责声明为契约）   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）

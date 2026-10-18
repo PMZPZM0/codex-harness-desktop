@@ -134,6 +134,22 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                   contentItems: [{ type: "inputText", text: `已归档 ${done} 个调度会话${missed ? `（${missed} 个失败）` : ""}。` }],
                   success: missed === 0,
                 });
+              } else if (event.params?.tool === "laya_judge") {
+                /* Laya 局部判断（10-18）：工具只在装了 Laya 的机器上注册；执行端做参数校验、
+                   未就绪最多等 15s 预热、低置信返回「弃权」文案。⛔ 不走能力网关（专用工具）。 */
+                const layaResult: any = await window.codex.layaJudge({
+                  preset: typeof args.preset === "string" ? (args.preset as "knowledge_gate" | "duplicate" | "custom") : undefined,
+                  state: String(args.state ?? ""),
+                  reference: args.reference ? String(args.reference) : undefined,
+                  instructions: args.instructions ? String(args.instructions) : undefined,
+                  criteria: args.criteria && typeof args.criteria === "object" && !Array.isArray(args.criteria) ? args.criteria : undefined,
+                  minConfidence: typeof args.minConfidence === "number" ? args.minConfidence : undefined,
+                  timeoutMs: typeof args.timeoutMs === "number" ? args.timeoutMs : undefined,
+                });
+                await toolCallRespond.send(event.id!, {
+                  contentItems: [{ type: "inputText", text: layaResult?.ok ? String(layaResult.output ?? "") : `Laya 判断失败：${layaResult?.error ?? "未知原因"}` }],
+                  success: layaResult?.ok === true,
+                });
               } else if (event.params?.tool === "harness_tools") {
                 /* ⭐ 能力网关（10-05）：把引擎 0.157 后对模型不可见的内置 MCP 工具面接回来
                    （定时任务 / 知识库 / 组件库 / 视频 / 语音 / 工作流 / 专家管理 / 连接器注册）。

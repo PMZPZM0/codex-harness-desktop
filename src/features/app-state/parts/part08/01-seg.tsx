@@ -421,6 +421,11 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
    *       否则创建于旧版本的会话永远拿不到新工具（症状：agent_ask 写着"可多选"却只能选一个）。 */
   const buildDynamicTools = useCallback(async (): Promise<any[]> => {
     const builtinCfg = await window.codex.readBuiltinPlugins().catch(() => null);
+    /* Laya 判断工具（10-18 用户：「如果安装了 laya 模型，就再暴露这个工具给 codex」）：
+       ⛔ 条件注册是需求本身（没装就别让模型看见）；`layaStatus` 在主进程有 30s pip 缓存，
+         新开会话/切会话问一次不会拖慢。dynamicTools 只在 thread/start / resume 生效 ⇒
+         装好 Laya 后要**新开会话或切走再切回**才会出现（与既有工具面同规则）。 */
+    const laya = await Promise.resolve(window.codex.layaStatus?.()).catch(() => null);
     /* ⛔ 调度工具面的**完整来龙去脉**（10-04 用户拍板"调度开关就要对应生效工具"→ 引擎 0.157
        起 MCP 工具整批延迟暴露、不可达 → 10-05 改回渲染层注册 dynamicTools）见下方
        `agent_invoke` / `agent_archive_sessions` 两处注册上方的注释，那里是唯一真相源。 */
@@ -447,6 +452,37 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
               留着的唯一理由是老会话的上下文里记着它。 */
         { type: "function", name: "memory_write", description: "保存一条记忆。两种作用域：session（默认）= 只属于本会话的私事，别的会话看不到；project = 全项目共享，所有会话与智能体（子智能体 / 专家 / 专家团）都能读到。⛔ project 是公共知识，别把一次性的中间结论写进去。分类沿用五类，别自造；相同内容会自动去重。", inputSchema: { type: "object", properties: { scope: { type: "string", enum: ["session", "project"], description: "记忆作用域：session=本会话私有（默认），project=全项目共享" }, category: { type: "string", enum: ["用户偏好", "项目背景", "工作流/SOP", "任务经验", "临时上下文"] }, content: { type: "string", description: "记忆正文（单条上限 2000 字）" }, weight: { type: "number", description: "重要性 0..1（省略则按分类取默认）" }, pinned: { type: "boolean", description: "钉住：蒸馏与裁剪时永不删除" } }, required: ["content"] } },
       ] : []),
+      /* Laya 局部判断工具：**装了才出现**（用户 10-18 明确要求；未装时连 schema 都不占工具面）。
+         它是短文本多选一分类器（本地 ~几十 ms、零生成），不是生成/核查模型：
+         适合知识价值（knowledge_gate）、重复内容（duplicate）、固定选项粗分类（custom）；
+         ⛔ 不适合安全/法律/医疗/财务/不可逆操作的决定，也不适合长文本理解或开放生成。
+         低置信会返回「弃权」，模型必须当真（不要拿猜测当结论）。 */
+      ...(laya?.installed ? [{
+        type: "function",
+        name: "laya_judge",
+        description:
+          "调用本机 Laya 决策模型做**短文本多选一判断**（本地、零生成、几十毫秒）。"
+          + "适合：① preset=knowledge_gate —— 一段内容算项目知识还是闲聊/寒暄（写知识库前可先判一次）；"
+          + "② preset=duplicate —— 新内容是否与已有条目重复（要传 reference）；"
+          + "③ preset=custom —— 你自己定义 2~6 个选项的粗分类（instructions + criteria）。"
+          + "典型场景：写知识库前的价值/重复判断、把用户消息粗分成提问/任务/闲聊、对多份候选做同一套分类。"
+          + "⛔ 不适合：长文本理解、开放生成、事实核查、安全/法律/医疗/财务判断、不可逆操作的决定 —— 这些用你自己的判断。"
+          + "置信不足时它会返回「弃权」文案：弃权就**不要**依据这次判断，改用你自己的判断或向用户确认。"
+          + "⛔ 未安装 Laya 时本工具不会出现；出现后如果返回「正在预热」，稍后重试一次即可，别循环重试。",
+        inputSchema: {
+          type: "object",
+          properties: {
+            preset: { type: "string", enum: ["knowledge_gate", "duplicate", "custom"], description: "判断类型；缺省 knowledge_gate" },
+            state: { type: "string", description: "要判断的文本（≤4000 字；duplicate 时=新内容）" },
+            reference: { type: "string", description: "preset=duplicate 时的已有条目/已有内容（≤1500 字）" },
+            instructions: { type: "string", description: "preset=custom 时的判断说明（≤500 字）" },
+            criteria: { type: "object", description: "preset=custom 时的选项→含义（2~6 个，例如 { \"task\": \"用户要求改代码/做事\", \"question\": \"用户在问概念\" }）", additionalProperties: { type: "string" } },
+            minConfidence: { type: "number", description: "置信阈值 0.5~0.95（缺省 0.5）；低于它 Laya 弃权" },
+            timeoutMs: { type: "number", description: "等待预热/判断的上限 3000~30000ms（缺省 15000）" },
+          },
+          required: ["state"],
+        },
+      }] : []),
       /* ── 调度工具面（10-05 修正；⛔ 这里是「调度开关 → 生效工具」联动的**唯一**落点）──────
          ⛔⛔ 10-04 拍板「三类对象统一走内置 MCP」本身没错，但**引擎 0.157 改了工具面策略**：
             内置 MCP（harness-dispatch）的工具整批不进模型工具面。隔离复现（2026-10-05，
