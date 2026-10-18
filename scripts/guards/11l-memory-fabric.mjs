@@ -18,7 +18,10 @@ import { ROOT, readMainSource, readAppUi } from "./_ctx.mjs";
 let checks = 0, fails = 0;
 const ok = (c, m) => { checks++; if (c) console.log("  ✓ " + m); else { fails++; console.log("  ✗ " + m); } };
 
-const fab = readFileSync(join(ROOT, "electron", "memory-fabric.ts"), "utf8");
+/* 10-18：检索打分块（isRelevant / rankEntries / pruneEntries）已切到 memory/fabric-rank.ts（P2 批次 5）
+   ⇒ 两源拼接后断言（⛔ 只读单文件 ⇒ 这些断言会**静默恒真**，比红更危险）。 */
+const fab = readFileSync(join(ROOT, "electron", "memory-fabric.ts"), "utf8")
+  + readFileSync(join(ROOT, "electron", "memory", "fabric-rank.ts"), "utf8");
 const tool = readFileSync(join(ROOT, "electron", "memory-fabric-tool.ts"), "utf8");
 const del = readFileSync(join(ROOT, "electron", "delegate-memory.ts"), "utf8");
 const legacy = readFileSync(join(ROOT, "electron", "role-memory.ts"), "utf8");
