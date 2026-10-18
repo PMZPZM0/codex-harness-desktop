@@ -392,7 +392,7 @@ export function CloudAccountSection() {
               ⛔ 不需要桌面端在线，也不需要先打开云助手。
             </p>
             <div className="cloud-acct-actions">
-              <button className="secondary-setting" onClick={openUserCenter}>
+              <button className="secondary-setting" onClick={openUserCenter} title="浏览器打开，不需要桌面端在线；用同一个云账号登录即可">
                 <ExternalLink size={14} />打开云端用户中心（注册 / 查看账户）
               </button>
             </div>
@@ -578,21 +578,6 @@ export function CloudAccountSection() {
                   兜底页）；REST 通道正常，开通权益并刷新凭据后按<b>请求层注入</b>生效。</>
               )}
             </p>
-          </div>
-          <div className="cloud-acct-card">
-            <div className="cloud-acct-head">
-              <ExternalLink size={16} />
-              <strong>云端用户中心</strong>
-              <span className="cloud-acct-sub">改密码 / 看积分流水 / 勾选模型 / 开通知识库与记忆 / 管理设备</span>
-            </div>
-            <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-              在浏览器里打开，<b>不需要桌面端在线</b>；用同一个云账号登录即可。
-            </p>
-            <div className="cloud-acct-actions">
-              <button className="secondary-setting" onClick={openUserCenter}>
-                <ExternalLink size={14} />打开云端用户中心
-              </button>
-            </div>
           </div>
         </>
       )}
