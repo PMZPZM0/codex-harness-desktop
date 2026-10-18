@@ -263,9 +263,26 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
      压缩线要等下一次被动重渲染才出现（竞态）。订阅记录模块的版本号，一变即重渲染；
      线本体仍在下方的 IIFE 里按 thread 取（这里只负责触发）。 */
   void useSyncExternalStore(subscribeCompactions, compactionVersion);
+  /* 刻度尺上的绿色压缩标记（10-18 用户：「刻度线里面如那两个中间产生压缩线，就在那两个中间产生一个绿色线」）。
+     ⛔ 与时间线压缩线**同源**：同一个状态推导 + 同一个纯函数 ⇒ 两处口径不可能分叉。 */
+  const compactionMark = (() => {
+    if (!thread) return { turnId: "", atEnd: false };
+    const win = visibleTurnWindow(thread.turns, turnWindow[thread.id] ?? TURN_WINDOW);
+    const cs = compactionStateOf(win.ordered, compactToast?.state);
+    const record = compactionRecordFor(thread.id);
+    const boundary = cs.turnId || String(record?.turnId ?? "");
+    const at = resolveCompactionAnchor(win.visible, boundary, { compactionAt: Number(record?.at ?? 0) });
+    if (at < 0) return { turnId: "", atEnd: false };
+    /* ⛔ 刻度尺只给**用户消息**画刻度：压缩落在空回合（手动压缩）上时，锚点那个回合没有刻度 ⇒
+       绿色段要挂在「锚点位置之后第一个有用户消息的回合」的刻度之前；后面一个都没有 = 末尾。 */
+    const hasUser = (turn: any) => ((turn?.items ?? []) as any[]).some((item) => item?.type === "userMessage");
+    let j = at;
+    while (j < win.visible.length && !hasUser(win.visible[j])) j += 1;
+    return { turnId: j < win.visible.length ? String(win.visible[j]?.id ?? "") : "", atEnd: j >= win.visible.length };
+  })();
   return (
     <div className="timeline-wrap" ref={timelineWrapRef}>
-                  {thread && <MemoMessageRuler turns={thread.turns} scrollRef={scrollRef} containerRef={timelineWrapRef} onJump={jumpToTurnInWindow} />}
+                  {thread && <MemoMessageRuler turns={thread.turns} scrollRef={scrollRef} containerRef={timelineWrapRef} onJump={jumpToTurnInWindow} compactionTurnId={compactionMark.turnId} compactionAtEnd={compactionMark.atEnd} />}
                   <div className={`timeline ${isEmpty ? "empty-state" : ""}`} ref={scrollRef} onScroll={onTimelineScroll}>
                   {isEmpty ? (
                     <div className="welcome-state">
@@ -323,7 +340,12 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                       const boundaryTurnId = lastCompactionTurnId || String(hostCompaction?.turnId ?? "");
                       /* ⛔ 10-18：锚点计算收进纯函数（守卫【165】跑真值表）。旧实现在「边界回合不在已加载窗口」时
                          回退到最后一回合 ⇒ 线被钉在最新消息上方（用户：「每次发新消息他都在上面」）。 */
-                      insertBefore = resolveCompactionAnchor(visible, boundaryTurnId);
+                      /* ⛔ 10-18 二次修（用户：「我刚刚压缩的，压缩完成就不见了」）：手动压缩跑成**空回合**，
+                         时间线把空推进回合整组过滤掉 ⇒ 记录里的 turnId 在回合列表里根本不存在。
+                         ⇒ 用**记录时间**定位：落在最后一个「先于压缩」的回合之后（压缩发生处；
+                         再来新消息也不会把线拽下去）。 */
+                      const compactionAt = Number(hostCompaction?.at ?? 0);
+                      insertBefore = resolveCompactionAnchor(visible, boundaryTurnId, { compactionAt });
                       /* ⛔ 运行中的压缩线（优先于"已完成"线）：锚在压缩所在回合的用户消息之上；
                          找不到用户消息回合就锚在最后一回合之上。⛔ 不与底部兜底线同屏 ——
                          底部那条的条件已排除"存在 in-progress 压缩项"的情况。 */
@@ -369,12 +391,16 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                         );
                       }
                     }
-                    return visible.map((turn, i) => (
+                    return [
+                      ...visible.map((turn, i) => (
                       <Fragment key={turn.id}>
                         {compactionLine && i === insertBefore && compactionLine}
                         <MemoTurnView turn={turn} isLastTurn={String(turn.id) === lastId} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={turn.id === latestCompletedTurn?.id || turn.id === activeTurnId ? tokenUsage : null} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} />
                       </Fragment>
-                    ));
+                    )),
+                      /* ⛔ 末尾插槽：手动压缩的锚点 = 压缩发生处（最后一回合之后） */
+                      compactionLine && insertBefore === visible.length ? <Fragment key="compact-tail">{compactionLine}</Fragment> : null,
+                    ];
                   })()}
                   {/* ⛔ 状态条（run-activity-bar）必须排在 #chat-anchor（乐观气泡）**之后**（09-17 用户实测
                       「这个怎么到这个位置了」）：原先它排在最前面，于是「发送后 · 引擎回声前」这段时间里，
