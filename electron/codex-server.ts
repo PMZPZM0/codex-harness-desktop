@@ -344,7 +344,7 @@ export class CodexServer extends EventEmitter {
       env: spawnEnv,
     });
     this.child = child;
-    this.debugLog(`[spawn] HTTPS_PROXY=${spawnEnv.HTTPS_PROXY ?? "(无)"} NO_PROXY=${spawnEnv.NO_PROXY ?? "(无)"} CODEX_HOME=${spawnEnv.CODEX_HOME} provider 相关 env 已注入 ${this.externalEnv.HTTPS_PROXY ? "externalEnv" : "externalEnv 无代理"}`);
+    this.debugLog(`[spawn] HTTPS_PROXY=${spawnEnv.HTTPS_PROXY ?? "(无)"} NO_PROXY=${spawnEnv.NO_PROXY ?? "(无)"} CODEX_HOME=${spawnEnv.CODEX_HOME} provider 相关 env 已注入 ${this.externalEnv.HTTPS_PROXY ? "externalEnv" : "externalEnv 无代理"} | connectorEnv 键=${Object.keys(this.externalEnv).filter((key) => !/^(HTTPS?_PROXY|NO_PROXY|no_proxy)$/.test(key)).join(",") || "(无)"}`);
     // ⛔ 进程级清账（09-19，用户：「每个会话都是绝对独立运行状态，互不影响」）：
     //   新引擎 = 旧进程里那些回合**全部不存在了**（它们的子进程/会话随进程销毁）。主进程那份
     //   「谁在跑」的记账必须在这里清，否则它会永久卡在"有任务在跑"——

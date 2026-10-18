@@ -331,6 +331,14 @@ export async function bootApp() {
   try {
     server.setBuiltinPluginEnv(builtinPluginEnv(await readBuiltinPlugins()));
   } catch (error) { console.warn("builtin plugin env injection failed:", error); }
+  /* ⛔⛔ 10-19 实证修复：连接器密钥（知识库 / 记忆的 Bearer token）必须**每次启动**注入 env。
+     旧实现只在 `applyCustomModel` 里 `setExternalEnv`，而它在启动时**只有 config 漂移才跑**
+     ⇒ 配置没漂移的那次启动引擎 env 里根本没有 `CLOUD_KB_MCP_TOKEN` ⇒ MCP 收到空 bearer
+     ⇒ 每次重启都 401（知识库累计 396 次、`missing bearer token` 的根因）。
+     必须在 server.start() 之前 —— spawn 之后再设对已起的进程无效。 */
+  try {
+    server.setExternalEnv(connectorEnv(await readConnectors()));
+  } catch (error) { console.warn("connector env injection failed:", error); }
   // 启动即补齐 AGENTS.md（emoji + 中文语言规范基础段）：老版本升级后没有这些段，
   // 重写让模型默认用中文思考与回复；AGENTS.md 引擎每请求动态重读，无需重启即生效。
   try {
