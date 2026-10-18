@@ -37,6 +37,9 @@ const KIND_LABEL: Record<string, string> = {
 /** 主进程通道面。全部可选 —— 老构建没有这些通道时页面要能优雅降级（⛔ 不是白屏）。 */
 type CloudApi = {
   cloudAuthLogin?: (input: { baseUrl?: string; username: string; password: string }) => Promise<{ ok: boolean; error?: string }>;
+  /* 10-18 会话同步（手动）：与模型同步独立。⛔ 服务端可被管理员关闭，届时 code=session-sync-disabled */
+  cloudSyncPush?: (input?: { paths?: string[] }) => Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>;
+  cloudSyncPull?: (input?: { keys?: string[] }) => Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>;
   cloudAuthLogout?: (id?: string) => Promise<{ ok: boolean }>;
   cloudAuthSwitch?: (id: string) => Promise<{ ok: boolean }>;
   cloudAuthStatus?: () => Promise<AuthStatus>;
@@ -141,6 +144,28 @@ export function CloudAccountSection() {
       }
       : { kind: "err", text: r.error === "not-logged-in" ? "登录已过期，请重新登录" : `同步失败：${r.error || "未知原因"}` });
     await refresh();
+  });
+
+  /* 10-18 手动会话同步（推 / 拉）。
+     ⛔ 失败文案必须能分辨「管理员已关闭」——服务端会回 code=session-sync-disabled，
+        这时**不是**网络故障，不能让用户反复重试。 */
+  const doSyncPush = () => run("sync-push", async () => {
+    const api = cloudApi();
+    if (!api.cloudSyncPush) return;
+    setMsg(null);
+    const r = await api.cloudSyncPush({});
+    setMsg(r.ok
+      ? { kind: "ok", text: "会话已上传到云端" }
+      : { kind: "err", text: r.code === "session-sync-disabled" ? "管理员已关闭云端会话同步" : (r.error || "上传失败") });
+  });
+  const doSyncPull = () => run("sync-pull", async () => {
+    const api = cloudApi();
+    if (!api.cloudSyncPull) return;
+    setMsg(null);
+    const r = await api.cloudSyncPull({});
+    setMsg(r.ok
+      ? { kind: "ok", text: "已从云端下载" }
+      : { kind: "err", text: r.code === "session-sync-disabled" ? "管理员已关闭云端会话同步" : (r.error || "下载失败") });
   });
 
   /** 打开**云端用户中心**（账户 / 积分 / 模型勾选 / 知识库 / 记忆 的自助页）。
@@ -329,6 +354,14 @@ export function CloudAccountSection() {
               </button>
               <button className="secondary-setting danger" disabled={!!busy} onClick={() => doLogout(status.active?.id)}>
                 <LogOut size={14} />{confirmLogout ? "再点一次确认退出" : "退出登录"}
+              </button>
+              {/* 10-18：**会话同步（手动）** —— ⛔ 与「同步模型」是两件事：这里推/拉的是**会话内容**本身。
+                  ⛔ 只做手动：自动同步会把用户的对话在无感知的情况下持续外传，桌面版不默认开。 */}
+              <button className="secondary-setting" disabled={!!busy} onClick={doSyncPush}>
+                {busy === "sync-push" ? "上传中…" : "上传会话"}
+              </button>
+              <button className="secondary-setting" disabled={!!busy} onClick={doSyncPull}>
+                {busy === "sync-pull" ? "下载中…" : "从云端下载"}
               </button>
               {busyIcon("sync")}{busyIcon("resync")}
             </div>
