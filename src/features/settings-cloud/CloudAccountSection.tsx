@@ -17,6 +17,7 @@ import { Spinner } from "../../components/CardShell";
 import { cloudUserCenterUrl } from "../../lib/cloud-links.mjs";
 
 import { SessionSyncDialog } from "./SessionSyncDialog";
+import { ResultDialog } from "./ResultDialog";
 type AccountView = { id: string; username: string; role: string; baseUrl: string; active: boolean; savedAt: number };
 type AuthStatus = { loggedIn: boolean; baseUrl: string; active: AccountView | null; accounts: AccountView[]; defaultBaseUrl: string };
 type ModelStatus = { loggedIn: boolean; registered: boolean; enabled: boolean; active: boolean; models: number; hasToken: boolean; lastSyncAt: number };
@@ -86,6 +87,8 @@ export function CloudAccountSection() {
   const [baseUrl, setBaseUrl] = useState("");
   /* 10-18：会话同步用**独立弹窗**（非内嵌）；null = 关闭 */
   const [sessionDialog, setSessionDialog] = useState<"upload" | "pull" | null>(null);
+  /* 10-18：连通测试 / 刷新的**弹窗**反馈（内嵌 hint 会被滚动错过） */
+  const [resultDialog, setResultDialog] = useState<{ title: string; tone: "ok" | "err" | "info"; message: string; details?: Array<{ label: string; value: string }> } | null>(null);
   const confirmTimer = useRef<number | null>(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
 
@@ -216,6 +219,49 @@ export function CloudAccountSection() {
     await refresh();
   });
 
+  /* 10-18 连通测试：只**探测**（复用 cloudKbStatus / cloudMemoryStatus，不建连接、不改配置），
+     结果用弹窗展示 —— 用户要求「连通测试弹窗反馈」。 */
+  const doTest = (kind: "kb" | "memory") => run(`test-${kind}`, async () => {
+    const api = cloudApi();
+    try {
+      if (kind === "kb") {
+        const st = await api.cloudKbStatus?.();
+        if (!st) { setResultDialog({ title: "连通测试 · 知识库", tone: "err", message: "当前版本不支持知识库探测（缺少 cloudKbStatus）" }); return; }
+        const ok = Boolean(st.url && st.hasToken);
+        setResultDialog({
+          title: "连通测试 · 云端知识库",
+          tone: ok ? "ok" : "err",
+          message: ok
+            ? "连接信息完整：端点已下发、凭据已保存。引擎可把它当 MCP 连接器检索。"
+            : "连接信息不完整 —— 还需要先「接通 / 刷新云端知识库」。",
+          details: [
+            { label: "端点", value: st.url ? st.url : "无" },
+            { label: "凭据", value: st.hasToken ? "已保存" : "无" },
+            { label: "名称", value: (st as { kbName?: string }).kbName || "—" },
+          ],
+        });
+      } else {
+        const st = await api.cloudMemoryStatus?.();
+        if (!st) { setResultDialog({ title: "连通测试 · 记忆", tone: "err", message: "当前版本不支持记忆探测（缺少 cloudMemoryStatus）" }); return; }
+        const ok = st.mode === "mcp" || st.mode === "rest-only";
+        setResultDialog({
+          title: "连通测试 · 云端记忆",
+          tone: ok ? "ok" : "err",
+          message: ok
+            ? (st.upstream === "memory" ? "记忆已接通：对话上游已切到记忆端点，请求层自动注入与写入。" : "凭据已就绪（未生效）：再刷新一次或重启应用即会切到记忆上游。")
+            : "尚未开通或未取到凭据 —— 先「获取 / 刷新记忆凭据」。",
+          details: [
+            { label: "模式", value: st.mode || "—" },
+            { label: "上游", value: (st as { upstream?: string }).upstream || "—" },
+            { label: "凭据", value: st.hasCredentials ? "已缓存" : "无" },
+          ],
+        });
+      }
+    } catch (e) {
+      setResultDialog({ title: `连通测试 · ${kind === "kb" ? "知识库" : "记忆"}`, tone: "err", message: `探测异常：${(e as Error).message.slice(0, 160)}` });
+    }
+  });
+
   const doLogout = (id?: string) => {
     if (!confirmLogout) {
       setConfirmLogout(true);
@@ -250,6 +296,15 @@ export function CloudAccountSection() {
     <section className="settings-section stack">
       {/* 10-18 会话同步弹窗（**独立弹窗，非内嵌**）。成功关闭后回调刷新外部界面：
           让"最近同步 / 已上传数量"这类展示跟着变（用户要求：状态变化后正确渲染刷新）。 */}
+      {resultDialog && (
+        <ResultDialog
+          title={resultDialog.title}
+          tone={resultDialog.tone}
+          message={resultDialog.message}
+          details={resultDialog.details}
+          onClose={() => setResultDialog(null)}
+        />
+      )}
       {sessionDialog && (
         <SessionSyncDialog
           mode={sessionDialog}
@@ -366,15 +421,16 @@ export function CloudAccountSection() {
               <button className="secondary-setting danger" disabled={!!busy} onClick={() => doLogout(status.active?.id)}>
                 <LogOut size={14} />{confirmLogout ? "再点一次确认退出" : "退出登录"}
               </button>
-              {/* 10-18：**会话同步（手动）** —— ⛔ 与「同步模型」是两件事：这里推/拉的是**会话内容**本身。
-                  ⛔ 只做手动：自动同步会把用户的对话在无感知的情况下持续外传，桌面版不默认开。 */}
+              {busyIcon("sync")}{busyIcon("resync")}
+            </div>
+            {/* 10-18 用户要求：会话同步单独一行、靠左（原来挤在模型按钮末尾会换行错位） */}
+            <div className="cloud-acct-actions">
               <button className="secondary-setting" disabled={!!busy} onClick={() => setSessionDialog("upload")}>
                 {busy === "sync-push" ? "上传中…" : "上传会话"}
               </button>
               <button className="secondary-setting" disabled={!!busy} onClick={() => setSessionDialog("pull")}>
                 {busy === "sync-pull" ? "下载中…" : "从云端下载"}
               </button>
-              {busyIcon("sync")}{busyIcon("resync")}
             </div>
           </div>
 
@@ -472,6 +528,9 @@ export function CloudAccountSection() {
               <button className="secondary-setting" disabled={!!busy} onClick={doKb}>
                 <BookOpen size={14} />{busy === "kb" ? "接通中…" : "接通 / 刷新云端知识库"}
               </button>
+              <button className="secondary-setting" disabled={!!busy} onClick={() => doTest("kb")}>
+                {busy === "test-kb" ? "测试中…" : "连通测试"}
+              </button>
               {busyIcon("kb")}
             </div>
             <p className="muted" style={{ margin: 0, fontSize: 12 }}>
@@ -497,6 +556,9 @@ export function CloudAccountSection() {
             <div className="cloud-acct-actions">
               <button className="secondary-setting" disabled={!!busy} onClick={doMemory}>
                 <RefreshCw size={14} />{busy === "memory" ? "获取中…" : "获取 / 刷新记忆凭据"}
+              </button>
+              <button className="secondary-setting" disabled={!!busy} onClick={() => doTest("memory")}>
+                {busy === "test-memory" ? "测试中…" : "连通测试"}
               </button>
               {busyIcon("memory")}
             </div>
