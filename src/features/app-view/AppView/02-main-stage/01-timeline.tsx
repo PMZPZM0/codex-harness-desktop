@@ -5,6 +5,7 @@
 import { isCompactionItem } from "../../../../lib/compaction-item.mjs";
 import { compactionStateOf, reportCompactionState } from "../../../../lib/compaction-state.mjs";
 import { compactionRecordFor, compactionVersion, subscribeCompactions } from "../../../../lib/compaction-records.mjs";
+import { resolveCompactionAnchor } from "../../../../lib/compaction-anchor.mjs";
 import { Fragment, useSyncExternalStore, type ReactNode } from "react";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../lib/entity-avatar";
 import {
@@ -320,19 +321,14 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                          所在回合为界、取该回合(含)之前最近一条用户消息的正上方。 */
                       const hostCompaction = lastCompaction ? null : compactionRecordFor(thread.id);
                       const boundaryTurnId = lastCompactionTurnId || String(hostCompaction?.turnId ?? "");
-                      const anchorFrom = boundaryTurnId ? ordered.findIndex((t) => String(t.id) === boundaryTurnId) : ordered.length - 1;
-                      for (let i = (anchorFrom >= 0 ? anchorFrom : ordered.length - 1); i >= 0; i--) {
-                        if (((ordered[i].items ?? []) as any[]).some((it) => it?.type === "userMessage")) { insertBefore = visible.indexOf(ordered[i]); break; }
-                      }
+                      /* ⛔ 10-18：锚点计算收进纯函数（守卫【165】跑真值表）。旧实现在「边界回合不在已加载窗口」时
+                         回退到最后一回合 ⇒ 线被钉在最新消息上方（用户：「每次发新消息他都在上面」）。 */
+                      insertBefore = resolveCompactionAnchor(visible, boundaryTurnId);
                       /* ⛔ 运行中的压缩线（优先于"已完成"线）：锚在压缩所在回合的用户消息之上；
                          找不到用户消息回合就锚在最后一回合之上。⛔ 不与底部兜底线同屏 ——
                          底部那条的条件已排除"存在 in-progress 压缩项"的情况。 */
                       if (runningCompactionTurnId) {
-                        const afRun = ordered.findIndex((t) => String(t.id) === runningCompactionTurnId);
-                        insertBefore = -1;
-                        for (let i = (afRun >= 0 ? afRun : ordered.length - 1); i >= 0; i--) {
-                          if (((ordered[i].items ?? []) as any[]).some((it) => it?.type === "userMessage")) { insertBefore = visible.indexOf(ordered[i]); break; }
-                        }
+                        insertBefore = resolveCompactionAnchor(visible, runningCompactionTurnId);
                         if (insertBefore < 0) insertBefore = Math.max(0, visible.length - 1);
                         compactionLine = (
                           <div className="compact-divider compact-divider--running" role="status" aria-label="上下文压缩状态" key={`compact-running-${thread.id}`}>
