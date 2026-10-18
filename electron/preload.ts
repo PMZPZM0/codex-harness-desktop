@@ -752,6 +752,14 @@ contextBridge.exposeInMainWorld("codex", {
   cloudAuthPoints: () => __ipc("cloud-auth:points", 0, []),
   /* 把「云端模型」设为当前生效供应商（用户显式点击）。⛔ 自动同步绝不抢生效位，只有这条会；切换会重启引擎以让新 Key/地址生效 */
   cloudModelsActivate: () => __ipc("cloud-models:activate", 0, []),
+  /* 云版预留（10-11）：云端存储开通状态（enabled=false = 未开通，配额/最近同步时间一并给出） */
+  cloudSyncStatus: () => __ipc("cloud:sync/status", 0, []),
+  /* 云版预留：把指定本地路径推到云端（云端存储未开通时返回预留桩形状 {ok:false,reserved:true,code}） */
+  cloudSyncPush: (input?: { paths: string[] }) => __ipc("cloud:sync/push", 0, [input]),
+  /* 云版预留：按 key 从云端拉回数据（未开通前为预留桩） */
+  cloudSyncPull: (input?: { keys: string[] }) => __ipc("cloud:sync/pull", 0, [input]),
+  /* 云版预留：同步冲突解决（resolution = local|cloud|merge；未开通前为预留桩） */
+  cloudSyncConflictResolve: (key: string, resolution: string) => __ipc("cloud:sync/conflict/resolve", 2, [key, resolution]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

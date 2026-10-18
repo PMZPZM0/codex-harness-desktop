@@ -1090,6 +1090,14 @@ interface Window {
     cloudAuthPoints(): Promise<{ ok: boolean; balance: number; signupGrant: number; txns: Array<{ id?: string; at?: number; delta?: number; kind?: string; note?: string; after?: number }>; error?: string }>;
     /* 把「云端模型」设为当前生效供应商（用户显式点击）。⛔ 自动同步绝不抢生效位，只有这条会；切换会重启引擎以让新 Key/地址生效 */
     cloudModelsActivate(): Promise<{ ok: boolean; model: string; error?: string }>;
+    /* 云版预留（10-11）：云端存储开通状态（enabled=false = 未开通，配额/最近同步时间一并给出） */
+    cloudSyncStatus(): Promise<{ enabled: boolean; reserved: boolean; quotaBytes: number; usedBytes: number; lastSyncAt: number }>;
+    /* 云版预留：把指定本地路径推到云端（云端存储未开通时返回预留桩形状 {ok:false,reserved:true,code}） */
+    cloudSyncPush(input?: { paths: string[] }): Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>;
+    /* 云版预留：按 key 从云端拉回数据（未开通前为预留桩） */
+    cloudSyncPull(input?: { keys: string[] }): Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>;
+    /* 云版预留：同步冲突解决（resolution = local|cloud|merge；未开通前为预留桩） */
+    cloudSyncConflictResolve(key: string, resolution: string): Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>;
 /* ═══ gen:end ═══ */
 
 

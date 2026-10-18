@@ -385,7 +385,10 @@ function reportUnregistered(entries) {
   const regPath = join(ROOT, "electron", "ipc-registry.ts");
   if (!existsSync(regPath)) return;
   const regSrc = readFileSync(regPath, "utf8");
-  const known = new Set([...regSrc.matchAll(/["']([\w-]+(?::[\w-]+)+)["']/g)].map((x) => x[1]));
+  /* ⛔ 通道名里可能带 `/`（如 `cloud:sync/status`、`cloud:sync/conflict/resolve`）——
+     原来的 `[\w-]+(?::[\w-]+)+` 不认斜杠 ⇒ 这类通道永远被判"未登记"，
+     生成时一直报 ⚠（10-18 移植会话同步时踩到）。放宽到 `[\w/-]`。 */
+  const known = new Set([...regSrc.matchAll(/["']([\w-]+(?::[\w/-]+)+)["']/g)].map((x) => x[1]));
   const missing = [...new Set(entries.map((c) => c.channel))].filter((c) => !known.has(c));
   if (!missing.length) return;
   const byPrefix = new Map();
