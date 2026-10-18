@@ -25,15 +25,26 @@ export declare function creditRate(credits?: unknown): number;
 /** 客户端的"现在" → 服务器本地小时数（含小数）；服务端没给时区偏移 ⇒ null。 */
 export declare function serverHourAt(offPeak?: OffPeakConfig | null, now?: number): number | null;
 
-/** 命中哪个闲时窗口（未启用/没命中 ⇒ null）。 */
-export declare function offPeakWindowAt(offPeak?: OffPeakConfig | null, now?: number): TurnCreditEstimate["window"];
+/** 命中哪个闲时窗口（未启用/没命中 ⇒ null）。
+ *  `opts.ignoreEnabled` = **只判时段、不看总闸** —— 每模型单独配了系数的，
+ *  总闸关着也要能探到命中（否则就是"配了没用"，与服务端同一取舍）。 */
+export declare function offPeakWindowAt(
+  offPeak?: OffPeakConfig | null,
+  now?: number,
+  opts?: { ignoreEnabled?: boolean },
+): TurnCreditEstimate["window"];
 
 /** 计费系数：命中闲时 ⇒ 窗口系数，否则 1。 */
 export declare function offPeakFactorAt(offPeak?: OffPeakConfig | null, now?: number): number;
 
+/** 每模型单独配的闲时系数：`null` = 没配（跟随全局默认），数字 = 该模型自己的系数。 */
+export declare function offPeakRateValue(value?: unknown): number | null;
+
 /** 本轮积分估算；没有 token ⇒ null（调用方据此不显示）。 */
 export declare function estimateTurnCredit(args?: {
   credits?: unknown;
+  /** 该模型**单独**配的闲时系数（缺省/空 ⇒ 跟随全局默认系数） */
+  modelOffPeakRate?: unknown;
   offPeak?: OffPeakConfig | null;
   input?: unknown;
   output?: unknown;

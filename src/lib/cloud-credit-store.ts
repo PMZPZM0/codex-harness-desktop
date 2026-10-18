@@ -26,8 +26,14 @@ const CATALOG_TTL_MS = 5 * 60_000;
 /** 记录上限：超出后淘汰最早的（只影响"翻很久以前的回合还看不看得到估算"，不影响账本）。 */
 const MAX_RECORDS = 800;
 
-type CatalogSnapshot = { models: Map<string, string>; offPeak: OffPeakConfig | null };
-type CatalogReply = { ok?: boolean; models?: Array<{ id?: string; credits?: string }>; offPeak?: OffPeakConfig };
+/** 目录里我们关心的两项：模型倍率 + **该模型自己的闲时系数**（后者可缺省 ⇒ 跟随全局默认）。 */
+type ModelEntry = { credits: string; offPeakRate: string };
+type CatalogSnapshot = { models: Map<string, ModelEntry>; offPeak: OffPeakConfig | null };
+type CatalogReply = {
+  ok?: boolean;
+  models?: Array<{ id?: string; credits?: string; offPeakRate?: string | number }>;
+  offPeak?: OffPeakConfig;
+};
 type CatalogApi = { cloudModelsCatalog?: () => Promise<CatalogReply> };
 
 let catalog: CatalogSnapshot | null = null;
@@ -68,9 +74,17 @@ function fetchCatalog(): Promise<CatalogReply | null> {
 function readCatalog(): Promise<CatalogSnapshot> {
   return fetchCatalog()
     .then((reply) => {
-      const models = new Map<string, string>();
+      const models = new Map<string, ModelEntry>();
       if (reply && reply.ok && Array.isArray(reply.models)) {
-        for (const m of reply.models) if (m && m.id) models.set(String(m.id), m.credits == null ? "" : String(m.credits));
+        for (const m of reply.models) {
+          if (!m || !m.id) continue;
+          models.set(String(m.id), {
+            credits: m.credits == null ? "" : String(m.credits),
+            /* ⛔ 每模型闲时系数（10-18）：空串/缺省 = 该模型跟随全局默认 ——
+               不要在这里补默认值，默认值的判定只放一处（credit-estimate 的 offPeakRateValue）。 */
+            offPeakRate: m.offPeakRate == null ? "" : String(m.offPeakRate),
+          });
+        }
       }
       return { models, offPeak: (reply && reply.offPeak) || null };
     })
@@ -106,7 +120,17 @@ export function recordTurnCredit(turnId: string, model: string, input: number, o
   if (!id || !name) return;
   const compute = (snap: CatalogSnapshot): TurnCreditRecord | null => {
     if (!snap.models.has(name)) return null;
-    const estimate = estimateTurnCredit({ credits: snap.models.get(name), offPeak: snap.offPeak, input, output });
+    const entry = snap.models.get(name);
+    if (!entry) return null;
+    /* ⛔ `modelOffPeakRate` 必须传：这是"每模型单独配置"的入口 —— 漏传就等于把管理员的
+       每模型折扣当成没配，页脚会按全局默认算出一个偏大的数（与服务端账本对不上）。 */
+    const estimate = estimateTurnCredit({
+      credits: entry.credits,
+      modelOffPeakRate: entry.offPeakRate,
+      offPeak: snap.offPeak,
+      input,
+      output,
+    });
     return estimate ? { ...estimate, model: name } : null;
   };
   const apply = (record: TurnCreditRecord | null) => {
