@@ -99,7 +99,7 @@
 
 1. **精准度**：snippet 必须**围绕 query 命中词**取，不得固定取块首。
    ✅ 2026-10-04 已修（语义档原先 `chunk.slice(0, 260)` 取块首）；2026-10-10 进一步把**两档**的
-   定位统一到 `snippetAround`（`electron/text-match.ts` 的 `bestHitIndex`，取最长命中 token 的位置）。
+   定位统一到 `snippetAround`（`electron/retrieval/text-match.ts` 的 `bestHitIndex`，取最长命中 token 的位置）。
 2. **两档量纲一致**：全文档与语义档的 score 放在同一张表里排序，不一致就要显式归一化。
    ✅ 2026-10-10 已修：全文档档归一到 0..1（`raw / maxChunkScore`），语义档直接用 cosine（去掉 `*10`）。
 3. **低分不凑数**：低于阈值直接丢弃是对的（现状 `score < 0.25`），

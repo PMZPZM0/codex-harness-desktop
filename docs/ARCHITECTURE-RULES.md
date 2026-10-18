@@ -55,7 +55,7 @@
 
 ### 1.1 主进程新增文件放哪（`electron/features/` 还是 `electron/` 根）★ 判据
 
-09-22 实测缺口：并发写入者把 `electron/memory-prune.ts`、`electron/memory-capture-debug.ts` 放进 `electron/` 根后，**无法判断这算不算"新增域"**。判据如下（按顺序问）：
+09-22 实测缺口：并发写入者把 `electron/memory/memory-prune.ts`、`electron/memory-capture-debug.ts` 放进 `electron/` 根后，**无法判断这算不算"新增域"**。判据如下（按顺序问）：
 
 | 问 | 是 → 放哪 | 否 → 放哪 |
 |---|---|---|
@@ -210,7 +210,7 @@
 
 - 纯函数一律 `src/lib/<名>.mjs` + 同名 `.d.mts`（预检能直接 import 真实现跑断言）。
 - **主进程侧纯函数**（要被 `electron/**` import、且不能引 `../src/lib` —— tsconfig `rootDir = electron/` 会破坏产物结构）
-  放 `electron/<名>.ts`，预检从 `dist-electron/<名>.js` 跑真断言（先例：`electron/voice/wake-match.ts`、【97】的 `electron/memory-prune.ts`）。
+  放 `electron/<名>.ts`，预检从 `dist-electron/<名>.js` 跑真断言（先例：`electron/voice/wake-match.ts`、【97】的 `electron/memory/memory-prune.ts`）。
 - 跨产物路径：`require("字面量")` 是 **tsc 盲区**（不解析模块），路径必须由守卫【96】可解析校验兜住。
 
 ---

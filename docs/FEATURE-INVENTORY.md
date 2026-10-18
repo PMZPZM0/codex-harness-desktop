@@ -111,7 +111,7 @@
 | 功能 | 现状 | 目标域 |
 |---|---|---|
 | 记忆分层 / 搜索 / 召回 / 历史 | `ipc: memory:17`（L8867–L8913）+ `electron/memory-layers.ts` + `hooks/useMemory.ts` | `features/memory/` |
-| **L3 碎片池生命周期（09-22）** | `electron/memory-prune.ts`（纯函数：临时上下文 TTL 14 天 / 容量 500 / pinned 豁免）+ `MemoryStore.pruneIfDue`（读接口不写盘、写盘成功才改内存）+ 淘汰留痕 `{workspace}/.codex-harness/memory/pruned.jsonl`；健康度经 `memory:layers:read\|write` 暴露；预检【97】15 条断言 + 验收 `memory-lifecycle` | 同上 |
+| **L3 碎片池生命周期（09-22）** | `electron/memory/memory-prune.ts`（纯函数：临时上下文 TTL 14 天 / 容量 500 / pinned 豁免）+ `MemoryStore.pruneIfDue`（读接口不写盘、写盘成功才改内存）+ 淘汰留痕 `{workspace}/.codex-harness/memory/pruned.jsonl`；健康度经 `memory:layers:read\|write` 暴露；预检【97】15 条断言 + 验收 `memory-lifecycle` | 同上 |
 | 记忆漏斗 / 分层编辑器 / 配置弹窗 | `MemoryFunnel`(97) `MemoryLayersEditor`(73) `MemoryConfigModal`(35) | 同上 |
 
 ## 10. 自动化与任务（automation）
@@ -137,7 +137,7 @@
 |---|---|---|
 | 主题 / 代码外观 / 头像 / 身份 | `ipc: personalization:6 theme:1` + `PersonalizationPage.tsx` `CodeAppearance.tsx` `CodexAvatar.tsx` `UserAvatar.tsx` `user-identity.mjs` `codex-identity.mjs` | `features/appearance/` |
 | 用户中心 / 账号 | 设置页 `user` + `components/UserCenter.tsx` + `ipc: user:1` | 同上 |
-| 小马驹（ponytail）模式与插件 | `ipc: ponytail:2` + `electron/ponytail-mode.ts` `ponytail-plugin.ts` | 同上 |
+| 小马驹（ponytail）模式与插件 | `ipc: ponytail:2` + `electron/conventions/ponytail-mode.ts` `ponytail-plugin.ts` | 同上 |
 | 应用设置 | `ipc: appSettings:2` + `electron/app-settings.ts` | `features/settings/` |
 
 ## 13. 用量 / 备份 / 归档 / 存储
@@ -158,7 +158,7 @@
 | 启动链 / 引导 / 崩溃兜底 | `BootSplash.tsx` `ErrorBoundary.tsx` `EnvCheckDialog.tsx` + `boot-timing.ts` |
 | 工具链（随包运行时 / 开发工具页） | `electron/toolchain.ts` + 设置页 `devtools` + `scripts/install-runtimes.cjs` |
 | 帮助 / 反馈 | `components/HelpDialog.tsx` `FlowDiagram.tsx` `GenerativeWidget.tsx` `MermaidDiagram.tsx` |
-| 圆角窗口（Windows） | `electron/win-rounded-corners.ts`（**平台门控，mac 不加载**） |
+| 圆角窗口（Windows） | `electron/window/win-rounded-corners.ts`（**平台门控，mac 不加载**） |
 | 数据桥 | `electron/responses-bridge.ts` `harness-services.ts` `config-toml.ts` `preload.ts` |
 
 ## 15. 内置技能（7 个，随应用种入）

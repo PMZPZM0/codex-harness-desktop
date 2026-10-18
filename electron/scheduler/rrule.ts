@@ -8,7 +8,7 @@
 import type { ScheduleKind } from "../scheduler";
 
 export const FULL_WEEK = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
-export const DAY_TO_INDEX: Record<string, number> = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
+const DAY_TO_INDEX: Record<string, number> = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
 export const INDEX_TO_DAY: Record<number, string> = { 0: "SU", 1: "MO", 2: "TU", 3: "WE", 4: "TH", 5: "FR", 6: "SA" };
 
 
