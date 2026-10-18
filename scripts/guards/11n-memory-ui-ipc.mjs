@@ -70,7 +70,9 @@ function fieldsOf(src, typeName) {
   return [...new Set(out)];
 }
 
-const LAYERS_SRC = read("electron", "memory-layers.ts");
+/* 10-18：MemoryLayersSnapshot 等类型已随纯函数层切到 memory/layers-budget.ts（P2 批次 4）
+   ⇒ 两个源拼接后抠字段（⛔ 只看单文件会抠出 0 个 ⇒ 守卫空跑）。 */
+const LAYERS_SRC = read("electron", "memory-layers.ts") + read("electron", "memory", "layers-budget.ts");
 const BACKEND_SRC = read("electron", "memory-backend.ts");
 const DELEGATE_SRC = read("electron", "delegate-registry.ts");
 

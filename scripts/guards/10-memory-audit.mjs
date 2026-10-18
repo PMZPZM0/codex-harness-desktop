@@ -99,7 +99,9 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
   (/scope: "user" \| "background" \| "project" \| "lessons"/.test(envSrc) ? ok : fail)("【102】vite-env 声明同步 lessons scope");
   const instr = readFileSync(join(ROOT, "electron/developer-instructions.ts"), "utf8");
   (/LESSONS\.md/.test(instr) && /坑/.test(instr) ? ok : fail)("【102】引擎指令要求「踩坑留痕」（LESSONS.md + 格式）");
-  const layersSrc = readFileSync(join(ROOT, "electron/memory-layers.ts"), "utf8");
+    /* 10-18：DISTILL_PROMPT / 金字塔等已切到 memory/layers-budget.ts（P2 批次 4）⇒ 两源拼接 */
+  const layersSrc = readFileSync(join(ROOT, "electron/memory-layers.ts"), "utf8")
+    + readFileSync(join(ROOT, "electron/memory", "layers-budget.ts"), "utf8");
   (/现有踩坑与纪律/.test(layersSrc) ? ok : fail)("【102】蒸馏输入带上坑清单（否则蒸馏会把坑丢掉）");
   const svcSrc = readFileSync(join(ROOT, "electron/memory-store.ts"), "utf8");
   (/shouldCapture\(/.test(svcSrc) && /appendLesson/.test(svcSrc) ? ok : fail)("【102】捕获链改用纠错优先判定 + 追加坑");
