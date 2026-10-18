@@ -3,7 +3,7 @@
  * ⛔ 逻辑与原地逐字一致，只补了顶部 import 与 `export`。
  */
 import { Turn } from "../../../lib/turn";
-import { useEffect, useMemo, memo, useState, useRef } from "react";
+import { Fragment, useEffect, useMemo, memo, useState, useRef } from "react";
 import { useRefObject } from "../../../lib/use-ref-object";
 import { itemText } from "../../../lib/item-text";
 import { userDisplayText } from "../../../lib/user-refs";
@@ -16,7 +16,7 @@ export type RulerMark = { id: string; turnId: string; itemId: string; type: "use
 
 const RULER_MAX = 50;
 
-export function MessageRuler({ turns, onJump, scrollRef, containerRef }: { turns: Turn[]; onJump: (id: string) => void; scrollRef: useRefObject; containerRef: useRefObject }) {
+export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactionTurnId, compactionAtEnd }: { turns: Turn[]; onJump: (id: string) => void; scrollRef: useRefObject; containerRef: useRefObject; /** 压缩线所在回合（green 标记画在该回合用户消息的刻度之前；空串 = 无压缩线） */ compactionTurnId?: string; /** 压缩发生在最后一回合**之后**（手动压缩的空回合被过滤掉）⇒ 绿段画在最后一个刻度之后 */ compactionAtEnd?: boolean }) {
   const [tip, setTip] = useState<{ text: string; top: number } | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [currentItemId, setCurrentItemId] = useState<string | null>(null);
@@ -179,21 +179,27 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef }: { turns
         onMouseLeave={() => { setHoverIndex(null); setTip(null); }}
       >
         {marks.map((mark, index) => {
+          /* ⛔ 10-18 用户：「刻度线里面如那两个中间产生压缩线，就在那两个中间产生一个绿色线」——
+             段位固定 14px（2+8 padding+4 gap），与刻度槽同高 ⇒ 不破坏 visibleCount = h/14 的容量计算。 */
+          const compactionHere = Boolean(compactionTurnId) && mark.turnId === compactionTurnId;
           // 波浪效果：hover 刻度最长，上下邻刻度按距离衰减（1.4x、0.9x、0.7x），
           // 且向对话框一侧（右侧）伸长；配合错峰 transition 产生丝滑波浪
           const dist = hoverIndex == null ? 99 : Math.abs(index - hoverIndex);
           const wave = dist === 0 ? " wave-0" : dist === 1 ? " wave-1" : dist === 2 ? " wave-2" : "";
           return (
-            <button
-              key={mark.id}
+            <Fragment key={mark.id}>
+              {compactionHere && <span className="ruler-compaction" title="上下文已压缩（点上面的刻度跳到该回合）" aria-hidden />}
+              <button
               className={`ruler-tick ${mark.type} ${mark.id === latestId ? "latest" : ""} ${mark.itemId === currentItemId ? "current" : ""}${wave}`}
               onMouseEnter={(event) => { setHoverIndex(index); setTip({ text: mark.label, top: event.currentTarget.offsetTop + event.currentTarget.offsetHeight / 2 }); }}
               onMouseLeave={() => setTip(null)}
               onClick={() => onJump(mark.turnId)}
               aria-label={mark.label}
-            />
+              />
+            </Fragment>
           );
         })}
+        {compactionAtEnd && <span className="ruler-compaction" title="上下文已压缩（刚发生在最后一条消息之后）" aria-hidden />}
         {tip && <div className="ruler-tip" style={{ top: tip.top }}>{tip.text}</div>}
       </div>
     </div>
@@ -215,5 +221,7 @@ function userMarksKey(turns: Turn[]) {
 export const MemoMessageRuler = memo(MessageRuler, (prev, next) =>
   prev.scrollRef === next.scrollRef
   && prev.onJump === next.onJump
-  && (prev.turns === next.turns || userMarksKey(prev.turns) === userMarksKey(next.turns)),
+  && (prev.turns === next.turns || userMarksKey(prev.turns) === userMarksKey(next.turns))
+  && prev.compactionTurnId === next.compactionTurnId
+  && prev.compactionAtEnd === next.compactionAtEnd,
 );

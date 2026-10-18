@@ -1253,6 +1253,20 @@
     background-color 0.22s;
   position: relative;
 }
+/* 刻度尺上的「压缩」绿段（10-18 用户：「刻度线里面如那两个中间产生压缩线，就在那两个中间产生一个绿色线」）：
+   ⛔ 段位与刻度同槽（2px 线 + 4px 上下 margin = 10 + gap 4 = 14px），否则 visibleCount = h/14 的容量会被撑乱；
+   ⛔ 颜色与压缩线同一个 token（var(--green)）。 */
+.message-ruler .ruler-compaction {
+  flex: none;
+  width: 26px;
+  height: 2px;
+  margin: 4px 0 4px 12px;
+  padding: 0;
+  border-radius: 1px;
+  background: var(--green);
+  opacity: 0.85;
+}
+
 .message-ruler .ruler-tick.latest,
 .message-ruler .ruler-tick.current {
   background-color: color-mix(in srgb, var(--text) 80%, transparent);

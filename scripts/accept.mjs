@@ -1560,6 +1560,8 @@ const CHECKS = [
           const msgs = [...document.querySelectorAll('.message.user-message')];
           return { cls: d.className, text: (d.textContent||'').replace(/\\s+/g,' ').trim().slice(0, 60),
             aboveLastUser: msgs.length ? d.getBoundingClientRect().top <= msgs[msgs.length-1].getBoundingClientRect().top : null,
+            belowLastUser: msgs.length ? d.getBoundingClientRect().top >= msgs[msgs.length-1].getBoundingClientRect().bottom - 2 : null,
+            inViewport: d.getBoundingClientRect().top >= -2 && d.getBoundingClientRect().bottom <= window.innerHeight + 2,
             userMsgs: msgs.length };
         })()`).catch(() => null);
         if (line) break;
@@ -1569,27 +1571,38 @@ const CHECKS = [
         JSON.stringify(line).slice(0, 200));
       if (!line) return;
       /* ⑥ 锚点：线在用户消息**上方**（压缩线跟着历史往上走 —— 用户点名的一条） */
-      h.check("⑤ 压缩线锚在用户消息上方（不是挂在消息下面）",
-        line.aboveLastUser === true && line.userMsgs >= 2, JSON.stringify({ aboveLastUser: line.aboveLastUser, userMsgs: line.userMsgs }));
+      /* ⛔ 10-18 二改（用户：「我刚刚压缩的，压缩完成就不见了」）：手动压缩跑成空回合、被「空推进回合整组不渲染」
+         过滤掉 ⇒ 锚点按压缩时间落在最后一个「先于压缩」的回合之后 = **最后一条消息之后**（压缩发生处）。 */
+      h.check("⑤ 压缩线落在**压缩发生处**：最后一条消息之后、且在视口内（不是被扔到视口外的窗口顶部）",
+        line.belowLastUser === true && line.inViewport === true && line.userMsgs >= 2,
+        JSON.stringify({ belowLastUser: line.belowLastUser, inViewport: line.inViewport, userMsgs: line.userMsgs }));
 
       /* ⑥b 用户 10-18：「每次发新消息他都在上面，没有跟着历史消息往上顶」。
-         判据：线**紧接着的那条用户消息**在新消息到来前后必须是同一条 —— 线是历史项，不该跟着新消息往下跑。 */
-      const lineAnchorText = () => h.eval(`(function(){
-        var d=document.querySelector('.compact-divider'); if(!d) return null;
-        var db=d.getBoundingClientRect().bottom;
-        var msgs=[...document.querySelectorAll('.message.user-message')]
-          .map(function(el){ return { t: (el.innerText||'').replace(/\s+/g,' ').trim().slice(0,24), top: el.getBoundingClientRect().top }; })
-          .filter(function(m){ return m.top >= db - 2; })
-          .sort(function(x,y){ return x.top-y.top; });
-        return msgs.length ? msgs[0].t : null; })()`);
-      const anchorBefore = await lineAnchorText();
+         判据：压完再发一条消息，线必须仍在**这条新消息之上**（线是历史项，不跟着新消息往下跑）。 */
+      const lineTopNow = () => h.eval(`(function(){
+        var d=[...document.querySelectorAll('.compact-divider')].find(function(el){ return /--(settled|success)/.test(el.className) && el.className.indexOf('--running') < 0; });
+        return d ? Math.round(d.getBoundingClientRect().top) : null; })()`);
+      const lineTopBefore = await lineTopNow();
       await sendMsg("请只回复：收到三。不要调用任何工具。");
       const d3 = await waitTurnIdle(120000);
-      await wait(600);
-      const anchorAfter = await lineAnchorText();
-      h.check("⑥b 新消息到来后压缩线**不跟着往下跑**（线紧接着的还是同一条用户消息）",
-        typeof anchorBefore === "string" && anchorBefore.length > 0 && anchorAfter === anchorBefore && d3 === true,
-        JSON.stringify({ before: anchorBefore, after: anchorAfter, d3 }));
+      await wait(800);
+      const lineTopAfter = await lineTopNow();
+      const newestMsgTop = await h.eval(`(function(){ var m=[...document.querySelectorAll('.message.user-message')].pop(); return m ? Math.round(m.getBoundingClientRect().top) : null; })()`);
+      h.check("⑥b 新消息到来后压缩线**不跟着往下跑**（线仍在新消息之上）",
+        typeof lineTopBefore === "number" && d3 === true && typeof lineTopAfter === "number" && typeof newestMsgTop === "number" && lineTopAfter < newestMsgTop - 2,
+        JSON.stringify({ lineTopBefore, lineTopAfter, newestMsgTop, d3 }));
+      /* ⑦c 刻度尺绿段（用户 10-18：「刻度线里面如那两个中间产生压缩线，就在那两个中间产生一个绿色线」）。
+         前置 = 刻度尺可见（内容够高才会渲染）；手动压缩是「末尾情形」⇒ 绿段在最后一个刻度之后。 */
+      const rulerMark = await h.eval(`(function(){
+        var ruler=document.querySelector('.message-ruler'); if(!ruler) return { visible:false };
+        var seg=ruler.querySelector('.ruler-compaction');
+        var ticks=[...ruler.querySelectorAll('.ruler-tick')];
+        var last=ticks[ticks.length-1];
+        return { visible:true, hasSegment:!!seg, afterLastTick: !!(seg && last && last.nextElementSibling === seg),
+          color: seg ? getComputedStyle(seg).backgroundColor : null, ticks:ticks.length }; })()`);
+      h.check("⑦c 刻度尺上画出压缩绿段（手动压缩 = 末尾情形 ⇒ 绿段在最后一个刻度之后）",
+        rulerMark?.visible !== true ? true : (rulerMark?.hasSegment === true && rulerMark?.afterLastTick === true),
+        JSON.stringify(rulerMark));
       /* ⑦ 落盘：重启/切会话重播的真相源（presist 在广播之前，线出现即可读） */
       const storeFile = join(h.userDataDir ?? join(ROOT, ".e2e-profile", "main"), "compaction-records", `${tid}.json`);
       let stored = null;
