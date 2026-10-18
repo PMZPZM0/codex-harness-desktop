@@ -499,11 +499,11 @@ export async function run() {
 {
   console.log(C.bold("\n【129】截图与收藏夹（不可再生数据 / 系统级副作用）"));
   const SHOT = join(ROOT, "electron", "screenshot.ts");
-  const FAV = join(ROOT, "electron", "favorites.ts");
+  const FAV = join(ROOT, "electron", "features", "favorites", "store.ts");
   /* ⛔ 10-03 P2 批次 8：截图 / 收藏夹拆成两个独立板块（硬规则「一个文件恒等于一个域前缀」），
      断言**跟着搬**：截图那三条读 SHOT_IPC，记忆那一条读 FAV_IPC（拆开不是取消断言）。 */
   const SHOT_IPC = join(ROOT, "electron", "features", "screenshot-ipc.ts");
-  const FAV_IPC = join(ROOT, "electron", "features", "favorites-ipc.ts");
+  const FAV_IPC = join(ROOT, "electron", "features", "favorites", "ipc.ts");
   const OVERLAY = join(ROOT, "electron", "overlay-preload.ts");
   const APP_PART = join(ROOT, "src", "features", "app-state", "parts", "part07", "03-seg.tsx");
   const FAV_PAGE = join(ROOT, "src", "features", "settings-favorites", "FavoritesSettingsSection.tsx");
@@ -513,7 +513,7 @@ export async function run() {
   const TYPES_FILE = join(ROOT, "src", "features", "app-view", "types.ts");
   const HELP_FILE = join(ROOT, "src", "components", "HelpDialog.tsx");
 
-  for (const [file, label] of [[SHOT, "screenshot.ts"], [FAV, "favorites.ts"], [SHOT_IPC, "screenshot-ipc.ts"], [FAV_IPC, "favorites-ipc.ts"], [OVERLAY, "overlay-preload.ts"], [APP_PART, "app-state/part07/03-seg.tsx"], [FAV_PAGE, "settings-favorites"], [SHOT_PAGE, "settings-screenshot"]]) {
+  for (const [file, label] of [[SHOT, "screenshot.ts"], [FAV, "features/favorites/store.ts"], [SHOT_IPC, "screenshot-ipc.ts"], [FAV_IPC, "features/favorites/ipc.ts"], [OVERLAY, "overlay-preload.ts"], [APP_PART, "app-state/part07/03-seg.tsx"], [FAV_PAGE, "settings-favorites"], [SHOT_PAGE, "settings-screenshot"]]) {
     (existsSync(file) ? ok : fail)(`【129】${label} 存在`);
   }
 

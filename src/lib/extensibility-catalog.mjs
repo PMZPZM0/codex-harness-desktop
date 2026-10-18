@@ -264,14 +264,14 @@ export const EXTENSIBILITY_ENTRIES = [
     name: "收藏夹（用户素材集合）",
     purpose: "新增一类「用户可以攒起来复用」的素材（现在是 片段/截图/文件/链接）：一种数据 + 三个消费面。",
     where: [
-      "electron/favorites.ts（读盘归一化 / 原子写 / 批量删除只认显式 id）",
-      "electron/features/favorites-ipc.ts（favorites:* 通道）",
+      "electron/features/favorites/store.ts（读盘归一化 / 原子写 / 批量删除只认显式 id）",
+      "electron/features/favorites/ipc.ts（favorites:* 通道）",
       "src/features/app-state/parts/part07/03-seg.tsx（镜像 + 插入/发送/加入记忆）",
       "src/features/settings-favorites/FavoritesSettingsSection.tsx（批量管理页）",
       "src/features/app-view/AppView/02-main-stage/03-composer/02-composer-form.tsx（加号菜单子面板）",
     ],
     steps: [
-      "electron/favorites.ts 的 FavoriteKind 加新类型 + normalizeKind 放行",
+      "electron/features/favorites/store.ts 的 FavoriteKind 加新类型 + normalizeKind 放行",
       "新增入口时只调 addFavorite（主进程返回全量列表）⇒ 设置页/加号菜单自动同步",
       "渲染层「插入」「一键发送」复用 app 层同一对动作（insertFavorite/sendFavorite），不要各写一份",
       "要在会话里能发出去：把内容编码成输入框 token（文本直发 / 图片 imageToken / 文件 fileToken）",

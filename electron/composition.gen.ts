@@ -20,7 +20,7 @@ import { soulMarketFeature as feat_soul_market } from "./features/soul-market-ip
 import { dramaCanvasFeature as feat_drama_canvas } from "./features/drama-canvas";
 import { petFeature as feat_pet } from "./features/pet-ipc";
 import { screenshotFeature as feat_screenshot } from "./features/screenshot-ipc";
-import { favoritesFeature as feat_favorites } from "./features/favorites-ipc";
+import { favoritesFeature as feat_favorites } from "./features/favorites/ipc";
 import { userFeature as feat_user } from "./features/user-ipc";
 import { capabilitiesFeature as feat_capabilities } from "./features/capabilities-ipc";
 import { notifyFeature as feat_notify } from "./features/notify-ipc";

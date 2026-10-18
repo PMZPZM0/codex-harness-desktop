@@ -95,7 +95,7 @@
     {
       "id": "favorites",
       "enabled": true,
-      "file": "features/favorites-ipc.ts",
+      "file": "features/favorites/ipc.ts",
       "export": "favoritesFeature",
       "config": null
     },

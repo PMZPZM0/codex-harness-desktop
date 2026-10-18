@@ -20,9 +20,9 @@ import {
   touchFavorite,
   updateFavorite,
   type FavoriteItem,
-} from "../favorites";
-import { defineFeature } from "../context";
-import type { IpcHost } from "../ipc-host";
+} from "./store";
+import { defineFeature } from "../../context";
+import type { IpcHost } from "../../ipc-host";
 
 type MemoryScope = "user" | "project" | "background" | "lessons";
 
@@ -65,7 +65,7 @@ async function favoritesToMemory(input: { ids: string[]; scope?: MemoryScope; wo
 
   // 懒加载：main.ts 在模块体里 setPath(userData)，早于本文件的 handler 执行 ——
   // 只有在这里（handler 内）require 才能拿到正确实例。
-  const { memoryLayers } = require("../main") as { memoryLayers: any };
+  const { memoryLayers } = require("../../main") as { memoryLayers: any };
   let written = 0;
   const failed: string[] = [];
   for (const item of items) {
