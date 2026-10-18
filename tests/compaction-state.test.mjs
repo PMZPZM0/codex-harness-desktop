@@ -4,6 +4,8 @@ import { compactionStateOf, COMPACTION_STATE, compactionStateLabel } from "../sr
 import { isCompactionItem } from "../src/lib/compaction-item.mjs";
 
 const turn = (id, items) => ({ id, items });
+/* ⛔ 完成态夹具**故意不带 status**：引擎落盘的压缩项就是 {"type":"ContextCompaction"} 形状，
+   状态机按「非运行/非失败即完成」判定 —— 这条用例同时钉住该语义。 */
 const DONE = { type: "ContextCompaction", id: "c1" };
 const RUNNING = { type: "toolCall", name: "contextCompaction", id: "live", status: "inProgress" };
 const FAILED = { type: "contextCompaction", id: "bad", status: "error", failure: { message: "boom" } };
