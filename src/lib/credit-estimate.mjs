@@ -45,8 +45,12 @@ export function serverHourAt(offPeak, now) {
 /** 命中哪个闲时窗口（未启用 / 没命中 / 服务端没给时区 ⇒ null）。
  *  语义与服务端 `offPeakWindow()` 逐条对齐：起点含、终点不含；`start > end` = 跨零点；
  *  命中多段取**数组序在前**的那段；零长度窗口不生效。 */
-export function offPeakWindowAt(offPeak, now) {
-  if (!offPeak || offPeak.enabled !== true) return null;
+export function offPeakWindowAt(offPeak, now, opts) {
+  if (!offPeak) return null;
+  /* ⛔ `ignoreEnabled`：判"现在命中哪个时段"与"这次要不要用默认系数"是两件事 ——
+     每模型单独配了系数的，总闸关着也必须能探到命中（否则就是"配了没用"；
+     与服务端 `offPeakWindow(atMs, { ignoreEnabled: true })` 同一取舍）。 */
+  if (offPeak.enabled !== true && !(opts && opts.ignoreEnabled === true)) return null;
   const windows = Array.isArray(offPeak.windows) ? offPeak.windows : [];
   const hour = serverHourAt(offPeak, now);
   if (hour === null) return null;
@@ -69,9 +73,22 @@ export function offPeakFactorAt(offPeak, now) {
   return win ? win.rate : 1;
 }
 
+/** 每模型单独配的闲时系数（10-18 用户令「每个模型单独的配置」）。
+ *  · `null` = **没单独配** ⇒ 跟随全局默认系数；
+ *  · 数字 = 该模型自己的系数（乘在模型倍率之上，1 = 不打折，0 = 该时段免费）。
+ *  ⛔ 空串 / 缺字段 / 非法值一律当"没配" —— 绝不当成 0（那会让该模型在闲时白送）。 */
+export function offPeakRateValue(value) {
+  if (value === undefined || value === null) return null;
+  const raw = String(value).trim().replace(/^x/i, "");
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 /**
  * 本轮积分估算。
- * @param {{ credits?: unknown, offPeak?: unknown, input?: unknown, output?: unknown, now?: number }} args
+ * @param {{ credits?: unknown, modelOffPeakRate?: unknown, offPeak?: unknown,
+ *           input?: unknown, output?: unknown, now?: number }} args
  * @returns {{ credit:number, rate:number, factor:number, tokens:number, free:boolean, window:object|null } | null}
  *          ⛔ 没有任何 token ⇒ null（调用方据此**不显示**，而不是显示 "0 积分" 骗人）。
  */
@@ -80,8 +97,14 @@ export function estimateTurnCredit(args) {
   const tokens = Math.max(0, Math.round(Number(a.input) || 0)) + Math.max(0, Math.round(Number(a.output) || 0));
   if (tokens <= 0) return null;
   const rate = creditRate(a.credits);
-  const window = offPeakWindowAt(a.offPeak, a.now);
-  const factor = window ? window.rate : 1;
+  /* 闲时系数（10-18：**每模型可单独配**）。优先级与服务端 `server.js` 计费处逐条一致：
+     ① 该模型自己配了 `offPeakRate` ⇒ 一律按它，**不看总闸**（配了就该生效）；
+     ② 没配 ⇒ 总闸 `enabled` 开着才用窗口的默认系数，否则 1（不折扣）。
+     ⛔ 两边口径必须同形 —— 差一点就会出现「页脚说 0.4、账本扣 0.8」。 */
+  const hit = offPeakWindowAt(a.offPeak, a.now, { ignoreEnabled: true });
+  const own = offPeakRateValue(a.modelOffPeakRate);
+  const factor = hit ? (own !== null ? own : (a.offPeak && a.offPeak.enabled === true ? hit.rate : 1)) : 1;
+  const window = factor !== 1 ? hit : null;
   if (rate <= 0) return { credit: 0, rate: 0, factor, tokens, free: true, window };
   return { credit: Math.round((tokens / 1000) * rate * factor * 100) / 100, rate, factor, tokens, free: false, window };
 }
