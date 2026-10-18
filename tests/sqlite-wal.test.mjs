@@ -79,3 +79,41 @@ test("startWalCheckpointWatch：启动即跑一次，返回可停止函数", { s
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+/* ── P2-8：引擎日志库归档（默认保留 14 天） ─────────────────────────────── */
+const makeLogsDb = (dir, name, { old = 0, recent = 0 } = {}) => {
+  const file = join(dir, name);
+  const db = new DatabaseSync(file);
+  db.exec("CREATE TABLE logs (id INTEGER PRIMARY KEY, ts INTEGER, body TEXT)");
+  const insert = db.prepare("INSERT INTO logs (ts, body) VALUES (?, ?)");
+  const now = Math.floor(Date.now() / 1000);
+  for (let i = 0; i < old; i++) insert.run(now - 30 * 24 * 60 * 60, "old-" + i);
+  for (let i = 0; i < recent; i++) insert.run(now - 60, "recent-" + i);
+  db.close();
+  return file;
+};
+
+test("trimEngineLogs：删 14 天前的行、保留新行、回收空间", { skip: !mod && "dist-electron 未构建" }, () => {
+  const dir = mkdtempSync(join(tmpdir(), "wal-test-"));
+  try {
+    const file = makeLogsDb(dir, "logs_2.sqlite", { old: 300, recent: 5 });
+    const result = mod.trimEngineLogs(file, 14);
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(result.deleted, 300);
+    const db = new DatabaseSync(file);
+    assert.equal(db.prepare("SELECT COUNT(*) n FROM logs").get().n, 5, "新行必须保留");
+    assert.equal(db.prepare("SELECT COUNT(*) n FROM logs WHERE body LIKE 'old-%'").get().n, 0, "旧行必须删净");
+    db.close();
+    assert.ok((result.after ?? 0) <= (result.before ?? 0), "VACUUM 后不应变大");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("trimEngineLogs：库不存在 → ok:false（不创建文件）", { skip: !mod && "dist-electron 未构建" }, () => {
+  const dir = mkdtempSync(join(tmpdir(), "wal-test-"));
+  try {
+    const file = join(dir, "none.sqlite");
+    const result = mod.trimEngineLogs(file);
+    assert.equal(result.ok, false);
+    assert.equal(existsSync(file), false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
