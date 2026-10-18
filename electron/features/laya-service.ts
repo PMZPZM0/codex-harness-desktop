@@ -23,11 +23,12 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { bundledPython, pythonPipReady } from "../toolchain";
 import { PIP_COMMON_ARGS, PIP_INDEXES } from "./pip-sources";
+import { formatLayaVerdict, resolveLayaJudgeRequest, type LayaJudgeInput } from "../laya-judge";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import type { HostCaps } from "../runtime/seams";
 
-const LAYA_CHANNELS = ["laya:status", "laya:install", "laya:uninstall", "laya:decide-effort"];
+const LAYA_CHANNELS = ["laya:status", "laya:install", "laya:uninstall", "laya:decide-effort", "laya:judge"];
 
 /** 首选源可被环境变量覆盖（自测/代理场景）；其后按共享兜底表顺序（去重）。 */
 const PIP_INDEX = process.env.LAYA_PIP_INDEX ?? "";
@@ -124,16 +125,32 @@ function log(line: string) {
   if (serviceLog.length > 200) serviceLog.splice(0, serviceLog.length - 200);
 }
 
-/** pip 包 laya 是否已装（含版本）。 */
+/* pip show 结果缓存：渲染层每次 thread/start / resume 都要问「装没装」（决定 laya_judge 露不露），
+   每次真跑 `python -m pip show` 会拖慢新开会话/切会话（冷机几百 ms 起）。安装/卸载时显式失效。 */
+const PIP_CACHE_MS = 30_000;
+let pipCache: { installed: boolean; version: string } | null = null;
+let pipCacheAt = 0;
+
+function invalidatePipCache(): void {
+  pipCache = null;
+  pipCacheAt = 0;
+}
+
+/** pip 包 laya 是否已装（含版本；30 秒缓存）。 */
 function pipShow(): { installed: boolean; version: string } {
+  if (pipCache && Date.now() - pipCacheAt < PIP_CACHE_MS) return pipCache;
   const bin = bundledPython();
+  let result: { installed: boolean; version: string };
   try {
     const out = require("node:child_process").execFileSync(bin, ["-m", "pip", "show", "laya"], { encoding: "utf8", timeout: 30_000 });
     const ver = /Version:\s*(\S+)/.exec(out)?.[1] ?? "";
-    return { installed: true, version: ver };
+    result = { installed: true, version: ver };
   } catch {
-    return { installed: false, version: "" };
+    result = { installed: false, version: "" };
   }
+  pipCache = result;
+  pipCacheAt = Date.now();
+  return result;
 }
 
 export function layaStatus(): LayaServiceState {
@@ -183,6 +200,7 @@ function parseProgress(line: string, into: LayaProgress): void {
 /** 安装 / 更新 laya[serve]（清华 pip 镜像；torch 体积大，超时放宽 20 分钟）。 */
 export function layaInstall(): Promise<{ ok: boolean; log: string }> {
   if (installing) return Promise.resolve({ ok: false, log: "已有安装任务在进行中" });
+  invalidatePipCache();
   const bin = bundledPython();
   // ⛔ 前置体检（10-01 用户机器实录）：旧版 Python 缺 pip 时 `python -m pip` 直接
   //  `No module named pip` exit 1，日志只剩一行裸路径报错、用户无从下手。
@@ -243,6 +261,7 @@ export function layaInstall(): Promise<{ ok: boolean; log: string }> {
       if (i > 0) log(`换个源再试（${i + 1}/${LAYA_PIP_SOURCES.length}）：${index}`);
       const { code, installed } = await runPip(index);
       if (code === 0 && installed) {
+        invalidatePipCache();
         installing = false;
         if (i > 0) log(`pip 改用源成功：${index}`);
         // 装成即后台预热（拉起 laya-serve + 下载权重 ~700MB）：进度在设置页 Laya 卡片实时可见，
@@ -258,6 +277,7 @@ export function layaInstall(): Promise<{ ok: boolean; log: string }> {
       }
     }
     installing = false;
+    invalidatePipCache();
     return { ok: false, log: lines.join("\n") };
   })();
 }
@@ -270,6 +290,7 @@ export function layaInstall(): Promise<{ ok: boolean; log: string }> {
  */
 export function layaUninstall(): Promise<{ ok: boolean; log: string }> {
   killService("卸载 Laya");
+  invalidatePipCache();
   const bin = bundledPython();
   const pip = pythonPipReady(bin);
   if (!pip.ok) {
@@ -307,6 +328,7 @@ export function layaUninstall(): Promise<{ ok: boolean; log: string }> {
     child.on("close", (code) => {
       clearTimeout(timer);
       lines.push(`pip uninstall → exit ${code}`);
+      invalidatePipCache();
       const { installed } = pipShow();
       // ⛔ 只看退出码会假绿：pip 有时 exit 0 但包还在（多环境/被占用）。以**复核结果**为准。
       const ok = !installed;
@@ -564,6 +586,64 @@ export async function layaJudgeAll(
   ]);
 }
 
+/**
+ * 模型工具 `laya_judge` 的执行端（10-18 用户：「给 codex 加一个调用 laya 判断的工具…
+ * 如果安装了 laya 模型，就再暴露这个工具给 codex」）。
+ *
+ * 与内部 `layaJudge` 的区别（⛔ 不要合并）：
+ *   · 内部路径是**旁路增强**：未就绪只预热、立刻返回 null，绝不拖慢发送/写入；
+ *   · 模型工具是**用户/模型显式要的一次判断**：可以等一小会儿（默认 15s，上限 30s），
+ *     但**绝不自动安装**；没装直接回「未安装」，装了就尽量把服务拉起来再判。
+ *   · 低置信不是「失败」：返回 ok=true 的「弃权」文案，明确告诉模型别拿它当结论。
+ */
+export async function layaJudgeForTool(input: LayaJudgeInput | null | undefined): Promise<{ ok: boolean; output?: string; error?: string }> {
+  let req;
+  try {
+    req = resolveLayaJudgeRequest(input);
+  } catch (error: any) {
+    return { ok: false, error: `参数不合法：${String(error?.message ?? error)}` };
+  }
+
+  const { installed } = pipShow();
+  if (!installed) {
+    return { ok: false, error: "Laya 未安装：请先在 设置 → 开发工具 → Laya 智能判断 安装（装好后新开会话或切回会话，laya_judge 才会出现在工具面）" };
+  }
+
+  if (!proc || !ready) {
+    /* ⛔ 不为一次判断无限等：后台拉起服务 + 最多等 req.timeoutMs；超时如实说「正在预热」。
+       服务会在后台继续启动/下载权重，下一次调用就能真判。 */
+    let startError = "";
+    void ensureService().catch((error: any) => {
+      startError = String(error?.message ?? error);
+      log(`工具调用预热失败: ${startError.slice(0, 120)}`);
+    });
+    const deadline = Date.now() + req.timeoutMs;
+    while (Date.now() < deadline) {
+      if (proc && ready) break;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    if (!proc || !ready) {
+      return {
+        ok: false,
+        error: startError
+          ? `Laya 启动失败：${startError}`
+          : "Laya 正在预热（首次需加载/下载模型权重），这次先别用它判断；稍后重试，或到 设置 → 开发工具 查看进度。",
+      };
+    }
+  }
+
+  try {
+    const answers = await layaDecide(req.state, {
+      judge: { type: "choice", instructions: req.instructions, criteria: req.criteria },
+    });
+    const verdict = parseVerdict(answers.judge, req.criteria);
+    if (!verdict) return { ok: true, output: "Laya 没有给出合法选项（模型输出异常），这次不要依据它判断。" };
+    return { ok: true, output: formatLayaVerdict(verdict.choice, verdict.confidence, req.criteria, req.minConfidence).text };
+  } catch (error: any) {
+    return { ok: false, error: `Laya 判断失败：${String(error?.message ?? error)}` };
+  }
+}
+
 /** 应用退出时收服务进程。 */
 export function layaShutdown() {
   killService("应用退出");
@@ -588,6 +668,7 @@ export const layaFeature = defineFeature<null>({
     ipcHost.handle("laya:install", () => layaInstall());
     ipcHost.handle("laya:uninstall", () => layaUninstall());
     ipcHost.handle("laya:decide-effort", (_event, text: unknown) => layaDecideEffort(String(text ?? "")));
+    ipcHost.handle("laya:judge", (_event, input: unknown) => layaJudgeForTool(input as LayaJudgeInput));
 
     // ⛔ 10-03：will-quit 订阅的**退订函数**必须交给 ctx.effect —— 插件卸载时随容器一起释放。
     //    直接 app.on(...) 不注册退订 = 域卸载后钩子仍在（泄漏，且再挂一次会重复触发）。

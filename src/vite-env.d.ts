@@ -984,6 +984,8 @@ interface Window {
     layaUninstall(): Promise<{ ok: boolean; log: string }>;
     /* 思考等级自动判断（choice: low/medium/high/xhigh + 校准置信度；置信 <0.45 弃权返回 null，调用方回落手选档） */
     layaDecideEffort(text: string): Promise<{ effort: string; confidence: number } | null>;
+    /* 模型工具 laya_judge 的执行端：只有装了 Laya 才注册进模型工具面；短文本多选一判断（知识价值 / 重复 / 自定义 2~6 项），低置信弃权、不自动安装（10-18） */
+    layaJudge(input: { preset?: "knowledge_gate" | "duplicate" | "custom"; state: string; reference?: string; instructions?: string; criteria?: Record<string, string>; minConfidence?: number; timeoutMs?: number }): Promise<{ ok: boolean; output?: string; error?: string }>;
     /* 10-03：Codex 官方插件市场（GitHub openai/plugins，gh-proxy 镜像优先）。installedDir 由主进程注入 —— 「装没装」的真相源是本地 marker；live=false 表示上游没连通、这次读的是内置快照 */
     listOfficialMarketPlugins(input?: { category?: string; query?: string; page?: number; pageSize?: number }): Promise<OfficialMarketListResult>;
     /* 官方源的 10 个分类（含每类数量）。⛔ 与 Gitee 镜像源的分类各算各的，tab 按源切换 */

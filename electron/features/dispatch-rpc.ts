@@ -28,6 +28,7 @@ import { delegateRegistry, server, threadCwd, threadRuntimeStore } from "../runt
 import { mutableState, scheduler } from "../main";
 import { uiverseSearch, uiverseGet } from "./uiverse-library";
 import { concatVideosCore, downloadVideoCore, findVideoJob, listVideoJobs, pollVideoCore, rememberVideoJob, submitVideoCore, updateVideoJob, videoProviderViews } from "./video-gen";
+import { DUPLICATE_CRITERIA, KNOWLEDGE_GATE_CRITERIA, KNOWLEDGE_GATE_INSTRUCTIONS } from "../laya-judge";
 /* ⛔ 图像四件套（image_generate / image_edit / image_info / image_view）的执行端**已整体移出本文件**，
    改由 image-lab 域自己的 IPC 承担（electron/features/image-lab.ts 的 image-lab:generate / :edit /
    :info / :view）。这里不再有它们的分支 —— 用户 10-09 要求「生成和编辑的 IPC 彻底分开」。 */
@@ -160,11 +161,8 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     try {
       const { layaJudge } = await import("./laya-service");
       const verdict = await layaJudge(`${title}\n${text}`, {
-        instructions: "下面是一条用户想让 AI 存进项目知识库的内容。判断它属于哪一类。",
-        criteria: {
-          knowledge: "项目知识：开发规范、技术结论、踩坑经验、配置或接口说明、决策记录，有实质信息量。",
-          chatter: "非知识：寒暄、闲聊、情绪表达、口头招呼、无实义内容。",
-        },
+        instructions: KNOWLEDGE_GATE_INSTRUCTIONS,
+        criteria: KNOWLEDGE_GATE_CRITERIA,
       }, { minConfidence: 0.5 });
       if (verdict?.choice === "chatter") {
         return {
@@ -186,10 +184,7 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
         similar.forEach((h, i) => {
           questions[String(i)] = {
             instructions: `已有知识条目：【${h.title}】${h.snippet.slice(0, 200)}\n新写入内容：\n${(`${title}\n${text}`).slice(0, 800)}\n判断新内容相对这条已有条目是否重复。`,
-            criteria: {
-              duplicate: "重复：讲的是同一件事，已有条目已覆盖，没有新增信息",
-              new: "新知识：内容不同或有新增信息，值得另存一条",
-            },
+            criteria: DUPLICATE_CRITERIA,
           };
         });
         const verdicts = await layaJudgeAll(`${title}\n${text}`, questions, { minConfidence: 0.5, timeoutMs: 3_000 });
