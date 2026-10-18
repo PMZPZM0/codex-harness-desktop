@@ -23,6 +23,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { defineFeature } from "../context";
+/* 10-18 接线：会话同步从"预留桩"改为**真实现**。
+   ⛔ `deviceToken` 注入的是**云账号 token**（`activeCredential().token`）——
+      `cloud-sync.ts` 里它直接当 `Authorization: Bearer` 用；
+      服务端 1.1.8 起已允许账号 token 直接 push（device 降为可选标记），所以不再需要配对流程。 */
+import { accountsBase, activeCredential } from "../cloud-api";
+import { runCloudSyncOnce, pullCloudSessions, readSyncSummary } from "../cloud-sync";
 import type { IpcHost } from "../ipc-host";
 
 const CHANNELS = [
@@ -75,21 +81,54 @@ export const cloudReserveFeature = defineFeature<null>({
     const ipcHost = ctx.get<IpcHost>("ipc");
     if (!ipcHost) throw new Error("cloud-reserve: 缺少 ipc 服务（宿主未提供）");
 
-    /* ── ① 数据同步（云端存储）────────────────────────────────────────────── */
-    ipcHost.handle("cloud:sync/status", async () => ({
-      enabled: false, reserved: true, quotaBytes: 0, usedBytes: 0, lastSyncAt: 0,
-    }));
-    ipcHost.handle("cloud:sync/push", async (_event, paths?: string[]) => {
-      void paths;
-      return RESERVED("cloud-storage-not-enabled", "云端存储尚未开通：数据仍只存本机");
+    /* ── ① 数据同步（云端存储）—— **10-18 接真实现** ────────────────────────
+       ⛔ 原来这 4 个是 `RESERVED("cloud-storage-not-enabled", …)` 的桩：永远返回"尚未开通"、
+          一个字节都不传。接线后走 `runCloudSyncOnce` / `pullCloudSessions`（按行增量上传）。 */
+    const syncDeps = () => ({
+      codexHome: path.join(app.getPath("userData"), "codex-home"),
+      stateFile: path.join(app.getPath("userData"), "sync", "state.json"),
+      accountsBase: accountsBase(),
+      /* ⛔ 这里回的是**云账号 token**（见文件头注释）：服务端 syncAuth 认它 ⇒ 未登录时为空 ⇒ 直接 not-paired */
+      deviceToken: () => activeCredential()?.token || "",
+      machineId: () => { try { return os.hostname(); } catch { return "unknown"; } },
     });
+
+    ipcHost.handle("cloud:sync/status", async () => {
+      const cr = activeCredential();
+      if (!cr) return { enabled: false, reserved: false, quotaBytes: 0, usedBytes: 0, lastSyncAt: 0, sessions: 0, lines: 0 };
+      let s = { sessions: 0, lines: 0 };
+      try { s = readSyncSummary(syncDeps().stateFile); } catch { /* 首次运行没有游标文件 */ }
+      return { enabled: true, reserved: false, quotaBytes: 0, usedBytes: 0, lastSyncAt: 0, sessions: s.sessions, lines: s.lines };
+    });
+
+    ipcHost.handle("cloud:sync/push", async () => {
+      if (!activeCredential()) return { ok: false, reserved: false, code: "not-logged-in", error: "未登录云账号" };
+      try {
+        const r = await runCloudSyncOnce(syncDeps());
+        return r.ok
+          ? { ok: true, reserved: false, pushedSessions: r.pushedSessions, pushedLines: r.pushedLines }
+          : { ok: false, reserved: false, code: r.reason || "sync-failed", error: r.reason === "not-paired" ? "未登录云账号" : (r.reason || "上传失败") };
+      } catch (error) {
+        return { ok: false, reserved: false, code: "exception", error: (error as Error).message.slice(0, 200) };
+      }
+    });
+
     ipcHost.handle("cloud:sync/pull", async (_event, keys?: string[]) => {
-      void keys;
-      return RESERVED("cloud-storage-not-enabled", "云端存储尚未开通：数据仍只存本机");
+      if (!activeCredential()) return { ok: false, reserved: false, code: "not-logged-in", error: "未登录云账号" };
+      try {
+        const r = await pullCloudSessions(syncDeps(), Array.isArray(keys) ? keys : []);
+        return r.ok
+          ? { ok: true, reserved: false, pulled: r.pulled }
+          : { ok: false, reserved: false, code: r.reason || "pull-failed", error: r.reason || "下载失败" };
+      } catch (error) {
+        return { ok: false, reserved: false, code: "exception", error: (error as Error).message.slice(0, 200) };
+      }
     });
+
     ipcHost.handle("cloud:sync/conflict/resolve", async (_event, key?: string, resolution?: string) => {
       void key; void resolution;
-      return RESERVED("cloud-storage-not-enabled", "云端存储尚未开通：无冲突可处理");
+      /* ⛔ 冲突解决仍无实现（云助手侧也是桩）—— 如实说明，不假装成功。 */
+      return RESERVED("conflict-not-implemented", "冲突解决尚未实现：目前按行追加，不产生冲突");
     });
 
     /* ── ② 设备/配对管理（真实现）─────────────────────────────────────────── */
