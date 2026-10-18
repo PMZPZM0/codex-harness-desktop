@@ -23,7 +23,7 @@ const ok = (cond, label) => {
 };
 
 const distSafety = new URL("../dist-electron/update-safety.js", import.meta.url);
-const distTar = new URL("../dist-electron/update-tar.js", import.meta.url);
+const distTar = new URL("../dist-electron/updates/update-tar.js", import.meta.url);
 if (!fs.existsSync(distSafety)) {
   console.error("找不到编译产物 dist-electron/ —— 请先 npm run build:electron");
   process.exit(1);

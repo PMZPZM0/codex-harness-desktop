@@ -23,7 +23,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
-import { extractTarGz } from "./update-tar";
+import { extractTarGz } from "./updates/update-tar";
 import { checkEngineUpdateInfo, performEngineUpdateFlow } from "./features/engine-ipc";
 import { checkRuntimeUpdateRow, performRuntimeUpdate, updateableToolIds } from "./features/runtime-ipc";
 import { checkSkillUpdateRows, updateSkillFolder } from "./features/skills-ipc";

@@ -312,7 +312,7 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
   catch (error) { fail(`【105】分类纯逻辑产物读不到（先 npm run build）：${error?.message ?? error}`); }
   try { layersMod2 = await import("../../dist-electron/memory-layers.js"); }
   catch (error) { fail(`【105】记忆分层产物读不到：${error?.message ?? error}`); }
-  try { pruneMod = await import("../../dist-electron/memory-prune.js"); }
+  try { pruneMod = await import("../../dist-electron/memory/memory-prune.js"); }
   catch (error) { fail(`【105】淘汰策略产物读不到：${error?.message ?? error}`); }
 
   if (lessonsMod) {

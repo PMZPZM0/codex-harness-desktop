@@ -189,7 +189,7 @@ export async function run() {
   console.log(C.bold("\n【97】记忆碎片池生命周期（过期清理 / pinned 保护 / 容量淘汰）"));
   let pruneMod = null;
   try {
-    pruneMod = await import("../../dist-electron/memory-prune.js");
+    pruneMod = await import("../../dist-electron/memory/memory-prune.js");
   } catch (error) {
     fail(`【97】记忆生命周期纯逻辑产物读不到（先 npm run build）：${error?.message ?? error}`);
   }
