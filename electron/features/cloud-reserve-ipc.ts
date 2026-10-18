@@ -75,7 +75,7 @@ function toolExists(rel: string): boolean {
 const RESERVED = (code: string, error: string) => ({ ok: false, reserved: true, code, error });
 
 export const cloudReserveFeature = defineFeature<null>({
-  id: "cloud-reserve",
+  id: "cloud",
   inject: ["ipc"],
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");

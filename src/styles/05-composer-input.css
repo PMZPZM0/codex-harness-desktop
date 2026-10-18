@@ -1148,6 +1148,23 @@
   font-size: 12px;
   line-height: 1.6;
 }
+.git-missing .primary-setting { margin-top: 2px; }
+.git-missing small {
+  max-width: 280px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.git-note {
+  margin: 6px 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
 .git-empty {
   place-items: center;
   min-height: 200px;

@@ -247,6 +247,8 @@
   --panel-2: #f1f1ef;
   --line: #e7e7e4;
   --line-soft: #efefec;
+  --line-strong: #d9d9d4;
+  --field: #ffffff;
   --text: #23231f;
   --muted: #6f6f69;
   --faint: #9b9b95;
@@ -295,6 +297,8 @@
   --panel-2: #2c2c2b;
   --line: #373736;
   --line-soft: #2e2e2d;
+  --line-strong: #4a4a48;
+  --field: #1b1b1a;
   --text: #ececea;
   --muted: #a6a6a1;
   --faint: #7d7d78;
