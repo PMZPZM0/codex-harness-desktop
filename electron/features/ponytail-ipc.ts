@@ -6,7 +6,7 @@
  *
  * 口径唯一真相源 = `../ponytail-mode`（Mode 枚举与落盘都在那里）。
  */
-import { getPonytailMode, setPonytailMode } from "../ponytail-mode";
+import { getPonytailMode, setPonytailMode } from "../conventions/ponytail-mode";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 

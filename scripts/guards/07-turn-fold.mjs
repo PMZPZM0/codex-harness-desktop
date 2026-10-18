@@ -2140,7 +2140,7 @@ export async function run() {
   );
   // ⛔ 写代码模式缺省一律 off（10-01 用户令：默认关、关了就是关了）——主进程读档与
   //    渲染层自愈兜底两处都不许回退 full。
-  const pmSrc58 = readFileSync(join(ROOT, "electron", "ponytail-mode.ts"), "utf8");
+  const pmSrc58 = readFileSync(join(ROOT, "electron", "conventions", "ponytail-mode.ts"), "utf8");
   (/String\(raw\.defaultMode \?\? "off"\)/.test(pmSrc58) && /catch \{[\s\S]{0,60}?return "off";/.test(pmSrc58) ? ok : fail)(
     "【58】写代码模式落盘缺省 = off（config.json 缺失/读不了时回退 full = 关掉的开关重启被拉开）"
   );
