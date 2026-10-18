@@ -42,6 +42,7 @@ import { migrateBuiltinPluginSecrets, builtinPluginEnv, readBuiltinPlugins } fro
 import { augmentedPath, nuphusBinary } from "../toolchain";
 import { net, safeStorage, session } from "electron";
 import { pathToFileURL } from "node:url";
+import { startWalCheckpointWatch } from "../sqlite-wal";
 import { petAssetRoots, readPetSettings } from "./pet-ipc";
 import { feedPetEvent } from "./pet-state";
 import { applyPetSettings } from "./pet-window";
@@ -339,6 +340,16 @@ export async function bootApp() {
   try {
     server.setExternalEnv(connectorEnv(await readConnectors()));
   } catch (error) { console.warn("connector env injection failed:", error); }
+  /* P1-4（10-19 复检报告）：引擎 SQLite 的 WAL 定期 checkpoint（启动一次 + 每 6 小时）。
+     ⛔ 只碰**已存在**的库，失败只记日志 —— 绝不能因为磁盘/占用把启动链带崩。 */
+  try {
+    const stopWalWatch = startWalCheckpointWatch([
+      path.join(codexHome, "state_5.sqlite"),
+      path.join(codexHome, "thread_history_1.sqlite"),
+      path.join(codexHome, "logs_2.sqlite"),
+    ]);
+    app.once("will-quit", stopWalWatch);
+  } catch (error) { console.warn("wal checkpoint watch failed to start:", error); }
   // 启动即补齐 AGENTS.md（emoji + 中文语言规范基础段）：老版本升级后没有这些段，
   // 重写让模型默认用中文思考与回复；AGENTS.md 引擎每请求动态重读，无需重启即生效。
   try {
