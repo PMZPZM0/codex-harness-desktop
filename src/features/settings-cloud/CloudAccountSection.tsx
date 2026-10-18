@@ -376,7 +376,7 @@ export function CloudAccountSection() {
               />
             </details>
             <div className="cloud-acct-actions">
-              <button className="primary-setting" disabled={!username || !password || busy === "login"} onClick={doLogin}>
+              <button className="primary-setting cloud-acct-login" disabled={!username || !password || busy === "login"} onClick={doLogin}>
                 <LogIn size={14} />{busy === "login" ? "登录中…" : "登录"}
               </button>
             </div>
