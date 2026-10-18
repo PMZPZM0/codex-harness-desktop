@@ -124,16 +124,25 @@ export function CloudAccountSection() {
     const r = await api.cloudAuthLogin({ baseUrl: baseUrl.trim() || undefined, username: username.trim(), password });
     if (!r.ok) { setMsg({ kind: "err", text: r.error || "登录失败" }); return; }
     setPassword("");
-    /* ⛔⛔ 10-18（用户令「做成自动重签，手动重签也保留」）：
-       登录后必须 **force: true** —— 非强制同步不会重签代理密钥，旧令牌继续失效，
-       用户每次重新登录都得手动点「重签密钥并同步」才能用（用户实测的第一个坑）。
-       ⛔ 手动按钮「重签密钥并同步」保留，用于换设备/令牌提前过期时重来。 */
-    const sync = await api.cloudModelsSync?.({ force: true });
+    /* ⛔⛔ 10-18（用户令「做成自动重签，手动重签也保留」+「云管理可以绑定三个设备，要考虑到」）：
+       登录后**先非强制同步**：
+         · 本机已有有效代理令牌 ⇒ 直接成功、**不重签** ⇒ 不会踢掉同账号另外两台设备；
+         · 令牌缺失/已失效 ⇒ 失败，这时才 **force 重签** ⇒ 新手首次登录也能自动修好。
+       ⛔ 绝不能无条件 force：那会让"在第二台机器上登录"把第一台踢下线。
+       ⛔ 手动按钮「重签密钥并同步」保留（换设备 / 令牌提前过期时用）。 */
+    let sync = await api.cloudModelsSync?.({ force: false });
+    let autoResigned = false;
+    if (!sync?.ok) {
+      sync = await api.cloudModelsSync?.({ force: true });
+      autoResigned = Boolean(sync?.ok);
+    }
     refreshProviders();
     setMsg({
       kind: "ok",
       text: sync?.ok
-        ? `登录成功：已自动重签密钥并同步 ${sync.models} 个云端模型 —— 到「设置 → 模型」的供应商「云端模型」里就能直接选。`
+        ? (autoResigned
+            ? `登录成功：本机密钥不可用，已自动重签并同步 ${sync.models} 个云端模型（不影响同账号其他设备）。`
+            : `登录成功：本机密钥仍有效，已同步 ${sync.models} 个云端模型（未重签，其他设备不受影响）。`)
         : "登录成功，但自动重签/同步没完成 —— 点「重签密钥并同步」重试一次即可。",
     });
     await refresh();
