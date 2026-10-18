@@ -159,8 +159,13 @@ import { decodeText } from "../../../../hooks/useFilePreview";
 
 /** 会话工作区文件的弹窗编辑读写通道（pastedText.kind==="file" 时用）：读 = fs:read（base64→
  *  与右栏预览同一 decodeText 口径，GBK 兜底）；写 = fs:write（可信根校验在主进程，root 参数不参与判定）。 */
+/** ⛔ 10-18 预览修复：路径在会话工作区之外时，主进程返回 OUTSIDE_TRUST:<dir>（机器可读）。
+ *  这里弹一次确认，用户同意后调 fs:allow 放行**该目录**（主进程持久化，重启仍有效），再重试一次。
+ *  ⛔ 只在用户点击打开文件这条路径上发生 —— 不是模型能触发的放行。 */
 const fileEditTransport: TextEditorTransport = {
   read: async (path: string) => {
+    /* ⛔ 越界（OUTSIDE_TRUST:<dir>）不在这一层处理：⛔ 原生 confirm 被守卫【191】禁（吞焦点）。
+       授权 UI 在编辑器里（PastedTextEditor 内联按钮），这里原样抛出让 UI 识别前缀。 */
     const result = await window.codex.readFile(path);
     const binary = atob(result.dataBase64 ?? "");
     return decodeText(Uint8Array.from(binary, (value) => value.charCodeAt(0)));
