@@ -27,7 +27,7 @@ const mod = (p) => import(pathToFileURL(join(ROOT, p)).href);
 const AS_JSON = process.argv.includes("--json");
 
 const { MemoryStore } = await mod("dist-electron/memory-store.js");
-const tm = await mod("dist-electron/text-match.js");
+const tm = await mod("dist-electron/retrieval/text-match.js");
 const { CORRECTION_CATEGORY, PITFALL_CATEGORY, SOP_CATEGORY } = await mod("dist-electron/memory-lessons.js");
 
 /** 样本集：全部取自**本项目的真实纪律**（不是编的），措辞与查询刻意错开。 */

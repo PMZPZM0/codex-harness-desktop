@@ -1253,7 +1253,7 @@ console.log(C.bold("\n【4f】麦克风错误翻译（唤醒/通话共用）+ �
   {
 console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端审批，跑编译产物真实现）"));
 {
-  const botPairPath = join(ROOT, "dist-electron", "bot-pairing.js");
+  const botPairPath = join(ROOT, "dist-electron", "bots", "bot-pairing.js");
   let BotPairingService = null;
   try { BotPairingService = (await import("file://" + botPairPath.replace(/\\/g, "/"))).BotPairingService; }
   catch { fail(`bot-pairing 编译产物读不到（先 npm run build）`); }

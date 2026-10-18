@@ -866,7 +866,7 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
 
   // ── Bug 8：provider id 取引擎权威索引；会话「记录已丢失」要有标记 ──
   {
-    const st = req(join(ROOT, "dist-electron", "session-tools.js"));
+    const st = req(join(ROOT, "dist-electron", "tools", "session-tools.js"));
     const missingCase = st.markMissingRollouts(
       [{ id: "T1", path: "sessions/x/rollout-2026-09-16T00-00-00-01a09d64-23c8-7e80-9215-58ad1a647868.jsonl" }, { id: "T2", path: "p2" }, { id: "T3" }],
       new Set(["t2"]),

@@ -1031,7 +1031,7 @@ export async function run() {
   {
     console.log(C.bold("\n【43】永久删除的磁盘收尾（删了就不能重启复活）"));
     const req = createRequire(import.meta.url);
-    const st = req(join(ROOT, "dist-electron", "session-tools.js"));
+    const st = req(join(ROOT, "dist-electron", "tools", "session-tools.js"));
     const pool = req(join(ROOT, "dist-electron", "rollout-pool.js"));
     const mainTs = readMainSource();
     const workerSrc = readFileSync(join(ROOT, "electron", "rollout-worker.cjs"), "utf8");

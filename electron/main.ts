@@ -11,7 +11,7 @@ import http from "node:http";
 import { ChannelBotService, type ChannelBotConfig } from "./channel-bot";
 import { ensureTrustedProject, resolveStartupUserData } from "./data-dir";
 import { CodexServer, codexBinaryPath } from "./codex-server";
-import { BotPairingService } from "./bot-pairing";
+import { BotPairingService } from "./bots/bot-pairing";
 import { MemoryStore, type MemoryCategory, type MemoryRemoteConfig } from "./memory-store";
 import { Scheduler } from "./scheduler";
 import { MemoryLayers } from "./memory-layers";
