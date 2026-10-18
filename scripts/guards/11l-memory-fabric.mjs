@@ -20,6 +20,18 @@ const ok = (c, m) => { checks++; if (c) console.log("  ✓ " + m); else { fails+
 
 /* 10-18：检索打分块（isRelevant / rankEntries / pruneEntries）已切到 memory/fabric-rank.ts（P2 批次 5）
    ⇒ 两源拼接后断言（⛔ 只读单文件 ⇒ 这些断言会**静默恒真**，比红更危险）。 */
+/* 10-18：检索/裁剪的断言改为**行为断言**（真调 dist 模块）—— 搬家不再需要改这里。
+   ⛔ 源码文本断言只保留给「实现形态」类（导出口径/路径闸），行为类一律真跑。 */
+let fabricMod = null;
+try {
+  fabricMod = await import(new URL("../../dist-electron/memory-fabric.js", import.meta.url));
+} catch { /* 未 build ⇒ 下方断言会明确报红 */ }
+const mkEntry = (over = {}) => ({
+  id: Math.random().toString(36).slice(2), content: "", scope: "project", sessionId: null,
+  projectKey: "p", sourceAgent: { kind: "main", id: "m" }, category: "任务经验",
+  weight: 0.5, pinned: false, createdAt: Date.now(), updatedAt: Date.now(), lastUsedAt: null,
+  useCount: 0, ...over,
+});
 const fab = readFileSync(join(ROOT, "electron", "memory-fabric.ts"), "utf8")
   + readFileSync(join(ROOT, "electron", "memory", "fabric-rank.ts"), "utf8");
 const tool = readFileSync(join(ROOT, "electron", "memory-fabric-tool.ts"), "utf8");
@@ -65,12 +77,21 @@ ok(/if \(!rel \|\| rel\.startsWith\("\.\."\) \|\| path\.isAbsolute\(rel\)\) retu
   "⛔ 目录必须仍在 fabric 根内（挡住 .. 与绝对路径 ⇒ 越界写 = 任意文件写）");
 /* ⛔ 判据形态随实现改过一次（加了归档过滤后中间变量从 scored 变成 live）——
    锚点必须跟着**当前的真实代码形态**，⛔ 别锚一个已不存在的中间变量。 */
-ok(/const live = opts\.includeArchived \? pool : pool\.filter\(\(e\) => e\.archivedAt == null\)/.test(fab)
-  && /const kept = tokens\.length \? live\.filter\(\(e\) => isRelevant\(e\.content, tokens\)\) : live/.test(fab),
-  "⛔ 带 query 时**不相关的条目不返回**（只排序不丢弃 = 噪声召回，实跑抓过）");
-ok(/function isRelevant\(content: string, tokens: string\[\]\)/.test(fab)
-  && /shortHits \/ shortTotal >= 0\.34/.test(fab),
-  "⛔ 相关性判定有命中率门槛（中文单字命中天然偏高，无门槛必然噪声）");
+{
+  const got = fabricMod?.rankEntries([
+    mkEntry({ content: "蓝绿部署 灰度 回滚 流程" }),
+    mkEntry({ content: "pnpm 安装 依赖 版本 锁定" }),
+  ], "蓝绿部署") ?? null;
+  ok(Array.isArray(got) && got.length === 1 && /蓝绿部署/.test(got[0].content),
+    "⛔ 带 query 时**不相关的条目不返回**（只排序不丢弃 = 噪声召回，实跑抓过）");
+}
+{
+  const q = "缓存 命中 前缀 稳定 复盘"; // 5 个短 token
+  const low = fabricMod?.rankEntries([mkEntry({ content: "缓存 相关" })], q) ?? null;      // 1/5 = 0.2 < 0.34
+  const high = fabricMod?.rankEntries([mkEntry({ content: "缓存 命中 前缀 稳定" })], q) ?? null; // 4/5
+  ok(Array.isArray(low) && low.length === 0 && Array.isArray(high) && high.length === 1,
+    "⛔ 相关性判定有命中率门槛（中文单字命中天然偏高，无门槛必然噪声）");
+}
 ok(!/pool\.filter\(\(e\) => e\.sessionId ===/.test(fab),
   "⛔⛔ 隔离**不做**成\"读全量再按 sessionId 过滤\"（漏一个条件就是串扰事故）");
 /* ⛔ 上一版只有上面那条**负向**断言 ⇒ 变异（在 recall 里读别的命名空间）不红 = 假绿。
@@ -118,8 +139,13 @@ ok(/function isRoleAgent/.test(fab) && /return agent\.kind !== "main" && agent\.
   "⛔ 闸的判据是\"是不是角色\"（主会话与系统不受限）");
 ok(/content\.length > FABRIC_MAX_ENTRY/.test(fab),
   "⛔ 单条有长度上限（否则模型一次写 10MB 就能把文件撑爆）");
-ok(/pruneEntries\(after, FABRIC_MAX_ENTRIES\)/.test(fab) && /e\.pinned \? 1\.5 : 1\.0|filter\(\(e\) => e\.pinned\)/.test(fab),
-  "⛔ 超量裁剪且 pinned 永不裁");
+{
+  const many = Array.from({ length: 11 }, (_, i) => mkEntry({ weight: i / 10 }));
+  many[0].pinned = true;
+  const kept = fabricMod?.pruneEntries(many, 3) ?? null;
+  ok(Array.isArray(kept) && kept.length === 3 && kept.some((e) => e.pinned),
+    "⛔ 超量裁剪且 pinned 永不裁");
+}
 ok(/inject 不|不静默|被截断/.test(fab) && /超出预算被截断/.test(fab),
   "⛔ 注入被钳制时必须**如实告知**（静默截断 = 让它在盲区里干活）");
 ok(/本次注入 \$\{relevant\.length\} \/ 命名空间共 \$\{entries\.length\} 条/.test(fab),
@@ -198,8 +224,14 @@ ok(/e\.archivedAt == null && now - e\.createdAt > FABRIC_PRIVATE_RETENTION_DAYS 
   "⛔⛔ 过期归档的判据是「未归档 且 超保留期」（两条件都在 —— 少一个就永不过期，恒假）");
 /* ⛔ 归档必须有**行为差异**：只打标记、不过滤 = 字段是装饰（review 抓到）。
    ⇒ 钉住 rankEntries 默认排除已归档 + 提供 includeArchived 出口。 */
-ok(/const live = opts\.includeArchived \? pool : pool\.filter\(\(e\) => e\.archivedAt == null\)/.test(fab),
-  "⛔⛔ 已归档条目**不参与召回**（只打标记不过滤 ⇒ 归档形同虚设）");
+{
+  const live = mkEntry({ content: "活跃条目" });
+  const dead = mkEntry({ content: "已归档条目", archivedAt: Date.now() });
+  const def = fabricMod?.rankEntries([live, dead], "") ?? null;
+  const all = fabricMod?.rankEntries([live, dead], "", { includeArchived: true }) ?? null;
+  ok(Array.isArray(def) && def.length === 1 && Array.isArray(all) && all.length === 2,
+    "⛔⛔ 已归档条目**不参与召回**（只打标记不过滤 ⇒ 归档形同虚设）");
+}
 ok(/includeArchived\?: boolean/.test(fab),
   "⛔ 需要读历史时有出口（includeArchived —— 归档不等于删内容）");
 /* ⛔ 删除会话路径必须**真的调用**归档（否则 archiveSessionMemory 又是死代码）。
