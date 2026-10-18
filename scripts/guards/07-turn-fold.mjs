@@ -4864,9 +4864,9 @@ export async function run() {
       "【165】压缩线插在目标回合**之前**（不是回合后面）"
     );
     (timeline.includes("const boundaryTurnId = lastCompactionTurnId || String(hostCompaction?.turnId ?? \"\")")
-      && /anchorFrom = boundaryTurnId \? ordered\.findIndex/.test(timeline) ? ok : fail)(
+      && /insertBefore = resolveCompactionAnchor\(visible, boundaryTurnId\)/.test(timeline) ? ok : fail)(
       "【165】压缩线锚点 = **压缩 item 自己所在回合**（10-07：取该回合(含)之前最近一条用户消息的正上方）——"
-        + "新消息到来线**不动**（旧口径「永远黏最新一条用户消息」会让线跟着新消息往下跑，用户实测点出）"
+        + "新消息到来线**不动**（旧口径「永远黏最新一条用户消息」会让线跟着新消息往下跑，用户实测点出）。10-18 起锚点收进纯函数 resolveCompactionAnchor（守卫 12r 跑真值表：边界不在已加载窗口时锚顶部）"
     );
     // ⛔ 同屏最多一条「已完成」压缩线（09-26 用户截图「两条压缩线」）：settled 兜底必须在归位处
     //    （else-if 与 compactionLine 互斥），不许再单独挂在时间线尾部。
