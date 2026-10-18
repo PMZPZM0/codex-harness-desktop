@@ -16,6 +16,7 @@ import { PageInfo } from "../../components/SettingsHead";
 import { Spinner } from "../../components/CardShell";
 import { cloudUserCenterUrl } from "../../lib/cloud-links.mjs";
 
+import { SessionSyncDialog } from "./SessionSyncDialog";
 type AccountView = { id: string; username: string; role: string; baseUrl: string; active: boolean; savedAt: number };
 type AuthStatus = { loggedIn: boolean; baseUrl: string; active: AccountView | null; accounts: AccountView[]; defaultBaseUrl: string };
 type ModelStatus = { loggedIn: boolean; registered: boolean; enabled: boolean; active: boolean; models: number; hasToken: boolean; lastSyncAt: number };
@@ -83,6 +84,8 @@ export function CloudAccountSection() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  /* 10-18：会话同步用**独立弹窗**（非内嵌）；null = 关闭 */
+  const [sessionDialog, setSessionDialog] = useState<"upload" | "pull" | null>(null);
   const confirmTimer = useRef<number | null>(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
 
@@ -245,6 +248,14 @@ export function CloudAccountSection() {
 
   return (
     <section className="settings-section stack">
+      {/* 10-18 会话同步弹窗（**独立弹窗，非内嵌**）。成功关闭后回调刷新外部界面：
+          让"最近同步 / 已上传数量"这类展示跟着变（用户要求：状态变化后正确渲染刷新）。 */}
+      {sessionDialog && (
+        <SessionSyncDialog
+          mode={sessionDialog}
+          onClose={(result) => { setSessionDialog(null); if (result) { setMsg(result); void refresh(); } }}
+        />
+      )}
       <div className="settings-copy channel-heading">
         <div>
           <h2>
@@ -357,10 +368,10 @@ export function CloudAccountSection() {
               </button>
               {/* 10-18：**会话同步（手动）** —— ⛔ 与「同步模型」是两件事：这里推/拉的是**会话内容**本身。
                   ⛔ 只做手动：自动同步会把用户的对话在无感知的情况下持续外传，桌面版不默认开。 */}
-              <button className="secondary-setting" disabled={!!busy} onClick={doSyncPush}>
+              <button className="secondary-setting" disabled={!!busy} onClick={() => setSessionDialog("upload")}>
                 {busy === "sync-push" ? "上传中…" : "上传会话"}
               </button>
-              <button className="secondary-setting" disabled={!!busy} onClick={doSyncPull}>
+              <button className="secondary-setting" disabled={!!busy} onClick={() => setSessionDialog("pull")}>
                 {busy === "sync-pull" ? "下载中…" : "从云端下载"}
               </button>
               {busyIcon("sync")}{busyIcon("resync")}

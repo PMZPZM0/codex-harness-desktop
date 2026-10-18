@@ -760,6 +760,8 @@ contextBridge.exposeInMainWorld("codex", {
   cloudSyncPull: (input?: { keys: string[] }) => __ipc("cloud:sync/pull", 0, [input]),
   /* 云版预留：同步冲突解决（resolution = local|cloud|merge；未开通前为预留桩） */
   cloudSyncConflictResolve: (key: string, resolution: string) => __ipc("cloud:sync/conflict/resolve", 2, [key, resolution]),
+  /* 10-18：列出本地会话供勾选上传（只读，不写游标） */
+  cloudSyncList: () => __ipc("cloud:sync/list", 0, []),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。
