@@ -65,10 +65,10 @@ export function MessageFooter({ item, turn, usage, tokenUsage, fallbackWindow, o
   const turnCredit = useTurnCredit(turn?.id);
   const creditNode = isAgent && turnCredit ? (
     <span key="credit" className="message-action-extra" title={creditTitle(turnCredit)}>
-      {/* 免费有两种来源：模型倍率为 0（`free`）、或该时段系数被配成 0（`factor === 0`）——
-          两者服务端都走 `addUsageOnly`（只留痕不扣分）⇒ 这里必须都显示「免费」，
+      {/* `free` = **实际生效倍率为 0**（模型倍率 0，或该时段的闲时倍率配成 0）——
+          两者服务端都走 `addUsageOnly`（只留痕不扣分）⇒ 这里统一显示「免费」，
           ⛔ 不能显示「≈ 0 积分」（看着像计费异常）。 */}
-      {(turnCredit.free || turnCredit.factor === 0) ? "免费" : `≈ ${turnCredit.credit} 积分`}
+      {turnCredit.free ? "免费" : `≈ ${turnCredit.credit} 积分`}
     </span>
   ) : null;
   const tokenNodes = isAgent ? [
@@ -103,21 +103,20 @@ function formatTimestamp(value: unknown) {
 /** 页脚积分徽标的 tooltip：把"这个数字是怎么算出来的"摊开（模型 / 倍率 / 闲时 / tokens）。
  *  ⛔ 末尾必须声明"以服务端为准" —— 页脚是估算，用户拿它对账会差（目录 TTL 内管理员改过倍率时必差）。 */
 function creditTitle(rec: TurnCreditRecord) {
-  const parts = [`模型 ${rec.model}`, `倍率 ×${rec.rate}`];
-  /* ⛔ 这里必须显示**实际生效的系数** `rec.factor`，不能写窗口的默认系数 ——
-     每模型单独配过时两者不同（窗口 0.5、该模型 0.8），照窗口写就是给用户一个错的数字。
-     同时把"该模型单独配置"标出来，否则用户会以为自己看到的是全局设置。 */
+  const parts = [`模型 ${rec.model}`];
+  /* ⛔ 闲时是**替换倍率**（不是折扣）：这里要同时给出"高峰多少 / 闲时多少"，
+     否则用户没法核对（只写一个数字，他分不清是基准还是折后）。 */
   if (rec.window) {
-    const own = rec.factor !== rec.window.rate;
     parts.push(
-      `闲时「${rec.window.label || "时段"}」${rec.window.start}–${rec.window.end}点 ×${rec.factor}`
-      + (own ? `（该模型单独配置；全局默认 ×${rec.window.rate}）` : ""),
+      `高峰 ×${rec.baseRate}；闲时「${rec.window.label || "时段"}」`
+      + `${rec.window.start}–${rec.window.end}点 ×${rec.rate}`,
     );
+  } else {
+    parts.push(`倍率 ×${rec.baseRate}`);
   }
   parts.push(`${rec.tokens.toLocaleString()} tokens`);
-  const reason = rec.free ? "该模型倍率为 0" : rec.factor === 0 ? "该时段系数为 0" : "";
-  const head = reason
-    ? `${parts.join(" · ")}\n${reason} ⇒ 免费（服务端只留痕不扣分）`
+  const head = rec.free
+    ? `${parts.join(" · ")}\n该模型倍率为 0 ⇒ 免费（服务端只留痕不扣分）`
     : `${parts.join(" · ")}\n≈ ${rec.credit} 积分`;
   return `${head}\n\n以服务端积分账本为准，本地仅为估算`;
 }

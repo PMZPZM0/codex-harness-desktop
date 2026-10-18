@@ -276,8 +276,15 @@ ok(
 const estimateSrc = read("src/lib/credit-estimate.mjs");
 ok(existsSync(join(ROOT, "src/lib/credit-estimate.d.mts")), "src/lib/credit-estimate.mjs 有配套 .d.mts 声明（缺了 tsc 报 TS7016）");
 ok(
-  /Math\.round\(\(tokens \/ 1000\) \* rate \* factor \* 100\) \/ 100/.test(estimateSrc),
-  "估算公式与服务端逐字符同形：(tokens / 1000) * rate * factor 保留两位（⛔ 差一点就会出现「页脚说 0.4、账本扣 0.8」）",
+  /Math\.round\(\(tokens \/ 1000\) \* rate \* 100\) \/ 100/.test(estimateSrc),
+  "估算公式与服务端逐字符同形：`(tokens / 1000) * rate` 保留两位（⛔ 闲时是**替换倍率**，计价式里不许出现任何系数连乘；差一点就会出现「页脚说 0.4、账本扣 0.8」）",
+);
+ok(
+  /* ⛔⛔ `Number(null) === 0` —— 今天第三次踩（前两次：`serverHourAt` 的时区偏移、窗口 rate）。
+     这里一旦用 `Number(w.rate)`，「该时段没设默认倍率」就变成 **0** ⇒ 该时段所有没单独设的模型
+     全部免费白送（实测抓到的就是这个）。必须走 offPeakRateValue（空/缺 ⇒ null）。 */
+  /const rate = offPeakRateValue\(w && w\.rate\)/.test(estimateSrc),
+  "窗口的默认倍率用 offPeakRateValue 解析（⛔ 不许 `Number(w.rate)`：null 会变 0 ⇒ 该时段全部白送）",
 );
 ok(
   /tokens <= 0\) return null/.test(estimateSrc),
@@ -306,16 +313,14 @@ ok(
 );
 const footerSrc = read("src/features/shared/MessageFooter.tsx");
 ok(
-  /useTurnCredit\(turn\?\.id\)/.test(footerSrc) && /\(turnCredit\.free \|\| turnCredit\.factor === 0\) \? "免费"/.test(footerSrc),
-  "消息页脚按 turn.id 读本轮估算，且「倍率 0」与「闲时系数 0」都显示「免费」而不是「≈ 0 积分」",
+  /useTurnCredit\(turn\?\.id\)/.test(footerSrc) && /turnCredit\.free \? "免费"/.test(footerSrc),
+  "消息页脚按 turn.id 读本轮估算，且实际倍率为 0（模型 0 或该时段闲时倍率 0）显示「免费」而不是「≈ 0 积分」",
 );
 ok(
-  /* ⛔ 锚「点 ×<系数>」这个**显示形态**：tooltip 一旦在这里写回窗口默认系数，就会在
-     "每模型单独配置"时给出错的折扣数字（窗口 0.5、该模型 0.8 ⇒ 用户看到 ×0.5、实际扣 0.8）。
-     负向只挡"点 ×窗口系数"这一形态 —— 后面那句「全局默认 ×0.5」是**正确**的补充信息，
-     ⛔ 不能一起挡掉（第一版写成裸 `×${rec.window.rate}` 就误伤了自己）。 */
-  /点 ×\$\{rec\.factor\}/.test(footerSrc) && !/点 ×\$\{rec\.window\.rate\}/.test(footerSrc),
-  "积分 tooltip 的折扣系数用**实际生效的** rec.factor（⛔ 不许在「点 ×」处写窗口默认系数）",
+  /* ⛔ 闲时是**替换倍率**：tooltip 必须同时给出「高峰 ×a」与「闲时 ×b」两个数，
+     用户才核对得了；⛔ 写窗口默认系数（rec.window.rate）是错的 —— 那是"兜底默认值"，不是该模型实际用的。 */
+  /高峰 ×\$\{rec\.baseRate\}/.test(footerSrc) && /点 ×\$\{rec\.rate\}/.test(footerSrc) && !/点 ×\$\{rec\.window\.rate\}/.test(footerSrc),
+  "积分 tooltip 同时给出高峰倍率与闲时倍率（⛔ 不许写窗口默认系数 —— 那是兜底值，不是实际用的）",
 );
 ok(
   /creditNode \? \[creditNode\] : \[\]/.test(footerSrc),
