@@ -16,6 +16,7 @@
  *    由用户点「完成」关闭；关闭时把结果抛给父级去刷新外部界面。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 type SessionRow = {
   id: string;
@@ -151,11 +152,14 @@ export function SessionSyncDialog(props: {
   const canSubmit = phase === "idle" && picked.size > 0;
   const tone = phase === "error" ? "#f5cdc7" : phase === "success" ? "#cfe9d8" : "#e6e6e1";
 
-  return (
-    /* ⛔ 独立弹窗：fixed 遮罩 + 居中面板，层级低于确认框(950)、高于全局模态(400) */
+  return createPortal(
+    /* ⛔ 用 Portal 挂到 document.body —— 设置面板祖先若有 transform/filter/contain，
+       position:fixed 会降级成相对该祖先定位并被 overflow 裁切，看起来就是内嵌弹窗
+       （用户实测截图：弹窗被设置面板下沿截断）。
+       ⛔ 层级 1100：高于确认框(950)，否则弹窗内按钮点不到。 */
     <div role="dialog" aria-modal="true" aria-label={`${verb}会话`}
       style={{
-        position: "fixed", inset: 0, zIndex: 940, background: "rgba(0,0,0,.42)",
+        position: "fixed", inset: 0, zIndex: 1100, background: "rgba(0,0,0,.42)",
         display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
       }}
       onMouseDown={(e) => { if (e.target === e.currentTarget && phase !== "submitting") onClose(null); }}>
@@ -248,5 +252,7 @@ export function SessionSyncDialog(props: {
         </div>
       </div>
     </div>
+    ,
+    document.body,
   );
 }
