@@ -5,7 +5,7 @@ kind: change
 area: ui
 title: HTML 实时预览独立板块（自动开右栏 + 加宽 + 实时重载；只在生成时打开）
 tags: [html-preview, preview, watch, webview, history-replay]
-commits: []
+commits: [585c8d0]
 files: [electron/features/html-preview-ipc.ts, src/features/html-preview/HtmlPreviewBridge.tsx, src/lib/html-preview-store.mjs, src/lib/file-url.mjs, src/components/BrowserPane.tsx, src/features/app-view/AppView.tsx, scripts/guards/12t-html-preview.mjs, scripts/accept.mjs]
 importance: normal
 ---
