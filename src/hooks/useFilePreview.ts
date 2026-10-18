@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { askFileTrust } from "../lib/file-trust-ask.mjs";
 
 export type FilePreview = { path: string; content: string; language: string; kind: "text" | "image" | "binary" | "pdf" };
 
@@ -106,8 +107,23 @@ export function useFilePreview({ workspace, onNotice }: Options) {
       return;
     }
     try {
-      // 走本地 IPC 读文件（比转发引擎的 fs/readFile 可靠：非任务上下文不依赖引擎、返回结构稳定）
-      const result = await window.codex.readFile(path);
+      /* ⛔ 10-18：越界（OUTSIDE_TRUST:<dir>）⇒ 应用内模态问一次；允许则授权该目录并**重试一次**。
+         ⛔ 不用系统弹窗（跑出窗口外 + 吞焦点），⛔ 不内嵌（用户不知道点哪），⛔ 不静默放行。 */
+      const readWithConsent = async () => {
+        try {
+          return await window.codex.readFile(path);
+        } catch (error: any) {
+          const message = String(error?.message ?? error);
+          const outside = message.match(/OUTSIDE_TRUST:([^"]+)/);
+          if (!outside) throw error;
+          const dir = outside[1];
+          const allowed = await askFileTrust({ dir, path });
+          if (!allowed) throw new Error(`已取消：${dir} 不在可信目录内`);
+          await window.codex.allowFsPath(dir);
+          return await window.codex.readFile(path);
+        }
+      };
+      const result = await readWithConsent();
       const binary = atob(result.dataBase64 ?? "");
       const bytes = Uint8Array.from(binary, (value) => value.charCodeAt(0));
       // 未知扩展名兜底：文件头/NUL 嗅探出二进制同样给占位，不渲染乱码
