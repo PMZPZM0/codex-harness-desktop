@@ -42,7 +42,7 @@ import { migrateBuiltinPluginSecrets, builtinPluginEnv, readBuiltinPlugins } fro
 import { augmentedPath, nuphusBinary } from "../toolchain";
 import { net, safeStorage, session } from "electron";
 import { pathToFileURL } from "node:url";
-import { startWalCheckpointWatch } from "../sqlite-wal";
+import { startWalCheckpointWatch, trimEngineLogs } from "../sqlite-wal";
 import { petAssetRoots, readPetSettings } from "./pet-ipc";
 import { feedPetEvent } from "./pet-state";
 import { applyPetSettings } from "./pet-window";
@@ -350,6 +350,13 @@ export async function bootApp() {
     ]);
     app.once("will-quit", stopWalWatch);
   } catch (error) { console.warn("wal checkpoint watch failed to start:", error); }
+  /* P2-8（10-19 复检报告）：引擎日志库归档（默认保留 14 天）。⛔ 必须在 server.start() 之前做
+     —— VACUUM 需要独占，引擎连着时做不了；失败只记日志，绝不影响启动。 */
+  try {
+    const trimmed = trimEngineLogs(path.join(codexHome, "logs_2.sqlite"));
+    if (!trimmed.ok) console.warn(`[logs] 归档跳过：${trimmed.error}`);
+    else if (trimmed.deleted) console.log(`[logs] 引擎日志归档：删除 ${trimmed.deleted} 行（14 天前），回收 ${Math.max(0, Math.round(((trimmed.before ?? 0) - (trimmed.after ?? 0)) / 1024))} KB`);
+  } catch (error) { console.warn("engine log trim failed:", error); }
   // 启动即补齐 AGENTS.md（emoji + 中文语言规范基础段）：老版本升级后没有这些段，
   // 重写让模型默认用中文思考与回复；AGENTS.md 引擎每请求动态重读，无需重启即生效。
   try {

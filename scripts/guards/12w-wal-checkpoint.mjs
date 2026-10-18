@@ -27,7 +27,7 @@ const ok = (condition, message) => {
 const boot = codeOnly(read("electron/features/boot.ts"));
 const mod = codeOnly(read("electron/sqlite-wal.ts"));
 
-ok(/import \{ startWalCheckpointWatch \} from "\.\.\/sqlite-wal"/.test(boot) && /startWalCheckpointWatch\(\[/.test(boot),
+ok(/import \{ startWalCheckpointWatch(?:, [^}]+)? \} from "\.\.\/sqlite-wal"/.test(boot) && /startWalCheckpointWatch\(\[/.test(boot),
   "boot 已接 `startWalCheckpointWatch`（三个引擎库：state / thread_history / logs）");
 const injectAt = boot.indexOf("startWalCheckpointWatch([");
 const startAt = boot.indexOf("server.start(");
@@ -42,6 +42,15 @@ ok(/if \(!fs\.existsSync\(file\)\) return \{ file, ok: false, error: "数据库�
 ok(/busy_timeout/.test(mod), "有 busy_timeout（引擎同时持有连接，拿不到锁就跳过）");
 ok(/return \(\) => clearInterval\(timer\)/.test(mod) && /timer\.unref/.test(mod),
   "返回停止函数且定时器 unref（不阻止进程退出）");
+
+/* ── P2-8：引擎日志库归档（logs_2.sqlite 44.5MB 只增不减） ── */
+ok(/DELETE FROM logs WHERE ts < \$\{cutoff\}/.test(mod) && /LOG_RETAIN_DAYS = 14/.test(mod),
+  "日志归档按保留天数删除（默认 14 天）");
+ok(/db\.exec\("VACUUM"\)/.test(mod) && /if \(deleted > 0\)/.test(mod),
+  "有删除才 VACUUM 回收空间（VACUUM 失败不影响已删除）");
+const trimAt = boot.indexOf("trimEngineLogs(");
+ok(trimAt >= 0 && startAt > trimAt, `日志归档也挂在 server.start() 之前（${trimAt} < ${startAt}；VACUUM 需要独占）`);
+ok(/try \{[\s\S]{0,120}trimEngineLogs[\s\S]{0,400}\} catch/.test(boot), "归档失败只记日志（try/catch）");
 
 console.log(`\n【wal-checkpoint】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

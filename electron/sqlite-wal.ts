@@ -74,3 +74,42 @@ export function startWalCheckpointWatch(files: string[], intervalMs = WAL_CHECKP
   timer.unref?.();
   return () => clearInterval(timer);
 }
+
+/* ══ 引擎日志库归档（P2-8）：`logs_2.sqlite` 已 44.5MB 且只增不减 ══════════════════════ */
+
+/** 默认保留天数：14 天（引擎的 stderr 另有 engine-debug.log，项目结论另有 logs/ 档案）。 */
+export const LOG_RETAIN_DAYS = 14;
+
+export type TrimLogsResult = { file: string; ok: boolean; deleted?: number; before?: number; after?: number; error?: string };
+
+function sizeOf(file: string): number {
+  try { return fs.statSync(file).size; } catch { return 0; }
+}
+
+/**
+ * 删除 `logs` 表里超过保留期的行，并回收空间（VACUUM）。
+ * ⛔ 只在**引擎未启动时**调用（boot 里 server.start 之前）：VACUUM 需要独占，引擎连着时会失败。
+ * ⛔ 任何一步失败都返回 ok:false，由调用方吞掉 —— 日志归档失败绝不能影响启动。
+ */
+export function trimEngineLogs(file: string, retainDays = LOG_RETAIN_DAYS, nowMs = Date.now()): TrimLogsResult {
+  if (!fs.existsSync(file)) return { file, ok: false, error: "数据库不存在" };
+  const days = Math.max(1, Math.floor(Number(retainDays) || LOG_RETAIN_DAYS));
+  const cutoff = Math.floor(nowMs / 1000) - days * 24 * 60 * 60;
+  const before = sizeOf(file);
+  let db: SqliteDb | null = null;
+  try {
+    db = new DatabaseSync(file);
+    db.exec("PRAGMA busy_timeout = 2000");
+    db.exec(`DELETE FROM logs WHERE ts < ${cutoff}`);
+    const deleted = Number((db.prepare("SELECT changes() AS n").get() as { n?: number } | undefined)?.n ?? 0);
+    db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get();
+    if (deleted > 0) {
+      try { db.exec("VACUUM"); } catch { /* 回收失败不影响“已删除”这一事实 */ }
+    }
+    return { file, ok: true, deleted, before, after: sizeOf(file) };
+  } catch (error) {
+    return { file, ok: false, error: String((error as Error)?.message ?? error).slice(0, 200), before };
+  } finally {
+    try { db?.close(); } catch { /* 已关闭 */ }
+  }
+}
