@@ -11,7 +11,7 @@
  * ⛔ 本文件**不得** import "./main"（会成环，且整场收敛失效）。
  */
 import { app, BrowserWindow, nativeTheme } from "electron";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import QRCode from "qrcode";
 import { CodexServer } from "./codex-server";
@@ -114,6 +114,29 @@ export function appSourceRoot() {
 /** 「用户亲自选过」的路径 = 可信来源（09-13 审计 S5 的安全版修法）。 */
 const userPickedPaths = new Set<string>();
 
+/* ── 用户一次性授权的路径（10-18 预览修复）：按**目录**记，持久化到 userData/trusted-paths.json
+   ⛔ 语义仍是「用户亲自点过授权」= 可信来源；⛔ 不是放开任意读（每次新增都要一次用户手势）。 */
+let persistedTrustLoaded = false;
+function trustFilePath() { return path.join(app.getPath("userData"), "trusted-paths.json"); }
+function loadPersistedTrust() {
+  if (persistedTrustLoaded) return;
+  persistedTrustLoaded = true;
+  try {
+    const rows = JSON.parse(readFileSync(trustFilePath(), "utf8"));
+    if (Array.isArray(rows)) for (const row of rows) if (typeof row === "string" && row) userPickedPaths.add(path.resolve(row));
+  } catch { /* 首次运行/文件坏 => 空集 */ }
+}
+/** 用户点击授权后调用：把该文件所在**目录**加入可信根并持久化。返回规范化后的目录。 */
+export function allowUserPath(target: string): string {
+  loadPersistedTrust();
+  const resolved = path.resolve(String(target || ""));
+  const dir = existsSync(resolved) && statSync(resolved).isDirectory() ? resolved : path.dirname(resolved);
+  userPickedPaths.add(dir);
+  if (userPickedPaths.size > 200) userPickedPaths.delete(userPickedPaths.values().next().value as string);
+  try { writeFileSync(trustFilePath(), JSON.stringify([...userPickedPaths], null, 2), "utf8"); } catch { /* 写盘失败仍本次生效 */ }
+  return dir;
+}
+
 export const trustPicked = (paths: readonly string[]) => {
   for (const p of paths) {
     if (!p) continue;
@@ -125,6 +148,7 @@ export const trustPicked = (paths: readonly string[]) => {
 
 /** 可信根集合：主进程记着的各会话工作目录 + userData + 用户亲自选过的路径（含其所在目录）。 */
 const trustedRoots = () => {
+  loadPersistedTrust();
   const roots = [app.getPath("userData"), ...[...threadCwd.values()].filter(Boolean).map((cwd) => String(cwd))];
   for (const picked of userPickedPaths) roots.push(picked, path.dirname(picked));
   return roots.filter(Boolean).map((root) => path.resolve(root));
