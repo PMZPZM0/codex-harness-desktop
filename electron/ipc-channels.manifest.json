@@ -4767,10 +4767,10 @@
       "channel": "cloud-models:catalog",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ ok?: boolean; provider?: { id?: string; name?: string; baseUrl?: string; ready?: boolean; hasProxyToken?: boolean }; models?: Array<{ id: string; name?: string; credits?: string; enabled?: boolean; contextLength?: number; maxOutputTokens?: number; supportsImages?: boolean; supportsReasoning?: boolean }>; error?: string }>",
+      "returns": "Promise<{ ok?: boolean; provider?: { id?: string; name?: string; baseUrl?: string; ready?: boolean; hasProxyToken?: boolean }; models?: Array<{ id: string; name?: string; credits?: string; enabled?: boolean; contextLength?: number; maxOutputTokens?: number; supportsImages?: boolean; supportsReasoning?: boolean; creditsLocked?: boolean; upstreamCredits?: string }>; offPeak?: { enabled?: boolean; windows?: Array<{ id?: string; label?: string; start?: number; end?: number; rate?: number }>; active?: { label?: string; start?: number; end?: number; rate?: number } | null; tzOffsetMinutes?: number }; error?: string }>",
       "invokeArgs": "",
       "cast": null,
-      "note": "云端模型目录（服务端 /models 原样透传）：含逐模型勾选状态 enabled 与积分倍率 credits。⛔ 不返回任何密钥与上游地址"
+      "note": "云端模型目录（服务端 /models 原样透传）：含逐模型勾选状态 enabled 与积分倍率 credits（creditsLocked=管理员已钉住、upstreamCredits=上游原值），以及闲时倍率快照 offPeak（时段按服务端本地时间，tzOffsetMinutes 供客户端换算）。⛔ 不返回任何密钥与上游地址"
     },
     {
       "name": "cloudModelsSync",

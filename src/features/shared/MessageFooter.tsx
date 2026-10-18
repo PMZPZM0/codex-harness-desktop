@@ -9,6 +9,8 @@ import { usageNumber } from "../../lib/usage-number";
 import { usageCachedTokens } from "../../lib/usage-cached-tokens";
 import { Quote, PenLine, Copy, GitBranch, Clock3, Star, Check } from "lucide-react";
 import { requestFavorite } from "../../lib/favorite-bridge";
+import { useTurnCredit } from "../../lib/cloud-credit-store";
+import type { TurnCreditRecord } from "../../lib/cloud-credit-store";
 import { FeedbackIconButton } from "./FeedbackIconButton";
 import { TurnWebSources } from "./TurnWebSources";
 
@@ -57,10 +59,22 @@ export function MessageFooter({ item, turn, usage, tokenUsage, fallbackWindow, o
       icon={<GitBranch size={12} />} doneIcon={<Check size={12} />} label="分支" onFire={() => { onFork(); }} />
   ) : null;
   const timeNode = isAgent && turn?.startedAt ? <span key="time"><Clock3 size={12} />{formatTimestamp(turn.completedAt ?? turn.startedAt)}</span> : null;
-  const tokenNodes = isAgent && showTokenInfo ? [
+  /* 本轮积分（10-18 用户令）：只对**云端目录里有、且倍率非空**的模型显示 —— 记录由回合完成事件写入，
+     非云端供应商 / 目录没拿到 / 模型不在目录 ⇒ 这里拿到 null ⇒ **不占位**（不写死的 0，也不猜）。
+     ⛔ 纯展示估算，账本以服务端为准；口径见 lib/credit-estimate.mjs（与服务端同一公式）。 */
+  const turnCredit = useTurnCredit(turn?.id);
+  const creditNode = isAgent && turnCredit ? (
+    <span key="credit" className="message-action-extra" title={creditTitle(turnCredit)}>
+      {turnCredit.free ? "免费" : `≈ ${turnCredit.credit} 积分`}
+    </span>
+  ) : null;
+  const tokenNodes = isAgent ? [
     /* 10-17 用户令：页脚展示**最新回合**的 输入/输出/缓存输入（缓存命中括注）；
        ⛔ 不再展示累计「总」—— 累计口径在「上下文容量」弹层里看（那里用户要的就是总）。 */
-    <span key="tokens" className="message-action-extra">{input.toLocaleString()} 入 / {output.toLocaleString()} 出 / 缓存 {cached.toLocaleString()}{cacheRate != null ? ` · 命中 ${cacheRate}%` : ""}</span>,
+    ...(showTokenInfo ? [
+      <span key="tokens" className="message-action-extra">{input.toLocaleString()} 入 / {output.toLocaleString()} 出 / 缓存 {cached.toLocaleString()}{cacheRate != null ? ` · 命中 ${cacheRate}%` : ""}</span>,
+    ] : []),
+    ...(creditNode ? [creditNode] : []),
   ] : [];
 
   return (
@@ -81,4 +95,14 @@ export function MessageFooter({ item, turn, usage, tokenUsage, fallbackWindow, o
 function formatTimestamp(value: unknown) {
   const timestamp = typeof value === "number" ? value : Number(value);
   return Number.isFinite(timestamp) ? new Date(timestamp * 1000).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
+}
+
+/** 页脚积分徽标的 tooltip：把"这个数字是怎么算出来的"摊开（模型 / 倍率 / 闲时 / tokens）。
+ *  ⛔ 末尾必须声明"以服务端为准" —— 页脚是估算，用户拿它对账会差（目录 TTL 内管理员改过倍率时必差）。 */
+function creditTitle(rec: TurnCreditRecord) {
+  const parts = [`模型 ${rec.model}`, `倍率 ×${rec.rate}`];
+  if (rec.window) parts.push(`闲时「${rec.window.label || "时段"}」${rec.window.start}–${rec.window.end}点 ×${rec.window.rate}`);
+  parts.push(`${rec.tokens.toLocaleString()} tokens`);
+  const head = rec.free ? `${parts.join(" · ")}\n该模型倍率为 0 ⇒ 免费（服务端只留痕不扣分）` : `${parts.join(" · ")}\n≈ ${rec.credit} 积分`;
+  return `${head}\n\n以服务端积分账本为准，本地仅为估算`;
 }

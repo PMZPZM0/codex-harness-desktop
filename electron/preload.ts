@@ -730,7 +730,7 @@ contextBridge.exposeInMainWorld("codex", {
   cloudAuthSwitch: (id: string) => __ipc("cloud-auth:switch", 1, [id]),
   /* 云账号登录态（⛔ 只回账号与「有没有」，不回任何令牌） */
   cloudAuthStatus: () => __ipc("cloud-auth:status", 0, []),
-  /* 云端模型目录（服务端 /models 原样透传）：含逐模型勾选状态 enabled 与积分倍率 credits。⛔ 不返回任何密钥与上游地址 */
+  /* 云端模型目录（服务端 /models 原样透传）：含逐模型勾选状态 enabled 与积分倍率 credits（creditsLocked=管理员已钉住、upstreamCredits=上游原值），以及闲时倍率快照 offPeak（时段按服务端本地时间，tzOffsetMinutes 供客户端换算）。⛔ 不返回任何密钥与上游地址 */
   cloudModelsCatalog: () => __ipc("cloud-models:catalog", 0, []),
   /* 把云端目录同步成本机供应商行（登录成功后 / 手动刷新 / 定时轮询都调它）。⛔ 同时写复数列表与单数生效档案（10-16「勾 5 个下拉 15 个」事故的防线）；force=true 会重签代理令牌 */
   cloudModelsSync: (input?: { force?: boolean }) => __ipc("cloud-models:sync", 0, [input]),
