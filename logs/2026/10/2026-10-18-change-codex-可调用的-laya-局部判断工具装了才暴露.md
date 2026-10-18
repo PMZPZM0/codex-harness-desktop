@@ -5,7 +5,7 @@ kind: change
 area: laya
 title: Codex 可调用的 Laya 局部判断工具（装了才暴露）
 tags: [laya, tool, judge, conditional]
-commits: []
+commits: [64dccf9]
 files: [electron/laya-judge.ts, electron/features/laya-service.ts, src/features/app-state/parts/part08/01-seg.tsx, src/features/app-state/parts/part05/event-router/02-request.tsx, electron/developer-instructions.ts, scripts/guards/12s-laya-judge.mjs, scripts/accept.mjs]
 importance: normal
 ---
