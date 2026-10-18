@@ -14,7 +14,7 @@ import os from "node:os";
 import { WeixinGateway } from "../weixin-gateway";
 import { markBoot } from "../boot-timing";
 import { debugMemoryCapture } from "../memory-capture-debug";
-import { debugTurnFiles } from "../turn-files-debug";
+import { debugTurnFiles } from "../debug/turn-files-debug";
 import { sendToWindow } from "./window-bus";
 import { dropStoredReports, emitTurnFileChanges, setTurnFileWatchBroadcast, setTurnFileWatchDiag, setTurnFileWatchStore, settleTurnByTurnId, snapshotTurnWorkspace, storedReportsForThread } from "../turn-file-watch";
 import { dropStoredCompactions, loadCompactionStore, setCompactionWatchDirs, watchTurnCompleted } from "../compaction-watch";

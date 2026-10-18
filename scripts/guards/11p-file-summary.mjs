@@ -165,7 +165,7 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
    stdout 不可见 ⇒ 关键事实必须落盘（userData/turn-files-diag.log），mac 复现一次即可定位。
    ⛔ 判据锚「诊断点真的接了落盘 + cwd 结果优先」，不是「有 debug 字样」。 */
 {
-  const diagMod = read("electron/turn-files-debug.ts");
+  const diagMod = read("electron/debug/turn-files-debug.ts");
   ok(diagMod.includes('"turn-files-diag.log"') && diagMod.includes("MAX_BYTES") && diagMod.includes("appendFileSync"),
     "诊断落盘模块存在（userData/turn-files-diag.log，JSON 行 + 上限清空重写 —— 与 memory-capture-debug 同款纪律）");
   ok(watch.includes("export function setTurnFileWatchDiag") && watch.includes('point: "snapshot-skip"')
@@ -173,7 +173,7 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     && watch.includes('point: "walk-root-error"') && watch.includes('point: "emit-no-snapshot"')
     && watch.includes('point: "emit"'),
     "追踪器诊断点齐全：快照跳过（空值/cwd 不在磁盘）/ 快照为空 / 根目录读取失败（mac 权限实锤点）/ 收尾无快照 / 收尾心跳");
-  ok(boot.includes('import { debugTurnFiles } from "../turn-files-debug"') && boot.includes("setTurnFileWatchDiag(debugTurnFiles)"),
+  ok(boot.includes('import { debugTurnFiles } from "../debug/turn-files-debug"') && boot.includes("setTurnFileWatchDiag(debugTurnFiles)"),
     "boot 注入诊断落盘（与 setTurnFileWatchStore 同一时机 —— bootApp 内、setPath 之后）");
   ok(boot.includes('debugTurnFiles({ point: "started-no-cwd"') && boot.includes("回合开始未记快照"),
     "回合开始未记快照时同时落一行文件诊断（打包版 mac stdout 不可见，console.warn 不够）");
