@@ -22,7 +22,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { safeProviderId } from "../provider-id";
 import { enrichThreadWithRolloutToolsAsync, listRolloutThreadsAsync, syncToolSurfaceAsync } from "../rollout-pool";
-import { markMissingRollouts, mergeThreadList } from "../session-tools";
+import { markMissingRollouts, mergeThreadList } from "../tools/session-tools";
 import { dropStoredReports, storedReportsForThread } from "../turn-file-watch";
 import { dropStoredCompactions, storedCompactionsForThread } from "../compaction-watch";
 import { rendererActiveByWindow } from "./renderer-fuse";

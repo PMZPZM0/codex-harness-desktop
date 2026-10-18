@@ -11,7 +11,7 @@ import path from "node:path";
 /* 中文友好的分词 / 相关性门槛 / 加权评分 / snippet 定位（纯函数）。
    ⛔⛔ 2026-10-10：原实现用 split(/\s+/) 分词 ⇒ 中文无空格查询召回 **0 条**（实测），
    两档（全文档 / 语义）口径也不一致 ⇒ 统一收敛到 electron/text-match.ts。 */
-import { bestHitIndex, isChunkRelevant, maxChunkScore, scoreChunk, tokenizeQuery } from "./text-match";
+import { bestHitIndex, isChunkRelevant, maxChunkScore, scoreChunk, tokenizeQuery } from "./retrieval/text-match";
 
 export type KbDocMeta = { id: string; title: string; source: string; chunks: number; addedAt: string; bytes: number };
 export type KbHit = { docId: string; title: string; chunkIndex: number; score: number; snippet: string };
