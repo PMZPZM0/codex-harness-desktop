@@ -124,13 +124,17 @@ export function CloudAccountSection() {
     const r = await api.cloudAuthLogin({ baseUrl: baseUrl.trim() || undefined, username: username.trim(), password });
     if (!r.ok) { setMsg({ kind: "err", text: r.error || "登录失败" }); return; }
     setPassword("");
-    const sync = await api.cloudModelsSync?.({ force: false });
+    /* ⛔⛔ 10-18（用户令「做成自动重签，手动重签也保留」）：
+       登录后必须 **force: true** —— 非强制同步不会重签代理密钥，旧令牌继续失效，
+       用户每次重新登录都得手动点「重签密钥并同步」才能用（用户实测的第一个坑）。
+       ⛔ 手动按钮「重签密钥并同步」保留，用于换设备/令牌提前过期时重来。 */
+    const sync = await api.cloudModelsSync?.({ force: true });
     refreshProviders();
     setMsg({
       kind: "ok",
       text: sync?.ok
-        ? `登录成功，已同步 ${sync.models} 个云端模型 —— 到「设置 → 模型」的供应商「云端模型」里就能选到它们。`
-        : "登录成功。模型同步未完成（可稍后点「立即同步模型」重试）。",
+        ? `登录成功：已自动重签密钥并同步 ${sync.models} 个云端模型 —— 到「设置 → 模型」的供应商「云端模型」里就能直接选。`
+        : "登录成功，但自动重签/同步没完成 —— 点「重签密钥并同步」重试一次即可。",
     });
     await refresh();
   });
