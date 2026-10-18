@@ -24,6 +24,7 @@ import { readCustomModel, readCustomModels, writeCustomModels } from "./main/01-
 import { customModelFile } from "./runtime-paths";
 import { applyCustomModel } from "./features/custom-model-apply";
 import { cloudHome } from "./cloud-api";
+import { withExclusiveEnabled } from "./provider-exclusivity";
 import type { CustomModelFile, ProviderModel } from "./features/custom-model-types";
 
 /** 云供应商的固定 id（⛔ 只含字母数字下划线短横线：`custom-model:save` 的校验口径）。 */
@@ -192,6 +193,14 @@ export async function applyCloudProvider(
   const modelBaseUrl = `${opts.baseUrl.replace(/\/+$/, "")}${CLOUD_PROXY_SUFFIX}`;
   if (key) await writeModelUpstream({ baseUrl: modelBaseUrl, encryptedKey: key });
   const effective = (await resolveUpstream()) ?? { baseUrl: modelBaseUrl, encryptedKey: key };
+  /* ⛔ 10-15 修「两个绿开关」（用户：云管理新增的供应商，上面的豆包没有自动停用）：
+     云端行**不再无条件 enabled** —— 只有 ① 它本来就是生效供应商，或 ② 列表里没有任何别的供应商
+     启用（空场，promoteIfVacant 会把它顶上）时才置 true；否则保持停用。
+     ⛔ 否则同步（每 10 分钟）会把用户刚切走的供应商**顶回来** ⇒「反向」永远不成立。 */
+  const activeRow = await readCustomModel();
+  const cloudActive = activeRow?.provider === CLOUD_PROVIDER_ID;
+  const othersEnabled = list.some((row) => row.provider !== CLOUD_PROVIDER_ID && row.enabled !== false);
+  const enabled = models.length > 0 && (cloudActive || !othersEnabled);
   const next: CustomModelFile = {
     ...(previous ?? {
       provider: CLOUD_PROVIDER_ID,
@@ -213,8 +222,9 @@ export async function applyCloudProvider(
     wireApi: "responses",
     upstreamProtocol: "chat",
     models,
-    /* enabled 必须为真，否则**下拉框不显示它的模型**（成员遍历会整行跳过 enabled===false 的行）。 */
-    enabled: models.length > 0 ? true : (previous?.enabled ?? false),
+    /* ⛔ 10-15 起 `enabled` 由上面的条件决定（生效中 / 空场才为真），**不再恒 true**：
+       恒 true 会让云端行与用户当前生效的供应商同时绿（用户截图两个开关都亮）。 */
+    enabled,
     ...(effective.encryptedKey ? { encryptedKey: effective.encryptedKey } : {}),
   } as CustomModelFile;
 
@@ -222,7 +232,9 @@ export async function applyCloudProvider(
      所以判据落在**令牌串有没有变**上，而不是"有没有 key"。没拿到新令牌时沿用原值。 */
   const changed = !previous || shapeOf(previous) !== shapeOf(next);
   if (index >= 0) list[index] = next; else list.push(next);
-  if (changed) await writeCustomModels(list);
+  /* 互斥（唯一实现）：云端行启用 ⇒ 其余供应商一律停用。 */
+  const exclusive = enabled ? withExclusiveEnabled(list, CLOUD_PROVIDER_ID) : { list, changed: false };
+  if (changed || exclusive.changed) await writeCustomModels(exclusive.list);
 
   await alignActiveFile(models);
   const promoted = await promoteIfVacant(next);
@@ -283,6 +295,10 @@ export async function activateCloudProvider(): Promise<{ ok: boolean; model: str
   const models = row.models ?? [];
   if (!models.length) return { ok: false, model: "", error: "no-models" };
   const picked: CustomModelFile = { ...row, model: row.model || models[0]?.id || "", enabled: true };
+  /* ⛔ 10-15：显式切到云端 = 互斥收敛（其余供应商停用）—— 以前只写生效档案，
+     列表里原来那个供应商的开关仍是绿的（用户截图「豆包没有自动停用」）。 */
+  const { list: exclusiveList, changed: exclusiveChanged } = withExclusiveEnabled(await readCustomModels(), CLOUD_PROVIDER_ID);
+  if (exclusiveChanged) await writeCustomModels(exclusiveList);
   await fs.writeFile(customModelFile, JSON.stringify(picked, null, 2), "utf8");
   await applyCustomModel(picked, { restart: true });
   return { ok: true, model: picked.model };
