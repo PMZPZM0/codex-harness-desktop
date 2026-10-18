@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（97 个能力域 / 494 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（97 个能力域 / 495 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -428,9 +428,9 @@ RPA 配方（录制好的桌面自动化流程）
 **云账号**的登录 / 登出 / 切换（10-16）：用账号密码换云端会话令牌（⛔ 不是配对流程）；令牌在 safeStorage 里，⛔ 渲染层与模型侧都拿不到明文。用户说「登录云端 / 退出云账号 / 换个云账号」时用它。⛔ 与本机「中转站账号」是两条独立的登录线，别混
 通道：cloud-auth:login, cloud-auth:logout, cloud-auth:switch, cloud-auth:status, cloud-auth:points
 
-### cloud（4 通道）
+### cloud（5 通道）
 **云端会话同步**（10-18 自云助手移植）：把本机会话**按行增量**推到云端、按需从云端拉回、以及冲突解决（\`cloud:sync/status|push|pull|conflict/resolve\`）。⛔ 与 cloud-auth（登录）/ cloud-models（模型目录）是并列的独立板块。用户说「上传会话 / 同步会话到云端 / 从云端恢复会话」时用它。⛔ 服务端可能由管理员关闭同步，此时会返回 \`session-sync-disabled\`（人话「管理员已关闭云端会话同步」），不要当成网络故障重试
-通道：cloud:sync/status, cloud:sync/push, cloud:sync/pull, cloud:sync/conflict/resolve
+通道：cloud:sync/status, cloud:sync/list, cloud:sync/push, cloud:sync/pull, cloud:sync/conflict/resolve
 
 ### cloud-models（6 通道）
 **云端模型目录同步**（10-16）：登录后自动把云端「已勾选」的模型写成本机供应商 \`cloud\`（勾选 = 下拉框可见），并默认每 10 分钟自动保持更新。用户说「云端模型没同步 / 拉一下云端模型 / 勾了模型选不到」时用它（sync 是唯一同步入口，force=true 会重签代理令牌）

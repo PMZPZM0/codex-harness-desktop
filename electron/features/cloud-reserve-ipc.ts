@@ -28,7 +28,7 @@ import { defineFeature } from "../context";
       `cloud-sync.ts` 里它直接当 `Authorization: Bearer` 用；
       服务端 1.1.8 起已允许账号 token 直接 push（device 降为可选标记），所以不再需要配对流程。 */
 import { accountsBase, activeCredential } from "../cloud-api";
-import { runCloudSyncOnce, pullCloudSessions, readSyncSummary } from "../cloud-sync";
+import { runCloudSyncOnce, pullCloudSessions, readSyncSummary, listLocalSessions } from "../cloud-sync";
 import type { IpcHost } from "../ipc-host";
 
 const CHANNELS = [
@@ -99,6 +99,15 @@ export const cloudReserveFeature = defineFeature<null>({
       let s = { sessions: 0, lines: 0 };
       try { s = readSyncSummary(syncDeps().stateFile); } catch { /* 首次运行没有游标文件 */ }
       return { enabled: true, reserved: false, quotaBytes: 0, usedBytes: 0, lastSyncAt: 0, sessions: s.sessions, lines: s.lines };
+    });
+
+    /* 10-18：给"勾选会话"弹窗用 —— 列出本地会话（只读，不写游标）。 */
+    ipcHost.handle("cloud:sync/list", async () => {
+      try {
+        return { ok: true, sessions: listLocalSessions({ codexHome: path.join(app.getPath("userData"), "codex-home") }) };
+      } catch (error) {
+        return { ok: false, error: (error as Error).message.slice(0, 200), sessions: [] };
+      }
     });
 
     ipcHost.handle("cloud:sync/push", async () => {

@@ -1,7 +1,7 @@
 {
  "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
  "generatedAt": "2026-10-09",
- "count": 494,
+ "count": 495,
  "channels": [
   {
    "name": "request",
@@ -4911,6 +4911,16 @@
    "invokeArgs": "key, resolution",
    "cast": null,
    "note": "云版预留：同步冲突解决（resolution = local|cloud|merge；未开通前为预留桩）"
+  },
+  {
+   "name": "cloudSyncList",
+   "channel": "cloud:sync/list",
+   "paramsImpl": "",
+   "paramsDecl": "",
+   "returns": "Promise<{ ok: boolean; error?: string; sessions: Array<{ id: string; title: string; project: string; lines: number; sizeBytes: number; updatedAt: number; path: string }> }>",
+   "invokeArgs": "",
+   "cast": null,
+   "note": "10-18：列出本地会话供勾选上传（只读，不写游标）"
   }
  ]
 }

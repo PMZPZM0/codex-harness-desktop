@@ -1098,6 +1098,8 @@ interface Window {
     cloudSyncPull(input?: { keys: string[] }): Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>;
     /* 云版预留：同步冲突解决（resolution = local|cloud|merge；未开通前为预留桩） */
     cloudSyncConflictResolve(key: string, resolution: string): Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>;
+    /* 10-18：列出本地会话供勾选上传（只读，不写游标） */
+    cloudSyncList(): Promise<{ ok: boolean; error?: string; sessions: Array<{ id: string; title: string; project: string; lines: number; sizeBytes: number; updatedAt: number; path: string }> }>;
 /* ═══ gen:end ═══ */
 
 

@@ -172,6 +172,26 @@ export async function runCloudSyncOnce(deps: SyncDeps): Promise<SyncResult> {
 }
 
 /** 状态摘要（界面展示用）：上次推送的会话数 / 游标条数。 */
+/** 列出本地会话供 UI 勾选（10-18）。⛔ 纯只读：不写游标、不发请求。
+ *  id 优先取 rollout 头部的 session_id，取不到用文件名（与服务端同步的 id 口径一致）。 */
+export function listLocalSessions(
+  deps: Pick<SyncDeps, "codexHome">, limit = 500,
+): Array<{ id: string; title: string; project: string; lines: number; sizeBytes: number; updatedAt: number; path: string }> {
+  const out: Array<{ id: string; title: string; project: string; lines: number; sizeBytes: number; updatedAt: number; path: string }> = [];
+  for (const full of listRollouts(deps.codexHome, limit)) {
+    let raw = "";
+    try { raw = readFileSync(full, "utf8"); } catch { continue; }
+    const lines = raw.split("\n").filter((l) => l.trim());
+    if (!lines.length) continue;
+    const meta = deriveMeta(lines);
+    let sizeBytes = 0, updatedAt = 0;
+    try { const st = statSync(full); sizeBytes = st.size; updatedAt = st.mtimeMs; } catch { /* 忽略 */ }
+    const id = meta.sessionId || basename(full).replace(/^rollout-/, "").replace(/\.jsonl$/, "");
+    out.push({ id, title: meta.title || "(未命名会话)", project: meta.project, lines: lines.length, sizeBytes, updatedAt, path: full });
+  }
+  return out;
+}
+
 export function readSyncSummary(stateFile: string): { sessions: number; lines: number } {
   const state = readState(stateFile);
   const rows = Object.values(state.sessions);
