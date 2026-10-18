@@ -14,7 +14,7 @@ import path from "node:path";
 import { safeProviderId } from "./provider-id";
 import { randomUUID } from "node:crypto";
 import type { CodexServer } from "./codex-server";
-import { MEMORY_CATEGORY_WEIGHT, MEMORY_MAX_RECORDS, MEMORY_TTL_MS, pickPrunable } from "./memory-prune";
+import { MEMORY_CATEGORY_WEIGHT, MEMORY_MAX_RECORDS, MEMORY_TTL_MS, pickPrunable } from "./memory/memory-prune";
 import { debugMemoryCapture } from "./memory-capture-debug";
 import { buildLessonLine, buildLogEntry, buildUserProfileLine, shouldCapture } from "./memory-lessons";
 import { isScratchWorkspace } from "./memory-layers";
