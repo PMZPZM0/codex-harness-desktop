@@ -110,8 +110,10 @@ ok(
 );
 ok(/promoteIfVacant/.test(providerCode), "空生效位由 promoteIfVacant 补上（否则下拉框整只灰的、点不动）");
 ok(
-  /if \(changed\) await writeCustomModels\(list\);/.test(providerCode),
-  "写复数列表只在 changed 时落盘（幂等：没变就不写，避免与渲染层保存打架）",
+  // 10-15 起写盘条件多了「互斥收敛改动了列表」这一项（同步启用云端行时会顺带停用别人），
+  // 仍必须**有判据才写**（无变化时不写，否则与渲染层保存互相打架）。
+  /if \(changed \|\| exclusive\.changed\) await writeCustomModels\(exclusive\.list\);/.test(providerCode),
+  "写复数列表只在真变了时落盘（幂等：档案没变、互斥也不需要收敛 ⇒ 不写，避免与渲染层保存打架）",
 );
 
 /* ── ⑥⛔ 令牌不落明文、不进 config.toml ───────────────────────────────── */
@@ -346,6 +348,48 @@ ok(
   /offPeak\?:/.test(String(catalogEntry.returns || "")) && /tzOffsetMinutes\?:/.test(String(catalogEntry.returns || "")),
   "manifest 里 cloud-models:catalog 的返回类型声明了 offPeak/tzOffsetMinutes（⛔ 生成区手改会被覆盖，必须改 manifest 再跑 npm run gen:ipc）",
 );
+
+/* ── ⑤ 供应商互斥（10-15 用户：「云管理我新增的供应商，上面的豆包没有自动停用，供应商正向反向做的还不够」）──
+   判据一：**唯一实现**跑真值表（`electron/provider-exclusivity.ts` 是纯函数，直接 import 真跑）；
+   判据二：三条写入路径（save / set-enabled / cloud-provider）全部调它，且各自的旧循环已删（负向）。 */
+{
+  const { withExclusiveEnabled } = await import("../../electron/provider-exclusivity.ts");
+  const row = (provider, enabled) => (enabled === undefined ? { provider } : { provider, enabled });
+  const forward = withExclusiveEnabled([row("doubao", true), row("cloud", false)], "cloud");
+  ok(forward.changed === true
+    && forward.list.find((r) => r.provider === "doubao").enabled === false
+    && forward.list.find((r) => r.provider === "cloud").enabled === true,
+    "真值表：启用 B ⇒ 原来启用的 A 被自动停用（用户截图那条：云端模型启用后「豆包」必须熄灯）");
+  const again = withExclusiveEnabled(forward.list, "cloud");
+  ok(again.changed === false && again.list.every((r, i) => r === forward.list[i]),
+    "真值表：已互斥时幂等（changed=false、原对象原样返回 —— 每 10 分钟的同步不会白写盘）");
+  const back = withExclusiveEnabled(forward.list, "doubao");
+  ok(back.list.find((r) => r.provider === "doubao").enabled === true
+    && back.list.find((r) => r.provider === "cloud").enabled === false,
+    "真值表：反向同样成立（切回 A ⇒ B 停用；⛔ 单向逻辑会让用户切走的供应商永远回不来）");
+  const legacy = withExclusiveEnabled([row("doubao"), row("cloud", false)], "cloud");
+  ok(legacy.list.find((r) => r.provider === "doubao").enabled === false,
+    "真值表：老档案缺 `enabled` 字段按**启用**处理（口径是 `!== false`，别改成 `=== true`）");
+  const none = withExclusiveEnabled([row("doubao", true), row("cloud", true)], null);
+  ok(none.list.every((r) => r.enabled === false),
+    "真值表：传 null ⇒ 全部停用（宁可一个都不亮，也不要留下两个绿开关）");
+}
+
+const customIpcSrc = read("electron/features/custom-model-ipc.ts");
+const providerSrc = read("electron/cloud-provider.ts");
+ok(/from "\.\.\/provider-exclusivity"/.test(customIpcSrc) && /withExclusiveEnabled\(/.test(customIpcSrc),
+  "手工开关两条路径（custom-model:save / set-enabled）都走唯一实现");
+// ⛔ 不用固定变量名做负向判据（变异测试实测：把变量改名就漏网）—— 按「循环体里写 enabled: false」认形态。
+ok(!/disableOtherCustomProviders/.test(customIpcSrc) && !/for \(const \w+ of \w+\)\s*\{[\s\S]{0,160}enabled: false/.test(customIpcSrc),
+  "⛔ 旧的本地循环已删（各写一份 = 下一个写入者照样会漏）");
+ok(/withExclusiveEnabled/.test(providerSrc) && /withExclusiveEnabled\(list, CLOUD_PROVIDER_ID\)/.test(providerSrc),
+  "云端同步（applyCloudProvider）在启用云端行时做互斥收敛");
+ok(/withExclusiveEnabled\(await readCustomModels\(\), CLOUD_PROVIDER_ID\)/.test(providerSrc),
+  "「设为当前供应商」（activateCloudProvider）也做互斥收敛");
+ok(!/enabled: models\.length > 0 \? true/.test(providerSrc),
+  "⛔ 云端行不许再无条件 `enabled: true`（那正是两个绿开关的根因）");
+ok(/const enabled = models\.length > 0 && \(cloudActive \|\| !othersEnabled\)/.test(providerSrc),
+  "云端行的 enabled = 「生效中」或「空场」—— 不是「有模型就亮」（否则每 10 分钟把用户的选择顶回来）");
 
 console.log(`\n【cloud-account】${checks - fails}/${checks} 通过`);
 if (fails > 0) process.exit(1);

@@ -22,6 +22,7 @@ import fs from "node:fs/promises";
 import { app } from "electron";
 import { probeCustomModel } from "./custom-model-probe";
 import { safeProviderId } from "../provider-id";
+import { withExclusiveEnabled } from "../provider-exclusivity";
 import type { CustomModelFile, ProviderModel } from "./custom-model-types";
 import type { BridgeMode } from "../responses-bridge";
 import { readRelayStore, writeRelayStore } from "./relay-ipc";
@@ -36,13 +37,11 @@ import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import type { HostCaps } from "../runtime/seams";
 
-async function disableOtherCustomProviders(provider: string) {
-  const list = await readCustomModels();
-  for (const other of list) {
-    if (other.provider !== provider && other.enabled !== false) {
-      await upsertCustomModel({ ...other, enabled: false });
-    }
-  }
+/** 供应商互斥（10-15 收成唯一实现）：启用谁，就把其余全部停用。
+ *  ⛔ 以前这里有一份本地循环，`cloud-provider` 又一份都没有 ⇒ 云端同步后两个绿开关。现在只调 `withExclusiveEnabled`。 */
+async function enableOnlyProvider(provider: string): Promise<void> {
+  const { list, changed } = withExclusiveEnabled(await readCustomModels(), provider);
+  if (changed) await writeCustomModels(list);
 }
 
 function broadcastProviderActivated(provider: string) {
@@ -146,13 +145,7 @@ export const customModelFeature = defineFeature<null>({
       }
       // 全局互斥：保存为启用状态的供应商成为唯一生效者，其他启用中的全部禁用
       //（UI 置灰是第一道防线，这里是兜底——中转站/官方订阅/设置页保存都汇到这个 handler）
-      if (saved.enabled !== false) {
-        for (const other of list) {
-          if (other.provider !== provider && other.enabled !== false) {
-            await upsertCustomModel({ ...other, enabled: false });
-          }
-        }
-      }
+      if (saved.enabled !== false) await enableOnlyProvider(provider);
       await fs.writeFile(customModelFile, JSON.stringify(saved, null, 2), "utf8");
       await applyCustomModel(saved);
       broadcastProviderActivated(provider);
@@ -172,7 +165,7 @@ export const customModelFeature = defineFeature<null>({
       if (!target) throw new Error("未找到该供应商");
       const next = withModels(target);
       if (next !== target) await upsertCustomModel(next);
-      await disableOtherCustomProviders(providerId);
+      await enableOnlyProvider(providerId);
       await fs.writeFile(customModelFile, JSON.stringify(next, null, 2), "utf8");
       await applyCustomModel(next);
       broadcastProviderActivated(providerId);
@@ -187,7 +180,7 @@ export const customModelFeature = defineFeature<null>({
       if (!target) throw new Error("未找到该供应商");
       const next = withModels({ ...target, model }, model);
       await upsertCustomModel(next);
-      await disableOtherCustomProviders(input.provider);
+      await enableOnlyProvider(input.provider);
       await fs.writeFile(customModelFile, JSON.stringify(next, null, 2), "utf8");
       // apply=false 时只保存配置不重写 config.toml（最轻量，仅对齐档案文件）。
       // apply=true + restart=false：一次性写齐 custom-model.json + config.toml 顶层 + catalog，
@@ -271,14 +264,10 @@ export const customModelFeature = defineFeature<null>({
       const isCurrent = current?.provider === input.provider;
       // 全局互斥：一次只能启用一个供应商。启用 A 时若 B 在生效 → 自动禁用所有其他启用中的
       // 供应商，并把 A 写为当前生效（引擎重启，切换语义）。UI 置灰是第一道防线，这里是兜底。
+      // ⛔ 10-15：循环收进 `withExclusiveEnabled`（唯一实现）—— 云端同步那条路径原先漏了同一份逻辑。
       if (input.enabled) {
-        for (const other of list) {
-          if (other.provider !== input.provider && other.enabled !== false) {
-            await upsertCustomModel({ ...other, enabled: false });
-          }
-        }
+        await enableOnlyProvider(input.provider);
         const next: CustomModelFile = { ...target, enabled: true };
-        await upsertCustomModel(next);
         if (!isCurrent) {
           await fs.writeFile(customModelFile, JSON.stringify(next, null, 2), "utf8");
           await applyCustomModel(next);

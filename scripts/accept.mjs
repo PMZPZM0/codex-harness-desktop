@@ -2347,6 +2347,117 @@ const CHECKS = [
       await h.pressKey("Escape");
       await wait(300);
     },
+  },  {
+    id: "provider-exclusive",
+    name: "㉛ 供应商互斥（正反两向）：关掉当前生效再启用另一个 ⇒ 档案里永远只有一个 enabled，切回也成立（10-15 轮 · 用户报「云端模型启用后豆包没自动停用」）",
+    run: async (h) => {
+      /* 为什么真跑：`enabled` 有三个写入者（设置页开关 / 保存 / 云端同步），"一次只能一个"的收敛必须
+         落在 store 层并**真写盘**才算数。真值表与三条路径的接线由守卫 12q 钉；这里走真界面 + 真文件：
+         ① 关掉当前生效供应商 → 档案 0 个 enabled；② 启用另一个 → 恰好 1 个且生效档案跟着切；
+         ③ 再关掉它、切回原来那个（反向）→ 仍恰好 1 个。收尾恢复到进来的状态。
+         ⛔ 两个实测坑（都踩过）：**关掉当前生效供应商会重启引擎** ⇒ 界面状态晚一拍，
+           必须等开关**真的解锁**再点下一次；列表里还有 PPtoken 推荐卡 / 免费网关推荐卡（也是
+           `.provider-item` 但**没有** `.provider-dot`）⇒ 断言一律作用到「有 dot 的真实供应商行」。
+         ⛔ UI 的置灰只防"同时开两个"的直接点击 ⇒ 反向链路必须走「先关后开」，那正是用户会做的操作。 */
+      const readJson = (name) => {
+        try { return JSON.parse(readFileSync(join(h.userDataDir, name), "utf8")); } catch { return null; }
+      };
+      const enabledOf = (list) => (Array.isArray(list) ? list.filter((r) => r && r.enabled !== false).map((r) => r.provider) : []);
+      const waitUntil = async (predicate, timeoutMs = 25000) => {
+        const t0 = Date.now();
+        while (Date.now() - t0 < timeoutMs) {
+          if (await predicate()) return true;
+          await wait(300);
+        }
+        return false;
+      };
+      const switchState = (providerName) => h.eval(`(function(){
+        var items=[...document.querySelectorAll('.provider-item')].filter(function(el){ return !!el.querySelector('.provider-dot'); });
+        var row=items.find(function(el){ var s=el.querySelector('.provider-name-row strong') || el.querySelector('strong'); return s && (s.textContent||'').trim() === ${JSON.stringify(providerName)}; });
+        if(!row) return { found:false };
+        var input=row.querySelector('.provider-switch input');
+        var label=row.querySelector('.provider-switch');
+        return { found:true, hasInput:!!input, disabled: input?!!input.disabled:null, checked: input?!!input.checked:null,
+          onClass: label? !label.classList.contains('off') : null, dot: !!row.querySelector('.provider-dot.on') }; })()`);
+      const clickSwitch = async (providerName) => {
+        const before = await switchState(providerName);
+        await h.eval(`(function(){
+          var items=[...document.querySelectorAll('.provider-item')].filter(function(el){ return !!el.querySelector('.provider-dot'); });
+          var row=items.find(function(el){ var s=el.querySelector('.provider-name-row strong') || el.querySelector('strong'); return s && (s.textContent||'').trim() === ${JSON.stringify(providerName)}; });
+          var input=row && row.querySelector('.provider-switch input'); if(input) input.click(); return 1; })()`);
+        return before;
+      };
+      const uiCounts = () => h.eval(`(function(){
+        var rows=[...document.querySelectorAll('.provider-item')].filter(function(el){ return !!el.querySelector('.provider-dot'); });
+        var on=rows.filter(function(el){ var l=el.querySelector('.provider-switch'); return l && !l.classList.contains('off'); });
+        return { rows: rows.length, on: on.length,
+          onNames: on.map(function(el){ var s=el.querySelector('strong'); return s?(s.textContent||'').trim():''; }),
+          dotNames: rows.filter(function(el){ return !!el.querySelector('.provider-dot.on'); }).map(function(el){ var s=el.querySelector('strong'); return s?(s.textContent||'').trim():''; }) }; })()`);
+
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await wait(1500);
+      await h.eval(`(function(){ var b=[...document.querySelectorAll('.settings-nav button')].find(function(x){ return (x.textContent||'').trim()==='模型'; }); if(b) b.click(); return 1; })()`);
+      await wait(1500);
+
+      const list0 = readJson("custom-models.json");
+      const rows0 = Array.isArray(list0) ? list0 : [];
+      const enabled0 = enabledOf(list0);
+      const active0 = readJson("custom-model.json");
+      h.check("① 前置：档案可读、≥2 个供应商、当前恰好 1 个启用（本项在这基础上正反各切一次）",
+        rows0.length >= 2 && enabled0.length === 1,
+        JSON.stringify({ n: rows0.length, enabled: enabled0, active: active0?.provider }));
+      if (rows0.length < 2 || enabled0.length !== 1) return;
+      const first = rows0.find((r) => r.provider === enabled0[0]);
+      const second = rows0.find((r) => r.provider !== enabled0[0]);
+      if (!first || !second) return;
+      const ui0 = await uiCounts();
+      h.check("② 前置：界面里「有 dot 的真实供应商」与档案对得上，且只有一个开关是开的",
+        ui0?.rows === rows0.length && ui0?.on === 1 && ui0?.onNames[0] === first.name, JSON.stringify(ui0));
+      if (ui0?.rows !== rows0.length || ui0?.on !== 1) return;
+
+      // ③ 关掉当前生效的 A（UI 允许）→ 档案 0 个启用；等界面解锁（关当前会重启引擎，状态晚一拍）
+      const beforeOff = await clickSwitch(first.name);
+      const zero = await waitUntil(() => enabledOf(readJson("custom-models.json")).length === 0);
+      const unlocked = await waitUntil(async () => {
+        const s = await switchState(second.name);
+        return s?.found === true && s.disabled === false;
+      });
+      h.check("③ 关掉当前生效供应商 ⇒ 档案 0 个 enabled，且另一个供应商的开关**真的解锁**（否则「先停用再启用」走不通）",
+        beforeOff?.found === true && beforeOff?.disabled !== true && zero === true && unlocked === true,
+        JSON.stringify({ before: beforeOff, enabled: enabledOf(readJson("custom-models.json")), unlocked }));
+
+      // ④ 启用 B → 恰好 1 个 enabled、生效档案切到 B、界面对上
+      const beforeOn = await clickSwitch(second.name);
+      const onlyB = await waitUntil(() => {
+        const e = enabledOf(readJson("custom-models.json"));
+        return e.length === 1 && e[0] === second.provider && readJson("custom-model.json")?.provider === second.provider;
+      });
+      const uiB = await waitUntil(async () => {
+        const c = await uiCounts();
+        return c?.on === 1 && c?.onNames[0] === second.name && c?.dotNames[0] === second.name;
+      });
+      h.check("④ 启用 B ⇒ 档案里**恰好一个** enabled（B）+ 生效档案切到 B + 界面只有一个开、dot 在 B（不再留下第二个绿开关）",
+        beforeOn?.disabled !== true && onlyB === true && uiB === true,
+        JSON.stringify({ before: beforeOn, enabled: enabledOf(readJson("custom-models.json")), active: readJson("custom-model.json")?.provider, ui: await uiCounts() }));
+
+      // ⑤ 反向：关掉 B、切回 A ⇒ 仍恰好一个（A），收尾即恢复进来时的状态
+      await clickSwitch(second.name);
+      const zero2 = await waitUntil(() => enabledOf(readJson("custom-models.json")).length === 0);
+      const unlocked2 = await waitUntil(async () => {
+        const s = await switchState(first.name);
+        return s?.found === true && s.disabled === false;
+      });
+      const backA = await clickSwitch(first.name);
+      const onlyA = await waitUntil(() => {
+        const e = enabledOf(readJson("custom-models.json"));
+        return e.length === 1 && e[0] === first.provider && readJson("custom-model.json")?.provider === first.provider;
+      });
+      h.check("⑤ 反向链路同样成立：关 B → 开 A ⇒ 恰好一个 enabled（A）+ 生效档案回到 A",
+        zero2 === true && unlocked2 === true && backA?.disabled !== true && onlyA === true,
+        JSON.stringify({ zero: zero2, unlocked: unlocked2, before: backA, enabled: enabledOf(readJson("custom-models.json")), active: readJson("custom-model.json")?.provider }));
+      await h.pressKey("Escape");
+      await wait(400);
+    },
   },
 ];
 
@@ -2393,7 +2504,8 @@ const ROUND_OF = {
   "boot-intro": "10-12",   // 10-12 轮：550C 开机动画（外观页设置行 + Shadow DOM 预览 + Esc 跳过 + 档位落盘；启动首帧与三不播判据由守卫 20-boot-intro 钉）⛔ 必须跟着 LATEST_ROUND 走，否则默认轮跑不到它 = 保护关着
   "web-sources": "10-12",   // 10-12 轮：汇总卡右下角网页来源条（真回合 4 curl → 3 圆标 + 「···」全量弹层；提取真值表由守卫 12g 钉）
   "status-lights": "10-12",   // 10-12 轮：输入框底栏动态状态灯（最多一盏 + 轮换 + 窗口自适应隐藏；结构由守卫 12d 钉）
-  "md-block-copy": "10-12",   // 10-14 加：块级复制（表格 + 代码块）—— 常驻可见 + 两段反馈 + 剪贴板拿到 TSV/代码原文；结构由守卫 12o 钉
+  "md-block-copy": "10-12",
+  "provider-exclusive": "10-12",   // 10-15 加：供应商互斥正反两向（关当前→开另一个→切回；档案里永远只有一个 enabled）   // 10-14 加：块级复制（表格 + 代码块）—— 常驻可见 + 两段反馈 + 剪贴板拿到 TSV/代码原文；结构由守卫 12o 钉
                               // ⛔ 登记在**当前轮**（LATEST_ROUND 仍是 10-12）⇒ 默认轮跑得到它，且不动别人的覆盖
   "refresh-receipt": "10-16",   // 10-16 轮：刷新回执（设置页刷新钮真点一次，MutationObserver 录「正在… → 完成/失败」序列；结构面由守卫 11u ⑤ 逐个登记）
   "message-feedback": "10-05",   // 10-05 轮：消息操作图标的两段反馈 + 用户消息复制贴右端（历史项，默认轮不再跑 —— 回归证据）
