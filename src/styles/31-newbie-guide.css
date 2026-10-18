@@ -47,6 +47,17 @@
   overflow-y: auto;
 }
 .guide-nav-head { display: flex; align-items: center; gap: 6px; padding: 4px 8px 10px; color: var(--text); font-size: 13px; }
+/* 10-18：左导航分「新手教程 / 高级教程」两组（用户：「分新手和高级教程」）。
+   组标题是弱提示，不抢条目；更新日志不分组，用一条分隔线单独置底。 */
+.guide-nav-group {
+  padding: 10px 8px 3px;
+  color: var(--faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .08em;
+}
+.guide-nav-head + .guide-nav-group { padding-top: 2px; }
+.guide-nav-sep { flex: none; height: 1px; margin: 8px 10px 6px; background: var(--line); }
 .guide-nav-item {
   display: flex;
   align-items: center;
@@ -65,7 +76,19 @@
 
 .guide-body { padding: 18px 20px; overflow-y: auto; }
 .guide-body-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.guide-body-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .guide-body-head h3 { margin: 0; color: var(--text); font-size: 15px; }
+/* 层级徽章：新手 = 主题蓝，高级 = 紫；用 color-mix 跟随时主题色，不写死浅深两套。 */
+.guide-tier-pill {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.guide-tier-pill.is-beginner { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.guide-tier-pill.is-advanced { color: var(--purple); background: color-mix(in srgb, var(--purple) 16%, transparent); }
 .guide-close {
   display: grid;
   place-items: center;
@@ -96,6 +119,20 @@
 }
 .guide-steps b { display: block; color: var(--text); font-size: 12.5px; }
 .guide-steps small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+/* 重点提醒（10-18）：步骤之后、主按钮之前的一块高亮卡；颜色跟主题，不另立一套色板。 */
+.guide-tip {
+  display: flex;
+  gap: 9px;
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+}
+.guide-tip svg { flex: none; margin-top: 2px; color: var(--accent); }
+.guide-tip b { display: block; color: var(--text); font-size: 12.5px; }
+.guide-tip small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .guide-action {
   display: inline-flex;
   align-items: center;
