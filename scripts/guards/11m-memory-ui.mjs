@@ -213,7 +213,10 @@ ok(/pushMain\(entries, "项目共享层"/.test(SHELL) && /pushMain\(entries, "�
 console.log("\n【mui】⑩ 分层规则 / 两级 IA / 会话↔记忆层级");
 {
   const RULES = readFileSync(join(ROOT, "src", "lib", "memory-scope-rules.mjs"), "utf8");
-  const pyramidSrc = readFileSync(join(ROOT, "electron", "memory-layers.ts"), "utf8");
+  /* 10-18：MEMORY_PYRAMID 已切到 memory/layers-budget.ts（P2 批次 4）⇒ 两处拼接读取，
+       搬家后不误红（⛔ 只读单文件 ⇒ 断言静默恒真，那更危险）。 */
+  const pyramidSrc = readFileSync(join(ROOT, "electron", "memory-layers.ts"), "utf8")
+    + readFileSync(join(ROOT, "electron", "memory", "layers-budget.ts"), "utf8");
   const layerIds = [...RULES.matchAll(/layer: "(L\d)"/g)].map((m) => m[1]);
   const pyramidIds = [...pyramidSrc.matchAll(/\{ id: "(L\d)"/g)].map((m) => m[1]);
   ok(layerIds.length > 0 && layerIds.join(",") === pyramidIds.join(","),
