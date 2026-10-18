@@ -122,10 +122,14 @@ export const cloudReserveFeature = defineFeature<null>({
       }
     });
 
-    ipcHost.handle("cloud:sync/pull", async (_event, keys?: string[]) => {
+    /* ⛔⛔ 第二个参数是 **`{ keys }` 对象**，不是数组 —— manifest 里 `invokeArgs: "input"`，
+       preload 会把整个 input 对象作为实参传进来。原来写成 `keys?: string[]` + `Array.isArray(keys)`
+       ⇒ 恒为 false ⇒ **勾选被静默忽略、永远下载全部**（审查抓到的真 bug）。 */
+    ipcHost.handle("cloud:sync/pull", async (_event, input?: { keys?: string[] }) => {
       if (!activeCredential()) return { ok: false, reserved: false, code: "not-logged-in", error: "未登录云账号" };
+      const keys = Array.isArray(input?.keys) ? input.keys : [];
       try {
-        const r = await pullCloudSessions(syncDeps(), Array.isArray(keys) ? keys : []);
+        const r = await pullCloudSessions(syncDeps(), keys);
         return r.ok
           ? { ok: true, reserved: false, pulled: r.pulled }
           : { ok: false, reserved: false, code: r.reason || "pull-failed", error: r.reason || "下载失败" };
