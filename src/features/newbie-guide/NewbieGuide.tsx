@@ -12,13 +12,19 @@
  * ⛔ 本板块**不进 bag**：自包含、局部 state（同 codex-official-market / component-library 的样板），
  *   免得给 1,400 项的 bag 再添字段。
  */
-import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, ExternalLink, LoaderCircle, Rocket, X } from "lucide-react";
-import { GUIDE_SECTIONS, type GuideSection } from "./sections";
+import { Fragment, useCallback, useEffect, useState } from "react";
+import { ArrowRight, ExternalLink, Lightbulb, LoaderCircle, Rocket, X } from "lucide-react";
+import { GUIDE_SECTIONS, type GuideSection, type GuideTier } from "./sections";
 import { GuideFigureView } from "./figures";
 
 type HistoryEntry = { version: string; date: string; items: { t: string; d?: string }[]; releaseUrl: string };
 type HistoryState = { status: "idle" | "loading" | "ok" | "error"; entries: HistoryEntry[]; error?: string };
+
+/** 左导航分组（10-18 用户：「分新手和高级教程」）；更新日志不参与分组，单独置底。 */
+const GUIDE_TIERS: { id: GuideTier; label: string }[] = [
+  { id: "beginner", label: "新手教程" },
+  { id: "advanced", label: "高级教程" },
+];
 
 export function NewbieGuide({ onOpenSettings }: { onOpenSettings?: (page: string) => void }) {
   const [open, setOpen] = useState(false);
@@ -69,7 +75,28 @@ export function NewbieGuide({ onOpenSettings }: { onOpenSettings?: (page: string
           <div className="guide-modal" role="dialog" aria-modal="true" aria-label="新手引导">
             <aside className="guide-nav">
               <div className="guide-nav-head"><Rocket size={15} /><strong>新手引导</strong></div>
-              {GUIDE_SECTIONS.map((section) => (
+              {GUIDE_TIERS.map((tier) => {
+                const items = GUIDE_SECTIONS.filter((section) => section.tier === tier.id);
+                if (!items.length) return null;
+                return (
+                  <Fragment key={tier.id}>
+                    <div className="guide-nav-group">{tier.label}</div>
+                    {items.map((section) => (
+                      <button
+                        key={section.id}
+                        type="button"
+                        className={`guide-nav-item ${section.id === active?.id ? "active" : ""}`}
+                        onClick={() => setActiveId(section.id)}
+                      >
+                        <section.icon size={15} />
+                        <span>{section.label}</span>
+                      </button>
+                    ))}
+                  </Fragment>
+                );
+              })}
+              {GUIDE_SECTIONS.some((section) => !section.tier) && <div className="guide-nav-sep" aria-hidden />}
+              {GUIDE_SECTIONS.filter((section) => !section.tier).map((section) => (
                 <button
                   key={section.id}
                   type="button"
@@ -83,7 +110,12 @@ export function NewbieGuide({ onOpenSettings }: { onOpenSettings?: (page: string
             </aside>
             <section className="guide-body">
               <header className="guide-body-head">
-                <h3>{active?.title}</h3>
+                <div className="guide-body-title">
+                  <h3>{active?.title}</h3>
+                  {active?.tier && (
+                    <span className={`guide-tier-pill is-${active.tier}`}>{active.tier === "beginner" ? "新手" : "高级"}</span>
+                  )}
+                </div>
                 <button type="button" className="guide-close" title="关闭" aria-label="关闭" onClick={() => setOpen(false)}><X size={16} /></button>
               </header>
               {active?.changelog ? (
@@ -129,6 +161,12 @@ export function NewbieGuide({ onOpenSettings }: { onOpenSettings?: (page: string
                       </li>
                     ))}
                   </ol>
+                  {active?.tip && (
+                    <aside className="guide-tip">
+                      <Lightbulb size={14} />
+                      <div><b>{active.tip.t}</b>{active.tip.d ? <small>{active.tip.d}</small> : null}</div>
+                    </aside>
+                  )}
                   {active?.action && (
                     <button type="button" className="guide-action" onClick={() => jump(active.action!.page)}>
                       {active.action.label}<ArrowRight size={14} />

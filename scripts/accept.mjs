@@ -1402,7 +1402,7 @@ const CHECKS = [
   },
   {
     id: "newbie-guide",
-    name: "㉖ 新手引导：侧栏常驻入口 + 迷你设置弹窗（左选项/右内容/映射跳转/版本日志，10-07 轮）",
+    name: "㉖ 新手引导：侧栏常驻入口 + 迷你设置弹窗（新手/高级两组、图示+文字、映射跳转、版本日志、拓展开发；10-07 轮，10-18 扩内容）",
     run: async (h) => {
       /* 为什么真跑（用户 10-07 令 + 追问「这个新手引导不能被对话选项遮住」）：
          入口位置（列表之外、账户行之上、不被滚动内容盖住）、点击开合、映射跳转（弹窗关 →
@@ -1443,6 +1443,8 @@ const CHECKS = [
           var rect = modal.getBoundingClientRect();
           return { fits: rect.top >= 0 && rect.bottom <= innerHeight && rect.left >= 0 && rect.right <= innerWidth,
             nav: [...modal.querySelectorAll('.guide-nav-item')].map(function(b){ return (b.textContent||'').trim(); }),
+            groups: [...modal.querySelectorAll('.guide-nav-group')].map(function(b){ return (b.textContent||'').trim(); }),
+            tier: (modal.querySelector('.guide-tier-pill')?.textContent||'').trim(),
             active: (modal.querySelector('.guide-nav-item.active')?.textContent||'').trim(),
             title: (modal.querySelector('.guide-body-head h3')?.textContent||'').trim() };
         })()`).catch(() => opened);
@@ -1453,6 +1455,10 @@ const CHECKS = [
         JSON.stringify(opened).slice(0, 240));
       if (!opened) return;
       const nav0 = opened.nav ?? [];
+      /* ②a 分组（10-18 用户：「分新手和高级教程」）：两组组标题 + 默认节的层级徽章 */
+      h.check("②a 左导航分「新手教程 / 高级教程」两组，默认节带「新手」徽章",
+        (opened.groups ?? []).join("|") === "新手教程|高级教程" && opened.tier === "新手",
+        JSON.stringify({ groups: opened.groups, tier: opened.tier }).slice(0, 200));
       /* ②b 图示 + 文字（10-18 用户：「把应用功能都扫一遍，做一个详细的新手教程，画图+字结合起来」）：
          章节要够多（详细）、每节带图、界面速览那张是**窗格分区 SVG**、其它节是流程/并列/分层示意图。 */
       const figureProbe = async (label) => {
@@ -1478,9 +1484,26 @@ const CHECKS = [
       h.check("②c 内容节带示意图（流程/并列/分层）：至少有 3 个盒子 + 图注",
         flowFigure?.found === true && flowFigure.visible === true && flowFigure.nodes >= 3 && flowFigure.caption > 0,
         JSON.stringify(flowFigure));
-      h.check("②d 教程足够详细：左选项 ≥ 12 节（功能地图/上下文/扩展/自动化/创作/声音/数据等都在）",
-        (nav0 ?? []).length >= 12,
-        `nav=${(nav0 ?? []).length}`);
+      h.check("②d 教程足够详细：左选项 ≥ 20 节（前端开发/组件库/生图/视频/专家团队/个性化/人格市场/拓展开发等都在）",
+        (nav0 ?? []).length >= 20
+          && ["前端开发", "组件库", "生图", "视频", "专家团队", "个性化", "人格市场", "拓展开发"].every((label) => nav0.includes(label)),
+        `nav=${(nav0 ?? []).length} ${JSON.stringify(nav0).slice(0, 240)}`);
+      /* ②e 高级教程里的「拓展开发」：层级徽章=高级、正文有真接口名与命令、带重点提醒卡 */
+      await h.eval(`(function(){ var b=[...document.querySelectorAll('.guide-nav-item')].find(function(x){ return (x.textContent||'').trim()==='拓展开发'; }); b?.click(); return 1; })()`);
+      await wait(300);
+      const apiSection = await h.eval(`(function(){
+        var modal=document.querySelector('.guide-modal'); if(!modal) return null;
+        var body=modal.querySelector('.guide-body');
+        var text=(body?.textContent||'');
+        return { tier:(modal.querySelector('.guide-tier-pill')?.textContent||'').trim(),
+          hasPage:text.includes('拓展接口'), hasSkill:text.includes('harness-api'),
+          hasGen:text.includes('npm run gen:ipc'), hasGuard:text.includes('scripts/guards'),
+          tip:!!body.querySelector('.guide-tip') };
+      })()`);
+      h.check("②e 高级教程有「拓展开发」：高级徽章 + 真接口名（拓展接口/harness-api/gen:ipc/guards）+ 提醒卡",
+        !!apiSection && apiSection.tier === "高级" && apiSection.hasPage === true && apiSection.hasSkill === true
+          && apiSection.hasGen === true && apiSection.hasGuard === true && apiSection.tip === true,
+        JSON.stringify(apiSection).slice(0, 240));
       await h.eval(`(function(){ var b=[...document.querySelectorAll('.guide-nav-item')].find(function(x){ return (x.textContent||'').trim()==='快速上手'; }); b?.click(); return 1; })()`);
       await wait(200);
       /* ③ 左选项：三个设置页映射 + 更新日志**置底**（用户：「版本更新日志默认在最下面」） */

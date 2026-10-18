@@ -67,7 +67,7 @@ const preload = read("electron/preload.ts");
     "「打开设置」= 关弹窗 + onOpenSettings(page) 跳真设置页（映射的落点）");
 }
 
-/* ── 三、注册表：三个设置页映射 + 日志置底 + 拓展接口头注 ──────────────────── */
+/* ── 三、注册表：设置页映射 + 日志置底 + 拓展接口头注 ──────────────────────── */
 {
   /* 映射的 page id 必须真存在于 settingsNav（改设置 key 后这里变死链的样子是"点了没反应"） */
   const navSrc = read("src/features/app-view/helpers/catalogs.ts");
@@ -80,6 +80,55 @@ const preload = read("electron/preload.ts");
   ok(/export const GUIDE_SECTIONS/.test(sections) && /export type GuideSection/.test(sections)
     && /数组加一项/.test(read("src/features/newbie-guide/sections.tsx")),
     "拓展接口：GUIDE_SECTIONS 注册表 + GuideSection 类型 + 头注写明「加一节 = 数组加一项」");
+
+  /* 10-18 二轮：用户点名「前端UI开发、组件库、生图工作流、视频工作流、专家/专家团/子智能体、
+     个性化、人格市场」这些都没写 ⇒ 每项独立成节，且内容里要有真实入口名（不许再一笔带过）。
+     同日再追加「分新手和高级教程 + 拓展开发（怎么自己加功能）」⇒ tier 分组与 api 节也在这里钉。 */
+  const required = [
+    ["start", "快速上手", "beginner", []],
+    ["frontend", "前端开发", "advanced", ["交给 Codex 实现", "44 种"]],
+    ["library", "组件库", "advanced", ["复制代码", "ui_component_search"]],
+    ["image", "生图", "advanced", ["生图插件", "图像工坊", "生图工作流"]],
+    ["video", "视频", "advanced", ["视频生成接口", "白模视频工作流", "FFmpeg"]],
+    ["agents", "专家团队", "advanced", ["子智能体", "专家团", "调度", "办公室"]],
+    ["memory", "记忆知识", "advanced", ["项目共享记忆库", "记忆后端", "知识库"]],
+    ["personal", "个性化", "beginner", ["称呼", "回复风格", "自定义指令", "语气自适应"]],
+    ["soul-market", "人格市场", "beginner", ["应用此人格", "下一个新会话"]],
+    ["api", "拓展开发", "advanced", ["harness-api", "ipc-channels.manifest.json", "npm run gen:ipc", "scripts/guards", "scripts/accept.mjs", "FEATURE-LEDGER"]],
+  ];
+  for (const [id, label, tier, needles] of required) {
+    ok(sections.includes(`id: "${id}"`) && sections.includes(`label: "${label}"`)
+      && new RegExp(`id: "${id}",[\\s\\S]{0,160}?tier: "${tier}",`).test(sections)
+      && needles.every((needle) => sections.includes(needle)),
+      `章节「${label}」在、层级=${tier}、真实入口 / 关键动作写全（${needles.join(" / ") || "—"}）`);
+  }
+  /* 每一节（更新日志除外）都必须归组；更新日志不参与分组，留在最下面 */
+  const ids = [...sections.matchAll(/^    id: "([^"]+)",/gm)].map((m) => m[1]);
+  const tiers = [...sections.matchAll(/^    tier: "(beginner|advanced)",/gm)].map((m) => m[1]);
+  ok(ids.length >= 20 && tiers.length === ids.length - 1,
+    `新手 / 高级两组覆盖除更新日志外的全部章节（${ids.length} 节 / ${tiers.length} 个 tier）`);
+  ok(!/id: "changelog"[\s\S]{0,300}?tier:/.test(sections),
+    "更新日志不参与分组（置底，不归入高级教程）");
+  ok(!/在会话里选择人格/.test(sections),
+    "⛔ 人格市场那句旧错话不许回来（人格写全局个性化、**下一个新会话**生效，不是「在会话里选」）");
+  /* 左列表标签 ≤6 字（弹窗 176px 列宽；超了会折行把导航挤乱） */
+  const labels = [...sections.matchAll(/^    label: "([^"]+)"/gm)].map((m) => m[1]);
+  ok(labels.length >= 18 && labels.every((label) => [...label].length <= 6),
+    `章节标签都 ≤6 字（实测 ${labels.length} 节：${labels.join(" / ")}）`);
+
+  /* 10-18 用户：「分新手和高级教程」「写好看一点」—— 分组导航 + 层级徽章 + 重点提醒卡。 */
+  ok(/const GUIDE_TIERS[\s\S]{0,220}?"新手教程"[\s\S]{0,140}?"高级教程"/.test(guide),
+    "左导航分「新手教程 / 高级教程」两组");
+  ok(/className="guide-nav-group"/.test(guide) && /section\.tier === tier\.id/.test(guide),
+    "导航按 tier 分组渲染（新手 / 高级各一组）");
+  ok(/section\.tier === tier\.id/.test(guide) && /!section\.tier/.test(guide) && /guide-nav-sep/.test(guide),
+    "更新日志不分组、用分隔线单独置底");
+  ok(/guide-tier-pill/.test(guide) && /className="guide-tip"/.test(guide),
+    "正文标题旁有层级徽章、步骤后有重点提醒卡");
+  ok(/\.guide-tier-pill/.test(css) && /\.guide-tip \{/.test(css) && /\.guide-nav-group \{/.test(css),
+    "两组导航 / 层级徽章 / 提醒卡的样式都在（不是裸结构）");
+  const tipCount = (sections.match(/^    tip: \{/gm) || []).length;
+  ok(tipCount >= 8, `重点提醒覆盖关键章节（实测 ${tipCount} 条）`);
 }
 
 /* ── 四、版本日志 = 单一真相源（whatsnew:history，不许抄第二份）────────────── */
@@ -106,7 +155,10 @@ const preload = read("electron/preload.ts");
   ok(/<GuideFigureView figure=\{active\?\.figure\} \/>/.test(guide),
     "引导右页渲染 figure（位置在 intro 之后、步骤之前）");
   const figureSections = (sections.match(/figure: \{/g) || []).length;
+  const sectionCount = (sections.match(/\bid: "/g) || []).length;
   ok(figureSections >= 10, `每一节都配了图（实测 ${figureSections} 节带 figure；changelog 除外）`);
+  ok(figureSections === sectionCount - 1,
+    `除更新日志外**每一节都有图**（${figureSections} 图 vs ${sectionCount} 节 —— 新增章节漏图会红）`);
   ok(/figure\?: GuideFigure/.test(sections) && /from "\.\/figures"/.test(sections),
     "GuideSection 类型带 figure 字段（拓展接口：加一节 = 数组加一项，图跟着写）");
   ok(/\.guide-figure\b/.test(css) && /\.guide-figure-caption/.test(css) && /\.guide-window-map/.test(css),
