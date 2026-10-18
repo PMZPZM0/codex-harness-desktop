@@ -605,7 +605,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       { t: "先看「设置 → 拓展接口」", d: "四个分组（接口与契约 / 界面与呈现 / 智能体与能力 / 记忆与质量），每条都写全了：用途、改哪个文件、怎么改、改完怎么生效、配套守卫、容易踩的坑。点「复制」把整条说明复制成 Markdown，可以直接贴给 Codex 让它照做。" },
       { t: "不写代码的扩展（先用这条）", d: "技能（一份 SKILL.md，教它怎么做）、插件（把技能 / MCP / 钩子打包）、MCP（接外部工具与服务）、钩子（在固定时机自动执行）。装完按提示重启引擎或新开会话生效。" },
       { t: "加一个 IPC 通道（写代码的标准套路）", d: "① 在 `electron/ipc-channels.manifest.json` 加一条（单一真相源）；② 跑 `npm run gen:ipc` 自动生成 preload 与类型声明；③ 在 `electron/ipc-registry.ts` 登记；④ 在 `electron/features/<域>.ts` 用 `ipcHost.handle` 实现；⑤ 渲染层用 `window.codex.<方法>` 调用。⛔ 生成物禁手改，守卫逐字节比对。" },
-      { t: "加一个界面板块", d: "在 `src/features/<域>/` 建自包含页面；入口三处同轮加：设置注册表、`settingsNav`、`HelpDialog` 总览（少一处守卫会红）；样式单独一节进 `src/styles/`。纯展示组件的 props 尽量不超过 5 个。" },
+      { t: "加一个界面板块", d: "在 `src/features/<域>/` 建自包含页面；如果它是设置页，入口三处同轮加：设置注册表、`settingsNav`、`HelpDialog` 总览（少一处守卫会红）；样式单独一节进 `src/styles/`。纯展示组件的 props 尽量不超过 5 个。" },
       { t: "加一个模型能调用的工具", d: "内置 MCP 工具在 `dispatch-core.ts` 定义、`dispatch-rpc.ts` 执行；模型侧经 `harness_tools` 网关按需取。工具描述要写清适用场景与边界，并在 `developer-instructions.ts` 配一条常驻指令 —— 工具在表里但模型不知道要用 = 白配。" },
       { t: "加主题 / 快捷键 / 斜杠命令", d: "主题：在 `src/lib/themes.ts` 加一行；快捷键：在 `accelerator.ts` 与设置注册表接线；斜杠命令：在 `builtinCommandCatalog` 加定义，并实现对应的 `runSlashCommand`。" },
       { t: "留判据（必做）", d: "每新增一个域 / 接口，同轮在 `scripts/guards/` 补守卫、在 `scripts/accept.mjs` 补验收项（登记轮次）；跑 `npm run check`，跨模块改动跑 `npm run verify`。守卫是防回退的，不是摆设。" },
