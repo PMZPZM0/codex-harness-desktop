@@ -57,9 +57,12 @@ export function offPeakWindowAt(offPeak, now, opts) {
   for (const w of windows) {
     const start = Number(w && w.start);
     const end = Number(w && w.end);
-    const rate = Number(w && w.rate);
-    if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(rate)) continue;
-    if (!(rate >= 0)) continue;
+    /* ⛔⛔ `Number(null) === 0`（第三次踩）：直接把 `w.rate` 转数字，会把「该窗口没设默认倍率」
+       变成 **0** ⇒ 该时段所有没单独设的模型全部免费白送。必须用 offPeakRateValue 解析
+       —— 空/缺/非法 ⇒ null（= 本窗口不设默认倍率，落到各模型自己的值）。 */
+    const rate = offPeakRateValue(w && w.rate);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+    if (rate !== null && !(rate >= 0)) continue;
     if (start === end) continue;
     const hit = start < end ? hour >= start && hour < end : hour >= start || hour < end;
     if (hit) return { label: String((w && w.label) || ""), start, end, rate };
@@ -67,10 +70,12 @@ export function offPeakWindowAt(offPeak, now, opts) {
   return null;
 }
 
-/** 计费系数：命中闲时 ⇒ 窗口系数，否则 1（= 不折扣）。 */
+/** 命中窗口的**默认倍率**（没命中 / 窗口没设默认 ⇒ 1）。
+ *  ⚠️ 10-18 起闲时是「替换倍率」而不是折扣系数，这个返回值**不再参与计价**
+ *     （计价见 estimateTurnCredit 的替换逻辑）；保留它只为兼容既有调用面。 */
 export function offPeakFactorAt(offPeak, now) {
   const win = offPeakWindowAt(offPeak, now);
-  return win ? win.rate : 1;
+  return win && win.rate != null ? win.rate : 1;
 }
 
 /** 每模型单独配的闲时系数（10-18 用户令「每个模型单独的配置」）。
@@ -96,15 +101,25 @@ export function estimateTurnCredit(args) {
   const a = args || {};
   const tokens = Math.max(0, Math.round(Number(a.input) || 0)) + Math.max(0, Math.round(Number(a.output) || 0));
   if (tokens <= 0) return null;
-  const rate = creditRate(a.credits);
-  /* 闲时系数（10-18：**每模型可单独配**）。优先级与服务端 `server.js` 计费处逐条一致：
-     ① 该模型自己配了 `offPeakRate` ⇒ 一律按它，**不看总闸**（配了就该生效）；
-     ② 没配 ⇒ 总闸 `enabled` 开着才用窗口的默认系数，否则 1（不折扣）。
-     ⛔ 两边口径必须同形 —— 差一点就会出现「页脚说 0.4、账本扣 0.8」。 */
+  const baseRate = creditRate(a.credits);
+  /* 闲时倍率（10-18 语义修正：**替换**而非折扣，用户令「前面 0.11 后面闲时我可以填 0.05」）。
+     ⛔⛔ 命中时段就用闲时倍率**替换**正常倍率，绝不相乘 —— 0.11 × 0.05 = 0.0055 是灾难。
+     优先级与服务端 server.js 计费处逐条一致：
+       ① 模型自己配了 ⇒ 一律按它（**不看总闸**，配了就该生效）；
+       ② 没配 ⇒ 总闸开着且该窗口配了默认倍率 ⇒ 用它；
+       ③ 都没有 ⇒ 沿用正常倍率（该时段不优惠）。 */
   const hit = offPeakWindowAt(a.offPeak, a.now, { ignoreEnabled: true });
   const own = offPeakRateValue(a.modelOffPeakRate);
-  const factor = hit ? (own !== null ? own : (a.offPeak && a.offPeak.enabled === true ? hit.rate : 1)) : 1;
-  const window = factor !== 1 ? hit : null;
-  if (rate <= 0) return { credit: 0, rate: 0, factor, tokens, free: true, window };
-  return { credit: Math.round((tokens / 1000) * rate * factor * 100) / 100, rate, factor, tokens, free: false, window };
+  const winRate = hit ? offPeakRateValue(hit.rate) : null;
+  let offRate = null;
+  if (hit) {
+    if (own !== null) offRate = own;
+    else if (a.offPeak && a.offPeak.enabled === true && winRate !== null) offRate = winRate;
+  }
+  const rate = offRate !== null ? offRate : baseRate;
+  const window = offRate !== null ? hit : null;
+  /* `factor` 仅供展示（"相当于高峰的几折"），⛔ **不参与计价** —— 计价式与服务端逐字符同形。 */
+  const factor = baseRate > 0 ? Math.round((rate / baseRate) * 10000) / 10000 : 1;
+  if (rate <= 0) return { credit: 0, rate: 0, baseRate, factor, tokens, free: true, window };
+  return { credit: Math.round((tokens / 1000) * rate * 100) / 100, rate, baseRate, factor, tokens, free: false, window };
 }

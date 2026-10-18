@@ -9,14 +9,19 @@ export type OffPeakConfig = {
   tzOffsetMinutes?: number;
 };
 
-/** 本轮积分估算结果。`free` = 该模型倍率为 0（免费，服务端只留痕不扣分）。 */
+/** 本轮积分估算结果。
+ *  · `baseRate` = 高峰（基准）倍率；`rate` = **实际生效倍率**（闲时命中且配了 ⇒ 换成闲时倍率，
+ *    否则等于 `baseRate`）。
+ *  · `factor` = `rate / baseRate`，**仅供展示**（"相当于高峰的几折"），⛔ 不参与计价。
+ *  · `free` = 实际生效倍率为 0（服务端只留痕不扣分）。 */
 export type TurnCreditEstimate = {
   credit: number;
   rate: number;
+  baseRate: number;
   factor: number;
   tokens: number;
   free: boolean;
-  window: { label: string; start: number; end: number; rate: number } | null;
+  window: { label: string; start: number; end: number; rate?: number | null } | null;
 };
 
 /** 模型倍率 → 数字（空/0/非法 ⇒ 0 = 免费）。 */
