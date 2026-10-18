@@ -382,7 +382,7 @@ export const IPC_DOMAINS: IpcDomainEntry[] = [
     channels: ["screenshot:settings-get", "screenshot:settings-set", "screenshot:hotkey-set", "screenshot:capture", "screenshot:pick-dir", "screenshot:reveal"],
     note: "09-24 新增：隐藏窗口全屏 + 冻结帧框选，两种模式各绑一条全局快捷键（先注册成功才落盘）；框选覆盖层用独立 preload（dist-electron/overlay-preload.js，沙箱化、不用主桥）",
   },
-  { prefix: "favorites", count: 7, status: "in-features", file: "features/favorites-ipc.ts",
+  { prefix: "favorites", count: 7, status: "in-features", file: "features/favorites/ipc.ts",
     channels: ["favorites:list", "favorites:add", "favorites:update", "favorites:delete", "favorites:clear", "favorites:touch", "favorites:to-memory"],
     note: "09-24 新增：真相源 userData/favorites.json；删除只认显式 id 列表（批量管理仍是一次确认）；to-memory 先读后写追加到记忆层，单行限长 300 字",
   },
