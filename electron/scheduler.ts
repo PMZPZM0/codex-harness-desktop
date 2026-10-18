@@ -67,6 +67,10 @@ export function buildDeliverText(taskName: string, reply: string, maxChars = WEI
 
 export type ScheduleKind = "interval" | "daily" | "weekly" | "monthly" | "yearly" | "once";
 
+/* P2 批次 1（10-18）：jitter 削峰块已切到 ./scheduler/jitter —— ⛔ 对外导出保持，调用方零改动。 */
+import { DEFAULT_JITTER_CONFIG, applyJitter, isPeakHour, removeJitter, stableFractionFromString } from "./scheduler/jitter";
+export { applyJitter, removeJitter };
+
 export type ScheduledTask = {
   id: string;
   name: string;
@@ -123,8 +127,7 @@ const MAX_RECURRING_LOOKAHEAD_DAYS = 366 * 5;
 const FULL_WEEK = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 const DAY_TO_INDEX: Record<string, number> = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
 const INDEX_TO_DAY: Record<number, string> = { 0: "SU", 1: "MO", 2: "TU", 3: "WE", 4: "TH", 5: "FR", 6: "SA" };
-const DEFAULT_JITTER_CONFIG = { peakHours: [8, 9, 10], peakJitterMs: 600_000, nonPeakJitterMs: 300_000 };
-const BEIJING_OFFSET_MS = 480 * 60 * 1_000;
+
 
 type RruleFreq = "HOURLY" | "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
 type ParsedRRule = {
@@ -213,45 +216,6 @@ export function buildRRuleFromInput(kind: ScheduleKind, timeOfDay?: string, week
   }
   if (kind === "monthly") return `FREQ=MONTHLY;BYMONTHDAY=${Math.max(1, Math.min(31, monthDay ?? 1))};BYHOUR=${hour};BYMINUTE=${minute}`;
   return `FREQ=YEARLY;BYMONTH=${Math.max(1, Math.min(12, month ?? 1))};BYMONTHDAY=${Math.max(1, Math.min(31, monthDay ?? 1))};BYHOUR=${hour};BYMINUTE=${minute}`;
-}
-
-// ---------- jitter（削峰打散，对齐 WorkBuddy） ----------
-function stableFractionFromString(seed: string): number {
-  let hash = 2166136261;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash ^= seed.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0) / 4294967296;
-}
-
-function getBeijingHour(timestampMs: number): number {
-  const beijingMs = timestampMs + new Date(timestampMs).getTimezoneOffset() * 60 * 1_000 + BEIJING_OFFSET_MS;
-  return new Date(beijingMs).getHours();
-}
-
-function isPeakHour(timestampMs: number, config = DEFAULT_JITTER_CONFIG): boolean {
-  return config.peakHours.includes(getBeijingHour(timestampMs));
-}
-
-export function applyJitter(scheduledTimeMs: number, automationId: string, _periodMs: number, config = DEFAULT_JITTER_CONFIG): number {
-  const fraction = stableFractionFromString(automationId);
-  const signed = (fraction - 0.5) * 2;
-  const jitterMs = isPeakHour(scheduledTimeMs, config) ? signed * config.peakJitterMs : signed * config.nonPeakJitterMs;
-  return scheduledTimeMs + jitterMs;
-}
-
-/** 从已打散的 nextRunAt 反解「用于 missed 判定的计划基准」（对负偏移任务取最宽容原像） */
-export function removeJitter(jitteredTimeMs: number, automationId: string, config = DEFAULT_JITTER_CONFIG): number {
-  const signed = (stableFractionFromString(automationId) - 0.5) * 2;
-  if (signed >= 0) return jitteredTimeMs;
-  const candidatePeak = jitteredTimeMs - signed * config.peakJitterMs;
-  const candidateNonPeak = jitteredTimeMs - signed * config.nonPeakJitterMs;
-  const preimages: number[] = [];
-  if (isPeakHour(candidatePeak, config)) preimages.push(candidatePeak);
-  if (!isPeakHour(candidateNonPeak, config)) preimages.push(candidateNonPeak);
-  if (preimages.length === 0) return jitteredTimeMs;
-  return Math.max(...preimages);
 }
 
 // ---------- 区间锚点（相位守恒） ----------
