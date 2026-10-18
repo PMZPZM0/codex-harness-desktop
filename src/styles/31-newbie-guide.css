@@ -149,3 +149,24 @@
 .guide-release li { color: var(--muted); font-size: 12px; line-height: 1.6; }
 .guide-release li b { color: var(--text); font-weight: 600; }
 .guide-release li span { display: block; margin-top: 1px; }
+
+/* ── 图示（10-18 用户：「做一个详细的新手教程，画图+字结合起来」）────────────────
+   ⛔ 全部走主题变量、不用图片：截图分浅深两套且会过期，生成图与真实界面对不上
+     （理由详见 figures.tsx 头注）。 */
+.guide-figure { margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.guide-figure-caption { margin: 8px 0 0; color: var(--faint); font-size: 11px; line-height: 1.5; }
+.guide-figure svg { display: block; width: 100%; height: auto; }
+.guide-window-map text { fill: var(--muted); font-size: 9.5px; font-family: ui-sans-serif, system-ui, sans-serif; }
+.guide-window-map .w-title { fill: var(--text); font-size: 10.5px; font-weight: 600; }
+.guide-figure.is-flow .guide-figure-row { display: flex; align-items: stretch; gap: 6px; flex-wrap: wrap; }
+.guide-figure-node { flex: 1 1 120px; min-width: 104px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+.guide-figure-node b { display: block; font-size: 12px; color: var(--text); }
+.guide-figure-node small { display: block; margin-top: 2px; font-size: 11px; color: var(--muted); line-height: 1.5; }
+.guide-figure-arrow { align-self: center; color: var(--faint); font-size: 12px; }
+.guide-figure.is-panes .guide-figure-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.guide-figure-pane { padding: 7px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+.guide-figure-pane b { display: block; font-size: 12px; color: var(--text); }
+.guide-figure-pane small { display: block; margin-top: 2px; font-size: 11px; color: var(--muted); line-height: 1.5; }
+.guide-figure.is-layers .guide-figure-layer { margin-bottom: 4px; padding: 6px 10px; border-left: 3px solid var(--accent, #3b82f6); border-radius: 6px; background: var(--panel-2); }
+.guide-figure.is-layers .guide-figure-layer b { display: block; font-size: 12px; color: var(--text); }
+.guide-figure.is-layers .guide-figure-layer small { display: block; margin-top: 1px; font-size: 11px; color: var(--muted); }

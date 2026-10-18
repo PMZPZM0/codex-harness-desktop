@@ -95,5 +95,24 @@ const preload = read("electron/preload.ts");
     "history 直接复用 whats-new-notes.ts 的 WHATS_NEW_ENTRIES（同 whatsnew:state 的数据源）");
 }
 
+/* ── 五、图示 + 文字（10-18 用户：「把应用功能都扫一遍，做一个详细的新手教程，画图+字结合起来」）── */
+{
+  const figures = read("src/features/newbie-guide/figures.tsx");
+  ok(/export function GuideFigureView/.test(figures) && /kind: "window"/.test(figures)
+    && /kind: "flow"/.test(figures) && /kind: "panes"/.test(figures) && /kind: "layers"/.test(figures),
+    "图示组件四种形态齐全（窗口图 / 流程 / 并列 / 分层）");
+  ok(/guide-window-map/.test(figures) && /viewBox="0 0 520 306"/.test(figures),
+    "「界面速览」用内联 SVG 画窗口分区（不是截图 / 不是外链图）");
+  ok(/<GuideFigureView figure=\{active\?\.figure\} \/>/.test(guide),
+    "引导右页渲染 figure（位置在 intro 之后、步骤之前）");
+  const figureSections = (sections.match(/figure: \{/g) || []).length;
+  ok(figureSections >= 10, `每一节都配了图（实测 ${figureSections} 节带 figure；changelog 除外）`);
+  ok(/figure\?: GuideFigure/.test(sections) && /from "\.\/figures"/.test(sections),
+    "GuideSection 类型带 figure 字段（拓展接口：加一节 = 数组加一项，图跟着写）");
+  ok(/\.guide-figure\b/.test(css) && /\.guide-figure-caption/.test(css) && /\.guide-window-map/.test(css),
+    "图示样式在（容器 / 图注 / 窗口图文字色）");
+  ok(!/from "[^"]+\.(png|jpe?g|webp|gif|svg)\?/.test(guide + figures) && !/\.(png|jpe?g|webp|gif)"/.test(figures),
+    "⛔ 不用位图资产（截图会过期、生成图与界面对不上；JS import 的位图还会被 before-pack 当死块删掉）");
+}
 console.log(`\n【newbie-guide】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

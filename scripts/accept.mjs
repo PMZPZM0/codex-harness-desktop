@@ -1452,6 +1452,37 @@ const CHECKS = [
         !!opened && opened.fits === true && (opened.nav ?? []).length >= 5 && opened.active === "快速上手" && opened.title.length > 0,
         JSON.stringify(opened).slice(0, 240));
       if (!opened) return;
+      const nav0 = opened.nav ?? [];
+      /* ②b 图示 + 文字（10-18 用户：「把应用功能都扫一遍，做一个详细的新手教程，画图+字结合起来」）：
+         章节要够多（详细）、每节带图、界面速览那张是**窗格分区 SVG**、其它节是流程/并列/分层示意图。 */
+      const figureProbe = async (label) => {
+        await h.eval(`(function(){ var b=[...document.querySelectorAll('.guide-nav-item')].find(function(x){ return (x.textContent||'').trim()===${JSON.stringify(label)}; }); b?.click(); return 1; })()`);
+        await wait(300);
+        return h.eval(`(function(){
+          var fig=document.querySelector('.guide-body .guide-figure');
+          if(!fig) return { found:false };
+          var rect=fig.getBoundingClientRect();
+          var svg=fig.querySelector('svg');
+          return { found:true, kind:(fig.className||'').replace('guide-figure','').trim(),
+            visible: rect.height > 40 && rect.width > 200,
+            nodes: fig.querySelectorAll('.guide-figure-node, .guide-figure-pane, .guide-figure-layer').length,
+            svg: svg ? { h: Math.round(svg.getBoundingClientRect().height), texts: svg.querySelectorAll('text').length } : null,
+            caption: (fig.querySelector('.guide-figure-caption')?.textContent||'').trim().length }; })()`);
+      };
+      const windowFigure = await figureProbe("界面速览");
+      h.check("②b 界面速览：内联 SVG 窗口分区图（5 区标注 + 说明文字）",
+        windowFigure?.found === true && windowFigure.kind.includes('is-window') && windowFigure.visible === true
+          && !!windowFigure.svg && windowFigure.svg.texts >= 10 && windowFigure.caption > 0,
+        JSON.stringify(windowFigure));
+      const flowFigure = await figureProbe("一次对话");
+      h.check("②c 内容节带示意图（流程/并列/分层）：至少有 3 个盒子 + 图注",
+        flowFigure?.found === true && flowFigure.visible === true && flowFigure.nodes >= 3 && flowFigure.caption > 0,
+        JSON.stringify(flowFigure));
+      h.check("②d 教程足够详细：左选项 ≥ 12 节（功能地图/上下文/扩展/自动化/创作/声音/数据等都在）",
+        (nav0 ?? []).length >= 12,
+        `nav=${(nav0 ?? []).length}`);
+      await h.eval(`(function(){ var b=[...document.querySelectorAll('.guide-nav-item')].find(function(x){ return (x.textContent||'').trim()==='快速上手'; }); b?.click(); return 1; })()`);
+      await wait(200);
       /* ③ 左选项：三个设置页映射 + 更新日志**置底**（用户：「版本更新日志默认在最下面」） */
       const nav = opened.nav ?? [];
       h.check("③ 左选项含 模型/开发工具/人格市场 三映射，且「更新日志」置底",

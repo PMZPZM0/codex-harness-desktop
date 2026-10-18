@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, ExternalLink, LoaderCircle, Rocket, X } from "lucide-react";
 import { GUIDE_SECTIONS, type GuideSection } from "./sections";
+import { GuideFigureView } from "./figures";
 
 type HistoryEntry = { version: string; date: string; items: { t: string; d?: string }[]; releaseUrl: string };
 type HistoryState = { status: "idle" | "loading" | "ok" | "error"; entries: HistoryEntry[]; error?: string };
@@ -118,6 +119,8 @@ export function NewbieGuide({ onOpenSettings }: { onOpenSettings?: (page: string
               ) : (
                 <>
                   <p className="guide-intro">{active?.intro}</p>
+                  {/* 10-18：图示 + 文字（用户：「画图+字结合起来」）—— 图是数据驱动的示意图，见 figures.tsx */}
+                  <GuideFigureView figure={active?.figure} />
                   <ol className="guide-steps">
                     {active?.steps.map((step, index) => (
                       <li key={index}>
