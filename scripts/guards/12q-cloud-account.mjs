@@ -268,5 +268,64 @@ ok(
   "记忆未开通/被停用时要**清掉**上游意图并切回纯模型地址（⛔ 否则停用后对话仍走记忆端点）",
 );
 
+/* ── ⑮ 本地「积分估算」显示面（10-18 用户令：本地也做到与服务端同口径）────────
+   ⛔ 这组钉的是**接线**，不是数值（数值判据在 .workbuddy/tmp/test-credit-estimate.mjs，
+      含"服务端源码里那条公式还在不在"的跨仓同口径钉子）。
+   ⛔⛔ 最危险的失效是**静默的**：估算模块写好了但没接到回合完成事件上 ⇒ 页脚永远不显示，
+      守卫若只查"文件存在"就完全看不出来。所以这里必须查到**调用点**与**读取点**。 */
+const estimateSrc = read("src/lib/credit-estimate.mjs");
+ok(existsSync(join(ROOT, "src/lib/credit-estimate.d.mts")), "src/lib/credit-estimate.mjs 有配套 .d.mts 声明（缺了 tsc 报 TS7016）");
+ok(
+  /Math\.round\(\(tokens \/ 1000\) \* rate \* factor \* 100\) \/ 100/.test(estimateSrc),
+  "估算公式与服务端逐字符同形：(tokens / 1000) * rate * factor 保留两位（⛔ 差一点就会出现「页脚说 0.4、账本扣 0.8」）",
+);
+ok(
+  /tokens <= 0\) return null/.test(estimateSrc),
+  "没有 token 时如实返回 null（⛔ 不许返回 0 —— 那会显示「0 积分」，看着像免费）",
+);
+const storeSrc = read("src/lib/cloud-credit-store.ts");
+ok(
+  /cloudModelsCatalog/.test(storeSrc) && /cloudModelsCatalog\) return Promise\.resolve/.test(storeSrc),
+  "积分 store 的倍率来源是 cloudModelsCatalog（⛔ 拿不到目录一律不显示，不猜倍率）",
+);
+const turnDoneSrc = read("src/features/app-state/parts/part05/event-router/05-turn-completed-notify.tsx");
+ok(
+  /recordTurnCredit\(turnId, creditModel, inputTokens, outputTokens\)/.test(turnDoneSrc),
+  "回合完成事件里**真的调了** recordTurnCredit（只建模块不接线 ⇒ 页脚永远不显示，且不报任何错）",
+);
+ok(
+  /modelName\(loadThreadModel\(threadId\)\)[^\n]*\|\|[^\n]*bag\.activeModelRef\.current/.test(turnDoneSrc),
+  "积分归属照本仓既有口径（会话自己记的模型优先，没记过才回落到当前选择）——⛔ 直接读 activeModelRef 会把「切了全局模型、本会话跑自己的模型」算错倍率",
+);
+const footerSrc = read("src/features/shared/MessageFooter.tsx");
+ok(
+  /useTurnCredit\(turn\?\.id\)/.test(footerSrc) && /turnCredit\.free \? "免费"/.test(footerSrc),
+  "消息页脚按 turn.id 读本轮估算，且倍率 0 显示「免费」而不是「≈ 0 积分」",
+);
+ok(
+  /creditNode \? \[creditNode\] : \[\]/.test(footerSrc),
+  "页脚积分节点由估算结果**决定要不要占位**（拿不到估算就不显示，不摆一个空位）",
+);
+const badgeSrc = read("src/features/settings-cloud/CloudPointsBadge.tsx");
+ok(
+  /currentOffPeakWindow\(offPeak\)/.test(badgeSrc),
+  "积分徽标现算「当前命中哪个闲时窗口」（⛔ 不能只信目录里的 active 快照 —— 那是拉目录那一刻算的，可以差 5 分钟）",
+);
+/* ⛔ 这里必须**数次数**：`warmCloudCreditCatalog()` 在徽标里出现两次（进入时一次 + 轮询各一次）。
+   只断言"出现过"的话，删掉"进入时"那一次仍能通过 —— 而那正是最要紧的一次（否则首屏要等 5 分钟）。 */
+ok(
+  (badgeSrc.match(/warmCloudCreditCatalog\(\)/g) || []).length >= 2,
+  `积分徽标预热目录：进入时一次 + 每次轮询一次（实测 ${(badgeSrc.match(/warmCloudCreditCatalog\(\)/g) || []).length} 次；⛔ 只剩轮询那次 ⇒ 徽标一直停在「未启用」直到用户发出第一回合）`,
+);
+ok(
+  /enabled !== true\) return \{ text: "闲时倍率：未启用/.test(badgeSrc) && /if \(!offPeak\) return null/.test(badgeSrc),
+  "目录没拿到时整行不出现（⛔ 不许显示「未启用」—— 那是在说谎）",
+);
+const catalogEntry = (manifest.channels || []).find((c) => c.channel === "cloud-models:catalog") || {};
+ok(
+  /offPeak\?:/.test(String(catalogEntry.returns || "")) && /tzOffsetMinutes\?:/.test(String(catalogEntry.returns || "")),
+  "manifest 里 cloud-models:catalog 的返回类型声明了 offPeak/tzOffsetMinutes（⛔ 生成区手改会被覆盖，必须改 manifest 再跑 npm run gen:ipc）",
+);
+
 console.log(`\n【cloud-account】${checks - fails}/${checks} 通过`);
 if (fails > 0) process.exit(1);

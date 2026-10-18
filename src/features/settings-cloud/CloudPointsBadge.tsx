@@ -13,6 +13,8 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Coins } from "lucide-react";
+import { currentOffPeakWindow, useOffPeak, warmCloudCreditCatalog } from "../../lib/cloud-credit-store";
+import type { OffPeakConfig, TurnCreditEstimate } from "../../lib/credit-estimate.mjs";
 
 type PointTxn = { at?: number; delta?: number; kind?: string; note?: string };
 type PointsReply = { ok: boolean; balance: number; signupGrant: number; txns: PointTxn[]; error?: string };
@@ -36,10 +38,20 @@ function fmt(value: number): string {
   return Math.abs(n) >= 1000 ? n.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : String(Math.round(n * 100) / 100);
 }
 
+/** 闲时那一行的文案（10-18 用户令：管理员改了时段/系数，用户得能看见"现在算不算闲时"）。
+ *  ⛔ 目录没拿到（未登录 / 网络失败）⇒ 返回 null ⇒ 整行不出现（不猜"未启用"，那是在说谎）。 */
+function offPeakText(offPeak: OffPeakConfig | null, win: TurnCreditEstimate["window"]) {
+  if (!offPeak) return null;
+  if (offPeak.enabled !== true) return { text: "闲时倍率：未启用（不折扣）", hot: false };
+  if (!win) return { text: "当前不在闲时时段（不折扣）", hot: false };
+  return { text: `当前闲时「${win.label || "时段"}」${win.start}–${win.end}点 ×${win.rate}`, hot: true };
+}
+
 /** @param active 云端模型是否为**当前供应商**。⛔ 10-17 用户令：停用/切走后必须隐藏，
  *  不再常驻（此前只判「已登录」⇒ 模型停用了徽标还在）。非活跃时**也不轮询**（省一次网络）。 */
 export function CloudPointsBadge({ active }: { active: boolean }) {
   const [points, setPoints] = useState<PointsReply | null>(null);
+  const offPeak = useOffPeak();
 
   const refresh = useCallback(() => {
     const api = window.codex as unknown as PointsApi;
@@ -52,12 +64,16 @@ export function CloudPointsBadge({ active }: { active: boolean }) {
   useEffect(() => {
     if (!active) { setPoints(null); return; }
     refresh();
-    const timer = window.setInterval(refresh, POLL_MS);
+    /* 闲时快照走**同一处目录缓存**（TTL 5 分钟，与这里的轮询同频 ⇒ 不多打网络；
+       目录已在 TTL 内时是纯本地读）。⛔ 不拉一次的话，徽标会一直停在"未启用"直到用户发出第一回合。 */
+    warmCloudCreditCatalog();
+    const timer = window.setInterval(() => { refresh(); warmCloudCreditCatalog(); }, POLL_MS);
     return () => window.clearInterval(timer);
   }, [active, refresh]);
 
   if (!active || !points) return null;
   const last = points.txns?.[0];
+  const off = offPeakText(offPeak, currentOffPeakWindow(offPeak));
   return (
     <span className="cloud-points-badge" tabIndex={0} aria-label={`云端积分 ${fmt(points.balance)}`}>
       <Coins size={13} />
@@ -72,6 +88,7 @@ export function CloudPointsBadge({ active }: { active: boolean }) {
         ) : (
           <small>{points.signupGrant ? `注册赠送 ${fmt(points.signupGrant)} 积分` : "暂无变动记录"}</small>
         )}
+        {off ? <small className={off.hot ? "cloud-points-offpeak" : undefined}>{off.text}</small> : null}
         <small className="cloud-points-tip-foot">设置 → 云账号 可查看完整明细</small>
       </span>
     </span>

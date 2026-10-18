@@ -201,3 +201,8 @@
 .cloud-points-tip-foot {
   color: var(--faint) !important;
 }
+/* 命中闲时 ⇒ 这一行点亮（`!important` 是为了压过上面的 `.cloud-points-tip small` 配色，
+   与 `.cloud-points-tip-foot` 同一个做法）。不命中/未启用时用默认 muted，不抢注意力。 */
+.cloud-points-offpeak {
+  color: var(--ok) !important;
+}
