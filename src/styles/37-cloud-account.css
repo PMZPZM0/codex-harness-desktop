@@ -223,12 +223,12 @@
 .cloud-acct-row > input:hover { border-color: var(--line-strong, var(--muted)); }
 .cloud-acct-row > input:focus {
   outline: none;
-  border-color: var(--brand);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 /* 登录按钮：与全站主色统一（原来是浅绿渐变，和紫色 brand 冲突） */
 .cloud-acct-actions > button.primary-setting.cloud-acct-login {
-  background: var(--brand);
+  background: var(--accent);
   background-image: none;
   border: 0;
   border-radius: 9px;
