@@ -638,6 +638,10 @@ contextBridge.exposeInMainWorld("codex", {
   currentSoulMarket: () => __ipc("soul-market:current", 0, []),
   /* 应用人格（slug=null 还原默认）：写 personalization.persona + 同步 $CODEX_HOME/AGENTS.md，新会话即生效 */
   applySoulMarket: (input: { slug: string | null }) => __ipc("soul-market:apply", 1, [input]),
+  /* HTML 实时预览：开始监听一个 HTML 文件（可信目录 + 扩展名白名单；120ms 防抖；变更推 harness 事件 html-preview:changed） */
+  htmlPreviewWatch: (input: unknown) => __ipc("html-preview:watch", 1, [input]),
+  /* HTML 实时预览：停止当前监听 */
+  htmlPreviewUnwatch: () => __ipc("html-preview:unwatch", 0, []),
   /* Laya 智能判断：服务/安装状态（pip 包 + laya-serve 进程 + 权重就绪） */
   layaStatus: () => __ipc("laya:status", 0, []),
   /* 安装/更新 laya[serve]（pip 清华镜像；torch 大，20 分钟超时）；权重由服务首启时经 hf-mirror 拉取 */

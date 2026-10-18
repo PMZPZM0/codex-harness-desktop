@@ -976,6 +976,10 @@ interface Window {
     currentSoulMarket(): Promise<{ soulSlug: string; persona: string }>;
     /* 应用人格（slug=null 还原默认）：写 personalization.persona + 同步 $CODEX_HOME/AGENTS.md，新会话即生效 */
     applySoulMarket(input: { slug: string | null }): Promise<{ slug: string; displayName: string }>;
+    /* HTML 实时预览：开始监听一个 HTML 文件（可信目录 + 扩展名白名单；120ms 防抖；变更推 harness 事件 html-preview:changed） */
+    htmlPreviewWatch(input: { path: string }): Promise<{ ok: boolean; path?: string; error?: string }>;
+    /* HTML 实时预览：停止当前监听 */
+    htmlPreviewUnwatch(): Promise<{ ok: boolean }>;
     /* Laya 智能判断：服务/安装状态（pip 包 + laya-serve 进程 + 权重就绪） */
     layaStatus(): Promise<{ installed: boolean; version: string; running: boolean; ready: boolean; port: number; installing: boolean; starting: boolean; lastError: string; installProgress: { phase: string; current: string; percent: number; speed: string; detail: string } | null; startProgress: { phase: string; current: string; percent: number; speed: string; detail: string } | null }>;
     /* 安装/更新 laya[serve]（pip 清华镜像；torch 大，20 分钟超时）；权重由服务首启时经 hf-mirror 拉取 */
