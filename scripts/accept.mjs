@@ -1591,6 +1591,95 @@ const CHECKS = [
     },
   },
   {
+    id: "html-preview",
+    name: "㉙ HTML 实时预览：写 HTML 自动开右栏并实时重载（10-18 轮）",
+    run: async (h) => {
+      /* 为什么真跑：自动开右栏、按比例加宽、webview 无缓存重载都是运行期行为；
+         用**真回合 + 测试进程写文件**走 turn-file-watch 真链路（与 file-summary 同款），
+         再用 webview 的 executeJavaScript 读 guest 的 document.title 验证「内容真的换了」。 */
+      const target = join(ROOT, "html-preview-acceptance.html");
+      const cleanup = () => { try { rmSync(target, { force: true }); } catch { /* ignore */ } };
+      cleanup();
+      const clicked = await h.eval(`(function(){ const b=[...document.querySelectorAll('.sidebar-tab')].find((x)=>(x.textContent||'').includes('新建任务')); if(!b) return 0; b.click(); return 1; })()`).catch(() => 0);
+      h.check("① 点到「新建任务」（前置）", clicked === 1, `clicked=${clicked}`);
+      if (clicked !== 1) return;
+      await wait(1200);
+      /* 先收起右栏（如果开着）：验证是「写 HTML 自动打开的」，不是本来就开着。 */
+      const closedPanel = await h.eval(`(function(){ if(!document.querySelector('.context-panel')) return true; const b=document.querySelector('.tb-right-panel'); if(!b) return false; b.click(); return true; })()`).catch(() => false);
+      await wait(500);
+      h.check("②a 前置：右栏已收起（验证是自动打开的）", closedPanel === true, `closedPanel=${closedPanel}`);
+      await h.eval(`(function(){ const dt=new DataTransfer(); dt.setData("text/plain", "请先用 shell 运行 sleep 8（必须真的执行），然后只回复：好。不要做别的。"); const el=document.querySelector('.composer-editor'); el.focus(); el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles:true, cancelable:true })); return 1; })()`);
+      await wait(500);
+      await h.pressKey("Enter", { text: "\r" });
+      let running = false;
+      for (let i = 0; i < 80; i++) {
+        await wait(200);
+        if (await h.eval(`!!document.querySelector('.send-button.is-pause')`).catch(() => false)) { running = true; break; }
+      }
+      h.check("② 前置：真回合真的跑起来了（没跑 = 模型未配置/引擎没起，本项作废）", running === true, `running=${running}`);
+      if (!running) return;
+      /* 快照可能正好在读目录：先写一版、等 2s 再写一版 —— 两版之间必有一版落在快照之后。 */
+      writeFileSync(target, "<!doctype html><html><head><meta charset=\"utf-8\"><title>preview-v0</title></head><body><h1>v0</h1></body></html>", "utf8");
+      await wait(2000);
+      writeFileSync(target, "<!doctype html><html><head><meta charset=\"utf-8\"><title>preview-v1</title></head><body><h1>v1</h1></body></html>", "utf8");
+      let opened = null;
+      for (let i = 0; i < 60; i++) {
+        await wait(500);
+        opened = await h.eval(`(function(){
+          const shell = document.querySelector('.app-shell');
+          const panel = document.querySelector('.context-panel');
+          const tab = document.querySelector('.panel-tab.active');
+          const wv = document.querySelector('webview');
+          const tracks = shell ? getComputedStyle(shell).gridTemplateColumns.split(' ').map(parseFloat) : [];
+          return { panel: !!panel, tab: (tab?.textContent||'').trim(), src: wv ? String(wv.getAttribute('src')||'') : '', width: tracks[tracks.length-1] || 0, inner: window.innerWidth };
+        })()`).catch(() => opened);
+        if (opened?.panel && opened.tab.includes("浏览器") && /html-preview-acceptance\.html/i.test(decodeURIComponent(opened.src))) break;
+      }
+      h.check("③ 写 HTML 后自动打开右栏浏览器并加载该文件",
+        !!opened && opened.panel === true && opened.tab.includes("浏览器") && /html-preview-acceptance\.html/i.test(decodeURIComponent(opened.src)),
+        JSON.stringify(opened).slice(0, 260));
+      await wait(700);
+      const widened = await h.eval(`(function(){ const shell=document.querySelector('.app-shell'); if(!shell) return 0; const tracks=getComputedStyle(shell).gridTemplateColumns.split(' ').map(parseFloat); return tracks[tracks.length-1]||0; })()`).catch(() => 0);
+      h.check("④ 右栏自动加宽（窗口 45% 档，≥360px）", widened >= 360, `width=${widened} inner=${opened?.inner}`);
+      if (!opened?.panel) { cleanup(); return; }
+      writeFileSync(target, "<!doctype html><html><head><meta charset=\"utf-8\"><title>preview-v2</title></head><body><h1>v2</h1></body></html>", "utf8");
+      let title = "";
+      for (let i = 0; i < 40; i++) {
+        await wait(300);
+        title = await h.eval(`(function(){ const wv=document.querySelector('webview'); if(!wv || typeof wv.executeJavaScript!=='function') return ''; return wv.executeJavaScript('document.title').catch(function(){ return ''; }); })()`).catch(() => "");
+        if (title === "preview-v2") break;
+      }
+      h.check("⑤ 文件改动后 webview 实时刷新（guest 标题从 v1 变 v2）", title === "preview-v2", `title=${title}`);
+      /* ⑥ 用户 10-18 实测：「正常我进去不要每次都打开对话框里面已有的 html 文件」。
+         resume 会把历史回合的文件报告重播成同一个 turn-file-changes 事件；没有 live 记录的
+         历史报告必须被忽略。这里真切走再切回，验证右栏不会被历史报告重新打开。 */
+      for (let i = 0; i < 40; i++) {
+        await wait(500);
+        if (!(await h.eval(`!!document.querySelector('.send-button.is-pause')`).catch(() => false))) break;
+      }
+      await wait(1500);
+      const tid = await h.eval(`(function(){ const shell=document.querySelector('.app-shell'); const sid=shell?shell.getAttribute('data-thread-id'):''; if(sid) return sid; const row=document.querySelector('.thread-row.active'); return row ? row.getAttribute('data-thread-id') : ''; })()`).catch(() => "");
+      h.check("⑥ 前置：读到当前会话 id（切回测试）", typeof tid === "string" && tid.length > 10, `tid=${tid}`);
+      if (tid) {
+        await h.eval(`(function(){ if(document.querySelector('.context-panel')) document.querySelector('.tb-right-panel')?.click(); return 1; })()`);
+        await wait(600);
+        const switched = await h.eval(`(function(){
+          const rows=[...document.querySelectorAll('.thread-row')];
+          const other=rows.find((row)=>row.getAttribute('data-thread-id') && row.getAttribute('data-thread-id')!==${JSON.stringify(tid)});
+          if(!other) return 0; other.click(); return 1;
+        })()`).catch(() => 0);
+        await wait(1500);
+        await h.eval(`(function(){ if(document.querySelector('.context-panel')) document.querySelector('.tb-right-panel')?.click(); return 1; })()`);
+        await wait(600);
+        await h.eval(`(function(){ const row=[...document.querySelectorAll('.thread-row')].find((r)=>r.getAttribute('data-thread-id')===${JSON.stringify(tid)}); row?.click(); return !!row; })()`);
+        await wait(3000);
+        const reopened = await h.eval(`!!document.querySelector('.context-panel')`).catch(() => true);
+        h.check("⑥ 切回会话：历史 HTML 报告重播不自动打开已有文件（用户实测「进去不要每次都打开」）", switched === 1 && reopened === false, JSON.stringify({ switched, reopened }));
+      }
+      cleanup();
+    },
+  },
+  {
     id: "compact-line",
     name: "㉗ 压缩线：真压缩 → 宿主侦测 → 压缩线出现（10-07 轮）",
     run: async (h) => {
@@ -2618,6 +2707,7 @@ const ROUND_OF = {
   "goal-bar": "10-06",   // 10-06 夜五轮新增：/goal 目标条（用户对照 Qoder：计时 + 编辑/删除/暂停；默认轮最后一项，含真续跑回合）
   "newbie-guide": "10-07",   // 10-07 轮：新手引导（侧栏常驻入口 + 迷你设置弹窗；左选项/右内容/映射跳转/版本日志）
   "laya-judge": "10-18",   // 10-18 轮：Laya 判断工具（装了才暴露；未装拒绝且不自动安装；纯函数真值表由守卫 12s 钉）
+  "html-preview": "10-18",   // 10-18 轮：HTML 实时预览（真回合写 HTML → 自动开右栏浏览器 + 加宽 + 文件变更重载）
   "compact-line": "10-07",   // 10-07 夜十一轮：压缩线（新会话 + 短回合 + 手动压缩 → 宿主侦测真链路 → 线出现 + 落盘）
   "devtools-install-ux": "10-11",   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）
   "free-gateway": "10-12",   // 10-12 轮：免费模型网关（第三方开源侧车 + 一键注册供应商；免责声明为契约）   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）

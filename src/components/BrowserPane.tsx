@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, ChevronDown, ExternalLink, Globe2, Maximize2, MoreHorizontal, Plus, RefreshCw, FileWarning, ShieldCheck, Star, X } from "lucide-react";
+import { subscribeHtmlPreview } from "../lib/html-preview-store.mjs";
 
 /**
  * 中央主区「浏览器」视图（sidebar 顶部「浏览器」入口切换进来）。
@@ -117,6 +118,20 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
     setActiveId(id);
     setDraft(url);
   }, [pendingOpen?.seq, pendingOpen?.url, active, patchActive]);
+
+  /* HTML 实时预览（10-18 独立板块）：文件内容变了就无缓存重载**当前标签**。
+     ⛔ 只在当前标签就是那个预览 URL 时重载 —— 用户已经导航到别的网页时不许抢；
+     ⛔ 用 reloadIgnoringCache 而不是 reload：file:// 也会被 Chromium 缓存，普通 reload 会看到旧内容。 */
+  useEffect(() => subscribeHtmlPreview((event) => {
+    if (!event || event.reason !== "changed") return;
+    if (!event.url || active.url !== event.url) return;
+    const wv = wvRef.current as unknown as { reloadIgnoringCache?: () => void; reload?: () => void } | null;
+    if (!wv) return;
+    try {
+      if (typeof wv.reloadIgnoringCache === "function") wv.reloadIgnoringCache();
+      else wv.reload?.();
+    } catch { /* 加载中 / 元素刚重建时忽略，下一次变更还会再通知 */ }
+  }), [active.url]);
 
   const toggleBookmark = useCallback(() => {
     const url = active.url;

@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 496,
+  "count": 498,
   "channels": [
     {
       "name": "request",
@@ -4271,6 +4271,26 @@
       "invokeArgs": "input",
       "cast": null,
       "note": "应用人格（slug=null 还原默认）：写 personalization.persona + 同步 $CODEX_HOME/AGENTS.md，新会话即生效"
+    },
+    {
+      "name": "htmlPreviewWatch",
+      "channel": "html-preview:watch",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { path: string }",
+      "returns": "Promise<{ ok: boolean; path?: string; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "HTML 实时预览：开始监听一个 HTML 文件（可信目录 + 扩展名白名单；120ms 防抖；变更推 harness 事件 html-preview:changed）"
+    },
+    {
+      "name": "htmlPreviewUnwatch",
+      "channel": "html-preview:unwatch",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "HTML 实时预览：停止当前监听"
     },
     {
       "name": "layaStatus",

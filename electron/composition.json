@@ -338,6 +338,13 @@
       "config": null
     },
     {
+      "id": "html-preview",
+      "enabled": true,
+      "file": "features/html-preview-ipc.ts",
+      "export": "htmlPreviewFeature",
+      "config": null
+    },
+    {
       "id": "laya",
       "enabled": true,
       "file": "features/laya-service.ts",

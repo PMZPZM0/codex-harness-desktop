@@ -172,6 +172,9 @@ import { ImageLabBridge } from "../image-lab";
 import { VoiceAnnounceBridge } from "../voice-announce";
 import { PollBridge } from "../polling";
 import { WallpaperLayer } from "../wallpaper";
+/* HTML 实时预览（10-18 独立板块）：写 .html ⇒ 自动开右栏浏览器 + 加宽 + 文件变更实时重载。
+   ⛔ 只在主窗口挂（独立弹窗没有右栏）；它返回 null，不产生 DOM。 */
+import { HtmlPreviewBridge } from "../html-preview";
 // 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
 import { Slot } from "../../runtime/registry";
 import { DeclaredPluginSlots } from "../../runtime/declared-plugin-slots";
@@ -416,6 +419,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     <div
       ref={shellRef}
       className={`app-shell ${rightOpen ? "with-context" : ""} ${sidebarCollapsed ? "side-collapsed" : ""} ${narrow ? "narrow" : ""} ${popoutThreadId ? "popout-shell" : ""}`}
+      data-thread-id={thread?.id ?? ""}
       // 右侧上下文面板仅在用户显式开启后参与网格；收起左栏时不能塞入一个 0px 首列，
       // 否则 CSS Grid 会保留隐式轨道，把 workspace 挤到最右侧。
       style={rightOpen ? { gridTemplateColumns: popoutThreadId ? `minmax(0, 1fr) 1px ${panelWidth}px` : sidebarCollapsed ? `minmax(0, 1fr) 1px ${panelWidth}px` : `256px minmax(0, 1fr) 1px ${panelWidth}px` } : undefined}
@@ -423,6 +427,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       {/* 壁纸层（wallpaper 域）：app-shell 首子元素 + isolation 堆叠上下文，负 z 层透出在
           全应用表面（侧栏/聊天/输入框周边）之下、内容之上；用户关掉时不在 DOM。 */}
       <WallpaperLayer />
+      {!popoutThreadId && <HtmlPreviewBridge app={app} />}
       {/* 思考浮窗宿主（10-06 夜，用户实测「办公室预览被运行中的思考板块盖住」）：思考浮窗原来
           portal 到 body、以 z-index:8 参加**根层**竞争 —— 而 app-shell 是 isolation 层，壳内
           一切 z（办公室 400、设置 80~97、画布 90）都只在壳内比较 ⇒ 全被外面那个 8 压住。
