@@ -306,8 +306,16 @@ ok(
 );
 const footerSrc = read("src/features/shared/MessageFooter.tsx");
 ok(
-  /useTurnCredit\(turn\?\.id\)/.test(footerSrc) && /turnCredit\.free \? "免费"/.test(footerSrc),
-  "消息页脚按 turn.id 读本轮估算，且倍率 0 显示「免费」而不是「≈ 0 积分」",
+  /useTurnCredit\(turn\?\.id\)/.test(footerSrc) && /\(turnCredit\.free \|\| turnCredit\.factor === 0\) \? "免费"/.test(footerSrc),
+  "消息页脚按 turn.id 读本轮估算，且「倍率 0」与「闲时系数 0」都显示「免费」而不是「≈ 0 积分」",
+);
+ok(
+  /* ⛔ 锚「点 ×<系数>」这个**显示形态**：tooltip 一旦在这里写回窗口默认系数，就会在
+     "每模型单独配置"时给出错的折扣数字（窗口 0.5、该模型 0.8 ⇒ 用户看到 ×0.5、实际扣 0.8）。
+     负向只挡"点 ×窗口系数"这一形态 —— 后面那句「全局默认 ×0.5」是**正确**的补充信息，
+     ⛔ 不能一起挡掉（第一版写成裸 `×${rec.window.rate}` 就误伤了自己）。 */
+  /点 ×\$\{rec\.factor\}/.test(footerSrc) && !/点 ×\$\{rec\.window\.rate\}/.test(footerSrc),
+  "积分 tooltip 的折扣系数用**实际生效的** rec.factor（⛔ 不许在「点 ×」处写窗口默认系数）",
 );
 ok(
   /creditNode \? \[creditNode\] : \[\]/.test(footerSrc),
