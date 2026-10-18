@@ -18,6 +18,7 @@
  * ⛔ 模块顶层**不求值** `app.getPath`（【91】）：域模块体先于壳的 `app.setPath("userData")` 执行，
  *   顶层求值拿到的是默认目录 ⇒ 路径静默漂移。本文件所有路径一律在函数体内惰性求值。
  */
+import os from "node:os";
 import { app, net, safeStorage } from "electron";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -205,7 +206,15 @@ export async function login(baseUrlRaw: string, usernameRaw: string, password: s
     const res = await net.fetch(`${baseUrl}/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      /* ⛔ 10-18 设备管理：登录必须上报本机标识 —— 否则云端「已配对设备」永远是 0
+         （服务端 registerLoginDevice 靠 machineId 去重，缺了就记不上）。
+         machineId 取 hostname + userData 路径的哈希：同机稳定、不同机不撞。 */
+      body: JSON.stringify({
+        username,
+        password,
+        machineId: (() => { try { return crypto.createHash("sha256").update(os.hostname() + "|" + app.getPath("userData")).digest("hex").slice(0, 32); } catch { return ""; } })(),
+        machineName: (() => { try { return os.hostname().slice(0, 32); } catch { return ""; } })(),
+      }),
       signal: AbortSignal.timeout(15_000),
     });
     status = res.status;
