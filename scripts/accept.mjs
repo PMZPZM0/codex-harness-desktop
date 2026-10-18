@@ -23,6 +23,7 @@
 // 被测 profile：`.e2e-profile/<name>/`（已 gitignore，含真实对话内容，勿入库）
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ElectronHarness } from "./e2e/lib/harness.mjs";
@@ -1680,6 +1681,72 @@ const CHECKS = [
     },
   },
   {
+    id: "git-review",
+    name: "㉚ 右栏变更：四个范围真实可用 + 分支起点 + Git 缺失可安装（10-18 轮）",
+    run: async (h) => {
+      /* 用户截图框住右栏「变更」下拉问「是不是真实的」。旧实现里「全部分支更改」只是
+         git diff HEAD（和未暂存同类，分支已提交改动看不到）⇒ 这里用临时仓库真跑：
+         分支上提交一次 + 工作区再改一次，head 必须同时看到两段，unstaged 只能看到后一段。 */
+      const repo = join(h.userDataDir ?? join(ROOT, ".e2e-profile", "main"), "git-review-acceptance");
+      const gitBin = process.platform === "win32" ? join(ROOT, "resources", "tools", "git", "cmd", "git.exe") : join(ROOT, "resources", "tools", "git", "bin", "git");
+      const git = (list) => execFileSync(existsSync(gitBin) ? gitBin : "git", list, {
+        cwd: repo,
+        env: { ...process.env, GIT_AUTHOR_NAME: "Acceptance", GIT_AUTHOR_EMAIL: "acceptance@example.com", GIT_COMMITTER_NAME: "Acceptance", GIT_COMMITTER_EMAIL: "acceptance@example.com" },
+        encoding: "utf8",
+        windowsHide: true,
+      });
+      try {
+        rmSync(repo, { recursive: true, force: true });
+        mkdirSync(repo, { recursive: true });
+        try { git(["init", "-b", "main"]); } catch { git(["init"]); git(["checkout", "-b", "main"]); }
+        writeFileSync(join(repo, "base.txt"), "one\n");
+        git(["add", "base.txt"]);
+        git(["commit", "-m", "base"]);
+        git(["checkout", "-b", "feature"]);
+        writeFileSync(join(repo, "base.txt"), "one\ntwo\n");
+        git(["add", "base.txt"]);
+        git(["commit", "-m", "feature"]);
+        writeFileSync(join(repo, "base.txt"), "one\ntwo\nthree\n");
+        const call = async (scope) => h.eval(`window.codex.gitDiff(${JSON.stringify(repo)}, ${JSON.stringify(scope)})`).catch((error) => ({ error: String(error?.message ?? error) }));
+        const head = await call("head");
+        h.check("① 全部分支更改 = 分支起点 diff（含分支已提交 + 工作区）",
+          head?.code === 0 && /\+two/.test(String(head?.output ?? "")) && /\+three/.test(String(head?.output ?? "")),
+          JSON.stringify({ code: head?.code, error: head?.error, sample: String(head?.output ?? "").slice(0, 120) }));
+        const unstaged = await call("unstaged");
+        h.check("② 未暂存 = 只含工作区未 add 的改动（不含分支已提交的 +two）",
+          unstaged?.code === 0 && /\+three/.test(String(unstaged?.output ?? "")) && !/\+two/.test(String(unstaged?.output ?? "")),
+          JSON.stringify({ code: unstaged?.code, sample: String(unstaged?.output ?? "").slice(0, 120) }));
+        git(["add", "base.txt"]);
+        const staged = await call("staged");
+        const afterStage = await call("unstaged");
+        h.check("③ 已暂存 = 只含暂存区改动；未暂存随之为空",
+          staged?.code === 0 && /\+three/.test(String(staged?.output ?? "")) && !/\+three/.test(String(afterStage?.output ?? "")),
+          JSON.stringify({ staged: String(staged?.output ?? "").slice(0, 80), unstaged: String(afterStage?.output ?? "").slice(0, 80) }));
+        await h.eval(`(function(){ if(!document.querySelector('.context-panel')) document.querySelector('.tb-right-panel')?.click(); return 1; })()`);
+        await wait(500);
+        await h.eval(`(function(){ const b=[...document.querySelectorAll('.panel-tab')].find((x)=>(x.textContent||'').includes('变更')); b?.click(); return 1; })()`);
+        await wait(500);
+        await h.eval(`document.querySelector('.scope-btn')?.click()`);
+        const menu = await h.eval(`(function(){ return [...document.querySelectorAll('.scope-menu button')].map((b)=>(b.textContent||'').trim()); })()`);
+        h.check("④ 下拉四个范围真实存在（未暂存 / 已暂存 / 全部分支更改 / 上一轮更改）",
+          ["未暂存", "已暂存", "全部分支更改", "上一轮更改"].every((label) => menu.includes(label)), JSON.stringify(menu));
+        const missingUi = await h.eval(`!!document.querySelector('.git-missing')`);
+        const installBtn = await h.eval(`!!document.querySelector('.git-missing .primary-setting')`);
+        h.check("⑤ 当前工作区 Git 可用；若缺 Git 则必须有一键安装按钮", missingUi === false || installBtn === true, JSON.stringify({ missingUi, installBtn }));
+        await h.eval(`(function(){ const b=[...document.querySelectorAll('.scope-menu button')].find((x)=>(x.textContent||'').trim()==='全部分支更改'); b?.click(); return 1; })()`);
+        await wait(700);
+        const branchLabel = await h.eval(`(document.querySelector('.scope-btn')?.textContent||'').trim()`);
+        h.check("⑥ 切到「全部分支更改」不报缺 Git / 不空白", branchLabel.includes("全部分支更改"), branchLabel);
+        await h.eval(`document.querySelector('.scope-btn')?.click()`);
+        await h.eval(`(function(){ const b=[...document.querySelectorAll('.scope-menu button')].find((x)=>(x.textContent||'').trim()==='上一轮更改'); b?.click(); return 1; })()`);
+        await wait(500);
+        h.check("⑦ 切到「上一轮更改」可用（真实回合 diff，不崩溃）", (await h.eval(`(document.querySelector('.scope-btn')?.textContent||'').includes('上一轮更改')`)) === true, "");
+      } finally {
+        try { rmSync(repo, { recursive: true, force: true }); } catch { /* ignore */ }
+      }
+    },
+  },
+  {
     id: "compact-line",
     name: "㉗ 压缩线：真压缩 → 宿主侦测 → 压缩线出现（10-07 轮）",
     run: async (h) => {
@@ -2708,6 +2775,7 @@ const ROUND_OF = {
   "newbie-guide": "10-07",   // 10-07 轮：新手引导（侧栏常驻入口 + 迷你设置弹窗；左选项/右内容/映射跳转/版本日志）
   "laya-judge": "10-18",   // 10-18 轮：Laya 判断工具（装了才暴露；未装拒绝且不自动安装；纯函数真值表由守卫 12s 钉）
   "html-preview": "10-18",   // 10-18 轮：HTML 实时预览（真回合写 HTML → 自动开右栏浏览器 + 加宽 + 文件变更重载）
+  "git-review": "10-18",   // 10-18 轮：右栏变更四个范围（临时仓库验证分支起点 + 暂存/未暂存 + UI 下拉）
   "compact-line": "10-07",   // 10-07 夜十一轮：压缩线（新会话 + 短回合 + 手动压缩 → 宿主侦测真链路 → 线出现 + 落盘）
   "devtools-install-ux": "10-11",   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）
   "free-gateway": "10-12",   // 10-12 轮：免费模型网关（第三方开源侧车 + 一键注册供应商；免责声明为契约）   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）

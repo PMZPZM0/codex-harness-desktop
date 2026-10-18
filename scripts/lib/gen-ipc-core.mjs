@@ -23,6 +23,23 @@ export const MANIFEST_PATH = join(ROOT, "electron", "ipc-channels.manifest.json"
 export const GEN_BEGIN = "/* ═══ gen:begin（由 scripts/gen-ipc-bridge.mjs 生成，源 ipc-channels.manifest.json，勿手改）═══ */";
 export const GEN_END = "/* ═══ gen:end ═══ */";
 
+/** 数 invokeArgs 的**顶层参数个数**（按顶层逗号切，跳过 <>[]{}() 嵌套）。
+ *  ⛔ 10-18 实测事故：`paramsImpl` 是给调用方看的签名（`cwd, scope` 两个参数），而 invoke 实际只把
+ *     它们打包成**一个对象**传过去（`invokeArgs: "{ cwd, scope }"`）。旧代码直接拿「必选参数个数」
+ *     当 `__ipc` 的 minArgs ⇒ 12 条这种形态的通道（git:diff / fs:write / ssh:* / connectors:set-enabled …）
+ *     每次调用都被前置校验拒成 `ERR_MISSING_ARGS`，界面上表现为「读了但永远是空的」。
+ *  ⇒ minArgs 必须按**真正传给 ipcRenderer.invoke 的参数个数**算，再用必选参数个数封顶（见下）。 */
+export function argCountOf(invokeArgs) {
+  if (!invokeArgs || !invokeArgs.trim()) return 0;
+  let depth = 0, count = 1;
+  for (const ch of invokeArgs) {
+    if ("([{<".includes(ch)) depth++;
+    else if (")]}>".includes(ch)) depth--;
+    else if (ch === "," && depth === 0) count++;
+  }
+  return count;
+}
+
 /** 数 paramsImpl 里的**必选**参数个数：按顶层逗号切（跳过 <>[]{}() 嵌套），带 `=` 默认值的不算。 */
 export function minArgsOf(paramsImpl) {
   if (!paramsImpl || !paramsImpl.trim()) return 0;
@@ -58,7 +75,10 @@ export function generatePreloadRegion(entries) {
     const note = e.note ? `  /* ${e.note} */\n` : "";
     const cast = e.cast ? ` as ${e.cast}` : "";
     const args = e.invokeArgs ? `[${e.invokeArgs}]` : "[]";
-    return `${note}  ${e.name}: (${e.paramsImpl}) => __ipc(${JSON.stringify(e.channel)}, ${minArgsOf(e.paramsImpl)}, ${args})${cast},`;
+    /* ⛔ minArgs 不能超过**真正传过去的参数个数**（单对象 invokeArgs 只传 1 个）——
+       否则每次调用都被 __ipc 的前置校验拒掉（10-18 的 12 条通道全中）。 */
+    const minArgs = Math.min(minArgsOf(e.paramsImpl), argCountOf(e.invokeArgs ?? ""));
+    return `${note}  ${e.name}: (${e.paramsImpl}) => __ipc(${JSON.stringify(e.channel)}, ${minArgs}, ${args})${cast},`;
   }).join("\n");
   return `${GEN_BEGIN}\n${body}\n  ${GEN_END}`;
 }

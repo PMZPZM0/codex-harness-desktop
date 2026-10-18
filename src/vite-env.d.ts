@@ -672,7 +672,8 @@ interface Window {
     terminalResize(id: string, cols: number, rows: number): Promise<void>;
     restartTerminal(id: string, cwd?: string): Promise<void>;
     terminalReady(): Promise<void>;
-    gitDiff(cwd: string, scope: string): Promise<{ code: number | null; output: string }>;
+    /* 10-18 实修：unstaged=git diff / staged=--cached / head=分支起点 merge-base diff（含已提交+未提交，找不到基准才退回 HEAD 并说明）/ last 由渲染层展示；Git 缺失/非仓库/无 HEAD 都回中文原因 */
+    gitDiff(cwd: string, scope: string): Promise<{ code: number | null; output: string; error?: string }>;
     openExternal(url: string): Promise<void>;
     browserPopout(url: string): Promise<{ ok: boolean }>;
     shellReveal(target: string): Promise<void>;

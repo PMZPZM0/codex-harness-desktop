@@ -1,7 +1,7 @@
 /** 存储设置 / 复审面板（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
 import { useState, useEffect, useMemo } from "react";
 import { PageInfo } from "../../components/SettingsHead";
-import { Database, ChevronDown, Check, RefreshCw, FileCode2, Search } from "lucide-react";
+import { Database, ChevronDown, Check, RefreshCw, FileCode2, Search, Download } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 import { basename } from "../../lib/basename";
@@ -66,30 +66,53 @@ export function StorageSection({ onNotice, onClearMemoryCache, openAppConfirm }:
 }
 
 const reviewScopes: [ReviewScope, string][] = [["unstaged", "未暂存"], ["staged", "已暂存"], ["head", "全部分支更改"], ["last", "上一轮更改"]];
+const reviewScopeHints: Record<ReviewScope, string> = {
+  unstaged: "工作区里还没有 git add 的改动（git diff）",
+  staged: "已经 git add、还没提交的改动（git diff --cached）",
+  head: "当前分支从上游 / 主分支分出来后的全部改动（含已提交 + 未提交；git merge-base → diff）",
+  last: "上一轮对话产生的改动（用回合记录，不经过 Git）",
+};
 
 export function ReviewPanel({ workspace, lastDiff, disabled, busy, report, onReview, onNotice }: { workspace: string; lastDiff: string; disabled: boolean; busy: boolean; report: string; onReview: (instructions: string) => void; onNotice?: (message: string) => void }) {
   const [scope, setScope] = useState<ReviewScope>("unstaged");
   const [menuOpen, setMenuOpen] = useState(false);
   const [output, setOutput] = useState("");
   const [gitMissing, setGitMissing] = useState(false);
+  const [gitError, setGitError] = useState("");
+  const [installingGit, setInstallingGit] = useState(false);
   const [loading, setLoading] = useState(false);
   const [custom, setCustom] = useState("");
   const refresh = async () => {
-    if (scope === "last") { setOutput(lastDiff); setGitMissing(false); return ""; }
-    if (!workspace) { setGitMissing(true); setOutput(""); return "还没有工作区 —— 先在会话里选一个项目"; }
+    if (scope === "last") { setOutput(lastDiff); setGitMissing(false); setGitError(""); return ""; }
+    if (!workspace) { setGitMissing(true); setGitError("还没有工作区 —— 先在会话里选一个项目"); setOutput(""); return "还没有工作区 —— 先在会话里选一个项目"; }
     setLoading(true);
     try {
       const result = await window.codex.gitDiff(workspace, scope);
       setGitMissing(false);
+      setGitError(result.error ?? "");
       setOutput(result.output ?? "");
-      return "";
+      return result.error ?? "";
     } catch (error: any) {
-      setGitMissing(true);
+      const message = String(error?.message ?? error);
+      setGitMissing(/未找到 Git|ENOENT|git.*not found/i.test(message));
+      setGitError(message);
       setOutput("");
-      // ⛔ 原来这里 `catch { … }` 只把界面切成「没有可用的 Git」，连失败原因都不留一行
-      return String(error?.message ?? error);
+      return message;
     } finally {
       setLoading(false);
+    }
+  };
+  const installGit = async () => {
+    if (installingGit) return;
+    setInstallingGit(true);
+    try {
+      const result: any = await window.codex.installRuntime("git");
+      onNotice?.(result?.ok ? "Git 安装完成，正在刷新变更…" : "Git 安装未完成，请到 设置 → 开发工具 查看进度与报错");
+      await refresh();
+    } catch (error: any) {
+      onNotice?.(`Git 安装失败：${String(error?.message ?? error)}`);
+    } finally {
+      setInstallingGit(false);
     }
   };
   useEffect(() => { void refresh(); }, [scope, workspace]);
@@ -111,16 +134,19 @@ export function ReviewPanel({ workspace, lastDiff, disabled, busy, report, onRev
     <section className="review-panel">
       <div className="review-bar">
         <div className="scope-wrap">
-          <button className="scope-btn" onClick={() => setMenuOpen((current) => !current)}>{scopeLabel}<ChevronDown size={13} /></button>
+          <button className="scope-btn" title={reviewScopeHints[scope]} onClick={() => setMenuOpen((current) => !current)}>{scopeLabel}<ChevronDown size={13} /></button>
           {menuOpen && <div className="scope-menu">
-            {reviewScopes.map(([value, label]) => <button key={value} onClick={() => { setScope(value); setMenuOpen(false); }}>{label}{scope === value && <Check size={13} />}</button>)}
+            {reviewScopes.map(([value, label]) => <button key={value} title={reviewScopeHints[value]} onClick={() => { setScope(value); setMenuOpen(false); }}>{label}{scope === value && <Check size={13} />}</button>)}
           </div>}
         </div>
         <button className="review-refresh" title="刷新" onClick={() => void refreshWithReceipt(onNotice, "刷新变更列表", () => refresh())}>{loading ? <Spinner /> : <RefreshCw size={14} />}<span>刷新</span></button>
       </div>
-      {gitMissing ? <div className="git-missing"><FileCode2 size={36} /><strong>当前环境没有可用的 Git</strong><p>请先安装 Git，或确认当前运行环境里可以执行 git 命令。</p></div>
-        : files.length ? <div className="diff-file-list">{files.map((file) => <div key={file.path}><code title={file.path}>{basename(file.path)}</code><span><b>+{file.added}</b> <i>-{file.deleted}</i></span></div>)}</div>
-        : <div className="git-empty"><p className="muted">当前范围没有文件改动</p></div>}
+      {gitMissing ? <div className="git-missing"><FileCode2 size={36} /><strong>当前环境没有可用的 Git</strong><p>{gitError || "安装后就能查看未暂存 / 已暂存 / 分支起点 / 上一轮的文件改动。"}</p><button className="primary-setting" disabled={installingGit} onClick={() => void installGit()}>{installingGit ? <Spinner /> : <Download size={14} />}{installingGit ? "安装中…" : "一键安装 Git"}</button><small>也可以在「设置 → 开发工具」查看安装进度；装完会自动刷新。</small></div>
+        : <>
+          {gitError && <div className="git-note">{gitError}</div>}
+          {files.length ? <div className="diff-file-list">{files.map((file) => <div key={file.path}><code title={file.path}>{basename(file.path)}</code><span><b>+{file.added}</b> <i>-{file.deleted}</i></span></div>)}</div>
+            : <div className="git-empty"><p className="muted">{scope === "last" ? "还没有上一轮改动 —— 先在会话里发一条消息，回合收尾后再看" : "当前范围没有文件改动"}</p></div>}
+        </>}
       <details className="ai-review">
         <summary><Search size={13} />AI 审查（review/start）<ChevronDown size={13} /></summary>
         <div className="ai-review-body">

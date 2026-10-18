@@ -2138,10 +2138,10 @@
       "channel": "git:diff",
       "paramsImpl": "cwd: string, scope: string",
       "paramsDecl": "cwd: string, scope: string",
-      "returns": "Promise<{ code: number | null; output: string }>",
+      "returns": "Promise<{ code: number | null; output: string; error?: string }>",
       "invokeArgs": "{ cwd, scope }",
       "cast": null,
-      "note": null
+      "note": "10-18 实修：unstaged=git diff / staged=--cached / head=分支起点 merge-base diff（含已提交+未提交，找不到基准才退回 HEAD 并说明）/ last 由渲染层展示；Git 缺失/非仓库/无 HEAD 都回中文原因"
     },
     {
       "name": "openExternal",
