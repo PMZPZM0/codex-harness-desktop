@@ -38,7 +38,12 @@ export const cloudKbFeature = defineFeature<null>({
       }
       const kb = res.data?.knowledge ?? {};
       const url = String(kb.mcpUrl || "");
-      const token = String(kb.mcpToken || "");
+      const rawToken = String(kb.mcpToken || "");
+      /* ⛔⛔ 10-19 实测：引擎的 `env_http_headers` 把环境变量的值**原样**写进请求头，**不会**自动
+         加 `Bearer `（那是 `bearer_token_env_var` 才有的行为）。WeKnora 只认 `Authorization: Bearer <token>`
+         ⇒ 只存裸 token 会得到 `Authorization: mcp_…` → 服务端回 `unauthorized: missing bearer token`
+         （实测：裸 token 401 / 带 Bearer 200）。所以在**落盘前**补前缀，别指望引擎补。 */
+      const token = rawToken && !/^Bearer\s/i.test(rawToken) ? `Bearer ${rawToken}` : rawToken;
       if (!kb.ok || !url || !token) {
         /* 未开通 / 服务端没配 WeKnora：**停用**连接器（不删），并把原因回给界面。 */
         const action = await syncCloudMcpConnector(null, CLOUD_KB_CONNECTOR_ID);
