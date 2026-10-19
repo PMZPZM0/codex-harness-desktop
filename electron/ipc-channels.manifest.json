@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 498,
+  "count": 499,
   "channels": [
     {
       "name": "request",
@@ -4811,6 +4811,16 @@
       "invokeArgs": "input",
       "cast": null,
       "note": "把云端目录同步成本机供应商行（登录成功后 / 手动刷新 / 定时轮询都调它）。⛔ 同时写复数列表与单数生效档案（10-16「勾 5 个下拉 15 个」事故的防线）；force=true 会重签代理令牌"
+    },
+    {
+      "name": "cloudModelsTest",
+      "channel": "cloud-models:test",
+      "paramsImpl": "input?: { forceHeal?: boolean }",
+      "paramsDecl": "input?: { forceHeal?: boolean }",
+      "returns": "Promise<{ ok: boolean; code?: string; error?: string; originalError?: string; healed?: boolean; model?: string; status?: number; latencyMs?: number; models?: number }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "云端模型连通测试（10-19）：探**引擎实际会用的那条路**（本地桥 + 云供应商行合成后的 baseUrl/key，记忆开启时即 memapi + 记忆 userKey）。401/403 自动重签一次并重探；forceHeal=true = 界面「重签密钥并重试」。成功由界面提示保存并重启应用"
     },
     {
       "name": "cloudModelsToken",

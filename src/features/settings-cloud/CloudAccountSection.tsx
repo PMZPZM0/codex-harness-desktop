@@ -17,7 +17,7 @@ import { Spinner } from "../../components/CardShell";
 import { cloudUserCenterUrl } from "../../lib/cloud-links.mjs";
 
 import { SessionSyncDialog } from "./SessionSyncDialog";
-import { ResultDialog } from "./ResultDialog";
+import { ResultDialog, type ResultAction } from "./ResultDialog";
 type AccountView = { id: string; username: string; role: string; baseUrl: string; active: boolean; savedAt: number };
 type AuthStatus = { loggedIn: boolean; baseUrl: string; active: AccountView | null; accounts: AccountView[]; defaultBaseUrl: string };
 type ModelStatus = { loggedIn: boolean; registered: boolean; enabled: boolean; active: boolean; models: number; hasToken: boolean; lastSyncAt: number; account?: string; tokenPrefix?: string };
@@ -25,6 +25,18 @@ type KbStatus = { exists: boolean; enabled: boolean; url: string; hasToken: bool
 type MemoryStatus = { mode: string; hasCredentials: boolean; note: string; upstream?: "memory" | "model"; connectorId?: string };
 type PointTxn = { id?: string; at?: number; delta?: number; kind?: string; note?: string; after?: number };
 type Points = { ok: boolean; balance: number; signupGrant: number; txns: PointTxn[]; error?: string };
+/** cloud-models:test 回执（10-19）：成功 ⇒ 提示保存重启；401/403 主进程已自动重签后重探。 */
+type CloudTestReply = {
+  ok: boolean;
+  code?: string;
+  error?: string;
+  originalError?: string;
+  healed?: boolean;
+  model?: string;
+  status?: number;
+  latencyMs?: number;
+  models?: number;
+};
 
 /** 积分变动的类型标签（与服务端 `kind` 同源；⛔ 不认识的 kind 原样显示，别吞掉）。 */
 const KIND_LABEL: Record<string, string> = {
@@ -47,6 +59,7 @@ type CloudApi = {
   cloudAuthStatus?: () => Promise<AuthStatus>;
   cloudAuthPoints?: () => Promise<Points>;
   cloudModelsSync?: (input?: { force?: boolean }) => Promise<{ ok: boolean; models: number; changed: boolean; promoted: boolean; error?: string }>;
+  cloudModelsTest?: (input?: { forceHeal?: boolean }) => Promise<CloudTestReply>;
   cloudModelsActivate?: () => Promise<{ ok: boolean; model: string; error?: string }>;
   cloudModelsStatus?: () => Promise<ModelStatus>;
   cloudKbSync?: () => Promise<{ ok: boolean; action: string; url?: string; kbName?: string; error?: string }>;
@@ -88,7 +101,7 @@ export function CloudAccountSection() {
   /* 10-18：会话同步用**独立弹窗**（非内嵌）；null = 关闭 */
   const [sessionDialog, setSessionDialog] = useState<"upload" | "pull" | null>(null);
   /* 10-18：连通测试 / 刷新的**弹窗**反馈（内嵌 hint 会被滚动错过） */
-  const [resultDialog, setResultDialog] = useState<{ title: string; tone: "ok" | "err" | "info"; message: string; details?: Array<{ label: string; value: string }> } | null>(null);
+  const [resultDialog, setResultDialog] = useState<{ title: string; tone: "ok" | "err" | "info"; message: string; details?: Array<{ label: string; value: string }>; actions?: ResultAction[] } | null>(null);
   const confirmTimer = useRef<number | null>(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
 
@@ -206,6 +219,100 @@ export function CloudAccountSection() {
       ? { kind: "ok", text: `已把「云端模型」设为当前生效供应商（默认模型 ${r.model}）—— 引擎正在重启以应用新密钥。` }
       : { kind: "err", text: r.error === "no-models" ? "云端没有可用模型，先在云端勾选后再同步" : "切换失败，请先「立即同步模型」再试" });
     await refresh();
+  });
+
+  /* 连通测试成功后的「保存并重启应用」：先做一次非强制同步把配置落定（幂等），
+     再重启应用 —— 引擎进程只在启动时读 Key，不重启则新密钥不生效。 */
+  const doSaveRestart = () => run("save-restart", async () => {
+    const api = cloudApi();
+    if (api.cloudModelsSync) {
+      const r = await api.cloudModelsSync({ force: false });
+      if (!r.ok) {
+        setMsg({ kind: "err", text: `保存失败：${r.error === "not-logged-in" ? "登录已过期，请重新登录" : (r.error || "未知原因")} —— 未重启应用` });
+        return;
+      }
+    }
+    setMsg({ kind: "ok", text: "配置已保存，应用即将重启…" });
+    await new Promise((resolve) => window.setTimeout(resolve, 600));
+    await window.codex.relaunchApp();
+  });
+
+  /* 云端模型连通测试（10-19）—— 与「模型供应商 → 测试当前供应商」同一套逻辑：
+     探活 → 成功提示保存并重启；401/403 由主进程自动重签并重探；仍失败则弹窗给出「重签密钥并重试」。
+     ⛔ 探测的是**行里的合成上游**（记忆开启时 = memapi + 记忆 userKey），不是纯模型通道。 */
+  const doTestModels = (forceHeal = false) => run("test-models", async () => {
+    const api = cloudApi();
+    if (!api.cloudModelsTest) {
+      setResultDialog({ title: "连通测试 · 云端模型", tone: "err", message: "当前版本不支持云端模型探测（缺少 cloudModelsTest），请更新后再试。" });
+      return;
+    }
+    setMsg(null);
+    try {
+      const r = await api.cloudModelsTest({ forceHeal });
+      refreshProviders();
+      await refresh().catch(() => undefined);
+      if (r.ok) {
+        const response = `HTTP ${r.status ?? "—"} · ${r.latencyMs ?? 0} ms · ${r.models ?? 0} 个模型可用`;
+        setResultDialog({
+          title: "连通测试 · 云端模型",
+          tone: "ok",
+          message: r.healed
+            ? "连接成功。刚才的本机密钥已失效，已自动重签并恢复。点「保存并重启应用」让引擎用上新密钥。"
+            : "连接成功。点「保存并重启应用」确保配置在引擎中生效。",
+          details: [
+            { label: "模型", value: r.model || "—" },
+            { label: "响应", value: response },
+            ...(r.healed ? [{ label: "自愈", value: "已自动重签并刷新记忆凭据" }] : []),
+            { label: "注意", value: "重启会中断正在运行的任务（会话历史完整保留）" },
+          ],
+          actions: [
+            { label: "保存并重启应用", primary: true, onClick: doSaveRestart },
+            { label: "稍后", onClick: () => undefined },
+          ],
+        });
+        return;
+      }
+      const healFailed = r.code === "heal-failed";
+      const stillFailing = r.code === "still-failing";
+      const authTrouble = healFailed || stillFailing;
+      const canResign = authTrouble || r.code === "no-token";
+      /* 动作按失败类型给，不一律甩「重签」：网络不通重签没用、未登录更不该签；
+         没模型/没供应商的正确下一步是同步（否则用户只能关掉弹窗自己找按钮）。 */
+      const actions: ResultAction[] = [];
+      if (canResign) actions.push({ label: "重签密钥并重试", primary: true, onClick: () => { void doTestModels(true); } });
+      else if (r.code === "unreachable") actions.push({ label: "重试", primary: true, onClick: () => { void doTestModels(false); } });
+      else if (r.code === "no-provider" || r.code === "no-model") actions.push({ label: "立即同步模型", primary: true, onClick: () => doSync(false) });
+      if (authTrouble) actions.push({ label: "云端用户中心", onClick: openUserCenter });
+      actions.push({ label: "关闭", onClick: () => undefined });
+      const advice = authTrouble
+        ? "重签密钥后重试；仍失败检查账号权益或稍后再试"
+        : r.code === "unreachable"
+          ? "检查网络后重试；持续失败请打开云端用户中心"
+          : r.code === "not-logged-in"
+            ? "重新登录云账号后再测试"
+            : "先「立即同步模型」，再重试";
+      setResultDialog({
+        title: "连通测试 · 云端模型",
+        tone: "err",
+        message: healFailed
+          ? "认证失败，自动重签密钥也没成功。可以手动重签再试一次；仍失败请打开云端用户中心检查账号与权益。"
+          : stillFailing
+            ? "已自动重签密钥，但连接仍然失败。请打开云端用户中心确认账号/权益，或稍后再试。"
+            : r.code === "not-logged-in"
+              ? "登录已过期 —— 请重新登录云账号后再测试。"
+              : r.code === "no-provider" || r.code === "no-model" || r.code === "no-token"
+                ? (r.error || "云端模型尚未就绪：先同步模型、补齐密钥后再测试。")
+                : `连接失败：${r.error || "未知原因"}`,
+        details: [
+          ...(r.error ? [{ label: "原因", value: r.error }] : []),
+          ...(r.originalError && r.originalError !== r.error ? [{ label: "原始错误", value: r.originalError }] : []),
+          { label: "建议", value: advice },
+        ],
+        actions,
+      });
+    } catch (error: any) {
+      setResultDialog({ title: "连通测试 · 云端模型", tone: "err", message: `探测异常：${String(error?.message ?? error).slice(0, 200)}` });
+    }
   });
 
   const doKb = () => run("kb", async () => {
@@ -433,6 +540,10 @@ export function CloudAccountSection() {
               </button>
               <button className="secondary-setting" disabled={!!busy} onClick={() => doSync(true)}>
                 <RotateCcw size={14} />{busy === "resync" ? "重签中…" : "重签密钥并同步"}
+              </button>
+              {/* 10-19：与供应商页「测试当前供应商」同口径；成功 → 保存并重启，失败 → 重签密钥重试 */}
+              <button className="secondary-setting" disabled={!!busy || !models?.registered || !models.models} onClick={() => doTestModels(false)} title="测试云端模型链路（与引擎实际使用的上游一致；401 会自动重签一次）">
+                <RefreshCw size={14} />{busy === "test-models" ? "测试中…" : "连通测试"}
               </button>
               <button className="secondary-setting" onClick={openUserCenter}>
                 <ExternalLink size={14} />云端用户中心

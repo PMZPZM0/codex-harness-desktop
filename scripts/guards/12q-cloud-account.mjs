@@ -32,7 +32,7 @@ const ok = (condition, message) => {
 
 const DOMAINS = [
   { id: "cloud-auth", file: "features/cloud-auth-ipc.ts", channels: ["cloud-auth:login", "cloud-auth:logout", "cloud-auth:switch", "cloud-auth:status", "cloud-auth:points"] },
-  { id: "cloud-models", file: "features/cloud-models-ipc.ts", channels: ["cloud-models:catalog", "cloud-models:sync", "cloud-models:token", "cloud-models:set-enabled", "cloud-models:activate", "cloud-models:status"] },
+  { id: "cloud-models", file: "features/cloud-models-ipc.ts", channels: ["cloud-models:catalog", "cloud-models:sync", "cloud-models:test", "cloud-models:token", "cloud-models:set-enabled", "cloud-models:activate", "cloud-models:status"] },
   { id: "cloud-kb", file: "features/cloud-kb-ipc.ts", channels: ["cloud-kb:sync", "cloud-kb:status"] },
   { id: "cloud-memory", file: "features/cloud-memory-ipc.ts", channels: ["cloud-memory:sync", "cloud-memory:status"] },
 ];
@@ -58,7 +58,7 @@ ok(unregistered.length === 0, `四个云域都在组合表里启用（未启用�
 const dupFiles = DOMAINS.filter((d) => rows.filter((r) => r && r.file === d.file).length !== 1).map((d) => d.file);
 ok(dupFiles.length === 0, `云域文件在组合表里各出现且仅出现一次（异常：${dupFiles.join("/") || "无"}）`);
 
-/* ── ② manifest：13 条通道全在，且 count 自洽 ─────────────────────────── */
+/* ── ② manifest：四域通道全在，且 count 自洽 ───────────────────────────── */
 const manifestChannels = (manifest.channels || []).map((c) => c.channel);
 const missingCh = ALL_CHANNELS.filter((c) => !manifestChannels.includes(c));
 ok(missingCh.length === 0, `manifest 含全部 ${ALL_CHANNELS.length} 条云域通道（缺：${missingCh.join("/") || "无"}）`);

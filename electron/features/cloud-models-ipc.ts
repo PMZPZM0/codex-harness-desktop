@@ -20,9 +20,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
-import { accountsBase, cloudFetch, cloudHome, encrypt, loginState } from "../cloud-api";
+import { accountsBase, cloudFetch, cloudHome, decrypt, encrypt, loginState } from "../cloud-api";
 import { issueProxyToken, readProxyToken, verifyProxyToken } from "../cloud-token";
-import { applyCloudProvider, activateCloudProvider, isCloudActive, readCloudProviderRow, readMemoryUpstream, refreshMemoryUpstreamFromIntegrations, type CloudCatalogModel, repairCloudProviderProtocol, refreshEngineProviders } from "../cloud-provider";
+import { healCloudAccess } from "../cloud-heal";
+import { probeCustomModel } from "./custom-model-probe";
+import { applyCloudProvider, activateCloudProvider, isCloudActive, readCloudProviderRow, readMemoryUpstream, refreshMemoryUpstreamFromIntegrations, type CloudCatalogModel, CLOUD_PROVIDER_ID, repairCloudProviderProtocol, refreshEngineProviders } from "../cloud-provider";
 
 /** 域内 IPC 通道。 */
 const CHANNELS = [
@@ -32,6 +34,7 @@ const CHANNELS = [
   "cloud-models:set-enabled",
   "cloud-models:activate",
   "cloud-models:status",
+  "cloud-models:test",
 ];
 
 /** 轮询间隔（分钟）。⛔ 只是"保持更新"的下限，任何手动动作都会立刻触发一次同步。 */
@@ -46,6 +49,21 @@ type CatalogReply = {
 };
 
 type SyncReply = { ok: boolean; models: number; changed: boolean; promoted: boolean; error?: string };
+
+/** `cloud-models:test` 的结构化回执（渲染层据此决定「保存重启」还是「重签」）。 */
+export type CloudTestReply = {
+  ok: boolean;
+  code?: "not-logged-in" | "no-provider" | "no-model" | "no-token" | "unreachable" | "heal-failed" | "still-failing";
+  error?: string;
+  /** 自愈前的原始错误（诊断用）。 */
+  originalError?: string;
+  /** 本次是否真的重签过（true ⇒ 必须重启引擎/应用才生效）。 */
+  healed?: boolean;
+  model?: string;
+  status?: number;
+  latencyMs?: number;
+  models?: number;
+};
 
 let lastSyncAt = 0;
 
@@ -113,6 +131,74 @@ async function syncModels(force: boolean): Promise<SyncReply> {
   return { ok: true, ...applied };
 }
 
+/** 选一个可测的模型：行里当前选中的优先，否则取第一个仍启用的。 */
+function pickTestModel(row: { model?: string; models?: Array<{ id: string; enabled?: boolean }> }): string {
+  const current = String(row.model || "").trim();
+  if (current && (row.models ?? []).some((m) => m.id === current && m.enabled !== false)) return current;
+  return String((row.models ?? []).find((m) => m.enabled !== false)?.id || current || "");
+}
+
+/**
+ * 云端模型连通测试（10-19）—— 与「模型供应商 → 测试当前供应商」同一套探活核心，
+ * 但探的是**引擎实际会用的那条路**（本地桥 + 云供应商行当前的 baseUrl/key）。
+ *
+ * 闭环：
+ *   ① 直接探活；成功 ⇒ ok（渲染层提示保存并重启）。
+ *   ② 401/403 ⇒ `healCloudAccess()`（强制重签 + 写回行 + 刷新记忆 userKey）→ **重探一次**。
+ *   ③ 仍失败 / 网络异常 ⇒ 如实回执，不再连环重签（避免把同账号其它设备挤出令牌环）。
+ * `forceHeal=true` 是界面上的「重签密钥并重试」按钮：先重签再探，一次一条路径。
+ *
+ * ⛔ 探测对象必须是**行里的合成上游**：记忆开启时它是 memapi + 记忆 userKey，
+ *   不是代理令牌 —— 只测纯模型通道会得出「测试通过、对话 401」的假绿。
+ */
+async function testCloudModels(forceHeal: boolean): Promise<CloudTestReply> {
+  if (!loginState().loggedIn) return { ok: false, code: "not-logged-in", error: "未登录云账号" };
+  let row = await readCloudProviderRow();
+  if (!row) return { ok: false, code: "no-provider", error: "云端模型尚未注册 —— 先点「立即同步模型」" };
+  if (!pickTestModel(row)) return { ok: false, code: "no-model", error: "云端没有可用模型 —— 先在云端勾选并同步" };
+
+  let healed = false;
+  if (forceHeal) {
+    const heal = await healCloudAccess();
+    if (!heal.ok) return { ok: false, code: "heal-failed", error: heal.error || "token-failed", healed: false };
+    healed = true;
+    row = (await readCloudProviderRow()) ?? row;
+  }
+
+  const attempt = async (): Promise<{ model: string; result: Awaited<ReturnType<typeof probeCustomModel>> }> => {
+    const current = (await readCloudProviderRow()) ?? row!;
+    const model = pickTestModel(current);
+    if (!model) throw Object.assign(new Error("云端没有可用模型"), { code: "no-model" });
+    const key = decrypt(current.encryptedKey);
+    if (!key) throw Object.assign(new Error("本机云密钥不可用（安全存储解码失败）—— 请重启应用后重试"), { code: "no-token" });
+    const result = await probeCustomModel({ provider: CLOUD_PROVIDER_ID, baseUrl: current.baseUrl, apiKey: key, model, wireApi: "responses" });
+    return { model, result };
+  };
+
+  try {
+    const { model, result } = await attempt();
+    return { ok: true, healed, model, status: result.status, latencyMs: result.latencyMs, models: result.models?.length ?? 0 };
+  } catch (error: any) {
+    const code = String(error?.code || "");
+    const message = String(error?.message ?? error);
+    if (code === "no-token" || code === "no-model") return { ok: false, code: code as CloudTestReply["code"], error: message, healed };
+    /* 非认证类失败（域名解析 / 连接拒绝 / 模型不存在 / 上游 5xx）：重签没有意义，如实回报。 */
+    if (!/认证失败（HTTP (401|403)）/.test(message)) return { ok: false, code: "unreachable", error: message, healed };
+    if (healed) return { ok: false, code: "still-failing", error: message, healed: true };
+
+    const heal = await healCloudAccess();
+    if (!heal.ok) {
+      return { ok: false, code: "heal-failed", error: `认证失败，自动重签未成功：${heal.error || "unknown"}`, originalError: message, healed: false };
+    }
+    try {
+      const { model, result } = await attempt();
+      return { ok: true, healed: true, model, status: result.status, latencyMs: result.latencyMs, models: result.models?.length ?? 0 };
+    } catch (retryError: any) {
+      return { ok: false, code: "still-failing", error: String(retryError?.message ?? retryError), originalError: message, healed: true };
+    }
+  }
+}
+
 async function localStatus() {
   const state = loginState();
   const row = await readCloudProviderRow();
@@ -168,6 +254,9 @@ export const cloudModelsFeature = defineFeature<null>({
     });
     /* 同步（手动刷新按钮 / 面板打开 / 登录成功后）。input.force 会重签代理令牌。 */
     ipcHost.handle("cloud-models:sync", async (_event, input?: { force?: boolean }) => syncModels(Boolean(input?.force)));
+    /* 云端模型连通测试（10-19）：与供应商页「测试当前供应商」同口径；401/403 自动重签并重试，
+       forceHeal=true 对应界面上的「重签密钥并重试」（先重签再探）。 */
+    ipcHost.handle("cloud-models:test", async (_event, input?: { forceHeal?: boolean }) => testCloudModels(Boolean(input?.forceHeal)));
     /* 单独取令牌（供应商 Key 掉了的"修复"入口）。⛔ 明文只在这一条通道返回。 */
     ipcHost.handle("cloud-models:token", async (_event, input?: { force?: boolean }) =>
       issueProxyToken(input?.force !== false));
