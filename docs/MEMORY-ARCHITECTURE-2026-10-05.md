@@ -1,6 +1,7 @@
 # 统一记忆架构（Unified Memory Fabric）
 
 > 状态：**10-05 实施中** —— 本文件是记忆系统的**架构真相源**。
+> **10-20 增补**：MCP 后端生效时的写入面与本地金字塔职责见 **§10**（与上文三层作用域并存）。
 > ⚠️ **10-05 晚间修订**：作用域从两级扩到**三层**（用户定稿「私有 + 团内共享 + 项目共享」），
 >   并新增「被调度实例按调度作用域隔离」；前端另立 `src/features/memory-ui`（七类差异化视图，⛔ 界面纯只读）。
 >   下面 §1/§2 的两级表述已被三层取代，⛔ 改代码前以本修订为准。
@@ -366,3 +367,51 @@ await window.codex.memoryHandle({ threadId, workspace })   // IPC，返回可注
   不为了方便而放松（10-03 用户已因擅自收紧/放宽 fs:write 表达过不满）。
 - **`entries.jsonl` 不做并发写锁**。当前写入是单主进程串行（`fs.writeFile` 追加），
   若将来多进程写同一工作区需加锁。⛔ 已知限制，不是遗漏。
+
+---
+
+## 10. 10-20 修订：记忆后端分支（MCP 生效时）
+
+> 背景：用户把记忆后端切到 MCP 后，旧的第 7 条仍要求模型「必须往 `lessons/` 追加」，
+> 而 `appendLesson` 在 MCP 模式下直接 `return false`（让位）⇒ 模型做无效写入、坑/纠错静默丢失；
+> 同时宿主 `memory_write` 与 MCP `memory-write` 两个同名工具并存 ⇒ 可能双写。
+> 本条把「显式写入 / 自动捕获 / 常驻注入」三件事的归属钉死。判定一律用 `effectiveMemoryBackend()`。
+
+### 10.1 写入面（MCP 生效时）
+
+| 写入者 / 来源 | 落到哪 | 规则 |
+|---|---|---|
+| Codex 显式记忆 | MCP `memory-write` | `type` ∈ code_fact / decision / mistake / pattern / task_archive；`importance` 1–5；先过四问；⛔ 不写 `lessons/*.md` / `MEMORY.md` |
+| 应用自动捕获 | L0 `USER.md` + L4 `logs/YYYY-MM-DD.md` | 继续；Codex 不要重复写 |
+| 自动捕获的 lesson 候选 | `lessons/misc.md` 的 `## 待入 MCP（自动捕获，落库后删除）` | **队列**，不是第二份记忆；Codex 下一轮落 MCP 后删掉该行 |
+| 内置金字塔 | 常驻注入 + 90% 蒸馏 | 只读；不接 lesson 写入 |
+| 宿主 `memory_write` | — | MCP 模式下**不暴露**（避免同名双写）；内置模式保留，scope 统一 `private` / `project` |
+
+### 10.2 判据（与内置同一套，不再引用已停用的 memory-classify）
+
+写之前四问（任一为否就不写）：
+1. 未来还会遇到吗？
+2. 不知道这条，下次会犯错吗？
+3. 能写成一句可执行的约束吗？
+4. 现在不记，下次能自己推出来吗？
+
+**明令不写**：进度播报 · 命令回显 · 一次性排查过程 · 临时路径/ID ·
+代码能表达的（函数签名、目录结构、配置取值）· 已有技能承载的流程 · 重复条目。
+
+**MCP 类型映射**：踩坑/纠错 → `mistake`；定下来的做法/取舍 → `decision`；
+可复用套路 → `pattern`；代码里读不出来的事实/约定 → `code_fact`；任务归档 → `task_archive`。
+
+判据正文在 `electron/builtin-skills/13-skill-memory-mcp.ts`；守卫 `scripts/guards/10b-memory-write-gate.mjs`
+钉住「四问 / 明令不写 / 待入 MCP」必须在技能正文里（技能改了但判据没同步 = 红）。
+
+### 10.3 为什么保留本地金字塔
+
+MCP 只替代**显式记忆库**；L0 画像、L4 日志、常驻注入、90% 蒸馏仍是「每轮上下文」的来源。
+⛔ 不能因为切了 MCP 就把金字塔关掉——那会让模型失去常驻纪律与用户画像，也会让历史检索断档。
+
+### 10.4 工具面
+
+- 主会话的 `memory_write` / `memory_recall` 只在 `bag.memoryEnabled && bag.memoryBackend !== "mcp"` 时注册；
+  MCP 模式由 MCP 的 `memory-write` / `memory-read` 接管。
+- `memory_write` 的 scope 统一为 `private` / `project`；旧 `session` 仍由内核归一化到 `private`（兼容老会话）。
+- 被委派角色的 `memory_write`（`memory-fabric-tool.ts`）仍使用 `private` / `team` / `project` 三层，`promote` 闸不变。

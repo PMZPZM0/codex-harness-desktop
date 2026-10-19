@@ -233,5 +233,23 @@ if (mod && typeof mod.scanSensitive === "function") {
   ok(/\[memory\] 未写入纪律/.test(layers), "被拒时留痕（⛔ 不许静默吞：判据是启发式，拒错要能复盘）");
 }
 
+/* ⑮ MCP 后端收敛（10-20）：宿主 fabric 工具与 MCP memory-write 不许同名双写；
+   自动捕获的 lesson 候选必须有着落（待入 MCP 区），不能静默丢。 */
+{
+  const seg = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part08", "01-seg.tsx"), "utf8");
+  ok(/bag\.memoryEnabled && bag\.memoryBackend !== "mcp"/.test(seg), "MCP 后端不暴露宿主 memory_write/memory_recall");
+  ok(/enum: \["private", "project"\]/.test(seg), "主会话 scope 统一 private/project（旧 session 仅兼容）");
+  const store = readFileSync(join(ROOT, "electron", "memory-store.ts"), "utf8");
+  const layers = readFileSync(join(ROOT, "electron", "memory-layers.ts"), "utf8");
+  const budget = readFileSync(join(ROOT, "electron", "memory", "layers-budget.ts"), "utf8");
+  ok(/appendPendingLesson/.test(store) && /appendPendingLesson/.test(layers), "MCP 模式自动捕获 lesson 候选有落点（不静默丢）");
+  ok(/PENDING_MCP_SECTION/.test(budget) && /待入 MCP/.test(budget), "待归档区标题存在（Codex 能看见）");
+  const mcpSkill = readFileSync(join(ROOT, "electron", "builtin-skills", "13-skill-memory-mcp.ts"), "utf8");
+  ok(/四问/.test(mcpSkill) && /明令不写/.test(mcpSkill), "MCP 技能自带判据（不依赖已停用的 memory-classify）");
+  ok(/待入 MCP/.test(mcpSkill), "MCP 技能说明待归档区怎么排空");
+  const dev = readFileSync(join(ROOT, "electron", "developer-instructions.ts"), "utf8");
+  ok(/MCP_MEMORY_INSTRUCTIONS/.test(dev) && /memoryInstructions\(\)/.test(dev), "第 7 条按后端分支（MCP 不再要求直写 lessons）");
+}
+
 console.log(`【memGate】${checks - fails}/${checks} 通过`);
 if (fails) process.exitCode = 1;
