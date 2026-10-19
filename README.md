@@ -232,7 +232,7 @@ npm run verify   # = npm run check（离线预检）+ npm run e2e（拉起应用
 | 渠道 | 地址 |
 |---|---|
 | 🐛 GitHub Issues | [提交 Bug / 建议](../../issues) |
-| 💬 官网反馈页 | [www.jvszzp.ltd/feedback.html](https://www.jvszzp.ltd/feedback.html) |
+| 💬 官网反馈页 | [dl.ppz123.asia/feedback.html](https://dl.ppz123.asia/feedback.html) |
 | 📦 下载与更新 | [GitHub Releases](../../releases)（唯一更新源） |
 
 ## ⚠️ 免责声明

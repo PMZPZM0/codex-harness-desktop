@@ -557,7 +557,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                     <div className="account-menu-sep" />
                     <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); setSettingsPage("usage"); setSettingsOpen(true); }}><CircleGauge size={15} className="ic-blue" /><span>使用统计</span></button>
                     <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); setSettingsPage("user"); setSettingsOpen(true); setMobileNav(false); }}><UserRound size={15} className="ic-blue" /><span>用户中心</span></button>
-                    <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); void window.codex.openExternal("https://www.jvszzp.ltd/feedback.html"); }}><MessageSquarePlus size={15} className="ic-amber" /><span>问题反馈</span><ExternalLink size={12} className="account-menu-arrow" /></button>
+                    <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); void window.codex.openExternal("https://dl.ppz123.asia/feedback.html"); }}><MessageSquarePlus size={15} className="ic-amber" /><span>问题反馈</span><ExternalLink size={12} className="account-menu-arrow" /></button>
                     <div className="account-menu-sep" />
                     <button className="account-menu-item" onClick={() => { setAccountMenuOpen(false); handleLogout(); }}><LogOut size={15} /><span>退出登录</span></button>
                   </>}

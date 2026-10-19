@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        欢迎提想法！也欢迎到 [官网反馈页](https://www.jvszzp.ltd/feedback.html) 讨论。
+        欢迎提想法！也欢迎到 [官网反馈页](https://dl.ppz123.asia/feedback.html) 讨论。
   - type: textarea
     id: problem
     attributes:
