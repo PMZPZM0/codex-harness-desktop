@@ -841,10 +841,19 @@ const appSrc4 = readAppUi();
   /userScrolledRef\.current/.test(scrollFn)
     ? ok("★ 自动续载只认「真实用户滚动」（滚轮/触摸/翻页键/拖滚动条）")
     : fail("自动续载又只看 scrollTop —— 打开会话的程序化滚动会让「用户没滚也加载」");
-  const anchorFn = appSrc4.slice(appSrc4.indexOf("async function loadEarlierTurns"), appSrc4.indexOf("async function loadEarlierTurns") + 4200);
+  const anchorFn = appSrc4.slice(appSrc4.indexOf("async function loadEarlierTurns"), appSrc4.indexOf("async function loadEarlierTurns") + 6200);
   /anchorTopBefore/.test(anchorFn) && /isConnected/.test(anchorFn)
     ? ok("★ 位置补偿用锚点元素位移（content-visibility 下 scrollHeight 不可靠）")
     : fail("位置补偿退回 scrollHeight 增量 —— 上方插入内容会把用户看的内容顶飞");
+  /* ⛔ 10-19 用户实测「上滚续页会跳到上一页最上面」：单次双 rAF 补偿后，content-visibility 的
+     真实行高结算会把内容再推一次（同机探针实测同一锚点被顶飞 383px）⇒ 必须**多帧收敛**，
+     且用户一有滚轮/触摸输入就停手（不能和用户抢滚动）。 */
+  /const deadline = performance\.now\(\) \+ 260/.test(anchorFn) && /requestAnimationFrame\(pin\)/.test(anchorFn)
+    ? ok("★ 续载位置补偿多帧收敛（单次双 rAF 不够 —— content-visibility 行高结算会把内容再推一次）")
+    : fail("续载只做一次位置补偿 —— 用户上滚会跳到上一页最上面（10-19 实测）");
+  /addEventListener\("wheel", cancel/.test(anchorFn) && /removeEventListener\("wheel", cancel\)/.test(anchorFn)
+    ? ok("★ 收敛期间用户一滚就停手（滚轮/触摸取消补偿，且监听器收尾时移除）")
+    : fail("收敛循环会跟用户抢滚动（或监听器泄漏）");
   /setEarlierLoadingId/.test(anchorFn) && /load-earlier-hint/.test(appSrc4)
     ? ok("续载有可见提示（不再是静默加载）")
     : fail("续载没有载入提示");

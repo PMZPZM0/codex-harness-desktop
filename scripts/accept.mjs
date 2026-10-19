@@ -2734,6 +2734,51 @@ const CHECKS = [
       await wait(400);
     },
   },
+  {
+    id: "scroll-anchor",
+    name: "㉛ 上滚续载：视口不跳（同一锚点回合的视口 top 保持 ±4px）",
+    run: async (h) => {
+      /* 10-19 用户实测「上滚续页会跳到上一页最上面」：单次双 rAF 补偿后，content-visibility
+         的真实行高结算会把内容再推一次 ⇒ 改为多帧收敛。这里真跑：滚到 300 → 点「加载更早」→
+         同一个 .turn-group 节点的视口 top 必须守住（±4px），且回合数确实变多（非恒真）。 */
+      await h.waitFor(`!!document.querySelector(".timeline") && document.querySelectorAll(".thread-row").length > 0`, { label: "主界面", timeoutMs: 40000 }).catch(() => undefined);
+      await wait(2000);
+      const rows = Number(await h.eval(`document.querySelectorAll(".thread-row").length`)) || 0;
+      let opened = false;
+      for (let i = 0; i < Math.min(rows, 10) && !opened; i++) {
+        await h.eval(`(function(){ var rows=[...document.querySelectorAll(".thread-row")]; rows[${i}] && rows[${i}].click(); return 1; })()`);
+        await wait(1600);
+        opened = Boolean(await h.eval(`!!document.querySelector(".timeline .load-earlier-turns")`));
+      }
+      h.check("① 前置：找到一个有「加载更早」按钮的长会话（历史多到需要分页）", opened === true, JSON.stringify({ rows }));
+      if (!opened) return;
+      await h.eval(`(function(){ var el=document.querySelector(".timeline"); el.scrollTop = 300; return Math.round(el.scrollTop); })()`);
+      await wait(300);
+      const before = await h.eval(`(function(){
+        var el=document.querySelector(".timeline");
+        var groups=[...el.querySelectorAll(".turn-group")];
+        var anchor=groups.find(function(n){ return n.getBoundingClientRect().bottom > 0; });
+        window.__scrollAnchorProbe = anchor;
+        return { top: anchor ? Math.round(anchor.getBoundingClientRect().top) : null, groups: groups.length, scrollTop: Math.round(el.scrollTop), scrollHeight: el.scrollHeight };
+      })()`);
+      const clicked = await h.eval(`(function(){ var b=document.querySelector(".timeline .load-earlier-turns"); if(!b) return false; b.click(); return true; })()`);
+      await wait(1000);
+      const after = await h.eval(`(function(){
+        var el=document.querySelector(".timeline");
+        var a=window.__scrollAnchorProbe;
+        return { connected: !!(a && a.isConnected), top: a && a.isConnected ? Math.round(a.getBoundingClientRect().top) : null,
+          groups: el.querySelectorAll(".turn-group").length, scrollTop: Math.round(el.scrollTop), scrollHeight: el.scrollHeight };
+      })()`);
+      h.check("② 续载后同一锚点回合的视口位置保持（±4px）—— 不允许跳到上一页顶部",
+        clicked === true && after.connected === true && before.top != null && after.top != null && Math.abs(after.top - before.top) <= 4,
+        JSON.stringify({ before, after, shift: after.top != null && before.top != null ? after.top - before.top : null }));
+      h.check("③ 续载确实加载了更早的回合（回合数变多 ⇒ 断言不是恒真）",
+        after.groups > before.groups, JSON.stringify({ before: before.groups, after: after.groups }));
+      // 收尾：切回最新会话（别把后续项留在旧会话上）
+      await h.eval(`(function(){ var rows=[...document.querySelectorAll(".thread-row")]; rows[0] && rows[0].click(); return 1; })()`);
+      await wait(600);
+    },
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2763,7 +2808,7 @@ async function enterMain(h) {
 //   历史项不删（它们仍然是回归证据），但**永远不会在默认路径上被执行** ——
 //   这样"每次只测最新改动"是机制保证的，不再依赖我记不记得。
 // ─────────────────────────────────────────────────────────────────────────────
-const LATEST_ROUND = "10-18";   // 10-18 轮：Laya 判断工具（装了才暴露；未装拒绝且不自动安装）；10-16 刷新回执转回归证据
+const LATEST_ROUND = "10-19";   // 10-19 轮：上滚续载视口不跳（scroll-anchor）；10-18 的 Laya 判断工具转回归证据
 // 上一轮（10-06）的五个验收项仍是回归证据：--only <id> 单跑，或 --all 全量。
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
@@ -2776,6 +2821,7 @@ const ROUND_OF = {
   "laya-judge": "10-18",   // 10-18 轮：Laya 判断工具（装了才暴露；未装拒绝且不自动安装；纯函数真值表由守卫 12s 钉）
   "html-preview": "10-18",   // 10-18 轮：HTML 实时预览（真回合写 HTML → 自动开右栏浏览器 + 加宽 + 文件变更重载）
   "git-review": "10-18",   // 10-18 轮：右栏变更四个范围（临时仓库验证分支起点 + 暂存/未暂存 + UI 下拉）
+  "scroll-anchor": "10-19",   // 10-19 轮：上滚续载视口不跳（同一锚点回合的视口 top 保持 ±4px）
   "compact-line": "10-07",   // 10-07 夜十一轮：压缩线（新会话 + 短回合 + 手动压缩 → 宿主侦测真链路 → 线出现 + 落盘）
   "devtools-install-ux": "10-11",   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）
   "free-gateway": "10-12",   // 10-12 轮：免费模型网关（第三方开源侧车 + 一键注册供应商；免责声明为契约）   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）
