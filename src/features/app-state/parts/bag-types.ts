@@ -910,7 +910,7 @@ export interface Bag {
   memoryGateway: import("../../../hooks/useMemory.ts").MemoryGatewayState;
   setMemoryGateway: React.Dispatch<React.SetStateAction<import("../../../hooks/useMemory.ts").MemoryGatewayState>>;
   memoryGatewayAction: "save" | "test" | null;
-  memoryMode: import("../../../hooks/useMemory.ts").MemoryMode;
+  memoryMode: import("../../../hooks/useMemory.ts").MemoryMode; memoryBackend: "builtin" | "mcp";
   updateMemoryMode: (mode: import("../../../hooks/useMemory.ts").MemoryMode) => Promise<void>;
   workspaceMemoryEnabled: boolean;
   updateWorkspaceMemory: (enabled: boolean, workspaceOverride?: string | undefined) => void;
