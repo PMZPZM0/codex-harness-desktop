@@ -17,6 +17,7 @@ import type { CodexServer } from "./codex-server";
 import { MEMORY_CATEGORY_WEIGHT, MEMORY_MAX_RECORDS, MEMORY_TTL_MS, pickPrunable } from "./memory/memory-prune";
 import { debugMemoryCapture } from "./memory-capture-debug";
 import { buildLessonLine, buildLogEntry, buildUserProfileLine, shouldCapture } from "./memory-lessons";
+import { effectiveMemoryBackend } from "./memory-backend";
 import { isScratchWorkspace } from "./memory-layers";
 export const MEMORY_CATEGORIES = ["用户偏好", "项目背景", "工作流/SOP", "任务经验", "临时上下文"] as const;
 /**
@@ -73,12 +74,12 @@ export class MemoryStore {
 
   /** L2 每日日志 + L1.5 坑与纪律的落点：自动捕获的唯一出口，长期记忆层（L1 MEMORY.md）不在这里写。
    *  `appendLesson` 第四参 = **分类**（「用户纠错」单独一类，正常落 `## 用户纠错` 节，注入最前）。 */
-  private layers?: { appendLog(workspace: string, summary: string): Promise<void>; appendLesson?(workspace: string, line: string, dedupeKey: string, category?: string): Promise<boolean>; appendUserProfile?(line: string): Promise<boolean> };
+  private layers?: { appendLog(workspace: string, summary: string): Promise<void>; appendLesson?(workspace: string, line: string, dedupeKey: string, category?: string): Promise<boolean>; appendPendingLesson?(workspace: string, line: string, dedupeKey: string, category?: string): Promise<boolean>; appendUserProfile?(line: string): Promise<boolean> };
 
   constructor(private readonly file: string) {}
 
   /** 注入记忆分层模块（结构化类型，避免与 electron/memory-layers 产生循环依赖） */
-  setLayers(layers: { appendLog(workspace: string, summary: string): Promise<void>; appendLesson?(workspace: string, line: string, dedupeKey: string, category?: string): Promise<boolean>; appendUserProfile?(line: string): Promise<boolean> }) { this.layers = layers; }
+  setLayers(layers: { appendLog(workspace: string, summary: string): Promise<void>; appendLesson?(workspace: string, line: string, dedupeKey: string, category?: string): Promise<boolean>; appendPendingLesson?(workspace: string, line: string, dedupeKey: string, category?: string): Promise<boolean>; appendUserProfile?(line: string): Promise<boolean> }) { this.layers = layers; }
 
   setRemote(config?: MemoryRemoteConfig) { this.remote = config?.endpoint ? config : undefined; }
 
@@ -139,12 +140,21 @@ export class MemoryStore {
     await this.layers.appendLog(workspace, summary)
       .then(() => debug("written", { forced: verdict.forced }))
       .catch((error: any) => debug("append-failed", { error: error?.message ?? String(error) }));
-    /* 纪律行：单独一条，写进 L1.5 的**对应分类节**（纠错单独一节；去重靠现象首句，重复出现不再追加） */
+    /* 纪律行：单独一条，写进 L1.5 的**对应分类节**（纠错单独一节；去重靠现象首句，重复出现不再追加）。
+       10-20：MCP 后端下 appendLesson 会让位（返回 false）⇒ 不能静默丢，改落「待入 MCP」区，
+       Codex 下一轮读常驻记忆时把它写进 MCP，然后删掉该行。 */
     const lesson = buildLessonLine({ userContent, assistantContent, date });
     if (!lesson) return;
-    if (typeof this.layers.appendLesson !== "function") return debug("lesson-unsupported");
-    await this.layers.appendLesson(workspace, lesson.line, lesson.dedupeKey, lesson.category)
-      .then((added: boolean) => debug(added ? "lesson-written" : "lesson-duplicate", { basis: lesson.basis, category: lesson.category }))
+    const layers = this.layers;
+    if (!layers) return debug("lesson-unsupported");
+    const usePending = effectiveMemoryBackend() === "mcp" && typeof layers.appendPendingLesson === "function";
+    const append = usePending ? layers.appendPendingLesson : layers.appendLesson;
+    if (!append) return debug("lesson-unsupported");
+    await append.call(layers, workspace, lesson.line, lesson.dedupeKey, lesson.category)
+      .then((added: boolean) => debug(
+        added ? (usePending ? "pending-written" : "lesson-written") : (usePending ? "pending-duplicate" : "lesson-duplicate"),
+        { basis: lesson.basis, category: lesson.category },
+      ))
       .catch((error: any) => debug("lesson-failed", { error: error?.message ?? String(error) }));
   }
 

@@ -8,7 +8,7 @@ import { effectiveMemoryBackend } from "./memory-backend";
 /* P2 批次 4（10-18）：布局常量 / 预算 / 金字塔 / 水位 / 蒸馏切分等**纯逻辑**已切到 ./memory/layers-budget。
    ⛔ 重导出保持对外 API；类区仍使用的符号在下方显式回引。 */
 export * from "./memory/layers-budget";
-import { MEMORY_DIR, MEMORY_SUB, ARCHIVE_DIR, PROJECT_DIR, LESSONS_DIR, LOGS_DIR, ROLLUP_DIR, MEMORY_FILE, BACKGROUND_FILE, LESSON_FILES, LESSON_MISC_FILE, LEGACY_LESSONS, LEGACY_MARK, MEMORY_BUDGET, DEFAULT_MEMORY_SCALE, normalizeMemoryScale, scaledMemoryBudget, LESSONS_MAX_LINES, DISTILL_AFTER_DAYS, AUTO_DISTILL_INTERVAL_MS, DISTILL_MIN_CHARS, MEMORY_DISTILL_THRESHOLD, ROLLUP_BUDGET, layerWatermarks, splitDistill, DISTILL_PROMPT, today, daysBetween, clamp, isScratchWorkspace } from "./memory/layers-budget";
+import { MEMORY_DIR, MEMORY_SUB, ARCHIVE_DIR, PROJECT_DIR, LESSONS_DIR, LOGS_DIR, ROLLUP_DIR, MEMORY_FILE, BACKGROUND_FILE, LESSON_FILES, LESSON_MISC_FILE, PENDING_MCP_SECTION, LEGACY_LESSONS, LEGACY_MARK, MEMORY_BUDGET, DEFAULT_MEMORY_SCALE, normalizeMemoryScale, scaledMemoryBudget, LESSONS_MAX_LINES, DISTILL_AFTER_DAYS, AUTO_DISTILL_INTERVAL_MS, DISTILL_MIN_CHARS, MEMORY_DISTILL_THRESHOLD, ROLLUP_BUDGET, layerWatermarks, splitDistill, DISTILL_PROMPT, today, daysBetween, clamp, isScratchWorkspace } from "./memory/layers-budget";
 import type { MemoryBudget, PyramidLayerId, MemoryLayersSnapshot, DistillPick, DistillResult } from "./memory/layers-budget";
 
 /**
@@ -318,6 +318,34 @@ export class MemoryLayers {
       ? body.replace("# 纪律与记忆", `# 纪律与记忆\n\n> ⚠️ 条目已超过 ${LESSONS_MAX_LINES} 行，请在设置 → 记忆里整理/并入 MEMORY.md（不自动删除）。`)
       : body;
     await this.writeText(file, out);
+    return true;
+  }
+
+  /**
+   * MCP 后端下的自动捕获落点（10-20）：lesson 候选不静默丢，也不双写。
+   * 先写进 lessons/misc.md 的「待入 MCP」节；Codex 下一轮读常驻记忆时看到，调 MCP `memory-write`
+   * 落库后把该行删掉。内置后端直接走 appendLesson。
+   */
+  async appendPendingLesson(workspace: string, line: string, dedupeKey: string, category?: string): Promise<boolean> {
+    if (effectiveMemoryBackend() !== "mcp") return this.appendLesson(workspace, line, dedupeKey, category);
+    const dir = this.projectDir(workspace);
+    const text = String(line ?? "").trim();
+    if (!dir || !text) return false;
+    if (/\[Harness\s*(?:常驻记忆|相关记忆)|\[(?:常驻记忆结束|记忆结束)\]/.test(text)) return false;
+    const verdict = shouldRememberLine(text, category);
+    if (!verdict.keep) {
+      console.log(`[memory] 未入待归档（${verdict.reason}）：${text.slice(0, 80)}`);
+      return false;
+    }
+    await this.migrateLayout(dir);
+    const file = path.join(this.lessonsDir(dir), LESSON_MISC_FILE);
+    const existing = await this.readText(file);
+    const key = String(dedupeKey ?? "").trim();
+    const all = await this.readLessons(workspace);
+    const norm = (s: string) => String(s ?? "").replace(/[\s，。！？、,.!?:：；;""''（）()【】\[\]]/g, "");
+    if (key && norm(all).includes(key)) return false;
+    if (norm(existing).includes(norm(text))) return false;
+    await this.writeText(file, appendLessonLine(existing, PENDING_MCP_SECTION, text));
     return true;
   }
 
