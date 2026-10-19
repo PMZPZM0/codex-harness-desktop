@@ -166,6 +166,22 @@ const MEMORY_INSTRUCTIONS =
   "   f) CLASSIFY EVERYTHING YOU WRITE (the user asked for memory classification, with corrections as a category of their own): the memory dir is organised by FOLDER — `project/` · `lessons/` · `logs/` · `rollups/` · `archive/` — and inside `lessons/` there is one file per category: `corrections.md` (「用户纠错」 = the user told you that you got it wrong: highest priority, injected first, never pruned) · `preferences.md` (taste / habit / taboo) · `sop.md` (a procedure or convention this project settled on) · `pitfalls.md` (a pitfall you hit yourself, or a regression you fixed). Pick by that priority order (correction > pitfall > preference > convention); if the file does not exist yet, create it with a `## <分类>` heading. Never reorder, reword or delete lines the user wrote by hand — and never write to the v1 flat files (`memory/MEMORY.md`, `memory/LESSONS.md`): those get migrated away.";
 
 /**
+ * MCP 记忆后端下的第 7 条（10-20）：
+ * ⛔ MCP 生效时 `MemoryLayers.appendLesson` 直接 return false（见 memory-layers.ts），
+ *    旧的「必须往 lessons/ 追加」会让模型做一次无效写入；这里改成「只走 MCP + 画像/日志由应用自动捕获」。
+ */
+const MCP_MEMORY_INSTRUCTIONS =
+  "\n7) memory & pitfall log — this app keeps a layered memory for the workspace, and the standing context (L0 `USER.md` · L1 `project/MEMORY.md` · L2 `lessons/`) is injected automatically each turn. The current memory backend is the **MCP memory service** (see rule 10c / skill `memory-mcp-backend`).\n" +
+  "   a) EXPLICIT MEMORY GOES THROUGH MCP — call the MCP tool `memory-write` (`type` = code_fact / decision / mistake / pattern / task_archive; `importance` = number 1–5). ⛔ Do NOT append to `lessons/*.md`, `MEMORY.md` or the daily log: the built-in lesson write is disabled while MCP is active (the write would be a no-op), and duplicating the same fact in two stores is forbidden.\n" +
+  "   b) `.codex-harness/memory/project/MEMORY.md` (L1) is the distillation output — never hand-write it. `USER.md` (L0, cross-project) you MUST co-maintain: when you learn a STABLE fact about the user (role, stack preference, taste, taboo, working style), append ONE line `- YYYY-MM-DD 画像：<fact>` via the app's profile API or the file itself — dedupe first, NEVER rewrite or delete existing lines. Daily turns are captured automatically into `logs/YYYY-MM-DD.md`; do not duplicate them.\n" +
+  "   c) When the user says you got something wrong: first restate 现象/根因 in one line so the user can confirm, then fix it, then store a `mistake` in MCP BEFORE you report back.\n" +
+  "   d) The standing block is READ-ONLY injected context and binding for this workspace. The ONE exception is the `## 待入 MCP（自动捕获，落库后删除）` section: drain it — write each line to MCP with the mapped type (usually `mistake`), then delete that line. ⛔ Do not keep the rest of the block in sync with MCP: the local pyramid remains responsible for standing injection, L0/L4 auto-capture and 90% distillation (rule 9); MCP only replaces the explicit memory store.\n" +
+  "   e) PROMOTION: when the same 现象 shows up a SECOND time, upgrade it into a skill (see 8) and mark the MCP entry or pending queue line 「已升级为技能 …」 — a pitfall with no executable steps gets stepped in again.\n" +
+  "   f) MCP TYPE MAPPING (the user asked for classification; do not invent new types): 踩坑/纠错 → `mistake`; 定下来的做法/取舍 → `decision`; 可复用套路 → `pattern`; 代码里读不出来的事实/约定 → `code_fact`; 任务归档 → `task_archive`. Dedupe before writing; if a type is not one of these five, do NOT write it.";
+
+const memoryInstructions = () => effectiveMemoryBackend() === "mcp" ? MCP_MEMORY_INSTRUCTIONS : MEMORY_INSTRUCTIONS;
+
+/**
  * 技能沉淀（经验包，09-22 加）—— 与第 7 条（记忆留痕）配对：
  *   记忆记「**是什么**」（事实 / 约束 / 踩过的坑），技能记「**怎么做**」（可复用的流程 + 判据）。
  * ⛔ 这里只给「何时写 / 写哪 / 先读哪个技能」，**不展开格式正文** —— 格式写在内置技能
@@ -189,14 +205,16 @@ const SKILL_PACK_INSTRUCTIONS =
  * ⛔ 触发不靠模型自己数数：水位提示行由 memory-layers.context() 在 ≥90% 时**自动出现在常驻记忆块里**
  *    （平时为空），所以模型每轮都能"看见该蒸了"，不需要额外工具或轮询。
  */
-const MEMORY_PYRAMID_INSTRUCTIONS =
+const memoryPyramidInstructions = (mcpBackend: boolean) =>
   `\n9) memory pyramid & self-distillation — the workspace memory is a funnel of 8 layers, all inside \`<workspace>/.codex-harness/memory/\` and organised BY FOLDER (project/ · lessons/ · logs/ · rollups/ · archive/): L0 USER.md (user profile, cross-project) → L1 \`project/MEMORY.md\` (project constitution) → L2 \`lessons/<category>.md\` (discipline & pitfalls; corrections have their own file) → L3 \`project/BACKGROUND.md\` → L4 \`logs/YYYY-MM-DD.md\` (daily logs) → L5 \`rollups/YYYY-MM.md\` (monthly rollup) → L6 \`archive/\` (cold originals) → L7 memory.json (fragment pool). Every layer has a budget, and the funnel rule is: **at ${Math.round(MEMORY_DISTILL_THRESHOLD * 100)}% of a layer's budget that layer must be distilled one level down**.\n` +
   `   WHEN: the standing memory block carries a line starting with "[Harness 记忆水位 · ⚠️ 已达 ${Math.round(MEMORY_DISTILL_THRESHOLD * 100)}% 蒸馏线" naming the layer and its sink. When you see it, **distill that layer BEFORE continuing the task** — the user asked explicitly that this be done by you rather than by the app.\n` +
   `   HOW: read the built-in skill \`${MEMORY_DISTILL_SKILL}\` and follow it — the per-layer procedure, where each kind of content goes, and the never-lose list. Consumed originals are MOVED to L6 (archive/), never deleted.\n` +
   "   RULE OF THUMB: distillation may shorten and reorganize, but it may NEVER drop a pitfall, a standing rule, or anything the user wrote by hand. If you cannot compress a layer safely, say so in one line instead of guessing.\n" +
   `   HISTORICAL RECALL: when the user references past work that is NOT in the standing memory block ("上周聊的那个方案"), do NOT guess — grep the memory dir: grep -rn "<keyword>" <workspace>/.codex-harness/memory/logs <workspace>/.codex-harness/memory/rollups <workspace>/.codex-harness/memory/archive . Full-text beats memory.\n` +
   "   HYGIENE RULES (clean-as-you-go): (a) dirty data never enters lessons — one line, one 现象, classified correctly; (b) dedupe before every write — the existing line wins unless your insight corrects it; (c) after a monthly distill, merge same-topic lines you touch (vacuum thinking). The memory pages hold the full rule table (设置 → 记忆 → 常驻记忆; the 记忆中心 浮层 is the全量视图).\n" +
-  "   WRAP-UP CHECKLIST (user-mandated: never stop mid-state): before ending a multi-step task — (a) every pitfall hit or correction received this session is recorded in `lessons/<分类>.md`; (b) any reusable procedure (≥3 steps, will recur) is written into a skill per rule 8; (c) stable user facts learned this session are appended to USER.md (rule 7b). If any is pending, do it BEFORE reporting done.";
+  (mcpBackend
+    ? "   WRAP-UP CHECKLIST (user-mandated: never stop mid-state): before ending a multi-step task — (a) every pitfall hit or correction received this session is stored in MCP `memory-write` (type `mistake`), and the `## 待入 MCP` block is drained; (b) any reusable procedure (≥3 steps, will recur) is written into a skill per rule 8; (c) stable user facts learned this session are appended to USER.md (rule 7b). If any is pending, do it BEFORE reporting done."
+    : "   WRAP-UP CHECKLIST (user-mandated: never stop mid-state): before ending a multi-step task — (a) every pitfall hit or correction received this session is recorded in `lessons/<分类>.md`; (b) any reusable procedure (≥3 steps, will recur) is written into a skill per rule 8; (c) stable user facts learned this session are appended to USER.md (rule 7b). If any is pending, do it BEFORE reporting done.");
 
 /**
  * 技能安装门禁 + 收尾复盘（09-23 用户明令：「安装技能审查技能，并设置强制规则：每当用户要求 Codex 安装新技能时，
@@ -344,6 +362,7 @@ export type DevInstructionsInput = {
 export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   const desktop = input.desktop !== false;
   const browser = input.browser !== false;
+  const mcpBackend = effectiveMemoryBackend() === "mcp";
   let text = BASE_INSTRUCTIONS + LANGUAGE_INSTRUCTIONS + CONTINUITY_INSTRUCTIONS;
   // 输出风格（用户开关打开的风格技能）：必须**早**出现，与语言指令同理（见上方那段说明）。
   if (input.outputStyles?.length) text += OUTPUT_STYLE_INSTRUCTIONS(input.outputStyles);
@@ -358,11 +377,11 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   // 复审指引无条件下发（内容自带条件式判断：先看 agent_invoke 在不在工具表里）
   text += REVIEW_INSTRUCTIONS;
   // 记忆分层与踩坑留痕：无条件下发（用户 09-22 点名的痛点：坑不记 ⇒ 反复踩）
-  text += MEMORY_INSTRUCTIONS;
+  text += memoryInstructions();
   // 技能沉淀（经验包）：与第 7 条配对 —— 记忆记「是什么」，技能记「怎么做」
   text += SKILL_PACK_INSTRUCTIONS;
   // 记忆金字塔的自助蒸馏：水位提示出现时由模型自己把那一层压下去（用户 09-22 点名）
-  text += MEMORY_PYRAMID_INSTRUCTIONS;
+  text += memoryPyramidInstructions(mcpBackend);
   // 技能安装门禁 + 收尾复盘 + 记忆分类/整洁（09-23 用户明令的硬规则）
   text += gateAndReviewInstructions();
   // 宿主能力与可拓展性（09-25：用户问「能拓展什么」时模型去 grep 源码，扫半天没答案）
