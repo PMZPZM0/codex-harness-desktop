@@ -442,7 +442,8 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
         description: "当你看不清或无法解析用户提供的图片内容时，调用此工具让视觉模型描述图片并把结果作为依据继续回答。",
         inputSchema: { type: "object", properties: { imageUrl: { type: "string", description: "图片的本地文件路径或 http(s) 地址（本地图片直接传路径，会自动读取；生成/保存下来的图片就用它的路径）。⛔ 不要传 data URL —— 内联 base64 会把几 MB 文本灌进对话历史" }, prompt: { type: "string", description: "你想让视觉模型关注的问题，可省略" } }, required: ["imageUrl"] },
       }] : []),
-      ...(bag.memoryEnabled ? [
+      // 10-20：MCP 后端自带 memory-write/read，宿主 fabric 工具在 MCP 模式不再暴露（避免同名双写）。
+      ...(bag.memoryEnabled && bag.memoryBackend !== "mcp" ? [
         { type: "function", name: "memory_recall", description: "按当前任务查询相关的分类记忆。", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
         /* ⛔⛔ 10-05 统一记忆：工具名从 `memory_save` 改成 `memory_write`，**与被调度角色同名**。
            改造前主会话用 memory_save、角色用 role_memory_save（两套语义、两份说明书），
@@ -450,7 +451,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
            agent_invoke 与 subagent_invoke 并存 ⇒ 专家团被绕过）。
            ⛔ 旧名 `memory_save` 仍可调用（主进程同一 handler），只是**不再出现在工具面里** ——
               留着的唯一理由是老会话的上下文里记着它。 */
-        { type: "function", name: "memory_write", description: "保存一条记忆。两种作用域：session（默认）= 只属于本会话的私事，别的会话看不到；project = 全项目共享，所有会话与智能体（子智能体 / 专家 / 专家团）都能读到。⛔ project 是公共知识，别把一次性的中间结论写进去。分类沿用五类，别自造；相同内容会自动去重。", inputSchema: { type: "object", properties: { scope: { type: "string", enum: ["session", "project"], description: "记忆作用域：session=本会话私有（默认），project=全项目共享" }, category: { type: "string", enum: ["用户偏好", "项目背景", "工作流/SOP", "任务经验", "临时上下文"] }, content: { type: "string", description: "记忆正文（单条上限 2000 字）" }, weight: { type: "number", description: "重要性 0..1（省略则按分类取默认）" }, pinned: { type: "boolean", description: "钉住：蒸馏与裁剪时永不删除" } }, required: ["content"] } },
+        { type: "function", name: "memory_write", description: "保存一条记忆。两种作用域：private（默认）= 只属于本会话 / 本执行体的私事，别的会话看不到；project = 全项目共享，所有会话与智能体（子智能体 / 专家 / 专家团）都能读到。⛔ project 是公共知识，别把一次性的中间结论写进去。分类沿用五类，别自造；相同内容会自动去重。", inputSchema: { type: "object", properties: { scope: { type: "string", enum: ["private", "project"], description: "记忆作用域：private=本会话/本执行体私有（默认），project=全项目共享" }, category: { type: "string", enum: ["用户偏好", "项目背景", "工作流/SOP", "任务经验", "临时上下文"] }, content: { type: "string", description: "记忆正文（单条上限 2000 字）" }, weight: { type: "number", description: "重要性 0..1（省略则按分类取默认）" }, pinned: { type: "boolean", description: "钉住：蒸馏与裁剪时永不删除" } }, required: ["content"] } },
       ] : []),
       /* Laya 局部判断工具：**装了才出现**（用户 10-18 明确要求；未装时连 schema 都不占工具面）。
          它是短文本多选一分类器（本地 ~几十 ms、零生成），不是生成/核查模型：
@@ -623,7 +624,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
         },
       },
     ];
-  }, [bag.memoryEnabled]);
+  }, [bag.memoryEnabled, bag.memoryBackend]);
 bag.buildDynamicTools = buildDynamicTools as typeof bag.buildDynamicTools;
 
   async function createEmptyThread(): Promise<Thread | null> {

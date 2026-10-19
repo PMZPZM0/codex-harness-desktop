@@ -55,7 +55,7 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                    ⚠️ scope=project 从这里写**不需要 promote**：主会话就是项目的主人；
                       角色会话的 promote 闸在主进程应答路径（boot.ts），那里才有身份硬闸。 */
                 const cat = String(args.category ?? "临时上下文");
-                const scope = args.scope === "project" ? "project" : "session";
+                const scope = args.scope === "project" ? "project" : "private";
                 const result = await window.codex.writeFabricMemory({
                   threadId: String(event.params?.threadId ?? bag.threadRef.current?.id ?? ""),
                   workspace: bag.workspace || "",
@@ -66,7 +66,7 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                   pinned: args.pinned === true,
                 });
                 if (result?.ok) {
-                  bag.showToast("已记住", `${scope === "project" ? "项目记忆" : "本会话记忆"}：${String(args.content ?? "").slice(0, 60)}`);
+                  bag.showToast("已记住", `${scope === "project" ? "项目记忆" : "私有记忆"}：${String(args.content ?? "").slice(0, 60)}`);
                 }
                 await toolCallRespond.send(event.id!, {
                   contentItems: [{ type: "inputText", text: result?.ok ? result.text : `没有写入：${result?.text ?? "未知原因"}` }],

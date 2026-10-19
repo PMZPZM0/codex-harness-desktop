@@ -108,6 +108,9 @@ export function useMemory({ threadId, activeTurnId, workspace }: Options = {}) {
     const stored = localStorage.getItem(MODE_KEY);
     return stored === "cloud" ? "cloud" : "local";
   });
+  /* 记忆后端（内置金字塔 ⇄ MCP）：工具面据此收敛 —— MCP 后端已有自己的 memory-write，
+     不能再把宿主的 memory_write 一起暴露（同名双写，见 10-20 修复）。 */
+  const [memoryBackend, setMemoryBackend] = useState<"builtin" | "mcp">("builtin");
   const [workspaceMemoryEnabled, setWorkspaceMemoryEnabled] = useState<boolean>(() => localStorage.getItem(WORKSPACE_KEY) !== "false");
 
   useEffect(() => {
@@ -144,6 +147,9 @@ export function useMemory({ threadId, activeTurnId, workspace }: Options = {}) {
     void window.codex.readMemoryMode().then((mode) => {
       setMemoryModeState(mode);
       localStorage.setItem(MODE_KEY, mode);
+    }).catch(() => undefined);
+    void window.codex.readMemoryBackend().then((status) => {
+      setMemoryBackend(status?.effective === "mcp" ? "mcp" : "builtin");
     }).catch(() => undefined);
   }, []);
 
@@ -270,6 +276,7 @@ export function useMemory({ threadId, activeTurnId, workspace }: Options = {}) {
     memoryGatewayAction,
     memoryMode,
     updateMemoryMode,
+    memoryBackend,
     workspaceMemoryEnabled,
     updateWorkspaceMemory,
     saveMemoryRecord,
