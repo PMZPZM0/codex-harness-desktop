@@ -20,8 +20,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
-import { accountsBase, cloudFetch, cloudHome, decrypt, encrypt, loginState } from "../cloud-api";
-import { applyCloudProvider, activateCloudProvider, isCloudActive, readCloudProviderRow, type CloudCatalogModel, repairCloudProviderProtocol, refreshEngineProviders } from "../cloud-provider";
+import { accountsBase, cloudFetch, cloudHome, encrypt, loginState } from "../cloud-api";
+import { issueProxyToken, readProxyToken, verifyProxyToken } from "../cloud-token";
+import { applyCloudProvider, activateCloudProvider, isCloudActive, readCloudProviderRow, readMemoryUpstream, refreshMemoryUpstreamFromIntegrations, type CloudCatalogModel, repairCloudProviderProtocol, refreshEngineProviders } from "../cloud-provider";
 
 /** 域内 IPC 通道。 */
 const CHANNELS = [
@@ -39,7 +40,7 @@ const DEFAULT_INTERVAL_MINUTES = 10;
 /** 服务端 `/models` 回执。 */
 type CatalogReply = {
   ok?: boolean;
-  provider?: { id?: string; name?: string; baseUrl?: string; ready?: boolean; hasProxyToken?: boolean };
+  provider?: { id?: string; name?: string; baseUrl?: string; ready?: boolean; hasProxyToken?: boolean; proxyTokenPrefix?: string; proxyTokenAt?: number };
   models?: CloudCatalogModel[];
   error?: string;
 };
@@ -72,47 +73,10 @@ function writeLastSyncAt(at: number): void {
   } catch { /* 落盘失败不影响本次同步 */ }
 }
 
-/** 代理令牌缓存文件（本域专属；明文与密文双轨，能加密就加密）。 */
-function proxyTokenFile(): string {
-  return path.join(cloudHome(), "proxy-token");
-}
-
-function readProxyToken(): string {
-  try {
-    return decrypt(fs.readFileSync(proxyTokenFile(), "utf8").trim());
-  } catch {
-    return "";
-  }
-}
-
-function writeProxyToken(token: string): boolean {
-  const encrypted = encrypt(token);
-  if (!encrypted) return false;
-  fs.mkdirSync(cloudHome(), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(proxyTokenFile(), encrypted, { mode: 0o600 });
-  return true;
-}
-
 async function fetchCatalog(): Promise<{ ok: boolean; data: CatalogReply | null; error?: string }> {
   const res = await cloudFetch<CatalogReply>("/models");
   if (!res.ok || !res.data?.ok) return { ok: false, data: res.data, error: res.error || "catalog-failed" };
   return { ok: true, data: res.data };
-}
-
-/**
- * 取代理令牌：优先读缓存；`force` 或缓存缺失时向服务端签一枚新的。
- * ⛔ 明文只在返回值里（本进程内），落盘一律走 `writeProxyToken`（加密）。
- */
-async function issueProxyToken(force: boolean): Promise<{ ok: boolean; token: string; reused: boolean; error?: string }> {
-  if (!force) {
-    const cached = readProxyToken();
-    if (cached) return { ok: true, token: cached, reused: true };
-  }
-  const res = await cloudFetch<{ ok?: boolean; token?: string; error?: string }>("/proxy/token", { method: "POST", body: {} });
-  const token = String(res.data?.token || "");
-  if (!res.ok || !token) return { ok: false, token: "", reused: false, error: res.error || "token-failed" };
-  writeProxyToken(token);
-  return { ok: true, token, reused: false };
 }
 
 /** 同步一次：拉目录 → 确保有代理令牌 → 写本机供应商行。 */
@@ -122,13 +86,29 @@ async function syncModels(force: boolean): Promise<SyncReply> {
   if (!catalog.ok || !catalog.data) {
     return { ok: false, models: 0, changed: false, promoted: false, error: catalog.error };
   }
-  /* 服务端没有令牌记录时（`hasProxyToken === false`）必须重签 —— 缓存里的旧串对它已无效。 */
-  const needToken = force || !catalog.data.provider?.hasProxyToken;
+  /* ⛔⛔ 10-19（清单 2/4）：非强制路径**不再盲信** `hasProxyToken` ——
+     ① 服务端回了令牌前缀且与本机缓存对不上 ⇒ 已被轮换（多设备重签），直接重签；
+     ② 否则做一次轻量校验（`GET /proxy/models`）：401/403 ⇒ 本机这把已经失效，重签；
+        网络异常按有效处理（临时断网不该把用户的 key 换掉）。
+     令牌环只保留 3 枚（服务端 `PROXY_TOKEN_RING`）⇒ 多设备各签几次就会把旧串挤出去。 */
+  const cachedToken = readProxyToken();
+  let needToken = force || !catalog.data.provider?.hasProxyToken;
+  if (!needToken) {
+    const prefix = String(catalog.data.provider?.proxyTokenPrefix || "");
+    if (!cachedToken) needToken = true;
+    else if (prefix && cachedToken.slice(0, 12) !== prefix) needToken = true;
+    else if (!(await verifyProxyToken(cachedToken))) needToken = true;
+  }
   const token = await issueProxyToken(needToken);
   const applied = await applyCloudProvider(catalog.data.models ?? [], {
     baseUrl: accountsBase(),
     encryptedKey: token.ok ? encrypt(token.token) : "",
   });
+  /* ⛔ 清单 5（10-19）：「重签」必须**同时刷新记忆上游的 userKey** —— 只换代理令牌不会更新它，
+     用户开了云端记忆时表现就是「点了重签还是 401」。记忆未开启/已停用时这里是无操作。 */
+  if (needToken && !token.reused && (await readMemoryUpstream())) {
+    await refreshMemoryUpstreamFromIntegrations();
+  }
   writeLastSyncAt(Date.now());
   return { ok: true, ...applied };
 }
@@ -146,6 +126,10 @@ async function localStatus() {
     active: await isCloudActive(),
     models: row?.models?.length ?? 0,
     hasToken: Boolean(row?.encryptedKey),
+    /* 清单 6（10-19）：让界面能显示「key 属于哪个账号 + 令牌前缀」——
+       「订阅了但 key 掉了」的现场，第一眼就能看出是不是账号/令牌错位。 */
+    account: state.active?.username ?? "",
+    tokenPrefix: readProxyToken().slice(0, 12),
     lastSyncAt: readLastSyncAt(),
   };
 }
