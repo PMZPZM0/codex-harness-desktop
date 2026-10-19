@@ -35,6 +35,8 @@ export const LESSON_FILES: Record<string, string> = {
   [PREFERENCE_CATEGORY]: "preferences.md",
 };
 export const LESSON_MISC_FILE = "misc.md";
+/** MCP 后端下自动捕获的 lesson 候选落点（仍写进 lessons/misc.md，由 Codex 下一轮落 MCP 后删除）。 */
+export const PENDING_MCP_SECTION = "待入 MCP（自动捕获，落库后删除）";
 /** 迁移源：v1 摊在 memory/ 根的旧纪律文件名（v2 起改为 lessons/<分类>.md） */
 export const LEGACY_LESSONS = "LESSONS.md";
 export const LEGACY_MARK = ".layout-v2-done";
