@@ -135,6 +135,41 @@ export function mergeTurn(thread: Thread | null, nextTurn: Turn) {
   return { ...thread, turns: current ? thread.turns.map((entry) => entry.id === turn.id ? turn : entry) : [...thread.turns, turn] };
 }
 
+/**
+ * 收尾「纯工具回合」并入前一个回合（10-19 用户报：回合结束后还有一条可展开的尾巴，里面全是编辑）。
+ *
+ * 引擎在回合 already completed 之后仍会补发一批收尾工具（诊断报告 harness_tools / 收尾编辑等），
+ * 它们自带一个新的 turnId，于是走 turn/started 建了一个**没有用户消息、也没有 agent 消息**的回合
+ * ⇒ 界面上表现为大折叠之外的一条独立尾巴。
+ *
+ * 判据（三条同时成立才并，尽量不误伤）：
+ *   ① items 非空（turn/started 的空快照不触发）
+ *   ② 没有 userMessage（回合必以用户消息开始，没有它就是个容器壳）
+ *   ③ 没有 agentMessage（**子智能体回合一定有正文**，因此不会误并）
+ * ⇒ 满足就把 items 追加到前一个回合，让它进该回合的大折叠。
+ *
+ * ⛔ 只并"内容"，不改 ids / 顺序 / 引用：前一个回合已有的 item id 会跳过（幂等）。
+ */
+function collapseOrphanToolTurns(thread: Thread | null): Thread | null {
+  if (!thread || thread.turns.length < 2) return thread;
+  let changed = false;
+  const out: Turn[] = [];
+  for (const turn of thread.turns) {
+    const items = Array.isArray(turn.items) ? turn.items : [];
+    const onlyTools = items.length > 0 && !items.some((i: any) => i?.type === "userMessage") && !items.some((i: any) => i?.type === "agentMessage");
+    const prev = out[out.length - 1];
+    if (onlyTools && prev) {
+      const seen = new Set(prev.items.map((e) => e.id));
+      const add = items.filter((e) => !seen.has(e.id));
+      out[out.length - 1] = { ...prev, items: add.length ? [...prev.items, ...add] : prev.items };
+      changed = true;
+      continue;
+    }
+    out.push(turn);
+  }
+  return changed ? { ...thread, turns: out } : thread;
+}
+
 export function markBufferedAgentReveal(thread: Thread | null, turnId: string, item: ThreadItem) {
   // reasoning 完成快照一次性交付思考全文：同样标记起点，渲染层渐进揭示
   if (item.type === "reasoning") {
@@ -287,7 +322,8 @@ export function applyThreadEvent(thread: Thread | null, method: string, params: 
       return mergeTurn(thread, params.turn);
     case "turn/completed":
       markBufferedTurnReveal(thread, params.turn);
-      return mergeTurn(thread, params.turn);
+      /* 回合结束：顺手把"纯工具尾巴回合"并回前一个回合（见 collapseOrphanToolTurns 头注） */
+      return collapseOrphanToolTurns(mergeTurn(thread, params.turn));
     case "item/started":
       return mergeItem(thread, params.turnId, params.item);
     case "item/completed":
