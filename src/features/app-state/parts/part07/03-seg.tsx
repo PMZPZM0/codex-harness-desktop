@@ -234,16 +234,38 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
       }
       if (grow > 0) {
         bag.expandTurnWindow(id, grow);
-        // 双 rAF 等 React 提交 DOM 后把视口钉回原内容（上方插入了新渲染的回合）：
-        // 优先用锚点元素位移（对 content-visibility 免疫），锚点已卸载才退回 scrollHeight 增量。
+        /* ⛔⛔ 10-19 用户实测「上滚续页会跳到上一页最上面」：**单次双 rAF 补偿不够**。
+           新插入的行在 `content-visibility: auto` 下先按**估算高度**排版，随后真实高度结算
+           会把内容再推一次（同机探针实测：同一锚点节点被顶飞 383px，scrollHeight 后来才补齐）。
+           ⇒ 用「同一个锚点 + 期望 top」**多帧收敛**：每帧比一次、差多少补多少，最多约 260ms；
+           期间任何滚轮/触摸输入立刻停手（不能和用户抢滚动）。
+           锚点已卸载时仍退回 scrollHeight 增量（一次性）。 */
         requestAnimationFrame(() => requestAnimationFrame(() => {
           const el = bag.scrollRef.current;
           if (!el) return;
-          if (anchorNode && anchorNode.isConnected) {
-            el.scrollTop += anchorNode.getBoundingClientRect().top - anchorTopBefore;
-          } else {
+          if (!anchorNode || !anchorNode.isConnected) {
             el.scrollTop = beforeTop + Math.max(0, el.scrollHeight - beforeHeight);
+            return;
           }
+          let cancelled = false;
+          const cancel = () => { cancelled = true; };
+          window.addEventListener("wheel", cancel, { passive: true });
+          window.addEventListener("touchmove", cancel, { passive: true });
+          const deadline = performance.now() + 260;
+          const pin = () => {
+            if (cancelled) return;
+            const node = bag.scrollRef.current;
+            if (!node || !anchorNode.isConnected) { finish(); return; }
+            const delta = anchorNode.getBoundingClientRect().top - anchorTopBefore;
+            if (Math.abs(delta) > 0.5) node.scrollTop += delta;
+            if (performance.now() < deadline) requestAnimationFrame(pin);
+            else finish();
+          };
+          const finish = () => {
+            window.removeEventListener("wheel", cancel);
+            window.removeEventListener("touchmove", cancel);
+          };
+          requestAnimationFrame(pin);
         }));
       }
     } finally {
