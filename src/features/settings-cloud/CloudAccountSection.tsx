@@ -422,6 +422,7 @@ export function CloudAccountSection() {
           tone={resultDialog.tone}
           message={resultDialog.message}
           details={resultDialog.details}
+          actions={resultDialog.actions}
           onClose={() => setResultDialog(null)}
         />
       )}
