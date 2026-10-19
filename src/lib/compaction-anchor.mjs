@@ -19,10 +19,20 @@
  * @returns 插入位置：`visible` 的下标；`-1` = 不插；`visible.length` = 末尾（在最后一回合**之后**）
  */
 
-/** 回合的“最后活动时刻”（毫秒）：优先 completedAt，退化到 startedAt；取不到 = 0。 */
+/** 统一时间单位到毫秒：< 1e12 视为秒（引擎回合时间是秒、记录 at 是毫秒，两边都要能对）。 */
+function toMs(value) {
+  const n = Number(value ?? 0) || 0;
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return n < 1e12 ? n * 1000 : n;
+}
+
+/** 回合的“最后活动时刻”（毫秒）：优先 completedAt，退化到 startedAt；取不到 = 0。
+ *  ⛔⛔ 单位坑（10-19 用户实测「压缩线一直显示在最新消息下面」）：引擎/应用里的回合时间是**秒**
+ *     （`formatTimestamp` 用 `new Date(timestamp * 1000)`、`timeAgo` 用 `Date.now()/1000 - timestamp`），
+ *     而压缩记录的 `at` 是宿主 `Date.now()` 的**毫秒** ⇒ 旧代码直接比较时「秒 <= 毫秒」恒成立，
+ *     锚点每次都命中最后一回合（线永远钉在最新消息下面）。 */
 function turnTimeMs(turn) {
-  const n = Number(turn?.completedAt ?? 0) || Number(turn?.startedAt ?? 0) || 0;
-  return Number.isFinite(n) ? n : 0;
+  return toMs(turn?.completedAt) || toMs(turn?.startedAt);
 }
 
 export function resolveCompactionAnchor(visible, boundaryTurnId, options = {}) {
@@ -31,7 +41,7 @@ export function resolveCompactionAnchor(visible, boundaryTurnId, options = {}) {
   const id = String(boundaryTurnId ?? "");
   const at = id ? list.findIndex((turn) => String(turn?.id ?? "") === id) : -1;
   if (at >= 0) return at; // ① 压缩所在回合在窗口 ⇒ 插在它自己之前
-  const when = Number(options?.compactionAt ?? 0);
+  const when = toMs(options?.compactionAt);
   if (when > 0) {
     // ② 不在窗口（或被过滤）⇒ 按时间落在最后一个「先于压缩」的回合之后
     for (let i = list.length - 1; i >= 0; i--) {

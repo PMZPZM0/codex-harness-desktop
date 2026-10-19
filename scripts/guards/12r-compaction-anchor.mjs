@@ -43,6 +43,17 @@ ok(resolveCompactionAnchor(turns, "t-not-loaded", { compactionAt: 500 }) === 0,
   "真值表②c：压缩比窗口里所有回合都早 ⇒ 窗口顶部（历史项；⛔ 旧 bug 回退最后一回合 = 钉在最新消息上方）");
 ok(resolveCompactionAnchor(turns, "t-old") === 0,
   "真值表②d：老记录没有时间信息 ⇒ 保守按「更早的历史」= 顶部");
+/* ⛔ 10-19 实测单位坑（用户：「压缩线一直显示在最新消息下面」）：应用里的回合时间是**秒**
+   （formatTimestamp 按秒），而压缩记录的 at 是宿主 Date.now() 的**毫秒** ⇒ 旧代码直接比较时
+   「秒 <= 毫秒」恒成立，锚点每次都命中最后一回合。这两条用真实数量级钉住。 */
+const secTurns = [
+  { id: "s1", startedAt: 1700000000, completedAt: 1700000100, items: [] },
+  { id: "s2", startedAt: 1700000200, completedAt: 1700000300, items: [] },
+];
+ok(resolveCompactionAnchor(secTurns, "ghost", { compactionAt: 1600000000000 }) === 0,
+  "真值表④：回合=秒 / 记录=毫秒，旧记录比窗口都早 ⇒ 顶部（⛔ 旧 bug 恒落末尾）");
+ok(resolveCompactionAnchor(secTurns, "ghost", { compactionAt: 1700000250000 }) === 1,
+  "真值表④b：压缩发生在 s1 之后、s2 之前 ⇒ 插在 s2 之前（下标 1）");
 ok(resolveCompactionAnchor(turns, "") === 4,
   "真值表③：完全没有回合信息（只有 toast）⇒ 最后一回合（压缩就发生在当下）");
 ok(resolveCompactionAnchor([], "t3") === -1 && resolveCompactionAnchor(null, "") === -1,
