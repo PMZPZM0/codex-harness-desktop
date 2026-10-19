@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（98 个能力域 / 498 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（98 个能力域 / 499 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -436,9 +436,9 @@ RPA 配方（录制好的桌面自动化流程）
 **云端会话同步**（10-18 自云助手移植）：把本机会话**按行增量**推到云端、按需从云端拉回、以及冲突解决（\`cloud:sync/status|push|pull|conflict/resolve\`）。⛔ 与 cloud-auth（登录）/ cloud-models（模型目录）是并列的独立板块。用户说「上传会话 / 同步会话到云端 / 从云端恢复会话」时用它。⛔ 服务端可能由管理员关闭同步，此时会返回 \`session-sync-disabled\`（人话「管理员已关闭云端会话同步」），不要当成网络故障重试
 通道：cloud:sync/status, cloud:sync/list, cloud:sync/push, cloud:sync/pull, cloud:sync/conflict/resolve
 
-### cloud-models（6 通道）
+### cloud-models（7 通道）
 **云端模型目录同步**（10-16）：登录后自动把云端「已勾选」的模型写成本机供应商 \`cloud\`（勾选 = 下拉框可见），并默认每 10 分钟自动保持更新。用户说「云端模型没同步 / 拉一下云端模型 / 勾了模型选不到」时用它（sync 是唯一同步入口，force=true 会重签代理令牌）
-通道：cloud-models:catalog, cloud-models:sync, cloud-models:token, cloud-models:set-enabled, cloud-models:status, cloud-models:activate
+通道：cloud-models:catalog, cloud-models:sync, cloud-models:test, cloud-models:token, cloud-models:set-enabled, cloud-models:status, cloud-models:activate
 
 ### cloud-kb（2 通道）
 **云端知识库**（跨设备共享的那一份）→ 本机 MCP 连接器 \`cloud-kb\`（10-16）。⛔ 与「本地项目级知识库」（kb 域，随项目走）**不是一回事**：这份存在服务端，换台机器登录也在。未开通权益时服务端不建库不发钥匙，本域只会如实报 not-activated

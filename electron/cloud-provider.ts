@@ -186,6 +186,10 @@ export async function resyncCloudUpstream(): Promise<{ changed: boolean; memory:
  */
 export async function updateCloudProviderKey(encryptedKey: string): Promise<boolean> {
   if (!encryptedKey) return false;
+  /* ⛔ 记忆上游开着时，行里的 key 是**记忆 userKey**（合成结果），不能被代理令牌覆盖 ——
+     覆盖后又恰好碰上 /integrations 拉取失败，就会留下「memapi 地址 + 代理令牌」的必 401 组合。
+     那一侧的刷新由 refreshMemoryUpstreamFromIntegrations → resyncCloudUpstream 落盘。 */
+  if (await readMemoryUpstream()) return false;
   const list = await readCustomModels();
   const index = list.findIndex((row) => row.provider === CLOUD_PROVIDER_ID);
   if (index < 0) return false;

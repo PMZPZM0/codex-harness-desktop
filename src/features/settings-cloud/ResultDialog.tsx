@@ -11,15 +11,20 @@ import { createPortal } from "react-dom";
 
 export type ResultTone = "ok" | "err" | "info";
 
+/** 弹窗底部动作（10-19）：云端模型连通测试需要「保存并重启应用 / 重签密钥并重试」两个出口。 */
+export type ResultAction = { label: string; onClick: () => void | Promise<void>; primary?: boolean };
+
 export function ResultDialog(props: {
   title: string;
   tone: ResultTone;
   message: string;
   /** 可选的明细行（如"端点 已下发 / 凭据 已保存"） */
   details?: Array<{ label: string; value: string }>;
+  /** 可选的动作按钮；不传 = 原来的「知道了」。⛔ 点击后弹窗先关闭，再执行回调。 */
+  actions?: ResultAction[];
   onClose: () => void;
 }) {
-  const { title, tone, message, details, onClose } = props;
+  const { title, tone, message, details, actions, onClose } = props;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -68,12 +73,26 @@ export function ResultDialog(props: {
           )}
         </div>
 
-        <div style={{ padding: "10px 18px 14px", display: "flex", justifyContent: "flex-end" }}>
-          <button type="button" onClick={onClose}
-            style={{
-              fontSize: 12.5, padding: "5px 16px", borderRadius: 7, border: 0, cursor: "pointer",
-              background: "var(--brand,#7c3aed)", color: "#fff",
-            }}>知道了</button>
+        <div style={{ padding: "10px 18px 14px", display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+          {actions?.length ? actions.map((action, index) => (
+            <button
+              key={`${action.label}-${index}`}
+              type="button"
+              onClick={() => { onClose(); void action.onClick(); }}
+              style={{
+                fontSize: 12.5, padding: "5px 16px", borderRadius: 7, cursor: "pointer",
+                border: action.primary ? 0 : "1px solid var(--line,#e6e6e1)",
+                background: action.primary ? "var(--brand,#7c3aed)" : "transparent",
+                color: action.primary ? "#fff" : "var(--text,#22221f)",
+              }}
+            >{action.label}</button>
+          )) : (
+            <button type="button" onClick={onClose}
+              style={{
+                fontSize: 12.5, padding: "5px 16px", borderRadius: 7, border: 0, cursor: "pointer",
+                background: "var(--brand,#7c3aed)", color: "#fff",
+              }}>知道了</button>
+          )}
         </div>
       </div>
     </div>,

@@ -1079,6 +1079,8 @@ interface Window {
     cloudModelsCatalog(): Promise<{ ok?: boolean; provider?: { id?: string; name?: string; baseUrl?: string; ready?: boolean; hasProxyToken?: boolean }; models?: Array<{ id: string; name?: string; credits?: string; enabled?: boolean; contextLength?: number; maxOutputTokens?: number; supportsImages?: boolean; supportsReasoning?: boolean; creditsLocked?: boolean; upstreamCredits?: string }>; offPeak?: { enabled?: boolean; windows?: Array<{ id?: string; label?: string; start?: number; end?: number; rate?: number }>; active?: { label?: string; start?: number; end?: number; rate?: number } | null; tzOffsetMinutes?: number }; error?: string }>;
     /* 把云端目录同步成本机供应商行（登录成功后 / 手动刷新 / 定时轮询都调它）。⛔ 同时写复数列表与单数生效档案（10-16「勾 5 个下拉 15 个」事故的防线）；force=true 会重签代理令牌 */
     cloudModelsSync(input?: { force?: boolean }): Promise<{ ok: boolean; models: number; changed: boolean; promoted: boolean; error?: string }>;
+    /* 云端模型连通测试（10-19）：探**引擎实际会用的那条路**（本地桥 + 云供应商行合成后的 baseUrl/key，记忆开启时即 memapi + 记忆 userKey）。401/403 自动重签一次并重探；forceHeal=true = 界面「重签密钥并重试」。成功由界面提示保存并重启应用 */
+    cloudModelsTest(input?: { forceHeal?: boolean }): Promise<{ ok: boolean; code?: string; error?: string; originalError?: string; healed?: boolean; model?: string; status?: number; latencyMs?: number; models?: number }>;
     /* 取云代理令牌（/proxy/token，明文**仅此一次**）。⛔ 供「Key 掉了」的修复入口用；落盘一律加密 */
     cloudModelsToken(input?: { force?: boolean }): Promise<{ ok: boolean; token: string; reused: boolean; error?: string }>;
     /* 勾选云端模型（写**服务端** /models/enabled，权威在云端）→ 写完后立刻同步到本机下拉框。勾选语义：勾上 = 下拉框可见 */
