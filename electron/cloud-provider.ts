@@ -23,7 +23,7 @@ import path from "node:path";
 import { readCustomModel, readCustomModels, writeCustomModels } from "./main/01-model-catalog";
 import { customModelFile } from "./runtime-paths";
 import { applyCustomModel } from "./features/custom-model-apply";
-import { cloudHome } from "./cloud-api";
+import { cloudHome, encrypt, fetchIntegrations } from "./cloud-api";
 import { withExclusiveEnabled } from "./provider-exclusivity";
 import type { CustomModelFile, ProviderModel } from "./features/custom-model-types";
 
@@ -176,6 +176,53 @@ export async function resyncCloudUpstream(): Promise<{ changed: boolean; memory:
   }
   await refreshEngineProviders();
   return { changed: true, memory };
+}
+
+/* ── 10-19（清单 1/5）：重签后的两件事都收在这里，别在域里各写一份 ─────────────── */
+
+/**
+ * 把**新签发的代理令牌**写进云供应商行（列表 + 生效档案两份同轮），并重生成引擎配置。
+ * ⛔ 只改 key：模型列表 / 生效位 / baseUrl 都不动（那是 applyCloudProvider / 记忆上游的地盘）。
+ */
+export async function updateCloudProviderKey(encryptedKey: string): Promise<boolean> {
+  if (!encryptedKey) return false;
+  const list = await readCustomModels();
+  const index = list.findIndex((row) => row.provider === CLOUD_PROVIDER_ID);
+  if (index < 0) return false;
+  const row = list[index];
+  if (String(row.encryptedKey || "") === encryptedKey) return false;
+  list[index] = { ...row, encryptedKey };
+  await writeCustomModels(list);
+  const active = await readCustomModel();
+  if (active && active.provider === CLOUD_PROVIDER_ID) {
+    await fs.writeFile(customModelFile, JSON.stringify({ ...active, encryptedKey }, null, 2), "utf8");
+  }
+  await refreshEngineProviders();
+  return true;
+}
+
+/**
+ * 重新拉一次 `/integrations` 并把**记忆上游**刷新成服务端当前下发的那把 userKey。
+ * 用途：重签/自愈时用户刚开通或轮换了记忆空间 —— 只换代理令牌不会更新记忆 key，
+ * 表现就是「点了重签还是 401」（10-19 实测）。未开通/已停用 ⇒ 清掉记忆意图（回落纯模型）。
+ */
+export async function refreshMemoryUpstreamFromIntegrations(): Promise<{ memory: boolean; changed: boolean }> {
+  try {
+    const res = await fetchIntegrations();
+    const mem = res.ok ? (res.data?.memory ?? {}) : {};
+    if (!mem.ok || !mem.baseUrl || !mem.userKey) {
+      await setMemoryUpstream(null);
+      const cleared = await resyncCloudUpstream();
+      return { memory: false, changed: cleared.changed };
+    }
+    const encryptedUserKey = encrypt(String(mem.userKey));
+    if (!encryptedUserKey) return { memory: Boolean(await readMemoryUpstream()), changed: false };
+    await setMemoryUpstream({ baseUrl: String(mem.baseUrl), encryptedUserKey });
+    const applied = await resyncCloudUpstream();
+    return { memory: true, changed: applied.changed };
+  } catch {
+    return { memory: Boolean(await readMemoryUpstream()), changed: false };
+  }
 }
 
 export async function applyCloudProvider(

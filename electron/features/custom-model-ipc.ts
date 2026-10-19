@@ -21,6 +21,8 @@
 import fs from "node:fs/promises";
 import { app } from "electron";
 import { probeCustomModel } from "./custom-model-probe";
+import { healCloudAccess } from "../cloud-heal";
+import { CLOUD_PROVIDER_ID } from "../cloud-provider";
 import { safeProviderId } from "../provider-id";
 import { withExclusiveEnabled } from "../provider-exclusivity";
 import type { CustomModelFile, ProviderModel } from "./custom-model-types";
@@ -80,7 +82,23 @@ export const customModelFeature = defineFeature<null>({
         : "";
       return saved ? { ...input, apiKey: saved } : input;
     };
-    ipcHost.handle("custom-model:probe", async (_event, input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" | "auto" }) => probeCustomModel(await withSavedKey(input)));
+    /* ⛔⛔ 10-19（清单 1）：云端供应商探活遇 401/403 ⇒ **自动自愈一次**再重试：
+       重签代理令牌 + 写回供应商档案 + 刷新记忆 userKey（`cloud-heal`，并发去重）。
+       现场症状：订阅/多设备重签把本机 key 挤出令牌环，用户点「测试」只看到 401，
+       而「重签密钥并同步」在某些路径下并不会改到这把 key —— 自愈把这条路兜住。 */
+    ipcHost.handle("custom-model:probe", async (_event, input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" | "auto" }) => {
+      const first = await withSavedKey(input);
+      try {
+        return await probeCustomModel(first);
+      } catch (error: any) {
+        const message = String(error?.message ?? error);
+        if (String(first.provider ?? "") !== CLOUD_PROVIDER_ID || !/认证失败（HTTP (401|403)）/.test(message)) throw error;
+        const healed = await healCloudAccess();
+        if (!healed.ok) throw error;
+        /* 重新读回刚写入的新 key（用户没手填时；手填了错误值就不该被静默替换）。 */
+        return await probeCustomModel(await withSavedKey(input));
+      }
+    });
 
     ipcHost.handle("custom-model:save", async (_event, input: { provider: string; name: string; model: string; baseUrl: string; contextWindow?: string | number; wireApi?: "responses" | "chat"; apiKey?: string; models?: ProviderModel[]; enabled?: boolean; upstreamProtocol?: BridgeMode }) => {
       const provider = safeProviderId(input.provider.trim());

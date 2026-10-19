@@ -20,7 +20,7 @@ import { SessionSyncDialog } from "./SessionSyncDialog";
 import { ResultDialog } from "./ResultDialog";
 type AccountView = { id: string; username: string; role: string; baseUrl: string; active: boolean; savedAt: number };
 type AuthStatus = { loggedIn: boolean; baseUrl: string; active: AccountView | null; accounts: AccountView[]; defaultBaseUrl: string };
-type ModelStatus = { loggedIn: boolean; registered: boolean; enabled: boolean; active: boolean; models: number; hasToken: boolean; lastSyncAt: number };
+type ModelStatus = { loggedIn: boolean; registered: boolean; enabled: boolean; active: boolean; models: number; hasToken: boolean; lastSyncAt: number; account?: string; tokenPrefix?: string };
 type KbStatus = { exists: boolean; enabled: boolean; url: string; hasToken: boolean };
 type MemoryStatus = { mode: string; hasCredentials: boolean; note: string; upstream?: "memory" | "model"; connectorId?: string };
 type PointTxn = { id?: string; at?: number; delta?: number; kind?: string; note?: string; after?: number };
@@ -421,6 +421,12 @@ export function CloudAccountSection() {
               <span className="cloud-acct-sub">已登录</span>
             </div>
             <div className="cloud-acct-kv"><span>服务地址</span><code>{status.active?.baseUrl}</code></div>
+            {/* 清单 6（10-19）：key 属于哪个账号 + 令牌前缀 —— 「订阅后 key 掉了」先看这一行是不是账号/令牌错位。 */}
+            <div className="cloud-acct-kv">
+              <span>模型令牌</span>
+              <code>{models?.tokenPrefix ? models.tokenPrefix + "…" : "尚未签发"}</code>
+              <span className="cloud-acct-sub">{models?.account || status.active?.username || ""}</span>
+            </div>
             <div className="cloud-acct-actions">
               <button className="secondary-setting" disabled={!!busy} onClick={() => doSync(false)}>
                 <RefreshCw size={14} />{busy === "sync" ? "同步中…" : "立即同步模型"}
