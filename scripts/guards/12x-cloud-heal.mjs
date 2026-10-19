@@ -92,6 +92,10 @@ ok(/doTestModels/.test(ui) && /cloudModelsTest/.test(ui)
   "界面闭环：连通测试 → 成功「保存并重启应用」/ 失败「重签密钥并重试」（断言锚动作接线，不认提示文案）");
 ok(/actions\?: ResultAction\[\]/.test(dialog) && /onClick=\{\(\) => \{ onClose\(\); void action\.onClick\(\); \}\}/.test(dialog),
   "ResultDialog 支持动作按钮（先关窗再执行，不叠两层弹窗）");
+/* ⛔ 10-19 实测漏接：状态里塞了 actions、渲染时忘了传 ⇒ 成功弹窗只剩「知道了」，
+   用户点了测试却看不到「保存并重启应用」。断言必须锚**传递那一行**，不能只查两边各自的定义。 */
+ok(/actions=\{resultDialog\.actions\}/.test(ui),
+  "ResultDialog 调用处把 resultDialog.actions 传下去（⛔ 漏传 = 动作按钮永远不出现）");
 ok(/cloud-models:test/.test(registry) && /count: 7/.test(registry), "ipc-registry 登记第 7 条通道（数与通道面一致）");
 
 console.log(`\n【cloud-heal】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
