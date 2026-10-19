@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         感谢反馈！填写得越完整，问题定位得越快。
-        不想用 GitHub 也可以到 [官网反馈页](https://www.jvszzp.ltd/feedback.html) 提交（支持截图，无需账号）。
+        不想用 GitHub 也可以到 [官网反馈页](https://dl.ppz123.asia/feedback.html) 提交（支持截图，无需账号）。
   - type: textarea
     id: what-happened
     attributes:

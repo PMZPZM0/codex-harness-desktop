@@ -174,7 +174,7 @@ bag.runUpdateDownload = runUpdateDownload as typeof bag.runUpdateDownload;
     if (bag.updateCurrentVersion) qs.set("v", bag.updateCurrentVersion);
     if (os) qs.set("os", os);
     // 发布中心地址固定（应用介绍 + 问题反馈），用户无需配置
-    const base = "https://www.jvszzp.ltd";
+    const base = "https://dl.ppz123.asia";
     const url = `${base}/feedback.html${qs.toString() ? `?${qs.toString()}` : ""}`;
     bag.setAccountMenuOpen(false);
     void window.codex.openExternal(url);
