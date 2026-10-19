@@ -43,7 +43,7 @@ export type WhatsNewEntry = {
 /** 全部版本的要点，**最新在最前**（弹窗按数组顺序展示）。 */
 export const WHATS_NEW_ENTRIES: WhatsNewEntry[] = [
   {
-    version: "0.0.44",
+    version: "0.0.45",
     date: "2026-10-19",
     items: [
       { t: "反馈页换新域名", d: "官网反馈入口迁到 dl.ppz123.asia，打开速度提升明显" },
