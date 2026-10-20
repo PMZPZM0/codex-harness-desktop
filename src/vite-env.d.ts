@@ -834,7 +834,7 @@ interface Window {
     voiceDictationFinish(): Promise<{ ok: boolean; text?: string; error?: string }>;
     voiceEndpointNow(): Promise<{ ok: boolean; text?: string }>;
     voiceSpeak(text: string, options?: { sid?: number; speed?: number }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
-    voicePreviewVoice(input?: { sid?: number; speed?: number; text?: string; profileId?: string }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
+    voicePreviewVoice(input?: { sid?: number; speed?: number; text?: string; profileId?: string; warm?: boolean; numSteps?: number }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
     voiceProfilesList(): Promise<{ profiles: any[]; zipvoiceReady: boolean }>;
     voicePresetList(): Promise<{ presets: { id: string; name: string; desc: string; lang: string; applied: boolean }[] }>;
     voicePresetApply(presetId: string): Promise<{ ok: boolean; profile?: any; existed?: boolean; error?: string }>;

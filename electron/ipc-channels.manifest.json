@@ -3463,8 +3463,8 @@
     {
       "name": "voicePreviewVoice",
       "channel": "voice:preview-voice",
-      "paramsImpl": "input?: { sid?: number; speed?: number; text?: string; profileId?: string }",
-      "paramsDecl": "input?: { sid?: number; speed?: number; text?: string; profileId?: string }",
+      "paramsImpl": "input?: { sid?: number; speed?: number; text?: string; profileId?: string; warm?: boolean; numSteps?: number }",
+      "paramsDecl": "input?: { sid?: number; speed?: number; text?: string; profileId?: string; warm?: boolean; numSteps?: number }",
       "returns": "Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>",
       "invokeArgs": "input",
       "cast": null,

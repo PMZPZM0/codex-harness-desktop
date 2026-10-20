@@ -49,6 +49,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { createSentenceChunker } from "../../lib/voice-aec.mjs";
 import { createSpeakFilter } from "../../lib/speak-text.mjs";
 import { createVoiceScriptStripper, dedupeSpokenSentences, resolveAnnounceSummary } from "../../lib/voice-script.mjs";
+import { splitSentences } from "../../lib/voice-summary.mjs";
 import { createAutoSpeakTracker } from "../../lib/voice-auto-speak.mjs";
 import {
   notifyAnnounceToggle,
@@ -70,6 +71,13 @@ type AnnounceCfg = { enabled: boolean; volume: number };
 const MAX_ANNOUNCE_BACKLOG = 3;
 
 /**
+ * 播报的 ZipVoice 采样步数（默认 4）。
+ * ⛔ 10-21 用户报「播报延迟有点高」：实测 3.5 秒音频 4 步要 9.4 秒、2 步 4.8 秒（同机）。
+ *    播报优先跟手，压到 2 步；设置页试听仍走默认 4 步，用户想对比音质时听试听。
+ */
+const ANNOUNCE_NUM_STEPS = 2;
+
+/**
  * 本回合播报的**总量预算**（字符，10-12 用户：「这个语音播报，不用这么长」）。
  *
  * ⛔ 根因：在此之前只有「队列长度」背压（`MAX_ANNOUNCE_BACKLOG`），**没有总量上限** ——
@@ -86,6 +94,8 @@ const MAX_ANNOUNCE_CHARS_PER_TURN = 160;
 export function useVoiceAnnounce(threadId: string = ""): void {
   /** 开关/音量（从设置读、经 voice:event 广播刷新；放 ref 里避免每次变化重建订阅） */
   const cfgRef = useRef<AnnounceCfg>({ enabled: true, volume: 1 });
+  /** 已预热的音色档案（null = 还没热过）；模型加载是播报延迟的大头，选好音色后先空合成一句短句把 worker 拉起来。 */
+  const warmKeyRef = useRef<string | null>(null);
   /**
    * 「本回合要不要把正文边写边念」——⛔ **由 Codex 自己决定**（`voice_speak_reply` 工具，
    * 运行中广播 `voice-announce` / `action:"speak-reply"`）。不是每条回复都念，也不是用户开关控制：
@@ -299,7 +309,7 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     busyRef.current += 1;
     publishStatus();
     try {
-      const result: any = await window.codex.voicePreviewVoice({ text: deduped.text, speed: opts.speed }).catch(() => null);
+      const result: any = await window.codex.voicePreviewVoice({ text: deduped.text, speed: opts.speed, numSteps: ANNOUNCE_NUM_STEPS }).catch(() => null);
       if (epoch !== epochRef.current) return;   // 期间被打断/换轮：这句不念
       if (mutedRef.current) return;              // 合成期间用户按了停止：这句不念
       if (!result?.ok || !result.audioBase64 || !result.sampleRate) {
@@ -370,7 +380,16 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     if (!cfgRef.current.enabled) return;
     sourceRef.current = "summary";
     const script = resolveAnnounceSummary(String(finalText ?? ""));
-    if (script.text) await speak(script.text, epoch);
+    if (script.text) {
+      /* ⛔ 按句合成、先到先播：整段一次性送 TTS 时，必须等整段生成完才出声；拆成句子后
+         第一句合成完就开播，后面的句子在播放期间继续合成（10-21 用户报「播报延迟有点高」）。
+         `speak()` 内部仍逐句做预算与去重，行为不变。 */
+      const sentences = splitSentences(script.text).map((s: string) => s.trim()).filter(Boolean);
+      for (const sentence of (sentences.length ? sentences : [script.text])) {
+        await speak(sentence, epoch);
+        if (epoch !== epochRef.current) return;
+      }
+    }
   }, [resetLive, speak]);
 
   /** 模型主动插播（`voice_announce` 工具）：⛔ 不看开关 —— 显式调用就是用户想听这一句 */
@@ -417,6 +436,17 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       if (enabled && mutedRef.current) {
         mutedRef.current = false;
         stoppedRef.current = false;
+      }
+      /* ★ 预热：播报要在回合结束时才合成，第一次还要加载 156MB 克隆模型 ⇒ 用户听到的是
+         「回合结束好几秒后才开口」。开关打开/音色切换时先让主进程把试听 worker 建起来
+         （空合成一句「好」，不播放、不登记）。失败（模型没装）则清掉 key，下次设置变化再试。
+         ⛔ 只按 profileId 变化触发：调语速/音量时不该重复加载模型。 */
+      const profileId = typeof raw.tts?.profileId === "string" ? raw.tts.profileId : "";
+      if (enabled && warmKeyRef.current !== profileId) {
+        warmKeyRef.current = profileId;
+        void window.codex.voicePreviewVoice({ warm: true })
+          .then((r: any) => { if (!r?.ok) warmKeyRef.current = null; })
+          .catch(() => { warmKeyRef.current = null; });
       }
       if (prev !== null && prev !== enabled) notifyAnnounceToggle(enabled);
       prev = enabled;

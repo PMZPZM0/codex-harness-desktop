@@ -632,7 +632,7 @@ export class VoiceService {
    * 试听克隆音色（profileId）时不能用通话里的 TTS worker（配置不同），
    * 单独走这套缓存。
    */
-  async previewVoice(input?: { sid?: number; speed?: number; text?: string; profileId?: string }): Promise<VoiceSpeakResult> {
+  async previewVoice(input?: { sid?: number; speed?: number; text?: string; profileId?: string; numSteps?: number }): Promise<VoiceSpeakResult> {
     /* ⛔ 有效音色 = 调用方显式指定（档案行试听）> **磁盘上的当前档案**（页面顶部试听/播报）。
        旧实现读 `this.currentSettings` —— 它只在 start()/设置保存时同步，应用刚启动、还没通话
        时是默认值（profileId 为空）⇒ 用户选了克隆音色，试听/播报却回退到基础音色（10-21 复测）。
@@ -649,35 +649,96 @@ export class VoiceService {
     if (!(await this.refreshModelsReady())) {
       return { ok: false, error: "语音模型未下载完整，请先到「开发工具 → 语音模型」下载" };
     }
-    // worker 配置 key：音色档案 / 识别线程数变化时才重建
+    const worker = await this.ensurePreviewWorker(sherpaPath, wanted, numThreads);
+    try {
+      const result = await worker.request("speak", {
+        text: String(input?.text ?? VOICE_SAMPLE_TEXT),
+        sid: input?.sid ?? settings.tts.sid,
+        speed: input?.speed ?? settings.tts.speed,
+        // 播报端会传更少的采样步数换低延迟；不传 = worker 默认 4 步（试听保持原音质）
+        numSteps: input?.numSteps,
+      });
+      return { ok: true, sampleRate: Number(result.sampleRate ?? 22050), samples: result.samples };
+    } catch (error: any) {
+      // worker 出错时下次重建（坏 worker 不复用）
+      if (this.previewTts === worker) {
+        this.previewTts = null;
+        this.previewTtsKey = "";
+      }
+      return { ok: false, error: String(error?.message ?? error) };
+    }
+  }
+
+  /**
+   * 确保试听/播报 worker 已创建并把模型加载完（不合成）。
+   *
+   * ⛔ 10-21：播报延迟的大头是 156MB ZipVoice 模型的冷加载。预热必须只做 `create`，
+   *    不能靠「空合成一句」—— 合成本身要几秒，反而会把第一句真正的播报排在它后面。
+   */
+  private async ensurePreviewWorker(sherpaPath: string, wanted: string, numThreads: number): Promise<VoiceWorkerClient> {
     const key = `${wanted}|${numThreads}`;
-    if (!this.previewTts || !this.previewTts.alive || this.previewTtsKey !== key) {
+    if (this.previewTts && this.previewTts.alive && this.previewTtsKey === key) {
+      this.schedulePreviewDispose();
+      return this.previewTts;
+    }
+    /* ⛔ 并发保护：预热与第一句播报可能同时到达。没有这道闸时两边都看到「没 worker」，
+       各自建一个 —— 第二个会把正在加载的第一个 terminate 掉，用户听到的是加载两次 + 失败重试。 */
+    if (this.previewEnsure) {
+      await this.previewEnsure.catch(() => undefined);
+      if (this.previewTts && this.previewTts.alive && this.previewTtsKey === key) {
+        this.schedulePreviewDispose();
+        return this.previewTts;
+      }
+    }
+    const pending = (async () => {
       await this.previewTts?.terminate().catch(() => undefined);
-      this.previewTts = new VoiceWorkerClient(
+      const worker = new VoiceWorkerClient(
         "语音试听",
         TTS_WORKER_SOURCE,
         // 跟正式通话对齐（之前用 1 偶尔触发 sherpa-onnx 的不同代码路径）
         await this.ttsWorkerData(sherpaPath, numThreads, wanted),
         () => undefined
       );
+      this.previewTts = worker;
       this.previewTtsKey = key;
-    }
-    this.schedulePreviewDispose();
+      try {
+        await worker.request("create");
+      } catch (error) {
+        await worker.terminate().catch(() => undefined);
+        if (this.previewTts === worker) {
+          this.previewTts = null;
+          this.previewTtsKey = "";
+        }
+        throw error;
+      }
+      this.schedulePreviewDispose();
+      return worker;
+    })();
+    this.previewEnsure = pending;
     try {
-      const result = await this.previewTts.request("speak", {
-        text: String(input?.text ?? VOICE_SAMPLE_TEXT),
-        sid: input?.sid ?? this.currentSettings.tts.sid,
-        speed: input?.speed ?? this.currentSettings.tts.speed,
-      });
-      return { ok: true, sampleRate: Number(result.sampleRate ?? 22050), samples: result.samples };
+      return await pending;
+    } finally {
+      if (this.previewEnsure === pending) this.previewEnsure = null;
+    }
+  }
+
+  /** 只预热播报/试听 worker（加载模型，不合成、不出声）。 */
+  async warmPreviewVoice(): Promise<{ ok: boolean; error?: string }> {
+    const sherpaPath = resolveSherpaPath();
+    if (!sherpaPath) return { ok: false, error: "语音运行时未就绪（sherpa-onnx 未安装）" };
+    if (!(await this.refreshModelsReady())) return { ok: false, error: "语音模型未下载完整" };
+    const settings = loadVoiceSettings(this.deps.userDataDir);
+    try {
+      await this.ensurePreviewWorker(sherpaPath, String(settings.tts.profileId ?? "").trim(), settings.asr.numThreads);
+      return { ok: true };
     } catch (error: any) {
-      // worker 出错时下次重建（坏 worker 不复用）
-      this.previewTts = null;
       return { ok: false, error: String(error?.message ?? error) };
     }
   }
 
-  /** 试听 worker 空闲自动销毁：试听是低频操作，不该常驻占内存。 */
+  /** 试听 worker 空闲自动销毁：试听是低频操作，不该常驻占内存。
+   *  ⛔ 10-21 由 5 分钟放宽到 15 分钟：语音播报也复用它，5 分钟一过就要重新加载
+   *     ZipVoice 模型（数秒），用户感知就是「隔一会儿再播报就特别慢」。 */
   private schedulePreviewDispose(): void {
     if (this.previewDisposeTimer) clearTimeout(this.previewDisposeTimer);
     this.previewDisposeTimer = setTimeout(() => {
@@ -685,7 +746,7 @@ export class VoiceService {
       this.previewTts = null;
       this.previewTtsKey = "";
       this.previewDisposeTimer = null;
-    }, 5 * 60 * 1000);
+    }, 15 * 60 * 1000);
   }
 
   /**
@@ -740,6 +801,8 @@ export class VoiceService {
   /** 试听专用 worker 缓存（previewVoice 复用；配置 key 变了才重建） */
   private previewTts: VoiceWorkerClient | null = null;
   private previewTtsKey = "";
+  /** 正在创建/加载中的试听 worker（并发预热 + 首次播报共用同一次加载，别建两个） */
+  private previewEnsure: Promise<VoiceWorkerClient> | null = null;
   private previewDisposeTimer: any = null;
   /** 唤醒引擎：kws=关键词模型（首选）；asr=通用识别 + 同音容错（回退） */
   private wakeEngine: "kws" | "asr" | "" = "";

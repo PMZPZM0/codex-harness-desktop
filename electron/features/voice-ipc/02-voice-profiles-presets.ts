@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import * as voiceProfiles from "../../voice/voice-profiles";
+import { sendToWindow } from "../window-bus";
 import { ALL_VOICE_REPOS, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "../../voice/model-manifest";
 import type { registerVoiceIpc1 } from "./01-voice-hotkey-models";
 
@@ -231,6 +232,9 @@ export function registerVoiceIpc2(ibA: ReturnType<typeof registerVoiceIpc1>) {
       tts: { ...current.tts, profileId: String(id ?? "") },
     });
     svc().updateSettings(next);
+    // 音色变了要让所有窗口的播报端知道（预热新音色的 TTS worker，并刷新设置页显示）；
+    // 旧实现只写盘不广播 ⇒ 播报端仍按旧档案工作，下一次开口才发现换了音色。
+    sendToWindow("voice:event", { type: "settings", settings: next });
     // 通话中的 TTS 线程在 create 时就把音色固定了 ⇒ 必须重建，否则「选了新音色还是旧声音」
     const reloaded = await svc().reloadTtsVoice();
     return { ok: true, profileId: String(id ?? ""), ttsError: reloaded.ok ? undefined : reloaded.error };
