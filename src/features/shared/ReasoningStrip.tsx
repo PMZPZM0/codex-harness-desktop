@@ -31,8 +31,8 @@ export function ReasoningStrip({ head, text, running, revealing }: {
 
   /* 溢出测量 + 完成态贴尾：
      · 直播：只有真的溢出才挂滚动动画（短内容静止）；
-     · 完成：直接 scrollLeft 到末尾显示最新尾部，一次性，不循环——用户报「已完成还在一直滚动播放」。
-       这里不用 rAF/持续 scrollLeft：那会触发 scroll 事件，时间线监听可能跟着上下补偿。 */
+     · 完成：由 CSS `justify-content:flex-end` 直接露出最新尾部，不循环——用户报「已完成还在一直滚动播放」。
+       这里不写 scrollLeft / rAF：那会触发 scroll 事件，时间线监听可能跟着上下补偿。 */
   useLayoutEffect(() => {
     const el = previewRef.current;
     const content = contentRef.current;
