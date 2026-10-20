@@ -17,7 +17,6 @@
  *    只读 `readConnectors()` 里已启用、带 url 的项。
  */
 import { readConnectors } from "./main/07-connectors-io";
-import { decrypt } from "./cloud-api";
 
 export type McpToolSpec = {
   /** 暴露给模型的工具名（加前缀避免与内置撞名，如 kb__search_knowledge） */
@@ -134,7 +133,18 @@ export async function listMcpDynamicTools(force = false): Promise<McpToolSpec[]>
     const secretKey = String(row?.envHttpHeaders?.Authorization || "");
     const encrypted = secretKey ? String(row?.encryptedSecrets?.[secretKey] || "") : "";
     let token = "";
-    try { token = encrypted ? decrypt(encrypted) : ""; } catch { token = ""; }
+    if (encrypted) {
+      /* ⛔ 云助手仓没有 cloud-api.ts（safeStorage 封装只存在于主仓/PPCode）⇒ 动态导入并降级，
+         找不到解密器按"无 token"处理（该仓本来也不写云端连接器）。 */
+      try {
+        /* ⛔ 用 require 而不是 import()：TS 对 `import("./x")` **仍做模块解析**（云助手仓没有
+           cloud-api.ts 会直接报 TS2307）；`require("字面量")` 不解析、返回 any —— 这是项目既有结论。 */
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const req: any = typeof require === "function" ? require : null;
+        const mod: any = req ? req("./cloud-api") : null;
+        token = mod?.decrypt ? String(mod.decrypt(encrypted)) : "";
+      } catch { token = ""; }
+    }
     try {
       const tools = await listToolsOn(url, token);
       for (const t of tools as Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }>) {
