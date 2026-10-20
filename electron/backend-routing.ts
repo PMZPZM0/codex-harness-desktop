@@ -193,8 +193,7 @@ export function isConnectorBlockedByBackend(id: string): boolean {
  */
 export async function refreshEngineInstructions(): Promise<boolean> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const req: any = typeof require === "function" ? require : null;
+        const req: any = typeof require === "function" ? require : null;
     const mod: any = req ? req("./cloud-provider") : null;
     if (typeof mod?.refreshEngineProviders !== "function") return false;
     return Boolean(await mod.refreshEngineProviders());
