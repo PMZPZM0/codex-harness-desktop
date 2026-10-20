@@ -30,7 +30,28 @@ export function usePart02c1(bag: Bag) {
     if (payload?.type === "tasks-changed") void window.codex.listTasks().then(bag.setTaskList).catch(() => undefined);
     /* 压缩侦测（10-07）：当前引擎的压缩不发 item 事件 ⇒ 主进程用「非渲染层回合 + rollout 对账」
        侦测后广播本事件；resume 时由 codex-ipc 重播存量 ⇒ 时间线的压缩线从这条记录里取锚点。 */
-    if (payload?.type === "thread-compacted-host") noteCompactionRecord(payload.threadId, payload.turnId, payload.at);
+    if (payload?.type === "thread-compacted-host") {
+      noteCompactionRecord(payload.threadId, payload.turnId, payload.at);
+      /* 10-18（「压缩完跑一会又到 50%」的根因）：自动压缩只走这条宿主事件，不走
+         thread/compacted / item/completed ⇒ 10-17 的「作废用量快照」没执行，压缩请求
+         自身那份 ~50 万的用量被继续显示、还会被重新落盘。这里补上同款清理：
+         · 盘上快照作废；
+         · total/derived 差值快照清掉（压缩后 input 回落是正常的，别被单调递增判据误伤）；
+         · 当前会话的环立刻清空 —— 压缩后的真实占用等下一轮 tokenUsage 推送再统计。
+         ⛔ 只对**新鲜的**宿主事件生效：resume 会重播历史压缩记录，旧记录不能把当前用量清掉。 */
+      const compactThreadId = String(payload.threadId ?? "");
+      const compactAt = Number(payload.at ?? 0) || 0;
+      const isLiveCompaction = Boolean(compactThreadId) && compactAt > 0 && Date.now() - compactAt < 2 * 60_000;
+      if (isLiveCompaction) {
+        bag.persistTokenUsageSnapshot(compactThreadId, null);
+        bag.tokenUsageTotalsRef.current.delete(compactThreadId);
+        bag.derivedTokenUsageRef.current.delete(compactThreadId);
+        if (compactThreadId === String(bag.threadRef.current?.id ?? "")) {
+          bag.tokenUsageRef.current = null;
+          bag.setTokenUsage(null);
+        }
+      }
+    }
   }), []);
 
   useEffect(() => window.codex.onConnectorOAuth((event) => {

@@ -336,6 +336,7 @@ export function ContextUsageBadge({ tokenUsage, fallbackWindow, recentCompaction
              说明三件事：数字是上游原话、引擎自动压缩在回合结束后执行（回合内不中断）、可手动立即压。 */}
           {used != null && used > contextWindow && <p className="ctx-pop-cache-note">本轮上游返回的输入量（{Number(used).toLocaleString()} Token）已超过配置的模型窗口（{Number(contextWindow).toLocaleString()}）—— 部分供应商会放宽窗口或把缓存命中计入用量，请求仍会执行。引擎的自动压缩在回合结束后进行（回合中不会打断）；也可以点下方按钮立即压缩。</p>}
           <div className="ctx-pop-bar"><i style={{ width: `${Math.max(2, percent)}%` }} /></div>
+          {used == null && recentCompaction && <p className="ctx-pop-cache-note">上下文刚压缩过：压缩请求自身的用量不算当前占用，下一轮对话完成后会重新统计。</p>}
           <div className="ctx-pop-grid">
             {rows.map((entry) => (
               <div className="ctx-pop-cell" key={entry.label}>
