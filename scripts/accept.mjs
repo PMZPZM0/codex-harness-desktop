@@ -549,6 +549,115 @@ const CHECKS = [
     },
   },
   {
+    id: "pet-activity",
+    name: "🐤 桌面宠物活动气泡 · 真回合（running→review 持久 + 独立窗 + 打开清已看 + 拖拽）",
+    run: async (h) => {
+      /* 10-21 用户对照 Qoder：「宠物事件驱动和对应状态效果比我们好很多」。
+         本项零注入：真起一个引擎回合 → 主进程活动归约 → 宠物/活动气泡两个独立窗 → 打开清已看。
+         ⛔ 只住 e2e profile，不碰真实宠物设置；结束时 petHide 防浮窗 target 污染后续项。 */
+      try {
+        await h.waitFor(`!!document.querySelector(".composer-editor")`, { label: "输入框就绪", timeoutMs: 30000 });
+        const shown = await h.eval(`window.codex.petShow().then((x)=>({ open: x.open, enabled: x.settings?.enabled })).catch((e)=>({ error: String(e && e.message || e) }))`);
+        h.check("① 宠物能打开（独立透明窗 + 设置 enabled）", shown?.error == null && shown?.enabled === true, JSON.stringify(shown));
+
+        const cwd = await h.eval(`localStorage.getItem("workspace") || ${JSON.stringify(ROOT)}`);
+        const started = await h.eval(`(async function(){
+          try {
+            const cm = await window.codex.getCustomModel().catch(()=>null);
+            const startedThread = await window.codex.request("thread/start", { cwd: ${JSON.stringify(cwd)} });
+            const thread = startedThread?.thread || startedThread;
+            const turn = await window.codex.request("turn/start", {
+              threadId: thread.id,
+              input: [{ type: "text", text: "请先运行 shell 命令 Start-Sleep -Seconds 3，然后只回复：活动测试完成。", text_elements: [] }],
+              model: cm?.model || "deepseek-v4.1-flash",
+              effort: "medium",
+              approvalPolicy: "never",
+              sandboxPolicy: { type: "dangerFullAccess" }
+            });
+            return { threadId: thread.id, turnId: turn?.turn?.id || turn?.id || "" };
+          } catch (e) { return { error: String(e && e.message || e) }; }
+        })()`).catch((e) => ({ error: String(e?.message || e) }));
+        h.check("② 真回合已启动（模型/会话可用）", !!started?.threadId && !started?.error, JSON.stringify(started).slice(0, 240));
+        if (!started?.threadId) return;
+
+        let running = null;
+        for (let i = 0; i < 24; i++) {
+          await wait(400);
+          const signal = await h.eval(`window.codex.petState().then((x)=>x.signal)`).catch(() => null);
+          running = (signal?.activities ?? []).find((item) => item.threadId === started.threadId) ?? null;
+          if (running) break;
+        }
+        h.check("③ running 活动出现（标题 / 详情 / canStop 真值）",
+          running?.status === "running" && !!running?.title && running?.canStop === true,
+          JSON.stringify(running).slice(0, 280));
+
+        let completed = null;
+        for (let i = 0; i < 40; i++) {
+          await wait(500);
+          const signal = await h.eval(`window.codex.petState().then((x)=>x.signal)`).catch(() => null);
+          const hit = (signal?.activities ?? []).find((item) => item.threadId === started.threadId);
+          if (hit?.status === "completed") { completed = hit; break; }
+        }
+        h.check("④ 回合完成 → 活动 completed（不是被清掉/回 idle）", completed?.status === "completed", JSON.stringify(completed).slice(0, 240));
+
+        await wait(1200);
+        const later = await h.eval(`window.codex.petState().then((x)=>x.signal)`).catch(() => null);
+        const still = (later?.activities ?? []).find((item) => item.threadId === started.threadId);
+        h.check("⑤ review 持久：1.2s 后仍在本轮完成态（Qoder 同款，不自动回 idle）",
+          later?.phase === "review" && still?.status === "completed",
+          JSON.stringify({ phase: later?.phase, status: still?.status }).slice(0, 160));
+
+        let card = null;
+        for (let i = 0; i < 16; i++) {
+          card = await h.evalInTarget("pet=activity", `(function(){
+            const cards=[...document.querySelectorAll('.pet-activity-card')];
+            const splash=document.querySelector('.boot-splash');
+            return { count: cards.length, text: cards.map((c)=>c.innerText).join("\\n"),
+              splashVisible: !!splash && getComputedStyle(splash).display !== "none",
+              buttons: [...document.querySelectorAll('.pet-activity-btn')].map((b)=>(b.innerText||"").trim()) };
+          })()`).catch(() => null);
+          if (card?.count > 0) break;
+          await wait(300);
+        }
+        h.check("⑥ 独立活动窗出现任务卡（标题/状态 + 打开按钮；无启动页白底）",
+          (card?.count ?? 0) >= 1 && String(card?.text ?? "").includes("本轮已完成") && (card?.buttons ?? []).includes("打开")
+            && card?.splashVisible === false,
+          JSON.stringify(card).slice(0, 260));
+
+        const clicked = await h.evalInTarget("pet=activity", `(function(){
+          const b=[...document.querySelectorAll('.pet-activity-btn.open')][0]; if(!b) return false; b.click(); return true;
+        })()`).catch(() => false);
+        let cleared = false;
+        for (let i = 0; i < 16; i++) {
+          await wait(300);
+          const signal = await h.eval(`window.codex.petState().then((x)=>x.signal)`).catch(() => null);
+          if (!(signal?.activities ?? []).some((item) => item.threadId === started.threadId)) { cleared = true; break; }
+        }
+        let activeId = "";
+        for (let i = 0; i < 20; i++) {
+          activeId = await h.eval(`document.querySelector('.thread-row.active')?.getAttribute('data-thread-id') || ""`).catch(() => "");
+          if (activeId === started.threadId) break;
+          await wait(300);
+        }
+        h.check("⑦ 点「打开」→ 活动清空（已看）+ 主窗切到该会话", clicked === true && cleared === true && activeId === started.threadId,
+          JSON.stringify({ clicked, cleared, activeId, threadId: started.threadId }).slice(0, 220));
+
+        const before = await h.eval(`window.codex.petState().then((x)=>x.bounds)`).catch(() => null);
+        await h.eval(`window.codex.petDragStart({ screenX: 0, screenY: 0 })`).catch(() => undefined);
+        await h.eval(`window.codex.petDragMove({ screenX: 50, screenY: 20 })`).catch(() => undefined);
+        await wait(200);
+        const during = await h.eval(`window.codex.petState().then((x)=>x.bounds)`).catch(() => null);
+        await h.eval(`window.codex.petDragEnd()`).catch(() => undefined);
+        h.check("⑧ 手动拖拽真移动窗口（不再依赖 app-region）",
+          !!before && !!during && (during.x !== before.x || during.y !== before.y),
+          JSON.stringify({ before, during }).slice(0, 220));
+        await h.screenshot("pet-activity");
+      } finally {
+        await h.eval(`window.codex.petHide().catch(()=>undefined)`).catch(() => undefined);
+      }
+    },
+  },
+  {
     id: "file-summary",
     name: "㉓ 文件更改汇报 · 真回合全链路（运行中实时编辑行 + 收尾汇总卡 + 交互，10-06 两次重写）",
     run: async (h) => {
@@ -2998,7 +3107,7 @@ async function enterMain(h) {
 //   历史项不删（它们仍然是回归证据），但**永远不会在默认路径上被执行** ——
 //   这样"每次只测最新改动"是机制保证的，不再依赖我记不记得。
 // ─────────────────────────────────────────────────────────────────────────────
-const LATEST_ROUND = "10-19";   // 10-19 轮：上滚续载视口不跳（scroll-anchor）；10-18 的 Laya 判断工具转回归证据
+const LATEST_ROUND = "10-21";   // 10-21 轮：桌面宠物活动气泡（Qoder 式事件驱动）；10-19 的 scroll-anchor 转回归证据
 // 上一轮（10-06）的五个验收项仍是回归证据：--only <id> 单跑，或 --all 全量。
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
@@ -3012,6 +3121,7 @@ const ROUND_OF = {
   "html-preview": "10-18",   // 10-18 轮：HTML 实时预览（真回合写 HTML → 自动开右栏浏览器 + 加宽 + 文件变更重载）
   "git-review": "10-18",   // 10-18 轮：右栏变更四个范围（临时仓库验证分支起点 + 暂存/未暂存 + UI 下拉）
   "scroll-anchor": "10-19",   // 10-19 轮：上滚续载视口不跳（同一锚点回合的视口 top 保持 ±4px）
+  "pet-activity": "10-21",   // 10-21 轮：桌宠活动气泡（running→review 持久 + 独立窗 + 打开清已看 + 拖拽）
   "compact-line": "10-07",   // 10-07 夜十一轮：压缩线（新会话 + 短回合 + 手动压缩 → 宿主侦测真链路 → 线出现 + 落盘）
   "devtools-install-ux": "10-11",   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）
   "free-gateway": "10-12",   // 10-12 轮：免费模型网关（第三方开源侧车 + 一键注册供应商；免责声明为契约）   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）

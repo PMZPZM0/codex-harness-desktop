@@ -644,6 +644,18 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
           }).catch(() => undefined);
         }
       }
+      if (event.type === "pet-open-thread") {
+        /* 桌面宠物活动气泡「打开」：主进程已把主窗拉起，这里只负责切到对应会话。
+           ⛔ 和 popout-return 同一套查找（先在缓存里找，找不到再 thread/list 补一次），
+           否则新建/后台会话点「打开」会静默停在原会话。 */
+        const tid = String((event as any).threadId ?? "");
+        if (tid) {
+          if (bag.threadsRef.current.some((entry: any) => entry.id === tid)) void bag.openThread(tid);
+          else void window.codex.request("thread/list", { limit: 80, sortKey: "updated_at", sortDirection: "desc", archived: false }).then((r) => {
+            if ((r.data ?? []).some((entry: any) => entry.id === tid)) void bag.openThread(tid);
+          }).catch(() => undefined);
+        }
+      }
       if (event.type === "popout-closed") {
         // 弹窗被关闭（点 X / 返回主应用 / 主窗口联动）：被隐藏的会话回到侧栏。
         // 全量重拉（而非只删单条）：弹窗异常退出时主进程已移除、渲染层状态可能残留，

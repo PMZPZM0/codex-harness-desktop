@@ -3059,15 +3059,15 @@ w.postMessage({id:1,op:"list",root});
       "【232】CSP 的 img-src 显式放行 pet:（否则图集被拦成空白）"
     );
     /* ⑥ 浮窗必须在**首帧前**摘掉启动页：启动页是不透明白底，晚一步就在桌面上闪一块白 */
-    (/data-pet-window[\s\S]{0,24}\.boot-splash[\s\S]{0,60}?display:\s*none/.test(htmlSrc) ? ok : fail)(
-      "【232】浮窗首帧前隐藏启动页（防透明窗上的白底闪烁）"
+    (/html\[data-pet-window\][\s\S]{0,120}\.boot-splash[\s\S]{0,80}?display:\s*none/.test(htmlSrc) ? ok : fail)(
+      "【232】宠物/活动浮窗首帧前隐藏启动页（防透明窗上的白底闪烁）"
     );
-    (htmlSrc.includes('get("pet") === "1"') && htmlSrc.includes("data-pet-window") ? ok : fail)(
-      "【232】index.html 内联脚本在首帧前判定 ?pet=1"
+    (htmlSrc.includes('petSurface === "1" || petSurface === "activity"') && htmlSrc.includes("data-pet-window") ? ok : fail)(
+      "【232】index.html 内联脚本在首帧前判定 ?pet=1 / ?pet=activity"
     );
     /* ⑦ 入口分流必须在 main.tsx（App() 里条件调用 useHarnessApp 会破坏 hook 调用序） */
-    (mainEntrySrc.includes("isPetWindow ? <PetFloat /> : <App />") ? ok : fail)(
-      "【232】渲染入口按 ?pet=1 分流（不在 App() 里条件调用 hook）"
+    (mainEntrySrc.includes('petSurface === "activity"') && mainEntrySrc.includes("isPetActivityWindow ? <PetActivity />") && mainEntrySrc.includes("isPetWindow ? <PetFloat /> : <App />") ? ok : fail)(
+      "【232】渲染入口按 ?pet=1 / ?pet=activity 分流（不在 App() 里条件调用 hook）"
     );
     /* ⑧ 浮窗**不登记 window-bus**：登记进去会白收 codex:event 广播，还会被卷进弹窗语义 */
     (!winSrc.includes("registerBusWindow") ? ok : fail)(
@@ -3089,18 +3089,19 @@ w.postMessage({id:1,op:"list",root});
     (bootSrc.includes("feedPetEvent(event)") ? ok : fail)(
       "【232】引擎事件流喂给宠物归约（不改事件流向、只旁听）"
     );
-    /* ⑫ 归约侧：九态全在类型里 + 一次性状态必须回落（庆祝/失败不能永久停住） */
+    /* ⑫ 归约侧：九态全在类型里 + Qoder 式持久活动（review/failed 不再到点回 idle） */
     const stateNames = (stateSrc.match(/export type PetStateName =([\s\S]*?);/) || [, ""])[1];
     (OFFICIAL_STATES.every((s) => stateNames.includes(`"${s}"`)) ? ok : fail)(
       "【232】归约侧九态类型齐全"
     );
-    (stateSrc.includes("holdUntil") && stateSrc.includes("pulse(") ? ok : fail)(
-      "【232】一次性状态（庆祝/失败）到点回落，不永久停住"
+    (stateSrc.includes("petPhaseOfActivities") && stateSrc.includes("activities") && stateSrc.includes('status: "completed"')
+      && stateSrc.includes("motion") && stateSrc.includes("markPetActivitySeen") ? ok : fail)(
+      "【232】活动归约：completed→review 持久、failed 持久、打开后 markSeen 才清（Qoder 同款事件模型）"
     );
     /* ⑬ ⛔ e2e 必须排除宠物浮窗 target：它也是 page target，
        取 list[0] 会随机连到宠物窗 ⇒ 之后所有 eval/click 全打空（实测设置导航读到 0 项） */
-    (harnessSrc.includes('!((t.url || "").includes("pet=1"))') || harnessSrc.includes('!(t.url || "").includes("pet=1")') ? ok : fail)(
-      "【232】e2e 连接排除宠物浮窗（否则会随机连错窗口）"
+    (harnessSrc.includes('!(t.url || "").includes("pet=")') ? ok : fail)(
+      "【232】e2e 连接排除宠物/活动浮窗整族（否则会随机连错窗口）"
     );
     /* ⑭ 设置页三处注册齐全（类型 / 导航 / 渲染注册表）—— 少一处就是"导航里有、点开空白" */
     const settingsTypesSrc = readFileSync(join(ROOT, "src", "features", "app-view", "types.ts"), "utf8");
@@ -3139,8 +3140,8 @@ w.postMessage({id:1,op:"list",root});
     /* ⛔ 锚**位置**而不是"字符串存在"：`petMouseAppliedIgnore = null` 在 closePetWindow 里也有一处，
        只判 includes 的话把 closed 处理器里那处删掉仍绿（变异测试当场抓到这个假绿）。
        ⇒ 按 `win.on("closed"` 切片，只认**该处理器体内**的重置。 */
-    const petClosedIdx = winSrc.indexOf('win.on("closed"');
-    const petClosedBody = petClosedIdx >= 0 ? winSrc.slice(petClosedIdx, petClosedIdx + 320) : "";
+    const petClosedIdx = winSrc.lastIndexOf('win.on("closed"');
+    const petClosedBody = petClosedIdx >= 0 ? winSrc.slice(petClosedIdx, petClosedIdx + 800) : "";
     (winSrc.includes("petInteractiveRect: PetInteractiveRect | null = null")
       && petClosedBody.includes("petMouseAppliedIgnore = null") ? ok : fail)(
       "【232】默认 fail-safe 穿透（矩形未上报 = 整块穿透）+ 窗口 closed 时重置「已应用状态」（不重置则重建后首帧不推状态、默认仍挡桌面）"

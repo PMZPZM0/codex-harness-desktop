@@ -62,30 +62,32 @@
         try {
           var bi = localStorage.getItem("boot-intro");
           var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-          var isPet = new URLSearchParams(location.search).get("pet") === "1";
+          var petSurface = new URLSearchParams(location.search).get("pet");
+          var isPet = petSurface === "1" || petSurface === "activity";
           /* ⛔ 只认参数在不在：`?popout=` 空值也是分出去的窗口（与 BootIntroGate 同口径）。 */
           var isPopout = new URLSearchParams(location.search).has("popout");
           if (bi !== "off" && !reduced && !isPet && !isPopout) {
             document.documentElement.setAttribute("data-boot-intro", "1");
           }
         } catch (e) { /* 忽略：读不到就走既有启动页 */ }
-        /* ⛔ 桌面宠物浮窗（?pet=1）必须在**首帧之前**就打上这个标记：
+        /* ⛔ 桌面宠物浮窗（?pet=1）与活动气泡（?pet=activity）必须在**首帧之前**就打上这个标记：
            下面 body 里的启动页是**静态 HTML**，若等到 React 挂载再隐藏，
            透明浮窗上会先闪一整块不透明白底（渲染层判定太晚）。 */
         try {
-          if (new URLSearchParams(location.search).get("pet") === "1") {
-            document.documentElement.setAttribute("data-pet-window", "1");
+          var petSurface = new URLSearchParams(location.search).get("pet");
+          if (petSurface === "1" || petSurface === "activity") {
+            document.documentElement.setAttribute("data-pet-window", petSurface);
           }
         } catch (e) { /* 忽略 */ }
       })();
     </script>
     <style>
-      /* 桌面宠物浮窗：整窗透明 + 不出启动页（启动页是不透明白底，会盖住透明窗口） */
-      html[data-pet-window="1"],
-      html[data-pet-window="1"] body {
+      /* 桌面宠物浮窗 / 活动气泡：整窗透明 + 不出启动页（启动页是不透明白底，会盖住透明窗口） */
+      html[data-pet-window],
+      html[data-pet-window] body {
         background: transparent;
       }
-      html[data-pet-window="1"] .boot-splash {
+      html[data-pet-window] .boot-splash {
         display: none;
       }
       /* 550C 档位开启时：首帧 = 动画底色纯黑（#050403），logo 与文案先不显示 ——

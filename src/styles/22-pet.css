@@ -1,13 +1,17 @@
-/* 22-pet.css —— 桌面宠物浮窗（独立 BrowserWindow，`?pet=1`）
+/* 22-pet.css —— 桌面宠物两个独立 BrowserWindow：
+   `?pet=1` 宠物本体；`?pet=activity` 活动气泡（Qoder 同款，任务卡单独一窗）。
    ⛔ 本文件**刻意不跟随应用主题**：宠物浮在任意桌面内容之上（壁纸、别的应用窗口），
       跟随主题（亮/暗）会让气泡在某些桌面上直接读不出来。参照 DESIGN.md 对
       「固定插画不跟随主题」的既有例外（原办公室场景同款理由）。
    ⛔ 也不写死"品牌色"：只用中性黑白灰 + 透明度，保证在任何背景上都可读。 */
 
-/* 浮窗根：整窗透明 + 铺满 + 可拖动（无边框窗靠 -webkit-app-region 拖） */
+/* 浮窗根：整窗透明 + 铺满 + 不拦截键盘 */
 html[data-pet-window="1"],
 html[data-pet-window="1"] body,
-html[data-pet-window="1"] #root {
+html[data-pet-window="1"] #root,
+html[data-pet-window="activity"],
+html[data-pet-window="activity"] body,
+html[data-pet-window="activity"] #root {
   background: transparent !important;
   overflow: hidden;
 }
@@ -20,13 +24,10 @@ html[data-pet-window="1"] #root {
   justify-content: flex-end;
   width: 100%;
   height: 100%;
-  /* 整片都是拖动区：桌宠没有按钮，不需要 no-drag 例外 */
-  -webkit-app-region: drag;
   user-select: none;
-  cursor: grab;
+  cursor: default;
   font-family: Inter, "Segoe UI", system-ui, sans-serif;
 }
-.pet-float:active { cursor: grabbing; }
 
 /* 宠物舞台：占满余下空间，精灵**贴底居中**（脚踩窗口底边，缩放时向上长） */
 .pet-stage {
@@ -39,14 +40,63 @@ html[data-pet-window="1"] #root {
   box-sizing: border-box;
 }
 
-/* 精灵：一张图集靠 background-position 切帧（⛔ 不逐帧建 <img>，也不 canvas） */
+/* 精灵：一张图集靠 background-position 切帧（⛔ 不逐帧建 <img>，也不 canvas）。
+   10-21：手动拖动（指针捕获）替代 app-region —— 这样才能拿到 pointermove 做左右跑/跳。 */
 .pet-sprite {
+  position: relative;
   background-repeat: no-repeat;
   background-position: 0 0;
   /* 等距/矢量风格素材，默认平滑缩放即可；不用 pixelated（会破坏抗锯齿边缘） */
   image-rendering: auto;
   filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.22));
+  cursor: grab;
+  touch-action: none;
 }
+.pet-float.is-dragging .pet-sprite { cursor: grabbing; }
+
+/* 悬停工具栏：打开主窗 / 任务横幅 / 隐藏（Qoder 同款只在悬停时出现） */
+.pet-toolbar {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(252, 252, 251, 0.96);
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+.pet-float.is-hover .pet-toolbar { opacity: 1; pointer-events: auto; transform: translate(-50%, 0); }
+.pet-toolbar button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #55554f;
+  cursor: pointer;
+}
+.pet-toolbar button:hover { background: rgba(35, 35, 31, 0.08); color: #23231f; }
+.pet-toolbar-dot {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #d08a1a;
+  box-shadow: 0 0 0 1px rgba(252, 252, 251, 0.96);
+}
+.pet-toolbar-dot.error { background: #d14a4a; }
 
 /* 气泡：窗口顶部居中，淡出 */
 .pet-bubble {
@@ -109,6 +159,99 @@ html[data-pet-window="1"] #root {
   text-align: center;
 }
 .pet-missing span:last-child { color: #9b9b95; font-size: 10.5px; }
+
+/* ═══════════ 活动气泡（独立透明窗 `?pet=activity`）═══════════ */
+/* ⛔ 卡片高度与主进程 pet-window.ts 的 ACTIVITY_CARD_HEIGHT 对齐（82px）；
+   改一处必须改另一处，否则窗口会裁掉卡片 / 留一条透明空带。 */
+.pet-activity-root {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  padding: 12px;
+  box-sizing: border-box;
+  overflow: hidden;
+  font-family: Inter, "Segoe UI", system-ui, sans-serif;
+  user-select: none;
+}
+.pet-activity-card {
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 82px;
+  padding: 9px 11px;
+  border-radius: 14px;
+  background: rgba(252, 252, 251, 0.97);
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  color: #23231f;
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+.pet-activity-card:hover { transform: translateY(-1px); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22); }
+.pet-activity-card.status-waiting { border-color: rgba(208, 138, 26, 0.45); }
+.pet-activity-card.status-failed,
+.pet-activity-card.status-interrupted { border-color: rgba(209, 74, 74, 0.42); }
+.pet-activity-card header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 18px;
+}
+.pet-activity-card header strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.pet-activity-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: #9b9b95; }
+.pet-activity-dot.running { background: #2f6bdd; }
+.pet-activity-dot.waiting { background: #d08a1a; }
+.pet-activity-dot.failed, .pet-activity-dot.interrupted { background: #d14a4a; }
+.pet-activity-dot.completed { background: #3f9b63; }
+.pet-activity-warn { flex: none; color: #d14a4a; }
+.pet-activity-spin { flex: none; color: #2f6bdd; animation: pet-activity-spin 1s linear infinite; }
+@keyframes pet-activity-spin { to { transform: rotate(360deg); } }
+.pet-activity-card p {
+  display: flex;
+  min-width: 0;
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  line-height: 16px;
+  color: #6f6f69;
+}
+.pet-activity-status { flex: none; }
+.pet-activity-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pet-activity-card footer { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
+.pet-activity-stop-error { flex: 1; min-width: 0; color: #b14040; font-size: 10.5px; line-height: 14px; }
+.pet-activity-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  border-radius: 7px;
+  background: rgba(35, 35, 31, 0.04);
+  color: #55554f;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.pet-activity-btn:hover { background: rgba(35, 35, 31, 0.09); color: #23231f; }
+.pet-activity-btn.stop { color: #b14040; }
+.pet-activity-btn:disabled { opacity: 0.55; cursor: default; }
+@media (prefers-reduced-motion: reduce) {
+  .pet-activity-card, .pet-activity-spin { transition: none; animation: none; }
+}
+
 
 /* ═══════════ 设置页 · 桌面宠物（回到应用主题；只有浮窗那一段不跟主题） ═══════════ */
 

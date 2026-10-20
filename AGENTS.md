@@ -104,12 +104,12 @@
      与当年 `connect-src` 不放行 `data:` 导致 Pixi 贴图变白方块同型；**只在构建产物 + 真实 CSP 下暴露**。
   2. 浮窗（`?pet=1`）必须在**首帧前**摘掉启动页（`index.html` 内联脚本判定 + 内联 CSS `display:none`）——
      启动页是不透明白底，晚一步就在桌面上闪一块白。
-- **架构落点**：主进程归约（`pet-state.ts`：引擎事件 → 九态，旁听不改流向）→ 透明置顶浮窗（`pet-window.ts`，
-  **不登记 window-bus**，主窗口关时由 window-factory 显式关掉）→ `pet://` **窄口径**协议供图（只放行宠物目录 + 图片扩展名；
-  ⛔ 不放宽 `harness-image` 的可信根，那是安全回归）→ 渲染层 `src/features/pet/`（`main.tsx` 按 `?pet=1` 分流，
+- **架构落点**：主进程归约（`pet-state.ts`：引擎事件 → **每会话一条活动**，`waiting > running > failed/interrupted > completed→review`，旁听不改流向；completed 不自动回 idle）→ 两个透明置顶窗（`pet-window.ts`，**都不登记 window-bus**，主窗口关时由 window-factory 显式关掉）：宠物 `?pet=1` + 活动气泡 `?pet=activity`（独立 320px，标题/状态/最近一句 + 打开/停止）→ `pet://` **窄口径**协议供图（只放行宠物目录 + 图片扩展名；
+  ⛔ 不放宽 `harness-image` 的可信根，那是安全回归）→ 渲染层 `src/features/pet/`（`main.tsx` 按 `?pet=1` / `?pet=activity` 分流，
   ⛔ 不能进 `App()` 条件调用 `useHarnessApp` —— hook 调用序）。
-- ⛔ **e2e 必须排除宠物浮窗 target**：它也是 page target，`harness._connect()` 取 `list[0]` 会随机连错窗口
-  （实测症状：设置导航读到 0 项，看着像"设置页坏了"）。已在 `scripts/e2e/lib/harness.mjs` 里排除 `pet=1`。
+- ⛔ **拖拽不要挂 `-webkit-app-region: drag`**（10-21）：drag 区属非客户区，渲染层收不到 pointermove ⇒ 做不了左右跑/竖向跳反馈，也放不下悬停工具栏。现走「渲染层指针捕获 → `pet:drag-*` → 主进程 setBounds」；拖动期间 `applyPetMouseState` 必须强制可交互，否则窗口跟随移动会被判穿透、丢事件。
+- ⛔ **e2e 必须排除宠物浮窗 target 整族**：宠物和活动气泡都是 page target，`harness._connect()` 取 `list[0]` 会随机连错窗口
+  （实测症状：设置导航读到 0 项，看着像"设置页坏了"）。已在 `scripts/e2e/lib/harness.mjs` 里按 `pet=` 排除。
 - 设置页 = 注册表一行一页（`pet` 页）+ `settingsNav` + `HelpDialog.OVERVIEW_GROUPS` **三处都要加**
   —— 少总览那处会被守卫【32】打红。
 

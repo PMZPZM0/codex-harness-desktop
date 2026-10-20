@@ -627,6 +627,20 @@ contextBridge.exposeInMainWorld("codex", {
   petHide: () => __ipc("pet:hide", 0, []),
   /* 上报「宠物本体」矩形（相对窗口内容左上角，CSS 像素；null = 无可交互区）——主进程按 screen.getCursorScreenPoint 轮询比对决定整块穿透/可交互。⛔ 翻转判据刻意不依赖页面鼠标事件：窗口整块是 app-region drag，drag 区属非客户区，Chromium 不派发 DOM mousemove（第一版挂在 mousemove 上 ⇒ 宠物直接拖不动） */
   petInteractiveRect: (rect: { x: number; y: number; width: number; height: number } | null) => __ipc("pet:interactive-rect", 1, [rect]),
+  /* 活动气泡「打开」：标记已看 → 聚焦主窗口 → 让渲染层切到该会话 */
+  petActivityOpen: (threadId: string) => __ipc("pet:activity-open", 1, [threadId]),
+  /* 活动气泡「停止」：对运行中的回合发 turn/interrupt（主进程侧，不依赖主窗口是否打开） */
+  petActivityStop: (threadId: string) => __ipc("pet:activity-stop", 1, [threadId]),
+  /* 桌面宠物工具栏：收起/展开活动气泡（状态在主进程，两个浮窗同步） */
+  petActivityToggle: () => __ipc("pet:activity-toggle", 0, []),
+  /* 桌面宠物双击/工具栏「打开」：聚焦主窗口 */
+  petOpenMain: () => __ipc("pet:open-main", 0, []),
+  /* 宠物手动拖动开始（屏幕坐标）；主进程记下窗口原点，之后由 pet:drag-move 移动窗口 */
+  petDragStart: (pos: { screenX: number; screenY: number }) => __ipc("pet:drag-start", 1, [pos]),
+  /* 宠物手动拖动中（屏幕坐标）；主进程按增量 setBounds，实现「拖着走」 */
+  petDragMove: (pos: { screenX: number; screenY: number }) => __ipc("pet:drag-move", 1, [pos]),
+  /* 宠物手动拖动结束：夹回工作区，moved 事件负责落盘坐标 */
+  petDragEnd: () => __ipc("pet:drag-end", 0, []),
   /* SkillHub 专家市场包（skillhub.cn/skillspackage，总 55 包） */
   listExpertMarketPackages: (input: { page?: number; pageSize?: number; query?: string } = {}) => __ipc("expert-market:list", 0, [input]),
   /* 装包 = 元技能 + 子技能 + 专家中心新增对应专家卡片 */
