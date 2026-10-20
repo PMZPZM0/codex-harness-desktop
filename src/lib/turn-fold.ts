@@ -102,7 +102,9 @@ export function bodyTextOf(item: ThreadItem) {
 
 
 export function buildSegments(units: FoldUnit[], turnFinished: boolean, options: { inlineThinking?: boolean } = {}): FoldSegment[] {
-  const inlineThinking = Boolean(options.inlineThinking);
+  /* strip 模式只在**直播中**把思考内联（用户要看最新一行）；回合结束后必须随过程
+     收进「耗时」大折叠，不能露在外面（用户 10-20 截图：「思考板块没有进大折叠」）。 */
+  const inlineThinking = Boolean(options.inlineThinking) && !turnFinished;
   const segments: FoldSegment[] = [];
   let buffer: FoldUnit[] = [];
   const flush = () => {
@@ -129,8 +131,8 @@ export function buildSegments(units: FoldUnit[], turnFinished: boolean, options:
     if (unit.kind === "foldable" || (unit.kind === "thinking" && !thinkingLive && !inlineThinking)) {
       // 工具与已结束的思考合并成段（对齐 WorkBuddy：一段过程一个摘要组，思考在组内）；
       // 直播中的思考打断分段、内联常驻。
-      // strip 模式（10-20）：思考永远内联 —— 否则会被「深度思考」过程组收起，
-      // 只剩一个空长条，用户必须展开组才看得到内容（用户截图报障）。
+      // strip 模式（10-20）：仅直播期思考内联；turnFinished 时 inlineThinking 已被关掉，
+      // 已结束的思考回到大折叠里（否则回合结束后还会露在「耗时」组外面）。
       buffer.push(unit);
     } else {
       flush();
