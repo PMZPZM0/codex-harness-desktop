@@ -20,15 +20,13 @@ type Status = {
   repos: { id: string; lastSegment: string }[];
   /** 音色克隆模型（ZipVoice）就绪状态——主进程新增字段必须在这里带出来，否则 UI 永远显示未安装 */
   zipvoice?: { ready: boolean; enabled?: boolean; bytes?: number; dir?: string };
-  /** 语音唤醒关键词模型（KWS） */
-  kws?: { ready: boolean; enabled?: boolean; bytes?: number; dir?: string };
   /** 基础模型是否启用（10-03 三态；缺省 true = 启用，兼容老主进程） */
   baseEnabled?: boolean;
 };
 type DownloadState = { percent: number; message: string; mode: "download" | "import" } | null;
 
 /** 可三态管理的资源种类（与主进程 VOICE_RESOURCE_KINDS 对齐）。 */
-type ResourceKind = "base" | "zipvoice" | "kws";
+type ResourceKind = "base" | "zipvoice";
 
 /**
  * 单个资源的四态（10-03）。
@@ -101,7 +99,6 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
         // 否则表现为「装完了状态一直显示未安装」（09-12 用户实测踩过：zipvoice 被丢掉）。
         // 10-03 同款坑第二次：enabled 漏了会让「已停用」显示成「已就绪」。
         zipvoice: s.zipvoice ? { ...s.zipvoice, enabled: s.zipvoice.enabled !== false } : undefined,
-        kws: s.kws ? { ...s.kws, enabled: s.kws.enabled !== false } : undefined,
         baseEnabled: s.baseEnabled !== false,
       }))
       .catch((e: any) => onNotice(`读取语音模型状态失败：${e?.message ?? e}`));
@@ -165,7 +162,7 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
 
   const uninstall = useCallback(() => {
     // ⛔ 10-03：二次确认改在按钮上做（见 confirmUninstall），这里只负责真正执行。
-    //    卸载删的是**整个 voice-models 目录**（含音色克隆模型 156MB 与唤醒模型），
+    //    卸载删的是**整个 voice-models 目录**（含音色克隆模型 156MB），
     //    但**不碰 <userData>/voice-profiles** ⇒ 用户导入/录制的音色（参考音频）安全。
     setConfirmUninstall(false);
     window.codex.voiceModelsUninstall()
@@ -344,7 +341,7 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
                 <Trash2 size={13} />删除
               </button>
             )}
-            {/* 全部清空（含音色克隆与唤醒模型）——与「删除」区分：那个只删本卡片这一个资源 */}
+            {/* 全部清空（含音色克隆模型）——与「删除」区分：那个只删本卡片这一个资源 */}
             {confirmUninstall ? (
               <>
                 <span className="voice-uninstall-hint">

@@ -616,6 +616,13 @@
 }
 .voice-input:focus { border-color: var(--link); box-shadow: 0 0 0 3px color-mix(in srgb, var(--link) 18%, transparent); }
 .voice-input:disabled { opacity:0.55; cursor:not-allowed; }
+/* 顶部「当前音色」只读展示：选中克隆音色后不再显示基础音色下拉（避免看起来没切换） */
+.voice-current-profile {
+  display:flex; align-items:center; min-width:0;
+  overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
+  background: color-mix(in srgb, var(--link) 6%, var(--bg));
+  border-color: color-mix(in srgb, var(--link) 28%, var(--line));
+}
 
 .voice-range {
   width:100%; height:18px; margin:0; padding:0;

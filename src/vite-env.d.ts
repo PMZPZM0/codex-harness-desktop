@@ -834,11 +834,11 @@ interface Window {
     voiceDictationFinish(): Promise<{ ok: boolean; text?: string; error?: string }>;
     voiceEndpointNow(): Promise<{ ok: boolean; text?: string }>;
     voiceSpeak(text: string, options?: { sid?: number; speed?: number }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
-    voicePreviewVoice(input?: { sid?: number; speed?: number; text?: string }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
+    voicePreviewVoice(input?: { sid?: number; speed?: number; text?: string; profileId?: string }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
     voiceProfilesList(): Promise<{ profiles: any[]; zipvoiceReady: boolean }>;
     voicePresetList(): Promise<{ presets: { id: string; name: string; desc: string; lang: string; applied: boolean }[] }>;
     voicePresetApply(presetId: string): Promise<{ ok: boolean; profile?: any; existed?: boolean; error?: string }>;
-    voiceProfilesSelect(id: string): Promise<{ ok: boolean; profileId: string }>;
+    voiceProfilesSelect(id: string): Promise<{ ok: boolean; profileId: string; ttsError?: string }>;
     /* 10-03：新增 baseEnabled / 各资源 enabled —— 启用与已下载正交，UI 靠它们组合出四态 */
     voiceModelsStatus(): Promise<{ ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; root: string; repos: { id: string; lastSegment: string }[]; baseEnabled?: boolean; zipvoice?: { ready: boolean; enabled?: boolean; bytes: number; dir: string }; kws?: { ready: boolean; enabled?: boolean; bytes: number; dir: string }; resources?: Record<string, { enabled: boolean; label: string }>; }>;
     voiceModelsInstall(): Promise<{ ok: boolean; error?: string }>;

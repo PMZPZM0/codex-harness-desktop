@@ -899,54 +899,6 @@ console.log(C.bold("\n【4d】语音唤醒（同音容错匹配 / 端点复位 /
       ? ok("唤醒：唤醒词全在词表内时不打扰用户")
       : fail("唤醒：词表内也报警，提示会被无视");
   }
-
-  // ===== 接线守卫（唤醒是常驻监听，主进程侧 CDP 测不到）=====
-  const readSrc2 = (rel) => (existsSync(join(ROOT, rel)) ? readFileSync(join(ROOT, rel), "utf8") : "");
-  const floatSrc2 = readVoiceCallFloatSrc();
-  const serviceSrc2 = readSrc2("electron/voice/voice-service.ts");
-  const settingsUiSrc = readVoiceSettingsSrc();
-
-  if (!floatSrc2 || !serviceSrc2 || !settingsUiSrc) {
-    warn("找不到语音源码，跳过唤醒接线守卫");
-  } else {
-    // ① 开关/唤醒词改了必须立刻重挂（旧实现依赖数组只有 [phase] → 打开开关毫无反应）
-    const depsOk = /\}, \[phase, wakeCfg\.enabled, wakeCfg\.phrase\]\);/.test(floatSrc2);
-    const broadcast = /type: "settings", settings: next/.test(mainSrc);
-    const listensSettings = /event\?\.type === "settings"/.test(floatSrc2);
-    depsOk && broadcast && listensSettings
-      ? ok("唤醒：设置变更即时生效（主进程广播 settings + effect 依赖含开关与唤醒词）")
-      : fail(`唤醒：改了设置不重挂（deps=${depsOk} 广播=${broadcast} 监听=${listensSettings}）`);
-
-    // ② 命中后不得用 effect 里捕获的 startCall（threadId 会过期）
-    const refForwarded = /startCallRef\.current\(\)/.test(floatSrc2) && /const startCallRef = useRef/.test(floatSrc2);
-    const noStaleCall = !/event\.type === "wake"[\s\S]{0,400}?\bstartCall\(\)/.test(floatSrc2);
-    refForwarded && noStaleCall
-      ? ok("唤醒：命中后经 startCallRef 取最新闭包（不会用到过期的 threadId）")
-      : fail(`唤醒：命中路径仍可能用过期闭包（ref=${refForwarded} 无裸调用=${noStaleCall}）`);
-
-    // ③ 匹配与复位在主进程：渲染层不再拿文本、不再自己 includes
-    const mainMatches = /wakeMatcher\?\.match\(text\)/.test(serviceSrc2);
-    const endpointReset = /if \(endpoint\)[\s\S]{0,300}?request\("reset"/.test(serviceSrc2);
-    const preloaded = /await this\.wakeAsr\.request\("create"\)/.test(serviceSrc2);
-    const noRenderMatch = !/norm\.includes\(wake\.phrase\)/.test(floatSrc2) && !/includes\(wakeCfg\.phrase\)/.test(floatSrc2);
-    mainMatches && endpointReset && preloaded && noRenderMatch
-      ? ok("唤醒：匹配在主进程 + 每次端点复位识别流 + 启动即预热模型（不再每块回传整坨文本）")
-      : fail(`唤醒：主进程侧不完整（match=${mainMatches} reset=${endpointReset} 预热=${preloaded} 渲染层无匹配=${noRenderMatch}）`);
-
-    // ④ 背压：忙时攒块、空了合并发送（旧实现每块无条件 invoke → 越积越慢）
-    const backpressure = /let busy = false;/.test(floatSrc2) && /pending\.push\(raw\)/.test(floatSrc2) && /const pump = \(\) => \{/.test(floatSrc2) && /MAX_PENDING/.test(floatSrc2);
-    backpressure
-      ? ok("唤醒：识别忙时攒块合并发送（有背压上限，不会无限积压）")
-      : fail("唤醒：没有背压 —— 识别跟不上时会越积越慢");
-
-    // ⑤ 失败必须可见 + 「最近听到什么」必须显示得出来
-    //    判据要落在**启动失败那条分支**上（catch 块里也有一处 patchWakeState，只匹配调用会让守卫放水）
-    const failureVisible = /if \(!started\?\.ok\) \{[\s\S]{0,240}?patchWakeState\(\{ listening: false, error:/.test(floatSrc2);
-    const statusShown = /wakeState\.heard/.test(settingsUiSrc) && /subscribeWakeState/.test(settingsUiSrc);
-    failureVisible && statusShown
-      ? ok("唤醒：启动失败会提示 + 设置页显示「最近听到什么」（诊断可见）")
-      : fail(`唤醒：失败静默或诊断不可见（失败提示=${failureVisible} 状态显示=${statusShown}）`);
-  }
 }
   }
 
@@ -1138,13 +1090,12 @@ console.log(C.bold("\n【4e】语音唤醒关键词模型（KWS，读音匹配�
     const rearm = /stopWakeListener\(\)\.then\(\(\) => this\.startWakeListener\(\)\)/.test(serviceSrc3);
     rearm ? ok("KWS：改唤醒词后重建 worker（keywordsFile 是启动参数，不重建就还在等旧词）") : fail("KWS：改唤醒词没有重挂 worker");
 
-    // ⑤ 安装链路 + UI 入口（模型 31MB，按需下载；不装也能用回退）
+    // ⑤ 安装链路（模型 31MB，按需下载）——渲染层入口已随唤醒功能删除，这里只守后端链路
     const installChain = /voice:kws-install/.test(mainSrc) && /voiceKwsInstall/.test(preloadSrc) && /ensureKws\(/.test(storeSrc);
-    const uiEntry = /installKws\(\)/.test(settingsUiSrc3) && /voiceKwsInstall\(\)/.test(settingsUiSrc3);
     const archive = /KWS_ARCHIVE/.test(manifestSrc) && /kwsReady/.test(manifestSrc) && /b2f7c89690dc8ce4c6ed6afeab7cd800c36ad1421fb6b6302b4a4b194cf7f35f/.test(manifestSrc);
-    installChain && uiEntry && archive
-      ? ok("KWS：安装链路（归档 SHA256 + ensureKws + IPC + 设置页一键下载）齐全")
-      : fail(`KWS：安装链路不完整（chain=${installChain} ui=${uiEntry} archive=${archive}）`);
+    installChain && archive
+      ? ok("KWS：后端安装链路（归档 SHA256 + ensureKws + IPC）齐全（渲染层不再有入口）")
+      : fail(`KWS：后端安装链路不完整（chain=${installChain} archive=${archive}）`);
 
     // ⑥ 关键词模型不能进「主模型齐备」判定：它只服务唤醒，缺了不该把整个语音功能挡住
     const notInAll = !/ALL_VOICE_REPOS[^\n]*KWS/.test(manifestSrc) && /KWS_REPO/.test(manifestSrc) === false;
@@ -1157,7 +1108,7 @@ console.log(C.bold("\n【4e】语音唤醒关键词模型（KWS，读音匹配�
 
   /* ══ 【4f】原 L1528–L1617 ══ */
   {
-console.log(C.bold("\n【4f】麦克风错误翻译（唤醒/通话共用）+ 模型下载（可取消 / 会换源提速）"));
+console.log(C.bold("\n【4f】麦克风错误翻译（通话）+ 模型下载（可取消 / 会换源提速）"));
 
 {
   // ===== 纯逻辑：错误翻译（用户实测界面直接显示过英文原文 Requested device not found）=====
@@ -1196,28 +1147,16 @@ console.log(C.bold("\n【4f】麦克风错误翻译（唤醒/通话共用）+ �
   if (!floatSrc4 || !storeSrc4 || !settingsUiSrc4) {
     warn("找不到源码，跳过【4f】接线守卫");
   } else {
-    // ① 两条采集链路共用同一份翻译（旧实现只有通话侧有，唤醒侧直接漏英文）
-    const usesTranslator = (floatSrc4.match(/describeMicError\(/g) ?? []).length >= 2;
-    const noRawLeak = !/patchWakeState\(\{ listening: false, error: String\(error\?\.message/.test(floatSrc4);
-    usesTranslator && noRawLeak
-      ? ok("唤醒：麦克风错误与通话共用一份翻译（唤醒侧不再漏原生英文）")
-      : fail(`唤醒：错误翻译没共用或仍有裸英文（translator=${usesTranslator} raw=${!noRawLeak}）`);
-
-    // ② 唤醒要重试 + 用设置里的设备（旧实现硬编码 constraints，用户换的麦不生效）
-    const retries = /for \(let attempt = 0; attempt < 3/.test(floatSrc4);
-    const usesSettingsMic = /micCfg\.deviceId/.test(floatSrc4) && /wakeConstraint/.test(floatSrc4);
-    retries && usesSettingsMic
-      ? ok("唤醒：麦克风失败重试 3 次 + 使用设置里选的设备/开关")
-      : fail(`唤醒：缺重试或用的是硬编码设备（retry=${retries} settingsMic=${usesSettingsMic}）`);
-
-    // ③ 下载可取消：UI 有按钮 + 取消**保留**断点（旧实现取消也把残file 删了 → 下次从头来）
-    const cancelUi = /取消下载/.test(settingsUiSrc4) && /voiceKwsCancel\(\)/.test(settingsUiSrc4);
+    // ① 下载可取消：UI 有按钮 + 取消**保留**断点（旧实现取消也把残file 删了 → 下次从头来）
+    //    取消按钮在「语音模型」卡（VoiceDevToolsSection）里，不在 VoiceSettingsSection 本体
+    const devToolsSrc4 = readSrc4("src/components/VoiceDevToolsSection.tsx");
+    const cancelUi = /取消下载/.test(devToolsSrc4) && /(voiceModelsCancel|voiceZipvoiceCancel)\(\)/.test(devToolsSrc4);
     const cancelKeepsPartial = /cancelled: true/.test(storeSrc4) && !/error\?\.fatal \|\| signal\?\.aborted/.test(storeSrc4);
     cancelUi && cancelKeepsPartial
       ? ok("下载：设置页有「取消下载」，且取消保留已下载部分（下次点下载续传）")
       : fail(`下载：取消不完整（ui=${cancelUi} keepPartial=${cancelKeepsPartial}）`);
 
-    // ④ 提速：候选地址并发探测排序 + 连接超时 + 速度下限换源 + 进度显示速度
+    // ② 提速：候选地址并发探测排序 + 连接超时 + 速度下限换源 + 进度显示速度
     //    判据要落在**调用点**上：只查函数定义的话，把调用删掉守卫照样绿（反证时踩到过）
     const ordered = /await orderCandidatesByLatency\(candidates, signal\)/.test(storeSrc4)
       && /async function orderCandidatesByLatency\(/.test(storeSrc4);

@@ -133,6 +133,8 @@ export class VoiceService {
   /** 本次通话工作线程的配置指纹（设置一变就不能复用旧线程） */
   private asrKey = "";
   private ttsKey = "";
+  /** 当前合成线程加载的是哪个音色档案（空串 = 内置预置音色）；试听据此判断能否复用通话线程 */
+  private ttsProfileWanted = "";
 
   constructor(private readonly deps: Deps) {}
 
@@ -247,6 +249,8 @@ export class VoiceService {
       if (this.mode === "conversation") {
         const ttsData = await this.ttsWorkerData(sherpaPath, numThreads);
         this.ttsKey = JSON.stringify(ttsData);
+        // 只有真的以克隆模式加载时才算「当前音色 = 档案」；模型缺失回退 vits 时不能冒充
+        this.ttsProfileWanted = ttsData.mode === "zipvoice" ? String(this.currentSettings.tts.profileId ?? "").trim() : "";
         const reusedTts = this.takeIdle("tts", this.ttsKey);
         this.tts = reusedTts ?? new VoiceWorkerClient("语音合成", TTS_WORKER_SOURCE, ttsData, () => {
           if (this.active) this.fail("语音合成线程意外退出，请重新开始通话");
@@ -629,7 +633,12 @@ export class VoiceService {
    * 单独走这套缓存。
    */
   async previewVoice(input?: { sid?: number; speed?: number; text?: string; profileId?: string }): Promise<VoiceSpeakResult> {
-    if (this.tts && !input?.profileId) {
+    /* ⛔ 有效音色 = 调用方显式指定（档案行试听）> 设置里的当前档案（页面顶部试听/播报）。
+       旧实现只用 `input.profileId` 当缓存键、却没算设置里的值 ⇒ 选中克隆音色后仍命中
+       之前缓存的 VITS 试听 worker，表现就是「换了音色，试听/播报还是旧声音」（10-21 用户报障）。 */
+    const wanted = String(input?.profileId ?? this.currentSettings?.tts?.profileId ?? "").trim();
+    // 通话线程只有在「加载的正是这个音色」时才能直接复用；音色不同必须走试听 worker 重建
+    if (this.tts && !input?.profileId && wanted === this.ttsProfileWanted) {
       return this.speak(input?.text ?? VOICE_SAMPLE_TEXT, { sid: input?.sid, speed: input?.speed });
     }
     const sherpaPath = resolveSherpaPath();
@@ -637,15 +646,15 @@ export class VoiceService {
     if (!(await this.refreshModelsReady())) {
       return { ok: false, error: "语音模型未下载完整，请先到「开发工具 → 语音模型」下载" };
     }
-    // worker 配置 key：克隆音色 / 识别线程数变化时才重建
-    const key = `${input?.profileId ?? ""}|${this.currentSettings.asr.numThreads}`;
+    // worker 配置 key：音色档案 / 识别线程数变化时才重建
+    const key = `${wanted}|${this.currentSettings.asr.numThreads}`;
     if (!this.previewTts || !this.previewTts.alive || this.previewTtsKey !== key) {
       await this.previewTts?.terminate().catch(() => undefined);
       this.previewTts = new VoiceWorkerClient(
         "语音试听",
         TTS_WORKER_SOURCE,
         // 跟正式通话对齐（之前用 1 偶尔触发 sherpa-onnx 的不同代码路径）
-        await this.ttsWorkerData(sherpaPath, this.currentSettings.asr.numThreads, input?.profileId),
+        await this.ttsWorkerData(sherpaPath, this.currentSettings.asr.numThreads, wanted),
         () => undefined
       );
       this.previewTtsKey = key;
@@ -674,6 +683,40 @@ export class VoiceService {
       this.previewTtsKey = "";
       this.previewDisposeTimer = null;
     }, 5 * 60 * 1000);
+  }
+
+  /**
+   * 通话中切换音色后重建合成线程。
+   *
+   * ⛔ 为什么必须有：TTS worker 的音色在 `create` 时固定（zipvoice 参考音频 / vits 预置），
+   *    光改设置不会让已经加载的 worker 换嗓子 ⇒ 用户听到「选了新音色还是旧声音」。
+   *    选音色（voice:profiles-select）后调用这里，下一次开口就是新音色。
+   * 通话/听写未进行时无需处理：下次 start() 会按最新设置新建线程。
+   */
+  async reloadTtsVoice(): Promise<{ ok: boolean; error?: string }> {
+    if (!this.active || this.mode !== "conversation") return { ok: true };
+    const sherpaPath = resolveSherpaPath();
+    if (!sherpaPath) return { ok: false, error: "语音运行时未就绪" };
+    try {
+      const ttsData = await this.ttsWorkerData(
+        sherpaPath,
+        this.currentSettings.asr.numThreads,
+        this.currentSettings.tts.profileId,
+      );
+      const next = new VoiceWorkerClient("语音合成", TTS_WORKER_SOURCE, ttsData, () => {
+        if (this.active) this.fail("语音合成线程意外退出，请重新开始通话");
+      });
+      await next.request("create");
+      const previous = this.tts;
+      this.tts = next;
+      this.ttsKey = JSON.stringify(ttsData);
+      this.ttsProfileWanted = ttsData.mode === "zipvoice" ? String(this.currentSettings.tts.profileId ?? "").trim() : "";
+      await previous?.terminate().catch(() => undefined);
+      this.deps.log("info", "音色已切换，合成线程已按新音色重建");
+      return { ok: true };
+    } catch (error: any) {
+      return { ok: false, error: String(error?.message ?? error) };
+    }
   }
 
   // ── 语音唤醒（持续聆听，只用 ASR、不开引擎回合）──

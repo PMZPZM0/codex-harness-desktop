@@ -13,28 +13,44 @@ type Props = {
   saving: boolean;
   settings: Settings;
   voiceOptions: { value: number; label: string; }[];
+  /** 当前选中的「我的音色」名称（空 = 用基础音色）——顶部必须显示它，
+   *  否则选中克隆音色后下拉还停在「音色 3」，用户会以为没切换（10-21 报障）。 */
+  activeProfileName?: string;
+  zipReady: boolean;
 };
 
-export function VoiceSettingsSectionVoicePicker({ apply, audition, auditionPhase, saving, settings, voiceOptions }: Props) {
+export function VoiceSettingsSectionVoicePicker({ apply, audition, auditionPhase, saving, settings, voiceOptions, activeProfileName, zipReady }: Props) {
+  const usingProfile = Boolean(settings.tts.profileId);
   return (
     <div className="voice-card">
             <div className="voice-card-head"><Headphones size={15} /><span>音色</span></div>
             <div className="voice-card-body">
               <div className="voice-row">
-                <AppSelect
-                  className="voice-input"
-                  value={String(settings.tts.sid)}
-                  onChange={(v) => apply({ tts: { ...settings.tts, sid: Number(v) } })}
-                  disabled={saving}
-                  ariaLabel="音色"
-                  options={voiceOptions.map((v) => ({ value: String(v.value), label: v.label }))}
-                />
+                {usingProfile ? (
+                  <div className="voice-input voice-current-profile" title={activeProfileName || settings.tts.profileId}>
+                    当前音色：{activeProfileName || "我的音色"}
+                  </div>
+                ) : (
+                  <AppSelect
+                    className="voice-input"
+                    value={String(settings.tts.sid)}
+                    onChange={(v) => apply({ tts: { ...settings.tts, sid: Number(v) } })}
+                    disabled={saving}
+                    ariaLabel="音色"
+                    options={voiceOptions.map((v) => ({ value: String(v.value), label: `基础 · ${v.label}` }))}
+                  />
+                )}
                 <button className="secondary-setting voice-audition" onClick={() => void audition()} disabled={auditionPhase === "synth" || saving}>
                   {auditionPhase === "synth" ? <><Square size={13} />合成中…</> : auditionPhase === "playing" ? <><Square size={13} />停止</> : <><Play size={13} />试听</>}
                 </button>
               </div>
               <div className="voice-card-hint">
-                点「试听」用当前音色和语速念一句示例话（首次要加载模型，稍等；之后再点就是秒出）。播放中再点一次即停止。
+                {usingProfile
+                  ? "当前使用「我的音色」里选中的克隆音色（通话与播报都用它）。点「试听」验证；想换回机械的基础音色，到下方点「改回内置音色」。"
+                  : zipReady
+                    ? "还没选克隆音色，当前用基础音色（较机械）。到下方「内置音色」或「我的音色」里选一个，再点试听。"
+                    : "音色克隆模型未安装，当前只能用基础音色。到下方「语音模型 → 音色克隆模型」下载后即可导入自己的音色。"}
+                {usingProfile && !zipReady && " ⚠️ 音色克隆模型未就绪，当前实际会回退到基础音色。"}
               </div>
             </div>
           </div>
