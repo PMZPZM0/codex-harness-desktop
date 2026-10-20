@@ -118,7 +118,7 @@ export async function moekoeStatus() {
     running: Boolean(dfid),
     api: API_BASE,
     exe: exe || "",
-    accountNote: "API 不返回会员状态；付费歌是否完整取决于 MoeKoe 登录账号的 VIP（本机实测 is_vip=0 时只给 60 秒试听）。",
+    accountNote: "API 不返回会员状态；standard（128k，客户端同款 ppage_id）通常可完整播放，high/lossless 可能触发会员/版权试听。",
   };
 }
 
@@ -153,18 +153,17 @@ export async function playMoeKoe(input: MoeKoePlayInput) {
   if (!hash) throw new Error("缺少 hash（用 moekoe_search 结果里的 hash）");
   await ensureApi();
   const cached = songCache.get(hash);
-  const albumId = String(input.albumId ?? cached?.albumId ?? "").trim();
-  const audioId = String(input.audioId ?? cached?.audioId ?? "").trim();
   const title = String(input.title ?? cached?.title ?? "").trim();
   const artist = String(input.artist ?? cached?.artist ?? "").trim();
   const artwork = String(input.artwork ?? cached?.artwork ?? "").trim();
   const qualityKey = String(input.quality ?? "standard");
   const quality = qualityKey === "lossless" ? "flac" : qualityKey === "high" ? "320" : "128";
-  const payload = await apiJson(`/song/url?hash=${encodeURIComponent(hash)}&album_id=${encodeURIComponent(albumId || "0")}&album_audio_id=${encodeURIComponent(audioId || "0")}&quality=${quality}`, 25_000);
+  // ⛔ ppage_id 是 MoeKoe 客户端同款参数：缺了它，付费歌会被判风控/只给 60 秒试听（实测）。
+  const payload = await apiJson(`/song/url?hash=${encodeURIComponent(hash)}&quality=${quality}&ppage_id=356753938`, 25_000);
   const normalized = normalizeMoeKoeSongUrl(payload);
   if (!normalized.url) {
-    const pay = cached ? `（PayType=${cached.payType}${cached.free ? "，标记为免费" : "，付费/会员"}）` : "";
-    throw new Error(`${normalized.error}${pay}。可以换 free=true 的歌，或先在 MoeKoe 客户端登录有会员的账号并完成安全验证后再试。`);
+    const pay = cached ? `（PayType=${cached.payType}${cached.free ? "，标记为免费" : ""}）` : "";
+    throw new Error(`${normalized.error}${pay}。标准音质（quality=standard）通常可完整播放；高音质失败可降档重试，仍失败再在 MoeKoe 客户端播放一次完成安全验证。`);
   }
   // ⛔ 不要加 Referer：酷狗 CDN 对 Referer 返回 ERR_BLOCKED_BY_CLIENT（实测），只带 UA 即可
   const token = createMusicStream(normalized.url, { "user-agent": USER_AGENT });
