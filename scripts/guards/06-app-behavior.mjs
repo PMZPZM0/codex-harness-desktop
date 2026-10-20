@@ -86,12 +86,27 @@ console.log(C.bold("\n【24】协议桥：引擎只发 Responses，chat-only 网
   (bridgeSrc.includes('headers["x-tdai-user-key"]') && bridgeSrc.includes("sk-mem-") ? ok : fail)(
     "云端记忆桥：sk-mem key 同步补 X-Tdai-User-Key（否则模型请求按内部账号鉴权）"
   );
+  /* 10-20 多租户隔离加固：MEMHUB 会原样透传客户端给的 X-Tdai-User-Key ⇒ 单靠它 = 客户端自报身份。
+     桥再带本机账号代理令牌；账号服务要求两证指向同一用户。 */
+  (bridgeSrc.includes('headers["x-harness-proxy-token"]') && bridgeSrc.includes("readCloudProxyToken") && /headers\["x-tdai-user-key"\] =/.test(bridgeSrc) ? ok : fail)(
+    "云端记忆桥：同时带代理令牌，并覆盖客户端同名头（不采信自报身份）"
+  );
   {
     const serverPath = join(ROOT, "cloud/server-account/server.js");
     if (existsSync(serverPath)) {
       const accountServerSrc = readFileSync(serverPath, "utf8");
       (accountServerSrc.includes("usernameByMemoryKey") && accountServerSrc.includes("effectiveUsername") && accountServerSrc.includes("X-Tdai-User-Key") ? ok : fail)(
         "账号服务：内部网关请求按 X-Tdai-User-Key 映射真实用户（鉴权/余额/扣费都用 effectiveUsername）"
+      );
+      /* 跨用户隔离的硬判据：token 与 memKey 必须一致；memKey-only 不归属；billing 全用有效用户。 */
+      (accountServerSrc.includes("claimedToken") && accountServerSrc.includes('"identity-mismatch"') && accountServerSrc.includes('"invalid-identity-token"') && accountServerSrc.includes('"identity-incomplete"') ? ok : fail)(
+        "账号服务：代理令牌 + memKey 双证必须同时存在且一致（缺一/不一致/令牌无效直接拒绝）"
+      );
+      (/if \(found\) return "";/.test(accountServerSrc) && /effectiveUsername = internal && hasIdentity \? tokenHit\.username : hit\.username/.test(accountServerSrc) ? ok : fail)(
+        "账号服务：memKey 重复命中判无效；无身份的老客户端回退内部账号（不按自报 memKey 归属）"
+      );
+      (accountServerSrc.includes("addPoints(effectiveUsername") && accountServerSrc.includes("addUsageOnly(effectiveUsername") ? ok : fail)(
+        "账号服务：扣费/用量都记在 effectiveUsername（不再记内部账号或提交头的人）"
       );
     }
   }
