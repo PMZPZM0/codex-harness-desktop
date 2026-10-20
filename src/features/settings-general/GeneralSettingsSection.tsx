@@ -282,7 +282,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                             {reasoningDisplay === "strip" && <em>当前</em>}
                           </button>
                         </div>
-                        <p className="settings-card-hint">只影响思考内容的呈现方式，不会改变模型思考本身或历史记录。长条模式收起时只显示最新一行（贴到最新输出），且思考不会收进「深度思考」过程折叠，始终直接可见；点击展开全文，最高 50vh 内部滚动。</p>
+                        <p className="settings-card-hint">只影响思考内容的呈现方式，不会改变模型思考本身或历史记录。长条模式收起时与过程行同款，只显示最新一行（末尾省略），且思考不会收进「深度思考」过程折叠，始终直接可见；点击展开全文，最高 50vh 内部滚动。</p>
                       </div>
                     </div>
 
