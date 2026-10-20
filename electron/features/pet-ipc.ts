@@ -25,8 +25,11 @@ import { app, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { petSignal } from "./pet-state";
-import { applyPetSettings, hidePetWindow, isPetVisible, petWindowBounds, pushPetConfig, setPetInteractiveRect, setPetMoveHandler, showPetWindow } from "./pet-window";
+import { petSignal, markPetActivitySeen, petActivityRecord, togglePetActivity } from "./pet-state";
+import { applyPetSettings, hidePetWindow, isPetVisible, petWindowBounds, petActivityWindowBounds, pushPetConfig, setPetInteractiveRect, setPetMoveHandler, showPetWindow, startPetDrag, movePet, endPetDrag } from "./pet-window";
+import { server } from "../runtime-refs";
+import { showMainWindow } from "./window-factory";
+import { sendToWindow } from "./window-bus";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
@@ -283,14 +286,16 @@ function togglePet() {
   const next = writePetSettings({ ...settings, enabled: !settings.enabled });
   applyPetSettings(next);
   publishPetConfig(next);
-  return { settings: next, open: isPetVisible() };
+  // 新建窗口的 ready-to-show 在 IPC 返回之后才到；open 用「目标态」而不是瞬时 isVisible，
+  // 否则设置页首次开启会收到 false（10-21 验收 ① 实测）。
+  return { settings: next, open: next.enabled };
 }
 
 function showPet() {
   const next = writePetSettings({ ...readPetSettings(), enabled: true });
   showPetWindow(next);
   publishPetConfig(next);
-  return { settings: next, open: isPetVisible() };
+  return { settings: next, open: true };
 }
 
 function hidePet() {
@@ -314,7 +319,46 @@ export const petFeature = defineFeature<null>({
 
     ipcHost.handle("pet:settings-set", (_event, patch: Partial<PetSettings>) => setPetSettingsFromPatch(patch));
 
-    ipcHost.handle("pet:state", () => ({ signal: petSignal(), open: isPetVisible(), bounds: petWindowBounds() }));
+    ipcHost.handle("pet:state", () => ({ signal: petSignal(), open: isPetVisible(), bounds: petWindowBounds(), activityBounds: petActivityWindowBounds() }));
+
+    /* 活动气泡动作（Qoder 同款）：打开会话 / 停止回合 / 收起展开 / 打开主窗。 */
+    ipcHost.handle("pet:activity-open", (_event, threadId: string) => {
+      const id = String(threadId ?? "");
+      if (!id) return { ok: false, error: "缺少会话 id" };
+      markPetActivitySeen(id);
+      try { showMainWindow(); } catch { /* 无主窗时至少把事件发出去 */ }
+      sendToWindow("harness:event", { type: "pet-open-thread", threadId: id, at: Date.now() });
+      return { ok: true };
+    });
+
+    ipcHost.handle("pet:activity-stop", async (_event, threadId: string) => {
+      const id = String(threadId ?? "");
+      const record = petActivityRecord(id);
+      if (!record) return { ok: false, error: "活动已过期" };
+      if (!record.canStop || !record.turnId) return { ok: false, error: "当前没有可停止的执行" };
+      try {
+        await server.request("turn/interrupt", { threadId: id, turnId: record.turnId });
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: (error as Error)?.message ?? String(error) };
+      }
+    });
+
+    ipcHost.handle("pet:activity-toggle", () => ({ collapsed: !togglePetActivity() }));
+
+    ipcHost.handle("pet:open-main", () => {
+      try { showMainWindow(); } catch { /* 无主窗时忽略 */ }
+      return { ok: true };
+    });
+
+    /** 手动拖动（Qoder 同款）：渲染层捕获指针 → 主进程按屏幕坐标增量移动窗口。 */
+    ipcHost.handle("pet:drag-start", (_event, pos: { screenX?: number; screenY?: number }) => ({
+      ok: startPetDrag(Number(pos?.screenX), Number(pos?.screenY)),
+    }));
+    ipcHost.handle("pet:drag-move", (_event, pos: { screenX?: number; screenY?: number }) => ({
+      ok: movePet(Number(pos?.screenX), Number(pos?.screenY)),
+    }));
+    ipcHost.handle("pet:drag-end", () => ({ ok: endPetDrag() }));
 
     /** 目录清单：给设置页显示"能放哪儿"+ 打开按钮。 */
     ipcHost.handle("pet:roots", () => petRoots().map(({ dir, source }) => ({
@@ -347,7 +391,7 @@ export const petFeature = defineFeature<null>({
       return { ok: true };
     });
 
-    // 生命期：卸载时摘掉本域十一条通道（不摘 = 卸载后通道还在、实现已被回收 ⇒ 调用报错）
+    // 生命期：卸载时摘掉本域十八条通道（不摘 = 卸载后通道还在、实现已被回收 ⇒ 调用报错）
     ctx.effect(() => {
       ipcHost.removeHandler("pet:list");
       ipcHost.removeHandler("pet:settings-get");
@@ -360,6 +404,13 @@ export const petFeature = defineFeature<null>({
       ipcHost.removeHandler("pet:show");
       ipcHost.removeHandler("pet:hide");
       ipcHost.removeHandler("pet:interactive-rect");
+      ipcHost.removeHandler("pet:activity-open");
+      ipcHost.removeHandler("pet:activity-stop");
+      ipcHost.removeHandler("pet:activity-toggle");
+      ipcHost.removeHandler("pet:open-main");
+      ipcHost.removeHandler("pet:drag-start");
+      ipcHost.removeHandler("pet:drag-move");
+      ipcHost.removeHandler("pet:drag-end");
     });
   },
 });

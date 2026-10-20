@@ -11,10 +11,10 @@
  * 位置与放大倍率都落 `pet-settings.json`（见 pet-ipc.ts）；改倍率 = 改窗口尺寸
  * （⛔ 不是 CSS transform：窗口比宠物大一圈时，那一圈透明区域会挡住桌面上的鼠标事件）。
  */
-import { BrowserWindow, app, screen } from "electron";
+import { BrowserWindow, app, screen, type Rectangle } from "electron";
 import path from "node:path";
 import { existsSync } from "node:fs";
-import { setPetSignalSink, petSignal } from "./pet-state";
+import { setPetSignalSink, petSignal, type PetSignal } from "./pet-state";
 // ⛔ type-only：pet-ipc 静态 import 本模块，本模块只取它的类型（编译期擦除 ⇒ 无运行时循环）
 import type { PetPackage, PetSettings } from "./pet-ipc";
 
@@ -25,6 +25,11 @@ const BASE_H = 300;
 const EDGE = 18;
 
 let petWindow: BrowserWindow | null = null;
+/** 活动气泡独立窗（Qoder 同款：宠物只画本体，任务卡片单独一个窗，避免把宠物窗撑大挡桌面）。 */
+let activityWindow: BrowserWindow | null = null;
+/** 手动拖动起点（屏幕坐标 + 窗口原点）。⛔ 不走 app-region：那样拿不到 DOM 事件，做不了左右跑/竖向跳反馈。 */
+let petDragOrigin: { screenX: number; screenY: number; bounds: Rectangle } | null = null;
+let petDragging = false;
 /** 拖动结束后写盘用的防抖句柄（拖动会连续触发 moved） */
 let moveTimer: NodeJS.Timeout | null = null;
 /** 「用户把宠物拖到哪了」的回调 —— 由 pet-ipc 登记（它才是设置的持有者）。
@@ -74,16 +79,19 @@ function applyPetMouseState(): void {
   const win = petWindow!;
   if (win.isDestroyed() || win.webContents.isDestroyed()) return;
   let inside = false;
-  if (win.isVisible() && petInteractiveRect) {
-    try {
-      const b = win.getBounds();
-      const p = screen.getCursorScreenPoint();
-      const r = petInteractiveRect;
-      inside = p.x >= b.x + r.x - PET_HIT_PADDING
-        && p.x <= b.x + r.x + r.width + PET_HIT_PADDING
-        && p.y >= b.y + r.y - PET_HIT_PADDING
-        && p.y <= b.y + r.y + r.height + PET_HIT_PADDING;
-    } catch { inside = false; }
+  if (win.isVisible() && (petDragging || petInteractiveRect)) {
+    if (petDragging) inside = true;
+    else {
+      try {
+        const b = win.getBounds();
+        const p = screen.getCursorScreenPoint();
+        const r = petInteractiveRect!;
+        inside = p.x >= b.x + r.x - PET_HIT_PADDING
+          && p.x <= b.x + r.x + r.width + PET_HIT_PADDING
+          && p.y >= b.y + r.y - PET_HIT_PADDING
+          && p.y <= b.y + r.y + r.height + PET_HIT_PADDING;
+      } catch { inside = false; }
+    }
   }
   const ignore = !inside;
   if (petMouseAppliedIgnore === ignore) return;   // 状态没变，不重复调（避免无谓的窗口属性写）
@@ -162,10 +170,14 @@ export function petWindowBounds() {
 
 /** 主进程 → 浮窗的状态推送（浮窗首帧还会自己 invoke pet:state 补水，防漏推）。 */
 function pushSignal() {
-  if (!isPetWindowOpen()) return;
-  const win = petWindow!;
-  if (win.webContents.isDestroyed()) return;
-  try { win.webContents.send("pet:signal", petSignal()); } catch { /* 窗口在关，忽略 */ }
+  const signal = petSignal();
+  if (isPetWindowOpen()) {
+    const win = petWindow!;
+    if (!win.webContents.isDestroyed()) {
+      try { win.webContents.send("pet:signal", signal); } catch { /* 窗口在关，忽略 */ }
+    }
+  }
+  syncPetActivityWindow(signal);
 }
 
 /**
@@ -181,6 +193,200 @@ export function pushPetConfig(payload: { settings: PetSettings; active: PetPacka
   const win = petWindow!;
   if (win.webContents.isDestroyed()) return;
   try { win.webContents.send("pet:config", payload); } catch { /* 忽略 */ }
+}
+
+/* ── 活动气泡独立窗（Qoder 同款）──────────────────────────────────────────
+   宠物窗只有 230×300，塞任务卡会把宠物本体挤小、悬停区/拖拽区全乱。
+   活动气泡单独一窗：320px 宽、最多两张卡，贴在宠物上方，跟随宠物移动/缩放；
+   只在有活动、未收起、宠物可见时出现。 */
+const ACTIVITY_WIDTH = 320;
+const ACTIVITY_CARD_HEIGHT = 82;
+const ACTIVITY_GAP = 8;
+const ACTIVITY_PADDING = 12;
+const ACTIVITY_EDGE = 8;
+
+function activityWindowSize(signal: PetSignal) {
+  const count = Math.max(1, Math.min(2, signal.activities.length));
+  return {
+    width: ACTIVITY_WIDTH,
+    height: ACTIVITY_PADDING * 2 + count * ACTIVITY_CARD_HEIGHT + Math.max(0, count - 1) * ACTIVITY_GAP,
+  };
+}
+
+export function isPetActivityWindowOpen(): boolean {
+  return Boolean(activityWindow && !activityWindow.isDestroyed());
+}
+
+export function petActivityWindowBounds() {
+  if (!isPetActivityWindowOpen()) return null;
+  return activityWindow!.getBounds();
+}
+
+function positionPetActivityWindow(size: { width: number; height: number }) {
+  if (!isPetActivityWindowOpen() || !isPetWindowOpen()) return;
+  const win = activityWindow!;
+  if (win.isDestroyed()) return;
+  let petBounds: Rectangle;
+  try { petBounds = petWindow!.getBounds(); } catch { return; }
+  if (!petBounds.width || !petBounds.height) return;
+  const work = screen.getDisplayMatching(petBounds).workArea;
+  let x = Math.round(petBounds.x + petBounds.width / 2 - size.width / 2);
+  let y = petBounds.y - size.height - ACTIVITY_EDGE;
+  if (y < work.y + ACTIVITY_EDGE) y = petBounds.y + petBounds.height + ACTIVITY_EDGE;
+  x = Math.min(Math.max(x, work.x + ACTIVITY_EDGE), work.x + work.width - size.width - ACTIVITY_EDGE);
+  y = Math.min(Math.max(y, work.y + ACTIVITY_EDGE), work.y + work.height - size.height - ACTIVITY_EDGE);
+  try { win.setBounds({ x, y, ...size }); } catch { /* 忽略 */ }
+}
+
+function sendActivitySignal(signal: PetSignal) {
+  if (!isPetActivityWindowOpen()) return;
+  const win = activityWindow!;
+  if (win.webContents.isDestroyed()) return;
+  try { win.webContents.send("pet:signal", signal); } catch { /* 忽略 */ }
+}
+
+function createPetActivityWindow(): BrowserWindow {
+  const signal = petSignal();
+  const size = activityWindowSize(signal);
+  const win = new BrowserWindow({
+    width: size.width,
+    height: size.height,
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    hasShadow: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    autoHideMenuBar: true,
+    acceptFirstMouse: true,
+    show: false,
+    focusable: true,
+    webPreferences: {
+      preload: path.join(app.getAppPath(), "dist-electron", "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webviewTag: false,
+      backgroundThrottling: false,
+    },
+  });
+  activityWindow = win;
+  win.setAlwaysOnTop(true);
+  win.on("closed", () => {
+    if (activityWindow === win) activityWindow = null;
+  });
+  win.webContents.on("will-navigate", (event, target) => {
+    const devUrl = process.env.VITE_DEV_SERVER_URL ?? "";
+    if (devUrl && target.startsWith(devUrl)) return;
+    if (target.startsWith("file://") && target.includes("/dist/index.html")) return;
+    event.preventDefault();
+  });
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  win.once("ready-to-show", () => {
+    try {
+      positionPetActivityWindow(size);
+      win.showInactive();
+      win.moveTop();
+      sendActivitySignal(petSignal());
+    } catch { /* 忽略 */ }
+  });
+  const devUrl = process.env.VITE_DEV_SERVER_URL;
+  if (devUrl) {
+    const sep = devUrl.includes("?") ? "&" : "?";
+    void win.loadURL(`${devUrl}${sep}pet=activity`);
+  } else {
+    void win.loadFile(path.join(app.getAppPath(), "dist", "index.html"), { query: { pet: "activity" } });
+  }
+  return win;
+}
+
+/** 活动气泡窗的显隐/位置/内容同步（每次宠物信号推送都调）。 */
+export function syncPetActivityWindow(signal: PetSignal) {
+  if (!isPetVisible() || signal.activityCollapsed || signal.activities.length === 0) {
+    if (isPetActivityWindowOpen()) {
+      try { activityWindow!.hide(); } catch { /* 忽略 */ }
+    }
+    return;
+  }
+  const size = activityWindowSize(signal);
+  if (!isPetActivityWindowOpen()) {
+    createPetActivityWindow();
+    return;
+  }
+  const win = activityWindow!;
+  if (win.isDestroyed()) return;
+  const b = win.getBounds();
+  if (b.width !== size.width || b.height !== size.height) {
+    try { win.setBounds({ ...b, ...size }); } catch { /* 忽略 */ }
+  }
+  positionPetActivityWindow(size);
+  if (!win.isVisible()) {
+    try { win.showInactive(); } catch { /* 忽略 */ }
+  }
+  try { win.moveTop(); } catch { /* 忽略 */ }
+  sendActivitySignal(signal);
+}
+
+export function hidePetActivityWindow() {
+  if (!isPetActivityWindowOpen()) return;
+  try { activityWindow!.hide(); } catch { /* 忽略 */ }
+}
+
+export function closePetActivityWindow() {
+  if (!isPetActivityWindowOpen()) return;
+  try { activityWindow!.destroy(); } catch { /* 忽略 */ }
+  activityWindow = null;
+}
+
+/* ── 手动拖动（Qoder 同款：指针捕获 + 主进程 setBounds，拿得到 screenX/screenY）──
+   ⛔ 旧实现用 `-webkit-app-region: drag`；drag 区属非客户区，渲染层收不到 mousemove，
+   做不了「左右跑 / 竖向跳」的拖拽反馈，也放不下悬停工具栏。 */
+export function startPetDrag(screenX: number, screenY: number): boolean {
+  if (!isPetWindowOpen() || !Number.isFinite(screenX) || !Number.isFinite(screenY)) return false;
+  const win = petWindow!;
+  if (win.isDestroyed()) return false;
+  try {
+    const bounds = win.getBounds();
+    petDragOrigin = { screenX, screenY, bounds };
+    petDragging = true;
+    applyPetMouseState();
+    return true;
+  } catch { return false; }
+}
+
+export function movePet(screenX: number, screenY: number): boolean {
+  if (!petDragOrigin || !isPetWindowOpen() || !Number.isFinite(screenX) || !Number.isFinite(screenY)) return false;
+  const win = petWindow!;
+  if (win.isDestroyed()) return false;
+  const origin = petDragOrigin;
+  try {
+    win.setBounds({
+      x: Math.round(origin.bounds.x + screenX - origin.screenX),
+      y: Math.round(origin.bounds.y + screenY - origin.screenY),
+      width: origin.bounds.width,
+      height: origin.bounds.height,
+    });
+    return true;
+  } catch { return false; }
+}
+
+export function endPetDrag(): boolean {
+  petDragOrigin = null;
+  petDragging = false;
+  if (isPetWindowOpen()) {
+    try {
+      const b = petWindow!.getBounds();
+      const pos = clampToWorkArea(b.x, b.y, b.width, b.height);
+      if (pos.x !== b.x || pos.y !== b.y) petWindow!.setBounds({ ...b, ...pos });
+      onMoved?.({ x: pos.x, y: pos.y });
+    } catch { /* 忽略 */ }
+  }
+  applyPetMouseState();
+  return true;
 }
 
 function createPetWindow(settings: PetSettings): BrowserWindow {
@@ -231,6 +437,7 @@ function createPetWindow(settings: PetSettings): BrowserWindow {
       win.showInactive();          // ⛔ showInactive：显示宠物**不抢当前应用的焦点**
       // 光标轮询开跑；矩形尚未上报前**整块穿透**（fail-safe：绝不挡桌面）
       startPetMouseWatch();
+      syncPetActivityWindow(petSignal());
     } catch { /* 忽略 */ }
   });
 
@@ -246,6 +453,7 @@ function createPetWindow(settings: PetSettings): BrowserWindow {
   /* 拖动后存位置（防抖 400ms：连续 moved 会写爆磁盘） */
   win.on("moved", () => {
     if (!isPetWindowOpen()) return;
+    if (isPetActivityWindowOpen()) positionPetActivityWindow(activityWindowSize(petSignal()));
     if (moveTimer) clearTimeout(moveTimer);
     moveTimer = setTimeout(() => {
       if (!isPetWindowOpen()) return;
@@ -253,11 +461,17 @@ function createPetWindow(settings: PetSettings): BrowserWindow {
       onMoved?.({ x: b.x, y: b.y });
     }, 400);
   });
+  win.on("resize", () => {
+    if (isPetActivityWindowOpen()) positionPetActivityWindow(activityWindowSize(petSignal()));
+  });
 
   win.on("closed", () => {
     stopPetMouseWatch();
     petMouseAppliedIgnore = null;
     petWindow = null;
+    petDragOrigin = null;
+    petDragging = false;
+    closePetActivityWindow();
     setPetSignalSink(null);
   });
 
@@ -289,6 +503,7 @@ export function showPetWindow(settings: PetSettings) {
     win.setAlwaysOnTop(true);
     win.showInactive();
     startPetMouseWatch();
+    syncPetActivityWindow(petSignal());
   } catch { /* 忽略 */ }
   return win;
 }
@@ -296,12 +511,18 @@ export function showPetWindow(settings: PetSettings) {
 export function hidePetWindow() {
   if (!isPetWindowOpen()) return;
   try { petWindow!.hide(); } catch { /* 忽略 */ }
+  hidePetActivityWindow();
+  petDragOrigin = null;
+  petDragging = false;
   // 藏起来即停轮询并回到穿透态：下次 showInactive 若指针恰好停在窗上，不至于一出现就挡住桌面
   stopPetMouseWatch();
   applyPetMouseState();
 }
 
 export function closePetWindow() {
+  petDragOrigin = null;
+  petDragging = false;
+  closePetActivityWindow();
   if (!isPetWindowOpen()) return;
   stopPetMouseWatch();
   petMouseAppliedIgnore = null;
@@ -327,6 +548,7 @@ export function applyPetSettings(settings: PetSettings) {
     if (b.width !== width || b.height !== height) {
       const pos = clampToWorkArea(b.x, b.y, width, height);
       win.setBounds({ ...pos, width, height });
+      if (isPetActivityWindowOpen()) positionPetActivityWindow(activityWindowSize(petSignal()));
     }
   } catch { /* 忽略 */ }
 }
