@@ -25,8 +25,11 @@ import { bufferedReasoningRevealStarts } from "../../lib/buffered-reasoning-reve
 import { revealReasoningProgress } from "../../lib/reveal-reasoning-progress";
 import { revealStepForReasoning } from "../../lib/reveal-step-for-reasoning";
 import { useCardOpen } from "../../components/CardShell";
+import { useReasoningDisplayMode } from "../../lib/reasoning-display-mode";
+import { ReasoningStrip } from "./ReasoningStrip";
 
 export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: boolean }) {
+  const displayMode = useReasoningDisplayMode();
   const bodyRef = useRef<HTMLDivElement>(null);
   // 思考卡一旦「现场出现过」（本会话流式期间渲染过），完成后永不整体消失：
   // 部分模型/中转不回 reasoning 摘要 delta，text 一直为空——旧行为在回合结束时
@@ -219,7 +222,7 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
   // ⛔ 10-06「回合结束幻影浮窗」三修（前两修堵了两条路径，实测仍有残留揭示/状态翻转能凭空开窗）：
   //    回合结束后，浮窗**只认用户显式点开**（manualOpen === true）——自动揭示、残留标记、
   //    文本补写引起的任何 flicker 都不许再让浮窗出现，从而彻底消灭「凭空开一下再缩回」。
-  const popupOpen = open && Boolean(displayed) && (running ? (streamingNow || manualOpen !== null) : manualOpen === true);
+  const popupOpen = displayMode === "auto" && open && Boolean(displayed) && (running ? (streamingNow || manualOpen !== null) : manualOpen === true);
   /* 芯片 ref：被下面那个 effect 用来判"元素是否还被父容器带着"
      （⛔ 必须声明在它的使用者之前 —— effect 回调虽在渲染后才跑，但依赖"后面才声明的
      const"太脆：谁把这段代码上移/下移就会变成 TDZ 崩。 */
@@ -255,7 +258,7 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
       return () => clearTimeout(t);
     }
   }, [popupOpen, displayed, manualOpen]);
-  const reasoningBodyPointerMounted = (popupOpen || exiting) && Boolean(displayed);
+  const reasoningBodyPointerMounted = displayMode === "auto" && (popupOpen || exiting) && Boolean(displayed);
   /* ── 浮窗定位：与输入框**同宽同列**（跟输入框一样长）；垂直方向**按空间自适应**
      （09-26 用户定稿「位置不是固定每次都在下方」）：下方够就贴芯片下方 4px；
      下方不够（芯片贴近输入框——最常见）放芯片上方；两侧都不够取**空间大**的一侧
@@ -338,6 +341,11 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
   const head = running
     ? <span className="reasoning-head shimmer-text"><Brain size={13} className="reasoning-pulse" />深度思考中</span>
     : <span className="reasoning-head"><Brain size={13} />已深度思考{durationMs ? `（用时 ${formatDuration(durationMs)}）` : ""}</span>;
+  /* 第二种展示形态（10-20 用户）：长条按行 + 点击展开。默认仍是上面的自适应浮窗；
+     两档由设置 → 控制台的「思考板块展示」切换，正文/追字仍走同一份 displayed。 */
+  if (displayMode === "strip") {
+    return <ReasoningStrip head={head} text={displayed} running={running} revealing={revealing} />;
+  }
   return (
     <div className={`reasoning-card ${running ? "live" : "done"} ${open ? "open" : "collapsed"}`}>
       <button type="button" className="reasoning-head-btn" ref={headRef} onClick={toggle}>
