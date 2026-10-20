@@ -4718,7 +4718,7 @@ export async function run() {
   );
   // ① 正文一律走 portal 浮窗（直播与 done 预览同一条路）——内联 Fold 展开已退役：
   //    思考不占消息流布局，工具卡不再被撑出视口（用户 09-26 定稿）。
-  (/createPortal\(/.test(itemSrc) ? ok : fail)("【161】思考正文 = portal 浮窗（直播与预览同路）");
+  (/createPortal\(/.test(itemSrc) ? ok : fail)("【161】自适应模式的正文 = portal 浮窗（直播与预览同路）");
   (!/Fold open=\{open\}/.test(itemSrc) ? ok : fail)("【161】⛔ 内联 Fold 展开不得回归（那是「撑走工具卡」本身）");
   // ② 浮窗与输入框同宽同列（JS 每帧取 composerRect.width/left 写内联样式）。
   (/compR\.width/.test(itemSrc) && /compR\.left/.test(itemSrc) ? ok : fail)(
@@ -4774,7 +4774,7 @@ export async function run() {
   (/if \(!running && !revealing\) bufferedReasoningRevealStarts\.delete\(String\(item\.id\)\);\n\s*const markedStart = running \? bufferedReasoningRevealStarts\.get\(String\(item\.id\)\) : null;/.test(itemSrc) ? ok : fail)(
     "【161】⛔ 揭示 effect：非直播态先清续播标记、且不读它（残留标记 + 文本补写 = 幻影开窗）"
   );
-  (/const popupOpen = open && Boolean\(displayed\) && \(running \? \(streamingNow \|\| manualOpen !== null\) : manualOpen === true\);/.test(itemSrc) ? ok : fail)(
+  (/const popupOpen = displayMode === "auto" && open && Boolean\(displayed\) && \(running \? \(streamingNow \|\| manualOpen !== null\) : manualOpen === true\);/.test(itemSrc) ? ok : fail)(
     "【161】⛔ 回合结束后浮窗只认用户显式点开（自动揭示/状态 flicker 一律不许凭空开窗）"
   );
   // ⑫ ⛔⛔ 10-07 组件级探针实测（**单块思考直播期间放大 10 次 / 缩小 10 次**，卡片在
@@ -4795,6 +4795,32 @@ export async function run() {
   (/if \(!headRef\.current\?\.isConnected \|\| manualOpen !== false\) \{ setExiting\(false\); return; \}/.test(itemSrc) ? ok : fail)(
     "【161】⛔ 吸入动画只在用户点收起来时播（自动收起/被父容器带走一律静默）"
   );
+  // ⑭ 10-20 两种展示形态（用户：「一个长条里面按行展示思考内容（也可以点击展开），
+  //    一个是现在的自适应展开展示，默认现在的自适应」）：
+  //    · 默认值必须是 auto —— 模式键缺失/非法时一律回落自适应，不能让老用户升级后突然换形态；
+  //    · strip 模式走独立组件（消息流内联），不许复制一份追字/直播判据；
+  //    · 两档都从控制台切换，且即时生效（同窗 CustomEvent + 跨窗 storage）。
+  {
+    const stripSrc = readFileSync(join(ROOT, "src", "features", "shared", "ReasoningStrip.tsx"), "utf8").replace(/\r/g, "");
+    const modeSrc = readFileSync(join(ROOT, "src", "lib", "reasoning-display-mode.ts"), "utf8").replace(/\r/g, "");
+    const generalSrc = readFileSync(join(ROOT, "src", "features", "settings-general", "GeneralSettingsSection.tsx"), "utf8").replace(/\r/g, "");
+    const stylesEntry = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+    (modeSrc.includes('localStorage.getItem(KEY) === "strip" ? "strip" : "auto"') && /useReasoningDisplayMode/.test(modeSrc) && /window.dispatchEvent\(new CustomEvent/.test(modeSrc) && /addEventListener\("storage"/.test(modeSrc) ? ok : fail)(
+      "【161】展示模式默认 auto、非法值回落 auto；同窗事件 + 跨窗 storage 即时同步"
+    );
+    (/displayMode === "strip"[\s\S]{0,160}<ReasoningStrip/.test(itemSrc) && /<ReasoningStrip head=\{head\} text=\{displayed\} running=\{running\} revealing=\{revealing\} \/>/.test(itemSrc) ? ok : fail)(
+      "【161】strip 模式复用同一份 displayed/追字状态（不复制直播判据）"
+    );
+    (/aria-expanded=\{expanded\} onClick=\{toggle\}/.test(stripSrc) && /setExpanded\(\(current\) => !current\)/.test(stripSrc) && /scrollTop = el\.scrollHeight/.test(stripSrc) && /scrollTop = 0/.test(stripSrc) ? ok : fail)(
+      "【161】长条可点击展开/收起；直播贴底、展开从头读"
+    );
+    (/\.reasoning-strip\.collapsed \.reasoning-strip-body \{[\s\S]{0,120}max-height: 78px;/.test(styles54) && /\.reasoning-strip\.expanded \.reasoning-strip-body \{[\s\S]{0,120}max-height: min\(50vh, 420px\)/.test(styles54) && /styles\/40-reasoning-strip/.test(stylesEntry) ? ok : fail)(
+      "【161】长条默认 3 行（78px）、展开最高 50vh 内部滚动；40 号样式已引入"
+    );
+    (generalSrc.includes("思考板块展示") && generalSrc.includes('setReasoningDisplayMode("auto")') && generalSrc.includes('setReasoningDisplayMode("strip")') && generalSrc.includes("reasoning-mode-seg") ? ok : fail)(
+      "【161】设置 → 控制台有两档切换（自适应展开 / 长条按行），点击即时生效"
+    );
+  }
 }
 // ── 55. 压缩期间的运行态语义（09-26 用户截图：压缩后「正在生成回复 · 正在落笔」一直挂着）──
 {
