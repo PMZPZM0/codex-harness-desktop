@@ -126,15 +126,24 @@ export function CappedToolRun({ label, units, renderUnit, renderAfter, limit = 3
  *    用户明确要求避免这种重复；而且停止回合（`keepProcessOpen`）外层默认展开时，内层仍收着会让
  *    「点开也看不到做到哪了」（09-18 修过的老问题）复活。
  *  ⛔ 运行态没有外层折叠块 ⇒ 保持 `cap` 开启，它是那一阶段唯一的收敛机制（两种规则各管一段、不重叠）。 */
-export function CappedToolSequence({ units, renderUnit, renderAfter, cap = true }: {
+export function CappedToolSequence({ units, renderUnit, renderAfter, cap = true, unitLimit }: {
   units: FoldUnit[];
   renderUnit: (unit: FoldUnit) => React.ReactNode;
   /** 每项之后追加渲染（运行中实时「编辑 <文件> +N -M」行按锚点挂在对应项后面——10-06 二改）。 */
   renderAfter?: (unit: FoldUnit) => React.ReactNode;
   cap?: boolean;
+  /** 直播**过程末段**的整段上限（10-20）：超过就只留最新 N 条，其余收进「已收起…过程」。
+   *  ⛔ 只传 foldable 段（工具/命令/编辑/搜索/看图/已结束思考），⛔ 别传给含正文的 normal 段
+   *     —— 那会把助手正文也藏起来。 */
+  unitLimit?: number;
 }) {
   const runs = useMemo(() => (cap ? buildOrderedToolRuns(units) : []), [units, cap]);
   if (cap === false) return <>{units.map((unit) => <Fragment key={unit.item.id}>{renderUnit(unit)}{renderAfter ? renderAfter(unit) : null}</Fragment>)}</>;
+  /* 直播末段没有外层折叠组 ⇒ 除了「同一工具 >3 条」之外，还要有一个**整段上限**：
+     否则十分钟的回合里几十种不同工具/命令/看图会一直堆在折叠外（用户 10-20 审查报障）。 */
+  if (unitLimit && units.length > unitLimit) {
+    return <CappedToolRun label="过程" units={units} renderUnit={renderUnit} renderAfter={renderAfter} limit={unitLimit} />;
+  }
   return <>{runs.map((run) => run.kind === "unit"
     ? <Fragment key={run.key}>{renderUnit(run.units[0])}{renderAfter ? renderAfter(run.units[0]) : null}</Fragment>
     : <CappedToolRun key={run.key} label={run.label} units={run.units} renderUnit={renderUnit} renderAfter={renderAfter} />)}</>;
