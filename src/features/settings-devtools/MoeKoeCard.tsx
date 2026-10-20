@@ -53,7 +53,7 @@ export function MoeKoeCard({
               </span>
               <em className="runtime-progress">{stage ? `${stage} · ` : ""}{value ? `${value}%` : "准备中"}{progress ? ` · ${progress}` : ""}</em>
             </span>
-          ) : <em className="runtime-hint">{installed ? "已安装 · 点击启动；Codex 可直接调用 6521 API" : `系统级安装 · ${runtime?.size ?? "约 133 MB"} · 国内镜像`}</em>}
+          ) : <em className="runtime-hint">{installed ? "已安装 · 点击启动；Codex 可直接调用 6521 API" : `系统级安装 · ${runtime?.size ?? "约 133 MB"} · 官方源 · 自动识别系统/架构`}</em>}
         </span>
         <span className="runtime-actions" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
           <button type="button" className="primary-setting runtime-install" disabled={installing} onClick={run}>
@@ -69,8 +69,8 @@ export function MoeKoeCard({
           }}>
             <Copy size={13} />
           </button>
-          <button type="button" className="secondary-setting" onClick={() => void window.codex.openExternal("https://music.moekoe.cn/")}>
-            <ExternalLink size={13} />官网
+          <button type="button" className="secondary-setting" onClick={() => void window.codex.openExternal("https://music.moekoe.cn/download.html")}>
+            <ExternalLink size={13} />官方下载页
           </button>
         </span>
       </div>
