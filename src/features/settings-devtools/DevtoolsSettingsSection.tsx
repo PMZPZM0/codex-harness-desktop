@@ -20,7 +20,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { PageInfo } from "../../components/SettingsHead";
-import { AlertTriangle, Boxes, Brain, ChevronRight, CircleCheck, Copy, Puzzle, Smartphone, Wrench, X } from "lucide-react";
+import { AlertTriangle, Boxes, Brain, ChevronRight, CircleCheck, Copy, Music2, Puzzle, Smartphone, Wrench, X } from "lucide-react";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { Slot } from "../../runtime/Slot";
@@ -28,11 +28,12 @@ import { RuntimeToolsPanel } from "./RuntimeToolsPanel";
 import { CapabilityChainPanel } from "./CapabilityChainPanel";
 import { PhoneHarnessCard } from "./PhoneHarnessCard";
 import { LayaCard } from "./LayaCard";
+import { MoeKoeCard } from "./MoeKoeCard";
 
 export type DevtoolsSettingsSectionProps = { downloadSource?: any; capabilityRows: any; capabilityError: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any; runtimeModal: any; setRuntimeModal: any; };
 
 /** 一级卡片的 key —— 也是弹窗的开关值（同时只开一个）。 */
-type DevtoolsCardKey = "runtime" | "capability" | "phone" | "laya" | "domains" | "plugins";
+type DevtoolsCardKey = "runtime" | "moekoe" | "capability" | "phone" | "laya" | "domains" | "plugins";
 
 export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
   const { capabilityRows, capabilityError, setNotice, devRuntimes, runtimeInstalling, runtimeUninstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime, cancelDevRuntime, runtimeModal, setRuntimeModal } = props;
@@ -62,8 +63,11 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
      数字拿不到的就不显示 —— 卡片上写错的状态比不写更糟）。 */
   const runtimeReady = devRuntimes.filter((row: any) => row.installed || row.installedBySystem || row.builtIn).length;
   const runtimeTotal = devRuntimes.length;
+  const moekoeRuntime = devRuntimes.find((row: any) => row.id === "moekoe");
+  const moekoeInstalling = runtimeInstalling === "moekoe";
   const cards: { key: DevtoolsCardKey; icon: any; title: string; desc: string; stat: string }[] = [
     { key: "runtime", icon: <Wrench size={15} />, title: "运行时与工具链", desc: "内置运行时、桌面与浏览器自动化、开发工具链、媒体与文档", stat: runtimeTotal ? `已就绪 ${runtimeReady} / ${runtimeTotal} 项` : "正在读取状态…" },
+    { key: "moekoe", icon: <Music2 size={15} />, title: "MoeKoe 音乐", desc: "外部酷狗客户端：Codex 通过 6521 API 搜歌/播放", stat: moekoeInstalling ? "安装中…" : moekoeRuntime?.installed ? "已安装 · 可从 Codex 调用" : "未安装 · 点开安装" },
     { key: "capability", icon: <CircleCheck size={15} />, title: "当前能力链路", desc: "同一件事有多个后端时，现在实际走的是哪条", stat: capabilityRows.length ? `${capabilityRows.length} 项能力` : "正在读取状态…" },
     { key: "phone", icon: <Smartphone size={15} />, title: "手机控制", desc: "让 Codex 直接操作手机：看屏幕、点按、打字、读日志", stat: "Android（adb）· iPhone 需 mac" },
     { key: "laya", icon: <Brain size={15} />, title: "Laya 智能判断", desc: "思考等级「自动」档的本地决策端（Python）", stat: "本地 · 可选安装" },
@@ -117,6 +121,19 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
           {/* 手机控制（09-27）：上游 phone-harness 是 Python CLI 不是 MCP 服务，
               所以不做连接器模板，做成工具卡：装机 + 关遥测 + 注册技能 + 权限引导。 */}
           <PhoneHarnessCard setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} />
+        </SettingsDialog>
+      )}
+      {openCard === "moekoe" && activeCard && (
+        <SettingsDialog title={activeCard.title} icon={<Music2 size={15} />} hint="外部客户端 · 国内镜像安装 · 6521 API" size="lg" onClose={() => setOpenCard(null)}>
+          <MoeKoeCard
+            runtime={moekoeRuntime}
+            installing={moekoeInstalling}
+            percent={runtimePercent?.["moekoe"]}
+            stage={runtimeStage?.["moekoe"]}
+            progress={runtimeProgress?.["moekoe"]}
+            onInstall={() => installDevRuntime("moekoe")}
+            setNotice={setNotice}
+          />
         </SettingsDialog>
       )}
       {openCard === "laya" && activeCard && (
