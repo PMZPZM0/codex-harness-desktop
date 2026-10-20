@@ -45,8 +45,9 @@
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  text-overflow: ellipsis;
   color: var(--muted);
+  /* 10-20 用户令「长条按行要滚动展示思考内容」：单行内容由 JS 自动横向滚动，
+     ⛔ 不用省略号截断（那会把后面的思考内容吃掉）。 */
 }
 .reasoning-strip-hint {
   flex: none;
