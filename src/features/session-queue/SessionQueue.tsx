@@ -21,6 +21,7 @@ import { planCompletedFold } from "../../lib/turn-fold-plan.mjs";
 import { QueueItem } from "../../lib/queue-item";
 import { inputText } from "../../lib/input-text";
 import { reasoningDuration } from "../../lib/reasoning-duration";
+import { useReasoningDisplayMode } from "../../lib/reasoning-display-mode";
 import { ItemView } from "./ItemView";
 
 export function QueuedMessageList({ entries, timers, onSetTimer, onOpenFile, onQuote, onDelete, onStart, onSave, onReorder, dragIndex, setDragIndex }: {
@@ -288,7 +289,10 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
     .filter((item) => !(item.type === "agentMessage" && !String(item.text ?? "").trim()))
     .map((item) => ({ item, kind: classifyUnit(item) })),
   [items]);
-  const segments = useMemo(() => buildSegments(units, !running), [units, running]);
+  const reasoningDisplay = useReasoningDisplayMode();
+  // strip 模式思考始终内联：不参与过程折叠（否则收起后只剩「深度思考」空长条）。
+  const inlineThinking = reasoningDisplay === "strip";
+  const segments = useMemo(() => buildSegments(units, !running, { inlineThinking }), [units, running, inlineThinking]);
 
   /* ── 「编辑 <文件> +N -M」行的**就地锚定**（运行中）+ **收尾冻结块**（结束后常驻可见）─────────
      一改（用户纠正）：「在哪个地方就展示在哪个地方，不是一直在新消息下面，这样多丑」——
@@ -435,7 +439,7 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
   // ⛔ 09-23 试过把过渡正文也留在外面（每段正文之间各自成一个折叠块，对标图二），
   //    用户当天否掉：「你先加了一个正文中间折叠，运行过程不折叠吗」⇒ 别再试（见纯函数文件头）。
   if (finalUnit && units.length > 1) {
-    const plan = planCompletedFold(units, finalUnit.item.id);
+    const plan = planCompletedFold(units, finalUnit.item.id, { inlineThinking });
     if (plan.some((entry) => entry.kind === "fold")) {
       // ⛔ 09-15 修复「耗时折叠头重复」：任务回合（长正文把过程切成多段）原来**每个** fold 段
       // 都挂 completedTitle，实测一回合出现两个「耗时 4m49s · 2 项失败」——一个在过程开头、

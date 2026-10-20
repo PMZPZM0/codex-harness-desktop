@@ -27,9 +27,11 @@ function bodyTextOf(item) {
  *   { kind: "fold", units } —— 连续的过程单元 → 收进折叠组
  *   { kind: "body", unit }  —— 锚点 → 常驻在折叠组外（用户消息 / 最终汇总结果）
  */
-export function planCompletedFold(units, finalAgentId) {
+export function planCompletedFold(units, finalAgentId, options = {}) {
   const list = Array.isArray(units) ? units : [];
+  const inlineThinking = Boolean(options.inlineThinking);
   const isUser = (unit) => unit?.item?.type === "userMessage";
+  const isThinking = (unit) => unit?.kind === "thinking" || unit?.item?.type === "reasoning";
   const isAgentWithBody = (unit) => unit?.item?.type === "agentMessage" && Boolean(bodyTextOf(unit.item));
   // 最终汇总：优先按 id 匹配；id 对不上（上游快照丢 id 的既有形态）→ 以最后一条有正文的消息兜底
   let finalIndex = -1;
@@ -47,6 +49,8 @@ export function planCompletedFold(units, finalAgentId) {
   let buffer = [];
   const flush = () => { if (buffer.length) plan.push({ kind: "fold", units: buffer }); buffer = []; };
   list.forEach((unit, index) => {
+    // strip 模式（10-20）：思考留在折叠组外直接显示（详见 buildSegments 同处注释）。
+    if (inlineThinking && isThinking(unit)) { flush(); plan.push({ kind: "body", unit }); return; }
     if (isUser(unit) || index === finalIndex) { flush(); plan.push({ kind: "body", unit }); }
     else buffer.push(unit);
   });
