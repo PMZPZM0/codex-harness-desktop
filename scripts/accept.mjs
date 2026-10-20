@@ -966,16 +966,8 @@ const CHECKS = [
         /* ⑩ 图片行：logo.svg 有缩略图 + 「新增」徽标（用户点名「还有生成的图片」）。 */
         const svgRow = (rowsAll ?? []).find((r) => String(r.name).toLowerCase().endsWith("logo.svg"));
         h.check("⑩ logo.svg 行显示缩略图 + 「新增」徽标", svgRow?.thumb === true && svgRow?.isNew === true, JSON.stringify(svgRow));
-        /* ⑪ 点 notes.md 行 → 真文件预览弹窗（文件是盘上真货，预览器真读盘）。 */
-        await h.eval(`(function(){ const c=${cardSel}; if(!c) return false;
-          const row=[...c.querySelectorAll('.completed-file')].find((r)=>(r.querySelector('.completed-file-meta code')?.textContent||'').trim().toLowerCase()==='notes.md');
-          if(!row) return false; row.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true})); return true; })()`);
-        const previewOpened = await h.waitFor(`!!document.querySelector('.file-preview')`, { label: "文件预览弹窗", timeoutMs: 8000 }).then(() => true).catch(() => false);
-        const previewMeta = await h.text(".file-preview-meta").catch(() => "");
-        h.check("⑪ 点行直接打开预览（弹窗打开，且预览的就是这一行的 notes.md）",
-          previewOpened === true && String(previewMeta).includes("notes.md"), JSON.stringify({ previewOpened, previewMeta: String(previewMeta).slice(0, 80) }));
-        await h.eval(`(function(){ document.querySelector('.file-preview .relay-modal-close')?.click(); window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'})); return 1; })()`).catch(() => undefined);
-        await wait(400);
+        /* ⑪（10-18 改口径）行点击已改为右栏「审阅」（用户令）；文件预览入口保留在右键菜单的
+           「打开」上 —— 本项挪到 ⑬ 之后验证，避免与 ⑫ 抢同一个菜单。 */
         /* ⑫ 行右键 → 文件卡菜单两项点名（在文件夹中显示 = 「打开文件地址」/ 复制文件路径）。
            ⛔ 用 JS 派发 contextmenu（React 监听的正是这个原生事件）；派发后等一拍再读 DOM（setMenu 异步）。 */
         await h.eval(`(function(){ const c=${cardSel}; if(!c) return false;
@@ -1000,6 +992,22 @@ const CHECKS = [
           copied === true && copyToast === true, JSON.stringify({ copied, copyToast }));
         await h.eval(`(function(){ window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'})); return 1; })()`).catch(() => undefined);
         await wait(300);
+        /* ⑪ 文件预览入口：右键菜单「打开」（行点击现在进右栏审阅，不再开居中小弹窗）。 */
+        await h.eval(`(function(){ const c=${cardSel}; if(!c) return false;
+          const row=[...c.querySelectorAll('.completed-file')].find((r)=>(r.querySelector('.completed-file-meta code')?.textContent||'').trim().toLowerCase()==='notes.md');
+          if(!row) return false; const r=row.getBoundingClientRect();
+          row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:Math.round(r.left+40),clientY:Math.round(r.top+10)}));
+          return true; })()`);
+        await wait(300);
+        const openedFromMenu = await h.eval(`(function(){ const b=[...document.querySelectorAll('.file-card-menu button')].find((x)=>(x.textContent||'').trim()==='打开');
+          if(!b) return false; b.click(); return true; })()`);
+        const previewOpened = await h.waitFor(`!!document.querySelector('.file-preview')`, { label: "文件预览弹窗", timeoutMs: 8000 }).then(() => true).catch(() => false);
+        const previewMeta = await h.text(".file-preview-meta").catch(() => "");
+        h.check("⑪ 行右键「打开」→ 文件预览弹窗（行点击已改为右栏审阅，预览入口在右键菜单）",
+          openedFromMenu === true && previewOpened === true && String(previewMeta).includes("notes.md"),
+          JSON.stringify({ openedFromMenu, previewOpened, previewMeta: String(previewMeta).slice(0, 80) }));
+        await h.eval(`(function(){ document.querySelector('.file-preview .relay-modal-close')?.click(); window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'})); return 1; })()`).catch(() => undefined);
+        await wait(400);
         /* ⑭ 收起重回 6 行（折叠往返闭合）。 */
         await h.eval(`(function(){ const c=${cardSel}; c?.querySelector('.completed-more')?.click(); return 1; })()`);
         await wait(300);
@@ -1088,6 +1096,114 @@ const CHECKS = [
         await wait(500);
         const previewGone = await h.eval(`!document.querySelector('.completed-diff-preview')`);
         h.check("⑰ 鼠标移开后预览自动收起（不残留浮层）", previewGone === true, `stillOpen=${!previewGone}`);
+        /* ⑱d 右栏「审阅」自动带出最新回合的文件（10-18 用户：「每次最新回合中已修改的文件，
+           都要在这里面展示」）—— 不先点卡片，直接开右栏审阅。 */
+        await h.eval(`(function(){ if(!document.querySelector('.context-panel')) document.querySelector('.tb-right-panel')?.click(); return 1; })()`);
+        await wait(600);
+        await h.eval(`(function(){ const b=[...document.querySelectorAll('.panel-tab')].find((x)=>(x.textContent||'').trim()==='审阅'); b?.click(); return 1; })()`);
+        let latestReview = null;
+        for (let i = 0; i < 20; i++) {
+          await wait(300);
+          latestReview = await h.eval(`(function(){
+            var panel=document.querySelector('.turn-review-panel');
+            if(!panel) return null;
+            return { files:document.querySelectorAll('.turn-review-file').length,
+              lines:document.querySelectorAll('.turn-review-diff .diffp-line').length,
+              hasAt:(document.querySelector('.turn-review-diff')?.innerText||'').includes('@@') };
+          })()`).catch(() => latestReview);
+          if (latestReview && latestReview.files > 0) break;
+        }
+        h.check("⑱d 右栏「审阅」自动展示最新回合的全部文件 + diff（不用先点卡片）",
+          !!latestReview && latestReview.files >= 1 && latestReview.lines >= 1 && latestReview.hasAt === true,
+          JSON.stringify(latestReview).slice(0, 220));
+        /* ⑱e 每个文件块的 diff 可折叠 / 展开（用户 10-18：「没有文件折叠功能」）——
+           Qoder 的连续审阅是「文件块堆叠 + 每块头部折叠」，不是只折叠整个文件列表。 */
+        const fileSectionsBefore = await h.eval(`document.querySelectorAll('.turn-review-file-section .diffp').length`);
+        await h.eval(`document.querySelector('.turn-review-file-toggle')?.click()`);
+        await wait(250);
+        const fileSectionsCollapsed = await h.eval(`document.querySelectorAll('.turn-review-file-section .diffp').length`);
+        await h.eval(`document.querySelector('.turn-review-file-toggle')?.click()`);
+        await wait(250);
+        const fileSectionsExpanded = await h.eval(`document.querySelectorAll('.turn-review-file-section .diffp').length`);
+        h.check("⑱e 每个文件块的 diff 可折叠 / 展开（Qoder 同款文件折叠）",
+          fileSectionsBefore >= 1 && fileSectionsCollapsed === fileSectionsBefore - 1 && fileSectionsExpanded === fileSectionsBefore,
+          JSON.stringify({ fileSectionsBefore, fileSectionsCollapsed, fileSectionsExpanded }));
+        /* ⑱e2 目录树筛选：输入一个不存在的关键字 ⇒ 树为空；清空 ⇒ 文件回来。 */
+        const filterBefore = await h.eval(`(function(){
+          var input=document.querySelector('.turn-review-filter input');
+          var before=document.querySelectorAll('.turn-review-file').length;
+          if(!input) return before;
+          var setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;
+          setter.call(input,'__no_such_file__');
+          input.dispatchEvent(new Event('input',{bubbles:true}));
+          return before;
+        })()`);
+        await wait(250);
+        const filterEmpty = (await h.eval(`({ files:document.querySelectorAll('.turn-review-file').length, noMatch:!!document.querySelector('.turn-review-no-match') })`).catch(() => null)) ?? { files: 0, noMatch: false };
+        await h.eval(`(function(){
+          var input=document.querySelector('.turn-review-filter input');
+          if(!input) return 1;
+          var setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;
+          setter.call(input,'');
+          input.dispatchEvent(new Event('input',{bubbles:true}));
+          return 1;
+        })()`);
+        await wait(250);
+        const filterRestored = (await h.eval(`document.querySelectorAll('.turn-review-file').length`).catch(() => 0)) ?? 0;
+        h.check("⑱e2 审阅文件树可按名称筛选并清空恢复（Qoder 左侧筛选框）",
+          (filterBefore ?? 0) >= 1 && filterEmpty.files === 0 && filterEmpty.noMatch === true && filterRestored >= (filterBefore ?? 1),
+          JSON.stringify({ filterBefore, filterEmpty, filterRestored }));
+        /* ⑱e3/⑱e4 三点菜单：四项都在；拆分/堆叠 + 自动换行都是真行为。 */
+        await h.eval(`document.querySelector('.turn-review-menu-wrap > button')?.click()`);
+        await wait(200);
+        const menuItems = (await h.eval(`Array.from(document.querySelectorAll('.turn-review-menu button')).map(function(b){return (b.textContent||'').trim();})`).catch(() => [])) ?? [];
+        h.check("⑱e3 三点菜单包含堆叠/拆分、仅空白变更、自动换行（Qoder 同款四项）",
+          ["堆叠", "拆分", "隐藏仅空白变更", "启用自动换行"].every((label) => menuItems.some((item) => item.includes(label))),
+          JSON.stringify(menuItems).slice(0, 220));
+        await h.eval(`(function(){ var b=Array.from(document.querySelectorAll('.turn-review-menu button')).find(function(x){return (x.textContent||'').includes('拆分');}); b?.click(); return 1; })()`);
+        await wait(300);
+        const splitOn = (await h.eval(`({ dom:!!document.querySelector('.turn-review-diff .diffp-split'), anyDiff:!!document.querySelector('.turn-review-diff .diffp'), pref:localStorage.getItem('turn-review:view') })`).catch(() => null)) ?? {};
+        await h.eval(`document.querySelector('.turn-review-menu-wrap > button')?.click()`);
+        await wait(150);
+        await h.eval(`(function(){ var b=Array.from(document.querySelectorAll('.turn-review-menu button')).find(function(x){return (x.textContent||'').includes('堆叠');}); b?.click(); return 1; })()`);
+        await wait(250);
+        const splitOff = await h.eval(`!document.querySelector('.turn-review-diff .diffp-split')`);
+        await h.eval(`document.querySelector('.turn-review-menu-wrap > button')?.click()`);
+        await wait(150);
+        await h.eval(`(function(){ var b=Array.from(document.querySelectorAll('.turn-review-menu button')).find(function(x){return (x.textContent||'').includes('启用自动换行');}); b?.click(); return 1; })()`);
+        await wait(250);
+        const wrapOn = await h.eval(`!!document.querySelector('.turn-review-diff .diffp.is-wrap')`);
+        await h.eval(`document.querySelector('.turn-review-menu-wrap > button')?.click()`);
+        await wait(150);
+        await h.eval(`(function(){ var b=Array.from(document.querySelectorAll('.turn-review-menu button')).find(function(x){return (x.textContent||'').includes('关闭自动换行');}); b?.click(); return 1; })()`);
+        await wait(250);
+        const wrapOff = await h.eval(`!document.querySelector('.turn-review-diff .diffp.is-wrap')`);
+        h.check("⑱e4 拆分/堆叠与自动换行切换真实生效（split 落 DOM + pref；换行 class 往返）",
+          splitOn.pref === "split" && splitOn.anyDiff === true && splitOff === true && wrapOn === true && wrapOff === true,
+          JSON.stringify({ splitOn, splitOff, wrapOn, wrapOff }).slice(0, 260));
+        /* ⑱c 汇总卡文件点击 → 右栏「审阅」（10-18 用户对照 Qoder：「已修改的文件加一个可以点击，
+           然后右边展示右边这样的」）。行点击不再开居中小弹窗；右栏展示整轮文件清单 + 带行号 diff。 */
+        await h.eval(`(function(){ if(document.querySelector('.context-panel')) document.querySelector('.tb-right-panel')?.click(); return 1; })()`);
+        await wait(500);
+        await h.eval(`document.querySelector(${JSON.stringify(hoverRowSel)})?.click()`);
+        let turnReview = null;
+        for (let i = 0; i < 20; i++) {
+          await wait(300);
+          turnReview = await h.eval(`(function(){
+            var panel=document.querySelector('.turn-review-panel');
+            if(!panel) return null;
+            var tab=[...document.querySelectorAll('.panel-tab.active')].map(function(b){ return (b.textContent||'').trim(); });
+            return { context:!!document.querySelector('.context-panel'), tab:tab.join(','), panel:true,
+              files:document.querySelectorAll('.turn-review-file').length,
+              lines:document.querySelectorAll('.turn-review-diff .diffp-line').length,
+              hasAt:(document.querySelector('.turn-review-diff')?.innerText||'').includes('@@') };
+          })()`).catch(() => turnReview);
+          if (turnReview) break;
+        }
+        h.check("⑱c 点击汇总卡文件行 → 右栏「审阅」页展示带行号 diff（用户 10-18 对照 Qoder）",
+          !!turnReview && turnReview.context === true && turnReview.tab.includes("审阅") && turnReview.panel === true
+            && turnReview.files >= 1 && turnReview.lines >= 1 && turnReview.hasAt === true,
+          JSON.stringify(turnReview).slice(0, 260));
         /* ⑱a（10-06 夜六轮删除）：旧版「收尾后标记全完成 ⇒ 胶囊隐藏」在「没在跑就不渲染」生效后
            退化成恒真断言（收尾本来就不显示）。「全部完成 ⇒ 步骤区隐藏」的唯一有效检验点搬到了
            运行中的 ④e/④e2。 */

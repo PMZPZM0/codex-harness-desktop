@@ -57,3 +57,106 @@ export function parseDiffLines(text) {
   }
   return rows;
 }
+
+/** 逐字符去掉空白：用来识别「只改了缩进/空格」的增删对。 */
+function withoutWhitespace(text) {
+  return String(text ?? "").replace(/\s+/g, "");
+}
+
+/**
+ * 隐藏「仅空白变更」（Qoder 的 reviewIgnoreWhitespaceOnly 同款）：
+ * 逐 hunk 把相邻的 `-`/`+` 配对，归一化后完全相同 ⇒ 两边一起丢掉；
+ * 整块 hunk 没有剩余增删 ⇒ 连 hunk 头与上下文一起丢掉（否则会留下一个空块）。
+ * ⛔ 只做展示层过滤，不改原文、不改统计数字。
+ */
+export function filterWhitespaceOnlyRows(rows) {
+  const out = [];
+  let block = [];
+  let blockIsHunk = false;
+  let blockHasChange = false;
+  const flush = () => {
+    if (block.length && (!blockIsHunk || blockHasChange)) out.push(...block);
+    block = [];
+    blockIsHunk = false;
+    blockHasChange = false;
+  };
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index];
+    if (row.kind === "hunk") {
+      flush();
+      block = [row];
+      blockIsHunk = true;
+      continue;
+    }
+    if (row.kind === "add" || row.kind === "del") {
+      const run = [];
+      while (index < rows.length && (rows[index].kind === "add" || rows[index].kind === "del")) {
+        run.push(rows[index]);
+        index++;
+      }
+      index--;
+      const dels = run.filter((entry) => entry.kind === "del");
+      const adds = run.filter((entry) => entry.kind === "add");
+      const max = Math.max(dels.length, adds.length);
+      for (let pair = 0; pair < max; pair++) {
+        const del = dels[pair];
+        const add = adds[pair];
+        if (del && add && withoutWhitespace(del.text) === withoutWhitespace(add.text)) continue;
+        // 单边的纯空白行也算「仅空白变更」（新增/删除空行、只剩缩进的行）。
+        if (del && !add && !withoutWhitespace(del.text)) continue;
+        if (add && !del && !withoutWhitespace(add.text)) continue;
+        if (del) { block.push(del); blockHasChange = true; }
+        if (add) { block.push(add); blockHasChange = true; }
+      }
+      continue;
+    }
+    if (!block.length) out.push(row);
+    else block.push(row);
+  }
+  flush();
+  return out;
+}
+
+/**
+ * 统一 diff 行 → 左右两栏（Qoder 的「拆分」视图）。
+ * 返回 `{ kind: "meta"|"hunk", text }` 或 `{ kind: "pair", left, right }`；
+ * 连续增删按序配对，单边多出来的行另一侧留空。
+ */
+export function buildSplitDiffRows(rows) {
+  const out = [];
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index];
+    if (row.kind === "meta" || row.kind === "hunk") {
+      out.push({ kind: row.kind, text: row.text });
+      continue;
+    }
+    if (row.kind === "ctx") {
+      out.push({ kind: "pair", left: row, right: row });
+      continue;
+    }
+    const dels = [];
+    const adds = [];
+    while (index < rows.length && (rows[index].kind === "add" || rows[index].kind === "del")) {
+      if (rows[index].kind === "del") dels.push(rows[index]);
+      else adds.push(rows[index]);
+      index++;
+    }
+    index--;
+    const max = Math.max(dels.length, adds.length);
+    for (let pair = 0; pair < max; pair++) {
+      out.push({ kind: "pair", left: dels[pair] ?? null, right: adds[pair] ?? null });
+    }
+  }
+  return out;
+}
+
+/** 只有单边增或单边删（新增文件 / 删除文件）⇒ 拆分视图退回统一视图（Qoder 同款）。 */
+export function isSingleSidedDiff(rows) {
+  let hasAdd = false;
+  let hasDel = false;
+  for (const row of rows) {
+    if (row.kind === "add") hasAdd = true;
+    else if (row.kind === "del") hasDel = true;
+  }
+  return (hasAdd || hasDel) && !(hasAdd && hasDel);
+}

@@ -31,8 +31,11 @@ const css = read("src/styles/04-cards-tools.css");
 
 /* ── 一、汇报卡本体：点行预览 / 右键菜单 / 折叠 ───────────────────────────── */
 
-ok(status.includes("export function CompletedChanges({ turn, onOpenFile }"), "汇报卡收 onOpenFile（没有它 = 行点了没反应，onOpenFile 永远 undefined）");
-ok(/onClick=\{\(\) => openPath\(file\.path, name\)\}/.test(statusCode), "行点击 → openPath（用户点名：直接打开预览）");
+ok(status.includes("export function CompletedChanges({ turn, onOpenFile, isLastTurn }"), "汇报卡收 onOpenFile + isLastTurn（前者给预览入口，后者决定最新回合是否自动带出审阅）");
+ok(/onClick=\{\(\) => openReview\(file\.path\)\}/.test(statusCode) && statusCode.includes("setTurnReview"),
+  "行点击 → 右栏「审阅」（10-18 用户对照 Qoder：「已修改的文件加一个可以点击，然后右边展示」；⛔ 不再开居中小弹窗）");
+ok(statusCode.includes("onOpen={() => openPath(menu.path, menu.name)}"),
+  "右键菜单「打开」仍走 openPath（行点击改道后，文件预览入口保留在菜单里）");
 ok(/onContextMenu=\{\(event\) => \{ event\.preventDefault\(\); setMenu\(/.test(statusCode), "行右键 → 弹文件卡菜单");
 ok(statusCode.includes("openImageLightbox(path, name)") && statusCode.includes("onOpenFile?.(path)"),
   "openPath 分流：图片走灯箱、其余走文件预览（与消息内联卡片同口径，别各写一套）");
@@ -60,8 +63,8 @@ ok(/\(editable \? 5 : 4\) \* itemH/.test(shared),
 
 /* ── 三、接线与样式 ───────────────────────────────────────────── */
 
-ok(turnView.includes("<CompletedChanges turn={turn} onOpenFile={handlers.onOpenFile} />"),
-  "turn-view 把 handlers.onOpenFile 递进汇报卡（不递 = onOpenFile 永远 undefined，行点击静默失效）");
+ok(turnView.includes("<CompletedChanges turn={turn} onOpenFile={handlers.onOpenFile} isLastTurn={isLastTurn} />"),
+  "turn-view 把 handlers.onOpenFile 与 isLastTurn 递进汇报卡（不递 = 行点击静默失效 / 最新回合不自动带出审阅）");
 ok(/\.completed-file\.clickable:hover/.test(css) && /\.completed-file-thumb img/.test(css) && /\.completed-more:hover/.test(css),
   "样式齐：行 hover / 缩略图裁切 / 折叠钮 hover（少一个 = 看着像坏了）");
 

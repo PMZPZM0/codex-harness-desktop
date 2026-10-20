@@ -9,6 +9,7 @@ import { ToolCodeBlock } from "../shared/ToolCodeBlock";
 import { DiffPreviewBody } from "./DiffPreview";
 import { FileCardMenu } from "../shared/InlineCards";
 import { getTurnFileChanges, getTurnLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
+import { setTurnReview, primeTurnReview, clearTurnReview, getTurnReview } from "../../lib/turn-review-store.mjs";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { openImageLightbox } from "../../lib/ui-channels";
 import { imageUrl } from "../../lib/image-url";
@@ -39,7 +40,7 @@ function segments(full: string): { name: string; dir: string } {
   return { name: cut >= 0 ? norm.slice(cut + 1) : norm, dir: cut >= 0 ? norm.slice(0, cut) : "" };
 }
 
-export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?: (path: string) => void }) {
+export function CompletedChanges({ turn, onOpenFile, isLastTurn }: { turn: Turn; onOpenFile?: (path: string) => void; isLastTurn?: boolean }) {
   const [review, setReview] = useState<{ path: string; diff: string } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; name: string } | null>(null);
   /* 行悬停 → diff 预览（10-06 夜，用户对照图一：「鼠标放到汇总的修改的文件名上，出来这种预览效果」）。
@@ -104,7 +105,6 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
      悬停 diff 预览），SessionQueue 里那块插在汇总上面的裸行已于同日删除，别再加回去。 */
   const finalReport = getTurnFileChanges(turn.id);
   const tracked = finalReport.length ? finalReport : getTurnLiveFileChanges(turn.id);
-  if (!changes.length && !tracked.length) return null;
   const byPath = new Map<string, { path: string; added: number; deleted: number; diffs: string[]; deletedFile?: boolean; newFile?: boolean }>();
   for (const change of changes) {
     const path = change.path ?? change.filePath ?? "未知文件";
@@ -119,10 +119,45 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
   }
   const files = [...byPath.values()];
   const totals = files.reduce((sum, file) => ({ added: sum.added + file.added, deleted: sum.deleted + file.deleted }), { added: 0, deleted: 0 });
+  const reviewFiles = files.map((file) => ({
+    path: file.path,
+    added: file.added,
+    deleted: file.deleted,
+    diff: file.diffs.join("\n"),
+    deletedFile: Boolean(file.deletedFile),
+    newFile: Boolean(file.newFile),
+  }));
+  const reviewSignature = reviewFiles.map((file) => `${file.path}|${file.added}|${file.deleted}|${file.diff.length}`).join(";");
+  /* 最新回合自动带出到右栏「审阅」（用户 10-18：「每次最新回合中已修改的文件，都要在这里面展示」）：
+     只 prime 数据、不打开右栏；历史回合的卡（isLastTurn=false）不许覆盖当前最新回合。
+     最新回合没有文件改动 ⇒ 清空，避免右栏把上一轮当成「最新回合」。 */
+  useEffect(() => {
+    if (!isLastTurn) return;
+    if (!reviewFiles.length) { clearTurnReview(); return; }
+    const existing = getTurnReview();
+    const keepSelected = existing?.turnId === turn.id && reviewFiles.some((file) => file.path === existing.selectedPath);
+    primeTurnReview({
+      turnId: turn.id,
+      selectedPath: keepSelected ? existing!.selectedPath : reviewFiles[0].path,
+      files: reviewFiles,
+    });
+  }, [isLastTurn, turn.id, reviewSignature]);
+  if (!changes.length && !tracked.length) return null;
   /** 行点击 / 菜单「打开」共用：图片走灯箱，其余交给文件预览弹窗（会话单例的统一入口）。 */
   const openPath = (path: string, name: string) => {
     if (isImagePath(path)) openImageLightbox(path, name);
     else onOpenFile?.(path);
+  };
+  /* 点击文件行 → 右栏「审阅」（10-18 用户对照 Qoder：「已修改的文件加一个可以点击，然后右边展示」）。
+     整轮文件清单一起交给右栏，面板里还能切换别的文件；不走居中小弹窗。 */
+  const openReview = (path: string) => {
+    const selected = files.find((file) => file.path === path);
+    if (!selected) return;
+    setTurnReview({
+      turnId: turn.id,
+      selectedPath: path,
+      files: reviewFiles,
+    });
   };
   const visible = expanded ? files : files.slice(0, COLLAPSE_LIMIT);
   return (
@@ -134,8 +169,8 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
             const { name, dir } = segments(file.path);
             const diffText = file.diffs.join("\n");
             return (
-              <div className="completed-file clickable" key={file.path} title={`点击预览：${file.path}`}
-                onClick={() => openPath(file.path, name)}
+              <div className="completed-file clickable" key={file.path} title={`点击在右栏查看改动：${file.path}`}
+                onClick={() => openReview(file.path)}
                 onMouseEnter={(event) => {
                   keepHoverOpen();
                   if (hoverOpenTimerRef.current) window.clearTimeout(hoverOpenTimerRef.current);
@@ -161,7 +196,7 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
                   : <FileTypeIcon path={file.path} size={15} className="completed-file-icon" />}
                 <span className="completed-file-meta"><code title={file.path}>{name}</code><small title={file.path}>{dir}</small></span>
                 <span className="completed-file-stats">{file.deletedFile ? <i className="completed-file-gone">已删除</i> : file.newFile ? <b className="completed-file-new">新增</b> : <><b>+{file.added}</b> <i>-{file.deleted}</i></>}</span>
-                <button type="button" className="completed-file-btn" title="弹窗查看这个文件的完整 diff" onClick={(event) => { event.stopPropagation(); setReview({ path: file.path, diff: diffText }); }}>审查</button>
+                <button type="button" className="completed-file-btn" title="在右栏审阅这个文件的完整 diff" onClick={(event) => { event.stopPropagation(); openReview(file.path); }}>审查</button>
                 <button type="button" className="completed-file-btn" title="在资源管理器里定位该文件" onClick={(event) => { event.stopPropagation(); try { void window.codex.revealInFolder(file.path); } catch { /* 目录可能已删 */ } }}>打开</button>
               </div>
             );

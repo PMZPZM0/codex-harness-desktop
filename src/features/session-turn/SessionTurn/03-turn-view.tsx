@@ -151,7 +151,7 @@ export function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForAp
               10-06：把 onOpenFile 递进去 —— 汇报行点击 = 直接打开文件预览（用户对照 Qoder 效果图点名）。
               ⛔ 运行中的实时「编辑」行**不在这里**（用户 10-06 二次纠正：「在哪个地方就展示在哪个地方，
                  不是一直在新消息下面，这样多丑」）—— 它们由 TurnFoldStream 按锚点挂在对应工具项后面。 */}
-          {turnFinished && <CompletedChanges turn={turn} onOpenFile={handlers.onOpenFile} />}
+          {turnFinished && <CompletedChanges turn={turn} onOpenFile={handlers.onOpenFile} isLastTurn={isLastTurn} />}
           {/* 「用户已停止」标记：落在**最新内容之后**（用户 09-18 明确定位）。
               ⛔ 不重复耗时：上方过程组的标题已经写着「已停止 · 耗时 36 秒」，这里再说一遍就是
               同屏两处（用户对重复文案零容忍，09-18 已因同类问题返工过一次）。这里只说
