@@ -273,7 +273,9 @@ export class MemoryLayers {
        ⛔ 判据必须是 `effectiveMemoryBackend()`（带可用性回退），**不是** `memoryBackend()`：
        用户选了 MCP 但服务没装/装坏时（原生模块装不上的环境很常见），若这里也让位 ⇒
        记忆一处都不写 = **彻底丢记忆**。宁可回到金字塔，也不能丢。 */
-    if (effectiveMemoryBackend() !== "builtin") return false; /* mcp / cloud：本地金字塔都让位，避免双份记忆 */
+    if (effectiveMemoryBackend() === "mcp") return false;
+    /* 10-20：云端后端同样让位 —— 记忆在 memapi 侧自动注入/回写，本地再写就是两份。 */
+    if (effectiveMemoryBackend() === "cloud") return false;
     const dir = this.projectDir(workspace);
     const text = String(line ?? "").trim();
     if (!dir || !text) return false;
@@ -295,7 +297,9 @@ export class MemoryLayers {
     const existing = await this.readText(file);
     const key = String(dedupeKey ?? "").trim();
     /* 去重跨全部文件（同一条纪律不许在两个分类里各存一份） */
-    const all = await this.readLessons(workspace);
+    const wsSafe = String(workspace ?? "");
+    if (!wsSafe) return false;
+    const all = await this.readLessons(wsSafe);
     const norm = (s: string) => String(s ?? "").replace(/[\s，。！？、,.!?:：；;""''（）()【】\[\]]/g, "");
     let textOut = text;
     if (key && norm(all).includes(key)) {
@@ -327,7 +331,8 @@ export class MemoryLayers {
    * 落库后把该行删掉。内置后端直接走 appendLesson。
    */
   async appendPendingLesson(workspace: string, line: string, dedupeKey: string, category?: string): Promise<boolean> {
-    if (effectiveMemoryBackend() === "builtin") return this.appendLesson(workspace, line, dedupeKey, category);
+    if (effectiveMemoryBackend() === "mcp" || effectiveMemoryBackend() === "cloud") return false;
+    return this.appendLesson(workspace, line, dedupeKey, category);
     const dir = this.projectDir(workspace);
     const text = String(line ?? "").trim();
     if (!dir || !text) return false;
@@ -337,8 +342,10 @@ export class MemoryLayers {
       console.log(`[memory] 未入待归档（${verdict.reason}）：${text.slice(0, 80)}`);
       return false;
     }
-    await this.migrateLayout(dir);
-    const file = path.join(this.lessonsDir(dir), LESSON_MISC_FILE);
+    const dirSafe = String(dir ?? "");
+    if (!dirSafe) return false;
+    await this.migrateLayout(dirSafe);
+    const file = path.join(this.lessonsDir(dirSafe), LESSON_MISC_FILE);
     const existing = await this.readText(file);
     const key = String(dedupeKey ?? "").trim();
     const all = await this.readLessons(workspace);

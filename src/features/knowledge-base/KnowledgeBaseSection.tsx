@@ -17,6 +17,8 @@ type KbHit = { docId: string; title: string; chunkIndex: number; score: number; 
 export type KnowledgeBaseSectionProps = { workspace: string; setNotice: (m: string) => void };
 
 export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSectionProps) {
+  /* 10-20：知识库后端 —— local=项目本地库（kb:*）/ cloud=云端 weknora（MCP 工具检索） */
+  const [kbBackend, setKbBackend] = useState<"local" | "cloud">("local");
   const [docs, setDocs] = useState<KbDoc[]>([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
@@ -29,6 +31,16 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
   const [preview, setPreview] = useState<{ meta: KbDoc; text: string } | null>(null);
   /* 本地语义后端（按需下载，10-04）：状态 + 安装进度（进度事件复用主进程 runtime:progress，id=kb-embedding） */
   const [embedInstalled, setEmbedInstalled] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const r = await window.codex.kbBackendGet?.();
+        if (alive && r?.backend === "cloud") setKbBackend("cloud");
+      } catch { /* 读不到就按本地算 */ }
+    })();
+    return () => { alive = false; };
+  }, []);
   const [embedBusy, setEmbedBusy] = useState(false);
   const [embedProg, setEmbedProg] = useState<{ percent?: number; speed?: string; remaining?: string; message?: string } | null>(null);
 
@@ -134,6 +146,27 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
 
   return (
     <section className="settings-section stack kb-page">
+      {/* 10-20：知识库后端二选一 —— 本地项目库 / 云端 weknora（MCP） */}
+      <div className="memory-mode-switch" role="tablist" aria-label="知识库来源">
+        <button role="tab" aria-selected={kbBackend === "local"} className={`memory-mode-card ${kbBackend === "local" ? "active" : ""}`}
+          onClick={() => { setKbBackend("local"); void window.codex.kbBackendSet?.("local").then(() => setNotice("知识库已切到本地项目库")); }}>
+          <div className="memory-mode-body"><strong>本地知识库</strong><span>项目级 · 文件随项目走 · 离线可用</span></div>
+        </button>
+        <button role="tab" aria-selected={kbBackend === "cloud"} className={`memory-mode-card ${kbBackend === "cloud" ? "active" : ""}`}
+          onClick={() => { setKbBackend("cloud"); void window.codex.kbBackendSet?.("cloud").then(() => setNotice("知识库已切到云端（weknora）")); }}>
+          <div className="memory-mode-body"><strong>云端知识库</strong><span>weknora · 每账号独立库 · 用 MCP 工具检索</span></div>
+        </button>
+      </div>
+      {kbBackend === "cloud" ? (
+        <div className="memory-center-block" style={{ marginBottom: 12 }}>
+          <div className="memory-center-block-head">
+            <div>
+              <strong>当前使用云端知识库</strong>
+              <span>库与文档由云账号管理；模型侧通过 MCP 工具检索（ask / search_knowledge / grep_chunks / list_documents / read_document）。下面的本地库导入与检索在此模式下<b>不生效</b>（数据不会被删除，切回本地即可继续用）。</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="settings-copy"><h2>知识库<PageInfo text={<>项目级本地知识库：文档落在 <code>{workspace}\.codex-harness\knowledge\</code>，随项目走。检索 v1 = 分块全文评分（零依赖、离线可用）；语义向量检索后端（LanceDB + 本地 embedding）将在开发工具页按需提供。</>} helpKey="knowledge-base" label="知识库" /></h2></div>
 
       {/* 本地语义后端：未安装时给下载卡片（进度/速度/剩余），装完卡片消失 */}

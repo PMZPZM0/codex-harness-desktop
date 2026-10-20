@@ -8,10 +8,12 @@ import { kbEmbeddingInstalled, embedWithLocalBackend, installKbEmbedding, kbEmbe
 import { readCustomModel } from "../main/01-model-catalog";
 import type { HostCaps } from "../runtime/seams";
 import { sendToWindow } from "./window-bus";
+import { readAppSettingsSync, saveAppSettings } from "../app-settings";
+import { app } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 
-const KB_CHANNELS = ["kb:list", "kb:add-text", "kb:add-files", "kb:remove", "kb:search", "kb:read", "kb:embed-status", "kb:embed-install", "kb:embed-uninstall"];
+const KB_CHANNELS = ["kb:list", "kb:add-text", "kb:add-files", "kb:remove", "kb:search", "kb:read", "kb:embed-status", "kb:embed-install", "kb:embed-uninstall", "kb:backend-get", "kb:backend-set"];
 
 /** 语义向量档的 embedding 函数：**本地后端优先**（开发工具页「知识库本地语义检索」装了就用，
  *  完全离线、不依赖供应商）；未装则回落供应商 /embeddings（与「AI 润色」同一条配置）；
@@ -68,6 +70,15 @@ export const knowledgeBaseFeature = defineFeature<null>({
     if (!host) throw new Error("kb: 缺少 host 接缝（宿主未提供）");
     if (!ipcHost) throw new Error("knowledge-base: 缺少 ipc 服务（宿主未提供）");
 
+    /* 10-20：知识库后端（local=项目本地库 / cloud=云端 weknora MCP）。
+       ⛔ 只切"用哪套库"，两套数据各自独立：本地库文件仍在 <workspace>/.codex-harness/knowledge/，
+          云端库在 weknora 里，互不迁移、互不覆盖。 */
+    ipcHost.handle("kb:backend-get", () => ({ backend: readAppSettingsSync(app.getPath("userData")).kbBackend === "cloud" ? "cloud" : "local" }));
+    ipcHost.handle("kb:backend-set", async (_event, backend: "local" | "cloud" = "local") => {
+      const next = backend === "cloud" ? "cloud" : "local";
+      await saveAppSettings(app.getPath("userData"), { kbBackend: next });
+      return { backend: next };
+    });
     ipcHost.handle("kb:list", (_event, input: { workspace?: string } = {}) => {
       const workspace = String(input?.workspace ?? "").trim();
       if (!workspace) return [];

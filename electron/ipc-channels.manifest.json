@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 499,
+  "count": 501,
   "channels": [
     {
       "name": "request",
@@ -4561,6 +4561,26 @@
       "invokeArgs": "",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "kbBackendGet",
+      "channel": "kb:backend-get",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ backend: \"local\" | \"cloud\" }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "读取知识库后端：local=项目本地库 / cloud=云端 weknora（MCP）"
+    },
+    {
+      "name": "kbBackendSet",
+      "channel": "kb:backend-set",
+      "paramsImpl": "backend: \"local\" | \"cloud\"",
+      "paramsDecl": "backend: \"local\" | \"cloud\"",
+      "returns": "Promise<{ backend: \"local\" | \"cloud\" }>",
+      "invokeArgs": "backend",
+      "cast": null,
+      "note": "切换知识库后端并回传生效值"
     },
     {
       "name": "whatsNewState",
