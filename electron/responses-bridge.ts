@@ -40,19 +40,16 @@ const HOP_BY_HOP = new Set([
 
 /** 本机云账号的代理令牌（10-20 云端记忆身份的第二凭据）。
  *  ⛔ 懒加载 + 结构化类型：本文件会被 Node 守卫直接 require，顶层 import cloud-token 会连带加载 electron。
- *  ⛔ 主仓（桌面版）有 cloud-token；云助手副仓没有这个模块，回退到 limited-benefit 的令牌读取器。
+ *  ⛔ 主仓（桌面版）恒有 cloud-token，这是唯一读取源；⛔ 不做「limited-benefit 回退」——
+ *     那是云助手副仓（AS）的模块，主仓不存在，写了就是 require 断链（【96】抓到的正是这个：
+ *     af31c7e 从 AS 带回来的分支，tsc 不查 require 字面量，运行时才吞成空串）。
  *     两处都没有就返回空串（服务器会按 identity-incomplete 拒绝，不会误归属）。 */
 function readCloudProxyToken(): string {
   try {
     const mod = require("./cloud-token") as { readProxyToken?: () => string };
     if (typeof mod.readProxyToken === "function") return mod.readProxyToken();
-  } catch { /* 副仓没有 cloud-token */ }
-  try {
-    const mod = require("./features/limited-benefit-ipc") as { readLimitedBenefitTokenForBoot?: () => string };
-    return typeof mod.readLimitedBenefitTokenForBoot === "function" ? mod.readLimitedBenefitTokenForBoot() : "";
-  } catch {
-    return "";
-  }
+  } catch { /* 早期加载等异常：返回空串，服务器按 identity-incomplete 拒绝 */ }
+  return "";
 }
 
 /** 「上游不认这个端点」的措辞特征（用于 400 的歧义判定，见 probeResponses）。
