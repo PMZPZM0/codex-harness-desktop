@@ -830,7 +830,7 @@
      贴底跟随就会留着一条 28px 的空白。真机实测（完成态贴底）：可视空隙 60px = 最后回合
      margin-bottom 32 + 这里 28。底部的呼吸空间由回合间 margin 承担，最后一个回合的 margin
      由下面的规则归零。 */
-  padding: 28px max(23px, 50% - 410px) 0;
+  padding: 28px max(var(--chat-side-reserve), calc((100% - var(--chat-column-max)) / 2)) 0;
   overflow: hidden auto;
 }
 .timeline.empty-state {

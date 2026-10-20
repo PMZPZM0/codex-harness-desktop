@@ -422,9 +422,10 @@
    .sidebar 占 1 列。弹窗没有侧栏 → grid 收成 1~3 列，必须把 topbar 拉回第 1 列、
    workspace 落到第 1 列，否则 topbar 被推到隐式第 2 列、对话区被挤到右边半屏
    （用户截图实锤：消息列只占左侧 450px，右侧全空）。
-   ⚠️ 消息列宽度**不改**：.timeline 自带的 `50% - 410px` 内边距让内容 820px 居中，
-   与底部输入框同列对齐 —— 曾试过 padding:28px 26px 全宽铺开，结果消息列贴边、
-   输入框居中，两者错位 = 用户说的「中间内容歪了」。 */
+   ⚠️ 消息列宽度由 `--chat-column-max` 与 `--chat-side-reserve` 统一钳制（两侧给刻度尺 /
+   调度轨让位）：.timeline 内边距与 .composer-wrap 必须用同一组变量，否则消息列与底部
+   输入框会错位 —— 曾试过只给 .timeline 写全宽 padding，结果消息列贴边、输入框居中
+   = 用户说的「中间内容歪了」。 */
 .app-shell.popout-shell .topbar {
   grid-column: 1 / -1;
 }

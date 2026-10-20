@@ -354,7 +354,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   background: transparent;
   overflow: visible;
   transition: color 0.3s ease;
-  /* 固定为消息列全宽（= 输入框同宽，.timeline 内边距已钳制到 820px）：
+  /* 固定为消息列全宽（= 输入框同宽，宽度由 .timeline 的 --chat-column-max 钳制）：
      inline-flex 收缩布局会跟着流式文字往右长，思考框宽度一直跳。 */
   display: flex;
   flex-direction: column;

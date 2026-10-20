@@ -286,12 +286,10 @@ html[data-theme="dark"] .import-record-card.thread-reference {
 }
 .import-record-card.thread-reference .import-record-tag { color: #2563eb; }
 html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag { color: #60a5fa; }
-/* 未发送预览槽：消息区顶部，宽度与消息列一致 */
+/* 未发送预览槽：消息区顶部，宽度由 `.timeline` 的内边距（--chat-column-max）钳制，自身不再二次收窄 */
 .import-preview-slot {
   width: 100%;
-  max-width: 820px;
   margin: 14px auto 0;
-  padding: 0 max(23px, calc((100% - 820px) / 2));
 }
 .import-preview-slot .import-record-card { align-self: stretch; }
 .user-message-footer {

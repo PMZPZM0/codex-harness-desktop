@@ -26,6 +26,8 @@ const ok = (condition, message) => {
 const lights = codeOnly(read("src/features/status/ComposerStatusLights.tsx"));
 const form = codeOnly(read("src/features/app-view/AppView/02-main-stage/03-composer/02-composer-form.tsx"));
 const css = read("src/styles/04-cards-tools.css");
+const rootCss = read("src/styles/01-base-and-chrome.css");
+const timelineCss = read("src/styles/02-sidebar-threads.css");
 
 /* ── 组件形态 ── */
 ok(lights.includes("export function ComposerStatusLights") && lights.includes("icon: Target"),
@@ -63,6 +65,17 @@ ok(/@media \(max-width: 1280px\)[\s\S]{0,200}?\.composer-status-light > i\.light
   "窗口自适应两档：≤1280px 收文字只留图标、≤1060px 整块隐藏");
 ok(!/\.composer\s*\{[^}]*container-type/.test(css) && !/\.composer-wrap\s*\{[^}]*container-type/.test(css),
   "⛔ 不给 .composer/.composer-wrap 开 container-type：那会给后代弹层造新包含块（quick-pop 翻转会歪）");
+
+/* ── 会话主列自适应（10-20 用户：「全屏中间还是一样大」+「两边要留好刻度尺和专家团轨道」）──
+   失效方式：只改 .timeline 不改 composer-wrap ⇒ 消息与输入框错位；两侧让位写死 23px ⇒
+   正文压到左侧刻度尺/右侧办公室轨道下面（用户截图报障）。两处必须引用同一组变量。 */
+ok(rootCss.includes("--chat-column-max: 1360px") && rootCss.includes("--chat-side-reserve: clamp(23px, 10%, 104px)"),
+  "会话主列变量在：宽窗封顶 1360px + 两侧按 10% 让位（上限 104px = 右侧轨道 92 + 呼吸）");
+ok(timelineCss.includes("max(var(--chat-side-reserve), calc((100% - var(--chat-column-max)) / 2))")
+  && css.includes("min(var(--chat-column-max), calc(100% - var(--chat-side-reserve) * 2))"),
+  "消息列与输入框同宽自适应：两边同一组变量（⛔ 单边改宽会让中间内容歪掉）");
+ok(!timelineCss.includes("50% - 410px") && !css.includes("min(820px, 100% - 46px)"),
+  "旧的 820px 死宽已拆除（窗口变大时正文能真正铺开）");
 
 console.log(`\n【status-lights】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
