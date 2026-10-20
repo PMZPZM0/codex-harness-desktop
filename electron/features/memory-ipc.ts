@@ -56,8 +56,7 @@ import type { HostCaps } from "../runtime/seams";
  */
 async function applyCloudMemoryUpstream(): Promise<void> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const req: any = typeof require === "function" ? require : null;
+        const req: any = typeof require === "function" ? require : null;
     const mod: any = req ? req("../cloud-provider") : null;
     if (typeof mod?.refreshMemoryUpstreamFromIntegrations === "function") {
       await mod.refreshMemoryUpstreamFromIntegrations();
