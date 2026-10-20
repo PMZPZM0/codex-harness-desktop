@@ -49,6 +49,10 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
   const hoverOpenTimerRef = useRef<number | null>(null);
   const hoverCloseTimerRef = useRef<number | null>(null);
   const hoverPanelRef = useRef<HTMLDivElement>(null);
+  /** 取消「准备关窗」：行与预览面板**共用**（10-18 用户：「鼠标放上去闪一下就没了」）。 */
+  const keepHoverOpen = () => {
+    if (hoverCloseTimerRef.current) { window.clearTimeout(hoverCloseTimerRef.current); hoverCloseTimerRef.current = null; }
+  };
   const [expanded, setExpanded] = useState(false);
   const changes = turn.items.flatMap((item) => item.type === "fileChange" ? (item.changes ?? []) : []);
   /* 宿主追踪（10-01）：模型走 shell / MCP / 浏览器写文件时引擎不发 fileChange，
@@ -133,7 +137,7 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
               <div className="completed-file clickable" key={file.path} title={`点击预览：${file.path}`}
                 onClick={() => openPath(file.path, name)}
                 onMouseEnter={(event) => {
-                  if (hoverCloseTimerRef.current) { window.clearTimeout(hoverCloseTimerRef.current); hoverCloseTimerRef.current = null; }
+                  keepHoverOpen();
                   if (hoverOpenTimerRef.current) window.clearTimeout(hoverOpenTimerRef.current);
                   if (!diffText.trim()) return; // 没有 diff 内容的不弹（悬停没反应好过弹空窗）
                   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
@@ -149,7 +153,7 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
                 }}
                 onMouseLeave={() => {
                   if (hoverOpenTimerRef.current) { window.clearTimeout(hoverOpenTimerRef.current); hoverOpenTimerRef.current = null; }
-                  hoverCloseTimerRef.current = window.setTimeout(() => setDiffHover(null), 160); // 给"移向预览面板"留路
+                  hoverCloseTimerRef.current = window.setTimeout(() => setDiffHover(null), 500); // 给"移向预览面板"留够时间（10-18：160ms 会在中途被关掉）
                 }}
                 onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, path: file.path, name }); }}>
                 {isImagePath(file.path)
@@ -177,7 +181,8 @@ export function CompletedChanges({ turn, onOpenFile }: { turn: Turn; onOpenFile?
           （滚动豁免见上面的 close 监听）；右上角 ⤢ 一键开审查弹窗看完整 diff。 */}
       {diffHover && createPortal((
         <div ref={hoverPanelRef} className="completed-diff-preview" style={{ visibility: "hidden", top: 0, left: 0 }}
-          onMouseEnter={() => { if (hoverCloseTimerRef.current) { window.clearTimeout(hoverCloseTimerRef.current); hoverCloseTimerRef.current = null; } }}
+          onMouseEnter={keepHoverOpen}
+          onMouseMove={keepHoverOpen}
           onMouseLeave={() => setDiffHover(null)}>
           <header>
             <code title={diffHover.path}>{diffHover.path}</code>
