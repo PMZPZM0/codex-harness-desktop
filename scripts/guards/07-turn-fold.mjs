@@ -4820,18 +4820,18 @@ export async function run() {
     (generalSrc.includes("思考板块展示") && generalSrc.includes('setReasoningDisplayMode("auto")') && generalSrc.includes('setReasoningDisplayMode("strip")') && generalSrc.includes("reasoning-mode-seg") ? ok : fail)(
       "【161】设置 → 控制台有两档切换（自适应展开 / 长条按行），点击即时生效"
     );
-    // ⑮ 用户 10-20 截图报障：长条被收进「深度思考」过程折叠，收起后只剩一个空长条，
-    //    必须展开组才看得到内容。⇒ strip 模式思考**不参与任何过程折叠**（直播/完成两路都要），
-    //    长条本身始终直接可见；正文为空时只留标题行，不画空的长条身体。
+    // ⑮ 用户 10-20 二次报障「思考板块没有进大折叠」：
+    //    strip 模式只在**直播期**内联（看最新一行）；回合结束后必须随过程收进「耗时」大折叠，
+    //    planCompletedFold 不许再为思考开旁路。正文为空时只留标题行，不画空长条身体。
     {
       const turnFoldSrc = readFileSync(join(ROOT, "src", "lib", "turn-fold.ts"), "utf8").replace(/\r/g, "");
       const planSrc = readFileSync(join(ROOT, "src", "lib", "turn-fold-plan.mjs"), "utf8").replace(/\r/g, "");
       const queueSrc = readFileSync(join(ROOT, "src", "features", "session-queue", "SessionQueue.tsx"), "utf8").replace(/\r/g, "");
-      (/useReasoningDisplayMode/.test(queueSrc) && /buildSegments\(units, !running, \{ inlineThinking \}\)/.test(queueSrc) && /planCompletedFold\(units, finalUnit\.item\.id, \{ inlineThinking \}\)/.test(queueSrc) ? ok : fail)(
-        "【161】strip 模式：直播与完成两路都把 thinking 排除在过程折叠外（长条始终直接可见）"
+      (/useReasoningDisplayMode/.test(queueSrc) && /buildSegments\(units, !running, \{ inlineThinking \}\)/.test(queueSrc) && /planCompletedFold\(units, finalUnit\.item\.id\)/.test(queueSrc) && !/planCompletedFold\(units, finalUnit\.item\.id, \{ inlineThinking \}\)/.test(queueSrc) ? ok : fail)(
+        "【161】strip 模式：直播期思考内联，完成态交回 planCompletedFold 大折叠（不露在折叠外）"
       );
-      (/options: \{ inlineThinking\?: boolean \}/.test(turnFoldSrc) && /unit\.kind === "thinking" && !thinkingLive && !inlineThinking/.test(turnFoldSrc) && /options = \{\}/.test(planSrc) && /inlineThinking && isThinking\(unit\)/.test(planSrc) ? ok : fail)(
-        "【161】分段/完成折叠计划都支持 inlineThinking（默认关闭，不影响自适应档的旧口径）"
+      (/options: \{ inlineThinking\?: boolean \}/.test(turnFoldSrc) && /inlineThinking = Boolean\(options\.inlineThinking\) && !turnFinished/.test(turnFoldSrc) && /unit\.kind === "thinking" && !thinkingLive && !inlineThinking/.test(turnFoldSrc) && !/inlineThinking && isThinking\(unit\)/.test(planSrc) ? ok : fail)(
+        "【161】仅直播期内联（turnFinished 自动关闭）；完成计划不再给 thinking 开旁路"
       );
       (/const hasText = Boolean\(text\.trim\(\)\)/.test(stripSrc) && /hasText && !expanded \?/.test(stripSrc) && /hasText && expanded \?/.test(stripSrc) && /disabled=\{!hasText\}/.test(stripSrc) ? ok : fail)(
         "【161】正文为空时只留标题行（不画空长条身体；等待首段 delta 时也不出现空白块）"
