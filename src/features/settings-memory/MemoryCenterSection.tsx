@@ -124,6 +124,9 @@ return (
                           workspace={effectiveSharedProject}
                           workspaceEnabled={workspaceMemoryEnabled}
                           onNotice={app.setNotice}
+                          /* 云端记忆未开通时的出口：关掉本弹窗、把设置页切到「云账号」
+                             （开通动作只在那里做 —— ⛔ 不在记忆页再实现一套开通流程）。 */
+                          onOpenCloudAccount={() => { setOpenCard(null); app.setSettingsPage("cloud"); }}
                         />
                         {/* ── 旧「记忆中心」的「存储与同步」里的**保存位置**（10-10 迁移）──
                             ⛔ 只搬这一段：工作区开关面板里已经有，不重复渲染同一个开关。

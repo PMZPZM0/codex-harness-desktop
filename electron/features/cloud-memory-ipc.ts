@@ -22,6 +22,9 @@ import type { IpcHost } from "../ipc-host";
 import { cloudHome, decrypt, encrypt, fetchIntegrations } from "../cloud-api";
 import { CLOUD_MEMORY_CONNECTOR_ID, readCloudMcpConnector, syncCloudMcpConnector } from "../cloud-mcp";
 import { resyncCloudUpstream, setMemoryUpstream, readMemoryUpstream } from "../cloud-provider";
+import { readCloudMemoryActivation, writeCloudMemoryActivation, type CloudMemoryActivation, type CloudMemoryReason } from "../cloud-memory-activation";
+import { refreshEngineInstructions } from "../backend-routing";
+import { notifyMemoryBackendChanged } from "./memory-backend-events";
 
 const CHANNELS = ["cloud-memory:sync", "cloud-memory:status"];
 const CONNECTOR_NAME = "记忆（云端）";
@@ -35,6 +38,8 @@ type SyncReply = {
   /** 生效的推理上游：「memory」= 记忆端点（对话自动注入/写入），「model」= 纯模型。 */
   upstream?: "memory" | "model";
   upstreamChanged?: boolean;
+  /** 本次确认后的开通状态（界面据此置灰/放行，⛔ 不要自己再判一遍） */
+  activation?: CloudMemoryActivation;
 };
 
 type MemoryCredentials = {
@@ -47,6 +52,22 @@ type MemoryCredentials = {
 
 function credentialsFile(): string {
   return path.join(cloudHome(), "memory-integration.json");
+}
+
+/** 服务端/网络错误 → 开通原因。⛔ `unreachable` 必须单独一支：网络抖一下不能把已开通的记忆判成未开通。 */
+function reasonFromError(error?: string): CloudMemoryReason {
+  const text = String(error || "");
+  if (text === "not-logged-in" || text === "unauthorized") return "not-logged-in";
+  if (text.startsWith("unreachable")) return "unreachable";
+  if (text === "safe-storage-unavailable") return "storage-unavailable";
+  return "not-activated";
+}
+
+/** 一次「确认开通状态」的收尾：写快照 + 广播 + 重建提示层（生效后端可能刚从 builtin 变成 cloud，或反过来）。 */
+async function settleActivation(): Promise<CloudMemoryActivation> {
+  notifyMemoryBackendChanged();
+  await refreshEngineInstructions();
+  return readCloudMemoryActivation();
 }
 
 function readCredentials(): MemoryCredentials | null {
@@ -81,7 +102,20 @@ export const cloudMemoryFeature = defineFeature<null>({
 
     ipcHost.handle("cloud-memory:sync", async (): Promise<SyncReply> => {
       const res = await fetchIntegrations();
-      if (!res.ok) return { ok: false, mode: "not-activated", error: res.error || "integrations-failed" };
+      if (!res.ok) {
+        const reason = reasonFromError(res.error);
+        /* ⛔⛔ 连不上账号服务时**不动**已落盘的记忆配置：那是一次网络抖动，不是"用户停用了记忆"。
+           旧实现在这里无条件清空 ⇒ 断网 / 服务重启时把已开通用户的记忆上游一起清掉，
+           症状与"突然不记得我"完全一样，且用户毫无办法。只有**确定**未登录/未开通才清。 */
+        if (reason !== "unreachable") {
+          await syncCloudMcpConnector(null, CLOUD_MEMORY_CONNECTOR_ID);
+          await setMemoryUpstream(null);
+          await resyncCloudUpstream();
+          writeCloudMemoryActivation({ entitled: false, reason });
+        }
+        const activation = await settleActivation();
+        return { ok: false, mode: "not-activated", error: res.error || "integrations-failed", activation };
+      }
       const mem = res.data?.memory ?? {};
       if (!mem.ok || !mem.baseUrl || !mem.userKey) {
         await syncCloudMcpConnector(null, CLOUD_MEMORY_CONNECTOR_ID);
@@ -89,7 +123,9 @@ export const cloudMemoryFeature = defineFeature<null>({
            ⛔ 必须在这里也调一次：用户停用记忆后不能让对话继续走带记忆的端点。 */
         await setMemoryUpstream(null);
         await resyncCloudUpstream();
-        return { ok: false, mode: "not-activated", error: mem.error || "not-activated" };
+        writeCloudMemoryActivation({ entitled: false, reason: mem.error === "not-activated" ? "not-activated" : "no-credentials" });
+        const activation = await settleActivation();
+        return { ok: false, mode: "not-activated", error: mem.error || "not-activated", activation };
       }
       writeCredentials({
         baseUrl: String(mem.baseUrl),
@@ -114,21 +150,30 @@ export const cloudMemoryFeature = defineFeature<null>({
           token: String((mem as { mcpToken?: string }).mcpToken || ""),
           secretKey: "CLOUD_MEMORY_MCP_TOKEN",
         });
-        return { ok: true, mode: "mcp", action, upstream: "model" };
+        writeCloudMemoryActivation({ entitled: true, mode: "mcp" });
+        const activation = await settleActivation();
+        return { ok: true, mode: "mcp", action, upstream: "model", activation };
       }
 
       /* ② 否则把对话上游切到记忆端点。⛔ safeStorage 不可用时不切（宁可没有记忆，也不写明文凭据）。 */
       const encryptedUserKey = encrypt(String(mem.userKey));
-      if (!encryptedUserKey) return { ok: false, mode: "rest-only", error: "safe-storage-unavailable" };
+      if (!encryptedUserKey) {
+        writeCloudMemoryActivation({ entitled: true, mode: "rest-only", reason: "storage-unavailable" });
+        const activation = await settleActivation();
+        return { ok: false, mode: "rest-only", error: "safe-storage-unavailable", activation };
+      }
       await setMemoryUpstream({ baseUrl: String(mem.baseUrl), encryptedUserKey });
       const applied = await resyncCloudUpstream();
-      return { ok: true, mode: "rest-only", upstream: applied.memory ? "memory" : "model", upstreamChanged: applied.changed };
+      writeCloudMemoryActivation({ entitled: true, mode: "rest-only" });
+      const activation = await settleActivation();
+      return { ok: true, mode: "rest-only", upstream: applied.memory ? "memory" : "model", upstreamChanged: applied.changed, activation };
     });
 
     ipcHost.handle("cloud-memory:status", async () => {
       const connector = await readCloudMcpConnector(CLOUD_MEMORY_CONNECTOR_ID);
       const cred = readCredentials();
       const upstream = await readMemoryUpstream();
+      const activation = readCloudMemoryActivation();
       return {
         connectorId: CLOUD_MEMORY_CONNECTOR_ID,
         connector,
@@ -136,6 +181,8 @@ export const cloudMemoryFeature = defineFeature<null>({
         mode: connector.enabled ? "mcp" : (cred ? "rest-only" : "not-activated"),
         /* 生效上游：memory = 对话走带记忆的端点（记忆自动注入/写入）；model = 纯模型。 */
         upstream: upstream ? "memory" : "model",
+        /* ⛔ 开通 / 生效的唯一结论（界面置灰与引导都读它，⛔ 别在组件里用 mode 反推） */
+        activation,
         note: upstream
           ? "对话上游已切到记忆端点：记忆在请求层自动注入与写入（每账号独立命名空间）"
           : "记忆未生效：对话走纯模型端点",

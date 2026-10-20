@@ -1498,20 +1498,20 @@
       "channel": "memory:backend:read",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ backend: \"builtin\" | \"mcp\" | \"cloud\"; effective: \"builtin\" | \"mcp\" | \"cloud\"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null }>",
+      "returns": "Promise<{ backend: \"builtin\" | \"mcp\" | \"cloud\"; effective: \"builtin\" | \"mcp\" | \"cloud\"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null; cloudActivation: { state: \"active\" | \"inactive\" | \"unknown\"; reason: string; entitled: boolean; applied: boolean; checkedAt: number; reasonText: string } }>",
       "invokeArgs": "",
       "cast": null,
-      "note": "记忆后端二选一：用户选的值 + 实际生效值（装了 MCP 服务才让位）+ 安装命令"
+      "note": "记忆后端二选一：用户选的值 + 实际生效值（装了 MCP 服务才让位；云端未开通则回退内置）+ 云端开通状态 + 安装命令"
     },
     {
       "name": "setMemoryBackend",
       "channel": "memory:backend:set",
       "paramsImpl": "backend: \"builtin\" | \"mcp\" | \"cloud\"",
       "paramsDecl": "backend: \"builtin\" | \"mcp\" | \"cloud\"",
-      "returns": "Promise<{ backend: \"builtin\" | \"mcp\"; effective: \"builtin\" | \"mcp\"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null }>",
+      "returns": "Promise<{ backend: \"builtin\" | \"mcp\" | \"cloud\"; effective: \"builtin\" | \"mcp\" | \"cloud\"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null; cloudActivation: { state: \"active\" | \"inactive\" | \"unknown\"; reason: string; entitled: boolean; applied: boolean; checkedAt: number; reasonText: string }; refused?: string }>",
       "invokeArgs": "backend",
       "cast": null,
-      "note": "切换记忆后端并回传新状态"
+      "note": "切换记忆后端并回传新状态；选云端但未开通/未接通 ⇒ 不落盘，回执带 refused 原因"
     },
     {
       "name": "installMemoryMcp",
@@ -4897,7 +4897,7 @@
       "channel": "cloud-memory:sync",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; mode: string; action?: string; error?: string; upstream?: \"memory\" | \"model\"; upstreamChanged?: boolean }>",
+      "returns": "Promise<{ ok: boolean; mode: string; action?: string; error?: string; upstream?: \"memory\" | \"model\"; upstreamChanged?: boolean; activation?: { state: \"active\" | \"inactive\" | \"unknown\"; reason: string; entitled: boolean; applied: boolean; checkedAt: number; reasonText: string } }>",
       "invokeArgs": "",
       "cast": null,
       "note": "取云端记忆凭据（加密缓存）。⛔ 记忆中枢当前**没有 MCP 端点**（实测 /mcp、/v1/mcp、/sse 全 404），故 mode 恒为 rest-only 且不建连接器 —— 等本地 stdio 适配器"
@@ -4907,7 +4907,7 @@
       "channel": "cloud-memory:status",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ connectorId: string; connector: { exists: boolean; enabled: boolean; url: string; hasToken: boolean }; hasCredentials: boolean; mode: string; note: string; upstream?: \"memory\" | \"model\" }>",
+      "returns": "Promise<{ connectorId: string; connector: { exists: boolean; enabled: boolean; url: string; hasToken: boolean }; hasCredentials: boolean; mode: string; note: string; upstream?: \"memory\" | \"model\"; activation: { state: \"active\" | \"inactive\" | \"unknown\"; reason: string; entitled: boolean; applied: boolean; checkedAt: number; reasonText: string } }>",
       "invokeArgs": "",
       "cast": null,
       "note": "云端记忆状态（只读本地，不联网）"

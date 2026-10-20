@@ -255,9 +255,9 @@ contextBridge.exposeInMainWorld("codex", {
   setMemoryScale: (scale: number) => __ipc("memory:scale:set", 1, [scale]),
   readMemoryMode: () => __ipc("memory:mode-read", 0, []),
   setMemoryMode: (mode: "local" | "cloud") => __ipc("memory:mode-set", 1, [mode]),
-  /* 记忆后端二选一：用户选的值 + 实际生效值（装了 MCP 服务才让位）+ 安装命令 */
+  /* 记忆后端二选一：用户选的值 + 实际生效值（装了 MCP 服务才让位；云端未开通则回退内置）+ 云端开通状态 + 安装命令 */
   readMemoryBackend: () => __ipc("memory:backend:read", 0, []),
-  /* 切换记忆后端并回传新状态 */
+  /* 切换记忆后端并回传新状态；选云端但未开通/未接通 ⇒ 不落盘，回执带 refused 原因 */
   setMemoryBackend: (backend: "builtin" | "mcp" | "cloud") => __ipc("memory:backend:set", 1, [backend]),
   /* 一键安装 MCP 记忆服务（主进程用应用自带 node 跑安装器；新电脑无需预装 Node） */
   installMemoryMcp: () => __ipc("memory:mcp:install", 0, []),
@@ -791,6 +791,11 @@ contextBridge.exposeInMainWorld("codex", {
   platform: process.platform,
 onRuntimeProgress: (listener: (event: unknown) => void) =>
     __on("runtime:progress", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload)),
+  /* 记忆后端 / 云端开通状态变化推送（10-20）：主进程在**变化点**广播
+     （切后端、确认开通、登录/登出/换账号），界面订阅后重新读一次状态。
+     ⛔ 不在这里判定任何东西 —— payload 就是 readMemoryBackend() 的同一份快照。 */
+  onMemoryBackendChanged: (listener: (status: unknown) => void) =>
+    __on("memory:backend-changed", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload)),
   /* 3D 预览弹窗打开推送（model-viewer 域，10-05）：引擎 harness_tools preview_3d → 主进程
      sendToWindow("model-viewer:open") → 渲染层 ModelViewerBridge 弹窗。推送类手写桥，不在 gen 段。 */
   onModelViewerOpen: (listener: (event: { path: string; title: string }) => void) =>

@@ -22,7 +22,7 @@ type AccountView = { id: string; username: string; role: string; baseUrl: string
 type AuthStatus = { loggedIn: boolean; baseUrl: string; active: AccountView | null; accounts: AccountView[]; defaultBaseUrl: string };
 type ModelStatus = { loggedIn: boolean; registered: boolean; enabled: boolean; active: boolean; models: number; hasToken: boolean; lastSyncAt: number; account?: string; tokenPrefix?: string };
 type KbStatus = { exists: boolean; enabled: boolean; url: string; hasToken: boolean };
-type MemoryStatus = { mode: string; hasCredentials: boolean; note: string; upstream?: "memory" | "model"; connectorId?: string };
+type MemoryStatus = { mode: string; hasCredentials: boolean; note: string; upstream?: "memory" | "model"; connectorId?: string; activation?: { state: "active" | "inactive" | "unknown"; reason: string; entitled: boolean; applied: boolean; checkedAt: number; reasonText: string } };
 type PointTxn = { id?: string; at?: number; delta?: number; kind?: string; note?: string; after?: number };
 type Points = { ok: boolean; balance: number; signupGrant: number; txns: PointTxn[]; error?: string };
 /** cloud-models:test 回执（10-19）：成功 ⇒ 提示保存重启；401/403 主进程已自动重签后重探。 */
@@ -64,7 +64,7 @@ type CloudApi = {
   cloudModelsStatus?: () => Promise<ModelStatus>;
   cloudKbSync?: () => Promise<{ ok: boolean; action: string; url?: string; kbName?: string; error?: string }>;
   cloudKbStatus?: () => Promise<KbStatus>;
-  cloudMemorySync?: () => Promise<{ ok: boolean; mode: string; error?: string; upstream?: "memory" | "model"; upstreamChanged?: boolean }>;
+  cloudMemorySync?: () => Promise<{ ok: boolean; mode: string; error?: string; upstream?: "memory" | "model"; upstreamChanged?: boolean; activation?: { state: "active" | "inactive" | "unknown"; reason: string; entitled: boolean; applied: boolean; checkedAt: number; reasonText: string } }>;
   cloudMemoryStatus?: () => Promise<MemoryStatus>;
 };
 
@@ -331,11 +331,18 @@ export function CloudAccountSection() {
     if (!api.cloudMemorySync) return;
     setMsg(null);
     const r = await api.cloudMemorySync();
-    setMsg(r.mode === "rest-only"
-      ? (r.upstream === "memory"
-          ? { kind: "ok", text: "云端记忆已接通：对话上游已切到记忆端点，记忆在请求层自动注入与写入（无需工具调用）。" }
+    /* ⛔ 结论以主进程回执的 activation 为准（它同时落库给记忆页用）——
+       这里不再用 mode 反推，否则两个页面会给出不同的"开通/生效"判断。 */
+    const a = r.activation;
+    setMsg(r.ok
+      ? (a?.applied
+          ? { kind: "ok", text: "云端记忆已接通：对话上游已切到记忆端点，记忆在请求层自动注入与写入（无需工具调用）。回「记忆 → 记忆后端选项」即可选云端。" }
           : { kind: "ok", text: "记忆凭据已取回并加密缓存；再刷新一次或重启应用即可切到记忆上游。" })
-      : r.ok ? { kind: "ok", text: "云端记忆已接通。" } : { kind: "err", text: r.error === "not-activated" ? "云端记忆未开通权益 —— 先在云用户中心开通。" : `失败：${r.error || "未知原因"}` });
+      : {
+        kind: "err",
+        text: `未能接通：${a?.reasonText || (r.error === "not-activated" ? "当前账号未开通云端记忆" : r.error || "未知原因")}`
+          + (a?.reason === "not-logged-in" ? " —— 请重新登录云账号。" : " —— 去云用户中心开通后重试。"),
+      });
     await refresh();
   });
 
@@ -673,16 +680,19 @@ export function CloudAccountSection() {
             <div className="cloud-acct-head">
               <TriangleAlert size={16} />
               <strong>云端记忆</strong>
-              <span className={`cloud-acct-tag ${memory?.mode === "mcp" || memory?.upstream === "memory" ? "" : "off"}`}>
-                {memory?.mode === "mcp"
-                  ? "已接通（MCP）"
-                  : memory?.mode === "rest-only"
-                    ? (memory?.upstream === "memory" ? "已接通（请求层）" : "凭据就绪（未生效）")
+              <span className={`cloud-acct-tag ${memory?.activation?.state === "active" && memory?.activation?.applied ? "" : "off"}`}>
+                {memory?.activation?.state === "active"
+                  ? (memory.activation.applied
+                      ? (memory?.mode === "mcp" ? "已接通（MCP）" : "已接通（请求层）")
+                      : "已开通（未接通）")
+                  : memory?.activation?.state === "unknown"
+                    ? "待确认"
                     : "未开通"}
               </span>
             </div>
             <div className="cloud-acct-metrics">
               <span>凭据 <b>{memory?.hasCredentials ? "已缓存" : "无"}</b></span>
+              <span>开通 <b>{memory?.activation?.reasonText ?? "待确认"}</b></span>
             </div>
             <div className="cloud-acct-actions">
               <button className="secondary-setting" disabled={!!busy} onClick={doMemory}>

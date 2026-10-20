@@ -15,6 +15,8 @@ import type { IpcHost } from "../ipc-host";
 import { DEFAULT_ACCOUNTS_BASE, accountViews, cloudFetch, forgetAccount, login, loginState, switchAccount, serverBaseUrl } from "../cloud-api";
 import { disableCloudProvider } from "../cloud-provider";
 import { CLOUD_KB_CONNECTOR_ID, CLOUD_MEMORY_CONNECTOR_ID, syncCloudMcpConnector } from "../cloud-mcp";
+import { clearCloudMemoryActivation } from "../cloud-memory-activation";
+import { notifyMemoryBackendChanged } from "./memory-backend-events";
 
 /** 域内 IPC 通道（三前缀同源：域 id = ipc-registry prefix = manifest 前缀）。 */
 const CHANNELS = ["cloud-auth:login", "cloud-auth:logout", "cloud-auth:switch", "cloud-auth:status", "cloud-auth:points"];
@@ -39,19 +41,37 @@ export const cloudAuthFeature = defineFeature<null>({
 
     ipcHost.handle(
       "cloud-auth:login",
-      async (_event, input?: { baseUrl?: string; username?: string; password?: string }) =>
-        login(String(input?.baseUrl || ""), String(input?.username || ""), String(input?.password || "")),
+      async (_event, input?: { baseUrl?: string; username?: string; password?: string }) => {
+        const result = await login(String(input?.baseUrl || ""), String(input?.username || ""), String(input?.password || ""));
+        /* ⛔ 换了身份 ⇒ 云端记忆的开通结论作废（新账号未必有权益）。⛔ 不猜：标成「待确认」，
+           等用户在记忆页点「确认开通状态」或云账号页点「获取记忆凭据」再定。 */
+        if (result.ok) {
+          clearCloudMemoryActivation("account-changed");
+          notifyMemoryBackendChanged();
+        }
+        return result;
+      },
     );
 
     ipcHost.handle("cloud-auth:logout", async (_event, id?: string) => {
       const removed = forgetAccount(id ? String(id) : undefined);
       const state = loginState();
-      if (removed && !state.loggedIn) await disconnectCloud();
+      if (removed && !state.loggedIn) {
+        await disconnectCloud();
+        clearCloudMemoryActivation("not-logged-in");
+      } else if (removed) {
+        /* 删的不是生效账号：生效身份没变，但账号库变了 ⇒ 让界面重新读一次（可能条目少了）。 */
+        notifyMemoryBackendChanged();
+      }
       return { ok: removed, ...loginState() };
     });
 
     ipcHost.handle("cloud-auth:switch", async (_event, id?: string) => {
       const ok = switchAccount(String(id || ""));
+      if (ok) {
+        clearCloudMemoryActivation("account-changed");
+        notifyMemoryBackendChanged();
+      }
       return { ok, ...loginState() };
     });
 

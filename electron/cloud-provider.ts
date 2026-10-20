@@ -24,6 +24,7 @@ import { readCustomModel, readCustomModels, writeCustomModels } from "./main/01-
 import { customModelFile } from "./runtime-paths";
 import { applyCustomModel } from "./features/custom-model-apply";
 import { cloudHome, encrypt, fetchIntegrations } from "./cloud-api";
+import { writeCloudMemoryActivation } from "./cloud-memory-activation";
 import { withExclusiveEnabled } from "./provider-exclusivity";
 import type { CustomModelFile, ProviderModel } from "./features/custom-model-types";
 
@@ -213,16 +214,33 @@ export async function updateCloudProviderKey(encryptedKey: string): Promise<bool
 export async function refreshMemoryUpstreamFromIntegrations(): Promise<{ memory: boolean; changed: boolean }> {
   try {
     const res = await fetchIntegrations();
+    /* ⛔⛔ 连不上 / 服务端 5xx 属于**暂时性失败**：保留既有上游意图、也不下开通结论。
+       旧实现在这里无条件 `setMemoryUpstream(null)` —— 断网一次就把用户的云端记忆清成纯模型端点，
+       症状是「突然不记得我」，而用户什么都没改（与 cloud-memory-ipc 的 unreachable 分支同一条纪律）。 */
+    const transient = !res.ok && (res.status === 0 || res.status >= 500);
+    if (transient) return { memory: Boolean(await readMemoryUpstream()), changed: false };
     const mem = res.ok ? (res.data?.memory ?? {}) : {};
     if (!mem.ok || !mem.baseUrl || !mem.userKey) {
       await setMemoryUpstream(null);
       const cleared = await resyncCloudUpstream();
+      /* ⛔ 这里是**自愈/重签**链路上的第二次确认 ⇒ 也要落开通结论，否则设置页还显示旧状态。 */
+      const err = String(res.error || "");
+      writeCloudMemoryActivation({
+        entitled: false,
+        reason: res.status === 401 || err === "unauthorized" || err === "not-logged-in"
+          ? "not-logged-in"
+          : mem.error === "not-activated" ? "not-activated" : "no-credentials",
+      });
       return { memory: false, changed: cleared.changed };
     }
     const encryptedUserKey = encrypt(String(mem.userKey));
-    if (!encryptedUserKey) return { memory: Boolean(await readMemoryUpstream()), changed: false };
+    if (!encryptedUserKey) {
+      writeCloudMemoryActivation({ entitled: true, mode: "rest-only", reason: "storage-unavailable" });
+      return { memory: Boolean(await readMemoryUpstream()), changed: false };
+    }
     await setMemoryUpstream({ baseUrl: String(mem.baseUrl), encryptedUserKey });
     const applied = await resyncCloudUpstream();
+    writeCloudMemoryActivation({ entitled: true, mode: "rest-only" });
     return { memory: true, changed: applied.changed };
   } catch {
     return { memory: Boolean(await readMemoryUpstream()), changed: false };
