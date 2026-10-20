@@ -20,6 +20,16 @@ export type MoeKoeSong = {
 
 export type MoeKoeAsset = { name: string; url: string; size: number };
 
+/**
+ * 官方下载链路（与 https://music.moekoe.cn/download.html 一致）：
+ * 页面勾选「我是来自中国大陆（使用镜像加速下载）」时，链接就是
+ * `https://gh-proxy.com/` + GitHub release 资产地址。⛔ 顺序不要改：
+ * 官方镜像优先，ghfast 兜底，最后直连。
+ */
+export const MOEKOE_OFFICIAL_DOWNLOAD_PAGE = "https://music.moekoe.cn/download.html";
+export const MOEKOE_RELEASE_API = "https://api.github.com/repos/iAJue/MoeKoeMusic/releases/latest";
+export const MOEKOE_MIRRORS = ["https://gh-proxy.com/", "https://ghfast.top/", ""] as const;
+
 function text(value: unknown): string {
   return String(value ?? "").trim();
 }
@@ -90,11 +100,12 @@ export function normalizeMoeKoeSongUrl(payload: unknown): MoeKoePlayResult {
 }
 
 /**
- * 按平台选安装包：
- *   Windows → x64 .exe（跳过 ia32/blockmap）；
- *   macOS → 优先匹配架构的 .zip（自动化解压到 Applications），没有 zip 再 .dmg；
- *   Linux → AppImage（存在时，供手动运行）。
- * ⛔ 绝不能把 .exe 发给 Mac（旧版就是这样，Mac 上必失败）。
+ * 按平台/架构选安装包（官方 release 的命名：Windows `...-x64.exe` / `...-ia32.exe` /
+ * 无架构后缀的 universal；macOS `...-arm64.zip|dmg` / `...-x64.zip|dmg`）：
+ *   Windows → 对应架构 exe（arm64 无原生包，回退 x64 由系统转译）→ universal；
+ *   macOS → 对应架构 zip（可 ditto 自动安装）→ 对应架构 dmg → 无架构标记的包；
+ *   Linux → 对应架构 AppImage。
+ * ⛔ 绝不能把 .exe 发给 Mac，也绝不能给 Apple Silicon 发 x64 包。
  */
 export function pickMoeKoeInstaller(assets: unknown, platform: string = "win32", arch: string = "x64"): MoeKoeAsset | null {
   const list = Array.isArray(assets) ? assets : [];
@@ -107,19 +118,32 @@ export function pickMoeKoeInstaller(assets: unknown, platform: string = "win32",
       size: Number(asset.size ?? 0) || 0,
     }))
     .filter((asset) => !/\.blockmap$/i.test(asset.name) && /^https?:\/\//i.test(asset.url));
+  const hasArch = (name: string, pattern: RegExp) => pattern.test(name);
+  const universal = (asset: { name: string }) => !/arm64|ia32|x64|x86_64|amd64/i.test(asset.name);
   if (platform === "darwin") {
-    const archName = /arm64/i.test(arch) ? "arm64" : /x64|x86_64/i.test(arch) ? "x64" : arch;
+    const wantArm = /arm64/i.test(arch);
+    const archPattern = wantArm ? /arm64/i : /x64|x86_64/i;
     const zips = candidates.filter((asset) => /\.zip$/i.test(asset.name));
     const dmgs = candidates.filter((asset) => /\.dmg$/i.test(asset.name));
-    const forArch = (items: typeof zips) => items.find((asset) => asset.name.toLowerCase().includes(archName.toLowerCase()));
-    return forArch(zips) ?? forArch(dmgs) ?? zips[0] ?? dmgs[0] ?? null;
+    return zips.find((asset) => hasArch(asset.name, archPattern))
+      ?? dmgs.find((asset) => hasArch(asset.name, archPattern))
+      ?? zips.find(universal)
+      ?? dmgs.find(universal)
+      ?? null;
   }
   if (platform === "linux") {
-    return candidates.find((asset) => /\.AppImage$/i.test(asset.name)) ?? null;
+    const appImages = candidates.filter((asset) => /\.AppImage$/i.test(asset.name));
+    const wantArm = /arm64|aarch64/i.test(arch);
+    const archPattern = wantArm ? /arm64|aarch64/i : /x86_64|amd64|x64/i;
+    return appImages.find((asset) => hasArch(asset.name, archPattern))
+      ?? appImages.find(universal)
+      ?? null;
   }
   const exes = candidates.filter((asset) => /\.exe$/i.test(asset.name));
-  return exes.find((asset) => /x64/i.test(asset.name))
-    ?? exes.find((asset) => !/ia32|arm64/i.test(asset.name))
+  const wantIa32 = /ia32|x86(?!_64)/i.test(arch);
+  const archPattern = wantIa32 ? /ia32/i : /x64/i;
+  return exes.find((asset) => hasArch(asset.name, archPattern))
+    ?? exes.find(universal)
     ?? null;
 }
 

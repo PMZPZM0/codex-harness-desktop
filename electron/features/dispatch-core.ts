@@ -336,7 +336,7 @@ function dispatchMcpTools(): unknown[] {
     },
     {
       name: "moekoe_install",
-      description: "检查/启动/安装 MoeKoe Music。已安装会直接启动；未安装必须先得到用户同意，再带 confirm=true 调用。安装包从 GitHub 最新 release 经国内镜像（gh-proxy / ghfast）按平台下载：Windows x64 安装程序 / macOS arm64·x64 zip（解压到 Applications），约 130–150MB；会改动系统、可能弹 UAC 或 macOS 安全提示。⛔ 不要在没有用户明确同意时带 confirm=true。",
+      description: "检查/启动/安装 MoeKoe Music。已安装会直接启动；未安装必须先得到用户同意，再带 confirm=true 调用。安装包来自官方下载源（music.moekoe.cn/download.html 同款最新 release），中国大陆走 gh-proxy 镜像，失败回落 ghfast/直连；按系统与架构自动选包：Windows x64·ia32、macOS arm64·x64 zip（解压到 Applications）、Linux AppImage，约 130–160MB；会改动系统、可能弹 UAC 或 macOS 安全提示。⛔ 不要在没有用户明确同意时带 confirm=true。",
       inputSchema: {
         type: "object",
         properties: {

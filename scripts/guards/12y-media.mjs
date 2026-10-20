@@ -168,8 +168,16 @@ ok(
   "MoeKoe 卡片有 API 文档跳转/复制，常驻指令也带文档地址（Codex 可自己查）",
 );
 ok(
-  moekoe.includes("gh-proxy.com") && moekoe.includes("ghfast.top") && moekoe.includes("confirm !== true"),
-  "国内镜像安装通道 + 未确认不安装的硬闸",
+  moekoeCore.includes("gh-proxy.com") && moekoeCore.includes("ghfast.top") && moekoe.includes("MOEKOE_MIRRORS") && moekoe.includes("confirm !== true"),
+  "国内镜像安装通道（官方同款 gh-proxy 优先 + ghfast 兜底）+ 未确认不安装的硬闸",
+);
+ok(
+  moekoeCore.includes("https://api.github.com/repos/iAJue/MoeKoeMusic/releases/latest") && moekoeCore.includes("music.moekoe.cn/download.html") && moekoe.includes("MOEKOE_RELEASE_API"),
+  "安装走官方下载源：music.moekoe.cn 同款 iAJue/MoeKoeMusic 最新 release（不是第三方打包站）",
+);
+ok(
+  /platform === "darwin"[\s\S]{0,900}arm64[\s\S]{0,900}x64/.test(moekoeCore) && /wantIa32[\s\S]{0,300}ia32/.test(moekoeCore),
+  "安装包按系统+架构检测：macOS arm64/x64、Windows ia32/x64（⛔ 不给 Mac 发 exe、不给 Apple Silicon 发 x64）",
 );
 ok(
   moekoeCore.includes("pickMoeKoeInstaller") && moekoeCore.includes("hash_offset") && moekoeCore.includes("20028"),

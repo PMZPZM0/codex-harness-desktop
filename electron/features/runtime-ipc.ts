@@ -154,8 +154,8 @@ function fallbackPromptFor(id: DevRuntimeId, spec: DevRuntimeSpec): string {
       process.platform === "darwin"
         ? "· 装到哪：/Applications/MoeKoe Music.app（无权限时回落 ~/Applications）；macOS 首次打开如被拦截，去「系统设置 → 隐私与安全性」允许"
         : "· 装到哪：默认 Program Files\\MoeKoe Music（可在安装向导里改盘）",
-      "· 首选做法：在 Harness 会话里调用能力网关 moekoe_install（confirm=true），它会经 gh-proxy / ghfast 国内镜像下载对应平台安装包并启动安装；⛔ 不要用 install-runtimes.cjs（那里没有 moekoe，MoeKoe 也不是装到 tools 目录）。",
-      "· 网络兜底：GitHub 直链加 gh-proxy / ghfast 加速前缀；下载失败先删掉半截文件再完整重下（续传修不好坏文件）。",
+      "· 首选做法：在 Harness 会话里调用能力网关 moekoe_install（confirm=true），它会从官方下载源（music.moekoe.cn 同款 release，中国大陆走 gh-proxy 镜像）按系统/架构选包并启动安装；⛔ 不要用 install-runtimes.cjs（那里没有 moekoe，MoeKoe 也不是装到 tools 目录）。",
+      "· 网络兜底：官方下载页 https://music.moekoe.cn/download.html 勾选「我是来自中国大陆（使用镜像加速下载）」，或给 GitHub 直链加 gh-proxy / ghfast 前缀；下载失败先删掉半截文件再完整重下（续传修不好坏文件）。",
       "· 装完请验证：MoeKoe Music 能启动，且 http://127.0.0.1:6521/register/dev 返回 dfid；把结果发给我。",
     ].join("\n");
   }

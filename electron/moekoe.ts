@@ -4,8 +4,10 @@
  * 通道：
  *   · HTTP 127.0.0.1:6521（KuGouMusicApi）：/register/dev → dfid；/search 搜歌；/song/url 取流。
  *   · WebSocket 127.0.0.1:6520：仅 播放/暂停、上一首、下一首（moekoe_control）。
- *   · 安装：GitHub release → 国内镜像（gh-proxy / ghfast）下载对应平台包
- *     （Windows x64 NSIS / macOS arm64·x64 zip / Linux AppImage）→ 安装/启动。
+ *   · 安装：官方下载源（music.moekoe.cn/download.html → iAJue/MoeKoeMusic 最新 release）。
+ *     官网「我是来自中国大陆（使用镜像加速下载）」= gh-proxy 前缀；本实现同序：
+ *     gh-proxy → ghfast → 直连，按平台/架构选包
+ *     （Windows x64·ia32 / macOS arm64·x64 zip·dmg / Linux AppImage）→ 安装/启动。
  * ⛔ 不在本应用里内置曲库/插件；只调用用户安装的 MoeKoe。付费/会员歌能否完整播放取决于 MoeKoe 登录账号
  *    的 VIP 状态，取不到就如实报错，不伪造成功。
  *
@@ -21,13 +23,12 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { buildMirrorUrl, decodeLyricPayload, normalizeMoeKoeBrowse, normalizeMoeKoePrivilege, normalizeMoeKoeSearch, normalizeMoeKoeSearchType, normalizeMoeKoeSongUrl, pickLyricCandidate, pickMoeKoeInstaller, type MoeKoeSong } from "./moekoe-core";
+import { buildMirrorUrl, decodeLyricPayload, MOEKOE_MIRRORS, MOEKOE_OFFICIAL_DOWNLOAD_PAGE, MOEKOE_RELEASE_API, normalizeMoeKoeBrowse, normalizeMoeKoePrivilege, normalizeMoeKoeSearch, normalizeMoeKoeSearchType, normalizeMoeKoeSongUrl, pickLyricCandidate, pickMoeKoeInstaller, type MoeKoeSong } from "./moekoe-core";
 import { createMusicStream } from "./music-streams";
 
 const API_BASE = "http://127.0.0.1:6521";
 const WS_URL = "ws://127.0.0.1:6520";
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36";
-const MIRRORS = ["https://gh-proxy.com/", "https://ghfast.top/", ""];
 const SONG_CACHE_MAX = 500;
 
 let deviceDfid = "";
@@ -347,20 +348,27 @@ export async function installMoeKoe(input: { confirm?: unknown } = {}) {
     return { ...status, action: "launched", message: "MoeKoe Music 已安装，已帮您启动；等它加载完再搜索/播放。" };
   }
   if (input.confirm !== true) {
+    const platformHint = process.platform === "darwin"
+      ? (/arm64/i.test(process.arch) ? "macOS Apple Silicon（arm64 zip）" : "macOS Intel（x64 zip）")
+      : process.platform === "win32"
+        ? (/ia32|x86/i.test(process.arch) ? "Windows 32 位（ia32 exe）" : "Windows 64 位（x64 exe）")
+        : "Linux AppImage";
     return {
       ...status,
       action: "needs-confirm",
-      message: "尚未安装 MoeKoe Music。安装会下载约 133MB 的安装包并启动安装程序（会改动系统，可能弹 UAC）。用户确认后带 confirm=true 再调用 moekoe_install。",
+      platformPackage: platformHint,
+      officialPage: MOEKOE_OFFICIAL_DOWNLOAD_PAGE,
+      message: `尚未安装 MoeKoe Music。安装会从官方下载源（${MOEKOE_OFFICIAL_DOWNLOAD_PAGE} 同款 GitHub release，国内走 gh-proxy 镜像）下载 ${platformHint}，约 130–160MB，并启动安装程序（会改动系统，可能弹 UAC 或 macOS 安全提示）。用户确认后带 confirm=true 再调用 moekoe_install。`,
     };
   }
-  const releaseResponse = await net.fetch("https://api.github.com/repos/MoeKoeMusic/MoeKoeMusic/releases/latest", {
+  const releaseResponse = await net.fetch(MOEKOE_RELEASE_API, {
     headers: { accept: "application/vnd.github+json", "user-agent": USER_AGENT },
     signal: AbortSignal.timeout(15_000),
   });
-  if (!releaseResponse.ok) throw new Error(`获取 MoeKoe 最新版本失败：HTTP ${releaseResponse.status}`);
+  if (!releaseResponse.ok) throw new Error(`获取 MoeKoe 官方最新版本失败：HTTP ${releaseResponse.status}（下载页 ${MOEKOE_OFFICIAL_DOWNLOAD_PAGE}）`);
   const release = await releaseResponse.json() as any;
   const asset = pickMoeKoeInstaller(release?.assets, process.platform, process.arch);
-  if (!asset) throw new Error("最新 release 里没有找到当前平台/架构的安装包（支持 Windows x64 / macOS arm64·x64 / Linux AppImage）");
+  if (!asset) throw new Error(`官方 release ${release?.tag_name ?? ""} 里没有匹配 ${process.platform}/${process.arch} 的安装包（支持 Windows x64·ia32 / macOS arm64·x64 / Linux AppImage）；可到 ${MOEKOE_OFFICIAL_DOWNLOAD_PAGE} 手动下载`);
   const dir = path.join(app.getPath("userData"), "downloads");
   await fsp.mkdir(dir, { recursive: true });
   const target = path.join(dir, asset.name);
@@ -368,12 +376,12 @@ export async function installMoeKoe(input: { confirm?: unknown } = {}) {
     const stat = fs.statSync(target);
     if (!asset.size || stat.size === asset.size) {
       const launched = launchDownloadedInstaller(target);
-      return { ...status, ...launched, mirror: "cache" };
+      return { ...status, ...launched, source: "official", mirror: "cache", asset: asset.name };
     }
     fs.rmSync(target, { force: true });
   }
   let lastError = "";
-  for (const mirror of MIRRORS) {
+  for (const mirror of MOEKOE_MIRRORS) {
     const url = buildMirrorUrl(mirror, asset.url);
     const part = `${target}.part`;
     try {
@@ -388,11 +396,11 @@ export async function installMoeKoe(input: { confirm?: unknown } = {}) {
       if (asset.size && stat.size !== asset.size) throw new Error(`大小不符（${stat.size}/${asset.size}）`);
       fs.renameSync(part, target);
       const launched = launchDownloadedInstaller(target);
-      return { ...status, ...launched, mirror: mirror || "github", bytes: stat.size };
+      return { ...status, ...launched, source: "official", mirror: mirror || "github", asset: asset.name, bytes: stat.size };
     } catch (error) {
       lastError = messageOf(error);
       try { fs.rmSync(part, { force: true }); } catch { /* noop */ }
     }
   }
-  throw new Error(`国内镜像下载或安装失败：${lastError}。可以稍后重试，或手动从 https://music.moekoe.cn/ 下载。`);
+  throw new Error(`下载或安装失败：${lastError}。可以稍后重试，或到官方下载页 ${MOEKOE_OFFICIAL_DOWNLOAD_PAGE} 手动下载（中国大陆勾选镜像加速）。`);
 }

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildMirrorUrl, decodeLyricPayload, normalizeMoeKoeBrowse, normalizeMoeKoePrivilege, normalizeMoeKoeSearch, normalizeMoeKoeSearchType, normalizeMoeKoeSongUrl, pickLyricCandidate, pickMoeKoeInstaller } from "../electron/moekoe-core.ts";
+import { buildMirrorUrl, decodeLyricPayload, MOEKOE_OFFICIAL_DOWNLOAD_PAGE, MOEKOE_RELEASE_API, normalizeMoeKoeBrowse, normalizeMoeKoePrivilege, normalizeMoeKoeSearch, normalizeMoeKoeSearchType, normalizeMoeKoeSongUrl, pickLyricCandidate, pickMoeKoeInstaller } from "../electron/moekoe-core.ts";
 
 const item = {
   FileHash: "B3A52A7A958BF0AED0EBFBA2E9A818B7",
@@ -106,6 +106,11 @@ test("国内镜像 URL 拼接", () => {
   assert.equal(buildMirrorUrl("", url), url);
 });
 
+test("官方下载源：music.moekoe.cn 对应的 GitHub release 仓库", () => {
+  assert.equal(MOEKOE_OFFICIAL_DOWNLOAD_PAGE, "https://music.moekoe.cn/download.html");
+  assert.equal(MOEKOE_RELEASE_API, "https://api.github.com/repos/iAJue/MoeKoeMusic/releases/latest");
+});
+
 test("安装包按平台/架构选择：macOS 选 zip，不能拿 Windows exe", () => {
   const mac = [
     { name: "MoeKoe_Music_v1.7.1-arm64.dmg", browser_download_url: "https://x/arm64.dmg", size: 1 },
@@ -119,4 +124,24 @@ test("安装包按平台/架构选择：macOS 选 zip，不能拿 Windows exe", 
   assert.equal(pickMoeKoeInstaller(mac, "win32", "x64").name, "MoeKoe_Music_Setup_v1.7.1-x64.exe");
   assert.equal(pickMoeKoeInstaller([{ name: "MoeKoe_Music_v1.7.1-arm64.dmg", browser_download_url: "https://x/a.dmg", size: 1 }], "darwin", "arm64").name, "MoeKoe_Music_v1.7.1-arm64.dmg");
   assert.equal(pickMoeKoeInstaller(mac, "linux", "x64"), null);
+});
+
+test("安装包选择：Windows ia32/universal、Apple Silicon 绝不回落 x64、Linux 架构", () => {
+  const win = [
+    { name: "MoeKoe_Music_Setup_v1.7.1.exe", browser_download_url: "https://x/universal.exe", size: 1 },
+    { name: "MoeKoe_Music_Setup_v1.7.1-ia32.exe", browser_download_url: "https://x/ia32.exe", size: 1 },
+    { name: "MoeKoe_Music_Setup_v1.7.1-x64.exe", browser_download_url: "https://x/x64.exe", size: 1 },
+  ];
+  assert.equal(pickMoeKoeInstaller(win, "win32", "ia32").name, "MoeKoe_Music_Setup_v1.7.1-ia32.exe");
+  assert.equal(pickMoeKoeInstaller(win, "win32", "x64").name, "MoeKoe_Music_Setup_v1.7.1-x64.exe");
+  assert.equal(pickMoeKoeInstaller(win, "win32", "arm64").name, "MoeKoe_Music_Setup_v1.7.1-x64.exe");
+  assert.equal(pickMoeKoeInstaller(win.filter((a) => !/x64|ia32/.test(a.name)), "win32", "x64").name, "MoeKoe_Music_Setup_v1.7.1.exe");
+  const macX64Only = [{ name: "MoeKoe_Music_v1.7.1-x64.zip", browser_download_url: "https://x/x64.zip", size: 1 }];
+  assert.equal(pickMoeKoeInstaller(macX64Only, "darwin", "arm64"), null);
+  const linux = [
+    { name: "MoeKoe_Music_v1.7.1-x86_64.AppImage", browser_download_url: "https://x/x86.AppImage", size: 1 },
+    { name: "MoeKoe_Music_v1.7.1-arm64.AppImage", browser_download_url: "https://x/arm.AppImage", size: 1 },
+  ];
+  assert.equal(pickMoeKoeInstaller(linux, "linux", "arm64").name, "MoeKoe_Music_v1.7.1-arm64.AppImage");
+  assert.equal(pickMoeKoeInstaller(linux, "linux", "x64").name, "MoeKoe_Music_v1.7.1-x86_64.AppImage");
 });
