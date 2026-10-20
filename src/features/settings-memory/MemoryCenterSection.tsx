@@ -54,8 +54,8 @@ export function MemoryCenterSection(props: MemoryCenterSectionProps) {
     backend: { title: "记忆后端选项", hint: "内置金字塔 ⇄ MCP 记忆服务", tab: "storage", detail: "决定记忆**存在哪**：内置记忆金字塔（随包、离线）或可选的 MCP 记忆服务；以及条目保存在本机还是云端、当前项目是否开启工作区记忆。" },
   };
   const cards = [
-    { key: "shared", onlyBuiltin: true, icon: <BookOpen size={15} />, title: "项目共享记忆库", desc: "切换项目，查看该项目的共享记忆：用户档案 · 项目规则 · 工作纪律", stat: `${(effectiveSharedProject.split(/[\\/]/).filter(Boolean).pop() || "未选项目")} · 3 类共享内容` },
-    { key: "pyramid", onlyBuiltin: true, icon: <Layers size={15} />, title: "金字塔记忆架构", desc: "每个会话独立的金字塔结构：共享层只读、独立层自持", stat: "按会话查看" },
+    { key: "shared", icon: <BookOpen size={15} />, title: "项目共享记忆库", desc: "切换项目，查看该项目的共享记忆：用户档案 · 项目规则 · 工作纪律", stat: `${(effectiveSharedProject.split(/[\\/]/).filter(Boolean).pop() || "未选项目")} · 3 类共享内容` },
+    { key: "pyramid", icon: <Layers size={15} />, title: "金字塔记忆架构", desc: "每个会话独立的金字塔结构：共享层只读、独立层自持", stat: "按会话查看" },
     { key: "backend", icon: <Database size={15} />, title: "记忆后端选项", desc: "决定记忆写到哪儿：内置金字塔 / MCP 记忆服务 / 云端 memapi", stat: app.memoryBackend === "cloud" ? "云端记忆" : app.memoryBackend === "mcp" ? "MCP 记忆服务" : "内置金字塔" },
   ];
   const openMeta = openCard ? cardMeta[openCard] : null;
@@ -66,9 +66,13 @@ return (
       <section className="settings-section stack memory-center">
                     <div className="settings-copy channel-heading"><div><h2>记忆<PageInfo text={<>记忆分「常驻记忆」与「记忆条目」两部分：常驻记忆每轮对话自动注入；条目按需召回，按重要度分 P0–P3 管理。</>} /></h2></div><label className="channel-enable"><input type="checkbox" checked={memoryEnabled} onChange={(event) => void setMemoryEnabled(event.target.checked)} /><span>{memoryEnabled ? "已启用" : "已停用"}</span></label></div>
 
+                    {/* ⛔⛔ 10-20 用户反馈「这两个选项怎么进不去了」：上一版给前两张卡加了
+                        disabled={onlyBuiltin && backend!=="builtin"} —— 渲染层 backend 初值可能是
+                        undefined（尚未同步），`undefined !== "builtin"` 为真 ⇒ 内置后端下也被锁死。
+                        结论：**入口一律可点**；某页是否"只服务内置"由页内说明承担，不靠禁用表达。 */}
                     <div className="settings-cards" data-count={cards.length}>
                       {cards.map((card) => (
-                        <button type="button" className="settings-card" key={card.key} data-memory-card={card.key} disabled={(card as any).onlyBuiltin && app.memoryBackend !== "builtin"} title={(card as any).onlyBuiltin && app.memoryBackend !== "builtin" ? "这一页只服务「内置记忆金字塔」；当前后端不是它 —— 先在后端选项里切回内置" : undefined} onClick={() => setOpenCard(card.key)}>
+                        <button type="button" className="settings-card" key={card.key} data-memory-card={card.key} onClick={() => setOpenCard(card.key)}>
                           <span className="settings-card-logo">{card.icon}</span>
                           <span className="settings-card-copy">
                             <strong>{card.title}</strong>
