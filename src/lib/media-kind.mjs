@@ -88,7 +88,9 @@ export function mediaDisplaySrc(source) {
  * 从工具结果/对象里扫描媒体路径（不读盘，只做字符串匹配；调用方自行 fileExists 验证）。
  * 只收 video/audio/model；图片继续走 imageGeneration/灯箱，不在这里出播放器。
  */
-const MEDIA_FILE_RE = /(?:[A-Za-z]:[\\/]|\/|https?:\/\/)[^"'`\r\n<>|]*?\.(?:mp4|webm|mov|m4v|ogv|m3u8|mp3|wav|m4a|aac|ogg|flac|opus|glb|gltf)(?:\?[^\s"'`<>]*)?(?:#[^\s"'`<>]*)?(?=$|[\s"'`,;:)\]}>*，。；：、！？（）【】《》“”‘’])/gi;
+// ⛔ `/` 后跟空格不是 Unix 路径：工具输出「15 帧 / 10 KB」里的斜杠曾被当成路径起点，
+//    一路吞到后面的媒体扩展名（实测把音频路径吞成 `/ 10 KB）；`/(?!\s)` 把它挡掉。
+const MEDIA_FILE_RE = /(?:[A-Za-z]:[\\/]|\/(?!\s)|https?:\/\/)[^"'`\r\n<>|]*?\.(?:mp4|webm|mov|m4v|ogv|m3u8|mp3|wav|m4a|aac|ogg|flac|opus|glb|gltf)(?:\?[^\s"'`<>]*)?(?:#[^\s"'`<>]*)?(?=$|[\s"'`,;:)\]}>*，。；：、！？（）【】《》“”‘’])/gi;
 
 export function collectMediaPaths(value, limit = 8) {
   const out = [];
