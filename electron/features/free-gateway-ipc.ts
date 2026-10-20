@@ -16,7 +16,7 @@ import { app, net } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { bundledNode, toolsRoot } from "../toolchain";
+import { bundledNode, existingToolPath, toolsRoot } from "../toolchain";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { GH_MIRROR_PREFIXES } from "../gh-mirror";
@@ -99,7 +99,7 @@ function saveLastGoodMirror(i: number) {
 
 /** 用随包 7-Zip（完整版 7za）解 zip；缺 7za 时给可执行的中文名报错。 */
 function extractZip(zipPath: string, destDir: string): Promise<void> {
-  const sevenZip = path.join(toolsRoot(), "sevenzip", "7za.exe");
+  const sevenZip = existingToolPath("sevenzip", "7za.exe") || path.join(toolsRoot(), "sevenzip", "7za.exe");
   if (!fs.existsSync(sevenZip)) throw new Error("缺少随包 7-Zip（设置 → 开发工具 → 7-Zip CLI 修复安装后重试）");
   return new Promise((resolve, reject) => {
     const p = spawn(sevenZip, ["x", zipPath, `-o${destDir}`, "-y"], { stdio: "ignore" });

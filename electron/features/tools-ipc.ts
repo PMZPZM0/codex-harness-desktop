@@ -12,7 +12,7 @@
 import os from "node:os";
 import path from "node:path";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { cloakCacheDir, npmGlobalRoot, nuphusBinary, toolsRoot } from "../toolchain";
+import { cloakCacheDir, npmPackagePath, nuphusBinary, writeToolsRoot } from "../toolchain";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
@@ -28,8 +28,10 @@ export const toolsFeature = defineFeature<null>({
         try { return JSON.parse(readFileSync(pkgDir, "utf8")).version as string; }
         catch { return ""; }
       };
-      const root = toolsRoot();
-      const modules = npmGlobalRoot();
+      const root = writeToolsRoot();
+      const nuphusPkg = npmPackagePath("@nuphus", "nuphus-mcp", "package.json");
+      const playwrightPkg = npmPackagePath("@playwright", "cli", "package.json");
+      const cloakPkg = npmPackagePath("cloakbrowser", "package.json");
       const nuphusBin = nuphusBinary();
       // CloakBrowser 内核优先查应用内置缓存，兼容旧的用户目录缓存
       const cloakDirs = [cloakCacheDir(), path.join(os.homedir(), ".cloakbrowser")].filter(Boolean);
@@ -40,27 +42,27 @@ export const toolsFeature = defineFeature<null>({
       return [
         {
           id: "nuphus-mcp", name: "Nuphus 桌面自动化", scope: "computer",
-          version: modules ? readVersion(path.join(modules, "@nuphus", "nuphus-mcp", "package.json")) : "",
-          installed: Boolean(nuphusBin), binaryReady: Boolean(nuphusBin),
+          version: nuphusPkg ? readVersion(nuphusPkg) : "",
+          installed: Boolean(nuphusPkg), binaryReady: Boolean(nuphusBin),
           detail: nuphusBin ? "35 个桌面/浏览器自动化工具就绪（屏幕、窗口、键鼠、剪贴板、OCR、Chrome CDP），经 nuphus-call 按需调用，不占模型上下文" : "未安装：到「开发工具」页对「Nuphus 桌面自动化」点一次「修复安装」",
           command: nuphusBin,
         },
         {
           id: "playwright-cli", name: "Playwright 浏览器自动化", scope: "browser",
-          version: modules ? readVersion(path.join(modules, "@playwright", "cli", "package.json")) : "",
-          installed: modules ? existsSync(path.join(modules, "@playwright", "cli", "package.json")) : false,
+          version: playwrightPkg ? readVersion(playwrightPkg) : "",
+          installed: Boolean(playwrightPkg),
           binaryReady: existsSync(path.join(root, "pw-browsers")) && readdirSync(path.join(root, "pw-browsers")).some((entry) => entry.startsWith("chromium-")),
           detail: "命令行浏览器自动化：open / snapshot / click / type / screenshot；默认浏览器通道，内核可在「开发工具」页下载（国内镜像）",
           command: "playwright-cli",
         },
         {
           id: "cloakbrowser", name: "CloakBrowser 指纹浏览器", scope: "browser",
-          version: modules ? readVersion(path.join(modules, "cloakbrowser", "package.json")) : "",
-          installed: modules ? existsSync(path.join(modules, "cloakbrowser", "package.json")) : false,
+          version: cloakPkg ? readVersion(cloakPkg) : "",
+          installed: Boolean(cloakPkg),
           binaryReady: cloakBinary,
           // 三态（09-16 起 CloakBrowser 不随包，默认浏览器是内置视图 / playwright-cli）：
           // 未装包 → 提示可按需下载；装了包没内核 → 提示点内核卡片下载；都在 → 就绪。
-          detail: !(modules && existsSync(path.join(modules, "cloakbrowser", "package.json")))
+          detail: !cloakPkg
             ? "未安装（按需使用：需要过反爬站点时再到「开发工具」页下载，约 4 MB）"
             : cloakBinary
               ? "反检测 Chromium 内核已就绪（tools/cloak-cache）"

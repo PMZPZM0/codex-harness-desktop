@@ -17,7 +17,7 @@ import { existsSync, readdirSync, rmSync, watch as watchFs } from "node:fs";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { app } from "electron";
 import type { AppSettings } from "../app-settings";
-import { toolsRoot } from "../toolchain";
+import { existingToolPath, toolRootsRead, userToolsRoot, writeToolsRoot, toolsRoot } from "../toolchain";
 import { sendToWindow } from "./window-bus";
 import { kbEmbeddingInstalled } from "./kb-embed-backend";
 import { recordToolInstalled, recordToolRemoved } from "./tool-persistence";
@@ -271,8 +271,8 @@ function runtimeInstalled(id: DevRuntimeId, spec: DevRuntimeSpec): boolean {
   if (id === "kb-embedding") return kbEmbeddingInstalled();
   // MoeKoe 是系统级外部客户端：装没装看 exe（Program Files），不在 toolsRoot 里。
   if (id === "moekoe") return Boolean(findMoeKoeExe());
-  const root = toolsRoot();
-  if (!root) return false;
+  const roots = toolRootsRead();
+  if (!roots.length) return false;
   // ⛔⛔ python：只有可执行文件不算装好 —— 旧版 embeddable 安装就是「有 exe、无 pip 无 Tkinter」，
   //  按 marker 判会让坏安装显示「已安装」（卡片不给安装按钮）⇒ 用户连修复入口都没有
   //  （10-01 用户机器：Laya 报 `No module named pip`，而开发工具页 Python 显示已装）。
@@ -283,23 +283,29 @@ function runtimeInstalled(id: DevRuntimeId, spec: DevRuntimeSpec): boolean {
   //  不同，不做文件判据以免把好安装误判成未装）。
   //  ⛔ 与 scripts/install-runtimes.cjs 的 winPythonHealthy() 是同一套清单，改一处必须同步另一处。
   if (id === "python") {
-    const dir = path.join(root, "python");
-    // pip 判**模块目录**而不是 Scripts/pip.exe：PBS install_only 自带 pip 包但无 .exe 外壳，
-    // 而所有消费方走的都是 `python -m pip`（laya / 手机控制 / 文档转换）。
-    // ⛔ 路径经 pythonSiteDir 取（Windows = Lib/site-packages；mac = lib/pythonX.Y/site-packages，
-    //   版本号不能写死）—— 两平台同源，别在这里再写一遍平台分支。
-    const site = pythonSiteDir(dir);
-    if (!site || !existsSync(path.join(site, "pip", "__init__.py"))) return false;
-    if (IS_MAC) return existsSync(path.join(dir, "bin", "python3"));
-    return existsSync(path.join(dir, "python.exe")) && existsSync(path.join(dir, "DLLs", "_tkinter.pyd"));
+    for (const root of roots) {
+      const dir = path.join(root, "python");
+      // pip 判**模块目录**而不是 Scripts/pip.exe：PBS install_only 自带 pip 包但无 .exe 外壳，
+      // 而所有消费方走的都是 `python -m pip`（laya / 手机控制 / 文档转换）。
+      // ⛔ 路径经 pythonSiteDir 取（Windows = Lib/site-packages；mac = lib/pythonX.Y/site-packages，
+      //   版本号不能写死）—— 两平台同源，别在这里再写一遍平台分支。
+      const site = pythonSiteDir(dir);
+      if (!site || !existsSync(path.join(site, "pip", "__init__.py"))) continue;
+      if (IS_MAC) { if (existsSync(path.join(dir, "bin", "python3"))) return true; }
+      else if (existsSync(path.join(dir, "python.exe")) && existsSync(path.join(dir, "DLLs", "_tkinter.pyd"))) return true;
+    }
+    return false;
   }
   // pip 包（markitdown / laya / phone-harness）装在 Python 的 site-packages 里，路径含版本号 ⇒ 不走 marker。
   //  判定「包目录在不在」：目录在就等于 import 拿得到（比查 dist-info 更抗 pip 元数据差异）。
   if (PIP_PACKAGE_DIRS[id]) {
-    const site = pythonSiteDir(path.join(root, "python"));
-    // ⛔ 用 `site !== null` 而不是 `Boolean(site)`：后者不构成类型守卫，TS 不会收窄掉 null
-    //    （`Boolean(site) && …path.join(site…` 会报 TS2345，构建直接失败）。
-    return site !== null && existsSync(path.join(site, PIP_PACKAGE_DIRS[id]!));
+    for (const root of roots) {
+      const site = pythonSiteDir(path.join(root, "python"));
+      // ⛔ 用 `site !== null` 而不是 `Boolean(site)`：后者不构成类型守卫，TS 不会收窄掉 null
+      //    （`Boolean(site) && …path.join(site…` 会报 TS2345，构建直接失败）。
+      if (site !== null && existsSync(path.join(site, PIP_PACKAGE_DIRS[id]!))) return true;
+    }
+    return false;
   }
   // ⛔⛔ 10-07 mac（用户实测「指纹浏览器安装后不刷新」的根因）：npm 包类 marker 有**两个
   //  可能落位** —— 打包期 prepare-mac-tools.cjs 把 lib/node_modules 改名成 node_modules
@@ -307,11 +313,13 @@ function runtimeInstalled(id: DevRuntimeId, spec: DevRuntimeSpec): boolean {
   //  lib/node_modules，除非打包期留下的 symlink 活到了用户机器上。只查一个落位 ⇒
   //  装完永远显示「未安装」。两个都查：谁在算谁装了。
   const rel = markerRel(id, spec);
-  if (IS_MAC && rel.startsWith("npm-global/node_modules/")) {
-    return existsSync(path.join(root, rel))
-      || existsSync(path.join(root, rel.replace("npm-global/node_modules/", "npm-global/lib/node_modules/")));
-  }
-  return existsSync(path.join(root, rel));
+  return roots.some((root) => {
+    if (IS_MAC && rel.startsWith("npm-global/node_modules/")) {
+      return existsSync(path.join(root, rel))
+        || existsSync(path.join(root, rel.replace("npm-global/node_modules/", "npm-global/lib/node_modules/")));
+    }
+    return existsSync(path.join(root, rel));
+  });
 }
 
 
@@ -386,7 +394,7 @@ function runRuntimeInstaller(id: DevRuntimeId, script: string, args: string[], n
   return new Promise<void>((resolve, reject) => {
     const child = spawn(node, [script, ...args], {
       windowsHide: true,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: node === process.execPath ? "1" : undefined, TOOLS_ROOT: toolsRoot(), ...extraEnv },
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: node === process.execPath ? "1" : undefined, TOOLS_ROOT: userToolsRoot() || toolsRoot(), ...extraEnv },
     });
     trackRuntimeProc(id, child);
     let tail = "";
@@ -429,18 +437,20 @@ async function restartServerWhenIdle(id: string) {
 // 引擎（用户让 Codex 自己装工具）也可能往 tools/ 里写东西。目录一变就广播 auto 事件，
 // 渲染层收到后自动刷新开发工具清单与工具状态 —— 界面永远反映真实安装状态，不用手动重开设置。
 let toolsWatchDebounce: NodeJS.Timeout | null = null;
-try {
-  watchFs(toolsRoot(), { recursive: true }, () => {
-    if (toolsWatchDebounce) clearTimeout(toolsWatchDebounce);
-    // 去抖 1.5s：安装是「下载 zip → 解压很多文件」的高频写入，等写入稳定后再刷新一次
-    toolsWatchDebounce = setTimeout(() => {
-      toolsWatchDebounce = null;
-      sendToWindow("runtime:progress", { id: "__auto__", message: "开发工具目录已更新", auto: true, done: true });
-    }, 1500);
-  });
-} catch (error) {
-  // 监视失败只影响「自动刷新」，按钮安装路径仍会主动推 done 事件，不影响功能
-  console.warn("[runtime] tools 目录监视失败（自动刷新不可用）:", error);
+for (const toolsDir of toolRootsRead()) {
+  try {
+    watchFs(toolsDir, { recursive: true }, () => {
+      if (toolsWatchDebounce) clearTimeout(toolsWatchDebounce);
+      // 去抖 1.5s：安装是「下载 zip → 解压很多文件」的高频写入，等写入稳定后再刷新一次
+      toolsWatchDebounce = setTimeout(() => {
+        toolsWatchDebounce = null;
+        sendToWindow("runtime:progress", { id: "__auto__", message: "开发工具目录已更新", auto: true, done: true });
+      }, 1500);
+    });
+  } catch (error) {
+    // 监视失败只影响「自动刷新」，按钮安装路径仍会主动推 done 事件，不影响功能
+    console.warn(`[runtime] tools 目录监视失败（${toolsDir}，自动刷新不可用）:`, error);
+  }
 }
 
 // 首次启动自动安装 Git（09-16 瘦身后续）：git 不再随包，但引擎执行 shell 命令依赖它，
@@ -451,9 +461,8 @@ try {
 let gitAutoInstallStarted = false;
 async function autoInstallGitIfNeeded(): Promise<void> {
   if (process.platform !== "win32" || gitAutoInstallStarted) return;
-  const root = toolsRoot();
-  if (!root || runtimeInstalls.has("git")) return;
-  if (existsSync(path.join(root, devRuntimeSpecs.git.marker))) return;
+  if (!userToolsRoot() || runtimeInstalls.has("git")) return;
+  if (runtimeInstalled("git", devRuntimeSpecs.git)) return;
   gitAutoInstallStarted = true;
   sendToWindow("runtime:progress", { id: "git", message: "检测到未安装 Git，正在后台自动安装（镜像优先，约 90 MB）…" });
   const task = (async () => {

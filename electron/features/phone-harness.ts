@@ -20,7 +20,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { bundledPython, pythonPipReady } from "../toolchain";
 import { codexHome } from "../runtime-paths";
-import { toolsRoot } from "../toolchain";
+import { existingToolPath } from "../toolchain";
 import { PIP_COMMON_ARGS, PIP_INDEXES } from "./pip-sources";
 
 /** 首选源可被环境变量覆盖；其后按共享兜底表顺序（去重）。 */
@@ -103,8 +103,7 @@ function skillFile(): string {
 /** 随工具链装在 tools/platform-tools 下的 adb（开发工具页「Android 平台工具」装的就是它）。 */
 export function bundledAdb(): string {
   const exe = process.platform === "win32" ? "adb.exe" : "adb";
-  const p = path.join(toolsRoot(), "platform-tools", exe);
-  return existsSync(p) ? p : "";
+  return existingToolPath("platform-tools", exe);
 }
 
 /**

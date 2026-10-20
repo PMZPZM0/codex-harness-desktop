@@ -53,8 +53,8 @@ export async function run() {
     const fnBody = sliceFn(remoteC, "function resolveCloudflaredBin", 760);
     // 判据必须精确：Windows 分支**本来就该**叫 cloudflared.exe（不能笼统禁止 .exe），
     // 要锁的是「mac 也有对应布局」+「解析基于内置工具目录而不是 process.cwd()」。
-    (fnBody && /toolsRoot\(\)/.test(fnBody) && /\["cloudflared", "cloudflared"\]/.test(fnBody) && !/\.cwd\(\)/.test(fnBody))
-      ? ok("【32】cloudflared 走 toolsRoot + 平台化文件名（不再写死 cwd/…exe）")
+    (fnBody && /existingToolPath\(/.test(fnBody) && /\["cloudflared", "cloudflared"\]/.test(fnBody) && !/\.cwd\(\)/.test(fnBody))
+      ? ok("【32】cloudflared 走 userData/随包双根 + 平台化文件名（不再写死 cwd/…exe）")
       : fail("【32】remote.ts 的 cloudflared 解析仍依赖 process.cwd / 缺 mac 布局 —— mac 上手机配对隧道永不启动");
     /cloudflared-darwin-\$\{arch === "arm64" \? "arm64" : "amd64"\}\.tgz/.test(prepMac)
       ? ok("【32】prepare-mac-tools 现造 cloudflared(darwin) 并补执行位")
@@ -72,10 +72,10 @@ export async function run() {
     const toolbox = readFileSync(join(ROOT, "electron", "toolchain.ts"), "utf8");
     const fnBody = sliceFn(toolbox, "export function bundledFfmpeg", 900);
     const shaped = /process\.platform === "win32" \? "ffmpeg\.exe" : "ffmpeg"/.test(fnBody)
-      && /path\.join\(tools, "ffmpeg", "bin", exe\)/.test(fnBody)
-      && /path\.join\(tools, "ffmpeg", exe\)/.test(fnBody);
-    (shaped && /toolsRoot\(\)/.test(fnBody) && !/\.cwd\(\)/.test(fnBody))
-      ? ok("【32】ffmpeg 路径平台化且两种布局都找（tools/ffmpeg/bin 与平铺，不依赖 cwd）")
+      && /\["ffmpeg", "bin", exe\]/.test(fnBody)
+      && /\["ffmpeg", exe\]/.test(fnBody);
+    (shaped && /existingToolPath\(/.test(fnBody) && !/\.cwd\(\)/.test(fnBody))
+      ? ok("【32】ffmpeg 路径平台化且两种布局都找（userData/随包双根，不依赖 cwd）")
       : fail("【32】bundledFfmpeg 未覆盖平台差异 / 布局 —— mac 上渠道语音转码与整片合并必失败");
   }
 
@@ -3745,8 +3745,8 @@ export async function run() {
     "【83】pip 包的「装没装」判定看 site-packages 下的包目录（路径含 Python 版本号，不能走 marker）"
   );
   // ⛔ 最危险的一条：卸载路径。marker 首段推导会得到 tools/python —— 卸载文档转换会把整个 Python 删光
-  (/if \(pipDir\) \{[\s\S]{0,200}?pythonSiteDir\(path\.join\(toolsRoot\(\), "python"\)\)/.test(main83) ? ok : fail)(
-    "【83】卸载只删 pip 包目录（不按 marker 首段推 → 否则会删掉整个 Python 运行时）"
+  (/if \(pipDir\) \{[\s\S]{0,200}?pythonSiteDir\(path\.join\(writeToolsRoot\(\), "python"\)\)/.test(main83) ? ok : fail)(
+    "【83】卸载只删 pip 包目录（userData 安装根；不按 marker 首段推 → 否则会删掉整个 Python 运行时）"
   );
   // 卡片的体积提示必须与实测同量级（写小了会误导用户点）
   (/markitdown[\s\S]{0,400}?size: "约 \d+ MB"/.test(main83) ? ok : fail)(

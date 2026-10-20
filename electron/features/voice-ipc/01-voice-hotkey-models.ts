@@ -9,7 +9,7 @@ import { VoiceService } from "../../voice/voice-service";
 import { ALL_VOICE_REPOS, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "../../voice/model-manifest";
 import { ensureZipvoice, modelsSizeOnDisk, voiceModelsStatus } from "../../voice/model-store";
 import { isVoiceResourceEnabled, loadVoiceSettings, voiceResourceStates } from "../../voice/voice-settings";
-import { toolsRoot } from "../../toolchain";
+import { toolsRoot, writeToolsRoot } from "../../toolchain";
 import { sendToWindow } from "../window-bus";
 import { defineFeature } from "../../context";
 import type { IpcHost } from "../../ipc-host";
@@ -224,7 +224,7 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
     try {
       const result = await ensureZipvoice(
         modelsRoot(),
-        toolsRoot(),
+        writeToolsRoot(),
         (progress) => sendToWindow("voice:event", { type: "download", ...progress, target: "zipvoice" }),
         zipvoiceAbort.signal,
       );
@@ -257,7 +257,7 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
     try {
       const result = await ensureKws(
         modelsRoot(),
-        toolsRoot(),
+        writeToolsRoot(),
         (progress: any) => sendToWindow("voice:event", { type: "download", ...progress, target: "kws" }),
         kwsAbort.signal,
       );
