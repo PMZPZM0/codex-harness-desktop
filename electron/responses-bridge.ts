@@ -479,6 +479,19 @@ export class ResponsesBridge {
     headers["content-length"] = String(payload.length);
     // 协议特有的头（如 anthropic-version / x-api-key）在透传头之后覆盖
     if (overrides?.headers) Object.assign(headers, overrides.headers);
+    /* 10-20 云端记忆：memory-proxy 的注入门是 `injectedSkipped = !conversationId`，
+       而它只认 x-parent-conversation-id / x-conversation-id / x-session-id /
+       x-claude-code-session-id / x-deepseek-harness-session-id / x-chat-id / x-thread-id。
+       Codex 引擎一个都不发 ⇒ conversationId 恒为 null ⇒ 记忆永远不注入（连检索都不发起）。
+       这里统一补一个：**优先沿用客户端自带的会话头**，没有就退到固定账号级值。
+       ⛔ 固定值 = 账号级共享记忆（同账号所有会话共用一个记忆空间）；
+          要按会话隔离得让引擎侧把会话 id 送进来，本层做不到（app-server 是单例）。
+       ⛔ 只在该头缺席时补，绝不覆盖客户端显式传的值。 */
+    if (!headers["x-conversation-id"]) {
+      const conv = req.headers["x-conversation-id"] ?? req.headers["x-session-id"]
+        ?? req.headers["x-claude-code-session-id"] ?? req.headers["x-chat-id"] ?? req.headers["x-thread-id"];
+      headers["x-conversation-id"] = typeof conv === "string" && conv.length > 0 ? conv : "codex-harness-account";
+    }
     const transport = url.protocol === "https:" ? https : http;
     return transport.request({
       protocol: url.protocol, hostname: url.hostname, port: url.port || (url.protocol === "https:" ? 443 : 80),
