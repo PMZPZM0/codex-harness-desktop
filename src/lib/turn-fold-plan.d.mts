@@ -8,4 +8,4 @@ export type CompletedFoldPlanEntry =
   | { kind: "fold"; units: FoldUnit[] }
   | { kind: "body"; unit: FoldUnit };
 
-export declare function planCompletedFold(units: FoldUnit[], finalAgentId?: string): CompletedFoldPlanEntry[];
+export declare function planCompletedFold(units: FoldUnit[], finalAgentId?: string, options?: { inlineThinking?: boolean }): CompletedFoldPlanEntry[];

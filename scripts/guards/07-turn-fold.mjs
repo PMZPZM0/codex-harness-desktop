@@ -4811,15 +4811,32 @@ export async function run() {
     (/displayMode === "strip"[\s\S]{0,160}<ReasoningStrip/.test(itemSrc) && /<ReasoningStrip head=\{head\} text=\{displayed\} running=\{running\} revealing=\{revealing\} \/>/.test(itemSrc) ? ok : fail)(
       "【161】strip 模式复用同一份 displayed/追字状态（不复制直播判据）"
     );
-    (/aria-expanded=\{expanded\} onClick=\{toggle\}/.test(stripSrc) && /setExpanded\(\(current\) => !current\)/.test(stripSrc) && /scrollTop = el\.scrollHeight/.test(stripSrc) && /scrollTop = 0/.test(stripSrc) ? ok : fail)(
-      "【161】长条可点击展开/收起；直播贴底、展开从头读"
+    (/aria-expanded=\{expanded\} onClick=\{toggle\}/.test(stripSrc) && /setExpanded\(\(current\) => !current\)/.test(stripSrc) && /el\.scrollTop = el\.scrollHeight;\n\s*el\.scrollLeft = el\.scrollWidth;/.test(stripSrc) && /scrollTop = 0;\n\s*el\.scrollLeft = 0;/.test(stripSrc) ? ok : fail)(
+      "【161】长条可点击展开/收起；收起贴最新一行（横向贴尾）、展开从头读"
     );
-    (/\.reasoning-strip\.collapsed \.reasoning-strip-body \{[\s\S]{0,120}max-height: 78px;/.test(styles54) && /\.reasoning-strip\.expanded \.reasoning-strip-body \{[\s\S]{0,120}max-height: min\(50vh, 420px\)/.test(styles54) && /styles\/40-reasoning-strip/.test(stylesEntry) ? ok : fail)(
-      "【161】长条默认 3 行（78px）、展开最高 50vh 内部滚动；40 号样式已引入"
+    (/\.reasoning-strip\.collapsed \.reasoning-strip-body \{[\s\S]{0,140}max-height: 22px;[\s\S]{0,80}white-space: nowrap;/.test(styles54) && /\.reasoning-strip\.expanded \.reasoning-strip-body \{[\s\S]{0,140}max-height: min\(50vh, 420px\)/.test(styles54) && /styles\/40-reasoning-strip/.test(stylesEntry) ? ok : fail)(
+      "【161】长条收起只留一行（22px + nowrap），展开最高 50vh 内部滚动；40 号样式已引入"
     );
     (generalSrc.includes("思考板块展示") && generalSrc.includes('setReasoningDisplayMode("auto")') && generalSrc.includes('setReasoningDisplayMode("strip")') && generalSrc.includes("reasoning-mode-seg") ? ok : fail)(
       "【161】设置 → 控制台有两档切换（自适应展开 / 长条按行），点击即时生效"
     );
+    // ⑮ 用户 10-20 截图报障：长条被收进「深度思考」过程折叠，收起后只剩一个空长条，
+    //    必须展开组才看得到内容。⇒ strip 模式思考**不参与任何过程折叠**（直播/完成两路都要），
+    //    长条本身始终直接可见；正文为空时只留标题行，不画空的长条身体。
+    {
+      const turnFoldSrc = readFileSync(join(ROOT, "src", "lib", "turn-fold.ts"), "utf8").replace(/\r/g, "");
+      const planSrc = readFileSync(join(ROOT, "src", "lib", "turn-fold-plan.mjs"), "utf8").replace(/\r/g, "");
+      const queueSrc = readFileSync(join(ROOT, "src", "features", "session-queue", "SessionQueue.tsx"), "utf8").replace(/\r/g, "");
+      (/useReasoningDisplayMode/.test(queueSrc) && /buildSegments\(units, !running, \{ inlineThinking \}\)/.test(queueSrc) && /planCompletedFold\(units, finalUnit\.item\.id, \{ inlineThinking \}\)/.test(queueSrc) ? ok : fail)(
+        "【161】strip 模式：直播与完成两路都把 thinking 排除在过程折叠外（长条始终直接可见）"
+      );
+      (/options: \{ inlineThinking\?: boolean \}/.test(turnFoldSrc) && /unit\.kind === "thinking" && !thinkingLive && !inlineThinking/.test(turnFoldSrc) && /options = \{\}/.test(planSrc) && /inlineThinking && isThinking\(unit\)/.test(planSrc) ? ok : fail)(
+        "【161】分段/完成折叠计划都支持 inlineThinking（默认关闭，不影响自适应档的旧口径）"
+      );
+      (/const hasText = Boolean\(text\.trim\(\)\)/.test(stripSrc) && /hasText \? \(/.test(stripSrc) && /disabled=\{!hasText\}/.test(stripSrc) ? ok : fail)(
+        "【161】正文为空时只留标题行（不画空长条身体；等待首段 delta 时也不出现空白块）"
+      );
+    }
   }
 }
 // ── 55. 压缩期间的运行态语义（09-26 用户截图：压缩后「正在生成回复 · 正在落笔」一直挂着）──

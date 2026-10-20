@@ -36,6 +36,12 @@
 .reasoning-strip-head:hover {
   background: color-mix(in srgb, var(--line-soft) 70%, transparent);
 }
+.reasoning-strip.empty .reasoning-strip-head {
+  cursor: default;
+}
+.reasoning-strip.empty .reasoning-strip-head:hover {
+  background: transparent;
+}
 .reasoning-strip.live .reasoning-head {
   color: var(--orange);
   font-weight: 500;
@@ -70,13 +76,16 @@
   scrollbar-width: thin;
 }
 .reasoning-strip.collapsed .reasoning-strip-body {
-  /* 3 行（12.5px × 1.75 = 21.875px/行）；超过部分由 scrollTop 贴到最新一行 */
-  max-height: 78px;
+  /* 收起 = 只有最新一行（12.5px × 1.75 = 21.875px）；nowrap 后横向滚到末尾，
+     看到的是刚输出的尾部，不再堆出下面好几行。 */
+  max-height: 22px;
   overflow: hidden;
+  white-space: nowrap;
 }
 .reasoning-strip.expanded .reasoning-strip-body {
   max-height: min(50vh, 420px);
   overflow-y: auto;
+  white-space: pre-wrap;
   cursor: text;
 }
 

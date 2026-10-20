@@ -101,7 +101,8 @@ export function bodyTextOf(item: ThreadItem) {
 /** 完成态折叠计划见 ./turn-fold-plan.mjs（纯逻辑放 .mjs，预检可直接 import 跑断言）。 */
 
 
-export function buildSegments(units: FoldUnit[], turnFinished: boolean): FoldSegment[] {
+export function buildSegments(units: FoldUnit[], turnFinished: boolean, options: { inlineThinking?: boolean } = {}): FoldSegment[] {
+  const inlineThinking = Boolean(options.inlineThinking);
   const segments: FoldSegment[] = [];
   let buffer: FoldUnit[] = [];
   const flush = () => {
@@ -125,9 +126,11 @@ export function buildSegments(units: FoldUnit[], turnFinished: boolean): FoldSeg
       && (isLiveThinking(unit.item) || (!unit.item.status && !unit.item.durationMs))
       && !laterWork
       && !turnFinished;   // ⛔ 回合已结束 ⇒ 不存在还在直播的思考（settle 会补记时长）
-    if (unit.kind === "foldable" || (unit.kind === "thinking" && !thinkingLive)) {
+    if (unit.kind === "foldable" || (unit.kind === "thinking" && !thinkingLive && !inlineThinking)) {
       // 工具与已结束的思考合并成段（对齐 WorkBuddy：一段过程一个摘要组，思考在组内）；
-      // 直播中的思考打断分段、内联常驻
+      // 直播中的思考打断分段、内联常驻。
+      // strip 模式（10-20）：思考永远内联 —— 否则会被「深度思考」过程组收起，
+      // 只剩一个空长条，用户必须展开组才看得到内容（用户截图报障）。
       buffer.push(unit);
     } else {
       flush();
