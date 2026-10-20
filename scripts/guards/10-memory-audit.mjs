@@ -972,7 +972,12 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     const bePath = join(ROOT, "electron", "memory-backend.ts");
     (existsSync(bePath) ? ok : fail)("【150】记忆后端判定在独立叶子模块 electron/memory-backend.ts（⛔ 不许放进 runtime-refs：它已 import memory-layers，反向引用会成 require 环）");
     const beSrc = existsSync(bePath) ? readFileSync(bePath, "utf8") : "";
-    (beSrc && !/from "\.\/(?!app-settings")/.test(beSrc) ? ok : fail)("【150】memory-backend.ts 只依赖 app-settings（叶子，不许依赖其它业务模块）");
+    /* 10-20：云端判定抽到 cloud-memory-activation（同为叶子）—— 判据跟着放行它，但同时钉死它
+       不许反向 import memory-backend/memory-layers，否则 effectiveMemoryBackend ⇄ 该模块成环
+       （CJS 下拿到未初始化的绑定，tsc 不报错、运行时静默错）。 */
+    (beSrc && !/from "\.\/(?!app-settings"|cloud-memory-activation")/.test(beSrc) ? ok : fail)("【150】memory-backend.ts 只依赖 app-settings + cloud-memory-activation（⛔ 引用 memory-layers / runtime-refs 会成 require 环）");
+    const actLeafSrc150 = existsSync(join(ROOT, "electron", "cloud-memory-activation.ts")) ? readFileSync(join(ROOT, "electron", "cloud-memory-activation.ts"), "utf8") : "";
+    (actLeafSrc150 && !/from "\.\/(memory-backend|memory-layers|runtime-refs|developer-instructions)"/.test(actLeafSrc150) ? ok : fail)("【150】cloud-memory-activation 自己也是叶子（⛔ 反向 import memory-backend 成环）");
 
     const layersSrc = readFileSync(join(ROOT, "electron", "memory-layers.ts"), "utf8");
     (/appendLesson\([\s\S]{0,900}?effectiveMemoryBackend\(\) === "mcp"\) return false/.test(layersSrc) ? ok : fail)("【150】内置记忆写入入口 appendLesson 有 MCP 后端让位（否则同一条记忆在两处各存一份）");
@@ -1063,8 +1068,11 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     const packSrc150 = readFileSync(join(ROOT, "electron", "skill-pack.ts"), "utf8");
     (/MEMORY_MCP_BACKEND_SKILL = "memory-mcp-backend"/.test(packSrc150) ? ok : fail)("【150】MCP 后端技能名的单一真相源在 skill-pack（与内置技能目录名同源）");
     /* 切换必须**当场落盘**：此前只在启动链里同步 ⇒ 不重启就等于没切。 */
-    (/memory:backend:set[\s\S]{0,900}?ensureBuiltinSkills\(/.test(ipcSrc150) ? ok : fail)("【150】切后端时当场同步内置技能（否则不重启=没切）");
-    (/memory:backend:set[\s\S]{0,1400}?syncLocalMemoryConnector\(/.test(ipcSrc150) ? ok : fail)("【150】切后端时当场同步本地 MCP 连接器");
+    /* ⛔ 10-20：这两条原来用 900/1400 字符窗口 —— 本轮给云端闸门加了十来行，窗口立刻撑破（假红）。
+       窗口类判据一律按**处理器边界**切片，别调大数字（与 06/02 的 branchBody 同一条纪律）。 */
+    const setHandler150 = (ipcSrc150.split('ipcHost.handle("memory:backend:set"')[1] || "").split('ipcHost.handle("memory:mcp:install"')[0];
+    (/ensureBuiltinSkills\(/.test(setHandler150) ? ok : fail)("【150】切后端时当场同步内置技能（否则不重启=没切）");
+    (/syncLocalMemoryConnector\(/.test(setHandler150) ? ok : fail)("【150】切后端时当场同步本地 MCP 连接器");
     /* ⛔⛔ 其它技能正文也不许**无条件**指向 memory-classify（09-25 代码审查抓到）：
        self-review / memory-hygiene / skill-authoring **不在**互斥切换里（切后端时它们照旧启用），
        但正文写着「落点见 memory-classify / 写到 lessons/」⇒ MCP 后端下模型读到的是"去写一个已被
@@ -1079,5 +1087,76 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     const authoringSrc150 = readFileSync(join(ROOT, "electron", "builtin-skills", "07-skill-authoring.ts"), "utf8");
     (/\\`memory-mcp-backend\\`/.test(authoringSrc150) ? ok : fail)("【150】skill-authoring 的记忆落点随后端分岔");
   }
+  }
+
+  /* ══ 【200】云端记忆开通闸门（10-20 加）════════════════════════════════════
+     用户原话：「未开通时入口/按钮自动置灰不可用 + 明确提示 + 引导去开通；开通状态变化后界面
+     及时同步；置灰与提示必须与权限/状态判断同一口径，不许可点击却无法使用、不许提示缺失；
+     覆盖未开通 / 开通中 / 已开通」。
+     五个不变量（少一条的症状都是"看着正常、用了才发现记不住"）：
+       ① 判定只有一处（cloud-memory-activation），路由只认 entitled && applied ——
+          `memoryBackend === "cloud"` 只是**用户的选择**，不是"能用"；
+       ② 主进程是第二道闸：未开通时 memory:backend:set 拒绝落盘 + 回执 refused（界面置灰可以被绕过）；
+       ③ 换账号/登出写 **inactive 快照**（⛔ 删文件会走"无快照⇒按意图文件判已开通"的兼容分支）；
+       ④ 变化点广播 memory:backend-changed，界面订阅后重读（⛔ 各页面自己推断 = 两份判定）；
+       ⑤ 界面三件齐：disabled + 原因提示 + 出口按钮 + 灰灯（只做其一 = 点了没反应 / 提示缺失）。 */
+  {
+    const actPath200 = join(ROOT, "electron", "cloud-memory-activation.ts");
+    const actSrc200 = existsSync(actPath200) ? readFileSync(actPath200, "utf8") : "";
+    (existsSync(actPath200) ? ok : fail)("【200】开通判定在独立模块 electron/cloud-memory-activation.ts（唯一读取入口）");
+    (/export function cloudMemoryUsable\(\)[\s\S]{0,260}?return act\.entitled && act\.applied/.test(actSrc200) ? ok : fail)("【200】cloudMemoryUsable 只认 entitled && applied（「选了云端」≠「能用」）");
+    (/export function clearCloudMemoryActivation[\s\S]{0,600}?writeCloudMemoryActivation\(\{ entitled: false/.test(actSrc200) ? ok : fail)("【200】换账号 / 登出写 inactive 快照（⛔ 删文件会落到「无快照⇒按意图文件判已开通」的升级兼容分支 ⇒ 新账号被冒充成已开通）");
+    (!/\bunlink(Sync)?\b|\brmSync\b/.test(actSrc200) ? ok : fail)("【200】开通状态文件只写不删（负向：出现 unlink/rmSync 即违规）");
+
+    const beSrc200 = readFileSync(join(ROOT, "electron", "memory-backend.ts"), "utf8");
+    (/if \(configured === "cloud"\)[\s\S]{0,800}?if \(cloudMemoryUsable\(\)\) return "cloud"[\s\S]{0,300}?return "builtin"/.test(beSrc200) ? ok : fail)("【200】effectiveMemoryBackend：云端不可用必须回退 builtin（⛔ 直接返回 cloud = 提示层教模型「云端自动收」，静默丢记忆）");
+    (/cloudActivation: \{/.test(beSrc200) ? ok : fail)("【200】状态快照带 cloudActivation（界面据此置灰；⛔ 别让界面用 effective / mode 反推）");
+
+    const ipcSrc200 = readFileSync(join(ROOT, "electron", "features", "memory-ipc.ts"), "utf8");
+    (/if \(next === "cloud"\)[\s\S]{0,900}?refused: \(act\.reason/.test(ipcSrc200) ? ok : fail)("【200】第二道闸：memory:backend:set 在云端不可用时**拒绝落盘**并回执 refused（绕过界面的旧渲染层/脚本也切不进去）");
+    (/await refreshEngineInstructions\(\);\s*\n\s*notifyMemoryBackendChanged\(\);/.test(ipcSrc200) ? ok : fail)("【200】切换后重建提示层 + 广播（顺序：先重建再通知，界面重读时读到的是新口径）");
+
+    const syncSrc200 = readFileSync(join(ROOT, "electron", "features", "cloud-memory-ipc.ts"), "utf8");
+    (/if \(reason !== "unreachable"\)/.test(syncSrc200) ? ok : fail)("【200】确认开通只在**确定**未登录/未开通时清上游（unreachable 不许降级：断网不能把已开通判死）");
+    ((syncSrc200.match(/return \{ ok:[^\n]*?activation \}/g) || []).length >= 4 ? ok : fail)("【200】cloud-memory:sync 每条回执都带 activation（界面按它判，⛔ 不用 mode 反推）");
+    (/cloud-memory:status[\s\S]{0,700}?\bactivation,/.test(syncSrc200) ? ok : fail)("【200】cloud-memory:status 回执带 activation（置灰与引导的唯一读点）");
+
+    const provSrc200 = readFileSync(join(ROOT, "electron", "cloud-provider.ts"), "utf8");
+    (/const transient = !res\.ok && \(res\.status === 0 \|\| res\.status >= 500\);[\s\S]{0,200}?if \(transient\) return \{ memory/.test(provSrc200) ? ok : fail)("【200】自愈/重签链路同样不许在断网时清记忆上游（transient 直接返回，不 setMemoryUpstream(null)）");
+
+    const evtSrc200 = existsSync(join(ROOT, "electron", "features", "memory-backend-events.ts")) ? readFileSync(join(ROOT, "electron", "features", "memory-backend-events.ts"), "utf8") : "";
+    (/sendToWindow\("memory:backend-changed", memoryBackendStatus\(\)\)/.test(evtSrc200) ? ok : fail)("【200】广播 payload 就是 memoryBackendStatus() 原始快照（⛔ 事件里另算一套 = 双口径）");
+    const notifiers200 = ["features/memory-ipc.ts", "features/cloud-memory-ipc.ts", "features/cloud-auth-ipc.ts"]
+      .filter((rel) => /notifyMemoryBackendChanged\(\)/.test(readFileSync(join(ROOT, "electron", rel), "utf8"))).length;
+    (notifiers200 === 3 ? ok : fail)(`【200】三个变化点都广播（切后端 / 确认开通 / 登录登出换账号，实际 ${notifiers200}/3）`);
+
+    const preloadSrc200 = readFileSync(join(ROOT, "electron", "preload.ts"), "utf8");
+    (/onMemoryBackendChanged:[\s\S]{0,200}?"memory:backend-changed"/.test(preloadSrc200) ? ok : fail)("【200】preload 暴露 onMemoryBackendChanged（推送类手写桥）");
+    (/onMemoryBackendChanged/.test(readFileSync(join(ROOT, "src", "vite-env.d.ts"), "utf8")) ? ok : fail)("【200】渲染层类型声明里有 onMemoryBackendChanged");
+
+    const panelSrc200 = readFileSync(join(ROOT, "src", "features", "settings-memory", "BackendConsolePanel.tsx"), "utf8");
+    (/const cloudReady = Boolean\(act\?\.entitled && act\?\.applied\)/.test(panelSrc200) ? ok : fail)("【200】界面可用性同样只认 entitled && applied（与主进程同一口径）");
+    (/const locked = d\.id === "cloud" && !cloudReady;/.test(panelSrc200) && /disabled=\{Boolean\(busy\) \|\| locked\}/.test(panelSrc200) ? ok : fail)("【200】云端卡片是**原生 disabled**（⛔ 只在 onClick 里 return = 可点击却无法使用）");
+    (/data-locked=\{locked \? "true" : undefined\}/.test(panelSrc200) && /aria-disabled=/.test(panelSrc200) ? ok : fail)("【200】禁用同时给 data-locked + aria-disabled（样式钩子 + 读屏）");
+    (/cloudConfirming \? "确认中…" : cloudReady \? "已开通" : act\?\.entitled \? "待接通" : act\?\.state === "unknown" \? "未确认" : "未开通"/.test(panelSrc200) ? ok : fail)("【200】三态以上全覆盖：未确认 / 未开通 / 待接通 / 确认中 / 已开通");
+    (/className="bc-cloudgate" role="status" data-cloud-state=/.test(panelSrc200) ? ok : fail)("【200】未开通时给出引导条（原因 + 出口），且带 data-cloud-state 便于验收");
+    (/if \(cloudAction\.kind === "confirm"\) confirmCloud\(\); else onOpenCloudAccount\?\.\(\);/.test(panelSrc200) ? ok : fail)("【200】引导条按原因分流：当场确认 / 去云账号开通（⛔ 笼统一句「去开通」会把未登录也导去开通页）");
+    (/onMemoryBackendChanged\?\.\(\(\) => \{ void refresh\(\); \}\)/.test(panelSrc200) ? ok : fail)("【200】面板订阅 changes 后**重读**状态（⛔ 自己推断「应该已开通」= 第二份判定）");
+    (/value\?\.refused/.test(panelSrc200) ? ok : fail)("【200】被主进程拒绝时照实转述 refused（不能演成「已切换」）");
+    (/if \(backend === "cloud" && !cloudReady\)/.test(panelSrc200) ? ok : fail)("【200】键盘/旧构建绕过来时的兜底：不切换 + 明确提示");
+
+    const centerSrc200 = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryCenterSection.tsx"), "utf8");
+    (/onOpenCloudAccount=\{\(\) => \{ setOpenCard\(null\); app\.setSettingsPage\("cloud"\); \}\}/.test(centerSrc200) ? ok : fail)("【200】引导出口真的接到「云账号」页（⛔ 不在记忆页再实现一套开通流程）");
+
+    const useMemSrc200 = readFileSync(join(ROOT, "src", "hooks", "useMemory.ts"), "utf8");
+    (/effective === "cloud" \? "cloud" : effective === "mcp" \? "mcp" : "builtin"/.test(useMemSrc200) ? ok : fail)("【200】useMemory 三态还原（旧实现把 cloud 折叠成 builtin ⇒ 记忆中心卡片永远显示内置）");
+    (/onMemoryBackendChanged/.test(useMemSrc200) ? ok : fail)("【200】useMemory 也订阅广播（别处切后端后本页跟着变）");
+
+    const cloudAccSrc200 = readFileSync(join(ROOT, "src", "features", "settings-cloud", "CloudAccountSection.tsx"), "utf8");
+    (/activation/.test(cloudAccSrc200) ? ok : fail)("【200】云账号页也用 activation 判开通（两页同一口径，别一页说未开通一页说已开通）");
+
+    const cssSrc200 = readFileSync(join(ROOT, "src", "styles", "29-memory-ui.css"), "utf8");
+    (/\.bc-device:disabled\s*\{/.test(cssSrc200) && /\.bc-device\[data-locked="true"\]/.test(cssSrc200) ? ok : fail)("【200】禁用**有可见样式**（10-19 事故：disabled 无样式 ⇒ 看着正常、点了没反应，比变灰更糟）");
+    (/\.bc-cloudgate\s*\{/.test(cssSrc200) && /\.bc-lamp\.is-off\s*\{/.test(cssSrc200) ? ok : fail)("【200】引导条与灰灯样式在位（灰 = 没资格；琥珀 = 能修好）");
   }
 }

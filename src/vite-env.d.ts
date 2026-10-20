@@ -593,10 +593,10 @@ interface Window {
     setMemoryScale(scale: number): Promise<{ scale: number; options: number[]; budget: { user: number; background: number; project: number; lessons: number; logs: number; total: number } }>;
     readMemoryMode(): Promise<"local" | "cloud">;
     setMemoryMode(mode: "local" | "cloud"): Promise<"local" | "cloud">;
-    /* 记忆后端二选一：用户选的值 + 实际生效值（装了 MCP 服务才让位）+ 安装命令 */
-    readMemoryBackend(): Promise<{ backend: "builtin" | "mcp" | "cloud"; effective: "builtin" | "mcp" | "cloud"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null }>;
-    /* 切换记忆后端并回传新状态 */
-    setMemoryBackend(backend: "builtin" | "mcp" | "cloud"): Promise<{ backend: "builtin" | "mcp"; effective: "builtin" | "mcp"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null }>;
+    /* 记忆后端二选一：用户选的值 + 实际生效值（装了 MCP 服务才让位；云端未开通则回退内置）+ 云端开通状态 + 安装命令 */
+    readMemoryBackend(): Promise<{ backend: "builtin" | "mcp" | "cloud"; effective: "builtin" | "mcp" | "cloud"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null; cloudActivation: { state: "active" | "inactive" | "unknown"; reason: string; entitled: boolean; applied: boolean; checkedAt: number; reasonText: string } }>;
+    /* 切换记忆后端并回传新状态；选云端但未开通/未接通 ⇒ 不落盘，回执带 refused 原因 */
+    setMemoryBackend(backend: "builtin" | "mcp" | "cloud"): Promise<{ backend: "builtin" | "mcp" | "cloud"; effective: "builtin" | "mcp" | "cloud"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null; cloudActivation: { state: "active" | "inactive" | "unknown"; reason: string; entitled: boolean; applied: boolean; checkedAt: number; reasonText: string }; refused?: string }>;
     /* 一键安装 MCP 记忆服务（主进程用应用自带 node 跑安装器；新电脑无需预装 Node） */
     installMemoryMcp(): Promise<{ code: number | null; result: any; log: string; status: any }>;
     /* 卸载 MCP 记忆服务（删 <userData>/memory-mcp） */
@@ -1096,9 +1096,9 @@ interface Window {
     /* 云端知识库连接器状态（只读本地，不联网） */
     cloudKbStatus(): Promise<{ exists: boolean; enabled: boolean; url: string; hasToken: boolean } & { connectorId: string; tool: string }>;
     /* 取云端记忆凭据（加密缓存）。⛔ 记忆中枢当前**没有 MCP 端点**（实测 /mcp、/v1/mcp、/sse 全 404），故 mode 恒为 rest-only 且不建连接器 —— 等本地 stdio 适配器 */
-    cloudMemorySync(): Promise<{ ok: boolean; mode: string; action?: string; error?: string; upstream?: "memory" | "model"; upstreamChanged?: boolean }>;
+    cloudMemorySync(): Promise<{ ok: boolean; mode: string; action?: string; error?: string; upstream?: "memory" | "model"; upstreamChanged?: boolean; activation?: { state: "active" | "inactive" | "unknown"; reason: string; entitled: boolean; applied: boolean; checkedAt: number; reasonText: string } }>;
     /* 云端记忆状态（只读本地，不联网） */
-    cloudMemoryStatus(): Promise<{ connectorId: string; connector: { exists: boolean; enabled: boolean; url: string; hasToken: boolean }; hasCredentials: boolean; mode: string; note: string; upstream?: "memory" | "model" }>;
+    cloudMemoryStatus(): Promise<{ connectorId: string; connector: { exists: boolean; enabled: boolean; url: string; hasToken: boolean }; hasCredentials: boolean; mode: string; note: string; upstream?: "memory" | "model"; activation: { state: "active" | "inactive" | "unknown"; reason: string; entitled: boolean; applied: boolean; checkedAt: number; reasonText: string } }>;
     /* 云账号积分（服务端 /points/me）：余额 + 最近 30 条变动明细。⛔ 账户级数据，故挂在 cloud-auth 域而不是另开板块 */
     cloudAuthPoints(): Promise<{ ok: boolean; balance: number; signupGrant: number; txns: Array<{ id?: string; at?: number; delta?: number; kind?: string; note?: string; after?: number }>; error?: string }>;
     /* 把「云端模型」设为当前生效供应商（用户显式点击）。⛔ 自动同步绝不抢生效位，只有这条会；切换会重启引擎以让新 Key/地址生效 */
@@ -1270,6 +1270,10 @@ interface Window {
 
 
     onRuntimeProgress(listener: (event: { id: string; message?: string; percent?: number; stage?: string; speed?: string; done?: boolean; failed?: boolean; auto?: boolean; /** 已取消（10-07）：主进程杀完子进程清完临时文件后推来的收尾事件，≠ failed */ cancelled?: boolean }) => void): () => void;
+
+    /** 记忆后端 / 云端开通状态变化推送（10-20）：手写桥（非 gen 段）。主进程在变化点广播，
+     *  界面订阅后重新读一次状态：切后端、确认开通、登录 / 登出 / 换账号。 */
+    onMemoryBackendChanged(listener: (status: { backend: "builtin" | "mcp" | "cloud"; effective: "builtin" | "mcp" | "cloud"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null; cloudActivation: { state: "active" | "inactive" | "unknown"; reason: string; entitled: boolean; applied: boolean; checkedAt: number; reasonText: string } }) => void): () => void;
 
 
     /** 3D 预览弹窗打开推送（model-viewer 域，10-05）：手写桥（非 gen 段），引擎 preview_3d 触发 */

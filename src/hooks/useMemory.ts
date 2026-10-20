@@ -1,5 +1,18 @@
 import { useEffect, useState } from "react";
 
+/**
+ * 主进程回执 / 推送 → 渲染层后端值。
+ * ⛔⛔ 只认 `effective`（实际生效值）：选了 MCP 但服务没装、选了云端但未开通，
+ *   主进程都回退成 builtin —— 渲染层的工具面与卡片必须跟着回退，否则会出现
+ *   「界面说云端、模型其实按内置写」的双口径。
+ * ⛔ 旧实现是 `effective === "mcp" ? "mcp" : "builtin"` ⇒ **cloud 被静默折叠成 builtin**，
+ *   症状是切了云端后记忆中心卡片仍显示「内置金字塔」、云端专属说明也不出现。
+ */
+function backendOfStatus(status: unknown): "builtin" | "mcp" | "cloud" {
+  const effective = String((status as { effective?: unknown } | null)?.effective ?? "");
+  return effective === "cloud" ? "cloud" : effective === "mcp" ? "mcp" : "builtin";
+}
+
 export type MemoryRecord = {
   id: string;
   category: string;
@@ -149,8 +162,16 @@ export function useMemory({ threadId, activeTurnId, workspace }: Options = {}) {
       localStorage.setItem(MODE_KEY, mode);
     }).catch(() => undefined);
     void window.codex.readMemoryBackend().then((status) => {
-      setMemoryBackend(status?.effective === "mcp" ? "mcp" : "builtin");
+      setMemoryBackend(backendOfStatus(status));
     }).catch(() => undefined);
+  }, []);
+
+  /* 后端 / 云端开通状态变化推送（10-20）：主进程在变化点广播，这里跟着更新。
+     ⛔ 修的是「切了云端、别处还按内置显示」：此前只在挂载时读一次，切后端后
+        工具面条件与记忆中心卡片一直用旧值（云端被折叠成 builtin，见 backendOfStatus 的注释）。 */
+  useEffect(() => {
+    const off = window.codex.onMemoryBackendChanged?.((status: any) => setMemoryBackend(backendOfStatus(status)));
+    return typeof off === "function" ? off : undefined;
   }, []);
 
   async function saveMemoryRecord(workspaceOverride?: string) {

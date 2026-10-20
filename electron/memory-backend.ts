@@ -15,6 +15,9 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { app } from "electron";
 import { readAppSettingsSync } from "./app-settings";
+/* ⛔ 云端记忆「能用吗」由 cloud-memory-activation 统一判（服务端回执 + 上游意图），
+   本文件只**消费**结论。⛔ 别在这里自己判「选了就当能用」—— 那正是静默丢记忆的形态。 */
+import { cloudMemoryUsable, describeCloudMemoryReason, readCloudMemoryActivation } from "./cloud-memory-activation";
 
 export type MemoryBackend = "builtin" | "mcp" | "cloud";
 
@@ -54,7 +57,14 @@ export function localMemoryMcpInstalled(): boolean {
  *  ⇒ 选了 MCP 但不可用时**回退内置**：宁可回到金字塔，也不能丢。 */
 export function effectiveMemoryBackend(): MemoryBackend {
   const configured = memoryBackend();
-  if (configured === "cloud") return "cloud";
+  if (configured === "cloud") {
+    /* ⛔⛔ 与 MCP 同一条纪律：**用户选了不等于能用**。云端权益没开通 / 没登录 / 上游没接通时，
+       对话上游仍停在纯模型端点 —— 此时若还声称 cloud，提示层会教模型"什么都不用做，云端自动收"，
+       实际一条都存不下（静默丢记忆）。⇒ 回退内置，让记忆至少落在本机可读的地方。 */
+    if (cloudMemoryUsable()) return "cloud";
+    console.warn("[memory] 记忆后端选了云端，但云端记忆未开通/未接通 ⇒ 本轮回退内置记忆金字塔，避免记忆丢失");
+    return "builtin";
+  }
   if (configured !== "mcp") return "builtin";
   if (!localMemoryMcpInstalled()) {
     console.warn("[memory] 记忆后端选了 MCP，但服务未安装（入口缺失）⇒ 本轮回退内置记忆金字塔，避免记忆丢失");
@@ -105,14 +115,40 @@ export type MemoryBackendStatus = {
   installCommand: string;
   /** 选了 MCP 却回退时的原因；没回退则为 null */
   fallbackReason: string | null;
+  /** 云端记忆的开通 / 生效状态（界面据此置灰卡片并给引导；⛔ 单一来源 = cloud-memory-activation） */
+  cloudActivation: CloudMemoryActivationView;
+};
+
+/** 暴露给渲染层的开通状态形状（⛔ 与 cloud-memory-activation 的对外字段逐字一致）。 */
+export type CloudMemoryActivationView = {
+  state: "active" | "inactive" | "unknown";
+  reason: string;
+  entitled: boolean;
+  applied: boolean;
+  checkedAt: number;
+  /** 原因的人话版本（界面直接展示，⛔ 别在组件里重写一套文案） */
+  reasonText: string;
 };
 
 export function memoryBackendStatus(): MemoryBackendStatus {
   const backend = memoryBackend();
   const installed = localMemoryMcpInstalled();
   const installRoot = localMemoryMcpInstallRoot();
-  // ⛔ 与 effectiveMemoryBackend() 同口径（后端可用才认 MCP），但**不重复打 warn** —— 设置页会反复刷新。
-  const effective: MemoryBackend = backend === "cloud" ? "cloud" : backend === "mcp" && installed ? "mcp" : "builtin";
+  const cloud = readCloudMemoryActivation();
+  const cloudUsable = cloud.entitled && cloud.applied;
+  // ⛔ 与 effectiveMemoryBackend() 同口径（后端可用才认 MCP / 云端），但**不重复打 warn** —— 设置页会反复刷新。
+  const effective: MemoryBackend = backend === "cloud"
+    ? (cloudUsable ? "cloud" : "builtin")
+    : backend === "mcp" && installed ? "mcp" : "builtin";
+  /* ⛔ 三支分开写：`active` 但没接通讲的是"缺凭据/上游没切"，不能套用失败原因文案
+     （`describeCloudMemoryReason("")` 会说出"尚未确认开通状态"，与实际相反）。 */
+  const cloudFallback = backend === "cloud" && !cloudUsable
+    ? (cloud.state === "unknown"
+      ? "已选云端记忆，但开通状态还没确认：在「记忆后端选项」里确认一次，或去「云账号」开通。当前仍走内置金字塔，记忆不会丢。"
+      : cloud.state === "active"
+        ? "已选云端记忆，已开通但还没接通（缺记忆凭据或对话上游未切）：在「记忆后端选项」里点「接通云端记忆」即可。当前仍走内置金字塔，记忆不会丢。"
+        : `已选云端记忆，但${describeCloudMemoryReason(cloud.reason)}：当前仍走内置金字塔（记忆不会丢）。去「云账号」处理后再选一次即可。`)
+    : null;
   return {
     backend,
     effective,
@@ -120,9 +156,20 @@ export function memoryBackendStatus(): MemoryBackendStatus {
     serverPath: localMemoryMcpServerPath(),
     installRoot,
     installCommand: `"${bundledNodePath()}" "${memoryInstallerPath()}" --force`,
-    fallbackReason:
-      backend === "mcp" && !installed
-        ? "已选 MCP，但服务未安装：当前仍走内置金字塔（宁可回退，也不让记忆一处都不写）。装好服务后重启应用即可生效。"
-        : null,
+    fallbackReason: cloudFallback ?? (backend === "mcp" && !installed
+      ? "已选 MCP，但服务未安装：当前仍走内置金字塔（宁可回退，也不让记忆一处都不写）。装好服务后重启应用即可生效。"
+      : null),
+    cloudActivation: {
+      state: cloud.state,
+      reason: cloud.reason,
+      entitled: cloud.entitled,
+      applied: cloud.applied,
+      checkedAt: cloud.checkedAt,
+      reasonText: cloud.state === "active"
+        ? (cloud.applied ? "已开通并已接通" : "已开通，但尚未接通（缺凭据或上游未切）")
+        : cloud.state === "unknown"
+          ? describeCloudMemoryReason("")
+          : describeCloudMemoryReason(cloud.reason),
+    },
   };
 }
