@@ -231,7 +231,9 @@ export function registerVoiceIpc2(ibA: ReturnType<typeof registerVoiceIpc1>) {
       tts: { ...current.tts, profileId: String(id ?? "") },
     });
     svc().updateSettings(next);
-    return { ok: true, profileId: String(id ?? "") };
+    // 通话中的 TTS 线程在 create 时就把音色固定了 ⇒ 必须重建，否则「选了新音色还是旧声音」
+    const reloaded = await svc().reloadTtsVoice();
+    return { ok: true, profileId: String(id ?? ""), ttsError: reloaded.ok ? undefined : reloaded.error };
   });
   return { voiceProfilesDirOf, draftProfileAudio, voicePresetsDir };
 }

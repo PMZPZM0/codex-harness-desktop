@@ -12,7 +12,6 @@ import { decodeFloat32Base64 } from "../../voice/audio-transport";
 import { patchVoiceStage, requestVoiceCallNotice, requestVoiceDictationSend, requestVoiceOpenSettings, resetVoiceStage, setVoiceDictationHandler, setVoiceLevel, setVoiceSkipHandler, setVoiceStopHandler } from "../../voice/wave-level";
 import { isLikelySelfEcho } from "../../lib/voice-echo.mjs";
 import { createVoiceScriptStripper, resolveAnnounceSummary } from "../../lib/voice-script.mjs";
-import { patchWakeState, resetWakeState } from "../../voice/wake-state";
 import { describeMicError } from "../../lib/mic-error.mjs";
 import { VoicePhase, VoiceState, ModelsStatus, POS_KEY, CAPTURE_RATE, BARGUE_COOLDOWN_MS, REF_RING_SECONDS, AEC_MAX_DELAY_SAMPLES, AEC_DEFAULT_DELAY_SAMPLES, PREBUFFER_MAX_SAMPLES, ENDPOINT_QUIET_RMS, ENDPOINT_QUIET_MS, pickHint, readPos } from "../VoiceCallFloat";
 
@@ -337,19 +336,6 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
       }
       if (event.type === "error") {
         setNotice(String(event.message ?? ""));
-        return;
-      }
-      if (event.type === "wakeHeard") {
-        // 诊断：把「最近听到什么」贴给设置页（用户据此判断该换词还是改匹配）
-        patchWakeState({ heard: String(event.text ?? ""), matched: Boolean(event.matched) });
-        return;
-      }
-      if (event.type === "wake") {
-        patchWakeState({ heard: String(event.text ?? ""), matched: true });
-        // ★ 唤醒命中 → 开始通话。走 ref 转发最新闭包（旧实现在唤醒 effect 里直接用
-        //   捕获的 startCall，threadId 早已过期 → 命中后报「请先打开一个会话」）。
-        //   通话中/启动中不重复触发（监听本就应该已停，这里再兜一层）。
-        if (phaseRef.current === "idle") startCallRef.current();
         return;
       }
       if (event.type === "download") {
@@ -915,146 +901,6 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
     setTranscript((prev) => [...prev.slice(-29), { role, text: t, at: Date.now() }]);
   }, []);
 
-  // ── 语音唤醒：持续聆听 + 匹配唤醒词（会常驻占用 CPU，默认关）──
-  /**
-   * ⚠️ 09-13 三处重写（用户反馈「唤醒功能不太行」，取证见 `src/lib/wake-match.mjs` 顶部）：
-   * 1. **配置必须进 state 并进 effect 依赖**：旧实现只在 effect 里读一次设置、依赖数组只有
-   *    `[phase]` —— 在设置页打开开关后 phase 不变 → 监听根本没起来，表现就是「开了没反应」。
-   * 2. **匹配搬到主进程**：渲染层只收 `wake` 事件（识别文本每块回传 = O(n²) IPC，已去掉）。
-   * 3. **命中后不再从这里的闭包调 startCall**：旧实现捕获的是 effect 那次渲染的 `startCall`，
-   *    `threadId` 早已过期 → 命中后报「请先打开一个会话」或绑到旧会话（与 09-12 快捷键同族 bug）。
-   *    现在由主事件通道统一处理（`startCallRef` 每次渲染转发最新闭包）。
-   */
-  const [wakeCfg, setWakeCfg] = useState<{ enabled: boolean; phrase: string }>({ enabled: false, phrase: "" });
-  useEffect(() => {
-    let alive = true;
-    const load = () => {
-      void window.codex.voiceSettingsGet().then((s: any) => {
-        if (!alive) return;
-        const w = s?.settings?.wake;
-        setWakeCfg({ enabled: Boolean(w?.enabled), phrase: String(w?.phrase ?? "") });
-      }).catch(() => undefined);
-    };
-    load();
-    // 设置保存时主进程会广播 {type:"settings"}：开关/唤醒词改了立刻生效，不必等状态变化
-    const off = window.codex.onVoiceEvent((event: any) => {
-      if (event?.type === "settings") load();
-    });
-    return () => { alive = false; off?.(); };
-  }, []);
-
-  useEffect(() => {
-    // 通话中/启动中不跑唤醒（避免抢麦克风与 CPU）
-    if (phase === "active" || phase === "starting") return;
-    if (!wakeCfg.enabled || !wakeCfg.phrase) {
-      resetWakeState();
-      return;
-    }
-    let disposed = false;
-    let stream: MediaStream | null = null;
-    let ctx: AudioContext | null = null;
-    let node: AudioWorkletNode | null = null;
-    let blobUrl = "";
-    // ⚠️ 背压：识别链是串行的，一块没跑完就再塞一块 → 延迟越积越大（唤醒越叫越不应）。
-    // 忙时把新块攒着（上限 1 秒），空了再合并发一次；超限丢最旧的（唤醒只要「最近说了什么」）。
-    let busy = false;
-    let pending: Float32Array[] = [];
-    let pendingLen = 0;
-    const MAX_PENDING = CAPTURE_RATE;
-
-    const pump = () => {
-      if (disposed || busy || !pending.length) return;
-      const blocks = pending;
-      pending = [];
-      pendingLen = 0;
-      const merged = new Float32Array(blocks.reduce((n, b) => n + b.length, 0));
-      let offset = 0;
-      for (const block of blocks) { merged.set(block, offset); offset += block.length; }
-      busy = true;
-      void window.codex.voiceWakeAudio(merged)
-        .catch(() => undefined)
-        .then(() => { busy = false; pump(); });
-    };
-
-    (async () => {
-      const started: { ok: boolean; error?: string; phrase?: string; hint?: string; engine?: "kws" | "asr" } =
-        await window.codex.voiceWakeStart().catch((error: any) => ({ ok: false, error: String(error?.message ?? error) }));
-      if (disposed) return;
-      if (!started?.ok) {
-        // 旧实现静默 return（模型没下全 / 唤醒词为空时用户完全看不出为什么没反应）
-        patchWakeState({ listening: false, error: String(started?.error ?? "语音唤醒启动失败") });
-        return;
-      }
-      patchWakeState({
-        listening: true,
-        error: "",
-        hint: String(started?.hint ?? ""),
-        phrase: String(started?.phrase ?? wakeCfg.phrase),
-        engine: started?.engine ?? "",
-      });
-
-      // ★ 麦克风（09-13 修）：① 用**设置里选的设备与开关**（旧实现硬编码，用户换的麦在唤醒里不生效）；
-      //   ② 失败重试（最常见的原因是上一次通话的麦还没释放、或别的程序刚占用）；
-      //   ③ 失败时给**人话**而不是 Chromium 的英文原文（用户实测「唤醒未启动：Requested device not found」）。
-      const micCfg = (await window.codex.voiceSettingsGet().catch(() => null))?.settings?.mic
-        ?? { deviceId: "", noiseSuppression: false, echoCancellation: true, autoGainControl: false };
-      const wakeConstraint: MediaTrackConstraints = {
-        echoCancellation: micCfg.echoCancellation,
-        noiseSuppression: micCfg.noiseSuppression,
-        autoGainControl: micCfg.autoGainControl,
-        channelCount: 1,
-      };
-      if (micCfg.deviceId) wakeConstraint.deviceId = { ideal: micCfg.deviceId };
-      let micError = "";
-      for (let attempt = 0; attempt < 3 && !disposed; attempt += 1) {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ audio: wakeConstraint });
-          break;
-        } catch (error) {
-          micError = describeMicError(error);
-          await new Promise((resolve) => window.setTimeout(resolve, 800));
-        }
-      }
-      if (!stream) {
-        patchWakeState({ listening: false, error: micError || "打开麦克风失败" });
-        void window.codex.voiceWakeStop().catch(() => undefined);
-        return;
-      }
-      if (disposed) { stream.getTracks().forEach((t) => t.stop()); return; }
-      const micLabel = String((stream.getAudioTracks()[0] as any)?.label ?? "").trim();
-      if (micLabel) patchWakeState({ device: micLabel });
-      ctx = new AudioContext({ sampleRate: CAPTURE_RATE });
-      blobUrl = URL.createObjectURL(new Blob([CAPTURE_WORKLET_SOURCE], { type: "text/javascript" }));
-      await ctx.audioWorklet.addModule(blobUrl);
-      if (disposed) return;
-      node = new AudioWorkletNode(ctx, "voice-capture", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
-      node.port.onmessage = (e: MessageEvent) => {
-        const raw = e.data?.samples as Float32Array | undefined;
-        if (!raw || disposed) return;
-        pending.push(raw);
-        pendingLen += raw.length;
-        while (pendingLen > MAX_PENDING && pending.length > 1) pendingLen -= pending.shift()!.length;
-        pump();
-      };
-      const src = ctx.createMediaStreamSource(stream);
-      src.connect(node);
-      node.connect(ctx.destination);
-    })().catch((error: any) => {
-      if (!disposed) patchWakeState({ listening: false, error: describeMicError(error) });
-    });
-
-    return () => {
-      disposed = true;
-      try { node?.disconnect(); } catch { /* 已断开 */ }
-      void ctx?.close().catch(() => undefined);
-      stream?.getTracks().forEach((t) => t.stop());
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-      resetWakeState();
-      void window.codex.voiceWakeStop().catch(() => undefined);
-    };
-    // 唤醒词/开关都进依赖：改了立刻重挂（这是 09-13 修的主要 bug）
-  }, [phase, wakeCfg.enabled, wakeCfg.phrase]);
-
   // 卸载时务必释放麦克风与音频上下文（不留后台采集）
   useEffect(() => {
     return () => {
@@ -1145,5 +991,5 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
   // 他窗口通话中 → 球置灰（视觉 + 语义），挂断后轮询自动恢复
   const ballClass = `voice-ball ${phase === "active" ? `is-${state}` : ""} ${phase === "starting" ? "is-starting" : ""} ${busyElsewhere && phase === "idle" ? "is-busy-elsewhere" : ""}`;
 
-  return { threadId, phase, setPhase, state, setState, expanded, setExpanded, levelRef, screenElRef, applyLevel, muted, setMuted, mutedRef, toggleMute, transcript, setTranscript, callStartedAt, setCallStartedAt, userText, setUserText, agentText, setAgentText, ballVisible, setBallVisible, hintsEnabled, setHintsEnabled, hint, setHint, menu, setMenu, agentTextRef, ballRef, notice, setNotice, endpointSec, setEndpointSec, models, setModels, download, setDownload, pos, setPos, mediaStreamRef, captureCtxRef, workletRef, playCtxRef, playQueueRef, playingCountRef, aecRef, bargeModeRef, micSettingsRef, volumeRef, gateRef, chunkerRef, speakFilterRef, scriptStripperRef, announceRef, prebufferRef, liveRef, refRingRef, refWriteRef, refReadRef, refDropsRef, endpointArmedRef, quietSinceRef, lastBargeAtRef, speakingRef, phaseRef, voiceModeRef, dragRef, refreshModels, busyElsewhere, setBusyElsewhere, onBallContextMenu, hideBall, pushRef, enqueuePlay, speechEpochRef, bumpSpeechEpoch, stopPlayback, skipCurrent, speakDelta, flushSpeech, speakScript, startCapture, teardown, startCall, endCall, startCallRef, callToggleRef, pushTranscript, wakeCfg, setWakeCfg, installModels, draggedRef, onPointerDown, onPointerMove, onPointerUp, onBallClick, stateLabel, modelsReady, ballClass };
+  return { threadId, phase, setPhase, state, setState, expanded, setExpanded, levelRef, screenElRef, applyLevel, muted, setMuted, mutedRef, toggleMute, transcript, setTranscript, callStartedAt, setCallStartedAt, userText, setUserText, agentText, setAgentText, ballVisible, setBallVisible, hintsEnabled, setHintsEnabled, hint, setHint, menu, setMenu, agentTextRef, ballRef, notice, setNotice, endpointSec, setEndpointSec, models, setModels, download, setDownload, pos, setPos, mediaStreamRef, captureCtxRef, workletRef, playCtxRef, playQueueRef, playingCountRef, aecRef, bargeModeRef, micSettingsRef, volumeRef, gateRef, chunkerRef, speakFilterRef, scriptStripperRef, announceRef, prebufferRef, liveRef, refRingRef, refWriteRef, refReadRef, refDropsRef, endpointArmedRef, quietSinceRef, lastBargeAtRef, speakingRef, phaseRef, voiceModeRef, dragRef, refreshModels, busyElsewhere, setBusyElsewhere, onBallContextMenu, hideBall, pushRef, enqueuePlay, speechEpochRef, bumpSpeechEpoch, stopPlayback, skipCurrent, speakDelta, flushSpeech, speakScript, startCapture, teardown, startCall, endCall, startCallRef, callToggleRef, pushTranscript, installModels, draggedRef, onPointerDown, onPointerMove, onPointerUp, onBallClick, stateLabel, modelsReady, ballClass };
 }

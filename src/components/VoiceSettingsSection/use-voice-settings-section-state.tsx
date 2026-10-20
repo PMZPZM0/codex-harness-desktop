@@ -6,7 +6,6 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { decodeFloat32Base64 } from "../../voice/audio-transport";
-import { getWakeState, subscribeWakeState } from "../../voice/wake-state";
 import { IS_MAC_UI, Settings, Meta, playSamples } from "../VoiceSettingsSection";
 
 export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: string) => void }) {
@@ -36,19 +35,6 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
 
   // 快捷键录入中（通话快捷键 / 长按听写快捷键）
   const [capturing, setCapturing] = useState<"call" | "dictation" | null>(null);
-
-  // 唤醒词草稿（输完失焦/回车才落盘，避免每敲一个字就写一次文件）
-  const [wakePhraseDraft, setWakePhraseDraft] = useState("");
-
-  /** 唤醒运行态（是否在听 / 最近听到什么 / 词表提示）——由 VoiceCallFloat 经 store 广播过来 */
-  const [wakeState, setWakeState] = useState(getWakeState());
-
-  useEffect(() => subscribeWakeState(setWakeState), []);
-
-  /** 关键词唤醒模型（KWS）状态与下载进度：装了唤醒走「读音匹配」，不装回退识别模型 */
-  const [kws, setKws] = useState<{ ready: boolean } | null>(null);
-
-  const [kwsDownload, setKwsDownload] = useState<{ percent: number; message: string } | null>(null);
 
   const micTestRef = useRef<{ stop: () => void } | null>(null);
 
@@ -188,10 +174,11 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
 
 
   const selectProfile = useCallback(async (id: string) => {
-    await window.codex.voiceProfilesSelect(id).catch(() => undefined);
+    const r: any = await window.codex.voiceProfilesSelect(id).catch((error: any) => ({ ok: false, ttsError: String(error?.message ?? error) }));
+    if (r?.ttsError) onNotice(`音色已保存，但当前通话切换失败（下次通话生效）：${r.ttsError}`);
     const fresh = await window.codex.voiceSettingsGet().catch(() => null);
     if (fresh) setSettings(fresh.settings as Settings);
-  }, []);
+  }, [onNotice]);
 
 
   const removeProfile = useCallback(async (id: string) => {
@@ -213,11 +200,13 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
       const r = await window.codex.voicePresetApply(presetId);
       if (!r?.ok) { onNotice(`内置音色创建失败：${r?.error ?? "未知"}`); return; }
       await reloadProfiles();
-      await window.codex.voiceProfilesSelect(r.profile.id).catch(() => undefined);
+      const selected: any = await window.codex.voiceProfilesSelect(r.profile.id).catch((error: any) => ({ ttsError: String(error?.message ?? error) }));
       const fresh = await window.codex.voiceSettingsGet().catch(() => null);
       if (fresh) setSettings(fresh.settings as Settings);
       window.codex.voicePresetList().then((pr) => setPresets(pr?.presets ?? [])).catch(() => undefined);
-      onNotice(`内置音色「${r.profile.name}」已启用，点试听即可预览${r.existed ? "（已存在，直接复用）" : ""}`);
+      onNotice(selected?.ttsError
+        ? `内置音色「${r.profile.name}」已启用，但当前通话切换失败（下次通话生效）：${selected.ttsError}`
+        : `内置音色「${r.profile.name}」已启用，点试听即可预览${r.existed ? "（已存在，直接复用）" : ""}`);
     } catch (e: any) {
       onNotice(`内置音色创建失败：${e?.message ?? e}`);
     } finally {
@@ -254,10 +243,6 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
   }, [onNotice, profilePreview]);
 
 
-  /** 设置从主进程读回来后，同步一次唤醒词草稿 */
-  const wakePhraseSyncedRef = useRef(false);
-
-
   useEffect(() => {
     let alive = true;
     window.codex.voiceSettingsGet()
@@ -279,45 +264,6 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
   }, [onNotice]);
 
 
-  // 关键词唤醒模型（KWS）状态 + 下载进度：进度从主进程的 voice:event（target="kws"）来
-  useEffect(() => {
-    let alive = true;
-    const loadKws = () => {
-      void window.codex.voiceModelsStatus()
-        .then((s: any) => { if (alive && s?.kws) setKws({ ready: Boolean(s.kws.ready) }); })
-        .catch(() => undefined);
-    };
-    loadKws();
-    const off = window.codex.onVoiceEvent((event: any) => {
-      if (event?.target !== "kws") return;
-      if (event.type === "download") setKwsDownload({ percent: Number(event.percent ?? -1), message: String(event.message ?? "") });
-      if (event.type === "downloadDone") {
-        setKwsDownload(null);
-        // 「已取消」不是错误：主进程会带上已下载的体积，提示用户再点会续传
-        if (!event.ok && event.error) onNotice(String(event.error).includes("已取消") ? String(event.error) : `唤醒模型安装失败：${event.error}`);
-        loadKws();
-      }
-    });
-    return () => { alive = false; off?.(); };
-  }, [onNotice]);
-
-
-  const installKws = useCallback(async () => {
-    setKwsDownload({ percent: 0, message: "准备下载…" });
-    try {
-      const result = await window.codex.voiceKwsInstall();
-      if (!result?.ok) onNotice(`唤醒模型安装失败：${result?.error ?? "未知错误"}`);
-    } catch (error: any) {
-      onNotice(`唤醒模型安装失败：${error?.message ?? error}`);
-    } finally {
-      setKwsDownload(null);
-      void window.codex.voiceModelsStatus()
-        .then((s: any) => { if (s?.kws) setKws({ ready: Boolean(s.kws.ready) }); })
-        .catch(() => undefined);
-    }
-  }, [onNotice]);
-
-
   // 卸载时停掉电平测试
   useEffect(() => () => { micTestRef.current?.stop(); }, []);
 
@@ -336,7 +282,7 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
     };
     setSettings(next);
     window.codex.voiceSettingsSet(patch)
-      .then((saved) => setSettings(saved as Settings))
+      .then((saved) => setSettings(saved as unknown as Settings))
       .catch((e: any) => onNotice(`保存语音设置失败：${e?.message ?? e}`))
       .finally(() => { savingRef.current = false; setSaving(false); });
   }, [settings, onNotice]);
@@ -351,7 +297,7 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
     }
     setAuditionPhase("synth");
     try {
-      const r = await window.codex.voicePreviewVoice({ sid: settings.tts.sid, speed: settings.tts.speed });
+      const r = await window.codex.voicePreviewVoice({ sid: settings.tts.sid, speed: settings.tts.speed, profileId: settings.tts.profileId });
       if (!r.ok) { onNotice(`试听失败：${r.error ?? "未知"}`); return; }
       const samples = decodeFloat32Base64(r.audioBase64);
       if (!samples.length) { onNotice("试听失败：合成结果没有音频数据"); return; }
@@ -427,13 +373,6 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
   }, [micTesting, settings, onNotice]);
 
 
-  // 首次读到设置后同步唤醒词草稿（之后以用户输入为准，不再覆盖）
-  useEffect(() => {
-    if (!settings?.wake?.phrase || wakePhraseSyncedRef.current) return;
-    setWakePhraseDraft(settings.wake.phrase);
-    wakePhraseSyncedRef.current = true;
-  }, [settings?.wake?.phrase]);
-
 
   /** 录入快捷键：按住组合键 → 翻译成 Electron accelerator 字符串 */
   const captureHotkey = useCallback((kind: "call" | "dictation" = "call") => {
@@ -488,13 +427,6 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
   }, [apply, onNotice]);
 
 
-  const commitWakePhrase = useCallback(() => {
-    if (!settings) return;
-    const phrase = wakePhraseDraft.replace(/\s+/g, "").slice(0, 16);
-    if (!phrase || phrase === settings.wake.phrase) return;
-    apply({ wake: { enabled: settings.wake.enabled, phrase } });
-  }, [settings, wakePhraseDraft, apply]);
-
 
   const voiceOptions = useMemo(() => {
     if (!meta) return [] as { value: number; label: string }[];
@@ -503,5 +435,5 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
       .sort((a, b) => a.value - b.value);
   }, [meta]);
 
-  return { onNotice, settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, wakePhraseDraft, setWakePhraseDraft, wakeState, setWakeState, kws, setKws, kwsDownload, setKwsDownload, micTestRef, profiles, setProfiles, zipReady, setZipReady, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, wakePhraseSyncedRef, installKws, apply, audition, toggleMicTest, captureHotkey, commitWakePhrase, voiceOptions };
+  return { onNotice, settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, micTestRef, profiles, setProfiles, zipReady, setZipReady, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, apply, audition, toggleMicTest, captureHotkey, voiceOptions };
 }

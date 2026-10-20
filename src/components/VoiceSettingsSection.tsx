@@ -15,7 +15,6 @@ import { VoiceSettingsSectionBargeMode } from "./VoiceSettingsSection/05-barge-m
 import { VoiceSettingsSectionFloatingBall } from "./VoiceSettingsSection/06-floating-ball";
 import { VoiceSettingsSectionHotkeyStart } from "./VoiceSettingsSection/07-hotkey-start";
 import { VoiceSettingsSectionDictationHotkey } from "./VoiceSettingsSection/08-dictation-hotkey";
-import { VoiceSettingsSectionWakeWord } from "./VoiceSettingsSection/09-wake-word";
 import { VoiceSettingsSectionAnnounce } from "./VoiceSettingsSection/10-announce";
 import VoiceDevToolsSection from "./VoiceDevToolsSection";
 
@@ -38,7 +37,6 @@ export type Settings = {
   modelHost: "auto" | "huggingface" | "hf-mirror";
   hotkey: { enabled: boolean; accelerator: string };
   dictationHotkey: { enabled: boolean; accelerator: string };
-  wake: { enabled: boolean; phrase: string };
   ball: { visible: boolean; hints: boolean };
   /** 语音播报（10-09 第二轮收成一个总开关）：开 = 念 Codex 写的 `voice` 播报稿（通话里正文朗读也由它门控）。
    *  ⛔ 语速不在这里另开一份 —— 与通话共用 tts.speed（单一真相源）。 */
@@ -83,7 +81,7 @@ export async function playSamples(samples: Float32Array | undefined, sampleRate:
 }
 
 export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: string) => void }) {
-  const { settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, wakePhraseDraft, setWakePhraseDraft, wakeState, setWakeState, kws, setKws, kwsDownload, setKwsDownload, micTestRef, profiles, setProfiles, zipReady, setZipReady, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, wakePhraseSyncedRef, installKws, apply, audition, toggleMicTest, captureHotkey, commitWakePhrase, voiceOptions } = useVoiceSettingsSectionState({ onNotice });
+  const { settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, micTestRef, profiles, setProfiles, zipReady, setZipReady, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, apply, audition, toggleMicTest, captureHotkey, voiceOptions } = useVoiceSettingsSectionState({ onNotice });
     if (!settings || !meta) {
     return (
       <section className="settings-section stack voice-settings">
@@ -104,7 +102,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
       </div>
 
       {/* 音色 + 试听 */}
-      <VoiceSettingsSectionVoicePicker apply={apply} audition={audition} auditionPhase={auditionPhase} saving={saving} settings={settings} voiceOptions={voiceOptions} />
+      <VoiceSettingsSectionVoicePicker apply={apply} audition={audition} auditionPhase={auditionPhase} saving={saving} settings={settings} voiceOptions={voiceOptions} activeProfileName={profiles.find((p: any) => p.id === settings.tts.profileId)?.name} zipReady={zipReady} />
 
       {/* 我的音色（音色克隆）：导入/录制一段参考音频 → 本机识别原文 → 用那个嗓音说话 */}
       <VoiceSettingsSectionVoiceCloneProfile applyPreset={applyPreset} draft={draft} draftName={draftName} importProfile={importProfile} uploadProfile={uploadProfile} presets={presets} previewProfile={previewProfile} profileBusy={profileBusy} profilePreview={profilePreview} profileRecording={profileRecording} profiles={profiles} recordingRef={recordingRef} removeProfile={removeProfile} saveDraft={saveDraft} selectProfile={selectProfile} setDraft={setDraft} setDraftName={setDraftName} setProfileBusy={setProfileBusy} settings={settings} startProfileRecord={startProfileRecord} zipReady={zipReady} />
@@ -277,9 +275,6 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
 
       {/* 长按语音输入快捷键（仅应用内：按住开始听写，松开结束） */}
       <VoiceSettingsSectionDictationHotkey apply={apply} captureHotkey={captureHotkey} capturing={capturing} saving={saving} settings={settings} />
-
-      {/* 语音唤醒 */}
-      <VoiceSettingsSectionWakeWord apply={apply} commitWakePhrase={commitWakePhrase} installKws={installKws} kws={kws} kwsDownload={kwsDownload} saving={saving} setWakePhraseDraft={setWakePhraseDraft} settings={settings} wakePhraseDraft={wakePhraseDraft} wakeState={wakeState} />
 
       {/* 镜像源 */}
       <div className="voice-card">
