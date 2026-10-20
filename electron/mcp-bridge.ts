@@ -16,7 +16,8 @@
  * ⛔ 不做的事：不缓存鉴权结果、不写连接器配置（那是 cloud-mcp.ts 的职责）。
  *    只读 `readConnectors()` 里已启用、带 url 的项。
  */
-import { readConnectors } from "./main/07-connectors-io";
+import { spawn } from "node:child_process";
+import { decryptSecret, readConnectors } from "./main/07-connectors-io";
 
 export type McpToolSpec = {
   /** 暴露给模型的工具名（加前缀避免与内置撞名，如 kb__search_knowledge） */
@@ -25,13 +26,19 @@ export type McpToolSpec = {
   inputSchema: Record<string, unknown>;
   /** 转发用：原始工具名 + 目标端点 */
   serverId: string;
+  transport: "http" | "stdio";
   serverUrl: string;
   serverToken: string;
+  /** stdio 传输时用（http 时为空） */
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
   rawName: string;
 };
 
 type ConnectorRow = {
   id?: string; name?: string; url?: string; enabled?: boolean;
+  transport?: string; command?: string; args?: string[]; env?: Record<string, string>;
   /** 令牌不落明文：secret 在 encryptedSecrets[envHttpHeaders.Authorization]，需 decrypt */
   envHttpHeaders?: Record<string, string>;
   encryptedSecrets?: Record<string, string>;
@@ -103,12 +110,117 @@ async function listToolsOn(url: string, token: string): Promise<Array<{ name: st
     params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "codex-harness", version: "1" } },
   });
   const listed = await rpc(url, token, { jsonrpc: "2.0", id: nextId(), method: "tools/list", params: {} });
+  return normalizeTools(listed);
+}
+
+/* ── stdio 传输 ────────────────────────────────────────────────────────────────
+   ⛔ 记忆后端 = mcp 时，`local-memory` 连接器就是 **stdio**（command=electron.exe +
+      ELECTRON_RUN_AS_NODE=1 + 服务脚本路径）。只做 HTTP 的话「MCP 记忆」这一档仍然不可用
+      —— 所以两种传输都必须覆盖，否则「修好记忆后端」是空话。
+   分帧：MCP 的 stdio 用**换行分隔的 JSON**（不是 Content-Length），一次调用一行、按 id 收响应。 */
+
+type StdioConn = { command: string; args: string[]; env: Record<string, string> };
+
+type StdioSession = {
+  call: (method: string, params?: unknown) => Promise<any>;
+  notify: (method: string) => void;
+  close: () => void;
+};
+
+/** 起一个短命 stdio 会话（用完即 kill；换来的是零状态残留，不会留下孤儿进程） */
+function openStdio(conn: StdioConn): StdioSession {
+  const child = spawn(conn.command, conn.args, {
+    env: { ...process.env, ...conn.env },
+    stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true,
+  });
+  let buf = "";
+  let stderr = "";
+  const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>();
+  const failAll = (message: string) => {
+    for (const slot of pending.values()) slot.reject(new Error(message));
+    pending.clear();
+  };
+  child.stdout?.setEncoding("utf8");
+  child.stdout?.on("data", (chunk: string) => {
+    buf += chunk;
+    for (let at = buf.indexOf("\n"); at >= 0; at = buf.indexOf("\n")) {
+      const line = buf.slice(0, at).trim();
+      buf = buf.slice(at + 1);
+      if (!line) continue;
+      let msg: any;
+      try { msg = JSON.parse(line); } catch { continue; }          // 非 JSON 行（日志混进 stdout）直接跳过
+      const slot = typeof msg?.id === "number" ? pending.get(msg.id) : undefined;
+      if (!slot) continue;
+      pending.delete(msg.id);
+      if (msg?.error) slot.reject(new Error(String(msg.error?.message ?? JSON.stringify(msg.error))));
+      else slot.resolve(msg?.result);
+    }
+  });
+  /* stderr 只留尾巴：服务起不来时错误全在这里，不带出来就只剩一句“超时” */
+  child.stderr?.setEncoding("utf8");
+  child.stderr?.on("data", (chunk: string) => { stderr = (stderr + chunk).slice(-800); });
+  child.on("error", (error: Error) => failAll(`MCP 进程启动失败：${error.message}`));
+  child.on("exit", (code) => failAll(`MCP 进程退出（code=${code}）${stderr ? `：${stderr.trim().slice(-300)}` : ""}`));
+
+  const call = (method: string, params?: unknown) => new Promise<any>((resolve, reject) => {
+    const id = nextId();
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error(`MCP ${method} 超时（20s）${stderr ? `：${stderr.trim().slice(-200)}` : ""}`)); }, 20000);
+    pending.set(id, {
+      resolve: (v) => { clearTimeout(timer); resolve(v); },
+      reject: (e) => { clearTimeout(timer); reject(e); },
+    });
+    child.stdin?.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params: params ?? {} })}\n`);
+  });
+  const notify = (method: string) => { child.stdin?.write(`${JSON.stringify({ jsonrpc: "2.0", method })}\n`); };
+  const close = () => {
+    try { child.stdin?.end(); } catch { /* 已关闭 */ }
+    try { child.kill(); } catch { /* 已退出 */ }
+  };
+  return { call, notify, close };
+}
+
+/** 握手 + 执行 + 收尾（initialize → initialized 通知 → fn） */
+async function withStdio<T>(conn: StdioConn, fn: (session: StdioSession) => Promise<T>): Promise<T> {
+  const session = openStdio(conn);
+  try {
+    await session.call("initialize", {
+      protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "codex-harness", version: "1" },
+    });
+    session.notify("notifications/initialized");
+    return await fn(session);
+  } finally { session.close(); }
+}
+
+/** 连接器行 → stdio 启动参数（没有 command 就不是 stdio） */
+function stdioConnOf(row: ConnectorRow): StdioConn | null {
+  const command = String(row?.command || "").trim();
+  if (!command) return null;
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(row?.env ?? {})) env[key] = String(value);
+  return { command, args: Array.isArray(row?.args) ? row.args.map(String) : [], env };
+}
+
+/** 把 MCP 的 tools 数组规整成内部结构（两种传输共用） */
+function normalizeTools(listed: any): Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }> {
   const tools = Array.isArray(listed?.tools) ? listed.tools : [];
   return tools.map((t: any) => ({
     name: String(t?.name || ""),
     description: String(t?.description || ""),
     inputSchema: (t?.inputSchema && typeof t.inputSchema === "object") ? t.inputSchema as Record<string, unknown> : { type: "object", properties: {} },
   })).filter((t: { name: string }) => Boolean(t.name));
+}
+
+/** MCP `tools/call` 的结果 → 纯文本（content[] 里 type=text 的拼起来） */
+function textOfResult(result: any): { ok: boolean; text: string } {
+  const parts = Array.isArray(result?.content) ? result.content : [];
+  const text = parts
+    .map((p: any) => (typeof p?.text === "string" ? p.text : ""))
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+  const isError = Boolean(result?.isError);
+  return { ok: !isError, text: text || (isError ? "（MCP 返回错误但没有文本）" : "（无返回内容）") };
 }
 
 /** 缓存：连接器清单变化或超过 TTL 才重拉（thread/start 每次都会问，不能每次都打网络） */
@@ -124,41 +236,39 @@ export async function listMcpDynamicTools(force = false): Promise<McpToolSpec[]>
   try { rows = (await readConnectors()) as ConnectorRow[]; } catch { rows = []; }
   const out: McpToolSpec[] = [];
   for (const row of rows) {
-    const url = String(row?.url || "").trim();
-    if (!url || row?.enabled === false) continue;
+    if (row?.enabled === false) continue;
     const id = String(row?.id || row?.name || "mcp");
+    const url = String(row?.url || "").trim();
+    const stdio = url ? null : stdioConnOf(row);
+    if (!url && !stdio) continue;                 // 既没 url 也没 command ⇒ 配了一半的残项，跳过
     /* ⛔ 10-20 审查抓到的坑：连接器**不存明文 token**——secret 存在 encryptedSecrets 里，
        key 由 envHttpHeaders.Authorization 指明（cloud-mcp.ts 用 secretKey 环境变量名）。
        直接读 row.token 会永远为空 ⇒ MCP 请求无鉴权 ⇒ 401 ⇒ 桥接形同虚设。 */
     const secretKey = String(row?.envHttpHeaders?.Authorization || "");
     const encrypted = secretKey ? String(row?.encryptedSecrets?.[secretKey] || "") : "";
+    /* ⛔ 复用 07-connectors-io 已导出的 decryptSecret（safeStorage）——三仓共有，
+       不必探测 cloud-api（云助手仓没有它）。安全存储不可用时返回空串 ⇒ 按无 token 处理。 */
     let token = "";
-    if (encrypted) {
-      /* ⛔ 云助手仓没有 cloud-api.ts（safeStorage 封装只存在于主仓/PPCode）⇒ 动态导入并降级，
-         找不到解密器按"无 token"处理（该仓本来也不写云端连接器）。 */
-      try {
-        /* ⛔ 用 require 而不是 import()：TS 对 `import("./x")` **仍做模块解析**（云助手仓没有
-           cloud-api.ts 会直接报 TS2307）；`require("字面量")` 不解析、返回 any —— 这是项目既有结论。 */
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const req: any = typeof require === "function" ? require : null;
-        const mod: any = req ? req("./cloud-api") : null;
-        token = mod?.decrypt ? String(mod.decrypt(encrypted)) : "";
-      } catch { token = ""; }
-    }
+    if (encrypted) { try { token = decryptSecret(encrypted) || ""; } catch { token = ""; } }
     try {
-      const tools = await listToolsOn(url, token);
+      /* stdio 走本地进程（MCP 记忆服务就是这条），其余走 HTTP 端点 */
+      const tools = stdio ? await withStdio(stdio, (s) => s.call("tools/list", {}).then(normalizeTools)) : await listToolsOn(url, token);
       for (const t of tools as Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }>) {
         out.push({
           name: toolPrefix(id) + t.name.replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 40),
           description: t.description || `${id} 提供的 ${t.name}`,
           inputSchema: t.inputSchema || { type: "object", properties: {} },
           serverId: id,
+          transport: stdio ? "stdio" : "http",
           serverUrl: url,
           serverToken: token,
+          command: stdio?.command,
+          args: stdio?.args,
+          env: stdio?.env,
           rawName: t.name,
         });
       }
-      console.log(`[mcp-bridge] ${id}: ${tools.length} 个工具已接入 dynamicTools`);
+      console.log(`[mcp-bridge] ${id}（${stdio ? "stdio" : "http"}）: ${tools.length} 个工具已接入 dynamicTools`);
     } catch (error: any) {
       console.warn(`[mcp-bridge] ${id} 跳过：${error?.message || error}`);
     }
@@ -187,20 +297,21 @@ export async function resolveMcpTool(name: string): Promise<McpToolSpec | null> 
 export async function callMcpTool(name: string, args: unknown): Promise<{ ok: boolean; text: string }> {
   const spec = await resolveMcpTool(name);
   if (!spec) return { ok: false, text: `未知的 MCP 工具：${name}` };
+  const params = { name: spec.rawName, arguments: args && typeof args === "object" ? args : {} };
+  if (spec.transport === "stdio") {
+    const conn: StdioConn = { command: String(spec.command || ""), args: spec.args ?? [], env: spec.env ?? {} };
+    if (!conn.command) return { ok: false, text: `MCP 连接器 ${spec.serverId} 缺少启动命令` };
+    try {
+      return await withStdio(conn, async (s) => textOfResult(await s.call("tools/call", params)));
+    } catch (error: any) {
+      return { ok: false, text: `MCP 调用失败：${error?.message || error}` };
+    }
+  }
   try {
     const result = await rpc(spec.serverUrl, spec.serverToken, {
-      jsonrpc: "2.0", id: nextId(), method: "tools/call",
-      params: { name: spec.rawName, arguments: args && typeof args === "object" ? args : {} },
+      jsonrpc: "2.0", id: nextId(), method: "tools/call", params,
     }, 60000);
-    /* MCP 的 tools/call 结果形如 { content: [{ type: "text", text: "..." }], isError? } */
-    const parts = Array.isArray(result?.content) ? result.content : [];
-    const text = parts
-      .map((p: any) => (typeof p?.text === "string" ? p.text : ""))
-      .filter(Boolean)
-      .join("\n")
-      .trim();
-    const isError = Boolean(result?.isError);
-    return { ok: !isError, text: text || (isError ? "（MCP 返回错误但没有文本）" : "（无返回内容）") };
+    return textOfResult(result);
   } catch (error: any) {
     return { ok: false, text: `MCP 调用失败：${error?.message || error}` };
   }

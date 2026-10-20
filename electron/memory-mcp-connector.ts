@@ -81,6 +81,10 @@ export async function syncLocalMemoryConnector(): Promise<SyncResult> {
   }
 
   await fs.writeFile(connectorsFile, JSON.stringify(list, null, 2), "utf8");
+  /* 10-20：后端切换会改「哪些 MCP 工具该可见」⇒ 必须让 dynamicTools 桥接的 5 分钟缓存立即失效，
+     否则切到 MCP 记忆后模型在缓存过期前仍看不到 memory_write（症状=「切了没反应」）。 */
+  try { const { invalidateMcpBridgeCache } = await import("./mcp-bridge"); invalidateMcpBridgeCache(); }
+  catch { /* 桥接未加载不影响同步本身 */ }
   return want ? "enabled" : "disabled";
 }
 

@@ -56,6 +56,9 @@ export const cloudKbFeature = defineFeature<null>({
         token,
         secretKey: CLOUD_KB_TOKEN_ENV,
       });
+      /* 10-20：端点/凭据可能刚变（换库、换 token）⇒ 让桥接缓存立即失效，工具面下一回合就更新 */
+      try { const { invalidateMcpBridgeCache } = await import("../mcp-bridge"); invalidateMcpBridgeCache(); }
+      catch { /* 桥接未加载不影响同步 */ }
       return { ok: true, action, url, kbName: String(kb.kbName || "") };
     });
 
