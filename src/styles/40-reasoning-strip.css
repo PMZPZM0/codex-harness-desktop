@@ -46,8 +46,39 @@
   overflow: hidden;
   white-space: nowrap;
   color: var(--muted);
-  /* 10-20 用户令「长条按行要滚动展示思考内容」：单行内容由 JS 自动横向滚动，
-     ⛔ 不用省略号截断（那会把后面的思考内容吃掉）。 */
+}
+/* 完成态：用 flex-end 把超出的左侧裁掉，直接露出**最新尾部**；不做任何滚动/动画。 */
+.reasoning-strip.done .reasoning-strip-preview {
+  display: flex;
+  justify-content: flex-end;
+}
+.reasoning-strip.done .reasoning-strip-static {
+  flex: none;
+  white-space: nowrap;
+}
+/* 直播横滚：CSS transform 动画（合成器执行，不触发 scroll 事件 ⇒ 不会让时间线误以为用户在滚）。
+   两段文本各带 48px 右间距，translateX(-50%) 正好接上第二段，循环无缝。 */
+.reasoning-strip-marquee {
+  --marquee-duration: 12s;
+  display: inline-flex;
+  white-space: nowrap;
+  will-change: transform;
+}
+.reasoning-strip-marquee > span {
+  padding-right: 48px;
+}
+.reasoning-strip-marquee.is-scrolling {
+  animation: reasoning-strip-marquee var(--marquee-duration, 12s) linear infinite;
+}
+.reasoning-strip-preview:hover .reasoning-strip-marquee.is-scrolling {
+  animation-play-state: paused;
+}
+@keyframes reasoning-strip-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reasoning-strip-marquee.is-scrolling { animation: none; }
 }
 .reasoning-strip-hint {
   flex: none;
