@@ -17,6 +17,10 @@ import { Turn } from "../../../../lib/turn";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
 import type { Bag } from "../bag-types";
 
+/* 10-20：同一时间只允许一个「续载锚点钉住」循环。连续翻页时上一页的补偿如果还在跑，
+   两个循环会各自改 scrollTop、互相抢滚动（验收实测：锚点被顶飞 717px）。 */
+const activeHistoryAnchorPin = new WeakMap<HTMLElement, () => void>();
+
 export function usePart07c(bag: Bag) {
   // 卸载时清定时器，避免在已卸载组件上 setState
   useEffect(() => () => { if (bag.enhanceHintTimerRef.current != null) window.clearTimeout(bag.enhanceHintTimerRef.current); }, []);
@@ -198,12 +202,17 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
     }, 8000);
     try {
       const el0 = bag.scrollRef.current;
+      // 10-20：新一次续载先取消上一次的锚点钉住（连续翻页时两轮补偿不能并存）。
+      if (el0) activeHistoryAnchorPin.get(el0)?.();
       const beforeTop = el0?.scrollTop ?? 0;
-      const beforeHeight = el0?.scrollHeight ?? 0;
       // 位置补偿用「锚点元素」而不是 scrollHeight 增量：content-visibility: auto 下离屏回合的
       // 高度是估算值、scrollHeight 会滞后 → 补偿不足，用户看到内容被顶飞（实测位移 4.3k px）。
       // 记下「当前视口内第一条回合」相对视口的 top，插入后按它的位移把 scrollTop 补回去。
       const anchorNode = [...(el0?.querySelectorAll(".turn-group") ?? [])].find((node) => node.getBoundingClientRect().bottom > 0) as HTMLElement | undefined;
+      /* 10-20：锚点不能只存 DOM 引用 —— 续载/收起工具回合会让 React 替换节点，
+         旧节点 isConnected=false 后代码会误走 scrollHeight 回退，直接跳到上一页顶部。
+         `.turn-group` 的 id 是 `turn-<turnId>`，跨重渲染稳定，用它重新解析。 */
+      const anchorId = anchorNode?.id ?? "";
       const anchorTopBefore = anchorNode ? anchorNode.getBoundingClientRect().top : 0;
       let grow = 0;
       if (hidden > 0) {
@@ -243,27 +252,43 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
         requestAnimationFrame(() => requestAnimationFrame(() => {
           const el = bag.scrollRef.current;
           if (!el) return;
-          if (!anchorNode || !anchorNode.isConnected) {
-            el.scrollTop = beforeTop + Math.max(0, el.scrollHeight - beforeHeight);
+          /* ⛔ 10-20：锚点按 id 重新解析。React 重渲染/纯工具回合合并会替换 DOM 节点，
+             拿旧节点判断 isConnected 会误走 scrollHeight 回退（content-visibility 估算高度
+             下直接跳到上一页顶部）。`.turn-group` 的 id 跨重渲染稳定。 */
+          const resolveAnchor = (): HTMLElement | null => {
+            if (!anchorId) return anchorNode && anchorNode.isConnected ? anchorNode : null;
+            const byId = document.getElementById(anchorId);
+            return byId && el.contains(byId) ? byId : null;
+          };
+          if (!resolveAnchor()) {
+            /* 锚点真的被移除（不是被替换）：保持原位，宁可不补偿也不跳到上一页顶部。 */
+            el.scrollTop = beforeTop;
             return;
           }
           let cancelled = false;
-          const cancel = () => { cancelled = true; };
-          window.addEventListener("wheel", cancel, { passive: true });
-          window.addEventListener("touchmove", cancel, { passive: true });
-          const deadline = performance.now() + 260;
-          const pin = () => {
-            if (cancelled) return;
-            const node = bag.scrollRef.current;
-            if (!node || !anchorNode.isConnected) { finish(); return; }
-            const delta = anchorNode.getBoundingClientRect().top - anchorTopBefore;
-            if (Math.abs(delta) > 0.5) node.scrollTop += delta;
-            if (performance.now() < deadline) requestAnimationFrame(pin);
-            else finish();
-          };
+          /* 10-20：260ms / 900ms 对表格、图片、代码高亮这类延迟结算仍不够（验收实测 1.1s
+             时锚点又被顶飞 717px）。改为 1.5s 上限的逐帧钉住；期间用户滚轮/触摸就停手。
+             同时把本轮的取消函数登记到 WeakMap：下一次续载先取消它，避免两轮补偿互相抢。 */
           const finish = () => {
             window.removeEventListener("wheel", cancel);
             window.removeEventListener("touchmove", cancel);
+            activeHistoryAnchorPin.delete(el);
+          };
+          const cancel = () => { cancelled = true; finish(); };
+          window.addEventListener("wheel", cancel, { passive: true });
+          window.addEventListener("touchmove", cancel, { passive: true });
+          activeHistoryAnchorPin.set(el, cancel);
+          const deadline = performance.now() + 1500;
+          const pin = () => {
+            if (cancelled) return;
+            const node = bag.scrollRef.current;
+            if (!node) { finish(); return; }
+            const anchor = resolveAnchor();
+            if (!anchor) { finish(); return; }
+            const delta = anchor.getBoundingClientRect().top - anchorTopBefore;
+            if (Math.abs(delta) > 0.5) node.scrollTop += delta;
+            if (performance.now() < deadline) requestAnimationFrame(pin);
+            else finish();
           };
           requestAnimationFrame(pin);
         }));

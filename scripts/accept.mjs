@@ -2758,22 +2758,34 @@ const CHECKS = [
         var el=document.querySelector(".timeline");
         var groups=[...el.querySelectorAll(".turn-group")];
         var anchor=groups.find(function(n){ return n.getBoundingClientRect().bottom > 0; });
-        window.__scrollAnchorProbe = anchor;
-        return { top: anchor ? Math.round(anchor.getBoundingClientRect().top) : null, groups: groups.length, scrollTop: Math.round(el.scrollTop), scrollHeight: el.scrollHeight };
+        window.__scrollAnchorProbeId = anchor ? anchor.id : "";
+        return { id: window.__scrollAnchorProbeId, top: anchor ? Math.round(anchor.getBoundingClientRect().top) : null, groups: groups.length, scrollTop: Math.round(el.scrollTop), scrollHeight: el.scrollHeight };
       })()`);
       const clicked = await h.eval(`(function(){ var b=document.querySelector(".timeline .load-earlier-turns"); if(!b) return false; b.click(); return true; })()`);
-      await wait(1000);
-      const after = await h.eval(`(function(){
+      await wait(1100);
+      const readAfter = () => h.eval(`(function(){
         var el=document.querySelector(".timeline");
-        var a=window.__scrollAnchorProbe;
-        return { connected: !!(a && a.isConnected), top: a && a.isConnected ? Math.round(a.getBoundingClientRect().top) : null,
+        var a=window.__scrollAnchorProbeId ? document.getElementById(window.__scrollAnchorProbeId) : null;
+        var inside=!!(a && el.contains(a));
+        return { id: window.__scrollAnchorProbeId || null, connected: inside, top: inside ? Math.round(a.getBoundingClientRect().top) : null,
           groups: el.querySelectorAll(".turn-group").length, scrollTop: Math.round(el.scrollTop), scrollHeight: el.scrollHeight };
       })()`);
-      h.check("② 续载后同一锚点回合的视口位置保持（±4px）—— 不允许跳到上一页顶部",
-        clicked === true && after.connected === true && before.top != null && after.top != null && Math.abs(after.top - before.top) <= 4,
+      const after = await readAfter();
+      h.check("② 续载后同一锚点回合的视口位置保持（±4px）—— 按稳定 turn id 重新解析，允许节点被 React 替换",
+        clicked === true && Boolean(before.id) && after.connected === true && before.top != null && after.top != null && Math.abs(after.top - before.top) <= 4,
         JSON.stringify({ before, after, shift: after.top != null && before.top != null ? after.top - before.top : null }));
       h.check("③ 续载确实加载了更早的回合（回合数变多 ⇒ 断言不是恒真）",
         after.groups > before.groups, JSON.stringify({ before: before.groups, after: after.groups }));
+      /* 10-20：再翻一页 —— 用户报的是「翻页衔接」，单页测试不够。第二次仍按同一 id 钉住。 */
+      const clicked2 = await h.eval(`(function(){ var b=document.querySelector(".timeline .load-earlier-turns"); if(!b) return false; b.click(); return true; })()`);
+      if (clicked2) {
+        await wait(1100);
+        const after2 = await readAfter();
+        h.check("③b 连续第二页仍按同一 turn id 钉住（±4px）",
+          after2.connected === true && before.top != null && after2.top != null && Math.abs(after2.top - before.top) <= 4,
+          JSON.stringify({ before: before.top, after2, shift: after2.top != null && before.top != null ? after2.top - before.top : null }));
+        h.check("③c 第二页确实又加载了更早回合", after2.groups > after.groups, JSON.stringify({ first: after.groups, second: after2.groups }));
+      }
       // 收尾：切回最新会话（别把后续项留在旧会话上）
       await h.eval(`(function(){ var rows=[...document.querySelectorAll(".thread-row")]; rows[0] && rows[0].click(); return 1; })()`);
       await wait(600);

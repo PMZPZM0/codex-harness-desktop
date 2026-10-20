@@ -841,16 +841,25 @@ const appSrc4 = readAppUi();
   /userScrolledRef\.current/.test(scrollFn)
     ? ok("★ 自动续载只认「真实用户滚动」（滚轮/触摸/翻页键/拖滚动条）")
     : fail("自动续载又只看 scrollTop —— 打开会话的程序化滚动会让「用户没滚也加载」");
-  const anchorFn = appSrc4.slice(appSrc4.indexOf("async function loadEarlierTurns"), appSrc4.indexOf("async function loadEarlierTurns") + 6200);
+  const anchorFn = appSrc4.slice(appSrc4.indexOf("async function loadEarlierTurns"), appSrc4.indexOf("async function loadEarlierTurns") + 7600);
   /anchorTopBefore/.test(anchorFn) && /isConnected/.test(anchorFn)
     ? ok("★ 位置补偿用锚点元素位移（content-visibility 下 scrollHeight 不可靠）")
     : fail("位置补偿退回 scrollHeight 增量 —— 上方插入内容会把用户看的内容顶飞");
   /* ⛔ 10-19 用户实测「上滚续页会跳到上一页最上面」：单次双 rAF 补偿后，content-visibility 的
      真实行高结算会把内容再推一次（同机探针实测同一锚点被顶飞 383px）⇒ 必须**多帧收敛**，
      且用户一有滚轮/触摸输入就停手（不能和用户抢滚动）。 */
-  /const deadline = performance\.now\(\) \+ 260/.test(anchorFn) && /requestAnimationFrame\(pin\)/.test(anchorFn)
-    ? ok("★ 续载位置补偿多帧收敛（单次双 rAF 不够 —— content-visibility 行高结算会把内容再推一次）")
+  /const deadline = performance\.now\(\) \+ 1500/.test(anchorFn) && /requestAnimationFrame\(pin\)/.test(anchorFn)
+    ? ok("★ 续载位置补偿多帧收敛（10-20 拉长到 1500ms，覆盖表格/图片/代码高亮的延迟结算）")
     : fail("续载只做一次位置补偿 —— 用户上滚会跳到上一页最上面（10-19 实测）");
+  /activeHistoryAnchorPin\.get\(el0\)/.test(anchorFn) && /activeHistoryAnchorPin\.set\(el, cancel\)/.test(anchorFn)
+    ? ok("★ 连续翻页先取消上一轮锚点钉住（两轮补偿不许互相抢 scrollTop）")
+    : fail("连续翻页时两轮位置补偿会并存 —— 锚点会被二次顶飞（10-20 验收实测 717px）");
+  /const anchorId = anchorNode\?\.id \?\? ""/.test(anchorFn) && /document\.getElementById\(anchorId\)/.test(anchorFn) && /el\.contains\(byId\)/.test(anchorFn)
+    ? ok("★ 锚点按稳定 turn id 重新解析（React 重渲染替换节点也不丢）")
+    : fail("锚点只存 DOM 引用 —— 续载重渲染后 isConnected=false，会误走 scrollHeight 回退跳页（10-20 实测）");
+  !/beforeTop \+ Math\.max\(0, el\.scrollHeight - beforeHeight\)/.test(anchorFn)
+    ? ok("★ 锚点丢失不再回退 scrollHeight 增量（content-visibility 估算高度会跳到上一页顶部）")
+    : fail("锚点丢失仍退回 scrollHeight 增量 —— 会跳到上一页顶部（10-20 复发根因）");
   /addEventListener\("wheel", cancel/.test(anchorFn) && /removeEventListener\("wheel", cancel\)/.test(anchorFn)
     ? ok("★ 收敛期间用户一滚就停手（滚轮/触摸取消补偿，且监听器收尾时移除）")
     : fail("收敛循环会跟用户抢滚动（或监听器泄漏）");
