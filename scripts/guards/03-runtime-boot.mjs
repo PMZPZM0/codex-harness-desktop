@@ -842,12 +842,18 @@ const appSrc4 = readAppUi();
     ? ok("★ 自动续载只认「真实用户滚动」（滚轮/触摸/翻页键/拖滚动条）")
     : fail("自动续载又只看 scrollTop —— 打开会话的程序化滚动会让「用户没滚也加载」");
   const anchorFn = appSrc4.slice(appSrc4.indexOf("async function loadEarlierTurns"), appSrc4.indexOf("async function loadEarlierTurns") + 7600);
-  /anchorTopBefore/.test(anchorFn) && /isConnected/.test(anchorFn)
-    ? ok("★ 位置补偿用锚点元素位移（content-visibility 下 scrollHeight 不可靠）")
+  /anchorNode/.test(anchorFn) && /isConnected/.test(anchorFn)
+    ? ok("★ 位置补偿用锚点元素（content-visibility 下 scrollHeight 不可靠）")
     : fail("位置补偿退回 scrollHeight 增量 —— 上方插入内容会把用户看的内容顶飞");
-  /* ⛔ 10-19 用户实测「上滚续页会跳到上一页最上面」：单次双 rAF 补偿后，content-visibility 的
-     真实行高结算会把内容再推一次（同机探针实测同一锚点被顶飞 383px）⇒ 必须**多帧收敛**，
-     且用户一有滚轮/触摸输入就停手（不能和用户抢滚动）。 */
+  /* ⛔ 10-20 用户实测「滚轮触发上面页数，就自动到最前面」：补偿按**视口 top** 算时，
+     用户一滚就必须取消（否则抢滚动）；一取消插入高度就把视图顶走。改为内容坐标增量后，
+     用户滚轮不改变 anchor 的内容 offset ⇒ 只补插入量，不需要 cancel-on-wheel。 */
+  /contentOffsetTop\(anchor, node\)/.test(anchorFn) && /anchorContentBefore/.test(anchorFn)
+    ? ok("★ 补偿按内容坐标增量（用户滚轮不撤销插入补偿）")
+    : fail("补偿仍按视口 top 算 —— 用户一滚就撤销补偿，插入高度直接把视图顶走（10-20 实测）");
+  !/getBoundingClientRect\(\)\.top - anchorTopBefore/.test(anchorFn)
+    ? ok("★ 不再用视口 top 做补偿基准（用户滚轮会改变它）")
+    : fail("补偿基准仍是视口 top —— 和用户滚轮耦合（10-20 复发根因）");
   /const deadline = performance\.now\(\) \+ 1500/.test(anchorFn) && /requestAnimationFrame\(pin\)/.test(anchorFn)
     ? ok("★ 续载位置补偿多帧收敛（10-20 拉长到 1500ms，覆盖表格/图片/代码高亮的延迟结算）")
     : fail("续载只做一次位置补偿 —— 用户上滚会跳到上一页最上面（10-19 实测）");
@@ -860,9 +866,6 @@ const appSrc4 = readAppUi();
   !/beforeTop \+ Math\.max\(0, el\.scrollHeight - beforeHeight\)/.test(anchorFn)
     ? ok("★ 锚点丢失不再回退 scrollHeight 增量（content-visibility 估算高度会跳到上一页顶部）")
     : fail("锚点丢失仍退回 scrollHeight 增量 —— 会跳到上一页顶部（10-20 复发根因）");
-  /addEventListener\("wheel", cancel/.test(anchorFn) && /removeEventListener\("wheel", cancel\)/.test(anchorFn)
-    ? ok("★ 收敛期间用户一滚就停手（滚轮/触摸取消补偿，且监听器收尾时移除）")
-    : fail("收敛循环会跟用户抢滚动（或监听器泄漏）");
   /setEarlierLoadingId/.test(anchorFn) && /load-earlier-hint/.test(appSrc4)
     ? ok("续载有可见提示（不再是静默加载）")
     : fail("续载没有载入提示");

@@ -13,6 +13,7 @@ import { imageToken, splitPromptSegments, promptImagePaths, stripImageTokens, is
 import { visibleTurnWindow, mergeTurnListsById } from "../../../../lib/turn-order.mjs";
 import { setFavoriteHandler, type FavoriteRequest } from "../../../../lib/favorite-bridge";
 import { basename } from "../../../../lib/basename";
+import { contentOffsetTop } from "../../../../components/scroll-utils";
 import { Turn } from "../../../../lib/turn";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
 import type { Bag } from "../bag-types";
@@ -213,7 +214,9 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
          旧节点 isConnected=false 后代码会误走 scrollHeight 回退，直接跳到上一页顶部。
          `.turn-group` 的 id 是 `turn-<turnId>`，跨重渲染稳定，用它重新解析。 */
       const anchorId = anchorNode?.id ?? "";
-      const anchorTopBefore = anchorNode ? anchorNode.getBoundingClientRect().top : 0;
+      /* 10-20：补偿基准用**内容坐标**（anchor 在滚动内容里的 offset），不是视口 top。
+         视口 top 会被用户滚轮改变；用内容 offset 才能只补"上方插入的高度"、不跟用户抢滚动。 */
+      let anchorContentBefore = anchorNode && el0 ? contentOffsetTop(anchorNode, el0) : 0;
       let grow = 0;
       if (hidden > 0) {
         grow = Math.min(hidden, bag.TURNS_PAGE); // 本地展开一批的量，翻老历史不产生网络请求
@@ -243,12 +246,12 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
       }
       if (grow > 0) {
         bag.expandTurnWindow(id, grow);
-        /* ⛔⛔ 10-19 用户实测「上滚续页会跳到上一页最上面」：**单次双 rAF 补偿不够**。
-           新插入的行在 `content-visibility: auto` 下先按**估算高度**排版，随后真实高度结算
-           会把内容再推一次（同机探针实测：同一锚点节点被顶飞 383px，scrollHeight 后来才补齐）。
-           ⇒ 用「同一个锚点 + 期望 top」**多帧收敛**：每帧比一次、差多少补多少，最多约 260ms；
-           期间任何滚轮/触摸输入立刻停手（不能和用户抢滚动）。
-           锚点已卸载时仍退回 scrollHeight 增量（一次性）。 */
+        /* ⛔⛔ 10-20 用户实测「滚轮触发上面页数，就自动到最前面」：
+           旧补偿按**视口 top** 算，用户一滚就必须取消（否则和用户抢滚动）；一取消，
+           上方插入的高度直接把视图顶走。改成按**内容坐标增量**补偿 —— 内容 offset 只随
+           上方插入/布局结算变化，用户滚轮不改变它 ⇒ 只补插入量，用户怎么滚都不会被撤销。
+           1.5s 上限覆盖表格/图片/代码高亮的延迟结算；连续翻页由 WeakMap 先取消上一轮，
+           避免两轮同时改 scrollTop（上一版验收实测锚点被顶飞 717px）。 */
         requestAnimationFrame(() => requestAnimationFrame(() => {
           const el = bag.scrollRef.current;
           if (!el) return;
@@ -266,17 +269,8 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
             return;
           }
           let cancelled = false;
-          /* 10-20：260ms / 900ms 对表格、图片、代码高亮这类延迟结算仍不够（验收实测 1.1s
-             时锚点又被顶飞 717px）。改为 1.5s 上限的逐帧钉住；期间用户滚轮/触摸就停手。
-             同时把本轮的取消函数登记到 WeakMap：下一次续载先取消它，避免两轮补偿互相抢。 */
-          const finish = () => {
-            window.removeEventListener("wheel", cancel);
-            window.removeEventListener("touchmove", cancel);
-            activeHistoryAnchorPin.delete(el);
-          };
+          const finish = () => { activeHistoryAnchorPin.delete(el); };
           const cancel = () => { cancelled = true; finish(); };
-          window.addEventListener("wheel", cancel, { passive: true });
-          window.addEventListener("touchmove", cancel, { passive: true });
           activeHistoryAnchorPin.set(el, cancel);
           const deadline = performance.now() + 1500;
           const pin = () => {
@@ -285,8 +279,14 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
             if (!node) { finish(); return; }
             const anchor = resolveAnchor();
             if (!anchor) { finish(); return; }
-            const delta = anchor.getBoundingClientRect().top - anchorTopBefore;
-            if (Math.abs(delta) > 0.5) node.scrollTop += delta;
+            /* 只补"锚点内容 offset 的增长"（= 上方插入/结算的高度）；用户滚轮改的是
+               scrollTop 与 rect.top，两者抵消，内容 offset 不变 ⇒ 不会被这里撤销。 */
+            const contentNow = contentOffsetTop(anchor, node);
+            const delta = contentNow - anchorContentBefore;
+            if (Math.abs(delta) > 0.5) {
+              node.scrollTop += delta;
+              anchorContentBefore = contentNow;
+            }
             if (performance.now() < deadline) requestAnimationFrame(pin);
             else finish();
           };
