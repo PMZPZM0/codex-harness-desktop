@@ -164,6 +164,7 @@ import { WhatsNewDialog } from "../whats-new";
 import { AppViewSettingsSheet } from "./AppView/08-settings-sheet";
 import { AppViewFilePreviewEditor } from "./AppView/09-file-preview-editor";
 import { ModelViewerBridge } from "../model-viewer";
+import { MediaPreviewBridge } from "../media";
 /* 图像工坊浮层（image-lab 域，10-09）：Codex 调用 image_generate / image_edit / image_view 时
    弹出实时预览，工具结束自动收起。自挂载、订阅模块级总线，整个应用**只挂一次**。 */
 import { ImageLabBridge } from "../image-lab";
@@ -649,6 +650,8 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       {skillRemove && <SkillRemoveModal state={skillRemove} onClose={() => setSkillRemove(null)} />}
       {pluginInstall && <PluginInstallModal state={pluginInstall} onClose={() => setPluginInstall(null)} />}
       <AppViewFilePreviewEditor app={app} />
+      {/* 视频 / 音频 / 3D 统一预览（media 域，10-20）：自挂载，监听 ui-channels 与 media-preview:open */}
+      <MediaPreviewBridge />
       {/* 3D 预览弹窗（model-viewer 域）：自挂载，监听 model-viewer:open 推送（引擎 preview_3d） */}
       <ModelViewerBridge />
       {/* 图像工坊浮层（image-lab 域，10-09）：Codex 的图像生成/编辑工具调用时弹出预览，结束自动收起 */}

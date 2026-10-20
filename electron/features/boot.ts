@@ -8,8 +8,9 @@
  */
 import { app, BrowserWindow, dialog, ipcMain, shell, protocol } from "electron";
 import fs from "node:fs/promises";
-import { existsSync, readFileSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { Readable } from "node:stream";
 import os from "node:os";
 import { WeixinGateway } from "../weixin-gateway";
 import { markBoot } from "../boot-timing";
@@ -419,6 +420,79 @@ export async function bootApp() {
       return placeholderPngResponse();
     }
   });
+  /* `harness-media://`：本地视频/音频**流式读取**（10-20，对话媒体播放器）。
+     ⛔ 不能复用 harness-image：它只放图片后缀，非图片 415；也不能用 file://（渲染层 CSP/webSecurity 挡）。
+     ⛔ 必须支持 Range：<video>/<audio> 拖进度依赖 206 + Content-Range；整文件 base64 读进内存不可取。
+     安全口径与 harness-image 一致：MIME 白名单 + 可信根内。 */
+  const MEDIA_MIME: Record<string, string> = {
+    mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime", m4v: "video/x-m4v", ogv: "video/ogg",
+    mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4", aac: "audio/aac", ogg: "audio/ogg", flac: "audio/flac", opus: "audio/ogg",
+  };
+  protocol.handle("harness-media", async (request) => {
+    let mediaPath = new URL(request.url).searchParams.get("path");
+    if (!mediaPath) return new Response("Missing path", { status: 400 });
+    // 双编码兼容：与 harness-image 同口径（Chromium 会先解一层 percent 编码）
+    if (!/^[a-zA-Z]:[\\/]/.test(mediaPath) && !mediaPath.startsWith("/")) {
+      try { mediaPath = decodeURIComponent(mediaPath); } catch { /* 原样使用 */ }
+    }
+    const ext = path.extname(mediaPath).slice(1).toLowerCase();
+    const mime = MEDIA_MIME[ext];
+    if (!mime) return new Response("Unsupported media type", { status: 415 });
+    {
+      const resolved = path.resolve(mediaPath);
+      if (!isInsideTrustedRoots(resolved)) return new Response("Forbidden", { status: 403 });
+      mediaPath = resolved;
+    }
+    // 斜杠方向兜底（与 harness-image 同款）
+    if (!existsSync(mediaPath)) {
+      const backslash = mediaPath.replace(/\//g, "\\");
+      const forward = mediaPath.replace(/\\/g, "/");
+      if (existsSync(backslash)) mediaPath = backslash;
+      else if (existsSync(forward)) mediaPath = forward;
+    }
+    let stat: Awaited<ReturnType<typeof fs.stat>>;
+    try { stat = await fs.stat(mediaPath); } catch { return new Response("Not found", { status: 404 }); }
+    if (!stat.isFile()) return new Response("Not found", { status: 404 });
+    const headers: Record<string, string> = {
+      "Content-Type": mime,
+      "Accept-Ranges": "bytes",
+      "Cache-Control": "no-store",
+    };
+    if (request.method === "HEAD") {
+      return new Response(null, { headers: { ...headers, "Content-Length": String(stat.size) } });
+    }
+    const range = request.headers.get("range");
+    if (range) {
+      const match = /^bytes=(\d*)-(\d*)$/i.exec(range.trim());
+      if (!match) {
+        return new Response("Range Not Satisfiable", { status: 416, headers: { "Content-Range": `bytes */${stat.size}`, "Accept-Ranges": "bytes" } });
+      }
+      let start = match[1] === "" ? NaN : Number(match[1]);
+      let end = match[2] === "" ? NaN : Number(match[2]);
+      if (Number.isNaN(start)) {
+        // suffix range（bytes=-N）：取末尾 N 字节
+        start = Math.max(0, stat.size - (Number.isNaN(end) ? 0 : end));
+        end = stat.size - 1;
+      } else if (Number.isNaN(end)) {
+        end = stat.size - 1;
+      }
+      if (start < 0 || end >= stat.size || start > end) {
+        return new Response("Range Not Satisfiable", { status: 416, headers: { "Content-Range": `bytes */${stat.size}`, "Accept-Ranges": "bytes" } });
+      }
+      return new Response(Readable.toWeb(createReadStream(mediaPath, { start, end })) as any, {
+        status: 206,
+        headers: {
+          ...headers,
+          "Content-Length": String(end - start + 1),
+          "Content-Range": `bytes ${start}-${end}/${stat.size}`,
+        },
+      });
+    }
+    return new Response(Readable.toWeb(createReadStream(mediaPath)) as any, {
+      headers: { ...headers, "Content-Length": String(stat.size) },
+    });
+  });
+
   /* `pet://`：只服务**宠物目录下的图集**（09-30 加）。
      ⛔ 为什么不用 harness-image：宠物包可能装在 `~/.codex/pets`、`~/.petdex/pets`，
         它们**不在可信根**里（可信根 = userData + 会话工作目录 + 用户手选的路径）。

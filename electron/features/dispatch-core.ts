@@ -233,6 +233,60 @@ function dispatchMcpTools(): unknown[] {
         required: ["path"],
       },
     },
+    /* ── 影视源检索（10-20）：用户给的 LibreTV/TVBox 苹果CMS源（内置 5 个，userData 可覆盖）。
+       三件套：search（并发搜）→ detail（拿剧集地址）→ open（直链 m3u8/mp4 应用内播，网页页走浏览器）。
+       ⛔ 只做检索与打开，不下载/不缓存/不代理第三方流；结果可用性由源站决定。 */
+    {
+      name: "media_source_search",
+      description: "在用户配置的影视源（苹果CMS JSON API）里搜索电影/电视剧/动漫。用户让你「找片/搜片/看看有没有…」时先用它，别凭记忆编片名或链接。会并发查询所有源；个别源超时/失败是正常的，结果里会逐源标注。query 留空 = 只列出已配置的源。拿到结果后：要剧集地址用 media_source_detail，要直接看用 media_source_open。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "片名或关键词（留空则只列源）" },
+          sources: { type: "array", items: { type: "string" }, description: "只搜指定源 key（可省略 = 全部；key 从空 query 的结果里拿）" },
+          limit: { type: "number", description: "每个源最多返回几条（默认 8，上限 20）" },
+        },
+      },
+    },
+    {
+      name: "media_source_detail",
+      description: "取一个影视条目的详情与剧集列表（含播放地址）。先用 media_source_search 拿到 source + id。返回的 playGroups 里每条线路的 episodes 是「剧集名 + 地址」；m3u8 可内播，网页播放页会走浏览器。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          source: { type: "string", description: "源 key（search 结果里的 source）" },
+          id: { type: "string", description: "条目 id（search 结果里的 id）" },
+        },
+        required: ["source", "id"],
+      },
+    },
+    {
+      name: "media_source_open",
+      description: "打开影视条目的某一集：直链 m3u8 / mp4 会推到应用内播放器（m3u8 自动走 HLS），网页播放页交给系统浏览器。source + id 从搜索/详情结果拿；episode 可给 1 基序号（如 3）或剧集名片段（如「第03集」）。默认 mode=auto（直链内播、网页外开）；要看别的源可用 detail 里的线路换一条重试。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          source: { type: "string", description: "源 key" },
+          id: { type: "string", description: "条目 id" },
+          episode: { anyOf: [{ type: "number" }, { type: "string" }], description: "第几集（1 基序号）或剧集名片段；省略 = 该线路第一集" },
+          mode: { type: "string", enum: ["auto", "in-app", "external"], description: "auto=直链内播/网页外开（默认）；in-app=强制应用内（网页页会报错）；external=强制浏览器" },
+        },
+        required: ["source", "id"],
+      },
+    },
+    {
+      name: "media_preview",
+      description: "在应用内打开视频/音频预览（本地绝对路径或 http(s) 直链）；3D 模型（glb/gltf）自动走现有的 3D 预览弹窗。当你生成、下载或把媒体文件写到工作区后想让用户立刻查看时调用。⛔ 远程 3D 模型不支持，请先下载到本地；本地文件必须在可信目录内（会话工作目录 / 应用数据目录）。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "本地绝对路径或 http(s) 直链" },
+          kind: { type: "string", enum: ["video", "audio", "model"], description: "媒体类型（可省略，按扩展名推断；URL 无扩展名时必须给）" },
+          title: { type: "string", description: "预览标题（可省略，默认取文件名）" },
+        },
+        required: ["path"],
+      },
+    },
     /* ── 本地 HTML/CSS → MP4（10-11，P1）：把工作区里的 HTML 动画成品化。
        ⛔ 零 ffmpeg 依赖（Chromium 抓帧 + 运行时自带 MP4 编码器）；源与输出都过可信根闸。 */
     {

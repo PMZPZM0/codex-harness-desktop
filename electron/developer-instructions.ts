@@ -301,6 +301,15 @@ const TASK_LIST_INSTRUCTIONS =
   `\n14) TASK LIST — keep the user's task list (\`task_add\` / \`task_update\`) current whenever \`task_add\` is in your tool list:\n` +
   `   at the START of any multi-step task (3+ steps, or anything the user will follow along), put the steps into the list with \`task_add\`; while working, mark the current step \`doing\`; the MOMENT a step finishes, flip it to \`done\` — never batch the updates to the end. The app renders 「步骤 N/M」 in a capsule above the input box (hover shows the full list), so a stale list actively misleads the user. When everything is done every item must be \`done\` — the capsule then hides itself, and your NEXT \`task_add\` starts a fresh list (a fully-done list is cleared automatically). ⛔ Before starting a new task, if the list still holds UNFINISHED leftovers unrelated to the current work (e.g. items stuck in todo/doing from an aborted run), remove them first via \`task_update\` (done:true). Skip the list for one-shot questions, and if the tools are absent (an older session) just proceed without one.\n`;
 
+/* ── 第 17 条：影视源检索（10-20 用户：LibreTV/TVBox 源清单「配套好工具，codex 可以从里面搜索影视」）──
+   三件套 media_source_search / detail / open 是内置 MCP 工具；用户要「找片」时先搜、别凭记忆编片名。
+   直链 m3u8/mp4 由 media_source_open 推进应用内 MediaPreview（m3u8 走 hls.js），网页播放页交系统浏览器。
+   ⛔ 条件式写法：旧会话工具表里没有这三个工具时如实说明，不要假装搜过。 */
+const MEDIA_SOURCE_INSTRUCTIONS =
+  `\n17) MEDIA SOURCES (movies / TV / anime) — when the user asks you to find something to watch, search the configured sources FIRST, never from memory:\n` +
+  `   To show the user a VIDEO / AUDIO / 3D file you generated or downloaded, call the gateway \`harness_tools({ name: "media_preview", args: { path } })\` (local absolute path in a trusted dir, or an http(s) direct link; 3D opens the existing model viewer). It is not for web play pages — use media_source_open for those.
+   \`media_source_search\` (query; omit the query to list the configured sources) queries every source concurrently; per-source failures/timeouts are normal — report which source did not answer instead of hiding it. \`media_source_detail\` (source + id) returns the episode list and play URLs; \`media_source_open\` (source + id + episode, episode = 1-based number or name fragment) opens it: direct m3u8/mp4 goes to the in-app player (HLS handled automatically), a web play page goes to the system browser. ⛔ On current engine builds these MCP tools are deferred and may not appear in your tool list: call them through the gateway \`harness_tools({ name: "media_source_search", args: { query: "…" } })\` (the same for detail/open; \`harness_tools({ name: "list" })\` lists them). ⛔ NEVER invent or guess a title, episode or link, and never claim a source has a title you did not see in the results — these are third-party sources whose catalogue changes. If neither the direct tools nor \`harness_tools\` are available (an older session), say so instead of pretending to search.\n`;
+
 /* 实时语音（10-08 用户要求：「增加开启与关闭语音通话的状态并在对话框中发送通知，让 Codex 感知何时
    开启了实时语音」「实时语音场景下采用快问快答模式：先直接回答，再给出思考过程，不要先思考后回答」）。
    ⛔ 判据只能是**会话里那条告知**（`【实时语音已开启】` / `【实时语音已结束】`，由应用在开/挂断时发出；
@@ -429,6 +438,8 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   text += FRONTEND_CANVAS_INSTRUCTIONS;
   // 任务清单（10-06 夜三轮：输入框上方「步骤 N/M」胶囊的唯一数据源，完成一步更新一步）
   text += TASK_LIST_INSTRUCTIONS;
+  // 影视源检索（10-20：用户给的 LibreTV/TVBox 源 + media_source_search/detail/open 三件套）
+  text += MEDIA_SOURCE_INSTRUCTIONS;
   // 实时语音状态（10-08 用户要求：让 Codex 感知语音何时开/关，并在语音场景走「快问快答」）
   text += VOICE_INSTRUCTIONS;
   // 语音播报（10-09：播报内容由 Codex 自己写 —— 这条下发 `voice` 围栏契约；

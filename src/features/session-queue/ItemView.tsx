@@ -22,6 +22,7 @@ import { resolveTeamMember, AVATAR_GRADIENTS, avatarToneOf } from "../../lib/ent
 import { formatDuration } from "../../lib/format-duration";
 import { PlanEditor } from "../../components/PlanEditor";
 import { ImagePreview } from "../preview";
+import { MediaResultCards } from "../media";
 import { Markdown } from "../markdown";
 import { InlineFileCards } from "../inline-cards";
 import { usePacketRevealText } from "../shared/use-packet-reveal-text";
@@ -98,6 +99,9 @@ export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWi
     const invokedMember = item.tool === "team_member_invoke"
       ? resolveTeamMember(String(turn?.id ?? ""), String((item.arguments as any)?.memberId ?? ""))
       : null;
+    // 工具产物里的视频/音频/3D（10-20）：只扫产出（result/progress/contentItems），
+    // ⛔ 不扫 arguments —— 入参里的媒体路径是「喂给工具的素材」，不是这次产出的东西。
+    const mediaText = [item.progress ? String(item.progress) : "", item.result != null ? JSON.stringify(item.result) : "", item.contentItems != null ? JSON.stringify(item.contentItems) : ""].filter(Boolean).join("\n");
     return (
       <ActionCard
         icon={invokedMember
@@ -107,6 +111,7 @@ export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWi
         /* 名字 + 「怎么用的」（入参里最能说明这次在干什么的那个值，如 url / 路径 / 查询词） */
         info={<><code>{skill ? skill.label : title}</code>{plugin ? <code className="action-plugin">（插件 {plugin.plugin}）</code> : null}{how ? <span className="action-arg" title={how}> · {how}</span> : null}</>} status={status} statusText={running ? undefined : formatDuration(item.durationMs) || label}>
         <ProgressiveToolPayload itemId={`${item.id}-payload`} text={String(item.progress || JSON.stringify(item.result ?? item.arguments ?? item.contentItems, null, 2) || "")} active={turnActive} />
+        <MediaResultCards text={mediaText} />
       </ActionCard>
     );
   }

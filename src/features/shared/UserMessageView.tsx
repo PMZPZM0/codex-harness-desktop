@@ -14,10 +14,11 @@ import { lookupMessageOriginal } from "../../lib/user-message-originals.mjs";
 import { isImagePath } from "../../lib/is-image-path";
 import { basename } from "../../lib/basename";
 import { attachChipName } from "../../lib/attach-chip-name.mjs";
-import { User, Sparkles, FileText } from "lucide-react";
+import { User, Sparkles, FileText, Film, Music2, Box } from "lucide-react";
 import { UserRefsRow } from "./InlineCards";
 import { ImportedRecordCard } from "./ImportRecords";
-import { openImageLightbox } from "../../lib/ui-channels";
+import { openImageLightbox, openMediaPreview } from "../../lib/ui-channels";
+import { mediaKindOf } from "../../lib/media-kind.mjs";
 import { MessageFooter } from "./MessageFooter";
 import { hk } from "../../lib/hk";
 import { COMPOSER_CHIP_ICON } from "./COMPOSER_CHIP_ICON";
@@ -209,6 +210,7 @@ function MessageAttachChip({ name, source, image, onOpenImage, onOpenFile }: {
   // ⛔ 必须翻：聊天区的滚动容器（`.timeline`）有 overflow 裁剪，靠近顶部的那条消息
   //    如果硬往上弹，预览会被切掉上半截（09-18 真机实测 `top: -101`，等于看不见）。
   const [previewBelow, setPreviewBelow] = useState(false);
+  const mediaKind = image ? "" : mediaKindOf(source);
   const decideDirection = (el: HTMLElement) => {
     const preview = el.querySelector(".message-attach-preview") as HTMLElement | null;
     const img = preview?.querySelector("img");
@@ -230,8 +232,8 @@ function MessageAttachChip({ name, source, image, onOpenImage, onOpenFile }: {
   return (
     <button
       type="button"
-      className={`composer-image-chip-inline message-attach-chip${image ? " is-image" : ""}${previewBelow ? " preview-below" : ""}`}
-      title={image ? `点击查看大图：${name}` : name}
+      className={`composer-image-chip-inline message-attach-chip${image ? " is-image" : ""}${mediaKind ? " is-media" : ""}${previewBelow ? " preview-below" : ""}`}
+      title={image ? `点击查看大图：${name}` : mediaKind ? `点击${mediaKind === "model" ? "预览 3D" : "播放"}：${name}` : name}
       onClick={(event) => {
         // ⛔ 指针点击后要**释放焦点**：chip 一旦留着焦点，`:focus-visible` 会让预览继续挂着——
         //    用户点开大图 → Esc 关掉 → 小预览却又自己冒出来（而且 Esc 属键盘操作，会把
@@ -239,6 +241,7 @@ function MessageAttachChip({ name, source, image, onOpenImage, onOpenFile }: {
         //    键盘激活（Enter/Space）的 click 事件 `detail === 0`，此时**保留焦点**给无障碍用。
         if (event.detail > 0) event.currentTarget.blur();
         if (image) onOpenImage?.(source, name);
+        else if (mediaKind) openMediaPreview({ source, kind: mediaKind, title: name });
         else onOpenFile?.(source);
       }}
       onMouseEnter={(event) => decideDirection(event.currentTarget)}
@@ -246,7 +249,10 @@ function MessageAttachChip({ name, source, image, onOpenImage, onOpenFile }: {
     >
       {image
         ? <span className="composer-image-chip-icon" dangerouslySetInnerHTML={{ __html: COMPOSER_CHIP_ICON }} />
-        : <FileText size={13} style={{ color: "var(--link)", flex: "none" }} />}
+        : mediaKind === "video" ? <Film size={13} style={{ color: "var(--accent)", flex: "none" }} />
+          : mediaKind === "audio" ? <Music2 size={13} style={{ color: "var(--ok, var(--accent))", flex: "none" }} />
+          : mediaKind === "model" ? <Box size={13} style={{ color: "var(--orange, var(--accent))", flex: "none" }} />
+          : <FileText size={13} style={{ color: "var(--link)", flex: "none" }} />}
       <span className="composer-image-chip-name">{name}</span>
       {/* 悬停小预览：只给图片。尺寸由 CSS 的 max-width/max-height + 浏览器保持原始宽高比决定，
           所以"自适应"是天然的——不用按图片比例写任何分支。 */}

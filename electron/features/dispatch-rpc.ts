@@ -660,6 +660,83 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
       return { ok: false, error: String((error as Error)?.message ?? error) };
     }
   }
+  /* ── 影视源（10-20）：内置/用户覆盖的苹果CMS源检索、详情、打开。
+     直链 m3u8/mp4 → 渲染层 MediaPreview（m3u8 走 hls.js）；网页播放页 → 系统浏览器。
+     ⛔ 不做下载/缓存/代理；源站可用性由源站决定。 */
+  if (name === "media_source_search") {
+    try {
+      const { searchMediaSources } = await import("../media-sources");
+      const result = await searchMediaSources({ query: args.query, sources: args.sources, limit: args.limit });
+      return { ok: true, output: JSON.stringify(result, null, 2) };
+    } catch (error) {
+      return { ok: false, error: `影视源搜索失败：${String((error as Error)?.message ?? error)}` };
+    }
+  }
+  if (name === "media_source_detail") {
+    try {
+      const { getMediaSourceDetail } = await import("../media-sources");
+      const result = await getMediaSourceDetail({ source: args.source, id: args.id });
+      return { ok: true, output: JSON.stringify(result, null, 2) };
+    } catch (error) {
+      return { ok: false, error: `取影视详情失败：${String((error as Error)?.message ?? error)}` };
+    }
+  }
+  if (name === "media_source_open") {
+    try {
+      const { openMediaSource } = await import("../media-sources");
+      const result = await openMediaSource({ source: args.source, id: args.id, episode: args.episode, mode: args.mode });
+      const output = result.opened === "in-app"
+        ? `已在应用内播放器打开：${result.title}（线路 ${result.group}${result.hls ? " · HLS" : ""}）。\n播放地址：${result.url}\n如果播放失败（源站跨域/失效），改用 mode="external" 交给浏览器。`
+        : `已在系统浏览器打开：${result.title}（线路 ${result.group}）。\n${result.url}`;
+      return { ok: true, output };
+    } catch (error) {
+      return { ok: false, error: `打开影视失败：${String((error as Error)?.message ?? error)}` };
+    }
+  }
+  /* ── 媒体预览（10-20）：本地视频/音频过可信根 + 存在性；3D 走既有 resolveModelPath
+     与 model-viewer:open；远程音视频直接交给渲染层 MediaPreview（m3u8 走 hls.js）。
+     ⛔ 不做下载/转码；网页播放页不属于本工具（那是 media_source_open 的事）。 */
+  if (name === "media_preview") {
+    const raw = String(args.path ?? "").trim();
+    if (!raw) return { ok: false, error: "缺少 path（本地绝对路径或 http(s) 直链）" };
+    try {
+      const { mediaKindOfPath } = await import("../media-sources-core");
+      const declared = String(args.kind ?? "").trim();
+      const remote = /^https?:\/\//i.test(raw);
+      const inferred = mediaKindOfPath(raw);
+      const kind = inferred || declared;
+      if (!kind) return { ok: false, error: "识别不出媒体类型：请给 kind（video / audio / model），或使用受支持的扩展名" };
+      if (declared && inferred && declared !== inferred) return { ok: false, error: `kind=${declared} 与扩展名推断的 ${inferred} 不一致` };
+      if (kind === "video" && !remote && /\.m3u8(?:[?#]|$)/i.test(raw)) {
+        return { ok: false, error: "本地 .m3u8 播放列表的片段是相对路径，无法经由本地媒体协议解析；请先转成 mp4 再预览" };
+      }
+      const title = String(args.title ?? "").trim();
+      if (kind === "model") {
+        if (remote) return { ok: false, error: "远程 3D 模型不在本轮支持范围：先下载到本地（可信目录）再预览" };
+        const { resolveModelPath } = await import("./model-viewer-ipc");
+        const file = await resolveModelPath(raw);
+        const { sendToWindow } = await import("./window-bus");
+        sendToWindow("model-viewer:open", { path: file, title });
+        return { ok: true, output: `已在应用内打开 3D 预览：${file}（弹窗里可旋转/缩放）` };
+      }
+      const { sendToWindow } = await import("./window-bus");
+      if (remote) {
+        sendToWindow("media-preview:open", { source: raw, kind, title, autoPlay: false });
+        return { ok: true, output: `已在应用内打开媒体预览：${raw}` };
+      }
+      const path = await import("node:path");
+      const fsp = await import("node:fs/promises");
+      const abs = path.resolve(raw);
+      const { isInsideTrustedRoots } = await import("../runtime-refs");
+      if (!isInsideTrustedRoots(abs)) return { ok: false, error: "路径不在可信目录内（会话工作目录 / 应用数据目录）" };
+      const stat = await fsp.stat(abs).catch(() => null);
+      if (!stat?.isFile()) return { ok: false, error: `文件不存在：${abs}` };
+      sendToWindow("media-preview:open", { source: abs, kind, title, autoPlay: false });
+      return { ok: true, output: `已在应用内打开媒体预览：${abs}` };
+    } catch (error) {
+      return { ok: false, error: `无法打开媒体预览：${String((error as Error)?.message ?? error)}` };
+    }
+  }
   /* ── 3D 预览（2026-10-05）：模型文件路径过闸（可信根 + 扩展名白名单 + 大小上限，
      与 model-viewer:read 同一道 resolveModelPath）→ 推送渲染层打开弹窗。⛔ 只推不读，
      模型字节由渲染层经 model-viewer:read 自己拉（弹窗是用户主动看的界面）。 */

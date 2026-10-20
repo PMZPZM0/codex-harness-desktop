@@ -795,6 +795,10 @@ onRuntimeProgress: (listener: (event: unknown) => void) =>
      sendToWindow("model-viewer:open") → 渲染层 ModelViewerBridge 弹窗。推送类手写桥，不在 gen 段。 */
   onModelViewerOpen: (listener: (event: { path: string; title: string }) => void) =>
     __on("model-viewer:open", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload as { path: string; title: string })),
+  /* 媒体预览推送（media 域，10-20）：引擎 harness_tools 的 media_source_open（m3u8）→ 主进程
+     sendToWindow("media-preview:open") → 渲染层 MediaPreviewBridge。推送类手写桥，不在 gen 段。 */
+  onMediaPreviewOpen: (listener: (event: { source: string; kind?: "video" | "audio" | "model"; title?: string; poster?: string; autoPlay?: boolean }) => void) =>
+    __on("media-preview:open", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload as { source: string; kind?: "video" | "audio" | "model"; title?: string; poster?: string; autoPlay?: boolean })),
   /* 图像工坊浮层推送（image-lab 域，10-09）：引擎 harness_tools 的 image_generate / image_edit /
      image_view → 主进程 pushImageLabEvent（sendToWindow "image-lab:event"）→ 渲染层 ImageLabBridge。
      单通道三态（open 弹出 / update 换状态与图 / close 收起）。推送类手写桥，不在 gen 段。 */
