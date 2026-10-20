@@ -158,10 +158,12 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice }: {
       <div className="bc-statusbar" data-backend={current}>
         <span className={`bc-lamp is-${busy ? "warn" : ready || current === "builtin" ? "ok" : "warn"}`} />
         <span className="bc-statusbar-copy">
-          <strong>当前生效：{busy ? `${ACTION_LABEL[busy as ActionKey]}进行中…` : current === "mcp" ? "MCP 记忆服务" : "内置记忆金字塔"}</strong>
+          <strong>当前生效：{busy ? `${ACTION_LABEL[busy as ActionKey]}进行中…` : current === "cloud" ? "云端记忆" : current === "mcp" ? "MCP 记忆服务" : "内置记忆金字塔"}</strong>
           <small>
             {status?.version ? `版本 ${status.version} · ` : ""}
-            {current === "mcp"
+            {current === "cloud"
+              ? "写入走云端 memapi：对话自动注入与回写，跨设备共享；本地金字塔已停止写入"
+              : current === "mcp"
               ? (ready ? "服务已就绪，写入走 MCP" : `未就绪${status?.fallbackReason ? `：${status.fallbackReason}` : ""} —— 会自动回退到内置金字塔，记忆不会丢`)
               : "写入落在本机分层文件里，无需额外依赖"}
           </small>
@@ -193,8 +195,35 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice }: {
       <div className="bc-rows">
         <div className="bc-row">
           <span className="bc-row-label">保存位置</span>
-          <span className="bc-row-value">内置分层文件（本机）· 条目按项目 / 会话隔离</span>
+          <span className="bc-row-value">
+            {current === "cloud"
+              ? "云端 memapi · 跨设备 / 跨会话（本地不再落盘）"
+              : current === "mcp"
+              ? "MCP 记忆库 memory.db · 按 type 分类"
+              : "内置分层文件（本机）· 条目按项目 / 会话隔离"}
+          </span>
         </div>
+        {current === "cloud" ? (
+          <>
+            <div className="bc-row">
+              <span className="bc-row-label">云端账号</span>
+              <span className="bc-row-value">由「云账号」页管理（登录 / 记忆开通状态在那里查看）</span>
+            </div>
+            <div className="bc-row">
+              <span className="bc-row-label">记忆端点</span>
+              <span className="bc-row-value"><code>memapi.ppz123.asia</code> · 每账号独立空间</span>
+            </div>
+            <div className="bc-row">
+              <span className="bc-row-label">注入 / 回写</span>
+              <span className="bc-row-value">请求前自动注入相关记忆，回合结束后自动写回（由网关配置控制，此处只读）</span>
+            </div>
+            <div className="bc-row">
+              <span className="bc-row-label">本地落盘</span>
+              <span className="bc-row-value">已关闭 —— 云端模式下本地金字塔不再写入，避免一份记忆存两处</span>
+            </div>
+          </>
+        ) : null}
+        {current !== "cloud" ? (
         <div className="bc-row">
           <span className="bc-row-label">工作区记忆</span>
           <label className="bc-switch">
@@ -203,6 +232,8 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice }: {
             <span>{workspace ? (wsEnabled ? "已开启：背景 / 项目记忆 / 日志会注入并捕获" : "已关闭：只注入用户档案") : "先选项目"}</span>
           </label>
         </div>
+        ) : null}
+        {current === "mcp" ? (
         <div className="bc-row">
           <span className="bc-row-label">MCP 服务</span>
           <span className="bc-row-actions">
@@ -217,9 +248,10 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice }: {
             ) : null}
           </span>
         </div>
+        ) : null}
 
         {/* ── 进行中：实时进度条（主进程按阶段推送；没有字节级进度时按阶段推进）──────── */}
-        {(busy || prog) ? (
+        {current === "mcp" && (busy || prog) ? (
           <div className="bc-progress" role="status" aria-live="polite">
             <span className="runtime-progress-bar" role="progressbar" aria-label="记忆服务操作进度"
               aria-valuenow={prog?.percent ?? 0} aria-valuemin={0} aria-valuemax={100}
@@ -247,8 +279,8 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice }: {
           </div>
         ) : null}
 
-        {status?.installRoot ? <p className="bc-path">装到 <code>{status.installRoot}</code></p> : null}
-        <p className="bc-hint">安装默认走国内镜像（registry.npmmirror.com），依赖与原生绑定同理；镜像不可用时自动换源，无需你配置。</p>
+        {current === "mcp" && status?.installRoot ? <p className="bc-path">装到 <code>{status.installRoot}</code></p> : null}
+        {current === "mcp" ? <p className="bc-hint">安装默认走国内镜像（registry.npmmirror.com），依赖与原生绑定同理；镜像不可用时自动换源，无需你配置。</p> : null}
       </div>
 
       {note ? <p className="settings-status">{note}</p> : null}
