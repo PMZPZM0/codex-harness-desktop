@@ -140,6 +140,7 @@ import {
 } from "lucide-react";
 import { CardStatusIcon, Spinner, useCardOpen, type ActionStatus } from "../../../components/CardShell";
 import BrowserPane from "../../../components/BrowserPane";
+import { TurnReviewPanel } from "../../status";
 import { isImagePath } from "../../../lib/is-image-path";
 import { refreshWithReceipt } from "../../../lib/refresh-receipt.mjs";
 import { CommandExecutionCard, TerminalPanel } from "../../terminal";
@@ -178,10 +179,14 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
                 <button className={`panel-tab ${rightTab === "terminal" ? "active" : ""}`} title="终端" onClick={() => setRightTab("terminal")}><TerminalSquare size={12} className="ic-cyan" /><span>终端</span></button>
                 <button className={`panel-tab ${rightTab === "browser" ? "active" : ""}`} title="浏览器" onClick={() => setRightTab("browser")}><Globe2 size={12} className="ic-blue" /><span>浏览器</span></button>
                 <button className={`panel-tab ${rightTab === "tree" ? "active" : ""}`} title="项目树" onClick={() => setRightTab("tree")}><FolderTree size={12} className="ic-amber" /><span>项目树</span></button>
+                <button className={`panel-tab ${rightTab === "turn-review" ? "active" : ""}`} title="审阅：最后一轮已修改文件的完整 diff" onClick={() => setRightTab("turn-review")}><FileText size={12} className="ic-pink" /><span>审阅</span></button>
               </div>
             </div>
             <div className={`panel-page ${rightTab === "review" ? "" : "hidden"}`}>
               <ReviewPanel workspace={workspace} lastDiff={diff} disabled={!thread} busy={reviewBusy} report={reviewReport} onReview={startReview} onNotice={setNotice} />
+            </div>
+            <div className={`panel-page ${rightTab === "turn-review" ? "" : "hidden"}`}>
+              <TurnReviewPanel workspace={workspace} active={rightTab === "turn-review"} onOpenFile={(path) => void openFile(path)} />
             </div>
             <div className={`panel-page ${rightTab === "tree" ? "" : "hidden"}`}>
             <section className="tree-section">

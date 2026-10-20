@@ -750,6 +750,41 @@
 .diffp-line.hunk code, .diffp-line.meta code { color: var(--muted); }
 .diffp-line.meta code { color: var(--faint); }
 
+/* 自动换行（10-18：Qoder 审阅页的「启用自动换行」）。悬停预览默认不换行，两轴滚动。 */
+.diffp.is-wrap .diffp-inner { display: block; min-width: 0; }
+.diffp.is-wrap .diffp-line { white-space: pre-wrap; word-break: break-word; }
+.diffp.is-wrap .diffp-line code { flex: 1 1 auto; min-width: 0; white-space: inherit; }
+
+/* 拆分视图（10-18：Qoder 审阅页的「堆叠 / 拆分」）。左右两栏共用一个 grid ⇒ 行号槽对齐；
+   不换行时列宽取内容最大宽度，由 .diffp 自身横向滚动；换行时两栏各占一半。 */
+.diffp-split .diffp-inner {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  width: max-content;
+  min-width: 100%;
+}
+.diffp-split .diffp-line { grid-column: 1 / -1; }
+.diffp-split-row { display: contents; }
+.diffp-split-cell {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 20px;
+  line-height: 20px;
+  white-space: pre;
+  border-right: 1px solid var(--line-soft);
+}
+.diffp-split-cell:last-child { border-right: 0; }
+.diffp-split-cell code { flex: 1 1 auto; min-width: 0; padding-right: 12px; color: var(--text); font: inherit; }
+.diffp-split-cell.empty { background: var(--panel); }
+.diffp-split-cell.add { background: color-mix(in srgb, var(--add) 12%, transparent); }
+.diffp-split-cell.del { background: color-mix(in srgb, var(--del) 12%, transparent); }
+.diffp-split-cell.add .diffp-sign { color: var(--add); }
+.diffp-split-cell.del .diffp-sign { color: var(--del); }
+.diffp-split.is-wrap .diffp-inner { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); width: auto; min-width: 100%; }
+.diffp-split.is-wrap .diffp-split-cell { white-space: pre-wrap; word-break: break-word; }
+.diffp-split.is-wrap .diffp-split-cell code { white-space: inherit; }
+
 /* ── 知识库设置页（kb 域，10-01）──────────────────────────── */
 .kb-embed-card {
   display: flex;

@@ -948,6 +948,337 @@
   flex: 1;
   min-height: 0;
 }
+/* 右栏「审阅」（10-18 用户对照 Qoder）：顶部最新回合；左栏筛选 + 目录树；右栏整轮文件 diff 逐块堆叠。 */
+.turn-review-panel {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  min-height: 0;
+  padding: 10px;
+  overflow: hidden;
+  container-type: inline-size;
+}
+.turn-review-panel.no-tree { grid-template-columns: minmax(0, 1fr); }
+.turn-review-panel.no-tree .turn-review-tree-pane { display: none; }
+.turn-review-panel.no-tree .turn-review-diff { grid-column: 1; }
+.turn-review-panel.is-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  color: var(--muted);
+}
+.turn-review-panel.is-empty strong { color: var(--text); font-size: 14px; }
+.turn-review-panel.is-empty p { max-width: 280px; margin: 0; font-size: 12px; line-height: 1.6; }
+.turn-review-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.turn-review-head-main { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text); }
+.turn-review-head-right { display: flex; align-items: center; gap: 5px; flex: none; }
+.turn-review-count { color: var(--muted); font-weight: 400; white-space: nowrap; }
+.turn-review-total { flex: none; color: var(--muted); white-space: nowrap; }
+.turn-review-total b { color: var(--add); font-weight: 500; }
+.turn-review-total i { color: var(--del); font-style: normal; }
+.turn-review-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.turn-review-icon:hover, .turn-review-icon.active { color: var(--text); background: var(--panel-2); }
+.turn-review-menu-wrap { position: relative; flex: none; }
+.turn-review-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: 194px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.turn-review-menu-label { padding: 4px 8px; color: var(--faint); font-size: 10.5px; }
+.turn-review-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.turn-review-menu button:hover { background: var(--panel-2); color: var(--text); }
+.turn-review-menu button span { flex: 1; }
+.turn-review-menu button svg:last-child { color: var(--accent); }
+.turn-review-menu-sep { height: 1px; margin: 3px 4px; background: var(--line); }
+
+/* 左栏：筛选 + 收起全部文件夹 + 目录树 */
+.turn-review-tree-pane {
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+.turn-review-filter {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--muted);
+}
+.turn-review-filter input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+.turn-review-filter-clear {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.turn-review-filter-clear:hover { background: var(--panel-2); color: var(--text); }
+.turn-review-tree-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--faint);
+}
+.turn-review-collapse-all {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.turn-review-collapse-all:hover { color: var(--accent); }
+.turn-review-files {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.turn-review-folder {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11.5px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+.turn-review-folder:hover { background: var(--panel-2); color: var(--text); }
+.turn-review-folder span { overflow: hidden; text-overflow: ellipsis; }
+.turn-review-file {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  min-width: 0;
+  cursor: pointer;
+}
+.turn-review-file:hover { background: var(--panel-2); color: var(--text); }
+.turn-review-file.active { background: var(--panel-2); color: var(--text); }
+.turn-review-file code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+  font-size: 11.5px;
+}
+.turn-review-mark { flex: none; font-size: 10px; font-weight: 600; }
+.turn-review-mark.mod { color: var(--amber, #e8a020); }
+.turn-review-mark.add { color: var(--add); }
+.turn-review-mark.del { color: var(--del); }
+.turn-review-no-match { margin: 8px; color: var(--muted); font-size: 11.5px; }
+
+/* 右栏：整轮文件 diff 逐块堆叠；每块头部可折叠（Qoder 同款）。 */
+.turn-review-diff {
+  grid-column: 2;
+  grid-row: 2;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scrollbar-width: thin;
+}
+.turn-review-file-section {
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--panel);
+}
+.turn-review-file-section.is-active { border-color: color-mix(in srgb, var(--accent) 52%, var(--line)); }
+.turn-review-file-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 4px 0 2px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.turn-review-file-section.is-active .turn-review-file-head { background: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
+.turn-review-file-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.turn-review-file-toggle:hover { color: var(--text); }
+.turn-review-file-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 11.5px;
+}
+.turn-review-file-actions { flex: none; display: flex; align-items: center; gap: 1px; }
+.turn-review-file-actions button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.turn-review-file-actions button:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
+.turn-review-file-actions button:disabled { opacity: 0.35; cursor: default; }
+.turn-review-diff-body { border-top: 0; border-radius: 0; }
+.turn-review-diff-body .diffp { max-height: none !important; height: auto; border: 0; border-radius: 0; }
+.turn-review-inactive-hint { padding: 9px 12px; color: var(--faint); font-size: 11.5px; }
+.turn-review-large-diff {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.turn-review-large-diff > div { flex: none; display: flex; gap: 3px; }
+.turn-review-large-diff button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.turn-review-large-diff button:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.turn-review-large-diff button:disabled { opacity: 0.35; cursor: default; }
+.turn-review-empty-diff {
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+@container (max-width: 460px) {
+  .turn-review-panel { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
+  .turn-review-tree-pane { grid-column: 1; grid-row: 2; max-height: 180px; }
+  .turn-review-diff { grid-column: 1; grid-row: 3; }
+  .turn-review-panel.no-tree .turn-review-diff { grid-row: 2; }
+}
 .term-drawer {
   border-top: 1px solid var(--line);
   background: var(--bg);

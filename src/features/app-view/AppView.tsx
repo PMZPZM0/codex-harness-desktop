@@ -176,6 +176,9 @@ import { WallpaperLayer } from "../wallpaper";
 /* HTML 实时预览（10-18 独立板块）：写 .html ⇒ 自动开右栏浏览器 + 加宽 + 文件变更实时重载。
    ⛔ 只在主窗口挂（独立弹窗没有右栏）；它返回 null，不产生 DOM。 */
 import { HtmlPreviewBridge } from "../html-preview";
+/* 汇总卡 → 右栏「审阅」（10-18 用户对照 Qoder）：点文件行打开右栏审阅页。
+   与 HTML 预览桥同款：只在主窗口挂，返回 null。 */
+import { TurnReviewBridge } from "../status";
 // 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
 import { Slot } from "../../runtime/registry";
 import { DeclaredPluginSlots } from "../../runtime/declared-plugin-slots";
@@ -429,6 +432,13 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           全应用表面（侧栏/聊天/输入框周边）之下、内容之上；用户关掉时不在 DOM。 */}
       <WallpaperLayer />
       {!popoutThreadId && <HtmlPreviewBridge app={app} />}
+      {!popoutThreadId && <TurnReviewBridge onOpen={() => {
+        app.setRightOpen(true);
+        app.setRightTab("turn-review");
+        /* Qoder 同款：审阅面板要能放下文件清单 + diff，太窄会一直横向滚动。 */
+        const target = Math.min(560, Math.max(360, Math.round(window.innerWidth * 0.42)));
+        if (app.panelWidth < target) app.setPanelWidth(target);
+      }} />}
       {/* 思考浮窗宿主（10-06 夜，用户实测「办公室预览被运行中的思考板块盖住」）：思考浮窗原来
           portal 到 body、以 z-index:8 参加**根层**竞争 —— 而 app-shell 是 isolation 层，壳内
           一切 z（办公室 400、设置 80~97、画布 90）都只在壳内比较 ⇒ 全被外面那个 8 压住。
