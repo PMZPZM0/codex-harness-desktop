@@ -22,10 +22,11 @@ import { sendToWindow } from "./window-bus";
 import { kbEmbeddingInstalled } from "./kb-embed-backend";
 import { recordToolInstalled, recordToolRemoved } from "./tool-persistence";
 import { codexHome, engineActiveTurnIds, server } from "../runtime-refs";
+import { findMoeKoeExe } from "../moekoe";
 // 自动化工具链状态：nuphus-mcp（桌面）/ playwright-cli（浏览器）/ cloakbrowser（指纹浏览器）。
 // 静态检测安装目录与缓存，不 spawn 进程，打开设置页即时返回。
 
-type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "playwright-cli" | "cloakbrowser" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "cloak-browsers" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown" | "platform-tools" | "laya" | "phone-harness" | "kb-embedding" | "rea";
+type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "playwright-cli" | "cloakbrowser" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "cloak-browsers" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown" | "platform-tools" | "laya" | "phone-harness" | "kb-embedding" | "rea" | "moekoe";
 // bundled：随包内置（zip / 预解压目录是来源，不是联网下载）。界面显示「内置」徽标；
 // 缺失时允许「修复安装」（从随包 zip 重新解压），但不允许卸载（删了没有可靠重取途径）。
 // hidden：**不在「开发工具」页出卡**（它有自己的专用卡片），但注册成正式工具项 ⇒
@@ -100,6 +101,9 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   //  **没有国内镜像**（npmmirror 的 binaries 目录下没有该包，实测 404）⇒ 下载慢/失败时只能回落手动安装，
   //  卡片里如实说明，不假装有镜像。装到 tools/platform-tools/adb.exe，phone-harness 用 android.adb 指过去。
   "platform-tools": { name: "Android 平台工具（adb）", description: "让 Codex 通过 adb 控制 Android 手机（USB 或无线调试）：截图、点击、输入、读界面；随包内置，开箱即用", size: "随包 8 MB", marker: "platform-tools\\adb.exe", builtIn: true },
+  // 10-20：MoeKoe Music（外部酷狗客户端）—— 系统级安装，不在运行时面板平铺；
+  // 由开发工具页的专用卡片消费（hidden），代码侧复用 runtime:list / runtime:install 的进度与并发闸。
+  moekoe: { name: "MoeKoe Music（酷狗客户端）", description: "外部酷狗第三方客户端：Codex 通过它的 6521 API 搜歌/播放；国内镜像下载官方 x64 安装包，安装向导需用户完成（可能 UAC）。", size: "约 133 MB", marker: "moekoe", noUninstall: true, hidden: true },
 };
 // ⛔ 键放宽到 string：可更新工具清单（runtime-ipc 的 UPDATEABLE_TOOLS）含 mac 专属的
 //    "computer-use"，它**不是**开发工具规格表里的 id（DevRuntimeId 是封闭联合，加它会牵动整张
@@ -265,6 +269,8 @@ function runtimeInstalled(id: DevRuntimeId, spec: DevRuntimeSpec): boolean {
   // 知识库本地 embedding 后端（10-04）：装在 <userData>/kb-backend（kbBackendDir 兼容旧随包实验路径）。
   //  判据与安装面同源 = kbEmbeddingInstalled()（npm 包 + worker + 模型三者齐）。
   if (id === "kb-embedding") return kbEmbeddingInstalled();
+  // MoeKoe 是系统级外部客户端：装没装看 exe（Program Files），不在 toolsRoot 里。
+  if (id === "moekoe") return Boolean(findMoeKoeExe());
   const root = toolsRoot();
   if (!root) return false;
   // ⛔⛔ python：只有可执行文件不算装好 —— 旧版 embeddable 安装就是「有 exe、无 pip 无 Tkinter」，

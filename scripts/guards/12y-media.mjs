@@ -108,6 +108,10 @@ ok(
 /* ── MoeKoe Music（10-20）：本地 API 对接 + 安装通道 + 应用内播放 ── */
 const moekoe = codeOnly(read("electron/moekoe.ts"));
 const moekoeCore = codeOnly(read("electron/moekoe-core.ts"));
+const devRuntimesSrc = codeOnly(read("electron/features/dev-runtimes.ts"));
+const runtimeIpcSrc = codeOnly(read("electron/features/runtime-ipc.ts"));
+const devtoolsSrc = codeOnly(read("src/features/settings-devtools/DevtoolsSettingsSection.tsx"));
+const moekoeCard = codeOnly(read("src/features/settings-devtools/MoeKoeCard.tsx"));
 ok(
   moekoe.includes("127.0.0.1:6521") && moekoe.includes("/search") && moekoe.includes("/song/url") && moekoe.includes("/register/dev"),
   "MoeKoe 对接：6521 /register/dev → /search → /song/url（不是模拟 UI 点击）",
@@ -119,6 +123,22 @@ ok(
 ok(
   moekoe.includes("ppage_id=356753938"),
   "MoeKoe 取流带客户端同款 ppage_id（缺了它付费歌会被判风控/只给 60 秒试听）",
+);
+ok(
+  devRuntimesSrc.includes("moekoe:") && devRuntimesSrc.includes("findMoeKoeExe"),
+  "开发工具 runtime 清单登记 MoeKoe，并用 exe 检测安装态（自定义盘符也能识别）",
+);
+ok(
+  runtimeIpcSrc.includes('id === "moekoe"') && runtimeIpcSrc.includes("installMoeKoe"),
+  "runtime:install 有 MoeKoe 专用分支：国内镜像下载 → 等安装向导完成 → 启动",
+);
+ok(
+  runtimeIpcSrc.includes("moekoe_install") && runtimeIpcSrc.includes("不要用 install-runtimes"),
+  "MoeKoe 安装失败提示词走 moekoe_install，不指向不存在的 runtime 脚本",
+);
+ok(
+  devtoolsSrc.includes("MoeKoeCard") && devtoolsSrc.includes('"moekoe"') && moekoeCard.includes("安装 MoeKoe Music") && moekoeCard.includes("runtime-progress-bar"),
+  "开发工具页有 MoeKoe 安装卡（手动安装/启动 + 复用 runtime 进度）",
 );
 ok(
   moekoe.includes("gh-proxy.com") && moekoe.includes("ghfast.top") && moekoe.includes("confirm !== true"),

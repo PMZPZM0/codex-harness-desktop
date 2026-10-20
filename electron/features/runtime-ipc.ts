@@ -144,6 +144,16 @@ function fallbackExpectLine(id: DevRuntimeId, spec: DevRuntimeSpec): string {
 
 /** 拼出「发给 Codex 让它自己装」的提示词。⛔ 只在主进程生成（渲染层只展示 + 复制）。 */
 function fallbackPromptFor(id: DevRuntimeId, spec: DevRuntimeSpec): string {
+  // MoeKoe 是系统级外部客户端：不能套用 install-runtimes.cjs 的「装到 tools/moekoe」模板。
+  if (id === "moekoe") {
+    return [
+      "帮我在这台电脑上安装 MoeKoe Music（酷狗第三方客户端）。",
+      "应用里「设置 → 开发工具 → MoeKoe 音乐」有手动安装入口；如果下载失败，请在 Harness 会话里调用能力网关 moekoe_install（confirm=true）——它会经 gh-proxy / ghfast 国内镜像下载官方 x64 安装包并启动安装向导。",
+      "⛔ 不要用 install-runtimes.cjs（那里没有 moekoe，MoeKoe 也不是装到 tools 目录）。",
+      "· 装到哪：默认 Program Files\\MoeKoe Music（可在安装向导里改盘）",
+      "· 装完验证：MoeKoe Music 能启动，且 http://127.0.0.1:6521/register/dev 返回 dfid。",
+    ].join("\n");
+  }
   const steps = FALLBACK_STEPS[id] ?? `重跑本机的一键安装脚本（一条命令只装这一个工具，脚本自带「国内镜像优先 + 逐通道回落 + 坏缓存先删」）：\n    ${fallbackRunner()} ${id}`;
   const head = spec.description.split("；")[0];
   const purpose = head.length > 70 ? `${head.slice(0, 70)}…` : head;
@@ -836,6 +846,33 @@ export const runtimeFeature = defineFeature<null>({
         runtimeInstalls.set(id, task.finally(() => runtimeInstalls.delete(id)) as Promise<void>);
         await task.catch((error) => { throw error instanceof Error ? error : new Error(String(error)); });
         assertInstallVerified(id, spec);
+        return { ok: true, runtimes: runtimeList() };
+      }
+      /* MoeKoe Music（10-20）：系统级外部客户端，不能走 install-runtimes.cjs。
+         下载/安装由 moekoe.ts 负责；这里只发进度、等安装向导完成（exe 出现）再启动。
+         ⛔ 用户完成 NSIS 向导前 exe 不存在 —— 不能提前报「安装完成」。 */
+      if (id === "moekoe") {
+        const task = (async () => {
+          const { findMoeKoeExe, installMoeKoe } = await import("../moekoe");
+          if (findMoeKoeExe()) {
+            const launched = await installMoeKoe({ confirm: true });
+            sendToWindow("runtime:progress", { id, message: launched.message || "MoeKoe Music 已启动", percent: 100, done: true });
+            return;
+          }
+          sendToWindow("runtime:progress", { id, message: "正在从国内镜像下载 MoeKoe Music（约 133 MB）…", percent: 1 });
+          const started = await installMoeKoe({ confirm: true });
+          sendToWindow("runtime:progress", { id, message: started.message || "安装程序已启动，请完成安装向导…", percent: 3 });
+          for (let attempt = 0; attempt < 300; attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            if (!findMoeKoeExe()) continue;
+            await installMoeKoe({ confirm: true }).catch(() => undefined); // 装好就启动；启动失败不影响「已安装」
+            sendToWindow("runtime:progress", { id, message: "MoeKoe Music 已安装并启动", percent: 100, done: true });
+            return;
+          }
+          throw new Error("安装程序已启动，但 5 分钟内未检测到安装完成；请完成安装后回来刷新");
+        })();
+        runtimeInstalls.set(id, task.finally(() => runtimeInstalls.delete(id)) as Promise<void>);
+        await task.catch((error) => { throw error instanceof Error ? error : new Error(String(error)); });
         return { ok: true, runtimes: runtimeList() };
       }
       const task = (async () => {
