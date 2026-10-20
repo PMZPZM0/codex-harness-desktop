@@ -18,25 +18,58 @@ export function toolsRoot() {
   }
 }
 
+/** 用户按需下载的工具根（10-20）：必须放在 userData，不能放安装目录。
+ *  ⛔ 覆盖安装会重建 resources/tools，旧实现把 Playwright 内核 / Miniconda / MinGW / FFmpeg /
+ *     markitdown 全写在那里 ⇒ 更新一次全没、用户被迫重下（用户实测）。
+ *  惰性求值：app.getPath("userData") 不能在模块体取（main.ts 会 setPath）。 */
+export function userToolsRoot() {
+  try {
+    return path.join(app.getPath("userData"), "tools");
+  } catch {
+    return "";
+  }
+}
+
+/** 读取顺序：随包目录优先（node/pwsh 等内置件稳定），再用户下载目录（同名时内置优先）。 */
+export function toolRootsRead(): string[] {
+  return [...new Set([toolsRoot(), userToolsRoot()].filter(Boolean))];
+}
+
+/** 写入/安装目标：永远 userData；未初始化时退回随包目录（开发态）。 */
+export function writeToolsRoot(): string {
+  return userToolsRoot() || toolsRoot();
+}
+
+/** 在随包/用户两个根里找一个相对路径（用于 git/ffmpeg/python 等可能来自任一侧的工具）。 */
+export function existingToolPath(...parts: string[]): string {
+  for (const root of toolRootsRead()) {
+    const candidate = path.join(root, ...parts);
+    try {
+      if (candidate && fs.existsSync(candidate)) return candidate;
+    } catch { /* 不存在 */ }
+  }
+  return "";
+}
+
 // 这台机器的开发工具（node/python 等）不在系统 PATH 上，把常见工具链目录并进去，
 // 否则子进程里 git/node/python 全部"无法识别"。内置 node/pwsh 排最前，优先命中。
 export function augmentedPath() {
   const bundled: string[] = [];
   const discovered: string[] = [];
   const system = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
-  const tools = toolsRoot();
+  const toolRoots = toolRootsRead();
   if (process.platform !== "win32") {
-    const directories = [
+    const directories = toolRoots.flatMap((tools) => [
       "node/bin", "pwsh", "npm-global/bin", "bin", "git/bin", "python/bin",
       "vscode-cli", "rg", "uv", "cmake/bin",
       // ⛔ mac 适配（09-16）：darwin 侧 install-runtimes 会把这些也装进 tools/，
       // PATH 不带上 = 装了引擎也看不见（ffmpeg/yt-dlp/7zz/cmake.app 包布局/conda）。
       "ffmpeg/bin", "yt-dlp", "sevenzip", "cmake/CMake.app/Contents/bin", "miniconda/bin",
       "jq", "ninja",
-    ].map((directory) => path.join(tools, directory)).filter(fs.existsSync);
+    ].map((directory) => path.join(tools, directory))).filter(fs.existsSync);
     return [...new Set([...directories, ...system, "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"])].join(path.delimiter);
   }
-  if (tools) {
+  for (const tools of toolRoots) {
     // Codex app-server 是 GUI 子进程，直接拉起控制台版 pwsh.exe 会闪黑框。
     // pwsh-headless 是透明 GUI 桥（转发 stdio/退出码）；右侧终端仍通过 bundledPwsh
     // 直接使用真实 pwsh，不受这个 PATH 顺序影响。
@@ -74,24 +107,21 @@ export function augmentedPath() {
 // NODE_PATH 对 CommonJS require 生效；cloakbrowser 是 ESM-only（NODE_PATH 对 import 无效），
 // 引擎侧用 CLOAKBROWSER_ENTRY 直连 dist/index.js 动态 import。
 export function npmGlobalRoot() {
-  const tools = toolsRoot();
-  if (!tools) return "";
-  // ⛔⛔ mac 适配（10-07 用户实测「指纹浏览器安装后不刷新」「装了用不了」）：
-  //   npm 的 `--prefix` 布局按平台分叉 —— Windows 是 `<prefix>\node_modules`，
-  //   POSIX（mac/linux）是 `<prefix>/lib/node_modules`。打包期 prepare-mac-tools.cjs
-  //   会把 lib/node_modules 改名成 node_modules 并留一个 symlink，所以随包件两处等价；
-  //   但**运行期**（开发工具页）npm install 装的包（cloakbrowser）落在哪个，取决于
-  //   那个 symlink 是否随包存活 ⇒ 旧实现只认 Windows 布局，mac 上装完永远找不到。
-  //   探测两种布局：先认当前平台默认，不存在再看另一种；都不在按平台默认返回
-  //   （安装前的"预期落位"语义保持不变）。
-  const winLayout = path.join(tools, "npm-global", "node_modules");
-  const posixLayout = path.join(tools, "npm-global", "lib", "node_modules");
-  const [first, second] = process.platform === "win32" ? [winLayout, posixLayout] : [posixLayout, winLayout];
-  try {
-    if (fs.existsSync(first)) return first;
-    if (fs.existsSync(second)) return second;
-  } catch { /* 探测失败按平台默认布局返回 */ }
-  return first;
+  const roots = [userToolsRoot(), toolsRoot()].filter(Boolean);
+  for (const tools of roots) {
+    const winLayout = path.join(tools, "npm-global", "node_modules");
+    const posixLayout = path.join(tools, "npm-global", "lib", "node_modules");
+    const [first, second] = process.platform === "win32" ? [winLayout, posixLayout] : [posixLayout, winLayout];
+    try {
+      if (fs.existsSync(first)) return first;
+      if (fs.existsSync(second)) return second;
+    } catch { /* 探测失败试下一个根 */ }
+  }
+  // 安装前：按平台默认布局返回 **userData** 的预期落位（不能返回安装目录）。
+  const writeRoot = writeToolsRoot();
+  return writeRoot
+    ? path.join(writeRoot, "npm-global", process.platform === "win32" ? "node_modules" : path.join("lib", "node_modules"))
+    : "";
 }
 
 /** npm 全局包的**全部候选落位**（按平台优先级排序，第一个 = `npmGlobalRoot()`）。
@@ -101,20 +131,33 @@ export function npmGlobalRoot() {
  *   界面永远显示「已安装」。
  *   ⇒ 落位清单必须是**单一真相源**：这里给出全部候选，卸载逐个删（不存在的 fs.rm 是 no-op）。
  *   ⛔ 别再在别处手拼 `npm-global/node_modules` 或 `npm-global/lib/node_modules` —— 那正是本 bug 的成因。 */
-export function npmGlobalRootCandidates(): string[] {
-  const tools = toolsRoot();
-  if (!tools) return [];
-  const winLayout = path.join(tools, "npm-global", "node_modules");
-  const posixLayout = path.join(tools, "npm-global", "lib", "node_modules");
-  return process.platform === "win32" ? [winLayout, posixLayout] : [posixLayout, winLayout];
+export function npmGlobalRootCandidates(userOnly = false): string[] {
+  const roots = userOnly ? [userToolsRoot()] : [userToolsRoot(), toolsRoot()];
+  return roots.filter(Boolean).flatMap((tools) => {
+    const winLayout = path.join(tools, "npm-global", "node_modules");
+    const posixLayout = path.join(tools, "npm-global", "lib", "node_modules");
+    return process.platform === "win32" ? [winLayout, posixLayout] : [posixLayout, winLayout];
+  });
 }
 
 // cloakbrowser ESM 入口的 file:// URL（供引擎脚本 import；空串表示未安装）。
+/** 在 userData / 随包两个 npm-global 布局里找某个包内文件（userData 优先）。
+ *  ⛔ 不能只看 `npmGlobalRoot()`：它只返回第一个“存在 node_modules 的根”；
+ *  用户装了 cloakbrowser 后 userData 有了 npm-global，随包的 playwright/nuphus 仍需被找到。 */
+export function npmPackagePath(...parts: string[]): string {
+  for (const root of npmGlobalRootCandidates()) {
+    const candidate = path.join(root, ...parts);
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch { /* 不存在 */ }
+  }
+  return "";
+}
+
 export function cloakEntryUrl() {
-  const root = npmGlobalRoot();
-  const entry = root ? path.join(root, "cloakbrowser", "dist", "index.js") : "";
+  const entry = npmPackagePath("cloakbrowser", "dist", "index.js");
   try {
-    return entry && fs.existsSync(entry) ? pathToFileURL(entry).href : "";
+    return entry ? pathToFileURL(entry).href : "";
   } catch {
     return "";
   }
@@ -122,21 +165,18 @@ export function cloakEntryUrl() {
 
 // 桌面自动化 MCP 的原生二进制（Rust exe，无需 node 即可运行）。
 export function nuphusBinary() {
-  const root = npmGlobalRoot();
   const platform = process.platform === "darwin" ? "osx" : process.platform;
   const name = `nuphus-mcp-${platform}-${process.arch}`;
   const bin = process.platform === "win32" ? "nuphus-mcp.exe" : "nuphus-mcp";
-  const candidates = root
-    ? [
-      path.join(root, "@nuphus", "nuphus-mcp", "node_modules", "@nuphus", name, "bin", bin),
-      path.join(root, "@nuphus", name, "bin", bin),
-      path.join(root, name, "bin", bin),
-      path.join(toolsRoot(), "nuphus", bin),
-    ]
-    : [];
+  const candidates = [
+    npmPackagePath("@nuphus", "nuphus-mcp", "node_modules", "@nuphus", name, "bin", bin),
+    npmPackagePath("@nuphus", name, "bin", bin),
+    npmPackagePath(name, "bin", bin),
+    existingToolPath("nuphus", bin),
+  ];
   for (const candidate of candidates) {
     try {
-      if (fs.existsSync(candidate)) return candidate;
+      if (candidate && fs.existsSync(candidate)) return candidate;
     } catch { /* 不存在 */ }
   }
   return "";
@@ -176,11 +216,9 @@ export function harnessUiaServer() {
  */
 export function computerUseLauncher() {
   if (process.platform !== "darwin") return "";
-  const root = npmGlobalRoot();
-  if (!root) return "";
-  const pkg = path.join(root, "open-computer-use");
-  const launcher = path.join(pkg, "bin", "open-computer-use");
-  const app = path.join(pkg, "dist", "Open Computer Use.app");
+  const launcher = npmPackagePath("open-computer-use", "bin", "open-computer-use");
+  if (!launcher) return "";
+  const app = path.join(path.dirname(path.dirname(launcher)), "dist", "Open Computer Use.app");
   try {
     return fs.existsSync(launcher) && fs.existsSync(app) ? launcher : "";
   } catch {
@@ -194,14 +232,7 @@ export function computerUseLauncher() {
  * ⛔ command 不能写裸 `rea`：装进安装包后 PATH 里没有它（nuphus / computer-use 同款坑）。
  */
 export function reaServerScript() {
-  const root = npmGlobalRoot();
-  if (!root) return "";
-  const script = path.join(root, "rea-agents", "scripts", "rea.mjs");
-  try {
-    return fs.existsSync(script) ? script : "";
-  } catch {
-    return "";
-  }
+  return npmPackagePath("rea-agents", "scripts", "rea.mjs");
 }
 
 // 国内下载加速（09-16 打包瘦身配套）：浏览器内核不随包，按需下载时默认走国内镜像。
@@ -234,9 +265,10 @@ export function downloadEnv() {
 // 同时把 CloakBrowser/playwright 的缓存指向应用内置目录，打包后随应用走。
 export function toolchainEnv() {
   const env: Record<string, string> = { ...process.env, PATH: augmentedPath(), NO_UPDATE_NOTIFIER: "1" };
-  const nodePath = npmGlobalRoot();
+  const nodePath = npmGlobalRootCandidates().filter(Boolean).join(path.delimiter);
   if (nodePath) env.NODE_PATH = nodePath;
-  const tools = toolsRoot();
+  /* 10-20：缓存（浏览器内核/Playwright）必须落 userData，否则覆盖安装后 200MB+ 内核全丢。 */
+  const tools = writeToolsRoot();
   if (tools) {
     // ⛔ mac 适配（09-17 审计）：这里原写死 `tools/pwsh/pwsh.exe`，darwin 侧随包的是 `tools/pwsh/pwsh`
     //    （无后缀）⇒ mac 上 CODEX_REAL_PWSH 永远不设置。改用 bundledPwsh() 统一平台解析。
@@ -248,7 +280,7 @@ export function toolchainEnv() {
     const python = bundledPython();
     if (fs.existsSync(python)) {
       env.PYTHON = python;
-      env.PYTHONHOME = path.join(tools, "python");
+      env.PYTHONHOME = process.platform === "win32" ? path.dirname(python) : path.dirname(path.dirname(python));
       env.PYTHON_EXECUTABLE = python;
       env.npm_config_python = python;
     }
@@ -262,30 +294,18 @@ export function toolchainEnv() {
 
 // CloakBrowser Chromium 内核缓存目录（resources/tools/cloak-cache；09-16 起内核不随包，按需下载到此目录）。
 export function cloakCacheDir() {
-  const tools = toolsRoot();
+  const tools = writeToolsRoot();
   return tools ? path.join(tools, "cloak-cache") : "";
 }
 
 // 内置 pwsh 完整路径；没有则返回空串
 export function bundledPwsh() {
-  const tools = toolsRoot();
-  const candidate = path.join(tools, "pwsh", process.platform === "win32" ? "pwsh.exe" : "pwsh");
-  try {
-    return fs.existsSync(candidate) ? candidate : "";
-  } catch {
-    return "";
-  }
+  return existingToolPath("pwsh", process.platform === "win32" ? "pwsh.exe" : "pwsh");
 }
 
 // 内置 node 完整路径（主进程 spawn helper 脚本用）；没有则返回空串
 export function bundledNode() {
-  const tools = toolsRoot();
-  const candidate = process.platform === "win32" ? path.join(tools, "node", "node.exe") : path.join(tools, "node", "bin", "node");
-  try {
-    return fs.existsSync(candidate) ? candidate : "";
-  } catch {
-    return "";
-  }
+  return existingToolPath(...(process.platform === "win32" ? ["node", "node.exe"] : ["node", "bin", "node"]));
 }
 
 /** 内置 npm 的入口脚本（npm-cli.js 完整路径）；没有则返回空串。
@@ -299,25 +319,25 @@ export function bundledNode() {
  *     「开发工具」装包与知识库语义后端安装一律抛「内置 Node 缺少 npm」，功能等于被阉割。
  *     本函数是唯一真相源，两处消费方都改走它（别再复制字面量）。 */
 export function bundledNpmCli() {
-  const tools = toolsRoot();
   const candidates = [
-    path.join(tools, "node", "node_modules", "npm", "bin", "npm-cli.js"), // Windows（官方 zip 布局）
-    path.join(tools, "node", "lib", "node_modules", "npm", "bin", "npm-cli.js"), // macOS / Linux（官方 tar.gz 布局）
+    ["node", "node_modules", "npm", "bin", "npm-cli.js"], // Windows（官方 zip 布局）
+    ["node", "lib", "node_modules", "npm", "bin", "npm-cli.js"], // macOS / Linux（官方 tar.gz 布局）
   ];
-  for (const candidate of candidates) {
-    try { if (tools && fs.existsSync(candidate)) return candidate; } catch { /* 不存在 */ }
+  for (const rel of candidates) {
+    const found = existingToolPath(...rel);
+    if (found) return found;
   }
   return "";
 }
 
 /** 内置 MinGit 入口；没有安装时返回空串。 */
 export function bundledGit() {
-  const tools = toolsRoot();
   const candidates = process.platform === "win32"
-    ? [path.join(tools, "git", "cmd", "git.exe"), path.join(tools, "git", "bin", "git.exe")]
-    : [path.join(tools, "git", "bin", "git"), path.join(tools, "bin", "git")];
-  for (const candidate of candidates) {
-    try { if (tools && fs.existsSync(candidate)) return candidate; } catch { /* 不存在 */ }
+    ? [["git", "cmd", "git.exe"], ["git", "bin", "git.exe"]]
+    : [["git", "bin", "git"], ["bin", "git"]];
+  for (const rel of candidates) {
+    const found = existingToolPath(...rel);
+    if (found) return found;
   }
   return "";
 }
@@ -336,13 +356,10 @@ export function bundledGit() {
  *    **不带 .exe**）；只找 `.exe` 会让 mac 永远落空（同款坑 09-17 在 im-gateways 踩过）。
  */
 export function bundledFfmpeg() {
-  const tools = toolsRoot();
   const exe = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
-  const candidates = tools
-    ? [path.join(tools, "ffmpeg", "bin", exe), path.join(tools, "ffmpeg", exe)]
-    : [];
-  for (const candidate of candidates) {
-    try { if (fs.existsSync(candidate)) return candidate; } catch { /* 不存在，试下一个 */ }
+  for (const rel of [["ffmpeg", "bin", exe], ["ffmpeg", exe]]) {
+    const found = existingToolPath(...rel);
+    if (found) return found;
   }
   return "";
 }
@@ -368,9 +385,7 @@ export function ffmpegMissingMessage() {
 
 /** 内置 Python 解释器；没有安装时返回空串。 */
 export function bundledPython() {
-  const tools = toolsRoot();
-  const candidate = process.platform === "win32" ? path.join(tools, "python", "python.exe") : path.join(tools, "python", "bin", "python3");
-  try { return tools && fs.existsSync(candidate) ? candidate : ""; } catch { return ""; }
+  return existingToolPath(...(process.platform === "win32" ? ["python", "python.exe"] : ["python", "bin", "python3"]));
 }
 
 /**
@@ -402,6 +417,5 @@ export function pythonPipReady(bin: string): { ok: boolean; reason: string } {
 
 // CloakBrowser 常驻助手脚本（stdin 喂 URL，驱动指纹浏览器窗口）。
 export function cloakOpenHelper() {
-  const tools = toolsRoot();
-  return tools ? path.join(tools, "cloak-open.mjs") : "";
+  return existingToolPath("cloak-open.mjs");
 }

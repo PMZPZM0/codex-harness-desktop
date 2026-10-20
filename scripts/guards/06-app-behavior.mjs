@@ -485,7 +485,7 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   (["tools/python", "tools/rg", "tools/uv", "tools/jq", "tools/ninja", "tools/sevenzip", "tools/yt-dlp", "tools/cmake", "tools/platform-tools"]
     .every((to) => erTo.includes(to)) ? ok : fail)(
     "package.json：内置小工具的 extraResources 一条不少（漏了 = 发出去是空壳包）");
-  (mainTs26.includes("watchFs(toolsRoot(), { recursive: true }") && mainTs26.includes('message: "开发工具目录已更新", auto: true') ? ok : fail)("main.ts：tools 目录监视 → 引擎自己装工具后界面自动刷新");
+  (mainTs26.includes("toolRootsRead()") && /watchFs\(toolsDir, \{ recursive: true \}/.test(mainTs26) && mainTs26.includes('message: "开发工具目录已更新", auto: true') ? ok : fail)("main.ts：随包 + userData 两个 tools 目录都监视 → 引擎自己装工具后界面自动刷新");
   const installRuntimes = readFileSync(join(ROOT, "scripts", "install-runtimes.cjs"), "utf8");
   (installRuntimes.includes("https://cdn.npmmirror.com/binaries/node/") && installRuntimes.includes("https://cdn.npmmirror.com/binaries/python/") && installRuntimes.includes("https://cdn.npmmirror.com/binaries/git-for-windows/") ? ok : fail)("install-runtimes：node/python/git 走 npmmirror 国内镜像（有镜像源的不该是龟速官方源）");
   // 【242】开发工具的**卸载要真删**（10-01 用户报「卸载不真」：点了卸载还显示已装）。
@@ -518,13 +518,13 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
           kb-embedding 必须走自己的卸载函数（含 dispose worker）、分批删除失败必须抛而不是吞。 */
     (/if \(id === "kb-embedding"\) return \[kbBackendDir\(\)\];/.test(rt)
       && /if \(id === "kb-embedding"\)[\s\S]{0,400}?await uninstallKbEmbedding\(\);/.test(rt)
-      && /npmGlobalRootCandidates\(\)\.flatMap/.test(rt)
+      && /npmGlobalRootCandidates\(true\)\.flatMap/.test(rt)
       && /if \(failedCount > 0\)[\s\S]{0,300}?throw new Error\(/.test(rt))
       ? ok("【285】卸载落点与安装/判定同源（kb-embedding 走 kbBackendDir + 自带卸载；npm 类遍历全部候选落位；删除失败抛错不吞）")
       : fail("【285】卸载落点与安装/判定不同源 —— 又会出现「卸载了但一直显示已安装」（kb-embedding / cloakbrowser 实测）");
     /* 负向：判定侧既然认双落位，卸载侧就不许退回单落位（npmGlobalRoot() 单值）。
        ⛔ 正向那条已覆盖，这里钉的是「别把 npmGlobalRootCandidates 改回 npmGlobalRoot」。 */
-    (!/npmGlobalRootCandidates\(\)\.flatMap\([\s\S]{0,300}?npmShimPaths\(\.\.\./.test(rt)
+    (!/npmGlobalRootCandidates\(true\)\.flatMap\([\s\S]{0,300}?npmShimPaths\(\.\.\./.test(rt)
       && /function npmShimPaths\(globalRoot: string/.test(rt))
       ? ok("【285】npm 卸载遍历全部候选落位，且 npmShimPaths 显式接根参数（不再内部取单值）")
       : fail("【285】npm 卸载又退回单落位了 —— 装在另一落位的包会「卸载了但仍显示已安装」");
@@ -533,7 +533,7 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
        返回的落位**已含 node_modules 一段** ⇒ 直接 join 会拼出
        `node_modules/node_modules/cloakbrowser` ⇒ **包体从来就没被删过**（Windows 同样中招）。
        判据 = 必须先取 `path.dirname(root)` 当前缀再 join dirs。 */
-    (/npmGlobalRootCandidates\(\)\.flatMap\(\(root\) => \{\s*const prefix = path\.dirname\(root\);[\s\S]{0,200}?pkg\.dirs\.map\(\(dir\) => path\.join\(prefix, dir\)\)/.test(rt))
+    (/npmGlobalRootCandidates\(true\)\.flatMap\(\(root\) => \{\s*const prefix = path\.dirname\(root\);[\s\S]{0,200}?pkg\.dirs\.map\(\(dir\) => path\.join\(prefix, dir\)\)/.test(rt))
       ? ok("【285】npm 包体落点 join 到 npm-global 前缀（否则会拼出 node_modules/node_modules/…，包体永远删不掉）")
       : fail("【285】npm 包体落点又直接 join 到含 node_modules 的落位上 ⇒ 拼出 node_modules/node_modules/… ⇒ 包体从未被删过（cloakbrowser 实测）");
   }

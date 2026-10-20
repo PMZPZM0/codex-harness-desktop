@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { toolsRoot } from "./toolchain";
+import { existingToolPath, toolsRoot } from "./toolchain";
 import { buildRemotePageHtml } from "./remote/web-page";
 
 /** cloudflared 可执行文件（手机配对的公网隧道）。
@@ -17,12 +17,11 @@ import { buildRemotePageHtml } from "./remote/web-page";
  *  按平台 + 内置工具目录统一解析，找不到返回空串（调用方已按「隧道不可用」降级到局域网）。 */
 function resolveCloudflaredBin(): string {
   const isWin = process.platform === "win32";
-  const tools = toolsRoot();
   const candidates = [
-    ...(tools ? [path.join(tools, ...(isWin ? ["cloudflared.exe"] : ["cloudflared", "cloudflared"]))] : []),
+    existingToolPath(...(isWin ? ["cloudflared.exe"] : ["cloudflared", "cloudflared"])),
     // mac 上用户自己 brew 装的那份也认（随包缺失时的兜底）
     ...(isWin ? [] : ["/opt/homebrew/bin/cloudflared", "/usr/local/bin/cloudflared"]),
-  ];
+  ].filter(Boolean);
   for (const candidate of candidates) {
     try { if (fs.existsSync(candidate)) return candidate; } catch { /* 继续下一个 */ }
   }

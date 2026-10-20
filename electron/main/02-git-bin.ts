@@ -21,9 +21,10 @@ export function gitBin(): string {
         "/usr/bin/git",
         "/opt/homebrew/bin/git",
         "/usr/local/bin/git",
-        path.join(toolsRoot(), "git", "bin", "git"),
+        bundledGit(),
       ]
     : [
+        bundledGit(),
         path.join(appSourceRoot(), "resources", "tools", "git", "cmd", "git.exe"),
         path.join(process.resourcesPath || app.getAppPath(), "tools", "git", "cmd", "git.exe"),
         "C:\\Program Files\\Git\\cmd\\git.exe",

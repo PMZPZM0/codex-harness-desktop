@@ -64,7 +64,7 @@ const ri = readFileSync(join(ROOT, "electron/features/runtime-ipc.ts"), "utf8");
 //   RUNTIME_CHANNELS 数组与 import 注释里，用裸 indexOf 会切到那些位置 ⇒ 整段判空、恒假红。
 const unAt = ri.indexOf('ipcHost.handle("runtime:uninstall"');
 ok(unAt > 0, "定位到 runtime:uninstall 的 handler（锚点是 handle 调用，不是通道名）");
-const un = unAt >= 0 ? ri.slice(unAt, unAt + 3200) : "";
+const un = unAt >= 0 ? ri.slice(unAt, unAt + 6000) : "";
 ok(/recordToolRemoved/.test(un), "recordToolRemoved 落在 runtime:uninstall 处理器内（不是别处）");
 ok(/try \{ recordToolRemoved\(id\); \} catch/.test(un),
   "清账包在 try/catch 里（账本坏了不该让卸载报错）");
@@ -93,7 +93,20 @@ ok(/path_not_verified|no_verified_update/.test(ui.slice(0, ui.indexOf('handle("u
    /lastVerifiedUpdatePath/.test(rs),
   "restart-install 只认主进程已校验过的那个包（不接受渲染层传路径）");
 
-console.log("【⑤ 真跑：编译产物上的记账行为】");
+console.log("【⑤ 按需下载落点：userData/tools（覆盖安装不丢）】");
+const tc = readFileSync(join(ROOT, "electron/toolchain.ts"), "utf8");
+ok(/export function userToolsRoot/.test(tc) && /export function writeToolsRoot/.test(tc) && /export function existingToolPath/.test(tc),
+  "工具根拆成「随包 resources」+「userData/tools」双根（写入走 userData）");
+ok(/TOOLS_ROOT: userToolsRoot\(\) \|\| toolsRoot\(\)/.test(dr),
+  "安装子进程 TOOLS_ROOT 指向 userData（不再写进安装目录）");
+ok(/const roots = toolRootsRead\(\)/.test(dr) && /roots\.some\(/.test(dr),
+  "「装没装」同时检查随包与 userData 两处（更新后仍能认出来）");
+ok(/path\.join\(writeToolsRoot\(\), "npm-global"\)/.test(ri) && /npmGlobalRootCandidates\(true\)/.test(ri),
+  "npm 安装写 userData；卸载只清 userData（不误删随包件）");
+ok(/const tools = writeToolsRoot\(\)/.test(tc) && /CLOAKBROWSER_CACHE_DIR/.test(tc) && /PLAYWRIGHT_BROWSERS_PATH/.test(tc),
+  "浏览器内核缓存（Playwright / Cloak）指向 userData（更新后不用重下）");
+
+console.log("【⑥ 真跑：编译产物上的记账行为】");
 // ⛔ 真跑而非读字符串：stub electron 的 app.getPath 指向临时目录，
 //    跑「记 → 读 → 卸 → 读」四步，验的是行为。
 const dist = join(ROOT, "dist-electron/features/tool-persistence.js");

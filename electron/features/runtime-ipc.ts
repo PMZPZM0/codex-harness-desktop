@@ -24,7 +24,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { app, shell } from "electron";
-import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, downloadEnv, npmGlobalRoot, npmGlobalRootCandidates, pythonPipReady, toolchainEnv, toolsRoot } from "../toolchain";
+import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, downloadEnv, existingToolPath, npmGlobalRoot, npmGlobalRootCandidates, npmPackagePath, pythonPipReady, toolchainEnv, toolRootsRead, toolsRoot, userToolsRoot, writeToolsRoot } from "../toolchain";
 import { installKbEmbedding, kbBackendDir, kbEmbeddingInstalled, uninstallKbEmbedding } from "./kb-embed-backend";
 import { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, cancelRuntimeInstall, cleanupRuntimeTempFiles, clearCancelRequest, devRuntimeSpecs, emitRuntimeProgress, isCancelRequested, pipMetadataDirs, pythonSiteDir, readDownloadSource, requestRuntimeCancel, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls, trackRuntimeProc } from "./dev-runtimes";
 import type { DevRuntimeId, DevRuntimeSpec } from "./dev-runtimes";
@@ -100,18 +100,18 @@ const FALLBACK_STEPS: Partial<Record<DevRuntimeId, string>> = {
  *    跨平台都读得懂，也不会让人照抄一条必然报错的命令。 */
 function fallbackRunner(): string {
   const node = bundledNode() || "node";
-  return `"${node}" "${runtimeInstaller("install-runtimes.cjs")}"（若脚本要求指定工具目录，先设环境变量 TOOLS_ROOT=${toolsRoot()}）`;
+  return `"${node}" "${runtimeInstaller("install-runtimes.cjs")}"（若脚本要求指定工具目录，先设环境变量 TOOLS_ROOT=${writeToolsRoot()}）`;
 }
 
 /** 「装到哪个目录」——按工具类型给**语义正确**的落点（⛔ 不是 marker 首段推导）。 */
 function fallbackTargetDir(id: DevRuntimeId, spec: DevRuntimeSpec): string {
   if (id === "ponytail") return path.join(codexHome, "plugins", "cache");
   if (id === "kb-embedding") return kbBackendDir();
-  if (PIP_PACKAGE_DIRS[id]) return path.join(toolsRoot(), "python");
-  if (NPM_PACKAGE_ARTIFACTS[id]) return npmGlobalRoot() || path.join(toolsRoot(), "npm-global");
+  if (PIP_PACKAGE_DIRS[id]) return path.join(writeToolsRoot(), "python");
+  if (NPM_PACKAGE_ARTIFACTS[id]) return npmGlobalRoot() || path.join(writeToolsRoot(), "npm-global");
   if (spec.kind === "guide") return "系统安装目录（不在应用目录里）";
   // 其余落在 tools/<marker 首段> —— 与 runtimeUninstallTargets 的通用分支同源
-  return path.join(toolsRoot(), spec.marker.split(/[\\/]/)[0]);
+  return path.join(writeToolsRoot(), spec.marker.split(/[\\/]/)[0]);
 }
 
 /** 装完怎么确认：可执行文件型给一条**真能跑**的验证命令（与自检同口径）。
@@ -122,17 +122,17 @@ function fallbackExpectLine(id: DevRuntimeId, spec: DevRuntimeSpec): string {
   if (id === "ponytail") return `这个目录存在：${path.join(codexHome, "plugins", "cache", "ponytail")}`;
   if (id === "kb-embedding") return `这个目录存在（npm 包 + worker + 模型三件齐）：${kbBackendDir()}`;
   if (PIP_PACKAGE_DIRS[id]) {
-    const site = pythonSiteDir(path.join(toolsRoot(), "python"));
+    const site = pythonSiteDir(path.join(writeToolsRoot(), "python"));
     const pkg = PIP_PACKAGE_DIRS[id]!;
     return site
       ? `这个包目录存在：${path.join(site, pkg)}；也可以跑 python -c "import ${pkg}" 看能不能导入`
-      : `在 ${path.join(toolsRoot(), "python")} 下跑 python -m pip show ${pkg} 确认`;
+      : `在 ${path.join(writeToolsRoot(), "python")} 下跑 python -m pip show ${pkg} 确认`;
   }
   if (spec.kind === "guide") {
     return `在终端跑 ${id === "docker" ? "docker --version" : "openssl version"}，能打印版本就说明装好了`;
   }
   if (NPM_PACKAGE_ARTIFACTS[id]) {
-    const root = npmGlobalRoot() || path.join(toolsRoot(), "npm-global");
+    const root = npmGlobalRoot() || path.join(writeToolsRoot(), "npm-global");
     const rel = NPM_PACKAGE_ARTIFACTS[id]!.dirs[0].replace(/^node_modules[\\/]/, "");
     return `这个目录存在：${path.join(root, rel)}`;
   }
@@ -331,7 +331,7 @@ function runtimeUninstallTargets(id: DevRuntimeId, spec: DevRuntimeSpec): string
     //   而候选落位 npmGlobalRootCandidates() 返回的**已含 node_modules 一段** ——
     //   直接 join 会拼出 `node_modules/node_modules/cloakbrowser` ⇒ **包体从来就没被删过**
     //   （Windows 同样中招，10-07 实测才抓到）。所以这里必须 join 到前缀（= 落位的上一级）。
-    return npmGlobalRootCandidates().flatMap((root) => {
+    return npmGlobalRootCandidates(true).flatMap((root) => {
       const prefix = path.dirname(root);
       return [
         ...pkg.dirs.map((dir) => path.join(prefix, dir)),
@@ -343,8 +343,8 @@ function runtimeUninstallTargets(id: DevRuntimeId, spec: DevRuntimeSpec): string
   //    `tools/python` —— 那是整个 Python 运行时（含 pip 与引擎依赖），卸载一个包会把 Python 一起删光。
   const pipDir = PIP_PACKAGE_DIRS[id];
   if (pipDir) {
-    const site = pythonSiteDir(path.join(toolsRoot(), "python"));
-    if (!site) return [path.join(toolsRoot(), pipDir)];
+    const site = pythonSiteDir(path.join(writeToolsRoot(), "python"));
+    if (!site) return [path.join(writeToolsRoot(), pipDir)];
     // ⛔⛔ 必须连**元数据目录**一起删（10-08 用户实测事故「开发工具装完不更新」）：只删包目录会留下
     //   `<name>-<ver>.dist-info`，pip 据此认为「已安装」⇒ 重装时回 `Requirement already satisfied`
     //   且 exit 0（什么都不做），而判定看的是包目录 ⇒ 界面报「安装成功」但卡片永远显示未安装。
@@ -352,7 +352,8 @@ function runtimeUninstallTargets(id: DevRuntimeId, spec: DevRuntimeSpec): string
     return [path.join(site, pipDir), ...pipMetadataDirs(site, pipDir)];
   }
   // 工具侧：安装根 = marker 路径的第一段（playwright-browsers -> pw-browsers / git -> git / …）
-  return [path.join(toolsRoot(), spec.marker.split(/[\\/]/)[0])];
+  // ⛔ 卸载只删 **userData** 里的下载件；随包 resources 的目录不归用户可卸载。
+  return [path.join(writeToolsRoot(), spec.marker.split(/[\\/]/)[0])];
 }
 
 /** ⛔⛔ 安装成功后**必须回读「装没装」的判定**（10-08 用户报「开发工具安装完不更新」的整类根因）。
@@ -366,7 +367,7 @@ function assertInstallVerified(id: DevRuntimeId, spec: DevRuntimeSpec): void {
   if (runtimeInstalled(id, spec)) return;
   throw new Error(
     `「${spec.name}」安装流程已结束，但复核未通过 —— 在预期位置找不到已安装产物`
-    + `（安装根目录：${toolsRoot()}）。这通常是安装器「假成功」（命令退出码 0 但没落盘），`
+    + `（安装根目录：${writeToolsRoot()}）。这通常是安装器「假成功」（命令退出码 0 但没落盘），`
     + "请把本页日志反馈给开发者；重复点「下载」不会自愈。"
   );
 }
@@ -419,7 +420,7 @@ async function runNpmInstall(id: string, pkg: string, label: string, source: Non
   // ⛔ 按平台候选探测（Windows zip 布局 / mac tar.gz 布局）—— 别在这里复制路径字面量，见 toolchain.bundledNpmCli
   const npmCli = bundledNpmCli();
   if (!npmCli) throw new Error(`内置 Node 缺少 npm（候选中无 npm-cli.js，tools 根：${toolsRoot()}），无法安装 ${label}`);
-  const globalDir = path.join(toolsRoot(), "npm-global");
+  const globalDir = path.join(writeToolsRoot(), "npm-global");
   await fs.mkdir(globalDir, { recursive: true });
   const userRegistry = process.env.npm_config_registry || process.env.NPM_CONFIG_REGISTRY || "";
   const registries = userRegistry ? [userRegistry] : source === "direct" ? [""] : [CHINA_NPM_REGISTRY, ""];
@@ -512,7 +513,8 @@ function probeTool(file: string, args: string[]): Promise<{ ok: boolean; detail:
 /** 可执行文件的落点：Windows 用 spec.marker，mac 走 DARWIN_MARKERS 覆盖。 */
 function healthExecPath(id: DevRuntimeId, spec: DevRuntimeSpec): string {
   const rel = IS_MAC ? (DARWIN_MARKERS[id] ?? spec.marker) : spec.marker;
-  return path.join(toolsRoot(), rel);
+  /* 随包 / 用户下载两个根都查；未安装时返回 **userData** 预期落位（提示用户装到哪）。 */
+  return existingToolPath(rel) || path.join(writeToolsRoot(), rel);
 }
 
 /**
@@ -742,7 +744,7 @@ export const runtimeFeature = defineFeature<null>({
       //   上面「不得等于根」那条自相矛盾（target === 允许根 ⇒ 直接被拒，症状仍是卸不掉）。
       //   ⇒ 故拆成两个概念：allowedRoots = 可以往里删的**根**（不得相等）；
       //      exactAllowed = 允许**整体删除**的具体目录（target 就等于它）。
-      const allowedRoots = [toolsRoot(), codexHome].filter(Boolean).map((r) => path.resolve(r));
+      const allowedRoots = [...toolRootsRead(), codexHome].filter(Boolean).map((r) => path.resolve(r));
       const exactAllowed = new Set([path.resolve(kbBackendDir())]);
       for (const target of targets) {
         const resolvedTarget = path.resolve(target);
@@ -884,7 +886,7 @@ export const runtimeFeature = defineFeature<null>({
         if (id === "ponytail") {
           // ⛔ 必须排在 spec.bundled 分支**之前**：ponytail 也是 bundled，但它的修复路径是「重种插件」
           //    而不是「解压 automation-tools.zip」——漏了会让「修复安装 ponytail」把 zip 解到 npm-global。
-          await ensurePonytailPlugin(codexHome, path.join(toolsRoot(), "ponytail-plugin"));
+          await ensurePonytailPlugin(codexHome, existingToolPath("ponytail-plugin") || path.join(toolsRoot(), "ponytail-plugin"));
           // 卸载时把注册段置成了 false，这里必须显式置回 true —— seedConfigSections 是
           // 「段已存在就幂等跳过」，不会自己翻回 true，漏了会导致「卸载→重装」后插件永久不可用。
           await server.request("config/value/write", {
@@ -898,14 +900,14 @@ export const runtimeFeature = defineFeature<null>({
           if (!bundledNode()) await runRuntimeInstaller("node", runtimeInstaller("install-runtimes.cjs"), ["node"], process.execPath, { DOWNLOAD_SOURCE: downloadSource });
           // ⛔ 只认随包 zip（解压安装），**不再回落在线下载**（09-12 用户实测发布包故障）：
           //   GitHub Release 那个 automation-tools.zip 资产根本不存在，回落只会撞死地址。
-          const bundledAutomationZip = path.join(toolsRoot(), "automation-tools.zip");
+          const bundledAutomationZip = existingToolPath("automation-tools.zip") || path.join(toolsRoot(), "automation-tools.zip");
           if (!existsSync(bundledAutomationZip)) {
             throw new Error(
               `随包缺少 tools/automation-tools.zip —— 这一版安装包不完整，装不了「${spec.name}」。`
               + "请更新到带该文件的版本；自建包时先在本机装一次自动化工具链再执行打包。"
             );
           }
-          await runRuntimeInstaller(id, runtimeInstaller("install-automation.cjs"), [], bundledNode());
+          await runRuntimeInstaller(id, runtimeInstaller("install-automation.cjs"), ["--zip", bundledAutomationZip], bundledNode());
           // 解压安装成功后自动激活「桌面自动化」「浏览器自动化」联动开关
           await saveAppSettings(app.getPath("userData"), { desktopAutomation: true, browserAutomation: true });
         } else if (id === "cloakbrowser") {
@@ -916,7 +918,7 @@ export const runtimeFeature = defineFeature<null>({
           await runNpmInstall(id, "rea-agents", "REA 逆向分析", downloadSource);
         } else if (id === "playwright-browsers") {
           const node = bundledNode();
-          const cli = path.join(npmGlobalRoot(), "@playwright", "cli", "node_modules", "playwright", "cli.js");
+          const cli = npmPackagePath("@playwright", "cli", "node_modules", "playwright", "cli.js");
           if (!node || !existsSync(cli)) throw new Error("缺少 Playwright CLI，请先在「开发工具」安装「Playwright 浏览器自动化」");
           await runBrowserDownload(id, node, cli, ["install", "chromium"], "浏览器内核", downloadSource);
         } else if (id === "cloak-browsers") {
