@@ -38,6 +38,17 @@ const HOP_BY_HOP = new Set([
   "accept-encoding",
 ]);
 
+/** 本机云账号的代理令牌（10-20 云端记忆身份的第二凭据）。
+ *  ⛔ 懒加载：本文件会被 Node 守卫直接 require，顶层 import cloud-token 会连带加载 electron。 */
+function readCloudProxyToken(): string {
+  try {
+    const mod = require("./cloud-token") as typeof import("./cloud-token");
+    return mod.readProxyToken();
+  } catch {
+    return "";
+  }
+}
+
 /** 「上游不认这个端点」的措辞特征（用于 400 的歧义判定，见 probeResponses）。
  *  ⛔ 只在 400 且**响应体明确是这个意思**时才切 chat —— 宁可漏切（用户可手动指定
  *  「强制 chat」），也不能把「参数错误」误判成「端点不存在」而把本来能用的网关改坏。 */
@@ -482,9 +493,15 @@ export class ResponsesBridge {
        内部服务账号的钥匙覆盖 Authorization，并把 `X-Tdai-User-Key` **原样透传**。
        这里把记忆 key 同步到这个头，账号服务才能把模型请求归到真实用户（否则按内部账号
        PPZ11 的可用模型鉴权 —— 用户勾了 4 个却只有 PPZ11 也有的 deepseek 能用）。
-       ⛔ 只对 sk-mem- 记忆 key 生效，普通供应商不着这个头。 */
-    if (!headers["x-tdai-user-key"] && /^bearer\s+sk-mem-/i.test(String(headers.authorization || ""))) {
+       ⛔ 只对 sk-mem- 记忆 key 生效，普通供应商不着这个头。
+       ⛔⛔ 不能只信这个头：MEMHUB 会原样转发客户端给的 X-Tdai-User-Key ⇒ 只靠它等于
+          「客户端自报身份」。再带一枚本机账号的代理令牌，账号服务要求两者指向同一用户；
+          任一不匹配就拒绝（见账号服务 proxy 处的 identity-mismatch）。
+       ⛔ 头一律从本机真相源覆盖，不信引擎/插件传入的同名头。 */
+    if (/^bearer\s+sk-mem-/i.test(String(headers.authorization || ""))) {
       headers["x-tdai-user-key"] = String(headers.authorization).replace(/^bearer\s+/i, "").trim();
+      const proxyToken = readCloudProxyToken();
+      if (proxyToken) headers["x-harness-proxy-token"] = proxyToken;
     }
     // 协议特有的头（如 anthropic-version / x-api-key）在透传头之后覆盖
     if (overrides?.headers) Object.assign(headers, overrides.headers);
