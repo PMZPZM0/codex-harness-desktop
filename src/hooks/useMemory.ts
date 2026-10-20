@@ -110,7 +110,7 @@ export function useMemory({ threadId, activeTurnId, workspace }: Options = {}) {
   });
   /* 记忆后端（内置金字塔 ⇄ MCP）：工具面据此收敛 —— MCP 后端已有自己的 memory-write，
      不能再把宿主的 memory_write 一起暴露（同名双写，见 10-20 修复）。 */
-  const [memoryBackend, setMemoryBackend] = useState<"builtin" | "mcp">("builtin");
+  const [memoryBackend, setMemoryBackend] = useState<"builtin" | "mcp" | "cloud">("builtin");
   const [workspaceMemoryEnabled, setWorkspaceMemoryEnabled] = useState<boolean>(() => localStorage.getItem(WORKSPACE_KEY) !== "false");
 
   useEffect(() => {

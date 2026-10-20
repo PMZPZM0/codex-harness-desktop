@@ -259,7 +259,7 @@ export const memoryFeature = defineFeature<null>({
        ⛔ 两处都包 try/catch：设置已经保存成功，同步失败不能让整次切换看起来像"没切成"。 */
     ipcHost.handle("memory:backend:read", () => memoryBackendStatus());
     ipcHost.handle("memory:backend:set", async (_event, backend: unknown) => {
-      const next: MemoryBackend = backend === "mcp" ? "mcp" : "builtin";
+      const next: MemoryBackend = backend === "cloud" ? "cloud" : backend === "mcp" ? "mcp" : "builtin";
       await saveAppSettings(app.getPath("userData"), { memoryBackend: next });
       /* ⛔ 时序防御：userSkillsDir 由启动链注入，理论上窗口创建早于它的赋值不可能，但这里显式判一下
          —— 传 undefined 进去只会在深处抛 TypeError，被下面的 catch 吞成一条 warn，表现是

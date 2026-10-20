@@ -273,7 +273,7 @@ export class MemoryLayers {
        ⛔ 判据必须是 `effectiveMemoryBackend()`（带可用性回退），**不是** `memoryBackend()`：
        用户选了 MCP 但服务没装/装坏时（原生模块装不上的环境很常见），若这里也让位 ⇒
        记忆一处都不写 = **彻底丢记忆**。宁可回到金字塔，也不能丢。 */
-    if (effectiveMemoryBackend() === "mcp") return false;
+    if (effectiveMemoryBackend() !== "builtin") return false; /* mcp / cloud：本地金字塔都让位，避免双份记忆 */
     const dir = this.projectDir(workspace);
     const text = String(line ?? "").trim();
     if (!dir || !text) return false;
@@ -327,7 +327,7 @@ export class MemoryLayers {
    * 落库后把该行删掉。内置后端直接走 appendLesson。
    */
   async appendPendingLesson(workspace: string, line: string, dedupeKey: string, category?: string): Promise<boolean> {
-    if (effectiveMemoryBackend() !== "mcp") return this.appendLesson(workspace, line, dedupeKey, category);
+    if (effectiveMemoryBackend() === "builtin") return this.appendLesson(workspace, line, dedupeKey, category);
     const dir = this.projectDir(workspace);
     const text = String(line ?? "").trim();
     if (!dir || !text) return false;

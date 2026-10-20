@@ -258,7 +258,7 @@ contextBridge.exposeInMainWorld("codex", {
   /* 记忆后端二选一：用户选的值 + 实际生效值（装了 MCP 服务才让位）+ 安装命令 */
   readMemoryBackend: () => __ipc("memory:backend:read", 0, []),
   /* 切换记忆后端并回传新状态 */
-  setMemoryBackend: (backend: "builtin" | "mcp") => __ipc("memory:backend:set", 1, [backend]),
+  setMemoryBackend: (backend: "builtin" | "mcp" | "cloud") => __ipc("memory:backend:set", 1, [backend]),
   /* 一键安装 MCP 记忆服务（主进程用应用自带 node 跑安装器；新电脑无需预装 Node） */
   installMemoryMcp: () => __ipc("memory:mcp:install", 0, []),
   /* 卸载 MCP 记忆服务（删 <userData>/memory-mcp） */

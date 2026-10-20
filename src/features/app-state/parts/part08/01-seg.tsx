@@ -443,7 +443,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
         inputSchema: { type: "object", properties: { imageUrl: { type: "string", description: "图片的本地文件路径或 http(s) 地址（本地图片直接传路径，会自动读取；生成/保存下来的图片就用它的路径）。⛔ 不要传 data URL —— 内联 base64 会把几 MB 文本灌进对话历史" }, prompt: { type: "string", description: "你想让视觉模型关注的问题，可省略" } }, required: ["imageUrl"] },
       }] : []),
       // 10-20：MCP 后端自带 memory-write/read，宿主 fabric 工具在 MCP 模式不再暴露（避免同名双写）。
-      ...(bag.memoryEnabled && bag.memoryBackend !== "mcp" ? [
+      ...(bag.memoryEnabled && bag.memoryBackend !== "mcp" && bag.memoryBackend !== "cloud" ? [
         { type: "function", name: "memory_recall", description: "按当前任务查询相关的分类记忆。", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
         /* ⛔⛔ 10-05 统一记忆：工具名从 `memory_save` 改成 `memory_write`，**与被调度角色同名**。
            改造前主会话用 memory_save、角色用 role_memory_save（两套语义、两份说明书），
