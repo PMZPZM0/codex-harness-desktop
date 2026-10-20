@@ -1,6 +1,6 @@
 # Codex Harness Desktop
 
-独立桌面工作台，把 OpenAI Codex 引擎装进一个真正的桌面应用：多会话任务管理、可视化 diff 审阅、内置自动化工具、插件/技能/连接器生态、专家团队协作，开箱即用，无需命令行。
+独立桌面工作台，把 OpenAI Codex 引擎装进一个真正的桌面应用：多会话任务管理、可视化 diff 审阅、内置自动化工具、插件/技能/连接器生态、专家团队协作，开箱即用，不必碰命令行。
 
 <p align="center">
   <img src="docs/screenshots/main-light.png" width="820" alt="Codex Harness Desktop 主界面" />
