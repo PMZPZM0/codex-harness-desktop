@@ -122,6 +122,9 @@ ok(statusCode.includes('className="completed-diff-preview"') && statusCode.inclu
   "行悬停出 diff 预览（悬停意图定时器：扫过一行不弹、停住才弹）");
 ok(/Math\.max\(M, Math\.min\(rect\.left, vw - width - M\)\)/.test(statusCode) && statusCode.includes("maxHeight={diffHover.codeMax}"),
   "⛔ 预览位置自适应：上下按空间选边 + 钳进视口 + 代码区高度按所选边收窄（不许固定坐标）");
+ok(/hoverCloseTimerRef\.current = window\.setTimeout\(\(\) => setDiffHover\(null\), 500\)/.test(statusCode)
+  && statusCode.includes("onMouseEnter={keepHoverOpen}") && statusCode.includes("onMouseMove={keepHoverOpen}"),
+  "移向预览有 500ms 宽限，且面板 enter / move 持续取消关闭（用户 10-18：「鼠标放上去闪一下就没了」）");
 
 /* ── 七、预览升级（10-06 夜二改 · 用户对照 Qoder：「他这种预览好看，鼠标放上去还能左右滚动和
    上下滚动，我们现在的 diff 预览好丑」）────────────────────────────────

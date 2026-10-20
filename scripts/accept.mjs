@@ -1078,6 +1078,12 @@ const CHECKS = [
             && /auto|scroll/.test(String(previewUp.overflow)) && previewUp.nowrap === "pre"
             && previewUp.hasExpand === true && previewStillOpen === true,
           JSON.stringify({ previewUp, previewStillOpen }).slice(0, 260));
+        /* ⑯c 鼠标移进预览后必须**持续展示**（10-18 用户实测：「鼠标放上去，这个框框闪一下就没了，
+           鼠标放在上面就要一直展示」）。旧实现 160ms 关闭宽限会在指针走到面板前先关掉。 */
+        await h.hover(".completed-diff-preview").catch(() => undefined);
+        await wait(900);
+        const previewStays = await h.eval(`!!document.querySelector('.completed-diff-preview')`);
+        h.check("⑯c 鼠标移进预览后保持展示（不再闪没 —— 用户 10-18 实测）", previewStays === true, `stays=${previewStays}`);
         await h.moveMouseAway().catch(() => undefined);
         await wait(500);
         const previewGone = await h.eval(`!document.querySelector('.completed-diff-preview')`);
