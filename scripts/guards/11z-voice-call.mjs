@@ -493,8 +493,8 @@ ok(/loadVoiceSettings\(app\.getPath\("userData"\)\)\.announce\.enabled === false
   "总开关关着时工具**明确拒绝**并说清原因（不然模型以为念了、用户什么都没听到 = 谎报成功）");
 ok(/在催|几个人在催|用户在催/.test(coreToolsForVoice) && /判定权在你/.test(coreToolsForVoice),
   "工具描述写清**什么时候该用**（用户在催 / 反复没做好 / 步骤关键 / 自己有话说）且判定权在模型");
-ok(/resolveAnnounceSummary\(String\(finalText/.test(announceHook) && /if \(script\.text\) await speak/.test(announceHook),
-  "结束只念模型写的播报稿（`resolveAnnounceSummary` = 唯一裁决点；没写 ⇒ 什么都不念）");
+ok(/resolveAnnounceSummary\(String\(finalText/.test(announceHook) && /if \(script\.text\) \{/.test(announceHook) && /splitSentences\(script\.text\)/.test(announceHook),
+  "结束只念模型写的播报稿（`resolveAnnounceSummary` = 唯一裁决点；没写 ⇒ 什么都不念），且按句合成、先到先播");
 ok(/const tail = stripperRef\.current\?\.flush\(\) \?\? ""/.test(announceHook)
   && announceHook.indexOf("const tail = stripperRef.current?.flush()") < announceHook.indexOf("const script = resolveAnnounceSummary"),
   "念过正文的回合：**先把流式链的尾句念完**再念播报稿（否则尾句永远丢）");

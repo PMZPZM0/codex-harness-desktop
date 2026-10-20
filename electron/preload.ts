@@ -496,7 +496,7 @@ contextBridge.exposeInMainWorld("codex", {
   voiceDictationFinish: () => __ipc("voice:dictation-finish", 0, []),
   voiceEndpointNow: () => __ipc("voice:endpoint-now", 0, []),
   voiceSpeak: (text: string, options?: { sid?: number; speed?: number }) => __ipc("voice:speak", 1, [text, options]),
-  voicePreviewVoice: (input?: { sid?: number; speed?: number; text?: string; profileId?: string }) => __ipc("voice:preview-voice", 0, [input]),
+  voicePreviewVoice: (input?: { sid?: number; speed?: number; text?: string; profileId?: string; warm?: boolean; numSteps?: number }) => __ipc("voice:preview-voice", 0, [input]),
   voiceProfilesList: () => __ipc("voice:profiles-list", 0, []),
   voicePresetList: () => __ipc("voice:preset-list", 0, []),
   voicePresetApply: (presetId: string) => __ipc("voice:preset-apply", 1, [presetId]),

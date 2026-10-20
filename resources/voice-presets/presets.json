@@ -2,10 +2,10 @@
   {
     "id": "youth-female-zh",
     "name": "活泼女声 · 小夏",
-    "desc": "年轻活泼女声，像朋友聊天一样带语气（音源：CosyVoice 示例 · 本机生成）",
+    "desc": "年轻活泼女声，像朋友聊天一样带语气（音源：CosyVoice 示例 · 本机生成，3 秒短样本，播报更快）",
     "lang": "zh",
     "wav": "youth-female-zh.wav",
-    "refText": "哇，终于搞定啦！这次真的稳了，你就放心吧。我跟你讲，交给我准没错！下次还有这种事儿，记得第一个来找我呀！"
+    "refText": "哇，搞定啦！这次真的稳了，你就放心吧。"
   },
   {
     "id": "cosyvoice-female-zh",

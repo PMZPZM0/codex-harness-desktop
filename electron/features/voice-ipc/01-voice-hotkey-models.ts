@@ -120,7 +120,9 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
   ipcHost.handle("voice:speak", async (_event, text: string, options?: { sid?: number; speed?: number }) => {
     return voiceAudioForIpc(await svc().speak(String(text ?? ""), options));
   });
-  ipcHost.handle("voice:preview-voice", async (_event, input?: { sid?: number; speed?: number; text?: string }) => {
+  ipcHost.handle("voice:preview-voice", async (_event, input?: { sid?: number; speed?: number; text?: string; profileId?: string; warm?: boolean; numSteps?: number }) => {
+    // 只预热（加载模型）不合成：播报端在开关打开/换音色时调用，避免第一句还等模型冷加载
+    if (input?.warm) return svc().warmPreviewVoice();
     // 设置页「音色试听」：不必在通话中，内部会临时起一个 TTS worker，合成完即销毁
     return voiceAudioForIpc(await svc().previewVoice(input ?? {}));
   });

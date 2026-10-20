@@ -276,7 +276,8 @@ parentPort.on("message", (msg) => {
           referenceAudio: refSamples,
           referenceSampleRate: refRate,
           referenceText: String(workerData.referenceText || ""),
-          numSteps: Number(workerData.numSteps || 4),
+          // 播报端按请求传更少步数换低延迟（4 步是默认音质，2 步约快一倍）；不传走 4
+          numSteps: Number(msg.numSteps || workerData.numSteps || 4),
         };
       }
       const audio = tts.generate(request);
