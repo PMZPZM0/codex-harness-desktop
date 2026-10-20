@@ -693,7 +693,7 @@ contextBridge.exposeInMainWorld("codex", {
   uninstallKbEmbedBackend: () => __ipc("kb:embed-uninstall", 0, []),
   /* 读取知识库后端：local=项目本地库 / cloud=云端 weknora（MCP） */
   kbBackendGet: () => __ipc("kb:backend-get", 0, []),
-  /* 切换知识库后端并回传生效值 */
+  /* 切换知识库后端并回传生效值 + 连接器联动结果（connector.applied=false ⇒ 只存了设置、工具面没跟上，note 说明原因） */
   kbBackendSet: (backend: "local" | "cloud") => __ipc("kb:backend-set", 1, [backend]),
   /* 更新后首次启动的「新功能介绍」—— 该不该弹、弹什么由主进程判定（要点在 electron/whats-new-notes.ts，看过记录在 userData/whats-new.json） */
   whatsNewState: () => __ipc("whatsnew:state", 0, []),

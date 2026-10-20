@@ -85,6 +85,14 @@ export async function syncLocalMemoryConnector(): Promise<SyncResult> {
      否则切到 MCP 记忆后模型在缓存过期前仍看不到 memory_write（症状=「切了没反应」）。 */
   try { const { invalidateMcpBridgeCache } = await import("./mcp-bridge"); invalidateMcpBridgeCache(); }
   catch { /* 桥接未加载不影响同步本身 */ }
+  /* ⛔⛔ 10-20：还要重建**提示层**，否则「工具面换了、口径没换」——
+     developer_instructions 只在启动时自愈重写（boot 的 instructionsOutdated 判据），
+     同一进程里切后端不会重跑 ⇒ 模型下一轮仍按旧口径往 lessons/ 写（写错位置）。
+     ⛔ 技能层的启停**不在这里做**：`memory:backend:set` 已经用正确的 skillsDir 调过
+        ensureBuiltinSkills，本函数拿不到那个目录，硬传只会 TypeError。
+     ⛔ 失败静默：刷不了不影响切换本身，下次启动会自愈。 */
+  try { const { refreshEngineInstructions } = await import("./backend-routing"); await refreshEngineInstructions(); }
+  catch { /* 提示层刷新失败不影响连接器同步 */ }
   return want ? "enabled" : "disabled";
 }
 

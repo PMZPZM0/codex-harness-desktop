@@ -327,8 +327,11 @@ export class MemoryLayers {
 
   /**
    * MCP 后端下的自动捕获落点（10-20）：lesson 候选不静默丢，也不双写。
-   * 先写进 lessons/misc.md 的「待入 MCP」节；Codex 下一轮读常驻记忆时看到，调 MCP `memory-write`
-   * 落库后把该行删掉。内置后端直接走 appendLesson。
+   * 先写进 lessons/misc.md 的「待入 MCP」节；Codex 下一轮读常驻记忆时看到，调 MCP
+   * `local_memory__memory_write`（暴露名，见 backend-routing.ts 的 mcpToolName）落库后把该行删掉。
+   * 内置后端直接走 appendLesson。
+   * ⛔ 云端后端**两个都不走**：那个后端没有记忆工具、上游自动从对话内容收记忆，写哪儿都是白写
+   *    （写进 lessons 云端读不到，排进「待入 MCP」又没有工具可落库 ⇒ 只会留下永远删不掉的脏行）。
    */
   async appendPendingLesson(workspace: string, line: string, dedupeKey: string, category?: string): Promise<boolean> {
     if (effectiveMemoryBackend() === "mcp" || effectiveMemoryBackend() === "cloud") return false;

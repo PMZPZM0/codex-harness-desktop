@@ -9,7 +9,8 @@
  * ⛔ 正文必须是字面量（预检【86】按源文件文本做安全扫描）；正文里每个反引号都要写成 \\\` 转义。
  * ⛔ 工具名与参数口径**只写实测过的**（09-25 用自带 node 真起服务、跑 initialize + tools/list + 真实
  *    memory-write/memory-read/agent-context 往返，服务版本 0.49.0，共 19 个工具）：
- *      · 写入 \`memory-write\`（type 枚举 = code_fact / decision / mistake / pattern / task_archive；
+ *      · 写入 \`local_memory__memory_write\`（暴露名 = `<连接器>__<工具>`，连接器 \`local-memory\` 的连字符换下划线；
+ *        type 枚举 = code_fact / decision / mistake / pattern / task_archive；
  *        \`importance\` 是**数字 1–5**，⛔ 不是 "high"/"medium"；写错直接被 input validation 拒）
  *      · 读 \`memory-read\`（query→检索，id/code→详情，无参→recap）
  *      · \`agent-context\` 把记忆编译成带 token 预算的注入块（\`budget\` 是**对象**，如 {maxTokens:600}）
@@ -30,7 +31,10 @@ description: 记忆后端切成 MCP 记忆服务后的写法与读法。凡是�
 
 ## 写记忆：只走 MCP
 
-用 \`memory-write\`（工具名以工具列表实际返回为准，客户端常带前缀如 \`mcp__local-memory__memory-write\`）：
+用 \`local_memory__memory_write\`（**本应用暴露的确切名字** = \`<连接器>__<工具>\`：连接器 \`local-memory\` ⇒ \`local_memory\`，
+工具 \`memory-write\` ⇒ \`memory_write\`，中间两个下划线。⛔ 不是 \`memory-write\`、不是 \`memory_write\`、更不是
+\`mcp__local-memory__memory-write\` —— 这三种写法在工具列表里都**不存在**，试了只会浪费一轮。
+工具列表里**没有** \`local_memory__memory_write\` ⇒ MCP 后端没生效（服务没装 / 后端已切走），照实说一句，⛔ 不要退回手写文件）：
 
 - \`type\`（**枚举，必填**）：\`code_fact\` | \`decision\` | \`mistake\` | \`pattern\` | \`task_archive\`
   —— 踩过的坑/被纠正的事选 \`mistake\`；⛔ 没有 \`pitfall\` 这个值，传了会被 input validation 直接拒。
@@ -43,18 +47,22 @@ description: 记忆后端切成 MCP 记忆服务后的写法与读法。凡是�
 
 ## 读记忆
 
-- \`memory-read\`：三种模式自动切换 —— 传 \`query\` 走检索；传 \`id\`/\`code\` 取详情；都不传则 recap。
-- \`agent-context\`：把记忆/任务/交接/标准等**编译成带 token 预算的上下文块**（\`budget\` 是**对象**，
+- \`local_memory__memory_read\`：三种模式自动切换 —— 传 \`query\` 走检索；传 \`id\`/\`code\` 取详情；都不传则 recap。
+- \`local_memory__agent_context\`：把记忆/任务/交接/标准等**编译成带 token 预算的上下文块**（\`budget\` 是**对象**，
   形如 \`{ "maxTokens": 600 }\`；\`sources\` 可选 memories/decisions/tasks/handoffs/standards/observations/code）。
   适合在开始一个任务前先拉一次，看有没有相关前情。
 - 检索结果里 \`[N]\` 是该条重要度（1–5），\`[unacked]\` 表示尚未确认读过。
 - 内置的常驻记忆（用户档案 \`USER.md\`、项目记忆 \`MEMORY.md\`）**仍会作为上下文自动注入**，这是只读的，
   与 MCP 不冲突；⛔ 不要试图把它"同步"进 MCP —— 那是把一份记忆再抄一遍。
 
-## 什么时候切回内置
+## 什么时候离开本技能
 
-设置 → 记忆 → 记忆后端选项 切回「内置记忆金字塔」后，本技能会被停用、\`memory-classify\` 重新启用，
-此后写记忆按 \`memory-classify\` 的四分类口径进 \`lessons/\`。
+记忆后端是**三选一**（设置 → 记忆 → 记忆后端选项），只有第三种换来换去会改变本技能的启停：
+
+- 切回「**内置记忆金字塔**」⇒ 本技能停用、\`memory-classify\` 启用，写记忆按四分类口径进 \`lessons/\`；
+- 切到「**云端 memapi**」⇒ 本技能停用、\`memory-cloud-backend\` 启用 —— ⛔ 那个后端**没有记忆工具**
+  （记忆由对话上游自动注入/写入），所以既不要调 MCP 工具，也不要写 \`lessons/\`。
+- ⇢ 换后端**不迁移数据**：已经写进 MCP 的条目留在 MCP，切走只是不再读写它，不会丢也不会搬。
 
 ## 写进 MCP 记忆时的判据与归属（与内置同一套口径）
 
@@ -71,7 +79,7 @@ description: 记忆后端切成 MCP 记忆服务后的写法与读法。凡是�
 
 | 落点 | 收什么 | 不收什么 |
 |---|---|---|
-| MCP \`memory-write\` 的 \`mistake\` | 踩过的坑、被纠正的事 | 一次性环境故障 |
+| MCP \`local_memory__memory_write\` 的 \`mistake\` | 踩过的坑、被纠正的事 | 一次性环境故障 |
 | \`decision\` | 定下来的做法与取舍 | 还没定的事 |
 | \`pattern\` | 可复用的套路 | 单次临场处理 |
 | \`code_fact\` | 代码里读不出来的事实（约定、隐式契约） | 函数签名、目录结构（读代码就有） |
@@ -86,7 +94,7 @@ description: 记忆后端切成 MCP 记忆服务后的写法与读法。凡是�
 \`## 待入 MCP（自动捕获，落库后删除）\` 一节（物理落点是 \`lessons/misc.md\`）。
 
 看到这一节时**逐条处理**：
-1. 按上面的 type 映射调 \`memory-write\`（候选通常是 \`mistake\`，定下来的做法是 \`decision\`）；
+1. 按上面的 type 映射调 \`local_memory__memory_write\`（候选通常是 \`mistake\`，定下来的做法是 \`decision\`）；
 2. 成功后把这行从该节删掉（编辑 \`lessons/misc.md\`，保留节标题）；
 3. ⛔ 不要把它留在 lessons 里当第二份记忆，也不要只写 MCP 不删——那会让同一件事每轮都被重新提醒。
 

@@ -44,6 +44,25 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
   const [embedBusy, setEmbedBusy] = useState(false);
   const [embedProg, setEmbedProg] = useState<{ percent?: number; speed?: string; remaining?: string; message?: string } | null>(null);
 
+  /* 切换知识库后端：写设置 + **联动连接器**（主进程 applyKbBackend），并按**真实结果**提示。
+     ⛔ 不能只看设置写成功就报「已切换」—— 切云端时若账号没开通权益，连接器会被停用，
+        模型侧根本拿不到 `cloud_kb__*`，这时必须如实说「未接通」，否则用户以为云端已经在用。 */
+  const switchKbBackend = async (next: "local" | "cloud") => {
+    setKbBackend(next);
+    try {
+      const r: any = await window.codex.kbBackendSet?.(next);
+      if (next === "cloud") {
+        if (r?.connector?.applied === false) setNotice(`已切到云端，但连接器未接通：${r.connector.note ?? "原因未知"}（模型侧暂时拿不到云端工具）`);
+        else if (r?.connector?.note) setNotice(`已切到云端，但未接通：${r.connector.note}（账号可能未开通云端知识库）`);
+        else setNotice("知识库已切到云端（weknora）");
+      } else {
+        setNotice("知识库已切到本地项目库（云端工具已从模型侧移除）");
+      }
+    } catch (error: any) {
+      setNotice(`切换失败：${error?.message ?? error}`);
+    }
+  };
+
   const refreshEmbedStatus = useCallback(async () => {
     try { setEmbedInstalled(Boolean((await window.codex.getKbEmbedStatus())?.installed)); }
     catch { setEmbedInstalled(false); }
@@ -146,14 +165,16 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
 
   return (
     <section className="settings-section stack kb-page">
-      {/* 10-20：知识库后端二选一 —— 本地项目库 / 云端 weknora（MCP） */}
+      {/* 10-20：知识库后端二选一 —— 本地项目库 / 云端 weknora（MCP）。
+          ⛔ 切换**必须**落到连接器上（`kb:backend-set` 会启用/停用 cloud-kb 连接器并失效工具缓存），
+             否则设置变了、云端 6 个工具还在模型工具列表里 ⇒ 模型拿云端工具去查本地库。 */}
       <div className="memory-mode-switch" role="tablist" aria-label="知识库来源">
         <button role="tab" aria-selected={kbBackend === "local"} className={`memory-mode-card ${kbBackend === "local" ? "active" : ""}`}
-          onClick={() => { setKbBackend("local"); void window.codex.kbBackendSet?.("local").then(() => setNotice("知识库已切到本地项目库")); }}>
+          onClick={() => { void switchKbBackend("local"); }}>
           <div className="memory-mode-body"><strong>本地知识库</strong><span>项目级 · 文件随项目走 · 离线可用</span></div>
         </button>
         <button role="tab" aria-selected={kbBackend === "cloud"} className={`memory-mode-card ${kbBackend === "cloud" ? "active" : ""}`}
-          onClick={() => { setKbBackend("cloud"); void window.codex.kbBackendSet?.("cloud").then(() => setNotice("知识库已切到云端（weknora）")); }}>
+          onClick={() => { void switchKbBackend("cloud"); }}>
           <div className="memory-mode-body"><strong>云端知识库</strong><span>weknora · 每账号独立库 · 用 MCP 工具检索</span></div>
         </button>
       </div>
@@ -162,12 +183,14 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
           <div className="memory-center-block-head">
             <div>
               <strong>当前使用云端知识库</strong>
-              <span>库与文档由云账号管理；模型侧通过 MCP 工具检索（ask / search_knowledge / grep_chunks / list_documents / read_document）。下面的本地库导入与检索在此模式下<b>不生效</b>（数据不会被删除，切回本地即可继续用）。</span>
+              <span>库与文档由云账号管理；模型侧通过 MCP 工具检索（<code>cloud_kb__ask</code> / <code>cloud_kb__search_knowledge</code> / <code>cloud_kb__grep_chunks</code> / <code>cloud_kb__list_documents</code> / <code>cloud_kb__read_document</code> / <code>cloud_kb__list_knowledge_bases</code>）。下面的本地库导入与检索在此模式下<b>不生效</b>（数据不会被删除，切回本地即可继续用）。</span>
             </div>
           </div>
         </div>
       ) : null}
-      <div className="settings-copy"><h2>知识库<PageInfo text={<>项目级本地知识库：文档落在 <code>{workspace}\.codex-harness\knowledge\</code>，随项目走。检索 v1 = 分块全文评分（零依赖、离线可用）；语义向量检索后端（LanceDB + 本地 embedding）将在开发工具页按需提供。</>} helpKey="knowledge-base" label="知识库" /></h2></div>
+      {/* ⛔ 10-20：这块讲的是**本地库**。云端后端下它不再生效，标题必须如实标明 ——
+          否则用户看到「文档落在 <workspace>/…」会以为这就是模型正在查的东西（两套库是独立数据）。 */}
+      <div className="settings-copy"><h2>{kbBackend === "cloud" ? "本地知识库（当前后端=云端，仅可查看）" : "知识库"}<PageInfo text={<>项目级本地知识库：文档落在 <code>{workspace}\.codex-harness\knowledge\</code>，随项目走。检索 v1 = 分块全文评分（零依赖、离线可用）；语义向量检索后端（LanceDB + 本地 embedding）将在开发工具页按需提供。</>} helpKey="knowledge-base" label="知识库" /></h2></div>
 
       {/* 本地语义后端：未安装时给下载卡片（进度/速度/剩余），装完卡片消失 */}
       {embedInstalled === false ? (

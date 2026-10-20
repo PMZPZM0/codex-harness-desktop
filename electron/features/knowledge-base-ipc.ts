@@ -15,6 +15,26 @@ import path from "node:path";
 
 const KB_CHANNELS = ["kb:list", "kb:add-text", "kb:add-files", "kb:remove", "kb:search", "kb:read", "kb:embed-status", "kb:embed-install", "kb:embed-uninstall", "kb:backend-get", "kb:backend-set"];
 
+/**
+ * 把「知识库后端」落到连接器上（10-20）。
+ *
+ * ⛔ 为什么走 require 能力探测而不是直接 import：`cloud-kb-ipc.ts` 依赖 `cloud-api.ts`，
+ *   而**云助手仓没有这两个文件** —— 静态 import 会直接把那边编译搞红（TS2307，已踩过一次）；
+ *   `import("./x")` 同样会被 TS 解析。`require("字面量")` 不解析、返回 any，缺失即降级。
+ */
+async function applyKbConnectorLink(backend: "local" | "cloud"): Promise<{ applied: boolean; note?: string }> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const req: any = typeof require === "function" ? require : null;
+    const mod: any = req ? req("./cloud-kb-ipc") : null;
+    if (typeof mod?.applyKbBackend !== "function") return { applied: false, note: "本仓无云端知识库模块（只存设置）" };
+    const reply: any = await mod.applyKbBackend(backend);
+    return { applied: true, note: reply?.ok === false ? String(reply?.error || "not-activated") : undefined };
+  } catch (error: any) {
+    return { applied: false, note: String(error?.message ?? error) };
+  }
+}
+
 /** 语义向量档的 embedding 函数：**本地后端优先**（开发工具页「知识库本地语义检索」装了就用，
  *  完全离线、不依赖供应商）；未装则回落供应商 /embeddings（与「AI 润色」同一条配置）；
  *  两者都不可用时返回 undefined ⇒ searchDocsSmart 自动只用全文档，永不报错。 */
@@ -77,7 +97,13 @@ export const knowledgeBaseFeature = defineFeature<null>({
     ipcHost.handle("kb:backend-set", async (_event, backend: "local" | "cloud" = "local") => {
       const next = backend === "cloud" ? "cloud" : "local";
       await saveAppSettings(app.getPath("userData"), { kbBackend: next });
-      return { backend: next };
+      /* ⛔⛔ 10-20：光存设置等于**什么都没发生** —— 连接器的启用状态才是模型看得见的东西。
+         切 cloud ⇒ 启用 cloud-kb 连接器（拉凭据）；切 local ⇒ 停用它。
+         工具面是否互斥由 backend-routing 的第二道过滤兜底，这里管「能不能连」。
+         ⛔ 云助手仓没有 cloud-kb-ipc ⇒ 用 require 做能力探测（不做模块解析、缺失即降级），
+            不能因为另一仓缺文件就把这边编译搞红。 */
+      const link = await applyKbConnectorLink(next);
+      return { backend: next, connector: link };
     });
     ipcHost.handle("kb:list", (_event, input: { workspace?: string } = {}) => {
       const workspace = String(input?.workspace ?? "").trim();

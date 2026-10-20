@@ -982,6 +982,10 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
 
     const skillsSrc = readFileSync(join(ROOT, "electron", "builtin-skills.ts"), "utf8");
     (/setEnabled\("memory-mcp-backend", backend === "mcp"\)/.test(skillsSrc) && /setEnabled\("memory-classify", backend === "builtin"\)/.test(skillsSrc) ? ok : fail)("【150】两个记忆技能按后端互斥启用（同时生效会让模型收到两套写法）");
+    /* 10-20 补第三支：cloud 既不是 builtin 也不是 mcp —— 此前只有两态时选 cloud 会让**两个技能都停用**，
+       模型没有任何写法指引，而指令又把它当内置 ⇒ 照着手写 lessons/（云端读不到 = 白写）。 */
+    (/setEnabled\("memory-cloud-backend", backend === "cloud"\)/.test(skillsSrc) ? ok : fail)("【150】云端后端必须启用 memory-cloud-backend（三态互斥；缺这支 ⇒ cloud 下模型两手空空）");
+    (/setEnabled\("knowledge-backend"/.test(skillsSrc) ? fail : ok)("【150】知识库技能**不参与互斥**（setEnabled 是强制改名，会把用户的手动停用抢回去）");
     (skillsSrc.includes("MEMORY_MCP_SKILL") && existsSync(join(ROOT, "electron", "builtin-skills", "13-skill-memory-mcp.ts")) ? ok : fail)("【150】MCP 记忆后端技能存在且已注册到内置技能清单");
 
     const instPath = join(ROOT, "scripts", "install-memory-mcp.cjs");
@@ -1048,10 +1052,14 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     const devSrc150 = readFileSync(join(ROOT, "electron", "developer-instructions.ts"), "utf8");
     /* ⛔ 断言打到**代码**而不是注释（09-25 代码审查抓到：原来只 grep `effectiveMemoryBackend()` /
        `MEMORY_MCP_BACKEND_SKILL`，而这两个词**在文件头注释里也出现** ⇒ 把实现换成常量也照样绿）。 */
-    (/const mcpBackend = effectiveMemoryBackend\(\) === "mcp";/.test(devSrc150) ? ok : fail)("【150】开发者指令按**生效后端**生成（⛔ 硬编码 memory-classify 会把模型指向已停用的技能）");
-    (/mcpBackend \? MEMORY_MCP_BACKEND_SKILL : MEMORY_CLASSIFY_SKILL/.test(devSrc150) ? ok : fail)("【150】后端=mcp 时指令改用 memory-mcp-backend（写入方式随之改成 MCP 工具）");
+    /* 10-20：后端判定搬到 backend-routing.ts（单一真相源）后，判据跟着**接线**走 ——
+       断言指令文件不再自己算后端，而是读 memoryRoute()；三态分支少一支就是那个后端收到别人的写法。 */
+    (/const backend = memoryRoute\(\)\.backend;/.test(devSrc150) ? ok : fail)("【150】开发者指令按**生效后端**生成（走 backend-routing.memoryRoute 单一真相源；⛔ 自己写 if 判后端会与工具面/技能脱钩）");
+    (/backend === "mcp" \? MCP_MEMORY_INSTRUCTIONS : backend === "cloud" \? CLOUD_MEMORY_INSTRUCTIONS : MEMORY_INSTRUCTIONS/.test(devSrc150) ? ok : fail)("【150】记忆写法**三态**分岔都要在（内置 / MCP / 云端）—— 少一支 ⇒ 那个后端收到别人的写法（写错位置的直接原因）");
+    (/const route = memoryRoute\(\)[\s\S]{0,200}?const memorySkill = route\.skill;/.test(devSrc150) ? ok : fail)("【150】指令点名的技能名取自 memoryRoute().skill（⛔ 硬编码技能名会指向已停用的那个）");
+    (/text \+= backendRoutingBlock\(\)/.test(devSrc150) ? ok : fail)("【150】后端路由块必须拼进指令（宿主注入权威值 + 工具面交叉核对；否则模型只能靠猜）");
     (/gateAndReviewInstructions\(\)/.test(devSrc150) && !/GATE_AND_REVIEW_INSTRUCTIONS\b/.test(devSrc150) ? ok : fail)("【150】记忆写法那段是**函数**（内部读后端）而不是常量 —— 保证 boot 的过期比对与写出逐字同源");
-    (devSrc150.includes("memory-write") ? ok : fail)("【150】MCP 口径的指令点名 memory-write（不是笼统说去用 MCP）");
+    (devSrc150.includes("local_memory__memory_write") ? ok : fail)("【150】MCP 口径的指令点名**真实暴露名** local_memory__memory_write（带连接器前缀；⛔ 写 memory-write 模型找不到工具）");
     const packSrc150 = readFileSync(join(ROOT, "electron", "skill-pack.ts"), "utf8");
     (/MEMORY_MCP_BACKEND_SKILL = "memory-mcp-backend"/.test(packSrc150) ? ok : fail)("【150】MCP 后端技能名的单一真相源在 skill-pack（与内置技能目录名同源）");
     /* 切换必须**当场落盘**：此前只在启动链里同步 ⇒ 不重启就等于没切。 */

@@ -18,6 +18,9 @@
  */
 import { spawn } from "node:child_process";
 import { decryptSecret, readConnectors } from "./main/07-connectors-io";
+/* 10-20：工具名生成 + 「哪套后端该暴露」的判定都在 backend-routing.ts（单一真相源）。
+   ⛔ 不许在本文件再写一份前缀/过滤规则 —— 那正是「指令教的名字 ≠ 工具列表里的名字」的来源。 */
+import { isConnectorBlockedByBackend, mcpToolName } from "./backend-routing";
 
 export type McpToolSpec = {
   /** 暴露给模型的工具名（加前缀避免与内置撞名，如 kb__search_knowledge） */
@@ -44,11 +47,8 @@ type ConnectorRow = {
   encryptedSecrets?: Record<string, string>;
 };
 
-/** 工具名前缀：`<connectorId 简化>__<原工具名>`，⛔ 只用 [a-zA-Z0-9_]（OpenAI function name 限制） */
-function toolPrefix(connectorId: string): string {
-  const safe = String(connectorId || "mcp").replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 24);
-  return `${safe}__`;
-}
+/* 工具名 ⊆ backend-routing.ts 的 `mcpToolName`（唯一生成器）；
+   ⛔ 这里不再有本地前缀函数 —— 指令/技能引用的是同一个函数算出来的名字。 */
 
 /** 从 SSE 文本里抽 JSON（响应可能是 `event: message\ndata: {...}` 多帧） */
 function parseMcpBody(text: string, contentType: string): any {
@@ -234,10 +234,19 @@ export async function listMcpDynamicTools(force = false): Promise<McpToolSpec[]>
   if (!force && cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.tools;
   let rows: ConnectorRow[] = [];
   try { rows = (await readConnectors()) as ConnectorRow[]; } catch { rows = []; }
+  /* ⛔⛔ 10-20 第二道过滤：**受后端管辖的连接器**（local-memory / cloud-memory / cloud-kb）
+     只有属于当前后端时才暴露工具。第一道（enabled）不够 —— 知识库切回「本地」时 cloud-kb
+     连接器仍是 enabled（凭据在，只是不该用），记忆切到 builtin 时同理 ⇒ 模型会看到两套后端工具，
+     「该调哪个」只能靠猜，猜错就是写错位置。判定单一真相源 = backend-routing.ts。
+     ⛔ 只挡这三个：tencent-docs / cos 之类与后端无关的连接器照旧暴露。 */
   const out: McpToolSpec[] = [];
   for (const row of rows) {
     if (row?.enabled === false) continue;
     const id = String(row?.id || row?.name || "mcp");
+    if (isConnectorBlockedByBackend(id)) {
+      console.log(`[mcp-bridge] ${id}: 不属于当前后端 ⇒ 不暴露`);
+      continue;
+    }
     const url = String(row?.url || "").trim();
     const stdio = url ? null : stdioConnOf(row);
     if (!url && !stdio) continue;                 // 既没 url 也没 command ⇒ 配了一半的残项，跳过
@@ -255,7 +264,7 @@ export async function listMcpDynamicTools(force = false): Promise<McpToolSpec[]>
       const tools = stdio ? await withStdio(stdio, (s) => s.call("tools/list", {}).then(normalizeTools)) : await listToolsOn(url, token);
       for (const t of tools as Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }>) {
         out.push({
-          name: toolPrefix(id) + t.name.replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 40),
+          name: mcpToolName(id, t.name),
           description: t.description || `${id} 提供的 ${t.name}`,
           inputSchema: t.inputSchema || { type: "object", properties: {} },
           serverId: id,
