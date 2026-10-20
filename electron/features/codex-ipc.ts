@@ -74,6 +74,21 @@ export const codexFeature = defineFeature<null>({
       if (method === "thread/start") {
         const startCwd = String((params as any)?.cwd ?? "");
         if (startCwd) ensureProjectAgentsMd(startCwd);
+        /* 10-20：把已配 MCP 连接器的工具接进 dynamicTools —— 引擎 0.157 起内置 MCP 工具
+           **延迟暴露**（模型侧看不到 memory_write / 云端知识库的 ask 等），dynamicTools 不受此限。
+           ⛔ 只合并、不覆盖调用方传进来的那批（memory_recall / team_member_invoke 等）。
+           ⛔ 失败静默：拉不到工具不能挡住 thread/start。 */
+        try {
+          const { listMcpDynamicTools, toDynamicTools } = await import("../mcp-bridge");
+          const mcpTools = toDynamicTools(await listMcpDynamicTools());
+          if (mcpTools.length) {
+            const existing = Array.isArray((params as any)?.dynamicTools) ? (params as any).dynamicTools : [];
+            (params as any).dynamicTools = [...existing, ...mcpTools];
+            console.log(`[mcp-bridge] thread/start 注入 ${mcpTools.length} 个 MCP 工具`);
+          }
+        } catch (error: any) {
+          console.warn("[mcp-bridge] 注入失败（不影响 thread/start）：", String(error?.message ?? error).slice(0, 160));
+        }
       }
       /* ⛔⛔ 老会话的工具面升级（10-11 实测定案，与「resume 会重注册工具」的旧认知相反）：
          引擎的工具面**只在 spawn 时定死**，来源 = rollout 首行 `session_meta.dynamic_tools`
