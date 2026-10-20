@@ -208,14 +208,16 @@ export function MemorySearchPane({ app }: { app: HarnessAppApi }) {
   );
 }
 
-/** ⑤ 记忆保存在哪（本地 / 云端 + 云端配置）→ 挂进「记忆后端选项」弹窗
+/** ⑤ 内置金字塔保存在哪（本机 memory.json ⇄ TencentDB Gateway + 云端配置）→ 挂进「记忆后端选项」弹窗
  *  ⛔ 只搬「保存位置」这一段：工作区开关那一行**面板里已经有**（BackendConsolePanel），
- *    不重复渲染同一开关（同一切换器出现两次必然状态不同步）。 */
+ *    不重复渲染同一开关（同一切换器出现两次必然状态不同步）。
+ *  ⛔⛔ 这块**只服务内置金字塔**（memoryStore 的本机文件 / Gateway 远端那根轴）——
+ *    MCP 后端存自己的 memory.db、云端后端走 memapi，都不走这里 ⇒ 调用方只在 builtin 下渲染。 */
 export function MemoryModePane({ app }: { app: HarnessAppApi }) {
   return (
     <div className="memory-center-block">
       <div className="memory-center-block-head">
-        <div><strong>记忆保存在哪</strong><span>本地模式只保存在本机 memory.json；云端同步模式会通过 TencentDB Gateway 召回与保存，并保留本机缓存。</span></div>
+        <div><strong>内置金字塔保存在哪</strong><span>只对内置金字塔生效：存本机 memory.json，或同步到 TencentDB Gateway（召回 / 回写，并保留本机缓存）。MCP 用自己的 memory.db、云端后端走 memapi，都不受这里影响。</span></div>
         <button className="secondary-setting" onClick={() => app.setMemoryConfigOpen(true)}><Settings2 size={13} />云端配置</button>
       </div>
       <div className="memory-mode-switch" role="tablist" aria-label="记忆来源">
