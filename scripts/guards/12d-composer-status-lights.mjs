@@ -77,5 +77,14 @@ ok(timelineCss.includes("max(var(--chat-side-reserve), calc((100% - var(--chat-c
 ok(!timelineCss.includes("50% - 410px") && !css.includes("min(820px, 100% - 46px)"),
   "旧的 820px 死宽已拆除（窗口变大时正文能真正铺开）");
 
+/* ── 输入框按自身宽度自适应（10-21 用户：右侧面板打开后输入框被挤扁，底栏/上方胶囊挤在一起）──
+   失效方式：用 viewport 媒体查询（右栏开合不改 viewport ⇒ 永远不触发）、或只隐藏控件不做状态行换行。 */
+ok(form.includes("composerFormRef") && form.includes("composer-micro") && form.includes("new ResizeObserver(read)") && form.includes("attachComposerForm"),
+  "输入框观察自身宽度并分 composer-narrow / composer-micro 两档（不靠 viewport）");
+ok(/\.composer:is\(\.composer-narrow, \.composer-micro\) \.composer-setting > span \{ display: none; \}/.test(css)
+  && /\.composer-wrap:has\(\.composer-micro\) \.composer-status-row/.test(css)
+  && /grid-template-columns: minmax\(0, 1fr\); row-gap: 4px;/.test(css),
+  "窄宽度：权限/模型/强度只留图标，状态胶囊改上下两行（后台在上、文件/步骤在下）");
+
 console.log(`\n【status-lights】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

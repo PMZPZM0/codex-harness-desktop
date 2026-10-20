@@ -2,7 +2,7 @@
  * ComposerComposerForm —— MainStageComposer 的 JSX 第 2 段（09-22 从 03-composer.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { DEFAULT_EFFORT, pickDefaultEffort, normalizeEffort, ALL_EFFORTS, declaredModelEfforts } from "../../../../../lib/effort";
 import { RelayBalanceBadge, RelayCenterPage } from "../../../../relay";
 /* 云账号板块经它自己的 barrel 取（⛔ 不深链内部文件 —— 分层契约）。 */
@@ -277,6 +277,39 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
     welcomeScratchDir,
     workspace,
   } = app;
+  /* 输入框按自身宽度自适应（10-21 用户：右侧面板打开后输入框被挤扁，底栏与上方胶囊挤在一起）。
+     ⛔ 不能用 viewport 媒体查询：右栏开合只改工作区宽度，viewport 仍是 1280/1920。
+     这里观察 **form 自己**（局部 ref，不受共享 composerWrapRef 多实例影响）。 */
+  const composerFormRef = useRef<HTMLFormElement>(null);
+  const composerObserverRef = useRef<ResizeObserver | null>(null);
+  const [composerWidth, setComposerWidth] = useState(0);
+  /* 回调 ref：元素真正挂上/卸载时才接/断观察器（StrictMode 下 effect 的 ref 时序不稳，
+     直接 observe 在二次挂载时可能拿到 null 后不再触发）。 */
+  const attachComposerForm = useCallback((el: HTMLFormElement | null) => {
+    composerFormRef.current = el;
+    composerObserverRef.current?.disconnect();
+    composerObserverRef.current = null;
+    if (!el) return;
+    const read = () => setComposerWidth(el.clientWidth);
+    read();
+    try {
+      const observer = new ResizeObserver(read);
+      observer.observe(el);
+      composerObserverRef.current = observer;
+    } catch { /* 老环境无 ResizeObserver：下面的 layout effect 仍会在每次渲染校正 */ }
+  }, []);
+  /* 每次渲染后再校正一次：右侧面板开合/工作区变化时，即使 ResizeObserver 没回调也能跟上。 */
+  useLayoutEffect(() => {
+    const el = composerFormRef.current;
+    if (!el) return;
+    const width = el.clientWidth;
+    setComposerWidth((prev) => (prev === width ? prev : width));
+  });
+  const composerSizeClass = composerWidth > 0 && composerWidth < 480
+    ? " composer-micro"
+    : composerWidth > 0 && composerWidth < 640
+      ? " composer-narrow"
+      : "";
   /* ── 输入框上下拖动（10-06 夜三轮，用户对照 Qoder 图二：「输入框加一个上下拖动功能，最高能拖动的
      高度记得设置好，还有最低的」）──────────────────────────────────────────
      把手 = 输入框顶部的细条；拖动改**输入区高度**（--composer-editor-h / --composer-editor-max
@@ -333,7 +366,7 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
     try { localStorage.removeItem("composer-editor-height"); } catch { /* 同上 */ }
   };
   return (
-    <form className="composer" onSubmit={send}
+    <form ref={attachComposerForm} className={`composer${composerSizeClass}`} onSubmit={send}
       style={composerEditorHeight ? ({ "--composer-editor-h": `${composerEditorHeight}px`, "--composer-editor-max": `${composerEditorHeight}px` } as CSSProperties) : undefined}>
       {/* 上下拖动把手（10-06 夜三轮，用户对照 Qoder 图二）：拖 = 改输入区高度（48 ~ min(55vh,560px)），双击复位 */}
       <div className="composer-resize-handle" role="separator" aria-orientation="horizontal" aria-label="拖动调整输入框高度（双击恢复默认）"

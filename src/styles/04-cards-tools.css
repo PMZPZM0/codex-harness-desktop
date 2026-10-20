@@ -1571,6 +1571,40 @@
 .composer-right {
   flex: none;
 }
+/* ── 输入框按**自身宽度**自适应（10-21 用户：右侧面板打开后输入框被挤扁，底栏与上方胶囊挤在一起）──
+   ⛔ 不能用 viewport 媒体查询：右栏开合只改工作区宽度，viewport 还是 1280/1920。
+   这两档由 03-composer.tsx 的 ResizeObserver 打在 .composer-wrap 上。 */
+.composer:is(.composer-narrow, .composer-micro) .composer-actions { gap: 3px; }
+.composer:is(.composer-narrow, .composer-micro) .composer-left { flex: 1 1 auto; min-width: 0; overflow: hidden; gap: 1px; }
+.composer:is(.composer-narrow, .composer-micro) .composer-right { flex: 0 1 auto; min-width: 0; gap: 0; overflow: hidden; }
+.composer:is(.composer-narrow, .composer-micro) .model-controls { min-width: 0; gap: 0; }
+.composer:is(.composer-narrow, .composer-micro) .composer-setting { padding: 0 5px; }
+.composer:is(.composer-narrow, .composer-micro) .composer-setting > span { display: none; }
+.composer:is(.composer-narrow, .composer-micro) .effort-trigger-label { display: none; }
+.composer:is(.composer-narrow, .composer-micro) .composer-status-lights,
+.composer:is(.composer-narrow, .composer-micro) .relay-badge,
+.composer:is(.composer-narrow, .composer-micro) .cloud-points-badge,
+.composer:is(.composer-narrow, .composer-micro) .ctx-badge { display: none; }
+/* 上方两个胶囊：同现时从「左右一排」改成上下两行，各自占满输入框宽度，不再互相挤/压字 */
+.composer-wrap:has(.composer-narrow) .composer-status-row,
+.composer-wrap:has(.composer-micro) .composer-status-row { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
+.composer-wrap:has(.composer-narrow) .composer-status-row .edited-files-card,
+.composer-wrap:has(.composer-micro) .composer-status-row .edited-files-card,
+.composer-wrap:has(.composer-narrow) .composer-status-row .poll-bg-wrap,
+.composer-wrap:has(.composer-micro) .composer-status-row .poll-bg-wrap { grid-column: 1; grid-row: auto; justify-self: stretch; max-width: 100%; }
+.composer-wrap:has(.composer-narrow) .composer-status-row .poll-bg-wrap,
+.composer-wrap:has(.composer-micro) .composer-status-row .poll-bg-wrap { order: -1; } /* 后台胶囊（原左侧）在上，文件/步骤胶囊在下 */
+.composer-wrap:has(.composer-narrow) .edited-files-pill,
+.composer-wrap:has(.composer-micro) .edited-files-pill,
+.composer-wrap:has(.composer-narrow) .poll-bg-pill,
+.composer-wrap:has(.composer-micro) .poll-bg-pill { max-width: 100%; overflow: hidden; }
+.composer-wrap:has(.composer-narrow) .edited-files-pill > span,
+.composer-wrap:has(.composer-micro) .edited-files-pill > span,
+.composer-wrap:has(.composer-narrow) .poll-bg-pill > span,
+.composer-wrap:has(.composer-micro) .poll-bg-pill > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer.composer-micro .enhance-wrap { display: none; }
+.composer.composer-micro .composer-setting .menu-caret { display: none; }
+
 /* ── 输入框底栏「动态状态灯」（10-12）：权限胶囊右侧空位的浮动状态图标 ──
    色彩纪律（DESIGN.md）：--accent=进行中 / --orange=待处理（挂起、等待选择）/ --red=受阻 /
    --ok=成功 / --muted=暂停。呼吸动画只给"活着"的灯，静态灯不闪。 */
