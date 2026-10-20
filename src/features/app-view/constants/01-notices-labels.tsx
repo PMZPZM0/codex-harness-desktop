@@ -117,6 +117,10 @@ export const BUILTIN_DISTRIBUTED_SKILLS: string[] = [
   "memory-classify",
   "skill-audit",
   "memory-mcp-backend",
+  /* 10-20：记忆三态的第三支 + 知识库双后端 —— 两者都必须在这里透出，
+     否则 # 面板看不到（引擎清单要等重扫，保底是唯一无条件透出的通道）。 */
+  "memory-cloud-backend",
+  "knowledge-backend",
   "harness-api",
   "frontend-canvas",
   "visualization-guide",

@@ -143,6 +143,19 @@ export const SKILL_AUDIT_SKILL = "skill-audit";
  *  但技能没配套，模型还在往 lessons/ 手写」）。 */
 export const MEMORY_MCP_BACKEND_SKILL = "memory-mcp-backend";
 
+/** 云端记忆后端技能名（10-20 补）。**第三态**：cloud 既不是 builtin 也不是 mcp ——
+ *  这个后端**没有记忆工具**（memapi 只有 OpenAI 兼容转发口，记忆由对话上游自动注入/写入）。
+ *  ⛔ 必须与 `memory-classify` / `memory-mcp-backend` 组成三态互斥：此前只有两态，
+ *    选 cloud 时两个技能**都被停用**、指令又把它当内置 ⇒ 模型照着手写 `lessons/`，
+ *    而云端根本不读（用户报障形态：「切了云端，它还在往 lessons 里写」）。 */
+export const MEMORY_CLOUD_BACKEND_SKILL = "memory-cloud-backend";
+
+/** 知识库后端技能名（10-20 补）。知识库也有两套后端（本地项目库 / 云端 weknora），
+ *  但**不需要互斥**：两套的用法不矛盾（本地=读文件、云端=MCP 工具），
+ *  一个技能里写清「先看工具列表里有没有 cloud_kb__ask」即可判定当前是哪套。
+ *  ⛔ 名字在这里、正文在 `builtin-skills/23-skill-knowledge.ts`，指令点名时用本常量。 */
+export const KNOWLEDGE_BACKEND_SKILL = "knowledge-backend";
+
 /**
  * 宿主接口/能力清单技能名（09-25 加，用户报障：「问了接口和拓展清单，Codex 扫半天都没扫到」）。
  *

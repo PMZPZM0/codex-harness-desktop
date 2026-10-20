@@ -47,7 +47,8 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 | 把会话接到 IM | **渠道 Bot**（\`channel-bot:*\` / \`weixin:*\` / \`telegram:*\`） | — |
 | 记录好的桌面流程 | **RPA 配方**（\`rpa:*\`） | 键鼠级回放，适合无 API 的老软件 |
 | 浏览器 / 桌面自动化 | 专技能 \`desktop-automation\`（nuphus MCP）、\`browser-skill\`（playwright-cli） | 应用里关掉能力总闸后这些工具**不存在**，别当成坏了 |
-| 换记忆后端 | 设置 → 记忆 → 记忆后端（内置金字塔 ⇄ MCP 记忆服务） | 二者**互斥**，且装好才允许切 |
+| 换记忆后端 | 设置 → 记忆 → 记忆后端（内置金字塔 / 本地 MCP 记忆服务 / 云端 memapi，**三选一**） | ⛔ 三者互斥：**落点与工具名随后端变**，别混用（内置=写 \`lessons/\`；MCP=\`local_memory__memory_write\`；云端=**无工具**、上游自动收记忆） |
+| 换知识库后端 | 设置 → 知识库 → 后端（本地项目库 / 云端 weknora） | 本地 = \`knowledge_search\` / \`knowledge_add\`；云端 = \`cloud_kb__ask\` 等 6 个 MCP 工具。判定看工具列表里有没有 \`cloud_kb__\` 前缀 |
 | 主题 / 外观 | \`src/lib/themes.ts\`（多主题扩展点） | — |
 
 ⛔ **打包版没有宿主源码**：用户机器上只有一个安装包 ⇒ 那时真正的答案只有**接入类**（技能 / MCP 连接器 / 专家 · 专家团 / 定时任务 / RPA / IM 渠道 / 记忆后端）。要改宿主代码必须在**源码工程**里做；先确认源码在不在手边，再决定说哪种方案。
@@ -345,7 +346,7 @@ SkillHub **专家市场包**（skillhub.cn/skillspackage，55 包）：list 浏�
 通道：expert-market:install, expert-market:list
 
 ### kb（11 通道）
-**项目级本地知识库**（<项目>/.codex-harness/knowledge/）：list 列文档 / add-text·add-files 导入 md·txt·代码文档（自动分块）/ search 分块全文检索（带高亮片段）/ read 读全文 / remove 删除。用户要「把资料存进知识库 / 查项目资料」时用它；语义向量后端为按需下载项。⛔⚠️ 上面是 **IPC 桥（给设置页 UI 用），不是模型工具** —— 模型侧只有两个：\`knowledge_search(query, limit?)\` 检索（workspace 缺省 = 调用者 cwd；装了 Laya 时最相关的一条会被置顶标注）与 \`knowledge_add(title, text, source?)\` 写入（10-04 补，此前模型只能读不能写；⚠️ 同名不覆盖会堆重复条目、⚠️ 写入不做语义向量化、⚠️ 专家/被调度会话不许写、⚠️ 装了 Laya 时低价值内容会被拒写并说明原因——充实内容后重试即可）
+**项目级本地知识库**（<项目>/.codex-harness/knowledge/）：list 列文档 / add-text·add-files 导入 md·txt·代码文档（自动分块）/ search 分块全文检索（带高亮片段）/ read 读全文 / remove 删除。用户要「把资料存进知识库 / 查项目资料」时用它；语义向量后端为按需下载项。⛔⚠️ 上面是 **IPC 桥（给设置页 UI 用），不是模型工具** —— 模型侧只有两个：\`knowledge_search(query, limit?)\` 检索（workspace 缺省 = 调用者 cwd；装了 Laya 时最相关的一条会被置顶标注）与 \`knowledge_add(title, text, source?)\` 写入（10-04 补，此前模型只能读不能写；⚠️ 同名不覆盖会堆重复条目、⚠️ 写入不做语义向量化、⚠️ 专家/被调度会话不许写、⚠️ 装了 Laya 时低价值内容会被拒写并说明原因——充实内容后重试即可）。⛔⛔ **但只有「知识库后端 = 本地」时才是这两个**：后端切到**云端 weknora** 后，检索与写入一律走 MCP 连接器 \`cloud-kb\` 的工具（\`cloud_kb__ask\` / \`cloud_kb__search_knowledge\` / \`cloud_kb__grep_chunks\` / \`cloud_kb__list_documents\` / \`cloud_kb__read_document\` / \`cloud_kb__list_knowledge_bases\`），本地那两个此时**不在工具列表里**。判定方法：工具列表里有 \`cloud_kb__\` 前缀 ⇒ 云端；否则本地。切换**不迁移数据**（本地库与云端库是两份），详见内置技能 \`knowledge-backend\`
 通道：kb:add-files, kb:add-text, kb:backend-get, kb:backend-set, kb:embed-install, kb:embed-status, kb:embed-uninstall, kb:list, kb:read, kb:remove, kb:search
 
 ### whatsnew（3 通道）
@@ -385,7 +386,7 @@ IM 通道 Bot（把某个会话接到 IM 机器人上）
 通道：channel-bot:read, channel-bot:save, channel-bot:test
 
 ### memory（31 通道）
-记忆金字塔全链路（L0~L7 分层读写、召回、蒸馏、清理计划/执行、云端网关、工作区开关、记忆后端二选一）
+记忆金字塔全链路（L0~L7 分层读写、召回、蒸馏、清理计划/执行、云端网关、工作区开关、记忆后端**三选一**：内置金字塔 / 本地 MCP 记忆服务 / 云端 memapi）
 通道：memory:backend:read, memory:backend:set, memory:delete, memory:distill, memory:fabric-entries, memory:fabric-namespaces, memory:fabric-write, memory:gateway:read, memory:gateway:save, memory:gateway:test, memory:hygiene:apply, memory:hygiene:plan, memory:layers:context, memory:layers:read, memory:layers:write, memory:list, memory:mcp:install, memory:mcp:uninstall, memory:mcp:verify, memory:mode-read, memory:mode-set, memory:recall, memory:reset, memory:role-context, memory:role-sessions, memory:save, memory:scale:read, memory:scale:set, memory:search, memory:workspace-enabled:read, memory:workspace-enabled:set
 
 ### rpa（4 通道）

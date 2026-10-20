@@ -4577,10 +4577,10 @@
       "channel": "kb:backend-set",
       "paramsImpl": "backend: \"local\" | \"cloud\"",
       "paramsDecl": "backend: \"local\" | \"cloud\"",
-      "returns": "Promise<{ backend: \"local\" | \"cloud\" }>",
+      "returns": "Promise<{ backend: \"local\" | \"cloud\"; connector?: { applied: boolean; note?: string } }>",
       "invokeArgs": "backend",
       "cast": null,
-      "note": "切换知识库后端并回传生效值"
+      "note": "切换知识库后端并回传生效值 + 连接器联动结果（connector.applied=false ⇒ 只存了设置、工具面没跟上，note 说明原因）"
     },
     {
       "name": "whatsNewState",

@@ -23,6 +23,8 @@ import { MEMORY_HYGIENE_SKILL } from "./builtin-skills/10-skill-memory-hygiene";
 import { MEMORY_CLASSIFY_SKILL } from "./builtin-skills/11-skill-memory-classify";
 import { SKILL_AUDIT_SKILL } from "./builtin-skills/12-skill-skill-audit";
 import { MEMORY_MCP_SKILL } from "./builtin-skills/13-skill-memory-mcp";
+import { MEMORY_CLOUD_SKILL } from "./builtin-skills/22-skill-memory-cloud";
+import { KNOWLEDGE_SKILL } from "./builtin-skills/23-skill-knowledge";
 import { HARNESS_API_SKILL } from "./builtin-skills/14-skill-harness-api";
 import { FRONTEND_CANVAS_SKILL } from "./builtin-skills/20-skill-frontend-canvas";
 import { VISUALIZATION_SKILL } from "./builtin-skills/21-skill-visualization";
@@ -96,6 +98,12 @@ export async function ensureBuiltinSkills(skillsDir: string) {
     ["skill-audit", SKILL_AUDIT_SKILL],
     // 09-25：记忆后端 = MCP 时的写法（与 memory-classify 二选一，见下方互斥切换）
     ["memory-mcp-backend", MEMORY_MCP_SKILL],
+    // 10-20：记忆后端 = **云端 memapi** 时的口径（三态互斥的第三支）——
+    //  ⛔ 这个后端**没有记忆工具**：记忆由对话上游自动注入/写入，模型正确行为是「什么都不做」。
+    ["memory-cloud-backend", MEMORY_CLOUD_SKILL],
+    // 10-20：知识库双后端（本地项目库 / 云端 weknora）的用法与判定 ——
+    //  ⛔ 不参与互斥：两套用法不矛盾，正文自带「先看工具列表里有没有 cloud_kb__ask」的判定。
+    ["knowledge-backend", KNOWLEDGE_SKILL],
     // 09-25：宿主接口清单与可拓展能力（生成器产物，用户：「不用一个个去扫」）——
     //  ⛔ 内容来自 scripts/gen-capability-skill.mjs，勿手改；加通道后重跑生成器（守卫【153】比对）
     ["harness-api", HARNESS_API_SKILL],
@@ -161,6 +169,16 @@ export async function ensureBuiltinSkills(skillsDir: string) {
     };
     await setEnabled("memory-mcp-backend", backend === "mcp");
     await setEnabled("memory-classify", backend === "builtin");
+    /* 10-20 补第三支：云端记忆后端（memapi）——没有记忆工具，记忆由上游自动处理。
+       ⛔ 此前这里只有两态，选 cloud 时 `memory-classify` 与 `memory-mcp-backend` **都被停用**
+          ⇒ 模型两手空空，而指令又把它归进内置文案 ⇒ 照着手写 `lessons/`（云端不读 = 白写）。
+       ⛔ 知识库技能不参与互斥（两套用法不矛盾，正文自带判定），恒启用 —— 但仍受能力总闸约束
+          （`setEnabled` 只在 SKILL.md ⇄ SKILL.md.disabled 之间改名；总闸用的是 .pool-disabled，
+           两者互不覆盖）。 */
+    await setEnabled("memory-cloud-backend", backend === "cloud");
+    /* ⛔ 知识库技能**不在这里启停**：它不参与互斥，而 `setEnabled` 是**强制**改名
+       （会覆盖用户的手动停用 —— 那是后端语义驱动的三件才配享有的"特权"）。
+       它由上面的 entries 循环按常规写入，用户手动停用后不会被这里抢回去。 */
   } catch { /* 不阻塞启动 */ }
 
   /* 目录型内置技能（造梦师技能树，见上方函数说明）。 */
