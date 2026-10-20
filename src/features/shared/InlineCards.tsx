@@ -2,10 +2,11 @@
 import { useMemo, useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { resolveFilePath, lookupKnownFile, openImageLightbox, openFileTextEditor, notifyToast } from "../../lib/ui-channels";
+import { resolveFilePath, lookupKnownFile, openImageLightbox, openFileTextEditor, notifyToast, openMediaPreview } from "../../lib/ui-channels";
 import { basename } from "../../lib/basename";
 import { isImagePath } from "../../lib/is-image-path";
-import { FileText, Zap, Quote, Pencil, FolderOpen, Save, ExternalLink, Copy } from "lucide-react";
+import { mediaKindOf } from "../../lib/media-kind.mjs";
+import { FileText, Zap, Quote, Pencil, FolderOpen, Save, ExternalLink, Copy, Film, Music2, Box } from "lucide-react";
 import type { ParsedUserRefs } from "../../lib/user-refs";
 import { imageDisplaySrc } from "../../lib/image-src.mjs";
 import { imageUrl } from "../../lib/image-url";
@@ -184,14 +185,17 @@ export function InlineFileCards({ text, onOpenFile }: { text: string; onOpenFile
       {confirmed.map((m, index) => {
         const name = basename(m.path) || m.path;
         const openPath = resolvedPaths[m.path];
+        const mediaKind = mediaKindOf(openPath);
+        const mediaTitle = mediaKind === "video" ? "点击播放" : mediaKind === "audio" ? "点击播放音频" : mediaKind === "model" ? "点击预览 3D" : "";
         return (
           <button
             type="button"
-            className="inline-file-card"
+            className={`inline-file-card${mediaKind ? " is-media" : ""}`}
             key={`${m.path}-${index}`}
-            title={isImagePath(openPath) ? `点击预览：${openPath}` : `点击打开：${openPath}`}
+            title={isImagePath(openPath) ? `点击预览：${openPath}` : mediaTitle ? `${mediaTitle}：${openPath}` : `点击打开：${openPath}`}
             onClick={() => {
               if (isImagePath(openPath)) openImageLightbox(openPath, name);
+              else if (mediaKind) openMediaPreview({ source: openPath, kind: mediaKind, title: name });
               else onOpenFile?.(openPath);
             }}
             onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, path: openPath, name }); }}
@@ -200,7 +204,10 @@ export function InlineFileCards({ text, onOpenFile }: { text: string; onOpenFile
               <span className="inline-file-thumb">
                 <img src={imageUrl(resolveFilePath(openPath) ?? openPath)} alt="" loading="lazy" onError={(event) => { (event.currentTarget as HTMLImageElement).style.display = "none"; }} />
               </span>
-            ) : <FileText size={14} />}
+            ) : mediaKind === "video" ? <Film size={14} />
+              : mediaKind === "audio" ? <Music2 size={14} />
+              : mediaKind === "model" ? <Box size={14} />
+              : <FileText size={14} />}
             <span className="inline-file-name">{name}</span>
             {openPath !== name && <span className="inline-file-path">{openPath}</span>}
           </button>
@@ -212,7 +219,9 @@ export function InlineFileCards({ text, onOpenFile }: { text: string; onOpenFile
         menu={menu}
         onOpen={() => {
           const openPath = resolvedPaths[menu.path] ?? menu.path;
+          const mediaKind = mediaKindOf(openPath);
           if (isImagePath(openPath)) openImageLightbox(openPath, menu.name);
+          else if (mediaKind) openMediaPreview({ source: openPath, kind: mediaKind, title: menu.name });
           else onOpenFile?.(openPath);
         }}
         onClose={() => setMenu(null)}
@@ -246,9 +255,23 @@ export function UserRefsRow({ refs, onOpenFile, onQuote, extraThumbs, hideFiles 
             </button>
           );
         }
+        const mediaKind = mediaKindOf(path);
         return (
-          <button type="button" className="ref-file-card" title={name} onClick={() => onOpenFile?.(path)} onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, path: refAbsPath(path), name }); }} key={index}>
-            <FileText size={14} />
+          <button
+            type="button"
+            className={`ref-file-card${mediaKind ? " is-media" : ""}`}
+            title={mediaKind ? `点击${mediaKind === "model" ? "预览 3D" : "播放"}：${name}` : name}
+            onClick={() => {
+              if (mediaKind) openMediaPreview({ source: refAbsPath(path), kind: mediaKind, title: name });
+              else onOpenFile?.(path);
+            }}
+            onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, path: refAbsPath(path), name }); }}
+            key={index}
+          >
+            {mediaKind === "video" ? <Film size={14} />
+              : mediaKind === "audio" ? <Music2 size={14} />
+              : mediaKind === "model" ? <Box size={14} />
+              : <FileText size={14} />}
             <span className="ref-file-name">{name}</span>
           </button>
         );
@@ -270,7 +293,9 @@ export function UserRefsRow({ refs, onOpenFile, onQuote, extraThumbs, hideFiles 
         menu={menu}
         onOpen={() => {
           const abs = refAbsPath(menu.path);
+          const mediaKind = mediaKindOf(abs);
           if (isImagePath(abs)) openImageLightbox(abs, menu.name);
+          else if (mediaKind) openMediaPreview({ source: abs, kind: mediaKind, title: menu.name });
           else onOpenFile?.(abs);
         }}
         onClose={() => setMenu(null)}

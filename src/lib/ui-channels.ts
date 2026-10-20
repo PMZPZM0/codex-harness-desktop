@@ -20,6 +20,14 @@ type ClosePastedTextFn = () => void;
 type ResolvePathFn = (path: string) => string;
 type LookupFileFn = (name: string) => string | null;
 type FileMissingFn = (message: string) => void;
+export type MediaPreviewTarget = {
+  source: string;
+  kind?: "video" | "audio" | "model";
+  title?: string;
+  poster?: string;
+  autoPlay?: boolean;
+};
+type MediaPreviewFn = (target: MediaPreviewTarget) => void;
 
 let lightbox: LightboxFn | null = null;
 let openPastedText: OpenPastedTextFn | null = null;
@@ -29,6 +37,7 @@ let closePastedText: ClosePastedTextFn | null = null;
 let resolvePath: ResolvePathFn | null = null;
 let lookupFile: LookupFileFn | null = null;
 let fileMissing: FileMissingFn | null = null;
+let mediaPreview: MediaPreviewFn | null = null;
 
 export function registerImageLightbox(fn: LightboxFn | null): void { lightbox = fn; }
 export function openImageLightbox(path: string, alt: string): void { lightbox?.(path, alt); }
@@ -54,3 +63,8 @@ export function lookupKnownFile(name: string): string | null { return lookupFile
 
 export function registerFileMissing(fn: FileMissingFn | null): void { fileMissing = fn; }
 export function notifyFileMissing(message: string): void { fileMissing?.(message); }
+
+/** 视频 / 音频 / 3D 预览（10-20）：基座组件（文件卡、附件 chip）只发请求，
+ *  真正的弹窗由 MediaPreviewBridge 在 feature 层挂载 —— 避免 shared → features 反向依赖。 */
+export function registerMediaPreview(fn: MediaPreviewFn | null): void { mediaPreview = fn; }
+export function openMediaPreview(target: MediaPreviewTarget): void { mediaPreview?.(target); }
