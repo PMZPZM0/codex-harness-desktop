@@ -633,10 +633,13 @@ export class VoiceService {
    * 单独走这套缓存。
    */
   async previewVoice(input?: { sid?: number; speed?: number; text?: string; profileId?: string }): Promise<VoiceSpeakResult> {
-    /* ⛔ 有效音色 = 调用方显式指定（档案行试听）> 设置里的当前档案（页面顶部试听/播报）。
-       旧实现只用 `input.profileId` 当缓存键、却没算设置里的值 ⇒ 选中克隆音色后仍命中
-       之前缓存的 VITS 试听 worker，表现就是「换了音色，试听/播报还是旧声音」（10-21 用户报障）。 */
-    const wanted = String(input?.profileId ?? this.currentSettings?.tts?.profileId ?? "").trim();
+    /* ⛔ 有效音色 = 调用方显式指定（档案行试听）> **磁盘上的当前档案**（页面顶部试听/播报）。
+       旧实现读 `this.currentSettings` —— 它只在 start()/设置保存时同步，应用刚启动、还没通话
+       时是默认值（profileId 为空）⇒ 用户选了克隆音色，试听/播报却回退到基础音色（10-21 复测）。
+       缓存键同理：只用调用方入参会让「设置里的档案」变了、试听 worker 仍是旧的 VITS。 */
+    const settings = loadVoiceSettings(this.deps.userDataDir);
+    const wanted = String(input?.profileId ?? settings.tts.profileId ?? "").trim();
+    const numThreads = settings.asr.numThreads;
     // 通话线程只有在「加载的正是这个音色」时才能直接复用；音色不同必须走试听 worker 重建
     if (this.tts && !input?.profileId && wanted === this.ttsProfileWanted) {
       return this.speak(input?.text ?? VOICE_SAMPLE_TEXT, { sid: input?.sid, speed: input?.speed });
@@ -647,14 +650,14 @@ export class VoiceService {
       return { ok: false, error: "语音模型未下载完整，请先到「开发工具 → 语音模型」下载" };
     }
     // worker 配置 key：音色档案 / 识别线程数变化时才重建
-    const key = `${wanted}|${this.currentSettings.asr.numThreads}`;
+    const key = `${wanted}|${numThreads}`;
     if (!this.previewTts || !this.previewTts.alive || this.previewTtsKey !== key) {
       await this.previewTts?.terminate().catch(() => undefined);
       this.previewTts = new VoiceWorkerClient(
         "语音试听",
         TTS_WORKER_SOURCE,
         // 跟正式通话对齐（之前用 1 偶尔触发 sherpa-onnx 的不同代码路径）
-        await this.ttsWorkerData(sherpaPath, this.currentSettings.asr.numThreads, wanted),
+        await this.ttsWorkerData(sherpaPath, numThreads, wanted),
         () => undefined
       );
       this.previewTtsKey = key;
