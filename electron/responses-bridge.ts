@@ -477,6 +477,15 @@ export class ResponsesBridge {
     }
     headers["content-type"] = "application/json";
     headers["content-length"] = String(payload.length);
+    /* 10-20 云端记忆 = 内部网关上行的身份凭据：
+       引擎对记忆端点只发 `Authorization: Bearer sk-mem-…`，而 MEMHUB 向模型代理转发时会用
+       内部服务账号的钥匙覆盖 Authorization，并把 `X-Tdai-User-Key` **原样透传**。
+       这里把记忆 key 同步到这个头，账号服务才能把模型请求归到真实用户（否则按内部账号
+       PPZ11 的可用模型鉴权 —— 用户勾了 4 个却只有 PPZ11 也有的 deepseek 能用）。
+       ⛔ 只对 sk-mem- 记忆 key 生效，普通供应商不着这个头。 */
+    if (!headers["x-tdai-user-key"] && /^bearer\s+sk-mem-/i.test(String(headers.authorization || ""))) {
+      headers["x-tdai-user-key"] = String(headers.authorization).replace(/^bearer\s+/i, "").trim();
+    }
     // 协议特有的头（如 anthropic-version / x-api-key）在透传头之后覆盖
     if (overrides?.headers) Object.assign(headers, overrides.headers);
     /* 10-20 云端记忆：memory-proxy 的注入门是 `injectedSkipped = !conversationId`，

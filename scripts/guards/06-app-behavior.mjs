@@ -80,6 +80,21 @@ console.log(C.bold("\n【24】协议桥：引擎只发 Responses，chat-only 网
   (dialedCount >= 6 ? ok : fail)(`main.ts 内联 provider 配置已桥化（实测 ${dialedCount} 处，10-04 起基线 6）`);
   (preloadTs.includes('"bridge:status"') && typesSrc.includes("bridgeStatus") ? ok : fail)("桥状态 IPC 在 preload 与类型声明里对齐");
   (hookTs.includes("本机协议桥") ? ok : fail)("useModelProviders 明确告知 chat-only 网关已由协议桥接管（不再说「无法使用」）");
+  /* 10-20 云端记忆身份错位（勾了 4 个只有 deepseek 能用）：MEMHUB 用内部账号转发，
+     账号服务按内部账号的 userModels 鉴权。桥必须把记忆 key 补成 MEMHUB 会透传的
+     `X-Tdai-User-Key`，账号服务才能按真实用户鉴权/扣费。 */
+  (bridgeSrc.includes('headers["x-tdai-user-key"]') && bridgeSrc.includes("sk-mem-") ? ok : fail)(
+    "云端记忆桥：sk-mem key 同步补 X-Tdai-User-Key（否则模型请求按内部账号鉴权）"
+  );
+  {
+    const serverPath = join(ROOT, "cloud/server-account/server.js");
+    if (existsSync(serverPath)) {
+      const accountServerSrc = readFileSync(serverPath, "utf8");
+      (accountServerSrc.includes("usernameByMemoryKey") && accountServerSrc.includes("effectiveUsername") && accountServerSrc.includes("X-Tdai-User-Key") ? ok : fail)(
+        "账号服务：内部网关请求按 X-Tdai-User-Key 映射真实用户（鉴权/余额/扣费都用 effectiveUsername）"
+      );
+    }
+  }
 
   // ── 行为级：直接跑编译产物的真实转换函数 ──
   const compiled = join(ROOT, "dist-electron", "responses-bridge.js");
