@@ -39,11 +39,17 @@ const HOP_BY_HOP = new Set([
 ]);
 
 /** 本机云账号的代理令牌（10-20 云端记忆身份的第二凭据）。
- *  ⛔ 懒加载：本文件会被 Node 守卫直接 require，顶层 import cloud-token 会连带加载 electron。 */
+ *  ⛔ 懒加载 + 结构化类型：本文件会被 Node 守卫直接 require，顶层 import cloud-token 会连带加载 electron。
+ *  ⛔ 主仓（桌面版）有 cloud-token；云助手副仓没有这个模块，回退到 limited-benefit 的令牌读取器。
+ *     两处都没有就返回空串（服务器会按 identity-incomplete 拒绝，不会误归属）。 */
 function readCloudProxyToken(): string {
   try {
-    const mod = require("./cloud-token") as typeof import("./cloud-token");
-    return mod.readProxyToken();
+    const mod = require("./cloud-token") as { readProxyToken?: () => string };
+    if (typeof mod.readProxyToken === "function") return mod.readProxyToken();
+  } catch { /* 副仓没有 cloud-token */ }
+  try {
+    const mod = require("./features/limited-benefit-ipc") as { readLimitedBenefitTokenForBoot?: () => string };
+    return typeof mod.readLimitedBenefitTokenForBoot === "function" ? mod.readLimitedBenefitTokenForBoot() : "";
   } catch {
     return "";
   }
