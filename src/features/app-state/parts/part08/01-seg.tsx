@@ -555,7 +555,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           + "workflow_read / workflow_writeback（工作流看板）；expert_list / expert_save / subagent_save（专家与子智能体管理）；"
           + "preview_3d（3D 模型预览：拿到 .glb/.gltf 后在应用内弹出可旋转查看的弹窗）；"
           + "media_source_search / media_source_detail / media_source_open（影视源检索 / 详情 / 直链内播）；media_preview（视频/音频/3D 统一预览）；"
-          + "moekoe_status / moekoe_search / moekoe_play / moekoe_install（MoeKoe 音乐：状态 / 搜歌 / 内播 / 国内镜像安装）；"
+          + "moekoe_status / moekoe_search / moekoe_play / moekoe_lyric / moekoe_qualities / moekoe_install（MoeKoe 音乐：状态 / 搜歌（可按专辑/歌手/歌单/MV） / 内播 / 歌词 / 音质权限 / 国内镜像安装）；"
           + "wallpaper_set（壁纸：pattern/particles/stars/custom 四类，Codex 可自助做图设壁纸）；"
           + "connector_register（注册 MCP 连接器）。传 name=\"list\" 可拿到每个能力的完整参数说明（不确定参数就先调它）。"
           + "⛔ 调度专家 / 专家团 / 子智能体请用专用工具 agent_invoke，不在这里。"

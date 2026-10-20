@@ -238,7 +238,7 @@ function dispatchMcpTools(): unknown[] {
        ⛔ 只做检索与打开，不下载/不缓存/不代理第三方流；结果可用性由源站决定。 */
     {
       name: "media_source_search",
-      description: "在用户配置的影视源（苹果CMS JSON API）里搜索电影/电视剧/动漫。用户让你「找片/搜片/看看有没有…」时先用它，别凭记忆编片名或链接。会并发查询所有源；个别源超时/失败是正常的，结果里会逐源标注。query 留空 = 只列出已配置的源。拿到结果后：要剧集地址用 media_source_detail，要直接看用 media_source_open。",
+      description: "在用户配置的影视源（苹果CMS JSON API）里搜索电影/电视剧/动漫。用户让你「找片/搜片/看看有没有…」时先用它，别凭记忆编片名或链接。会并发查询所有源；个别源超时/失败是正常的，结果里会逐源标注。query 留空 = 只列出已配置的源。拿到结果后：要剧集地址用 media_source_detail，要直接看用 media_source_open。⛔ 影视源仅用于第三方接口调用/检索与打开，不下载/不缓存/不代理内容；版权归源站及权利人，本集成未收费、未二次创作，内容可用性由源站决定。",
       inputSchema: {
         type: "object",
         properties: {
@@ -284,11 +284,12 @@ function dispatchMcpTools(): unknown[] {
     },
     {
       name: "moekoe_search",
-      description: "在 MoeKoe Music（酷狗曲库）里搜索歌曲。返回 hash / albumId / audioId / free / payType / 封面等；用户让你「放首歌/搜首歌」时先用它，别凭记忆编歌名或 hash。free=true 的歌可完整播放；free=false 是付费/会员歌，取决于 MoeKoe 登录账号的 VIP 状态。query 留空只返回安装/API 状态。",
+      description: "在 MoeKoe Music（酷狗曲库）里搜索。type=song 返回 hash/albumId/audioId/free/payType/封面，可直接交给 moekoe_play；type=album/author/special/mv 返回专辑/歌手/歌单/MV 元数据（special=歌单），播歌请再用 type=song 搜歌名。用户让你「放首歌/搜首歌」时先用它，别凭记忆编歌名或 hash。query 留空只返回安装/API 状态。",
       inputSchema: {
         type: "object",
         properties: {
           query: { type: "string", description: "歌名 / 歌手 / 关键词（留空则只查状态）" },
+          type: { type: "string", enum: ["song", "album", "author", "special", "mv"], description: "搜索类型（默认 song；special=歌单）" },
           limit: { type: "number", description: "最多返回几条（默认 20，上限 50）" },
         },
       },
@@ -311,8 +312,31 @@ function dispatchMcpTools(): unknown[] {
       },
     },
     {
+      name: "moekoe_lyric",
+      description: "取 MoeKoe（酷狗）歌曲的 LRC 歌词。优先传 hash（moekoe_search 结果里的）；也可以传 title + artist。返回带时间轴的 LRC 文本，可直接展示或配合播放器使用。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          hash: { type: "string", description: "歌曲 hash（可省略，但至少要有 hash 或 title）" },
+          title: { type: "string", description: "歌名（可省略）" },
+          artist: { type: "string", description: "歌手（可省略，提高匹配准确率）" },
+        },
+      },
+    },
+    {
+      name: "moekoe_qualities",
+      description: "查 MoeKoe（酷狗）歌曲的音质/权限：默认音质、level、pay_type、privilege、是否有 high/lossless，以及当前建议。standard（128k）走客户端同款 ppage 可完整播放；high/lossless 可能需会员/版权。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          hash: { type: "string", description: "歌曲 hash（moekoe_search 结果里的）" },
+        },
+        required: ["hash"],
+      },
+    },
+    {
       name: "moekoe_install",
-      description: "检查/启动/安装 MoeKoe Music。已安装会直接启动；未安装必须先得到用户同意，再带 confirm=true 调用。安装包从 GitHub 最新 release 经国内镜像（gh-proxy / ghfast）下载 x64 安装程序并启动（约 133MB，会改动系统、可能弹 UAC）。⛔ 不要在没有用户明确同意时带 confirm=true。",
+      description: "检查/启动/安装 MoeKoe Music。已安装会直接启动；未安装必须先得到用户同意，再带 confirm=true 调用。安装包从 GitHub 最新 release 经国内镜像（gh-proxy / ghfast）按平台下载：Windows x64 安装程序 / macOS arm64·x64 zip（解压到 Applications），约 130–150MB；会改动系统、可能弹 UAC 或 macOS 安全提示。⛔ 不要在没有用户明确同意时带 confirm=true。",
       inputSchema: {
         type: "object",
         properties: {

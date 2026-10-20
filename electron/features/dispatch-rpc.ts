@@ -750,7 +750,7 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
   if (name === "moekoe_search") {
     try {
       const { searchMoeKoe } = await import("../moekoe");
-      const result = await searchMoeKoe({ query: args.query, limit: args.limit });
+      const result = await searchMoeKoe({ query: args.query, limit: args.limit, type: args.type });
       return { ok: true, output: JSON.stringify(result, null, 2) };
     } catch (error) {
       return { ok: false, error: `MoeKoe 搜索失败：${String((error as Error)?.message ?? error)}` };
@@ -763,6 +763,24 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
       return { ok: true, output: `已在应用内音频播放器打开：${result.title}（MoeKoe API · ${result.quality}）` };
     } catch (error) {
       return { ok: false, error: `MoeKoe 播放失败：${String((error as Error)?.message ?? error)}` };
+    }
+  }
+  if (name === "moekoe_lyric") {
+    try {
+      const { moeKoeLyric } = await import("../moekoe");
+      const result = await moeKoeLyric({ hash: args.hash, title: args.title, artist: args.artist });
+      return { ok: true, output: JSON.stringify(result, null, 2) };
+    } catch (error) {
+      return { ok: false, error: `取歌词失败：${String((error as Error)?.message ?? error)}` };
+    }
+  }
+  if (name === "moekoe_qualities") {
+    try {
+      const { moeKoeQualities } = await import("../moekoe");
+      const result = await moeKoeQualities({ hash: args.hash });
+      return { ok: true, output: JSON.stringify(result, null, 2) };
+    } catch (error) {
+      return { ok: false, error: `查音质失败：${String((error as Error)?.message ?? error)}` };
     }
   }
   if (name === "moekoe_install") {

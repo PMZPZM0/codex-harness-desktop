@@ -97,6 +97,17 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
         {/* 10-08 迁移：语音模型 / 音色克隆模型的选择项已搬到「设置 → 语音通话」——
             用户要求语音相关的东西集中在一处（音色 / 模型 / 播报 / 语速同页）。
             ⛔ 这里只留一句指路，不要再留第二份渲染（同一份状态两处渲染 = 双真相源）。 */}
+        <p className="settings-card-hint">
+          声明：影视源（LibreTV/TVBox）**仅用于第三方接口调用/检索与打开**，不内置、不下载、不缓存、不代理影视内容；本应用未收取费用、未对源站或内容进行二次创作，影视版权归源站及权利人，可用性由源站决定。
+          <button
+            type="button"
+            className="secondary-setting"
+            style={{ marginLeft: 8 }}
+            onClick={() => { void window.codex.getUserData().then((dir) => window.codex.shellReveal(dir)).catch(() => undefined); }}
+          >
+            打开数据目录（media-sources.json）
+          </button>
+        </p>
         <p className="settings-card-hint">语音模型（识别 + 合成）与音色克隆模型已移到<strong>设置 → 语音通话</strong>，和音色、语速同页管理。</p>
       </section>
 

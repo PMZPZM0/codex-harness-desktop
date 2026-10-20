@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildMirrorUrl, normalizeMoeKoeSearch, normalizeMoeKoeSongUrl, pickMoeKoeInstaller } from "../electron/moekoe-core.ts";
+import { buildMirrorUrl, decodeLyricPayload, normalizeMoeKoeBrowse, normalizeMoeKoePrivilege, normalizeMoeKoeSearch, normalizeMoeKoeSearchType, normalizeMoeKoeSongUrl, pickLyricCandidate, pickMoeKoeInstaller } from "../electron/moekoe-core.ts";
 
 const item = {
   FileHash: "B3A52A7A958BF0AED0EBFBA2E9A818B7",
@@ -62,9 +62,61 @@ test("MoeKoe 安装包：优先 x64、跳过 blockmap/ia32", () => {
   assert.equal(pickMoeKoeInstaller([{ name: "x.dmg", browser_download_url: "https://x/a.dmg" }]), null);
 });
 
+test("搜索类型：song/album/author/special(playlist)/mv", () => {
+  assert.equal(normalizeMoeKoeSearchType("playlist"), "special");
+  assert.equal(normalizeMoeKoeSearchType("album"), "album");
+  assert.equal(normalizeMoeKoeSearchType("bad"), "song");
+  const album = normalizeMoeKoeBrowse("album", { data: { lists: [{ albumid: 1, albumname: "魔杰座", singer: "周杰伦", img: "http://x.jpg", songcount: 11, publish_time: "2008-10-15", language: "华语" }] } });
+  assert.equal(album[0].kind, "album");
+  assert.equal(album[0].id, "1");
+  assert.equal(album[0].details.songCount, 11);
+  const author = normalizeMoeKoeBrowse("author", { data: { lists: [{ AuthorId: 3520, AuthorName: "周杰伦", Avatar: "http://a.jpg", AudioCount: 1849, AlbumCount: 49, FansNum: 10 }] } });
+  assert.equal(author[0].kind, "author");
+  assert.equal(author[0].details.audioCount, 1849);
+  const playlist = normalizeMoeKoeBrowse("special", { data: { lists: [{ specialid: 7, specialname: "歌单", nickname: "酷乐", img: "http://p.jpg", song_count: 154 }] } });
+  assert.equal(playlist[0].kind, "playlist");
+  assert.equal(playlist[0].description.includes("154"), true);
+  const mv = normalizeMoeKoeBrowse("mv", { data: { lists: [{ MvID: 9, MvName: "晴天", SingerName: "周杰伦", ThumbGif: "http://v.gif", Duration: 317, FileHash: "H", MvHashMark: "1080P" }] } });
+  assert.equal(mv[0].kind, "mv");
+  assert.equal(mv[0].details.songHash, "H");
+});
+
+test("歌词：候选选择 + decodeContent / base64 解码", () => {
+  const candidate = pickLyricCandidate({ candidates: [{ id: "1", accesskey: "k", product_from: "官方推荐歌词", song: "晴天", singer: "周杰伦" }] });
+  assert.deepEqual(candidate, { id: "1", accesskey: "k", song: "晴天", singer: "周杰伦", source: "官方推荐歌词" });
+  assert.equal(pickLyricCandidate({ candidates: [] }), null);
+  assert.equal(decodeLyricPayload({ decodeContent: "[00:01.00]hi\r\n[00:02.00]there" }), "[00:01.00]hi\n[00:02.00]there");
+  assert.equal(decodeLyricPayload({ content: Buffer.from("[00:01.00]hello").toString("base64") }), "[00:01.00]hello");
+});
+
+test("音质权限：standard 可用，High/Lossless 仅提示", () => {
+  const q = normalizeMoeKoePrivilege({ data: [{ quality: "128", level: 2, pay_type: 3, privilege: 10, fail_process: 12 }] }, { hasHigh: true, hasLossless: false });
+  assert.equal(q.defaultQuality, "128");
+  assert.equal(q.payType, 3);
+  assert.equal(q.hasHigh, true);
+  assert.equal(q.hasLossless, false);
+  assert.equal(q.standard, "available");
+  assert.match(q.note, /ppage/);
+});
+
 test("国内镜像 URL 拼接", () => {
   const url = "https://github.com/a/b.exe";
   assert.equal(buildMirrorUrl("https://gh-proxy.com/", url), "https://gh-proxy.com/https://github.com/a/b.exe");
   assert.equal(buildMirrorUrl("https://ghfast.top", url), "https://ghfast.top/https://github.com/a/b.exe");
   assert.equal(buildMirrorUrl("", url), url);
+});
+
+test("安装包按平台/架构选择：macOS 选 zip，不能拿 Windows exe", () => {
+  const mac = [
+    { name: "MoeKoe_Music_v1.7.1-arm64.dmg", browser_download_url: "https://x/arm64.dmg", size: 1 },
+    { name: "MoeKoe_Music_v1.7.1-arm64.zip", browser_download_url: "https://x/arm64.zip", size: 1 },
+    { name: "MoeKoe_Music_v1.7.1-x64.dmg", browser_download_url: "https://x/x64.dmg", size: 1 },
+    { name: "MoeKoe_Music_v1.7.1-x64.zip", browser_download_url: "https://x/x64.zip", size: 1 },
+    { name: "MoeKoe_Music_Setup_v1.7.1-x64.exe", browser_download_url: "https://x/x64.exe", size: 1 },
+  ];
+  assert.equal(pickMoeKoeInstaller(mac, "darwin", "arm64").name, "MoeKoe_Music_v1.7.1-arm64.zip");
+  assert.equal(pickMoeKoeInstaller(mac, "darwin", "x64").name, "MoeKoe_Music_v1.7.1-x64.zip");
+  assert.equal(pickMoeKoeInstaller(mac, "win32", "x64").name, "MoeKoe_Music_Setup_v1.7.1-x64.exe");
+  assert.equal(pickMoeKoeInstaller([{ name: "MoeKoe_Music_v1.7.1-arm64.dmg", browser_download_url: "https://x/a.dmg", size: 1 }], "darwin", "arm64").name, "MoeKoe_Music_v1.7.1-arm64.dmg");
+  assert.equal(pickMoeKoeInstaller(mac, "linux", "x64"), null);
 });
