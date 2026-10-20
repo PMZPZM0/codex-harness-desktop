@@ -4312,9 +4312,12 @@ export async function run() {
     (/export function CappedToolRun\(\{ label, units, renderUnit,( renderAfter,)? limit = 3 \}/.test(cards112)
       ? ok : fail)("【112】「相同工具连续调用超过 3 条」规则仍在（CappedToolRun 默认 limit = 3）");
     (/hiddenCount = Math\.max\(0, units\.length - limit\)/.test(cards112) ? ok : fail)("【112】超出 limit 的那部分才收进折叠行");
-    (/export function CappedToolSequence\(\{ units, renderUnit,( renderAfter,)? cap = true \}/.test(cards112)
+    (/export function CappedToolSequence\(\{ units, renderUnit,( renderAfter,)? cap = true(, unitLimit)? \}/.test(cards112)
       ? ok : fail)("【112】CappedToolSequence 有 cap 开关（默认开启 = 不改变既有行为）");
     (/if \(cap === false\) return/.test(cards112) ? ok : fail)("【112】cap=false 时逐条原序渲染（不再分组截断）");
+    (/if \(unitLimit && units\.length > unitLimit\)/.test(cards112) && /<CappedToolRun label="过程"/.test(cards112) ? ok : fail)(
+      "【112】直播末段整段上限：工具/命令/编辑/搜索/看图/已结束思考超过 N 条收起（不再只限同一工具）"
+    );
   }
 
   /* ⑥ 样式收口：统计的样式规则已随渲染一起删掉（不留死 CSS）。 */
@@ -4820,18 +4823,23 @@ export async function run() {
     (generalSrc.includes("思考板块展示") && generalSrc.includes('setReasoningDisplayMode("auto")') && generalSrc.includes('setReasoningDisplayMode("strip")') && generalSrc.includes("reasoning-mode-seg") ? ok : fail)(
       "【161】设置 → 控制台有两档切换（自适应展开 / 长条按行），点击即时生效"
     );
-    // ⑮ 用户 10-20 二次报障「思考板块没有进大折叠」：
-    //    strip 模式只在**直播期**内联（看最新一行）；回合结束后必须随过程收进「耗时」大折叠，
-    //    planCompletedFold 不许再为思考开旁路。正文为空时只留标题行，不画空长条身体。
+    // ⑮ 用户 10-20 审查「回合内容超长时，运行中会不会有不进折叠的」：
+    //    直播只把**当前正在直播的思考**内联；已结束的思考与所有 foldable 过程
+    //    （工具/命令/编辑/搜索/看图/协作/子智能体）进过程段。没有外层折叠组的直播末段
+    //    统一上限 8 条，超过收起；正文/用户消息/计划/生成图不隐藏。完成后全进「耗时」大折叠。
     {
       const turnFoldSrc = readFileSync(join(ROOT, "src", "lib", "turn-fold.ts"), "utf8").replace(/\r/g, "");
       const planSrc = readFileSync(join(ROOT, "src", "lib", "turn-fold-plan.mjs"), "utf8").replace(/\r/g, "");
       const queueSrc = readFileSync(join(ROOT, "src", "features", "session-queue", "SessionQueue.tsx"), "utf8").replace(/\r/g, "");
-      (/useReasoningDisplayMode/.test(queueSrc) && /buildSegments\(units, !running, \{ inlineThinking \}\)/.test(queueSrc) && /planCompletedFold\(units, finalUnit\.item\.id\)/.test(queueSrc) && !/planCompletedFold\(units, finalUnit\.item\.id, \{ inlineThinking \}\)/.test(queueSrc) ? ok : fail)(
-        "【161】strip 模式：直播期思考内联，完成态交回 planCompletedFold 大折叠（不露在折叠外）"
+      const cardsSrc = readFileSync(join(ROOT, "src", "features", "session-cards", "SessionCards.tsx"), "utf8").replace(/\r/g, "");
+      (/buildSegments\(units, !running\)/.test(queueSrc) && !/inlineThinking/.test(queueSrc) && /planCompletedFold\(units, finalUnit\.item\.id\)/.test(queueSrc) && !/planCompletedFold\(units, finalUnit\.item\.id, \{/.test(queueSrc) ? ok : fail)(
+        "【161】直播用原分段（已结束思考进过程段）；完成态全交 planCompletedFold 大折叠（无 thinking 旁路）"
       );
-      (/options: \{ inlineThinking\?: boolean \}/.test(turnFoldSrc) && /inlineThinking = Boolean\(options\.inlineThinking\) && !turnFinished/.test(turnFoldSrc) && /unit\.kind === "thinking" && !thinkingLive && !inlineThinking/.test(turnFoldSrc) && !/inlineThinking && isThinking\(unit\)/.test(planSrc) ? ok : fail)(
-        "【161】仅直播期内联（turnFinished 自动关闭）；完成计划不再给 thinking 开旁路"
+      (/unitLimit=\{seg\.kind === "foldable" \? 8 : undefined\}/.test(queueSrc) && /unitLimit\?: number/.test(cardsSrc) && /<CappedToolRun label="过程"/.test(cardsSrc) ? ok : fail)(
+        "【161】直播末段统一上限 8 条：工具/命令/编辑/搜索/看图/已结束思考都收；正文段不传 unitLimit（不藏正文）"
+      );
+      (/unit\.kind === "thinking" && !thinkingLive/.test(turnFoldSrc) && !/inlineThinking/.test(turnFoldSrc) && !/inlineThinking && isThinking\(unit\)/.test(planSrc) ? ok : fail)(
+        "【161】只有当前直播思考内联；完成计划不为 thinking 开旁路"
       );
       (/const hasText = Boolean\(text\.trim\(\)\)/.test(stripSrc) && /hasText && !expanded \?/.test(stripSrc) && /hasText && expanded \?/.test(stripSrc) && /disabled=\{!hasText\}/.test(stripSrc) ? ok : fail)(
         "【161】正文为空时只留标题行（不画空长条身体；等待首段 delta 时也不出现空白块）"

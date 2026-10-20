@@ -21,7 +21,6 @@ import { planCompletedFold } from "../../lib/turn-fold-plan.mjs";
 import { QueueItem } from "../../lib/queue-item";
 import { inputText } from "../../lib/input-text";
 import { reasoningDuration } from "../../lib/reasoning-duration";
-import { useReasoningDisplayMode } from "../../lib/reasoning-display-mode";
 import { ItemView } from "./ItemView";
 
 export function QueuedMessageList({ entries, timers, onSetTimer, onOpenFile, onQuote, onDelete, onStart, onSave, onReorder, dragIndex, setDragIndex }: {
@@ -289,10 +288,7 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
     .filter((item) => !(item.type === "agentMessage" && !String(item.text ?? "").trim()))
     .map((item) => ({ item, kind: classifyUnit(item) })),
   [items]);
-  const reasoningDisplay = useReasoningDisplayMode();
-  // strip 模式思考始终内联：不参与过程折叠（否则收起后只剩「深度思考」空长条）。
-  const inlineThinking = reasoningDisplay === "strip";
-  const segments = useMemo(() => buildSegments(units, !running, { inlineThinking }), [units, running, inlineThinking]);
+  const segments = useMemo(() => buildSegments(units, !running), [units, running]);
 
   /* ── 「编辑 <文件> +N -M」行的**就地锚定**（运行中）+ **收尾冻结块**（结束后常驻可见）─────────
      一改（用户纠正）：「在哪个地方就展示在哪个地方，不是一直在新消息下面，这样多丑」——
@@ -387,7 +383,7 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
           <CappedToolSequence units={seg.units} cap={false} renderUnit={renderLiveUnit} renderAfter={(unit) => liveRowsFor(unit.item.id)} />
         </FoldGroup>
       )
-      : <CappedToolSequence key={`live-${seg.units[0]?.item.id ?? "tail"}`} units={seg.units} renderUnit={renderLiveUnit} renderAfter={(unit) => liveRowsFor(unit.item.id)} />)}</>;
+      : <CappedToolSequence key={`live-${seg.units[0]?.item.id ?? "tail"}`} units={seg.units} renderUnit={renderLiveUnit} renderAfter={(unit) => liveRowsFor(unit.item.id)} unitLimit={seg.kind === "foldable" ? 8 : undefined} />)}</>;
   }
 
   // ── 完成态：与流式态同构的分段折叠 ──
