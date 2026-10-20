@@ -295,7 +295,7 @@ function dispatchMcpTools(): unknown[] {
     },
     {
       name: "moekoe_play",
-      description: "播放 MoeKoe 搜索结果里的某首歌，成功后推入应用内音频播放器（自绘播放条 + 封面）。必须先 moekoe_search 拿 hash/albumId/audioId。免费歌完整播放；付费/会员歌如果当前 MoeKoe 账号没有 VIP，API 只返回试听/风控——失败时如实转述错误，不要假装成功；可在 MoeKoe 客户端登录有会员的账号后再试。",
+      description: "播放 MoeKoe 搜索结果里的某首歌，成功后推入应用内音频播放器（自绘播放条 + 封面）。必须先 moekoe_search 拿 hash。standard（128k，客户端同款 ppage_id）通常可完整播放付费歌；high/lossless 可能触发会员/版权试听或风控——失败时如实转述错误并建议降回 standard，不要假装成功。",
       inputSchema: {
         type: "object",
         properties: {

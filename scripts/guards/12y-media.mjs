@@ -117,6 +117,10 @@ ok(
   "安装检测覆盖自定义盘符的 Program Files（本机 D:\\Program Files\\MoeKoe Music）",
 );
 ok(
+  moekoe.includes("ppage_id=356753938"),
+  "MoeKoe 取流带客户端同款 ppage_id（缺了它付费歌会被判风控/只给 60 秒试听）",
+);
+ok(
   moekoe.includes("gh-proxy.com") && moekoe.includes("ghfast.top") && moekoe.includes("confirm !== true"),
   "国内镜像安装通道 + 未确认不安装的硬闸",
 );
