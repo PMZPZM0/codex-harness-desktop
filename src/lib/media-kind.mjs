@@ -80,7 +80,7 @@ export function isRemoteMediaSource(value) {
 export function mediaDisplaySrc(source) {
   const s = String(source ?? "");
   if (!s) return "";
-  if (/^(data:|blob:|https?:|harness-media:)/i.test(s)) return s;
+  if (/^(data:|blob:|https?:|harness-media:|harness-music:)/i.test(s)) return s;
   return `${MEDIA_SCHEME}${encodeURIComponent(encodeURIComponent(s))}`;
 }
 

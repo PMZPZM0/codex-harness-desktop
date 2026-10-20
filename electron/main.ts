@@ -162,8 +162,8 @@ function enrichScanCountSnapshot() {
      详见 electron/sketch-protocol.ts 头部三条"为什么不能用别的办法"。 */
 protocol.registerSchemesAsPrivileged([
   { scheme: "harness-image", privileges: { secure: true, supportFetchAPI: true } },
-  /* 10-20：本地视频/音频流式播放（支持 Range / 206；handler 在 features/boot.ts，可信根 + MIME 白名单）。 */
-  { scheme: "harness-media", privileges: { secure: true, supportFetchAPI: true, stream: true } },
+  /* 10-20：本地媒体流式播放 + 音乐取流令牌代理（Range/206；handler 在 features/boot.ts）。 */
+  { scheme: "harness-media", privileges: { secure: true, supportFetchAPI: true, stream: true } }, { scheme: "harness-music", privileges: { secure: true, supportFetchAPI: true, stream: true } },
   { scheme: "pet", privileges: { secure: true, supportFetchAPI: true } },
   { scheme: SKETCH_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);

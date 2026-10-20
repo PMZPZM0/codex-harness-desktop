@@ -737,6 +737,43 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
       return { ok: false, error: `无法打开媒体预览：${String((error as Error)?.message ?? error)}` };
     }
   }
+  /* ── MoeKoe Music（10-20）：本地安装的酷狗客户端 API / 安装通道。
+     免费歌完整播放；付费/会员歌取决于 MoeKoe 登录账号 VIP，取不到就返回真实错误。 */
+  if (name === "moekoe_status") {
+    try {
+      const { moekoeStatus } = await import("../moekoe");
+      return { ok: true, output: JSON.stringify(await moekoeStatus(), null, 2) };
+    } catch (error) {
+      return { ok: false, error: `检查 MoeKoe 失败：${String((error as Error)?.message ?? error)}` };
+    }
+  }
+  if (name === "moekoe_search") {
+    try {
+      const { searchMoeKoe } = await import("../moekoe");
+      const result = await searchMoeKoe({ query: args.query, limit: args.limit });
+      return { ok: true, output: JSON.stringify(result, null, 2) };
+    } catch (error) {
+      return { ok: false, error: `MoeKoe 搜索失败：${String((error as Error)?.message ?? error)}` };
+    }
+  }
+  if (name === "moekoe_play") {
+    try {
+      const { playMoeKoe } = await import("../moekoe");
+      const result = await playMoeKoe({ hash: args.hash, albumId: args.albumId, audioId: args.audioId, quality: args.quality, title: args.title, artist: args.artist, artwork: args.artwork });
+      return { ok: true, output: `已在应用内音频播放器打开：${result.title}（MoeKoe API · ${result.quality}）` };
+    } catch (error) {
+      return { ok: false, error: `MoeKoe 播放失败：${String((error as Error)?.message ?? error)}` };
+    }
+  }
+  if (name === "moekoe_install") {
+    try {
+      const { installMoeKoe } = await import("../moekoe");
+      const result = await installMoeKoe({ confirm: args.confirm });
+      return { ok: true, output: JSON.stringify(result, null, 2) };
+    } catch (error) {
+      return { ok: false, error: `MoeKoe 安装/启动失败：${String((error as Error)?.message ?? error)}` };
+    }
+  }
   /* ── 3D 预览（2026-10-05）：模型文件路径过闸（可信根 + 扩展名白名单 + 大小上限，
      与 model-viewer:read 同一道 resolveModelPath）→ 推送渲染层打开弹窗。⛔ 只推不读，
      模型字节由渲染层经 model-viewer:read 自己拉（弹窗是用户主动看的界面）。 */

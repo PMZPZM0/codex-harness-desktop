@@ -15,6 +15,7 @@ const ok = (condition, message) => { checks++; if (!condition) { fails++; consol
 const read = (path) => readFileSync(join(ROOT, path), "utf8");
 
 let boot = "", main = "", preload = "", core = "", rpc = "", sources = "";
+let musicStreams = "";
 try {
   boot = read("dist-electron/features/boot.js");
   main = read("dist-electron/main.js");
@@ -22,6 +23,7 @@ try {
   core = read("dist-electron/features/dispatch-core.js");
   rpc = read("dist-electron/features/dispatch-rpc.js");
   sources = read("dist-electron/media-sources.js");
+  musicStreams = read("dist-electron/music-streams.js");
 } catch {
   console.log("  ✗ 【media】读 dist-electron 产物失败（先 npm run build:electron）");
   process.exit(1);
@@ -103,5 +105,45 @@ ok(
   "常驻指令写了影视源与 media_preview 的用法（工具在表里但模型不知道 = 白配）",
 );
 
-console.log(`\n【media】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
+/* ── MoeKoe Music（10-20）：本地 API 对接 + 安装通道 + 应用内播放 ── */
+const moekoe = codeOnly(read("electron/moekoe.ts"));
+const moekoeCore = codeOnly(read("electron/moekoe-core.ts"));
+ok(
+  moekoe.includes("127.0.0.1:6521") && moekoe.includes("/search") && moekoe.includes("/song/url") && moekoe.includes("/register/dev"),
+  "MoeKoe 对接：6521 /register/dev → /search → /song/url（不是模拟 UI 点击）",
+);
+ok(
+  moekoe.includes("MoeKoe Music.exe") && moekoe.includes("Program Files") && moekoe.includes("findMoeKoeExe"),
+  "安装检测覆盖自定义盘符的 Program Files（本机 D:\\Program Files\\MoeKoe Music）",
+);
+ok(
+  moekoe.includes("gh-proxy.com") && moekoe.includes("ghfast.top") && moekoe.includes("confirm !== true"),
+  "国内镜像安装通道 + 未确认不安装的硬闸",
+);
+ok(
+  moekoeCore.includes("pickMoeKoeInstaller") && moekoeCore.includes("hash_offset") && moekoeCore.includes("20028"),
+  "安装包选择 + 取流响应归一化（试听/风控识别）",
+);
+for (const name of ["moekoe_status", "moekoe_search", "moekoe_play", "moekoe_install"]) {
+  ok(core.includes(`"${name}"`) && rpc.includes(`"${name}"`), `MoeKoe 工具 ${name} 在网关与执行端成对存在`);
+}
+ok(
+  instructions.includes("moekoe_search") && instructions.includes("MoeKoe") && instructions.includes("VIP"),
+  "常驻指令写了 MoeKoe 用法、VIP 限制与安装确认规则",
+);
+ok(
+  boot.includes('"harness-music"') && boot.includes("getMusicStream") && main.includes('"harness-music"') && /media-src[^;]*harness-music:/.test(html),
+  "harness-music 令牌代理仍在（MoeKoe 取流交给应用内播放器）",
+);
+ok(
+  musicStreams.includes("createMusicStream") && musicStreams.includes("getMusicStream") && media.includes("poster?: string") && mediaKind.includes("harness-music:"),
+  "取流令牌 + 音频封面 + mediaDisplaySrc 放行 harness-music:",
+);
+ok(
+  !pkg.dependencies?.axios && !pkg.dependencies?.cheerio && !pkg.dependencies?.["crypto-js"],
+  "MusicFree 插件依赖已移除（专注 MoeKoe，不把远程插件运行时带进包）",
+);
+
+console.log(`
+【media】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

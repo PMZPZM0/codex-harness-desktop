@@ -310,6 +310,12 @@ const MEDIA_SOURCE_INSTRUCTIONS =
   `   To show the user a VIDEO / AUDIO / 3D file you generated or downloaded, call the gateway \`harness_tools({ name: "media_preview", args: { path } })\` (local absolute path in a trusted dir, or an http(s) direct link; 3D opens the existing model viewer). It is not for web play pages — use media_source_open for those.
    \`media_source_search\` (query; omit the query to list the configured sources) queries every source concurrently; per-source failures/timeouts are normal — report which source did not answer instead of hiding it. \`media_source_detail\` (source + id) returns the episode list and play URLs; \`media_source_open\` (source + id + episode, episode = 1-based number or name fragment) opens it: direct m3u8/mp4 goes to the in-app player (HLS handled automatically), a web play page goes to the system browser. ⛔ On current engine builds these MCP tools are deferred and may not appear in your tool list: call them through the gateway \`harness_tools({ name: "media_source_search", args: { query: "…" } })\` (the same for detail/open; \`harness_tools({ name: "list" })\` lists them). ⛔ NEVER invent or guess a title, episode or link, and never claim a source has a title you did not see in the results — these are third-party sources whose catalogue changes. If neither the direct tools nor \`harness_tools\` are available (an older session), say so instead of pretending to search.\n`;
 
+/* ── 第 18 条：MoeKoe Music（10-20 用户装了 MoeKoe，要求「做一个 MCP 同步对接/调用这个播放器」）──
+   搜索/免费歌走本地 6521 API；付费/会员歌取决于 MoeKoe 登录账号 VIP，取不到必须如实报错。
+   安装通道走国内镜像；⛔ 安装必须用户确认后才带 confirm=true。 */
+const MOEKOE_INSTRUCTIONS =
+  `\n18) MOEKOE MUSIC — the user has the third-party KuGou client **MoeKoe Music** installed; it exposes a local API at \`http://127.0.0.1:6521\`. When the user asks to play a song, use \`moekoe_search\` (query) → \`moekoe_play\` (hash + albumId + audioId) instead of inventing a song or URL. Search results carry \`free\` / \`payType\`: \`free=true\` tracks play fully through the in-app audio player; \`free=false\` tracks depend on the VIP status of the account logged into MoeKoe — if play returns a 60-second-trial / verification / no-URL error, report that exact reason and suggest logging into a VIP account in MoeKoe, never claim success or loop retries. \`moekoe_status\` checks installation/API; \`moekoe_install\` can launch it and, with the user's **explicit confirmation** (\`confirm=true\`), download the Windows x64 installer from GitHub via the domestic mirrors (gh-proxy / ghfast) and start it — ⛔ never install without that confirmation. On current engine builds these MCP tools may be deferred: call them through \`harness_tools({ name: "moekoe_search", args: { query: "…" } })\` (same for the others; \`harness_tools({ name: "list" })\` lists them). ⛔ Online listening only — do not download or batch-fetch tracks.\n`;
+
 /* 实时语音（10-08 用户要求：「增加开启与关闭语音通话的状态并在对话框中发送通知，让 Codex 感知何时
    开启了实时语音」「实时语音场景下采用快问快答模式：先直接回答，再给出思考过程，不要先思考后回答」）。
    ⛔ 判据只能是**会话里那条告知**（`【实时语音已开启】` / `【实时语音已结束】`，由应用在开/挂断时发出；
@@ -440,6 +446,8 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   text += TASK_LIST_INSTRUCTIONS;
   // 影视源检索（10-20：用户给的 LibreTV/TVBox 源 + media_source_search/detail/open 三件套）
   text += MEDIA_SOURCE_INSTRUCTIONS;
+  // MoeKoe 音乐（10-20：本机安装的外部播放器 + 6521 API；免费歌完整、会员歌如实报错）
+  text += MOEKOE_INSTRUCTIONS;
   // 实时语音状态（10-08 用户要求：让 Codex 感知语音何时开/关，并在语音场景走「快问快答」）
   text += VOICE_INSTRUCTIONS;
   // 语音播报（10-09：播报内容由 Codex 自己写 —— 这条下发 `voice` 围栏契约；
