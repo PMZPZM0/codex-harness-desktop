@@ -590,8 +590,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   // 09-15 反转：当前回合/流式回合**必须**用真实高度（content-visibility: visible），
   // 否则高度会在「真实值 / 估算值 300px / 0」之间塌陷 → 用户看到「消息滚过时闪一下」。
   // 实测：26ms 内 scrollHeight 在 1073/993/1213/913 之间反复跳。
-  /\.turn-group\.running[^{}]*\{[^{}]*content-visibility:\s*visible/.test(css)
-    ? ok("流式回合用真实高度（content-visibility: visible）—— 不会高度塌陷闪烁")
+  /\.turn-group\.running[^{}]*\{[^{}]*content-visibility:\s*visible/.test(css) && /\.timeline \.turn-group[^{}]*\{[^{}]*content-visibility:\s*visible/.test(css)
+    ? ok("流式/时间线历史回合用真实高度（content-visibility: visible）—— 不会高度塌陷/上滚被顶飞")
     : fail("流式回合没关掉 content-visibility —— 内容高度会在真实值/估算值间塌陷，滚动时闪一下");
 
   const app = readAppUi();

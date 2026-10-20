@@ -269,7 +269,18 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
             return;
           }
           let cancelled = false;
-          const finish = () => { activeHistoryAnchorPin.delete(el); };
+          /* 10-20：加载完若视口仍在预取阈值内，自动补下一页缓冲（不靠用户再滚一下触发）。
+             ⛔ 只在补偿结束后补，且用户确实滚过；`loadEarlierTurns` 自己会在没有更早历史时返回。 */
+          const maybePrefetch = () => {
+            const node = bag.scrollRef.current;
+            if (!node || !bag.userScrolledRef.current) return;
+            const threshold = Math.max(1200, node.clientHeight * 1.5);
+            if (node.scrollTop <= threshold) void bag.loadEarlierTurns(id);
+          };
+          const finish = () => {
+            activeHistoryAnchorPin.delete(el);
+            if (!cancelled) maybePrefetch();
+          };
           const cancel = () => { cancelled = true; finish(); };
           activeHistoryAnchorPin.set(el, cancel);
           const deadline = performance.now() + 1500;
@@ -306,6 +317,11 @@ bag.loadEarlierTurns = loadEarlierTurns as typeof bag.loadEarlierTurns;
    *  scrollTop 补偿）；贴近顶部时每向上滚一屏加载一页，离开顶部自然停止。 */
   function onTimelineScroll(event: React.UIEvent<HTMLDivElement>) {
     const el = event.currentTarget;
+    /* 10-20：锚点补偿自己会改 scrollTop。它同样会触发 scroll 事件；如果只靠 userScrolledRef，
+       用户滚过一次后这个标记一直是 true ⇒ 补偿的每一帧都可能再次触发自动续载，
+       表现为「滚轮一触发就自动往前翻好几页、最后停在上一页/最前」。
+       ⇒ 补偿进行中（含收尾的极短窗口）一律不响应用户滚动信号。 */
+    if (activeHistoryAnchorPin.has(el)) return;
     // 只有用户真的滚过才响应：程序化滚动（打开时跳底、插入内容后的位置补偿）也会把
     // scrollTop 扫过近顶区间，据此加载就成了「没滚也加载」。
     if (!bag.userScrolledRef.current) return;
@@ -317,7 +333,10 @@ bag.loadEarlierTurns = loadEarlierTurns as typeof bag.loadEarlierTurns;
       bag.collapseTurnWindow(id);
       return;
     }
-    if (el.scrollTop > 720) return;
+    /* 10-20：提前预取，别等滚到顶才加载（滚到顶再 fetch = 停一下再跳，永远做不成"无缝"）。
+       至少留 1.2 屏或 1200px 的缓冲；加载后由锚点补偿保持视口，滚轮继续往下就有内容。 */
+    const prefetchThreshold = Math.max(1200, el.clientHeight * 1.5);
+    if (el.scrollTop > prefetchThreshold) return;
     void bag.loadEarlierTurns(id);
   }
 bag.onTimelineScroll = onTimelineScroll as typeof bag.onTimelineScroll;

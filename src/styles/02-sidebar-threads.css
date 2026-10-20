@@ -1016,6 +1016,14 @@
 .turn-group[data-current-turn="true"] > .turn-card {
   content-visibility: visible;
 }
+/* 10-20：时间线渲染窗口内的历史回合也用**真实高度**。
+   真滚轮验收实测：用户上滚 5px，锚点被顶飞 **343px** —— content-visibility:auto 的
+   估算高度在回合进入视口时才结算，整段内容自己位移（跟续载补偿无关）。
+   时间线只渲染窗口内的 5~15 个回合，真实高度代价可控；性能靠 turn window，不靠估算高度。 */
+.timeline .turn-group,
+.timeline .turn-card {
+  content-visibility: visible;
+}
 .turn-group.running .turn-card,
 .turn-group.error .turn-card {
   box-shadow: none;
