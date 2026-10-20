@@ -4811,11 +4811,11 @@ export async function run() {
     (/displayMode === "strip"[\s\S]{0,160}<ReasoningStrip/.test(itemSrc) && /<ReasoningStrip head=\{head\} text=\{displayed\} running=\{running\} revealing=\{revealing\} \/>/.test(itemSrc) ? ok : fail)(
       "【161】strip 模式复用同一份 displayed/追字状态（不复制直播判据）"
     );
-    (/aria-expanded=\{expanded\} onClick=\{toggle\}/.test(stripSrc) && /setExpanded\(\(current\) => !current\)/.test(stripSrc) && /el\.scrollTop = el\.scrollHeight;\n\s*el\.scrollLeft = el\.scrollWidth;/.test(stripSrc) && /scrollTop = 0;\n\s*el\.scrollLeft = 0;/.test(stripSrc) ? ok : fail)(
-      "【161】长条可点击展开/收起；收起贴最新一行（横向贴尾）、展开从头读"
+    (/aria-expanded=\{expanded\} onClick=\{toggle\}/.test(stripSrc) && /setExpanded\(\(current\) => !current\)/.test(stripSrc) && /reasoning-strip-sep/.test(stripSrc) && /reasoning-strip-preview/.test(stripSrc) && /lines\[lines\.length - 1\]/.test(stripSrc) ? ok : fail)(
+      "【161】收起态与过程行同款：标题 + · 最新一行（取最后一条非空行）+ 展开箭头"
     );
-    (/\.reasoning-strip\.collapsed \.reasoning-strip-body \{[\s\S]{0,140}max-height: 22px;[\s\S]{0,80}white-space: nowrap;/.test(styles54) && /\.reasoning-strip\.expanded \.reasoning-strip-body \{[\s\S]{0,140}max-height: min\(50vh, 420px\)/.test(styles54) && /styles\/40-reasoning-strip/.test(stylesEntry) ? ok : fail)(
-      "【161】长条收起只留一行（22px + nowrap），展开最高 50vh 内部滚动；40 号样式已引入"
+    (/\.reasoning-strip-preview \{[\s\S]{0,160}white-space: nowrap;[\s\S]{0,100}text-overflow: ellipsis;/.test(styles54) && /\.reasoning-strip-body \{[\s\S]{0,200}max-height: min\(50vh, 420px\)/.test(styles54) && /styles\/40-reasoning-strip/.test(stylesEntry) ? ok : fail)(
+      "【161】收起只有一行（预览省略号），展开全文最高 50vh 内部滚动；40 号样式已引入"
     );
     (generalSrc.includes("思考板块展示") && generalSrc.includes('setReasoningDisplayMode("auto")') && generalSrc.includes('setReasoningDisplayMode("strip")') && generalSrc.includes("reasoning-mode-seg") ? ok : fail)(
       "【161】设置 → 控制台有两档切换（自适应展开 / 长条按行），点击即时生效"
@@ -4833,7 +4833,7 @@ export async function run() {
       (/options: \{ inlineThinking\?: boolean \}/.test(turnFoldSrc) && /unit\.kind === "thinking" && !thinkingLive && !inlineThinking/.test(turnFoldSrc) && /options = \{\}/.test(planSrc) && /inlineThinking && isThinking\(unit\)/.test(planSrc) ? ok : fail)(
         "【161】分段/完成折叠计划都支持 inlineThinking（默认关闭，不影响自适应档的旧口径）"
       );
-      (/const hasText = Boolean\(text\.trim\(\)\)/.test(stripSrc) && /hasText \? \(/.test(stripSrc) && /disabled=\{!hasText\}/.test(stripSrc) ? ok : fail)(
+      (/const hasText = Boolean\(text\.trim\(\)\)/.test(stripSrc) && /hasText && !expanded \?/.test(stripSrc) && /hasText && expanded \?/.test(stripSrc) && /disabled=\{!hasText\}/.test(stripSrc) ? ok : fail)(
         "【161】正文为空时只留标题行（不画空长条身体；等待首段 delta 时也不出现空白块）"
       );
     }

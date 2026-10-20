@@ -1,92 +1,86 @@
 /* 思考板块 · 长条按行（10-20 用户要求的第二种展示，默认仍是自适应浮窗）：
-   消息流内一条带底色的长条，标题行 + 3 行正文；直播时贴底显示最新几行，
-   点标题/正文展开全文（最高 50vh，内部滚动），再点收起。
+   收起态 = 与过程行（.process-row）同款的一行：标题 + 「· 最新内容」+ 省略号 + 展开箭头，
+   不占第二行；点开后在下方展开全文（最高 50vh，内部滚动），再点收起。
    ⛔ 与 .reasoning-float 互斥，由 localStorage.reasoning-display-mode 决定；
       正文/追字节奏仍由 ReasoningCard 的 displayed 提供，这里不另算。 */
 .reasoning-strip {
   width: 100%;
   max-width: 100%;
-  margin: 2px 0 6px;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--line-strong);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--panel-2) 72%, transparent);
-  overflow: hidden;
-  transition: border-color 0.2s ease, background 0.2s ease;
-}
-.reasoning-strip.live {
-  border-left-color: var(--accent);
-  background: color-mix(in srgb, var(--accent-soft) 45%, var(--panel-2));
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12px;
 }
 .reasoning-strip-head {
   width: 100%;
+  min-height: 26px;
   border: 0;
-  background: transparent;
+  background: none;
   cursor: pointer;
   align-items: center;
-  gap: 6px;
-  padding: 7px 10px 6px;
+  gap: 7px;
+  padding: 0;
   font: inherit;
-  font-size: 11.5px;
-  line-height: 1.4;
   color: inherit;
   text-align: left;
   display: flex;
 }
-.reasoning-strip-head:hover {
-  background: color-mix(in srgb, var(--line-soft) 70%, transparent);
-}
 .reasoning-strip.empty .reasoning-strip-head {
   cursor: default;
-}
-.reasoning-strip.empty .reasoning-strip-head:hover {
-  background: transparent;
 }
 .reasoning-strip.live .reasoning-head {
   color: var(--orange);
   font-weight: 500;
+  flex: none;
 }
 .reasoning-strip.done .reasoning-head {
   color: var(--muted);
+  flex: none;
+}
+.reasoning-strip-sep {
+  flex: none;
+  color: var(--faint);
+}
+.reasoning-strip-preview {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
 }
 .reasoning-strip-hint {
-  margin-left: auto;
   flex: none;
   font-size: 10.5px;
   color: var(--faint);
 }
 .reasoning-strip-caret {
   flex: none;
-  color: var(--accent);
-  opacity: 0.78;
+  color: var(--faint);
+  opacity: 0.8;
   transition: transform 0.18s ease, opacity 0.18s ease;
 }
 .reasoning-strip.expanded .reasoning-strip-caret {
   transform: rotate(180deg);
   opacity: 1;
 }
+.reasoning-strip.expanded .reasoning-strip-head:hover .reasoning-strip-hint,
+.reasoning-strip.collapsed .reasoning-strip-head:hover .reasoning-strip-hint {
+  color: var(--text);
+}
 .reasoning-strip-body {
-  padding: 0 11px 8px;
+  max-height: min(50vh, 420px);
+  margin: 4px 0 4px 20px;
+  padding: 6px 10px;
+  border-left: 2px solid var(--line-strong);
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--panel-2) 55%, transparent);
   color: var(--muted);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 12.5px;
-  line-height: 1.75;
-  cursor: pointer;
-  scrollbar-width: thin;
-}
-.reasoning-strip.collapsed .reasoning-strip-body {
-  /* 收起 = 只有最新一行（12.5px × 1.75 = 21.875px）；nowrap 后横向滚到末尾，
-     看到的是刚输出的尾部，不再堆出下面好几行。 */
-  max-height: 22px;
-  overflow: hidden;
-  white-space: nowrap;
-}
-.reasoning-strip.expanded .reasoning-strip-body {
-  max-height: min(50vh, 420px);
   overflow-y: auto;
-  white-space: pre-wrap;
-  cursor: text;
+  scrollbar-width: thin;
+  font-size: 12.5px;
+  line-height: 1.7;
 }
 
 /* 控制台 · 思考板块展示（两档） */
