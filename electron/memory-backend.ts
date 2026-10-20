@@ -16,12 +16,13 @@ import path from "node:path";
 import { app } from "electron";
 import { readAppSettingsSync } from "./app-settings";
 
-export type MemoryBackend = "builtin" | "mcp";
+export type MemoryBackend = "builtin" | "mcp" | "cloud";
 
 /** 用户选的记忆后端。惰性求值（每次读盘）——⛔ 不要在模块体里求值 userData（main.ts 的 setPath 之前读会漂移）。 */
 export function memoryBackend(): MemoryBackend {
   try {
-    return readAppSettingsSync(app.getPath("userData")).memoryBackend === "mcp" ? "mcp" : "builtin";
+    const raw = readAppSettingsSync(app.getPath("userData")).memoryBackend;
+    return raw === "cloud" ? "cloud" : raw === "mcp" ? "mcp" : "builtin";
   } catch {
     return "builtin"; // 读取失败（userData 未就绪等）时保守回退内置，绝不因此吞掉记忆
   }
@@ -52,7 +53,9 @@ export function localMemoryMcpInstalled(): boolean {
  *  若此时内置也让位 ⇒ **记忆一处都不写 = 彻底丢记忆**，这比"重复"严重得多。
  *  ⇒ 选了 MCP 但不可用时**回退内置**：宁可回到金字塔，也不能丢。 */
 export function effectiveMemoryBackend(): MemoryBackend {
-  if (memoryBackend() !== "mcp") return "builtin";
+  const configured = memoryBackend();
+  if (configured === "cloud") return "cloud";
+  if (configured !== "mcp") return "builtin";
   if (!localMemoryMcpInstalled()) {
     console.warn("[memory] 记忆后端选了 MCP，但服务未安装（入口缺失）⇒ 本轮回退内置记忆金字塔，避免记忆丢失");
     return "builtin";
@@ -109,7 +112,7 @@ export function memoryBackendStatus(): MemoryBackendStatus {
   const installed = localMemoryMcpInstalled();
   const installRoot = localMemoryMcpInstallRoot();
   // ⛔ 与 effectiveMemoryBackend() 同口径（后端可用才认 MCP），但**不重复打 warn** —— 设置页会反复刷新。
-  const effective: MemoryBackend = backend === "mcp" && installed ? "mcp" : "builtin";
+  const effective: MemoryBackend = backend === "cloud" ? "cloud" : backend === "mcp" && installed ? "mcp" : "builtin";
   return {
     backend,
     effective,

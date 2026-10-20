@@ -1498,7 +1498,7 @@
       "channel": "memory:backend:read",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ backend: \"builtin\" | \"mcp\"; effective: \"builtin\" | \"mcp\"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null }>",
+      "returns": "Promise<{ backend: \"builtin\" | \"mcp\" | \"cloud\"; effective: \"builtin\" | \"mcp\" | \"cloud\"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null }>",
       "invokeArgs": "",
       "cast": null,
       "note": "记忆后端二选一：用户选的值 + 实际生效值（装了 MCP 服务才让位）+ 安装命令"
@@ -1506,8 +1506,8 @@
     {
       "name": "setMemoryBackend",
       "channel": "memory:backend:set",
-      "paramsImpl": "backend: \"builtin\" | \"mcp\"",
-      "paramsDecl": "backend: \"builtin\" | \"mcp\"",
+      "paramsImpl": "backend: \"builtin\" | \"mcp\" | \"cloud\"",
+      "paramsDecl": "backend: \"builtin\" | \"mcp\" | \"cloud\"",
       "returns": "Promise<{ backend: \"builtin\" | \"mcp\"; effective: \"builtin\" | \"mcp\"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null }>",
       "invokeArgs": "backend",
       "cast": null,

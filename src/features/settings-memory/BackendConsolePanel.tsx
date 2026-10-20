@@ -22,7 +22,7 @@
  *     + 终态横幅（成功绿 / 失败红 / 未就绪琥珀，⛔ 判定在主进程做一次，这里只展示）。
  */
 import { useCallback, useEffect, useState } from "react";
-import { Database, Server, CircleDot, Check, Download, RefreshCw, Trash2, Copy, CheckCircle2, XCircle, AlertTriangle, X } from "lucide-react";
+import { Database, Server, Cloud, CircleDot, Check, Download, RefreshCw, Trash2, Copy, CheckCircle2, XCircle, AlertTriangle, X } from "lucide-react";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 type BackendStatus = {
@@ -103,7 +103,8 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice }: {
     const detail = ok ? undefined : String(value?.result?.error ?? value?.result?.hint ?? value?.log ?? "").trim().slice(0, 400) || undefined;
     return { tone: ok ? "ok" : "bad", title, detail };
   };
-  const switchJudge = (backend: "builtin" | "mcp") => (value: any): Verdict => {
+  const switchJudge = (backend: "builtin" | "mcp" | "cloud") => (value: any): Verdict => {
+    if (backend === "cloud") return { tone: "ok", title: "已切到云端记忆：对话记忆由 memapi 自动注入与回写，本地金字塔停止写入" };
     if (backend === "mcp" && String(value?.effective ?? "") !== "mcp") {
       return { tone: "warn", title: "已记下选择，但 MCP 服务尚未就绪 —— 当前仍走内置金字塔（记忆不会丢）", detail: String(value?.fallbackReason ?? "").slice(0, 300) || undefined };
     }
@@ -129,15 +130,16 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice }: {
     }
   };
 
-  const pick = (backend: "builtin" | "mcp") => run("switch", switchJudge(backend), () => api()?.setMemoryBackend?.(backend));
+  const pick = (backend: "builtin" | "mcp" | "cloud") => run("switch", switchJudge(backend), () => api()?.setMemoryBackend?.(backend));
 
   const current = status?.effective ?? status?.backend ?? "builtin";
   const ready = status?.installed === true;
   /** 灯色：内置恒绿；MCP 看是否就绪（未装 = 琥珀，装了 = 绿） */
-  const lampOf = (id: "builtin" | "mcp") => (id === "builtin" ? "ok" : ready ? "ok" : "warn");
+  const lampOf = (id: "builtin" | "mcp" | "cloud") => (id === "builtin" ? "ok" : id === "cloud" ? "ok" : ready ? "ok" : "warn");
 
   const DEVICES = [
     { id: "builtin" as const, name: "内置记忆金字塔", icon: <Database size={16} />, desc: "随包内置、离线可用；L0–L7 分层注入", tag: "默认" },
+    { id: "cloud" as const, name: "云端记忆", icon: <Cloud size={16} />, desc: "memapi · 跨设备 · 对话自动注入与回写（需账号已开通记忆）", tag: "需登录" },
     { id: "mcp" as const, name: "MCP 记忆服务", icon: <Server size={16} />, desc: "@vheins/local-memory-mcp · 装到应用数据目录的独立目录", tag: ready ? "已就绪" : "未安装" },
   ];
 
