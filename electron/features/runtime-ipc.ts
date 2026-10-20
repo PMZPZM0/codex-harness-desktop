@@ -147,11 +147,16 @@ function fallbackPromptFor(id: DevRuntimeId, spec: DevRuntimeSpec): string {
   // MoeKoe 是系统级外部客户端：不能套用 install-runtimes.cjs 的「装到 tools/moekoe」模板。
   if (id === "moekoe") {
     return [
-      "帮我在这台电脑上安装 MoeKoe Music（酷狗第三方客户端）。",
-      "应用里「设置 → 开发工具 → MoeKoe 音乐」有手动安装入口；如果下载失败，请在 Harness 会话里调用能力网关 moekoe_install（confirm=true）——它会经 gh-proxy / ghfast 国内镜像下载官方 x64 安装包并启动安装向导。",
-      "⛔ 不要用 install-runtimes.cjs（那里没有 moekoe，MoeKoe 也不是装到 tools 目录）。",
-      "· 装到哪：默认 Program Files\\MoeKoe Music（可在安装向导里改盘）",
-      "· 装完验证：MoeKoe Music 能启动，且 http://127.0.0.1:6521/register/dev 返回 dfid。",
+      "帮我在这台电脑上安装开发工具「MoeKoe Music（酷狗客户端）」。",
+      "背景：应用里「设置 → 开发工具 → MoeKoe 音乐」有手动安装入口；如果下载失败，请按下面的首选做法继续。",
+      "",
+      "· 用途：外部酷狗客户端，Codex 通过它的 6521 API 搜歌/播放",
+      process.platform === "darwin"
+        ? "· 装到哪：/Applications/MoeKoe Music.app（无权限时回落 ~/Applications）；macOS 首次打开如被拦截，去「系统设置 → 隐私与安全性」允许"
+        : "· 装到哪：默认 Program Files\\MoeKoe Music（可在安装向导里改盘）",
+      "· 首选做法：在 Harness 会话里调用能力网关 moekoe_install（confirm=true），它会经 gh-proxy / ghfast 国内镜像下载对应平台安装包并启动安装；⛔ 不要用 install-runtimes.cjs（那里没有 moekoe，MoeKoe 也不是装到 tools 目录）。",
+      "· 网络兜底：GitHub 直链加 gh-proxy / ghfast 加速前缀；下载失败先删掉半截文件再完整重下（续传修不好坏文件）。",
+      "· 装完请验证：MoeKoe Music 能启动，且 http://127.0.0.1:6521/register/dev 返回 dfid；把结果发给我。",
     ].join("\n");
   }
   const steps = FALLBACK_STEPS[id] ?? `重跑本机的一键安装脚本（一条命令只装这一个工具，脚本自带「国内镜像优先 + 逐通道回落 + 坏缓存先删」）：\n    ${fallbackRunner()} ${id}`;

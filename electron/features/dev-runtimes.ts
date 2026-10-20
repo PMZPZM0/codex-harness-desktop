@@ -103,7 +103,7 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   "platform-tools": { name: "Android 平台工具（adb）", description: "让 Codex 通过 adb 控制 Android 手机（USB 或无线调试）：截图、点击、输入、读界面；随包内置，开箱即用", size: "随包 8 MB", marker: "platform-tools\\adb.exe", builtIn: true },
   // 10-20：MoeKoe Music（外部酷狗客户端）—— 系统级安装，不在运行时面板平铺；
   // 由开发工具页的专用卡片消费（hidden），代码侧复用 runtime:list / runtime:install 的进度与并发闸。
-  moekoe: { name: "MoeKoe Music（酷狗客户端）", description: "外部酷狗第三方客户端：Codex 通过它的 6521 API 搜歌/播放；国内镜像下载官方 x64 安装包，安装向导需用户完成（可能 UAC）。", size: "约 133 MB", marker: "moekoe", noUninstall: true, hidden: true },
+  moekoe: { name: "MoeKoe Music（酷狗客户端）", description: "外部酷狗第三方客户端：Codex 通过它的 6521 API 搜歌/播放；按平台下载官方安装包（Windows x64 / macOS arm64·x64），安装向导需用户完成。", size: "约 130–150 MB", marker: "moekoe", noUninstall: true, hidden: true },
 };
 // ⛔ 键放宽到 string：可更新工具清单（runtime-ipc 的 UPDATEABLE_TOOLS）含 mac 专属的
 //    "computer-use"，它**不是**开发工具规格表里的 id（DevRuntimeId 是封闭联合，加它会牵动整张

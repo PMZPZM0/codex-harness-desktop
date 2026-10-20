@@ -121,9 +121,32 @@ ok(
   "安装检测覆盖自定义盘符的 Program Files（本机 D:\\Program Files\\MoeKoe Music）",
 );
 ok(
+  moekoe.includes('process.platform === "darwin"') && moekoe.includes("/Applications") && moekoe.includes("ditto") && moekoe.includes(".zip"),
+  "macOS 适配：/Applications 检测 + zip 用 ditto 解压 + open -a 启动（不是拿 Windows exe）",
+);
+ok(
+  moekoeCore.includes('platform === "darwin"') && moekoeCore.includes("arm64") && moekoeCore.includes(".dmg"),
+  "Mac 安装包按 arm64/x64 选 .zip/.dmg（发布包有 arm64 与 x64 两种）",
+);
+ok(
   moekoe.includes("ppage_id=356753938"),
   "MoeKoe 取流带客户端同款 ppage_id（缺了它付费歌会被判风控/只给 60 秒试听）",
 );
+ok(
+  moekoeCard.includes("仅用于接口调用") && instructions.includes("API invocation only"),
+  "MoeKoe 声明：仅接口调用 / 未收费 / 未二创 已写进卡片与常驻指令",
+);
+ok(
+  devtoolsSrc.includes("仅用于第三方接口调用") && instructions.includes("free and not a derivative work"),
+  "影视源声明：仅第三方接口调用/检索，不下载/不缓存/不代理，版权归源站",
+);
+ok(
+  moekoe.includes("/search/lyric") && moekoe.includes("/lyric?") && moekoe.includes("/privilege/lite") && moekoe.includes("normalizeMoeKoeSearchType"),
+  "MoeKoe 已接文档接口：搜索类型 / 歌词 / 音质权限",
+);
+for (const name of ["moekoe_lyric", "moekoe_qualities"]) {
+  ok(core.includes(`"${name}"`) && rpc.includes(`"${name}"`), `MoeKoe 工具 ${name} 在网关与执行端成对存在`);
+}
 ok(
   devRuntimesSrc.includes("moekoe:") && devRuntimesSrc.includes("findMoeKoeExe"),
   "开发工具 runtime 清单登记 MoeKoe，并用 exe 检测安装态（自定义盘符也能识别）",
@@ -141,6 +164,10 @@ ok(
   "开发工具页有 MoeKoe 安装卡（手动安装/启动 + 复用 runtime 进度）",
 );
 ok(
+  moekoeCard.includes("kugoumusicapi-docs.4everland.app") && moekoeCard.includes("API 文档") && instructions.includes("kugoumusicapi-docs.4everland.app"),
+  "MoeKoe 卡片有 API 文档跳转/复制，常驻指令也带文档地址（Codex 可自己查）",
+);
+ok(
   moekoe.includes("gh-proxy.com") && moekoe.includes("ghfast.top") && moekoe.includes("confirm !== true"),
   "国内镜像安装通道 + 未确认不安装的硬闸",
 );
@@ -151,6 +178,7 @@ ok(
 for (const name of ["moekoe_status", "moekoe_search", "moekoe_play", "moekoe_install"]) {
   ok(core.includes(`"${name}"`) && rpc.includes(`"${name}"`), `MoeKoe 工具 ${name} 在网关与执行端成对存在`);
 }
+ok(rpc.includes("type: args.type"), "moekoe_search 的 type 参数真的传给主进程（否则永远只搜单曲）");
 ok(
   instructions.includes("moekoe_search") && instructions.includes("MoeKoe") && instructions.includes("VIP"),
   "常驻指令写了 MoeKoe 用法、VIP 限制与安装确认规则",
