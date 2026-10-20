@@ -122,8 +122,12 @@ return (
                           onNotice={app.setNotice}
                         />
                         {/* ── 旧「记忆中心」的「存储与同步」里的**保存位置**（10-10 迁移）──
-                            ⛔ 只搬这一段：工作区开关面板里已经有，不重复渲染同一个开关。 */}
-                        {app.memoryBackend !== "cloud" ? <MemoryModePane app={app} /> : null}
+                            ⛔ 只搬这一段：工作区开关面板里已经有，不重复渲染同一个开关。
+                            ⛔⛔ 10-20 用户反馈「明明是 MCP 记忆的，为什么展示在其他两个」：
+                            这一块是 **内置金字塔的第二根轴**（本机 memory.json ⇄ TencentDB Gateway），
+                            只对 builtin 有意义 —— MCP 用自己的 memory.db、云端后端走 memapi，
+                            在它们下面渲染等于给了两套互相打架的「存哪儿」。⇒ 只在 builtin 下出现。 */}
+                        {app.memoryBackend === "builtin" ? <MemoryModePane app={app} /> : null}
                       </SettingsDialog>
                     )}
   </section>
