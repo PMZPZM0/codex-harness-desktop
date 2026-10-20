@@ -2782,7 +2782,47 @@ const CHECKS = [
         JSON.stringify({ before, after, shift: after.top != null && before.top != null ? after.top - before.top : null }));
       h.check("③ 续载确实加载了更早的回合（回合数变多 ⇒ 断言不是恒真）",
         after.groups > before.groups, JSON.stringify({ before: before.groups, after: after.groups }));
-      /* 10-20：再翻一页 —— 用户报的是「翻页衔接」，单页测试不够。第二次仍按同一 id 钉住。 */
+      /* 10-20：真实滚轮 + 自动续载路径（先测，趁历史还没被点按钮翻完）。
+         用户实际是滚轮滚到近顶自动触发；CDP 真滚轮（不是合成 WheelEvent）滚到 724 →
+         真滚 -10；应自动加载、同一锚点视口 top 保持；补偿自身不许触发连环加载。 */
+      {
+        const rect = await h.eval(`(function(){ var el=document.querySelector(".timeline"); var r=el.getBoundingClientRect(); return { x: Math.round(r.left+r.width/2), y: Math.round(r.top+r.height/2) }; })()`);
+        const autoBefore = await h.eval(`(function(){
+          var el=document.querySelector(".timeline");
+          el.scrollTop = 724;
+          var groups=[...el.querySelectorAll(".turn-group")];
+          var anchor=groups.find(function(n){ return n.getBoundingClientRect().bottom > 0; });
+          window.__autoAnchorId = anchor ? anchor.id : "";
+          return { id: window.__autoAnchorId, top: anchor ? Math.round(anchor.getBoundingClientRect().top) : null, groups: groups.length, scrollTop: Math.round(el.scrollTop), scrollHeight: el.scrollHeight };
+        })()`);
+        await wait(300);
+        await h._send("Input.dispatchMouseEvent", { type: "mouseWheel", x: rect.x, y: rect.y, deltaX: 0, deltaY: -10 });
+        await wait(2200);
+        const autoAfter = await h.eval(`(function(){
+          var el=document.querySelector(".timeline");
+          var a=window.__autoAnchorId ? document.getElementById(window.__autoAnchorId) : null;
+          var inside=!!(a && el.contains(a));
+          return { id: window.__autoAnchorId || null, connected: inside, top: inside ? Math.round(a.getBoundingClientRect().top) : null,
+            groups: el.querySelectorAll(".turn-group").length, scrollTop: Math.round(el.scrollTop), scrollHeight: el.scrollHeight };
+        })()`);
+        h.check("④ 真滚轮自动续载：确实预取了更早回合，且不是无界连环加载",
+          autoAfter.groups > autoBefore.groups && autoAfter.groups - autoBefore.groups <= 15,
+          JSON.stringify({ before: autoBefore, after: autoAfter, loaded: autoAfter.groups - autoBefore.groups }));
+        h.check("⑤ 真滚轮自动续载：同一锚点视口 top 保持 ±30px（真滚轮本身会滚几 px；不允许 343px 级位移）",
+          autoAfter.connected === true && autoBefore.top != null && autoAfter.top != null && Math.abs(autoAfter.top - autoBefore.top) <= 30,
+          JSON.stringify({ before: autoBefore, after: autoAfter, shift: autoAfter.top != null && autoBefore.top != null ? autoAfter.top - autoBefore.top : null }));
+      }
+
+      /* 10-20：再翻一页 —— 前面的自动续载已经滚动过视图，先重新钉住当前视口锚点再点。 */
+      const secondBefore = await h.eval(`(function(){
+        var el=document.querySelector(".timeline");
+        el.scrollTop = 300;
+        var groups=[...el.querySelectorAll(".turn-group")];
+        var anchor=groups.find(function(n){ return n.getBoundingClientRect().bottom > 0; });
+        window.__scrollAnchorProbeId2 = anchor ? anchor.id : "";
+        return { id: window.__scrollAnchorProbeId2, top: anchor ? Math.round(anchor.getBoundingClientRect().top) : null, groups: groups.length, scrollTop: Math.round(el.scrollTop), scrollHeight: el.scrollHeight };
+      })()`);
+      await wait(300);
       const clicked2 = await h.eval(`(function(){ var b=document.querySelector(".timeline .load-earlier-turns"); if(!b) return false; b.click(); return true; })()`);
       if (clicked2) {
         await wait(250);
@@ -2790,11 +2830,17 @@ const CHECKS = [
         await wait(150);
         await h.eval(`(function(){ var el=document.querySelector(".timeline"); el.dispatchEvent(new WheelEvent("wheel",{deltaY:-120,bubbles:true,cancelable:true})); return 1; })()`);
         await wait(700);
-        const after2 = await readAfter();
+        const after2 = await h.eval(`(function(){
+          var el=document.querySelector(".timeline");
+          var a=window.__scrollAnchorProbeId2 ? document.getElementById(window.__scrollAnchorProbeId2) : null;
+          var inside=!!(a && el.contains(a));
+          return { id: window.__scrollAnchorProbeId2 || null, connected: inside, top: inside ? Math.round(a.getBoundingClientRect().top) : null,
+            groups: el.querySelectorAll(".turn-group").length, scrollTop: Math.round(el.scrollTop), scrollHeight: el.scrollHeight };
+        })()`);
         h.check("③b 连续第二页仍按同一 turn id 钉住（±4px）",
-          after2.connected === true && before.top != null && after2.top != null && Math.abs(after2.top - before.top) <= 4,
-          JSON.stringify({ before: before.top, after2, shift: after2.top != null && before.top != null ? after2.top - before.top : null }));
-        h.check("③c 第二页确实又加载了更早回合", after2.groups > after.groups, JSON.stringify({ first: after.groups, second: after2.groups }));
+          after2.connected === true && secondBefore.top != null && after2.top != null && Math.abs(after2.top - secondBefore.top) <= 4,
+          JSON.stringify({ before: secondBefore, after2, shift: after2.top != null && secondBefore.top != null ? after2.top - secondBefore.top : null }));
+        h.check("③c 第二页确实又加载了更早回合", after2.groups > secondBefore.groups, JSON.stringify({ first: secondBefore.groups, second: after2.groups }));
       }
       // 收尾：切回最新会话（别把后续项留在旧会话上）
       await h.eval(`(function(){ var rows=[...document.querySelectorAll(".thread-row")]; rows[0] && rows[0].click(); return 1; })()`);

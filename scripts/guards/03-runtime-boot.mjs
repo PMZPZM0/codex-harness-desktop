@@ -837,10 +837,13 @@ const appSrc4 = readAppUi();
   /turnsCursorRef\.current\.set/.test(lightSig)
     ? ok("取页同时记下游标（往上滚能续到更早，不会重拉最新页）")
     : fail("取页没有记游标 —— 续拉会重复拉最新一页");
-  const scrollFn = appSrc4.slice(appSrc4.indexOf("function onTimelineScroll"), appSrc4.indexOf("function onTimelineScroll") + 700);
+  const scrollFn = appSrc4.slice(appSrc4.indexOf("function onTimelineScroll"), appSrc4.indexOf("function onTimelineScroll") + 900);
   /userScrolledRef\.current/.test(scrollFn)
     ? ok("★ 自动续载只认「真实用户滚动」（滚轮/触摸/翻页键/拖滚动条）")
     : fail("自动续载又只看 scrollTop —— 打开会话的程序化滚动会让「用户没滚也加载」");
+  /activeHistoryAnchorPin\.has\(el\)/.test(scrollFn)
+    ? ok("★ 锚点补偿期间忽略程序化 scroll（否则自动续载连环触发，视图翻到上一页/最前）")
+    : fail("补偿改 scrollTop 会被当成用户上滚 —— 自动续载会连环加载（10-20 实测）");
   const anchorFn = appSrc4.slice(appSrc4.indexOf("async function loadEarlierTurns"), appSrc4.indexOf("async function loadEarlierTurns") + 7600);
   /anchorNode/.test(anchorFn) && /isConnected/.test(anchorFn)
     ? ok("★ 位置补偿用锚点元素（content-visibility 下 scrollHeight 不可靠）")
