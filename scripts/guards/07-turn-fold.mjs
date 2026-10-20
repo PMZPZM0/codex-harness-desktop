@@ -4814,8 +4814,8 @@ export async function run() {
     (/aria-expanded=\{expanded\} onClick=\{toggle\}/.test(stripSrc) && /setExpanded\(\(current\) => !current\)/.test(stripSrc) && /reasoning-strip-sep/.test(stripSrc) && /reasoning-strip-preview/.test(stripSrc) && /lines\[lines\.length - 1\]/.test(stripSrc) ? ok : fail)(
       "【161】收起态与过程行同款：标题 + · 最新一行（取最后一条非空行）+ 展开箭头"
     );
-    (/\.reasoning-strip-preview \{[\s\S]{0,160}white-space: nowrap;[\s\S]{0,100}text-overflow: ellipsis;/.test(styles54) && /\.reasoning-strip-body \{[\s\S]{0,200}max-height: min\(50vh, 420px\)/.test(styles54) && /styles\/40-reasoning-strip/.test(stylesEntry) ? ok : fail)(
-      "【161】收起只有一行（预览省略号），展开全文最高 50vh 内部滚动；40 号样式已引入"
+    (/\.reasoning-strip-preview \{[\s\S]{0,200}white-space: nowrap;/.test(styles54) && !/\.reasoning-strip-preview \{[^}]*text-overflow: ellipsis/.test(styles54) && /requestAnimationFrame\(tick\)/.test(stripSrc) && /el\.scrollLeft = Math\.min\(max, el\.scrollLeft \+ 0\.8\)/.test(stripSrc) && /onPointerEnter=/.test(stripSrc) && /prefers-reduced-motion/.test(stripSrc) && /\.reasoning-strip-body \{[\s\S]{0,200}max-height: min\(50vh, 420px\)/.test(styles54) && /styles\/40-reasoning-strip/.test(stylesEntry) ? ok : fail)(
+      "【161】收起单行自动滚动展示（溢出才滚 / 悬停暂停 / 减少动效停尾部），不再用省略号截断；展开全文最高 50vh"
     );
     (generalSrc.includes("思考板块展示") && generalSrc.includes('setReasoningDisplayMode("auto")') && generalSrc.includes('setReasoningDisplayMode("strip")') && generalSrc.includes("reasoning-mode-seg") ? ok : fail)(
       "【161】设置 → 控制台有两档切换（自适应展开 / 长条按行），点击即时生效"
