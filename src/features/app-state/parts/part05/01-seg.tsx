@@ -399,6 +399,15 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
            盘上那份是压缩前的更大值，回合结束/重载时会被恢复回来，环就弹回 50%。
            作废后由下一条 thread/tokenUsage/updated 用压缩后的真实值重新落盘。 */
         bag.persistTokenUsageSnapshot(tid0, null);
+        /* 10-18：压缩请求自己的 last 用量（~压缩前规模）不是压缩后的上下文 ——
+           同步清掉 total/derived 与当前环，等下一轮 usage 重新统计；
+           ⛔ 否则面板会一直停在压缩前的 50%（用户实测「压缩完跑一会又到 50%」）。 */
+        bag.tokenUsageTotalsRef.current.delete(tid0);
+        bag.derivedTokenUsageRef.current.delete(tid0);
+        if (tid0 === String(bag.threadRef.current?.id ?? "")) {
+          bag.tokenUsageRef.current = null;
+          bag.setTokenUsage(null);
+        }
       }
       if (method === "turn/plan/updated") {
         /* ⛔ 10-17 串会话闸：事件带 threadId 且不是当前会话 ⇒ 丢弃（不带则维持原行为）。 */
@@ -506,7 +515,15 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
         // ContextRing 才能真实反映压缩后的占用。下一轮对话完成时用量自然刷新。
         {
           const tid = String(params.threadId ?? bag.threadRef.current?.id ?? "");
-          if (tid) { bag.tokenUsageTotalsRef.current.delete(tid); bag.derivedTokenUsageRef.current.delete(tid); }
+          if (tid) {
+            bag.tokenUsageTotalsRef.current.delete(tid);
+            bag.derivedTokenUsageRef.current.delete(tid);
+            bag.persistTokenUsageSnapshot(tid, null);
+            if (tid === String(bag.threadRef.current?.id ?? "")) {
+              bag.tokenUsageRef.current = null;
+              bag.setTokenUsage(null);
+            }
+          }
         }
         bag.setCompactEventState("success");
         // ⛔ 分隔线停转（09-26 用户截图：toast 已报成功、分隔线还在转圈）：thread/compacted
