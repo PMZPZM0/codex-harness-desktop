@@ -274,6 +274,52 @@ function dispatchMcpTools(): unknown[] {
         required: ["source", "id"],
       },
     },
+    /* ── MoeKoe Music（10-20）：用户本机安装的酷狗第三方客户端 + 它的本地 API 6521。
+       搜索走 API；免费歌完整播放，付费/会员歌取决于 MoeKoe 登录账号 VIP（取不到就如实报错）。
+       moekoe_install 负责国内镜像安装/启动；⛔ 不把客户端/曲库内置进本应用。 */
+    {
+      name: "moekoe_status",
+      description: "检查本机 MoeKoe Music 是否安装、本地 API（127.0.0.1:6521）是否在运行。用户说「用 MoeKoe 放歌」但搜索/播放报 API 不可达时先调它。",
+      inputSchema: { type: "object", properties: {} },
+    },
+    {
+      name: "moekoe_search",
+      description: "在 MoeKoe Music（酷狗曲库）里搜索歌曲。返回 hash / albumId / audioId / free / payType / 封面等；用户让你「放首歌/搜首歌」时先用它，别凭记忆编歌名或 hash。free=true 的歌可完整播放；free=false 是付费/会员歌，取决于 MoeKoe 登录账号的 VIP 状态。query 留空只返回安装/API 状态。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "歌名 / 歌手 / 关键词（留空则只查状态）" },
+          limit: { type: "number", description: "最多返回几条（默认 20，上限 50）" },
+        },
+      },
+    },
+    {
+      name: "moekoe_play",
+      description: "播放 MoeKoe 搜索结果里的某首歌，成功后推入应用内音频播放器（自绘播放条 + 封面）。必须先 moekoe_search 拿 hash/albumId/audioId。免费歌完整播放；付费/会员歌如果当前 MoeKoe 账号没有 VIP，API 只返回试听/风控——失败时如实转述错误，不要假装成功；可在 MoeKoe 客户端登录有会员的账号后再试。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          hash: { type: "string", description: "歌曲 hash（search 结果里的 hash）" },
+          albumId: { type: "string", description: "AlbumID（可省略，search 缓存里会带）" },
+          audioId: { type: "string", description: "Audioid/album_audio_id（可省略）" },
+          quality: { type: "string", enum: ["standard", "high", "lossless"], description: "standard=128k / high=320k / lossless=flac（默认 standard）" },
+          title: { type: "string", description: "歌名（可选）" },
+          artist: { type: "string", description: "歌手（可选）" },
+          artwork: { type: "string", description: "封面 URL（可选）" },
+        },
+        required: ["hash"],
+      },
+    },
+    {
+      name: "moekoe_install",
+      description: "检查/启动/安装 MoeKoe Music。已安装会直接启动；未安装必须先得到用户同意，再带 confirm=true 调用。安装包从 GitHub 最新 release 经国内镜像（gh-proxy / ghfast）下载 x64 安装程序并启动（约 133MB，会改动系统、可能弹 UAC）。⛔ 不要在没有用户明确同意时带 confirm=true。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          confirm: { type: "boolean", description: "用户已明确同意下载并启动安装程序才传 true" },
+        },
+      },
+    },
     {
       name: "media_preview",
       description: "在应用内打开视频/音频预览（本地绝对路径或 http(s) 直链）；3D 模型（glb/gltf）自动走现有的 3D 预览弹窗。当你生成、下载或把媒体文件写到工作区后想让用户立刻查看时调用。⛔ 远程 3D 模型不支持，请先下载到本地；本地文件必须在可信目录内（会话工作目录 / 应用数据目录）。",

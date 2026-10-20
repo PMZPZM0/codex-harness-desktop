@@ -170,7 +170,7 @@ function VideoStage({ source, title, poster, autoPlay }: { source: string; title
 
 /* ── 音频（自绘播放条）────────────────────────────────────────────────────── */
 
-export function AudioPlayer({ source, title, autoPlay, compact = false }: { source: string; title?: string; autoPlay?: boolean; compact?: boolean }) {
+export function AudioPlayer({ source, title, autoPlay, compact = false, poster }: { source: string; title?: string; autoPlay?: boolean; compact?: boolean; poster?: string }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
@@ -179,6 +179,9 @@ export function AudioPlayer({ source, title, autoPlay, compact = false }: { sour
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
+  const [posterFailed, setPosterFailed] = useState(false);
+
+  useEffect(() => { setPosterFailed(false); }, [poster]);
 
   useEffect(() => {
     setPlaying(false);
@@ -233,9 +236,11 @@ export function AudioPlayer({ source, title, autoPlay, compact = false }: { sour
 
   return (
     <div className={`media-audio${compact ? " is-compact" : ""}`}>
-      <div className={`media-audio-cover${playing ? " is-playing" : ""}`} aria-hidden="true">
-        <Music2 size={compact ? 16 : 24} />
-        <span /><span /><span />
+      <div className={`media-audio-cover${playing ? " is-playing" : ""}${poster && !posterFailed ? " has-poster" : ""}`} aria-hidden="true">
+        {poster && !posterFailed
+          ? <img className="media-audio-poster" src={poster} alt="" loading="lazy" onError={() => setPosterFailed(true)} />
+          : <Music2 size={compact ? 16 : 24} />}
+        {(!poster || posterFailed) ? <><span /><span /><span /></> : null}
       </div>
       <div className="media-audio-main">
         <div className="media-audio-title" title={source}>{name}</div>
@@ -353,7 +358,7 @@ export function MediaPreviewModal({ target, onClose }: { target: MediaPreviewTar
         </header>
         <div className="media-preview-body">
           {kind === "video" ? <VideoStage source={source} title={title} poster={target.poster} autoPlay={target.autoPlay} /> : null}
-          {kind === "audio" ? <AudioPlayer source={source} title={title} autoPlay={target.autoPlay} /> : null}
+          {kind === "audio" ? <AudioPlayer source={source} title={title} autoPlay={target.autoPlay} poster={target.poster} /> : null}
           {kind === "model" ? <ModelStage source={source} title={title} /> : null}
           {!kind ? <div className="media-preview-empty"><AlertTriangle size={22} /><strong>这个文件不是可预览的媒体</strong><span>支持视频（mp4 / webm / mov / m4v / ogv）、音频（mp3 / wav / m4a / aac / ogg / flac / opus）与 3D（glb / gltf）。</span></div> : null}
         </div>

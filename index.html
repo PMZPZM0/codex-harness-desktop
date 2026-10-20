@@ -36,7 +36,7 @@
          安全评估：worker-src 本来就允许 blob:（Worker 能执行任意 JS），因此放行 script-src 的
          blob: **不新增攻击面类型**；且页面内容全是自有代码，不接受远程输入。 -->
     <meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src * data: blob: file: harness-image: pet:; media-src * data: blob: harness-media:; font-src 'self' data:; connect-src 'self' data: blob: https: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; frame-src * sketch:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'" />
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src * data: blob: file: harness-image: pet:; media-src * data: blob: harness-media: harness-music:; font-src 'self' data:; connect-src 'self' data: blob: https: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; frame-src * sketch:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/png" href="/icon.png" />
     <meta name="theme-color" content="#171916" />

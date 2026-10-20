@@ -17,6 +17,7 @@ import { markBoot } from "../boot-timing";
 import { debugMemoryCapture } from "../memory-capture-debug";
 import { debugTurnFiles } from "../debug/turn-files-debug";
 import { sendToWindow } from "./window-bus";
+import { getMusicStream } from "../music-streams";
 import { dropStoredReports, emitTurnFileChanges, setTurnFileWatchBroadcast, setTurnFileWatchDiag, setTurnFileWatchStore, settleTurnByTurnId, snapshotTurnWorkspace, storedReportsForThread } from "../turn-file-watch";
 import { dropStoredCompactions, loadCompactionStore, setCompactionWatchDirs, watchTurnCompleted } from "../compaction-watch";
 
@@ -491,6 +492,33 @@ export async function bootApp() {
     return new Response(Readable.toWeb(createReadStream(mediaPath)) as any, {
       headers: { ...headers, "Content-Length": String(stat.size) },
     });
+  });
+
+  /* `harness-music://stream/<token>`：音乐源取流代理（10-20）。
+     真实音频地址 + Referer/UA 只留在主进程的短命令牌表（music-streams）；渲染层拿不到任意 URL。
+     协议按 token 反查，带 Range 转发（播放器拖进度要 206），并补 CORS。 */
+  protocol.handle("harness-music", async (request) => {
+    const url = new URL(request.url);
+    const token = url.hostname === "stream" ? url.pathname.replace(/^\/+/, "") : url.hostname;
+    const stream = getMusicStream(token);
+    if (!stream) return new Response("Not found", { status: 404 });
+    const headers = new Headers(stream.headers);
+    const range = request.headers.get("range");
+    if (range) headers.set("range", range);
+    let upstream: Response;
+    try {
+      upstream = await net.fetch(stream.url, { headers, redirect: "follow" });
+    } catch (error) {
+      return new Response(`Upstream failed: ${String((error as Error)?.message ?? error)}`, { status: 502 });
+    }
+    const out = new Headers();
+    for (const name of ["content-type", "content-length", "content-range", "accept-ranges"]) {
+      const value = upstream.headers.get(name);
+      if (value) out.set(name, value);
+    }
+    out.set("Access-Control-Allow-Origin", "*");
+    out.set("Cache-Control", "no-store");
+    return new Response(upstream.body, { status: upstream.status, headers: out });
   });
 
   /* `pet://`：只服务**宠物目录下的图集**（09-30 加）。
