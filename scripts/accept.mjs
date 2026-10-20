@@ -2762,7 +2762,13 @@ const CHECKS = [
         return { id: window.__scrollAnchorProbeId, top: anchor ? Math.round(anchor.getBoundingClientRect().top) : null, groups: groups.length, scrollTop: Math.round(el.scrollTop), scrollHeight: el.scrollHeight };
       })()`);
       const clicked = await h.eval(`(function(){ var b=document.querySelector(".timeline .load-earlier-turns"); if(!b) return false; b.click(); return true; })()`);
-      await wait(1100);
+      /* 10-20：模拟真实滚轮 —— 用户滚轮触发续载后通常还会继续滚一段惯性。
+         旧补偿会在这里取消，插入高度直接把视图顶走；新补偿按内容坐标增量，不受影响。 */
+      await wait(250);
+      await h.eval(`(function(){ var el=document.querySelector(".timeline"); el.dispatchEvent(new WheelEvent("wheel",{deltaY:-120,bubbles:true,cancelable:true})); return 1; })()`);
+      await wait(150);
+      await h.eval(`(function(){ var el=document.querySelector(".timeline"); el.dispatchEvent(new WheelEvent("wheel",{deltaY:-120,bubbles:true,cancelable:true})); return 1; })()`);
+      await wait(700);
       const readAfter = () => h.eval(`(function(){
         var el=document.querySelector(".timeline");
         var a=window.__scrollAnchorProbeId ? document.getElementById(window.__scrollAnchorProbeId) : null;
@@ -2779,7 +2785,11 @@ const CHECKS = [
       /* 10-20：再翻一页 —— 用户报的是「翻页衔接」，单页测试不够。第二次仍按同一 id 钉住。 */
       const clicked2 = await h.eval(`(function(){ var b=document.querySelector(".timeline .load-earlier-turns"); if(!b) return false; b.click(); return true; })()`);
       if (clicked2) {
-        await wait(1100);
+        await wait(250);
+        await h.eval(`(function(){ var el=document.querySelector(".timeline"); el.dispatchEvent(new WheelEvent("wheel",{deltaY:-120,bubbles:true,cancelable:true})); return 1; })()`);
+        await wait(150);
+        await h.eval(`(function(){ var el=document.querySelector(".timeline"); el.dispatchEvent(new WheelEvent("wheel",{deltaY:-120,bubbles:true,cancelable:true})); return 1; })()`);
+        await wait(700);
         const after2 = await readAfter();
         h.check("③b 连续第二页仍按同一 turn id 钉住（±4px）",
           after2.connected === true && before.top != null && after2.top != null && Math.abs(after2.top - before.top) <= 4,
