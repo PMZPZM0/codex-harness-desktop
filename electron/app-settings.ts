@@ -31,6 +31,8 @@ export type AppSettings = {
   engineWatchdog?: boolean;
   /** 记忆后端："builtin"= 内置记忆金字塔（默认）；"mcp"= MCP 记忆服务（此时内置停止写入） */
   memoryBackend?: "builtin" | "mcp" | "cloud";
+  /** 知识库后端："local"=项目本地库（kb:*）；"cloud"=云端 weknora（MCP 工具） */
+  kbBackend?: "local" | "cloud";
   /** 记忆容量倍率（10-10 用户要求「记忆库容量增加倍率功能」）：把记忆注入预算按倍数放大，
    *  可选 1 / 2 / 4 / 8 / 10 / 16（×1 = 基准）。⛔ 只放大**字符**类预算，`logDays`（回灌窗口）
    *  不参与放大。非法值由 normalizeMemoryScale 回退基准 —— 手改配置也写不出 NaN 预算。 */

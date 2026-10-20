@@ -691,6 +691,10 @@ contextBridge.exposeInMainWorld("codex", {
   /* npm(npmmirror)+模型(hf-mirror)；进度经 runtime:progress(id=kb-embedding) 推送 */
   installKbEmbedBackend: () => __ipc("kb:embed-install", 0, []),
   uninstallKbEmbedBackend: () => __ipc("kb:embed-uninstall", 0, []),
+  /* 读取知识库后端：local=项目本地库 / cloud=云端 weknora（MCP） */
+  kbBackendGet: () => __ipc("kb:backend-get", 0, []),
+  /* 切换知识库后端并回传生效值 */
+  kbBackendSet: (backend: "local" | "cloud") => __ipc("kb:backend-set", 1, [backend]),
   /* 更新后首次启动的「新功能介绍」—— 该不该弹、弹什么由主进程判定（要点在 electron/whats-new-notes.ts，看过记录在 userData/whats-new.json） */
   whatsNewState: () => __ipc("whatsnew:state", 0, []),
   /* 「知道了」：记下「当前版本已看过」（⛔ 只接受当前版本号 —— 权威值在主进程，渲染层传别的值会被拒） */
