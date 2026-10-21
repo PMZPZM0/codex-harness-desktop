@@ -396,7 +396,7 @@ const CHECKS = [
       const opened = await h.eval(`(function(){
         const tabs=[...document.querySelectorAll('.sidebar-nav .sidebar-tab')];
         const names=tabs.map((t)=>(t.textContent||'').trim());
-        const front=tabs.find((t)=>(t.textContent||'').includes('前端组件'));
+        const front=tabs.find((t)=>(t.textContent||'').includes('前端开发'));
         if(!front) return { found:false, tabs:names };
         front.click(); return { found:true, tabs:names }; })()`);
       h.check("① 侧栏有「前端 UI · 组件库」能力入口，且「更多」已删除（前置条件：找不到就整项作废）",
@@ -1270,6 +1270,63 @@ const CHECKS = [
         await h.eval(`(function(){ var f=document.getElementById("__rs_accept_fixture"); if(f) f.remove(); localStorage.setItem("reasoning-display-mode","auto"); window.dispatchEvent(new CustomEvent("codex:reasoning-display-mode",{detail:"auto"})); return 1; })()`).catch(() => undefined);
         await h.eval(`(function(){ var rows=[...document.querySelectorAll(".thread-row")]; rows[0] && rows[0].click(); return 1; })()`).catch(() => undefined);
       }
+    },
+  },
+  {
+    id: "panel-tabs",
+    name: "🗂 右栏标签：撤掉终端、审阅顶到第二位（10-22 用户）",
+    run: async (h) => {
+      /* 10-22 用户：「侧边栏终端按键可以删了，替换成审阅图标」。
+         根因是默认面板宽 308px 放不下五个标签（约 340px）⇒ 审阅排在最后一个、被挤出可视区。
+         这里量的是真 DOM：标签文本序列、当前宽度下是否横向溢出、审阅是否完整可见、点了能切回。 */
+      await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "界面就绪", timeoutMs: 40000 });
+      await h.eval(`(function(){
+        var panel=document.querySelector(".context-panel");
+        var b=document.querySelector(".tb-right-panel");
+        if (!panel && b) b.click();
+        return 1;
+      })()`);
+      await h.waitFor(`!!document.querySelector(".context-panel .panel-tab")`, { timeoutMs: 10000 }).catch(() => undefined);
+      await wait(400);
+      const info = await h.eval(`(function(){
+        var strip=document.querySelector(".context-panel .tabstrip-tabs");
+        if(!strip) return null;
+        var tabs=[...strip.querySelectorAll(".panel-tab")];
+        var r=strip.getBoundingClientRect();
+        var review=tabs.find(function(t){ return (t.textContent||"").trim()==="审阅"; });
+        var rr=review?review.getBoundingClientRect():null;
+        return { texts:tabs.map(function(t){ return (t.textContent||"").trim(); }),
+          scrollW:Math.round(strip.scrollWidth), clientW:Math.round(strip.clientWidth),
+          reviewFits: !!rr && rr.width>0 && rr.left>=r.left-1 && rr.right<=r.right+1 };
+      })()`).catch(() => null);
+      h.check("① 右栏标签 = 变更/审阅/浏览器/项目树（终端按钮已撤，审阅在第二位）",
+        Boolean(info && info.texts.join("/") === "变更/审阅/浏览器/项目树"),
+        JSON.stringify(info && info.texts));
+      h.check("② 当前面板宽度下四个标签排得下、审阅完整可见（不再被挤出横向滚动区）",
+        Boolean(info && info.reviewFits && info.scrollW <= info.clientW + 1),
+        JSON.stringify({ scrollW: info && info.scrollW, clientW: info && info.clientW, reviewFits: info && info.reviewFits }));
+      const opened = await h.eval(`(function(){
+        var b=[...document.querySelectorAll(".context-panel .panel-tab")].find(function(x){ return (x.textContent||"").trim()==="审阅"; });
+        if(!b) return false; b.click(); return true;
+      })()`).catch(() => false);
+      await wait(500);
+      const reviewShown = await h.eval(`(function(){
+        var p=document.querySelector(".turn-review-panel"); if(!p) return false;
+        var r=p.getBoundingClientRect(); return r.width>0 && r.height>0;
+      })()`).catch(() => false);
+      const back = await h.eval(`(function(){
+        var b=[...document.querySelectorAll(".context-panel .panel-tab")].find(function(x){ return (x.textContent||"").trim()==="变更"; });
+        if(!b) return false; b.click(); return true;
+      })()`).catch(() => false);
+      await wait(400);
+      const backShown = await h.eval(`(function(){
+        var p=document.querySelector(".review-panel"); if(!p) return false;
+        var r=p.getBoundingClientRect(); return r.width>0 && r.height>0;
+      })()`).catch(() => false);
+      h.check("③ 点「审阅」真打开审阅页、点「变更」能切回",
+        Boolean(opened && reviewShown && back && backShown),
+        JSON.stringify({ opened, reviewShown, back, backShown }));
+      await h.screenshot("panel-tabs");
     },
   },
   {
@@ -3723,10 +3780,11 @@ async function enterMain(h) {
 //   历史项不删（它们仍然是回归证据），但**永远不会在默认路径上被执行** ——
 //   这样"每次只测最新改动"是机制保证的，不再依赖我记不记得。
 // ─────────────────────────────────────────────────────────────────────────────
-const LATEST_ROUND = "10-21";   // 10-21 轮：桌面宠物活动气泡（Qoder 式事件驱动）；10-19 的 scroll-anchor 转回归证据
+const LATEST_ROUND = "10-22";   // 10-22 轮：右栏标签改版（撤终端、审阅顶到第二位）；10-21 的刻度尺/滚动/宠物转回归证据
 // 上一轮（10-06）的五个验收项仍是回归证据：--only <id> 单跑，或 --all 全量。
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
+  "panel-tabs": "10-22",   // 10-22 轮：右栏标签撤终端、审阅顶到第二位（默认宽 308px 五个排不下）
   "ui-sketch": "10-06",   // ⛔ 10-06 重写：三形态探针（手机+电脑屏 / platform web 真落盘）+ 预览 + 还原；编号改执行顺序
   "file-summary": "10-06",   // 文件更改汇报卡：运行中行/胶囊 + 收尾卡 + 悬停 diff 预览 + 交互（10-06 两次重写）
   "popup-fits": "10-06",   // ⛔ 10-06 新增：弹窗自适应普查（用户令「凡事弹窗类都要加自适应，不能被裁剪」）
