@@ -110,6 +110,19 @@ const diffCss = read("src/styles/04-cards-tools.css");
   ok(reviewPanel.includes('rightTab === "turn-review"') && reviewPanel.includes("<TurnReviewPanel") && reviewPanel.includes(">审阅<")
     && reviewPanel.includes('active={rightTab === "turn-review"}') && reviewPanel.includes("onOpenFile"),
     "右栏有「审阅」标签页；面板只在激活时渲染 diff（隐藏页不白算）+ 打开文件接回会话");
+  {
+    /* 10-22 用户：「侧边栏终端按键可以删了，替换成审阅图标」。默认面板宽 308px，
+       五个标签排不下 ⇒ 审阅被挤出可视区（横向滚动才能点到），所以撤终端、审阅顶到第二位。 */
+    const stripBlock = reviewPanel.match(/<div className="tabstrip-tabs">([\s\S]*?)<\/div>/);
+    const strip = stripBlock ? stripBlock[1] : "";
+    const order = [">变更<", ">审阅<", ">浏览器<", ">项目树<"].map((x) => strip.indexOf(x));
+    ok(Boolean(strip) && !/>终端</.test(strip) && order.every((v) => v >= 0) && order.every((v, i) => i === 0 || order[i - 1] < v),
+      "⛔ 右栏标签 = 变更/审阅/浏览器/项目树（终端撤掉、审阅顶到第二位 —— 308px 下五个标签排不下，审阅被挤出可视区）");
+    ok(/rightTab === "terminal"[\s\S]{0,240}?<TerminalPanel/.test(reviewPanel),
+      "终端页仍保留（Ctrl+J / 命令面板可开，只是没有常驻标签）");
+    ok(!/TerminalSquare/.test(reviewPanel),
+      "⛔ 撤掉终端标签后不许留死导入（TerminalSquare）");
+  }
   ok(reviewPanel.includes('from "../../status"'),
     "右栏从 status 的 barrel 取面板（⛔ 不深链域内部文件）");
 }
