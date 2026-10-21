@@ -2539,14 +2539,57 @@ w.postMessage({id:1,op:"list",root});
       `【180】底部导航组顺序 = ${want.join(" → ")}（实际 ${capLabels.length} 条：${capLabels.join(" / ")}）`
     );
   }
-  /* 布局：顶部只留「新建任务 / 搜索任务」，导航组在**账户行之后**（用户：底部依次展示用户名，以及这些入口）。 */
+  /* 布局：顶部只留「新建任务 / 搜索任务」；入口组在账户行**之上**，账户行是侧栏最后一条。
+     ⛔ 10-22 用户：「用户名那一排继续固定在页面最底部，不要移动位置」+「在用户名那一排上方的选项区域
+        加折叠/展开」⇒ 结构从「用户名 → 入口」倒过来（入口在上、账户行贴底）—— 只有这样
+        折叠入口组时账户行才可能 0 位移；写在账户行**下面**的方案折叠时整条会被拖着走。 */
   {
     const quickIdx = side180.indexOf('className="sidebar-quick"');
     const topNavIdx = side180.indexOf('名="能力入口"');
     const accountIdx = side180.indexOf('className="account-row"');
     const bottomNavIdx = side180.indexOf('className="sidebar-nav sidebar-nav-bottom"');
-    (quickIdx > 0 && topNavIdx === -1 && accountIdx > 0 && bottomNavIdx > accountIdx ? ok : fail)(
-      "【180】顶部只剩新建/搜索（旧「能力入口」组已移除），导航组位于账户行**之后**（用户名在上、入口在下）"
+    const optionsIdx = side180.indexOf('className="sidebar-options"');
+    (quickIdx > 0 && topNavIdx === -1 && optionsIdx > 0 && optionsIdx < bottomNavIdx && bottomNavIdx < accountIdx ? ok : fail)(
+      "【180】顶部只剩新建/搜索（旧「能力入口」组已移除）；底部顺序 = 入口组 → 账户行（账户行最后一条 = 贴底锚）"
+    );
+    const tailAfterAccount = side180.slice(accountIdx);
+    (!/className="sidebar-(?:nav|options)/.test(tailAfterAccount) ? ok : fail)(
+      "【180】账户行之后不许再挂入口/选项块（否则用户名行就不是「页面最底部那一排」）"
+    );
+  }
+  /* 入口组折叠 / 展开（10-22 用户要求）：真隐显 + 折叠头常驻 + 账户行位置与折叠无关。 */
+  {
+    const toggleIdx = side180.indexOf('className="sidebar-options-toggle"');
+    const bodyIdx = side180.indexOf('id="sidebar-options-body"');
+    (toggleIdx > 0 && bodyIdx > toggleIdx ? ok : fail)(
+      "【180】折叠头画在入口块**之前**（挂着块内 ⇒ 一收起就再也点不开 = 死路）"
+    );
+    (/<span>功能入口<\/span>/.test(side180) && /aria-expanded=\{!optionsCollapsed\}/.test(side180) && /aria-controls="sidebar-options-body"/.test(side180) ? ok : fail)(
+      "【180】折叠头有可见文案 + aria-expanded + aria-controls（不是只有一个裸箭头）"
+    );
+    (/hidden=\{optionsCollapsed\}/.test(side180) ? ok : fail)(
+      "【180】折叠 = 真把入口块 hidden 掉（只换 class / 只改样式 = 假折叠）"
+    );
+    (/localStorage\.setItem\("sidebar-options-collapsed"/.test(side180) ? ok : fail)(
+      "【180】折叠态跨重启保留（sidebar-options-collapsed，与 sidebar-collapsed 同口径）"
+    );
+    /* ⛔ `.sidebar-nav` 自带 `display:flex`，会压过 hidden 属性的 UA 样式（隐藏直接失效）⇒ 必须显式关。 */
+    const css41 = readFileSync(join(ROOT, "src", "styles", "41-sidebar-guide.css"), "utf8");
+    (/\.sidebar-nav-bottom\[hidden\]\s*\{\s*display:\s*none;?\s*\}/.test(css41) ? ok : fail)(
+      "【180】`.sidebar-nav-bottom[hidden]` 显式 display:none（.sidebar-nav 的 flex 会压过 hidden 属性）"
+    );
+    /* 箭头方向：行画在折叠头**下方** ⇒ 与全站折叠组同向（收起 ⌄ / 展开翻转成 ⌃）。
+       ⛔ 别按"底部锚点"想当然改成镜像 —— 内容在头下面，方向跟顶部组一样才对。 */
+    (/\.sidebar-options-chevron\.open\s*\{\s*transform:\s*rotate\(180deg\);?\s*\}/.test(css41) ? ok : fail)(
+      "【180】箭头翻转规则在（收起 ⌄ / 展开 ⌃，与全站折叠组同向）"
+    );
+    (/sidebar-options-chevron \$\{optionsCollapsed \? "" : "open"\}/.test(side180) ? ok : fail)(
+      "【180】箭头只由 optionsCollapsed 一个变量驱动（⛔ 不许再写第二份展开判定）"
+    );
+    /* 贴底锚：账户行高度必须**固定**（flex-basis），否则折叠时会被列表弹性带着上下跑。 */
+    const css02 = readFileSync(join(ROOT, "src", "styles", "02-sidebar-threads.css"), "utf8");
+    (/\.account-row \{[\s\S]{0,600}?flex:\s*0 0 42px/.test(css02) ? ok : fail)(
+      "【180】账户行仍是固定 42px（flex: 0 0 42px —— 折叠时 0 位移的前提）"
     );
   }
   /* 新手教程：入口进底部组，且 NewbieGuide 走**受控**（不传 open 它会再画一行「新手引导」⇒ 底部两个入口）。 */
