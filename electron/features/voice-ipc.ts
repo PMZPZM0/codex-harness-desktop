@@ -18,6 +18,7 @@
 import { registerVoiceIpc1 } from "./voice-ipc/01-voice-hotkey-models";
 import { registerVoiceIpc2 } from "./voice-ipc/02-voice-profiles-presets";
 import { registerVoiceIpc3 } from "./voice-ipc/03-voice-misc";
+import { registerVoiceIpc4 } from "./voice-ipc/04-announce-owner";
 
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
@@ -36,6 +37,7 @@ const VOICE_CHANNELS = [
   "voice:profiles-select", "voice:profiles-preview", "voice:profile-upload", "voice:models-install",
   "voice:models-cancel", "voice:models-import", "voice:models-reveal",
   "voice:models-uninstall", "voice:mic-permission", "voice:resource-set-enabled",
+  "voice:announce-owner", "voice:announce-set-muted",
   "voice:resource-delete", "voice:resource-status",
 ];
 
@@ -50,6 +52,8 @@ export const voiceFeature = defineFeature<null>({
     const a = registerVoiceIpc1({ ipcHost, host });
     registerVoiceIpc2(a);
     registerVoiceIpc3(a);
+    /* 10-21：播报归属裁决（多窗口唯一播报窗口）+ 全局静音闩锁。 */
+    registerVoiceIpc4(a);
     ctx.effect(() => {
       for (const ch of VOICE_CHANNELS) ipcHost.removeHandler(ch);
     });

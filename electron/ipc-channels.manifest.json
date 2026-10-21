@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 509,
+  "count": 511,
   "channels": [
     {
       "name": "request",
@@ -3421,6 +3421,26 @@
       "returns": "Promise<{ active: boolean; state: string; runtimeReady: boolean; modelsReady: boolean; threadId: string; lastError: string }>",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "announceOwner",
+      "channel": "voice:announce-owner",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ owner: boolean; ownerWebContentsId: number | null; reason: string; muted: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "我是播报窗口吗 + 当前全局静音态（多窗口唯一播报：焦点 → 最后活跃 → 主窗口；取不到时 owner=true 保底，⛔ 不许因算不出来就静音；⛔ muted 必须一起回，否则新开窗口会无视已生效的全局静音）"
+    },
+    {
+      "name": "announceSetMuted",
+      "channel": "voice:announce-set-muted",
+      "paramsImpl": "input?: { muted?: boolean }",
+      "paramsDecl": "input?: { muted?: boolean }",
+      "returns": "Promise<{ muted: boolean }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "全局静音闩锁（任一窗口按「停止播报」⇒ 全窗口静默；一个扬声器一个用户，⛔ 不许只在本地闩）"
     },
     {
       "name": "voiceStart",

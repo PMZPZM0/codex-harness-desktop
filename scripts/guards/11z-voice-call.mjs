@@ -317,8 +317,9 @@ ok(/draftProfileAudio\(/.test(voiceProfilesSeg.slice(voiceProfilesSeg.indexOf('"
 ok(/voiceProfileUpload: \(input\?/.test(read("electron/preload.ts")) && /voiceProfileUpload\(input\?/.test(read("src/vite-env.d.ts")),
   "生成物两侧都有 voiceProfileUpload（preload 内联段 + d.ts 生成段；跑过 gen:ipc，不是只改了 manifest）");
 const registrySrc = read("electron/ipc-registry.ts");
-ok(/\{ prefix: "voice", count: 42/.test(registrySrc) && /"voice:profile-upload"/.test(registrySrc),
-  "ipc-registry 的 voice 域计到 42 且列出新通道（不同步会被【107】/【90】报红）");
+/* count 是**事实账**：voice 域实列多少条就写多少（10-21 +2 = announce-owner / announce-set-muted）。 */
+ok(/\{ prefix: "voice", count: 44/.test(registrySrc) && /"voice:profile-upload"/.test(registrySrc),
+  "ipc-registry 的 voice 域计到 44 且列出新通道（不同步会被【107】/【90】报红）");
 const settingsState = read("src/components/VoiceSettingsSection/use-voice-settings-section-state.tsx");
 ok(/voiceProfileUpload\(\{ source: "file" \}\)/.test(settingsState)
   && /uploadProfile=\{uploadProfile\}/.test(read("src/components/VoiceSettingsSection.tsx")),
@@ -663,6 +664,71 @@ ok(/export function setAnnounceResumeHandler/.test(bus) && /export function requ
   "「恢复播报」出口与停止出口**成对**注册/注销，且状态条上真的有那个按钮（只有闩锁没有解除口 = 用户按一次永久失去播报）");
 ok(/muted: mutedRef\.current/.test(announceHook) && /muted: false/.test(bus),
   "状态广播带 `muted`（区分「1.6 秒回执」与「真的静了」—— 显示层靠它决定要不要给恢复按钮）");
+
+/* ── ⑰ 多窗口播报归属（10-21 用户令「仅应向用户当前所在的会话窗口播报」）──────────────
+   冲突根因：`codex:event` 是 broadcastToAll（所有窗口都收），每个窗口都挂 VoiceAnnounceBridge
+   且各有一套 AudioContext ⇒ ① 两窗口看不同会话同时输出 = 两段语音叠加；
+   ② 同一会话开主窗口 + 弹窗 = 同一句念两遍。会话闸只挡「别的会话」，挡不住「同一会话的另一窗口」。
+   方案 = 主进程裁决唯一 owner（焦点 → 最后活跃 → 主窗口），渲染层在 speak() 入口让位。 */
+const ownerMod = read("electron/features/voice-ipc/04-announce-owner.ts");
+const ownerWiring = read("electron/features/voice-ipc.ts");
+const busSrc = read("electron/features/window-bus.ts");
+const mainSrc = read("electron/main.ts");
+const manifestJson = read("electron/ipc-channels.manifest.json");
+const registryForOwner = read("electron/ipc-registry.ts");
+const preloadSrc = read("electron/preload.ts");
+
+ok(/export function pickAnnounceOwner\(/.test(ownerMod)
+  && /const focused = live\.find\(\(c\) => c\.focused\)/.test(ownerMod)
+  && /lastFocusedId == null \? undefined : live\.find/.test(ownerMod)
+  && ownerMod.indexOf("const focused = live.find") < ownerMod.indexOf("primary-fallback"),
+  "owner 裁决是**纯函数**且顺序正确（焦点 → 最后活跃 → 主窗口回退）—— 纯函数才可离线真跑");
+ok(/visible && !c\.minimized/.test(ownerMod),
+  "裁决排除**最小化**窗口（最小化时用户看不见内容，让它念等于对着空气说话）");
+ok(/if \(live\.length === 1\) return \{ ownerId: live\[0\]\.id, reason: "single-window" \}/.test(ownerMod),
+  "单窗口恒为该窗口（零行为变化 —— 不给单窗口用户引入任何新判定）");
+ok(/ipcHost\.handle\("voice:announce-owner", \(event\) =>/.test(ownerMod)
+  && /senderId === ownerId/.test(ownerMod),
+  "归属查询在**主进程**比对 sender（渲染层拿不到自己的 webContents.id，没法自己比）");
+ok(/if \(ownerId == null\) return \{ owner: true, ownerWebContentsId: null, reason, muted \}/.test(ownerMod),
+  "⛔ 算不出 owner 时返回 owner:**true**（保底）—— 宁可多念一次，也不能因一次算不出来就永久静音");
+ok(/win\.webContents\.send\("voice:announce-owner-changed"/.test(ownerMod)
+  && !/broadcastToAll\("voice:announce-owner-changed"/.test(ownerMod),
+  "owner 广播**逐窗口定制**（每窗口答案不同）——⛔ 用 broadcastToAll 发同一 payload 等于没判");
+ok(/app\.on\("browser-window-focus"/.test(ownerMod) && !/browser-window-blur/.test(ownerMod),
+  "焦点变化重算 owner；⛔ **不监听 blur**：切到浏览器/编辑器时应用整体失焦，若把 owner 清空就成了「一离开窗口就听不到」");
+ok(/onBusWindowListChanged\(\(\) => broadcastOwner\(\)\)/.test(ownerMod)
+  && /export function onBusWindowListChanged/.test(busSrc)
+  && /notifyWindowListChanged\(\)/.test(busSrc),
+  "窗口增减（开关独立弹窗）也重算 owner（旧 owner 关闭后必须有人接棒，否则播报静默到下次焦点变化）");
+ok(/if \(!isOwnerRef\.current\) return;/.test(announceHook)
+  && announceHook.indexOf("if (!isOwnerRef.current) return;") > announceHook.indexOf("if (mutedRef.current) return;"),
+  "⛔ owner 判据在 `speak()` **唯一入口**、排在静音闸锁之后（三个来源都汇合到那处，不许在分支里各判一遍）");
+ok(/const isOwnerRef = useRef\(true\)/.test(announceHook),
+  "⛔ owner 初值 **true**（取不到/旧构建时保持可用；反向 = 用户永久听不到）");
+ok(/if \(!next\) stopPlayback\(false\)/.test(announceHook),
+  "失去 owner 立刻停播，且用 `stopPlayback(false)`（不是按停语义 ⇒ 不许置静音闸锁）");
+
+ok(/const muted = state\.mutedAll;/.test(ownerMod) && /reason, muted \}/.test(ownerMod)
+  && /if \(r\?\.muted === true\)/.test(announceHook),
+  "⛔ owner 查询**同时带回全局静音态**并同步到新窗口（只拿 owner 不拿 muted ⇒ 新开窗口无视已生效的静音，"
+  + "用户按过停止它照念 —— 静态归属 ≠ 现在该不该出声）");
+ok(/void window\.codex\.announceSetMuted\?\.\(\{ muted: true \}\)/.test(announceHook)
+  && /void window\.codex\.announceSetMuted\?\.\(\{ muted: false \}\)/.test(announceHook)
+  && /onAnnounceMuted\?\./.test(announceHook),
+  "静音闸锁**全局**（任一窗口按停 ⇒ 全窗口静默，一个扬声器一个用户；本地只闸 = 另一窗口继续念 = 「按钮是假的」）");
+ok(/onVoiceCallState\?\./.test(announceHook) && /remoteCallActiveRef\.current/.test(announceHook),
+  "跨窗口通话避让（`voice:event` 只发主窗口 ⇒ 弹窗靠 voice:call-state 才知道主窗口在通话）");
+ok(/broadcastToAll\("voice:call-state", \{ state: event\.state, active \}\)/.test(mainSrc)
+  && /if \(event\.type === "state"\)/.test(mainSrc),
+  "通话状态旁路广播到**所有窗口**，且只转 state（⛔ 不把 partial/delta 塞进弹窗）");
+ok(/voice:announce-owner/.test(manifestJson) && /voice:announce-set-muted/.test(manifestJson)
+  && /"voice:announce-owner","voice:announce-set-muted"\]/.test(registryForOwner)
+  && /count: 44/.test(registryForOwner),
+  "两条新通道进 manifest + registry（count 42→44）—— 漏登记 = 预检【2】红 + 账本读不到");
+ok(/onAnnounceOwnerChanged: \(listener/.test(preloadSrc) && /onAnnounceMuted: \(listener/.test(preloadSrc)
+  && /onVoiceCallState: \(listener/.test(preloadSrc),
+  "三条推送类手写桥在 preload（不在 gen 段：主→渲染的广播不生成 invoke 桥）");
 /* ② 长度：每回合字数预算必须在 speak() 里扣，且与去重登记表**同一清零时机**（回合级）。
    ⛔ 10-21：预算按来源分档（正文 600 / 结尾 400 / 插播不限）—— 旧版单一 160 字会把
    「正文念几句」与「结尾重点」互相挤掉（用户明确要求两部分互不影响）。 */

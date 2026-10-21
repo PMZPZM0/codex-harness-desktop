@@ -148,6 +148,20 @@ export function useVoiceAnnounce(threadId: string = ""): void {
    *   下一回合又自动开口 = 白按。开关翻转也会解除（见设置订阅处）。
    */
   const mutedRef = useRef(false);
+  /**
+   * 本窗口是不是「播报窗口」（10-21 多窗口唯一播报，用户令「仅应向用户当前所在的会话窗口播报」）。
+   *
+   * ⛔ 默认 **true**：取不到（旧构建 / 主进程未就绪 / invoke 失败）时必须保持可用 ——
+   *    宁可多念一次，也不能因为一次算不出来就让用户永久听不到（与「取不到就静音」相反）。
+   * ⛔ 判据只在 `speak()` 入口用一次：三个来源（正文 / 播报稿 / 插播）都汇合到那里。
+   */
+  const isOwnerRef = useRef(true);
+  /**
+   * **别的窗口**正在通话（10-21 跨窗口避让）。
+   * `voice:event` 只发主窗口，弹窗收不到通话状态 ⇒ 由 `voice:call-state` 广播补上；
+   * 不判这条，弹窗的播报会与主窗口的通话 TTS 抢同一个扬声器（两条音轨叠在一起）。
+   */
+  const remoteCallActiveRef = useRef(false);
   /** 状态栏要显示「来源」：这一轮是结束播报稿 / 还是模型主动插播 */
   const sourceRef = useRef<AnnounceStatus["source"]>("");
   /** 还有多少句在「合成中/排队合成」（不含已经排进 AudioContext 的那些） */
@@ -254,6 +268,10 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     if (byUser) {
       mutedRef.current = true;
       stoppedRef.current = true;
+      /* ⛔ **全局**静音（10-21）：一个扬声器、一个用户 —— 只闩本窗口的话，另一窗口继续念
+         = 用户体感「停止按钮是假的」（这正是 10-12 那条反馈的跨窗口版本）。
+         主进程收到后广播给所有窗口（含自己，幂等；本地闩锁已置，回来的广播不会再触发动作）。 */
+      void window.codex.announceSetMuted?.({ muted: true }).catch(() => undefined);
       /* ⛔ 「已停止」现在**常驻**到用户点「恢复播报」为止（10-12：状态条上必须留着那个出口，
          否则按一次就永久失去播报）。原先那个 1.6s 自动收起定时器已整条删除 ——
          它是「回执」语义，而按停现在同时意味着**静音闩锁**，提示条不该自己消失。 */
@@ -277,6 +295,9 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     if (!mutedRef.current) return;
     mutedRef.current = false;
     stoppedRef.current = false;
+    /* ⛔ 全局闩锁同步解除（10-21）：否则另一窗口仍被主进程的 mutedAll 拦着，
+       用户在 A 点「恢复」、B 却还是哑的 —— 一个开关两种状态。 */
+    void window.codex.announceSetMuted?.({ muted: false }).catch(() => undefined);
     publishStatus();
   }, [publishStatus]);
 
@@ -329,6 +350,12 @@ export function useVoiceAnnounce(threadId: string = ""): void {
        delta 分支判，尾句 flush 绕得过去）。`summary` 的开关判定在 `finishTurn`（那里还要决定
        要不要解析播报稿），此处只收 live。 */
     if (scope === "live" && !cfgRef.current.enabled) return;
+    /* ⛔ 播报归属（10-21「仅向当前所在窗口播报」）：非 owner 直接返回 —— **连合成都省**。
+       多窗口下同一会话开两个窗口时，这一条就是「同一句不念两遍」的唯一裁决点
+       （会话闸只挡得住"别的会话"，挡不住"同一会话的另一个窗口"）。 */
+    if (!isOwnerRef.current) return;
+    /* ⛔ 跨窗口通话避让：主窗口在通话时，弹窗的非通话播报必须让位。 */
+    if (remoteCallActiveRef.current) return;
     // 背压：排太长就丢弃这一句（保持跟手，不变成停不下来的复读机）
     if (queueRef.current.length >= MAX_ANNOUNCE_BACKLOG) {
       console.warn("[voice-announce] 播报排队过长，丢弃这一句以保持跟手：", clean.slice(0, 24));
@@ -485,6 +512,9 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       if (enabled && mutedRef.current) {
         mutedRef.current = false;
         stoppedRef.current = false;
+        /* ⛔ 全局闩锁一起解除（10-21）：用户重新打开总开关 = 「我又想听了」，
+           别的窗口也必须恢复 —— 否则设置页显示开着、那个窗口却永远哑着。 */
+        void window.codex.announceSetMuted?.({ muted: false }).catch(() => undefined);
       }
       /* ★ 预热：播报要在回合结束时才合成，第一次还要加载 156MB 克隆模型 ⇒ 用户听到的是
          「回合结束好几秒后才开口」。开关打开/音色切换时先让主进程把试听 worker 建起来
@@ -508,6 +538,61 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     });
     return () => { alive = false; off?.(); };
   }, []);
+
+  /* ── 多窗口：播报归属 / 全局静音 / 跨窗口通话（10-21）──────────────────────────
+     ⛔ 为什么这三条都在这里订阅、而不是塞进各分支：它们都是「跨窗口的事实」，判据只在
+        `speak()` 入口用一次；在分支里各判一遍就是本项目记过的「二房东」缺陷。
+     ⛔ owner 初值取 invoke（挂载时算一次），之后靠广播增量更新 —— 焦点切换是**低频**动作，
+        不适合在每次开口前同步问主进程（那是每段合成一次 IPC 往返）。 */
+  useEffect(() => {
+    let alive = true;
+    void window.codex.announceOwner?.()
+      .then((r: any) => {
+        if (!alive) return;
+        if (typeof r?.owner === "boolean") isOwnerRef.current = r.owner;
+        /* ⛔ 全局静音态必须同步（10-21 自查的真漏洞）：用户已经在别的窗口按过「停止播报」，
+           新开的窗口若只拿 owner 不拿 muted，会以为自己没被静音 ⇒ 照念。
+           「我是不是 owner」是静态归属，「现在该不该出声」还要看这条。 */
+        if (r?.muted === true) {
+          mutedRef.current = true;
+          stoppedRef.current = true;
+        }
+        /* 挂载时发现「我不是 owner」⇒ 清掉可能残留的队列（弹窗刚开、上一个 owner 的尾巴）。 */
+        if (!isOwnerRef.current) stopPlayback(false);
+        publishStatus();
+      })
+      .catch(() => undefined);  // 取不到 ⇒ 保持默认 true（见 isOwnerRef 注释）
+    const offOwner = window.codex.onAnnounceOwnerChanged?.((s: any) => {
+      const next = s?.owner !== false;
+      if (next === isOwnerRef.current) return;
+      isOwnerRef.current = next;
+      /* 失去 owner ⇒ 立刻停：队列里排着的音频属于「上一个窗口」，继续念就是两个声音同时响。
+         ⛔ 用 `stopPlayback(false)`：这不是用户按停，不许置静音闩锁。 */
+      if (!next) stopPlayback(false);
+      else publishStatus();
+    });
+    const offMuted = window.codex.onAnnounceMuted?.((s: any) => {
+      const next = s?.muted === true;
+      if (next === mutedRef.current) return;
+      mutedRef.current = next;
+      if (next) {
+        /* 别的窗口按了停止：本窗口也要**真的**安静（不只是显示）——清队列 + 掐掉三条入口的标记。
+           ⛔ `stopPlayback(false)` 而不是 `(true)`：否则会把「全局闩锁」再广播一遍（回环）。 */
+        stoppedRef.current = true;
+        stopPlayback(false);
+      } else {
+        stoppedRef.current = false;
+      }
+      publishStatus();
+    });
+    const offCall = window.codex.onVoiceCallState?.((s: any) => {
+      remoteCallActiveRef.current = s?.active === true;
+      /* 通话一开始就停掉本窗口已排队的播报（与窗口内 `subscribeVoiceStage` 那条同一个理由：
+         通话的 TTS 与这里的队列同时出声 = 两条音轨打架）。 */
+      if (remoteCallActiveRef.current) stopPlayback(false);
+    });
+    return () => { alive = false; offOwner?.(); offMuted?.(); offCall?.(); };
+  }, [stopPlayback, publishStatus]);
 
   // ── 事件源：播报总线（事件路由只在**当前会话**上转发）──
   useEffect(() => {

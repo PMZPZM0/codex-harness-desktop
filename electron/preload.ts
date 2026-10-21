@@ -492,6 +492,10 @@ contextBridge.exposeInMainWorld("codex", {
   engineRestartLog: () => __ipc("engine:restart-log", 0, []),
   engineActiveTurns: () => __ipc("engine:active-turns", 0, []),
   voiceStatus: () => __ipc("voice:status", 0, []),
+  /* 我是播报窗口吗 + 当前全局静音态（多窗口唯一播报：焦点 → 最后活跃 → 主窗口；取不到时 owner=true 保底，⛔ 不许因算不出来就静音；⛔ muted 必须一起回，否则新开窗口会无视已生效的全局静音） */
+  announceOwner: () => __ipc("voice:announce-owner", 0, []),
+  /* 全局静音闩锁（任一窗口按「停止播报」⇒ 全窗口静默；一个扬声器一个用户，⛔ 不许只在本地闩） */
+  announceSetMuted: (input?: { muted?: boolean }) => __ipc("voice:announce-set-muted", 0, [input]),
   voiceStart: (threadId: string, options?: { mode?: "conversation" | "dictation" }) => __ipc("voice:start", 1, [threadId, options]),
   voiceDictationFinish: () => __ipc("voice:dictation-finish", 0, []),
   voiceEndpointNow: () => __ipc("voice:endpoint-now", 0, []),
@@ -816,6 +820,19 @@ onRuntimeProgress: (listener: (event: unknown) => void) =>
      ⛔ 不在这里判定任何东西 —— payload 就是 readMemoryBackend() 的同一份快照。 */
   onMemoryBackendChanged: (listener: (status: unknown) => void) =>
     __on("memory:backend-changed", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload)),
+  /* 播报归属推送（voice 域，10-21）：多窗口时**逐窗口定制**发送 —— payload 里的 `owner`
+     已经是「本窗口是不是播报窗口」，渲染层不需要（也拿不到）自己的 webContents.id。
+     触发点：焦点切换 / 窗口增减。推送类手写桥，不在 gen 段。 */
+  onAnnounceOwnerChanged: (listener: (state: { owner: boolean; reason: string }) => void) =>
+    __on("voice:announce-owner-changed", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload as { owner: boolean; reason: string })),
+  /* 全局静音闩锁推送（10-21）：任一窗口按「停止播报」⇒ 全窗口静默（一个扬声器一个用户）。
+     ⛔ 与本地 mutedRef 的区别：这条是**跨窗口事实**，收到就要真的拦，不能只当提示。 */
+  onAnnounceMuted: (listener: (state: { muted: boolean }) => void) =>
+    __on("voice:announce-muted", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload as { muted: boolean })),
+  /* 通话状态推送（10-21，**所有窗口**）：`voice:event` 只发主窗口，弹窗靠这条知道
+     「主窗口在通话」⇒ 非通话播报必须避让（否则两条音轨抢同一个扬声器）。 */
+  onVoiceCallState: (listener: (state: { state: string; active: boolean }) => void) =>
+    __on("voice:call-state", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload as { state: string; active: boolean })),
   /* 3D 预览弹窗打开推送（model-viewer 域，10-05）：引擎 harness_tools preview_3d → 主进程
      sendToWindow("model-viewer:open") → 渲染层 ModelViewerBridge 弹窗。推送类手写桥，不在 gen 段。 */
   onModelViewerOpen: (listener: (event: { path: string; title: string }) => void) =>
