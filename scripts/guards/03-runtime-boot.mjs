@@ -424,6 +424,15 @@ console.log(C.bold("\n【10】滚动与锚定状态：单一 owner + 默认值�
     && !/deltaY < 0\) releaseToUser/.test(appSrc) ? ok : fail)(
     "滚轮解除跟随不看方向、走 window capture（自然滚动 / portal / stopPropagation 都拦不住）"
   );
+
+  // ⑥ 续载更早历史先交出跟随权：上方插内容会被 height-follow 当成"底部增长"→ 回弹到底部。
+  {
+    const rel = appSrc.indexOf('releaseToUserRef.current?.("history")');
+    const exp = appSrc.indexOf("expandTurnWindow(id, grow)");
+    (rel >= 0 && exp > rel && exp - rel < 6000 ? ok : fail)(
+      "续载更早历史先 releaseToUser（否则滚到顶部会被贴底跟随回弹到底部）"
+    );
+  }
 }
   }
 
