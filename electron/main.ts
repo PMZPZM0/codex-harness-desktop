@@ -559,7 +559,19 @@ const voiceService = new VoiceService({
     if (voiceLogs.length > 50) voiceLogs.shift();
     if (level === "error") console.error(`[voice] ${message}`);
   },
-  emit: (event) => sendToWindow("voice:event", event),
+  /* 10-21：通话状态**单独旁路广播到所有窗口**（播报跨窗口避让用）。
+     ⛔ 为什么不能直接把 `voice:event` 改成 broadcastToAll：那会把 partial / delta / final
+        也塞进弹窗（弹窗没有通话 UI、也没有 AEC 参考环）⇒ 需要的是**只有状态**的一条轻量通道。
+     ⛔ 弹窗必须知道「主窗口正在通话」：否则它的非通话播报会与通话 TTS 抢同一个扬声器
+        （用户听到的是两条音轨叠在一起，且打断逻辑只管得到本窗口）。 */
+  emit: (event) => {
+    sendToWindow("voice:event", event);
+    if (event.type === "state") {
+      let active = event.state !== "idle";
+      try { active = voiceService.status().active; } catch { /* 构造期 TDZ：退回按 state 推断 */ }
+      broadcastToAll("voice:call-state", { state: event.state, active });
+    }
+  },
 });
 
 // 09-13：下线的内置音色预设（台湾腔·小美 / AI管家·贾维斯风）——把它们在用户档案里

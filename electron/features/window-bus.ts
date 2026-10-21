@@ -25,16 +25,41 @@ const primaryWindows: BusWindow[] = [];
 /** 独立会话弹窗。 */
 const extraWindows: BusWindow[] = [];
 
+/**
+ * 「窗口集合变了」的订阅者（10-21 新增）。
+ *
+ * 为什么需要：**播报归属**（`voice-announce-owner`）必须随窗口增减重算 —— 新开的弹窗可能
+ * 立刻成为焦点窗口、旧 owner 关闭后必须有人接棒。⛔ 这里是**基座**，只广播"变了"这个事实，
+ * 不反向依赖任何域（域的裁决逻辑在 `features/voice-ipc/04-announce-owner.ts`）。
+ */
+const windowListWatchers = new Set<() => void>();
+
+export function onBusWindowListChanged(fn: () => void): () => void {
+  windowListWatchers.add(fn);
+  return () => { windowListWatchers.delete(fn); };
+}
+
+function notifyWindowListChanged() {
+  for (const fn of windowListWatchers) {
+    try { fn(); } catch { /* 单个订阅者出错不影响窗口登记 */ }
+  }
+}
+
 export function registerBusWindow(win: BusWindow, opts?: { primary?: boolean }) {
   const list = opts?.primary ? primaryWindows : extraWindows;
-  if (!list.includes(win)) list.push(win);
+  if (!list.includes(win)) {
+    list.push(win);
+    notifyWindowListChanged();
+  }
 }
 
 export function unregisterBusWindow(win: BusWindow) {
+  let changed = false;
   for (const list of [primaryWindows, extraWindows]) {
     const i = list.indexOf(win);
-    if (i >= 0) list.splice(i, 1);
+    if (i >= 0) { list.splice(i, 1); changed = true; }
   }
+  if (changed) notifyWindowListChanged();
 }
 
 /** 主窗口 + 全部独立会话弹窗（主窗口在前 —— 与原先 `[mainWindow, ...popoutWindows]` 顺序一致）。 */
