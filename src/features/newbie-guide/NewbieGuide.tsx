@@ -26,8 +26,23 @@ const GUIDE_TIERS: { id: GuideTier; label: string }[] = [
   { id: "advanced", label: "高级教程" },
 ];
 
-export function NewbieGuide({ onOpenSettings }: { onOpenSettings?: (page: string) => void }) {
-  const [open, setOpen] = useState(false);
+/**
+ * @param open / onOpenChange **受控打开**（10-21 侧栏重排）：传了 `open` 就**不再渲染内置入口行** ——
+ *   入口由调用方自己画（侧栏底部「新手教程」一行，与其它导航项同款）。
+ *   ⛔ 不传 = 老行为（自带一行「新手引导」入口），别的调用方不用改。
+ */
+export function NewbieGuide({ onOpenSettings, open: openProp, onOpenChange }: {
+  onOpenSettings?: (page: string) => void;
+  open?: boolean;
+  onOpenChange?: (next: boolean) => void;
+}) {
+  const [openState, setOpenState] = useState(false);
+  const controlled = typeof openProp === "boolean";
+  const open = controlled ? openProp : openState;
+  const setOpen = (next: boolean) => {
+    if (controlled) onOpenChange?.(next);
+    else setOpenState(next);
+  };
   const [activeId, setActiveId] = useState(GUIDE_SECTIONS[0]?.id ?? "start");
   const [history, setHistory] = useState<HistoryState>({ status: "idle", entries: [] });
 
@@ -61,12 +76,14 @@ export function NewbieGuide({ onOpenSettings }: { onOpenSettings?: (page: string
 
   return (
     <>
-      {/* 侧栏常驻入口（会话列表之下、账户行之上；侧栏收起时随侧栏整体隐藏） */}
-      <button type="button" className="guide-entry" onClick={() => setOpen(true)} title="新手引导：第一次用点这里">
-        <Rocket size={15} />
-        <span className="guide-entry-label">新手引导</span>
-        <span className="guide-entry-sub">第一次用？</span>
-      </button>
+      {/* 侧栏常驻入口（非受控时才画；受控形态由侧栏底部导航组提供「新手教程」一行） */}
+      {!controlled && (
+        <button type="button" className="guide-entry" onClick={() => setOpen(true)} title="新手教程：第一次用点这里">
+          <Rocket size={15} />
+          <span className="guide-entry-label">新手教程</span>
+          <span className="guide-entry-sub">第一次用？</span>
+        </button>
+      )}
       {open && (
         <div
           className="modal-backdrop guide-backdrop"

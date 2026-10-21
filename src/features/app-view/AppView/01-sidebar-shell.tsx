@@ -252,6 +252,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   const [guideKey, setGuideKey] = useState<SidebarGuideKey | null>(null);
   /* 登录管理（10-21 用户要求）：三处账户一处直达，纯局部弹窗状态。 */
   const [loginMgrOpen, setLoginMgrOpen] = useState(false);
+  /* 新手教程（10-21 侧栏重排）：入口挪进底部导航组 ⇒ 打开状态提到这里（受控交给 NewbieGuide）。 */
+  const [newbieOpen, setNewbieOpen] = useState(false);
 
   /** 能力卡片本身就是跳转入口：侧栏统一把 target 翻译成设置页 / 画布。 */
   const navigateGuideTarget = (target: SidebarGuideTarget) => {
@@ -384,29 +386,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   <Search size={15} /><span>搜索任务</span>
                 </button>
               </div>
-              <div className="sidebar-nav" role="group" aria-label="能力入口">
-                <button className="sidebar-tab sidebar-cap-row ic-amber" title="按时间自动运行任务" aria-haspopup="dialog" onClick={() => { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); }}>
-                  <Clock3 size={15} /><span>定时任务</span><ChevronRight size={13} className="sidebar-cap-chevron" />
-                </button>
-                {/* 10-21 用户要求：侧栏名一律 4 字（原名太长）——全称留在 title 与弹窗标题里，信息不丢。 */}
-                <button className="sidebar-tab sidebar-cap-row" title="前端 UI · 组件库：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "frontend"} onClick={() => setGuideKey("frontend")}>
-                  <LayoutGrid size={15} className="ic-blue" /><span>前端组件</span><ChevronRight size={13} className="sidebar-cap-chevron" />
-                </button>
-                <button className="sidebar-tab sidebar-cap-row" title="技能 · 插件 · MCP：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "extensions"} onClick={() => setGuideKey("extensions")}>
-                  <Zap size={15} className="ic-pink" /><span>技能插件</span><ChevronRight size={13} className="sidebar-cap-chevron" />
-                </button>
-                <button className="sidebar-tab sidebar-cap-row" title="子智能体 · 专家 · 专家团：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "agents"} onClick={() => setGuideKey("agents")}>
-                  <Users size={15} className="ic-violet" /><span>专家团队</span><ChevronRight size={13} className="sidebar-cap-chevron" />
-                </button>
-                <button className="sidebar-tab sidebar-cap-row" title="人格市场 · 记忆中心 · 知识库：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "identity"} onClick={() => setGuideKey("identity")}>
-                  <Heart size={15} className="ic-amber" /><span>人格记忆</span><ChevronRight size={13} className="sidebar-cap-chevron" />
-                </button>
-                {/* 登录管理（10-21 用户要求）：三处账户一处直达（GPT 订阅 / 中转站 / 云账号）。
-                    ⛔ 只做入口聚合 + 直达，登录表单仍在各自设置页（复制一份必漂移）。 */}
-                <button className="sidebar-tab sidebar-cap-row" title="登录管理：GPT 订阅 · 中转站账户 · 云账号" aria-haspopup="dialog" aria-expanded={loginMgrOpen} onClick={() => setLoginMgrOpen(true)}>
-                  <KeyRound size={15} className="ic-green" /><span>登录管理</span><ChevronRight size={13} className="sidebar-cap-chevron" />
-                </button>
-              </div>
             </div>
             {guideKey && <SidebarGuideModal guideKey={guideKey} onNavigate={navigateGuideTarget} onClose={() => setGuideKey(null)} />}
             {/* 直达：关弹窗 + 直接开对应设置页（⛔ 不再经「设置 → 账户与模型」多一层） */}
@@ -502,9 +481,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 ⚠️ 这里空间紧（账户行固定高度），**插槽内容宜少不宜多** —— 一个统计数字、
                 一个开关那种；别往这里塞长列表。 */}
             <Slot id="sidebar.bottom" props={{ onOpenSettings }} loader={() => import("../../settings-devtools/DomainsPanel")} />
-            {/* 新手引导常驻入口（10-07 用户令）：会话列表之下、账户行之上 —— 与 sidebar.bottom 插槽同段位。
-                入口一行（空间紧），点开 = 迷你设置弹窗（.modal-backdrop fixed，不受行高影响）。 */}
-            <NewbieGuide onOpenSettings={onOpenSettings} />
             <div className="account-row">
               <button className="account-avatar" title="账户菜单" onClick={() => { setAccountMenuSub(null); setAccountMenuOpen(!accountMenuOpen); }}>{userAvatar?.type === "image" && userAvatar.value ? <img src={userAvatar.value} alt="头像" /> : userAvatar?.type === "emoji" && userAvatar.value ? <span className="account-avatar-emoji">{userAvatar.value}</span> : <span className="account-avatar-letter">{username.trim().charAt(0).toUpperCase() || "?"}</span>}</button>
               {accountEditing ? (
@@ -597,6 +573,37 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
               <button className="account-icon ic-cyan" title="移动端远程控制" onClick={() => { setMobileRemoteOpen(true); void window.codex.remoteStart().then((r) => setRemoteUrl(r.url)).catch(() => undefined); void window.codex.remoteStatus().then((s) => { setRemoteStatus(s.status); setRemoteDevices(s.devices); setRemoteUrl(s.url); }).catch(() => undefined); void window.codex.remoteQrcode().then((svg) => setRemoteQr(svg)).catch(() => undefined); void loadPairStates(); }}><Smartphone size={15} /></button>
               <button className="sidebar-settings ic-blue" title="设置" onClick={() => { setSettingsPage("appearance"); setSettingsOpen(true); setMobileNav(false); }}><Settings size={16} /></button>
             </div>
+            {/* ── 底部导航组（10-21 用户令：入口从顶部挪到底部，用户名之下）──────────────────
+                顺序 = 用户名 → 自动化 → 前端开发 → 拓展 → 团队 → 个性化&记忆 → 登录管理 → 新手教程。
+                ⛔ 名字是用户逐条指定的（不再强求 4 字）；全称仍留在 title 与弹窗标题里。 */}
+            <div className="sidebar-nav sidebar-nav-bottom" role="group" aria-label="功能入口">
+              <button className="sidebar-tab sidebar-cap-row ic-amber" title="按时间自动运行任务" aria-haspopup="dialog" onClick={() => { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); }}>
+                <Clock3 size={15} /><span>自动化</span><ChevronRight size={13} className="sidebar-cap-chevron" />
+              </button>
+              <button className="sidebar-tab sidebar-cap-row" title="前端 UI · 组件库：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "frontend"} onClick={() => setGuideKey("frontend")}>
+                <LayoutGrid size={15} className="ic-blue" /><span>前端开发</span><ChevronRight size={13} className="sidebar-cap-chevron" />
+              </button>
+              <button className="sidebar-tab sidebar-cap-row" title="技能 · 插件 · MCP：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "extensions"} onClick={() => setGuideKey("extensions")}>
+                <Zap size={15} className="ic-pink" /><span>拓展</span><ChevronRight size={13} className="sidebar-cap-chevron" />
+              </button>
+              <button className="sidebar-tab sidebar-cap-row" title="子智能体 · 专家 · 专家团：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "agents"} onClick={() => setGuideKey("agents")}>
+                <Users size={15} className="ic-violet" /><span>团队</span><ChevronRight size={13} className="sidebar-cap-chevron" />
+              </button>
+              <button className="sidebar-tab sidebar-cap-row" title="人格市场 · 记忆中心 · 知识库：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "identity"} onClick={() => setGuideKey("identity")}>
+                <Heart size={15} className="ic-amber" /><span>个性化&amp;记忆</span><ChevronRight size={13} className="sidebar-cap-chevron" />
+              </button>
+              {/* 登录管理（10-21 用户要求）：三处账户一处直达（GPT 订阅 / 中转站 / 云账号）。
+                  ⛔ 只做入口聚合 + 直达，登录表单仍在各自设置页（复制一份必漂移）。 */}
+              <button className="sidebar-tab sidebar-cap-row" title="登录管理：GPT 订阅 · 中转站账户 · 云账号" aria-haspopup="dialog" aria-expanded={loginMgrOpen} onClick={() => setLoginMgrOpen(true)}>
+                <KeyRound size={15} className="ic-green" /><span>登录管理</span><ChevronRight size={13} className="sidebar-cap-chevron" />
+              </button>
+              {/* 新手教程（10-21）：原来那一行独立入口收进本组，弹窗本身仍用 NewbieGuide（受控打开）。 */}
+              <button className="sidebar-tab sidebar-cap-row" title="新手教程：分步教你用起来" aria-haspopup="dialog" aria-expanded={newbieOpen} onClick={() => setNewbieOpen(true)}>
+                <Rocket size={15} className="ic-cyan" /><span>新手教程</span><ChevronRight size={13} className="sidebar-cap-chevron" />
+              </button>
+            </div>
+            {/* 受控：传 open ⇒ NewbieGuide 不再画自己那行入口（否则底部会出现两个「新手」） */}
+            <NewbieGuide open={newbieOpen} onOpenChange={setNewbieOpen} onOpenSettings={onOpenSettings} />
           </aside>
     ) : null}
     {/* ⛔ 10-12 更新就绪弹窗（需求 3）：挂在 sidebar 之外、Fragment 之内 ——
