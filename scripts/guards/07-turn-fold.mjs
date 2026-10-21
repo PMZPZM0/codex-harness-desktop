@@ -4589,6 +4589,9 @@ export async function run() {
     (/const action = command \? commandAction\(command\) : "";/.test(termCode) && /\{headline \|\| verb\}/.test(termCode) ? ok : fail)(
       "【127】命令卡表头优先用动作短语、认不出退回 verb（`headline || verb`）"
     );
+    (/const headline = action && !skill && !\(waitingForApproval && running\)/.test(termCode) ? ok : fail)(
+      "【127】⛔ 动作短语**给技能态与审批态让位**（读 SKILL.md 也是一条命令：不许把「已使用技能」盖成「跑脚本 x」；审批中要显示「等待批准」）"
+    );
     (/\[purpose, target\]\.filter\(Boolean\)\.join\(" · "\)/.test(termCode) ? ok : fail)(
       "【127】表头串 = 用途 · 目标（两者都显示，看不出目的才算没映射）"
     );

@@ -81,7 +81,14 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive }: {
      ⛔ 状态仍由右侧图标表达（✓/!/○）：有 action 时不再在标题前加「已/正在」，
         与 WorkBuddy 同形；失败时保留「失败」后缀（红色卡片 + 图标之外再给一处明确文字）。 */
   const action = command ? commandAction(command) : "";
-  const headline = action ? (failed ? `${action}失败` : action) : "";
+  /* ⛔ 两处**让位**（自查抓到的回归）：动作短语是"这句命令在干什么"，但有两种情况它的优先级更低——
+     ① 命中技能（09-24 用户明确要求「工具板块要显示用了哪个技能」）：读 SKILL.md 也是一条命令，
+        显示「跑脚本 xxx」会把「已使用技能 humanizer」盖掉 ⇒ 技能态必须优先；
+     ② 等待批准：用户此刻要知道的是"在等我点"，不是"这条命令在干什么"。
+     两种情况下动作短语仍出现在次级行（hint），信息不丢。 */
+  const headline = action && !skill && !(waitingForApproval && running)
+    ? (failed ? `${action}失败` : action)
+    : "";
   const verb = waitingForApproval && running ? "等待批准"
     : skill ? (running ? "正在使用技能" : failed ? "使用技能失败" : "已使用技能")
       : running ? `正在${intentVerb}` : failed ? `${intentVerb}失败` : `已${intentVerb}`;
