@@ -1258,7 +1258,7 @@
    ⛔ 颜色与压缩线同一个 token（var(--green)）。 */
 .message-ruler .ruler-compaction {
   flex: none;
-  /* ⛔ 与普通刻度同长（12px），不参与 hover/当前阅读位置的波浪加长。 */
+  /* ⛔ 静止与普通刻度同长（12px）；波浪时同样**只向右**变长（左端对齐不动）。 */
   width: 12px;
   height: 2px;
   margin: 4px 0 4px 12px;
@@ -1273,32 +1273,34 @@
     width 0.26s cubic-bezier(0.22, 0.61, 0.36, 1),
     margin-left 0.26s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
-/* 绿线也跟波浪：静止 12px，波浪中心/邻近与普通刻度同宽（26/18/15px）。 */
-.message-ruler .ruler-compaction.wave-0 { width: 26px; margin-left: 2px; transition-delay: 0s; }
-.message-ruler .ruler-compaction.wave-1 { width: 18px; margin-left: 5px; transition-delay: 40ms; }
-.message-ruler .ruler-compaction.wave-2 { width: 15px; margin-left: 8px; transition-delay: 80ms; }
+/* 绿线也跟波浪：静止 12px，波浪中心/邻近与普通刻度同宽（26/18/15px），左端同样不动。 */
+.message-ruler .ruler-compaction.wave-0 { width: 26px; margin-left: 12px; transition-delay: 0s; }
+.message-ruler .ruler-compaction.wave-1 { width: 18px; margin-left: 12px; transition-delay: 40ms; }
+.message-ruler .ruler-compaction.wave-2 { width: 15px; margin-left: 12px; transition-delay: 80ms; }
 
 .message-ruler .ruler-tick.latest,
 .message-ruler .ruler-tick.current {
   background-color: color-mix(in srgb, var(--text) 80%, transparent);
 }
+/* ⛔ 波浪只朝聊天一侧（右）变长：margin-left 恒为 12px，左端对齐不动（10-21 用户：
+   「只有靠近对话框这边有波浪效果，左边不要波浪效果」）。 */
 .message-ruler .ruler-tick.wave-0,
 .message-ruler .ruler-tick:hover {
   background-color: var(--text);
   width: 26px;
-  margin-left: 2px;
+  margin-left: 12px;
   transition-delay: 0s;
 }
 .message-ruler .ruler-tick.wave-1 {
   background-color: color-mix(in srgb, var(--text) 62%, transparent);
   width: 18px;
-  margin-left: 5px;
+  margin-left: 12px;
   transition-delay: 40ms;
 }
 .message-ruler .ruler-tick.wave-2 {
   background-color: color-mix(in srgb, var(--text) 38%, transparent);
   width: 15px;
-  margin-left: 8px;
+  margin-left: 12px;
   transition-delay: 80ms;
 }
 .message-ruler .ruler-tip {

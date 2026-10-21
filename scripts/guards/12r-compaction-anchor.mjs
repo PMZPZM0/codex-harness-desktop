@@ -98,11 +98,15 @@ ok(/\.message-ruler \.ruler-compaction\s*\{[\s\S]{0,260}margin:\s*4px 0 4px 12px
 ok(/\.message-ruler \.ruler-compaction\s*\{[\s\S]{0,300}?width:\s*12px/.test(css)
   && /className=\{`ruler-compaction\$\{wave\}`\}/.test(ruler)
   && /className=\{`ruler-compaction\$\{endWave\}`\}/.test(ruler)
-  && /\.message-ruler \.ruler-compaction\.wave-0 \{ width: 26px/.test(css)
-  && /\.message-ruler \.ruler-compaction\.wave-1 \{ width: 18px/.test(css)
-  && /\.message-ruler \.ruler-compaction\.wave-2 \{ width: 15px/.test(css)
-  && /\.ruler-compaction\.wave-0[^\n]*margin-left:\s*2px/.test(css),
+  && /\.message-ruler \.ruler-compaction\.wave-0 \{ width: 26px; margin-left: 12px/.test(css)
+  && /\.message-ruler \.ruler-compaction\.wave-1 \{ width: 18px; margin-left: 12px/.test(css)
+  && /\.message-ruler \.ruler-compaction\.wave-2 \{ width: 15px; margin-left: 12px/.test(css),
   "绿段跟随波浪长短：静止 12px，波浪中心/邻位与普通刻度同宽（26/18/15px，含末尾绿段）");
+ok(/\.ruler-tick\.wave-0,[\s\S]{0,160}?\.ruler-tick:hover \{[\s\S]{0,120}?width:\s*26px;[\s\S]{0,40}?margin-left:\s*12px/.test(css)
+  && /\.ruler-tick\.wave-1 \{[^}]*margin-left:\s*12px/.test(css)
+  && /\.ruler-tick\.wave-2 \{[^}]*margin-left:\s*12px/.test(css)
+  && !/\.ruler-(?:tick|compaction)\.wave-[012][^{]*\{[^}]*margin-left:\s*(?:2|5|8)px/.test(css),
+  "⛔ 波浪只朝聊天一侧变长：左端 margin-left 恒 12px（旧版两边同时伸缩的 2/5/8px 不许回来）");
 /* ── ④ 刻度尺联动（10-21 用户：当前阅读位置自动带起上下邻刻度的波浪；点击跳转） ── */
 ok(/const currentPos = currentItemId \? marks\.findIndex\(\(m\) => m\.itemId === currentItemId\) : -1/.test(ruler)
   && /const activeIndex = hoverIndex != null \? hoverIndex : \(currentPos >= 0 \? currentPos : null\)/.test(ruler)
