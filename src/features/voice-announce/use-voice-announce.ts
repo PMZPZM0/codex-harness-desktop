@@ -6,9 +6,12 @@
  *            作用范围 = 通话中 + 非通话（用户明确选了「两者都要」）；
  *   · 10-09 第一轮：「语气过于平淡 → 改成让 Codex 根据上下文自行决定并生成播报内容」
  *            「增加播报进行中的实时反馈」「支持随时停止」「记得配套对应工具，没工具他调用不了」；
- *   · 10-09 第二轮（**本版**）：「运行的正文和汇总正文不用播报了，只播报 Codex 写的内容」
+ *   · 10-09 第二轮：「运行的正文和汇总正文不用播报了，只播报 Codex 写的内容」
  *            ⇒ 非通话链路里**删掉**「正文流式逐句念」与「本机压缩摘要」两条来源，
- *              只念模型写在回复末尾的 `voice` 播报稿（+ 它主动插播的那句话）。
+ *              只念模型写在回复末尾的 `voice` 播报稿（+ 它主动插播的那句话）；
+ *   · **10-21（当前）**：「运行过程中，每当有新的正文内容输出时都要触发一次语音播报，
+ *            避免出现播报次数过少、几乎听不到的情况」⇒ 正文朗读**恢复为默认开**
+ *            （不再依赖模型标记），结尾播报稿逻辑不变，两者预算/来源互不影响。
  *
  * ── 职责划分（⛔ 这条边界是本功能的核心，别越界）────────────────────────────────
  *   · **通话中**：播报由 `VoiceCallFloat` 自己的链路负责（它还要喂 AEC 参考环、走音量/世代号/打断
@@ -18,16 +21,17 @@
  *     不必在通话中也能合成；`voice:speak` 那条只在通话里有 worker），播放走本模块自己的
  *     AudioContext 队列。**不开麦克风**（只听不说）。
  *
- * ── 念什么（10-09 第五轮定稿）────────────────────────────────────────────────
- *   ① **正文**（运行过程中逐句念）：两个入口，都只是把本回合标记成"念正文"——
- *      · **Codex 自己判断**（`voice_speak_reply` 工具）：用户在催、反复没做好、当前步骤重要、
- *        它自己有话要说时才会调；
- *      · **宿主硬规则兜底**（10-09 第六轮用户拍板）：单回合工具调用 **> 10 次**、
- *        或**同一个问题被返工 ≥2 次**（判据见 `src/lib/voice-auto-speak.mjs`）。
- *      用户把播报总开关关掉时正文也不念（比插播更"自动"，必须尊重开关）。
- *   ② **播报稿**：模型写在回复末尾的 `voice` 围栏块（契约见 `src/lib/voice-script.mjs`），
+ * ── 念什么（**10-21 用户契约，当前有效**）────────────────────────────────────
+ *   ① **正文**（运行过程中逐句念）：**每个正文段都念** —— 只要总开关开着、非通话、
+ *      没被用户按停，每来一段 `item/agentMessage/delta` 就断句合成入队。
+ *      ⛔ 旧判据（10-09 第五轮「由 Codex 逐条决定，`voice_speak_reply` 工具标记本回合」）已废：
+ *        模型很少调那个工具 ⇒ 绝大多数回合一个字都不念，用户报「播报次数过少、几乎听不到」。
+ *        `voice_speak_reply` 与两条硬规则（工具 >10 次 / 返工 ≥2 次）**保留但只作标记**，
+ *        不再门控正文（正文默认就念，它们不会改变结果）。
+ *   ② **播报稿**（结尾重点播报）：模型写在回复末尾的 `voice` 围栏块（契约 `src/lib/voice-script.mjs`），
  *      回合结束时念一次；**它没写就什么都不念**（不回退到本机压缩摘要 —— 那条已删除）。
- *   ③ **主动插播**：模型调 `voice_announce`（≤80 字一句）⇒ 立即念，⛔ **不看开关**。
+ *      ⛔ 与 ① **互不影响**：独立预算（`MAX_SUMMARY_CHARS`）、独立来源标记；正文念满上限也照样念它。
+ *   ③ **主动插播**：模型调 `voice_announce`（≤80 字一句）⇒ 立即念，⛔ **不看开关**、不计预算。
  *
  * ── 播报稿的合成分段（10-21 两次用户反馈的最终形态）────────────────────────────
  *   · 先为「播报延迟有点高」改成逐句合成、先到先播；
@@ -72,8 +76,10 @@ import { getVoiceStage, subscribeVoiceStage } from "../../voice/wave-level";
 
 type AnnounceCfg = { enabled: boolean; volume: number };
 
-/** 排队上限（段数）。超过就**不再为这一句合成**（丢弃它，保持跟手）。 */
-const MAX_ANNOUNCE_BACKLOG = 3;
+/** 排队上限（段数）。超过就**不再为这一句合成**（丢弃它，保持跟手）。
+ *  ⛔ 10-21 正文改默认播后 3 → 6：每个正文段都进链，3 段就丢会让「几乎听不到」重现；
+ *     但上限不能取消 —— TTS 合成慢于正文流出（实测 2 步合成 ≈ 0.73× 实时），无上限必然越念越落后。 */
+const MAX_ANNOUNCE_BACKLOG = 6;
 
 /**
  * 播报的 ZipVoice 采样步数（默认 4）。
@@ -83,18 +89,25 @@ const MAX_ANNOUNCE_BACKLOG = 3;
 const ANNOUNCE_NUM_STEPS = 2;
 
 /**
- * 本回合播报的**总量预算**（字符，10-12 用户：「这个语音播报，不用这么长」）。
+ * 运行中正文播报的**总量预算**（字符，回合级）。
  *
- * ⛔ 根因：在此之前只有「队列长度」背压（`MAX_ANNOUNCE_BACKLOG`），**没有总量上限** ——
- *    而 `live`（正文逐句念）是一条**无界流**：Codex 调一次 `voice_speak_reply`、或触发
- *    「工具调用 > 10 次 / 同一处返工 ≥2 次」硬规则之后，`speakLiveRef` 会一直为真，
- *    正文后续吐多少就念多少 ⇒ 一次长回合能被念一两分钟，且队列永远不满、背压形同虚设。
- *    这正是用户说的「一直播报」。
- * ⛔ 判据放在**唯一汇合处 `speak()`**：三条入口（正文实时 / 工具插播 / 结束播报稿）都过那里，
- *    在入口按字数扣预算 ⇒ 超了就直接丢弃这一句，**当回合剩下的内容一律不念**。
- * ⛔ 回合级清零（与 `spokenKeysRef` 同一时机）：预算不能跨回合累加，否则第二轮必然沉默。
+ * ⛔ 10-21 用户新契约：「运行过程中，每当有新的正文内容输出时都要触发一次语音播报，
+ *    避免出现播报次数过少、几乎听不到的情况」⇒ 正文不再看「Codex 是否标记回合」，
+ *    每个正文段都念。160 字（≈3 句）在这个契约下等于聊胜于无，提到 600（≈15~20 句）。
+ * ⛔ 为什么仍然要有上限：正文流出快于 TTS 合成（2 步 ≈ 0.73× 实时），纯无界会把
+ *    「一直播报」的老抱怨（10-12）原样带回来。超预算**只停正文**，⛔ 不影响结尾播报稿。
  */
-const MAX_ANNOUNCE_CHARS_PER_TURN = 160;
+const MAX_LIVE_CHARS_PER_TURN = 600;
+
+/**
+ * 结尾播报稿的**独立预算**（字符）。⛔ 用户 10-21 明确要求「两部分互不影响」：
+ * 正文把 600 字吃光时，结尾那句「重点播报」必须照样念（否则正是本轮要修的症状之一）。
+ * 播报稿本身由 `voice` 围栏契约限长（通常 40~80 字），这里只是兜底防模型写长文。
+ */
+const MAX_SUMMARY_CHARS = 400;
+
+/** 播报来源：正文实时 / 结尾播报稿 / 模型主动插播。⛔ 预算按来源分开计数，互不挤占。 */
+type SpeakScope = "live" | "summary" | "tool";
 
 export function useVoiceAnnounce(threadId: string = ""): void {
   /** 开关/音量（从设置读、经 voice:event 广播刷新；放 ref 里避免每次变化重建订阅） */
@@ -102,10 +115,12 @@ export function useVoiceAnnounce(threadId: string = ""): void {
   /** 已预热的音色档案（null = 还没热过）；模型加载是播报延迟的大头，选好音色后先空合成一句短句把 worker 拉起来。 */
   const warmKeyRef = useRef<string | null>(null);
   /**
-   * 「本回合要不要把正文边写边念」——⛔ **由 Codex 自己决定**（`voice_speak_reply` 工具，
-   * 运行中广播 `voice-announce` / `action:"speak-reply"`）。不是每条回复都念，也不是用户开关控制：
-   * 用户在催得急、反复没做好、当前步骤重要、或者它自己觉得有话要说这些情况下才会调。
-   * 回合结束/被打断时复位（逐条生效，不会漏到下一轮）。
+   * 「本回合正文是否念过」的标记（10-21 起**不再作门控**，也不再决定尾句是否 flush）：
+   * 只用于状态条的来源标注（`sourceRef` 之外的辅助信号）。
+   * ⛔ 旧语义（10-09 第五轮）是「只有 Codex 标记过的回合才念正文」—— 用户 10-21 明确否掉：
+   *    模型很少调 `voice_speak_reply` ⇒ 绝大多数回合一个字都不念，这就是「几乎听不到」。
+   * ⛔ `finishTurn` 的尾句 flush **恒执行**（不读这个 ref）：正文默认就念，尾句必须收；
+   *    空链路 flush 返回空数组，本来就是安全操作。
    */
   const speakLiveRef = useRef(false);
   /** 两条硬规则的累计器（每回合重置）——判据与阈值在 `src/lib/voice-auto-speak.mjs`（纯函数可真跑） */
@@ -160,12 +175,14 @@ export function useVoiceAnnounce(threadId: string = ""): void {
   const spokenKeysRef = useRef<Set<string>>(new Set());
   const clearSpokenKeys = useCallback(() => { spokenKeysRef.current.clear(); }, []);
   /**
-   * 本回合已播字数（10-12「不用这么长」的判据）。与 `spokenKeysRef` 同为**回合级**，
-   * 收尾/被打断时一起清零。
+   * 本回合**按来源分开**的已播字数（10-21「两部分互不影响」的落点）。
+   * ⛔ 旧版是一个数字：正文把 160 字吃光 ⇒ 结尾播报稿也被一起丢掉 —— 正是「结尾听到重点」
+   *    与「正文念得多」互相挤压的根因。现在 `live` / `summary` / `tool` 各记各的。
+   * 与 `spokenKeysRef` 同为**回合级**，收尾/被打断时一起清零。
    */
-  const spentCharsRef = useRef(0);
+  const spentCharsRef = useRef<Record<SpeakScope, number>>({ live: 0, summary: 0, tool: 0 });
   const resetTurnBudget = useCallback(() => {
-    spentCharsRef.current = 0;
+    spentCharsRef.current = { live: 0, summary: 0, tool: 0 };
     clearSpokenKeys();
   }, [clearSpokenKeys]);
   /**
@@ -177,8 +194,20 @@ export function useVoiceAnnounce(threadId: string = ""): void {
    *    （它必须立刻生效，否则「停止播报」会被排到几分钟后的队尾）。
    */
   const chainRef = useRef<Promise<void>>(Promise.resolve());
+  /**
+   * **待处理任务数**（已入链、还没跑完）。⛔ 10-21 新增，这是正文改默认播之后的必需品：
+   * `MAX_ANNOUNCE_BACKLOG` 只看**播放**队列（`queueRef`，已合成完在等出声），而合成是串行的、
+   * 每段要 2~5 秒（2 步合成 ≈ 0.73× 实时）。正文流出远快于合成 ⇒ 不加这道闸，链上会堆几十个
+   * 待合成段，用户听到的永远是几分钟前的内容 = 另一种形态的「听不到」。
+   * 判据在 delta 分支入链**之前**（`pendingTasksRef + queueRef.length`），超了直接丢这一段。
+   */
+  const pendingTasksRef = useRef(0);
   const enqueueTask = useCallback((task: () => Promise<void>) => {
-    chainRef.current = chainRef.current.then(task).catch(() => undefined);
+    pendingTasksRef.current += 1;
+    chainRef.current = chainRef.current
+      .then(task)
+      .catch(() => undefined)
+      .finally(() => { pendingTasksRef.current = Math.max(0, pendingTasksRef.current - 1); });
   }, []);
 
   /** 把当前的真实状况推给状态栏（唯一出口：凡是会改变「看起来在不在念」的地方都要调它） */
@@ -209,6 +238,9 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       try { source.stop(); } catch { /* 已经播完 */ }
     }
     queueRef.current = [];
+    /* ⛔ 积压计数也清零（10-21）：停止/打断后链上残留的任务会因世代号不匹配空转返回，
+       若不清这里，积压闸会在下一次开口前一直挡着正文（表现「恢复播报后还是不念」）。 */
+    pendingTasksRef.current = 0;
     resetLive();
     sourceRef.current = "";
     /* ⛔⛔ 主动停止必须**同时掐掉三条入口的活儿**（10-12「停止都停止不了」的根因修复）：
@@ -281,15 +313,22 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     publishStatus();
   }, [ensureCtx, publishStatus]);
 
-  /** 合成一句并排队：非通话路径走 preview-voice（常驻试听 worker） */
-  const speak = useCallback(async (text: string, epoch: number, opts: { speed?: number } = {}) => {
+  /** 合成一句并排队：非通话路径走 preview-voice（常驻试听 worker）
+   *  @param opts.scope 播报来源（决定**独立**的字数预算）；默认 `live`（正文实时）。 */
+  const speak = useCallback(async (text: string, epoch: number, opts: { speed?: number; scope?: SpeakScope } = {}) => {
     const clean = String(text ?? "").trim();
     if (!clean) return;
+    const scope: SpeakScope = opts.scope ?? "live";
     /* ⛔⛔ 静音闩锁（10-12「停止都停止不了」）：**唯一裁决点**，放在 `speak()` 最前面。
        三条入口（正文实时 delta / 工具插播 toolSpeak / 结束播报稿 finishTurn）全都汇合到这里，
        所以置位一次就等于把整条播报链静默 —— 不需要在三个分支各判一遍（三处各判一半就是
        本仓记过的「二房东」缺陷：改了这边漏那边，下条入口又冒出来念）。 */
     if (mutedRef.current) return;
+    /* ⛔ 总开关对**正文链**同样有效（10-21）：用户在回合中途关掉播报时，断句器里的尾句与
+       已入链的任务还会走到这里 —— 不在这一处判，就会出现「关了播报还在念」（旧入口只在
+       delta 分支判，尾句 flush 绕得过去）。`summary` 的开关判定在 `finishTurn`（那里还要决定
+       要不要解析播报稿），此处只收 live。 */
+    if (scope === "live" && !cfgRef.current.enabled) return;
     // 背压：排太长就丢弃这一句（保持跟手，不变成停不下来的复读机）
     if (queueRef.current.length >= MAX_ANNOUNCE_BACKLOG) {
       console.warn("[voice-announce] 播报排队过长，丢弃这一句以保持跟手：", clean.slice(0, 24));
@@ -302,13 +341,16 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       console.warn("[voice-announce] 同一回合内这段内容已经播报过，跳过重复播放：", clean.slice(0, 24));
       return;
     }
-    /* ⛔ 本回合总量预算（10-12「不用这么长」）：队列长度背压管不住 `live` 那条无界正文流，
-       必须按**字数**封顶。超出即丢弃本句并**顺手关掉本回合的正文朗读** ——
-       否则模型继续吐正文，它就一直尝试合成（每句一次 TTS 往返，纯浪费）。 */
-    if (spentCharsRef.current + deduped.text.length > MAX_ANNOUNCE_CHARS_PER_TURN) {
-      spentCharsRef.current = MAX_ANNOUNCE_CHARS_PER_TURN;
-      speakLiveRef.current = false;
-      console.info("[voice-announce] 本回合播报已达字数上限（", MAX_ANNOUNCE_CHARS_PER_TURN, "字），后续内容不再播报");
+    /* ⛔ 字数预算**按来源分开**（10-21「两部分互不影响」）：正文超限只停正文，
+       结尾播报稿与工具插播各有自己的额度 —— 正文念满 600 字也不会把结尾那句吞掉。
+       工具插播（模型显式调用）不计预算：显式调用就是用户要听这一句。 */
+    const budget = scope === "live" ? MAX_LIVE_CHARS_PER_TURN : scope === "summary" ? MAX_SUMMARY_CHARS : Number.POSITIVE_INFINITY;
+    if (spentCharsRef.current[scope] + deduped.text.length > budget) {
+      spentCharsRef.current[scope] = budget;
+      /* 超预算**只**关掉本回合的正文朗读（避免模型继续吐正文时每句白跑一次 TTS 往返）；
+         ⛔ 结尾播报稿走独立预算，这里不许连坐。 */
+      if (scope === "live") speakLiveRef.current = false;
+      console.info("[voice-announce] 本回合", scope, "播报已达字数上限（", budget, "字），后续同类内容不再播报");
       return;
     }
     busyRef.current += 1;
@@ -326,7 +368,7 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       if (samples.length) {
         // ⛔ 登记必须放在「确认会出声」之后：合成失败不登记，后到的兜底句才不会被误吞
         for (const key of deduped.keys) spokenKeysRef.current.add(key);
-        spentCharsRef.current += deduped.text.length;
+        spentCharsRef.current[scope] += deduped.text.length;
         await play(samples, Number(result.sampleRate), epoch, deduped.text);
       }
     } finally {
@@ -337,7 +379,7 @@ export function useVoiceAnnounce(threadId: string = ""): void {
 
   /**
    * 正文增量 → 剥掉播报稿 → 断句 → 朗读清洗 → 逐句合成（与通话链路共用同一套基座函数）。
-   * ⛔ 只在 **Codex 标记了本回合**时才被调用（`speakLiveRef`）—— 见总线订阅那处。
+   * ⛔ 10-21 起**每个正文段都走这里**（不再看 `speakLiveRef`）：用户要的是「有正文就播」。
    */
   const feedDelta = useCallback(async (delta: string) => {
     sourceRef.current = "live";
@@ -351,37 +393,40 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     for (const sentence of sentences) {
       const spoken = filterRef.current.push(sentence);
       if (!spoken) continue;
-      await speak(spoken, epoch);
+      await speak(spoken, epoch, { scope: "live" });
       if (epoch !== epochRef.current) return;
     }
   }, [speak]);
 
   /**
-   * 回合结束：① 若本回合念过正文，先把流式链的尾句念完；② 再念模型写的播报稿。
-   * ⛔ 10-09 第二轮起**不再回退到本机压缩摘要**（那条整条删除了）；没写稿就什么都不念。
+   * 回合结束（两件事，⛔ **互不影响**）：
+   *   ① **正文尾句**：把剥离器按住的那半行 + 断句器里没凑满的残句念完。
+   *      10-21 起正文默认就念 ⇒ 这一步**恒执行**（不再看 `speakLiveRef` 标记），
+   *      空链路 flush 返回空数组，是安全操作。
+   *   ② **结尾播报稿**：`resolveAnnounceSummary` 解析模型写的 `voice` 围栏稿，整段一次合成。
+   *      ⛔ 这一段逻辑与 10-09 定稿完全一致（没写稿就什么都不念、不回退压缩摘要、不拆句）；
+   *      唯一变化是预算独立（`scope: "summary"`）——正文念得再多也不会把它挤掉。
    */
   const finishTurn = useCallback(async (finalText: string) => {
     const epoch = epochRef.current;
-    const live = speakLiveRef.current;
     speakLiveRef.current = false;
-    if (live) {
-      /* ⛔ 剥离器 `flush()` 把按住的那半行定下来 —— 它一定**不是**播报稿（stripper 已把整块吃掉），
-         所以接回去当尾句念完；顺序必须「先喂 tail 再 flush 断句器」，反过来会把 tail 当成新一轮首句。 */
-      const tail = stripperRef.current?.flush() ?? "";
-      const tailSentences: string[] = [];
-      if (tail) {
-        if (!chunkerRef.current) chunkerRef.current = createSentenceChunker({ maxChars: 60 });
-        if (!filterRef.current) filterRef.current = createSpeakFilter();
-        tailSentences.push(...chunkerRef.current.push(tail), ...chunkerRef.current.flush());
-      }
-      for (const sentence of tailSentences) {
-        const spoken = filterRef.current?.push(sentence) ?? "";
-        if (!spoken) continue;
-        await speak(spoken, epoch);
-        if (epoch !== epochRef.current) return;
-      }
-      resetLive();
+    /* ⛔ 剥离器 `flush()` 把按住的那半行定下来 —— 它一定**不是**播报稿（stripper 已把整块吃掉），
+       所以接回去当尾句念完；顺序必须「先喂 tail 再 flush 断句器」，反过来会把 tail 当成新一轮首句。 */
+    const tail = stripperRef.current?.flush() ?? "";
+    const tailSentences: string[] = [];
+    if (tail) {
+      if (!chunkerRef.current) chunkerRef.current = createSentenceChunker({ maxChars: 60 });
+      if (!filterRef.current) filterRef.current = createSpeakFilter();
+      tailSentences.push(...chunkerRef.current.push(tail), ...chunkerRef.current.flush());
     }
+    for (const sentence of tailSentences) {
+      const spoken = filterRef.current?.push(sentence) ?? "";
+      if (!spoken) continue;
+      await speak(spoken, epoch, { scope: "live" });
+      if (epoch !== epochRef.current) return;
+    }
+    resetLive();
+    /* ── 以下 = 结尾「重点播报」，与正文播报**互不影响**（独立预算 / 独立来源标记）── */
     if (!cfgRef.current.enabled) return;
     sourceRef.current = "summary";
     const script = resolveAnnounceSummary(String(finalText ?? ""));
@@ -391,8 +436,8 @@ export function useVoiceAnnounce(threadId: string = ""): void {
          队列硬拼，听起来就是断开的一截；机器负载一高，后一句还没合成完还会多出真空。
          代价是首句要等整段合成完（实测 50 字稿约 6 秒），换来全程一条连续语流。
          ⛔ 不要为了首句快再退回拆句 —— 那是用户听感上明确否掉的形态。
-         `speak()` 内部仍会做去重、预算与静音闩锁，行为不变。 */
-      await speak(script.text, epoch);
+         `speak()` 内部仍会做去重、预算与静音闩锁，行为不变（预算走 `summary` 那一档）。 */
+      await speak(script.text, epoch, { scope: "summary" });
     }
   }, [resetLive, speak]);
 
@@ -410,7 +455,7 @@ export function useVoiceAnnounce(threadId: string = ""): void {
        不过同一套滤就永远对不上（去重失效 = 白修）。 */
     const filter = createSpeakFilter();
     const spoken = String(filter.push(String(text ?? "")) ?? "").trim();
-    await speak(spoken, epoch, { speed });
+    await speak(spoken, epoch, { speed, scope: "tool" });
   }, [speak]);
 
   // ── 设置：挂载读一次 + 主进程保存时广播刷新（与悬浮球/唤醒同一套）──
@@ -470,10 +515,23 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       // 通话中由 VoiceCallFloat 播报（它有 AEC 参考环与打断链）⇒ 这里必须避让，否则两个播报器同时念
       if (getVoiceStage().active) return;
       if (event.type === "delta") {
-        /* ⛔ 逐条判断（用户 10-09 第五轮）：**只有 Codex 标记过本回合**才念正文 ——
-           不是每条回复都念，也不是开关控制（开关管的是"念不念播报稿"这个默认行为）。 */
-        if (!speakLiveRef.current) return;
-        if (!cfgRef.current.enabled) return;   // 用户把播报关掉 ⇒ 正文也不念（比插播更"自动"，必须尊重开关）
+        /* ★★ 10-21 用户契约：「运行过程中，每当有新的正文内容输出时都要触发一次语音播报，
+           避免出现播报次数过少、几乎听不到的情况」。
+           ⇒ 正文朗读**不再看** `speakLiveRef`（旧判据要 Codex 调 `voice_speak_reply` 或命中硬规则
+           才为真 ⇒ 绝大多数回合一个字都不念，这就是「几乎听不到」）。
+           现在的门只有两道，都在这条分支之前/之内：
+             · 通话避让（订阅回调第一句就判，通话有自己的 AEC 播报链）；
+             · 总开关（用户关掉播报 ⇒ 正文也不念）。
+           静音闩锁在 `speak()` 唯一入口拦（用户按停后任何来源都不出声）。 */
+        if (!cfgRef.current.enabled) return;
+        /* ⛔ 积压闸（10-21）：把背压从「合成完的播放队列」**前移**到「待合成任务」。
+           正文默认播之后，合成（串行、每段 2~5s）必然慢于正文流出；只靠 `queueRef` 判会
+           让链上堆几十段，用户听到的是几分钟前的话。超了就丢这一段，保证念的始终是现在的。 */
+        if (pendingTasksRef.current + queueRef.current.length >= MAX_ANNOUNCE_BACKLOG) {
+          console.warn("[voice-announce] 播报积压（待合成", pendingTasksRef.current, "段 / 待播", queueRef.current.length, "段），丢弃这一段以保持跟手");
+          return;
+        }
+        speakLiveRef.current = true;   // 标记「本回合念过正文」（状态条来源；尾句 flush 恒执行，不靠它）
         enqueueTask(() => feedDelta(event.text));
         return;
       }
@@ -513,13 +571,13 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       if (threadId && target && target !== threadId) return;   // 会话闸：别的会话的插播不许在这里念
       if (payload.action === "stop") { stopPlayback(true); return; }
       if (payload.action === "speak-reply") {
-        /* ⛔ Codex 决定「这一条回复念出来」（运行中）。只**标记本回合**并把流式链重置到开头，
-           真正的念由总线订阅的 delta 分支做（那处判 speakLiveRef）—— 判据只有一份。
+        /* 10-21 起正文**默认就念**，这个工具退化成「加强标记」（保留契约：老会话/旧文案仍会调它）。
+           ⛔ 关键改动：**不再 `resetLive()`** —— 正文正在攒的半句会被重置丢掉（改默认播之后
+           这个工具每回合都可能来一次，重置一次就少念一句）。真正的念由 delta 分支做（判据只有一份）。
            ⛔ 静音期间**不许**重新开口（10-12）：用户刚按了停止，模型紧接着就要念正文 =
            "停止按钮是假的"。状态条也不许翻回「正在念」（`speakLiveRef` 保持 false ⇒ 显示一致）。 */
         if (mutedRef.current) return;
         speakLiveRef.current = true;
-        resetLive();
         stoppedRef.current = false;
         return;
       }
@@ -534,7 +592,7 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       });
     });
     return () => { off?.(); };
-  }, [resetLive, stopPlayback, threadId]);
+  }, [stopPlayback, threadId]);
 
   /* ── 两条硬规则：宿主侧的自动播报兜底（10-09 第六轮，用户拍板）──────────────────
      ① 单回合工具调用 **> 10 次**；② **同一个问题被返工 ≥2 次**（同一命令/同一文件/同参数同工具）。
@@ -559,12 +617,13 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       const reason = tracker.push(params.item);
       if (!reason) return;
       speakLiveRef.current = true;
-      resetLive();
+      /* ⛔ 不再 `resetLive()`（10-21）：正文默认就念，重置流式链只会把正在攒的半句丢掉。
+         这条硬规则现在只是「一次显式的自动标记 + 日志」，念与不念由 delta 分支统一决定。 */
       stoppedRef.current = false;
       console.info("[voice-announce] 自动播报（硬规则命中）：", reason);
     });
     return () => { off?.(); tracker.reset(); autoSpeakRef.current = null; };
-  }, [resetLive, threadId]);
+  }, [threadId]);
 
   // 「停止播报」出口（状态栏 / 悬浮球右键菜单）：非通话播报不开麦、界面很小，
   // 没有这个出口用户就只能等它念完 —— 与 wave-level 的结束通话/打断同一套广播注册。

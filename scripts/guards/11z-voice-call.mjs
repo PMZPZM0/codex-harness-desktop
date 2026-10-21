@@ -205,6 +205,16 @@ ok(/export function setAnnounceStopHandler/.test(bus) && /export function reques
   "有两条「停止播报」出口（悬浮球右键菜单 + 播报状态条按钮 → 基座广播 → 播报域执行；基座不反向依赖域）");
 ok(/queueRef\.current\.length >= MAX_ANNOUNCE_BACKLOG/.test(announceHook),
   "播放队列封顶（超了就丢弃这一句保持跟手，而不是念几分钟前的内容）");
+/* ⛔ 10-21 新增第二道背压：正文默认播之后，**待合成**任务才是积压的真源头（合成串行、每段 2~5s，
+   正文流出远快于它）。只判播放队列 ⇒ 链上堆几十段 ⇒ 听到的是几分钟前的话（另一种「听不到」）。 */
+ok(/pendingTasksRef\.current \+ queueRef\.current\.length >= MAX_ANNOUNCE_BACKLOG/.test(announceHook)
+  && announceHook.indexOf("pendingTasksRef.current + queueRef.current.length") < announceHook.indexOf("enqueueTask(() => feedDelta(event.text))"),
+  "⛔ 积压闸在**入链之前**：待合成段数 + 待播段数超上限就丢这一段（念的必须是「现在」的内容）");
+ok(/pendingTasksRef\.current \+= 1;/.test(announceHook) && /pendingTasksRef\.current = Math\.max\(0, pendingTasksRef\.current - 1\)/.test(announceHook)
+  && /pendingTasksRef\.current = 0;/.test(announceHook),
+  "待合成计数在入链 +1 / 完成 -1，停止或打断时清零（不清 ⇒ 恢复播报后积压闸一直挡着，表现「恢复了还是不念」）");
+ok(/if \(scope === "live" && !cfgRef\.current\.enabled\) return;/.test(announceHook),
+  "⛔ 总开关也拦**正文链**（回合中途关掉播报时，断句器尾句/已入链任务绕不过这一处 ⇒ 不会「关了还在念」）");
 ok(/subscribeVoiceStage\(\(stage\) => \{ if \(stage\.active\) stopPlayback\(\); \}\)/.test(announceHook),
   "通话一开始就停掉独立播报（否则通话播报与排队音频同时出声）");
 
@@ -235,8 +245,8 @@ ok(/const resetTurnBudget = useCallback/.test(announceHook)
   "去重登记表与字数预算**回合级清零**（正常收尾 `.finally(resetTurnBudget)` / 被打断时同步清 /\n"
   + "     没开开关时也要清）——⛔ 跨回合「再说一遍」必须照念，预算也不能跨回合累加（否则第二轮必然沉默）");
 ok(/const filter = createSpeakFilter\(\);\s*\n\s*const spoken = String\(filter\.push\(String\(text \?\? ""\)\) \?\? ""\)\.trim\(\);/.test(announceHook)
-  && /await speak\(spoken, epoch, \{ speed \}\);/.test(announceHook),
-  "工具插播文本过**同一套**朗读清洗（正文过滤后是「三个」、工具原文是「3」就永远对不上键；顺带 markdown 记号不再被当字念）");
+  && /await speak\(spoken, epoch, \{ speed, scope: "tool" \}\);/.test(announceHook),
+  "工具插播文本过**同一套**朗读清洗（正文过滤后是「三个」、工具原文是「3」就永远对不上键；顺带 markdown 记号不再被当字念），并走 `scope: \"tool\"`（不占正文预算）");
 /* 去重键真值表：**真跑** import 纯函数（「注释声称有」在本仓是最危险的假象） */
 const keyCases = [
   ["已修复 3 个问题。", "已修复3个问题！", true, "标点/空白差异必须算同一段"],
@@ -464,27 +474,44 @@ ok(!/still write that sentence in your reply text/.test(codeOnlyTs(devInstr))
   "⛔ 三处文案都不再要求「把播报句写进正文」—— 那正是用户报的「自己给自己叠一遍」（写进正文就会被念两遍）");
 ok(/do NOT also paste it into your reply/.test(devInstr) && /别再原样复述/.test(rpcSrcForContract),
   "反向要求写清楚：这句是说给耳朵的，正文别再原样复述（只写在提示里不够 —— 模型看不到守卫，靠文案）");
-/* ── 运行中念正文：**由 Codex 逐条决定**（10-09 第五轮，用户：「正文输出也可以进行播报，
-      但不是每条都需要，完全由 codex 决定」）────────────────────────────────────
-   ⛔ 这条最容易退化成"每条都念"（那就是用户上一轮明确否掉的形态）⇒ 判据必须钉住**门控**：
-      正文流式链存在、但只有 `speakLiveRef` 为真才念；标记只由工具广播设置、回合边界复位。 */
+/* ── 运行中念正文：**每个正文段都念**（10-21 用户契约，取代 10-09「由 Codex 逐条决定」）──────
+   用户原话：「运行过程中，每当有新的正文内容输出时都要触发一次语音播报，避免出现播报次数过少、
+   几乎听不到的情况」⇒ 旧门控 `if (!speakLiveRef.current) return;`（要模型调 voice_speak_reply
+   或命中硬规则才念）就是「几乎听不到」的根因，⛔ 不许再回来（下列负向断言钉住）。
+   门只剩两道：通话避让（订阅入口）+ 总开关（分支内）；静音闩锁在 speak() 唯一入口。 */
 ok(/const feedDelta = useCallback/.test(announceHook)
   && /if \(!stripperRef\.current\) stripperRef\.current = createVoiceScriptStripper\(\)/.test(announceHook)
   && /chunkerRef\.current\.push\(visible\)/.test(announceHook),
-  "正文流式链在（剥离器 → 断句器 → 朗读清洗 → 逐句念）—— Codex 决定念时必须真的有这条链");
-ok(/if \(!speakLiveRef\.current\) return;/.test(announceHook)
-  && announceHook.indexOf("if (!speakLiveRef.current) return;") < announceHook.indexOf("enqueueTask(() => feedDelta(event.text))"),
-  "⛔ delta **先过 `speakLiveRef` 门控**再进串行链：没被 Codex 标记的回合一个字都不念");
+  "正文流式链在（剥离器 → 断句器 → 朗读清洗 → 逐句念）—— 每个正文段都要真的走这条链");
+ok(!/if \(!speakLiveRef\.current\) return;/.test(announceHook),
+  "⛔ 正文播报**不得**再有 `speakLiveRef` 门控（10-21 已废：模型不标记 ⇒ 几乎听不到）");
 /* ⛔ 两个门必须在**同一条分支里**按序检查 —— 拿全文件 `indexOf` 比顺序会被别的函数里的
    同名语句骗到（`finishTurn` 里也有一句 `if (!cfgRef.current.enabled) return;`，实测顶成假红）。 */
 const deltaBranch = announceHook.slice(announceHook.indexOf('if (event.type === "delta")'), announceHook.indexOf('if (event.type === "toolSpeak")'));
-ok(deltaBranch.includes("if (!speakLiveRef.current) return;") && deltaBranch.includes("if (!cfgRef.current.enabled) return;")
-  && deltaBranch.indexOf("speakLiveRef.current") < deltaBranch.indexOf("cfgRef.current.enabled")
-  && deltaBranch.includes("enqueueTask(() => feedDelta(event.text))"),
-  "delta 分支：先过 `speakLiveRef`、再过**总开关**，然后才进串行链（用户关掉播报 ⇒ 正文也不念）");
-ok(/if \(payload\.action === "speak-reply"\)/.test(announceHook) && /speakLiveRef\.current = true;/.test(announceHook)
-  && /const live = speakLiveRef\.current;\s*\n\s*speakLiveRef\.current = false;/.test(announceHook),
-  "工具广播把本回合标记成「念正文」，**回合结束复位**（逐条生效，不会漏到下一轮）");
+ok(deltaBranch.includes("if (!cfgRef.current.enabled) return;")
+  && deltaBranch.includes("enqueueTask(() => feedDelta(event.text))")
+  && deltaBranch.includes("speakLiveRef.current = true;"),
+  "delta 分支：只过**总开关**就进串行链，并打上「本回合念过正文」标记（用户关掉播报 ⇒ 正文也不念）");
+ok(/const tail = stripperRef\.current\?\.flush\(\) \?\? ""/.test(announceHook)
+  && !/const live = speakLiveRef\.current;/.test(announceHook),
+  "回合结束**恒**收正文尾句（不再看 `speakLiveRef` 标记 —— 正文默认就念，尾句必须念完）");
+/* ── 正文播报 与 结尾重点播报 **互不影响**（10-21 用户明确要求）────────────────────
+   落点 = 预算按来源分开：`spentCharsRef` 是 {live,summary,tool} 三个独立计数，
+   超预算只关正文（`if (scope === "live") speakLiveRef.current = false`），⚠️ 不许连坐结尾。 */
+ok(/const MAX_LIVE_CHARS_PER_TURN = \d+;/.test(announceHook) && /const MAX_SUMMARY_CHARS = \d+;/.test(announceHook)
+  && /useRef<Record<SpeakScope, number>>\(\{ live: 0, summary: 0, tool: 0 \}\)/.test(announceHook),
+  "正文与结尾播报各有**独立预算**（旧版共用一个数字 ⇒ 正文吃满就把结尾那句重点吞掉）");
+ok(/const budget = scope === "live" \? MAX_LIVE_CHARS_PER_TURN : scope === "summary" \? MAX_SUMMARY_CHARS : Number\.POSITIVE_INFINITY/.test(announceHook)
+  && /if \(scope === "live"\) speakLiveRef\.current = false;/.test(announceHook)
+  && /spentCharsRef\.current\[scope\]/.test(announceHook),
+  "预算裁决按 `scope` 分档：超限**只**停正文，结尾播报稿与工具插播不受牵连");
+ok(/await speak\(script\.text, epoch, \{ scope: "summary" \}\)/.test(announceHook)
+  && /await speak\(spoken, epoch, \{ scope: "live" \}\)/.test(announceHook),
+  "两条链各走各的 scope（live / summary）—— 预算与来源标记都分开，接线不许混");
+ok(/if \(payload\.action === "speak-reply"\)/.test(announceHook) && /speakLiveRef\.current = true;/.test(announceHook),
+  "工具广播保留「标记本回合」语义（老会话/旧文案仍会调），但**不再门控**正文播报");
+ok(!/speakLiveRef\.current = true;\s*\n\s*resetLive\(\);/.test(announceHook),
+  "⛔ `speak-reply` / 硬规则**不许**再 `resetLive()`：正文默认就念，重置流式链只会把攒着的半句丢掉");
 const coreToolsForVoice = read("electron/features/dispatch-core.ts");
 ok(/name: "voice_speak_reply"/.test(coreToolsForVoice) && /name === "voice_speak_reply"/.test(rpcSrcForContract)
   && /action: "speak-reply"/.test(rpcSrcForContract),
@@ -493,11 +520,11 @@ ok(/loadVoiceSettings\(app\.getPath\("userData"\)\)\.announce\.enabled === false
   "总开关关着时工具**明确拒绝**并说清原因（不然模型以为念了、用户什么都没听到 = 谎报成功）");
 ok(/在催|几个人在催|用户在催/.test(coreToolsForVoice) && /判定权在你/.test(coreToolsForVoice),
   "工具描述写清**什么时候该用**（用户在催 / 反复没做好 / 步骤关键 / 自己有话说）且判定权在模型");
-ok(/resolveAnnounceSummary\(String\(finalText/.test(announceHook) && /if \(script\.text\) \{/.test(announceHook) && /await speak\(script\.text, epoch\)/.test(announceHook) && !/splitSentences\(script\.text\)/.test(announceHook),
+ok(/resolveAnnounceSummary\(String\(finalText/.test(announceHook) && /if \(script\.text\) \{/.test(announceHook) && /await speak\(script\.text, epoch, \{ scope: "summary" \}\)/.test(announceHook) && !/splitSentences\(script\.text\)/.test(announceHook),
   "结束只念模型写的播报稿（`resolveAnnounceSummary` = 唯一裁决点；没写 ⇒ 什么都不念），且**整段一次合成**（逐句拼接会在句界断开）");
 ok(/const tail = stripperRef\.current\?\.flush\(\) \?\? ""/.test(announceHook)
   && announceHook.indexOf("const tail = stripperRef.current?.flush()") < announceHook.indexOf("const script = resolveAnnounceSummary"),
-  "念过正文的回合：**先把流式链的尾句念完**再念播报稿（否则尾句永远丢）");
+  "回合结束**先**把流式链的尾句念完、**再**念播报稿（顺序反了尾句永远丢）");
 
 /* ── 两条硬规则：宿主侧自动播报兜底（10-09 第六轮，用户拍板「>10 次工具调用 / 返工 ≥2 次」）────
    ⛔ 判据与阈值都在 `src/lib/voice-auto-speak.mjs`（纯函数）⇒ 直接 import 跑真值表。 */
@@ -630,11 +657,13 @@ ok(/export function setAnnounceResumeHandler/.test(bus) && /export function requ
   "「恢复播报」出口与停止出口**成对**注册/注销，且状态条上真的有那个按钮（只有闩锁没有解除口 = 用户按一次永久失去播报）");
 ok(/muted: mutedRef\.current/.test(announceHook) && /muted: false/.test(bus),
   "状态广播带 `muted`（区分「1.6 秒回执」与「真的静了」—— 显示层靠它决定要不要给恢复按钮）");
-/* ② 长度：每回合字数预算必须在 speak() 里扣，且与去重登记表**同一清零时机**（回合级）。 */
-ok(/MAX_ANNOUNCE_CHARS_PER_TURN = 160/.test(announceHook)
-  && /spentCharsRef\.current \+ deduped\.text\.length > MAX_ANNOUNCE_CHARS_PER_TURN/.test(announceHook)
-  && /spentCharsRef\.current \+= deduped\.text\.length/.test(announceHook),
-  "⛔ 每回合播报**字数预算**（10-12「不用这么长」）：队列长度背压管不住 live 那条无界正文流，必须按字数封顶");
+/* ② 长度：每回合字数预算必须在 speak() 里扣，且与去重登记表**同一清零时机**（回合级）。
+   ⛔ 10-21：预算按来源分档（正文 600 / 结尾 400 / 插播不限）—— 旧版单一 160 字会把
+   「正文念几句」与「结尾重点」互相挤掉（用户明确要求两部分互不影响）。 */
+ok(/const MAX_LIVE_CHARS_PER_TURN = \d+;/.test(announceHook)
+  && /spentCharsRef\.current\[scope\] \+ deduped\.text\.length > budget/.test(announceHook)
+  && /spentCharsRef\.current\[scope\] \+= deduped\.text\.length/.test(announceHook),
+  "⛔ 播报**字数预算**仍在（队列背压管不住 live 那条无界正文流），但按来源分档扣减（正文 600 / 结尾 400 独立）");
 ok(/const resetTurnBudget = useCallback/.test(announceHook)
   && /resetTurnBudget\(\);/.test(announceHook)
   && /finishTurn\(event\.text\)\.finally\(resetTurnBudget\)/.test(announceHook),
