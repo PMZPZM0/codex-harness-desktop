@@ -3043,11 +3043,16 @@ w.postMessage({id:1,op:"list",root});
       try {
         const meta = JSON.parse(readFileSync(join(dir, "pet.json"), "utf8"));
         const statesOk = JSON.stringify(meta.states) === JSON.stringify(OFFICIAL_STATES);
+        const animated = meta.animationSet && typeof meta.animationSet === "object" && !Array.isArray(meta.animationSet);
+        /* 图集包几何必须是 192×208（官方格式）；动画包允许更高分辨率（288×312），
+           但九态行名、8×9 声明与 at least 192×208 的清晰度底线仍成立。 */
         const geomOk = meta.columns === 8 && meta.rows === 9
-          && meta.frameSize?.width === 192 && meta.frameSize?.height === 208;
+          && (animated
+            ? Number(meta.frameSize?.width) >= 192 && Number(meta.frameSize?.height) >= 208
+            : meta.frameSize?.width === 192 && meta.frameSize?.height === 208);
         let assetOk = false;
         let detail = "";
-        if (meta.animationSet && typeof meta.animationSet === "object" && !Array.isArray(meta.animationSet)) {
+        if (animated) {
           const missing = [];
           for (const state of OFFICIAL_STATES) {
             for (const key of ["animatedSrc", "stillSrc"]) {
@@ -3055,11 +3060,13 @@ w.postMessage({id:1,op:"list",root});
               if (!rel || !existsSync(join(dir, String(rel)))) missing.push(`${state}.${key}`);
             }
           }
-          const lookOk = Array.isArray(meta.lookFrameSet) && meta.lookFrameSet.length === 16
-            && meta.lookFrameSet.every((rel) => rel && existsSync(join(dir, String(rel))));
+          const lookFrames = Array.isArray(meta.lookFrameSet) ? meta.lookFrameSet : [];
+          const lookOk = lookFrames.length === 0
+            || (lookFrames.length === 16 && lookFrames.every((rel) => rel && existsSync(join(dir, String(rel)))));
           const fpsOk = Number(meta.fps) === 30;
-          assetOk = missing.length === 0 && lookOk && fpsOk && meta.supportsLookTracking === true;
-          detail = `anim=${assetOk} missing=${missing.slice(0, 3).join(",") || "无"} look=${lookOk} fps=${meta.fps}`;
+          const lookFlagOk = lookFrames.length === 16 ? meta.supportsLookTracking === true : meta.supportsLookTracking !== true;
+          assetOk = missing.length === 0 && lookOk && fpsOk && lookFlagOk;
+          detail = `anim=${assetOk} missing=${missing.slice(0, 3).join(",") || "无"} look=${lookFrames.length} fps=${meta.fps}`;
         } else {
           const sheet = join(dir, String(meta.spritesheetPath || ""));
           const size = spriteSize(sheet);
@@ -3073,7 +3080,7 @@ w.postMessage({id:1,op:"list",root});
       }
     }
     (builtinOk === petSlugs.length ? ok : fail)(
-      `【232】内置宠物包几何全部合规（图集 8×9 / 192×208 或动画包九态 + 16 看帧；问题：${builtinProblems.join(" | ") || "无"}）`
+      `【232】内置宠物包几何全部合规（图集 8×9 / 192×208 或动画包九态 + 可选 16 看帧；问题：${builtinProblems.join(" | ") || "无"}）`
     );
     /* ④ ⛔ 内置宠物必须落在 public/pets（→ dist/pets），**不能**放 src/：
        before-pack 的可达闭包只认 js/css 与 CSS 里的 url()，JS import 的位图会被判成陈旧死块删掉

@@ -21,5 +21,45 @@
     "review"
   ],
   "spriteVersionNumber": 1,
-  "builtin": true
+  "builtin": true,
+  "fps": 30,
+  "animationSet": {
+    "idle": {
+      "animatedSrc": "idle.webp",
+      "stillSrc": "idle-still.webp"
+    },
+    "running-right": {
+      "animatedSrc": "running-right.webp",
+      "stillSrc": "running-right-still.webp"
+    },
+    "running-left": {
+      "animatedSrc": "running-left.webp",
+      "stillSrc": "running-left-still.webp"
+    },
+    "waving": {
+      "animatedSrc": "waving.webp",
+      "stillSrc": "waving-still.webp"
+    },
+    "jumping": {
+      "animatedSrc": "jumping.webp",
+      "stillSrc": "jumping-still.webp"
+    },
+    "failed": {
+      "animatedSrc": "failed.webp",
+      "stillSrc": "failed-still.webp"
+    },
+    "waiting": {
+      "animatedSrc": "waiting.webp",
+      "stillSrc": "waiting-still.webp"
+    },
+    "running": {
+      "animatedSrc": "running.webp",
+      "stillSrc": "running-still.webp"
+    },
+    "review": {
+      "animatedSrc": "review.webp",
+      "stillSrc": "review-still.webp"
+    }
+  },
+  "supportsLookTracking": false
 }

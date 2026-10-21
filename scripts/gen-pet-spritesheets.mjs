@@ -756,4 +756,6 @@ function main() {
   console.log(`[pets] 完成 → ${path.relative(ROOT, OUT_ROOT)}（合计 ${(total / 1024).toFixed(0)}KB）`);
 }
 
+export { PETS, ROW_ANIMATION, drawFrame, mirrorFrame, encodePng };
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

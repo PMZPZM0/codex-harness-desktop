@@ -1,7 +1,7 @@
 {
   "id": "harness-fox",
   "displayName": "阿焰",
-  "description": "黏土小狐狸：工作时抱电脑，完成后拿放大镜审阅，被盯着会看向你。",
+  "description": "细毛小狐狸：工作时敲电脑，完成后拿放大镜审阅，被盯着会看向你。",
   "columns": 8,
   "rows": 9,
   "states": [
@@ -16,8 +16,8 @@
     "review"
   ],
   "frameSize": {
-    "width": 192,
-    "height": 208
+    "width": 288,
+    "height": 312
   },
   "spriteVersionNumber": 1,
   "fps": 30,

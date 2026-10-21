@@ -180,8 +180,18 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
   ok(ipcSrc.includes('missing.push("lookFrameSet（必须 16 个有效文件）")') && ipcSrc.includes("problem: missing.length"),
     "缺帧/缺文件显式报 problem（不静默空白，设置页照实显示）");
 
+  const frameW = Number(meta.frameSize?.width) || 0;
+  const frameH = Number(meta.frameSize?.height) || 0;
   ok(JSON.stringify(meta.states) === JSON.stringify(STATES) && meta.fps === 30 && meta.supportsLookTracking === true,
     "pet.json：九态顺序 = 官方规范、声明 30fps、支持看鼠标");
+  ok(frameW === 288 && frameH === 312,
+    `高分辨率画布 288×312（实测 ${frameW}×${frameH}；192×208 会把细节压糊，用户 10-21 打回第一版）`);
+  const genSrc = read("scripts/gen-pet-animation-set.py");
+  ok(genSrc.includes("FRAME_W, FRAME_H = 288, 312") && genSrc.includes("ART_H = 270") && genSrc.includes("IDLE_FRAMES = 45"),
+    "生成器：288×312 画布 / 角色 270px / idle 45 帧（1.5s 一循环）");
+  ok(genSrc.includes("_head_bob") && genSrc.includes("_tail_wave") && genSrc.includes("_closed_eyes")
+    && genSrc.includes('if state == "idle" and i in (30, 31, 32)'),
+    "分段运动：头部起伏 / 尾巴摆动 / idle 眨眼（不是整张图晃）");
   ok(meta.animationSet && Object.keys(meta.animationSet).length === 9
     && Object.values(meta.animationSet).every((entry) => entry && entry.animatedSrc && entry.stillSrc),
     "animationSet 九态全齐（每态 animatedSrc + stillSrc）");
@@ -196,7 +206,7 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
       const buf = readFileSync(file);
       totalBytes += buf.length;
       const size = vp8xSize(buf);
-      if (!size || size.width !== 192 || size.height !== 208) bad.push(`${state}.${key} 尺寸 ${size ? `${size.width}x${size.height}` : "非 WebP"}`);
+      if (!size || size.width !== frameW || size.height !== frameH) bad.push(`${state}.${key} 尺寸 ${size ? `${size.width}x${size.height}` : "非 WebP"}`);
       if (key === "animatedSrc") {
         const frames = countTag(buf, "ANMF");
         const head = firstAnmf(buf);
@@ -205,7 +215,7 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
       }
     }
   }
-  ok(bad.length === 0, `九态动画与静帧全部合规（192×208 / ≥10 帧 / 33ms；问题：${bad.slice(0, 6).join("、") || "无"}）`);
+  ok(bad.length === 0, `九态动画与静帧全部合规（${frameW}×${frameH} / ≥10 帧 / 33ms；问题：${bad.slice(0, 6).join("、") || "无"}）`);
 
   const lookMissing = [];
   for (let i = 0; i < 16; i++) {
@@ -214,16 +224,36 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
     const buf = readFileSync(file);
     totalBytes += buf.length;
     const size = vp8xSize(buf);
-    if (!size || size.width !== 192 || size.height !== 208) lookMissing.push(`look-${i} 尺寸异常`);
+    if (!size || size.width !== frameW || size.height !== frameH) lookMissing.push(`look-${i} 尺寸异常`);
   }
   ok(Array.isArray(meta.lookFrameSet) && meta.lookFrameSet.length === 16 && lookMissing.length === 0,
-    `16 向看帧全部存在且 192×208（问题：${lookMissing.join("、") || "无"}）`);
-  ok(totalBytes > 0 && totalBytes <= 4 * 1024 * 1024,
-    `整包体积受控（实测 ${(totalBytes / 1024 / 1024).toFixed(1)}MB ≤ 4MB，不为美术再翻倍）`);
+    `16 向看帧全部存在且 ${frameW}×${frameH}（问题：${lookMissing.join("、") || "无"}）`);
+  ok(totalBytes > 0 && totalBytes <= 8 * 1024 * 1024,
+    `整包体积受控（实测 ${(totalBytes / 1024 / 1024).toFixed(1)}MB ≤ 8MB）`);
   ok(settingsPetSrc.includes("pkg.animationSet?.idle?.stillSrc") && settingsPetSrc.includes('"contain"'),
     "设置页缩略图用 idle 静帧（动画包没有图集可切）");
   ok(petCss.includes(".pet-sprite-anim img") && petCss.includes("object-fit: contain"),
     "动画帧铺满本体且不拦截指针（object-fit: contain）");
+
+  /* 其他三只（程序化角色）同样升级到 30fps 动画包：保留原图集字段给官方消费方，
+     应用内优先读 animationSet；它们没有 16 向看帧，靠图集 v1 的 CSS 轻倾兜底。 */
+  const sdfBad = [];
+  for (const slug of ["harness-blob", "harness-cat", "harness-bot"]) {
+    try {
+      const sdfMeta = JSON.parse(readFileSync(join(ROOT, "public", "pets", slug, "pet.json"), "utf8"));
+      const entries = Object.keys(sdfMeta.animationSet || {});
+      const missingFiles = STATES.filter((state) => {
+        const entry = sdfMeta.animationSet?.[state];
+        return !entry || !existsSync(join(ROOT, "public", "pets", slug, String(entry.animatedSrc))) || !existsSync(join(ROOT, "public", "pets", slug, String(entry.stillSrc)));
+      });
+      if (entries.length !== 9 || missingFiles.length || Number(sdfMeta.fps) !== 30 || sdfMeta.supportsLookTracking === true) {
+        sdfBad.push(`${slug}(states=${entries.length},missing=${missingFiles.length},fps=${sdfMeta.fps})`);
+      }
+    } catch (error) {
+      sdfBad.push(`${slug}:${error.message}`);
+    }
+  }
+  ok(sdfBad.length === 0, `其他三只内置宠物也升级为 30fps 动画包（问题：${sdfBad.join(" | ") || "无"}）`);
 }
 
 console.log(`\n【pet-activity】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
