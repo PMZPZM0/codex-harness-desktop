@@ -243,25 +243,31 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
   ok(petCss.includes(".pet-sprite-anim img") && petCss.includes("object-fit: contain"),
     "动画帧铺满本体且不拦截指针（object-fit: contain）");
 
-  /* 其他三只（程序化角色）同样升级到 30fps 动画包：保留原图集字段给官方消费方，
-     应用内优先读 animationSet；它们没有 16 向看帧，靠图集 v1 的 CSS 轻倾兜底。 */
-  const sdfBad = [];
-  for (const slug of ["harness-blob", "harness-cat", "harness-bot"]) {
+  /* 其余五只（新角色）同样是 288/256 画布 + 九态 animationSet + 16 向看帧。 */
+  const otherBad = [];
+  for (const slug of ["harness-mochi", "harness-tuantuan", "harness-chai", "harness-lizi", "harness-qingtuan"]) {
     try {
-      const sdfMeta = JSON.parse(readFileSync(join(ROOT, "public", "pets", slug, "pet.json"), "utf8"));
-      const entries = Object.keys(sdfMeta.animationSet || {});
+      const dir = join(ROOT, "public", "pets", slug);
+      const other = JSON.parse(readFileSync(join(dir, "pet.json"), "utf8"));
+      const entries = Object.keys(other.animationSet || {});
       const missingFiles = STATES.filter((state) => {
-        const entry = sdfMeta.animationSet?.[state];
-        return !entry || !existsSync(join(ROOT, "public", "pets", slug, String(entry.animatedSrc))) || !existsSync(join(ROOT, "public", "pets", slug, String(entry.stillSrc)));
+        const entry = other.animationSet?.[state];
+        return !entry || !existsSync(join(dir, String(entry.animatedSrc))) || !existsSync(join(dir, String(entry.stillSrc)));
       });
-      if (entries.length !== 9 || missingFiles.length || Number(sdfMeta.fps) !== 30 || sdfMeta.supportsLookTracking === true) {
-        sdfBad.push(`${slug}(states=${entries.length},missing=${missingFiles.length},fps=${sdfMeta.fps})`);
+      const lookOk = Array.isArray(other.lookFrameSet) && other.lookFrameSet.length === 16
+        && other.lookFrameSet.every((rel) => existsSync(join(dir, String(rel))));
+      const sizeOk = Number(other.frameSize?.width) >= 256 && Number(other.frameSize?.height) >= 277;
+      if (entries.length !== 9 || missingFiles.length || !lookOk || !sizeOk || Number(other.fps) !== 30 || other.supportsLookTracking !== true) {
+        otherBad.push(`${slug}(states=${entries.length},missing=${missingFiles.length},look=${lookOk},size=${other.frameSize?.width}x${other.frameSize?.height},fps=${other.fps})`);
       }
     } catch (error) {
-      sdfBad.push(`${slug}:${error.message}`);
+      otherBad.push(`${slug}:${error.message}`);
     }
   }
-  ok(sdfBad.length === 0, `其他三只内置宠物也升级为 30fps 动画包（问题：${sdfBad.join(" | ") || "无"}）`);
+  ok(otherBad.length === 0, `其他五只新内置宠物全部是九态 + 16 看帧动画包（问题：${otherBad.join(" | ") || "无"}）`);
+  const genMetaSrc = read("scripts/gen-pet-animation-set.py");
+  ok(genMetaSrc.includes("pet-meta.json") && genMetaSrc.includes("_fill_fur_gaps") && genMetaSrc.includes("render"),
+    "生成器支持按宠物读 pet-meta.json（名称 / 尾巴方向 / 画布 / 补毛缝）");
 }
 
 console.log(`\n【pet-activity】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

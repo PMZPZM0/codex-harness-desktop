@@ -24,7 +24,7 @@ import runpy
 import sys
 from collections import deque
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -38,6 +38,9 @@ CENTER_X = 144
 FPS = 30
 FRAMES = 30
 IDLE_FRAMES = 45
+QUALITY = 84
+STILL_QUALITY = 92
+WEBP_METHOD = 4
 
 STATES = ["idle", "running-right", "running-left", "waving", "jumping", "failed", "waiting", "running", "review"]
 ROW_ART = {
@@ -63,6 +66,7 @@ TAIL_SIDE = {
 
 ART = runpy.run_path(os.path.join(ROOT, "scripts", "gen-pet-from-art.py"))
 prepare = ART["prepare"]
+prepare_strict = ART["prepare_strict"]
 normalize = ART["normalize"]
 sparkle = ART["_sparkle"]
 sweat = ART["_sweat"]
@@ -110,6 +114,50 @@ def _strip_shadow(im):
             else:
                 seen[j] = 1
     return rgba
+
+
+def _fill_fur_gaps(im, radius=6):
+    """浅色蓬松角色：生图会在毛缝里露出白底，严格抠底后变成一条条透明缝（动画里看是黑斑）。
+    用 alpha 的闭运算圈出实心轮廓，再从毛发边缘向缝里 BFS 填最近的颜色。
+    ⛔ 只填空隙，不改变外轮廓；两腿之间的大洞闭运算合不上，会保留透明。"""
+    im = im.convert("RGBA")
+    w, h = im.size
+    px = im.load()
+    alpha = im.getchannel("A")
+    closed = alpha.filter(ImageFilter.MaxFilter(2 * radius + 1)).filter(ImageFilter.MinFilter(2 * radius + 1))
+    cp = closed.load()
+    out = im.copy()
+    op = out.load()
+    filled = bytearray(w * h)
+    q = deque()
+    for y in range(h):
+        for x in range(w):
+            if px[x, y][3] >= 200:
+                filled[y * w + x] = 1
+                q.append((x, y))
+    while q:
+        x, y = q.popleft()
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nx, ny = x + dx, y + dy
+            if nx < 0 or ny < 0 or nx >= w or ny >= h:
+                continue
+            j = ny * w + nx
+            if filled[j] or cp[nx, ny] <= 0 or px[nx, ny][3] >= 200:
+                continue
+            cols = []
+            for ax, ay in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                bx, by = nx + ax, ny + ay
+                if 0 <= bx < w and 0 <= by < h and filled[by * w + bx] and op[bx, by][3] > 0:
+                    cols.append(op[bx, by])
+            if not cols:
+                continue
+            r = sum(c[0] for c in cols) // len(cols)
+            g = sum(c[1] for c in cols) // len(cols)
+            b = sum(c[2] for c in cols) // len(cols)
+            op[nx, ny] = (r, g, b, 255)
+            filled[j] = 1
+            q.append((nx, ny))
+    return out
 
 
 def _clean_white_holes(im):
@@ -220,6 +268,21 @@ def _clean_laptop_glow(im):
         for x in range(w):
             r, g, b, a = px[x, y]
             if a > 0 and b - r >= 25 and b - g >= 12 and (r + g + b) / 3 < 180:
+                op[x, y] = (r, g, b, 0)
+    return out
+
+
+def _clean_white_shadow(im):
+    """浅色宠物：严格抠底会留下白色地面阴影（脚边/尾巴底下一块块白）。
+    只扫底部 18%，只删「亮 >=225 且几乎中性」的像素；奶油毛通常 sat >12，不会被误伤。"""
+    w, h = im.size
+    px = im.load()
+    out = im.copy()
+    op = out.load()
+    for y in range(int(h * 0.82), h):
+        for x in range(w):
+            r, g, b, a = px[x, y]
+            if a > 0 and (r + g + b) / 3 >= 225 and max(r, g, b) - min(r, g, b) <= 10:
                 op[x, y] = (r, g, b, 0)
     return out
 
@@ -343,17 +406,26 @@ def _warp(im, fn):
     y1 = y0 + 1
     wx = (sx - x0)[..., None]
     wy = (sy - y0)[..., None]
+    # 预乘 alpha 再插值：透明像素的 RGB 是 0，直接双线性会把黑边/黑洞抹进毛发
+    # （阿糯的奶油毛实测一片黑斑）。
+    alpha = src[..., 3:4] / 255.0
+    premul = src[..., :3] * alpha
 
-    def sample(xi, yi):
+    def sample(arr, xi, yi):
         valid = (xi >= 0) & (xi < w) & (yi >= 0) & (yi < h)
         xc = np.clip(xi, 0, w - 1)
         yc = np.clip(yi, 0, h - 1)
-        out = src[yc, xc]
+        out = arr[yc, xc]
         out[~valid] = 0
         return out
 
-    out = (sample(x0, y0) * (1 - wx) * (1 - wy) + sample(x1, y0) * wx * (1 - wy)
-           + sample(x0, y1) * (1 - wx) * wy + sample(x1, y1) * wx * wy)
+    def blend(arr):
+        return (sample(arr, x0, y0) * (1 - wx) * (1 - wy) + sample(arr, x1, y0) * wx * (1 - wy)
+                + sample(arr, x0, y1) * (1 - wx) * wy + sample(arr, x1, y1) * wx * wy)
+
+    out_a = blend(alpha)
+    out_rgb = blend(premul) / np.maximum(out_a, 1e-6)
+    out = np.concatenate([np.clip(out_rgb, 0, 255), np.clip(out_a * 255, 0, 255)], axis=2)
     return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8), "RGBA")
 
 
@@ -402,7 +474,7 @@ def _clean_floor_pixels(im):
     return im
 
 
-def _make_frame(art, state, t, pose, blink=None):
+def _make_frame(art, state, t, pose, blink=None, tail_side=None):
     dy = 0.0
     angle = 0.0
     squash = 1.0
@@ -441,8 +513,9 @@ def _make_frame(art, state, t, pose, blink=None):
     img = art if blink is None else blink
     if state in ("idle", "waiting", "review", "running"):
         img = _head_bob(img, t * math.pi * 2)
-    if pose in TAIL_SIDE:
-        img = _tail_wave(img, t * math.pi * 2 + (1.2 if state in ("idle", "waiting") else 0), TAIL_SIDE[pose])
+    side_map = tail_side or TAIL_SIDE
+    if pose in side_map:
+        img = _tail_wave(img, t * math.pi * 2 + (1.2 if state in ("idle", "waiting") else 0), side_map[pose])
     if state == "running-left":
         img = img.transpose(Image.FLIP_LEFT_RIGHT)
     if squash != 1.0:
@@ -479,13 +552,6 @@ def _make_frame(art, state, t, pose, blink=None):
             py = FOOT_Y - 4
             r = 4 + i * 2
             d.ellipse([px - r, py - r, px + r, py + r], fill=(205, 186, 160, 120))
-    if state == "running":
-        for i in range(2):
-            px = x + img.width * (0.34 + i * 0.16)
-            py = y + img.height * 0.78
-            if round(n) % 2 == i % 2:
-                d.line([(px - 3, py - 5), (px + 3, py + 5)], fill=(255, 220, 130, 210), width=2)
-                d.line([(px + 3, py - 5), (px - 3, py + 5)], fill=(255, 220, 130, 210), width=2)
     if state == "review" and 0.25 < t < 0.55:
         gx = x + img.width * 0.8
         gy = y + img.height * 0.25
@@ -526,10 +592,10 @@ def _save_webp(frames, path, still_path, duration=round(1000 / FPS)):
         append_images=frames[1:],
         duration=duration,
         loop=0,
-        quality=84,
-        method=4,
+        quality=QUALITY,
+        method=WEBP_METHOD,
     )
-    frames[0].save(still_path, format="WEBP", quality=92, method=6)
+    frames[0].save(still_path, format="WEBP", quality=STILL_QUALITY, method=WEBP_METHOD)
 
 
 def main():
@@ -537,6 +603,23 @@ def main():
     src_dir = os.path.join(ART_ROOT, slug)
     if not os.path.isdir(src_dir):
         raise SystemExit(f"缺少姿态目录：{src_dir}")
+    meta_path = os.path.join(src_dir, "pet-meta.json")
+    pet_meta = {}
+    if os.path.exists(meta_path):
+        with open(meta_path, "r", encoding="utf-8") as fh:
+            pet_meta = json.load(fh)
+    cleanup = str(pet_meta.get("cleanup") or "full")
+    tail_side = {**TAIL_SIDE, **(pet_meta.get("tailSide") or {})}
+    render = pet_meta.get("render") or {}
+    global FRAME_W, FRAME_H, ART_H, FOOT_Y, CENTER_X, FRAMES, IDLE_FRAMES, QUALITY
+    FRAME_W = int(render.get("frameWidth") or FRAME_W)
+    FRAME_H = int(render.get("frameHeight") or FRAME_H)
+    ART_H = int(render.get("artHeight") or ART_H)
+    FOOT_Y = int(render.get("footY") or FOOT_Y)
+    CENTER_X = int(render.get("centerX") or CENTER_X)
+    FRAMES = int(render.get("frames") or FRAMES)
+    IDLE_FRAMES = int(render.get("idleFrames") or IDLE_FRAMES)
+    QUALITY = int(render.get("quality") or QUALITY)
     poses = {}
     for name in POSE_FILES:
         path = os.path.join(src_dir, f"{name}.png")
@@ -574,7 +657,7 @@ def main():
             blink = None
             if state == "idle" and i in (30, 31, 32):
                 blink = blinks[0.4] if i != 31 else blinks[0.84]
-            frames.append(_make_frame(art, state, t, pose, blink))
+            frames.append(_make_frame(art, state, t, pose, blink, tail_side))
         animated = f"{state}.webp"
         still = f"{state}-still.webp"
         _save_webp(frames, os.path.join(out_dir, animated), os.path.join(out_dir, still))
@@ -594,8 +677,8 @@ def main():
 
     meta = {
         "id": slug,
-        "displayName": "阿焰",
-        "description": "细毛小狐狸：工作时敲电脑，完成后拿放大镜审阅，被盯着会看向你。",
+        "displayName": str(pet_meta.get("displayName") or ("阿焰" if slug == "harness-fox" else slug)),
+        "description": str(pet_meta.get("description") or "工作时敲电脑，完成后拿放大镜审阅，被盯着会看向你。"),
         "columns": 8,
         "rows": 9,
         "states": STATES,

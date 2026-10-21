@@ -1,0 +1,7 @@
+{
+  "displayName": "阿焰",
+  "description": "细毛小狐狸：工作时敲电脑，完成后拿放大镜审阅，被盯着会看向你。",
+  "cleanup": "full",
+  "laptopGlow": true,
+  "trimWorkBottom": true
+}

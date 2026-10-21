@@ -3038,7 +3038,7 @@ w.postMessage({id:1,op:"list",root});
     /* ③ 内置宠物：几何自描述 + 素材齐全。
        ⛔ 图集现在可能是 WebP（AI 美术管线产出，比 PNG 小 60%）：PNG 读 IHDR、WebP 读 VP8X。
        10-21 美术替代新增动画包格式（animationSet + 16 向 lookFrameSet）：无图集，按九态文件校验。 */
-    const petSlugs = ["harness-fox", "harness-blob", "harness-cat", "harness-bot"];
+    const petSlugs = ["harness-fox", "harness-mochi", "harness-tuantuan", "harness-chai", "harness-lizi", "harness-qingtuan"];
     const spriteSize = (file) => {
       try {
         const head = readFileSync(file).subarray(0, 33);

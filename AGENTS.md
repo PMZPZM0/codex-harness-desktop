@@ -98,13 +98,15 @@
 - **九态行名（顺序即行序，⛔ 不可重排/增删，两种格式同一套）**：`idle / running-right / running-left / waving / jumping / failed / waiting / running / review`。
 - **四个宠物目录**（扫描面 = 协议白名单，单一真相源 `features/pet-ipc.ts` 的 `petRoots()`）：
   `dist/pets`（内置，随包）· `public/pets`（dev）· `<userData>/pets`（用户，可写）· `~/.codex/pets` + `~/.petdex/pets`（官方/Petdex 装的，只读展示、点「导入」才复制）。
-- **内置四只全部是 30fps 动画包**：
-  · **阿焰**（`harness-fox`，细毛小狐狸，**默认宠物**）：画布 **288×312**，idle 45 帧带眨眼，
-    头部起伏 / 尾巴摆动 / 眼睛开合分段运动；`scripts/gen-pet-animation-set.py` 从
-    `scripts/pet-art/harness-fox/` 的六张姿态图生成九态动画 + 16 看帧，整包约 5.3MB。素材自产，不复制 Qoder 的 Qoduck。
-  · 三只程序化角色（`harness-blob` / `harness-cat` / `harness-bot`）：保留原 8×9 图集给官方消费方，
-    同时用 `scripts/gen-pet-sdf-animation.mjs` + `scripts/pack-sdf-animation.py` 生成 30fps 动画帧
-    （192×208），应用内优先读 `animationSet`；没有 16 向看帧，靠 CSS 轻倾兜底。
+- **内置六只全部是 30fps 动画包**：
+  · **阿焰**（`harness-fox`，细毛小狐狸，**默认宠物**）：画布 **288×312**，整包约 5.3MB；
+  · **阿糯**（`harness-mochi`，奶油猫）· **阿团**（`harness-tuantuan`，垂耳兔）· **阿柴**（`harness-chai`，柯基）·
+    **阿栗**（`harness-lizi`，小熊猫）· **阿青**（`harness-qingtuan`，小龙）：画布 **256×277**，每只约 3.3~3.9MB。
+  六只都是九态 `animationSet` + 16 向看帧（idle 带眨眼、头/尾巴分段运动）；源图在
+  `scripts/pet-art/<slug>/`（六张姿态 + `pet-meta.json` 管显示名 / 尾巴方向 / 画布 / 补毛缝），
+  `python scripts/gen-pet-animation-set.py <slug>` 生成到 `public/pets/<slug>/`。
+  旧 SDF 三只（小墨 / 阿弦 / 小枢）及其 `gen-pet-sdf-animation.mjs` / `pack-sdf-animation.py` 已删除；
+  `gen-pet-spritesheets.mjs` 只保留为 8×9 图集格式示例（`PETS` 为空）。完整制作教程见 `docs/PET-MAKING.md`。
   默认只改 `DEFAULT_SETTINGS.active` / 空值回落；用户档案里**显式选过**别的宠物不会被改写。
   ⛔ **必须落 `public/`（→ `dist/pets`），不能放 `src/` 让 JS import**：`before-pack` 的可达闭包只认 js/css 与 CSS 里的 `url()`，
   JS import 的位图会被判成陈旧死块删掉（v0.0.27 事故同型）；`dist/pets` 不在裁剪面内。

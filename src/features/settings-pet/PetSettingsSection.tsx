@@ -139,7 +139,7 @@ export function PetSettingsSection({ onNotice }: PetSettingsSectionProps) {
           <h3>桌面宠物</h3>
           <p className="muted">
             一只浮在桌面上的小宠物，跟着这里跑的任务变状态（思考 / 干活 / 等你确认 / 完成）。
-            兼容 <b>Codex 官方宠物格式</b>，官方宠物包和社区宠物包都能直接放进来；内置的「阿焰」用动画包格式。
+            兼容 <b>Codex 官方宠物格式</b>，官方宠物包和社区宠物包都能直接放进来；内置六只都用动画包格式。
           </p>
         </div>
       </header>
@@ -181,7 +181,7 @@ export function PetSettingsSection({ onNotice }: PetSettingsSectionProps) {
       <section className="pet-card">
         <h4><ImageIcon size={14} />选择宠物<small className="pet-count">{usable.length} 只可用</small></h4>
         {usable.length === 0 && (
-          <p className="pet-warn"><TriangleAlert size={12} />一个可用的宠物包都没有。内置宠物在打包版里随应用提供；开发环境下先跑 <code>node scripts/gen-pet-spritesheets.mjs</code> 生成。</p>
+          <p className="pet-warn"><TriangleAlert size={12} />一个可用的宠物包都没有。内置宠物在打包版里随应用提供；开发环境下把六张姿态图放进 <code>scripts/pet-art/&lt;名字&gt;/</code>，再跑 <code>python scripts/gen-pet-animation-set.py &lt;名字&gt;</code> 生成。</p>
         )}
         <div className="pet-grid">
           {usable.map((pkg) => (
@@ -237,12 +237,14 @@ export function PetSettingsSection({ onNotice }: PetSettingsSectionProps) {
           </div>
         )}
         <p className="muted pet-tip">
-          也可以自己画一只：宠物包 = <code>pet.json</code> + 一张图集。
-          图集 <b>8 列 × 9 行</b>、每帧 <b>192×208</b>，九行从上到下依次是
-          <code>idle</code> / <code>running-right</code> / <code>running-left</code> / <code>waving</code> /
-          <code>jumping</code> / <code>failed</code> / <code>waiting</code> / <code>running</code> /
-          <code>review</code>（顺序不能改，客户端按行号取图）。
-          内置的三只就是 <code>scripts/gen-pet-spritesheets.mjs</code> 生成的，可以直接照着改。
+          也可以自己做一只。宠物包有两种格式：<br />
+          <b>① 官方图集包</b>：<code>pet.json</code> + 一张 <b>8 列 × 9 行</b>、每帧 192×208 的图集，
+          九行依次是 <code>idle</code> / <code>running-right</code> / <code>running-left</code> / <code>waving</code> /
+          <code>jumping</code> / <code>failed</code> / <code>waiting</code> / <code>running</code> / <code>review</code>；<br />
+          <b>② 动画包（内置六只用这个）</b>：九态各一段 30fps 动画 WebP + 静帧，可选 16 向看帧，画布 288×312 或 256×277。
+          做法：六张姿态图（站立/欢呼/难过/奔跑/工作/审阅）放进 <code>scripts/pet-art/&lt;名字&gt;/</code>，
+          加 <code>pet-meta.json</code>，运行 <code>python scripts/gen-pet-animation-set.py &lt;名字&gt;</code>。
+          完整教程见仓库 <code>docs/PET-MAKING.md</code>。
         </p>
       </section>
     </section>

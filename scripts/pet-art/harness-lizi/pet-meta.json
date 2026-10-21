@@ -1,0 +1,17 @@
+{
+  "displayName": "阿栗",
+  "description": "小熊猫：工作时敲电脑，完成后拿放大镜审阅，被盯着会看向你。",
+  "cleanup": "full",
+  "render": {
+    "frameWidth": 256,
+    "frameHeight": 277,
+    "artHeight": 240,
+    "footY": 264,
+    "centerX": 128,
+    "frames": 24,
+    "idleFrames": 40,
+    "quality": 78
+  },
+  "fillGaps": true,
+  "trimWorkBottom": true
+}

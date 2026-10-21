@@ -44,14 +44,10 @@ ROW_ART = {
     "review": "stand",
 }
 
-PETS = ["harness-blob", "harness-cat", "harness-bot"]
+PETS = []  # 旧三只内置宠物已下线；本脚本保留为 8×9 图集 AI 美术管线的格式参考
 POSE_FILES = ["stand", "cheer", "tired", "run", "work"]
-NAME_OF = {"harness-blob": "小墨", "harness-cat": "阿弦", "harness-bot": "小枢"}
-DESC_OF = {
-    "harness-blob": "工程助手墨滴：安静、专注，任务完成会蹦一下。",
-    "harness-cat": "原型猫：耳朵尖、尾巴会摆，等指令时会左右张望。",
-    "harness-bot": "原型机器人：头顶天线，工作时双眼与天线的灯会加速闪动。",
-}
+NAME_OF = {}  # 旧内置名已下线；做社区图集包时按 slug 填
+DESC_OF = {}
 
 
 def cut_background(im, tol=26):
@@ -112,7 +108,11 @@ def cut_background(im, tol=26):
                 if seen[j]:
                     continue
                 c = px[nx, ny]
-                if max(abs(c[0] - bg[0]), abs(c[1] - bg[1]), abs(c[2] - bg[2])) <= 60:
+                diff = max(abs(c[0] - bg[0]), abs(c[1] - bg[1]), abs(c[2] - bg[2]))
+                # 保护暖白奶油毛：背景是中性白（r≈g≈b），奶油毛 r-b 通常 >12。
+                # 只放行「中性且接近背景」或「几乎纯白」的像素，避免浅色宠物被抠出黑洞。
+                neutral = max(c) - min(c) <= 12
+                if (diff <= 60 and neutral) or diff <= 10:
                     seen[j] = 1
                     stack.append((nx, ny))
     else:
@@ -158,6 +158,64 @@ def alpha_bbox(im, threshold=24):
     """
     mask = im.getchannel("A").point(lambda v: 255 if v >= threshold else 0)
     return mask.getbbox()
+
+
+def prepare_strict(src_img, bg_tol=8, sat_tol=10):
+    """浅色宠物的严格抠底：只删「与边框同色（默认纯白）且中性」的背景像素。
+    ⛔ 普通 prepare 的容差 60 会把奶油/浅灰毛当成背景吃掉（阿糯实测脸和身上出黑洞）。
+    代价是地面软阴影会留下 —— 交给动画生成器的 floor 清理按位置处理。"""
+    im = src_img.convert("RGBA")
+    corners = [im.getpixel(p)[3] for p in [(2, 2), (im.width - 3, 2), (2, im.height - 3), (im.width - 3, im.height - 3)]]
+    if max(corners) <= 200:
+        return im
+    rgba = im
+    w, h = rgba.size
+    px = rgba.load()
+    samples = []
+    sx, sy = max(1, w // 96), max(1, h // 96)
+    for x in range(0, w, sx):
+        for y in (0, 1, 2, h - 3, h - 2, h - 1):
+            samples.append(px[x, y][:3])
+    for y in range(0, h, sy):
+        for x in (0, 1, 2, w - 3, w - 2, w - 1):
+            samples.append(px[x, y][:3])
+    bg = collections.Counter(samples).most_common(1)[0][0]
+    seen = bytearray(w * h)
+    stack = []
+    for x in range(w):
+        for y in (0, h - 1):
+            i = y * w + x
+            if not seen[i]:
+                seen[i] = 1
+                stack.append((x, y))
+    for y in range(h):
+        for x in (0, w - 1):
+            i = y * w + x
+            if not seen[i]:
+                seen[i] = 1
+                stack.append((x, y))
+    nb = ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, -1), (1, -1), (-1, 1))
+    while stack:
+        x, y = stack.pop()
+        for dx, dy in nb:
+            nx, ny = x + dx, y + dy
+            if nx < 0 or ny < 0 or nx >= w or ny >= h:
+                continue
+            j = ny * w + nx
+            if seen[j]:
+                continue
+            r, g, b, a = px[nx, ny]
+            if a == 0:
+                seen[j] = 1
+                stack.append((nx, ny))
+                continue
+            if max(abs(r - bg[0]), abs(g - bg[1]), abs(b - bg[2])) <= bg_tol and max(r, g, b) - min(r, g, b) <= sat_tol:
+                px[nx, ny] = (r, g, b, 0)
+                seen[j] = 1
+                stack.append((nx, ny))
+            else:
+                seen[j] = 1
+    return rgba
 
 
 def prepare(src_img):
