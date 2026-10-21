@@ -377,6 +377,7 @@ node scripts/logs.mjs delete <id...> --confirm <id...|all> --reason "…"   # �
 
 > 09-26 拆骨时从各轮变更小节提炼。**⛔ 每条都有守卫钉着，改坏会红**；这里是「为什么」与「别踩的坑」。
 
+- **模型检测必须真推理**（10-21）：`/models` 里有 **≠** 能用 —— `cn.pptoken.cc` 的 `grok-4.7` 在列表里，但 `/responses` 与 `/chat` 都 30s 零字节；旧探活只看列表就报「检测通过」。现在指定模型必须真发一次推理（35s 超时，失败给中文指引）；协议桥 auto 探活 200 但 18s 无数据 / 非 SSE 时回落 chat，显式 responses 也有 120s 空闲看门狗。守卫 06/07 + 测试 `tests/responses-bridge-fallback.test.mjs`。
 - **Codex 日志管理（09-29）**：设置 → 数据管理里的「Codex 日志」管的是引擎写的**会话记录原档**（`codex-home/sessions|archived_sessions/rollout-*.jsonl`，含对话全文），按项目（文件首行 `cwd`）→ 日期两级分组，可勾选批量删除 / 整库清空。⛔ **销毁性功能**：域内通道只认 `rollout-*.jsonl` 且必须落在那两个根目录内（越界/目录一律拒绝、不存在幂等）；删除时**级联剔除 `session_index.jsonl` 对应条目** —— 不剔就是会话列表里一堆打不开的死条目。守卫【200】12 条。
 
 - **记忆后端二选一**（`docs/CHANGELOG-ROUNDS.md` →「记忆后端二选一」）：内置金字塔 ⇄ MCP 记忆**互斥**，同一时刻只用一个。⛔ 判定一律用 `effectiveMemoryBackend()`（**不是** `memoryBackend()`）：选了 mcp 但服务起不来 ⇒ **回退内置**（宁可回退也不能"一处都不写 = 丢记忆"）。`electron/memory-backend.ts` 是叶子模块，不许进 `runtime-refs.ts`。守卫【150】。

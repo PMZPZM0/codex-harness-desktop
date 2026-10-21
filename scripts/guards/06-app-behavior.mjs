@@ -115,6 +115,15 @@ console.log(C.bold("\n【24】协议桥：引擎只发 Responses，chat-only 网
   const compiled = join(ROOT, "dist-electron", "responses-bridge.js");
   const compiledOk = existsSync(compiled);
   (compiledOk ? ok : fail)("协议桥已编译进 dist-electron（随主进程一起打包，不依赖额外运行时文件）");
+  (bridgeSrc.includes("BRIDGE_PROBE_IDLE_MS") && bridgeSrc.includes("改用 chat 转换") && bridgeSrc.includes("watchForwardIdle") ? ok : fail)(
+    "auto 探活：200 但无数据 / 非 SSE 超时后改走 chat；显式 responses 也有空闲看门狗（不再永远「生成中」）"
+  );
+  {
+    const probeSrc = readFileSync(join(ROOT, "electron/features/custom-model-probe.ts"), "utf8");
+    (probeSrc.includes("if (models && !model)") && probeSrc.includes("实际推理失败") && probeSrc.includes("35_000") ? ok : fail)(
+      "模型检测：指定模型必须真发一次推理（/models 里有 ≠ 能用；grok-4.7 实测列表有、推理挂起）"
+    );
+  }
   if (compiledOk) {
     const requireBridge = createRequire(import.meta.url);
     const { toChatRequest, ChatStreamTranslator, chatJsonToResponses } = requireBridge(compiled);

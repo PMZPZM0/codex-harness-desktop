@@ -2834,7 +2834,7 @@ export async function run() {
   (/const verdictOf = \(\) => \(UNSUPPORTED_ENDPOINT_HINT\.test/.test(bridgeSrc72) ? ok : fail)(
     "【72】400 歧义判定抽成单点（不许两处正则各写一遍，会漂移）"
   );
-  (/\bup\.resume\(\);\s*\n\s*resolve\(verdict\)/.test(bridgeSrc72) ? ok : fail)(
+  (/\bup\.resume\(\);\s*\n\s*(?:resolve|finish)\(verdict\)/.test(bridgeSrc72) ? ok : fail)(
     "【72】400 判决后排空上游响应（不排空 = keep-alive 连接悬挂泄漏）"
   );
   //   ③ register 发现目标变化必须丢掉已解析协议（否则「改了设置不生效」且查不出原因）
