@@ -304,19 +304,13 @@ export async function probeCustomModel(input: { provider?: string; baseUrl: stri
 
 
 
-  if (models) {
-
-    // /models 可用：没指定模型，或模型在列表里 → 直接连通成功（最快路径）
-
-    if (!model || !models.length || models.includes(model)) {
-
-      return { status: modelsStatus, latencyMs: Date.now() - startedAt, model: model ?? "", models, ok: true, via: "models" };
-
-    }
-
-    // 模型不在列表里：列表可能不全，用流式请求做精确判定
-
+  if (models && !model) {
+    // 没指定模型：/models 能拿到列表就算连通（只证明"连得上"，不代表某个模型能推理）
+    return { status: modelsStatus, latencyMs: Date.now() - startedAt, model: "", models, ok: true, via: "models" };
   }
+  /* ⛔ 指定了模型就必须真发一次推理：/models 里有 ≠ 能用。
+     10-21 实测 cn.pptoken.cc 的 grok-4.7 在 /models 列表里，但 /responses 与 /chat 都 30s 零字节；
+     旧逻辑直接返回 ok via models ⇒ 用户看到「检测通过」，一发消息就永远转圈。 */
 
 
 
@@ -370,7 +364,7 @@ export async function probeCustomModel(input: { provider?: string; baseUrl: stri
 
     const endpoint = wire === "chat" ? `${baseUrl}/chat/completions` : `${baseUrl}/responses`;
 
-    const response = await probeFetch(endpoint, { method: "POST", headers, body: JSON.stringify(buildPayload(wire, tokenParam)) }, 20_000);
+    const response = await probeFetch(endpoint, { method: "POST", headers, body: JSON.stringify(buildPayload(wire, tokenParam)) }, 35_000);
 
     const body = response.ok ? "" : await response.text();
 
@@ -385,6 +379,8 @@ export async function probeCustomModel(input: { provider?: string; baseUrl: stri
   let body = "";
 
   let wireUsed: "responses" | "chat" = wireOrder[0];
+
+  try {
 
   for (let w = 0; w < wireOrder.length; w++) {
 
@@ -432,6 +428,12 @@ export async function probeCustomModel(input: { provider?: string; baseUrl: stri
 
     }
 
+  }
+  } catch (error: any) {
+    const reason = /连接超时|timeout|aborted/i.test(String(error?.message ?? ""))
+      ? "实际推理请求超时（35 秒没有任何返回）"
+      : String(error?.message ?? error);
+    throw new Error(`模型「${model}」实际推理失败：${reason}。如果它出现在供应商的模型列表里但这里超时，通常是该账号未开通这个模型、或该模型暂时不可用；请换一个模型再试。`);
   }
 
   // 200 已证明网络、认证、模型名全部有效；读首个分片后立即断开，不等待生成完成

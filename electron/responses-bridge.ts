@@ -20,6 +20,9 @@ export type BridgeMode = "auto" | "responses" | "chat" | "anthropic";
       ② 阈值给到 120s：长上下文首字本来就可能 60~90s，⛔ 别把"慢"误杀成"错"；
       ③ 可用 `HARNESS_BRIDGE_IDLE_MS` 覆盖（调试用）。 */
 const BRIDGE_IDLE_MS = Math.max(30_000, Number(process.env.HARNESS_BRIDGE_IDLE_MS) || 120_000);
+/* auto 探活等待第一段数据的时间：超时 = 上游吊着不吐字 ⇒ 改走 chat 重放。
+   ⛔ 18s 要短于模型探活的 35s（否则用户点「检测」先被外层超时打断，看不到 chat 兜底结果）。 */
+const BRIDGE_PROBE_IDLE_MS = Math.max(5_000, Number(process.env.HARNESS_BRIDGE_PROBE_IDLE_MS) || 18_000);
 
 /** Responses 流的错误事件（引擎侧会把它当成本轮失败并显示原因，而不是静默空回复）。 */
 function sseError(message: string): string {
@@ -187,46 +190,49 @@ export class ResponsesBridge {
     return void this.convert(req, res, target, rest, raw);
   }
 
-  /** auto 模式的第一跳：透传 responses；若判定上游不认该端点则**不写任何响应**，留给 convert 重放。 */
+  /** auto 模式的第一跳：先等上游**真吐第一段数据**再决定。
+      200 + 无数据 ≠ 支持 responses（10-21 实测 grok-4.7：/models 有、/responses 30s 零字节），
+      旧实现直接 pipe ⇒ 引擎永远停在“生成中”。超时/非 SSE 一律判 unsupported，交给 chat 重放。 */
   private probeResponses(
     req: http.IncomingMessage, res: http.ServerResponse, target: BridgeTarget, rest: string, raw: Buffer,
   ): Promise<"unsupported" | "handled"> {
     return new Promise((resolve) => {
       const upstream = this.upstreamRequest(req, target, rest, raw);
+      let settled = false;
+      let probeTimer: ReturnType<typeof setTimeout> | null = null;
+      let streamStarted = false;
+      const finish = (verdict: "unsupported" | "handled") => {
+        if (settled) return;
+        settled = true;
+        if (probeTimer) { clearTimeout(probeTimer); probeTimer = null; }
+        resolve(verdict);
+      };
+      const idleMs = raw.byteLength < 64_000 ? BRIDGE_PROBE_IDLE_MS : Math.max(BRIDGE_PROBE_IDLE_MS, 30_000);
       upstream.once("response", (up) => {
         const status = up.statusCode ?? 502;
-        // ① 明确表示「没有这个端点」的状态码
         if (status === 404 || status === 405 || status === 501) {
-          up.resume(); // 丢弃响应体，避免连接悬挂
-          return resolve("unsupported");
+          up.resume();
+          return finish("unsupported");
         }
-        // ② 400 是**歧义**状态：可能是"不认这个端点"（该切 chat），也可能是"请求体有问题"
-        //    （端点正常，切了反而更糟 —— 有些 Responses 网关对不支持的参数就回 400）。
-        //    只看状态码会误判，必须读一小段响应体看措辞（错误响应都很小，缓冲不影响流式）。
         if (status === 400) {
           const chunks: Buffer[] = [];
-          let buffered = 0;   // 累加长度（别每次 data 都 reduce 重算 —— 那是 O(n²)）
-          let settled = false;
+          let buffered = 0;
+          let done = false;
           const verdictOf = () => (UNSUPPORTED_ENDPOINT_HINT.test(Buffer.concat(chunks).toString("utf8")) ? "unsupported" : "handled");
           const settle = (verdict: "unsupported" | "handled") => {
-            if (settled) return;
-            settled = true;
+            if (done) return;
+            done = true;
             if (verdict === "handled" && !res.headersSent) {
-              // 端点正常 → 把缓冲的响应体原样回放给引擎（不能吞掉，否则用户看不到真实报错）
               this.counters.forwarded += 1;
               res.writeHead(status, this.responseHeaders(up.headers));
               res.end(Buffer.concat(chunks));
             }
-            // ⛔ 无论哪种判决，都要把上游这条响应**排空**：只 resolve 不消费会让这条连接
-            //    （以及 keep-alive 池里的 socket）永远挂着 —— 而 400 恰好是「网关不配套」
-            //    时的高频路径，泄漏会随尝试次数累积。resume 让剩余数据流走并正常收尾。
             up.resume();
-            resolve(verdict);
+            finish(verdict);
           };
           up.on("data", (chunk: Buffer) => {
-            if (settled) return;
+            if (done) return;
             chunks.push(chunk);
-            // 攒够一段就能定性（避免超大响应把内存吃掉）
             buffered += chunk.length;
             if (buffered > 8192) settle(verdictOf());
           });
@@ -234,25 +240,71 @@ export class ResponsesBridge {
           up.once("error", () => settle("handled"));
           return;
         }
-        this.counters.forwarded += 1;
-        res.writeHead(status, this.responseHeaders(up.headers));
-        up.pipe(res);
-        up.once("end", () => resolve("handled"));
-        up.once("error", () => resolve("handled"));
+        const contentType = String(up.headers["content-type"] ?? "");
+        if (status >= 200 && status < 300 && !/event-stream/i.test(contentType)) {
+          this.log(`[bridge] ${target.label ?? ""} /responses 返回 ${status} ${contentType || "无 content-type"}，不是 SSE，改用 chat 转换`);
+          up.resume();
+          return finish("unsupported");
+        }
+        const start = (first: Buffer) => {
+          if (streamStarted || settled) return;
+          streamStarted = true;
+          if (probeTimer) { clearTimeout(probeTimer); probeTimer = null; }
+          this.counters.forwarded += 1;
+          res.writeHead(status, this.responseHeaders(up.headers));
+          if (first.length) res.write(first);
+          up.pipe(res);
+          this.watchForwardIdle(res, up, target.label ?? "");
+          finish("handled");
+        };
+        up.on("data", (chunk: Buffer) => {
+          if (!streamStarted) start(chunk);
+        });
+        up.once("end", () => { if (!streamStarted) finish("unsupported"); });
+        up.once("error", () => { if (!streamStarted) finish("unsupported"); });
+        probeTimer = setTimeout(() => {
+          if (streamStarted || settled) return;
+          this.log(`[bridge] ${target.label ?? ""} /responses 探活 ${Math.round(idleMs / 1000)}s 无数据，改用 chat 转换`);
+          try { up.destroy(); } catch { /* ignore */ }
+          finish("unsupported");
+        }, idleMs);
       });
       upstream.once("error", (error) => {
         this.counters.failures += 1;
-        /* ⛔ 20:3x 用户令「那自动就是有弱点的，你要修」：auto 模式首次探测若因**连不上**
-           （ECONNREFUSED/超时/DNS）失败，旧行为回 502 并判 handled ⇒ 整个请求废掉、不降级。
-           ⇒ 探测阶段连接失败一律判 unsupported，交给 convert 用 chat 重放一次；
-             连 chat 也失败时 convert 会返回真实错误（不丢信息）。 */
         if (!res.headersSent) {
           this.log(`[bridge] 探测连接失败（${error.message}），改判 unsupported，改用 chat 转换重试`);
         }
-        resolve("unsupported");
+        finish("unsupported");
+      });
+      res.once("close", () => {
+        if (!settled) { try { upstream.destroy(); } catch { /* ignore */ } finish("handled"); }
       });
       upstream.end(raw);
     });
+  }
+
+  /** 透传流空闲看门狗：上游连上后一个字节都不发时，主动断流并如实报错。
+      ⛔ 不能只给 chat 转换路径加 —— 显式 responses 模式同样会永远停在“生成中”。 */
+  private watchForwardIdle(res: http.ServerResponse, up: http.IncomingMessage, label: string) {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const clear = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    const fire = () => {
+      if (res.writableEnded) return;
+      this.counters.failures += 1;
+      this.log(`[bridge] ${label} 上游 ${Math.round(BRIDGE_IDLE_MS / 1000)}s 无任何数据（响应流空闲超时）`);
+      try { up.destroy(); } catch { /* ignore */ }
+      try {
+        const ctype = String(res.getHeader("content-type") ?? "");
+        if (/event-stream/i.test(ctype)) res.write(sseError(`上游 ${Math.round(BRIDGE_IDLE_MS / 1000)} 秒未返回任何数据（响应流空闲超时）`));
+        res.end();
+      } catch { /* ignore */ }
+    };
+    const arm = () => { clear(); timer = setTimeout(fire, BRIDGE_IDLE_MS); };
+    arm();
+    up.on("data", arm);
+    up.once("end", clear);
+    up.once("error", clear);
+    res.once("close", clear);
   }
 
   /** 透传：体与流都不改写（上游支持 responses 时走这里，行为与直连一致）。 */
@@ -264,6 +316,7 @@ export class ResponsesBridge {
       this.counters.forwarded += 1;
       res.writeHead(up.statusCode ?? 502, this.responseHeaders(up.headers));
       up.pipe(res);
+      if (rest.endsWith("/responses")) this.watchForwardIdle(res, up, target.label ?? "");
     });
     upstream.once("error", (error) => {
       this.counters.failures += 1;
