@@ -1,0 +1,319 @@
+/* ===== 侧栏快捷胶囊 + 能力入口 + 教程弹窗（10-21 用户重排） =====
+   全部走既有主题变量；没有新造同义色。弹窗复用 .info-modal 基座（遮罩/层级/入场动画），
+   这里只补内容版式。 */
+
+/* ── 新建 / 搜索：并排胶囊。快捷键仍生效，只是不再显示键帽 ── */
+.sidebar-quick {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 10px 0 8px;
+}
+.sidebar-quick .sidebar-quick-btn {
+  width: auto;
+  height: 34px;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.sidebar-quick .sidebar-quick-btn > span {
+  flex: 0 1 auto;
+  text-align: center;
+  white-space: nowrap;
+}
+.sidebar-quick .sidebar-quick-btn:hover {
+  background: var(--panel-2);
+  border-color: color-mix(in srgb, var(--ic, var(--accent)) 30%, var(--line));
+}
+.sidebar-quick .sidebar-quick-btn.primary {
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
+  color: var(--text);
+}
+.sidebar-quick .sidebar-quick-btn.primary svg { color: var(--accent); }
+
+/* ── 能力入口行 ── */
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sidebar-nav-divider {
+  height: 1px;
+  margin: 5px 8px;
+  background: var(--line-soft);
+}
+.sidebar-cap-row {
+  gap: 8px;
+}
+.sidebar-cap-row[aria-expanded="true"] {
+  background: var(--panel-2);
+}
+.sidebar-cap-chevron {
+  margin-left: auto;
+  flex: none;
+  color: var(--faint);
+  opacity: 0.8;
+  transition: transform 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+.sidebar-cap-row:hover .sidebar-cap-chevron {
+  color: var(--muted);
+  opacity: 1;
+  transform: translateX(1px);
+}
+.sidebar-quick-btn:focus-visible,
+.sidebar-cap-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── 教程弹窗（概览 ↔ 教程同窗切换，不叠第二层弹窗） ── */
+.sidebar-guide {
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(84vh, 780px);
+  border-radius: 16px;
+}
+.info-modal.sidebar-guide > header {
+  gap: 12px;
+  align-items: flex-start;
+  padding: 16px 20px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ic) 6%, var(--panel)), var(--panel));
+}
+.sidebar-guide-icon {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ic) 14%, var(--panel-2));
+  color: var(--ic);
+}
+.sidebar-guide-heading {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.info-modal.sidebar-guide .sidebar-guide-heading strong {
+  font-size: 16px;
+  line-height: 1.35;
+  font-weight: 600;
+  color: var(--text);
+}
+.sidebar-guide-heading small {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.info-modal.sidebar-guide .sidebar-guide-back,
+.info-modal.sidebar-guide .sidebar-guide-close {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.info-modal.sidebar-guide .sidebar-guide-back:hover,
+.info-modal.sidebar-guide .sidebar-guide-close:hover {
+  background: var(--panel-2);
+  color: var(--text);
+  border-color: var(--line);
+}
+.info-modal.sidebar-guide .sidebar-guide-back:focus-visible,
+.info-modal.sidebar-guide .sidebar-guide-close:focus-visible,
+.sidebar-guide-example:focus-visible,
+.sidebar-guide-foot button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.sidebar-guide-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.sidebar-guide-intro {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+}
+.sidebar-guide-section h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: var(--muted);
+}
+.sidebar-guide-caps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+}
+.sidebar-guide-cap {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.sidebar-guide-cap-icon {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ic) 10%, var(--panel-2));
+  color: var(--ic);
+}
+.sidebar-guide-cap strong {
+  display: block;
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: var(--text);
+}
+.sidebar-guide-cap small {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.sidebar-guide-steps {
+  margin: 0;
+  gap: 12px;
+}
+.sidebar-guide-steps b {
+  font-size: 12.5px;
+}
+.sidebar-guide-steps small {
+  font-size: 12px;
+}
+.sidebar-guide-codex {
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--ic) 26%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ic) 7%, var(--panel));
+}
+.sidebar-guide-codex-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ic);
+}
+.sidebar-guide-codex > p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+.sidebar-guide-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+.sidebar-guide-example {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.55;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.sidebar-guide-example:hover {
+  background: var(--panel-2);
+  border-color: var(--accent);
+}
+.sidebar-guide-example > svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--muted);
+}
+.sidebar-guide-example.is-copied {
+  border-color: var(--green, #2f9e44);
+  background: color-mix(in srgb, var(--green, #2f9e44) 8%, var(--panel));
+}
+.sidebar-guide-example.is-copied > svg {
+  color: var(--green, #2f9e44);
+}
+.sidebar-guide-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--panel);
+}
+.sidebar-guide-foot-note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.sidebar-guide-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sidebar-guide-tutorial-btn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.sidebar-guide-tutorial-btn:hover {
+  filter: brightness(1.05);
+}
+
+@media (max-width: 640px) {
+  .sidebar-guide-mask {
+    padding: 8px;
+    align-items: stretch;
+  }
+  .sidebar-guide {
+    width: 100%;
+    max-height: 100%;
+    border-radius: 14px;
+  }
+  .sidebar-guide-head { padding: 14px 16px; }
+  .sidebar-guide-body { padding: 16px; }
+  .sidebar-guide-foot { padding: 12px 16px; }
+  .sidebar-guide-caps { grid-template-columns: 1fr; }
+}

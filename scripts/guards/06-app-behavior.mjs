@@ -2513,52 +2513,47 @@ w.postMessage({id:1,op:"list",root});
   (!/<span>自动化<\/span>/.test(side180) ? ok : fail)(
     "【180】侧栏不再有「自动化」文案（与设置页里真正的 automation 页区分开）"
   );
-  // ③ 技能中心 / 插件市场 / 专家-专家团 合并成一个入口 + 弹窗三选一
-  (/<span>技能-插件-专家\/专家团<\/span>/.test(side180) ? ok : fail)(
-    "【180】侧栏有合并入口「技能-插件-专家/专家团」"
+  // ③ 10-21 用户重排：能力入口按用途拆行，点击先看概览，再在**同一个弹窗**里打开教程
+  //   （⛔ 用户明确「不要内嵌弹窗」⇒ 不是概览弹窗里再套一个教程弹窗）。
+  const hasGuideRow = (key, label) => new RegExp(`<span>${label}</span>`).test(side180)
+    && new RegExp(`setGuideKey\\("${key}"\\)`).test(side180);
+  (hasGuideRow("frontend", "前端 UI · 组件库")
+    && hasGuideRow("extensions", "技能 · 插件 · MCP")
+    && hasGuideRow("agents", "子智能体 · 专家 · 专家团")
+    && hasGuideRow("identity", "人格市场 · 记忆中心") ? ok : fail)(
+    "【180】侧栏四条能力入口齐全（前端 UI/组件库、技能/插件/MCP、子智能体/专家/专家团、人格市场/记忆中心）"
   );
-  (!/<span>技能中心<\/span>|<span>插件市场<\/span>|<span>专家\/专家团<\/span>/.test(side180) ? ok : fail)(
-    "【180】原来的三个独立入口不再并列在侧栏（已收进弹窗）"
+  (["frontend", "extensions", "agents", "identity"].every((key) => new RegExp(`setGuideKey\\("${key}"\\)`).test(side180)) ? ok : fail)(
+    "【180】四条入口各自能打开对应教程弹窗（每一条都锚到 setGuideKey，不是只写文案）"
   );
-  // ⛔ 必须同时钉「打开动作」与「打开条件」：只查弹窗内容会**恒真** —— 09-27 变异实测，
-  //   把渲染条件 `{extHubOpen && (` 改成 `{false && (` 时断言照样绿（内容还在源码里）。
-  (/onClick=\{\(\) => setExtHubOpen\(true\)\}/.test(side180) ? ok : fail)(
-    "【180】合并入口的按钮真的会打开弹窗（有 setExtHubOpen(true)）"
+  (/\{guideKey && <SidebarGuideModal/.test(side180) ? ok : fail)(
+    "【180】教程弹窗挂在 guideKey 条件上（⛔ 不是恒假/被删）"
   );
-  (/\{extHubOpen && \(/.test(side180) ? ok : fail)(
-    "【180】弹窗挂在 extHubOpen 条件上（⛔ 不是被改成恒假/被删）"
+  (!/<span>技能-插件-专家\/专家团<\/span>/.test(side180) && !/\{extHubOpen && \(/.test(side180) ? ok : fail)(
+    "【180】旧的三合一入口与 extHubOpen 弹窗已删除（技能/插件/MCP 与智能体已拆成两条）"
   );
-  // 弹窗内容取「aria-label → 下一个稳定标记 {moreHubOpen」之间（⛔ 别用固定字符窗口，
-  // 插几行就假红；也别锚结尾缩进 —— 09-27 自己在这里写错过一次）
-  // 10-04：「···更多」的弹窗插在 {projectFilter 之前，窗口尾锚必须跟着换成 {moreHubOpen，
-  // 否则这个 hub 的窗口会把另一个弹窗也算进来（"every" 断言仍会绿，但盯不住它自己那三项）。
-  const hub180 = (() => {
-    const at = side180.indexOf('aria-label="技能 / 插件 / 智能体"');
-    if (at < 0) return "";
-    const end = side180.indexOf("{moreHubOpen &&", at);
-    return side180.slice(at, end > at ? end : at + 2400);
-  })();
-  (["skills", "plugins", "agentteam"].every((p) => new RegExp(`setSettingsPage\\("${p}"\\)`).test(hub180)) ? ok : fail)(
-    "【180】弹窗三项（技能市场 / 插件市场 / 智能体）各自能跳到对应设置页"
+  const guideModalSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "SidebarGuideModal.tsx"), "utf8");
+  (/使用教程/.test(guideModalSrc) && /setView\("tutorial"\)/.test(guideModalSrc)
+    && /view === "overview" \?/.test(guideModalSrc) && (guideModalSrc.match(/info-modal sidebar-guide/g) ?? []).length === 1 ? ok : fail)(
+    "【180】每个入口弹窗都有「使用教程」，并在**同一个弹窗**内切换视图（只有一个弹窗类名，没有嵌套第二个）"
   );
-  (["技能市场", "插件市场", "智能体"].every((t) => hub180.includes(t)) ? ok : fail)(
-    "【180】弹窗三项文案齐全"
+  (guideModalSrc.includes("ui_component_search") && guideModalSrc.includes("ui_component_get") ? ok : fail)(
+    "【180】组件库教程写明 Codex 已配备 ui_component_search / ui_component_get（用户要求让用户知道可直接调用）"
   );
   (/\.ext-hub-list\s*\{/.test(readStyles()) ? ok : fail)(
-    "【180】合并入口弹窗的列表样式存在（缺了弹窗里会是一堆裸按钮）"
+    "【180】入口弹窗列表样式存在（缺了弹窗里会是一堆裸按钮）"
   );
   // ④ 模型配置入口的删除在【70】里（同轮把那两条正向断言翻成负向）
-  // ⑤ 搜索任务挪到「新建任务」下面（原来在按钮区之外，是独立一行）
-  // ⛔ 导航区边界 = `aria-label="导航"` 到它的 `</div>`（按钮区内无嵌套 div，首个 </div> 即边界）。
-  //   09-27 变异实测：只查「全文某处有 search-box」太弱（挪出去照样能过）。
+  // ⑤ 新建 / 搜索并排胶囊：快捷键仍然生效，但不再显示键帽
   const navStart180 = side180.indexOf('aria-label="导航"');
   const navEnd180 = navStart180 >= 0 ? side180.indexOf("</div>", navStart180) : -1;
   const nav180 = navStart180 >= 0 && navEnd180 > navStart180 ? side180.slice(navStart180, navEnd180) : "";
-  (nav180.includes("新建任务") && nav180.includes("search-box") && nav180.indexOf("search-box") > nav180.indexOf("新建任务") ? ok : fail)(
-    "【180】「搜索任务」在导航区内、且排在「新建任务」之后"
+  (nav180.includes("sidebar-quick") && nav180.includes("新建任务") && nav180.includes("搜索任务")
+    && nav180.indexOf("搜索任务") > nav180.indexOf("新建任务") ? ok : fail)(
+    "【180】新建任务 / 搜索任务在并排胶囊区，搜索排在新建之后"
   );
-  (!/<\/div>\s*<button className="search-box"/.test(side180) ? ok : fail)(
-    "【180】搜索任务不再留在导航区之外的旧位置（紧跟 </div> 之后那一行）"
+  (!/<kbd>/.test(nav180) ? ok : fail)(
+    "【180】快捷入口不再显示快捷键键帽（快捷键本身仍由全局监听生效）"
   );
 }
 

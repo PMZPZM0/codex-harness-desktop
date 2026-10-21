@@ -404,12 +404,36 @@ const CHECKS = [
         if(!m) return { open:false };
         return { open:true, rows:[...m.querySelectorAll('.ext-hub-list > button strong')].map((s)=>(s.textContent||'').trim()),
           navTitles:[...document.querySelectorAll('.sidebar-tabs .sidebar-tab')].map((t)=>(t.textContent||'').trim()) }; })()`);
-      h.check("② 弹窗五项齐全且「前端开发」在列，且知识库 / AI 画布工作流没有平铺回导航区",
-        hub?.open === true && ["AI 画布工作流", "前端开发", "知识库", "组件库", "人格市场"].every((title) => (hub?.rows ?? []).includes(title))
-          && !(hub?.navTitles ?? []).some((t) => t === "知识库" || t === "AI 画布工作流"),
+      h.check("②「更多」只保留 AI 画布工作流 / 知识库，四条能力入口已升到侧栏专用行",
+        hub?.open === true && ["AI 画布工作流", "知识库"].every((title) => (hub?.rows ?? []).includes(title))
+          && ["前端 UI · 组件库", "技能 · 插件 · MCP", "子智能体 · 专家 · 专家团", "人格市场 · 记忆中心"].every((title) => (hub?.navTitles ?? []).includes(title)),
         JSON.stringify({ rows: hub?.rows, nav: hub?.navTitles }));
-      await h.eval(`(function(){ const rows=[...document.querySelectorAll('.more-hub-modal .ext-hub-list > button')];
-        const row=rows.find((b)=>(b.textContent||'').includes("前端开发")); if(row) row.click(); return !!row; })()`);
+      h.check("②a 知识库 / AI 画布工作流没有平铺回导航区（仍收在更多里）",
+        !(hub?.navTitles ?? []).some((t) => t === "知识库" || t === "AI 画布工作流"), JSON.stringify(hub?.navTitles));
+      // 关掉「更多」，走新的能力入口：概览 → 使用教程（同窗切换，不叠第二个弹窗）→ 前端开发画布
+      await h.eval(`(function(){ document.querySelector('.more-hub-modal header button')?.click(); return 1; })()`);
+      await wait(350);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll('.sidebar-nav .sidebar-tab')].find((x)=>(x.textContent||'').includes('前端 UI')); if(!b) return 0; b.click(); return 1; })()`);
+      await wait(500);
+      const guideOverview = await h.eval(`(function(){ return {
+        title:(document.querySelector('.sidebar-guide-heading strong')?.textContent||'').trim(),
+        tutorial:[...document.querySelectorAll('.sidebar-guide-foot button')].some((b)=>(b.textContent||'').includes('使用教程')),
+        modals:document.querySelectorAll('.sidebar-guide').length, infoModals:document.querySelectorAll('.info-modal').length }; })()`);
+      h.check("②b 能力入口先弹概览，且有「使用教程」按钮（此时只有 1 个弹窗）",
+        guideOverview?.title === "前端 UI · 组件库" && guideOverview?.tutorial === true
+          && guideOverview?.modals === 1 && guideOverview?.infoModals === 1, JSON.stringify(guideOverview));
+      await h.eval(`(function(){ const b=[...document.querySelectorAll('.sidebar-guide-foot button')].find((x)=>(x.textContent||'').includes('使用教程')); if(!b) return 0; b.click(); return 1; })()`);
+      await wait(350);
+      const guideTutorial = await h.eval(`(function(){ return {
+        title:(document.querySelector('.sidebar-guide-heading strong')?.textContent||'').trim(),
+        steps:document.querySelectorAll('.sidebar-guide-steps li').length,
+        examples:document.querySelectorAll('.sidebar-guide-example').length,
+        modals:document.querySelectorAll('.sidebar-guide').length, infoModals:document.querySelectorAll('.info-modal').length }; })()`);
+      h.check("②c 点「使用教程」在同一个弹窗内切换（仍只有 1 个弹窗，步骤与示例齐全）",
+        String(guideTutorial?.title || '').includes("使用教程") && guideTutorial?.steps >= 3 && guideTutorial?.examples >= 1
+          && guideTutorial?.modals === 1 && guideTutorial?.infoModals === 1, JSON.stringify(guideTutorial));
+      await h.eval(`(function(){ const rows=[...document.querySelectorAll('.sidebar-guide-foot button')];
+        const row=rows.find((b)=>(b.textContent||'').includes("前端开发画布")); if(row) row.click(); return !!row; })()`);
       await h.waitFor(`!!document.querySelector('.ui-sketch-shell')`, { label: "前端开发浮层", timeoutMs: 15000 });
       const frame = await h.eval(`(function(){ const f=document.querySelector('.ui-sketch-frame');
         if(!f) return { has:false };
