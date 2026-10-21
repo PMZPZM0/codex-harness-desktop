@@ -3,8 +3,10 @@
  *
  * 10-21 按 Qoder 的桌宠改造：宠物不再只有一个「九态 + 一句气泡」，而是维护**每个会话一条活动**：
  *   waiting（等你处理）> running（执行中）> failed/interrupted > completed（本轮完成，等你看）
- * 宠物演最高优先级那条；活动气泡展示前两条。`completed` 不会被时钟自动抹回 idle ——
- * 它保持 review，直到用户从活动气泡「打开」或开始新一轮；`failed` 同样保持到处理。
+ * 宠物演最高优先级那条；活动气泡展示前两条。`completed` 的**活动记录**一直保留到用户从
+ * 活动气泡「打开」或开始新一轮（气泡不自己消失）；但宠物**姿态**只审阅一小段（REVIEW_HOLD_MS）
+ * 就回 idle —— 用户 10-21 实测「运行结束宠物不刷新，要点打开箭头才刷新」：
+ * 完成态长期占着 review 会让宠物看起来卡住，而气泡已经足够起提醒作用。`failed` 仍保持到处理。
  *
  * 为什么仍然放主进程：浮窗是独立 BrowserWindow，拿不到主窗口的 app 状态；主进程做唯一
  * 归约点，浮窗只收短字符串（标题 / 状态 / 最近一句），不拿原始事件与正文。
@@ -81,12 +83,16 @@ const pendingRequests = new Map<string, string>();
 let activityCollapsed = false;
 let bubble = "";
 let bubbleUntil = 0;
+/** 完成后的 review 姿态截止时刻；到点后姿态回 idle（活动/气泡仍在）。 */
+let reviewUntil = 0;
 let motion: { state: PetStateName; until: number; fallback: PetStateName } | null = null;
 let clock: NodeJS.Timeout | null = null;
 let lastTool: string | null = null;
 const MAX_ACTIVITIES = 5;
 const COMPLETED_TTL_MS = 30 * 60_000;
 const DETAIL_THROTTLE_MS = 280;
+/** 完成后的审阅姿态停留时长（活动记录不动，只是宠物姿态回 idle）。 */
+const REVIEW_HOLD_MS = 6_000;
 
 const store = {
   signal: {
@@ -137,7 +143,7 @@ function pruneActivities(now: number) {
 function currentPhase(now: number): PetStateName {
   if (motion && now < motion.until) return motion.state;
   const phase = petPhaseOfActivities([...activities.values()]);
-  if (phase === "review") return "review";
+  if (phase === "review") return now < reviewUntil ? "review" : "idle";
   return phase;
 }
 
@@ -145,6 +151,7 @@ function publish(force = false) {
   const now = Date.now();
   if (motion && now >= motion.until) motion = null;
   if (bubbleUntil && now >= bubbleUntil) bubble = "";
+  if (reviewUntil && now >= reviewUntil) reviewUntil = 0;
   pruneActivities(now);
   const phase = petPhaseOfActivities([...activities.values()]) as PetStateName;
   const state = currentPhase(now);
@@ -218,6 +225,7 @@ export function markPetActivitySeen(threadId: string): boolean {
   if (!item) return false;
   if (item.status === "completed" || item.status === "failed" || item.status === "interrupted") {
     activities.delete(id);
+    reviewUntil = 0;
     publish(true);
     return true;
   }
@@ -331,6 +339,7 @@ export function feedPetEvent(event: unknown): boolean {
   if (method === "turn/started") {
     if (threadId) {
       motion = null;
+      reviewUntil = 0;
       const existing = activities.get(threadId);
       const freshTurn = !existing || existing.status === "completed" || existing.status === "failed" || existing.status === "interrupted";
       upsertActivity(threadId, {
@@ -350,13 +359,16 @@ export function feedPetEvent(event: unknown): boolean {
       const title = existing?.title ?? fallbackTitle(threadId);
       if (method === "turn/completed") {
         const detail = existing?.detail && !existing.detail.startsWith("正在") ? existing.detail : "本轮已完成";
+        reviewUntil = Date.now() + REVIEW_HOLD_MS;
         upsertActivity(threadId, { turnId: turnIdOf(p) || existing?.turnId || "", status: "completed", detail, title });
         pulseMotion("jumping", "搞定！", 1600, "review");
       } else if (method === "turn/failed") {
         const reason = String(p.error?.message ?? p.turn?.error?.message ?? "").slice(0, 120);
+        reviewUntil = 0;
         upsertActivity(threadId, { turnId: turnIdOf(p) || existing?.turnId || "", status: "failed", detail: reason || "本轮执行失败", title });
         pulseMotion("failed", "这轮出错了", 3200, "failed");
       } else {
+        reviewUntil = 0;
         upsertActivity(threadId, { turnId: turnIdOf(p) || existing?.turnId || "", status: "interrupted", detail: "本轮已中断", title });
         pulseMotion("failed", "已中断", 2200, "failed");
       }
@@ -411,7 +423,11 @@ function ensureClock() {
       return;
     }
     const now = Date.now();
-    const needPublish = Boolean((motion && now >= motion.until) || (bubbleUntil && now >= bubbleUntil));
+    const needPublish = Boolean(
+      (motion && now >= motion.until)
+      || (bubbleUntil && now >= bubbleUntil)
+      || (reviewUntil && now >= reviewUntil),
+    );
     const beforeCount = activities.size;
     pruneActivities(now);
     if (needPublish || activities.size !== beforeCount) publish();
@@ -424,6 +440,7 @@ export function resetPetState() {
   activities.clear();
   pendingRequests.clear();
   motion = null;
+  reviewUntil = 0;
   bubble = "";
   bubbleUntil = 0;
   lastTool = null;

@@ -5,7 +5,8 @@
  * 本轮先做行为层（不动美术）：每会话一条活动、waiting>running>failed>completed→review、
  * 独立活动气泡窗、打开/停止、悬停工具栏、手动拖拽方向反馈、看鼠标。
  *
- * 失效方式：退化成「一个状态 + 一句 4 秒气泡」/ completed 又自动回 idle / 活动窗塞进宠物窗 /
+ * 失效方式：退化成「一个状态 + 一句 4 秒气泡」/ completed 活动被自动清掉 / 完成姿态永远不回 idle
+ * （用户 10-21 实测「运行结束宠物不刷新，要点打开箭头」）/ 活动窗塞进宠物窗 /
  * 拖拽又回到 app-region（拿不到 pointermove）/ 活动气泡按钮没有真接线。
  */
 import { existsSync, readFileSync } from "node:fs";
@@ -29,7 +30,7 @@ const lib = await import("../../src/lib/pet-activity.mjs");
   const waiting = { status: "waiting", updatedAt: 1 };
   const running = { status: "running", updatedAt: 9 };
   const completed = { status: "completed", updatedAt: 10 };
-  ok(lib.petPhaseOfActivities([completed]) === "review", "completed → review（本轮完成等你看，不是回 idle）");
+  ok(lib.petPhaseOfActivities([completed]) === "review", "completed → phase review（活动/气泡留给你看；宠物姿态回落由主进程 REVIEW_HOLD_MS 管）");
   ok(lib.petPhaseOfActivities([completed, running]) === "running", "running 优先于 completed");
   ok(lib.petPhaseOfActivities([running, waiting]) === "waiting", "waiting 优先于 running（需要用户操作最高）");
   ok(lib.petPhaseOfActivities([completed, { status: "failed" }]) === "failed", "failed 优先于 completed");
@@ -70,8 +71,15 @@ const stateSrc = codeOnly(read("electron/features/pet-state.ts"));
   ok(stateSrc.includes("DETAIL_THROTTLE_MS") && stateSrc.includes("item/agentMessage/delta"), "流式正文详情有节流（不高频刷推送）");
   ok(stateSrc.includes("freshTitle") && stateSrc.includes("existing.turnId !== nextTurnId"), "回复/steer 追加用户消息时不改原任务标题（只认本轮第一条）");
   ok(stateSrc.includes("COMPLETED_TTL_MS") && stateSrc.includes("MAX_ACTIVITIES"), "完成项有 TTL / 活动数量有上限（不会无限堆）");
-  ok(!stateSrc.includes("holdUntil") && !/current === "review"[\s\S]{0,120}?setState\("idle"\)/.test(stateSrc),
-    "负向：不许回到「review/failed 到点自动抹成 idle」的旧模型");
+  /* 10-21 晚用户实测：「运行过程结束，宠物没有刷新状态，我要点一下那个打开箭头，才会刷新」
+     ⇒ 完成后的**宠物姿态**必须自己回落 idle（活动记录/气泡仍留着当提醒）。 */
+  ok(stateSrc.includes("REVIEW_HOLD_MS") && stateSrc.includes("reviewUntil = Date.now() + REVIEW_HOLD_MS")
+    && stateSrc.includes('now < reviewUntil ? "review" : "idle"'),
+    "completed：jumping 之后 review 只停 REVIEW_HOLD_MS，到点姿态自动回 idle（不用点打开箭头）");
+  ok(/clock = setInterval[\s\S]{0,700}?reviewUntil && now >= reviewUntil/.test(stateSrc),
+    "低频时钟会在 review 截止时主动 publish（否则没人来推这次回落）");
+  ok(!stateSrc.includes("holdUntil") && !/reviewUntil[\s\S]{0,200}?activities\.delete/.test(stateSrc),
+    "负向：到点只回落姿态，completed 活动记录/气泡不许被自动删掉（已看才清）");
   ok(stateSrc.includes("export function togglePetActivity") && stateSrc.includes("export function petActivityRecord")
     && stateSrc.includes("export function petActivityCollapsed"), "活动收起/停止记录查询有导出（IPC 用）");
 }

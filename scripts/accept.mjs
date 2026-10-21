@@ -564,7 +564,7 @@ const CHECKS = [
   },
   {
     id: "pet-activity",
-    name: "🐤 桌面宠物活动气泡 · 真回合（running→review 持久 + 独立窗 + 打开清已看 + 拖拽）",
+    name: "🐤 桌面宠物活动气泡 · 真回合（running→review→idle 自动回落 + 活动持久 + 独立窗 + 打开清已看 + 拖拽）",
     run: async (h) => {
       /* 10-21 用户对照 Qoder：「宠物事件驱动和对应状态效果比我们好很多」。
          本项零注入：真起一个引擎回合 → 主进程活动归约 → 宠物/活动气泡两个独立窗 → 打开清已看。
@@ -647,6 +647,27 @@ const CHECKS = [
             JSON.stringify(lookProbe).slice(0, 260));
         }
 
+        /* ⑤b/⑤c 的旁听器：只被动记录宠物窗 <img src> 的切换序列，不触发任何交互。
+           用户 10-21 实测「运行过程结束，宠物没有刷新状态，我要点一下那个打开箭头，才会刷新」
+           —— 必须证明：completed 后姿态自己走 jumping→review→idle，且活动气泡仍留着。 */
+        const srcLogger = await h.evalInTarget("pet=1", `(function(){
+          const img = document.querySelector('.pet-sprite-anim img');
+          if (!img) return false;
+          window.__petSrcLog = [];
+          const rec = () => {
+            const src = img.getAttribute('src') || '';
+            let decoded = src;
+            try { decoded = decodeURIComponent(src); } catch (e) {}
+            const m = decoded.match(/([a-z-]+)\\.webp$/i);
+            const name = m ? m[1] : decoded;
+            if (!window.__petSrcLog.length || window.__petSrcLog[window.__petSrcLog.length - 1] !== name) window.__petSrcLog.push(name);
+          };
+          new MutationObserver(rec).observe(img, { attributes: true, attributeFilter: ['src'] });
+          rec();
+          return true;
+        })()`).catch(() => false);
+        h.check("⑤a 宠物窗 src 旁听器就位（后面两条不靠点击、只看它自己变）", srcLogger === true, `logger=${srcLogger}`);
+
         const cwd = await h.eval(`localStorage.getItem("workspace") || ${JSON.stringify(ROOT)}`);
         const started = await h.eval(`(async function(){
           try {
@@ -707,9 +728,31 @@ const CHECKS = [
         await wait(1200);
         const later = await h.eval(`window.codex.petState().then((x)=>x.signal)`).catch(() => null);
         const still = (later?.activities ?? []).find((item) => item.threadId === started.threadId);
-        h.check("⑤ review 持久：1.2s 后仍在本轮完成态（Qoder 同款，不自动回 idle）",
+        h.check("⑤ review 持久：1.2s 后活动仍是本轮完成态（气泡留给你看）",
           later?.phase === "review" && still?.status === "completed",
           JSON.stringify({ phase: later?.phase, status: still?.status }).slice(0, 160));
+
+        /* ⑤b 姿态自己回 idle：jumping → review → idle，全程零交互（REVIEW_HOLD_MS = 6s）。
+           ⛔ 不能只看主进程 signal：用户看到的是浮窗；渲染层漏更新时主进程照样是 review。 */
+        let seq = [];
+        for (let i = 0; i < 30; i++) {
+          await wait(500);
+          seq = await h.evalInTarget("pet=1", `(window.__petSrcLog || []).slice()`).catch(() => []);
+          const last = seq.lastIndexOf("review");
+          if (last >= 0 && seq.slice(last + 1).includes("idle")) break;
+        }
+        const iJump = seq.lastIndexOf("jumping");
+        const iReview = seq.lastIndexOf("review");
+        const iIdle = seq.lastIndexOf("idle");
+        h.check("⑤b 回合结束：jumping → review → idle 全部自动发生（不点打开箭头）",
+          iJump >= 0 && iReview > iJump && iIdle > iReview,
+          `seq=${JSON.stringify(seq).slice(0, 240)}`);
+
+        const afterIdle = await h.eval(`window.codex.petState().then((x)=>x.signal)`).catch(() => null);
+        const idleStill = (afterIdle?.activities ?? []).find((item) => item.threadId === started.threadId);
+        h.check("⑤c 姿态回 idle 但活动/气泡不消失（completed 记录仍在，提醒你去看）",
+          afterIdle?.state === "idle" && idleStill?.status === "completed" && (afterIdle?.activities ?? []).length >= 1,
+          JSON.stringify({ state: afterIdle?.state, status: idleStill?.status, n: (afterIdle?.activities ?? []).length }).slice(0, 200));
 
         let card = null;
         for (let i = 0; i < 16; i++) {

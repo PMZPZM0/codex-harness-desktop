@@ -3,6 +3,8 @@
  *
  * Qoder 的桌宠不是「一个状态 + 一句气泡」，而是把每个会话投影成一条活动：
  *   waiting（等你处理）> running（执行中）> failed/interrupted > completed（本轮完成，等你看）
+ *   ⛔ 这里只产出**相位**（completed 仍是 review，活动/气泡要留到已看）；
+ *      宠物**姿态**多久回 idle 由 electron/features/pet-state.ts 的 REVIEW_HOLD_MS 管。
  * 宠物演最高优先级那条；活动气泡展示前两条。这里只放**纯函数**（无 Electron / 无 React），
  * 便于主进程与守卫同时 import、直接跑真值表。
  */
