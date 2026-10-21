@@ -100,8 +100,16 @@ export class RpaStore {
   async addTask(input: { text: string; priority?: TaskItem["priority"] }) {
     await this.load();
     const now = Date.now();
-    const task: TaskItem = { id: randomUUID(), text: input.text.trim(), priority: input.priority ?? "medium", status: "todo", createdAt: now, updatedAt: now };
-    if (!task.text) throw new Error("任务内容不能为空");
+    const text = String(input.text ?? "").trim();
+    if (!text) throw new Error("任务内容不能为空");
+    /* ⛔ 幂等窗口（10-22 实测：用户截图里任务清单**每一步都成对出现**、胶囊写「步骤 0/10」，
+       而 store 里本该 5 条）：同一条 `task_add` 会被两路写入（渲染层分发 + 引擎重发/重放；
+       重放时 call id 可能变，按 id 去重拦不住）⇒ 2 秒内**同文本且仍是 todo** 视为同一次，
+       直接返回已有条目，不插第二条。
+       ⛔ 不做「永久按文本去重」：模型完全可能在不同阶段建同名任务（"跑测试"×2），只掐紧邻重复。 */
+    const duplicate = this.tasks.find((t) => t.text === text && t.status === "todo" && now - t.createdAt >= 0 && now - t.createdAt < 2000);
+    if (duplicate) return duplicate;
+    const task: TaskItem = { id: randomUUID(), text, priority: input.priority ?? "medium", status: "todo", createdAt: now, updatedAt: now };
     /* 新一轮任务自动开新清单（10-06 夜四轮，用户实测「新的任务清单里还叠着旧清单」）：
        清单**全部完成**时再 add = 上一轮已收工、这是新任务开工 ⇒ 先清掉全完成清单，
        防止胶囊「步骤 N/M」越叠越多。⛔ 只清「全 done」：批内还有 todo/doing 时是同轮补步，

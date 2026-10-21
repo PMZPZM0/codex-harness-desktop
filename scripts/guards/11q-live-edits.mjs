@@ -103,8 +103,19 @@ const capsule = codeOnly(read("src/features/status/TurnStatusCapsule.tsx"));
 const composer = codeOnly(read("src/features/app-view/AppView/02-main-stage/03-composer.tsx"));
 ok(capsule.includes("export function TurnStatusCapsule") && capsule.includes("getTurnLiveFileChanges(runningTurnId)") && capsule.includes("subscribeTurnFileChanges"),
   "回合状态胶囊：订阅 live、按运行中回合实时取数（文件区）");
-ok(capsule.includes("const steps: StepRow[] = (Array.isArray(taskList) ? [...taskList] : [])") && capsule.includes('setZone("steps")') && capsule.includes('setZone("files")'),
-  "步骤区取 Codex 的任务清单（taskList 入参）；左右悬停分区各自展开对应清单（用户令：放左边=步骤清单，放右边=文件）");
+ok(capsule.includes("const steps: StepRow[] = mergeTaskSteps(taskList)") && capsule.includes('from "../../lib/task-steps.mjs"') && capsule.includes('setZone("steps")') && capsule.includes('setZone("files")'),
+  "步骤区取 Codex 的任务清单（taskList 入参），归并口径来自纯函数 lib/task-steps.mjs；左右悬停分区各自展开对应清单");
+/* 10-22 用户截图「任务清单重复渲染」：每一步成对出现、胶囊写「步骤 0/10」而磁盘上只有 5 条
+   （同一条 task_add 被两路写入，重放时 call id 变了 ⇒ 按 id 去重拦不住）。
+   显示层必须**按文本归并**，冲突时保留状态最靠后的那条（⛔ 丢进度比重复更糟）。
+   ⛔ 口径只许写在纯函数里：组件里出现第二份 `byText` = 两份真相源，迟早分叉。 */
+const taskSteps = codeOnly(read("src/lib/task-steps.mjs"));
+ok(/for \(const row of rows\)[\s\S]{0,200}byText\.get\(row\.text\)/.test(taskSteps)
+  && /STATE_RANK\[row\.state\] \?\? 0\) > \(STATE_RANK\[prev\.state\] \?\? 0\)/.test(taskSteps)
+  && /\.sort\(\(a, b\) => a\.createdAt - b\.createdAt\)/.test(taskSteps),
+  "同一句话只显示一次（按 text 归并 + 保留 done>doing>todo 的最靠后状态），顺序按首次创建");
+ok(!capsule.includes("byText") && !capsule.includes("STATE_RANK"),
+  "⛔ 组件里不许再写第二份归并逻辑（唯一真相源 = lib/task-steps.mjs）");
 ok(capsule.includes("if (!hasSteps && !hasFiles) return null;"),
   "两区都没有才整卡不渲染（夜六轮起：非运行中两区都没内容 ⇒ 整卡消失 —— 用户「清单不会自动消失」的修法）");
 ok(capsule.includes("{hasSteps && (") && capsule.includes("{hasFiles && (") && capsule.includes('hasSteps && hasFiles && <span className="capsule-sep"'),
@@ -113,7 +124,7 @@ ok(capsule.includes('const hasSteps = Boolean(runningTurnId) && steps.length > 0
   "⛔ 步骤区**只在回合运行中显示**（用户夜四轮「跑完没消失」+ 夜六轮「清单不会自动消失」——含被 /stop 停掉的回合；全完成时同样隐藏）");
 ok(capsule.includes("if (!runningTurnId) { setZone(null); setPinned(false); setExpanded(false); }"),
   "回合结束清悬停分区与钉住/展开态（不清 ⇒ zone 残留在「渲染 null 的空档」里，下一回合一出现就凭空弹旧面板）");
-ok(capsule.includes(".sort((a, b) => Number(a?.createdAt ?? 0) - Number(b?.createdAt ?? 0))"),
+ok(capsule.includes(".sort((a, b) => a.createdAt - b.createdAt)") || taskSteps.includes(".sort((a, b) => a.createdAt - b.createdAt)"),
   "步骤按**创建顺序**展示（①②③④ 自上而下；store 接口序是 updatedAt 倒序，别直接铺）");
 const taskStore = codeOnly(read("electron/rpa-store.ts"));
 ok(taskStore.includes('every((t) => t.status === "done")) this.tasks = []'),
