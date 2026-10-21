@@ -47,9 +47,15 @@
   white-space: nowrap;
   color: var(--muted);
 }
-/* 完成态：用 flex-end 把超出的左侧裁掉，直接露出**最新尾部**；不做任何滚动/动画。 */
+/* 完成态：短内容**紧跟标题**（左对齐）；只有真超宽时才用 flex-end 裁掉左侧、
+   直接露出最新尾部（不做任何滚动/动画）。
+   ⛔ 不能无条件 flex-end：短内容会被推到最右边，标题与正文之间空出一大截
+   （用户 10-21 截图圈的就是这块空白）。超宽判据由 ReasoningStrip 的 overflowing 给。 */
 .reasoning-strip.done .reasoning-strip-preview {
   display: flex;
+  justify-content: flex-start;
+}
+.reasoning-strip.done .reasoning-strip-preview.is-overflowing {
   justify-content: flex-end;
 }
 .reasoning-strip.done .reasoning-strip-static {

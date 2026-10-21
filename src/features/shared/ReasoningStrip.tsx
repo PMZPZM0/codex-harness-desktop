@@ -50,7 +50,7 @@ export function ReasoningStrip({ head, text, running, revealing }: {
         {hasText && !expanded ? (
           <>
             <span className="reasoning-strip-sep" aria-hidden>·</span>
-            <span className="reasoning-strip-preview" ref={previewRef} title={latestLine}>
+            <span className={`reasoning-strip-preview${overflowing ? " is-overflowing" : ""}`} ref={previewRef} title={latestLine}>
               {running ? (
                 <span
                   className={`reasoning-strip-marquee ${overflowing ? "is-scrolling" : ""}`}
