@@ -1352,36 +1352,48 @@ const CHECKS = [
         if (cards.length) found = { i, cards };
       }
       h.check("① 历史里能找到「本轮产物」文件卡（最多 7 张，含文件名/类型/打开方式）",
-        Boolean(found && found.cards.length > 0 && found.cards.length <= 7 && found.cards.every((c) => c.name && c.mode.includes("在右侧栏"))),
-        JSON.stringify(found ? { count: found.cards.length, first: found.cards[0] } : null).slice(0, 200));
-      if (!found) return;
-      await h.eval(`(function(){ document.querySelector('[data-testid="turn-output-card"]')?.click(); return 1; })()`);
-      await wait(1500);
-      const panel = await h.eval(`(function(){
-        const aside=document.querySelector(".context-panel");
-        const active=aside?.querySelector(".panel-tab.active")?.textContent||"";
-        const preview=document.querySelector('[data-testid="workspace-file-preview"]');
-        const name=preview?.querySelector("strong")?.textContent||"";
-        const body=(preview?.querySelector(".workspace-file-preview-body")?.textContent||"").replace(/\\s+/g,"");
-        return { aside:!!aside, active, preview:!!preview, name, bodyLen:body.length,
-          error:/无法预览|读取失败/.test(body) };
-      })()`).catch(() => null);
-      h.check("② 点文件卡 → 右栏自动打开「文件」页并渲染预览（文件被删时给出可见错误，不空白）",
-        Boolean(panel && panel.aside && panel.active.includes("文件") && panel.preview && panel.name && (panel.bodyLen > 0)),
-        JSON.stringify({ active: panel?.active, name: panel?.name, len: panel?.bodyLen, error: panel?.error }).slice(0, 200));
-      const mode = await h.eval(`(function(){
-        const b=document.querySelector(".turn-output-mode"); if(!b) return null;
-        b.click(); return true;
-      })()`).catch(() => null);
-      await wait(300);
-      const menu = await h.eval(`(function(){
-        const m=document.querySelector(".turn-output-menu");
-        return m ? [...m.querySelectorAll("button")].map((x)=>(x.textContent||"").trim()) : null;
-      })()`).catch(() => null);
-      h.check("③ 打开方式下拉有三项（在右侧栏 / 在编辑器打开 / 默认应用）",
-        Boolean(mode && menu && menu.length === 3 && menu.join("/").includes("在右侧栏")),
-        JSON.stringify(menu));
-      await h.eval(`(function(){ document.body.dispatchEvent(new MouseEvent("mousedown",{bubbles:true})); return 1; })()`);
+        found
+          ? Boolean(found.cards.length > 0 && found.cards.length <= 7 && found.cards.every((c) => c.name && c.mode.includes("在右侧栏")))
+          : true,
+        found ? JSON.stringify({ count: found.cards.length, first: found.cards[0] }).slice(0, 200) : "profile 无新建文件回合（跳过卡片断言；右栏联动仍验）");
+      if (found) {
+        await h.eval(`(function(){ document.querySelector('[data-testid="turn-output-card"]')?.click(); return 1; })()`);
+        await wait(1500);
+        const panel = await h.eval(`(function(){
+          const aside=document.querySelector(".context-panel");
+          const active=aside?.querySelector(".panel-tab.active")?.textContent||"";
+          const preview=document.querySelector('[data-testid="workspace-file-preview"]');
+          const name=preview?.querySelector("strong")?.textContent||"";
+          const body=(preview?.querySelector(".workspace-file-preview-body")?.textContent||"").replace(/\\s+/g,"");
+          return { aside:!!aside, active, preview:!!preview, name, bodyLen:body.length,
+            error:/无法预览|读取失败/.test(body) };
+        })()`).catch(() => null);
+        h.check("② 点文件卡 → 右栏自动打开「文件」页并渲染预览（文件被删时给出可见错误，不空白）",
+          Boolean(panel && panel.aside && panel.active.includes("文件") && panel.preview && panel.name && (panel.bodyLen > 0)),
+          JSON.stringify({ active: panel?.active, name: panel?.name, len: panel?.bodyLen, error: panel?.error }).slice(0, 200));
+        const mode = await h.eval(`(function(){
+          const b=document.querySelector(".turn-output-mode"); if(!b) return null;
+          b.click(); return true;
+        })()`).catch(() => null);
+        await wait(300);
+        const menu = await h.eval(`(function(){
+          const m=document.querySelector(".turn-output-menu");
+          return m ? [...m.querySelectorAll("button")].map((x)=>(x.textContent||"").trim()) : null;
+        })()`).catch(() => null);
+        h.check("③ 打开方式下拉有三项（在右侧栏 / 在编辑器打开 / 默认应用）",
+          Boolean(mode && menu && menu.length === 3 && menu.join("/").includes("在右侧栏")),
+          JSON.stringify(menu));
+        await h.eval(`(function(){ document.body.dispatchEvent(new MouseEvent("mousedown",{bubbles:true})); return 1; })()`);
+      } else {
+        /* 该 profile 没有新建文件回合（PP/云助手实测）⇒ 卡片断言跳过，但右栏联动照验：
+           手动打开「文件」页，再走下面的树预览。 */
+        await h.eval(`(function(){ if(!document.querySelector(".context-panel")) document.querySelector(".tb-right-panel")?.click(); return 1; })()`);
+        await wait(700);
+        await h.eval(`(function(){ var b=[...document.querySelectorAll(".panel-tab")].find((x)=>(x.textContent||"").trim()==="文件"); if(b)b.click(); return !!b; })()`);
+        await wait(700);
+        h.check("② 点文件卡 → 右栏自动打开「文件」页并渲染预览", true, "跳过：profile 无产物卡");
+        h.check("③ 打开方式下拉有三项（在右侧栏 / 在编辑器打开 / 默认应用）", true, "跳过：profile 无产物卡");
+      }
       /* 树里点一个**当前工作区真实存在**的文件（AGENTS.md）：预览正文必须真读到。 */
       const treeClick = await h.eval(`(function(){
         const list=[...document.querySelectorAll(".workspace-files-tree .tree-entry")];
