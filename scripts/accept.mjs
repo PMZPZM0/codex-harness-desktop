@@ -831,6 +831,70 @@ const CHECKS = [
     },
   },
   {
+    id: "reasoning-strip",
+    name: "🧠 思考长条：短内容紧跟标题、不再甩到最右（10-21 用户截图圈出的空白）",
+    run: async (h) => {
+      /* 用户截图：收起态「已深度思考 ⬜⬜⬜ 知识库目录不存在。 展开」——短内容被
+         done 态的无条件 flex-end 推到最右边。这里真开 strip 模式量标题与正文的间距。 */
+      await h.waitFor(`!!document.querySelector(".app-shell") && !!document.querySelector(".thread-row")`, { label: "界面就绪", timeoutMs: 40000 });
+      try {
+        await h.eval(`(function(){ localStorage.setItem("reasoning-display-mode","strip"); window.dispatchEvent(new CustomEvent("codex:reasoning-display-mode",{detail:"strip"})); return 1; })()`);
+        await wait(800);
+        let found = null;
+        const rows = Math.min(Number(await h.eval(`document.querySelectorAll(".thread-row").length`)) || 0, 8);
+        for (let i = 0; i < rows && !found; i++) {
+          await h.eval(`(function(){ var rows=[...document.querySelectorAll(".thread-row")]; rows[${i}] && rows[${i}].click(); return 1; })()`);
+          await wait(1200);
+          found = await h.eval(`(function(){
+            var all = [...document.querySelectorAll(".reasoning-strip.done")].map(function(s){
+              var head = s.querySelector(".reasoning-head");
+              var prev = s.querySelector(".reasoning-strip-preview");
+              var text = s.querySelector(".reasoning-strip-static");
+              if (!head || !prev) return null;
+              var hr = head.getBoundingClientRect(), pr = prev.getBoundingClientRect();
+              var tr = text ? text.getBoundingClientRect() : null;
+              return { headRight: Math.round(hr.right), previewLeft: Math.round(pr.left),
+                textLeft: tr ? Math.round(tr.left) : null, previewW: Math.round(pr.width),
+                textW: text ? Math.round(text.scrollWidth) : 0, previewCls: String(prev.className) };
+            }).filter(Boolean);
+            // 只挑「短内容」那一条（用户截图圈的就是短内容被推到最右）；超宽的另有尾部截断逻辑。
+            return all.find(function(x){ return x.textW <= x.previewW + 1; }) || null;
+          })()`).catch(() => null);
+        }
+        h.check("① 前置：找到一条短内容的完成态思考长条（strip 模式）", Boolean(found), JSON.stringify(found).slice(0, 220));
+        if (!found) return;
+        h.check("② 短内容紧跟标题（正文左缘贴 preview 左缘、距标题 ≤ 40px；不是靠右的尾部截断）",
+          found.textLeft != null && found.textLeft - found.headRight <= 40
+            && !String(found.previewCls).includes("is-overflowing")
+            && Math.abs(found.textLeft - found.previewLeft) <= 2,
+          JSON.stringify(found).slice(0, 220));
+        const expanded = await h.eval(`(function(){
+          var s = document.querySelector(".reasoning-strip.done");
+          var b = s && s.querySelector(".reasoning-strip-head");
+          if (!b) return false; b.click();
+          return true;
+        })()`).catch(() => false);
+        await wait(500);
+        const bodyShown = await h.eval(`(function(){ var b=document.querySelector(".reasoning-strip-body"); return !!b && (b.textContent||"").trim().length > 0; })()`).catch(() => false);
+        const collapsed = await h.eval(`(function(){
+          var s = document.querySelector(".reasoning-strip.done");
+          var b = s && s.querySelector(".reasoning-strip-head");
+          if (!b) return false; b.click();
+          return true;
+        })()`).catch(() => false);
+        await wait(400);
+        const bodyHidden = await h.eval(`!document.querySelector(".reasoning-strip-body")`).catch(() => false);
+        h.check("③ 点标题展开真出正文，再点收起（长条可点开看全文）",
+          expanded === true && bodyShown === true && collapsed === true && bodyHidden === true,
+          JSON.stringify({ expanded, bodyShown, collapsed, bodyHidden }));
+        await h.screenshot("reasoning-strip");
+      } finally {
+        await h.eval(`(function(){ localStorage.setItem("reasoning-display-mode","auto"); window.dispatchEvent(new CustomEvent("codex:reasoning-display-mode",{detail:"auto"})); return 1; })()`).catch(() => undefined);
+        await h.eval(`(function(){ var rows=[...document.querySelectorAll(".thread-row")]; rows[0] && rows[0].click(); return 1; })()`).catch(() => undefined);
+      }
+    },
+  },
+  {
     id: "file-summary",
     name: "㉓ 文件更改汇报 · 真回合全链路（运行中实时编辑行 + 收尾汇总卡 + 交互，10-06 两次重写）",
     run: async (h) => {
@@ -3296,6 +3360,7 @@ const ROUND_OF = {
   "git-review": "10-18",   // 10-18 轮：右栏变更四个范围（临时仓库验证分支起点 + 暂存/未暂存 + UI 下拉）
   "scroll-anchor": "10-19",   // 10-19 轮：上滚续载视口不跳（同一锚点回合的视口 top 保持 ±4px）
   "pet-activity": "10-21",   // 10-21 轮：桌宠活动气泡（running→review 持久 + 独立窗 + 打开清已看 + 拖拽）
+  "reasoning-strip": "10-21",   // 10-21 晚：思考长条短内容不甩到最右（用户截图圈空白）+ 展开/收起
   "compact-line": "10-07",   // 10-07 夜十一轮：压缩线（新会话 + 短回合 + 手动压缩 → 宿主侦测真链路 → 线出现 + 落盘）
   "devtools-install-ux": "10-11",   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）
   "free-gateway": "10-12",   // 10-12 轮：免费模型网关（第三方开源侧车 + 一键注册供应商；免责声明为契约）   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）

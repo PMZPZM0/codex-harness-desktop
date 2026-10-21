@@ -4817,8 +4817,14 @@ export async function run() {
     (/aria-expanded=\{expanded\} onClick=\{toggle\}/.test(stripSrc) && /setExpanded\(\(current\) => !current\)/.test(stripSrc) && /reasoning-strip-sep/.test(stripSrc) && /reasoning-strip-preview/.test(stripSrc) && /lines\[lines\.length - 1\]/.test(stripSrc) ? ok : fail)(
       "【161】收起态与过程行同款：标题 + · 最新一行（取最后一条非空行）+ 展开箭头"
     );
-    (/\.reasoning-strip\.done \.reasoning-strip-preview \{[\s\S]{0,100}justify-content: flex-end;/.test(styles54) && /content\.scrollWidth > el\.clientWidth \+ 1/.test(stripSrc) && !/requestAnimationFrame\(tick\)/.test(stripSrc) && !/el\.scrollLeft/.test(stripSrc) ? ok : fail)(
-      "【161】完成态不再循环滚动：CSS flex-end 直接露出最新尾部，源码里没有持续 scrollLeft"
+    (/\.reasoning-strip\.done \.reasoning-strip-preview\s*\{[^}]*justify-content: flex-start;/.test(styles54)
+      && /\.reasoning-strip\.done \.reasoning-strip-preview\.is-overflowing\s*\{[^}]*justify-content: flex-end;/.test(styles54)
+      && /reasoning-strip-preview\$\{overflowing \? " is-overflowing" : ""\}/.test(stripSrc)
+      && /content\.scrollWidth > el\.clientWidth \+ 1/.test(stripSrc) && !/requestAnimationFrame\(tick\)/.test(stripSrc) && !/el\.scrollLeft/.test(stripSrc) ? ok : fail)(
+      "【161】完成态短内容紧跟标题（左对齐），只有超宽才 flex-end 露尾部；不再循环滚动 / 无 scrollLeft"
+    );
+    (!/\.reasoning-strip\.done \.reasoning-strip-preview(?!\.is-overflowing)\s*\{[^}]*justify-content: flex-end;/.test(styles54) ? ok : fail)(
+      "【161】负向：完成态不许无条件 flex-end（短内容会被推到最右、标题与正文间空一大截）"
     );
     (/\.reasoning-strip-marquee\.is-scrolling/.test(styles54) && /@keyframes reasoning-strip-marquee/.test(styles54) && /animation-play-state: paused/.test(styles54) && /prefers-reduced-motion/.test(styles54) && /\.reasoning-strip-body \{[\s\S]{0,200}max-height: min\(50vh, 420px\)/.test(styles54) && /styles\/40-reasoning-strip/.test(stylesEntry) ? ok : fail)(
       "【161】直播横滚用 CSS transform（不触发 scroll 事件 ⇒ 时间线不上下抖）；悬停暂停 / 减少动效静止；展开全文最高 50vh"
