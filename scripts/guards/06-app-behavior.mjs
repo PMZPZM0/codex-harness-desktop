@@ -115,8 +115,8 @@ console.log(C.bold("\n【24】协议桥：引擎只发 Responses，chat-only 网
   const compiled = join(ROOT, "dist-electron", "responses-bridge.js");
   const compiledOk = existsSync(compiled);
   (compiledOk ? ok : fail)("协议桥已编译进 dist-electron（随主进程一起打包，不依赖额外运行时文件）");
-  (bridgeSrc.includes("BRIDGE_PROBE_IDLE_MS") && bridgeSrc.includes("改用 chat 转换") && bridgeSrc.includes("watchForwardIdle") ? ok : fail)(
-    "auto 探活：200 但无数据 / 非 SSE 超时后改走 chat；显式 responses 也有空闲看门狗（不再永远「生成中」）"
+  (bridgeSrc.includes("BRIDGE_PROBE_IDLE_MS") && bridgeSrc.includes("BRIDGE_CONNECT_MS") && bridgeSrc.includes("无响应头") && bridgeSrc.includes("改用 chat 转换") && bridgeSrc.includes("watchForwardIdle") ? ok : fail)(
+    "auto 探活：连响应头都没有 / 200 无数据 / 非 SSE 都会超时改走 chat；显式 responses 也有空闲看门狗（不再永远「生成中」）"
   );
   {
     const probeSrc = readFileSync(join(ROOT, "electron/features/custom-model-probe.ts"), "utf8");
