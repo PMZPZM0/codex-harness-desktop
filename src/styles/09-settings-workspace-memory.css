@@ -1258,14 +1258,25 @@
    ⛔ 颜色与压缩线同一个 token（var(--green)）。 */
 .message-ruler .ruler-compaction {
   flex: none;
-  width: 26px;
+  /* ⛔ 与普通刻度同长（12px），不参与 hover/当前阅读位置的波浪加长。 */
+  width: 12px;
   height: 2px;
   margin: 4px 0 4px 12px;
   padding: 0;
+  border: 0;
   border-radius: 1px;
   background: var(--green);
   opacity: 0.85;
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    width 0.26s cubic-bezier(0.22, 0.61, 0.36, 1),
+    margin-left 0.26s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
+/* 绿线也跟波浪：静止 12px，波浪中心/邻近与普通刻度同宽（26/18/15px）。 */
+.message-ruler .ruler-compaction.wave-0 { width: 26px; margin-left: 2px; transition-delay: 0s; }
+.message-ruler .ruler-compaction.wave-1 { width: 18px; margin-left: 5px; transition-delay: 40ms; }
+.message-ruler .ruler-compaction.wave-2 { width: 15px; margin-left: 8px; transition-delay: 80ms; }
 
 .message-ruler .ruler-tick.latest,
 .message-ruler .ruler-tick.current {

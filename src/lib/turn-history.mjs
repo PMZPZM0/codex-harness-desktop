@@ -12,7 +12,7 @@
 
 import { orderTurnsByTime } from "./turn-order.mjs";
 
-const EMPTY = Object.freeze({ stubs: [], estimate: 0, complete: false, fetching: false });
+const EMPTY = Object.freeze({ stubs: [], estimate: 0, windowTail: 0, complete: false, fetching: false });
 const byThread = new Map();
 const inflight = new Map();
 const listeners = new Set();
@@ -51,6 +51,21 @@ export function turnHistoryFor(threadId) {
 
 export function turnHeightEstimateFor(threadId) {
   return turnHistoryFor(threadId).estimate;
+}
+
+/** 渲染窗口后面（最新方向）被折叠的回合数。窗口大小固定为 TURN_WINDOW，
+ *  往上读历史时窗口整体上移，最新回合落进底部占位区；往下读时再滑回来。
+ *  ⛔ 只折叠**已加载**的回合（新回合总在已加载区），不需要网络。 */
+export function turnWindowTailFor(threadId) {
+  return turnHistoryFor(threadId).windowTail;
+}
+
+export function setTurnWindowTail(threadId, tail) {
+  const id = threadKey(threadId);
+  const value = Math.max(0, Math.floor(Number(tail) || 0));
+  if (!id) return;
+  if ((byThread.get(id)?.windowTail ?? 0) === value) return;
+  publish(id, { windowTail: value });
 }
 
 /** 一轮回合的估算高度（占位区用）。只在会话首次渲染后量一次，之后保持稳定 ——

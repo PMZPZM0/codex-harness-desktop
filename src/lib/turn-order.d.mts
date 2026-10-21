@@ -6,4 +6,5 @@ export declare function turnHistoryPlan<T>(
   loadedOrdered: T[] | null | undefined,
   windowSize: unknown,
   hasMore: unknown,
-): { visible: T[]; hiddenLoaded: number; hiddenStubs: number; hiddenCount: number };
+  tailHidden?: unknown,
+): { visible: T[]; hiddenLoaded: number; hiddenStubs: number; hiddenCount: number; hiddenBelow: number };

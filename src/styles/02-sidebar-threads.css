@@ -1303,6 +1303,31 @@ html[data-ui-font="large"] .action-content pre {
 }
 .timeline-history-skeleton i:nth-child(2) { width: 68%; }
 .timeline-history-skeleton i:nth-child(3) { width: 54%; }
+/* 窗口后面的已加载回合（最新方向）折成的占位区：只参与滚动几何。 */
+.timeline-history-bottom-spacer {
+  position: relative;
+  width: 100%;
+  flex: none;
+  pointer-events: none;
+}
+.timeline-history-bottom-skeleton {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: 18px;
+  display: grid;
+  gap: 11px;
+  opacity: 0.35;
+}
+.timeline-history-bottom-skeleton i {
+  display: block;
+  height: 13px;
+  width: 44%;
+  border-radius: 7px;
+  background: linear-gradient(90deg, var(--panel-2), var(--line-soft), var(--panel-2));
+}
+.timeline-history-bottom-skeleton i:nth-child(2) { width: 68%; }
+.timeline-history-bottom-skeleton i:nth-child(3) { width: 54%; }
 /* 续载更早历史时的行内提示（此前自动加载是静默的，用户不知道在加载） */
 .load-earlier-hint {
   display: flex; align-items: center; justify-content: center;

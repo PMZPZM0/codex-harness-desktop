@@ -6,6 +6,7 @@
  */
 import "@xterm/xterm/css/xterm.css";
 import { loadDraft, saveDraft } from "../../../../../lib/composer-draft.mjs";
+import { setTurnWindowTail } from "../../../../../lib/turn-history.mjs";
 import { DEFAULT_EFFORT, pickDefaultEffort, normalizeEffort, ALL_EFFORTS, declaredModelEfforts } from "../../../../../lib/effort";
 import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider } from "../../../../../lib/provider-continuity.mjs";
 import { contentOffsetTop, jumpToBottom, scrollToOffsetInstant, setScrollUserDetached } from "../../../../../components/scroll-utils";
@@ -81,9 +82,14 @@ export async function openThread(bag: Bag, id: string, freshThread?: Thread | nu
     // 渲染窗口：**命中缓存则保留上次展开的深度**（切回刚看过的长会话不该把内容缩回去），
     // 冷加载才重置——重置的意义是「切换成本与会话历史长度无关」，冷加载本来就没内容。
     const keepWindow = Boolean(bag.threadCacheRef.current.get(id));
-    if (!keepWindow && (bag.turnWindowRef.current[id] ?? bag.TURN_WINDOW) !== bag.TURN_WINDOW) {
-      bag.turnWindowRef.current = bag.touchTurnWindow(id, { ...bag.turnWindowRef.current, [id]: bag.TURN_WINDOW });
-      bag.setTurnWindow(bag.turnWindowRef.current);
+    if (!keepWindow) {
+      /* 冷加载：滑动窗口回到最新 5 个（tail=0）。缓存秒开则保留上次的窗口位置，
+         与 rememberScrollPosition/recallScrollOffset 一起还原阅读位置。 */
+      setTurnWindowTail(id, 0);
+      if ((bag.turnWindowRef.current[id] ?? bag.TURN_WINDOW) !== bag.TURN_WINDOW) {
+        bag.turnWindowRef.current = bag.touchTurnWindow(id, { ...bag.turnWindowRef.current, [id]: bag.TURN_WINDOW });
+        bag.setTurnWindow(bag.turnWindowRef.current);
+      }
     } else {
       bag.turnWindowRef.current = bag.touchTurnWindow(id, bag.turnWindowRef.current);
     }
@@ -134,6 +140,7 @@ export async function openThread(bag: Bag, id: string, freshThread?: Thread | nu
       // 新建线程（含「导入会话记录」建的空会话）本地落地时也贴一次名字覆盖：
       // 这条链上引擎侧那份名字要么没有（无回合 ⇒ 不在 thread/list），要么会被首条消息顶掉。
       const fresh = bag.withNameOverride(freshThread);
+      setTurnWindowTail(id, 0);
       bag.threadRef.current = fresh;
       bag.threadCacheRef.current.set(id, fresh);
       bag.setThread(fresh);

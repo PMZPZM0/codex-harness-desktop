@@ -74,11 +74,18 @@ function orderValue(turn) {
  * ⛔ 只在 `hasMore`（还有游标）时统计 hiddenStubs：全部历史都已加载时游标为空，
  *    此时残留的旧元数据（例如 revert 之后）不能再撑出一段永远加载不出来的空白。
  */
-export function turnHistoryPlan(stubs, loadedOrdered, windowSize, hasMore) {
+export function turnHistoryPlan(stubs, loadedOrdered, windowSize, hasMore, tailHidden = 0) {
   const ordered = Array.isArray(loadedOrdered) ? loadedOrdered : [];
   const size = Number(windowSize);
-  const start = Number.isFinite(size) && size > 0 ? Math.max(0, ordered.length - Math.floor(size)) : 0;
-  const visible = ordered.slice(start);
+  const limit = Number.isFinite(size) && size > 0 ? Math.floor(size) : ordered.length;
+  /* ⛔ 窗口是**滑动**的：tailHidden = 窗口后面（最新方向）折叠的已加载回合数。
+     往上读时窗口整体上移、最新回合进入底部占位区；往下读时再滑回来。
+     窗口大小恒为 limit，不会因为历史加载得多就把整段历史挂进 React。 */
+  const maxTail = Math.max(0, ordered.length - limit);
+  const tail = Math.min(maxTail, Math.max(0, Math.floor(Number(tailHidden) || 0)));
+  const end = ordered.length - tail;
+  const start = Math.max(0, end - limit);
+  const visible = ordered.slice(start, end);
   const hiddenLoaded = start;
   let hiddenStubs = 0;
   const first = visible[0];
@@ -94,5 +101,5 @@ export function turnHistoryPlan(stubs, loadedOrdered, windowSize, hasMore) {
       if (!loadedIds.has(String(stub.id))) hiddenStubs += 1;
     }
   }
-  return { visible, hiddenLoaded, hiddenStubs, hiddenCount: hiddenLoaded + hiddenStubs };
+  return { visible, hiddenLoaded, hiddenStubs, hiddenCount: hiddenLoaded + hiddenStubs, hiddenBelow: ordered.length - end };
 }

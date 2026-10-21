@@ -83,15 +83,36 @@ ok(/compactionTurnId\?: string/.test(ruler) && /compactionAtEnd\?: boolean/.test
   "刻度尺接受 compactionTurnId / compactionAtEnd（由时间线用同一个纯函数算好传进来）");
 ok(/ruler-compaction/.test(ruler) && /mark\.turnId === compactionTurnId/.test(ruler),
   "绿段画在**该回合用户消息的刻度之前**（= 两条刻度之间）");
-ok(/compactionAtEnd && <span className=\"ruler-compaction\"/.test(ruler),
-  "末尾情形也画绿段（手动压缩：最后一条消息之后）");
+ok(/compactionAtEnd && \([\s\S]{0,600}?className=\{\`ruler-compaction/.test(ruler),
+  "末尾情形也画绿段（手动压缩：最后一条消息之后；10-21 起是可点击按钮 + 参与波浪）");
+ok(/ruler-compaction[\s\S]{0,260}?onClick=\{\(\) => onJump\(mark\.turnId\)\}/.test(ruler)
+  && /ruler-compaction[\s\S]{0,320}?onJump\(last\.turnId\)/.test(ruler),
+  "绿段本身可点击（回合处跳到该回合；末尾跳到最新回合）");
 ok(/prev\.compactionTurnId === next\.compactionTurnId/.test(ruler) && /prev\.compactionAtEnd === next\.compactionAtEnd/.test(ruler),
   "⛔ memo 比较器带上这两个 prop（漏了 = 压缩发生/完成时刻度尺不刷新，绿段永远不出现）");
 const css = read("src/styles/09-settings-workspace-memory.css");
-ok(/\.message-ruler \.ruler-compaction\s*\{[\s\S]{0,240}var\(--green\)/.test(css),
+ok(/\.message-ruler \.ruler-compaction\s*\{[\s\S]{0,260}var\(--green\)/.test(css),
   "绿段颜色与压缩线同一个 token（var(--green)）");
-ok(/\.message-ruler \.ruler-compaction\s*\{[\s\S]{0,240}margin:\s*4px 0 4px 12px/.test(css),
+ok(/\.message-ruler \.ruler-compaction\s*\{[\s\S]{0,260}margin:\s*4px 0 4px 12px/.test(css),
   "绿段与刻度同槽（2px 线 + 上下 4px margin + gap 4px = 14px，不撑乱 visibleCount = h/14）");
+ok(/\.message-ruler \.ruler-compaction\s*\{[\s\S]{0,300}?width:\s*12px/.test(css)
+  && /className=\{`ruler-compaction\$\{wave\}`\}/.test(ruler)
+  && /className=\{`ruler-compaction\$\{endWave\}`\}/.test(ruler)
+  && /\.message-ruler \.ruler-compaction\.wave-0 \{ width: 26px/.test(css)
+  && /\.message-ruler \.ruler-compaction\.wave-1 \{ width: 18px/.test(css)
+  && /\.message-ruler \.ruler-compaction\.wave-2 \{ width: 15px/.test(css)
+  && /\.ruler-compaction\.wave-0[^\n]*margin-left:\s*2px/.test(css),
+  "绿段跟随波浪长短：静止 12px，波浪中心/邻位与普通刻度同宽（26/18/15px，含末尾绿段）");
+/* ── ④ 刻度尺联动（10-21 用户：当前阅读位置自动带起上下邻刻度的波浪；点击跳转） ── */
+ok(/const currentPos = currentItemId \? marks\.findIndex\(\(m\) => m\.itemId === currentItemId\) : -1/.test(ruler)
+  && /const activeIndex = hoverIndex != null \? hoverIndex : \(currentPos >= 0 \? currentPos : null\)/.test(ruler)
+  && /const wave = dist === 0 \? " wave-0" : dist === 1 \? " wave-1" : dist === 2 \? " wave-2" : ""/.test(ruler),
+  "当前阅读位置自动成为波浪中心（hover 时以鼠标为准），上下两格按距离衰减");
+ok(/contentOffsetTop\(el, scroller\) <= probe/.test(ruler) && !/if \(el\.offsetTop <= probe\)/.test(ruler),
+  "⛔ 当前刻度用内容坐标（offsetTop 相对 .turn-group 恒接近 0 ⇒ 永远高亮最后一条）");
+ok(/className=\{`ruler-tick[\s\S]{0,900}?onClick=\{\(\) => onJump\(mark\.turnId\)\}/.test(ruler)
+  && /data-turn-id=\{mark\.turnId\}/.test(ruler),
+  "每根刻度线都可点击跳转（带 data-turn-id，验收/键盘可用）");
 
 console.log(fails ? `\n【compaction-anchor】${checks} 条断言 / ${fails} 条失败` : `\n【compaction-anchor】${checks} 条断言全部通过`);
 process.exit(fails ? 1 : 0);

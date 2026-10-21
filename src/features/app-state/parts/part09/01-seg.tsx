@@ -8,6 +8,7 @@
  */
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
+import { setTurnWindowTail, turnWindowTailFor } from "../../../../lib/turn-history.mjs";
 import {
   AlertTriangle,
   Archive,
@@ -256,9 +257,11 @@ bag.expandTurnWindow = expandTurnWindow as typeof bag.expandTurnWindow;
    *  ⛔ 只收「渲染窗口」，不动 thread.turns（数据仍在内存：再往上滚先本地展开、不重新请求），
    *  引擎侧上下文更不受影响；窗口记忆也回到基线，所以切走再切回同样是初始态。 */
   function collapseTurnWindow(id: string) {
-    if ((bag.turnWindowRef.current[id] ?? bag.TURN_WINDOW) === bag.TURN_WINDOW) return;
+    const tail = turnWindowTailFor(id);
+    if ((bag.turnWindowRef.current[id] ?? bag.TURN_WINDOW) === bag.TURN_WINDOW && tail === 0) return;
     const el = bag.scrollRef.current;
-    bag.dbg("history-collapse", { from: bag.turnWindowRef.current[id], top: Math.round(el?.scrollTop ?? 0), max: Math.round((el?.scrollHeight ?? 0) - (el?.clientHeight ?? 0)) });
+    bag.dbg("history-collapse", { from: bag.turnWindowRef.current[id], tail, top: Math.round(el?.scrollTop ?? 0), max: Math.round((el?.scrollHeight ?? 0) - (el?.clientHeight ?? 0)) });
+    setTurnWindowTail(id, 0);
     /* ⛔ 收缩窗口 = 把上方已渲染的回合换回占位高度。只有**贴底**时才能收（调用方就是
        在距文档底 <48px 的分支里调），否则视口会被抽走；这里先恢复贴底标记，等 React
        提交后由时间线的 layout effect 把内容底部贴回视口底（都在 paint 之前）。 */

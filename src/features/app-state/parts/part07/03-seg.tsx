@@ -11,17 +11,18 @@ import "@xterm/xterm/css/xterm.css";
 import { attachmentToken, fileToken, promptFilePaths, shouldSavePastedTextAsFile, splitAttachmentSegments, stripAttachmentTokens } from "../../../../lib/composer-attachments.mjs";
 import { imageToken, splitPromptSegments, promptImagePaths, stripImageTokens, isImagePart, imagePartSrc, normalizeImagePartForSend } from "../../../../lib/prompt-images";
 import { mergeTurnListsById } from "../../../../lib/turn-order.mjs";
-import { primeTurnHistory } from "../../../../lib/turn-history.mjs";
+import { primeTurnHistory, setTurnWindowTail, turnWindowTailFor } from "../../../../lib/turn-history.mjs";
 import { setFavoriteHandler, type FavoriteRequest } from "../../../../lib/favorite-bridge";
 import { basename } from "../../../../lib/basename";
 import { cancelHistoryPin, clearHistoryPin, clearHistoryPinState, contentOffsetTop, scrollToOffsetInstant, setHistoryPin, setHistoryPinState, type HistoryPinState } from "../../../../components/scroll-utils";
 import { Turn } from "../../../../lib/turn";
-import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
+import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
 import type { Bag } from "../bag-types";
 
 /* 10-21：这两个游标必须跨渲染存活 —— 放在 hook 体内会每次渲染归零（冷却窗形同虚设）。 */
 let lastHistoryLoadAt = 0;
 let lastHistoryScrollTop: number | null = null;
+let lastWindowSlideAt = 0;
 /* 单次水合的回合数。⛔ 必须比首屏的 TURNS_PAGE(5) 更小：老回合经常是带长工具输出的
    巨型回合（实测一条 3.6MB），一次挂 5 条会让主线程渲染阻塞十几秒（CDP 都超时）。
    2 条一页仍保持「按页」，但把单次提交的正文量砍掉一半以上。 */
@@ -189,20 +190,22 @@ bag.pasteLongText = pasteLongText as typeof bag.pasteLongText;
 bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
 
   /** 向上水合一页更早的历史（10-21 虚拟滚动条）：
-   *  ① 内存里还有未渲染的回合（hidden>0）→ 只扩大渲染窗口，不碰网络；
-   *  ② 内存耗尽且有游标 → thread/turns/list 按 cursor 拉**一页**拼到最前。
-   *  顶部 `.timeline-history-spacer` 按「未水合回合数 × 平均回合高」撑出整段历史；
-   *  水合时占位区变矮、真实内容变高，两处高度差都由同一轮锚点补偿吃掉 ⇒ 视口不跳。
-   *  loadingEarlierRef 防重入：滚动到占位区边界 + 按钮点击共用这一个入口。 */
+   *  ① 内存里窗口上方还有回合 → 把**滑动窗口**整体上移一页（不碰网络）；
+   *  ② 内存耗尽且有游标 → thread/turns/list 按 cursor 拉**一页**拼到最前，再上移窗口。
+   *  ⛔ 窗口大小恒为 TURN_WINDOW：往上读时最新回合落进底部占位区，绝不把整段历史
+   *  挂进 React（实测全量加载后 53 个回合让切会话从 0.5s 变成 2s）。
+   *  顶部/底部两个占位区都按「隐藏回合数 × 平均回合高」撑高度，窗口滑动时一增一减，
+   *  总高度不变，锚点补偿只处理真实内容高度差。 */
   async function loadEarlierTurns(id: string) {
     if (bag.loadingEarlierRef.current.has(id)) return;
     const current = bag.threadCacheRef.current.get(id) ?? bag.threadRef.current;
     if (!current || current.id !== id) return;
     const rendered = bag.turnWindowRef.current[id] ?? bag.TURN_WINDOW;
-    const hidden = current.turns.length - rendered;
+    const tail = turnWindowTailFor(id);
+    const hiddenAbove = current.turns.length - tail - rendered;
     // ref 优先（本次会话内已更新过），否则读线程对象上的兜底游标（见 resumeThreadWithTurns）。
     const cursor = bag.turnsCursorRef.current.get(id) ?? ((current as any).__turnsCursor ?? null);
-    if (hidden <= 0 && !cursor) return;
+    if (hiddenAbove <= 0 && !cursor) return;
     /* ⛔ 10-21 用户实测「滚到顶部就弹回最下面」：续载会在**上方**插入内容，
        高度变化被贴底跟随（height-follow）当成"底部又长了" ⇒ 直接跳到 contentTail。
        用户此刻是在看历史，必须先交出跟随权（同时撤钉顶留白）。 */
@@ -252,10 +255,8 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
       /* 10-20：补偿基准用**内容坐标**（anchor 在滚动内容里的 offset），不是视口 top。
          视口 top 会被用户滚轮改变；用内容 offset 才能只补"上方插入的高度"、不跟用户抢滚动。 */
       const anchorContentBefore = anchorNode && el0 ? contentOffsetTop(anchorNode, el0) : 0;
-      let grow = 0;
-      if (hidden > 0) {
-        grow = Math.min(hidden, HISTORY_PAGE); // 本地展开一批的量，翻老历史不产生网络请求
-      } else if (cursor) {
+      let fetched = 0;
+      if (hiddenAbove <= 0 && cursor) {
         try {
           // 超时保护：引擎偶发慢/挂起时不能让加载状态卡死（超时按失败处理，游标保留，下次滚动重试）
           const result: any = await Promise.race([
@@ -266,7 +267,7 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
           if (result?.nextCursor) bag.turnsCursorRef.current.set(id, result.nextCursor);
           else bag.turnsCursorRef.current.delete(id);
           if (data.length) {
-            grow = data.length;
+            fetched = data.length;
             const earlier = [...data].reverse();
             bag.setThread((c) => {
               if (!c || c.id !== id) return c;
@@ -278,6 +279,16 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
             });
           }
         } catch { /* 拉取失败不影响当前视口 */ }
+      }
+      const availableAbove = hiddenAbove + fetched;
+      const grow = availableAbove > 0 ? Math.min(availableAbove, HISTORY_PAGE) : 0;
+      const newLength = bag.threadRef.current?.id === id ? (bag.threadRef.current.turns.length ?? current.turns.length) : current.turns.length;
+      const targetTail = Math.max(0, Math.min(newLength - rendered, tail + grow));
+      /* 拉取期间用户已经回到底部 ⇒ 不要上移窗口（否则会把刚贴底的人带回历史）。
+         新拉到的更早回合留在内存，底部由 collapse/贴底负责。 */
+      if (grow > 0 && el0 && el0.scrollHeight - el0.scrollTop - el0.clientHeight < 48) {
+        bag.dbg("history-load-skip-bottom", { id, top: Math.round(el0.scrollTop) });
+        return;
       }
       if (grow > 0) {
         /* 交接时按**当前**内容坐标重算锚点：上一页的 rAF 钉住在拉取期间可能已经补过
@@ -299,13 +310,17 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
             contentBefore: handoffBefore,
             spacerBefore: spacerBeforeH,
             inSpacer,
-            expectedLimit: rendered + grow,
+            direction: 1,
+            expectedTail: targetTail,
+            expectedLength: newLength,
             applied: false,
           };
           setHistoryPin(el0, pinCancel);
           setHistoryPinState(el0, pinState);
         }
-        bag.expandTurnWindow(id, grow);
+        /* 窗口整体上移：顶部占位区少 grow 个、底部占位区多 grow 个（都用估算高度，
+           总高度不变）；真实内容替换估算值的高度差由锚点补偿吃掉。 */
+        setTurnWindowTail(id, targetTail);
         /* ⛔⛔ 10-20 用户实测「滚轮触发上面页数，就自动到最前面」：
            旧补偿按**视口 top** 算，用户一滚就必须取消（否则和用户抢滚动）；一取消，
            上方插入的高度直接把视图顶走。改成按**内容坐标增量**补偿 —— 内容 offset 只随
@@ -336,8 +351,12 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
             return byId && el.contains(byId) ? byId : null;
           };
           if (!resolveAnchor()) {
-            /* 锚点真的被移除（不是被替换）：保持原位，宁可不补偿也不跳到上一页顶部。 */
-            endPin("no-anchor");
+            /* 锚点被移出窗口（连续翻页/连点按钮时可能发生）：落到新窗口的上沿，
+               不能停在上方/下方占位区里变成一片空白。 */
+            const spacer = el.querySelector<HTMLElement>(".timeline-history-spacer");
+            bag.selfScrollUntilRef.current = Date.now() + 80;
+            scrollToOffsetInstant(el, Math.max(0, spacer?.offsetHeight ?? 0));
+            endPin("no-anchor-land");
             return;
           }
           const deadline = performance.now() + 1500;
@@ -371,6 +390,79 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
   }
 bag.loadEarlierTurns = loadEarlierTurns as typeof bag.loadEarlierTurns;
 
+  /** 往下读：窗口整体下移（tail 减小），把底部占位区里的已加载回合换回真实内容。
+   *  纯本地滑窗、不拉网络；用户滚到渲染窗口底边时由 onTimelineScroll 触发。
+   *  一次最多下移 2 个回合，锚点取**最后一条可见回合**（窗口下移后它仍在窗口内）。 */
+  function slideTurnWindowDown(id: string) {
+    if (bag.loadingEarlierRef.current.has(id)) return;
+    if (Date.now() - lastWindowSlideAt < 220) return;
+    const current = bag.threadCacheRef.current.get(id) ?? bag.threadRef.current;
+    if (!current || current.id !== id) return;
+    const tail = turnWindowTailFor(id);
+    if (tail <= 0) return;
+    const rendered = bag.turnWindowRef.current[id] ?? bag.TURN_WINDOW;
+    const el0 = bag.scrollRef.current;
+    if (!el0) return;
+    const bottomEdge = el0.getBoundingClientRect().bottom;
+    const anchorNode = [...el0.querySelectorAll(".turn-group")].reverse().find((node) => node.getBoundingClientRect().top < bottomEdge) as HTMLElement | undefined;
+    if (!anchorNode) return;
+    const anchorId = anchorNode.id;
+    const contentBefore = contentOffsetTop(anchorNode, el0);
+    const targetTail = Math.max(0, tail - Math.min(HISTORY_PAGE, Math.max(1, rendered - 1)));
+    lastWindowSlideAt = Date.now();
+    let cancelled = false;
+    let pinState: HistoryPinState | null = {
+      threadId: id,
+      anchorId,
+      contentBefore,
+      spacerBefore: 0,
+      inSpacer: false,
+      direction: -1,
+      expectedTail: targetTail,
+      expectedLength: current.turns.length,
+      applied: false,
+    };
+    const cancel = () => { cancelled = true; };
+    cancelHistoryPin(el0);
+    setHistoryPin(el0, cancel);
+    setHistoryPinState(el0, pinState);
+    const endPin = (why = "") => {
+      if (why) bag.dbg("history-slide-end", { why, top: Math.round(el0.scrollTop) });
+      clearHistoryPin(el0, cancel);
+      if (pinState) clearHistoryPinState(el0, pinState);
+      pinState = null;
+    };
+    setTurnWindowTail(id, targetTail);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const el = bag.scrollRef.current;
+      if (!el || cancelled || bag.threadRef.current?.id !== id) { endPin("stale"); return; }
+      const resolveAnchor = () => {
+        const byId = document.getElementById(anchorId);
+        return byId && el.contains(byId) ? byId : null;
+      };
+      if (!resolveAnchor()) { endPin("no-anchor"); return; }
+      const deadline = performance.now() + 1200;
+      const pin = () => {
+        if (cancelled) { endPin("cancelled"); return; }
+        const node = bag.scrollRef.current;
+        if (!node || bag.threadRef.current?.id !== id) { endPin("thread-changed"); return; }
+        const anchor = resolveAnchor();
+        if (!anchor) { endPin("anchor-lost"); return; }
+        const now = contentOffsetTop(anchor, node);
+        const delta = now - (pinState?.contentBefore ?? contentBefore);
+        if (Math.abs(delta) > 0.5) {
+          bag.selfScrollUntilRef.current = Date.now() + 80;
+          node.scrollTop += delta;
+          if (pinState) pinState.contentBefore = now;
+          bag.dbg("history-slide", { delta: Math.round(delta), top: Math.round(node.scrollTop), tail: targetTail });
+        }
+        if (performance.now() < deadline) requestAnimationFrame(pin);
+        else endPin("deadline");
+      };
+      requestAnimationFrame(pin);
+    }));
+  }
+
   /** 时间线滚动到**历史占位区边界**时水合下一页（10-21 虚拟滚动条）。
    *  ⛔ 不看"离文档顶多远"：占位区高度就是整段未加载历史，边界随水合往上退。
    *  ⛔ 一次用户手势只加载一页（userScrolledRef 被续载消费）+ 冷却窗 + 补偿中不响应，
@@ -381,6 +473,17 @@ bag.loadEarlierTurns = loadEarlierTurns as typeof bag.loadEarlierTurns;
        用户滚动会和"上一次用户滚动"比较，方向判断失真。 */
     const previousTop = lastHistoryScrollTop;
     lastHistoryScrollTop = el.scrollTop;
+    const id = bag.threadRef.current?.id;
+    if (!id) return;
+    /* ⛔ 回到底部必须排在补偿抑制窗/滑窗钉住之前：用户从历史一口气滚到文档底时，
+       上一轮的 slide pin 可能刚写过 scrollTop（selfScrollUntil 80ms）⇒ 旧顺序会把它
+       当程序滚动跳过，tail 留在 >0，视口停在底部占位区 = 一片空白（10-21 验收⑧实测）。
+       用户明确滚到底（userScrolledRef 真）时直接收窗口/tail=0，并取消历史钉住。 */
+    if (bag.userScrolledRef.current && el.scrollHeight - el.scrollTop - el.clientHeight < 48) {
+      cancelHistoryPin(el);
+      bag.collapseTurnWindow(id);
+      return;
+    }
     /* ⛔ 不再用「补偿进行中就一律不响应」挡住用户：大会话一页要渲染/结算几百毫秒到 1 秒，
        快滚时用户早已越过占位区边界（随后被当成"拖到顶"落到边界，视觉上就是一次跳）。
        现在只忽略**补偿自己写 scrollTop 产生的** scroll 事件（selfScrollUntil 抑制窗），
@@ -391,9 +494,9 @@ bag.loadEarlierTurns = loadEarlierTurns as typeof bag.loadEarlierTurns;
     if (!bag.userScrolledRef.current) return;
     // 冷却窗：同一手势内的多次 wheel/scroll 只允许触发一页。
     if (Date.now() - lastHistoryLoadAt < 350) return;
-    const id = bag.threadRef.current?.id;
-    if (!id || bag.switchJumpPending()) return;
-    // 回到最新（贴底）：把往上滚期间展开的历史窗口收回基线（用户 09-14：滚下来后不该
+    if (bag.switchJumpPending()) return;
+    const tail = turnWindowTailFor(id);
+    // 回到最新（贴底）：把往上滚期间展开/滑走的窗口收回基线（用户 09-14：滚下来后不该
     // 一直撑着渲染；切会话回来也应是初始态）。只收窗口，不动数据。
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) {
       bag.collapseTurnWindow(id);
@@ -401,15 +504,29 @@ bag.loadEarlierTurns = loadEarlierTurns as typeof bag.loadEarlierTurns;
     }
     /* ⛔ 只在上滚时水合历史。下滚时（尤其是从占位区往最新消息方向滚）如果还按
        「离边界近」触发，会在用户反向滚动期间继续插内容 + 锚点补偿，滚动会一顿一顿的，
-       到底时还可能被一次新的水合带离底部。 */
+       到底时还可能被一次新的水合带离底部。
+       ⇒ 下滚只做**本地滑窗**：接近渲染窗口底边时把底部占位区里的已加载回合换回来。 */
     const movingDown = previousTop != null && el.scrollTop > previousTop + 2;
-    if (movingDown) return;
+    if (movingDown) {
+      if (tail > 0) {
+        const groups = [...el.querySelectorAll(".turn-group")];
+        const last = groups[groups.length - 1] as HTMLElement | undefined;
+        const downMargin = Math.max(900, el.clientHeight * 1.5);
+        if (last && last.getBoundingClientRect().bottom <= el.getBoundingClientRect().bottom + downMargin) {
+          slideTurnWindowDown(id);
+        }
+      }
+      return;
+    }
     const spacer = el.querySelector<HTMLElement>(".timeline-history-spacer");
     const spacerH = spacer?.offsetHeight ?? 0;
     const margin = Math.max(1200, el.clientHeight * 2);
     /* 占位区存在 ⇒ 触发点是「占位区边界 + 2 屏」（提前一个缓冲，滚动时不会看见空白）；
        元数据还没到/没有占位区时退回文档顶触发一页（按钮仍是主入口）。 */
     const triggerAt = spacerH > 0 ? spacerH + margin : 12;
+    if (el.scrollTop <= triggerAt + 200) {
+      bag.dbg("history-scroll", { top: Math.round(el.scrollTop), spacerH, tail, triggerAt, user: bag.userScrolledRef.current, jump: bag.switchJumpPending(), cd: Math.round(Date.now() - lastHistoryLoadAt), down: movingDown });
+    }
     if (el.scrollTop <= triggerAt) {
       void bag.loadEarlierTurns(id);
     }
@@ -417,19 +534,40 @@ bag.loadEarlierTurns = loadEarlierTurns as typeof bag.loadEarlierTurns;
 bag.onTimelineScroll = onTimelineScroll as typeof bag.onTimelineScroll;
 
   /** 刻度尺跳转：目标回合可能还在渲染窗口之外（元素未挂载，scrollIntoView 找不到目标）。
-   *  先把窗口扩到覆盖目标回合，等 React 提交 DOM 后再跳。引用恒定（useCallback []），
-   *  保证 MemoMessageRuler 的 memo 比较仍然拦得住无关重渲染。 */
+   *  把**滑动窗口**移到目标附近（tail = 总长 − 目标下标 − 窗口大小），等 React 提交后再跳。
+   *  引用恒定（useCallback []），保证 MemoMessageRuler 的 memo 比较仍然拦得住无关重渲染。 */
   const jumpToTurnInWindow = useCallback((turnId: string) => {
     const t = bag.threadRef.current;
     if (t) {
       const idx = t.turns.findIndex((turn: Turn) => turn.id === turnId);
       const rendered = bag.turnWindowRef.current[t.id] ?? bag.TURN_WINDOW;
-      if (idx >= 0 && idx < t.turns.length - rendered) {
-        bag.turnWindowRef.current = { ...bag.turnWindowRef.current, [t.id]: t.turns.length - idx };
-        bag.setTurnWindow(bag.turnWindowRef.current);
+      if (idx >= 0) {
+        setTurnWindowTail(t.id, Math.max(0, t.turns.length - idx - rendered));
       }
     }
-    requestAnimationFrame(() => requestAnimationFrame(() => jumpToTurn(turnId)));
+    /* ⛔ 不等“两个 rAF 后 scrollIntoView”：滑窗切换要经过 store → React 提交，
+       大会话里两个 rAF 可能还没挂上目标；scrollIntoView 失败会停在别的回合。
+       改成等目标真的进了 DOM，用内容坐标瞬时定位（含顶部占位区偏移）。 */
+    const started = performance.now();
+    let frames = 0;
+    const align = () => {
+      const el = bag.scrollRef.current;
+      const node = document.getElementById(`turn-${turnId}`);
+      if (!el || !node || !el.contains(node)) {
+        if (performance.now() - started < 800) requestAnimationFrame(align);
+        return;
+      }
+      const desired = Math.max(0, contentOffsetTop(node, el) - 12);
+      if (Math.abs(el.scrollTop - desired) > 4) {
+        bag.selfScrollUntilRef.current = Date.now() + 80;
+        scrollToOffsetInstant(el, desired);
+      }
+      frames += 1;
+      /* 目标挂载后内容还会继续结算（图片/代码高亮/折叠展开）—— 跟 30 帧把它钉在顶部，
+         不依赖 smooth scroll 的时长，也不会“点了刻度停在上一段”。 */
+      if (frames < 30 && performance.now() - started < 800) requestAnimationFrame(align);
+    };
+    requestAnimationFrame(() => requestAnimationFrame(align));
   }, []);
 bag.jumpToTurnInWindow = jumpToTurnInWindow as typeof bag.jumpToTurnInWindow;
 

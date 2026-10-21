@@ -37,7 +37,11 @@ export type HistoryPinState = {
   contentBefore: number;
   spacerBefore: number;
   inSpacer: boolean;
-  expectedLimit: number;
+  /* 窗口滑动方向：+1 = 往更早滑（tail 增大），-1 = 往最新滑（tail 减小）。
+     等 tail / 已加载长度到达目标后，layout effect 才在 paint 前补一次。 */
+  direction: 1 | -1;
+  expectedTail: number;
+  expectedLength: number;
   applied: boolean;
 };
 const historyPinStates = new WeakMap<HTMLElement, HistoryPinState>();
