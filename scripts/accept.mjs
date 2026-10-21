@@ -888,8 +888,8 @@ const CHECKS = [
         await h.eval(`(function(){ var b=document.querySelector(".load-earlier-turns"); if(b) b.click(); return 1; })()`);
         await wait(1200);
         const after = await h.eval(`(function(){ var t=document.querySelector(".timeline"); return { top:Math.round(t.scrollTop), max:t.scrollHeight-t.clientHeight, groups:t.querySelectorAll(".turn-group").length }; })()`);
-        h.check("④ 顶部续载保持顶部（top ≤ 40px，不回弹到底部）",
-          after.top <= 40 && after.max >= before.max,
+        h.check("④ 顶部续载保持原位（top ≤ 1200px，不把滚动条推到新列表底部）",
+          after.top <= 1200 && after.max >= before.max,
           JSON.stringify({ before, after }).slice(0, 220));
       }
     },

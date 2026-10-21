@@ -221,10 +221,12 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
       /* 10-20：补偿基准用**内容坐标**（anchor 在滚动内容里的 offset），不是视口 top。
          视口 top 会被用户滚轮改变；用内容 offset 才能只补"上方插入的高度"、不跟用户抢滚动。 */
       let anchorContentBefore = anchorNode && el0 ? contentOffsetTop(anchorNode, el0) : 0;
-      /* 用户已经在**最顶部**时，续载的目的是"往上继续看"：此刻不能把旧锚点按插入高度
-         往下推（会把视口推到新列表的最底部 —— 用户实测「滚到顶部就回弹到下面」）。
-         保持顶部不动，新加载的更早内容直接出现在视口里。 */
-      const atTop = beforeTop <= 40;
+      /* 用户已经在**顶部续载区**（与 onTimelineScroll 的自动加载阈值一致：约 1.5 屏 /
+         最少 1200px）时，续载目的是"往上继续看"：此刻不能把旧锚点按插入高度往下推
+         （会把滚动条推到新列表底部 —— 用户实测「滚到顶部就回弹到下面」）。
+         保持当前位置不动，新加载的更早内容直接出现在视口里。 */
+      const loadZone = Math.max(1200, (el0?.clientHeight ?? 0) * 1.5);
+      const nearTop = beforeTop <= loadZone;
       let grow = 0;
       if (hidden > 0) {
         grow = Math.min(hidden, bag.TURNS_PAGE); // 本地展开一批的量，翻老历史不产生网络请求
@@ -263,8 +265,9 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
         requestAnimationFrame(() => requestAnimationFrame(() => {
           const el = bag.scrollRef.current;
           if (!el) return;
-          if (atTop) {
-            // 顶部续载：保持 0，新内容从上方展开；不做锚点补偿/预取（避免连环加载）。
+          if (nearTop) {
+            // 顶部续载区：保持原位置（不按插入高度往下推），新内容从上方展开；
+            // 不做锚点补偿/预取（避免连环加载）。
             el.scrollTop = Math.max(0, beforeTop);
             return;
           }
