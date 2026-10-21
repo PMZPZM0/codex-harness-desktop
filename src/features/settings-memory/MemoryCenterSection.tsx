@@ -17,10 +17,11 @@ import { useState } from "react";
 import { PyramidPanel } from "./PyramidPanel";
 import { SharedLibraryPanel } from "./SharedLibraryPanel";
 import { BackendConsolePanel } from "./BackendConsolePanel";
+import { MemoryBackendBoards, type MemoryBackendId } from "./MemoryBackendBoards";
 import { LayerRulesPane, MemoryEntriesPane, MemoryModePane, MemorySearchPane, MemorySourcesPane, ResidentMemoryPane } from "./MemoryPanes";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { PageInfo } from "../../components/SettingsHead";
-import { BookOpen, Database, Layers } from "lucide-react";
+import { BookOpen, Cloud, Database, Layers, Server } from "lucide-react";
 import { MemoryConfigModal } from "../../features/memory";
 import type { HarnessAppApi } from "../app-view/types";
 export type MemoryCenterSectionProps = {
@@ -41,24 +42,30 @@ export function MemoryCenterSection(props: MemoryCenterSectionProps) {
   /* ── 三个并列功能入口（10-10 用户要求：「重构为三个并列的功能入口」）──────────────
      ① 项目共享记忆库 —— 可切换项目，看该项目的共享记忆（用户档案 / 项目规则 / 工作纪律）
      ② 金字塔记忆架构 —— 每个会话独立的金字塔式结构（共享层只读 + 独立层可写）
-     ③ 记忆后端选项   —— 存储后端与保存位置（含工作区开关）
-     ⛔ 三者是**并列**关系（同一行卡片、各自独立弹窗），⛔ 不是"总览 + 详情"的上下级。
-     ⛔ 分类与字段全部来自 src/lib/memory-scope-rules.mjs（唯一真相源），页面不另写层表。 */
+     ③ 记忆后端三板块 —— 本地金字塔 / MCP / 云端各自一块板 + 开关（10-21 用户要求：
+        「开那个生效那个，就不用再在记忆后端选了」；后端详细安装在各自的「设置/管理」弹窗里）。
+     ⛔ ① ② 是**并列**内容入口；③ 是选择记忆存到哪里，不是第四张内容卡。 */
   const [openCard, setOpenCard] = useState<string | null>(null);
+  const [backendDetail, setBackendDetail] = useState<MemoryBackendId | null>(null);
   /* 项目共享记忆库里切换的项目（默认当前工作区；为空则跟随页面工作区） */
   const [sharedProject, setSharedProject] = useState<string>("");
   const effectiveSharedProject = sharedProject || threads.find((t: any) => t?.cwd)?.cwd || "";
   const cardMeta: Record<string, { title: string; hint: string; tab: string; detail: string }> = {
     shared: { title: "项目共享记忆库", hint: "切换项目 · 用户档案 / 项目规则 / 工作纪律", tab: "layers", detail: "按**项目**维度共享的记忆：用户档案（跨项目一致，全项目共用一份）、项目规则（项目宪法 L1 + 项目背景 L3）、工作纪律（L2，注入时排最前）。切换上面的项目即可看别的项目。" },
     pyramid: { title: "金字塔记忆架构", hint: "每个会话独立 · 共享层只读 + 独立层自持", tab: "library", detail: "金字塔是**分层机制**：项目级共享层（L0–L6，本项目所有会话读同一份）+ 会话独立层（L7 碎片池与命名空间条目，别的会话读不到）。下面按**会话**展示：每个会话签到的共享层是同一份，独立层各不相同。" },
-    backend: { title: "记忆后端选项", hint: "内置金字塔 ⇄ MCP 记忆服务", tab: "storage", detail: "决定记忆**存在哪**：内置记忆金字塔（随包、离线）或可选的 MCP 记忆服务；以及条目保存在本机还是云端、当前项目是否开启工作区记忆。" },
   };
   const cards = [
     { key: "shared", icon: <BookOpen size={15} />, title: "项目共享记忆库", desc: "切换项目，查看该项目的共享记忆：用户档案 · 项目规则 · 工作纪律", stat: `${(effectiveSharedProject.split(/[\\/]/).filter(Boolean).pop() || "未选项目")} · 3 类共享内容` },
     { key: "pyramid", icon: <Layers size={15} />, title: "金字塔记忆架构", desc: "每个会话独立的金字塔结构：共享层只读、独立层自持", stat: "按会话查看" },
-    { key: "backend", icon: <Database size={15} />, title: "记忆后端选项", desc: "决定记忆写到哪儿：内置金字塔 / MCP 记忆服务 / 云端 memapi", stat: app.memoryBackend === "cloud" ? "云端记忆" : app.memoryBackend === "mcp" ? "MCP 记忆服务" : "内置金字塔" },
   ];
   const openMeta = openCard ? cardMeta[openCard] : null;
+  const backendMeta = backendDetail === "builtin"
+    ? { title: "本地金字塔记忆", icon: <Database size={15} />, hint: "工作区开关 · 保存位置" }
+    : backendDetail === "mcp"
+      ? { title: "MCP 记忆", icon: <Server size={15} />, hint: "安装 · 连通性检查 · 卸载" }
+      : backendDetail === "cloud"
+        ? { title: "云端记忆", icon: <Cloud size={15} />, hint: "开通状态 · 接通 · 账号隔离" }
+        : null;
   /* 项目清单：从会话的 cwd 去重（⛔ 不新增 IPC —— 页面已有 threads） */
   const projects = Array.from(new Set((threads ?? []).map((t: any) => String(t?.cwd ?? "")).filter(Boolean))) as string[];
 return (
@@ -83,15 +90,21 @@ return (
                       ))}
                     </div>
 
+                    {/* 10-21：记忆后端不再是一张选择卡 / 一个下拉，而是三块板 + 开关。
+                        开关负责"开哪个生效哪个"；每块板的「设置 / 安装 / 开通」进对应详情弹窗。 */}
+                    <MemoryBackendBoards
+                      memoryEnabled={Boolean(memoryEnabled)}
+                      fallbackBackend={app.memoryBackend}
+                      onManage={(backend) => setBackendDetail(backend)}
+                      onNotice={app.setNotice}
+                    />
+
                     {/* ⛔⛔ 10-10 用户二轮反馈「还保留了旧的记忆板块入口，为什么没有清理干净」：
                         这里原来挂着「打开记忆中心」按钮（指向旧的记忆中心弹窗）。
-                        旧弹窗的内容已全部迁进上面三张卡片的二级弹窗
+                        旧弹窗的内容已全部迁进上面内容卡片的二级弹窗
                         （见 ./MemoryPanes.tsx），**入口与旧弹窗一并删除**。 */}
                     {memoryStatus && <p className="settings-status">{memoryStatus}</p>}
                     {memoryConfigOpen && <MemoryConfigModal gateway={memoryGateway} setGateway={setMemoryGateway} action={memoryGatewayAction} onClose={() => setMemoryConfigOpen(false)} onTest={() => void testMemoryGateway()} onSave={() => void saveMemoryGateway()} />}
-
-                    {/* 记忆后端（09-25 新增）：内置金字塔 ⇄ MCP 记忆服务二选一。 */}
-                  
                     {/* ── 二级弹窗（⛔ 内容一律在这里，不得内嵌到主界面）──────────────────── */}
                     {openCard === "shared" && openMeta && (
                       <SettingsDialog title="项目共享记忆库" icon={<BookOpen size={15} />} hint="切项目看书架 · 常驻记忆 · 记忆条目 · 全局搜索" size="lg" onClose={() => setOpenCard(null)}>
@@ -117,10 +130,12 @@ return (
                         <MemorySourcesPane app={app} />
                       </SettingsDialog>
                     )}
-                    {openCard === "backend" && openMeta && (
-                      <SettingsDialog title="记忆后端选项" icon={<Database size={15} />} hint="状态灯 · 设备大卡 · 控制行 · 保存在哪" size="lg" onClose={() => setOpenCard(null)}>
-                        {/* ⛔ 这一套用**设备控制台**形态（状态灯条 + 两个设备大卡 + 控制行）。 */}
+                    {backendDetail && backendMeta && (
+                      <SettingsDialog title={backendMeta.title} icon={backendMeta.icon} hint={backendMeta.hint} size="lg" onClose={() => setBackendDetail(null)}>
+                        {/* ⛔ 详情弹窗只显示**这一块板**的安装 / 检测 / 开通 / 工作区；
+                            三选一由页面上的开关完成，这里不再出现第二套后端选择。 */}
                         <BackendConsolePanel
+                          focus={backendDetail}
                           workspace={effectiveSharedProject}
                           workspaceEnabled={workspaceMemoryEnabled}
                           onNotice={app.setNotice}
@@ -130,11 +145,9 @@ return (
                         />
                         {/* ── 旧「记忆中心」的「存储与同步」里的**保存位置**（10-10 迁移）──
                             ⛔ 只搬这一段：工作区开关面板里已经有，不重复渲染同一个开关。
-                            ⛔⛔ 10-20 用户反馈「明明是 MCP 记忆的，为什么展示在其他两个」：
-                            这一块是 **内置金字塔的第二根轴**（本机 memory.json ⇄ TencentDB Gateway），
-                            只对 builtin 有意义 —— MCP 用自己的 memory.db、云端后端走 memapi，
-                            在它们下面渲染等于给了两套互相打架的「存哪儿」。⇒ 只在 builtin 下出现。 */}
-                        {app.memoryBackend === "builtin" ? <MemoryModePane app={app} /> : null}
+                            ⛔ 这一块是 **内置金字塔的第二根轴**（本机 memory.json ⇄ TencentDB Gateway），
+                            只对 builtin 有意义 —— MCP 用自己的 memory.db、云端后端走 memapi。 */}
+                        {backendDetail === "builtin" ? <MemoryModePane app={app} /> : null}
                       </SettingsDialog>
                     )}
   </section>

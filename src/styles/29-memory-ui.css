@@ -700,3 +700,83 @@
 .pyr-projects { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 2px 0 6px; }
 /* 没有独立记忆的会话仍然列出来（⛔ 不隐藏 —— 用户要"认出我已有的会话"），只是弱化显示 */
 .memory-funnel-chip.is-empty { opacity: .68; }
+
+/* ── 记忆后端三板块（10-21）：本地 / MCP / 云端各一块板 + 开关 ── */
+.memory-backends { display: flex; flex-direction: column; gap: 8px; }
+.memory-backends-head strong { display: block; color: var(--text); font-size: 13.5px; font-weight: 600; }
+.memory-backends-head small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.memory-backends-fallback {
+  display: flex; align-items: flex-start; gap: 6px; margin: 0;
+  padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--ic-amber) 32%, var(--line));
+  border-radius: 8px; background: color-mix(in srgb, var(--ic-amber) 7%, transparent);
+  color: var(--ic-amber); font-size: 12px; line-height: 1.55;
+}
+.memory-backends-fallback svg { flex: none; margin-top: 1px; }
+.memory-backend-list { display: flex; flex-direction: column; gap: 8px; }
+.memory-backend-board {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--panel);
+  transition: border-color .15s ease, background-color .15s ease;
+}
+.memory-backend-board.is-active {
+  border-color: color-mix(in srgb, var(--ic) 45%, var(--line));
+  background: color-mix(in srgb, var(--ic) 5%, var(--panel));
+}
+.memory-backend-main { display: flex; align-items: flex-start; gap: 10px; }
+.memory-backend-icon {
+  width: 32px; height: 32px; flex: none; display: grid; place-items: center;
+  border-radius: 9px; color: var(--ic);
+  background: color-mix(in srgb, var(--ic) 11%, var(--panel-2));
+}
+.memory-backend-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.memory-backend-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.memory-backend-title strong { color: var(--text); font-size: 13.5px; font-weight: 600; }
+.memory-backend-copy > small { color: var(--muted); font-size: 12px; line-height: 1.55; }
+.memory-backend-meta { color: var(--faint); font-size: 12px; line-height: 1.5; }
+.memory-backend-tag {
+  flex: none; padding: 1px 7px; border: 1px solid var(--line); border-radius: 999px;
+  font-style: normal; font-size: 12px; line-height: 1.6; color: var(--muted); background: var(--bg);
+}
+.memory-backend-tag.is-on { color: var(--ic); border-color: color-mix(in srgb, var(--ic) 35%, var(--line)); background: color-mix(in srgb, var(--ic) 9%, var(--bg)); }
+.memory-backend-tag.is-ready { color: var(--green, #2f9e44); border-color: color-mix(in srgb, var(--green, #2f9e44) 30%, var(--line)); }
+.memory-backend-tag.is-off { color: var(--muted); }
+.memory-backend-switch { display: inline-flex; align-items: center; gap: 7px; flex: none; cursor: pointer; }
+.memory-backend-switch input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.memory-backend-switch-ui {
+  position: relative; width: 38px; height: 22px; flex: none;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--panel-2);
+  transition: background-color .15s ease, border-color .15s ease;
+}
+.memory-backend-switch-ui::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+  border-radius: 50%; background: var(--muted);
+  transition: transform .15s ease, background-color .15s ease;
+}
+.memory-backend-switch input:checked + .memory-backend-switch-ui {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 30%, var(--panel-2));
+}
+.memory-backend-switch input:checked + .memory-backend-switch-ui::after {
+  transform: translateX(16px);
+  background: var(--accent);
+}
+.memory-backend-switch input:focus-visible + .memory-backend-switch-ui {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.memory-backend-switch input:disabled + .memory-backend-switch-ui { opacity: .45; }
+.memory-backend-switch:has(input:disabled) { cursor: not-allowed; }
+.memory-backend-switch em { font-style: normal; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.memory-backend-foot {
+  display: flex; align-items: center; gap: 8px; justify-content: space-between;
+  padding-top: 8px; border-top: 1px solid var(--line-soft);
+}
+.memory-backend-state { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; }
+.memory-backend-state.is-on { color: var(--ic); }
+.memory-backend-state.is-ready { color: var(--green, #2f9e44); }
+.memory-backend-state.is-off { color: var(--muted); }
+.memory-backend-manage { min-height: 30px; padding: 0 10px; font-size: 12px; }
+@media (max-width: 640px) {
+  .memory-backend-main { flex-wrap: wrap; }
+  .memory-backend-switch { margin-left: auto; }
+}
