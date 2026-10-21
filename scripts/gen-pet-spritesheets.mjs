@@ -1,5 +1,5 @@
 /**
- * 内置桌面宠物生成器 —— 产出**官方 Codex 宠物格式**的宠物包。
+ * 8×9 图集格式示例生成器 —— 产出**官方 Codex 宠物格式**的图集包（当前内置宠物已改用 animationSet 动画包）。
  *
  * 官方格式（实测自 codex 引擎二进制 + petdex 公开规范，两者逐字吻合）：
  *   宠物包 = `pet.json` + `spritesheet.webp`
@@ -304,46 +304,10 @@ function luminance([r, g, b]) {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
 
-/** 三只内置宠物的外观参数：物种差异靠**耳朵 / 头顶件 / 配色**，身体骨架完全共用。 */
-const PETS = [
-  {
-    slug: "harness-blob",
-    name: "小墨",
-    description: "工程助手墨滴：安静、专注，任务完成会蹦一下。",
-    body: PALETTE.accent,
-    bodyDark: PALETTE.accentDark,
-    accent: PALETTE.accentLight,
-    belly: PALETTE.paper,
-    ears: "droop",     // 垂耳
-    tail: "none",
-    vibe: ["专注", "可靠"],
-  },
-  {
-    slug: "harness-cat",
-    name: "阿弦",
-    description: "原型猫：耳朵尖、尾巴会摆，等指令时会左右张望。",
-    body: PALETTE.ink,
-    bodyDark: [20, 20, 18],
-    accent: PALETTE.orange,
-    belly: PALETTE.paper,
-    ears: "pointy",    // 尖耳
-    tail: "sway",
-    vibe: ["好奇", "灵活"],
-  },
-  {
-    slug: "harness-bot",
-    name: "小枢",
-    description: "原型机器人：头顶天线，工作时双眼与天线的灯会加速闪动。",
-    // ⛔ 不用纯白：白色宠物在浅色桌面上会"消失"（腿和轮廓都看不见）⇒ 用中性岩灰，深浅桌面都能读。
-    body: [86, 91, 101],
-    bodyDark: [60, 64, 73],
-    accent: PALETTE.ok,
-    belly: [168, 175, 187],
-    ears: "antenna",   // 天线
-    tail: "none",
-    vibe: ["严谨", "冷静"],
-  },
-];
+/** 8×9 图集格式示例（旧三只内置宠物已下线；当前内置六只走 animationSet 动画包）。
+ *  这里保留 PETS 空数组作为格式参考：需要生成社区图集包时，按原结构填一项再运行本脚本。
+ *  ⛔ 内置宠物不要再往这里加 —— 加在 `scripts/pet-art/` + `gen-pet-animation-set.py`。 */
+const PETS = [];
 
 /* ══════════════════════ 第四步：单帧绘制 ══════════════════════ */
 

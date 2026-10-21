@@ -1,0 +1,82 @@
+{
+  "id": "harness-mochi",
+  "displayName": "阿糯",
+  "description": "奶油小猫：工作时敲电脑，完成后拿放大镜审阅，被盯着会看向你。",
+  "columns": 8,
+  "rows": 9,
+  "states": [
+    "idle",
+    "running-right",
+    "running-left",
+    "waving",
+    "jumping",
+    "failed",
+    "waiting",
+    "running",
+    "review"
+  ],
+  "frameSize": {
+    "width": 256,
+    "height": 277
+  },
+  "spriteVersionNumber": 1,
+  "fps": 30,
+  "builtin": true,
+  "supportsLookTracking": true,
+  "animationSet": {
+    "idle": {
+      "animatedSrc": "idle.webp",
+      "stillSrc": "idle-still.webp"
+    },
+    "running-right": {
+      "animatedSrc": "running-right.webp",
+      "stillSrc": "running-right-still.webp"
+    },
+    "running-left": {
+      "animatedSrc": "running-left.webp",
+      "stillSrc": "running-left-still.webp"
+    },
+    "waving": {
+      "animatedSrc": "waving.webp",
+      "stillSrc": "waving-still.webp"
+    },
+    "jumping": {
+      "animatedSrc": "jumping.webp",
+      "stillSrc": "jumping-still.webp"
+    },
+    "failed": {
+      "animatedSrc": "failed.webp",
+      "stillSrc": "failed-still.webp"
+    },
+    "waiting": {
+      "animatedSrc": "waiting.webp",
+      "stillSrc": "waiting-still.webp"
+    },
+    "running": {
+      "animatedSrc": "running.webp",
+      "stillSrc": "running-still.webp"
+    },
+    "review": {
+      "animatedSrc": "review.webp",
+      "stillSrc": "review-still.webp"
+    }
+  },
+  "lookFrameSet": [
+    "look-00.webp",
+    "look-01.webp",
+    "look-02.webp",
+    "look-03.webp",
+    "look-04.webp",
+    "look-05.webp",
+    "look-06.webp",
+    "look-07.webp",
+    "look-08.webp",
+    "look-09.webp",
+    "look-10.webp",
+    "look-11.webp",
+    "look-12.webp",
+    "look-13.webp",
+    "look-14.webp",
+    "look-15.webp"
+  ]
+}
