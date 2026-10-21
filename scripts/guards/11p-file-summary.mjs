@@ -237,6 +237,17 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     "预览走 fs:read，覆盖 Markdown / 代码 / 图片 / PDF / 二进制占位");
   ok(Boolean(manifest.channels.find((c) => c.channel === "shell:open")) && /shell:open/.test(shell) && /isInsideOrEqualTrustedRoots\(target\)/.test(shell),
     "「默认应用」走新通道 shell:open，且与 shell:reveal 同一道可信根闸（⛔ 不放行任意路径）");
+
+  /* 10-22 用户截图：「我没改嘛，还是这种旧的」——消息末尾的内联文件引用原来还是小芯片。
+     普通文件必须换成同一张 FileRefCard（默认右栏），图片/音视频保留缩略芯片。 */
+  const inlineCards = read("src/features/shared/InlineCards.tsx");
+  const fileRefCard = read("src/components/FileRefCard.tsx");
+  ok(inlineCards.includes("FileRefCard") && /!isImagePath\(openPath\) && !mediaKind/.test(inlineCards) && inlineCards.includes("<FileRefCard"),
+    "消息末尾普通文件引用用 FileRefCard（图片/音视频仍走缩略芯片）");
+  ok(fileRefCard.includes("openRightFile") && /target === "editor" && onOpenEditor/.test(fileRefCard) && /shellOpen/.test(fileRefCard),
+    "文件引用卡默认右栏预览；编辑器 / 默认应用从下拉选择（⛔ 不再默认弹居中编辑器）");
+  ok(fileRefCard.includes("MODE_KEY") && /localStorage\.getItem\(MODE_KEY\)/.test(fileRefCard) && /localStorage\.setItem\(MODE_KEY/.test(fileRefCard),
+    "打开方式默认值跨卡片共用 localStorage（与回合产物卡同键 output-file-open-target）");
 }
 
 /* ── 九、parseDiffLines 真值表（纯函数**真跑**——行号/文件头判据出错的失效方式是静默的：

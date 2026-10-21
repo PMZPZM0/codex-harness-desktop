@@ -762,9 +762,15 @@
 /* Assistant 正文里识别到的文件路径卡片（同 .ref-file-card 视觉族，紧凑 + 默认展开路径） */
 .inline-file-cards {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 6px;
   margin: 8px 0 4px 0;
+}
+/* 10-22：普通文件引用用 Qoder 式整行卡片（与回合产物卡同一套 .turn-output-card 外观）。 */
+.inline-file-cards .file-ref-card {
+  width: 100%;
+  max-width: 640px;
 }
 .inline-file-card {
   display: inline-flex;

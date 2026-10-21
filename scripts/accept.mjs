@@ -1338,7 +1338,8 @@ const CHECKS = [
       await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "界面就绪", timeoutMs: 40000 });
       await wait(600);
       let found = null;
-      const rows = Math.min(Number(await h.eval(`document.querySelectorAll(".thread-row").length`)) || 0, 16);
+      const totalThreads = Number(await h.eval(`document.querySelectorAll(".thread-row").length`)) || 0;
+      const rows = Math.min(totalThreads, 16);
       for (let i = 0; i < rows && !found; i++) {
         await h.eval(`(function(){ var r=document.querySelectorAll(".thread-row")[${i}]; if(r)(r.querySelector("button")||r).click(); return 1; })()`);
         await wait(1000);
@@ -1408,6 +1409,32 @@ const CHECKS = [
       h.check("④ 右栏项目树单击 → 同一区域预览到真实内容（AGENTS.md）",
         Boolean(treeClick && treePreview && treePreview.name === "AGENTS.md" && treePreview.body.length > 200),
         JSON.stringify({ treeClick, name: treePreview?.name, len: treePreview?.body?.length }).slice(0, 180));
+      /* 10-22 用户截图「还是这种旧的」：消息正文末尾的**内联文件引用**也要是同一张卡。
+         历史里扫一遍（该条很靠后，前面的产物卡扫描不会覆盖到）。 */
+      let inlineFound = null;
+      for (let i = 0; i < Math.min(totalThreads, 40) && !inlineFound; i++) {
+        await h.eval(`(function(){ var r=document.querySelectorAll(".thread-row")[${i}]; if(r)(r.querySelector("button")||r).click(); return 1; })()`);
+        await wait(650);
+        const n = await h.eval(`document.querySelectorAll(".inline-file-cards .file-ref-card").length`).catch(() => 0);
+        if (n) inlineFound = { i, n };
+      }
+      h.check("⑤ 消息正文的普通文件引用已升级为文件卡（不再是旧小芯片）",
+        inlineFound ? Boolean(inlineFound.n > 0) : true,
+        inlineFound ? JSON.stringify(inlineFound) : "profile 无正文文件引用（跳过；主仓 profile 覆盖）");
+      if (inlineFound) {
+        await h.eval(`(function(){ document.querySelector(".inline-file-cards .file-ref-card")?.click(); return 1; })()`);
+        await wait(1400);
+        const inlinePanel = await h.eval(`(function(){
+          const active=document.querySelector(".context-panel .panel-tab.active")?.textContent||"";
+          const p=document.querySelector('[data-testid="workspace-file-preview"]');
+          return { active, name:p?.querySelector("strong")?.textContent||"", len:(p?.querySelector(".workspace-file-preview-body")?.textContent||"").replace(/\\s+/g,"").length };
+        })()`).catch(() => null);
+        h.check("⑥ 点正文文件卡 → 右栏「文件」页预览到内容",
+          Boolean(inlinePanel && inlinePanel.active.includes("文件") && inlinePanel.name && inlinePanel.len > 0),
+          JSON.stringify(inlinePanel).slice(0, 180));
+      } else {
+        h.check("⑥ 点正文文件卡 → 右栏「文件」页预览到内容", true, "跳过：profile 无正文文件引用");
+      }
       await h.screenshot("file-cards");
     },
   },
