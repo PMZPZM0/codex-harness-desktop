@@ -10,6 +10,9 @@
  *
  * 裁决规则（`pickAnnounceOwner`，纯函数可真跑）：
  *   焦点窗口 → 最后活跃窗口 → 主窗口回退。
+ *   ⛔ **全部最小化/隐藏 ⇒ 无人**（`all-minimized`，所有人 owner:false）—— 10-21 用户令：
+ *      「窗口全部缩小了就严格静音」。与下面「无焦点不静音」不矛盾：那是**应用整体失焦**
+ *      （用户在看别的软件，窗口还开着），这是**窗口本身不可见**（用户根本看不见界面）。
  *   ⛔ 为什么「无焦点」不用「全部静音」：用户切到浏览器/编辑器时应用整体失焦，
  *      此时若静音，等于「一离开窗口就听不到」——与「播报是给耳朵的」这个前提冲突。
  *      语义定为「最后活跃的那个窗口继续替你念」。
@@ -55,8 +58,15 @@ export function pickAnnounceOwner(
   candidates: OwnerCandidate[],
   lastFocusedId: number | null,
 ): { ownerId: number | null; reason: string } {
+  /* ⛔⛔ 两种「没人」必须分开（10-21 用户令：「窗口全部缩小了就严格静音」）：
+     · `no-window`    = **一个窗口都没登记**（启动早期 / 未注册）⇒ 调用方按 owner:true 保底，
+                        宁可多念一次，也不能因为一次算不出来就让用户永久听不到；
+     · `all-minimized`= **有窗口但全部最小化/隐藏** ⇒ 调用方让位（owner:false）。
+       用户看不见任何界面，让它念等于对着空气说话；而且每个窗口都会以为自己该念 ⇒ 两段语音叠加。
+     ⛔ 合并成一个 null 会让这两件相反的事共用一个返回值 —— 那正是本次要修的错。 */
+  if (!candidates.length) return { ownerId: null, reason: "no-window" };
   const live = candidates.filter((c) => c.visible && !c.minimized);
-  if (!live.length) return { ownerId: null, reason: "no-window" };
+  if (!live.length) return { ownerId: null, reason: "all-minimized" };
   if (live.length === 1) return { ownerId: live[0].id, reason: "single-window" };
   const focused = live.find((c) => c.focused);
   if (focused) return { ownerId: focused.id, reason: "focused" };
@@ -98,6 +108,22 @@ function broadcastOwner() {
   }
 }
 
+/**
+ * 给每个 bus 窗口挂「可能改变可见性」的监听（最小化 / 还原 / 显示 / 隐藏）。
+ * ⛔ 只挂一次（`hooked` 去重）：`onBusWindowListChanged` 会在每次开/关窗口时触发，
+ *    不去重的话同一个窗口会被挂上几十个同样的监听（每个都广播一次，越用越卡）。
+ */
+const hooked = new WeakSet<BrowserWindow>();
+function hookWindowEvents() {
+  for (const win of allBusWindows()) {
+    if (hooked.has(win)) continue;
+    hooked.add(win);
+    for (const event of ["minimize", "restore", "show", "hide"] as const) {
+      try { win.on(event as never, () => broadcastOwner()); } catch { /* 关窗竞态 */ }
+    }
+  }
+}
+
 function broadcastMuted() {
   broadcastToAll("voice:announce-muted", { muted: state.mutedAll });
 }
@@ -119,7 +145,10 @@ export function registerVoiceIpc4(a: ReturnType<typeof registerVoiceIpc1>) {
        ⛔ 启动早期 service 还没注入会抛错 —— 按「未通话」处理，不要因此让整个查询失败。 */
     let callActive = false;
     try { callActive = a.svc().status().active; } catch { /* 未注入：按未通话处理 */ }
-    if (ownerId == null) return { owner: true, ownerWebContentsId: null, reason, muted, callActive };
+    if (ownerId == null) {
+      /* ⛔ `all-minimized` ⇒ **全部让位**（用户令）；`no-window` ⇒ owner:true 保底（见 pickAnnounceOwner）。 */
+      return { owner: reason !== "all-minimized", ownerWebContentsId: null, reason, muted, callActive };
+    }
     /* ⛔ `ipcHost.handle` 的 event 是 unknown（不是 ipcMain.handle 的 IpcMainInvokeEvent）——
        必须显式收窄，否则 tsc 报 TS18046。 */
     const senderId = (event as { sender?: { id?: number } } | undefined)?.sender?.id;
@@ -145,7 +174,15 @@ export function registerVoiceIpc4(a: ReturnType<typeof registerVoiceIpc1>) {
     });
     /* 窗口增减（开/关独立弹窗）也要重算 —— 新窗口可能立刻成为 owner，
        旧 owner 关闭后必须有人接棒（否则播报静默到下次焦点变化）。 */
-    onBusWindowListChanged(() => broadcastOwner());
+    onBusWindowListChanged(() => {
+      hookWindowEvents();
+      broadcastOwner();
+    });
+    /* ⛔ **最小化 / 还原不发焦点事件**（`browser-window-focus` 只覆盖"切窗口"）——
+       不挂这几个监听，「全部最小化」这个状态永远算不出来：owner 还停在上次焦点的那个窗口，
+       它继续念（用户看到的就是"窗口都缩下去了还在说话"）。 */
+    hookWindowEvents();
+    broadcastOwner();
   }
 
   return { state, broadcastOwner, broadcastMuted };

@@ -690,14 +690,22 @@ ok(/if \(live\.length === 1\) return \{ ownerId: live\[0\]\.id, reason: "single-
 ok(/ipcHost\.handle\("voice:announce-owner", \(event\) =>/.test(ownerMod)
   && /senderId === ownerId/.test(ownerMod),
   "归属查询在**主进程**比对 sender（渲染层拿不到自己的 webContents.id，没法自己比）");
-ok(/if \(ownerId == null\) return \{ owner: true, ownerWebContentsId: null, reason, muted, callActive \}/.test(ownerMod),
-  "⛔ 算不出 owner 时返回 owner:**true**（保底）—— 宁可多念一次，也不能因一次算不出来就永久静音");
+ok(/if \(!candidates\.length\) return \{ ownerId: null, reason: "no-window" \}/.test(ownerMod)
+  && /if \(!live\.length\) return \{ ownerId: null, reason: "all-minimized" \}/.test(ownerMod),
+  "⛔ 裁决里 `no-window`（一个窗口都没登记）与 `all-minimized`（有窗口但全缩了）是**两个 reason** —— 合成一个 null 会让「取不到」和「全都缩了」共用返回值");
+ok(/if \(ownerId == null\) \{/.test(ownerMod) && /reason !== "all-minimized"/.test(ownerMod),
+  "⛔ `all-minimized` ⇒ **全部让位**（owner:false；10-21 用户令「窗口全部缩小了就严格静音」）；`no-window` ⇒ owner:true 保底（宁可多念一次，也不能因一次算不出来就永久静音）");
+ok(/\["minimize", "restore", "show", "hide"\]/.test(ownerMod) && /hookWindowEvents\(\)/.test(ownerMod)
+  && /new WeakSet<BrowserWindow>\(\)/.test(ownerMod),
+  "最小化 / 还原 / 显示 / 隐藏都要重算 owner，且监听**只挂一次**（WeakSet 去重：窗口增减会反复触发，不去重就越挂越多）");
+ok(/onBusWindowListChanged\(\(\) => \{[\s\S]{0,90}hookWindowEvents\(\)/.test(ownerMod),
+  "开/关弹窗时补挂监听（新弹窗必须被挂上，否则它最小化时不影响裁决）");
 ok(/win\.webContents\.send\("voice:announce-owner-changed"/.test(ownerMod)
   && !/broadcastToAll\("voice:announce-owner-changed"/.test(ownerMod),
   "owner 广播**逐窗口定制**（每窗口答案不同）——⛔ 用 broadcastToAll 发同一 payload 等于没判");
 ok(/app\.on\("browser-window-focus"/.test(ownerMod) && !/browser-window-blur/.test(ownerMod),
   "焦点变化重算 owner；⛔ **不监听 blur**：切到浏览器/编辑器时应用整体失焦，若把 owner 清空就成了「一离开窗口就听不到」");
-ok(/onBusWindowListChanged\(\(\) => broadcastOwner\(\)\)/.test(ownerMod)
+ok(/onBusWindowListChanged\(\(\) => (?:broadcastOwner\(\)|\{[\s\S]{0,90}broadcastOwner\(\);?\s*\})\)/.test(ownerMod)
   && /export function onBusWindowListChanged/.test(busSrc)
   && /notifyWindowListChanged\(\)/.test(busSrc),
   "窗口增减（开关独立弹窗）也重算 owner（旧 owner 关闭后必须有人接棒，否则播报静默到下次焦点变化）");
