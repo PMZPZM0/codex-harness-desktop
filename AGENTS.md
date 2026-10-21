@@ -88,14 +88,19 @@
 
 ### 🐾 桌面宠物（`src/features/pet/` + `electron/features/pet-*.ts`，2026-09-30 立）
 
-一只浮在桌面的小宠物，状态跟着引擎事件走。接入的是 **Codex 官方宠物格式**（实测自引擎二进制
-`tui/src/pets/*.rs` + petdex 公开规范，两者逐字吻合）：
+一只浮在桌面的小宠物，状态跟着引擎事件走。**两种包格式并存**：
 
-- **宠物包 = `pet.json` + 图集**；图集 **8 列 × 9 行**、每帧 **192×208**。
-- **九态行名（顺序即行序，⛔ 不可重排/增删）**：`idle / running-right / running-left / waving / jumping / failed / waiting / running / review`。
+- **Petdex / 官方图集包**：`pet.json` + 图集；图集 **8 列 × 9 行**、每帧 **192×208**（v2 包 11 行，多两行 16 向）。
+- **动画包（10-21 起内置主用，我们自己的格式）**：`pet.json` 的 `animationSet` 给九态各一对
+  `animatedSrc`（30fps 动画 WebP）+ `stillSrc`（减少动效用），`lookFrameSet` 给 16 向看帧，顶层 `fps: 30`；
+  **没有图集**。渲染层按 `animationSet` 是否存在分流：动画包用 `<img>` 自己播（`<picture>` 在
+  `prefers-reduced-motion` 回落静帧），图集包仍走 background-position 切帧，两套互不打架。
+- **九态行名（顺序即行序，⛔ 不可重排/增删，两种格式同一套）**：`idle / running-right / running-left / waving / jumping / failed / waiting / running / review`。
 - **四个宠物目录**（扫描面 = 协议白名单，单一真相源 `features/pet-ipc.ts` 的 `petRoots()`）：
   `dist/pets`（内置，随包）· `public/pets`（dev）· `<userData>/pets`（用户，可写）· `~/.codex/pets` + `~/.petdex/pets`（官方/Petdex 装的，只读展示、点「导入」才复制）。
-- **内置三只自产**：`scripts/gen-pet-spritesheets.mjs`（零依赖 SDF 光栅化 + 自写 PNG 编码）→ `public/pets/<slug>/`。
+- **内置四只**：三只 SDF 自产（`scripts/gen-pet-spritesheets.mjs`）+ **阿焰**（`harness-fox`，黏土小狐狸，**默认宠物**；
+  `scripts/gen-pet-animation-set.py` 从 `scripts/pet-art/harness-fox/` 的六张姿态图生成九态动画 + 16 看帧，整包约 2.7MB）。
+  默认只改 `DEFAULT_SETTINGS.active` / 空值回落；用户档案里**显式选过**别的宠物不会被改写。
   ⛔ **必须落 `public/`（→ `dist/pets`），不能放 `src/` 让 JS import**：`before-pack` 的可达闭包只认 js/css 与 CSS 里的 `url()`，
   JS import 的位图会被判成陈旧死块删掉（v0.0.27 事故同型）；`dist/pets` 不在裁剪面内。
 - **两个必须记住的坑（都踩过、守卫【232】钉住）**：
