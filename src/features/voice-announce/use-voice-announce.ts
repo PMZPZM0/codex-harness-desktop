@@ -27,7 +27,13 @@
  *      用户把播报总开关关掉时正文也不念（比插播更"自动"，必须尊重开关）。
  *   ② **播报稿**：模型写在回复末尾的 `voice` 围栏块（契约见 `src/lib/voice-script.mjs`），
  *      回合结束时念一次；**它没写就什么都不念**（不回退到本机压缩摘要 —— 那条已删除）。
- *   ③ **主动插播**：模型调 `voice_announce`（≤120 字一句）⇒ 立即念，⛔ **不看开关**。
+ *   ③ **主动插播**：模型调 `voice_announce`（≤80 字一句）⇒ 立即念，⛔ **不看开关**。
+ *
+ * ── 播报稿的合成分段（10-21 两次用户反馈的最终形态）────────────────────────────
+ *   · 先为「播报延迟有点高」改成逐句合成、先到先播；
+ *   · 随后用户报「连贯性好差，中间还要断一下」⇒ 播报稿改回**整段一次合成**。
+ *     独立 utterance 的句末语调 + 句界硬拼 = 听感断开，负载高时还会露出合成空档。
+ *     ⛔ 以后不要为了首句快再拆句；首句稍晚但整段连续，是用户明确选中的取舍。
  *
  * ── 同回合去重（10-09 用户报「同一段内容重复播放好几次」）──────────────────────
  *   三条入口（正文实时 / 工具插播 / 结束播报稿）可能送来同一段内容。裁决点在 `speak()`：
@@ -49,7 +55,6 @@ import { useCallback, useEffect, useRef } from "react";
 import { createSentenceChunker } from "../../lib/voice-aec.mjs";
 import { createSpeakFilter } from "../../lib/speak-text.mjs";
 import { createVoiceScriptStripper, dedupeSpokenSentences, resolveAnnounceSummary } from "../../lib/voice-script.mjs";
-import { splitSentences } from "../../lib/voice-summary.mjs";
 import { createAutoSpeakTracker } from "../../lib/voice-auto-speak.mjs";
 import {
   notifyAnnounceToggle,
@@ -381,14 +386,13 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     sourceRef.current = "summary";
     const script = resolveAnnounceSummary(String(finalText ?? ""));
     if (script.text) {
-      /* ⛔ 按句合成、先到先播：整段一次性送 TTS 时，必须等整段生成完才出声；拆成句子后
-         第一句合成完就开播，后面的句子在播放期间继续合成（10-21 用户报「播报延迟有点高」）。
-         `speak()` 内部仍逐句做预算与去重，行为不变。 */
-      const sentences = splitSentences(script.text).map((s: string) => s.trim()).filter(Boolean);
-      for (const sentence of (sentences.length ? sentences : [script.text])) {
-        await speak(sentence, epoch);
-        if (epoch !== epochRef.current) return;
-      }
+      /* ⛔ 整段一次合成，不再逐句拆（10-21 第二次用户报「播放语音连贯性差，中间还要断一下」）。
+         逐句虽然首句出声更快，但每句都是独立的 utterance：各自带句末收尾语调，句界再按
+         队列硬拼，听起来就是断开的一截；机器负载一高，后一句还没合成完还会多出真空。
+         代价是首句要等整段合成完（实测 50 字稿约 6 秒），换来全程一条连续语流。
+         ⛔ 不要为了首句快再退回拆句 —— 那是用户听感上明确否掉的形态。
+         `speak()` 内部仍会做去重、预算与静音闩锁，行为不变。 */
+      await speak(script.text, epoch);
     }
   }, [resetLive, speak]);
 
