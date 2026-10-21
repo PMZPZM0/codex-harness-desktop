@@ -5,6 +5,7 @@
 import { commandIntentOf, commandTarget } from "./command-display.mjs";
 import { diffStats } from "./diff-stats";
 import { argSummary, skillOfItem, skillTargetLabel } from "./tool-display.mjs";
+import { stepOf } from "./step-note.mjs";
 
 // ── 线程基础类型（与引擎 thread/list、thread/resume 返回结构对齐） ──
 export type ThreadItem = { id: string; type: string; [key: string]: any };
@@ -226,13 +227,16 @@ export function foldAtomOf(item: ThreadItem, waitingForApproval?: boolean): Fold
     case "mcpToolCall": {
       const name = item.tool ? `${item.server ?? "mcp"}/${item.tool}` : String(item.server ?? "mcp");
       const how = argSummary(item.arguments);
+      // 10-21：模型填的 `step` 优先当摘要（折叠芯片也只有一行，人话比「名 · 参数」好读）
+      const step = stepOf(item.arguments);
       // ⛔ 目标上限 56（与摘要 topic 同口径）：40 会把路径截成 `…/imag…`，比不显示更糟。
-      return { group: "mcp", object: truncText(how ? `${name} · ${how}` : name, 56), status };
+      return { group: "mcp", object: step ? truncText(step, 56) : truncText(how ? `${name} · ${how}` : name, 56), status };
     }
     case "dynamicToolCall": {
       const name = item.tool ? String(item.tool) : "";
       const how = argSummary(item.arguments);
-      return { group: "plugin", object: name ? truncText(how ? `${name} · ${how}` : name, 56) : undefined, status };
+      const step = stepOf(item.arguments);
+      return { group: "plugin", object: step ? truncText(step, 56) : (name ? truncText(how ? `${name} · ${how}` : name, 56) : undefined), status };
     }
     case "collabAgentToolCall":
     case "subAgentActivity":

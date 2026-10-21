@@ -970,6 +970,13 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   color: var(--text);
   flex: none;
   font-weight: 500;
+  /* 10-21：verb 现在可能是**模型写的一句中文**（`step`，工具卡标题，最长 40 字）——
+     原来的 `flex: none` 没有上限，长标题会把右侧状态图标挤出可视区或折成两行。
+     留一行、超出省略；短标题（「已调用 MCP」）不受影响。 */
+  max-width: 62%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .action-card .action-info {
   text-overflow: ellipsis;

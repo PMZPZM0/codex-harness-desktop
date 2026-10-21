@@ -23,6 +23,7 @@ import { buildDelegateMemory } from "../delegate-memory";
 import { buildRoleMemoryTool, noteRoleThread } from "../role-memory-tool";
 import { buildDelegateHarnessTool } from "../delegate-harness-tool";
 import { safeProviderId } from "../provider-id";
+import { withStepParam } from "../../src/lib/step-note.mjs";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { readCustomModel } from "../main/01-model-catalog";
 import { TURN_WAIT_BACKGROUND_NOTE, TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
@@ -110,7 +111,8 @@ export const teamsFeature = defineFeature<null>({
         modelProvider: provider,
         personality: input.personality || null,
         config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
-        dynamicTools: [teamTool, teamPhaseTool, buildDelegateHarnessTool()],
+        // 10-21：主进程自己发的 thread/start 不经过 codex-ipc 的拦截 ⇒ 工具面各自包一层 `withStepParam`
+        dynamicTools: withStepParam([teamTool, teamPhaseTool, buildDelegateHarnessTool()]),
       });
       threadCwd.set(String(started.thread.id), String(input.cwd || process.cwd())); /* 文件变更追踪 cwd 登记（10-01） */
       // 线程 → 团队映射落主进程并持久化：任何窗口（含 popout）据此才知道这个会话属于哪个团

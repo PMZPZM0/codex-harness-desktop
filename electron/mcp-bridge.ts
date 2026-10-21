@@ -21,6 +21,7 @@ import { decryptSecret, readConnectors } from "./main/07-connectors-io";
 /* 10-20：工具名生成 + 「哪套后端该暴露」的判定都在 backend-routing.ts（单一真相源）。
    ⛔ 不许在本文件再写一份前缀/过滤规则 —— 那正是「指令教的名字 ≠ 工具列表里的名字」的来源。 */
 import { isConnectorBlockedByBackend, mcpToolName } from "./backend-routing";
+import { stripStepParam } from "../src/lib/step-note.mjs";
 
 export type McpToolSpec = {
   /** 暴露给模型的工具名（加前缀避免与内置撞名，如 kb__search_knowledge） */
@@ -306,7 +307,10 @@ export async function resolveMcpTool(name: string): Promise<McpToolSpec | null> 
 export async function callMcpTool(name: string, args: unknown): Promise<{ ok: boolean; text: string }> {
   const spec = await resolveMcpTool(name);
   if (!spec) return { ok: false, text: `未知的 MCP 工具：${name}` };
-  const params = { name: spec.rawName, arguments: args && typeof args === "object" ? args : {} };
+  /* ⛔ 转发前剥掉宿主的展示参数 `step`（10-21）：它只服务于界面标题，
+     第三方 MCP / 我们自己的执行端都不认这个键 —— 严校验的服务器会直接判成非法入参。
+     剥离点就这一处（所有 MCP 调用都从这里出去），别在执行端各写一遍。 */
+  const params = { name: spec.rawName, arguments: stripStepParam(args && typeof args === "object" ? args : {}) };
   if (spec.transport === "stdio") {
     const conn: StdioConn = { command: String(spec.command || ""), args: spec.args ?? [], env: spec.env ?? {} };
     if (!conn.command) return { ok: false, text: `MCP 连接器 ${spec.serverId} 缺少启动命令` };

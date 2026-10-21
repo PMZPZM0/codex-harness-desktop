@@ -31,6 +31,7 @@ import { bufferedAgentRevealStarts } from "../../lib/buffered-agent-reveal-start
 import { bufferedToolRevealStarts } from "../../lib/buffered-tool-reveal-starts";
 import { ReasoningCard } from "../shared/ReasoningCard";
 import { skillOfItem, argSummary, pluginOfItem } from "../../lib/tool-display.mjs";
+import { stepOf } from "../../lib/step-note.mjs";
 
 export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWindow, hideFooter, waitingForApproval, onCopy, onQuote, onFork, onImageCopy, onEditSubmit, onOpenFile, onOpenThread, onApplyPlan, pending }: { item: ThreadItem; turn?: Turn; turnActive?: boolean; usage?: any; tokenUsage?: any; fallbackWindow?: number; hideFooter?: boolean; waitingForApproval?: boolean; onCopy: (text: string) => void; onQuote: (text: string) => void; onFork?: () => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void; onApplyPlan?: (markdown: string) => void; pending?: boolean }) {
   if (item.type === "userMessage") {
@@ -92,9 +93,17 @@ export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWi
     // 插件包名：命令/工具里出现 `plugins/cache/<vendor>/<plugin>/…` 或 `connectors-marketplace/<x>/…`
     // ⇒ 连"来自哪个插件"一起显示（09-24：技能目录同理，见 skillOfItem 的路径兜底）。
     const plugin = skill ? null : pluginOfItem(item);
-    const verb = skill
-      ? running ? "正在使用技能" : "已使用技能"
-      : running ? `正在调用${source}` : `已调用${source}`;
+    /* 10-21：模型填的 `step`（「这一步在干什么」）**直接当标题** —— 参照 WorkBuddy 的工具卡：
+       标题是人话，工具名 + 入参退到次级行。这是唯一拿得到「意图」的通道（引擎内置命令拿不到，
+       那条路只能靠 command-display.mjs 的规则推断）。
+       ⛔ 技能态优先（09-24 用户点名「要看见用了哪个技能」）：读 SKILL.md 本身也是一次工具调用，
+          不许被模型的"看一眼"这类短语盖成看不懂的标题。 */
+    const step = skill ? "" : stepOf(item.arguments);
+    const verb = step
+      ? step
+      : skill
+        ? running ? "正在使用技能" : "已使用技能"
+        : running ? `正在调用${source}` : `已调用${source}`;
     // 团队成员调度卡：点亮该成员的渐变头像替代通用扳手图标（查模块级注册表，见 entity-avatar.ts）
     const invokedMember = item.tool === "team_member_invoke"
       ? resolveTeamMember(String(turn?.id ?? ""), String((item.arguments as any)?.memberId ?? ""))
