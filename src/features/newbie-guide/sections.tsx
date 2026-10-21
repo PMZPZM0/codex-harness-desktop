@@ -17,7 +17,7 @@
  *   ⛔ 正文里出现的设置页名 / 入口名 / 命令名一律照 settingsNav、侧栏、「···更多」、内置命令目录
  *     与真实工具名的**实测名字**写（守卫 11x 逐项对账）；别写实现词（给新人的是大白话）。
  */
-import { Bot, Boxes, Brain, Clapperboard, Compass, Heart, ImagePlus, LayoutGrid, Layers, Lightbulb, ListChecks, Map, Mic, Rocket, ScrollText, ShieldCheck, Smartphone, Sparkles, TerminalSquare, Users, Workflow } from "lucide-react";
+import { Bot, Boxes, Brain, Clapperboard, Cloud, Compass, Heart, ImagePlus, LayoutGrid, Layers, Lightbulb, ListChecks, Map, Mic, Rocket, ScrollText, ShieldCheck, Smartphone, Sparkles, TerminalSquare, Users, Workflow } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { GuideFigure } from "./figures";
 
@@ -120,6 +120,32 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     ],
     tip: { t: "免费模型网关是第三方项目", d: "与本项目开发者无关；匿名免费模型不支持工具调用，重启后消息不保留。" },
     action: { label: "打开设置 · 模型", kind: "settings", page: "model" },
+  },
+  {
+    id: "cloud",
+    label: "云账号",
+    tier: "beginner",
+    icon: Cloud,
+    title: "云账号：登录一次，自动配好",
+    intro: "不想自己配 Key？登录云账号就行：云端勾选的模型会自动同步，云端知识库与记忆一并接通。入口在首启登录页的「云账号」，或「设置 → 云账号」。",
+    figure: {
+      kind: "flow",
+      caption: "登录 → 自动配置（模型 / 知识库 / 记忆）→ 回聊天直接发消息。",
+      nodes: [
+        { t: "① 登录云账号", d: "账号密码与网页端同一套" },
+        { t: "② 自动配置", d: "模型同步 · 知识库/记忆接通" },
+        { t: "③ 开始用", d: "回聊天直接发消息" },
+      ],
+    },
+    steps: [
+      { t: "登录", d: "「设置 → 云账号」填账号密码，点「登录并自动配置」；没有账号先在云端用户中心注册（浏览器里完成）。" },
+      { t: "自动配置", d: "云端勾选的模型同步到模型下拉框，云端知识库与记忆接通；没开通的会写明原因，不影响聊天。" },
+      { t: "开始用", d: "回聊天直接发消息。云端管理里改了模型勾选或开通权益，本机最多 10 分钟自动跟上，也可点「一键同步 / 修复」。" },
+      { t: "手动流程还在", d: "重签密钥、连通测试、上传下载会话、切换供应商都收在「手动流程 / 高级设置」里，需要时再展开。" },
+      { t: "已有别的供应商", d: "本机已经配置了其他模型供应商时，登录只同步云端模型、不切换当前供应商；需要时再点「设为当前供应商」。" },
+    ],
+    tip: { t: "登录不会抢走你正在用的模型", d: "新手空机登录后云端模型自动生效；已经配置了别家供应商的机器保持原样，手动点「设为当前供应商」才会切。" },
+    action: { label: "打开设置 · 云账号", kind: "settings", page: "cloud" },
   },
   {
     id: "turn",

@@ -12,6 +12,8 @@ import { performRelayLogin } from "../../lib/relay";
 import { normalizeCredential } from "../../lib/relay-input.mjs";
 /* 云端用户中心的地址由账号服务基址派生（⛔ 不写死域名）—— 见 src/lib/cloud-links.mjs。 */
 import { cloudUserCenterUrl } from "../../lib/cloud-links.mjs";
+/* 10-22「登录即用」：登录页与设置页共用同一套自动配置顺序（模型 → 知识库 → 记忆 → 生效位）。 */
+import { provisionCloud } from "../../lib/cloud-provision.mjs";
 import { useRef, useState, useLayoutEffect, useEffect, KeyboardEvent } from "react";
 
 export function FieldHelp({ text }: { text: string }) {
@@ -169,13 +171,13 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
   };
 
   /**
-   * 云账号登录（10-16）：账号密码 → 云端会话令牌 → 把云端勾选的模型同步成本机供应商 → 进主界面。
+   * 云账号登录（10-16 立；10-22 改「登录即用」）：账号密码 → 云端会话令牌 →
+   * **自动配置**（模型 + 知识库 + 记忆）→ 把 baseUrl / 令牌交给 onLogin 生效并进主界面。
    *
-   * ⛔ 分工：**写档案**是主进程 `cloud-models` 域的活（含云端目录里的真实上下文额度与代理令牌），
-   *   这里只负责「登录 + 让它生效 + 进主界面」。所以流程是
-   *   ① cloudAuthLogin → ② cloudModelsSync（主进程落盘）→ ③ 把 baseUrl / 令牌交给 onLogin，
-   *   沿用与其它登录方式**完全相同**的收尾（选中生效 + 标记已配置 + 进主界面，⛔ 不另写一套）；
-   *   ④ 再 sync 一次，把云端目录的真实规格覆盖掉 ③ 按内置规格表回填的那份。
+   * ⛔ 分工：**写档案**是主进程 `cloud-*` 域的活；这里只负责「登录 + 自动配好 + 进主界面」。
+   *   自动配置顺序收在 `src/lib/cloud-provision.mjs`（设置页用同一个函数，⛔ 不写第二套）。
+   *   `activate:false`：生效位交给 onLogin 的保存链（它本来就会重启引擎一次），
+   *   避免自动配置与登录收尾各重启一次。
    */
   const cloudLogin = async () => {
     setBusy(true); setStatus("");
@@ -183,7 +185,6 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
       const api = window.codex as unknown as {
         cloudAuthLogin?: (input: { baseUrl?: string; username: string; password: string }) => Promise<{ ok: boolean; error?: string }>;
         cloudAuthStatus?: () => Promise<{ baseUrl: string; active: { baseUrl: string } | null }>;
-        cloudModelsSync?: (input?: { force?: boolean }) => Promise<{ ok: boolean; models: number; error?: string }>;
         cloudModelsToken?: (input?: { force?: boolean }) => Promise<{ ok: boolean; token: string }>;
       };
       if (!api.cloudAuthLogin) { setStatus("当前构建未包含云账号接口，请更新后再试"); return; }
@@ -193,11 +194,12 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
         password: cloudDraft.password,
       });
       if (!r.ok) { setStatus(r.error || "云账号登录失败"); return; }
-      const sync = await api.cloudModelsSync?.({ force: false });
-      if (!sync?.ok || !sync.models) {
-        setStatus(sync?.ok
-          ? "已登录，但云端当前没有勾选任何模型 —— 去云用户中心勾选后，在「设置 → 云账号」点「立即同步模型」"
-          : `已登录，但模型同步失败（${sync?.error || "未知原因"}）—— 稍后在「设置 → 云账号」重试`);
+      /* 模型 + 知识库 + 记忆一次配齐（知识库/记忆未开通只记跳过，不挡登录）。 */
+      const report = await provisionCloud(api, { activate: false });
+      if (!report.models?.ok || report.models.count <= 0) {
+        setStatus(report.models?.ok
+          ? "已登录，但云端当前没有勾选任何模型 —— 去云用户中心勾选后，在「设置 → 云账号」点「一键同步」"
+          : `已登录，但模型同步失败（${report.models?.error || "未知原因"}）—— 稍后在「设置 → 云账号」重试`);
         onSkip(); // 账号已经登上了，别把人卡在登录页
         return;
       }
@@ -210,8 +212,7 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
         return;
       }
       const ok = await onLogin({ provider: "cloud", name: "云端模型", baseUrl: `${base}/proxy`, apiKey: tok.token, model: "", username: username.trim() || undefined });
-      if (!ok) { setStatus("云账号已登录，但启用供应商失败 —— 到「设置 → 云账号」点「立即同步模型」即可"); return; }
-      void api.cloudModelsSync?.({ force: false }).catch(() => undefined);
+      if (!ok) { setStatus("云账号已登录，但启用供应商失败 —— 到「设置 → 云账号」点「一键同步」即可"); return; }
     } catch (error: any) { setStatus("云账号登录失败：" + (error?.message ?? error)); }
     finally { setBusy(false); }
   };
@@ -284,7 +285,7 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
             <Settings2 size={16} /><span className="login-option-title">自定义 API</span><small>任意 OpenAI 兼容端点</small>
           </button>
           <button type="button" className={`login-option ${mode === "cloud" ? "active" : ""}`} onClick={() => { setMode("cloud"); setEndpointOpen(false); }}>
-            <Cloud size={16} /><span className="login-option-title">云账号</span><small>登录后自动同步云端模型</small>
+            <Cloud size={16} /><span className="login-option-title">云账号</span><small>登录即用，自动配好模型/知识库/记忆</small>
           </button>
         </div>
 
@@ -329,7 +330,7 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
             <label className="se-field"><span>服务地址（可选）</span>
               <input value={cloudDraft.baseUrl} onChange={(e) => setCloudDraft({ ...cloudDraft, baseUrl: e.target.value })} placeholder="留空用默认云端；自建部署才需要填" />
             </label>
-            <p className="relay-login-hint">登录后自动把云端勾选的模型同步成本机供应商并保持更新，云端知识库也会接成 MCP 连接器。之后可在 设置 → 云账号 里切换账号 / 手动同步 / 退出。</p>
+            <p className="relay-login-hint">登录后自动配好：云端勾选的模型同步成本机供应商，云端知识库与记忆一并接通（未开通的会写明原因）。之后可在 设置 → 云账号 查看就绪状态 / 手动同步 / 退出。</p>
           </div>
         ) : (
         <div className="login-fields">
@@ -370,7 +371,7 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
           </button>
         ) : mode === "cloud" ? (
           <button className="primary-setting login-btn" disabled={!cloudDraft.username.trim() || !cloudDraft.password.trim() || busy} onClick={() => void cloudLogin()}>
-            {busy ? <><Spinner />正在登录云账号…</> : <><Cloud size={15} />登录并同步云端模型</>}
+            {busy ? <><Spinner />正在登录并自动配置…</> : <><Cloud size={15} />登录并自动配置</>}
           </button>
         ) : (
         <button className="primary-setting login-btn" disabled={!apiBase.trim() || !apiKey.trim() || busy} onClick={() => { const selected = PPTokenEndpoints[endpoint]; void doLogin(mode === "pptoken" ? selected.id : `custom-login-${Date.now()}`, mode === "pptoken" ? selected.name : "自定义 API", apiBase.trim().replace(/\/$/, ""), apiKey.trim()); }}>

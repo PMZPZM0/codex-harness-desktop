@@ -158,6 +158,8 @@ import { AppViewRemoteApproval } from "./AppView/04-remote-approval";
 import { AppViewRemoteConsole } from "./AppView/05-remote-console";
 import { AppViewTaskComposer } from "./AppView/06-task-composer";
 import { TeamOfficePreview } from "../team-office";
+/* 云账号「登录即用」的后台联动桥（10-22）：只刷新已接通的云端知识库/记忆，返回 null。 */
+import { CloudAccountSyncBridge } from "../settings-cloud";
 import { DramaCanvas } from "../drama-canvas";
 import { UiSketchModal } from "../ui-sketch";
 import { WhatsNewDialog } from "../whats-new";
@@ -432,6 +434,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           全应用表面（侧栏/聊天/输入框周边）之下、内容之上；用户关掉时不在 DOM。 */}
       <WallpaperLayer />
       {!popoutThreadId && <HtmlPreviewBridge app={app} />}
+      {!popoutThreadId && <CloudAccountSyncBridge />}
       {!popoutThreadId && <TurnReviewBridge onOpen={() => {
         app.setRightOpen(true);
         app.setRightTab("turn-review");
