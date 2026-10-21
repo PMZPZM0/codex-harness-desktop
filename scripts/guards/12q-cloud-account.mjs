@@ -176,6 +176,23 @@ ok(
   /__refreshProviders/.test(pageSrc),
   "同步后刷新渲染层供应商状态（不刷新 ⇒ 同步成功了但下拉框还是空的）",
 );
+ok(
+  /cloud-login-simple/.test(pageSrc) && /cloud-tutorial/.test(pageSrc) && /cloud-advanced/.test(pageSrc),
+  "云账号页三段式：登录即用卡 / 新手教程 / 手动流程折叠（10-22 用户令「流程简化，保留手动流程，加上新手教程」）",
+);
+ok(
+  /doProvision/.test(pageSrc) && /provisionCloud/.test(pageSrc),
+  "已登录有一键同步 / 修复（与登录页共用 provisionCloud，⛔ 不写第二套）",
+);
+const bridgeSrc = read("src/features/settings-cloud/CloudAccountSyncBridge.tsx");
+ok(
+  /cloudKbStatus/.test(bridgeSrc) && /enabled/.test(bridgeSrc) && /activation\?\.applied/.test(bridgeSrc) && /readMemoryBackend/.test(bridgeSrc),
+  "服务器云管理联动只刷新**已接通**的资源（知识库 enabled / 记忆 backend=cloud）—— 不把用户手动关掉的又悄悄打开",
+);
+ok(
+  /CloudAccountSyncBridge/.test(read("src/features/app-view/AppView.tsx")),
+  "联动桥挂在主窗口（AppView），独立弹窗不重复跑",
+);
 
 /* ── ⑪ 首启登录页也有「云账号」入口（用户 10-16 实测「我还没看见登录界面」）──
    ⛔ 只做设置页不够：**首启看到的是 LoginScreen**，那里没有入口 = 新用户根本发现不了这套能力。 */
@@ -188,13 +205,24 @@ ok(
   /login-option-title">云账号</.test(loginSrc),
   "首启登录页有「云账号」选项卡（缺了 ⇒ 新用户看不到这套能力）",
 );
+const provisionSrc = read("src/lib/cloud-provision.mjs");
 ok(
-  /cloudAuthLogin/.test(loginSrc) && /cloudModelsSync/.test(loginSrc),
-  "首启登录页的云账号走真通道（cloudAuthLogin + cloudModelsSync）",
+  /cloudAuthLogin/.test(loginSrc) && /provisionCloud/.test(loginSrc)
+  && /cloudModelsSync/.test(provisionSrc) && /cloudKbSync/.test(provisionSrc) && /cloudMemorySync/.test(provisionSrc)
+  && /kbBackendSet/.test(provisionSrc) && /setMemoryBackend/.test(provisionSrc),
+  "首启登录页走「登录即用」：cloudAuthLogin → provisionCloud（模型 + 知识库 + 记忆同一套编排，⛔ 不写第二套）",
+);
+ok(
+  /onlyIfEmpty/.test(provisionSrc) && /getCustomModel/.test(provisionSrc) && /activateCloudProvider|cloudModelsActivate/.test(provisionSrc),
+  "自动配置不抢生效位：只有「没有别家供应商 / 已是云端」才激活（onlyIfEmpty + getCustomModel）",
 );
 ok(
   /provider: "cloud", name: "云端模型"/.test(loginSrc),
   "登录后把供应商落成 id=cloud / 名=云端模型（与主进程 cloud-provider 的口径一致）",
+);
+ok(
+  /登录并自动配置/.test(loginSrc),
+  "首启登录页按钮是「登录并自动配置」（新手一眼知道会替他配好）",
 );
 
 /* ── ⑫⛔⛔ 10-16 用户实测两条：供应商「测试」永远 401 / 加完供应商引擎配置没跟上 ──

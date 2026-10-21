@@ -10,8 +10,9 @@
  *   ② 云端知识库与**本地**知识库是两份东西（云端跨设备、本地随项目走）；
  *   ③ 记忆中枢当前**没有 MCP 端点**，所以记忆只能是 `rest-only` —— 不画一个假装能用的开关。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { BookOpen, Cloud, Coins, Database, ExternalLink, LogIn, LogOut, RefreshCw, RotateCcw, TriangleAlert } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { BookOpen, Bot, Brain, CheckCircle2, Cloud, Coins, Database, ExternalLink, LogIn, LogOut, RefreshCw, RotateCcw, TriangleAlert } from "lucide-react";
+import { provisionCloud, provisionSummary, type CloudProvisionReport } from "../../lib/cloud-provision.mjs";
 import { PageInfo } from "../../components/SettingsHead";
 import { Spinner } from "../../components/CardShell";
 import { cloudUserCenterUrl } from "../../lib/cloud-links.mjs";
@@ -86,6 +87,63 @@ function agoText(at: number): string {
   return `${Math.floor(sec / 3600)} 小时前`;
 }
 
+const STEP_LABEL: Record<string, string> = {
+  auth: "账号",
+  models: "模型",
+  kb: "知识库",
+  memory: "记忆",
+  "model-active": "生效模型",
+};
+
+/** 就绪清单的一行：图标 + 名称 + 当前状态 + 一句说明。 */
+function ReadyRow({ icon, label, tone, tag, detail }: { icon: ReactNode; label: string; tone: "on" | "off"; tag: string; detail: string }) {
+  return (
+    <div className={`cloud-acct-ready-row ${tone}`}>
+      <span className="cloud-acct-ready-ico">{icon}</span>
+      <b>{label}</b>
+      <span className={`cloud-acct-tag ${tone}`}>{tag}</span>
+      <span className="cloud-acct-ready-detail">{detail}</span>
+    </div>
+  );
+}
+
+/** 自动配置的逐步回执（只显示本机实际做过/跳过的步骤，⛔ 不画假进度）。 */
+function ProvisionSteps({ report }: { report: CloudProvisionReport }) {
+  if (!report.steps.length) return null;
+  return (
+    <div className="cloud-acct-steps" data-testid="cloud-provision-steps">
+      {report.steps.map((step) => (
+        <div className={`cloud-acct-step ${step.state}`} key={step.id}>
+          <span className="cloud-acct-step-dot" />
+          <b>{STEP_LABEL[step.id] || step.id}</b>
+          <span>{step.detail}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** 新手教程（10-22 用户令「加上新手教程」）：三步 + 手动流程入口说明。默认收起，不挡操作。 */
+function CloudTutorial() {
+  return (
+    <details className="cloud-tutorial" data-testid="cloud-tutorial">
+      <summary>
+        <BookOpen size={15} />
+        <strong>第一次用？三步搞定</strong>
+        <span className="cloud-acct-sub">点开看</span>
+      </summary>
+      <ol>
+        <li><b>注册 / 登录</b>：没有账号就点「去注册」在浏览器里注册；有账号直接填账号密码。</li>
+        <li><b>自动配置</b>：点「登录并自动配置」—— 云端勾选的模型会同步到下拉框，云端知识库与记忆会自动接通；没开通的会写清楚原因。</li>
+        <li><b>开始用</b>：回聊天直接发消息。云端知识库工具在新会话里可用；云端管理里改了勾选或开通权益，本机最多 10 分钟自动跟上。</li>
+      </ol>
+      <p className="cloud-tutorial-note">
+        需要手动控制（重签密钥 / 连通测试 / 上传下载会话 / 切换供应商）→ 展开下面的「手动流程 / 高级设置」。
+      </p>
+    </details>
+  );
+}
+
 export function CloudAccountSection() {
   const [status, setStatus] = useState<AuthStatus | null>(null);
   const [models, setModels] = useState<ModelStatus | null>(null);
@@ -95,6 +153,8 @@ export function CloudAccountSection() {
   const [unsupported, setUnsupported] = useState(false);
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  /* 10-22「登录即用」：自动配置的逐步回执（账号 / 模型 / 知识库 / 记忆 / 生效位）。 */
+  const [provisionReport, setProvisionReport] = useState<CloudProvisionReport | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
@@ -134,29 +194,41 @@ export function CloudAccountSection() {
     const api = cloudApi();
     if (!api.cloudAuthLogin) return;
     setMsg(null);
+    setProvisionReport(null);
     const r = await api.cloudAuthLogin({ baseUrl: baseUrl.trim() || undefined, username: username.trim(), password });
     if (!r.ok) { setMsg({ kind: "err", text: r.error || "登录失败" }); return; }
     setPassword("");
-    /* ⛔⛔ 10-18（用户令「做成自动重签，手动重签也保留」+「云管理可以绑定三个设备，要考虑到」）：
-       登录后**先非强制同步**：
-         · 本机已有有效代理令牌 ⇒ 直接成功、**不重签** ⇒ 不会踢掉同账号另外两台设备；
-         · 令牌缺失/已失效 ⇒ 失败，这时才 **force 重签** ⇒ 新手首次登录也能自动修好。
-       ⛔ 绝不能无条件 force：那会让"在第二台机器上登录"把第一台踢下线。
-       ⛔ 手动按钮「重签密钥并同步」保留（换设备 / 令牌提前过期时用）。 */
-    let sync = await api.cloudModelsSync?.({ force: false });
-    let autoResigned = false;
-    if (!sync?.ok) {
-      sync = await api.cloudModelsSync?.({ force: true });
-      autoResigned = Boolean(sync?.ok);
+    /* 10-22「登录即用」：登录后一次配齐模型 / 知识库 / 记忆，生效位只在没有别家供应商时切换。
+       ⛔ 令牌失效的 401 由 sync 内部自愈；仍失败才 force 重签一次（保留 10-18 多设备保护：
+          不无条件重签，否则会把同账号另外两台设备的令牌挤出 3 枚令牌环）。 */
+    let report = await provisionCloud(api, { activate: true, onlyIfEmpty: true });
+    if (!report.models?.ok) {
+      const forced = await api.cloudModelsSync?.({ force: true });
+      if (forced?.ok) report = await provisionCloud(api, { activate: true, onlyIfEmpty: true });
     }
+    setProvisionReport(report);
     refreshProviders();
     setMsg({
-      kind: "ok",
-      text: sync?.ok
-        ? (autoResigned
-            ? `登录成功：本机密钥不可用，已自动重签并同步 ${sync.models} 个云端模型（不影响同账号其他设备）。`
-            : `登录成功：本机密钥仍有效，已同步 ${sync.models} 个云端模型（未重签，其他设备不受影响）。`)
-        : "登录成功，但自动重签/同步没完成 —— 点「重签密钥并同步」重试一次即可。",
+      kind: report.ok ? "ok" : "err",
+      text: report.ok
+        ? `登录成功，已自动配置。${provisionSummary(report)}`
+        : `登录成功，但自动配置未完成：${provisionSummary(report) || "请稍后点「一键同步 / 修复」重试"}`,
+    });
+    await refresh();
+  });
+
+  /* 已登录状态的「一键同步 / 修复」：与登录页同一个编排函数（⛔ 不写第二套）。 */
+  const doProvision = () => run("provision", async () => {
+    const api = cloudApi();
+    setMsg(null);
+    const report = await provisionCloud(api, { activate: true, onlyIfEmpty: true });
+    setProvisionReport(report);
+    refreshProviders();
+    setMsg({
+      kind: report.ok ? "ok" : "err",
+      text: report.ok
+        ? `已自动配置。${provisionSummary(report)}`
+        : `自动配置未完成：${provisionSummary(report) || "请检查网络后重试"}`,
     });
     await refresh();
   });
@@ -401,6 +473,7 @@ export function CloudAccountSection() {
       if (!api.cloudAuthLogout) return;
       const r = await api.cloudAuthLogout(id);
       refreshProviders();
+      if (r.ok) setProvisionReport(null);
       setMsg(r.ok ? { kind: "ok", text: "已退出云账号（云端模型已从下拉框收起，配置保留，重新登录即恢复）。" } : { kind: "err", text: "退出失败" });
       await refresh();
     });
@@ -411,6 +484,7 @@ export function CloudAccountSection() {
     if (!api.cloudAuthSwitch) return;
     const r = await api.cloudAuthSwitch(id);
     if (!r.ok) { setMsg({ kind: "err", text: "切换失败" }); return; }
+    setProvisionReport(null);
     await api.cloudModelsSync?.({ force: false });
     refreshProviders();
     setMsg({ kind: "ok", text: "已切换云账号并同步其云端模型。" });
@@ -419,8 +493,19 @@ export function CloudAccountSection() {
 
   const busyIcon = (key: string) => (busy === key ? <Spinner /> : null);
 
+  /* 10-22 就绪状态：模型可不可用 / 是否生效 / KB / 记忆，一行一个结论。 */
+  const modelReady = Boolean(models?.registered && (models?.models ?? 0) > 0);
+  const modelLive = Boolean(models?.active);
+  const kbReady = Boolean(kb?.enabled);
+  const memReady = Boolean(memory?.activation?.state === "active" && memory?.activation?.applied);
+  const overall = !modelReady
+    ? { tone: "off" as const, label: "待配置", hint: "登录成功，但云端模型还没同步 —— 点「一键同步 / 修复」，或去用户中心勾选模型。" }
+    : !modelLive
+      ? { tone: "off" as const, label: "已同步，未生效", hint: "你现在用的是别的供应商（已保留）。需要云端出字时点「设为当前供应商」；知识库与记忆已自动接好。" }
+      : { tone: "on" as const, label: "已就绪", hint: "直接回聊天发消息即可；云端勾选与权益变动会每 10 分钟自动同步。" };
+
   return (
-    <section className="settings-section stack">
+    <section className="settings-section stack cloud-acct-section">
       {/* 10-18 会话同步弹窗（**独立弹窗，非内嵌**）。成功关闭后回调刷新外部界面：
           让"最近同步 / 已上传数量"这类展示跟着变（用户要求：状态变化后正确渲染刷新）。 */}
       {resultDialog && (
@@ -444,11 +529,11 @@ export function CloudAccountSection() {
           <h2>
             云账号
             <PageInfo
-              text={<>登录云端账号后，<b>云端勾选的模型会自动同步</b>到本机模型下拉框，并每 10 分钟保持更新；<b>云端知识库</b>会接成 MCP 连接器供 Codex 直接检索。<br />⛔ 这与「中转站」是两条独立的登录线，互不影响。</>}
+              text={<>登录云账号后<b>自动配好</b>：云端勾选的模型同步到本机下拉框，<b>云端知识库与记忆</b>一并接通；没开通的会写明原因。云端管理里改了勾选 / 权益，本机最多 10 分钟自动跟上。<br />⛔ 这与「中转站」是两条独立的登录线，互不影响。</>}
             />
           </h2>
           <p className="muted">
-            云端的记忆与知识库跨设备共享；本机「知识库」页那一份是<b>项目级</b>的（随项目走），两者并存、不冲突。
+            新手只需登录一次，剩下交给下面的一键配置；重签密钥 / 连通测试 / 上传下载会话等手动操作都收在「高级设置」里。
           </p>
         </div>
       </div>
@@ -463,25 +548,26 @@ export function CloudAccountSection() {
         <div className="cloud-acct-card"><Spinner /></div>
       ) : !status.loggedIn ? (
         <>
-          <div className="cloud-acct-card">
-            <div className="cloud-acct-head">
-              <Cloud size={16} />
-              <strong>登录云账号</strong>
-              <span className="cloud-acct-sub">用云账号的账号密码登录（与网页端同一套账号）</span>
+          {/* 未登录：只留一张「登录即用」卡（10-22 用户令「流程简化，新手登录即用」）。 */}
+          <div className="cloud-acct-card cloud-acct-hero cloud-acct-simple" data-testid="cloud-login-simple">
+            <div className="cloud-acct-hero-top">
+              <span className="cloud-acct-hero-icon"><Cloud size={22} /></span>
+              <div className="cloud-acct-hero-main">
+                <h3>登录云账号，直接开始用</h3>
+                <p className="muted">登录后自动同步云端模型，并接通云端知识库与记忆；没开通的会写清楚去哪开通，不会让你猜。</p>
+              </div>
             </div>
-            <div className="cloud-acct-row">
+            <div className="cloud-acct-form">
               <label htmlFor="cloud-acct-user">账号</label>
               <input
                 id="cloud-acct-user"
                 className="field"
                 value={username}
                 autoComplete="username"
-                placeholder="用户名"
+                placeholder="用户名（与网页端同一个）"
                 onChange={(e) => setUsername(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && username && password) doLogin(); }}
               />
-            </div>
-            <div className="cloud-acct-row">
               <label htmlFor="cloud-acct-pwd">密码</label>
               <input
                 id="cloud-acct-pwd"
@@ -489,11 +575,22 @@ export function CloudAccountSection() {
                 type="password"
                 value={password}
                 autoComplete="current-password"
-                placeholder="密码"
+                placeholder="云账号密码"
                 onChange={(e) => setPassword(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && username && password) doLogin(); }}
               />
             </div>
+            <div className="cloud-acct-hero-actions">
+              <button className="primary-setting cloud-acct-login" disabled={!username || !password || busy === "login"} onClick={doLogin}>
+                <LogIn size={14} />{busy === "login" ? "正在登录并自动配置…" : "登录并自动配置"}
+              </button>
+              <button className="secondary-setting" onClick={openUserCenter} title="浏览器打开，不需要桌面端在线">
+                <ExternalLink size={14} />去注册 / 用户中心
+              </button>
+            </div>
+            <p className="cloud-acct-sub cloud-acct-footnote">
+              还没有账号？先在浏览器打开云端用户中心注册（不需要先装云助手）。注册后回这里登录即可。
+            </p>
             <details className="cloud-acct-adv">
               <summary>服务地址（默认 {status.defaultBaseUrl}）</summary>
               <input
@@ -503,223 +600,257 @@ export function CloudAccountSection() {
                 onChange={(e) => setBaseUrl(e.target.value)}
               />
             </details>
-            <div className="cloud-acct-actions">
-              <button className="primary-setting cloud-acct-login" disabled={!username || !password || busy === "login"} onClick={doLogin}>
-                <LogIn size={14} />{busy === "login" ? "登录中…" : "登录"}
-              </button>
-            </div>
           </div>
-          <div className="cloud-acct-card">
-            <div className="cloud-acct-head">
-              <ExternalLink size={16} />
-              <strong>还没有云账号？</strong>
-              <span className="cloud-acct-sub">在云端用户中心注册后再回来登录</span>
-            </div>
-            <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-              用户中心是<b>浏览器里的网页</b>（改密码 / 看积分 / 勾选模型 / 开通知识库与记忆 / 管理设备），
-              ⛔ 不需要桌面端在线，也不需要先打开云助手。
-            </p>
-            <div className="cloud-acct-actions">
-              <button className="secondary-setting" onClick={openUserCenter} title="浏览器打开，不需要桌面端在线；用同一个云账号登录即可">
-                <ExternalLink size={14} />打开云端用户中心（注册 / 查看账户）
-              </button>
-            </div>
-          </div>
+          <CloudTutorial />
         </>
       ) : (
         <>
-          <div className="cloud-acct-card">
-            <div className="cloud-acct-head">
-              <Cloud size={16} />
-              <strong>{status.active?.username}</strong>
-              <span className="cloud-acct-tag on">{status.active?.role}</span>
-              <span className="cloud-acct-sub">已登录</span>
+          {/* 已登录：先给「就绪状态」，手动流程收进下面的高级折叠。 */}
+          <div className="cloud-acct-card cloud-acct-hero cloud-acct-ready" data-testid="cloud-ready">
+            <div className="cloud-acct-hero-top">
+              <span className="cloud-acct-hero-icon"><Cloud size={22} /></span>
+              <div className="cloud-acct-hero-main">
+                <h3>
+                  {status.active?.username}
+                  <span className={`cloud-acct-tag ${overall.tone}`}>{overall.label}</span>
+                </h3>
+                <p className="muted">{overall.hint}</p>
+              </div>
+              <div className="cloud-acct-hero-actions">
+                <button className="primary-setting" disabled={!!busy} onClick={doProvision}>
+                  <RefreshCw size={14} />{busy === "provision" ? "正在自动配置…" : "一键同步 / 修复"}
+                </button>
+                <button className="secondary-setting" onClick={openUserCenter}>
+                  <ExternalLink size={14} />用户中心
+                </button>
+              </div>
             </div>
-            <div className="cloud-acct-kv"><span>服务地址</span><code>{status.active?.baseUrl}</code></div>
-            {/* 清单 6（10-19）：key 属于哪个账号 + 令牌前缀 —— 「订阅后 key 掉了」先看这一行是不是账号/令牌错位。 */}
-            <div className="cloud-acct-kv">
-              <span>模型令牌</span>
-              <code>{models?.tokenPrefix ? models.tokenPrefix + "…" : "尚未签发"}</code>
-              <span className="cloud-acct-sub">{models?.account || status.active?.username || ""}</span>
+            <div className="cloud-acct-ready-grid">
+              <ReadyRow
+                icon={<Bot size={15} />}
+                label="云端模型"
+                tone={modelReady ? "on" : "off"}
+                tag={modelLive ? "当前生效" : modelReady ? "已同步" : "未注册"}
+                detail={modelReady ? `${models?.models ?? 0} 个可用 · 上次同步 ${agoText(models?.lastSyncAt ?? 0)}` : "云端还没有勾选模型（去用户中心勾选后点一键同步）"}
+              />
+              <ReadyRow
+                icon={<BookOpen size={15} />}
+                label="云端知识库"
+                tone={kbReady ? "on" : "off"}
+                tag={kbReady ? "已接通" : kb?.exists ? "已停用" : "未开通"}
+                detail={kbReady ? "MCP 连接器已就绪，新会话可直接检索" : "开通后点「一键同步」即可接通（未开通不影响聊天）"}
+              />
+              <ReadyRow
+                icon={<Brain size={15} />}
+                label="云端记忆"
+                tone={memReady ? "on" : "off"}
+                tag={memReady ? (memory?.mode === "mcp" ? "已接通（MCP）" : "已接通（请求层）") : memory?.activation?.state === "unknown" ? "待确认" : "未开通"}
+                detail={memReady ? "每账号独立命名空间，自动注入与写入" : (memory?.activation?.reasonText || "开通后点「一键同步」即可接通")}
+              />
             </div>
-            <div className="cloud-acct-actions">
-              <button className="secondary-setting" disabled={!!busy} onClick={() => doSync(false)}>
-                <RefreshCw size={14} />{busy === "sync" ? "同步中…" : "立即同步模型"}
-              </button>
-              <button className="secondary-setting" disabled={!!busy} onClick={() => doSync(true)}>
-                <RotateCcw size={14} />{busy === "resync" ? "重签中…" : "重签密钥并同步"}
-              </button>
-              {/* 10-19：与供应商页「测试当前供应商」同口径；成功 → 保存并重启，失败 → 重签密钥重试 */}
-              <button className="secondary-setting" disabled={!!busy || !models?.registered || !models.models} onClick={() => doTestModels(false)} title="测试云端模型链路（与引擎实际使用的上游一致；401 会自动重签一次）">
-                <RefreshCw size={14} />{busy === "test-models" ? "测试中…" : "连通测试"}
-              </button>
-              <button className="secondary-setting" onClick={openUserCenter}>
-                <ExternalLink size={14} />云端用户中心
-              </button>
-              <button className="secondary-setting danger" disabled={!!busy} onClick={() => doLogout(status.active?.id)}>
-                <LogOut size={14} />{confirmLogout ? "再点一次确认退出" : "退出登录"}
-              </button>
-              {busyIcon("sync")}{busyIcon("resync")}
-            </div>
-            {/* 10-18 用户要求：会话同步单独一行、靠左（原来挤在模型按钮末尾会换行错位） */}
-            <div className="cloud-acct-actions">
-              <button className="secondary-setting" disabled={!!busy} onClick={() => setSessionDialog("upload")}>
-                {busy === "sync-push" ? "上传中…" : "上传会话"}
-              </button>
-              <button className="secondary-setting" disabled={!!busy} onClick={() => setSessionDialog("pull")}>
-                {busy === "sync-pull" ? "下载中…" : "从云端下载"}
+            <div className="cloud-acct-hero-foot">
+              <span className="cloud-acct-points">
+                <Coins size={13} />
+                {points ? (points.ok ? `${Number(points.balance).toLocaleString()} 积分` : "积分读取失败") : "积分读取中…"}
+              </span>
+              <span className="cloud-acct-sub">{status.active?.role} · {status.active?.baseUrl}</span>
+              <button className="cloud-acct-link" disabled={!!busy} onClick={() => doLogout(status.active?.id)}>
+                <LogOut size={13} />{confirmLogout ? "再点一次确认退出" : "退出登录"}
               </button>
             </div>
           </div>
 
-          {status.accounts.length > 1 && (
-            <div className="cloud-acct-card">
-              <div className="cloud-acct-head"><strong>其他已保存的云账号</strong></div>
-              {status.accounts.filter((a) => !a.active).map((a) => (
-                <div className="cloud-acct-row" key={a.id}>
-                  <label>{a.username}</label>
-                  <span className="cloud-acct-sub" style={{ flex: 1 }}>{a.baseUrl}</span>
-                  <button className="secondary-setting" disabled={!!busy} onClick={() => doSwitch(a.id)}>切为此账号</button>
-                  <button className="secondary-setting danger" disabled={!!busy} onClick={() => doLogout(a.id)}>移除</button>
-                </div>
-              ))}
-            </div>
-          )}
+          {provisionReport && <ProvisionSteps report={provisionReport} />}
 
-          {/* 积分（账户级）：余额 + 最近变动。⛔ 不加红绿涨跌色 —— 这是积分不是行情，
-              用 +/- 表达增减，避免与「涨红跌绿」那套语义撞车。 */}
-          <div className="cloud-acct-card">
-            <div className="cloud-acct-head">
-              <Coins size={16} />
-              <strong>我的积分</strong>
-              <span className={`cloud-acct-tag ${points?.ok ? "on" : "off"}`}>
-                {points ? (points.ok ? `${Number(points.balance).toLocaleString()} 积分` : "读取失败") : "读取中…"}
-              </span>
-              {points && !points.ok && <span className="cloud-acct-sub">{points.error}</span>}
+          <CloudTutorial />
+
+          <details className="cloud-acct-advanced" data-testid="cloud-advanced">
+            <summary>
+              <CheckCircle2 size={15} />
+              <strong>手动流程 / 高级设置</strong>
+              <span className="cloud-acct-sub">登录时已自动做过；只有需要修复或手动切换时才用</span>
+            </summary>
+
+            <div className="cloud-acct-card">
+              <div className="cloud-acct-head">
+                <Cloud size={16} />
+                <strong>账号与密钥</strong>
+                <span className="cloud-acct-sub">已登录 · {status.active?.username}</span>
+              </div>
+              <div className="cloud-acct-kv"><span>服务地址</span><code>{status.active?.baseUrl}</code></div>
+              <div className="cloud-acct-kv">
+                <span>模型令牌</span>
+                <code>{models?.tokenPrefix ? models.tokenPrefix + "…" : "尚未签发"}</code>
+                <span className="cloud-acct-sub">{models?.account || status.active?.username || ""}</span>
+              </div>
+              <div className="cloud-acct-actions">
+                <button className="secondary-setting" disabled={!!busy} onClick={() => doSync(false)}>
+                  <RefreshCw size={14} />{busy === "sync" ? "同步中…" : "立即同步模型"}
+                </button>
+                <button className="secondary-setting" disabled={!!busy} onClick={() => doSync(true)}>
+                  <RotateCcw size={14} />{busy === "resync" ? "重签中…" : "重签密钥并同步"}
+                </button>
+                <button className="secondary-setting" disabled={!!busy || !models?.registered || !models.models} onClick={() => doTestModels(false)} title="测试云端模型链路（与引擎实际使用的上游一致；401 会自动重签一次）">
+                  <RefreshCw size={14} />{busy === "test-models" ? "测试中…" : "连通测试"}
+                </button>
+                <button className="secondary-setting" onClick={openUserCenter}>
+                  <ExternalLink size={14} />云端用户中心
+                </button>
+                <button className="secondary-setting danger" disabled={!!busy} onClick={() => doLogout(status.active?.id)}>
+                  <LogOut size={14} />{confirmLogout ? "再点一次确认退出" : "退出登录"}
+                </button>
+                {busyIcon("sync")}{busyIcon("resync")}
+              </div>
+              <div className="cloud-acct-actions">
+                <button className="secondary-setting" disabled={!!busy} onClick={() => setSessionDialog("upload")}>
+                  {busy === "sync-push" ? "上传中…" : "上传会话"}
+                </button>
+                <button className="secondary-setting" disabled={!!busy} onClick={() => setSessionDialog("pull")}>
+                  {busy === "sync-pull" ? "下载中…" : "从云端下载"}
+                </button>
+              </div>
             </div>
-            <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-              用途：在「云端模型」里调用模型时按<b>模型倍率</b>扣减；余额为 0 会暂停调用。
-            </p>
-            {points?.txns?.length ? (
-              <div className="cloud-acct-txns">
-                {points.txns.map((t, i) => (
-                  <div className="cloud-acct-txn" key={t.id || `${t.at}-${i}`}>
-                    <span className="cloud-acct-txn-when">
-                      {t.at ? new Date(t.at).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}
-                    </span>
-                    <span className="cloud-acct-txn-kind">{t.kind ? (KIND_LABEL[t.kind] || t.kind) : "变动"}</span>
-                    <span className="cloud-acct-txn-note" title={t.note || ""}>{t.note || ""}</span>
-                    <span className="cloud-acct-txn-delta">{(t.delta ?? 0) >= 0 ? "+" : ""}{t.delta ?? 0}</span>
+
+            <div className="cloud-acct-card">
+              <div className="cloud-acct-head">
+                <Database size={16} />
+                <strong>云端模型（手动）</strong>
+                <span className={`cloud-acct-tag ${models?.registered && models.enabled ? "on" : "off"}`}>
+                  {models?.registered ? (models.enabled ? "已注册" : "已停用") : "未注册"}
+                </span>
+                {models?.registered && (
+                  <span className={`cloud-acct-tag ${models.active ? "on" : "off"}`}>{models.active ? "当前生效" : "未生效"}</span>
+                )}
+              </div>
+              <div className="cloud-acct-metrics">
+                <span>下拉框可见模型 <b>{models?.models ?? 0}</b> 个</span>
+                <span>代理密钥 <b>{models?.hasToken ? "已就位" : "缺失"}</b></span>
+                <span>上次同步 <b>{agoText(models?.lastSyncAt ?? 0)}</b></span>
+                <span>自动保持更新 <b>每 10 分钟</b></span>
+              </div>
+              {models?.registered && !models.active && (
+                <div className="cloud-acct-actions">
+                  <button className="primary-setting" disabled={!!busy || !models.models} onClick={doActivate}>
+                    <Cloud size={14} />{busy === "activate" ? "切换中…" : "设为当前供应商"}
+                  </button>
+                  {busyIcon("activate")}
+                  <span className="cloud-acct-sub">你现在用的是别的供应商 —— 点这里切到云端模型（会重启引擎）</span>
+                </div>
+              )}
+              <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                勾选哪些模型由云端决定（云端勾选 = 本机下拉框可见）。改了勾选后在云端保存，本机最多 10 分钟自动跟上，也可点上面的「立即同步模型」。
+              </p>
+            </div>
+
+            <div className="cloud-acct-card">
+              <div className="cloud-acct-head">
+                <BookOpen size={16} />
+                <strong>云端知识库（手动）</strong>
+                <span className={`cloud-acct-tag ${kb?.enabled ? "on" : "off"}`}>{kb?.enabled ? "已接通" : kb?.exists ? "已停用" : "未接通"}</span>
+              </div>
+              <div className="cloud-acct-metrics">
+                <span>连接器 <b>cloud-kb</b></span>
+                <span>端点 <b>{kb?.url ? "已下发" : "无"}</b></span>
+                <span>凭据 <b>{kb?.hasToken ? "已保存" : "无"}</b></span>
+              </div>
+              <div className="cloud-acct-actions">
+                <button className="secondary-setting" disabled={!!busy} onClick={doKb}>
+                  <BookOpen size={14} />{busy === "kb" ? "接通中…" : "接通 / 刷新云端知识库"}
+                </button>
+                <button className="secondary-setting" disabled={!!busy} onClick={() => doTest("kb")}>
+                  {busy === "test-kb" ? "测试中…" : "连通测试"}
+                </button>
+                {busyIcon("kb")}
+              </div>
+              <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                接通后以 MCP 连接器形式提供给引擎（令牌经环境变量注入，⛔ 不写进 config.toml）。它与本机「知识库」页那份项目级知识库是<b>两份</b>，各管各的。
+              </p>
+            </div>
+
+            <div className="cloud-acct-card">
+              <div className="cloud-acct-head">
+                <TriangleAlert size={16} />
+                <strong>云端记忆（手动）</strong>
+                <span className={`cloud-acct-tag ${memory?.activation?.state === "active" && memory?.activation?.applied ? "on" : "off"}`}>
+                  {memory?.activation?.state === "active"
+                    ? (memory.activation.applied
+                        ? (memory?.mode === "mcp" ? "已接通（MCP）" : "已接通（请求层）")
+                        : "已开通（未接通）")
+                    : memory?.activation?.state === "unknown"
+                      ? "待确认"
+                      : "未开通"}
+                </span>
+              </div>
+              <div className="cloud-acct-metrics">
+                <span>凭据 <b>{memory?.hasCredentials ? "已缓存" : "无"}</b></span>
+                <span>开通 <b>{memory?.activation?.reasonText ?? "待确认"}</b></span>
+              </div>
+              <div className="cloud-acct-actions">
+                <button className="secondary-setting" disabled={!!busy} onClick={doMemory}>
+                  <RefreshCw size={14} />{busy === "memory" ? "获取中…" : "获取 / 刷新记忆凭据"}
+                </button>
+                <button className="secondary-setting" disabled={!!busy} onClick={() => doTest("memory")}>
+                  {busy === "test-memory" ? "测试中…" : "连通测试"}
+                </button>
+                {busyIcon("memory")}
+              </div>
+              <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                {memory?.upstream === "memory" ? (
+                  <>✅ 记忆<b>已接通</b>：对话上游已切到记忆端点，记忆在<b>请求层</b>自动注入与写入（每账号独立命名空间，<b>不需要工具调用</b>）。</>
+                ) : memory?.mode === "rest-only" ? (
+                  <>凭据已就绪但<b>尚未生效</b>：再点一次「获取 / 刷新记忆凭据」会把它切到对话上游（重启应用也会自动生效）。</>
+                ) : (
+                  <>记忆中枢的 MCP 端点尚未提供；REST 通道正常，开通权益并刷新凭据后按<b>请求层注入</b>生效。</>
+                )}
+              </p>
+            </div>
+
+            {status.accounts.length > 1 && (
+              <div className="cloud-acct-card">
+                <div className="cloud-acct-head"><strong>其他已保存的云账号</strong></div>
+                {status.accounts.filter((a) => !a.active).map((a) => (
+                  <div className="cloud-acct-row" key={a.id}>
+                    <label>{a.username}</label>
+                    <span className="cloud-acct-sub" style={{ flex: 1 }}>{a.baseUrl}</span>
+                    <button className="secondary-setting" disabled={!!busy} onClick={() => doSwitch(a.id)}>切为此账号</button>
+                    <button className="secondary-setting danger" disabled={!!busy} onClick={() => doLogout(a.id)}>移除</button>
                   </div>
                 ))}
               </div>
-            ) : (
-              <div className="muted" style={{ fontSize: 12 }}>
-                {points?.ok ? `暂无变动记录（注册赠送 ${Number(points.signupGrant || 0).toLocaleString()} 积分）` : "登录后读取"}
-              </div>
             )}
-          </div>
 
-          <div className="cloud-acct-card">
-            <div className="cloud-acct-head">
-              <Database size={16} />
-              <strong>云端模型</strong>
-              <span className={`cloud-acct-tag ${models?.registered && models.enabled ? "on" : "off"}`}>
-                {models?.registered ? (models.enabled ? "已注册" : "已停用") : "未注册"}
-              </span>
-              {models?.registered && (
-                <span className={`cloud-acct-tag ${models.active ? "on" : "off"}`}>{models.active ? "当前生效" : "未生效"}</span>
-              )}
-            </div>
-            <div className="cloud-acct-metrics">
-              <span>下拉框可见模型 <b>{models?.models ?? 0}</b> 个</span>
-              <span>代理密钥 <b>{models?.hasToken ? "已就位" : "缺失"}</b></span>
-              <span>上次同步 <b>{agoText(models?.lastSyncAt ?? 0)}</b></span>
-              <span>自动保持更新 <b>每 10 分钟</b></span>
-            </div>
-            {models?.registered && !models.active && (
-              <div className="cloud-acct-actions">
-                <button className="primary-setting" disabled={!!busy || !models.models} onClick={doActivate}>
-                  <Cloud size={14} />{busy === "activate" ? "切换中…" : "设为当前供应商"}
-                </button>
-                {busyIcon("activate")}
-                <span className="cloud-acct-sub">你现在用的是别的供应商 —— 点这里切到云端模型（会重启引擎）</span>
+            <div className="cloud-acct-card">
+              <div className="cloud-acct-head">
+                <Coins size={16} />
+                <strong>我的积分</strong>
+                <span className={`cloud-acct-tag ${points?.ok ? "on" : "off"}`}>
+                  {points ? (points.ok ? `${Number(points.balance).toLocaleString()} 积分` : "读取失败") : "读取中…"}
+                </span>
+                {points && !points.ok && <span className="cloud-acct-sub">{points.error}</span>}
               </div>
-            )}
-            <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-              勾选哪些模型由云端决定（云端勾选 = 本机下拉框可见）。改了勾选后在云端保存，本机最多 10 分钟自动跟上，也可点上面的「立即同步模型」。
-            </p>
-          </div>
-
-          <div className="cloud-acct-card">
-            <div className="cloud-acct-head">
-              <BookOpen size={16} />
-              <strong>云端知识库</strong>
-              <span className={`cloud-acct-tag ${kb?.enabled ? "on" : "off"}`}>{kb?.enabled ? "已接通" : kb?.exists ? "已停用" : "未接通"}</span>
-            </div>
-            <div className="cloud-acct-metrics">
-              <span>连接器 <b>cloud-kb</b></span>
-              <span>端点 <b>{kb?.url ? "已下发" : "无"}</b></span>
-              <span>凭据 <b>{kb?.hasToken ? "已保存" : "无"}</b></span>
-            </div>
-            <div className="cloud-acct-actions">
-              <button className="secondary-setting" disabled={!!busy} onClick={doKb}>
-                <BookOpen size={14} />{busy === "kb" ? "接通中…" : "接通 / 刷新云端知识库"}
-              </button>
-              <button className="secondary-setting" disabled={!!busy} onClick={() => doTest("kb")}>
-                {busy === "test-kb" ? "测试中…" : "连通测试"}
-              </button>
-              {busyIcon("kb")}
-            </div>
-            <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-              接通后以 MCP 连接器形式提供给引擎（令牌经环境变量注入，⛔ 不写进 config.toml）。它与本机「知识库」页那份项目级知识库是<b>两份</b>，各管各的。
-            </p>
-          </div>
-
-          <div className="cloud-acct-card">
-            <div className="cloud-acct-head">
-              <TriangleAlert size={16} />
-              <strong>云端记忆</strong>
-              <span className={`cloud-acct-tag ${memory?.activation?.state === "active" && memory?.activation?.applied ? "" : "off"}`}>
-                {memory?.activation?.state === "active"
-                  ? (memory.activation.applied
-                      ? (memory?.mode === "mcp" ? "已接通（MCP）" : "已接通（请求层）")
-                      : "已开通（未接通）")
-                  : memory?.activation?.state === "unknown"
-                    ? "待确认"
-                    : "未开通"}
-              </span>
-            </div>
-            <div className="cloud-acct-metrics">
-              <span>凭据 <b>{memory?.hasCredentials ? "已缓存" : "无"}</b></span>
-              <span>开通 <b>{memory?.activation?.reasonText ?? "待确认"}</b></span>
-            </div>
-            <div className="cloud-acct-actions">
-              <button className="secondary-setting" disabled={!!busy} onClick={doMemory}>
-                <RefreshCw size={14} />{busy === "memory" ? "获取中…" : "获取 / 刷新记忆凭据"}
-              </button>
-              <button className="secondary-setting" disabled={!!busy} onClick={() => doTest("memory")}>
-                {busy === "test-memory" ? "测试中…" : "连通测试"}
-              </button>
-              {busyIcon("memory")}
-            </div>
-            <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-              {memory?.upstream === "memory" ? (
-                <>
-                  ✅ 记忆<b>已接通</b>：对话上游已切到记忆端点，记忆在<b>请求层</b>自动注入与写入
-                  （每账号独立命名空间，<b>不需要工具调用</b>）。MCP 工具面仍待中枢提供端点 ——
-                  2026-10-17 复测：/mcp、/v1/mcp、/sse、/v1/sse 均为前端兜底页（无 MCP 路由），
-                  补上后会自动切换成连接器。
-                </>
-              ) : memory?.mode === "rest-only" ? (
-                <>凭据已就绪但<b>尚未生效</b>：再点一次「获取 / 刷新记忆凭据」会把它切到对话上游
-                  （重启应用也会自动生效）。</>
+              <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                用途：在「云端模型」里调用模型时按<b>模型倍率</b>扣减；余额为 0 会暂停调用。
+              </p>
+              {points?.txns?.length ? (
+                <div className="cloud-acct-txns">
+                  {points.txns.map((t, i) => (
+                    <div className="cloud-acct-txn" key={t.id || `${t.at}-${i}`}>
+                      <span className="cloud-acct-txn-when">
+                        {t.at ? new Date(t.at).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}
+                      </span>
+                      <span className="cloud-acct-txn-kind">{t.kind ? (KIND_LABEL[t.kind] || t.kind) : "变动"}</span>
+                      <span className="cloud-acct-txn-note" title={t.note || ""}>{t.note || ""}</span>
+                      <span className="cloud-acct-txn-delta">{(t.delta ?? 0) >= 0 ? "+" : ""}{t.delta ?? 0}</span>
+                    </div>
+                  ))}
+                </div>
               ) : (
-                <>记忆中枢的 MCP 端点尚未提供（2026-10-17 复测：/mcp、/v1/mcp、/sse、/v1/sse 均为前端
-                  兜底页）；REST 通道正常，开通权益并刷新凭据后按<b>请求层注入</b>生效。</>
+                <div className="muted" style={{ fontSize: 12 }}>
+                  {points?.ok ? `暂无变动记录（注册赠送 ${Number(points.signupGrant || 0).toLocaleString()} 积分）` : "登录后读取"}
+                </div>
               )}
-            </p>
-          </div>
+            </div>
+          </details>
         </>
       )}
     </section>

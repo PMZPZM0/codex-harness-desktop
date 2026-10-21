@@ -1330,6 +1330,69 @@ const CHECKS = [
     },
   },
   {
+    id: "cloud-simple",
+    name: "☁️ 云账号「登录即用」：单卡登录 + 就绪清单 + 教程 + 手动流程折叠（10-22）",
+    run: async (h) => {
+      /* 10-22 用户：「设置云账号界面功能流程太复杂，用户登录起步自动配置好，新手登录即用，
+         保留手动流程，并且加上新手教程」。本项量真 DOM：页面不再一屏堆满手动按钮，
+         登录卡 / 教程 / 高级折叠都在；登录态才有就绪清单与一键同步。 */
+      await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "界面就绪", timeoutMs: 40000 });
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await wait(1200);
+      const nav = await h.eval(`(function(){
+        const items=[...document.querySelectorAll(".settings-nav button")];
+        const b=items.find((x)=>(x.textContent||"").trim()==="云账号");
+        if(!b) return false; b.click(); return true;
+      })()`);
+      await h.waitFor(`!!document.querySelector(".cloud-acct-section")`, { timeoutMs: 8000 }).catch(() => undefined);
+      await wait(500);
+      const state = await h.eval(`(function(){
+        const page=document.querySelector(".cloud-acct-section");
+        if(!page) return null;
+        const login=document.querySelector('[data-testid="cloud-login-simple"]');
+        const ready=document.querySelector('[data-testid="cloud-ready"]');
+        const tutorial=document.querySelector(".cloud-tutorial");
+        const adv=document.querySelector('[data-testid="cloud-advanced"]');
+        const loginBtn=[...page.querySelectorAll("button")].find((b)=>(b.textContent||"").includes("登录并自动配置"));
+        return {
+          login: !!login, ready: !!ready,
+          tutorial: !!tutorial, tutorialOpen: tutorial ? tutorial.open : null,
+          tutorialSteps: tutorial ? tutorial.querySelectorAll("ol > li").length : 0,
+          advanced: !!adv, advancedOpen: adv ? adv.open : null,
+          loginBtn: !!loginBtn,
+          manualButtons: page.querySelectorAll(".cloud-acct-advanced button").length,
+          readyRows: page.querySelectorAll(".cloud-acct-ready-row").length,
+          oneClick: [...page.querySelectorAll("button")].some((b)=>(b.textContent||"").includes("一键同步")),
+        };
+      })()`).catch(() => null);
+      h.check("① 云账号页打开，登录/就绪两种形态之一出现（不再一屏堆手动按钮）",
+        Boolean(nav && state && (state.login || state.ready)),
+        JSON.stringify({ nav, login: state?.login, ready: state?.ready }));
+      h.check("② 新手教程默认收起、展开后有三步",
+        Boolean(state?.tutorial && state.tutorialOpen === false && state.tutorialSteps >= 3),
+        JSON.stringify({ tutorial: state?.tutorial, open: state?.tutorialOpen, steps: state?.tutorialSteps }));
+      const tutorialOpened = state?.tutorial
+        ? await h.eval(`(function(){ const t=document.querySelector(".cloud-tutorial"); if(!t) return false; t.open=true; return t.open; })()`).catch(() => false)
+        : false;
+      h.check("③ 教程可展开（点开能看到三步与手动流程指引）",
+        Boolean(tutorialOpened),
+        JSON.stringify({ tutorialOpened }));
+      if (state?.ready) {
+        h.check("④ 登录态：就绪清单三行 + 一键同步，手动流程默认收起",
+          state.readyRows >= 3 && state.oneClick && state.advanced && state.advancedOpen === false,
+          JSON.stringify({ rows: state.readyRows, oneClick: state.oneClick, advanced: state.advanced, open: state.advancedOpen }));
+        const opened = await h.eval(`(function(){ const d=document.querySelector('[data-testid="cloud-advanced"]'); if(!d) return 0; d.open=true; return d.querySelectorAll("button").length; })()`).catch(() => 0);
+        h.check("⑤ 高级设置展开后手动流程仍在（重签 / 测试 / 上传下载等）",
+          Number(opened) >= 6,
+          JSON.stringify({ manualButtons: opened }));
+      } else {
+        h.check("④ 未登录态：登录卡有账号/密码与「登录并自动配置」主按钮", Boolean(state?.login && state?.loginBtn), JSON.stringify({ login: state?.login, btn: state?.loginBtn }));
+        h.check("⑤ 未登录态没有假的就绪清单（不画没登录的模型状态）", Boolean(state && !state.ready), JSON.stringify({ ready: state?.ready }));
+      }
+      await h.screenshot("cloud-simple");
+    },
+  },
+  {
     id: "file-summary",
     name: "㉓ 文件更改汇报 · 真回合全链路（运行中实时编辑行 + 收尾汇总卡 + 交互，10-06 两次重写）",
     run: async (h) => {
@@ -3784,7 +3847,8 @@ const LATEST_ROUND = "10-22";   // 10-22 轮：右栏标签改版（撤终端、
 // 上一轮（10-06）的五个验收项仍是回归证据：--only <id> 单跑，或 --all 全量。
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
-  "panel-tabs": "10-22",   // 10-22 轮：右栏标签撤终端、审阅顶到第二位（默认宽 308px 五个排不下）
+  "panel-tabs": "10-22",
+  "cloud-simple": "10-22",   // 10-22 轮：云账号登录即用（单卡登录 / 就绪清单 / 教程 / 手动流程折叠）   // 10-22 轮：右栏标签撤终端、审阅顶到第二位（默认宽 308px 五个排不下）
   "ui-sketch": "10-06",   // ⛔ 10-06 重写：三形态探针（手机+电脑屏 / platform web 真落盘）+ 预览 + 还原；编号改执行顺序
   "file-summary": "10-06",   // 文件更改汇报卡：运行中行/胶囊 + 收尾卡 + 悬停 diff 预览 + 交互（10-06 两次重写）
   "popup-fits": "10-06",   // ⛔ 10-06 新增：弹窗自适应普查（用户令「凡事弹窗类都要加自适应，不能被裁剪」）

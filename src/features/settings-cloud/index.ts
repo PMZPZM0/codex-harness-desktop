@@ -6,3 +6,4 @@
  */
 export { CloudAccountSection } from "./CloudAccountSection";
 export { CloudPointsBadge } from "./CloudPointsBadge";
+export { CloudAccountSyncBridge } from "./CloudAccountSyncBridge";
