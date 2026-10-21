@@ -6,7 +6,7 @@ area: ui
 title: Qoder 式本轮产物文件卡 + 右栏工作区文件预览联动
 tags: [file-cards, right-panel, rea, qoder]
 commits: [567c880]
-files: [src/features/status/OutputFileCards.tsx, src/lib/right-file.mjs, src/lib/right-file.d.mts, src/features/app-view/AppView/RightFileBridge.tsx, src/features/app-view/AppView/03-workspace-files.tsx, src/features/app-view/AppView/03-review-panel.tsx, src/features/app-view/AppView.tsx, src/features/status/Status.tsx, src/styles/04-cards-tools.css, src/styles/14-model-onboarding.css, electron/features/shell-ipc.ts, electron/ipc-channels.manifest.json, electron/ipc-registry.ts, scripts/guards/11p-file-summary.mjs, scripts/accept.mjs]
+files: [src/components/FileRefCard.tsx, src/features/shared/InlineCards.tsx, src/features/status/OutputFileCards.tsx, src/lib/right-file.mjs, src/lib/right-file.d.mts, src/features/app-view/AppView/RightFileBridge.tsx, src/features/app-view/AppView/03-workspace-files.tsx, src/features/app-view/AppView/03-review-panel.tsx, src/features/app-view/AppView.tsx, src/features/status/Status.tsx, src/styles/04-cards-tools.css, src/styles/14-model-onboarding.css, electron/features/shell-ipc.ts, electron/ipc-channels.manifest.json, electron/ipc-registry.ts, scripts/guards/11p-file-summary.mjs, scripts/accept.mjs]
 importance: normal
 ---
 
@@ -44,10 +44,13 @@ importance: normal
   点第一张 → 右栏 active tab「文件」、预览头 `notes.md`、面板 399×409；树里点 `AGENTS.md` → 预览正文 65,707 字。
 - 验收 `file-cards` 4/4（卡片数量/结构、点卡开右栏、打开方式三项、树预览真实内容）；默认轮 12/12；守卫 11p 69 条。
 
+## 补：正文内联引用（用户实测「你没改嘛，还是这种旧的」）
+用户截图里那个小芯片是**消息正文末尾的内联文件引用**（旧 `inline-file-card`），不是本轮产物卡。已把普通文件引用换成同一张 `FileRefCard`（默认右栏；编辑器 / 默认应用从下拉选），图片 / 音视频仍保留缩略芯片。真机探针：`USER.md` / `BACKGROUND.md` 两张卡；点开右栏预览 206 字。验收 `file-cards` 4 → 6 条（⑤ 扫描正文引用、⑥ 点开右栏）。
+
 ## 影响面
-回合底部新增产物卡（仅新建文件）；右栏「项目树」改名/升级为「文件」，单击预览、双击编辑器；
-新增 `shell:open` 通道与 `right-file` 事件箱。用户可感知：新建文件在对话里直接成卡，点一下右栏就能看内容，
-不用先开居中弹窗。
+回合底部新增产物卡（仅新建文件）；**消息正文末尾的内联文件引用**也升级为同款卡（默认右栏）；
+右栏「项目树」改名/升级为「文件」，单击预览、双击编辑器；新增 `shell:open` 通道与 `right-file` 事件箱。
+用户可感知：新建文件与正文提到的文件都直接成卡，点一下右栏就能看内容，不用先开居中弹窗。
 
 ## 回滚
 回退本提交。删除 `OutputFileCards` 与 `right-file` 事件箱、还原 `03-review-panel` 的树区与标签、移除
