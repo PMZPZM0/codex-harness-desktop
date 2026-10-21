@@ -11,6 +11,7 @@ import { FileCardMenu } from "../shared/InlineCards";
 import { getTurnFileChanges, getTurnLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
 import { setTurnReview, primeTurnReview, clearTurnReview, getTurnReview } from "../../lib/turn-review-store.mjs";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
+import { OutputFileCards } from "./OutputFileCards";
 import { openImageLightbox } from "../../lib/ui-channels";
 import { imageUrl } from "../../lib/image-url";
 import { isImagePath } from "../../lib/is-image-path";
@@ -160,8 +161,12 @@ export function CompletedChanges({ turn, onOpenFile, isLastTurn }: { turn: Turn;
     });
   };
   const visible = expanded ? files : files.slice(0, COLLAPSE_LIMIT);
+  /* 10-22 Qoder 式「本轮产物」：只给**新建文件**出卡片（编辑已有文件仍走下面的汇总卡），
+     避免同一批文件在卡片和汇总里重复两遍。最多 7 张、超出折叠（Qoder 同口径）。 */
+  const outputFiles = files.filter((file) => file.newFile && !file.deletedFile).map((file) => ({ path: file.path, added: file.added, deleted: file.deleted }));
   return (
     <>
+      {outputFiles.length > 0 && <OutputFileCards files={outputFiles} onOpenEditor={onOpenFile} />}
       <details className="completed-changes" open>
         <summary><FileCode2 size={15} /><strong>已更改 {files.length} 个文件</strong><span className="diff-add">+{totals.added}</span><span className="diff-delete">-{totals.deleted}</span><ChevronDown size={14} /></summary>
         <div>

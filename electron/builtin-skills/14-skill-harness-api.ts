@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（98 个能力域 / 511 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（98 个能力域 / 512 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -365,9 +365,9 @@ SkillHub **人格市场**（skillhub.cn/soul，16 套现成人格）：list 浏�
 用系统默认浏览器打开外部链接
 通道：external:open
 
-### shell（1 通道）
+### shell（2 通道）
 系统默认方式打开文件/目录
-通道：shell:reveal
+通道：shell:reveal, shell:open
 
 ### scratch（1 通道）
 临时便签（快速记一条）
