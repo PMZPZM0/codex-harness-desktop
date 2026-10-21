@@ -7,7 +7,7 @@
  */
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
-import { contentOffsetTop, jumpToBottom, scrollToOffsetInstant } from "../../../../../components/scroll-utils";
+import { contentOffsetTop, jumpToBottom, scrollToOffsetInstant, setScrollUserDetached } from "../../../../../components/scroll-utils";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 
@@ -73,6 +73,8 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
     const scroller = bag.scrollRef.current;
     if (!scroller) return;
     let lastTop = scroller.scrollTop; // 供 update 识别「指针拖拽期间的位置变化」
+    /** 最近一次真实滚轮的时刻：只用来判「用户是不是真的往上滚了」，不看 deltaY 方向。 */
+    let lastWheelAt = 0;
     let pointerDown = false;
     // 本 effect 与 [thread?.id, scrollRef] 绑定，所以这里捕获的就是"当前显示的会话"：
     // 钉顶休眠在别的会话上时，跟随/贴底都按普通模式走（见 update 里的 gate）。
@@ -148,6 +150,12 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
       }
     };
     const update = () => {
+      /* 用户真实滚轮把视口往上挪了 ⇒ 标记「离开底部」，jumpToBottom 的全局闸门
+         从此拦下所有自动跳底（resume / 顶部续载 / switch-jump 都包括）。
+         ⛔ 只看"滚轮后的实际位移"，不看 deltaY 符号：自然滚动/触控板方向可能相反。 */
+      if (Date.now() - lastWheelAt < 300 && scroller.scrollTop < lastTop - 2) {
+        setScrollUserDetached(true);
+      }
       shrinkAnchorPad();
       const cb = contentBottom();
       const prevBottom = lastBottomRef.current;
@@ -262,6 +270,7 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
       // ⚠️ 钉顶进行中不许把 stick 置真（09-13 审计）：(anchor=true, stick=true) 会同时成立，
       // 而不同消费者对这对标志的解释不一致（有的看 `stick && !anchor`、有的只看 stick）
       // → 同一状态在不同路径行为不同 = "有时跳有时不跳"，调阈值救不了。
+      if (dist <= 4) setScrollUserDetached(false);   // 滚回底部：自动跳底闸门解除
       if (dist <= 4 && !bag.anchorTopRef.current) bag.stickToBottomRef.current = true;
       else if (dist > scroller.clientHeight * 0.25) bag.stickToBottomRef.current = false;
       // ⛔ 这里**不再**用「scrollTop 方向」猜用户意图（09-12 拆除，勿加回来）。
@@ -289,7 +298,7 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
        · 思考浮窗是 portal、刻度尺 wheel 里 stopPropagation ⇒ scroller 上的监听根本收不到。
        用户 10-21 实测「滚轮往上就自动弹回底部」正是这两条缝。capture 在 window 上，
        任何真实滚轮输入都让自动跟随让位（滚回底部会立刻重新贴底，语义不变）。 */
-    const onWheel = () => releaseToUser("wheel");
+    const onWheel = () => { lastWheelAt = Date.now(); releaseToUser("wheel"); };
     const onTouchMove = () => releaseToUser("touch");
     const onKeyDown = (event: Event) => {
       const key = (event as unknown as { key?: string }).key ?? "";

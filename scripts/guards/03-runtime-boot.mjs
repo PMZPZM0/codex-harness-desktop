@@ -418,7 +418,7 @@ console.log(C.bold("\n【10】滚动与锚定状态：单一 owner + 默认值�
 
   // ⑤ 10-21 用户实测「滚轮往上就自动弹回底部」：解除跟随不能看 deltaY 方向、也不能只挂 scroller。
   //    自然滚动会把上滚报成正值；思考浮窗是 portal、刻度尺 stopPropagation ⇒ 旧监听收不到。
-  (/const onWheel = \(\) => releaseToUser\("wheel"\)/.test(appSrc)
+  (/const onWheel = \(\) => [^\n]*releaseToUser\("wheel"\)/.test(appSrc)
     && /window\.addEventListener\("wheel", onWheel, \{ passive: true, capture: true \}\)/.test(appSrc)
     && /window\.removeEventListener\("wheel", onWheel, \{ capture: true \}\)/.test(appSrc)
     && !/deltaY < 0\) releaseToUser/.test(appSrc) ? ok : fail)(
@@ -431,6 +431,17 @@ console.log(C.bold("\n【10】滚动与锚定状态：单一 owner + 默认值�
     const exp = appSrc.indexOf("expandTurnWindow(id, grow)");
     (rel >= 0 && exp > rel && exp - rel < 6000 ? ok : fail)(
       "续载更早历史先 releaseToUser（否则滚到顶部会被贴底跟随回弹到底部）"
+    );
+  }
+
+  // ⑦ 用户离开底部后，所有自动跳底一律作废（长会话 resume / 续载 / switch-jump 的最终闸门）。
+  {
+    const util = readFileSync(join(ROOT, "src", "components", "scroll-utils.ts"), "utf8");
+    (/let userDetached = false;[\s\S]{0,200}?export function setScrollUserDetached/.test(util)
+      && /export function jumpToBottom\([\s\S]{0,900}?if \(userDetached\) \{[\s\S]{0,120}?return;/.test(util)
+      && /const tick = \(\) => \{[\s\S]{0,300}?if \(userDetached\)/.test(util)
+      && /setScrollUserDetached\(true\)/.test(appSrc) && /setScrollUserDetached\(false\)/.test(appSrc) ? ok : fail)(
+      "用户滚离底部后自动跳底全局作废（jumpToBottom 起点+每帧都检查；滚回底部解除）"
     );
   }
 }

@@ -13,6 +13,16 @@ export function contentOffsetTop(el: HTMLElement, scroller: HTMLElement) {
   return el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
 }
 
+/* ── 用户离开底部的全局闸门（10-21）────────────────────────────────────
+   用户滚上去看历史后，任何「自动跳到底部」都不许再执行——长会话 resume /
+   顶部续载 / 切会话的 switch-jump 都可能在后续 thread 更新里重新触发，
+   逐个调用点清不干净（用户实测「滚到顶部、加载新一页就回弹到最新」）。
+   ⇒ 唯一的程序滚动入口 jumpToBottom 统一检查；滚回底部（dist≤4）自动解除。
+   ⛔ 只拦"自动跳底"，不拦用户自己点「回到底部」（那个走 scrollToOffsetInstant）。 */
+let userDetached = false;
+export function setScrollUserDetached(detached: boolean) { userDetached = detached; }
+export function isScrollUserDetached() { return userDetached; }
+
 /**
  * 瞬时滚动到指定内容坐标（绕过 CSS scroll-behavior:smooth 的平滑动画）。
  *
@@ -59,12 +69,23 @@ export function jumpToBottom(
     onSettled?.();
     return;
   }
+  // 用户已经在上面看历史 ⇒ 这次自动跳底直接作废（连动画帧都不排）。
+  if (userDetached) {
+    onSettled?.();
+    return;
+  }
   scroller.style.scrollBehavior = "auto";
   let lastHeight = -1;
   let stableFrames = 0;
   let totalFrames = 0;
   const MAX_FRAMES = 60; // ~1s 上限（60 * 16ms），超过即强制 settled
   const tick = () => {
+    // 跳底循环途中用户滚上去了 ⇒ 立刻停手，别把他拽回来。
+    if (userDetached) {
+      scroller.style.scrollBehavior = "";
+      onSettled?.();
+      return;
+    }
     totalFrames += 1;
     scroller.scrollTop = getTarget(scroller);
     if (scroller.scrollHeight === lastHeight) {
