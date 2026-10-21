@@ -8,6 +8,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { setUserIdentity, type UserAvatarSpec } from "../../../../../lib/user-identity.mjs";
+import { avatarAsset } from "../../../../../lib/avatar-presets";
 import { readStoredCodexAvatar, storeCodexAvatar, setCodexIdentity, getCodexIdentity, subscribeCodexIdentity, CODEX_DEFAULT_NAME, type CodexAvatarSpec } from "../../../../../lib/codex-identity.mjs";
 import type { RateLimitCtx, BotEntry } from "../../types";
 import type { Bag } from "../../bag-types";
@@ -96,7 +97,17 @@ bag.projectFilter = projectFilter as typeof bag.projectFilter; bag.setProjectFil
 bag.username = username as typeof bag.username; bag.setUsername = setUsername as typeof bag.setUsername;
 
 
-  const [userAvatar, setUserAvatar] = useState<UserAvatarSpec | null>(() => { try { const p = JSON.parse(localStorage.getItem("user-profile") || "{}"); return p.avatarType && p.avatar ? { type: p.avatarType, value: p.avatar } : null; } catch { return null; } });
+  /* 10-21：没头像的老档案不再显示名字首字母 —— 默认发熊猫插画头像；
+     用户在「用户中心」选其它内置头像或上传后可覆盖。 */
+  const [userAvatar, setUserAvatar] = useState<UserAvatarSpec | null>(() => {
+    try {
+      const p = JSON.parse(localStorage.getItem("user-profile") || "{}");
+      if (p.avatarType && p.avatarType !== "none" && p.avatar) return { type: p.avatarType, value: p.avatar };
+      return { type: "image", value: avatarAsset("user-panda.png") };
+    } catch {
+      return { type: "image", value: avatarAsset("user-panda.png") };
+    }
+  });
 bag.userAvatar = userAvatar as typeof bag.userAvatar; bag.setUserAvatar = setUserAvatar as typeof bag.setUserAvatar;
 
 

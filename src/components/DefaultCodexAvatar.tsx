@@ -21,6 +21,8 @@
  *
  *  用户上传自定义头像后这个组件不再使用（由 <img> 接管，失败时回退到这里）。
  */
+import { avatarAsset, CODEX_DEFAULT_AVATAR_FILE } from "../lib/avatar-presets";
+
 export function DefaultCodexAvatar({ size = 24 }: { size?: number }) {
   return (
     <span
@@ -29,6 +31,15 @@ export function DefaultCodexAvatar({ size = 24 }: { size?: number }) {
       role="img"
       aria-label="Codex 默认头像"
     >
+      {/* 10-21：换成定制机器人头像；图片加载失败时隐藏它，露出下面的渐变 + 四角星兜底
+          （CSS 渐变是硬要求：SVG url(#id) 在视口外回合会解析不到，见文件头注释）。 */}
+      <img
+        className="codex-avatar-default-img"
+        src={avatarAsset(CODEX_DEFAULT_AVATAR_FILE)}
+        alt=""
+        draggable={false}
+        onError={(event) => { event.currentTarget.style.display = "none"; }}
+      />
       {/* 只画白色图形，不带任何 id / url(#…) 引用 */}
       <svg className="codex-avatar-spark" viewBox="0 0 32 32" width="100%" height="100%" aria-hidden="true">
         {/* 四角星：细长十字 + 中心实心，比纯十字更有"闪光"感 */}

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Camera, UserRound, Briefcase, GraduationCap, Clock3, Heart, Languages, Lightbulb, Save, Wand2, LogOut, RotateCcw } from "lucide-react";
 import { DefaultCodexAvatar } from "./DefaultCodexAvatar";
 import { CODEX_DEFAULT_NAME, type CodexAvatarSpec } from "../lib/codex-identity.mjs";
+import { avatarAsset, USER_AVATAR_PRESETS } from "../lib/avatar-presets";
 
 export type UserProfile = {
   nickname: string;
@@ -19,13 +20,10 @@ export type UserProfile = {
 };
 
 export function defaultProfile(): UserProfile {
-  return { nickname: "", avatarType: "none", avatar: "", occupation: "", field: "", hobby: "", habit: "", style: "pragmatic", language: "中文", timezone: "Asia/Shanghai", bio: "" };
+  /* 10-21：没有头像时不再只显示名字首字母 —— 默认发一只熊猫插画头像（用户可选其它或上传）。
+     旧档案里 avatarType=none 的也在下面初始化时补成同一个默认，避免「看起来还是 A」。 */
+  return { nickname: "", avatarType: "image", avatar: avatarAsset("user-panda.png"), occupation: "", field: "", hobby: "", habit: "", style: "pragmatic", language: "中文", timezone: "Asia/Shanghai", bio: "" };
 }
-
-const AVATAR_PRESETS = [
-  "🐼", "🦊", "🐯", "🐱", "🐶", "🦁", "🐨", "🐰", "🦄", "🐳",
-  "🚀", "💎", "🔥", "🌊", "🍀", "⭐", "🌈", "🎯", "🎨", "⚡",
-];
 
 const STYLE_OPTIONS = [
   { value: "pragmatic", label: "务实" },
@@ -56,7 +54,13 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
       // 兼容旧数据：avatar 是纯 emoji 时归为 emoji，是 data:/http 时归为 image
       let avatarType = raw.avatarType || "none";
       if (!avatarType && raw.avatar) avatarType = /^data:|^https?:\/\//.test(raw.avatar) ? "image" : "emoji";
-      return { ...defaultProfile(), ...raw, avatarType, nickname: raw.nickname || "" };
+      const merged = { ...defaultProfile(), ...raw, avatarType, nickname: raw.nickname || "" };
+      // 10-21：老档案没头像（none/空）时补默认插画，避免仍是名字首字母的大 A。
+      if (avatarType === "none" || !raw.avatar) {
+        merged.avatarType = "image";
+        merged.avatar = avatarAsset("user-panda.png");
+      }
+      return merged;
     } catch { return defaultProfile(); }
   });
   const fileRef = useRef<HTMLInputElement>(null);
@@ -85,7 +89,12 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
 
   const setField = (key: keyof UserProfile, value: string) => setProfile((p) => ({ ...p, [key]: value }));
 
-  const pickEmoji = (emoji: string) => setProfile((p) => ({ ...p, avatar: emoji, avatarType: "emoji" }));
+  /** 选内置头像：立即同步到侧栏/消息头（与上传头像同一套回调；资料里的其它字段仍点保存）。 */
+  const pickPresetAvatar = (file: string) => {
+    const value = avatarAsset(file);
+    setProfile((p) => ({ ...p, avatar: value, avatarType: "image" }));
+    onProfileChange?.({ avatarType: "image", avatar: value });
+  };
 
   /** 头像统一压到 128×128（居中裁正方形）再转 dataURL。
    *  ⛔ 为什么必须压：原来直接 readAsDataURL 原图 —— 用户传一张 3MB 照片就是 4MB+ 的 base64，
@@ -177,9 +186,25 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
           <div className="uc-head-info">
             <div className="uc-name">{profile.nickname || username || "未设置昵称"}</div>
             <div className="uc-meta">{profile.occupation || "未填写职业"} · {profile.field || "未填写领域"}</div>
-            <div className="uc-preset-hint">或选一个表情头像：</div>
-            <div className="uc-presets">
-              {AVATAR_PRESETS.slice(0, 10).map((emoji) => <button key={emoji} className={profile.avatarType === "emoji" && profile.avatar === emoji ? "active" : ""} onClick={() => pickEmoji(emoji)}>{emoji}</button>)}
+            <div className="uc-preset-hint">或选一个内置头像：</div>
+            <div className="uc-presets uc-presets-images">
+              {USER_AVATAR_PRESETS.map((preset) => {
+                const value = avatarAsset(preset.file);
+                const active = profile.avatarType === "image" && profile.avatar === value;
+                return (
+                  <button
+                    type="button"
+                    key={preset.id}
+                    className={active ? "active" : ""}
+                    title={preset.label}
+                    aria-label={`使用${preset.label}头像`}
+                    aria-pressed={active}
+                    onClick={() => pickPresetAvatar(preset.file)}
+                  >
+                    <img src={value} alt="" loading="lazy" />
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -213,7 +238,7 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
           <div className="codex-id-avatar">
             {codexAvatar?.type === "image" && codexAvatar.value
               ? <img src={codexAvatar.value} alt="Codex 头像" />
-              : <DefaultCodexAvatar size={56} />}
+              : <DefaultCodexAvatar size={60} />}
             <button className="codex-id-avatar-btn" title="上传 Codex 头像（建议用正方形图片）" onClick={() => codexFileRef.current?.click()}><Camera size={12} /></button>
             {codexAvatar?.type === "image" && (
               <button className="codex-id-avatar-btn reset" title="恢复到默认头像" onClick={() => { onCodexAvatarChange?.({ type: "default", value: "" }); onNotice("已恢复默认头像"); }}><RotateCcw size={12} /></button>
