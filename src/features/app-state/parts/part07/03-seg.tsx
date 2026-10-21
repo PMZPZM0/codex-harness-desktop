@@ -184,6 +184,9 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
    *  ② 内存耗尽且有游标 → thread/turns/list 按 cursor 拉**一页**（200）拼到最前。
    *  拼接会让视口上方长高，按 scrollHeight 增量补偿 scrollTop，视口内容不跳。
    *  loadingEarlierRef 防重入：滚动近顶自动触发 + 按钮点击共用这一个入口。 */
+  /** 上一次续载的时刻：一次用户手势只加载一页，布局/程序滚动不许连环触发。 */
+  let lastHistoryLoadAt = 0;
+
   async function loadEarlierTurns(id: string) {
     if (bag.loadingEarlierRef.current.has(id)) return;
     const current = bag.threadCacheRef.current.get(id) ?? bag.threadRef.current;
@@ -197,6 +200,11 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
        高度变化被贴底跟随（height-follow）当成"底部又长了" ⇒ 直接跳到 contentTail。
        用户此刻是在看历史，必须先交出跟随权（同时撤钉顶留白）。 */
     bag.releaseToUserRef.current?.("history");
+    /* ⛔ 一次续载消费掉本次用户滚动信号：续载后滚动位置仍在续载区时，布局/程序滚动
+       会不断触发 onTimelineScroll ⇒ 一次手势把全部历史加载出来、页面狂闪。
+       下一次真实滚轮/触摸由 part09 的 window 监听重新置真，一次手势最多加载一页。 */
+    bag.userScrolledRef.current = false;
+    lastHistoryLoadAt = Date.now();
     bag.loadingEarlierRef.current.add(id);
     bag.setEarlierLoadingId(id);
     // ⛔ 兜底：任何异常路径都不许让「正在载入」与防重入锁长期持有——实测续载请求挂起时，
@@ -341,6 +349,8 @@ bag.loadEarlierTurns = loadEarlierTurns as typeof bag.loadEarlierTurns;
     // 只有用户真的滚过才响应：程序化滚动（打开时跳底、插入内容后的位置补偿）也会把
     // scrollTop 扫过近顶区间，据此加载就成了「没滚也加载」。
     if (!bag.userScrolledRef.current) return;
+    // 冷却窗：同一手势内的多次 wheel/scroll 只允许触发一页（防止一次滚动拉完全部历史）。
+    if (Date.now() - lastHistoryLoadAt < 600) return;
     const id = bag.threadRef.current?.id;
     if (!id || bag.switchJumpPending()) return;
     // 回到最新（贴底）：把往上滚期间展开的历史窗口收回基线（用户 09-14：滚下来后不该
