@@ -841,7 +841,7 @@ const CHECKS = [
         await h.eval(`(function(){ localStorage.setItem("reasoning-display-mode","strip"); window.dispatchEvent(new CustomEvent("codex:reasoning-display-mode",{detail:"strip"})); return 1; })()`);
         await wait(800);
         let found = null;
-        const rows = Math.min(Number(await h.eval(`document.querySelectorAll(".thread-row").length`)) || 0, 8);
+        const rows = Math.min(Number(await h.eval(`document.querySelectorAll(".thread-row").length`)) || 0, 20);
         for (let i = 0; i < rows && !found; i++) {
           await h.eval(`(function(){ var rows=[...document.querySelectorAll(".thread-row")]; rows[${i}] && rows[${i}].click(); return 1; })()`);
           await wait(1200);
@@ -861,13 +861,37 @@ const CHECKS = [
             return all.find(function(x){ return x.textW <= x.previewW + 1; }) || null;
           })()`).catch(() => null);
         }
-        h.check("① 前置：找到一条短内容的完成态思考长条（strip 模式）", Boolean(found), JSON.stringify(found).slice(0, 220));
+        /* 历史里可能一条短思考都没有（PP/云助手 profile 实测）⇒ 用**真实 CSS 类**建一个
+           临时夹具量同一套规则；它验的是产物样式，不是假组件。有真实短条时优先用真实条。 */
+        let fixture = false;
+        const hadReal = await h.eval(`!!document.querySelector(".reasoning-strip.done")`).catch(() => false);
+        if (!found) {
+          fixture = true;
+          found = await h.eval(`(function(){
+            var host = document.querySelector(".timeline");
+            if (!host) return null;
+            var el = document.createElement("div");
+            el.id = "__rs_accept_fixture";
+            el.className = "reasoning-strip done collapsed";
+            el.style.margin = "12px 0";
+            el.innerHTML = '<button type="button" class="reasoning-strip-head"><span class="reasoning-head">已深度思考</span><span class="reasoning-strip-sep">·</span><span class="reasoning-strip-preview"><span class="reasoning-strip-static">知识库目录不存在。</span></span><span class="reasoning-strip-hint">展开</span></button>';
+            host.appendChild(el);
+            var head = el.querySelector(".reasoning-head"), prev = el.querySelector(".reasoning-strip-preview"), text = el.querySelector(".reasoning-strip-static");
+            var hr = head.getBoundingClientRect(), pr = prev.getBoundingClientRect(), tr = text.getBoundingClientRect();
+            return { headRight: Math.round(hr.right), previewLeft: Math.round(pr.left), textLeft: Math.round(tr.left),
+              previewW: Math.round(pr.width), textW: Math.round(text.scrollWidth), previewCls: String(prev.className), fixture: true };
+          })()`).catch(() => null);
+        }
+        h.check(`① 前置：找到短内容思考长条（strip 模式；${fixture ? "无历史 → 真实 CSS 夹具" : "真实历史"}）`,
+          Boolean(found), JSON.stringify(found).slice(0, 220));
         if (!found) return;
         h.check("② 短内容紧跟标题（正文左缘贴 preview 左缘、距标题 ≤ 40px；不是靠右的尾部截断）",
           found.textLeft != null && found.textLeft - found.headRight <= 40
             && !String(found.previewCls).includes("is-overflowing")
             && Math.abs(found.textLeft - found.previewLeft) <= 2,
           JSON.stringify(found).slice(0, 220));
+        if (!hadReal) console.log("  \x1b[90m（该 profile 无真实思考长条历史，跳过第③条展开/收起交互）\x1b[0m");
+        if (!hadReal) return;
         const expanded = await h.eval(`(function(){
           var s = document.querySelector(".reasoning-strip.done");
           var b = s && s.querySelector(".reasoning-strip-head");
@@ -889,7 +913,7 @@ const CHECKS = [
           JSON.stringify({ expanded, bodyShown, collapsed, bodyHidden }));
         await h.screenshot("reasoning-strip");
       } finally {
-        await h.eval(`(function(){ localStorage.setItem("reasoning-display-mode","auto"); window.dispatchEvent(new CustomEvent("codex:reasoning-display-mode",{detail:"auto"})); return 1; })()`).catch(() => undefined);
+        await h.eval(`(function(){ var f=document.getElementById("__rs_accept_fixture"); if(f) f.remove(); localStorage.setItem("reasoning-display-mode","auto"); window.dispatchEvent(new CustomEvent("codex:reasoning-display-mode",{detail:"auto"})); return 1; })()`).catch(() => undefined);
         await h.eval(`(function(){ var rows=[...document.querySelectorAll(".thread-row")]; rows[0] && rows[0].click(); return 1; })()`).catch(() => undefined);
       }
     },
