@@ -418,23 +418,38 @@ console.log(C.bold("\n【10】滚动与锚定状态：单一 owner + 默认值�
 
   // ⑤ 10-21 用户实测「滚轮往上就自动弹回底部」：解除跟随不能看 deltaY 方向、也不能只挂 scroller。
   //    自然滚动会把上滚报成正值；思考浮窗是 portal、刻度尺 stopPropagation ⇒ 旧监听收不到。
-  (/const onWheel = \(event[^)]*\) => \{[\s\S]{0,500}?releaseToUser\("wheel"\)/.test(appSrc)
+  (/const onWheel = \(\) => \{[\s\S]{0,400}?releaseToUser\("wheel"\)/.test(appSrc)
     && /window\.addEventListener\("wheel", onWheel, \{ passive: true, capture: true \}\)/.test(appSrc)
     && /window\.removeEventListener\("wheel", onWheel, \{ capture: true \}\)/.test(appSrc)
     && !/deltaY < 0\) releaseToUser/.test(appSrc) ? ok : fail)(
     "滚轮解除跟随不看方向、走 window capture（自然滚动 / portal / stopPropagation 都拦不住）"
   );
+  {
+    const wheelStart = appSrc.indexOf("const onWheel =");
+    const wheelBody = wheelStart >= 0 ? appSrc.slice(wheelStart, wheelStart + 600) : "";
+    (!/loadEarlierTurns/.test(wheelBody) ? ok : fail)(
+      "★ 滚轮本身不加载历史（10-21：加载只在占位区边界按页触发，到顶再滚的老路径已删）"
+    );
+  }
 
-  // ⑥ 续载更早历史先交出跟随权：上方插内容会被 height-follow 当成"底部增长"→ 回弹到底部。
+  // ⑥ 水合更早历史：占位区高度随窗口收缩/插入同步变化，锚点在扩窗前交接，首帧在 paint 前补偿。
   {
     const rel = appSrc.indexOf('releaseToUserRef.current?.("history")');
     const exp = appSrc.indexOf("expandTurnWindow(id, grow)");
-    (rel >= 0 && exp > rel && exp - rel < 6000
-      && /const loadZone = Math\.max\(1200, \(el0\?\.clientHeight \?\? 0\) \* 1\.5\)/.test(appSrc)
-      && /const nearTop = beforeTop <= loadZone/.test(appSrc) && /if \(nearTop\)/.test(appSrc)
+    (rel >= 0 && exp > rel && exp - rel < 9000
+      && /setHistoryPinState\(el0, pinState\)/.test(appSrc)
+      && /cancelHistoryPin\(el0\)/.test(appSrc)
+      && /const inSpacer =/.test(appSrc) && /spacer-land/.test(appSrc)
       && /userScrolledRef\.current = false;[\s\S]{0,300}?lastHistoryLoadAt = Date\.now\(\)/.test(appSrc)
-      && /Date\.now\(\) - lastHistoryLoadAt < 600/.test(appSrc) ? ok : fail)(
-      "续载更早历史先 releaseToUser；顶部续载区保持原位；一次手势只加载一页（消费滚动信号 + 600ms 冷却）"
+      && /Date\.now\(\) - lastHistoryLoadAt < 350/.test(appSrc)
+      && !/nearTop/.test(appSrc) && !/loadZone/.test(appSrc) ? ok : fail)(
+      "续载先 releaseToUser；扩窗前交接锚点并登记首帧补偿；占位区边界按页水合（350ms 冷却 + 消费滚动信号）"
+    );
+    const histPage = Number((appSrc.match(/const HISTORY_PAGE = (\d+);/) ?? [])[1] ?? NaN);
+    (Number.isFinite(histPage) && histPage >= 1 && histPage <= 5
+      && /grow = Math\.min\(hidden, HISTORY_PAGE\)/.test(appSrc)
+      && /limit: HISTORY_PAGE/.test(appSrc) ? ok : fail)(
+      `历史水合单页 = ${histPage} 回合（比首屏页更小：老回合常有巨型工具输出，一次挂 5 条会阻塞主线程十几秒）`
     );
   }
 
@@ -870,14 +885,44 @@ const appSrc4 = readAppUi();
   /turnsCursorRef\.current\.set/.test(lightSig)
     ? ok("取页同时记下游标（往上滚能续到更早，不会重拉最新页）")
     : fail("取页没有记游标 —— 续拉会重复拉最新一页");
-  const scrollFn = appSrc4.slice(appSrc4.indexOf("function onTimelineScroll"), appSrc4.indexOf("function onTimelineScroll") + 900);
+  /* 10-21 虚拟滚动条：打开会话时后台拉**全量回合元数据**（itemsView:"notLoaded"，
+     不含正文），滚动条长度才能覆盖整段历史。 */
+  /primeTurnHistory\(params\.threadId/.test(lightSig)
+    ? ok("打开会话后台拉全量回合元数据（不阻塞打开）")
+    : fail("没有拉回合元数据 —— 滚动条只按已加载的 5 个回合算长度，不知道总历史");
+  const turnHistorySrc = readFileSync(join(ROOT, "src/lib/turn-history.mjs"), "utf8");
+  /itemsView:\s*"notLoaded"/.test(turnHistorySrc) && /sortDirection:\s*"desc"/.test(turnHistorySrc)
+    ? ok("★ 元数据分页走 notLoaded（只回 id/startedAt，不序列化工具输出）")
+    : fail("元数据分页没用 notLoaded —— 等于又全量水合一遍历史");
+  !/itemsView:\s*"full"/.test(turnHistorySrc)
+    ? ok("★ 元数据缓存里不许出现 full（正文只允许按页水合）")
+    : fail("元数据缓存混进了 full 请求 —— 会把整段历史正文都拉回来");
+  const timelineSrc = readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/01-timeline.tsx"), "utf8");
+  /turnHistoryPlan\(/.test(timelineSrc) && /timeline-history-spacer/.test(timelineSrc) && /data-history-hidden/.test(timelineSrc)
+    ? ok("★ 时间线按总回合数渲染顶部占位区（滚动条看见整段历史）")
+    : fail("时间线没有按总回合数撑占位区 —— 滚动条仍只按当前窗口，往上滚到底就回弹");
+  /historyPinStateFor\(el\)/.test(timelineSrc) && /pin\.expectedLimit/.test(timelineSrc)
+    ? ok("★ 水合首帧由 layout effect 在 paint 前补偿（不是晚一帧的 rAF）")
+    : fail("水合只靠 rAF 补偿 —— 大会话渲染慢时会看到一整屏闪跳");
+  const scrollStart = appSrc4.indexOf("function onTimelineScroll");
+  /* readAppUi() 会剥掉 `bag.` 前缀 ⇒ 赋值行是 `onTimelineScroll = onTimelineScroll`。 */
+  const scrollEnd = appSrc4.indexOf("onTimelineScroll = onTimelineScroll", scrollStart);
+  const scrollFn = scrollStart >= 0 && scrollEnd > scrollStart ? appSrc4.slice(scrollStart, scrollEnd) : "";
   /userScrolledRef\.current/.test(scrollFn)
     ? ok("★ 自动续载只认「真实用户滚动」（滚轮/触摸/翻页键/拖滚动条）")
     : fail("自动续载又只看 scrollTop —— 打开会话的程序化滚动会让「用户没滚也加载」");
-  /activeHistoryAnchorPin\.has\(el\)/.test(scrollFn)
-    ? ok("★ 锚点补偿期间忽略程序化 scroll（否则自动续载连环触发，视图翻到上一页/最前）")
-    : fail("补偿改 scrollTop 会被当成用户上滚 —— 自动续载会连环加载（10-20 实测）");
-  const anchorFn = appSrc4.slice(appSrc4.indexOf("async function loadEarlierTurns"), appSrc4.indexOf("async function loadEarlierTurns") + 7600);
+  /selfScrollUntilRef\.current/.test(scrollFn) && /hasHistoryPin\(el\)/.test(scrollFn) === false
+    ? ok("★ 只忽略补偿自己写 scrollTop 的 scroll；用户的新滚动立刻能续下一页")
+    : fail("补偿期间把用户滚动也一起挡了 —— 快滚会越过占位区边界（随后被当成拖到顶跳一下）");
+  /movingDown/.test(scrollFn)
+    ? ok("★ 下滚不做历史水合（避免反向滚动时反复插内容/锚点补偿）")
+    : fail("下滚也触发历史水合 —— 回到底部过程中会一顿一顿的，甚至被新水合带离底部");
+  /spacerH\s*>\s*0\s*\?\s*spacerH \+ margin/.test(scrollFn)
+    ? ok("★ 触发点是占位区边界 + 缓冲屏（不再看文档顶 / scrollTop≤4）")
+    : fail("续载触发点还是文档顶 —— 长会话一到顶就回弹的老问题会回来");
+  const loadStart = appSrc4.indexOf("async function loadEarlierTurns");
+  const loadEnd = appSrc4.indexOf("loadEarlierTurns = loadEarlierTurns", loadStart);
+  const anchorFn = loadStart >= 0 && loadEnd > loadStart ? appSrc4.slice(loadStart, loadEnd) : "";
   /anchorNode/.test(anchorFn) && /isConnected/.test(anchorFn)
     ? ok("★ 位置补偿用锚点元素（content-visibility 下 scrollHeight 不可靠）")
     : fail("位置补偿退回 scrollHeight 增量 —— 上方插入内容会把用户看的内容顶飞");
@@ -893,9 +938,18 @@ const appSrc4 = readAppUi();
   /const deadline = performance\.now\(\) \+ 1500/.test(anchorFn) && /requestAnimationFrame\(pin\)/.test(anchorFn)
     ? ok("★ 续载位置补偿多帧收敛（10-20 拉长到 1500ms，覆盖表格/图片/代码高亮的延迟结算）")
     : fail("续载只做一次位置补偿 —— 用户上滚会跳到上一页最上面（10-19 实测）");
-  /activeHistoryAnchorPin\.get\(el0\)/.test(anchorFn) && /activeHistoryAnchorPin\.set\(el, cancel\)/.test(anchorFn)
-    ? ok("★ 连续翻页先取消上一轮锚点钉住（两轮补偿不许互相抢 scrollTop）")
-    : fail("连续翻页时两轮位置补偿会并存 —— 锚点会被二次顶飞（10-20 验收实测 717px）");
+  /cancelHistoryPin\(el0\)/.test(anchorFn) && /setHistoryPin\(el0, pinCancel\)/.test(anchorFn)
+    ? ok("★ 连续翻页在扩窗前交接上一轮锚点（拉取期间旧钉住继续跑，不提前撤）")
+    : fail("连续翻页时两轮位置补偿会并存或提前撤掉 —— 都会让锚点被顶飞");
+  /setHistoryPinState\(el0, pinState\)/.test(anchorFn) && /expectedLimit:\s*rendered \+ grow/.test(anchorFn)
+    ? ok("★ 扩窗前登记锚点状态 + 期望窗口（layout effect 只在这个提交上补一次）")
+    : fail("水合没把锚点状态交给 layout effect —— 首帧会晚一帧补偿（闪跳）");
+  /const inSpacer =/.test(anchorFn) && /spacer-land/.test(anchorFn)
+    ? ok("拖到占位区深处时落到新占位区下沿（不会停在纯空白里）")
+    : fail("拖到顶没有落点处理 —— 会停在占位区中间的一片空白");
+  !/nearTop/.test(anchorFn) && !/loadZone/.test(anchorFn)
+    ? ok("★ 已删除「顶部续载区保持原位置」旧分支（它会把滚动条推回列表底部）")
+    : fail("nearTop/loadZone 旧补偿分支又回来了 —— 滚到顶部续载会回弹");
   /const anchorId = anchorNode\?\.id \?\? ""/.test(anchorFn) && /document\.getElementById\(anchorId\)/.test(anchorFn) && /el\.contains\(byId\)/.test(anchorFn)
     ? ok("★ 锚点按稳定 turn id 重新解析（React 重渲染替换节点也不丢）")
     : fail("锚点只存 DOM 引用 —— 续载重渲染后 isConnected=false，会误走 scrollHeight 回退跳页（10-20 实测）");
@@ -925,10 +979,18 @@ const appSrc4 = readAppUi();
   /TURN_WINDOW/.test(collapseFn) && !/turns:/.test(collapseFn) && !/setThread/.test(collapseFn)
     ? ok("★ 窗口回收只重置渲染窗口（不动 thread.turns / 不触发拉取）")
     : fail("窗口回收动了数据 —— 收起后再看历史得重新请求，且可能与引擎状态打架");
-  const scrollFn2 = appSrc4.slice(appSrc4.indexOf("function onTimelineScroll"), appSrc4.indexOf("function onTimelineScroll") + 900);
+  const scrollFn2 = scrollFn;
   /collapseTurnWindow\(id\)/.test(scrollFn2) && /clientHeight/.test(scrollFn2)
     ? ok("★ 滚回最新（贴底）即收回窗口，切会话回来是初始态")
     : fail("没有「贴底即收回窗口」—— 展开过的历史会一直撑着渲染");
+  /* ⛔ 10-21 血泪：contentBottomOf 只能扣**内容下方**的尾部留白。
+     顶部的历史占位区把内容整体往下推，扣掉它会让「内容底部」退回文档顶部
+     （实测：收缩窗口后贴底落到占位区中间 = 一片空白）。 */
+  const bottomStart = appSrc4.indexOf("const contentBottomOf = useCallback");
+  const bottomFn = bottomStart >= 0 ? appSrc4.slice(bottomStart, bottomStart + 900) : "";
+  /const blank = \((?:bag\.)?compactSpacerRef\.current\?\.offsetHeight \?\? 0\) \+ \((?:bag\.)?anchorSpacerRef\.current\?\.offsetHeight \?\? 0\);[\s\S]{0,220}return el\.scrollHeight - blank/.test(bottomFn)
+    ? ok("★ contentBottomOf 只扣尾部留白（不扣顶部历史占位区）")
+    : fail("contentBottomOf 扣了顶部占位区 —— 内容底部会退回文档顶，贴底/回到底部全错位");
   // 刻度尺窗口（用户 09-18 改口径：「跟着懒加载来 / 往上滚过一直透出不对，要滚动渲染刻度线」
   // —— 09-14 的「已加载全部留在尺子上（pad 压缩）」在页数一多时会全量塞成密集柱，且与视口无关，
   // 现改为**滑动窗口跟随滚动位置**，固定槽高、容量封顶）

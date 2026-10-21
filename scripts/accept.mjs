@@ -839,14 +839,34 @@ const CHECKS = [
          刻度尺（stopPropagation）又收不到事件 ⇒ 跟随一直生效、视口被拉回底部。
          现在 window capture 上任何滚轮输入都 release。 */
       await h.waitFor(`!!document.querySelector(".timeline") && !!document.querySelector(".thread-row")`, { label: "界面就绪", timeoutMs: 30000 }).catch(() => undefined);
-      let can = false;
-      const rows = Math.min(Number(await h.eval(`document.querySelectorAll(".thread-row").length`)) || 0, 12);
-      for (let i = 0; i < rows && !can; i++) {
-        await h.eval(`(function(){ var r=[...document.querySelectorAll(".thread-row")][${i}]; var b=r&&r.querySelector("button"); if(b)b.click(); return 1; })()`);
-        await wait(1400);
-        can = await h.eval(`(function(){ var t=document.querySelector(".timeline"); return t ? t.scrollHeight - t.clientHeight > 200 : false; })()`).catch(() => false);
+      /* 切会话必须按 data-thread-id 点，并等侧栏 active 行真的切过去、过渡遮罩摘掉再断言。
+         ⛔ 只按行索引点 + 固定 1.4s：冷加载/连续点会互相打断，读到的还是上一个会话的几何。 */
+      const clickThreadRow = (id) => h.eval(`(function(){ var r=[...document.querySelectorAll(".thread-row")].find(function(n){return n.dataset.threadId===${JSON.stringify(id)};}); if(!r) return false; (r.querySelector("button")||r).click(); return true; })()`);
+      const activeThreadId = () => h.eval(`(function(){ var r=document.querySelector(".thread-row.active"); return r ? (r.dataset.threadId||"") : ""; })()`);
+      const waitThreadOpen = async (id) => {
+        await h.waitFor(`(function(){ var r=document.querySelector(".thread-row.active"); return r && r.dataset.threadId === ${JSON.stringify(id)}; })()`, { timeoutMs: 8000, intervalMs: 120 }).catch(() => undefined);
+        await h.waitFor(`!document.querySelector(".thread-switch-overlay")`, { timeoutMs: 10000 }).catch(() => undefined);
+        await wait(400);
+      };
+      const threadRowIds = await h.eval(`(function(){ return [...document.querySelectorAll(".thread-row")].slice(0, 40).map(function(r){ return r.dataset.threadId || ""; }).filter(Boolean); })()`).catch(() => []);
+      /* 从侧栏**底部往上**找：优先拿未加载回合最多的会话（真实长会话按最近活动排序通常在最下面），
+         没有虚拟历史时就退而求其次，拿任意可滚动会话。 */
+      const readHistoryStat = () => h.eval(`(function(){ var t=document.querySelector(".timeline"); if(!t) return null; var hidden=Number(t.dataset.historyHidden||0); var scrollable=t.scrollHeight-t.clientHeight>200; return {hidden:hidden,total:Number(t.dataset.historyTotal||0),spacer:Math.round((t.querySelector(".timeline-history-spacer")||{}).offsetHeight||0),scrollable:scrollable,groups:t.querySelectorAll(".turn-group").length}; })()`).catch(() => null);
+      let best = null;
+      for (const id of [...threadRowIds].reverse()) {
+        await clickThreadRow(id);
+        await waitThreadOpen(id);
+        let stat = await readHistoryStat();
+        /* 短会话（只挂 1 个回合）立刻跳过，别白等满超时 —— 否则 26 条侧栏要扫 2 分钟。
+           长会话首屏是 TURN_WINDOW=5 个回合，等它的元数据到达再判。 */
+        if (stat && !stat.hidden && !stat.scrollable && stat.groups > 1) {
+          stat = await h.waitFor(`(function(){ var t=document.querySelector(".timeline"); var hidden=t?Number(t.dataset.historyHidden||0):0; var scrollable=t?t.scrollHeight-t.clientHeight>200:false; return hidden>0 || scrollable ? {hidden:hidden,total:Number(t.dataset.historyTotal||0),spacer:Math.round((t.querySelector(".timeline-history-spacer")||{}).offsetHeight||0),scrollable:scrollable,groups:t.querySelectorAll(".turn-group").length} : false; })()`, { timeoutMs: 2500, intervalMs: 200 }).catch(() => stat);
+        }
+        if (stat && (stat.hidden > 0 || stat.scrollable) && (!best || stat.hidden > best.hidden)) best = { id, ...stat };
+        if (best && best.hidden >= 20) break;
       }
-      h.check("① 前置：找到一个可滚动会话", can === true, `can=${can}`);
+      const can = Boolean(best?.scrollable);
+      h.check("① 前置：找到一个可滚动会话", can, JSON.stringify(best).slice(0, 180));
       if (!can) return;
       const arm = async () => {
         await h.eval(`(function(){ window.__adbg=[]; var t=document.querySelector(".timeline"); t.scrollTop=t.scrollHeight; return 1; })()`);
@@ -863,36 +883,84 @@ const CHECKS = [
       await wait(250);
       const r2 = await releases();
       h.check("③ 刻度尺/stopPropagation 目标上的滚轮也能解除（window capture）", r2 >= 1, `release=${r2}`);
-      /* ④ 顶部续载：用户实测「滚到顶部就回弹到最下面」。找到有「加载更早」的会话（没有就跳过），
-         在顶部点续载，视口必须留在顶部（≤40px），不能被 switch-jump / 锚点补偿拉到底。 */
-      let paged = null;
-      for (let i = 0; i < rows && !paged; i++) {
-        await h.eval(`(function(){ var r=[...document.querySelectorAll(".thread-row")][${i}]; var b=r&&r.querySelector("button"); if(b)b.click(); return 1; })()`);
-        await wait(1000);
-        paged = await h.eval(`(function(){ var t=document.querySelector(".timeline"); var b=document.querySelector(".load-earlier-turns"); return b && t && t.scrollHeight > t.clientHeight + 100 ? { max: t.scrollHeight - t.clientHeight } : null; })()`).catch(() => null);
+      /* ④ 虚拟滚动条（10-21 用户定稿）：滚动条按**总回合数**撑高度；往上滚到占位区边界
+         才按页水合，视口跟着滚轮走、不跳到底、不出现空白。找会话时从侧栏**底部往上**找
+         （真实长会话按最近活动排序通常在最下面），拿到未加载回合最多的那条。 */
+      /* ① 的扫描已经停在这条会话上（优先未加载历史最多的）。这里只做前置校验；
+         若中途没有切换，就继续用当前视口。 */
+      h.check("④ 前置：找到带未加载历史的会话（虚拟占位区可见）", Boolean(best && best.hidden > 0), JSON.stringify(best).slice(0, 200));
+      if (!best || best.hidden <= 0) return;
+      if ((await activeThreadId()) !== best.id) {
+        await clickThreadRow(best.id);
+        await waitThreadOpen(best.id);
       }
-      if (!paged) {
-        console.log("  \x1b[90m（当前 profile 无「加载更早」会话，跳过 ④）\x1b[0m");
-      } else {
-        const before = await h.eval(`(function(){ var t=document.querySelector(".timeline"); return { groups:t.querySelectorAll(".turn-group").length, max:t.scrollHeight-t.clientHeight }; })()`);
-        /* 模拟真实「滚轮上滚」：滚轮事件 + 随后 scrollTop 实际变小 ⇒ 触发离开底部闸门
-           （只看方向值的老判据在这里会漏；自然滚动还会反向）。 */
-        await h.eval(`(function(){ var t=document.querySelector(".timeline"); t.scrollTop=t.scrollHeight; return 1; })()`);
-        await wait(250);
-        await h.eval(`(function(){ var t=document.querySelector(".timeline"); t.dispatchEvent(new WheelEvent("wheel",{deltaY:-300,bubbles:true,cancelable:true})); return 1; })()`);
-        await wait(80);
-        await h.eval(`(function(){ var t=document.querySelector(".timeline"); t.scrollTop=Math.max(0,t.scrollTop-320); t.dispatchEvent(new Event("scroll")); return 1; })()`);
-        await wait(300);
-        // 一次手势：先到顶，再在顶部滚一次 ⇒ 只加载一页，位置保持顶部。
-        await h.eval(`(function(){ window.__adbg=[]; var t=document.querySelector(".timeline"); t.scrollTop=0; t.dispatchEvent(new Event("scroll")); return 1; })()`);
-        await wait(300);
-        await h.eval(`(function(){ var t=document.querySelector(".timeline"); t.dispatchEvent(new WheelEvent("wheel",{deltaY:-300,bubbles:true,cancelable:true})); return 1; })()`);
-        await wait(1800);
-        const after = await h.eval(`(function(){ var t=document.querySelector(".timeline"); return { top:Math.round(t.scrollTop), max:t.scrollHeight-t.clientHeight, groups:t.querySelectorAll(".turn-group").length }; })()`);
-        h.check("④ 到顶后再滚一次只加载一页且保持顶部（top ≤ 40px、组数增量 ≤ 5）",
-          after.top <= 40 && after.max >= before.max && after.groups - before.groups <= 5,
-          JSON.stringify({ before, after }).slice(0, 220));
+      await wait(300);
+      const rect = await h.eval(`(function(){ var r=document.querySelector(".timeline").getBoundingClientRect(); return {x:Math.round(r.left+10), y:Math.round(r.top+r.height/2)}; })()`);
+      const snap = () => h.eval(`(function(){
+        var t=document.querySelector(".timeline"); var sp=t.querySelector(".timeline-history-spacer"); var tr=t.getBoundingClientRect();
+        var gs=[...t.querySelectorAll(".turn-group")]; var vis=gs.find(function(n){var r=n.getBoundingClientRect();return r.bottom>tr.top+2 && r.top<tr.bottom-2;});
+        return { hidden:Number(t.dataset.historyHidden||0), total:Number(t.dataset.historyTotal||0), groups:gs.length,
+          top:Math.round(t.scrollTop), max:Math.round(t.scrollHeight-t.clientHeight), spacer:Math.round(sp?sp.offsetHeight:0),
+          vis:vis?String(vis.id):"", visTop:vis?Math.round(vis.getBoundingClientRect().top-tr.top):null };
+      })()`);
+      const anchorTop = (id) => h.eval(`(function(){ var t=document.querySelector(".timeline"); var a=document.getElementById(${JSON.stringify(id)}); return a?Math.round(a.getBoundingClientRect().top-t.getBoundingClientRect().top):null; })()`);
+      const initial = await snap();
+      h.check("⑤ 滚动条知道总回合数：占位区按未加载回合撑出高度（不是只按当前 5 个）",
+        initial.hidden > 0 && initial.total > initial.groups && initial.spacer > 500,
+        JSON.stringify({ hidden: initial.hidden, total: initial.total, groups: initial.groups, spacer: initial.spacer }));
+
+      /* ⑥ 真滚轮上滚一页：只水合一页；同一个回合在视口里的位置只随滚轮移动（±容差）。
+         ⛔ 先停在触发区**外**（占位下沿 + 1400px，margin=1200），否则把 scrollTop 摆到
+         触发区内的那一次程序化滚动就会先吃掉一页，滚轮再滚时 hidden 不再变化（假红）。 */
+      await h.waitFor(`!document.querySelector('.load-earlier-turns[aria-busy="true"]')`, { timeoutMs: 8000 }).catch(() => undefined);
+      await wait(500);
+      await h.eval(`(function(){ var t=document.querySelector(".timeline"); var sp=t.querySelector(".timeline-history-spacer"); t.scrollTop=(sp?sp.offsetHeight:0)+1400; return 1; })()`);
+      await wait(350);
+      const beforePage = await snap();
+      const anchorId = beforePage.vis;
+      const beforeAnchorTop = beforePage.visTop;
+      await h._send("Input.dispatchMouseEvent", { type: "mouseWheel", x: rect.x, y: rect.y, deltaX: 0, deltaY: -600 }, 45000);
+      await h.waitFor(`Number(document.querySelector(".timeline").dataset.historyHidden) < ${beforePage.hidden}`, { timeoutMs: 10000, intervalMs: 150 }).catch(() => undefined);
+      await wait(500);
+      const afterPage = await snap();
+      const afterAnchorTop = anchorId ? await anchorTop(anchorId) : null;
+      h.check("⑥ 上滚一页只水合一页（+5 条以内），且视口内容跟着滚轮移动、不跳到底",
+        afterPage.hidden < beforePage.hidden && beforePage.hidden - afterPage.hidden <= 5
+          && afterPage.groups >= beforePage.groups && afterPage.groups - beforePage.groups <= 5
+          && afterAnchorTop != null && beforeAnchorTop != null && Math.abs((afterAnchorTop - beforeAnchorTop) - 600) <= 200
+          && afterPage.top < afterPage.max - 100,
+        JSON.stringify({ before: { hidden: beforePage.hidden, groups: beforePage.groups, anchorTop: beforeAnchorTop }, after: { hidden: afterPage.hidden, groups: afterPage.groups, anchorTop: afterAnchorTop, top: afterPage.top, max: afterPage.max } }).slice(0, 300));
+
+      /* ⑦ 连续上滚：逐页水合（hidden 只减不增），每 tick 视口内容仍跟着滚轮走，
+         且任何时刻都有真实回合或占位骨架在视口里（不出现纯空白帧）。 */
+      let hiddenUp = 0, blankFrames = 0, badMoves = 0, ticks = 0;
+      for (let tick = 0; tick < 8; tick++) {
+        const pre = await snap();
+        if (pre.hidden <= 0) break;
+        const id = pre.vis;
+        const top0 = pre.visTop;
+        await h._send("Input.dispatchMouseEvent", { type: "mouseWheel", x: rect.x, y: rect.y, deltaX: 0, deltaY: -600 }, 45000);
+        await wait(360);
+        const post = await snap();
+        ticks += 1;
+        if (post.hidden > pre.hidden) hiddenUp += 1;
+        const skelVisible = await h.eval(`(function(){ var t=document.querySelector(".timeline"); var tr=t.getBoundingClientRect(); var sk=t.querySelector(".timeline-history-skeleton"); if(!sk) return false; var r=sk.getBoundingClientRect(); return r.bottom>tr.top && r.top<tr.bottom; })()`).catch(() => false);
+        if (!post.vis && !skelVisible) blankFrames += 1;
+        const top1 = id ? await anchorTop(id) : null;
+        if (top0 != null && top1 != null && Math.abs((top1 - top0) - 600) > 250) badMoves += 1;
       }
+      h.check("⑦ 连续上滚：逐页水合、滚动条不回升、视口不空白、内容跟着滚轮（不是弹跳）",
+        ticks >= 2 && hiddenUp === 0 && blankFrames === 0 && badMoves <= 1,
+        JSON.stringify({ ticks, hiddenUp, blankFrames, badMoves }).slice(0, 200));
+
+      /* ⑧ 回到底部：收起渲染窗口后仍在真底（内容底部贴视口底），最新内容可见。 */
+      await h.eval(`(function(){ var t=document.querySelector(".timeline"); t.dispatchEvent(new WheelEvent("wheel",{deltaY:600,bubbles:true,cancelable:true})); t.scrollTop=t.scrollHeight; t.dispatchEvent(new Event("scroll")); return 1; })()`);
+      await wait(1500);
+      const bottom = await snap();
+      const bottomVisible = await h.eval(`(function(){ var t=document.querySelector(".timeline"); var tr=t.getBoundingClientRect(); return [...t.querySelectorAll(".turn-group")].some(function(n){var r=n.getBoundingClientRect(); return r.bottom>tr.top+2 && r.top<tr.bottom-2;}); })()`).catch(() => false);
+      h.check("⑧ 回到底部：top 贴住文档底、最新回合可见（收缩窗口没有把视口留在占位区）",
+        bottom.top >= bottom.max - 2 && bottomVisible === true,
+        JSON.stringify({ top: bottom.top, max: bottom.max, groups: bottom.groups, hidden: bottom.hidden, spacer: bottom.spacer, bottomVisible }).slice(0, 240));
     },
   },
   {

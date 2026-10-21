@@ -530,7 +530,7 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
 
 // ---------- 【17】回合时序规范化（09-15「更早消息按钮与内容对不上」修复的纯逻辑守卫） ----------
 {
-  const { orderTurnsByTime, mergeTurnListsById, visibleTurnWindow } = await import("../../src/lib/turn-order.mjs");
+  const { orderTurnsByTime, mergeTurnListsById, visibleTurnWindow, turnHistoryPlan } = await import("../../src/lib/turn-order.mjs");
   const appSrc7 = readAppUi();   // 09-21 改造期：统一口径（App.tsx + src/features/** + lib + hooks），代码可能已搬到 features/
   const mk = (id, startedAt) => ({ id, startedAt, items: [], status: "completed" });
   // 用户真实事故形状：mergeLongerStreams 盲目前插部分快照 → [3..8, 1, 2]（最旧的贴到末尾）
@@ -558,6 +558,27 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   /mergeTurnListsById\(mergedTurns, extraTurns\)/.test(appSrc7) && /mergeTurnListsById\(c\.turns \?\? \[\], earlier\)/.test(appSrc7)
     ? ok("mergeLongerStreams 与 loadEarlierTurns 都走去重时序合并（事故源头收口）")
     : fail("回合合并仍有盲目前插/拼接 —— 顺序错乱源头未收口");
+  /* 10-21 虚拟滚动条：窗口上方还有多少回合 = 已加载但被窗口截掉 + 元数据里更早且未加载。
+     ⛔ 元数据里的重复/更新条目不能重复计数；没有游标时（历史已全量）旧元数据不许撑出空白。 */
+  const stubs15 = Array.from({ length: 15 }, (_, i) => ({ id: `t${i}`, startedAt: 1000 + i }));
+  const loaded10 = Array.from({ length: 10 }, (_, i) => mk(`t${i + 5}`, 1005 + i));
+  const planA = turnHistoryPlan(stubs15, loaded10, 5, true);
+  planA.hiddenLoaded === 5 && planA.hiddenStubs === 5 && planA.hiddenCount === 10 && planA.visible[0]?.id === "t10"
+    ? ok("turnHistoryPlan：窗口上方 = 已加载隐藏 5 + 未加载元数据 5（总 10）")
+    : fail("turnHistoryPlan 计数不对 —— 滚动条覆盖的历史条数会偏（用户要的「知道回合条数」失效）");
+  const planNoMore = turnHistoryPlan(stubs15, loaded10, 5, false);
+  planNoMore.hiddenStubs === 0 && planNoMore.hiddenCount === 5
+    ? ok("turnHistoryPlan：没有游标时忽略未加载元数据（revert 旧条目不会撑出永远加载不出的空白）")
+    : fail("无游标时仍按旧元数据算未加载回合 —— revert 后会留下永远加载不出的占位区");
+  const staleStubs = Array.from({ length: 21 }, (_, i) => ({ id: `t${i}`, startedAt: 1000 + i }));
+  const planStale = turnHistoryPlan(staleStubs, loaded10, 5, true);
+  planStale.hiddenCount === 10
+    ? ok("turnHistoryPlan：比窗口新的陈旧/直播元数据不计入上方占位")
+    : fail("turnHistoryPlan 把窗口之后的元数据也算进了上方隐藏数 —— 占位区高度会失真");
+  const dupStubs = [...stubs15, ...loaded10.map((t) => ({ id: t.id, startedAt: t.startedAt }))];
+  turnHistoryPlan(dupStubs, loaded10, 5, true).hiddenCount === 10
+    ? ok("turnHistoryPlan：已加载回合在元数据里出现时不重复计数")
+    : fail("turnHistoryPlan 重复计数已加载回合 —— 占位区会多出一截");
 }
 // ---------- 【18】用户气泡不得悬浮遮挡后代内容（09-15 实测事故） ----------
 // 事故：为了「发送后钉住用户消息、消掉一屏留白」，给当前回合的用户气泡加了
@@ -814,7 +835,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
        ⛔⛔ 权限边界在执行端（`canDispatchFrom` / `restrictedThreadRole`），**不靠"给不给工具"**
        —— 所以这里不再有"绝不给 harness_tools"的负向断言；"给了网关 = 越权"是个**假命题**
        （工具可见 ≠ 操作被允许）。 */
-    /dynamicTools: \[\.\.\.teamTools, buildDelegateHarnessTool\(\), \.\.\.\(roleRef \? \[buildRoleMemoryTool\(roleRef\)\]/.test(mainSrc9)
+    /* 10-21 step 标题落地后，工具面统一过 withStepParam（同一份数组，顺序与成员不变）。 */
+    /dynamicTools: (?:withStepParam\()?\[\.\.\.teamTools, buildDelegateHarnessTool\(\), \.\.\.\(roleRef \? \[buildRoleMemoryTool\(roleRef\)\]/.test(mainSrc9)
       ? ok("dynamicTools = 调度工具 + 能力网关（+ 角色记忆写入）；⛔ 权限边界在执行端而非工具面")
       : fail("dynamicTools 的组装变了 —— 确认被委派会话拿得到网关、且调度工具仍只给主理人");
     // ⛔ 回归防线：这些工具必须**合并成一个数组**（写两个 dynamicTools 键会互相覆盖）

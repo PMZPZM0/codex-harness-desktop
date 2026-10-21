@@ -54,3 +54,45 @@ export function visibleTurnWindow(turns, windowSize) {
   const start = Number.isFinite(size) && size > 0 ? Math.max(0, ordered.length - Math.floor(size)) : 0;
   return { ordered, visible: ordered.slice(start) };
 }
+
+/** 回合排序键（与 orderTurnsByTime 同口径：缺失 startedAt 视为最后）。 */
+function orderValue(turn) {
+  const started = Number(turn?.startedAt);
+  return Number.isFinite(started) && started > 0 ? started : Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * 虚拟滚动条的历史计数（10-21）。
+ *
+ * 数据面：`stubs` = `thread/turns/list itemsView:"notLoaded"` 拉回来的**全部回合元数据**
+ * （只有 id/startedAt，没有 items），按时间升序。它让滚动条能按「总回合数」撑出高度，
+ * 而不是只按当前挂载的 5 个回合。
+ *
+ * 计入「视口上方还有多少回合」的两部分：
+ *  · hiddenLoaded：已在内存、但被渲染窗口截掉的回合（本地展开即可，零网络）；
+ *  · hiddenStubs：元数据里比当前窗口更早、且还没进内存的回合（需要按游标续拉）。
+ * ⛔ 只在 `hasMore`（还有游标）时统计 hiddenStubs：全部历史都已加载时游标为空，
+ *    此时残留的旧元数据（例如 revert 之后）不能再撑出一段永远加载不出来的空白。
+ */
+export function turnHistoryPlan(stubs, loadedOrdered, windowSize, hasMore) {
+  const ordered = Array.isArray(loadedOrdered) ? loadedOrdered : [];
+  const size = Number(windowSize);
+  const start = Number.isFinite(size) && size > 0 ? Math.max(0, ordered.length - Math.floor(size)) : 0;
+  const visible = ordered.slice(start);
+  const hiddenLoaded = start;
+  let hiddenStubs = 0;
+  const first = visible[0];
+  if (hasMore && first && Array.isArray(stubs)) {
+    const loadedIds = new Set(ordered.map((turn) => String(turn?.id ?? "")));
+    const firstKey = orderValue(first);
+    const firstId = String(first?.id ?? "");
+    for (const stub of stubs) {
+      if (!stub || stub.id == null) continue;
+      const key = orderValue(stub);
+      if (key > firstKey) break;
+      if (key === firstKey && String(stub.id) >= firstId) continue;
+      if (!loadedIds.has(String(stub.id))) hiddenStubs += 1;
+    }
+  }
+  return { visible, hiddenLoaded, hiddenStubs, hiddenCount: hiddenLoaded + hiddenStubs };
+}

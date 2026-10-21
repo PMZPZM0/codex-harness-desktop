@@ -6,7 +6,7 @@ import { isCompactionItem } from "../../../../lib/compaction-item.mjs";
 import { compactionStateOf, reportCompactionState } from "../../../../lib/compaction-state.mjs";
 import { compactionRecordFor, compactionVersion, subscribeCompactions } from "../../../../lib/compaction-records.mjs";
 import { resolveCompactionAnchor } from "../../../../lib/compaction-anchor.mjs";
-import { Fragment, useSyncExternalStore, type ReactNode } from "react";
+import { Fragment, useLayoutEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../lib/entity-avatar";
 import {
   AlertTriangle,
@@ -147,8 +147,9 @@ import { CardStatusIcon, Spinner, useCardOpen, type ActionStatus } from "../../.
 import { BootIntroGate } from "../../../settings-appearance";
 import { HelpDialog, type HelpTopic } from "../../../../components/HelpDialog";
 import { CodexAvatar, useCodexName } from "../../../../components/CodexAvatar";
-import { contentOffsetTop, jumpToBottom, scrollToOffsetInstant } from "../../../../components/scroll-utils";
-import { visibleTurnWindow, mergeTurnListsById } from "../../../../lib/turn-order.mjs";
+import { contentOffsetTop, historyPinStateFor, jumpToBottom, scrollToOffsetInstant } from "../../../../components/scroll-utils";
+import { visibleTurnWindow, mergeTurnListsById, turnHistoryPlan } from "../../../../lib/turn-order.mjs";
+import { setTurnHeightEstimate, subscribeTurnHistory, turnHistoryFor, turnHistoryVersion } from "../../../../lib/turn-history.mjs";
 import { ExpertTeamEditorModal, SubAgentEditorModal, TeamMemberRail, TeamMemberHistory, DelegatedRail, DelegatedRunPopup, TeamRunPopup } from "../../../experts-teams";
 /* ⭐ 10-05：普通会话的办公室入口迁到本文件的右侧轨道上 ⇒ 需要那个哨兵 teamId
    （从 team-office 域的 barrel 取，域间只许走 barrel）。 */
@@ -183,7 +184,6 @@ import type { HarnessAppApi } from "../../../app-state/useHarnessApp";
 
 export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
   const {
-    TURNS_PAGE,
     TURN_WINDOW,
     activeMember,
     activeMemberTeam,
@@ -229,6 +229,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     runActivity,
     runPhrase,
     scrollRef,
+    selfScrollUntilRef,
     sending,
     serverStatus,
     setCompactToast,
@@ -263,11 +264,79 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
      压缩线要等下一次被动重渲染才出现（竞态）。订阅记录模块的版本号，一变即重渲染；
      线本体仍在下方的 IIFE 里按 thread 取（这里只负责触发）。 */
   void useSyncExternalStore(subscribeCompactions, compactionVersion);
+  /* 虚拟滚动条（10-21）：订阅后台拉回的全量回合元数据。它只影响滚动高度与「还剩多少条」
+     文案，不影响真实回合内容（内容仍按 turnWindow 窗口懒渲染）。 */
+  void useSyncExternalStore(subscribeTurnHistory, turnHistoryVersion, turnHistoryVersion);
+  const renderedTurnLimit = thread ? (turnWindow[thread.id] ?? TURN_WINDOW) : TURN_WINDOW;
+  const timelineWindow = visibleTurnWindow(thread?.turns, renderedTurnLimit);
+  const historySnapshot = thread ? turnHistoryFor(thread.id) : null;
+  const hasEarlierCursor = thread ? Boolean(turnsCursorRef.current.get(thread.id) ?? (thread as any).__turnsCursor) : false;
+  const historyPlan = turnHistoryPlan(historySnapshot?.stubs, timelineWindow.ordered, renderedTurnLimit, hasEarlierCursor);
+  /* 每个未水合回合的估算高度：打开会话后量一次（最后 6 个真实回合并取平均）并固定下来。
+     ⛔ 不要每帧重算 —— 占位区高度随流式/折叠变化会让滚动条本身变成新的抖动源。 */
+  const historyTurnEstimate = historySnapshot?.estimate || 420;
+  const historySpacerHeight = Math.round(historyPlan.hiddenCount * historyTurnEstimate);
+  useLayoutEffect(() => {
+    const id = thread?.id;
+    const el = scrollRef.current;
+    if (!id || !el) return;
+    if (turnHistoryFor(id).estimate > 0) return;
+    const nodes = [...el.querySelectorAll<HTMLElement>(".timeline > .turn-group")].slice(-6);
+    const heights = nodes.map((node) => node.getBoundingClientRect().height).filter((height) => height > 60);
+    if (!heights.length) return;
+    const average = heights.reduce((sum, height) => sum + height, 0) / heights.length;
+    setTurnHeightEstimate(id, Math.max(160, Math.min(8000, Math.round(average))));
+  }, [thread?.id, thread?.turns.length, scrollRef]);
+  /* 历史水合的首帧补偿（10-21）：loadEarlierTurns 在 setState 前登记锚点状态，这里在
+     **paint 之前**把"上方新增内容 − 占位区收缩"的净高度补进 scrollTop。
+     ⛔ 只靠 rAF 会晚一帧（大会话渲染时可能是一整屏的闪跳）；后续延迟布局
+     （图片/代码块）仍由 loadEarlierTurns 的 rAF 循环继续跟。 */
+  useLayoutEffect(() => {
+    const id = thread?.id;
+    const el = scrollRef.current;
+    if (!id || !el) return;
+    const pin = historyPinStateFor(el);
+    if (!pin || pin.threadId !== id || pin.applied) return;
+    if (renderedTurnLimit < pin.expectedLimit) return;
+    if (pin.inSpacer) {
+      const spacer = el.querySelector<HTMLElement>(".timeline-history-spacer");
+      const height = spacer?.offsetHeight ?? 0;
+      if (Math.abs(height - pin.spacerBefore) <= 1) return;
+      selfScrollUntilRef.current = Date.now() + 80;
+      scrollToOffsetInstant(el, Math.max(0, height));
+      pin.applied = true;
+      return;
+    }
+    const anchor = pin.anchorId ? document.getElementById(pin.anchorId) : null;
+    if (!anchor || !el.contains(anchor)) { pin.applied = true; return; }
+    const contentNow = contentOffsetTop(anchor, el);
+    const delta = contentNow - pin.contentBefore;
+    if (Math.abs(delta) <= 0.5) return;
+    selfScrollUntilRef.current = Date.now() + 80;
+    scrollToOffsetInstant(el, el.scrollTop + delta);
+    pin.contentBefore = contentNow;
+    pin.applied = true;
+  }, [thread?.id, renderedTurnLimit, thread?.turns.length, scrollRef, selfScrollUntilRef]);
+  /* 贴底时收缩渲染窗口（把已看过的回合换回占位高度）会让上方内容瞬间变矮/占位变高；
+     在 layout effect 里、首帧绘制前把内容底部贴回视口底，避免「回到底部时画面先跳一下」。
+     ⛔ 只在窗口变小（collapse）且确实处于贴底时生效；上滚扩窗走 loadEarlierTurns 的锚点补偿。 */
+  const prevRenderedLimitRef = useRef<{ id: string; limit: number }>({ id: "", limit: 0 });
+  useLayoutEffect(() => {
+    const id = thread?.id ?? "";
+    const prev = prevRenderedLimitRef.current;
+    prevRenderedLimitRef.current = { id, limit: renderedTurnLimit };
+    const el = scrollRef.current;
+    if (!el || !id || prev.id !== id) return;
+    if (renderedTurnLimit < prev.limit && stickToBottomRef.current) {
+      selfScrollUntilRef.current = Date.now() + 80;
+      scrollToOffsetInstant(el, contentTailTarget(el));
+    }
+  }, [thread?.id, renderedTurnLimit, scrollRef, contentTailTarget, stickToBottomRef, selfScrollUntilRef]);
   /* 刻度尺上的绿色压缩标记（10-18 用户：「刻度线里面如那两个中间产生压缩线，就在那两个中间产生一个绿色线」）。
      ⛔ 与时间线压缩线**同源**：同一个状态推导 + 同一个纯函数 ⇒ 两处口径不可能分叉。 */
   const compactionMark = (() => {
     if (!thread) return { turnId: "", atEnd: false };
-    const win = visibleTurnWindow(thread.turns, turnWindow[thread.id] ?? TURN_WINDOW);
+    const win = timelineWindow;
     const cs = compactionStateOf(win.ordered, compactToast?.state);
     const record = compactionRecordFor(thread.id);
     const boundary = cs.turnId || String(record?.turnId ?? "");
@@ -283,7 +352,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
   return (
     <div className="timeline-wrap" ref={timelineWrapRef}>
                   {thread && <MemoMessageRuler turns={thread.turns} scrollRef={scrollRef} containerRef={timelineWrapRef} onJump={jumpToTurnInWindow} compactionTurnId={compactionMark.turnId} compactionAtEnd={compactionMark.atEnd} />}
-                  <div className={`timeline ${isEmpty ? "empty-state" : ""}`} ref={scrollRef} onScroll={onTimelineScroll}>
+                  <div className={`timeline ${isEmpty ? "empty-state" : ""}`} ref={scrollRef} onScroll={onTimelineScroll} data-history-hidden={historyPlan.hiddenCount} data-history-total={historyPlan.hiddenCount + timelineWindow.ordered.length}>
                   {isEmpty ? (
                     <div className="welcome-state">
                       <div className="welcome-mark"><Code2 strokeWidth={0.5} size={96} /></div>
@@ -293,24 +362,36 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                   ) : null}
                   {/* 导入会话记录后、尚未发送首条消息：记录预览卡常驻消息区顶部；发送后转为消息内的导入卡 */}
                   {thread && (thread.turns ?? []).length === 0 && pendingImportThreads[thread.id] ? <PendingImportSlot key={thread.id} threadId={thread.id} onDiscard={() => forgetPendingImport(thread.id)} /> : null}
-                  {/* 长会话窗口化：默认只挂最近 TURN_WINDOW 个回合，更早的滚动到顶/点按钮增量加载
-                      （每次一页，内存展开优先）。软件渲染下全量挂载几千个回合是「切换会话慢」的主因。 */}
-                  {thread && (thread.turns.length > (turnWindow[thread.id] ?? TURN_WINDOW) || turnsCursorRef.current.get(thread.id)) && (
-                    <button type="button" className="load-earlier-turns" onClick={() => void loadEarlierTurns(thread.id)}>
+                  {/* 长会话窗口化 + 虚拟滚动条（10-21）：
+                      · 未水合回合全部折成顶部一段占位高度 = 回合数 × 平均回合高 ⇒ 滚动条长度覆盖整段历史；
+                      · 只挂最近 TURN_WINDOW 个回合；滚动到占位区边界时按页水合（内存展开优先，其次拉游标）。
+                      ⛔ 占位区是**空白**，不会渲染几千个骨架节点；水合时占位区同步变矮、真实内容长高，
+                         两边高度差由 loadEarlierTurns 的锚点补偿吃掉 ⇒ 视口不跳。 */}
+                  {thread && historyPlan.hiddenCount > 0 && (
+                    <div className="timeline-history-spacer" style={{ height: historySpacerHeight }} data-hidden-turns={historyPlan.hiddenCount} aria-hidden="true">
+                      {/* 占位区只参与滚动几何，不挂真实回合；底部给几行骨架，快滚到边界时
+                          不会看到「一片空白」——它表示更早的回合还等着按页水合。 */}
+                      <div className="timeline-history-skeleton"><i /><i /><i /></div>
+                    </div>
+                  )}
+                  {thread && (historyPlan.hiddenCount > 0 || hasEarlierCursor) && (
+                    <button type="button" className="load-earlier-turns" aria-busy={earlierLoadingId === thread.id} onClick={() => void loadEarlierTurns(thread.id)}>
                       <ChevronDown size={13} style={{ transform: "rotate(180deg)" }} />
-                      {thread.turns.length - (turnWindow[thread.id] ?? TURN_WINDOW) > 0
-                        ? `显示更早的 ${Math.min(thread.turns.length - (turnWindow[thread.id] ?? TURN_WINDOW), TURNS_PAGE * 5)} 条消息`
-                        : "加载更早的消息"}
-                      <small>向上滚动到此也会自动继续加载</small>
+                      {earlierLoadingId === thread.id
+                        ? "正在载入更早的消息…"
+                        : historyPlan.hiddenCount > 0
+                          ? `显示更早的 ${historyPlan.hiddenCount} 条消息`
+                          : "加载更早的消息"}
+                      <small>向上滚动会自动继续加载</small>
                     </button>
                   )}
-                  {thread && earlierLoadingId === thread.id && (
+                  {thread && earlierLoadingId === thread.id && historyPlan.hiddenCount === 0 && (
                     <div className="load-earlier-hint" role="status">正在载入更早的消息…</div>
                   )}
                   {(() => {
                     // ⛔ 09-15：渲染前按时序规范化（防合并乱序——「更早消息按钮与内容对不上」的兜底），
                     // isLastTurn / 窗口切片都以规范序列为准
-                    const { ordered, visible } = visibleTurnWindow(thread?.turns, thread ? (turnWindow[thread.id] ?? TURN_WINDOW) : TURN_WINDOW);
+                    const { ordered, visible } = timelineWindow;
                     const lastId = String(ordered[ordered.length - 1]?.id ?? "");
                     // ⛔ 压缩线 timeline 层归位（09-26 二次修 + 10-07 夜十一轮改锚点）：
                     //    09-26 的修法 = 插在「**最新一条**用户消息回合」正上方 —— 当时解决了「线被引擎

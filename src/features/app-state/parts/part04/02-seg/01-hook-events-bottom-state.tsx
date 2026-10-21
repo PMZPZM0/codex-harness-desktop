@@ -7,7 +7,7 @@
  */
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
-import { contentOffsetTop, jumpToBottom, scrollToOffsetInstant, setScrollUserDetached } from "../../../../../components/scroll-utils";
+import { contentOffsetTop, hasHistoryPin, jumpToBottom, scrollToOffsetInstant, setScrollUserDetached } from "../../../../../components/scroll-utils";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 
@@ -75,6 +75,8 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
     let lastTop = scroller.scrollTop; // 供 update 识别「指针拖拽期间的位置变化」
     /** 最近一次真实滚轮的时刻：只用来判「用户是不是真的往上滚了」，不看 deltaY 方向。 */
     let lastWheelAt = 0;
+    /** 上一次看到的「未加载历史占位区」高度：占位区变高/变矮都会把下方内容整体推走。 */
+    let lastHistorySpacerHeight = -1;
     let pointerDown = false;
     // 本 effect 与 [thread?.id, scrollRef] 绑定，所以这里捕获的就是"当前显示的会话"：
     // 钉顶休眠在别的会话上时，跟随/贴底都按普通模式走（见 update 里的 gate）。
@@ -156,6 +158,20 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
       if (Date.now() - lastWheelAt < 300 && scroller.scrollTop < lastTop - 2) {
         setScrollUserDetached(true);
       }
+      /* 未加载历史占位区（10-21 虚拟滚动条）高度变化时，下方内容会整体位移。
+         用户在看历史（既没贴底也没钉顶）⇒ 把 scrollTop 补同样的量，视口内容保持不动。
+         ⛔ 历史水合有自己的内容坐标补偿循环（hasHistoryPin）⇒ 这里让位，否则补两次。
+         ⛔ 贴底时也不补：高度变化由下面的 height-follow 把内容底部贴回视口底。 */
+      const historySpacer = scroller.querySelector<HTMLElement>(".timeline-history-spacer");
+      const historySpacerHeight = historySpacer?.offsetHeight ?? 0;
+      const historySpacerDelta = lastHistorySpacerHeight < 0 ? 0 : historySpacerHeight - lastHistorySpacerHeight;
+      lastHistorySpacerHeight = historySpacerHeight;
+      if (Math.abs(historySpacerDelta) > 1 && !hasHistoryPin(scroller) && !bag.anchorTopRef.current && !bag.stickToBottomRef.current) {
+        bag.selfScrollUntilRef.current = Date.now() + 80;
+        scrollToOffsetInstant(scroller, scroller.scrollTop + historySpacerDelta);
+        lastTop = scroller.scrollTop;
+        bag.dbg("history-spacer-follow", { delta: historySpacerDelta, top: Math.round(scroller.scrollTop), spacer: historySpacerHeight });
+      }
       shrinkAnchorPad();
       const cb = contentBottom();
       const prevBottom = lastBottomRef.current;
@@ -179,6 +195,14 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
       //   所以 null 只可能出现在"刚发送、真实回合 id 还没回来"这一小段。若把它当外人，
       //   自动跟随会在整段回复里不启动（09-18 实测：top 恒 0、内容底部停在视口外）。
       const pinMine = bag.anchorTopRef.current && (bag.pinThreadIdRef.current === null || bag.pinThreadIdRef.current === myThreadId);
+      /* ★ 10-21 虚拟滚动条：不能用 `dist ≤ 4` 判「到底」。
+         有历史占位区时，视口可能停在**已加载内容块的上沿**（上面还有整段历史），
+         此时视口底早已越过内容底 ⇒ dist 是负的。旧判据据此重新开启贴底，下一次
+         thread 更新（续载 setThread）就被贴底 layout effect 拉回内容末尾 —— 用户看到
+         的正是「滚到上面又弹到底部」。
+         真正的「到底」= 视口下方只剩已知尾部留白（compact / anchor-pad）+ 呼吸位。 */
+      const tailBlank = (bag.compactSpacerRef.current?.offsetHeight ?? 0) + (bag.anchorSpacerRef.current?.offsetHeight ?? 0);
+      const atContentBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= tailBlank + bag.CONTENT_TAIL_GAP_PX + 4;
       /** 相对上次 update，内容底部**变矮**了多少（> 0 = 变矮）。
        *  折叠思考卡 / 收起工具卡 / 过程块合并都会让内容一次性变矮。 */
       const shrankBy = prevBottom ? prevBottom.cb - cb : 0;
@@ -270,8 +294,8 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
       // ⚠️ 钉顶进行中不许把 stick 置真（09-13 审计）：(anchor=true, stick=true) 会同时成立，
       // 而不同消费者对这对标志的解释不一致（有的看 `stick && !anchor`、有的只看 stick）
       // → 同一状态在不同路径行为不同 = "有时跳有时不跳"，调阈值救不了。
-      if (dist <= 4) setScrollUserDetached(false);   // 滚回底部：自动跳底闸门解除
-      if (dist <= 4 && !bag.anchorTopRef.current) bag.stickToBottomRef.current = true;
+      if (atContentBottom) setScrollUserDetached(false);   // 滚回底部：自动跳底闸门解除
+      if (atContentBottom && !bag.anchorTopRef.current) bag.stickToBottomRef.current = true;
       else if (dist > scroller.clientHeight * 0.25) bag.stickToBottomRef.current = false;
       // ⛔ 这里**不再**用「scrollTop 方向」猜用户意图（09-12 拆除，勿加回来）。
       // 那套启发式的实测结局：钉顶落点与记录值差 13px（浏览器 clamp / 内容重排造成，
@@ -298,15 +322,12 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
        · 思考浮窗是 portal、刻度尺 wheel 里 stopPropagation ⇒ scroller 上的监听根本收不到。
        用户 10-21 实测「滚轮往上就自动弹回底部」正是这两条缝。capture 在 window 上，
        任何真实滚轮输入都让自动跟随让位（滚回底部会立刻重新贴底，语义不变）。 */
-    const onWheel = (event: WheelEvent) => {
+    const onWheel = () => {
       lastWheelAt = Date.now();
       releaseToUser("wheel");
-      /* 懒加载只发生在**已经到顶后继续上滚**这一刻：正常滚动过程中绝不插内容，
-         滚轮因此始终是"正常往上滚"；到顶后一次手势只加一页，位置保持不动。 */
-      if (event.deltaY < 0 && scroller.scrollTop <= 4) {
-        const id = bag.thread?.id ?? "";
-        if (id) void bag.loadEarlierTurns(id);
-      }
+      /* ⛔ 滚轮本身不加载历史（10-21 虚拟滚动条）：加载由 onTimelineScroll 按
+         「占位区边界 + 用户手势」触发。旧实现「到 scrollTop=0 再滚一次才加载」
+         在长会话里意味着用户必须先撞到文档顶、占位区不存在，正是回弹的来源。 */
     };
     const onTouchMove = () => releaseToUser("touch");
     const onKeyDown = (event: Event) => {

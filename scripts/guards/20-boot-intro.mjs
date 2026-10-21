@@ -124,7 +124,8 @@ ok(
   html.includes('setAttribute("data-boot-intro"') && html.includes('getItem("boot-intro")') && html.includes("background: #050403"),
   "index.html 首帧：读 boot-intro 键 ⇒ setAttribute 打 data-boot-intro ⇒ 底色用动画自己的 #050403（断言锚代码形态，不锚注释）"
 );
-ok(html.includes('get("pet") === "1"') && html.includes("prefers-reduced-motion"), "首帧判定也带宠物浮窗与减弱动效（否则透明窗上会闪一块黑）");
+/* 10-21 起宠物有两个浮窗面（?pet=1 / ?pet=activity），首帧判定改成 petSurface 合取式。 */
+ok(html.includes('get("pet")') && /petSurface\s*===\s*"1"\s*\|\|\s*petSurface\s*===\s*"activity"/.test(html) && html.includes("prefers-reduced-motion"), "首帧判定也带宠物浮窗（含活动气泡）与减弱动效（否则透明窗上会闪一块黑）");
 /* ⛔⛔ 首帧内联脚本**必须与 shouldPlayBootIntro 逐条一致** —— 它比 React 闸门早，
    漏一条的后果是"还没轮到闸门就已经画错了"。实测事故：漏了独立会话弹窗 ⇒
    点开花出去的会话窗口**先黑一下**（首帧被涂成动画底色 #050403），而 React 那侧早就改对了。

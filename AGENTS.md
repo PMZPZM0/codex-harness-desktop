@@ -379,6 +379,7 @@ node scripts/logs.mjs delete <id...> --confirm <id...|all> --reason "…"   # �
 
 > 09-26 拆骨时从各轮变更小节提炼。**⛔ 每条都有守卫钉着，改坏会红**；这里是「为什么」与「别踩的坑」。
 
+- **长会话滚动 = 顶部虚拟占位 + 按页水合**（10-21，用户定稿「滚轮知道回合条数、自适应滚动条长度」）：打开会话后台用 `thread/turns/list itemsView:"notLoaded"` 拉全量回合元数据（只回 id/startedAt，59 回合实测 7ms）→ `turnHistoryPlan` 算「窗口上方还有多少回合」→ 顶部 `.timeline-history-spacer` 高度 = 隐藏回合数 × 估算回合高，滚动条覆盖整段历史。⛔ 只在占位区边界 + 2 屏、且**上滚**时水合（`HISTORY_PAGE=2`；老回合常有巨型工具输出，5 条一页会阻塞主线程十几秒）；⛔ 下滚不水合；⛔ `contentBottomOf` 只扣**尾部**留白，绝不扣顶部占位区（扣了贴底会落到占位区中间）；⛔ 扩窗前 `setHistoryPinState` 交接锚点，时间线 layout effect 在 **paint 前**补 scrollTop（只靠 rAF 会闪一帧）；⛔ 贴底收缩渲染窗口时用 layout effect 把内容底部贴回真底。守卫【14】+ `turnHistoryPlan` 真值表；验收 `scroll-wheel-release` 8 条（真实 59 回合会话）。
 - **模型检测必须真推理**（10-21）：`/models` 里有 **≠** 能用 —— `cn.pptoken.cc` 的 `grok-4.7` 在列表里，但 `/responses` 与 `/chat` 都 30s 零字节；旧探活只看列表就报「检测通过」。现在指定模型必须真发一次推理（35s 超时，失败给中文指引）；协议桥 auto 探活 200 但 18s 无数据 / 非 SSE 时回落 chat，显式 responses 也有 120s 空闲看门狗。守卫 06/07 + 测试 `tests/responses-bridge-fallback.test.mjs`。
 - **Codex 日志管理（09-29）**：设置 → 数据管理里的「Codex 日志」管的是引擎写的**会话记录原档**（`codex-home/sessions|archived_sessions/rollout-*.jsonl`，含对话全文），按项目（文件首行 `cwd`）→ 日期两级分组，可勾选批量删除 / 整库清空。⛔ **销毁性功能**：域内通道只认 `rollout-*.jsonl` 且必须落在那两个根目录内（越界/目录一律拒绝、不存在幂等）；删除时**级联剔除 `session_index.jsonl` 对应条目** —— 不剔就是会话列表里一堆打不开的死条目。守卫【200】12 条。
 
@@ -637,6 +638,7 @@ GitHub Release Notes、`whats-new-notes.ts` 要点的**唯一权威数据源**�
 不重翻 commit。只追加不改写（勘误另起行）；格式与分工说明见该文件头部。漏记 = 工作未完成。
 
 - 近期功能性变更（宿主行为，引擎交互相关）
+- 10-21 长会话滚动条按回合总数撑高 + 按页水合（滚轮不跳 / 不回弹；顶部虚拟占位 + layout effect 首帧锚点补偿）
 - 09-21 深色模式下「独立会话窗口」的系统钮看不见但能点（已修）
 - 09-21 内置第三方写作技能 + 文档转换（markitdown）
 - 09-21 「工具输出裁剪」的真相：不是文本工具，是生图内联 base64（已修）
