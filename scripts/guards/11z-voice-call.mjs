@@ -690,7 +690,7 @@ ok(/if \(live\.length === 1\) return \{ ownerId: live\[0\]\.id, reason: "single-
 ok(/ipcHost\.handle\("voice:announce-owner", \(event\) =>/.test(ownerMod)
   && /senderId === ownerId/.test(ownerMod),
   "归属查询在**主进程**比对 sender（渲染层拿不到自己的 webContents.id，没法自己比）");
-ok(/if \(ownerId == null\) return \{ owner: true, ownerWebContentsId: null, reason, muted \}/.test(ownerMod),
+ok(/if \(ownerId == null\) return \{ owner: true, ownerWebContentsId: null, reason, muted, callActive \}/.test(ownerMod),
   "⛔ 算不出 owner 时返回 owner:**true**（保底）—— 宁可多念一次，也不能因一次算不出来就永久静音");
 ok(/win\.webContents\.send\("voice:announce-owner-changed"/.test(ownerMod)
   && !/broadcastToAll\("voice:announce-owner-changed"/.test(ownerMod),
@@ -709,10 +709,14 @@ ok(/const isOwnerRef = useRef\(true\)/.test(announceHook),
 ok(/if \(!next\) stopPlayback\(false\)/.test(announceHook),
   "失去 owner 立刻停播，且用 `stopPlayback(false)`（不是按停语义 ⇒ 不许置静音闸锁）");
 
-ok(/const muted = state\.mutedAll;/.test(ownerMod) && /reason, muted \}/.test(ownerMod)
+ok(/const muted = state\.mutedAll;/.test(ownerMod) && /reason, muted, callActive \}/.test(ownerMod)
   && /if \(r\?\.muted === true\)/.test(announceHook),
   "⛔ owner 查询**同时带回全局静音态**并同步到新窗口（只拿 owner 不拿 muted ⇒ 新开窗口无视已生效的静音，"
   + "用户按过停止它照念 —— 静态归属 ≠ 现在该不该出声）");
+
+ok(/let callActive = false;/.test(ownerMod) && /callActive \}/.test(ownerMod) && /if \(r\?\.callActive === true\)/.test(announceHook),
+  "⛔ owner 查询**同时带回通话态**（主窗口已在通话时新开弹窗收不到那次广播 ⇒ 必须从初值拿，否则一开口就抢扬声器）；"
+  + "未注入 service 时按未通话处理（不许因此让整个查询失败）");
 ok(/void window\.codex\.announceSetMuted\?\.\(\{ muted: true \}\)/.test(announceHook)
   && /void window\.codex\.announceSetMuted\?\.\(\{ muted: false \}\)/.test(announceHook)
   && /onAnnounceMuted\?\./.test(announceHook),

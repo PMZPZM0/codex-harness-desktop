@@ -557,6 +557,9 @@ export function useVoiceAnnounce(threadId: string = ""): void {
           mutedRef.current = true;
           stoppedRef.current = true;
         }
+        /* ⛔ 通话态同理（10-21 自查）：主窗口**已经在通话**时新开弹窗，收不到那次状态广播
+           （广播只在变化时发）⇒ 必须从初值里拿，否则一开口就与通话 TTS 抢扬声器。 */
+        if (r?.callActive === true) remoteCallActiveRef.current = true;
         /* 挂载时发现「我不是 owner」⇒ 清掉可能残留的队列（弹窗刚开、上一个 owner 的尾巴）。 */
         if (!isOwnerRef.current) stopPlayback(false);
         publishStatus();

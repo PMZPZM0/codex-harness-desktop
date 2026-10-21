@@ -3427,7 +3427,7 @@
       "channel": "voice:announce-owner",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ owner: boolean; ownerWebContentsId: number | null; reason: string; muted: boolean }>",
+      "returns": "Promise<{ owner: boolean; ownerWebContentsId: number | null; reason: string; muted: boolean; callActive: boolean }>",
       "invokeArgs": "",
       "cast": null,
       "note": "我是播报窗口吗 + 当前全局静音态（多窗口唯一播报：焦点 → 最后活跃 → 主窗口；取不到时 owner=true 保底，⛔ 不许因算不出来就静音；⛔ muted 必须一起回，否则新开窗口会无视已生效的全局静音）"
