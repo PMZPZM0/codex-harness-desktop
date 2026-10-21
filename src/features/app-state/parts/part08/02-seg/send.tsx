@@ -14,6 +14,7 @@ import { isUnsupportedEffortError, pickEffortFallback, blockedEffortsOf, markEff
 import { imageToken, splitPromptSegments, promptImagePaths, stripImageTokens, isImagePart, imagePartSrc, normalizeImagePartForSend } from "../../../../../lib/prompt-images";
 import { pickEnhanceHint, shouldShowHintAfterSends, isLongPrompt, HINT_COOLDOWN_MS, HINT_AUTO_HIDE_MS } from "../../../../../lib/enhance-hints.mjs";
 import { nowBlock } from "../../../../../lib/now-block.mjs";
+import { setTurnWindowTail } from "../../../../../lib/turn-history.mjs";
 import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, computeFoldSummary, topToolGroup, isTurnRunning, normalizeLoadedThread, type FoldUnit } from "../../../../../lib/turn-fold";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../lib/user-refs";
 import { effortLabels } from "../../../../../lib/effort-labels";
@@ -271,6 +272,9 @@ export async function send(bag: Bag, event?: FormEvent) {
       bag.optimisticTurnIdRef.current = null;
       bag.sawRunningTurnRef.current = false;   // 新一轮发送：重置安全阀判据（见该 effect 的 09-17 注释）
       bag.optimisticBaselineRef.current = { threadId: bag.thread?.id ?? null, turnIds: new Set((bag.thread?.turns ?? []).map((entry) => entry.id)) };
+      /* 发送会让时间线贴到最新；若用户之前在读历史（滑动窗口 tail>0），先把窗口收回
+         最新 5 个，否则乐观气泡 / 新回合在底部占位区后面，pin 找不到锚点。 */
+      if (bag.thread?.id) setTurnWindowTail(bag.thread.id, 0);
       bag.setOptimisticInput({ id: optimisticId, type: "userMessage", content: [
         ...((messageText || threadReferenceBlocks || inlineFilePaths.length || bag.quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${threadReferenceSuffix}`, text_elements: [] }] : []),
         ...inlineImagePaths.map((path) => ({ type: "localImage", path })),

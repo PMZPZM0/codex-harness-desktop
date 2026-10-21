@@ -435,21 +435,35 @@ console.log(C.bold("\n【10】滚动与锚定状态：单一 owner + 默认值�
   // ⑥ 水合更早历史：占位区高度随窗口收缩/插入同步变化，锚点在扩窗前交接，首帧在 paint 前补偿。
   {
     const rel = appSrc.indexOf('releaseToUserRef.current?.("history")');
-    const exp = appSrc.indexOf("expandTurnWindow(id, grow)");
-    (rel >= 0 && exp > rel && exp - rel < 9000
+    const exp = appSrc.indexOf("setTurnWindowTail(id, targetTail)");
+    (rel >= 0 && exp > rel && exp - rel < 11000
       && /setHistoryPinState\(el0, pinState\)/.test(appSrc)
       && /cancelHistoryPin\(el0\)/.test(appSrc)
       && /const inSpacer =/.test(appSrc) && /spacer-land/.test(appSrc)
       && /userScrolledRef\.current = false;[\s\S]{0,300}?lastHistoryLoadAt = Date\.now\(\)/.test(appSrc)
       && /Date\.now\(\) - lastHistoryLoadAt < 350/.test(appSrc)
+      && /expectedTail: targetTail/.test(appSrc) && /expectedLength: newLength/.test(appSrc)
+      && /direction: 1/.test(appSrc)
       && !/nearTop/.test(appSrc) && !/loadZone/.test(appSrc) ? ok : fail)(
-      "续载先 releaseToUser；扩窗前交接锚点并登记首帧补偿；占位区边界按页水合（350ms 冷却 + 消费滚动信号）"
+      "续载先 releaseToUser；滑窗前登记锚点/期望 tail；占位区边界按页上移窗口（350ms 冷却 + 消费滚动信号）"
     );
     const histPage = Number((appSrc.match(/const HISTORY_PAGE = (\d+);/) ?? [])[1] ?? NaN);
     (Number.isFinite(histPage) && histPage >= 1 && histPage <= 5
-      && /grow = Math\.min\(hidden, HISTORY_PAGE\)/.test(appSrc)
+      && /Math\.min\(availableAbove, HISTORY_PAGE\)/.test(appSrc)
       && /limit: HISTORY_PAGE/.test(appSrc) ? ok : fail)(
       `历史水合单页 = ${histPage} 回合（比首屏页更小：老回合常有巨型工具输出，一次挂 5 条会阻塞主线程十几秒）`
+    );
+    /* 滑动窗口：往上只移窗口不扩 DOM；往下本地滑回来；DOM 永远 ~5 个回合。 */
+    (/function slideTurnWindowDown/.test(appSrc) && /direction: -1/.test(appSrc)
+      && /setTurnWindowTail\(id, targetTail\)/.test(appSrc)
+      && /slideTurnWindowDown\(id\)/.test(appSrc)
+      && /turnWindowTailFor\(id\)/.test(appSrc) ? ok : fail)(
+      "★ 滑窗：往上移动窗口、往下本地滑回；全量加载后 DOM 仍只挂 5 个回合（切会话不再变慢）"
+    );
+    /* 切回“上次在读历史”的缓存会话：必须关上全局自动跳底闸门，否则 rAF jumpToBottom
+       会落到文档底 = 底部占位区的空白里。 */
+    (/recallScrollOffset[\s\S]{0,520}?setScrollUserDetached\(true\)/.test(appSrc) ? ok : fail)(
+      "★ 切回缓存会话恢复阅读位置时关上自动跳底闸门（否则长会话落进底部占位区空白）"
     );
   }
 
@@ -901,9 +915,15 @@ const appSrc4 = readAppUi();
   /turnHistoryPlan\(/.test(timelineSrc) && /timeline-history-spacer/.test(timelineSrc) && /data-history-hidden/.test(timelineSrc)
     ? ok("★ 时间线按总回合数渲染顶部占位区（滚动条看见整段历史）")
     : fail("时间线没有按总回合数撑占位区 —— 滚动条仍只按当前窗口，往上滚到底就回弹");
-  /historyPinStateFor\(el\)/.test(timelineSrc) && /pin\.expectedLimit/.test(timelineSrc)
-    ? ok("★ 水合首帧由 layout effect 在 paint 前补偿（不是晚一帧的 rAF）")
+  /historyPinStateFor\(el\)/.test(timelineSrc) && /pin\.expectedTail/.test(timelineSrc) && /pin\.direction/.test(timelineSrc)
+    ? ok("★ 滑窗/水合首帧由 layout effect 在 paint 前补偿（不是晚一帧的 rAF）")
     : fail("水合只靠 rAF 补偿 —— 大会话渲染慢时会看到一整屏闪跳");
+  /const visible = historyPlan\.visible/.test(timelineSrc) && /timeline-history-bottom-spacer/.test(timelineSrc) && /data-history-below/.test(timelineSrc)
+    ? ok("★ 渲染的是滑窗切片（不是“最后 N 个”）；窗口后面的已加载回合折进底部占位区")
+    : fail("渲染仍用 visibleTurnWindow 的尾窗 —— 占位区在动、内容却一直是最新 5 个（滑窗会落进空白）");
+  /data-history-total=\{historyPlan\.hiddenStubs \+ timelineWindow\.ordered\.length\}/.test(timelineSrc)
+    ? ok("★ 总回合数 = 未加载目录 + 已加载回合（不把已加载隐藏回合重复算一遍）")
+    : fail("总回合数重复计数 —— 全量加载后会显示成 113 这类错数");
   const scrollStart = appSrc4.indexOf("function onTimelineScroll");
   /* readAppUi() 会剥掉 `bag.` 前缀 ⇒ 赋值行是 `onTimelineScroll = onTimelineScroll`。 */
   const scrollEnd = appSrc4.indexOf("onTimelineScroll = onTimelineScroll", scrollStart);
@@ -941,8 +961,8 @@ const appSrc4 = readAppUi();
   /cancelHistoryPin\(el0\)/.test(anchorFn) && /setHistoryPin\(el0, pinCancel\)/.test(anchorFn)
     ? ok("★ 连续翻页在扩窗前交接上一轮锚点（拉取期间旧钉住继续跑，不提前撤）")
     : fail("连续翻页时两轮位置补偿会并存或提前撤掉 —— 都会让锚点被顶飞");
-  /setHistoryPinState\(el0, pinState\)/.test(anchorFn) && /expectedLimit:\s*rendered \+ grow/.test(anchorFn)
-    ? ok("★ 扩窗前登记锚点状态 + 期望窗口（layout effect 只在这个提交上补一次）")
+  /setHistoryPinState\(el0, pinState\)/.test(anchorFn) && /expectedTail:\s*targetTail/.test(anchorFn) && /expectedLength:\s*newLength/.test(anchorFn)
+    ? ok("★ 滑窗前登记锚点状态 + 期望 tail/长度（layout effect 只在这个提交上补一次）")
     : fail("水合没把锚点状态交给 layout effect —— 首帧会晚一帧补偿（闪跳）");
   /const inSpacer =/.test(anchorFn) && /spacer-land/.test(anchorFn)
     ? ok("拖到占位区深处时落到新占位区下沿（不会停在纯空白里）")

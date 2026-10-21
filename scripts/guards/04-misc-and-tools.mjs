@@ -579,6 +579,16 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   turnHistoryPlan(dupStubs, loaded10, 5, true).hiddenCount === 10
     ? ok("turnHistoryPlan：已加载回合在元数据里出现时不重复计数")
     : fail("turnHistoryPlan 重复计数已加载回合 —— 占位区会多出一截");
+  /* 滑窗：tail=2 时窗口整体上移，最新 2 个折进底部占位区；上方已加载 3 + 未加载 5。 */
+  const slidePlan = turnHistoryPlan(stubs15, loaded10, 5, true, 2);
+  slidePlan.visible[0]?.id === "t8" && slidePlan.hiddenLoaded === 3 && slidePlan.hiddenStubs === 5
+    && slidePlan.hiddenCount === 8 && slidePlan.hiddenBelow === 2
+    ? ok("turnHistoryPlan 滑窗：tail=2 ⇒ 窗口 t8..t12，上方 3+5、下方 2（DOM 恒 5 个回合）")
+    : fail("turnHistoryPlan 滑窗切片/计数不对 —— 全量加载后又会把整段历史挂进 React");
+  const clampPlan = turnHistoryPlan(stubs15, loaded10, 5, true, 99);
+  clampPlan.visible[0]?.id === "t5" && clampPlan.hiddenBelow === 5
+    ? ok("turnHistoryPlan 滑窗：tail 被钳到 len−窗口大小（不会把窗口滑出列表）")
+    : fail("turnHistoryPlan 未钳制 tail —— 越界空白/丢回合");
 }
 // ---------- 【18】用户气泡不得悬浮遮挡后代内容（09-15 实测事故） ----------
 // 事故：为了「发送后钉住用户消息、消掉一屏留白」，给当前回合的用户气泡加了

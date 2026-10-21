@@ -149,7 +149,7 @@ import { HelpDialog, type HelpTopic } from "../../../../components/HelpDialog";
 import { CodexAvatar, useCodexName } from "../../../../components/CodexAvatar";
 import { contentOffsetTop, historyPinStateFor, jumpToBottom, scrollToOffsetInstant } from "../../../../components/scroll-utils";
 import { visibleTurnWindow, mergeTurnListsById, turnHistoryPlan } from "../../../../lib/turn-order.mjs";
-import { setTurnHeightEstimate, subscribeTurnHistory, turnHistoryFor, turnHistoryVersion } from "../../../../lib/turn-history.mjs";
+import { setTurnHeightEstimate, setTurnWindowTail, subscribeTurnHistory, turnHistoryFor, turnHistoryVersion } from "../../../../lib/turn-history.mjs";
 import { ExpertTeamEditorModal, SubAgentEditorModal, TeamMemberRail, TeamMemberHistory, DelegatedRail, DelegatedRunPopup, TeamRunPopup } from "../../../experts-teams";
 /* ⭐ 10-05：普通会话的办公室入口迁到本文件的右侧轨道上 ⇒ 需要那个哨兵 teamId
    （从 team-office 域的 barrel 取，域间只许走 barrel）。 */
@@ -271,11 +271,15 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
   const timelineWindow = visibleTurnWindow(thread?.turns, renderedTurnLimit);
   const historySnapshot = thread ? turnHistoryFor(thread.id) : null;
   const hasEarlierCursor = thread ? Boolean(turnsCursorRef.current.get(thread.id) ?? (thread as any).__turnsCursor) : false;
-  const historyPlan = turnHistoryPlan(historySnapshot?.stubs, timelineWindow.ordered, renderedTurnLimit, hasEarlierCursor);
+  const historyTail = thread ? (historySnapshot?.windowTail ?? 0) : 0;
+  const historyPlan = turnHistoryPlan(historySnapshot?.stubs, timelineWindow.ordered, renderedTurnLimit, hasEarlierCursor, historyTail);
   /* 每个未水合回合的估算高度：打开会话后量一次（最后 6 个真实回合并取平均）并固定下来。
      ⛔ 不要每帧重算 —— 占位区高度随流式/折叠变化会让滚动条本身变成新的抖动源。 */
   const historyTurnEstimate = historySnapshot?.estimate || 420;
   const historySpacerHeight = Math.round(historyPlan.hiddenCount * historyTurnEstimate);
+  /* 窗口后面的已加载回合也折成占位高度。顶部与底部都用同一个估算值 ⇒ 窗口滑动时
+     一个变矮、一个变高，总高度不变，滚动条长度不会跟着抖。 */
+  const historyBottomSpacerHeight = Math.round(historyPlan.hiddenBelow * historyTurnEstimate);
   useLayoutEffect(() => {
     const id = thread?.id;
     const el = scrollRef.current;
@@ -297,7 +301,11 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     if (!id || !el) return;
     const pin = historyPinStateFor(el);
     if (!pin || pin.threadId !== id || pin.applied) return;
-    if (renderedTurnLimit < pin.expectedLimit) return;
+    const tailNow = historyTail;
+    const lengthNow = timelineWindow.ordered.length;
+    if (pin.direction > 0) {
+      if (tailNow < pin.expectedTail || lengthNow < pin.expectedLength) return;
+    } else if (tailNow > pin.expectedTail) return;
     if (pin.inSpacer) {
       const spacer = el.querySelector<HTMLElement>(".timeline-history-spacer");
       const height = spacer?.offsetHeight ?? 0;
@@ -308,7 +316,14 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
       return;
     }
     const anchor = pin.anchorId ? document.getElementById(pin.anchorId) : null;
-    if (!anchor || !el.contains(anchor)) { pin.applied = true; return; }
+    if (!anchor || !el.contains(anchor)) {
+      /* 锚点不在新窗口里：落到新窗口上沿（顶部占位区下边缘），别停在空白占位区。 */
+      const spacer = el.querySelector<HTMLElement>(".timeline-history-spacer");
+      selfScrollUntilRef.current = Date.now() + 80;
+      scrollToOffsetInstant(el, Math.max(0, spacer?.offsetHeight ?? 0));
+      pin.applied = true;
+      return;
+    }
     const contentNow = contentOffsetTop(anchor, el);
     const delta = contentNow - pin.contentBefore;
     if (Math.abs(delta) <= 0.5) return;
@@ -316,7 +331,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     scrollToOffsetInstant(el, el.scrollTop + delta);
     pin.contentBefore = contentNow;
     pin.applied = true;
-  }, [thread?.id, renderedTurnLimit, thread?.turns.length, scrollRef, selfScrollUntilRef]);
+  }, [thread?.id, renderedTurnLimit, thread?.turns.length, historyTail, scrollRef, selfScrollUntilRef]);
   /* 贴底时收缩渲染窗口（把已看过的回合换回占位高度）会让上方内容瞬间变矮/占位变高；
      在 layout effect 里、首帧绘制前把内容底部贴回视口底，避免「回到底部时画面先跳一下」。
      ⛔ 只在窗口变小（collapse）且确实处于贴底时生效；上滚扩窗走 loadEarlierTurns 的锚点补偿。 */
@@ -332,11 +347,40 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
       scrollToOffsetInstant(el, contentTailTarget(el));
     }
   }, [thread?.id, renderedTurnLimit, scrollRef, contentTailTarget, stickToBottomRef, selfScrollUntilRef]);
+  /* 滑窗收回到 tail=0（贴底时的 collapse / 点「回到底部」）同样要贴回真底：
+     窗口大小没变（仍是 5），但顶部占位区变高、底部占位区消失。 */
+  const prevTailRef = useRef<{ id: string; tail: number }>({ id: "", tail: 0 });
+  useLayoutEffect(() => {
+    const id = thread?.id ?? "";
+    const prev = prevTailRef.current;
+    prevTailRef.current = { id, tail: historyTail };
+    const el = scrollRef.current;
+    if (!el || !id || prev.id !== id) return;
+    if (historyTail === 0 && prev.tail > 0 && stickToBottomRef.current) {
+      selfScrollUntilRef.current = Date.now() + 80;
+      scrollToOffsetInstant(el, contentTailTarget(el));
+    }
+  }, [historyTail, thread?.id, scrollRef, contentTailTarget, stickToBottomRef, selfScrollUntilRef]);
+  /* 新回合追加到底部时，若用户正在读历史（tail>0），把 tail 同步增大同样多 ——
+     否则窗口会整体往下滑、正在看的那几行被顶走。 */
+  const prevTurnsLenRef = useRef<{ id: string; len: number }>({ id: "", len: 0 });
+  useLayoutEffect(() => {
+    const id = thread?.id ?? "";
+    const len = thread?.turns.length ?? 0;
+    const prev = prevTurnsLenRef.current;
+    prevTurnsLenRef.current = { id, len };
+    if (!id || prev.id !== id || len <= prev.len) return;
+    if (historyTail > 0 && !stickToBottomRef.current) {
+      const rendered = turnWindow[id] ?? TURN_WINDOW;
+      setTurnWindowTail(id, Math.min(Math.max(0, len - rendered), historyTail + (len - prev.len)));
+    }
+  }, [thread?.id, thread?.turns.length, historyTail, turnWindow, stickToBottomRef]);
   /* 刻度尺上的绿色压缩标记（10-18 用户：「刻度线里面如那两个中间产生压缩线，就在那两个中间产生一个绿色线」）。
      ⛔ 与时间线压缩线**同源**：同一个状态推导 + 同一个纯函数 ⇒ 两处口径不可能分叉。 */
   const compactionMark = (() => {
     if (!thread) return { turnId: "", atEnd: false };
-    const win = timelineWindow;
+    /* 刻度尺/压缩线也跟**滑动窗口**走（不是“尾巴最后 5 个”）。 */
+    const win = { ordered: timelineWindow.ordered, visible: historyPlan.visible };
     const cs = compactionStateOf(win.ordered, compactToast?.state);
     const record = compactionRecordFor(thread.id);
     const boundary = cs.turnId || String(record?.turnId ?? "");
@@ -352,7 +396,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
   return (
     <div className="timeline-wrap" ref={timelineWrapRef}>
                   {thread && <MemoMessageRuler turns={thread.turns} scrollRef={scrollRef} containerRef={timelineWrapRef} onJump={jumpToTurnInWindow} compactionTurnId={compactionMark.turnId} compactionAtEnd={compactionMark.atEnd} />}
-                  <div className={`timeline ${isEmpty ? "empty-state" : ""}`} ref={scrollRef} onScroll={onTimelineScroll} data-history-hidden={historyPlan.hiddenCount} data-history-total={historyPlan.hiddenCount + timelineWindow.ordered.length}>
+                  <div className={`timeline ${isEmpty ? "empty-state" : ""}`} ref={scrollRef} onScroll={onTimelineScroll} data-history-hidden={historyPlan.hiddenCount} data-history-below={historyPlan.hiddenBelow} data-history-total={historyPlan.hiddenStubs + timelineWindow.ordered.length}>
                   {isEmpty ? (
                     <div className="welcome-state">
                       <div className="welcome-mark"><Code2 strokeWidth={0.5} size={96} /></div>
@@ -391,7 +435,10 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                   {(() => {
                     // ⛔ 09-15：渲染前按时序规范化（防合并乱序——「更早消息按钮与内容对不上」的兜底），
                     // isLastTurn / 窗口切片都以规范序列为准
-                    const { ordered, visible } = timelineWindow;
+                    const ordered = timelineWindow.ordered;
+                    /* ⛔ 渲染必须用滑窗切片（historyPlan.visible），不是 visibleTurnWindow
+                       的“最后 N 个”—— 否则窗口滑动时占位区在动、真实内容却一直是最新 5 个。 */
+                    const visible = historyPlan.visible;
                     const lastId = String(ordered[ordered.length - 1]?.id ?? "");
                     // ⛔ 压缩线 timeline 层归位（09-26 二次修 + 10-07 夜十一轮改锚点）：
                     //    09-26 的修法 = 插在「**最新一条**用户消息回合」正上方 —— 当时解决了「线被引擎
@@ -483,6 +530,13 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                       compactionLine && insertBefore === visible.length ? <Fragment key="compact-tail">{compactionLine}</Fragment> : null,
                     ];
                   })()}
+                  {/* 滑动窗口后面的已加载回合（最新方向）折成占位区：只参与滚动几何，
+                     不挂 React 回合。这样即便整段历史都加载过，切会话也只挂 5 个回合。 */}
+                  {thread && historyPlan.hiddenBelow > 0 && (
+                    <div className="timeline-history-bottom-spacer" style={{ height: historyBottomSpacerHeight }} data-hidden-turns={historyPlan.hiddenBelow} aria-hidden="true">
+                      <div className="timeline-history-bottom-skeleton"><i /><i /><i /></div>
+                    </div>
+                  )}
                   {/* ⛔ 状态条（run-activity-bar）必须排在 #chat-anchor（乐观气泡）**之后**（09-17 用户实测
                       「这个怎么到这个位置了」）：原先它排在最前面，于是「发送后 · 引擎回声前」这段时间里，
                       状态条显示在刚发出的那条消息**上方**；而气泡阶段时间线里只有「你的消息 + 状态条」，
@@ -599,7 +653,13 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                     <button
                       className="jump-bottom"
                       title="回到底部"
-                      onClick={() => { releaseToUserRef.current("button"); stickToBottomRef.current = true; const el = scrollRef.current; if (el) scrollToOffsetInstant(el, contentTailTarget(el)); }}
+                      onClick={() => {
+                        if (thread) setTurnWindowTail(thread.id, 0);
+                        releaseToUserRef.current("button");
+                        stickToBottomRef.current = true;
+                        const el = scrollRef.current;
+                        if (el) scrollToOffsetInstant(el, contentTailTarget(el));
+                      }}
                     ><ArrowDown size={16} /></button>
                   )}
                   {/* 专家团成员头像轨 + 成员工作弹窗 + 历史记录（09-14 用户要求）。

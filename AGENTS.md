@@ -379,7 +379,8 @@ node scripts/logs.mjs delete <id...> --confirm <id...|all> --reason "…"   # �
 
 > 09-26 拆骨时从各轮变更小节提炼。**⛔ 每条都有守卫钉着，改坏会红**；这里是「为什么」与「别踩的坑」。
 
-- **长会话滚动 = 顶部虚拟占位 + 按页水合**（10-21，用户定稿「滚轮知道回合条数、自适应滚动条长度」）：打开会话后台用 `thread/turns/list itemsView:"notLoaded"` 拉全量回合元数据（只回 id/startedAt，59 回合实测 7ms）→ `turnHistoryPlan` 算「窗口上方还有多少回合」→ 顶部 `.timeline-history-spacer` 高度 = 隐藏回合数 × 估算回合高，滚动条覆盖整段历史。⛔ 只在占位区边界 + 2 屏、且**上滚**时水合（`HISTORY_PAGE=2`；老回合常有巨型工具输出，5 条一页会阻塞主线程十几秒）；⛔ 下滚不水合；⛔ `contentBottomOf` 只扣**尾部**留白，绝不扣顶部占位区（扣了贴底会落到占位区中间）；⛔ 扩窗前 `setHistoryPinState` 交接锚点，时间线 layout effect 在 **paint 前**补 scrollTop（只靠 rAF 会闪一帧）；⛔ 贴底收缩渲染窗口时用 layout effect 把内容底部贴回真底。守卫【14】+ `turnHistoryPlan` 真值表；验收 `scroll-wheel-release` 8 条（真实 59 回合会话）。
+- **长会话滚动 = 顶部/底部双占位 + 5 回合滑动窗口**（10-21，用户定稿「滚轮知道回合条数、自适应滚动条长度」）：打开会话后台用 `thread/turns/list itemsView:"notLoaded"` 拉全量回合元数据（只回 id/startedAt，59 回合实测 7ms）→ `turnHistoryPlan` 用 `windowTail` 取滑动切片；顶部 `.timeline-history-spacer` 与底部 `.timeline-history-bottom-spacer` 都用「隐藏回合数 × 估算回合高」，窗口移动时一增一减、总高度不变。⛔ 渲染**必须用 `historyPlan.visible`**（不是 `visibleTurnWindow` 的尾窗，否则占位区动、内容不动 = 滑进空白）；⛔ DOM 恒 ≈5 个回合，全量加载后切会话不许挂 53 个（实测 2s → 0.5s）；⛔ 只在占位区边界 + 2 屏、且**上滚**时水合（`HISTORY_PAGE=2`；老回合常有巨型工具输出，5 条一页会阻塞主线程十几秒）；下滚走 `slideTurnWindowDown` 本地滑窗；⛔ `contentBottomOf` 只扣**尾部**留白，绝不扣顶部占位区；⛔ 窗口滑动/水合前 `setHistoryPinState` 交接锚点（带 `direction/expectedTail/expectedLength`），layout effect 在 **paint 前**补 scrollTop；⛔ 切回缓存会话恢复阅读位置时 `setScrollUserDetached(true)`（否则 rAF jumpToBottom 落到文档底 = 底部占位区空白）；⛔ `data-history-total` = `hiddenStubs + 已加载回合`（别把已加载隐藏回合重复算）。守卫【14】+ `turnHistoryPlan` 真值表；验收 `scroll-wheel-release` 9 条（含全量加载后切回 DOM≤7/位置保持）。
+- **刻度尺联动**（10-21）：当前阅读位置（`contentOffsetTop` 的 30% 探针，⛔ 不用 `offsetTop`）自动成为波浪中心，`wave-0/1/2` 是 26/18/15px；hover 优先。压缩绿线**静止 12px，波浪扫过时与相邻刻度同宽（26/18/15px）**（用户 10-21：「绿线也要跟着波浪变化长短」），且可点击跳到压缩回合；每根刻度都有 `data-turn-id` 且点击走 `jumpToTurnInWindow`（滑窗把目标挂载后用内容坐标对齐到顶部 12px）。守卫【12r】29 条；验收 `ruler-wave` 6 条（宽视口真会话）。
 - **模型检测必须真推理**（10-21）：`/models` 里有 **≠** 能用 —— `cn.pptoken.cc` 的 `grok-4.7` 在列表里，但 `/responses` 与 `/chat` 都 30s 零字节；旧探活只看列表就报「检测通过」。现在指定模型必须真发一次推理（35s 超时，失败给中文指引）；协议桥 auto 探活 200 但 18s 无数据 / 非 SSE 时回落 chat，显式 responses 也有 120s 空闲看门狗。守卫 06/07 + 测试 `tests/responses-bridge-fallback.test.mjs`。
 - **Codex 日志管理（09-29）**：设置 → 数据管理里的「Codex 日志」管的是引擎写的**会话记录原档**（`codex-home/sessions|archived_sessions/rollout-*.jsonl`，含对话全文），按项目（文件首行 `cwd`）→ 日期两级分组，可勾选批量删除 / 整库清空。⛔ **销毁性功能**：域内通道只认 `rollout-*.jsonl` 且必须落在那两个根目录内（越界/目录一律拒绝、不存在幂等）；删除时**级联剔除 `session_index.jsonl` 对应条目** —— 不剔就是会话列表里一堆打不开的死条目。守卫【200】12 条。
 
@@ -639,6 +640,7 @@ GitHub Release Notes、`whats-new-notes.ts` 要点的**唯一权威数据源**�
 
 - 近期功能性变更（宿主行为，引擎交互相关）
 - 10-21 长会话滚动条按回合总数撑高 + 按页水合（滚轮不跳 / 不回弹；顶部虚拟占位 + layout effect 首帧锚点补偿）
+- 10-21 长会话滑动窗口（全量加载后仍只挂 5 个回合，切会话不再变慢）+ 刻度尺当前阅读位置波浪 / 绿线等长可点击
 - 09-21 深色模式下「独立会话窗口」的系统钮看不见但能点（已修）
 - 09-21 内置第三方写作技能 + 文档转换（markitdown）
 - 09-21 「工具输出裁剪」的真相：不是文本工具，是生图内联 base64（已修）

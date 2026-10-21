@@ -162,11 +162,14 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
          用户在看历史（既没贴底也没钉顶）⇒ 把 scrollTop 补同样的量，视口内容保持不动。
          ⛔ 历史水合有自己的内容坐标补偿循环（hasHistoryPin）⇒ 这里让位，否则补两次。
          ⛔ 贴底时也不补：高度变化由下面的 height-follow 把内容底部贴回视口底。 */
+      /* ⛔ 只跟**顶部**历史占位区：它变高/变矮会把下面的内容整体推走，需要补 scrollTop。
+         底部占位区（滑窗后面）在内容下方，变高不会移动上方内容，补了反而把视口推进空白。 */
       const historySpacer = scroller.querySelector<HTMLElement>(".timeline-history-spacer");
       const historySpacerHeight = historySpacer?.offsetHeight ?? 0;
       const historySpacerDelta = lastHistorySpacerHeight < 0 ? 0 : historySpacerHeight - lastHistorySpacerHeight;
       lastHistorySpacerHeight = historySpacerHeight;
-      if (Math.abs(historySpacerDelta) > 1 && !hasHistoryPin(scroller) && !bag.anchorTopRef.current && !bag.stickToBottomRef.current) {
+      if (Math.abs(historySpacerDelta) > 1 && Date.now() >= bag.selfScrollUntilRef.current
+        && !hasHistoryPin(scroller) && !bag.anchorTopRef.current && !bag.stickToBottomRef.current) {
         bag.selfScrollUntilRef.current = Date.now() + 80;
         scrollToOffsetInstant(scroller, scroller.scrollTop + historySpacerDelta);
         lastTop = scroller.scrollTop;

@@ -7,7 +7,8 @@
  */
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
-import { contentOffsetTop, jumpToBottom, scrollToOffsetInstant } from "../../../../../components/scroll-utils";
+import { contentOffsetTop, jumpToBottom, scrollToOffsetInstant, setScrollUserDetached } from "../../../../../components/scroll-utils";
+import { turnWindowTailFor } from "../../../../../lib/turn-history.mjs";
 import { HIGHLIGHT_CACHE } from "../../../../../lib/highlight-cache";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
@@ -132,13 +133,41 @@ export function usePart04b2(bag: Bag) {
       // ★ 09-14：切回**命中过缓存**的会话且用户当时在读历史 → 还原距底偏移，不贴底。
       //   recallScrollOffset 取一次即消费；没有记忆（一直贴底/首次打开）才走下面的贴底。
       const remembered = bag.recallScrollOffset(bag.thread?.id ?? "");
+      bag.dbg("scroll-memo", { id: bag.thread?.id ?? "", remembered, top: Math.round(el.scrollTop), tail: turnWindowTailFor(bag.thread?.id ?? "") });
       if (remembered !== null) {
+        /* ⛔ 切回“上次在读历史”的会话：把全局自动跳底闸门也关上。只置 stick=false
+           挡不住 openThread 末尾那次 rAF jumpToBottom —— 长会话会跳到文档底，
+           而滑动窗口把最新回合折进底部占位区 ⇒ 落在一片空白里。 */
+        setScrollUserDetached(true);
         bag.stickToBottomRef.current = false;
-        scrollToOffsetInstant(el, Math.max(0, el.scrollHeight - el.clientHeight - remembered));
-        bag.updateBottomStateRef.current?.();
+        /* ⛔ 切回时第一帧拿到的 scrollHeight 可能还是**上一个会话/顶部占位区尚未挂上**的几何：
+           单次 scrollTo 之后占位区才长出来，通用 spacer-follow 会把视口再推到底部占位区
+           （用户实测「停在中间，切走再切回，对话框空白」）。这里按「距底偏移」连续校准
+           20 帧：顶部/底部占位区晚一帧出现，目标会同步跟着长，视口始终留在同一段内容上。 */
+        const restoreThreadId = bag.thread?.id ?? "";
+        let restoreFrames = 0;
+        const restore = () => {
+          if ((bag.thread?.id ?? "") !== restoreThreadId) return;
+          bag.selfScrollUntilRef.current = Date.now() + 120;
+          scrollToOffsetInstant(el, Math.max(0, el.scrollHeight - el.clientHeight - remembered));
+          bag.updateBottomStateRef.current?.();
+          restoreFrames += 1;
+          if (restoreFrames < 20) requestAnimationFrame(restore);
+        };
+        restore();
+        return;
+      }
+      /* ⛔ 滑动窗口不在尾部（用户上次在读历史）⇒ 这次重新打开绝不能再开贴底：
+         resume 会再发一次 thread 更新（新的 switchJump），此时阅读位置 memo 已被
+         第一次消费掉；若这里把 stick 置真，ResizeObserver/height-follow 会把
+         视口拉到 contentTailTarget（长会话 = 底部占位区的一片空白）。 */
+      if (turnWindowTailFor(bag.thread?.id ?? "") > 0) {
+        bag.dbg("switch-jump-keep", { id: bag.thread?.id ?? "", tail: turnWindowTailFor(bag.thread?.id ?? ""), top: Math.round(el.scrollTop) });
+        bag.stickToBottomRef.current = false;
         return;
       }
       bag.stickToBottomRef.current = true;
+      bag.dbg("switch-jump-bottom", { id: bag.thread?.id ?? "", top: Math.round(el.scrollTop) });
       jumpToBottom(el, undefined, bag.contentTailTarget);
       return;
     }

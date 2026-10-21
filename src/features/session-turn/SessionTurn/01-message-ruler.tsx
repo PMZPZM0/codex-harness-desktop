@@ -8,6 +8,7 @@ import { useRefObject } from "../../../lib/use-ref-object";
 import { itemText } from "../../../lib/item-text";
 import { userDisplayText } from "../../../lib/user-refs";
 import { playWheelTick } from "../../../lib/wheel-tick.mjs";
+import { contentOffsetTop } from "../../../components/scroll-utils";
 const RULER_PAGE = 5;
 
 export type RulerMark = { id: string; turnId: string; itemId: string; type: "user" | "agent"; label: string };
@@ -122,7 +123,10 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
       const probe = scroller.scrollTop + scroller.clientHeight * 0.3;
       let current: string | null = null;
       for (const el of elements) {
-        if (el.offsetTop <= probe) current = el.dataset.itemId ?? current;
+        /* ⛔ 不能用 el.offsetTop：用户消息的 offsetParent 是 .turn-group（position:relative），
+           量到的是回合内部偏移（几乎恒 0）⇒ 当前刻度永远落在最后一条消息上。
+           用内容坐标（含顶部历史占位区）才能跟着视口真实滚动位置走。 */
+        if (contentOffsetTop(el, scroller) <= probe) current = el.dataset.itemId ?? current;
         else break;
       }
       setCurrentItemId(current);
@@ -150,6 +154,10 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
   // 专家/专家团会话常常只有一条任务消息 + 超长执行输出，内容早就可滚了，
   // 若仍要求 ≥2 条用户消息，这类窗口永远没有刻度线 —— 放宽为 ≥1 条即可定位回任务消息。
   if (allMarks.length < 1 || !scrollable || containerNarrow) return null;
+  /* 当前阅读位置在**渲染出来的这一段刻度**里的下标。自动波浪以它为中心：
+     往上/往下滚动 → currentItemId 变化 → 波浪跟着走（CSS transition 把相邻刻度
+     的长度变化错峰，形成用户要的“波浪”；hover 时以鼠标位置为准）。 */
+  const currentPos = currentItemId ? marks.findIndex((m) => m.itemId === currentItemId) : -1;
   return (
     <div className="message-ruler" role="navigation" aria-label="消息定位">
       <div
@@ -182,24 +190,50 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
           /* ⛔ 10-18 用户：「刻度线里面如那两个中间产生压缩线，就在那两个中间产生一个绿色线」——
              段位固定 14px（2+8 padding+4 gap），与刻度槽同高 ⇒ 不破坏 visibleCount = h/14 的容量计算。 */
           const compactionHere = Boolean(compactionTurnId) && mark.turnId === compactionTurnId;
-          // 波浪效果：hover 刻度最长，上下邻刻度按距离衰减（1.4x、0.9x、0.7x），
-          // 且向对话框一侧（右侧）伸长；配合错峰 transition 产生丝滑波浪
-          const dist = hoverIndex == null ? 99 : Math.abs(index - hoverIndex);
+          /* 波浪中心：hover 优先；否则跟**当前阅读位置**（视口 30% 处的那条用户消息）。
+             这样滚动时 activeIndex 变化、wave-0/1/2 跟着移动，刻度尺自己会“呼吸”。 */
+          const activeIndex = hoverIndex != null ? hoverIndex : (currentPos >= 0 ? currentPos : null);
+          const dist = activeIndex == null ? 99 : Math.abs(index - activeIndex);
           const wave = dist === 0 ? " wave-0" : dist === 1 ? " wave-1" : dist === 2 ? " wave-2" : "";
           return (
             <Fragment key={mark.id}>
-              {compactionHere && <span className="ruler-compaction" title="上下文已压缩（点上面的刻度跳到该回合）" aria-hidden />}
+              {compactionHere && <button
+                type="button"
+                className={`ruler-compaction${wave}`}
+                title="上下文已压缩（点击跳到该回合）"
+                aria-label="上下文已压缩，点击跳到该回合"
+                data-turn-id={mark.turnId}
+                onClick={() => onJump(mark.turnId)}
+              />}
               <button
               className={`ruler-tick ${mark.type} ${mark.id === latestId ? "latest" : ""} ${mark.itemId === currentItemId ? "current" : ""}${wave}`}
               onMouseEnter={(event) => { setHoverIndex(index); setTip({ text: mark.label, top: event.currentTarget.offsetTop + event.currentTarget.offsetHeight / 2 }); }}
               onMouseLeave={() => setTip(null)}
               onClick={() => onJump(mark.turnId)}
               aria-label={mark.label}
+              data-turn-id={mark.turnId}
+              data-item-id={mark.itemId}
               />
             </Fragment>
           );
         })}
-        {compactionAtEnd && <span className="ruler-compaction" title="上下文已压缩（刚发生在最后一条消息之后）" aria-hidden />}
+        {compactionAtEnd && (() => {
+          /* 末尾绿段也参与波浪：以最后一根刻度为邻（它是“之后”的那条线）。 */
+          const endIndex = marks.length - 1;
+          const activeIndex = hoverIndex != null ? hoverIndex : (currentPos >= 0 ? currentPos : null);
+          const dist = activeIndex == null || endIndex < 0 ? 99 : Math.abs(endIndex - activeIndex);
+          const endWave = dist === 0 ? " wave-0" : dist === 1 ? " wave-1" : dist === 2 ? " wave-2" : "";
+          return (
+            <button
+              type="button"
+              className={`ruler-compaction${endWave}`}
+              title="上下文已压缩（刚发生在最后一条消息之后，点击跳到最新回合）"
+              aria-label="上下文已压缩，点击跳到最新回合"
+              data-turn-id={allMarks[allMarks.length - 1]?.turnId ?? ""}
+              onClick={() => { const last = allMarks[allMarks.length - 1]; if (last) onJump(last.turnId); }}
+            />
+          );
+        })()}
         {tip && <div className="ruler-tip" style={{ top: tip.top }}>{tip.text}</div>}
       </div>
     </div>
