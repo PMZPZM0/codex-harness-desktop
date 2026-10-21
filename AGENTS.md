@@ -621,7 +621,7 @@ FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）· Playwright 内核�
 
 ## 应用 UI 速览（引擎了解宿主能力用）
 
-- **内置浏览器在右侧面板**（不在中央主区，聊天不受影响）：右栏「浏览器」标签 = Electron `<webview>`（宿主窗口 `webPreferences.webviewTag: true`），guest 与宿主隔离、无 node API。组件 `src/components/BrowserPane.tsx`（`variant="panel"` 适配右栏宽度）。右栏四个标签（变更/终端/浏览器/项目树）常驻直达，无「打开标签页」选择器。标题栏行高 44px 与 titleBarOverlay 原生窗口钮对齐。
+- **内置浏览器在右侧面板**（不在中央主区，聊天不受影响）：右栏「浏览器」标签 = Electron `<webview>`（宿主窗口 `webPreferences.webviewTag: true`），guest 与宿主隔离、无 node API。组件 `src/components/BrowserPane.tsx`（`variant="panel"` 适配右栏宽度）。右栏四个标签（变更/审阅/浏览器/项目树）常驻直达，无「打开标签页」选择器（10-22 用户令撤掉「终端」标签 —— 默认宽 308px 放不下五个、审阅被挤出可视区；终端页仍在，Ctrl+J / 命令面板可开）。标题栏行高 44px 与 titleBarOverlay 原生窗口钮对齐。
 - **指纹内核（cloak-browsers）仅用于自动化场景**（模型经 `cloakbrowser` CLI 调用）；浏览器视图的「隐身浏览」按钮为预留位，尚未接入 CDP 嵌入。
 
 
@@ -641,6 +641,7 @@ GitHub Release Notes、`whats-new-notes.ts` 要点的**唯一权威数据源**�
 - 近期功能性变更（宿主行为，引擎交互相关）
 - 10-21 长会话滚动条按回合总数撑高 + 按页水合（滚轮不跳 / 不回弹；顶部虚拟占位 + layout effect 首帧锚点补偿）
 - 10-21 长会话滑动窗口（全量加载后仍只挂 5 个回合，切会话不再变慢）+ 刻度尺当前阅读位置波浪 / 绿线等长可点击
+- 10-22 右栏标签撤掉「终端」、审阅顶到第二位（终端仍可 Ctrl+J）
 - 09-21 深色模式下「独立会话窗口」的系统钮看不见但能点（已修）
 - 09-21 内置第三方写作技能 + 文档转换（markitdown）
 - 09-21 「工具输出裁剪」的真相：不是文本工具，是生图内联 base64（已修）
