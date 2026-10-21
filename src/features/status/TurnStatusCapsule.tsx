@@ -26,6 +26,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CircleCheck, Circle, ListChecks, LoaderCircle } from "lucide-react";
 import { getTurnLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
+import { mergeTaskSteps } from "../../lib/task-steps.mjs";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { ToolCodeBlock } from "../shared/ToolCodeBlock";
 import { isImagePath } from "../../lib/is-image-path";
@@ -118,14 +119,11 @@ export function TurnStatusCapsule({ runningTurnId, taskList }: { runningTurnId: 
     pop.style.right = "auto";
   }, [zone]);
   const files = runningTurnId ? getTurnLiveFileChanges(runningTurnId) : [];
-  // 步骤按**创建顺序**展示（①②③④ 从上往下读；store 接口的顺序是 updatedAt 倒序，这里重排）
-  const steps: StepRow[] = (Array.isArray(taskList) ? [...taskList] : [])
-    .sort((a, b) => Number(a?.createdAt ?? 0) - Number(b?.createdAt ?? 0))
-    .map((task) => ({
-      id: String(task?.id ?? ""),
-      text: String(task?.text ?? ""),
-      state: String(task?.status ?? "todo"),
-    }));
+  /* 步骤按**创建顺序**展示（①②③④ 从上往下读；store 接口的顺序是 updatedAt 倒序）。
+     ★ 10-22 用户截图「任务清单重复渲染」：胶囊写「步骤 0/10」，磁盘上只有 5 条 —— 同一条
+       `task_add` 被两路写入（重放时 call id 会变，按 id 去重拦不住）。归并口径收进纯函数
+       `lib/task-steps.mjs`（同一句话只留一条、冲突取状态最靠后的；守卫【live-edits】钉住）。 */
+  const steps: StepRow[] = mergeTaskSteps(taskList);
   /* ⛔ 步骤区 = **只在回合运行中显示**（用户 10-06 夜四轮 + 夜六轮实测：「任务跑完，清单不会自动
      消失」「新回合，旧的任务清单还在」）：
        · 回合结束（跑完/被 /stop 停止）⇒ 整卡消失（runningTurnId 由 composer 按活动回合传入，
