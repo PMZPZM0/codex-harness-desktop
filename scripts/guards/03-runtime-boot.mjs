@@ -415,6 +415,15 @@ console.log(C.bold("\n【10】滚动与锚定状态：单一 owner + 默认值�
   /releaseToUserRef\.current\("button"\)/.test(appSrc)
     ? ok("「回到底部」按钮走 releaseToUser 统一复位（不再直写锚定标志）")
     : fail("「回到底部」按钮没有走 releaseToUser —— 直写标志会漏掉 pinGapLocked/pinFix 等复位");
+
+  // ⑤ 10-21 用户实测「滚轮往上就自动弹回底部」：解除跟随不能看 deltaY 方向、也不能只挂 scroller。
+  //    自然滚动会把上滚报成正值；思考浮窗是 portal、刻度尺 stopPropagation ⇒ 旧监听收不到。
+  (/const onWheel = \(\) => releaseToUser\("wheel"\)/.test(appSrc)
+    && /window\.addEventListener\("wheel", onWheel, \{ passive: true, capture: true \}\)/.test(appSrc)
+    && /window\.removeEventListener\("wheel", onWheel, \{ capture: true \}\)/.test(appSrc)
+    && !/deltaY < 0\) releaseToUser/.test(appSrc) ? ok : fail)(
+    "滚轮解除跟随不看方向、走 window capture（自然滚动 / portal / stopPropagation 都拦不住）"
+  );
 }
   }
 

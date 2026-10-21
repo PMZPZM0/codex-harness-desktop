@@ -831,6 +831,41 @@ const CHECKS = [
     },
   },
   {
+    id: "scroll-wheel-release",
+    name: "🖱 滚轮解除自动跟随：不看方向、不挑目标（修「上滚自动回弹」）",
+    run: async (h) => {
+      /* 10-21 用户实测「滚轮往上就自动到最底下、弹回」。旧实现：监听挂在 scroller、
+         且只认 deltaY<0 —— 自然滚动/触控板把上滚报成正值，思考浮窗（portal）与
+         刻度尺（stopPropagation）又收不到事件 ⇒ 跟随一直生效、视口被拉回底部。
+         现在 window capture 上任何滚轮输入都 release。 */
+      await h.waitFor(`!!document.querySelector(".timeline") && !!document.querySelector(".thread-row")`, { label: "界面就绪", timeoutMs: 30000 }).catch(() => undefined);
+      let can = false;
+      const rows = Math.min(Number(await h.eval(`document.querySelectorAll(".thread-row").length`)) || 0, 12);
+      for (let i = 0; i < rows && !can; i++) {
+        await h.eval(`(function(){ var r=[...document.querySelectorAll(".thread-row")][${i}]; var b=r&&r.querySelector("button"); if(b)b.click(); return 1; })()`);
+        await wait(1400);
+        can = await h.eval(`(function(){ var t=document.querySelector(".timeline"); return t ? t.scrollHeight - t.clientHeight > 200 : false; })()`).catch(() => false);
+      }
+      h.check("① 前置：找到一个可滚动会话", can === true, `can=${can}`);
+      if (!can) return;
+      const arm = async () => {
+        await h.eval(`(function(){ window.__adbg=[]; var t=document.querySelector(".timeline"); t.scrollTop=t.scrollHeight; return 1; })()`);
+        await wait(500);
+      };
+      const releases = () => h.eval(`(window.__adbg||[]).filter(function(x){return x.r==="release:wheel";}).length`).catch(() => 0);
+      await arm();
+      await h.eval(`(function(){ document.body.dispatchEvent(new WheelEvent("wheel",{deltaY:300,bubbles:true,cancelable:true})); return 1; })()`);
+      await wait(250);
+      const r1 = await releases();
+      h.check("② 对话区之外（body）发滚轮、且 deltaY>0 也解除跟随（旧判据两条都漏）", r1 >= 1, `release=${r1}`);
+      await arm();
+      await h.eval(`(function(){ var t=document.querySelector(".timeline"); var track=document.querySelector(".ruler-track") || t; track.dispatchEvent(new WheelEvent("wheel",{deltaY:-300,bubbles:true,cancelable:true})); return 1; })()`);
+      await wait(250);
+      const r2 = await releases();
+      h.check("③ 刻度尺/stopPropagation 目标上的滚轮也能解除（window capture）", r2 >= 1, `release=${r2}`);
+    },
+  },
+  {
     id: "reasoning-strip",
     name: "🧠 思考长条：短内容紧跟标题、不再甩到最右（10-21 用户截图圈出的空白）",
     run: async (h) => {
@@ -3385,6 +3420,7 @@ const ROUND_OF = {
   "scroll-anchor": "10-19",   // 10-19 轮：上滚续载视口不跳（同一锚点回合的视口 top 保持 ±4px）
   "pet-activity": "10-21",   // 10-21 轮：桌宠活动气泡（running→review 持久 + 独立窗 + 打开清已看 + 拖拽）
   "reasoning-strip": "10-21",   // 10-21 晚：思考长条短内容不甩到最右（用户截图圈空白）+ 展开/收起
+  "scroll-wheel-release": "10-21",   // 10-21 晚：滚轮解除跟随不看方向/目标（修「上滚自动回弹」）
   "compact-line": "10-07",   // 10-07 夜十一轮：压缩线（新会话 + 短回合 + 手动压缩 → 宿主侦测真链路 → 线出现 + 落盘）
   "devtools-install-ux": "10-11",   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）
   "free-gateway": "10-12",   // 10-12 轮：免费模型网关（第三方开源侧车 + 一键注册供应商；免责声明为契约）   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）
