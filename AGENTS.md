@@ -116,7 +116,7 @@
      与当年 `connect-src` 不放行 `data:` 导致 Pixi 贴图变白方块同型；**只在构建产物 + 真实 CSP 下暴露**。
   2. 浮窗（`?pet=1`）必须在**首帧前**摘掉启动页（`index.html` 内联脚本判定 + 内联 CSS `display:none`）——
      启动页是不透明白底，晚一步就在桌面上闪一块白。
-- **架构落点**：主进程归约（`pet-state.ts`：引擎事件 → **每会话一条活动**，`waiting > running > failed/interrupted > completed→review`，旁听不改流向；completed 不自动回 idle）→ 两个透明置顶窗（`pet-window.ts`，**都不登记 window-bus**，主窗口关时由 window-factory 显式关掉）：宠物 `?pet=1` + 活动气泡 `?pet=activity`（独立 320px，标题/状态/最近一句 + 打开/停止）→ `pet://` **窄口径**协议供图（只放行宠物目录 + 图片扩展名；
+- **架构落点**：主进程归约（`pet-state.ts`：引擎事件 → **每会话一条活动**，`waiting > running > failed/interrupted > completed→review`，旁听不改流向；completed 的**活动/气泡**保留到已看，但**宠物姿态只审阅 6s 就自动回 idle** —— 10-21 用户实测「运行结束宠物不刷新，要点打开箭头才刷新」，长期占着 review 会让宠物看起来卡住）→ 两个透明置顶窗（`pet-window.ts`，**都不登记 window-bus**，主窗口关时由 window-factory 显式关掉）：宠物 `?pet=1` + 活动气泡 `?pet=activity`（独立 320px，标题/状态/最近一句 + 打开/停止）→ `pet://` **窄口径**协议供图（只放行宠物目录 + 图片扩展名；
   ⛔ 不放宽 `harness-image` 的可信根，那是安全回归）→ 渲染层 `src/features/pet/`（`main.tsx` 按 `?pet=1` / `?pet=activity` 分流，
   ⛔ 不能进 `App()` 条件调用 `useHarnessApp` —— hook 调用序）。
 - ⛔ **悬停工具栏的隐藏由主进程推 hover**（10-21）：窗口移出可交互矩形后会切成穿透，页面从此收不到 `pointerleave` ⇒ 工具栏会永久挂着；`pet-window.ts` 在光标轮询里把 inside 变化推成 `pet:hover`，浮窗用 `onPetHover` 收起。工具栏底部 42px **不参与看帧**（指针停在图标上切静态 look 帧会让宠物看着像冻住）。

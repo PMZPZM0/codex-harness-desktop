@@ -3140,14 +3140,15 @@ w.postMessage({id:1,op:"list",root});
     (bootSrc.includes("feedPetEvent(event)") ? ok : fail)(
       "【232】引擎事件流喂给宠物归约（不改事件流向、只旁听）"
     );
-    /* ⑫ 归约侧：九态全在类型里 + Qoder 式持久活动（review/failed 不再到点回 idle） */
+    /* ⑫ 归约侧：九态全在类型里 + Qoder 式活动（completed 活动/气泡持久到已看；
+     * 宠物姿态 jumping→review 6s→idle 自动回落，failed 仍持久 —— 用户 10-21 实测要求） */
     const stateNames = (stateSrc.match(/export type PetStateName =([\s\S]*?);/) || [, ""])[1];
     (OFFICIAL_STATES.every((s) => stateNames.includes(`"${s}"`)) ? ok : fail)(
       "【232】归约侧九态类型齐全"
     );
     (stateSrc.includes("petPhaseOfActivities") && stateSrc.includes("activities") && stateSrc.includes('status: "completed"')
       && stateSrc.includes("motion") && stateSrc.includes("markPetActivitySeen") ? ok : fail)(
-      "【232】活动归约：completed→review 持久、failed 持久、打开后 markSeen 才清（Qoder 同款事件模型）"
+      "【232】活动归约：completed→review 活动持久（姿态 6s 后回 idle）、failed 持久、打开后 markSeen 才清"
     );
     /* ⑬ ⛔ e2e 必须排除宠物浮窗 target：它也是 page target，
        取 list[0] 会随机连到宠物窗 ⇒ 之后所有 eval/click 全打空（实测设置导航读到 0 项） */
