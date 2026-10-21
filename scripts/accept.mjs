@@ -875,6 +875,14 @@ const CHECKS = [
         console.log("  \x1b[90m（当前 profile 无「加载更早」会话，跳过 ④）\x1b[0m");
       } else {
         const before = await h.eval(`(function(){ var t=document.querySelector(".timeline"); return { groups:t.querySelectorAll(".turn-group").length, max:t.scrollHeight-t.clientHeight }; })()`);
+        /* 模拟真实「滚轮上滚」：滚轮事件 + 随后 scrollTop 实际变小 ⇒ 触发离开底部闸门
+           （只看方向值的老判据在这里会漏；自然滚动还会反向）。 */
+        await h.eval(`(function(){ var t=document.querySelector(".timeline"); t.scrollTop=t.scrollHeight; return 1; })()`);
+        await wait(250);
+        await h.eval(`(function(){ var t=document.querySelector(".timeline"); t.dispatchEvent(new WheelEvent("wheel",{deltaY:-300,bubbles:true,cancelable:true})); return 1; })()`);
+        await wait(80);
+        await h.eval(`(function(){ var t=document.querySelector(".timeline"); t.scrollTop=Math.max(0,t.scrollTop-320); t.dispatchEvent(new Event("scroll")); return 1; })()`);
+        await wait(300);
         await h.eval(`(function(){ window.__adbg=[]; var t=document.querySelector(".timeline"); t.scrollTop=0; t.dispatchEvent(new Event("scroll")); return 1; })()`);
         await wait(500);
         await h.eval(`(function(){ var b=document.querySelector(".load-earlier-turns"); if(b) b.click(); return 1; })()`);

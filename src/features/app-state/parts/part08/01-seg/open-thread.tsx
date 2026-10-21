@@ -8,7 +8,7 @@ import "@xterm/xterm/css/xterm.css";
 import { loadDraft, saveDraft } from "../../../../../lib/composer-draft.mjs";
 import { DEFAULT_EFFORT, pickDefaultEffort, normalizeEffort, ALL_EFFORTS, declaredModelEfforts } from "../../../../../lib/effort";
 import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider } from "../../../../../lib/provider-continuity.mjs";
-import { contentOffsetTop, jumpToBottom, scrollToOffsetInstant } from "../../../../../components/scroll-utils";
+import { contentOffsetTop, jumpToBottom, scrollToOffsetInstant, setScrollUserDetached } from "../../../../../components/scroll-utils";
 import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, computeFoldSummary, topToolGroup, isTurnRunning, normalizeLoadedThread, type FoldUnit } from "../../../../../lib/turn-fold";
 import { Turn } from "../../../../../lib/turn";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
@@ -19,6 +19,8 @@ export async function openThread(bag: Bag, id: string, freshThread?: Thread | nu
     bag.switchStartRef.current = performance.now();
     // 新会话：重新等待「真实用户滚动」才允许自动续载（见 userScrolledRef）
     bag.userScrolledRef.current = false;
+    // 切到一个会话 = 允许这次「打开后跳到底部」；用户在新会话里上滚后会重新上锁。
+    setScrollUserDetached(false);
     bag.setEarlierLoadingId(null); // 切会话不留上一次的「正在载入更早」提示
     bag.setChatSearchOpen(false);
     // 快速连点防竞态：只有最新一次切换的 resume 响应才允许落地渲染
