@@ -38,8 +38,18 @@ export const shellFeature = defineFeature<null>({
       }
     });
 
+    /* 10-22 文件卡「默认应用」：用系统关联程序打开文件/目录。
+       ⛔ 与 shell:reveal 同一道可信根闸（渲染层传来的路径不可信，放行任意路径 = 系统级执行面）。 */
+    ipcHost.handle("shell:open", async (_event, target: string) => {
+      if (!target) return;
+      if (!isInsideOrEqualTrustedRoots(target)) throw new Error("仅允许打开会话工作区与应用数据目录");
+      const openErr = await shell.openPath(target);
+      if (openErr) throw new Error(openErr);
+    });
+
     ctx.effect(() => {
       ipcHost.removeHandler("shell:reveal");
+      ipcHost.removeHandler("shell:open");
     });
   },
 });

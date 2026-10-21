@@ -160,6 +160,7 @@ import { AppViewTaskComposer } from "./AppView/06-task-composer";
 import { TeamOfficePreview } from "../team-office";
 /* 云账号「登录即用」的后台联动桥（10-22）：只刷新已接通的云端知识库/记忆，返回 null。 */
 import { CloudAccountSyncBridge } from "../settings-cloud";
+import { RightFileBridge } from "./AppView/RightFileBridge";
 import { DramaCanvas } from "../drama-canvas";
 import { UiSketchModal } from "../ui-sketch";
 import { WhatsNewDialog } from "../whats-new";
@@ -435,6 +436,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       <WallpaperLayer />
       {!popoutThreadId && <HtmlPreviewBridge app={app} />}
       {!popoutThreadId && <CloudAccountSyncBridge />}
+      {!popoutThreadId && <RightFileBridge app={app} />}
       {!popoutThreadId && <TurnReviewBridge onOpen={() => {
         app.setRightOpen(true);
         app.setRightTab("turn-review");

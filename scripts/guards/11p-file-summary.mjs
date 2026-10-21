@@ -205,6 +205,40 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     "收尾心跳带截断标记（排查日志可区分「真的没改」与「被预算截断」—— mac 排查的关键字段）");
 }
 
+/* ── 十、Qoder 式「本轮产物」文件卡 + 右栏文件预览联动（10-22）──────────────── */
+{
+  const outputCards = read("src/features/status/OutputFileCards.tsx");
+  const rightFile = read("src/lib/right-file.mjs");
+  const bridge = read("src/features/app-view/AppView/RightFileBridge.tsx");
+  const reviewPanel = read("src/features/app-view/AppView/03-review-panel.tsx");
+  const workspacePreview = read("src/features/app-view/AppView/03-workspace-files.tsx");
+  const appView = read("src/features/app-view/AppView.tsx");
+  const shell = read("electron/features/shell-ipc.ts");
+  const manifest = JSON.parse(read("electron/ipc-channels.manifest.json"));
+
+  ok(statusCode.includes("file.newFile && !file.deletedFile") && statusCode.includes("<OutputFileCards"),
+    "本轮产物卡只给**新建文件**（编辑已有文件仍走汇总卡，⛔ 同一批文件不许展示两遍）");
+  ok(/MAX_VISIBLE\s*=\s*7/.test(outputCards) && /显示其余 \$\{hidden\} 个文件/.test(outputCards),
+    "最多 7 张、超出折叠（与 Qoder outputFiles 的 7 张口径一致）");
+  ok(outputCards.includes("openRightFile") && /在右侧栏/.test(outputCards) && /在编辑器打开/.test(outputCards) && /默认应用/.test(outputCards),
+    "卡片默认打开右栏，另有编辑器 / 默认应用（对应 Qoder 的 workspace / newWindow / system）");
+  ok(/data-testid="turn-output-card"/.test(outputCards) && /createPortal/.test(outputCards),
+    "卡片带稳定 testid；打开方式 / 更多操作菜单 portal 到 body（不被回合容器裁剪）");
+  ok(rightFile.includes("openRightFile") && rightFile.includes("subscribeRightFile") && appView.includes("<RightFileBridge"),
+    "文件卡 → 右栏走事件箱 + AppView 桥（⛔ 不给整条组件链加 props）");
+  ok(bridge.includes('setRightTab("tree")') && bridge.includes("setRightOpen(true)") && bridge.includes("setPanelWidth(420)"),
+    "点卡片：打开右栏 + 切到文件页 + 放宽到 420px（308px 放不下预览）");
+  ok(/<WorkspaceFilePreview path=\{resolvedWorkspaceFile\}/.test(reviewPanel) && reviewPanel.includes('title="工作区文件：浏览项目并预览"'),
+    "右栏「文件」页 = 项目树 + 预览（标签由「项目树」改名，工具提示仍是「工作区文件」）");
+  ok(/单击在\*\*右侧栏\*\*预览，双击才开居中编辑器/.test(reviewPanel) && reviewPanel.includes("onDoubleClick"),
+    "树里单击在右栏预览、双击才开居中编辑器");
+  ok(/window\.codex\.readFile\(path\)/.test(workspacePreview) && /FilePreviewCode/.test(workspacePreview) && /Markdown/.test(workspacePreview)
+    && /workspace-file-preview-pdf/.test(workspacePreview) && /workspace-file-preview-image/.test(workspacePreview),
+    "预览走 fs:read，覆盖 Markdown / 代码 / 图片 / PDF / 二进制占位");
+  ok(Boolean(manifest.channels.find((c) => c.channel === "shell:open")) && /shell:open/.test(shell) && /isInsideOrEqualTrustedRoots\(target\)/.test(shell),
+    "「默认应用」走新通道 shell:open，且与 shell:reveal 同一道可信根闸（⛔ 不放行任意路径）");
+}
+
 /* ── 九、parseDiffLines 真值表（纯函数**真跑**——行号/文件头判据出错的失效方式是静默的：
    行号错位只是数字难看不会报错；`---` 判错会吞内容行，预览直接缺行）────────────────── */
 {

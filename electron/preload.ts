@@ -339,6 +339,7 @@ contextBridge.exposeInMainWorld("codex", {
   openExternal: (url: string) => __ipc("external:open", 1, [url]),
   browserPopout: (url: string) => __ipc("browser:popout", 1, [url]),
   shellReveal: (target: string) => __ipc("shell:reveal", 1, [target]),
+  shellOpen: (target: string) => __ipc("shell:open", 1, [target]),
   writeClipboardImage: (filePath: string) => __ipc("clipboard:write-image", 1, [filePath]),
   readClipboardFiles: () => __ipc("clipboard:read-files", 0, []),
   doctor: (cwd?: string) => __ipc("app:doctor", 0, [{ cwd }]),

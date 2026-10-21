@@ -1299,8 +1299,8 @@ const CHECKS = [
           scrollW:Math.round(strip.scrollWidth), clientW:Math.round(strip.clientWidth),
           reviewFits: !!rr && rr.width>0 && rr.left>=r.left-1 && rr.right<=r.right+1 };
       })()`).catch(() => null);
-      h.check("① 右栏标签 = 变更/审阅/浏览器/项目树（终端按钮已撤，审阅在第二位）",
-        Boolean(info && info.texts.join("/") === "变更/审阅/浏览器/项目树"),
+      h.check("① 右栏标签 = 变更/审阅/浏览器/文件（终端已撤、审阅在第二位；项目树改造成工作区文件）",
+        Boolean(info && info.texts.join("/") === "变更/审阅/浏览器/文件"),
         JSON.stringify(info && info.texts));
       h.check("② 当前面板宽度下四个标签排得下、审阅完整可见（不再被挤出横向滚动区）",
         Boolean(info && info.reviewFits && info.scrollW <= info.clientW + 1),
@@ -1327,6 +1327,76 @@ const CHECKS = [
         Boolean(opened && reviewShown && back && backShown),
         JSON.stringify({ opened, reviewShown, back, backShown }));
       await h.screenshot("panel-tabs");
+    },
+  },
+  {
+    id: "file-cards",
+    name: "🗂 本轮产物文件卡 + 右栏工作区文件预览联动（10-22，按 Qoder outputFiles 逆向）",
+    run: async (h) => {
+      /* Qoder 的结构（REA 读 app.asar）：每轮最多 7 张产物卡，卡片带「打开方式」下拉，
+         点卡片默认进右侧工作区预览。这里量真 DOM：卡在、点开右栏、文件页能读、树能预览。 */
+      await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "界面就绪", timeoutMs: 40000 });
+      await wait(600);
+      let found = null;
+      const rows = Math.min(Number(await h.eval(`document.querySelectorAll(".thread-row").length`)) || 0, 16);
+      for (let i = 0; i < rows && !found; i++) {
+        await h.eval(`(function(){ var r=document.querySelectorAll(".thread-row")[${i}]; if(r)(r.querySelector("button")||r).click(); return 1; })()`);
+        await wait(1000);
+        const cards = await h.eval(`(function(){
+          return [...document.querySelectorAll('[data-testid="turn-output-card"]')].map((c)=>({
+            name:c.querySelector(".turn-output-main b")?.textContent||"",
+            type:c.querySelector(".turn-output-type")?.textContent||"",
+            mode:c.querySelector(".turn-output-mode")?.textContent||"",
+          }));
+        })()`).catch(() => []);
+        if (cards.length) found = { i, cards };
+      }
+      h.check("① 历史里能找到「本轮产物」文件卡（最多 7 张，含文件名/类型/打开方式）",
+        Boolean(found && found.cards.length > 0 && found.cards.length <= 7 && found.cards.every((c) => c.name && c.mode.includes("在右侧栏"))),
+        JSON.stringify(found ? { count: found.cards.length, first: found.cards[0] } : null).slice(0, 200));
+      if (!found) return;
+      await h.eval(`(function(){ document.querySelector('[data-testid="turn-output-card"]')?.click(); return 1; })()`);
+      await wait(1500);
+      const panel = await h.eval(`(function(){
+        const aside=document.querySelector(".context-panel");
+        const active=aside?.querySelector(".panel-tab.active")?.textContent||"";
+        const preview=document.querySelector('[data-testid="workspace-file-preview"]');
+        const name=preview?.querySelector("strong")?.textContent||"";
+        const body=(preview?.querySelector(".workspace-file-preview-body")?.textContent||"").replace(/\\s+/g,"");
+        return { aside:!!aside, active, preview:!!preview, name, bodyLen:body.length,
+          error:/无法预览|读取失败/.test(body) };
+      })()`).catch(() => null);
+      h.check("② 点文件卡 → 右栏自动打开「文件」页并渲染预览（文件被删时给出可见错误，不空白）",
+        Boolean(panel && panel.aside && panel.active.includes("文件") && panel.preview && panel.name && (panel.bodyLen > 0)),
+        JSON.stringify({ active: panel?.active, name: panel?.name, len: panel?.bodyLen, error: panel?.error }).slice(0, 200));
+      const mode = await h.eval(`(function(){
+        const b=document.querySelector(".turn-output-mode"); if(!b) return null;
+        b.click(); return true;
+      })()`).catch(() => null);
+      await wait(300);
+      const menu = await h.eval(`(function(){
+        const m=document.querySelector(".turn-output-menu");
+        return m ? [...m.querySelectorAll("button")].map((x)=>(x.textContent||"").trim()) : null;
+      })()`).catch(() => null);
+      h.check("③ 打开方式下拉有三项（在右侧栏 / 在编辑器打开 / 默认应用）",
+        Boolean(mode && menu && menu.length === 3 && menu.join("/").includes("在右侧栏")),
+        JSON.stringify(menu));
+      await h.eval(`(function(){ document.body.dispatchEvent(new MouseEvent("mousedown",{bubbles:true})); return 1; })()`);
+      /* 树里点一个**当前工作区真实存在**的文件（AGENTS.md）：预览正文必须真读到。 */
+      const treeClick = await h.eval(`(function(){
+        const list=[...document.querySelectorAll(".workspace-files-tree .tree-entry")];
+        const f=list.find((x)=>(x.textContent||"").trim()==="AGENTS.md");
+        if(!f) return false; f.click(); return true;
+      })()`).catch(() => false);
+      await wait(1400);
+      const treePreview = await h.eval(`(function(){
+        const p=document.querySelector('[data-testid="workspace-file-preview"]');
+        return { name:p?.querySelector("strong")?.textContent||"", body:(p?.querySelector(".workspace-file-preview-body")?.textContent||"").replace(/\\s+/g,"") };
+      })()`).catch(() => null);
+      h.check("④ 右栏项目树单击 → 同一区域预览到真实内容（AGENTS.md）",
+        Boolean(treeClick && treePreview && treePreview.name === "AGENTS.md" && treePreview.body.length > 200),
+        JSON.stringify({ treeClick, name: treePreview?.name, len: treePreview?.body?.length }).slice(0, 180));
+      await h.screenshot("file-cards");
     },
   },
   {
@@ -3848,7 +3918,8 @@ const LATEST_ROUND = "10-22";   // 10-22 轮：右栏标签改版（撤终端、
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
   "panel-tabs": "10-22",
-  "cloud-simple": "10-22",   // 10-22 轮：云账号登录即用（单卡登录 / 就绪清单 / 教程 / 手动流程折叠）   // 10-22 轮：右栏标签撤终端、审阅顶到第二位（默认宽 308px 五个排不下）
+  "cloud-simple": "10-22",   // 10-22 轮：云账号登录即用（单卡登录 / 就绪清单 / 教程 / 手动流程折叠）
+  "file-cards": "10-22",   // 10-22 轮：Qoder 式本轮产物文件卡 + 右栏工作区文件预览联动   // 10-22 轮：右栏标签撤终端、审阅顶到第二位（默认宽 308px 五个排不下）
   "ui-sketch": "10-06",   // ⛔ 10-06 重写：三形态探针（手机+电脑屏 / platform web 真落盘）+ 预览 + 还原；编号改执行顺序
   "file-summary": "10-06",   // 文件更改汇报卡：运行中行/胶囊 + 收尾卡 + 悬停 diff 预览 + 交互（10-06 两次重写）
   "popup-fits": "10-06",   // ⛔ 10-06 新增：弹窗自适应普查（用户令「凡事弹窗类都要加自适应，不能被裁剪」）
