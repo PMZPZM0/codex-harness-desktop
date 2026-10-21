@@ -836,7 +836,7 @@ interface Window {
     engineActiveTurns(): Promise<{ count: number; threadIds: string[] }>;
     voiceStatus(): Promise<{ active: boolean; state: string; runtimeReady: boolean; modelsReady: boolean; threadId: string; lastError: string }>;
     /* 我是播报窗口吗 + 当前全局静音态（多窗口唯一播报：焦点 → 最后活跃 → 主窗口；取不到时 owner=true 保底，⛔ 不许因算不出来就静音；⛔ muted 必须一起回，否则新开窗口会无视已生效的全局静音） */
-    announceOwner(): Promise<{ owner: boolean; ownerWebContentsId: number | null; reason: string; muted: boolean }>;
+    announceOwner(): Promise<{ owner: boolean; ownerWebContentsId: number | null; reason: string; muted: boolean; callActive: boolean }>;
     /* 全局静音闩锁（任一窗口按「停止播报」⇒ 全窗口静默；一个扬声器一个用户，⛔ 不许只在本地闩） */
     announceSetMuted(input?: { muted?: boolean }): Promise<{ muted: boolean }>;
     voiceStart(threadId: string, options?: { mode?: "conversation" | "dictation" }): Promise<{ ok: boolean; error?: string; status: unknown }>;

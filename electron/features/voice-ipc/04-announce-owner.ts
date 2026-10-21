@@ -114,11 +114,16 @@ export function registerVoiceIpc4(a: ReturnType<typeof registerVoiceIpc1>) {
        owner、不拿 muted，它会以为自己没被静音 ⇒ 用户已经在别的窗口按过「停止播报」，
        新窗口照念 —— 静态判定「我是不是 owner」不等于「现在该不该出声」。 */
     const muted = state.mutedAll;
-    if (ownerId == null) return { owner: true, ownerWebContentsId: null, reason, muted };
+    /* ⛔ 通话态也要一起回（与 muted 同一个理由）：弹窗启动时若主窗口**已经在通话**，
+       它收不到那次状态广播（广播只在**变化**时发）⇒ 会开口播报，与通话 TTS 抢扬声器。
+       ⛔ 启动早期 service 还没注入会抛错 —— 按「未通话」处理，不要因此让整个查询失败。 */
+    let callActive = false;
+    try { callActive = a.svc().status().active; } catch { /* 未注入：按未通话处理 */ }
+    if (ownerId == null) return { owner: true, ownerWebContentsId: null, reason, muted, callActive };
     /* ⛔ `ipcHost.handle` 的 event 是 unknown（不是 ipcMain.handle 的 IpcMainInvokeEvent）——
        必须显式收窄，否则 tsc 报 TS18046。 */
     const senderId = (event as { sender?: { id?: number } } | undefined)?.sender?.id;
-    return { owner: senderId === ownerId, ownerWebContentsId: ownerId, reason, muted };
+    return { owner: senderId === ownerId, ownerWebContentsId: ownerId, reason, muted, callActive };
   });
 
   /* ② 全局静音闩锁（任一窗口按「停止播报」⇒ 全窗口安静）。 */
