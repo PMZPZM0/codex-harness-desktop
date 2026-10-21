@@ -631,6 +631,8 @@ contextBridge.exposeInMainWorld("codex", {
   petActivityOpen: (threadId: string) => __ipc("pet:activity-open", 1, [threadId]),
   /* 活动气泡「停止」：对运行中的回合发 turn/interrupt（主进程侧，不依赖主窗口是否打开） */
   petActivityStop: (threadId: string) => __ipc("pet:activity-stop", 1, [threadId]),
+  /* 活动气泡「回复」：对运行中的回合发 turn/steer（把一句话补进当前任务，不新起回合） */
+  petActivityReply: (threadId: string, text: string) => __ipc("pet:activity-reply", 2, [threadId, text]),
   /* 桌面宠物工具栏：收起/展开活动气泡（状态在主进程，两个浮窗同步） */
   petActivityToggle: () => __ipc("pet:activity-toggle", 0, []),
   /* 桌面宠物双击/工具栏「打开」：聚焦主窗口 */

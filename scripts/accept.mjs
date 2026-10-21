@@ -605,6 +605,23 @@ const CHECKS = [
           running?.status === "running" && !!running?.title && running?.canStop === true,
           JSON.stringify(running).slice(0, 280));
 
+        let runningCard = null;
+        for (let i = 0; i < 16; i++) {
+          runningCard = await h.evalInTarget("pet=activity", `(function(){
+            return { count: document.querySelectorAll('.pet-activity-card').length,
+              buttons: [...document.querySelectorAll('.pet-activity-btn')].map((b)=>(b.innerText||"").trim()) };
+          })()`).catch(() => null);
+          if ((runningCard?.buttons ?? []).includes("回复")) break;
+          await wait(250);
+        }
+        h.check("③b 运行中活动卡有「回复 / 停止」按钮（回复走 turn/steer）",
+          (runningCard?.count ?? 0) >= 1 && (runningCard?.buttons ?? []).includes("回复") && (runningCard?.buttons ?? []).includes("停止"),
+          JSON.stringify(runningCard).slice(0, 200));
+
+        const steered = await h.eval(`window.codex.petActivityReply(${JSON.stringify(started.threadId)}, "补充：完成后只回复“完成”两个字。")
+          .then((x)=>({ ok: x?.ok, error: x?.error })).catch((e)=>({ ok: false, error: String(e && e.message || e) }))`);
+        h.check("③c 气泡回复真送入当前回合（turn/steer，不新起回合）", steered?.ok === true, JSON.stringify(steered).slice(0, 220));
+
         let completed = null;
         for (let i = 0; i < 40; i++) {
           await wait(500);

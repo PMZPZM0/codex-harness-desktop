@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 508,
+  "count": 509,
   "channels": [
     {
       "name": "request",
@@ -4231,6 +4231,16 @@
       "invokeArgs": "threadId",
       "cast": null,
       "note": "活动气泡「停止」：对运行中的回合发 turn/interrupt（主进程侧，不依赖主窗口是否打开）"
+    },
+    {
+      "name": "petActivityReply",
+      "channel": "pet:activity-reply",
+      "paramsImpl": "threadId: string, text: string",
+      "paramsDecl": "threadId: string, text: string",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "threadId, text",
+      "cast": null,
+      "note": "活动气泡「回复」：对运行中的回合发 turn/steer（把一句话补进当前任务，不新起回合）"
     },
     {
       "name": "petActivityToggle",

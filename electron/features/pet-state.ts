@@ -44,6 +44,7 @@ export interface PetActivity {
   status: PetActivityStatus;
   updatedAt: number;
   canStop: boolean;
+  canReply: boolean;
 }
 
 /** 推给浮窗的载荷（⛔ 只传短字符串，不传引擎原始事件 / 正文全文）。 */
@@ -115,6 +116,7 @@ function topActivities(): PetActivity[] {
   return sortPetActivities([...activities.values()]).slice(0, 2).map(({ detailAt, ...rest }) => ({
     ...rest,
     canStop: rest.status === "running" && Boolean(rest.turnId),
+    canReply: rest.status === "running" && Boolean(rest.turnId),
   }));
 }
 
@@ -206,7 +208,7 @@ export function petActivityRecord(threadId: string): PetActivity | null {
   const item = activities.get(String(threadId ?? ""));
   if (!item) return null;
   const { detailAt, ...rest } = item;
-  return { ...rest, canStop: rest.status === "running" && Boolean(rest.turnId) };
+  return { ...rest, canStop: rest.status === "running" && Boolean(rest.turnId), canReply: rest.status === "running" && Boolean(rest.turnId) };
 }
 
 /** 用户从活动气泡打开了会话 ⇒ completed/failed 视为已看，清掉（running/waiting 不动）。 */
@@ -235,9 +237,11 @@ function upsertActivity(threadId: string, patch: Partial<ActivityRecord>): Activ
     status: patch.status ?? existing?.status ?? "running",
     updatedAt: patch.updatedAt ?? now,
     canStop: false,
+    canReply: false,
     detailAt: patch.detailAt ?? existing?.detailAt ?? 0,
   };
   next.canStop = next.status === "running" && Boolean(next.turnId);
+  next.canReply = next.status === "running" && Boolean(next.turnId);
   activities.set(id, next);
   ensureClock();
   publish();
@@ -327,11 +331,13 @@ export function feedPetEvent(event: unknown): boolean {
   if (method === "turn/started") {
     if (threadId) {
       motion = null;
+      const existing = activities.get(threadId);
+      const freshTurn = !existing || existing.status === "completed" || existing.status === "failed" || existing.status === "interrupted";
       upsertActivity(threadId, {
         turnId: turnIdOf(p),
         status: "running",
         detail: "正在开始…",
-        title: activities.get(threadId)?.title ?? fallbackTitle(threadId),
+        title: freshTurn ? fallbackTitle(threadId) : existing.title,
       });
       showBubble("");
     }
@@ -364,8 +370,12 @@ export function feedPetEvent(event: unknown): boolean {
     if (!threadId) return false;
     if (type === "userMessage") {
       const text = petItemText(item);
-      const title = petTitleFromText(text, activities.get(threadId)?.title ?? fallbackTitle(threadId));
-      upsertActivity(threadId, { title, turnId: turnIdOf(p) || activities.get(threadId)?.turnId || "" });
+      const existing = activities.get(threadId);
+      const nextTurnId = turnIdOf(p) || existing?.turnId || "";
+      // 标题只认「这一轮的第一条用户消息」：steer 会追加用户消息，别把原任务名改掉。
+      const freshTitle = !existing || !existing.title || existing.title.startsWith("会话 ") || (existing.turnId && nextTurnId && existing.turnId !== nextTurnId);
+      const title = freshTitle ? petTitleFromText(text, existing?.title ?? fallbackTitle(threadId)) : existing.title;
+      upsertActivity(threadId, { title, turnId: nextTurnId });
     } else if (type === "agentMessage") {
       const text = petItemText(item);
       setStatusIfNotWaiting(threadId, "running", { detail: petDetailFromText(text) || "正在整理结果…", detailAt: Date.now() });

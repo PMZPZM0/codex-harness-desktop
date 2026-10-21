@@ -231,6 +231,22 @@ html[data-pet-window="activity"] #root {
 .pet-activity-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pet-activity-card footer { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
 .pet-activity-stop-error { flex: 1; min-width: 0; color: #b14040; font-size: 10.5px; line-height: 14px; }
+.pet-activity-reply { flex: 1; display: flex; align-items: center; gap: 4px; min-width: 0; }
+.pet-activity-reply input {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 7px;
+  outline: none;
+  background: #fff;
+  color: #23231f;
+  font: inherit;
+  font-size: 11px;
+}
+.pet-activity-reply input:focus { border-color: rgba(47, 107, 221, 0.55); box-shadow: 0 0 0 2px rgba(47, 107, 221, 0.12); }
+.pet-activity-btn.send { color: #2f6bdd; }
 .pet-activity-btn {
   display: inline-flex;
   align-items: center;
