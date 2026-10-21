@@ -23,6 +23,7 @@ import path from "node:path";
 import { safeProviderId } from "../provider-id";
 import { enrichThreadWithRolloutToolsAsync, listRolloutThreadsAsync, syncToolSurfaceAsync } from "../rollout-pool";
 import { markMissingRollouts, mergeThreadList } from "../tools/session-tools";
+import { withStepParam } from "../../src/lib/step-note.mjs";
 import { dropStoredReports, storedReportsForThread } from "../turn-file-watch";
 import { dropStoredCompactions, storedCompactionsForThread } from "../compaction-watch";
 import { rendererActiveByWindow } from "./renderer-fuse";
@@ -89,6 +90,13 @@ export const codexFeature = defineFeature<null>({
         } catch (error: any) {
           console.warn("[mcp-bridge] 注入失败（不影响 thread/start）：", String(error?.message ?? error).slice(0, 160));
         }
+        /* 10-21：给工具面注入可选 `step` —— 模型填一句中文「这一步在干什么」，卡片直接当标题。
+           ⛔ 位置必须在 MCP 合并**之后**：并进来的那批也要有；且要放在 try **外面**，
+              合并失败时渲染层自己那批照样能拿到（漏掉就是"工具卡有时没标题"的幽灵差异）。
+           ⛔ 只在有工具面时动：`thread/start` 也可能不带 dynamicTools（引擎侧纯空会话）。 */
+        if (Array.isArray((params as any)?.dynamicTools)) {
+          (params as any).dynamicTools = withStepParam((params as any).dynamicTools);
+        }
       }
       /* ⛔⛔ 老会话的工具面升级（10-11 实测定案，与「resume 会重注册工具」的旧认知相反）：
          引擎的工具面**只在 spawn 时定死**，来源 = rollout 首行 `session_meta.dynamic_tools`
@@ -104,7 +112,9 @@ export const codexFeature = defineFeature<null>({
         const resumeTools = (params as any)?.dynamicTools;
         if (resumeThreadId && Array.isArray(resumeTools) && resumeTools.length) {
           try {
-            await syncToolSurfaceAsync(codexHome, resumeThreadId, resumeTools);
+            /* ⛔ 同步进去的是**最终工具面**：这里也要带 `step`，否则 resume 一次就把
+               首行的工具面换回无 step 的旧形态（老会话 = 卡片永远没有标题）。 */
+            await syncToolSurfaceAsync(codexHome, resumeThreadId, withStepParam(resumeTools) as unknown[]);
           } catch (error: any) {
             console.warn("[tool-surface] 工具面同步失败（不影响 resume）：", String(error?.message ?? error).slice(0, 200));
           }

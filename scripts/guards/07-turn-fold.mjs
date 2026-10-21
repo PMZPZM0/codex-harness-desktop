@@ -4619,6 +4619,53 @@ export async function run() {
       "【127】工具卡标明来源：技能 / MCP / 插件（mcpToolCall=MCP，dynamicToolCall=插件动态工具）"
     );
     (/className="action-arg"/.test(itemCode) ? ok : fail)("【127】工具卡显示关键入参（用了什么 url/路径/查询词）");
+    /* ── ⑱ 工具卡标题 = 模型自己写的「这一步在干什么」（10-21，参照 WorkBuddy 的工具卡形态）────
+       命令卡只能从字面反推（commandAction）；工具卡有**语义通道**：工具面里注入一个可选 `step`，
+       模型调用时填一句中文 ⇒ 卡片直接拿它当标题，工具名与入参退到次级行。
+       ⛔ 引擎内置的 exec_command / shell **走不了这条路**（0.162.1 二进制原文：
+          "`justification` requires an explicit `sandbox_permissions`"）—— 填了就变成审批请求，
+          所以引擎内置命令仍是 commandAction 规则推断，两条通道各管一半，别混。 */
+    const stepLib = join(ROOT, "src", "lib", "step-note.mjs");
+    const stepCode = existsSync(stepLib) ? readFileSync(stepLib, "utf8").replace(/\r/g, "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "") : "";
+    (existsSync(stepLib) && /export function withStepParam\(/.test(stepCode) && /export function stripStepParam\(/.test(stepCode) && /export function stepOf\(/.test(stepCode) ? ok : fail)(
+      "【127】step-note.mjs 三件套齐（注入 / 剥离 / 读取 —— 单一真相源，⛔ 不许各工具 schema 各写一份）"
+    );
+    const codexIpcSrc = readFileSync(join(ROOT, "electron", "features", "codex-ipc.ts"), "utf8").replace(/\r/g, "");
+    (/withStepParam\(\(params as any\)\.dynamicTools\)/.test(codexIpcSrc) && /syncToolSurfaceAsync\(codexHome, resumeThreadId, withStepParam\(resumeTools\)/.test(codexIpcSrc) ? ok : fail)(
+      "【127】注入点是主进程工具面**两处**（thread/start MCP 合并后 + resume 改写 rollout 首行前）—— ⛔ 少 resume 那处，老会话 resume 一次就退回无 step 的旧形态"
+    );
+    const bridgeSrc = readFileSync(join(ROOT, "electron", "mcp-bridge.ts"), "utf8").replace(/\r/g, "");
+    (/stripStepParam\(args && typeof args === "object"/.test(bridgeSrc) ? ok : fail)(
+      "【127】⛔ 转发前剥离 `step`（严校验的 MCP 服务器会把它当非法入参；剥离点只放 callMcpTool 一处）"
+    );
+    (/const step = skill \? "" : stepOf\(item\.arguments\);/.test(itemCode) && /const verb = step[\s\S]{0,80}: skill/.test(itemCode) ? ok : fail)(
+      "【127】工具卡标题优先 `step`，但**技能态优先**（读 SKILL.md 也是一次工具调用，不许被「看一眼」盖掉技能名）"
+    );
+    (/case "mcpToolCall": \{[\s\S]{0,600}stepOf\(item\.arguments\)/.test(foldCode) ? ok : fail)(
+      "【127】折叠芯片同样优先 `step`（芯片只有一行，人话比「名 · 参数」好读）"
+    );
+    const delegateSrc = readFileSync(join(ROOT, "electron", "features", "delegation.ts"), "utf8").replace(/\r/g, "");
+    const teamsSrc = readFileSync(join(ROOT, "electron", "features", "teams-ipc.ts"), "utf8").replace(/\r/g, "");
+    (/withStepParam\(\[\.\.\.teamTools/.test(delegateSrc) && /withStepParam\(\[teamTool, teamPhaseTool/.test(teamsSrc) ? ok : fail)(
+      "【127】委派 / 团队会话的工具面也包了（主进程自己发的 thread/start **不经过** codex-ipc 拦截）"
+    );
+    /* 运行时真跑（⛔ 只断言源码文本会「自洽地错」：正则绿着、函数是坏的也照样过） */
+    {
+      const stepMod = await import("../../src/lib/step-note.mjs");
+      const sample = { type: "function", name: "t", inputSchema: { type: "object", properties: { q: { type: "string" } }, required: ["q"] } };
+      const once = stepMod.withStepParam([sample])[0];
+      const twice = stepMod.withStepParam([once])[0];
+      (Boolean(once.inputSchema.properties.step) && JSON.stringify(once) === JSON.stringify(twice) ? ok : fail)(
+        "【127】`step` 注入**幂等**且不碰 required（重复注入不会长出两个键）"
+      );
+      (JSON.stringify(stepMod.stripStepParam({ q: "x", step: "播放" })) === JSON.stringify({ q: "x" }) ? ok : fail)(
+        "【127】转发前剥离**真的**去掉了 `step`（其余入参一字不动）"
+      );
+      (stepMod.stepOf({ step: "很".repeat(41) }) === "" && stepMod.stepOf({ step: "" }) === "" ? ok : fail)(
+        "【127】⛔ 空 / 超长的 `step` 一律当没填（返空串 ⇒ 调用方退回原标签，绝不显示半句话）"
+      );
+    }
+
     (/mcp: \{ topic: "调用 MCP \{t\}"/.test(foldSrc) && /plugin: \{ topic: "用插件 \{t\}"/.test(foldSrc) ? ok : fail)(
       "【127】词表有 mcp / plugin 两档（不再混进含糊的「调用服务」）"
     );

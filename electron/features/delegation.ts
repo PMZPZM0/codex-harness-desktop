@@ -11,6 +11,7 @@ import { canDispatchFrom, clipDispatchOutput, delegateScopeBlock, dispatchKindAl
 import { buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, readUsableExpertTeams } from "../expert-teams";
 import { app, safeStorage } from "electron";
 import { safeProviderId } from "../provider-id";
+import { withStepParam } from "../../src/lib/step-note.mjs";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { buildDelegateMemory } from "../delegate-memory";
 import { broadcastHarnessEvent } from "../features/window-bus";
@@ -121,7 +122,9 @@ export async function runDelegatedTask(input: {
     // ⛔ 不再单独挂 knowledge_search —— 同一能力挂两个名字，模型只会挑最直白的那个、另一套被绕过。
     // ⛔ 权限边界在**执行端**（canDispatchFrom / restrictedThreadRole），不靠"给不给工具"
     //    （详见 delegate-harness-tool.ts 文件头）；⛔ 无条件挂（带开关条件 = 中途变化不生效）。
-    dynamicTools: [...teamTools, buildDelegateHarnessTool(), ...(roleRef ? [buildRoleMemoryTool(roleRef)] : [])],
+    // 10-21：`withStepParam` 给这批工具注入可选的「这一步在干什么」参数（卡片标题）。
+    // ⛔ 主进程自己发的 thread/start **不经过** codex-ipc 的拦截 ⇒ 这里必须各自包一层。
+    dynamicTools: withStepParam([...teamTools, buildDelegateHarnessTool(), ...(roleRef ? [buildRoleMemoryTool(roleRef)] : [])]),
   });
   const threadId = String(started?.thread?.id ?? "");
   if (!threadId) return { ok: false, output: "", error: "调度会话创建失败（未返回 threadId）" };

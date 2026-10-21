@@ -29,6 +29,14 @@ const BASE_INSTRUCTIONS =
    ⛔ 为什么放在**最前面**（紧跟语言指令、排在全部工具箱说明之前）：它是「怎么写」的全局
       约束，跟在一长串工具说明后面会被当成又一条可选建议 —— 那正是用户报的"不点火"。
    ⛔ 判据/名单在 electron/output-styles.ts（单一真相源，风格技能只在那里登记一行）。 */
+/* ── 工具卡的「这一步在干什么」（10-21 用户附 WorkBuddy 截图：「运行命令做中文展示」）──────
+   宿主注册的工具面里有一个可选 `step` 参数（注入点见 features/codex-ipc.ts），模型填一句中文，
+   界面直接把它当卡片标题。⛔ 引擎内置的 `exec_command` / `shell` **没有**这个字段 ——
+   对它硬塞 `step` 会被判成非法入参，所以这段末尾必须明说「只填工具表里列了的」。
+   ⛔ 只靠 schema 里的 description 不够：模型的注意力在任务上，不带一句硬指令就常常省略。 */
+const STEP_NOTE_INSTRUCTIONS =
+  "\n\nTOOL CALL LABEL (shown to the user): most host-registered tools accept an optional `step` parameter — fill it with ONE short Chinese phrase (≤20 chars) saying what THIS step is for. It becomes the card title above the tool name, e.g. 「跑守卫看有没有回归」「把三条档案同步到另外两个仓」「先搜有哪些影视源」. Describe the INTENT of this step; do not restate the arguments (they are already displayed under the title), and never write filler such as 「执行操作」/「调用工具」. Only fill `step` for tools whose schema actually lists it — the built-in shell tool does not, so never pass `step` to it.";
+
 const OUTPUT_STYLE_INSTRUCTIONS = (targets: { skill: string; label: string; file: string }[]) =>
   `\n\nOUTPUT STYLE MODE — switched ON by the user (Settings → 控制台 → 回复风格). It applies to EVERY reply of this session and needs NO trigger word:\n` +
   targets
@@ -413,6 +421,8 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   const browser = input.browser !== false;
   const mcpBackend = effectiveMemoryBackend();
   let text = BASE_INSTRUCTIONS + LANGUAGE_INSTRUCTIONS + CONTINUITY_INSTRUCTIONS;
+  // 工具卡标题（10-21）：管的是「每次调工具都怎么说」，必须早出现 —— 排在工具说明后面会被当可选建议。
+  text += STEP_NOTE_INSTRUCTIONS;
   // 输出风格（用户开关打开的风格技能）：必须**早**出现，与语言指令同理（见上方那段说明）。
   if (input.outputStyles?.length) text += OUTPUT_STYLE_INSTRUCTIONS(input.outputStyles);
   if (desktop) text += DESKTOP_INSTRUCTIONS;

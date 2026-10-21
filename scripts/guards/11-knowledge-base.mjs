@@ -273,8 +273,12 @@ try {
     const teams = readFileSync(join(ROOT, "electron", "features", "teams-ipc.ts"), "utf8");
     const boot9 = readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8");
     const dhtSrc = readFileSync(join(ROOT, "electron", "delegate-harness-tool.ts"), "utf8");
-    ok(/dynamicTools: \[\.\.\.teamTools, buildDelegateHarnessTool\(\)/.test(delegation),
+    /* 10-21：工具面外面包了一层 `withStepParam(...)`（给工具注入卡片标题参数）⇒ 允许这层包装，
+       但**里面那三个成员必须还在**（别为了包装把它拆掉）。 */
+    ok(/dynamicTools: (?:withStepParam\()?\[\.\.\.teamTools, buildDelegateHarnessTool\(\)/.test(delegation),
       "被委派会话（子智能体 / 专家）拿到能力网关");
+    ok(/dynamicTools: withStepParam\(\[\.\.\.teamTools/.test(delegation),
+      "委派会话工具面包了 `withStepParam`（主进程自建会话**不经过** codex-ipc 的注入点，漏了 = 子智能体的卡片没有标题）");
     const teamHits = teams.match(/buildDelegateHarnessTool\(\)/g) ?? [];
     ok(teamHits.length >= 2,
       `专家团两条建会话路径（团主 / 成员）都挂了能力网关（实际 ${teamHits.length} 处）`);
