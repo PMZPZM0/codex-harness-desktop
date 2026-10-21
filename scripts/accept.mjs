@@ -863,6 +863,27 @@ const CHECKS = [
       await wait(250);
       const r2 = await releases();
       h.check("③ 刻度尺/stopPropagation 目标上的滚轮也能解除（window capture）", r2 >= 1, `release=${r2}`);
+      /* ④ 顶部续载：用户实测「滚到顶部就回弹到最下面」。找到有「加载更早」的会话（没有就跳过），
+         在顶部点续载，视口必须留在顶部（≤40px），不能被 switch-jump / 锚点补偿拉到底。 */
+      let paged = null;
+      for (let i = 0; i < rows && !paged; i++) {
+        await h.eval(`(function(){ var r=[...document.querySelectorAll(".thread-row")][${i}]; var b=r&&r.querySelector("button"); if(b)b.click(); return 1; })()`);
+        await wait(1000);
+        paged = await h.eval(`(function(){ var t=document.querySelector(".timeline"); var b=document.querySelector(".load-earlier-turns"); return b && t && t.scrollHeight > t.clientHeight + 100 ? { max: t.scrollHeight - t.clientHeight } : null; })()`).catch(() => null);
+      }
+      if (!paged) {
+        console.log("  \x1b[90m（当前 profile 无「加载更早」会话，跳过 ④）\x1b[0m");
+      } else {
+        const before = await h.eval(`(function(){ var t=document.querySelector(".timeline"); return { groups:t.querySelectorAll(".turn-group").length, max:t.scrollHeight-t.clientHeight }; })()`);
+        await h.eval(`(function(){ window.__adbg=[]; var t=document.querySelector(".timeline"); t.scrollTop=0; t.dispatchEvent(new Event("scroll")); return 1; })()`);
+        await wait(500);
+        await h.eval(`(function(){ var b=document.querySelector(".load-earlier-turns"); if(b) b.click(); return 1; })()`);
+        await wait(1200);
+        const after = await h.eval(`(function(){ var t=document.querySelector(".timeline"); return { top:Math.round(t.scrollTop), max:t.scrollHeight-t.clientHeight, groups:t.querySelectorAll(".turn-group").length }; })()`);
+        h.check("④ 顶部续载保持顶部（top ≤ 40px，不回弹到底部）",
+          after.top <= 40 && after.max >= before.max,
+          JSON.stringify({ before, after }).slice(0, 220));
+      }
     },
   },
   {

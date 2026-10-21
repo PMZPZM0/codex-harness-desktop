@@ -193,6 +193,10 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
     // ref 优先（本次会话内已更新过），否则读线程对象上的兜底游标（见 resumeThreadWithTurns）。
     const cursor = bag.turnsCursorRef.current.get(id) ?? ((current as any).__turnsCursor ?? null);
     if (hidden <= 0 && !cursor) return;
+    /* ⛔ 10-21 用户实测「滚到顶部就弹回最下面」：续载会在**上方**插入内容，
+       高度变化被贴底跟随（height-follow）当成"底部又长了" ⇒ 直接跳到 contentTail。
+       用户此刻是在看历史，必须先交出跟随权（同时撤钉顶留白）。 */
+    bag.releaseToUserRef.current?.("history");
     bag.loadingEarlierRef.current.add(id);
     bag.setEarlierLoadingId(id);
     // ⛔ 兜底：任何异常路径都不许让「正在载入」与防重入锁长期持有——实测续载请求挂起时，
@@ -217,6 +221,10 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
       /* 10-20：补偿基准用**内容坐标**（anchor 在滚动内容里的 offset），不是视口 top。
          视口 top 会被用户滚轮改变；用内容 offset 才能只补"上方插入的高度"、不跟用户抢滚动。 */
       let anchorContentBefore = anchorNode && el0 ? contentOffsetTop(anchorNode, el0) : 0;
+      /* 用户已经在**最顶部**时，续载的目的是"往上继续看"：此刻不能把旧锚点按插入高度
+         往下推（会把视口推到新列表的最底部 —— 用户实测「滚到顶部就回弹到下面」）。
+         保持顶部不动，新加载的更早内容直接出现在视口里。 */
+      const atTop = beforeTop <= 40;
       let grow = 0;
       if (hidden > 0) {
         grow = Math.min(hidden, bag.TURNS_PAGE); // 本地展开一批的量，翻老历史不产生网络请求
@@ -255,6 +263,11 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
         requestAnimationFrame(() => requestAnimationFrame(() => {
           const el = bag.scrollRef.current;
           if (!el) return;
+          if (atTop) {
+            // 顶部续载：保持 0，新内容从上方展开；不做锚点补偿/预取（避免连环加载）。
+            el.scrollTop = Math.max(0, beforeTop);
+            return;
+          }
           /* ⛔ 10-20：锚点按 id 重新解析。React 重渲染/纯工具回合合并会替换 DOM 节点，
              拿旧节点判断 isConnected 会误走 scrollHeight 回退（content-visibility 估算高度
              下直接跳到上一页顶部）。`.turn-group` 的 id 跨重渲染稳定。 */

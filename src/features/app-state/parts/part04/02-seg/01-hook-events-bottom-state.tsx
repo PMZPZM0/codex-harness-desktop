@@ -90,6 +90,13 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
      *  **只能被真实用户输入调用**（滚轮/触摸/键盘翻页/指针拖拽）——这是设计上的唯一解除信号。 */
     const releaseToUser = (why: string) => {
       bag.dbg("release:" + why, { top: Math.round(scroller.scrollTop), was: bag.anchorTopRef.current ? "pin" : bag.stickToBottomRef.current ? "stick" : "none" });
+      /* ⛔ 切会话的「跳到底部」也是程序滚动 owner：长会话 resume 期间它可能在后续
+         thread 更新里继续对齐（用户滚到顶部又被拉回底部）。用户一旦接管视口就作废，
+         否则 release 只停了跟随、停不下这颗待执行的切换跳转。
+         ⛔ 必须放在下面的 early-return **之前**：stick/anchor 都为假时也要清，
+         否则顶部续载/滚动时这颗遗留的 switch-jump 仍在 15s 窗口内，下一次
+         thread 更新就会把视口拉到底（用户 10-21 实测「到顶部就回弹」）。 */
+      bag.switchJumpRef.current = null;
       if (!bag.anchorTopRef.current && !bag.stickToBottomRef.current) return;
       bag.stickToBottomRef.current = false;
       bag.anchorTopRef.current = false;
