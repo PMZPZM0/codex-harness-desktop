@@ -70,6 +70,8 @@ let petMouseTimer: NodeJS.Timeout | null = null;
 let petMouseAppliedIgnore: boolean | null = null;
 /** 当前是否可交互（= 最近一次应用的状态取反）。诊断 / 守卫用。 */
 let petMouseInteractive = false;
+/** 最近一次推给渲染层的 hover 状态（true = 指针在宠物本体/工具栏内）。 */
+let petHoverInside = false;
 
 /** 命中容差（像素）：边界上抖动会让「可交互 ↔ 穿透」反复横跳。 */
 const PET_HIT_PADDING = 2;
@@ -92,6 +94,13 @@ function applyPetMouseState(): void {
           && p.y <= b.y + r.y + r.height + PET_HIT_PADDING;
       } catch { inside = false; }
     }
+  }
+  /* ⛔ 悬停工具栏不能只靠渲染层 pointerleave：鼠标移出可交互矩形时主进程会把窗口切成穿透，
+     页面从此收不到 pointerleave ⇒ 工具栏永久挂着（10-21 用户实测「下面那个图标一直在」）。
+     主进程按 100ms 轮询拿到 inside，变化就推给浮窗，由它收起工具栏。 */
+  if (inside !== petHoverInside) {
+    petHoverInside = inside;
+    try { win.webContents.send("pet:hover", inside); } catch { /* 窗口在关，忽略 */ }
   }
   const ignore = !inside;
   if (petMouseAppliedIgnore === ignore) return;   // 状态没变，不重复调（避免无谓的窗口属性写）
@@ -468,6 +477,7 @@ function createPetWindow(settings: PetSettings): BrowserWindow {
   win.on("closed", () => {
     stopPetMouseWatch();
     petMouseAppliedIgnore = null;
+    petHoverInside = false;
     petWindow = null;
     petDragOrigin = null;
     petDragging = false;
@@ -526,6 +536,7 @@ export function closePetWindow() {
   if (!isPetWindowOpen()) return;
   stopPetMouseWatch();
   petMouseAppliedIgnore = null;
+  petHoverInside = false;
   try { petWindow!.destroy(); } catch { /* 忽略 */ }
   petWindow = null;
   setPetSignalSink(null);
