@@ -150,6 +150,7 @@ import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 // 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
 import { Slot } from "../../../runtime/registry";
 import { NewbieGuide } from "../../newbie-guide";
+import { SidebarGuideModal, type SidebarGuideAction, type SidebarGuideKey } from "./SidebarGuideModal";
 import { UpdateReadyToast } from "./UpdateReadyToast";
 import { CloseConfirmDialog } from "../../../components/CloseConfirmDialog";
 import { FileTrustDialog } from "../../../components/FileTrustDialog";
@@ -247,13 +248,31 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     viewTab,
   } = app;
 
-  // ⛔ 09-27 用户要求：技能中心 / 插件市场 / 专家-专家团**合并成一个入口**，点击弹窗三选一。
-  //   纯局部 UI 状态（不跨组件共享、不进 bag）⇒ 用组件内 useState，与 09-file-preview-editor.tsx
-  //   的 mdSourceView 同款做法，避免动自动生成的 bag-types.ts。
-  const [extHubOpen, setExtHubOpen] = useState(false);
-  // ⛔ 10-04 用户要求：知识库 / AI 画布工作流 / 组件库 / 人格市场 / 前端开发**收进「···更多」**，
-  //   侧栏导航区不再逐个平铺。同上同款纯局部 UI 状态（不跨组件共享、不进 bag）。
+  // ⛔ 10-21 用户要求：侧栏能力入口按用途分行（前端 UI / 技能插件 MCP / 智能体 / 人格记忆），
+  //   点击弹窗看教程；纯局部 UI 状态，不跨组件共享、不进 bag（与下面 moreHubOpen 同款）。
+  const [guideKey, setGuideKey] = useState<SidebarGuideKey | null>(null);
+  // 10-04 用户要求：AI 画布工作流 / 知识库收进「···更多」；前端 / 组件库 / 人格市场已有专用入口。
   const [moreHubOpen, setMoreHubOpen] = useState(false);
+
+  /** 教程弹窗底部的「直达」动作。每个入口只留最相关的 1–3 个，避免又变成一长串菜单。 */
+  const guideActions: Record<SidebarGuideKey, SidebarGuideAction[]> = {
+    frontend: [
+      { label: "打开组件库", primary: true, onClick: () => { setSettingsPage("component-library"); setSettingsOpen(true); setMobileNav(false); } },
+      { label: "前端开发画布", onClick: () => { setUiSketchOpen(true); setMobileNav(false); } },
+    ],
+    extensions: [
+      { label: "技能", primary: true, onClick: () => { setSettingsPage("skills"); setSettingsOpen(true); setMobileNav(false); } },
+      { label: "插件", onClick: () => { setSettingsPage("plugins"); setSettingsOpen(true); setMobileNav(false); } },
+      { label: "MCP", onClick: () => { setSettingsPage("mcp"); setSettingsOpen(true); setMobileNav(false); } },
+    ],
+    agents: [
+      { label: "打开专家 / 专家团", primary: true, onClick: () => { setSettingsPage("agentteam"); setSettingsOpen(true); setMobileNav(false); } },
+    ],
+    identity: [
+      { label: "人格市场", primary: true, onClick: () => { setSettingsPage("soul-market"); setSettingsOpen(true); setMobileNav(false); } },
+      { label: "记忆中心", onClick: () => { setSettingsPage("memory"); setSettingsOpen(true); setMobileNav(false); } },
+    ],
+  };
 
   /** 复制「我正在跑的是哪一份构建」的诊断信息（09-23）。
    *  目的很具体：用户报「改了没生效」时，第一件要排除的就是**跑的产物不是最新构建**（09-23 真实事故，
@@ -356,61 +375,41 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
               </button>
               {!sidebarCollapsed && <div><strong className="brand-name">Codex Harness</strong></div>}
             </div>
-            <div className="sidebar-tabs" role="tablist" aria-label="导航">
-              <button className="sidebar-tab ic-blue" onClick={() => { startNewThread(); }}><MessageSquarePlus size={15} /><span>新建任务</span><kbd>{hk("Ctrl+N")}</kbd></button>
-              {/* ⛔ 09-27 用户要求：「搜索任务选项放到新建任务下面」。原来是按钮区之外的独立一行，
-                  现在挪进来紧随「新建任务」；样式沿用 .search-box（与 .sidebar-tab 同为 34px 行）。 */}
-              <button className="search-box ic-cyan" title={`搜索任务与操作（${hk("Ctrl+K")}）`} onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}><Search size={15} /><span>搜索任务</span><kbd>{hk("Ctrl+K")}</kbd></button>
-              {/* ⛔ 09-27 用户要求：侧栏「自动化」改名「定时任务」—— 它跳的本来就是 settingsPage="schedule"
-                  （该页标题即「定时任务」），改名后入口与目标页同名，不再和设置页里那个真正叫
-                  「自动化」的 automation 页混起来。配套：命令面板里的同名项一起改（part09）。
-                  ⛔ 09-28 用户指定顺序：定时任务排在「···更多」前面（原来排在 AI 画布工作流前面，
-                  10-04 该入口收进更多后同序）。 */}
-              <button className="sidebar-tab ic-amber" onClick={() => { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); }}><Clock3 size={15} /><span>定时任务</span></button>
-              {/* ⛔ 10-04 用户要求：「在主界面左侧栏加一个三个点更多选项，把 AI 画布工作流和知识库
-                  和这个新的自定义 UI 放里面」+「把组件库也放一个到更多里面，还有人格市场」。
-                  09-27 那条「它是与聊天并列的另一种工作台，不是设置项」仍然成立 —— 更多里既有
-                  工作台（画布 / 草图），也有设置页跳转（知识库 / 组件库 / 人格市场），
-                  所以这个入口叫「更多」而不叫「设置」。 */}
-              <button className="sidebar-tab ic-violet" title="知识库 / AI 画布工作流 / 前端开发 / 组件库 / 人格市场" aria-expanded={moreHubOpen} onClick={() => setMoreHubOpen(true)}>
-                <MoreHorizontal size={15} /><span>更多</span>
-              </button>
-              {/* ⛔ 09-27 用户要求：技能中心 / 插件市场 / 专家-专家团**合并成一个入口**，点击弹窗三选一
-                  （原来三个独立按钮）。入口名按用户指定逐字写全。 */}
-              <button className="sidebar-tab ic-pink" title="技能 / 插件 / 智能体" aria-expanded={extHubOpen} onClick={() => setExtHubOpen(true)}>
-                <LayoutGrid size={15} /><span>技能-插件-专家/专家团</span>
-              </button>
-            </div>
-            {/* 合并入口的弹窗：复用既有 info-modal 体系（遮罩点击关闭 / header 带关闭键），
-                三项各自跳到对应设置页；跳转前先关弹窗（与侧栏其它入口同款：关设置面板移动端导航）。 */}
-            {extHubOpen && (
-              <div className="info-modal-mask" onClick={() => setExtHubOpen(false)}>
-                <div className="info-modal ext-hub-modal" role="dialog" aria-label="技能 / 插件 / 智能体" onClick={(event) => event.stopPropagation()}>
-                  <header>
-                    <LayoutGrid size={15} className="info-modal-icon" />
-                    <strong>技能 · 插件 · 智能体</strong>
-                    <button title="关闭" onClick={() => setExtHubOpen(false)}><X size={14} /></button>
-                  </header>
-                  <div className="ext-hub-list">
-                    <button type="button" onClick={() => { setExtHubOpen(false); setSettingsPage("skills"); setSettingsOpen(true); setMobileNav(false); }}>
-                      <Zap size={16} />
-                      <span><strong>技能市场</strong><small>浏览、安装技能（腾讯 SkillHub），自动写入 Codex 技能目录</small></span>
-                    </button>
-                    <button type="button" onClick={() => { setExtHubOpen(false); setSettingsPage("plugins"); setSettingsOpen(true); setMobileNav(false); }}>
-                      <Store size={16} />
-                      <span><strong>插件市场</strong><small>安装插件与连接器，给引擎加能力</small></span>
-                    </button>
-                    <button type="button" onClick={() => { setExtHubOpen(false); setSettingsPage("agentteam"); setSettingsOpen(true); setMobileNav(false); }}>
-                      <Users size={16} />
-                      <span><strong>智能体</strong><small>专家 / 专家团与子智能体</small></span>
-                    </button>
-                  </div>
-                </div>
+            <div className="sidebar-tabs" role="navigation" aria-label="导航">
+              {/* 10-21 用户要求：新建 / 搜索并排胶囊；快捷键仍然生效，但不显示键帽 */}
+              <div className="sidebar-quick">
+                <button className="sidebar-tab sidebar-quick-btn primary ic-blue" title={`新建任务（${hk("Ctrl+N")}）`} onClick={() => { startNewThread(); }}>
+                  <MessageSquarePlus size={15} /><span>新建任务</span>
+                </button>
+                <button className="sidebar-tab sidebar-quick-btn ic-cyan" title={`搜索任务与操作（${hk("Ctrl+K")}）`} onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}>
+                  <Search size={15} /><span>搜索任务</span>
+                </button>
               </div>
-            )}
-            {/* 10-04「···更多」的弹窗：与上面同款 info-modal 体系（遮罩点击关闭 / header 带关闭键 /
-                列表项跳完先关弹窗再关移动端导航）。分两类摆：工作台（画布 / 草图）在前，
-                设置页（知识库 / 组件库 / 人格市场）在后 —— 用户点名把两边混在同一个入口里。 */}
+              <div className="sidebar-nav" role="group" aria-label="能力入口">
+                <button className="sidebar-tab ic-amber" title="按时间自动运行任务" onClick={() => { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); }}>
+                  <Clock3 size={15} /><span>定时任务</span>
+                </button>
+                <div className="sidebar-nav-divider" aria-hidden />
+                <button className="sidebar-tab sidebar-cap-row" title="前端 UI / 组件库：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "frontend"} onClick={() => setGuideKey("frontend")}>
+                  <LayoutGrid size={15} className="ic-blue" /><span>前端 UI · 组件库</span><ChevronRight size={13} className="sidebar-cap-chevron" />
+                </button>
+                <button className="sidebar-tab sidebar-cap-row" title="技能 / 插件 / MCP：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "extensions"} onClick={() => setGuideKey("extensions")}>
+                  <Zap size={15} className="ic-pink" /><span>技能 · 插件 · MCP</span><ChevronRight size={13} className="sidebar-cap-chevron" />
+                </button>
+                <button className="sidebar-tab sidebar-cap-row" title="子智能体 / 专家 / 专家团：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "agents"} onClick={() => setGuideKey("agents")}>
+                  <Users size={15} className="ic-violet" /><span>子智能体 · 专家 · 专家团</span><ChevronRight size={13} className="sidebar-cap-chevron" />
+                </button>
+                <button className="sidebar-tab sidebar-cap-row" title="人格市场 / 记忆中心：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "identity"} onClick={() => setGuideKey("identity")}>
+                  <Heart size={15} className="ic-amber" /><span>人格市场 · 记忆中心</span><ChevronRight size={13} className="sidebar-cap-chevron" />
+                </button>
+                <div className="sidebar-nav-divider" aria-hidden />
+                <button className="sidebar-tab ic-violet" title="AI 画布工作流 / 知识库" aria-expanded={moreHubOpen} onClick={() => setMoreHubOpen(true)}>
+                  <MoreHorizontal size={15} /><span>更多</span>
+                </button>
+              </div>
+            </div>
+            {/* 「更多」只保留工作台与知识库；前端 / 组件库 / 人格市场另有专用入口。
+                弹窗沿用 info-modal 体系（遮罩点击关闭 / header 带关闭键 / 跳转前先关窗）。 */}
             {moreHubOpen && (
               <div className="info-modal-mask" onClick={() => setMoreHubOpen(false)}>
                 <div className="info-modal more-hub-modal" role="dialog" aria-label="更多" onClick={(event) => event.stopPropagation()}>
@@ -424,26 +423,15 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                       <Clapperboard size={16} />
                       <span><strong>AI 画布工作流</strong><small>短剧 / 生图两种起手，卡片连线就是「这份输入喂给下一步」</small></span>
                     </button>
-                    <button type="button" title="前端开发：Material 3 Expressive 手机 / 电脑 / 网页界面画布，摆好的界面可一键预览、直接变成前端提示词" onClick={() => { setMoreHubOpen(false); setUiSketchOpen(true); setMobileNav(false); }}>
-                      <PenTool size={16} />
-                      <span><strong>前端开发</strong><small>拖 Material 3 组件拼手机 / 电脑 / 网页界面、连导航，可一键预览，摆完交给 Codex 实现</small></span>
-                    </button>
                     <button type="button" title="项目知识库：导入文档，Codex 可直接检索" onClick={() => { setMoreHubOpen(false); setSettingsPage("knowledge-base"); setSettingsOpen(true); setMobileNav(false); }}>
                       <Library size={16} />
                       <span><strong>知识库</strong><small>导入项目文档，Codex 检索时直接引用</small></span>
-                    </button>
-                    <button type="button" title="组件库：3802 个 Uiverse 控件，看源码、复制走" onClick={() => { setMoreHubOpen(false); setSettingsPage("component-library"); setSettingsOpen(true); setMobileNav(false); }}>
-                      <LayoutGrid size={16} />
-                      <span><strong>组件库</strong><small>Uiverse 控件原文与预览，复制就能用</small></span>
-                    </button>
-                    <button type="button" title="人格市场：给专家与子智能体挑人格" onClick={() => { setMoreHubOpen(false); setSettingsPage("soul-market"); setSettingsOpen(true); setMobileNav(false); }}>
-                      <Heart size={16} />
-                      <span><strong>人格市场</strong><small>专家 / 子智能体的人格与语气模板</small></span>
                     </button>
                   </div>
                 </div>
               </div>
             )}
+            {guideKey && <SidebarGuideModal guideKey={guideKey} actions={guideActions[guideKey]} onClose={() => setGuideKey(null)} />}
             {/* ⛔ 只给前缀文件夹染色：这个 chip 里还有个"关闭 ×"，它是**动作**不是分类。 */}
             {projectFilter && <button className="filter-chip" title="清除项目筛选" onClick={() => setProjectFilter(null)}><FolderOpen size={12} className="ic-amber" />{basename(projectFilter)}<X size={12} /></button>}
             <div className="view-tabs" role="tablist" aria-label="视图">

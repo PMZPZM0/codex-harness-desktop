@@ -55,19 +55,20 @@ const hubEnd = hubAt >= 0 ? side.indexOf("{projectFilter &&", hubAt) : -1;
 const hub = hubAt >= 0 ? side.slice(hubAt, hubEnd > hubAt ? hubEnd : hubAt + 3200) : "";
 ok(hub.length > 400, "取到「更多」弹窗的内容窗口（取不到 = 锚点被挪走，下面的分项断言全部不可信）");
 ok(hub.includes("setDramaCanvasOpen(true)"), "更多里有「AI 画布工作流」，动作是开画布");
-ok(hub.includes("setUiSketchOpen(true)"), "更多里有「前端开发」，动作是开界面窗");
-for (const page of ["knowledge-base", "component-library", "soul-market"]) {
-  ok(hub.includes(`setSettingsPage("${page}")`), `更多里有跳设置页 ${page} 的入口`);
-}
-ok(["AI 画布工作流", "前端开发", "知识库", "组件库", "人格市场"].every((title) => hub.includes(`<strong>${title}</strong>`)), "五项文案齐全且锚的是**列表项标签本体**（<strong> 定界 —— 名字只出现在 title 属性里不算；10-05 夜变异实测抓出来的弱断言）");
+/* ⛔ 10-21 用户重排：前端开发 / 组件库 / 人格市场 已升到侧栏专用入口（点击看教程），
+   更多里只保留 AI 画布工作流与知识库；这里按新契约钉，不再要求旧五项。 */
+ok(hub.includes('setSettingsPage("knowledge-base")'), "更多里有跳设置页 knowledge-base 的入口");
+ok(!hub.includes('setSettingsPage("component-library")') && !hub.includes('setSettingsPage("soul-market")') && !hub.includes("setUiSketchOpen(true)"),
+  "负向：前端开发 / 组件库 / 人格市场 不再重复塞进「更多」（已有专用能力入口）");
+ok(["AI 画布工作流", "知识库"].every((title) => hub.includes(`<strong>${title}</strong>`)), "两项文案齐全且锚的是**列表项标签本体**（<strong> 定界）");
 
-/** 导航区窗口：aria-label="导航" → 首个 </div>（区内不许有嵌套 div，这是【180】同一口径） */
-const navAt = side.indexOf('aria-label="导航"');
+/** 导航区窗口：aria-label="能力入口" → 首个 </div>（区内不许有嵌套 div，这是【180】同一口径） */
+const navAt = side.indexOf('aria-label="能力入口"');
 const navEnd = navAt >= 0 ? side.indexOf("</div>", navAt) : -1;
 const nav = navAt >= 0 && navEnd > navAt ? side.slice(navAt, navEnd) : "";
 ok(nav.length > 200, "取到导航区窗口");
 ok(!nav.includes("<span>知识库</span>") && !nav.includes("<span>AI 画布工作流</span>"), "知识库 / AI 画布工作流不再平铺在导航区（已收进更多）");
-ok(nav.includes("<span>更多</span>"), "导航区里换成了「更多」一项");
+ok(nav.includes("<span>更多</span>"), "导航区里保留了「更多」一项");
 ok(!/setSettingsPage\("backup"\)/.test(side), "负向：更多里也不许把「会话备份」入口放回侧栏（【180】同一条纪律）");
 
 /* ───────────────────────── 二、板块接线四处 ───────────────────────── */

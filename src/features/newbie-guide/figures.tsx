@@ -43,8 +43,8 @@ function WindowMap() {
       {[38, 54, 70, 86, 102].map((y) => (
         <rect key={y} x="14" y={y} width="100" height="8" rx="4" fill={panel2} />
       ))}
-      <text x="18" y="126">新建 / 搜索 / 定时 / ···更多</text>
-      <text x="18" y="142">技能·插件·专家团</text>
+      <text x="18" y="126">新建 · 搜索 / 定时</text>
+      <text x="18" y="142">能力入口 / 更多</text>
       <rect x="14" y="150" width="100" height="10" rx="5" fill={accent} opacity="0.25" />
       <text x="18" y="176">项目 / 分类 视图</text>
       {[184, 200, 216].map((y) => (
