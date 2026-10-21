@@ -576,6 +576,7 @@ const CHECKS = [
         return { ruler: !!ruler, ticks: ticks.length, cur: cur,
           waves: ticks.map(function(t){ return String(t.className); }),
           widths: ticks.map(function(t){ return Math.round(t.getBoundingClientRect().width); }),
+          lefts: ticks.map(function(t){ return Math.round(t.getBoundingClientRect().left); }),
           currentItem: cur >= 0 ? (ticks[cur].dataset.itemId || "") : "",
           greens: [...document.querySelectorAll(".ruler-compaction")].map(function(g){
             return { w: Math.round(g.getBoundingClientRect().width), cls: String(g.className), turn: g.dataset.turnId || "" };
@@ -665,10 +666,12 @@ const CHECKS = [
             center: String(info.waves[info.cur]).includes("wave-0") && Math.abs(info.widths[info.cur] - 26) <= 2,
             near: String(info.waves[info.cur - 1]).includes("wave-1") && String(info.waves[info.cur + 1]).includes("wave-1") && Math.abs(info.widths[info.cur - 1] - 18) <= 2,
             far: String(info.waves[info.cur - 2]).includes("wave-2") && String(info.waves[info.cur + 2]).includes("wave-2") && Math.abs(info.widths[info.cur - 2] - 15) <= 2,
+            /* ⛔ 10-21 用户：「只有靠近对话框这边有波浪效果，左边不要」。所有刻度左端必须对齐同一 x。 */
+            leftAligned: Math.max(...info.lefts) - Math.min(...info.lefts) <= 1,
           } : null;
-        h.check("② 当前阅读位置自动成为波浪中心（中心 26px、上下邻 18px / 15px）",
-          Boolean(wave && wave.center && wave.near && wave.far),
-          JSON.stringify({ cur: info && info.cur, waves: info && info.waves.slice(Math.max(0, (info.cur||0)-2), (info.cur||0)+3), widths: info && info.widths.slice(Math.max(0, (info.cur||0)-2), (info.cur||0)+3) }).slice(0, 260));
+        h.check("② 当前阅读位置自动成为波浪中心（中心 26px、上下邻 18px / 15px；左端对齐不动、只朝聊天一侧变长）",
+          Boolean(wave && wave.center && wave.near && wave.far && wave.leftAligned),
+          JSON.stringify({ cur: info && info.cur, waves: info && info.waves.slice(Math.max(0, (info.cur||0)-2), (info.cur||0)+3), widths: info && info.widths.slice(Math.max(0, (info.cur||0)-2), (info.cur||0)+3), lefts: info && info.lefts.slice(Math.max(0, (info.cur||0)-2), (info.cur||0)+3) }).slice(0, 300));
         const beforeItem = info && info.currentItem;
         let moved = null;
         let movedBy = "";
@@ -712,7 +715,9 @@ const CHECKS = [
           var g=document.querySelector(".ruler-compaction"); if(!g) return null;
           var sib=g.nextElementSibling || g.previousElementSibling;
           return { w:Math.round(g.getBoundingClientRect().width), cls:String(g.className), turn:g.dataset.turnId||"",
-            sibW:sib?Math.round(sib.getBoundingClientRect().width):null, sibCls:sib?String(sib.className):"" };
+            left:Math.round(g.getBoundingClientRect().left),
+            sibW:sib?Math.round(sib.getBoundingClientRect().width):null, sibCls:sib?String(sib.className):"",
+            sibLeft:sib?Math.round(sib.getBoundingClientRect().left):null };
         })()`).catch(() => null);
         if (green) {
           /* 绿线跟相邻刻度用同一个 wave：静止 12px，波浪扫过时同宽（26/18/15）。
@@ -723,11 +728,13 @@ const CHECKS = [
             var g=document.querySelector(".ruler-compaction"); if(!g) return null;
             var sib=g.nextElementSibling || g.previousElementSibling;
             return { w:Math.round(g.getBoundingClientRect().width), cls:String(g.className),
-              sibW:sib?Math.round(sib.getBoundingClientRect().width):null, sibCls:sib?String(sib.className):"" };
+              left:Math.round(g.getBoundingClientRect().left),
+              sibW:sib?Math.round(sib.getBoundingClientRect().width):null, sibCls:sib?String(sib.className):"",
+              sibLeft:sib?Math.round(sib.getBoundingClientRect().left):null };
           })()`).catch(() => null);
-          h.check("⑤ 压缩绿线跟随波浪长短（静止 12px，波浪中心与相邻刻度同宽 26px）",
-            Boolean(greenWave && Math.abs(greenWave.w - (greenWave.sibW ?? -1)) <= 2 && greenWave.w >= 24 && /wave-0/.test(greenWave.cls) && /wave-0/.test(greenWave.sibCls)),
-            JSON.stringify({ before: green, after: greenWave }).slice(0, 260));
+          h.check("⑤ 压缩绿线跟随波浪长短（静止 12px，波浪中心与相邻刻度同宽 26px；左端对齐）",
+            Boolean(greenWave && Math.abs(greenWave.w - (greenWave.sibW ?? -1)) <= 2 && greenWave.w >= 24 && /wave-0/.test(greenWave.cls) && /wave-0/.test(greenWave.sibCls) && Math.abs(greenWave.left - (greenWave.sibLeft ?? -1)) <= 1),
+            JSON.stringify({ before: green, after: greenWave }).slice(0, 300));
           await wait(50);
           const gHit = await h.eval(`(function(){ var t=document.querySelector(".timeline"); var g=document.getElementById("turn-"+${JSON.stringify(green.turn)}); if(!g) return null; var r=g.getBoundingClientRect(), tr=t.getBoundingClientRect(); return { top:Math.round(r.top-tr.top), visible:r.bottom>tr.top+2 && r.top<tr.bottom-2 }; })()`).catch(() => null);
           h.check("⑥ 点击压缩绿线也跳到压缩所在回合（目标回合可见）", Boolean(gHit && gHit.visible), JSON.stringify(gHit));
