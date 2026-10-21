@@ -8,7 +8,7 @@
  * 失效方式：退化成「一个状态 + 一句 4 秒气泡」/ completed 又自动回 idle / 活动窗塞进宠物窗 /
  * 拖拽又回到 app-region（拿不到 pointermove）/ 活动气泡按钮没有真接线。
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { codeOnly } from "./_ctx.mjs";
@@ -126,13 +126,104 @@ const petCss = read("src/styles/22-pet.css");
     && petFloatSrc.includes("petDragMove(") && petFloatSrc.includes("petDragEnd("), "宠物浮窗：工具栏三键 + 手动拖拽三通道");
   ok(petFloatSrc.includes("running-right") && petFloatSrc.includes("running-left") && petFloatSrc.includes("jumping"),
     "拖动方向反馈：左右跑 / 竖向跳");
-  ok(petFloatSrc.includes("showLookFrame") && petFloatSrc.includes("pkg.rows >= 11") && petFloatSrc.includes("lookDirection"),
-    "v2 包（11 行）悬停直接切 16 向看帧；v1 用 CSS 轻倾兜底");
+  ok(petFloatSrc.includes("showSheetLook") && petFloatSrc.includes("pkg.rows >= 11") && petFloatSrc.includes("lookDirection")
+    && petFloatSrc.includes("showAnimationLook") && petFloatSrc.includes("pkg.lookFrameSet?.length === 16"),
+    "看鼠标：v2 图集切 16 向帧，动画包切 lookFrameSet，v1 用 CSS 轻倾兜底");
+  ok((petFloatSrc.match(/show(?:Sheet|Animation)Look = Boolean\(/g) || []).length === 2
+    && (petFloatSrc.match(/effectiveState === "idle"/g) || []).length >= 2,
+    "看帧只在 idle 生效（工作时抱电脑的动画不会被看帧换成站姿）");
   ok(petFloatSrc.includes("GREETING_MS") && petFloatSrc.includes("waving"), "打开后先挥手 2.6s（Qoder 同款问候）");
   ok(!petCss.includes("-webkit-app-region: drag") && petCss.includes(".pet-toolbar") && petCss.includes(".pet-activity-card"),
     "样式：移除 app-region 拖动，加入悬停工具栏与活动卡");
   ok(mainTsx.includes('petSurface === "activity"') && mainTsx.includes("<PetActivity />"), "main.tsx 按 ?pet=activity 渲染活动气泡");
   ok(appEvents.includes('event.type === "pet-open-thread"') && appEvents.includes("openThread(tid)"), "主窗收到 pet-open-thread 会切到对应会话");
+}
+
+/* ── 五、美术替代：30fps 动画包 + 16 向看帧（10-21 第二轮）───────────────── */
+const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSection.tsx"));
+{
+  const metaPath = join(ROOT, "public", "pets", "harness-fox", "pet.json");
+  const meta = JSON.parse(readFileSync(metaPath, "utf8"));
+  const dir = join(ROOT, "public", "pets", "harness-fox");
+  const STATES = ["idle", "running-right", "running-left", "waving", "jumping", "failed", "waiting", "running", "review"];
+  const vp8xSize = (buf) => {
+    if (buf.length < 30 || buf.subarray(0, 4).toString() !== "RIFF" || buf.subarray(8, 12).toString() !== "WEBP") return null;
+    if (buf.subarray(12, 16).toString() !== "VP8X") return null;
+    return { width: buf.readUIntLE(24, 3) + 1, height: buf.readUIntLE(27, 3) + 1 };
+  };
+  const countTag = (buf, tag) => {
+    let at = 0;
+    let n = 0;
+    while ((at = buf.indexOf(tag, at)) !== -1) { n++; at += 4; }
+    return n;
+  };
+  const firstAnmf = (buf) => {
+    const at = buf.indexOf("ANMF");
+    if (at < 0 || at + 24 > buf.length) return null;
+    return { duration: buf.readUIntLE(at + 20, 3), width: (buf.readUIntLE(at + 14, 3) + 1) * 2, height: (buf.readUIntLE(at + 17, 3) + 1) * 2 };
+  };
+
+  ok(ipcSrc.includes('active: "harness-fox"') && /active: typeof value\.active[\s\S]{0,140}?DEFAULT_SETTINGS\.active/.test(ipcSrc),
+    "默认宠物 = 阿焰（harness-fox；老档案 active 为空也回落到它，已有用户显式选别的宠物不被改写）");
+  ok(petFloatSrc.includes("pkg?.animationSet") && petFloatSrc.includes("if (pkg?.animationSet) return;"),
+    "动画包走 <img> 自己播，图集帧循环按 animationSet 早退（两套格式互不打架）");
+  ok(/\}, \[pkg\?\.columns, pkg\?\.animationSet\]\);/.test(petFloatSrc),
+    "帧循环依赖含 animationSet（切包时能取消/重启，否则切回图集同列数会冻结）");
+  ok(petFloatSrc.includes('className={`pet-sprite${pkg.animationSet ? " pet-sprite-anim" : ""}`}')
+    && petFloatSrc.includes("backgroundImage: pkg.animationSet ? undefined :"),
+    "动画包不挂 background-image（图集切帧路径保持原样）");
+  ok(petFloatSrc.includes("<picture>") && petFloatSrc.includes('media="(prefers-reduced-motion: reduce)"') && petFloatSrc.includes("animationStill"),
+    "减少动效偏好回落静帧（<picture> source，不靠 JS 判断）");
+  ok(ipcSrc.includes("animationSet") && ipcSrc.includes("lookFrameSet") && ipcSrc.includes("function resolvePetFile")
+    && ipcSrc.includes("abs.startsWith(root + path.sep)"),
+    "主进程解析动画包，且素材路径被限制在宠物目录内（防目录穿越）");
+  ok(ipcSrc.includes('missing.push("lookFrameSet（必须 16 个有效文件）")') && ipcSrc.includes("problem: missing.length"),
+    "缺帧/缺文件显式报 problem（不静默空白，设置页照实显示）");
+
+  ok(JSON.stringify(meta.states) === JSON.stringify(STATES) && meta.fps === 30 && meta.supportsLookTracking === true,
+    "pet.json：九态顺序 = 官方规范、声明 30fps、支持看鼠标");
+  ok(meta.animationSet && Object.keys(meta.animationSet).length === 9
+    && Object.values(meta.animationSet).every((entry) => entry && entry.animatedSrc && entry.stillSrc),
+    "animationSet 九态全齐（每态 animatedSrc + stillSrc）");
+
+  const bad = [];
+  let totalBytes = 0;
+  for (const state of STATES) {
+    const entry = meta.animationSet?.[state];
+    for (const key of ["animatedSrc", "stillSrc"]) {
+      const file = entry && join(dir, String(entry[key] ?? ""));
+      if (!entry || !existsSync(file)) { bad.push(`${state}.${key} 缺失`); continue; }
+      const buf = readFileSync(file);
+      totalBytes += buf.length;
+      const size = vp8xSize(buf);
+      if (!size || size.width !== 192 || size.height !== 208) bad.push(`${state}.${key} 尺寸 ${size ? `${size.width}x${size.height}` : "非 WebP"}`);
+      if (key === "animatedSrc") {
+        const frames = countTag(buf, "ANMF");
+        const head = firstAnmf(buf);
+        if (frames < 10) bad.push(`${state} 只有 ${frames} 帧`);
+        if (!head || head.duration !== 33) bad.push(`${state} 首帧时长 ${head ? head.duration : "?"}ms（应为 33ms ≈ 30fps）`);
+      }
+    }
+  }
+  ok(bad.length === 0, `九态动画与静帧全部合规（192×208 / ≥10 帧 / 33ms；问题：${bad.slice(0, 6).join("、") || "无"}）`);
+
+  const lookMissing = [];
+  for (let i = 0; i < 16; i++) {
+    const file = join(dir, `look-${String(i).padStart(2, "0")}.webp`);
+    if (!existsSync(file)) { lookMissing.push(`look-${i} 缺失`); continue; }
+    const buf = readFileSync(file);
+    totalBytes += buf.length;
+    const size = vp8xSize(buf);
+    if (!size || size.width !== 192 || size.height !== 208) lookMissing.push(`look-${i} 尺寸异常`);
+  }
+  ok(Array.isArray(meta.lookFrameSet) && meta.lookFrameSet.length === 16 && lookMissing.length === 0,
+    `16 向看帧全部存在且 192×208（问题：${lookMissing.join("、") || "无"}）`);
+  ok(totalBytes > 0 && totalBytes <= 4 * 1024 * 1024,
+    `整包体积受控（实测 ${(totalBytes / 1024 / 1024).toFixed(1)}MB ≤ 4MB，不为美术再翻倍）`);
+  ok(settingsPetSrc.includes("pkg.animationSet?.idle?.stillSrc") && settingsPetSrc.includes('"contain"'),
+    "设置页缩略图用 idle 静帧（动画包没有图集可切）");
+  ok(petCss.includes(".pet-sprite-anim img") && petCss.includes("object-fit: contain"),
+    "动画帧铺满本体且不拦截指针（object-fit: contain）");
 }
 
 console.log(`\n【pet-activity】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

@@ -53,6 +53,14 @@ html[data-pet-window="activity"] #root {
   touch-action: none;
 }
 .pet-float.is-dragging .pet-sprite { cursor: grabbing; }
+.pet-sprite-anim img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
 
 /* 悬停工具栏：打开主窗 / 任务横幅 / 隐藏（Qoder 同款只在悬停时出现） */
 .pet-toolbar {

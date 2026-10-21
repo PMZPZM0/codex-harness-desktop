@@ -68,6 +68,11 @@ export interface PetPackage {
   states: string[];
   /** 来源：内置 / 用户 / 官方引擎 / petdex */
   source: "builtin" | "user" | "codex" | "petdex";
+  /** 30fps 动画包：每个状态一对动画 WebP + 静帧（存在时不使用 spritesheet） */
+  animationSet?: Record<string, { animatedSrc: string; stillSrc: string }>;
+  /** 16 向看帧（动画包专用；绝对路径） */
+  lookFrameSet?: string[];
+  supportsLookTracking?: boolean;
   /** 校验不通过时给出原因（渲染层灰显 + 提示） */
   problem?: string;
 }
@@ -86,7 +91,7 @@ export interface PetSettings {
   y: number | null;
 }
 
-const DEFAULT_SETTINGS: PetSettings = { enabled: false, active: null, scale: 1, opacity: 0.92, x: null, y: null };
+const DEFAULT_SETTINGS: PetSettings = { enabled: false, active: "harness-fox", scale: 1, opacity: 0.92, x: null, y: null };
 
 function settingsFile(): string {
   return path.join(app.getPath("userData"), "pet-settings.json");
@@ -101,7 +106,7 @@ export function normalizePetSettings(raw: unknown): PetSettings {
   const value = (raw ?? {}) as Partial<PetSettings>;
   return {
     enabled: Boolean(value.enabled),
-    active: typeof value.active === "string" && value.active ? value.active : null,
+    active: typeof value.active === "string" && value.active ? value.active : DEFAULT_SETTINGS.active,
     scale: clamp(Number(value.scale), 0.6, 1.8, DEFAULT_SETTINGS.scale),
     opacity: clamp(Number(value.opacity), 0.4, 1, DEFAULT_SETTINGS.opacity),
     x: Number.isFinite(Number(value.x)) ? Number(value.x) : null,
@@ -159,6 +164,15 @@ export function petAssetRoots(): string[] {
   return petRoots().map((r) => path.resolve(r.dir));
 }
 
+function resolvePetFile(dir: string, rel: unknown): string {
+  const value = String(rel ?? "").trim();
+  if (!value) return "";
+  const root = path.resolve(dir);
+  const abs = path.resolve(root, value);
+  if (abs !== root && !abs.startsWith(root + path.sep)) return "";
+  return fs.existsSync(abs) ? abs : "";
+}
+
 function readPetPackage(dir: string, id: string, source: PetPackage["source"]): PetPackage | null {
   const metaPath = path.join(dir, "pet.json");
   if (!fs.existsSync(metaPath)) return null;
@@ -175,6 +189,45 @@ function readPetPackage(dir: string, id: string, source: PetPackage["source"]): 
     };
   }
 
+  const frame = (meta.frameSize ?? {}) as { width?: number; height?: number };
+  const rows = Number(meta.rows) || (Number(meta.spriteVersionNumber) === 2 ? 11 : DEFAULT_ROWS);
+  const states = Array.isArray(meta.states) && meta.states.length ? meta.states.map(String) : [...PET_STATE_ROWS];
+  const name = String(meta.displayName ?? meta.name ?? id);
+  const description = String(meta.description ?? "");
+  const columns = Number(meta.columns) || DEFAULT_COLS;
+  const frameWidth = Number(frame.width) || DEFAULT_FRAME.width;
+  const frameHeight = Number(frame.height) || DEFAULT_FRAME.height;
+
+  /* 30fps 动画包（10-21 美术替代）：每态 animatedSrc + stillSrc；可选 16 向 lookFrameSet。
+     ⛔ 这是**我们自己的内置格式**，与 Petdex 8×9 图集并存；渲染层按 animationSet 是否存在分流。 */
+  const animationMeta = meta.animationSet;
+  if (animationMeta && typeof animationMeta === "object" && !Array.isArray(animationMeta)) {
+    const missing: string[] = [];
+    const set: Record<string, { animatedSrc: string; stillSrc: string }> = {};
+    for (const state of states) {
+      const entry = (animationMeta as Record<string, unknown>)[state] as { animatedSrc?: unknown; stillSrc?: unknown } | undefined;
+      if (!entry || typeof entry !== "object") { missing.push(`${state}（无条目）`); continue; }
+      const animatedSrc = resolvePetFile(dir, entry.animatedSrc);
+      const stillSrc = resolvePetFile(dir, entry.stillSrc);
+      if (!animatedSrc) missing.push(`${state}.animatedSrc`);
+      if (!stillSrc) missing.push(`${state}.stillSrc`);
+      if (animatedSrc && stillSrc) set[state] = { animatedSrc, stillSrc };
+    }
+    let lookFrameSet: string[] | undefined;
+    if (Array.isArray(meta.lookFrameSet)) {
+      const look = meta.lookFrameSet.map((entry) => resolvePetFile(dir, entry));
+      if (look.length === 16 && look.every(Boolean)) lookFrameSet = look;
+      else missing.push("lookFrameSet（必须 16 个有效文件）");
+    }
+    return {
+      id, name, description, dir, spritesheet: "",
+      columns, rows, frameWidth, frameHeight, states, source,
+      animationSet: set,
+      ...(lookFrameSet ? { lookFrameSet, supportsLookTracking: true } : { supportsLookTracking: false }),
+      problem: missing.length ? `动画包缺少文件：${missing.join("、")}` : undefined,
+    };
+  }
+
   const sheetName = String(meta.spritesheetPath ?? "spritesheet.webp");
   let spritesheet = path.join(dir, sheetName);
   if (!fs.existsSync(spritesheet)) {
@@ -182,21 +235,18 @@ function readPetPackage(dir: string, id: string, source: PetPackage["source"]): 
     const alt = path.join(dir, sheetName.replace(/\.(webp|png)$/i, (m) => (m.toLowerCase() === ".webp" ? ".png" : ".webp")));
     if (fs.existsSync(alt)) spritesheet = alt;
   }
-  const frame = (meta.frameSize ?? {}) as { width?: number; height?: number };
-  const rows = Number(meta.rows) || (Number(meta.spriteVersionNumber) === 2 ? 11 : DEFAULT_ROWS);
-  const states = Array.isArray(meta.states) && meta.states.length ? meta.states.map(String) : [...PET_STATE_ROWS];
   const missing = !fs.existsSync(spritesheet);
 
   return {
     id,
-    name: String(meta.displayName ?? meta.name ?? id),
-    description: String(meta.description ?? ""),
+    name,
+    description,
     dir,
     spritesheet: missing ? "" : spritesheet,
-    columns: Number(meta.columns) || DEFAULT_COLS,
+    columns,
     rows,
-    frameWidth: Number(frame.width) || DEFAULT_FRAME.width,
-    frameHeight: Number(frame.height) || DEFAULT_FRAME.height,
+    frameWidth,
+    frameHeight,
     states,
     source,
     problem: missing ? `缺少图集文件（pet.json 声明 ${sheetName}）` : undefined,

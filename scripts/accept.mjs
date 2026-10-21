@@ -571,8 +571,64 @@ const CHECKS = [
          ⛔ 只住 e2e profile，不碰真实宠物设置；结束时 petHide 防浮窗 target 污染后续项。 */
       try {
         await h.waitFor(`!!document.querySelector(".composer-editor")`, { label: "输入框就绪", timeoutMs: 30000 });
+        /* e2e profile 是跨轮复用的（旧轮可能显式选过 blob），验"默认"前先把 active 清空：
+           normalizePetSettings 会把空值回落到 harness-fox，同时不碰真实用户设置。 */
+        await h.eval(`window.codex.petSettingsSet({ active: null }).catch(()=>undefined)`).catch(() => undefined);
         const shown = await h.eval(`window.codex.petShow().then((x)=>({ open: x.open, enabled: x.settings?.enabled })).catch((e)=>({ error: String(e && e.message || e) }))`);
         h.check("① 宠物能打开（独立透明窗 + 设置 enabled）", shown?.error == null && shown?.enabled === true, JSON.stringify(shown));
+
+        /* ①b 美术替代（10-21）：默认宠物必须是 30fps 动画包（九态 + 16 向看帧、无图集），
+           缺一个文件主进程会挂 problem —— 这里连 problem 一起断言，防止"包名对了但素材是残的"。 */
+        const pkgInfo = await h.eval(`window.codex.petSettingsGet().then((x)=>{
+          const a = x?.active || {};
+          return { id: a.id || "", states: Object.keys(a.animationSet || {}).sort(), looks: (a.lookFrameSet || []).length,
+            sheet: !!a.spritesheet, problem: a.problem || "", name: a.name || "" };
+        }).catch((e)=>({ error: String(e && e.message || e) }))`);
+        h.check("①b 默认宠物 = 阿焰动画包（九态 + 16 向看帧，无图集、无 problem）",
+          pkgInfo?.id === "harness-fox" && pkgInfo?.name === "阿焰" && (pkgInfo?.states ?? []).length === 9
+            && pkgInfo?.looks === 16 && pkgInfo?.sheet === false && !pkgInfo?.problem,
+          JSON.stringify(pkgInfo).slice(0, 260));
+
+        /* ①c 宠物窗真渲染动画 <img>（不是图集背景），且悬停切 16 向看帧后能回到动画。
+           问候挥手 2.6s 内不切看帧（PetFloat 的门），所以先等过问候再探。 */
+        let visual = null;
+        for (let i = 0; i < 24; i++) {
+          visual = await h.evalInTarget("pet=1", `(function(){
+            const img = document.querySelector('.pet-sprite-anim img');
+            const sprite = document.querySelector('.pet-sprite');
+            return { anim: !!img, src: img ? (img.getAttribute('src') || '') : '',
+              natural: img ? [img.naturalWidth, img.naturalHeight] : null,
+              bg: sprite ? getComputedStyle(sprite).backgroundImage : '' };
+          })()`).catch(() => null);
+          if (visual?.anim && visual?.natural?.[0] === 192) break;
+          await wait(200);
+        }
+        h.check("①c 宠物窗用动画 <img> 播 30fps WebP（192×208，本体不挂图集背景）",
+          visual?.anim === true && /harness-fox(?:%5C|\/)(idle|waving)\.webp$/i.test(String(visual?.src ?? ""))
+            && visual?.natural?.[0] === 192 && visual?.natural?.[1] === 208 && visual?.bg === "none",
+          JSON.stringify(visual).slice(0, 260));
+
+        if (visual?.anim) {
+          await wait(2800); // 过掉打开问候（GREETING_MS 2.6s），否则看帧被 greeting 门挡住
+          const lookProbe = await h.evalInTarget("pet=1", `(async function(){
+            const sprite = document.querySelector('.pet-sprite');
+            const img = document.querySelector('.pet-sprite-anim img');
+            if (!sprite || !img) return { error: 'missing' };
+            const rect = sprite.getBoundingClientRect();
+            sprite.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, pointerType: 'mouse',
+              clientX: rect.right - 2, clientY: rect.top + rect.height / 2 }));
+            await new Promise((r)=>setTimeout(r, 200));
+            const looked = img.getAttribute('src') || '';
+            sprite.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, pointerType: 'mouse',
+              clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 }));
+            await new Promise((r)=>setTimeout(r, 200));
+            return { looked, reset: img.getAttribute('src') || '' };
+          })()`).catch((e) => ({ error: String(e?.message || e) }));
+          h.check("⑨ 看鼠标真切 16 向看帧，指针回中后回到动画（动画包 lookFrameSet 链路）",
+            /look-\d{2}\.webp$/i.test(String(lookProbe?.looked ?? ""))
+              && /harness-fox(?:%5C|\/)(idle|waving)\.webp$/i.test(String(lookProbe?.reset ?? "")),
+            JSON.stringify(lookProbe).slice(0, 260));
+        }
 
         const cwd = await h.eval(`localStorage.getItem("workspace") || ${JSON.stringify(ROOT)}`);
         const started = await h.eval(`(async function(){

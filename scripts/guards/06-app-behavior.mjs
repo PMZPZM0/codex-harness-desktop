@@ -3019,9 +3019,10 @@ w.postMessage({id:1,op:"list",root});
     (genSrc.includes("官方九态缺一不可") && genSrc.includes("ROW_ANIMATION") ? ok : fail)(
       "【232】生成器缺行即抛（不静默出残图）"
     );
-    /* ③ 内置宠物：几何自描述 + 图集尺寸 = 8 列 × 9 行 × (192×208)。
-       ⛔ 图集现在可能是 WebP（AI 美术管线产出，比 PNG 小 60%）：PNG 读 IHDR、WebP 读 VP8X。 */
-    const petSlugs = ["harness-blob", "harness-cat", "harness-bot"];
+    /* ③ 内置宠物：几何自描述 + 素材齐全。
+       ⛔ 图集现在可能是 WebP（AI 美术管线产出，比 PNG 小 60%）：PNG 读 IHDR、WebP 读 VP8X。
+       10-21 美术替代新增动画包格式（animationSet + 16 向 lookFrameSet）：无图集，按九态文件校验。 */
+    const petSlugs = ["harness-fox", "harness-blob", "harness-cat", "harness-bot"];
     const spriteSize = (file) => {
       try {
         const head = readFileSync(file).subarray(0, 33);
@@ -3041,20 +3042,38 @@ w.postMessage({id:1,op:"list",root});
       const dir = join(ROOT, "public", "pets", slug);
       try {
         const meta = JSON.parse(readFileSync(join(dir, "pet.json"), "utf8"));
-        const sheet = join(dir, String(meta.spritesheetPath || ""));
-        const size = spriteSize(sheet);
         const statesOk = JSON.stringify(meta.states) === JSON.stringify(OFFICIAL_STATES);
         const geomOk = meta.columns === 8 && meta.rows === 9
           && meta.frameSize?.width === 192 && meta.frameSize?.height === 208;
-        const sheetOk = size && size.width === 8 * 192 && size.height === 9 * 208;
-        if (statesOk && geomOk && sheetOk) builtinOk += 1;
-        else builtinProblems.push(`${slug}: states=${statesOk} geom=${geomOk} sheet=${size ? `${size.width}x${size.height}` : "缺失/非PNG非WebP"}`);
+        let assetOk = false;
+        let detail = "";
+        if (meta.animationSet && typeof meta.animationSet === "object" && !Array.isArray(meta.animationSet)) {
+          const missing = [];
+          for (const state of OFFICIAL_STATES) {
+            for (const key of ["animatedSrc", "stillSrc"]) {
+              const rel = meta.animationSet?.[state]?.[key];
+              if (!rel || !existsSync(join(dir, String(rel)))) missing.push(`${state}.${key}`);
+            }
+          }
+          const lookOk = Array.isArray(meta.lookFrameSet) && meta.lookFrameSet.length === 16
+            && meta.lookFrameSet.every((rel) => rel && existsSync(join(dir, String(rel))));
+          const fpsOk = Number(meta.fps) === 30;
+          assetOk = missing.length === 0 && lookOk && fpsOk && meta.supportsLookTracking === true;
+          detail = `anim=${assetOk} missing=${missing.slice(0, 3).join(",") || "无"} look=${lookOk} fps=${meta.fps}`;
+        } else {
+          const sheet = join(dir, String(meta.spritesheetPath || ""));
+          const size = spriteSize(sheet);
+          assetOk = Boolean(size && size.width === 8 * 192 && size.height === 9 * 208);
+          detail = `sheet=${size ? `${size.width}x${size.height}` : "缺失/非PNG非WebP"}`;
+        }
+        if (statesOk && geomOk && assetOk) builtinOk += 1;
+        else builtinProblems.push(`${slug}: states=${statesOk} geom=${geomOk} ${detail}`);
       } catch (error) {
         builtinProblems.push(`${slug}: ${error.message}`);
       }
     }
     (builtinOk === petSlugs.length ? ok : fail)(
-      `【232】内置宠物包几何全部合规（8 列 × 9 行 / 192×208 / 九态；问题：${builtinProblems.join(" | ") || "无"}）`
+      `【232】内置宠物包几何全部合规（图集 8×9 / 192×208 或动画包九态 + 16 看帧；问题：${builtinProblems.join(" | ") || "无"}）`
     );
     /* ④ ⛔ 内置宠物必须落在 public/pets（→ dist/pets），**不能**放 src/：
        before-pack 的可达闭包只认 js/css 与 CSS 里的 url()，JS import 的位图会被判成陈旧死块删掉

@@ -112,6 +112,8 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
   }, [stageRatio]);
 
   useEffect(() => {
+    // 动画包（30fps 动画 WebP）自己会播；只有 Petdex 图集需要这里切帧。
+    if (pkg?.animationSet) return;
     const columns = pkg?.columns ?? PET_DEFAULT_COLUMNS;
     let raf = 0;
     let last = 0;
@@ -124,7 +126,7 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [pkg?.columns]);
+  }, [pkg?.columns, pkg?.animationSet]);
 
   /* ── 气泡：来了就显示，4 秒后淡出 ── */
   useEffect(() => {
@@ -161,17 +163,44 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
   /* v2 包（11 行）第 9/10 行是 16 个看方向帧：鼠标在宠物上时直接切帧（Qoder 同款）。
      v1 包没有这两行，用下面 CSS 的轻微倾斜代替，绝不越界读行。 */
   const lookDirection = Math.round(((Math.atan2(look.x, -look.y) * 180 / Math.PI + 360) % 360) / 22.5) % 16;
-  const showLookFrame = Boolean(
-    pkg && pkg.rows >= 11 && !dragMotion && !greeting && Math.hypot(look.x, look.y) > 0.18,
+  const showSheetLook = Boolean(
+    !pkg?.animationSet && pkg && pkg.rows >= 11 && effectiveState === "idle" && !dragMotion && !greeting && Math.hypot(look.x, look.y) > 0.18,
   );
-  const row = showLookFrame ? 9 + Math.floor(lookDirection / 8) : petRowOf(pkg?.states ?? PET_STATES, effectiveState);
-  const style = petFrameStyle(geometry, row, showLookFrame ? lookDirection % 8 : frame, renderedFrameHeight || geometry.frameHeight);
+  const animation = pkg?.animationSet?.[effectiveState] ?? pkg?.animationSet?.idle;
+  const showAnimationLook = Boolean(
+    pkg?.animationSet && pkg.lookFrameSet?.length === 16 && effectiveState === "idle"
+      && !dragMotion && !greeting && Math.hypot(look.x, look.y) > 0.12,
+  );
+  const animationSrc = animation ? (showAnimationLook ? pkg?.lookFrameSet?.[lookDirection] ?? "" : animation.animatedSrc) : "";
+  const animationStill = animation ? (showAnimationLook ? pkg?.lookFrameSet?.[lookDirection] ?? "" : animation.stillSrc) : "";
+  const row = showSheetLook ? 9 + Math.floor(lookDirection / 8) : petRowOf(pkg?.states ?? PET_STATES, effectiveState);
+  const style = petFrameStyle(geometry, row, showSheetLook ? lookDirection % 8 : frame, renderedFrameHeight || geometry.frameHeight);
 
   const openMain = useCallback(() => { void window.codex.petOpenMain().catch(() => undefined); }, []);
   const hidePet = useCallback(() => { void window.codex.petHide().catch(() => undefined); }, []);
   const toggleActivity = useCallback(() => { void window.codex.petActivityToggle().catch(() => undefined); }, []);
   const hasActivity = Boolean(signal.activities?.length);
   const attention = signal.attention ?? "";
+  const toolbar = (
+    <div
+      className="pet-toolbar"
+      ref={toolbarRef}
+      onPointerDown={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+    >
+      <button type="button" title="打开主界面" aria-label="打开主界面" onClick={openMain}><ExternalLink size={13} /></button>
+      {hasActivity && (
+        <button type="button" className={`${attention ? `attention-${attention}` : ""}`}
+          title={signal.activityCollapsed ? "展开任务横幅" : "收起任务横幅"}
+          aria-label={signal.activityCollapsed ? "展开任务横幅" : "收起任务横幅"}
+          onClick={toggleActivity}>
+          <ListTodo size={13} />
+          {attention && <span className={`pet-toolbar-dot ${attention}`} aria-hidden />}
+        </button>
+      )}
+      <button type="button" title="隐藏宠物" aria-label="隐藏宠物" onClick={hidePet}><X size={13} /></button>
+    </div>
+  );
 
   const updateLook = (clientX: number, clientY: number) => {
     const el = spriteRef.current;
@@ -282,14 +311,14 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
         </div>
       )}
       <div className="pet-stage" title={pkg ? `${pkg.name}${pkg.description ? ` · ${pkg.description}` : ""}` : "没有可用的宠物包"}>
-        {pkg && pkg.spritesheet ? (
+        {pkg && (pkg.spritesheet || pkg.animationSet) ? (
           <div
-            className="pet-sprite"
+            className={`pet-sprite${pkg.animationSet ? " pet-sprite-anim" : ""}`}
             ref={spriteRef}
             style={{
               ...style,
-              backgroundImage: `url("${petAssetUrl(pkg.spritesheet)}")`,
-              transform: `translate(${look.x * 4}px, ${look.y * 2}px) rotate(${look.x * 1.2}deg)`,
+              backgroundImage: pkg.animationSet ? undefined : `url("${petAssetUrl(pkg.spritesheet)}")`,
+              transform: showAnimationLook ? undefined : `translate(${look.x * 4}px, ${look.y * 2}px) rotate(${look.x * 1.2}deg)`,
             }}
             onDoubleClick={openMain}
             onPointerDown={handlePointerDown}
@@ -297,24 +326,13 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
             onPointerUp={finishDrag}
             onPointerCancel={finishDrag}
           >
-            <div
-              className="pet-toolbar"
-              ref={toolbarRef}
-              onPointerDown={(event) => event.stopPropagation()}
-              onDoubleClick={(event) => event.stopPropagation()}
-            >
-              <button type="button" title="打开主界面" aria-label="打开主界面" onClick={openMain}><ExternalLink size={13} /></button>
-              {hasActivity && (
-                <button type="button" className={`${attention ? `attention-${attention}` : ""}`}
-                  title={signal.activityCollapsed ? "展开任务横幅" : "收起任务横幅"}
-                  aria-label={signal.activityCollapsed ? "展开任务横幅" : "收起任务横幅"}
-                  onClick={toggleActivity}>
-                  <ListTodo size={13} />
-                  {attention && <span className={`pet-toolbar-dot ${attention}`} aria-hidden />}
-                </button>
-              )}
-              <button type="button" title="隐藏宠物" aria-label="隐藏宠物" onClick={hidePet}><X size={13} /></button>
-            </div>
+            {pkg.animationSet ? (
+              <picture>
+                <source media="(prefers-reduced-motion: reduce)" srcSet={petAssetUrl(animationStill)} />
+                <img src={petAssetUrl(animationSrc)} alt="" draggable={false} />
+              </picture>
+            ) : null}
+            {toolbar}
           </div>
         ) : (
           <div className="pet-missing" ref={missingRef}>

@@ -29,18 +29,20 @@ const SOURCE_LABEL: Record<PetPackage["source"], string> = {
   petdex: "Petdex",
 };
 
-/** 列表项的小预览：直接切图集第 0 行第 0 帧（idle 首帧）。 */
+/** 列表项的小预览：图集切第 0 行第 0 帧；动画包用 idle 静帧整张缩略。 */
 function PetThumb({ pkg }: { pkg: PetPackage }) {
   const k = PREVIEW_H / (pkg.frameHeight || 208);
+  const animationStill = pkg.animationSet?.idle?.stillSrc;
+  const source = animationStill || pkg.spritesheet;
   return (
     <span
       className="pet-thumb"
       style={{
         width: `${pkg.frameWidth * k}px`,
         height: `${PREVIEW_H}px`,
-        backgroundImage: pkg.spritesheet ? `url("${petAssetUrl(pkg.spritesheet)}")` : undefined,
-        backgroundSize: `${pkg.columns * pkg.frameWidth * k}px ${pkg.rows * pkg.frameHeight * k}px`,
-        backgroundPosition: "0 0",
+        backgroundImage: source ? `url("${petAssetUrl(source)}")` : undefined,
+        backgroundSize: animationStill ? "contain" : `${pkg.columns * pkg.frameWidth * k}px ${pkg.rows * pkg.frameHeight * k}px`,
+        backgroundPosition: animationStill ? "center bottom" : "0 0",
       }}
     />
   );
@@ -137,7 +139,7 @@ export function PetSettingsSection({ onNotice }: PetSettingsSectionProps) {
           <h3>桌面宠物</h3>
           <p className="muted">
             一只浮在桌面上的小宠物，跟着这里跑的任务变状态（思考 / 干活 / 等你确认 / 完成）。
-            用的是 <b>Codex 官方宠物格式</b>，官方宠物包和社区宠物包都能直接放进来。
+            兼容 <b>Codex 官方宠物格式</b>，官方宠物包和社区宠物包都能直接放进来；内置的「阿焰」用动画包格式。
           </p>
         </div>
       </header>
