@@ -59,3 +59,50 @@ test("bridge auto 探活超时后回落 chat", { skip: !enabled, timeout: 30_000
     await new Promise((r) => upstream.close(r));
   }
 });
+
+test("bridge auto 上游连响应头都不回时也回落 chat", { skip: !enabled, timeout: 30_000 }, async () => {
+  process.env.HARNESS_BRIDGE_PROBE_IDLE_MS = "5000";
+  const require = createRequire(import.meta.url);
+  const { ResponsesBridge } = require(compiled);
+
+  const upstream = http.createServer((req, res) => {
+    if (req.url.includes("/responses")) {
+      req.resume();
+      return; // 10-21 grok-4.7 实测：连状态行/响应头都没有
+    }
+    if (req.url.includes("/chat/completions")) {
+      req.resume();
+      req.on("end", () => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({
+          id: "mock", object: "chat.completion", model: "m",
+          choices: [{ index: 0, message: { role: "assistant", content: "ok-no-headers" }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }));
+      });
+      return;
+    }
+    res.writeHead(404); res.end();
+  });
+  await new Promise((r) => upstream.listen(0, "127.0.0.1", r));
+  const upstreamPort = upstream.address().port;
+
+  const bridge = new ResponsesBridge({ log: () => {} });
+  const port = await bridge.start();
+  bridge.register("test", { baseUrl: `http://127.0.0.1:${upstreamPort}`, mode: "auto", label: "test" });
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/p/test/responses`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "m", input: "hi", stream: true }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    const text = await response.text();
+    assert.equal(response.status, 200);
+    assert.match(text, /ok-no-headers/);
+    assert.equal(bridge.status().converted, 1);
+  } finally {
+    await bridge.stop();
+    await new Promise((r) => upstream.close(r));
+  }
+});

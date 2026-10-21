@@ -23,6 +23,9 @@ const BRIDGE_IDLE_MS = Math.max(30_000, Number(process.env.HARNESS_BRIDGE_IDLE_M
 /* auto 探活等待第一段数据的时间：超时 = 上游吊着不吐字 ⇒ 改走 chat 重放。
    ⛔ 18s 要短于模型探活的 35s（否则用户点「检测」先被外层超时打断，看不到 chat 兜底结果）。 */
 const BRIDGE_PROBE_IDLE_MS = Math.max(5_000, Number(process.env.HARNESS_BRIDGE_PROBE_IDLE_MS) || 18_000);
+/* 连上游后**连响应头都没有**的超时：10-21 实测 grok-4.7 就是这种（0 字节、无状态行）。
+   ⛔ 旧看门狗只在 response 事件之后才启动，这种情况一个都不会触发。 */
+const BRIDGE_CONNECT_MS = Math.max(15_000, Number(process.env.HARNESS_BRIDGE_CONNECT_MS) || 30_000);
 
 /** Responses 流的错误事件（引擎侧会把它当成本轮失败并显示原因，而不是静默空回复）。 */
 function sseError(message: string): string {
@@ -262,12 +265,6 @@ export class ResponsesBridge {
         });
         up.once("end", () => { if (!streamStarted) finish("unsupported"); });
         up.once("error", () => { if (!streamStarted) finish("unsupported"); });
-        probeTimer = setTimeout(() => {
-          if (streamStarted || settled) return;
-          this.log(`[bridge] ${target.label ?? ""} /responses 探活 ${Math.round(idleMs / 1000)}s 无数据，改用 chat 转换`);
-          try { up.destroy(); } catch { /* ignore */ }
-          finish("unsupported");
-        }, idleMs);
       });
       upstream.once("error", (error) => {
         this.counters.failures += 1;
@@ -279,6 +276,14 @@ export class ResponsesBridge {
       res.once("close", () => {
         if (!settled) { try { upstream.destroy(); } catch { /* ignore */ } finish("handled"); }
       });
+      /* ⛔ 计时必须从**请求发出**开始，不能等 response 事件：
+         10-21 实测 grok-4.7 的 /responses 连响应头都不回，旧实现永远卡在 upstream.once("response")。 */
+      probeTimer = setTimeout(() => {
+        if (streamStarted || settled) return;
+        this.log(`[bridge] ${target.label ?? ""} /responses 探活 ${Math.round(idleMs / 1000)}s 无响应/无数据，改用 chat 转换`);
+        try { upstream.destroy(); } catch { /* ignore */ }
+        finish("unsupported");
+      }, idleMs);
       upstream.end(raw);
     });
   }
@@ -312,19 +317,32 @@ export class ResponsesBridge {
     req: http.IncomingMessage, res: http.ServerResponse, target: BridgeTarget, rest: string, raw: Buffer,
   ) {
     const upstream = this.upstreamRequest(req, target, rest, raw);
+    let connectTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearConnect = () => { if (connectTimer) { clearTimeout(connectTimer); connectTimer = null; } };
+    connectTimer = setTimeout(() => {
+      if (res.headersSent || res.writableEnded) return;
+      this.counters.failures += 1;
+      this.log(`[bridge] ${target.label ?? ""} 上游 ${Math.round(BRIDGE_CONNECT_MS / 1000)}s 无响应头（连接超时）`);
+      try { upstream.destroy(); } catch { /* ignore */ }
+      res.writeHead(502, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: { message: `上游 ${Math.round(BRIDGE_CONNECT_MS / 1000)} 秒未返回响应头：${target.baseUrl}` } }));
+    }, BRIDGE_CONNECT_MS);
     upstream.once("response", (up) => {
+      clearConnect();
       this.counters.forwarded += 1;
       res.writeHead(up.statusCode ?? 502, this.responseHeaders(up.headers));
       up.pipe(res);
       if (rest.endsWith("/responses")) this.watchForwardIdle(res, up, target.label ?? "");
     });
     upstream.once("error", (error) => {
+      clearConnect();
       this.counters.failures += 1;
       if (!res.headersSent) {
         res.writeHead(502, { "content-type": "application/json" });
         res.end(JSON.stringify({ error: { message: `协议桥无法连接上游：${error.message}` } }));
       } else res.end();
     });
+    res.once("close", clearConnect);
     upstream.end(raw);
   }
 
@@ -343,8 +361,20 @@ export class ResponsesBridge {
     const chatItems = Array.isArray(chatBody?.messages) ? chatBody.messages.length : 0;
     const toolCount = Array.isArray(chatBody?.tools) ? chatBody.tools.length : 0;
     const upstream = this.upstreamRequest(req, target, rest.replace(/\/responses$/, "/chat/completions"), payload);
+    let connectTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearConnect = () => { if (connectTimer) { clearTimeout(connectTimer); connectTimer = null; } };
+    connectTimer = setTimeout(() => {
+      if (res.headersSent || res.writableEnded) return;
+      this.counters.failures += 1;
+      this.log(`[bridge] ${target.label ?? ""} 上游 ${Math.round(BRIDGE_CONNECT_MS / 1000)}s 无响应头（连接超时）`);
+      try { upstream.destroy(); } catch { /* ignore */ }
+      res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+      res.end(sseError(`上游 ${Math.round(BRIDGE_CONNECT_MS / 1000)} 秒未返回响应头：${target.baseUrl}`));
+    }, BRIDGE_CONNECT_MS);
+    res.once("close", clearConnect);
 
     upstream.once("response", (up) => {
+      clearConnect();
       const status = up.statusCode ?? 502;
       const contentType = String(up.headers["content-type"] ?? "");
       if (status >= 400 || !/event-stream/.test(contentType)) {
@@ -429,6 +459,7 @@ export class ResponsesBridge {
       });
     });
     upstream.once("error", (error) => {
+      clearConnect();
       this.counters.failures += 1;
       this.log(`[bridge] ${target.label ?? target.baseUrl} 上游连接失败：${error.message}`);
       if (!res.headersSent) {
