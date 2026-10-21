@@ -2,11 +2,11 @@
  * PetActivity —— 桌面宠物的活动气泡（独立透明窗，`?pet=activity` 进入）。
  *
  * Qoder 同款：宠物只画本体；任务状态单独一块卡片贴在宠物上方：
- *   标题 + 当前状态 + 最近一句/工具 + 打开 / 停止。
+ *   标题 + 当前状态 + 最近一句/工具 + 回复 / 停止 / 打开。
  * ⛔ 只消费主进程归约好的短字符串（见 electron/features/pet-state.ts），不拿原始引擎事件。
  */
 import { useEffect, useState } from "react";
-import { ArrowUpRight, CircleStop, LoaderCircle, TriangleAlert } from "lucide-react";
+import { ArrowUpRight, CircleStop, CornerDownLeft, LoaderCircle, TriangleAlert, X } from "lucide-react";
 
 type ActivityStatus = "waiting" | "running" | "failed" | "interrupted" | "completed";
 type PetActivityItem = {
@@ -17,6 +17,7 @@ type PetActivityItem = {
   status: ActivityStatus;
   updatedAt: number;
   canStop: boolean;
+  canReply: boolean;
 };
 type PetSignalLike = {
   activities?: PetActivityItem[];
@@ -37,6 +38,9 @@ export function PetActivity() {
   const [signal, setSignal] = useState<PetSignalLike>(EMPTY_SIGNAL);
   const [busyId, setBusyId] = useState("");
   const [failedId, setFailedId] = useState("");
+  const [replyId, setReplyId] = useState("");
+  const [replyText, setReplyText] = useState("");
+  const [replyBusy, setReplyBusy] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -62,11 +66,25 @@ export function PetActivity() {
       .catch(() => setFailedId(threadId))
       .finally(() => setBusyId(""));
   };
+  const submitReply = (threadId: string) => {
+    const text = replyText.trim();
+    if (!text || replyBusy) return;
+    setReplyBusy(true);
+    setFailedId("");
+    void window.codex.petActivityReply(threadId, text)
+      .then((result) => {
+        if (result?.ok) { setReplyId(""); setReplyText(""); }
+        else setFailedId(threadId);
+      })
+      .catch(() => setFailedId(threadId))
+      .finally(() => setReplyBusy(false));
+  };
 
   return (
     <main className="pet-activity-root" aria-live="polite">
       {activities.map((item, index) => {
         const showDetail = Boolean(item.detail) && item.detail !== STATUS_LABEL[item.status];
+        const replying = replyId === item.threadId;
         return (
         <article
           key={item.threadId}
@@ -88,18 +106,38 @@ export function PetActivity() {
             {showDetail ? <span className="pet-activity-detail" title={item.detail}> · {item.detail}</span> : null}
           </p>
           <footer>
-            {failedId === item.threadId && <span className="pet-activity-stop-error">停止失败，请打开会话处理</span>}
-            {item.canStop && (
-              <button type="button" className="pet-activity-btn stop" disabled={busyId === item.threadId}
-                title={busyId === item.threadId ? "正在停止" : "停止这个任务"}
-                onClick={(event) => { event.stopPropagation(); stop(item.threadId); }}>
-                <CircleStop size={13} /><span>{busyId === item.threadId ? "正在停止" : "停止"}</span>
-              </button>
+            {replying ? (
+              <form className="pet-activity-reply" onClick={(event) => event.stopPropagation()}
+                onSubmit={(event) => { event.preventDefault(); event.stopPropagation(); submitReply(item.threadId); }}>
+                <input autoFocus value={replyText} onChange={(event) => setReplyText(event.target.value)}
+                  placeholder="回复当前任务…" aria-label="回复当前任务" maxLength={32000} disabled={replyBusy} />
+                <button type="submit" className="pet-activity-btn send" disabled={!replyText.trim() || replyBusy}
+                  title="发送回复" aria-label="发送回复"><CornerDownLeft size={13} /></button>
+                <button type="button" className="pet-activity-btn" title="取消回复" aria-label="取消回复"
+                  onClick={(event) => { event.stopPropagation(); setReplyId(""); setReplyText(""); }}><X size={13} /></button>
+              </form>
+            ) : (
+              <>
+                {failedId === item.threadId && <span className="pet-activity-stop-error">操作失败，请打开会话处理</span>}
+                {item.canReply && (
+                  <button type="button" className="pet-activity-btn reply" title="在当前任务里回复"
+                    onClick={(event) => { event.stopPropagation(); setFailedId(""); setReplyId(item.threadId); setReplyText(""); }}>
+                    <CornerDownLeft size={13} /><span>回复</span>
+                  </button>
+                )}
+                {item.canStop && (
+                  <button type="button" className="pet-activity-btn stop" disabled={busyId === item.threadId}
+                    title={busyId === item.threadId ? "正在停止" : "停止这个任务"}
+                    onClick={(event) => { event.stopPropagation(); stop(item.threadId); }}>
+                    <CircleStop size={13} /><span>{busyId === item.threadId ? "正在停止" : "停止"}</span>
+                  </button>
+                )}
+                <button type="button" className="pet-activity-btn open" title="打开会话"
+                  onClick={(event) => { event.stopPropagation(); open(item.threadId); }}>
+                  <ArrowUpRight size={13} /><span>打开</span>
+                </button>
+              </>
             )}
-            <button type="button" className="pet-activity-btn open" title="打开会话"
-              onClick={(event) => { event.stopPropagation(); open(item.threadId); }}>
-              <ArrowUpRight size={13} /><span>打开</span>
-            </button>
           </footer>
         </article>
         );

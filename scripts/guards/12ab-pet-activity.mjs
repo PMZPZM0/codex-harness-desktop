@@ -68,6 +68,7 @@ const stateSrc = codeOnly(read("electron/features/pet-state.ts"));
   ok(stateSrc.includes("pendingRequests") && stateSrc.includes("serverRequest/resolved") && stateSrc.includes('status: "waiting"'),
     "审批/提问 → waiting；serverRequest/resolved 后回 running");
   ok(stateSrc.includes("DETAIL_THROTTLE_MS") && stateSrc.includes("item/agentMessage/delta"), "流式正文详情有节流（不高频刷推送）");
+  ok(stateSrc.includes("freshTitle") && stateSrc.includes("existing.turnId !== nextTurnId"), "回复/steer 追加用户消息时不改原任务标题（只认本轮第一条）");
   ok(stateSrc.includes("COMPLETED_TTL_MS") && stateSrc.includes("MAX_ACTIVITIES"), "完成项有 TTL / 活动数量有上限（不会无限堆）");
   ok(!stateSrc.includes("holdUntil") && !/current === "review"[\s\S]{0,120}?setState\("idle"\)/.test(stateSrc),
     "负向：不许回到「review/failed 到点自动抹成 idle」的旧模型");
@@ -104,21 +105,23 @@ const appEvents = codeOnly(read("src/features/app-state/parts/part05/01-seg.tsx"
 const petCss = read("src/styles/22-pet.css");
 {
   const channels = (manifestSrc.channels ?? []).map((entry) => entry.channel);
-  const expected = ["pet:activity-open", "pet:activity-stop", "pet:activity-toggle", "pet:open-main", "pet:drag-start", "pet:drag-move", "pet:drag-end"];
-  ok(expected.every((channel) => channels.includes(channel)), "manifest 登记 7 条新通道（活动 3 + 主窗 1 + 拖拽 3）");
-  ok(expected.every((channel) => preloadSrc.includes(`"${channel}"`)), "preload 生成物包含 7 条新通道（不手改生成物）");
-  ok(registrySrc.includes('"pet:activity-open"') && registrySrc.includes("count: 18"), "registry 账本通道数 = 18");
+  const expected = ["pet:activity-open", "pet:activity-stop", "pet:activity-reply", "pet:activity-toggle", "pet:open-main", "pet:drag-start", "pet:drag-move", "pet:drag-end"];
+  ok(expected.every((channel) => channels.includes(channel)), "manifest 登记 8 条新通道（活动 4 + 主窗 1 + 拖拽 3）");
+  ok(expected.every((channel) => preloadSrc.includes(`"${channel}"`)), "preload 生成物包含 8 条新通道（不手改生成物）");
+  ok(registrySrc.includes('"pet:activity-open"') && registrySrc.includes("count: 19"), "registry 账本通道数 = 19");
   ok(ipcSrc.includes('ipcHost.handle("pet:activity-open"') && ipcSrc.includes("markPetActivitySeen")
     && ipcSrc.includes('sendToWindow("harness:event", { type: "pet-open-thread"'), "活动「打开」：清已看 → 聚焦主窗 → 发 pet-open-thread");
   ok(ipcSrc.includes('ipcHost.handle("pet:activity-stop"') && ipcSrc.includes('server.request("turn/interrupt"'),
     "活动「停止」：主进程直接 turn/interrupt（主窗没开也能停）");
+  ok(ipcSrc.includes('ipcHost.handle("pet:activity-reply"') && ipcSrc.includes('server.request("turn/steer"') && ipcSrc.includes("expectedTurnId"),
+    "活动「回复」：主进程 turn/steer 把一句话补进当前回合（不新起回合）");
   ok(ipcSrc.includes('ipcHost.handle("pet:activity-toggle"') && ipcSrc.includes("togglePetActivity()"), "活动收起/展开走主进程状态（两个浮窗同步）");
   ok(ipcSrc.includes('ipcHost.handle("pet:open-main"') && ipcSrc.includes("showMainWindow()"), "工具栏「打开主界面」接 showMainWindow");
   ok(ipcSrc.includes('ipcHost.handle("pet:drag-start"') && ipcSrc.includes("startPetDrag(")
     && ipcSrc.includes('ipcHost.handle("pet:drag-move"') && ipcSrc.includes("movePet(")
     && ipcSrc.includes('ipcHost.handle("pet:drag-end"') && ipcSrc.includes("endPetDrag("), "拖拽三条通道全部接到窗口层");
-  ok(petActivitySrc.includes("petActivityOpen") && petActivitySrc.includes("petActivityStop")
-    && petActivitySrc.includes("正在执行") && petActivitySrc.includes("本轮已完成"), "活动气泡 UI：状态文案 + 打开/停止真调用");
+  ok(petActivitySrc.includes("petActivityOpen") && petActivitySrc.includes("petActivityStop") && petActivitySrc.includes("petActivityReply")
+    && petActivitySrc.includes("正在执行") && petActivitySrc.includes("本轮已完成") && petActivitySrc.includes("回复当前任务"), "活动气泡 UI：状态文案 + 回复/停止/打开真调用");
   ok(petFloatSrc.includes("petOpenMain()") && petFloatSrc.includes("petActivityToggle()") && petFloatSrc.includes("petDragStart(")
     && petFloatSrc.includes("petDragMove(") && petFloatSrc.includes("petDragEnd("), "宠物浮窗：工具栏三键 + 手动拖拽三通道");
   ok(petFloatSrc.includes("running-right") && petFloatSrc.includes("running-left") && petFloatSrc.includes("jumping"),

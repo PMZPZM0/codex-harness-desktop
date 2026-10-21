@@ -344,6 +344,26 @@ export const petFeature = defineFeature<null>({
       }
     });
 
+    ipcHost.handle("pet:activity-reply", async (_event, threadId: string, text: string) => {
+      const id = String(threadId ?? "");
+      const prompt = String(text ?? "").trim();
+      if (!id || !prompt) return { ok: false, error: "回复内容不能为空" };
+      if (prompt.length > 32_000) return { ok: false, error: "回复内容过长" };
+      const record = petActivityRecord(id);
+      if (!record) return { ok: false, error: "活动已过期" };
+      if (!record.canReply || !record.turnId) return { ok: false, error: "当前任务不在执行中，请打开会话回复" };
+      try {
+        await server.request("turn/steer", {
+          threadId: id,
+          expectedTurnId: record.turnId,
+          input: [{ type: "text", text: prompt, text_elements: [] }],
+        });
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: (error as Error)?.message ?? String(error) };
+      }
+    });
+
     ipcHost.handle("pet:activity-toggle", () => ({ collapsed: !togglePetActivity() }));
 
     ipcHost.handle("pet:open-main", () => {
@@ -391,7 +411,7 @@ export const petFeature = defineFeature<null>({
       return { ok: true };
     });
 
-    // 生命期：卸载时摘掉本域十八条通道（不摘 = 卸载后通道还在、实现已被回收 ⇒ 调用报错）
+    // 生命期：卸载时摘掉本域十九条通道（不摘 = 卸载后通道还在、实现已被回收 ⇒ 调用报错）
     ctx.effect(() => {
       ipcHost.removeHandler("pet:list");
       ipcHost.removeHandler("pet:settings-get");
@@ -406,6 +426,7 @@ export const petFeature = defineFeature<null>({
       ipcHost.removeHandler("pet:interactive-rect");
       ipcHost.removeHandler("pet:activity-open");
       ipcHost.removeHandler("pet:activity-stop");
+      ipcHost.removeHandler("pet:activity-reply");
       ipcHost.removeHandler("pet:activity-toggle");
       ipcHost.removeHandler("pet:open-main");
       ipcHost.removeHandler("pet:drag-start");
