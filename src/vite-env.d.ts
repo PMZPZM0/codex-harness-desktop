@@ -1217,6 +1217,7 @@ interface Window {
 
     /** 桌面宠物配置推送（当前宠物包 + 设置）：换宠物 / 改缩放时用它让已开着的浮窗立刻跟上 */
     onPetConfig(listener: (config: PetStatus) => void): () => void;
+    onPetHover(listener: (inside: boolean) => void): () => void;
 
 
     onQueueTimerDue(listener: (event: { threadId: string; queuedSubmissionId: string }) => void): () => void;

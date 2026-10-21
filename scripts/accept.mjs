@@ -755,6 +755,32 @@ const CHECKS = [
         h.check("⑧ 手动拖拽真移动窗口（不再依赖 app-region）",
           !!before && !!during && (during.x !== before.x || during.y !== before.y),
           JSON.stringify({ before, during }).slice(0, 220));
+
+        /* ⑩ 用户实测「下面那个图标一出来，宠物就不动了，图标也一直在」：
+           工具栏出现后把可交互矩形清空（等价于鼠标移出宠物），主进程应推 hover=false，
+           工具栏收起；同时底部工具栏区不再切静态看帧。 */
+        const hoverProbe = await h.evalInTarget("pet=1", `(async function(){
+          const host = document.querySelector('.pet-float');
+          const sprite = document.querySelector('.pet-sprite');
+          const img = document.querySelector('.pet-sprite-anim img');
+          if (!host || !sprite || !img) return { error: 'no-host' };
+          host.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, pointerId: 1, pointerType: 'mouse' }));
+          await new Promise((r)=>setTimeout(r, 300));
+          const bar = document.querySelector('.pet-toolbar');
+          const shown = !!bar && getComputedStyle(bar).opacity !== '0';
+          const rect = sprite.getBoundingClientRect();
+          sprite.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, pointerType: 'mouse',
+            clientX: rect.left + rect.width / 2, clientY: rect.bottom - 10 }));
+          await new Promise((r)=>setTimeout(r, 220));
+          const src = img.getAttribute('src') || '';
+          host.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, pointerId: 1, pointerType: 'mouse', relatedTarget: document.body }));
+          await new Promise((r)=>setTimeout(r, 400));
+          const hidden = !!bar && getComputedStyle(bar).opacity === '0';
+          return { shown, hidden, src };
+        })()`).catch((e) => ({ error: String(e?.message || e) }));
+        h.check("⑩ 工具栏底部区不切静态看帧；指针离开后工具栏收起（不再永久挂着）",
+          hoverProbe?.shown === true && hoverProbe?.hidden === true && !/look-\d{2}\.webp$/i.test(String(hoverProbe?.src ?? "")),
+          JSON.stringify(hoverProbe).slice(0, 220));
         await h.screenshot("pet-activity");
       } finally {
         await h.eval(`window.codex.petHide().catch(()=>undefined)`).catch(() => undefined);

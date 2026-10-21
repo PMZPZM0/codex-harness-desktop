@@ -117,6 +117,7 @@
 - **架构落点**：主进程归约（`pet-state.ts`：引擎事件 → **每会话一条活动**，`waiting > running > failed/interrupted > completed→review`，旁听不改流向；completed 不自动回 idle）→ 两个透明置顶窗（`pet-window.ts`，**都不登记 window-bus**，主窗口关时由 window-factory 显式关掉）：宠物 `?pet=1` + 活动气泡 `?pet=activity`（独立 320px，标题/状态/最近一句 + 打开/停止）→ `pet://` **窄口径**协议供图（只放行宠物目录 + 图片扩展名；
   ⛔ 不放宽 `harness-image` 的可信根，那是安全回归）→ 渲染层 `src/features/pet/`（`main.tsx` 按 `?pet=1` / `?pet=activity` 分流，
   ⛔ 不能进 `App()` 条件调用 `useHarnessApp` —— hook 调用序）。
+- ⛔ **悬停工具栏的隐藏由主进程推 hover**（10-21）：窗口移出可交互矩形后会切成穿透，页面从此收不到 `pointerleave` ⇒ 工具栏会永久挂着；`pet-window.ts` 在光标轮询里把 inside 变化推成 `pet:hover`，浮窗用 `onPetHover` 收起。工具栏底部 42px **不参与看帧**（指针停在图标上切静态 look 帧会让宠物看着像冻住）。
 - ⛔ **拖拽不要挂 `-webkit-app-region: drag`**（10-21）：drag 区属非客户区，渲染层收不到 pointermove ⇒ 做不了左右跑/竖向跳反馈，也放不下悬停工具栏。现走「渲染层指针捕获 → `pet:drag-*` → 主进程 setBounds」；拖动期间 `applyPetMouseState` 必须强制可交互，否则窗口跟随移动会被判穿透、丢事件。
 - ⛔ **e2e 必须排除宠物浮窗 target 整族**：宠物和活动气泡都是 page target，`harness._connect()` 取 `list[0]` 会随机连错窗口
   （实测症状：设置导航读到 0 项，看着像"设置页坏了"）。已在 `scripts/e2e/lib/harness.mjs` 里按 `pet=` 排除。

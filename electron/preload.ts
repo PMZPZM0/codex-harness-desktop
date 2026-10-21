@@ -801,6 +801,10 @@ contextBridge.exposeInMainWorld("codex", {
      否则已开着的浮窗还画着旧宠物（它只在挂载时读一次设置）。 */
   onPetConfig: (listener: (config: unknown) => void) =>
     __on("pet:config", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload)),
+  /* 桌面宠物：主进程按光标轮询推来的「指针是否在宠物本体/工具栏内」。
+     ⛔ 不能只靠 pointerleave：移出可交互矩形后窗口切成穿透，页面收不到 leave（工具栏会永久挂着）。 */
+  onPetHover: (listener: (inside: boolean) => void) =>
+    __on("pet:hover", listener, (listener) => (_e: unknown, inside: unknown) => listener(Boolean(inside))),
 
   // ⛔ mac 适配（09-16）：渲染层此前完全不知道自己跑在什么平台——窗口控制键让位、
   // 平台差异 UI 全靠这个字段。sandboxed preload 里 process.platform 可用。

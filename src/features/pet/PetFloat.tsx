@@ -93,6 +93,10 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
     if (config && typeof config === "object") setPkg((config as PetStatus).active ?? null);
   }), []);
 
+  /* 主进程按光标轮询推来的 hover：鼠标移出可交互矩形后窗口会被切成穿透，
+     页面收不到 pointerleave ⇒ 工具栏会永久挂着（用户实测「下面图标一直在」）。 */
+  useEffect(() => window.codex.onPetHover((inside) => setHover(Boolean(inside))), []);
+
   /* ── 启动问候：只有 idle 时挥手 2.6s（Qoder 同款） ── */
   useEffect(() => {
     setGreeting(true);
@@ -186,6 +190,7 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
       className="pet-toolbar"
       ref={toolbarRef}
       onPointerDown={(event) => event.stopPropagation()}
+      onPointerMove={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
     >
       <button type="button" title="打开主界面" aria-label="打开主界面" onClick={openMain}><ExternalLink size={13} /></button>
@@ -206,6 +211,12 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
     const el = spriteRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
+    /* 底部工具栏区不参与看帧：指针落在图标上时切静态看帧会让宠物「不动」
+       （用户实测「下面那个图标一出来宠物就不动了」）。 */
+    if (clientY >= rect.bottom - 42) {
+      setLook({ x: 0, y: 0 });
+      return;
+    }
     const dx = clientX - (rect.left + rect.width / 2);
     const dy = clientY - (rect.top + rect.height / 2);
     const max = Math.max(1, Math.min(rect.width, rect.height) * 0.38);

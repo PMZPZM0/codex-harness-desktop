@@ -78,6 +78,9 @@ const stateSrc = codeOnly(read("electron/features/pet-state.ts"));
 
 /* ── 三、窗口层：独立活动窗 + 跟随宠物 + 手动拖拽 ───────────────────────── */
 const winSrc = codeOnly(read("electron/features/pet-window.ts"));
+const preloadSrc = read("electron/preload.ts");
+const viteEnvSrc = read("src/vite-env.d.ts");
+const petFloatSrc = codeOnly(read("src/features/pet/PetFloat.tsx"));
 {
   ok(winSrc.includes("activityWindow") && winSrc.includes("ACTIVITY_WIDTH = 320") && winSrc.includes("ACTIVITY_CARD_HEIGHT = 82"),
     "活动气泡是独立窗口（320px 宽，卡片高度与 CSS 82px 对齐）");
@@ -90,16 +93,21 @@ const winSrc = codeOnly(read("electron/features/pet-window.ts"));
   ok(winSrc.includes("startPetDrag") && winSrc.includes("movePet") && winSrc.includes("endPetDrag")
     && winSrc.includes("petDragging") && winSrc.includes("setBounds"), "手动拖动：指针捕获 → 主进程 setBounds（能拿到方向反馈）");
   ok(winSrc.includes("if (petDragging) inside = true"), "拖动期间强制可交互（否则窗口跟随移动时会被判穿透、丢 pointer 事件）");
+  ok(winSrc.includes('win.webContents.send("pet:hover", inside)') && winSrc.includes("petHoverInside"),
+    "hover 由主进程按光标轮询推送（移出可交互矩形后窗口穿透，页面收不到 pointerleave —— 工具栏会永久挂着）");
+  ok(preloadSrc.includes("onPetHover") && preloadSrc.includes('"pet:hover"') && viteEnvSrc.includes("onPetHover"),
+    "preload / 类型面暴露 onPetHover（浮窗能收到主进程的 hover 翻转）");
+  ok(petFloatSrc.includes("onPetHover((inside)") && petFloatSrc.includes("rect.bottom - 42")
+    && petFloatSrc.includes("onPointerMove={(event) => event.stopPropagation()}"),
+    "浮窗订阅 hover + 底部工具栏区不切静态看帧（否则图标一出现宠物就不动）");
   ok(!winSrc.includes("registerBusWindow"), "负向：宠物/活动窗不登记 window-bus");
 }
 
 /* ── 四、IPC / preload / 渲染层动作真实接线 ─────────────────────────────── */
 const ipcSrc = codeOnly(read("electron/features/pet-ipc.ts"));
-const preloadSrc = read("electron/preload.ts");
 const manifestSrc = JSON.parse(read("electron/ipc-channels.manifest.json"));
 const registrySrc = read("electron/ipc-registry.ts");
 const petActivitySrc = codeOnly(read("src/features/pet/PetActivity.tsx"));
-const petFloatSrc = codeOnly(read("src/features/pet/PetFloat.tsx"));
 const mainTsx = codeOnly(read("src/main.tsx"));
 const appEvents = codeOnly(read("src/features/app-state/parts/part05/01-seg.tsx"));
 const petCss = read("src/styles/22-pet.css");
