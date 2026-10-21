@@ -1187,32 +1187,43 @@
 .login-foot { text-align: center; color: var(--faint); font-size: 11px; }
 
 /* 用户中心 */
-.user-center { max-width: 680px; }
-.uc-card { display: flex; flex-direction: column; gap: 16px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); }
-.uc-head { display: flex; gap: 16px; align-items: flex-start; }
-.uc-avatar { position: relative; width: 72px; height: 72px; flex: 0 0 72px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(135deg, color-mix(in srgb, var(--green) 30%, var(--panel-2)), var(--panel-2)); border: 1px solid var(--line); }
+.user-center { max-width: 700px; }
+.uc-card {
+  display: flex; flex-direction: column; gap: 16px; padding: 20px;
+  border: 1px solid var(--line); border-radius: 16px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel-2) 36%, var(--bg)), var(--bg));
+}
+.uc-head { display: flex; gap: 18px; align-items: center; }
+.uc-avatar {
+  position: relative; width: 84px; height: 84px; flex: 0 0 84px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--green) 30%, var(--panel-2)), var(--panel-2));
+  border: 2px solid color-mix(in srgb, var(--green) 38%, var(--line));
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--green) 14%, transparent);
+}
 .uc-avatar > img, .uc-avatar > .uc-avatar-emoji { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: grid; place-items: center; overflow: hidden; }
 .uc-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.uc-avatar-emoji { font-size: 34px; }
-.uc-avatar-edit { position: absolute; right: -4px; bottom: -4px; width: 26px; height: 26px; border: 1px solid var(--line); border-radius: 50%; background: var(--panel); color: var(--muted); cursor: pointer; display: grid; place-items: center; box-shadow: 0 2px 6px rgba(0,0,0,.15); z-index: 2; }
-.uc-avatar-edit:hover { color: var(--text); }
+.uc-avatar-emoji { font-size: 38px; }
+.uc-avatar-edit { position: absolute; right: -4px; bottom: -4px; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 50%; background: var(--panel); color: var(--muted); cursor: pointer; display: grid; place-items: center; box-shadow: 0 2px 8px rgba(0,0,0,.18); z-index: 2; }
+.uc-avatar-edit:hover { color: var(--text); border-color: var(--accent); }
 .uc-head-info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
-.uc-name { font-size: 18px; font-weight: 600; color: var(--text); }
-.uc-meta { color: var(--muted); font-size: 12.5px; }
-.uc-preset-hint { color: var(--faint); font-size: 11px; margin-top: 4px; }
-.uc-presets { display: flex; flex-wrap: wrap; gap: 4px; }
-.uc-presets button { width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); cursor: pointer; font-size: 15px; display: grid; place-items: center; transition: all .15s ease; }
-.uc-presets button:hover { transform: scale(1.08); }
-.uc-presets button.active { border-color: var(--green); box-shadow: 0 0 0 1px var(--green); }
-.uc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.uc-name { font-size: 20px; font-weight: 600; color: var(--text); line-height: 1.3; }
+.uc-meta { color: var(--muted); font-size: 13px; }
+.uc-preset-hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+.uc-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.uc-presets button { width: 38px; height: 38px; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); cursor: pointer; overflow: hidden; display: grid; place-items: center; transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease; }
+.uc-presets button img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.uc-presets button:hover { transform: translateY(-1px) scale(1.04); border-color: color-mix(in srgb, var(--green) 55%, var(--line)); }
+.uc-presets button.active { border-color: var(--green); box-shadow: 0 0 0 2px color-mix(in srgb, var(--green) 30%, transparent); }
+.uc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
 .uc-grid .se-field { display: flex; flex-direction: column; gap: 5px; }
-.uc-grid .se-field > span { font-size: 11.5px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
-.uc-grid .se-field input, .uc-grid .se-field select, .uc-grid .se-field textarea { height: 36px; border: 1px solid var(--line); border-radius: 9px; padding: 0 10px; background: var(--bg); color: var(--text); font-size: 12.5px; outline: 0; }
-.uc-grid .se-field textarea { height: auto; min-height: 52px; padding: 8px 10px; resize: vertical; }
-.uc-grid .se-field input:focus, .uc-grid .se-field select:focus, .uc-grid .se-field textarea:focus { border-color: var(--muted); }
+.uc-grid .se-field > span { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
+.uc-grid .se-field input, .uc-grid .se-field select, .uc-grid .se-field textarea { height: 38px; border: 1px solid var(--line); border-radius: 10px; padding: 0 11px; background: var(--bg); color: var(--text); font-size: 13px; outline: 0; transition: border-color .15s ease, box-shadow .15s ease; }
+.uc-grid .se-field textarea { height: auto; min-height: 56px; padding: 9px 11px; resize: vertical; }
+.uc-grid .se-field input:focus, .uc-grid .se-field select:focus, .uc-grid .se-field textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
 .uc-grid .se-field:last-child { grid-column: 1 / -1; }
-.uc-actions { display: flex; gap: 8px; justify-content: flex-end; }
-@media (max-width: 560px) { .uc-grid { grid-template-columns: 1fr; } .uc-head { flex-direction: column; align-items: center; text-align: center; } }
+.uc-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 2px; }
+@media (max-width: 560px) { .uc-grid { grid-template-columns: 1fr; } .uc-head { flex-direction: column; align-items: flex-start; text-align: left; } }
 
 .danger-setting { min-height: 36px; padding: 0 14px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid color-mix(in srgb, var(--red) 45%, transparent); border-radius: 9px; background: transparent; color: var(--red); cursor: pointer; font-size: 12.5px; }
 .danger-setting:hover { background: color-mix(in srgb, var(--red) 10%, transparent); }

@@ -662,16 +662,17 @@
 .codex-id-avatar {
   position: relative;
   flex: none;
-  width: 56px;
-  height: 56px;
+  width: 60px;
+  height: 60px;
 }
 .codex-id-avatar > .codex-avatar-default,
 .codex-id-avatar > img {
-  width: 56px;
-  height: 56px;
-  border-radius: 15px;
+  width: 60px;
+  height: 60px;
+  border-radius: 16px;
   object-fit: cover;
   display: block;
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 /* 上传/恢复按钮：压在头像下缘的两角（圆底 + 描边 + 投影，不遮头像主体；两枚左右错开） */
 .codex-id-avatar-btn {
@@ -706,7 +707,7 @@
   flex-direction: column;
 }
 .codex-id-title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--text);
   line-height: 1.4;
@@ -719,8 +720,8 @@
 }
 .codex-id-label {
   margin: 12px 0 5px;
-  font-size: 11px;
-  color: var(--faint);
+  font-size: 12px;
+  color: var(--muted);
 }
 .codex-id-row {
   display: flex;
@@ -730,19 +731,19 @@
 }
 .codex-id-hint {
   margin-top: 5px;
-  font-size: 11px;
-  color: var(--faint);
+  font-size: 12px;
+  color: var(--muted);
 }
 .codex-name-input {
-  height: 30px;
+  height: 34px;
   width: 200px;
   max-width: 100%;
-  padding: 0 9px;
+  padding: 0 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 9px;
   background: var(--bg);
   color: var(--text);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .codex-name-input:focus {
   outline: none;
@@ -750,10 +751,10 @@
 }
 .codex-name-reset {
   flex: none;
-  height: 30px;
-  padding: 0 10px;
+  height: 34px;
+  padding: 0 11px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 9px;
   background: var(--bg);
   color: var(--muted);
   font-size: 12px;
@@ -828,6 +829,17 @@
   display: block;
   position: relative;
   z-index: 1;
+}
+/* 定制机器人头像：铺满圆角方形；坏图时 onError 隐藏，露出渐变 + 四角星 */
+.codex-avatar-default-img {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+  pointer-events: none;
 }
 /* ── 「你」的回合头：名字 + 头像（09-17 用户「人也要有名字和头像，位置跟 Codex 一样」）──
    与 Codex 的 `.turn-head` 镜像：他那边「头像 + 名字」左对齐，这边「名字 + 头像」右对齐。
