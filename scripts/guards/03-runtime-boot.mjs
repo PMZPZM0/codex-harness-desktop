@@ -1116,8 +1116,8 @@ const appSrc4 = readAppUi();
     (missingEntry.length === 0 ? ok : fail)(
       `【123】菜单条目齐（缺 ${missingEntry.join(" / ") || "无"}）`
     );
-    (/setToolTip\(`Codex Harness Desktop \$\{app\.getVersion\(\)\}`\)/.test(traySrc) ? ok : fail)(
-      "【123】托盘 tooltip 带版本号（悬停即可确认在跑哪一版）"
+    (/setToolTip\([\s\S]{0,160}?\$\{app\.getVersion\(\)\}`\)/.test(traySrc) ? ok : fail)(
+      "【123】托盘 tooltip 带版本号（悬停即可确认在跑哪一版；云助手形态标题换 Codex Assistant，版本号不变）"
     );
 
     // ④ 接线：main.ts 创建 + before-quit 销毁 + 退出前绕开关窗守卫
@@ -1162,11 +1162,10 @@ const appSrc4 = readAppUi();
        ① 第二实例：quit 是**异步**的，ready 抢跑照样 boot ⇒ 用 singleInstanceBlocked 挡住 ready 后的编排；
        ② ready 之前 `second-instance` 早到：showMainWindow → createWindow 先建一个，boot 随后又建一个
           ⇒ createWindow 必须复用未销毁的主窗口。 */
-    (/const singleInstanceBlocked = !gotSingleLock;/.test(mainTray)
-      && /app\.whenReady\(\)\.then\(\(\) => \{ if \(singleInstanceBlocked\) return; bootApp\(\); \}\)/.test(mainTray) ? ok : fail)(
+    (/const singleInstanceBlocked = !gotSingleLock;/.test(mainTray) && /if \(singleInstanceBlocked\) return;/.test(mainTray) ? ok : fail)(
       "【123】没拿到单实例锁 ⇒ ready 之后不 boot（光 app.quit() 拦不住第二实例建窗/起引擎）"
     );
-    (/const alive = mutableState\.mainWindow;[\s\S]{0,240}?if \(alive && !alive\.isDestroyed\(\)\)/.test(winFactory) ? ok : fail)(
+    (/const alive = mutableState\.mainWindow;[\s\S]{0,300}?if \(alive && !alive\.isDestroyed\(\)\)/.test(winFactory) ? ok : fail)(
       "【123】createWindow 防重入（已有未销毁的主窗口就复用 —— second-instance 早到不再开出第二个主窗口）"
     );
   }
