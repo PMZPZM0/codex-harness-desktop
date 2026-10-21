@@ -1,6 +1,5 @@
-import { AppSelect } from "./AppSelect";
 import { useEffect, useRef, useState } from "react";
-import { Camera, UserRound, Briefcase, GraduationCap, Clock3, Heart, Languages, Lightbulb, Save, Wand2, LogOut, RotateCcw } from "lucide-react";
+import { Camera, UserRound, Briefcase, GraduationCap, Clock3, Heart, Languages, Lightbulb, Save, Wand2, LogOut, RotateCcw, Check, Sparkles } from "lucide-react";
 import { DefaultCodexAvatar } from "./DefaultCodexAvatar";
 import { CODEX_DEFAULT_NAME, type CodexAvatarSpec } from "../lib/codex-identity.mjs";
 import { avatarAsset, USER_AVATAR_PRESETS } from "../lib/avatar-presets";
@@ -26,9 +25,9 @@ export function defaultProfile(): UserProfile {
 }
 
 const STYLE_OPTIONS = [
-  { value: "pragmatic", label: "务实" },
-  { value: "friendly", label: "友好" },
-  { value: "none", label: "默认" },
+  { value: "pragmatic", label: "务实", desc: "直接给结论和代码" },
+  { value: "friendly", label: "友好", desc: "多解释思路与取舍" },
+  { value: "none", label: "默认", desc: "不额外注入语气" },
 ];
 
 export function UserCenterSection({ username, onUsernameChange, personality, onPersonalityChange, onNotice, onProfileChange, onLogout, assistantName = CODEX_DEFAULT_NAME, onAssistantNameChange, codexAvatar, onCodexAvatarChange }: {
@@ -172,21 +171,31 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
       ? <span className="uc-avatar-emoji">{profile.avatar}</span>
       : <span className="uc-avatar-emoji">{profile.nickname ? profile.nickname.slice(0, 1).toUpperCase() : <UserRound size={26} />}</span>;
 
+  const styleLabel = STYLE_OPTIONS.find((option) => option.value === profile.style)?.label ?? "务实";
+  const displayName = profile.nickname || username || "未设置昵称";
+
   return (
     <section className="settings-section stack user-center">
-      <div className="settings-copy"><h2>用户中心</h2><p>你的身份与个性化资料，让 Codex 更懂你。</p></div>
+      <div className="settings-copy uc-page-head"><h2>用户中心</h2><p>你的身份与个性化资料，让 Codex 更懂你。</p></div>
 
-      <div className="uc-card">
-        <div className="uc-head">
-          <div className="uc-avatar">
+      <div className="uc-hero">
+        <div className="uc-hero-main">
+          <div className="uc-avatar uc-avatar-hero">
             {avatarRender}
-            <button className="uc-avatar-edit" title="上传图片头像" onClick={() => fileRef.current?.click()}><Camera size={13} /></button>
+            <button className="uc-avatar-edit" title="上传图片头像" onClick={() => fileRef.current?.click()}><Camera size={14} /></button>
             <input ref={fileRef} type="file" accept="image/*" hidden onChange={onAvatarFile} />
           </div>
-          <div className="uc-head-info">
-            <div className="uc-name">{profile.nickname || username || "未设置昵称"}</div>
+          <div className="uc-hero-copy">
+            <div className="uc-hero-kicker">你的身份</div>
+            <div className="uc-name">{displayName}</div>
             <div className="uc-meta">{profile.occupation || "未填写职业"} · {profile.field || "未填写领域"}</div>
-            <div className="uc-preset-hint">或选一个内置头像：</div>
+            <div className="uc-hero-chips">
+              <span className="uc-chip"><Wand2 size={12} />{styleLabel}</span>
+              <span className="uc-chip"><Languages size={12} />{profile.language || "中文"}</span>
+            </div>
+          </div>
+          <div className="uc-avatar-side">
+            <div className="uc-avatar-side-head"><strong>换个头像</strong><span>点一下立即生效</span></div>
             <div className="uc-presets uc-presets-images">
               {USER_AVATAR_PRESETS.map((preset) => {
                 const value = avatarAsset(preset.file);
@@ -206,34 +215,77 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
                 );
               })}
             </div>
+            <button type="button" className="uc-upload-link" onClick={() => fileRef.current?.click()}>
+              <Camera size={12} />上传自己的照片
+            </button>
           </div>
         </div>
+      </div>
 
-        <div className="uc-grid">
-          <label className="se-field"><span>昵称（Codex 怎么称呼你）</span><input value={profile.nickname} onChange={(e) => setField("nickname", e.target.value)} placeholder="保存后同步到界面与引擎称呼" /></label>
-          <label className="se-field"><span><Briefcase size={12} />职业</span><input value={profile.occupation} onChange={(e) => setField("occupation", e.target.value)} placeholder="如：后端工程师 / 产品经理" /></label>
-          <label className="se-field"><span><GraduationCap size={12} />专业领域</span><input value={profile.field} onChange={(e) => setField("field", e.target.value)} placeholder="如：Web 开发 / 数据分析" /></label>
-          <label className="se-field"><span><Heart size={12} />兴趣爱好</span><input value={profile.hobby} onChange={(e) => setField("hobby", e.target.value)} placeholder="如：摄影 / 跑步 / 游戏" /></label>
-          <label className="se-field"><span><Clock3 size={12} />生活习惯</span><input value={profile.habit} onChange={(e) => setField("habit", e.target.value)} placeholder="如：早九晚六 / 夜猫子" /></label>
-          <label className="se-field"><span><Languages size={12} />常用语言</span><input value={profile.language} onChange={(e) => setField("language", e.target.value)} placeholder="中文" /></label>
-          <label className="se-field"><span><Wand2 size={12} />回复风格</span>
-            <AppSelect value={profile.style} onChange={(v) => setField("style", v)} options={[...(STYLE_OPTIONS).map((o) => ({ value: (o.value), label: (`${o.label}`), }))]} />
-          </label>
-          <label className="se-field"><span><Lightbulb size={12} />自我介绍</span><textarea rows={2} value={profile.bio} onChange={(e) => setField("bio", e.target.value)} placeholder="一句话介绍自己，Codex 会记住" /></label>
+      <div className="uc-layout">
+        <section className="uc-panel">
+          <div className="uc-panel-head">
+            <span className="uc-panel-icon"><UserRound size={14} /></span>
+            <div><strong>基本资料</strong><small>Codex 怎么称呼你、你做什么</small></div>
+          </div>
+          <div className="uc-grid uc-grid-2">
+            <label className="se-field"><span>昵称（Codex 怎么称呼你）</span><input value={profile.nickname} onChange={(e) => setField("nickname", e.target.value)} placeholder="保存后同步到界面与引擎称呼" /></label>
+            <label className="se-field"><span><Briefcase size={12} />职业</span><input value={profile.occupation} onChange={(e) => setField("occupation", e.target.value)} placeholder="如：后端工程师 / 产品经理" /></label>
+            <label className="se-field"><span><GraduationCap size={12} />专业领域</span><input value={profile.field} onChange={(e) => setField("field", e.target.value)} placeholder="如：Web 开发 / 数据分析" /></label>
+          </div>
+        </section>
+
+        <section className="uc-panel">
+          <div className="uc-panel-head">
+            <span className="uc-panel-icon"><Heart size={14} /></span>
+            <div><strong>关于我</strong><small>让回答更贴近你的生活</small></div>
+          </div>
+          <div className="uc-grid uc-grid-2">
+            <label className="se-field"><span><Heart size={12} />兴趣爱好</span><input value={profile.hobby} onChange={(e) => setField("hobby", e.target.value)} placeholder="如：摄影 / 跑步 / 游戏" /></label>
+            <label className="se-field"><span><Clock3 size={12} />生活习惯</span><input value={profile.habit} onChange={(e) => setField("habit", e.target.value)} placeholder="如：早九晚六 / 夜猫子" /></label>
+            <label className="se-field"><span><Languages size={12} />常用语言</span><input value={profile.language} onChange={(e) => setField("language", e.target.value)} placeholder="中文" /></label>
+            <label className="se-field uc-field-full"><span><Lightbulb size={12} />自我介绍</span><textarea rows={2} value={profile.bio} onChange={(e) => setField("bio", e.target.value)} placeholder="一句话介绍自己，Codex 会记住" /></label>
+          </div>
+        </section>
+      </div>
+
+      <section className="uc-panel">
+        <div className="uc-panel-head">
+          <span className="uc-panel-icon"><Sparkles size={14} /></span>
+          <div><strong>交流偏好</strong><small>决定它回复你的语气和详细程度</small></div>
         </div>
+        <div className="uc-style-options">
+          {STYLE_OPTIONS.map((option) => {
+            const active = profile.style === option.value;
+            return (
+              <button
+                type="button"
+                key={option.value}
+                className={`uc-style-option ${active ? "active" : ""}`}
+                aria-pressed={active}
+                onClick={() => setField("style", option.value)}
+              >
+                <span><strong>{option.label}</strong><small>{option.desc}</small></span>
+                {active ? <Check size={14} /> : null}
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
-        <div className="uc-actions">
-          <button className="primary-setting" onClick={save}><Save size={14} />保存资料</button>
-          {onLogout && <button className="danger-setting" onClick={onLogout}><LogOut size={14} />退出登录</button>}
+      <div className="uc-savebar">
+        <span className="uc-savebar-note"><Sparkles size={13} />资料会同步到侧栏与 Codex 的称呼</span>
+        <div className="uc-savebar-actions">
+          {onLogout && <button type="button" className="danger-setting" onClick={onLogout}><LogOut size={14} />退出登录</button>}
+          <button type="button" className="primary-setting" onClick={save}><Save size={14} />保存资料</button>
         </div>
       </div>
 
       {/* Codex 的身份（09-17 用户要求）：名字 + 头像。与上方"你自己"的资料分开成卡，避免混淆。
           ⛔ 这里必须用**独立类名**（codex-id-*），不能复用上面那些 .uc-*：
-          `.uc-presets` 是「表情头像选择器」的样式，里面有 `.uc-presets button { width:30px }` ——
           复用它会把「用默认名」按钮压成 30px 宽、文字竖排断行（用户截图实测就是这么坏的）；
-          `.uc-avatar` 的圆形底 + overflow 还会把方形默认头像裁圆。 */}
-      <div className="uc-card">
+          `.uc-avatar` 的圆形底 + 尺寸还会把方形默认头像裁圆。 */}
+      <section className="uc-panel codex-id-panel">
         <div className="codex-id-head">
           <div className="codex-id-avatar">
             {codexAvatar?.type === "image" && codexAvatar.value
@@ -246,7 +298,7 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
             <input ref={codexFileRef} type="file" accept="image/*" hidden onChange={onCodexAvatarFile} />
           </div>
           <div className="codex-id-info">
-            <div className="codex-id-title">Codex 的身份</div>
+            <div className="codex-id-title">Codex 的身份 <span className="codex-id-badge"><Sparkles size={11} />AI 助手</span></div>
             <div className="codex-id-desc">这里的名字与头像会显示在每条回复的上方</div>
             <label className="codex-id-label" htmlFor="codex-name-input">它的名字</label>
             <div className="codex-id-row">
@@ -268,7 +320,7 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
             <div className="codex-id-hint">回车或点别处即时保存</div>
           </div>
         </div>
-      </div>
+      </section>
     </section>
   );
 }
