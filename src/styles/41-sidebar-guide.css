@@ -418,3 +418,21 @@
   flex: none;
   color: var(--faint);
 }
+
+/* ── 底部导航组（10-21 用户令：入口从顶部挪到「用户名之下」）──────────────────────────
+   顺序 = 用户名 → 自动化 → 前端开发 → 拓展 → 团队 → 个性化&记忆 → 登录管理 → 新手教程。
+   ⛔ `.sidebar` 是 flex 列、`.thread-list` 是 `flex:1 1 0` ⇒ 本组必须 `flex:none`，
+      否则会被列表的弹性挤压（窄屏下直接看不见）。
+   ⛔ 窗口矮时让**本组自己滚**（max-height），⛔ 不许把会话列表挤没 —— 列表是主场。 */
+.sidebar-nav-bottom {
+  flex: none;
+  margin-top: 4px;
+  max-height: 40vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+/* 7 行并排时行高收一点，给列表留空间（只在底部组生效，顶部快捷胶囊不受影响） */
+.sidebar-nav-bottom .sidebar-cap-row {
+  height: 30px;
+}

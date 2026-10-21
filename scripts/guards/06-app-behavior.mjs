@@ -2516,32 +2516,46 @@ w.postMessage({id:1,op:"list",root});
     "【180】侧栏不再有「会话备份」入口（⛔ 设置页里的备份页仍保留，别连带删掉）"
   );
   // ② 「自动化」→「定时任务」：它跳的本来就是 schedule 页，改名后入口与目标页同名
-  (/<Clock3 size=\{15\} \/><span>定时任务<\/span>/.test(side180) ? ok : fail)(
-    "【180】侧栏该项文案是「定时任务」（跳 schedule 页，与页面同名）"
+  /* ③ 10-21 用户**再次点名**改名 + 重排（覆盖上一条「一律 4 字」的口径）：
+     名字由用户逐条给定，不再强求 4 字；入口从顶部挪到「用户名之下」。
+     ⛔ 断言改成**精确名单 + 顺序**：改名类需求最容易漏一条，按名单比对才抓得住。 */
+  (/<Clock3 size=\{15\} \/><span>自动化<\/span>/.test(side180) ? ok : fail)(
+    "【180】该项文案是「自动化」（10-21 用户令：定时任务 → 自动化；跳的仍是 schedule 页）"
   );
-  (!/<span>自动化<\/span>/.test(side180) ? ok : fail)(
-    "【180】侧栏不再有「自动化」文案（与设置页里真正的 automation 页区分开）"
-  );
-  // ③ 10-21 用户重排：能力入口按用途拆行，点击先看概览，再在**同一个弹窗**里打开教程
-  //   （⛔ 用户明确「不要内嵌弹窗」⇒ 不是概览弹窗里再套一个教程弹窗）。
   const hasGuideRow = (key, label) => new RegExp(`<span>${label}</span>`).test(side180)
     && new RegExp(`setGuideKey\\("${key}"\\)`).test(side180);
-  /* 10-21 用户令：「左侧菜单栏名字都太长了，统改成 4 个字」——
-     全称仍在 title 提示与弹窗标题里（信息不丢），侧栏只留 4 字。
-     ⛔ 这条断言按**形状**扫（`<span>…</span><ChevronRight …sidebar-cap-chevron`），
-        所以新增一条能力入口会自动被纳入 4 字约束，不会靠人工记得改。 */
-  (hasGuideRow("frontend", "前端组件")
-    && hasGuideRow("extensions", "技能插件")
-    && hasGuideRow("agents", "专家团队")
-    && hasGuideRow("identity", "人格记忆") ? ok : fail)(
-    "【180】侧栏四条能力入口齐全且都是 4 字（前端组件 / 技能插件 / 专家团队 / 人格记忆；全称在 title 与弹窗标题）"
+  (hasGuideRow("frontend", "前端开发")
+    && hasGuideRow("extensions", "拓展")
+    && hasGuideRow("agents", "团队")
+    && hasGuideRow("identity", "个性化&amp;记忆") ? ok : fail)(
+    "【180】四条能力入口按用户指定改名（前端开发 / 拓展 / 团队 / 个性化&amp;记忆）且各自仍锚到 setGuideKey"
   );
+  /* 底部导航组：**顺序**就是用户口述的顺序，逐条比对（漏一条 / 顺序错都该红）。 */
   {
-    const capLabels = [...side180.matchAll(/<span>([^<]{1,12})<\/span><ChevronRight size=\{13\} className="sidebar-cap-chevron"/g)].map((m) => m[1]);
-    (capLabels.length === 6 && capLabels.every((label) => label.length === 4) ? ok : fail)(
-      `【180】侧栏能力入口名**一律 4 字**（实际 ${capLabels.length} 条：${capLabels.join(" / ")}）`
+    const bottomNav = /<div className="sidebar-nav sidebar-nav-bottom"[^>]*>([\s\S]*?)<\/div>/.exec(side180)?.[1] ?? "";
+    const capLabels = [...bottomNav.matchAll(/<span>([^<]{1,12})<\/span><ChevronRight size=\{13\} className="sidebar-cap-chevron"/g)].map((m) => m[1]).map((s) => s.replace(/&amp;/g, "&"));
+    const want = ["自动化", "前端开发", "拓展", "团队", "个性化&记忆", "登录管理", "新手教程"];
+    (capLabels.length === want.length && want.every((label, i) => capLabels[i] === label) ? ok : fail)(
+      `【180】底部导航组顺序 = ${want.join(" → ")}（实际 ${capLabels.length} 条：${capLabels.join(" / ")}）`
     );
   }
+  /* 布局：顶部只留「新建任务 / 搜索任务」，导航组在**账户行之后**（用户：底部依次展示用户名，以及这些入口）。 */
+  {
+    const quickIdx = side180.indexOf('className="sidebar-quick"');
+    const topNavIdx = side180.indexOf('名="能力入口"');
+    const accountIdx = side180.indexOf('className="account-row"');
+    const bottomNavIdx = side180.indexOf('className="sidebar-nav sidebar-nav-bottom"');
+    (quickIdx > 0 && topNavIdx === -1 && accountIdx > 0 && bottomNavIdx > accountIdx ? ok : fail)(
+      "【180】顶部只剩新建/搜索（旧「能力入口」组已移除），导航组位于账户行**之后**（用户名在上、入口在下）"
+    );
+  }
+  /* 新手教程：入口进底部组，且 NewbieGuide 走**受控**（不传 open 它会再画一行「新手引导」⇒ 底部两个入口）。 */
+  (/<span>新手教程<\/span>/.test(side180) && /setNewbieOpen\(true\)/.test(side180) ? ok : fail)(
+    "【180】底部有「新手教程」一行且真的能打开（锚到 setNewbieOpen）"
+  );
+  (/<NewbieGuide open=\{newbieOpen\} onOpenChange=\{setNewbieOpen\}/.test(side180) ? ok : fail)(
+    "【180】NewbieGuide 走受控打开（⛔ 不传 open 它会自带一行「新手引导」⇒ 底部出现两个入口）"
+  );
   /* 登录管理（10-21 用户令）：「加一个登录管理，点击弹窗提醒 GPT订阅 / 中转站账户 / 云账号，跳转都是直达界面」。
      ⛔ 三处缺一 = 把某个登录入口藏起来；⛔ 行里必须各自交出自己的 page（都跳同一页 = 假入口）。 */
   (/setLoginMgrOpen\(true\)/.test(side180) && /<span>登录管理<\/span>/.test(side180) ? ok : fail)(
@@ -2600,8 +2614,8 @@ w.postMessage({id:1,op:"list",root});
     && /\.sidebar-quick\s*\{[\s\S]{0,260}?border-radius:\s*999px/.test(sideStyles180) ? ok : fail)(
     "【180】新建 / 搜索是共享外框的连体胶囊（gap 0 + 999px 圆角，中间一条分隔线）"
   );
-  (/<button className="sidebar-tab sidebar-cap-row ic-amber"[\s\S]{0,180}?<span>定时任务<\/span>/.test(side180) ? ok : fail)(
-    "【180】定时任务与四条能力入口同一行样式（不再单独一档）"
+  (/<button className="sidebar-tab sidebar-cap-row ic-amber"[\s\S]{0,180}?<span>自动化<\/span>/.test(side180) ? ok : fail)(
+    "【180】「自动化」与其它能力入口同一行样式（不再单独一档）"
   );
   (!/<span>更多<\/span>/.test(side180) && !/moreHubOpen/.test(side180) ? ok : fail)(
     "【180】「更多」入口与弹窗已删除（AI 画布并入前端能力入口、知识库并入人格/记忆入口）"
