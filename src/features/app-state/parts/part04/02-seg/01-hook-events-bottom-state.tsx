@@ -298,7 +298,16 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
        · 思考浮窗是 portal、刻度尺 wheel 里 stopPropagation ⇒ scroller 上的监听根本收不到。
        用户 10-21 实测「滚轮往上就自动弹回底部」正是这两条缝。capture 在 window 上，
        任何真实滚轮输入都让自动跟随让位（滚回底部会立刻重新贴底，语义不变）。 */
-    const onWheel = () => { lastWheelAt = Date.now(); releaseToUser("wheel"); };
+    const onWheel = (event: WheelEvent) => {
+      lastWheelAt = Date.now();
+      releaseToUser("wheel");
+      /* 懒加载只发生在**已经到顶后继续上滚**这一刻：正常滚动过程中绝不插内容，
+         滚轮因此始终是"正常往上滚"；到顶后一次手势只加一页，位置保持不动。 */
+      if (event.deltaY < 0 && scroller.scrollTop <= 4) {
+        const id = bag.thread?.id ?? "";
+        if (id) void bag.loadEarlierTurns(id);
+      }
+    };
     const onTouchMove = () => releaseToUser("touch");
     const onKeyDown = (event: Event) => {
       const key = (event as unknown as { key?: string }).key ?? "";

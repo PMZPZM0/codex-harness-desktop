@@ -883,12 +883,14 @@ const CHECKS = [
         await wait(80);
         await h.eval(`(function(){ var t=document.querySelector(".timeline"); t.scrollTop=Math.max(0,t.scrollTop-320); t.dispatchEvent(new Event("scroll")); return 1; })()`);
         await wait(300);
-        // 一次手势：只滚进续载区（1.5 屏/1200px），等它自动加载一页；不点按钮。
-        await h.eval(`(function(){ window.__adbg=[]; var t=document.querySelector(".timeline"); t.scrollTop=Math.min(1100, t.scrollHeight-t.clientHeight); t.dispatchEvent(new Event("scroll")); return 1; })()`);
+        // 一次手势：先到顶，再在顶部滚一次 ⇒ 只加载一页，位置保持顶部。
+        await h.eval(`(function(){ window.__adbg=[]; var t=document.querySelector(".timeline"); t.scrollTop=0; t.dispatchEvent(new Event("scroll")); return 1; })()`);
+        await wait(300);
+        await h.eval(`(function(){ var t=document.querySelector(".timeline"); t.dispatchEvent(new WheelEvent("wheel",{deltaY:-300,bubbles:true,cancelable:true})); return 1; })()`);
         await wait(1800);
         const after = await h.eval(`(function(){ var t=document.querySelector(".timeline"); return { top:Math.round(t.scrollTop), max:t.scrollHeight-t.clientHeight, groups:t.querySelectorAll(".turn-group").length }; })()`);
-        h.check("④ 顶部续载保持原位且一次手势只加载一页（top ≤ 1200px、组数增量 ≤ 5）",
-          after.top <= 1200 && after.max >= before.max && after.groups - before.groups <= 5,
+        h.check("④ 到顶后再滚一次只加载一页且保持顶部（top ≤ 40px、组数增量 ≤ 5）",
+          after.top <= 40 && after.max >= before.max && after.groups - before.groups <= 5,
           JSON.stringify({ before, after }).slice(0, 220));
       }
     },

@@ -359,11 +359,9 @@ bag.loadEarlierTurns = loadEarlierTurns as typeof bag.loadEarlierTurns;
       bag.collapseTurnWindow(id);
       return;
     }
-    /* 10-20：提前预取，别等滚到顶才加载（滚到顶再 fetch = 停一下再跳，永远做不成"无缝"）。
-       至少留 1.2 屏或 1200px 的缓冲；加载后由锚点补偿保持视口，滚轮继续往下就有内容。 */
-    const prefetchThreshold = Math.max(1200, el.clientHeight * 1.5);
-    if (el.scrollTop > prefetchThreshold) return;
-    void bag.loadEarlierTurns(id);
+    /* ⛔ 不在滚动途中自动插历史（用户 10-21：「滚轮正常往上滚动」）：
+       触发点收口到「已经到顶后继续上滚」的 wheel（见 01-hook 的 onWheel）与「加载更早」按钮。
+       滚动到顶之前一行都不插 ⇒ 滚动条不会因加载而跳、也不会狂闪/一次拉完全部。 */
   }
 bag.onTimelineScroll = onTimelineScroll as typeof bag.onTimelineScroll;
 

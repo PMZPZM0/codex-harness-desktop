@@ -418,7 +418,7 @@ console.log(C.bold("\n【10】滚动与锚定状态：单一 owner + 默认值�
 
   // ⑤ 10-21 用户实测「滚轮往上就自动弹回底部」：解除跟随不能看 deltaY 方向、也不能只挂 scroller。
   //    自然滚动会把上滚报成正值；思考浮窗是 portal、刻度尺 stopPropagation ⇒ 旧监听收不到。
-  (/const onWheel = \(\) => [^\n]*releaseToUser\("wheel"\)/.test(appSrc)
+  (/const onWheel = \(event[^)]*\) => \{[\s\S]{0,500}?releaseToUser\("wheel"\)/.test(appSrc)
     && /window\.addEventListener\("wheel", onWheel, \{ passive: true, capture: true \}\)/.test(appSrc)
     && /window\.removeEventListener\("wheel", onWheel, \{ capture: true \}\)/.test(appSrc)
     && !/deltaY < 0\) releaseToUser/.test(appSrc) ? ok : fail)(
