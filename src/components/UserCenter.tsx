@@ -73,13 +73,21 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
     if (username && !profile.nickname) setProfile((p) => ({ ...p, nickname: username }));
   }, [username]);
 
+  /* 回复风格与「设置 → 个性化 → 回复风格」是**同一份设置**（personality）：
+     用户在任意一边切换，另一边和 Codex 的 thread/start personality 都要跟着变。
+     ⛔ 不要以 localStorage user-profile.style 为准 —— 那是旧字段，只做兼容缓存。 */
+  useEffect(() => {
+    if (!personality) return;
+    setProfile((p) => (p.style === personality ? p : { ...p, style: personality }));
+  }, [personality]);
+
   const save = () => {
     // 昵称是全局权威：主界面用户名 + 引擎称呼 + 用户中心 三处统一
     const name = profile.nickname.trim() || username.trim() || "Codex 用户";
     onUsernameChange(name);
     localStorage.setItem("username", name);
     void window.codex.setNickname(name).catch(() => undefined);
-    onPersonalityChange(profile.style);
+    onPersonalityChange(personality);
     onProfileChange?.({ avatarType: profile.avatarType, avatar: profile.avatar });
     onNotice("用户资料已保存，Codex 会称呼你「" + name + "」");
     // 立即落库昵称
@@ -171,7 +179,7 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
       ? <span className="uc-avatar-emoji">{profile.avatar}</span>
       : <span className="uc-avatar-emoji">{profile.nickname ? profile.nickname.slice(0, 1).toUpperCase() : <UserRound size={26} />}</span>;
 
-  const styleLabel = STYLE_OPTIONS.find((option) => option.value === profile.style)?.label ?? "务实";
+  const styleLabel = STYLE_OPTIONS.find((option) => option.value === personality)?.label ?? "务实";
   const displayName = profile.nickname || username || "未设置昵称";
 
   return (
@@ -252,18 +260,18 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
       <section className="uc-panel">
         <div className="uc-panel-head">
           <span className="uc-panel-icon"><Sparkles size={14} /></span>
-          <div><strong>交流偏好</strong><small>决定它回复你的语气和详细程度</small></div>
+          <div><strong>交流偏好</strong><small>与「设置 → 个性化 → 回复风格」联动，切换后下一个回合生效</small></div>
         </div>
         <div className="uc-style-options">
           {STYLE_OPTIONS.map((option) => {
-            const active = profile.style === option.value;
+            const active = personality === option.value;
             return (
               <button
                 type="button"
                 key={option.value}
                 className={`uc-style-option ${active ? "active" : ""}`}
                 aria-pressed={active}
-                onClick={() => setField("style", option.value)}
+                onClick={() => { onPersonalityChange(option.value); setProfile((p) => ({ ...p, style: option.value })); }}
               >
                 <span><strong>{option.label}</strong><small>{option.desc}</small></span>
                 {active ? <Check size={14} /> : null}
