@@ -355,3 +355,66 @@
   .sidebar-guide-foot { padding: 12px 16px; }
   .sidebar-guide-caps { grid-template-columns: 1fr; }
 }
+
+/* ── 登录管理弹窗（10-21 用户要求：GPT 订阅 / 中转站 / 云账号 三处一处直达）──────────
+   ⛔ 外壳复用 sidebar-guide（同一套弹窗骨架与关闭三路），这里只加「三行入口」的排布。
+   ⛔ 颜色一律走 token / color-mix，别写死色值（守卫扫硬编码非语义色）。 */
+.login-mgr {
+  /* 只有三行，760px 的空弹窗比内容还空 ⇒ 单独收窄（移动端仍由 calc 兜住） */
+  width: min(460px, calc(100vw - 32px));
+  max-height: min(70vh, 420px);
+}
+.login-mgr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.login-mgr-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 11px 12px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--bg);
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.login-mgr-row:hover,
+.login-mgr-row:focus-visible {
+  border-color: var(--ic);
+  background: color-mix(in srgb, var(--ic) 7%, var(--bg));
+}
+.login-mgr-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--ic) 14%, var(--bg));
+  color: var(--ic);
+}
+.login-mgr-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.login-mgr-text strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.login-mgr-text small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.login-mgr-arrow {
+  flex: none;
+  color: var(--faint);
+}

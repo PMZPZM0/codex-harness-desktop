@@ -2526,11 +2526,50 @@ w.postMessage({id:1,op:"list",root});
   //   （⛔ 用户明确「不要内嵌弹窗」⇒ 不是概览弹窗里再套一个教程弹窗）。
   const hasGuideRow = (key, label) => new RegExp(`<span>${label}</span>`).test(side180)
     && new RegExp(`setGuideKey\\("${key}"\\)`).test(side180);
-  (hasGuideRow("frontend", "前端 UI · 组件库")
-    && hasGuideRow("extensions", "技能 · 插件 · MCP")
-    && hasGuideRow("agents", "子智能体 · 专家 · 专家团")
-    && hasGuideRow("identity", "人格市场 · 记忆中心 · 知识库") ? ok : fail)(
-    "【180】侧栏四条能力入口齐全（前端 UI/组件库、技能/插件/MCP、子智能体/专家/专家团、人格市场/记忆中心/知识库）"
+  /* 10-21 用户令：「左侧菜单栏名字都太长了，统改成 4 个字」——
+     全称仍在 title 提示与弹窗标题里（信息不丢），侧栏只留 4 字。
+     ⛔ 这条断言按**形状**扫（`<span>…</span><ChevronRight …sidebar-cap-chevron`），
+        所以新增一条能力入口会自动被纳入 4 字约束，不会靠人工记得改。 */
+  (hasGuideRow("frontend", "前端组件")
+    && hasGuideRow("extensions", "技能插件")
+    && hasGuideRow("agents", "专家团队")
+    && hasGuideRow("identity", "人格记忆") ? ok : fail)(
+    "【180】侧栏四条能力入口齐全且都是 4 字（前端组件 / 技能插件 / 专家团队 / 人格记忆；全称在 title 与弹窗标题）"
+  );
+  {
+    const capLabels = [...side180.matchAll(/<span>([^<]{1,12})<\/span><ChevronRight size=\{13\} className="sidebar-cap-chevron"/g)].map((m) => m[1]);
+    (capLabels.length === 6 && capLabels.every((label) => label.length === 4) ? ok : fail)(
+      `【180】侧栏能力入口名**一律 4 字**（实际 ${capLabels.length} 条：${capLabels.join(" / ")}）`
+    );
+  }
+  /* 登录管理（10-21 用户令）：「加一个登录管理，点击弹窗提醒 GPT订阅 / 中转站账户 / 云账号，跳转都是直达界面」。
+     ⛔ 三处缺一 = 把某个登录入口藏起来；⛔ 行里必须各自交出自己的 page（都跳同一页 = 假入口）。 */
+  (/setLoginMgrOpen\(true\)/.test(side180) && /<span>登录管理<\/span>/.test(side180) ? ok : fail)(
+    "【180】侧栏有「登录管理」入口，且真的打开弹窗（不是死按钮）"
+  );
+  const loginMgrSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "LoginManagerModal.tsx"), "utf8");
+  (["openai", "relay", "cloud"].every((page) => new RegExp(`page: "${page}"`).test(loginMgrSrc)) ? ok : fail)(
+    "【180】登录管理弹窗列全三处账户（GPT 订阅 / 中转站 / 云账号）"
+  );
+  (/onNavigate\(account\.page\)/.test(loginMgrSrc) ? ok : fail)(
+    "【180】每行把自己那个 page 交出去（⛔ 三行都跳同一页 = 假入口）"
+  );
+  (/onNavigate=\{\(page: LoginManagerTarget\) => \{/.test(side180) && /setSettingsPage\(page\)/.test(side180) && /setSettingsOpen\(true\)/.test(side180) ? ok : fail)(
+    "【180】点一行**直达**对应设置页（⛔ 不再经「设置 → 账户与模型」多一层）"
+  );
+
+  /* 可达性（⛔ 不许省）：aria-modal 的对话框必须自带三条出路 + 焦点不外逃。 */
+  (/aria-modal="true"/.test(loginMgrSrc) && /role="dialog"/.test(loginMgrSrc) ? ok : fail)(
+    "【180】登录管理是个真对话框（role=dialog + aria-modal）"
+  );
+  (/addEventListener\("keydown", onKey, true\)/.test(loginMgrSrc) && /event\.key === "Escape"/.test(loginMgrSrc) ? ok : fail)(
+    "【180】Esc 能关（键盘用户的主出口；⛔ 只做 ✕ 与遮罩等于把键盘用户关在里面）"
+  );
+  (/event\.key !== "Tab"/.test(loginMgrSrc) && /document\.activeElement === last/.test(loginMgrSrc) ? ok : fail)(
+    "【180】Tab 焦点陷阱在（aria-modal 承诺焦点只在本框内；⛔ 不拦 Tab 焦点会跑到背后的侧栏/消息区）"
+  );
+  (/onMouseDown=\{\(event\) => \{ if \(event\.target === event\.currentTarget\) onClose\(\); \}\}/.test(loginMgrSrc) ? ok : fail)(
+    "【180】点遮罩能关（第三条出路，且只在**遮罩本身**被点时才关 —— 点内容不许误关）"
   );
   (["frontend", "extensions", "agents", "identity"].every((key) => new RegExp(`setGuideKey\\("${key}"\\)`).test(side180)) ? ok : fail)(
     "【180】四条入口各自能打开对应教程弹窗（每一条都锚到 setGuideKey，不是只写文案）"
