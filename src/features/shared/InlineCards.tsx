@@ -12,6 +12,7 @@ import { imageDisplaySrc } from "../../lib/image-src.mjs";
 import { imageUrl } from "../../lib/image-url";
 import { IMAGE_EXTENSIONS, BINARY_EXTENSIONS } from "../../hooks/useFilePreview";
 import { copyTextToClipboard } from "../../lib/clipboard";
+import { FileRefCard } from "../../components/FileRefCard";
 
 /** 文本类文件才能弹窗编辑（二进制/图片写回即损坏）。口径与 useFilePreview 同源（导出复用，别抄第二份）。 */
 function isEditableTextFile(path: string): boolean {
@@ -187,6 +188,18 @@ export function InlineFileCards({ text, onOpenFile }: { text: string; onOpenFile
         const openPath = resolvedPaths[m.path];
         const mediaKind = mediaKindOf(openPath);
         const mediaTitle = mediaKind === "video" ? "点击播放" : mediaKind === "audio" ? "点击播放音频" : mediaKind === "model" ? "点击预览 3D" : "";
+        /* 10-22 用户截图：「还是这种旧的」——普通文件改成 Qoder 式卡片（默认右栏预览），
+           图片/音视频/3D 仍走原来的缩略芯片（点击进灯箱/播放器，不显示打开方式下拉）。 */
+        if (!isImagePath(openPath) && !mediaKind) {
+          return (
+            <FileRefCard
+              key={`${m.path}-${index}`}
+              path={openPath}
+              onOpenEditor={onOpenFile}
+              onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, path: openPath, name }); }}
+            />
+          );
+        }
         return (
           <button
             type="button"
