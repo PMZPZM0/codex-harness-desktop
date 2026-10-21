@@ -1158,6 +1158,17 @@ const appSrc4 = readAppUi();
     (/closePromptSeen\(\)/.test(closeHandler) ? ok : fail)("【123】「不再询问」已记住 ⇒ 不再弹窗（closePromptSeen 分支，动作按 closeToTray 走）");
     (/closeConfirmBridge\.pending = \{ busy/.test(closeHandler) ? ok : fail)("【123】未记住动作 ⇒ preventDefault 并推 close-confirm:ask 给渲染层画应用内卡片");
     (/closeConfirmBridge\.respond = /.test(winFactory) ? ok : fail)("【123】回包执行端已接线（close-confirm-ipc 回包后 hide / 二次 close）");
+    /* ⛔ 10-22 用户实测「应用还能重复打开」（两个一模一样的窗口）：两条路都要堵 ——
+       ① 第二实例：quit 是**异步**的，ready 抢跑照样 boot ⇒ 用 singleInstanceBlocked 挡住 ready 后的编排；
+       ② ready 之前 `second-instance` 早到：showMainWindow → createWindow 先建一个，boot 随后又建一个
+          ⇒ createWindow 必须复用未销毁的主窗口。 */
+    (/const singleInstanceBlocked = !gotSingleLock;/.test(mainTray)
+      && /app\.whenReady\(\)\.then\(\(\) => \{ if \(singleInstanceBlocked\) return; bootApp\(\); \}\)/.test(mainTray) ? ok : fail)(
+      "【123】没拿到单实例锁 ⇒ ready 之后不 boot（光 app.quit() 拦不住第二实例建窗/起引擎）"
+    );
+    (/const alive = mutableState\.mainWindow;[\s\S]{0,240}?if \(alive && !alive\.isDestroyed\(\)\)/.test(winFactory) ? ok : fail)(
+      "【123】createWindow 防重入（已有未销毁的主窗口就复用 —— second-instance 早到不再开出第二个主窗口）"
+    );
   }
 
   /* ══ 【136】委派并发闸不得被"残留运行中记录"永久占满（09-24，评估报告 §4.3）══
