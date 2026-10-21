@@ -289,14 +289,14 @@ console.log("\n【mui】⑨ 维度分离（作用域 / 分层机制 / 存储后�
 console.log("\n【mui】⑪ 设置页「记忆」两级 IA");
 {
   const center = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryCenterSection.tsx"), "utf8");
-  const cardKeys = ["shared", "pyramid", "backend"];
+  const cardKeys = ["shared", "pyramid"];
   const missing = cardKeys.filter((k) => !center.includes(`key: "${k}"`));
-  ok(missing.length === 0, `一级 3 个并列入口齐全（缺：${missing.join("/") || "无"}）`);
+  ok(missing.length === 0, `内容入口齐全（缺：${missing.join("/") || "无"}）`);
   ok(/className="settings-cards"/.test(center) && /cards\.map\(/.test(center),
-    "一级用**跨页通用**卡片（.settings-card* —— 与开发工具页/拓展接口页/记忆中心同一份 CSS）");
+    "内容入口用**跨页通用**卡片（.settings-card* —— 与开发工具页/拓展接口页/记忆中心同一份 CSS）");
   const dlgAt = center.indexOf("<SettingsDialog");
   ok(dlgAt > 0 && center.indexOf("<BackendConsolePanel") > dlgAt,
-    "⛔ 记忆后端整块只在弹窗里（⛔ 原来内嵌在页面上；现在由控制台组件承载）");
+    "⛔ 记忆后端的详细配置只在弹窗里（选择开关已升到页面上的三块板）");
   ok(!/className="memory-overview"/.test(center), "⛔ 旧的 4 张 overview 卡已替换（页内直排 = 不是两级 IA）");
   /* ⛔⛔ 10-10 用户反馈「每个卡片进去都是这个」：弹窗里只有一句说明 + 一个"再打开记忆中心"按钮
      = 让人多点一次。⇒ 弹窗必须**直接给内容**（条目给漏斗 / 常驻给层水位 / 存储搜索给状态）。 */
@@ -337,19 +337,27 @@ console.log("\n【mui】⑬ 写入侧作用域边界说明");
   ok(/跨项目的东西写 L0/.test(fabTool), "跨项目的东西指向 L0 用户档案（给模型一条明确出路）");
 }
 
-/* ── ⑭ 设置页「记忆」= 三个并列入口（10-10 用户要求）──────────────────────────
+/* ── ⑭ 设置页「记忆」= 两个内容入口 + 三块后端板（10-21 用户要求）──────────────
    ① 项目共享记忆库（可切项目，覆盖用户档案 / 项目规则 / 工作纪律）
    ② 金字塔记忆架构（按会话展示：共享层同一份 + 独立层各异）
-   ③ 记忆后端选项（存储后端与保存位置）
-   ⛔ 三者**并列**（同级卡片），不是"总览 + 详情"的上下级。 */
-console.log("\n【mui】⑭ 设置页「记忆」三个并列入口");
+   ③ 记忆后端三块板（本地金字塔 / MCP / 云端，各带开关；开哪个生效哪个）
+   ⛔ 内容入口并列；后端选择不再是卡中卡 / 下拉，而是页面上的三块板。 */
+console.log("\n【mui】⑭ 设置页「记忆」内容入口 + 三块后端板");
 {
   const center2 = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryCenterSection.tsx"), "utf8");
   const dlgIdx2 = center2.indexOf("<SettingsDialog");
-  ok(/项目共享记忆库/.test(center2) && /金字塔记忆架构/.test(center2) && /记忆后端选项/.test(center2),
-    "三个入口齐备（项目共享记忆库 / 金字塔记忆架构 / 记忆后端选项）");
-  ok(/key: "shared"/.test(center2) && /key: "pyramid"/.test(center2) && /key: "backend"/.test(center2),
-    "三张卡片**同级并列**（同一卡片网格）");
+  ok(/项目共享记忆库/.test(center2) && /金字塔记忆架构/.test(center2) && /<MemoryBackendBoards/.test(center2),
+    "两个内容入口 + 三块后端板（MemoryBackendBoards）都在页面上");
+  ok(/key: "shared"/.test(center2) && /key: "pyramid"/.test(center2) && !/key: "backend"/.test(center2),
+    "内容卡片不再包含「记忆后端选项」；后端由三块板上的开关选择");
+  const boardsSrc = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryBackendBoards.tsx"), "utf8");
+  ok(/id: "builtin"/.test(boardsSrc) && /id: "mcp"/.test(boardsSrc) && /id: "cloud"/.test(boardsSrc)
+    && /type="checkbox"/.test(boardsSrc) && /role="switch"/.test(boardsSrc),
+    "三块板 + 每块一个开关（本地金字塔 / MCP / 云端）");
+  ok(/setMemoryBackend/.test(boardsSrc) && /onMemoryBackendChanged/.test(boardsSrc) && /effective/.test(boardsSrc),
+    "开关真的切后端（setMemoryBackend）并以后端回报的 effective 为准（未就绪回退可见）");
+  ok(/focus\?: "builtin" \| "mcp" \| "cloud"/.test(readFileSync(join(ROOT, "src", "features", "settings-memory", "BackendConsolePanel.tsx"), "utf8")),
+    "详情面板按块聚焦（不再在三块板之外重复一套后端选择）");
   const libSrc = readFileSync(join(ROOT, "src", "features", "settings-memory", "SharedLibraryPanel.tsx"), "utf8");
   ok(/readMemoryLayers/.test(libSrc) && /lib-spine/.test(libSrc) && /<SharedLibraryPanel/.test(center2),
     "① 可切换项目：切项目就重读该项目的层快照（书架组件内 readMemoryLayers）");

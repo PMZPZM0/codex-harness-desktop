@@ -54,12 +54,14 @@ const ACTION_LABEL: Record<ActionKey, string> = { install: "安装", uninstall: 
 /** 主进程进度事件的 id 前缀（与 electron/features/memory-ipc.ts 的 MCP_PROGRESS 同源）。 */
 const PROGRESS_PREFIX = "memory-mcp";
 
-export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice, onOpenCloudAccount }: {
+export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice, onOpenCloudAccount, focus }: {
   workspace: string;
   workspaceEnabled: boolean;
   onNotice?: (message: string) => void;
   /** 去「云账号」页开通 / 登录（10-20：云端记忆未开通时的引导出口） */
   onOpenCloudAccount?: () => void;
+  /** 10-21：只显示这一块后端的详情（从三块板进来）；不传 = 旧的整体控制台。 */
+  focus?: "builtin" | "mcp" | "cloud";
 }) {
   /* ⛔ 工作区开关直接走 IPC（与记忆中心同一条通道）—— 不依赖 app 的 state setter。 */
   const [wsEnabled, setWsEnabled] = useState(workspaceEnabled);
@@ -211,6 +213,7 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice, onO
   };
 
   const current = status?.effective ?? status?.backend ?? "builtin";
+  const shown = focus ?? current;
   const ready = status?.installed === true;
   /** 灯色：内置恒绿；MCP 看是否就绪（未装 = 琥珀，装了 = 绿）；云端看开通状态（不可用 = 灰灯） */
   const lampOf = (id: "builtin" | "mcp" | "cloud") =>
@@ -240,7 +243,8 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice, onO
   );
 
   return (
-    <div className="bc-root">
+    <div className="bc-root" data-focus={focus ?? undefined}>
+      {!focus ? (<>
       {/* ── 状态灯条 ────────────────────────────────────────────────── */}
       <div className="bc-statusbar" data-backend={current}>
         <span className={`bc-lamp is-${busy ? "warn" : ready || current === "builtin" ? "ok" : "warn"}`} />
@@ -288,9 +292,11 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice, onO
         })}
       </div>
 
+      </>) : null}
+
       {/* ── 云端记忆引导条（10-20：未开通时卡片置灰 + 这里给出**唯一出口**）──────
           ⛔ 未登录 / 未开通 / 未确认 三种原因分别给不同按钮，⛔ 不要笼统一句"去开通"。 */}
-      {!cloudReady ? (
+      {(!focus || focus === "cloud") && !cloudReady ? (
         <div className="bc-cloudgate" role="status" data-cloud-state={act?.state ?? "unknown"}>
           <span className="bc-cloudgate-copy">
             <strong>
@@ -325,14 +331,14 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice, onO
         <div className="bc-row">
           <span className="bc-row-label">保存位置</span>
           <span className="bc-row-value">
-            {current === "cloud"
+            {shown === "cloud"
               ? "云端 memapi · 跨设备 / 跨会话（本地不再落盘）"
-              : current === "mcp"
+              : shown === "mcp"
               ? "MCP 记忆库 memory.db · 按 type 分类"
               : "内置分层文件（本机）· 条目按项目 / 会话隔离"}
           </span>
         </div>
-        {current === "cloud" ? (
+        {shown === "cloud" ? (
           <>
             <div className="bc-row">
               <span className="bc-row-label">云端账号</span>
@@ -352,7 +358,7 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice, onO
             </div>
           </>
         ) : null}
-        {current !== "cloud" ? (
+        {shown !== "cloud" ? (
         <div className="bc-row">
           <span className="bc-row-label">工作区记忆</span>
           <label className="bc-switch">
@@ -362,7 +368,7 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice, onO
           </label>
         </div>
         ) : null}
-        {current === "mcp" ? (
+        {shown === "mcp" ? (
         <div className="bc-row">
           <span className="bc-row-label">MCP 服务</span>
           <span className="bc-row-actions">
@@ -380,7 +386,7 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice, onO
         ) : null}
 
         {/* ── 进行中：实时进度条（主进程按阶段推送；没有字节级进度时按阶段推进）──────── */}
-        {current === "mcp" && (busy || prog) ? (
+        {shown === "mcp" && (busy || prog) ? (
           <div className="bc-progress" role="status" aria-live="polite">
             <span className="runtime-progress-bar" role="progressbar" aria-label="记忆服务操作进度"
               aria-valuenow={prog?.percent ?? 0} aria-valuemin={0} aria-valuemax={100}
@@ -408,8 +414,8 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice, onO
           </div>
         ) : null}
 
-        {current === "mcp" && status?.installRoot ? <p className="bc-path">装到 <code>{status.installRoot}</code></p> : null}
-        {current === "mcp" ? <p className="bc-hint">安装默认走国内镜像（registry.npmmirror.com），依赖与原生绑定同理；镜像不可用时自动换源，无需你配置。</p> : null}
+        {shown === "mcp" && status?.installRoot ? <p className="bc-path">装到 <code>{status.installRoot}</code></p> : null}
+        {shown === "mcp" ? <p className="bc-hint">安装默认走国内镜像（registry.npmmirror.com），依赖与原生绑定同理；镜像不可用时自动换源，无需你配置。</p> : null}
       </div>
 
       {note ? <p className="settings-status">{note}</p> : null}
