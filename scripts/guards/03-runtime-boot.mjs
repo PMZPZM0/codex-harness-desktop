@@ -429,8 +429,10 @@ console.log(C.bold("\n【10】滚动与锚定状态：单一 owner + 默认值�
   {
     const rel = appSrc.indexOf('releaseToUserRef.current?.("history")');
     const exp = appSrc.indexOf("expandTurnWindow(id, grow)");
-    (rel >= 0 && exp > rel && exp - rel < 6000 ? ok : fail)(
-      "续载更早历史先 releaseToUser（否则滚到顶部会被贴底跟随回弹到底部）"
+    (rel >= 0 && exp > rel && exp - rel < 6000
+      && /const loadZone = Math\.max\(1200, \(el0\?\.clientHeight \?\? 0\) \* 1\.5\)/.test(appSrc)
+      && /const nearTop = beforeTop <= loadZone/.test(appSrc) && /if \(nearTop\)/.test(appSrc) ? ok : fail)(
+      "续载更早历史先 releaseToUser；顶部续载区（1.5屏/1200px）保持原位，不按插入高度往下推"
     );
   }
 
