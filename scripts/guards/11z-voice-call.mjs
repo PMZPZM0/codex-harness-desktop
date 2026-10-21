@@ -125,8 +125,14 @@ ok(/announce: \{ enabled: true \}/.test(voiceSettings),
   "默认值：`announce.enabled = true`（与旧结构 live 的默认一致 —— 播报默认开着）");
 ok(/announce: \{ enabled: announceEnabled \}/.test(voiceSettings) && /announceRaw\?\.live !== false \|\| announceRaw\?\.summary === true/.test(voiceSettings),
   "mergeSettings **显式映射** announce.enabled，且把旧档案的 {live, summary} 平移过来（漏映射 = 用户改了不生效且不报错 —— 本文件已 N 次同款）");
-ok(/VOICE_SETTINGS_VERSION = 4/.test(voiceSettings) && /if \(version < 4\)/.test(voiceSettings),
-  "版本 3 → 4 且带迁移（字段形状变了：两个开关收成一个 —— 不迁移的话老档案读出来是 undefined）");
+ok(/VOICE_SETTINGS_VERSION = 5/.test(voiceSettings) && /if \(version < 4\)/.test(voiceSettings) && /if \(version < 5\)/.test(voiceSettings),
+  "版本 3 → 4（两个开关收成一个）→ 5（语速默认 1.0→1.25）且**各带迁移** —— 不迁移的话老档案读出来是旧值/undefined");
+/* ⛔ 10-21 用户令「语音播报速度默认改成 1.25×」：常量与迁移必须同轮落地（只改常量对老用户无效，
+   只写迁移不改常量对新用户无效 —— 两边缺一都等于这次默认值改动没生效）。 */
+ok(/tts: \{ sid: 0, speed: 1\.25, volume: 1\.0 \}/.test(voiceSettings),
+  "默认值：`tts.speed = 1.25`（语音播报与通话共用这一份 —— 单一真相源）");
+ok(/if \(version < 5\)[\s\S]{0,600}?Math\.abs\(speed - 1\.0\) < 1e-9[\s\S]{0,400}?DEFAULT_VOICE_SETTINGS\.tts\.speed/.test(voiceSettings),
+  "v4 → v5 迁移：**值等于旧默认 1.0（或缺失）**才迁到 1.25，用户显式调过的档位不动");
 ok(/checked=\{enabled\}/.test(announceCard) && /apply\(\{ announce: \{ enabled: e\.target\.checked \} \}\)/.test(announceCard)
   && (announceCard.match(/type="checkbox"/g) || []).length === 1,
   "设置页「语音播报」卡片上**只有一个**总开关（正文实时 / 汇总两个旧开关已删）");

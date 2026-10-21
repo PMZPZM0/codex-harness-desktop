@@ -24,7 +24,7 @@ export type ModelHost = "auto" | "huggingface" | "hf-mirror";
 export type AecMode = "auto" | "on" | "off";
 
 /** 设置文件结构版本：每次「默认值语义变了、老档案需要迁移」就 +1（见 migrateSettings） */
-export const VOICE_SETTINGS_VERSION = 4;
+export const VOICE_SETTINGS_VERSION = 5;
 
 export type VoiceSettings = {
   tts: { sid: number; speed: number; volume: number; /** "我的音色"档案 id；空串/缺省 = 用内置预置音色 */ profileId?: string };
@@ -99,7 +99,12 @@ export const VOICE_RESOURCE_LABELS: Record<VoiceResourceKind, string> = {
 };
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
-  tts: { sid: 0, speed: 1.0, volume: 1.0 },
+  /* ⛔ 10-21 用户令「语音播报速度默认改成 1.25×」：默认 1.0 → **1.25**。
+     ⚠️ 只改这里对**已存过设置的老用户无效**（档案里存的是旧值 1.0）⇒ 同轮把
+        `VOICE_SETTINGS_VERSION` +1 并在 `migrateSettings` 里按「值等于旧默认才迁移」处理
+        （与 rule2 / autoGainControl 同一套做法）。用户显式调过的档位保持不动。
+     ⛔ 播报与通话共用这一份（单一真相源）⇒ 通话默认语速同步变成 1.25×。 */
+  tts: { sid: 0, speed: 1.25, volume: 1.0 },
   // rule2 = 已识别出文字后，尾静音超过它就算「说完了」。09-13 由 1.2 → 0.8：
   // 它是端到端延迟里**唯一纯等待**的一块（审计 ④），每轮省 0.4s，且 0.8s 仍明显长于
   // 汉语自然停顿（~0.3s），不会把长句切碎。
@@ -219,6 +224,18 @@ export function migrateSettings(raw: Partial<VoiceSettings> | undefined): { sett
     const a: any = (source as any).announce;
     if (a && typeof a.enabled !== "boolean") {
       (source as any).announce = { enabled: a.live !== false || a.summary === true };
+      changed = true;
+    }
+  }
+  /* v4 → v5（10-21）：`tts.speed` 默认值 1.0 → **1.25**（用户令「语音播报速度默认改成 1.25×」）。
+     ⛔ 判据与 rule2 同型：**值缺失或仍等于旧默认 1.0** 才迁移；用户显式调过的档位（0.75 / 1.5 / 2 …）
+       保持不动。⚠️ 无法区分「用户手动设成 1.0」与「从未设过」——两者都会被迁到 1.25（有意取舍：
+       1.25 更接近用户想要的默认听感，想回 1.0 一档点回即可；反之留 1.0 等于这次默认值改动对所有人无效）。
+     ⛔ 单一真相源：播报与通话共用 `tts.speed` ⇒ 通话默认也跟着变，不另开字段。 */
+  if (version < 5) {
+    const speed = Number(source.tts?.speed);
+    if (!Number.isFinite(speed) || Math.abs(speed - 1.0) < 1e-9) {
+      source.tts = { ...(source.tts as any), speed: DEFAULT_VOICE_SETTINGS.tts.speed };
       changed = true;
     }
   }
