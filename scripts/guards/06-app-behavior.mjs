@@ -2520,8 +2520,8 @@ w.postMessage({id:1,op:"list",root});
   (hasGuideRow("frontend", "前端 UI · 组件库")
     && hasGuideRow("extensions", "技能 · 插件 · MCP")
     && hasGuideRow("agents", "子智能体 · 专家 · 专家团")
-    && hasGuideRow("identity", "人格市场 · 记忆中心") ? ok : fail)(
-    "【180】侧栏四条能力入口齐全（前端 UI/组件库、技能/插件/MCP、子智能体/专家/专家团、人格市场/记忆中心）"
+    && hasGuideRow("identity", "人格市场 · 记忆中心 · 知识库") ? ok : fail)(
+    "【180】侧栏四条能力入口齐全（前端 UI/组件库、技能/插件/MCP、子智能体/专家/专家团、人格市场/记忆中心/知识库）"
   );
   (["frontend", "extensions", "agents", "identity"].every((key) => new RegExp(`setGuideKey\\("${key}"\\)`).test(side180)) ? ok : fail)(
     "【180】四条入口各自能打开对应教程弹窗（每一条都锚到 setGuideKey，不是只写文案）"
@@ -2540,8 +2540,22 @@ w.postMessage({id:1,op:"list",root});
   (guideModalSrc.includes("ui_component_search") && guideModalSrc.includes("ui_component_get") ? ok : fail)(
     "【180】组件库教程写明 Codex 已配备 ui_component_search / ui_component_get（用户要求让用户知道可直接调用）"
   );
-  (/\.ext-hub-list\s*\{/.test(readStyles()) ? ok : fail)(
-    "【180】入口弹窗列表样式存在（缺了弹窗里会是一堆裸按钮）"
+  const sideStyles180 = readStyles();
+  (/\.sidebar-quick\s*\{[\s\S]{0,260}?gap:\s*0/.test(sideStyles180)
+    && /\.sidebar-quick\s*\{[\s\S]{0,260}?border-radius:\s*999px/.test(sideStyles180) ? ok : fail)(
+    "【180】新建 / 搜索是共享外框的连体胶囊（gap 0 + 999px 圆角，中间一条分隔线）"
+  );
+  (/<button className="sidebar-tab sidebar-cap-row ic-amber"[\s\S]{0,180}?<span>定时任务<\/span>/.test(side180) ? ok : fail)(
+    "【180】定时任务与四条能力入口同一行样式（不再单独一档）"
+  );
+  (!/<span>更多<\/span>/.test(side180) && !/moreHubOpen/.test(side180) ? ok : fail)(
+    "【180】「更多」入口与弹窗已删除（AI 画布并入前端能力入口、知识库并入人格/记忆入口）"
+  );
+  (/setDramaCanvasOpen\(true\)/.test(side180) && /setUiSketchOpen\(true\)/.test(side180) ? ok : fail)(
+    "【180】AI 画布 / 前端开发画布入口没有随「更多」一起消失（已并入前端 UI · 组件库）"
+  );
+  (/\.sidebar-guide\s*\{/.test(sideStyles180) ? ok : fail)(
+    "【180】能力入口弹窗样式存在（缺了弹窗会是一堆裸按钮）"
   );
   // ④ 模型配置入口的删除在【70】里（同轮把那两条正向断言翻成负向）
   // ⑤ 新建 / 搜索并排胶囊：快捷键仍然生效，但不再显示键帽

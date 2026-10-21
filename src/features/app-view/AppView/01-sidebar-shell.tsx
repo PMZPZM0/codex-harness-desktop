@@ -15,7 +15,6 @@ import {
   Star,
   Check,
   ChevronDown,
-  Clapperboard,
   CircleGauge,
   Clock3,
   CircleStop,
@@ -40,7 +39,6 @@ import {
   CornerDownRight,
   Heart,
   Layers,
-  Library,
   Info,
   KeyRound,
   LayoutGrid,
@@ -150,7 +148,7 @@ import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 // 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
 import { Slot } from "../../../runtime/registry";
 import { NewbieGuide } from "../../newbie-guide";
-import { SidebarGuideModal, type SidebarGuideAction, type SidebarGuideKey } from "./SidebarGuideModal";
+import { SidebarGuideModal, type SidebarGuideKey, type SidebarGuideTarget } from "./SidebarGuideModal";
 import { UpdateReadyToast } from "./UpdateReadyToast";
 import { CloseConfirmDialog } from "../../../components/CloseConfirmDialog";
 import { FileTrustDialog } from "../../../components/FileTrustDialog";
@@ -248,30 +246,24 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     viewTab,
   } = app;
 
-  // ⛔ 10-21 用户要求：侧栏能力入口按用途分行（前端 UI / 技能插件 MCP / 智能体 / 人格记忆），
-  //   点击弹窗看教程；纯局部 UI 状态，不跨组件共享、不进 bag（与下面 moreHubOpen 同款）。
+  // ⛔ 10-21 用户要求：侧栏能力入口按用途分行（前端 UI / 技能插件 MCP / 智能体 / 人格记忆知识库），
+  //   点击弹窗看教程；纯局部 UI 状态，不跨组件共享、不进 bag。
   const [guideKey, setGuideKey] = useState<SidebarGuideKey | null>(null);
-  // 10-04 用户要求：AI 画布工作流 / 知识库收进「···更多」；前端 / 组件库 / 人格市场已有专用入口。
-  const [moreHubOpen, setMoreHubOpen] = useState(false);
 
-  /** 教程弹窗底部的「直达」动作。每个入口只留最相关的 1–3 个，避免又变成一长串菜单。 */
-  const guideActions: Record<SidebarGuideKey, SidebarGuideAction[]> = {
-    frontend: [
-      { label: "打开组件库", primary: true, onClick: () => { setSettingsPage("component-library"); setSettingsOpen(true); setMobileNav(false); } },
-      { label: "前端开发画布", onClick: () => { setUiSketchOpen(true); setMobileNav(false); } },
-    ],
-    extensions: [
-      { label: "技能", primary: true, onClick: () => { setSettingsPage("skills"); setSettingsOpen(true); setMobileNav(false); } },
-      { label: "插件", onClick: () => { setSettingsPage("plugins"); setSettingsOpen(true); setMobileNav(false); } },
-      { label: "MCP", onClick: () => { setSettingsPage("mcp"); setSettingsOpen(true); setMobileNav(false); } },
-    ],
-    agents: [
-      { label: "打开专家 / 专家团", primary: true, onClick: () => { setSettingsPage("agentteam"); setSettingsOpen(true); setMobileNav(false); } },
-    ],
-    identity: [
-      { label: "人格市场", primary: true, onClick: () => { setSettingsPage("soul-market"); setSettingsOpen(true); setMobileNav(false); } },
-      { label: "记忆中心", onClick: () => { setSettingsPage("memory"); setSettingsOpen(true); setMobileNav(false); } },
-    ],
+  /** 能力卡片本身就是跳转入口：侧栏统一把 target 翻译成设置页 / 画布。 */
+  const navigateGuideTarget = (target: SidebarGuideTarget) => {
+    switch (target) {
+      case "component-library": setSettingsPage("component-library"); setSettingsOpen(true); setMobileNav(false); break;
+      case "ui-sketch": setUiSketchOpen(true); setMobileNav(false); break;
+      case "drama-canvas": setDramaCanvasOpen(true); setMobileNav(false); break;
+      case "skills": setSettingsPage("skills"); setSettingsOpen(true); setMobileNav(false); break;
+      case "plugins": setSettingsPage("plugins"); setSettingsOpen(true); setMobileNav(false); break;
+      case "mcp": setSettingsPage("mcp"); setSettingsOpen(true); setMobileNav(false); break;
+      case "agentteam": setSettingsPage("agentteam"); setSettingsOpen(true); setMobileNav(false); break;
+      case "soul-market": setSettingsPage("soul-market"); setSettingsOpen(true); setMobileNav(false); break;
+      case "memory": setSettingsPage("memory"); setSettingsOpen(true); setMobileNav(false); break;
+      case "knowledge-base": setSettingsPage("knowledge-base"); setSettingsOpen(true); setMobileNav(false); break;
+    }
   };
 
   /** 复制「我正在跑的是哪一份构建」的诊断信息（09-23）。
@@ -386,10 +378,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 </button>
               </div>
               <div className="sidebar-nav" role="group" aria-label="能力入口">
-                <button className="sidebar-tab ic-amber" title="按时间自动运行任务" onClick={() => { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); }}>
-                  <Clock3 size={15} /><span>定时任务</span>
+                <button className="sidebar-tab sidebar-cap-row ic-amber" title="按时间自动运行任务" aria-haspopup="dialog" onClick={() => { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); }}>
+                  <Clock3 size={15} /><span>定时任务</span><ChevronRight size={13} className="sidebar-cap-chevron" />
                 </button>
-                <div className="sidebar-nav-divider" aria-hidden />
                 <button className="sidebar-tab sidebar-cap-row" title="前端 UI / 组件库：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "frontend"} onClick={() => setGuideKey("frontend")}>
                   <LayoutGrid size={15} className="ic-blue" /><span>前端 UI · 组件库</span><ChevronRight size={13} className="sidebar-cap-chevron" />
                 </button>
@@ -399,39 +390,12 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 <button className="sidebar-tab sidebar-cap-row" title="子智能体 / 专家 / 专家团：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "agents"} onClick={() => setGuideKey("agents")}>
                   <Users size={15} className="ic-violet" /><span>子智能体 · 专家 · 专家团</span><ChevronRight size={13} className="sidebar-cap-chevron" />
                 </button>
-                <button className="sidebar-tab sidebar-cap-row" title="人格市场 / 记忆中心：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "identity"} onClick={() => setGuideKey("identity")}>
-                  <Heart size={15} className="ic-amber" /><span>人格市场 · 记忆中心</span><ChevronRight size={13} className="sidebar-cap-chevron" />
-                </button>
-                <div className="sidebar-nav-divider" aria-hidden />
-                <button className="sidebar-tab ic-violet" title="AI 画布工作流 / 知识库" aria-expanded={moreHubOpen} onClick={() => setMoreHubOpen(true)}>
-                  <MoreHorizontal size={15} /><span>更多</span>
+                <button className="sidebar-tab sidebar-cap-row" title="人格市场 / 记忆中心 / 知识库：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "identity"} onClick={() => setGuideKey("identity")}>
+                  <Heart size={15} className="ic-amber" /><span>人格市场 · 记忆中心 · 知识库</span><ChevronRight size={13} className="sidebar-cap-chevron" />
                 </button>
               </div>
             </div>
-            {/* 「更多」只保留工作台与知识库；前端 / 组件库 / 人格市场另有专用入口。
-                弹窗沿用 info-modal 体系（遮罩点击关闭 / header 带关闭键 / 跳转前先关窗）。 */}
-            {moreHubOpen && (
-              <div className="info-modal-mask" onClick={() => setMoreHubOpen(false)}>
-                <div className="info-modal more-hub-modal" role="dialog" aria-label="更多" onClick={(event) => event.stopPropagation()}>
-                  <header>
-                    <MoreHorizontal size={15} className="info-modal-icon" />
-                    <strong>更多</strong>
-                    <button title="关闭" onClick={() => setMoreHubOpen(false)}><X size={14} /></button>
-                  </header>
-                  <div className="ext-hub-list">
-                    <button type="button" title="AI 画布工作流：短剧 / 生图两种起手，卡片连线就是「这份输入喂给下一步」" onClick={() => { setMoreHubOpen(false); setDramaCanvasOpen(true); setMobileNav(false); }}>
-                      <Clapperboard size={16} />
-                      <span><strong>AI 画布工作流</strong><small>短剧 / 生图两种起手，卡片连线就是「这份输入喂给下一步」</small></span>
-                    </button>
-                    <button type="button" title="项目知识库：导入文档，Codex 可直接检索" onClick={() => { setMoreHubOpen(false); setSettingsPage("knowledge-base"); setSettingsOpen(true); setMobileNav(false); }}>
-                      <Library size={16} />
-                      <span><strong>知识库</strong><small>导入项目文档，Codex 检索时直接引用</small></span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-            {guideKey && <SidebarGuideModal guideKey={guideKey} actions={guideActions[guideKey]} onClose={() => setGuideKey(null)} />}
+            {guideKey && <SidebarGuideModal guideKey={guideKey} onNavigate={navigateGuideTarget} onClose={() => setGuideKey(null)} />}
             {/* ⛔ 只给前缀文件夹染色：这个 chip 里还有个"关闭 ×"，它是**动作**不是分类。 */}
             {projectFilter && <button className="filter-chip" title="清除项目筛选" onClick={() => setProjectFilter(null)}><FolderOpen size={12} className="ic-amber" />{basename(projectFilter)}<X size={12} /></button>}
             <div className="view-tabs" role="tablist" aria-label="视图">

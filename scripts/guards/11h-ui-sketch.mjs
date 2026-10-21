@@ -41,35 +41,16 @@ const ok = (condition, message) => {
   if (!condition) fails++;
 };
 
-/* ───────────────────────── 一、侧栏「···更多」 ───────────────────────── */
+/* ───────────────────────── 一、侧栏能力入口（10-21：更多已删除） ───────────────────────── */
 
 const side = codeOnly(read("src/features/app-view/AppView/01-sidebar-shell.tsx"));
 
-ok(/onClick=\{\(\) => setMoreHubOpen\(true\)\}/.test(side), "「···更多」按钮真的开窗（有 setMoreHubOpen(true)，不是只写着文案）");
-ok(/\{moreHubOpen && \(/.test(side), "更多弹窗挂在 moreHubOpen 条件上（⛔ 被改成恒假也算断言通过，所以两条都要钉）");
-ok(/className="sidebar-tab[^"]*"[^>]*aria-expanded=\{moreHubOpen\}/.test(side), "按钮带 aria-expanded（无障碍状态与开窗同源；⛔ className 允许挂 ic-* 色相后缀 —— 10-07 图标批把裸 sidebar-tab 全部带上了色相类）");
-
-/** hub 窗口：aria-label="更多" → 下一个稳定标记 {projectFilter（⛔ 不用固定字符窗口） */
-const hubAt = side.indexOf('aria-label="更多"');
-const hubEnd = hubAt >= 0 ? side.indexOf("{projectFilter &&", hubAt) : -1;
-const hub = hubAt >= 0 ? side.slice(hubAt, hubEnd > hubAt ? hubEnd : hubAt + 3200) : "";
-ok(hub.length > 400, "取到「更多」弹窗的内容窗口（取不到 = 锚点被挪走，下面的分项断言全部不可信）");
-ok(hub.includes("setDramaCanvasOpen(true)"), "更多里有「AI 画布工作流」，动作是开画布");
-/* ⛔ 10-21 用户重排：前端开发 / 组件库 / 人格市场 已升到侧栏专用入口（点击看教程），
-   更多里只保留 AI 画布工作流与知识库；这里按新契约钉，不再要求旧五项。 */
-ok(hub.includes('setSettingsPage("knowledge-base")'), "更多里有跳设置页 knowledge-base 的入口");
-ok(!hub.includes('setSettingsPage("component-library")') && !hub.includes('setSettingsPage("soul-market")') && !hub.includes("setUiSketchOpen(true)"),
-  "负向：前端开发 / 组件库 / 人格市场 不再重复塞进「更多」（已有专用能力入口）");
-ok(["AI 画布工作流", "知识库"].every((title) => hub.includes(`<strong>${title}</strong>`)), "两项文案齐全且锚的是**列表项标签本体**（<strong> 定界）");
-
-/** 导航区窗口：aria-label="能力入口" → 首个 </div>（区内不许有嵌套 div，这是【180】同一口径） */
-const navAt = side.indexOf('aria-label="能力入口"');
-const navEnd = navAt >= 0 ? side.indexOf("</div>", navAt) : -1;
-const nav = navAt >= 0 && navEnd > navAt ? side.slice(navAt, navEnd) : "";
-ok(nav.length > 200, "取到导航区窗口");
-ok(!nav.includes("<span>知识库</span>") && !nav.includes("<span>AI 画布工作流</span>"), "知识库 / AI 画布工作流不再平铺在导航区（已收进更多）");
-ok(nav.includes("<span>更多</span>"), "导航区里保留了「更多」一项");
-ok(!/setSettingsPage\("backup"\)/.test(side), "负向：更多里也不许把「会话备份」入口放回侧栏（【180】同一条纪律）");
+ok(!/moreHubOpen/.test(side) && !side.includes("<span>更多</span>"), "「更多」入口与弹窗已删除（用户 10-21 要求）");
+ok(/setDramaCanvasOpen\(true\)/.test(side), "AI 画布工作流仍可从侧栏进入（已并入前端 UI · 组件库入口）");
+ok(/setUiSketchOpen\(true\)/.test(side), "前端开发画布仍可从侧栏进入（同一个能力入口的教程/直达按钮）");
+ok(/setSettingsPage\("knowledge-base"\)/.test(side), "知识库仍可从侧栏进入（人格市场 / 记忆中心 / 知识库入口）");
+ok(/<span>定时任务<\/span>/.test(side) && /sidebar-cap-row/.test(side), "定时任务与能力入口使用同一行样式（不再单独一档）");
+ok(!/setSettingsPage\("backup"\)/.test(side), "负向：也不许把「会话备份」入口放回侧栏（【180】同一条纪律）");
 
 /* ───────────────────────── 二、板块接线四处 ───────────────────────── */
 

@@ -11,7 +11,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  ArrowRight,
+  ArrowUpRight,
   BookOpen,
   Brain,
   Check,
@@ -35,11 +35,18 @@ import { copyTextToClipboard } from "../../../lib/clipboard";
 
 export type SidebarGuideKey = "frontend" | "extensions" | "agents" | "identity";
 
-export type SidebarGuideAction = {
-  label: string;
-  onClick: () => void;
-  primary?: boolean;
-};
+/** 能力卡片直接跳到哪：由侧栏统一翻译成 setSettingsPage / 开画布。 */
+export type SidebarGuideTarget =
+  | "component-library"
+  | "ui-sketch"
+  | "drama-canvas"
+  | "skills"
+  | "plugins"
+  | "mcp"
+  | "agentteam"
+  | "soul-market"
+  | "memory"
+  | "knowledge-base";
 
 type Guide = {
   key: SidebarGuideKey;
@@ -48,7 +55,7 @@ type Guide = {
   tone: "ic-blue" | "ic-pink" | "ic-violet" | "ic-amber";
   icon: LucideIcon;
   intro: string;
-  capabilities: { icon: LucideIcon; title: string; desc: string }[];
+  capabilities: { icon: LucideIcon; title: string; desc: string; target?: SidebarGuideTarget }[];
   steps: { title: string; desc: ReactNode }[];
   examples: string[];
   codexNote: ReactNode;
@@ -61,15 +68,16 @@ const GUIDES: Record<SidebarGuideKey, Guide> = {
     subtitle: "用现成组件拼界面，再交给 Codex 写进项目",
     tone: "ic-blue",
     icon: LayoutGrid,
-    intro: "组件库收了 Uiverse 的 3800+ 个 MIT 控件；前端开发画布可以先把手机 / 电脑 / 网页界面摆出来。两边都能直接交给 Codex 落地。",
+    intro: "组件库收了 Uiverse 的 3800+ 个 MIT 控件；前端开发画布可以先把手机 / 电脑 / 网页界面摆出来，AI 画布工作流负责批量生图 / 视频 / 短剧。都能直接交给 Codex 落地。",
     capabilities: [
-      { icon: Library, title: "3800+ 现成控件", desc: "按钮、卡片、表单、加载器等 11 类，带真实预览与 HTML + CSS 源码。" },
-      { icon: MousePointerClick, title: "可视化画布", desc: "拖 44 种 Material 3 组件，摆手机 / 电脑 / 网页，一键预览。" },
-      { icon: Wand2, title: "Codex 直接取用", desc: "已配备 ui_component_search / ui_component_get：搜库、取源码、写进你的项目。" },
+      { icon: Library, title: "3800+ 现成控件", desc: "按钮、卡片、表单、加载器等 11 类，带真实预览与 HTML + CSS 源码。", target: "component-library" },
+      { icon: MousePointerClick, title: "可视化画布", desc: "拖 44 种 Material 3 组件，摆手机 / 电脑 / 网页，一键预览。", target: "ui-sketch" },
+      { icon: Wand2, title: "AI 画布工作流", desc: "生图 / 视频 / 短剧，卡片连线把上一张结果喂给下一步。", target: "drama-canvas" },
     ],
     steps: [
       { title: "找组件", desc: "打开组件库，按分类或搜索找；点卡片看源码，点「复制代码」可直接粘进项目。" },
       { title: "摆界面", desc: "打开前端开发画布，拖组件、连页面跳转；顶部「预览」检查效果，预览不会改动设计稿。" },
+      { title: "跑工作流", desc: "需要批量生图 / 视频 / 短剧时，打开「AI 画布工作流」：写提示词卡、连出图卡，按连线顺序跑。" },
       { title: "交给 Codex", desc: "画布点「交给 Codex 实现」；或在对话里直接说「用 ui_component_search 找…，用 ui_component_get 取代码写进…」。" },
     ],
     examples: [
@@ -87,9 +95,9 @@ const GUIDES: Record<SidebarGuideKey, Guide> = {
     icon: Zap,
     intro: "技能教它「怎么做」，插件可以打包一整套能力，MCP 把外部服务接进来。装好后它们会出现在 Codex 的技能 / 工具清单里，可以直接调用。",
     capabilities: [
-      { icon: Sparkles, title: "技能", desc: "一份可读的做法说明书与检查清单；合适任务会自动参考，也能点名「用 xx 技能」。" },
-      { icon: Store, title: "插件", desc: "一个包可带技能 / MCP / 钩子；内置插件里还能配生图、视频、视觉辅助接口。" },
-      { icon: Server, title: "MCP 连接器", desc: "接 GitHub、数据库、公司内部系统；工具以「连接器__工具」的名字出现在工具列表。" },
+      { icon: Sparkles, title: "技能", desc: "一份可读的做法说明书与检查清单；合适任务会自动参考，也能点名「用 xx 技能」。", target: "skills" },
+      { icon: Store, title: "插件", desc: "一个包可带技能 / MCP / 钩子；内置插件里还能配生图、视频、视觉辅助接口。", target: "plugins" },
+      { icon: Server, title: "MCP 连接器", desc: "接 GitHub、数据库、公司内部系统；工具以「连接器__工具」的名字出现在工具列表。", target: "mcp" },
     ],
     steps: [
       { title: "装技能", desc: "设置 → 技能，搜索安装或导入 SKILL.md；安装前会做安全检查，放行 / 有条件 / 拒绝都会写明理由。" },
@@ -111,9 +119,9 @@ const GUIDES: Record<SidebarGuideKey, Guide> = {
     icon: Users,
     intro: "专家 = 单人专长，专家团 = 主理人带成员按 SOP 协作，子智能体 = 你自定义的轻量角色。它们各有独立上下文，结果汇总回主会话。",
     capabilities: [
-      { icon: Users, title: "专家", desc: "代码审查、内容创作、演示文稿等现成专长，开一对一会话。" },
-      { icon: CheckCircle2, title: "专家团", desc: "主理人按流程拆分、多人协作，适合能并行的大任务。" },
-      { icon: Brain, title: "子智能体", desc: "自定义角色与系统提示词，反复使用；Codex 可直接创建。" },
+      { icon: Users, title: "专家", desc: "代码审查、内容创作、演示文稿等现成专长，开一对一会话。", target: "agentteam" },
+      { icon: CheckCircle2, title: "专家团", desc: "主理人按流程拆分、多人协作，适合能并行的大任务。", target: "agentteam" },
+      { icon: Brain, title: "子智能体", desc: "自定义角色与系统提示词，反复使用；Codex 可直接创建。", target: "agentteam" },
     ],
     steps: [
       { title: "建对象", desc: "设置 → 专家/专家团：子智能体、专家中心、专家团三张卡，按需要建或直接使用现成的。" },
@@ -129,15 +137,15 @@ const GUIDES: Record<SidebarGuideKey, Guide> = {
   },
   identity: {
     key: "identity",
-    title: "人格市场 · 记忆中心",
+    title: "人格市场 · 记忆中心 · 知识库",
     subtitle: "换一套性格，并让它越用越懂你",
     tone: "ic-amber",
     icon: Heart,
-    intro: "人格市场是整套人设包，应用后写进全局个性化；记忆中心把偏好、项目背景和会话经验沉淀下来，之后自动召回。",
+    intro: "人格市场是整套人设包，应用后写进全局个性化；记忆中心把偏好、项目背景和会话经验沉淀下来；知识库放项目资料，检索时直接引用。",
     capabilities: [
-      { icon: Heart, title: "人格", desc: "16 套现成人格；整套换性格、语气、称呼，下一个新会话生效。" },
-      { icon: Brain, title: "记忆", desc: "项目共享层 + 会话独立层；每轮自动注入，重要条目按 P0–P3 管理。" },
-      { icon: BookOpen, title: "知识库", desc: "项目资料放本机，检索时直接引用；和记忆一起让回答更贴近这个项目。" },
+      { icon: Heart, title: "人格", desc: "16 套现成人格；整套换性格、语气、称呼，下一个新会话生效。", target: "soul-market" },
+      { icon: Brain, title: "记忆", desc: "项目共享层 + 会话独立层；每轮自动注入，重要条目按 P0–P3 管理。", target: "memory" },
+      { icon: BookOpen, title: "知识库", desc: "项目资料放本机，检索时直接引用；和记忆一起让回答更贴近这个项目。", target: "knowledge-base" },
     ],
     steps: [
       { title: "挑人格", desc: "设置 → 人格市场，点「应用此人格」；当前会话不变，新开一个任务看效果。想微调就去「个性化」。" },
@@ -153,7 +161,7 @@ const GUIDES: Record<SidebarGuideKey, Guide> = {
   },
 };
 
-export function SidebarGuideModal({ guideKey, actions, onClose }: { guideKey: SidebarGuideKey; actions: SidebarGuideAction[]; onClose: () => void }) {
+export function SidebarGuideModal({ guideKey, onNavigate, onClose }: { guideKey: SidebarGuideKey; onNavigate: (target: SidebarGuideTarget) => void; onClose: () => void }) {
   const guide = GUIDES[guideKey];
   const Icon = guide.icon;
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -249,14 +257,28 @@ export function SidebarGuideModal({ guideKey, actions, onClose }: { guideKey: Si
               <p className="sidebar-guide-intro">{guide.intro}</p>
               <section className="sidebar-guide-section">
                 <h4>能做什么</h4>
-                <div className="sidebar-guide-caps">
+                <div className="sidebar-guide-caps" data-count={guide.capabilities.length}>
                   {guide.capabilities.map((capability) => {
                     const CapIcon = capability.icon;
-                    return (
-                      <div className="sidebar-guide-cap" key={capability.title}>
+                    const body = (
+                      <>
                         <span className="sidebar-guide-cap-icon" aria-hidden><CapIcon size={15} /></span>
-                        <span><strong>{capability.title}</strong><small>{capability.desc}</small></span>
-                      </div>
+                        <span className="sidebar-guide-cap-text"><strong>{capability.title}</strong><small>{capability.desc}</small></span>
+                      </>
+                    );
+                    return capability.target ? (
+                      <button
+                        type="button"
+                        className="sidebar-guide-cap is-action"
+                        key={capability.title}
+                        title={`打开${capability.title}`}
+                        onClick={() => { onClose(); onNavigate(capability.target!); }}
+                      >
+                        {body}
+                        <ArrowUpRight size={13} className="sidebar-guide-cap-go" aria-hidden />
+                      </button>
+                    ) : (
+                      <div className="sidebar-guide-cap" key={capability.title}>{body}</div>
                     );
                   })}
                 </div>
@@ -303,30 +325,16 @@ export function SidebarGuideModal({ guideKey, actions, onClose }: { guideKey: Si
         </div>
 
         <footer className="sidebar-guide-foot">
-          <span className="sidebar-guide-foot-note"><CheckCircle2 size={13} />{view === "tutorial" ? "示例可点击复制" : "先看概览，需要时再打开教程"}</span>
+          <span className="sidebar-guide-foot-note"><CheckCircle2 size={13} />{view === "tutorial" ? "示例可点击复制" : "点上方卡片直接打开对应页面"}</span>
           <div className="sidebar-guide-actions">
             {view === "overview" ? (
-              <>
-                <button type="button" className="primary-setting sidebar-guide-tutorial-btn" onClick={() => setView("tutorial")}>
-                  <BookOpen size={13} />使用教程
-                </button>
-                {actions.map((action) => (
-                  <button key={action.label} type="button" className="secondary-setting" onClick={() => { onClose(); action.onClick(); }}>
-                    {action.label}<ArrowRight size={13} />
-                  </button>
-                ))}
-              </>
+              <button type="button" className="primary-setting sidebar-guide-tutorial-btn" onClick={() => setView("tutorial")}>
+                <BookOpen size={13} />使用教程
+              </button>
             ) : (
-              actions.map((action) => (
-                <button
-                  key={action.label}
-                  type="button"
-                  className={action.primary ? "primary-setting" : "secondary-setting"}
-                  onClick={() => { onClose(); action.onClick(); }}
-                >
-                  {action.label}<ArrowRight size={13} />
-                </button>
-              ))
+              <button type="button" className="secondary-setting" onClick={() => setView("overview")}>
+                <ChevronLeft size={13} />返回概览
+              </button>
             )}
           </div>
         </footer>
