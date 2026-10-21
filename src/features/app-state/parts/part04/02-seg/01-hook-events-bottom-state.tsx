@@ -277,9 +277,12 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
     // 为什么必须按输入事件判而不是按 scroll 事件判：流式内容增长、浏览器 clamp、
     // content-visibility 重排都会让 scrollTop 自己动，从 scroll 事件里无法区分
     // 「用户滚的」和「内容/浏览器弄的」。输入事件没有这个问题。
-    const onWheel = (event: WheelEvent) => {
-      if (event.deltaY < 0) releaseToUser("wheel-up");
-    };
+    /* ⛔ 不能挂在 scroller 上、也不能只看 deltaY<0：
+       · 自然滚动 / 触控板会把上滚报成正值（deltaY>0），旧判据整条失效；
+       · 思考浮窗是 portal、刻度尺 wheel 里 stopPropagation ⇒ scroller 上的监听根本收不到。
+       用户 10-21 实测「滚轮往上就自动弹回底部」正是这两条缝。capture 在 window 上，
+       任何真实滚轮输入都让自动跟随让位（滚回底部会立刻重新贴底，语义不变）。 */
+    const onWheel = () => releaseToUser("wheel");
     const onTouchMove = () => releaseToUser("touch");
     const onKeyDown = (event: Event) => {
       const key = (event as unknown as { key?: string }).key ?? "";
@@ -310,7 +313,7 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
       if (event.propertyName === "grid-template-rows") schedule();
     };
     scroller.addEventListener("transitionend", onTransitionEnd);
-    scroller.addEventListener("wheel", onWheel, { passive: true });
+    window.addEventListener("wheel", onWheel, { passive: true, capture: true });
     scroller.addEventListener("touchmove", onTouchMove, { passive: true });
     scroller.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("pointerup", onPointerUp);
@@ -336,7 +339,7 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
       observer.disconnect();
       scroller.removeEventListener("scroll", schedule);
       scroller.removeEventListener("transitionend", onTransitionEnd);
-      scroller.removeEventListener("wheel", onWheel);
+      window.removeEventListener("wheel", onWheel, { capture: true });
       scroller.removeEventListener("touchmove", onTouchMove);
       scroller.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("pointerup", onPointerUp);
