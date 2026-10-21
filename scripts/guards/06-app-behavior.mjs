@@ -2540,6 +2540,13 @@ w.postMessage({id:1,op:"list",root});
   (guideModalSrc.includes("ui_component_search") && guideModalSrc.includes("ui_component_get") ? ok : fail)(
     "【180】组件库教程写明 Codex 已配备 ui_component_search / ui_component_get（用户要求让用户知道可直接调用）"
   );
+  /* 10-21 用户截图：点专家卡后还停在「智能体团队」外层，要再点一次才进专家中心。
+     ⇒ 三张卡必须直达各自内页（expert-center / teams / agents），不许再指向 agentteam 外层。 */
+  (["expert-center", "teams", "agents"].every((t) => guideModalSrc.includes(`target: "${t}"`))
+    && !guideModalSrc.includes('target: "agentteam"')
+    && ["expert-center", "teams", "agents"].every((t) => new RegExp(`case "${t}"`).test(side180)) ? ok : fail)(
+    "【180】专家 / 专家团 / 子智能体卡片直达各自内页（不先落到 agentteam 外层再点一次）"
+  );
   const sideStyles180 = readStyles();
   (/\.sidebar-quick\s*\{[\s\S]{0,260}?gap:\s*0/.test(sideStyles180)
     && /\.sidebar-quick\s*\{[\s\S]{0,260}?border-radius:\s*999px/.test(sideStyles180) ? ok : fail)(

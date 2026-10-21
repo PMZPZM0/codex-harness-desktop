@@ -43,7 +43,9 @@ export type SidebarGuideTarget =
   | "skills"
   | "plugins"
   | "mcp"
-  | "agentteam"
+  | "expert-center"
+  | "teams"
+  | "agents"
   | "soul-market"
   | "memory"
   | "knowledge-base";
@@ -119,9 +121,9 @@ const GUIDES: Record<SidebarGuideKey, Guide> = {
     icon: Users,
     intro: "专家 = 单人专长，专家团 = 主理人带成员按 SOP 协作，子智能体 = 你自定义的轻量角色。它们各有独立上下文，结果汇总回主会话。",
     capabilities: [
-      { icon: Users, title: "专家", desc: "代码审查、内容创作、演示文稿等现成专长，开一对一会话。", target: "agentteam" },
-      { icon: CheckCircle2, title: "专家团", desc: "主理人按流程拆分、多人协作，适合能并行的大任务。", target: "agentteam" },
-      { icon: Brain, title: "子智能体", desc: "自定义角色与系统提示词，反复使用；Codex 可直接创建。", target: "agentteam" },
+      { icon: Users, title: "专家", desc: "代码审查、内容创作、演示文稿等现成专长，开一对一会话。", target: "expert-center" },
+      { icon: CheckCircle2, title: "专家团", desc: "主理人按流程拆分、多人协作，适合能并行的大任务。", target: "teams" },
+      { icon: Brain, title: "子智能体", desc: "自定义角色与系统提示词，反复使用；Codex 可直接创建。", target: "agents" },
     ],
     steps: [
       { title: "建对象", desc: "设置 → 专家/专家团：子智能体、专家中心、专家团三张卡，按需要建或直接使用现成的。" },

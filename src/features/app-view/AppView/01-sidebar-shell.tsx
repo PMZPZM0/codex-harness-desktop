@@ -259,7 +259,11 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       case "skills": setSettingsPage("skills"); setSettingsOpen(true); setMobileNav(false); break;
       case "plugins": setSettingsPage("plugins"); setSettingsOpen(true); setMobileNav(false); break;
       case "mcp": setSettingsPage("mcp"); setSettingsOpen(true); setMobileNav(false); break;
-      case "agentteam": setSettingsPage("agentteam"); setSettingsOpen(true); setMobileNav(false); break;
+      /* ⛔ 10-21：专家 / 专家团 / 子智能体直接进各自内页，不再落到 agentteam 外层再点一次
+         （用户截图：点完卡片还停在「智能体团队」/「专家中心」的入口层）。 */
+      case "expert-center": setSettingsPage("expert-center"); setSettingsOpen(true); setMobileNav(false); break;
+      case "teams": setSettingsPage("teams"); setSettingsOpen(true); setMobileNav(false); break;
+      case "agents": setSettingsPage("agents"); setSettingsOpen(true); setMobileNav(false); break;
       case "soul-market": setSettingsPage("soul-market"); setSettingsOpen(true); setMobileNav(false); break;
       case "memory": setSettingsPage("memory"); setSettingsOpen(true); setMobileNav(false); break;
       case "knowledge-base": setSettingsPage("knowledge-base"); setSettingsOpen(true); setMobileNav(false); break;
