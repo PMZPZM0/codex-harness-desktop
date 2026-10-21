@@ -814,7 +814,7 @@
   overflow: hidden;
   border-radius: 7px;
   flex: none;
-  background-image: linear-gradient(135deg, #4f6bff 0%, #6a54e8 55%, #8b53d8 100%);
+  background-image: linear-gradient(135deg, #d8a24a 0%, #b97b2e 55%, #8a5420 100%);
 }
 .codex-avatar-default::after {
   /* 右上一点柔光：让纯色块看起来有体积，不至于像占位图 */

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Camera, UserRound, Briefcase, GraduationCap, Clock3, Heart, Languages, Lightbulb, Save, Wand2, LogOut, RotateCcw, Check, Sparkles } from "lucide-react";
 import { DefaultCodexAvatar } from "./DefaultCodexAvatar";
 import { CODEX_DEFAULT_NAME, type CodexAvatarSpec } from "../lib/codex-identity.mjs";
-import { avatarAsset, USER_AVATAR_PRESETS } from "../lib/avatar-presets";
+import { avatarAsset, CODEX_AVATAR_PRESETS, CODEX_DEFAULT_AVATAR_FILE, USER_AVATAR_PRESETS } from "../lib/avatar-presets";
 
 export type UserProfile = {
   nickname: string;
@@ -326,6 +326,37 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
               <button className="codex-name-reset" onClick={() => { setAssistantDraft(CODEX_DEFAULT_NAME); onAssistantNameChange?.(CODEX_DEFAULT_NAME); onNotice("名字已恢复为 Codex"); }}>用默认名</button>
             </div>
             <div className="codex-id-hint">回车或点别处即时保存</div>
+          </div>
+        </div>
+        <div className="codex-id-presets">
+          <div className="codex-id-presets-head">
+            <strong>内置形象</strong>
+            <span>点选即时生效，也可点头像右下角相机上传自己的图片</span>
+          </div>
+          <div className="codex-id-preset-grid" role="group" aria-label="Codex 内置形象">
+            {CODEX_AVATAR_PRESETS.map((preset) => {
+              const isDefault = preset.file === CODEX_DEFAULT_AVATAR_FILE;
+              const active = isDefault
+                ? !codexAvatar || codexAvatar.type !== "image"
+                : codexAvatar?.type === "image" && codexAvatar.value === avatarAsset(preset.file);
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className={`codex-id-preset ${active ? "active" : ""}`}
+                  aria-pressed={active}
+                  aria-label={`使用「${preset.label}」形象`}
+                  title={preset.label}
+                  onClick={() => {
+                    onCodexAvatarChange?.(isDefault ? { type: "default", value: "" } : { type: "image", value: avatarAsset(preset.file) });
+                    onNotice(isDefault ? "已切换为默认形象" : `已切换为「${preset.label}」形象`);
+                  }}
+                >
+                  <img src={avatarAsset(preset.file)} alt="" draggable={false} />
+                  {active ? <span className="codex-id-preset-check"><Check size={10} /></span> : null}
+                </button>
+              );
+            })}
           </div>
         </div>
       </section>

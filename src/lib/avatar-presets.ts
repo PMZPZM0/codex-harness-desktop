@@ -15,7 +15,20 @@ export const USER_AVATAR_PRESETS: UserAvatarPreset[] = [
   { id: "unicorn", label: "独角兽", file: "user-unicorn.png" },
 ];
 
-export const CODEX_DEFAULT_AVATAR_FILE = "codex.png";
+/** Codex 的内置形象（10-21 用户要求：不能只有一个头像，要能一键切换）。
+ *  同一套 3D 黏土机器人，只换配色；第一项就是默认形象。
+ *  ⛔ 默认项必须与 CODEX_DEFAULT_AVATAR_FILE 指向同一文件 —— 画廊靠它判断「当前是默认」。
+ */
+export const CODEX_AVATAR_PRESETS: UserAvatarPreset[] = [
+  { id: "hero", label: "暖金", file: "codex-hero.png" },
+  { id: "indigo", label: "靛蓝", file: "codex-indigo.png" },
+  { id: "mint", label: "薄荷", file: "codex-mint.png" },
+  { id: "amber", label: "暖橙", file: "codex-amber.png" },
+  { id: "sakura", label: "樱花", file: "codex-sakura.png" },
+  { id: "obsidian", label: "曜石", file: "codex-obsidian.png" },
+];
+
+export const CODEX_DEFAULT_AVATAR_FILE = "codex-hero.png";
 
 export function avatarAsset(file: string): string {
   return `${import.meta.env.BASE_URL}avatars/${file}`;
