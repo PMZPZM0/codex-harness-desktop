@@ -17,7 +17,6 @@ import { basename } from "../../lib/basename";
 import { ActionCard } from "../session-cards";
 import { FileCode2, Wrench, BookOpen, Search, Bot, ImagePlus, Clock3, LoaderCircle, CircleX, CircleCheck, Brain, ChevronDown } from "lucide-react";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
-import { itemStatusLabel } from "../../lib/item-status-label";
 import { resolveTeamMember, AVATAR_GRADIENTS, avatarToneOf } from "../../lib/entity-avatar";
 import { formatDuration } from "../../lib/format-duration";
 import { PlanEditor } from "../../components/PlanEditor";
@@ -79,7 +78,6 @@ export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWi
     const running = item.status === "inProgress" || item.status === "running";
     const failed = item.status === "failed" || item.status === "error";
     const status: ActionStatus = running ? "running" : failed ? "error" : "done";
-    const label = itemStatusLabel(item.status);
     // ★ 技能归属（09-24 用户：「使用了技能类似没看见」）：`desktop_screenshot` / `markitdown`
     //   这类调用原本只显示成「调用 nuphus/desktop_screenshot」，看不出在用技能、更看不出用哪个。
     //   命中技能 ⇒ 动词改「正在使用技能 / 已使用技能」+ 显示**中文技能名**（工具原名仍在展开里）。
@@ -90,6 +88,9 @@ export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWi
     const isMcp = item.type === "mcpToolCall";
     const source = skill ? "技能" : isMcp ? "MCP" : "插件";
     const how = argSummary(item.arguments);
+    /* 折叠行的短目标（10-22 用户：「读取/编辑这类精确到文件，不要再地址」）：
+       取入参里那个值**再剥成最后一段**（`D:\a\src\x.ts` ⇒ `x.ts`），完整入参仍在展开体。 */
+    const howName = basename(argSummary(item.arguments, 400) || "");
     // 插件包名：命令/工具里出现 `plugins/cache/<vendor>/<plugin>/…` 或 `connectors-marketplace/<x>/…`
     // ⇒ 连"来自哪个插件"一起显示（09-24：技能目录同理，见 skillOfItem 的路径兜底）。
     const plugin = skill ? null : pluginOfItem(item);
@@ -111,14 +112,25 @@ export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWi
     // 工具产物里的视频/音频/3D（10-20）：只扫产出（result/progress/contentItems），
     // ⛔ 不扫 arguments —— 入参里的媒体路径是「喂给工具的素材」，不是这次产出的东西。
     const mediaText = [item.progress ? String(item.progress) : "", item.result != null ? JSON.stringify(item.result) : "", item.contentItems != null ? JSON.stringify(item.contentItems) : ""].filter(Boolean).join("\n");
+    /* ★ 10-22 用户要求：折叠行只留中文动作，**工具名 / 入参 / 耗时**全搬进展开体
+       （`ActionCard` 现在把 `info` 渲染在展开体里）。⛔ 别再往表头传 statusText 显示耗时。 */
+    const detail = (
+      <>
+        <code>{skill ? skill.label : title}</code>
+        {plugin ? <code className="action-plugin">（插件 {plugin.plugin}）</code> : null}
+        {how ? <span className="action-arg" title={how}> · {how}</span> : null}
+        {!running && formatDuration(item.durationMs) ? <span className="action-arg"> · {formatDuration(item.durationMs)}</span> : null}
+      </>
+    );
     return (
       <ActionCard
         icon={invokedMember
           ? <span className={`tool-member-avatar ${running ? "running" : ""}`} style={{ background: AVATAR_GRADIENTS[avatarToneOf(invokedMember.id || invokedMember.name)] }} aria-hidden="true">{invokedMember.label.slice(0, 1)}</span>
           : <Wrench size={13} />}
         verb={invokedMember ? (running ? `正在咨询 ${invokedMember.label}` : `咨询 ${invokedMember.label}`) : verb}
-        /* 名字 + 「怎么用的」（入参里最能说明这次在干什么的那个值，如 url / 路径 / 查询词） */
-        info={<><code>{skill ? skill.label : title}</code>{plugin ? <code className="action-plugin">（插件 {plugin.plugin}）</code> : null}{how ? <span className="action-arg" title={how}> · {how}</span> : null}</>} status={status} statusText={running ? undefined : formatDuration(item.durationMs) || label}>
+        target={howName ? <code>{howName}</code> : undefined}
+        info={detail} status={status}
+      >
         <ProgressiveToolPayload itemId={`${item.id}-payload`} text={String(item.progress || JSON.stringify(item.result ?? item.arguments ?? item.contentItems, null, 2) || "")} active={turnActive} />
         <MediaResultCards text={mediaText} />
       </ActionCard>
@@ -135,26 +147,29 @@ export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWi
     );
   }
   if (item.type === "webSearch") {
+    /* 10-22：查询词不是"地址"，它就是这次操作的对象 ⇒ 进折叠行（短目标）；⛔ 原来还把英文 status 摆表头 */
     return (
-      <ActionCard icon={<Search size={13} />} verb="网页搜索" info={item.query ? <code>{item.query}</code> : undefined} status="done" statusText={item.status ?? "完成"} />
+      <ActionCard icon={<Search size={13} />} verb="网页搜索" target={item.query ? <code>{item.query}</code> : undefined} status="done" />
     );
   }
   if (item.type === "collabAgentToolCall" || item.type === "subAgentActivity") {
     const title = item.type === "collabAgentToolCall" ? item.tool : item.kind;
+    /* 10-22：工具名 / agentPath 都进展开体（原来是英文 status 摆在表头） */
     return (
-      <ActionCard icon={<Bot size={13} />} verb={item.type === "collabAgentToolCall" ? "协作代理" : "子代理"} info={title ? <code>{title}</code> : undefined} status="done" statusText={item.status ?? item.agentPath ?? ""} />
+      <ActionCard icon={<Bot size={13} />} verb={item.type === "collabAgentToolCall" ? "协作代理" : "子代理"} info={title ? <code>{title}</code> : undefined} status="done" />
     );
   }
   if (item.type === "imageView") return <div className="message"><div className="avatar agent"><ImagePlus size={15} /></div><div className="message-body"><ImagePreview path={item.path} alt="Codex 查看图片" onCopy={() => onImageCopy?.(item.path)} /></div></div>;
   if (item.type === "imageGeneration") return <div className="message"><div className="avatar agent"><ImagePlus size={15} /></div><div className="message-body">{item.savedPath || item.result ? <ImagePreview path={item.savedPath || item.result} alt="生成图片" onCopy={() => onImageCopy?.(item.savedPath || item.result)} /> : <p>{item.failure?.message ?? item.status}</p>}</div></div>;
   if (item.type === "sleep") {
-    return <ActionCard icon={<Clock3 size={13} />} verb="等待" status={item.status === "inProgress" ? "running" : "done"} statusText={item.status ?? "进行中"} />;
+    /* 10-22：`item.status`（英文 inProgress/completed）不再上表头 —— 状态由图标表达 */
+    return <ActionCard icon={<Clock3 size={13} />} verb="等待" status={item.status === "inProgress" ? "running" : "done"} />;
   }
   if (item.type === "enteredReviewMode" || item.type === "exitedReviewMode") {
     return <ActionCard icon={<Search size={13} />} verb={item.type === "enteredReviewMode" ? "开始代码审查" : "完成代码审查"} info={item.review ? <code>{item.review}</code> : undefined} status="done" />;
   }
   if (item.type === "hookPrompt") {
-    return <ActionCard icon={<Wrench size={13} />} verb="Hook" status="done" statusText="完成" />;
+    return <ActionCard icon={<Wrench size={13} />} verb="注入 Hook" status="done" />;
   }
   if (isCompactionItem(item)) {
     // 压缩结果常驻为「两边虚线 + 中间文字」分隔线（与压缩进行中的过渡态同一形态），
@@ -181,8 +196,10 @@ export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWi
       </div>
     );
   }
+  /* 兜底卡（引擎新增了本文件还没认识的 item 类型）：⛔ 原来直接把 `item.type`（英文枚举）当标题，
+     与「操作按钮统一显示中文」冲突 ⇒ 标题中文化，原始 type 与整条 JSON 都收进展开体。 */
   return (
-    <ActionCard icon={<Wrench size={13} />} verb={item.type} status="done">
+    <ActionCard icon={<Wrench size={13} />} verb="其他操作" info={<code>{item.type}</code>} status="done">
       <pre>{JSON.stringify(item, null, 2)}</pre>
     </ActionCard>
   );
@@ -236,7 +253,9 @@ function FileChangeCard({ item, turnActive }: { item: ThreadItem; turnActive?: b
   // 头部数字：揭示进行中用实时累计（live）；未挂载/已完成用全量（full）——两态数值揭示完一致
   const shown = live.added || live.deleted ? live : full;
   return (
-    <ActionCard icon={<FileCode2 size={13} />} verb={editing ? "正在编辑" : "已编辑"} info={fileNames ? <code>{fileNames}</code> : undefined} status={status} statusText={<><b>+{shown.added}</b> <i>-{shown.deleted}</i></>}>
+    /* 10-22 用户：编辑卡「精确到文件，不要地址」——折叠行只给**文件名**（+N -M 统计照旧常驻），
+       完整路径在展开体每一条 diff 行的行头里（ChangeDiffRow 的 `<strong>{path}</strong>`）。 */
+    <ActionCard icon={<FileCode2 size={13} />} verb={editing ? "正在编辑" : "已编辑"} target={fileNames ? <code>{fileNames}</code> : undefined} status={status} statusText={<><b>+{shown.added}</b> <i>-{shown.deleted}</i></>}>
       {changes.map((change: any, idx: number) => (
         <ChangeDiffRow key={idx} id={`${item.id}-diff-${idx}`} path={change.path ?? change.filePath ?? "文件"} diff={String(change.diff ?? "")} active={turnActive} onStats={onStats} />
       ))}

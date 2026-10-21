@@ -25,9 +25,12 @@ export function HookBadge({ hooks }: { hooks: { name: string; label?: string; do
 
 export type ToolStatusEntry = { id: string; name: string; scope: "computer" | "browser"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string };
 
-export function ActionCard({ icon, verb, info, status, statusText, autoOpen, defaultExpanded, children }: {
+export function ActionCard({ icon, verb, target, info, status, statusText, autoOpen, defaultExpanded, children }: {
   icon: React.ReactNode;
   verb: React.ReactNode;
+  /** 折叠行上的**短目标**（10-22 用户：「读取/编辑这类精确到文件，不要地址」）——文件名/查询词，
+   *  ⛔ 完整路径与入参只进 `info`（展开体）。 */
+  target?: React.ReactNode;
   info?: React.ReactNode;
   status: ActionStatus;
   statusText?: React.ReactNode;
@@ -36,19 +39,43 @@ export function ActionCard({ icon, verb, info, status, statusText, autoOpen, def
   children?: React.ReactNode;
 }) {
   const { open, toggle } = useCardOpen(Boolean(defaultExpanded || autoOpen));
+  /* ★ 10-22 用户要求（对话框里的操作按钮：「读取/编辑/查看这类统一显示中文，不再显示地址和耗时，
+     点击展开看详细内容」+「精确到文件，不要再地址」）：
+       表头 = **图标 + 中文动作 + 文件名 + 状态图标 + 展开/收起**；
+       `info`（完整路径 / 工具名 / 入参）搬进展开体，耗时由调用方决定要不要给（默认不给）。
+     ⛔ 展开体从此是唯一的详情入口 ⇒ 只要有 info 就必须可点开（此前没有 children 的卡点了没反应）；
+     ⛔ 没有 info 也没有 children 的卡（等待 / Hook）不画展开标识 —— 点了什么都不出来的箭头是骗子。 */
+  const hasBody = info != null || children != null;
+  const head = (
+    <>
+      <span className="action-icon">{icon}</span>
+      <span className="action-verb">{verb}</span>
+      {target != null && <span className="action-target">{target}</span>}
+      <span className="action-status">
+        <CardStatusIcon status={status} />
+        {statusText != null && <span className="action-status-text">{statusText}</span>}
+      </span>
+      {hasBody && (
+        <span className="action-toggle">
+          <span className="action-toggle-text">{open ? "收起" : "展开"}</span>
+          <ChevronDown size={13} className="action-chevron" />
+        </span>
+      )}
+    </>
+  );
   return (
     <div className={`action-card ${status} ${open ? "open" : "closed"}`}>
-      <button type="button" className="action-head" onClick={toggle}>
-        <span className="action-icon">{icon}</span>
-        <span className="action-verb">{verb}</span>
-        {info != null && <span className="action-info">{info}</span>}
-        <span className="action-status">
-          <CardStatusIcon status={status} />
-          {statusText != null && <span className="action-status-text">{statusText}</span>}
-        </span>
-        <ChevronDown size={13} className="action-chevron" />
-      </button>
-      {children != null && <Fold open={open}><div className="action-content">{children}</div></Fold>}
+      {hasBody
+        ? <button type="button" className="action-head" onClick={toggle} aria-expanded={open}>{head}</button>
+        : <div className="action-head static">{head}</div>}
+      {hasBody && (
+        <Fold open={open}>
+          <div className="action-content">
+            {info != null && <div className="action-meta">{info}</div>}
+            {children}
+          </div>
+        </Fold>
+      )}
     </div>
   );
 }

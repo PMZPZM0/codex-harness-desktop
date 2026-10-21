@@ -978,18 +978,49 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.action-card .action-info {
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* 折叠行上的短目标（10-22 用户：「精确到文件，不要再地址」）——
+   只放文件名/查询词，完整路径留在展开体的 .action-meta 里 */
+.action-card .action-target {
+  flex: none;
   min-width: 0;
-  color: var(--muted);
-  flex: 1;
+  /* ⛔ 表头是 width:fit-content ⇒ 百分比上限会变成自己量自己（实测只剩 TerminalPanel…）*/
+  max-width: min(260px, 52vw);
   overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-family: Cascadia Code, Consolas, ui-monospace, monospace;
 }
-.action-card .action-info code {
+.action-card .action-target code {
+  color: inherit;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+}
+/* ★ 10-22 用户要求：详情（工具名 / 文件 / url / 入参）只在**展开体**里显示。
+   ⛔ 表头再出现 `.action-info` = 把地址塞回折叠行，需求被打回。 */
+.action-card .action-meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  min-width: 0;
+  margin: 0 0 8px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 11.5px;
+}
+/* 只有详情没有正文时不留一条空的分隔线 */
+.action-card .action-meta:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.action-card .action-meta code {
   color: var(--text);
   background: transparent;
-  text-overflow: ellipsis;
   vertical-align: baseline;
   border-radius: 0;
   max-width: 100%;
@@ -1000,28 +1031,26 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
     ui-monospace,
     monospace;
   text-decoration: none;
-  display: inline;
-  overflow: hidden;
+  overflow-wrap: anywhere;
 }
-.action-card .action-info > code + code {
+.action-card .action-meta code + code {
   margin-left: 4px;
 }
 /* 「怎么用的」：技能/插件/MCP 调用的关键入参（url / 路径 / 查询词），跟在名字后面（09-24） */
 /* 插件包名：跟在工具名后面的次要标注（09-24，与 action-arg 同一视觉层级） */
-.action-card .action-info .action-plugin {
+.action-card .action-meta .action-plugin {
   margin-left: 4px;
   color: var(--faint);
   opacity: 0.85;
 }
 
-.action-card .action-info .action-arg {
+.action-card .action-meta .action-arg {
   color: var(--faint);
-  text-overflow: ellipsis;
-  overflow: hidden;
-  white-space: nowrap;
-  max-width: 60%;
-  display: inline-block;
-  vertical-align: bottom;
+  overflow-wrap: anywhere;
+}
+/* 没有详情也没有正文的卡（等待 / Hook）：表头不可点，别画成按钮 */
+.action-card .action-head.static {
+  cursor: default;
 }
 .action-card .action-status {
   color: var(--faint);
@@ -1059,19 +1088,35 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   color: var(--del);
   font-style: normal;
 }
-.action-card .action-chevron {
+/* ★ 10-22：明确的展开标识（文案 + 箭头一起变），与命令卡同一形态 */
+.action-card .action-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   color: var(--faint);
+  font-size: 11px;
+  opacity: 0.75;
+  transition: color 0.18s, opacity 0.18s;
+}
+.action-card .action-head:hover .action-toggle,
+.action-card.open .action-toggle {
+  opacity: 1;
+}
+.action-card.open .action-toggle {
+  color: var(--muted);
+}
+.action-card .action-chevron {
+  color: inherit;
   flex: none;
   transform: rotate(-90deg);
-  opacity: 0.55;
   transition:
     transform 0.22s,
     opacity 0.18s;
 }
-.action-card.open .action-chevron,
-.action-card .action-head:hover .action-chevron {
+/* ⛔ 只有真的展开才转正：悬停不再假装已展开（有文案标识后那样会误导） */
+.action-card.open .action-chevron {
   transform: rotate(0deg);
-  opacity: 1;
 }
 /* running / error 不再加外壳色——状态色交给 status-icon + verb 表达，保持外壳干净 */
 .action-card.running .action-icon {
