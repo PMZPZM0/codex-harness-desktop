@@ -582,12 +582,29 @@ const CHECKS = [
         const pkgInfo = await h.eval(`window.codex.petSettingsGet().then((x)=>{
           const a = x?.active || {};
           return { id: a.id || "", states: Object.keys(a.animationSet || {}).sort(), looks: (a.lookFrameSet || []).length,
-            sheet: !!a.spritesheet, problem: a.problem || "", name: a.name || "" };
+            sheet: !!a.spritesheet, problem: a.problem || "", name: a.name || "",
+            fw: a.frameWidth || 0, fh: a.frameHeight || 0 };
         }).catch((e)=>({ error: String(e && e.message || e) }))`);
-        h.check("①b 默认宠物 = 阿焰动画包（九态 + 16 向看帧，无图集、无 problem）",
+        h.check("①b 默认宠物 = 阿焰动画包（九态 + 16 向看帧、288×312 高分辨率、无 problem）",
           pkgInfo?.id === "harness-fox" && pkgInfo?.name === "阿焰" && (pkgInfo?.states ?? []).length === 9
-            && pkgInfo?.looks === 16 && pkgInfo?.sheet === false && !pkgInfo?.problem,
+            && pkgInfo?.looks === 16 && pkgInfo?.sheet === false && !pkgInfo?.problem
+            && (pkgInfo?.fw ?? 0) >= 288 && (pkgInfo?.fh ?? 0) >= 312,
           JSON.stringify(pkgInfo).slice(0, 260));
+        const expectedW = pkgInfo?.fw || 288;
+        const expectedH = pkgInfo?.fh || 312;
+
+        /* ①d 其他三只也升级到动画包（用户 10-21：「其他家一个动画一起优化」）——
+           四只内置全部有 animationSet 九态；狐狸额外有 16 向看帧。 */
+        const allPets = await h.eval(`window.codex.petList().then((list)=>(list||[]).map((p)=>({
+          id: p.id || '', name: p.name || '', builtin: p.source === 'builtin',
+          states: Object.keys(p.animationSet || {}).length, looks: (p.lookFrameSet || []).length,
+          problem: p.problem || ''
+        }))).catch((e)=>({ error: String(e && e.message || e) }))`);
+        const builtins = Array.isArray(allPets) ? allPets.filter((p) => p.builtin) : [];
+        const petBad = builtins.filter((p) => p.states !== 9 || p.problem);
+        h.check("①d 四只内置宠物全部升级为动画包（其他三只不再只有图集）",
+          builtins.length === 4 && petBad.length === 0 && builtins.some((p) => p.id === "harness-fox" && p.looks === 16),
+          JSON.stringify({ count: builtins.length, bad: petBad, all: builtins }).slice(0, 300));
 
         /* ①c 宠物窗真渲染动画 <img>（不是图集背景），且悬停切 16 向看帧后能回到动画。
            问候挥手 2.6s 内不切看帧（PetFloat 的门），所以先等过问候再探。 */
@@ -600,12 +617,12 @@ const CHECKS = [
               natural: img ? [img.naturalWidth, img.naturalHeight] : null,
               bg: sprite ? getComputedStyle(sprite).backgroundImage : '' };
           })()`).catch(() => null);
-          if (visual?.anim && visual?.natural?.[0] === 192) break;
+          if (visual?.anim && visual?.natural?.[0] === expectedW) break;
           await wait(200);
         }
-        h.check("①c 宠物窗用动画 <img> 播 30fps WebP（192×208，本体不挂图集背景）",
+        h.check(`①c 宠物窗用动画 <img> 播 30fps WebP（${expectedW}×${expectedH}，本体不挂图集背景）`,
           visual?.anim === true && /harness-fox(?:%5C|\/)(idle|waving)\.webp$/i.test(String(visual?.src ?? ""))
-            && visual?.natural?.[0] === 192 && visual?.natural?.[1] === 208 && visual?.bg === "none",
+            && visual?.natural?.[0] === expectedW && visual?.natural?.[1] === expectedH && visual?.bg === "none",
           JSON.stringify(visual).slice(0, 260));
 
         if (visual?.anim) {
@@ -703,7 +720,7 @@ const CHECKS = [
               splashVisible: !!splash && getComputedStyle(splash).display !== "none",
               buttons: [...document.querySelectorAll('.pet-activity-btn')].map((b)=>(b.innerText||"").trim()) };
           })()`).catch(() => null);
-          if (card?.count > 0) break;
+          if (card?.count > 0 && String(card?.text ?? "").includes("本轮已完成")) break;
           await wait(300);
         }
         h.check("⑥ 独立活动窗出现任务卡（标题/状态 + 打开按钮；无启动页白底）",
