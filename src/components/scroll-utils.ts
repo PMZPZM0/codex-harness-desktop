@@ -17,11 +17,50 @@ export function contentOffsetTop(el: HTMLElement, scroller: HTMLElement) {
    用户滚上去看历史后，任何「自动跳到底部」都不许再执行——长会话 resume /
    顶部续载 / 切会话的 switch-jump 都可能在后续 thread 更新里重新触发，
    逐个调用点清不干净（用户实测「滚到顶部、加载新一页就回弹到最新」）。
-   ⇒ 唯一的程序滚动入口 jumpToBottom 统一检查；滚回底部（dist≤4）自动解除。
+   ⇒ 唯一的程序滚动入口 jumpToBottom 统一检查；真正滚回底部（视口下方只剩尾部
+   留白，不是「内容块底部」—— 长会话上方还有未加载占位区）自动解除。
    ⛔ 只拦"自动跳底"，不拦用户自己点「回到底部」（那个走 scrollToOffsetInstant）。 */
 let userDetached = false;
 export function setScrollUserDetached(detached: boolean) { userDetached = detached; }
 export function isScrollUserDetached() { return userDetached; }
+
+/* ── 历史水合的锚点钉住（10-21 虚拟滚动条）──────────────────────────────
+   续载会在上方插入内容，同时顶部的「未加载历史占位区」变矮；两个改动都要靠
+   内容坐标补偿，别的滚动 owner（贴底跟随 / 占位区高度补偿）必须知道这轮补偿
+   正在进行，否则会对同一个高度差补两次。 */
+/** 水合前捕获的锚点信息：loadEarlierTurns 写、时间线的 layout effect 在**首帧绘制前**
+ *  消费一次（把上方插入内容/占位收缩的净高度补进 scrollTop），之后的延迟布局由
+ *  同一个对象的 rAF 循环继续跟。`contentBefore` 是两边共享的可变值，避免补两次。 */
+export type HistoryPinState = {
+  threadId: string;
+  anchorId: string;
+  contentBefore: number;
+  spacerBefore: number;
+  inSpacer: boolean;
+  expectedLimit: number;
+  applied: boolean;
+};
+const historyPinStates = new WeakMap<HTMLElement, HistoryPinState>();
+export function setHistoryPinState(scroller: HTMLElement, state: HistoryPinState) { historyPinStates.set(scroller, state); }
+export function historyPinStateFor(scroller: HTMLElement): HistoryPinState | null { return historyPinStates.get(scroller) ?? null; }
+export function clearHistoryPinState(scroller: HTMLElement, state?: HistoryPinState) {
+  if (state && historyPinStates.get(scroller) !== state) return;
+  historyPinStates.delete(scroller);
+}
+
+const historyPins = new WeakMap<HTMLElement, () => void>();
+export function setHistoryPin(scroller: HTMLElement, cancel: () => void) { historyPins.set(scroller, cancel); }
+export function hasHistoryPin(scroller: HTMLElement) { return historyPins.has(scroller); }
+/** 只清自己那一轮：连续翻页时旧循环的收尾不能把新一轮的钉住标记删掉。 */
+export function clearHistoryPin(scroller: HTMLElement, cancel?: () => void) {
+  if (cancel && historyPins.get(scroller) !== cancel) return;
+  historyPins.delete(scroller);
+}
+export function cancelHistoryPin(scroller: HTMLElement) {
+  const cancel = historyPins.get(scroller);
+  historyPins.delete(scroller);
+  cancel?.();
+}
 
 /**
  * 瞬时滚动到指定内容坐标（绕过 CSS scroll-behavior:smooth 的平滑动画）。

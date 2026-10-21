@@ -147,8 +147,15 @@ ok((data?.bad?.length ?? 1) === 0,
   `真跑：每条文案都有「用途 / 装到哪 / 首选做法 / 网络兜底 / 装完请验证」（问题：${(data?.bad ?? []).slice(0, 4).join("；") || "无"}）`);
 ok(/装到哪：.*mingw\b/.test(data?.mingw ?? "") && /g\+\+\.exe/.test(data?.mingw ?? ""),
   "真跑：MinGW 的文案给出 tools\\mingw 与 g++.exe --version（路径与判定同源）");
-ok(/site-packages/.test(data?.markitdown ?? ""),
-  "真跑：markitdown 的验证行指向 python 的 site-packages 包目录（不是被占位 marker 拼出来的假路径）");
+{
+  /* 首次安装前 userData/tools/python 还没有 site-packages（pythonSiteDir 为空）⇒ 生成器
+     会给出可执行的 `python -m pip show markitdown` 作为兜底验证。两种都是真路径/真命令；
+     ⛔ 仍然拒绝「按 marker 占位拼出来的 tools/markitdown」。 */
+  const mdVerify = data?.markitdown ?? "";
+  const realVerify = /site-packages/.test(mdVerify) || (/python\s+-m\s+pip\s+show\s+markitdown/.test(mdVerify) && !/tools[\\/](markitdown|laya|phone-harness)\b/.test(mdVerify));
+  ok(realVerify,
+    "真跑：markitdown 的验证行指向 site-packages 或可执行的 pip show（不是被占位 marker 拼出来的假路径）");
+}
 
 /* ── ④ 自审（dongming-code-review 六步）抓出并修掉的两条 ──────────────────────
    ⛔ 都是「同一类问题的漏网之鱼」：假成功与不可执行——判据留下，防止下次写回去。 */

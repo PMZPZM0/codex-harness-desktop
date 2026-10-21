@@ -31,6 +31,10 @@ bag.compactSpacerRef = compactSpacerRef as typeof bag.compactSpacerRef;
    *  正好得到最后一个真实元素（回合 / 排队气泡 / 处理中行）的底边；不需要额外插哨兵节点，
    *  也就不必改 `.timeline` 的子元素顺序。 */
   const contentBottomOf = useCallback((el: HTMLElement) => {
+    /* ⛔ 只扣**内容下方**的尾部留白（compact / anchor-pad）。
+       顶部的「未加载历史占位区」不能扣：它把内容整体往下推，内容底部在文档坐标里
+       仍然包含这段偏移。扣掉它会让"内容底部"退回文档顶部，贴底跟随/回到底部全错位
+       （10-21 实测：收缩渲染窗口后 contentTailTarget 落到占位区中间 = 一片空白）。 */
     const blank = (bag.compactSpacerRef.current?.offsetHeight ?? 0) + (bag.anchorSpacerRef.current?.offsetHeight ?? 0);
     return el.scrollHeight - blank;
   }, []);

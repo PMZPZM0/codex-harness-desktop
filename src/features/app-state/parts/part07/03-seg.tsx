@@ -10,17 +10,22 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import "@xterm/xterm/css/xterm.css";
 import { attachmentToken, fileToken, promptFilePaths, shouldSavePastedTextAsFile, splitAttachmentSegments, stripAttachmentTokens } from "../../../../lib/composer-attachments.mjs";
 import { imageToken, splitPromptSegments, promptImagePaths, stripImageTokens, isImagePart, imagePartSrc, normalizeImagePartForSend } from "../../../../lib/prompt-images";
-import { visibleTurnWindow, mergeTurnListsById } from "../../../../lib/turn-order.mjs";
+import { mergeTurnListsById } from "../../../../lib/turn-order.mjs";
+import { primeTurnHistory } from "../../../../lib/turn-history.mjs";
 import { setFavoriteHandler, type FavoriteRequest } from "../../../../lib/favorite-bridge";
 import { basename } from "../../../../lib/basename";
-import { contentOffsetTop } from "../../../../components/scroll-utils";
+import { cancelHistoryPin, clearHistoryPin, clearHistoryPinState, contentOffsetTop, scrollToOffsetInstant, setHistoryPin, setHistoryPinState, type HistoryPinState } from "../../../../components/scroll-utils";
 import { Turn } from "../../../../lib/turn";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
 import type { Bag } from "../bag-types";
 
-/* 10-20：同一时间只允许一个「续载锚点钉住」循环。连续翻页时上一页的补偿如果还在跑，
-   两个循环会各自改 scrollTop、互相抢滚动（验收实测：锚点被顶飞 717px）。 */
-const activeHistoryAnchorPin = new WeakMap<HTMLElement, () => void>();
+/* 10-21：这两个游标必须跨渲染存活 —— 放在 hook 体内会每次渲染归零（冷却窗形同虚设）。 */
+let lastHistoryLoadAt = 0;
+let lastHistoryScrollTop: number | null = null;
+/* 单次水合的回合数。⛔ 必须比首屏的 TURNS_PAGE(5) 更小：老回合经常是带长工具输出的
+   巨型回合（实测一条 3.6MB），一次挂 5 条会让主线程渲染阻塞十几秒（CDP 都超时）。
+   2 条一页仍保持「按页」，但把单次提交的正文量砍掉一半以上。 */
+const HISTORY_PAGE = 2;
 
 export function usePart07c(bag: Bag) {
   // 卸载时清定时器，避免在已卸载组件上 setState
@@ -164,6 +169,10 @@ bag.pasteLongText = pasteLongText as typeof bag.pasteLongText;
    *  extra 透传（如 dynamicTools）：引擎 resume 的 schema 实证接受 dynamicTools，
    *  每次恢复都重注册当前工具面——旧会话也能用上新增的动态工具。 */
   async function resumeThreadLight(params: { threadId: string; sandbox?: string; approvalPolicy?: string; dynamicTools?: any[] }, turnBudget: number = bag.TURNS_PAGE): Promise<any> {
+    /* 虚拟滚动条（10-21）：后台拉全量回合元数据（itemsView:"notLoaded"，不含正文），
+       不 await —— 打开会话的等待时间不变。元数据到达前滚动条只按已加载回合算高度，
+       到达后由 turn-history 订阅触发重渲染、补上整段历史。 */
+    void primeTurnHistory(params.threadId, (method, payload) => window.codex.request(method as any, payload as any));
     const result = await window.codex.request("thread/resume", { threadId: params.threadId, excludeTurns: true, sandbox: params.sandbox, approvalPolicy: params.approvalPolicy, ...(Array.isArray(params.dynamicTools) && params.dynamicTools.length ? { dynamicTools: params.dynamicTools } : {}) });
     const thread = result?.thread;
     if (thread && !(Array.isArray(thread.turns) && thread.turns.length)) {
@@ -179,14 +188,12 @@ bag.pasteLongText = pasteLongText as typeof bag.pasteLongText;
   }
 bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
 
-  /** 向上加载更早的历史（ZCode 式增量）：
+  /** 向上水合一页更早的历史（10-21 虚拟滚动条）：
    *  ① 内存里还有未渲染的回合（hidden>0）→ 只扩大渲染窗口，不碰网络；
-   *  ② 内存耗尽且有游标 → thread/turns/list 按 cursor 拉**一页**（200）拼到最前。
-   *  拼接会让视口上方长高，按 scrollHeight 增量补偿 scrollTop，视口内容不跳。
-   *  loadingEarlierRef 防重入：滚动近顶自动触发 + 按钮点击共用这一个入口。 */
-  /** 上一次续载的时刻：一次用户手势只加载一页，布局/程序滚动不许连环触发。 */
-  let lastHistoryLoadAt = 0;
-
+   *  ② 内存耗尽且有游标 → thread/turns/list 按 cursor 拉**一页**拼到最前。
+   *  顶部 `.timeline-history-spacer` 按「未水合回合数 × 平均回合高」撑出整段历史；
+   *  水合时占位区变矮、真实内容变高，两处高度差都由同一轮锚点补偿吃掉 ⇒ 视口不跳。
+   *  loadingEarlierRef 防重入：滚动到占位区边界 + 按钮点击共用这一个入口。 */
   async function loadEarlierTurns(id: string) {
     if (bag.loadingEarlierRef.current.has(id)) return;
     const current = bag.threadCacheRef.current.get(id) ?? bag.threadRef.current;
@@ -200,7 +207,7 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
        高度变化被贴底跟随（height-follow）当成"底部又长了" ⇒ 直接跳到 contentTail。
        用户此刻是在看历史，必须先交出跟随权（同时撤钉顶留白）。 */
     bag.releaseToUserRef.current?.("history");
-    /* ⛔ 一次续载消费掉本次用户滚动信号：续载后滚动位置仍在续载区时，布局/程序滚动
+    /* ⛔ 一次续载消费掉本次用户滚动信号：续载后滚动位置仍在触发区时，布局/程序滚动
        会不断触发 onTimelineScroll ⇒ 一次手势把全部历史加载出来、页面狂闪。
        下一次真实滚轮/触摸由 part09 的 window 监听重新置真，一次手势最多加载一页。 */
     bag.userScrolledRef.current = false;
@@ -213,36 +220,46 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
       bag.loadingEarlierRef.current.delete(id);
       bag.setEarlierLoadingId((current) => (current === id ? null : current));
     }, 8000);
+    let pinEl: HTMLElement | null = null;
+    let pinCancel: (() => void) | null = null;
+    let pinState: HistoryPinState | null = null;
+    const endPin = (why = "") => {
+      if (why && pinEl) bag.dbg("history-pin-end", { why, top: Math.round(pinEl.scrollTop) });
+      if (pinEl && pinCancel) clearHistoryPin(pinEl, pinCancel);
+      if (pinEl && pinState) clearHistoryPinState(pinEl, pinState);
+      pinEl = null;
+      pinCancel = null;
+      pinState = null;
+    };
     try {
       const el0 = bag.scrollRef.current;
-      // 10-20：新一次续载先取消上一次的锚点钉住（连续翻页时两轮补偿不能并存）。
-      if (el0) activeHistoryAnchorPin.get(el0)?.();
+      /* ⛔ 不在入口就取消上一轮钉住：拉取要几百毫秒，期间上一页的延迟布局还在结算，
+         提前撤掉会让视口先飘一下。等新内容到手、准备扩窗时再交接（见 grow>0 分支）。 */
       const beforeTop = el0?.scrollTop ?? 0;
-      // 位置补偿用「锚点元素」而不是 scrollHeight 增量：content-visibility: auto 下离屏回合的
-      // 高度是估算值、scrollHeight 会滞后 → 补偿不足，用户看到内容被顶飞（实测位移 4.3k px）。
-      // 记下「当前视口内第一条回合」相对视口的 top，插入后按它的位移把 scrollTop 补回去。
-      const anchorNode = [...(el0?.querySelectorAll(".turn-group") ?? [])].find((node) => node.getBoundingClientRect().bottom > 0) as HTMLElement | undefined;
+      const spacerBefore = el0?.querySelector<HTMLElement>(".timeline-history-spacer") ?? null;
+      const spacerBeforeH = spacerBefore?.offsetHeight ?? 0;
+      /* 视口完全落在占位区里（用户拖滚动条直接到顶）：占位区没有可锚定的内容。
+         水合后把视口落到新占位区的下边缘 = 新加载内容的顶部，不能拿"下面的回合"
+         当锚点（那会把滚动条从顶部一路拽到内容处）。 */
+      const inSpacer = Boolean(el0) && spacerBeforeH > 0 && beforeTop + (el0?.clientHeight ?? 0) <= spacerBeforeH + 2;
+      // 位置补偿用「锚点元素」而不是 scrollHeight 增量：离屏/占位区高度会让 scrollHeight 滞后。
+      // 记下「当前视口内第一条回合」在**内容坐标**里的位置，插入后按增量补 scrollTop。
+      const anchorNode = inSpacer ? undefined : [...(el0?.querySelectorAll(".turn-group") ?? [])].find((node) => node.getBoundingClientRect().bottom > 0) as HTMLElement | undefined;
       /* 10-20：锚点不能只存 DOM 引用 —— 续载/收起工具回合会让 React 替换节点，
          旧节点 isConnected=false 后代码会误走 scrollHeight 回退，直接跳到上一页顶部。
          `.turn-group` 的 id 是 `turn-<turnId>`，跨重渲染稳定，用它重新解析。 */
       const anchorId = anchorNode?.id ?? "";
       /* 10-20：补偿基准用**内容坐标**（anchor 在滚动内容里的 offset），不是视口 top。
          视口 top 会被用户滚轮改变；用内容 offset 才能只补"上方插入的高度"、不跟用户抢滚动。 */
-      let anchorContentBefore = anchorNode && el0 ? contentOffsetTop(anchorNode, el0) : 0;
-      /* 用户已经在**顶部续载区**（与 onTimelineScroll 的自动加载阈值一致：约 1.5 屏 /
-         最少 1200px）时，续载目的是"往上继续看"：此刻不能把旧锚点按插入高度往下推
-         （会把滚动条推到新列表底部 —— 用户实测「滚到顶部就回弹到下面」）。
-         保持当前位置不动，新加载的更早内容直接出现在视口里。 */
-      const loadZone = Math.max(1200, (el0?.clientHeight ?? 0) * 1.5);
-      const nearTop = beforeTop <= loadZone;
+      const anchorContentBefore = anchorNode && el0 ? contentOffsetTop(anchorNode, el0) : 0;
       let grow = 0;
       if (hidden > 0) {
-        grow = Math.min(hidden, bag.TURNS_PAGE); // 本地展开一批的量，翻老历史不产生网络请求
+        grow = Math.min(hidden, HISTORY_PAGE); // 本地展开一批的量，翻老历史不产生网络请求
       } else if (cursor) {
         try {
           // 超时保护：引擎偶发慢/挂起时不能让加载状态卡死（超时按失败处理，游标保留，下次滚动重试）
           const result: any = await Promise.race([
-            window.codex.request("thread/turns/list", { threadId: id, limit: bag.TURNS_PAGE, sortDirection: "desc", itemsView: "full", cursor }),
+            window.codex.request("thread/turns/list", { threadId: id, limit: HISTORY_PAGE, sortDirection: "desc", itemsView: "full", cursor }),
             new Promise((_, reject) => window.setTimeout(() => reject(new Error("turns/list timeout")), 8000)),
           ]);
           const data = Array.isArray(result?.data) ? result.data : [];
@@ -263,6 +280,31 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
         } catch { /* 拉取失败不影响当前视口 */ }
       }
       if (grow > 0) {
+        /* 交接时按**当前**内容坐标重算锚点：上一页的 rAF 钉住在拉取期间可能已经补过
+           一次延迟布局，用入口时记的旧值会少补/多补一截。 */
+        const liveAnchor = anchorId ? document.getElementById(anchorId) : anchorNode;
+        const handoffBefore = liveAnchor && el0 && el0.contains(liveAnchor) ? contentOffsetTop(liveAnchor, el0) : anchorContentBefore;
+        if (el0) cancelHistoryPin(el0);
+        /* ⛔ 在 setState **之前**占住「历史钉住」标记与锚点状态：
+           · 占位区变矮 / 真实内容插入的那一刻，update() 的通用占位高度补偿必须让位；
+           · 时间线的 layout effect 在**首帧绘制前**消费这个状态，把净高度差补进 scrollTop
+             （只靠 rAF 会晚一帧，慢机器/大会话上能看到 300px+ 的闪跳）。 */
+        let pinCancelled = false;
+        pinCancel = () => { pinCancelled = true; };
+        if (el0) {
+          pinEl = el0;
+          pinState = {
+            threadId: id,
+            anchorId,
+            contentBefore: handoffBefore,
+            spacerBefore: spacerBeforeH,
+            inSpacer,
+            expectedLimit: rendered + grow,
+            applied: false,
+          };
+          setHistoryPin(el0, pinCancel);
+          setHistoryPinState(el0, pinState);
+        }
         bag.expandTurnWindow(id, grow);
         /* ⛔⛔ 10-20 用户实测「滚轮触发上面页数，就自动到最前面」：
            旧补偿按**视口 top** 算，用户一滚就必须取消（否则和用户抢滚动）；一取消，
@@ -272,13 +314,19 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
            避免两轮同时改 scrollTop（上一版验收实测锚点被顶飞 717px）。 */
         requestAnimationFrame(() => requestAnimationFrame(() => {
           const el = bag.scrollRef.current;
-          if (!el) return;
-          if (nearTop) {
-            // 顶部续载区：保持原位置（不按插入高度往下推），新内容从上方展开；
-            // 不做锚点补偿/预取（避免连环加载）。
-            el.scrollTop = Math.max(0, beforeTop);
+          if (!el || pinCancelled || bag.threadRef.current?.id !== id) { endPin("stale"); return; }
+          if (inSpacer) {
+            // 拖到顶：落到新占位区的下边缘（= 刚水合出来的内容顶部），避免停在空白占位里。
+            // layout effect 通常已经在 paint 前落过一次；这里只兜底。
+            if (!pinState?.applied) {
+              const spacer = el.querySelector<HTMLElement>(".timeline-history-spacer");
+              bag.selfScrollUntilRef.current = Date.now() + 80;
+              scrollToOffsetInstant(el, Math.max(0, spacer?.offsetHeight ?? 0));
+            }
+            endPin("spacer-land");
             return;
           }
+          bag.dbg("history-pin-start", { anchorId, before: Math.round(pinState?.contentBefore ?? anchorContentBefore), top: Math.round(beforeTop) });
           /* ⛔ 10-20：锚点按 id 重新解析。React 重渲染/纯工具回合合并会替换 DOM 节点，
              拿旧节点判断 isConnected 会误走 scrollHeight 回退（content-visibility 估算高度
              下直接跳到上一页顶部）。`.turn-group` 的 id 跨重渲染稳定。 */
@@ -289,41 +337,28 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
           };
           if (!resolveAnchor()) {
             /* 锚点真的被移除（不是被替换）：保持原位，宁可不补偿也不跳到上一页顶部。 */
-            el.scrollTop = beforeTop;
+            endPin("no-anchor");
             return;
           }
-          let cancelled = false;
-          /* 10-20：加载完若视口仍在预取阈值内，自动补下一页缓冲（不靠用户再滚一下触发）。
-             ⛔ 只在补偿结束后补，且用户确实滚过；`loadEarlierTurns` 自己会在没有更早历史时返回。 */
-          const maybePrefetch = () => {
-            const node = bag.scrollRef.current;
-            if (!node || !bag.userScrolledRef.current) return;
-            const threshold = Math.max(1200, node.clientHeight * 1.5);
-            if (node.scrollTop <= threshold) void bag.loadEarlierTurns(id);
-          };
-          const finish = () => {
-            activeHistoryAnchorPin.delete(el);
-            if (!cancelled) maybePrefetch();
-          };
-          const cancel = () => { cancelled = true; finish(); };
-          activeHistoryAnchorPin.set(el, cancel);
           const deadline = performance.now() + 1500;
           const pin = () => {
-            if (cancelled) return;
+            if (pinCancelled) { endPin("cancelled"); return; }
             const node = bag.scrollRef.current;
-            if (!node) { finish(); return; }
+            if (!node || bag.threadRef.current?.id !== id) { endPin("thread-changed"); return; }
             const anchor = resolveAnchor();
-            if (!anchor) { finish(); return; }
-            /* 只补"锚点内容 offset 的增长"（= 上方插入/结算的高度）；用户滚轮改的是
+            if (!anchor) { endPin("anchor-lost"); return; }
+            /* 只补"锚点内容 offset 的增长"（= 上方插入/占位收缩的净高度）；用户滚轮改的是
                scrollTop 与 rect.top，两者抵消，内容 offset 不变 ⇒ 不会被这里撤销。 */
             const contentNow = contentOffsetTop(anchor, node);
-            const delta = contentNow - anchorContentBefore;
+            const delta = contentNow - (pinState?.contentBefore ?? anchorContentBefore);
             if (Math.abs(delta) > 0.5) {
+              bag.selfScrollUntilRef.current = Date.now() + 80;
               node.scrollTop += delta;
-              anchorContentBefore = contentNow;
+              if (pinState) pinState.contentBefore = contentNow;
+              bag.dbg("history-pin", { delta: Math.round(delta), top: Math.round(node.scrollTop) });
             }
             if (performance.now() < deadline) requestAnimationFrame(pin);
-            else finish();
+            else endPin("deadline");
           };
           requestAnimationFrame(pin);
         }));
@@ -336,21 +371,26 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
   }
 bag.loadEarlierTurns = loadEarlierTurns as typeof bag.loadEarlierTurns;
 
-  /** 时间线滚动近顶（<720px ≈ 一屏）自动续载更早的历史（ZCode 式）：
-   *  loadEarlierTurns 内部防重入 + 切换动画期间跳过（switchJumpRef，避免对旧 DOM 做
-   *  scrollTop 补偿）；贴近顶部时每向上滚一屏加载一页，离开顶部自然停止。 */
+  /** 时间线滚动到**历史占位区边界**时水合下一页（10-21 虚拟滚动条）。
+   *  ⛔ 不看"离文档顶多远"：占位区高度就是整段未加载历史，边界随水合往上退。
+   *  ⛔ 一次用户手势只加载一页（userScrolledRef 被续载消费）+ 冷却窗 + 补偿中不响应，
+   *  避免布局/程序滚动把整段历史一次拉完。 */
   function onTimelineScroll(event: React.UIEvent<HTMLDivElement>) {
     const el = event.currentTarget;
-    /* 10-20：锚点补偿自己会改 scrollTop。它同样会触发 scroll 事件；如果只靠 userScrolledRef，
-       用户滚过一次后这个标记一直是 true ⇒ 补偿的每一帧都可能再次触发自动续载，
-       表现为「滚轮一触发就自动往前翻好几页、最后停在上一页/最前」。
-       ⇒ 补偿进行中（含收尾的极短窗口）一律不响应用户滚动信号。 */
-    if (activeHistoryAnchorPin.has(el)) return;
+    /* 方向基线：先记账再判早退 —— 补偿期间也要保持基线最新，否则补偿结束后第一次
+       用户滚动会和"上一次用户滚动"比较，方向判断失真。 */
+    const previousTop = lastHistoryScrollTop;
+    lastHistoryScrollTop = el.scrollTop;
+    /* ⛔ 不再用「补偿进行中就一律不响应」挡住用户：大会话一页要渲染/结算几百毫秒到 1 秒，
+       快滚时用户早已越过占位区边界（随后被当成"拖到顶"落到边界，视觉上就是一次跳）。
+       现在只忽略**补偿自己写 scrollTop 产生的** scroll 事件（selfScrollUntil 抑制窗），
+       用户的新滚动可以立刻触发下一页；旧钉住在拉取期间继续跑，扩窗前再交接。 */
+    if (Date.now() < bag.selfScrollUntilRef.current) return;
     // 只有用户真的滚过才响应：程序化滚动（打开时跳底、插入内容后的位置补偿）也会把
-    // scrollTop 扫过近顶区间，据此加载就成了「没滚也加载」。
+    // scrollTop 扫过触发区，据此加载就成了「没滚也加载」。
     if (!bag.userScrolledRef.current) return;
-    // 冷却窗：同一手势内的多次 wheel/scroll 只允许触发一页（防止一次滚动拉完全部历史）。
-    if (Date.now() - lastHistoryLoadAt < 600) return;
+    // 冷却窗：同一手势内的多次 wheel/scroll 只允许触发一页。
+    if (Date.now() - lastHistoryLoadAt < 350) return;
     const id = bag.threadRef.current?.id;
     if (!id || bag.switchJumpPending()) return;
     // 回到最新（贴底）：把往上滚期间展开的历史窗口收回基线（用户 09-14：滚下来后不该
@@ -359,9 +399,20 @@ bag.loadEarlierTurns = loadEarlierTurns as typeof bag.loadEarlierTurns;
       bag.collapseTurnWindow(id);
       return;
     }
-    /* ⛔ 不在滚动途中自动插历史（用户 10-21：「滚轮正常往上滚动」）：
-       触发点收口到「已经到顶后继续上滚」的 wheel（见 01-hook 的 onWheel）与「加载更早」按钮。
-       滚动到顶之前一行都不插 ⇒ 滚动条不会因加载而跳、也不会狂闪/一次拉完全部。 */
+    /* ⛔ 只在上滚时水合历史。下滚时（尤其是从占位区往最新消息方向滚）如果还按
+       「离边界近」触发，会在用户反向滚动期间继续插内容 + 锚点补偿，滚动会一顿一顿的，
+       到底时还可能被一次新的水合带离底部。 */
+    const movingDown = previousTop != null && el.scrollTop > previousTop + 2;
+    if (movingDown) return;
+    const spacer = el.querySelector<HTMLElement>(".timeline-history-spacer");
+    const spacerH = spacer?.offsetHeight ?? 0;
+    const margin = Math.max(1200, el.clientHeight * 2);
+    /* 占位区存在 ⇒ 触发点是「占位区边界 + 2 屏」（提前一个缓冲，滚动时不会看见空白）；
+       元数据还没到/没有占位区时退回文档顶触发一页（按钮仍是主入口）。 */
+    const triggerAt = spacerH > 0 ? spacerH + margin : 12;
+    if (el.scrollTop <= triggerAt) {
+      void bag.loadEarlierTurns(id);
+    }
   }
 bag.onTimelineScroll = onTimelineScroll as typeof bag.onTimelineScroll;
 

@@ -71,7 +71,7 @@ ok(sessionQueue.includes("renderAfter={(unit) => liveRowsFor(unit.item.id)}") &&
   "两个渲染口（折叠段 + 运行尾段）都把实时行挂在对应工具项**后面**（用户：不是一直在新消息下面）");
 ok(sessionCards.includes("renderAfter?: (unit: FoldUnit) => React.ReactNode") && sessionCards.includes("renderAfter ? renderAfter(unit) : null"),
   "CappedToolSequence / CappedToolRun 支持 renderAfter（锚点行按序插在每条工具项后面）");
-ok(turnView && !turnView.includes("LiveFileChanges") && turnView.includes("{turnFinished && <CompletedChanges turn={turn} onOpenFile={handlers.onOpenFile} />}"),
+ok(turnView && !turnView.includes("LiveFileChanges") && /turnFinished && <CompletedChanges turn=\{turn\} onOpenFile=\{handlers\.onOpenFile\}(?: isLastTurn=\{isLastTurn\})? \/>/.test(turnView),
   "回合视图：底部只剩收尾汇总卡；运行中实时行**不在底部**（由折叠流锚定渲染）");
 
 /* ── 四、文件类型图标 ───────────────────────────────────────── */
@@ -236,7 +236,8 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
   ok(/export function syncToolSurfaceAsync\(/.test(poolCode) && /call\("syncTools"/.test(poolCode),
     "rollout-pool 暴露 syncToolSurfaceAsync（传到 worker 的 syncTools op）");
   const ipcCode = codeOnly(read("electron/features/codex-ipc.ts"));
-  ok(/method === "thread\/resume"[\s\S]{0,900}await syncToolSurfaceAsync\(codexHome, resumeThreadId, resumeTools\)/.test(ipcCode),
+  /* 10-21 工具面带 `step` 参数后，第三个实参是 withStepParam(resumeTools)；判据盯「resume 之前 await」与「最终工具面」两点。 */
+  ok(/method === "thread\/resume"[\s\S]{0,1200}await syncToolSurfaceAsync\(codexHome, resumeThreadId, (?:withStepParam\(resumeTools\)(?:\s+as\s+[^,)]+)?|resumeTools)\)/.test(ipcCode),
     "⛔ codex-ipc 在 thread/resume **之前** await 工具面同步（引擎就是在这条 resume 上 spawn 会话并读首行；晚一步就白做）");
   ok(/multiple === true \|\| args\.multiple === "true"/.test(codeOnly(read("src/features/app-state/parts/part05/event-router/02-request.tsx"))),
     "agent_ask 的 multiple 解析容错字符串 \"true\"（个别模型会传字符串）");

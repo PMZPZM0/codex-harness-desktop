@@ -1274,6 +1274,35 @@ html[data-ui-font="large"] .action-content pre {
   margin-bottom: 0;
 }
 /* 长会话窗口化入口：默认只渲染最近若干回合，点这里加载更早的历史 */
+/* 虚拟滚动条占位区（10-21）：高度 = 未加载回合数 × 平均回合高。
+   只参与滚动几何（让滚动条知道整段历史有多长），不渲染骨架节点；
+   滚动到它的下边界时按页水合，视口由 loadEarlierTurns 的锚点补偿钉住。 */
+.timeline-history-spacer {
+  position: relative;
+  width: 100%;
+  flex: none;
+  pointer-events: none;
+}
+/* 占位区下沿的「历史还没水合」提示。只在滚到边界附近时进入视口，
+   避免快滚时出现纯空白帧（骨架不是真实回合，高度不参与内容测量）。 */
+.timeline-history-skeleton {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 58px;
+  display: grid;
+  gap: 11px;
+  opacity: 0.5;
+}
+.timeline-history-skeleton i {
+  display: block;
+  height: 13px;
+  width: 44%;
+  border-radius: 7px;
+  background: linear-gradient(90deg, var(--panel-2), var(--line-soft), var(--panel-2));
+}
+.timeline-history-skeleton i:nth-child(2) { width: 68%; }
+.timeline-history-skeleton i:nth-child(3) { width: 54%; }
 /* 续载更早历史时的行内提示（此前自动加载是静默的，用户不知道在加载） */
 .load-earlier-hint {
   display: flex; align-items: center; justify-content: center;

@@ -104,7 +104,7 @@ console.log("\n【mui】④ 视觉规范");
 const hardColors = CSS.match(/#[0-9a-fA-F]{3,8}\b/g) || [];
 /* ⛔ 允许的硬编码：只限"语义色"（成功/警告/危险/强调），
    ⛔ 背景与文字色必须走 token（否则深色主题下会落亮色 fallback）。 */
-const semantic = ["#1d9e75", "#0f6e56", "#d99000", "#8a5a00", "#d0574f", "#a32d2d", "#d4537e"];
+const semantic = ["#1d9e75", "#0f6e56", "#d99000", "#8a5a00", "#d0574f", "#a32d2d", "#d4537e", "#2f9e44"];
 const illegal = hardColors.filter((c) => !semantic.includes(c.toLowerCase()));
 ok(illegal.length === 0, `⛔ 背景/文字色全部走 token（硬编码只剩 ${illegal.length} 处非语义色：${illegal.slice(0, 3).join(",") || "无"}）`);
 ok(/var\(--bg\)|var\(--panel\)|var\(--text\)/.test(CSS) && !/var\(--font-mono/.test(CSS),

@@ -257,6 +257,12 @@ bag.expandTurnWindow = expandTurnWindow as typeof bag.expandTurnWindow;
    *  引擎侧上下文更不受影响；窗口记忆也回到基线，所以切走再切回同样是初始态。 */
   function collapseTurnWindow(id: string) {
     if ((bag.turnWindowRef.current[id] ?? bag.TURN_WINDOW) === bag.TURN_WINDOW) return;
+    const el = bag.scrollRef.current;
+    bag.dbg("history-collapse", { from: bag.turnWindowRef.current[id], top: Math.round(el?.scrollTop ?? 0), max: Math.round((el?.scrollHeight ?? 0) - (el?.clientHeight ?? 0)) });
+    /* ⛔ 收缩窗口 = 把上方已渲染的回合换回占位高度。只有**贴底**时才能收（调用方就是
+       在距文档底 <48px 的分支里调），否则视口会被抽走；这里先恢复贴底标记，等 React
+       提交后由时间线的 layout effect 把内容底部贴回视口底（都在 paint 之前）。 */
+    bag.stickToBottomRef.current = true;
     const next = bag.touchTurnWindow(id, { ...bag.turnWindowRef.current, [id]: bag.TURN_WINDOW });
     bag.turnWindowRef.current = next;
     bag.setTurnWindow(next);

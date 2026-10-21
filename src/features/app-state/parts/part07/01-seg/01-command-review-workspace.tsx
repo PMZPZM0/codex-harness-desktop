@@ -12,6 +12,7 @@ import { copyTextToClipboard } from "../../../../../lib/clipboard";
 import { effortLabels } from "../../../../../lib/effort-labels";
 import { ThreadItem } from "../../../../../lib/thread-item";
 import { itemText } from "../../../../../lib/item-text";
+import { resetTurnHistory } from "../../../../../lib/turn-history.mjs";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 
@@ -179,14 +180,23 @@ export function usePart07a1(bag: Bag) {
             //   那条 bug 的同型）。失败必须弹可见 toast 带引擎原话。
             try {
               const result = await window.codex.request("thread/revert", { threadId: bag.thread.id, beforeTurnId: lastTurnId });
+              // 历史被替换 ⇒ 回合元数据缓存与分页游标整份作废（旧游标会把已删回合重新拉回来，
+              // 虚拟滚动条的占位区也会按旧总回合数撑出一段永远加载不出来的空白）。
+              resetTurnHistory(bag.thread.id);
+              bag.turnsCursorRef.current.delete(bag.thread.id);
               // 回合重载是**尽力而为**：失败不阻断 —— 引擎侧历史已经回退了，界面刷新失败最多暂时显示
               // 旧回合（下次 resume 会纠正），不该因此把"已撤销"报成"撤销失败"。
               let restored: any[] | null = null;
+              let nextCursor: string | null = null;
               try {
                 const page: any = await window.codex.request("thread/turns/list", { threadId: bag.thread.id, limit: 200, sortDirection: "desc", itemsView: "full" });
                 restored = Array.isArray(page?.data) ? [...page.data].reverse() : [];
+                nextCursor = page?.nextCursor ?? null;
               } catch { /* 重载失败：保留 revert 返回的元数据 */ }
+              if (nextCursor) bag.turnsCursorRef.current.set(bag.thread.id, nextCursor);
+              else bag.turnsCursorRef.current.delete(bag.thread.id);
               const nextThread = restored ? { ...result.thread, turns: restored } : result.thread;
+              if (restored) (nextThread as any).__turnsCursor = nextCursor;
               bag.threadRef.current = nextThread;
               bag.setThread(nextThread);
               bag.showToast("已撤销上一轮", "仅回退对话历史，不会撤销工作区文件改动");

@@ -258,6 +258,7 @@
   --accent: #2f6bdd;
   --accent-soft: #2f6bdd14;
   --orange: #e8830c;
+  --amber: #e8a020;
   --purple: #8b5cf6;
   --mono: "Cascadia Code", Consolas, ui-monospace, monospace;
   --red: #d94f43;
@@ -320,6 +321,7 @@
   --accent: #7cabf8;
   --accent-soft: #7cabf81f;
   --orange: #f0a35c;
+  --amber: #f0a35c;
   --purple: #a78bfa;
   --red: #ec7a70;
   --ok: #58c085;
