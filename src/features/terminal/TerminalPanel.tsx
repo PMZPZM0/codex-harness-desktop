@@ -11,7 +11,7 @@ import { Fold } from "../shared/Fold";
 import { ToolCodeBlock } from "../shared/ToolCodeBlock";
 import { formatDuration } from "../../lib/format-duration";
 import { itemStatusLabel } from "../../lib/item-status-label";
-import { INTENT_VERB, commandIntentOf, commandPurpose, commandTarget, displayCommand } from "../../lib/command-display.mjs";
+import { INTENT_VERB, commandAction, commandIntentOf, commandPurpose, commandTarget, displayCommand } from "../../lib/command-display.mjs";
 import { skillOfItem, skillTargetLabel } from "../../lib/tool-display.mjs";
 
 function durationLabel(status: unknown, durationMs: unknown) {
@@ -73,6 +73,15 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive }: {
      「已查看 结构 · …/.codex-harness」「已定位 pin-shrink-follow」「已运行 npm run build」
      命中技能时换成技能中文名（目标按上面的规则取舍）。 */
   const hint = skill ? skillTargetLabel(target) || skill.label : [purpose, target].filter(Boolean).join(" · ");
+  /* ★ 动作短语（10-21，参照 WorkBuddy 的命令标题形态）：把「已运行 npm run check」升级成
+     「跑全量检查」——看得出**这一步在干什么**，而不只是"在操作什么"。
+     ⛔ 来源限制：引擎只给 `command` 字面（没有模型给的 description），所以是**模式识别**
+        （`commandAction`，规则见 lib/command-display.mjs）；认不出时 `action` 为空 ⇒ 退回
+        原来的 verb + hint，绝不显示拼出来的假动作。
+     ⛔ 状态仍由右侧图标表达（✓/!/○）：有 action 时不再在标题前加「已/正在」，
+        与 WorkBuddy 同形；失败时保留「失败」后缀（红色卡片 + 图标之外再给一处明确文字）。 */
+  const action = command ? commandAction(command) : "";
+  const headline = action ? (failed ? `${action}失败` : action) : "";
   const verb = waitingForApproval && running ? "等待批准"
     : skill ? (running ? "正在使用技能" : failed ? "使用技能失败" : "已使用技能")
       : running ? `正在${intentVerb}` : failed ? `${intentVerb}失败` : `已${intentVerb}`;
@@ -88,7 +97,7 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive }: {
     <div className={`cmd-card ${status} ${open ? "open" : "closed"}`}>
       <button type="button" className="cmd-head" onClick={toggle}>
         <span className="cmd-icon"><TerminalSquare size={14} /></span>
-        <span className="cmd-verb">{verb}</span>
+        <span className="cmd-verb">{headline || verb}</span>
         {/* ⛔ 表头只显示**剥壳后**的命令（09-23 用户：「图一看着很变扭」）：
             引擎给的 `item.command` 是宿主包过 shell 启动器的形态，真机原样是
               "D:\…\resources\tools\pwsh\pwsh.exe" -Command "Get-Content -Lit…"

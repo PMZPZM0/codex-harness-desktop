@@ -20,3 +20,6 @@ export function commandPurpose(command: string, max?: number): string;
 
 /** 意图 → 中文动词（read 查看 / search 定位 / modify 编辑 / command 运行） */
 export const INTENT_VERB: Record<string, string>;
+
+/** 命令的动作短语（「跑守卫 11z」「构建并跑全量检查」）；**认不出返回空串**，调用方退回原 hint */
+export function commandAction(command: string, max?: number): string;
