@@ -215,3 +215,141 @@ export function commandPurpose(command, max = 40) {
 
 /** 意图 → 中文动词（命令行卡片的表头动词；`command` 档保持原样「运行」）。 */
 export const INTENT_VERB = { read: "查看", search: "定位", modify: "编辑", command: "运行" };
+
+/* ── 命令的**动作短语**（10-21 新增，参照 WorkBuddy 的工具标题形态）────────────────────
+ * WorkBuddy 的命令卡表头是**一句人话**（「加静音同步断言并跑守卫」「写增量同步脚本」），
+ * 命令原文只在小字/展开里。本项目的表头此前是「动词 + 用途/目标」（「已运行 npm run check」），
+ * 差的是**动作短语**这一层：看得出"在操作什么"，但看不出"这一步在干什么"。
+ *
+ * ⛔ 语义来源的限制（必须写清楚，别指望它能变成 WorkBuddy 那样精准）：
+ *   WorkBuddy 那句标题是**模型在工具调用时给的 description**（LLM 生成，所以能写「为什么」）；
+ *   本项目拿到的只有引擎的 `command` 字面（引擎的 commandExecution 不带 action/description），
+ *   所以这一层只能是**模式识别**：规则覆盖本仓高频命令，认不出就返回空串。
+ *   ⇒ 认不出时调用方退回原有 hint（用途 · 目标 / 剥壳命令），**绝不编一个假动作**。
+ *
+ * ⛔ 与 `commandPurpose` 的分工：purpose = 从**脚本输出标签**提炼的用途（数据驱动）；
+ *   action = 从**命令模式**认出的动作（模式驱动）。有 action 优先 action（更贴"在干什么"）。
+ */
+
+/** 路径末段（去掉引号与目录） */
+function actName(value) {
+  return String(value ?? "").replace(/^["']|["']$/g, "").split(/[\\/]/).pop() || "";
+}
+
+/** 去掉扩展名 */
+function actStem(value) {
+  return actName(value).replace(/\.(?:mjs|cjs|js|ts|tsx)$/i, "");
+}
+
+/** 常见脚本名 → 动作（本仓脚本的语义映射；认不出就「跑脚本 <名>」） */
+function scriptAction(target) {
+  const name = actStem(target);
+  if (!name) return "";
+  if (/^11[a-z0-9]*-/.test(name)) return `跑守卫 ${name.split("-")[0]}`;
+  if (/^check-(?:preflight|bag-types|dead-imports|require-paths)$/.test(name)) return "跑检查";
+  if (/^gen-/.test(name)) return "重生成产物";
+  if (/^(?:accept|e2e)/.test(name)) return "跑界面验收";
+  const short = name.length > 18 ? `${name.slice(0, 18)}…` : name;
+  return `跑脚本 ${short}`;
+}
+
+/**
+ * 单条命令 → 动作短语（不含复合拆分）。命中即返回，认不出返回空串。
+ * ⛔ 规则顺序即优先级：越具体越靠前（`scripts/guards/x.mjs` 要先于通用 `node <脚本>`）。
+ */
+const ACTION_RULES = [
+  // 本仓守卫 / 预检 / 验收（最具体，必须排在通用 node 之前）
+  [/scripts[\\/]guards[\\/]([\w.-]+)\.mjs/i, (m) => `跑守卫 ${String(m[1]).split("-")[0]}`],
+  [/scripts[\\/]check-preflight\.mjs/i, () => "跑预检"],
+  [/scripts[\\/]accept\.mjs/i, () => "跑界面验收"],
+  [/scripts[\\/]deploy-cloud-ui\.mjs/i, () => "部署云端界面"],
+  [/scripts[\\/]logs\.mjs\s+new/i, () => "记结论档案"],
+  [/scripts[\\/]logs\.mjs\s+reindex/i, () => "重建日志索引"],
+  [/scripts[\\/]logs\.mjs\s+(?:verify|dedupe)/i, () => "校验日志库"],
+  // npm scripts（先具体后通用）
+  [/npm\s+run\s+check\b/i, () => "跑全量检查"],
+  [/npm\s+run\s+lint\b/i, () => "跑 lint"],
+  [/npm\s+run\s+build:electron/i, () => "构建主进程"],
+  [/npm\s+run\s+build:vite/i, () => "构建界面"],
+  [/npm\s+run\s+build\b/i, () => "构建"],
+  [/npm\s+run\s+gen:/i, () => "重生成产物"],
+  [/\bnpm\s+test\b|\bnpm\s+run\s+test\b/i, () => "跑测试"],
+  [/npm\s+run\s+([\w:.-]+)/i, (m) => `跑 ${m[1]}`],
+  [/\bnpm\s+(?:install|ci|i)\b/i, () => "装依赖"],
+  // node 脚本
+  [/\bnode\s+(?:--experimental-strip-types\s+|--no-warnings\s+)*(?:"([^"]+)"|'([^']+)'|(\S+))/i,
+    (m) => scriptAction(m[1] ?? m[2] ?? m[3])],
+  // git
+  [/\bgit\s+commit\b/i, () => "提交改动"],
+  [/\bgit\s+push\b/i, () => "推送远端"],
+  [/\bgit\s+status\b/i, () => "看改动状态"],
+  [/\bgit\s+diff\b/i, () => "看改动差异"],
+  [/\bgit\s+log\b/i, () => "看提交历史"],
+  [/\bgit\s+tag\b/i, () => "打版本标签"],
+  [/\bgit\s+apply\b/i, () => "应用补丁"],
+  [/\bgit\s+(?:checkout|restore)\b/i, () => "恢复文件"],
+  [/\bgit\s+add\b/i, () => "暂存改动"],
+  [/\bgit\s+(?:clone|fetch|pull)\b/i, () => "同步仓库"],
+  [/\bgit\s+branch\b/i, () => "看分支"],
+  // 写文件（heredoc / 覆盖写）
+  [/(?:cat|tee)\s*>+\s*(?:"([^"]+)"|'([^']+)'|(\S+))/i, (m) => `写文件 ${actName(m[1] ?? m[2] ?? m[3]) || ""}`.trim()],
+  [/Set-Content|Out-File|WriteAllText|WriteAllLines|WriteAllBytes|writeFileSync|appendFileSync/i, () => "写文件"],
+  // 增删移拷
+  [/Remove-Item[^|\n]*-Recurse|\brm\s+-r|\brm\s+-rf/i, () => "删目录"],
+  [/Remove-Item\b|\brm\s+/i, () => "删文件"],
+  [/Move-Item\b|\bmv\s+/i, () => "移动文件"],
+  [/Copy-Item\b|\bcp\s+/i, () => "复制文件"],
+  [/New-Item[^|\n]*-ItemType\s+Directory|\bmkdir\b/i, () => "建目录"],
+  // 网络 / 远程
+  [/\bcurl\b|Invoke-WebRequest|Invoke-RestMethod/i, () => "请求接口"],
+  [/\bscp\b/i, () => "上传文件"],
+  [/\bssh\b/i, () => "远程执行"],
+];
+
+/** 单段命令求动作（内部用，不做复合拆分） */
+function actionOfOne(text) {
+  const body = stripShellLauncher(text);
+  if (!body) return "";
+  for (const [pattern, make] of ACTION_RULES) {
+    const hit = pattern.exec(body);
+    if (hit) {
+      const value = String(make(hit) ?? "").trim();
+      if (value) return value;
+    }
+  }
+  return "";
+}
+
+/**
+ * 命令 → **动作短语**（≤ max 字，命令卡表头的标题）。
+ *
+ * 复合命令（`a && b`、`a; b`）拆开各自求动作，两个都认得出时拼成「A并B」
+ * （本仓最常见的形态：`npm run build && npm run check` → 「构建并跑全量检查」）。
+ *
+ * @param {string} command 引擎给的 `item.command`（可带 shell 启动器外壳）
+ * @param {number} [max] 短语长度上限（默认 24）
+ * @returns {string} 认不出返回空串（调用方退回原 hint，绝不显示假动作）
+ */
+export function commandAction(command, max = 24) {
+  const text = stripShellLauncher(command);
+  if (!text) return "";
+  // 复合拆分：只拆 `&&` / `;`（⛔ 不拆 `|` 管道 —— 它是同一条处理链，拆开语义就错了）
+  const parts = text.split(/\s*(?:&&|;)\s*/).map((part) => part.trim()).filter(Boolean);
+  const actions = [];
+  for (const part of parts.slice(0, 3)) {
+    const action = actionOfOne(part);
+    if (action && !actions.includes(action)) actions.push(action);
+    if (actions.length >= 2) break;
+  }
+  let out = "";
+  if (actions.length === 1) out = actions[0];
+  else if (actions.length >= 2) {
+    const joined = `${actions[0]}并${actions[1]}`;
+    // 拼完太长就只留第一个动作（表头是一行，宁可少说也不挤）
+    out = joined.length <= max ? joined : actions[0];
+  } else {
+    out = actionOfOne(text);
+  }
+  if (!out) return "";
+  return out.length > max ? `${out.slice(0, max)}…` : out;
+}

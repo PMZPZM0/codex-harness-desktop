@@ -4568,7 +4568,26 @@ export async function run() {
       "【127】意图→动词表存在（查看/定位/编辑/运行）"
     );
     (!/const verb = [^;]*"已运行"[^;]*;/.test(termCode) && /const intentVerb = INTENT_VERB\[intent\]/.test(termCode) ? ok : fail)(
+
       "【127】命令行表头动词按意图映射（⚠️ 不许退回写死的「已运行」—— 那正是用户截图里的问题）"
+    );
+
+    /* ⛔ 10-21 新增：命令标题改为**动作短语**（WorkBuddy 形态：标题是人话，命令原文退到次要位置）。
+       语义来源只能是命令字面（引擎不给 description）⇒ 认不出必须返回空串、由调用方退回旧 hint，
+       ⛔ 绝不许拼一个假动作（"执行操作"这种）—— 那是本仓记过的「注释/文案声称能力」同类假象。 */
+    (/export function commandAction\(/.test(cmdCode) ? ok : fail)("【127】commandAction 纯函数存在（命令的动作短语）");
+    (/const ACTION_RULES = \[/.test(cmdCode) && /跑守卫 \$\{String\(m\[1\]\)/.test(cmdCode) ? ok : fail)(
+      "【127】动作规则表存在且覆盖本仓守卫脚本（`scripts/guards/<名>.mjs` → 「跑守卫 <名>」）"
+    );
+    (/return out\.length > max \? `\$\{out\.slice\(0, max\)\}…` : out;/.test(cmdCode) ? ok : fail)(
+      "【127】动作短语有长度上限（表头是一行，超长截断而不是挤压状态图标）"
+    );
+    (cmdCode.includes('if (!out) return "";') ? ok : fail)("【127】⛔ 认不出动作时返回空串（不许兜底成假动作）");
+    (/import \{ INTENT_VERB, commandAction, commandIntentOf/.test(termCode) ? ok : fail)(
+      "【127】命令卡真的 import 了 commandAction（声明了不用 = 装饰品）"
+    );
+    (/const action = command \? commandAction\(command\) : "";/.test(termCode) && /\{headline \|\| verb\}/.test(termCode) ? ok : fail)(
+      "【127】命令卡表头优先用动作短语、认不出退回 verb（`headline || verb`）"
     );
     (/\[purpose, target\]\.filter\(Boolean\)\.join\(" · "\)/.test(termCode) ? ok : fail)(
       "【127】表头串 = 用途 · 目标（两者都显示，看不出目的才算没映射）"
