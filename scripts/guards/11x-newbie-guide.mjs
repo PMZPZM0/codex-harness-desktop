@@ -42,9 +42,11 @@ const preload = read("electron/preload.ts");
 /* ── 一、入口常驻、绝不被滚没（用户 10-07 点名的一条）────────────────────── */
 {
   const listAt = shell.indexOf('className="thread-list"');
-  const guideAt = shell.indexOf("<NewbieGuide");
+  /* ⛔ 锚**入口按钮**而不是 `<NewbieGuide>`：10-22 起账户行压成侧栏最后一条（用户名贴底），
+     弹窗组件仍挂在 Fragment 尾部（它的位置与可见性无关）；拿组件位置比对会永远红。 */
+  const entryAt = shell.indexOf("<span>新手教程</span>");
   const accountAt = shell.indexOf('className="account-row"');
-  ok(listAt >= 0 && guideAt > listAt && accountAt > guideAt,
+  ok(listAt >= 0 && entryAt > listAt && accountAt > entryAt,
     "入口在 .thread-list **之外**、账户行之上（⛔ 放进列表里会随滚动走、被内容压住 —— 用户点名）");
   ok(/\.guide-entry \{[\s\S]{0,120}?flex: none/.test(css),
     ".guide-entry flex:none（侧栏 flex 列里唯一允许收缩的是 .thread-list —— 入口不许被压扁）");

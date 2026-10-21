@@ -419,11 +419,52 @@
   color: var(--faint);
 }
 
-/* ── 底部导航组（10-21 用户令：入口从顶部挪到「用户名之下」）──────────────────────────
-   顺序 = 用户名 → 自动化 → 前端开发 → 拓展 → 团队 → 个性化&记忆 → 登录管理 → 新手教程。
-   ⛔ `.sidebar` 是 flex 列、`.thread-list` 是 `flex:1 1 0` ⇒ 本组必须 `flex:none`，
-      否则会被列表的弹性挤压（窄屏下直接看不见）。
-   ⛔ 窗口矮时让**本组自己滚**（max-height），⛔ 不许把会话列表挤没 —— 列表是主场。 */
+/* ── 底部入口组（10-22 用户要求：加折叠/展开；用户名行压在最底）────────────────────────
+   结构 = …会话列表 → [折叠头 + 入口组] → 账户行（最后一条，贴底）。
+   ⛔ 折叠只收本组自身：入口组 `hidden` + 本组 `flex:none`，空出来的高度由 `.thread-list`
+      （flex:1 1 0）吃掉 ⇒ 账户行 0 位移；⛔ 别给列表/账户行加占位、补白或 transition。
+   ⛔ 窗口矮时让**入口组自己滚**（max-height），⛔ 不许把会话列表挤没 —— 列表是主场。 */
+.sidebar-options {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+/* 折叠头：整行可点（不是小箭头），标题常驻 ⇒ 收起后仍有一眼可见的入口 */
+.sidebar-options-toggle {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 26px;
+  margin-top: 6px;
+  padding: 0 10px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  /* ⛔ 暗色下原生 button 会按浅色 UA 画成 #efefef 浅底（全站无 color-scheme）⇒ background+appearance 双保险 */
+  appearance: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.sidebar-options-toggle:hover { color: var(--text); }
+.sidebar-options-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sidebar-options-chevron {
+  margin-left: auto;
+  flex: none;
+  color: var(--faint);
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+.sidebar-options-chevron.open { transform: rotate(180deg); }
+.sidebar-options-toggle:hover .sidebar-options-chevron { color: var(--muted); }
+
 .sidebar-nav-bottom {
   flex: none;
   margin-top: 4px;
@@ -432,6 +473,8 @@
   overscroll-behavior: contain;
   scrollbar-width: thin;
 }
+/* ⛔ `.sidebar-nav` 自带 `display:flex`，会压过 hidden 属性的 UA 样式 ⇒ 必须显式关掉 */
+.sidebar-nav-bottom[hidden] { display: none; }
 /* 7 行并排时行高收一点，给列表留空间（只在底部组生效，顶部快捷胶囊不受影响） */
 .sidebar-nav-bottom .sidebar-cap-row {
   height: 30px;
