@@ -4443,7 +4443,15 @@ export async function run() {
         ? ok : fail)("【118】单条过程也收进折叠块（flush 不按条数分叉 —— 无论多少都归并为一个可折叠区块）");
 
       const panel = readFileSync(join(ROOT, "src", "features", "terminal", "TerminalPanel.tsx"), "utf8");
-      (/displayCommand\(command\) \|\| "命令"/.test(panel) ? ok : fail)("【118】命令卡片表头用剥壳后的命令");
+      /* ★ 10-22 口径变更（用户：「默认仅展示中文名称，隐藏具体命令内容；展开后才看完整命令」）：
+         表头不再放命令行（原来锚的是 displayCommand(command) 那一串）⇒ 改判「表头 = 中文动作短语
+         + 明确的展开标识」，命令原文只在展开体。⛔ 别把这条断言退回旧口径 —— 那等于把命令行塞回折叠行。 */
+      (/\{headline \|\| verb\}/.test(panel) && /\{open \? "收起" : "展开"\}/.test(panel) ? ok : fail)(
+        "【118】命令卡片折叠行 = 中文动作短语 + 展开/收起标识（10-22：不再展示命令行）"
+      );
+      (!/cmd-command/.test(panel) ? ok : fail)(
+        "【118】折叠行不许再放命令行（`.cmd-command` 已随需求删除，⛔ 别当死代码又加回来）"
+      );
       /* ⛔ 展开里的完整命令必须是引擎原文（用户要照着复现）——剥壳只用于展示 */
       (/const command = String\(item\.command \?\? ""\)\.trim\(\);/.test(panel) ? ok : fail)(
         "【118】完整命令仍取引擎原文（剥壳只用于展示）"
@@ -4593,7 +4601,60 @@ export async function run() {
       "【127】⛔ 动作短语**给技能态与审批态让位**（读 SKILL.md 也是一条命令：不许把「已使用技能」盖成「跑脚本 x」；审批中要显示「等待批准」）"
     );
     (/\[purpose, target\]\.filter\(Boolean\)\.join\(" · "\)/.test(termCode) ? ok : fail)(
-      "【127】表头串 = 用途 · 目标（两者都显示，看不出目的才算没映射）"
+      "【127】元信息串 = 用途 · 目标（10-22 起只在**展开体**里显示，看不出目的才算没映射）"
+    );
+    /* ★ 10-22 用户要求（附 WorkBuddy 截图）：「默认仅展示中文名称，隐藏具体命令内容；每条命令支持
+       展开看完整命令；折叠态后面不再显示地址与耗时」。
+       ⛔ 表头里再出现命令行/耗时 = 这条需求被打回；⛔ 展开体里必须仍是引擎原文（能照着复现）。 */
+    const headSlice = termCode.slice(termCode.indexOf('className="cmd-head"'), termCode.indexOf("<Fold open={open}>"));
+    (headSlice.length > 200 && !/cmd-command|displayCommand/.test(headSlice) ? ok : fail)(
+      "【127】折叠行不含命令原文（10-22：默认只展示中文，命令内容收进展开体）"
+    );
+    (!/cmd-duration/.test(headSlice) ? ok : fail)(
+      "【127】折叠行不含耗时（10-22 同一句：「不再显示地址与耗时信息」）"
+    );
+    (/aria-expanded=\{open\}/.test(headSlice) ? ok : fail)(
+      "【127】折叠行带 aria-expanded（读屏也知道现在展开没）"
+    );
+    (/\{open \? "收起" : "展开"\}/.test(headSlice) ? ok : fail)(
+      "【127】展开/收起有**文案**变化（只有一个小箭头不叫「明确的可展开标识」）"
+    );
+    (/className="cmd-title-hint"/.test(termCode) && /className="cmd-duration"/.test(termCode) ? ok : fail)(
+      "【127】地址/用途 + 耗时搬到展开体元信息行（信息不丢，只是不占折叠行）"
+    );
+    (/const codeText = \[\s*\n\s*command,/.test(termCode) ? ok : fail)(
+      "【127】展开体第一段仍是引擎原文 command（用户要照着复现）"
+    );
+    /* ★ 10-22 同类需求扩到**所有操作卡**（读取/编辑/查看…）：「统一显示中文，不再显示地址和耗时，
+       点击展开看详细内容」。⛔ 表头不许再出现 info（地址/工具名/入参）；⛔ 英文 status 不许上表头。 */
+    const cardsSrc = readFileSync(join(ROOT, "src", "features", "session-cards", "SessionCards.tsx"), "utf8").replace(/\r/g, "");
+    const itemsSrc = readFileSync(join(ROOT, "src", "features", "session-queue", "ItemView.tsx"), "utf8").replace(/\r/g, "");
+    const cardsCode = cardsSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    const itemsCode = itemsSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    (!/className="action-info"/.test(cardsCode) ? ok : fail)(
+      "【127】操作卡表头不再放 action-info（10-22：地址类信息只进展开体）"
+    );
+    (/const hasBody = info != null \|\| children != null;/.test(cardsCode) && /className="action-meta"/.test(cardsCode) ? ok : fail)(
+      "【127】详情搬进展开体（action-meta），且**有 info 就能点开**（⛔ 以前没有 children 的卡点了没反应）"
+    );
+    (/\{open \? "收起" : "展开"\}/.test(cardsCode) && /aria-expanded=\{open\}/.test(cardsCode) ? ok : fail)(
+      "【127】操作卡也带「展开/收起」文案 + aria-expanded（与命令卡同一形态）"
+    );
+    (!/statusText=\{item\.status/.test(itemsCode) ? ok : fail)(
+      "【127】⛔ 英文 status（completed / inProgress）不许再上表头（10-22：统一中文）"
+    );
+    (!/formatDuration\(item\.durationMs\) \|\| label/.test(itemsCode) ? ok : fail)(
+      "【127】工具卡表头不再显示耗时（耗时随详情进展开体）"
+    );
+    (!/verb=\{item\.type\}/.test(itemsCode) ? ok : fail)(
+      "【127】兜底卡标题不许直接用英文枚举 `item.type`（改「其他操作」，原文进展开体）"
+    );
+    /* 「精确到文件，不要再地址」（用户 10-22 补的一句）：折叠行给文件名，完整路径留展开体。 */
+    (/className="action-target"/.test(cardsCode) && /const targetName = target \? basename\(target\) : "";/.test(termCode) ? ok : fail)(
+      "【127】命令卡折叠行「精确到文件」：目标只取 basename（完整路径在展开体元信息行）"
+    );
+    (/const howName = basename\(argSummary\(item\.arguments, 400\) \|\| ""\);/.test(itemsCode) && /target=\{howName/.test(itemsCode) ? ok : fail)(
+      "【127】工具卡折叠行给文件名（⛔ 先按 400 字取完整入参再 basename —— 48 字截断后再剥会只剩半截）"
     );
     (/\(\?!\[A-Za-z0-9_-\]\)/.test(cmdCode) ? ok : fail)(
       "【127】目标提取带尾部负向断言（防 `.codex-harness` 被截成半截 `.codex`）"
@@ -4610,8 +4671,8 @@ export async function run() {
       "【127】折叠原子优先按技能归类（命中 ⇒ group=skill，摘要出「使用技能 …」）"
     );
     (/skill: \{ topic: "使用技能 \{t\}"/.test(foldSrc) ? ok : fail)("【127】词表有 skill 档（使用技能）");
-    (/const skill = skillOfItem\(item\);/.test(itemCode) && /info=\{<><code>\{skill \? skill\.label : title\}<\/code>/.test(itemCode) ? ok : fail)(
-      "【127】工具卡表头显示技能中文名（使用技能而不是「调用 server/tool」）"
+    (/const skill = skillOfItem\(item\);/.test(itemCode) && /<code>\{skill \? skill\.label : title\}<\/code>/.test(itemCode) ? ok : fail)(
+      "【127】工具卡详情显示技能中文名（10-22 起在展开体里；使用技能而不是「调用 server/tool」）"
     );
     /* ── 技能 / 插件 / MCP 「怎么用的」（09-24 用户：「技能，插件，mcp 等等都要展示出来怎么用了」）── */
     (/export function argSummary\(/.test(toolCode) ? ok : fail)("【127】argSummary 纯函数存在（从入参提炼「怎么用了」）");
