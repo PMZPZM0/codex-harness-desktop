@@ -306,6 +306,29 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
     };
     const onPointerDown = () => { pointerDown = true; };
     const onPointerUp = () => { pointerDown = false; };
+    /* 临时诊断（10-21，定位完删）：记录所有对 .timeline.scrollTop 的**程序写入**+调用栈。
+       ⛔ 只记录、不改行为；用户按 Ctrl+Alt+Shift+D 复制现场。 */
+    const scrollTopDesc = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop");
+    if (scrollTopDesc?.get && scrollTopDesc?.set) {
+      try {
+        Object.defineProperty(scroller, "scrollTop", {
+          configurable: true,
+          get() { return scrollTopDesc.get!.call(this); },
+          set(value: number) {
+            const from = scrollTopDesc.get!.call(this) as number;
+            if (Math.abs(Number(value) - from) > 0.5) {
+              const w = window as unknown as { __scrollSets?: unknown[] };
+              (w.__scrollSets ||= []).push({
+                from: Math.round(from), to: Math.round(Number(value)),
+                stack: String(new Error().stack || "").split("\n").slice(1, 7).join(" | "), t: Date.now(),
+              });
+              if ((w.__scrollSets as unknown[]).length > 500) (w.__scrollSets as unknown[]).splice(0, 100);
+            }
+            scrollTopDesc.set!.call(this, value);
+          },
+        });
+      } catch { /* 无法重定义的环境忽略 */ }
+    }
     bag.updateBottomStateRef.current = update;
     bag.releaseToUserRef.current = releaseToUser;
     // rAF 节流：scroll 事件密集时 update 会读 scrollHeight/scrollTop 强制同步布局
@@ -351,6 +374,7 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
     });
     window.addEventListener("codex:packet-reveal", onPacketReveal);
     return () => {
+      try { delete (scroller as unknown as { scrollTop?: number }).scrollTop; } catch { /* 恢复原型访问器失败不影响功能 */ }
       if (raf) cancelAnimationFrame(raf);
       observer.disconnect();
       scroller.removeEventListener("scroll", schedule);
@@ -364,5 +388,36 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
       window.removeEventListener("codex:packet-reveal", onPacketReveal);
     };
   }, [bag.thread?.id, bag.scrollRef]);
+  /* 临时诊断（10-21，定位完删）：Ctrl+Alt+Shift+D 把滚动现场复制到剪贴板。
+     内容包括构建指纹 / 当前会话 / 滚动几何 / 所有程序写入 scrollTop 的调用栈。 */
+  useEffect(() => {
+    const onDiagKey = (event: globalThis.KeyboardEvent) => {
+      if (!(event.ctrlKey && event.altKey && event.shiftKey) || String(event.key).toLowerCase() !== "d") return;
+      event.preventDefault();
+      const scroller = bag.scrollRef.current;
+      const payload = {
+        build: { stamp: bag.buildStamp, bundle: bag.bundleFile },
+        thread: bag.thread?.id ?? "",
+        at: new Date().toISOString(),
+        scroll: scroller ? {
+          top: Math.round(scroller.scrollTop),
+          max: scroller.scrollHeight - scroller.clientHeight,
+          scrollHeight: scroller.scrollHeight,
+          clientHeight: scroller.clientHeight,
+        } : null,
+        groups: document.querySelectorAll(".timeline .turn-group").length,
+        loadBtn: Boolean(document.querySelector(".load-earlier-turns")),
+        detachFlag: (window as unknown as { __scrollSets?: unknown[] }).__scrollSets?.length ?? 0,
+        adbg: ((window as unknown as { __adbg?: unknown[] }).__adbg || []).slice(-300),
+        writes: ((window as unknown as { __scrollSets?: unknown[] }).__scrollSets || []).slice(-150),
+      };
+      void window.codex.writeClipboard(JSON.stringify(payload, null, 2))
+        .then(() => bag.showToast("滚动诊断已复制", "直接粘贴给 Codex 就行"))
+        .catch(() => bag.showToast("滚动诊断复制失败", "控制台执行 copy(JSON.stringify(window.__scrollSets))"));
+    };
+    window.addEventListener("keydown", onDiagKey, true);
+    return () => window.removeEventListener("keydown", onDiagKey, true);
+  }, [bag]);
+
   return { addHookEvent, pendingCommandTextRef, updateBottomStateRef, turnResizeObserverRef, releaseToUserRef };
 }
