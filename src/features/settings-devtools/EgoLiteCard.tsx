@@ -1,20 +1,40 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowUpCircle, Download, ExternalLink, Globe2, RefreshCw } from "lucide-react";
+import { Download, ExternalLink, Globe2, RefreshCw } from "lucide-react";
 
 type EgoStatus = Awaited<ReturnType<typeof window.codex.egoStatus>>;
 
 /** 开发工具 → Ego Lite：浏览器自动化**首选**通道（外部安装；未装回落 browse-skills 默认浏览器）。
- *  ⛔ 不把 611MB 的 Chromium 随应用内置（用户拍板）：这里只做检测、官方下载页、打开与手动升级。
+ *  ⛔ 不把 611MB 的 Chromium 随应用内置（用户拍板）：这里只做检测、官方下载页与打开；
+ *  **升级/自动更新统一在「设置 → 控制台 → 组件更新」的 Ego Lite 行**（10-22 用户要求）。
  *  每个 Codex 会话的 Space 由浏览器技能用 CODEX_THREAD_ID 固定；本卡不绑会话。 */
 export function EgoLiteCard({ onNotice }: { onNotice?: (message: string) => void }) {
   const [status, setStatus] = useState<EgoStatus | null>(null);
   const [busy, setBusy] = useState(false);
-  const [confirmUpgrade, setConfirmUpgrade] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [note, setNote] = useState("");
 
-  const recheck = useCallback(async () => {
-    try { setStatus(await window.codex.egoStatus()); }
-    catch { setStatus(null); }
+  const recheck = useCallback(async (announce = false) => {
+    setChecking(true);
+    try {
+      const next = await window.codex.egoStatus();
+      setStatus(next);
+      if (announce) {
+        const message = next.installed
+          ? `已重新检测：已安装 ${String(next.version || "ego lite").replace(/^ego-browser\s*/i, "") || "ego lite"}`
+          : "已重新检测：仍未找到 ego-browser，请确认安装完成并走完首次引导";
+        setNote(message);
+        onNotice?.(message);
+      }
+    } catch (error: any) {
+      setStatus(null);
+      if (announce) {
+        const message = `重新检测失败：${error?.message ?? error}`;
+        setNote(message);
+        onNotice?.(message);
+      }
+    } finally {
+      setChecking(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -43,26 +63,9 @@ export function EgoLiteCard({ onNotice }: { onNotice?: (message: string) => void
     try {
       const result = await window.codex.egoOpen();
       setNote(result.detail);
-    } catch (error: any) {
-      setNote(`打开 ego lite 失败：${error?.message ?? error}`);
-    } finally { setBusy(false); }
-  }
-
-  async function upgrade() {
-    if (busy) return;
-    setConfirmUpgrade(false);
-    setBusy(true);
-    setNote("正在运行 ego-browser upgrade…");
-    try {
-      const result = await window.codex.egoUpgrade();
-      const text = result.ok
-        ? (result.changed ? `已升级：${result.before || "旧版本"} → ${result.after || "新版本"}` : "已是最新版本")
-        : `升级失败：${result.output || "未知原因"}`;
-      setNote(text);
-      onNotice?.(text);
       await recheck();
     } catch (error: any) {
-      setNote(`升级失败：${error?.message ?? error}`);
+      setNote(`打开 ego lite 失败：${error?.message ?? error}`);
     } finally { setBusy(false); }
   }
 
@@ -92,28 +95,17 @@ export function EgoLiteCard({ onNotice }: { onNotice?: (message: string) => void
             <button type="button" className="primary-setting" disabled={busy} onClick={() => void open()}>
               <ExternalLink size={13} />打开 ego lite
             </button>
-            <button type="button" className="secondary-setting" disabled={busy} onClick={() => void recheck()}>
-              <RefreshCw size={13} />重新检测
+            <button type="button" className="secondary-setting" disabled={busy || checking} onClick={() => void recheck(true)}>
+              <RefreshCw size={13} className={checking ? "spin" : ""} />{checking ? "检测中…" : "重新检测"}
             </button>
-            {confirmUpgrade ? (
-              <span className="ego-lite-confirm">
-                <em>升级可能下载数百 MB，继续？</em>
-                <button type="button" className="primary-setting" disabled={busy} onClick={() => void upgrade()}>确认升级</button>
-                <button type="button" className="secondary-setting" onClick={() => setConfirmUpgrade(false)}>取消</button>
-              </span>
-            ) : (
-              <button type="button" className="secondary-setting" disabled={busy} onClick={() => setConfirmUpgrade(true)}>
-                <ArrowUpCircle size={13} />升级
-              </button>
-            )}
           </>
         ) : (
           <>
             <button type="button" className="primary-setting" disabled={busy} onClick={() => void install()}>
               <Download size={13} />下载安装
             </button>
-            <button type="button" className="secondary-setting" disabled={busy} onClick={() => void recheck()}>
-              <RefreshCw size={13} />重新检测
+            <button type="button" className="secondary-setting" disabled={busy || checking} onClick={() => void recheck(true)}>
+              <RefreshCw size={13} className={checking ? "spin" : ""} />{checking ? "检测中…" : "重新检测"}
             </button>
           </>
         )}
@@ -121,7 +113,7 @@ export function EgoLiteCard({ onNotice }: { onNotice?: (message: string) => void
 
       <p className="ego-lite-hint">
         {installed
-          ? "技能按 CODEX_THREAD_ID 续用同一个 codex-<会话ID> Space；会话归档时自动回收，多个会话互不抢页面。"
+          ? "技能按 CODEX_THREAD_ID 续用同一个 codex-<会话ID> Space；会话归档时自动回收，多个会话互不抢页面。升级与自动更新在「设置 → 控制台 → 组件更新」的 Ego Lite 行：由 Ego 官方更新器下载（可能约 600MB 并重启浏览器，暂无第三方国内镜像）。"
           : "不随应用内置：Windows 安装包约 13.5MB、macOS 146–164MB，首次启动会下载约 600MB Chromium。装完完成首次引导，CLI 才可用。"}
       </p>
       {note ? <p className="ego-lite-note" aria-live="polite">{note}</p> : null}
