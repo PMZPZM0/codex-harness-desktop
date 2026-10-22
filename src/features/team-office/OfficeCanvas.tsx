@@ -1,393 +1,701 @@
 /**
- * 办公室 · 白色简洁工位板（2026-10-22 对照 Marvis workbench 重做）
+ * 像素办公室 · Canvas 渲染器
  *
- * 参考图（用户提供）：纯白背景，白色 3D 办公桌 + 黑色显示器 + 白/灰办公椅 +
- * 黑猫成员（彩色围巾），名字标在显示器上方；左侧茶水间/跑步机/洗手间。
- *
- * 我们的做法：
- *   · 家具/设施 = **本仓生成的白底 3D 渲染图**（`assets/*.webp`，白底 + multiply 融进白板），
- *     ⛔ 不搬 Marvis 的美术资产；
- *   · 猫 = 3D 多角度渲染图（坐姿背对镜头 / 站姿正面；红围巾 hue-rotate 分色），状态跟真实运行阶段联动；
- *   · 一页 6 个工位（2 列 × 3 排，照参考图尺寸）；成员 >6 时分页（10 个工位 = 2 页），
- *     ⛔ 不是把 10 个压成小图标；
- *   · 每台显示器叠实时内容（状态色代码条 + 扫描线）；悬停出详情卡、点击进会话；
- *   · 缩放/平移沿用同一套舞台 transform（contain 基准 + 指针锚点）。
+ * ⛔ 刻意用 **原生 canvas 2D** 而不是 Pixi：像素风要的是 imageSmoothingEnabled=false
+ *   的最近邻放大，2D 足够；还躲开 Pixi v8 的空纹理/CSP 两个坑（上一版实测踩过）。
+ * ⛔ 资产走 **Vite import**（可达闭包内，打包期裁剪不掉 —— 0.0.27 那条事故的教训）。
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import deskUrl from "./assets/desk.webp?inline";
-import chairWhiteUrl from "./assets/chair-white.webp?inline";
-import coffeeUrl from "./assets/coffee.webp?inline";
-import treadmillUrl from "./assets/treadmill.webp?inline";
-import toiletUrl from "./assets/toilet.webp?inline";
-import catSeatedUrl from "./assets/cat-seated.webp?inline";
-import catStandingUrl from "./assets/cat-standing.webp?inline";
-import { CANVAS_H, CANVAS_W, TEAM_OFFICE_LIMIT, type OfficeMemberState } from "./office-format";
-import { effectivePhase, eventWordZhOf, type RunPhase } from "./office-screen";
+import { useEffect, useRef, type RefObject } from "react";
+// ⛔ bg 必须 ?inline（强制 data: URI）：bg.webp 80KB 超过全局 assetsInlineLimit(64KB) 会被拆成
+//   独立文件 /assets/bg-*.webp，构建版 file:// 下绝对路径解析到盘根 ⇒ 404 ⇒ 画布白底
+//   （10-05 用户报「办公室白了」；09-30 v19 埋雷，办公室调试都在 dev 模式所以一直没暴露）。
+//   人物 PNG 小于阈值本来就内联成 data:，所以人物一直正常 —— 这也是它拖到今天才被发现的原因。
+import bgUrl from "./assets/bg.webp?inline";
+import char0 from "./assets/chars/char_0.png";
+import char1 from "./assets/chars/char_1.png";
+import char2 from "./assets/chars/char_2.png";
+import char3 from "./assets/chars/char_3.png";
+import char4 from "./assets/chars/char_4.png";
+import char5 from "./assets/chars/char_5.png";
+import {
+  CANVAS_H, CANVAS_W, COL_IDLE, FRAME_H, FRAME_W, SEATS, SIT_FRAMES, SPRITE_SCALE, WALK_CYCLE,
+  type OfficeMemberState,
+} from "./office-format";
+import { OfficeSim, phaseElapsedMs, type Agent } from "./office-sim";
 import type { OfficeActivityKind } from "./office-activity";
+import {
+  drawScreen, effectivePhase, eventWordZhOf, screenModeOf, screensaverAt, TOOL_SCREEN_MODES,
+  type RunPhase, type SaScene, type ScreenMode,
+} from "./office-screen";
 
-const WS_W = 470;
-const WS_H = 430;
-const DESK_TOP = 34;
-const DESK_H = Math.round(WS_W * 830 / 1037); // 桌面图原始比例 1037×830
-const DESK_COLS = [430, 960];
-const DESK_ROWS = [40, 460, 880];
-const PAGE_SIZE = 6;
+const CHAR_URLS = [char0, char1, char2, char3, char4, char5];
 
-/** 每个工位一只猫；3D 猫贴图是红围巾，用 hue-rotate 转出每个成员的颜色（黑色/白色不受影响）。 */
-const SCARF_HUES = [0, 42, 265, 170, 105, 215, 28, 320, 155, 230];
+/* ⭐ 全局常驻 sim（2026-10-04）。
+ * ⛔ 为什么必须是模块级而不是组件级：`OfficeCanvas` 每次打开预览都会重新挂载
+ *   ⇒ 组件内的 sim（含 agents 数组）会一起销毁 ⇒ 每人退回门口初始位置、重播进场。
+ *   sim 属于「整个应用的一份世界状态」，不属于「这块画布」。
+ * ⛔ 不加「新 sim 继承旧 sim」那类接口：单例已解决重建问题，那类方法就是**没有调用方的死代码**。 */
+let officeSimSingletonRef: OfficeSim | null = null;
+function officeSimSingleton(): OfficeSim {
+  if (!officeSimSingletonRef) officeSimSingletonRef = new OfficeSim();
+  return officeSimSingletonRef;
+}
 
-type Status = {
-  text: string;
-  accent: string;
-  level: "run" | "waiting" | "done" | "failed" | "idle";
-};
+/** 成员 id → 稳定整数（屏幕内容种子）。⛔ 同一个成员每次刷新必须同一套"代码"，不能乱跳。 */
+function hashId(id: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
 
+/**
+ * 走路/站立时的**渲染层微错位**（±5px，纵向）。
+ *
+ * ⛔⛔ 10-06 用户要求删掉人物之间的体积碰撞（"太容易卡位"）⇒ 逻辑上两个人**可以站在
+ *   同一格**上。为了不让他们在画面上叠成"一个人"，按 id 给一个**固定**的纵向微偏移：
+ *   · 只影响**画在哪儿**，不影响 `x/y`/寻路/点击命中以外的任何东西（所以不会卡位）；
+ *   · 按 id 取 -5/0/+5 ⇒ 同一屏里三个人以内都能错开，且**每次渲染都相同**（不抖）。
+ * ⛔ 坐姿**不给偏移**：坐姿锚点是从椅背实测推出来的（精确到像素），偏了就会"人不在椅子上"。
+ *   而坐姿不会重叠（座位是按人分的，且 sync 会把坐姿钉回精确座位像素）。
+ */
+function renderOffsetY(id: string): number {
+  return ((hashId(id) % 3) - 1) * 5;
+}
+
+/**
+ * 宿主喂进来的**真实事件状态**（只影响显示器内容 + 是否派人离席）。
+ * ⛔⛔ 10-05 晚改：原来是 `{ activity, thinking, waiting, reporting }` 三个布尔 ——
+ *   宿主**编不出**真实值（`reporting` 被写成"关键词没命中" ⇒ 敲代码屏永远不出现），
+ *   用户报「事件状态反馈未接通，操作后没有任何响应」根因就在这里。
+ *   ⇒ 换成"真实阶段 + 真实产出量 + 阶段起始时刻"，全部可从 run 记录如实推出。
+ */
 export type OfficeEventState = {
+  /** 真实运行阶段（none = 无运行信息 ⇒ 屏保） */
   phase: RunPhase;
+  /** 阶段起始的**绝对**时刻（epoch ms；0 = 未知，由 sim 按首次观测计时） */
   sinceMs: number;
+  /** 完成/失败时的总用时（跑动中给 0 ⇒ 屏面实时算） */
   durationMs: number;
+  /** 本轮**真实产出字数**（report 屏的进度条按它增长） */
   chars: number;
+  /** ⭐ 本次委派的身份（**变化 = 有新任务派下来** ⇒ 播"任务派发"动画）。
+   *  专家团取主进程给的 `runId`；被调度会话没有 runId ⇒ 用 `起始时刻` 代替
+   *  （同一个会话再次被派单 ⇒ startedAt 必变）。 */
   runId: string;
+  /** ⭐ 该成员**最近一条真实事件**（打开浏览器 / 写文件 / 搜文件 / 跑命令…）。
+   *  来自 `office-activity` 事件面（引擎 item 事件，与对话框同一套判据）。
+   *  ⛔ 这是"显示器演什么"的**主输入**：阶段只回答"这条命跑到哪了"，
+   *    回答不了"他此刻在打开浏览器还是改文件"。 */
   event: { kind: OfficeActivityKind; detail: string; elapsedMs: number } | null;
 };
-
-function statusOf(member: OfficeMemberState, st: OfficeEventState | null, now: number): Status {
-  if (st) {
-    const phase = effectivePhase(st.phase, st.sinceMs, now);
-    if (phase === "failed") return { text: "失败", accent: "#d95745", level: "failed" };
-    if (phase === "done") return { text: "已完成", accent: "#3f9e72", level: "done" };
-    if (st.event) {
-      const s = Math.floor(st.event.elapsedMs / 1000);
-      const word = eventWordZhOf(st.event.kind) || "工作中";
-      return { text: s >= 1 ? `${word} ${s}s` : word, accent: "#b58227", level: "run" };
-    }
-    if (phase === "waiting") return { text: "等待中", accent: "#b58227", level: "waiting" };
-    if (phase === "thinking" || phase === "writing" || phase === "reporting") {
-      const s = st.sinceMs ? Math.floor((now - st.sinceMs) / 1000) : 0;
-      return { text: s >= 1 ? `运行中 ${s}s` : "运行中", accent: "#2f8f68", level: "run" };
-    }
-  }
-  if (member.running) return { text: "运行中", accent: "#2f8f68", level: "run" };
-  return { text: "待机", accent: "#8a919b", level: "idle" };
-}
 
 export type OfficeCanvasProps = {
   members: OfficeMemberState[];
   onOpenMember?: (memberId: string) => void;
+  /** 取某成员的真实事件状态（null = 该成员当下无运行信息）。
+   *  ⛔ 由上层从 run 记录派生（不订阅引擎，见 TeamOfficePreview 注释）。 */
   eventStateOf?: (memberId: string) => OfficeEventState | null;
+  /** ⭐ 缩放控制句柄（10-07 用户要求：关闭钮**左侧**一组「放大 / 缩小 / 重置」）。
+   *  ⛔ 用**显式命名的 prop** 而不是 `ref`：这不是 DOM 元素，`ref` 的 DOM 语义在这里会误导。
+   *  视图状态（zoom + 平移）归本组件 —— 只有它知道舞台尺寸与指针锚点；
+   *  父层只是**下命令**，不持有坐标。 */
   controlsRef?: RefObject<OfficeZoomControls | null>;
+  /** 缩放倍率变化回报：父层据此显示百分比、并在到达上下限时禁用对应按钮
+   *  （⛔ 不回报 ⇒ 滚轮已经放到最大、按钮却还亮着 = 点了没反应）。 */
   onZoomChange?: (zoom: number) => void;
 };
 
+/** ⭐ 缩放控制句柄（10-07）。三个动作与滚轮走**同一条** view 写入路径。 */
 export type OfficeZoomControls = {
   zoomIn: () => void;
   zoomOut: () => void;
   reset: () => void;
 };
 
+/** 缩放范围：1 = **contain 基准**（整间办公室完整可见），4 = 放大到 4 倍。
+ *  ⛔ 下限是 1 而不是更小：contain 已经完整可见，再缩只会多留浮层底色（纯负收益）。
+ *  ⛔ 上限不给更大：像素素材到 4× 已是 3840×2560 的画布像素，再放只剩巨大马赛克块。 */
 export const OFFICE_ZOOM_MIN = 1;
 export const OFFICE_ZOOM_MAX = 4;
+/** 每一档的倍率（滚轮一格 / 点一次按钮 = 同一档，两处观感必须一致）。 */
 export const OFFICE_ZOOM_STEP = 1.25;
 
-function Workstation({
-  member, status, index, x, y, hovered, onEnter, onLeave, onOpen, now,
-}: {
-  member: OfficeMemberState;
-  status: Status;
-  index: number;
-  x: number;
-  y: number;
-  hovered: boolean;
-  onEnter: () => void;
-  onLeave: () => void;
-  onOpen: () => void;
-  now: number;
-}) {
-  const hue = SCARF_HUES[index % SCARF_HUES.length];
-  const seated = status.level === "run" || status.level === "idle";
-  const dozing = status.level === "idle" && (Math.floor(now / 19000) + index) % 4 === 0;
-  const bubble = status.level === "waiting" ? "…" : status.level === "done" ? "✓" : status.level === "failed" ? "!" : "";
-  return (
-    <div
-      className={`office-agent ws${hovered ? " is-hover" : ""}`}
-      style={{ left: x, top: y, width: WS_W, height: WS_H }}
-      role="button"
-      tabIndex={0}
-      aria-label={`${member.name} · ${status.text}`}
-      onMouseEnter={onEnter}
-      onMouseLeave={onLeave}
-      onFocus={onEnter}
-      onBlur={onLeave}
-      onClick={onOpen}
-      onKeyDown={(ev) => {
-        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onOpen(); }
-      }}
-    >
-      <div className="ws-name">
-        <strong>{member.name}</strong>
-        <span className="ws-status" style={{ color: status.accent }}>
-          <i style={{ background: status.accent }} />
-          {status.text}
-        </span>
-      </div>
-      <div className="ws-furniture">
-        <div className="ws-desk-wrap" style={{ top: DESK_TOP, height: DESK_H }}>
-          <img className="ws-desk-img" src={deskUrl} alt="" draggable={false} />
-          <div
-            className={`ws-screen tone-${status.level}`}
-            style={{ ["--screen-accent" as string]: status.accent }}
-          >
-            <i /><i /><i /><i />
-            <span className="ws-screen-scan" />
-            {(status.level === "done" || status.level === "failed") && (
-              <b className="ws-screen-mark">{status.level === "done" ? "✓" : "!"}</b>
-            )}
-          </div>
-        </div>
-        {seated && (
-          <img
-            className="ws-cat-img is-seated"
-            src={catSeatedUrl}
-            alt=""
-            draggable={false}
-            style={{ filter: `hue-rotate(${hue}deg) drop-shadow(0 8px 6px rgba(20,28,36,.14))` }}
-          />
-        )}
-        {!seated && (
-          <img
-            className="ws-cat-img is-standing"
-            src={catStandingUrl}
-            alt=""
-            draggable={false}
-            style={{ filter: `hue-rotate(${hue}deg) drop-shadow(0 8px 6px rgba(20,28,36,.14))` }}
-          />
-        )}
-        {dozing && <span className="ws-zzz">Zzz</span>}
-        {bubble && <span className={`ws-bubble is-${status.level}`}>{bubble}</span>}
-      </div>
-      {hovered && (
-        <div
-          className="office-agent-card"
-          style={{ left: WS_W / 2 - 143, top: y < 120 ? 8 : -96 }}
-          onMouseDown={(ev) => ev.stopPropagation()}
-        >
-          <strong>{member.name}</strong>
-          <span>{member.profession || "团队成员"}</span>
-          <span style={{ color: status.accent, fontWeight: 600 }}>{status.text}</span>
-          <button type="button" onClick={(ev) => { ev.stopPropagation(); onOpen(); }}>点击打开会话 ›</button>
-        </div>
-      )}
-    </div>
-  );
+/** 加载一张图（resolve 后才用；失败 resolve null 绝不 reject —— 一张图挂了别拖死整层）。 */
+function loadImage(url: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
 }
 
-function EmptyWorkstation({ x, y }: { x: number; y: number }) {
-  return (
-    <div className="ws is-empty" style={{ left: x, top: y, width: WS_W, height: WS_H }} aria-hidden="true">
-      <div className="ws-furniture">
-        <div className="ws-desk-wrap" style={{ top: DESK_TOP, height: DESK_H }}>
-          <img className="ws-desk-img" src={deskUrl} alt="" draggable={false} />
-          <div className="ws-screen tone-idle"><i /><i /><i /><i /><span className="ws-screen-scan" /></div>
-        </div>
-        <img className="ws-chair-img" src={chairWhiteUrl} alt="" draggable={false} />
-      </div>
-    </div>
-  );
-}
-
-function Facilities() {
-  return (
-    <>
-      <section className="facility facility-coffee" style={{ left: 24, top: 70, width: 356 }}>
-        <h4>茶水间</h4>
-        <img src={coffeeUrl} alt="" draggable={false} />
-      </section>
-      <section className="facility facility-treadmill" style={{ left: 24, top: 390, width: 356 }}>
-        <h4>放松一下</h4>
-        <img src={treadmillUrl} alt="" draggable={false} />
-      </section>
-      <section className="facility facility-toilet" style={{ left: 64, top: 735, width: 240 }}>
-        <h4>洗手间</h4>
-        <img src={toiletUrl} alt="" draggable={false} />
-      </section>
-    </>
-  );
+/** 角色名牌下的状态词（⭐ 10-05 晚新增：把"这人什么状态"从**屏面里**也搬到**名牌上**）。
+ *  ⛔ 为什么两处都要：屏面只有 50×34（缩放到窗口里也就几十像素），远看只能看出颜色；
+ *    名牌是画布上字号最大的元素，状态放这儿才"看得见"（这正是用户说的"没有任何响应"）。 */
+function statusOf(a: Agent, nowMs: number): { text: string; color: string } {
+  /* ⛔ 顺序 = 屏幕的优先级（见 screenModeOf）：终态 > 事件 > 阶段 > 离席 > 待机。
+     两处口径必须一致 —— 否则会出现"名牌说已完成、屏幕上还在滚命令"。 */
+  const phase = effectivePhase(a.phase, a.phaseSince, nowMs);
+  if (phase === "failed") return { text: "失败", color: "#e0705f" };
+  if (phase === "done") return { text: "已完成", color: "#6ed49a" };
+  if (a.event) {
+    const s = Math.floor(a.eventElapsedMs / 1000);
+    const word = eventWordZhOf(a.event);
+    return { text: s >= 1 ? `${word} ${s}s` : word, color: "#7fd6a8" };
+  }
+  if (phase === "thinking" || phase === "waiting" || phase === "writing" || phase === "reporting") {
+    const s = Math.floor(phaseElapsedMs(a, nowMs) / 1000);
+    return { text: s >= 1 ? `运行中 ${s}s` : "运行中", color: "#7fd6a8" };
+  }
+  if (a.activity) return { text: "离席", color: "#e8c76a" };
+  if (a.mode === "work") return { text: "开工中", color: "#7fd6a8" };
+  return { text: "待机", color: "#8ea3b8" };
 }
 
 export function OfficeCanvas({ members, onOpenMember, eventStateOf, controlsRef, onZoomChange }: OfficeCanvasProps) {
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef<HTMLDivElement>(null);
-  const viewRef = useRef({ zoom: 1, cx: 0, cy: 0 });
-  const fitRef = useRef(1);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const membersRef = useRef(members);
   const openRef = useRef(onOpenMember);
   const eventRef = useRef(eventStateOf);
-  const zoomCbRef = useRef(onZoomChange);
+  const onZoomRef = useRef(onZoomChange);
+  /* 悬停的成员 id（⭐ 10-05 晚新增）：画布上"能点"这件事原来**没有任何视觉提示**，
+     用户点空处/点没会话的人 ⇒ 静默无反应，正是"操作后没有任何响应"的一半原因。 */
+  const hoverRef = useRef<string | null>(null);
+  membersRef.current = members;
   openRef.current = onOpenMember;
   eventRef.current = eventStateOf;
-  zoomCbRef.current = onZoomChange;
-  const [hoverId, setHoverId] = useState<string | null>(null);
-  const [now, setNow] = useState(() => Date.now());
-  const [page, setPage] = useState(0);
+  onZoomRef.current = onZoomChange;
 
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    let raf = 0;
+    let disposed = false;
+    let ro: ResizeObserver | null = null;
 
-  const rows = members.slice(0, TEAM_OFFICE_LIMIT);
-  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-  useEffect(() => {
-    if (page > pageCount - 1) setPage(pageCount - 1);
-  }, [page, pageCount]);
-  const pageRows = rows.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+    /* ── 视图：完整展示 + 用户缩放/平移（⭐ 10-07）─────────────────────────
+     * ⛔⛔ 用户报「预览画面过大，无法完整展示整个办公室，底部内容被裁剪」。
+     *   根因：上一版 `fitCover()` 用 `Math.max(sw/CANVAS_W, sh/CANVAS_H)` = **cover**，
+     *   而 cover 的定义就是"必然溢出" —— 溢出的部分由舞台 `overflow:hidden` 裁掉
+     *   （舞台 `align-items: flex-start` 只保上半 ⇒ 缺的一直是**底部**）。
+     * ✅ 基准改成 **contain**（`Math.min`）：整个房间（含底部地板与工位）完整可见，
+     *   四周留浮层底色。⛔ 别再改回 cover —— 那会精确复现用户报的这个 bug。
+     * ⛔ 依旧不用 CSS `object-fit`：那会让元素盒与实际渲染区不一致，而点击命中算的是
+     *   `getBoundingClientRect()` ⇒ 命中点整体偏移（人物点不中）。显式写死尺寸则天然正确。
+     *
+     * ⭐ 在基准之上叠一层**用户缩放/平移**：
+     *   视图 = `{ zoom, cx, cy }`，(cx,cy) = 画布中心在**舞台坐标系**里的位置。
+     *   · 尺寸走 `width/height`（像素风要的是整数倍最近邻放大，交给 CSS scale 会糊像素）；
+     *   · `transform` 只做**平移**（`translate`），`transform-origin: 0 0`。
+     *   ⛔ transform 只平移不缩放 ⇒ `getBoundingClientRect()` 的宽高就是渲染宽高，
+     *     命中换算（`(clientX - rect.left) / rect.width * CANVAS_W`）依然精确。 */
+    type OfficeView = { zoom: number; cx: number; cy: number };
+    let view: OfficeView = { zoom: OFFICE_ZOOM_MIN, cx: 0, cy: 0 };
 
-  const applyView = useCallback(() => {
-    const wrap = wrapRef.current;
-    const stage = stageRef.current;
-    if (!wrap || !stage) return;
-    const sw = wrap.clientWidth;
-    const sh = wrap.clientHeight;
-    if (sw <= 0 || sh <= 0) return;
-    const fit = Math.min(sw / CANVAS_W, sh / CANVAS_H);
-    fitRef.current = fit;
-    const scale = fit * viewRef.current.zoom;
-    const width = CANVAS_W * scale;
-    const height = CANVAS_H * scale;
-    const clamp = (c: number, size: number, span: number) =>
+    const stageSize = () => {
+      const stage = canvas.parentElement;
+      return { sw: stage?.clientWidth ?? 0, sh: stage?.clientHeight ?? 0 };
+    };
+
+    /** contain 基准尺寸（**整间办公室完整可见**）。resize 时重算；用户 zoom 是它的倍率。 */
+    const baseSize = (sw: number, sh: number) => {
+      if (sw <= 0 || sh <= 0) return { bw: CANVAS_W, bh: CANVAS_H };
+      const s = Math.min(sw / CANVAS_W, sh / CANVAS_H);
+      return { bw: CANVAS_W * s, bh: CANVAS_H * s };
+    };
+
+    /** 单轴夹取：比舞台小 ⇒ 该轴必须**居中**（不平移）；比舞台大 ⇒ 不许露出舞台的边。 */
+    const clampAxis = (c: number, size: number, span: number) =>
       size <= span ? span / 2 : Math.min(size / 2, Math.max(span - size / 2, c));
-    viewRef.current.cx = clamp(viewRef.current.cx, width, sw);
-    viewRef.current.cy = clamp(viewRef.current.cy, height, sh);
-    stage.style.transform =
-      `translate(${viewRef.current.cx - width / 2}px, ${viewRef.current.cy - height / 2}px) scale(${scale})`;
+
+    /** 把 view 写到 DOM（尺寸 + 平移）。**所有**改变 view 的路径都必须走它，否则必然漂。 */
+    const applyView = () => {
+      const { sw, sh } = stageSize();
+      const { bw, bh } = baseSize(sw, sh);
+      const w = bw * view.zoom;
+      const h = bh * view.zoom;
+      /* ⛔ 夹取放在**写 DOM 之前**：越界时把视图拉回来，否则"以指针为中心"会把画面推出去。 */
+      view.cx = clampAxis(view.cx, w, sw);
+      view.cy = clampAxis(view.cy, h, sh);
+      canvas.style.width = `${Math.round(w)}px`;
+      canvas.style.height = `${Math.round(h)}px`;
+      canvas.style.transform =
+        `translate(${Math.round(view.cx - w / 2)}px, ${Math.round(view.cy - h / 2)}px)`;
+    };
+
+    /** ⭐ 以舞台上某点 `(ax, ay)` 为锚点缩放到 `nextZoom`（滚轮 / 按钮**共用**的唯一实现）。
+     *  ⛔ 判据是「锚点在**画布内容**里的相对位置缩放前后不变」⇒ 视觉上"指针底下那一点没动"。
+     *     按钮把锚点传舞台中心即可复用同一条链，⛔ 不另写一份"居中缩放"。 */
+    const zoomAt = (nextZoom: number, ax: number, ay: number) => {
+      const { sw, sh } = stageSize();
+      const { bw, bh } = baseSize(sw, sh);
+      const z = Math.min(OFFICE_ZOOM_MAX, Math.max(OFFICE_ZOOM_MIN, nextZoom));
+      const w0 = bw * view.zoom, h0 = bh * view.zoom;
+      const w1 = bw * z, h1 = bh * z;
+      const fx = w0 > 0 ? (ax - (view.cx - w0 / 2)) / w0 : 0.5;
+      const fy = h0 > 0 ? (ay - (view.cy - h0 / 2)) / h0 : 0.5;
+      view = { zoom: z, cx: ax + w1 * (0.5 - fx), cy: ay + h1 * (0.5 - fy) };
+      applyView();
+      onZoomRef.current?.(view.zoom);
+    };
+
+    const zoomTo = (z: number) => {
+      const { sw, sh } = stageSize();
+      zoomAt(z, sw / 2, sh / 2);
+    };
+
+    /** 重置 = 回到 contain 基准 + 居中（⛔ 不是"回到上一次的缩放"，用户要的是原样）。 */
+    const resetView = () => {
+      const { sw, sh } = stageSize();
+      view = { zoom: OFFICE_ZOOM_MIN, cx: sw / 2, cy: sh / 2 };
+      applyView();
+      onZoomRef.current?.(view.zoom);
+    };
+
+    /* ⛔ 立刻摆一次（**不等图片加载**）：否则加载期画布还停在 `width/height` 属性的
+       固有尺寸 960×640 上，且没有 transform ⇒ 会有一次可见的跳位。 */
+    applyView();
+
+    void (async () => {
+      const [bg, ...chars] = await Promise.all([loadImage(bgUrl), ...CHAR_URLS.map(loadImage)]);
+      if (disposed) return;
+
+      resetView();
+      if (typeof ResizeObserver !== "undefined") {
+        /* resize 只重算基准尺寸（contain），**保留**用户当前 zoom —— 窗口缩放不该把人的缩放吃掉。 */
+        ro = new ResizeObserver(() => applyView());
+        if (canvas.parentElement) ro.observe(canvas.parentElement);
+      }
+
+      /* ⛔⛔ 2026-10-04 用户报「每次打开办公室预览，人物就重新进办公室」——
+         这里原本是 `new OfficeSim()`，而**每次打开预览 = 本组件重新挂载**
+         ⇒ 新 sim ⇒ 成员回到门口初始位置 (`x:64,y:596`) ⇒ 每次都重播进场。
+         ⇒ 改为**模块级常驻单例**：整个应用生命周期内只建一次；
+            关掉预览只是画布卸载，sim（成员位置/座位/ID）原样留着，下次打开直接接着。 */
+      const sim = officeSimSingleton();
+      /* 调试/e2e 句柄：探针据此断言 agents 状态（⛔ 只读使用，别在业务里碰它） */
+      (window as unknown as Record<string, unknown>).__officeSim = sim;
+      let lastSync = 0;
+      let last = performance.now();
+
+      const draw = (now: number) => {
+        const dt = Math.min(64, now - last);
+        last = now;
+        const nowMs = Date.now();
+
+        // ── 数据同步（4Hz 足够：成员状态本来就是低频变化） ──
+        if (now - lastSync > 250) {
+          lastSync = now;
+          sim.sync(membersRef.current, nowMs);
+          /* ⛔⛔ 10-04 事件驱动：把**真实事件**灌进 sim。
+             两件事分开：
+               · setEventState ⇒ 只改显示器画什么（不驱动移动）
+               · sendTo ⇒ 真的派人去对应 POI（书架/饮水机/卫生间/跑步机/哑铃）
+             ⚠️ 4Hz 派单会不会反复派？sendTo 内部有「已在途/已在做同一件事就拒」，
+               所以同一条事件最多派一次；换任务（query 变了）才会派新的。 */
+          const es = eventRef.current;
+          if (es) {
+            for (const a of sim.agents) {
+              const st = es(a.id);
+              sim.setEventState(a.id, {
+                phase: st?.phase ?? "none",
+                since: st?.sinceMs ?? 0,
+                chars: st?.chars ?? 0,
+                durationMs: st?.durationMs ?? 0,
+                event: st?.event?.kind ?? null,
+                eventDetail: st?.event?.detail ?? "",
+                eventElapsedMs: st?.event?.elapsedMs ?? 0,
+                runId: st?.runId ?? "",
+              });
+            }
+            /* ⛔ 这里**刻意不再**按事件派人出门（用户 10-05：「有工作就不要闲逛」）——
+               曾经按任务里的关键词把在跑的人派去书架/饮水机表演，现在一律不出门：
+               在跑的人坐工位，屏幕照实演他手上的事（浏览器/写文件/跑命令…）。
+               出门只剩一条路径：sim 内部空闲成员的随机休息（`step` → `sendTo`）。 */
+          }
+        }
+        sim.tick(dt);
+
+        // ── 背景 ──
+        ctx.imageSmoothingEnabled = false;
+        if (bg) ctx.drawImage(bg, 0, 0, CANVAS_W, CANVAS_H);
+        else {
+          ctx.fillStyle = "#dfe5ec";
+          ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+        }
+
+        // ── 悬停落点（画在场景最底层：地面光圈，不遮人物）──
+        const hoverId = hoverRef.current;
+        if (hoverId) {
+          const ha = sim.agents.find((x) => x.id === hoverId);
+          if (ha) {
+            ctx.save();
+            ctx.globalAlpha = 0.3;
+            ctx.fillStyle = "#ffe9a8";
+            ctx.beginPath();
+            ctx.ellipse(ha.x, ha.y + 24, 26, 9, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+
+        // ── 显示器内容（10-04 用户报「显示器像一张图、没有动画」）──
+        // ⛔ 必须画在**背景之后、角色之前**：背景图把六个显示器烙死了，内容区是叠在
+        //   屏面上的；而角色要能走到屏前面（路过后被挡住才对）。
+        // ⛔ 屏幕坐标**锚在座位、不是角色**：角色起身去喝水时，屏幕必须留在原地亮着，
+        //   不能跟着人飘到饮水机那儿去。
+        // ⛔ 每个座位都画（没人也画 off=熄屏）—— 否则"有人来了屏幕才亮"这个状态变化
+        //   体现不出来，显示器看上去仍是静态图。
+        /* 每个工位这一帧画的是哪种画面 —— 第二遍画人物时要拿它推**姿态**
+           （姿态与屏幕必须同源，见下面那段的注释）。 */
+        const seatMode: ScreenMode[] = [];
+        /* ⭐ 屏保**当前那一档**（与屏面同源：都用同一个 `screensaverAt`）——
+           只给"摸鱼姿态"用（tv/game ⇒ 人后仰看屏幕）。⛔ 别另判一套条件。 */
+        const seatScene: (SaScene | null)[] = [];
+        for (let i = 0; i < SEATS.length; i++) {
+          const seat = SEATS[i];
+          const sc = seat?.screen;
+          if (!seat || !sc) continue;
+          const a = sim.agents.find((x) => x.seatIndex === i);
+          /* ⛔ 完成/失败反馈有**时效**（DONE_HOLD_MS 后回到屏保）——
+             这个裁剪必须在绘制侧按绝对时刻判：宿主只在 React 重渲染时才重算阶段，
+             而用户可能一直开着办公室不动。 */
+          const phase = a ? effectivePhase(a.phase, a.phaseSince, nowMs) : "none";
+          const seed = a ? hashId(a.id) : i + 1;
+          const mode: ScreenMode = a
+            ? screenModeOf({ activity: a.activity, mode: a.mode, phase, event: a.event, occupied: true })
+            : "off";
+          /* ⭐ 屏保（10-06 重做）：`idle` 表示"这块屏该放屏保了"，**具体放哪一档、
+             以及在两档之间怎么交叉溶解，全在 drawScreen 内部完成**（见 screensaverAt）。
+             ⛔ 这里**不再**把 mode 换成 video/game —— 那会让 `seatMode` 与屏面实际
+               内容不一致（屏面已经换成别的档了，姿态却还按旧档演）。 */
+          if (mode === "idle") seatScene[i] = screensaverAt(now / 1000, seed).from;
+          /* 计时口径：**由事件驱动的模式**显示"这件事跑了多久"，
+             其余显示"这条命跑了多久"。⛔ 别混用（会把"写了 12 秒"显示成"开工 12 秒"）。 */
+          const eventDriven = TOOL_SCREEN_MODES.has(mode) && a?.event != null;
+          seatMode[i] = mode;
+          /* ⛔⛔ **屏面裁剪**（10-06）：屏保里有"云从屏外飘进来""代码雨从顶上落下"
+             这类元素 —— 它们**故意**画到框外，不裁就会盖住显示器外框和桌子
+             （用户 10-04 报过"黑块盖在桌子上"，是同一类溢出）。
+             ⛔ 裁剪放在**调用侧**而不是 drawScreen 内部：drawScreen 有十来个
+               `return` 分支（每个模式一个），在里面 save/clip 必然漏掉某条 return
+               的 restore ⇒ clip 泄漏到后面的人物绘制上（人整个被裁掉）。
+               包一层在这里 ⇒ 只有一处、且不会漏。 */
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(Math.round(seat.x + sc.x), Math.round(seat.y + sc.y), sc.w, sc.h);
+          ctx.clip();
+          drawScreen(
+            ctx, now / 1000, mode, seed,
+            Math.round(seat.x + sc.x), Math.round(seat.y + sc.y), sc.w, sc.h,
+            a
+              ? {
+                elapsedMs: eventDriven ? a.eventElapsedMs : phaseElapsedMs(a, nowMs),
+                chars: a.chars,
+                detail: a.eventDetail,
+              }
+              : undefined,
+          );
+          ctx.restore();
+        }
+
+        // ── 角色（y 排序：越靠下越后画 = 遮挡正确）──
+        // 名字牌 / 气泡留到第二遍画：坐姿成员画完后要重贴椅背（盖住下半身），
+        // 牌子若在同一遍会被椅背盖掉。
+        /* ⛔ y 相同时按 id 定序：10-06 删掉体积碰撞后**两个人可能站在同一格**
+           （y 完全相等）⇒ 没有 tie-break 的话绘制顺序会随数组内部状态抖动 = 闪烁。 */
+        const sorted = [...sim.agents].sort((a, b) => (a.y - b.y) || (a.id < b.id ? -1 : 1));
+        /* 每个人的**人物绘制底边**（第一遍算出来，第二遍名牌按它贴脚画）——
+           ⛔ 必须同源：两处各算一遍必然漂（名牌和人物对不上）。 */
+        const spriteBottom = new Map<string, number>();
+        for (const a of sorted) {
+          const sheet = chars[a.charIndex] ?? chars[0];
+          if (!sheet) continue;
+          // 列：坐姿用两帧变体交替（打字微动画）；走路按步频循环；其余站立
+          const col = a.action === "sit" ? SIT_FRAMES[Math.floor(a.frameClock * 1.6) % SIT_FRAMES.length] : a.action === "walk" ? WALK_CYCLE[Math.floor(a.frameClock * 3) % WALK_CYCLE.length] : COL_IDLE;
+          const row = a.action === "sit" ? 1 /* 朝上坐（背对观众对着显示器） */ : a.facing;
+          const dw = FRAME_W * SPRITE_SCALE;
+          const dh = FRAME_H * SPRITE_SCALE;
+          /* ⛔⛔ 姿态与屏幕**同源**（用户 10-05：「确保办公室预览中各事件对应的卡通人物
+             动画与显示器内容严格一一联动对应」）：姿态由**同一个 `mode` / 同一个屏保档**推出来，
+             ⛔ 不另判一套条件 —— 两套条件必然漂（屏幕上放着剧、人却在猛敲键盘）。
+             · 屏保当前档是 tv/game（摸鱼）⇒ `slack`：人**后仰看屏幕**（微微左右晃 + 举着手机）
+             · 否则按 sim 的 action/mode 走原来的敲键盘 / 静坐 / 举杯。 */
+          const scene = seatScene[a.seatIndex] ?? null;
+          const slack = a.action === "sit" && (scene === "tv" || scene === "game");
+          const swing = slack ? Math.round(Math.sin(a.frameClock * 1.3)) : 0;
+          const dx = Math.round(a.x - dw / 2) + swing;
+          /* ⛔ 坐姿锚点从**该座位椅背顶**推导（10-01 实测：两排椅子相对座位高度差 25px，
+             统一公式必然弄错一排——上排人物整个被椅背重贴盖掉「头都没了」）：
+             人物顶 = 椅背顶 - 31（露头肩 31px，与下排自然态一致）；走路/站立 = 脚底 y+26。 */
+          const r = SEATS[a.seatIndex]?.backrest ?? { dx: -30, dy: -30, w: 60, h: 64 };
+          /* ⛔ 走路/站立加**渲染层微错位**（见 renderOffsetY）：逻辑上没有体积碰撞了，
+             靠这 ±5px 避免两人叠成"一个人"。⛔ 坐姿不加（锚点是实测像素）。 */
+          const off = a.action === "sit" ? 0 : renderOffsetY(a.id);
+          const dy = a.action === "sit"
+            ? Math.round(a.y + r.dy - 31)
+            : Math.round(a.y - dh + 26) + off;
+          spriteBottom.set(a.id, dy + dh);
+          ctx.save();
+          if (a.flip) {
+            ctx.translate(dx + dw, dy);
+            ctx.scale(-1, 1);
+            ctx.drawImage(sheet, col * FRAME_W, row * FRAME_H, FRAME_W, FRAME_H, 0, 0, dw, dh);
+          } else {
+            ctx.drawImage(sheet, col * FRAME_W, row * FRAME_H, FRAME_W, FRAME_H, dx, dy, dw, dh);
+          }
+          ctx.restore();
+
+          /* ⛔ 坐进椅子：人画完立刻把椅背矩形从背景图**重贴**上来盖住下半身 ——
+             背景是烙死的整图，人物永远画在它上面，不重贴就是"人物挡住椅子"（09-30 实测）。
+             ⛔ 矩形用**该座位自己的 backrest**（实测值，见 SEATS 注释）。 */
+          if (a.action === "sit" && bg) {
+            ctx.drawImage(bg, a.x + r.dx, a.y + r.dy, r.w, r.h, a.x + r.dx, a.y + r.dy, r.w, r.h);
+          }
+
+          /* ⛔ 手部动画（10-01 用户：「干坐着挺尴尬」→「加一点喝茶倒水查资料」「没有点鼠标
+             跟键盘」）：素材坐姿帧差异 1-2px 不可感知 ⇒ canvas 叠手。
+             · work：左手快速敲键盘 + 右手慢节奏点鼠标（桌上有鼠标块，下压有行程）
+             · idle：双手静放键盘
+             · activity==="tea"：右手举杯到嘴边（杯子 + 握持手），左手放键盘
+             手 y = 椅背顶 - 28（键盘面，从 backrest 推导）；⛔ 画在椅背重贴之后（桌面最上层）。 */
+          if (a.action === "sit") {
+            const work = a.mode === "work" && !slack;
+            const backTop = a.y + r.dy;
+            if (slack) {
+              /* 摸鱼姿态（10-05 晚，与 video/game 屏**成对**出现）：
+                 一只手举着"手机/遥控器"贴在脸前、另一只手撂在桌上不敲键盘、
+                 身体随 swing 轻晃、头顶偶尔飘一个音符（每 ~3.4s 一个，飘 1.2s）。 */
+              ctx.fillStyle = "#2b323c"; // 举着的屏幕（放在肩侧偏下 ⇒ 一眼是"举着手机看"，不是"头上顶着东西"）
+              ctx.fillRect(a.x + 11 + swing, dy + 22, 8, 12);
+              ctx.fillStyle = "#7fd6a8"; // 屏幕里的画面（绿光，与"看剧"呼应）
+              ctx.fillRect(a.x + 12 + swing, dy + 23, 6, 8);
+              ctx.fillStyle = "#e8b08a"; // 托着它的手
+              ctx.fillRect(a.x + 10 + swing, dy + 33, 5, 5);
+              ctx.fillStyle = "#e8b08a"; // 另一只手撂在桌上（⛔ 没有敲键盘动作）
+              ctx.fillRect(a.x - 16 + swing, backTop - 27, 4, 5);
+              const note = (a.frameClock * 0.29 + (hashId(a.id) % 7) / 7) % 1;
+              if (note < 0.35) {
+                const lift = Math.round((note / 0.35) * 14);
+                ctx.fillStyle = `rgba(232,199,106,${(1 - note / 0.35).toFixed(2)})`;
+                ctx.fillRect(a.x + 14 + swing, dy - 6 - lift, 3, 3);
+                ctx.fillRect(a.x + 16 + swing, dy - 11 - lift, 2, 6);
+              }
+            } else if (a.activity === "tea") {
+              // 举杯喝水：杯举到头侧（人物顶+20 处），右手托杯，左手仍在键盘上
+              const cupY = dy + 18;
+              ctx.fillStyle = "#dfe8f2"; ctx.fillRect(a.x + 11, cupY, 6, 8); // 杯身
+              ctx.fillStyle = "#7fb5d6"; ctx.fillRect(a.x + 11, cupY + 1, 6, 3); // 水面
+              ctx.fillStyle = "#c98d63"; ctx.fillRect(a.x + 11, cupY + 8, 6, 2); // 杯底影
+              ctx.fillStyle = "#e8b08a"; ctx.fillRect(a.x + 10, cupY + 10, 5, 5); // 托杯的手
+              ctx.fillStyle = "#e8b08a"; ctx.fillRect(a.x - 17, backTop - 28, 4, 5); // 左手放键盘
+            } else {
+              const t = a.frameClock * (work ? 9 : 0);
+              const lb = work ? (Math.sin(t) > 0 ? -2 : 0) : 0;
+              // 右手点鼠标：低频（约 0.35Hz）且短促下压，与左手错开
+              const rb = work ? (Math.sin(t * 0.24) > 0.82 ? -2 : 0) : 0;
+              const handY = backTop - 28;
+              ctx.fillStyle = "#3a3f47"; // 鼠标（右手边桌面上）
+              ctx.fillRect(a.x + 23, handY + 1, 4, 6);
+              ctx.fillStyle = "#c98d63"; // 手腕/袖口阴影层
+              ctx.fillRect(a.x - 18, handY + lb - 1, 5, 6);
+              ctx.fillRect(a.x + 14, handY + rb - 1, 5, 6);
+              ctx.fillStyle = "#e8b08a"; // 手
+              ctx.fillRect(a.x - 17, handY + lb, 4, 5);
+              ctx.fillRect(a.x + 15, handY + rb, 4, 5);
+            }
+          }
+        }
+        /* ── 任务派发动画（⭐ 10-05 晚 用户要求「为任务派发增加对应的动画表现」）──
+           ⛔ 画在**人物之后、名牌之前**：任务卡是从桌面飞过去的，必须能盖住桌椅；
+             但⛔ 不能盖住名牌/气泡（那两样是"谁是谁、说了什么"的唯一出口）。
+           ⛔ 起点固定取座位 0：两条成员来源都把**派发方**放在第 0 位
+             （专家团 = 主理人；普通会话 = 「我」，见 TeamOfficePreview 的 members 构造）。 */
+        for (const fx of sim.dispatchFx) {
+          const from = SEATS[fx.from];
+          const to = sim.agents.find((x) => x.seatIndex === fx.to);
+          if (!from || !to) continue;
+          const p = Math.min(1, Math.max(0, (nowMs - fx.at) / 1600));
+          const sx = from.x;
+          const sy = from.y - 44;
+          const tx = to.x;
+          const ty = to.y - 44;
+          const ctrlX = (sx + tx) / 2;
+          const ctrlY = Math.min(sy, ty) - 64;                 // 抛物线控制点在上方 ⇒ 卡片"抛"过去
+          const mx = (1 - p) * (1 - p) * sx + 2 * (1 - p) * p * ctrlX + p * p * tx;
+          const my = (1 - p) * (1 - p) * sy + 2 * (1 - p) * p * ctrlY + p * p * ty;
+          // 拖尾（同一条二次曲线取前半段，越靠近卡片越亮）
+          ctx.strokeStyle = `rgba(232,199,106,${(0.5 * (1 - p)).toFixed(2)})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          for (let s = 0; s <= 10; s += 1) {
+            const q = p * (s / 10);
+            const qx = (1 - q) * (1 - q) * sx + 2 * (1 - q) * q * ctrlX + q * q * tx;
+            const qy = (1 - q) * (1 - q) * sy + 2 * (1 - q) * q * ctrlY + q * q * ty;
+            if (s === 0) ctx.moveTo(qx, qy);
+            else ctx.lineTo(qx, qy);
+          }
+          ctx.stroke();
+          // 任务卡（一张小纸片：黄底 + 两行"字"）
+          ctx.save();
+          ctx.translate(mx, my);
+          ctx.rotate(Math.sin(p * Math.PI) * 0.5);
+          ctx.fillStyle = "#fdf3c8";
+          ctx.fillRect(-8, -6, 16, 12);
+          ctx.fillStyle = "#8a6b1f";
+          ctx.fillRect(-6, -4, 12, 2);
+          ctx.fillRect(-6, -1, 8, 2);
+          ctx.fillRect(-6, 2, 10, 2);
+          ctx.restore();
+          // 落点高亮环（卡片到达时闪一下 ⇒ 明确"交给谁了"）
+          if (p > 0.86) {
+            ctx.strokeStyle = `rgba(232,199,106,${(1 - (p - 0.86) / 0.14).toFixed(2)})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.ellipse(tx, ty + 68, 26, 10, 0, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+
+        // ── 第二遍：名字牌（含**真实状态**）+ 气泡（UI 层，永远在最上）──
+        for (const a of sorted) {
+          const st = statusOf(a, nowMs);
+          ctx.textAlign = "center";
+          ctx.font = "11px ui-sans-serif, system-ui";
+          const nameW = ctx.measureText(a.name).width;
+          ctx.font = "10px ui-sans-serif, system-ui";
+          const stW = ctx.measureText(st.text).width;
+          const pw = Math.max(nameW, stW) + 12;
+          const plx = a.x - pw / 2;
+          /* ⛔⛔ 名牌**贴脚**画（10-06 用户：「顶部一排名字与其对应角色的距离过远」）。
+             根因：原来写死 `a.y + 30` —— 而"人物底边"在**坐姿**时是 `a.y + r.dy + 65`
+             （上排 r.dy = −62 ⇒ 人物底 ≈ a.y + 3），比 `a.y + 30` **高 27px**
+             ⇒ 上排名牌浮在人物脚下老远（下排 r.dy = −37 ⇒ 人物底 a.y + 28，看着正常）。
+             ⇒ 改成从第一遍算出的 `spriteBottom`（人物**真实绘制底边**）推 ⇒ 两排一致。
+             ⚠️ 上排名牌会压住椅子下沿 ~5px 属正常（名牌是 UI 层，永远画在最上）。 */
+          const ply = (spriteBottom.get(a.id) ?? a.y + 26) + 4;
+          ctx.fillStyle = "rgba(28,30,36,0.78)";
+          ctx.beginPath();
+          ctx.roundRect(plx, ply, pw, 26, 4);
+          ctx.fill();
+          /* 悬停：名牌描一圈暖色边 —— 与地面光圈一起构成"这个能点"的提示 */
+          if (hoverId === a.id) {
+            ctx.strokeStyle = "rgba(255,233,168,0.85)";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+          ctx.font = "11px ui-sans-serif, system-ui";
+          ctx.fillStyle = "#f4f5f7";
+          ctx.fillText(a.name, a.x, ply + 11);
+          ctx.font = "10px ui-sans-serif, system-ui";
+          ctx.fillStyle = st.color;
+          ctx.fillText(st.text, a.x, ply + 23);
+
+          if (a.bubble) {
+            ctx.font = "12px ui-sans-serif, system-ui";
+            const btxt = a.bubble.text;
+            const bw = ctx.measureText(btxt).width + 16;
+            const bx = Math.min(CANVAS_W - bw - 4, Math.max(4, a.x - bw / 2));
+            const by = a.y - 84;
+            ctx.fillStyle = "rgba(255,255,255,0.96)";
+            ctx.strokeStyle = "rgba(40,44,52,0.5)";
+            ctx.beginPath();
+            ctx.roundRect(bx, by, bw, 20, 6);
+            ctx.fill();
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(a.x - 4, by + 20);
+            ctx.lineTo(a.x + 4, by + 20);
+            ctx.lineTo(a.x, by + 26);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = "#22252c";
+            ctx.fillText(btxt, bx + bw / 2, by + 14);
+          }
+        }
+
+        raf = requestAnimationFrame(draw);
+      };
+      raf = requestAnimationFrame(draw);
+
+      /* 命中判定：取离点击点最近的角色。
+       * ⛔ 悬停与点击**共用同一个判定**（`hitTest`）—— 各写一份必然漂：
+       *   看着有光圈却点不中（或反过来），是最难查的那种"操作没反应"。 */
+      const hitTest = (clientX: number, clientY: number): Agent | null => {
+        const rect = canvas.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return null;
+        const sx = ((clientX - rect.left) / rect.width) * CANVAS_W;
+        const sy = ((clientY - rect.top) / rect.height) * CANVAS_H;
+        let best: { d: number; a: Agent } | null = null;
+        for (const a of sim.agents) {
+          const d = Math.hypot(a.x - sx, a.y - 26 - sy);
+          if (d < 48 && (!best || d < best.d)) best = { d, a };
+        }
+        return best?.a ?? null;
+      };
+      const onClick = (ev: MouseEvent) => {
+        const a = hitTest(ev.clientX, ev.clientY);
+        if (a) openRef.current?.(a.id);
+      };
+      const onMove = (ev: MouseEvent) => {
+        const a = hitTest(ev.clientX, ev.clientY);
+        const id = a?.id ?? null;
+        if (hoverRef.current !== id) {
+          hoverRef.current = id;
+          canvas.style.cursor = id ? "pointer" : "default";
+        }
+      };
+      const onLeave = () => {
+        if (hoverRef.current !== null) {
+          hoverRef.current = null;
+          canvas.style.cursor = "default";
+        }
+      };
+      /* ⭐ 滚轮缩放（10-07 用户要求「以鼠标所在位置为中心」）。
+       *  ⛔ 锚点取**指针在舞台坐标系**里的位置（`clientX - stageRect.left`），
+       *     ⛔ 不是画布中心 —— 锚在中心就不叫"以鼠标位置为中心"了。
+       *  ⛔⛔ 必须 `{ passive: false }`：默认 passive 下 `preventDefault()` 会被浏览器
+       *     **静默忽略** ⇒ 缩放的同时宿主页面跟着滚（整屏浮层上看着像"页面在跳"）。 */
+      const onWheel = (ev: WheelEvent) => {
+        const stage = canvas.parentElement;
+        if (!stage) return;
+        ev.preventDefault();
+        const rect = stage.getBoundingClientRect();
+        const ax = ev.clientX - rect.left;
+        const ay = ev.clientY - rect.top;
+        zoomAt(view.zoom * (ev.deltaY < 0 ? OFFICE_ZOOM_STEP : 1 / OFFICE_ZOOM_STEP), ax, ay);
+      };
+      canvas.addEventListener("click", onClick);
+      canvas.addEventListener("mousemove", onMove);
+      canvas.addEventListener("mouseleave", onLeave);
+      canvas.addEventListener("wheel", onWheel, { passive: false });
+
+      /* ⭐ 暴露缩放句柄（父层的三个按钮 → 执行在**这里**）。
+         ⛔ 放大/缩小/重置与滚轮共用 `zoomTo`/`resetView`/`applyView` 这条唯一写入路径；
+           各写一份必然漂（按钮能放大、滚轮不能，或按钮不夹上下限之类）。 */
+      if (controlsRef) {
+        controlsRef.current = {
+          zoomIn: () => zoomTo(view.zoom * OFFICE_ZOOM_STEP),
+          zoomOut: () => zoomTo(view.zoom / OFFICE_ZOOM_STEP),
+          reset: resetView,
+        };
+      }
+    })().catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      /* ⛔ 卸载后把句柄摘掉：否则父层按钮还握着一个指向已销毁画布的闭包（点了没反应且难查）。 */
+      if (controlsRef) controlsRef.current = null;
+      if (ro) ro.disconnect();
+      if (raf) cancelAnimationFrame(raf);
+    };
   }, []);
 
-  const zoomAt = useCallback((nextZoom: number, ax: number, ay: number) => {
-    const wrap = wrapRef.current;
-    const stage = stageRef.current;
-    if (!wrap || !stage) return;
-    const sw = wrap.clientWidth;
-    const sh = wrap.clientHeight;
-    const fit = fitRef.current || Math.min(sw / CANVAS_W, sh / CANVAS_H);
-    const z = Math.min(OFFICE_ZOOM_MAX, Math.max(OFFICE_ZOOM_MIN, nextZoom));
-    const rect = stage.getBoundingClientRect();
-    const wrapRect = wrap.getBoundingClientRect();
-    const left = rect.left - wrapRect.left;
-    const top = rect.top - wrapRect.top;
-    const s0 = rect.width / CANVAS_W;
-    if (s0 <= 0) return;
-    const designX = (ax - left) / s0;
-    const designY = (ay - top) / s0;
-    const s1 = fit * z;
-    const newLeft = ax - designX * s1;
-    const newTop = ay - designY * s1;
-    viewRef.current = {
-      zoom: z,
-      cx: newLeft + (CANVAS_W * s1) / 2,
-      cy: newTop + (CANVAS_H * s1) / 2,
-    };
-    applyView();
-    zoomCbRef.current?.(z);
-  }, [applyView]);
-
-  const resetView = useCallback(() => {
-    const wrap = wrapRef.current;
-    if (!wrap) return;
-    viewRef.current = { zoom: 1, cx: wrap.clientWidth / 2, cy: wrap.clientHeight / 2 };
-    applyView();
-    zoomCbRef.current?.(1);
-  }, [applyView]);
-
-  useLayoutEffect(() => {
-    const wrap = wrapRef.current;
-    if (!wrap) return;
-    viewRef.current = { zoom: 1, cx: wrap.clientWidth / 2, cy: wrap.clientHeight / 2 };
-    applyView();
-    const ro = new ResizeObserver(() => applyView());
-    ro.observe(wrap);
-    return () => ro.disconnect();
-  }, [applyView]);
-
-  useEffect(() => {
-    if (!controlsRef) return;
-    controlsRef.current = {
-      zoomIn: () => {
-        const wrap = wrapRef.current;
-        if (!wrap) return;
-        zoomAt(viewRef.current.zoom * OFFICE_ZOOM_STEP, wrap.clientWidth / 2, wrap.clientHeight / 2);
-      },
-      zoomOut: () => {
-        const wrap = wrapRef.current;
-        if (!wrap) return;
-        zoomAt(viewRef.current.zoom / OFFICE_ZOOM_STEP, wrap.clientWidth / 2, wrap.clientHeight / 2);
-      },
-      reset: resetView,
-    };
-    return () => { controlsRef.current = null; };
-  }, [controlsRef, resetView, zoomAt]);
-
-  useEffect(() => {
-    const wrap = wrapRef.current;
-    if (!wrap) return;
-    const onWheel = (ev: WheelEvent) => {
-      ev.preventDefault();
-      const rect = wrap.getBoundingClientRect();
-      zoomAt(
-        viewRef.current.zoom * (ev.deltaY < 0 ? OFFICE_ZOOM_STEP : 1 / OFFICE_ZOOM_STEP),
-        ev.clientX - rect.left,
-        ev.clientY - rect.top,
-      );
-    };
-    wrap.addEventListener("wheel", onWheel, { passive: false });
-    return () => wrap.removeEventListener("wheel", onWheel);
-  }, [zoomAt]);
-
-  return (
-    <div ref={wrapRef} className="office-scene-wrap">
-      <div ref={stageRef} className="office-scene-stage" style={{ width: CANVAS_W, height: CANVAS_H }}>
-        <div className="office-board">
-          <Facilities />
-          {Array.from({ length: PAGE_SIZE }, (_, i) => {
-            const x = DESK_COLS[i % 2];
-            const y = DESK_ROWS[Math.floor(i / 2)];
-            const member = pageRows[i];
-            if (!member) return <EmptyWorkstation key={`empty-${page}-${i}`} x={x} y={y} />;
-            const status = statusOf(member, eventRef.current?.(member.id) ?? null, now);
-            return (
-              <Workstation
-                key={member.id}
-                member={member}
-                status={status}
-                index={page * PAGE_SIZE + i}
-                x={x}
-                y={y}
-                now={now}
-                hovered={hoverId === member.id}
-                onEnter={() => setHoverId(member.id)}
-                onLeave={() => setHoverId((cur) => (cur === member.id ? null : cur))}
-                onOpen={() => openRef.current?.(member.id)}
-              />
-            );
-          })}
-          {pageCount > 1 && (
-            <div className="office-pager">
-              <button
-                type="button"
-                aria-label="上一页"
-                disabled={page === 0}
-                onClick={() => { setPage((p) => Math.max(0, p - 1)); setHoverId(null); }}
-              >‹</button>
-              <span>第 {page + 1} / {pageCount} 页 · {rows.length} 人</span>
-              <button
-                type="button"
-                aria-label="下一页"
-                disabled={page === pageCount - 1}
-                onClick={() => { setPage((p) => Math.min(pageCount - 1, p + 1)); setHoverId(null); }}
-              >›</button>
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="office-scene-hint">点击工位进入会话 · 悬停查看状态 · 滚轮缩放 · 超过 6 人可分页</div>
-    </div>
-  );
+  return <canvas ref={canvasRef} width={CANVAS_W} height={CANVAS_H} className="office-pixel-canvas" />;
 }

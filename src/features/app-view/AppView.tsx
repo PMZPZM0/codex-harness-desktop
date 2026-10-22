@@ -201,19 +201,11 @@ const OFFICE_PROBE_TEAM = {
   displayName: { zh: "诊断用团队", en: "Probe Team" },
   profession: { zh: "诊断", en: "Probe" },
   lead: { id: "probe-lead", name: "执舵", profession: { zh: "统筹", en: "Lead" } },
-  /* 探针固定 10 人（主理人 + 9 名成员）⇒ 办公室分页也能被真实验收覆盖（一页 6 人）。 */
-  members: [
-    { id: "probe-m0", name: "观澜", profession: { zh: "工程", en: "-" } },
-    { id: "probe-m1", name: "察本", profession: { zh: "风控", en: "-" } },
-    { id: "probe-m2", name: "衡值", profession: { zh: "行情", en: "-" } },
-    { id: "probe-m3", name: "执绳", profession: { zh: "文档", en: "-" } },
-    { id: "probe-m4", name: "观海", profession: { zh: "数据", en: "-" } },
-    { id: "probe-m5", name: "知微", profession: { zh: "设计", en: "-" } },
-    { id: "probe-m6", name: "守拙", profession: { zh: "测试", en: "-" } },
-    { id: "probe-m7", name: "问渠", profession: { zh: "产品", en: "-" } },
-    { id: "probe-m8", name: "载物", profession: { zh: "运维", en: "-" } },
-  ],
-} as unknown as ExpertTeamConfig;
+  members: [0, 1, 2, 3].map((i) => ({
+    id: `probe-m${i}`,
+    name: ["观澜", "察本", "衡值", "执绳"][i],
+    profession: { zh: ["工程", "风控", "行情", "文档"][i], en: "-" },
+  })),} as unknown as ExpertTeamConfig;
 
 /* 顶栏标题按**字符数**截断（10-06 夜八轮用户令：「那个会话窗口左上角那个字最多 6 个字，
    其他省略」）：CSS 只能按像素裁，同样 6em 在拉丁文下会放进来十几个字符 —— 按 code point

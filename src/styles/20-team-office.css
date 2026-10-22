@@ -1,7 +1,20 @@
-/* 专家团办公室 · 白色简洁工位板（2026-10-22 对照 Marvis workbench 重做）
-   ⛔ 纯白底；家具/设施 = 本仓生成的白底 3D 渲染图（mix-blend-mode:multiply 融进白板）；
-   猫 = DOM/SVG 黑猫剪影；一页 6 工位（2×3），超过 6 人分页。 */
+/* 专家团像素办公室（v19）：整屏浮层 + 原生 canvas 舞台。样式独立成域，不外溢。 */
 
+/* ⛔ 10-05：普通会话的「常驻入口按钮」(`.office-entry-btn`，10-04 那个左下角浮动胶囊)
+   **已整体删除** —— 用户要求「跟专家和专家团一样，展示在对话框右边轨道上」。
+   ⇒ 入口现在是**右侧轨道末位的节点**，样式复用 `19-misc-hints.css` 里那套
+     `.team-rail-node.team-rail-office`（两条轨共用 `OfficeRailNode`）。
+   ⛔ 别再往这里加浮动入口：那正是用户报的"位置和图标跟专家团不一样"。 */
+
+/* ⭐ 10-05 晚：**满屏承载**（用户报「画面未铺满全屏，只显示在中间区域」）。
+   ⛔ 更早的写法是 `.office-overlay` flex + body 居中 + 画布 `max-width/max-height:100%`
+     —— 那只**限制上限**、不会放大，而画布固有尺寸就是 960×640
+     ⇒ 窗口一大就只剩中间一块，四周是浮层底色。
+   ✅ 形态：浮层自己 `overflow:hidden`，画布由一个**满屏舞台**承载，
+     尺寸/位置由 `OfficeCanvas` 的视图状态写死；顶栏改成**浮层压在画布上**，
+     不再占掉画布的高度。
+   ⭐ 10-07：基准由 cover 换成 **contain**（整间办公室完整可见）+ 用户缩放
+     （详见下面 `.office-overlay-stage` 与 `.office-pixel-canvas` 两处的注释）。 */
 .office-overlay {
   --office-top: 0px;
   position: fixed;
@@ -9,14 +22,21 @@
   z-index: 400; /* 与全局模态同档（09-30 层级表）：办公室是整屏浮层 */
   display: block;
   overflow: hidden;
-  background: #f6f7f9;
-  color: #23272f;
+  background: #0d0f13;
 }
 
-/* ⛔ Windows titleBarOverlay：右上 145×43 是原生窗口钮的系统层命中区，
-   浮层 ✕ 若落在里面会被原生关闭钮截获 ⇒ 整块舞台从原生带之下开始。 */
+/* ⛔ Windows titleBarOverlay：右上 145×43 是原生窗口钮（最小化/最大化/关闭）的
+   **系统层命中区**，浮层 ✕ 若落在里面会被原生关闭钮截获（10-01 用户实测「叉掉
+   点不到，优先点的是应用的」——还会误关整窗）。⇒ 整块舞台从原生带之下开始
+   （画布不会再伸到窗口钮底下）；darwin 红绿灯在左上，右上无钮，不必让。 */
 [data-os="win32"] .office-overlay { --office-top: 43px; }
 
+/* ⭐ 10-07：**完整展示 + 用户缩放**（用户报「预览画面过大，无法完整展示整个办公室，
+   底部内容被裁剪」）。
+   ⛔ 旧形态（10-05）是 cover 铺满 —— 而 cover 的定义就是"必然溢出"，溢出的部分被这一层
+     `overflow:hidden` 裁掉（旧写法 `align-items: flex-start` 只保上半）⇒ 缺的正是**底部**。
+   ✅ 现在基准是 contain（整间办公室完整可见），缩放/平移由 `OfficeCanvas` 的视图状态
+     写死画布尺寸与 `transform` ⇒ 舞台这一层**不再负责摆放**，只管裁掉放大后的溢出。 */
 .office-overlay-stage {
   position: absolute;
   inset: var(--office-top) 0 0 0;
@@ -34,40 +54,48 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 16px;
-  color: #23272f;
-  /* 白色场景不需要遮罩渐变；有条渐变会把第一排的悬停卡洗成一片白。 */
-  background: transparent;
-  /* ⛔ 顶栏默认不吃点击：它压在画布上，只有按钮单独把事件收回来。 */
+  color: #eef0f4;
+  /* 浮在画布上 ⇒ 给一层暗角渐变，保证浅色的房间顶部也能看清标题 */
+  background: linear-gradient(180deg, rgba(10, 12, 16, 0.72), rgba(10, 12, 16, 0));
+  /* ⛔ 顶栏默认不吃点击：它压在画布上，若拦截事件则画布最上沿的角色点不中。
+     只有关闭按钮单独把事件收回来。 */
   pointer-events: none;
   user-select: none;
 }
 
 .office-overlay-title { display: flex; flex-direction: column; gap: 2px; }
-.office-overlay-name { font-size: 15px; font-weight: 600; color: #23272f; }
-.office-overlay-sub { font-size: 12px; color: #7d838c; }
+.office-overlay-name { font-size: 14px; font-weight: 600; }
+.office-overlay-sub { font-size: 11px; opacity: 0.66; }
 
 .office-overlay-close {
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  border: 1px solid #e2e5ea;
-  background: rgba(255, 255, 255, 0.92);
-  color: #3d424a;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.08);
+  color: #eef0f4;
   cursor: pointer;
   pointer-events: auto;
 }
-.office-overlay-close:hover { background: #f1f3f6; }
+.office-overlay-close:hover { background: rgba(255, 255, 255, 0.16); }
 
-.office-overlay-right { display: flex; align-items: center; gap: 8px; }
-
+/* ⭐ 右侧一组：缩放控制 + 关闭钮（10-07）。⛔ 顺序 = `放大 / 缩小 / 重置 / 关闭`。 */
+.office-overlay-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* 控制组做成一个"胶囊托盘"：三个按钮同属一件事，视觉上要能读出这是一组。
+   ⛔ 顶栏整条是 `pointer-events: none`（不吃点击，否则画布最上沿的角色点不中）
+   ⇒ 托盘必须自己把事件**收回来**，否则三个按钮全是死的。 */
 .office-overlay-tools {
   display: flex;
   align-items: center;
   gap: 2px;
   padding: 2px;
   border-radius: 9px;
-  border: 1px solid #e6e8ec;
-  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
   pointer-events: auto;
 }
 .office-overlay-tool {
@@ -79,344 +107,41 @@
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: #3d424a;
+  color: #eef0f4;
   cursor: pointer;
+  /* ⛔ 不加 `!important` ⇒ `prefers-reduced-motion` 的 `transition-duration: 0.001ms !important`
+     兜底才压得住（两边都 `!important` 会退化成比源码顺序，等于把无障碍兜底废掉）。 */
   transition: background 0.14s ease, color 0.14s ease;
 }
-.office-overlay-tool:hover:not(:disabled) { background: #eef0f3; }
+.office-overlay-tool:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); }
+/* 到达上下限 ⇒ 禁用（⛔ 不是"点了没反应"：置灰本身就说清"已经到头了"） */
 .office-overlay-tool:disabled { opacity: 0.32; cursor: default; }
+/* 倍率读数（纯视觉）：等宽数字 ⇒ 从 100% 跳到 125% 时宽度不抖 */
 .office-overlay-zoom {
   min-width: 38px;
   padding-right: 4px;
   text-align: center;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  color: #5d636c;
+  opacity: 0.7;
   user-select: none;
 }
 
-/* ── 舞台：纯白渐变（Marvis 的“白上白”），缩放/平移全部写进 transform ── */
-.office-scene-wrap {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  background:
-    radial-gradient(120% 90% at 50% 18%, #ffffff 0%, #fcfcfd 56%, #f4f5f7 100%);
-}
-
-.office-scene-stage {
+/* 画布：**绝对定位**，尺寸与平移全部由 JS 的视图状态写死
+   （⛔ 不使用 flex 对齐 —— 对齐等于把位置写死成"居中/顶对齐"，就没法做"以指针为中心"的平移了；
+    ⛔ 也不用 `object-fit` —— 元素盒与渲染区不一致会让点击命中整体偏移；
+    ⛔ 也不靠 CSS `transform: scale` —— 那会让像素糊掉，像素风必须整数倍最近邻放大）。
+   基准 = contain，整个办公室完整可见；放大后溢出部分由 `.office-overlay-stage` 裁掉。 */
+.office-pixel-canvas {
   position: absolute;
   left: 0;
   top: 0;
   transform-origin: 0 0;
-  will-change: transform;
-}
-
-.office-board { position: absolute; inset: 0; }
-
-/* ── 工位 ── */
-.ws { position: absolute; }
-.office-agent { cursor: pointer; outline: none; }
-.office-agent:focus-visible .ws-desk-wrap {
-  outline: 3px solid rgba(74, 123, 208, 0.4);
-  outline-offset: 4px;
-  border-radius: 12px;
-}
-
-.ws-name {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-  pointer-events: none;
-  z-index: 12;
-}
-.ws-name strong {
-  font-size: 26px;
-  line-height: 30px;
-  font-weight: 600;
-  color: #2b2f36;
-  letter-spacing: 0.2px;
-}
-.ws-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 15px;
-  line-height: 18px;
-  color: #8a919b;
-}
-.ws-status i { width: 7px; height: 7px; border-radius: 50%; }
-
-.ws-furniture { position: absolute; inset: 0; }
-
-.ws-desk-wrap {
-  position: absolute;
-  left: 0;
-  width: 100%;
-  z-index: 2;
-}
-.ws-desk-img {
   display: block;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  user-select: none;
-  mix-blend-mode: multiply;
-}
-
-/* 显示器玻璃面（在生成的桌上，位置按桌面图比例；运行时叠实时内容） */
-.ws-screen {
-  --screen-accent: #8a919b;
-  position: absolute;
-  left: 25.7%;
-  top: 4.7%;
-  width: 37.2%;
-  height: 28.3%;
-  overflow: hidden;
-  border-radius: 2px;
-  background:
-    radial-gradient(120% 90% at 50% 25%, color-mix(in srgb, var(--screen-accent) 20%, transparent), transparent 72%),
-    #14181d;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-  z-index: 3;
-}
-.ws-screen > i {
-  position: absolute;
-  left: 10%;
-  height: 7%;
-  min-height: 3px;
-  border-radius: 1px;
-  background: color-mix(in srgb, var(--screen-accent) 68%, transparent);
-  animation: ws-bar 2.8s ease-in-out infinite;
-}
-.ws-screen > i:nth-child(1) { top: 17%; width: 56%; animation-delay: 0s; }
-.ws-screen > i:nth-child(2) { top: 35%; width: 72%; animation-delay: 0.35s; opacity: 0.72; }
-.ws-screen > i:nth-child(3) { top: 53%; width: 44%; animation-delay: 0.7s; opacity: 0.55; }
-.ws-screen > i:nth-child(4) { top: 71%; width: 63%; animation-delay: 1.05s; opacity: 0.42; }
-.ws-screen.tone-idle > i { opacity: 0.28; animation-duration: 4.6s; }
-.ws-screen.tone-waiting > i { animation-duration: 3.6s; }
-.ws-screen-scan {
-  position: absolute;
-  left: -20%;
-  right: -20%;
-  top: -40%;
-  height: 34%;
-  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--screen-accent) 32%, transparent), transparent);
-  animation: ws-scan 3.6s linear infinite;
-}
-.ws-screen.tone-idle .ws-screen-scan { opacity: 0.3; animation-duration: 6s; }
-.ws-screen-mark {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: 26px;
-  font-weight: 700;
-  color: var(--screen-accent);
-  background: rgba(10, 14, 18, 0.55);
-}
-
-@keyframes ws-bar {
-  0%, 100% { transform: scaleX(1); opacity: 0.55; }
-  40% { transform: scaleX(0.72); opacity: 1; }
-  70% { transform: scaleX(1.08); opacity: 0.4; }
-}
-@keyframes ws-scan {
-  0% { top: -40%; opacity: 0; }
-  12% { opacity: 1; }
-  88% { opacity: 1; }
-  100% { top: 112%; opacity: 0; }
-}
-
-/* 椅子（空位白椅 / 有人灰椅），图和桌子一样用 multiply 融进白底 */
-.ws-chair-img {
-  position: absolute;
-  left: 50%;
-  top: 200px;
-  width: 150px;
-  height: auto;
-  transform: translateX(-50%);
-  z-index: 6;
-  pointer-events: none;
-  user-select: none;
-  mix-blend-mode: multiply;
-}
-/* ── 黑猫成员：3D 渲染图（多角度：坐姿背面 / 站姿正面 / 打瞌睡），红围巾用 hue-rotate 分色 ── */
-.ws-cat-img {
-  position: absolute;
-  left: 50%;
-  z-index: 8;
-  translate: -50% 0;
-  height: auto;
-  pointer-events: none;
-  user-select: none;
-}
-.ws-cat-img.is-seated {
-  top: 118px;
-  width: 175px;
-  transform-origin: 50% 100%;
-  animation: cat-breathe 3.8s ease-in-out infinite;
-}
-.ws-cat-img.is-standing {
-  top: 128px;
-  width: 168px;
-  animation: cat-stand 4.2s ease-in-out infinite;
-}
-
-@keyframes cat-breathe {
-  0%, 100% { transform: scaleY(1); }
-  50% { transform: scaleY(1.012); }
-}
-@keyframes cat-stand {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-3px); }
-}
-
-.ws-bubble {
-  position: absolute;
-  left: 50%;
-  top: 58px;
-  width: 40px;
-  height: 40px;
-  transform: translateX(-50%);
-  display: grid;
-  place-items: center;
-  border: 1px solid #eceef1;
-  border-radius: 50%;
-  background: #ffffff;
-  box-shadow: 0 8px 18px rgba(30, 40, 50, 0.14);
-  font-size: 21px;
-  font-weight: 700;
-  z-index: 9;
-  animation: ws-bubble 2.2s ease-in-out infinite;
-}
-.ws-bubble.is-waiting { color: #b58227; }
-.ws-bubble.is-done { color: #3f9e72; }
-.ws-bubble.is-failed { color: #d95745; }
-@keyframes ws-bubble {
-  0%, 100% { transform: translateX(-50%) translateY(0); }
-  50% { transform: translateX(-50%) translateY(-3px); }
-}
-
-.ws-zzz {
-  position: absolute;
-  left: 62%;
-  top: 126px;
-  z-index: 9;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  color: #5d636c;
-  animation: ws-zzz 3.2s ease-in-out infinite;
-  pointer-events: none;
-}
-@keyframes ws-zzz {
-  0%, 100% { transform: translateY(0); opacity: 0.45; }
-  50% { transform: translateY(-8px); opacity: 0.9; }
-}
-
-.office-agent.is-hover .ws-name strong { color: #1e5fa8; }
-.office-agent.is-hover .ws-chair-img { filter: drop-shadow(0 6px 10px rgba(30, 40, 50, 0.18)); }
-
-/* ── 左侧功能区（生成的白色 3D 设施） ── */
-.facility { position: absolute; }
-.facility h4 {
-  margin: 0 0 10px;
-  text-align: center;
-  font-size: 20px;
-  font-weight: 600;
-  color: #767d87;
-}
-.facility img {
-  display: block;
-  width: 100%;
-  height: auto;
-  user-select: none;
-  pointer-events: none;
-  mix-blend-mode: multiply;
-}
-.facility-coffee { height: 290px; }
-.facility-treadmill { height: 300px; }
-.facility-toilet { height: 260px; }
-
-/* ── 分页 ── */
-.office-pager {
-  position: absolute;
-  left: 50%;
-  top: 1284px;
-  transform: translateX(-50%);
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 7px 12px;
-  border: 1px solid #e6e8ec;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 8px 18px rgba(20, 30, 40, 0.08);
-  color: #5d636c;
-  font-size: 18px;
-  user-select: none;
-}
-.office-pager button {
-  width: 30px;
-  height: 30px;
-  border: 1px solid #e6e8ec;
-  border-radius: 50%;
-  background: #fff;
-  color: #3d424a;
-  font-size: 20px;
-  line-height: 1;
+  background: #dfe5ec;
   cursor: pointer;
-}
-.office-pager button:hover:not(:disabled) { background: #f1f3f6; }
-.office-pager button:disabled { opacity: 0.3; cursor: default; }
-
-/* ── 悬停详情卡 ── */
-.office-agent-card {
-  position: absolute;
-  z-index: 2000;
-  width: 286px;
-  padding: 14px 16px;
-  border-radius: 12px;
-  background: #ffffff;
-  border: 1px solid #e4e7ea;
-  box-shadow: 0 18px 40px rgba(20, 30, 40, 0.16);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.office-agent-card strong { font-size: 21px; color: #1f252c; }
-.office-agent-card span { font-size: 14px; color: #6b727b; }
-.office-agent-card button {
-  align-self: flex-start;
-  margin-top: 6px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: #2f6fb0;
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.office-scene-hint {
-  position: absolute;
-  left: 18px;
-  bottom: 18px;
-  padding: 7px 13px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid #e6e8ec;
-  box-shadow: 0 8px 18px rgba(20, 30, 40, 0.08);
-  color: #5d636c;
-  font-size: 13px;
-  pointer-events: none;
+  /* 像素风：缩放交给最近的整数倍渲染管线（imageSmoothing 由 canvas 内部关闭） */
+  image-rendering: pixelated;
 }
 
 .office-overlay-empty {
@@ -427,24 +152,23 @@
   margin: 0;
   padding: 8px 14px;
   border-radius: 999px;
-  background: #ffffff;
-  border: 1px solid #e6e8ec;
-  color: #5d636c;
+  background: rgba(16, 18, 22, 0.78);
+  color: #eef0f4;
   font-size: 13px;
-  box-shadow: 0 10px 24px rgba(20, 30, 40, 0.08);
 }
 
+/* ⭐ 「点了没反应」的显式提示（10-05 晚）：点了一个还没有会话的成员时给出原因 */
 .office-overlay-hint {
   position: absolute;
   left: 50%;
   bottom: 24px;
   transform: translateX(-50%);
   margin: 0;
-  padding: 8px 14px;
+  padding: 7px 14px;
   border-radius: 999px;
-  background: #23272f;
-  color: #f5f7f9;
+  background: rgba(16, 18, 22, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #eef0f4;
   font-size: 12px;
-  box-shadow: 0 10px 24px rgba(20, 30, 40, 0.18);
   pointer-events: none;
 }

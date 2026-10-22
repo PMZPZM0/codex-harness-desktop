@@ -1,11 +1,11 @@
 /**
- * 专家团办公室 · 白色简洁工位板（2026-10-22 对照 Marvis 重做）
+ * 专家团像素办公室 · 整屏浮层（v19 像素版）
  *
  * 数据边界（⛔ 事件驱动的接法）：本组件**不订阅引擎** —— 成员运行态由宿主（AppView）
  * 传入，宿主的 railRuns 本身就是引擎事件流归约出来的，所以这里的画面会随任务
- * 开始/结束**实时变化**（开始 → 猫坐下敲键盘 + 屏幕亮起；结束 → ✓ 气泡 + 显示器标记）。
+ * 开始/结束**实时变化**（开始 → 坐下敲键盘 + 气泡；结束 → 完成 ✓ → 待机时钟屏保）。
  *
- * 交互：① 点工位 → 打开该成员会话；
+ * 交互：① 点角色 → 打开该成员会话；
  *      ② 缩放（10-07 用户要求）—— 鼠标滚轮**以指针位置为中心**缩放，
  *         顶栏关闭钮**左侧**另有「放大 / 缩小 / 重置」三个按钮（两条路径共用同一条实现，
  *         见 `OfficeCanvas` 的 `zoomAt`）。画面基准是 **contain**：整个办公室完整可见。
@@ -28,7 +28,7 @@ import {
 } from "./OfficeCanvas";
 import { activityElapsedMs, officeActivityOf } from "./office-activity";
 import { REPORT_CHARS, WAIT_AFTER_MS, type RunPhase } from "./office-screen";
-import { TEAM_OFFICE_LIMIT, type OfficeMemberState } from "./office-format";
+import type { OfficeMemberState } from "./office-format";
 
 export type TeamOfficePreviewProps = {
   teamId: string | null;
@@ -164,7 +164,7 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
         ? [{ id: self.threadId, name: self.name || "本会话", profession: "本会话", running: self.running, hasThread: false }]
         : [];
       return [...mine, ...(delegatedRuns ?? [])
-        .slice(-(TEAM_OFFICE_LIMIT - mine.length))   // 工位 10 个；取**最近**的几个 ⇒ 新派的一定看得见，老的先离场
+        .slice(-(6 - mine.length))   // 工位只有 6 个；取**最近**的几个 ⇒ 新派的一定看得见，老的先离场
         .map((r) => ({
           //⛔ id 用 threadId（唯一且稳定）而不是数组下标 —— 下标会随列表变化导致人物"换位"。
           id: r.threadId,
@@ -176,7 +176,7 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
           hasThread: true,
         }))];
     }
-    const roster = [team.lead, ...team.members].slice(0, TEAM_OFFICE_LIMIT);
+    const roster = [team.lead, ...team.members].slice(0, 6);
     return roster.map((m) => {
       const run = runningByMember[m.id];
       const last = lastByMember[m.id];
@@ -303,11 +303,11 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
     ? team.displayName?.zh || team.displayName?.en || "办公室"
     : "我的办公室";
   const subtitle = team
-    ? "成员状态实时联动 · 点工位打开会话"
-    : "调度出去的子会话会变成办公室里的人 · 点工位打开子会话";
+    ? "成员状态实时联动 · 点角色打开会话"
+    : "调度出去的子会话会变成办公室里的人 · 点角色打开子会话";
 
   return (
-    <div className="office-overlay" role="dialog" aria-label="办公室">
+    <div className="office-overlay" role="dialog" aria-label="像素办公室">
       <header className="office-overlay-bar">
         <div className="office-overlay-title">
           <span className="office-overlay-name">{title}</span>
