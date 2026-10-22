@@ -791,6 +791,25 @@ ok(/const announceMuted = useSyncExternalStore\(/.test(floatTsx)
   && /if \(announceMuted\) requestAnnounceResume\(threadId\);\s*else requestAnnounceStop\(threadId\);/.test(floatTsx)
   && /announceMuted \? "恢复播报" : "停止播报"/.test(floatTsx),
   "悬浮球右键菜单与 📢 共用同一份会话状态：显示「停止/恢复」并按同一 threadId 操作");
+/* ── ⑱′ 静音状态必须到模型（10-22 用户：「我关掉了，codex 还说你播报，实际是播报不了的」）──
+   只在本机拦播放不够：模型看得到全局 voice-settings.json 的 announce.enabled=true，于是继续
+   声称「这条回复会被播报」，还白写 voice 播报稿。修法 = 把会话级 mute 写进该会话的
+   developer instructions（每轮 send 前 pushSessionScope；原来挂 adaptiveToneRef，语气关着时
+   整个作用域都不下发 ⇒ 静音状态永远到不了模型）。 */
+const scopeSrc = read("src/lib/session-scope.mjs");
+const runtimeActivityTsx = read("src/features/app-state/parts/part06/02-seg/01-turn-runtime-activity.tsx");
+const sendTsx = read("src/features/app-state/parts/part08/02-seg/send.tsx");
+ok(/announceMuted: isAnnounceMutedForThread\(threadId\) \? "1" : "0"/.test(runtimeActivityTsx)
+  && /announceMuted: input\.announceMuted === true/.test(scopeSrc)
+  && /当前会话语音播报：\*\*已关闭\*\*/.test(scopeSrc)
+  && /本会话已关闭语音播报/.test(scopeSrc),
+  "静音状态写进会话作用域（developer instructions）：模型不会再拿全局 announce.enabled=true 当成能播");
+ok(/if \(bag\.threadRef\.current\?\.id\) \{\s*await Promise\.race\(\[bag\.pushSessionScope\(bag\.threadRef\.current\.id\)/.test(sendTsx)
+  && !/bag\.threadRef\.current\?\.id && bag\.adaptiveToneRef\.current/.test(codeOnlyTs(sendTsx)),
+  "⛔ 每轮发送前都推一次会话作用域（⛔ 不许退回「只在 adaptiveToneRef 开着时推」——语气关着时静音状态根本到不了模型）");
+ok(/session-scope block in your developer instructions carries the live per-session state/.test(devInstr)
+  && /语音播报已关闭/.test(devInstr),
+  "第 16 条明确：会话作用域里的静音状态高于全局 ON（用户现场：「我关掉了，codex 还说你播报」）");
 /* ── ⑲ 长播报音质 + 断句（10-22 用户：「声音变小、沙哑、长播报变杂音」＋「断句不准」）──
    ZipVoice 对超长 utterance 会掉音量/发沙 ⇒ 按句/逗号切成 ≤90 字分段合成，再用等功率
    交叉淡化拼成**一条**音频（拼接若逐段排队播放会重新出现句界空档）。

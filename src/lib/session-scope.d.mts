@@ -10,6 +10,8 @@ export interface SessionScopeInput {
   sandbox?: string;
   approval?: string;
   workspace?: string;
+  /** 本会话喇叭是否已关（true = 用户按下了 📢 / 悬浮球停止播报）。 */
+  announceMuted?: boolean | string;
 }
 
 export declare const SESSION_SCOPE_HEADING: string;

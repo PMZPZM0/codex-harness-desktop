@@ -139,6 +139,14 @@ console.log(C.bold("\n【4a-2】会话作用域块（会话级配置下发到会
   modelChanged !== sig ? ok("签名随模型变化（切模型后必定重新下发作用域）") : fail("换模型后签名不变 → 切了模型模型仍自报旧模型");
   const effortChanged = sessionScopeSignature({ ...scope, effort: "high" });
   effortChanged !== sig ? ok("签名随思考档位变化") : fail("换档位后签名不变 → 体检的档位项会读到旧值");
+  /* 10-22 用户：「我关掉了，codex 还说你播报」——会话级喇叭静音必须进作用域，且签字要变
+     （否则 pushSessionScope 去重后不会重新下发，模型永远看不到静音）。 */
+  const mutedBlock = sessionScopeBlock({ ...scope, announceMuted: true });
+  const mutedSig = sessionScopeSignature({ ...scope, announceMuted: true });
+  mutedBlock.includes("当前会话语音播报：**已关闭**") && mutedBlock.includes("本会话已关闭语音播报")
+    && mutedSig !== sig
+    ? ok("作用域块写入本会话静音状态，且签名随静音变化（每轮发送前会重新下发）")
+    : fail("会话静音没有进作用域/签名 —— 模型会继续按全局 announce.enabled=true 声称会播报");
 
   // ④ 组合：基线原样在前（否则作用域块会把语言/工具/自动化说明顶掉），块在后
   const composed = composeScopeInstructions(base, block);
