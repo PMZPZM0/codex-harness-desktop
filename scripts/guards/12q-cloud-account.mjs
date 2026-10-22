@@ -184,6 +184,18 @@ ok(
   /doProvision/.test(pageSrc) && /provisionCloud/.test(pageSrc),
   "已登录有一键同步 / 修复（与登录页共用 provisionCloud，⛔ 不写第二套）",
 );
+/* ⛔ 10-22 用户实测：一键同步显示「已就绪」，其实网关整站 502 —— 编排只核对配置与目录，
+   没人验证「现在能不能出话」。两条判据：① 必须有真探活一步；② 结论 `ok` 必须看所有步骤终态，
+   否则知识库/记忆/生效位/连通性失败时横幅依旧是绿的。 */
+const provisionFlowSrc = read("src/lib/cloud-provision.mjs");
+ok(
+  /probeCustomModel/.test(provisionFlowSrc) && /push\("probe", "failed"/.test(provisionFlowSrc),
+  "一键同步 / 修复必须真探活一次模型通道（目录里有 ≠ 现在能用；探测失败进「需处理」）",
+);
+ok(
+  /report\.ok = Boolean\(report\.models\?\.ok && report\.models\.count > 0\)[\s\S]{0,160}?step\.state === "failed"/.test(provisionFlowSrc),
+  "⛔ 结论 ok 看**所有**步骤终态（旧实现只判模型目录同步成功 ⇒ 其余步骤失败也报「已自动配置」）",
+);
 const bridgeSrc = read("src/features/settings-cloud/CloudAccountSyncBridge.tsx");
 ok(
   /cloudKbStatus/.test(bridgeSrc) && /enabled/.test(bridgeSrc) && /activation\?\.applied/.test(bridgeSrc) && /readMemoryBackend/.test(bridgeSrc),

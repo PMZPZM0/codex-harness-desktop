@@ -166,7 +166,31 @@ export async function provisionCloud(api, options = {}) {
     }
   }
 
-  report.ok = Boolean(report.models?.ok && report.models.count > 0);
+  /* ── ⑤ 真连通性：光有「目录里 4 个模型」≠「现在能用」 ──
+     10-22 用户实测：一键同步显示「已就绪」，实际网关整站 502，点连接测试才发现用不了。
+     前四步只核对**配置与目录**（云账号接口活着就能过），所以这里补一次**真探活**：
+     拿生效模型发一个 16 token 的推理（与设置页「连接测试」同一条通道，⛔ 不另写一套）。
+     探测失败不改落盘配置，只把「需处理」如实回执出来。 */
+  if (report.activated && (report.activeModel || "").trim()) {
+    try {
+      const current = await api.getCustomModel?.().catch(() => null);
+      const probe = await withTimeout(api.probeCustomModel?.({ provider: current?.provider || "cloud", baseUrl: current?.baseUrl || "", model: report.activeModel }) ?? Promise.resolve(null), 20_000);
+      if (probe?.ok) push("probe", "ok", `模型通道可用（${report.activeModel}${probe.latencyMs ? ` · ${probe.latencyMs}ms` : ""}）`);
+      else push("probe", "failed", "模型通道没通过连通性验证");
+    } catch (error) {
+      /* ⛔ 探活失败**必须**进「需处理」：这一步就是用来证明「能不能用」的，
+         静默吞掉 = 又回到「显示成功、实际不可用」。错误原文保留（含 5xx / 认证等分类）。 */
+      const reason = String(error?.message ?? error) || "模型通道不可用";
+      push("probe", "failed", reason === "timeout" ? "模型通道 20 秒内没有返回（超时）" : reason);
+      report.code = report.code || "probe-failed";
+    }
+  }
+
+  /* ⛔ 结论口径：`ok` 必须看**所有**步骤的终态 —— 旧实现只判「模型目录同步成功」，
+     于是知识库 / 记忆 / 生效位 / 连通性失败时横幅依旧是绿色「已自动配置」，
+     用户看到的就是「显示成功、不显示失败内容」。skipped 不算失败（未开通是正常态）。 */
+  report.ok = Boolean(report.models?.ok && report.models.count > 0)
+    && !report.steps.some((step) => step.state === "failed" || step.state === "needs-action");
   return report;
 }
 
