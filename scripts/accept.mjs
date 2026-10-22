@@ -1338,6 +1338,14 @@ const CHECKS = [
          这里量真 DOM + 真 localStorage：按钮位置/语义、点一下真的静音当前会话、悬浮球菜单同步
          显示「恢复播报」并能复位、两个不同会话的开关互不影响、切走再切回仍保持。 */
       await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "界面就绪", timeoutMs: 40000 });
+      /* ⛔ 持久 profile 可能上次退出时还开着办公室预览（10-22 用户：「你的测试脚本要更新一下，
+         还测试办公室预览呢」）—— 先关掉它，否则整屏是办公室、聊天回合头根本不在可视 DOM 里。 */
+      const closedOffice = await h.eval(`(function(){
+        var close=document.querySelector(".office-overlay-close");
+        if (close) close.click();
+        return !!close;
+      })()`).catch(() => false);
+      if (closedOffice) await wait(400);
       await h.waitFor(`!!document.querySelector(".turn-head-announce")`, { label: "回合头喇叭按钮", timeoutMs: 20000 }).catch(() => undefined);
       const initial = await h.eval(`(function(){
         var btn=document.querySelector(".turn-head-announce");
