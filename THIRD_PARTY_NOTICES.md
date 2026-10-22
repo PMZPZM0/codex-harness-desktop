@@ -79,7 +79,7 @@
 
 | 组件 | 许可 | 说明 |
 |---|---|---|
-| Playwright / playwright-cli | Apache-2.0 | 浏览器自动化（开发工具页按需下载浏览器内核） |
+| Ego Lite（ego-browser） | MIT（开源仓库） | **外部安装、不随包**。官网 <https://lite.ego.app/zh-cn> · 源码 <https://github.com/citrolabs/ego-lite>；浏览器本体由 Citro Labs 分发，本应用只检测并调用其 CLI。更新由 Ego 官方更新器从官方 CDN 下载（暂无公开第三方镜像） |
 | ffmpeg | LGPL/GPL（视构建而定） | 媒体处理，见 `resources/tools/ffmpeg/LICENSE` |
 | Git for Windows (MinGit) | GPL-2.0 | 随包或按需安装，见 `resources/tools/git/LICENSE.txt` |
 | jq | MIT | JSON 处理 |
@@ -91,3 +91,16 @@
 | dsh-550c-boot 的 550C 开机动画（2026-10-11 移植为「外观 → 开机动画」） | MIT | DSH 插件 `dsh-550c-boot@0.3.3` 的启动片头 —— 动画与 HTML 原稿 **Voidpoket**（<https://github.com/Voidpoket>），插件工程与移植 **Ziyang Song**（<https://github.com/yannicksong0106>）。本应用**逐字移植**其样式表 / 标记 / 驱动：`src/features/settings-appearance/boot550c/assets.ts`（CSS_550C / ENHANCE_CSS / BOOT_MARKUP / APP_MARKUP）与 `show.mjs`（动画驱动，仅加 `export`），零改写。上游 <https://github.com/yannicksong0106/dsh-550c-boot> |
 
 （本表只列「我们主动引入且有明确上游」的组件；上述工具各自的完整许可文本随其自身目录分发。）
+
+### Ego Lite（外部安装的浏览器自动化）
+
+| | |
+|---|---|
+| 产品 | ego (lite) · 面向 AI Agent 的 Chromium 浏览器 |
+| 官网 | <https://lite.ego.app/zh-cn> |
+| 开源仓库 | <https://github.com/citrolabs/ego-lite> |
+| 作者 / 分发方 | Citro Labs |
+| 许可 | 仓库代码 MIT；浏览器本体与官方更新器由 Citro Labs 分发 |
+| 本应用关系 | **不打包、不分发浏览器本体**。仅检测本机 `ego-browser` CLI、打开官方下载页、调用 `ego-browser nodejs` / `ego-browser upgrade`，并把官方 `ego-browser` 技能镜像到 Codex 技能目录。 |
+| 更新源 | Ego 官方更新器（`ego-browser upgrade`）从官方 CDN 检查/下载；截至 2026-10-22 **没有公开的国内镜像或换源参数**，本应用不代理大文件。 |
+| 数据 | 用户的浏览数据、Cookie 等由 Ego Lite 保存在本机；本应用不读取其浏览器数据。 |

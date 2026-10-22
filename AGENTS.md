@@ -502,7 +502,7 @@ FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）。
 | 引擎本体 | `app-server --listen stdio://` | 会话、工具、插件、钩子、技能全部走它 |
 | 基础运行时 | `resources/tools/{node,python,git,pwsh,vscode-cli,rg,uv,cmake,ninja,sevenzip,jq}` | 开发机本地保留；**打包后仅 node/vscode-cli 内置**，其余开发工具页按需下载（缺 Git 启动自动补装） |
 | 桌面自动化 MCP | `tools/npm-global` 里的 `nuphus`（MCP 服务器名） | 工具前缀 `desktop_*`；浏览器工具经 `nuphus-call browser_*` CLI 调用 |
-| 浏览器自动化首选 | 外部安装的 `ego-browser`（ego lite） | 每个 Codex 会话一个 `codex-<CODEX_THREAD_ID>` TaskSpace；共享登录态、多会话并行；不随包内置 |
+| 浏览器自动化首选 | 外部安装的 `ego-browser`（ego lite） | 每个 Codex 会话一个 `codex-<CODEX_THREAD_ID>` TaskSpace；共享登录态、多会话并行；不随包内置。官网 <https://lite.ego.app/zh-cn> · 源码 <https://github.com/citrolabs/ego-lite>（MIT） |
 | 浏览器自动化回落（browse-skills） | `nuphus-call browser_navigate / browser_snapshot / browser_click / …` | ego 未安装时驱动本机默认浏览器；不按会话隔离 Space |
 | 内置技能 | `codex-home/skills/` 的 `desktop-automation`、`browser-skill` | 随应用写入，引导引擎调自动化工具；旧 `browser-automation` 已退役（升级时按指纹自动清理，用户改过的目录不碰） |
 
