@@ -964,14 +964,34 @@
 .turn-review-panel.no-tree .turn-review-diff { grid-column: 1; }
 .turn-review-panel.is-empty {
   display: flex;
+  /* ⛔ 10-22 用户截图：空态原来是 **row** —— 图标 + 标题 + 说明挤在一行里，
+     「还没有选中的文件」被折成「还没有选 / 中的文件」，说明文字也被压成窄条。
+     ⇒ 纵向堆叠、居中，标题一行放得下（窄栏里也不许在词中间断）。 */
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
+  padding: 24px 20px;
   text-align: center;
   color: var(--muted);
 }
-.turn-review-panel.is-empty strong { color: var(--text); font-size: 14px; }
-.turn-review-panel.is-empty p { max-width: 280px; margin: 0; font-size: 12px; line-height: 1.6; }
+.turn-review-panel.is-empty > svg {
+  color: var(--faint);
+  flex: none;
+}
+.turn-review-panel.is-empty strong {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.4;
+  max-width: 100%;
+}
+.turn-review-panel.is-empty p {
+  max-width: 300px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.65;
+  text-wrap: pretty;
+}
 .turn-review-head {
   grid-column: 1 / -1;
   display: flex;

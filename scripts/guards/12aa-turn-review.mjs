@@ -95,6 +95,11 @@ const diffCss = read("src/styles/04-cards-tools.css");
     "文件块头部有复制路径 / 打开文件（删除的文件禁用打开）");
   ok(panelSrc.includes("还没有选中的文件") && panelSrc.includes("在对话里的「已更改 N 个文件」汇总卡"),
     "未选中时有可操作的说明（不是空白）");
+  /* ⛔ 10-22 用户截图：空态曾是 row 布局 ⇒ 图标 + 标题 + 说明挤一行，标题被折成「还没有选/中的文件」。
+     必须是纵向堆叠（图标在上、标题、说明），且标题不许在词中间断。 */
+  ok(/\.turn-review-panel\.is-empty \{[^}]*flex-direction: column/.test(css)
+    && /\.turn-review-panel\.is-empty strong \{[^}]*line-height/.test(css),
+    "空态纵向堆叠 + 标题行高（⛔ 退回 row 会把「还没有选中的文件」折成两行）");
   ok(diffSrc.includes('view = "unified"') && diffSrc.includes("wrap = false") && diffSrc.includes("ignoreWhitespaceOnly = false")
     && diffSrc.includes("diffp-split") && diffSrc.includes("data-diff-view"),
     "DiffPreviewBody 支持统一/拆分、换行、仅空白过滤三种显示参数");
@@ -115,9 +120,9 @@ const diffCss = read("src/styles/04-cards-tools.css");
        五个标签排不下 ⇒ 审阅被挤出可视区（横向滚动才能点到），所以撤终端、审阅顶到第二位。 */
     const stripBlock = reviewPanel.match(/<div className="tabstrip-tabs">([\s\S]*?)<\/div>/);
     const strip = stripBlock ? stripBlock[1] : "";
-    const order = [">变更<", ">审阅<", ">浏览器<", ">项目树<"].map((x) => strip.indexOf(x));
+    const order = [">变更<", ">审阅<", ">浏览器<", ">文件<"].map((x) => strip.indexOf(x));
     ok(Boolean(strip) && !/>终端</.test(strip) && order.every((v) => v >= 0) && order.every((v, i) => i === 0 || order[i - 1] < v),
-      "⛔ 右栏标签 = 变更/审阅/浏览器/项目树（终端撤掉、审阅顶到第二位 —— 308px 下五个标签排不下，审阅被挤出可视区）");
+      "⛔ 右栏标签 = 变更/审阅/浏览器/文件（终端撤掉、审阅顶到第二位；项目树 10-22 起改叫「文件」）");
     ok(/rightTab === "terminal"[\s\S]{0,240}?<TerminalPanel/.test(reviewPanel),
       "终端页仍保留（Ctrl+J / 命令面板可开，只是没有常驻标签）");
     ok(!/TerminalSquare/.test(reviewPanel),
