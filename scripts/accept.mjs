@@ -1330,6 +1330,108 @@ const CHECKS = [
     },
   },
   {
+    id: "voice-toggle",
+    name: "📢 回合头会话级播报开关（10-22 用户：Codex 名字后 / 每会话独立 / 与悬浮球同步）",
+    run: async (h) => {
+      /* 10-22 用户：「语音播报在 codex 名字后面加一个📢按键图标开关，每个会话独立状态，
+         这个喇叭开关只决定当前会话，是否进行语音播报，跟悬浮球里面的这个同步启用停止」。
+         这里量真 DOM + 真 localStorage：按钮位置/语义、点一下真的静音当前会话、悬浮球菜单同步
+         显示「恢复播报」并能复位、两个不同会话的开关互不影响、切走再切回仍保持。 */
+      await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "界面就绪", timeoutMs: 40000 });
+      await h.waitFor(`!!document.querySelector(".turn-head-announce")`, { label: "回合头喇叭按钮", timeoutMs: 20000 }).catch(() => undefined);
+      const initial = await h.eval(`(function(){
+        var btn=document.querySelector(".turn-head-announce");
+        var name=document.querySelector(".turn-head-name");
+        var shell=document.querySelector(".app-shell");
+        var wrap=btn&&btn.closest(".turn-head-announce-wrap");
+        return { has:!!btn, afterName:!!(wrap&&name&&name.nextElementSibling===wrap),
+          tag:btn?btn.tagName:"", label:btn?(btn.getAttribute("aria-label")||""):"",
+          pressed:btn?(btn.getAttribute("aria-pressed")||""):"",
+          threadId:shell?(shell.getAttribute("data-thread-id")||""):"" };
+      })()`).catch(() => null);
+      h.check("① 📢 就在 Codex 名字后面，且是带 aria-label 的原生按钮",
+        Boolean(initial && initial.has && initial.afterName && initial.tag === "BUTTON" && initial.label),
+        JSON.stringify(initial));
+
+      const threadA = String((initial && initial.threadId) || "");
+      const readState = () => h.eval(`(function(){
+        var btn=document.querySelector(".turn-head-announce");
+        var ids=[]; try { ids=JSON.parse(localStorage.getItem("announce-muted-threads")||"[]"); } catch(e) {}
+        var bar=document.querySelector(".voice-announce-bar");
+        var toast=document.querySelector(".turn-head-announce-toast");
+        var shell=document.querySelector(".app-shell");
+        return { pressed:btn?(btn.getAttribute("aria-pressed")||""):"", ids:ids,
+          threadId:shell?(shell.getAttribute("data-thread-id")||""):"",
+          bar:bar?(bar.innerText||"").trim():"", toast:toast?(toast.innerText||"").trim():"" };
+      })()`).catch(() => null);
+      // 上一轮若失败在半途可能留下静音态：先用同一个按钮恢复，保证起点是「开」
+      if (initial && initial.pressed !== "true") {
+        await h.eval(`(function(){ document.querySelector(".turn-head-announce")?.click(); return 1; })()`).catch(() => 0);
+        await wait(300);
+      }
+      await h.eval(`(function(){ document.querySelector(".turn-head-announce")?.click(); return 1; })()`).catch(() => 0);
+      await wait(300);
+      const muted = await readState();
+      h.check("② 点 📢 ⇒ 当前会话静音 + 就地弹提醒（状态按会话落盘；⛔ 输入框上方不再出现「已停止播报」条）",
+        Boolean(muted && muted.pressed === "false" && muted.ids.includes(threadA)
+          && muted.toast.includes("已关闭当前会话语音播报") && !muted.bar),
+        JSON.stringify({ threadA, muted }));
+
+      const menu = await h.eval(`(function(){
+        var ball=document.querySelector(".voice-ball"); if(!ball) return null;
+        ball.dispatchEvent(new MouseEvent("contextmenu", { bubbles:true, cancelable:true, clientX: 500, clientY: 500 }));
+        return 1;
+      })()`).catch(() => null);
+      await wait(300);
+      const menuItems = await h.eval(`(function(){ return [...document.querySelectorAll("[role=menuitem]")].map(function(e){ return (e.innerText||"").trim(); }); })()`).catch(() => []);
+      const resumed = await h.eval(`(function(){
+        var item=[...document.querySelectorAll("[role=menuitem]")].find(function(e){ return (e.innerText||"").trim()==="恢复播报"; });
+        if(!item) return false; item.click(); return true;
+      })()`).catch(() => false);
+      await wait(300);
+      const afterMenu = await readState();
+      h.check("③ 悬浮球右键菜单同步显示「恢复播报」，点它 📢 跟着复位（同一份会话状态）",
+        Boolean(menu && menuItems.includes("恢复播报") && resumed && afterMenu && afterMenu.pressed === "true" && !afterMenu.ids.includes(threadA)),
+        JSON.stringify({ menuItems, resumed, afterMenu }));
+
+      const otherId = String((await h.eval(`(function(){
+        var row=[...document.querySelectorAll(".thread-row")].find(function(r){ return r.getAttribute("data-thread-id") !== ${JSON.stringify(threadA)}; });
+        return row ? row.getAttribute("data-thread-id") : "";
+      })()`).catch(() => "")) || "");
+      const switchTo = async (id) => {
+        await h.eval(`(function(){
+          var row=document.querySelector('.thread-row[data-thread-id="${id}"]');
+          var btn=row&&row.querySelector("button"); if(btn) btn.click(); return !!btn;
+        })()`).catch(() => false);
+        await h.waitFor(`document.querySelector(".app-shell")?.getAttribute("data-thread-id")===${JSON.stringify(id)} && !!document.querySelector(".turn-head-announce")`,
+          { label: `切到会话 ${id.slice(0, 8)}`, timeoutMs: 15000 }).catch(() => undefined);
+        await wait(500);
+      };
+      await switchTo(otherId);
+      const bOn = await readState();
+      await h.eval(`(function(){ document.querySelector(".turn-head-announce")?.click(); return 1; })()`).catch(() => 0);
+      await wait(300);
+      const bMuted = await readState();
+      await switchTo(threadA);
+      const aStillOn = await readState();
+      await switchTo(otherId);
+      const bStillMuted = await readState();
+      // 收尾：把 B 恢复，并回到初始会话
+      await h.eval(`(function(){ document.querySelector(".turn-head-announce")?.click(); return 1; })()`).catch(() => 0);
+      await wait(300);
+      await switchTo(threadA);
+      const clean = await readState();
+      h.check("④ 每个会话独立：B 初始为开、静音 B 不影响 A；切走再切回 B 仍静音；收尾全部恢复",
+        Boolean(otherId && bOn && bOn.threadId === otherId && bOn.pressed === "true"
+          && bMuted && bMuted.pressed === "false" && bMuted.ids.includes(otherId)
+          && aStillOn && aStillOn.threadId === threadA && aStillOn.pressed === "true"
+          && bStillMuted && bStillMuted.threadId === otherId && bStillMuted.pressed === "false"
+          && clean && !clean.ids.includes(threadA) && !clean.ids.includes(otherId)),
+        JSON.stringify({ threadA, otherId, bOn: bOn && bOn.pressed, bMuted: bMuted && bMuted.pressed, aStillOn: aStillOn && aStillOn.pressed, bStillMuted: bStillMuted && bStillMuted.pressed, cleanIds: clean && clean.ids }));
+      await h.screenshot("voice-toggle");
+    },
+  },
+  {
     id: "file-cards",
     name: "🗂 本轮产物文件卡 + 右栏工作区文件预览联动（10-22，按 Qoder outputFiles 逆向）",
     run: async (h) => {
@@ -3957,6 +4059,7 @@ const LATEST_ROUND = "10-22";   // 10-22 轮：右栏标签改版（撤终端、
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
   "panel-tabs": "10-22",
+  "voice-toggle": "10-22",   // 10-22 轮：回合头 📢 会话级播报开关（名字后图标 / 每会话独立 / 与悬浮球同步）
   "cloud-simple": "10-22",   // 10-22 轮：云账号登录即用（单卡登录 / 就绪清单 / 教程 / 手动流程折叠）
   "file-cards": "10-22",   // 10-22 轮：Qoder 式本轮产物文件卡 + 右栏工作区文件预览联动   // 10-22 轮：右栏标签撤终端、审阅顶到第二位（默认宽 308px 五个排不下）
   "ui-sketch": "10-06",   // ⛔ 10-06 重写：三形态探针（手机+电脑屏 / platform web 真落盘）+ 预览 + 还原；编号改执行顺序

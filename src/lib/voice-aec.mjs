@@ -221,15 +221,18 @@ export function createEchoGate(options = {}) {
  * 再不行就硬切（否则长回答会「憋很久才开口」）。
  */
 export function createSentenceChunker(options = {}) {
-  const maxChars = options.maxChars ?? 60;
-  // 首句阈值单独调小（09-12 用户反馈「正文出来了语音还没跟上」）：模型输出往往
-  // 前几十字都没有句号，等满 maxChars 才开口，体感就是「慢半拍」。首句尽早出声后
-  // 后续仍按 maxChars 攒长句，语气不至于碎。
-  // 09-13（审计 ④）：18 → 10 —— 首块合成是延迟链上最贵的一环（18 字≈4 秒音频），
-  // 再往前压 0.3~0.8s；有软断点（逗号/顿号）时仍优先在断点处切，不会把词切断。
-  const firstMaxChars = options.firstMaxChars ?? Math.min(10, maxChars);
-  const hardBreak = new Set(["。", "！", "？", "!", "?", "\n", "；", ";"]);
-  const softBreak = new Set(["，", ",", "、", "：", ":", " "]);
+  /* 10-22 用户：「播放语音断句问题，断的不准」。
+     旧口径首块 10 字、之后 60 字**到点就切**（没有软断点时直接硬切）—— 正文里遇到
+     「当前版本是 0.0.46，升级路径…」这类长串就会从词/数字中间断开，听感是半句话被掐掉。
+     新口径：① 只有句末标点算硬断；分号/逗号降为软断，先保证句子完整；
+             ② 首块放到 24 字（仍能较快开口），之后 90 字；
+             ③ 超限时**等软断点**再切，最多等到 hardCap；只有整段完全没标点才硬切。 */
+  const maxChars = options.maxChars ?? 90;
+  const firstMaxChars = options.firstMaxChars ?? Math.min(24, maxChars);
+  const hardCap = options.hardCap ?? Math.max(maxChars + 30, Math.round(maxChars * 1.35));
+  const firstHardCap = options.firstHardCap ?? Math.max(firstMaxChars + 6, 30);
+  const hardBreak = new Set(["。", "！", "？", "!", "?", "\n"]);
+  const softBreak = new Set(["，", ",", "、", "：", ":", "；", ";", " "]);
   let buffer = "";
   let emitted = 0;
 
@@ -246,6 +249,7 @@ export function createSentenceChunker(options = {}) {
       const out = [];
       for (;;) {
         const limit = emitted === 0 ? firstMaxChars : maxChars;
+        const cap = emitted === 0 ? Math.max(firstHardCap, limit) : hardCap;
         const hit = firstBreakIndex(buffer, hardBreak);
         if (hit >= 0) {
           out.push(take(buffer.slice(0, hit + 1)).trim());
@@ -253,9 +257,19 @@ export function createSentenceChunker(options = {}) {
           continue;
         }
         if (buffer.length <= limit) break;
-        const soft = lastBreakIndex(buffer.slice(0, limit), softBreak);
-        const cut = soft >= 0 ? soft + 1 : limit;
-        out.push(take(buffer.slice(0, cut)).trim());
+        /* 在「到上限为止」的窗口里找最后一个自然断点；没找到就继续等下一段增量，
+           直到 hardCap 才硬切。⛔ 别退回「到 limit 就切」——那正是断句不准的根因。 */
+        const searchEnd = Math.min(buffer.length, Math.max(limit, cap));
+        const soft = lastBreakIndex(buffer.slice(0, searchEnd), softBreak);
+        /* 断点太靠前就不算（「好，…」之后 100 字才又一个逗号 ⇒ 别把「好，」单独合成一句）；
+           等不到像样的断点就硬切 hardCap，别一直憋着不出声。 */
+        if (soft >= 0 && soft + 1 >= Math.floor(limit * 0.4)) {
+          out.push(take(buffer.slice(0, soft + 1)).trim());
+          emitted += 1;
+          continue;
+        }
+        if (buffer.length < cap) break;
+        out.push(take(buffer.slice(0, cap)).trim());
         emitted += 1;
       }
       return out.filter((s) => s.length > 0);

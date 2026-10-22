@@ -501,10 +501,10 @@ contextBridge.exposeInMainWorld("codex", {
   engineRestartLog: () => __ipc("engine:restart-log", 0, []),
   engineActiveTurns: () => __ipc("engine:active-turns", 0, []),
   voiceStatus: () => __ipc("voice:status", 0, []),
-  /* 我是播报窗口吗 + 当前全局静音态（多窗口唯一播报：焦点 → 最后活跃 → 主窗口；取不到时 owner=true 保底，⛔ 不许因算不出来就静音；⛔ muted 必须一起回，否则新开窗口会无视已生效的全局静音） */
-  announceOwner: () => __ipc("voice:announce-owner", 0, []),
-  /* 全局静音闩锁（任一窗口按「停止播报」⇒ 全窗口静默；一个扬声器一个用户，⛔ 不许只在本地闩） */
-  announceSetMuted: (input?: { muted?: boolean }) => __ipc("voice:announce-set-muted", 0, [input]),
+  /* 我是播报窗口吗 + 当前会话静音态（按 threadId 分开，别的会话停止不影响当前会话；取不到 owner 时保底 true） */
+  announceOwner: (threadId?: string) => __ipc("voice:announce-owner", 0, [threadId]),
+  /* 会话级静音闩锁（同一 threadId 的窗口一起安静；别的会话不受影响） */
+  announceSetMuted: (input?: { muted?: boolean; threadId?: string }) => __ipc("voice:announce-set-muted", 0, [input]),
   voiceStart: (threadId: string, options?: { mode?: "conversation" | "dictation" }) => __ipc("voice:start", 1, [threadId, options]),
   voiceDictationFinish: () => __ipc("voice:dictation-finish", 0, []),
   voiceEndpointNow: () => __ipc("voice:endpoint-now", 0, []),

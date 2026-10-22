@@ -205,10 +205,11 @@ ok((appViewSrc.match(/<VoiceAnnounceBridge\b/g) || []).length === 1
   "挂载件整个应用只挂一次（挂两次会念两遍 —— 它订阅的是模块级总线）");
 /* 运行期安全三条：非通话播报「只管说不管听」，没有这三条它就成了停不下来的复读机 */
 ok(/export function setAnnounceStopHandler/.test(bus) && /export function requestAnnounceStop/.test(bus)
-  && /setAnnounceStopHandler\(\(\) => \{ stopPlayback\(/.test(announceHook)
-  && /requestAnnounceStop\(\)/.test(floatTsx) && /停止播报/.test(floatTsx)
+  && /setAnnounceStopHandler\(\(target\) => \{ if \(!target \|\| target === threadId\) stopPlayback\(true\); \}\)/.test(announceHook)
+  && /requestAnnounceStop\(threadId\)/.test(floatTsx) && /停止播报/.test(floatTsx)
   && /requestAnnounceStop\(\)/.test(read("src/features/voice-announce/VoiceAnnounceIndicator.tsx")),
-  "有两条「停止播报」出口（悬浮球右键菜单 + 播报状态条按钮 → 基座广播 → 播报域执行；基座不反向依赖域）");
+  "有两条「停止播报」出口（悬浮球右键菜单 + 播报状态条按钮 → 基座广播 → 播报域执行；基座不反向依赖域）——"
+  + "悬浮球按会话传 threadId，状态条作用于当前会话");
 ok(/queueRef\.current\.length >= MAX_ANNOUNCE_BACKLOG/.test(announceHook),
   "播放队列封顶（超了就丢弃这一句保持跟手，而不是念几分钟前的内容）");
 /* ⛔ 10-21 新增第二道背压：正文默认播之后，**待合成**任务才是积压的真源头（合成串行、每段 2~5s，
@@ -243,8 +244,9 @@ ok(skipIdx > 0 && keyDecl > 0 && skipIdx > keyDecl && skipIdx < busyIdx,
 ok(keyAdd > 0 && okIdx > 0 && keyAdd > okIdx
   && /for \(const key of deduped\.keys\) spokenKeysRef\.current\.add\(key\)/.test(announceHook),
   "登记在「确认会出声」**之后**、且登记**这一批每个句子的键**——合成失败不登记，后到的兜底句才不会被误吞");
-ok(/window\.codex\.voicePreviewVoice\(\{ text: deduped\.text/.test(announceHook),
-  "合成用的是**去重后**的文本（拿原始 clean 去合成 = 查重白做）");
+ok(/const chunks = chunkAnnounceText\(deduped\.text, ANNOUNCE_CHUNK_MAX_CHARS\)/.test(announceHook)
+  && /voicePreviewVoice\(\{ text: chunk/.test(announceHook),
+  "合成用的是**去重后**的文本（先按去重结果切段、再逐段合成；拿原始 clean = 查重白做）");
 ok(/const resetTurnBudget = useCallback/.test(announceHook)
   && (announceHook.match(/resetTurnBudget\(\)/g) || []).length >= 2
   && /finishTurn\(event\.text\)\.finally\(resetTurnBudget\)/.test(announceHook),
@@ -625,8 +627,10 @@ ok(/stripVoiceScript\(children\)/.test(markdownTsx) && /hasWidgetFence\(text\)/.
 ok(/export function publishAnnounceStatus/.test(bus) && /export function subscribeAnnounceStatus/.test(bus)
   && /export type AnnounceStatus/.test(bus) && /publishAnnounceStatus\(\{/.test(announceHook),
   "状态经 announce-bus 广播（执行端推**事实**：有没有在念 / 正在念哪句 / 还排几句；基座不反向依赖域）");
-ok(/getAnnounceStatus\(\)/.test(indicatorTsx) && /if \(!status\.active && !status\.stopped\) return null;/.test(indicatorTsx),
-  "状态条只在**真的在念**时出现（平时 DOM 里什么都没有 —— 不占输入框周围的空间）");
+ok(/getAnnounceStatus\(\)/.test(indicatorTsx) && /if \(!status\.active\) return null;/.test(indicatorTsx)
+  && !/is-stopped/.test(codeOnlyTs(indicatorTsx)) && !/已停止播报/.test(codeOnlyTs(indicatorTsx)),
+  "状态条只在**真的在念**时出现（10-22 用户：「有这个小喇叭就行了，下面这个已停止播报的这个不要」"
+  + "—— 静音/恢复只留在回合头 📢 与悬浮球菜单，状态条不再常驻）");
 ok(/待播 \{status\.pending\}/.test(indicatorTsx) && /voice-announce-stop/.test(indicatorTsx) && /requestAnnounceStop\(\)/.test(indicatorTsx),
   "状态条给出「当前句 + 待播句数 + 停止按钮」（看不见这条 = 用户既不知念到哪、也不知去哪儿掐断）");
 ok(/<VoiceAnnounceIndicator \/>/.test(composerTsx) && /VoiceAnnounceIndicator/.test(read("src/features/voice-announce/index.ts")),
@@ -642,7 +646,7 @@ ok(/\.voice-announce-bar\s*\{/.test(codeOnlyCss(stageCss)) && !/(?<![-\w])(top|l
       恢复出口必须存在（否则按一次就永久失去播报 —— 比"停不下来"更糟）。 */
 /* ① 静音闩锁：三处入口条件（speak / speakNow / speak-reply）都必须读 mutedRef，
       且必须**真的清掉** speakLiveRef 与 autoSpeakRef —— 少任一条，用户按停后正文流会接着念。 */
-ok(/const mutedRef = useRef\(false\)/.test(announceHook)
+ok(/const mutedRef = useRef\(isAnnounceMutedForThread\(threadId\)\)/.test(announceHook)
   && /if \(mutedRef\.current\) return;/.test(announceHook)
   && /if \(mutedRef\.current\) return;\s*\n\s*sourceRef\.current = "tool";/.test(announceHook)
   && /if \(mutedRef\.current\) return;\s*\n\s*speakLiveRef\.current = true;/.test(announceHook),
@@ -658,10 +662,10 @@ ok((announceHook.match(/if \(mutedRef\.current\) return;/g) || []).length === 5
   + "     「只在 speak 里判」不够（插播会先把 stoppedRef 翻回「正在念」，界面撒谎比不出声更坏）");
 /* 解除出口：必须成对存在（set + clear），否则卸载后留下指向已卸载 hook 的回调。 */
 ok(/export function setAnnounceResumeHandler/.test(bus) && /export function requestAnnounceResume/.test(bus)
-  && /setAnnounceResumeHandler\(\(\) => \{ resumePlayback\(\); \}\)/.test(announceHook)
+  && /setAnnounceResumeHandler\(\(target\) => \{ resumePlayback\(target\); \}\)/.test(announceHook)
   && /setAnnounceResumeHandler\(null\)/.test(announceHook)
-  && /requestAnnounceResume\(\)/.test(indicatorTsx),
-  "「恢复播报」出口与停止出口**成对**注册/注销，且状态条上真的有那个按钮（只有闩锁没有解除口 = 用户按一次永久失去播报）");
+  && /requestAnnounceResume\(threadId\)/.test(read("src/features/voice-announce/SessionAnnounceToggle.tsx")),
+  "「恢复播报」出口与停止出口**成对**注册/注销，且回合头 📢 上真的有解除口（只有闩锁没有解除口 = 用户按一次永久失去播报）");
 ok(/muted: mutedRef\.current/.test(announceHook) && /muted: false/.test(bus),
   "状态广播带 `muted`（区分「1.6 秒回执」与「真的静了」—— 显示层靠它决定要不要给恢复按钮）");
 
@@ -687,7 +691,7 @@ ok(/visible && !c\.minimized/.test(ownerMod),
   "裁决排除**最小化**窗口（最小化时用户看不见内容，让它念等于对着空气说话）");
 ok(/if \(live\.length === 1\) return \{ ownerId: live\[0\]\.id, reason: "single-window" \}/.test(ownerMod),
   "单窗口恒为该窗口（零行为变化 —— 不给单窗口用户引入任何新判定）");
-ok(/ipcHost\.handle\("voice:announce-owner", \(event\) =>/.test(ownerMod)
+ok(/ipcHost\.handle\("voice:announce-owner", \(event, threadId\?: string\) =>/.test(ownerMod)
   && /senderId === ownerId/.test(ownerMod),
   "归属查询在**主进程**比对 sender（渲染层拿不到自己的 webContents.id，没法自己比）");
 ok(/if \(!candidates\.length\) return \{ ownerId: null, reason: "no-window" \}/.test(ownerMod)
@@ -717,18 +721,97 @@ ok(/const isOwnerRef = useRef\(true\)/.test(announceHook),
 ok(/if \(!next\) stopPlayback\(false\)/.test(announceHook),
   "失去 owner 立刻停播，且用 `stopPlayback(false)`（不是按停语义 ⇒ 不许置静音闸锁）");
 
-ok(/const muted = state\.mutedAll;/.test(ownerMod) && /reason, muted, callActive \}/.test(ownerMod)
-  && /if \(r\?\.muted === true\)/.test(announceHook),
-  "⛔ owner 查询**同时带回全局静音态**并同步到新窗口（只拿 owner 不拿 muted ⇒ 新开窗口无视已生效的静音，"
-  + "用户按过停止它照念 —— 静态归属 ≠ 现在该不该出声）");
+ok(/const tid = String\(threadId \?\? ""\)\.trim\(\);/.test(ownerMod)
+  && /const muted = Boolean\(tid && state\.mutedThreads\[tid\]\)/.test(ownerMod)
+  && /reason, muted, callActive \}/.test(ownerMod)
+  && /persistedMuted \|\| r\?\.muted === true/.test(announceHook),
+  "⛔ owner 查询**同时带回本会话的静音态**并同步到新窗口（只拿 owner 不拿 muted ⇒ 新开窗口无视已生效的静音，"
+  + "用户按过停止它照念 —— 静态归属 ≠ 现在该不该出声；状态按 threadId 分开）");
 
 ok(/let callActive = false;/.test(ownerMod) && /callActive \}/.test(ownerMod) && /if \(r\?\.callActive === true\)/.test(announceHook),
   "⛔ owner 查询**同时带回通话态**（主窗口已在通话时新开弹窗收不到那次广播 ⇒ 必须从初值拿，否则一开口就抢扬声器）；"
   + "未注入 service 时按未通话处理（不许因此让整个查询失败）");
-ok(/void window\.codex\.announceSetMuted\?\.\(\{ muted: true \}\)/.test(announceHook)
-  && /void window\.codex\.announceSetMuted\?\.\(\{ muted: false \}\)/.test(announceHook)
+ok(/state\.mutedThreads\[tid\] = true/.test(ownerMod) && /delete state\.mutedThreads\[tid\]/.test(ownerMod)
+  && /broadcastMuted\(tid, muted\)/.test(ownerMod)
+  && /input\?: \{ muted\?: boolean; threadId\?: string \}/.test(ownerMod)
+  && /announceSetMuted\?\.\(\{ muted: true, threadId \}\)/.test(announceHook)
+  && /announceSetMuted\?\.\(\{ muted: false, threadId: target \}\)/.test(announceHook)
   && /onAnnounceMuted\?\./.test(announceHook),
-  "静音闸锁**全局**（任一窗口按停 ⇒ 全窗口静默，一个扬声器一个用户；本地只闸 = 另一窗口继续念 = 「按钮是假的」）");
+  "静音闸锁**按会话**（threadId）：同一会话的多窗口一起安静、别的会话不受影响"
+  + "（10-22 用户：「每个会话独立状态，喇叭开关只决定当前会话」）");
+/* ── ⑱ 回合头 📢 会话级开关（10-22 用户）────────────────────────────────
+   「语音播报在 codex 名字后面加一个📢按键图标开关，每个会话独立状态，
+   这个喇叭开关只决定当前会话，是否进行语音播报，跟悬浮球里面的这个同步启用停止」。 */
+const announceBusSrc = read("src/voice/announce-bus.ts");
+const announceToggleTsx = read("src/features/voice-announce/SessionAnnounceToggle.tsx");
+const turnViewTsx = read("src/features/session-turn/SessionTurn/03-turn-view.tsx");
+const timelineTsx = read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx");
+const turnHeadCss = read("src/styles/13-subagents-page.css");
+ok(/const THREAD_MUTE_KEY = "announce-muted-threads"/.test(announceBusSrc)
+  && /localStorage\.setItem\(THREAD_MUTE_KEY/.test(announceBusSrc)
+  && /export function setAnnounceMutedForThread/.test(announceBusSrc)
+  && /export function isAnnounceMutedForThread/.test(announceBusSrc)
+  && /export function subscribeAnnounceThreadMuted/.test(announceBusSrc),
+  "会话级喇叭状态落 localStorage（同一会话重开仍保持；各会话互不影响）");
+const turnHeadIdx = turnViewTsx.indexOf('<span className="turn-head-name">');
+const turnToggleIdx = turnViewTsx.indexOf("<SessionAnnounceToggle");
+ok(/<span className="turn-head-name">\{codexName\}<\/span>\s*<SessionAnnounceToggle threadId=\{threadId\} \/>/.test(turnViewTsx)
+  && turnToggleIdx > turnHeadIdx,
+  "📢 开关就渲染在回合头的 Codex 名字**后面**（不是别处；顺序错了用户找不到）");
+ok(/const muted = useSyncExternalStore\(/.test(announceToggleTsx)
+  && /isAnnounceMutedForThread\(threadId\)/.test(announceToggleTsx)
+  && /function AnnounceIcon\(/.test(announceToggleTsx)
+  && /announce-slash/.test(announceToggleTsx)
+  && /aria-pressed=\{!muted\}/.test(announceToggleTsx)
+  && /requestAnnounceStop\(threadId\)/.test(announceToggleTsx)
+  && /requestAnnounceResume\(threadId\)/.test(announceToggleTsx),
+  "📢 是真实开关：同一 threadId 调停止/恢复，图标随状态切换，aria-pressed 反映开态");
+ok(/subscribeAnnounceStatus/.test(announceToggleTsx)
+  && /const playing = !muted && status\.active/.test(announceToggleTsx)
+  && /is-playing/.test(announceToggleTsx)
+  && /announce-waves/.test(announceToggleTsx),
+  "喇叭播放特效：只在**正在播报且未静音**时点亮声波（10-22 用户「做个好看一点的图标和喇叭播放特效」）");
+ok(/turn-head-announce-toast/.test(announceToggleTsx)
+  && /已开启当前会话语音播报/.test(announceToggleTsx)
+  && /已关闭当前会话语音播报/.test(announceToggleTsx)
+  && /role="status"/.test(announceToggleTsx)
+  && /setTimeout\(\(\) => setNotice\(null\), 2000\)/.test(announceToggleTsx),
+  "开关翻转弹 2 秒就地提醒（10-22 用户「语音播报开启关闭做一个弹窗提醒」；role=status 可被读屏）");
+ok(/@keyframes announce-wave/.test(turnHeadCss) && /@keyframes announce-ring/.test(turnHeadCss)
+  && /@keyframes announce-toast-in/.test(turnHeadCss)
+  && /\.turn-head-announce-toast\s*\{[^}]*pointer-events:\s*none/.test(codeOnlyCss(turnHeadCss)),
+  "声波 / 呼吸环 / 提示入场三组动效在样式里，且提示不挡点击（只动 transform/opacity）");
+ok(/<MemoTurnView turn=\{turn\} threadId=\{thread\?\.id \?\? ""\}/.test(timelineTsx),
+  "会话 id 一路传到回合视图（⛔ 不传 = 所有会话共用空 id，开关会退化成全局）");
+ok(/\.turn-head-announce\s*\{[^}]*appearance:\s*none/.test(codeOnlyCss(turnHeadCss))
+  && /\.turn-head-announce:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--accent\)/.test(codeOnlyCss(turnHeadCss))
+  && /\.turn-head-announce\.muted\s*\{[^}]*background:\s*var\(--panel-2\)/.test(codeOnlyCss(turnHeadCss)),
+  "📢 按钮走项目变量（appearance:none 防暗色 UA 浅底 / focus-visible 焦点环 / 关态有底色，不只换色）");
+ok(/const announceMuted = useSyncExternalStore\(/.test(floatTsx)
+  && /if \(announceMuted\) requestAnnounceResume\(threadId\);\s*else requestAnnounceStop\(threadId\);/.test(floatTsx)
+  && /announceMuted \? "恢复播报" : "停止播报"/.test(floatTsx),
+  "悬浮球右键菜单与 📢 共用同一份会话状态：显示「停止/恢复」并按同一 threadId 操作");
+/* ── ⑲ 长播报音质 + 断句（10-22 用户：「声音变小、沙哑、长播报变杂音」＋「断句不准」）──
+   ZipVoice 对超长 utterance 会掉音量/发沙 ⇒ 按句/逗号切成 ≤90 字分段合成，再用等功率
+   交叉淡化拼成**一条**音频（拼接若逐段排队播放会重新出现句界空档）。
+   断句：实时块不再到 60 字硬切（等软断点，最多 hardCap）；TTS 分段不放「两三个字的尾巴」。 */
+const aecSrc = read("src/lib/voice-aec.mjs");
+ok(/const ANNOUNCE_CHUNK_MAX_CHARS = 90;/.test(announceHook)
+  && /ANNOUNCE_CHUNK_MIN_TAIL/.test(announceHook)
+  && /chunkAnnounceText\(deduped\.text, ANNOUNCE_CHUNK_MAX_CHARS\)/.test(announceHook)
+  && /for \(const chunk of chunks\)/.test(announceHook)
+  && /joinAnnounceChunks\(parts, sampleRate\)/.test(announceHook)
+  && /sampleRate \* 0\.015/.test(announceHook)
+  && /await play\(joined, sampleRate, epoch, deduped\.text\)/.test(announceHook),
+  "⛔ 长播报分段合成 + 交叉淡化拼成一条音频（每段 ≤90 字、不留碎片尾巴；只 play 一次 ⇒ 句界不出现播放空档）");
+ok((announceHook.match(/createSentenceChunker\(\{ maxChars: 90 \}\)/g) || []).length === 2
+  && /const hardCap = options\.hardCap \?\?/.test(aecSrc)
+  && /const firstHardCap = options\.firstHardCap \?\?/.test(aecSrc)
+  && /const searchEnd = Math\.min\(buffer\.length, Math\.max\(limit, cap\)\)/.test(aecSrc)
+  && /if \(soft >= 0 && soft \+ 1 >= Math\.floor\(limit \* 0\.4\)\)/.test(aecSrc)
+  && /if \(buffer\.length < cap\) break;/.test(aecSrc),
+  "实时断句不再「到字数就硬切」：句末才算硬断，超限先等逗号/顿号，没标点才用 hardCap"
+  + "（10-22 用户「断句问题，断的不准」；正文与收尾两处同口径 maxChars=90）");
 ok(/onVoiceCallState\?\./.test(announceHook) && /remoteCallActiveRef\.current/.test(announceHook),
   "跨窗口通话避让（`voice:event` 只发主窗口 ⇒ 弹窗靠 voice:call-state 才知道主窗口在通话）");
 ok(/broadcastToAll\("voice:call-state", \{ state: event\.state, active \}\)/.test(mainSrc)

@@ -1050,7 +1050,6 @@
   font-size: 12px; line-height: 1.6; color: var(--muted);
   animation: voice-announce-in .18s cubic-bezier(.2,.8,.25,1);
 }
-.voice-announce-bar.is-stopped { padding-right: 4px; }
 @keyframes voice-announce-in {
   from { opacity: 0; transform: translate(-50%, 6px); }
   to   { opacity: 1; transform: translate(-50%, 0); }
@@ -1093,8 +1092,6 @@
 .voice-announce-stop:focus-visible {
   outline: 2px solid var(--link); outline-offset: 2px;
 }
-/* 「已停止」态：喇叭图标降为中性色（不再暗示"正在出声"），整条偏安静 */
-.voice-announce-bar.is-stopped .voice-announce-icon { color: var(--faint); }
 @media (prefers-reduced-motion: reduce) {
   html:not([data-motion="force"]) .voice-announce-bar,
   html:not([data-motion="force"]) .voice-announce-dot {

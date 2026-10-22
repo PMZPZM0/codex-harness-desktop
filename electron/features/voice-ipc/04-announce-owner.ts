@@ -18,8 +18,8 @@
  *      语义定为「最后活跃的那个窗口继续替你念」。
  *   ⛔ 单窗口时恒为该窗口（reason=single-window）⇒ **零行为变化**，不给单窗口用户引入任何新判定。
  *
- * 静音闩锁**全局**（`voice:announce-set-muted`）：一个扬声器、一个用户 —— 在任一窗口按
- * 「停止播报」就该全窗口安静，否则另一窗口继续念 = 用户体感「按钮是假的」。
+ * 静音闩锁**按会话**（`voice:announce-set-muted` + threadId）：同一会话的多个窗口一起安静，
+ * 其它会话不受影响（10-22 用户：「每个会话独立状态，喇叭开关只决定当前会话」）。
  *
  * 广播方式：`voice:announce-owner-changed` 与 `voice:announce-muted` 都是**逐窗口定制发送**
  * （owner 是布尔，各窗口答案不同）；⛔ 不能用 `broadcastToAll` 发同一个 payload ——
@@ -40,11 +40,12 @@ export type OwnerCandidate = {
 /** 主进程侧的播报全局状态（进程内单例）。 */
 type AnnounceOwnerState = {
   lastFocusedId: number | null;
-  mutedAll: boolean;
+  /** threadId -> 是否被用户按了「停止播报」；不同会话互不影响。 */
+  mutedThreads: Record<string, boolean>;
 };
 
 /** 模块级单例：`registerVoiceIpc4` 可能被重复调用（热重载 / 测试），状态不能每次重建。 */
-const state: AnnounceOwnerState = { lastFocusedId: null, mutedAll: false };
+const state: AnnounceOwnerState = { lastFocusedId: null, mutedThreads: {} };
 let wired = false;
 
 /**
@@ -124,8 +125,8 @@ function hookWindowEvents() {
   }
 }
 
-function broadcastMuted() {
-  broadcastToAll("voice:announce-muted", { muted: state.mutedAll });
+function broadcastMuted(threadId: string, muted: boolean) {
+  broadcastToAll("voice:announce-muted", { muted, threadId });
 }
 
 export function registerVoiceIpc4(a: ReturnType<typeof registerVoiceIpc1>) {
@@ -134,12 +135,13 @@ export function registerVoiceIpc4(a: ReturnType<typeof registerVoiceIpc1>) {
   /* ① 我是播报窗口吗 —— 只回**本窗口的答案**（渲染层拿不到自己的 webContents.id，
      所以比对必须在主进程做）。⛔ 取不到窗口信息时 owner=null ⇒ 返回 owner:true 保底：
      宁可多念一次，也不能因为一次算不出来就让用户永久听不到（与「取不到就静音」相反）。 */
-  ipcHost.handle("voice:announce-owner", (event) => {
+  ipcHost.handle("voice:announce-owner", (event, threadId?: string) => {
     const { ownerId, reason } = resolveAnnounceOwner();
-    /* ⛔ 必须把**全局静音态**一起带回去（10-21 自查发现的真漏洞）：新开的窗口挂载时若只拿
-       owner、不拿 muted，它会以为自己没被静音 ⇒ 用户已经在别的窗口按过「停止播报」，
-       新窗口照念 —— 静态判定「我是不是 owner」不等于「现在该不该出声」。 */
-    const muted = state.mutedAll;
+    /* ⛔ 必须把**当前会话的静音态**一起带回去（10-22）：新开的窗口挂载时若只拿
+       owner、不拿 muted，它会以为自己没被静音 ⇒ 用户已经按过「停止播报」，新窗口照念。
+       状态按 threadId 分开，别的会话的停止不影响当前会话。 */
+    const tid = String(threadId ?? "").trim();
+    const muted = Boolean(tid && state.mutedThreads[tid]);
     /* ⛔ 通话态也要一起回（与 muted 同一个理由）：弹窗启动时若主窗口**已经在通话**，
        它收不到那次状态广播（广播只在**变化**时发）⇒ 会开口播报，与通话 TTS 抢扬声器。
        ⛔ 启动早期 service 还没注入会抛错 —— 按「未通话」处理，不要因此让整个查询失败。 */
@@ -155,11 +157,16 @@ export function registerVoiceIpc4(a: ReturnType<typeof registerVoiceIpc1>) {
     return { owner: senderId === ownerId, ownerWebContentsId: ownerId, reason, muted, callActive };
   });
 
-  /* ② 全局静音闩锁（任一窗口按「停止播报」⇒ 全窗口安静）。 */
-  ipcHost.handle("voice:announce-set-muted", (_event, input?: { muted?: boolean }) => {
-    state.mutedAll = input?.muted === true;
-    broadcastMuted();
-    return { muted: state.mutedAll };
+  /* ② 会话级静音闩锁（同一会话的窗口一起安静；别的会话不受影响）。 */
+  ipcHost.handle("voice:announce-set-muted", (_event, input?: { muted?: boolean; threadId?: string }) => {
+    const tid = String(input?.threadId ?? "").trim();
+    const muted = input?.muted === true;
+    if (tid) {
+      if (muted) state.mutedThreads[tid] = true;
+      else delete state.mutedThreads[tid];
+    }
+    broadcastMuted(tid, muted);
+    return { muted, threadId: tid };
   });
 
   /* ③ 焦点跟踪：**只有焦点变化才影响 owner**（blur 不动 owner —— 见文件头「无焦点」的口径）。 */

@@ -21,7 +21,8 @@ import { UserMessageView } from "../../shared/UserMessageView";
 import { isTaskTurn } from "../SessionTurn";
 import { Slot } from "../../../runtime/Slot";
 import { PollTaskBoard } from "../../polling";
-export function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForApproval, interruptedAt, elapsedSeconds, handlers, hooks, isLastTurn }: { turn: Turn; usage?: any; tokenUsage?: any; fallbackWindow?: number; waitingForApproval?: boolean; interruptedAt?: number; elapsedSeconds?: number; handlers: FoldHandlers; hooks?: any[] | null; isLastTurn?: boolean }) {
+import { SessionAnnounceToggle } from "../../voice-announce";
+export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, waitingForApproval, interruptedAt, elapsedSeconds, handlers, hooks, isLastTurn }: { turn: Turn; threadId: string; usage?: any; tokenUsage?: any; fallbackWindow?: number; waitingForApproval?: boolean; interruptedAt?: number; elapsedSeconds?: number; handlers: FoldHandlers; hooks?: any[] | null; isLastTurn?: boolean }) {
   // Codex 的名字（09-17）：用户在用户中心取的；走外部 store 而不是逐层传 props
   // —— 回合标识（.turn-head）在 TurnView 渲染，这里取一次（见 codex-identity.mjs）。
   const codexName = useCodexName();
@@ -110,6 +111,7 @@ export function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForAp
           <div className="turn-head">
             <span className="turn-head-avatar"><CodexAvatar size={22} /></span>
             <span className="turn-head-name">{codexName}</span>
+            <SessionAnnounceToggle threadId={threadId} />
           </div>
         )}
         {/* 「正在处理 N 秒」+ 它下面那条灰线（border-bottom）：09-17 用户「那个正在处理和那条
@@ -188,6 +190,7 @@ export function TurnView({ turn, usage, tokenUsage, fallbackWindow, waitingForAp
 
 export const MemoTurnView = memo(TurnView, (prev, next) =>
   prev.turn === next.turn
+  && prev.threadId === next.threadId
   && prev.usage === next.usage
   && prev.tokenUsage === next.tokenUsage
   && prev.fallbackWindow === next.fallbackWindow

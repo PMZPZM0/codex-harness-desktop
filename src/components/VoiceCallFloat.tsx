@@ -3,11 +3,12 @@
  * ⛔ 解构名与 hook 返回键同名 ⇒ JSX 与搬迁前逐字一致。
  */
 import { createPortal } from "react-dom";
-import { AlertCircle, AudioLines, Download, EyeOff, LoaderCircle, Mic, PhoneOff, Settings2, VolumeX, X } from "lucide-react";
+import { useSyncExternalStore } from "react";
+import { AlertCircle, AudioLines, Download, EyeOff, LoaderCircle, Mic, PhoneOff, Settings2, Volume2, VolumeX, X } from "lucide-react";
 import VoiceMascot from "./VoiceMascot";
 import { patchVoiceStage, requestVoiceDictationSend, requestVoiceOpenSettings, resetVoiceStage, setVoiceDictationHandler, setVoiceLevel, setVoiceStopHandler } from "../voice/wave-level";
 // 非通话播报的「停止」出口（10-08）：播报域注册，这里只是触发 —— 基座不反向依赖域，走广播
-import { requestAnnounceStop } from "../voice/announce-bus";
+import { isAnnounceMutedForThread, requestAnnounceResume, requestAnnounceStop, subscribeAnnounceThreadMuted } from "../voice/announce-bus";
 import { useVoiceCallFloatState } from "./VoiceCallFloat/use-voice-call-float-state";
 
 export type VoicePhase = "idle" | "starting" | "active";
@@ -119,6 +120,12 @@ export function readPos(): { right: number; bottom: number } {
 }
 
 export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
+  // 与回合头 📢 共用同一份会话级状态：这里显示「停止 / 恢复」并按同一 threadId 操作。
+  const announceMuted = useSyncExternalStore(
+    subscribeAnnounceThreadMuted,
+    () => Boolean(threadId) && isAnnounceMutedForThread(String(threadId)),
+    () => false,
+  );
   const { phase, setPhase, state, setState, expanded, setExpanded, levelRef, screenElRef, applyLevel, muted, setMuted, mutedRef, toggleMute, transcript, setTranscript, callStartedAt, setCallStartedAt, userText, setUserText, agentText, setAgentText, ballVisible, setBallVisible, hintsEnabled, setHintsEnabled, hint, setHint, menu, setMenu, agentTextRef, ballRef, notice, setNotice, endpointSec, setEndpointSec, models, setModels, download, setDownload, pos, setPos, mediaStreamRef, captureCtxRef, workletRef, playCtxRef, playQueueRef, playingCountRef, aecRef, bargeModeRef, micSettingsRef, volumeRef, gateRef, chunkerRef, speakFilterRef, prebufferRef, liveRef, refRingRef, refWriteRef, refReadRef, refDropsRef, endpointArmedRef, quietSinceRef, lastBargeAtRef, speakingRef, phaseRef, voiceModeRef, dragRef, refreshModels, busyElsewhere, setBusyElsewhere, onBallContextMenu, hideBall, pushRef, enqueuePlay, speechEpochRef, bumpSpeechEpoch, stopPlayback, skipCurrent, speakDelta, flushSpeech, startCapture, teardown, startCall, endCall, startCallRef, callToggleRef, pushTranscript, installModels, draggedRef, onPointerDown, onPointerMove, onPointerUp, onBallClick, stateLabel, modelsReady, ballClass } = useVoiceCallFloatState({ threadId });
   return createPortal(
     <>
@@ -250,9 +257,14 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => { setMenu(null); requestAnnounceStop(); }}
+                onClick={() => {
+                  setMenu(null);
+                  if (announceMuted) requestAnnounceResume(threadId);
+                  else requestAnnounceStop(threadId);
+                }}
               >
-                <VolumeX size={13} />停止播报
+                {announceMuted ? <Volume2 size={13} /> : <VolumeX size={13} />}
+                {announceMuted ? "恢复播报" : "停止播报"}
               </button>
               <button
                 type="button"
