@@ -1519,7 +1519,7 @@ const CHECKS = [
         const stage=document.querySelector(".office-scene-stage");
         const board=document.querySelector(".office-board");
         const agents=[...document.querySelectorAll(".office-agent")];
-        const cats=[...document.querySelectorAll(".ws-cat")];
+        const cats=[...document.querySelectorAll(".ws-cat-img")];
         const screens=[...document.querySelectorAll(".ws-screen")];
         const pager=document.querySelector(".office-pager");
         return {
@@ -1538,24 +1538,22 @@ const CHECKS = [
       h.check("① 白色场景：1500×1360 / 一页 6 工位（3D 家具图 + 黑猫） / 10 人分页",
         Boolean(first && first.w === 1500 && first.h === 1360 && first.workstations === 6
           && first.agents === 6 && first.cats === 6 && first.screens === 6
-          && first.desks === 6 && first.chairs === 6 && first.bgImgs === 0 && first.deskLoaded === true
+          && first.desks === 6 && first.bgImgs === 0 && first.deskLoaded === true
           && first.pager.includes("1 / 2") && first.pager.includes("10 人")),
         JSON.stringify(first));
       const anim = await h.eval(`(function(){
         const bar=document.querySelector(".ws-screen > i");
-        const tail=document.querySelector(".ws-cat .cat-tail");
-        const arm=document.querySelector(".ws-cat.is-run .cat-arm-r");
+        const cat=document.querySelector(".ws-cat-img.is-seated");
         return {
           screen: bar ? getComputedStyle(bar).animationName : "",
-          tail: tail ? getComputedStyle(tail).animationName : "",
-          arm: arm ? getComputedStyle(arm).animationName : "",
+          cat: cat ? getComputedStyle(cat).animationName : "",
           screens: document.querySelectorAll(".ws-screen").length,
           screensWithScan: document.querySelectorAll(".ws-screen-scan").length,
         };
       })()`).catch(() => null);
-      h.check("② 场景是活的：显示器代码条 + 扫描线 + 猫摇尾 + 运行中敲键盘",
-        Boolean(anim && anim.screen.includes("ws-bar") && anim.tail.includes("cat-tail")
-          && anim.arm.includes("cat-type-r") && anim.screens === 6 && anim.screensWithScan === 6),
+      h.check("② 场景是活的：显示器代码条 + 扫描线 + 3D 猫呼吸",
+        Boolean(anim && anim.screen.includes("ws-bar") && anim.cat.includes("cat-breathe")
+          && anim.screens === 6 && anim.screensWithScan === 6),
         JSON.stringify(anim));
       await h.hover(".office-agent");
       await wait(450);

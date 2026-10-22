@@ -6,7 +6,7 @@
  *
  * 现行实现：
  *   · 家具/设施 = 本仓生成的白底 3D 图（assets/*.webp，?inline + multiply 融进白板）；
- *   · 猫 = DOM/SVG（坐姿背对镜头 / 站姿正面；idle 偶尔打瞌睡 Zzz）；
+ *   · 猫 = 3D 多角度渲染图（坐姿背对镜头 / 站姿正面；idle 偶尔打瞌睡 Zzz）；
  *   · 一页 6 个工位（2 列 × 3 排），10 人分 2 页，底部 pager；
  *   · 显示器叠实时内容；悬停详情卡、点击进会话、滚轮指针锚点缩放。
  * ⛔ 只复用 Marvis 的布局与状态机，不搬它的美术资产。
@@ -27,7 +27,7 @@ const css = read("src", "styles", "20-team-office.css");
 const cssCode = codeOnly(css);
 
 /* ── ① 资产：本仓生成的白色 3D 家具/设施 ── */
-for (const name of ["desk", "chair-white", "chair-gray", "coffee", "treadmill", "toilet"]) {
+for (const name of ["desk", "chair-white", "coffee", "treadmill", "toilet", "cat-seated", "cat-standing"]) {
   const p = join(ROOT, "src", "features", "team-office", "assets", `${name}.webp`);
   ok(existsSync(p) && statSync(p).size > 8 * 1024,
     `白色 3D 资产：${name}.webp（${existsSync(p) ? Math.round(statSync(p).size / 1024) + "KB" : "缺失"}）`);
@@ -63,8 +63,8 @@ ok(canvas.includes('className="ws-desk-wrap"') && canvas.includes('className="ws
   "桌面 = 生成的白色 3D 图（不是 CSS 画的平板）");
 ok(css.includes(".ws-desk-img") && /mix-blend-mode:\s*multiply/.test(css),
   "白底家具用 multiply 融进白板（无白框/硬边）");
-ok(canvas.includes("chairWhiteUrl") && canvas.includes("chairGrayUrl") && canvas.includes("ws-chair-img is-gray"),
-  "空位白椅 / 有人灰椅 两套资产");
+ok(canvas.includes("chairWhiteUrl") && canvas.includes("ws-chair-img"),
+  "空位白椅资产（有人坐的椅子已包含在 3D 猫图里）");
 ok(css.includes(".ws-chair-img") && /width:\s*150px/.test(css), "椅子有独立尺寸/层级");
 ok(canvas.includes('className={`ws-screen tone-${status.level}`}') && canvas.includes('["--screen-accent" as string]: status.accent'),
   "显示器内容颜色跟真实状态走");
@@ -75,20 +75,19 @@ ok(/\.ws-screen\s*\{[\s\S]{0,500}?position:\s*absolute/.test(css) && /@keyframes
 ok(canvas.includes("function Facilities") && ["coffee", "treadmill", "toilet"].every((k) => canvas.includes(k)),
   "左侧功能区：茶水间 / 跑步机 / 洗手间（生成的 3D 设施）");
 
-/* ── ④ 黑猫成员 ── */
-ok(canvas.includes("const SCARVES = [") && (canvas.match(/"#[0-9a-f]{6}"/g) ?? []).length >= 10,
-  "10 种围巾颜色（每个成员可区分）");
-ok(/const scarf = SCARVES\[index % SCARVES\.length\];/.test(canvas), "围巾颜色按成员索引取（不闪色）");
-ok(canvas.includes("function SeatedCat") && canvas.includes("function StandingCat"),
-  "黑猫两种姿态：坐姿（背对镜头）/ 站姿（正面）");
-ok(/const seated = status\.level === "run" \|\| status\.level === "idle";/.test(canvas)
-  && /\{seated \? \(/.test(canvas), "运行/待机坐着，等待/完成/失败站着");
-ok(/const dozing = status\.level === "idle"/.test(canvas) && /className="ws-zzz"/.test(canvas),
+/* ── ④ 黑猫成员（3D 多角度渲染图） ── */
+ok(canvas.includes("const SCARF_HUES = [") && (canvas.match(/\d+/g) ?? []).length >= 10,
+  "10 种围巾色相（每个成员可区分）");
+ok(/const hue = SCARF_HUES\[index % SCARF_HUES\.length\];/.test(canvas), "围巾色相按成员索引取");
+ok(canvas.includes("catSeatedUrl") && canvas.includes("catStandingUrl"),
+  "3D 猫两姿态：坐姿背面 / 站姿正面（打瞌睡用 Zzz 标记）");
+ok(/\{seated && \([\s\S]{0,200}?catSeatedUrl/.test(canvas)
+  && /\{!seated && \([\s\S]{0,200}?catStandingUrl/.test(canvas), "运行/待机坐着，等待/完成/失败站着");
+ok(/const dozing = status.level === "idle"/.test(canvas) && /className="ws-zzz"/.test(canvas),
   "待机偶尔打瞌睡（Zzz，参考图里的浏览器管家）");
-ok(css.includes("@keyframes cat-type-r") && css.includes("@keyframes cat-wave")
-  && css.includes("@keyframes cat-blink") && css.includes("@keyframes cat-tail") && css.includes("@keyframes cat-doze"),
-  "猫会敲键盘 / 招手 / 眨眼 / 摇尾 / 打瞌睡（不是静态剪影）");
-ok(canvas.includes("cat-eyes") && canvas.includes("cat-eyes-failed"), "正面猫有眼睛；失败换 X 眼");
+ok(/hue-rotate\(\$\{hue\}deg\)/.test(canvas), "同一套红围巾用 hue-rotate 分色（黑/白不受影响）");
+ok(css.includes("@keyframes cat-breathe") && css.includes("@keyframes cat-stand"),
+  "3D 猫有呼吸/站立轻微动效（不是完全静止）");
 ok(canvas.includes("ws-bubble") && /waiting.*…/.test(canvas) && css.includes(".ws-bubble"),
   "等待/完成/失败有气泡（… / ✓ / !）");
 

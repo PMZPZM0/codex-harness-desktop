@@ -7,7 +7,7 @@
  * 我们的做法：
  *   · 家具/设施 = **本仓生成的白底 3D 渲染图**（`assets/*.webp`，白底 + multiply 融进白板），
  *     ⛔ 不搬 Marvis 的美术资产；
- *   · 猫 = DOM + SVG 自绘（坐姿背对镜头 / 站姿正面），状态跟真实运行阶段联动；
+ *   · 猫 = 3D 多角度渲染图（坐姿背对镜头 / 站姿正面；红围巾 hue-rotate 分色），状态跟真实运行阶段联动；
  *   · 一页 6 个工位（2 列 × 3 排，照参考图尺寸）；成员 >6 时分页（10 个工位 = 2 页），
  *     ⛔ 不是把 10 个压成小图标；
  *   · 每台显示器叠实时内容（状态色代码条 + 扫描线）；悬停出详情卡、点击进会话；
@@ -16,10 +16,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import deskUrl from "./assets/desk.webp?inline";
 import chairWhiteUrl from "./assets/chair-white.webp?inline";
-import chairGrayUrl from "./assets/chair-gray.webp?inline";
 import coffeeUrl from "./assets/coffee.webp?inline";
 import treadmillUrl from "./assets/treadmill.webp?inline";
 import toiletUrl from "./assets/toilet.webp?inline";
+import catSeatedUrl from "./assets/cat-seated.webp?inline";
+import catStandingUrl from "./assets/cat-standing.webp?inline";
 import { CANVAS_H, CANVAS_W, TEAM_OFFICE_LIMIT, type OfficeMemberState } from "./office-format";
 import { effectivePhase, eventWordZhOf, type RunPhase } from "./office-screen";
 import type { OfficeActivityKind } from "./office-activity";
@@ -32,11 +33,8 @@ const DESK_COLS = [430, 960];
 const DESK_ROWS = [40, 460, 880];
 const PAGE_SIZE = 6;
 
-/** 每个工位一只猫；围巾颜色用来区分成员（Marvis 同款做法）。 */
-const SCARVES = [
-  "#e8553f", "#e2b23c", "#7b61c9", "#35b8b1", "#5fae66",
-  "#4a7bd0", "#e08a3c", "#cf6fa5", "#3f8f8a", "#5c6673",
-];
+/** 每个工位一只猫；3D 猫贴图是红围巾，用 hue-rotate 转出每个成员的颜色（黑色/白色不受影响）。 */
+const SCARF_HUES = [0, 42, 265, 170, 105, 215, 28, 320, 155, 230];
 
 type Status = {
   text: string;
@@ -91,50 +89,6 @@ export const OFFICE_ZOOM_MIN = 1;
 export const OFFICE_ZOOM_MAX = 4;
 export const OFFICE_ZOOM_STEP = 1.25;
 
-function SeatedCat({ scarf, level, dozing }: { scarf: string; level: Status["level"]; dozing: boolean }) {
-  return (
-    <svg className={`ws-cat is-seated is-${level}${dozing ? " is-doze" : ""}`} viewBox="0 0 120 120" aria-hidden="true">
-      <path className="cat-tail" d="M95 96c17 4 22-8 17-17" fill="none" stroke="#111214" strokeWidth="7" strokeLinecap="round" />
-      <path className="cat-body" d="M28 114c-3-24 7-42 32-44 25 2 35 20 32 44z" fill="#111214" />
-      <path className="cat-head" d="M35 68 31 30l20 11c5-3 13-3 18 0l20-11-4 38z" fill="#111214" />
-      <rect className="cat-scarf" x="37" y="72" width="46" height="13" rx="6.5" fill={scarf} />
-      <path className="cat-scarf-tail" d="M74 82l12 23-16-5z" fill={scarf} />
-      <g className="cat-arm cat-arm-l"><rect x="24" y="82" width="10" height="22" rx="5" fill="#111214" /></g>
-      <g className="cat-arm cat-arm-r"><rect x="86" y="82" width="10" height="22" rx="5" fill="#111214" /></g>
-    </svg>
-  );
-}
-
-function StandingCat({ scarf, level }: { scarf: string; level: Status["level"] }) {
-  const failed = level === "failed";
-  return (
-    <svg className={`ws-cat is-standing is-${level}`} viewBox="0 0 110 142" aria-hidden="true">
-      <path className="cat-tail" d="M25 96C7 100 5 84 12 77" fill="none" stroke="#111214" strokeWidth="6.5" strokeLinecap="round" />
-      <ellipse className="cat-body" cx="55" cy="100" rx="27" ry="34" fill="#111214" />
-      <rect x="40" y="124" width="12" height="15" rx="6" fill="#111214" />
-      <rect x="58" y="124" width="12" height="15" rx="6" fill="#111214" />
-      <path className="cat-head" d="M27 72 23 28l20 12c5-3 19-3 24 0l20-12-4 44z" fill="#111214" />
-      {failed ? (
-        <g className="cat-eyes-failed" stroke="#fff" strokeWidth="3.2" strokeLinecap="round">
-          <path d="M39 51l10 10M49 51 39 61" />
-          <path d="M61 51l10 10M71 51 61 61" />
-        </g>
-      ) : (
-        <g className="cat-eyes">
-          <ellipse cx="44" cy="54" rx="7.4" ry="8.8" fill="#fff" />
-          <ellipse cx="66" cy="54" rx="7.4" ry="8.8" fill="#fff" />
-          <circle cx="45" cy="55" r="3.4" fill="#111214" />
-          <circle cx="67" cy="55" r="3.4" fill="#111214" />
-        </g>
-      )}
-      <rect className="cat-scarf" x="35" y="72" width="40" height="12" rx="6" fill={scarf} />
-      <path className="cat-scarf-tail" d="M65 82l10 21-14-5z" fill={scarf} />
-      <g className="cat-arm cat-arm-l"><rect x="24" y="88" width="10" height="24" rx="5" fill="#111214" /></g>
-      <g className="cat-arm cat-arm-r"><rect x="76" y="86" width="10" height="26" rx="5" fill="#111214" /></g>
-    </svg>
-  );
-}
-
 function Workstation({
   member, status, index, x, y, hovered, onEnter, onLeave, onOpen, now,
 }: {
@@ -149,7 +103,7 @@ function Workstation({
   onOpen: () => void;
   now: number;
 }) {
-  const scarf = SCARVES[index % SCARVES.length];
+  const hue = SCARF_HUES[index % SCARF_HUES.length];
   const seated = status.level === "run" || status.level === "idle";
   const dozing = status.level === "idle" && (Math.floor(now / 19000) + index) % 4 === 0;
   const bubble = status.level === "waiting" ? "…" : status.level === "done" ? "✓" : status.level === "failed" ? "!" : "";
@@ -192,16 +146,21 @@ function Workstation({
         </div>
         {seated && (
           <img
-            className="ws-chair-img is-gray"
-            src={chairGrayUrl}
+            className="ws-cat-img is-seated"
+            src={catSeatedUrl}
             alt=""
             draggable={false}
+            style={{ filter: `hue-rotate(${hue}deg) drop-shadow(0 8px 6px rgba(20,28,36,.14))` }}
           />
         )}
-        {seated ? (
-          <SeatedCat scarf={scarf} level={status.level} dozing={dozing} />
-        ) : (
-          <StandingCat scarf={scarf} level={status.level} />
+        {!seated && (
+          <img
+            className="ws-cat-img is-standing"
+            src={catStandingUrl}
+            alt=""
+            draggable={false}
+            style={{ filter: `hue-rotate(${hue}deg) drop-shadow(0 8px 6px rgba(20,28,36,.14))` }}
+          />
         )}
         {dozing && <span className="ws-zzz">Zzz</span>}
         {bubble && <span className={`ws-bubble is-${status.level}`}>{bubble}</span>}

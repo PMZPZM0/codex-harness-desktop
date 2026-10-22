@@ -152,7 +152,7 @@ hover 回落 `--text` 保原行为）。⛔ **窗口控制钮（— □ ✕）�
 | `.system-event` | 系统事件行（压缩线、通知等） |
 | `.composer-menu-pop` | 输入框浮层（`#` / `@` / 命令面板） |
 | `.team-cluster-body` | 专家团聚类块 |
-| `.team-office-*` / `.office-scene` | 专家团办公室（外壳 + 右栏看板 + 白色工位板；场景本体是 DOM + SVG，**不是照片/画布贴图**） |
+| `.team-office-*` / `.office-scene` | 专家团办公室（外壳 + 右栏看板 + 白色工位板；场景本体是 DOM + 3D 渲染图资产，**不是照片/画布贴图**） |
 | `.is-settings-flow` + `.codex-rollout-card` / `.work-logs-card` | 数据管理页的「管理卡」：卡头（图标 + 标题）/ 说明 / 工具条（`.codex-logs-bar`，统计在左、操作在右）/ 列表（`.codex-logs-tree`，圆角 10、最大高 460 可滚动）/ 危险操作行。会话原档 = 中性灰，工作日志 = 主色点缀 |
 | `.pet-float` / `.pet-bubble` / `.pet-stage` / `.pet-sprite` | **桌面宠物**（2026-09-30）：**独立透明置顶窗口**里的内容，不是主界面的一部分。精灵靠一张图集 + `background-position` 切帧（8 列 × 9 行，每帧 192×208）；整片可拖动（`-webkit-app-region: drag`） |
 | `.pet-card` / `.pet-item` / `.pet-grid` / `.pet-roots` | 设置页「桌面宠物」：卡片 / 宠物选择项（缩略图 + 名字 + 来源徽标）/ 网格 / 目录清单 |
@@ -176,7 +176,7 @@ hover 回落 `--text` 保原行为）。⛔ **窗口控制钮（— □ ✕）�
 > 白色 3D 办公桌/显示器/主机/白灰椅 + **黑猫成员（彩色围巾）**，名字标在显示器上方；
 > 左侧茶水间 / 跑步机 / 洗手间。家具/设施 = 本仓生成的**独立白底渲染图**
 > （`assets/{desk,chair-white,chair-gray,coffee,treadmill,toilet}.webp`，`?inline` +
-> `mix-blend-mode:multiply` 融进白板）；猫 = DOM/SVG。⛔ 不搬 Marvis 的美术资产。
+> `mix-blend-mode:multiply` 融进白板）；猫 = 3D 多角度渲染图（坐姿背影 / 站姿正面，白底去背，红围巾 hue-rotate 分色）。⛔ 不搬 Marvis 的美术资产。
 >
 > · **布局**：一页 **2 列 × 3 排 = 6 个工位**（照参考图尺寸）；10 人分 2 页，底部 pager
 >   （「第 1 / 2 页 · 10 人」+ 上一页/下一页）。⛔ 不是把 10 个压成小图标。
