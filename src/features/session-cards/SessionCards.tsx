@@ -56,8 +56,9 @@ export function ActionCard({ icon, verb, target, info, status, statusText, autoO
         {statusText != null && <span className="action-status-text">{statusText}</span>}
       </span>
       {hasBody && (
-        <span className="action-toggle">
-          <span className="action-toggle-text">{open ? "收起" : "展开"}</span>
+        /* ★ 10-22 用户：「『展开』字样不要，鼠标放上去再浮出箭头，移开就隐藏」
+           ⛔ 不要再写回文案；展开态靠 aria-expanded + 箭头方向表达。 */
+        <span className="action-toggle" aria-hidden="true">
           <ChevronDown size={13} className="action-chevron" />
         </span>
       )}
