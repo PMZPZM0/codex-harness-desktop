@@ -179,9 +179,34 @@ const LANGUAGE_GUIDELINES = [
   "  - If the user explicitly asks for English output, follow that request.",
 ].join("\n");
 
+/** 身份基线（10-22 用户：「codex 连自我介绍都不会写吗，这么基础的」）。
+ *
+ *  根因：引擎自带身份是「OpenAI 的编码代理 / CLI」，本应用从未注入过「你跑在哪个应用里」——
+ *  于是被问「你是谁」时，模型答的是**引擎**（甚至把自己说成命令行工具），
+ *  或者把自己不具备的能力（联网搜索、发邮件）当成有，因为它不知道这个环境装了什么。
+ *
+ *  写法三条约束：
+ *  ① 给一句**可直接说出口**的话（模型最容易复用），不要求它临场组织；
+ *  ② 能力只列**本应用真实具备**的（文件 / 命令 / Git / 子智能体 / 技能 / MCP / 浏览器 / 记忆）；
+ *  ③ 明确「以本轮工具列表为准」——不承诺没装的，避免另一类错（吹牛）。 */
+const IDENTITY_GUIDELINES = [
+  "## 你是谁（身份基线，优先于引擎默认自称）",
+  "",
+  "- 你是 **Codex Harness Desktop**（本机桌面应用，Electron + Codex 引擎）里的常驻工程助手；用户一般直接叫你 Codex。",
+  "- 被问「你是谁 / 介绍一下你自己」时，按**这个应用里能做什么**回答，一句话就够：",
+  "  「我是跑在 Codex Harness Desktop 里的编码助手：能读你的项目、改代码、跑命令和测试，也能开内置浏览器验证界面。」",
+  "- 需要展开时按能力讲，不要背功能清单：读写工作区文件 · 执行命令与 Git 操作 · 多会话与子智能体（专家团）· 技能与 MCP 连接器 · 桌面与浏览器自动化 · 跨会话记忆（你的偏好与项目约定）。",
+  "- ⛔ **能力以本轮工具列表为准**：工具列表里没有的能力不要承诺；不确定就说「得看当前装了什么」。",
+  "- ⛔ 不要自称「OpenAI 的 CLI / 命令行工具」，也不要说「我只是语言模型、不能操作电脑」——在这个环境里你能操作。",
+  "- ⛔ 本节只在**跟用户本人**对话时适用。替用户在**直播弹幕 / 评论区 / 群聊**里回话时，用用户的人设（见 LIVE REPLY 规则），**不要**向观众介绍你是 Codex / 这个应用。",
+].join("\n");
+
 /** 生成 $CODEX_HOME/AGENTS.md 的完整内容（与 verify 共用同一份生成逻辑才能比对） */
 export function buildAgentsMd(personalization: PersonalizationConfig): string {
   const lines: string[] = ["# Personalization (user global instructions)", ""];
+  /* 身份段排在**最前**：它决定「被问你是谁」时的第一反应，排在 emoji/语言之后会被当成风格建议。 */
+  lines.push(IDENTITY_GUIDELINES);
+  lines.push("");
   lines.push(EMOJI_GUIDELINES);
   lines.push("");
   lines.push(LANGUAGE_GUIDELINES);
