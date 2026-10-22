@@ -28,7 +28,7 @@ import {
 } from "./OfficeCanvas";
 import { activityElapsedMs, officeActivityOf } from "./office-activity";
 import { REPORT_CHARS, WAIT_AFTER_MS, type RunPhase } from "./office-screen";
-import type { OfficeMemberState } from "./office-format";
+import { TEAM_OFFICE_LIMIT, type OfficeMemberState } from "./office-format";
 
 export type TeamOfficePreviewProps = {
   teamId: string | null;
@@ -164,7 +164,7 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
         ? [{ id: self.threadId, name: self.name || "本会话", profession: "本会话", running: self.running, hasThread: false }]
         : [];
       return [...mine, ...(delegatedRuns ?? [])
-        .slice(-(6 - mine.length))   // 工位只有 6 个；取**最近**的几个 ⇒ 新派的一定看得见，老的先离场
+        .slice(-(TEAM_OFFICE_LIMIT - mine.length))   // 工位 10 个；取**最近**的几个 ⇒ 新派的一定看得见，老的先离场
         .map((r) => ({
           //⛔ id 用 threadId（唯一且稳定）而不是数组下标 —— 下标会随列表变化导致人物"换位"。
           id: r.threadId,
@@ -176,7 +176,7 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
           hasThread: true,
         }))];
     }
-    const roster = [team.lead, ...team.members].slice(0, 6);
+    const roster = [team.lead, ...team.members].slice(0, TEAM_OFFICE_LIMIT);
     return roster.map((m) => {
       const run = runningByMember[m.id];
       const last = lastByMember[m.id];

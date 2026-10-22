@@ -183,10 +183,11 @@ for (const [label, re] of ACCOUNT) ok(re.test(sidebar), `④c 账号菜单「${l
      ① `title="…"` 后面隔着 `onClick={() => …}`，**箭头函数的 `>` 会让 `[^>]*` 提前截断**；
      ② `className="ic-x"` 在**子元素**上，不在按钮的属性里 ⇒ 顺序是 title → onClick → 子元素。
    ⇒ 必须用惰性 `[\s\S]{0,200}?` 且锚「title … 紧跟一个带 ic-* 的子元素」。 */
-const PANEL_TABS = [["变更", "ic-green"], ["终端", "ic-cyan"], ["浏览器", "ic-blue"], ["项目树", "ic-amber"]];
+/* 10-22：终端 tab 撤掉（审阅顶到第二位）、项目树改名「工作区文件」⇒ 四个 tab 的锚随之更新 */
+const PANEL_TABS = [["变更", "ic-green"], ["审阅", "ic-pink"], ["浏览器", "ic-blue"], ["工作区文件", "ic-amber"]];
 const panel = read("src/features/app-view/AppView/03-review-panel.tsx");
 for (const [label, tone] of PANEL_TABS) {
-  ok(new RegExp(`title="${label}"[\\s\\S]{0,200}?><\\w+ size=\\{12\\} className="${tone}"`).test(panel),
+  ok(new RegExp(`title="${label}[\\s\\S]{0,200}?><\\w+ size=\\{12\\} className="${tone}"`).test(panel),
     `④c 右侧面板「${label}」tab 图标挂了色相类（${tone}）`);
 }
 ok(/\.panel-tab > svg \{[\s\S]{0,160}?color:\s*var\(--ic,\s*currentColor\)/.test(codeOnly(composer)),
