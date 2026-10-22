@@ -1518,8 +1518,22 @@
 }
 .git-empty {
   place-items: center;
+  align-content: center;
+  gap: 4px;
   min-height: 200px;
+  padding: 0 14px;
+  text-align: center;
   display: grid;
+}
+/* 10-22：空态改成「结论 + 下一步」两行（原来只有一句「当前范围没有文件改动」看不出该干什么）。 */
+.git-empty p {
+  margin: 0;
+  font-size: 12.5px;
+}
+.git-empty small {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.55;
 }
 .ai-review {
   border-top: 1px solid var(--line-soft);
@@ -1553,6 +1567,12 @@
   gap: 10px;
   padding-top: 8px;
   display: flex;
+}
+/* 10-22：审查区加一行说明「它做什么、结果在哪」——原来只有一个按钮，用户不知道点了会发生什么。 */
+.ai-review-hint {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.55;
 }
 .browser-toolbar {
   border-bottom: 1px solid var(--line-soft);

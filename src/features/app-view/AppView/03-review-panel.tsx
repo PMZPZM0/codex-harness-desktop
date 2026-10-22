@@ -189,10 +189,10 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
                 {/* 10-07 用户截图后补：与侧栏「项目/分类」同一口径 —— tab 的**前缀图标**按色相上色、文字中性。 */}
                 {/* 10-22 用户：「侧边栏终端按键可以删了，替换成审阅图标」——终端标签撤掉（右栏默认 308px 时排不下五个，
                     审阅被挤到横向滚动外），审阅顶到第二位；终端页保留，Ctrl+J / 命令面板仍可打开。 */}
-                <button className={`panel-tab ${rightTab === "review" ? "active" : ""}`} title="变更" onClick={() => setRightTab("review")}><GitBranch size={12} className="ic-green" /><span>变更</span></button>
-                <button className={`panel-tab ${rightTab === "turn-review" ? "active" : ""}`} title="审阅：最后一轮已修改文件的完整 diff" onClick={() => setRightTab("turn-review")}><FileText size={12} className="ic-pink" /><span>审阅</span></button>
-                <button className={`panel-tab ${rightTab === "browser" ? "active" : ""}`} title="浏览器" onClick={() => setRightTab("browser")}><Globe2 size={12} className="ic-blue" /><span>浏览器</span></button>
-                <button className={`panel-tab ${rightTab === "tree" ? "active" : ""}`} title="工作区文件：浏览项目并预览" onClick={() => setRightTab("tree")}><FolderTree size={12} className="ic-amber" /><span>文件</span></button>
+                <button className={`panel-tab ${rightTab === "review" ? "active" : ""}`} title="变更：按范围查看 Git 改动（未暂存 / 已暂存 / 分支起点 / 上一轮）" onClick={() => setRightTab("review")}><GitBranch size={12} className="ic-green" /><span>变更</span></button>
+                <button className={`panel-tab ${rightTab === "turn-review" ? "active" : ""}`} title="审阅：本轮对话改过的文件与完整对比" onClick={() => setRightTab("turn-review")}><FileText size={12} className="ic-pink" /><span>审阅</span></button>
+                <button className={`panel-tab ${rightTab === "browser" ? "active" : ""}`} title="浏览器：在内置浏览器打开网页" onClick={() => setRightTab("browser")}><Globe2 size={12} className="ic-blue" /><span>浏览器</span></button>
+                <button className={`panel-tab ${rightTab === "tree" ? "active" : ""}`} title="文件：浏览工作区并预览" onClick={() => setRightTab("tree")}><FolderTree size={12} className="ic-amber" /><span>文件</span></button>
               </div>
             </div>
             <div className={`panel-page ${rightTab === "review" ? "" : "hidden"}`}>

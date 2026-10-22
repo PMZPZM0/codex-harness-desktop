@@ -61,7 +61,7 @@ const review = codeOnly(read("src/features/storage-settings/StorageSettings.tsx"
     "先查 @{upstream}，再按候选表找基准分支");
   ok(gitIpc.includes('runGit(cwd, ["diff", mb])') && gitIpc.includes("NO_BRANCH_BASE_NOTE"),
     "分支起点 diff 覆盖已提交 + 工作区；无基准时退回 HEAD 并带说明");
-  ok(gitIpc.includes("isInsideOrEqualTrustedRoots") && gitIpc.includes("拒绝读取 Git 变更"),
+  ok(gitIpc.includes("isInsideOrEqualTrustedRoots") && gitIpc.includes("工作区之外的 Git 数据不会被读取"),
     "cwd 必须落在可信工作区（渲染层传任意目录读不了 Git）");
   ok(gitIpc.includes('reject(new Error(gitFailureMessage(null') && gitIpc.includes("error:"),
     "Git 缺失会 reject（渲染层进入安装分支）；非零退出把原因放进 error");
@@ -82,6 +82,15 @@ const review = codeOnly(read("src/features/storage-settings/StorageSettings.tsx"
     "Git 缺失时有一键安装按钮（接 runtime:install，装完自动刷新）");
   ok(review.includes("上一轮改动") && review.includes("lastDiff"),
     "上一轮更改用 lastDiff（回合记录），不经过 Git");
+  /* 10-22 文案审查（用户截图「文案表达没做好」）：三条都把「说错话」当缺陷钉住。 */
+  ok(review.includes("noWorkspace") && review.includes("还没有选择工作区"),
+    "没选工作区走独立空态（⛔ 不再误报「当前环境没有可用的 Git」+ 给出无效的安装按钮）");
+  ok(review.includes("gitError ? null"),
+    "读不到变更时不再同时声称「没有改动」（两条互相矛盾的结论只留一条）");
+  ok(!review.includes("review/start"),
+    "审查入口不把内部方法名 review/start 暴露给用户");
+  ok(review.includes("reviewEmptyCopy") && review.includes("还没有暂存的改动") && review.includes("当前分支与起点一致"),
+    "每个范围有空态「结论 + 下一步」（未暂存空 ≠ 分支与起点一致）");
 }
 
 /* ── 四、IPC 参数前置校验：minArgs 不许超过真正传过去的参数个数 ───────────────
