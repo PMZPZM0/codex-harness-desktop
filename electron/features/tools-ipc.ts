@@ -4,15 +4,12 @@
  * 域：tools(1)
  * 通道：tools:status（自动化工具三件套的安装/内核就绪状态）
  *
- * ⛔ CloakBrowser 是**三态**判定（09-16 起不随包）：未装包 → 可按需下载；
- *    装了包没内核 → 提示点内核卡片；都在 → 就绪。合成两态会让用户不知道该点哪个。
- * ⛔ CloakBrowser 内核优先查应用内置缓存，兼容旧的用户目录缓存（`~/.cloakbrowser`）。
+ * ⛔ 浏览器自动化主通道是 ego lite（外部安装，状态走 browser:ego-status）；
+ *    这里只保留随包的 Nuphus 桌面自动化；浏览器自动化走外部 Ego Lite。
  * ⛔ 待接缝化（阶段 2）：fs 为宿主能力。
  */
-import os from "node:os";
-import path from "node:path";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { cloakCacheDir, npmPackagePath, nuphusBinary, writeToolsRoot } from "../toolchain";
+import { readFileSync } from "node:fs";
+import { npmPackagePath, nuphusBinary } from "../toolchain";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
@@ -28,17 +25,8 @@ export const toolsFeature = defineFeature<null>({
         try { return JSON.parse(readFileSync(pkgDir, "utf8")).version as string; }
         catch { return ""; }
       };
-      const root = writeToolsRoot();
       const nuphusPkg = npmPackagePath("@nuphus", "nuphus-mcp", "package.json");
-      const playwrightPkg = npmPackagePath("@playwright", "cli", "package.json");
-      const cloakPkg = npmPackagePath("cloakbrowser", "package.json");
       const nuphusBin = nuphusBinary();
-      // CloakBrowser 内核优先查应用内置缓存，兼容旧的用户目录缓存
-      const cloakDirs = [cloakCacheDir(), path.join(os.homedir(), ".cloakbrowser")].filter(Boolean);
-      let cloakBinary = false;
-      for (const dir of cloakDirs) {
-        try { if (readdirSync(dir).some((entry) => entry.includes("chromium"))) { cloakBinary = true; break; } } catch { /* 未下载 */ }
-      }
       return [
         {
           id: "nuphus-mcp", name: "Nuphus 桌面自动化", scope: "computer",
@@ -46,28 +34,6 @@ export const toolsFeature = defineFeature<null>({
           installed: Boolean(nuphusPkg), binaryReady: Boolean(nuphusBin),
           detail: nuphusBin ? "35 个桌面/浏览器自动化工具就绪（屏幕、窗口、键鼠、剪贴板、OCR、Chrome CDP），经 nuphus-call 按需调用，不占模型上下文" : "未安装：到「开发工具」页对「Nuphus 桌面自动化」点一次「修复安装」",
           command: nuphusBin,
-        },
-        {
-          id: "playwright-cli", name: "Playwright 浏览器自动化", scope: "browser",
-          version: playwrightPkg ? readVersion(playwrightPkg) : "",
-          installed: Boolean(playwrightPkg),
-          binaryReady: existsSync(path.join(root, "pw-browsers")) && readdirSync(path.join(root, "pw-browsers")).some((entry) => entry.startsWith("chromium-")),
-          detail: "命令行浏览器自动化：open / snapshot / click / type / screenshot；默认浏览器通道，内核可在「开发工具」页下载（国内镜像）",
-          command: "playwright-cli",
-        },
-        {
-          id: "cloakbrowser", name: "CloakBrowser 指纹浏览器", scope: "browser",
-          version: cloakPkg ? readVersion(cloakPkg) : "",
-          installed: Boolean(cloakPkg),
-          binaryReady: cloakBinary,
-          // 三态（09-16 起 CloakBrowser 不随包，默认浏览器是内置视图 / playwright-cli）：
-          // 未装包 → 提示可按需下载；装了包没内核 → 提示点内核卡片下载；都在 → 就绪。
-          detail: !cloakPkg
-            ? "未安装（按需使用：需要过反爬站点时再到「开发工具」页下载，约 4 MB）"
-            : cloakBinary
-              ? "反检测 Chromium 内核已就绪（tools/cloak-cache）"
-              : "npm 包已装，Chromium 内核未下载（「开发工具」页点「Cloak 指纹浏览器内核」下载）",
-          command: "cloakbrowser",
         },
       ];
     });

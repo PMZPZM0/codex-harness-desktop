@@ -862,10 +862,6 @@ try {
   botPairing.restoreApproved(saved ?? {});
 } catch { /* 首次运行无文件 */ }
 
-// CloakBrowser 常驻助手：单个 node 进程托管指纹浏览器窗口（headed + humanize），
-// stdin 逐行喂 URL；stdout 回传 JSON 事件（boot / launching / ready / opened / error / closed）。
-let cloakProc: ReturnType<typeof spawn> | null = null;
-
 const userSkillsDir = path.join(codexHome, "skills");
 
 const skillsRegistryFile = path.join(codexHome, "skills-registry.json");
@@ -1077,7 +1073,7 @@ const filePreviewAllowed = (target: URL) => {
 /** 启用/禁用供应商；禁用当前供应商时清空生效配置并重启 Codex */
 
 // ── 退出统一清理：确保所有子进程/服务都被终止，应用「退得干净」 ──
-// 覆盖：引擎(codex.exe)、node-pty 终端、CloakBrowser 助手、远程隧道+HTTP 服务、
+// 覆盖：引擎(codex.exe)、node-pty 终端、远程隧道+HTTP 服务、
 // 频道机器人 HTTP、调度器、微信/Telegram 网关轮询。
 let cleanupDone = false;
 
@@ -1087,9 +1083,6 @@ function cleanupAll() {
   // node-pty 终端：逐个 kill（intentionalKill 置位，不弹「进程已退出」）
   for (const terminal of terminals.values()) { try { terminal.kill(); } catch { /* 已退出 */ } }
   terminals.clear();
-  // CloakBrowser 常驻助手
-  try { cloakProc?.kill(); } catch { /* 已退出 */ }
-  cloakProc = null;
   // 远程控制：隧道(cloudflared) + HTTP 服务
   remote.stop();
   // 频道机器人 HTTP 服务、调度器、引擎子进程
@@ -1174,8 +1167,6 @@ bindCustomModelProbe({ normalizeProvider, readOpenaiAuth, readCustomModel, fetch
 //    这些符号既要读也要写（计数器 / 子进程句柄 / 缓存），所以经 getter/setter 暴露；
 //    main 侧现有代码一行未改。
 export const mutableState = {
-  get cloakProc() { return cloakProc; },
-  set cloakProc(v: typeof cloakProc) { cloakProc = v; },
   get resumeCount() { return resumeCount; },
   set resumeCount(v: typeof resumeCount) { resumeCount = v; },
   get resumeEnrichMs() { return resumeEnrichMs; },

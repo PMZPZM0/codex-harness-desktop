@@ -89,8 +89,16 @@ contextBridge.exposeInMainWorld("codex", {
   showNotification: (title: string, body: string) => __ipc("notify:show", 2, [title, body]),
   toolStatus: () => __ipc("tools:status", 0, []),
   listRuntimes: () => __ipc("runtime:list", 0, []),
-  openInCloakBrowser: (url: string) => __ipc("browser:open-cloak", 1, [url]),
-  cloakBrowserStatus: () => __ipc("browser:cloak-status", 0, []),
+  /* ego lite 安装态：CLI 路径/版本/双平台下载页；不内置浏览器本体 */
+  egoStatus: () => __ipc("browser:ego-status", 0, []),
+  /* 打开 ego lite 官方下载页（不静默安装系统软件） */
+  egoInstall: () => __ipc("browser:ego-install", 0, []),
+  /* 打开 ego lite GUI；找不到启动器时回落官方下载页 */
+  egoOpen: () => __ipc("browser:ego-open", 0, []),
+  /* 手动升级：运行官方 ego-browser upgrade（可能下载数百 MB） */
+  egoUpgrade: () => __ipc("browser:ego-upgrade", 0, []),
+  /* 归档会话时回收 codex-<threadId> TaskSpace；不传 threadId 则清全部 codex-* */
+  egoCleanup: (threadId?: string) => __ipc("browser:ego-cleanup", 0, [threadId]),
   remoteStart: () => __ipc("remote:start", 0, []),
   remoteStatus: () => __ipc("remote:status", 0, []),
   remoteDevices: () => __ipc("remote:devices", 0, []),

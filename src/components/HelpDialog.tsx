@@ -314,7 +314,7 @@ export const HELP_CONTENT: Record<HelpKey, HelpContent> = {
           "先看列表里哪些显示「未安装」——只有用到才需要装",
           "写代码：至少装 Git（首次启动可能已自动补装）",
           "跑 Python 脚本：装 Python",
-          "做浏览器自动化：在「自动化工具包」里装 playwright-cli 与浏览器内核",
+          "做浏览器自动化：优先在「开发工具」装 Ego Lite（每会话独立 Space）；未装回落 browse-skills 默认浏览器",
         ],
       },
       {

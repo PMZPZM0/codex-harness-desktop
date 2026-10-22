@@ -53,8 +53,8 @@ export type CapabilityProbe = {
   visionPlugin: boolean;
   /** 内置「生图插件」是否已配置（MCP 工具 image_generate 与命令行 generate_image **共用**这份配置） */
   imagePlugin: boolean;
-  /** 命令行兜底 playwright-cli 是否已安装 */
-  playwrightCli: boolean;
+  /** Ego Lite 浏览器自动化是否已安装（每会话 TaskSpace 的唯一自动化通道） */
+  egoBrowser: boolean;
   /** markitdown 是否已装（文档附件转换） */
   markitdown: boolean;
 };
@@ -80,8 +80,8 @@ export const CAPABILITIES: readonly CapabilityDefinition[] = [
     label: "浏览器自动化",
     purpose: "打开网页、抓取内容、点击/填表/下载",
     backends: [
-      { id: "nuphus-browser", label: "内置 MCP（nuphus browser_*）", why: "功能最全（23 个工具，含多步合一的 browser_exec、复用 Chrome 登录态的 cookie 导入）" },
-      { id: "playwright-cli", label: "命令行兜底（playwright-cli）", why: "在「桌面与浏览器自动化」里装了它才可用；MCP 不可用时的替代路径" },
+      { id: "ego-browser", label: "Ego Lite（每会话独立 TaskSpace）", why: "首选：真实 Chromium、继承登录态、多会话并行；到「开发工具 → Ego Lite」安装" },
+      { id: "nuphus-cli-browser", label: "browse-skills 默认浏览器（nuphus-call）", why: "Ego Lite 未安装时的回落：nuphus 的 browser_* CLI 驱动本机默认浏览器（不按会话隔离 Space）" },
     ],
   },
   {
@@ -141,8 +141,8 @@ export function localOcrSupported(probe: Pick<CapabilityProbe, "platform" | "arc
 export function resolveCapabilities(probe: CapabilityProbe): CapabilityResolution[] {
   /** 每个后端的可用性（判据集中在这里，便于预检逐条验） */
   const availability: Record<string, boolean> = {
-    "nuphus-browser": probe.browserSwitch && probe.nuphusAvailable,
-    "playwright-cli": probe.playwrightCli,
+    "ego-browser": probe.browserSwitch && probe.egoBrowser,
+    "nuphus-cli-browser": probe.browserSwitch && probe.nuphusAvailable,
     "nuphus-desktop": probe.desktopSwitch && probe.nuphusAvailable && probe.platform !== "darwin",
     // 判据与 automation-policy 的同名函数一致（守卫【274】比对，不许两处各写一套平台判断）
     "uia-desktop": probe.desktopSwitch && probe.uiaAvailable && probe.platform === "win32",

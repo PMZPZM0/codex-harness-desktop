@@ -149,7 +149,7 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
     // 压缩阈值键已上移顶层（09-28，见 providerToml 处说明），段内不写
   ]);
   // 自动化三件套不再注册为 MCP 常驻服务器：35 个工具 schema 会把每轮 prompt 撑大十几 KB，
-  // 拖慢所有对话。改为按需命令行调用（nuphus-call / playwright-cli / cloakbrowser，
+  // 拖慢所有对话。改为按需命令行调用（nuphus-call / ego-browser，
   // 用法见 developer_instructions），工具能力不变，上下文零占用。
   // ⛔ 统一内置 provider id 段（09-14 用户定稿）：新建会话一律绑 harness，它**永远指向当前生效
   // 供应商** —— 切供应商只重写这一段 + 重启引擎注入新 Key，所有会话零迁移直接可用。
@@ -257,7 +257,7 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
       `PYTHONHOME = "${escapeToml(path.dirname(bundledPython()))}"`,
     ] : []),
     "",
-    // 默认浏览器 = **内置浏览器视图**（右栏 Chromium webview）+ playwright-cli；CloakBrowser 是
+    // 默认浏览器 = **内置浏览器视图**（右栏 Chromium webview，仅供查看）+ ego-browser（每会话 Space，唯一自动化通道）；
     // 按需下载的可选增强（见 developer_instructions 的浏览器能力段）。
     // 浏览器自动化开关关掉后不开启 features.browser_use，模型不再被引导操作浏览器。
     ...(browserAuto ? [

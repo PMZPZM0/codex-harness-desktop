@@ -24,7 +24,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { app, shell } from "electron";
-import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, downloadEnv, existingToolPath, npmGlobalRoot, npmGlobalRootCandidates, npmPackagePath, pythonPipReady, toolchainEnv, toolRootsRead, toolsRoot, userToolsRoot, writeToolsRoot } from "../toolchain";
+import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, existingToolPath, npmGlobalRoot, npmGlobalRootCandidates, npmPackagePath, pythonPipReady, toolchainEnv, toolRootsRead, toolsRoot, userToolsRoot, writeToolsRoot } from "../toolchain";
 import { installKbEmbedding, kbBackendDir, kbEmbeddingInstalled, uninstallKbEmbedding } from "./kb-embed-backend";
 import { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, cancelRuntimeInstall, cleanupRuntimeTempFiles, clearCancelRequest, devRuntimeSpecs, emitRuntimeProgress, isCancelRequested, pipMetadataDirs, pythonSiteDir, readDownloadSource, requestRuntimeCancel, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls, trackRuntimeProc } from "./dev-runtimes";
 import type { DevRuntimeId, DevRuntimeSpec } from "./dev-runtimes";
@@ -85,9 +85,6 @@ const FALLBACK_STEPS: Partial<Record<DevRuntimeId, string>> = {
   markitdown: "在目标 python 下执行：python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple \"markitdown[pdf,docx,pptx]\" openpyxl",
   laya: "在目标 python 下执行：python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple laya[serve]（含 PyTorch，约 800 MB，要耐心等）",
   "phone-harness": "在目标 python 下执行：python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple phone-harness，装完把它的 CLI 注册成引擎技能",
-  cloakbrowser: "用内置 node 的 npm 装到目标目录：npm install --global --prefix \"<目标目录>\" cloakbrowser --registry=https://registry.npmmirror.com",
-  "playwright-browsers": "用 playwright CLI 自己下内核（环境变量 PLAYWRIGHT_BROWSERS_PATH 已经指向目标目录）",
-  "cloak-browsers": "用 cloakbrowser CLI 自己下内核（环境变量 CLOAKBROWSER_CACHE_DIR 已经指向目标目录）",
   "kb-embedding": "让 Codex 读项目里的工具链文档，用 npmmirror 装 npm 运行库、用 hf-mirror 下模型，都放目标目录",
   docker: "系统级安装：界面按钮会打开官网，按官网步骤装完需要重启电脑",
   openssl: "系统级安装：界面按钮会打开官网（slproweb 的 Windows 版），按官网步骤装",
@@ -275,15 +272,13 @@ async function removeTargetsWithProgress(id: DevRuntimeId, targets: string[]): P
   }
 }
 
-/** npm 包（nuphus / playwright-cli / cloakbrowser）的卸载落点：**包体目录 + 它自己的 shim**。
+/** npm 包（nuphus / rea）的卸载落点：**包体目录 + 它自己的 shim**。
  *  ⛔⛔ 为什么不能按 marker 首段推导：marker 是 `npm-global\node_modules\@nuphus\nuphus-mcp\package.json`，
  *    首段推导会得到 `tools/npm-global` —— 那是几个 npm 能力的**共同家目录**，卸载一个会把其它一起删光。
  *  ⛔ 10-01 用户报「卸载不真」的根因：旧实现只删 `npm-global/<pkg>`（那是 **shim 文件**），
  *    真正的包体 `npm-global/node_modules/<pkg>` 原地不动 ⇒ 卡片显示「未安装」但包还在。 */
 const NPM_PACKAGE_ARTIFACTS: Partial<Record<DevRuntimeId, { dirs: string[]; shims: string[] }>> = {
   nuphus: { dirs: ["node_modules/@nuphus"], shims: ["nuphus-mcp", "nuphus-call"] },
-  "playwright-cli": { dirs: ["node_modules/@playwright/cli"], shims: ["playwright-cli"] },
-  cloakbrowser: { dirs: ["node_modules/cloakbrowser"], shims: ["cloakbrowser"] },
   // REA（10-13）：包体目录 + rea / rea-agents 两个 shim；删完引擎重启后 [mcp_servers.rea]
   // 段自动消失（custom-model-apply 按 reaServerScript() 的存在性生成，见 ownedMcpServers）。
   rea: { dirs: ["node_modules/rea-agents"], shims: ["rea", "rea-agents"] },
@@ -326,7 +321,7 @@ function runtimeUninstallTargets(id: DevRuntimeId, spec: DevRuntimeSpec): string
   if (pkg) {
     // ⛔⛔ 同源纪律（10-07 同一批实测）：判定侧认**全部候选落位**（mac 双布局），
     //   卸载侧也必须逐个删 —— 只删 npmGlobalRoot() 那一个，装在另一个落位的包会
-    //   「卸载了但仍显示已安装」（cloakbrowser 实测）。落位清单来自单一真相源，别手拼。
+    //   「卸载了但仍显示已安装」（历史实测）。落位清单来自单一真相源，别手拼。
     // ⛔⛔⛔ dirs 里的路径是相对 **npm-global 前缀**的（`node_modules/cloakbrowser`），
     //   而候选落位 npmGlobalRootCandidates() 返回的**已含 node_modules 一段** ——
     //   直接 join 会拼出 `node_modules/node_modules/cloakbrowser` ⇒ **包体从来就没被删过**
@@ -351,7 +346,7 @@ function runtimeUninstallTargets(id: DevRuntimeId, spec: DevRuntimeSpec): string
     //   markitdown / laya / phone-harness 三个 pip 包都在这个分支上，一起覆盖。
     return [path.join(site, pipDir), ...pipMetadataDirs(site, pipDir)];
   }
-  // 工具侧：安装根 = marker 路径的第一段（playwright-browsers -> pw-browsers / git -> git / …）
+  // 工具侧：安装根 = marker 路径的第一段（git -> git / ffmpeg -> ffmpeg / …）
   // ⛔ 卸载只删 **userData** 里的下载件；随包 resources 的目录不归用户可卸载。
   return [path.join(writeToolsRoot(), spec.marker.split(/[\\/]/)[0])];
 }
@@ -370,47 +365,6 @@ function assertInstallVerified(id: DevRuntimeId, spec: DevRuntimeSpec): void {
     + `（安装根目录：${writeToolsRoot()}）。这通常是安装器「假成功」（命令退出码 0 但没落盘），`
     + "请把本页日志反馈给开发者；重复点「下载」不会自愈。"
   );
-}
-
-/** 浏览器内核按需下载（09-16 起内核不再随包）：先走国内镜像，失败回落官方源直连。 */
-async function runBrowserDownload(
-  id: DevRuntimeId, node: string, cli: string, args: string[], label: string, source: NonNullable<AppSettings["downloadSource"]> = "auto",
-): Promise<void> {
-  const mirrored = downloadEnv();
-  const mirrorKeys = ["PLAYWRIGHT_DOWNLOAD_HOST", "CLOAKBROWSER_DOWNLOAD_URL"].filter((key) => mirrored[key]);
-  const official = { ...mirrored };
-  for (const key of mirrorKeys) delete official[key];
-  const attempts = source === "direct" || !mirrorKeys.length
-    ? [{ env: official, via: "官方源" }]
-    : [{ env: mirrored, via: "国内镜像" }, { env: official, via: "官方源" }];
-  let lastError: Error | null = null;
-  for (let index = 0; index < attempts.length; index++) {
-    const via = attempts[index].via;
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const child = spawn(node, [cli, ...args], { windowsHide: true, env: attempts[index].env });
-        trackRuntimeProc(id, child);
-        let tail = "";
-        const report = (chunk: Buffer | string) => {
-          const text = String(chunk);
-          if (!text.trim()) return;
-          tail = `${tail}\n${text}`.slice(-4000);
-          emitRuntimeProgress(id, text, `（${via}）`);
-        };
-        child.stdout?.on("data", report);
-        child.stderr?.on("data", report);
-        child.on("error", reject);
-        child.on("close", (code) => code === 0 ? resolve() : reject(new Error(tail.trim().slice(-1200) || `${label}下载失败（${code}）`)));
-      });
-      return;
-    } catch (error) {
-      lastError = error as Error;
-      if (index < attempts.length - 1) {
-        sendToWindow("runtime:progress", { id, message: `${label}${attempts[index].via}下载失败，改用官方源重试…`, percent: 0 });
-      }
-    }
-  }
-  throw lastError ?? new Error(`${label}下载失败`);
 }
 
 /** npm 包按需安装：用**内置 node 自带的 npm**，registry 国内镜像优先、失败回落官方源。 */
@@ -567,14 +521,10 @@ async function devRuntimeHealth(): Promise<DevRuntimeHealth[]> {
  */
 const UPDATEABLE_TOOLS: Record<string, { pkg: string; label: string; platforms?: NodeJS.Platform[] }> = {
   nuphus: { pkg: "@nuphus/nuphus-mcp", label: "Nuphus 桌面自动化" },
-  "playwright-cli": { pkg: "@playwright/cli", label: "Playwright 浏览器自动化" },
   // ⛔ mac 专属：open-computer-use 只在 mac 随包工具链里（scripts/prepare-mac-tools.cjs 装进
   //    <tools>/npm-global），Windows/Linux 上既没装也不该提示 —— 列出来会永远显示「未检测到已装版本」，
   //    后台自动更新还会为它白跑一次 npm 安装。故带 platforms 约束，由 updateableToolIds() 统一过滤。
   "computer-use": { pkg: "open-computer-use", label: "Mac 电脑操作（Computer Use）", platforms: ["darwin"] },
-  // 10-13 统一更新体系纳入：指纹浏览器就是个普通的 npm 包，装在同一套 npm-global 落位里，
-  //   installedVersionOf / runNpmInstall 对它完全成立 ⇒ 不需要为它单写一条路径。
-  cloakbrowser: { pkg: "cloakbrowser", label: "CloakBrowser 指纹浏览器" },
   // REA 逆向分析（10-13）：同一条在线更新链（fetchRegistryLatest = 国内镜像优先 + 官方回落）。
   rea: { pkg: "rea-agents", label: "REA 逆向分析" },
 };
@@ -732,7 +682,7 @@ export const runtimeFeature = defineFeature<null>({
       if (!spec) throw new Error("未知开发工具");
       if (spec.builtIn) throw new Error("内置工具不可卸载");
       if (spec.kind === "guide") throw new Error("该工具是系统级安装，请到系统的「应用与功能」里卸载");
-      // 随包内置能力（nuphus / playwright-cli / ponytail 插件），不是联网下载 —— 删了没有可靠的重取途径
+      // 随包内置能力（nuphus / ponytail 插件），不是联网下载 —— 删了没有可靠的重取途径
       if (spec.bundled) throw new Error("该工具随应用内置，删除后只能从随包资源恢复，因此不支持卸载");
       // 随包内置资源（zip / 插件目录），不是联网下载 —— 删了没有可靠的重取途径，直接拒绝
       if (spec.noUninstall) throw new Error("该工具来自随包内置资源，删除后难以恢复，因此不支持卸载");
@@ -896,7 +846,7 @@ export const runtimeFeature = defineFeature<null>({
             mergeStrategy: "replace",
           }).catch(() => undefined);
         } else if (spec.bundled) {
-          // 随包内置能力的「修复安装」（nuphus / playwright-cli）：从随包 zip 重新解压。
+          // 随包内置能力的「修复安装」（nuphus）：从随包 zip 重新解压。
           if (!bundledNode()) await runRuntimeInstaller("node", runtimeInstaller("install-runtimes.cjs"), ["node"], process.execPath, { DOWNLOAD_SOURCE: downloadSource });
           // ⛔ 只认随包 zip（解压安装），**不再回落在线下载**（09-12 用户实测发布包故障）：
           //   GitHub Release 那个 automation-tools.zip 资产根本不存在，回落只会撞死地址。
@@ -910,22 +860,10 @@ export const runtimeFeature = defineFeature<null>({
           await runRuntimeInstaller(id, runtimeInstaller("install-automation.cjs"), ["--zip", bundledAutomationZip], bundledNode());
           // 解压安装成功后自动激活「桌面自动化」「浏览器自动化」联动开关
           await saveAppSettings(app.getPath("userData"), { desktopAutomation: true, browserAutomation: true });
-        } else if (id === "cloakbrowser") {
-          await runNpmInstall(id, "cloakbrowser", "CloakBrowser", downloadSource);
         } else if (id === "rea") {
           // REA 逆向分析（10-13）：npm 国内镜像装，失败回落官方源；重跑同一入口 = 更新到 latest
           // （UPDATEABLE_TOOLS 的 rea 条目让「设置 → 自动化」的在线更新链对它同样成立）。
           await runNpmInstall(id, "rea-agents", "REA 逆向分析", downloadSource);
-        } else if (id === "playwright-browsers") {
-          const node = bundledNode();
-          const cli = npmPackagePath("@playwright", "cli", "node_modules", "playwright", "cli.js");
-          if (!node || !existsSync(cli)) throw new Error("缺少 Playwright CLI，请先在「开发工具」安装「Playwright 浏览器自动化」");
-          await runBrowserDownload(id, node, cli, ["install", "chromium"], "浏览器内核", downloadSource);
-        } else if (id === "cloak-browsers") {
-          const node = bundledNode();
-          const cli = path.join(npmGlobalRoot(), "cloakbrowser", "dist", "cli.js");
-          if (!node || !existsSync(cli)) throw new Error("缺少 CloakBrowser，请先在「开发工具」安装「CloakBrowser 指纹浏览器」（约 4 MB）");
-          await runBrowserDownload(id, node, cli, ["install"], "Cloak 内核", downloadSource);
         } else {
           // ⛔ DOWNLOAD_SOURCE 经环境变量传给安装脚本 —— 脚本 argv 的裸词会被当成工具 id。
           await runRuntimeInstaller(id, runtimeInstaller("install-runtimes.cjs"), [id], process.execPath, { DOWNLOAD_SOURCE: downloadSource });

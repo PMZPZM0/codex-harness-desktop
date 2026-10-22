@@ -1629,24 +1629,6 @@
   margin: 0;
   font-size: 12px;
 }
-.browser-empty.cloak-mode svg {
-  color: var(--green);
-}
-.cloak-mode .cloak-url {
-  color: var(--text);
-  word-break: break-all;
-}
-.cloak-mode .cloak-status {
-  color: var(--green);
-  margin: 0;
-  font-size: 12px;
-}
-.cloak-mode .cloak-hint {
-  opacity: 0.75;
-  max-width: 320px;
-  font-size: 11px;
-  line-height: 1.6;
-}
 .settings-group {
   flex-direction: column;
   gap: 2px;

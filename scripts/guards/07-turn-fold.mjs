@@ -766,7 +766,7 @@ export async function run() {
       strip(readFileSync(entry.path, "utf8")).split(/\r?\n/).forEach((line, i) => {
         // ⛔ 1~2 个反斜杠都算：`\\codex-home`（源码里的转义形态，渲染出 `\codex-home`）与
         //    `\codex-home`（模板串里会被 JS 当转义吃掉 → 分隔符直接消失）都是错的。
-        if (/\\{1,2}(codex-home|skills|sessions|plugins|commands|logs|pw-browsers|cloak-cache)/.test(line)) {
+        if (/\\{1,2}(codex-home|skills|sessions|plugins|commands|logs|pw-browsers)/.test(line)) {
           offenders.push(`${relative(ROOT, entry.path)}:${i + 1}`);
         }
       });
@@ -2063,7 +2063,7 @@ export async function run() {
   //    → 随后「这个更好，那个替换掉」：改用 browser-skill 替换 browser-automation）
   //    要点：① 随应用写入 codexHome/skills/（内置=代码为准，启动时按内容覆盖）
   //          ② 内容必须覆盖**真实存在**的命令（照 help 写）且替换后**不丢能力说明**
-  //             （通道选型 / CloakBrowser 是从旧技能并过来的，删旧技能不能把它们一起删掉）
+  //             （ego 优先 / 每会话 TaskSpace / playwright-cli 回落 —— 10-22 替换 CloakBrowser）
   //          ③ 旧技能必须退役清理 —— 内建写入只增不删，不清的话老用户磁盘上那份会继续被加载
   //          ④ 仍受「浏览器自动化」总闸管（名单 = BROWSER_SKILL_IDS）
   const bsSrc58 = readBuiltinSkillsSource();
@@ -2076,12 +2076,12 @@ export async function run() {
   (/name: browser-skill[\r\n]/.test(bsSrc58) ? ok : fail)(
     "【58】技能 frontmatter 的 name 与目录名一致（browser-skill，否则引擎按名字索引不到）"
   );
-  // 命令必须照 playwright-cli --help 写（写错模型就照着错命令试）
-  const bsCmds58 = ["snapshot", "find <text>", "requests", "response-body", "console [min-level]", "state-save", "state-load", "kill-all", "tab-list", "--raw", "eval <func>"];
+  // 技能必须覆盖 ego 的真实 API（写错模型就照着错命令试）
+  const bsCmds58 = ["taskSpace", "snapshot", "waitForSelector", "evaluate", "screenshot", "nuphus-call"];
   const bsMiss58 = bsCmds58.filter((k) => !bsSrc58.includes(k));
   (bsMiss58.length === 0 ? ok : fail)(`【58】技能覆盖真实实操命令（缺：${bsMiss58.join("、") || "无"}）`);
-  // 替换后不能丢能力说明：通道选型表 + CloakBrowser 段（原本在旧技能里）
-  const bsMerge58 = ["通道选型", "内置浏览器面板", "CLOAKBROWSER_ENTRY", "cloakbrowser install"];
+  // 替换后不能丢能力说明：通道优先级 + 每会话 TaskSpace + 回落通道（10-22 ego 替换 Cloak）
+  const bsMerge58 = ["ego-browser", "TaskSpace", "CODEX_THREAD_ID", "nuphus-call"];
   const bsLost58 = bsMerge58.filter((k) => !bsSrc58.includes(k));
   (bsLost58.length === 0 ? ok : fail)(
     `【58】替换后能力说明未丢失（缺：${bsLost58.join("、") || "无"}）`
@@ -3100,18 +3100,21 @@ export async function run() {
     const nxt = /\n(?:export\s+)?const |\n\/\*\*/.exec(rest);
     return rest.slice(0, nxt ? nxt.index : rest.length);
   };
-  const bSkill = cutSkill("BROWSER_SKILL");
+  // ⛔ 10-22：browser-skill 正文里有 JS 示例（行首 `const task = await ...`），
+  //    原来「切到下一个行首 const」的切法会把它拦腰截断 ⇒ 直接从专属文件切到末尾。
+  const bSkillFile = readFileSync(join(ROOT, "electron", "builtin-skills", "02-skill-browser.ts"), "utf8");
+  const bSkill = bSkillFile.slice(Math.max(0, bSkillFile.indexOf("export const BROWSER_SKILL")));
   const dSkill = cutSkill("DESKTOP_SKILL");
   (bSkill && dSkill ? ok : fail)("【74】能从 builtin-skills.ts 切出两个技能正文（切不出来说明常量被改名/移动）");
 
-  // ① 浏览器技能必须真的讲 browser_* 通道，而不只是换个标题
-  (/browser_snapshot/.test(bSkill) && /browser_exec/.test(bSkill) && /browser_import_cookies/.test(bSkill) ? ok : fail)(
-    "【74】browser-skill 讲清 browser_* 通道（快照 / 批处理 / 登录态复用）"
+  // ① 浏览器技能必须真的讲 ego 通道（10-22 起 ego 优先、playwright-cli 回落）
+  (/ego-browser/.test(bSkill) && /taskSpace/.test(bSkill) && /snapshot/.test(bSkill) && /nuphus-call/.test(bSkill) ? ok : fail)(
+    "【74】browser-skill 讲清 ego TaskSpace + snapshot + browse-skills 默认浏览器回落"
   );
-  (/单次 CDP 往返/.test(bSkill) ? ok : fail)("【74】browser-skill 点明 browser_exec 的价值（多步合并成单次 CDP 往返）");
-  (/三段循环/.test(bSkill) ? ok : fail)("【74】browser-skill 有「观察 → 动作 → 验证」三段协议");
-  // ⛔ 10-12：MCP 工具对模型不可达 ⇒ 技能不再讲「判存在」，讲「当前唯一可用通道」。
-  (/唯一可用通道/.test(bSkill) && /unsupported call/.test(bSkill) ? ok : fail)("【74】browser-skill 讲明当前引擎下唯一可用通道（0.157 起 MCP 工具不下发，旧「判存在」那套已失效）");
+  (/同一页的多步动作/.test(bSkill) && /page\.evaluate/.test(bSkill) ? ok : fail)("【74】browser-skill 点明批处理与结构化取数的价值");
+  (/观察 → 动作 → 验证/.test(bSkill) ? ok : fail)("【74】browser-skill 有「观察 → 动作 → 验证」三段协议");
+  // ⛔ 10-12：MCP 工具对模型不可达 ⇒ 技能不再讲「判存在」，讲「ego 优先 + 回落」。
+  (/unsupported call/.test(bSkill) && /回落/.test(bSkill) ? ok : fail)("【74】browser-skill 讲明 ego 优先、browse-skills 回落，并禁止直调 MCP browser_*（0.157 起必 unsupported call）");
 
   // ② 桌面技能：perceive/vision 分工 + 平台降级（Intel Mac 无本地 OCR）
   (/desktop_perceive/.test(dSkill) && /never click with them/.test(dSkill) ? ok : fail)(
@@ -3354,7 +3357,7 @@ export async function run() {
   try { caps274 = req274(join(ROOT, "dist-electron", "capability-registry.js")); } catch { caps274 = null; }
   const probeBase = {
     arch: "arm64", desktopSwitch: true, browserSwitch: true, nuphusAvailable: true, uiaAvailable: true,
-    computerUseAvailable: true, nuphusVisionEnv: true, visionPlugin: true, imagePlugin: true, playwrightCli: true, markitdown: true,
+    computerUseAvailable: true, nuphusVisionEnv: true, visionPlugin: true, imagePlugin: true, egoBrowser: true, markitdown: true,
   };
   const desktopItem = (resolution, platform) => {
     const item = (resolution ?? []).find((entry) => entry.id === "desktop");
@@ -3826,14 +3829,14 @@ export async function run() {
       desktopSwitch: true, browserSwitch: true,
       nuphusAvailable: true, nuphusVisionEnv: true,
       visionPlugin: true, imagePlugin: true,
-      playwrightCli: false, markitdown: false,
+      egoBrowser: false, markitdown: false,
     };
     const pick = (rows, id) => rows.find((r) => r.id === id) || {};
     const alt = (rows, capId, altId) => (pick(rows, capId).alternatives || []).find((a) => a.id === altId) || {};
 
     const allOn = reg.resolveCapabilities(base);
-    (pick(allOn, "browser").activeId === "nuphus-browser" && pick(allOn, "desktop").activeId === "nuphus-desktop" ? ok : fail)(
-      "【85】总闸开着时，浏览器与桌面自动化都走内置 MCP（nuphus）"
+    (pick(allOn, "browser").activeId === "nuphus-cli-browser" && pick(allOn, "desktop").activeId === "nuphus-desktop" ? ok : fail)(
+      "【85】总闸开着时桌面走 nuphus；未装 Ego Lite 时浏览器回落 browse-skills（nuphus-call 默认浏览器）"
     );
     (pick(allOn, "vision").activeId === "nuphus-vision" ? ok : fail)(
       "【85】视觉 env 已下发时，看图首选 nuphus desktop_vision（BYOK）"
@@ -3872,13 +3875,17 @@ export async function run() {
       "【85】Apple Silicon 同条件下本地 OCR 可用（与 Intel Mac 结论相反 ⇒ 平台判据真的生效）"
     );
 
-    // 没装的后端不许被报成「可用」
-    (alt(allOn, "browser", "playwright-cli").available === false && pick(allOn, "documents").activeId === null ? ok : fail)(
-      "【85】没装的兜底后端判为「未就绪」；没装 markitdown 时文档转换判为无可用后端"
+    // 没装的后端不许被报成「可用」；但 nuphus 回落仍应接住浏览器自动化
+    (pick(allOn, "browser").activeId === "nuphus-cli-browser" && pick(allOn, "documents").activeId === null ? ok : fail)(
+      "【85】没装 Ego Lite 时浏览器回落 nuphus-call；没装 markitdown 时文档转换判无可用后端"
     );
-    const withCli = reg.resolveCapabilities({ ...base, playwrightCli: true, markitdown: true });
-    (alt(withCli, "browser", "playwright-cli").available === true && pick(withCli, "documents").activeId === "markitdown" ? ok : fail)(
-      "【85】装上以后同两条又变「就绪」（与上一条互为反转）"
+    const withEgo = reg.resolveCapabilities({ ...base, egoBrowser: true, markitdown: true });
+    (pick(withEgo, "browser").activeId === "ego-browser" && pick(withEgo, "documents").activeId === "markitdown" ? ok : fail)(
+      "【85】装上 Ego Lite / markitdown 以后切到首选通道且文档就绪（与上一条互为反转）"
+    );
+    const noNuphus = reg.resolveCapabilities({ ...base, nuphusAvailable: false });
+    (pick(noNuphus, "browser").activeId === null ? ok : fail)(
+      "【85】Ego 与 nuphus 都不可用时浏览器判无可用后端"
     );
   }
 

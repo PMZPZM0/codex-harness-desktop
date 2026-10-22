@@ -18,7 +18,7 @@ import type { PendingRequest } from "../types";
 
 
 export function ToolCard({ tool }: { tool: ToolStatusEntry }) {
-  const Icon = tool.id === "nuphus-mcp" ? Monitor : tool.id === "cloakbrowser" ? ShieldCheck : Globe2;
+  const Icon = tool.id === "nuphus-mcp" ? Monitor : Globe2;
   const state = !tool.installed ? "missing" : !tool.binaryReady ? "partial" : "ready";
   const stateLabel = state === "ready" ? "就绪" : state === "partial" ? "待下载内核" : "未安装";
   return (

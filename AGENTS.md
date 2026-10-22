@@ -487,21 +487,23 @@ resources/tools/node/node.exe scripts/accept.mjs --keep        # 跑完不关应
 > ③ `scripts/prepare-mac-tools.cjs`（mac 构建期现造）。守卫【29】按 extraResources 逐条比对。
 
 **内置（builtIn=true，11 项）**：引擎本体 · Node.js · VS Code CLI · Nuphus 桌面自动化 ·
-Playwright 浏览器自动化（CLI）· ponytail 写代码模式插件 · **Python（完整版，自带 pip + Tkinter）** ·
+ponytail 写代码模式插件 · **Python（完整版，自带 pip + Tkinter）** ·
 **ripgrep** · **uv** · **CMake** · **7-Zip CLI** · **jq** · **Ninja** · **yt-dlp** · **Android 平台工具（adb）**
 （后 9 件为本次按 50MB 口径新纳入；打包靠上面两个 prepare 脚本现造，CI 干净检出必然命中）。
 
 **按需下载（>50MB / 内核）**：PowerShell 7（282MB）· Git（90MB，缺了首启自动补装）·
-FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）· Playwright 内核（170MB）· Cloak 内核（200MB）。
-全部走国内镜像优先、失败自动回落官方源。
+FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）。
+全部走国内镜像优先、失败自动回落官方源。**Ego Lite 浏览器不随包内置**（安装后约 611MB），
+由「设置 → 开发工具」跳官方安装器；浏览器自动化优先走它，未安装回落 browse-skills
+（`nuphus-call browser_*` 驱动默认浏览器）。**Playwright CLI 与浏览器内核已整体移除。**
 
 | 能力 | 入口 | 说明 |
 |---|---|---|
 | 引擎本体 | `app-server --listen stdio://` | 会话、工具、插件、钩子、技能全部走它 |
 | 基础运行时 | `resources/tools/{node,python,git,pwsh,vscode-cli,rg,uv,cmake,ninja,sevenzip,jq}` | 开发机本地保留；**打包后仅 node/vscode-cli 内置**，其余开发工具页按需下载（缺 Git 启动自动补装） |
-| 桌面自动化 MCP | `tools/npm-global` 里的 `nuphus`（MCP 服务器名） | 需先装「自动化工具包」，工具前缀 `desktop_*` / `browser_*` |
-| 浏览器自动化 CLI | `tools/npm-global/playwright-cli` | 需先装「自动化工具包」，首次 open 会提示装内核 |
-| 指纹浏览器 | `require("cloakbrowser")` / `tools/npm-global/cloakbrowser` | 需先装「自动化工具包」+「Cloak 内核」 |
+| 桌面自动化 MCP | `tools/npm-global` 里的 `nuphus`（MCP 服务器名） | 工具前缀 `desktop_*`；浏览器工具经 `nuphus-call browser_*` CLI 调用 |
+| 浏览器自动化首选 | 外部安装的 `ego-browser`（ego lite） | 每个 Codex 会话一个 `codex-<CODEX_THREAD_ID>` TaskSpace；共享登录态、多会话并行；不随包内置 |
+| 浏览器自动化回落（browse-skills） | `nuphus-call browser_navigate / browser_snapshot / browser_click / …` | ego 未安装时驱动本机默认浏览器；不按会话隔离 Space |
 | 内置技能 | `codex-home/skills/` 的 `desktop-automation`、`browser-skill` | 随应用写入，引导引擎调自动化工具；旧 `browser-automation` 已退役（升级时按指纹自动清理，用户改过的目录不碰） |
 
 ## 会话动态工具（thread/start / thread/resume 注册，可直接调用）
@@ -544,17 +546,15 @@ FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）· Playwright 内核�
 
 ## 工具链清单
 
-**随包内置（离线可用，勿重复下载）**：Node（安装器引导）、VS Code CLI、**Nuphus 桌面自动化 + Playwright 浏览器自动化 CLI**（`tools/npm-global` 预解压，≈48MB 原始；09-16 起 **CloakBrowser 已从包里剥离**，extraResources `filter` / `pack-automation.cjs` / mac `copy-mac-tools.cjs` 三处同源排除。⛔ **必须两条 extraResources 映射**：`from=resources/tools/npm-global`（根级 shim）+ `from=resources/tools/npm-global/node_modules`（包体本身）——electron-builder 会**无条件丢弃 `from` 根级的 `node_modules`**，只写一条映射的话包里只剩 shim、包体全无）、**ponytail 插件源**（`tools/ponytail-plugin` 1.6MB）。其余（Python/Git/PowerShell/rg/uv/CMake/Ninja/7-Zip/jq）09-16 起不随包，走「开发工具」页按需下载；**首次启动检测到缺 Git 会自动后台补装**（`autoInstallGitIfNeeded`：仅 Windows、与手动安装互斥、装完 `restartServerWhenIdle` 刷新引擎、失败广播 done 事件不悬挂安装态，下次启动仍缺会再试）。**ponytail 默认不装**（09-27，见【26】）：随包只留安装源，启动**不再自动种**；想用在「开发工具」页手动安装（`runtime:install` id=ponytail），卸载后不会自动装回。
+**随包内置（离线可用，勿重复下载）**：Node（安装器引导）、VS Code CLI、**Nuphus 桌面自动化**（`tools/npm-global` 预解压）、**ponytail 插件源**（`tools/ponytail-plugin` 1.6MB）。⛔ **必须两条 extraResources 映射**：`from=resources/tools/npm-global`（根级 shim）+ `from=resources/tools/npm-global/node_modules`（包体本身）——electron-builder 会**无条件丢弃 `from` 根级的 `node_modules`**，只写一条映射的话包里只剩 shim、包体全无。其余（Python/Git/PowerShell/rg/uv/CMake/Ninja/7-Zip/jq）09-16 起不随包，走「开发工具」页按需下载；**首次启动检测到缺 Git 会自动后台补装**（`autoInstallGitIfNeeded`：仅 Windows、与手动安装互斥、装完 `restartServerWhenIdle` 刷新引擎、失败广播 done 事件不悬挂安装态，下次启动仍缺会再试）。**ponytail 默认不装**（09-27，见【26】）：随包只留安装源，启动**不再自动种**；想用在「开发工具」页手动安装（`runtime:install` id=ponytail），卸载后不会自动装回。
 
 **按需安装（应用内「开发工具」页 或 手动）**：
 
 | 工具 | 大小 | 安装方式 | 装完效果 |
 |---|---|---|---|
 | Nuphus 桌面自动化 | 随包 30MB | **随包直出**，卡片显示「内置」；目录损坏时点「修复安装」（重新解压 zip 到 `tools/npm-global/` + 激活联动开关 + 引擎重启） | nuphus MCP 注册 35+ 桌面工具（经 nuphus-call 按需调用） |
-| Playwright 浏览器自动化（CLI） | 随包 18MB | 同上（随包直出 / 可修复安装） | playwright-cli 可用（**默认浏览器通道**） |
-| CloakBrowser 指纹浏览器（npm 包） | ~4MB | 开发工具页「下载」（`runNpmInstall`：内置 node 自带 npm + registry.npmmirror.com，失败回落官方源；用户自设 registry 时不覆盖） | `CLOAKBROWSER_ENTRY` 生效，可过 Cloudflare/reCAPTCHA；**不装不影响日常浏览**（默认走内置浏览器视图 + playwright-cli） |
-| Playwright 浏览器内核 | ~170MB | 开发工具页「下载」（需先有 Playwright CLI） | playwright-cli 首次 open 不再提示缺内核 |
-| Cloak 指纹浏览器内核 | ~200MB | 开发工具页「下载」（需先装 CloakBrowser npm 包） | cloakbrowser 可开反检测窗口 |
+| Ego Lite 浏览器自动化（首选） | 安装后约 611MB（不随包） | 「设置 → 开发工具 → Ego Lite」→ 官方安装器（Windows 约 13.5MB 在线包 / macOS 146–164MB），完成 GUI 引导 | `ego-browser` CLI 可用；每会话一个 `codex-<CODEX_THREAD_ID>` TaskSpace，多会话并行、共享登录态 |
+| browse-skills 默认浏览器（回落） | 随包（nuphus） | 无需单独安装；装好 Nuphus 后 `nuphus-call browser_*` 即可用 | ego 未安装时的浏览器自动化回落通道 |
 | ponytail 写代码模式插件 | 随包 2MB | **默认不装**（09-27 起，按需安装）；用人在开发工具页手动安装 | 会话钩子 + 6 个 ponytail-* 技能 |
 | FFmpeg / yt-dlp / Miniconda / MinGW | 各 20~300MB | 开发工具页「下载」（联网） | 对应命令可用 |
 | Docker Desktop / OpenSSL | — | 系统级安装（开发工具页打开官网） | 系统命令 |
@@ -563,13 +563,12 @@ FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）· Playwright 内核�
 ## 安装操作（引擎缺工具时怎么自助装）
 
 1. **优先看 `tools/` 目录**：`resources/tools/npm-global` 存在 = 自动化工具已装；`tools/{node,python,git,...}` 存在 = 基础运行时已装。
-2. **缺 Nuphus / Playwright CLI（随包内置能力缺失）**：调用应用内 `runtime:install`（id=`nuphus` / `playwright-cli`，从随包 zip 修复解压），或手动：
+2. **缺 Nuphus（随包内置能力缺失）**：调用应用内 `runtime:install`（id=`nuphus`，从随包 zip 修复解压），或手动：
    - 解压随包 `tools/automation-tools.zip` 到 `tools/`（内置 python：`python -c "import zipfile; zipfile.ZipFile('automation-tools.zip').extractall('tools')"`），结果得到 `tools/npm-global/`。
    - 重启引擎（或重选一次供应商触发 `applyCustomModel`）→ nuphus MCP 段写入 config.toml。
-3. **缺 CloakBrowser npm 包**：`runtime:install`（id=`cloakbrowser`，走 npmmirror npm 源）。
-4. **缺 Playwright / Cloak 内核**：`runtime:install`（id=`playwright-browsers` / `cloak-browsers`），会分别调 `playwright install chromium` 与 `cloakbrowser install`（后者需先装 CloakBrowser 包）。
-5. **缺 ponytail 插件**：默认就没装，要用就走这条安装：`runtime:install`（id=`ponytail`），随包安装源 `tools/ponytail-plugin` 种到 `codex-home/plugins/cache` + 写 `[marketplaces.ponytail]` / `[plugins."ponytail@ponytail"]` / 钩子信任。
-6. **装完统一**：重启引擎生效；插件/技能/钩子状态从 `plugin/list`、`skills/list`、`hooks/list` 读。
+3. **缺 Ego Lite**：到「设置 → 开发工具 → Ego Lite 浏览器自动化」点「下载安装」，完成首次引导（CLI 才会进 PATH）；不要自己跑第三方安装脚本。
+4. **缺 ponytail 插件**：默认就没装，要用就走这条安装：`runtime:install`（id=`ponytail`），随包安装源 `tools/ponytail-plugin` 种到 `codex-home/plugins/cache` + 写 `[marketplaces.ponytail]` / `[plugins."ponytail@ponytail"]` / 钩子信任。
+5. **装完统一**：重启引擎生效；插件/技能/钩子状态从 `plugin/list`、`skills/list`、`hooks/list` 读。
 7. ⛔ **写 config.toml 的键值走 `config/value/write` 时必带 `mergeStrategy: "replace"`**（引擎必填；缺了整条请求被拒 `Invalid request: missing field mergeStrategy`，而这些调用普遍 `.catch(() => undefined)` 静默吞掉 → 表现成「开关点了没生效」）。预检【26】有结构守卫：每处调用 600 字符内必须出现该字段。09-16 实测：ponytail 卸载/装回的 enabled 写入漏了它，长期没生效。
 
 ## 人工预览（给用户看 / 自己看）
@@ -625,7 +624,7 @@ FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）· Playwright 内核�
 ## 应用 UI 速览（引擎了解宿主能力用）
 
 - **内置浏览器在右侧面板**（不在中央主区，聊天不受影响）：右栏「浏览器」标签 = Electron `<webview>`（宿主窗口 `webPreferences.webviewTag: true`），guest 与宿主隔离、无 node API。组件 `src/components/BrowserPane.tsx`（`variant="panel"` 适配右栏宽度）。右栏四个标签（变更/审阅/浏览器/文件）常驻直达，无「打开标签页」选择器（10-22 用户令撤掉「终端」标签 —— 默认宽 308px 放不下五个、审阅被挤出可视区；终端页仍在，Ctrl+J / 命令面板可开。「项目树」同日升级成「工作区文件」= 树 + 只读预览，见下方文件卡不变量）。标题栏行高 44px 与 titleBarOverlay 原生窗口钮对齐。
-- **指纹内核（cloak-browsers）仅用于自动化场景**（模型经 `cloakbrowser` CLI 调用）；浏览器视图的「隐身浏览」按钮为预留位，尚未接入 CDP 嵌入。
+- **浏览器自动化优先 Ego Lite 的 TaskSpace**（每会话一个 `codex-<CODEX_THREAD_ID>`，共享登录态、并行不抢页）；未安装时回落 browse-skills（`nuphus-call browser_*` 默认浏览器）。内置浏览器面板只用于用户查看页面；Playwright / Cloak 入口已移除。
 
 
 ## 近期功能性变更（索引）

@@ -1,11 +1,6 @@
 #!/usr/bin/env node
-// 把 resources/tools/npm-global（nuphus-mcp / @playwright/cli）打成 automation-tools.zip，
+// 把 resources/tools/npm-global（nuphus-mcp）打成 automation-tools.zip，
 // 供「开发工具」页的「修复安装」重新解压恢复。
-//
-// ⛔ 09-16（用户「CloakBrowser 不用内置，按需下载就行」）：zip **不含 cloakbrowser**。
-//    它与 npm-global 的 extraResources filter（package.json）是同一份排除清单的两处落点：
-//    zip 漏了这条排除 → 用户点一次「修复安装」就把 CloakBrowser 又装回包里。
-//    CloakBrowser 现在走「开发工具」页按需 npm 安装（npmmirror 源）。
 //
 // 用法：node scripts/pack-automation.cjs [输出目录]
 // 输出：<tools>/automation-tools.zip（zip 内顶层为 npm-global/）
@@ -35,22 +30,24 @@ if (!fs.existsSync(path.join(globalDir, "node_modules"))) {
  *    与 `--exclude`；Linux/macOS runner 上系统 tar 同样是 bsdtar/支持 zip），
  *    python 与 7z 降级为备用。
  *
- * 排除清单在这里、package.json 的 extraResources filter、mac 的 copy-mac-tools.cjs
- * 三处必须同源 —— 漏一处，用户点一次「修复安装」就把已剥离的 CloakBrowser 装回包里。
  */
-const CLAUB_EXCLUDES = [
-  "npm-global/cloakbrowser",
-  "npm-global/cloakbrowser.cmd",
-  "npm-global/cloakbrowser.ps1",
-  "npm-global/node_modules/cloakbrowser",
-  "npm-global/node_modules/.bin/cloakbrowser",
-  "npm-global/node_modules/.bin/cloakbrowser.cmd",
-  "npm-global/node_modules/.bin/cloakbrowser.ps1",
+
+/** Playwright CLI / 内核已从产品移除；本地 tools 里可能还留着旧包，打 zip 时一并排除，
+ *  避免「修复安装」把它们又带回新版本。 */
+const PLAYWRIGHT_EXCLUDES = [
+  "npm-global/node_modules/@playwright",
+  "npm-global/node_modules/playwright-core",
+  "npm-global/node_modules/.bin/playwright-cli",
+  "npm-global/node_modules/.bin/playwright-cli.cmd",
+  "npm-global/node_modules/.bin/playwright-cli.ps1",
+  "npm-global/playwright-cli",
+  "npm-global/playwright-cli.cmd",
+  "npm-global/playwright-cli.ps1",
 ];
 
 /** 用 bsdtar 打包：顶层为 npm-global/，与 python/7z 两条实现一致 */
 function packWithTar(bin) {
-  const args = ["-a", "-c", "-f", outZip, "-C", toolsRoot, ...CLAUB_EXCLUDES.map((e) => "--exclude=" + e), "npm-global"];
+  const args = ["-a", "-c", "-f", outZip, "-C", toolsRoot, ...PLAYWRIGHT_EXCLUDES.map((entry) => "--exclude=" + entry), "npm-global"];
   const res = spawnSync(bin, args, { stdio: "pipe", encoding: "utf8" });
   if (res.status !== 0) throw new Error(`tar 打包失败(${bin}): ${(res.stderr || res.stdout || "").slice(-500)}`);
   console.log(`tar 打包完成（${bin}）`);
@@ -62,7 +59,6 @@ function packWithPython(python) {
 import zipfile, os, sys
 src = r"${globalDir.replace(/\\/g, "\\\\")}"
 out = r"${outZip.replace(/\\/g, "\\\\")}"
-skipped = 0
 total = 0
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
     for cur, dirs, files in os.walk(src):
@@ -71,16 +67,11 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
             rel = os.path.relpath(fp, os.path.dirname(src))  # 顶层 npm-global/
             arc = rel.replace("\\\\", "/")
             parts = arc.split("/")
-            # 排除 CloakBrowser（顶层 shim + node_modules 包体 + .bin shim）——按需下载，不随包
-            if len(parts) >= 2 and parts[1].startswith("cloakbrowser"):
-                skipped += 1
-                continue
-            if len(parts) >= 3 and parts[1] == "node_modules" and (parts[2] == "cloakbrowser" or (parts[2] == ".bin" and parts[-1].startswith("cloakbrowser"))):
-                skipped += 1
+            if len(parts) >= 3 and parts[1] == "node_modules" and (parts[2] in ("@playwright", "playwright-core") or (parts[2] == ".bin" and parts[-1].startswith("playwright-cli"))):
                 continue
             z.write(fp, arc)
             total += 1
-print("done files=%d skipped_cloak=%d" % (total, skipped))
+print("done files=%d" % total)
 `;
   const res = spawnSync(python, ["-c", pyScript], { stdio: "pipe", encoding: "utf8" });
   if (res.status !== 0) throw new Error("python 打包失败: " + (res.stderr || res.stdout || "").slice(-500));

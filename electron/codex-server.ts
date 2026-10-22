@@ -337,7 +337,7 @@ export class CodexServer extends EventEmitter {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
       // toolchainEnv：PATH 里带内置 node/pwsh/npm-global，NODE_PATH 指向 npm 全局
-      // node_modules——引擎能直接用 nuphus-mcp / playwright-cli / cloakbrowser。
+      // node_modules——引擎能直接用 nuphus-mcp；浏览器自动化走外部 ego-browser。
       // 关掉 remote control 轮询：它是 ChatGPT 账号专属功能，本机走 API key 没有登录态，
       // websocket 每秒重试解析偏好并连带触发 auth reload，实测占全部日志的 95%。
       // 这是二进制里的官方内部开关（不在 --help 里），对非登录态环境是安全关闭。

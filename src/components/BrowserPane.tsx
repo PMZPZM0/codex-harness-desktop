@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, ChevronDown, ExternalLink, Globe2, Maximize2, MoreHorizontal, Plus, RefreshCw, FileWarning, ShieldCheck, Star, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronDown, ExternalLink, Globe2, Maximize2, MoreHorizontal, Plus, RefreshCw, FileWarning, Star, X } from "lucide-react";
 import { subscribeHtmlPreview } from "../lib/html-preview-store.mjs";
 
 /**
@@ -8,8 +8,8 @@ import { subscribeHtmlPreview } from "../lib/html-preview-store.mjs";
  *
  * 渲染内核：Electron <webview>（宿主窗口 webPreferences.webviewTag 已开启）。
  * guest 内容是独立 webContents，拿不到 preload / node API，只用于渲染。
- * 这就是「内置浏览器」（09-16 用户「默认用内置浏览器」）——默认浏览通道。
- * 「隐身浏览」按钮走 CloakBrowser（按需下载的可选增强，独立窗口；未安装时提示下载入口）。
+ * 这就是「内置浏览器」（09-16 用户「默认用内置浏览器」）——用于用户查看页面。
+ * 浏览器自动化（Agent 操作）只走 ego lite（每会话独立 TaskSpace）。
  */
 type BrowserTab = { id: string; url: string; title: string; loading: boolean };
 
@@ -51,20 +51,6 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
   const seqRef = useRef(1);
 
   const active = tabs.find((entry) => entry.id === activeId) ?? tabs[0];
-
-  // 隐身浏览：调 CloakBrowser 指纹内核（外部窗口，按需下载的可选增强）。
-  // 未安装时 open-cloak 会返回带下载入口的提示，这里原样展示给用户（不再引导去跑脚本）。
-  const openCloak = useCallback(() => {
-    void (async () => {
-      const target = active.url || "about:blank";
-      try {
-        const result = await window.codex.openInCloakBrowser(target);
-        setStealthHint(result.ok ? `已在 CloakBrowser 指纹浏览器中打开：${target}` : result.detail);
-      } catch (error: any) {
-        setStealthHint(error?.message ?? "调用指纹浏览器失败");
-      }
-    })();
-  }, [active.url]);
 
   const patchActive = useCallback((patch: Partial<BrowserTab>) => {
     setTabs((current) => current.map((entry) => (entry.id === activeId ? { ...entry, ...patch } : entry)));
@@ -257,11 +243,6 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
           onKeyDown={(event) => { if (event.key === "Enter") navigate(draft); }}
         />
         <button className={`icon-button ${bookmarked ? "active-tool" : ""}`} title={bookmarked ? "取消收藏" : "收藏此页"} onClick={toggleBookmark}><Star size={15} /></button>
-        <button
-          className="icon-button"
-          title="隐身浏览（CloakBrowser 指纹内核，独立窗口；需在「开发工具」按需下载）"
-          onClick={openCloak}
-        ><ShieldCheck size={15} /></button>
         <div className="browser-pane-menu-wrap">
           <button className={`icon-button ${menuOpen ? "active-tool" : ""}`} title="更多" onClick={() => setMenuOpen((value) => !value)}><MoreHorizontal size={15} /></button>
           {menuOpen && <>
@@ -326,8 +307,8 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
       {stealthHint && (
         <>
           <div className="menu-backdrop" onClick={() => setStealthHint("")} />
-          <div className="browser-pane-note" role="dialog" aria-label="隐身浏览">
-            <strong><ShieldCheck size={14} />隐身浏览</strong>
+          <div className="browser-pane-note" role="dialog" aria-label="提示">
+            <strong>提示</strong>
             <p>{stealthHint}</p>
             <button className="secondary-setting" onClick={() => setStealthHint("")}>知道了</button>
           </div>

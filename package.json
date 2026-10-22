@@ -154,10 +154,6 @@
         "to": "tools/video-providers.mjs"
       },
       {
-        "from": "resources/tools/cloak-open.mjs",
-        "to": "tools/cloak-open.mjs"
-      },
-      {
         "from": "resources/tools/python",
         "to": "tools/python"
       },
@@ -208,9 +204,13 @@
           "**/*",
           "!node_modules",
           "!node_modules/**/*",
-          "!cloakbrowser",
-          "!cloakbrowser.cmd",
-          "!cloakbrowser.ps1"
+          "!@playwright",
+          "!@playwright/**/*",
+          "!playwright-core",
+          "!playwright-core/**/*",
+          "!playwright-cli",
+          "!playwright-cli.cmd",
+          "!playwright-cli.ps1"
         ]
       },
       {
@@ -218,11 +218,13 @@
         "to": "tools/npm-global/node_modules",
         "filter": [
           "**/*",
-          "!cloakbrowser",
-          "!cloakbrowser/**/*",
-          "!.bin/cloakbrowser",
-          "!.bin/cloakbrowser.cmd",
-          "!.bin/cloakbrowser.ps1"
+          "!@playwright",
+          "!@playwright/**/*",
+          "!playwright-core",
+          "!playwright-core/**/*",
+          "!.bin/playwright-cli",
+          "!.bin/playwright-cli.cmd",
+          "!.bin/playwright-cli.ps1"
         ]
       },
       {

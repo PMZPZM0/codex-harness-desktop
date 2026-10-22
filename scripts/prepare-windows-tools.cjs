@@ -9,7 +9,7 @@
  *
  * 产出（与 package.json build.extraResources 的 from 逐条对应）：
  *   node/             ← nodejs.org win-x64（v24.19.0，与 mac 侧同版本）
- *   npm-global/       ← npm i -g --prefix：@nuphus/nuphus-mcp + @playwright/cli + playwright-core
+ *   npm-global/       ← npm i -g --prefix：@nuphus/nuphus-mcp（浏览器自动化走外部 Ego Lite）
  *   vscode-cli/       ← update.code.visualstudio.com cli-win32-x64
  *   cloudflared.exe   ← cloudflare/cloudflared release
  *   ponytail-plugin/  ← ponytail v4.9.0 源码包（strip 1）
@@ -21,7 +21,7 @@
  * 不产出 **是设计**（大件仍走「开发工具」页按需下载，体积门槛 = 下载体积 >50MB）：
  *   pwsh(282MB) / git(90MB) / ffmpeg(307MB) / miniconda(100MB) / mingw(267MB)
  *   —— 它们由应用内 install-runtimes.cjs 在用户机器上下载，不进安装包。
- *   CloakBrowser 同样不在这里装（09-16 起从随包剥离，改为按需 npm 下载）。
+ *   浏览器自动化主通道 Ego Lite 是外部安装的应用，不在这里的随包工具链里。
  *
  * 用法：
  *   node scripts/prepare-windows-tools.cjs
@@ -50,11 +50,9 @@ const NODE_VERSION = "v24.19.0";
 //   09-20 升 0.2.3：上游该版本只有「HUD 视觉重构 + TLS 依赖安全修复」，**工具能力零变化**
 //   （我们打包本来就 NUPHUS_MCP_HUD=off），升级理由是安全依赖。
 // ⛔ 09-24：版本常量搬到 scripts/lib/tools-versions.cjs（单一来源）。
-//   原先这里是独立字面量、mac 侧各写一份 ⇒ 实测漂移出 playwright-core 1.62.1 vs 1.58.2。
+//   原先这里是独立字面量、mac 侧各写一份 ⇒ 同一包在两平台可能漂移。
 const { TOOLS_VERSIONS } = require("./lib/tools-versions.cjs");
 const NUPHUS_VERSION = TOOLS_VERSIONS.nuphus;
-const PLAYWRIGHT_CLI_VERSION = TOOLS_VERSIONS.playwrightCli;
-const PLAYWRIGHT_CORE_VERSION = TOOLS_VERSIONS.playwrightCore.win32;
 const PONYTAIL_VERSION = TOOLS_VERSIONS.ponytail;
 
 const run = (file, args, env = {}) =>
@@ -162,14 +160,12 @@ async function main() {
   const npmCli = path.join(tools, "node", "node_modules", "npm", "bin", "npm-cli.js");
   console.log("[node] " + execFileSync(node, ["-v"], { encoding: "utf8" }).trim());
 
-  // 2) 自动化工具链（随包预解压、开箱即用）。CloakBrowser 明确不在其中。
+  // 2) 自动化工具链（随包预解压、开箱即用：nuphus 桌面自动化）。
+  //    浏览器自动化主通道是外部 Ego Lite，不再随包 Playwright CLI / 内核。
   const prefix = path.join(tools, "npm-global");
   const env = {
     PATH: [path.join(tools, "node"), prefix, process.env.PATH].join(path.delimiter),
     NO_UPDATE_NOTIFIER: "1",
-    CLOAKBROWSER_CACHE_DIR: path.join(tools, "cloak-cache"),
-    CLOAKBROWSER_AUTO_UPDATE: "false",
-    PLAYWRIGHT_BROWSERS_PATH: path.join(tools, "pw-browsers"),
   };
   run(node, [
     npmCli, "install", "-g", "--prefix", prefix,
@@ -178,7 +174,7 @@ async function main() {
     //    postinstall（bin/check.js）会校验平台原生二进制是否就位 —— 跳过它等于放行一个坏包。
     //    与 mac 侧同一处置（那边对 arm64 也显式放行）。
     "--allow-scripts=@nuphus/nuphus-mcp",
-    `@nuphus/nuphus-mcp@${NUPHUS_VERSION}`, `@playwright/cli@${PLAYWRIGHT_CLI_VERSION}`, `playwright-core@${PLAYWRIGHT_CORE_VERSION}`,
+    `@nuphus/nuphus-mcp@${NUPHUS_VERSION}`,
   ], env);
 
   // 3) VS Code CLI（latest 口径，已就位就跳过）
@@ -245,7 +241,6 @@ async function main() {
   const required = [
     ["node/node.exe", "随包 Node"],
     ["npm-global/node_modules/@nuphus/nuphus-mcp/package.json", "Nuphus 桌面自动化"],
-    ["npm-global/node_modules/@playwright/cli/package.json", "Playwright CLI"],
     ["npm-global/nuphus-call.cmd", "nuphus-call 命令行桥"],
     ["vscode-cli/code.exe", "VS Code CLI"],
     ["cloudflared.exe", "cloudflared"],
@@ -272,9 +267,8 @@ async function main() {
 
   fs.writeFileSync(path.join(tools, "win-runtime-manifest.json"), JSON.stringify({
     platform: process.platform, arch: process.arch, node: NODE_VERSION,
-    nuphus: NUPHUS_VERSION, playwrightCli: PLAYWRIGHT_CLI_VERSION, playwrightCore: PLAYWRIGHT_CORE_VERSION,
+    nuphus: NUPHUS_VERSION,
     ponytail: PONYTAIL_VERSION, bundledSmall: BUNDLED_SMALL, source: process.env.GITHUB_SHA || "",
-    // cloakbrowser 09-16 起不随包（按需下载），故不记入随包清单
   }, null, 2));
 
   console.log(`[done] 随包工具链已就绪：${tools}`);

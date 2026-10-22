@@ -24,7 +24,7 @@ Windows 用 `node scripts/prepare-windows-tools.cjs`、macOS 用 `node scripts/p
 | PowerShell 7 无窗口桥 | `pwsh-headless/` | 转发给 `pwsh/`（完整 PowerShell 按需下载），不弹控制台窗口 |
 | VS Code CLI | `vscode-cli/` | `code` 命令打开文件/工作区 |
 | cloudflared | `cloudflared.exe` | Cloudflare Tunnel（远程接入） |
-| 桌面 / 浏览器自动化 | `npm-global/` | Nuphus MCP + Playwright CLI（见第二节 1） |
+| 桌面 / 浏览器自动化 | `npm-global/` | Nuphus MCP（桌面 + 默认浏览器回落）；浏览器首选外部 Ego Lite（见第二节 1） |
 | ponytail 插件源 | `ponytail-plugin/` | 写代码模式插件（09-27 起默认不装，开发工具页按需装） |
 
 > **09-16 安装包瘦身**：Python 3 / Git / ripgrep / uv / CMake / Ninja / 7-Zip / jq / 完整 PowerShell
@@ -51,7 +51,7 @@ Windows 用 `node scripts/prepare-windows-tools.cjs`、macOS 用 `node scripts/p
 
 ### 1. 桌面与浏览器自动化（zip 解压即用）
 
-- 内容：`nuphus-mcp`（桌面自动化 MCP）+ `@playwright/cli` + `cloakbrowser` + `playwright-core`
+- 内容：`nuphus-mcp`（桌面自动化 MCP；浏览器工具经 `nuphus-call browser_*` CLI 调用）
 - 安装：开发工具页「下载」→ 应用解压随包 `tools/automation-tools.zip` 到 `tools/` →
   得到 `tools/npm-global/` → 自动激活「桌面自动化」「浏览器自动化」联动开关 → 引擎重启生效。
 - 手动解压（引擎自装时）：
@@ -62,22 +62,17 @@ Windows 用 `node scripts/prepare-windows-tools.cjs`、macOS 用 `node scripts/p
 
 调用方式：
 - **桌面自动化**：引擎 config.toml 注册 `[mcp_servers.nuphus]`，工具前缀 `desktop_*`（截图/窗口/键鼠/剪贴板/OCR）+ `browser_*`（Chrome CDP）。操作前先 `desktop_window_activate`。
-- **浏览器自动化**：命令行 `playwright-cli open|snapshot|click|type|screenshot`。
-- **指纹浏览器**：`node -e "import('cloakbrowser').then(m=>...)"`（Playwright API 兼容，反检测 + humanize）。
+- **浏览器自动化（首选）**：外部安装的 Ego Lite —— `ego-browser nodejs`；每个 Codex 会话用 `taskSpace("codex-<CODEX_THREAD_ID>")` 固定一个独立 Space，多会话并行、共享登录态。
+- **浏览器自动化（回落 browse-skills）**：ego 未安装时用 `nuphus-call browser_navigate|browser_snapshot|browser_click|browser_type|browser_close` 驱动本机默认浏览器。
 
-### 2. Playwright 浏览器内核（~170MB，联网下载）
+### 2. Ego Lite 浏览器自动化（外部应用，不随包内置）
 
-- 安装：开发工具页「下载」（**先装自动化包**，它提供 playwright CLI）。
-- 底层命令：`node <tools>/npm-global/node_modules/@playwright/cli/node_modules/playwright/cli.js install chromium`
-- 落地：`tools/pw-browsers/`。未装时 `playwright-cli open` 会提示缺内核。
+- 安装：「设置 → 开发工具 → Ego Lite 浏览器自动化」→「下载安装」打开官方安装器；完成 GUI 首次引导后 `ego-browser` 才进 PATH。
+- 体积：安装后约 611MB Chromium；Windows 官方安装包约 13.5MB（首次启动下载 Chromium），macOS DMG 146–164MB。
+- 检测路径：Windows `%USERPROFILE%\.local\share\ego\active_version_dir\ego-browser.exe`；macOS `~/.local/bin/ego-browser`；应用会把该目录并入引擎 PATH 并设 `EGO_BROWSER_PATH`。
+- 每会话 Space：`taskSpace("codex-<CODEX_THREAD_ID>")`；会话归档/删除时应用自动 `finish` 回收。
 
-### 3. Cloak 指纹浏览器内核（~200MB，联网下载）
-
-- 安装：开发工具页「下载」（**先装自动化包**）。
-- 底层命令：`node <tools>/npm-global/node_modules/cloakbrowser/dist/cli.js install`（CLOAKBROWSER_CACHE_DIR=tools/cloak-cache）。
-- 落地：`tools/cloak-cache/`。用于 Cloudflare/reCAPTCHA/风控站。
-
-### 4. ponytail 写代码模式插件（随包安装源）
+### 3. ponytail 写代码模式插件（随包安装源）
 
 - 安装：开发工具页「下载」→ 从 `tools/ponytail-plugin/` 种到引擎：
   - `codex-home/plugins/cache/ponytail/ponytail/4.9.0/`（插件落点，hooks/技能都从这出）
@@ -85,7 +80,7 @@ Windows 用 `node scripts/prepare-windows-tools.cjs`、macOS 用 `node scripts/p
 - 生效：会话启动钩子注入精简工程规则；6 个技能 `ponytail-*` 出现在 `skills/list`。
 - 注：**不要**把插件 skills/ 拷到全局 skills/（会导致技能列表重复）。
 
-### 5. 其他按需下载（开发工具页）
+### 4. 其他按需下载（开发工具页）
 
 FFmpeg（音视频）、yt-dlp（下载）、Miniconda（conda 环境）、MinGW-w64（gcc/g++/make）。
 系统级安装：Docker Desktop、OpenSSL（开发工具页打开官网）。
@@ -97,8 +92,7 @@ FFmpeg（音视频）、yt-dlp（下载）、Miniconda（conda 环境）、MinGW
 | id | 效果 |
 |---|---|
 | `automation` | 解压 automation-tools.zip → npm-global，激活联动开关 |
-| `playwright-browsers` | playwright install chromium → pw-browsers |
-| `cloak-browsers` | cloakbrowser install → cloak-cache |
+| Ego Lite | 不走 `runtime:install`：开发工具页打开官方安装器（外部系统软件，用户显式确认） |
 | `ponytail` | 种 ponytail 插件到引擎 |
 | `ffmpeg` / `yt-dlp` / `conda` / `mingw` | 联网下载对应运行时 |
 | `docker` / `openssl` | 打开官网（系统级） |
@@ -108,8 +102,7 @@ FFmpeg（音视频）、yt-dlp（下载）、Miniconda（conda 环境）、MinGW
 ## 四、故障排查
 
 - **nuphus MCP 显示 0 工具**：未装自动化包或刚装完没重启。装包 → 重选一次供应商（触发 config 重写）→ 等回填。
-- **playwright-cli 提示缺内核**：装「Playwright 浏览器内核」。
-- **cloakbrowser 打不开**：装「Cloak 指纹浏览器内核」。
+- **ego-browser 找不到 / 连不上**：确认已装 Ego Lite 且完成首次引导；开发工具页点「重新检测」，仍失败时读 `ego-browser skill` 的 install 参考。不要自己跑第三方安装脚本。
 - **7z 解压失败 "Cannot open the file as archive"**：`7z.exe` 缺 `7z.dll`，用内置 python zipfile 解压。
 - **官方精选市场（`openai-api-curated`）装不上**：需 ChatGPT 账号登录，API Key 方式不可用。**10-03 用户改判：卡片放出来**（不再整源隐藏），点了装不上会有中文提示。要装官方插件请走插件页的「Codex 官方插件」源（GitHub `openai/plugins` 国内镜像，一键装到本地插件目录）。
 - **技能列表重复（ponytail-* 两遍）**：全局 skills/ 里残留了插件技能副本，删掉全局那份即可（引擎会从插件 cache 列）。

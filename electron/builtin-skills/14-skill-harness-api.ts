@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（98 个能力域 / 513 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（98 个能力域 / 516 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -27,7 +27,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
   · 自造工具：\`connector_register\`（把一个本地 stdio MCP server 脚本注册成持久连接器 —— 重启应用后新会话的 tools/list 带上它的工具）。**没有现成工具时先读 \`self-tools\` 技能**：路线① 工作区脚本立即用（一次性）；路线② 自建 MCP server + connector_register（持久）；路线③ 改宿主源码要重新构建（交给用户）
   · 画布工作流：\`workflow_read\`（读画布上搭的工作流：节点/连线/提示词/产物现状）/ \`workflow_writeback\`（把执行结果写回节点，画布实时显示）。用户说「按画布那套跑 / 画布里搭好的流程执行一下」时：先 workflow_read 看清节点与连线，再用 image_generate / video_generate / voice_generate 按链路逐节点执行，每步产物用 workflow_writeback 写回对应节点
   ⇒ 当用户要「建定时任务 / 加待办 / 存 RPA 配方 / 改设置」这类**界面动作**时，**说明该去哪个界面点**（例如 设置 → 定时任务），**不要**声称自己调用了某个 \`域:动作\` 通道、也不要凭空发明工具名（如 \`task_add\`）—— 没有的工具就是没有。
-- 引擎**直接可用**的自动化能力另有专技能：\`desktop-automation\`（键鼠/窗口/OCR，nuphus MCP）、\`browser-skill\`（浏览器，playwright-cli）、\`ssh\`（远程执行）。MCP 连接器是动态的，以 tools/list 实际返回为准。
+- 引擎**直接可用**的自动化能力另有专技能：\`desktop-automation\`（键鼠/窗口/OCR，nuphus MCP）、\`browser-skill\`（浏览器，ego-browser）、\`ssh\`（远程执行）。MCP 连接器是动态的，以 tools/list 实际返回为准。
 
 **怎么读这份清单**（09-25 加，用户实测踩到）：它是**一个文件**，**一次读全** —— 不要分段读、不要在技能目录里 grep 找接口。
 引擎的技能清单里给的 \`(file: …)\` 就是它。⛔ 用 cmd 的 \`type "路径"\` 读时，路径上的**引号会被执行通道剥掉**、\`workdir\` 也可能报 \`os error 267\` —— 改用你惯用的读文件方式，或先把它的所在目录设为工作目录再读 \`SKILL.md\`。
@@ -46,7 +46,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 | 定时 / 周期任务 | **调度器**（\`scheduler:*\`） | 任务真的在指定 workspace 目录里跑（不是「看起来在那里」） |
 | 把会话接到 IM | **渠道 Bot**（\`channel-bot:*\` / \`weixin:*\` / \`telegram:*\`） | — |
 | 记录好的桌面流程 | **RPA 配方**（\`rpa:*\`） | 键鼠级回放，适合无 API 的老软件 |
-| 浏览器 / 桌面自动化 | 专技能 \`desktop-automation\`（nuphus MCP）、\`browser-skill\`（playwright-cli） | 应用里关掉能力总闸后这些工具**不存在**，别当成坏了 |
+| 浏览器 / 桌面自动化 | 专技能 \`desktop-automation\`（nuphus MCP）、\`browser-skill\`（ego-browser） | 应用里关掉能力总闸后这些工具**不存在**，别当成坏了 |
 | 换记忆后端 | 设置 → 记忆 → 记忆后端（内置金字塔 / 本地 MCP 记忆服务 / 云端 memapi，**三选一**） | ⛔ 三者互斥：**落点与工具名随后端变**，别混用（内置=写 \`lessons/\`；MCP=\`local_memory__memory_write\`；云端=**无工具**、上游自动收记忆） |
 | 换知识库后端 | 设置 → 知识库 → 后端（本地项目库 / 云端 weknora） | 本地 = \`knowledge_search\` / \`knowledge_add\`；云端 = \`cloud_kb__ask\` 等 6 个 MCP 工具。判定看工具列表里有没有 \`cloud_kb__\` 前缀 |
 | 主题 / 外观 | \`src/lib/themes.ts\`（多主题扩展点） | — |
@@ -241,9 +241,9 @@ Bot 会话（Bot 与会话的绑定与消息注入）
 随包运行时管理（node/python 等的安装/卸载/列表）
 通道：runtime:health, runtime:install, runtime:list, runtime:uninstall, runtime:cancel, runtime:update-check, runtime:update
 
-### browser（3 通道）
-浏览器自动化开关（cloak 状态/打开/弹窗）
-通道：browser:cloak-status, browser:open-cloak, browser:popout
+### browser（6 通道）
+浏览器自动化（Ego Lite 检测/安装/打开/升级/回收 Space + 内置预览弹窗）
+通道：browser:ego-status, browser:ego-install, browser:ego-open, browser:ego-upgrade, browser:ego-cleanup, browser:popout
 
 ### git（1 通道）
 仓库 diff 读取
@@ -426,7 +426,7 @@ RPA 配方（录制好的桌面自动化流程）
 通道：history:search
 
 ### autoUpdate（5 通道）
-自动化能力与引擎的**后台自动更新**：四类（桌面自动化 nuphus / 浏览器自动化 playwright-cli / Mac 电脑操作 open-computer-use / Codex 引擎）各一个独立开关（缺省即开，存 app-settings.json），开启后主进程定时静默拉取国内镜像最新版并更新，成功发系统通知。⛔ 手动更新与后台更新走**同一批函数**，不存在两套判据
+自动化能力与引擎的**后台自动更新**：桌面自动化 nuphus / Mac 电脑操作 open-computer-use / Codex 引擎各一个独立开关（缺省即开，存 app-settings.json）；浏览器自动化 Ego Lite 单独一个开关（默认关，开启后后台跑官方 ego-browser upgrade）。⛔ 手动更新与后台更新走**同一批函数**，不存在两套判据
 通道：autoUpdate:status, autoUpdate:set, autoUpdate:scan, autoUpdate:run, autoUpdate:run-all
 
 ### cloud-auth（5 通道）

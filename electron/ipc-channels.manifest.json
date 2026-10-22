@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 513,
+  "count": 516,
   "channels": [
     {
       "name": "request",
@@ -84,24 +84,54 @@
       "note": null
     },
     {
-      "name": "openInCloakBrowser",
-      "channel": "browser:open-cloak",
-      "paramsImpl": "url: string",
-      "paramsDecl": "url: string",
-      "returns": "Promise<{ ok: boolean; detail: string }>",
-      "invokeArgs": "url",
-      "cast": null,
-      "note": null
-    },
-    {
-      "name": "cloakBrowserStatus",
-      "channel": "browser:cloak-status",
+      "name": "egoStatus",
+      "channel": "browser:ego-status",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ event?: string; message?: string; url?: string; title?: string }>",
+      "returns": "Promise<{ installed: boolean; cliPath: string; version: string; appPath: string; platform: string; downloadUrl: string }>",
       "invokeArgs": "",
       "cast": null,
-      "note": null
+      "note": "ego lite 安装态：CLI 路径/版本/双平台下载页；不内置浏览器本体"
+    },
+    {
+      "name": "egoInstall",
+      "channel": "browser:ego-install",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; detail: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "打开 ego lite 官方下载页（不静默安装系统软件）"
+    },
+    {
+      "name": "egoOpen",
+      "channel": "browser:ego-open",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; detail: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "打开 ego lite GUI；找不到启动器时回落官方下载页"
+    },
+    {
+      "name": "egoUpgrade",
+      "channel": "browser:ego-upgrade",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; output: string; before: string; after: string; changed: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "手动升级：运行官方 ego-browser upgrade（可能下载数百 MB）"
+    },
+    {
+      "name": "egoCleanup",
+      "channel": "browser:ego-cleanup",
+      "paramsImpl": "threadId?: string",
+      "paramsDecl": "threadId?: string",
+      "returns": "Promise<{ ok: boolean; cleaned: number; detail: string }>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": "归档会话时回收 codex-<threadId> TaskSpace；不传 threadId 则清全部 codex-*"
     },
     {
       "name": "remoteStart",

@@ -2,9 +2,9 @@
 // terminal.ts（终端面板）与 codex-server.ts（Codex 引擎子进程）共用：
 // 子进程环境里优先命中内置 node/pwsh，应用自包含可移植。
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
-import { pathToFileURL } from "node:url";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { app } from "electron";
 
 export function toolsRoot() {
@@ -19,7 +19,7 @@ export function toolsRoot() {
 }
 
 /** 用户按需下载的工具根（10-20）：必须放在 userData，不能放安装目录。
- *  ⛔ 覆盖安装会重建 resources/tools，旧实现把 Playwright 内核 / Miniconda / MinGW / FFmpeg /
+ *  ⛔ 覆盖安装会重建 resources/tools，旧实现把 Miniconda / MinGW / FFmpeg /
  *     markitdown 全写在那里 ⇒ 更新一次全没、用户被迫重下（用户实测）。
  *  惰性求值：app.getPath("userData") 不能在模块体取（main.ts 会 setPath）。 */
 export function userToolsRoot() {
@@ -51,12 +51,104 @@ export function existingToolPath(...parts: string[]): string {
   return "";
 }
 
+/** ego lite 的 CLI。官方安装/首次引导后会注册到 PATH：
+ *  · Windows：`%USERPROFILE%\.local\share\ego\active_version_dir\ego-browser.exe`
+ *    （active_version_dir 是指向 `...\Citro Labs\ego lite\Application\<ver>` 的链接/junction）；
+ *  · macOS：`~/.local/bin/ego-browser`；
+ *  · 另外兼容 `EGO_BROWSER_PATH` 显式指定与 PATH 里的同名命令。
+ *  ⛔ 不把整包 611MB 随应用内置（用户拍板：一键按需安装），这里只负责发现已装的那份。 */
+export function egoBrowserPath(): string {
+  const explicit = String(process.env.EGO_BROWSER_PATH ?? "").trim();
+  const candidates = process.platform === "win32"
+    ? [
+      explicit,
+      path.join(os.homedir(), ".local", "share", "ego", "active_version_dir", "ego-browser.exe"),
+      path.join(os.homedir(), ".local", "bin", "ego-browser.exe"),
+    ]
+    : [
+      explicit,
+      path.join(os.homedir(), ".local", "bin", "ego-browser"),
+      "/Applications/ego lite.app/Contents/MacOS/ego-browser",
+    ];
+  for (const candidate of candidates) {
+    try { if (candidate && fs.existsSync(candidate)) return candidate; } catch { /* 继续探测 */ }
+  }
+  const names = process.platform === "win32" ? ["ego-browser.exe", "ego-browser.cmd"] : ["ego-browser"];
+  for (const directory of (process.env.PATH ?? "").split(path.delimiter).filter(Boolean)) {
+    for (const name of names) {
+      const candidate = path.join(directory, name);
+      try { if (fs.existsSync(candidate)) return candidate; } catch { /* 继续探测 */ }
+    }
+  }
+  return "";
+}
+
+/** ego lite 的 GUI 启动器（"打开 ego lite"按钮）；没找到就返回空串，由调用方退回下载页。 */
+export function egoAppPath(): string {
+  if (process.platform === "win32") {
+    const cli = egoBrowserPath();
+    if (cli) {
+      try {
+        // active_version_dir 是 junction/符号链接：先解析到真实版本目录，再上跳一层到 Application\ego.exe
+        const real = fs.realpathSync(cli);
+        const candidate = path.join(path.dirname(path.dirname(real)), "ego.exe");
+        if (fs.existsSync(candidate)) return candidate;
+      } catch { /* 继续 */ }
+    }
+    const installed = path.join(process.env.ProgramFiles || "C:\\Program Files", "Citro Labs", "ego lite", "Application", "ego.exe");
+    try { if (fs.existsSync(installed)) return installed; } catch { /* 未装 */ }
+    return "";
+  }
+  try { return fs.existsSync("/Applications/ego lite.app") ? "/Applications/ego lite.app" : ""; } catch { return ""; }
+}
+
+/** `ego-browser --version` 的前两行；未安装或命令失败返回空串（状态卡显示"未安装"）。 */
+export function egoBrowserVersion(): string {
+  const cli = egoBrowserPath();
+  if (!cli) return "";
+  try {
+    // ⛔ ego-browser 的版本行输出到 stderr（实测 stdout 为空），必须两路一起取
+    const result = spawnSync(cli, ["--version"], { encoding: "utf8", timeout: 8000, windowsHide: true });
+    const output = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
+    return output.split("\n").map((line) => line.trim()).filter(Boolean)[0] || "";
+  } catch {
+    return "";
+  }
+}
+
+/** 手动/后台升级 ego lite（官方 updater：`ego-browser upgrade`）。可能下载数百 MB，最长等 5 分钟。 */
+export function runEgoUpgrade(): Promise<{ ok: boolean; output: string }> {
+  const cli = egoBrowserPath();
+  if (!cli) return Promise.resolve({ ok: false, output: "ego lite 未安装" });
+  return new Promise((resolve) => {
+    let output = "";
+    let settled = false;
+    const finish = (result: { ok: boolean; output: string }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const child = spawn(cli, ["upgrade"], { windowsHide: true });
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch { /* 已退出 */ }
+      finish({ ok: false, output: "ego lite 升级超时（5 分钟）" });
+    }, 5 * 60 * 1000);
+    child.stdout?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+    child.stderr?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+    child.once("error", (error) => finish({ ok: false, output: error.message }));
+    child.once("exit", (code) => finish({ ok: code === 0, output: output.trim().slice(0, 4000) || `ego-browser upgrade 退出（${code}）` }));
+  });
+}
+
 // 这台机器的开发工具（node/python 等）不在系统 PATH 上，把常见工具链目录并进去，
 // 否则子进程里 git/node/python 全部"无法识别"。内置 node/pwsh 排最前，优先命中。
 export function augmentedPath() {
   const bundled: string[] = [];
   const discovered: string[] = [];
   const system = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
+  const egoDir = (() => { const cli = egoBrowserPath(); return cli ? path.dirname(cli) : ""; })();
+  if (egoDir) bundled.push(egoDir);
   const toolRoots = toolRootsRead();
   if (process.platform !== "win32") {
     const directories = toolRoots.flatMap((tools) => [
@@ -67,7 +159,7 @@ export function augmentedPath() {
       "ffmpeg/bin", "yt-dlp", "sevenzip", "cmake/CMake.app/Contents/bin", "miniconda/bin",
       "jq", "ninja",
     ].map((directory) => path.join(tools, directory))).filter(fs.existsSync);
-    return [...new Set([...directories, ...system, "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"])].join(path.delimiter);
+    return [...new Set([...(egoDir ? [egoDir] : []), ...directories, ...system, "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"])].join(path.delimiter);
   }
   for (const tools of toolRoots) {
     // Codex app-server 是 GUI 子进程，直接拉起控制台版 pwsh.exe 会闪黑框。
@@ -103,9 +195,7 @@ export function augmentedPath() {
   }).join(";");
 }
 
-// npm 全局包的 node_modules（nuphus-mcp / playwright-cli / cloakbrowser / playwright-core）。
-// NODE_PATH 对 CommonJS require 生效；cloakbrowser 是 ESM-only（NODE_PATH 对 import 无效），
-// 引擎侧用 CLOAKBROWSER_ENTRY 直连 dist/index.js 动态 import。
+// npm 全局包的 node_modules（nuphus-mcp / rea-agents 等）。
 export function npmGlobalRoot() {
   const roots = [userToolsRoot(), toolsRoot()].filter(Boolean);
   for (const tools of roots) {
@@ -140,10 +230,9 @@ export function npmGlobalRootCandidates(userOnly = false): string[] {
   });
 }
 
-// cloakbrowser ESM 入口的 file:// URL（供引擎脚本 import；空串表示未安装）。
 /** 在 userData / 随包两个 npm-global 布局里找某个包内文件（userData 优先）。
  *  ⛔ 不能只看 `npmGlobalRoot()`：它只返回第一个“存在 node_modules 的根”；
- *  用户装了 cloakbrowser 后 userData 有了 npm-global，随包的 playwright/nuphus 仍需被找到。 */
+ *  用户装了包后 userData 有了 npm-global，随包的 nuphus 仍需被找到。 */
 export function npmPackagePath(...parts: string[]): string {
   for (const root of npmGlobalRootCandidates()) {
     const candidate = path.join(root, ...parts);
@@ -152,15 +241,6 @@ export function npmPackagePath(...parts: string[]): string {
     } catch { /* 不存在 */ }
   }
   return "";
-}
-
-export function cloakEntryUrl() {
-  const entry = npmPackagePath("cloakbrowser", "dist", "index.js");
-  try {
-    return entry ? pathToFileURL(entry).href : "";
-  } catch {
-    return "";
-  }
 }
 
 // 桌面自动化 MCP 的原生二进制（Rust exe，无需 node 即可运行）。
@@ -235,48 +315,25 @@ export function reaServerScript() {
   return npmPackagePath("rea-agents", "scripts", "rea.mjs");
 }
 
-// 国内下载加速（09-16 打包瘦身配套）：浏览器内核不随包，按需下载时默认走国内镜像。
-// ① Playwright 内核：npmmirror 的 binaries 镜像（淘宝系，国内直连快）；
-// ② CloakBrowser 内核：官方只发 GitHub Releases，国内直连慢/不稳，走 gh 代理前缀
-//    （代理只做路径前缀替换，归档与 SHA256SUMS 校验文件同源，完整性校验不受影响）。
-// 用户自己设了同名变量时不覆盖；镜像下载失败时主进程会自动回落官方源重试。
-export const CHINA_MIRROR_ENV: Record<string, string> = {
-  PLAYWRIGHT_DOWNLOAD_HOST: "https://cdn.npmmirror.com/binaries/playwright",
-  CLOAKBROWSER_DOWNLOAD_URL: "https://ghfast.top/https://github.com/CloakHQ/cloakbrowser/releases/download",
-};
-
 /**
- * npm 包按需安装用的国内镜像 registry（09-16：CloakBrowser 等 npm 包从包里剥离后按需下载）。
+ * npm 包按需安装用的国内镜像 registry（nuphus / rea 等按需更新的包）。
  * 用 registry.npmmirror.com（淘宝 npm 镜像）而不是 gh 代理：npm 元数据 + tarball 都在同源镜像上，
  * 一次解析就可拿到全部依赖，不用逐包拼 URL。用户自设 npm_config_registry 时不覆盖。
  */
 export const CHINA_NPM_REGISTRY = "https://registry.npmmirror.com";
 
-/** 内核下载用环境：toolchainEnv + 未被用户覆盖的国内镜像变量。 */
-export function downloadEnv() {
-  const env = toolchainEnv();
-  for (const [key, value] of Object.entries(CHINA_MIRROR_ENV)) {
-    if (!process.env[key]) env[key] = value;
-  }
-  return env;
-}
-
 // Codex 子进程的完整环境：PATH + NODE_PATH，让引擎能直接使用已装自动化工具。
-// 同时把 CloakBrowser/playwright 的缓存指向应用内置目录，打包后随应用走。
 export function toolchainEnv() {
   const env: Record<string, string> = { ...process.env, PATH: augmentedPath(), NO_UPDATE_NOTIFIER: "1" };
   const nodePath = npmGlobalRootCandidates().filter(Boolean).join(path.delimiter);
   if (nodePath) env.NODE_PATH = nodePath;
-  /* 10-20：缓存（浏览器内核/Playwright）必须落 userData，否则覆盖安装后 200MB+ 内核全丢。 */
+  /* 10-20：按需工具缓存必须落 userData，否则覆盖安装后要重下。 */
   const tools = writeToolsRoot();
   if (tools) {
     // ⛔ mac 适配（09-17 审计）：这里原写死 `tools/pwsh/pwsh.exe`，darwin 侧随包的是 `tools/pwsh/pwsh`
     //    （无后缀）⇒ mac 上 CODEX_REAL_PWSH 永远不设置。改用 bundledPwsh() 统一平台解析。
     const realPwsh = bundledPwsh();
     if (realPwsh) env.CODEX_REAL_PWSH = realPwsh;
-    env.CLOAKBROWSER_CACHE_DIR = path.join(tools, "cloak-cache");
-    env.CLOAKBROWSER_AUTO_UPDATE = "false";
-    env.PLAYWRIGHT_BROWSERS_PATH = path.join(tools, "pw-browsers");
     const python = bundledPython();
     if (fs.existsSync(python)) {
       env.PYTHON = python;
@@ -285,17 +342,11 @@ export function toolchainEnv() {
       env.npm_config_python = python;
     }
   }
-  const cloakEntry = cloakEntryUrl();
-  if (cloakEntry) env.CLOAKBROWSER_ENTRY = cloakEntry;
+  const egoCli = egoBrowserPath();
+  if (egoCli) env.EGO_BROWSER_PATH = egoCli;
   const nuphusBin = nuphusBinary();
   if (nuphusBin) env.NUPHUS_BIN = nuphusBin;
   return env;
-}
-
-// CloakBrowser Chromium 内核缓存目录（resources/tools/cloak-cache；09-16 起内核不随包，按需下载到此目录）。
-export function cloakCacheDir() {
-  const tools = writeToolsRoot();
-  return tools ? path.join(tools, "cloak-cache") : "";
 }
 
 // 内置 pwsh 完整路径；没有则返回空串
@@ -413,9 +464,4 @@ export function pythonPipReady(bin: string): { ok: boolean; reason: string } {
     }
     return { ok: false, reason: `内置 Python 的 pip 不可用：${text.split("\n").find((line) => line.trim())?.slice(0, 200) ?? "未知原因"}` };
   }
-}
-
-// CloakBrowser 常驻助手脚本（stdin 喂 URL，驱动指纹浏览器窗口）。
-export function cloakOpenHelper() {
-  return existingToolPath("cloak-open.mjs");
 }

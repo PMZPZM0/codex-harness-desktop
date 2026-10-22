@@ -1,0 +1,50 @@
+/* 开发工具 → Ego Lite 浏览器自动化卡（10-22）。
+   外部安装的应用（不随包内置 611MB Chromium），卡片只负责检测/下载/打开/升级。
+   颜色全走主题变量，双主题跟随；间距按 4px 栅格。 */
+.ego-lite-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 4%, var(--bg));
+}
+.ego-lite-head { display: flex; align-items: flex-start; gap: 10px; }
+.ego-lite-logo {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel-2));
+  color: var(--accent);
+}
+.ego-lite-copy { min-width: 0; }
+.ego-lite-title { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.ego-lite-title strong { font-size: 13px; font-weight: 600; color: var(--text); }
+.ego-lite-copy small { display: block; margin-top: 2px; color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+.ego-lite-badge {
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.ego-lite-badge.ok {
+  border-color: color-mix(in srgb, var(--green) 40%, var(--line));
+  background: color-mix(in srgb, var(--green) 10%, transparent);
+  color: var(--green);
+}
+.ego-lite-meta { color: var(--muted); font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
+.ego-lite-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.ego-lite-confirm { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.ego-lite-confirm em { color: var(--muted); font-size: 11.5px; font-style: normal; }
+.ego-lite-hint, .ego-lite-note { margin: 0; font-size: 11.5px; line-height: 1.5; }
+.ego-lite-hint { color: var(--muted); }
+.ego-lite-note { color: var(--link); }
+
+@media (max-width: 640px) {
+  .ego-lite-actions, .ego-lite-confirm { align-items: flex-start; }
+}

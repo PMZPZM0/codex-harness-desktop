@@ -538,11 +538,6 @@ export interface Bag {
   setBrowserUrl: React.Dispatch<React.SetStateAction<string>>;
   browserDraft: string;
   setBrowserDraft: React.Dispatch<React.SetStateAction<string>>;
-  browserMode: "cloak" | "internal";
-  cloakPage: string;
-  setCloakPage: React.Dispatch<React.SetStateAction<string>>;
-  cloakStatus: string;
-  setCloakStatus: React.Dispatch<React.SetStateAction<string>>;
   browserBookmarks: { url: string; title: string; }[];
   setBrowserBookmarks: React.Dispatch<React.SetStateAction<{ url: string; title: string; }[]>>;
   browserHistory: { url: string; title: string; at: number; }[];
@@ -1144,8 +1139,6 @@ export interface Bag {
   fetchChildren: (path: string) => Promise<void>;
   toggleTreeDir: (dir: string) => void;
   loadTree: (path: string) => Promise<string | undefined>;
-  describeCloakEvent: (event: { event?: string | undefined; message?: string | undefined; url?: string | undefined; title?: string | undefined; }) => string;
-  openInCloak: (url: string) => Promise<void>;
   openBrowser: () => void;
   toggleBookmark: () => void;
   deleteQueued: (id: string) => Promise<void>;

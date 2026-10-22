@@ -6,7 +6,7 @@ import { Menu, Notification, app, BrowserWindow, clipboard, globalShortcut, ipcM
 import path from "node:path";
 import { readAppSettings, readAppSettingsSync, saveAppSettings, type AppSettings } from "../app-settings";
 import { upsertSkillDiscipline, DISCIPLINE_START, DISCIPLINE_END } from "../skill-discipline";
-import { augmentedPath, bundledGit, bundledNode, bundledPython, CHINA_NPM_REGISTRY, cloakCacheDir, cloakOpenHelper, downloadEnv, existingToolPath, nuphusBinary, npmGlobalRoot, toolchainEnv, toolsRoot } from "../toolchain";
+import { augmentedPath, bundledGit, bundledNode, bundledPython, CHINA_NPM_REGISTRY, existingToolPath, nuphusBinary, npmGlobalRoot, toolchainEnv, toolsRoot } from "../toolchain";
 import { applyCustomModel } from "../features/custom-model-apply";
 import { readConnectors } from "./07-connectors-io";
 import { readBuiltinPlugins } from "./09-agents-plugins";
@@ -27,7 +27,7 @@ import { loadVoiceSettings } from "../voice/voice-settings";
  */
 export async function devInstructionsInput() {
   const appSettings = await readAppSettings(app.getPath("userData"));
-  // 自动化总闸（设置页「常规」）：桌面=nuphus MCP，浏览器=playwright/cloakbrowser 指令 + browser_use
+  // 自动化总闸（设置页「常规」）：桌面=nuphus MCP，浏览器=ego-browser 指令 + browser_use
   const builtinPlugins = await readBuiltinPlugins();
   const bundledNodePath = bundledNode();
   const mediaHelper = existingToolPath("harness-media.mjs") || path.join(toolsRoot(), "harness-media.mjs");

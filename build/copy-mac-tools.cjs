@@ -2,17 +2,11 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { existsSync } = require("node:fs");
 
-// 09-16 打包瘦身：浏览器内核（Playwright pw-browsers / Cloak cloak-cache，合计 ~1.2GB 原始）
-// 不再随包内置，由「开发工具」页按需下载（主进程已接国内镜像 + 失败回落官方源）。
-// 开发机 resources/tools 里这两个目录照常保留，只是复制进 .app 时跳过。
-const NOT_BUNDLED = new Set(["pw-browsers", "cloak-cache"]);
-
-// 09-16 用户「CloakBrowser 不用内置，按需下载就行」：cloakbrowser 的 npm 包体与 shell shim
-// 同样不进包（Windows 侧是 package.json extraResources 的 filter，两处必须同源）。
-// 用 basename 匹配，覆盖 bin/cloakbrowser、node_modules/cloakbrowser、node_modules/.bin/cloakbrowser。
-function isCloakPackage(entry) {
-  return /^cloakbrowser(\.cmd|\.ps1)?$/.test(path.basename(entry));
-}
+// 09-16 打包瘦身：Playwright 内核（pw-browsers，~700MB）不随包内置，
+// 由「开发工具」页按需下载（主进程已接国内镜像 + 失败回落官方源）。
+// 开发机 resources/tools 里这个目录照常保留，只是复制进 .app 时跳过。
+// 浏览器自动化主通道 Ego Lite 是外部安装的应用，也不在随包目录里。
+const NOT_BUNDLED = new Set(["pw-browsers"]);
 
 module.exports = async function afterPack(context) {
   const resources = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, "Contents/Resources");
@@ -21,7 +15,7 @@ module.exports = async function afterPack(context) {
   // Copy the complete, target-native tool closure, preserving Unix executable bits.
   await fs.cp(source, path.join(resources, "tools"), {
     recursive: true, verbatimSymlinks: true, preserveTimestamps: true,
-    filter: (entry) => !NOT_BUNDLED.has(path.basename(entry)) && !isCloakPackage(entry),
+    filter: (entry) => !NOT_BUNDLED.has(path.basename(entry)),
   });
 
   // 09-13 v0.0.14 补漏：mac 的 extraResources 是空数组（避免 builder 过滤 node_modules），

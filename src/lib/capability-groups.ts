@@ -43,7 +43,7 @@ export const DESKTOP_SKILL_ID = "desktop-automation";
 /** 浏览器自动化配套技能目录名。 */
 export const BROWSER_SKILL_ID = "browser-skill";
 /** 浏览器相关的内置技能目录名（总闸要一起管）。
- *  09-19 起只有 browser-skill（playwright-cli 实操 + 通道选型 + CloakBrowser 合并版）；
+ *  10-22 起只有 browser-skill（ego-browser 唯一通道 + 每会话 TaskSpace）；
  *  旧的 browser-automation 已退役，磁盘上那份由主进程 ensureBuiltinSkills 的退役清理删掉
  *  （只删内容逐字一致的指纹，不碰用户自建/改过的目录）。 */
 export const BROWSER_SKILL_IDS: readonly string[] = [BROWSER_SKILL_ID];

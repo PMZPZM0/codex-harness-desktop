@@ -23,10 +23,10 @@ import { kbEmbeddingInstalled } from "./kb-embed-backend";
 import { recordToolInstalled, recordToolRemoved } from "./tool-persistence";
 import { codexHome, engineActiveTurnIds, server } from "../runtime-refs";
 import { findMoeKoeExe } from "../moekoe";
-// 自动化工具链状态：nuphus-mcp（桌面）/ playwright-cli（浏览器）/ cloakbrowser（指纹浏览器）。
+// 自动化工具链状态：nuphus-mcp（桌面）；浏览器自动化主通道是外部 Ego Lite。
 // 静态检测安装目录与缓存，不 spawn 进程，打开设置页即时返回。
 
-type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "playwright-cli" | "cloakbrowser" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "playwright-browsers" | "cloak-browsers" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown" | "platform-tools" | "laya" | "phone-harness" | "kb-embedding" | "rea" | "moekoe";
+type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown" | "platform-tools" | "laya" | "phone-harness" | "kb-embedding" | "rea" | "moekoe";
 // bundled：随包内置（zip / 预解压目录是来源，不是联网下载）。界面显示「内置」徽标；
 // 缺失时允许「修复安装」（从随包 zip 重新解压），但不允许卸载（删了没有可靠重取途径）。
 // hidden：**不在「开发工具」页出卡**（它有自己的专用卡片），但注册成正式工具项 ⇒
@@ -37,9 +37,8 @@ type DevRuntimeSpec = { name: string; description: string; size: string; marker:
 // 例外（用户明确要求内置）：
 //   · node —— 安装器引导运行时（install-runtimes 本身靠内置 node 跑），没有它其余都装不了；
 //   · vscode-cli —— 体积小、无国内镜像；
-//   · nuphus / playwright-cli —— 桌面与浏览器自动化的两条默认通道，只发在 npm 上、
-//     国内没有独立的"加速直链"（详见下方 bundled 注释与 package.json 的 filter）。
-// ⛔ CloakBrowser 不在此列：09-16 起剥离出包，按需下载（开发工具页 → npm 国内镜像）。
+//   · nuphus —— 桌面自动化默认通道，只发在 npm 上、国内没有独立的"加速直链"
+//     （详见下方 bundled 注释与 package.json 的 filter）。
 const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   // ⛔ 10-01 用户定稿：「把那些 50m 以内的工具都内置」—— 下载体积 ≤50MB 的一律随包（builtIn），
   //    用户在开发工具页看到「内置」徽标、不需要再等下载；>50MB 的大件仍走按需下载。
@@ -52,14 +51,11 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   "vscode-cli": { name: "VS Code CLI", description: "通过 code 命令打开文件与工作区", size: "约 28 MB", marker: "vscode-cli\\code.exe", builtIn: true },
   // noUninstall：来源是**随包内置资源**（zip / 插件目录）而不是联网下载 —— 删掉后没有
 // 可靠的重取途径（压缩包本体随应用分发、不单独缓存），用户误删很难找回，因此不支持卸载。
-  // 09-16 用户「自动化工具拆开，拆详细一点」：原来一张「桌面与浏览器自动化」大卡（把三个 npm 包
+  // 09-16 用户「自动化工具拆开，拆详细一点」：原来一张「桌面与浏览器自动化」大卡（把两个 npm 包
   // 混在一起、装没装只能看一个 marker）拆成逐条能力卡，每条各自可查状态、可单独恢复。
-  // 同时按用户「这三个内置，CloakBrowser 不用内置，按需下载就行」定下分工：
-  //   nuphus / playwright-cli —— 随包预解压内置（bundled，开箱即用；缺了可从随包 zip 修复）；
-  //   cloakbrowser —— 从包里剥离，走 npm 国内镜像按需下载（默认浏览器用内置视图 / playwright-cli）。
+  // nuphus 随包预解压内置（bundled，开箱即用；缺了可从随包 zip 修复）；
+  // 浏览器自动化主通道是用户自行安装的 ego lite（见 browser-ipc + 设置页 Ego 卡），不再内置 Playwright。
   nuphus: { name: "Nuphus 桌面自动化", description: "35 个桌面自动化工具（屏幕截取、窗口控制、键鼠输入、剪贴板、OCR 感知），经 nuphus-call 按需调用，不占模型上下文；随包内置，开箱即用", size: "随包 30 MB", marker: "npm-global\\node_modules\\@nuphus\\nuphus-mcp\\package.json", bundled: true, noUninstall: true },
-  "playwright-cli": { name: "Playwright 浏览器自动化", description: "命令行浏览器自动化 CLI（open / snapshot / click / type / screenshot），浏览器内核单独按需下载；随包内置，开箱即用", size: "随包 18 MB", marker: "npm-global\\node_modules\\@playwright\\cli\\package.json", bundled: true, noUninstall: true },
-  cloakbrowser: { name: "CloakBrowser 指纹浏览器", description: "反检测指纹浏览器 npm 包（过 Cloudflare Turnstile / reCAPTCHA / FingerprintJS），默认不用、需要时再装；npm 国内镜像下载，失败自动回落官方源", size: "约 4 MB", marker: "npm-global\\node_modules\\cloakbrowser\\package.json" },
   // REA 逆向分析（10-13，源自 morluto/rea「REA: Reverse Engineer Anything」，npm rea-agents，MIT）：
   // 100MB > 50MB 内置线 ⇒ 按需下载（npm 国内镜像，失败回落官方源）。装完自动注册 [mcp_servers.rea]，
   // 配套内置专家「洞见 · 逆向工程专家」（requiresTool="rea"，未装时整队隐藏 —— readExpertTeams 口径）。
@@ -75,8 +71,6 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   rg: { name: "ripgrep (rg)", description: "极速代码搜索，Codex 检索代码库的主力工具；随包内置，开箱即用", size: "随包 5 MB", marker: "rg\\rg.exe", builtIn: true },
   uv: { name: "uv", description: "极速 Python 包管理器（pip/venv 替代）；随包内置，开箱即用", size: "随包 12 MB", marker: "uv\\uv.exe", builtIn: true },
   cmake: { name: "CMake", description: "C/C++ 构建系统生成器（配合 Ninja）；随包内置，开箱即用", size: "随包 45 MB", marker: "cmake\\bin\\cmake.exe", builtIn: true },
-  "playwright-browsers": { name: "Playwright 浏览器内核", description: "Chromium 等浏览器内核，浏览器自动化 CLI 首次运行所需；按需下载（国内镜像优先，失败自动回落官方源）", size: "约 170 MB", marker: "pw-browsers", kind: "browsers" },
-  "cloak-browsers": { name: "Cloak 指纹浏览器内核", description: "反检测 Chromium 内核（Cloudflare/reCAPTCHA 站点用），CloakBrowser 运行所需；按需下载（国内镜像优先，失败自动回落官方源）", size: "约 200 MB", marker: "cloak-cache" },
   conda: { name: "Miniconda", description: "Python 环境管理器（conda 命令，科学计算/环境隔离）", size: "约 100 MB", marker: "miniconda\\Scripts\\conda.exe", kind: "download" },
   docker: { name: "Docker Desktop", description: "容器运行时，需要系统级安装（管理员权限 + 重启 + 登录）", size: "约 500 MB", marker: "docker\\docker.exe", kind: "guide" },
   mingw: { name: "MinGW-w64 (gcc/g++/make)", description: "C/C++ 编译器工具链，含 gcc、g++、make、gdb", size: "约 267 MB", marker: "mingw\\mingw64\\bin\\g++.exe", kind: "download" },
@@ -309,7 +303,7 @@ function runtimeInstalled(id: DevRuntimeId, spec: DevRuntimeSpec): boolean {
   }
   // ⛔⛔ 10-07 mac（用户实测「指纹浏览器安装后不刷新」的根因）：npm 包类 marker 有**两个
   //  可能落位** —— 打包期 prepare-mac-tools.cjs 把 lib/node_modules 改名成 node_modules
-  //  （随包件在 node_modules）；运行期 npm install --prefix 装的包（cloakbrowser）落在
+  //  （随包件在 node_modules）；运行期 npm install --prefix 装的包（rea 等）落在
   //  lib/node_modules，除非打包期留下的 symlink 活到了用户机器上。只查一个落位 ⇒
   //  装完永远显示「未安装」。两个都查：谁在算谁装了。
   const rel = markerRel(id, spec);
@@ -457,7 +451,7 @@ for (const toolsDir of toolRootsRead()) {
 // 用户不点安装的话引擎跑终端命令全是失败。启动时检测到缺失就后台自动装一次
 // （install-runtimes.cjs：npmmirror 镜像优先、失败回落官方源），失败不阻塞启动，
 // 用户仍可到「开发工具」页手动装；下次启动若仍缺会再试（自愈）。
-// 仅 Windows：mac 包仍内置 git（copy-mac-tools 只排除 pw-browsers/cloak-cache），不需要装。
+// 仅 Windows：mac 包仍内置 git（copy-mac-tools 只排除 pw-browsers），不需要装。
 let gitAutoInstallStarted = false;
 async function autoInstallGitIfNeeded(): Promise<void> {
   if (process.platform !== "win32" || gitAutoInstallStarted) return;

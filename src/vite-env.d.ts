@@ -432,8 +432,16 @@ interface Window {
     showNotification(title: string, body: string): Promise<boolean>;
     toolStatus(): Promise<{ id: string; name: string; scope: "computer" | "browser"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string }[]>;
     listRuntimes(): Promise<DevRuntimeEntry[]>;
-    openInCloakBrowser(url: string): Promise<{ ok: boolean; detail: string }>;
-    cloakBrowserStatus(): Promise<{ event?: string; message?: string; url?: string; title?: string }>;
+    /* ego lite 安装态：CLI 路径/版本/双平台下载页；不内置浏览器本体 */
+    egoStatus(): Promise<{ installed: boolean; cliPath: string; version: string; appPath: string; platform: string; downloadUrl: string }>;
+    /* 打开 ego lite 官方下载页（不静默安装系统软件） */
+    egoInstall(): Promise<{ ok: boolean; detail: string }>;
+    /* 打开 ego lite GUI；找不到启动器时回落官方下载页 */
+    egoOpen(): Promise<{ ok: boolean; detail: string }>;
+    /* 手动升级：运行官方 ego-browser upgrade（可能下载数百 MB） */
+    egoUpgrade(): Promise<{ ok: boolean; output: string; before: string; after: string; changed: boolean }>;
+    /* 归档会话时回收 codex-<threadId> TaskSpace；不传 threadId 则清全部 codex-* */
+    egoCleanup(threadId?: string): Promise<{ ok: boolean; cleaned: number; detail: string }>;
     remoteStart(): Promise<{ port: number; url: string }>;
     remoteStatus(): Promise<{ status: string; devices: any[]; url: string }>;
     remoteDevices(): Promise<any[]>;

@@ -67,117 +67,110 @@ await browser.close();
 
 export const BROWSER_SKILL = `---
 name: browser-skill
-description: 浏览器自动化技能：走 playwright-cli（当前引擎下唯一可用通道）完成打开网页、抓数据、填表、端到端验证；含命令速查、失败排查与 CloakBrowser 反爬升级。⛔ 当前引擎版本下 nuphus 的 browser_* 工具不可调用（调用即 unsupported call），不要尝试。
+description: 浏览器自动化技能（browse-skills）：装了 Ego Lite 就优先走 ego-browser（每会话一个 TaskSpace、多会话并行）；没装则回落 nuphus-call browser_* 调用默认浏览器。⛔ 不再使用 Playwright / CloakBrowser。
 ---
 
-# 浏览器自动化
+# 浏览器自动化（Ego Lite）
 
-## 0. 通道选型：直接用 \`playwright-cli\`（当前唯一可用通道）
+## 0. 通道优先级
 
-> ⛔⛔ **当前引擎版本下 nuphus 的 \`browser_*\` 工具不可调用**：引擎 0.157 起内置 MCP 工具面对模型是
-> 「延迟暴露」—— 名字在工具列表里看得见、路由里不认，调用必返 \`unsupported call\`
-> （实证日志：\`error=unsupported call: browser_navigate\`）。本技能下文出现的 \`browser_*\` 字样
-> **只作历史对照**；需要浏览器能力时一律改用 \`playwright-cli\`。一个回合内最多试一次 \`browser_*\`，
-> 失败立刻转 CLI —— **绝不在两条通道间反复横跳**（那会把整个回合耗死在工具选择上）。
+1. **首选 \`ego-browser\`（ego lite）**：真实 Chromium、保留登录态；每个 Codex 会话一个独立 TaskSpace。
+2. **未装 Ego Lite → \`nuphus-call browser_*\`（默认浏览器回落）**：调用 nuphus 的浏览器自动化工具，操作本机默认浏览器；见第 5 节。
+3. **用户自己看页面** → 应用右栏内置浏览器面板（不是自动化通道）。
+4. 完整 ego API / 故障排查：运行 \`ego-browser skill\`，按它打印的**当前版本**指南执行；本技能补充宿主策略（每会话 Space / 复用 / 回收）。
 
-**① 默认且唯一可靠通道：\`playwright-cli\`** —— 命令行工具，已在 PATH，当前引擎下它真的能用。
-为什么是它：每步一个 CLI 动作、\`snapshot\` 只回可交互元素引用（**省 token**），链路简单不会卡在选择上。
+⛔ 不要再用 \`playwright-cli\`（已从应用移除）、CloakBrowser（已移除），也不要直接调用 nuphus 的 MCP \`browser_*\`（当前引擎必返 unsupported call）；回落一律走 **\`nuphus-call browser_*\` CLI**。
 
-**② 退化通道：\`playwright-cli\`** —— 命令行工具，已在 PATH。仅在 nuphus 不可用时使用。
+## 1. 一会话一 Space（硬规则）
 
-**③ 反爬增强：CloakBrowser** —— 指纹浏览器，**按需下载、可能未安装**，只有风控站才需要（见第 5 节）。
+1. 先取本会话 ID：
+   - Windows PowerShell：\`$env:CODEX_THREAD_ID\`
+   - macOS / Bash：\`$CODEX_THREAD_ID\`
+2. Space 名固定为 \`codex-<会话ID>\`。第一轮 \`const task = await taskSpace("codex-<id>")\` 创建/续用；打印 \`task.spaceId\`。
+3. **同一会话的后续轮次必须用同一个名字续用**，不要再建新 Space；一个目标一个 Space，整个会话保持。
+4. 多个 Codex 会话同时跑时，各自 ID 不同 ⇒ 各自 Space，互不抢标签页。⛔ 不要 \`claimTaskSpace\` 别人的 \`codex-*\` Space。
+5. **不要每轮 \`finish()\`**：Space 里的标签页和登录态要留给后续轮次；只有用户明确说「清理 / 关闭浏览器工作区」时才 \`finish({ keep: [] })\`。会话归档时应用会自动回收。
+6. 用户自己拥有的 Space（\`ownership: "user"\`）不要碰；需要接管先问用户。
 
-**④ 需要用户亲眼看页面** → 应用右栏的**内置浏览器面板**（Chromium，随应用内置）。
+## 2. 双平台运行脚本
 
-> ⛔ 不要 \`require("playwright")\` 裸写脚本 —— 内核与版本由应用管，绕过它必踩坑。
-> 需要写脚本时，改用 nuphus 工具或 \`playwright-cli\`。
+ego 的 Node **不继承 shell 环境变量** ⇒ 会话 ID 要以字面量写进脚本；先 echo 出来再写文件。
 
-## 1. 三段循环：观察 → 动作 → 验证
+**Windows / PowerShell**（推荐 .mjs + ASCII-only 入口）：
 
-| 段 | 首选工具 | 要点 |
-|---|---|---|
-| 观察 | \`browser_snapshot\`（AX 树文本）/ \`browser_extract\`（正文） | **只回元素与编号**，别去 dump 整页 HTML |
-| 动作 | \`browser_exec\`（**多步合并，单次 CDP 往返**）/ \`browser_click\` / \`browser_type\` / \`browser_press\` | 能把「点开 → 填表 → 提交」一次发完，就别分三次调 |
-| 验证 | \`browser_wait_for\`（等元素到某状态）→ 再 \`browser_snapshot\` 复核 | 等**条件**，不要 sleep 猜时间 |
+\`\`\`powershell
+$env:CODEX_THREAD_ID
+# 用文件工具写 round-01.mjs，内容里写死 const TID = "<上一步的 ID>";
+ego-browser nodejs -e "await import('file:///C:/绝对路径/round-01.mjs')"
+\`\`\`
 
-## 2. nuphus \`browser_*\` 工具速查（24 个）
+不要用 PowerShell heredoc（不存在），也不要用 \`Get-Content\` 管道（UTF-8 会被按 ANSI 读坏）。
 
-**导航**：\`browser_navigate\` · \`browser_back\` · \`browser_forward\`
-**观察**：\`browser_snapshot\`（可交互元素 + 编号）· \`browser_extract\`（正文）· \`browser_screenshot\`
-**交互**：\`browser_click\` · \`browser_type\` · \`browser_press\` · \`browser_scroll\` · \`browser_exec\`（批处理）
-**等待**：\`browser_wait_for\`
-**标签页**：\`browser_new_tab\` · \`browser_list_tabs\` · \`browser_switch_tab\`
-**文件**：\`browser_upload\` · \`browser_drag_files\` · \`browser_list_downloads\`
-**登录态**：\`browser_import_cookies\` · \`browser_cookies_get\` · \`browser_cookies_set\`
-**其它**：\`browser_evaluate\`（页面内跑任意 JS）· \`browser_close\`
-
-### 登录态复用（省掉重新登录，但有边界）
-
-需要登录才能继续时，**先试 \`browser_import_cookies\`**：它把本机 Chrome 的 cookie 导进自动化会话。
-- ⚠️ 这会把**该 Chrome profile 的站点凭证**交给自动化会话 —— 只在用户知情同意时用
-- 若导入后仍被要求登录（站点认设备指纹、token 短效），退回「让用户人工登一次」
-
-## 3. playwright-cli 速查（退化通道）
+**macOS / Linux / Git Bash**：
 
 \`\`\`bash
-playwright-cli open https://example.com   # 打开（-s=名字 可开独立会话）
-playwright-cli snapshot                    # 拿可交互元素引用 e12 / e5 …
-playwright-cli click e12                   # 操作
-playwright-cli snapshot                    # 复核：真变了才算成功
-playwright-cli close                       # 收尾
+ego-browser nodejs < /绝对路径/round-01.mjs
 \`\`\`
 
-**常用**：\`find <text>\`（页面内搜文本，比整页 snapshot 省得多）· \`eval <func>\`（取结构化数据）·
-\`requests\` → \`response-body <i>\`（**SPA 别解析 DOM，直接抓 XHR 的 JSON**）·
-\`state-save\` / \`state-load\`（复用登录）· \`tab-list\` / \`tab-new\` / \`tab-select\` ·
-\`--raw\`（只输出结果值，最省 token）· \`kill-all\`（强杀僵尸会话）
+或 heredoc（Bash/Zsh）：
 
-**调试（排不动时用）**：\`console [min-level]\`（页面日志）· \`tracing-start\` / \`tracing-stop\` ·
-\`highlight [target]\`（高亮元素）· \`generate-locator <target>\`（拿稳定选择器）· \`pause-at\` / \`resume\` / \`step-over\`（单步）
-
-**失败对策（照这个查，别瞎试）**：
-
-| 症状 | 对策 |
-|---|---|
-| 点不到 / 引用失效 | 重新 \`snapshot\`（页面变了）；或 \`find <文本>\` |
-| 看不到目标元素 | 可能在 iframe / shadow DOM / 另一个标签页 → \`tab-list\` |
-| cookie 横幅 / 登录墙 | 先 \`snapshot\` 看**真实**状态，处理干扰项再操作原目标 |
-| 抓不到数据（SPA/无限滚动） | \`requests\` 找 XHR → \`response-body <i>\` 拿 JSON |
-| 命令卡住 / 超时 | \`kill-all\` 清僵尸后重来 |
-| 被反爬 / 验证码 | 换 CloakBrowser（见第 5 节），**不要**硬刚或反复重试 |
-
-## 4. 元素引用 vs 坐标（别犯这个错）
-
-- **引用只在当次快照有效**：页面一变就重新 \`snapshot\`。
-- **不要用坐标点网页元素** —— 坐标会随滚动/布局漂移，用元素引用（\`@N\` / \`e12\`）。
-
-## 5. CloakBrowser（可选增强：反检测指纹浏览器）
-
-**按需下载项，可能未安装**（「设置 → 开发工具 → CloakBrowser 指纹浏览器」，约 4 MB；内核另需下载）。
-先探 \`process.env.CLOAKBROWSER_ENTRY\`：为空说明没装 → **直接用 nuphus 工具或 playwright-cli**，
-不要自己跑安装命令，也不要把它当故障上报（可以把下载入口告诉用户）。装了之后写 Node 脚本：
-
-\`\`\`javascript
-// bot-check.mjs —— node bot-check.mjs 运行
-const { launch } = await import(process.env.CLOAKBROWSER_ENTRY);
-const browser = await launch({ headless: false, humanize: true });  // 有头 + 拟人化
-const page = await browser.newPage();
-await page.goto("https://target-site.com");
-await browser.close();
+\`\`\`bash
+ego-browser nodejs <<'EOF'
+...
+EOF
 \`\`\`
 
-- 内核缓存目录是 \`CLOAKBROWSER_CACHE_DIR\`；**不要**自己跑 \`cloakbrowser install\`
-- 它是**独立窗口**，和应用右栏内置浏览器面板是两回事
+每轮写新的完整文件（round-01.mjs、round-02.mjs…）；不要把上一轮的文件改一改重跑（会重放旧动作）。
 
-## 6. 产出规范
+## 3. 最小 API 速查
 
-- 抓到的数据**写到工作区文件**（JSON / CSV），不要把大段内容贴进对话
-- 截图存到工作区，并把**路径**给用户（不要只贴 base64）
-- 汇报写清：访问了哪个 URL、做了什么、拿到什么、哪一步没成
+\`\`\`js
+const task = await taskSpace("codex-<会话ID>");
+const page = task.page("p1");              // 新 Space 自带 p1；不要每步开新页
+await page.goto("https://example.com");
+const snap = await page.snapshot();        // 可交互元素 + ref/text
+await page.click("@12");                   // 或 loc=role:button[name='...']
+await page.fill("@21", "hello");
+await page.waitForSelector("loc=css:#done", { state: "visible" });
+console.log(await page.snapshot());        // 每轮最后打印一次，作为下一轮起点
+\`\`\`
 
-## 7. 边界（硬约束）
+- 页面操作：\`goto / snapshot / click / fill / press / selectOption / waitForSelector / waitForURL / evaluate / screenshot / url / title\`
+- 多页：\`await task.pages()\`、\`task.page("p2")\`、\`await task.newPage()\`；用完 \`page.close()\`。
+- 需要完整签名 / 不常用选项：\`help()\` 或 \`help("page.click")\`（ego 会自己打印，别包 console.log）。
+- 没有的 API 用 \`page.evaluate\` 或 \`page.cdp\`，不要猜其他自动化框架的方法。
 
-- 登录 / 支付 / 删除 / 发布这类**不可逆动作，先问用户**再点
-- 同一站点连续失败 2 次就停下来报告，不反复重试（可能触发风控）
-- 不用浏览器自动化绕过付费墙、验证码或做违反站点条款的事
+## 4. 一轮怎么做
+
+观察 → 动作 → 验证：
+
+- 先用 \`snapshot()\` 看可交互元素；同一页的多步动作在一次脚本里做完，最后再 snapshot 复核。
+- 能用语义选择器就不要用坐标；页面一变就重新 snapshot。
+- SPA 抓数据优先 \`page.evaluate\` 取结构化数据，别整页 dump HTML。
+- 每轮把截图 / JSON 写到工作区绝对路径，不要把大段内容贴进对话。
+
+## 5. ego 未安装时：browse-skills 默认浏览器回落
+
+如果 \`ego-browser\` 不存在或连不上，改用 **\`nuphus-call browser_*\`**（nuphus 的浏览器自动化 CLI，操作本机默认浏览器；\`nuphus-call\` 已在 PATH）：
+
+\`\`\`bash
+nuphus-call browser_navigate url="https://example.com"
+nuphus-call browser_snapshot
+nuphus-call browser_click ref="@12"
+nuphus-call browser_type ref="@21" text="hello"
+nuphus-call browser_press key="Enter"
+nuphus-call browser_close
+\`\`\`
+
+- 一次一个动作，动作后 \`browser_snapshot\` 复核；多步可用 \`browser_exec\` 合并。
+- 需要复用登录态：\`nuphus-call browser_import_cookies\`（用户知情时）。
+- 这条回落**不按 Codex 会话隔离 Space**；能装 Ego Lite 时优先 ego（每会话独立 Space）。
+- 不要自己安装 ego lite、不要跑第三方安装脚本、不要换回 Playwright 等其他通道；告诉用户到「设置 → 开发工具 → Ego Lite 浏览器自动化」安装，并附上原始报错。
+
+## 6. 边界
+
+- 登录 / 支付 / 删除 / 发布等不可逆动作先问用户。
+- 同一站点连续失败 2 次就停下报告，别反复重试（可能触发风控）。
+- 不用浏览器自动化绕过付费墙、验证码或违反站点条款。
+- 用户没明确要求时不要操作 / 接管用户自己的 Space 或标签页。
 `;

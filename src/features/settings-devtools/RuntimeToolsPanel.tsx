@@ -12,6 +12,7 @@ import { useState } from "react";
 import { Activity, AlertTriangle, ArrowDown, BookOpen, CircleCheck, Copy, Download, ExternalLink, Globe2, TerminalSquare, Wrench } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { copyTextToClipboard } from "../../lib/clipboard";
+import { EgoLiteCard } from "./EgoLiteCard";
 
 export type RuntimeToolsPanelProps = {
   devRuntimes: any;
@@ -55,20 +56,22 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
   const healthMissing = health ? health.filter((row: any) => !row.installed).length : 0;
   return (
     <div className="settings-section stack">
+      {/* 浏览器自动化主通道：外部安装的 ego lite（每会话一个 TaskSpace；不随包内置 611MB 浏览器） */}
+      <EgoLiteCard onNotice={setNotice} />
       {(() => {
         // 09-16 用户「自动化工具拆开，拆详细一点」：不再一张「桌面与浏览器自动化」大卡，
-        // 拆成逐条能力卡（Nuphus / Playwright CLI / CloakBrowser / 两类内核 / ponytail）。
+        // 拆成逐条能力卡（Nuphus / ponytail；浏览器自动化走外部 Ego Lite）。
         // bundled=true 的卡片显示「内置」（随包预装，无需安装；缺失时给「修复安装」）。
         // 10-07 重构（用户「对工具合理分类整理」）：按用途细分五类，末组兜底 ——
         // ⛔ 末组必须存在：将来新增工具忘了归类时落在「其它」而不是从界面上凭空消失。
-        const autoIds = ["nuphus", "playwright-cli", "cloakbrowser", "playwright-browsers", "cloak-browsers", "ponytail"];
+        const autoIds = ["nuphus", "ponytail"];
         const devChainIds = ["pwsh", "git", "conda", "mingw"];
         const mediaIds = ["ffmpeg", "markitdown"];
         const aiIds = ["kb-embedding"];
         const notIn = (ids: string[]) => (r: any) => !ids.includes(r.id);
         const groups = [
           { key: "base", title: "基础运行时", hint: "随应用内置，离线可用", icon: <Wrench size={13} />, filter: (r: any) => r.builtIn },
-          { key: "auto", title: "桌面与浏览器自动化", hint: "Nuphus / Playwright CLI 随包内置，CloakBrowser 与浏览器内核按需下载", icon: <TerminalSquare size={13} />, filter: (r: any) => autoIds.includes(r.id) },
+          { key: "auto", title: "桌面与浏览器自动化", hint: "Nuphus 随包内置（Ego Lite 未装时作默认浏览器回落）；自动化优先外部 Ego Lite", icon: <TerminalSquare size={13} />, filter: (r: any) => autoIds.includes(r.id) },
           { key: "devchain", title: "开发工具链", hint: "Git / PowerShell 7 / Miniconda 等，按需下载（国内镜像优先）", icon: <Download size={13} />, filter: (r: any) => devChainIds.includes(r.id) },
           { key: "media", title: "媒体与文档", hint: "音视频处理与文档格式转换", icon: <Activity size={13} />, filter: (r: any) => mediaIds.includes(r.id) },
           { key: "ai", title: "本地智能", hint: "本地推理 / 语义检索，模型走国内镜像", icon: <BookOpen size={13} />, filter: (r: any) => aiIds.includes(r.id) },
@@ -108,7 +111,6 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
                       </em>
                     </span>
                       : !isDone && runtime.bundled ? <em className="runtime-hint">随包内置能力缺失时可点「修复安装」从包内恢复</em>
-                      : !isDone && runtime.id === "cloakbrowser" ? <em className="runtime-hint">按需下载 · 不装也能用内置浏览器与 playwright-cli</em>
                       : null}
                   </span>
                   {/* 10-11 改版：失败不再内联一大块 —— 完整报错进「完整报错」弹窗（DevtoolsSettingsSection 渲染），
@@ -205,7 +207,7 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
           <button className="secondary-setting" onClick={() => { void copyTextToClipboard(devRuntimes.map((r: any) => `# ${r.name}\n${r.description}\n${r.installed || r.builtIn ? "状态：已就绪" : "状态：未安装"}\n`).join("\n")); setNotice("工具清单已复制"); }}><Copy size={13} />复制清单</button>
         </div>
       </details>
-      <p className="settings-card-hint">随应用内置（安装包自带、离线可用）：引擎、Node、VS Code CLI、Nuphus 桌面自动化、Playwright 浏览器自动化（CLI）、ponytail 写代码模式插件，以及下载体积 50MB 以内的小工具 —— Python（完整版，含 pip 与 Tkinter）、ripgrep、uv、CMake、7-Zip、jq、Ninja、yt-dlp、Android 平台工具（adb）；按需下载：Git、PowerShell 7（npmmirror / gh 加速，失败自动回落官方源，首次启动检测到缺 Git 会自动补装）、FFmpeg、Miniconda、MinGW、CloakBrowser 指纹浏览器（npm 国内镜像）、Playwright / Cloak 两类浏览器内核、文档转换（markitdown，pip 清华镜像）；Docker Desktop、OpenSSL 需系统级安装（点按钮打开官网）。除内置项外都可卸载（卸载是真删）。日常浏览用内置浏览器视图，CloakBrowser 只在需要过反爬站点时按需下载。安装后自动加入 Codex 环境（不修改系统 PATH 或注册表）；引擎在会话里自行安装工具时，此页状态也会自动刷新。</p>
+      <p className="settings-card-hint">随应用内置（安装包自带、离线可用）：引擎、Node、VS Code CLI、Nuphus 桌面自动化、ponytail 写代码模式插件，以及下载体积 50MB 以内的小工具 —— Python（完整版，含 pip 与 Tkinter）、ripgrep、uv、CMake、7-Zip、jq、Ninja、yt-dlp、Android 平台工具（adb）；按需下载：Git、PowerShell 7（npmmirror / gh 加速，失败自动回落官方源，首次启动检测到缺 Git 会自动补装）、FFmpeg、Miniconda、MinGW、文档转换（markitdown，pip 清华镜像）；Docker Desktop、OpenSSL 需系统级安装（点按钮打开官网）。Ego Lite 浏览器自动化是**首选**通道，在卡片里跳官方安装器（不随包内置 611MB 浏览器）；未安装时回落 browse-skills（nuphus 默认浏览器）。除内置项外都可卸载（卸载是真删）。日常浏览用内置浏览器视图；浏览器自动化由每个会话自己的 Ego Lite Space 执行。安装后自动加入 Codex 环境（不修改系统 PATH 或注册表）；引擎在会话里自行安装工具时，此页状态也会自动刷新。</p>
     </div>
   );
 }

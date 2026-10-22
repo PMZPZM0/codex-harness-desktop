@@ -103,8 +103,8 @@ ok(/const roots = toolRootsRead\(\)/.test(dr) && /roots\.some\(/.test(dr),
   "「装没装」同时检查随包与 userData 两处（更新后仍能认出来）");
 ok(/path\.join\(writeToolsRoot\(\), "npm-global"\)/.test(ri) && /npmGlobalRootCandidates\(true\)/.test(ri),
   "npm 安装写 userData；卸载只清 userData（不误删随包件）");
-ok(/const tools = writeToolsRoot\(\)/.test(tc) && /CLOAKBROWSER_CACHE_DIR/.test(tc) && /PLAYWRIGHT_BROWSERS_PATH/.test(tc),
-  "浏览器内核缓存（Playwright / Cloak）指向 userData（更新后不用重下）");
+ok(/const tools = writeToolsRoot\(\)/.test(tc) && !/PLAYWRIGHT_BROWSERS_PATH/.test(tc) && !/cloak-cache/.test(tc),
+  "浏览器自动化不再落第二套内核缓存（Playwright/Cloak 已移除；Ego Lite 自管）");
 
 console.log("【⑥ 真跑：编译产物上的记账行为】");
 // ⛔ 真跑而非读字符串：stub electron 的 app.getPath 指向临时目录，
