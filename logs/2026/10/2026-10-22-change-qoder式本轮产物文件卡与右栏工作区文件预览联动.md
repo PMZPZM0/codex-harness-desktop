@@ -5,7 +5,7 @@ kind: change
 area: ui
 title: Qoder 式本轮产物文件卡 + 右栏工作区文件预览联动
 tags: [file-cards, right-panel, rea, qoder]
-commits: [567c880]
+commits: [567c880, cc58ce2, 6f248ae]
 files: [src/components/FileRefCard.tsx, src/features/shared/InlineCards.tsx, src/features/status/OutputFileCards.tsx, src/lib/right-file.mjs, src/lib/right-file.d.mts, src/features/app-view/AppView/RightFileBridge.tsx, src/features/app-view/AppView/03-workspace-files.tsx, src/features/app-view/AppView/03-review-panel.tsx, src/features/app-view/AppView.tsx, src/features/status/Status.tsx, src/styles/04-cards-tools.css, src/styles/14-model-onboarding.css, electron/features/shell-ipc.ts, electron/ipc-channels.manifest.json, electron/ipc-registry.ts, scripts/guards/11p-file-summary.mjs, scripts/accept.mjs]
 importance: normal
 ---
@@ -46,6 +46,9 @@ importance: normal
 
 ## 补：正文内联引用（用户实测「你没改嘛，还是这种旧的」）
 用户截图里那个小芯片是**消息正文末尾的内联文件引用**（旧 `inline-file-card`），不是本轮产物卡。已把普通文件引用换成同一张 `FileRefCard`（默认右栏；编辑器 / 默认应用从下拉选），图片 / 音视频仍保留缩略芯片。真机探针：`USER.md` / `BACKGROUND.md` 两张卡；点开右栏预览 206 字。验收 `file-cards` 4 → 6 条（⑤ 扫描正文引用、⑥ 点开右栏）。
+
+## 补：创建后又删除的文件（用户实测「汇总消息下面没有文件卡片」）
+一轮里创建/修改/删除文件，结束时磁盘与开始一致 ⇒ 最终快照 diff 为空，汇总卡与产物卡整块消失。修法：主进程保留最后一次**非空** live 明细，结算时把它出现、但最终快照没有的路径补成 `deleted`（带当时统计），合并后的报告照常落盘 + 广播；⛔ 空 live 不能清掉这份记录。真机探针：创建 `netzero-a.txt` / `netzero-b.md` → 6s 后删除 → 回合结束，汇总卡显示「已更改 2 个文件」，两行均为「已删除」。
 
 ## 影响面
 回合底部新增产物卡（仅新建文件）；**消息正文末尾的内联文件引用**也升级为同款卡（默认右栏）；
