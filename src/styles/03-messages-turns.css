@@ -1088,23 +1088,21 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   color: var(--del);
   font-style: normal;
 }
-/* ★ 10-22：明确的展开标识（文案 + 箭头一起变），与命令卡同一形态 */
+/* ★ 10-22 用户：「『展开』字样不要，鼠标放上去再浮出箭头，移开就隐藏」——
+   与命令卡同一形态：visibility 保留占位（不抖），只切透明度；展开态也不常显。 */
 .action-card .action-toggle {
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
   color: var(--faint);
-  font-size: 11px;
-  opacity: 0.75;
-  transition: color 0.18s, opacity 0.18s;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.16s, visibility 0.16s;
 }
 .action-card .action-head:hover .action-toggle,
-.action-card.open .action-toggle {
+.action-card .action-head:focus-visible .action-toggle {
   opacity: 1;
-}
-.action-card.open .action-toggle {
-  color: var(--muted);
+  visibility: visible;
 }
 .action-card .action-chevron {
   color: inherit;

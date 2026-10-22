@@ -115,8 +115,9 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive }: {
         {skill?.label ? <span className="cmd-name">{skill.label}</span> : null}
         <span className="cmd-status"><CardStatusIcon status={status} /></span>
         {/* 明确的展开标识：文案 + 箭头一起变（只有一个小箭头不够明确 —— 用户 10-22 点名） */}
-        <span className="cmd-toggle">
-          <span className="cmd-toggle-text">{open ? "收起" : "展开"}</span>
+        {/* ★ 10-22 用户：「『展开』字样不要，鼠标放上去再浮出箭头，移开就隐藏」。
+           ⛔ 不要再写回「展开/收起」文案；状态由 aria-expanded + 箭头方向表达。 */}
+        <span className="cmd-toggle" aria-hidden="true">
           <ChevronDown size={13} className="cmd-chevron" />
         </span>
       </button>

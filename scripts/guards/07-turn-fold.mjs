@@ -4446,8 +4446,10 @@ export async function run() {
       /* ★ 10-22 口径变更（用户：「默认仅展示中文名称，隐藏具体命令内容；展开后才看完整命令」）：
          表头不再放命令行（原来锚的是 displayCommand(command) 那一串）⇒ 改判「表头 = 中文动作短语
          + 明确的展开标识」，命令原文只在展开体。⛔ 别把这条断言退回旧口径 —— 那等于把命令行塞回折叠行。 */
-      (/\{headline \|\| verb\}/.test(panel) && /\{open \? "收起" : "展开"\}/.test(panel) ? ok : fail)(
-        "【118】命令卡片折叠行 = 中文动作短语 + 展开/收起标识（10-22：不再展示命令行）"
+      /* 10-22 二改（用户：「『展开』字样不要，鼠标放上去再浮出箭头，移开就隐藏」）：
+         折叠行只剩中文动作 + 悬停浮现的箭头。⛔ 别再退回带「展开/收起」文字的老形态。 */
+      (/\{headline \|\| verb\}/.test(panel) && /className="cmd-toggle"/.test(panel) && !/cmd-toggle-text/.test(panel) ? ok : fail)(
+        "【118】命令卡片折叠行 = 中文动作短语 + 悬停浮现的箭头（无「展开」字样，10-22 二改）"
       );
       (!/cmd-command/.test(panel) ? ok : fail)(
         "【118】折叠行不许再放命令行（`.cmd-command` 已随需求删除，⛔ 别当死代码又加回来）"
@@ -4616,8 +4618,13 @@ export async function run() {
     (/aria-expanded=\{open\}/.test(headSlice) ? ok : fail)(
       "【127】折叠行带 aria-expanded（读屏也知道现在展开没）"
     );
-    (/\{open \? "收起" : "展开"\}/.test(headSlice) ? ok : fail)(
-      "【127】展开/收起有**文案**变化（只有一个小箭头不叫「明确的可展开标识」）"
+    /* 10-22 二改：用户先要「明确的标识」，看到实测后改成「不要文字、悬停才浮出箭头」。
+       ⛔ 两侧都要钉：有箭头（.cmd-toggle）、没有文案（cmd-toggle-text）。 */
+    (/className="cmd-toggle"/.test(headSlice) && !/cmd-toggle-text/.test(headSlice) ? ok : fail)(
+      "【127】折叠行只有悬停浮现的箭头，没有「展开/收起」字样（用户 10-22 二改）"
+    );
+    (/\.cmd-card \.cmd-toggle \{[^}]*visibility: hidden/.test(readStyles()) && /\.cmd-card \.cmd-head:hover \.cmd-toggle/.test(readStyles()) ? ok : fail)(
+      "【127】箭头默认隐藏、整行 hover 才显形（visibility 保留占位 ⇒ 不抖）"
     );
     (/className="cmd-title-hint"/.test(termCode) && /className="cmd-duration"/.test(termCode) ? ok : fail)(
       "【127】地址/用途 + 耗时搬到展开体元信息行（信息不丢，只是不占折叠行）"
@@ -4637,8 +4644,8 @@ export async function run() {
     (/const hasBody = info != null \|\| children != null;/.test(cardsCode) && /className="action-meta"/.test(cardsCode) ? ok : fail)(
       "【127】详情搬进展开体（action-meta），且**有 info 就能点开**（⛔ 以前没有 children 的卡点了没反应）"
     );
-    (/\{open \? "收起" : "展开"\}/.test(cardsCode) && /aria-expanded=\{open\}/.test(cardsCode) ? ok : fail)(
-      "【127】操作卡也带「展开/收起」文案 + aria-expanded（与命令卡同一形态）"
+    (/className="action-toggle"/.test(cardsCode) && !/action-toggle-text/.test(cardsCode) && /aria-expanded=\{open\}/.test(cardsCode) ? ok : fail)(
+      "【127】操作卡同一形态：悬停浮现的箭头（无文案）+ aria-expanded"
     );
     (!/statusText=\{item\.status/.test(itemsCode) ? ok : fail)(
       "【127】⛔ 英文 status（completed / inProgress）不许再上表头（10-22：统一中文）"
