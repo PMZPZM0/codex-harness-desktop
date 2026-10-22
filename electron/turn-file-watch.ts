@@ -245,6 +245,10 @@ const LIVE_POLL_MS = 2500;
 let liveTimer: ReturnType<typeof setInterval> | null = null;
 let liveBusy = false;
 const liveLastSent = new Map<string, string>();
+/* 10-22 用户实测「汇总消息下面没有文件卡片」：一轮里**创建后又删除**的文件，最终快照与开始一样
+   ⇒ 最终报告为空；而收尾会清掉 live，卡片直接消失。这里留下最后一次 live 明细，结算时把
+   最终快照里已经不存在的路径按 deleted 补回报告（只影响"本轮确实碰过"的文件）。 */
+const liveLastFiles = new Map<string, { turnId: string; files: { path: string; status: string; added: number; deleted: number }[] }>();
 
 function ensureLiveTimer(): void {
   if (liveTimer) return;
@@ -296,6 +300,10 @@ async function pollLiveOnce(): Promise<void> {
       }
       files.sort((x, y) => y.added + y.deleted - (x.added + x.deleted));
       const report = files.slice(0, MAX_REPORT);
+      /* 保留最近一次 live 明细（结算时补「创建后又删除」的文件；见 liveLastFiles 注释）。 */
+      /* ⛔ 空报告**不能清**这份记录：文件创建后又删掉时，最后一拍 live 就是空数组 ——
+         清掉等于把「本轮确实碰过这些文件」的唯一证据丢了（用户实测卡片再次消失）。 */
+      if (report.length) liveLastFiles.set(threadId, { turnId: entry.turnId, files: report });
       const sig = report.map((f) => `${f.path}|${f.status}|${f.added}|${f.deleted}`).join("\n");
       if (sig === liveLastSent.get(threadId)) continue;
       liveLastSent.set(threadId, sig);
@@ -325,6 +333,7 @@ export function snapshotTurnWorkspace(threadId: string, turnId: string, cwd: str
   // 快照为空 = 空工作区或**读不到目录**（TCC/权限）——与「改了但没检测到」必须能区分（10-07）。
   if (snap.size === 0) diag({ point: "snapshot-empty", threadId: id, cwd: dir });
   liveLastSent.delete(id);
+  liveLastFiles.delete(id);
   ensureLiveTimer();
 }
 
@@ -339,6 +348,8 @@ export function emitTurnFileChanges(threadId: string): void {
   }
   snaps.delete(id);
   liveLastSent.delete(id);
+  const live = liveLastFiles.get(id);
+  liveLastFiles.delete(id);
   stopLiveTimerIfIdle();
   const { snap: next, rootError, truncated } = walk(entry.cwd);
   if (rootError) diag({ point: "walk-root-error", threadId: id, cwd: entry.cwd, error: rootError });
@@ -368,7 +379,24 @@ export function emitTurnFileChanges(threadId: string): void {
     }
   }
   files.sort((x, y) => y.added + y.deleted - (x.added + x.deleted));
-  const report = files.slice(0, MAX_REPORT);
+  let report = files.slice(0, MAX_REPORT);
+  /* 10-22：最终快照为空 ≠ 本轮没动文件 —— 创建后又删除的文件在首尾快照里都不存在。
+     把最后一次 live 里出现、但最终快照里没有的路径补成 deleted（带当时统计，diff 为空）。
+     ⛔ 只补本轮 live 记录到的路径；不做全目录反推，避免把历史文件又翻出来。 */
+  if (live && live.turnId === entry.turnId && live.files.length) {
+    const byPath = new Map(report.map((file) => [file.path, file]));
+    for (const file of live.files) {
+      if (byPath.has(file.path)) continue;
+      byPath.set(file.path, {
+        path: file.path,
+        status: next.has(file.path) ? file.status : "deleted",
+        added: file.added,
+        deleted: file.deleted,
+        diff: "",
+      });
+    }
+    report = [...byPath.values()].sort((x, y) => y.added + y.deleted - (x.added + x.deleted)).slice(0, MAX_REPORT);
+  }
   // 收尾心跳（10-07）：每次结算都记一行 —— mac 上「没有这行」= 主进程侧链路断了；
   // 「有这行但 files:0」= 检测正常但没发现改动（工作区之外写的 / 本来就没改）。
   // truncated=true 表示工作区大到预算截断（本仓 workspace 就如此：resources 图标集）——此时
