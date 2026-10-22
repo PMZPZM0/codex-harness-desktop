@@ -303,8 +303,8 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
     ? team.displayName?.zh || team.displayName?.en || "办公室"
     : "我的办公室";
   const subtitle = team
-    ? "成员状态实时联动 · 点角色打开会话"
-    : "调度出去的子会话会变成办公室里的人 · 点角色打开子会话";
+    ? "成员状态实时联动 · 点工位打开会话"
+    : "调度出去的子会话会变成办公室里的人 · 点工位打开子会话";
 
   return (
     <div className="office-overlay" role="dialog" aria-label="像素办公室">
