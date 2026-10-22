@@ -18,3 +18,4 @@ export declare function petPhaseOfActivities(activities: unknown): "waiting" | "
 export declare function petAttentionOfActivities(activities: unknown): "" | "pending" | "error";
 export declare function sortPetActivities<T extends { status?: string; updatedAt?: number }>(activities: T[]): T[];
 export declare function petActivitySignature(activities: unknown): string;
+export function orderPetActivities<T extends { threadId?: string }>(activities: T[], focusThreadId?: string): T[];

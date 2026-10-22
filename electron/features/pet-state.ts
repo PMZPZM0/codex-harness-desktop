@@ -23,6 +23,7 @@ import {
   petToolDetail,
   normalizePetItemType,
   sortPetActivities,
+  orderPetActivities,
 } from "../../src/lib/pet-activity.mjs";
 
 export type PetStateName =
@@ -80,6 +81,9 @@ type ActivityRecord = PetActivity & { detailAt: number };
 
 const activities = new Map<string, ActivityRecord>();
 const pendingRequests = new Map<string, string>();
+/* 10-22 用户实测「任务状态没有跟随会话」：活动气泡是全局列表，切会话后仍显示上一个会话的任务。
+   渲染层把当前打开的 threadId 报上来，排序时把它顶到第一位（其余活动保留，不吞后台提醒）。 */
+let focusThreadId = "";
 let activityCollapsed = false;
 let bubble = "";
 let bubbleUntil = 0;
@@ -119,7 +123,7 @@ function fallbackTitle(threadId: string): string {
 }
 
 function topActivities(): PetActivity[] {
-  return sortPetActivities([...activities.values()]).slice(0, 2).map(({ detailAt, ...rest }) => ({
+  return orderPetActivities(sortPetActivities([...activities.values()]), focusThreadId).slice(0, 2).map(({ detailAt, ...rest }) => ({
     ...rest,
     canStop: rest.status === "running" && Boolean(rest.turnId),
     canReply: rest.status === "running" && Boolean(rest.turnId),
@@ -205,6 +209,15 @@ export function petActivityCollapsed(): boolean {
   return activityCollapsed;
 }
 
+/** 渲染层报告当前打开的会话（切会话立即重排活动气泡，不等下一条引擎事件）。 */
+export function setPetFocusThread(threadId: string): boolean {
+  const next = String(threadId ?? "");
+  if (next === focusThreadId) return false;
+  focusThreadId = next;
+  publish(true);
+  return true;
+}
+
 export function togglePetActivity(): boolean {
   activityCollapsed = !activityCollapsed;
   publish(true);
@@ -256,9 +269,12 @@ function upsertActivity(threadId: string, patch: Partial<ActivityRecord>): Activ
   return next;
 }
 
-function setStatusIfNotWaiting(threadId: string, status: PetActivityStatus, patch: Partial<ActivityRecord> = {}) {
+function setStatusIfNotWaiting(threadId: string, status: PetActivityStatus, patch: Partial<ActivityRecord> = {}, clearWaiting = false) {
   const existing = activities.get(threadId);
-  if (existing?.status === "waiting") return;
+  /* 10-22：等待被处理后的**第一条新 item** 就恢复 running。旧逻辑死等 serverRequest/resolved，
+     有些引擎版本不回这条 ⇒ 用户确认完，气泡仍卡在「等待你的确认」（实测「刷新慢/不跟随」）。
+     真正等待期间模型是暂停的、不会有新 item，所以这条只在恢复工作时生效。 */
+  if (existing?.status === "waiting" && !clearWaiting) return;
   upsertActivity(threadId, { ...patch, status });
 }
 
@@ -390,12 +406,12 @@ export function feedPetEvent(event: unknown): boolean {
       upsertActivity(threadId, { title, turnId: nextTurnId });
     } else if (type === "agentMessage") {
       const text = petItemText(item);
-      setStatusIfNotWaiting(threadId, "running", { detail: petDetailFromText(text) || "正在整理结果…", detailAt: Date.now() });
+      setStatusIfNotWaiting(threadId, "running", { detail: petDetailFromText(text) || "正在整理结果…", detailAt: Date.now() }, true);
     } else if (["commandExecution", "fileChange", "webSearch", "mcpToolCall", "dynamicToolCall"].includes(type)) {
       lastTool = type;
-      setStatusIfNotWaiting(threadId, "running", { detail: petToolDetail(item), detailAt: Date.now(), turnId: turnIdOf(p) || activities.get(threadId)?.turnId || "" });
+      setStatusIfNotWaiting(threadId, "running", { detail: petToolDetail(item), detailAt: Date.now(), turnId: turnIdOf(p) || activities.get(threadId)?.turnId || "" }, true);
     } else if (type === "reasoning") {
-      setStatusIfNotWaiting(threadId, "running", { detail: "正在推演…", detailAt: Date.now() });
+      setStatusIfNotWaiting(threadId, "running", { detail: "正在推演…", detailAt: Date.now() }, true);
     }
     return `${petActivitySignature([...activities.values()])}|${store.signal.state}|${store.signal.bubble}` !== before;
   }

@@ -121,3 +121,16 @@ export function petActivitySignature(activities) {
     .map((item) => `${item.threadId}|${item.turnId}|${item.title}|${item.status}|${item.detail}|${item.updatedAt}`)
     .join(";");
 }
+
+/** 活动列表「跟随当前会话」：把当前打开的会话提到第一位（其余保持 sortPetActivities 的顺序）。
+ *  ⛔ 只调整顺序、不删别人的活动 —— 后台还有 waiting/running 时仍要能被看到。 */
+export function orderPetActivities(activities, focusThreadId) {
+  const list = Array.isArray(activities) ? [...activities] : [];
+  const id = String(focusThreadId || "");
+  if (!id) return list;
+  const index = list.findIndex((item) => item?.threadId === id);
+  if (index <= 0) return list;
+  const [focused] = list.splice(index, 1);
+  list.unshift(focused);
+  return list;
+}

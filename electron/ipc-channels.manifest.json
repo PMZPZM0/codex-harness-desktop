@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 512,
+  "count": 513,
   "channels": [
     {
       "name": "request",
@@ -4291,6 +4291,16 @@
       "invokeArgs": "",
       "cast": null,
       "note": "桌面宠物双击/工具栏「打开」：聚焦主窗口"
+    },
+    {
+      "name": "petFocusThread",
+      "channel": "pet:focus-thread",
+      "paramsImpl": "threadId: string",
+      "paramsDecl": "threadId: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": "渲染层报告当前打开的会话；活动气泡跟随会话排序（10-22）"
     },
     {
       "name": "petDragStart",

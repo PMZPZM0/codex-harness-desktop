@@ -642,6 +642,8 @@ contextBridge.exposeInMainWorld("codex", {
   petActivityToggle: () => __ipc("pet:activity-toggle", 0, []),
   /* 桌面宠物双击/工具栏「打开」：聚焦主窗口 */
   petOpenMain: () => __ipc("pet:open-main", 0, []),
+  /* 渲染层报告当前打开的会话；活动气泡跟随会话排序（10-22） */
+  petFocusThread: (threadId: string) => __ipc("pet:focus-thread", 1, [threadId]),
   /* 宠物手动拖动开始（屏幕坐标）；主进程记下窗口原点，之后由 pet:drag-move 移动窗口 */
   petDragStart: (pos: { screenX: number; screenY: number }) => __ipc("pet:drag-start", 1, [pos]),
   /* 宠物手动拖动中（屏幕坐标）；主进程按增量 setBounds，实现「拖着走」 */

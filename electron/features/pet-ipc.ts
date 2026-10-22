@@ -25,8 +25,8 @@ import { app, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { petSignal, markPetActivitySeen, petActivityRecord, togglePetActivity } from "./pet-state";
-import { applyPetSettings, hidePetWindow, isPetVisible, petWindowBounds, petActivityWindowBounds, pushPetConfig, setPetInteractiveRect, setPetMoveHandler, showPetWindow, startPetDrag, movePet, endPetDrag } from "./pet-window";
+import { petSignal, markPetActivitySeen, petActivityRecord, togglePetActivity, setPetFocusThread } from "./pet-state";
+import { applyPetSettings, hidePetWindow, isPetVisible, petWindowBounds, petWindowDiagnostics, petActivityWindowBounds, pushPetConfig, setPetInteractiveRect, setPetMoveHandler, showPetWindow, startPetDrag, movePet, endPetDrag } from "./pet-window";
 import { server } from "../runtime-refs";
 import { showMainWindow } from "./window-factory";
 import { sendToWindow } from "./window-bus";
@@ -369,7 +369,7 @@ export const petFeature = defineFeature<null>({
 
     ipcHost.handle("pet:settings-set", (_event, patch: Partial<PetSettings>) => setPetSettingsFromPatch(patch));
 
-    ipcHost.handle("pet:state", () => ({ signal: petSignal(), open: isPetVisible(), bounds: petWindowBounds(), activityBounds: petActivityWindowBounds() }));
+    ipcHost.handle("pet:state", () => ({ signal: petSignal(), open: isPetVisible(), bounds: petWindowBounds(), activityBounds: petActivityWindowBounds(), mouse: petWindowDiagnostics() }));
 
     /* 活动气泡动作（Qoder 同款）：打开会话 / 停止回合 / 收起展开 / 打开主窗。 */
     ipcHost.handle("pet:activity-open", (_event, threadId: string) => {
@@ -420,6 +420,9 @@ export const petFeature = defineFeature<null>({
       try { showMainWindow(); } catch { /* 无主窗时忽略 */ }
       return { ok: true };
     });
+
+    /* 10-22：当前打开的会话 → 活动气泡跟随排序（切会话立即生效，不等下一条引擎事件）。 */
+    ipcHost.handle("pet:focus-thread", (_event, threadId: string) => ({ ok: setPetFocusThread(String(threadId ?? "")) }));
 
     /** 手动拖动（Qoder 同款）：渲染层捕获指针 → 主进程按屏幕坐标增量移动窗口。 */
     ipcHost.handle("pet:drag-start", (_event, pos: { screenX?: number; screenY?: number }) => ({
@@ -479,6 +482,7 @@ export const petFeature = defineFeature<null>({
       ipcHost.removeHandler("pet:activity-reply");
       ipcHost.removeHandler("pet:activity-toggle");
       ipcHost.removeHandler("pet:open-main");
+      ipcHost.removeHandler("pet:focus-thread");
       ipcHost.removeHandler("pet:drag-start");
       ipcHost.removeHandler("pet:drag-move");
       ipcHost.removeHandler("pet:drag-end");

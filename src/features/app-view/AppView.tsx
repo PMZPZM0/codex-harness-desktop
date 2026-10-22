@@ -158,6 +158,7 @@ import { AppViewRemoteApproval } from "./AppView/04-remote-approval";
 import { AppViewRemoteConsole } from "./AppView/05-remote-console";
 import { AppViewTaskComposer } from "./AppView/06-task-composer";
 import { TeamOfficePreview } from "../team-office";
+import { PetFocusBridge } from "../pet";
 /* 云账号「登录即用」的后台联动桥（10-22）：只刷新已接通的云端知识库/记忆，返回 null。 */
 import { CloudAccountSyncBridge } from "../settings-cloud";
 import { RightFileBridge } from "./AppView/RightFileBridge";
@@ -686,6 +687,8 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           通话中的播报由 VoiceCallFloat 负责 —— 它会喂 AEC 参考环、走音量与打断那一套。
           ⛔ threadId = 会话闸：`voice_announce` 工具走主进程广播（全窗口），不能让别的会话插播到这里。 */}
       <VoiceAnnounceBridge threadId={thread?.id ?? ""} />
+      {/* 10-22：宠物活动气泡跟随当前会话（切会话立即重排，后台 waiting/running 仍保留）。 */}
+      {!popoutThreadId && <PetFocusBridge threadId={thread?.id ?? ""} />}
       {/* 播报开关翻转 → 往当前会话发一条告知（10-09：模型据此才知道要不要写结尾那段播报稿）。
           ⛔ 同样要会话闸：设置可能在任意窗口改，告知只发给当前会话。 */}
       <VoiceAnnounceNoticeBridge threadId={thread?.id ?? ""} onNotify={(text, targetThreadId) => {
