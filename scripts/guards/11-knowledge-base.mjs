@@ -296,6 +296,21 @@ try {
       "⛔ 能力清单取自 dispatchMcpTools、执行端复用 dispatchRpcCall（⛔ 不另写一份）");
     ok(/GATEWAY_EXCLUDED[\s\S]{0,140}?agent_invoke/.test(dhtSrc),
       "⛔ 调度类工具不进网关（被委派会话不许再套娃 —— 与执行端 canDispatchFrom 同口径）");
+    /* 10-22 专家团工具兜底（用户报「专家团无法调用成员干活」）：`team_member_invoke` /
+       `team_phase_invoke` 原来**只**由渲染层应答，而 `item/tool/call` 不在跨会话白名单里 ⇒
+       后台跑的团队主理人（agent_invoke(kind:"team") 派出去的）根本没人应答，成员永远不被调用。
+       与 role_memory / MCP / harness_tools 同款：必须在主进程再放一道应答。 */
+    const teamFallback = codeOnly(readFileSync(join(ROOT, "electron", "team-tool-fallback.ts"), "utf8"));
+    ok(/void handleTeamToolCall\(\{/.test(boot9),
+      "⛔ 主进程应答专家团工具（后台团队会话的事件送不到渲染层，不在这里应答 = 成员永远不被调用）");
+    ok(/TEAM_TOOL_MEMBER = "team_member_invoke"/.test(teamFallback) && /TEAM_TOOL_PHASE = "team_phase_invoke"/.test(teamFallback),
+      "⛔ 只认这两个工具名（其余返回 false 交回原流程，不吞别人的调用）");
+    ok(/if \(deps\.delivered\(threadId\)\) return false;/.test(teamFallback),
+      "⛔ 只在「送不到渲染层」时接管（两边都答 = 同一个成员被调度两次、同一个 id 应答两遍）");
+    ok(/teamRunStore\.teamOfThread\(threadId\)/.test(teamFallback) && !/args\?\.teamId|args\.teamId/.test(teamFallback),
+      "⛔ 团队归属取主进程落盘映射（⛔ 不用 args 里模型自报的 teamId）");
+    ok(/invokeTeamMemberCore/.test(teamFallback) && /invokeTeamMemberCore/.test(teams),
+      "⛔ 渲染层与主进程兜底**共用同一份**成员调度实现（electron/team-invoke.ts）");
   }
 } finally {
   rmSync(ws, { recursive: true, force: true });

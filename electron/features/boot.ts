@@ -33,6 +33,8 @@ import { broadcastCodexEvent, broadcastHarnessEvent } from "./window-bus";
 import { handleRoleMemoryToolCall } from "../role-memory-tool";
 import { handleMcpToolCall } from "../mcp-bridge";
 import { handleDelegateHarnessToolCall } from "../delegate-harness-tool";
+import { handleTeamToolCall } from "../team-tool-fallback";
+import { isThreadDelivered } from "./renderer-fuse";
 import { settleBackgroundRunsOnTurnEnd } from "../delegation/delegate-settle";
 import { isTurnEndMethod } from "../turn-end";
 import { forgetRoleSession } from "../role-memory";
@@ -595,6 +597,12 @@ export async function bootApp() {
        filterForRenderer 裁掉 ⇒ 必须在主进程应答。
        ⛔ 只回答 `harness_tools` 一个工具名；返回 false = 不是它，照原流程往下走。 */
     void handleDelegateHarnessToolCall({ userDataDir: app.getPath("userData"), event, respond: (id, result) => server.respond(id as any, result) })
+      .catch(() => false);
+    /* 10-22 专家团工具兜底（`team_member_invoke` / `team_phase_invoke`）：这两条原来只由渲染层应答，
+       而 `item/tool/call` 不在跨会话白名单里 ⇒ 后台跑的团队主理人（从普通会话 agent_invoke(kind:"team")
+       派出去的）根本没人应答，成员永远不被调用（用户报「无法调用成员干活」）。
+       ⛔ 只在**送不到渲染层**时接管：两边都答 = 同一个成员被调度两次。 */
+    void handleTeamToolCall({ event, respond: (id, result) => server.respond(id as any, result), delivered: isThreadDelivered })
       .catch(() => false);
     /* 10-10「委派超时转后台」的**收尾点**：宿主提前放手后，记录要保持 running 直到回合真正结束
        ⇒ 必须在引擎事件流里收敛（原来只有 delegation/teams-ipc 的 await 路径会做，一旦放手就永远
