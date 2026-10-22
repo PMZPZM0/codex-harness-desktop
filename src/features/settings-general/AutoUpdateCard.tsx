@@ -64,7 +64,7 @@ type Outcome = {
 
 /** 行图标：纯外观，不对清单做判断（未知 id 回落通用图标）。 */
 const ICONS: Record<string, any> = {
-  nuphus: Monitor, "playwright-cli": Globe2, "computer-use": ShieldCheck, cloakbrowser: ShieldCheck, rea: ScanSearch,
+  nuphus: Monitor, "computer-use": ShieldCheck, "ego-lite": Globe2, rea: ScanSearch,
   engine: Cpu, skill: Sparkles, "market-skill": Sparkles, "expert-skill": Wand2, ponytail: Package,
   "market-plugin": Puzzle, "official-plugin": Puzzle, soul: Wand2,
   markitdown: Boxes, laya: Boxes, "phone-harness": Boxes,
@@ -245,7 +245,11 @@ export function AutoUpdateCard({ onNotice }: { onNotice?: (text: string) => void
               ? (row.enabled
                 ? "后台静默比对市场技能内容（技能没有版本号），有变化才更新；本地导入的技能不参与。开启后会覆盖你技能目录里的文件。"
                 : `${off}开启后会覆盖你技能目录里的文件。`)
-              : `${row.current ? `已装 ${row.current}` : "未检测到已装版本"}${row.latest ? ` · 最新 ${row.latest}` : ""}${row.pkg ? ` · ${row.pkg}` : ""}${row.enabled ? "" : ` —— ${off}`}`;
+              : row.id === "ego-lite"
+                ? (row.enabled
+                  ? `已装 ${row.current || "版本未知"} · 后台会运行官方 ego-browser upgrade（可能下载数百 MB），升级后自动接管新版本`
+                  : `${off}Ego Lite 由官方应用自更新；开启后后台才会运行 ego-browser upgrade。`)
+                : `${row.current ? `已装 ${row.current}` : "未检测到已装版本"}${row.latest ? ` · 最新 ${row.latest}` : ""}${row.pkg ? ` · ${row.pkg}` : ""}${row.enabled ? "" : ` —— ${off}`}`;
           return (
             <div className="settings-toggle-row" key={`sw-${row.id}`}>
               <span className="settings-toggle-icon"><Icon size={16} /></span>

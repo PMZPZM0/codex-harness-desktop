@@ -340,44 +340,5 @@ bag.toggleTreeDir = toggleTreeDir as typeof bag.toggleTreeDir;
   }
 bag.loadTree = loadTree as typeof bag.loadTree;
 
-  function describeCloakEvent(event: { event?: string; message?: string; url?: string; title?: string }) {
-    switch (event.event) {
-      case "boot": return "助手进程已启动，等待首次打开";
-      case "launching": return "指纹浏览器启动中…（首次会下载/加载内核，稍慢）";
-      case "ready": return "CloakBrowser 已就绪";
-      case "opened": return `已打开：${event.title ? `${event.title} — ` : ""}${event.url ?? ""}`;
-      case "nav-error": return `页面导航失败：${event.message}`;
-      case "error": return `错误：${event.message}`;
-      case "closed": return "指纹浏览器窗口已关闭";
-      case "exit": return "助手进程已退出";
-      default: return "";
-    }
-  }
-bag.describeCloakEvent = describeCloakEvent as typeof bag.describeCloakEvent;
-
-  async function openInCloak(url: string) {
-    bag.setCloakPage(url);
-    bag.setCloakStatus("正在提交给 CloakBrowser…");
-    try {
-      const result = await window.codex.openInCloakBrowser(url);
-      if (!result.ok) {
-        bag.setNotice(`CloakBrowser 打开失败：${result.detail}（可切换回内置视图）`);
-        bag.setCloakStatus(`提交失败：${result.detail}`);
-        return;
-      }
-      bag.setCloakStatus("已提交，等待窗口响应…");
-    } catch (error: any) {
-      bag.setNotice(`CloakBrowser 打开失败：${error.message}`);
-      bag.setCloakStatus(`提交失败：${error.message}`);
-      return;
-    }
-    window.setTimeout(() => {
-      void window.codex.cloakBrowserStatus().then((status) => {
-        const text = bag.describeCloakEvent(status);
-        if (text) bag.setCloakStatus(text);
-      });
-    }, 5000);
-  }
-bag.openInCloak = openInCloak as typeof bag.openInCloak;
-  return { chatSearchGo, pushChatSearchHistory, removeChatSearchHistory, clearChatSearchHistory, knownFilesRef, refreshThreads, sidebarRefreshTimerRef, scheduleSidebarRefresh, refreshQueue, fetchChildren, toggleTreeDir, loadTree, describeCloakEvent, openInCloak };
+  return { chatSearchGo, pushChatSearchHistory, removeChatSearchHistory, clearChatSearchHistory, knownFilesRef, refreshThreads, sidebarRefreshTimerRef, scheduleSidebarRefresh, refreshQueue, fetchChildren, toggleTreeDir, loadTree };
 }

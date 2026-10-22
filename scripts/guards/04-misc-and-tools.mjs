@@ -196,11 +196,11 @@ console.log(C.bold("\n【工具下载源】设置持久化 + 三条下载通道�
     && /ghfast\.top/.test(runtimeSrc))
     ? ok("install-runtimes.cjs 按 DOWNLOAD_SOURCE 分通道（auto/mirror/ghproxy/ghfast/direct/proxy，均回落直连）")
     : fail("install-runtimes.cjs 的下载源分派被摘 —— 页面上选了源工具链也不认");
-  // ② 主进程把源传下去：runtime:install 现读 + 三条通道（工具链 env / npm / 浏览器内核）都接线
+  // ② 主进程把源传下去：runtime:install 现读 + 两条通道（工具链 env / npm registry）都接线
   (/async function readDownloadSource\(\)/.test(mainSrc2) && /DOWNLOAD_SOURCE: downloadSource/.test(mainSrc2)
-    && /runNpmInstall\(id, "cloakbrowser", "CloakBrowser", downloadSource\)/.test(mainSrc2)
-    && /runBrowserDownload\(id, node, cli, \["install", "chromium"\], "浏览器内核", downloadSource\)/.test(mainSrc2))
-    ? ok("主进程三条下载通道都接了 downloadSource（工具链 env / npm registry / 浏览器内核）")
+    && /runNpmInstall\(id, "rea-agents", "REA 逆向分析", downloadSource\)/.test(mainSrc2)
+    && !/runBrowserDownload/.test(mainSrc2))
+    ? ok("主进程两条下载通道都接了 downloadSource（工具链 env / npm registry；Playwright 内核已移除）")
     : fail("主进程没把下载源传下去 —— 选了源也只有部分通道生效");
   // ③ ⛔ 10-01 用户定稿：镜像切换不暴露给用户 —— 选择器必须被摘；主进程恒走国内优先 auto
   //    （老用户存过的 direct/proxy 一律作废；general 页的源标签是只读展示，不算切换入口）

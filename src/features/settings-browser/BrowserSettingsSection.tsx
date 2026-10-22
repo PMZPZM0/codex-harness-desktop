@@ -17,13 +17,13 @@ export function BrowserSettingsSection(props: BrowserSettingsSectionProps) {
                     <div className="settings-grid">
                       <label className="wide"><span>默认起始页</span><div className="input-button"><input value={browserHome} onChange={(event) => setBrowserHome(event.target.value)} placeholder="https://" /><button className="secondary-setting" onClick={() => { localStorage.setItem("browser-home", browserHome.trim()); setBrowserDraft(browserHome.trim()); setNotice("浏览器默认页已保存"); }}><Check size={14} />保存</button></div></label>
                     </div>
-                    <div className="settings-actions"><span>面板空态会使用默认起始页作为建议地址；右侧浏览器面板默认使用内置浏览器视图（Chromium），需要过反爬站点时可用工具栏的隐身浏览按钮打开 CloakBrowser（未安装会提示到「开发工具」按需下载）。</span></div>
+                    <div className="settings-actions"><span>面板空态会使用默认起始页作为建议地址；右侧浏览器面板使用内置浏览器视图（Chromium）用于看页面。浏览器自动化优先 Ego Lite（「设置 → 开发工具」安装，每个 Codex 会话一个独立 Space）；未安装时回落 browse-skills（nuphus 默认浏览器）。</span></div>
                     <div className="settings-subhead"><Globe2 size={13} />浏览器自动化工具<span className="settings-subhead-hint">Codex 引擎可直接调用，PATH 与 NODE_PATH 已注入</span></div>
                     <div className="tool-card-grid">
                       {toolsStatus.filter((tool: any) => tool.scope === "browser").map((tool: any) => <ToolCard tool={tool} key={tool.id} />)}
                       {!toolsStatus.length && <p className="muted">正在读取工具状态…</p>}
                     </div>
-                    <p className="muted">默认用内置浏览器视图与 <code>playwright-cli</code>（open → snapshot → click/type）；有反爬/验证码的站点才用 CloakBrowser（<code>CLOAKBROWSER_ENTRY</code> 动态 import，humanize + geoip），它不随应用内置，需在「开发工具」页按需下载。引擎已内置这两条路径的使用说明。</p>
+                    <p className="muted">默认用内置浏览器视图看页面；自动化优先走 <code>ego-browser</code>（每个 Codex 会话一个 <code>codex-&lt;会话ID&gt;</code> TaskSpace，多会话并行），未安装时回落 <code>nuphus-call browser_*</code> 驱动默认浏览器（browse-skills）。Ego Lite 不随应用内置，在「开发工具」页跳官方安装器。</p>
                   </section>
     </>
   );

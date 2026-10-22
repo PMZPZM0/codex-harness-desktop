@@ -7,7 +7,8 @@ import { existsSync, readFileSync } from "node:fs";
  *
  * - webSearch: 每轮 prompt 都会被引擎带上的服务端搜索工具，关掉能省掉模型「顺手联网」的往返。
  * - desktopAutomation: 桌面自动化（nuphus MCP），关闭后不注册 nuphus，引擎不再加载 35 个桌面工具。
- * - browserAutomation: 浏览器自动化（playwright-cli / cloakbrowser 命令行），关闭后从基础指令里移除
+ * - browserAutomation: 浏览器自动化（ego-browser 唯一通道），关闭后从基础指令里移除
+ * ⛔ Playwright CLI / 内核已从应用移除（10-22 用户令），不要再新增回落通道。
  *   调用说明并关掉 features.browser_use，模型不再被引导去操作浏览器。
  * - engineWatchdog: ⛔ **已停用（2026-09-09 移除看门狗本体）**，字段仅为兼容历史 app-settings.json
  *   与调用点而保留；**没有任何界面渲染它**，`server.startWatchdog()` 是空实现（见 codex-server.ts）。
@@ -106,7 +107,6 @@ export type AppSettings = {
   /**
    * 自动化能力与引擎的自动更新（10-13 用户令）：四类**各自独立、互不影响**，缺省即**开启**。
    *   · autoUpdateDesktop     = 桌面自动化（nuphus MCP，`@nuphus/nuphus-mcp`）
-   *   · autoUpdateBrowser     = 浏览器自动化（playwright-cli，`@playwright/cli`）
    *   · autoUpdateComputerUse = Mac 电脑操作（`open-computer-use`，仅 macOS 生效，其它平台恒跳过）
    *   · autoUpdateEngine      = Codex 引擎本体（`@openai/codex`）
    * ⛔ 缺省值判据统一走 `autoUpdateEnabled(settings, key)`（**`!== false`**）—— 字段不存在 = 开；
@@ -115,7 +115,6 @@ export type AppSettings = {
    * ⛔ 后台更新只在「开关开 + 确有新版」时才动盘；单类失败只跳过该类，下周期再试，绝不打断启动。
    */
   autoUpdateDesktop?: boolean;
-  autoUpdateBrowser?: boolean;
   autoUpdateComputerUse?: boolean;
   autoUpdateEngine?: boolean;
   /** 语气自适应（默认开）：按会话维护少量状态（心情/精力/默契），随会话自己的
@@ -134,7 +133,7 @@ export type AppSettings = {
   closePromptSeen?: boolean;
   /** 开发工具下载源（09-20 用户：「下载太慢了，所有工具下载加下载源选择」）。
    *  对「开发工具」页的所有按需下载生效：工具链（install-runtimes.cjs）、npm 包
-   *  （CloakBrowser）、浏览器内核（Playwright / Cloak）。
+   *  （Ego Lite 外部安装）。
    *  - "auto"（默认）：国内镜像优先 → 本机代理（若配置）→ 官方直连 → gh 加速，逐通道回落
    *  - "mirror"：国内镜像优先，失败回落官方直连
    *  - "ghproxy" / "ghfast"：GitHub 资产走对应加速前缀，失败回落官方直连（非 GitHub 资产按 auto）
@@ -222,14 +221,14 @@ export function invalidateAppSettings() {
  */
 export function autoUpdateEnabled(
   settings: AppSettings,
-  key: "autoUpdateDesktop" | "autoUpdateBrowser" | "autoUpdateComputerUse" | "autoUpdateEngine",
+  key: "autoUpdateDesktop" | "autoUpdateComputerUse" | "autoUpdateEngine",
 ): boolean {
   return settings?.[key] !== false;
 }
 
 /** 自动更新项在 AppSettings 上的开关字段（含技能那条，它缺省判据不同，见下）。 */
 export type AutoUpdateSettingKey =
-  | "autoUpdateDesktop" | "autoUpdateBrowser" | "autoUpdateComputerUse" | "autoUpdateEngine" | "skillAutoUpdate";
+  | "autoUpdateDesktop" | "autoUpdateComputerUse" | "autoUpdateEngine" | "skillAutoUpdate";
 
 /**
  * 每个组件行的独立偏好（键 = 组件行 id，见 electron/update-registry.ts 与动态行的 `<spec>/<slug>`）。
@@ -244,7 +243,6 @@ export type AutoUpdateOverrides = Record<string, boolean>;
 /** 每一行「属于哪个具名开关」（没有归属的走组件自身的默认），解析唯一入口在 readAutoUpdateSwitch。 */
 export const AUTO_UPDATE_ROW_OWNER: Record<string, AutoUpdateSettingKey> = {
   nuphus: "autoUpdateDesktop",
-  "playwright-cli": "autoUpdateBrowser",
   "computer-use": "autoUpdateComputerUse",
   engine: "autoUpdateEngine",
   skill: "skillAutoUpdate",
@@ -253,8 +251,8 @@ export const AUTO_UPDATE_ROW_OWNER: Record<string, AutoUpdateSettingKey> = {
   "market-skill": "skillAutoUpdate",
 };
 
-/** 默认 **关** 的行：它们会在无人值守时改写用户自己的文件/技能目录，必须用户点头。 */
-const AUTO_UPDATE_DEFAULT_OFF = new Set(["market-skill", "expert-skill", "soul"]);
+/** 默认 **关** 的行：它们会改写用户自己的文件/技能目录，或升级外部大体积应用，必须用户点头。 */
+const AUTO_UPDATE_DEFAULT_OFF = new Set(["market-skill", "expert-skill", "soul", "ego-lite"]);
 
 /**
  * 统一读「某一行」自动更新的生效值 —— **界面、后台循环、手动入口三处共用这一个判据**。

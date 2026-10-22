@@ -208,6 +208,8 @@ bag.cascadeTeamCluster = cascadeTeamCluster as typeof bag.cascadeTeamCluster;
       await bag.cascadeTeamCluster(id, "archive");
       await window.codex.request("thread/archive", { threadId: id });
       bag.setThreads((current) => current.filter((entry) => entry.id !== id));
+      // 回收该会话的 ego TaskSpace（未装 ego 时主进程直接返回未安装；不阻塞归档）
+      void window.codex.egoCleanup(id).catch(() => undefined);
       bag.threadCacheRef.current.delete(id);
       if (bag.threadRef.current?.id === id) {
         // 归档当前会话 = 回到全新会话：必须走 startNewThread 完整复位。
@@ -226,6 +228,7 @@ bag.cascadeTeamCluster = cascadeTeamCluster as typeof bag.cascadeTeamCluster;
       //    `no rollout found`。用户点归档的意图 = 让它从侧栏消失 ⇒ 本地移除即达成意图，
       //    而不是弹「归档失败」让用户反复点。其余错误（瞬态/引擎重启）才按失败提示。
       if (/no rollout found|thread[^.]{0,40}not found|failed to read session metadata|rollout path|canonical rollout/i.test(msg)) {
+        void window.codex.egoCleanup(id).catch(() => undefined);
         bag.setThreads((current) => current.filter((entry) => entry.id !== id));
         bag.threadCacheRef.current.delete(id);
         bag.showToast("已从列表清理", "该会话在引擎中已不存在（可能已归档过或记录丢失），已从侧栏移除");
@@ -299,6 +302,7 @@ bag.unarchiveThread = unarchiveThread as typeof bag.unarchiveThread;
   async function deleteThreadCore(id: string) {
     await bag.cascadeTeamCluster(id, "delete");
     await window.codex.request("thread/delete", { threadId: id });
+    void window.codex.egoCleanup(id).catch(() => undefined);
     bag.forgetThreadMood(id);
     bag.threadCacheRef.current.delete(id);
     bag.threadProviderRef.current.delete(id);

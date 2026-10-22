@@ -6,7 +6,7 @@ import { Menu, Notification, app, BrowserWindow, clipboard, globalShortcut, ipcM
 import { execSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, watch as watchFs, writeFileSync, type Dirent } from "node:fs";
 import path from "node:path";
-import { augmentedPath, bundledGit, bundledNode, bundledPython, CHINA_NPM_REGISTRY, cloakCacheDir, cloakOpenHelper, downloadEnv, nuphusBinary, npmGlobalRoot, toolchainEnv, toolsRoot } from "../toolchain";
+import { augmentedPath, bundledGit, bundledNode, bundledPython, CHINA_NPM_REGISTRY, nuphusBinary, npmGlobalRoot, toolchainEnv, toolsRoot } from "../toolchain";
 import { appSourceRoot } from "../runtime-refs";
 /** git 可执行文件路径缓存（09-24 从 main.ts 迁入本模块：全仓仅此处使用）。 */
 let gitBinCache = "";

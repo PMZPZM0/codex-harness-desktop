@@ -1238,7 +1238,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ===== 浏览器 cloak 首页（Chrome new tab 风：居中输入框） ===== */
+/* ===== 浏览器首页（Chrome new tab 风：居中输入框） ===== */
 .browser-home {
   flex: 1;
   min-height: 0;
@@ -1249,9 +1249,6 @@
   gap: 8px;
   padding: 16px 20px;
   text-align: center;
-}
-.browser-home.cloak-mode svg {
-  color: var(--green);
 }
 .browser-home > strong {
   color: var(--text);
@@ -1322,15 +1319,7 @@
   color: var(--faint);
   font-size: 10.5px;
 }
-.browser-home .cloak-status {
-  color: var(--muted);
-  font-size: 11.5px;
-  margin: 0;
-  word-break: break-all;
-  line-height: 1.4;
-}
-
-/* ===== cloak 首页美化：光晕 + 问候 + 大输入框 + 快捷站点 ===== */
+/* ===== 浏览器首页美化：光晕 + 问候 + 大输入框 + 快捷站点 ===== */
 .browser-home {
   position: relative;
   flex: 1;
@@ -1356,9 +1345,6 @@
 .browser-home > * {
   position: relative;
   z-index: 1;
-}
-.browser-home.cloak-mode .home-badge {
-  color: var(--green);
 }
 .home-badge {
   width: 56px;
@@ -1492,13 +1478,6 @@
 }
 .home-site:hover small {
   color: var(--text);
-}
-.browser-home .cloak-status {
-  color: var(--muted);
-  font-size: 11.5px;
-  margin: 0;
-  word-break: break-all;
-  line-height: 1.4;
 }
 .browser-home .home-hint {
   color: var(--faint);

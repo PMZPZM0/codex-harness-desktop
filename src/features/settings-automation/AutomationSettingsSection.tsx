@@ -117,8 +117,7 @@ export function AutomationSettingsSection(props: AutomationSettingsSectionProps)
                         <button className="hub-card" onClick={() => setSettingsPage("browser")}>
                           <span className="hub-card-icon"><Globe2 size={20} /></span>
                           <strong>浏览器自动化</strong>
-                          <p>内置浏览器面板与 playwright-cli / CloakBrowser 工具链；默认起始页设置在这里。</p>
-                          {versionOf("playwright-cli") ? <em className="hub-card-version">playwright-cli {versionOf("playwright-cli")}</em> : null}
+                          <p>内置浏览器面板与 Ego Lite 浏览器自动化；默认起始页设置在这里。</p>
                         </button>
                         <button className="hub-card" onClick={() => setSettingsPage("computer")}>
                           <span className="hub-card-icon"><ShieldCheck size={20} /></span>

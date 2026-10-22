@@ -237,11 +237,10 @@ export function usePart04c2(bag: Bag) {
     } else if (looksLikeUrl) {
       target = new URL(`https://${raw}`).toString();
     } else {
-      // 搜索词：交给默认搜索引擎（可见视图直接导航；指纹窗口同样打开搜索结果页）
+      // 搜索词：交给默认搜索引擎（内置浏览器视图直接导航）
       target = searchEngine + encodeURIComponent(raw);
     }
-    if (bag.browserMode === "cloak") void bag.openInCloak(target);
-    else bag.setBrowserUrl(target);
+    bag.setBrowserUrl(target);
     // 记录历史（去重置顶，最多 60 条）
     bag.setBrowserHistory((current) => {
       const next = [{ url: target, title: (() => { try { return new URL(target).hostname; } catch { return target; } })(), at: Date.now() }, ...current.filter((entry) => entry.url !== target)].slice(0, 60);

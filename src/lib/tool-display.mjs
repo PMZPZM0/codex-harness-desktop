@@ -15,8 +15,8 @@
 export const SKILL_MATCHERS = [
   // 内置技能 desktop-automation：nuphus MCP 的 desktop_* 工具
   { skill: "desktop-automation", label: "桌面自动化", re: /\b(desktop_[a-z_]+|nuphus)\b/i },
-  // 内置技能 browser-automation：playwright-cli / CloakBrowser / browser_* 工具
-  { skill: "browser-automation", label: "浏览器自动化", re: /\b(browser_[a-z_]+|playwright(?:-cli)?|cloakbrowser)\b/i },
+  // 内置技能 browser-skill：ego-browser / browser_* 工具
+  { skill: "browser-automation", label: "浏览器自动化", re: /\b(browser_[a-z_]+|ego-browser)\b/i },
   // 内置技能 document-convert：markitdown / openpyxl 转档
   { skill: "document-convert", label: "文档转换", re: /\b(markitdown|openpyxl|document-convert|doc-convert)\b/i },
   { skill: "humanizer", label: "去 AI 味", re: /\bhumaniz(?:e|er|ed)?\b/i },

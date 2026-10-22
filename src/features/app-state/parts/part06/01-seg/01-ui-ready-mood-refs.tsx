@@ -165,7 +165,7 @@ bag.lastStreamTsRef = lastStreamTsRef as typeof bag.lastStreamTsRef;
 
   /** 全局基线 developer instructions（config.toml 顶层那段：语言 / 内置工具 / 自动化说明）。
    *  会话作用域块必须**拼在它之后**一起下发——只发作用域块会把基线顶掉，模型就不知道
-   *  nuphus-call / playwright-cli / generate_image 这些内置工具怎么用了。读一次缓存住。 */
+   *  nuphus-call / ego-browser / generate_image 这些内置工具怎么用了。读一次缓存住。 */
   const baseInstructionsRef = useRef("");
 bag.baseInstructionsRef = baseInstructionsRef as typeof bag.baseInstructionsRef;
 

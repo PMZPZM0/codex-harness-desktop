@@ -6,10 +6,9 @@
  *
  * 职责：**后台静默自动更新**四类能力 + **承载全部自动更新开关的状态与读写**（含技能那条）。
  *   1. 桌面自动化     nuphus            （@nuphus/nuphus-mcp）
- *   2. 浏览器自动化   playwright-cli    （@playwright/cli）
- *   3. Mac 电脑操作   open-computer-use （仅 macOS，其它平台根本不入清单）
- *   4. Codex 引擎     @openai/codex
- *   5. 市场技能内容更新 —— ⛔ **只承载开关与显示，不在这里跑循环**：它的检查/更新流程在
+ *   2. Mac 电脑操作   open-computer-use （仅 macOS，其它平台根本不入清单）
+ *   3. Codex 引擎     @openai/codex
+ *   4. 市场技能内容更新 —— ⛔ **只承载开关与显示，不在这里跑循环**：它的检查/更新流程在
  *      skills-ipc（checkSkillUpdateRows / updateSkillFolder，含安全检查）里已有独立调度器。
  *      放进来是为了让界面**一次请求拿到全部开关**（两个端点两套默认值 = 迟早不一致）。
  *
@@ -43,6 +42,7 @@ import { Notification, app } from "electron";
 import { AUTO_UPDATE_ROW_OWNER, readAppSettings, readAutoUpdateRowSwitch, readAutoUpdateSwitch, saveAppSettings, writeAutoUpdateRowSwitch, type AutoUpdateSettingKey } from "../app-settings";
 import { checkEngineUpdateInfo } from "./engine-ipc";
 import { updateableToolIds, updateableToolMeta } from "./runtime-ipc";
+import { egoBrowserPath, egoBrowserVersion, runEgoUpgrade } from "../toolchain";
 import { componentSpec, visibleSpecs, type ComponentSpec, type DownloadSourceSetting } from "../update-registry";
 import { scanRows, updateComponent, type ComponentRow, type UpdateOutcome } from "../update-backends";
 import { sendToWindow } from "./window-bus";
@@ -75,7 +75,6 @@ type AutoUpdateItem = {
 function autoUpdateItems(): AutoUpdateItem[] {
   const toolKeys: Record<string, AutoUpdateItem["key"]> = {
     nuphus: "autoUpdateDesktop",
-    "playwright-cli": "autoUpdateBrowser",
     "computer-use": "autoUpdateComputerUse",
   };
   const items: AutoUpdateItem[] = [];
@@ -181,6 +180,21 @@ export const autoUpdateFeature = defineFeature<null>({
             console.warn(`[auto-update] ${row.label} 自动更新失败，下个周期再试：${(error as Error)?.message ?? error}`);
           }
         }
+        // Ego Lite 是外部应用（不在 npm/注册表组件清单里），单独走官方 updater。
+        // ⛔ 默认关：升级可能下载数百 MB 并替换浏览器；用户显式打开这个开关才在后台跑。
+        if (readAutoUpdateRowSwitch(settings, "ego-lite") && egoBrowserPath()) {
+          try {
+            const before = egoBrowserVersion();
+            const result = await runEgoUpgrade();
+            const after = egoBrowserVersion();
+            if (result.ok && after && after !== before) {
+              updated += 1;
+              notifyUpdated("Ego Lite 已自动升级", `${before || "旧版本"} → ${after}`);
+            }
+          } catch (error) {
+            console.warn(`[auto-update] Ego Lite 自动升级失败，下个周期再试：${(error as Error)?.message ?? error}`);
+          }
+        }
         if (updated) console.log(`[auto-update] 本轮更新了 ${updated} 个组件`);
       } catch (error) {
         console.warn(`[auto-update] 本轮自动更新未能开始：${(error as Error)?.message ?? error}`);
@@ -230,6 +244,20 @@ export const autoUpdateFeature = defineFeature<null>({
           hasUpdate: Boolean(row?.hasUpdate),
           error: row?.error ?? row?.unsupported ?? "",
         };
+      });
+      // Ego Lite 不在组件注册表里（外部安装的 Chromium 应用），但控制台要留同一个更新开关。
+      // 开关默认关（AUTO_UPDATE_DEFAULT_OFF）；开启后后台只跑官方 `ego-browser upgrade`。
+      const egoInstalled = Boolean(egoBrowserPath());
+      rows.push({
+        id: "ego-lite",
+        kind: "tool",
+        label: "Ego Lite 浏览器自动化",
+        pkg: "ego-browser",
+        enabled: readAutoUpdateRowSwitch(settings, "ego-lite"),
+        current: egoInstalled ? egoBrowserVersion() : "",
+        latest: "",
+        hasUpdate: false,
+        error: egoInstalled ? "" : "未安装 —— 到「设置 → 开发工具」下载并完成首次引导",
       });
       return rows;
     });
@@ -293,6 +321,10 @@ export const autoUpdateFeature = defineFeature<null>({
       const key = String(id ?? "").trim();
       const userData = app.getPath("userData");
       const settings = await readAppSettings(userData);
+      if (key === "ego-lite") {
+        const next = await saveAppSettings(userData, { autoUpdateOverrides: writeAutoUpdateRowSwitch(settings, key, enabled) });
+        return { id: key, enabled: readAutoUpdateRowSwitch(next, key) };
+      }
       const owner: AutoUpdateSettingKey | undefined = AUTO_UPDATE_ROW_OWNER[key] ?? AUTO_UPDATE_ROW_OWNER[key.split("/")[0]];
       if (owner) {
         // ⛔ 只写这一个字段（patch 单键）⇒ 各开关物理独立，互不影响

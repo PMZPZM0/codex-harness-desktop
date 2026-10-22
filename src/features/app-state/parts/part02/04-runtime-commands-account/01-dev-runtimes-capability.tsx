@@ -183,7 +183,7 @@ bag.uninstallDevRuntime = uninstallDevRuntime as typeof bag.uninstallDevRuntime;
   useEffect(() => { if (bag.settingsOpen && bag.settingsPage === "devtools") bag.refreshDevRuntimes(); }, [bag.settingsOpen, bag.settingsPage]);
 
 
-  // 进入「开发工具」页时同时刷一次能力链路（装/卸工具会改变"现在走哪条"：例如装上 playwright-cli 后
+  // 进入「开发工具」页时同时刷一次能力链路（装/卸工具会改变"现在走哪条"：例如装上 Ego Lite 后
   // 浏览器自动化就多了条兜底路径）
   useEffect(() => { if (bag.settingsOpen && bag.settingsPage === "devtools") bag.refreshCapabilities(); }, [bag.settingsOpen, bag.settingsPage]);
 

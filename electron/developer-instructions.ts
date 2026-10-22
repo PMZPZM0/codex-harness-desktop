@@ -11,7 +11,7 @@ import { MEMORY_DISTILL_SKILL, MEMORY_DISTILL_THRESHOLD } from "./memory-layers"
  * 引擎基础指令（developer_instructions）：完全自主工程模式 + 已装自动化工具的按需调用说明。
  * 自动化能力按两个开关分段组装：
  *  - desktopAutomation（桌面自动化）：nuphus-call，注册为 nuphus MCP 服务器。
- *  - browserAutomation（浏览器自动化）：playwright-cli / cloakbrowser 命令行 + features.browser_use。
+ *  - browserAutomation（浏览器自动化）：ego-browser（每会话 TaskSpace）/ playwright-cli 回落 + features.browser_use。
  * 关掉对应的开关，该段说明不进入 developer_instructions，模型不再被引导去调用对应工具。
  * 个性化（称呼/自定义指令）不再拼在这里 —— 走 Codex 原生 AGENTS.md 机制，
  * 见 personalization.ts 的 applyPersonalizationToAgentsMd（纯 Markdown，无 TOML 转义风险）。
@@ -93,10 +93,13 @@ const CONTINUITY_INSTRUCTIONS =
  *     · `nuphus-call.cmd` 确认在 PATH 上（resources/tools/npm-global，已核对）。
  *  细节留在技能里（渐进披露），这里只给通道与优先级，避免每轮多花几百 token。 */
 const DESKTOP_INSTRUCTIONS =
-  "\n\nAUTOMATION TOOLKIT (pre-installed; use ONLY when the task actually needs it — the tools themselves are NOT described in your context by default):\n1) Desktop automation — the nuphus MCP tools (`desktop_*`) are registered as an MCP server, but on current engine builds MCP tools are NOT delivered to you: a direct call such as `desktop_windows_list` fails with `unsupported call`. ⛔ That is NOT \"the switch is off\" — do NOT retry it, and do NOT tell the user the feature is disabled. **Drive desktop automation through the CLI instead: `nuphus-call <tool> key=value …`** (on PATH; run it with no args to list every tool — e.g. `nuphus-call desktop_perceive`, `nuphus-call desktop_windows_list`). The UIA channel (`desktop_ui_*`, from the harness-uia MCP server) has the same limitation: if a direct call fails, use the CLI path rather than reporting it broken.\n   CHANNEL PRIORITY on Windows: for native apps (Explorer / Office / Win32 / WPF) prefer the control-list channel (UIA) when your skill gives you a working way to it — read the list once, then act by element index (no coordinates, survives window moves and DPI scaling; writes still need confirm=true); use playwright-cli (see your browser-skill) for web content and for Electron/Tauri windows (their UIA tree is shallow, often single digits); fall back to OCR coordinates (`desktop_perceive` + `desktop_mouse`) only when neither gives you a usable list, and re-perceive after any window move.\n   Loop: list windows → activate the target window → observe (`desktop_screenshot` / `desktop_perceive`) → act (`desktop_mouse` / `desktop_input`, pass confirm=true) → verify with another screenshot. Take click coordinates from `desktop_perceive` (runs locally, free); `desktop_vision` coordinates are explicitly unreliable — never click with them. For long text (>500 chars) write the clipboard first and paste (Ctrl+V on Windows, Cmd+V on macOS — never hardcode one platform).\n   ⛔ `desktop_perceive` downloads its OCR models ON FIRST USE (tens of seconds to a couple of minutes). That is a one-time cost, not a hang — launch it the way the TURN CONTINUITY rule describes for long commands, then continue. ⛔ Run automation calls ONE AT A TIME: nuphus serializes them, and parallel calls collide with `Automation is busy` — that error means \"wait for the other call\", not \"retry harder\". ⛔ Never automate a UAC / privilege-elevation prompt — stop and ask the user.";
+  "\n\nAUTOMATION TOOLKIT (pre-installed; use ONLY when the task actually needs it — the tools themselves are NOT described in your context by default):\n1) Desktop automation — the nuphus MCP tools (`desktop_*`) are registered as an MCP server, but on current engine builds MCP tools are NOT delivered to you: a direct call such as `desktop_windows_list` fails with `unsupported call`. ⛔ That is NOT \"the switch is off\" — do NOT retry it, and do NOT tell the user the feature is disabled. **Drive desktop automation through the CLI instead: `nuphus-call <tool> key=value …`** (on PATH; run it with no args to list every tool — e.g. `nuphus-call desktop_perceive`, `nuphus-call desktop_windows_list`). The UIA channel (`desktop_ui_*`, from the harness-uia MCP server) has the same limitation: if a direct call fails, use the CLI path rather than reporting it broken.\n   CHANNEL PRIORITY on Windows: for native apps (Explorer / Office / Win32 / WPF) prefer the control-list channel (UIA) when your skill gives you a working way to it — read the list once, then act by element index (no coordinates, survives window moves and DPI scaling; writes still need confirm=true); use ego-browser (see your browser-skill) for web content and for Electron/Tauri windows (their UIA tree is shallow, often single digits); fall back to OCR coordinates (`desktop_perceive` + `desktop_mouse`) only when neither gives you a usable list, and re-perceive after any window move.\n   Loop: list windows → activate the target window → observe (`desktop_screenshot` / `desktop_perceive`) → act (`desktop_mouse` / `desktop_input`, pass confirm=true) → verify with another screenshot. Take click coordinates from `desktop_perceive` (runs locally, free); `desktop_vision` coordinates are explicitly unreliable — never click with them. For long text (>500 chars) write the clipboard first and paste (Ctrl+V on Windows, Cmd+V on macOS — never hardcode one platform).\n   ⛔ `desktop_perceive` downloads its OCR models ON FIRST USE (tens of seconds to a couple of minutes). That is a one-time cost, not a hang — launch it the way the TURN CONTINUITY rule describes for long commands, then continue. ⛔ Run automation calls ONE AT A TIME: nuphus serializes them, and parallel calls collide with `Automation is busy` — that error means \"wait for the other call\", not \"retry harder\". ⛔ Never automate a UAC / privilege-elevation prompt — stop and ask the user.";
 
 /**
  * 浏览器自动化说明。
+ * ⛔ 10-22 定稿：浏览器自动化**优先 ego-browser**（每会话 `codex-<CODEX_THREAD_ID>` TaskSpace）；
+ *    未装时回落 `nuphus-call browser_*`（默认浏览器）。Playwright CLI / 内核与 CloakBrowser 已整体移除。
+ *    下面 09-20 / 10-12 的段落是旧取舍记录。
  * ⛔ 09-20 修正通道优先级（此前把慢的那条说成"默认"）：
  *  - 首选 = nuphus MCP 的 `browser_*` 工具。它们**本来就注册在模型工具列表里**
  *    （[mcp_servers.nuphus] 全量注册 24 个），但旧文案一次都没提它们、反而 20 多次指引
@@ -106,7 +109,7 @@ const DESKTOP_INSTRUCTIONS =
  *    nuphus 只在桌面自动化总闸开启时才注册（mcp_servers.nuphus 段缺失就没有这些工具），
  *    所以必须写成条件式，否则模型会去调不存在的工具、把「没开」误判成「坏了」。
  *  - playwright-cli 降级为**兜底**通道（nuphus 不可用时仍能干活）。
- *  - cloakbrowser 仍是可选增强，可能根本没装 —— 必须先看环境变量再决定。
+ *  - （历史）cloakbrowser 已移除，不再探测其环境变量。
  * ⛔⛔ 10-12 改（引擎日志实证 + 用户与真实用户同报「任务跑不完、自动断」）：
  *  - **首选改为 `playwright-cli`**。原因：`browser_*` 走引擎内置 MCP 注册，而**引擎 0.157 起
  *    内置 MCP 工具面对模型是「延迟暴露」** —— 列表里看得到、**调用必报 `unsupported call`**
@@ -119,10 +122,13 @@ const DESKTOP_INSTRUCTIONS =
  *    并要求**失败立即转 CLI、绝不重试**。
  */
 const BROWSER_INSTRUCTIONS =
-  "\n2) Browser automation — use playwright-cli (on PATH) for ALL web work: it is the ONLY channel that works on current engine builds. " +
-  "⛔ Do NOT call browser_* (the nuphus MCP tools) even if those names appear in your tool list — every such call fails with unsupported call; " +
-  "if one already failed, do not retry it and do not keep switching channels: continue with playwright-cli immediately. " +
-  "Detailed commands, per-action cheat sheet, login/cookie reuse and the cloakbrowser upgrade path are in your skill browser-skill — load it when the task actually needs a browser.";
+  "\n2) Browser automation — PREFERRED: ego-browser (ego lite is an external browser the user installs from Settings → Developer tools; do not try to install it yourself). " +
+  "Each Codex session MUST use its own TaskSpace named `codex-<CODEX_THREAD_ID>`: read CODEX_THREAD_ID from the shell, resume that same Space on every round, never share it with another session (parallel sessions stay isolated). " +
+  "Run `ego-browser skill` for the version-matched API guide, then write a Node script and feed it to `ego-browser nodejs` (Windows: write a .mjs file and import it from an ASCII-only `-e` entry; Bash/macOS: stdin/heredoc). " +
+  "Each Space keeps its tabs/login state for the whole session; do NOT finish() it every round — the app reclaims it when the session is archived. " +
+  "If `ego-browser` is not installed or fails to connect, fall back to the browse-skills default-browser channel: `nuphus-call browser_navigate|browser_snapshot|browser_click|browser_type|browser_close` (CLI, on PATH; drives the user's default browser). " +
+  "⛔ Do NOT call nuphus browser_* via MCP — every such call fails with unsupported call; use the nuphus-call CLI instead. " +
+  "Detailed per-session Space policy and platform command forms are in your skill browser-skill — load it when the task actually needs a browser.";
 /**
  * 内置媒体插件说明（生图 / 视觉辅助）。只在用户配置并启用对应插件后注入——
  * 引擎从而「知道」这些能力并通过 harness-media.mjs 命令行真实调用。
@@ -466,12 +472,12 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   text += VOICE_ANNOUNCE_INSTRUCTIONS(input.announceEnabled !== false);
   // 深层联动软约束：自动化能力被关闭时，在基础指令里明确告诉模型不要调用这些工具。
   // 09-20：MCP 工具（`desktop_*` / `browser_*`）现在会被 disabled_tools **硬移除**，所以这里
-  // 重点变成「别用命令行兜底绕过总闸」—— nuphus-call / playwright-cli 仍在 PATH 上，
+  // 重点变成「别用命令行兜底绕过总闸」—— nuphus-call / ego-browser 仍在 PATH 上，
   // 那是提示词管得住、配置管不到的一层。
   if (!desktop || !browser) {
     const notes: string[] = [];
     if (!desktop) notes.push("桌面自动化：`desktop_*` MCP 工具已被硬移除，且不得用 `nuphus-call` 从命令行绕过");
-    if (!browser) notes.push("浏览器自动化：`browser_*` MCP 工具已被硬移除，且不得用 `playwright-cli` / `cloakbrowser` 绕过");
+    if (!browser) notes.push("浏览器自动化：`browser_*` MCP 工具已被硬移除，且不得用 `ego-browser` / `nuphus-call browser_*` 绕过");
     text += `\n\nAUTOMATION DISABLED NOTE: 以下能力已在应用设置中关闭，当前任务禁止使用：${notes.join("；")}。即使其他技能或插件提到这些工具，也不要调用它们。`;
   }
   return text;

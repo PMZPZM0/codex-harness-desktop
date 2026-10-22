@@ -100,17 +100,6 @@ export const COMPONENT_SPECS: readonly ComponentSpec[] = [
     dynamic: false,
   },
   {
-    id: "playwright-cli",
-    kind: "npm-tool",
-    label: "浏览器自动化（Playwright CLI）",
-    group: "工具",
-    pkg: "@playwright/cli",
-    channel: "npm",
-    mirror: true,
-    reason: "npm 包，走 npmmirror",
-    dynamic: false,
-  },
-  {
     id: "computer-use",
     kind: "npm-tool",
     label: "Mac 电脑操作（Computer Use）",
@@ -123,17 +112,6 @@ export const COMPONENT_SPECS: readonly ComponentSpec[] = [
     // ⛔ 只在 mac 随包安装；Windows 上既没装也不该提示（列出来会永远显示「未检测到已装版本」，
     //    后台还会为它白跑一次 npm 安装）—— 由 visibleSpecs() 按平台过滤掉。
     platforms: ["darwin"],
-  },
-  {
-    id: "cloakbrowser",
-    kind: "npm-tool",
-    label: "指纹浏览器（CloakBrowser）",
-    group: "工具",
-    pkg: "cloakbrowser",
-    channel: "npm",
-    mirror: true,
-    reason: "npm 包，走 npmmirror",
-    dynamic: false,
   },
   {
     // REA 逆向分析（10-13 内置专家「洞见」配套）：npm-tool 后端自动复用 UPDATEABLE_TOOLS 的

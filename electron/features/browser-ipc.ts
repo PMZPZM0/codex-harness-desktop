@@ -1,25 +1,74 @@
 /**
- * browser-ipc（10-03 从 `features/settings-app-ipc.ts` 按前缀拆出，同时改为**插件形态**）
+ * browser-ipc —— 浏览器域（内置预览窗 / Ego Lite 浏览器自动化）。
  *
- * 域：browser(3)
- * 通道：browser:open-cloak / browser:cloak-status / browser:popout
+ * 域：browser(5)
+ * 通道：browser:ego-status / browser:ego-install / browser:ego-open / browser:ego-cleanup / browser:popout
  *
- * ⛔ `cloakStatus` 是本域私有的模块级状态（只被 cloak 两通道读写）⇒ 随板块走。
- *    `cloakProc` 走 `mutableState` 访问器（ESM 里 import 的绑定不可赋值）—— 这层间接不能去掉。
- * ⛔⛔ `browser:popout` 的 URL 校验与 `external:open` 同口径：只放行 http/https 或经
- *    `filePreviewAllowed` 放行的本地预览地址；窗口开 `contextIsolation + sandbox`（安全边界不放宽）。
- * ⛔ 待接缝化（阶段 2）：BrowserWindow / spawn / fs 均为宿主能力，将来经 `"window"` / `"subprocess"` 注入。
+ * 10-22 用户拍板：用 ego lite 替换 CloakBrowser 指纹浏览器，浏览器自动化优先走 ego；
+ * 每个 Codex 会话一个独立 TaskSpace，共存并发。ego 本体不随应用内置（安装目录约 611MB），
+ * 这里只负责**发现已装 CLI / 打开官方下载页 / 打开 GUI / 归档会话时回收 Space**。
  */
 import path from "node:path";
-import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
-import { BrowserWindow } from "electron";
-import { bundledNode, cloakOpenHelper, npmGlobalRoot, toolchainEnv } from "../toolchain";
-import { filePreviewAllowed, mutableState } from "../main";
+import { BrowserWindow, shell } from "electron";
+import { egoAppPath, egoBrowserPath, egoBrowserVersion, runEgoUpgrade } from "../toolchain";
+import { filePreviewAllowed } from "../main";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
-let cloakStatus: { event?: string; message?: string; url?: string; title?: string } = {};
+/** 官方下载页会自动识别 Windows / macOS（只带安装器，不内置 611MB 解包目录）。 */
+const EGO_DOWNLOAD_URL = "https://lite.ego.app/download?auto=1";
+
+/** 清理指定会话（或全部 codex-*）的 Space。
+ *  ⛔ 用 `taskSpace(name)` 续用自己的 Space 再 finish；`claimTaskSpace` 对脚本已退出的 Space
+ *    会等控制权（实测 20s 超时），归档回收必须走名字续用。
+ *  ⛔ threadId 由主进程拼进脚本前必须 JSON.stringify，禁止字符串插值裸拼（防脚本注入）。 */
+function cleanupEgoSpaces(cli: string, threadId: string): Promise<{ ok: boolean; cleaned: number; detail: string }> {
+  const script = `
+const target = ${JSON.stringify(threadId)};
+const wanted = target ? "codex-" + target : "codex-";
+const names = target
+  ? [wanted]
+  : (await listTaskSpaces()).map((entry) => String(entry?.name || "")).filter((name) => name.startsWith(wanted));
+let cleaned = 0;
+for (const name of names) {
+  try {
+    const task = await taskSpace(name);
+    await task.finish({ keep: [] });
+    cleaned += 1;
+  } catch { /* 正在被别的会话占用：留给手动清理 */ }
+}
+console.log(JSON.stringify({ cleaned }));
+`;
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const finish = (result: { ok: boolean; cleaned: number; detail: string }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    // ⛔ 用 stdin 传脚本（`nodejs < script` 同款）；`-e` 对多行/双引号脚本在 Windows
+    //    ego CLI 上会卡住不退出（实测 20s 超时），且脚本结果走 stderr。
+    const child = spawn(cli, ["nodejs"], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+    child.stdin?.end(script);
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch { /* 已退出 */ }
+      finish({ ok: false, cleaned: 0, detail: "清理 ego 工作区超时（20 秒）" });
+    }, 20_000);
+    child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
+    child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+    child.once("error", (error) => finish({ ok: false, cleaned: 0, detail: error.message }));
+    child.once("exit", (code) => {
+      const combined = `${stdout}\n${stderr}`.trim();
+      if (code !== 0) return finish({ ok: false, cleaned: 0, detail: combined.slice(-300) || `ego-browser 退出（${code}）` });
+      const match = combined.match(/\{"cleaned":(\d+)\}/);
+      return finish({ ok: true, cleaned: match ? Number(match[1]) : 0, detail: "" });
+    });
+  });
+}
 
 export const browserFeature = defineFeature<null>({
   id: "browser",
@@ -28,42 +77,50 @@ export const browserFeature = defineFeature<null>({
     const ipcHost = ctx.get<IpcHost>("ipc");
     if (!ipcHost) throw new Error("browser: 缺少 ipc 服务（宿主未提供）");
 
-    ipcHost.handle("browser:open-cloak", (_event, url: string) => {
-      const modules = npmGlobalRoot();
-      if (!modules || !existsSync(path.join(modules, "cloakbrowser", "package.json"))) {
-        return { ok: false, detail: "CloakBrowser 未安装（按需下载）：到「设置 → 开发工具」下载「CloakBrowser 指纹浏览器」（约 4 MB）后再用；日常浏览走内置浏览器视图" };
-      }
-      if (!mutableState.cloakProc || mutableState.cloakProc.exitCode !== null) {
-        const helper = cloakOpenHelper();
-        if (!helper || !existsSync(helper)) return { ok: false, detail: "缺少 resources/tools/cloak-open.mjs 助手脚本" };
-        const node = bundledNode() || "node";
-        mutableState.cloakProc = spawn(node, [helper], { windowsHide: true, env: { ...toolchainEnv(), CLOAK_NPM_ROOT: modules } });
-        mutableState.cloakProc.stdout?.on("data", (chunk: Buffer) => {
-          for (const line of chunk.toString().split("\n")) {
-            if (!line.trim()) continue;
-            try { cloakStatus = JSON.parse(line); } catch { /* 非 JSON 行 */ }
-          }
-        });
-        mutableState.cloakProc.stderr?.on("data", (chunk: Buffer) => {
-          const text = chunk.toString().trim();
-          if (text) cloakStatus = { event: "error", message: text.slice(0, 300) };
-        });
-        mutableState.cloakProc.once("error", (error) => { cloakStatus = { event: "error", message: error.message }; mutableState.cloakProc = null; });
-        mutableState.cloakProc.once("exit", (code) => {
-          if (cloakStatus.event !== "error") cloakStatus = { event: "exit", ...(code ? { message: `浏览器进程退出（${code}）` } : {}) };
-          mutableState.cloakProc = null;
-        });
-        mutableState.cloakProc.stdin?.on("error", () => { /* EPIPE：进程刚退出 */ });
-        cloakStatus = { event: "launching" };
-      }
-      try {
-        mutableState.cloakProc.stdin?.write(`${url.trim()}\n`);
-        return { ok: true, detail: "已提交给 CloakBrowser" };
-      } catch (error: any) {
-        return { ok: false, detail: error.message };
-      }
+    ipcHost.handle("browser:ego-status", () => {
+      const cliPath = egoBrowserPath();
+      return {
+        installed: Boolean(cliPath),
+        cliPath,
+        version: cliPath ? egoBrowserVersion() : "",
+        appPath: egoAppPath(),
+        platform: process.platform,
+        downloadUrl: EGO_DOWNLOAD_URL,
+      };
     });
-    ipcHost.handle("browser:cloak-status", () => cloakStatus);
+
+    ipcHost.handle("browser:ego-install", async () => {
+      await shell.openExternal(EGO_DOWNLOAD_URL);
+      return {
+        ok: true,
+        detail: "已打开 ego lite 官方下载页：安装并完成首次引导后，回来点「重新检测」。Windows 安装包较小，首次启动会下载约 600MB 的 Chromium。",
+      };
+    });
+
+    ipcHost.handle("browser:ego-open", async () => {
+      const appPath = egoAppPath();
+      if (appPath) {
+        const error = await shell.openPath(appPath);
+        if (!error) return { ok: true, detail: "已打开 ego lite" };
+      }
+      await shell.openExternal(EGO_DOWNLOAD_URL);
+      return { ok: false, detail: "没找到 ego lite 启动器，已打开官方下载页" };
+    });
+
+    ipcHost.handle("browser:ego-upgrade", async () => {
+      const before = egoBrowserVersion();
+      const result = await runEgoUpgrade();
+      const after = egoBrowserVersion();
+      return { ...result, before, after, changed: Boolean(before && after && before !== after) };
+    });
+
+    ipcHost.handle("browser:ego-cleanup", async (_event, threadId?: string) => {
+      const cli = egoBrowserPath();
+      if (!cli) return { ok: false, cleaned: 0, detail: "ego lite 未安装" };
+      const safeThreadId = String(threadId ?? "").replace(/[^0-9a-zA-Z_-]/g, "");
+      return cleanupEgoSpaces(cli, safeThreadId);
+    });
+
     ipcHost.handle("browser:popout", async (_event, value: string) => {
       const url = new URL(value);
       if (url.protocol !== "https:" && url.protocol !== "http:" && !filePreviewAllowed(url)) throw new Error("Unsupported URL");
@@ -87,7 +144,7 @@ export const browserFeature = defineFeature<null>({
     });
 
     ctx.effect(() => {
-      for (const ch of ["browser:open-cloak", "browser:cloak-status", "browser:popout"]) ipcHost.removeHandler(ch);
+      for (const ch of ["browser:ego-status", "browser:ego-install", "browser:ego-open", "browser:ego-upgrade", "browser:ego-cleanup", "browser:popout"]) ipcHost.removeHandler(ch);
     });
   },
 });

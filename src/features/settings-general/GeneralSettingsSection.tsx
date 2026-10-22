@@ -211,7 +211,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                         </div>
                         <div className="settings-toggle-row">
                           <span className="settings-toggle-icon"><Globe2 size={16} /></span>
-                          <span className="settings-toggle-text"><strong>浏览器自动化</strong><small>{capabilityHint("browser-automation") ?? "提供 playwright-cli / cloakbrowser 浏览器操作能力。关闭后移除浏览器调用说明与 browser_use feature、停用 browser-automation 技能，模型不再被引导使用浏览器工具，能减少上下文占用"}</small></span>
+                          <span className="settings-toggle-text"><strong>浏览器自动化</strong><small>{capabilityHint("browser-automation") ?? "提供 Ego Lite（首选，每会话独立 Space）/ browse-skills 默认浏览器回落。关闭后移除浏览器调用说明与 browser_use feature、停用 browser-automation 技能，模型不再被引导使用浏览器工具，能减少上下文占用"}</small></span>
                           <ToggleSwitch checked={browserAuto} disabled={groupBusy === "browser-automation"} label="浏览器自动化" onChange={toggleBrowserAuto} />
                         </div>
                         <div className="settings-toggle-row">

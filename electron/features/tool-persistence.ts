@@ -4,7 +4,7 @@
  * ⛔⛔ **问题根因（一句话）**：打包态下 `toolsRoot()` = `process.resourcesPath/tools`
  *   （`electron/toolchain.ts`），也就是**安装目录内部**。内置工具由 electron-builder 的
  *   `extraResources` 随安装包重新铺一遍，所以更新后必然「回来」；
- *   而用户**按需下载**的工具（git / ffmpeg / pwsh / cloakbrowser / markitdown …）
+ *   而用户**按需下载**的工具（git / ffmpeg / pwsh / markitdown …）
  *   是直接写进这个目录的 —— Windows 覆盖安装会重建整个安装目录 ⇒ 它们被一起抹掉。
  *   代码里对此**没有任何补偿**：清单（`devRuntimeSpecs`）只描述「有哪些工具」，
  *   不描述「用户装过哪些」，于是每次更新后这些工具一律回到「未安装」。

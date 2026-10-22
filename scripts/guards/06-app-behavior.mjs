@@ -463,7 +463,7 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   //   这份「不该随包」清单 = 大件（pwsh 282 / git 90 / ffmpeg 307 / miniconda 100 / mingw 267）
   //   + 两个浏览器内核（170 / 200）。小件随包由下面的 positive 断言盯（少一条 = 空壳包）。
   const unbundled = [
-    "resources/tools/pw-browsers", "resources/tools/cloak-cache",
+    "resources/tools/pw-browsers",
     "resources/tools/pwsh", "resources/tools/git", "resources/tools/ffmpeg",
     "resources/tools/miniconda", "resources/tools/mingw",
     // 知识库本地 embedding 后端（10-04 改判）：npm 树解压实测 463MB（裁剪后仍 ~85MB + 模型 23MB），
@@ -476,16 +476,15 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   (extraFrom.includes("resources/tools/node") ? ok : fail)("node 仍随包内置（安装器引导运行时，缺了其余工具都装不了）");
   (Array.isArray(pkg.build?.files) && pkg.build.files.some((pattern) => String(pattern).includes("mermaid") && String(pattern).endsWith(".map")) ? ok : fail)("asar 打包排除 mermaid 的 sourcemap（-25MB 纯赚）");
   const copyMac = readFileSync(join(ROOT, "build", "copy-mac-tools.cjs"), "utf8");
-  (copyMac.includes('NOT_BUNDLED = new Set(["pw-browsers", "cloak-cache"])') && copyMac.includes("NOT_BUNDLED.has(path.basename(entry))") ? ok : fail)("mac copy-mac-tools 复制 tools 时跳过两个内核目录");
+  (copyMac.includes('NOT_BUNDLED = new Set(["pw-browsers"])') && copyMac.includes("NOT_BUNDLED.has(path.basename(entry))") ? ok : fail)("mac copy-mac-tools 复制 tools 时跳过 Playwright 内核目录");
   const toolchainTs = readFileSync(join(ROOT, "electron", "toolchain.ts"), "utf8");
-  (toolchainTs.includes('PLAYWRIGHT_DOWNLOAD_HOST: "https://cdn.npmmirror.com/binaries/playwright"') ? ok : fail)("toolchain：Playwright 内核国内镜像源已配置（npmmirror binaries）");
-  (toolchainTs.includes('CLOAKBROWSER_DOWNLOAD_URL: "https://ghfast.top/https://github.com/CloakHQ/cloakbrowser/releases/download"') ? ok : fail)("toolchain：CloakBrowser 内核走 gh 代理（归档与 SHA256SUMS 同源，校验不受影响）");
-  (toolchainTs.includes("if (!process.env[key]) env[key] = value;") ? ok : fail)("toolchain：用户自设的下载源变量优先于镜像（不覆盖用户配置）");
+  (!/PLAYWRIGHT|pw-browsers/.test(toolchainTs) ? ok : fail)("toolchain：Playwright 内核环境/路径已移除（浏览器自动化改 Ego Lite + nuphus 回落）");
+  (toolchainTs.includes("export function egoBrowserPath()") && toolchainTs.includes("active_version_dir") && toolchainTs.includes('env.EGO_BROWSER_PATH = egoCli') && !/CLOAKBROWSER_(ENTRY|CACHE_DIR|DOWNLOAD_URL)/.test(toolchainTs) ? ok : fail)("toolchain：Ego Lite 双平台检测 + 引擎 PATH/EGO_BROWSER_PATH 注入；Cloak 环境已清除");
   const mainTs26 = readMainSource();
-  // 09-20 下载源选择：内核下载 attempts 改为按 source 组装（direct 只走官方，其余镜像优先+官方回落）
-  (mainTs26.includes('const attempts = source === "direct" || !mirrorKeys.length') && mainTs26.includes('{ env: mirrored, via: "国内镜像" }, { env: official, via: "官方源" }') ? ok : fail)("main.ts：内核下载按所选源组装（direct 只走官方，其余镜像优先 + 官方源回落）");
-  (mainTs26.includes('await runBrowserDownload(id, node, cli, ["install", "chromium"], "浏览器内核", downloadSource)') ? ok : fail)("main.ts：Playwright 内核下载走 runBrowserDownload（不直接 spawn 官方源）");
-  (mainTs26.includes('await runBrowserDownload(id, node, cli, ["install"], "Cloak 内核", downloadSource)') ? ok : fail)("main.ts：Cloak 内核下载走 runBrowserDownload（不直接 spawn 官方源）");
+  (!/runBrowserDownload|playwright-browsers/.test(mainTs26) ? ok : fail)("main.ts：Playwright 内核下载链已整体移除");
+  (!/runBrowserDownload|playwright-browsers/.test(mainTs26) ? ok : fail)("main.ts：Playwright 内核下载分支已移除（不再有第二套浏览器内核）");
+  const browserIpcSrc = readFileSync(join(ROOT, "electron", "features", "browser-ipc.ts"), "utf8");
+  (browserIpcSrc.includes('ipcHost.handle("browser:ego-status"') && browserIpcSrc.includes('ipcHost.handle("browser:ego-install"') && browserIpcSrc.includes('ipcHost.handle("browser:ego-cleanup"') && !browserIpcSrc.includes("browser:open-cloak") && !browserIpcSrc.includes("browser:cloak-status") ? ok : fail)("browser-ipc：Ego Lite 检测/安装/打开/升级/回收 Space，Cloak 通道已移除");
   // ⛔ 09-16 安装包瘦身：大件工具转按需下载；10-01 用户改口径「50m 以内的都内置」⇒
   //    pwsh/git/ffmpeg/conda/mingw 这些**大件**仍不得 builtIn（否则安装包暴涨），
   //    而 ≤50MB 的小件（python/rg/jq/ninja/7zip/yt-dlp/uv/cmake/adb）**必须** builtIn。
@@ -514,9 +513,9 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   //   反证：把包体路径改回 marker 首段推导 → 断言必须红。
   {
     const rt = codeOnly(readFileSync(join(ROOT, "electron", "features", "runtime-ipc.ts"), "utf8"));
-    const hasMap = /NPM_PACKAGE_ARTIFACTS[^=]*=\s*\{[\s\S]*?nuphus:\s*\{[^}]*node_modules\/@nuphus[\s\S]*?"playwright-cli":\s*\{[^}]*node_modules\/@playwright\/cli[\s\S]*?cloakbrowser:\s*\{[^}]*node_modules\/cloakbrowser/.test(rt);
+    const hasMap = /NPM_PACKAGE_ARTIFACTS[^=]*=\s*\{[\s\S]*?nuphus:\s*\{[^}]*node_modules\/@nuphus[\s\S]*?rea:\s*\{[^}]*node_modules\/rea-agents/.test(rt);
     hasMap
-      ? ok("【242】npm 类工具的卸载落点是**包体目录**（node_modules/@nuphus、@playwright/cli、cloakbrowser），不是 marker 首段")
+      ? ok("【242】npm 类工具的卸载落点是**包体目录**（node_modules/@nuphus、rea-agents），不是 marker 首段")
       : fail("【242】npm 类工具的卸载落点又退回 marker 首段推导 —— 删的是 shim 文件，包体还在 ⇒ 卸载后仍显示已装");
     // 10-07 重构：删除动作挪进 removeTargetsWithProgress（分批删 + 发进度，用户要求卸载也要有进度），
     //   **安全校验仍在同一个 for 循环里逐 target 做**，且校验全部通过后才开始删 ——
@@ -729,7 +728,7 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   const npmGlobalSet = extraResources27.find((entry) => entry?.from === "resources/tools/npm-global");
   const npmFilter = Array.isArray(npmGlobalSet?.filter) ? npmGlobalSet.filter.map(String) : [];
   (npmFilter.some((pattern) => /^!node_modules(\/\*\*\/\*)?$/.test(pattern)) ? ok : fail)("package.json：npm-global 根级映射显式排除 node_modules（该层交给下面那条独立映射）");
-  (npmFilter.some((pattern) => /^!cloakbrowser(\.cmd|\.ps1)?$/.test(pattern)) ? ok : fail)("package.json：filter 同时排除 npm-global 根下的 cloakbrowser shim");
+  (!npmFilter.some((pattern) => /cloakbrowser/i.test(pattern)) ? ok : fail)("package.json：CloakBrowser 排除项已删除（功能整体移除）");
   // ⛔ 09-16 实测踩坑（打包验证才暴露）：electron-builder 的 copyDir **无条件丢弃 extraResources `from`
   //    根级的 node_modules**（app-builder-lib/out/util/filter.js 写死 `if (relative === "node_modules") return false`，
   //    且 walk() 在目录节点被过滤时整棵剪掉）。所以只写一条 from=npm-global 的映射时，包里只有根级 shim，
@@ -748,13 +747,13 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   const nodeNmSet = extraResources27.find((entry) => entry?.from === "resources/tools/node/node_modules");
   (nodeNmSet && nodeNmSet.to === "tools/node/node_modules" ? ok : fail)("package.json：单独一条 from=resources/tools/node/node_modules → tools/node/node_modules 的映射（缺了它包内 Node 没有 npm ⇒「开发工具」与知识库的全部安装动作都报「内置 Node 缺少 npm」）");
   const nodeModulesFilter = Array.isArray(nodeModulesSet?.filter) ? nodeModulesSet.filter.map(String) : [];
-  (nodeModulesFilter.some((pattern) => /^!cloakbrowser(\/\*\*\/\*)?$/.test(pattern)) && nodeModulesFilter.some((pattern) => pattern.startsWith("!.bin/cloakbrowser")) ? ok : fail)("package.json：node_modules 映射同样排除 cloakbrowser 包体与 .bin shim");
+  (!nodeModulesFilter.some((pattern) => /cloakbrowser/i.test(pattern)) ? ok : fail)("package.json：node_modules 映射不再包含 CloakBrowser 排除项");
 
   const packAutomation = readFileSync(join(ROOT, "scripts", "pack-automation.cjs"), "utf8");
-  (packAutomation.includes('parts[1].startswith("cloakbrowser")') && packAutomation.includes('parts[2] == "cloakbrowser"') ? ok : fail)("pack-automation：打 zip 时排除 cloakbrowser（否则「修复安装」把它又装回包里）");
+  (!/cloakbrowser/i.test(packAutomation) ? ok : fail)("pack-automation：CloakBrowser 排除清单已删除（功能整体移除）");
 
   const beforePack = readFileSync(join(ROOT, "scripts", "before-pack.cjs"), "utf8");
-  (beforePack.includes("requiredShipped") && beforePack.includes('["@nuphus", "nuphus-mcp", "package.json"]') && beforePack.includes('["@playwright", "cli", "package.json"]') ? ok : fail)("before-pack：硬校验随包 npm-global 含 nuphus-mcp + @playwright/cli（坏包守卫盯着随包内容本身）");
+  (beforePack.includes("requiredShipped") && beforePack.includes('["@nuphus", "nuphus-mcp", "package.json"]') && !/@playwright/.test(beforePack) ? ok : fail)("before-pack：硬校验随包 npm-global 含 nuphus-mcp（不再要求 Playwright CLI）");
   // ⛔ 断言的是**比较表达式本身**（去空白后匹配），不是两个松散标识符：
   //    反证实测过一次假绿——只留 const packScript/newestSource 的声明、把 Math.max(...) 摘掉，
   //    旧写法照样命中，守卫恒绿。这类守卫必须锚在真正的逻辑上。
@@ -762,7 +761,7 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   (bpFlat.includes("constnewestSource=Math.max(fs.statSync(modules).mtimeMs,fs.statSync(packScript).mtimeMs)") ? ok : fail)("before-pack：zip 新鲜度同时比对打包脚本 mtime（改了排除清单不会静默复用旧 zip）");
   // 产物层守卫：verify-packaged-tools 必须对「包体真的进包了」下断言（它是最靠近产物的那道网）。
   const verifyPackagedTools = readFileSync(join(ROOT, "scripts", "verify-packaged-tools.cjs"), "utf8");
-  (verifyPackagedTools.includes("@nuphus/nuphus-mcp/package.json") && verifyPackagedTools.includes("@playwright/cli/package.json") && /from=resources\/tools\/npm-global\/node_modules/.test(verifyPackagedTools) ? ok : fail)("verify-packaged-tools：断言产物里真的有 nuphus-mcp 与 @playwright/cli（node_modules 没被打进包就红）");
+  (verifyPackagedTools.includes("@nuphus/nuphus-mcp/package.json") && !/@playwright/.test(verifyPackagedTools) && /from=resources\/tools\/npm-global\/node_modules/.test(verifyPackagedTools) ? ok : fail)("verify-packaged-tools：断言产物里有 nuphus-mcp（不再要求 Playwright CLI）");
   /* ⛔⛔ 10-07 二次事故（v0.0.33 首轮 CI 的 mac job 就红在这条脚本上）：
      本脚本是**两平台共用**的（build-win 验 resources/tools 与 win-unpacked；build-mac 验 resources/tools
      与 .app/Contents/Resources/tools），而两个平台随包 Node 的**解包布局不同** ——
@@ -808,27 +807,28 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
       env: { ...process.env, AUTOMATION_TOOLS_ROOT: probeRoot, AUTOMATION_ZIP_OPTIONAL: "1" },
     });
     try { rmSync(probeRoot, { recursive: true, force: true }); } catch { /* 忽略 */ }
-    (strict.status !== 0 && /随包 npm-global 缺少/.test(String(strict.stderr || "")) ? ok : fail)("before-pack：npm-global 缺 nuphus/playwright-cli 时**中止打包**并点名缺哪个");
+    (strict.status !== 0 && /随包 npm-global 缺少/.test(String(strict.stderr || "")) ? ok : fail)("before-pack：npm-global 缺 nuphus 时**中止打包**并点名缺哪个");
     (relaxed.status === 0 ? ok : fail)("before-pack：AUTOMATION_ZIP_OPTIONAL=1 仍可显式放行（发布链路不被卡死）");
   }
 
   const mainTs27 = readMainSource();
   const idLine = /type DevRuntimeId = ([^;]+);/.exec(mainTs27)?.[1] ?? "";
   (!/\bautomation\b/.test(idLine) ? ok : fail)("main.ts：开发工具 id 里不再有合并的 automation 大卡");
-  (idLine.includes('"nuphus"') && idLine.includes('"playwright-cli"') && idLine.includes('"cloakbrowser"') ? ok : fail)("main.ts：拆成 nuphus / playwright-cli / cloakbrowser 三条独立条目");
-  (mainTs27.includes('nuphus: { name: "Nuphus 桌面自动化"') && mainTs27.includes('"playwright-cli": { name: "Playwright 浏览器自动化"') ? ok : fail)("main.ts：Nuphus / Playwright CLI 两条内置卡片在位");
-  (mainTs27.includes('marker: "npm-global\\\\node_modules\\\\@nuphus\\\\nuphus-mcp\\\\package.json", bundled: true') && mainTs27.includes('marker: "npm-global\\\\node_modules\\\\@playwright\\\\cli\\\\package.json", bundled: true') ? ok : fail)("main.ts：两条内置卡片标为 bundled（界面显示「内置」，缺失才给「修复安装」）");
+  (idLine.includes('"nuphus"') && !idLine.includes('"playwright-cli"') && !idLine.includes('"cloakbrowser"') ? ok : fail)("main.ts：只剩 Nuphus 内置条目；Playwright / CloakBrowser 已从运行时清单移除");
+  (mainTs27.includes('nuphus: { name: "Nuphus 桌面自动化"') && !mainTs27.includes('"playwright-cli": { name:') ? ok : fail)("main.ts：Nuphus 内置卡片在位，Playwright 卡已删除");
+  (mainTs27.includes('marker: "npm-global\\\\node_modules\\\\@nuphus\\\\nuphus-mcp\\\\package.json", bundled: true') && !mainTs27.includes('@playwright\\\\cli\\\\package.json') ? ok : fail)("main.ts：Nuphus 卡标为 bundled，Playwright 已移除（缺失才给「修复安装」）");
   (mainTs27.includes('marker: "ponytail-plugin", kind: "plugin", bundled: true, noUninstall: true') ? ok : fail)("main.ts：ponytail 也是 bundled（随包内置；缺失走「重种插件」，绝不能落进解压 zip 的分支）");
-  (mainTs27.includes('cloakbrowser: { name: "CloakBrowser 指纹浏览器"') && !/cloakbrowser: \{[^}]*bundled: true/.test(mainTs27) ? ok : fail)("main.ts：CloakBrowser 是独立的按需下载卡片（不是 bundled）");
-  (mainTs27.includes("async function runNpmInstall(") && mainTs27.includes('await runNpmInstall(id, "cloakbrowser", "CloakBrowser", downloadSource)') ? ok : fail)("main.ts：CloakBrowser 走 runNpmInstall（用内置 node 自带 npm，不依赖用户环境）");
+  const egoCardSrc = readFileSync(join(ROOT, "src", "features", "settings-devtools", "EgoLiteCard.tsx"), "utf8");
+  (egoCardSrc.includes("Ego Lite 浏览器自动化") && egoCardSrc.includes("下载安装") && egoCardSrc.includes("egoStatus") && egoCardSrc.includes("CODEX_THREAD_ID") ? ok : fail)("EgoLiteCard：外部安装入口 + 状态/版本 + 每会话 Space 说明（不内置 611MB Chromium）");
+  (mainTs27.includes("async function runNpmInstall(") && !/runNpmInstall\(id, "cloakbrowser"/.test(mainTs27) && !/cloakbrowser: \{ name:/.test(mainTs27) ? ok : fail)("main.ts：CloakBrowser 下载/安装分支已移除");
   // 09-20 下载源选择：direct 只走官方源，其余（auto/mirror/gh 加速/proxy）保持镜像优先+官方回落
   (mainTs27.includes('const registries = userRegistry ? [userRegistry] : source === "direct" ? [""] : [CHINA_NPM_REGISTRY, ""];') ? ok : fail)("main.ts：npm 安装按所选源组装（direct 只走官方，其余镜像优先 + 官方源回落，用户自设源时不覆盖）");
   // ⛔ 10-01 改：卸载落点从「单条 if (id === "cloakbrowser")」升级为 NPM_PACKAGE_ARTIFACTS 映射
   //    （npm 包的包体在 node_modules/<pkg>，而 npm-global/<pkg> 那层是 shim 文件 —— 只删 shim 等于没卸干净）。
-  (mainTs27.includes("NPM_PACKAGE_ARTIFACTS") && mainTs27.includes('cloakbrowser: { dirs: ["node_modules/cloakbrowser"]') ? ok : fail)("main.ts：卸载 CloakBrowser 删的是**包体目录** node_modules/cloakbrowser（按 marker 首段删会连 nuphus/playwright-cli 一起删光）");
+  (mainTs27.includes("NPM_PACKAGE_ARTIFACTS") && mainTs27.includes('rea: { dirs: ["node_modules/rea-agents"]') ? ok : fail)("main.ts：npm 包卸载删的是**包体目录**（如 node_modules/rea-agents），不是 marker 首段");
   // ⛔ 10-07：npmShimPaths 改为**显式接根参数**（卸载要遍历全部候选落位，内部取单值会删不干净）
   //   ⇒ 锚点跟着改成新调用形态，语义不变（shim 仍随包体一起清）。
-  (mainTs27.includes("shims: [\"cloakbrowser\"]") && mainTs27.includes("...npmShimPaths(root, ...pkg.shims)") ? ok : fail)("main.ts：卸载时把该包的 shim 一起清掉（否则 PATH 留着指向空目录的 cloakbrowser.cmd）");
+  (mainTs27.includes("...npmShimPaths(root, ...pkg.shims)") ? ok : fail)("main.ts：卸载时把该包的 shim 一起清掉（否则 PATH 留着指向空目录）");
   (mainTs27.includes('if (spec.bundled) throw new Error("该工具随应用内置') ? ok : fail)("main.ts：bundled 条目拒绝卸载（删了没有可靠重取途径）");
   (mainTs27.includes("if (spec.bundled && runtimeInstalled(id, spec)) return { ok: true, runtimes: runtimeList() };") ? ok : fail)("main.ts：bundled 条目已就位时「修复安装」是幂等空操作（判定与清单同源 runtimeInstalled）");
   const toolchainTs27 = readFileSync(join(ROOT, "electron", "toolchain.ts"), "utf8");
@@ -841,23 +841,24 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   //    占着约 10k 前缀，指令却一次不提、还把 CLI 说成默认（每步一次进程往返）。
   // ⛔⛔ 10-12 改（引擎 0.157 起内置 MCP 工具延迟暴露，直调必返 unsupported call）：主线已改成
   //    playwright-cli，browser_* 是「名字在表里、路由不认」。断言随之改成钉新事实。
-  (devInstr.includes("it is the ONLY channel that works on current engine builds") && devInstr.includes("Do NOT call browser_*") && /cloakbrowser upgrade path/.test(devInstr) ? ok : fail)("developer_instructions：浏览器主线 = playwright-cli（browser_* 直调必 unsupported call）；cloakbrowser 增强提法保留探 CLOAKBROWSER_ENTRY");
-  (!devInstr.includes("DEFAULT browser channel") ? ok : fail)("developer_instructions：不得回退成「playwright-cli 是默认通道」（会让已注册的 browser_* 工具白占上下文）");
-  (/Do NOT call browser_\*/.test(devInstr) && /unsupported call/.test(devInstr) ? ok : fail)("developer_instructions：明确禁止直调 browser_* 并写明报错（不再按「工具表里有没有」判存在 —— 那是 0.157 前的旧机制）");
+  (/ego-browser \(ego lite/.test(devInstr) && devInstr.includes("codex-<CODEX_THREAD_ID>") && devInstr.includes("nuphus-call browser_") && devInstr.includes("Do NOT call nuphus browser_*") && !/cloakbrowser upgrade path/.test(devInstr) ? ok : fail)("developer_instructions：ego-browser 优先（每会话 Space），未装回落 nuphus-call 默认浏览器；Cloak 提法已移除");
+  (!/DEFAULT browser channel/.test(devInstr) ? ok : fail)("developer_instructions：不得回退成「playwright-cli 是默认通道」");
+  (/Do NOT call nuphus browser_\*/.test(devInstr) && /unsupported call/.test(devInstr) ? ok : fail)("developer_instructions：明确禁止直调 MCP browser_*（改用 nuphus-call CLI）并写明报错");
   (!/The in-app browser panel is CloakBrowser/.test(devInstr) ? ok : fail)("developer_instructions：不再声称应用内面板就是 CloakBrowser（默认是内置浏览器视图）");
-  const skillsTs = readBuiltinSkillsSource();
-  (!/本机内置的浏览器就是 CloakBrowser/.test(skillsTs) && /## 0\. 通道选型/.test(skillsTs) && /唯一可用通道/.test(skillsTs) && /playwright-cli/.test(skillsTs) ? ok : fail)("browser-skill：通道选型写明当前唯一可用通道 = playwright-cli（CloakBrowser 仅在已安装且需过反爬时用）");
+  const skillsFile = readFileSync(join(ROOT, "electron", "builtin-skills", "02-skill-browser.ts"), "utf8");
+  const skillsTs = skillsFile.slice(Math.max(0, skillsFile.indexOf("export const BROWSER_SKILL")));
+  (/## 1\. 一会话一 Space/.test(skillsTs) && skillsTs.includes("CODEX_THREAD_ID") && skillsTs.includes("taskSpace") && skillsTs.includes("ego-browser") && skillsTs.includes("nuphus-call browser_") && !/CLOAKBROWSER_ENTRY/.test(skillsTs) ? ok : fail)("browser-skill：ego 优先 + 每会话 TaskSpace（CODEX_THREAD_ID）+ nuphus-call 默认浏览器回落；Cloak/Playwright 指导已移除");
   const appTs = readAppUi();
-  (appTs.includes('const [browserMode] = useState<"cloak" | "internal">("internal")') ? ok : fail)("App.tsx：浏览器模式默认内置视图（不再是 cloak）");
-  (appTs.includes('const autoIds = ["nuphus", "playwright-cli", "cloakbrowser", "playwright-browsers", "cloak-browsers", "ponytail"]') ? ok : fail)("App.tsx：开发工具分组按拆分后的条目 id 归类");
+  (!/browserMode.*"cloak"/.test(appTs) ? ok : fail)("App.tsx：浏览器模式里的 cloak 分支已移除（只剩内置视图）");
+  (appTs.includes('const autoIds = ["nuphus", "ponytail"]') ? ok : fail)("App.tsx：开发工具分组只剩 Nuphus / ponytail（Playwright、Cloak 已删除）");
 
-  // mac 侧两条链路与 Windows 同源（否则 mac 包又把 CloakBrowser 带回来）
+  // mac 侧与 Windows 同源（不再排除/安装 CloakBrowser）
   const macCopy = readFileSync(join(ROOT, "build", "copy-mac-tools.cjs"), "utf8");
-  (macCopy.includes("isCloakPackage") && macCopy.includes("!isCloakPackage(entry)") ? ok : fail)("mac copy-mac-tools：复制 npm-global 时同样排除 cloakbrowser");
+  (!/isCloakPackage|cloak-cache/.test(macCopy) ? ok : fail)("mac copy-mac-tools：不再排除 CloakBrowser / cloak-cache（功能已整体移除）");
   const macPrepare = readFileSync(join(ROOT, "scripts", "prepare-mac-tools.cjs"), "utf8");
-  (!macPrepare.includes('"cloakbrowser@') ? ok : fail)("mac prepare-mac-tools：不再安装 cloakbrowser（与 Windows 同源）");
+  (!/cloakbrowser|cloak-cache|CLOAKBROWSER/i.test(macPrepare) ? ok : fail)("mac prepare-mac-tools：不再安装或缓存 cloakbrowser");
   const verifyPackaged = readFileSync(join(ROOT, "scripts", "verify-packaged-tools.cjs"), "utf8");
-  (verifyPackaged.includes("未随包内置") ? ok : fail)("verify-packaged-tools：CloakBrowser 缺席不再判失败（按需下载是预期形态）");
+  (!/cloak/i.test(verifyPackaged) ? ok : fail)("verify-packaged-tools：CloakBrowser 冒烟已移除（浏览器自动化主通道改为外部 Ego Lite）");
 }
   }
 
@@ -1169,8 +1170,8 @@ w.postMessage({id:1,op:"list",root});
     const versionsPath = join(ROOT, "scripts", "lib", "tools-versions.cjs");
     (existsSync(versionsPath) ? ok : fail)("【141】scripts/lib/tools-versions.cjs 存在（版本单一来源）");
     const versionsSrc = readFileSync(versionsPath, "utf8");
-    (/"0\.2\.3"/.test(versionsSrc) && /win32: "1\.62\.1"/.test(versionsSrc) && /darwin: "1\.58\.2"/.test(versionsSrc) ? ok : fail)(
-      "【141】各平台现值保留在表里（⛔ 不得为「对齐」擅自改 mac 的 playwright-core —— 本机验不了，属产品决策）"
+    (/"0\.2\.3"/.test(versionsSrc) && /computerUse: "0\.3\.6"/.test(versionsSrc) && !/playwright/i.test(versionsSrc) ? ok : fail)(
+      "【141】版本表只剩 nuphus / computer-use / ponytail 等实际随包件（Playwright 已移除）"
     );
     const prepWinSrc = readFileSync(join(ROOT, "scripts", "prepare-windows-tools.cjs"), "utf8");
     const prepMacSrc = readFileSync(join(ROOT, "scripts", "prepare-mac-tools.cjs"), "utf8");
@@ -1179,7 +1180,7 @@ w.postMessage({id:1,op:"list",root});
     );
     (!/const NUPHUS_VERSION = "/.test(prepWinSrc) ? ok : fail)("【141】Windows 侧不得再留自写版本字面量");
     (!/@nuphus\/nuphus-mcp@\d/.test(prepMacSrc) ? ok : fail)("【141】mac 侧不得再留自写 npm 版本字面量");
-    (!/playwright-core@\d/.test(prepMacSrc) ? ok : fail)("【141】mac 侧不得再留自写 playwright-core 字面量");
+    (!/@playwright/.test(prepMacSrc) ? ok : fail)("【141】mac 侧不得再留 Playwright 安装/版本字面量");
     /* 四处同源的第四处（CI workflow 的 ref:）也要与表一致 */
     const wantNuphus = (/nuphus: "([^"]+)"/.exec(versionsSrc) ?? [])[1] ?? "";
     (wantNuphus && buildMac.includes(`ref: v${wantNuphus}`) ? ok : fail)(
@@ -1209,7 +1210,6 @@ w.postMessage({id:1,op:"list",root});
   }
   const prepMarkers = [
     "npm-global/node_modules/@nuphus/nuphus-mcp/package.json",
-    "npm-global/node_modules/@playwright/cli/package.json",
     // 引擎按 `nuphus-call …` 命令行调用桌面工具（35 个 schema 不进上下文）⇒ 这个桥必须在 PATH 上。
     // 它不是任何 npm 包的 bin（npm 不会生成），mac 侧由 prepare-mac-tools 写 bin/nuphus-call，
     // Windows 侧必须由本脚本写 npm-global/nuphus-call.cmd —— 漏了就是「README 有、用户用不了」。
@@ -1236,7 +1236,6 @@ w.postMessage({id:1,op:"list",root});
     "resources/tools/nuphus-call.mjs",
     "resources/tools/harness-media.mjs",
     "resources/tools/harness-video.mjs",
-    "resources/tools/cloak-open.mjs",
     // Windows 控件清单通道（10-04）：两个都是**版本控制里的静态脚本**，干净检出就有，
     // 不需要 CI 现造（harness-uia.mjs 是 MCP 门面，desktop-uia.ps1 调系统自带 UIAutomation）。
     "resources/tools/harness-uia.mjs",
@@ -1268,8 +1267,7 @@ w.postMessage({id:1,op:"list",root});
   // ⛔ 断言要锚定**实际分支条件**，不能只查标识符存在 —— 第一版只查 "System32"/packWithTar/--exclude
   //    三个名字，把 `if (tarBin)` 改成 `if (false && tarBin)` 照样绿（假绿，反证时才发现）。
   (/\nif \(tarBin\) \{\n {2}try \{ packWithTar\(tarBin\); packed = true; \}/.test(packScript) ? ok : fail)("【29】pack-automation 优先用 bsdtar（Windows 自带 tar.exe，CI 无随包 python 也能打 zip）");
-  (packScript.includes("npm-global/node_modules/cloakbrowser") && packScript.includes("npm-global/node_modules/.bin/cloakbrowser") ? ok : fail)("【29】bsdtar 分支的排除清单与 python 分支同源（含 .bin shim，否则「修复安装」把 CloakBrowser 装回来）");
-  (packScript.includes("npm-global/cloakbrowser.cmd") ? ok : fail)("【29】排除清单覆盖顶层 cloakbrowser shim 三件套");
+  (!/cloakbrowser|cloak-cache|CLAUB_EXCLUDES/i.test(packScript) ? ok : fail)("【29】pack-automation 已移除 CloakBrowser 排除清单（该能力整体删除，不再有装回风险）");
 }
 
 // ---------- 汇总 ----------

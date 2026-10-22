@@ -81,18 +81,6 @@ bag.browserUrl = browserUrl as typeof bag.browserUrl; bag.setBrowserUrl = setBro
   const [browserDraft, setBrowserDraft] = useState("");
 bag.browserDraft = browserDraft as typeof bag.browserDraft; bag.setBrowserDraft = setBrowserDraft as typeof bag.setBrowserDraft;
 
-  // 09-16：默认用**内置浏览器视图**（右栏 BrowserPane = 内置 Chromium webview）；CloakBrowser 改为
-  // 按需下载的可选增强（需要过反爬站点时才用）。这里的 mode 是旧版 App 级浏览器面板的遗留字段
-  // （面板已由 components/BrowserPane 取代），仅用于兼容既有渲染分支，默认值也必须跟「默认内置」一致。
-  const [browserMode] = useState<"cloak" | "internal">("internal");
-bag.browserMode = browserMode as typeof bag.browserMode;
-
-  const [cloakPage, setCloakPage] = useState("");
-bag.cloakPage = cloakPage as typeof bag.cloakPage; bag.setCloakPage = setCloakPage as typeof bag.setCloakPage;
-
-  const [cloakStatus, setCloakStatus] = useState("");
-bag.cloakStatus = cloakStatus as typeof bag.cloakStatus; bag.setCloakStatus = setCloakStatus as typeof bag.setCloakStatus;
-
   // 浏览器收藏夹 + 历史（localStorage 持久化）
   const [browserBookmarks, setBrowserBookmarks] = useState<{ url: string; title: string }[]>(() => { try { return JSON.parse(localStorage.getItem("browser-bookmarks") ?? "[]"); } catch { return []; } });
 bag.browserBookmarks = browserBookmarks as typeof bag.browserBookmarks; bag.setBrowserBookmarks = setBrowserBookmarks as typeof bag.setBrowserBookmarks;
@@ -109,7 +97,7 @@ bag.browserMenuOpen = browserMenuOpen as typeof bag.browserMenuOpen; bag.setBrow
   const [backupBusy, setBackupBusy] = useState<"" | "export" | "import" | "export-md" | "import-md">("");
 bag.backupBusy = backupBusy as typeof bag.backupBusy; bag.setBackupBusy = setBackupBusy as typeof bag.setBackupBusy;
 
-  // cloak 首页快捷站点：收藏夹优先（≤6），不足补内置常用站点
+  // 浏览器首页快捷站点：收藏夹优先（≤6），不足补内置常用站点
   const homeSites = useMemo(() => {
     const list: { name: string; url: string; color?: string }[] = bag.browserBookmarks.slice(0, 6).map((b) => ({ name: b.title || b.url, url: b.url }));
     for (const s of QUICK_SITES) {
@@ -152,5 +140,5 @@ bag.collapsedSections = collapsedSections as typeof bag.collapsedSections; bag.s
     });
   }, []);
 bag.toggleSection = toggleSection as typeof bag.toggleSection;
-  return { goalStatus, setGoalStatus, goalsAutoGone, setGoalsAutoGone, goalsPrevRunningRef, goalsTaskRunning, reviewBusy, setReviewBusy, reviewReport, setReviewReport, reviewTurnRef, treePath, setTreePath, treeEntries, setTreeEntries, treeChildren, setTreeChildren, treeExpanded, setTreeExpanded, treeLoading, setTreeLoading, browserHome, setBrowserHome, browserUrl, setBrowserUrl, browserDraft, setBrowserDraft, browserMode, cloakPage, setCloakPage, cloakStatus, setCloakStatus, browserBookmarks, setBrowserBookmarks, browserHistory, setBrowserHistory, browserDrawer, setBrowserDrawer, browserMenuOpen, setBrowserMenuOpen, backupBusy, setBackupBusy, homeSites, iframeRef, queue, setQueue, queueDragIndex, setQueueDragIndex, mobileNav, setMobileNav, sidebarFlyout, setSidebarFlyout, threadRowMenu, setThreadRowMenu, collapsedSections, setCollapsedSections, toggleSection };
+  return { goalStatus, setGoalStatus, goalsAutoGone, setGoalsAutoGone, goalsPrevRunningRef, goalsTaskRunning, reviewBusy, setReviewBusy, reviewReport, setReviewReport, reviewTurnRef, treePath, setTreePath, treeEntries, setTreeEntries, treeChildren, setTreeChildren, treeExpanded, setTreeExpanded, treeLoading, setTreeLoading, browserHome, setBrowserHome, browserUrl, setBrowserUrl, browserDraft, setBrowserDraft, browserBookmarks, setBrowserBookmarks, browserHistory, setBrowserHistory, browserDrawer, setBrowserDrawer, browserMenuOpen, setBrowserMenuOpen, backupBusy, setBackupBusy, homeSites, iframeRef, queue, setQueue, queueDragIndex, setQueueDragIndex, mobileNav, setMobileNav, sidebarFlyout, setSidebarFlyout, threadRowMenu, setThreadRowMenu, collapsedSections, setCollapsedSections, toggleSection };
 }

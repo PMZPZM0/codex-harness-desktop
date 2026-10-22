@@ -13,7 +13,7 @@
  * 生命周期：通道在 `setup` 内注册、`ctx.effect` 内摘除；注册时机由组合表决定（本文件不自挂载）。
  */
 import { resolveCapabilities } from "../capability-registry";
-import { computerUseLauncher, harnessUiaServer, nuphusBinary } from "../toolchain";
+import { computerUseLauncher, egoBrowserPath, harnessUiaServer, nuphusBinary } from "../toolchain";
 import { nuphusVisionEnv } from "../nuphus-env";
 import type { CapabilityProbe } from "../capability-registry";
 import { devInstructionsInput } from "../main/12-skill-discipline";
@@ -38,7 +38,7 @@ async function collectCapabilityProbe(): Promise<CapabilityProbe> {
     computerUseAvailable: Boolean(computerUseLauncher()),
     visionPlugin: devInput.visionPlugin,
     imagePlugin: devInput.imagePlugin,
-    playwrightCli: runtimeInstalled("playwright-cli", devRuntimeSpecs["playwright-cli"]),
+    egoBrowser: Boolean(egoBrowserPath()),
     markitdown: runtimeInstalled("markitdown", devRuntimeSpecs.markitdown),
   };
 }
