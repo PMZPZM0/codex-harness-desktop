@@ -42,6 +42,30 @@
 .ego-lite-hint, .ego-lite-note { margin: 0; font-size: 11.5px; line-height: 1.5; }
 .ego-lite-hint { color: var(--muted); }
 .ego-lite-note { color: var(--link); }
+.ego-lite-links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 12%, var(--line));
+  color: var(--muted);
+  font-size: 11px;
+}
+.ego-lite-links > span { min-width: 0; }
+.ego-lite-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--link);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.ego-lite-link:hover { text-decoration: underline; }
 
 @media (max-width: 640px) {
   .ego-lite-actions { align-items: flex-start; }

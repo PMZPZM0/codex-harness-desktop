@@ -67,6 +67,7 @@ Windows 用 `node scripts/prepare-windows-tools.cjs`、macOS 用 `node scripts/p
 
 ### 2. Ego Lite 浏览器自动化（外部应用，不随包内置）
 
+- 官网：<https://lite.ego.app/zh-cn> · 开源仓库（MIT）：<https://github.com/citrolabs/ego-lite>
 - 安装：「设置 → 开发工具 → Ego Lite 浏览器自动化」→「下载安装」打开官方安装器；完成 GUI 首次引导后 `ego-browser` 才进 PATH。
 - 体积：安装后约 611MB Chromium；Windows 官方安装包约 13.5MB（首次启动下载 Chromium），macOS DMG 146–164MB。
 - 检测路径：Windows `%USERPROFILE%\.local\share\ego\active_version_dir\ego-browser.exe`；macOS `~/.local/bin/ego-browser`；应用会把该目录并入引擎 PATH 并设 `EGO_BROWSER_PATH`。

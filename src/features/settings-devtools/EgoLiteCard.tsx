@@ -3,6 +3,9 @@ import { Download, ExternalLink, Globe2, RefreshCw } from "lucide-react";
 
 type EgoStatus = Awaited<ReturnType<typeof window.codex.egoStatus>>;
 
+const EGO_OFFICIAL_SITE = "https://lite.ego.app/zh-cn";
+const EGO_GITHUB = "https://github.com/citrolabs/ego-lite";
+
 /** 开发工具 → Ego Lite：浏览器自动化**首选**通道（外部安装；未装回落 browse-skills 默认浏览器）。
  *  ⛔ 不把 611MB 的 Chromium 随应用内置（用户拍板）：这里只做检测、官方下载页与打开；
  *  **升级/自动更新统一在「设置 → 控制台 → 组件更新」的 Ego Lite 行**（10-22 用户要求）。
@@ -117,6 +120,15 @@ export function EgoLiteCard({ onNotice }: { onNotice?: (message: string) => void
           : "不随应用内置：Windows 安装包约 13.5MB、macOS 146–164MB，首次启动会下载约 600MB Chromium。装完完成首次引导，CLI 才可用。"}
       </p>
       {note ? <p className="ego-lite-note" aria-live="polite">{note}</p> : null}
+      <div className="ego-lite-links">
+        <span>Ego Lite 由 Citro Labs 提供，仓库以 MIT 许可开源；本应用只调用其 CLI，不分发浏览器本体。</span>
+        <button type="button" className="ego-lite-link" onClick={() => void window.codex.openExternal(EGO_OFFICIAL_SITE).catch(() => undefined)}>
+          官网 <ExternalLink size={10} />
+        </button>
+        <button type="button" className="ego-lite-link" onClick={() => void window.codex.openExternal(EGO_GITHUB).catch(() => undefined)}>
+          GitHub <ExternalLink size={10} />
+        </button>
+      </div>
     </div>
   );
 }
