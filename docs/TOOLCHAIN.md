@@ -71,6 +71,7 @@ Windows 用 `node scripts/prepare-windows-tools.cjs`、macOS 用 `node scripts/p
 - 体积：安装后约 611MB Chromium；Windows 官方安装包约 13.5MB（首次启动下载 Chromium），macOS DMG 146–164MB。
 - 检测路径：Windows `%USERPROFILE%\.local\share\ego\active_version_dir\ego-browser.exe`；macOS `~/.local/bin/ego-browser`；应用会把该目录并入引擎 PATH 并设 `EGO_BROWSER_PATH`。
 - 每会话 Space：`taskSpace("codex-<CODEX_THREAD_ID>")`；会话归档/删除时应用自动 `finish` 回收。
+- 升级/自动更新：在「设置 → 控制台 → 组件更新」的 Ego Lite 行（手动「更新」+ 开关）。走 Ego 官方更新器 `ego-browser upgrade`；官方未提供可配置镜像，更新包可能约 600MB，本应用不代理大文件。
 
 ### 3. ponytail 写代码模式插件（随包安装源）
 

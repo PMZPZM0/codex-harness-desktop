@@ -79,6 +79,10 @@ const ACTION_TEXT: Record<Outcome["action"], string> = {
 
 /** 每行的状态说明（版本信息来自主进程，这里只组织语言 + 交代清影响面）。 */
 function describeComponent(row: ComponentRow): string {
+  if (row.specId === "ego-lite") {
+    if (!row.installed) return "未安装 —— 到「设置 → 开发工具」安装并完成首次引导。";
+    return `${row.current || "已安装"}（更新由 Ego 官方更新器执行，可能下载约 600MB 并重启浏览器；暂无第三方国内镜像）`;
+  }
   if (row.error) return row.error;
   if (row.unsupported) return row.unsupported;
   if (!row.installed) return "未安装 —— 装了之后这里才会出现更新入口。";
@@ -288,7 +292,7 @@ export function AutoUpdateCard({ onNotice }: { onNotice?: (text: string) => void
                         <strong>
                           {row.label}
                           {row.hasUpdate ? <em className="auto-update-badge">有更新</em> : null}
-                          {!row.mirror ? <em className="auto-update-badge warn">无可用镜像源</em> : null}
+                          {!row.mirror && row.specId !== "ego-lite" ? <em className="auto-update-badge warn">无可用镜像源</em> : null}
                         </strong>
                         <small>{describeComponent(row)}</small>
                       </span>

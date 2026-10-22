@@ -145,6 +145,20 @@ export const autoUpdateFeature = defineFeature<null>({
      * ⛔ 别在这里按 kind 再写一遍判据：那是本项目反复栽过的坑（手动说最新、后台却在装）。
      */
     async function updateRow(row: ComponentRow, source: DownloadSourceSetting, settings: Awaited<ReturnType<typeof readAppSettings>>): Promise<UpdateOutcome> {
+      if (row.id === "ego-lite") {
+        const before = egoBrowserVersion();
+        if (!egoBrowserPath()) return { id: row.id, label: row.label, action: "skipped", before: "", after: "", message: "未安装 Ego Lite" };
+        const result = await runEgoUpgrade();
+        const after = egoBrowserVersion();
+        return {
+          id: row.id,
+          label: row.label,
+          action: result.ok ? (before && after && before !== after ? "updated" : "unchanged") : "failed",
+          before,
+          after,
+          message: result.output || (result.ok ? "已是最新版本" : "升级失败"),
+        };
+      }
       const spec = componentSpec(row.specId);
       if (!spec) return { id: row.id, label: row.label, action: "skipped", before: "", after: "", message: "未登记在组件清单里" };
       return updateComponent(spec, row.id, makeCtx(source, settings));
@@ -168,7 +182,8 @@ export const autoUpdateFeature = defineFeature<null>({
           if (row.specId === "market-skill") continue;
           // ⛔ 开关判定在**检查之前**（不是"查到了不装"）：关掉 ⇒ 连版本/内容都不比
           if (!readAutoUpdateRowSwitch(settings, row.id)) continue;
-          if (!row.hasUpdate) continue;
+          // Ego Lite 没有可查询的远端版本号；开关开着就交给官方 updater 自己判断。
+          if (row.id !== "ego-lite" && !row.hasUpdate) continue;
           try {
             const outcome = await updateRow(row, source, settings);
             if (outcome.action === "updated") {
@@ -178,21 +193,6 @@ export const autoUpdateFeature = defineFeature<null>({
           } catch (error) {
             // 闸 2：单个失败不拖垮其余 —— 下个周期再试
             console.warn(`[auto-update] ${row.label} 自动更新失败，下个周期再试：${(error as Error)?.message ?? error}`);
-          }
-        }
-        // Ego Lite 是外部应用（不在 npm/注册表组件清单里），单独走官方 updater。
-        // ⛔ 默认关：升级可能下载数百 MB 并替换浏览器；用户显式打开这个开关才在后台跑。
-        if (readAutoUpdateRowSwitch(settings, "ego-lite") && egoBrowserPath()) {
-          try {
-            const before = egoBrowserVersion();
-            const result = await runEgoUpgrade();
-            const after = egoBrowserVersion();
-            if (result.ok && after && after !== before) {
-              updated += 1;
-              notifyUpdated("Ego Lite 已自动升级", `${before || "旧版本"} → ${after}`);
-            }
-          } catch (error) {
-            console.warn(`[auto-update] Ego Lite 自动升级失败，下个周期再试：${(error as Error)?.message ?? error}`);
           }
         }
         if (updated) console.log(`[auto-update] 本轮更新了 ${updated} 个组件`);
@@ -222,7 +222,29 @@ export const autoUpdateFeature = defineFeature<null>({
         unsupported: "",
         error: (error as Error)?.message ?? String(error),
       }])));
-      return results.flat();
+      // Ego Lite 是外部应用（不在组件注册表里）：单独补一行，控制台才能同时给出「更新」按钮
+      // 和自动更新开关。它没有远端版本查询接口，hasUpdate 恒 false，手动/自动都交给官方 updater。
+      const egoInstalled = Boolean(egoBrowserPath());
+      return [
+        ...results.flat(),
+        {
+          id: "ego-lite",
+          specId: "ego-lite",
+          label: "Ego Lite 浏览器自动化",
+          group: "工具",
+          pkg: "ego-browser",
+          mirror: false,
+          reason: "Ego 官方更新器（暂无国内镜像）",
+          enabled: ctx.enabledOf("ego-lite"),
+          installed: egoInstalled,
+          current: egoInstalled ? egoBrowserVersion() : "",
+          latest: "",
+          hasUpdate: false,
+          detectable: true,
+          unsupported: "",
+          error: "",
+        },
+      ];
     }
 
     ipcHost.handle("autoUpdate:status", async () => {
@@ -244,20 +266,6 @@ export const autoUpdateFeature = defineFeature<null>({
           hasUpdate: Boolean(row?.hasUpdate),
           error: row?.error ?? row?.unsupported ?? "",
         };
-      });
-      // Ego Lite 不在组件注册表里（外部安装的 Chromium 应用），但控制台要留同一个更新开关。
-      // 开关默认关（AUTO_UPDATE_DEFAULT_OFF）；开启后后台只跑官方 `ego-browser upgrade`。
-      const egoInstalled = Boolean(egoBrowserPath());
-      rows.push({
-        id: "ego-lite",
-        kind: "tool",
-        label: "Ego Lite 浏览器自动化",
-        pkg: "ego-browser",
-        enabled: readAutoUpdateRowSwitch(settings, "ego-lite"),
-        current: egoInstalled ? egoBrowserVersion() : "",
-        latest: "",
-        hasUpdate: false,
-        error: egoInstalled ? "" : "未安装 —— 到「设置 → 开发工具」下载并完成首次引导",
       });
       return rows;
     });

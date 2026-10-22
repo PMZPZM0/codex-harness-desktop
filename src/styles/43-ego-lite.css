@@ -39,12 +39,10 @@
 }
 .ego-lite-meta { color: var(--muted); font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
 .ego-lite-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.ego-lite-confirm { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.ego-lite-confirm em { color: var(--muted); font-size: 11.5px; font-style: normal; }
 .ego-lite-hint, .ego-lite-note { margin: 0; font-size: 11.5px; line-height: 1.5; }
 .ego-lite-hint { color: var(--muted); }
 .ego-lite-note { color: var(--link); }
 
 @media (max-width: 640px) {
-  .ego-lite-actions, .ego-lite-confirm { align-items: flex-start; }
+  .ego-lite-actions { align-items: flex-start; }
 }

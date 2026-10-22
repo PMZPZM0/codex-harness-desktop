@@ -64,7 +64,7 @@ const ledger = read("docs/FEATURE-LEDGER.md");
 const boardCode = stripComments(board);
 
 console.log("【① 四个开关互相独立 + 缺省即开】");
-for (const key of ["autoUpdateDesktop", "autoUpdateBrowser", "autoUpdateComputerUse", "autoUpdateEngine"]) {
+for (const key of ["autoUpdateDesktop", "autoUpdateComputerUse", "autoUpdateEngine"]) {
   ok(settings.includes(`${key}?: boolean`), `AppSettings 有独立字段 ${key}`);
 }
 ok(/function autoUpdateEnabled[\s\S]{0,400}\?\.\[key\] !== false/.test(settings),
@@ -74,9 +74,11 @@ ok(/readAutoUpdateRowSwitch\(settings, row\.id\)/.test(board),
 ok(/saveAppSettings\(userData, \{ \[owner\]: Boolean\(enabled\) \}/.test(board),
   "⛔ autoUpdate:set 只 patch 单键（写整份会互相覆盖 ⇒ 开关不独立）");
 const keysBlock = board.match(/const toolKeys[\s\S]*?\};/)?.[0] ?? "";
-ok(/nuphus: "autoUpdateDesktop"/.test(keysBlock) && /"playwright-cli": "autoUpdateBrowser"/.test(keysBlock)
+ok(/nuphus: "autoUpdateDesktop"/.test(keysBlock) && !/playwright-cli/.test(keysBlock)
   && /"computer-use": "autoUpdateComputerUse"/.test(keysBlock),
-  "三类工具各自映射到自己的开关字段（不是共用一把总闸）");
+  "桌面 / Mac 电脑操作各自映射到自己的开关字段（Playwright 已移除）");
+ok(/id: "ego-lite"/.test(board) && /runEgoUpgrade/.test(board) && /if \(row\.id === "ego-lite"\)/.test(board),
+  "控制台组件清单含 Ego Lite 行，手动更新走官方 ego-browser upgrade");
 
 console.log("【② 手动链 = 自动链（单一真相源）】");
 ok(/export async function checkRuntimeUpdateRow/.test(runtimeIpc) && /export async function performRuntimeUpdate/.test(runtimeIpc),
@@ -144,8 +146,8 @@ ok(!/ToggleSwitch/.test(page) && !/skillAutoUpdate/.test(skillsPage),
 ok(/控制台/.test(read("src/features/settings-automation/AutomationSettingsSection.tsx"))
   && /控制台/.test(skillsPage),
   "两处都留了指向「控制台」的说明（不是静默消失）");
-ok(/versionOf\("nuphus"\)/.test(page) && /versionOf\("playwright-cli"\)/.test(page),
-  "桌面自动化 / 浏览器自动化卡片显示当前版本号");
+ok(/versionOf\("nuphus"\)/.test(page) && !/playwright-cli/.test(page),
+  "桌面自动化卡片显示版本号（Playwright 卡已移除）");
 ok(!/Object\.keys\(UPDATEABLE_TOOLS\)|nuphus.*@nuphus/.test(page) && !/@nuphus|@playwright/.test(card),
   "⛔ 界面不另抄工具清单与包名");
 
