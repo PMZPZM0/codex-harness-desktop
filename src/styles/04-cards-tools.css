@@ -574,6 +574,11 @@
   padding: 3px 2px;
   font-size: 12px;
   min-width: 0;
+  /* ★ 10-22 用户：「这个为啥显示这么远呢，贴编辑文件尾部就行」——
+     行不再占满整宽（占满 ⇒ +N -N 被顶到最右边，看着和文件隔了一整个屏）；
+     改成按内容宽度收缩，所有元素紧挨着：编辑 · 文件名 · 目录 · +N -N。 */
+  width: fit-content;
+  max-width: 100%;
 }
 .live-edit-action {
   display: inline-flex;
@@ -596,7 +601,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.live-edit-stats { flex: none; margin-left: auto; display: inline-flex; gap: 6px; animation: live-tick 0.5s ease-out; }
+.live-edit-stats { flex: none; display: inline-flex; gap: 6px; animation: live-tick 0.5s ease-out; }
 .live-edit-stats b { color: var(--add); font-style: normal; font-weight: 500; }
 .live-edit-stats i { color: var(--del); font-style: normal; }
 .live-edits-more { font-size: 11.5px; color: var(--muted); padding: 2px 0; }
