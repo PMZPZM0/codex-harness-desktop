@@ -947,7 +947,9 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     (nDeleg >= 1 ? ok : fail)(`【125】runDelegatedTask 接线（实得 ${nDeleg} 处，需 ≥1 —— 引擎调度的全部角色走它）`);
     (deleg.includes("delegateMemory.text") ? ok : fail)("【125】runDelegatedTask 的记忆段确实追到了出站文本上");
 
-    const teams = readFileSync(join(ROOT, "electron", "features", "teams-ipc.ts"), "utf8").replace(/\r/g, "");
+    /* 10-22：「teams:invoke-member」的实现搬到 electron/team-invoke.ts（渲染层与主进程兜底共用）
+       ⇒ 两条入口要跨**两个文件**数，否则「主理人→成员」那条会被判成没接线（假红）。 */
+    const teams = [readFileSync(join(ROOT, "electron", "features", "teams-ipc.ts"), "utf8"), readFileSync(join(ROOT, "electron", "team-invoke.ts"), "utf8")].join("\n").replace(/\r/g, "");
     const nTeams = (teams.match(/buildDelegateMemory\(/g) || []).length;
     (nTeams >= 2 ? ok : fail)(
       `【125】成员会话两条入口都接线（实得 ${nTeams} 处，需 ≥2 —— teams:member-session + teams:invoke-member）`

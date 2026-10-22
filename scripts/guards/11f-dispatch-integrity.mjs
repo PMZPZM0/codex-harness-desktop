@@ -268,7 +268,7 @@ try {
    宿主一提前放手，记录就永远停在 running（下次启动自愈会把它误标成"应用重启中断"）。 */
 {
   const delSrc = readFileSync(join(ROOT, "electron/features/delegation.ts"), "utf8");
-  const teamSrc = readFileSync(join(ROOT, "electron/features/teams-ipc.ts"), "utf8");
+  const teamSrc = readFileSync(join(ROOT, "electron/team-invoke.ts"), "utf8");   // 10-22：成员调度实现搬到 team-invoke.ts（渲染层与主进程兜底共用）
   const settleSrc = readFileSync(join(ROOT, "electron/delegation/delegate-settle.ts"), "utf8");
   const bootSettle = readFileSync(join(ROOT, "electron/features/boot.ts"), "utf8");
   ok(/error\?\.code === TURN_WAIT_TIMEOUT_CODE/.test(delSrc) && /TURN_WAIT_BACKGROUND_NOTE/.test(delSrc),
@@ -291,7 +291,7 @@ try {
    ⛔ 绝不能 thread/start + turn/start（那会打断发起会话正在跑的回合）。 */
 {
   const delRepSrc = readFileSync(join(ROOT, "electron/features/delegation.ts"), "utf8");
-  const teamRepSrc = readFileSync(join(ROOT, "electron/features/teams-ipc.ts"), "utf8");
+  const teamRepSrc = readFileSync(join(ROOT, "electron/team-invoke.ts"), "utf8");
   const reportSrc = readFileSync(join(ROOT, "electron/delegation/delegate-report.ts"), "utf8");
   const settleRepSrc = readFileSync(join(ROOT, "electron/delegation/delegate-settle.ts"), "utf8");
   ok(/reportBackgroundResult\(/.test(settleRepSrc) && /pendingReport/.test(settleRepSrc),

@@ -87,8 +87,19 @@ function watchedThreadIds(): Set<string> | null {
   return ids;
 }
 
-export function filterForRenderer(event: any) {
-  if (!EVENT_FILTER_ENABLED) return event;
+/** 某个会话的「非白名单事件」会不会送到渲染层？—— 给「渲染层应答」与「主进程兜底应答」分工用（10-22）。
+    ⛔ 判定必须与 filterForRenderer **同源**：两边各写一份，迟早出现「一个裁一个放」或
+    「两边都答」——后者会让同一个成员被调度两次（同一个 tool call id 被应答两遍）。 */
+export function isThreadDelivered(threadId: string) {
+  if (!EVENT_FILTER_ENABLED) return true;
+  const tid = String(threadId ?? "");
+  if (!tid) return true;
+  const watched = watchedThreadIds();
+  if (!watched) return true;          // 不知道窗口在看什么 ⇒ 放行（与 filterForRenderer 一致）
+  return watched.has(tid);
+}
+
+export function filterForRenderer(event: any) {  if (!EVENT_FILTER_ENABLED) return event;
   if (event?.kind !== "notification") return event;
   const method = String(event?.method ?? "");
   if (RENDERER_CROSS_SESSION_METHODS.has(method)) return event;
