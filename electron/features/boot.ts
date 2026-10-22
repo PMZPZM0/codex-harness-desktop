@@ -24,7 +24,7 @@ import { dropStoredCompactions, loadCompactionStore, setCompactionWatchDirs, wat
 import { shouldRegisterNuphus } from "../automation-policy";
 import { SKETCH_SCHEME, sketchResponse } from "../sketch-protocol";
 import { BotStreamSession, readBotStreamSettingsSync } from "../bot-stream";
-import { ensureBuiltinSkills, ensureExpertSkillsMarketplace } from "../builtin-skills";
+import { ensureBuiltinSkills, ensureEgoBrowserSkill, ensureExpertSkillsMarketplace } from "../builtin-skills";
 import { syncLocalMemoryConnector } from "../memory-mcp-connector";
 import { developerInstructionsLine } from "../developer-instructions";
 import { normalizeAutoCompactRatio, readAppSettings, readAppSettingsSync } from "../app-settings";
@@ -309,6 +309,9 @@ export async function bootApp() {
   // 专家技能市场（cheat-on-content / ppt-master）原位注册，零拷贝——见 ensureExpertSkillsMarketplace
   await ensureExpertSkillsMarketplace(codexHome);
   await ensureBuiltinSkills(userSkillsDir);
+  // Ego Lite 的官方 ego-browser 技能由安装器写到 ~/.agents/skills；Codex 只扫 codexHome/skills，
+  // 启动时镜像一份，引擎的技能列表里才会同时出现官方技能与本应用的 browser-skill。
+  await ensureEgoBrowserSkill(userSkillsDir);
   /* 记忆后端 → 本地 MCP 连接器同步（09-25）：后端=mcp 时启用 local-memory 连接器
      （引擎可见 MCP 记忆工具、写入走 MCP），builtin 时停用它（写入走内置金字塔）。
      ⛔ 两边必须同源，否则「内置在写 + MCP 工具也可见」会让模型两边都写 = 双份记忆。

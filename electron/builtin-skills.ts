@@ -3,6 +3,7 @@
  * ⛔ 顺序即契约（若含 hook / 副作用注册，调用顺序 == 原文件顺序）⇒ 只能按文件名前缀顺序 import。
  */
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { existsSync } from "node:fs";
 import { DESKTOP_SKILL } from "./builtin-skills/01-skill-desktop";
@@ -56,6 +57,34 @@ async function retireActiveCopyIfOff(dir: string): Promise<void> {
   if (!off) return;
   const active = path.join(dir, SKILL_FILE);
   if (existsSync(active)) await fs.rename(active, off).catch(() => undefined);
+}
+
+/** 把 Ego Lite 安装器写在 `~/.agents/skills/ego-browser` 的**官方技能**同步到 Codex 的
+ *  `codexHome/skills`。引擎只扫后者（实测 prompt-input 里原先只有 browser-skill），
+ *  不同步的话官方完整 API/learnings 不会被加载；版本没变则不重复写盘。
+ *  ⛔ 这是官方 skill 的镜像，不是我们的内置常量：文件内容以 ego lite 安装目录为准。 */
+export async function ensureEgoBrowserSkill(skillsDir: string): Promise<void> {
+  try {
+    let source = path.join(os.homedir(), ".agents", "skills", "ego-browser");
+    // ego lite 把该目录做成 junction/symlink；fs.cp 默认会复制链接本身而不是内容，
+    // 必须解析到真实目录再拷（Windows 上实测目标目录会变成坏链接）。
+    try { source = await fs.realpath(source); } catch { return; }
+    if (!existsSync(path.join(source, "SKILL.md"))) return;
+    const target = path.join(skillsDir, "ego-browser");
+    const markerPath = path.join(target, ".harness-ego-skill-version");
+    let version = "unknown";
+    try {
+      const sourceText = await fs.readFile(path.join(source, "SKILL.md"), "utf8");
+      version = /^\s*version:\s*"([^"]+)"/m.exec(sourceText)?.[1] ?? "unknown";
+    } catch { /* 源不可读就不覆盖 */ }
+    try {
+      if ((await fs.readFile(markerPath, "utf8")).trim() === version) return;
+    } catch { /* 首次或版本文件缺失 → 同步 */ }
+    await fs.cp(source, target, { recursive: true, force: true, dereference: true });
+    await fs.writeFile(markerPath, version, "utf8");
+  } catch {
+    /* 技能同步失败不影响启动；browser-skill 仍会指引 agent 运行 ego-browser skill */
+  }
 }
 
 export async function ensureBuiltinSkills(skillsDir: string) {

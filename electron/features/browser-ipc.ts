@@ -10,8 +10,9 @@
  */
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { BrowserWindow, shell } from "electron";
+import { BrowserWindow, app, shell } from "electron";
 import { egoAppPath, egoBrowserPath, egoBrowserVersion, runEgoUpgrade } from "../toolchain";
+import { ensureEgoBrowserSkill } from "../builtin-skills";
 import { filePreviewAllowed } from "../main";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
@@ -77,8 +78,11 @@ export const browserFeature = defineFeature<null>({
     const ipcHost = ctx.get<IpcHost>("ipc");
     if (!ipcHost) throw new Error("browser: 缺少 ipc 服务（宿主未提供）");
 
-    ipcHost.handle("browser:ego-status", () => {
+    ipcHost.handle("browser:ego-status", async () => {
       const cliPath = egoBrowserPath();
+      // 安装/引导完成后重新检测：顺手把官方 ego-browser 技能镜像进 Codex 技能目录，
+      // 不用等下一次应用重启（引擎的新会话会重新读 skills）。
+      if (cliPath) await ensureEgoBrowserSkill(path.join(app.getPath("userData"), "codex-home", "skills"));
       return {
         installed: Boolean(cliPath),
         cliPath,
