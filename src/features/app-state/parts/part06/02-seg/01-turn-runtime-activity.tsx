@@ -10,6 +10,7 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import "@xterm/xterm/css/xterm.css";
 import { resolveModelForOpen, shouldSyncOpenThread } from "../../../../../lib/model-scope.mjs";
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "../../../../../lib/session-scope.mjs";
+import { isAnnounceMutedForThread } from "../../../../../voice/announce-bus";
 import { advanceMood, composeMoodInstructions, emptyMood, moodBlock, moodSignature, moodTone, normalizeMood, userSignalOf } from "../../../../../lib/agent-mood.mjs";
 import { LEGACY_PREFIX, dispatchSignature, emptyDispatch, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeDispatch, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeKey, runtimeSignature } from "../../../../../lib/thread-runtime.mjs";
 import { describeTurnStop, turnHeadline, isAwaitingTurnClose } from "../../../../../lib/turn-stop-reason.mjs";
@@ -302,6 +303,9 @@ bag.loadBaseInstructions = loadBaseInstructions as typeof bag.loadBaseInstructio
       sandbox: String(override?.sandbox ?? bag.sandbox ?? ""),
       approval: String(override?.approval ?? bag.approvalPolicy ?? ""),
       workspace: String(bag.workspace ?? ""),
+      /* 10-22：本会话喇叭状态随每轮 send 前的 pushSessionScope 下发（见 part08 send）。
+         ⛔ 只读会话级 mute，不读全局 announce.enabled —— 全局 true 时本会话仍可能被 📢 关掉。 */
+      announceMuted: isAnnounceMutedForThread(threadId) ? "1" : "0",
     };
     const base = await bag.loadBaseInstructions();
     return {

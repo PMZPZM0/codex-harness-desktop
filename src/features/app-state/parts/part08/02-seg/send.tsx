@@ -87,7 +87,11 @@ export async function send(bag: Bag, event?: FormEvent) {
     //    一次 throw 不会把发送永久卡死。
     try {
     bag.sendInFlightRef.current = true;
-    if (bag.threadRef.current?.id && bag.adaptiveToneRef.current) {
+    /* ⛔ 每轮发送前都推一次会话作用域（签名去重，没变时只是一次内存比较）：
+       10-22 用户「我关掉了，codex 还说你播报」——原来这里挂着 `adaptiveToneRef.current`，
+       语气关着时整个作用域（含本会话喇叭已静音）都不下发，模型只能看全局 announce.enabled=true
+       ⇒ 继续声称「这条回复会被播报」。静音状态必须随每一次发送到达模型。 */
+    if (bag.threadRef.current?.id) {
       await Promise.race([bag.pushSessionScope(bag.threadRef.current.id), new Promise((resolve) => setTimeout(resolve, 800))]);
     }
     if (!bag.customModel || !bag.selectedModel) {
