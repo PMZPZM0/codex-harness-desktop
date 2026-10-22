@@ -121,6 +121,8 @@
   ⛔ 不能进 `App()` 条件调用 `useHarnessApp` —— hook 调用序）。
 - ⛔ **悬停工具栏的隐藏由主进程推 hover**（10-21）：窗口移出可交互矩形后会切成穿透，页面从此收不到 `pointerleave` ⇒ 工具栏会永久挂着；`pet-window.ts` 在光标轮询里把 inside 变化推成 `pet:hover`，浮窗用 `onPetHover` 收起。工具栏底部 42px **不参与看帧**（指针停在图标上切静态 look 帧会让宠物看着像冻住）。
 - ⛔ **拖拽不要挂 `-webkit-app-region: drag`**（10-21）：drag 区属非客户区，渲染层收不到 pointermove ⇒ 做不了左右跑/竖向跳反馈，也放不下悬停工具栏。现走「渲染层指针捕获 → `pet:drag-*` → 主进程 setBounds」；拖动期间 `applyPetMouseState` 必须强制可交互，否则窗口跟随移动会被判穿透、丢事件。
+- ⛔ **活动气泡贴「宠物本体」而不是窗口上沿**（10-22 用户截图「离得太远了」）：宠物窗 230×300，精灵在窗内还有 ~97px 透明留白；`positionPetActivityWindow` 必须用 `petInteractiveRect` 算头顶/中心，拖动与矩形上报时都要重排（否则气泡甩在原地）。⛔ **hover 重跑 effect 时不许上报 `petInteractiveRect(null)`**（只在卸载时发）——null 会让主进程把整窗瞬切穿透，用户正好这一帧按下左键就「拖不动」。
+- ⛔ **活动气泡跟随当前会话**（10-22 用户「任务状态刷新慢、没有跟随会话」）：渲染层 `PetFocusBridge` 把 `thread?.id` 经 `pet:focus-thread` 报给主进程，`orderPetActivities` 把该会话顶到第一位（后台 waiting/running 保留）；切会话立即 `publish`，不等下一条引擎事件。**确认后的第一条新 item 恢复 running**（`clearWaiting`）——有些引擎版本不回 `serverRequest/resolved`，否则气泡永远卡在「等待你的确认」。
 - ⛔ **e2e 必须排除宠物浮窗 target 整族**：宠物和活动气泡都是 page target，`harness._connect()` 取 `list[0]` 会随机连错窗口
   （实测症状：设置导航读到 0 项，看着像"设置页坏了"）。已在 `scripts/e2e/lib/harness.mjs` 里按 `pet=` 排除。
 - 设置页 = 注册表一行一页（`pet` 页）+ `settingsNav` + `HelpDialog.OVERVIEW_GROUPS` **三处都要加**
