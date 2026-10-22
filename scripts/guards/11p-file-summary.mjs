@@ -248,6 +248,18 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     "文件引用卡默认右栏预览；编辑器 / 默认应用从下拉选择（⛔ 不再默认弹居中编辑器）");
   ok(fileRefCard.includes("MODE_KEY") && /localStorage\.getItem\(MODE_KEY\)/.test(fileRefCard) && /localStorage\.setItem\(MODE_KEY/.test(fileRefCard),
     "打开方式默认值跨卡片共用 localStorage（与回合产物卡同键 output-file-open-target）");
+
+  /* 10-22 用户实测「汇总消息下面没有文件卡片」：创建后又删除的文件首尾快照一致 ⇒ 最终报告空。
+     必须留最后一次非空 live 明细，结算时把最终快照里没有的路径补成 deleted。 */
+  const turnWatch = read("electron/turn-file-watch.ts");
+  ok(/liveLastFiles/.test(turnWatch) && /if \(report\.length\) liveLastFiles\.set/.test(turnWatch) && !/else liveLastFiles\.delete/.test(turnWatch),
+    "运行中最近一次**非空** live 明细留到结算（⛔ 空报告不能清：创建后删除时最后一拍就是空，清掉=证据丢失）");
+  ok(/if \(live && live\.turnId === entry\.turnId && live\.files\.length\)/.test(turnWatch)
+    && /status: next\.has\(file\.path\) \? file\.status : "deleted"/.test(turnWatch),
+    "结算时把 live 出现过、最终快照没有的路径补成 deleted（汇总卡仍显示本轮碰过的文件）");
+  ok(/let report = files\.slice\(0, MAX_REPORT\)/.test(turnWatch) && /report = \[\.\.\.byPath\.values\(\)\]/.test(turnWatch)
+    && /if \(report\.length && entry\.turnId\)/.test(turnWatch),
+    "合并后的报告仍走落盘 + 广播（重启/切回会话仍能看到这张卡）");
 }
 
 /* ── 九、parseDiffLines 真值表（纯函数**真跑**——行号/文件头判据出错的失效方式是静默的：
