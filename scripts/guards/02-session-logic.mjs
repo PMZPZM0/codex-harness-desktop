@@ -610,41 +610,50 @@ console.log(C.bold("\n【4b】语音通话纯逻辑（回声消除 / 回声门�
     ? ok("门控：播报停止后复位（下次播报重新学习地板）")
     : fail("门控：播报停止后未复位");
 
-  // 首句阈值：模型开头常常几十字没有句号，首句必须比后续句子更早出声（跟手感）
+  // 首句阈值：模型开头常常几十字没有句号，首句必须比后续句子更早出声（跟手感）。
+  // 10-22 用户「断句不准」：首块上限 10 → 24（没标点时到 30 才硬切），不再 10 字掐半句。
   const firstFast = createSentenceChunker({ maxChars: 60 });
   const firstOut = firstFast.push("这是一句没有任何标点符号而且很长的话用来验证首句是不是会提前切出来");
-  firstOut.length === 1 && firstOut[0].length <= 10
-    ? ok(`断句：首句提前切出（${firstOut[0].length} 字，阈值 10，不等满 60 字）`)
+  firstOut.length === 1 && firstOut[0].length <= 30 && firstOut[0].length < 60
+    ? ok(`断句：首句提前切出（${firstOut[0].length} 字，首块上限 30，不等满 60 字）`)
     : fail(`断句：首句没有提前切出（${JSON.stringify(firstOut).slice(0, 60)}）`);
-  // 反证口径：09-13 审计 ④ 把首句阈值从 18 压到 10，这里必须跟着压，
-  // 否则「阈值被改回 18」这种回归照不出来（10 也算 ≤18）
-  const firstOld = createSentenceChunker({ maxChars: 60, firstMaxChars: 18 });
+  const firstOld = createSentenceChunker({ maxChars: 60, firstMaxChars: 18, firstHardCap: 18 });
   const oldOut = firstOld.push("这是一句没有任何标点符号而且很长的话用来验证首句是不是会提前切出来");
-  oldOut[0].length > firstOut[0].length
-    ? ok(`断句：首句阈值确实变小了（18 字 → ${firstOut[0].length} 字，首块合成更快出声）`)
-    : fail("断句：首句阈值没有随审计 ④ 调小（firstMaxChars 还是 18）");
+  oldOut[0].length > 0 && oldOut[0].length < firstOut[0].length
+    ? ok(`断句：首块上限可调且确实生效（18 字 → ${firstOut[0].length} 字）`)
+    : fail(`断句：首块上限配置没生效（${JSON.stringify({ old: oldOut[0], now: firstOut[0] }).slice(0, 80)}）`);
   const later = firstFast.push("第二句同样没有标点但是首句已经出过声了所以应该按 60 字阈值继续攒着" + "补字补字补字补字补字补字补字补字补字补字补字补字补字补字补字补字补字补字补字补字");
   later.length === 0 || later[0].length > 18
     ? ok("断句：首句之后回到常规阈值（不会一直碎句）")
     : fail("断句：首句之后仍在碎切（阈值没回到 maxChars）");
 
-  // --- 断句：句读即切、超长在软断点切、结尾 flush ---
+  // --- 断句：句读即切；超限先等软断点、等到 hardCap 才硬切；结尾 flush ---
   const hard = createSentenceChunker({ maxChars: 10 });
   const got1 = hard.push("你好。");
   got1.length === 1 && got1[0] === "你好。" ? ok("断句：遇到句号立即成句") : fail(`断句：句号未切，实际 ${JSON.stringify(got1)}`);
   hard.push("abc").length === 0 ? ok("断句：未到句读且不超长 → 继续攒") : fail("断句：短句被提前切了");
 
-  const hardCut = createSentenceChunker({ maxChars: 10 });
+  const hardCut = createSentenceChunker({ maxChars: 10, firstHardCap: 10 });
   const got2 = hardCut.push("abcdefghijklmn");
   got2.length === 1 && got2[0] === "abcdefghij"
-    ? ok("断句：无标点超长 → 按上限硬切（避免长回答憋着不出声）")
+    ? ok("断句：完全没标点 → 到 hardCap 才硬切（避免长回答憋着不出声）")
     : fail(`断句：硬切结果不对，实际 ${JSON.stringify(got2)}`);
   const tail2 = hardCut.flush();
   tail2.length === 1 && tail2[0] === "klmn" ? ok("断句：flush 吐出残留") : fail(`断句：flush 结果不对，实际 ${JSON.stringify(tail2)}`);
 
-  const soft = createSentenceChunker({ maxChars: 10 });
-  const got3 = soft.push("abc,defghijkl");
-  got3.length === 1 && got3[0] === "abc," ? ok("断句：超长时优先在逗号处切") : fail(`断句：软断点结果不对，实际 ${JSON.stringify(got3)}`);
+  const soft = createSentenceChunker({ maxChars: 10, firstHardCap: 10 });
+  const got3 = soft.push("abcdefgh,ijklmnop");
+  got3.length === 1 && got3[0] === "abcdefgh," ? ok("断句：超长时优先在逗号处切") : fail(`断句：软断点结果不对，实际 ${JSON.stringify(got3)}`);
+
+  // 10-22 新契约：超过 maxChars 但还没到 hardCap、又没有软断点时**等下一段增量**，
+  // 不许「到字数就切」（用户实测半句被掐断）。等满 hardCap 才允许硬切。
+  const waitSoft = createSentenceChunker({ maxChars: 60 });
+  waitSoft.push("甲".repeat(40));                    // 首块 30 字硬切（无标点，firstHardCap=30）
+  const waiting = waitSoft.push("乙".repeat(70));    // 余 10 + 70 = 80，超过 60 但没到 90
+  const forced = waitSoft.push("丙".repeat(20));     // 100 字 → 到 hardCap 才切
+  waiting.length === 0 && forced.length === 1 && forced[0].length === 90
+    ? ok("断句：超限但没标点时先等，等到 hardCap 才硬切（不再半句就切）")
+    : fail(`断句：等待/硬切口径不对（waiting=${JSON.stringify(waiting).slice(0, 20)}, forced=${JSON.stringify(forced).slice(0, 20)}）`);
 }
   }
 

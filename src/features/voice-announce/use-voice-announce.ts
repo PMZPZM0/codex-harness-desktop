@@ -59,6 +59,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { createSentenceChunker } from "../../lib/voice-aec.mjs";
 import { createSpeakFilter } from "../../lib/speak-text.mjs";
 import { createVoiceScriptStripper, dedupeSpokenSentences, resolveAnnounceSummary } from "../../lib/voice-script.mjs";
+import { splitSentences } from "../../lib/voice-summary.mjs";
 import { createAutoSpeakTracker } from "../../lib/voice-auto-speak.mjs";
 import {
   notifyAnnounceToggle,
@@ -67,6 +68,8 @@ import {
   setAnnounceNoticeHandler,
   setAnnounceResumeHandler,
   setAnnounceStopHandler,
+  setAnnounceMutedForThread,
+  isAnnounceMutedForThread,
   subscribeAnnounce,
   IDLE_ANNOUNCE_STATUS,
   type AnnounceStatus,
@@ -87,6 +90,80 @@ const MAX_ANNOUNCE_BACKLOG = 6;
  *    播报优先跟手，压到 2 步；设置页试听仍走默认 4 步，用户想对比音质时听试听。
  */
 const ANNOUNCE_NUM_STEPS = 2;
+
+/** 单次送 TTS 的最大字数。ZipVoice 对超长 utterance 会明显掉音量/发沙（用户实测长播报变杂音），
+ *  所以长稿按句/逗号切成小段，合成完再无缝拼接成一条音频。
+ *  10-22 用户又报「断句不准」：上限从 60 放宽到 90（与实时断句器同口径），切点优先落在
+ *  **句末或逗号**，并且不留「尾巴只有两三个字」的碎片（那种碎句单独合成会带一个完整句调，
+ *  听起来像念错）。 */
+const ANNOUNCE_CHUNK_MAX_CHARS = 90;
+const ANNOUNCE_CHUNK_MIN_TAIL = 12;
+
+function pushLongChunk(out: string[], sentence: string, maxChars: number): void {
+  let rest = sentence;
+  while (rest.length > maxChars) {
+    let cut = -1;
+    for (let i = maxChars; i >= Math.floor(maxChars * 0.5); i--) {
+      if ("，,、：:；;。！？!? ".includes(rest[i] ?? "")) {
+        const tail = rest.length - (i + 1);
+        /* 断点后只剩几个字 ⇒ 不在这里切（下一段会是个带句调的碎片），继续往前找一个
+           尾巴够长的断点；实在没有就按 maxChars 硬切。 */
+        if (tail >= ANNOUNCE_CHUNK_MIN_TAIL || tail === 0) { cut = i + 1; break; }
+      }
+    }
+    if (cut <= 0) cut = maxChars;
+    out.push(rest.slice(0, cut));
+    rest = rest.slice(cut);
+  }
+  if (rest) out.push(rest);
+}
+
+/** 按句子分组，单句过长再按逗号/硬上限切；每组都 ≤ maxChars，避免长 utterance 降质。 */
+function chunkAnnounceText(text: string, maxChars: number): string[] {
+  const chunks: string[] = [];
+  let buffer = "";
+  for (const sentence of splitSentences(text)) {
+    const part = sentence.trim();
+    if (!part) continue;
+    if (buffer && buffer.length + part.length > maxChars) {
+      chunks.push(buffer);
+      buffer = "";
+    }
+    if (part.length > maxChars) {
+      if (buffer) { chunks.push(buffer); buffer = ""; }
+      pushLongChunk(chunks, part, maxChars);
+    } else {
+      buffer += part;
+    }
+  }
+  if (buffer) chunks.push(buffer);
+  return chunks.length ? chunks : [text];
+}
+
+/** 多段 TTS 拼成一条连续音频：边界做 15ms 等功率交叉淡化，避免句界硬切/爆音。 */
+function joinAnnounceChunks(parts: Float32Array[], sampleRate: number): Float32Array {
+  if (parts.length <= 1) return parts[0] ?? new Float32Array(0);
+  const fade = Math.max(1, Math.min(Math.floor(sampleRate * 0.015), ...parts.map((part) => Math.floor(part.length / 4))));
+  const total = parts.reduce((sum, part) => sum + part.length, 0) - fade * (parts.length - 1);
+  const out = new Float32Array(total);
+  let write = 0;
+  for (let index = 0; index < parts.length; index++) {
+    const part = parts[index];
+    if (index === 0) {
+      out.set(part, 0);
+      write = part.length;
+      continue;
+    }
+    const base = write - fade;
+    for (let i = 0; i < fade; i++) {
+      const t = i / fade;
+      out[base + i] = out[base + i] * Math.cos(t * Math.PI / 2) + part[i] * Math.sin(t * Math.PI / 2);
+    }
+    out.set(part.subarray(fade), write);
+    write += part.length - fade;
+  }
+  return out.subarray(0, write);
+}
 
 /**
  * 运行中正文播报的**总量预算**（字符，回合级）。
@@ -147,7 +224,9 @@ export function useVoiceAnnounce(threadId: string = ""): void {
    *   ⛔ 刻意**不**跟着回合结束自动解除：用户按停的语义是「我现在不想听」，
    *   下一回合又自动开口 = 白按。开关翻转也会解除（见设置订阅处）。
    */
-  const mutedRef = useRef(false);
+  const threadIdRef = useRef(threadId);
+  threadIdRef.current = threadId;
+  const mutedRef = useRef(isAnnounceMutedForThread(threadId));
   /**
    * 本窗口是不是「播报窗口」（10-21 多窗口唯一播报，用户令「仅应向用户当前所在的会话窗口播报」）。
    *
@@ -268,16 +347,16 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     if (byUser) {
       mutedRef.current = true;
       stoppedRef.current = true;
-      /* ⛔ **全局**静音（10-21）：一个扬声器、一个用户 —— 只闩本窗口的话，另一窗口继续念
-         = 用户体感「停止按钮是假的」（这正是 10-12 那条反馈的跨窗口版本）。
-         主进程收到后广播给所有窗口（含自己，幂等；本地闩锁已置，回来的广播不会再触发动作）。 */
-      void window.codex.announceSetMuted?.({ muted: true }).catch(() => undefined);
+      /* ⛔ 会话级静音（10-22 用户：「每个会话独立状态，喇叭开关只决定当前会话」）：
+         同一 threadId 的其它窗口一起安静；别的会话不受影响。 */
+      setAnnounceMutedForThread(threadId, true);
+      void window.codex.announceSetMuted?.({ muted: true, threadId }).catch(() => undefined);
       /* ⛔ 「已停止」现在**常驻**到用户点「恢复播报」为止（10-12：状态条上必须留着那个出口，
          否则按一次就永久失去播报）。原先那个 1.6s 自动收起定时器已整条删除 ——
          它是「回执」语义，而按停现在同时意味着**静音闩锁**，提示条不该自己消失。 */
     }
     publishStatus();
-  }, [publishStatus, resetLive]);
+  }, [publishStatus, resetLive, threadId]);
 
   /* ⛔⛔ 10-17 用户令「语音播报切换会话会串会话」：`threadId` 一直在参数里，但**没有任何 effect
      监听它变化** ⇒ 切走之后 A 会话的播报继续在 B 会话里响。⇒ 切会话 = 立即停播（同一套 stopPlayback，
@@ -288,18 +367,23 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     prevAnnounceThreadRef.current = threadId;
     stopPlayback(false);
     clearSpokenKeys();
-  }, [threadId, stopPlayback, clearSpokenKeys]);
+    /* 切到另一个会话：恢复它自己的喇叭状态（每个会话独立；没关过就是开）。 */
+    const threadMuted = isAnnounceMutedForThread(threadId);
+    mutedRef.current = threadMuted;
+    stoppedRef.current = threadMuted;
+    publishStatus();
+  }, [threadId, stopPlayback, clearSpokenKeys, publishStatus]);
 
   /** 「恢复播报」：解除静音闩锁，让后续播报重新可用（状态条上的按钮 → announce-bus → 这里）。 */
-  const resumePlayback = useCallback(() => {
-    if (!mutedRef.current) return;
+  const resumePlayback = useCallback((targetThreadId?: string) => {
+    const target = String(targetThreadId || threadId);
+    setAnnounceMutedForThread(target, false);
+    void window.codex.announceSetMuted?.({ muted: false, threadId: target }).catch(() => undefined);
+    if (target !== threadId) return;
     mutedRef.current = false;
     stoppedRef.current = false;
-    /* ⛔ 全局闩锁同步解除（10-21）：否则另一窗口仍被主进程的 mutedAll 拦着，
-       用户在 A 点「恢复」、B 却还是哑的 —— 一个开关两种状态。 */
-    void window.codex.announceSetMuted?.({ muted: false }).catch(() => undefined);
     publishStatus();
-  }, [publishStatus]);
+  }, [publishStatus, threadId]);
 
   const ensureCtx = useCallback((): AudioContext => {
     if (!ctxRef.current) ctxRef.current = new AudioContext();
@@ -383,20 +467,33 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     busyRef.current += 1;
     publishStatus();
     try {
-      const result: any = await window.codex.voicePreviewVoice({ text: deduped.text, speed: opts.speed, numSteps: ANNOUNCE_NUM_STEPS }).catch(() => null);
-      if (epoch !== epochRef.current) return;   // 期间被打断/换轮：这句不念
-      if (mutedRef.current) return;              // 合成期间用户按了停止：这句不念
-      if (!result?.ok || !result.audioBase64 || !result.sampleRate) {
-        // ⛔ 不静默吞：模型没下全 / worker 起不来时，用户会「开了播报却没声音」，日志是唯一线索
-        console.warn("[voice-announce] 合成失败：", result?.error ?? "未知错误");
-        return;
+      /* ⛔ 长稿必须分段合成（用户实测：整段长播报会变小声/沙哑/杂音）。
+         每段 ≤90 字（优先句末/逗号、不留碎片尾巴），全部合成完后交叉淡化拼成一条音频再交给播放队列 ——
+         既避免长 utterance 降质，也不会在句界出现播放空档。 */
+      const chunks = chunkAnnounceText(deduped.text, ANNOUNCE_CHUNK_MAX_CHARS);
+      const parts: Float32Array[] = [];
+      let sampleRate = 0;
+      for (const chunk of chunks) {
+        const result: any = await window.codex.voicePreviewVoice({ text: chunk, speed: opts.speed, numSteps: ANNOUNCE_NUM_STEPS }).catch(() => null);
+        if (epoch !== epochRef.current) return;   // 期间被打断/换轮：这句不念
+        if (mutedRef.current) return;              // 合成期间用户按了停止：这句不念
+        if (!result?.ok || !result.audioBase64 || !result.sampleRate) {
+          // ⛔ 不静默吞：模型没下全 / worker 起不来时，用户会「开了播报却没声音」，日志是唯一线索
+          console.warn("[voice-announce] 合成失败：", result?.error ?? "未知错误");
+          return;
+        }
+        const samples = decodeFloat32Base64(result.audioBase64);
+        if (!samples.length) continue;
+        if (!sampleRate) sampleRate = Number(result.sampleRate);
+        parts.push(samples);
       }
-      const samples = decodeFloat32Base64(result.audioBase64);
-      if (samples.length) {
+      if (!parts.length) return;
+      const joined = joinAnnounceChunks(parts, sampleRate);
+      if (joined.length) {
         // ⛔ 登记必须放在「确认会出声」之后：合成失败不登记，后到的兜底句才不会被误吞
         for (const key of deduped.keys) spokenKeysRef.current.add(key);
         spentCharsRef.current[scope] += deduped.text.length;
-        await play(samples, Number(result.sampleRate), epoch, deduped.text);
+        await play(joined, sampleRate, epoch, deduped.text);
       }
     } finally {
       busyRef.current = Math.max(0, busyRef.current - 1);
@@ -413,7 +510,7 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     if (!stripperRef.current) stripperRef.current = createVoiceScriptStripper();
     const visible = stripperRef.current.push(String(delta ?? ""));
     if (!visible) return;
-    if (!chunkerRef.current) chunkerRef.current = createSentenceChunker({ maxChars: 60 });
+    if (!chunkerRef.current) chunkerRef.current = createSentenceChunker({ maxChars: 90 });
     if (!filterRef.current) filterRef.current = createSpeakFilter();
     const epoch = epochRef.current;
     const sentences: string[] = chunkerRef.current.push(visible);
@@ -442,7 +539,7 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     const tail = stripperRef.current?.flush() ?? "";
     const tailSentences: string[] = [];
     if (tail) {
-      if (!chunkerRef.current) chunkerRef.current = createSentenceChunker({ maxChars: 60 });
+      if (!chunkerRef.current) chunkerRef.current = createSentenceChunker({ maxChars: 90 });
       if (!filterRef.current) filterRef.current = createSpeakFilter();
       tailSentences.push(...chunkerRef.current.push(tail), ...chunkerRef.current.flush());
     }
@@ -512,9 +609,10 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       if (enabled && mutedRef.current) {
         mutedRef.current = false;
         stoppedRef.current = false;
-        /* ⛔ 全局闩锁一起解除（10-21）：用户重新打开总开关 = 「我又想听了」，
-           别的窗口也必须恢复 —— 否则设置页显示开着、那个窗口却永远哑着。 */
-        void window.codex.announceSetMuted?.({ muted: false }).catch(() => undefined);
+        /* 用户重新打开总开关 = 「我又想听了」：只解除**当前会话**的喇叭闩锁，
+           其它会话各自的开关状态保持不动（10-22 会话级状态）。 */
+        setAnnounceMutedForThread(threadIdRef.current, false);
+        void window.codex.announceSetMuted?.({ muted: false, threadId: threadIdRef.current }).catch(() => undefined);
       }
       /* ★ 预热：播报要在回合结束时才合成，第一次还要加载 156MB 克隆模型 ⇒ 用户听到的是
          「回合结束好几秒后才开口」。开关打开/音色切换时先让主进程把试听 worker 建起来
@@ -546,16 +644,20 @@ export function useVoiceAnnounce(threadId: string = ""): void {
         不适合在每次开口前同步问主进程（那是每段合成一次 IPC 往返）。 */
   useEffect(() => {
     let alive = true;
-    void window.codex.announceOwner?.()
+    void window.codex.announceOwner?.(threadId)
       .then((r: any) => {
         if (!alive) return;
         if (typeof r?.owner === "boolean") isOwnerRef.current = r.owner;
-        /* ⛔ 全局静音态必须同步（10-21 自查的真漏洞）：用户已经在别的窗口按过「停止播报」，
-           新开的窗口若只拿 owner 不拿 muted，会以为自己没被静音 ⇒ 照念。
-           「我是不是 owner」是静态归属，「现在该不该出声」还要看这条。 */
-        if (r?.muted === true) {
+        /* ⛔ 会话级静音态必须同步（10-22）：别的窗口按过当前会话的「停止播报」时，
+           新开窗口只拿 owner 不拿 muted 会照念；本地 localStorage 里也有同一会话的持久状态。 */
+        const persistedMuted = isAnnounceMutedForThread(threadId);
+        if (persistedMuted || r?.muted === true) {
+          setAnnounceMutedForThread(threadId, true);
           mutedRef.current = true;
           stoppedRef.current = true;
+          if (persistedMuted && r?.muted !== true) {
+            void window.codex.announceSetMuted?.({ muted: true, threadId }).catch(() => undefined);
+          }
         }
         /* ⛔ 通话态同理（10-21 自查）：主窗口**已经在通话**时新开弹窗，收不到那次状态广播
            （广播只在变化时发）⇒ 必须从初值里拿，否则一开口就与通话 TTS 抢扬声器。 */
@@ -575,12 +677,19 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       else publishStatus();
     });
     const offMuted = window.codex.onAnnounceMuted?.((s: any) => {
+      const target = String(s?.threadId ?? threadId);
       const next = s?.muted === true;
+      // 别的会话的喇叭变化只更新共享状态，不碰当前会话的播放队列。
+      if (target !== threadId) {
+        setAnnounceMutedForThread(target, next);
+        return;
+      }
+      if (!next) setAnnounceMutedForThread(threadId, false);
       if (next === mutedRef.current) return;
       mutedRef.current = next;
       if (next) {
-        /* 别的窗口按了停止：本窗口也要**真的**安静（不只是显示）——清队列 + 掐掉三条入口的标记。
-           ⛔ `stopPlayback(false)` 而不是 `(true)`：否则会把「全局闩锁」再广播一遍（回环）。 */
+        /* 同一会话的另一个窗口按了停止：本窗口也要**真的**安静（不只是显示）。
+           ⛔ `stopPlayback(false)`：不要再次广播（回环）。 */
         stoppedRef.current = true;
         stopPlayback(false);
       } else {
@@ -716,16 +825,16 @@ export function useVoiceAnnounce(threadId: string = ""): void {
   // 「停止播报」出口（状态栏 / 悬浮球右键菜单）：非通话播报不开麦、界面很小，
   // 没有这个出口用户就只能等它念完 —— 与 wave-level 的结束通话/打断同一套广播注册。
   useEffect(() => {
-    setAnnounceStopHandler(() => { stopPlayback(true); });
+    setAnnounceStopHandler((target) => { if (!target || target === threadId) stopPlayback(true); });
     /* ⛔ 「恢复播报」出口（10-12）：静音闩锁必须可解除，否则用户按一次停止就永久失去播报
        （比"停不下来"更糟：他想听的时候再也听不到了）。与停止出口成对注册、一起注销 ——
        两个出口的生命周期必须绑在同一个 effect，否则卸载时容易只清掉一个（留下一个指向
        已卸载 hook 的回调 = 下次点击报 "Cannot read properties of null"）。 */
-    setAnnounceResumeHandler(() => { resumePlayback(); });
+    setAnnounceResumeHandler((target) => { resumePlayback(target); });
     // 通话一开始就停掉独立播报：否则通话的播报与这里排队的音频会同时出声
     const offStage = subscribeVoiceStage((stage) => { if (stage.active) stopPlayback(); });
     return () => { setAnnounceStopHandler(null); setAnnounceResumeHandler(null); offStage(); };
-  }, [resumePlayback, stopPlayback]);
+  }, [resumePlayback, stopPlayback, threadId]);
 
   // 卸载：释放音频上下文（不留后台播放）
   useEffect(() => () => {

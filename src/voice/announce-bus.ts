@@ -51,15 +51,15 @@ export function announceListenerCount(): number {
 //    ⛔ 为什么必须有这个出口：非通话播报是**只管说、不管听**的（不开麦克风），
 //      没有它用户就**没有任何办法让它闭嘴** —— 一条长回复能被念上好几分钟。
 //      与 wave-level 的 setVoiceStopHandler / setVoiceSkipHandler 同一套广播范式。
-let stopHandler: (() => void) | null = null;
-let resumeHandler: (() => void) | null = null;
+let stopHandler: ((threadId?: string) => void) | null = null;
+let resumeHandler: ((threadId?: string) => void) | null = null;
 
-export function setAnnounceStopHandler(fn: (() => void) | null): void {
+export function setAnnounceStopHandler(fn: ((threadId?: string) => void) | null): void {
   stopHandler = fn;
 }
 
-export function requestAnnounceStop(): void {
-  try { stopHandler?.(); } catch { /* 停止失败不影响别的功能 */ }
+export function requestAnnounceStop(threadId?: string): void {
+  try { stopHandler?.(threadId); } catch { /* 停止失败不影响别的功能 */ }
 }
 
 /* ── 「恢复播报」出口（10-12 用户：「停止都停止不了，一直播报」）────────────────────
@@ -67,12 +67,51 @@ export function requestAnnounceStop(): void {
       拦下后续所有播报——正文实时 / 工具插播 / 结束播报稿三条入口全过那一处）。
       只有闩锁没有解除口 = 用户按一次就把播报永久废了（比"停不下来"更糟：他再也听不到了）。
       出口放在**状态条**上（按停后它本来就不消失 ⇒ 那里正是用户手指刚离开的地方）。 */
-export function setAnnounceResumeHandler(fn: (() => void) | null): void {
+export function setAnnounceResumeHandler(fn: ((threadId?: string) => void) | null): void {
   resumeHandler = fn;
 }
 
-export function requestAnnounceResume(): void {
-  try { resumeHandler?.(); } catch { /* 恢复失败不影响别的功能 */ }
+export function requestAnnounceResume(threadId?: string): void {
+  try { resumeHandler?.(threadId); } catch { /* 恢复失败不影响别的功能 */ }
+}
+
+/* ── 会话级播报开关（10-22 用户：「每个会话独立状态，喇叭开关只决定当前会话」）──────
+   为什么放在总线：TurnView 的 📢 按钮、悬浮球右键菜单、状态条、执行端 hook 四处都要读/写
+   同一个状态；总线是它们唯一的公共面。状态按 threadId 分开，并落 localStorage ——
+   同一会话重开仍保持用户的选择，不同会话互不影响。 */
+const THREAD_MUTE_KEY = "announce-muted-threads";
+function readMutedThreads(): Set<string> {
+  try {
+    const raw = localStorage.getItem(THREAD_MUTE_KEY);
+    const list = JSON.parse(raw || "[]");
+    return new Set(Array.isArray(list) ? list.map(String).filter(Boolean) : []);
+  } catch {
+    return new Set();
+  }
+}
+const mutedThreads = readMutedThreads();
+const threadMuteListeners = new Set<() => void>();
+
+export function isAnnounceMutedForThread(threadId: string): boolean {
+  return Boolean(threadId) && mutedThreads.has(threadId);
+}
+
+export function subscribeAnnounceThreadMuted(listener: () => void): () => void {
+  threadMuteListeners.add(listener);
+  return () => { threadMuteListeners.delete(listener); };
+}
+
+export function setAnnounceMutedForThread(threadId: string, muted: boolean): void {
+  const id = String(threadId ?? "");
+  if (!id) return;
+  const had = mutedThreads.has(id);
+  if (had === muted) return;
+  if (muted) mutedThreads.add(id);
+  else mutedThreads.delete(id);
+  try { localStorage.setItem(THREAD_MUTE_KEY, JSON.stringify([...mutedThreads])); } catch { /* 隐私模式 */ }
+  for (const listener of threadMuteListeners) {
+    try { listener(); } catch { /* 单个订阅者失败不影响其它 */ }
+  }
 }
 
 /* ── 「播报状态」广播（10-09 用户：「增加播报进行中的实时反馈」）────────────────────

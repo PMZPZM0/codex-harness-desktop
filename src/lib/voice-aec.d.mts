@@ -49,8 +49,12 @@ export declare function createEchoGate(options?: EchoGateOptions): EchoGate;
 
 export interface SentenceChunkerOptions {
   maxChars?: number;
-  /** 首句阈值（默认 min(10, maxChars)：首句尽早出声，后续仍按 maxChars 攒长句） */
+  /** 首句阈值（默认 min(24, maxChars)：首句尽早出声，后续仍按 maxChars 攒长句） */
   firstMaxChars?: number;
+  /** 无标点时可等待的硬上限（默认 max(maxChars + 30, maxChars * 1.35)） */
+  hardCap?: number;
+  /** 首块无标点时的硬上限（默认 max(firstMaxChars + 6, 30)） */
+  firstHardCap?: number;
 }
 
 export interface SentenceChunker {

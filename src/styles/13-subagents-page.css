@@ -796,6 +796,127 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 回合头 📢：当前会话的语音播报开关（10-22 用户：「在 codex 名字后面加一个📢按键图标开关，
+   每个会话独立状态，跟悬浮球里的停止/恢复同步」）。
+   ⛔ 纯图标按钮 ⇒ 必须带 aria-label/title（组件已给）；⛔ 关态不能只靠颜色区分
+   （图标换成带斜杠的扬声器 + 压进底色，色彩不是唯一线索）。 */
+.turn-head-announce-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+.turn-head-announce {
+  appearance: none;
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  line-height: 0;
+  cursor: pointer;
+  transition: color var(--dur-ui) ease-out, background-color var(--dur-ui) ease-out, border-color var(--dur-ui) ease-out, transform var(--dur-ui) ease-out;
+}
+.turn-head-announce:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+.turn-head-announce:active {
+  transform: scale(0.94);
+}
+.turn-head-announce:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.turn-head-announce.muted {
+  color: var(--muted);
+  background: var(--panel-2);
+  border-color: var(--line);
+}
+/* 正在播报：声波依次扩散 + 一圈很淡的呼吸环（10-22 用户「喇叭播放特效」）。
+   ⛔ 只动 transform/opacity；时长走 --dur-ui 附近的动效带，降级由全局 prefers-reduced-motion 兜底。 */
+.turn-head-announce.is-playing {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.turn-head-announce.is-playing::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  opacity: 0.2;
+  pointer-events: none;
+  animation: announce-ring 1.8s ease-out infinite;
+}
+.turn-head-announce-icon {
+  display: block;
+  overflow: visible;
+}
+.announce-speaker {
+  fill: currentColor;
+}
+.announce-slash {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+.announce-wave {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  opacity: 0.5;
+  transform-box: fill-box;
+  transform-origin: left center;
+}
+.announce-waves.is-playing .announce-wave {
+  opacity: 1;
+  animation: announce-wave 1.5s ease-out infinite;
+}
+.announce-waves.is-playing .wave-2 {
+  animation-delay: 0.18s;
+}
+@keyframes announce-wave {
+  0% { opacity: 0.25; transform: scale(0.72); }
+  35% { opacity: 1; }
+  100% { opacity: 0.15; transform: scale(1.12); }
+}
+@keyframes announce-ring {
+  0% { transform: scale(0.92); opacity: 0.3; }
+  70%, 100% { transform: scale(1.16); opacity: 0; }
+}
+/* 开关翻转的就地提醒（10-22 用户：「语音播报开启关闭做一个弹窗提醒」）：
+   2 秒后自动消失、不占布局、不挡点击；role=status + aria-live 让读屏也能听到。 */
+.turn-head-announce-toast {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 6px);
+  z-index: 8;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateY(-50%);
+  animation: announce-toast-in 180ms ease-out;
+}
+@keyframes announce-toast-in {
+  from { opacity: 0; transform: translate(-4px, -50%); }
+  to { opacity: 1; transform: translate(0, -50%); }
+}
 /* 头像：圆角方形（与应用图标同体系，且与用户头像的圆形区分开） */
 .codex-avatar-img {
   display: block;

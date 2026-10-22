@@ -12,19 +12,19 @@
  *
  * ── 10-12 用户反馈三连，逐一对应到本组件 ─────────────────────────────────────
  *   「停止都停止不了，一直播报」⇒ 真正的修复在执行端（静音闩锁，`use-voice-announce.ts`）；
- *     本组件负责**让停止看起来可信、也让恢复找得到**：按停后条子不再自动消失，
- *     换成「已停止 · 恢复播报」，手指刚离开的地方就是恢复的地方。
+ *     本组件负责**让停止看起来可信**：只在真的出声/排队时出现，按钮随时可按。
  *   「语音播报有点丑」        ⇒ 见下方标记的几处：宽度改为**贴合内容**（不再强制 280px 起
  *     把正文挤成省略号）、按钮补 `appearance:none`（本项目铁律：暗色下原生 `<button>`
  *     按浅色 UA 绘制，不重置就是一块突兀的浅底）、点击区抬到 32px、字号到 12px。
+ *   10-22 用户：「有这个小喇叭就行了，下面这个已停止播报的这个不要」⇒ 删掉 stopped 常驻态；
+ *     开关与恢复归回合头 📢 / 悬浮球菜单，条子不再兼任第二个恢复出口。
  *
  * ⛔ 数据来源：`announce-bus` 的状态广播（执行端推过来的**事实**），这里不做任何"是不是在念"的推断。
  */
 import { useEffect, useRef, useState } from "react";
-import { Play, Square, Volume2 } from "lucide-react";
+import { Square, Volume2 } from "lucide-react";
 import {
   getAnnounceStatus,
-  requestAnnounceResume,
   requestAnnounceStop,
   subscribeAnnounceStatus,
   type AnnounceStatus,
@@ -46,7 +46,7 @@ export function VoiceAnnounceIndicator() {
 
   // 贴合输入框（同 VoiceWaveform：量 composer 矩形 → 写自己的行内几何）
   useEffect(() => {
-    if (!status.active && !status.stopped) return;
+    if (!status.active) return;
     const el = rootRef.current;
     if (!el) return;
     const anchor = (el.closest(".composer-wrap") ?? el.parentElement) as HTMLElement | null;
@@ -67,30 +67,14 @@ export function VoiceAnnounceIndicator() {
     observer?.observe(anchor);
     window.addEventListener("resize", place);
     return () => { observer?.disconnect(); window.removeEventListener("resize", place); };
-  }, [status.active, status.stopped]);
+  }, [status.active]);
 
-  if (!status.active && !status.stopped) return null;
+  /* ⛔ 10-22 用户：「有这个小喇叭就行了，下面这个已停止播报的这个不要」——
+     静音/恢复的出口已经收口到回合头的 📢 与悬浮球菜单，条子只在**真的在播报**时出现，
+     不再常驻「已停止播报 · 恢复」（同一个出口挂在两处只会互相抢注意力，且停在输入框上方很碍事）。 */
+  if (!status.active) return null;
 
   const current = String(status.current ?? "").trim();
-  /* ⛔ 静音优先于"已停止"回执的显示：两者都由 `stopped` 触发，但只有 `muted` 才有恢复出口
-     —— 分开渲染才能保证"条子上一定有办法恢复"（用户看不到出口就等于永久失去播报）。 */
-  if (status.stopped) {
-    return (
-      <div className="voice-announce-bar is-stopped" ref={rootRef} role="status" aria-live="polite">
-        <Volume2 size={13} className="voice-announce-icon" aria-hidden="true" />
-        <span className="voice-announce-mode">已停止播报</span>
-        <button
-          type="button"
-          className="voice-announce-stop"
-          onClick={() => requestAnnounceResume()}
-          title="恢复语音播报（下次播报照常念出来）"
-        >
-          <Play size={11} />恢复
-        </button>
-      </div>
-    );
-  }
-
   return (
     <div className="voice-announce-bar is-active" ref={rootRef} role="status" aria-live="polite">
       <span className="voice-announce-dot" aria-hidden="true" />
