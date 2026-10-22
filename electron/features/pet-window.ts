@@ -131,6 +131,8 @@ function stopPetMouseWatch(): void {
 export function setPetInteractiveRect(rect: PetInteractiveRect | null): void {
   petInteractiveRect = rect && rect.width > 0 && rect.height > 0 ? rect : null;
   applyPetMouseState();
+  /* 气泡若先于本体矩形创建，会按窗口上沿定位；矩形一上报就重排到宠物头顶。 */
+  if (petInteractiveRect && isPetActivityWindowOpen()) positionPetActivityWindow(activityWindowSize(petSignal()));
 }
 
 /** 宠物窗当前是否可交互（false = 整块穿透）。诊断 / 守卫用。 */
@@ -175,6 +177,25 @@ export function isPetVisible(): boolean {
 export function petWindowBounds() {
   if (!isPetWindowOpen()) return null;
   return petWindow!.getBounds();
+}
+
+/** 诊断：窗口是否可交互 / 上报的本体矩形 / 指针与窗口坐标 —— `pet:state` 透出，供真机排查。 */
+export function petWindowDiagnostics() {
+  let cursor: { x: number; y: number } | null = null;
+  let bounds: Rectangle | null = null;
+  let computedInside: boolean | null = null;
+  try {
+    bounds = petWindow && !petWindow.isDestroyed() ? petWindow.getBounds() : null;
+    cursor = screen.getCursorScreenPoint();
+    if (bounds && petInteractiveRect) {
+      const r = petInteractiveRect;
+      computedInside = cursor.x >= bounds.x + r.x - PET_HIT_PADDING
+        && cursor.x <= bounds.x + r.x + r.width + PET_HIT_PADDING
+        && cursor.y >= bounds.y + r.y - PET_HIT_PADDING
+        && cursor.y <= bounds.y + r.y + r.height + PET_HIT_PADDING;
+    }
+  } catch { /* 诊断失败不影响主流程 */ }
+  return { interactive: petMouseInteractive, hitRect: petInteractiveRect, dragging: petDragging, cursor, bounds, computedInside };
 }
 
 /** 主进程 → 浮窗的状态推送（浮窗首帧还会自己 invoke pet:state 补水，防漏推）。 */
@@ -239,9 +260,16 @@ function positionPetActivityWindow(size: { width: number; height: number }) {
   try { petBounds = petWindow!.getBounds(); } catch { return; }
   if (!petBounds.width || !petBounds.height) return;
   const work = screen.getDisplayMatching(petBounds).workArea;
-  let x = Math.round(petBounds.x + petBounds.width / 2 - size.width / 2);
-  let y = petBounds.y - size.height - ACTIVITY_EDGE;
-  if (y < work.y + ACTIVITY_EDGE) y = petBounds.y + petBounds.height + ACTIVITY_EDGE;
+  /* 10-22 用户实测「离得太远了」：气泡原来贴的是**窗口**上沿，而宠物精灵在窗口里还有 ~97px
+     的透明留白 ⇒ 气泡浮在头顶很远。改为按渲染层上报的「宠物本体矩形」定位（没有就回退窗口）。 */
+  const hit = petInteractiveRect;
+  const petLeft = petBounds.x + (hit ? hit.x : 0);
+  const petTop = petBounds.y + (hit ? hit.y : 0);
+  const petRight = petBounds.x + (hit ? hit.x + hit.width : petBounds.width);
+  const petBottom = petBounds.y + (hit ? hit.y + hit.height : petBounds.height);
+  let x = Math.round((petLeft + petRight) / 2 - size.width / 2);
+  let y = petTop - size.height - ACTIVITY_EDGE;
+  if (y < work.y + ACTIVITY_EDGE) y = petBottom + ACTIVITY_EDGE;
   x = Math.min(Math.max(x, work.x + ACTIVITY_EDGE), work.x + work.width - size.width - ACTIVITY_EDGE);
   y = Math.min(Math.max(y, work.y + ACTIVITY_EDGE), work.y + work.height - size.height - ACTIVITY_EDGE);
   try { win.setBounds({ x, y, ...size }); } catch { /* 忽略 */ }
@@ -379,6 +407,8 @@ export function movePet(screenX: number, screenY: number): boolean {
       width: origin.bounds.width,
       height: origin.bounds.height,
     });
+    /* 10-22：拖宠物时活动气泡跟着走（原来只在下次信号推送才重排 ⇒ 看起来「甩掉了」）。 */
+    if (isPetActivityWindowOpen()) positionPetActivityWindow(activityWindowSize(petSignal()));
     return true;
   } catch { return false; }
 }

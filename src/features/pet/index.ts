@@ -9,3 +9,4 @@ export { PetActivity } from "./PetActivity";
 export type { PetFloatProps } from "./PetFloat";
 export { PET_STATES, PET_DEFAULT_COLUMNS, PET_DEFAULT_ROWS, PET_DEFAULT_FRAME, petAssetUrl } from "./pet-format";
 export type { PetStateId } from "./pet-format";
+export { PetFocusBridge } from "./PetFocusBridge";

@@ -304,9 +304,14 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
       observer.disconnect();
       window.removeEventListener("resize", schedule);
       if (raf) cancelAnimationFrame(raf);
-      void window.codex.petInteractiveRect(null).catch(() => undefined);
+      /* ⛔ 这里**不能**上报 null：hover / 包切换都会重跑本 effect，null 会让主进程把整窗切成
+         穿透 —— 用户正好在这一帧按下左键，宠物就「拖不动」。null 只在组件真正卸载时发（下面那个
+         mount-only effect）。 */
     };
   }, [pkg, renderedFrameHeight, hover]);
+  useEffect(() => () => {
+    void window.codex.petInteractiveRect(null).catch(() => undefined);
+  }, []);
 
   return (
     <div
