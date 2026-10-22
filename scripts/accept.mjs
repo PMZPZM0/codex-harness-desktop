@@ -1346,7 +1346,18 @@ const CHECKS = [
         return !!close;
       })()`).catch(() => false);
       if (closedOffice) await wait(400);
-      await h.waitFor(`!!document.querySelector(".turn-head-announce")`, { label: "回合头喇叭按钮", timeoutMs: 20000 }).catch(() => undefined);
+      /* 持久 profile 当前会话也可能是一条**报错回合**（没有 Codex 回合头，例如缺 API key）——
+         逐个点侧栏旧会话，找到真有回合头的那个；不新建会话、不发消息。 */
+      let hasToggle = await h.eval(`!!document.querySelector(".turn-head-announce")`).catch(() => false);
+      if (!hasToggle) {
+        const totalRows = Number(await h.eval(`document.querySelectorAll(".thread-row").length`)) || 0;
+        for (let i = 0; i < Math.min(totalRows, 12) && !hasToggle; i += 1) {
+          await h.eval(`(function(){ var row=document.querySelectorAll(".thread-row")[${i}]; var btn=row&&row.querySelector("button"); if(btn) btn.click(); return !!btn; })()`).catch(() => false);
+          await wait(900);
+          hasToggle = await h.eval(`!!document.querySelector(".turn-head-announce")`).catch(() => false);
+        }
+      }
+      await h.waitFor(`!!document.querySelector(".turn-head-announce")`, { label: "回合头喇叭按钮", timeoutMs: 10000 }).catch(() => undefined);
       const initial = await h.eval(`(function(){
         var btn=document.querySelector(".turn-head-announce");
         var name=document.querySelector(".turn-head-name");
