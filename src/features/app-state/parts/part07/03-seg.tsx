@@ -16,7 +16,6 @@ import { setFavoriteHandler, type FavoriteRequest } from "../../../../lib/favori
 import { basename } from "../../../../lib/basename";
 import { cancelHistoryPin, clearHistoryPin, clearHistoryPinState, contentOffsetTop, scrollToOffsetInstant, setHistoryPin, setHistoryPinState, type HistoryPinState } from "../../../../components/scroll-utils";
 import { Turn } from "../../../../lib/turn";
-import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
 import type { Bag } from "../bag-types";
 
 /* 10-21：这两个游标必须跨渲染存活 —— 放在 hook 体内会每次渲染归零（冷却窗形同虚设）。 */

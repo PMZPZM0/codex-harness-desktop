@@ -1766,13 +1766,23 @@ w.postMessage({id:1,op:"list",root});
          ⛔ 无阈值可调、无需读图；坐标一旦写回椅背范围立刻变红。 */
     const fmtSrc = existsSync(join(ROOT, "src", "features", "team-office", "office-format.ts"))
       ? readFileSync(join(ROOT, "src", "features", "team-office", "office-format.ts"), "utf8") : "";
-    const seatRows = [...fmtSrc.matchAll(/y:\s*(-?\d+),\s*facing:\s*"up",\s*backrest:\s*\{\s*dx:\s*(-?\d+),\s*dy:\s*(-?\d+),\s*w:\s*\d+,\s*h:\s*\d+\s*\},\s*screen:\s*\{\s*x:\s*(-?\d+),\s*y:\s*(-?\d+),\s*w:\s*(\d+),\s*h:\s*(\d+)\s*\}/g)];
-    (seatRows.length === 6 ? ok : fail)(`【154】SEATS 六个座位都带 screen 矩形（解析到 ${seatRows.length} 个 —— ⛔ 0 个说明正则失配、断言在空跑）`);
-    const onChair = seatRows.filter((m) => Number(m[5]) + Number(m[7]) > Number(m[3]));
-    (onChair.length === 0 ? ok : fail)(`【154】⛔⛔ 每个屏面都**完全在椅背上方**（压到椅背上会被椅背重贴整块盖掉）—— 违例 ${onChair.length} 个`);
-    /* ⛔ 判据落在**注释里**（量法说明）⇒ ⛔ 不能先剥注释再找（那样必然恒红 —— 第一版就写错了）。 */
-    (/(is_glass|sum\s*<\s*190)/.test(fmtSrc) ? ok : fail)(
-      "【154】量法注释点名**亮度判据**（⛔ 旧的 `b>r+20` 类判据会把椅背一起收进来）");
+    const sceneCanvas154 = existsSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"))
+      ? readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8") : "";
+    (fmtSrc.includes("export const CANVAS_W = 1792") && fmtSrc.includes("export const CANVAS_H = 960") ? ok : fail)(
+      "【154】办公室 = 交互式 3D 场景（1792×960 场景图画布）"
+    );
+    (/import bgUrl from "\.\/assets\/office-bg\.webp\?inline"/.test(sceneCanvas154) ? ok : fail)(
+      "【154】场景底图 ?inline 强制 data: URI（拆成独立文件 = 构建版 file:// 白屏）"
+    );
+    (sceneCanvas154.includes("const ANCHORS: Anchor[] = [") && (sceneCanvas154.match(/screen: \{ x: \d+,/g) ?? []).length === 10 ? ok : fail)(
+      "【154】10 个可点热点（人物/椅子 + 状态屏矩形）"
+    );
+    (sceneCanvas154.includes("openRef.current?.(hit.id)") ? ok : fail)(
+      "【154】点击人物热点进入该成员会话（安居客式漫游交互）"
+    );
+    (!/OfficeSim|SEATS|drawScreen\(/.test(sceneCanvas154) ? ok : fail)(
+      "【154】旧走位模拟/逐帧画显示器已整体退役（场景热点取代）"
+    );
     const officeCss = existsSync(join(ROOT, "src", "styles", "20-team-office.css")) ? readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8") : "";
     /* 形态守卫（09-27 v8「PixiJS 渲染」）：v1 折线图 / v2 div 色块 / v3 单张 SVG 插画
        三版都被用户否过（「歪歪扭扭」「不好看」「手绘人物和素材家具违和」）⇒ 断言钉死：
@@ -1788,37 +1798,14 @@ w.postMessage({id:1,op:"list",root});
     const screenSrc154 = existsSync(screenPath154) ? readFileSync(screenPath154, "utf8") : "";
     const cssSrc154 = existsSync(join(ROOT, "src", "styles", "20-team-office.css"))
       ? readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8") : "";
-    (canvasSrc154.includes('getContext("2d")') && canvasSrc154.includes("drawScreen(") ? ok : fail)(
-      "【154】场景是原生 canvas 2D 且逐帧画显示器内容（v19 形态）"
+    (cssSrc154.includes(".office-pixel-canvas") && /image-rendering: auto/.test(cssSrc154) ? ok : fail)(
+      "【154】画布宿主样式齐全且按照片平滑渲染（不再 pixelated）"
     );
-    (cssSrc154.includes(".office-pixel-canvas") ? ok : fail)(
-      "【154】画布宿主容器样式齐全（.office-pixel-canvas —— 类名是接口）"
+    (!canvasSrc154.includes("ipcRenderer") && !/window as any\)\.codex/.test(canvasSrc154) && canvasSrc154.includes("membersRef") ? ok : fail)(
+      "【154】画布层零 IPC（成员状态由宿主 props 传入）"
     );
-    (!/\.ofc-(desk|bubble|type-a|zzz|sip)/.test(cssSrc154) ? ok : fail)(
-      "【154】⛔ 场景级 .ofc-* 旧样式已清干净（留着 = 死样式，CSS 覆盖告警会一直报）"
-    );
-    /* ⛔⛔ 显示器内容必须画在**背景之后**：画在背景前等于没画（会被背景盖掉）。 */
-    const drawIdx154 = canvasSrc154.indexOf("drawScreen(");
-    const bgIdx154 = canvasSrc154.indexOf("ctx.drawImage(bg, 0, 0, CANVAS_W, CANVAS_H)");
-    (bgIdx154 >= 0 && drawIdx154 > bgIdx154 ? ok : fail)(
-      "【154】⛔⛔ 显示器内容画在背景之后（画在背景前 = 被背景盖住 = 用户报的「没显示」）"
-    );
-    (!canvasSrc154.includes("ipcRenderer") && !/window as any\)\.codex/.test(canvasSrc154) ? ok : fail)(
-      "【154】画布层零 IPC（事件驱动：成员状态由宿主 props 传入）"
-    );
-    /* ⛔⛔ 待机 ≠ 熄屏（10-05 用户报「显示器都还是固定的」的第二层原因）：
-       `idle` 必须有**自己的**屏保分支，⛔ 不许再让它落到 `off`。 */
-    (/if \(mode === "idle"\)/.test(screenSrc154) ? ok : fail)(
-      "【154】⛔⛔ idle 有自己的屏保分支（⛔ 退回 off ⇒ 委托跑完全员待机、六屏全黑静止）"
-    );
-    (/return "code";[\s\S]{0,300}?return "idle";/.test(screenSrc154) ? ok : fail)(
-      "【154】⛔⛔ 有人坐工位但没在跑 ⇒ 映射到 idle（屏保），⛔ 不是 off"
-    );
-    (/if \(!input\.occupied\) return "off";/.test(screenSrc154) ? ok : fail)(
-      "【154】off 语义收窄为**空座**（⛔ 别再让「待机」共用它）"
-    );
-    (/let officeSimSingletonRef/.test(canvasSrc154) ? ok : fail)(
-      "【154】sim 是模块级常驻单例（⛔ 组件级 ⇒ 每次打开预览都重播进场）"
+    (canvasSrc154.includes("imageSmoothingEnabled = true") && !canvasSrc154.includes("imageSmoothingEnabled = false") ? ok : fail)(
+      "【154】照片场景开平滑（关掉会糊成马赛克）"
     );
   }
 
@@ -3297,325 +3284,67 @@ w.postMessage({id:1,op:"list",root});
   }
 
 
-  /* ══ 【233】像素办公室（team-office v19）═════════════════════════════
-     实现整体删除过一次（用户「太丑了」），重做后按「目录存在才跑」守卫；
-     ⛔ 断言钉的都是这轮实测踩过的坑，别删。 */
+  /* ══ 【233】交互式办公室场景（team-office，2026-10-22 重做）═══════════
+     用户方向：**不再代码画卡通风人物/房间**；场景 = 生成好的 3D 办公室场景图，
+     人物是可点击热点（安居客式漫游）—— 点击进入该成员会话、悬停看状态。 */
   if (!existsSync(join(ROOT, "src", "features", "team-office", "office-format.ts"))) {
-    /* v19 实现不在（再次下线）⇒ 跳过 */
+    /* 实现不在（再次下线）⇒ 跳过 */
   } else {
-    const fmtSrc = readFileSync(join(ROOT, "src", "features", "team-office", "office-format.ts"), "utf8");
-    const simSrc = readFileSync(join(ROOT, "src", "features", "team-office", "office-sim.ts"), "utf8");
-    const canvasSrc = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
-
-    /* ① 精灵格式常量与 MetroCity 图集一致（16×32，7 列；列 6 = 坐姿） */
-    (fmtSrc.includes("FRAME_W = 16") && fmtSrc.includes("FRAME_H = 32") ? ok : fail)(
-      "【233】精灵帧 16×32（MetroCity CC0 图集网格）"
+    const fmtSrc233 = readFileSync(join(ROOT, "src", "features", "team-office", "office-format.ts"), "utf8");
+    const canvasSrc233 = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
+    const asset233 = join(ROOT, "src", "features", "team-office", "assets", "office-bg.webp");
+    (existsSync(asset233) && statSync(asset233).size > 120 * 1024 ? ok : fail)(
+      "【233】3D 办公室场景图存在且是高清底图（>120KB）"
     );
-    (fmtSrc.includes("COL_SIT = 6") ? ok : fail)("【233】坐姿列号 = 6（图集第 7 列）");
-
-    /* ② ⛔ 座位格必须在碰撞图的可走行：桌矩形 y1 只到 8/13（椅行 9/14 留空）。
-       座位被挡 ⇒ findPath 返回 null ⇒ 成员永远走不到工位（实测全员困在门口） */
-    (/\{ x0: 6, y0: 6, x1: 10, y1: 8 \}/.test(simSrc) && /\{ x0: 19, y0: 11, x1: 23, y1: 13 \}/.test(simSrc) ? ok : fail)(
-      "【233】桌碰撞矩形不含椅子行（椅行 9/14 可走）"
+    (/import bgUrl from "\.\/assets\/office-bg\.webp\?inline"/.test(canvasSrc233) ? ok : fail)(
+      "【233】场景图 ?inline 强制 data: URI（拆成独立文件 = 构建版 file:// 白屏）"
     );
-
-    /* ③ ⛔ 门凹龛必须连通房间（col 5 也要开）—— 只开 2-4 会被左墙封死 */
-    (simSrc.includes("for (const x of [2, 3, 4, 5]) g[at(x, y)] = 0;") ? ok : fail)(
-      "【233】门凹龛连通房间（cols 2-5 × rows 15-18）"
+    (fmtSrc233.includes("export const CANVAS_W = 1792") && fmtSrc233.includes("export const CANVAS_H = 960")
+      && fmtSrc233.includes("TEAM_OFFICE_LIMIT = 10") ? ok : fail)(
+      "【233】画布 = 场景图原生 1792×960 / 人数上限 10"
     );
-
-    /* ③b ⛔ 行为模型 = 人人有工位、坐班是常态（09-30 用户纠错：别把没任务的人映射成永久闲逛） */
-    (simSrc.includes("坐班是常态") && simSrc.includes("onBreak") ? ok : fail)(
-      "【233】坐班常态模型（非 running 也坐工位，闲逛只是短暂休息）"
+    (canvasSrc233.includes("const ANCHORS: Anchor[] = [") && (canvasSrc233.match(/screen: \{ x: \d+,/g) ?? []).length === 10 ? ok : fail)(
+      "【233】10 个热点锚点（人物/椅子 + 状态屏矩形，一对一）"
     );
-
-    /* ③c ⛔ 回工位必须**当场 BFS 重规划**并精确落到座位像素；⛔ 不许回放"来时路线的反向"
-     * （10-06 晚逐帧实测：陈旧 homePath 的头是**出发地** ⇒ 人朝饮水机走直线、撞进「桌子行 +
-     *  座位格」的夹角 ⇒ 每帧动 0.68px 却从不靠近路点、`path` 一格不减，僵持 1692 秒）。 */
-    (simSrc.includes("private headHome") && simSrc.includes("back.push({ x: seat.x, y: seat.y })") && !/\.homePath\s*=/.test(simSrc) ? ok : fail)(
-      "【233】回工位当场重规划 + 精确落座（⛔ homePath 已整体删除，不许回放陈旧路线）"
+    (canvasSrc233.includes("openRef.current?.(hit.id)") && /addEventListener\("mousemove"/.test(canvasSrc233)
+      && /cursor = id \? "pointer"/.test(canvasSrc233) ? ok : fail)(
+      "【233】人物热点可点击/可悬停（点击进会话、悬停变手型）"
     );
-    (simSrc.includes('activity: null | "tea" | "water" | "book"') && simSrc.includes("agent.activity = null") && simSrc.includes("agent.path = []") ? ok : fail)(
-      "【233】休息活动（tea/water/book）在 mode 沿清空 + 清在途路径"
+    (/eventWordZhOf/.test(canvasSrc233) && /effectivePhase/.test(canvasSrc233) ? ok : fail)(
+      "【233】热点状态走真实阶段 + 真实事件（⛔ 不编状态）"
     );
-
-    /* ══ 【237】Laya 智能判断（10-01 用户立项）═══════════════════════════
-       GitHub NandhaKishorM/laya（Apache-2.0，33ms 非自回归决策引擎）。数据端
-       electron/features/laya-service.ts（laya-serve HTTP，Python laya[serve]）。
-       首个消费方 = 思考等级「自动」档。⛔ 判断失败必须降级手选档（增强不是依赖）。 */
-    const layaSrc = existsSync(join(ROOT, "electron", "features", "laya-service.ts"))
-      ? readFileSync(join(ROOT, "electron", "features", "laya-service.ts"), "utf8") : "";
-    (layaSrc.includes("127.0.0.1") && layaSrc.includes("LAYA_API_KEY") && layaSrc.includes("hf-mirror.com") && layaSrc.includes("IDLE_EXIT_MS") ? ok : fail)(
-      "【237】服务安全与经济性（只绑 127.0.0.1 + API key 鉴权 + 权重走 hf-mirror + 闲置自动退出）"
+    (/status\.level === "run"/.test(canvasSrc233) && /createLinearGradient/.test(canvasSrc233) ? ok : fail)(
+      "【233】运行中的状态屏有实时扫描线（静态场景里的活）"
     );
-    (layaSrc.includes('["low", "medium", "high", "xhigh"].includes(choice)') && layaSrc.includes("confidence >= 0.45") ? ok : fail)(
-      "【237】effort 判定收口（档位白名单 + 校准置信 <0.45 弃权——低置信硬判不如不判）"
+    (!/OfficeSim|SEATS|drawScreen\(|drawWalking/.test(canvasSrc233) ? ok : fail)(
+      "【233】旧模拟层/代码绘人物已整体退役（场景热点取代）"
     );
-    const sendSrc237 = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part08", "02-seg", "send.tsx"), "utf8");
-    (sendSrc237.includes("bag.effortAuto") && sendSrc237.includes("resolveAutoEffort") && sendSrc237.includes("effectiveEffort") ? ok : fail)(
-      "【237】发送链接入（effortAuto → resolveAutoEffort → effectiveEffort，手选档不被覆盖）"
+    (canvasSrc233.includes("imageSmoothingEnabled = true") && !canvasSrc233.includes("imageSmoothingEnabled = false") ? ok : fail)(
+      "【233】照片场景开平滑（关掉会糊成马赛克）"
     );
-    const pickerSrc237 = readFileSync(join(ROOT, "src", "components", "EffortPicker.tsx"), "utf8");
-    (pickerSrc237.includes("onAutoToggle") && pickerSrc237.includes("自动（Laya 智能判断）") ? ok : fail)(
-      "【237】EffortPicker 自动档开关在位（⛔ auto 不进滑块 levels——不污染 effort 值域）"
+    (canvasSrc233.includes("membersRef") && !/ipcRenderer|window\.codex\./.test(canvasSrc233) ? ok : fail)(
+      "【233】成员状态经 props/ref 进渲染循环，画布层零 IPC"
     );
-    const capabilitySrc237 = readFileSync(join(ROOT, "scripts", "gen-capability-skill.mjs"), "utf8");
-    (capabilitySrc237.includes('"laya":') ? ok : fail)(
-      "【237】能力清单含 laya 域描述（漏了模型就不知道这个能力存在——【153】教训）"
+    (canvasSrc233.includes("const s = Math.min(sw / CANVAS_W, sh / CANVAS_H)")
+      && !/Math\.max\(sw \/ CANVAS_W/.test(canvasSrc233) ? ok : fail)(
+      "【233】contain 基准（整张场景图完整可见）"
     );
-    // 10-01 二补：手动档立即生效 + 升档锚点（模型对「中以上」系统性压缩的实测对策）
-    (sendSrc237.includes("manualEffortOverride") && layaSrc.includes("ruleEscalate") ? ok : fail)(
-      "【237】手动档一次性覆盖 + 升档锚点（自动模式下手选立即生效；规则命中 0ms 跳过模型）"
+    (/addEventListener\("wheel",[\s\S]{0,80}?\{ passive: false \}/.test(canvasSrc233) ? ok : fail)(
+      "【233】滚轮缩放必须 passive:false（否则 preventDefault 被忽略）"
     );
-
-    /* ── 【239】插件市场源 = Gitee 官方镜像（10-01 用户定稿：SkillHub 源几乎全为 DSH 生态装不上）──
-       三条硬不变量：源指向 Gitee 镜像仓库、旧 SkillHub 插件 API 清零、镜像源插件全兼容
-       （清单条目必须有 pluginPath——DSH 探测分支已随换源删除，不许回来）。 */
-    {
-      const marketSrc = readFileSync(join(ROOT, "electron", "codex-market.ts"), "utf8");
-      const plugIpcSrc = readFileSync(join(ROOT, "electron", "features", "plugins-ipc.ts"), "utf8");
-      (marketSrc.includes("claude-plugins-official-gitee") && marketSrc.includes("gitee.com/api/v5") ? ok : fail)(
-        "【239】插件市场源 = Gitee 官方镜像（claude-plugins-official-gitee，48 个 .claude-plugin 兼容插件）"
-      );
-      (!/api\.skillhub\.cn\/api\/v1\/plugins/.test(marketSrc) && !/listSkillHubPlugins/.test(plugIpcSrc) ? ok : fail)(
-        "【239】SkillHub 插件源清零（API 调用与旧函数名不许回来）"
-      );
-      (/Gitee 镜像源的插件全部自带 \.claude-plugin\/plugin\.json/.test(plugIpcSrc) ? ok : fail)(
-        "【239】DSH 探测分支已删（镜像源 100% 兼容，无需逐仓库探测）"
-      );
-      /* 10-01 用户：「能不能翻译成中文，英文看不懂」——名称/简介走静态翻译表，
-         ⛔ 必须同时锚「表存在」与「映射时真的套用」，只锚表存在会变成恒真。 */
-      (/(?:^|\n)\s+"?[\w.-]+"?: \{ name:/.test(marketSrc) && /PLUGIN_ZH\[slug\]/.test(marketSrc) && /zh\?\.name \|\| slug/.test(marketSrc) ? ok : fail)(
-        "【239】插件名称/简介中文翻译表在位且映射时套用（PLUGIN_ZH → displayName/description）"
-      );
-    }
-
-    /* ── 【245】插件市场「已安装」状态必须来自**本地 manifest**（10-03 用户报障：
-       装完卡片仍是「+」，「已安装」里也看不到）───────────────────────────────
-       根因：判定只依赖引擎 `plugin/list` 的「id@market 前段 === slug」，而引擎可能未认领
-       （安装流程自己的提示语就写着「当前列表未返回该插件」）⇒ 永远显示未安装。
-       真相源 = 安装时写入市场目录的 `.codex-market.json`（主进程扫目录回传 installed）。 */
-    const appUiCode245 = codeOnly(readAppUi());
-    const marketSrc245 = codeOnly(readFileSync(join(ROOT, "electron", "codex-market.ts"), "utf8"));
-    const marketIpcSrc245 = codeOnly(readFileSync(join(ROOT, "electron", "features", "plugins-ipc.ts"), "utf8"));
-    // ⛔ 自读源文件：marketSrc 是【239】块内的局部 const，在块外引用会 ReferenceError
-    //   ⇒ 「预检自身异常」会把后面所有断言一起废掉（10-03 实测踩过）。
-    (marketSrc245.includes("export function codexMarketDir(") && /const marketDir = codexMarketDir\(codexHome\)/.test(marketSrc245) ? ok : fail)(
-      "【245】本地市场目录单一真相源 codexMarketDir()（安装落点与「已装」扫描不许各拼一份路径）"
+    (canvasSrc233.includes("controlsRef") && /zoomIn:/.test(canvasSrc233) && /reset: resetView/.test(canvasSrc233) ? ok : fail)(
+      "【233】缩放句柄（放大 / 缩小 / 重置）"
     );
-    (marketSrc245.includes("listInstalledMarketPlugins") && /installed: installedMap\.has\(entry\.slug\)/.test(marketSrc245) ? ok : fail)(
-      "【245】市场列表逐项合并本地已装标记（真相源 = .codex-market.json，不靠引擎 plugin/list 的命名巧合）"
+    const css233 = readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8");
+    (/image-rendering: auto/.test(css233) && !/image-rendering: pixelated/.test(css233) ? ok : fail)(
+      "【233】画布 CSS 按照片平滑渲染（⛔ 不再 pixelated）"
     );
-    (marketIpcSrc245.includes("installedDir: codexMarketDir(codexHome)") ? ok : fail)(
-      "【245】plugins:market-list 必须传 installedDir（不传就退化成只看引擎列表 ⇒ 装完仍显示「+」）"
-    );
-    (appUiCode245.includes("plugin.installed === true") ? ok : fail)(
-      "【245】市场卡片的「已安装」判定读主进程回传的 plugin.installed（引擎 id 比对只作回落）"
-    );
-    (/installMarketPlugin\(plugin\)[\s\S]{0,400}refreshPluginsPage\(\)/.test(appUiCode245) ? ok : fail)(
-      "【245】装完插件必须重拉市场列表（只刷页面资源 ⇒ 卡片停留在旧状态）"
-    );
-
-    /* ── 【246】本地已装插件必须能进「已安装」列表并能真卸载（10-03 用户追问后补做）─────
-       引擎 plugin/list 有时不认领本地市场插件（安装流程自己会提示「当前列表未返回该插件」），
-       于是「装完了但已安装列表里没有、也卸不掉」。两条不变量：
-         ① 补齐口径 = 引擎列表 ∪（本地已装 − 引擎已认领），且通道必须**零网络**；
-         ② 卸载走本地删除时，目标必须过 safeFolder 归一 + 市场目录内校验（删除是唯一不可逆动作）。 */
-    (/(?:ipcMain|ipcHost)\.handle\("plugins:market-installed"/.test(marketIpcSrc245) && marketIpcSrc245.includes("listInstalledMarketPlugins(codexMarketDir(codexHome))") && !/market-installed[\s\S]{0,200}listMarketPlugins\(/.test(marketIpcSrc245) ? ok : fail)(
-      "【246】已装清单通道只扫本地目录（走 listInstalledMarketPlugins；误接 listMarketPlugins 会去拉远端 48 个插件）"
-    );
-    (appUiCode245.includes("localOnly: true") && appUiCode245.includes("engineSlugs.has(row.slug)") ? ok : fail)(
-      "【246】「已安装」列表补齐本地已装且不与引擎重复（localOnly 标记 + 引擎 slug 差集）"
-    );
-    (/if \(plugin\.localOnly && plugin\.marketSlug\)[\s\S]{0,300}uninstallMarketPlugin\(/.test(appUiCode245) ? ok : fail)(
-      "【246】localOnly 插件卸载走本地 IPC（引擎 plugin/uninstall 认不出它，绕过去会报 unknown plugin）"
-    );
-    (marketSrc245.includes("export async function removeCodexMarketPluginFiles(")
-      && /target === root \|\| !target\.startsWith\(root \+ path\.sep\)/.test(marketSrc245)
-      && marketSrc245.includes("safeFolder(slug)") ? ok : fail)(
-      "【246】卸载删除有三重防御（safeFolder 归一 + 必须落在市场目录内 + 不等于根本身）"
-    );
-
-    /* ── 【254】Codex 官方插件市场（GitHub openai/plugins，国内镜像）—— 10-03 用户立项 ──────
-       「帮我内置国内镜像源到插件列表里面，分好类，加官方插件安装入口，和安装状态反馈和已安装反馈」
-       这是**第二个数据源**、独立板块（codex-official-market 前缀），不改 Gitee 源（【239】）一根毛。
-       ⛔ 块内一律自读源文件（引用别的块内局部 const = ReferenceError，会把后面所有断言一起废掉）。 */
-    {
-      const officialSrc = codeOnly(readFileSync(join(ROOT, "electron", "codex-official-market.ts"), "utf8"));
-      const officialIpc = codeOnly(readFileSync(join(ROOT, "electron", "features", "codex-official-market-ipc.ts"), "utf8"));
-      const officialCatalog = readFileSync(join(ROOT, "electron", "codex-official-catalog.gen.ts"), "utf8");
-      (officialSrc.includes('const GH_OWNER = "openai"') && officialSrc.includes('const GH_REPO = "plugins"')
-        && officialSrc.includes('".agents/plugins/marketplace.json"') && officialSrc.includes('".agents/plugins/api_marketplace.json"') ? ok : fail)(
-        "【254】官方源锚定 GitHub openai/plugins 的 .agents/plugins/{marketplace,api_marketplace}.json（清单形态与上游一致）"
-      );
-      // 镜像顺序 = 实测可用性（gh-proxy 通、直连兜底）；顺序反了国内首屏就要等三轮超时
-      //（10-11 表收敛进 ./gh-mirror 单一真相源 —— 这里锚「别名引用 + 源头顺序」两处）
-      (/const MIRROR_PREFIXES = GH_MIRROR_PREFIXES/.test(officialSrc) && /export const GH_MIRROR_PREFIXES = \["https:\/\/gh-proxy\.com\/", "https:\/\/ghfast\.top\/", ""\] as const/.test(codeOnly(readFileSync(join(ROOT, "electron", "gh-mirror.ts"), "utf8"))) ? ok : fail)(
-        "【254】镜像优先级 gh-proxy → ghfast → 直连（表在 gh-mirror.ts 单一真相源；⛔ api.github.com 也走代理：未登录直连限 60 次/小时）"
-      );
-      (officialSrc.includes("const MAX_FILES = 1_200") && officialSrc.includes("MAX_SINGLE_FILE_BYTES = 20 * 1024 * 1024") ? ok : fail)(
-        "【254】文件数上限按实测放宽到 1200（上游 zoom 单插件 795 个文件；沿用 Gitee 源的 300 会拒装 4 个合法插件）"
-      );
-      (officialSrc.includes("export function codexOfficialMarketDir(") && /installedDir: codexOfficialMarketDir\(codexHome\)/.test(officialIpc) ? ok : fail)(
-        "【254】官方市场目录单一真相源 + list 必须传 installedDir（同【245】口径，不传就只看引擎列表）"
-      );
-      // 已装真相源 = 安装时写的 marker；两处（写 / 读）都要在，缺一处就是「装完仍是 +」
-      (/\.codex-official\.json/.test(officialSrc) && officialSrc.includes("listInstalledOfficialPlugins")
-        && /installed: installedMap\.has\(item\.slug\)/.test(officialSrc) ? ok : fail)(
-        "【254】官方插件「已安装」判定读本地 marker .codex-official.json（引擎 plugin/list 不认领时它返空）"
-      );
-      (/(?:ipcHost|ipcMain)\.handle\("codex-official-market:installed"/.test(officialIpc)
-        && officialIpc.includes("listInstalledOfficialPlugins(codexOfficialMarketDir(codexHome))")
-        && !/codex-official-market:installed[\s\S]{0,200}listOfficialMarketPlugins\(/.test(officialIpc) ? ok : fail)(
-        "【254】官方已装清单通道零网络（走本地扫描；误接 list 会去拉上游 65 条拖慢刷新）"
-      );
-      // pluginPath 来自渲染层字符串且参与临时目录取值拼接 ⇒ 必须白名单校验（不能靠"大概传不到"）
-      (/if \(!\/\^\[\\w\.-\]\+\(\\\/\[\\w\.-\]\+\)\+\$\/\.test\(plugin\.pluginPath\)/.test(officialSrc)
-        && officialSrc.includes('plugin.pluginPath.split("/").includes("..")') ? ok : fail)(
-        "【254】安装入参 pluginPath 走形态白名单（只允许 plugins/<slug>，含 .. 或以 / 开头一律拒绝）"
-      );
-      (officialSrc.includes("export async function removeOfficialMarketPluginFiles(")
-        && officialSrc.includes("path.resolve(pluginsRootOf(marketDir))")
-        && /target === root \|\| !target\.startsWith\(root \+ path\.sep\)/.test(officialSrc)
-        && officialSrc.includes("safeFolder(slug)") ? ok : fail)(
-        "【254】官方插件卸载同样有三重删除防御（归一 + 必须落在 <市场>/plugins 内 + 点开头目录不碰）"
-      );
-      (officialIpc.includes("ensureOfficialMarketplaceSection(codexHome)")
-        && /marketplacePath: installed\.manifestPath/.test(officialIpc)
-        && officialIpc.includes('server.request("plugin/install"') && officialIpc.includes("server.restart()") ? ok : fail)(
-        "【254】装完必须注册本地市场段 + plugin/install 传清单**文件**（传目录报 os error 5）+ 重启引擎（照【245】三条实证）"
-      );
-      (/自动生成，请勿手改/.test(officialCatalog) && /node scripts\/gen-codex-official-catalog\.mjs/.test(officialCatalog) ? ok : fail)(
-        "【254】官方文案快照是生成物（头部标记 + 生成器命令都在，别手改 electron/codex-official-catalog.gen.ts）"
-      );
-      // 上游拉不通时回落内置快照，但**必须带 live=false 让 UI 说明白**（静默冒充实时数据 = 骗人）
-      (/manifestCache = \{ at: Date.now\(\), entries, live: false \}/.test(officialSrc) && /live,\n?\s*catalogGeneratedAt/.test(officialSrc) ? ok : fail)(
-        "【254】网络失败回落内置快照时回传 live=false + 快照日期（UI 要如实标注，不许冒充实时清单）"
-      );
-    }
-
-    /* ── 【255】两个市场源在插件页各自成块 + 安装/已装反馈（10-03）──────────────────
-       用户拍板：新独立板块（不塞进 plugins 域）· 按源给各自的分类 tab · 同时放出引擎自带的
-       openai-api-curated 官方卡片。三条都各有断言，防止下一轮"顺手合并成一个列表"。 */
-    {
-      const officialUiSrc = readFileSync(join(ROOT, "src", "features", "codex-official-market", "CodexOfficialMarketSection.tsx"), "utf8");
-      const officialUiCode = codeOnly(officialUiSrc);
-      const officialIpc255 = codeOnly(readFileSync(join(ROOT, "electron", "features", "codex-official-market-ipc.ts"), "utf8"));
-      const pluginsPageCode = codeOnly(readFileSync(join(ROOT, "src", "features", "settings-plugins", "PluginsMarketSection.tsx"), "utf8"));
-      const appUiCode255 = codeOnly(readAppUi());
-      (officialUiCode.includes("export function CodexOfficialMarketSection(") && officialUiCode.includes("useState(")
-        && !/\bbag\./.test(officialUiCode) ? ok : fail)(
-        "【255】官方市场板块自包含（本地 state，不进 bag —— 装进度/分页/搜索只有本页消费）"
-      );
-      (pluginsPageCode.includes("<CodexOfficialMarketSection") && /marketSource === "official"/.test(pluginsPageCode)
-        && /label: "Claude 插件镜像"/.test(pluginsPageCode) && /label: "Codex 官方插件"/.test(pluginsPageCode) ? ok : fail)(
-        "【255】插件页有源切换，两个源各渲染各的块（分类表 8 类 / 10 类不混排 —— 用户拍板按源给 tab）"
-      );
-      (/window\.codex\.listOfficialMarketCategories\(\)/.test(officialUiCode) ? ok : fail)(
-        "【255】官方分类 tab 读上游清单（主进程现算 10 类含数量），不许在 catalogs.ts 里再硬编码一份"
-      );
-      (officialIpc255.includes('type: "official-plugin-install"') && /event\?\.type !== "official-plugin-install"/.test(officialUiCode) ? ok : fail)(
-        "【255】安装进度事件独立 type（⛔ 不许与 Gitee 源共用 plugin-install：两源 slug 有重名 linear/github，会认错插件）"
-      );
-      (officialUiCode.includes("<PluginInstallModal") && officialUiCode.includes("STAGE_POSITIONS") ? ok : fail)(
-        "【255】安装中有六步弹层（复用 PluginInstallModal，同一套 DOM/CSS，装了看不到进度=没有反馈）"
-      );
-      /* ⛔ 10-08 收口（行为已按 10-06 用户定案变更）：本页不再显示已安装项，
-         页内两段式确认条（confirmSlug / uninstallPlugin）随之删除 —— 卸载统一在「已安装」屏
-         走 openAppConfirm 确认框（全局模态层级另有【227】钉）。本条改为**负向**：
-         旧的页内两段式确认条不许复活，且本页必须真的隐藏已装项。 */
-      (!officialUiCode.includes("confirmSlug") && officialUiCode.includes("if (installed) return null") ? ok : fail)(
-        "【255】官方市场页不显示已安装项（10-06 定案）；页内两段式确认条（confirmSlug）不许复活 —— 卸载统一在「已安装」屏走确认框"
-      );
-      /* ⛔ 10-08 收口：官方市场来源的插件卸载**必须走专用通道**。半成品把卸载统一收进 changePlugin 后，
-         官方插件只调了引擎 plugin/uninstall —— 落盘目录与 `.agents/plugins/marketplace.json` 条目没清；
-         而官方市场页按「扫本地目录」判已装、又隐藏已装项 ⇒ 两处都没入口、磁盘却还在（幽灵残留）。
-         判据锚**调用接线**（剥注释后仍出现该 API 调用），不是"常量存在"。 */
-      ((() => {
-        const seg05 = codeOnly(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part05", "01-seg.tsx"), "utf8"));
-        return seg05.includes("window.codex.uninstallOfficialMarketPlugin(") && /marketplaceName/.test(seg05) && /codex-official/i.test(seg05);
-      })() ? ok : fail)(
-        "【255】官方市场插件卸载走专用通道（changePlugin /codex-official/i 分支调 uninstallOfficialMarketPlugin —— 只调 plugin/uninstall 会漏删落盘目录 + marketplace 清单条目）"
-      );
-      (officialUiCode.includes("!live &&") && officialUiCode.includes("codex-official-market-error") ? ok : fail)(
-        "【255】快照模式与加载失败都在 UI 上明说（⛔ 静默空列表会被当成「官方源没有插件」）"
-      );
-      // 每张卡片必须写清「还要配什么」：官方 65 条全部要鉴权（ON_INSTALL 58 / ON_USE 7），15 条还要 ChatGPT 连接器
-      (officialUiCode.includes("{plugin.authNote}") && /authNote: /.test(codeOnly(readFileSync(join(ROOT, "electron", "codex-official-market.ts"), "utf8"))) ? ok : fail)(
-        "【255】卡片带鉴权提示 authNote（装了不等于能用；「已安装」不能骗人）"
-      );
-      (!/\.filter\(\(marketplace: any\) => marketplace\.name !== "openai-api-curated"\)/.test(appUiCode255)
-        && /\.flatMap\(\(marketplace: any\) => \(marketplace\.plugins \?\? \[\]\)/.test(appUiCode255) ? ok : fail)(
-        "【255】openai-api-curated 整源过滤已按用户改判删除（引擎自带的官方市场卡片要放出来）"
-      );
-      (/if \(!plugin\.installable \|\| installing\) return;/.test(officialUiCode) ? ok : fail)(
-        "【255】外部仓库源（3 条）不许触发安装（只给查看来源，不给人点了才发现报错）"
-      );
-      /* ⛔⛔ 10-08 事故（用户实测「装技能/插件报安装失败，其实已经装好了」）：四条安装链
-       * （技能市场 / 插件市场 / 官方市场 / 专家市场）最后一步都是 `await server.restart()`，
-       * 引擎的**瞬时**启动失败会原样抛出 ⇒ 把已经落盘的安装报成失败（SkillHub「编程专家.Skill」
-       * 与 Gitee「Agent SDK 开发套件」两次实测；codex-home/skills 与 plugins/codex-market 里文件都在）。
-       * 引擎侧已有自动重试兜底，但重试用尽时**不许**再把「装好了」说成「装失败」——
-       * 四条必须降级成 pending 如实告知。判据锚**接线取值**（剥注释后仍出现
-       * try{...restart()}catch 的降级写法），不是"文件里出现过 restart"。
-       * ⛔ 本段续行一律带 ` * ` 前缀：本文件在【265】棘轮名单里，判据是**净代码行**。 */
-      ((() => {
-        const chain = ["skills-ipc.ts", "plugins-ipc.ts", "codex-official-market-ipc.ts", "expert-market-ipc.ts"]
-          .map((name) => [name, join(ROOT, "electron", "features", name)]);
-        const missing = chain
-          .filter(([, file]) => !/try \{ await server\.restart\(\); \} catch/.test(codeOnly(readFileSync(file, "utf8"))))
-          .map(([name]) => name);
-        if (missing.length) console.log(`      未降级的安装链：${missing.join(" / ")}`);
-        return missing.length === 0;
-      })() ? ok : fail)(
-        "【255】四条安装链都不让「引擎重启失败」变成「安装失败」（文件已落盘 ⇒ 必须降级为 pending 如实告知）"
-      );
-      // 板块三前缀同源：目录名 = IPC 前缀 = CSS 类前缀，且 CSS 独立成文件（不许塞进别人的分节尾部）
-      (/\.codex-official-market/.test(readFileSync(join(ROOT, "src", "styles", "25-codex-official-market.css"), "utf8"))
-        && readFileSync(join(ROOT, "src", "styles.css"), "utf8").includes('./styles/25-codex-official-market') ? ok : fail)(
-        "【255】官方市场样式独立分节 25-codex-official-market.css 且已进 barrel（类前缀 = 域 id）"
-      );
-    }
-
-    /* ③c 坐姿打字微动画 = 图集两个坐姿变体交替（cols 5/6） */
-    (fmtSrc.includes("SIT_FRAMES = [5, 6]") && canvasSrc.includes("SIT_FRAMES[") ? ok : fail)(
-      "【233】坐姿用双帧变体交替（打字微动画）"
-    );
-
-    /* ③d ⛔ 坐姿锚点从椅背顶推导 + 椅背重贴：人不抬高看不清谁坐在哪、不重贴就是人物挡住椅子。
-       ⛔ 锚**per-seat backrest**（10-01 实测：两排椅子相对座位高度差 25px，统一公式/常量
-       必然弄错一排——上排人物整个被盖掉「头都没了」）。 */
-    /* ⛔ 锚「坐姿分支取 per-seat 偏移 − 31」，不锚换行（10-06 拆行后旧字面量匹配假红）。 */
-    (/const dy = a\.action === "sit"\s*\?\s*Math\.round\(a\.y \+ r\.dy - 31\)/.test(canvasSrc) ? ok : fail)(
-      "【233】坐姿锚点从椅背顶推导（人物顶 = 椅背顶 - 31，两排自适应）"
-    );
-    (canvasSrc.includes("SEATS[a.seatIndex]?.backrest") && canvasSrc.includes("ctx.drawImage(bg, a.x + r.dx") ? ok : fail)(
-      "【233】坐姿画完重贴椅背矩形（人坐进椅子，不是挡住椅子；矩形按座位实测值）"
-    );
-
-    /* ⑤ 渲染必须关平滑（像素风最近邻放大）+ 资产走 Vite import（可达闭包，别回 public/） */
-    (canvasSrc.includes("imageSmoothingEnabled = false") ? ok : fail)(
-      "【233】canvas 关像素平滑（否则像素被拉糊）"
-    );
-    (canvasSrc.includes('from "./assets/bg.webp?inline"') && canvasSrc.includes("assets/chars/char_0.png") ? ok : fail)(
-      "【233】办公室资产走 Vite import（打包可达闭包内；bg 必须 ?inline —— 80KB 超内联阈值，拆文件 = 构建版白底）"
-    );
-
-    /* ⑥ 事件驱动边界：域不订阅引擎、不开 IPC —— 状态只从 props 进（架构规则 §2.2） */
-    (!/ipcRenderer|window\.codex\./.test(simSrc) ? ok : fail)(
-      "【233】sim 不碰 IPC（状态一律由宿主 props 传入）"
-    );
-    (canvasSrc.includes("membersRef") ? ok : fail)(
-      "【233】成员状态经 ref 进渲染循环（props 变化即画面变化 = 事件驱动落点）"
-    );
-
-    /* ⑦ 入口三件套：按钮回调接通 / bag 状态在 / AppView 挂载 */
-    const timelineSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "02-main-stage", "01-timeline.tsx"), "utf8");
-    (timelineSrc.includes("onOpenOffice={() => setCompanyPreviewTeamId(railTeam.teamId)}") ? ok : fail)(
+    const timelineSrc233 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "02-main-stage", "01-timeline.tsx"), "utf8");
+    (timelineSrc233.includes("onOpenOffice={() => setCompanyPreviewTeamId(railTeam.teamId)}") ? ok : fail)(
       "【233】办公室按钮接通（不再留 TODO 空实现）"
     );
-    const appViewSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView.tsx"), "utf8");
-    (appViewSrc.includes("from \"../team-office\"") && appViewSrc.includes("<TeamOfficePreview") ? ok : fail)(
+    const appViewSrc233 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView.tsx"), "utf8");
+    (appViewSrc233.includes("from \"../team-office\"") && appViewSrc233.includes("<TeamOfficePreview") ? ok : fail)(
       "【233】AppView 挂载办公室浮层"
     );
   }

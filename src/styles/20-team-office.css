@@ -140,8 +140,8 @@
   display: block;
   background: #dfe5ec;
   cursor: pointer;
-  /* 像素风：缩放交给最近的整数倍渲染管线（imageSmoothing 由 canvas 内部关闭） */
-  image-rendering: pixelated;
+  /* 场景图是 3D 渲染照片：交给浏览器平滑缩放（画布内的状态层仍是高清文字） */
+  image-rendering: auto;
 }
 
 .office-overlay-empty {

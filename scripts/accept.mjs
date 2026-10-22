@@ -1502,6 +1502,47 @@ const CHECKS = [
     },
   },
   {
+    id: "office-scene",
+    name: "🏢 交互式办公室场景：3D 场景图 + 可点热点 + 悬停提示（10-22）",
+    run: async (h) => {
+      /* 10-22 用户：「摒弃旧的思维，办公室预览可以做交互，类似安居客里那种办公室场景，可以点进去看」。
+         本项量真 DOM：场景图（1792×960）打开、人物热点悬停变手型、点击热点给到成员反馈
+         （有会话 ⇒ 关浮层开会话；没会话 ⇒ 出「还没有会话」提示，⛔ 不许静默）。 */
+      await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "界面就绪", timeoutMs: 40000 });
+      await h.eval(`localStorage.setItem("officeProbe","1")`);
+      await h.reload({ waitMs: 2500 });
+      await h.waitFor(`!!document.querySelector(".office-pixel-canvas")`, { timeoutMs: 20000 });
+      await wait(1500);
+      const first = await h.eval(`(function(){
+        const c=document.querySelector(".office-pixel-canvas");
+        if(!c) return null;
+        const r=c.getBoundingClientRect();
+        c.dispatchEvent(new MouseEvent("mousemove",{clientX:r.left+r.width*(168/1792),clientY:r.top+r.height*((465+42)/960),bubbles:true}));
+        return { w:c.width, h:c.height, bw:Math.round(r.width), bh:Math.round(r.height), cursor:c.style.cursor };
+      })()`).catch(() => null);
+      h.check("① 场景打开且画布 = 1792×960 高清底图（不是代码画的像素画布）",
+        Boolean(first && first.w === 1792 && first.h === 960 && first.bw > 600), JSON.stringify(first));
+      await wait(400);
+      const cursor = await h.eval(`(function(){ const c=document.querySelector(".office-pixel-canvas"); return c ? c.style.cursor : null; })()`).catch(() => null);
+      h.check("② 悬停人物热点指针变手型（可点这件事有视觉提示）", cursor === "pointer", JSON.stringify({ cursor }));
+      await h.eval(`(function(){
+        const c=document.querySelector(".office-pixel-canvas");
+        const r=c.getBoundingClientRect();
+        c.dispatchEvent(new MouseEvent("click",{clientX:r.left+r.width*(168/1792),clientY:r.top+r.height*((465+42)/960),bubbles:true}));
+        return 1;
+      })()`).catch(() => undefined);
+      await wait(900);
+      const after = await h.eval(`(function(){
+        const canvas=!!document.querySelector(".office-pixel-canvas");
+        const hint=document.querySelector(".office-overlay-hint");
+        return { canvas, hint: hint ? (hint.textContent||"").trim() : "", overlay: !!document.querySelector(".office-overlay") };
+      })()`).catch(() => null);
+      h.check("③ 点击热点有明确反馈（开会话关浮层 / 或出「还没有会话」提示 —— ⛔ 不许静默）",
+        Boolean(after && (!after.canvas || (after.hint && after.hint.length > 0))), JSON.stringify(after));
+      await h.screenshot("office-scene");
+    },
+  },
+  {
     id: "file-summary",
     name: "㉓ 文件更改汇报 · 真回合全链路（运行中实时编辑行 + 收尾汇总卡 + 交互，10-06 两次重写）",
     run: async (h) => {
@@ -3958,6 +3999,7 @@ const LATEST_ROUND = "10-22";   // 10-22 轮：右栏标签改版（撤终端、
 const ROUND_OF = {
   "panel-tabs": "10-22",
   "cloud-simple": "10-22",   // 10-22 轮：云账号登录即用（单卡登录 / 就绪清单 / 教程 / 手动流程折叠）
+  "office-scene": "10-22",   // 10-22 轮：交互式办公室场景（3D 场景图 + 可点热点 + 悬停提示；结构由守卫 11d/06 钉）
   "file-cards": "10-22",   // 10-22 轮：Qoder 式本轮产物文件卡 + 右栏工作区文件预览联动   // 10-22 轮：右栏标签撤终端、审阅顶到第二位（默认宽 308px 五个排不下）
   "ui-sketch": "10-06",   // ⛔ 10-06 重写：三形态探针（手机+电脑屏 / platform web 真落盘）+ 预览 + 还原；编号改执行顺序
   "file-summary": "10-06",   // 文件更改汇报卡：运行中行/胶囊 + 收尾卡 + 悬停 diff 预览 + 交互（10-06 两次重写）

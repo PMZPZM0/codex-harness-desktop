@@ -162,7 +162,7 @@ const REFRESH_ENTRIES = [
   ["src/features/relay/RelayCenterPage/01-subscription-banner.tsx", ["刷新中转站状态"]],
   ["src/features/relay/RelayCenterPage/03-manage-modal.tsx", ["刷新账号余额与套餐"]],
   ["src/features/openai/OpenaiSubscriptionPage.tsx", ["刷新额度"]],
-  ["src/features/app-view/AppView/03-review-panel.tsx", ["刷新项目树"]],
+  ["src/features/app-view/AppView/03-review-panel.tsx", ["刷新工作区文件"]],
   ["src/features/app-view/AppView/01-sidebar-shell.tsx", ["刷新会话列表"]],
   ["src/features/app-view/AppView/08-settings-sheet/01-settings-layout/02-settings-content.tsx", ["刷新设置资源"]],
   ["src/features/app-view/AppView/04-remote-approval.tsx", ["刷新配对码", "刷新二维码"]],
