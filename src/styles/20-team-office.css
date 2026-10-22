@@ -1,20 +1,7 @@
-/* 专家团像素办公室（v19）：整屏浮层 + 原生 canvas 舞台。样式独立成域，不外溢。 */
+/* 专家团办公室 · 白色简洁场景（2026-10-22 对照 Marvis workbench 重做）
+   ⛔ 纯白底 + 白色家具 + 黑猫成员；不再使用任何照片/位图背景。
+   ⛔ 工位/桌椅/猫全部 DOM + SVG，状态动画走 CSS（真实状态由 OfficeCanvas 映射）。 */
 
-/* ⛔ 10-05：普通会话的「常驻入口按钮」(`.office-entry-btn`，10-04 那个左下角浮动胶囊)
-   **已整体删除** —— 用户要求「跟专家和专家团一样，展示在对话框右边轨道上」。
-   ⇒ 入口现在是**右侧轨道末位的节点**，样式复用 `19-misc-hints.css` 里那套
-     `.team-rail-node.team-rail-office`（两条轨共用 `OfficeRailNode`）。
-   ⛔ 别再往这里加浮动入口：那正是用户报的"位置和图标跟专家团不一样"。 */
-
-/* ⭐ 10-05 晚：**满屏承载**（用户报「画面未铺满全屏，只显示在中间区域」）。
-   ⛔ 更早的写法是 `.office-overlay` flex + body 居中 + 画布 `max-width/max-height:100%`
-     —— 那只**限制上限**、不会放大，而画布固有尺寸就是 960×640
-     ⇒ 窗口一大就只剩中间一块，四周是浮层底色。
-   ✅ 形态：浮层自己 `overflow:hidden`，画布由一个**满屏舞台**承载，
-     尺寸/位置由 `OfficeCanvas` 的视图状态写死；顶栏改成**浮层压在画布上**，
-     不再占掉画布的高度。
-   ⭐ 10-07：基准由 cover 换成 **contain**（整间办公室完整可见）+ 用户缩放
-     （详见下面 `.office-overlay-stage` 与 `.office-pixel-canvas` 两处的注释）。 */
 .office-overlay {
   --office-top: 0px;
   position: fixed;
@@ -22,21 +9,14 @@
   z-index: 400; /* 与全局模态同档（09-30 层级表）：办公室是整屏浮层 */
   display: block;
   overflow: hidden;
-  background: #0d0f13;
+  background: #f6f7f9;
+  color: #23272f;
 }
 
-/* ⛔ Windows titleBarOverlay：右上 145×43 是原生窗口钮（最小化/最大化/关闭）的
-   **系统层命中区**，浮层 ✕ 若落在里面会被原生关闭钮截获（10-01 用户实测「叉掉
-   点不到，优先点的是应用的」——还会误关整窗）。⇒ 整块舞台从原生带之下开始
-   （画布不会再伸到窗口钮底下）；darwin 红绿灯在左上，右上无钮，不必让。 */
+/* ⛔ Windows titleBarOverlay：右上 145×43 是原生窗口钮的系统层命中区，
+   浮层 ✕ 若落在里面会被原生关闭钮截获 ⇒ 整块舞台从原生带之下开始。 */
 [data-os="win32"] .office-overlay { --office-top: 43px; }
 
-/* ⭐ 10-07：**完整展示 + 用户缩放**（用户报「预览画面过大，无法完整展示整个办公室，
-   底部内容被裁剪」）。
-   ⛔ 旧形态（10-05）是 cover 铺满 —— 而 cover 的定义就是"必然溢出"，溢出的部分被这一层
-     `overflow:hidden` 裁掉（旧写法 `align-items: flex-start` 只保上半）⇒ 缺的正是**底部**。
-   ✅ 现在基准是 contain（整间办公室完整可见），缩放/平移由 `OfficeCanvas` 的视图状态
-     写死画布尺寸与 `transform` ⇒ 舞台这一层**不再负责摆放**，只管裁掉放大后的溢出。 */
 .office-overlay-stage {
   position: absolute;
   inset: var(--office-top) 0 0 0;
@@ -54,48 +34,40 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 16px;
-  color: #eef0f4;
-  /* 浮在画布上 ⇒ 给一层暗角渐变，保证浅色的房间顶部也能看清标题 */
-  background: linear-gradient(180deg, rgba(10, 12, 16, 0.72), rgba(10, 12, 16, 0));
-  /* ⛔ 顶栏默认不吃点击：它压在画布上，若拦截事件则画布最上沿的角色点不中。
-     只有关闭按钮单独把事件收回来。 */
+  color: #23272f;
+  /* 白色场景不需要遮罩渐变；有条渐变会把第一排的悬停卡洗成一片白。 */
+  background: transparent;
+  /* ⛔ 顶栏默认不吃点击：它压在画布上，只有按钮单独把事件收回来。 */
   pointer-events: none;
   user-select: none;
 }
 
 .office-overlay-title { display: flex; flex-direction: column; gap: 2px; }
-.office-overlay-name { font-size: 14px; font-weight: 600; }
-.office-overlay-sub { font-size: 11px; opacity: 0.66; }
+.office-overlay-name { font-size: 15px; font-weight: 600; color: #23272f; }
+.office-overlay-sub { font-size: 12px; color: #7d838c; }
 
 .office-overlay-close {
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  background: rgba(255, 255, 255, 0.08);
-  color: #eef0f4;
+  border: 1px solid #e2e5ea;
+  background: rgba(255, 255, 255, 0.92);
+  color: #3d424a;
   cursor: pointer;
   pointer-events: auto;
 }
-.office-overlay-close:hover { background: rgba(255, 255, 255, 0.16); }
+.office-overlay-close:hover { background: #f1f3f6; }
 
-/* ⭐ 右侧一组：缩放控制 + 关闭钮（10-07）。⛔ 顺序 = `放大 / 缩小 / 重置 / 关闭`。 */
-.office-overlay-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-/* 控制组做成一个"胶囊托盘"：三个按钮同属一件事，视觉上要能读出这是一组。
-   ⛔ 顶栏整条是 `pointer-events: none`（不吃点击，否则画布最上沿的角色点不中）
-   ⇒ 托盘必须自己把事件**收回来**，否则三个按钮全是死的。 */
+.office-overlay-right { display: flex; align-items: center; gap: 8px; }
+
 .office-overlay-tools {
   display: flex;
   align-items: center;
   gap: 2px;
   padding: 2px;
   border-radius: 9px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid #e6e8ec;
+  background: rgba(255, 255, 255, 0.88);
   pointer-events: auto;
 }
 .office-overlay-tool {
@@ -107,41 +79,692 @@
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: #eef0f4;
+  color: #3d424a;
   cursor: pointer;
-  /* ⛔ 不加 `!important` ⇒ `prefers-reduced-motion` 的 `transition-duration: 0.001ms !important`
-     兜底才压得住（两边都 `!important` 会退化成比源码顺序，等于把无障碍兜底废掉）。 */
   transition: background 0.14s ease, color 0.14s ease;
 }
-.office-overlay-tool:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); }
-/* 到达上下限 ⇒ 禁用（⛔ 不是"点了没反应"：置灰本身就说清"已经到头了"） */
+.office-overlay-tool:hover:not(:disabled) { background: #eef0f3; }
 .office-overlay-tool:disabled { opacity: 0.32; cursor: default; }
-/* 倍率读数（纯视觉）：等宽数字 ⇒ 从 100% 跳到 125% 时宽度不抖 */
 .office-overlay-zoom {
   min-width: 38px;
   padding-right: 4px;
   text-align: center;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  opacity: 0.7;
+  color: #5d636c;
   user-select: none;
 }
 
-/* 画布：**绝对定位**，尺寸与平移全部由 JS 的视图状态写死
-   （⛔ 不使用 flex 对齐 —— 对齐等于把位置写死成"居中/顶对齐"，就没法做"以指针为中心"的平移了；
-    ⛔ 也不用 `object-fit` —— 元素盒与渲染区不一致会让点击命中整体偏移；
-    ⛔ 也不靠 CSS `transform: scale` —— 那会让像素糊掉，像素风必须整数倍最近邻放大）。
-   基准 = contain，整个办公室完整可见；放大后溢出部分由 `.office-overlay-stage` 裁掉。 */
-.office-pixel-canvas {
+/* ── 舞台：纯白渐变（Marvis 的“白上白”），缩放/平移全部写进 transform ── */
+.office-scene-wrap {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% 18%, #ffffff 0%, #fcfcfd 56%, #f4f5f7 100%);
+}
+
+.office-scene-stage {
   position: absolute;
   left: 0;
   top: 0;
   transform-origin: 0 0;
-  display: block;
-  background: #dfe5ec;
+  will-change: transform;
+}
+
+.office-board {
+  position: absolute;
+  inset: 0;
+}
+
+/* ── 工位（480×230 设计坐标） ── */
+.ws { position: absolute; }
+.office-agent { cursor: pointer; outline: none; }
+.office-agent:focus-visible .ws-desk-top {
+  box-shadow: 0 0 0 3px rgba(74, 123, 208, 0.32), 0 14px 22px rgba(38, 48, 58, 0.1);
+}
+
+.ws-name {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  pointer-events: none;
+}
+.ws-name strong {
+  font-size: 22px;
+  line-height: 24px;
+  font-weight: 600;
+  color: #2b2f36;
+  letter-spacing: 0.2px;
+}
+.ws-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 16px;
+  color: #8a919b;
+}
+.ws-status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.ws-furniture { position: absolute; inset: 0; }
+
+.ws-floor-shadow {
+  position: absolute;
+  left: 50%;
+  top: 178px;
+  width: 390px;
+  height: 38px;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at 50% 50%, rgba(34, 44, 54, 0.13), transparent 70%);
+  filter: blur(5px);
+  pointer-events: none;
+}
+
+.ws-desk-top {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 88px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid #eef0f2;
+  background: linear-gradient(180deg, #ffffff 0%, #f9fafb 68%, #f2f4f6 100%);
+  box-shadow: 0 1px 0 #eceef1, 0 10px 18px rgba(38, 48, 58, 0.07);
+  z-index: 2;
+  transition: box-shadow 0.18s ease;
+}
+.ws-desk-edge {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 120px;
+  height: 12px;
+  border: 1px solid #e8ebee;
+  border-top: 0;
+  border-radius: 0 0 6px 6px;
+  background: linear-gradient(180deg, #f3f5f7, #e9ecef);
+  z-index: 3;
+}
+.ws-desk-leg {
+  position: absolute;
+  top: 130px;
+  width: 14px;
+  height: 74px;
+  border: 1px solid #e9ebee;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #fbfbfc, #eef0f2);
+  z-index: 1;
+}
+.ws-desk-leg.is-left { left: 28px; }
+.ws-desk-leg.is-right { right: 28px; }
+.ws-pedestal {
+  position: absolute;
+  top: 118px;
+  right: 44px;
+  width: 94px;
+  height: 80px;
+  border: 1px solid #e8ebee;
+  border-radius: 5px;
+  background: linear-gradient(180deg, #ffffff, #f4f6f7);
+  box-shadow: 0 8px 14px rgba(30, 40, 50, 0.05);
+  z-index: 1;
+}
+.ws-pedestal::before,
+.ws-pedestal::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 1px;
+  background: #eceef1;
+}
+.ws-pedestal::before { top: 40px; }
+.ws-pedestal::after { top: 62px; }
+
+.ws-pc {
+  position: absolute;
+  top: 58px;
+  right: 84px;
+  width: 32px;
+  height: 62px;
+  border: 1px solid #e6e9ec;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #ffffff, #eef0f3);
+  box-shadow: 0 6px 10px rgba(30, 40, 50, 0.05);
+  z-index: 4;
+}
+.ws-pc i {
+  position: absolute;
+  left: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background: #d9dde2;
+}
+.ws-pc i:nth-child(1) { top: 14px; width: 16px; }
+.ws-pc i:nth-child(2) { top: 20px; width: 12px; }
+.ws-pc i:nth-child(3) { top: 26px; width: 8px; }
+
+.ws-monitor {
+  position: absolute;
+  left: 50%;
+  top: 44px;
+  width: 150px;
+  height: 74px;
+  transform: translateX(-50%);
+  padding: 6px;
+  border: 1px solid #e8ebee;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff, #eef1f4);
+  box-shadow: 0 2px 0 #e4e7ea, 0 10px 16px rgba(30, 40, 50, 0.08);
+  z-index: 4;
+}
+.ws-monitor-neck {
+  position: absolute;
+  left: 50%;
+  bottom: -14px;
+  width: 18px;
+  height: 16px;
+  transform: translateX(-50%);
+  border: 1px solid #e7eaed;
+  background: #f5f6f8;
+}
+.ws-monitor-base {
+  position: absolute;
+  left: 50%;
+  bottom: -20px;
+  width: 76px;
+  height: 7px;
+  transform: translateX(-50%);
+  border: 1px solid #e6e9ec;
+  border-radius: 50%;
+  background: #f2f4f6;
+}
+
+.ws-screen {
+  --screen-accent: #8a919b;
+  position: relative;
+  width: 100%;
+  height: 60px;
+  overflow: hidden;
+  border-radius: 4px;
+  background:
+    radial-gradient(120% 90% at 50% 25%, color-mix(in srgb, var(--screen-accent) 22%, transparent), transparent 72%),
+    #14181d;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.ws-screen > i {
+  position: absolute;
+  left: 11%;
+  height: 7%;
+  min-height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--screen-accent) 68%, transparent);
+  animation: ws-bar 2.8s ease-in-out infinite;
+}
+.ws-screen > i:nth-child(1) { top: 17%; width: 56%; animation-delay: 0s; }
+.ws-screen > i:nth-child(2) { top: 35%; width: 72%; animation-delay: 0.35s; opacity: 0.72; }
+.ws-screen > i:nth-child(3) { top: 53%; width: 44%; animation-delay: 0.7s; opacity: 0.55; }
+.ws-screen > i:nth-child(4) { top: 71%; width: 63%; animation-delay: 1.05s; opacity: 0.42; }
+.ws-screen.tone-idle > i { opacity: 0.32; animation-duration: 4.6s; }
+.ws-screen.tone-waiting > i { animation-duration: 3.6s; }
+.ws-screen-scan {
+  position: absolute;
+  left: -20%;
+  right: -20%;
+  top: -40%;
+  height: 34%;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--screen-accent) 32%, transparent), transparent);
+  animation: ws-scan 3.6s linear infinite;
+}
+.ws-screen.tone-idle .ws-screen-scan { opacity: 0.35; animation-duration: 6s; }
+.ws-screen-mark {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--screen-accent);
+  background: rgba(10, 14, 18, 0.55);
+}
+
+@keyframes ws-bar {
+  0%, 100% { transform: scaleX(1); opacity: 0.55; }
+  40% { transform: scaleX(0.72); opacity: 1; }
+  70% { transform: scaleX(1.08); opacity: 0.4; }
+}
+@keyframes ws-scan {
+  0% { top: -40%; opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { top: 112%; opacity: 0; }
+}
+
+.ws-keyboard {
+  position: absolute;
+  left: 50%;
+  top: 96px;
+  width: 168px;
+  height: 22px;
+  transform: translateX(-50%);
+  border: 1px solid #e7eaed;
+  border-radius: 4px;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 11px, #eceef1 11px 12px),
+    linear-gradient(180deg, #ffffff, #f4f6f7);
+  box-shadow: 0 2px 3px rgba(30, 40, 50, 0.04);
+  z-index: 5;
+}
+.ws-keyboard i { display: none; }
+
+/* ── 椅子：空位白色、有人灰色（Marvis 同款区分） ── */
+.ws-chair {
+  position: absolute;
+  left: 50%;
+  top: 122px;
+  width: 150px;
+  height: 114px;
+  transform: translateX(-50%);
+  overflow: visible;
+  z-index: 6;
+}
+.chair-back { fill: #f3f5f7; stroke: #e4e7ea; stroke-width: 1.4; }
+.chair-seat { fill: #eef1f4; stroke: #e4e7ea; stroke-width: 1.2; }
+.chair-stem, .chair-wheel { fill: #e8ebee; stroke: #dfe3e7; stroke-width: 1; }
+.chair-base { stroke: #dfe3e7; stroke-width: 3.4; stroke-linecap: round; fill: none; }
+.ws-chair.is-occupied .chair-back { fill: #9aa0a8; stroke: #8b929b; }
+.ws-chair.is-occupied .chair-seat { fill: #8f959e; stroke: #858c96; }
+.ws-chair.is-occupied .chair-stem { fill: #8f959e; stroke: #7f8792; }
+.ws-chair.is-occupied .chair-base { stroke: #9aa0a8; }
+.ws-chair.is-occupied .chair-wheel { fill: #b3b8bf; stroke: #9aa0a8; }
+
+/* ── 黑猫成员：背对（坐着敲键盘）/ 正面（站着等你） ── */
+.ws-cat {
+  position: absolute;
+  left: 50%;
+  top: 66px;
+  width: 132px;
+  height: 132px;
+  transform: translateX(-50%);
+  overflow: visible;
+  z-index: 8;
+  pointer-events: none;
+  filter: drop-shadow(0 8px 7px rgba(20, 28, 36, 0.16));
+}
+.ws-cat.is-standing { top: 52px; width: 122px; height: 152px; }
+
+.cat-tail {
+  transform-box: fill-box;
+  transform-origin: 8% 60%;
+  animation: cat-tail 3.4s ease-in-out infinite;
+}
+.cat-body {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: cat-breathe 3.6s ease-in-out infinite;
+}
+.cat-head {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: cat-head 5.4s ease-in-out infinite;
+}
+.cat-eyes { transform-box: fill-box; transform-origin: center; animation: cat-blink 4.8s ease-in-out infinite; }
+.cat-arm { transform-box: fill-box; }
+
+.ws-cat.is-run .cat-arm-r {
+  transform-origin: top center;
+  animation: cat-type-r 0.5s ease-in-out infinite alternate;
+}
+.ws-cat.is-run .cat-arm-l {
+  transform-origin: top center;
+  animation: cat-type-l 0.58s ease-in-out infinite alternate;
+}
+.ws-cat.is-idle .cat-head { animation: cat-head 7s ease-in-out infinite; }
+.ws-cat.is-waiting .cat-arm-r {
+  transform-origin: top center;
+  animation: cat-wave 1.7s ease-in-out infinite;
+}
+.ws-cat.is-done .cat-body { animation: cat-pop 2.4s ease-in-out infinite; }
+.ws-cat.is-failed .cat-head { animation: cat-head 2.4s ease-in-out infinite; }
+
+@keyframes cat-tail {
+  0%, 100% { transform: rotate(-4deg); }
+  50% { transform: rotate(8deg); }
+}
+@keyframes cat-breathe {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(1.018); }
+}
+@keyframes cat-head {
+  0%, 100% { transform: rotate(0deg); }
+  35% { transform: rotate(-2deg); }
+  70% { transform: rotate(2deg); }
+}
+@keyframes cat-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95%, 97% { transform: scaleY(0.08); }
+}
+@keyframes cat-type-r {
+  from { transform: rotate(-7deg); }
+  to { transform: rotate(9deg); }
+}
+@keyframes cat-type-l {
+  from { transform: rotate(8deg); }
+  to { transform: rotate(-6deg); }
+}
+@keyframes cat-wave {
+  0%, 100% { transform: rotate(0deg); }
+  30% { transform: rotate(-24deg); }
+  60% { transform: rotate(6deg); }
+}
+@keyframes cat-pop {
+  0%, 100% { transform: scaleY(1); }
+  45% { transform: scaleY(1.045); }
+}
+
+.ws-bubble {
+  position: absolute;
+  left: 50%;
+  top: 34px;
+  width: 36px;
+  height: 36px;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  border: 1px solid #eceef1;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(30, 40, 50, 0.14);
+  font-size: 19px;
+  font-weight: 700;
+  z-index: 9;
+  animation: ws-bubble 2.2s ease-in-out infinite;
+}
+.ws-bubble.is-waiting { color: #b58227; }
+.ws-bubble.is-done { color: #3f9e72; }
+.ws-bubble.is-failed { color: #d95745; }
+@keyframes ws-bubble {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-3px); }
+}
+
+.office-agent.is-hover .ws-desk-top {
+  box-shadow: 0 0 0 2px rgba(74, 123, 208, 0.16), 0 14px 22px rgba(38, 48, 58, 0.1);
+}
+.office-agent.is-hover .ws-name strong { color: #1e5fa8; }
+
+/* ── 左侧功能区 ── */
+.facility { position: absolute; }
+.facility h4 {
+  margin: 0 0 12px;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  color: #767d87;
+}
+
+.coffee-counter {
+  position: relative;
+  height: 192px;
+  border: 1px solid #eceef1;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff, #f5f6f8);
+  box-shadow: 0 18px 28px rgba(30, 40, 50, 0.06);
+}
+.coffee-panel {
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  top: 108px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: #b9c9a6;
+  color: #ffffff;
+  font-size: 13px;
+  letter-spacing: 3px;
+}
+.coffee-machine {
+  position: absolute;
+  left: 50%;
+  top: 22px;
+  width: 96px;
+  height: 78px;
+  transform: translateX(-50%);
+  border: 1px solid #e2e5e9;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff, #e9ecef);
+  box-shadow: 0 6px 10px rgba(30, 40, 50, 0.05);
+}
+.coffee-machine i {
+  position: absolute;
+  left: 16px;
+  top: 14px;
+  width: 64px;
+  height: 24px;
+  border-radius: 4px;
+  background: #20242a;
+}
+.coffee-machine b {
+  position: absolute;
+  left: 36px;
+  top: 48px;
+  width: 24px;
+  height: 18px;
+  border-radius: 3px;
+  background: #f5f6f8;
+  border: 1px solid #e2e5e9;
+}
+.coffee-cups {
+  position: absolute;
+  left: 30px;
+  top: 34px;
+  display: flex;
+  gap: 8px;
+}
+.coffee-cups i {
+  width: 20px;
+  height: 26px;
+  border: 1px solid #e2e5e9;
+  border-radius: 3px 3px 5px 5px;
+  background: linear-gradient(180deg, #ffffff, #eef0f2);
+}
+.coffee-kettle {
+  position: absolute;
+  right: 34px;
+  top: 34px;
+  width: 26px;
+  height: 30px;
+  border: 1px solid #e2e5e9;
+  border-radius: 5px 5px 9px 9px;
+  background: #ffffff;
+}
+
+.treadmill {
+  position: relative;
+  height: 192px;
+  border: 1px solid #eceef1;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff, #f5f6f8);
+  box-shadow: 0 18px 28px rgba(30, 40, 50, 0.06);
+}
+.treadmill-belt {
+  position: absolute;
+  left: 48px;
+  right: 48px;
+  top: 74px;
+  height: 70px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #e9ecef, #d8dce0);
+  box-shadow: inset 0 0 0 6px #f5f6f8;
+  transform: perspective(300px) rotateX(8deg);
+}
+.treadmill-belt i {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.5);
+}
+.treadmill-belt i:nth-child(1) { top: 20px; }
+.treadmill-belt i:nth-child(2) { top: 34px; }
+.treadmill-belt i:nth-child(3) { top: 48px; }
+.treadmill-rail {
+  position: absolute;
+  top: 48px;
+  width: 12px;
+  height: 104px;
+  border: 1px solid #e2e5e9;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #ffffff, #eef0f2);
+}
+.treadmill-rail.is-left { left: 28px; }
+.treadmill-rail.is-right { right: 28px; }
+.treadmill-console {
+  position: absolute;
+  left: 50%;
+  top: 24px;
+  width: 108px;
+  height: 28px;
+  transform: translateX(-50%);
+  border: 1px solid #e2e5e9;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #ffffff, #eef0f2);
+}
+
+.lounge-sofa {
+  position: relative;
+  height: 190px;
+  border-radius: 12px;
+}
+.sofa-back {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  top: 24px;
+  height: 78px;
+  border: 1px solid #e4e7ea;
+  border-radius: 14px 14px 8px 8px;
+  background: linear-gradient(180deg, #ffffff, #f0f2f4);
+  box-shadow: 0 12px 20px rgba(30, 40, 50, 0.06);
+}
+.sofa-seat {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 92px;
+  height: 52px;
+  border: 1px solid #e4e7ea;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #fbfbfc, #eef0f2);
+}
+.sofa-arm {
+  position: absolute;
+  top: 58px;
+  width: 28px;
+  height: 88px;
+  border: 1px solid #e4e7ea;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #ffffff, #eff1f3);
+}
+.sofa-arm.is-left { left: 0; }
+.sofa-arm.is-right { right: 0; }
+.sofa-cushion {
+  position: absolute;
+  top: 46px;
+  width: 74px;
+  height: 46px;
+  border: 1px solid #e4e7ea;
+  border-radius: 9px;
+  background: #ffffff;
+}
+.sofa-cushion.is-a { left: 46px; transform: rotate(-6deg); }
+.sofa-cushion.is-b { right: 46px; transform: rotate(5deg); }
+.lounge-plant {
+  position: absolute;
+  right: 4px;
+  bottom: 0;
+  width: 70px;
+  height: 110px;
+}
+.lounge-plant span {
+  position: absolute;
+  left: 18px;
+  bottom: 0;
+  width: 34px;
+  height: 32px;
+  border: 1px solid #e2e5e9;
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+  background: #ffffff;
+}
+.lounge-plant i {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  width: 12px;
+  height: 44px;
+  border-radius: 50% 50% 10% 50%;
+  background: #a9c0a2;
+  transform-origin: bottom center;
+}
+.lounge-plant i:nth-child(1) { transform: translateX(-50%) rotate(-28deg); }
+.lounge-plant i:nth-child(2) { transform: translateX(-50%) rotate(-10deg); }
+.lounge-plant i:nth-child(3) { transform: translateX(-50%) rotate(6deg); }
+.lounge-plant i:nth-child(4) { transform: translateX(-50%) rotate(24deg); }
+.lounge-plant i:nth-child(5) { transform: translateX(-50%) rotate(40deg); }
+
+/* ── 悬停详情卡 ── */
+.office-agent-card {
+  position: absolute;
+  z-index: 2000;
+  width: 286px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #e4e7ea;
+  box-shadow: 0 18px 40px rgba(20, 30, 40, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.office-agent-card strong { font-size: 21px; color: #1f252c; }
+.office-agent-card span { font-size: 14px; color: #6b727b; }
+.office-agent-card button {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #2f6fb0;
+  font-weight: 600;
+  font-size: 14px;
   cursor: pointer;
-  /* 场景图是 3D 渲染照片：交给浏览器平滑缩放（画布内的状态层仍是高清文字） */
-  image-rendering: auto;
+}
+
+.office-scene-hint {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  padding: 7px 13px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #e6e8ec;
+  box-shadow: 0 8px 18px rgba(20, 30, 40, 0.08);
+  color: #5d636c;
+  font-size: 13px;
+  pointer-events: none;
 }
 
 .office-overlay-empty {
@@ -152,23 +775,24 @@
   margin: 0;
   padding: 8px 14px;
   border-radius: 999px;
-  background: rgba(16, 18, 22, 0.78);
-  color: #eef0f4;
+  background: #ffffff;
+  border: 1px solid #e6e8ec;
+  color: #5d636c;
   font-size: 13px;
+  box-shadow: 0 10px 24px rgba(20, 30, 40, 0.08);
 }
 
-/* ⭐ 「点了没反应」的显式提示（10-05 晚）：点了一个还没有会话的成员时给出原因 */
 .office-overlay-hint {
   position: absolute;
   left: 50%;
   bottom: 24px;
   transform: translateX(-50%);
   margin: 0;
-  padding: 7px 14px;
+  padding: 8px 14px;
   border-radius: 999px;
-  background: rgba(16, 18, 22, 0.86);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: #eef0f4;
+  background: #23272f;
+  color: #f5f7f9;
   font-size: 12px;
+  box-shadow: 0 10px 24px rgba(20, 30, 40, 0.18);
   pointer-events: none;
 }

@@ -1,9 +1,9 @@
 /**
  * 办公室状态词 · 单一映射（2026-10-22 精简）
  *
- * 交互式场景（`OfficeCanvas`）与 `TeamOfficePreview` 共用：把**真实运行阶段 + 真实事件**
- * 翻译成屏面/热点上的一行中文（⛔ 不再包含逐帧绘制显示器的代码 —— 场景是 3D 场景图，
- * 屏幕上只叠细线与扫描线，状态词由本文件提供）。
+ * 白色办公室场景（`OfficeCanvas`）与 `TeamOfficePreview` 共用：把**真实运行阶段 + 真实事件**
+ * 翻译成工位名牌/显示器上的一行中文（⛔ 画面由 SVG 工位与黑猫成员构成，
+ * 状态词与完成态时效由本文件提供）。
  */
 import type { OfficeActivityKind } from "./office-activity";
 

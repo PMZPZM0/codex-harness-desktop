@@ -1768,20 +1768,26 @@ w.postMessage({id:1,op:"list",root});
       ? readFileSync(join(ROOT, "src", "features", "team-office", "office-format.ts"), "utf8") : "";
     const sceneCanvas154 = existsSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"))
       ? readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8") : "";
-    (fmtSrc.includes("export const CANVAS_W = 1792") && fmtSrc.includes("export const CANVAS_H = 960") ? ok : fail)(
-      "【154】办公室 = 交互式 3D 场景（1792×960 场景图画布）"
+    (fmtSrc.includes("export const CANVAS_W = 1560") && fmtSrc.includes("export const CANVAS_H = 1270") ? ok : fail)(
+      "【154】办公室 = 白色简洁工位板（1560×1270 设计坐标）"
     );
-    (/import bgUrl from "\.\/assets\/office-bg\.webp\?inline"/.test(sceneCanvas154) ? ok : fail)(
-      "【154】场景底图 ?inline 强制 data: URI（拆成独立文件 = 构建版 file:// 白屏）"
+    (!/assets\/office-bg|bgUrl|office-agent-img/.test(sceneCanvas154) ? ok : fail)(
+      "【154】⛔ 不再引照片底图 / 宠物贴图（白底 + SVG 家具/黑猫）"
     );
-    (sceneCanvas154.includes("const ANCHORS: Anchor[] = [") && (sceneCanvas154.match(/screen: \{ x: \d+,/g) ?? []).length === 10 ? ok : fail)(
-      "【154】10 个可点热点（人物/椅子 + 状态屏矩形）"
+    (/DESK_COLS = \[\d+, \d+\]/.test(sceneCanvas154)
+      && (sceneCanvas154.match(/DESK_ROWS = \[[^\]]+\]/)?.[0].match(/\d+/g) ?? []).length === 5
+      && sceneCanvas154.includes("TEAM_OFFICE_LIMIT") ? ok : fail)(
+      "【154】2 列 × 5 排 = 10 个工位（上限与 office-format 同源）"
     );
-    (sceneCanvas154.includes("openRef.current?.(hit.id)") ? ok : fail)(
-      "【154】点击人物热点进入该成员会话（安居客式漫游交互）"
+    (/onClick=\{onOpen\}/.test(sceneCanvas154) && /onKeyDown=/.test(sceneCanvas154) ? ok : fail)(
+      "【154】点击/键盘都能进入该成员会话"
+    );
+    (sceneCanvas154.includes("function SeatedCat") && sceneCanvas154.includes("function StandingCat")
+      && sceneCanvas154.includes("SCARVES") ? ok : fail)(
+      "【154】黑猫成员：坐姿（背对）/站姿（正面）+ 彩色围巾"
     );
     (!/OfficeSim|SEATS|drawScreen\(/.test(sceneCanvas154) ? ok : fail)(
-      "【154】旧走位模拟/逐帧画显示器已整体退役（场景热点取代）"
+      "【154】旧走位模拟/逐帧画显示器已整体退役（工位状态猫取代）"
     );
     const officeCss = existsSync(join(ROOT, "src", "styles", "20-team-office.css")) ? readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8") : "";
     /* 形态守卫（09-27 v8「PixiJS 渲染」）：v1 折线图 / v2 div 色块 / v3 单张 SVG 插画
@@ -1798,14 +1804,16 @@ w.postMessage({id:1,op:"list",root});
     const screenSrc154 = existsSync(screenPath154) ? readFileSync(screenPath154, "utf8") : "";
     const cssSrc154 = existsSync(join(ROOT, "src", "styles", "20-team-office.css"))
       ? readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8") : "";
-    (cssSrc154.includes(".office-pixel-canvas") && /image-rendering: auto/.test(cssSrc154) ? ok : fail)(
-      "【154】画布宿主样式齐全且按照片平滑渲染（不再 pixelated）"
+    (cssSrc154.includes(".office-scene-stage") && cssSrc154.includes(".ws-desk-top")
+      && cssSrc154.includes(".ws-chair") && !/image-rendering: pixelated/.test(cssSrc154) ? ok : fail)(
+      "【154】白底舞台 + 白色桌子/椅子样式齐全（⛔ 不再照片画布）"
     );
-    (!canvasSrc154.includes("ipcRenderer") && !/window as any\)\.codex/.test(canvasSrc154) && canvasSrc154.includes("membersRef") ? ok : fail)(
+    (!canvasSrc154.includes("ipcRenderer") && !/window\.codex\./.test(canvasSrc154) ? ok : fail)(
       "【154】画布层零 IPC（成员状态由宿主 props 传入）"
     );
-    (canvasSrc154.includes("imageSmoothingEnabled = true") && !canvasSrc154.includes("imageSmoothingEnabled = false") ? ok : fail)(
-      "【154】照片场景开平滑（关掉会糊成马赛克）"
+    (cssSrc154.includes("@keyframes ws-scan") && cssSrc154.includes("@keyframes ws-bar")
+      && cssSrc154.includes("@keyframes cat-type-r") ? ok : fail)(
+      "【154】显示器 + 猫都是持续动画（扫描线 / 代码条 / 敲键盘）"
     );
   }
 
@@ -3284,50 +3292,54 @@ w.postMessage({id:1,op:"list",root});
   }
 
 
-  /* ══ 【233】交互式办公室场景（team-office，2026-10-22 重做）═══════════
-     用户方向：**不再代码画卡通风人物/房间**；场景 = 生成好的 3D 办公室场景图，
-     人物是可点击热点（安居客式漫游）—— 点击进入该成员会话、悬停看状态。 */
+  /* ══ 【233】白色简洁办公室场景（team-office，2026-10-22 对照 Marvis 重做）═════
+     用户方向：**不要静态照片**，按 Marvis workbench 逆向出白色简洁办公室：
+     白底 + 白色桌椅 + 黑色显示器 + 黑猫成员（彩色围巾）+ 名字标在显示器上方。
+     美术全部由我们自己的 SVG/DOM 绘制（⛔ 不搬 Marvis 资产）。 */
   if (!existsSync(join(ROOT, "src", "features", "team-office", "office-format.ts"))) {
     /* 实现不在（再次下线）⇒ 跳过 */
   } else {
     const fmtSrc233 = readFileSync(join(ROOT, "src", "features", "team-office", "office-format.ts"), "utf8");
     const canvasSrc233 = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
-    const asset233 = join(ROOT, "src", "features", "team-office", "assets", "office-bg.webp");
-    (existsSync(asset233) && statSync(asset233).size > 120 * 1024 ? ok : fail)(
-      "【233】3D 办公室场景图存在且是高清底图（>120KB）"
-    );
-    (/import bgUrl from "\.\/assets\/office-bg\.webp\?inline"/.test(canvasSrc233) ? ok : fail)(
-      "【233】场景图 ?inline 强制 data: URI（拆成独立文件 = 构建版 file:// 白屏）"
-    );
-    (fmtSrc233.includes("export const CANVAS_W = 1792") && fmtSrc233.includes("export const CANVAS_H = 960")
+    (fmtSrc233.includes("export const CANVAS_W = 1560") && fmtSrc233.includes("export const CANVAS_H = 1270")
       && fmtSrc233.includes("TEAM_OFFICE_LIMIT = 10") ? ok : fail)(
-      "【233】画布 = 场景图原生 1792×960 / 人数上限 10"
+      "【233】白色工位板 1560×1270 / 人数上限 10"
     );
-    (canvasSrc233.includes("const ANCHORS: Anchor[] = [") && (canvasSrc233.match(/screen: \{ x: \d+,/g) ?? []).length === 10 ? ok : fail)(
-      "【233】10 个热点锚点（人物/椅子 + 状态屏矩形，一对一）"
+    (/DESK_COLS = \[\d+, \d+\]/.test(canvasSrc233) && (canvasSrc233.match(/DESK_ROWS = \[[^\]]+\]/)?.[0].match(/\d+/g) ?? []).length === 5 ? ok : fail)(
+      "【233】2 列 × 5 排 = 10 个工位（白桌 + 显示器 + 椅子）"
     );
-    (canvasSrc233.includes("openRef.current?.(hit.id)") && /addEventListener\("mousemove"/.test(canvasSrc233)
-      && /cursor = id \? "pointer"/.test(canvasSrc233) ? ok : fail)(
-      "【233】人物热点可点击/可悬停（点击进会话、悬停变手型）"
+    (canvasSrc233.includes("function SeatedCat") && canvasSrc233.includes("function StandingCat")
+      && canvasSrc233.includes("SCARVES") ? ok : fail)(
+      "【233】黑猫成员：坐姿（背对镜头）/ 站姿（正面）+ 彩色围巾"
+    );
+    (canvasSrc233.includes("office-agent-card") && canvasSrc233.includes("点击打开会话") ? ok : fail)(
+      "【233】悬停出详情卡（姓名/职业/状态 + 打开会话）"
+    );
+    (/onClick=\{onOpen\}/.test(canvasSrc233) && /role="button"/.test(canvasSrc233) ? ok : fail)(
+      "【233】工位可点击进入该成员会话（键盘可达）"
     );
     (/eventWordZhOf/.test(canvasSrc233) && /effectivePhase/.test(canvasSrc233) ? ok : fail)(
-      "【233】热点状态走真实阶段 + 真实事件（⛔ 不编状态）"
+      "【233】猫的姿态/状态走真实阶段 + 真实事件（⛔ 不编状态）"
     );
-    (/status\.level === "run"/.test(canvasSrc233) && /createLinearGradient/.test(canvasSrc233) ? ok : fail)(
-      "【233】运行中的状态屏有实时扫描线（静态场景里的活）"
+    (/status\.level === "run" \|\| status\.level === "idle"/.test(canvasSrc233)
+      && /is-standing is-\$\{level\}/.test(canvasSrc233) ? ok : fail)(
+      "【233】状态 → 姿态映射（运行/待机坐着、等待/完成/失败站着）"
+    );
+    (canvasSrc233.includes("ws-screen") && canvasSrc233.includes("ws-screen-scan") ? ok : fail)(
+      "【233】每台显示器都有实时内容（状态色 + 代码条 + 扫描线）"
+    );
+    (!/assets\/office-bg|bgUrl|petList|pet:\/\/|imageSmoothingEnabled/.test(canvasSrc233) ? ok : fail)(
+      "【233】⛔ 不再引照片底图 / 宠物管线（白底 + SVG 家具/黑猫）"
     );
     (!/OfficeSim|SEATS|drawScreen\(|drawWalking/.test(canvasSrc233) ? ok : fail)(
-      "【233】旧模拟层/代码绘人物已整体退役（场景热点取代）"
+      "【233】旧模拟层/代码绘人物已整体退役（工位状态猫取代）"
     );
-    (canvasSrc233.includes("imageSmoothingEnabled = true") && !canvasSrc233.includes("imageSmoothingEnabled = false") ? ok : fail)(
-      "【233】照片场景开平滑（关掉会糊成马赛克）"
-    );
-    (canvasSrc233.includes("membersRef") && !/ipcRenderer|window\.codex\./.test(canvasSrc233) ? ok : fail)(
+    (!/ipcRenderer|window\.codex\./.test(canvasSrc233) ? ok : fail)(
       "【233】成员状态经 props/ref 进渲染循环，画布层零 IPC"
     );
-    (canvasSrc233.includes("const s = Math.min(sw / CANVAS_W, sh / CANVAS_H)")
+    (canvasSrc233.includes("const fit = Math.min(sw / CANVAS_W, sh / CANVAS_H)")
       && !/Math\.max\(sw \/ CANVAS_W/.test(canvasSrc233) ? ok : fail)(
-      "【233】contain 基准（整张场景图完整可见）"
+      "【233】contain 基准（整间办公室完整可见）"
     );
     (/addEventListener\("wheel",[\s\S]{0,80}?\{ passive: false \}/.test(canvasSrc233) ? ok : fail)(
       "【233】滚轮缩放必须 passive:false（否则 preventDefault 被忽略）"
@@ -3336,8 +3348,9 @@ w.postMessage({id:1,op:"list",root});
       "【233】缩放句柄（放大 / 缩小 / 重置）"
     );
     const css233 = readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8");
-    (/image-rendering: auto/.test(css233) && !/image-rendering: pixelated/.test(css233) ? ok : fail)(
-      "【233】画布 CSS 按照片平滑渲染（⛔ 不再 pixelated）"
+    (/\.ws-cat\s*\{/.test(css233) && /@keyframes cat-type-r/.test(css233)
+      && /@keyframes ws-scan/.test(css233) && !/image-rendering: pixelated/.test(css233) ? ok : fail)(
+      "【233】黑猫敲键盘 / 屏幕扫描线都是持续动画（不是静态图）"
     );
     const timelineSrc233 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "02-main-stage", "01-timeline.tsx"), "utf8");
     (timelineSrc233.includes("onOpenOffice={() => setCompanyPreviewTeamId(railTeam.teamId)}") ? ok : fail)(

@@ -1,55 +1,36 @@
 /**
- * 办公室场景 · 交互式场景层（2026-10-22 重做）
+ * 办公室 · 白色简洁动画场景（2026-10-22 重做，对照腾讯 Marvis workbench）
  *
- * 用户方向：**不再用代码画卡通风人物/房间**，改成参考图那种高质感 3D 办公室场景，
- * 场景里的人物是**可点击的热点**（类似安居客漫游里点家具/房间看详情）：
- *   · 底图 = 生成好的 1792×960 办公室场景（含桌椅/显示器/人物/窗景），静态绘制；
- *   · 每个成员在场景里有固定锚点（人物/椅子）+ 状态屏矩形；
- *   · 实时叠加：人物热点呼吸环、姓名/状态标签、状态屏底部的实时 HUD + 扫描线；
- *   · hover 展示详情卡，点击人物/标签直接进入该成员的会话；
- *   · 缩放 / 平移 / 命中与之前的 view 逻辑一致。
- *
- * ⛔ 人物位置来自场景图（固定），不再跑走位模拟；状态仍由宿主 props + 事件面实时驱动。
+ * 用户否掉了"一张静态 3D 照片"，要求按 Marvis 逆向出**一模一样的白色简洁办公室**：
+ * 纯白背景、白色办公桌 + 黑色显示器 + 白色椅子 + 黑猫成员（彩色围巾），
+ * 名字标在显示器上方。我们沿用 Marvis 的**布局与状态机**，但桌子/椅子/猫全部用
+ * DOM + SVG 自己画（不搬它的美术资产）：
+ *   · 10 个工位（2 列 × 5 排），左侧是茶水间 / 跑步机 / 休息区；
+ *   · 黑猫按真实状态换姿态：运行 = 背对镜头坐着敲键盘，等待 = 站着等你，
+ *     完成 = 站着比 ✓，失败 = 站着报错，待机 = 背对镜头安静坐着（尾巴会动）；
+ *   · 每台显示器都有实时内容（状态色 + 代码条 + 扫描线），缩放/平移沿用同一套舞台；
+ *   · 悬停出详情卡、点击进入成员会话。
  */
-import { useEffect, useRef, type RefObject } from "react";
-// ⛔ ?inline：场景图 226KB 超过 Vite 64KB 阈值，拆成独立文件在构建版 file:// 下会 404
-//    （10-05 办公室白屏事故同型）。内联成 data: URI，代价是 bundle 大一点，换来打包版必定能显示。
-import bgUrl from "./assets/office-bg.webp?inline";
-import { CANVAS_H, CANVAS_W, type OfficeMemberState } from "./office-format";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { CANVAS_H, CANVAS_W, TEAM_OFFICE_LIMIT, type OfficeMemberState } from "./office-format";
 import { effectivePhase, eventWordZhOf, type RunPhase } from "./office-screen";
 import type { OfficeActivityKind } from "./office-activity";
 
-/** 场景图里的 10 个工位（坐标是 1792×960 底图坐标）。 */
-type Anchor = {
-  /** 人物/椅子的热点中心 */
-  x: number;
-  y: number;
-  /** 状态屏矩形（实时 HUD/扫描线画在这里） */
-  screen: { x: number; y: number; w: number; h: number };
-  /** 姓名标签相对人物的纵向偏移 */
-  tagDy: number;
-};
+const WS_W = 480;
+const WS_H = 230;
+const DESK_COLS = [450, 1000];
+const DESK_ROWS = [60, 300, 540, 780, 1020];
 
-const ANCHORS: Anchor[] = [
-  // 前排
-  { x: 168, y: 465, screen: { x: 214, y: 388, w: 158, h: 100 }, tagDy: 112 },
-  { x: 392, y: 588, screen: { x: 432, y: 542, w: 160, h: 102 }, tagDy: 112 },
-  { x: 632, y: 660, screen: { x: 700, y: 598, w: 168, h: 106 }, tagDy: 112 },
-  // 中排
-  { x: 452, y: 280, screen: { x: 505, y: 246, w: 150, h: 92 }, tagDy: 108 },
-  { x: 632, y: 388, screen: { x: 700, y: 354, w: 160, h: 100 }, tagDy: 108 },
-  { x: 882, y: 468, screen: { x: 932, y: 430, w: 160, h: 100 }, tagDy: 108 },
-  { x: 1092, y: 558, screen: { x: 1140, y: 506, w: 168, h: 104 }, tagDy: 108 },
-  // 右/后排
-  { x: 1360, y: 648, screen: { x: 1420, y: 596, w: 168, h: 104 }, tagDy: 108 },
-  { x: 1082, y: 280, screen: { x: 1130, y: 246, w: 150, h: 92 }, tagDy: 108 },
-  { x: 1322, y: 380, screen: { x: 1370, y: 336, w: 150, h: 92 }, tagDy: 108 },
+/** 每个工位一只猫；围巾颜色用来区分成员（Marvis 同款做法）。 */
+const SCARVES = [
+  "#e8553f", "#e2b23c", "#7b61c9", "#35b8b1", "#5fae66",
+  "#4a7bd0", "#e08a3c", "#cf6fa5", "#3f8f8a", "#5c6673",
 ];
 
 type Status = {
   text: string;
   accent: string;
-  level: "run" | "done" | "failed" | "idle";
+  level: "run" | "waiting" | "done" | "failed" | "idle";
 };
 
 export type OfficeEventState = {
@@ -64,20 +45,21 @@ export type OfficeEventState = {
 function statusOf(member: OfficeMemberState, st: OfficeEventState | null, now: number): Status {
   if (st) {
     const phase = effectivePhase(st.phase, st.sinceMs, now);
-    if (phase === "failed") return { text: "失败", accent: "#e0705f", level: "failed" };
-    if (phase === "done") return { text: "已完成", accent: "#6ed49a", level: "done" };
+    if (phase === "failed") return { text: "失败", accent: "#d95745", level: "failed" };
+    if (phase === "done") return { text: "已完成", accent: "#3f9e72", level: "done" };
     if (st.event) {
       const s = Math.floor(st.event.elapsedMs / 1000);
       const word = eventWordZhOf(st.event.kind) || "工作中";
-      return { text: s >= 1 ? `${word} ${s}s` : word, accent: "#e8c76a", level: "run" };
+      return { text: s >= 1 ? `${word} ${s}s` : word, accent: "#b58227", level: "run" };
     }
-    if (phase === "thinking" || phase === "waiting" || phase === "writing" || phase === "reporting") {
+    if (phase === "waiting") return { text: "等待中", accent: "#b58227", level: "waiting" };
+    if (phase === "thinking" || phase === "writing" || phase === "reporting") {
       const s = st.sinceMs ? Math.floor((now - st.sinceMs) / 1000) : 0;
-      return { text: s >= 1 ? `运行中 ${s}s` : "运行中", accent: "#7fd6a8", level: "run" };
+      return { text: s >= 1 ? `运行中 ${s}s` : "运行中", accent: "#2f8f68", level: "run" };
     }
   }
-  if (member.running) return { text: "运行中", accent: "#7fd6a8", level: "run" };
-  return { text: "待机", accent: "#8fb4c9", level: "idle" };
+  if (member.running) return { text: "运行中", accent: "#2f8f68", level: "run" };
+  return { text: "待机", accent: "#8a919b", level: "idle" };
 }
 
 export type OfficeCanvasProps = {
@@ -98,335 +80,362 @@ export const OFFICE_ZOOM_MIN = 1;
 export const OFFICE_ZOOM_MAX = 4;
 export const OFFICE_ZOOM_STEP = 1.25;
 
-function loadImage(url: string): Promise<HTMLImageElement | null> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-    img.src = url;
-  });
+/* ── 家具：全部白底浅灰描边 + 柔和投影（Marvis 同款“白上白”），不描黑边。 ── */
+
+function OfficeChair({ occupied }: { occupied: boolean }) {
+  return (
+    <svg className={`ws-chair${occupied ? " is-occupied" : ""}`} viewBox="0 0 140 116" aria-hidden="true">
+      <path className="chair-back" d="M42 12C42 5 47 1 54 1h32c7 0 12 4 12 11v48c0 7-5 12-12 12H54c-7 0-12-5-12-12z" />
+      <rect className="chair-seat" x="38" y="60" width="64" height="17" rx="8.5" />
+      <rect className="chair-stem" x="66" y="76" width="8" height="20" rx="4" />
+      <path className="chair-base" d="M70 96 38 107M70 96l32 11M70 96 52 110M70 96l18 14" />
+      <circle className="chair-wheel" cx="36" cy="108" r="3.6" />
+      <circle className="chair-wheel" cx="104" cy="108" r="3.6" />
+      <circle className="chair-wheel" cx="52" cy="111" r="3.6" />
+      <circle className="chair-wheel" cx="88" cy="111" r="3.6" />
+    </svg>
+  );
 }
 
-/** 每个热点的标签位置（人物下方；超出画布时上移）。 */
-function tagPosition(a: Anchor): { x: number; y: number } {
-  return { x: a.x, y: Math.min(CANVAS_H - 44, a.y + a.tagDy) };
+function SeatedCat({ scarf, level }: { scarf: string; level: Status["level"] }) {
+  return (
+    <svg className={`ws-cat is-seated is-${level}`} viewBox="0 0 120 120" aria-hidden="true">
+      <path className="cat-tail" d="M95 96c17 4 22-8 17-17" fill="none" stroke="#111214" strokeWidth="7" strokeLinecap="round" />
+      <path className="cat-body" d="M28 114c-3-24 7-42 32-44 25 2 35 20 32 44z" fill="#111214" />
+      <path className="cat-head" d="M35 68 31 30l20 11c5-3 13-3 18 0l20-11-4 38z" fill="#111214" />
+      <rect className="cat-scarf" x="37" y="72" width="46" height="13" rx="6.5" fill={scarf} />
+      <path className="cat-scarf-tail" d="M74 82l12 23-16-5z" fill={scarf} />
+      <g className="cat-arm cat-arm-l"><rect x="24" y="82" width="10" height="22" rx="5" fill="#111214" /></g>
+      <g className="cat-arm cat-arm-r"><rect x="86" y="82" width="10" height="22" rx="5" fill="#111214" /></g>
+    </svg>
+  );
 }
 
-/** #rrggbb → rgba(...)（状态强调色统一从这里出）。 */
-function hexToRgba(hex: string, alpha: number): string {
-  const h = hex.replace("#", "");
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
+function StandingCat({ scarf, level }: { scarf: string; level: Status["level"] }) {
+  const failed = level === "failed";
+  return (
+    <svg className={`ws-cat is-standing is-${level}`} viewBox="0 0 110 142" aria-hidden="true">
+      <path className="cat-tail" d="M25 96C7 100 5 84 12 77" fill="none" stroke="#111214" strokeWidth="6.5" strokeLinecap="round" />
+      <ellipse className="cat-body" cx="55" cy="100" rx="27" ry="34" fill="#111214" />
+      <rect x="40" y="124" width="12" height="15" rx="6" fill="#111214" />
+      <rect x="58" y="124" width="12" height="15" rx="6" fill="#111214" />
+      <path className="cat-head" d="M27 72 23 28l20 12c5-3 19-3 24 0l20-12-4 44z" fill="#111214" />
+      {failed ? (
+        <g className="cat-eyes-failed" stroke="#fff" strokeWidth="3.2" strokeLinecap="round">
+          <path d="M39 51l10 10M49 51 39 61" />
+          <path d="M61 51l10 10M71 51 61 61" />
+        </g>
+      ) : (
+        <g className="cat-eyes">
+          <ellipse cx="44" cy="54" rx="7.4" ry="8.8" fill="#fff" />
+          <ellipse cx="66" cy="54" rx="7.4" ry="8.8" fill="#fff" />
+          <circle cx="45" cy="55" r="3.4" fill="#111214" />
+          <circle cx="67" cy="55" r="3.4" fill="#111214" />
+        </g>
+      )}
+      <rect className="cat-scarf" x="35" y="72" width="40" height="12" rx="6" fill={scarf} />
+      <path className="cat-scarf-tail" d="M65 82l10 21-14-5z" fill={scarf} />
+      <g className="cat-arm cat-arm-l"><rect x="24" y="88" width="10" height="24" rx="5" fill="#111214" /></g>
+      <g className="cat-arm cat-arm-r"><rect x="76" y="86" width="10" height="26" rx="5" fill="#111214" /></g>
+    </svg>
+  );
+}
+
+function Workstation({
+  member, status, index, x, y, hovered, onEnter, onLeave, onOpen,
+}: {
+  member: OfficeMemberState;
+  status: Status;
+  index: number;
+  x: number;
+  y: number;
+  hovered: boolean;
+  onEnter: () => void;
+  onLeave: () => void;
+  onOpen: () => void;
+}) {
+  const scarf = SCARVES[index % SCARVES.length];
+  const seated = status.level === "run" || status.level === "idle";
+  const bubble = status.level === "waiting" ? "…" : status.level === "done" ? "✓" : status.level === "failed" ? "!" : "";
+  return (
+    <div
+      className={`office-agent ws${hovered ? " is-hover" : ""}`}
+      style={{ left: x, top: y, width: WS_W, height: WS_H }}
+      role="button"
+      tabIndex={0}
+      aria-label={`${member.name} · ${status.text}`}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+      onFocus={onEnter}
+      onBlur={onLeave}
+      onClick={onOpen}
+      onKeyDown={(ev) => {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onOpen(); }
+      }}
+    >
+      <div className="ws-name">
+        <strong>{member.name}</strong>
+        <span className="ws-status" style={{ color: status.accent }}>
+          <i style={{ background: status.accent }} />
+          {status.text}
+        </span>
+      </div>
+      <div className="ws-furniture">
+        <span className="ws-floor-shadow" />
+        <span className="ws-desk-leg is-left" />
+        <span className="ws-desk-leg is-right" />
+        <span className="ws-pedestal" />
+        <span className="ws-desk-top" />
+        <span className="ws-desk-edge" />
+        <span className="ws-pc"><i /><i /><i /></span>
+        <div className="ws-monitor">
+          <div className={`ws-screen tone-${status.level}`} style={{ ["--screen-accent" as string]: status.accent }}>
+            <i /><i /><i /><i />
+            <span className="ws-screen-scan" />
+            {(status.level === "done" || status.level === "failed") && (
+              <b className="ws-screen-mark">{status.level === "done" ? "✓" : "!"}</b>
+            )}
+          </div>
+          <span className="ws-monitor-neck" />
+          <span className="ws-monitor-base" />
+        </div>
+        <span className="ws-keyboard"><i /><i /><i /><i /></span>
+        <OfficeChair occupied={seated} />
+        {seated ? <SeatedCat scarf={scarf} level={status.level} /> : <StandingCat scarf={scarf} level={status.level} />}
+        {bubble && <span className={`ws-bubble is-${status.level}`}>{bubble}</span>}
+      </div>
+      {hovered && (
+        <div
+          className="office-agent-card"
+          style={{ left: WS_W / 2 - 143, top: y < 120 ? 4 : -86 }}
+          onMouseDown={(ev) => ev.stopPropagation()}
+        >
+          <strong>{member.name}</strong>
+          <span>{member.profession || "团队成员"}</span>
+          <span style={{ color: status.accent, fontWeight: 600 }}>{status.text}</span>
+          <button
+            type="button"
+            onClick={(ev) => { ev.stopPropagation(); onOpen(); }}
+          >
+            点击打开会话 ›
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EmptyWorkstation({ x, y }: { x: number; y: number }) {
+  return (
+    <div className="ws is-empty" style={{ left: x, top: y, width: WS_W, height: WS_H }} aria-hidden="true">
+      <div className="ws-furniture">
+        <span className="ws-floor-shadow" />
+        <span className="ws-desk-leg is-left" />
+        <span className="ws-desk-leg is-right" />
+        <span className="ws-pedestal" />
+        <span className="ws-desk-top" />
+        <span className="ws-desk-edge" />
+        <span className="ws-pc"><i /><i /><i /></span>
+        <div className="ws-monitor">
+          <div className="ws-screen tone-idle"><i /><i /><i /><i /><span className="ws-screen-scan" /></div>
+          <span className="ws-monitor-neck" />
+          <span className="ws-monitor-base" />
+        </div>
+        <span className="ws-keyboard"><i /><i /><i /><i /></span>
+        <OfficeChair occupied={false} />
+      </div>
+    </div>
+  );
+}
+
+/* ── 左侧功能区：茶水间 / 跑步机 / 休息区（对应 Marvis 办公室的生活设施） ── */
+function Facilities() {
+  return (
+    <>
+      <section className="facility facility-coffee" style={{ left: 50, top: 60, width: 350, height: 250 }}>
+        <h4>茶水间</h4>
+        <div className="coffee-counter">
+          <span className="coffee-panel">COFFEE</span>
+          <span className="coffee-machine"><i /><b /></span>
+          <span className="coffee-cups"><i /><i /><i /></span>
+          <span className="coffee-kettle" />
+        </div>
+      </section>
+      <section className="facility facility-treadmill" style={{ left: 50, top: 350, width: 350, height: 250 }}>
+        <h4>放松一下</h4>
+        <div className="treadmill">
+          <span className="treadmill-belt"><i /><i /><i /></span>
+          <span className="treadmill-rail is-left" />
+          <span className="treadmill-rail is-right" />
+          <span className="treadmill-console" />
+        </div>
+      </section>
+      <section className="facility facility-lounge" style={{ left: 50, top: 650, width: 350, height: 320 }}>
+        <h4>休息区</h4>
+        <div className="lounge-sofa">
+          <span className="sofa-back" />
+          <span className="sofa-seat" />
+          <span className="sofa-arm is-left" />
+          <span className="sofa-arm is-right" />
+          <span className="sofa-cushion is-a" />
+          <span className="sofa-cushion is-b" />
+        </div>
+        <div className="lounge-plant"><i /><i /><i /><i /><i /><span /></div>
+      </section>
+    </>
+  );
 }
 
 export function OfficeCanvas({ members, onOpenMember, eventStateOf, controlsRef, onZoomChange }: OfficeCanvasProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const membersRef = useRef(members);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef({ zoom: 1, cx: 0, cy: 0 });
+  const fitRef = useRef(1);
   const openRef = useRef(onOpenMember);
   const eventRef = useRef(eventStateOf);
-  const onZoomRef = useRef(onZoomChange);
-  const hoverRef = useRef<string | null>(null);
-  membersRef.current = members;
+  const zoomCbRef = useRef(onZoomChange);
   openRef.current = onOpenMember;
   eventRef.current = eventStateOf;
-  onZoomRef.current = onZoomChange;
+  zoomCbRef.current = onZoomChange;
+  const [hoverId, setHoverId] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    let raf = 0;
-    let disposed = false;
-    let ro: ResizeObserver | null = null;
-
-    /* 视图 = contain 基准 + 用户缩放/平移。⛔ 不用 object-fit（命中会整体偏移）。 */
-    type OfficeView = { zoom: number; cx: number; cy: number };
-    let view: OfficeView = { zoom: OFFICE_ZOOM_MIN, cx: 0, cy: 0 };
-
-    const stageSize = () => {
-      const stage = canvas.parentElement;
-      return { sw: stage?.clientWidth ?? 0, sh: stage?.clientHeight ?? 0 };
-    };
-    const baseSize = (sw: number, sh: number) => {
-      if (sw <= 0 || sh <= 0) return { bw: CANVAS_W, bh: CANVAS_H };
-      const s = Math.min(sw / CANVAS_W, sh / CANVAS_H);
-      return { bw: CANVAS_W * s, bh: CANVAS_H * s };
-    };
-    const clampAxis = (c: number, size: number, span: number) =>
-      size <= span ? span / 2 : Math.min(size / 2, Math.max(span - size / 2, c));
-    const applyView = () => {
-      const { sw, sh } = stageSize();
-      const { bw, bh } = baseSize(sw, sh);
-      const w = bw * view.zoom;
-      const h = bh * view.zoom;
-      view.cx = clampAxis(view.cx, w, sw);
-      view.cy = clampAxis(view.cy, h, sh);
-      canvas.style.width = `${Math.round(w)}px`;
-      canvas.style.height = `${Math.round(h)}px`;
-      canvas.style.transform =
-        `translate(${Math.round(view.cx - w / 2)}px, ${Math.round(view.cy - h / 2)}px)`;
-    };
-    const zoomAt = (nextZoom: number, ax: number, ay: number) => {
-      const { sw, sh } = stageSize();
-      const { bw, bh } = baseSize(sw, sh);
-      const z = Math.min(OFFICE_ZOOM_MAX, Math.max(OFFICE_ZOOM_MIN, nextZoom));
-      const w0 = bw * view.zoom, h0 = bh * view.zoom;
-      const w1 = bw * z, h1 = bh * z;
-      const fx = w0 > 0 ? (ax - (view.cx - w0 / 2)) / w0 : 0.5;
-      const fy = h0 > 0 ? (ay - (view.cy - h0 / 2)) / h0 : 0.5;
-      view = { zoom: z, cx: ax + w1 * (0.5 - fx), cy: ay + h1 * (0.5 - fy) };
-      applyView();
-      onZoomRef.current?.(view.zoom);
-    };
-    const zoomTo = (z: number) => {
-      const { sw, sh } = stageSize();
-      zoomAt(z, sw / 2, sh / 2);
-    };
-    const resetView = () => {
-      const { sw, sh } = stageSize();
-      view = { zoom: OFFICE_ZOOM_MIN, cx: sw / 2, cy: sh / 2 };
-      applyView();
-      onZoomRef.current?.(view.zoom);
-    };
-    applyView();
-
-    void (async () => {
-      const bg = await loadImage(bgUrl);
-      if (disposed) return;
-      resetView();
-      if (typeof ResizeObserver !== "undefined") {
-        ro = new ResizeObserver(() => applyView());
-        if (canvas.parentElement) ro.observe(canvas.parentElement);
-      }
-
-      const draw = (now: number) => {
-        const t = now / 1000;
-        const nowMs = Date.now();
-        ctx.imageSmoothingEnabled = true;
-        if (bg) ctx.drawImage(bg, 0, 0, CANVAS_W, CANVAS_H);
-        else {
-          ctx.fillStyle = "#dfe5e8";
-          ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-        }
-
-        const list = membersRef.current.slice(0, ANCHORS.length);
-        const hoverId = hoverRef.current;
-        let hoverAnchor: Anchor | null = null;
-        let hoverMember: OfficeMemberState | null = null;
-        let hoverStatus: Status | null = null;
-
-        for (let i = 0; i < list.length; i += 1) {
-          const m = list[i];
-          const a = ANCHORS[i];
-          if (!a) continue;
-          const st = eventRef.current?.(m.id) ?? null;
-          const status = statusOf(m, st, nowMs);
-          const isHover = hoverId === m.id;
-          if (isHover) {
-            hoverAnchor = a;
-            hoverMember = m;
-            hoverStatus = status;
-          }
-
-          /* ── 状态屏：不覆盖场景里的仪表盘，只用细线与扫描线表达“在运行” ── */
-          const s = a.screen;
-          ctx.fillStyle = hexToRgba(status.accent, 0.72);
-          ctx.fillRect(s.x, s.y, s.w, 2);
-          const blink = status.level === "run" ? 0.5 + 0.5 * Math.sin(t * 3.4 + i) : 0.35;
-          ctx.beginPath();
-          ctx.arc(s.x + s.w - 8, s.y + 8, 3, 0, Math.PI * 2);
-          ctx.fillStyle = hexToRgba(status.accent, blink);
-          ctx.fill();
-          if (status.level === "run") {
-            const ly = s.y + ((t * 0.12 + i * 0.17) % 1) * s.h;
-            const grad = ctx.createLinearGradient(0, ly - 8, 0, ly + 8);
-            grad.addColorStop(0, "rgba(127,214,168,0)");
-            grad.addColorStop(0.5, "rgba(127,214,168,0.16)");
-            grad.addColorStop(1, "rgba(127,214,168,0)");
-            ctx.fillStyle = grad;
-            ctx.fillRect(s.x, ly - 8, s.w, 16);
-          }
-
-          /* ── 人物热点：肩上一个小圆标 + 扩散脉冲（类似场景漫游的可点热点） ── */
-          const hx = a.x;
-          const hy = a.y + 42;
-          const wave = (t * 0.55 + i * 0.11) % 1;
-          ctx.save();
-          // 向外扩散的脉冲圈（提示“这里可以点”）
-          ctx.beginPath();
-          ctx.ellipse(hx, hy, 9 + wave * 17, 4 + wave * 7, 0, 0, Math.PI * 2);
-          ctx.strokeStyle = hexToRgba(status.accent, (1 - wave) * 0.42);
-          ctx.lineWidth = 1.6;
-          ctx.stroke();
-          // 柔和底光
-          ctx.beginPath();
-          ctx.ellipse(hx, hy, isHover ? 17 : 11, isHover ? 8 : 5.5, 0, 0, Math.PI * 2);
-          ctx.fillStyle = hexToRgba(status.accent, isHover ? 0.25 : 0.13);
-          ctx.fill();
-          // 主圆标（白边，保证在照片上可辨）
-          ctx.beginPath();
-          ctx.arc(hx, hy, isHover ? 8 : 6, 0, Math.PI * 2);
-          ctx.fillStyle = status.accent;
-          ctx.fill();
-          ctx.strokeStyle = "rgba(255,255,255,0.95)";
-          ctx.lineWidth = 2;
-          ctx.stroke();
-          // 中心小点（运行中闪烁）
-          const core = status.level === "run" ? 0.55 + 0.45 * Math.sin(t * 5 + i) : 0.9;
-          ctx.beginPath();
-          ctx.arc(hx, hy, isHover ? 2.6 : 2, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(255,255,255,${core.toFixed(2)})`;
-          ctx.fill();
-          ctx.restore();
-        }
-
-        /* ── 悬停详情卡（场景漫游式“点进去看”提示；不常驻，避免挡场景） ── */
-        if (hoverAnchor && hoverMember && hoverStatus) {
-          const cw = 238;
-          const ch = 104;
-          const right = hoverAnchor.x < CANVAS_W - cw - 70;
-          const cx = right ? hoverAnchor.x + 48 : hoverAnchor.x - cw - 48;
-          const cy = Math.min(CANVAS_H - ch - 10, Math.max(10, hoverAnchor.y - 66));
-          ctx.save();
-          ctx.shadowColor = "rgba(0,0,0,0.42)";
-          ctx.shadowBlur = 18;
-          ctx.shadowOffsetY = 6;
-          ctx.beginPath();
-          ctx.roundRect(cx, cy, cw, ch, 12);
-          ctx.fillStyle = "rgba(248,250,251,0.98)";
-          ctx.fill();
-          ctx.restore();
-          ctx.beginPath();
-          ctx.roundRect(cx, cy, cw, ch, 12);
-          ctx.strokeStyle = "rgba(32,48,58,0.22)";
-          ctx.lineWidth = 1.2;
-          ctx.stroke();
-          // 指向人物的小三角
-          ctx.beginPath();
-          if (right) {
-            ctx.moveTo(cx, cy + 46);
-            ctx.lineTo(cx - 9, cy + 53);
-            ctx.lineTo(cx, cy + 60);
-          } else {
-            ctx.moveTo(cx + cw, cy + 46);
-            ctx.lineTo(cx + cw + 9, cy + 53);
-            ctx.lineTo(cx + cw, cy + 60);
-          }
-          ctx.closePath();
-          ctx.fillStyle = "rgba(248,250,251,0.98)";
-          ctx.fill();
-          ctx.fillStyle = "#1c2a33";
-          ctx.textAlign = "left";
-          ctx.font = "600 17px ui-sans-serif, system-ui";
-          ctx.fillText(hoverMember.name, cx + 16, cy + 28);
-          ctx.font = "12px ui-sans-serif, system-ui";
-          ctx.fillStyle = "#5d7380";
-          ctx.fillText(hoverMember.profession || "团队成员", cx + 16, cy + 48);
-          ctx.fillStyle = hoverStatus.accent;
-          ctx.font = "600 13px ui-sans-serif, system-ui";
-          ctx.fillText(hoverStatus.text, cx + 16, cy + 70);
-          ctx.fillStyle = "#3f8f7d";
-          ctx.font = "600 12px ui-sans-serif, system-ui";
-          ctx.fillText("点击打开会话  ›", cx + 16, cy + 92);
-        }
-
-        /* ── 左下角操作提示 ── */
-        ctx.save();
-        ctx.font = "13px ui-sans-serif, system-ui";
-        const hint = "点击人物进入会话 · 悬停查看状态";
-        const hw = ctx.measureText(hint).width + 28;
-        const hx = 18;
-        const hy = CANVAS_H - 44;
-        ctx.beginPath();
-        ctx.roundRect(hx, hy, hw, 28, 9);
-        ctx.fillStyle = "rgba(10,17,23,0.62)";
-        ctx.fill();
-        ctx.strokeStyle = "rgba(255,255,255,0.14)";
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(hx + 14, hy + 14, 4, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(127,214,168,0.9)";
-        ctx.lineWidth = 1.4;
-        ctx.stroke();
-        ctx.fillStyle = "rgba(240,246,250,0.9)";
-        ctx.fillText(hint, hx + 24, hy + 18);
-        ctx.restore();
-
-        raf = requestAnimationFrame(draw);
-      };
-      raf = requestAnimationFrame(draw);
-
-      const hitTest = (clientX: number, clientY: number): { id: string } | null => {
-        const rect = canvas.getBoundingClientRect();
-        if (rect.width <= 0 || rect.height <= 0) return null;
-        const sx = ((clientX - rect.left) / rect.width) * CANVAS_W;
-        const sy = ((clientY - rect.top) / rect.height) * CANVAS_H;
-        let best: { d: number; id: string } | null = null;
-        const list = membersRef.current.slice(0, ANCHORS.length);
-        for (let i = 0; i < list.length; i += 1) {
-          const a = ANCHORS[i];
-          const m = list[i];
-          if (!a) continue;
-          const tag = tagPosition(a);
-          const dPerson = Math.hypot(a.x - sx, a.y + 55 - sy);
-          const dTag = Math.hypot(tag.x - sx, tag.y + 14 - sy);
-          const d = Math.min(dPerson, dTag);
-          if (d < 62 && (!best || d < best.d)) best = { d, id: m.id };
-        }
-        return best;
-      };
-      const onClick = (ev: MouseEvent) => {
-        const hit = hitTest(ev.clientX, ev.clientY);
-        if (hit) openRef.current?.(hit.id);
-      };
-      const onMove = (ev: MouseEvent) => {
-        const hit = hitTest(ev.clientX, ev.clientY);
-        const id = hit?.id ?? null;
-        if (hoverRef.current !== id) {
-          hoverRef.current = id;
-          canvas.style.cursor = id ? "pointer" : "default";
-        }
-      };
-      const onLeave = () => {
-        if (hoverRef.current !== null) {
-          hoverRef.current = null;
-          canvas.style.cursor = "default";
-        }
-      };
-      const onWheel = (ev: WheelEvent) => {
-        const stage = canvas.parentElement;
-        if (!stage) return;
-        ev.preventDefault();
-        const rect = stage.getBoundingClientRect();
-        const ax = ev.clientX - rect.left;
-        const ay = ev.clientY - rect.top;
-        zoomAt(view.zoom * (ev.deltaY < 0 ? OFFICE_ZOOM_STEP : 1 / OFFICE_ZOOM_STEP), ax, ay);
-      };
-      canvas.addEventListener("click", onClick);
-      canvas.addEventListener("mousemove", onMove);
-      canvas.addEventListener("mouseleave", onLeave);
-      canvas.addEventListener("wheel", onWheel, { passive: false });
-
-      if (controlsRef) {
-        controlsRef.current = {
-          zoomIn: () => zoomTo(view.zoom * OFFICE_ZOOM_STEP),
-          zoomOut: () => zoomTo(view.zoom / OFFICE_ZOOM_STEP),
-          reset: resetView,
-        };
-      }
-    })().catch(() => undefined);
-
-    return () => {
-      disposed = true;
-      if (controlsRef) controlsRef.current = null;
-      if (ro) ro.disconnect();
-      if (raf) cancelAnimationFrame(raf);
-    };
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
   }, []);
 
-  return <canvas ref={canvasRef} width={CANVAS_W} height={CANVAS_H} className="office-pixel-canvas" />;
+  const applyView = useCallback(() => {
+    const wrap = wrapRef.current;
+    const stage = stageRef.current;
+    if (!wrap || !stage) return;
+    const sw = wrap.clientWidth;
+    const sh = wrap.clientHeight;
+    if (sw <= 0 || sh <= 0) return;
+    const fit = Math.min(sw / CANVAS_W, sh / CANVAS_H);
+    fitRef.current = fit;
+    const scale = fit * viewRef.current.zoom;
+    const width = CANVAS_W * scale;
+    const height = CANVAS_H * scale;
+    const clamp = (c: number, size: number, span: number) =>
+      size <= span ? span / 2 : Math.min(size / 2, Math.max(span - size / 2, c));
+    viewRef.current.cx = clamp(viewRef.current.cx, width, sw);
+    viewRef.current.cy = clamp(viewRef.current.cy, height, sh);
+    stage.style.transform =
+      `translate(${viewRef.current.cx - width / 2}px, ${viewRef.current.cy - height / 2}px) scale(${scale})`;
+  }, []);
+
+  const zoomAt = useCallback((nextZoom: number, ax: number, ay: number) => {
+    const wrap = wrapRef.current;
+    const stage = stageRef.current;
+    if (!wrap || !stage) return;
+    const sw = wrap.clientWidth;
+    const sh = wrap.clientHeight;
+    const fit = fitRef.current || Math.min(sw / CANVAS_W, sh / CANVAS_H);
+    const z = Math.min(OFFICE_ZOOM_MAX, Math.max(OFFICE_ZOOM_MIN, nextZoom));
+    const rect = stage.getBoundingClientRect();
+    const wrapRect = wrap.getBoundingClientRect();
+    const left = rect.left - wrapRect.left;
+    const top = rect.top - wrapRect.top;
+    const s0 = rect.width / CANVAS_W;
+    if (s0 <= 0) return;
+    const designX = (ax - left) / s0;
+    const designY = (ay - top) / s0;
+    const s1 = fit * z;
+    const newLeft = ax - designX * s1;
+    const newTop = ay - designY * s1;
+    viewRef.current = {
+      zoom: z,
+      cx: newLeft + (CANVAS_W * s1) / 2,
+      cy: newTop + (CANVAS_H * s1) / 2,
+    };
+    applyView();
+    zoomCbRef.current?.(z);
+  }, [applyView]);
+
+  const resetView = useCallback(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    viewRef.current = { zoom: 1, cx: wrap.clientWidth / 2, cy: wrap.clientHeight / 2 };
+    applyView();
+    zoomCbRef.current?.(1);
+  }, [applyView]);
+
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    viewRef.current = { zoom: 1, cx: wrap.clientWidth / 2, cy: wrap.clientHeight / 2 };
+    applyView();
+    const ro = new ResizeObserver(() => applyView());
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, [applyView]);
+
+  useEffect(() => {
+    if (!controlsRef) return;
+    controlsRef.current = {
+      zoomIn: () => {
+        const wrap = wrapRef.current;
+        if (!wrap) return;
+        zoomAt(viewRef.current.zoom * OFFICE_ZOOM_STEP, wrap.clientWidth / 2, wrap.clientHeight / 2);
+      },
+      zoomOut: () => {
+        const wrap = wrapRef.current;
+        if (!wrap) return;
+        zoomAt(viewRef.current.zoom / OFFICE_ZOOM_STEP, wrap.clientWidth / 2, wrap.clientHeight / 2);
+      },
+      reset: resetView,
+    };
+    return () => { controlsRef.current = null; };
+  }, [controlsRef, resetView, zoomAt]);
+
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const onWheel = (ev: WheelEvent) => {
+      ev.preventDefault();
+      const rect = wrap.getBoundingClientRect();
+      zoomAt(
+        viewRef.current.zoom * (ev.deltaY < 0 ? OFFICE_ZOOM_STEP : 1 / OFFICE_ZOOM_STEP),
+        ev.clientX - rect.left,
+        ev.clientY - rect.top,
+      );
+    };
+    wrap.addEventListener("wheel", onWheel, { passive: false });
+    return () => wrap.removeEventListener("wheel", onWheel);
+  }, [zoomAt]);
+
+  const rows = members.slice(0, TEAM_OFFICE_LIMIT);
+
+  return (
+    <div ref={wrapRef} className="office-scene-wrap">
+      <div ref={stageRef} className="office-scene-stage" style={{ width: CANVAS_W, height: CANVAS_H }}>
+        <div className="office-board">
+          <Facilities />
+          {Array.from({ length: TEAM_OFFICE_LIMIT }, (_, i) => {
+            const x = DESK_COLS[i % 2];
+            const y = DESK_ROWS[Math.floor(i / 2)];
+            const member = rows[i];
+            if (!member) return <EmptyWorkstation key={`empty-${i}`} x={x} y={y} />;
+            const status = statusOf(member, eventRef.current?.(member.id) ?? null, now);
+            return (
+              <Workstation
+                key={member.id}
+                member={member}
+                status={status}
+                index={i}
+                x={x}
+                y={y}
+                hovered={hoverId === member.id}
+                onEnter={() => setHoverId(member.id)}
+                onLeave={() => setHoverId((cur) => (cur === member.id ? null : cur))}
+                onOpen={() => openRef.current?.(member.id)}
+              />
+            );
+          })}
+        </div>
+      </div>
+      <div className="office-scene-hint">点击工位进入会话 · 悬停查看状态 · 滚轮缩放</div>
+    </div>
+  );
 }
