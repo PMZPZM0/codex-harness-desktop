@@ -380,6 +380,11 @@ export async function probeCustomModel(input: { provider?: string; baseUrl: stri
 
   let wireUsed: "responses" | "chat" = wireOrder[0];
 
+  /* ⛔ 已经诊断到具体原因时带上这个标记：下面的 catch 只兜「网络层根本没回来」的情况，
+     不许把精确诊断再包一层 —— 10-22 实测：网关 502 被包装成「实际推理失败…该账号未开通这个模型」，
+     用户照着换模型，方向全错（真正原因是服务端 Caddy 反代目标不通）。 */
+  const diagnose = (message: string) => Object.assign(new Error(message), { probeDiagnosed: true });
+
   try {
 
   for (let w = 0; w < wireOrder.length; w++) {
@@ -412,24 +417,28 @@ export async function probeCustomModel(input: { provider?: string; baseUrl: stri
 
       const detail = describeHttpBody(body) || response.statusText;
 
-      if (response.status === 401 || response.status === 403) throw new Error(`认证失败（HTTP ${response.status}）${detail ? `：${detail}` : "：网络是通的，请检查 API Key"}`);
+      if (response.status === 401 || response.status === 403) throw diagnose(`认证失败（HTTP ${response.status}）${detail ? `：${detail}` : "：网络是通的，请检查 API Key"}`);
 
-      if (response.status === 400 && /model.*(not.*(found|exist)|不存在)/i.test(body)) throw new Error(`模型不存在（HTTP 400）：${detail}`);
+      if (response.status === 400 && /model.*(not.*(found|exist)|不存在)/i.test(body)) throw diagnose(`模型不存在（HTTP 400）：${detail}`);
 
       if (response.status === 404 && /coding plan/i.test(body)) {
 
         // 火山 Coding Plan 类网关的原话要翻译成白话：用户看到 404 只知道"失败了"，不知道是该换接入点还是换模型
 
-        throw new Error(`HTTP 404: ${detail}\n白话：供应商表示这个模型不在其 Coding Plan 通道的支持范围。请确认 Base URL 与模型是否配套（例如火山引擎通用接入点是 https://ark.cn-beijing.volces.com/api/v3），或换用支持该模型的接入点。`);
+        throw diagnose(`HTTP 404: ${detail}\n白话：供应商表示这个模型不在其 Coding Plan 通道的支持范围。请确认 Base URL 与模型是否配套（例如火山引擎通用接入点是 https://ark.cn-beijing.volces.com/api/v3），或换用支持该模型的接入点。`);
 
       }
 
-      throw new Error(`HTTP ${response.status}: ${detail}`);
+      /* ⛔ 5xx 是**网关/服务端**的问题：请求已经到达网关，它背后的服务不可用。
+         与模型、密钥、账号无关 —— 旧文案统一说「可能是该账号未开通这个模型」，把人带偏。 */
+      if (response.status >= 500) throw diagnose(`服务端网关异常（HTTP ${response.status}）${detail ? `：${detail}` : "（上游没有返回任何内容）"}\n白话：请求已经到网关，但网关背后的服务不可用 —— 与模型、密钥、账号无关，通常是服务端故障 / 正在维护 / 反代目标没起来。稍后重试；持续如此请联系服务商。`);
+      throw diagnose(`HTTP ${response.status}: ${detail}`);
 
     }
 
   }
   } catch (error: any) {
+    if (error?.probeDiagnosed) throw error;   // 精确诊断原样上抛（见 diagnose）
     const reason = /连接超时|timeout|aborted/i.test(String(error?.message ?? ""))
       ? "实际推理请求超时（35 秒没有任何返回）"
       : String(error?.message ?? error);

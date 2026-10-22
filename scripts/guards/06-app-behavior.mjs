@@ -123,6 +123,16 @@ console.log(C.bold("\n【24】协议桥：引擎只发 Responses，chat-only 网
     (probeSrc.includes("if (models && !model)") && probeSrc.includes("实际推理失败") && probeSrc.includes("35_000") ? ok : fail)(
       "模型检测：指定模型必须真发一次推理（/models 里有 ≠ 能用；grok-4.7 实测列表有、推理挂起）"
     );
+    /* ⛔ 10-22 用户实测：网关整站 502（Caddy 反代目标不通），界面却说「实际推理失败…通常是该账号
+       未开通这个模型」—— 把人引到换模型/查账号上，方向全错。两条判据：
+       ① 5xx 单独归因到服务端；② 精确诊断不许被 catch 再包一层。 */
+    (probeSrc.includes("if (response.status >= 500) throw diagnose(") ? ok : fail)(
+      "⛔ 5xx 归因为服务端网关异常（⛔ 不许再说成「该账号未开通这个模型」）"
+    );
+    (probeSrc.includes("const diagnose = (message: string) => Object.assign(new Error(message), { probeDiagnosed: true });")
+      && probeSrc.includes("if (error?.probeDiagnosed) throw error;") ? ok : fail)(
+      "⛔ 精确诊断不被 catch 二次包装（否则认证失败 / 模型不存在 / 5xx 全被吞成「实际推理失败」）"
+    );
   }
   if (compiledOk) {
     const requireBridge = createRequire(import.meta.url);
