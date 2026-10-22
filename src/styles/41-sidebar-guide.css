@@ -424,8 +424,12 @@
    ⛔ 折叠只收本组自身：入口组 `hidden` + 本组 `flex:none`，空出来的高度由 `.thread-list`
       （flex:1 1 0）吃掉 ⇒ 账户行 0 位移；⛔ 别给列表/账户行加占位、补白或 transition。
    ⛔ 窗口矮时让**入口组自己滚**（max-height），⛔ 不许把会话列表挤没 —— 列表是主场。 */
+/* ⛔ 10-22 自适应：入口组原来是 `flex:none`（定高）——矮窗口（笔记本 768 高 / 分屏）时
+   7 行 + 账户行把上面的会话列表压到 0，而 .sidebar 是 overflow:hidden ⇒ 列表直接消失。
+   现在两层都可以**收缩**：分组收缩 → 内部 nav 收缩并自己滚（折叠头始终可见），
+   列表由 .thread-list 的 min-height 保底 96px，账户行仍是定高 42px（贴底锚不动）。 */
 .sidebar-options {
-  flex: none;
+  flex: 0 1 auto;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -466,7 +470,9 @@
 .sidebar-options-toggle:hover .sidebar-options-chevron { color: var(--muted); }
 
 .sidebar-nav-bottom {
-  flex: none;
+  /* ⛔ 可收缩（原 flex:none）：矮窗口下由它先让位并自己滚，而不是把上面的会话列表挤没、把下面的账户行顶出可视区。 */
+  flex: 0 1 auto;
+  min-height: 0;
   margin-top: 4px;
   max-height: 40vh;
   overflow-y: auto;

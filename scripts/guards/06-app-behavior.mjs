@@ -2601,6 +2601,15 @@ w.postMessage({id:1,op:"list",root});
     (/\.account-row \{[\s\S]{0,600}?flex:\s*0 0 42px/.test(css02) ? ok : fail)(
       "【180】账户行仍是固定 42px（flex: 0 0 42px —— 折叠时 0 位移的前提）"
     );
+    /* ⛔ 10-22 自适应（用户问「两个板块会不会冲突」）：矮窗口下 7 行入口组 + 账户行会把会话列表
+       压到 0（列表消失）；现在列表有保底、入口组可收缩并自己滚，账户行照旧钉死。 */
+    const css01 = readFileSync(join(ROOT, "src", "styles", "01-base-and-chrome.css"), "utf8");
+    (/\.thread-list \{[\s\S]{0,700}?min-height:\s*96px/.test(css01) ? ok : fail)(
+      "【180】会话列表有高度保底 96px（矮窗口下不被底部入口组压到 0）"
+    );
+    (/\.sidebar-nav-bottom \{[\s\S]{0,240}?flex:\s*0 1 auto/.test(css41) ? ok : fail)(
+      "【180】底部入口组可收缩并自己滚（⛔ 别改回 flex:none —— 会把列表挤没 / 账户行顶出可视区）"
+    );
   }
   /* 新手教程：入口进底部组，且 NewbieGuide 走**受控**（不传 open 它会再画一行「新手引导」⇒ 底部两个入口）。 */
   (/<span>新手教程<\/span>/.test(side180) && /setNewbieOpen\(true\)/.test(side180) ? ok : fail)(
