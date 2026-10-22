@@ -1,7 +1,7 @@
 /** 存储设置 / 复审面板（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
 import { useState, useEffect, useMemo } from "react";
 import { PageInfo } from "../../components/SettingsHead";
-import { Database, ChevronDown, Check, RefreshCw, FileCode2, Search, Download } from "lucide-react";
+import { Database, ChevronDown, Check, RefreshCw, FileCode2, FolderOpen, Search, Download } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 import { basename } from "../../lib/basename";
@@ -72,19 +72,31 @@ const reviewScopeHints: Record<ReviewScope, string> = {
   head: "当前分支从上游 / 主分支分出来后的全部改动（含已提交 + 未提交；git merge-base → diff）",
   last: "上一轮对话产生的改动（用回合记录，不经过 Git）",
 };
+/* 10-22 空态文案：原来说「当前范围没有文件改动」——用户看不出「为什么空」「接下来做什么」。
+   改成「结论 + 下一步」，并按范围区分（未暂存空 ≠ 分支与起点一致，两件事）。 */
+const reviewEmptyCopy: Record<ReviewScope, { title: string; hint: string }> = {
+  unstaged: { title: "「未暂存」里还没有改动", hint: "改过文件后点右上角「刷新」；也可以展开下面的 AI 审查，让它先看一遍未提交改动。" },
+  staged: { title: "还没有暂存的改动", hint: "git add 之后会出现在这里；没 add 的改动在「未暂存」。" },
+  head: { title: "当前分支与起点一致", hint: "从分支起点到现在的改动（含已提交 + 未提交）都会列在这里。" },
+  last: { title: "还没有上一轮改动", hint: "先在会话里发一条消息，回合结束后再回来看。" },
+};
 
 export function ReviewPanel({ workspace, lastDiff, disabled, busy, report, onReview, onNotice }: { workspace: string; lastDiff: string; disabled: boolean; busy: boolean; report: string; onReview: (instructions: string) => void; onNotice?: (message: string) => void }) {
   const [scope, setScope] = useState<ReviewScope>("unstaged");
   const [menuOpen, setMenuOpen] = useState(false);
   const [output, setOutput] = useState("");
   const [gitMissing, setGitMissing] = useState(false);
+  /* ⛔「没选工作区」不是「没装 Git」：原来两者共用 gitMissing ⇒ 面板会顶着「当前环境没有可用的 Git」
+     和「一键安装 Git」按钮，用户装了也是白装。这里独立成一个空态。 */
+  const [noWorkspace, setNoWorkspace] = useState(false);
   const [gitError, setGitError] = useState("");
   const [installingGit, setInstallingGit] = useState(false);
   const [loading, setLoading] = useState(false);
   const [custom, setCustom] = useState("");
   const refresh = async () => {
-    if (scope === "last") { setOutput(lastDiff); setGitMissing(false); setGitError(""); return ""; }
-    if (!workspace) { setGitMissing(true); setGitError("还没有工作区 —— 先在会话里选一个项目"); setOutput(""); return "还没有工作区 —— 先在会话里选一个项目"; }
+    if (scope === "last") { setOutput(lastDiff); setGitMissing(false); setNoWorkspace(false); setGitError(""); return ""; }
+    if (!workspace) { setNoWorkspace(true); setGitMissing(false); setGitError(""); setOutput(""); return ""; }
+    setNoWorkspace(false);
     setLoading(true);
     try {
       const result = await window.codex.gitDiff(workspace, scope);
@@ -141,18 +153,23 @@ export function ReviewPanel({ workspace, lastDiff, disabled, busy, report, onRev
         </div>
         <button className="review-refresh" title="刷新" onClick={() => void refreshWithReceipt(onNotice, "刷新变更列表", () => refresh())}>{loading ? <Spinner /> : <RefreshCw size={14} />}<span>刷新</span></button>
       </div>
-      {gitMissing ? <div className="git-missing"><FileCode2 size={36} /><strong>当前环境没有可用的 Git</strong><p>{gitError || "安装后就能查看未暂存 / 已暂存 / 分支起点 / 上一轮的文件改动。"}</p><button className="primary-setting" disabled={installingGit} onClick={() => void installGit()}>{installingGit ? <Spinner /> : <Download size={14} />}{installingGit ? "安装中…" : "一键安装 Git"}</button><small>也可以在「设置 → 开发工具」查看安装进度；装完会自动刷新。</small></div>
+      {noWorkspace ? <div className="git-missing"><FolderOpen size={36} /><strong>还没有选择工作区</strong><p>在会话里选一个项目目录，或从「文件」标签打开项目；选好后这里会列出 Git 改动。</p></div>
+        : gitMissing ? <div className="git-missing"><FileCode2 size={36} /><strong>当前环境没有可用的 Git</strong><p>{gitError || "安装后就能查看未暂存 / 已暂存 / 分支起点 / 上一轮的文件改动。"}</p><button className="primary-setting" disabled={installingGit} onClick={() => void installGit()}>{installingGit ? <Spinner /> : <Download size={14} />}{installingGit ? "安装中…" : "一键安装 Git"}</button><small>也可以在「设置 → 开发工具」查看安装进度；装完会自动刷新。</small></div>
         : <>
           {gitError && <div className="git-note">{gitError}</div>}
           {files.length ? <div className="diff-file-list">{files.map((file) => <div key={file.path}><code title={file.path}>{basename(file.path)}</code><span><b>+{file.added}</b> <i>-{file.deleted}</i></span></div>)}</div>
-            : <div className="git-empty"><p className="muted">{scope === "last" ? "还没有上一轮改动 —— 先在会话里发一条消息，回合收尾后再看" : "当前范围没有文件改动"}</p></div>}
+            /* ⛔ 读不到变更时只说读到的那句：再说「没有改动」是两个互相矛盾的结论（10-22 用户截图里就是两条并存）。 */
+            : gitError ? null
+            : <div className="git-empty"><p className="muted">{reviewEmptyCopy[scope].title}</p><small>{reviewEmptyCopy[scope].hint}</small></div>}
         </>}
       <details className="ai-review">
-        <summary><Search size={13} />AI 审查（review/start）<ChevronDown size={13} /></summary>
+        {/* ⛔ 不再把内部方法名 review/start 写在标题里（用户不需要知道 RPC 名，且看起来像未完成的功能）。 */}
+        <summary><Search size={13} />AI 代码审查<ChevronDown size={13} /></summary>
         <div className="ai-review-body">
+          <p className="muted ai-review-hint">让模型读一遍未提交改动，列出问题与修改建议；结果直接显示在下方。</p>
           <button className="primary-setting" disabled={disabled || busy} onClick={() => onReview("")}><Search size={14} />{busy ? "审查中…" : "审查未提交改动"}</button>
           <div className="review-custom">
-            <textarea value={custom} rows={2} placeholder="或输入自定义审查说明，例如：重点检查鉴权逻辑" onChange={(event) => setCustom(event.target.value)} />
+            <textarea value={custom} rows={2} placeholder="补充审查要求（可选），例如：重点检查鉴权与错误处理" onChange={(event) => setCustom(event.target.value)} />
             <button className="secondary-setting" disabled={disabled || busy || !custom.trim()} onClick={() => { const value = custom.trim(); setCustom(""); onReview(value); }}>按说明审查</button>
           </div>
           {report && <div className="review-report"><Markdown>{report}</Markdown></div>}

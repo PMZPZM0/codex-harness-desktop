@@ -114,8 +114,10 @@ export const gitFeature = defineFeature<null>({
 
     ipcHost.handle("git:diff", async (_event, input: { cwd?: unknown; scope?: unknown } | null | undefined): Promise<GitDiffResult> => {
       const cwd = String(input?.cwd ?? "").trim();
-      if (!cwd) return { code: null, output: "", error: "还没有工作区 —— 先在会话里选一个项目。" };
-      if (!isInsideOrEqualTrustedRoots(cwd)) return { code: null, output: "", error: "目录不在可信工作区（当前会话工作区 / 应用数据）内，拒绝读取 Git 变更。" };
+      if (!cwd) return { code: null, output: "", error: "还没有选择工作区：先在会话里选一个项目目录。" };
+      /* 10-22 文案：原文是「不在可信工作区…拒绝读取」，用户读到的是一句拒绝声明（且不知道下一步做什么）。
+         改成「说清原因 + 说清下一步」，安全语义（工作区之外一律不读）不弱化。 */
+      if (!isInsideOrEqualTrustedRoots(cwd)) return { code: null, output: "", error: "读不到变更：这个目录不在当前会话的工作区内。工作区之外的 Git 数据不会被读取（安全限制），切到对应项目后再试。" };
       return diffForScope(cwd, String(input?.scope ?? "unstaged"));
     });
 
