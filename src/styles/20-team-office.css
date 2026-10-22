@@ -1,6 +1,6 @@
-/* 专家团办公室 · 白色简洁场景（2026-10-22 对照 Marvis workbench 重做）
-   ⛔ 纯白底 + 白色家具 + 黑猫成员；不再使用任何照片/位图背景。
-   ⛔ 工位/桌椅/猫全部 DOM + SVG，状态动画走 CSS（真实状态由 OfficeCanvas 映射）。 */
+/* 专家团办公室 · 白色简洁工位板（2026-10-22 对照 Marvis workbench 重做）
+   ⛔ 纯白底；家具/设施 = 本仓生成的白底 3D 渲染图（mix-blend-mode:multiply 融进白板）；
+   猫 = DOM/SVG 黑猫剪影；一页 6 工位（2×3），超过 6 人分页。 */
 
 .office-overlay {
   --office-top: 0px;
@@ -112,16 +112,15 @@
   will-change: transform;
 }
 
-.office-board {
-  position: absolute;
-  inset: 0;
-}
+.office-board { position: absolute; inset: 0; }
 
-/* ── 工位（480×230 设计坐标） ── */
+/* ── 工位 ── */
 .ws { position: absolute; }
 .office-agent { cursor: pointer; outline: none; }
-.office-agent:focus-visible .ws-desk-top {
-  box-shadow: 0 0 0 3px rgba(74, 123, 208, 0.32), 0 14px 22px rgba(38, 48, 58, 0.1);
+.office-agent:focus-visible .ws-desk-wrap {
+  outline: 3px solid rgba(74, 123, 208, 0.4);
+  outline-offset: 4px;
+  border-radius: 12px;
 }
 
 .ws-name {
@@ -132,12 +131,13 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 1px;
   pointer-events: none;
+  z-index: 12;
 }
 .ws-name strong {
-  font-size: 22px;
-  line-height: 24px;
+  font-size: 26px;
+  line-height: 30px;
   font-weight: 600;
   color: #2b2f36;
   letter-spacing: 0.2px;
@@ -146,168 +146,51 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
-  line-height: 16px;
+  font-size: 15px;
+  line-height: 18px;
   color: #8a919b;
 }
-.ws-status i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-}
+.ws-status i { width: 7px; height: 7px; border-radius: 50%; }
 
 .ws-furniture { position: absolute; inset: 0; }
 
-.ws-floor-shadow {
-  position: absolute;
-  left: 50%;
-  top: 178px;
-  width: 390px;
-  height: 38px;
-  transform: translateX(-50%);
-  background: radial-gradient(ellipse at 50% 50%, rgba(34, 44, 54, 0.13), transparent 70%);
-  filter: blur(5px);
-  pointer-events: none;
-}
-
-.ws-desk-top {
+.ws-desk-wrap {
   position: absolute;
   left: 0;
-  right: 0;
-  top: 88px;
-  height: 32px;
-  border-radius: 6px;
-  border: 1px solid #eef0f2;
-  background: linear-gradient(180deg, #ffffff 0%, #f9fafb 68%, #f2f4f6 100%);
-  box-shadow: 0 1px 0 #eceef1, 0 10px 18px rgba(38, 48, 58, 0.07);
+  width: 100%;
   z-index: 2;
-  transition: box-shadow 0.18s ease;
 }
-.ws-desk-edge {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 120px;
-  height: 12px;
-  border: 1px solid #e8ebee;
-  border-top: 0;
-  border-radius: 0 0 6px 6px;
-  background: linear-gradient(180deg, #f3f5f7, #e9ecef);
-  z-index: 3;
-}
-.ws-desk-leg {
-  position: absolute;
-  top: 130px;
-  width: 14px;
-  height: 74px;
-  border: 1px solid #e9ebee;
-  border-radius: 3px;
-  background: linear-gradient(90deg, #fbfbfc, #eef0f2);
-  z-index: 1;
-}
-.ws-desk-leg.is-left { left: 28px; }
-.ws-desk-leg.is-right { right: 28px; }
-.ws-pedestal {
-  position: absolute;
-  top: 118px;
-  right: 44px;
-  width: 94px;
-  height: 80px;
-  border: 1px solid #e8ebee;
-  border-radius: 5px;
-  background: linear-gradient(180deg, #ffffff, #f4f6f7);
-  box-shadow: 0 8px 14px rgba(30, 40, 50, 0.05);
-  z-index: 1;
-}
-.ws-pedestal::before,
-.ws-pedestal::after {
-  content: "";
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  height: 1px;
-  background: #eceef1;
-}
-.ws-pedestal::before { top: 40px; }
-.ws-pedestal::after { top: 62px; }
-
-.ws-pc {
-  position: absolute;
-  top: 58px;
-  right: 84px;
-  width: 32px;
-  height: 62px;
-  border: 1px solid #e6e9ec;
-  border-radius: 4px;
-  background: linear-gradient(90deg, #ffffff, #eef0f3);
-  box-shadow: 0 6px 10px rgba(30, 40, 50, 0.05);
-  z-index: 4;
-}
-.ws-pc i {
-  position: absolute;
-  left: 8px;
-  height: 2px;
-  border-radius: 1px;
-  background: #d9dde2;
-}
-.ws-pc i:nth-child(1) { top: 14px; width: 16px; }
-.ws-pc i:nth-child(2) { top: 20px; width: 12px; }
-.ws-pc i:nth-child(3) { top: 26px; width: 8px; }
-
-.ws-monitor {
-  position: absolute;
-  left: 50%;
-  top: 44px;
-  width: 150px;
-  height: 74px;
-  transform: translateX(-50%);
-  padding: 6px;
-  border: 1px solid #e8ebee;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #ffffff, #eef1f4);
-  box-shadow: 0 2px 0 #e4e7ea, 0 10px 16px rgba(30, 40, 50, 0.08);
-  z-index: 4;
-}
-.ws-monitor-neck {
-  position: absolute;
-  left: 50%;
-  bottom: -14px;
-  width: 18px;
-  height: 16px;
-  transform: translateX(-50%);
-  border: 1px solid #e7eaed;
-  background: #f5f6f8;
-}
-.ws-monitor-base {
-  position: absolute;
-  left: 50%;
-  bottom: -20px;
-  width: 76px;
-  height: 7px;
-  transform: translateX(-50%);
-  border: 1px solid #e6e9ec;
-  border-radius: 50%;
-  background: #f2f4f6;
+.ws-desk-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  user-select: none;
+  mix-blend-mode: multiply;
 }
 
+/* 显示器玻璃面（在生成的桌上，位置按桌面图比例；运行时叠实时内容） */
 .ws-screen {
   --screen-accent: #8a919b;
-  position: relative;
-  width: 100%;
-  height: 60px;
+  position: absolute;
+  left: 25.7%;
+  top: 4.7%;
+  width: 37.2%;
+  height: 28.3%;
   overflow: hidden;
-  border-radius: 4px;
+  border-radius: 2px;
   background:
-    radial-gradient(120% 90% at 50% 25%, color-mix(in srgb, var(--screen-accent) 22%, transparent), transparent 72%),
+    radial-gradient(120% 90% at 50% 25%, color-mix(in srgb, var(--screen-accent) 20%, transparent), transparent 72%),
     #14181d;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  z-index: 3;
 }
 .ws-screen > i {
   position: absolute;
-  left: 11%;
+  left: 10%;
   height: 7%;
   min-height: 3px;
-  border-radius: 2px;
+  border-radius: 1px;
   background: color-mix(in srgb, var(--screen-accent) 68%, transparent);
   animation: ws-bar 2.8s ease-in-out infinite;
 }
@@ -315,7 +198,7 @@
 .ws-screen > i:nth-child(2) { top: 35%; width: 72%; animation-delay: 0.35s; opacity: 0.72; }
 .ws-screen > i:nth-child(3) { top: 53%; width: 44%; animation-delay: 0.7s; opacity: 0.55; }
 .ws-screen > i:nth-child(4) { top: 71%; width: 63%; animation-delay: 1.05s; opacity: 0.42; }
-.ws-screen.tone-idle > i { opacity: 0.32; animation-duration: 4.6s; }
+.ws-screen.tone-idle > i { opacity: 0.28; animation-duration: 4.6s; }
 .ws-screen.tone-waiting > i { animation-duration: 3.6s; }
 .ws-screen-scan {
   position: absolute;
@@ -326,13 +209,13 @@
   background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--screen-accent) 32%, transparent), transparent);
   animation: ws-scan 3.6s linear infinite;
 }
-.ws-screen.tone-idle .ws-screen-scan { opacity: 0.35; animation-duration: 6s; }
+.ws-screen.tone-idle .ws-screen-scan { opacity: 0.3; animation-duration: 6s; }
 .ws-screen-mark {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
-  font-size: 30px;
+  font-size: 26px;
   font-weight: 700;
   color: var(--screen-accent);
   background: rgba(10, 14, 18, 0.55);
@@ -350,58 +233,35 @@
   100% { top: 112%; opacity: 0; }
 }
 
-.ws-keyboard {
+/* 椅子（空位白椅 / 有人灰椅），图和桌子一样用 multiply 融进白底 */
+.ws-chair-img {
   position: absolute;
   left: 50%;
-  top: 96px;
-  width: 168px;
-  height: 22px;
-  transform: translateX(-50%);
-  border: 1px solid #e7eaed;
-  border-radius: 4px;
-  background:
-    repeating-linear-gradient(90deg, transparent 0 11px, #eceef1 11px 12px),
-    linear-gradient(180deg, #ffffff, #f4f6f7);
-  box-shadow: 0 2px 3px rgba(30, 40, 50, 0.04);
-  z-index: 5;
-}
-.ws-keyboard i { display: none; }
-
-/* ── 椅子：空位白色、有人灰色（Marvis 同款区分） ── */
-.ws-chair {
-  position: absolute;
-  left: 50%;
-  top: 122px;
+  top: 200px;
   width: 150px;
-  height: 114px;
+  height: auto;
   transform: translateX(-50%);
-  overflow: visible;
   z-index: 6;
+  pointer-events: none;
+  user-select: none;
+  mix-blend-mode: multiply;
 }
-.chair-back { fill: #f3f5f7; stroke: #e4e7ea; stroke-width: 1.4; }
-.chair-seat { fill: #eef1f4; stroke: #e4e7ea; stroke-width: 1.2; }
-.chair-stem, .chair-wheel { fill: #e8ebee; stroke: #dfe3e7; stroke-width: 1; }
-.chair-base { stroke: #dfe3e7; stroke-width: 3.4; stroke-linecap: round; fill: none; }
-.ws-chair.is-occupied .chair-back { fill: #9aa0a8; stroke: #8b929b; }
-.ws-chair.is-occupied .chair-seat { fill: #8f959e; stroke: #858c96; }
-.ws-chair.is-occupied .chair-stem { fill: #8f959e; stroke: #7f8792; }
-.ws-chair.is-occupied .chair-base { stroke: #9aa0a8; }
-.ws-chair.is-occupied .chair-wheel { fill: #b3b8bf; stroke: #9aa0a8; }
+.ws-chair-img.is-gray { top: 214px; width: 154px; }
 
-/* ── 黑猫成员：背对（坐着敲键盘）/ 正面（站着等你） ── */
+/* ── 黑猫成员：背对/正面，围巾按工位取色 ── */
 .ws-cat {
   position: absolute;
   left: 50%;
-  top: 66px;
-  width: 132px;
-  height: 132px;
+  top: 122px;
+  width: 190px;
+  height: 190px;
   transform: translateX(-50%);
   overflow: visible;
   z-index: 8;
   pointer-events: none;
-  filter: drop-shadow(0 8px 7px rgba(20, 28, 36, 0.16));
+  filter: drop-shadow(0 8px 6px rgba(20, 28, 36, 0.16));
 }
-.ws-cat.is-standing { top: 52px; width: 122px; height: 152px; }
+.ws-cat.is-standing { top: 88px; width: 175px; height: 215px; }
 
 .cat-tail {
   transform-box: fill-box;
@@ -420,22 +280,14 @@
 }
 .cat-eyes { transform-box: fill-box; transform-origin: center; animation: cat-blink 4.8s ease-in-out infinite; }
 .cat-arm { transform-box: fill-box; }
-
-.ws-cat.is-run .cat-arm-r {
-  transform-origin: top center;
-  animation: cat-type-r 0.5s ease-in-out infinite alternate;
-}
-.ws-cat.is-run .cat-arm-l {
-  transform-origin: top center;
-  animation: cat-type-l 0.58s ease-in-out infinite alternate;
-}
+.ws-cat.is-run .cat-arm-r { transform-origin: top center; animation: cat-type-r 0.5s ease-in-out infinite alternate; }
+.ws-cat.is-run .cat-arm-l { transform-origin: top center; animation: cat-type-l 0.58s ease-in-out infinite alternate; }
 .ws-cat.is-idle .cat-head { animation: cat-head 7s ease-in-out infinite; }
-.ws-cat.is-waiting .cat-arm-r {
-  transform-origin: top center;
-  animation: cat-wave 1.7s ease-in-out infinite;
-}
+.ws-cat.is-waiting .cat-arm-r { transform-origin: top center; animation: cat-wave 1.7s ease-in-out infinite; }
 .ws-cat.is-done .cat-body { animation: cat-pop 2.4s ease-in-out infinite; }
 .ws-cat.is-failed .cat-head { animation: cat-head 2.4s ease-in-out infinite; }
+.ws-cat.is-doze .cat-head { animation: cat-doze 5s ease-in-out infinite; }
+.ws-cat.is-doze .cat-body { animation: cat-breathe 5.2s ease-in-out infinite; }
 
 @keyframes cat-tail {
   0%, 100% { transform: rotate(-4deg); }
@@ -449,6 +301,10 @@
   0%, 100% { transform: rotate(0deg); }
   35% { transform: rotate(-2deg); }
   70% { transform: rotate(2deg); }
+}
+@keyframes cat-doze {
+  0%, 100% { transform: translateY(9px) rotate(-5deg); }
+  50% { transform: translateY(11px) rotate(-7deg); }
 }
 @keyframes cat-blink {
   0%, 92%, 100% { transform: scaleY(1); }
@@ -475,9 +331,9 @@
 .ws-bubble {
   position: absolute;
   left: 50%;
-  top: 34px;
-  width: 36px;
-  height: 36px;
+  top: 58px;
+  width: 40px;
+  height: 40px;
   transform: translateX(-50%);
   display: grid;
   place-items: center;
@@ -485,7 +341,7 @@
   border-radius: 50%;
   background: #ffffff;
   box-shadow: 0 8px 18px rgba(30, 40, 50, 0.14);
-  font-size: 19px;
+  font-size: 21px;
   font-weight: 700;
   z-index: 9;
   animation: ws-bubble 2.2s ease-in-out infinite;
@@ -498,232 +354,79 @@
   50% { transform: translateX(-50%) translateY(-3px); }
 }
 
-.office-agent.is-hover .ws-desk-top {
-  box-shadow: 0 0 0 2px rgba(74, 123, 208, 0.16), 0 14px 22px rgba(38, 48, 58, 0.1);
+.ws-zzz {
+  position: absolute;
+  left: 56%;
+  top: 146px;
+  z-index: 9;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #5d636c;
+  animation: ws-zzz 3.2s ease-in-out infinite;
+  pointer-events: none;
 }
-.office-agent.is-hover .ws-name strong { color: #1e5fa8; }
+@keyframes ws-zzz {
+  0%, 100% { transform: translateY(0); opacity: 0.45; }
+  50% { transform: translateY(-8px); opacity: 0.9; }
+}
 
-/* ── 左侧功能区 ── */
+.office-agent.is-hover .ws-name strong { color: #1e5fa8; }
+.office-agent.is-hover .ws-chair-img { filter: drop-shadow(0 6px 10px rgba(30, 40, 50, 0.18)); }
+
+/* ── 左侧功能区（生成的白色 3D 设施） ── */
 .facility { position: absolute; }
 .facility h4 {
-  margin: 0 0 12px;
+  margin: 0 0 10px;
   text-align: center;
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 600;
   color: #767d87;
 }
+.facility img {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+.facility-coffee { height: 290px; }
+.facility-treadmill { height: 300px; }
+.facility-toilet { height: 260px; }
 
-.coffee-counter {
-  position: relative;
-  height: 192px;
-  border: 1px solid #eceef1;
-  border-radius: 12px;
-  background: linear-gradient(180deg, #ffffff, #f5f6f8);
-  box-shadow: 0 18px 28px rgba(30, 40, 50, 0.06);
-}
-.coffee-panel {
-  position: absolute;
-  left: 22px;
-  right: 22px;
-  top: 108px;
-  height: 46px;
-  display: grid;
-  place-items: center;
-  border-radius: 6px;
-  background: #b9c9a6;
-  color: #ffffff;
-  font-size: 13px;
-  letter-spacing: 3px;
-}
-.coffee-machine {
+/* ── 分页 ── */
+.office-pager {
   position: absolute;
   left: 50%;
-  top: 22px;
-  width: 96px;
-  height: 78px;
+  top: 1284px;
   transform: translateX(-50%);
-  border: 1px solid #e2e5e9;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #ffffff, #e9ecef);
-  box-shadow: 0 6px 10px rgba(30, 40, 50, 0.05);
-}
-.coffee-machine i {
-  position: absolute;
-  left: 16px;
-  top: 14px;
-  width: 64px;
-  height: 24px;
-  border-radius: 4px;
-  background: #20242a;
-}
-.coffee-machine b {
-  position: absolute;
-  left: 36px;
-  top: 48px;
-  width: 24px;
-  height: 18px;
-  border-radius: 3px;
-  background: #f5f6f8;
-  border: 1px solid #e2e5e9;
-}
-.coffee-cups {
-  position: absolute;
-  left: 30px;
-  top: 34px;
+  z-index: 40;
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 12px;
+  border: 1px solid #e6e8ec;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 18px rgba(20, 30, 40, 0.08);
+  color: #5d636c;
+  font-size: 18px;
+  user-select: none;
 }
-.coffee-cups i {
-  width: 20px;
-  height: 26px;
-  border: 1px solid #e2e5e9;
-  border-radius: 3px 3px 5px 5px;
-  background: linear-gradient(180deg, #ffffff, #eef0f2);
-}
-.coffee-kettle {
-  position: absolute;
-  right: 34px;
-  top: 34px;
-  width: 26px;
+.office-pager button {
+  width: 30px;
   height: 30px;
-  border: 1px solid #e2e5e9;
-  border-radius: 5px 5px 9px 9px;
-  background: #ffffff;
+  border: 1px solid #e6e8ec;
+  border-radius: 50%;
+  background: #fff;
+  color: #3d424a;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
 }
-
-.treadmill {
-  position: relative;
-  height: 192px;
-  border: 1px solid #eceef1;
-  border-radius: 12px;
-  background: linear-gradient(180deg, #ffffff, #f5f6f8);
-  box-shadow: 0 18px 28px rgba(30, 40, 50, 0.06);
-}
-.treadmill-belt {
-  position: absolute;
-  left: 48px;
-  right: 48px;
-  top: 74px;
-  height: 70px;
-  border-radius: 10px;
-  background: linear-gradient(180deg, #e9ecef, #d8dce0);
-  box-shadow: inset 0 0 0 6px #f5f6f8;
-  transform: perspective(300px) rotateX(8deg);
-}
-.treadmill-belt i {
-  position: absolute;
-  left: 14px;
-  right: 14px;
-  height: 1px;
-  background: rgba(255, 255, 255, 0.5);
-}
-.treadmill-belt i:nth-child(1) { top: 20px; }
-.treadmill-belt i:nth-child(2) { top: 34px; }
-.treadmill-belt i:nth-child(3) { top: 48px; }
-.treadmill-rail {
-  position: absolute;
-  top: 48px;
-  width: 12px;
-  height: 104px;
-  border: 1px solid #e2e5e9;
-  border-radius: 6px;
-  background: linear-gradient(90deg, #ffffff, #eef0f2);
-}
-.treadmill-rail.is-left { left: 28px; }
-.treadmill-rail.is-right { right: 28px; }
-.treadmill-console {
-  position: absolute;
-  left: 50%;
-  top: 24px;
-  width: 108px;
-  height: 28px;
-  transform: translateX(-50%);
-  border: 1px solid #e2e5e9;
-  border-radius: 6px;
-  background: linear-gradient(180deg, #ffffff, #eef0f2);
-}
-
-.lounge-sofa {
-  position: relative;
-  height: 190px;
-  border-radius: 12px;
-}
-.sofa-back {
-  position: absolute;
-  left: 24px;
-  right: 24px;
-  top: 24px;
-  height: 78px;
-  border: 1px solid #e4e7ea;
-  border-radius: 14px 14px 8px 8px;
-  background: linear-gradient(180deg, #ffffff, #f0f2f4);
-  box-shadow: 0 12px 20px rgba(30, 40, 50, 0.06);
-}
-.sofa-seat {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  top: 92px;
-  height: 52px;
-  border: 1px solid #e4e7ea;
-  border-radius: 10px;
-  background: linear-gradient(180deg, #fbfbfc, #eef0f2);
-}
-.sofa-arm {
-  position: absolute;
-  top: 58px;
-  width: 28px;
-  height: 88px;
-  border: 1px solid #e4e7ea;
-  border-radius: 10px;
-  background: linear-gradient(90deg, #ffffff, #eff1f3);
-}
-.sofa-arm.is-left { left: 0; }
-.sofa-arm.is-right { right: 0; }
-.sofa-cushion {
-  position: absolute;
-  top: 46px;
-  width: 74px;
-  height: 46px;
-  border: 1px solid #e4e7ea;
-  border-radius: 9px;
-  background: #ffffff;
-}
-.sofa-cushion.is-a { left: 46px; transform: rotate(-6deg); }
-.sofa-cushion.is-b { right: 46px; transform: rotate(5deg); }
-.lounge-plant {
-  position: absolute;
-  right: 4px;
-  bottom: 0;
-  width: 70px;
-  height: 110px;
-}
-.lounge-plant span {
-  position: absolute;
-  left: 18px;
-  bottom: 0;
-  width: 34px;
-  height: 32px;
-  border: 1px solid #e2e5e9;
-  border-bottom-left-radius: 8px;
-  border-bottom-right-radius: 8px;
-  background: #ffffff;
-}
-.lounge-plant i {
-  position: absolute;
-  left: 50%;
-  bottom: 28px;
-  width: 12px;
-  height: 44px;
-  border-radius: 50% 50% 10% 50%;
-  background: #a9c0a2;
-  transform-origin: bottom center;
-}
-.lounge-plant i:nth-child(1) { transform: translateX(-50%) rotate(-28deg); }
-.lounge-plant i:nth-child(2) { transform: translateX(-50%) rotate(-10deg); }
-.lounge-plant i:nth-child(3) { transform: translateX(-50%) rotate(6deg); }
-.lounge-plant i:nth-child(4) { transform: translateX(-50%) rotate(24deg); }
-.lounge-plant i:nth-child(5) { transform: translateX(-50%) rotate(40deg); }
+.office-pager button:hover:not(:disabled) { background: #f1f3f6; }
+.office-pager button:disabled { opacity: 0.3; cursor: default; }
 
 /* ── 悬停详情卡 ── */
 .office-agent-card {

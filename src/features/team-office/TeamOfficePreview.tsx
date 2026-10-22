@@ -1,11 +1,11 @@
 /**
- * 专家团像素办公室 · 整屏浮层（v19 像素版）
+ * 专家团办公室 · 白色简洁工位板（2026-10-22 对照 Marvis 重做）
  *
  * 数据边界（⛔ 事件驱动的接法）：本组件**不订阅引擎** —— 成员运行态由宿主（AppView）
  * 传入，宿主的 railRuns 本身就是引擎事件流归约出来的，所以这里的画面会随任务
- * 开始/结束**实时变化**（开始 → 坐下敲键盘 + 气泡；结束 → 完成 ✓ → 待机时钟屏保）。
+ * 开始/结束**实时变化**（开始 → 猫坐下敲键盘 + 屏幕亮起；结束 → ✓ 气泡 + 显示器标记）。
  *
- * 交互：① 点角色 → 打开该成员会话；
+ * 交互：① 点工位 → 打开该成员会话；
  *      ② 缩放（10-07 用户要求）—— 鼠标滚轮**以指针位置为中心**缩放，
  *         顶栏关闭钮**左侧**另有「放大 / 缩小 / 重置」三个按钮（两条路径共用同一条实现，
  *         见 `OfficeCanvas` 的 `zoomAt`）。画面基准是 **contain**：整个办公室完整可见。
@@ -307,7 +307,7 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
     : "调度出去的子会话会变成办公室里的人 · 点工位打开子会话";
 
   return (
-    <div className="office-overlay" role="dialog" aria-label="像素办公室">
+    <div className="office-overlay" role="dialog" aria-label="办公室">
       <header className="office-overlay-bar">
         <div className="office-overlay-title">
           <span className="office-overlay-name">{title}</span>
