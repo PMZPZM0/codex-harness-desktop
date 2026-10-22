@@ -1,25 +1,36 @@
 /**
- * 办公室 · 白色简洁动画场景（2026-10-22 重做，对照腾讯 Marvis workbench）
+ * 办公室 · 白色简洁工位板（2026-10-22 对照 Marvis workbench 重做）
  *
- * 用户否掉了"一张静态 3D 照片"，要求按 Marvis 逆向出**一模一样的白色简洁办公室**：
- * 纯白背景、白色办公桌 + 黑色显示器 + 白色椅子 + 黑猫成员（彩色围巾），
- * 名字标在显示器上方。我们沿用 Marvis 的**布局与状态机**，但桌子/椅子/猫全部用
- * DOM + SVG 自己画（不搬它的美术资产）：
- *   · 10 个工位（2 列 × 5 排），左侧是茶水间 / 跑步机 / 休息区；
- *   · 黑猫按真实状态换姿态：运行 = 背对镜头坐着敲键盘，等待 = 站着等你，
- *     完成 = 站着比 ✓，失败 = 站着报错，待机 = 背对镜头安静坐着（尾巴会动）；
- *   · 每台显示器都有实时内容（状态色 + 代码条 + 扫描线），缩放/平移沿用同一套舞台；
- *   · 悬停出详情卡、点击进入成员会话。
+ * 参考图（用户提供）：纯白背景，白色 3D 办公桌 + 黑色显示器 + 白/灰办公椅 +
+ * 黑猫成员（彩色围巾），名字标在显示器上方；左侧茶水间/跑步机/洗手间。
+ *
+ * 我们的做法：
+ *   · 家具/设施 = **本仓生成的白底 3D 渲染图**（`assets/*.webp`，白底 + multiply 融进白板），
+ *     ⛔ 不搬 Marvis 的美术资产；
+ *   · 猫 = DOM + SVG 自绘（坐姿背对镜头 / 站姿正面），状态跟真实运行阶段联动；
+ *   · 一页 6 个工位（2 列 × 3 排，照参考图尺寸）；成员 >6 时分页（10 个工位 = 2 页），
+ *     ⛔ 不是把 10 个压成小图标；
+ *   · 每台显示器叠实时内容（状态色代码条 + 扫描线）；悬停出详情卡、点击进会话；
+ *   · 缩放/平移沿用同一套舞台 transform（contain 基准 + 指针锚点）。
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import deskUrl from "./assets/desk.webp?inline";
+import chairWhiteUrl from "./assets/chair-white.webp?inline";
+import chairGrayUrl from "./assets/chair-gray.webp?inline";
+import coffeeUrl from "./assets/coffee.webp?inline";
+import treadmillUrl from "./assets/treadmill.webp?inline";
+import toiletUrl from "./assets/toilet.webp?inline";
 import { CANVAS_H, CANVAS_W, TEAM_OFFICE_LIMIT, type OfficeMemberState } from "./office-format";
 import { effectivePhase, eventWordZhOf, type RunPhase } from "./office-screen";
 import type { OfficeActivityKind } from "./office-activity";
 
-const WS_W = 480;
-const WS_H = 230;
-const DESK_COLS = [450, 1000];
-const DESK_ROWS = [60, 300, 540, 780, 1020];
+const WS_W = 470;
+const WS_H = 430;
+const DESK_TOP = 34;
+const DESK_H = Math.round(WS_W * 830 / 1037); // 桌面图原始比例 1037×830
+const DESK_COLS = [430, 960];
+const DESK_ROWS = [40, 460, 880];
+const PAGE_SIZE = 6;
 
 /** 每个工位一只猫；围巾颜色用来区分成员（Marvis 同款做法）。 */
 const SCARVES = [
@@ -80,26 +91,9 @@ export const OFFICE_ZOOM_MIN = 1;
 export const OFFICE_ZOOM_MAX = 4;
 export const OFFICE_ZOOM_STEP = 1.25;
 
-/* ── 家具：全部白底浅灰描边 + 柔和投影（Marvis 同款“白上白”），不描黑边。 ── */
-
-function OfficeChair({ occupied }: { occupied: boolean }) {
+function SeatedCat({ scarf, level, dozing }: { scarf: string; level: Status["level"]; dozing: boolean }) {
   return (
-    <svg className={`ws-chair${occupied ? " is-occupied" : ""}`} viewBox="0 0 140 116" aria-hidden="true">
-      <path className="chair-back" d="M42 12C42 5 47 1 54 1h32c7 0 12 4 12 11v48c0 7-5 12-12 12H54c-7 0-12-5-12-12z" />
-      <rect className="chair-seat" x="38" y="60" width="64" height="17" rx="8.5" />
-      <rect className="chair-stem" x="66" y="76" width="8" height="20" rx="4" />
-      <path className="chair-base" d="M70 96 38 107M70 96l32 11M70 96 52 110M70 96l18 14" />
-      <circle className="chair-wheel" cx="36" cy="108" r="3.6" />
-      <circle className="chair-wheel" cx="104" cy="108" r="3.6" />
-      <circle className="chair-wheel" cx="52" cy="111" r="3.6" />
-      <circle className="chair-wheel" cx="88" cy="111" r="3.6" />
-    </svg>
-  );
-}
-
-function SeatedCat({ scarf, level }: { scarf: string; level: Status["level"] }) {
-  return (
-    <svg className={`ws-cat is-seated is-${level}`} viewBox="0 0 120 120" aria-hidden="true">
+    <svg className={`ws-cat is-seated is-${level}${dozing ? " is-doze" : ""}`} viewBox="0 0 120 120" aria-hidden="true">
       <path className="cat-tail" d="M95 96c17 4 22-8 17-17" fill="none" stroke="#111214" strokeWidth="7" strokeLinecap="round" />
       <path className="cat-body" d="M28 114c-3-24 7-42 32-44 25 2 35 20 32 44z" fill="#111214" />
       <path className="cat-head" d="M35 68 31 30l20 11c5-3 13-3 18 0l20-11-4 38z" fill="#111214" />
@@ -142,7 +136,7 @@ function StandingCat({ scarf, level }: { scarf: string; level: Status["level"] }
 }
 
 function Workstation({
-  member, status, index, x, y, hovered, onEnter, onLeave, onOpen,
+  member, status, index, x, y, hovered, onEnter, onLeave, onOpen, now,
 }: {
   member: OfficeMemberState;
   status: Status;
@@ -153,9 +147,11 @@ function Workstation({
   onEnter: () => void;
   onLeave: () => void;
   onOpen: () => void;
+  now: number;
 }) {
   const scarf = SCARVES[index % SCARVES.length];
   const seated = status.level === "run" || status.level === "idle";
+  const dozing = status.level === "idle" && (Math.floor(now / 19000) + index) % 4 === 0;
   const bubble = status.level === "waiting" ? "…" : status.level === "done" ? "✓" : status.level === "failed" ? "!" : "";
   return (
     <div
@@ -181,44 +177,45 @@ function Workstation({
         </span>
       </div>
       <div className="ws-furniture">
-        <span className="ws-floor-shadow" />
-        <span className="ws-desk-leg is-left" />
-        <span className="ws-desk-leg is-right" />
-        <span className="ws-pedestal" />
-        <span className="ws-desk-top" />
-        <span className="ws-desk-edge" />
-        <span className="ws-pc"><i /><i /><i /></span>
-        <div className="ws-monitor">
-          <div className={`ws-screen tone-${status.level}`} style={{ ["--screen-accent" as string]: status.accent }}>
+        <div className="ws-desk-wrap" style={{ top: DESK_TOP, height: DESK_H }}>
+          <img className="ws-desk-img" src={deskUrl} alt="" draggable={false} />
+          <div
+            className={`ws-screen tone-${status.level}`}
+            style={{ ["--screen-accent" as string]: status.accent }}
+          >
             <i /><i /><i /><i />
             <span className="ws-screen-scan" />
             {(status.level === "done" || status.level === "failed") && (
               <b className="ws-screen-mark">{status.level === "done" ? "✓" : "!"}</b>
             )}
           </div>
-          <span className="ws-monitor-neck" />
-          <span className="ws-monitor-base" />
         </div>
-        <span className="ws-keyboard"><i /><i /><i /><i /></span>
-        <OfficeChair occupied={seated} />
-        {seated ? <SeatedCat scarf={scarf} level={status.level} /> : <StandingCat scarf={scarf} level={status.level} />}
+        {seated && (
+          <img
+            className="ws-chair-img is-gray"
+            src={chairGrayUrl}
+            alt=""
+            draggable={false}
+          />
+        )}
+        {seated ? (
+          <SeatedCat scarf={scarf} level={status.level} dozing={dozing} />
+        ) : (
+          <StandingCat scarf={scarf} level={status.level} />
+        )}
+        {dozing && <span className="ws-zzz">Zzz</span>}
         {bubble && <span className={`ws-bubble is-${status.level}`}>{bubble}</span>}
       </div>
       {hovered && (
         <div
           className="office-agent-card"
-          style={{ left: WS_W / 2 - 143, top: y < 120 ? 4 : -86 }}
+          style={{ left: WS_W / 2 - 143, top: y < 120 ? 8 : -96 }}
           onMouseDown={(ev) => ev.stopPropagation()}
         >
           <strong>{member.name}</strong>
           <span>{member.profession || "团队成员"}</span>
           <span style={{ color: status.accent, fontWeight: 600 }}>{status.text}</span>
-          <button
-            type="button"
-            onClick={(ev) => { ev.stopPropagation(); onOpen(); }}
-          >
-            点击打开会话 ›
-          </button>
+          <button type="button" onClick={(ev) => { ev.stopPropagation(); onOpen(); }}>点击打开会话 ›</button>
         </div>
       )}
     </div>
@@ -229,58 +226,30 @@ function EmptyWorkstation({ x, y }: { x: number; y: number }) {
   return (
     <div className="ws is-empty" style={{ left: x, top: y, width: WS_W, height: WS_H }} aria-hidden="true">
       <div className="ws-furniture">
-        <span className="ws-floor-shadow" />
-        <span className="ws-desk-leg is-left" />
-        <span className="ws-desk-leg is-right" />
-        <span className="ws-pedestal" />
-        <span className="ws-desk-top" />
-        <span className="ws-desk-edge" />
-        <span className="ws-pc"><i /><i /><i /></span>
-        <div className="ws-monitor">
+        <div className="ws-desk-wrap" style={{ top: DESK_TOP, height: DESK_H }}>
+          <img className="ws-desk-img" src={deskUrl} alt="" draggable={false} />
           <div className="ws-screen tone-idle"><i /><i /><i /><i /><span className="ws-screen-scan" /></div>
-          <span className="ws-monitor-neck" />
-          <span className="ws-monitor-base" />
         </div>
-        <span className="ws-keyboard"><i /><i /><i /><i /></span>
-        <OfficeChair occupied={false} />
+        <img className="ws-chair-img" src={chairWhiteUrl} alt="" draggable={false} />
       </div>
     </div>
   );
 }
 
-/* ── 左侧功能区：茶水间 / 跑步机 / 休息区（对应 Marvis 办公室的生活设施） ── */
 function Facilities() {
   return (
     <>
-      <section className="facility facility-coffee" style={{ left: 50, top: 60, width: 350, height: 250 }}>
+      <section className="facility facility-coffee" style={{ left: 24, top: 70, width: 356 }}>
         <h4>茶水间</h4>
-        <div className="coffee-counter">
-          <span className="coffee-panel">COFFEE</span>
-          <span className="coffee-machine"><i /><b /></span>
-          <span className="coffee-cups"><i /><i /><i /></span>
-          <span className="coffee-kettle" />
-        </div>
+        <img src={coffeeUrl} alt="" draggable={false} />
       </section>
-      <section className="facility facility-treadmill" style={{ left: 50, top: 350, width: 350, height: 250 }}>
+      <section className="facility facility-treadmill" style={{ left: 24, top: 390, width: 356 }}>
         <h4>放松一下</h4>
-        <div className="treadmill">
-          <span className="treadmill-belt"><i /><i /><i /></span>
-          <span className="treadmill-rail is-left" />
-          <span className="treadmill-rail is-right" />
-          <span className="treadmill-console" />
-        </div>
+        <img src={treadmillUrl} alt="" draggable={false} />
       </section>
-      <section className="facility facility-lounge" style={{ left: 50, top: 650, width: 350, height: 320 }}>
-        <h4>休息区</h4>
-        <div className="lounge-sofa">
-          <span className="sofa-back" />
-          <span className="sofa-seat" />
-          <span className="sofa-arm is-left" />
-          <span className="sofa-arm is-right" />
-          <span className="sofa-cushion is-a" />
-          <span className="sofa-cushion is-b" />
-        </div>
-        <div className="lounge-plant"><i /><i /><i /><i /><i /><span /></div>
+      <section className="facility facility-toilet" style={{ left: 64, top: 735, width: 240 }}>
+        <h4>洗手间</h4>
+        <img src={toiletUrl} alt="" draggable={false} />
       </section>
     </>
   );
@@ -299,11 +268,19 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf, controlsRef,
   zoomCbRef.current = onZoomChange;
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, []);
+
+  const rows = members.slice(0, TEAM_OFFICE_LIMIT);
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  useEffect(() => {
+    if (page > pageCount - 1) setPage(pageCount - 1);
+  }, [page, pageCount]);
+  const pageRows = rows.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
 
   const applyView = useCallback(() => {
     const wrap = wrapRef.current;
@@ -405,27 +382,26 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf, controlsRef,
     return () => wrap.removeEventListener("wheel", onWheel);
   }, [zoomAt]);
 
-  const rows = members.slice(0, TEAM_OFFICE_LIMIT);
-
   return (
     <div ref={wrapRef} className="office-scene-wrap">
       <div ref={stageRef} className="office-scene-stage" style={{ width: CANVAS_W, height: CANVAS_H }}>
         <div className="office-board">
           <Facilities />
-          {Array.from({ length: TEAM_OFFICE_LIMIT }, (_, i) => {
+          {Array.from({ length: PAGE_SIZE }, (_, i) => {
             const x = DESK_COLS[i % 2];
             const y = DESK_ROWS[Math.floor(i / 2)];
-            const member = rows[i];
-            if (!member) return <EmptyWorkstation key={`empty-${i}`} x={x} y={y} />;
+            const member = pageRows[i];
+            if (!member) return <EmptyWorkstation key={`empty-${page}-${i}`} x={x} y={y} />;
             const status = statusOf(member, eventRef.current?.(member.id) ?? null, now);
             return (
               <Workstation
                 key={member.id}
                 member={member}
                 status={status}
-                index={i}
+                index={page * PAGE_SIZE + i}
                 x={x}
                 y={y}
+                now={now}
                 hovered={hoverId === member.id}
                 onEnter={() => setHoverId(member.id)}
                 onLeave={() => setHoverId((cur) => (cur === member.id ? null : cur))}
@@ -433,9 +409,26 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf, controlsRef,
               />
             );
           })}
+          {pageCount > 1 && (
+            <div className="office-pager">
+              <button
+                type="button"
+                aria-label="上一页"
+                disabled={page === 0}
+                onClick={() => { setPage((p) => Math.max(0, p - 1)); setHoverId(null); }}
+              >‹</button>
+              <span>第 {page + 1} / {pageCount} 页 · {rows.length} 人</span>
+              <button
+                type="button"
+                aria-label="下一页"
+                disabled={page === pageCount - 1}
+                onClick={() => { setPage((p) => Math.min(pageCount - 1, p + 1)); setHoverId(null); }}
+              >›</button>
+            </div>
+          )}
         </div>
       </div>
-      <div className="office-scene-hint">点击工位进入会话 · 悬停查看状态 · 滚轮缩放</div>
+      <div className="office-scene-hint">点击工位进入会话 · 悬停查看状态 · 滚轮缩放 · 超过 6 人可分页</div>
     </div>
   );
 }

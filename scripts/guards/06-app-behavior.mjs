@@ -1768,16 +1768,16 @@ w.postMessage({id:1,op:"list",root});
       ? readFileSync(join(ROOT, "src", "features", "team-office", "office-format.ts"), "utf8") : "";
     const sceneCanvas154 = existsSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"))
       ? readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8") : "";
-    (fmtSrc.includes("export const CANVAS_W = 1560") && fmtSrc.includes("export const CANVAS_H = 1270") ? ok : fail)(
-      "【154】办公室 = 白色简洁工位板（1560×1270 设计坐标）"
+    (fmtSrc.includes("export const CANVAS_W = 1500") && fmtSrc.includes("export const CANVAS_H = 1360") ? ok : fail)(
+      "【154】办公室 = 白色简洁工位板（1500×1360 设计坐标）"
     );
     (!/assets\/office-bg|bgUrl|office-agent-img/.test(sceneCanvas154) ? ok : fail)(
       "【154】⛔ 不再引照片底图 / 宠物贴图（白底 + SVG 家具/黑猫）"
     );
     (/DESK_COLS = \[\d+, \d+\]/.test(sceneCanvas154)
-      && (sceneCanvas154.match(/DESK_ROWS = \[[^\]]+\]/)?.[0].match(/\d+/g) ?? []).length === 5
+      && (sceneCanvas154.match(/DESK_ROWS = \[[^\]]+\]/)?.[0].match(/\d+/g) ?? []).length === 3
       && sceneCanvas154.includes("TEAM_OFFICE_LIMIT") ? ok : fail)(
-      "【154】2 列 × 5 排 = 10 个工位（上限与 office-format 同源）"
+      "【154】2 列 × 3 排 = 6 个工位/页（10 人分页，上限与 office-format 同源）"
     );
     (/onClick=\{onOpen\}/.test(sceneCanvas154) && /onKeyDown=/.test(sceneCanvas154) ? ok : fail)(
       "【154】点击/键盘都能进入该成员会话"
@@ -1804,9 +1804,9 @@ w.postMessage({id:1,op:"list",root});
     const screenSrc154 = existsSync(screenPath154) ? readFileSync(screenPath154, "utf8") : "";
     const cssSrc154 = existsSync(join(ROOT, "src", "styles", "20-team-office.css"))
       ? readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8") : "";
-    (cssSrc154.includes(".office-scene-stage") && cssSrc154.includes(".ws-desk-top")
-      && cssSrc154.includes(".ws-chair") && !/image-rendering: pixelated/.test(cssSrc154) ? ok : fail)(
-      "【154】白底舞台 + 白色桌子/椅子样式齐全（⛔ 不再照片画布）"
+    (cssSrc154.includes(".office-scene-stage") && cssSrc154.includes(".ws-desk-img")
+      && cssSrc154.includes(".ws-chair-img") && !/image-rendering: pixelated/.test(cssSrc154) ? ok : fail)(
+      "【154】白底舞台 + 白色 3D 桌/椅资产样式齐全（⛔ 不再照片画布）"
     );
     (!canvasSrc154.includes("ipcRenderer") && !/window\.codex\./.test(canvasSrc154) ? ok : fail)(
       "【154】画布层零 IPC（成员状态由宿主 props 传入）"
@@ -3301,12 +3301,18 @@ w.postMessage({id:1,op:"list",root});
   } else {
     const fmtSrc233 = readFileSync(join(ROOT, "src", "features", "team-office", "office-format.ts"), "utf8");
     const canvasSrc233 = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
-    (fmtSrc233.includes("export const CANVAS_W = 1560") && fmtSrc233.includes("export const CANVAS_H = 1270")
+    (fmtSrc233.includes("export const CANVAS_W = 1500") && fmtSrc233.includes("export const CANVAS_H = 1360")
       && fmtSrc233.includes("TEAM_OFFICE_LIMIT = 10") ? ok : fail)(
-      "【233】白色工位板 1560×1270 / 人数上限 10"
+      "【233】白色工位板 1500×1360 / 人数上限 10"
     );
-    (/DESK_COLS = \[\d+, \d+\]/.test(canvasSrc233) && (canvasSrc233.match(/DESK_ROWS = \[[^\]]+\]/)?.[0].match(/\d+/g) ?? []).length === 5 ? ok : fail)(
-      "【233】2 列 × 5 排 = 10 个工位（白桌 + 显示器 + 椅子）"
+    (/DESK_COLS = \[\d+, \d+\]/.test(canvasSrc233) && (canvasSrc233.match(/DESK_ROWS = \[[^\]]+\]/)?.[0].match(/\d+/g) ?? []).length === 3 ? ok : fail)(
+      "【233】2 列 × 3 排 = 6 个工位/页（10 人分页）"
+    );
+    (canvasSrc233.includes("const PAGE_SIZE = 6;") && canvasSrc233.includes("office-pager") ? ok : fail)(
+      "【233】10 人分 2 页（pager 真接线）"
+    );
+    (canvasSrc233.includes("ws-desk-img") && canvasSrc233.includes("ws-chair-img") ? ok : fail)(
+      "【233】家具走生成的白色 3D 资产（桌面图 / 椅子图）"
     );
     (canvasSrc233.includes("function SeatedCat") && canvasSrc233.includes("function StandingCat")
       && canvasSrc233.includes("SCARVES") ? ok : fail)(
