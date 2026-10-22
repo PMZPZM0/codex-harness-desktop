@@ -3699,6 +3699,18 @@ w.postMessage({id:1,op:"list",root});
     (devInstrSrc.includes("UI_COMPONENT_INSTRUCTIONS") && /text \+= UI_COMPONENT_INSTRUCTIONS;/.test(devInstrSrc) ? ok : fail)(
       "【235】developer_instructions 常驻第 12 条（写前端先查库；接线在 buildDevInstructions）"
     );
+    /* ②b 直播弹幕代回 + 身份基线（10-22 用户：客户接了抖音自动化让它回弹幕，「连自我介绍都不会」）。
+       两件事都不是措辞问题：① 弹幕是公共场合，长文/Markdown/反问/自称 AI 都会当场翻车；
+       ② 引擎默认自称是「OpenAI 的编码代理」，本应用从没注入过「你跑在哪个应用里」。 */
+    ((devInstrSrc.includes("LIVE_REPLY_INSTRUCTIONS") && /text \+= LIVE_REPLY_INSTRUCTIONS;/.test(devInstrSrc)
+      && devInstrSrc.includes("不要现编") && devInstrSrc.includes("我是 AI / 语言模型")) ? ok : fail)(
+      "【235】弹幕代回有默认口径（一句一句 / 不反问 / 没人设不现编 / 不说自己是 AI），且真接线"
+    );
+    const persSrc235 = readFileSync(join(ROOT, "electron", "personalization.ts"), "utf8");
+    ((persSrc235.includes("IDENTITY_GUIDELINES") && persSrc235.includes("lines.push(IDENTITY_GUIDELINES)")
+      && persSrc235.includes("向观众介绍你是 Codex")) ? ok : fail)(
+      "【235】AGENTS.md 注入身份基线（被问「你是谁」按本应用回答；弹幕场景改用人设，不向观众自我介绍 Codex）"
+    );
 
     /* ③ 独立设置页三件套（注册表 / 类型 / 导航）+ 帮助总览 + 域页面在位 */
     const registrySrc235 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8");

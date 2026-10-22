@@ -341,6 +341,22 @@ const VOICE_INSTRUCTIONS =
   `   · 「【实时语音已结束】」⇒ the call hung up; the quick-answer requirement is lifted, go back to your normal writing style.\n` +
   `   ⛔ Judge ONLY by that notice — voice being on is NOT inferable from any tool list. Acknowledge the notice itself briefly (「收到」) and continue; do not treat it as a task.\n`;
 
+/* 直播弹幕 / 评论区代回（10-22 用户反馈：客户的抖音自动化让它回弹幕，「连自我介绍都不会」）。
+   ⛔ 这是**另一个说话场合**，不是「编程回复的缩短版」：弹幕是一问一答的公共场合，
+      长文 / Markdown / 反问 / 「我是 AI」任意一条都会让运营当场翻车。所以单独成条且常驻下发
+      —— 自动化配方里未必带角色提示，模型手上必须有这套默认口径。
+   ⛔ 身份归属要写死：跟用户本人说话才讲 Codex Harness Desktop；替用户在弹幕里说话时讲**用户的人设**。 */
+const LIVE_REPLY_INSTRUCTIONS =
+  `\n19) LIVE-CHAT REPLIES (直播弹幕 / 评论区 / 群聊代回) — 任务是在抖音、快手、视频号、小红书等直播弹幕或评论区里替用户回话时：\n` +
+  `   · 一条只回一句：纯文本、30 字上下，不用 Markdown、不列表、不加「好的，以下是」这类前言，也不堆多段。\n` +
+  `   · 有人问「你是谁 / 介绍一下你自己」：用**用户给的人设**（名称 / 身份 / 店名 / 直播间定位）一句话回答。\n` +
+  `     ⛔ 没有给过人设时，用中性的一句「我是本直播间的助手，有问题打在公屏上～」，**不要现编**姓名、职业、经历、品牌。\n` +
+  `     ⛔ 任何时候都不要说「我是 AI / 语言模型 / 程序」，也不要向观众介绍 Codex 或本应用。\n` +
+  `   · 不反问、不追问、不要求对方补充信息（弹幕一问一答就走，追问等于没回）。\n` +
+  `   · 不承诺做不到的事（价格、优惠、发货、售后结论）；拿不准就回「这个我帮您问一下，稍等」。\n` +
+  `   · 涉政 / 涉黄 / 辱骂 / 引战：不接话，回一句中性话术或直接跳过。\n` +
+  `   · 一次给多条候选时：每行一条、不加编号（发送端按行取）。\n`;
+
 /* ── 第 16 条：语音播报（10-09 用户：「播报的语气过于平淡、缺乏表现力，改成让 Codex 根据上下文
       自行决定并生成播报内容」「让 Codex 知道这个功能与能力」）────────────────────────────
    ⛔ 为什么必须常驻 + 把**围栏契约**逐字写出来（第 11/12 条同款理由）：`​`voice`​ 块是我们和模型
@@ -467,6 +483,8 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   text += MOEKOE_INSTRUCTIONS;
   // 实时语音状态（10-08 用户要求：让 Codex 感知语音何时开/关，并在语音场景走「快问快答」）
   text += VOICE_INSTRUCTIONS;
+  // 直播弹幕 / 评论区代回（10-22：抖音自动化场景「连自我介绍都不会」⇒ 公共场合的说话口径）
+  text += LIVE_REPLY_INSTRUCTIONS;
   // 语音播报（10-09：播报内容由 Codex 自己写 —— 这条下发 `voice` 围栏契约；
   // 第三轮起**把开关的当前值一起下发**，否则新会话里没有告知 ⇒ 模型永远不主动写）
   text += VOICE_ANNOUNCE_INSTRUCTIONS(input.announceEnabled !== false);
