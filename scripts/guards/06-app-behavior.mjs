@@ -2608,6 +2608,12 @@ w.postMessage({id:1,op:"list",root});
     (/\.sidebar-nav-bottom \{[\s\S]{0,240}?flex:\s*0 1 auto/.test(css41) ? ok : fail)(
       "【180】底部入口组可收缩并自己滚（⛔ 别改回 flex:none —— 会把列表挤没 / 账户行顶出可视区）"
     );
+    /* 10-22 用户：「这个为啥显示这么远呢，贴编辑文件尾部就行」——实时编辑行原来给目录 `flex:1`，
+       它吃掉整行剩余宽度 ⇒ 目录看着和文件名隔了老远。目录必须**紧跟文件名**，行尾由统计顶住。 */
+    const cards04 = readFileSync(join(ROOT, "src", "styles", "04-cards-tools.css"), "utf8");
+    (/\.live-edit-row small \{[\s\S]{0,260}?flex:\s*0 1 auto/.test(cards04) && /\.live-edit-stats \{[^}]*margin-left:\s*auto/.test(cards04) ? ok : fail)(
+      "【180】实时编辑行的目录紧跟文件名（⛔ 别改回 flex:1 —— 目录会被推到行中间）"
+    );
   }
   /* 新手教程：入口进底部组，且 NewbieGuide 走**受控**（不传 open 它会再画一行「新手引导」⇒ 底部两个入口）。 */
   (/<span>新手教程<\/span>/.test(side180) && /setNewbieOpen\(true\)/.test(side180) ? ok : fail)(
