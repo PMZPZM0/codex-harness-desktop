@@ -246,86 +246,35 @@
   user-select: none;
   mix-blend-mode: multiply;
 }
-.ws-chair-img.is-gray { top: 214px; width: 154px; }
-
-/* ── 黑猫成员：背对/正面，围巾按工位取色 ── */
-.ws-cat {
+/* ── 黑猫成员：3D 渲染图（多角度：坐姿背面 / 站姿正面 / 打瞌睡），红围巾用 hue-rotate 分色 ── */
+.ws-cat-img {
   position: absolute;
   left: 50%;
-  top: 122px;
-  width: 190px;
-  height: 190px;
-  transform: translateX(-50%);
-  overflow: visible;
   z-index: 8;
+  translate: -50% 0;
+  height: auto;
   pointer-events: none;
-  filter: drop-shadow(0 8px 6px rgba(20, 28, 36, 0.16));
+  user-select: none;
 }
-.ws-cat.is-standing { top: 88px; width: 175px; height: 215px; }
-
-.cat-tail {
-  transform-box: fill-box;
-  transform-origin: 8% 60%;
-  animation: cat-tail 3.4s ease-in-out infinite;
-}
-.cat-body {
-  transform-box: fill-box;
+.ws-cat-img.is-seated {
+  top: 118px;
+  width: 175px;
   transform-origin: 50% 100%;
-  animation: cat-breathe 3.6s ease-in-out infinite;
+  animation: cat-breathe 3.8s ease-in-out infinite;
 }
-.cat-head {
-  transform-box: fill-box;
-  transform-origin: 50% 100%;
-  animation: cat-head 5.4s ease-in-out infinite;
+.ws-cat-img.is-standing {
+  top: 128px;
+  width: 168px;
+  animation: cat-stand 4.2s ease-in-out infinite;
 }
-.cat-eyes { transform-box: fill-box; transform-origin: center; animation: cat-blink 4.8s ease-in-out infinite; }
-.cat-arm { transform-box: fill-box; }
-.ws-cat.is-run .cat-arm-r { transform-origin: top center; animation: cat-type-r 0.5s ease-in-out infinite alternate; }
-.ws-cat.is-run .cat-arm-l { transform-origin: top center; animation: cat-type-l 0.58s ease-in-out infinite alternate; }
-.ws-cat.is-idle .cat-head { animation: cat-head 7s ease-in-out infinite; }
-.ws-cat.is-waiting .cat-arm-r { transform-origin: top center; animation: cat-wave 1.7s ease-in-out infinite; }
-.ws-cat.is-done .cat-body { animation: cat-pop 2.4s ease-in-out infinite; }
-.ws-cat.is-failed .cat-head { animation: cat-head 2.4s ease-in-out infinite; }
-.ws-cat.is-doze .cat-head { animation: cat-doze 5s ease-in-out infinite; }
-.ws-cat.is-doze .cat-body { animation: cat-breathe 5.2s ease-in-out infinite; }
 
-@keyframes cat-tail {
-  0%, 100% { transform: rotate(-4deg); }
-  50% { transform: rotate(8deg); }
-}
 @keyframes cat-breathe {
   0%, 100% { transform: scaleY(1); }
-  50% { transform: scaleY(1.018); }
+  50% { transform: scaleY(1.012); }
 }
-@keyframes cat-head {
-  0%, 100% { transform: rotate(0deg); }
-  35% { transform: rotate(-2deg); }
-  70% { transform: rotate(2deg); }
-}
-@keyframes cat-doze {
-  0%, 100% { transform: translateY(9px) rotate(-5deg); }
-  50% { transform: translateY(11px) rotate(-7deg); }
-}
-@keyframes cat-blink {
-  0%, 92%, 100% { transform: scaleY(1); }
-  95%, 97% { transform: scaleY(0.08); }
-}
-@keyframes cat-type-r {
-  from { transform: rotate(-7deg); }
-  to { transform: rotate(9deg); }
-}
-@keyframes cat-type-l {
-  from { transform: rotate(8deg); }
-  to { transform: rotate(-6deg); }
-}
-@keyframes cat-wave {
-  0%, 100% { transform: rotate(0deg); }
-  30% { transform: rotate(-24deg); }
-  60% { transform: rotate(6deg); }
-}
-@keyframes cat-pop {
-  0%, 100% { transform: scaleY(1); }
-  45% { transform: scaleY(1.045); }
+@keyframes cat-stand {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
 }
 
 .ws-bubble {
@@ -356,8 +305,8 @@
 
 .ws-zzz {
   position: absolute;
-  left: 56%;
-  top: 146px;
+  left: 62%;
+  top: 126px;
   z-index: 9;
   font-size: 20px;
   font-weight: 700;

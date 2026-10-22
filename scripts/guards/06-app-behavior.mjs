@@ -1782,9 +1782,9 @@ w.postMessage({id:1,op:"list",root});
     (/onClick=\{onOpen\}/.test(sceneCanvas154) && /onKeyDown=/.test(sceneCanvas154) ? ok : fail)(
       "【154】点击/键盘都能进入该成员会话"
     );
-    (sceneCanvas154.includes("function SeatedCat") && sceneCanvas154.includes("function StandingCat")
-      && sceneCanvas154.includes("SCARVES") ? ok : fail)(
-      "【154】黑猫成员：坐姿（背对）/站姿（正面）+ 彩色围巾"
+    (sceneCanvas154.includes("catSeatedUrl") && sceneCanvas154.includes("catStandingUrl")
+      && sceneCanvas154.includes("SCARF_HUES") ? ok : fail)(
+      "【154】黑猫成员：3D 坐姿（背对）/站姿（正面）+ 10 色围巾"
     );
     (!/OfficeSim|SEATS|drawScreen\(/.test(sceneCanvas154) ? ok : fail)(
       "【154】旧走位模拟/逐帧画显示器已整体退役（工位状态猫取代）"
@@ -1812,8 +1812,8 @@ w.postMessage({id:1,op:"list",root});
       "【154】画布层零 IPC（成员状态由宿主 props 传入）"
     );
     (cssSrc154.includes("@keyframes ws-scan") && cssSrc154.includes("@keyframes ws-bar")
-      && cssSrc154.includes("@keyframes cat-type-r") ? ok : fail)(
-      "【154】显示器 + 猫都是持续动画（扫描线 / 代码条 / 敲键盘）"
+      && cssSrc154.includes("@keyframes cat-breathe") ? ok : fail)(
+      "【154】显示器 + 3D 猫都有持续动画（扫描线 / 代码条 / 呼吸）"
     );
   }
 
@@ -3314,9 +3314,9 @@ w.postMessage({id:1,op:"list",root});
     (canvasSrc233.includes("ws-desk-img") && canvasSrc233.includes("ws-chair-img") ? ok : fail)(
       "【233】家具走生成的白色 3D 资产（桌面图 / 椅子图）"
     );
-    (canvasSrc233.includes("function SeatedCat") && canvasSrc233.includes("function StandingCat")
-      && canvasSrc233.includes("SCARVES") ? ok : fail)(
-      "【233】黑猫成员：坐姿（背对镜头）/ 站姿（正面）+ 彩色围巾"
+    (canvasSrc233.includes("catSeatedUrl") && canvasSrc233.includes("catStandingUrl")
+      && canvasSrc233.includes("SCARF_HUES") ? ok : fail)(
+      "【233】黑猫成员：3D 坐姿（背对镜头）/站姿（正面）+ 10 色围巾"
     );
     (canvasSrc233.includes("office-agent-card") && canvasSrc233.includes("点击打开会话") ? ok : fail)(
       "【233】悬停出详情卡（姓名/职业/状态 + 打开会话）"
@@ -3328,7 +3328,7 @@ w.postMessage({id:1,op:"list",root});
       "【233】猫的姿态/状态走真实阶段 + 真实事件（⛔ 不编状态）"
     );
     (/status\.level === "run" \|\| status\.level === "idle"/.test(canvasSrc233)
-      && /is-standing is-\$\{level\}/.test(canvasSrc233) ? ok : fail)(
+      && /ws-cat-img is-standing/.test(canvasSrc233) ? ok : fail)(
       "【233】状态 → 姿态映射（运行/待机坐着、等待/完成/失败站着）"
     );
     (canvasSrc233.includes("ws-screen") && canvasSrc233.includes("ws-screen-scan") ? ok : fail)(
@@ -3354,9 +3354,9 @@ w.postMessage({id:1,op:"list",root});
       "【233】缩放句柄（放大 / 缩小 / 重置）"
     );
     const css233 = readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8");
-    (/\.ws-cat\s*\{/.test(css233) && /@keyframes cat-type-r/.test(css233)
+    (/\.ws-cat-img\s*\{/.test(css233) && /@keyframes cat-breathe/.test(css233)
       && /@keyframes ws-scan/.test(css233) && !/image-rendering: pixelated/.test(css233) ? ok : fail)(
-      "【233】黑猫敲键盘 / 屏幕扫描线都是持续动画（不是静态图）"
+      "【233】3D 猫呼吸 / 屏幕扫描线都是持续动画（不是静态图）"
     );
     const timelineSrc233 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "02-main-stage", "01-timeline.tsx"), "utf8");
     (timelineSrc233.includes("onOpenOffice={() => setCompanyPreviewTeamId(railTeam.teamId)}") ? ok : fail)(
