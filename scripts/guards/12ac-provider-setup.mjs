@@ -94,7 +94,7 @@ ok(/saved\?\.enabled === false/.test(lib), "主进程把无 Key 第三方存成�
 ok(/const before = await enabledProviders\(\)/.test(lib) && /const after = await enabledProviders\(\)/.test(lib), "保存前后各读一次供应商列表（旧供应商是否真停用要有据）");
 ok(/stillEnabled/.test(lib) && /disabled/.test(lib) && /others/.test(lib), "回执区分「已自动停用」与「仍有人启用」（互斥失效要如实提示）");
 ok(/旧供应商已自动停用/.test(dialog) && /唯一启用的供应商/.test(dialog), "完成页写明旧供应商自动停用 / 已是唯一启用");
-ok(/RELAUNCH_SECONDS/.test(dialog) && /稍后重启/.test(dialog) && /立即重启/.test(dialog) && /自动重启/.test(dialog), "重启步骤有倒计时 + 立即/稍后两个出口");
+ok(/RELAUNCH_SECONDS/.test(dialog) && !/稍后重启/.test(dialog) && /立即重启/.test(dialog) && /自动重启/.test(dialog), "重启步骤有倒计时 + 自动重启（10-24 用户：不再提供「稍后重启」出口）");
 
 /* ── ④ 登录页四路接入 ── */
 ok(/ProviderSetupDialog/.test(login) && /setSetupIntent/.test(login), "登录页接入统一弹窗");
@@ -110,7 +110,8 @@ ok(/if \(ok && intent\.relayActive\) writeRelayActive/.test(login), "中转站 r
 
 /* ── ⑤ 设置页 / 云账号页 / OpenAI 页 ── */
 ok(/provider-setup-hero/.test(modelPage) && /ProviderSetupDialog/.test(modelPage) && /refreshActive/.test(modelPage), "模型页大入口 + 弹窗 + 保存后刷新供应商列表");
-ok(/relaunchApp/.test(modelPage), "模型页保存后按选择重启应用");
+ok(/relaunchApp/.test(modelPage), "模型页保存后自动重启应用");
+ok(!/openNewProvider|测试当前供应商/.test(modelPage), "模型页不再有手动「添加供应商」与「测试当前供应商」入口（只保留自动配置）");
 ok(/provisionCloud\(api, \{ activate: false \}\)/.test(cloudPage), "云账号登录自动配置不再偷偷抢生效位（activate:false 交给弹窗）");
 ok(/选择模型并启用/.test(cloudPage) && /ProviderSetupDialog/.test(cloudPage) && /relaunchApp/.test(cloudPage), "云账号页有「选择模型并启用」入口 + 弹窗 + 重启");
 ok(/openOfficialSetup/.test(openaiPage) && /ProviderSetupDialog/.test(openaiPage) && /relaunchApp/.test(openaiPage), "OpenAI 页登录/启用订阅走同一弹窗");
@@ -122,7 +123,7 @@ ok(/activateCloudProvider/.test(cloudProvider) && /sendToWindow\("harness:event"
 /* ── ⑥ 样式与验收登记 ── */
 ok(/42-provider-setup/.test(read(FILES.styles)), "样式已挂进全局样式入口");
 ok(/LATEST_ROUND = "10-24"/.test(accept) && /"provider-autosetup": "10-24"/.test(accept) && /"provider-login-autosetup": "10-24"/.test(accept), "验收项已登记本轮（10-24）");
-ok(/createServer/.test(accept) && /mock-alpha/.test(accept) && /稍后重启/.test(accept), "验收用本地 mock 网关跑真链路，且不会真重启应用");
+ok(/createServer/.test(accept) && /mock-alpha/.test(accept) && /CODEX_HARNESS_NO_RELAUNCH/.test(read("scripts/e2e/lib/harness.mjs")) && /立即重启/.test(accept), "验收用本地 mock 网关跑真链路；子进程带 NO_RELAUNCH，点立即重启不会真断 CDP");
 ok(/LATEST_ROUND = "10-24"/.test(accept) && !/"provider-autosetup": "10-23"/.test(accept), "⛔ 新验收项没有被错误登记到上一轮（否则默认轮跑不到）");
 
 /* ── ⑦ 单源：编排只有这一份 ── */

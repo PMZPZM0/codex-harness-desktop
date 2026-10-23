@@ -55,12 +55,6 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
     selectProviderDraft(p, isPseudo);
     setEditorOpen(true);
   };
-  const openNewProvider = () => {
-    providerAutoOpenRef.current = true;
-    setCustomDraft({ provider: "custom" + (Date.now() % 1000), name: "", model: "", baseUrl: "", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: true });
-    setEditingProvider(null);
-    setEditorOpen(true);
-  };
   useEffect(() => {
     if (!editorOpen) return;
     const onKey = (event: KeyboardEvent) => {
@@ -110,14 +104,6 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                         <h2>模型供应商 <span className="provider-count">{displayProviders.length}</span>
                           <PageInfo text={<>两种方式二选一：登录 ChatGPT 订阅账号，或添加第三方供应商并填入密钥。配好后再选模型——两者齐了才能发消息。</>} helpKey="model" label="模型配置" />
                         </h2>
-                      </div>
-                      <div className="provider-page-actions">
-                        {customModel && (
-                          <button className="secondary-setting" title={`测试当前生效供应商：${customModel.name} · ${customModel.model}`} disabled={!!probingProvider} onClick={() => void probeActiveProvider()}>
-                            {probingProvider === "test" ? <Spinner /> : <RefreshCw size={14} />}测试当前供应商
-                          </button>
-                        )}
-                        <button className="primary-setting" onClick={openNewProvider}><Plus size={14} />添加供应商</button>
                       </div>
                     </div>
                     <div className="provider-card-grid">

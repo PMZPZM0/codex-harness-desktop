@@ -154,7 +154,7 @@ export function ProviderSetupDialog({
       if (event.key !== "Escape") return;
       event.stopPropagation();
       if (saving) return;
-      if (phase === "saved") finish(false);
+      if (phase === "saved") finish(true);
       else onClose();
     };
     window.addEventListener("keydown", onKey, true);
@@ -239,7 +239,7 @@ export function ProviderSetupDialog({
 
   const closeOrFinish = () => {
     if (saving) return;
-    if (phase === "saved") finish(false);
+    if (phase === "saved") finish(true);
     else onClose();
   };
 
@@ -252,7 +252,7 @@ export function ProviderSetupDialog({
             <strong>自动配置模型</strong>
             <span>{intent.sourceLabel || meta.label}{intent.account ? ` · ${intent.account}` : ""} · 检测 → 勾选 → 保存 → 重启，全程自动</span>
           </div>
-          <button className="icon-button" title={phase === "saved" ? "关闭（稍后重启）" : "关闭"} disabled={saving} onClick={closeOrFinish}><X size={16} /></button>
+          <button className="icon-button" title={phase === "saved" ? "立即重启" : "关闭"} disabled={saving} onClick={closeOrFinish}><X size={16} /></button>
         </header>
 
         <div className="provider-setup-body">
@@ -397,7 +397,6 @@ export function ProviderSetupDialog({
                 </ul>
                 <p className="provider-setup-restart-hint">应用将在 <b>{countdown}</b> 秒后自动重启，使配置完全生效。</p>
                 <div className="provider-setup-done-actions">
-                  <button className="secondary-setting" onClick={() => finish(false)}>稍后重启</button>
                   <button className="primary-setting" onClick={() => finish(true)}><RefreshCw size={14} />立即重启</button>
                 </div>
               </div>
