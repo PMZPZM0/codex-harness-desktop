@@ -1864,6 +1864,34 @@ const CHECKS = [
         await wait(1100);
         await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(x=>(x.textContent||"").trim()==="模型"); if(!b) return false; b.click(); return true; })()`);
         await h.waitFor(`!!document.querySelector(".provider-setup-open")`, { label: "模型页自动配置入口", timeoutMs: 9000 });
+        await h.waitFor(`document.querySelectorAll(".provider-card-grid .provider-card").length > 0`, { label: "供应商大卡片", timeoutMs: 6000 });
+        const modelUi = await h.eval(`(function(){
+          const cards=[...document.querySelectorAll(".provider-card-grid .provider-card")];
+          const real=cards.find(c=>c.querySelector(".provider-dot"));
+          const oldButtons=document.querySelectorAll(".provider-list .add-provider-btn").length;
+          if(!real) return { cards:cards.length, oldButtons, opened:false };
+          real.click();
+          return { cards:cards.length, oldButtons, opened:true };
+        })()`);
+        if (modelUi?.opened) {
+          await h.waitFor(`!!document.querySelector('[data-testid="provider-editor"]')`, { label: "二级配置弹窗", timeoutMs: 4000 });
+          await h.screenshot("provider-editor");
+        }
+        const editorUi = await h.eval(`(function(){
+          const modal=document.querySelector('[data-testid="provider-editor"]');
+          return {
+            modal:!!modal,
+            fields:modal?modal.querySelectorAll(".provider-form .provider-field").length:0,
+            modelBlock:!!modal?.querySelector(".model-list-block"),
+            actions:!!modal?.querySelector(".settings-actions"),
+          };
+        })()`);
+        await h.eval(`document.querySelector(".provider-editor-head .icon-button")?.click()`);
+        await h.waitFor(`!document.querySelector('[data-testid="provider-editor"]')`, { label: "二级配置弹窗关闭", timeoutMs: 4000 });
+        h.check("⓪ 供应商已改造成大卡片：点击打开二级配置弹窗（原表单功能齐全），旧小行/旧按钮已删除",
+          Boolean(modelUi && modelUi.cards >= 2 && modelUi.oldButtons === 0 && modelUi.opened
+            && editorUi.modal && editorUi.fields >= 3 && editorUi.modelBlock && editorUi.actions),
+          JSON.stringify({ modelUi, editorUi }));
         await h.screenshot("provider-autosetup-entry");
         before = await h.eval(`(async function(){
           const l=await window.codex.listCustomModels();
