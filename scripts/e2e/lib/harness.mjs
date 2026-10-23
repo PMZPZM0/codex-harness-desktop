@@ -301,6 +301,7 @@ export class ElectronHarness {
       // 「CDP Runtime.enable 超时」——实测连零项目代码的最小 Electron 应用也一样崩，
       // 与本项目代码无关。该开关只在测试实例上生效，不影响真实用户。
       CODEX_HARNESS_IN_PROCESS_GPU: "1",
+      CODEX_HARNESS_NO_RELAUNCH: "1",
       // 本机回环直连，绕开环境里的 HTTP_PROXY
       NO_PROXY: "127.0.0.1,localhost",
       no_proxy: "127.0.0.1,localhost",

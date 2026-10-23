@@ -257,6 +257,7 @@ export const appFeature = defineFeature<null>({
     });
 
     ipcHost.handle("app:relaunch", () => {
+      if (process.env.CODEX_HARNESS_NO_RELAUNCH === "1") return;
       /* ⛔ dev 下 relaunch 必须**摘掉 VITE_DEV_SERVER_URL**（09-27 实证修白屏）：
          新实例由 relaunch 继承当前进程的环境变量，而 dev 的启动脚本是
          `concurrently -k "vite" "wait-on tcp:5173 && electron ."` —— `-k` 让旧 electron 一退出

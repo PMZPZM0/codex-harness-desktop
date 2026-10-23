@@ -1841,7 +1841,7 @@ const CHECKS = [
          保存生效供应商重启，旧供应商自动停止」。
          本项用**真网关**（测试进程起一个本地 /v1/models mock）走完整链路：
          设置 → 模型 → 打开自动配置 → 填地址密钥 → 检测 → 勾选 → 保存 → 旧供应商消失。
-         ⛔ 完成后点「稍后重启」：验收进程不能真把被测应用重启掉。 */
+         配置完成会自动重启；验收子进程带 CODEX_HARNESS_NO_RELAUNCH=1，真重启不会发生。 */
       const server = createServer((req, res) => {
         if ((req.url || "").split("?")[0].endsWith("/models")) {
           res.writeHead(200, { "content-type": "application/json" });
@@ -1893,6 +1893,17 @@ const CHECKS = [
             && editorUi.modal && editorUi.fields >= 3 && editorUi.modelBlock && editorUi.actions),
           JSON.stringify({ modelUi, editorUi }));
         await h.screenshot("provider-autosetup-entry");
+        /* 清掉上一轮同名的测试供应商，保证回执/after 不会取错行。 */
+        await h.eval(`(async function(){
+          try {
+            const l=await window.codex.listCustomModels();
+            for (const p of l.providers.filter(x=>String(x.name||"").includes("自动配置测试供应商"))) {
+              await window.codex.removeCustomModel(p.provider);
+            }
+          } catch {}
+          return true;
+        })()`).catch(() => undefined);
+        await wait(400);
         before = await h.eval(`(async function(){
           const l=await window.codex.listCustomModels();
           const current=l.providers.find(p=>p.provider===l.current);
@@ -1967,13 +1978,13 @@ const CHECKS = [
             restart:document.querySelector(".provider-setup-restart-hint")?.innerText||"",
           };
         })()`);
-        h.check("④ 保存完成回执：旧供应商自动停用 + 即将重启",
-          Boolean(receipt.title === "已保存并启用" && receipt.text.includes("旧供应商已自动停用") && receipt.restart.includes("重启")),
+        h.check("④ 保存完成回执：旧供应商自动停用（原本没有则为唯一启用）+ 即将重启",
+          Boolean(receipt.title === "已保存并启用" && (receipt.text.includes("旧供应商已自动停用") || receipt.text.includes("已确认为唯一启用的供应商")) && receipt.restart.includes("重启")),
           JSON.stringify({ receipt, before }));
 
-        /* 先点「稍后重启」停掉 6 秒倒计时，再查主进程 —— 否则验收运行到一半应用会真重启。 */
+        /* 配置完自动重启；验收子进程带 NO_RELAUNCH，点立即重启只收尾、不会真断 CDP。 */
         await h.eval(`(function(){
-          const btn=[...document.querySelectorAll(".provider-setup-done-actions button")].find(b=>(b.textContent||"").includes("稍后重启"));
+          const btn=[...document.querySelectorAll(".provider-setup-done-actions button")].find(b=>(b.textContent||"").includes("立即重启"));
           if(!btn) return false; btn.click(); return true;
         })()`);
         await h.waitFor(`!document.querySelector('[data-testid="provider-setup"]')`, { label: "弹窗关闭", timeoutMs: 5000 });
@@ -2054,7 +2065,7 @@ const CHECKS = [
     run: async (h) => {
       /* 10-24 用户令：登录云账号 / 中转站 / OpenAI 订阅 / 自定义 API 后**全程自动化**。
          本项真进登录页（清 login-skipped + reload）走自定义 API 一路：
-         填地址与 Key → 弹窗自动检测 → 全选 → 保存启用（旧供应商自动停用）→ 点「稍后重启」→ 主界面。 */
+         填地址与 Key → 弹窗自动检测 → 全选 → 保存启用（旧供应商自动停用）→ 自动重启（验收 NO_RELAUNCH）→ 主界面。 */
       const server = createServer((req, res) => {
         if ((req.url || "").split("?")[0].endsWith("/models")) {
           res.writeHead(200, { "content-type": "application/json" });
@@ -2119,7 +2130,7 @@ const CHECKS = [
           JSON.stringify({ receipt, before }));
 
         await h.eval(`(function(){
-          const btn=[...document.querySelectorAll(".provider-setup-done-actions button")].find(b=>(b.textContent||"").includes("稍后重启"));
+          const btn=[...document.querySelectorAll(".provider-setup-done-actions button")].find(b=>(b.textContent||"").includes("立即重启"));
           if(!btn) return false; btn.click(); return true;
         })()`);
         await h.waitFor(`!document.querySelector('[data-testid="provider-setup"]') && !!document.querySelector(".app-shell")`, { label: "进入主界面", timeoutMs: 12000 });
