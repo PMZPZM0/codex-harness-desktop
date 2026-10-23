@@ -11,11 +11,12 @@
  *   ③ 记忆中枢当前**没有 MCP 端点**，所以记忆只能是 `rest-only` —— 不画一个假装能用的开关。
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { BookOpen, Bot, Brain, CheckCircle2, Cloud, Coins, Database, ExternalLink, LogIn, LogOut, RefreshCw, RotateCcw, TriangleAlert } from "lucide-react";
+import { BookOpen, Bot, Brain, CheckCircle2, Cloud, Coins, Database, ExternalLink, ListChecks, LogIn, LogOut, RefreshCw, RotateCcw, TriangleAlert } from "lucide-react";
 import { provisionCloud, provisionSummary, type CloudProvisionReport } from "../../lib/cloud-provision.mjs";
 import { PageInfo } from "../../components/SettingsHead";
 import { Spinner } from "../../components/CardShell";
 import { cloudUserCenterUrl } from "../../lib/cloud-links.mjs";
+import { ProviderSetupDialog, type ProviderSetupCompleted, type ProviderSetupIntent } from "../provider-setup";
 
 import { SessionSyncDialog } from "./SessionSyncDialog";
 import { ResultDialog, type ResultAction } from "./ResultDialog";
@@ -157,6 +158,8 @@ export function CloudAccountSection() {
   const [provisionReport, setProvisionReport] = useState<CloudProvisionReport | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  /* 10-24：登录 / 选择模型统一走自动配置大弹窗（检测目录 → 勾选 → 保存启用 → 重启）。 */
+  const [setupIntent, setSetupIntent] = useState<ProviderSetupIntent | null>(null);
   /* 10-18：会话同步用**独立弹窗**（非内嵌）；null = 关闭 */
   const [sessionDialog, setSessionDialog] = useState<"upload" | "pull" | null>(null);
   /* 10-18：连通测试 / 刷新的**弹窗**反馈（内嵌 hint 会被滚动错过） */
@@ -189,6 +192,14 @@ export function CloudAccountSection() {
     try { await fn(); } finally { setBusy(""); }
   }, []);
 
+  const finishCloudSetup = async ({ result }: ProviderSetupCompleted, options: { restart: boolean }) => {
+    setSetupIntent(null);
+    refreshProviders();
+    setMsg({ kind: "ok", text: `已启用「云端模型」· ${result.models.length} 个模型；旧供应商已自动停用。` });
+    await refresh();
+    if (options.restart) window.setTimeout(() => { void window.codex.relaunchApp().catch(() => undefined); }, 900);
+  };
+
   const doLogin = () => run("login", async () => {
     const api = cloudApi();
     if (!api.cloudAuthLogin) return;
@@ -197,23 +208,35 @@ export function CloudAccountSection() {
     const r = await api.cloudAuthLogin({ username: username.trim(), password });
     if (!r.ok) { setMsg({ kind: "err", text: r.error || "登录失败" }); return; }
     setPassword("");
-    /* 10-22「登录即用」：登录后一次配齐模型 / 知识库 / 记忆，生效位只在没有别家供应商时切换。
+    /* 10-22「登录即用」：登录后一次配齐模型 / 知识库 / 记忆；**生效位交给统一弹窗**
+       （10-24：勾选模型 → 保存并启用 → 旧供应商自动停用 → 重启，不再在这里偷偷切生效位）。
        ⛔ 令牌失效的 401 由 sync 内部自愈；仍失败才 force 重签一次（保留 10-18 多设备保护：
           不无条件重签，否则会把同账号另外两台设备的令牌挤出 3 枚令牌环）。 */
-    let report = await provisionCloud(api, { activate: true, onlyIfEmpty: true });
+    let report = await provisionCloud(api, { activate: false });
     if (!report.models?.ok) {
       const forced = await api.cloudModelsSync?.({ force: true });
-      if (forced?.ok) report = await provisionCloud(api, { activate: true, onlyIfEmpty: true });
+      if (forced?.ok) report = await provisionCloud(api, { activate: false });
     }
     setProvisionReport(report);
     refreshProviders();
-    setMsg({
-      kind: report.ok ? "ok" : "err",
-      text: report.ok
-        ? `登录成功，已自动配置。${provisionSummary(report)}`
-        : `登录成功，但自动配置未完成：${provisionSummary(report) || "请稍后点「一键同步 / 修复」重试"}`,
-    });
     await refresh();
+    if (report.models?.ok) {
+      setMsg({ kind: "ok", text: `登录成功，已读取 ${report.models.count} 个云端模型 —— 在弹窗里勾选后保存启用。` });
+      setSetupIntent({
+        provider: "cloud",
+        name: "云端模型",
+        baseUrl: "",
+        apiKey: "",
+        source: "cloud",
+        autoStart: true,
+        account: username.trim() || status?.active?.username || undefined,
+      });
+      return;
+    }
+    setMsg({
+      kind: "err",
+      text: `登录成功，但自动配置未完成：${provisionSummary(report) || "请稍后点「一键同步 / 修复」重试"}`,
+    });
   });
 
   /* 已登录状态的「一键同步 / 修复」：与登录页同一个编排函数（⛔ 不写第二套）。 */
@@ -718,13 +741,28 @@ export function CloudAccountSection() {
                 <span>上次同步 <b>{agoText(models?.lastSyncAt ?? 0)}</b></span>
                 <span>自动保持更新 <b>每 10 分钟</b></span>
               </div>
+              {models?.registered && (
+                <div className="cloud-acct-actions">
+                  <button className="primary-setting" disabled={!!busy || !models.models} onClick={() => setSetupIntent({
+                    provider: "cloud",
+                    name: "云端模型",
+                    baseUrl: "",
+                    apiKey: "",
+                    source: "cloud",
+                    autoStart: true,
+                    account: models.account || undefined,
+                  })}>
+                    <ListChecks size={14} />选择模型并启用
+                  </button>
+                  <span className="cloud-acct-sub">自动读取云端目录，可一键全选；保存后旧供应商自动停用并重启应用</span>
+                </div>
+              )}
               {models?.registered && !models.active && (
                 <div className="cloud-acct-actions">
-                  <button className="primary-setting" disabled={!!busy || !models.models} onClick={doActivate}>
-                    <Cloud size={14} />{busy === "activate" ? "切换中…" : "设为当前供应商"}
+                  <button className="secondary-setting" disabled={!!busy || !models.models} onClick={doActivate}>
+                    <Cloud size={14} />{busy === "activate" ? "切换中…" : "直接设为当前供应商（保持现有勾选）"}
                   </button>
                   {busyIcon("activate")}
-                  <span className="cloud-acct-sub">你现在用的是别的供应商 —— 点这里切到云端模型（会重启引擎）</span>
                 </div>
               )}
               <p className="muted" style={{ margin: 0, fontSize: 12 }}>
@@ -842,6 +880,13 @@ export function CloudAccountSection() {
             </div>
           </details>
         </>
+      )}
+      {setupIntent && (
+        <ProviderSetupDialog
+          intent={setupIntent}
+          onClose={() => setSetupIntent(null)}
+          onCompleted={finishCloudSetup}
+        />
       )}
     </section>
   );

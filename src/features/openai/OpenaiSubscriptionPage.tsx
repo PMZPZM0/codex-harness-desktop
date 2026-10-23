@@ -3,7 +3,7 @@
  * ⛔ 顺序即契约（若含 hook / 副作用注册，调用顺序 == 原文件顺序）⇒ 只能按文件名前缀顺序 import。
  */
 import { CircleGauge, Clock3, AlertTriangle, Bot, Check, Play, LogIn, Trash2, Plus, FileUp, X, RefreshCw } from "lucide-react";
-import { OFFICIAL_MODELS } from "../../lib/official-models";
+import { ProviderSetupDialog, type ProviderSetupCompleted, type ProviderSetupIntent } from "../provider-setup";
 import { PageInfo } from "../../components/SettingsHead";
 import { Spinner } from "../../components/CardShell";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
@@ -24,6 +24,23 @@ export function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, o
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [nowTick, setNowTick] = useState(Date.now());
   const [proxy, setProxy] = useState(() => localStorage.getItem("openai-proxy") ?? "");
+  /* 10-24：登录 / 启用订阅统一走自动配置弹窗（拉官方目录 → 勾选 → 保存启用 → 重启）。 */
+  const [setupIntent, setSetupIntent] = useState<ProviderSetupIntent | null>(null);
+  const openOfficialSetup = (account?: string) => setSetupIntent({
+    provider: "openai-official",
+    name: "OpenAI 官方订阅",
+    baseUrl: "https://chatgpt.com/backend-api/codex",
+    apiKey: "",
+    source: "openai",
+    autoStart: true,
+    account,
+  });
+  const finishOfficialSetup = ({ result }: ProviderSetupCompleted, options: { restart: boolean }) => {
+    setSetupIntent(null);
+    void onRefreshActive?.();
+    onNotice(`已启用 OpenAI 官方订阅 · ${result.models.length} 个模型；旧供应商已自动停用`);
+    if (options.restart) window.setTimeout(() => { void window.codex.relaunchApp().catch(() => undefined); }, 900);
+  };
   const timerRef = useRef<number | null>(null);
   useEffect(() => { const t = window.setInterval(() => setNowTick(Date.now()), 30_000); return () => window.clearInterval(t); }, []);
   const authOpenedRef = useRef(false);
@@ -49,10 +66,10 @@ export function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, o
       const first = okItems.find((i) => i.id && i.loginable);
       if (first?.id) {
         const sw = await window.codex.openaiAccountSwitch(first.id);
-        await onActivate(OFFICIAL_MODELS);
         onActiveChange?.(sw.email);
         await reload();
-        onNotice(`导入完成：新增 ${result.imported}、更新 ${result.updated}、失败 ${result.failed}；已切换登录 ${sw.email}，可以直接对话`);
+        onNotice(`导入完成：新增 ${result.imported}、更新 ${result.updated}、失败 ${result.failed}；已切换登录 ${sw.email}，正在打开模型配置…`);
+        openOfficialSetup(sw.email);
       } else {
         onNotice(`导入完成：新增 ${result.imported}、更新 ${result.updated}、失败 ${result.failed}`);
       }
@@ -129,8 +146,8 @@ export function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, o
           try {
             await window.codex.openaiAccountSwitch(saved.id);
             onActiveChange?.(saved.email);
-            await onActivate(OFFICIAL_MODELS);
-            onNotice("OpenAI 账号已登录并启用订阅：" + saved.email + "，可以直接开始对话");
+            onNotice("OpenAI 账号已登录：" + saved.email + "，正在打开模型配置…");
+            openOfficialSetup(saved.email);
           } catch (e: any) {
             setErr("账号已保存，但自动启用失败：" + (e.message ?? e));
           }
@@ -168,8 +185,8 @@ export function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, o
     try {
       const r = await window.codex.openaiAccountSwitch(id);
       onActiveChange?.(r.email);
-      await onActivate(OFFICIAL_MODELS);
-      onNotice("已启用 " + r.email + " 的 Codex 订阅");
+      onNotice("正在打开模型配置：" + r.email);
+      openOfficialSetup(r.email);
     } catch (e: any) { setErr("启用失败：" + (e.message ?? e)); } finally { setWorking(""); }
   };
   // 账号启用/停用：停用 = 退出切换候选（vault 数据保留）；停用使用中的账号会同步退出引擎生效。
@@ -203,8 +220,8 @@ export function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, o
         setWorking("en" + id);
         const sw = await window.codex.openaiAccountSwitch(id);
         onActiveChange?.(sw.email);
-        await onActivate(OFFICIAL_MODELS);
-        onNotice("账号已启用并恢复为当前生效：" + sw.email);
+        onNotice("账号已启用，正在打开模型配置：" + sw.email);
+        openOfficialSetup(sw.email);
       } else {
         onNotice(enabled ? "账号已启用，可启用其 Codex 订阅" : "账号已停用，不再出现在切换候选中");
       }
@@ -312,7 +329,7 @@ export function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, o
               <div className="relay-plan-card-foot">
                 <button className="secondary-setting" disabled={working !== ""} onClick={() => void refreshWithReceipt(onNotice, "刷新额度", () => loadUsage(a.email))}><RefreshCw size={13} />刷新额度</button>
                 {a.active && !a.disabled
-                  ? <button className="secondary-setting" disabled={working !== ""} onClick={() => void onActivate(OFFICIAL_MODELS)}>{working === "en" + a.id ? <Spinner /> : <Play size={13} />}重新启用</button>
+                  ? <button className="secondary-setting" disabled={working !== ""} onClick={() => openOfficialSetup(a.email)}>{working === "en" + a.id ? <Spinner /> : <Play size={13} />}重新启用</button>
                   : <button className="secondary-setting" disabled={working !== "" || a.disabled || Boolean(activeProvider)} title={a.disabled ? "已停用的账号不能启用订阅，请先在卡片上重新启用" : (activeProvider ? `已有供应商「${activeProvider}」生效，请先停用再启用 OpenAI 订阅` : undefined)} onClick={() => void enableSubscription(a.id)}>{working === "en" + a.id ? <Spinner /> : <Play size={13} />}启用订阅</button>}
                 <button className="secondary-setting relay-account-remove" title={`删除账号「${a.email || a.id}」（会二次确认）`} disabled={working !== ""} onClick={() => void removeAccount(a)}><Trash2 size={13} />删除</button>
               </div>
@@ -329,7 +346,7 @@ export function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, o
               <small>设备码登录 · 自动收进账号库并启用订阅</small>
               <button className="icon-button relay-modal-close" title="关闭" onClick={() => setLoginModalOpen(false)}><X size={15} /></button>
             </div>
-            <p className="openai-sub-line">点击登录后浏览器会打开 OpenAI 授权页，输入验证码即可；登录成功自动启用订阅并进入可用状态。OpenAI 有区域限制，需要可访问 OpenAI 的网络（代理）。</p>
+            <p className="openai-sub-line">点击登录后浏览器会打开 OpenAI 授权页，输入验证码即可；登录成功会打开模型配置：勾选模型 → 保存启用（旧供应商自动停用）→ 重启。OpenAI 有区域限制，需要可访问 OpenAI 的网络（代理）。</p>
             <div className="relay-key-form openai-add-row">
               <input value={proxy} onChange={(e) => setProxy(e.target.value)} placeholder="代理地址（可选，如 http://127.0.0.1:7897）" />
               <button className="primary-setting" disabled={busy} onClick={() => void startLogin()}>{busy ? <><Spinner />等待浏览器登录…</> : <><LogIn size={14} />设备码登录</>}</button>
@@ -343,6 +360,9 @@ export function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, o
             )}
           </div>
         </div>
+      )}
+      {setupIntent && (
+        <ProviderSetupDialog intent={setupIntent} onClose={() => setSetupIntent(null)} onCompleted={finishOfficialSetup} />
       )}
     </section>
   );

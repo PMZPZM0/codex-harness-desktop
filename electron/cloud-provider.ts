@@ -26,6 +26,7 @@ import { applyCustomModel } from "./features/custom-model-apply";
 import { cloudHome, encrypt, fetchIntegrations } from "./cloud-api";
 import { writeCloudMemoryActivation } from "./cloud-memory-activation";
 import { withExclusiveEnabled } from "./provider-exclusivity";
+import { sendToWindow } from "./features/window-bus";
 import type { CustomModelFile, ProviderModel } from "./features/custom-model-types";
 
 /** 云供应商的固定 id（⛔ 只含字母数字下划线短横线：`custom-model:save` 的校验口径）。 */
@@ -370,6 +371,9 @@ export async function activateCloudProvider(): Promise<{ ok: boolean; model: str
   if (exclusiveChanged) await writeCustomModels(exclusiveList);
   await fs.writeFile(customModelFile, JSON.stringify(picked, null, 2), "utf8");
   await applyCustomModel(picked, { restart: true });
+  /* 10-24：云端「选择模型并启用」也要广播 provider-activated —— 渲染层据此刷新供应商列表
+     并把当前会话模型跟到云端（与 custom-model:save / set-enabled 同一条事件，⛔ 不另开一套）。 */
+  try { sendToWindow("harness:event", { type: "provider-activated", provider: CLOUD_PROVIDER_ID, at: Date.now() }); } catch { /* 窗口未就绪 */ }
   return { ok: true, model: picked.model };
 }
 

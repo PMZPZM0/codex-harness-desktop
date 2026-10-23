@@ -1356,7 +1356,7 @@ export interface Bag {
   buildDynamicTools: () => Promise<any[]>;
   createEmptyThread: () => Promise<import("../../app-view/types.ts").Thread | null>;
   send: (event?: React.FormEvent<Element> | undefined) => Promise<void>;
-  handleLogin: (info: { provider: string; name: string; baseUrl: string; apiKey: string; model: string; username?: string | undefined; }) => Promise<boolean>;
+  handleLogin: (info: { provider: string; name: string; baseUrl: string; apiKey: string; model: string; username?: string | undefined; saved?: any; models?: string[] | undefined; }) => Promise<boolean>;
   handleSkip: () => Promise<void>;
   MODEL_CONFIGURED_KEY: "model-configured-v1";
   markModelConfigured: () => void;
