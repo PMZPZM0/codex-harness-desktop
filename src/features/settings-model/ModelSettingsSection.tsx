@@ -31,30 +31,6 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
   const displayProviders = realPptoken
     ? [...providersList].sort((a: any, b: any) => (a.provider === "pptoken" ? 0 : 1) - (b.provider === "pptoken" ? 0 : 1))
     : [{ provider: "pptoken", name: "PPtoken", model: "", baseUrl: PPTokenEndpoints[0].url, wireApi: "responses" as const, hasKey: false, models: [], enabled: true }, ...providersList];
-  const draftForProvider = (p: any) => ({
-    provider: p.provider,
-    name: p.name,
-    model: p.model,
-    baseUrl: p.baseUrl,
-    contextWindow: String(p.contextWindow ?? 128000),
-    wireApi: p.wireApi ?? "responses",
-    apiKey: "",
-    models: p.models ?? (p.model ? [{ id: p.model }] : []),
-    enabled: p.enabled ?? true,
-  });
-  const selectProviderDraft = (p: any, isPseudo: boolean) => {
-    if (isPseudo) {
-      setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: PPTokenEndpoints[0].url, contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff });
-      setEditingProvider(null);
-      return;
-    }
-    setEditingProvider(p.provider);
-    setCustomDraft(draftForProvider(p));
-  };
-  const openProviderEditor = (p: any, isPseudo: boolean) => {
-    selectProviderDraft(p, isPseudo);
-    setEditorOpen(true);
-  };
   useEffect(() => {
     if (!editorOpen) return;
     const onKey = (event: KeyboardEvent) => {
@@ -115,7 +91,6 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                           <div
                             key={p.provider}
                             className={`provider-item provider-card ${p.provider === "pptoken" ? "sponsor" : ""} ${(p.enabled === false || pseudoOff) ? "disabled" : ""} ${p.provider === editingProvider ? "selected" : ""}`}
-                            onClick={() => openProviderEditor(p, isPseudoPptoken)}
                             data-provider={p.provider}
                           >
                             <div className="provider-card-top">
@@ -139,7 +114,6 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                               <label
                                 className={`provider-switch ${(p.enabled === false || pseudoOff) ? "off" : ""}`}
                                 title={isPseudoPptoken ? (pseudoOff ? "推荐卡已停用 · 点击恢复展示" : "停用 PPtoken 推荐卡展示") : (p.enabled !== false ? "已启用 · 点击禁用" : "已禁用 · 点击启用（会自动停用当前供应商）")}
-                                onClick={(event) => { event.stopPropagation(); selectProviderDraft(p, isPseudoPptoken); }}
                               >
                                 <input type="checkbox" checked={isPseudoPptoken ? !pseudoOff : p.enabled !== false} onChange={(event) => { if (isPseudoPptoken) setPptokenCardOff(!event.target.checked); else void setProviderEnabled(p.provider, event.target.checked); }} />
                                 <span className="provider-switch-ui" />
@@ -148,12 +122,11 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                             <div className="provider-card-models">
                               {models.slice(0, 3).map((m: any) => <span className="provider-model-chip" key={m.id}>{m.id}</span>)}
                               {models.length > 3 && <span className="provider-model-chip more">+{models.length - 3}</span>}
-                              {!models.length && <span className="provider-card-empty">{isPseudoPptoken ? "填入 API Key 后即可使用" : "还没有模型 · 点配置添加"}</span>}
+                              {!models.length && <span className="provider-card-empty">{isPseudoPptoken ? "填入 API Key 后即可使用" : "还没有模型 · 用上方自动配置添加"}</span>}
                             </div>
                             <div className="provider-card-foot">
                               {!isPseudoPptoken && <span className={`provider-dot ${p.provider === currentProvider ? "on" : ""}`} title={p.provider === currentProvider ? "当前生效供应商" : ""} />}
                               <span className="provider-card-status">{p.provider === currentProvider ? "当前生效" : (p.enabled === false || pseudoOff) ? "已停用" : "未生效"}</span>
-                              <button type="button" className="provider-card-configure" onClick={(event) => { event.stopPropagation(); openProviderEditor(p, isPseudoPptoken); }}>配置 <ChevronRight size={13} /></button>
                             </div>
                           </div>
                         );

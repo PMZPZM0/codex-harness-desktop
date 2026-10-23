@@ -111,7 +111,7 @@ ok(/if \(ok && intent\.relayActive\) writeRelayActive/.test(login), "中转站 r
 /* ── ⑤ 设置页 / 云账号页 / OpenAI 页 ── */
 ok(/provider-setup-hero/.test(modelPage) && /ProviderSetupDialog/.test(modelPage) && /refreshActive/.test(modelPage), "模型页大入口 + 弹窗 + 保存后刷新供应商列表");
 ok(/relaunchApp/.test(modelPage), "模型页保存后自动重启应用");
-ok(!/openNewProvider|测试当前供应商/.test(modelPage), "模型页不再有手动「添加供应商」与「测试当前供应商」入口（只保留自动配置）");
+ok(!/openNewProvider|openProviderEditor|provider-card-configure|测试当前供应商/.test(modelPage), "模型页只保留自动配置：无手动添加/配置/测试入口");
 ok(/provisionCloud\(api, \{ activate: false \}\)/.test(cloudPage), "云账号登录自动配置不再偷偷抢生效位（activate:false 交给弹窗）");
 ok(/选择模型并启用/.test(cloudPage) && /ProviderSetupDialog/.test(cloudPage) && /relaunchApp/.test(cloudPage), "云账号页有「选择模型并启用」入口 + 弹窗 + 重启");
 ok(/openOfficialSetup/.test(openaiPage) && /ProviderSetupDialog/.test(openaiPage) && /relaunchApp/.test(openaiPage), "OpenAI 页登录/启用订阅走同一弹窗");
