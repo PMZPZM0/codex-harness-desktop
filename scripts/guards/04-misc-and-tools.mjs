@@ -392,6 +392,13 @@ console.log(C.bold("\n【15】供应商列表：点开关（启用/停用）右�
   /setEditingProvider\(p\.provider\)/.test(swBlock)
     ? ok("开关的 onClick 里确实切了编辑对象（setEditingProvider）")
     : fail("开关 onClick 里没有切编辑对象 —— 详情不会跟随");
+  const ppEndpointsSrc = readFileSync(join(ROOT, "src", "lib", "pptoken-endpoints.ts"), "utf8");
+  ((ppEndpointsSrc.includes('url: "https://cn.pptoken.cc/v1"')
+    && ppEndpointsSrc.indexOf('url: "https://cn.pptoken.cc/v1"') < ppEndpointsSrc.indexOf('url: "https://api.pptoken.cc/v1"')
+    && providerSwitchHost.includes("PPTokenEndpoints[0].url")
+    && !providerSwitchHost.includes('baseUrl: "https://api.pptoken.cc/v1"')) ? ok : fail)(
+    "【15】PPtoken 默认 API = 大陆线路（端点表默认 cn，供应商卡不再写死 api）"
+  );
 }
   }
 

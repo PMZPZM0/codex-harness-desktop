@@ -96,7 +96,7 @@ export function FieldHelp({ text }: { text: string }) {
 export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: (info: { provider: string; name: string; baseUrl: string; apiKey: string; model: string; username?: string }) => Promise<boolean> }) {
   const [mode, setMode] = useState<"custom" | "pptoken" | "relay" | "openai" | "cloud">("pptoken");
   const [username, setUsername] = useState(() => localStorage.getItem("username") || "");
-  const [apiBase, setApiBase] = useState("https://api.pptoken.cc/v1");
+  const [apiBase, setApiBase] = useState(PPTokenEndpoints[0].url);
   const [apiKey, setApiKey] = useState("");
   const [endpoint, setEndpoint] = useState(0);
   const [endpointOpen, setEndpointOpen] = useState(false);

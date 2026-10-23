@@ -228,8 +228,8 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     "文件卡 → 右栏走事件箱 + AppView 桥（⛔ 不给整条组件链加 props）");
   ok(bridge.includes('setRightTab("tree")') && bridge.includes("setRightOpen(true)") && bridge.includes("setPanelWidth(420)"),
     "点卡片：打开右栏 + 切到文件页 + 放宽到 420px（308px 放不下预览）");
-  ok(/<WorkspaceFilePreview path=\{resolvedWorkspaceFile\}/.test(reviewPanel) && reviewPanel.includes('title="工作区文件：浏览项目并预览"'),
-    "右栏「文件」页 = 项目树 + 预览（标签由「项目树」改名，工具提示仍是「工作区文件」）");
+  ok(/<WorkspaceFilePreview path=\{resolvedWorkspaceFile\}/.test(reviewPanel) && reviewPanel.includes('title="文件：浏览工作区并预览"'),
+    "右栏「文件」页 = 工作区文件树 + 预览（tab 显示「文件」，标题/提示同源）");
   ok(/单击在\*\*右侧栏\*\*预览，双击才开居中编辑器/.test(reviewPanel) && reviewPanel.includes("onDoubleClick"),
     "树里单击在右栏预览、双击才开居中编辑器");
   ok(/window\.codex\.readFile\(path\)/.test(workspacePreview) && /FilePreviewCode/.test(workspacePreview) && /Markdown/.test(workspacePreview)
