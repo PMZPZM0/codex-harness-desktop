@@ -229,8 +229,11 @@ ok(
   "自动配置不抢生效位：只有「没有别家供应商 / 已是云端」才激活（onlyIfEmpty + getCustomModel）",
 );
 ok(
-  /provider: "cloud", name: "云端模型"/.test(loginSrc),
-  "登录后把供应商落成 id=cloud / 名=云端模型（与主进程 cloud-provider 的口径一致）",
+  /* 10-24：登录页不再直接调 onLogin 落盘，而是把云端凭据交给「自动配置弹窗」，
+     由用户在弹窗里勾选模型后保存启用。id/名仍必须与主进程 cloud-provider 同口径。 */
+  /provider:\s*"cloud",[\s\S]{0,120}?name:\s*"云端模型"/.test(loginSrc)
+    && /ProviderSetupDialog/.test(loginSrc),
+  "登录后把供应商落成 id=cloud / 名=云端模型（经自动配置弹窗保存，口径与主进程一致）",
 );
 ok(
   /登录并自动配置/.test(loginSrc),

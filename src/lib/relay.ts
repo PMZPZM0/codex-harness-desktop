@@ -196,8 +196,17 @@ export async function performRelayLogin(input: {
    *  用途：本机已有有效 token（24h）时，用户不必为了一次配置再赌一遍密码 ——
    *  ⛔ 只在**同一网关 + 同一邮箱**且会话未过期时才允许（由调用方判），否则会串账号。 */
   skipLogin?: boolean;
+  /** 10-24：只登录 + 解析候选 + 试通模型，**不写供应商、不落 relay-active**。
+   *  登录页用它把凭据交给「自动配置弹窗」，由用户在弹窗里勾选模型后再落盘。 */
+  deferActivation?: boolean;
   onLogin: (info: { provider: string; name: string; baseUrl: string; apiKey: string; model: string; username?: string }) => Promise<boolean>;
-}): Promise<{ ok: boolean; message?: string; active?: RelayActive }> {
+}): Promise<{
+  ok: boolean;
+  message?: string;
+  active?: RelayActive;
+  /** deferActivation 时返回：已验证可用的供应商凭据（尚未落盘）。 */
+  pending?: { provider: string; name: string; baseUrl: string; apiKey: string };
+}> {
   if (!input.skipLogin) {
     /* ⛔ 提交前净化一次（全角 `＠`、尾随空格、零宽字符 ⇒ 站点按字节比对必判 invalid，
        而页面上看不出来）。UI 也会净化并提示，这里再做一次是**兜底**：凡是调用方漏做的
@@ -238,6 +247,25 @@ export async function performRelayLogin(input: {
         continue;
       }
       lastActive = resolved.active;
+      /* 10-24：延迟落盘模式 —— 只确认这个候选的模型列表能用，然后把凭据交回调用方。
+         ⛔ 不写 relay-active（用户可能在弹窗里取消）；取消后这把新 key 留在站点里是正常副作用。 */
+      if (input.deferActivation) {
+        try {
+          const probe = await window.codex.probeCustomModel({ provider: resolved.provider, baseUrl: resolved.gateway, apiKey: resolved.apiKey, wireApi: "responses" });
+          if (!(probe?.models ?? []).length) {
+            if (note(cand.label, "网关返回的模型列表为空（该密钥所属分组当前没有可用模型）")) break;
+            continue;
+          }
+          return {
+            ok: true,
+            active: resolved.active,
+            pending: { provider: resolved.provider, name: resolved.displayName, baseUrl: resolved.gateway, apiKey: resolved.apiKey },
+          };
+        } catch (error) {
+          if (note(cand.label, relayReason(error))) break;
+          continue;
+        }
+      }
       let ok = false;
       try {
         ok = await input.onLogin({

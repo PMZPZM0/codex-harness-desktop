@@ -24,6 +24,7 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { createServer } from "node:http";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ElectronHarness } from "./e2e/lib/harness.mjs";
@@ -1693,6 +1694,304 @@ const CHECKS = [
       await h.eval(`window.codex.setProviderEnabled({ provider: "cloud", enabled: true }).catch(()=>undefined)`).catch(() => undefined);
       await wait(1600);
       await h.screenshot("provider-switch");
+    },
+  },
+
+  {
+    id: "provider-autosetup",
+    name: "🧭 供应商自动配置：检测 → 全选 → 保存启用 → 旧供应商自动停用（10-24）",
+    run: async (h) => {
+      /* 用户 10-24 原话：登录/填密钥后「自动检测，自动刷新模型，提示勾选想用的模型或者一键全选，
+         保存生效供应商重启，旧供应商自动停止」。
+         本项用**真网关**（测试进程起一个本地 /v1/models mock）走完整链路：
+         设置 → 模型 → 打开自动配置 → 填地址密钥 → 检测 → 勾选 → 保存 → 旧供应商消失。
+         ⛔ 完成后点「稍后重启」：验收进程不能真把被测应用重启掉。 */
+      const server = createServer((req, res) => {
+        if ((req.url || "").split("?")[0].endsWith("/models")) {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ data: [{ id: "mock-alpha" }, { id: "mock-beta" }] }));
+          return;
+        }
+        res.writeHead(404, { "content-type": "application/json" });
+        res.end("{}");
+      });
+      let providerId = "";
+      let before = { current: "", currentName: "", enabled: [] };
+      try {
+        await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+        const port = server.address()?.port;
+        const baseUrl = `http://127.0.0.1:${port}/v1`;
+
+        await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "界面就绪", timeoutMs: 40000 });
+        await wait(900);
+        await h.eval(`document.querySelector(".sidebar-settings")?.click()`);
+        await wait(1100);
+        await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(x=>(x.textContent||"").trim()==="模型"); if(!b) return false; b.click(); return true; })()`);
+        await h.waitFor(`!!document.querySelector(".provider-setup-open")`, { label: "模型页自动配置入口", timeoutMs: 9000 });
+        await h.screenshot("provider-autosetup-entry");
+        before = await h.eval(`(async function(){
+          const l=await window.codex.listCustomModels();
+          const current=l.providers.find(p=>p.provider===l.current);
+          return { enabled:l.providers.filter(p=>p.enabled!==false).map(p=>p.provider), current:l.current||"", currentName:current?.name||"" };
+        })()`);
+
+        await h.eval(`document.querySelector(".provider-setup-open")?.click()`);
+        await h.waitFor(`!!document.querySelector('[data-testid="provider-setup"]')`, { label: "自动配置弹窗打开", timeoutMs: 5000 });
+        const opened = await h.eval(`(function(){
+          const modal=document.querySelector('[data-testid="provider-setup"]');
+          const fields=[...document.querySelectorAll(".provider-setup-credentials input")];
+          return { modal:!!modal, fields:fields.length, detect:!!document.querySelector(".provider-setup-detect"),
+            steps:document.querySelectorAll(".provider-setup-step").length,
+            firstStep:document.querySelector('.provider-setup-step[data-step="account"]')?.dataset.state||"" };
+        })()`);
+        h.check("① 模型页大入口打开「自动配置」弹窗：凭据表单 + 检测按钮 + 5 步进度在位",
+          Boolean(opened && opened.modal && opened.fields >= 3 && opened.detect && opened.steps === 5),
+          JSON.stringify(opened));
+
+        const filled = await h.eval(`(function(){
+          const inputs=[...document.querySelectorAll(".provider-setup-credentials input")];
+          if(inputs.length<3) return null;
+          const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;
+          const set=(el,v)=>{ setter.call(el,v); el.dispatchEvent(new Event("input",{bubbles:true})); };
+          set(inputs[0],"自动配置测试供应商");
+          set(inputs[1],${JSON.stringify(baseUrl)});
+          set(inputs[2],"sk-mock-test");
+          return true;
+        })()`);
+        await wait(300);
+        await h.eval(`document.querySelector(".provider-setup-detect")?.click()`);
+        await h.waitFor(`document.querySelectorAll(".provider-setup-model").length >= 2`, { label: "检测到模型", timeoutMs: 12000 });
+        const detected = await h.eval(`(function(){
+          const rows=[...document.querySelectorAll(".provider-setup-model")];
+          const boxes=rows.map(r=>r.querySelector('input[type="checkbox"]'));
+          return {
+            count:rows.length,
+            ids:rows.map(r=>r.dataset.model||""),
+            checked:boxes.filter(b=>b&&b.checked).length,
+            detectState:document.querySelector('.provider-setup-step[data-step="detect"]')?.dataset.state||"",
+            selectState:document.querySelector('.provider-setup-step[data-step="select"]')?.dataset.state||"",
+            hint:document.querySelector(".provider-setup-select-head .provider-setup-hint")?.innerText||"",
+            chip:(document.querySelector(".provider-setup-chip")?.innerText||"").trim(),
+          };
+        })()`);
+        h.check("② 自动检测并刷新模型列表：进度到位、默认全选、一键全选/全不选入口在位",
+          Boolean(filled && detected.count === 2 && detected.checked === 2
+            && detected.detectState === "done" && detected.selectState === "active"
+            && detected.hint.includes("2") && /全不选|全选/.test(detected.chip)
+            && detected.ids.includes("mock-alpha") && detected.ids.includes("mock-beta")),
+          JSON.stringify(detected));
+
+        const toggled = await h.eval(`(async function(){
+          const chip=()=>document.querySelector(".provider-setup-chip");
+          chip()?.click();
+          await new Promise(r=>setTimeout(r,120));
+          const none=[...document.querySelectorAll('.provider-setup-model input[type="checkbox"]')].filter(b=>b.checked).length;
+          chip()?.click();
+          await new Promise(r=>setTimeout(r,120));
+          const all=[...document.querySelectorAll('.provider-setup-model input[type="checkbox"]')].filter(b=>b.checked).length;
+          return { none, all };
+        })()`);
+        h.check("③ 全不选 / 一键全选都真实生效", Boolean(toggled && toggled.none === 0 && toggled.all === 2), JSON.stringify(toggled));
+        await h.screenshot("provider-autosetup-dialog");
+
+        await h.eval(`document.querySelector(".provider-setup-foot .primary-setting")?.click()`);
+        await h.waitFor(`!!document.querySelector(".provider-setup-done")`, { label: "保存并启用完成", timeoutMs: 20000 });
+        const receipt = await h.eval(`(function(){
+          return {
+            text:document.querySelector(".provider-setup-receipt")?.innerText||"",
+            title:document.querySelector(".provider-setup-done strong")?.innerText||"",
+            restart:document.querySelector(".provider-setup-restart-hint")?.innerText||"",
+          };
+        })()`);
+        h.check("④ 保存完成回执：旧供应商自动停用 + 即将重启",
+          Boolean(receipt.title === "已保存并启用" && receipt.text.includes("旧供应商已自动停用") && receipt.restart.includes("重启")),
+          JSON.stringify({ receipt, before }));
+
+        /* 先点「稍后重启」停掉 6 秒倒计时，再查主进程 —— 否则验收运行到一半应用会真重启。 */
+        await h.eval(`(function(){
+          const btn=[...document.querySelectorAll(".provider-setup-done-actions button")].find(b=>(b.textContent||"").includes("稍后重启"));
+          if(!btn) return false; btn.click(); return true;
+        })()`);
+        await h.waitFor(`!document.querySelector('[data-testid="provider-setup"]')`, { label: "弹窗关闭", timeoutMs: 5000 });
+        await wait(800);
+
+        const after = await h.eval(`(async function(){
+          const l=await window.codex.listCustomModels();
+          const row=l.providers.find(p=>p.name==="自动配置测试供应商");
+          const active=await window.codex.getCustomModel();
+          return {
+            provider:row?.provider||"",
+            enabled:l.providers.filter(p=>p.enabled!==false).map(p=>p.provider),
+            current:l.current||"",
+            activeProvider:active?.provider||"",
+            models:(row?.models||[]).map(m=>m.id),
+            dom:!![...document.querySelectorAll(".provider-item")].find(x=>(x.textContent||"").includes("自动配置测试供应商")),
+          };
+        })()`);
+        providerId = after.provider || "";
+        h.check("⑤ 主进程只启用新供应商（旧的被自动停用），模型 2 个，界面列表已刷新",
+          Boolean(providerId && after.enabled.length === 1 && after.enabled[0] === providerId
+            && after.current === providerId && after.activeProvider === providerId
+            && after.models.includes("mock-alpha") && after.models.includes("mock-beta")
+            && after.dom
+            && (!before.current || before.current === providerId || !after.enabled.includes(before.current))),
+          JSON.stringify({ after, before }));
+        const composerModel = await h.eval(`(function(){
+          const btn=[...document.querySelectorAll(".composer-menu button")].find(b=>(b.getAttribute("title")||"")==="模型");
+          return btn ? (btn.innerText||"").trim() : "";
+        })()`);
+        h.check("⑤b 当前会话的模型选择已跟到新供应商（不会继续发旧 model id）",
+          String(composerModel).includes("mock-alpha"), JSON.stringify({ composerModel }));
+
+        /* 云账号同一条弹窗：登录后读云端目录（⛔ 不走 /models 探测）。只看不存，避免改服务端勾选。 */
+        const cloudLoggedIn = await h.eval(`(async function(){ const s=await window.codex.cloudAuthStatus(); return !!s.loggedIn; })()`).catch(() => false);
+        const navCloud = await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(x=>(x.textContent||"").trim()==="云账号"); if(!b) return false; b.click(); return true; })()`);
+        await wait(1200);
+        const openCloud = await h.eval(`(function(){
+          const b=[...document.querySelectorAll("button")].find(x=>(x.textContent||"").includes("选择模型并启用"));
+          if(!b) return false; b.click(); return true;
+        })()`);
+        if (cloudLoggedIn && navCloud && openCloud) {
+          await h.waitFor(`document.querySelectorAll(".provider-setup-model").length > 0`, { label: "云端目录模型列表", timeoutMs: 15000 });
+          const cloudDialog = await h.eval(`(function(){
+            const rows=[...document.querySelectorAll(".provider-setup-model")];
+            return { models:rows.length, checked:rows.filter(r=>r.querySelector('input[type="checkbox"]')?.checked).length,
+              detect:document.querySelector('.provider-setup-step[data-step="detect"]')?.dataset.state||"" };
+          })()`);
+          h.check("⑥ 云账号走同一弹窗：自动读取云端目录（模型 > 0，按云端勾选预选）",
+            Boolean(cloudDialog.models > 0 && cloudDialog.checked > 0 && cloudDialog.detect === "done"),
+            JSON.stringify(cloudDialog));
+          await h.eval(`document.querySelector(".provider-setup-head .icon-button")?.click()`);
+          await h.waitFor(`!document.querySelector('[data-testid="provider-setup"]')`, { label: "云端弹窗关闭", timeoutMs: 5000 });
+        } else {
+          h.check("⑥ 云账号走同一弹窗（本 profile 未登录云账号，跳过；登录后由登录页/云账号页共用同一组件）",
+            true, JSON.stringify({ cloudLoggedIn, navCloud, openCloud }));
+        }
+        await h.screenshot("provider-autosetup");
+      } finally {
+        /* 复原：删掉测试供应商，把验收前的生效供应商切回来（失败也要复原，别污染下一轮）。 */
+        await h.eval(`(async function(){
+          try {
+            const l=await window.codex.listCustomModels();
+            const test=l.providers.find(p=>p.name==="自动配置测试供应商");
+            if(test) await window.codex.removeCustomModel(test.provider);
+            if(${JSON.stringify(before.current || "")}) await window.codex.setProviderEnabled({ provider: ${JSON.stringify(before.current || "")}, enabled: true });
+          } catch {}
+          return true;
+        })()`).catch(() => undefined);
+        await new Promise((resolve) => { server.closeAllConnections?.(); server.close(() => resolve(undefined)); });
+      }
+    },
+  },
+
+  {
+    id: "provider-login-autosetup",
+    name: "🧭 登录页自动配置：自定义 API 登录 → 检测 → 勾选 → 保存启用 → 进主界面（10-24）",
+    run: async (h) => {
+      /* 10-24 用户令：登录云账号 / 中转站 / OpenAI 订阅 / 自定义 API 后**全程自动化**。
+         本项真进登录页（清 login-skipped + reload）走自定义 API 一路：
+         填地址与 Key → 弹窗自动检测 → 全选 → 保存启用（旧供应商自动停用）→ 点「稍后重启」→ 主界面。 */
+      const server = createServer((req, res) => {
+        if ((req.url || "").split("?")[0].endsWith("/models")) {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ data: [{ id: "mock-login-alpha" }] }));
+          return;
+        }
+        res.writeHead(404, { "content-type": "application/json" });
+        res.end("{}");
+      });
+      let before = { current: "", currentName: "" };
+      let providerId = "";
+      let port = 0;
+      try {
+        await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+        port = server.address()?.port;
+        const baseUrl = `http://127.0.0.1:${port}/v1`;
+        before = await h.eval(`(async function(){
+          const l=await window.codex.listCustomModels();
+          const current=l.providers.find(p=>p.provider===l.current);
+          return { current:l.current||"", currentName:current?.name||"" };
+        })()`);
+
+        await h.eval(`localStorage.setItem("login-skipped","logout")`);
+        await h.reload({ waitMs: 900 });
+        await h.waitFor(`!!document.querySelector(".login-screen")`, { label: "登录页出现", timeoutMs: 20000 });
+        const mode = await h.eval(`(function(){
+          const b=[...document.querySelectorAll(".login-option")].find(x=>(x.textContent||"").includes("自定义 API"));
+          if(!b) return false; b.click(); return true;
+        })()`);
+        await wait(300);
+        const filled = await h.eval(`(function(){
+          const inputs=[...document.querySelectorAll(".login-fields .se-field input")];
+          if(inputs.length<3) return null;
+          const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;
+          const set=(el,v)=>{ setter.call(el,v); el.dispatchEvent(new Event("input",{bubbles:true})); };
+          set(inputs[1],${JSON.stringify(baseUrl)});
+          set(inputs[2],"sk-mock-login");
+          return { fields:inputs.length, base:inputs[1].value };
+        })()`);
+        await wait(200);
+        await h.eval(`document.querySelector(".login-btn.primary-setting")?.click()`);
+        await h.waitFor(`!!document.querySelector('[data-testid="provider-setup"]')`, { label: "登录后自动配置弹窗", timeoutMs: 8000 });
+        await h.waitFor(`document.querySelectorAll(".provider-setup-model").length > 0`, { label: "登录弹窗检测到模型", timeoutMs: 12000 });
+        const dialog = await h.eval(`(function(){
+          const rows=[...document.querySelectorAll(".provider-setup-model")];
+          return {
+            models:rows.length,
+            checked:rows.filter(r=>r.querySelector('input[type="checkbox"]')?.checked).length,
+            detect:document.querySelector('.provider-setup-step[data-step="detect"]')?.dataset.state||"",
+            account:(document.querySelector('.provider-setup-step[data-step="account"] small')?.textContent||""),
+          };
+        })()`);
+        h.check("① 自定义 API 登录后自动打开配置弹窗并自动检测（模型默认全选）",
+          Boolean(mode && filled && dialog.models >= 1 && dialog.checked === dialog.models && dialog.detect === "done"),
+          JSON.stringify({ mode, filled, dialog }));
+
+        await h.eval(`document.querySelector(".provider-setup-foot .primary-setting")?.click()`);
+        await h.waitFor(`!!document.querySelector(".provider-setup-done")`, { label: "登录链路保存完成", timeoutMs: 20000 });
+        const receipt = await h.eval(`(function(){ return document.querySelector(".provider-setup-receipt")?.innerText||""; })()`);
+        h.check("② 保存启用后旧供应商自动停用（回执如实写明）",
+          receipt.includes("旧供应商已自动停用") || receipt.includes("唯一启用"),
+          JSON.stringify({ receipt, before }));
+
+        await h.eval(`(function(){
+          const btn=[...document.querySelectorAll(".provider-setup-done-actions button")].find(b=>(b.textContent||"").includes("稍后重启"));
+          if(!btn) return false; btn.click(); return true;
+        })()`);
+        await h.waitFor(`!document.querySelector('[data-testid="provider-setup"]') && !!document.querySelector(".app-shell")`, { label: "进入主界面", timeoutMs: 12000 });
+        await wait(600);
+        const after = await h.eval(`(async function(){
+          const l=await window.codex.listCustomModels();
+          const row=l.providers.find(p=>(p.baseUrl||"").includes(":${port}"));
+          const active=await window.codex.getCustomModel();
+          return {
+            provider:row?.provider||"",
+            enabled:l.providers.filter(p=>p.enabled!==false).map(p=>p.provider),
+            current:l.current||"",
+            activeProvider:active?.provider||"",
+            models:(row?.models||[]).map(m=>m.id),
+            loginScreen:!!document.querySelector(".login-screen"),
+          };
+        })()`);
+        providerId = after.provider || "";
+        h.check("③ 已进入主界面，新供应商是唯一启用项、模型正确",
+          Boolean(providerId && !after.loginScreen && after.enabled.length === 1 && after.enabled[0] === providerId
+            && after.current === providerId && after.activeProvider === providerId
+            && after.models.includes("mock-login-alpha")),
+          JSON.stringify({ after }));
+      } finally {
+        await h.eval(`(async function(){
+          try {
+            const l=await window.codex.listCustomModels();
+            const test=l.providers.find(p=>(p.baseUrl||"").includes(":${port}"));
+            if(test) await window.codex.removeCustomModel(test.provider);
+            if(${JSON.stringify(before.current || "")}) await window.codex.setProviderEnabled({ provider: ${JSON.stringify(before.current || "")}, enabled: true });
+            localStorage.setItem("login-skipped","false");
+          } catch {}
+          return true;
+        })()`).catch(() => undefined);
+        await new Promise((resolve) => { server.closeAllConnections?.(); server.close(() => resolve(undefined)); });
+      }
     },
   },
 
@@ -4147,13 +4446,15 @@ async function enterMain(h) {
 //   历史项不删（它们仍然是回归证据），但**永远不会在默认路径上被执行** ——
 //   这样"每次只测最新改动"是机制保证的，不再依赖我记不记得。
 // ─────────────────────────────────────────────────────────────────────────────
-const LATEST_ROUND = "10-23";   // 10-23 轮：供应商启用互斥 + 云端模型目录刷新；10-22 及以前的项转回归证据
+const LATEST_ROUND = "10-24";   // 10-24 轮：供应商自动配置（检测 → 勾选 → 保存启用 → 重启）；10-23 及以前的项转回归证据
 // 上一轮（10-06）的五个验收项仍是回归证据：--only <id> 单跑，或 --all 全量。
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
   "panel-tabs": "10-22",
   "voice-toggle": "10-22",   // 10-22 轮：回合头 📢 会话级播报开关（名字后图标 / 每会话独立 / 与悬浮球同步）
   "provider-switch": "10-23",   // 10-23 轮：供应商启用互斥 + 云端模型目录刷新（真 DOM）
+  "provider-autosetup": "10-24",   // 10-24 轮：供应商自动配置大弹窗（检测/全选/保存/旧供应商停用，本地 mock 网关真链路）
+  "provider-login-autosetup": "10-24",   // 10-24 轮：登录页自定义 API → 自动弹窗 → 检测/勾选/保存 → 进主界面
   "cloud-simple": "10-22",   // 10-22 轮：云账号登录即用（单卡登录 / 就绪清单 / 教程 / 手动流程折叠）
   "file-cards": "10-22",   // 10-22 轮：Qoder 式本轮产物文件卡 + 右栏工作区文件预览联动   // 10-22 轮：右栏标签撤终端、审阅顶到第二位（默认宽 308px 五个排不下）
   "ui-sketch": "10-06",   // ⛔ 10-06 重写：三形态探针（手机+电脑屏 / platform web 真落盘）+ 预览 + 还原；编号改执行顺序

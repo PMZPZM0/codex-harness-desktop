@@ -27,7 +27,7 @@ export function usePart08b(bag: Bag) {
 
 bag.send = send as typeof bag.send;
 
-  async function handleLogin(info: { provider: string; name: string; baseUrl: string; apiKey: string; model: string; username?: string }): Promise<boolean> {
+  async function handleLogin(info: { provider: string; name: string; baseUrl: string; apiKey: string; model: string; username?: string; saved?: any; models?: string[] }): Promise<boolean> {
     try {
       const preservedThreadId = bag.accountSwitchThreadRef.current;
       // 用户名同步（昵称走 personalization，引擎下次对话就用这个称呼）
@@ -35,6 +35,28 @@ bag.send = send as typeof bag.send;
         localStorage.setItem("username", info.username);
         bag.setUsername(info.username);
         void window.codex.setNickname(info.username).catch(() => undefined);
+      }
+      /* 10-24：自动配置弹窗已经落盘并启用（互斥在主进程完成），这里只做收尾：
+         采用生效档案 → 选模型 → 进主界面。⛔ 不再探测/保存一遍（云端网关没有 /models，
+         重复探测会报假错；重复保存还会再重启一次引擎）。 */
+      if (info.saved) {
+        const saved = info.saved;
+        const models = (info.models?.length ? info.models : (saved.models ?? []).map((m: any) => m.id)).filter(Boolean);
+        const defaultModel = saved.model || models[0] || "";
+        const id = `custom:${saved.provider}:${defaultModel}`;
+        bag.setModelId(id);
+        bag.applyGlobalModelChoice(id);
+        bag.setEffort("high");
+        localStorage.setItem("default-effort", "high");
+        bag.adoptSavedProvider(saved, models);
+        localStorage.setItem("login-skipped", "false");
+        bag.markModelConfigured();
+        bag.setShowLogin(false);
+        bag.showToast("登录成功", `已启用 ${info.name || saved.name}，${models.length} 个模型，默认生效 ${defaultModel}`);
+        await bag.refreshThreads().catch(() => undefined);
+        if (preservedThreadId) await bag.openThread(preservedThreadId);
+        bag.accountSwitchThreadRef.current = null;
+        return true;
       }
       // 1) 探测该端点模型；官方订阅走引擎内置模型目录（chatgpt 网关无裸 /models 探测），跳过探测
       let models: string[];

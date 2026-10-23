@@ -727,10 +727,20 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
            被点的那一行，旧供应商的绿开关会一直留着（用户看到"两个都启用"的假象）。
            ⇒ 任何 provider-activated（保存 / 启用 / 云端同步）都重新拉一次整张列表。 */
         bag.refreshActive?.();
+        /* 10-24：显式启用/保存供应商后，当前会话的模型选择也要跟到新供应商 ——
+           否则「旧供应商被停用、界面还发着旧 model id」，用户看到的是保存成功却发不出去。
+           ⛔ 只认刚激活的那一家（避免并发事件把用户正在用的别家模型改掉）。 */
+        const activatedByEvent = String((event as any).provider ?? "");
+        void window.codex.getCustomModel().then((current) => {
+          if (!current?.provider || (activatedByEvent && current.provider !== activatedByEvent)) return;
+          const id = `custom:${current.provider}:${current.model}`;
+          bag.setModelId(id);
+          bag.applyGlobalModelChoice(id);
+        }).catch(() => undefined);
         // 供应商→中转站反向联动：生效供应商变成非 relay 时，清掉中转站「当前生效」标记，
         // 余额徽标/置顶订阅卡即时退场（此前只靠 activeProvider 逐处比对，relay-active 会残留）。
         // relayActivate 自身最后一步才写 relay-active，本分支先清后写也会收敛到正确终态。
-        const activated = String((event as any).provider ?? "");
+        const activated = activatedByEvent;
         const relay = readRelayActive();
         if (activated && relay && relay.provider !== activated) {
           writeRelayActive(null);
