@@ -399,6 +399,18 @@ console.log(C.bold("\n【15】供应商列表：点开关（启用/停用）右�
     && !providerSwitchHost.includes('baseUrl: "https://api.pptoken.cc/v1"')) ? ok : fail)(
     "【15】PPtoken 默认 API = 大陆线路（端点表默认 cn，供应商卡不再写死 api）"
   );
+  const providerHookSrc15 = readFileSync(join(ROOT, "src", "hooks", "useModelProviders.ts"), "utf8");
+  const providerEventSrc15 = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part05", "01-seg.tsx"), "utf8");
+  (!providerSwitchHost.includes('disabled={!isPseudoPptoken && p.enabled === false && customModel != null && customModel.provider !== p.provider}')
+    && !providerSwitchHost.includes('customDraft.enabled === false && customModel != null && customModel.provider !== editingProvider') ? ok : fail)(
+    "【15】启用新供应商不被 UI 禁用（主进程会自动停用旧的，不让用户先手动关）"
+  );
+  (providerHookSrc15.includes("cloudModelsSync") && /customDraft\.provider === "cloud"/.test(providerHookSrc15) ? ok : fail)(
+    "【15】云端供应商刷新走 cloud-models 目录（⛔ 不再拿 /models 探活）"
+  );
+  (/provider-activated[\s\S]{0,400}?refreshActive/.test(providerEventSrc15) ? ok : fail)(
+    "【15】provider-activated 后刷新整张供应商列表（旧开关同步变灰）"
+  );
 }
   }
 
