@@ -49,13 +49,18 @@ const preload = read("electron/preload.ts");
   const listAt = shell.indexOf('className="thread-list"');
   /* ⛔ 锚**入口按钮**而不是 `<NewbieGuide>`：10-22 起账户行压成侧栏最后一条（用户名贴底），
      弹窗组件仍挂在 Fragment 尾部（它的位置与可见性无关）；拿组件位置比对会永远红。 */
-  const optionsAt = shell.indexOf('className="sidebar-options"');
+  const optionsAt = Math.max(
+    shell.indexOf('className="sidebar-options"'),
+    shell.indexOf('className={`sidebar-options'),
+  );
   const entryAt = shell.indexOf("<span>新手教程</span>") >= 0
     ? shell.indexOf("<span>新手教程</span>")
     : functionMenu.indexOf('"新手教程"');
   const accountAt = shell.indexOf('className="account-row"');
-  ok(listAt >= 0 && optionsAt > listAt && accountAt > optionsAt && entryAt >= 0,
-    "入口在 .thread-list **之外**、账户行之上（入口组容器位于两者之间；⛔ 放进列表里会随滚动走、被内容压住 —— 用户点名）");
+  /* 10-24 并行线把功能入口改成「顶部 / 底部」可选（f5a74e4）：顶部时 optionsAt 在 thread-list 之前。
+     仍必须满足「入口在账户行之上」且「入口由 function-menu 提供」；⛔ 不再硬绑「必须在 thread-list 之后」。 */
+  ok(listAt >= 0 && optionsAt >= 0 && accountAt > optionsAt && entryAt >= 0,
+    "入口在账户行之上（顶部/底部两种位置都允许；入口由 function-menu 提供，⛔ 不放进会话列表里随滚动走）");
   ok(/\.guide-entry \{[\s\S]{0,120}?flex: none/.test(css),
     ".guide-entry flex:none（侧栏 flex 列里唯一允许收缩的是 .thread-list —— 入口不许被压扁）");
   ok(/\.thread-list \{[\s\S]{0,600}?flex: 1 1 0[\s\S]{0,600}?min-height: 0[\s\S]{0,600}?overflow-y: auto/.test(baseCss),

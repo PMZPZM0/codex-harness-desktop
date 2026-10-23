@@ -389,8 +389,8 @@ console.log(C.bold("\n【15】供应商列表：点开关（启用/停用）右�
   !/onClick=\{\(event\) => event\.stopPropagation\(\)\}/.test(swBlock)
     ? ok("供应商开关不再裸 stopPropagation（拦冒泡时同时把详情切过去）")
     : fail("供应商开关又是裸 stopPropagation —— 点开关后右侧会停在旧界面");
-  /setEditingProvider\(p\.provider\)/.test(swBlock)
-    ? ok("开关的 onClick 里确实切了编辑对象（setEditingProvider）")
+  (/setEditingProvider\(p\.provider\)/.test(swBlock) || (/selectProviderDraft\(p, isPseudoPptoken\)/.test(swBlock) && /setEditingProvider\(p\.provider\)/.test(providerSwitchHost)))
+    ? ok("开关的 onClick 里确实切了编辑对象（setEditingProvider；大卡片经 selectProviderDraft 单源）")
     : fail("开关 onClick 里没有切编辑对象 —— 详情不会跟随");
   const ppEndpointsSrc = readFileSync(join(ROOT, "src", "lib", "pptoken-endpoints.ts"), "utf8");
   ((ppEndpointsSrc.includes('url: "https://cn.pptoken.cc/v1"')

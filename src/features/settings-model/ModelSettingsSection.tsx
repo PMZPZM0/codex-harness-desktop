@@ -4,10 +4,10 @@
  * 纯搬迁：返回的 JSX 与原块逐字一致（仅去掉外层缩进）。
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppSelect } from "../../components/AppSelect";
 import { PPTokenEndpoints } from "../../lib/pptoken-endpoints";
-import { Check, ExternalLink, Eye, EyeOff, ListChecks, PenLine, Plus, RefreshCw, Rocket, Store, Trash2, Wand2, X, Zap } from "lucide-react";
+import { Check, ChevronRight, ExternalLink, Eye, EyeOff, ListChecks, PenLine, Plus, RefreshCw, Rocket, Store, Trash2, Wand2, X, Zap } from "lucide-react";
 import { PageInfo } from "../../components/SettingsHead";
 import { AVATAR_GRADIENTS, avatarToneOf } from "../../lib/entity-avatar";
 import { Spinner } from "../../components/CardShell";
@@ -24,6 +24,51 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
   const { refreshActive, autoCompactRatio, setAutoCompactRatio, setNotice, providersList, pptokenCardOff, editingProvider, setCustomDraft, setEditingProvider, uniqueModelCount, customModel, setPptokenCardOff, setProviderEnabled, currentProvider, probingProvider, probeActiveProvider, providerAutoOpenRef, customDraft, savingSettings, openAppConfirm, removeProvider, LOCAL_MODEL_PRESETS, showApiKey, setShowApiKey, probeProvider, saveCustomDraft, switchingModel, probeOneModel, openModelEditor, providerStatus, showToast, saveCustomModel, modelEditor, setModelEditor, targetProviderHint, applyModelIdInput, modelSuggestions, saveModelEditor } = props;
   /* 10-24：自动配置弹窗（大面板）——填地址+密钥 → 自动检测 → 勾选 → 保存启用 → 重启。 */
   const [setupIntent, setSetupIntent] = useState<ProviderSetupIntent | null>(null);
+  /* 10-24 二轮（用户：「旧的供应商卡片改造成大卡片 + 二级弹窗预览」）：
+     页面只保留大卡片；详细配置（原右侧表单）迁进二级弹窗。⛔ 表单里的功能一个不删。 */
+  const [editorOpen, setEditorOpen] = useState(false);
+  const realPptoken = providersList.some((p: any) => p.provider === "pptoken");
+  const displayProviders = realPptoken
+    ? [...providersList].sort((a: any, b: any) => (a.provider === "pptoken" ? 0 : 1) - (b.provider === "pptoken" ? 0 : 1))
+    : [{ provider: "pptoken", name: "PPtoken", model: "", baseUrl: PPTokenEndpoints[0].url, wireApi: "responses" as const, hasKey: false, models: [], enabled: true }, ...providersList];
+  const draftForProvider = (p: any) => ({
+    provider: p.provider,
+    name: p.name,
+    model: p.model,
+    baseUrl: p.baseUrl,
+    contextWindow: String(p.contextWindow ?? 128000),
+    wireApi: p.wireApi ?? "responses",
+    apiKey: "",
+    models: p.models ?? (p.model ? [{ id: p.model }] : []),
+    enabled: p.enabled ?? true,
+  });
+  const selectProviderDraft = (p: any, isPseudo: boolean) => {
+    if (isPseudo) {
+      setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: PPTokenEndpoints[0].url, contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff });
+      setEditingProvider(null);
+      return;
+    }
+    setEditingProvider(p.provider);
+    setCustomDraft(draftForProvider(p));
+  };
+  const openProviderEditor = (p: any, isPseudo: boolean) => {
+    selectProviderDraft(p, isPseudo);
+    setEditorOpen(true);
+  };
+  const openNewProvider = () => {
+    providerAutoOpenRef.current = true;
+    setCustomDraft({ provider: "custom" + (Date.now() % 1000), name: "", model: "", baseUrl: "", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: true });
+    setEditingProvider(null);
+    setEditorOpen(true);
+  };
+  useEffect(() => {
+    if (!editorOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !modelEditor && !savingSettings) setEditorOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editorOpen, modelEditor, savingSettings]);
   const openAutoSetup = () => {
     let n = Date.now() % 1000;
     while (providersList.some((p: any) => p.provider === `custom${n}`)) n = (n + 1) % 1000;
@@ -50,8 +95,8 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
         </div>
         <button className="primary-setting provider-setup-open" onClick={openAutoSetup}><Wand2 size={15} />打开自动配置</button>
       </div>
-      <section className="settings-model-layout">
-                    <div className="model-global-bar">
+      <section className="model-settings-page">
+                    <div className="model-global-bar model-global-bar-standalone">
                       <div className="model-global-item">
                         <span className="model-global-label"><Zap size={13} />自动压缩比例</span>
                         {/* ⛔ 落盘失败必须推翻那句"已设置"（10-06 用户：「很多开发都没有通知提醒」）：
@@ -60,38 +105,38 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                         <small>上下文用量达到此比例时引擎自动压缩较早对话</small>
                       </div>
                     </div>
-                    <div className="provider-list">
-                      <div className="provider-list-head"><h2>模型供应商<PageInfo text={<>两种方式二选一：登录 ChatGPT 订阅账号，或添加第三方供应商并填入密钥。配好后再选模型——两者齐了才能发消息。</>} helpKey="model" label="模型配置" /></h2></div>
-                      {(() => {
-                        // PPtoken 赞助商卡常驻置顶：真实配置存在时用真实数据参与排序，否则显示未配置引导卡
-                        const realPptoken = providersList.some((p: any) => p.provider === "pptoken");
-                        const display = realPptoken
-                          ? [...providersList].sort((a, b) => (a.provider === "pptoken" ? 0 : 1) - (b.provider === "pptoken" ? 0 : 1))
-                          : [{ provider: "pptoken", name: "PPtoken", model: "", baseUrl: PPTokenEndpoints[0].url, wireApi: "responses" as const, hasKey: false, models: [], enabled: true }, ...providersList];
-                        return display.map((p) => {
-                          const isPseudoPptoken = p.provider === "pptoken" && !realPptoken;
-                          const pseudoOff = isPseudoPptoken && pptokenCardOff;
-                          return (
-                            <div
-                              key={p.provider}
-                              className={`provider-item ${p.provider === "pptoken" ? "sponsor" : ""} ${(p.enabled === false || pseudoOff) ? "disabled" : ""} ${p.provider === editingProvider ? "selected" : ""}`}
-                              onClick={() => {
-                                if (isPseudoPptoken) {
-                                  // 未配置的常驻赞助商卡：进表单预填 PPtoken 端点，填密钥保存即可用；启用态与卡片开关联动
-                                  setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: PPTokenEndpoints[0].url, contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff });
-                                  setEditingProvider(null);
-                                  return;
-                                }
-                                setEditingProvider(p.provider); setCustomDraft({ provider: p.provider, name: p.name, model: p.model, baseUrl: p.baseUrl, contextWindow: String(p.contextWindow ?? 128000), wireApi: p.wireApi ?? "responses", apiKey: "", models: p.models ?? (p.model ? [{ id: p.model }] : []), enabled: p.enabled ?? true });
-                              }}
-                            >
-                              <span
-                                className="provider-item-icon"
-                                style={{ background: p.provider === "pptoken" ? "linear-gradient(135deg, #e64980, #9775fa)" : AVATAR_GRADIENTS[avatarToneOf(p.name)], color: "#fff" }}
-                              >
-                                {p.provider === "pptoken" ? <Rocket size={13} /> : <Store size={13} />}
+                    <div className="provider-page-toolbar">
+                      <div className="provider-list-head">
+                        <h2>模型供应商 <span className="provider-count">{displayProviders.length}</span>
+                          <PageInfo text={<>两种方式二选一：登录 ChatGPT 订阅账号，或添加第三方供应商并填入密钥。配好后再选模型——两者齐了才能发消息。</>} helpKey="model" label="模型配置" />
+                        </h2>
+                      </div>
+                      <div className="provider-page-actions">
+                        {customModel && (
+                          <button className="secondary-setting" title={`测试当前生效供应商：${customModel.name} · ${customModel.model}`} disabled={!!probingProvider} onClick={() => void probeActiveProvider()}>
+                            {probingProvider === "test" ? <Spinner /> : <RefreshCw size={14} />}测试当前供应商
+                          </button>
+                        )}
+                        <button className="primary-setting" onClick={openNewProvider}><Plus size={14} />添加供应商</button>
+                      </div>
+                    </div>
+                    <div className="provider-card-grid">
+                      {displayProviders.map((p: any) => {
+                        const isPseudoPptoken = p.provider === "pptoken" && !realPptoken;
+                        const pseudoOff = isPseudoPptoken && pptokenCardOff;
+                        const models = p.models ?? [];
+                        return (
+                          <div
+                            key={p.provider}
+                            className={`provider-item provider-card ${p.provider === "pptoken" ? "sponsor" : ""} ${(p.enabled === false || pseudoOff) ? "disabled" : ""} ${p.provider === editingProvider ? "selected" : ""}`}
+                            onClick={() => openProviderEditor(p, isPseudoPptoken)}
+                            data-provider={p.provider}
+                          >
+                            <div className="provider-card-top">
+                              <span className="provider-item-icon" style={{ background: p.provider === "pptoken" ? "linear-gradient(135deg, #e64980, #9775fa)" : AVATAR_GRADIENTS[avatarToneOf(p.name)], color: "#fff" }}>
+                                {p.provider === "pptoken" ? <Rocket size={15} /> : <Store size={15} />}
                               </span>
-                              <div className="provider-item-main">
+                              <div className="provider-card-title">
                                 <span className="provider-name-row">
                                   <strong>{p.name}</strong>
                                   {p.provider === "pptoken" && <b className="provider-sponsor-badge">官方推荐</b>}
@@ -101,50 +146,46 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                                     </button>
                                   )}
                                 </span>
-                                <small>{isPseudoPptoken ? (pseudoOff ? "已停用" : "未配置密钥") : p.hasKey === false && p.provider === "pptoken" ? "未配置密钥" : `${uniqueModelCount(p.models)} 个模型`}</small>
+                                <small className="provider-card-sub">
+                                  {isPseudoPptoken ? (pseudoOff ? "已停用" : "未配置密钥") : p.hasKey === false && p.provider === "pptoken" ? "未配置密钥" : `${uniqueModelCount(models)} 个模型`}
+                                </small>
                               </div>
                               <label
-                                className={`provider-switch ${p.enabled === false ? "off" : ""}`}
+                                className={`provider-switch ${(p.enabled === false || pseudoOff) ? "off" : ""}`}
                                 title={isPseudoPptoken ? (pseudoOff ? "推荐卡已停用 · 点击恢复展示" : "停用 PPtoken 推荐卡展示") : (p.enabled !== false ? "已启用 · 点击禁用" : "已禁用 · 点击启用（会自动停用当前供应商）")}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  // 启用/停用时**同步把右侧详情切到这个供应商**：原先开关只 stopPropagation，
-                                  // 行点击被拦住 → 用户点了开关（开启某个供应商）右侧还停在上一个的界面
-                                  // （用户 09-14 实测截图）。逻辑与行点击保持一致。
-                                  if (isPseudoPptoken) {
-                                    setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: PPTokenEndpoints[0].url, contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff });
-                                    setEditingProvider(null);
-                                  } else {
-                                    setEditingProvider(p.provider);
-                                    setCustomDraft({ provider: p.provider, name: p.name, model: p.model, baseUrl: p.baseUrl, contextWindow: String(p.contextWindow ?? 128000), wireApi: p.wireApi ?? "responses", apiKey: "", models: p.models ?? (p.model ? [{ id: p.model }] : []), enabled: p.enabled ?? true });
-                                  }
-                                }}
+                                onClick={(event) => { event.stopPropagation(); selectProviderDraft(p, isPseudoPptoken); }}
                               >
                                 <input type="checkbox" checked={isPseudoPptoken ? !pseudoOff : p.enabled !== false} onChange={(event) => { if (isPseudoPptoken) setPptokenCardOff(!event.target.checked); else void setProviderEnabled(p.provider, event.target.checked); }} />
                                 <span className="provider-switch-ui" />
                               </label>
-                              {!isPseudoPptoken && <span className={`provider-dot ${p.provider === currentProvider ? "on" : ""}`} title={p.provider === currentProvider ? "当前生效供应商" : ""} />}
                             </div>
-                          );
-                        });
-                      })()}
-                      {/* 不打开编辑器也能测当前生效供应商：切换/保存后最常用的自检动作。
-                          失败会弹带排查清单的中文提示，认证类错误保留供应商原文。 */}
-                      {customModel && <button className="add-provider-btn" title={`测试当前生效供应商：${customModel.name} · ${customModel.model}`} disabled={!!probingProvider} onClick={() => void probeActiveProvider()}>{probingProvider === "test" ? <Spinner /> : <RefreshCw size={13} />}测试当前供应商</button>}
-                      <button className="add-provider-btn" onClick={() => { providerAutoOpenRef.current = true; setCustomDraft({ provider: "custom" + (Date.now() % 1000), name: "", model: "", baseUrl: "", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: true }); setEditingProvider(null); }}><Plus size={13} />添加供应商</button>
-                      {/* 免费模型网关推荐卡（free-gateway 域，10-12）：第三方开源侧车，⛔ 免责声明是契约（守卫 12c）——
-                          自包含组件（本地 state + SettingsDialog），不占 bag；注册走既有 custom-model:save。 */}
+                            <div className="provider-card-models">
+                              {models.slice(0, 3).map((m: any) => <span className="provider-model-chip" key={m.id}>{m.id}</span>)}
+                              {models.length > 3 && <span className="provider-model-chip more">+{models.length - 3}</span>}
+                              {!models.length && <span className="provider-card-empty">{isPseudoPptoken ? "填入 API Key 后即可使用" : "还没有模型 · 点配置添加"}</span>}
+                            </div>
+                            <div className="provider-card-foot">
+                              {!isPseudoPptoken && <span className={`provider-dot ${p.provider === currentProvider ? "on" : ""}`} title={p.provider === currentProvider ? "当前生效供应商" : ""} />}
+                              <span className="provider-card-status">{p.provider === currentProvider ? "当前生效" : (p.enabled === false || pseudoOff) ? "已停用" : "未生效"}</span>
+                              <span className="provider-card-configure">配置 <ChevronRight size={13} /></span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="provider-more-section">
+                      <div className="provider-list-head"><h2>更多供应商</h2></div>
                       <FreeGatewayRecommendCard
                         setNotice={setNotice}
                         registered={providersList.some((p: any) => p.provider === "free-gateway")}
                         onSelect={() => {
                           const fg = providersList.find((p: any) => p.provider === "free-gateway");
-                          if (fg) { setEditingProvider("free-gateway"); setCustomDraft({ provider: "free-gateway", name: fg.name, model: fg.model, baseUrl: fg.baseUrl, contextWindow: String(fg.contextWindow ?? 128000), wireApi: "responses" as const, apiKey: "", models: fg.models ?? [], enabled: fg.enabled !== false }); }
+                          if (fg) { setEditingProvider("free-gateway"); setCustomDraft({ provider: "free-gateway", name: fg.name, model: fg.model, baseUrl: fg.baseUrl, contextWindow: String(fg.contextWindow ?? 128000), wireApi: "responses" as const, apiKey: "", models: fg.models ?? [], enabled: fg.enabled !== false }); setEditorOpen(true); }
                         }}
                         onRegistered={() => {
-                          // 注册成功：选中供应商（右侧出模型清单）+ 自动启用（其他供应商自动关闭）→ 用户点保存重启
                           setEditingProvider("free-gateway");
                           setCustomDraft({ provider: "free-gateway", name: "免费模型网关", model: "", baseUrl: "http://127.0.0.1:18900/v1", contextWindow: "128000", wireApi: "responses" as const, apiKey: "", models: [], enabled: true });
+                          setEditorOpen(true);
                           void window.codex.listCustomModels().then(({ providers }: any) => {
                             const fg = providers.find((p: any) => p.provider === "free-gateway");
                             if (fg) setCustomDraft({ provider: "free-gateway", name: fg.name, model: fg.model, baseUrl: fg.baseUrl, contextWindow: String(fg.contextWindow ?? 128000), wireApi: "responses" as const, apiKey: "", models: fg.models ?? [], enabled: true });
@@ -155,6 +196,18 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                         onUninstalled={() => removeProvider("free-gateway")}
                       />
                     </div>
+      </section>
+      {editorOpen && (
+        <div className="modal-backdrop provider-editor-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !savingSettings) setEditorOpen(false); }}>
+          <div className="provider-editor-modal" role="dialog" aria-modal="true" aria-label="供应商配置" data-testid="provider-editor">
+            <header className="provider-editor-head">
+              <div className="provider-editor-title">
+                <strong>{customDraft.name || (editingProvider ? "供应商配置" : "添加供应商")}</strong>
+                <small>{editingProvider ? `供应商 ID：${customDraft.provider}` : "填写地址与密钥，检测并勾选要启用的模型"}</small>
+              </div>
+              <button className="icon-button" title="关闭" disabled={savingSettings} onClick={() => setEditorOpen(false)}><X size={16} /></button>
+            </header>
+            <div className="provider-editor-body">
                     <div className="provider-form">
                       <div className="provider-detail-head">
                         {/* 供应商名字**不在顶部**（09-17 用户要求）：挪到下方表单当普通字段，
@@ -174,7 +227,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                         })()}
                         <span className="provider-head-spacer" />
                         {/* 「设为当前」已移除：启用即生效（全局只生效一个），不需要二次确认按钮 */}
-                        {editingProvider && <button className="icon-button" title="删除供应商" onClick={async () => { if (!(await openAppConfirm("删除供应商", `供应商「${customDraft.name}」将被删除，此操作无法撤销。`, "删除"))) return; void removeProvider({ provider: customDraft.provider, name: customDraft.name, model: customDraft.model, baseUrl: customDraft.baseUrl }); }}><Trash2 size={14} /></button>}
+                        {editingProvider && <button className="icon-button" title="删除供应商" onClick={async () => { if (!(await openAppConfirm("删除供应商", `供应商「${customDraft.name}」将被删除，此操作无法撤销。`, "删除"))) return; await removeProvider({ provider: customDraft.provider, name: customDraft.name, model: customDraft.model, baseUrl: customDraft.baseUrl }); setEditorOpen(false); }}><Trash2 size={14} /></button>}
                       </div>
                       {customDraft.provider === "pptoken" && !providersList.some((p: any) => p.provider === "pptoken") && (
                         <p className="provider-form-hint">只需下方填入 API Key 即可使用；<a href="https://api.pptoken.cc/register?aff=X82JSNVC3W3S" onClick={(event) => { event.preventDefault(); void window.codex.openExternal("https://api.pptoken.cc/register?aff=X82JSNVC3W3S"); }}>注册 PPtoken 领取体验额度 ↗</a></p>
@@ -412,7 +465,10 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                         <footer><button className="secondary-setting" onClick={() => setModelEditor(null)}>取消</button><button className="primary-setting" disabled={!modelEditor.draft.id.trim()} onClick={() => void saveModelEditor()}><Check size={14} />保存</button></footer>
                       </div>
                     </div>}
-                  </section>
+            </div>
+          </div>
+        </div>
+      )}
       {setupIntent && (
         <ProviderSetupDialog
           intent={setupIntent}
