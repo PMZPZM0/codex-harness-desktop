@@ -2528,25 +2528,26 @@ w.postMessage({id:1,op:"list",root});
   /* ③ 10-21 用户**再次点名**改名 + 重排（覆盖上一条「一律 4 字」的口径）：
      名字由用户逐条给定，不再强求 4 字；入口从顶部挪到「用户名之下」。
      ⛔ 断言改成**精确名单 + 顺序**：改名类需求最容易漏一条，按名单比对才抓得住。 */
-  /* 10-22 功能入口改成**共享菜单组件**（侧栏 / 对话框上方 / 可拖动 / 更多）：
+  /* 10-24 功能入口改成**共享菜单组件**（新建/搜索下面 / 侧栏底部 / 可拖动 / 更多）：
      文案与默认顺序从渲染层挪到了 FunctionMenu + menu-model；这里改为钉数据模型与接线。 */
   const fmSrc180 = codeOnly(readFileSync(join(ROOT, "src", "features", "function-menu", "FunctionMenu.tsx"), "utf8"));
   const fmStore180 = codeOnly(readFileSync(join(ROOT, "src", "features", "function-menu", "store.ts"), "utf8"));
   const fmDefault180 = normalizeFunctionMenu(null);
   (FUNCTION_MENU_DEFAULT_ORDER.join(">") === "schedule>frontend>extensions>team>identity>login>newbie"
-    && fmDefault180.location === "sidebar" && fmDefault180.overflow.length === 0
+    && fmDefault180.location === "top" && fmDefault180.overflow.length === 0
     ? ok : fail)(
-    "【180】功能入口默认顺序 = 自动化 → 前端开发 → 拓展 → 团队 → 个性化&记忆 → 登录管理 → 新手教程（数据模型单一真相源）"
+    "【180】功能入口默认顺序 + 默认位置 = 新建/搜索下面（top），数据模型单一真相源"
   );
   (["自动化", "前端开发", "拓展", "团队", "登录管理", "新手教程", "个性化&记忆"].every((label) => fmSrc180.includes(label))
     && fmSrc180.includes('schedule: { label: "自动化"') ? ok : fail)(
     "【180】入口改名全在 FunctionMenu 元数据里（前端开发 / 拓展 / 团队 / 个性化&记忆 / 登录管理 / 新手教程）"
   );
-  (side180.includes('<FunctionMenu location="sidebar" />')
-    && /functionMenu\.location === "sidebar"/.test(side180)
+  (side180.includes("<FunctionMenu location={menuLocation} />")
+    && /renderOptionsGroup\("top"\)/.test(side180) && /renderOptionsGroup\("bottom"\)/.test(side180)
+    && /functionMenu\.location === "top"/.test(side180) && /functionMenu\.location === "bottom"/.test(side180)
     && /setFunctionMenuActionHandler\(/.test(side180)
     && /id === "team"\) \{ setGuideKey\("agents"\)/.test(side180) ? ok : fail)(
-    "【180】侧栏接共享菜单：只在 sidebar 位置渲染，动作经总线回到 setGuideKey/setSettingsPage（团队仍开 agents 教程）"
+    "【180】侧栏接共享菜单：top/bottom 两处渲染，动作经总线回到 setGuideKey/setSettingsPage（团队仍开 agents 教程）"
   );
   {
     const moved = moveFunctionMenuItem(fmDefault180, "schedule", "overflow");
@@ -2559,8 +2560,8 @@ w.postMessage({id:1,op:"list",root});
     (nudged.order[0] === "schedule" && nudged.order[1] === "frontend" ? ok : fail)(
       "【180】拖到某行之前 = 插到它前面（不是粗暴追加到末尾）"
     );
-    const reset = resetFunctionMenuLayout({ ...fmDefault180, location: "composer", order: [...fmDefault180.order].reverse() });
-    (reset.location === "composer" && reset.order.join(">") === FUNCTION_MENU_DEFAULT_ORDER.join(">") ? ok : fail)(
+    const reset = resetFunctionMenuLayout({ ...fmDefault180, location: "bottom", order: [...fmDefault180.order].reverse() });
+    (reset.location === "bottom" && reset.order.join(">") === FUNCTION_MENU_DEFAULT_ORDER.join(">") ? ok : fail)(
       "【180】恢复默认只还原排序/分组，保留用户选的位置"
     );
     (setFunctionMenuItemOverflow(fmDefault180, "login", true).overflow.join(">") === "login" ? ok : fail)(
@@ -2568,20 +2569,23 @@ w.postMessage({id:1,op:"list",root});
     );
   }
   /* 两种展示位置 + 设置页入口 + 首次教程 / 编辑菜单。 */
-  ((side180.match(/<FunctionMenu location="sidebar" \/>/g) || []).length === 1
-    && side180.includes("<FunctionMenuTourHost />") && side180.includes("<FunctionMenuEditorHost />") ? ok : fail)(
+  (side180.includes("<FunctionMenuTourHost />") && side180.includes("<FunctionMenuEditorHost />")
+    && (side180.match(/<FunctionMenu location=\{menuLocation\} \/>/g) || []).length === 1 ? ok : fail)(
     "【180】侧栏只挂一份菜单 + 一份教程宿主 + 一份编辑弹窗宿主"
   );
   {
-    const composer180 = codeOnly(readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "02-main-stage", "03-composer.tsx"), "utf8"));
     const appearance180 = codeOnly(readFileSync(join(ROOT, "src", "features", "settings-appearance", "AppearanceSettingsSection.tsx"), "utf8"));
-    (composer180.includes("functionMenu.location === \"composer\"")
-      && composer180.includes('<FunctionMenu location="composer" />')
-      && composer180.includes('className="function-menu-composer-bar"') ? ok : fail)(
-      "【180】对话框上方模式：菜单条渲染在 .composer-wrap 正常流内（输入框/状态条随之下移）"
+    const quickIdx = side180.indexOf('className="sidebar-quick"');
+    const topRenderIdx = side180.indexOf('renderOptionsGroup("top")');
+    const bottomRenderIdx = side180.indexOf('renderOptionsGroup("bottom")');
+    const accountIdx = side180.indexOf('className="account-row"');
+    (quickIdx > 0 && topRenderIdx > quickIdx && bottomRenderIdx > quickIdx && bottomRenderIdx < accountIdx
+      && appearance180.includes("FunctionMenuSettings") ? ok : fail)(
+      "【180】顶部位置紧跟新建/搜索之后、底部位置在账户行之前；外观设置页有位置选择入口"
     );
-    (appearance180.includes("FunctionMenuSettings") ? ok : fail)(
-      "【180】外观设置页有「功能入口」位置选择（设置控制台入口）"
+    const composer180 = codeOnly(readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "02-main-stage", "03-composer.tsx"), "utf8"));
+    (!composer180.includes("function-menu-composer") ? ok : fail)(
+      "【180】入口不再挂到输入框上方（用户 10-24 澄清：位置是新建/搜索下面，不是对话框上面）"
     );
   }
   (fmStore180.includes('const CONFIG_KEY = "function-menu-v1"')
@@ -2592,10 +2596,10 @@ w.postMessage({id:1,op:"list",root});
   );
   {
     const fmCss180 = readFileSync(join(ROOT, "src", "styles", "44-function-menu.css"), "utf8");
-    (/\.function-menu-composer-bar\s*\{/.test(fmCss180) && /\.function-menu-tour\s*\{/.test(fmCss180)
+    (/\.sidebar-options-top\s*\{/.test(fmCss180) && /\.function-menu-tour\s*\{/.test(fmCss180)
       && /\.function-menu-editor-backdrop\s*\{\s*z-index:\s*900/.test(fmCss180)
-      && /\.welcome-cwd-picker\s*\{[\s\S]{0,120}?bottom:\s*calc\(100% \+ 5px \+ var\(--function-menu-bar-h\)\)/.test(fmCss180) ? ok : fail)(
-      "【180】两种位置 / 教程 / 编辑弹窗的样式在位；菜单条出现时项目地址 chip 自动抬高（不互相压住）"
+      && !/function-menu-composer/.test(fmCss180) ? ok : fail)(
+      "【180】顶/底两种位置、教程、编辑弹窗样式在位（旧的对话框上方样式已移除）"
     );
   }
   /* 布局：顶部只留「新建任务 / 搜索任务」；入口组在账户行**之上**，账户行是侧栏最后一条。
@@ -2607,8 +2611,8 @@ w.postMessage({id:1,op:"list",root});
     const topNavIdx = side180.indexOf('名="能力入口"');
     const accountIdx = side180.indexOf('className="account-row"');
     const bottomNavIdx = side180.indexOf('className="sidebar-nav sidebar-nav-bottom"');
-    const optionsIdx = side180.indexOf('className="sidebar-options"');
-    (quickIdx > 0 && topNavIdx === -1 && optionsIdx > 0 && optionsIdx < bottomNavIdx && bottomNavIdx < accountIdx ? ok : fail)(
+    const optionsIdx = side180.indexOf("sidebar-options");
+    (quickIdx > 0 && topNavIdx === -1 && optionsIdx > 0 && optionsIdx < bottomNavIdx && bottomNavIdx < accountIdx && side180.indexOf('renderOptionsGroup("top")') > quickIdx ? ok : fail)(
       "【180】顶部只剩新建/搜索（旧「能力入口」组已移除）；底部顺序 = 入口组 → 账户行（账户行最后一条 = 贴底锚）"
     );
     const tailAfterAccount = side180.slice(accountIdx);
@@ -2737,7 +2741,7 @@ w.postMessage({id:1,op:"list",root});
     && fmSrc180.includes("schedule: { label: \"自动化\"") ? ok : fail)(
     "【180】「自动化」与其它能力入口同一行样式（统一 sidebar-cap-row，不再单独一档）"
   );
-  (fmSrc180.includes("function-menu-more") && fmSrc180.includes("编辑菜单") && fmSrc180.includes("移到对话框上方")
+  (fmSrc180.includes("function-menu-more") && fmSrc180.includes("编辑菜单") && fmSrc180.includes("移到侧栏顶部")
     && !/moreHubOpen/.test(side180) ? ok : fail)(
     "【180】新的「更多」只收溢出入口 + 编辑菜单/切换位置（旧 AI 画布 moreHubOpen 已删除）"
   );

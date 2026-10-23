@@ -1453,18 +1453,17 @@ const CHECKS = [
   },
   {
     id: "function-menu",
-    name: "🧩 功能入口：侧栏 / 对话框上方 + 拖动排序 + 更多 + 首次教程（10-22）",
+    name: "🧩 功能入口：新建/搜索下面或侧栏底部 + 拖动排序 + 更多 + 首次教程（10-24）",
     run: async (h) => {
-      /* 用户 10-22：功能入口菜单要像 Qoder 一样首次悬停有教程；支持编辑菜单拖动排序、
-         拖进「更多」；设置控制台可切换「侧栏底部 / 对话框上方」，两种位置共用一套配置，
-         输入框随菜单条整体下移。 */
+      /* 用户 10-24：功能入口菜单要放在「新建任务 / 搜索任务」下面（老版位置），也可选侧栏底部；
+         支持首次悬停教程、编辑菜单拖动排序、拖进「更多」。两种位置共用同一套配置。 */
       await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "界面就绪", timeoutMs: 40000 });
       await h.eval(`(function(){ document.querySelector(".office-overlay-close")?.click(); document.querySelector(".function-menu-editor .fm-editor-close")?.click(); return 1; })()`).catch(() => undefined);
       await wait(400);
-      await h.waitFor(`!!document.querySelector(".function-menu-sidebar") || !!document.querySelector(".function-menu-composer-bar")`, { label: "功能入口就绪", timeoutMs: 15000 }).catch(() => undefined);
-      // 上次运行可能停在对话框上方：先切回侧栏，保证起点一致
-      if (await h.eval(`!!document.querySelector(".function-menu-composer-bar")`).catch(() => false)) {
-        await h.eval(`document.querySelector(".function-menu-composer > .function-menu-more")?.click()`).catch(() => undefined);
+      await h.waitFor(`!!document.querySelector(".function-menu-sidebar")`, { label: "功能入口就绪", timeoutMs: 15000 }).catch(() => undefined);
+      // 上次可能停在侧栏底部：先切回顶部（默认位置）
+      if (!(await h.eval(`!!document.querySelector(".sidebar-options-top")`).catch(() => false))) {
+        await h.eval(`document.querySelector(".sidebar-options .function-menu-more")?.click()`).catch(() => undefined);
         await wait(250);
         await h.eval(`[...document.querySelectorAll(".function-menu-popover-item")].find((b) => b.innerText.includes("编辑菜单"))?.click()`).catch(() => undefined);
         await h.waitFor(`!!document.querySelector(".function-menu-editor")`, { timeoutMs: 4000 }).catch(() => undefined);
@@ -1474,19 +1473,22 @@ const CHECKS = [
         await wait(400);
       }
       const base = await h.eval(`(function(){
-        return { sidebar: !!document.querySelector(".function-menu-sidebar"),
-          options: !!document.querySelector(".sidebar-options"),
+        const group = document.querySelector(".sidebar-options-top");
+        const quick = document.querySelector(".sidebar-quick")?.getBoundingClientRect();
+        const rect = group?.getBoundingClientRect();
+        return { sidebar: !!document.querySelector(".function-menu-sidebar"), top: !!group,
+          underQuick: Boolean(quick && rect && rect.top >= quick.bottom - 1 && rect.top <= quick.bottom + 28),
           labels: [...document.querySelectorAll(".function-menu-sidebar .sidebar-cap-row")].map((b) => b.innerText.trim()),
           more: !!document.querySelector(".function-menu-sidebar .function-menu-more") };
       })()`).catch(() => null);
-      h.check("① 侧栏有完整功能入口（7 项 + 更多），且整个入口组可见",
-        Boolean(base && base.sidebar && base.options && base.labels.length === 8 && base.more
+      h.check("① 功能入口在「新建任务 / 搜索任务」下面（7 项 + 更多），整个入口组可见",
+        Boolean(base && base.sidebar && base.top && base.underQuick && base.labels.length === 8 && base.more
           && ["自动化", "前端开发", "拓展", "团队", "个性化&记忆", "登录管理", "新手教程"].every((label) => base.labels.includes(label))),
         JSON.stringify(base));
 
       // 首次悬停教程：清掉已看标记再 hover
-      await h.eval(`localStorage.removeItem("function-menu-tour-seen-v1-sidebar")`).catch(() => undefined);
-      await h.hover(".sidebar-options-toggle");
+      await h.eval(`localStorage.removeItem("function-menu-tour-seen-v1-top")`).catch(() => undefined);
+      await h.hover(".sidebar-options-top .sidebar-options-toggle");
       await h.waitFor(`!!document.querySelector(".function-menu-tour")`, { timeoutMs: 3000 }).catch(() => undefined);
       const tour = await h.eval(`document.querySelector(".function-menu-tour")?.innerText || ""`).catch(() => "");
       h.check("② 首次悬停弹出教程（说明编辑菜单 / 拖进更多 / 设置里切换位置）",
@@ -1505,8 +1507,8 @@ const CHECKS = [
           cols: [...document.querySelectorAll(".fm-edit-col")].map((c) => c.querySelectorAll(".fm-edit-row").length),
           locations: [...document.querySelectorAll(".fm-location-card")].map((b) => b.innerText.trim().split("\\n")[0]) };
       })()`).catch(() => null);
-      h.check("③ 更多 → 编辑菜单：弹窗有显示 / 更多两列 + 两个展示位置",
-        Boolean(editor && editor.open && editor.cols[0] >= 1 && editor.locations.length === 2 && editor.locations.includes("侧栏底部") && editor.locations.includes("对话框上方")),
+      h.check("③ 更多 → 编辑菜单：弹窗有显示 / 更多两列 + 顶部/底部两个展示位置",
+        Boolean(editor && editor.open && editor.cols[0] >= 1 && editor.locations.length === 2 && editor.locations.includes("侧栏顶部") && editor.locations.includes("侧栏底部")),
         JSON.stringify(editor));
 
       // 拖动第一项到「更多」列
@@ -1543,32 +1545,26 @@ const CHECKS = [
       })()`).catch(() => null);
       h.check("⑤ 从「更多」移回菜单：更多列清空、角标消失", Boolean(movedBack && movedBack.overflowCount === 0 && !movedBack.badge), JSON.stringify(movedBack));
 
-      // 切到对话框上方：侧栏组收起、菜单条出现且排在输入框上方（不重叠）
+      // 切到侧栏底部：入口组消失于顶部、改在账户行之前
       await h.eval(`document.querySelectorAll(".fm-location-card")[1]?.click()`).catch(() => undefined);
-      await wait(500);
-      const composer = await h.eval(`(function(){
-        const bar = document.querySelector(".function-menu-composer-bar")?.getBoundingClientRect();
-        const composerEl = document.querySelector(".composer")?.getBoundingClientRect();
-        const chip = document.querySelector(".welcome-cwd-picker")?.getBoundingClientRect();
-        return { sidebarOptions: !!document.querySelector(".sidebar-options"),
-          bar: !!bar, barTop: bar ? Math.round(bar.top) : 0, barBottom: bar ? Math.round(bar.bottom) : 0,
-          composerTop: composerEl ? Math.round(composerEl.top) : 0,
-          chipBottom: chip ? Math.round(chip.bottom) : 0,
-          pills: [...document.querySelectorAll(".function-menu-composer .function-menu-pill")].map((b) => b.innerText.trim()) };
-      })()`).catch(() => null);
-      h.check("⑥ 切到对话框上方：侧栏入口组收起、横向菜单条出现且排在输入框上方（项目地址 chip 也让位）",
-        Boolean(composer && !composer.sidebarOptions && composer.bar
-          && composer.barBottom <= composer.composerTop + 1
-          && (!composer.chipBottom || composer.chipBottom <= composer.barTop + 1)
-          && composer.pills.some((t) => t.includes("自动化")) && composer.pills.some((t) => t.includes("更多"))),
-        JSON.stringify(composer));
-
+      await wait(400);
       await h.eval(`[...document.querySelectorAll(".fm-editor-foot button")].find((b) => b.innerText.includes("完成"))?.click()`).catch(() => undefined);
       await wait(400);
+      const bottom = await h.eval(`(function(){
+        const group = document.querySelector(".sidebar-options:not(.sidebar-options-top)");
+        const rect = group?.getBoundingClientRect();
+        const account = document.querySelector(".account-row")?.getBoundingClientRect();
+        return { top: !!document.querySelector(".sidebar-options-top"), bottom: !!group,
+          aboveAccount: Boolean(rect && account && rect.bottom <= account.top + 1),
+          count: group ? group.querySelectorAll(".sidebar-cap-row").length : 0 };
+      })()`).catch(() => null);
+      h.check("⑥ 切到侧栏底部：入口组移到用户名上方、顶部组消失（共用顺序/更多配置）",
+        Boolean(bottom && !bottom.top && bottom.bottom && bottom.aboveAccount && bottom.count === 8),
+        JSON.stringify(bottom));
       await h.screenshot("function-menu");
 
-      // 收尾：切回侧栏 + 恢复默认
-      await h.eval(`document.querySelector(".function-menu-composer > .function-menu-more")?.click()`).catch(() => undefined);
+      // 再切回顶部（新建/搜索下面）
+      await h.eval(`document.querySelector(".sidebar-options:not(.sidebar-options-top) .function-menu-more")?.click()`).catch(() => undefined);
       await wait(250);
       await h.eval(`[...document.querySelectorAll(".function-menu-popover-item")].find((b) => b.innerText.includes("编辑菜单"))?.click()`).catch(() => undefined);
       await h.waitFor(`!!document.querySelector(".function-menu-editor")`, { timeoutMs: 4000 }).catch(() => undefined);
@@ -1579,13 +1575,15 @@ const CHECKS = [
       await h.eval(`[...document.querySelectorAll(".fm-editor-foot button")].find((b) => b.innerText.includes("完成"))?.click()`).catch(() => undefined);
       await wait(400);
       const restored = await h.eval(`(function(){
-        return { sidebar: !!document.querySelector(".function-menu-sidebar"),
-          bar: !!document.querySelector(".function-menu-composer-bar"),
-          count: document.querySelectorAll(".function-menu-sidebar .sidebar-cap-row").length,
-          badge: !!document.querySelector(".function-menu-sidebar .function-menu-more-badge") };
+        const group = document.querySelector(".sidebar-options-top");
+        const quick = document.querySelector(".sidebar-quick")?.getBoundingClientRect();
+        const rect = group?.getBoundingClientRect();
+        return { top: !!group, underQuick: Boolean(quick && rect && rect.top >= quick.bottom - 1 && rect.top <= quick.bottom + 28),
+          count: group ? group.querySelectorAll(".sidebar-cap-row").length : 0,
+          badge: !!group?.querySelector(".function-menu-more-badge") };
       })()`).catch(() => null);
-      h.check("⑦ 收尾恢复侧栏与默认排序（不留测试配置）",
-        Boolean(restored && restored.sidebar && !restored.bar && restored.count === 8 && !restored.badge),
+      h.check("⑦ 收尾恢复顶部位置与默认排序（不留测试配置）",
+        Boolean(restored && restored.top && restored.underQuick && restored.count === 8 && !restored.badge),
         JSON.stringify(restored));
     },
   },

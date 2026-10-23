@@ -279,6 +279,27 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     return () => setFunctionMenuActionHandler(null);
   }, [setSettingsPage, setSettingsOpen, setMobileNav]);
 
+  /** 同一套入口组渲染在「新建/搜索下面」或「侧栏底部」；两处共用一个折叠状态与菜单数据。 */
+  const renderOptionsGroup = (menuLocation: "top" | "bottom") => (
+    <div className={`sidebar-options ${menuLocation === "top" ? "sidebar-options-top" : ""}`}>
+      <button
+        type="button"
+        className="sidebar-options-toggle"
+        aria-expanded={!optionsCollapsed}
+        aria-controls="sidebar-options-body"
+        title={optionsCollapsed ? "展开功能入口" : "收起功能入口"}
+        onMouseEnter={(event) => maybeShowFunctionMenuTour(menuLocation, event.currentTarget)}
+        onClick={toggleOptions}
+      >
+        <span>功能入口</span>
+        <ChevronDown size={13} className={`sidebar-options-chevron ${optionsCollapsed ? "" : "open"}`} />
+      </button>
+      <div className="sidebar-nav sidebar-nav-bottom" id="sidebar-options-body" role="group" aria-label="功能入口" hidden={optionsCollapsed}>
+        <FunctionMenu location={menuLocation} />
+      </div>
+    </div>
+  );
+
   /** 能力卡片本身就是跳转入口：侧栏统一把 target 翻译成设置页 / 画布。 */
   const navigateGuideTarget = (target: SidebarGuideTarget) => {
     switch (target) {
@@ -411,6 +432,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 </button>
               </div>
             </div>
+            {functionMenu.location === "top" && renderOptionsGroup("top")}
             {guideKey && <SidebarGuideModal guideKey={guideKey} onNavigate={navigateGuideTarget} onClose={() => setGuideKey(null)} />}
             {/* 直达：关弹窗 + 直接开对应设置页（⛔ 不再经「设置 → 账户与模型」多一层） */}
             {loginMgrOpen && (
@@ -512,26 +534,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 ⛔ 折叠**只收本组**（入口 `hidden` + 本组 `flex:none`）⇒ 空出来的高度被 `.thread-list`
                    （flex:1 1 0）吃掉；⛔ 别给账户行加占位/补白、⛔ 别把它挪进本组 —— 它是贴底的锚，
                    位置只由「侧栏最后一条」决定，与展开/折叠无关。 */}
-            {functionMenu.location === "sidebar" && (
-              <div className="sidebar-options">
-                <button
-                  type="button"
-                  className="sidebar-options-toggle"
-                  aria-expanded={!optionsCollapsed}
-                  aria-controls="sidebar-options-body"
-                  title={optionsCollapsed ? "展开功能入口" : "收起功能入口"}
-                  onMouseEnter={(event) => maybeShowFunctionMenuTour("sidebar", event.currentTarget)}
-                  onClick={toggleOptions}
-                >
-                  <span>功能入口</span>
-                  {/* 行在折叠头**下方**（折叠头 → 入口行 → 账户行）⇒ 与全站其它折叠组同向：收起=⌄、展开时翻转=⌃ */}
-                  <ChevronDown size={13} className={`sidebar-options-chevron ${optionsCollapsed ? "" : "open"}`} />
-                </button>
-                <div className="sidebar-nav sidebar-nav-bottom" id="sidebar-options-body" role="group" aria-label="功能入口" hidden={optionsCollapsed}>
-                  <FunctionMenu location="sidebar" />
-                </div>
-              </div>
-            )}
+            {functionMenu.location === "bottom" && renderOptionsGroup("bottom")}
             <FunctionMenuTourHost />
             <FunctionMenuEditorHost />
             <div className="account-row">
