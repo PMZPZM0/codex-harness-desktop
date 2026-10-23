@@ -1,4 +1,4 @@
-export type FunctionMenuLocation = "sidebar" | "composer";
+export type FunctionMenuLocation = "top" | "bottom";
 export type FunctionMenuItemId = "schedule" | "frontend" | "extensions" | "team" | "identity" | "login" | "newbie";
 export type FunctionMenuConfig = { location: FunctionMenuLocation; order: FunctionMenuItemId[]; overflow: FunctionMenuItemId[] };
 

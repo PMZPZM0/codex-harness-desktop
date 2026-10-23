@@ -4,7 +4,6 @@
  */
 import { createPortal } from "react-dom";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "../../../../lib/rate-limit-retry";
-import { FunctionMenu, useFunctionMenuConfig } from "../../../function-menu";
 import {
   AlertTriangle,
   Archive,
@@ -303,8 +302,6 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
     archiveToast,
     setArchiveToast,
   } = app;
-  /* 功能入口显示位置（10-24）：侧栏底部（默认）/ 对话框上方；后者在正常流里，输入框与状态条随之下移。 */
-  const functionMenu = useFunctionMenuConfig();
   /* 目标条动作（10-06 夜五轮，用户对照 Qoder 的目标条）。⛔ 暂停/继续走 `thread/goal/set`
      的 status 字段（10-06 隔离引擎实测支持；引擎**没有** thread/goal/pause|resume 两个方法，
      别改回去）；暂停时若回合在跑补一发 interrupt —— 引擎的 paused 只停"下一次自动续跑"。 */
@@ -366,11 +363,6 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                   {thread && goalText && (
                     <GoalBar threadId={thread.id} goalText={goalText} goalStatus={goalStatus} running={Boolean(activeThreadRunning)}
                       onEdit={editGoal} onTogglePause={toggleGoalPause} onDelete={stopGoalLoop} />
-                  )}
-                  {functionMenu.location === "composer" && (
-                    <div className="function-menu-composer-bar">
-                      <FunctionMenu location="composer" />
-                    </div>
                   )}
                   <ComposerComposerCardStack app={app} />
                   {/* 启动静默检查发现新版本 → 通知卡片（非阻塞，可稍后/关闭） */}

@@ -2,7 +2,9 @@ import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ComponentType, type DragEvent } from "react";
 import {
   ArrowDown,
+  ArrowDownToLine,
   ArrowUp,
+  ArrowUpToLine,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -13,10 +15,8 @@ import {
   KeyRound,
   LayoutGrid,
   MoreHorizontal,
-  PanelLeft,
   Pencil,
   Rocket,
-  Rows3,
   Sparkles,
   Users,
   X,
@@ -32,7 +32,6 @@ import {
   closeFunctionMenuEditor,
   dismissFunctionMenuTour,
   getFunctionMenuTour,
-  maybeShowFunctionMenuTour,
   moveFunctionMenuItemInMenu,
   nudgeFunctionMenuItemInMenu,
   openFunctionMenuEditor,
@@ -58,24 +57,17 @@ export const FUNCTION_MENU_META: Record<FunctionMenuItemId, MenuMeta> = {
   newbie: { label: "新手教程", title: "新手教程：分步教你用起来", Icon: Rocket, tone: "ic-cyan" },
 };
 
-function MenuItemButton({ id, location, onDone }: { id: FunctionMenuItemId; location: FunctionMenuLocation; onDone?: () => void }) {
+function MenuItemButton({ id, onDone }: { id: FunctionMenuItemId; onDone?: () => void }) {
   const meta = FUNCTION_MENU_META[id];
   const Icon = meta.Icon;
-  if (location === "sidebar") {
-    return (
-      <button type="button" className="sidebar-tab sidebar-cap-row" title={meta.title} onClick={() => { runFunctionMenuAction(id); onDone?.(); }}>
-        <Icon size={15} className={meta.tone} /><span>{meta.label}</span><ChevronRight size={13} className="sidebar-cap-chevron" />
-      </button>
-    );
-  }
   return (
-    <button type="button" className="function-menu-pill" title={meta.title} onClick={() => { runFunctionMenuAction(id); onDone?.(); }}>
-      <Icon size={14} className={meta.tone} /><span>{meta.label}</span>
+    <button type="button" className="sidebar-tab sidebar-cap-row" title={meta.title} onClick={() => { runFunctionMenuAction(id); onDone?.(); }}>
+      <Icon size={15} className={meta.tone} /><span>{meta.label}</span><ChevronRight size={13} className="sidebar-cap-chevron" />
     </button>
   );
 }
 
-/** 一条功能入口菜单。location 决定外观；两份实例共用同一份排序/更多配置。 */
+/** 一条功能入口菜单。top = 新建/搜索下面，bottom = 侧栏底部；两个位置共用同一份排序/更多配置。 */
 export function FunctionMenu({ location }: { location: FunctionMenuLocation }) {
   const config = useFunctionMenuConfig();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -83,49 +75,29 @@ export function FunctionMenu({ location }: { location: FunctionMenuLocation }) {
   if (config.location !== location) return null;
   const visible = visibleFunctionMenuItems(config);
   const overflow = overflowFunctionMenuItems(config);
-  const other = location === "sidebar" ? "composer" : "sidebar";
-  const moreButton = (
-    <button
-      ref={moreRef}
-      type="button"
-      className={location === "sidebar" ? "sidebar-tab sidebar-cap-row function-menu-more" : "function-menu-pill function-menu-more"}
-      aria-haspopup="menu"
-      aria-expanded={moreOpen}
-      title="更多：编辑菜单 / 切换显示位置"
-      onClick={() => setMoreOpen((open) => !open)}
-    >
-      {location === "sidebar" ? <MoreHorizontal size={15} /> : <ChevronDown size={13} />}
-      <span>更多</span>
-      {overflow.length > 0 && <em className="function-menu-more-badge">{overflow.length}</em>}
-      {location === "sidebar" && <ChevronRight size={13} className="sidebar-cap-chevron" />}
-    </button>
-  );
-  const popover = moreOpen && moreRef.current
-    ? <MorePopover anchor={moreRef.current} overflow={overflow} otherLocation={other} onClose={() => setMoreOpen(false)} />
-    : null;
-
-  if (location === "composer") {
-    return (
-      <div className="function-menu function-menu-composer">
-        <span className="function-menu-label" onMouseEnter={(event) => maybeShowFunctionMenuTour("composer", event.currentTarget)}>
-          功能入口
-        </span>
-        <div className="function-menu-items" role="group" aria-label="功能入口">
-          {visible.map((id) => <MenuItemButton key={id} id={id} location={location} />)}
-        </div>
-        {moreButton}
-        {popover}
-      </div>
-    );
-  }
-
+  const other: FunctionMenuLocation = location === "top" ? "bottom" : "top";
   return (
-    <div className={`function-menu function-menu-${location}`}>
+    <div className={`function-menu function-menu-sidebar function-menu-${location}`}>
       <div className="function-menu-items" role="group" aria-label="功能入口">
-        {visible.map((id) => <MenuItemButton key={id} id={id} location={location} />)}
-        {moreButton}
+        {visible.map((id) => <MenuItemButton key={id} id={id} />)}
+        <button
+          ref={moreRef}
+          type="button"
+          className="sidebar-tab sidebar-cap-row function-menu-more"
+          aria-haspopup="menu"
+          aria-expanded={moreOpen}
+          title="更多：编辑菜单 / 切换显示位置"
+          onClick={() => setMoreOpen((open) => !open)}
+        >
+          <MoreHorizontal size={15} />
+          <span>更多</span>
+          {overflow.length > 0 && <em className="function-menu-more-badge">{overflow.length}</em>}
+          <ChevronRight size={13} className="sidebar-cap-chevron" />
+        </button>
       </div>
-      {popover}
+      {moreOpen && moreRef.current && (
+        <MorePopover anchor={moreRef.current} overflow={overflow} otherLocation={other} onClose={() => setMoreOpen(false)} />
+      )}
     </div>
   );
 }
@@ -180,8 +152,8 @@ function MorePopover({ anchor, overflow, otherLocation, onClose }: {
         <Pencil size={14} /><span>编辑菜单…</span>
       </button>
       <button type="button" role="menuitem" className="function-menu-popover-item" onClick={() => { onClose(); setFunctionMenuLocation(otherLocation); }}>
-        {otherLocation === "composer" ? <Rows3 size={14} /> : <PanelLeft size={14} />}
-        <span>{otherLocation === "composer" ? "移到对话框上方" : "移到侧栏底部"}</span>
+        {otherLocation === "top" ? <ArrowUpToLine size={14} /> : <ArrowDownToLine size={14} />}
+        <span>{otherLocation === "top" ? "移到侧栏顶部（新建/搜索下面）" : "移到侧栏底部"}</span>
       </button>
     </div>,
     document.body,
@@ -322,13 +294,13 @@ function FunctionMenuEditor() {
         </header>
 
         <div className="fm-location-grid" role="group" aria-label="功能入口显示位置">
-          <button type="button" className={`fm-location-card ${config.location === "sidebar" ? "on" : ""}`} aria-pressed={config.location === "sidebar"}
-            onClick={() => setFunctionMenuLocation("sidebar")}>
-            <PanelLeft size={16} /><span><b>侧栏底部</b><small>当前侧栏样式，可折叠</small></span>{config.location === "sidebar" && <Check size={14} />}
+          <button type="button" className={`fm-location-card ${config.location === "top" ? "on" : ""}`} aria-pressed={config.location === "top"}
+            onClick={() => setFunctionMenuLocation("top")}>
+            <ArrowUpToLine size={16} /><span><b>侧栏顶部</b><small>「新建任务 / 搜索任务」下面（老版位置）</small></span>{config.location === "top" && <Check size={14} />}
           </button>
-          <button type="button" className={`fm-location-card ${config.location === "composer" ? "on" : ""}`} aria-pressed={config.location === "composer"}
-            onClick={() => setFunctionMenuLocation("composer")}>
-            <Rows3 size={16} /><span><b>对话框上方</b><small>老版横向菜单栏，输入框整体下移</small></span>{config.location === "composer" && <Check size={14} />}
+          <button type="button" className={`fm-location-card ${config.location === "bottom" ? "on" : ""}`} aria-pressed={config.location === "bottom"}
+            onClick={() => setFunctionMenuLocation("bottom")}>
+            <ArrowDownToLine size={16} /><span><b>侧栏底部</b><small>用户名上方，可折叠</small></span>{config.location === "bottom" && <Check size={14} />}
           </button>
         </div>
 
