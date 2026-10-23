@@ -157,7 +157,6 @@ export function CloudAccountSection() {
   const [provisionReport, setProvisionReport] = useState<CloudProvisionReport | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
   /* 10-18：会话同步用**独立弹窗**（非内嵌）；null = 关闭 */
   const [sessionDialog, setSessionDialog] = useState<"upload" | "pull" | null>(null);
   /* 10-18：连通测试 / 刷新的**弹窗**反馈（内嵌 hint 会被滚动错过） */
@@ -195,7 +194,7 @@ export function CloudAccountSection() {
     if (!api.cloudAuthLogin) return;
     setMsg(null);
     setProvisionReport(null);
-    const r = await api.cloudAuthLogin({ baseUrl: baseUrl.trim() || undefined, username: username.trim(), password });
+    const r = await api.cloudAuthLogin({ username: username.trim(), password });
     if (!r.ok) { setMsg({ kind: "err", text: r.error || "登录失败" }); return; }
     setPassword("");
     /* 10-22「登录即用」：登录后一次配齐模型 / 知识库 / 记忆，生效位只在没有别家供应商时切换。
@@ -591,15 +590,6 @@ export function CloudAccountSection() {
             <p className="cloud-acct-sub cloud-acct-footnote">
               还没有账号？先在浏览器打开云端用户中心注册（不需要先装云助手）。注册后回这里登录即可。
             </p>
-            <details className="cloud-acct-adv">
-              <summary>服务地址（默认 {status.defaultBaseUrl}）</summary>
-              <input
-                className="field"
-                value={baseUrl}
-                placeholder={status.defaultBaseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-              />
-            </details>
           </div>
           <CloudTutorial />
         </>
