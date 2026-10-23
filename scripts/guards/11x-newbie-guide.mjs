@@ -12,7 +12,7 @@
  * 行为（点击开合、跳设置）由验收 `newbie-guide` 真跑；本守卫钉结构、登记表与单源接线。
  * 独立守卫（不进 check-preflight 的 checks 计数）。
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { codeOnly } from "./_ctx.mjs";
@@ -29,6 +29,11 @@ const ok = (condition, message) => {
 };
 
 const shell = codeOnly(read("src/features/app-view/AppView/01-sidebar-shell.tsx"));
+/* 10-24 并行线把侧栏入口抽进 function-menu 板块；入口文案在这里，位置仍由侧栏的
+   `.sidebar-options` 容器决定（⛔ 不能因为换了文件就放过「放进 thread-list」的负向）。 */
+const functionMenu = existsSync(join(ROOT, "src/features/function-menu/FunctionMenu.tsx"))
+  ? codeOnly(read("src/features/function-menu/FunctionMenu.tsx"))
+  : "";
 const guide = codeOnly(read("src/features/newbie-guide/NewbieGuide.tsx"));
 const sections = codeOnly(read("src/features/newbie-guide/sections.tsx"));
 const css = read("src/styles/31-newbie-guide.css");
@@ -44,10 +49,13 @@ const preload = read("electron/preload.ts");
   const listAt = shell.indexOf('className="thread-list"');
   /* ⛔ 锚**入口按钮**而不是 `<NewbieGuide>`：10-22 起账户行压成侧栏最后一条（用户名贴底），
      弹窗组件仍挂在 Fragment 尾部（它的位置与可见性无关）；拿组件位置比对会永远红。 */
-  const entryAt = shell.indexOf("<span>新手教程</span>");
+  const optionsAt = shell.indexOf('className="sidebar-options"');
+  const entryAt = shell.indexOf("<span>新手教程</span>") >= 0
+    ? shell.indexOf("<span>新手教程</span>")
+    : functionMenu.indexOf('"新手教程"');
   const accountAt = shell.indexOf('className="account-row"');
-  ok(listAt >= 0 && entryAt > listAt && accountAt > entryAt,
-    "入口在 .thread-list **之外**、账户行之上（⛔ 放进列表里会随滚动走、被内容压住 —— 用户点名）");
+  ok(listAt >= 0 && optionsAt > listAt && accountAt > optionsAt && entryAt >= 0,
+    "入口在 .thread-list **之外**、账户行之上（入口组容器位于两者之间；⛔ 放进列表里会随滚动走、被内容压住 —— 用户点名）");
   ok(/\.guide-entry \{[\s\S]{0,120}?flex: none/.test(css),
     ".guide-entry flex:none（侧栏 flex 列里唯一允许收缩的是 .thread-list —— 入口不许被压扁）");
   ok(/\.thread-list \{[\s\S]{0,600}?flex: 1 1 0[\s\S]{0,600}?min-height: 0[\s\S]{0,600}?overflow-y: auto/.test(baseCss),
