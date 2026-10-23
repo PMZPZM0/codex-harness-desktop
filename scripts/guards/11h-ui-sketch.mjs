@@ -49,7 +49,14 @@ ok(!/moreHubOpen/.test(side) && !side.includes("<span>更多</span>"), "「更�
 ok(/setDramaCanvasOpen\(true\)/.test(side), "AI 画布工作流仍可从侧栏进入（已并入前端 UI · 组件库入口）");
 ok(/setUiSketchOpen\(true\)/.test(side), "前端开发画布仍可从侧栏进入（同一个能力入口的教程/直达按钮）");
 ok(/setSettingsPage\("knowledge-base"\)/.test(side), "知识库仍可从侧栏进入（人格市场 / 记忆中心 / 知识库入口）");
-ok(/<span>自动化<\/span>/.test(side) && /sidebar-cap-row/.test(side), "「自动化」（原定时任务）与能力入口使用同一行样式（不再单独一档）");
+/* 10-24 并行线把入口抽成了 function-menu 板块：文案与行样式跟着搬走，判据允许两处之一，
+   但仍要求 `sidebar-cap-row`（⛔ 不是放宽成「随便有没有」）。 */
+const functionMenu = existsSync(join(ROOT, "src/features/function-menu/FunctionMenu.tsx"))
+  ? codeOnly(read("src/features/function-menu/FunctionMenu.tsx"))
+  : "";
+ok((/<span>自动化<\/span>/.test(side) || /<span>自动化<\/span>/.test(functionMenu))
+  && /sidebar-cap-row/.test(side + "\n" + functionMenu),
+  "「自动化」（原定时任务）与能力入口使用同一行样式（不再单独一档；入口可抽到 function-menu）");
 ok(!/setSettingsPage\("backup"\)/.test(side), "负向：也不许把「会话备份」入口放回侧栏（【180】同一条纪律）");
 
 /* ───────────────────────── 二、板块接线四处 ───────────────────────── */
