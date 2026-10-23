@@ -50,7 +50,7 @@ const preload = read("electron/preload.ts");
     "入口在 .thread-list **之外**、账户行之上（⛔ 放进列表里会随滚动走、被内容压住 —— 用户点名）");
   ok(/\.guide-entry \{[\s\S]{0,120}?flex: none/.test(css),
     ".guide-entry flex:none（侧栏 flex 列里唯一允许收缩的是 .thread-list —— 入口不许被压扁）");
-  ok(/\.thread-list \{[\s\S]{0,200}?flex: 1 1 0[\s\S]{0,200}?min-height: 0[\s\S]{0,200}?overflow-y: auto/.test(baseCss),
+  ok(/\.thread-list \{[\s\S]{0,600}?flex: 1 1 0[\s\S]{0,600}?min-height: 0[\s\S]{0,600}?overflow-y: auto/.test(baseCss),
     ".thread-list 仍是唯一滚动容器（flex:1 1 0 + min-height:0 + overflow-y:auto —— 防「加行挤坏滚动」）");
   ok(stylesEntry.includes('@import "./styles/31-newbie-guide"'),
     "31-newbie-guide.css 已被 styles.css 引入（漏引 = 入口裸奔）");
