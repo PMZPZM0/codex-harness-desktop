@@ -104,10 +104,14 @@ export async function detectSetupModels(input: {
   source: SetupSource;
 }): Promise<DetectedSetup> {
   if (input.source === "cloud" || input.provider === "cloud") {
+    /* 云助手仓没有 cloud-models 域（无云账号页）⇒ 走 any 探测，缺接口时给明确原因，
+       ⛔ 其余供应商的流程不受影响。 */
+    const cloudApi = window.codex as any;
+    if (!cloudApi.cloudModelsSync || !cloudApi.cloudModelsCatalog) throw new Error("当前构建不支持云账号模型目录");
     /* ⛔ force:false —— 强制同步会重签代理令牌，可能把同账号其它设备挤出 3 枚令牌环。 */
-    const sync = await window.codex.cloudModelsSync({ force: false });
+    const sync = await cloudApi.cloudModelsSync({ force: false });
     if (!sync?.ok) throw new Error(sync?.error || "云端模型同步失败");
-    const catalog: any = await window.codex.cloudModelsCatalog().catch(() => null);
+    const catalog: any = await cloudApi.cloudModelsCatalog().catch(() => null);
     const rows = Array.isArray(catalog?.models) ? catalog.models : [];
     let models = buildCloudModels(rows);
     let selected: string[] = rows.filter((m: any) => m?.enabled && m?.id).map((m: any) => String(m.id));
@@ -176,12 +180,14 @@ export async function applySetupSelection(input: {
 
   let saved: any = null;
   if (input.source === "cloud" || input.provider === "cloud") {
-    const persisted = await window.codex.cloudModelsSetEnabled({ ids });
+    const cloudApi = window.codex as any;
+    if (!cloudApi.cloudModelsSetEnabled || !cloudApi.cloudModelsActivate) throw new Error("当前构建不支持云账号模型目录");
+    const persisted = await cloudApi.cloudModelsSetEnabled({ ids });
     if (!persisted?.ok) throw new Error(persisted?.error || "保存云端模型勾选失败");
     if (persisted.sync && persisted.sync.ok === false) {
       throw new Error(`云端勾选已保存，但本机模型同步失败：${persisted.sync.error || "未知原因"}`);
     }
-    const activated = await window.codex.cloudModelsActivate();
+    const activated = await cloudApi.cloudModelsActivate();
     if (!activated?.ok) throw new Error(activated?.error || "切换云端模型失败");
     saved = await window.codex.getCustomModel();
     if (!saved) throw new Error("云端供应商已启用，但读取生效档案失败 —— 请重启应用后重试");
