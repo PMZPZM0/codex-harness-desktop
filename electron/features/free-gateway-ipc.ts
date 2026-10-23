@@ -99,7 +99,11 @@ function saveLastGoodMirror(i: number) {
 
 /** 用随包 7-Zip（完整版 7za）解 zip；缺 7za 时给可执行的中文名报错。 */
 function extractZip(zipPath: string, destDir: string): Promise<void> {
-  const sevenZip = existingToolPath("sevenzip", "7za.exe") || path.join(toolsRoot(), "sevenzip", "7za.exe");
+  /* ⛔ mac 适配（10-23 审计）：darwin 随包的是 7-Zip 官方 **7zz**（`install-runtimes.cjs`
+     的 sevenzip 分支 marker 就是 `7zz`），旧实现写死 `7za.exe` ⇒ mac 上「安装免费网关」必失败
+     （找不到/不可执行）。参数与 Windows 版一致（`x -o<dir> -y`）。 */
+  const sevenZipName = process.platform === "win32" ? "7za.exe" : "7zz";
+  const sevenZip = existingToolPath("sevenzip", sevenZipName) || path.join(toolsRoot(), "sevenzip", sevenZipName);
   if (!fs.existsSync(sevenZip)) throw new Error("缺少随包 7-Zip（设置 → 开发工具 → 7-Zip CLI 修复安装后重试）");
   return new Promise((resolve, reject) => {
     const p = spawn(sevenZip, ["x", zipPath, `-o${destDir}`, "-y"], { stdio: "ignore" });
