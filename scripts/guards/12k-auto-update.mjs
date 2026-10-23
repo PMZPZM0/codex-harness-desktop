@@ -119,7 +119,10 @@ ok(/updateableToolMeta/.test(boardCode)
 
 console.log("【⑤ 后台三道闸】");
 ok(/if \(running\) return;[\s\S]{0,80}running = true;/.test(board), "闸 1 防重入（上轮没跑完不开新一轮）");
-ok(/for \(const row of rows\)[\s\S]{0,900}console\.warn/.test(board),
+/* ⛔ 10-23：窗口从 900 放宽到 1600 —— PPcode 仓在这段循环里多出 6 行「市场技能不在这里跑」的注释，
+   177→195 行隔了 ~1000 字符 ⇒ 旧窗口把**已正确实现**的 catch/console.warn 判成缺失（假红）。
+   放宽后仍要求「循环体里出现 console.warn」这个实质。 */
+ok(/for \(const row of rows\)[\s\S]{0,1600}console\.warn/.test(board),
   "闸 2 单类失败只 warn 跳过、继续跑其余（一个包挂了不拖垮全部）");
 ok(/finally \{[\s\S]{0,120}running = false;/.test(board), "闸 3 finally 放闸");
 ok(/clearInterval\(timer\)/.test(board) && /clearTimeout\(first\)/.test(board) && /ctx\.effect\(/.test(board),
