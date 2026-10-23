@@ -656,9 +656,15 @@
   display: inline-flex;
   align-items: center;
   gap: 1px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--accent);
+  font: inherit;
   font-weight: 600;
+  cursor: pointer;
 }
+.provider-card-configure:hover { text-decoration: underline; }
 .provider-more-section { margin-top: 4px; }
 .provider-more-section .provider-list-head { margin: 0 2px 6px; }
 .provider-more-section .provider-item { width: 100%; text-align: left; }
