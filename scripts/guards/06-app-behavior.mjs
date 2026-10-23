@@ -8,6 +8,7 @@
 import {
   C, ROOT, codeOnly, createRequire, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, readAppUi, readBuiltinSkillsSource, readFileSync, readMainSource, readResponsesBridgeSource, readStyles, readdirSync, relative, rmSync, sliceHandle, spawnSync, statSync, typesSrc,
 } from "./_ctx.mjs";
+import { FUNCTION_MENU_DEFAULT_ORDER, moveFunctionMenuItem, normalizeFunctionMenu, resetFunctionMenuLayout, setFunctionMenuItemOverflow } from "../../src/features/function-menu/menu-model.mjs";
 
 export async function run() {
 
@@ -2527,24 +2528,74 @@ w.postMessage({id:1,op:"list",root});
   /* ③ 10-21 用户**再次点名**改名 + 重排（覆盖上一条「一律 4 字」的口径）：
      名字由用户逐条给定，不再强求 4 字；入口从顶部挪到「用户名之下」。
      ⛔ 断言改成**精确名单 + 顺序**：改名类需求最容易漏一条，按名单比对才抓得住。 */
-  (/<Clock3 size=\{15\} \/><span>自动化<\/span>/.test(side180) ? ok : fail)(
-    "【180】该项文案是「自动化」（10-21 用户令：定时任务 → 自动化；跳的仍是 schedule 页）"
+  /* 10-22 功能入口改成**共享菜单组件**（侧栏 / 对话框上方 / 可拖动 / 更多）：
+     文案与默认顺序从渲染层挪到了 FunctionMenu + menu-model；这里改为钉数据模型与接线。 */
+  const fmSrc180 = codeOnly(readFileSync(join(ROOT, "src", "features", "function-menu", "FunctionMenu.tsx"), "utf8"));
+  const fmStore180 = codeOnly(readFileSync(join(ROOT, "src", "features", "function-menu", "store.ts"), "utf8"));
+  const fmDefault180 = normalizeFunctionMenu(null);
+  (FUNCTION_MENU_DEFAULT_ORDER.join(">") === "schedule>frontend>extensions>team>identity>login>newbie"
+    && fmDefault180.location === "sidebar" && fmDefault180.overflow.length === 0
+    ? ok : fail)(
+    "【180】功能入口默认顺序 = 自动化 → 前端开发 → 拓展 → 团队 → 个性化&记忆 → 登录管理 → 新手教程（数据模型单一真相源）"
   );
-  const hasGuideRow = (key, label) => new RegExp(`<span>${label}</span>`).test(side180)
-    && new RegExp(`setGuideKey\\("${key}"\\)`).test(side180);
-  (hasGuideRow("frontend", "前端开发")
-    && hasGuideRow("extensions", "拓展")
-    && hasGuideRow("agents", "团队")
-    && hasGuideRow("identity", "个性化&amp;记忆") ? ok : fail)(
-    "【180】四条能力入口按用户指定改名（前端开发 / 拓展 / 团队 / 个性化&amp;记忆）且各自仍锚到 setGuideKey"
+  (["自动化", "前端开发", "拓展", "团队", "登录管理", "新手教程", "个性化&记忆"].every((label) => fmSrc180.includes(label))
+    && fmSrc180.includes('schedule: { label: "自动化"') ? ok : fail)(
+    "【180】入口改名全在 FunctionMenu 元数据里（前端开发 / 拓展 / 团队 / 个性化&记忆 / 登录管理 / 新手教程）"
   );
-  /* 底部导航组：**顺序**就是用户口述的顺序，逐条比对（漏一条 / 顺序错都该红）。 */
+  (side180.includes('<FunctionMenu location="sidebar" />')
+    && /functionMenu\.location === "sidebar"/.test(side180)
+    && /setFunctionMenuActionHandler\(/.test(side180)
+    && /id === "team"\) \{ setGuideKey\("agents"\)/.test(side180) ? ok : fail)(
+    "【180】侧栏接共享菜单：只在 sidebar 位置渲染，动作经总线回到 setGuideKey/setSettingsPage（团队仍开 agents 教程）"
+  );
   {
-    const bottomNav = /<div className="sidebar-nav sidebar-nav-bottom"[^>]*>([\s\S]*?)<\/div>/.exec(side180)?.[1] ?? "";
-    const capLabels = [...bottomNav.matchAll(/<span>([^<]{1,12})<\/span><ChevronRight size=\{13\} className="sidebar-cap-chevron"/g)].map((m) => m[1]).map((s) => s.replace(/&amp;/g, "&"));
-    const want = ["自动化", "前端开发", "拓展", "团队", "个性化&记忆", "登录管理", "新手教程"];
-    (capLabels.length === want.length && want.every((label, i) => capLabels[i] === label) ? ok : fail)(
-      `【180】底部导航组顺序 = ${want.join(" → ")}（实际 ${capLabels.length} 条：${capLabels.join(" / ")}）`
+    const moved = moveFunctionMenuItem(fmDefault180, "schedule", "overflow");
+    const back = moveFunctionMenuItem(moved, "schedule", "visible");
+    (moved.overflow.includes("schedule") && !normalizeFunctionMenu(fmDefault180).overflow.includes("schedule")
+      && back.overflow.length === 0 && back.order.includes("schedule") ? ok : fail)(
+      "【180】拖动落点模型：拖进「更多」= overflow 标记、拖回 = 移除标记（顺序不丢）"
+    );
+    const nudged = moveFunctionMenuItem({ ...fmDefault180, order: ["frontend", "schedule", ...FUNCTION_MENU_DEFAULT_ORDER.filter((id) => id !== "frontend" && id !== "schedule")] }, "schedule", "visible", "frontend");
+    (nudged.order[0] === "schedule" && nudged.order[1] === "frontend" ? ok : fail)(
+      "【180】拖到某行之前 = 插到它前面（不是粗暴追加到末尾）"
+    );
+    const reset = resetFunctionMenuLayout({ ...fmDefault180, location: "composer", order: [...fmDefault180.order].reverse() });
+    (reset.location === "composer" && reset.order.join(">") === FUNCTION_MENU_DEFAULT_ORDER.join(">") ? ok : fail)(
+      "【180】恢复默认只还原排序/分组，保留用户选的位置"
+    );
+    (setFunctionMenuItemOverflow(fmDefault180, "login", true).overflow.join(">") === "login" ? ok : fail)(
+      "【180】行尾「收进更多」按钮与拖动落点同源"
+    );
+  }
+  /* 两种展示位置 + 设置页入口 + 首次教程 / 编辑菜单。 */
+  ((side180.match(/<FunctionMenu location="sidebar" \/>/g) || []).length === 1
+    && side180.includes("<FunctionMenuTourHost />") && side180.includes("<FunctionMenuEditorHost />") ? ok : fail)(
+    "【180】侧栏只挂一份菜单 + 一份教程宿主 + 一份编辑弹窗宿主"
+  );
+  {
+    const composer180 = codeOnly(readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "02-main-stage", "03-composer.tsx"), "utf8"));
+    const appearance180 = codeOnly(readFileSync(join(ROOT, "src", "features", "settings-appearance", "AppearanceSettingsSection.tsx"), "utf8"));
+    (composer180.includes("functionMenu.location === \"composer\"")
+      && composer180.includes('<FunctionMenu location="composer" />')
+      && composer180.includes('className="function-menu-composer-bar"') ? ok : fail)(
+      "【180】对话框上方模式：菜单条渲染在 .composer-wrap 正常流内（输入框/状态条随之下移）"
+    );
+    (appearance180.includes("FunctionMenuSettings") ? ok : fail)(
+      "【180】外观设置页有「功能入口」位置选择（设置控制台入口）"
+    );
+  }
+  (fmStore180.includes('const CONFIG_KEY = "function-menu-v1"')
+    && fmStore180.includes("function-menu-tour-seen-v1-")
+    && fmSrc180.includes("onDragStart") && fmSrc180.includes("onDrop")
+    && fmSrc180.includes("编辑菜单") ? ok : fail)(
+    "【180】排序/更多落 localStorage、每个位置首次教程只弹一次；编辑菜单真有 dragstart/onDrop"
+  );
+  {
+    const fmCss180 = readFileSync(join(ROOT, "src", "styles", "44-function-menu.css"), "utf8");
+    (/\.function-menu-composer-bar\s*\{/.test(fmCss180) && /\.function-menu-tour\s*\{/.test(fmCss180)
+      && /\.function-menu-editor-backdrop\s*\{\s*z-index:\s*900/.test(fmCss180)
+      && /\.welcome-cwd-picker\s*\{[\s\S]{0,120}?bottom:\s*calc\(100% \+ 5px \+ var\(--function-menu-bar-h\)\)/.test(fmCss180) ? ok : fail)(
+      "【180】两种位置 / 教程 / 编辑弹窗的样式在位；菜单条出现时项目地址 chip 自动抬高（不互相压住）"
     );
   }
   /* 布局：顶部只留「新建任务 / 搜索任务」；入口组在账户行**之上**，账户行是侧栏最后一条。
@@ -2617,16 +2668,16 @@ w.postMessage({id:1,op:"list",root});
     );
   }
   /* 新手教程：入口进底部组，且 NewbieGuide 走**受控**（不传 open 它会再画一行「新手引导」⇒ 底部两个入口）。 */
-  (/<span>新手教程<\/span>/.test(side180) && /setNewbieOpen\(true\)/.test(side180) ? ok : fail)(
-    "【180】底部有「新手教程」一行且真的能打开（锚到 setNewbieOpen）"
+  (fmSrc180.includes('newbie: { label: "新手教程"') && /id === "newbie"\) \{ setNewbieOpen\(true\)/.test(side180) ? ok : fail)(
+    "【180】菜单有「新手教程」一项且动作真锚到 setNewbieOpen"
   );
   (/<NewbieGuide open=\{newbieOpen\} onOpenChange=\{setNewbieOpen\}/.test(side180) ? ok : fail)(
     "【180】NewbieGuide 走受控打开（⛔ 不传 open 它会自带一行「新手引导」⇒ 底部出现两个入口）"
   );
   /* 登录管理（10-21 用户令）：「加一个登录管理，点击弹窗提醒 GPT订阅 / 中转站账户 / 云账号，跳转都是直达界面」。
      ⛔ 三处缺一 = 把某个登录入口藏起来；⛔ 行里必须各自交出自己的 page（都跳同一页 = 假入口）。 */
-  (/setLoginMgrOpen\(true\)/.test(side180) && /<span>登录管理<\/span>/.test(side180) ? ok : fail)(
-    "【180】侧栏有「登录管理」入口，且真的打开弹窗（不是死按钮）"
+  (fmSrc180.includes('login: { label: "登录管理"') && /setLoginMgrOpen\(true\)/.test(side180) ? ok : fail)(
+    "【180】菜单有「登录管理」入口，且动作真打开弹窗（不是死按钮）"
   );
   const loginMgrSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "LoginManagerModal.tsx"), "utf8");
   (["openai", "relay", "cloud"].every((page) => new RegExp(`page: "${page}"`).test(loginMgrSrc)) ? ok : fail)(
@@ -2652,8 +2703,9 @@ w.postMessage({id:1,op:"list",root});
   (/onMouseDown=\{\(event\) => \{ if \(event\.target === event\.currentTarget\) onClose\(\); \}\}/.test(loginMgrSrc) ? ok : fail)(
     "【180】点遮罩能关（第三条出路，且只在**遮罩本身**被点时才关 —— 点内容不许误关）"
   );
-  (["frontend", "extensions", "agents", "identity"].every((key) => new RegExp(`setGuideKey\\("${key}"\\)`).test(side180)) ? ok : fail)(
-    "【180】四条入口各自能打开对应教程弹窗（每一条都锚到 setGuideKey，不是只写文案）"
+  (["frontend", "extensions", "team", "identity"].every((id) => fmSrc180.includes(`${id}: { label:`))
+    && /setGuideKey\(id\)/.test(side180) && /id === "team"\) \{ setGuideKey\("agents"\)/.test(side180) ? ok : fail)(
+    "【180】四条能力入口各自映射到教程（team → agents 的映射仍在；不是只写文案）"
   );
   (/\{guideKey && <SidebarGuideModal/.test(side180) ? ok : fail)(
     "【180】教程弹窗挂在 guideKey 条件上（⛔ 不是恒假/被删）"
@@ -2681,11 +2733,13 @@ w.postMessage({id:1,op:"list",root});
     && /\.sidebar-quick\s*\{[\s\S]{0,260}?border-radius:\s*999px/.test(sideStyles180) ? ok : fail)(
     "【180】新建 / 搜索是共享外框的连体胶囊（gap 0 + 999px 圆角，中间一条分隔线）"
   );
-  (/<button className="sidebar-tab sidebar-cap-row ic-amber"[\s\S]{0,180}?<span>自动化<\/span>/.test(side180) ? ok : fail)(
-    "【180】「自动化」与其它能力入口同一行样式（不再单独一档）"
+  (/className="sidebar-tab sidebar-cap-row" title=\{meta\.title\}/.test(fmSrc180)
+    && fmSrc180.includes("schedule: { label: \"自动化\"") ? ok : fail)(
+    "【180】「自动化」与其它能力入口同一行样式（统一 sidebar-cap-row，不再单独一档）"
   );
-  (!/<span>更多<\/span>/.test(side180) && !/moreHubOpen/.test(side180) ? ok : fail)(
-    "【180】「更多」入口与弹窗已删除（AI 画布并入前端能力入口、知识库并入人格/记忆入口）"
+  (fmSrc180.includes("function-menu-more") && fmSrc180.includes("编辑菜单") && fmSrc180.includes("移到对话框上方")
+    && !/moreHubOpen/.test(side180) ? ok : fail)(
+    "【180】新的「更多」只收溢出入口 + 编辑菜单/切换位置（旧 AI 画布 moreHubOpen 已删除）"
   );
   (/setDramaCanvasOpen\(true\)/.test(side180) && /setUiSketchOpen\(true\)/.test(side180) ? ok : fail)(
     "【180】AI 画布 / 前端开发画布入口没有随「更多」一起消失（已并入前端 UI · 组件库）"

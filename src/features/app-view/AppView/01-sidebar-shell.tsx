@@ -2,7 +2,8 @@
  * AppViewSidebarShell —— AppView 的 JSX 第 1 段（09-22 从 AppView.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
+import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, useFunctionMenuConfig } from "../../function-menu";
 import { hk } from "../../../lib/hk";
 import {
   AlertTriangle,
@@ -265,6 +266,18 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     setOptionsCollapsed(next);
     try { localStorage.setItem("sidebar-options-collapsed", String(next)); } catch { /* 隐私模式写不进属正常，别拦切换 */ }
   };
+  /* 功能入口（10-24）：可配置排序 / 更多分组 / 两种展示位置；动作经总线回到侧栏壳。 */
+  const functionMenu = useFunctionMenuConfig();
+  useEffect(() => {
+    setFunctionMenuActionHandler((id) => {
+      if (id === "schedule") { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); return; }
+      if (id === "login") { setLoginMgrOpen(true); return; }
+      if (id === "newbie") { setNewbieOpen(true); return; }
+      if (id === "team") { setGuideKey("agents"); return; }
+      setGuideKey(id);
+    });
+    return () => setFunctionMenuActionHandler(null);
+  }, [setSettingsPage, setSettingsOpen, setMobileNav]);
 
   /** 能力卡片本身就是跳转入口：侧栏统一把 target 翻译成设置页 / 画布。 */
   const navigateGuideTarget = (target: SidebarGuideTarget) => {
@@ -499,46 +512,28 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 ⛔ 折叠**只收本组**（入口 `hidden` + 本组 `flex:none`）⇒ 空出来的高度被 `.thread-list`
                    （flex:1 1 0）吃掉；⛔ 别给账户行加占位/补白、⛔ 别把它挪进本组 —— 它是贴底的锚，
                    位置只由「侧栏最后一条」决定，与展开/折叠无关。 */}
-            <div className="sidebar-options">
-              <button
-                type="button"
-                className="sidebar-options-toggle"
-                aria-expanded={!optionsCollapsed}
-                aria-controls="sidebar-options-body"
-                title={optionsCollapsed ? "展开功能入口" : "收起功能入口"}
-                onClick={toggleOptions}
-              >
-                <span>功能入口</span>
-                {/* 行在折叠头**下方**（折叠头 → 7 行 → 账户行）⇒ 与全站其它折叠组同向：收起=⌄、展开时翻转=⌃ */}
-                <ChevronDown size={13} className={`sidebar-options-chevron ${optionsCollapsed ? "" : "open"}`} />
-              </button>
-              <div className="sidebar-nav sidebar-nav-bottom" id="sidebar-options-body" role="group" aria-label="功能入口" hidden={optionsCollapsed}>
-                <button className="sidebar-tab sidebar-cap-row ic-amber" title="按时间自动运行任务" aria-haspopup="dialog" onClick={() => { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); }}>
-                  <Clock3 size={15} /><span>自动化</span><ChevronRight size={13} className="sidebar-cap-chevron" />
+            {functionMenu.location === "sidebar" && (
+              <div className="sidebar-options">
+                <button
+                  type="button"
+                  className="sidebar-options-toggle"
+                  aria-expanded={!optionsCollapsed}
+                  aria-controls="sidebar-options-body"
+                  title={optionsCollapsed ? "展开功能入口" : "收起功能入口"}
+                  onMouseEnter={(event) => maybeShowFunctionMenuTour("sidebar", event.currentTarget)}
+                  onClick={toggleOptions}
+                >
+                  <span>功能入口</span>
+                  {/* 行在折叠头**下方**（折叠头 → 入口行 → 账户行）⇒ 与全站其它折叠组同向：收起=⌄、展开时翻转=⌃ */}
+                  <ChevronDown size={13} className={`sidebar-options-chevron ${optionsCollapsed ? "" : "open"}`} />
                 </button>
-                <button className="sidebar-tab sidebar-cap-row" title="前端 UI · 组件库：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "frontend"} onClick={() => setGuideKey("frontend")}>
-                  <LayoutGrid size={15} className="ic-blue" /><span>前端开发</span><ChevronRight size={13} className="sidebar-cap-chevron" />
-                </button>
-                <button className="sidebar-tab sidebar-cap-row" title="技能 · 插件 · MCP：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "extensions"} onClick={() => setGuideKey("extensions")}>
-                  <Zap size={15} className="ic-pink" /><span>拓展</span><ChevronRight size={13} className="sidebar-cap-chevron" />
-                </button>
-                <button className="sidebar-tab sidebar-cap-row" title="子智能体 · 专家 · 专家团：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "agents"} onClick={() => setGuideKey("agents")}>
-                  <Users size={15} className="ic-violet" /><span>团队</span><ChevronRight size={13} className="sidebar-cap-chevron" />
-                </button>
-                <button className="sidebar-tab sidebar-cap-row" title="人格市场 · 记忆中心 · 知识库：查看教程与入口" aria-haspopup="dialog" aria-expanded={guideKey === "identity"} onClick={() => setGuideKey("identity")}>
-                  <Heart size={15} className="ic-amber" /><span>个性化&amp;记忆</span><ChevronRight size={13} className="sidebar-cap-chevron" />
-                </button>
-                {/* 登录管理（10-21 用户要求）：三处账户一处直达（GPT 订阅 / 中转站 / 云账号）。
-                    ⛔ 只做入口聚合 + 直达，登录表单仍在各自设置页（复制一份必漂移）。 */}
-                <button className="sidebar-tab sidebar-cap-row" title="登录管理：GPT 订阅 · 中转站账户 · 云账号" aria-haspopup="dialog" aria-expanded={loginMgrOpen} onClick={() => setLoginMgrOpen(true)}>
-                  <KeyRound size={15} className="ic-green" /><span>登录管理</span><ChevronRight size={13} className="sidebar-cap-chevron" />
-                </button>
-                {/* 新手教程（10-21）：原来那一行独立入口收进本组，弹窗本身仍用 NewbieGuide（受控打开）。 */}
-                <button className="sidebar-tab sidebar-cap-row" title="新手教程：分步教你用起来" aria-haspopup="dialog" aria-expanded={newbieOpen} onClick={() => setNewbieOpen(true)}>
-                  <Rocket size={15} className="ic-cyan" /><span>新手教程</span><ChevronRight size={13} className="sidebar-cap-chevron" />
-                </button>
+                <div className="sidebar-nav sidebar-nav-bottom" id="sidebar-options-body" role="group" aria-label="功能入口" hidden={optionsCollapsed}>
+                  <FunctionMenu location="sidebar" />
+                </div>
               </div>
-            </div>
+            )}
+            <FunctionMenuTourHost />
+            <FunctionMenuEditorHost />
             <div className="account-row">
               <button className="account-avatar" title="账户菜单" onClick={() => { setAccountMenuSub(null); setAccountMenuOpen(!accountMenuOpen); }}>{userAvatar?.type === "image" && userAvatar.value ? <img src={userAvatar.value} alt="头像" /> : userAvatar?.type === "emoji" && userAvatar.value ? <span className="account-avatar-emoji">{userAvatar.value}</span> : <span className="account-avatar-letter">{username.trim().charAt(0).toUpperCase() || "?"}</span>}</button>
               {accountEditing ? (

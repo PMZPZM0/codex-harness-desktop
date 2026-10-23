@@ -7,6 +7,7 @@
  */
 import { Check, Moon, Sun, ZoomIn } from "lucide-react";
 import { CodeAppearanceSection } from "../../components/CodeAppearance";
+import { FunctionMenuSettings } from "../function-menu";
 import { WallpaperSettingsSection } from "../wallpaper";
 import { BootIntroSettingsRow } from "./boot550c";
 import { THEMES } from "../../lib/themes";
@@ -44,6 +45,7 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
           <button type="button" className={uiFont === "default" ? "active" : ""} onClick={() => { setUiFont("default"); localStorage.setItem("ui-font", "default"); }}><span className="fs-demo fs-demo-default">标准</span></button>
           <button type="button" className={uiFont === "large" ? "active" : ""} onClick={() => { setUiFont("large"); localStorage.setItem("ui-font", "large"); }}><span className="fs-demo fs-demo-large">大字</span></button>
         </div>
+        <FunctionMenuSettings onNotice={onNotice} />
         <CodeAppearanceSection onNotice={onNotice} />
         <BootIntroSettingsRow onNotice={onNotice} />
         <WallpaperSettingsSection />
