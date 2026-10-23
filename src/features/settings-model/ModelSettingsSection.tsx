@@ -167,7 +167,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                             <div className="provider-card-foot">
                               {!isPseudoPptoken && <span className={`provider-dot ${p.provider === currentProvider ? "on" : ""}`} title={p.provider === currentProvider ? "当前生效供应商" : ""} />}
                               <span className="provider-card-status">{p.provider === currentProvider ? "当前生效" : (p.enabled === false || pseudoOff) ? "已停用" : "未生效"}</span>
-                              <span className="provider-card-configure">配置 <ChevronRight size={13} /></span>
+                              <button type="button" className="provider-card-configure" onClick={(event) => { event.stopPropagation(); openProviderEditor(p, isPseudoPptoken); }}>配置 <ChevronRight size={13} /></button>
                             </div>
                           </div>
                         );
