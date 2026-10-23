@@ -1452,6 +1452,144 @@ const CHECKS = [
     },
   },
   {
+    id: "function-menu",
+    name: "🧩 功能入口：侧栏 / 对话框上方 + 拖动排序 + 更多 + 首次教程（10-22）",
+    run: async (h) => {
+      /* 用户 10-22：功能入口菜单要像 Qoder 一样首次悬停有教程；支持编辑菜单拖动排序、
+         拖进「更多」；设置控制台可切换「侧栏底部 / 对话框上方」，两种位置共用一套配置，
+         输入框随菜单条整体下移。 */
+      await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "界面就绪", timeoutMs: 40000 });
+      await h.eval(`(function(){ document.querySelector(".office-overlay-close")?.click(); document.querySelector(".function-menu-editor .fm-editor-close")?.click(); return 1; })()`).catch(() => undefined);
+      await wait(400);
+      await h.waitFor(`!!document.querySelector(".function-menu-sidebar") || !!document.querySelector(".function-menu-composer-bar")`, { label: "功能入口就绪", timeoutMs: 15000 }).catch(() => undefined);
+      // 上次运行可能停在对话框上方：先切回侧栏，保证起点一致
+      if (await h.eval(`!!document.querySelector(".function-menu-composer-bar")`).catch(() => false)) {
+        await h.eval(`document.querySelector(".function-menu-composer > .function-menu-more")?.click()`).catch(() => undefined);
+        await wait(250);
+        await h.eval(`[...document.querySelectorAll(".function-menu-popover-item")].find((b) => b.innerText.includes("编辑菜单"))?.click()`).catch(() => undefined);
+        await h.waitFor(`!!document.querySelector(".function-menu-editor")`, { timeoutMs: 4000 }).catch(() => undefined);
+        await h.eval(`document.querySelectorAll(".fm-location-card")[0]?.click()`).catch(() => undefined);
+        await wait(250);
+        await h.eval(`[...document.querySelectorAll(".fm-editor-foot button")].find((b) => b.innerText.includes("完成"))?.click()`).catch(() => undefined);
+        await wait(400);
+      }
+      const base = await h.eval(`(function(){
+        return { sidebar: !!document.querySelector(".function-menu-sidebar"),
+          options: !!document.querySelector(".sidebar-options"),
+          labels: [...document.querySelectorAll(".function-menu-sidebar .sidebar-cap-row")].map((b) => b.innerText.trim()),
+          more: !!document.querySelector(".function-menu-sidebar .function-menu-more") };
+      })()`).catch(() => null);
+      h.check("① 侧栏有完整功能入口（7 项 + 更多），且整个入口组可见",
+        Boolean(base && base.sidebar && base.options && base.labels.length === 8 && base.more
+          && ["自动化", "前端开发", "拓展", "团队", "个性化&记忆", "登录管理", "新手教程"].every((label) => base.labels.includes(label))),
+        JSON.stringify(base));
+
+      // 首次悬停教程：清掉已看标记再 hover
+      await h.eval(`localStorage.removeItem("function-menu-tour-seen-v1-sidebar")`).catch(() => undefined);
+      await h.hover(".sidebar-options-toggle");
+      await h.waitFor(`!!document.querySelector(".function-menu-tour")`, { timeoutMs: 3000 }).catch(() => undefined);
+      const tour = await h.eval(`document.querySelector(".function-menu-tour")?.innerText || ""`).catch(() => "");
+      h.check("② 首次悬停弹出教程（说明编辑菜单 / 拖进更多 / 设置里切换位置）",
+        tour.includes("让功能入口更顺手") && tour.includes("编辑菜单") && tour.includes("拖进") && tour.includes("设置 → 外观"),
+        JSON.stringify({ tour: tour.slice(0, 80) }));
+      await h.eval(`[...document.querySelectorAll(".function-menu-tour-actions button")].find((b) => b.innerText.includes("知道了"))?.click()`).catch(() => undefined);
+      await wait(200);
+
+      // 更多 → 编辑菜单
+      await h.eval(`document.querySelector(".function-menu-sidebar .function-menu-more")?.click()`).catch(() => undefined);
+      await wait(250);
+      await h.eval(`[...document.querySelectorAll(".function-menu-popover-item")].find((b) => b.innerText.includes("编辑菜单"))?.click()`).catch(() => undefined);
+      await h.waitFor(`!!document.querySelector(".function-menu-editor")`, { label: "编辑菜单弹窗", timeoutMs: 4000 }).catch(() => undefined);
+      const editor = await h.eval(`(function(){
+        return { open: !!document.querySelector(".function-menu-editor"),
+          cols: [...document.querySelectorAll(".fm-edit-col")].map((c) => c.querySelectorAll(".fm-edit-row").length),
+          locations: [...document.querySelectorAll(".fm-location-card")].map((b) => b.innerText.trim().split("\\n")[0]) };
+      })()`).catch(() => null);
+      h.check("③ 更多 → 编辑菜单：弹窗有显示 / 更多两列 + 两个展示位置",
+        Boolean(editor && editor.open && editor.cols[0] >= 1 && editor.locations.length === 2 && editor.locations.includes("侧栏底部") && editor.locations.includes("对话框上方")),
+        JSON.stringify(editor));
+
+      // 拖动第一项到「更多」列
+      const firstLabel = await h.eval(`document.querySelector(".fm-edit-row")?.innerText.trim() || ""`).catch(() => "");
+      await h.eval(`(function(){
+        const row = document.querySelector(".fm-edit-row"); if (!row) return 0;
+        const dt = new DataTransfer(); window.__fmDt = dt;
+        row.dispatchEvent(new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer: dt }));
+        return 1;
+      })()`).catch(() => 0);
+      await wait(150);
+      await h.eval(`(function(){
+        const list = document.querySelectorAll(".fm-edit-col")[1]?.querySelector(".fm-edit-list"); if (!list) return 0;
+        list.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: window.__fmDt }));
+        list.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: window.__fmDt }));
+        return 1;
+      })()`).catch(() => 0);
+      await wait(250);
+      const dragged = await h.eval(`(function(){
+        const overflow = [...document.querySelectorAll(".fm-edit-col")[1].querySelectorAll(".fm-edit-label")].map((e) => e.innerText.trim());
+        return { first: ${JSON.stringify(firstLabel)}, overflow,
+          badge: document.querySelector(".function-menu-sidebar .function-menu-more-badge")?.innerText.trim() || "" };
+      })()`).catch(() => null);
+      h.check("④ 拖动入口到「更多」：进入更多列并在侧栏「更多」上出现角标",
+        Boolean(dragged && dragged.overflow.includes(dragged.first.trim()) && Number(dragged.badge) >= 1),
+        JSON.stringify(dragged));
+
+      // 移回（用行尾按钮，与拖动落点同源）
+      await h.eval(`(function(){ const row = document.querySelectorAll(".fm-edit-col")[1]?.querySelector(".fm-edit-row"); const btns = row ? row.querySelectorAll("button") : []; btns[2]?.click(); return 1; })()`).catch(() => 0);
+      await wait(250);
+      const movedBack = await h.eval(`(function(){
+        return { overflowCount: document.querySelectorAll(".fm-edit-col")[1]?.querySelectorAll(".fm-edit-row").length || 0,
+          badge: document.querySelector(".function-menu-sidebar .function-menu-more-badge")?.innerText.trim() || "" };
+      })()`).catch(() => null);
+      h.check("⑤ 从「更多」移回菜单：更多列清空、角标消失", Boolean(movedBack && movedBack.overflowCount === 0 && !movedBack.badge), JSON.stringify(movedBack));
+
+      // 切到对话框上方：侧栏组收起、菜单条出现且排在输入框上方（不重叠）
+      await h.eval(`document.querySelectorAll(".fm-location-card")[1]?.click()`).catch(() => undefined);
+      await wait(500);
+      const composer = await h.eval(`(function(){
+        const bar = document.querySelector(".function-menu-composer-bar")?.getBoundingClientRect();
+        const composerEl = document.querySelector(".composer")?.getBoundingClientRect();
+        const chip = document.querySelector(".welcome-cwd-picker")?.getBoundingClientRect();
+        return { sidebarOptions: !!document.querySelector(".sidebar-options"),
+          bar: !!bar, barTop: bar ? Math.round(bar.top) : 0, barBottom: bar ? Math.round(bar.bottom) : 0,
+          composerTop: composerEl ? Math.round(composerEl.top) : 0,
+          chipBottom: chip ? Math.round(chip.bottom) : 0,
+          pills: [...document.querySelectorAll(".function-menu-composer .function-menu-pill")].map((b) => b.innerText.trim()) };
+      })()`).catch(() => null);
+      h.check("⑥ 切到对话框上方：侧栏入口组收起、横向菜单条出现且排在输入框上方（项目地址 chip 也让位）",
+        Boolean(composer && !composer.sidebarOptions && composer.bar
+          && composer.barBottom <= composer.composerTop + 1
+          && (!composer.chipBottom || composer.chipBottom <= composer.barTop + 1)
+          && composer.pills.some((t) => t.includes("自动化")) && composer.pills.some((t) => t.includes("更多"))),
+        JSON.stringify(composer));
+
+      await h.eval(`[...document.querySelectorAll(".fm-editor-foot button")].find((b) => b.innerText.includes("完成"))?.click()`).catch(() => undefined);
+      await wait(400);
+      await h.screenshot("function-menu");
+
+      // 收尾：切回侧栏 + 恢复默认
+      await h.eval(`document.querySelector(".function-menu-composer > .function-menu-more")?.click()`).catch(() => undefined);
+      await wait(250);
+      await h.eval(`[...document.querySelectorAll(".function-menu-popover-item")].find((b) => b.innerText.includes("编辑菜单"))?.click()`).catch(() => undefined);
+      await h.waitFor(`!!document.querySelector(".function-menu-editor")`, { timeoutMs: 4000 }).catch(() => undefined);
+      await h.eval(`document.querySelectorAll(".fm-location-card")[0]?.click()`).catch(() => undefined);
+      await wait(250);
+      await h.eval(`[...document.querySelectorAll(".fm-editor-foot button")].find((b) => b.innerText.includes("恢复默认"))?.click()`).catch(() => undefined);
+      await wait(250);
+      await h.eval(`[...document.querySelectorAll(".fm-editor-foot button")].find((b) => b.innerText.includes("完成"))?.click()`).catch(() => undefined);
+      await wait(400);
+      const restored = await h.eval(`(function(){
+        return { sidebar: !!document.querySelector(".function-menu-sidebar"),
+          bar: !!document.querySelector(".function-menu-composer-bar"),
+          count: document.querySelectorAll(".function-menu-sidebar .sidebar-cap-row").length,
+          badge: !!document.querySelector(".function-menu-sidebar .function-menu-more-badge") };
+      })()`).catch(() => null);
+      h.check("⑦ 收尾恢复侧栏与默认排序（不留测试配置）",
+        Boolean(restored && restored.sidebar && !restored.bar && restored.count === 8 && !restored.badge),
+        JSON.stringify(restored));
+    },
+  },
+  {
     id: "file-cards",
     name: "🗂 本轮产物文件卡 + 右栏工作区文件预览联动（10-22，按 Qoder outputFiles 逆向）",
     run: async (h) => {
@@ -4452,6 +4590,7 @@ const LATEST_ROUND = "10-24";   // 10-24 轮：供应商自动配置（检测 �
 const ROUND_OF = {
   "panel-tabs": "10-22",
   "voice-toggle": "10-22",   // 10-22 轮：回合头 📢 会话级播报开关（名字后图标 / 每会话独立 / 与悬浮球同步）
+  "function-menu": "10-22",   // 10-22 轮：功能入口（侧栏/对话框上方 + 拖动排序 + 更多 + 首次教程）
   "provider-switch": "10-23",   // 10-23 轮：供应商启用互斥 + 云端模型目录刷新（真 DOM）
   "provider-autosetup": "10-24",   // 10-24 轮：供应商自动配置大弹窗（检测/全选/保存/旧供应商停用，本地 mock 网关真链路）
   "provider-login-autosetup": "10-24",   // 10-24 轮：登录页自定义 API → 自动弹窗 → 检测/勾选/保存 → 进主界面
