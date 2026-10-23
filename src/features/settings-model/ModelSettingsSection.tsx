@@ -77,7 +77,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                               </div>
                               <label
                                 className={`provider-switch ${p.enabled === false ? "off" : ""}`}
-                                title={isPseudoPptoken ? (pseudoOff ? "推荐卡已停用 · 点击恢复展示" : "停用 PPtoken 推荐卡展示") : (p.enabled !== false ? "已启用 · 点击禁用" : (customModel && customModel.provider !== p.provider ? `已有供应商「${customModel.name}」生效，一次只能启用一个——先停用它再启用这个` : "已禁用 · 点击启用"))}
+                                title={isPseudoPptoken ? (pseudoOff ? "推荐卡已停用 · 点击恢复展示" : "停用 PPtoken 推荐卡展示") : (p.enabled !== false ? "已启用 · 点击禁用" : "已禁用 · 点击启用（会自动停用当前供应商）")}
                                 onClick={(event) => {
                                   event.stopPropagation();
                                   // 启用/停用时**同步把右侧详情切到这个供应商**：原先开关只 stopPropagation，
@@ -92,7 +92,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                                   }
                                 }}
                               >
-                                <input type="checkbox" checked={isPseudoPptoken ? !pseudoOff : p.enabled !== false} disabled={!isPseudoPptoken && p.enabled === false && customModel != null && customModel.provider !== p.provider} onChange={(event) => { if (isPseudoPptoken) setPptokenCardOff(!event.target.checked); else void setProviderEnabled(p.provider, event.target.checked); }} />
+                                <input type="checkbox" checked={isPseudoPptoken ? !pseudoOff : p.enabled !== false} onChange={(event) => { if (isPseudoPptoken) setPptokenCardOff(!event.target.checked); else void setProviderEnabled(p.provider, event.target.checked); }} />
                                 <span className="provider-switch-ui" />
                               </label>
                               {!isPseudoPptoken && <span className={`provider-dot ${p.provider === currentProvider ? "on" : ""}`} title={p.provider === currentProvider ? "当前生效供应商" : ""} />}
@@ -140,7 +140,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                               {/* 启用/停用合并成一颗状态药丸：状态与动作一眼可读 */}
                               {pseudoPptokenForm
                                 ? <button className={`provider-state-btn pill ${effectiveEnabled ? "on" : "off"}`} onClick={() => setPptokenCardOff(!pptokenCardOff)}><span className="provider-state-dot" />{effectiveEnabled ? "展示中 · 点击停用" : "已停用 · 点击展示"}</button>
-                                : editingProvider && <button className={`provider-state-btn pill ${effectiveEnabled ? "on" : "off"}`} disabled={savingSettings || (customDraft.enabled === false && customModel != null && customModel.provider !== editingProvider)} title={(customDraft.enabled === false && customModel && customModel.provider !== editingProvider) ? `已有供应商「${customModel.name}」生效，请先停用它再启用` : undefined} onClick={() => void setProviderEnabled(editingProvider, customDraft.enabled === false)}><span className="provider-state-dot" />{effectiveEnabled ? "启用中 · 点击停用" : "已停用 · 点击启用"}</button>}
+                                : editingProvider && <button className={`provider-state-btn pill ${effectiveEnabled ? "on" : "off"}`} disabled={savingSettings} title={customDraft.enabled === false ? "点击启用，会自动停用当前供应商" : "点击停用"} onClick={() => void setProviderEnabled(editingProvider, customDraft.enabled === false)}><span className="provider-state-dot" />{effectiveEnabled ? "启用中 · 点击停用" : "已停用 · 点击启用"}</button>}
                             </>
                           );
                         })()}

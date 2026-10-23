@@ -723,6 +723,10 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
         });
       }
       if (event.type === "provider-activated") {
+        /* 供应商互斥是**主进程**执行的：启用 A 会把 B/C 写成 enabled=false。渲染层如果只改
+           被点的那一行，旧供应商的绿开关会一直留着（用户看到"两个都启用"的假象）。
+           ⇒ 任何 provider-activated（保存 / 启用 / 云端同步）都重新拉一次整张列表。 */
+        bag.refreshActive?.();
         // 供应商→中转站反向联动：生效供应商变成非 relay 时，清掉中转站「当前生效」标记，
         // 余额徽标/置顶订阅卡即时退场（此前只靠 activeProvider 逐处比对，relay-active 会残留）。
         // relayActivate 自身最后一步才写 relay-active，本分支先清后写也会收敛到正确终态。

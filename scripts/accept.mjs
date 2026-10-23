@@ -1623,6 +1623,80 @@ const CHECKS = [
     },
   },
   {
+    id: "provider-switch",
+    name: "🔁 模型供应商：启用即互斥 + 云端模型目录刷新（10-23）",
+    run: async (h) => {
+      /* 用户实测两条：
+         ① 启用新供应商时旧的没有自动停用（UI 甚至把开关禁用，必须先手动关旧供应商）；
+         ② 云账号登录后的「云端模型」列表不跟着账号目录刷新，点刷新却走 /models 探活并报
+            「该网关不提供 /models」；手动加一个模型又出现了。
+         本项在持久 profile 上量真 DOM：云端供应商的模型行自动出现；刷新走 cloud-models 目录；
+         启用豆包后主进程/UI 都只剩豆包一个绿开关，最后恢复云端。 */
+      await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "界面就绪", timeoutMs: 40000 });
+      await wait(900);
+      await h.eval(`document.querySelector(".sidebar-settings")?.click()`);
+      await wait(1100);
+      const nav = await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(x=>(x.textContent||"").trim()==="模型"); if(!b) return false; b.click(); return true; })()`);
+      await h.waitFor(`document.querySelectorAll(".provider-item").length > 0`, { timeoutMs: 8000 }).catch(() => undefined);
+      await wait(700);
+      h.check("① 设置 → 模型页打开，供应商列表在位", Boolean(nav), JSON.stringify({ nav }));
+      const cloudPick = await h.eval(`(function(){
+        const row=[...document.querySelectorAll(".provider-item")].find(x=>(x.textContent||"").includes("云端模型"));
+        if(!row) return null; row.click(); return true;
+      })()`);
+      await wait(700);
+      const cloudModels = await h.eval(`(function(){
+        return { rows: document.querySelectorAll(".model-row").length };
+      })()`).catch(() => null);
+      h.check("② 选中云端供应商后模型列表自动有内容（不是空表）",
+        Boolean(cloudPick && cloudModels && cloudModels.rows > 0),
+        JSON.stringify(cloudModels));
+      const refresh = await h.eval(`(function(){
+        const btns=[...document.querySelectorAll(".model-list-head-actions .icon-button")];
+        const b=btns[btns.length-1]; if(!b) return false; b.click(); return true;
+      })()`);
+      await wait(2400);
+      const status = await h.eval(`(function(){ return document.querySelector(".model-probe-status")?.innerText || ""; })()`).catch(() => "");
+      h.check("③ 手动刷新走云端目录（不再报「该网关不提供 /models」）",
+        Boolean(refresh && status.includes("云端模型") && !status.includes("该网关不提供 /models")),
+        JSON.stringify({ refresh, status }));
+      const toggled = await h.eval(`(function(){
+        const row=[...document.querySelectorAll(".provider-item")].find(x=>(x.textContent||"").includes("豆包"));
+        if(!row) return null;
+        const input=row.querySelector('input[type="checkbox"]');
+        if(!input) return null;
+        const wasDisabled=row.classList.contains("disabled");
+        input.click();
+        return { wasDisabled, inputDisabled: input.disabled };
+      })()`);
+      await wait(2600);
+      const exclusive = await h.eval(`(async function(){
+        const l=await window.codex.listCustomModels();
+        const rows=[...document.querySelectorAll(".provider-item")].map(x=>({
+          name:(x.querySelector(".provider-name-row strong")?.textContent||"").trim(),
+          disabled:x.classList.contains("disabled"),
+          on:!!x.querySelector(".provider-dot.on"),
+        }));
+        return {
+          enabled:l.providers.filter(p=>p.enabled!==false).map(p=>p.provider),
+          current:l.current,
+          doubao:rows.find(r=>r.name==="豆包"),
+          cloud:rows.find(r=>r.name==="云端模型"),
+        };
+      })()`).catch(() => null);
+      h.check("④ 启用豆包后旧的云端自动停用（主进程只有豆包 enabled，UI 同步）",
+        Boolean(toggled && toggled.inputDisabled === false && exclusive
+          && exclusive.enabled.length === 1 && exclusive.enabled[0] === "custom39"
+          && exclusive.current === "custom39" && exclusive.doubao && !exclusive.doubao.disabled
+          && exclusive.cloud && exclusive.cloud.disabled),
+        JSON.stringify({ toggled, exclusive }));
+      await h.eval(`window.codex.setProviderEnabled({ provider: "cloud", enabled: true }).catch(()=>undefined)`).catch(() => undefined);
+      await wait(1600);
+      await h.screenshot("provider-switch");
+    },
+  },
+
+  {
     id: "file-summary",
     name: "㉓ 文件更改汇报 · 真回合全链路（运行中实时编辑行 + 收尾汇总卡 + 交互，10-06 两次重写）",
     run: async (h) => {
@@ -4073,12 +4147,13 @@ async function enterMain(h) {
 //   历史项不删（它们仍然是回归证据），但**永远不会在默认路径上被执行** ——
 //   这样"每次只测最新改动"是机制保证的，不再依赖我记不记得。
 // ─────────────────────────────────────────────────────────────────────────────
-const LATEST_ROUND = "10-22";   // 10-22 轮：右栏标签改版（撤终端、审阅顶到第二位）；10-21 的刻度尺/滚动/宠物转回归证据
+const LATEST_ROUND = "10-23";   // 10-23 轮：供应商启用互斥 + 云端模型目录刷新；10-22 及以前的项转回归证据
 // 上一轮（10-06）的五个验收项仍是回归证据：--only <id> 单跑，或 --all 全量。
 /** 每一项属于哪一轮。新增验收项**必须**登记在这里，否则默认轮次里跑不到（会打印警告）。 */
 const ROUND_OF = {
   "panel-tabs": "10-22",
   "voice-toggle": "10-22",   // 10-22 轮：回合头 📢 会话级播报开关（名字后图标 / 每会话独立 / 与悬浮球同步）
+  "provider-switch": "10-23",   // 10-23 轮：供应商启用互斥 + 云端模型目录刷新（真 DOM）
   "cloud-simple": "10-22",   // 10-22 轮：云账号登录即用（单卡登录 / 就绪清单 / 教程 / 手动流程折叠）
   "file-cards": "10-22",   // 10-22 轮：Qoder 式本轮产物文件卡 + 右栏工作区文件预览联动   // 10-22 轮：右栏标签撤终端、审阅顶到第二位（默认宽 308px 五个排不下）
   "ui-sketch": "10-06",   // ⛔ 10-06 重写：三形态探针（手机+电脑屏 / platform web 真落盘）+ 预览 + 还原；编号改执行顺序
