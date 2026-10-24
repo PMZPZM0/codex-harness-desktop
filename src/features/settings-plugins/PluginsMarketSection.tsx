@@ -14,7 +14,6 @@ import { Spinner } from "../../components/CardShell";
 import { BatchActions, CheckCard, SearchField, SegmentedTabs, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
 import { MarketLogo } from "../../features/skills-market";
 import { CodexOfficialMarketSection } from "../codex-official-market";
-import { MarketUpdatePanel } from "../market-updates";
 import { avatarToneOf } from "../../lib/entity-avatar";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
@@ -45,6 +44,9 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
   // 10-04：源切换器（Claude 镜像 / Codex 官方 / 已安装）。⛔ 必须声明在 visible 之前——
   //   visible 要按它过滤（已装屏只显示已装的）。
   const [marketSource, setMarketSource] = useState("gitee");
+  /* 10-24 用户令：「已安装插件为啥两张展示方式」——已安装屏只留一份列表；
+     顶部两块更新面板撤掉，改成一个「检查更新」按钮：两个市场都查，有新版逐个更新。 */
+  const [pluginUpdating, setPluginUpdating] = useState(false);
   const installed = all.filter((plugin) => plugin.installed);
   // 市场卡片「已安装」判定：引擎插件 id 形如 name@marketplace，取 @ 前与市场 slug 比对
   const installedMarketPluginSlugs = new Set(installed.map((plugin) => String(plugin.id ?? plugin.name ?? "").split("@")[0]));
@@ -75,6 +77,32 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
     disable: checkedPlugins.filter((plugin) => plugin.enabled !== false),
   };
   const togglePluginChecked = (id: string) => setPluginChecked((current: any) => current.includes(id) ? current.filter((entry: any) => entry !== id) : [...current, id]);
+  const checkAndUpdatePlugins = async () => {
+    if (pluginUpdating) return;
+    setPluginUpdating(true);
+    try {
+      const [gitee, official] = await Promise.all([
+        window.codex.checkPluginUpdates().catch(() => []),
+        window.codex.checkOfficialPluginUpdates().catch(() => []),
+      ]);
+      const targets = [
+        ...(Array.isArray(gitee) ? gitee : []).filter((row: any) => row.hasUpdate).map((row: any) => ({ name: String(row.name ?? row.slug), run: () => window.codex.updatePlugin(row.slug) })),
+        ...(Array.isArray(official) ? official : []).filter((row: any) => row.hasUpdate).map((row: any) => ({ name: String(row.name ?? row.slug), run: () => window.codex.updateOfficialPlugin(row.slug) })),
+      ];
+      if (!targets.length) { setNotice("插件已是最新，没有可更新的版本"); return; }
+      setNotice(`发现 ${targets.length} 个插件有更新，正在更新…`);
+      let ok = 0, failed = 0;
+      for (const target of targets) {
+        try { await target.run(); ok += 1; } catch { failed += 1; }
+      }
+      setNotice(`插件更新完成：${ok} 个已更新${failed ? `，${failed} 个失败（可稍后重试）` : ""}`);
+      await refreshPluginsPage();
+    } catch (error: any) {
+      setNotice(`检查插件更新失败：${error?.message ?? error}`);
+    } finally {
+      setPluginUpdating(false);
+    }
+  };
   // 两个市场数据源（10-03）：Gitee 上的 Claude Code 官方镜像 ⇄ Codex 官方 openai/plugins（GitHub 国内镜像读取）。
   // 各自的分类表、卡片与安装进度互不相干 ⇒ 切的是**整块**（用户拍板「按源给各自的分类 tab」），不是把 18 个分类混排。
   return <section className="settings-section stack plugin-center">
@@ -142,10 +170,8 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
     {/* 市场更新（10-12 用户要求「技能和插件加一个更新功能」）：
         与市场列表**并列**而不是塞进去 —— 它管的是「已装的那批要不要更新」，
         两个源各自独立比对（gitee 镜像 / Codex 官方），在「已安装」屏两块都出。 */}
-    {marketSource === "gitee" || marketSource === "installed" ? <MarketUpdatePanel kind="plugins" onNotice={setNotice} hint="对照 Gitee 镜像市场的当前版本检查已装插件，有新版才提示；更新走与安装完全相同的链路。" /> : null}
-    {marketSource === "official" || marketSource === "installed" ? <MarketUpdatePanel kind="official" onNotice={setNotice} hint="对照 Codex 官方市场的当前版本检查已装插件，有新版才提示。" /> : null}
 
-    {marketSource === "installed" ? <><div className="plugin-market-title">已安装插件<small>本机已安装的插件 · 停用后 Codex 不再加载它提供的指令、技能与钩子（文件仍在，不占不到磁盘）</small></div>    <div className="plugin-stats">
+    {marketSource === "installed" ? <><div className="plugin-market-title plugin-installed-head">已安装插件<small>本机已安装的插件 · 停用后 Codex 不再加载它提供的指令、技能与钩子（文件仍在，不占不到磁盘）</small><button className="secondary-setting plugin-update-all" disabled={pluginUpdating} onClick={() => void checkAndUpdatePlugins()}>{pluginUpdating ? <Spinner /> : <RefreshCw size={13} />}{pluginUpdating ? "更新中…" : "检查更新"}</button></div>    <div className="plugin-stats">
       <div className="plugin-stat"><span>已安装</span><strong>{installed.length}</strong></div>
       <div className="plugin-stat"><span>启用中</span><strong className="stat-ok">{enabledCount}</strong></div>
       <div className="plugin-stat"><span>已停用</span><strong className="stat-off">{disabledCount}</strong></div>

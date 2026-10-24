@@ -110,6 +110,12 @@ export type AppSettings = {
    *   下个周期再试，绝不打断启动。
    */
   skillAutoUpdate?: boolean;
+  /**
+   * 插件自动更新（10-24 用户令：「精简成一个技能更新开关，和插件更新开关就行」）：
+   * 开启后后台静默检查 Gitee 镜像与 Codex 官方市场里已安装插件的版本，有新版才重装。
+   * ⛔ **默认关** —— 会改写插件目录并重启引擎；单个失败静默跳过，下周期再试。
+   */
+  pluginAutoUpdate?: boolean;
   /** 统一更新体系：每个组件行的独立偏好（键 = 组件行 id）。缺省语义见 readAutoUpdateRowSwitch。 */
   autoUpdateOverrides?: Record<string, boolean>;
   /**
@@ -236,7 +242,7 @@ export function autoUpdateEnabled(
 
 /** 自动更新项在 AppSettings 上的开关字段（含技能那条，它缺省判据不同，见下）。 */
 export type AutoUpdateSettingKey =
-  | "autoUpdateDesktop" | "autoUpdateComputerUse" | "autoUpdateEngine" | "skillAutoUpdate";
+  | "autoUpdateDesktop" | "autoUpdateComputerUse" | "autoUpdateEngine" | "skillAutoUpdate" | "pluginAutoUpdate";
 
 /**
  * 每个组件行的独立偏好（键 = 组件行 id，见 electron/update-registry.ts 与动态行的 `<spec>/<slug>`）。
@@ -254,13 +260,17 @@ export const AUTO_UPDATE_ROW_OWNER: Record<string, AutoUpdateSettingKey> = {
   "computer-use": "autoUpdateComputerUse",
   engine: "autoUpdateEngine",
   skill: "skillAutoUpdate",
+  plugin: "pluginAutoUpdate",
   // ⛔ 「技能内容更新」那把历史开关管的就是市场技能 ⇒ 动态行 `market-skill/<folder>` 也归属它。
   //    不接上的话用户把那把开关打开，技能却依然默认关、不检查 —— 界面说开了、后台没动。
   "market-skill": "skillAutoUpdate",
+  // 插件自动更新（10-24 用户令）：市场插件与官方插件的动态行都归这一把开关。
+  "market-plugin": "pluginAutoUpdate",
+  "official-plugin": "pluginAutoUpdate",
 };
 
 /** 默认 **关** 的行：它们会改写用户自己的文件/技能目录，或升级外部大体积应用，必须用户点头。 */
-const AUTO_UPDATE_DEFAULT_OFF = new Set(["market-skill", "expert-skill", "soul", "ego-lite"]);
+const AUTO_UPDATE_DEFAULT_OFF = new Set(["market-skill", "expert-skill", "soul", "market-plugin", "official-plugin", "ego-lite"]);
 
 /**
  * 统一读「某一行」自动更新的生效值 —— **界面、后台循环、手动入口三处共用这一个判据**。
@@ -299,5 +309,7 @@ export function writeAutoUpdateRowSwitch(settings: AppSettings, rowId: string, e
  *   ⇒ 判据只此一处，界面与后台都走它 —— ⛔ 别在别处再写一份默认值。
  */
 export function readAutoUpdateSwitch(settings: AppSettings, key: AutoUpdateSettingKey): boolean {
-  return key === "skillAutoUpdate" ? settings?.skillAutoUpdate === true : autoUpdateEnabled(settings, key);
+  return key === "skillAutoUpdate" || key === "pluginAutoUpdate"
+    ? settings?.[key] === true
+    : autoUpdateEnabled(settings, key);
 }

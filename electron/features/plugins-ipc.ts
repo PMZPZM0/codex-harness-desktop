@@ -19,6 +19,9 @@
  */
 import path from "node:path";
 import fs from "node:fs/promises";
+import { app } from "electron";
+import { readAppSettingsSync } from "../app-settings";
+import { checkOfficialPluginUpdates, codexOfficialMarketDir, findOfficialMarketPlugin, installOfficialMarketPlugin } from "../codex-official-market";
 import { codexMarketDir, checkMarketPluginUpdates, ensureCodexMarketplaceSection, findMarketPlugin, installCodexMarketPlugin, listInstalledMarketPlugins, listMarketPlugins, removeCodexMarketPluginFiles } from "../codex-market";
 import type { CodexMarketPlugin } from "../codex-market";
 import { sendToWindow } from "./window-bus";
@@ -110,6 +113,42 @@ export const pluginsFeature = defineFeature<null>({
       const result = await installMarketPlugin(plugin);
       return { ...result, from: before, to: plugin.version || "" };
     });
+
+    /* 插件自动更新（10-24 用户令：「精简成一个技能更新开关，和插件更新开关」）：
+       总开关 pluginAutoUpdate；启动 15s 后一次 + 每 6 小时一次。两个市场各自检查已装插件版本，
+       有新版才重装；单插件失败静默跳过，下周期再试，绝不打断启动。 */
+    let autoUpdateRunning = false;
+    async function runPluginAutoUpdate() {
+      if (autoUpdateRunning) return;
+      let enabled = false;
+      try { enabled = Boolean(readAppSettingsSync(app.getPath("userData")).pluginAutoUpdate); } catch { return; }
+      if (!enabled) return;
+      autoUpdateRunning = true;
+      try {
+        const marketDir = codexMarketDir(codexHome);
+        const giteeRows = await checkMarketPluginUpdates(marketDir).catch(() => []);
+        for (const row of giteeRows) {
+          if (!row.hasUpdate) continue;
+          try {
+            const plugin = await findMarketPlugin(row.slug);
+            if (plugin) await installMarketPlugin(plugin);
+          } catch { /* 单个失败不拖累其余；下周期再试 */ }
+        }
+        const officialDir = codexOfficialMarketDir(codexHome);
+        const officialRows = await checkOfficialPluginUpdates(officialDir).catch(() => []);
+        for (const row of officialRows) {
+          if (!row.hasUpdate) continue;
+          try {
+            const plugin = await findOfficialMarketPlugin(row.slug);
+            if (plugin) await installOfficialMarketPlugin({ plugin, marketDir: officialDir });
+          } catch { /* 单个失败不拖累其余；下周期再试 */ }
+        }
+      } catch { /* 检查失败静默，下周期再试 */ }
+      finally { autoUpdateRunning = false; }
+    }
+    const autoUpdateKick = setTimeout(() => { void runPluginAutoUpdate(); }, 15_000);
+    const autoUpdateTimer = setInterval(() => { void runPluginAutoUpdate(); }, 6 * 60 * 60 * 1000);
+    ctx.effect(() => { clearTimeout(autoUpdateKick); clearInterval(autoUpdateTimer); });
 
     ipcHost.handle("plugins:market-uninstall", async (_event, slug: string) => {
       const slugText = String(slug ?? "").trim();
