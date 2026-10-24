@@ -14,7 +14,7 @@ export function AgentTeamSettingsSection(props: AgentTeamSettingsSectionProps) {
   return (
     <>
                     <section className="settings-section stack">
-                      <div className="settings-copy"><h2>专家和专家团<PageInfo text={<>单体专家与多角色团队的总入口。</>} helpKey="agentteam" label="专家/专家团" /></h2></div>
+                      <div className="settings-copy"><h2>专家和专家团<PageInfo text={<>单体专家与多角色团队的总入口。</>} helpKey="agentteam" label="专家/专家团" /></h2><p>三种协作方式：子智能体、专家中心、专家团。先选一个入口。</p></div>
                       <div className="hub-card-grid hub-card-grid-3">
                         <button className="hub-card" onClick={() => setSettingsPage("agents")}>
                           <span className="hub-card-icon"><Bot size={20} /></span>

@@ -4,7 +4,7 @@
  */
 import { AppSelect } from "../../../../../components/AppSelect";
 import { createPortal } from "react-dom";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { settingsPagesOf } from "./00-settings-registry";
 // ssh 门户（createPortal 到 body）仍在本文件渲染 ⇒ 这两个 lazy 声明留在 content，不随设置页分节搬走
 const SshTerminalModal = lazy(() => import("../../../../ssh").then((m) => ({ default: m.SshTerminalModal })));
@@ -147,6 +147,9 @@ import {
 import { Spinner } from "../../../../../components/CardShell";
 import { refreshWithReceipt } from "../../../../../lib/refresh-receipt.mjs";
 import { HarnessAppApi } from "../../../../app-state/useHarnessApp";
+
+/* 10-24：外观与体验之外的这些内页也收进统一版式（页头像一张卡、控件收进长卡片，不强制网格）。 */
+const EXP_SHELL_PAGES = new Set(["skills","plugins","component-library","mcp","commands","soul-market","memory","knowledge-base","automation","schedule","hooks","ssh","agentteam","usage","storage","backup","archive","favorites"]);
 
 /* ⛔ 懒加载（09-22）：以下组件全部只在 settingsPage === "…" 分支渲染（02-settings-content 内），
    且除本文件外无任何静态引用（已全量核查）⇒ 每页一个 chunk、首次进该页才加载。
@@ -505,8 +508,12 @@ export function SettingsLayoutSettingsContent({ app }: { app: HarnessAppApi }) {
     workspace,
     workspaceMemoryEnabled,
   } = app;
+  /* 切页回到顶部：设置内容是同一个滚动容器，不重置会把上一页的滚动位置带过来，
+     页头卡片被截在容器上沿（10-24 截图实测）。 */
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { contentRef.current?.scrollTo({ top: 0 }); }, [settingsPage]);
   return (
-    <div className="settings-content">
+    <div ref={contentRef} className={`settings-content${EXP_SHELL_PAGES.has(settingsPage) ? " settings-exp-shell" : ""}`}>
                         {/* 骨架先行：弹窗框架先绘制一帧，分区内容延后挂载（详见 settingsContentReady 注释） */}
                         {!settingsContentReady ? <div className="settings-boot" role="status"><Spinner /><span>正在载入…</span></div> : <>
                         {resourceError && <div className="resource-error"><AlertTriangle size={14} /><span>{resourceError}</span><button className="secondary-setting" onClick={() => void refreshWithReceipt(setNotice, "刷新设置资源", () => refreshSettingsResources())}>重试</button></div>}

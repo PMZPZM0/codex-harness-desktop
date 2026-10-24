@@ -19,6 +19,7 @@ export function SshSettingsSection(props: SshSettingsSectionProps) {
                     <div className="settings-copy channel-heading">
                       <div>
                         <h2>SSH 服务器<PageInfo text={<>集中管理远程主机：保存连接与凭据，分组打标签，配置跳板机与登录后命令；可逐台或批量启用/停用、测试连通性、直接开终端或下发一次性命令。凭据仅保存在本机配置目录（ssh-servers.json）。</>} /></h2>
+                        <p>保存常用服务器，Codex 可以直接开终端或下发命令；凭据只留在本机。</p>
                       </div>
                       <div className="settings-heading-actions">
                         <button className="primary-setting" onClick={() => { setSshEditorTest(null); setSshDraft(emptySshDraft()); }}><Plus size={14} />新建连接</button>
