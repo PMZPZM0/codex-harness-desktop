@@ -102,6 +102,10 @@ ok(/<h2>记忆<PageInfo[\s\S]{0,200}<p>/.test(memory), "记忆页头有新手可
 ok(/\.settings-exp-shell \.memory-center \.memory-backends\s*\{[^}]*border-top/s.test(css), "「记忆存到哪里」与内容卡之间有分隔");
 const modelPage = pageSrc("model");
 ok(/provider-card-actions[\s\S]{0,700}provider-card-update/.test(modelPage), "「更新模型」在供应商卡底部操作行（与测试/编辑并排，不再占模型芯片行）");
+const actionsAt = modelPage.indexOf("provider-card-actions");
+const actionsEnd = modelPage.indexOf("</span>", actionsAt);
+const actionsBlock = actionsAt >= 0 && actionsEnd > actionsAt ? modelPage.slice(actionsAt, actionsEnd) : "";
+ok(/provider-card-icon-btn/.test(modelPage) && actionsBlock.length > 0 && !/编辑<\/button>/.test(actionsBlock), "编辑入口只保留右上角铅笔（底部操作行不再重复）");
 for (const [key, title] of [["skills", "技能中心"], ["plugins", "插件"], ["mcp", "MCP"], ["commands", "命令"], ["hooks", "钩子"], ["ssh", "SSH 服务器"], ["agentteam", "专家和专家团"], ["storage", "数据管理"]]) {
   const text = pageSrc(key);
   const at = text.indexOf(`<h2>${title}`);

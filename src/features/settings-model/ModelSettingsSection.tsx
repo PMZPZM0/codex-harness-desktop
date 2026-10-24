@@ -234,7 +234,6 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                                   <button type="button" className="provider-card-action danger" onClick={(event) => { event.stopPropagation(); void repairProviderCard(p); }}>{p.provider === "cloud" ? "修复密钥" : "更新密钥"}</button>
                                 )}
                                 <button type="button" className="provider-card-action provider-card-test" disabled={health?.state === "testing"} onClick={(event) => { event.stopPropagation(); void testProviderCard(p); }}>{health?.state === "testing" ? <Spinner /> : <Zap size={11} />}测试</button>
-                                <button type="button" className="provider-card-action" onClick={(event) => { event.stopPropagation(); openProviderEditor(p, isPseudoPptoken); }}><PenLine size={11} />编辑</button>
                               </span>
                             </div>
                           </div>
