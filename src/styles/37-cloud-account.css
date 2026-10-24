@@ -564,3 +564,7 @@
 .cloud-team-bad { margin: 8px 0 0; font-size: 12px; display: flex; align-items: center; gap: 5px; }
 .cloud-team-ok { color: var(--accent); }
 .cloud-team-bad { color: var(--red); }
+.cloud-team-uploads { margin: 8px 0 0; padding-left: 0; list-style: none; font-size: 11.5px; line-height: 1.8; }
+.cloud-team-uploads li { word-break: break-all; }
+.cloud-team-uploads li.ok { color: var(--accent); }
+.cloud-team-uploads li.bad { color: var(--red); }

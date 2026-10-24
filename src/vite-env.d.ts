@@ -536,8 +536,8 @@ interface Window {
     /* 写指路牌并就地完成基础迁移（异步分批 + 进度）；重启后只做秒级增量同步。重启复用既有 app:relaunch */
     prepareDataDir(dir: string): Promise<{ ok: boolean; restoreDefault: boolean; needRestart: boolean; target: string; migrate?: boolean; hasExistingData?: boolean; migrated?: { files: number; bytes: number }; note?: string }>;
     /* 应用级运行时开关（联网搜索等） */
-    readAppSettings(): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off"; adaptiveTone?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy"; skillAutoUpdate?: boolean; functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean; modelCatalogRepairNotice?: string }>;
-    saveAppSettings(patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off"; adaptiveTone?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy"; skillAutoUpdate?: boolean; functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean; modelCatalogRepairNotice?: string }): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; adaptiveTone?: boolean; skillAutoUpdate?: boolean; functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean }>;
+    readAppSettings(): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off"; adaptiveTone?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy"; skillAutoUpdate?: boolean; pluginAutoUpdate?: boolean; modelCatalogRepairNotice?: string; functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean }>;
+    saveAppSettings(patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off"; adaptiveTone?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy"; skillAutoUpdate?: boolean; pluginAutoUpdate?: boolean; modelCatalogRepairNotice?: string; functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean }): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; adaptiveTone?: boolean; skillAutoUpdate?: boolean; pluginAutoUpdate?: boolean; modelCatalogRepairNotice?: string; functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean }>;
     themeApply(theme: string): Promise<{ ok: boolean }>;
     updateReveal(filePath: string): Promise<{ ok: boolean }>;
     /* SSH 服务器连接管理：列表 CRUD、批量启停、连接测试、命令执行、交互式会话、导入导出 */
@@ -1157,6 +1157,8 @@ interface Window {
     teamExit(): Promise<any>;
     /* 团队模式当前生效状态 */
     teamStatus(): Promise<any>;
+    /* 上传本机文件到团队知识库（走云端计费与权限闸） */
+    teamUpload(input?: { paths?: string[] }): Promise<any>;
 /* ═══ gen:end ═══ */
 
 

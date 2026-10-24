@@ -11,7 +11,7 @@
  *   ③ 空间没开通时如实说"未开通"，⛔ 不画一个假装能用的开关。
  */
 import { useCallback, useEffect, useState } from "react";
-import { LogIn, LogOut, RefreshCw, TriangleAlert, Users } from "lucide-react";
+import { LogIn, LogOut, RefreshCw, TriangleAlert, Upload, Users } from "lucide-react";
 import { AppSelect } from "../../components/AppSelect";
 
 type TeamRow = {
@@ -39,11 +39,15 @@ type EnterReply = {
   missing?: string[];
 };
 
+type UploadRow = { name: string; ok: boolean; error?: string; message?: string; cost?: number; usedMb?: number; quotaMb?: number };
+
 type TeamApi = {
   teamList?: () => Promise<{ ok: boolean; teams: TeamRow[]; error?: string; policyEnabled?: boolean }>;
   teamEnter?: (input?: { teamId?: string }) => Promise<EnterReply>;
   teamExit?: () => Promise<{ ok: boolean; error?: string; note?: string }>;
   teamStatus?: () => Promise<{ ok: boolean } & TeamStatus>;
+  teamUpload?: (input?: { paths?: string[] }) => Promise<{ ok: boolean; error?: string; results: UploadRow[] }>;
+  chooseFiles?: () => Promise<string[]>;
 };
 
 const teamApi = (): TeamApi => window.codex as unknown as TeamApi;
@@ -65,6 +69,8 @@ export function TeamModeSection() {
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState<{ tone: "ok" | "bad"; text: string } | null>(null);
   const [err, setErr] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [upResults, setUpResults] = useState<UploadRow[]>([]);
 
   const load = useCallback(async () => {
     const api = teamApi();
@@ -129,6 +135,21 @@ export function TeamModeSection() {
     }
   };
 
+  const upload = async () => {
+    const files = (await teamApi().chooseFiles?.()) || [];
+    if (!files.length) return;
+    setUploading(true);
+    setUpResults([]);
+    try {
+      const r = (await teamApi().teamUpload?.({ paths: files })) || { ok: false, error: "通道未就绪", results: [] };
+      setUpResults(r.results || []);
+      if (!r.ok && r.error) setMsg({ tone: "bad", text: `上传失败：${r.error}` });
+      else if (r.results?.some((x) => x.ok)) setMsg({ tone: "ok", text: `已上传 ${r.results.filter((x) => x.ok).length} 个文件到团队库` });
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const active = Boolean(status?.active);
   const notLoggedIn = err === "not-logged-in";
 
@@ -184,6 +205,26 @@ export function TeamModeSection() {
         <span>团队知识库：{status?.kb.teamConnector ? "已接（cloud-kb-team）" : "未接"}</span>
         <span>个人知识库：{status?.kb.personalConnector ? "已接（进入团队时会暂时让位）" : "未接"}</span>
       </div>
+
+      {active ? (
+        <div className="cloud-team-row">
+          <button className="cloud-team-btn" type="button" disabled={uploading} onClick={() => void upload()}>
+            <Upload size={14} />{uploading ? "上传中…" : "上传文档到团队库"}
+          </button>
+          <span className="cloud-team-hint" style={{ margin: 0 }}>
+            单文件 ≤24MB；图片需视觉模型；按 1 点/MB 扣团队积分（走云端计费与权限，失败自动退分）
+          </span>
+        </div>
+      ) : null}
+      {upResults.length ? (
+        <ul className="cloud-team-uploads">
+          {upResults.map((r) => (
+            <li key={r.name} className={r.ok ? "ok" : "bad"}>
+              {r.ok ? `✓ ${r.name}（${r.cost ?? 0} 点）` : `✗ ${r.name}：${r.message || r.error || "失败"}`}
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       <p className="cloud-team-hint">
         ⛔ 记忆通道是独占的：进入团队后<b>个人记忆暂停</b>；退出后回本页点一次「同步记忆」即可恢复个人记忆。
