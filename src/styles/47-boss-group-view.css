@@ -199,3 +199,14 @@
 }
 .sidebar-quick .sidebar-quick-btn.sidebar-quick-boss:hover { color: var(--text); }
 .sidebar-quick .sidebar-quick-btn.sidebar-quick-boss svg { color: var(--amber, #d29922); }
+
+/* 侧栏 BOSS 按钮「选中效果」（用户点名）：面板开着 = 高亮，再点收起 */
+.sidebar-quick .sidebar-quick-btn.sidebar-quick-boss.boss-open {
+  background: color-mix(in srgb, var(--amber, #d29922) 12%, var(--panel));
+  border-color: color-mix(in srgb, var(--amber, #d29922) 30%, var(--line));
+  color: var(--text);
+}
+.sidebar-quick .sidebar-quick-btn.sidebar-quick-boss.boss-open svg { color: var(--amber, #d29922); }
+
+/* 顶栏成员按钮开合态 */
+.boss-members-btn.boss-members-btn-open { color: var(--amber, #d29922); }
