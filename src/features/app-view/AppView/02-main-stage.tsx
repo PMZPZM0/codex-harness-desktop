@@ -5,8 +5,24 @@
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 import { MainStageTimeline } from "./02-main-stage/01-timeline";
 import { MainStageComposer } from "./02-main-stage/03-composer";
+import { useEffect, useRef, useSyncExternalStore } from "react";
+import { BossGroupStage, closeBossStage, getBossPanelState, subscribeBossPanel } from "../../boss-group-view";
 
 export function AppViewMainStage({ app }: { app: HarnessAppApi }) {
+  /* BOSS 会话专属界面（10-25 用户令）：stage 激活时主舞台整块渲染成群聊视图。
+     ⛔ 自动退出：用户点了其它会话/新会话（thread id 变了）⇒ 回普通会话 —— 不能把普通会话
+        「藏」在 BOSS 视图后面。进入那一刻的 thread id 记在 ref 里做对比。 */
+  const bossStage = useSyncExternalStore(subscribeBossPanel, getBossPanelState);
+  const stageEnterThreadId = useRef("");
+  const currentThreadId = app.thread?.id ?? "";
+  if (bossStage.stage && stageEnterThreadId.current === "") stageEnterThreadId.current = currentThreadId;
+  useEffect(() => {
+    if (bossStage.stage && stageEnterThreadId.current !== "" && currentThreadId !== stageEnterThreadId.current) {
+      closeBossStage();
+      stageEnterThreadId.current = "";
+    }
+    if (!bossStage.stage) stageEnterThreadId.current = "";
+  }, [bossStage.stage, currentThreadId]);
   const {
     TURNS_PAGE,
     TURN_WINDOW,
@@ -238,6 +254,8 @@ export function AppViewMainStage({ app }: { app: HarnessAppApi }) {
     welcomeScratchDir,
     workspace,
   } = app;
+  if (bossStage.stage) return <main className="workspace"><BossGroupStage /></main>;
+
   return (
     <main className="workspace">
     
