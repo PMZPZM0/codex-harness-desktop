@@ -200,7 +200,7 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
       // 语音包：内置音色 2 号；克隆档案让位（profileId 置空 = 回到内置预置音色）
       try {
         const current: any = await window.codex.voiceSettingsGet();
-        await window.codex.voiceSettingsSet({ tts: { ...(current?.tts ?? {}), sid: BUBU_PACK.voice.sid, profileId: "" } });
+        await window.codex.voiceSettingsSet({ tts: { ...(current?.settings?.tts ?? {}), sid: BUBU_PACK.voice.sid, profileId: "" } });
       } catch { /* 语音模型未装时跳过：人格与表情不受影响 */ }
       onNotice("一二布布主题包已应用：双头像立即生效，人格 / 表情包 / 语音包从下一个新会话开始");
     } catch (err: any) {

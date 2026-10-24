@@ -2272,7 +2272,7 @@ const CHECKS = [
           if (av && (av.src||'').includes('user-bubu') && persona && (persona.persona||'').includes('一二布布')) {
             const voice=await window.codex.voiceSettingsGet().catch(()=>null);
             return { avatar:(av.src||'').slice(-30), personaHasGuide: (persona.persona||'').includes('bubu://'),
-              assistantName: persona.assistantName||'', sid: voice&&voice.tts?voice.tts.sid:null, soulSlug: persona.soulSlug||'' };
+              assistantName: persona.assistantName||'', sid: voice&&voice.settings&&voice.settings.tts?voice.settings.tts.sid:null, soulSlug: persona.soulSlug||'' };
           }
         }
         return null;
