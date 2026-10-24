@@ -157,7 +157,7 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
   if (!workspace) {
     return (
       <section className="settings-section stack kb-page">
-        <div className="settings-copy"><h2>知识库<PageInfo text="项目级本地知识库：文档落在 <项目>/.codex-harness/knowledge/，随项目走。" helpKey="knowledge-base" label="知识库" /></h2></div>
+        <div className="settings-copy"><h2>知识库<PageInfo text="项目级本地知识库：文档落在 <项目>/.codex-harness/knowledge/，随项目走。" helpKey="knowledge-base" label="知识库" /></h2><p>知识库按项目存放：先选一个工作文件夹，就能开始导入和检索。</p></div>
         <p className="muted">还没有选择工作目录——知识库是**项目级**的，先在会话里选择一个工作文件夹。</p>
       </section>
     );
@@ -165,6 +165,7 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
 
   return (
     <section className="settings-section stack kb-page">
+      <div className="settings-copy"><h2>知识库<PageInfo text={<>项目级本地知识库：文档落在 <code>{workspace}\.codex-harness\knowledge\</code>，随项目走。检索 v1 = 分块全文评分（零依赖、离线可用）；语义向量检索后端（LanceDB + 本地 embedding）将在开发工具页按需提供。</>} helpKey="knowledge-base" label="知识库" /></h2><p>先选来源：本地库随项目走、离线可用；云端库按账号隔离、由 MCP 工具检索。</p></div>
       {/* 10-20：知识库后端二选一 —— 本地项目库 / 云端 weknora（MCP）。
           ⛔ 切换**必须**落到连接器上（`kb:backend-set` 会启用/停用 cloud-kb 连接器并失效工具缓存），
              否则设置变了、云端 6 个工具还在模型工具列表里 ⇒ 模型拿云端工具去查本地库。 */}
@@ -190,7 +191,7 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
       ) : null}
       {/* ⛔ 10-20：这块讲的是**本地库**。云端后端下它不再生效，标题必须如实标明 ——
           否则用户看到「文档落在 <workspace>/…」会以为这就是模型正在查的东西（两套库是独立数据）。 */}
-      <div className="settings-copy"><h2>{kbBackend === "cloud" ? "本地知识库（当前后端=云端，仅可查看）" : "知识库"}<PageInfo text={<>项目级本地知识库：文档落在 <code>{workspace}\.codex-harness\knowledge\</code>，随项目走。检索 v1 = 分块全文评分（零依赖、离线可用）；语义向量检索后端（LanceDB + 本地 embedding）将在开发工具页按需提供。</>} helpKey="knowledge-base" label="知识库" /></h2></div>
+      <div className="settings-exp-group-head"><span>本地文档</span><small>{kbBackend === "cloud" ? "当前后端为云端，这里仅可查看；切回本地即可继续导入与检索" : `存放在 ${workspace}\\.codex-harness\\knowledge`}</small></div>
 
       {/* 本地语义后端：未安装时给下载卡片（进度/速度/剩余），装完卡片消失 */}
       {embedInstalled === false ? (

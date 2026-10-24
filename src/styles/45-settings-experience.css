@@ -267,3 +267,184 @@
 }
 
 
+
+/* ── 10-24 三轮：技能/插件/组件库/MCP/命令/人格/记忆/知识库/自动化/定时/钩子/SSH/专家/统计/数据/收藏夹
+   统一页头与卡片皮肤。⛔ 不强制网格、不改变任何控件结构；长卡片高度随内容。 ── */
+.settings-exp-shell > .settings-section,
+.settings-exp-shell > .comp-lib {
+  width: 100%;
+  max-width: 100%;
+  padding: 14px 20px 30px;
+}
+.settings-exp-shell > .settings-section > .settings-copy,
+.settings-exp-shell > .settings-section > .settings-block-head,
+.settings-exp-shell .comp-lib-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 14px;
+  margin: 0 0 12px;
+  padding: 15px 17px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+  border-radius: 16px;
+  background:
+    radial-gradient(120% 180% at 0% 0%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 55%),
+    linear-gradient(180deg, color-mix(in srgb, var(--panel) 94%, var(--accent) 6%), var(--panel));
+}
+/* 页头 = 第一行「标题 + 右侧操作」，第二行整宽说明：标题包装层用 display:contents 摊平，
+   避免长说明把操作按钮挤到标题下、或把标题压成窄列。 */
+.settings-exp-shell > .settings-section > .settings-copy > div:not(.settings-heading-actions) { display: contents; }
+.settings-exp-shell > .settings-section > .settings-copy h2,
+.settings-exp-shell .comp-lib-head h3 {
+  grid-column: 1;
+  grid-row: 1;
+  margin: 0;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.settings-exp-shell > .settings-section > .settings-copy p,
+.settings-exp-shell .comp-lib-sub {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.settings-exp-shell > .settings-section > .settings-copy > .settings-heading-actions,
+.settings-exp-shell > .settings-section > .settings-copy > button,
+.settings-exp-shell > .settings-section > .settings-copy > .channel-enable {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+}
+.settings-exp-shell .settings-heading-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.settings-exp-shell .settings-card {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 96%, var(--accent) 4%), var(--panel));
+  margin-top: 12px;
+  overflow: hidden;
+}
+.settings-exp-shell .settings-card-head { padding: 13px 16px; gap: 9px; }
+.settings-exp-shell .settings-card-head > svg {
+  flex: none;
+  width: 27px;
+  height: 27px;
+  padding: 6px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--ic-page, var(--accent)) 12%, transparent);
+  color: var(--ic-page, var(--accent));
+}
+.settings-exp-shell .settings-card-body { padding: 14px 16px 16px; }
+.settings-exp-shell .settings-card-hint { color: var(--faint); font-size: 11.5px; line-height: 1.65; }
+.settings-exp-shell .skill-installed-group,
+.settings-exp-shell .command-group,
+.settings-exp-shell .hook-group {
+  margin-top: 12px;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 96%, var(--accent) 4%), var(--panel));
+}
+.settings-exp-shell .skill-installed-group > header,
+.settings-exp-shell .command-group > header,
+.settings-exp-shell .hook-group > header { margin-bottom: 10px; }
+
+/* 收藏夹：页头 + 工具栏 + 列表都收成卡片 */
+.settings-exp-shell .favorites-settings > .settings-block-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 15px 17px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+  border-radius: 16px;
+  background:
+    radial-gradient(120% 180% at 0% 0%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 55%),
+    linear-gradient(180deg, color-mix(in srgb, var(--panel) 94%, var(--accent) 6%), var(--panel));
+}
+.settings-exp-shell .favorites-settings > .settings-block-head h3 { margin: 0; font-size: 17px; }
+.settings-exp-shell .favorites-settings > .settings-block-head p { margin: 4px 0 0; font-size: 12px; }
+.settings-exp-shell .fav-toolbar,
+.settings-exp-shell .fav-batch,
+.settings-exp-shell .fav-draft {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+}
+.settings-exp-shell .fav-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.settings-exp-shell .fav-item {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  padding: 10px 12px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.settings-exp-shell .fav-item:hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+.settings-exp-shell .fav-item.selected { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); background: color-mix(in srgb, var(--accent) 5%, var(--panel)); }
+.settings-exp-shell .fav-empty { margin-top: 12px; padding: 20px; border: 1px dashed var(--line); border-radius: 14px; text-align: center; }
+
+/* 自动化 / 专家团入口：三张入口卡改成一列长卡 —— 内容自适应高度，不留空格子 */
+.settings-exp-shell .hub-card-grid { grid-template-columns: 1fr; gap: 10px; }
+.settings-exp-shell .hub-card {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-areas: "icon title" "icon desc" "icon version";
+  grid-template-rows: auto 1fr auto;
+  column-gap: 13px;
+  row-gap: 3px;
+  align-items: start;
+  padding: 15px 17px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 96%, var(--accent) 4%), var(--panel));
+}
+.settings-exp-shell .hub-card-icon {
+  grid-area: icon;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-top: 1px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ic-page, var(--accent)) 12%, transparent);
+  color: var(--ic-page, var(--accent));
+}
+.settings-exp-shell .hub-card strong { grid-area: title; font-size: 14px; }
+.settings-exp-shell .hub-card p { grid-area: desc; }
+.settings-exp-shell .hub-card-version { grid-area: version; }
+
+/* 定时任务模板：两列，落单的最后一张占满整行（不留空格子） */
+.settings-exp-shell .template-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.settings-exp-shell .template-grid > .template-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.settings-exp-shell .template-card { border-radius: 14px; padding: 12px 14px; }
+
+/* 记忆页两张内容卡改成一列长卡；网格内的卡不再叠加 margin */
+.settings-exp-shell .memory-center .settings-cards { grid-template-columns: 1fr; }
+.settings-exp-shell .settings-cards > .settings-card { margin-top: 0; }
+
+/* 收藏夹页脚说明：原来是 flex，文本节点被拆成多个可收缩的列（截图里断成四块） */
+.settings-exp-shell .favorites-settings .fav-foot {
+  display: block;
+  margin-top: 12px;
+  padding: 10px 13px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.settings-exp-shell .favorites-settings .fav-foot > svg { vertical-align: -2px; margin-right: 6px; }
+
+/* 记忆页：「记忆存到哪里」与前两张内容卡拉开层级 */
+.settings-exp-shell .memory-center .memory-backends {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+}
+
+/* SSH 工具栏：搜索框可收缩，导出/导入不再被挤到第二行单飞 */
+.settings-exp-shell .ssh-toolbar { gap: 10px; }
+.settings-exp-shell .ssh-toolbar .search-field { flex: 1 1 160px; width: auto !important; min-width: 140px; }

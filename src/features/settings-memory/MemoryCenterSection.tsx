@@ -71,7 +71,7 @@ export function MemoryCenterSection(props: MemoryCenterSectionProps) {
 return (
     <>
       <section className="settings-section stack memory-center">
-                    <div className="settings-copy channel-heading"><div><h2>记忆<PageInfo text={<>记忆分「常驻记忆」与「记忆条目」两部分：常驻记忆每轮对话自动注入；条目按需召回，按重要度分 P0–P3 管理。</>} /></h2></div><label className="channel-enable"><input type="checkbox" checked={memoryEnabled} onChange={(event) => void setMemoryEnabled(event.target.checked)} /><span>{memoryEnabled ? "已启用" : "已停用"}</span></label></div>
+                    <div className="settings-copy channel-heading"><div><h2>记忆<PageInfo text={<>记忆分「常驻记忆」与「记忆条目」两部分：常驻记忆每轮对话自动注入；条目按需召回，按重要度分 P0–P3 管理。</>} /></h2><p>决定 Codex 跨会话记住什么；本地、MCP 与云端三选一。</p></div><label className="channel-enable"><input type="checkbox" checked={memoryEnabled} onChange={(event) => void setMemoryEnabled(event.target.checked)} /><span>{memoryEnabled ? "已启用" : "已停用"}</span></label></div>
 
                     {/* ⛔⛔ 10-20 用户反馈「这两个选项怎么进不去了」：上一版给前两张卡加了
                         disabled={onlyBuiltin && backend!=="builtin"} —— 渲染层 backend 初值可能是
