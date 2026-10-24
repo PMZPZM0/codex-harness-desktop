@@ -426,15 +426,17 @@ const CHECKS = [
         const cols = grid ? getComputedStyle(grid).gridTemplateColumns : '';
         const updateBtn = document.querySelector('.settings-exp-shell .provider-card-update');
         const updateInFoot = !!(updateBtn && updateBtn.closest('.provider-card-actions') && updateBtn.closest('.provider-card-foot'));
+        const topEdit = !!document.querySelector('.settings-exp-shell .provider-card-icon-btn');
+        const footerEdit = [...document.querySelectorAll('.settings-exp-shell .provider-card-foot button')].some((b) => (b.textContent || '').trim() === '编辑');
         return {
           headerBg: hcs?.backgroundImage ?? 'missing', headerPad: hcs?.paddingTop ?? '',
           cardBg: ccs?.backgroundImage ?? 'missing',
           cardW: card ? Math.round(card.getBoundingClientRect().width) : 0,
           cardH: card ? Math.round(card.getBoundingClientRect().height) : 0,
-          cols, colCount: cols ? cols.split(' ').length : 0, updateInFoot,
+          cols, colCount: cols ? cols.split(' ').length : 0, updateInFoot, topEdit, footerEdit,
         };
       })()`);
-      h.check("⑧ 简洁风：页头无卡片/渐变，模型供应商多列小卡（自适应大小）", flat.headerBg === "none" && flat.headerPad === "0px" && flat.cardBg === "none" && flat.cardW > 0 && flat.cardW <= 420 && flat.cardH > 0 && flat.cardH <= 220 && flat.colCount >= 2 && flat.updateInFoot === true, JSON.stringify(flat));
+      h.check("⑧ 简洁风：页头无卡片/渐变，模型供应商多列小卡（自适应大小）", flat.headerBg === "none" && flat.headerPad === "0px" && flat.cardBg === "none" && flat.cardW > 0 && flat.cardW <= 420 && flat.cardH > 0 && flat.cardH <= 220 && flat.colCount >= 2 && flat.updateInFoot === true && flat.topEdit === true && flat.footerEdit === false, JSON.stringify(flat));
     },
   },
   {
