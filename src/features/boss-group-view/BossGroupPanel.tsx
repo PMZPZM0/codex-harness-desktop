@@ -37,6 +37,7 @@ export function BossGroupPanel() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [tick, setTick] = useState(0);
+  const [showAll, setShowAll] = useState(false);   // 默认只看汇总消息
   const feedRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -80,8 +81,9 @@ export function BossGroupPanel() {
 
   const memberName = (id?: string) => snap?.group.members.find((m) => m.id === id)?.name ?? "成员";
   const pinnedIds = snap?.group.pinnedEventIds ?? [];
-  const events = snap?.events ?? [];
-  const pinnedCards = pinnedIds.map((id) => events.find((e) => e.id === id)).filter(Boolean) as typeof events;
+  const allEvents = snap?.events ?? [];
+  const events = showAll ? allEvents : allEvents.filter((e) => e.kind === "chat-user" || e.kind === "chat-boss" || e.kind === "chat-member");
+  const pinnedCards = pinnedIds.map((id) => allEvents.find((e) => e.id === id)).filter(Boolean) as typeof allEvents;
   const isChat = (kind: string) => kind === "chat-user" || kind === "chat-boss" || kind === "chat-member";
 
   const send = async () => {
@@ -114,6 +116,13 @@ export function BossGroupPanel() {
         ) : group ? (
           <span className="boss-panel-sub">{group.name}</span>
         ) : null}
+        <button
+          type="button"
+          className={`boss-panel-mini boss-stage-dynamic${showAll ? " boss-stage-dynamic-on" : ""}`}
+          aria-pressed={showAll}
+          title="群动态：中间过程事件（默认只看汇总消息）"
+          onClick={() => setShowAll((v) => !v)}
+        >动态</button>
         <button type="button" className="boss-panel-x" aria-label="关闭群对话框" onClick={() => closeBossPanel()}>
           <X size={14} />
         </button>
@@ -146,7 +155,7 @@ export function BossGroupPanel() {
             {events.length === 0 ? <div className="boss-panel-sub">在下面说第一句话，把活派起来。</div> : null}
             {events.map((e) => {
               if (isChat(e.kind)) {
-                const side = e.kind === "chat-member" ? "left" : "right";
+                const side = e.kind === "chat-user" ? "right" : "left";   // 正常群聊：只有你在右，BOSS/成员都在左
                 const who = e.kind === "chat-user" ? "你" : e.kind === "chat-boss" ? "BOSS" : memberName(e.memberId);
                 return (
                   <div key={e.id} className={`boss-chat-row side-${side}`}>

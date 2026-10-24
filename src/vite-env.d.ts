@@ -1181,6 +1181,8 @@ interface Window {
     bossGroupPin(input: any): Promise<any>;
     /* 创世 boss：你在群对话框里说话 → boss 线程（回复镜像回群流） */
     bossGroupSay(input: any): Promise<any>;
+    /* 创世 boss：可拉名单（专家/专家团 + 本机 CLI agent，带探测结果） */
+    bossGroupPool(): Promise<any>;
 /* ═══ gen:end ═══ */
 
 

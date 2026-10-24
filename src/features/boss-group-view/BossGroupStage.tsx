@@ -24,6 +24,11 @@ type Snapshot = {
 
 const MEMBER_TEXT: Record<string, string> = { idle: "空闲", busy: "正在做", reviewing: "交活待审", locked: "被锁", removed: "已移出" };
 
+/** 汇总消息 = 群聊正文；其余 kind 是过程事件（只在「群动态」里看）。 */
+export function isChatKind(kind: string): boolean {
+  return kind === "chat-user" || kind === "chat-boss" || kind === "chat-member";
+}
+
 function clock(ms: number): string {
   if (!ms) return "";
   const d = new Date(ms);
@@ -38,6 +43,7 @@ export function BossGroupStage() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [tick, setTick] = useState(0);
+  const [showAll, setShowAll] = useState(false);   // 群动态开关：默认只看汇总消息（10-25 用户令）
   const feedRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -79,9 +85,11 @@ export function BossGroupStage() {
 
   const memberName = (id?: string) => snap?.group.members.find((m) => m.id === id)?.name ?? "成员";
   const pinnedIds = snap?.group.pinnedEventIds ?? [];
-  const events = snap?.events ?? [];
-  const pinnedCards = pinnedIds.map((id) => events.find((e) => e.id === id)).filter(Boolean) as typeof events;
-  const isChat = (kind: string) => kind === "chat-user" || kind === "chat-boss" || kind === "chat-member";
+  const allEvents = snap?.events ?? [];
+  /* ⛔ 10-25 用户令：群聊只显示**汇总消息**（你说的话/BOSS 回复/成员交活汇总）；
+     派活、开始做、审查过、打回这些中间过程不进对话框（防刷屏），收进「群动态」开关里。 */
+  const events = showAll ? allEvents : allEvents.filter((e) => isChatKind(e.kind));
+  const pinnedCards = pinnedIds.map((id) => allEvents.find((e) => e.id === id)).filter(Boolean) as typeof allEvents;
   const activeMembers = (snap?.group.members ?? []).filter((m) => m.status !== "removed");
 
   const send = async () => {
@@ -109,14 +117,15 @@ export function BossGroupStage() {
         ) : (
           <b className="boss-stage-group">{snap?.group.name ?? group?.name ?? ""}</b>
         )}
-        <span className="boss-stage-members" title="成员状态">
-          {activeMembers.map((m) => (
-            <span key={m.id} className="boss-groups-member" data-status={m.status}>
-              {m.name} · {MEMBER_TEXT[m.status] ?? m.status}
-            </span>
-          ))}
-        </span>
+        <span className="boss-stage-count">成员 {activeMembers.length}</span>
         {snap?.group.paused ? <span className="boss-stage-paused">已暂停</span> : null}
+        <button
+          type="button"
+          className={`boss-panel-mini boss-stage-dynamic${showAll ? " boss-stage-dynamic-on" : ""}`}
+          aria-pressed={showAll}
+          title="群动态：派活/审查/打回等中间过程（默认只看汇总消息，防刷屏）"
+          onClick={() => setShowAll((v) => !v)}
+        >群动态</button>
         <button type="button" className="boss-panel-x" aria-label="退出 BOSS 界面（回普通会话）" onClick={() => closeBossStage()}>
           <X size={15} />
         </button>
@@ -146,11 +155,13 @@ export function BossGroupStage() {
             </div>
           ) : null}
 
+          <div className="boss-stage-body">
+          <div className="boss-stage-main">
           <div className="boss-stage-feed" ref={feedRef}>
             {events.length === 0 ? <div className="boss-panel-sub">在下面说第一句话，把活派起来。</div> : null}
             {events.map((e) => {
               if (isChat(e.kind)) {
-                const side = e.kind === "chat-member" ? "left" : "right";
+                const side = e.kind === "chat-user" ? "right" : "left";   // 正常群聊：只有你在右，BOSS/成员都在左
                 const who = e.kind === "chat-user" ? "你" : e.kind === "chat-boss" ? "BOSS" : memberName(e.memberId);
                 return (
                   <div key={e.id} className={`boss-chat-row side-${side}`}>
@@ -181,6 +192,16 @@ export function BossGroupStage() {
             })}
           </div>
 
+          </div>
+          <aside className="boss-stage-rail" aria-label="群成员">
+            {activeMembers.map((m) => (
+              <div key={m.id} className="boss-rail-node" data-status={m.status} title={`${m.name} · ${MEMBER_TEXT[m.status] ?? m.status}${m.source === "cli" ? " · 本机 CLI agent" : ""}`}>
+                <span className="boss-rail-avatar" data-status={m.status}>{m.name.slice(0, 1)}</span>
+                <small>{m.name}</small>
+              </div>
+            ))}
+          </aside>
+          </div>
           <form className="boss-stage-composer" onSubmit={(ev) => { ev.preventDefault(); void send(); }}>
             <input
               ref={inputRef}

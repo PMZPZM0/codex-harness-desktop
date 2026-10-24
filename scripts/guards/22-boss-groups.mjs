@@ -199,6 +199,20 @@ if (state) {
     ok(s.events.filter((e) => e.kind === "chat-user").length === 1, "重复触发不会互相顶掉（各自独立入账）");
   }
 
+  /* ── 8d. CLI 成员（本机外部 agent，10-25 群聊重构）── */
+  {
+    const s = emptyState();
+    const g = mkGroup(s, [{ name: "甲", role: "写" }]);
+    ok(String(throws(() => addMember(s, g.id, { name: "zcode", role: "CLI", source: "cli" })))?.includes("命令模板"), "⛔ CLI 成员没有命令模板 ⇒ 被拒");
+    const cli = addMember(s, g.id, { name: "zcode", role: "CLI", source: "cli", cliCommand: 'zcode -p "{prompt}"' });
+    ok(cli.source === "cli" && cli.cliCommand?.includes("{prompt}"), "CLI 成员建档（source=cli + 模板）");
+    const t = addTask(s, { groupId: g.id, title: "T", brief: "", criteria: "能用" });
+    assignTask(s, t.id, cli.id);
+    ok(t.status === "assigned" && t.assignee === cli.id, "CLI 成员可以被派活（派遣走子进程，状态机同款）");
+    const eng = addMember(s, g.id, { name: "乙", role: "写" });
+    ok(eng.source === "engine" && !eng.cliCommand, "默认来源 = engine（不带 cliCommand）");
+  }
+
   /* ── 9. 评审输出解析：绝不默认通过 ── */
   {
     ok(parseVerdict('{"pass": true, "reasons": []}').verdict === "approved", "pass:true ⇒ approved");
@@ -213,7 +227,7 @@ if (state) {
 {
   const manifest = JSON.parse(read("electron/ipc-channels.manifest.json"));
   const channels = (manifest.channels ?? []).filter((c) => String(c.channel).startsWith("boss-groups:"));
-  ok(channels.length === 11, `manifest 有 11 个 boss-groups 通道（实测 ${channels.length}）`);
+  ok(channels.length === 12, `manifest 有 12 个 boss-groups 通道（实测 ${channels.length}）`);
   ok(manifest.count === manifest.channels.length, `manifest.count 与通道数一致（${manifest.count} / ${manifest.channels.length}）`);
   ok(channels.every((c) => typeof c.invokeArgs === "string" && Boolean(c.returns)
     && (!String(c.paramsImpl ?? "").trim() || String(c.invokeArgs ?? "").trim())),
@@ -226,11 +240,11 @@ if (state) {
   ok(read("electron/composition.gen.ts").includes("boss-groups-ipc"), "composition.gen.ts 已重生成（跑过 npm run gen:domains）");
 
   const registry = read("electron/ipc-registry.ts");
-  ok(/\{ prefix: "boss-groups", count: 11, status: "in-features", file: "features\/boss-groups-ipc\.ts"/.test(registry),
-    "ipc-registry.ts 账本已登记（count=11）");
+  ok(/\{ prefix: "boss-groups", count: 12, status: "in-features", file: "features\/boss-groups-ipc\.ts"/.test(registry),
+    "ipc-registry.ts 账本已登记（count=12）");
 
   const preload = read("electron/preload.ts");
-  for (const method of ["listBossGroups", "bossGroupStatus", "createBossGroup", "assignBossTask", "reviewBossTask", "escalateBossTask", "bossBrowserStatus", "recheckBossTask", "bossGroupMember", "bossGroupPin", "bossGroupSay"]) {
+  for (const method of ["listBossGroups", "bossGroupStatus", "createBossGroup", "assignBossTask", "reviewBossTask", "escalateBossTask", "bossBrowserStatus", "recheckBossTask", "bossGroupMember", "bossGroupPin", "bossGroupSay", "bossGroupPool"]) {
     ok(preload.includes(method), `preload 已生成 ${method}`);
   }
 

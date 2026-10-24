@@ -41,7 +41,14 @@ export type GroupMember = {
   status: GroupMemberStatus;
   /** 锁在哪些任务上（⛔ 任务级，不是成员级：他被锁的是这条活，别的活照做）。 */
   lockedTaskIds: string[];
+  /** 执行体来源（10-25 群聊重构）：engine 默认；cli = 外部 CLI（cliCommand 必填）。 */
+  source?: GroupMemberSource;
+  /** cli 成员的命令模板，`{prompt}` 会被替换成任务全文（例：`zcode -p "{prompt}"`）。 */
+  cliCommand?: string;
 };
+
+/** 成员执行体来源：engine = 引擎会话（默认）；cli = 本机外部 CLI agent（zcode/qoder/豆包等，派遣时起子进程跑命令行）。 */
+export type GroupMemberSource = "engine" | "cli";
 
 export type ReviewRecord = {
   by: ReviewLevel | string;

@@ -157,7 +157,10 @@
   align-self: center; max-width: 96%;
   font-size: 11px; color: var(--muted);
   text-align: center;
+  opacity: 0.85;
 }
+.boss-chat-sys .boss-panel-mini { opacity: 0; transition: opacity 120ms ease; }
+.boss-chat-sys:hover .boss-panel-mini { opacity: 1; }
 .boss-chat-sys .text { overflow-wrap: anywhere; }
 .boss-chat-sys time { flex: none; opacity: 0.8; }
 
@@ -234,11 +237,11 @@
 .boss-stage-pins { flex: none; display: flex; flex-direction: column; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
 .boss-stage-feed {
   flex: 1 1 auto; min-height: 0; overflow-y: auto;
-  display: flex; flex-direction: column; gap: 12px;
-  padding: 16px 16%;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 14px 24px;
 }
-.boss-stage-feed .boss-chat-bubble { font-size: 13.5px; padding: 9px 13px; border-radius: 12px; max-width: 100%; }
-.boss-stage-feed .boss-chat-sys { font-size: 11.5px; }
+.boss-stage-feed .boss-chat-row { max-width: 72%; }
+.boss-stage-feed .boss-chat-bubble { font-size: 13.5px; padding: 9px 13px; border-radius: 12px; }
 .boss-stage-empty {
   flex: 1; display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center;
   color: var(--muted); font-size: 13px; text-align: center;
@@ -250,3 +253,41 @@
 }
 .boss-stage-composer-input { height: 38px; font-size: 13.5px; }
 .boss-stage-send { flex: none; }
+
+/* 正常群聊（10-25 用户令）：只有「你」在右；BOSS/成员在左 */
+.boss-chat-bubble[data-kind="chat-boss"] .who { color: var(--amber, #d29922); font-weight: 600; }
+.boss-panel-feed .boss-chat-row { max-width: 88%; }
+
+/* ── 10-25 群聊重构：汇总过滤 / 成员头像轨 / 常驻成员入口 ── */
+
+/* stage 布局：左 = 群聊主列（feed+composer），右 = 成员头像轨（原专家团轨道位置） */
+.boss-stage-body { flex: 1 1 auto; min-height: 0; display: flex; }
+.boss-stage-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.boss-stage-count { flex: none; font-size: 12px; color: var(--muted); }
+.boss-stage-dynamic { flex: none; font-size: 11px; }
+.boss-stage-dynamic-on { color: var(--amber, #d29922); border-color: color-mix(in srgb, var(--amber, #d29922) 40%, var(--line)); }
+
+/* 成员头像轨（复用专家团轨道的视觉语言：渐变底 + 状态环） */
+.boss-stage-rail {
+  flex: none; width: 64px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 12px 6px;
+  border-left: 1px solid var(--line);
+  overflow-y: auto;
+}
+.boss-rail-node { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 100%; }
+.boss-rail-avatar {
+  width: 34px; height: 34px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 600; color: #fff;
+  background: linear-gradient(135deg, #7aa2f7, #9d7cd8);
+  border: 2px solid var(--line-strong);
+}
+.boss-rail-avatar[data-status="busy"] { border-color: var(--ok, #3fb950); }
+.boss-rail-avatar[data-status="reviewing"] { border-color: var(--amber, #d29922); }
+.boss-rail-avatar[data-status="locked"] { border-color: var(--red, #f85149); }
+.boss-rail-node small { font-size: 10px; color: var(--muted); max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* popover 里的群选择器与提示 */
+.boss-members-pop-select { flex: 1; min-width: 0; max-width: none; }
+.boss-members-pop-hint { font-size: 10.5px; color: var(--faint, var(--muted)); border-top: 1px dashed var(--line); padding-top: 6px; }

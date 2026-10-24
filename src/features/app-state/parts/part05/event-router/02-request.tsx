@@ -221,8 +221,15 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                   } else if (tool === "group_status") {
                     const groupId = String(args.groupId ?? "");
                     if (!groupId) {
-                      const list = await window.codex.listBossGroups();
-                      await ok(`共 ${list?.length ?? 0} 个群：${(list ?? []).map((g: any) => `${g.name}(id=${g.id}${g.paused ? "，已暂停" : ""})`).join("；") || "（无）"}`);
+                      const [list, pool] = await Promise.all([
+                        window.codex.listBossGroups(),
+                        window.codex.bossGroupPool().catch(() => null),
+                      ]);
+                      const poolText = pool
+                        ? `\n可拉专家：${(pool.experts ?? []).map((x: any) => `${x.name}[${x.teamName}]`).join("、") || "（无）"}`
+                          + `\n可拉本机 CLI agent：${(pool.cliAgents ?? []).map((x: any) => `${x.name}${x.detected ? "✓" : "（未检测到命令）"}`).join("、")}`
+                        : "";
+                      await ok(`共 ${list?.length ?? 0} 个群：${(list ?? []).map((g: any) => `${g.name}(id=${g.id}${g.paused ? "，已暂停" : ""})`).join("；") || "（无）"}${poolText}`);
                     } else {
                       const snap = await window.codex.bossGroupStatus(groupId);
                       await ok(JSON.stringify(snap).slice(0, 6000));
@@ -249,9 +256,14 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       systemPrompt: args.systemPrompt ? String(args.systemPrompt) : undefined,
                       model: args.model ? String(args.model) : undefined,
                       effort: args.effort ? String(args.effort) : undefined,
+                      from: args.from ? String(args.from) : undefined,
+                      expertTeamId: args.expertTeamId ? String(args.expertTeamId) : undefined,
+                      expertMemberId: args.expertMemberId ? String(args.expertMemberId) : undefined,
+                      cliName: args.cliName ? String(args.cliName) : undefined,
+                      cliCommand: args.cliCommand ? String(args.cliCommand) : undefined,
                     });
                     if (!res?.ok) await bad(`加人失败：${res?.error ?? "未知原因"}`);
-                    else await ok(`新成员进群：${res.member?.name}（${res.member?.role}，id=${res.member?.id}）。TA 第一次被派活时才有自己的会话；用 group_assign 指派时传这个 id。`);
+                    else await ok(`新成员进群：${res.member?.name}（${res.member?.role}${res.member?.source === "cli" ? "，本机 CLI agent" : ""}，id=${res.member?.id}）。TA 第一次被派活时才建执行体；用 group_assign 指派时传这个 id。`);
                   } else if (tool === "group_remove_member") {
                     const res = await window.codex.bossGroupMember({
                       groupId: String(args.groupId ?? ""), action: "remove",
@@ -286,9 +298,23 @@ ${st.hint}`);
               //    已整体删除（它与调度开关脱钩、还让专家/专家团永远被绕过），⛔ 不许加回来。
               else if (event.params?.tool === "agent_invoke") {
                 const dispatchOrigin = String(event.params?.threadId ?? bag.threadRef.current?.id ?? "");
+                /* ⛔ BOSS 群会话不用调度工具（10-25 用户令）：群里的派遣只有 group_assign 一条路，
+                   否则两套派遣并行会把账本撕裂。拒绝时告诉模型正确工具。 */
+                const bossHit = await (async () => {
+                  try {
+                    const list = await window.codex.listBossGroups();
+                    return (list ?? []).some((g: any) => g.bossThreadId === dispatchOrigin);
+                  } catch { return false; }
+                })();
+                if (bossHit) {
+                  await toolCallRespond.send(event.id!, {
+                    contentItems: [{ type: "inputText", text: "你是群里的 BOSS：不用 agent_invoke 调度，改用 group_assign 派活（验收标准 criteria 必填）。" }],
+                    success: false,
+                  });
+                } else {
+                const kindRaw = String(args.kind ?? "");
                 // kind 是联合类型：非法值**不硬塞**（先校验再断言，断言因此可证安全），
                 // 当场回一条可读的拒绝，而不是让 IPC 抛类型错——模型据此立刻改参数。
-                const kindRaw = String(args.kind ?? "");
                 const kindArg = (["expert", "team", "member", "subagent"] as const).includes(kindRaw as any)
                   ? (kindRaw as "expert" | "team" | "member" | "subagent")
                   : null;
@@ -304,6 +330,7 @@ ${st.hint}`);
                   contentItems: [{ type: "inputText", text: delegated?.ok ? String(delegated.output ?? "") : `调度被拒绝：${delegated?.error ?? "未知原因"}` }],
                   success: delegated?.ok === true,
                 });
+                }
               } else if (event.params?.tool === "agent_archive_sessions") {
                 const dispatchOrigin = String(event.params?.threadId ?? bag.threadRef.current?.id ?? "");
                 const archived: any = await window.codex.archiveDelegates({
