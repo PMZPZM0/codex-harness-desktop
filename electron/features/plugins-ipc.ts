@@ -146,7 +146,8 @@ export const pluginsFeature = defineFeature<null>({
       } catch { /* 检查失败静默，下周期再试 */ }
       finally { autoUpdateRunning = false; }
     }
-    const autoUpdateKick = setTimeout(() => { void runPluginAutoUpdate(); }, 15_000);
+    // 启动后 60s 再跑首轮：避开启动期 UI 首屏与验收导航（网络扫描慢会拖慢首屏观感）。
+    const autoUpdateKick = setTimeout(() => { void runPluginAutoUpdate(); }, 60_000);
     const autoUpdateTimer = setInterval(() => { void runPluginAutoUpdate(); }, 6 * 60 * 60 * 1000);
     ctx.effect(() => { clearTimeout(autoUpdateKick); clearInterval(autoUpdateTimer); });
 
