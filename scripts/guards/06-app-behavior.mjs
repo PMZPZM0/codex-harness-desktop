@@ -3480,6 +3480,10 @@ w.postMessage({id:1,op:"list",root});
       (marketSrc.includes("claude-plugins-official-gitee") && marketSrc.includes("gitee.com/api/v5") ? ok : fail)(
         "【239】插件市场源 = Gitee 官方镜像（claude-plugins-official-gitee，48 个 .claude-plugin 兼容插件）"
       );
+      (marketSrc.includes("GITEE_RAW") && marketSrc.includes("CDN_FILES_API") && marketSrc.includes("jsdelivr")
+        && /sources = \[[\s\S]{0,200}GITEE_RAW[\s\S]{0,200}CDN_GH/.test(marketSrc) ? ok : fail)(
+        "【239】清单/安装有备用源：Gitee raw 优先 + jsDelivr CDN 回落（Gitee API 403 限流时不再整页失败）"
+      );
       (!/api\.skillhub\.cn\/api\/v1\/plugins/.test(marketSrc) && !/listSkillHubPlugins/.test(plugIpcSrc) ? ok : fail)(
         "【239】SkillHub 插件源清零（API 调用与旧函数名不许回来）"
       );

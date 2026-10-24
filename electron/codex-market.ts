@@ -6,9 +6,9 @@
 // ⛔ 换源史：原 codex-marketplace.com（国内访问不稳，整面 AbortError）→ SkillHub
 //   （api.skillhub.cn，9600+ 条，实测绝大多数面向 DeepSeek Harness（DSH）生态装不上，
 //   用户令换源）→ 本源。本源 48 个插件 100% Codex 兼容，无需再探 manifest。
-// list = .claude-plugin/marketplace.json（Gitee contents API，base64，5 分钟缓存）；
-// install = git trees API（recursive，533 项一次拿全）+ raw 下载（gitee raw 是 302 跳转，
-//   electron net 自动跟随）→ 写入本地 marketplace 目录 → 注册 [marketplaces.codex-market]
+// list = .claude-plugin/marketplace.json（Gitee raw 优先；Gitee API 按 IP 限流 403 时
+//   jsDelivr 官方仓库兜底，5 分钟缓存）；install = jsDelivr data API 枚举文件 + CDN 下载
+//   （失败回落 Gitee trees/raw）→ 写入本地 marketplace 目录 → 注册 [marketplaces.codex-market]
 //   → 引擎 plugin/install + plugin/list 发现。
 import { net } from "electron";
 import fs from "node:fs/promises";
@@ -20,6 +20,12 @@ const GITEE_REPO = "claude-plugins-official-gitee";
 const GITEE_BRANCH = "main";
 const GITEE_API = "https://gitee.com/api/v5";
 const GITEE_HOME = `https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}`;
+const GITEE_RAW = `${GITEE_HOME}/raw/${GITEE_BRANCH}`;
+/* 备用源：官方 GitHub 仓库（jsDelivr 国内 CDN）。Gitee 匿名 API 会按 IP 限流（403
+   Rate Limit Exceeded），raw 仍可用；文件树 API 被限时用 jsDelivr data API 枚举 + CDN 下载。 */
+const OFFICIAL_GH = "anthropics/claude-plugins-official";
+const CDN_GH = `https://cdn.jsdelivr.net/gh/${OFFICIAL_GH}@main`;
+const CDN_FILES_API = `https://data.jsdelivr.com/v1/packages/gh/${OFFICIAL_GH}@main?structure=flat`;
 const MARKET_SOURCE_LABEL = "Gitee 官方镜像";
 const MAX_TOTAL_BYTES = 50 * 1024 * 1024;
 const MAX_SINGLE_FILE_BYTES = 20 * 1024 * 1024;
@@ -138,20 +144,33 @@ export type MarketCategory = { key: string; displayName: string };
 
 let marketCache: { at: number; plugins: CodexMarketPlugin[] } | null = null;
 
-/** 拉取并缓存镜像市场的插件清单（marketplace.json，5 分钟缓存） */
+/** 拉取并缓存镜像市场的插件清单（marketplace.json，5 分钟缓存）。
+ *  ⛔ 10-24 用户报「插件一直 403」：Gitee contents API 被按 IP 限流。
+ *  顺序：Gitee raw（无 API 限流）→ jsDelivr 官方仓库 → Gitee contents API（最后兜底）。 */
 async function loadMarketPlugins(): Promise<CodexMarketPlugin[]> {
   if (marketCache && Date.now() - marketCache.at < 300_000) return marketCache.plugins;
-  const url = `${GITEE_API}/repos/${GITEE_OWNER}/${GITEE_REPO}/contents/.claude-plugin/marketplace.json?ref=${GITEE_BRANCH}`;
-  const response = await fetchWithRetry(url, 15_000, 3).catch((error: unknown) => {
-    throw new Error(`插件市场连接失败（已重试 3 次，请检查网络后重试）：${error instanceof Error ? error.message : String(error)}`);
+  const readManifest = async (): Promise<any> => {
+    const sources = [
+      `${GITEE_RAW}/.claude-plugin/marketplace.json`,
+      `${CDN_GH}/.claude-plugin/marketplace.json`,
+    ];
+    for (const url of sources) {
+      try {
+        const response = await fetchWithRetry(url, 15_000, 2);
+        if (response.ok) return await response.json();
+      } catch { /* 下一个源 */ }
+    }
+    const response = await fetchWithRetry(`${GITEE_API}/repos/${GITEE_OWNER}/${GITEE_REPO}/contents/.claude-plugin/marketplace.json?ref=${GITEE_BRANCH}`, 15_000, 2);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload: any = await response.json();
+    const raw = payload?.encoding === "base64" && payload?.content
+      ? Buffer.from(payload.content, "base64").toString("utf8")
+      : text(payload?.content);
+    return JSON.parse(raw);
+  };
+  const manifest = await readManifest().catch((error: unknown) => {
+    throw new Error(`插件市场连接失败（Gitee raw / jsDelivr / API 均不可用）：${error instanceof Error ? error.message : String(error)}`);
   });
-  if (!response.ok) throw new Error(`插件市场请求失败（HTTP ${response.status}）`);
-  const payload: any = await response.json();
-  // contents API 返回 base64 content；直接解析
-  const raw = payload?.encoding === "base64" && payload?.content
-    ? Buffer.from(payload.content, "base64").toString("utf8")
-    : text(payload?.content);
-  const manifest = JSON.parse(raw);
   const entries: any[] = Array.isArray(manifest?.plugins) ? manifest.plugins : [];
   const plugins: CodexMarketPlugin[] = entries
     .map((entry: any) => {
@@ -347,8 +366,24 @@ async function listPluginFiles(owner: string, repo: string, branch: string, plug
   throw new Error(`Gitee 文件树获取失败（${owner}/${repo}@${branch}）——请稍后重试`);
 }
 
-/** 并发下载（限流 6 路）；gitee raw 是 302 跳转到带签名的 CDN 地址，net 自动跟随 */
-async function downloadFiles(owner: string, repo: string, branch: string, files: FileEntry[], tempDir: string, progress: ProgressFn) {
+/** jsDelivr data API 枚举官方仓库文件（Gitee tree API 被限流时的备用文件清单）。 */
+let cdnFileCache: { at: number; files: FileEntry[] } | null = null;
+async function listPluginFilesFromCdn(pluginPath: string): Promise<FileEntry[]> {
+  if (!cdnFileCache || Date.now() - cdnFileCache.at > 300_000) {
+    const response = await fetchWithRetry(CDN_FILES_API, 20_000, 2);
+    if (!response.ok) throw new Error(`jsDelivr 文件清单 HTTP ${response.status}`);
+    const data: any = await response.json();
+    const files: FileEntry[] = (Array.isArray(data?.files) ? data.files : [])
+      .map((file: any) => ({ path: String(file?.name ?? "").replace(/^\//, ""), size: num(file?.size) }))
+      .filter((file: FileEntry) => Boolean(file.path));
+    cdnFileCache = { at: Date.now(), files };
+  }
+  const prefix = pluginPath ? `${pluginPath}/` : "";
+  return cdnFileCache.files.filter((file) => file.path.startsWith(prefix));
+}
+
+/** 并发下载（限流 6 路）；baseUrl = Gitee raw 或 jsDelivr CDN（都是直链，net 自动跟随跳转） */
+async function downloadFiles(files: FileEntry[], tempDir: string, progress: ProgressFn, baseUrl: string) {
   let total = 0;
   for (const file of files) total += file.size;
   if (total > MAX_TOTAL_BYTES) throw new Error("插件包超过 50 MB，已拒绝安装");
@@ -358,7 +393,7 @@ async function downloadFiles(owner: string, repo: string, branch: string, files:
     while (cursor < files.length) {
       const file = files[cursor++];
       if (file.size > MAX_SINGLE_FILE_BYTES) throw new Error(`文件 ${file.path} 超过 20 MB，已拒绝安装`);
-      const response = await fetchWithRetry(`${GITEE_HOME}/raw/${branch}/${file.path}`, 60_000);
+      const response = await fetchWithRetry(`${baseUrl}/${file.path}`, 60_000);
       if (!response.ok) throw new Error(`插件文件下载失败：${file.path}（HTTP ${response.status}）`);
       const buffer = Buffer.from(await response.arrayBuffer());
       if (buffer.length !== file.size && file.size > 0) {
@@ -383,12 +418,18 @@ export async function installCodexMarketPlugin(input: { plugin: CodexMarketPlugi
   if (!repoRef) throw new Error(`插件仓库地址无法解析：${plugin.repository}`);
   progress("resolve", "正在解析插件清单与版本");
   const branch = plugin.defaultBranch || GITEE_BRANCH;
-  progress("download", "正在从 Gitee 镜像下载插件文件（国内源）");
-  const files = await listPluginFiles(repoRef.owner, repoRef.repo, branch, plugin.pluginPath);
+  progress("download", "正在下载插件文件（CDN 优先，失败自动回落 Gitee 镜像）");
+  let files: FileEntry[] = [];
+  let downloadBase = CDN_GH;
+  try { files = await listPluginFilesFromCdn(plugin.pluginPath); } catch { /* 回落 Gitee */ }
+  if (!files.length) {
+    files = await listPluginFiles(repoRef.owner, repoRef.repo, branch, plugin.pluginPath);
+    downloadBase = GITEE_RAW;
+  }
   if (!files.length) throw new Error(`插件目录「${plugin.pluginPath}」不存在或为空`);
   const temp = await fs.mkdtemp(path.join(require("node:os").tmpdir(), "codex-harness-plugin-"));
   try {
-    await downloadFiles(repoRef.owner, repoRef.repo, branch, files, temp, progress);
+    await downloadFiles(files, temp, progress, downloadBase);
     progress("install", `正在写入插件目录 ${plugin.slug}`);
     const target = path.join(input.destinationRoot, safeFolder(plugin.slug));
     await fs.mkdir(input.destinationRoot, { recursive: true });
