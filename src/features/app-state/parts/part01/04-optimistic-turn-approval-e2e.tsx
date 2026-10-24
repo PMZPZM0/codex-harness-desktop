@@ -354,7 +354,13 @@ bag.sshEditorTest = sshEditorTest as typeof bag.sshEditorTest; bag.setSshEditorT
 
   // 联网搜索 UI 入口已整体下架（2026-09-04：引擎沙箱本就允许联网，web_search 工具默认常开，
   // 无需用户切换）。app-settings.webSearch 默认值仍由主进程写进 config.toml，引擎能力不受影响。
-  useEffect(() => { void window.codex.readAppSettings().then((settings) => { bag.setDesktopAuto(settings.desktopAutomation !== false); bag.setBrowserAuto(settings.browserAutomation !== false); bag.setAutoCompactRatio(typeof settings.autoCompactRatio === "number" ? settings.autoCompactRatio : AUTO_COMPACT_RATIO_DEFAULT); bag.setHardwareAccel(settings.hardwareAcceleration ?? "auto"); bag.setAdaptiveTone(settings.adaptiveTone !== false); bag.setDownloadSource(settings.downloadSource ?? "auto"); }).catch(() => undefined); }, []);
+  useEffect(() => { void window.codex.readAppSettings().then((settings) => { bag.setDesktopAuto(settings.desktopAutomation !== false); bag.setBrowserAuto(settings.browserAutomation !== false); bag.setAutoCompactRatio(typeof settings.autoCompactRatio === "number" ? settings.autoCompactRatio : AUTO_COMPACT_RATIO_DEFAULT); bag.setHardwareAccel(settings.hardwareAcceleration ?? "auto"); bag.setAdaptiveTone(settings.adaptiveTone !== false); bag.setDownloadSource(settings.downloadSource ?? "auto");
+    // 10-24 启动自愈回执：主进程修好了损坏的 model-catalog.json → 弹一次可见提醒后清掉
+    if (settings.modelCatalogRepairNotice) {
+      bag.setNotice(settings.modelCatalogRepairNotice);
+      void window.codex.saveAppSettings({ modelCatalogRepairNotice: "" }).catch(() => undefined);
+    }
+  }).catch(() => undefined); }, []);
 
 
   // 桌面/浏览器自动化是能力总闸：开关直接决定引擎能不能用，同时联动 nuphus MCP 与配套技能。

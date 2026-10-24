@@ -35,6 +35,9 @@ export type AppSettings = {
   functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] };
   /** 功能入口折叠态（10-24）：与 localStorage 双写，启动后以本文件为准。 */
   sidebarOptionsCollapsed?: boolean;
+  /** 模型目录自愈回执（10-24）：启动时修复损坏的 model-catalog.json 后写入，
+   *  渲染层读一次展示成可见提醒后就清掉（不残留）。 */
+  modelCatalogRepairNotice?: string;
   /** 记忆后端："builtin"= 内置记忆金字塔（默认）；"mcp"= MCP 记忆服务（此时内置停止写入） */
   memoryBackend?: "builtin" | "mcp" | "cloud";
   /** 知识库后端："local"=项目本地库（kb:*）；"cloud"=云端 weknora（MCP 工具） */
