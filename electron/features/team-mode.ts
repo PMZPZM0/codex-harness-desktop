@@ -95,16 +95,20 @@ function clearContext(): void {
 async function statusNow() {
   const ctx = readContext();
   const upstream = await readMemoryUpstream();
+  /* ⛔ 文件里没有"团队标记"，只能看上游地址：真的指向 `/proxy/t/<id>` 才算团队计费。
+     否则「团队空间没开通」时会把个人通道误报成团队计费 —— 那正是最坑的一种错账。 */
+  const onTeamProxy = Boolean(upstream && /\/proxy\/t\//.test(String(upstream.baseUrl || "")));
   const teamKb = await readCloudMcpConnector(CLOUD_KB_TEAM_CONNECTOR_ID);
   const personalKb = await readCloudMcpConnector(CLOUD_KB_PERSONAL_CONNECTOR_ID);
   return {
     active: Boolean(ctx),
+    billing: ctx && onTeamProxy ? "team" : "personal",
     team: ctx ? { id: ctx.teamId, name: ctx.name, role: ctx.role, enteredAt: ctx.enteredAt } : null,
     memory: {
       /* ⛔ 这里只能报"有没有记忆上游"，无法从文件反推它属于哪个团队 ——
          所以以 context 为准：有 context 且上游存在 = 团队记忆生效。 */
       on: Boolean(upstream),
-      scope: ctx && upstream ? "team" : upstream ? "personal" : "model",
+      scope: ctx && onTeamProxy ? "team" : upstream ? "personal" : "model",
     },
     kb: {
       teamConnector: teamKb.enabled,
@@ -169,7 +173,9 @@ export const teamModeFeature = defineFeature<null>({
         const base = String(accountsBase() || "").replace(/\/+$/, "") + "/proxy/t/" + encodeURIComponent(teamId) + "/v1";
         await setMemoryUpstream({ baseUrl: base, encryptedUserKey: encrypted });
       } else {
-        await setMemoryUpstream(null);
+        /* ⛔ 10-24 审查修：团队空间没开通时**不要动记忆上游**。
+           原先是 `setMemoryUpstream(null)` —— 结果是「个人记忆被关掉 + 模型仍走个人通道扣个人积分」，
+           两边都亏，而界面还显示已进入团队模式。保持不变并如实报 billing=personal。 */
       }
 
       /* ② 知识库：先停个人（工具名会撞），再接团队。 */
@@ -206,10 +212,12 @@ export const teamModeFeature = defineFeature<null>({
         ok: true,
         team: { id: teamId, name: teamName },
         memory: { ready: Boolean(mem.ready && applied.memory), upstreamChanged: applied.changed },
+        /* 团队计费成立的前提是上游真的指向 `/proxy/t/<id>`；没有团队空间就没有这条通道。 */
+        billing: mem.ready && mem.baseUrl ? "team" : "personal",
         kb: { ready: Boolean(kb.ready), url: kb.mcpUrl || "" },
         /* 缺什么就说什么 —— 界面直接展示，不让用户猜"为什么没生效"。 */
         missing: [
-          mem.ready ? "" : "团队记忆空间未开通（owner 在网页端点「开通 / 修复团队空间」）",
+          mem.ready ? "" : "团队记忆空间未开通：模型仍走个人通道（扣个人积分），个人记忆保持不变；owner 在网页端点「开通 / 修复团队空间」后重新进入即可",
           kb.ready ? "" : "团队知识库未开通",
         ].filter(Boolean),
       };

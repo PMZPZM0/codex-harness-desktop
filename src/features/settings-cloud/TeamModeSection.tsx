@@ -25,6 +25,8 @@ type TeamRow = {
 
 type TeamStatus = {
   active: boolean;
+  /** "team" = 模型调用扣团队积分；"personal" = 还没接上团队通道（扣个人积分）。 */
+  billing: "team" | "personal";
   team: { id: string; name: string; role: string; enteredAt: number } | null;
   memory: { on: boolean; scope: "team" | "personal" | "model" };
   kb: { teamConnector: boolean; personalConnector: boolean; url: string };
@@ -83,7 +85,7 @@ export function TeamModeSection() {
       setErr(list?.error === "not-logged-in" ? "not-logged-in" : list?.error || "读取团队列表失败");
     }
     if (st && st.ok) {
-      setStatus({ active: st.active, team: st.team, memory: st.memory, kb: st.kb });
+      setStatus({ active: st.active, billing: st.billing, team: st.team, memory: st.memory, kb: st.kb });
       if (st.active && st.team) setPick(st.team.id);
     }
   }, []);
@@ -204,6 +206,7 @@ export function TeamModeSection() {
 
       <div className="cloud-team-state">
         <span>记忆通道：{scopeText(status)}</span>
+        <span>模型计费：{status?.billing === "team" ? "扣团队积分" : "扣个人积分"}</span>
         <span>团队知识库：{status?.kb.teamConnector ? "已接（cloud-kb-team）" : "未接"}</span>
         <span>个人知识库：{status?.kb.personalConnector ? "已接（进入团队时会暂时让位）" : "未接"}</span>
       </div>
@@ -226,6 +229,12 @@ export function TeamModeSection() {
             </li>
           ))}
         </ul>
+      ) : null}
+
+      {active && status?.billing === "personal" ? (
+        <p className="cloud-team-bad">
+          <TriangleAlert size={13} />团队通道未接通：模型调用<b>仍扣个人积分</b>（团队空间未开通）。请 owner 开通后重新进入。
+        </p>
       ) : null}
 
       <p className="cloud-team-hint">
