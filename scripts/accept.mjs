@@ -736,6 +736,10 @@ const CHECKS = [
       try {
         await h._send("Emulation.setDeviceMetricsOverride", { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false }).catch(() => undefined);
         await wait(500);
+        /* 侧栏默认是「项目」视图（只看当前工作区的会话）；长会话可能在别的项目下。
+           本题需要长会话，先切「分类」视图把全部会话露出来（09-25 既有两个 view tab）。 */
+        await h.eval(`(function(){ const b=[...document.querySelectorAll('.view-tab')].find(x=>(x.textContent||'').includes('分类')); b&&b.click(); return !!b; })()`).catch(() => undefined);
+        await wait(500);
         let found = null;
         let foundId = "";
         /* ⛔ 不能只扫侧栏底部 20 条：长会话会被前面的验收顶到上面。先试当前 active，
