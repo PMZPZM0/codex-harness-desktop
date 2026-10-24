@@ -160,6 +160,35 @@ const IDENTITY_ONBOARD_INSTRUCTIONS = [
   "用户回复后：从 TA 的话里提取各维度信息，**立刻调用 identity_onboard 工具一次性保存**（没聊到的维度传空字符串，绝不编造；用户给取了名字务必带上）。保存后热情确认一句（取了名字就正式认下这个名字），然后立刻回归正常、简洁的工作风格——不再发起第二轮提问，正事随叫随到。",
 ].join("\n");
 
+export /** 常驻的「名字 / 称呼」工具（10-24 新增，**每个会话都下发**）。
+ *
+ *  ⛔⛔ 为什么必须有这个工具：`identity_onboard` 只在 `identityGreeted === false`（从没打过招呼）
+ *     那一次会话注入，之后模型想改名字/改称呼**没有任何正规通道** ⇒ 实测到的用户场景：
+ *     「我给 codex 取了个名字，它只写进了长期记忆，界面上的 'Codex' 和 'Administrator' 都没变」。
+ *     模型没有工具可调时，最自然的动作就是把这类事实写进 `memory_write` —— 记忆里有，档案里没有。
+ *
+ *  ⛔ 描述里必须明写「不要只写进记忆」：这是模型面对「记住这件事」时的默认路径，
+ *     不点名就会继续走 memory_write（记忆是给模型看的，界面不吃）。
+ *  ⛔ 字段名用 `userName`（对模型最直观），主进程 `writePersonalization` 已做 nickname 别名收口。
+ */
+const IDENTITY_UPDATE_TOOL = {
+  type: "function",
+  name: "identity_update",
+  description:
+    "更新「名字 / 称呼」并立即全局生效（界面显示 + 后续对话都会用它）："
+    + "① 用户给你起了名字或要改你的名字 → 传 assistantName；"
+    + "② 用户告诉你该怎么称呼 TA、或要改称呼 → 传 userName。"
+    + "⛔ 用户一旦明确说了名字/称呼，必须调用本工具，**不要只写进记忆**（memory_write 只有你自己看得到，界面和称呼不会变）。"
+    + "没涉及的字段不要传（传空字符串等于「不改」，不会清空）。保存后界面即时更新，无需重启。",
+  inputSchema: {
+    type: "object",
+    properties: {
+      assistantName: { type: "string", description: "你的新名字（用户给你取的名字）；不改就不传" },
+      userName: { type: "string", description: "用户希望被称呼的名字；不改就不传" },
+    },
+  },
+};
+
 export const IDENTITY_ONBOARD_TOOL = {
   type: "function",
   name: "identity_onboard",

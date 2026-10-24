@@ -179,6 +179,40 @@ console.log(C.bold("\n【7】验收入口唯一化 + 持久 profile（带历史�
       }
     }
   }
+
+  /* ── 名字 / 称呼的「实时联动」闭环（10-24 用户实测）─────────────────────────
+     用户原话：「我给 codex 取了名字，我让他给我写了一下名字，我的用户名没变，codex 的名字展示名字也没变，
+     联动性太弱了，要实时更新的啊」。
+     根因是三个洞**同时**存在，缺一条这条链就断：
+       ① 引导工具字段叫 userName，档案里叫 nickname，早先没映射 ⇒ 用户报的名字被**静默丢弃**；
+       ② identity_onboard 只在「从没打过招呼」那次会话注入 ⇒ 之后模型想改名没有任何工具，
+          只能写 memory_write（记忆里有、界面没有）；
+       ③ 保存后只落盘、不刷渲染层 store ⇒ 要重启才变（那不叫实时）。
+     三条各钉一处，防止任意一条被改回去后用户又回到「说了名字但界面不动」。 */
+  {
+    const personalization = readFileSync(join(ROOT, "electron", "personalization.ts"), "utf8");
+    const dynamicSeg = readFileSync(join(ROOT, "src/features/app-state/parts/part08/01-seg.tsx"), "utf8");
+    const eventRouter = readFileSync(join(ROOT, "src/features/app-state/parts/part05/event-router/02-request.tsx"), "utf8");
+    const consts = readFileSync(join(ROOT, "src/features/app-view/constants/02-identity-onboarding.tsx"), "utf8");
+    (personalization.includes('input2.nickname === undefined && String(input2.userName ?? "").trim()')
+      && /input2\.nickname = input2\.userName/.test(personalization) ? ok : fail)(
+      "【身份】主进程把工具字段 userName 收口到档案 nickname（缺这条 = 用户报的名字静默丢弃，界面永远显示账号名）"
+    );
+    (/name: "identity_update"/.test(consts) && /不要只写进记忆/.test(consts) ? ok : fail)(
+      "【身份】常驻工具 identity_update 存在，且描述点名「不要只写进记忆」（模型默认路径就是 memory_write）"
+    );
+    (/^\s{6}IDENTITY_UPDATE_TOOL,$/m.test(dynamicSeg) && !/if \(shouldGreet\)[\s\S]{0,200}?IDENTITY_UPDATE_TOOL/.test(dynamicSeg) ? ok : fail)(
+      "【身份】identity_update **无条件**进工具面（不能只在首次引导那次会话下发，否则改名没通道）"
+    );
+    (/applyIdentityToUi\(bag, \{ assistantName, userName \}\)/.test(eventRouter)
+      && /setCodexIdentity\(\{ name: assistant/.test(eventRouter)
+      && /bag\.setUsername\(userName\)/.test(eventRouter) ? ok : fail)(
+      "【身份】写盘后立刻刷渲染层（setCodexIdentity + bag.setUsername）—— 只落盘不刷 = 要重启才变，不叫实时"
+    );
+    (!/userName: String\(args\.userName \?\? ""\)\.trim\(\)/.test(eventRouter) ? ok : fail)(
+      "【身份】引导工具不再内联传 userName（改由 identity_update 的只传非空字段路径走，避免空串清空名字）"
+    );
+  }
 }
   }
 

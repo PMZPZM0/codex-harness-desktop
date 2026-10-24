@@ -30,7 +30,7 @@ export const IS_MAC_UI = (() => {
 /** 快捷键展示：accelerator 原文 → 当前平台习惯写法（mac：⌘⇧M）。 */
 export const showHotkey = (accelerator: string) => hotkeyLabel(accelerator, IS_MAC_UI ? "darwin" : "other");
 export type Settings = {
-  tts: { sid: number; speed: number; volume: number; profileId?: string };
+  tts: { sid: number; speed: number; volume: number; profileId?: string; numSteps?: number };
   asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
   mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
   barge: { gateDb: number; mode: "auto" | "manual" };

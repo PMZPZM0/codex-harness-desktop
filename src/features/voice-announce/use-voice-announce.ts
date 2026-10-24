@@ -77,7 +77,7 @@ import {
 import { decodeFloat32Base64 } from "../../voice/audio-transport";
 import { getVoiceStage, subscribeVoiceStage } from "../../voice/wave-level";
 
-type AnnounceCfg = { enabled: boolean; volume: number };
+type AnnounceCfg = { enabled: boolean; volume: number; numSteps: number };
 
 /** 排队上限（段数）。超过就**不再为这一句合成**（丢弃它，保持跟手）。
  *  ⛔ 10-21 正文改默认播后 3 → 6：每个正文段都进链，3 段就丢会让「几乎听不到」重现；
@@ -85,11 +85,15 @@ type AnnounceCfg = { enabled: boolean; volume: number };
 const MAX_ANNOUNCE_BACKLOG = 6;
 
 /**
- * 播报的 ZipVoice 采样步数（默认 4）。
- * ⛔ 10-21 用户报「播报延迟有点高」：实测 3.5 秒音频 4 步要 9.4 秒、2 步 4.8 秒（同机）。
- *    播报优先跟手，压到 2 步；设置页试听仍走默认 4 步，用户想对比音质时听试听。
+ * 播报的采样步数**兜底值**（实际读设置 `tts.numSteps`，见 applySettings）。
+ *
+ * ⛔ 10-24 用户报「播报声音太沙哑，听不清」—— 根因是这里原本**写死 2 步**：
+ *    10-21 为了压延迟（实测 3.5s 音频：4 步 9.4s、2 步 4.8s）从 4 压到 2，
+ *    这个蒸馏模型在 2 步就是明显掉音质（发沙、齿音糊）。延迟与音质是**用户偏好**，
+ *    写死在源码里必然得罪一半人 ⇒ 改成设置项 `tts.numSteps`（设置页「播报音质」三档），
+ *    默认回到模型默认质量 4 步。本常量只在「设置还没读到」的第一帧兜底。
  */
-const ANNOUNCE_NUM_STEPS = 2;
+const ANNOUNCE_NUM_STEPS = 4;
 
 /** 单次送 TTS 的最大字数。ZipVoice 对超长 utterance 会明显掉音量/发沙（用户实测长播报变杂音），
  *  所以长稿按句/逗号切成小段，合成完再无缝拼接成一条音频。
@@ -188,7 +192,7 @@ type SpeakScope = "live" | "summary" | "tool";
 
 export function useVoiceAnnounce(threadId: string = ""): void {
   /** 开关/音量（从设置读、经 voice:event 广播刷新；放 ref 里避免每次变化重建订阅） */
-  const cfgRef = useRef<AnnounceCfg>({ enabled: true, volume: 1 });
+  const cfgRef = useRef<AnnounceCfg>({ enabled: true, volume: 1, numSteps: ANNOUNCE_NUM_STEPS });
   /** 已预热的音色档案（null = 还没热过）；模型加载是播报延迟的大头，选好音色后先空合成一句短句把 worker 拉起来。 */
   const warmKeyRef = useRef<string | null>(null);
   /**
@@ -474,7 +478,7 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       const parts: Float32Array[] = [];
       let sampleRate = 0;
       for (const chunk of chunks) {
-        const result: any = await window.codex.voicePreviewVoice({ text: chunk, speed: opts.speed, numSteps: ANNOUNCE_NUM_STEPS }).catch(() => null);
+        const result: any = await window.codex.voicePreviewVoice({ text: chunk, speed: opts.speed, numSteps: cfgRef.current.numSteps }).catch(() => null);
         if (epoch !== epochRef.current) return;   // 期间被打断/换轮：这句不念
         if (mutedRef.current) return;              // 合成期间用户按了停止：这句不念
         if (!result?.ok || !result.audioBase64 || !result.sampleRate) {
@@ -602,6 +606,9 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       cfgRef.current = {
         enabled,
         volume: typeof raw.tts?.volume === "number" ? raw.tts.volume : cfgRef.current.volume,
+        /* ⛔ 10-24：音质档跟设置走（2/4/8 可选，默认 4）。读不到就沿用上一次的值，
+           不要回落成写死的常量 —— 那会让「设置里选了清晰」在偶发读失败时静默失效。 */
+        numSteps: Number.isFinite(Number(raw.tts?.numSteps)) ? Number(raw.tts.numSteps) : cfgRef.current.numSteps,
       };
       /* ⛔ 用户把总开关**重新打开** = 明确表示"我又想听了" ⇒ 顺手解除静音闩锁（10-12）。
          否则会出现最别扭的一种状态：设置页显示"播报已开启"，但界面上永远不出声

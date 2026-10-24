@@ -7,6 +7,7 @@ import "@xterm/xterm/css/xterm.css";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 import { createToolCallDedupe } from "../../../../../lib/tool-call-dedupe.mjs";
+import { readStoredCodexAvatar, setCodexIdentity } from "../../../../../lib/codex-identity.mjs";
 /* 前端开发（10-05，两轮改名：界面草图 → 手机前端UI → 前端开发）：Codex 读写画布走**对方域的 barrel**（域↔域的唯一接口面）。
    会话单例在 ui-sketch 那边持有（iframe 由弹窗 attach），这里只发请求。 */
 import { applySketchDoc, requestSketchDoc, summarizeDoc, validateSketchDoc, waitSketchReady } from "../../../../ui-sketch";
@@ -23,6 +24,24 @@ const toolCallRespond = (() => {
     resend: (id: string | number) => { const payload = cache.get(String(id)); return payload === undefined ? Promise.resolve() : window.codex.respond(id, payload); },
   };
 })();
+
+/** 名字/称呼写盘后**立刻**灌进渲染层（10-24 用户实测：「我给 codex 取了名字，它只写进了记忆，
+ *  界面上还是 Administrator / Codex」）。
+ *
+ *  ⛔ 只写 personalization.json 不刷 store 的话，界面要等**下次启动**回读才变 —— 那不叫实时。
+ *  ⛔ 用户名的权威源是 `bag.setUsername`（左下角账户名 / 用户消息头 / 欢迎语都跟着它），
+ *     `setUserIdentity` 的 effect 依赖 bag.username，所以这一处更新就够了；
+ *     同时写 localStorage 只作下次启动秒显的缓存（personalization.json 仍是权威源）。
+ *  ⛔ Codex 的名字走外部 store（`codex-identity.mjs`），消息头/用户中心/设置页共用同一份。 */
+function applyIdentityToUi(bag: Bag, next: { assistantName?: string; userName?: string }) {
+  const assistant = String(next.assistantName ?? "").trim();
+  if (assistant) setCodexIdentity({ name: assistant, avatar: readStoredCodexAvatar() });
+  const userName = String(next.userName ?? "").trim();
+  if (userName) {
+    bag.setUsername(userName);
+    try { localStorage.setItem("username", userName); } catch { /* 隐私模式：本次会话仍生效 */ }
+  }
+}
 
 export function handleEventRouter2(bag: Bag, event: any): boolean {
         if (event.method === "currentTime/read") {
@@ -77,9 +96,10 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                 // AGENTS.md 即时重建——之后所有新会话都不再注入引导。
                 try {
                   const assistantName = String(args.assistantName ?? "").trim();
+                  const userName = String(args.userName ?? "").trim();
                   await window.codex.saveIdentity({
                     assistantName,
-                    userName: String(args.userName ?? "").trim(),
+                    userName,
                     about: String(args.about ?? "").trim(),
                     occupation: String(args.occupation ?? "").trim(),
                     replyStyle: String(args.replyStyle ?? "").trim(),
@@ -87,9 +107,38 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                     interests: String(args.interests ?? "").trim(),
                     habits: String(args.habits ?? "").trim(),
                   });
+                  /* ⛔ 10-24：写盘后必须**立刻**刷界面（原先只落盘不刷 store ⇒ 用户看到的是
+                     「它记住了名字，但界面还是 Administrator / Codex」，要重启才变）。 */
+                  applyIdentityToUi(bag, { assistantName, userName });
                   bag.setIdentityGreeted(true);
                   bag.showToast(assistantName ? `你好，${assistantName}！` : "用户中心已建立", assistantName ? "这个名字已经正式归你啦，以后新会话都会用它" : "初次见面档案已保存，后续新会话不再出现");
                   await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "用户中心档案已保存并全局生效（含称呼/场景/风格/爱好等维度）。请热情确认一句后结束引导。" }], success: true });
+                } catch (error: any) {
+                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `保存失败：${error.message}` }], success: false });
+                }
+              } else if (event.params?.tool === "identity_update") {
+                /* ⛔ 常驻的「改名字 / 改称呼」通道（10-24 新增，工具面见 IDENTITY_UPDATE_TOOL）。
+                   没有它时模型只能把名字写进 memory_write —— 记忆里对、档案与界面全不变。 */
+                try {
+                  const assistantName = String(args.assistantName ?? "").trim();
+                  const userName = String(args.userName ?? "").trim();
+                  if (!assistantName && !userName) {
+                    await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "没有可保存的内容：assistantName 与 userName 至少传一个。" }], success: false });
+                    return;
+                  }
+                  /* ⛔ 只带上「真的给了值」的字段：writePersonalization 对 undefined = 保持现值，
+                     而传空串会**清空**已有名字 —— 模型常把没涉及的字段填成 ""。 */
+                  const patch: Record<string, string> = {};
+                  if (assistantName) patch.assistantName = assistantName;
+                  if (userName) patch.userName = userName;
+                  await window.codex.saveIdentity(patch);
+                  applyIdentityToUi(bag, { assistantName, userName });
+                  const done = [assistantName ? `我叫「${assistantName}」` : "", userName ? `称呼你「${userName}」` : ""].filter(Boolean).join("，");
+                  bag.showToast("名字已更新", `${done} —— 界面与后续对话已生效`);
+                  await toolCallRespond.send(event.id!, {
+                    contentItems: [{ type: "inputText", text: `已保存并即时生效（${done}）：界面显示与 AGENTS.md 都已更新，不需要重启，后续对话直接按新名字来。` }],
+                    success: true,
+                  });
                 } catch (error: any) {
                   await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `保存失败：${error.message}` }], success: false });
                 }

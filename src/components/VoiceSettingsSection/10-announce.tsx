@@ -12,6 +12,7 @@
  * ⛔ `voice_announce` 工具插播**不受这个开关管**（显式调用 = 用户就要听这一句）。
  */
 import { Volume2 } from "lucide-react";
+import { AppSelect } from "../AppSelect";
 import { Settings } from "../VoiceSettingsSection";
 
 type Props = {
@@ -29,6 +30,8 @@ export function VoiceSettingsSectionAnnounce({ apply, saving, settings }: Props)
   const enabled = typeof announce.enabled === "boolean"
     ? announce.enabled
     : (announce.live !== false || announce.summary === true);
+  /* 音质档（合成步数）：老主进程/未重启的回包可能还没有这个字段 ⇒ 回落 4（与主进程缺省一致）。 */
+  const numSteps = Number.isFinite(Number(settings.tts?.numSteps)) ? Number(settings.tts?.numSteps) : 4;
   return (
     <div className="voice-card" data-voice-announce="1">
       <div className="voice-card-head"><Volume2 size={15} /><span>语音播报</span></div>
@@ -44,6 +47,23 @@ export function VoiceSettingsSectionAnnounce({ apply, saving, settings }: Props)
             <span>播报 Codex 写的内容</span>
           </label>
         </div>
+        {/* 10-24 用户报「播报声音太沙哑，听不清」：播报端原先写死 2 步（换延迟）⇒ 音质明显掉。
+            改成三档可选，默认「标准（4 步）= 模型默认音质」。⛔ 与通话/试听共用 tts.numSteps。 */}
+        <div className="voice-toggle" style={{ marginTop: 8, alignItems: "center", gap: 10 }}>
+          <span style={{ minWidth: 64 }}>播报音质</span>
+          <AppSelect
+            className="voice-input"
+            value={String(numSteps)}
+            onChange={(v) => apply({ tts: { ...settings.tts, numSteps: Number(v) } })}
+            disabled={saving}
+            ariaLabel="播报音质"
+            options={[
+              { value: "2", label: "极速 · 2 步（最跟手，略沙哑）" },
+              { value: "4", label: "标准 · 4 步（默认，推荐）" },
+              { value: "8", label: "清晰 · 8 步（更清晰，合成约慢一倍）" },
+            ]}
+          />
+        </div>
         <div className="voice-card-hint">
           开启后，应用会念 <strong>Codex 自己写的播报稿</strong> —— 它在回复末尾写一个小块
           （屏幕上不显示），念什么、什么语气都由它按上下文自己定；<strong>写不写、写什么，由它决定</strong>，
@@ -54,7 +74,9 @@ export function VoiceSettingsSectionAnnounce({ apply, saving, settings }: Props)
           <br />
           通话中与非通话时都生效；<strong>非通话时只听不说话</strong>（不开麦克风），所以播报期间
           输入框上方会出现一条「语音播报中」的状态条（显示当前句与待播句数），<strong>点「停止」随时掐断</strong>，
-          也可以右键悬浮球选择停止播报。语速见下方「语速」卡片（播报与通话共用同一档）。
+          也可以右键悬浮球选择停止播报。语速见下方「语速」卡片（播报与通话共用同一档）；
+          <strong>觉得声音沙哑就调上面「播报音质」</strong>（步数越多越清晰、合成越慢），
+          觉得赶不上就选「极速」。
         </div>
       </div>
     </div>
