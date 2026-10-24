@@ -4,3 +4,6 @@
  */
 export { BossGroupPanel } from "./BossGroupPanel";
 export { BossGroupMembersButton } from "./BossGroupMembersButton";
+export { BossGroupStage } from "./BossGroupStage";
+/* store 动作也走 barrel（域内唯一出口） */
+export { closeBossPanel, closeBossStage, getBossPanelState, openBossPanel, openBossStage, setBossPanelGroup, subscribeBossPanel } from "./panel-store.mjs";
