@@ -72,6 +72,13 @@
       "config": null
     },
     {
+      "id": "boss-groups",
+      "enabled": true,
+      "file": "features/boss-groups-ipc.ts",
+      "export": "bossGroupsFeature",
+      "config": null
+    },
+    {
       "id": "bots",
       "enabled": true,
       "file": "features/bots-ipc.ts",

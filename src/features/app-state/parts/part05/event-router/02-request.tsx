@@ -142,6 +142,83 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                 } catch (error: any) {
                   await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `保存失败：${error.message}` }], success: false });
                 }
+              } else if (["group_create", "group_assign", "group_status", "group_review", "group_escalate", "group_browser_setup"].includes(String(event.params?.tool))) {
+                /* 创世 boss 的群编排（10-24）：六个工具共用一条分支。
+                   ⛔ 规则不在这里：状态机在 electron/boss-groups/state.ts（纯函数 + 守卫真跑），
+                      本分支只做「参数整形 + 转 IPC + 把结果讲成模型能读的一句话」。 */
+                const tool = String(event.params?.tool);
+                const ok = (text: string) => toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text }], success: true });
+                const bad = (text: string) => toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text }], success: false });
+                try {
+                  if (tool === "group_create") {
+                    const members = (Array.isArray(args.members) ? args.members : [])
+                      .map((m: any) => ({ name: String(m?.name ?? ""), role: String(m?.role ?? ""), systemPrompt: String(m?.systemPrompt ?? ""), model: m?.model ? String(m.model) : undefined, effort: m?.effort ? String(m.effort) : undefined }))
+                      .filter((m: any) => m.name && m.role);
+                    const res = await window.codex.createBossGroup({
+                      name: String(args.name ?? ""),
+                      workspace: String(args.workspace ?? bag.workspace ?? ""),
+                      // ⛔ boss 身份取引擎下发的 threadId（模型伪造不了），群事件靠它回投
+                      bossThreadId: String(event.params?.threadId ?? bag.threadRef.current?.id ?? ""),
+                      members,
+                      policy: { maxRejects: args.maxRejects, budgetMinutes: args.budgetMinutes },
+                    });
+                    const group = res?.group;
+                    if (!group) await bad(`建群失败：宿主没有返回群信息`);
+                    else await ok(`群已建好：${group.group.name}（id=${group.group.id}）
+成员：${group.group.members.map((m: any) => `${m.name}[${m.role}] id=${m.id}`).join("、")}
+打回上限 ${group.group.policy.maxRejects} 次，时间预算 ${group.group.policy.budgetMinutes} 分钟。
+下一步用 group_assign 派活（⛔ criteria 必填）。`);
+                  } else if (tool === "group_assign") {
+                    const res = await window.codex.assignBossTask({
+                      groupId: String(args.groupId ?? ""),
+                      title: String(args.title ?? ""),
+                      brief: String(args.brief ?? ""),
+                      criteria: String(args.criteria ?? ""),
+                      assignee: args.assignee ? String(args.assignee) : undefined,
+                    });
+                    if (!res?.ok) await bad(`派活失败：${res?.error ?? "未知原因"}`);
+                    else await ok(`已派活（taskId=${res.taskId}）${res.dispatched ? "，成员已经在它自己的会话里开工" : "，但暂时没派出去"}。
+⛔ 这是异步的：不要在这里等结果，交活/审查/打回会以 [群事件] 回到你这里。`);
+                  } else if (tool === "group_status") {
+                    const groupId = String(args.groupId ?? "");
+                    if (!groupId) {
+                      const list = await window.codex.listBossGroups();
+                      await ok(`共 ${list?.length ?? 0} 个群：${(list ?? []).map((g: any) => `${g.name}(id=${g.id}${g.paused ? "，已暂停" : ""})`).join("；") || "（无）"}`);
+                    } else {
+                      const snap = await window.codex.bossGroupStatus(groupId);
+                      await ok(JSON.stringify(snap).slice(0, 6000));
+                    }
+                  } else if (tool === "group_review") {
+                    const res = await window.codex.reviewBossTask({
+                      taskId: String(args.taskId ?? ""),
+                      verdict: args.verdict === "approved" ? "approved" : "rejected",
+                      reasons: Array.isArray(args.reasons) ? args.reasons.map(String) : [],
+                      by: "boss",
+                    });
+                    await ok(`审查已记录：任务 ${res?.task?.id} 现在 ${res?.task?.status}（打回 ${res?.task?.rejects} 次，锁定作者 ${JSON.stringify(res?.task?.lockedAuthors ?? [])}）`);
+                  } else if (tool === "group_escalate") {
+                    const res = await window.codex.escalateBossTask({
+                      taskId: String(args.taskId ?? ""),
+                      choice: String(args.choice ?? ""),
+                      note: String(args.note ?? ""),
+                    });
+                    await ok(`升级已处理：任务 ${res?.taskId} 现在 ${res?.status}${res?.dispatched ? "，已重新派活" : ""}${res?.error ? `（${res.error}）` : ""}`);
+                  } else {
+                    const st = await window.codex.bossBrowserStatus();
+                    if (!st?.installed) {
+                      const opened = await window.codex.egoInstall().catch(() => null);
+                      await ok(`成员用的浏览器是 Ego Lite，本机还没装。
+已打开官方下载页${opened ? "" : "（打开失败，让用户去 设置 → 开发工具 → Ego Lite）"}；装完首次引导后回来再调一次本工具复查。
+装上之后：每个成员各自一个 \`codex-<它的线程id>\` TaskSpace，同群并行互不冲突。
+⛔ 在装好之前，不要让成员假设自己有浏览器。`);
+                    } else {
+                      await ok(`浏览器可用：${st.cli}
+${st.hint}`);
+                    }
+                  }
+                } catch (error: any) {
+                  await bad(`群操作失败（${tool}）：${String(error?.message ?? error)}`);
+                }
               }
               // ⛔⛔ 调度工具走**渲染层注册的 dynamicTool**（10-05 改回；根因见 part08/01-seg.tsx
               //    的 buildDynamicTools 注释：引擎 0.157 起内置 MCP 的工具整批被"延迟暴露"，

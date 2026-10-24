@@ -17,6 +17,7 @@ import { backupFeature as feat_backup } from "./features/change-backup-ipc";
 import { botFeature as feat_bot } from "./features/bot-ipc";
 import { botBindingFeature as feat_bot_binding } from "./features/bot-binding-ipc";
 import { botStreamFeature as feat_bot_stream } from "./features/bot-stream-ipc";
+import { bossGroupsFeature as feat_boss_groups } from "./features/boss-groups-ipc";
 import { botsFeature as feat_bots } from "./features/bots-ipc";
 import { bridgeFeature as feat_bridge } from "./features/bridge-ipc";
 import { browserFeature as feat_browser } from "./features/browser-ipc";
@@ -128,6 +129,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "bot", plugin: feat_bot as Plugin<unknown>, config: null },
   { id: "bot-binding", plugin: feat_bot_binding as Plugin<unknown>, config: null },
   { id: "bot-stream", plugin: feat_bot_stream as Plugin<unknown>, config: null },
+  { id: "boss-groups", plugin: feat_boss_groups as Plugin<unknown>, config: null },
   { id: "bots", plugin: feat_bots as Plugin<unknown>, config: null },
   { id: "bridge", plugin: feat_bridge as Plugin<unknown>, config: null },
   { id: "browser", plugin: feat_browser as Plugin<unknown>, config: null },
