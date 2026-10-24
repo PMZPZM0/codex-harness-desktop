@@ -1611,6 +1611,11 @@ const CHECKS = [
         await h.eval(`document.querySelector(".sidebar-options-top .sidebar-options-toggle")?.click()`).catch(() => undefined);
         await wait(350);
       }
+      // 折叠动画在后台窗口可能被节流：测试里等 React 提交后把 CSS 过渡直接推到终点再量高度。
+      const settleAnimations = async () => {
+        await h.eval(`(function(){ void document.body.offsetHeight; document.getAnimations().forEach((a) => { try { a.finish(); } catch {} }); return 1; })()`).catch(() => undefined);
+        await wait(80);
+      };
       // 10-24 用户对照截图：顶部改成整行「新会话」+ 下一行「搜索任务」（不再并排胶囊）
       const quickLayout = await h.eval(`(function(){
         const box=document.querySelector(".sidebar-quick");
@@ -1726,7 +1731,8 @@ const CHECKS = [
         JSON.stringify(bottom));
       // ⑦ 底部组折叠/展开：grid 高度过渡到 0，再点恢复（两处位置都支持）
       await h.eval(`document.querySelector(".sidebar-options:not(.sidebar-options-top) .sidebar-options-toggle")?.click()`).catch(() => undefined);
-      await wait(800);
+      await wait(150);
+      await settleAnimations();
       const bottomCollapsed = await h.eval(`(function(){
         const g=document.querySelector(".sidebar-options:not(.sidebar-options-top)");
         const body=g?.querySelector(".sidebar-options-body");
@@ -1743,7 +1749,8 @@ const CHECKS = [
         Boolean(bottomCollapsed && bottomCollapsed.cls && bottomCollapsed.bodyH <= 4 && bottomCollapsed.navH <= 4 && bottomCollapsed.aria === "true"),
         JSON.stringify(bottomCollapsed));
       await h.eval(`document.querySelector(".sidebar-options:not(.sidebar-options-top) .sidebar-options-toggle")?.click()`).catch(() => undefined);
-      await wait(600);
+      await wait(150);
+      await settleAnimations();
       const bottomExpanded = await h.eval(`(function(){
         const g=document.querySelector(".sidebar-options:not(.sidebar-options-top)");
         const body=g?.querySelector(".sidebar-options-body");
@@ -1783,7 +1790,8 @@ const CHECKS = [
 
       // ⑨ 顶部组折叠/展开（与底部同款 grid 高度动画）
       await h.eval(`document.querySelector(".sidebar-options-top .sidebar-options-toggle")?.click()`).catch(() => undefined);
-      await wait(600);
+      await wait(150);
+      await settleAnimations();
       const topCollapsed = await h.eval(`(function(){
         const g=document.querySelector(".sidebar-options-top");
         const body=g?.querySelector(".sidebar-options-body");
@@ -1797,7 +1805,8 @@ const CHECKS = [
         Boolean(topCollapsed && topCollapsed.cls && topCollapsed.bodyH <= 4 && topCollapsed.navH <= 4 && topCollapsed.aria === "true"),
         JSON.stringify(topCollapsed));
       await h.eval(`document.querySelector(".sidebar-options-top .sidebar-options-toggle")?.click()`).catch(() => undefined);
-      await wait(600);
+      await wait(150);
+      await settleAnimations();
       const topExpanded = await h.eval(`(function(){
         const g=document.querySelector(".sidebar-options-top");
         const body=g?.querySelector(".sidebar-options-body");
@@ -1845,6 +1854,12 @@ const CHECKS = [
         Boolean(dragBefore && dragAfter && dragBefore.labels[0] === dragAfter.labels[1] && dragBefore.labels[1] === dragAfter.labels[0]
           && dragAfter.order[0] === dragBefore.order[1] && dragAfter.location === "top" && !dragAfter.bottom),
         JSON.stringify({ before: dragBefore, after: dragAfter }));
+      // ⑩b 改动落到主进程 app-settings.json（重启/强杀后的回灌源）
+      const persisted = await h.eval(`window.codex.readAppSettings().then((s) => ({ fm: s.functionMenu, collapsed: s.sidebarOptionsCollapsed })).catch((e) => ({ error: String(e) }))`).catch(() => null);
+      h.check("⑩b 位置/顺序/折叠态已写入主进程 app-settings（重启后回灌）",
+        Boolean(persisted && persisted.fm && persisted.fm.location === "top" && persisted.fm.order && persisted.fm.order[0] === dragBefore?.order[1]
+          && persisted.collapsed === false),
+        JSON.stringify(persisted));
 
       // ⑪ 收尾恢复默认排序（不留测试配置）
       await h.eval(`document.querySelector(".sidebar-options-top .function-menu-more")?.click()`).catch(() => undefined);
@@ -1864,6 +1879,96 @@ const CHECKS = [
       h.check("⑪ 收尾恢复默认排序、顶部展开（不留测试配置）",
         Boolean(final && final.top && final.count === 8 && !final.badge && !final.collapsed),
         JSON.stringify(final));
+
+      // ⑫ 强杀重启：用户改动后的位置/顺序/折叠态必须原样回来（即使 localStorage 最后写入丢了）
+      const persistBefore = await h.eval(`(function(){
+        const rows=[...document.querySelectorAll(".sidebar-options-top .sidebar-cap-row:not(.function-menu-more)")];
+        let stored=null; try { stored=JSON.parse(localStorage.getItem("function-menu-v1") || "null"); } catch {}
+        return { labels: rows.map((b)=>b.querySelector("span")?.innerText.trim()), order: stored?.order || [] };
+      })()`).catch(() => null);
+      await h.eval(`(function(){
+        const rows=[...document.querySelectorAll(".sidebar-options-top .sidebar-cap-row:not(.function-menu-more)")];
+        if (rows.length < 2) return 0;
+        const dt=new DataTransfer(); window.__fmDt=dt;
+        rows[1].dispatchEvent(new DragEvent("dragstart", { bubbles:true, cancelable:true, dataTransfer:dt }));
+        return 1;
+      })()`).catch(() => 0);
+      await wait(200);
+      await h.eval(`(function(){
+        const rows=[...document.querySelectorAll(".sidebar-options-top .sidebar-cap-row:not(.function-menu-more)")];
+        if (rows.length < 2) return 0;
+        rows[0].dispatchEvent(new DragEvent("dragover", { bubbles:true, cancelable:true, dataTransfer:window.__fmDt }));
+        rows[0].dispatchEvent(new DragEvent("drop", { bubbles:true, cancelable:true, dataTransfer:window.__fmDt }));
+        return 1;
+      })()`).catch(() => 0);
+      await wait(500);
+      await h.eval(`document.querySelector(".sidebar-options-top .sidebar-options-toggle")?.click()`).catch(() => undefined);
+      await wait(150);
+      await settleAnimations();
+      const beforeRestart = await h.eval(`(function(){
+        const group=document.querySelector(".sidebar-options-top");
+        const body=group?.querySelector(".sidebar-options-body");
+        const rows=[...group.querySelectorAll(".sidebar-cap-row:not(.function-menu-more)")];
+        let stored=null; try { stored=JSON.parse(localStorage.getItem("function-menu-v1") || "null"); } catch {}
+        return { labels: rows.map((b)=>b.querySelector("span")?.textContent.trim()), order: stored?.order || [],
+          location: stored?.location || "", collapsed: body?.classList.contains("is-collapsed") || false };
+      })()`).catch(() => null);
+      const persistedBeforeRestart = await h.eval(`window.codex.readAppSettings().then((s)=>({ fm:s.functionMenu, collapsed:s.sidebarOptionsCollapsed })).catch((e)=>({ error:String(e) }))`).catch(() => null);
+      h.check("⑫a 重启前：位置/顺序/折叠态已在主进程落盘",
+        Boolean(beforeRestart && persistedBeforeRestart?.fm && persistedBeforeRestart.fm.location === "top"
+          && persistedBeforeRestart.fm.order?.[0] === beforeRestart.order?.[0]
+          && persistedBeforeRestart.collapsed === true && beforeRestart.collapsed), JSON.stringify({ beforeRestart, persistedBeforeRestart }));
+
+      // 模拟强杀时 localStorage 丢/旧：故意写一份错误值，重启后必须以 app-settings 为准回灌
+      await h.eval(`(function(){
+        try {
+          localStorage.setItem("function-menu-v1", JSON.stringify({ location: "bottom", order: ["newbie","login","identity","team","extensions","frontend","schedule"], overflow: [] }));
+          localStorage.setItem("sidebar-options-collapsed", "false");
+        } catch {}
+        return 1;
+      })()`).catch(() => undefined);
+
+      await h.restart();
+      await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "重启后界面就绪", timeoutMs: 40000 });
+      await wait(1800);
+      const afterRestart = await h.eval(`(function(){
+        const group=document.querySelector(".sidebar-options-top");
+        const body=group?.querySelector(".sidebar-options-body");
+        const rows=group ? [...group.querySelectorAll(".sidebar-cap-row:not(.function-menu-more)")] : [];
+        let stored=null; try { stored=JSON.parse(localStorage.getItem("function-menu-v1") || "null"); } catch {}
+        return { top: !!group, bottom: !!document.querySelector(".sidebar-options:not(.sidebar-options-top)"),
+          labels: rows.map((b)=>b.querySelector("span")?.textContent.trim()),
+          order: stored?.order || [], location: stored?.location || "",
+          collapsed: body?.classList.contains("is-collapsed") || false,
+          bodyH: body ? Math.round(body.getBoundingClientRect().height) : -1 };
+      })()`).catch(() => null);
+      h.check("⑫ 强杀重启后仍是用户改动后的状态（顶部 + 自定义顺序 + 折叠）",
+        Boolean(afterRestart && afterRestart.top && !afterRestart.bottom && afterRestart.location === "top"
+          && afterRestart.order?.[0] === beforeRestart?.order?.[0]
+          && afterRestart.labels?.[0] === beforeRestart?.labels?.[0] && afterRestart.collapsed && afterRestart.bodyH <= 4),
+        JSON.stringify({ beforeRestart, afterRestart }));
+
+      // ⑫b 收尾：展开并恢复默认排序
+      await h.eval(`document.querySelector(".sidebar-options-top .sidebar-options-toggle")?.click()`).catch(() => undefined);
+      await wait(150);
+      await settleAnimations();
+      await h.eval(`document.querySelector(".sidebar-options-top .function-menu-more")?.click()`).catch(() => undefined);
+      await wait(250);
+      await h.eval(`[...document.querySelectorAll(".function-menu-popover-item")].find((b) => b.innerText.includes("编辑菜单"))?.click()`).catch(() => undefined);
+      await h.waitFor(`!!document.querySelector(".function-menu-editor")`, { timeoutMs: 4000 }).catch(() => undefined);
+      await h.eval(`[...document.querySelectorAll(".fm-editor-foot button")].find((b) => b.innerText.includes("恢复默认"))?.click()`).catch(() => undefined);
+      await wait(250);
+      await h.eval(`[...document.querySelectorAll(".fm-editor-foot button")].find((b) => b.innerText.includes("完成"))?.click()`).catch(() => undefined);
+      await wait(400);
+      const afterCleanup = await h.eval(`(function(){
+        const group=document.querySelector(".sidebar-options-top");
+        return { top: !!group, count: group ? group.querySelectorAll(".sidebar-cap-row").length : 0,
+          collapsed: !!group?.querySelector(".sidebar-options-body.is-collapsed"),
+          first: group?.querySelector(".sidebar-cap-row span")?.innerText.trim() || "" };
+      })()`).catch(() => null);
+      h.check("⑫b 重启持久性测试收尾：解除折叠并恢复默认顺序",
+        Boolean(afterCleanup && afterCleanup.top && afterCleanup.count === 8 && !afterCleanup.collapsed && afterCleanup.first === "自动化"),
+        JSON.stringify(afterCleanup));
     },
   },
   {
@@ -2131,6 +2236,7 @@ const CHECKS = [
           return;
         }
         if ((req.url || "").split("?")[0].endsWith("/models")) {
+          modelsHits += 1;
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ data: mockModels.map((id) => ({ id })) }));
           return;
@@ -2327,7 +2433,7 @@ const CHECKS = [
             btn.click();
             return { found:true, editorBefore:!!document.querySelector('.provider-editor-modal') };
           })()`);
-          await wait(2200);
+          await wait(5000);
           const after = await h.eval(`(function(){
             return { editor:!!document.querySelector('.provider-editor-modal') };
           })()`);
@@ -2350,7 +2456,6 @@ const CHECKS = [
         h.check("⑤d 卡片「更新模型」移除已下架模型并保存重启",
           Boolean(removeRun.clicked.found && !removeRun.after.editor && removeRun.hits > 0 && afterRemove.length === 1 && afterRemove[0] === "mock-alpha"),
           JSON.stringify({ removeRun, afterRemove }));
-
 
         /* 云账号同一条弹窗：登录后读云端目录（⛔ 不走 /models 探测）。只看不存，避免改服务端勾选。 */
         const cloudLoggedIn = await h.eval(`(async function(){ const s=await window.codex.cloudAuthStatus(); return !!s.loggedIn; })()`).catch(() => false);
