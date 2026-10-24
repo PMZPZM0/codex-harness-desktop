@@ -568,3 +568,28 @@
   flex-wrap: wrap;
 }
 .settings-exp-shell .skill-local-bulk .batch-hint { color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+
+/* ── 数据管理页（10-24 用户令「整齐划一」）：三段统一为分组小标题 + 单张白卡，行间细分隔线 ──
+   ⛔ 全部作用域在 .storage-page-* 下（34-devtools-cards 教训：不许裸写 .settings-card 级全局改写）。
+   旧行样式（.storage-row 自带边框底色）在卡内关掉 —— 行与行用分隔线，不再一格一格。 */
+.settings-exp-shell .storage-page-card { display: flex; flex-direction: column; padding: 2px 14px; }
+.settings-exp-shell .storage-page-card > * { padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+.settings-exp-shell .storage-page-card > *:first-child { padding-top: 14px; }
+.settings-exp-shell .storage-page-card > *:last-child { border-bottom: 0; }
+.settings-exp-shell .storage-page-card > .storage-row { padding: 12px 0; border: 0; border-radius: 0; background: none; }
+.settings-exp-shell .storage-page-card > .storage-row + .storage-row { border-top: 1px solid var(--line-soft); }
+.settings-exp-shell .storage-page-card > .codex-logs-bar { padding: 8px 10px; }
+.settings-exp-shell .storage-page-card > .codex-logs-tree { padding: 4px; }
+.settings-exp-shell .storage-page-card p.muted { margin: 0; line-height: 1.65; }
+.settings-exp-shell .storage-page-card .settings-actions { margin: 0; gap: 8px; }
+.settings-exp-shell .storage-page-card .storage-row .settings-actions { flex: none; }
+/* 备份目录行：说明在上，输入行在下（输入框可收缩，窄窗不横向溢出） */
+.storage-dir-row { display: flex; flex-direction: column; gap: 8px; }
+.storage-dir-line { display: flex; align-items: center; gap: 8px; }
+.storage-dir-line .account-menu-input { flex: 1 1 auto; min-width: 0; }
+.storage-dir-line .secondary-setting { flex: none; }
+.storage-dir-effective { margin: 2px 0 0; word-break: break-all; font-size: 11.5px; }
+.storage-dir-warn { color: var(--orange); }
+.settings-exp-shell .storage-page-card .work-logs-foot { flex-wrap: wrap; }
+/* 工作日志卡内的提示行放宽（与统计条同宽） */
+.settings-exp-shell .storage-page-card .work-logs-hint { max-width: none; }

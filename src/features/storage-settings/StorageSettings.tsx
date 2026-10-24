@@ -1,7 +1,7 @@
 /** 存储设置 / 复审面板（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
 import { useState, useEffect, useMemo } from "react";
 import { PageInfo } from "../../components/SettingsHead";
-import { Database, ChevronDown, Check, RefreshCw, FileCode2, FolderOpen, Search, Download } from "lucide-react";
+import { ChevronDown, Check, RefreshCw, FileCode2, FolderOpen, Search, Download } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 import { basename } from "../../lib/basename";
@@ -44,7 +44,9 @@ export function StorageSection({ onNotice, onClearMemoryCache, openAppConfirm }:
   return (
     <section className="settings-section stack is-settings-flow">
       <div className="settings-copy"><h2>数据管理<PageInfo text={<>查看各数据目录占用，并清理可安全的缓存。会话历史（rollout 原档）<strong>不随缓存清理</strong>；要归档或永久删除会话，去「归档管理」页。</>} /></h2><p>看清各类数据占多少空间，按需清理缓存；会话原档不受缓存清理影响。</p></div>
-      <div className="storage-list">
+      <div className="settings-exp-group-head"><span>存储占用</span><small>缓存可随手清理；会话记录永远保留</small></div>
+      {/* 10-24 用户令「整齐划一」：占用行 + 恢复缓存行收进同一张白卡（每行一行分隔线，操作全部右对齐） */}
+      <div className="storage-page-card settings-card">
         {info?.items.map((item) => (
           <div className="storage-row" key={item.key}>
             <div className="storage-meta"><strong>{item.label}</strong><span>{formatBytes(item.bytes)}</span></div>
@@ -54,12 +56,16 @@ export function StorageSection({ onNotice, onClearMemoryCache, openAppConfirm }:
           </div>
         ))}
         {!info && <p className="muted">正在统计占用…</p>}
-      </div>
-      <div className="settings-subhead"><Database size={13} />会话恢复缓存（内存）</div>
-      <p className="muted">应用会在内存里缓存已打开过的会话用于秒开；长时间运行、切换过大量会话后可能占用可观内存。清理后下次打开会话会重新从磁盘加载（略慢一瞬）。</p>
-      <div className="settings-actions">
-        <button className="secondary-setting" disabled={busy !== null} onClick={() => { onClearMemoryCache(); onNotice("已清理会话恢复缓存"); }}>清理会话恢复缓存</button>
-        <button className="secondary-setting" onClick={() => { window.codex.getUserData().then((p: string) => window.codex.shellReveal(p)).catch(() => undefined); }}>打开数据目录</button>
+        <div className="storage-row">
+          <div className="storage-meta">
+            <strong>会话恢复缓存（内存）</strong>
+            <span>内存里缓存已打开过的会话用于秒开；清理后下次打开会话会重新从磁盘加载（略慢一瞬）</span>
+          </div>
+          <div className="settings-actions">
+            <button className="secondary-setting" disabled={busy !== null} onClick={() => { onClearMemoryCache(); onNotice("已清理会话恢复缓存"); }}>清理缓存</button>
+            <button className="secondary-setting" onClick={() => { window.codex.getUserData().then((p: string) => window.codex.shellReveal(p)).catch(() => undefined); }}>打开数据目录</button>
+          </div>
+        </div>
       </div>
     </section>
   );
