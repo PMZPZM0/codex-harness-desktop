@@ -30,6 +30,52 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
   /* 10-24 二轮（用户：「有考虑到如果密钥失效吗」）：卡片直接测试连接并标出密钥失效；
      云端走 cloudModelsTest（401/403 自动重签），其它供应商提示更新 Key。 */
   const [cardHealth, setCardHealth] = useState<Record<string, { state: "testing" | "ok" | "bad"; detail?: string; auth?: boolean }>>({});
+  /* 10-24 八轮（用户：「点击更新模型，直接更新就好了，还进来了编辑界面，又要点一遍更新」）：
+     卡片上的「更新模型」直接拉 /models 并保存，不再打开二级弹窗。 */
+  const [cardUpdating, setCardUpdating] = useState<Record<string, boolean>>({});
+  const refreshCardModels = async (p: any) => {
+    if (cardUpdating[p.provider]) return;
+    setCardUpdating((cur) => ({ ...cur, [p.provider]: true }));
+    try {
+      if (p.provider === "cloud") {
+        const api = window.codex as any;
+        if (!api.cloudModelsSync) throw new Error("当前构建不支持云端模型刷新");
+        const sync = await api.cloudModelsSync({ force: true });
+        if (!sync?.ok) throw new Error(sync?.error || "云端模型同步失败");
+        await refreshActive?.();
+        showToast?.("云端模型已刷新", `${sync.models ?? 0} 个模型（来自云账号目录）`);
+        return;
+      }
+      const draft = draftForProvider(p);
+      const result = await window.codex.probeCustomModel({ ...draft, model: "", wireApi: "responses" });
+      const ids: string[] = Array.isArray((result as any).models) ? (result as any).models : [];
+      if (!ids.length) throw new Error("没有拉到可用模型，请检查 API 地址与密钥");
+      const fetched = new Set(ids);
+      const currentIds = (draft.models ?? []).map((m: any) => m.id);
+      const addedIds = ids.filter((id) => !currentIds.includes(id));
+      const removed = currentIds.filter((id) => !fetched.has(id)).length;
+      const changed = addedIds.length > 0 || removed > 0;
+      const models = [
+        ...(draft.models ?? []).filter((m: any) => fetched.has(m.id)).map((m: any) => ({ ...m })),
+        ...addedIds.map((id) => ({ id, enabled: true, contextWindow: Number(p.contextWindow) || 128000 })),
+      ];
+      if (changed) {
+        const saved = await saveCustomDraft({ ...draft, models });
+        if (!saved) throw new Error("模型列表保存失败，详情见提示");
+        showToast?.("模型列表已更新", `新增 ${addedIds.length} 个、移除 ${removed} 个，共 ${models.length} 个（已保存，应用即将重启以完全生效）`);
+        // 用户 10-24：「新增了模型，和减少了模型都要保存重启，才能刷新出来」——
+        // 与编辑弹窗保存一致，保存成功后重启应用（验收子进程 NO_RELAUNCH 时为空操作）。
+        window.setTimeout(() => { void window.codex.relaunchApp().catch(() => undefined); }, 800);
+      } else {
+        await refreshActive?.();
+        showToast?.("模型列表已更新", `已是最新，共 ${models.length} 个`);
+      }
+    } catch (error: any) {
+      showToast?.("更新模型失败", String(error?.message ?? error));
+    } finally {
+      setCardUpdating((cur) => { const next = { ...cur }; delete next[p.provider]; return next; });
+    }
+  };
   const testProviderCard = async (p: any) => {
     if (cardHealth[p.provider]?.state === "testing") return;
     setCardHealth((cur) => ({ ...cur, [p.provider]: { state: "testing" } }));
@@ -229,7 +275,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                                 </span>
                               )}
                               <span className="provider-card-actions">
-                                <button type="button" className="provider-card-action provider-card-update" title="刷新该供应商的模型列表" onClick={(event) => { event.stopPropagation(); openProviderEditor(p, isPseudoPptoken); }}><RefreshCw size={11} />{isPseudoPptoken ? "配置" : "更新模型"}</button>
+                                <button type="button" className="provider-card-action provider-card-update" disabled={Boolean(cardUpdating[p.provider])} title={isPseudoPptoken ? "先填写 API Key 才能拉取模型" : "直接刷新该供应商的模型列表并保存"} onClick={(event) => { event.stopPropagation(); if (isPseudoPptoken) openProviderEditor(p, isPseudoPptoken); else void refreshCardModels(p); }}>{cardUpdating[p.provider] ? <Spinner /> : <RefreshCw size={11} />}{isPseudoPptoken ? "配置" : cardUpdating[p.provider] ? "更新中" : "更新模型"}</button>
                                 {health?.state === "bad" && health.auth && (
                                   <button type="button" className="provider-card-action danger" onClick={(event) => { event.stopPropagation(); void repairProviderCard(p); }}>{p.provider === "cloud" ? "修复密钥" : "更新密钥"}</button>
                                 )}
