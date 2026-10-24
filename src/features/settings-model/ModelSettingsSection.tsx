@@ -140,6 +140,8 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
   };
   return (
     <>
+      <section className="settings-section stack model-page">
+      <div className="settings-copy"><h2>模型</h2><p>配置供应商与自动压缩；新供应商保存后旧供应商自动停用。</p></div>
       <div className="provider-setup-hero" data-testid="provider-setup-entry">
         <div className="provider-setup-hero-copy">
           <span className="provider-setup-hero-title"><Wand2 size={15} /><b>自动配置模型</b><em>推荐</em></span>
@@ -148,7 +150,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
         </div>
         <button className="primary-setting provider-setup-open" onClick={openAutoSetup}><Wand2 size={15} />打开自动配置</button>
       </div>
-      <section className="model-settings-page">
+      <div className="model-settings-page">
                     <div className="provider-page-toolbar">
                       <div className="provider-list-head">
                         <h2>模型供应商 <span className="provider-count">{displayProviders.length}</span>
@@ -262,6 +264,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                         onUninstalled={() => removeProvider("free-gateway")}
                       />
                     </div>
+      </div>
       </section>
       {editorOpen && (
         <div className="modal-backdrop provider-editor-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !savingSettings) setEditorOpen(false); }}>

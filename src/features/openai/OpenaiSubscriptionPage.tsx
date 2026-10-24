@@ -232,7 +232,7 @@ export function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, o
   };
   return (
     <section className="settings-section stack relay-center">
-      <div className="settings-copy channel-heading"><div><h2>OpenAI 订阅监控<PageInfo text={<>多账号统一监控：每张卡片实时显示订阅档位、有效期与额度用量；切换账号即写入引擎并重启生效。登录与额度查询需要可访问 OpenAI 的网络（代理）。</>} /></h2></div></div>
+      <div className="settings-copy channel-heading"><div><h2>OpenAI 订阅监控<PageInfo text={<>多账号统一监控：每张卡片实时显示订阅档位、有效期与额度用量；切换账号即写入引擎并重启生效。登录与额度查询需要可访问 OpenAI 的网络（代理）。</>} /></h2><p>多账号统一监控订阅与额度；切换后重启生效。</p></div></div>
       {err && <p className="relay-account-err"><AlertTriangle size={13} />{err}</p>}
       <div className="relay-plan-grid openai-account-grid">
         {accounts.map((a) => {
