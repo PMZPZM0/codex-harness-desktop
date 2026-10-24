@@ -37,6 +37,7 @@ const wave = read("src/voice/wave-level.ts");
 const noticeTs = read("src/voice/voice-notice.ts");
 const devInstr = read("electron/developer-instructions.ts");
 const voiceSettings = read("electron/voice/voice-settings.ts");
+const voiceService = read("electron/voice/voice-service.ts");
 const bridgeTsx = read("src/features/app-view/helpers/components.tsx");
 const appView = read("src/features/app-view/AppView.tsx");
 
@@ -125,14 +126,27 @@ ok(/announce: \{ enabled: true \}/.test(voiceSettings),
   "默认值：`announce.enabled = true`（与旧结构 live 的默认一致 —— 播报默认开着）");
 ok(/announce: \{ enabled: announceEnabled \}/.test(voiceSettings) && /announceRaw\?\.live !== false \|\| announceRaw\?\.summary === true/.test(voiceSettings),
   "mergeSettings **显式映射** announce.enabled，且把旧档案的 {live, summary} 平移过来（漏映射 = 用户改了不生效且不报错 —— 本文件已 N 次同款）");
-ok(/VOICE_SETTINGS_VERSION = 5/.test(voiceSettings) && /if \(version < 4\)/.test(voiceSettings) && /if \(version < 5\)/.test(voiceSettings),
-  "版本 3 → 4（两个开关收成一个）→ 5（语速默认 1.0→1.25）且**各带迁移** —— 不迁移的话老档案读出来是旧值/undefined");
+ok(/VOICE_SETTINGS_VERSION = 6/.test(voiceSettings) && /if \(version < 4\)/.test(voiceSettings) && /if \(version < 5\)/.test(voiceSettings) && /if \(version < 6\)/.test(voiceSettings),
+  "版本 3 → 4（两个开关收成一个）→ 5（语速默认 1.0→1.25）→ 6（新增 tts.numSteps 音质档）且**各带迁移** —— 不迁移的话老档案读出来是旧值/undefined");
 /* ⛔ 10-21 用户令「语音播报速度默认改成 1.25×」：常量与迁移必须同轮落地（只改常量对老用户无效，
    只写迁移不改常量对新用户无效 —— 两边缺一都等于这次默认值改动没生效）。 */
-ok(/tts: \{ sid: 0, speed: 1\.25, volume: 1\.0 \}/.test(voiceSettings),
-  "默认值：`tts.speed = 1.25`（语音播报与通话共用这一份 —— 单一真相源）");
+/* ⛔ 默认值块中间夹着长注释（解释 2 步为什么发沙），夹取窗口给足 1200 字符；
+   只锚「同一个 tts 对象里先 speed 后 numSteps」这个结构，不锚注释内容。 */
+ok(/tts: \{[\s\S]{0,1200}?speed: 1\.25[\s\S]{0,1200}?numSteps: 4/.test(voiceSettings),
+  "默认值：`tts.speed = 1.25` + `tts.numSteps = 4`（语音播报与通话共用这一份 —— 单一真相源）");
 ok(/if \(version < 5\)[\s\S]{0,600}?Math\.abs\(speed - 1\.0\) < 1e-9[\s\S]{0,400}?DEFAULT_VOICE_SETTINGS\.tts\.speed/.test(voiceSettings),
   "v4 → v5 迁移：**值等于旧默认 1.0（或缺失）**才迁到 1.25，用户显式调过的档位不动");
+/* ⛔ 10-24 用户报「播报声音太沙哑，听不清」：根因是播报端把步数写死 2（换延迟）。
+   修复必须**同时**满足三条，缺一条就等于没修：
+     ① 播报取设置值（不再是常量）；
+     ② speak（通话/试听复用）把 numSteps 下发到 worker；
+     ③ 设置页有可选的音质档（否则用户只能吃默认）。 */
+ok(/numSteps: cfgRef\.current\.numSteps/.test(announceHook) && !/numSteps: ANNOUNCE_NUM_STEPS\b\)/.test(announceHook),
+  "播报的合成步数取设置（`cfgRef.current.numSteps`），不再写死常量 —— 写死 = 用户选了「清晰」也没用");
+ok(/numSteps: options\?\.numSteps \?\? this\.currentSettings\.tts\.numSteps/.test(voiceService),
+  "speak 把 numSteps 下发到 worker（漏下发 = worker 用默认 4，设置里的档位形同虚设）");
+ok(/tts: \{ \.\.\.settings\.tts, numSteps: Number\(v\) \}/.test(announceCard),
+  "设置页「播报音质」三档可选（写回 tts.numSteps，与播报/通话/试听共用）");
 ok(/checked=\{enabled\}/.test(announceCard) && /apply\(\{ announce: \{ enabled: e\.target\.checked \} \}\)/.test(announceCard)
   && (announceCard.match(/type="checkbox"/g) || []).length === 1,
   "设置页「语音播报」卡片上**只有一个**总开关（正文实时 / 汇总两个旧开关已删）");

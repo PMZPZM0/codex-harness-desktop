@@ -82,8 +82,15 @@ export async function readPersonalization(): Promise<PersonalizationConfig> {
 export async function writePersonalization(input: Record<string, unknown>): Promise<PersonalizationConfig> {
   const current = await readPersonalization();
   const str = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max);
+  /* ⛔⛔ 别名收口（10-24 实测 bug）：模型侧工具（`identity_onboard` / `identity_update`）把「用户称呼」
+     这个字段叫 `userName`（对模型最好理解），而档案里的真名是 `nickname`。早先没有映射 ⇒
+     引导里用户明明报了名字，`userName` 在这里被**静默丢弃**（档案 nickname 恒空），
+     于是界面永远显示账号名、引擎也永远不知道该怎么称呼 TA。
+     ⛔ 收口点放在这里（而不是每个调用方各自映射）：任何入口传 `userName` 都不会再丢字段。 */
+  const input2: Record<string, unknown> = { ...input };
+  if (input2.nickname === undefined && String(input2.userName ?? "").trim()) input2.nickname = input2.userName;
   const pick = (key: keyof PersonalizationConfig, max: number): string | undefined =>
-    input[key] === undefined ? current[key] as string | undefined : str(input[key], max);
+    input2[key] === undefined ? current[key] as string | undefined : str(input2[key], max);
   const config: PersonalizationConfig = {
     nickname: pick("nickname", 60),
     customInstructions: pick("customInstructions", 8000),

@@ -24,10 +24,16 @@ export type ModelHost = "auto" | "huggingface" | "hf-mirror";
 export type AecMode = "auto" | "on" | "off";
 
 /** 设置文件结构版本：每次「默认值语义变了、老档案需要迁移」就 +1（见 migrateSettings） */
-export const VOICE_SETTINGS_VERSION = 5;
+export const VOICE_SETTINGS_VERSION = 6;
 
 export type VoiceSettings = {
-  tts: { sid: number; speed: number; volume: number; /** "我的音色"档案 id；空串/缺省 = 用内置预置音色 */ profileId?: string };
+  tts: {
+    sid: number; speed: number; volume: number;
+    /** "我的音色"档案 id；空串/缺省 = 用内置预置音色 */ profileId?: string;
+    /** 合成步数（10-24 新增，2–12）。步数越多音质越清晰、合成越慢。
+     *  ⛔ 单一真相源：播报 / 通话 / 试听共用这一档（播报端曾写死 2 步换延迟，实测「沙哑听不清」）。 */
+    numSteps: number;
+  };
   asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
   mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
   barge: { gateDb: number; mode: BargeMode };
@@ -104,7 +110,13 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
         `VOICE_SETTINGS_VERSION` +1 并在 `migrateSettings` 里按「值等于旧默认才迁移」处理
         （与 rule2 / autoGainControl 同一套做法）。用户显式调过的档位保持不动。
      ⛔ 播报与通话共用这一份（单一真相源）⇒ 通话默认语速同步变成 1.25×。 */
-  tts: { sid: 0, speed: 1.25, volume: 1.0 },
+  tts: {
+    sid: 0, speed: 1.25, volume: 1.0,
+    /* ⛔ 10-24 用户报「播报声音太沙哑，听不清」：播报端为压延迟写死 **2 步**（见 use-voice-announce
+       的 ANNOUNCE_NUM_STEPS 历史注释：4 步 9.4s / 2 步 4.8s），而 2 步对这个蒸馏模型就是
+       明显掉音质。改成**用户可选**、默认回到模型默认质量 4 步；要更清楚可在播报卡选 8 步。 */
+    numSteps: 4,
+  },
   // rule2 = 已识别出文字后，尾静音超过它就算「说完了」。09-13 由 1.2 → 0.8：
   // 它是端到端延迟里**唯一纯等待**的一块（审计 ④），每轮省 0.4s，且 0.8s 仍明显长于
   // 汉语自然停顿（~0.3s），不会把长句切碎。
@@ -244,6 +256,17 @@ export function migrateSettings(raw: Partial<VoiceSettings> | undefined): { sett
      既有通话行为、summary=false 不引入新声音）⇒ 升级不改变任何现有体验，无需迁移。
      ⛔ 反过来才需要迁移：像上面两条那样「字段已存在、只是默认值换了」——那时老档案里存的是旧值，
        只改常量对他们完全无效（`loadVoiceSettings` 读的是文件里的值）。 */
+  /* v5 → v6（10-24）：`tts.numSteps` 新增（缺省 4 = 模型默认音质）。
+     ⛔ 这是**新增字段**、不是旧默认值变了，`mergeSettings` 本来就能填默认值 —— 但这里仍显式迁移一次：
+        老档案（version 5）若被人手改过/写过 null，`clampInt(null)` 会静默落到默认，看不出问题；
+        显式置位能让「升级后播报音质确实变好了」这件事在档案里可验证（用户报的是听感，最难归因）。 */
+  if (version < 6) {
+    const steps = Number(source.tts?.numSteps);
+    if (!Number.isFinite(steps)) {
+      source.tts = { ...(source.tts as any), numSteps: DEFAULT_VOICE_SETTINGS.tts.numSteps };
+      changed = true;
+    }
+  }
   const settings = mergeSettings(source);
   if (Number(settings.version ?? 0) !== VOICE_SETTINGS_VERSION) {
     settings.version = VOICE_SETTINGS_VERSION;
@@ -285,6 +308,8 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
       sid: clampInt(tts.sid, 0, 4, d.tts.sid),
       speed: clampNum(tts.speed, 0.5, 2.0, d.tts.speed),
       volume: clampNum(tts.volume, 0, 2.0, d.tts.volume),
+      /* 2 步是「能听清但发沙」的下限，12 步再往上只增延迟不给音质 ⇒ 夹在 2–12 */
+      numSteps: clampInt(tts.numSteps, 2, 12, d.tts.numSteps),
       // profileId 必须显式透传：这里是显式字段映射，漏写 = 「选用克隆音色后设置不持久，
       // 通话一直用内置音色」（09-12「显式字段映射吞新字段」同款坑，voice-presets 验收抓到）
       ...(typeof tts.profileId === "string" ? { profileId: tts.profileId } : {}),

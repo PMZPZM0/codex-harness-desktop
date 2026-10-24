@@ -12,7 +12,7 @@ import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } fr
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../lib/user-refs";
 import { basename } from "../../../../lib/basename";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
-import { DELEGATE_RAIL_LINGER_MS, IDENTITY_ONBOARD_INSTRUCTIONS, IDENTITY_ONBOARD_TOOL, MEMBER_LABELS, NOTICE_MAX, NOTICE_TTL_MS, QUICK_SITES } from "../../../app-view/constants";
+import { DELEGATE_RAIL_LINGER_MS, IDENTITY_ONBOARD_INSTRUCTIONS, IDENTITY_ONBOARD_TOOL, IDENTITY_UPDATE_TOOL, MEMBER_LABELS, NOTICE_MAX, NOTICE_TTL_MS, QUICK_SITES } from "../../../app-view/constants";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../app-view/types";
 import type { Bag } from "../bag-types";
 import { openThread as openThreadImpl } from "./01-seg/open-thread";
@@ -455,7 +455,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
            agent_invoke 与 subagent_invoke 并存 ⇒ 专家团被绕过）。
            ⛔ 旧名 `memory_save` 仍可调用（主进程同一 handler），只是**不再出现在工具面里** ——
               留着的唯一理由是老会话的上下文里记着它。 */
-        { type: "function", name: "memory_write", description: "保存一条记忆。两种作用域：private（默认）= 只属于本会话 / 本执行体的私事，别的会话看不到；project = 全项目共享，所有会话与智能体（子智能体 / 专家 / 专家团）都能读到。⛔ project 是公共知识，别把一次性的中间结论写进去。分类沿用五类，别自造；相同内容会自动去重。", inputSchema: { type: "object", properties: { scope: { type: "string", enum: ["private", "project"], description: "记忆作用域：private=本会话/本执行体私有（默认），project=全项目共享" }, category: { type: "string", enum: ["用户偏好", "项目背景", "工作流/SOP", "任务经验", "临时上下文"] }, content: { type: "string", description: "记忆正文（单条上限 2000 字）" }, weight: { type: "number", description: "重要性 0..1（省略则按分类取默认）" }, pinned: { type: "boolean", description: "钉住：蒸馏与裁剪时永不删除" } }, required: ["content"] } },
+        { type: "function", name: "memory_write", description: "保存一条记忆。两种作用域：private（默认）= 只属于本会话 / 本执行体的私事，别的会话看不到；project = 全项目共享，所有会话与智能体（子智能体 / 专家 / 专家团）都能读到。⛔ project 是公共知识，别把一次性的中间结论写进去。分类沿用五类，别自造；相同内容会自动去重。⛔「你叫什么名字 / 该怎么称呼用户」不属于记忆，必须调 identity_update（写这里界面与称呼都不会变）。", inputSchema: { type: "object", properties: { scope: { type: "string", enum: ["private", "project"], description: "记忆作用域：private=本会话/本执行体私有（默认），project=全项目共享" }, category: { type: "string", enum: ["用户偏好", "项目背景", "工作流/SOP", "任务经验", "临时上下文"] }, content: { type: "string", description: "记忆正文（单条上限 2000 字）" }, weight: { type: "number", description: "重要性 0..1（省略则按分类取默认）" }, pinned: { type: "boolean", description: "钉住：蒸馏与裁剪时永不删除" } }, required: ["content"] } },
       ] : []),
       /* Laya 局部判断工具：**装了才出现**（用户 10-18 明确要求；未装时连 schema 都不占工具面）。
          它是短文本多选一分类器（本地 ~几十 ms、零生成），不是生成/核查模型：
@@ -629,6 +629,10 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           required: ["doc"],
         },
       },
+      /* ⛔ 名字 / 称呼的常驻通道（10-24 实测缺口）：`identity_onboard` 只在「从没打过招呼」那次会话注入，
+         之后模型想改名字**没有任何工具** ⇒ 它只能写进记忆，界面上的名字永远不变。
+         本工具每个会话都下发（描述里点名「不要只写进记忆」），落点是 personalization.json + AGENTS.md。 */
+      IDENTITY_UPDATE_TOOL,
     ];
   }, [bag.memoryEnabled, bag.memoryBackend]);
 bag.buildDynamicTools = buildDynamicTools as typeof bag.buildDynamicTools;

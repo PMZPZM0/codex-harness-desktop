@@ -117,7 +117,7 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
     };
   }
 
-  ipcHost.handle("voice:speak", async (_event, text: string, options?: { sid?: number; speed?: number }) => {
+  ipcHost.handle("voice:speak", async (_event, text: string, options?: { sid?: number; speed?: number; numSteps?: number }) => {
     return voiceAudioForIpc(await svc().speak(String(text ?? ""), options));
   });
   ipcHost.handle("voice:preview-voice", async (_event, input?: { sid?: number; speed?: number; text?: string; profileId?: string; warm?: boolean; numSteps?: number }) => {

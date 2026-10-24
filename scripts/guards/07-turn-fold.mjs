@@ -5070,7 +5070,9 @@ export async function run() {
     (turnView.includes("!isCompactionItem(item)") && !turnView.includes("items={responseItems}") ? ok : fail)(
       "【165】回合内容区剔除压缩线（TurnFoldStream 只吃 foldItems，线不许再落回内容末尾）"
     );
-    (timeline.includes("compactionStateOf(ordered, compactToast?.state)") && timeline.includes("cs.state === \"done\" ? cs.item : null") ? ok : fail)(
+    /* ⛔ 10-24 锚点同步：`compactToast` 必须先按会话过滤（`threadCompactToast`）再交给
+       compactionStateOf —— 否则 A 会话的压缩成功会让 B 会话刻度尺长出假绿线（用户实测）。 */
+    (timeline.includes("compactionStateOf(ordered, threadCompactToast?.state)") && timeline.includes("cs.state === \"done\" ? cs.item : null") ? ok : fail)(
       "【165】timeline 层扫描最后一条已完成压缩 item（与 pruneSupersededCompactions 同口径）"
     );
     ((() => { const a = timeline.indexOf("compactionLine && i === insertBefore"); const b = timeline.indexOf("<MemoTurnView"); return a >= 0 && b >= 0 && a < b; })() ? ok : fail)(

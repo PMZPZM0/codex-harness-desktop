@@ -582,7 +582,7 @@ export class VoiceService {
   }
 
   /** 合成一句话（渲染层按句调用，实现边生成边播）。 */
-  async speak(text: string, options?: { sid?: number; speed?: number }): Promise<VoiceSpeakResult> {
+  async speak(text: string, options?: { sid?: number; speed?: number; numSteps?: number }): Promise<VoiceSpeakResult> {
     if (!this.tts) return { ok: false, error: "语音合成未就绪" };
     const clean = String(text ?? "").trim();
     if (!clean) return { ok: false, error: "空文本" };
@@ -592,6 +592,9 @@ export class VoiceService {
         // 默认走设置里的音色/语速，调用方传了 options 就覆盖（便于临时切换）
         sid: options?.sid ?? this.currentSettings.tts.sid,
         speed: options?.speed ?? this.currentSettings.tts.speed,
+        /* ⛔ 10-24：音质（合成步数）走设置里的单一档位。早先这里不下发 ⇒ worker 用 4；
+           播报端又自己写死 2（换延迟）⇒ 用户听到的播报比试听明显沙哑。现在统一由设置决定。 */
+        numSteps: options?.numSteps ?? this.currentSettings.tts.numSteps,
       });
       this.setState("speaking");
       return { ok: true, sampleRate: Number(result.sampleRate ?? 22050), samples: result.samples };
@@ -642,7 +645,9 @@ export class VoiceService {
     const numThreads = settings.asr.numThreads;
     // 通话线程只有在「加载的正是这个音色」时才能直接复用；音色不同必须走试听 worker 重建
     if (this.tts && !input?.profileId && wanted === this.ttsProfileWanted) {
-      return this.speak(input?.text ?? VOICE_SAMPLE_TEXT, { sid: input?.sid, speed: input?.speed });
+      /* ⛔ 复用通话 worker 时同样要带 numSteps：不带就回落 worker 默认 4 ⇒ 用户选了「清晰(8)」
+         却没效果（这条与「显式字段映射吞字段」同型，最难发现）。 */
+      return this.speak(input?.text ?? VOICE_SAMPLE_TEXT, { sid: input?.sid, speed: input?.speed, numSteps: input?.numSteps });
     }
     const sherpaPath = resolveSherpaPath();
     if (!sherpaPath) return { ok: false, error: "语音运行时未就绪（sherpa-onnx 未安装）" };
@@ -655,8 +660,9 @@ export class VoiceService {
         text: String(input?.text ?? VOICE_SAMPLE_TEXT),
         sid: input?.sid ?? settings.tts.sid,
         speed: input?.speed ?? settings.tts.speed,
-        // 播报端会传更少的采样步数换低延迟；不传 = worker 默认 4 步（试听保持原音质）
-        numSteps: input?.numSteps,
+        /* 显式回落到设置里的音质档（不传 undefined —— 那会让 worker 用写死的 4，
+           与用户在设置页选的档位脱节）。 */
+        numSteps: input?.numSteps ?? settings.tts.numSteps,
       });
       return { ok: true, sampleRate: Number(result.sampleRate ?? 22050), samples: result.samples };
     } catch (error: any) {
