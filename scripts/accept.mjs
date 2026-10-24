@@ -414,7 +414,7 @@ const CHECKS = [
         return { found:true, display: cs.display, w: Math.round(el.getBoundingClientRect().width), sw: el.scrollWidth };
       })()`);
       h.check("⑦ 收藏夹页脚说明是单列块（不再被 flex 拆成多列）", foot?.found && foot.display === "block" && foot.sw <= foot.w + 2, JSON.stringify(foot));
-      // 简洁风：页头必须是纯标题（无卡片/渐变），模型供应商是一列白卡（不是彩色方卡）
+      // 简洁风：页头必须是纯标题（无卡片/渐变），模型供应商是多列小卡（高度随内容）
       await h.eval(`(function(){ var b=[...document.querySelectorAll('.settings-nav button')].find(function(x){ return (x.textContent||'').trim()==='模型'; }); b&&b.click(); return 1; })()`);
       await wait(1400);
       const flat = await h.eval(`(function(){
@@ -428,10 +428,11 @@ const CHECKS = [
           headerBg: hcs?.backgroundImage ?? 'missing', headerPad: hcs?.paddingTop ?? '',
           cardBg: ccs?.backgroundImage ?? 'missing',
           cardW: card ? Math.round(card.getBoundingClientRect().width) : 0,
+          cardH: card ? Math.round(card.getBoundingClientRect().height) : 0,
           cols, colCount: cols ? cols.split(' ').length : 0,
         };
       })()`);
-      h.check("⑧ 简洁风：页头无卡片/渐变，模型供应商一列白卡", flat.headerBg === "none" && flat.headerPad === "0px" && flat.cardBg === "none" && flat.cardW >= 600 && flat.colCount === 1, JSON.stringify(flat));
+      h.check("⑧ 简洁风：页头无卡片/渐变，模型供应商多列小卡（自适应大小）", flat.headerBg === "none" && flat.headerPad === "0px" && flat.cardBg === "none" && flat.cardW > 0 && flat.cardW <= 420 && flat.cardH > 0 && flat.cardH <= 220 && flat.colCount >= 2, JSON.stringify(flat));
     },
   },
   {

@@ -461,7 +461,7 @@
 .settings-exp-shell .provider-card:hover { background: var(--panel); border-color: var(--line); transform: none; }
 .settings-exp-shell .provider-card.selected { background: var(--panel); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .settings-exp-shell .provider-item-icon { background: var(--panel-2) !important; color: var(--muted) !important; }
-.settings-exp-shell .provider-card-grid { grid-template-columns: 1fr; }
+.settings-exp-shell .provider-card-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
 .settings-exp-shell .provider-more-section .provider-item { border-color: var(--line-soft); background: var(--panel); }
 
 .settings-exp-shell .relay-sub-banner,
@@ -500,6 +500,6 @@
 .settings-exp-shell .backup-card--current { border-color: var(--line-soft); }
 .settings-exp-shell .backup-card-head > span { background: var(--panel-2); color: var(--muted); }
 
-/* 供应商卡改成一列后不再撑高（原 min-height 会在宽卡里留一大片空白） */
-.settings-exp-shell .provider-card { min-height: 0; }
+/* 供应商小卡：多列 auto-fill，高度随内容；不再强制 152px 最小高度 */
+.settings-exp-shell .provider-card { min-height: 0; padding: 12px 13px; gap: 8px; }
 .settings-exp-shell .relay-add-card { background: var(--panel); border: 1px dashed var(--line); }
