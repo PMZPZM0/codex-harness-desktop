@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, FileText, FolderOpen, RotateCw, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, FolderOpen, RotateCw, Trash2 } from "lucide-react";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 /**
@@ -105,30 +105,28 @@ export function WorkLogsSection({ onNotice, openAppConfirm }: {
 
   return (
     <section className="settings-section stack is-settings-flow work-logs-card">
-      <div className="settings-subhead"><FileText size={13} />工作日志（项目工作记录）</div>
-      <p className="muted">
-        Codex 在每个项目里写下的工作日志与项目记忆（<code>&lt;项目&gt;/.codex-harness/memory/</code>）：每日日志、长期记忆、坑与纪律。
-        点一条看正文，勾选后可批量删除。
-        <strong>⛔ 这是项目里的工作记录，不是对话记录</strong>——会话的归档 / 删除在「归档管理」页，记忆档案在「记忆管理」页。
-      </p>
+      <div className="settings-exp-group-head"><span>工作日志</span><small>项目里的工作记录与项目记忆（<code>.codex-harness/memory/</code>），不是对话记录</small></div>
+      {/* 10-24 用户令「整齐划一」：统计条 / 列表 / 操作行收进同一张白卡 */}
+      <div className="storage-page-card settings-card">
+        <p className="muted work-logs-hint">Codex 在每个项目里写下的工作日志、长期记忆与坑与纪律：点条目看正文，勾选后可批量删除。注意这是项目里的工作记录，不是对话记录——会话的归档 / 删除在「归档管理」页，记忆档案在「记忆管理」页。</p>
 
-      <div className="codex-logs-bar">
-        <span>
-          共 <b>{total.length}</b> 个工作日志文件 · <b>{formatBytes(total.reduce((sum, f) => sum + f.bytes, 0))}</b>
-          {data ? ` · ${withLogs.length} 个项目` : ""}
-        </span>
-        <div className="settings-actions">
-          <button className="secondary-setting" disabled={busy} onClick={() => void refreshWithReceipt(onNotice, "重新扫描工作日志", () => refresh())}><RotateCw size={12} />重新扫描</button>
-          <button className="secondary-setting" disabled={busy || !total.length} onClick={() => toggle(allPaths, !allPicked)}>
-            {allPicked ? "取消全选" : "全选"}
-          </button>
+        <div className="codex-logs-bar">
+          <span>
+            共 <b>{total.length}</b> 个工作日志文件 · <b>{formatBytes(total.reduce((sum, f) => sum + f.bytes, 0))}</b>
+            {data ? ` · ${withLogs.length} 个项目` : ""}
+          </span>
+          <div className="settings-actions">
+            <button className="secondary-setting" disabled={busy} onClick={() => void refreshWithReceipt(onNotice, "重新扫描工作日志", () => refresh())}><RotateCw size={12} />重新扫描</button>
+            <button className="secondary-setting" disabled={busy || !total.length} onClick={() => toggle(allPaths, !allPicked)}>
+              {allPicked ? "取消全选" : "全选"}
+            </button>
+          </div>
         </div>
-      </div>
 
-      {!data ? <p className="muted">正在扫描…</p> : null}
-      {data && !withLogs.length ? (
-        <p className="muted">还没有任何项目写过工作日志。（Codex 在项目里干活并留下结论时，会自动写进该项目 .codex-harness/memory/logs/）</p>
-      ) : null}
+        {!data ? <p className="muted">正在扫描…</p> : null}
+        {data && !withLogs.length ? (
+          <p className="muted">还没有任何项目写过工作日志。（Codex 在项目里干活并留下结论时，会自动写进该项目 .codex-harness/memory/logs/）</p>
+        ) : null}
 
       <div className="codex-logs-tree">
         {withLogs.map((project) => {
@@ -184,7 +182,7 @@ export function WorkLogsSection({ onNotice, openAppConfirm }: {
       </div>
 
       {withLogs.length ? (
-        <div className="settings-actions">
+        <div className="settings-actions work-logs-foot">
           <button className="danger-setting" disabled={busy || !picked.size} onClick={() => void runDelete([...picked], "勾选的工作日志")}>
             <Trash2 size={12} />删除选中（{picked.size} 个 · {formatBytes(pickedBytes)}）
           </button>
@@ -193,6 +191,7 @@ export function WorkLogsSection({ onNotice, openAppConfirm }: {
           </button>
         </div>
       ) : null}
+      </div>
     </section>
   );
 }
