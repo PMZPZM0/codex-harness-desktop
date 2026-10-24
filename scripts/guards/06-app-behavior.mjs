@@ -2535,26 +2535,24 @@ w.postMessage({id:1,op:"list",root});
   const fmDefault180 = normalizeFunctionMenu(null);
   (FUNCTION_MENU_DEFAULT_ORDER.join(">") === "schedule>frontend>extensions>team>identity>login>newbie"
     && fmDefault180.location === "top" && fmDefault180.overflow.length === 0
-    && normalizeFunctionMenu({ location: "both" }).location === "both"
     ? ok : fail)(
-    "【180】功能入口默认顺序 + 默认位置 = 搜索任务下面（top），两处都显示（both）可归一化，数据模型单一真相源"
+    "【180】功能入口默认顺序 + 默认位置 = 搜索任务下面（top），数据模型单一真相源"
   );
   (["自动化", "前端开发", "拓展", "团队", "登录管理", "新手教程", "个性化&记忆"].every((label) => fmSrc180.includes(label))
     && fmSrc180.includes('schedule: { label: "自动化"') ? ok : fail)(
     "【180】入口改名全在 FunctionMenu 元数据里（前端开发 / 拓展 / 团队 / 个性化&记忆 / 登录管理 / 新手教程）"
   );
   (side180.includes("<FunctionMenu location={menuLocation} />")
-    && /renderPinnedOptions\(\)/.test(side180) && /renderOptionsGroup\("bottom"\)/.test(side180)
-    && /showFunctionMenuAt\(functionMenu, "top"\)/.test(side180) && /showFunctionMenuAt\(functionMenu, "bottom"\)/.test(side180)
+    && /renderOptionsGroup\("top"\)/.test(side180) && /renderOptionsGroup\("bottom"\)/.test(side180)
+    && /functionMenu\.location === "top"/.test(side180) && /functionMenu\.location === "bottom"/.test(side180)
     && /setFunctionMenuActionHandler\(/.test(side180)
     && /id === "team"\) \{ setGuideKey\("agents"\)/.test(side180) ? ok : fail)(
-    "【180】侧栏接共享菜单：顶部常驻 / 底部折叠，两者可同时显示；动作经总线回到 setGuideKey/setSettingsPage（团队仍开 agents 教程）"
+    "【180】侧栏接共享菜单：顶部/底部两处渲染，动作经总线回到 setGuideKey/setSettingsPage（团队仍开 agents 教程）"
   );
-  (fmSrc180.includes('setFunctionMenuLocation("both")') && fmSrc180.includes("两处都显示")
-    && side180.includes("sidebar-options-pinned") && /moveFunctionMenuItemInMenu\(dragId, "visible"/.test(fmSrc180)
+  (/moveFunctionMenuItemInMenu\(dragId, "visible"/.test(fmSrc180)
     && /moveFunctionMenuItemInMenu\(dragId, "overflow"/.test(fmSrc180)
     && fmSrc180.includes("drop-before") && fmSrc180.includes("drop-into") ? ok : fail)(
-    "【180】三种展示位置（含两处都显示）+ 侧栏入口可直接拖动排序/拖进更多，落手即写回配置"
+    "【180】侧栏入口可直接拖动排序/拖进更多，落手即写回配置"
   );
   {
     const moved = moveFunctionMenuItem(fmDefault180, "schedule", "overflow");
@@ -2583,12 +2581,12 @@ w.postMessage({id:1,op:"list",root});
   {
     const appearance180 = codeOnly(readFileSync(join(ROOT, "src", "features", "settings-appearance", "AppearanceSettingsSection.tsx"), "utf8"));
     const quickIdx = side180.indexOf('className="sidebar-quick"');
-    const pinnedIdx = side180.indexOf("renderPinnedOptions()");
+    const topRenderIdx = side180.indexOf('renderOptionsGroup("top")');
     const bottomRenderIdx = side180.indexOf('renderOptionsGroup("bottom")');
     const accountIdx = side180.indexOf('className="account-row"');
-    (quickIdx > 0 && pinnedIdx > quickIdx && bottomRenderIdx > quickIdx && bottomRenderIdx < accountIdx
+    (quickIdx > 0 && topRenderIdx > quickIdx && bottomRenderIdx > quickIdx && bottomRenderIdx < accountIdx
       && appearance180.includes("FunctionMenuSettings") ? ok : fail)(
-      "【180】顶部常驻入口紧跟新建/搜索之后、底部位置在账户行之前；外观设置页有位置选择入口"
+      "【180】顶部入口紧跟新建/搜索之后（贴紧）、底部位置在账户行之前；外观设置页有位置选择入口"
     );
     const composer180 = codeOnly(readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "02-main-stage", "03-composer.tsx"), "utf8"));
     (!composer180.includes("function-menu-composer") ? ok : fail)(
@@ -2604,10 +2602,10 @@ w.postMessage({id:1,op:"list",root});
   {
     const fmCss180 = readFileSync(join(ROOT, "src", "styles", "44-function-menu.css"), "utf8");
     (/\.sidebar-options-top\s*\{/.test(fmCss180) && /\.function-menu-tour\s*\{/.test(fmCss180)
-      && /\.sidebar-options-pinned \.sidebar-nav-bottom\s*\{[\s\S]{0,80}?max-height:\s*32vh/.test(fmCss180)
+      && /\.sidebar-options-top \.sidebar-options-toggle\s*\{\s*margin-top:\s*2px/.test(fmCss180)
       && /\.function-menu-editor-backdrop\s*\{\s*z-index:\s*900/.test(fmCss180)
       && !/function-menu-composer/.test(fmCss180) ? ok : fail)(
-      "【180】顶/底两种位置、教程、编辑弹窗样式在位（旧的对话框上方样式已移除）"
+      "【180】顶/底两种位置、贴紧搜索任务、教程、编辑弹窗样式在位（旧的对话框上方样式已移除）"
     );
   }
   /* 布局：顶部只留「新会话 / 搜索任务」；入口组在账户行**之上**，账户行是侧栏最后一条。
@@ -2620,16 +2618,12 @@ w.postMessage({id:1,op:"list",root});
     const accountIdx = side180.indexOf('className="account-row"');
     const bottomNavIdx = side180.indexOf('className="sidebar-nav sidebar-nav-bottom"');
     const optionsIdx = side180.indexOf("sidebar-options");
-    (quickIdx > 0 && topNavIdx === -1 && optionsIdx > 0 && optionsIdx < bottomNavIdx && bottomNavIdx < accountIdx && side180.indexOf("renderPinnedOptions()") > quickIdx ? ok : fail)(
-      "【180】顶部只剩新建/搜索（旧「能力入口」组已移除）；底部顺序 = 入口组 → 账户行（账户行最后一条 = 贴底锚）"
+    (quickIdx > 0 && topNavIdx === -1 && optionsIdx > 0 && optionsIdx < bottomNavIdx && bottomNavIdx < accountIdx && side180.indexOf('renderOptionsGroup("top")') > quickIdx && side180.includes('renderOptionsGroup("bottom")') ? ok : fail)(
+      "【180】顶部只剩新建/搜索；功能入口组顶部/底部两处都接同一套折叠结构，账户行仍是贴底锚"
     );
-    const pinnedStart = side180.indexOf("const renderPinnedOptions");
-    const pinnedEnd = side180.indexOf("const navigateGuideTarget", pinnedStart);
-    const pinned180 = pinnedStart >= 0 && pinnedEnd > pinnedStart ? side180.slice(pinnedStart, pinnedEnd) : "";
-    (pinned180.includes("sidebar-options-pinned") && pinned180.includes('maybeShowFunctionMenuTour("top"')
-      && pinned180.includes('<FunctionMenu location="top" />') && !pinned180.includes("sidebar-options-toggle")
-      && !pinned180.includes("hidden=") ? ok : fail)(
-      "【180】顶部入口常驻：无折叠头 / 无 hidden，内容由同一份功能入口配置渲染"
+    (side180.includes("is-collapsed") && side180.includes("aria-hidden={optionsCollapsed}")
+      && /renderOptionsGroup\("top"\)/.test(side180) && /renderOptionsGroup\("bottom"\)/.test(side180) ? ok : fail)(
+      "【180】两处入口共用可动画折叠体（is-collapsed + aria-hidden），不是只给底部做"
     );
     const tailAfterAccount = side180.slice(accountIdx);
     (!/className="sidebar-(?:nav|options)/.test(tailAfterAccount) ? ok : fail)(
@@ -2646,16 +2640,18 @@ w.postMessage({id:1,op:"list",root});
     (/<span>功能入口<\/span>/.test(side180) && /aria-expanded=\{!optionsCollapsed\}/.test(side180) && /aria-controls="sidebar-options-body"/.test(side180) ? ok : fail)(
       "【180】折叠头有可见文案 + aria-expanded + aria-controls（不是只有一个裸箭头）"
     );
-    (/hidden=\{optionsCollapsed\}/.test(side180) ? ok : fail)(
-      "【180】折叠 = 真把入口块 hidden 掉（只换 class / 只改样式 = 假折叠）"
+    (/className=\{`sidebar-options-body \$\{optionsCollapsed \? "is-collapsed" : ""\}`\}/.test(side180)
+      && /aria-hidden=\{optionsCollapsed\}/.test(side180) ? ok : fail)(
+      "【180】折叠 = 折叠体加 is-collapsed + aria-hidden（真实隐藏 + 键盘/读屏不可达）"
     );
     (/localStorage\.setItem\("sidebar-options-collapsed"/.test(side180) ? ok : fail)(
       "【180】折叠态跨重启保留（sidebar-options-collapsed，与 sidebar-collapsed 同口径）"
     );
-    /* ⛔ `.sidebar-nav` 自带 `display:flex`，会压过 hidden 属性的 UA 样式（隐藏直接失效）⇒ 必须显式关。 */
+    /* 无缝展开/折叠：grid 行高 0fr ↔ 1fr 过渡（不再用 hidden 瞬切）。 */
     const css41 = readFileSync(join(ROOT, "src", "styles", "41-sidebar-guide.css"), "utf8");
-    (/\.sidebar-nav-bottom\[hidden\]\s*\{\s*display:\s*none;?\s*\}/.test(css41) ? ok : fail)(
-      "【180】`.sidebar-nav-bottom[hidden]` 显式 display:none（.sidebar-nav 的 flex 会压过 hidden 属性）"
+    (/\.sidebar-options-body\s*\{[\s\S]{0,220}?grid-template-rows:\s*1fr[\s\S]{0,220}?transition:\s*grid-template-rows/.test(css41)
+      && /\.sidebar-options-body\.is-collapsed\s*\{[\s\S]{0,160}?grid-template-rows:\s*0fr/.test(css41) ? ok : fail)(
+      "【180】折叠用 grid 行高过渡（0fr ↔ 1fr + transition），无缝高度动画"
     );
     /* 箭头方向：行画在折叠头**下方** ⇒ 与全站折叠组同向（收起 ⌄ / 展开翻转成 ⌃）。
        ⛔ 别按"底部锚点"想当然改成镜像 —— 内容在头下面，方向跟顶部组一样才对。 */

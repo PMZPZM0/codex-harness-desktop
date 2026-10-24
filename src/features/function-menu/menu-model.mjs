@@ -26,8 +26,7 @@ export function isFunctionMenuId(id) {
  *  - 未知 id 丢掉；重复 id 去重；
  *  - 旧配置里没有的新入口自动追加（升级不丢新功能）；
  *  - overflow 只能是 order 的子集；
- *  - location 认 top（新建/搜索下面）/ bottom（侧栏底部）/ both（两处都显示）；
- *    旧值 sidebar→bottom、composer→top。
+ *  - location 只认 top（新建/搜索下面）/ bottom（侧栏底部）；旧值 sidebar→bottom、composer→top。
  */
 export function normalizeFunctionMenu(input) {
   const source = input && typeof input === "object" ? input : {};
@@ -43,18 +42,10 @@ export function normalizeFunctionMenu(input) {
     if (order.includes(id) && !overflow.includes(id)) overflow.push(id);
   }
   return {
-    location: source.location === "bottom" || source.location === "sidebar"
-      ? "bottom"
-      : source.location === "both" ? "both" : "top",
+    location: source.location === "bottom" || source.location === "sidebar" ? "bottom" : "top",
     order,
     overflow,
   };
-}
-
-/** 该位置当前是否显示（both = 顶部常驻区与底部组同时显示）。 */
-export function showFunctionMenuAt(config, location) {
-  const c = normalizeFunctionMenu(config);
-  return c.location === "both" || c.location === location;
 }
 
 /** 可见项（不在「更多」里），保持顺序。 */
@@ -113,7 +104,7 @@ export function nudgeFunctionMenuItem(config, id, delta) {
 
 export function setFunctionMenuLocation(config, location) {
   const c = normalizeFunctionMenu(config);
-  return { ...c, location: location === "bottom" ? "bottom" : location === "both" ? "both" : "top" };
+  return { ...c, location: location === "bottom" ? "bottom" : "top" };
 }
 
 /** 恢复默认只恢复排序与分组，**保留用户选的位置**（在对话框上方编辑时不该被弹回侧栏）。 */

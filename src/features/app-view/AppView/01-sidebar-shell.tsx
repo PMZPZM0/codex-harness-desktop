@@ -3,7 +3,7 @@
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
 import { Fragment, useEffect, useState } from "react";
-import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, showFunctionMenuAt, useFunctionMenuConfig } from "../../function-menu";
+import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, useFunctionMenuConfig } from "../../function-menu";
 import { hk } from "../../../lib/hk";
 import {
   AlertTriangle,
@@ -280,7 +280,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     return () => setFunctionMenuActionHandler(null);
   }, [setSettingsPage, setSettingsOpen, setMobileNav]);
 
-  /** 同一套入口组渲染在「新会话 / 搜索任务」下面或「侧栏底部」；底部组可折叠。 */
+  /** 同一套入口组渲染在「新会话 / 搜索任务」下面或「侧栏底部」；两处都支持展开/折叠，
+      折叠态共用一个持久值（本地记录），高度过渡由 `.sidebar-options-body` 的 grid 动画完成。 */
   const renderOptionsGroup = (menuLocation: "top" | "bottom") => (
     <div className={`sidebar-options ${menuLocation === "top" ? "sidebar-options-top" : ""}`}>
       <button
@@ -295,21 +296,10 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         <span>功能入口</span>
         <ChevronDown size={13} className={`sidebar-options-chevron ${optionsCollapsed ? "" : "open"}`} />
       </button>
-      <div className="sidebar-nav sidebar-nav-bottom" id="sidebar-options-body" role="group" aria-label="功能入口" hidden={optionsCollapsed}>
-        <FunctionMenu location={menuLocation} />
-      </div>
-    </div>
-  );
-
-  /** 顶部入口 = 常驻列表（10-24 用户：「搜索任务下面可以从功能入口里面拓展功能过来，常驻展示」）：
-      直接挂在「搜索任务」下面，不画折叠头、不 hidden；内容和顺序仍由功能入口配置/编辑器驱动。 */
-  const renderPinnedOptions = () => (
-    <div
-      className="sidebar-options sidebar-options-top sidebar-options-pinned"
-      onMouseEnter={(event) => maybeShowFunctionMenuTour("top", event.currentTarget)}
-    >
-      <div className="sidebar-nav sidebar-nav-bottom" role="group" aria-label="功能入口">
-        <FunctionMenu location="top" />
+      <div className={`sidebar-options-body ${optionsCollapsed ? "is-collapsed" : ""}`}>
+        <div className="sidebar-nav sidebar-nav-bottom" id="sidebar-options-body" role="group" aria-label="功能入口" aria-hidden={optionsCollapsed}>
+          <FunctionMenu location={menuLocation} />
+        </div>
       </div>
     </div>
   );
@@ -446,7 +436,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 </button>
               </div>
             </div>
-            {showFunctionMenuAt(functionMenu, "top") && renderPinnedOptions()}
+            {functionMenu.location === "top" && renderOptionsGroup("top")}
             {guideKey && <SidebarGuideModal guideKey={guideKey} onNavigate={navigateGuideTarget} onClose={() => setGuideKey(null)} />}
             {/* 直达：关弹窗 + 直接开对应设置页（⛔ 不再经「设置 → 账户与模型」多一层） */}
             {loginMgrOpen && (
@@ -548,7 +538,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 ⛔ 折叠**只收本组**（入口 `hidden` + 本组 `flex:none`）⇒ 空出来的高度被 `.thread-list`
                    （flex:1 1 0）吃掉；⛔ 别给账户行加占位/补白、⛔ 别把它挪进本组 —— 它是贴底的锚，
                    位置只由「侧栏最后一条」决定，与展开/折叠无关。 */}
-            {showFunctionMenuAt(functionMenu, "bottom") && renderOptionsGroup("bottom")}
+            {functionMenu.location === "bottom" && renderOptionsGroup("bottom")}
             <FunctionMenuTourHost />
             <FunctionMenuEditorHost />
             <div className="account-row">
