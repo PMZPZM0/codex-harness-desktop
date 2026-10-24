@@ -2,8 +2,8 @@
  * AppViewSidebarShell —— AppView 的 JSX 第 1 段（09-22 从 AppView.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
-import { Fragment, useEffect, useState } from "react";
-import { openBossPanel } from "../../boss-group-view/panel-store.mjs";
+import { Fragment, useEffect, useState, useSyncExternalStore } from "react";
+import { closeBossPanel, getBossPanelState, openBossPanel, subscribeBossPanel } from "../../boss-group-view/panel-store.mjs";
 import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, useFunctionMenuConfig } from "../../function-menu";
 import { hk } from "../../../lib/hk";
 import {
@@ -158,6 +158,8 @@ import { CloseConfirmDialog } from "../../../components/CloseConfirmDialog";
 import { FileTrustDialog } from "../../../components/FileTrustDialog";
 
 export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppApi; onOpenSettings?: (page: string) => void }) {
+  /* BOSS 会话面板开合（10-24）：给侧栏按钮「选中效果」——用户点名要的。订阅模块级 store。 */
+  const bossPanelOpen = useSyncExternalStore(subscribeBossPanel, getBossPanelState).open;
   const {
     accountDraft,
     accountEditing,
@@ -450,7 +452,12 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 </button>
                 {/* 10-24 用户令：「BOSS 会话」常驻在搜索任务下面（不进功能入口菜单）；
                     功能入口（top 位置）自适应排在本按钮之后。点击开右侧群面板。 */}
-                <button className="sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-amber" title="BOSS 会话：拉群派活、盯进度、审不过打回重做" onClick={() => { openBossPanel(); }}>
+                <button
+                  className={`sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-amber${bossPanelOpen ? " boss-open" : ""}`}
+                  title="BOSS 会话：拉群派活、盯进度、审不过打回重做"
+                  aria-pressed={bossPanelOpen}
+                  onClick={() => { if (bossPanelOpen) { closeBossPanel(); } else { openBossPanel(); } }}
+                >
                   <Crown size={15} /><span>BOSS 会话</span>
                 </button>
               </div>
