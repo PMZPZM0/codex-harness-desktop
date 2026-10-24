@@ -18,7 +18,7 @@ import { safeProviderId } from "../provider-id";
 import { server, threadCwd } from "../runtime-refs";
 import { egoBrowserPath } from "../toolchain";
 import { bossStore } from "./store";
-import { addTask, assignTask, checkBudget, createGroup, groupOf, markRunning, markStalled, memberOf, parseVerdict, pickReassignee, recordReview, snapshot, submitTask, taskOf } from "./state";
+import { addMember, addTask, assignTask, checkBudget, createGroup, groupOf, markRunning, markStalled, memberOf, parseVerdict, pickReassignee, recordReview, removeMember, setPinned, snapshot, submitTask, taskOf } from "./state";
 import type { BossGroup, GroupMember, GroupTask } from "./types";
 
 /** 事件出口（域层注入：本模块在 features/ 之外，不许反向 import 域）。 */
@@ -332,6 +332,39 @@ export async function addTaskForBoss(input: { groupId: string; title: string; br
     return { ok: result.ok, taskId: task.id, dispatched: result.ok, error: result.error };
   }
   return { ok: true, taskId: task.id, dispatched: false };
+}
+
+/** 拉人 / 移人（boss 工具与群视图面板共用这一条通道）。 */
+export async function memberForBoss(input: {
+  groupId: string; action: "add" | "remove";
+  name?: string; role?: string; systemPrompt?: string; model?: string; effort?: string; memberId?: string;
+}): Promise<{ ok: boolean; member?: { id: string; name: string; role: string; status: string }; error?: string }> {
+  const state = await bossStore.load();
+  try {
+    const member = input.action === "add"
+      ? addMember(state, String(input.groupId ?? ""), { name: String(input.name ?? ""), role: String(input.role ?? ""), systemPrompt: input.systemPrompt, model: input.model, effort: input.effort })
+      : removeMember(state, String(input.groupId ?? ""), String(input.memberId ?? ""));
+    bossStore.save();
+    const group = groupOf(state, String(input.groupId ?? ""));
+    emit({ type: "boss-group", phase: "member", groupId: group.id, memberId: member.id, status: member.status });
+    return { ok: true, member: { id: member.id, name: member.name, role: member.role, status: member.status } };
+  } catch (error: any) {
+    bossStore.save();
+    return { ok: false, error: String(error?.message ?? error) };
+  }
+}
+
+/** 置顶 / 取消置顶某条群事件（群视图卡带用）。 */
+export async function pinForBoss(input: { groupId: string; eventId: string; pinned: boolean }): Promise<{ ok: boolean; pinnedEventIds?: string[]; error?: string }> {
+  const state = await bossStore.load();
+  try {
+    const group = setPinned(state, String(input.groupId ?? ""), String(input.eventId ?? ""), input.pinned === true);
+    bossStore.save();
+    emit({ type: "boss-group", phase: "pin", groupId: group.id });
+    return { ok: true, pinnedEventIds: group.pinnedEventIds ?? [] };
+  } catch (error: any) {
+    return { ok: false, error: String(error?.message ?? error) };
+  }
 }
 
 export function statusForBoss(groupId: string) {

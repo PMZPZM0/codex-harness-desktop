@@ -113,12 +113,50 @@ export const GROUP_BROWSER_TOOL = {
   inputSchema: { type: "object", properties: {} },
 };
 
-/** 工具面批量注入用（顺序 = 模型看到的顺序：建群 → 派活 → 查账 → 审/升级 → 浏览器）。 */
+export const GROUP_ADD_MEMBER_TOOL = {
+  type: "function",
+  name: "group_add_member",
+  description:
+    "给已有的群加一个成员（动态拉人）。只建档，不立刻建会话 —— TA 第一次被派活时才有自己的会话。"
+    + "返回成员 id，之后 group_assign 可以指派给 TA。",
+  inputSchema: {
+    type: "object",
+    properties: {
+      groupId: { type: "string" },
+      name: { type: "string", description: "成员名" },
+      role: { type: "string", description: "岗位（一句话）" },
+      systemPrompt: { type: "string", description: "可选：风格与边界交代" },
+      model: { type: "string", description: "可选：单独指定模型" },
+      effort: { type: "string", description: "可选：思考档" },
+    },
+    required: ["groupId", "name", "role"],
+  },
+};
+
+export const GROUP_REMOVE_MEMBER_TOOL = {
+  type: "function",
+  name: "group_remove_member",
+  description:
+    "把成员移出群。⛔ 会话与轨迹保留（不删）；TA 手上正在跑的任务**不打断**——交活后照常审查，之后不再派活；"
+    + "TA 的未派任务会自动换人（被移出视同锁死）。",
+  inputSchema: {
+    type: "object",
+    properties: {
+      groupId: { type: "string" },
+      memberId: { type: "string" },
+    },
+    required: ["groupId", "memberId"],
+  },
+};
+
+/** 工具面批量注入用（顺序 = 模型看到的顺序：建群 → 派活 → 查账 → 审/升级 → 成员管理 → 浏览器）。 */
 export const BOSS_GROUP_TOOLS = [
   GROUP_CREATE_TOOL,
   GROUP_ASSIGN_TOOL,
   GROUP_STATUS_TOOL,
   GROUP_REVIEW_TOOL,
   GROUP_ESCALATE_TOOL,
+  GROUP_ADD_MEMBER_TOOL,
+  GROUP_REMOVE_MEMBER_TOOL,
   GROUP_BROWSER_TOOL,
 ];

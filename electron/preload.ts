@@ -832,6 +832,10 @@ contextBridge.exposeInMainWorld("codex", {
   bossBrowserStatus: () => __ipc("boss-groups:browser", 0, []),
   /* 创世 boss：重跑一次独立评审（评审会话丢了/结论过期时用） */
   recheckBossTask: (taskId: string) => __ipc("boss-groups:recheck", 1, [taskId]),
+  /* 创世 boss：拉人/移人（移人不删会话、不打断在跑任务） */
+  bossGroupMember: (input: any) => __ipc("boss-groups:member", 1, [input]),
+  /* 创世 boss：置顶/取消置顶群事件（群视图卡带，最多 3 条） */
+  bossGroupPin: (input: any) => __ipc("boss-groups:pin", 1, [input]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

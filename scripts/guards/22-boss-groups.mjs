@@ -34,7 +34,7 @@ try {
   ok(false, `dist-electron/boss-groups/state.js 加载失败（先跑 npm run build:electron）：${String(error?.message ?? error).slice(0, 120)}`);
 }
 if (state) {
-  const { emptyState, createGroup, addTask, assignTask, markRunning, submitTask, recordReview, pickReassignee, resolveEscalation, checkBudget, parseVerdict } = state;
+  const { emptyState, createGroup, addMember, addTask, assignTask, markRunning, submitTask, recordReview, pickReassignee, resolveEscalation, checkBudget, parseVerdict, removeMember, setPinned } = state;
   const { MAX_MEMBERS, DEFAULT_POLICY } = require(join(ROOT, "dist-electron", "boss-groups", "types.js"));
 
   const mkGroup = (stateObj, members, policy) => createGroup(stateObj, {
@@ -156,6 +156,38 @@ if (state) {
     ok(String(throws(() => assignTask(s, t.id, g.members[0].id)))?.includes("暂停"), "暂停后派活被拒（不会偷偷继续烧）");
   }
 
+  /* ── 8b. 动态成员：拉人 / 移人（10-24 用户令） ── */
+  {
+    const s = emptyState();
+    const g = mkGroup(s, [{ name: "甲", role: "写" }]);
+    const m2 = addMember(s, g.id, { name: "乙", role: "写" });
+    ok(g.members.length === 2 && m2.status === "idle", "拉人 ⇒ 建档（不建会话，idle）");
+    ok(addMember(s, g.id, { name: "丙", role: "" }).role === "成员", "空岗位回落「成员」（不拒，别让 boss 卡在措辞上）");
+    let capError = "";
+    for (let i = 0; i < 6 && !capError; i++) {
+      capError = throws(() => addMember(s, g.id, { name: `乙${i}`, role: "写" })) ?? "";
+    }
+    ok(capError.includes("最多"), "在群成员超过上限 ⇒ 被拒");
+    const t = addTask(s, { groupId: g.id, title: "T", brief: "", criteria: "能用" });
+    assignTask(s, t.id, m2.id);
+    markRunning(s, t.id, { threadId: "x" });
+    removeMember(s, g.id, m2.id);
+    ok(m2.status === "removed" && pickReassignee(s, t)?.id !== m2.id, "移出 ⇒ removed 且不再被挑中");
+    // ⛔ 双闸都在：running 状态闸先拒；就算任务回到可派状态，成员状态闸也拒（“已移出群”）
+    ok(Boolean(throws(() => assignTask(s, t.id, m2.id))), "派活给已移出成员 ⇒ 被拒");
+    {
+      const t2 = addTask(s, { groupId: g.id, title: "T2", brief: "", criteria: "能用" });
+      ok(String(throws(() => assignTask(s, t2.id, m2.id)))?.includes("移出"), "queued 任务派给已移出成员 ⇒ 成员状态闸拒绝");
+    }
+    ok(t.status === "running", "移人不打断在跑任务（等它交活，默认口径）");
+    // 置顶：事件由 addMember/removeMember 产生，取一条真实事件
+    const ev = s.events[s.events.length - 1];
+    setPinned(s, g.id, ev.id, true);
+    ok(g.pinnedEventIds.includes(ev.id), "置顶 ⇒ 进 pinnedEventIds");
+    setPinned(s, g.id, ev.id, false);
+    ok(!g.pinnedEventIds.includes(ev.id), "取消置顶 ⇒ 移出");
+  }
+
   /* ── 9. 评审输出解析：绝不默认通过 ── */
   {
     ok(parseVerdict('{"pass": true, "reasons": []}').verdict === "approved", "pass:true ⇒ approved");
@@ -170,7 +202,7 @@ if (state) {
 {
   const manifest = JSON.parse(read("electron/ipc-channels.manifest.json"));
   const channels = (manifest.channels ?? []).filter((c) => String(c.channel).startsWith("boss-groups:"));
-  ok(channels.length === 8, `manifest 有 8 个 boss-groups 通道（实测 ${channels.length}）`);
+  ok(channels.length === 10, `manifest 有 10 个 boss-groups 通道（实测 ${channels.length}）`);
   ok(manifest.count === manifest.channels.length, `manifest.count 与通道数一致（${manifest.count} / ${manifest.channels.length}）`);
   ok(channels.every((c) => typeof c.invokeArgs === "string" && Boolean(c.returns)
     && (!String(c.paramsImpl ?? "").trim() || String(c.invokeArgs ?? "").trim())),
@@ -183,11 +215,11 @@ if (state) {
   ok(read("electron/composition.gen.ts").includes("boss-groups-ipc"), "composition.gen.ts 已重生成（跑过 npm run gen:domains）");
 
   const registry = read("electron/ipc-registry.ts");
-  ok(/\{ prefix: "boss-groups", count: 8, status: "in-features", file: "features\/boss-groups-ipc\.ts"/.test(registry),
-    "ipc-registry.ts 账本已登记（count=8）");
+  ok(/\{ prefix: "boss-groups", count: 10, status: "in-features", file: "features\/boss-groups-ipc\.ts"/.test(registry),
+    "ipc-registry.ts 账本已登记（count=10）");
 
   const preload = read("electron/preload.ts");
-  for (const method of ["listBossGroups", "bossGroupStatus", "createBossGroup", "assignBossTask", "reviewBossTask", "escalateBossTask", "bossBrowserStatus", "recheckBossTask"]) {
+  for (const method of ["listBossGroups", "bossGroupStatus", "createBossGroup", "assignBossTask", "reviewBossTask", "escalateBossTask", "bossBrowserStatus", "recheckBossTask", "bossGroupMember", "bossGroupPin"]) {
     ok(preload.includes(method), `preload 已生成 ${method}`);
   }
 

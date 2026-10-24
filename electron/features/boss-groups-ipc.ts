@@ -11,7 +11,7 @@
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { bossStore } from "../boss-groups/store";
-import { addTaskForBoss, browserStatus, createGroupForBoss, dispatchTask, postToBoss, reviewTask, setBossEventSink, statusForBoss, tickAll } from "../boss-groups/runner";
+import { addTaskForBoss, browserStatus, createGroupForBoss, dispatchTask, memberForBoss, pinForBoss, postToBoss, reviewTask, setBossEventSink, statusForBoss, tickAll } from "../boss-groups/runner";
 import { recordReview, resolveEscalation } from "../boss-groups/state";
 import type { EscalateChoice } from "../boss-groups/types";
 import { broadcastCodexEvent } from "./window-bus";
@@ -100,6 +100,28 @@ export const bossGroupsFeature = defineFeature<null>({
 
     ipcHost.handle("boss-groups:browser", async () => browserStatus());
 
+    /** 拉人 / 移人（boss 工具与群视图面板共用）。移人不删会话、不打断在跑任务。 */
+    ipcHost.handle("boss-groups:member", async (_event, input: any) => {
+      await bossStore.load();
+      const action = input?.action === "add" ? "add" : "remove";
+      return memberForBoss({
+        groupId: String(input?.groupId ?? ""),
+        action,
+        name: input?.name ? String(input.name) : undefined,
+        role: input?.role ? String(input.role) : undefined,
+        systemPrompt: input?.systemPrompt ? String(input.systemPrompt) : undefined,
+        model: input?.model ? String(input.model) : undefined,
+        effort: input?.effort ? String(input.effort) : undefined,
+        memberId: input?.memberId ? String(input.memberId) : undefined,
+      });
+    });
+
+    /** 置顶 / 取消置顶群事件（群视图卡带，最多 3 条）。 */
+    ipcHost.handle("boss-groups:pin", async (_event, input: any) => {
+      await bossStore.load();
+      return pinForBoss({ groupId: String(input?.groupId ?? ""), eventId: String(input?.eventId ?? ""), pinned: input?.pinned === true });
+    });
+
     /** 手动跑一次审查（模型自评之后不服、或评审会话丢了时用）。 */
     ipcHost.handle("boss-groups:recheck", async (_event, taskId: string) => reviewTask(String(taskId ?? "")));
 
@@ -110,7 +132,7 @@ export const bossGroupsFeature = defineFeature<null>({
 
     ctx.effect(() => {
       setBossEventSink(null);
-      for (const channel of ["boss-groups:list", "boss-groups:status", "boss-groups:create", "boss-groups:assign", "boss-groups:review", "boss-groups:escalate", "boss-groups:browser", "boss-groups:recheck"]) {
+      for (const channel of ["boss-groups:list", "boss-groups:status", "boss-groups:create", "boss-groups:assign", "boss-groups:review", "boss-groups:escalate", "boss-groups:browser", "boss-groups:recheck", "boss-groups:member", "boss-groups:pin"]) {
         ipcHost.removeHandler(channel);
       }
     });

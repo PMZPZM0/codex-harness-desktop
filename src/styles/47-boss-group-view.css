@@ -1,0 +1,114 @@
+/**
+ * BOSS 会话面板样式（47-boss-group-view.css）
+ * ⛔ 全部走 DESIGN.md 变量；层级 = 主界面停靠浮层 40（主界面 <30 < 本档 < 浮窗宿主 60，见 19【198】层级带）。
+ */
+.boss-panel {
+  position: fixed;
+  top: 56px;
+  right: 16px;
+  bottom: 16px;
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden auto;
+}
+.boss-panel-head { display: flex; align-items: center; gap: 8px; }
+.boss-panel-title { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; flex: 1; }
+.boss-panel-sub { color: var(--muted); font-size: 12px; }
+.boss-panel-select {
+  height: 28px;
+  max-width: 180px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--field);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  /* ⛔ 暗色下原生 select 是浅色 UA 绘制，必须显式重置（08/13/18 惯例） */
+  appearance: none;
+  padding: 0 6px;
+}
+.boss-panel-x, .boss-panel-mini {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.boss-panel-x { border: 0; background: transparent; }
+.boss-panel-x:hover, .boss-panel-mini:hover { color: var(--text); border-color: var(--line-strong); }
+.boss-panel-x:focus-visible, .boss-panel-mini:focus-visible, .boss-panel-input:focus-visible, .boss-panel-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.boss-panel-sec-title { font-size: 12px; font-weight: 500; color: var(--muted); margin-top: 6px; }
+.boss-panel-members { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.boss-panel-addform { display: inline-flex; gap: 4px; align-items: center; }
+.boss-panel-input {
+  width: 90px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--field);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+.boss-panel-add { color: var(--accent); border-color: var(--accent); }
+.boss-panel-removed { color: var(--faint); font-size: 12px; }
+.boss-panel-pins { display: flex; flex-direction: column; gap: 6px; }
+.boss-panel-pin {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  padding: 8px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.boss-panel-pin .text, .boss-panel-feed .text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.boss-panel-feed { list-style: none; margin: 0; padding: 0; }
+.boss-panel-feed li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.boss-panel-feed li:last-child { border-bottom: 0; }
+.boss-panel-feed time { color: var(--faint); font-variant-numeric: tabular-nums; flex: none; }
+.boss-panel-empty { color: var(--muted); font-size: 13px; line-height: 1.7; }
+.boss-panel-empty b { display: block; color: var(--text); font-weight: 500; margin-bottom: 6px; }
+.boss-panel-empty code {
+  font-family: var(--mono, monospace);
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  padding: 1px 6px;
+  color: var(--text);
+}
+@media (prefers-reduced-motion: reduce) {
+  .boss-panel, .boss-panel-mini, .boss-panel-pin { transition: none; }
+}

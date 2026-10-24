@@ -185,6 +185,7 @@ import { HtmlPreviewBridge } from "../html-preview";
 import { TurnReviewBridge } from "../status";
 // 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
 import { Slot } from "../../runtime/registry";
+import { BossGroupPanel } from "../boss-group-view";
 import { DeclaredPluginSlots } from "../../runtime/declared-plugin-slots";
 
 
@@ -674,6 +675,8 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       {/* 悬浮球右键菜单里的「语音设置」：把「打开设置并跳到语音页」注册给 VoiceCallFloat
       （悬浮球是 body portal，拿不到这里的 setSettingsPage） */}
       <VoiceCallFloat threadId={thread?.id ?? ""} />
+      {/* BOSS 会话群面板（boss-groups 域）：右侧停靠浮层，全局开关在侧栏「BOSS 会话」按钮。 */}
+      <BossGroupPanel />
       <VoiceSettingsBridge onOpen={() => { setSettingsPage("voice"); setSettingsOpen(true); }} />
       {/* 语音通话 开/关 → 往对话里发一条告知（10-08 用户要求：让 Codex 感知实时语音何时开、何时关，
           并在语音场景下走「快问快答」）。⛔ 会话闸：通话绑定会话，切走之后到达的告知必须丢弃。 */}

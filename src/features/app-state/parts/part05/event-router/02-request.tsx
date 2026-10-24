@@ -181,7 +181,7 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                 } catch (error: any) {
                   await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `人格切换失败：${error.message}` }], success: false });
                 }
-              } else if (["group_create", "group_assign", "group_status", "group_review", "group_escalate", "group_browser_setup"].includes(String(event.params?.tool))) {
+              } else if (["group_create", "group_assign", "group_status", "group_review", "group_escalate", "group_add_member", "group_remove_member", "group_browser_setup"].includes(String(event.params?.tool))) {
                 /* 创世 boss 的群编排（10-24）：六个工具共用一条分支。
                    ⛔ 规则不在这里：状态机在 electron/boss-groups/state.ts（纯函数 + 守卫真跑），
                       本分支只做「参数整形 + 转 IPC + 把结果讲成模型能读的一句话」。 */
@@ -242,6 +242,23 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       note: String(args.note ?? ""),
                     });
                     await ok(`升级已处理：任务 ${res?.taskId} 现在 ${res?.status}${res?.dispatched ? "，已重新派活" : ""}${res?.error ? `（${res.error}）` : ""}`);
+                  } else if (tool === "group_add_member") {
+                    const res = await window.codex.bossGroupMember({
+                      groupId: String(args.groupId ?? ""), action: "add",
+                      name: String(args.name ?? ""), role: String(args.role ?? ""),
+                      systemPrompt: args.systemPrompt ? String(args.systemPrompt) : undefined,
+                      model: args.model ? String(args.model) : undefined,
+                      effort: args.effort ? String(args.effort) : undefined,
+                    });
+                    if (!res?.ok) await bad(`加人失败：${res?.error ?? "未知原因"}`);
+                    else await ok(`新成员进群：${res.member?.name}（${res.member?.role}，id=${res.member?.id}）。TA 第一次被派活时才有自己的会话；用 group_assign 指派时传这个 id。`);
+                  } else if (tool === "group_remove_member") {
+                    const res = await window.codex.bossGroupMember({
+                      groupId: String(args.groupId ?? ""), action: "remove",
+                      memberId: String(args.memberId ?? ""),
+                    });
+                    if (!res?.ok) await bad(`移人失败：${res?.error ?? "未知原因"}`);
+                    else await ok(`已移出：${res.member?.name}。会话与轨迹保留；TA 正在跑的任务不打断（交活后照常审查），未派的任务会自动换人。`);
                   } else {
                     const st = await window.codex.bossBrowserStatus();
                     if (!st?.installed) {
