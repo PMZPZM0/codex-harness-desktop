@@ -253,7 +253,11 @@ export const autoUpdateFeature = defineFeature<null>({
       const settings = await readAppSettings(app.getPath("userData"));
       const source = (settings.downloadSource ?? "auto") as DownloadSourceSetting;
       // ⛔ 版本信息来源与 `autoUpdate:scan` **同一份**（scanRows）⇒ 两个端点不可能给出矛盾的结论
-      const scanned = await scanAll(makeCtx(source, settings));
+      // 开关状态不能被网络版本检查卡住：扫描最多等 2.5s，超时先返回开关（版本由下方组件清单单独扫）。
+      const scanned = await Promise.race([
+        scanAll(makeCtx(source, settings)).catch(() => []),
+        new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 2500)),
+      ]);
       const byId = new Map(scanned.map((row) => [row.id, row]));
       const rows = autoUpdateItems().map<AutoUpdateStatusRow>((item) => {
         const row = byId.get(item.id);
