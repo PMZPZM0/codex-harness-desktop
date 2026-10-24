@@ -1175,6 +1175,10 @@ interface Window {
     bossBrowserStatus(): Promise<{ installed: boolean; cli: string; hint: string }>;
     /* 创世 boss：重跑一次独立评审（评审会话丢了/结论过期时用） */
     recheckBossTask(taskId: string): Promise<any>;
+    /* 创世 boss：拉人/移人（移人不删会话、不打断在跑任务） */
+    bossGroupMember(input: any): Promise<any>;
+    /* 创世 boss：置顶/取消置顶群事件（群视图卡带，最多 3 条） */
+    bossGroupPin(input: any): Promise<any>;
 /* ═══ gen:end ═══ */
 
 

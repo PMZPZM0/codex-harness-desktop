@@ -3,6 +3,7 @@
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
 import { Fragment, useEffect, useState } from "react";
+import { openBossPanel } from "../../boss-group-view/panel-store.mjs";
 import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, useFunctionMenuConfig } from "../../function-menu";
 import { hk } from "../../../lib/hk";
 import {
@@ -446,6 +447,11 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 </button>
                 <button className="sidebar-tab sidebar-quick-btn sidebar-quick-search ic-cyan" title={`搜索任务与操作（${hk("Ctrl+K")}）`} onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}>
                   <Search size={15} /><span>搜索任务</span>
+                </button>
+                {/* 10-24 用户令：「BOSS 会话」常驻在搜索任务下面（不进功能入口菜单）；
+                    功能入口（top 位置）自适应排在本按钮之后。点击开右侧群面板。 */}
+                <button className="sidebar-tab sidebar-quick-btn ic-amber" title="BOSS 会话：拉群派活、盯进度、审不过打回重做" onClick={() => { openBossPanel(); }}>
+                  <Crown size={15} /><span>BOSS 会话</span>
                 </button>
               </div>
             </div>

@@ -87,7 +87,9 @@ export function createGroup(state: BossState, input: {
       status: "idle",
       lockedTaskIds: [],
     })),
+    pinnedEventIds: [],
   };
+  group.pinnedEventIds = [];
   state.groups[group.id] = group;
   pushEvent(state, { groupId: group.id, kind: "created", text: `建群「${name}」：${group.members.map((m) => `${m.name}（${m.role}）`).join("、")}` });
   return group;
@@ -126,6 +128,9 @@ export function assignTask(state: BossState, taskId: string, memberId: string): 
     throw new Error(`成员「${memberId}」已被锁在这条任务上（上一版就是 TA 做的、被打回了）。请换一个成员重做，或升级给用户。`);
   }
   const member = memberOf(group, memberId);
+  if (member.status === "removed") {
+    throw new Error(`成员「${member.name}」已移出群，不能再派活`);
+  }
   if (member.status === "locked" && member.lockedTaskIds.includes(task.id)) {
     throw new Error(`成员「${member.name}」当前被锁在任务「${task.title}」上`);
   }
@@ -230,10 +235,74 @@ export function recordReview(state: BossState, taskId: string, review: { by: str
   return task;
 }
 
+/** 拉人：只建档不建会话 —— 成员会话在下一次派活时才建（工具面在建会话那刻定死，所以晚建没损失）。 */
+export function addMember(state: BossState, groupId: string, input: {
+  name: string; role: string; systemPrompt?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string;
+}): GroupMember {
+  const group = groupOf(state, groupId);
+  const name = String(input.name ?? "").trim();
+  const role = String(input.role ?? "").trim() || "成员";
+  if (!name) throw new Error("成员名不能为空");
+  const active = group.members.filter((m) => m.status !== "removed").length;
+  if (active >= MAX_MEMBERS) throw new Error(`在群成员最多 ${MAX_MEMBERS} 个（当前 ${active} 个），先移人再加`);
+  const member: GroupMember = {
+    id: `m${group.members.length + 1}_${name.toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, "").slice(0, 12) || "member"}_${Math.floor(Math.random() * 1000)}`,
+    name, role,
+    systemPrompt: String(input.systemPrompt ?? "").trim(),
+    model: input.model || undefined,
+    effort: input.effort || undefined,
+    sandbox: input.sandbox || "workspace-write",
+    approvalPolicy: input.approvalPolicy || "on-request",
+    status: "idle",
+    lockedTaskIds: [],
+  };
+  group.members.push(member);
+  pushEvent(state, { groupId: group.id, memberId: member.id, kind: "note", text: `新成员进群：${member.name}（${member.role}）` });
+  return member;
+}
+
+/**
+ * 移人：**会话保留**（轨迹不丢），成员标 removed —— 不再接新活。
+ * ⛔ 正在跑的任务**不打断**（默认口径：等它交活，结果照常回投与审查；之后由换人逻辑接管）。
+ */
+export function removeMember(state: BossState, groupId: string, memberId: string): GroupMember {
+  const group = groupOf(state, groupId);
+  const member = memberOf(group, memberId);
+  if (member.status === "removed") throw new Error(`成员「${member.name}」已经被移出了`);
+  const running = Object.values(state.tasks).some((t) => t.groupId === group.id && t.status === "running" && t.assignee === member.id);
+  member.status = "removed";
+  member.lockedTaskIds = [];
+  pushEvent(state, {
+    groupId: group.id, memberId: member.id, kind: "note",
+    text: running
+      ? `${member.name} 已移出群；TA 手上正在跑的任务**不打断**，交活后照常审查，之后不再派活。`
+      : `${member.name} 已移出群（TA 的会话与轨迹保留）。`,
+  });
+  return member;
+}
+
+/** 置顶/取消置顶某条群事件（视图层收藏，最多 3 条，超出挤掉最旧）。 */
+export function setPinned(state: BossState, groupId: string, eventId: string, pinned: boolean): BossGroup {
+  const group = groupOf(state, groupId);
+  const event = state.events.find((e) => e.id === String(eventId ?? "") && e.groupId === group.id);
+  if (!event) throw new Error("事件不存在或不属于这个群");
+  group.pinnedEventIds = group.pinnedEventIds ?? [];
+  if (pinned) {
+    if (!group.pinnedEventIds.includes(event.id)) {
+      group.pinnedEventIds.push(event.id);
+      while (group.pinnedEventIds.length > 3) group.pinnedEventIds.shift();
+    }
+  } else {
+    group.pinnedEventIds = group.pinnedEventIds.filter((id) => id !== event.id);
+  }
+  return group;
+}
+
 /** 下一个可派的人：不在锁名单、状态不是 locked。全被锁 ⇒ null（调用方必须升级，不许放行）。 */
 export function pickReassignee(state: BossState, task: GroupTask): GroupMember | null {
   const group = groupOf(state, task.groupId);
   for (const member of group.members) {
+    if (member.status === "removed") continue;          // ⛔ 已移出的成员不再接新活
     if (task.lockedAuthors.includes(member.id)) continue;
     if (member.status === "locked" && member.lockedTaskIds.includes(task.id)) continue;
     return member;
@@ -322,6 +391,7 @@ export function snapshot(state: BossState, groupId: string) {
         id: m.id, name: m.name, role: m.role, status: m.status,
         threadId: m.threadId ?? "", lockedTaskIds: m.lockedTaskIds,
       })),
+      pinnedEventIds: group.pinnedEventIds ?? [],
     },
     counts,
     tasks: tasks.map((t) => ({

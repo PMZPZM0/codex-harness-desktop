@@ -8,7 +8,7 @@
  */
 
 /** 成员状态：忙 = 有在跑的回合；reviewing = 交活后等审查；locked = 被打回、本轮不许再碰这条活。 */
-export type GroupMemberStatus = "idle" | "busy" | "reviewing" | "locked";
+export type GroupMemberStatus = "idle" | "busy" | "reviewing" | "locked" | "removed";
 
 /**
  * 任务状态机（转换只有 state.ts 里那几个 reducer 能做，其它地方只许读）：
@@ -119,6 +119,8 @@ export type BossGroup = {
   members: GroupMember[];
   /** paused = 预算打满或用户叫停，不再自动派活。 */
   paused?: boolean;
+  /** 置顶的群事件 id（群视图顶部卡带，最多 3 条，超出挤掉最旧；视图层收藏，不影响任务状态）。 */
+  pinnedEventIds: string[];
 };
 
 export type BossState = {
