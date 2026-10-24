@@ -2260,6 +2260,29 @@ const CHECKS = [
       })()`).catch(() => null);
       h.check("②b 引擎更新只剩组件清单一处（独立引擎卡与「一键更新全部」已删）",
         Boolean(cleaned && cleaned.engineCard === 0 && cleaned.bulk === false && cleaned.topSwitches === 2), JSON.stringify(cleaned));
+      /* ②c 10-24 用户实测：组件清单被慢源卡在「正在读取组件清单…」一直不结束。
+         主进程逐类 12 秒预算 + 渲染层 20 秒兜底 ⇒ 这里只量「真的会结束」。 */
+      await h.waitFor(`(function(){
+        const card=[...document.querySelectorAll('.settings-card')].find(c=>(c.textContent||'').includes('技能与插件更新'));
+        return !!card && !(card.textContent||'').includes('正在读取组件清单');
+      })()`, { label: "组件清单在时限内结束加载", timeoutMs: 20000 }).catch(() => undefined);
+      const scanUi = await h.eval(`(function(){
+        const card=[...document.querySelectorAll('.settings-card')].find(c=>(c.textContent||'').includes('技能与插件更新'));
+        if(!card) return { found:false };
+        const visible=(sel)=>[...card.querySelectorAll(sel)].filter(x=>x.getClientRects().length>0).length;
+        return {
+          found:true,
+          loading:(card.textContent||'').includes('正在读取组件清单'),
+          groups:visible('.auto-update-group'),
+          rows:visible('.auto-update-row'),
+          details:card.querySelectorAll('details').length,
+          timeoutRows:(card.textContent||'').includes('检测超时'),
+        };
+      })()`);
+      h.check("②c 组件清单不会被慢源卡成永久 loading（20 秒内出分组，慢项标「检测超时」而不是整块空着）",
+        Boolean(scanUi.found && !scanUi.loading && scanUi.groups >= 2), JSON.stringify(scanUi));
+      h.check("②d 工具清单常显、不折叠隐藏（分组与逐项行默认可见）",
+        Boolean(scanUi.found && scanUi.details === 0 && scanUi.rows > 0), JSON.stringify(scanUi));
       const toggled = await h.eval(`(async function(){
         const card=[...document.querySelectorAll('.settings-card')].find(c=>(c.textContent||'').includes('技能与插件更新'));
         const row=[...card.querySelectorAll('.settings-toggle-row')].find(r=>(r.querySelector('strong')?.textContent||'').trim()==='插件自动更新');
@@ -2275,7 +2298,9 @@ const CHECKS = [
         Boolean(toggled && toggled.on === true && toggled.off === false), JSON.stringify(toggled));
 
       await h.eval(`(function(){ const b=[...document.querySelectorAll('.settings-nav button')].find(x=>(x.textContent||'').trim()==='插件'); b&&b.click(); return 1; })()`);
-      await wait(1600);
+      // 页面是懒加载的：等它真挂上再点 tab（固定 1600ms 在慢机上会读到上一页 ⇒ ④⑤ 假红）
+      await h.waitFor(`document.querySelectorAll('.market-source-switch button').length >= 3`, { label: "插件页加载", timeoutMs: 10000 }).catch(() => undefined);
+      await wait(300);
       const tabs = ["Claude 插件镜像", "Codex 官方插件", "已安装"];
       const tabProbes = [];
       for (const label of tabs) {

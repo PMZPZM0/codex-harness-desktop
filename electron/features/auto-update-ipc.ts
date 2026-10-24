@@ -56,6 +56,27 @@ const AUTO_UPDATE_CHANNELS = ["autoUpdate:status", "autoUpdate:set", "autoUpdate
 const FIRST_DELAY_MS = 20_000;
 const INTERVAL_MS = 6 * 60 * 60 * 1000;
 
+/**
+ * 单类组件的检测预算。
+ * ⛔⛔ 远端查版本**没有整体上限**的旧实现会把整张清单拖成永久 loading（10-24 用户实测
+ *    「正在读取组件清单…」一直不结束）：npm 工具与引擎各自 2×20s、pip 是 5 个镜像 ×20s，
+ *    任何一个源挂住，`Promise.all` 就永远不返回。清单是给人看的，单类超时就先给一行
+ *    「检测超时」+ 刷新按钮重试，其余照常显示。
+ * ⛔ 后台循环也走同一个 scanAll ⇒ 慢源同样不会再把 6 小时周期卡死在「进行中」。
+ */
+const SCAN_DEADLINE_MS = 12_000;
+
+/** 给 promise 加上限：超时返回 fallback（⛔ 不抛 —— 超时是「这项先不显示版本」，不是整页失败）。 */
+function withDeadline<T>(promise: Promise<T>, ms: number, fallback: () => T): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback()), ms);
+  });
+  return Promise.race([promise, deadline]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 type AutoUpdateKind = "tool" | "engine" | "skill" | "plugin";
 
 type AutoUpdateItem = {
@@ -182,6 +203,9 @@ export const autoUpdateFeature = defineFeature<null>({
           //    迟早互相打架（重复下载、互相覆盖）；本体系的循环只**承载它的开关与显示**，
           //    手动更新入口仍然能点到它 ⇒ 技能行在控制台里可见、可手点，但后台只有那一个 owner。
           if (row.specId === "market-skill") continue;
+          // 插件同理（10-24）：plugins-ipc 有自己的调度器（Gitee + 官方市场各扫一遍）。
+          // ⛔ 两个循环跑同一批插件 = 同时重装同一目录（互相覆盖、白下载），只留一个 owner。
+          if (row.specId === "market-plugin" || row.specId === "official-plugin") continue;
           // ⛔ 开关判定在**检查之前**（不是"查到了不装"）：关掉 ⇒ 连版本/内容都不比
           if (!readAutoUpdateRowSwitch(settings, row.id)) continue;
           // Ego Lite 没有可查询的远端版本号；开关开着就交给官方 updater 自己判断。
@@ -206,8 +230,9 @@ export const autoUpdateFeature = defineFeature<null>({
       }
     }
 
-    async function scanAll(ctx: ReturnType<typeof makeCtx>): Promise<ComponentRow[]> {
-      const results = await Promise.all(visibleSpecs().map((spec) => scanRows(spec, ctx).catch((error) => [{
+    /** 某一行扫描失败 / 超时的占位行：照常出现在清单里，并写明原因（⛔ 不许整项消失）。 */
+    function placeholderRows(spec: ComponentSpec, ctx: ReturnType<typeof makeCtx>, error: string): ComponentRow[] {
+      return [{
         id: spec.id,
         specId: spec.id,
         label: spec.label,
@@ -222,8 +247,18 @@ export const autoUpdateFeature = defineFeature<null>({
         hasUpdate: false,
         detectable: false,
         unsupported: "",
-        error: (error as Error)?.message ?? String(error),
-      }])));
+        error,
+      }];
+    }
+
+    async function scanAll(ctx: ReturnType<typeof makeCtx>): Promise<ComponentRow[]> {
+      // ⛔ 每类各自限时（并行跑）：一个挂住的镜像站不许把整张清单拖成永久 loading。
+      const results = await Promise.all(visibleSpecs().map((spec) =>
+        withDeadline(
+          scanRows(spec, ctx).catch((error) => placeholderRows(spec, ctx, (error as Error)?.message ?? String(error))),
+          SCAN_DEADLINE_MS,
+          () => placeholderRows(spec, ctx, "检测超时：镜像站响应慢或网络不通，点右上角刷新可重试"),
+        )));
       // Ego Lite 是外部应用（不在组件注册表里）：单独补一行，控制台才能同时给出「更新」按钮
       // 和自动更新开关。它没有远端版本查询接口，hasUpdate 恒 false，手动/自动都交给官方 updater。
       const egoInstalled = Boolean(egoBrowserPath());
@@ -254,10 +289,7 @@ export const autoUpdateFeature = defineFeature<null>({
       const source = (settings.downloadSource ?? "auto") as DownloadSourceSetting;
       // ⛔ 版本信息来源与 `autoUpdate:scan` **同一份**（scanRows）⇒ 两个端点不可能给出矛盾的结论
       // 开关状态不能被网络版本检查卡住：扫描最多等 2.5s，超时先返回开关（版本由下方组件清单单独扫）。
-      const scanned = await Promise.race([
-        scanAll(makeCtx(source, settings)).catch(() => []),
-        new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 2500)),
-      ]);
+      const scanned = await withDeadline(scanAll(makeCtx(source, settings)).catch(() => []), 2500, () => []);
       const byId = new Map(scanned.map((row) => [row.id, row]));
       const rows = autoUpdateItems().map<AutoUpdateStatusRow>((item) => {
         const row = byId.get(item.id);
