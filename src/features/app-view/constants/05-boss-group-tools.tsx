@@ -117,19 +117,27 @@ export const GROUP_ADD_MEMBER_TOOL = {
   type: "function",
   name: "group_add_member",
   description:
-    "给已有的群加一个成员（动态拉人）。只建档，不立刻建会话 —— TA 第一次被派活时才有自己的会话。"
-    + "返回成员 id，之后 group_assign 可以指派给 TA。",
+    "给已有的群加一个成员（动态拉人）。三种来源："
+    + "① from=\"expert\"：从专家/专家团登记表拉（expertTeamId + expertMemberId，或直接给 name 按花名匹配）——"
+    + "带 TA 的人设/模型/思考档；② from=\"cli\"：拉本机命令行 agent 进群（cliName ∈ zcode/qoder/workbuddy/deepseek/doubao，"
+    + "或自定义 cliCommand，模板里 {prompt} 会替换成任务全文）——派遣时宿主起子进程跑它，stdout 就是 TA 的成品；"
+    + "③ 缺省：自定义成员（name+role）。只建档，不立刻建执行体。先 group_status 看可拉名单。返回成员 id。",
   inputSchema: {
     type: "object",
     properties: {
       groupId: { type: "string" },
-      name: { type: "string", description: "成员名" },
-      role: { type: "string", description: "岗位（一句话）" },
+      from: { type: "string", description: "拉人来源：expert / cli，缺省=自定义", enum: ["expert", "cli"] },
+      expertTeamId: { type: "string", description: "from=expert 时：专家团 id（group_status 的可拉名单里有）" },
+      expertMemberId: { type: "string", description: "from=expert 时：专家成员 id（或用 name 按花名匹配）" },
+      cliName: { type: "string", description: "from=cli 时：zcode / qoder / workbuddy / deepseek / doubao" },
+      cliCommand: { type: "string", description: "from=cli 时可选：自定义命令模板（{prompt} 替换任务全文）" },
+      name: { type: "string", description: "成员名（from=expert 时可只给花名）" },
+      role: { type: "string", description: "岗位（一句话；expert/cli 来源可省略）" },
       systemPrompt: { type: "string", description: "可选：风格与边界交代" },
       model: { type: "string", description: "可选：单独指定模型" },
       effort: { type: "string", description: "可选：思考档" },
     },
-    required: ["groupId", "name", "role"],
+    required: ["groupId"],
   },
 };
 

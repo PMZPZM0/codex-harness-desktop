@@ -238,6 +238,10 @@ export function recordReview(state: BossState, taskId: string, review: { by: str
 /** 拉人：只建档不建会话 —— 成员会话在下一次派活时才建（工具面在建会话那刻定死，所以晚建没损失）。 */
 export function addMember(state: BossState, groupId: string, input: {
   name: string; role: string; systemPrompt?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string;
+  /** 执行体来源（10-25 群聊重构）：默认 engine；cli = 本机外部 CLI agent。 */
+  source?: "engine" | "cli";
+  /** cli 成员命令模板，`{prompt}` 替换任务全文；source=cli 时必填。 */
+  cliCommand?: string;
 }): GroupMember {
   const group = groupOf(state, groupId);
   const name = String(input.name ?? "").trim();
@@ -255,7 +259,12 @@ export function addMember(state: BossState, groupId: string, input: {
     approvalPolicy: input.approvalPolicy || "on-request",
     status: "idle",
     lockedTaskIds: [],
+    source: input.source === "cli" ? "cli" : "engine",
+    cliCommand: input.source === "cli" ? String(input.cliCommand ?? "").trim() || undefined : undefined,
   };
+  if (member.source === "cli" && !member.cliCommand) {
+    throw new Error(`CLI 成员「${name}」必须有命令模板（cliCommand，{prompt} 会被替换成任务全文）`);
+  }
   group.members.push(member);
   pushEvent(state, { groupId: group.id, memberId: member.id, kind: "note", text: `新成员进群：${member.name}（${member.role}）` });
   return member;
@@ -390,6 +399,7 @@ export function snapshot(state: BossState, groupId: string) {
       members: group.members.map((m) => ({
         id: m.id, name: m.name, role: m.role, status: m.status,
         threadId: m.threadId ?? "", lockedTaskIds: m.lockedTaskIds,
+        source: m.source ?? "engine",
       })),
       pinnedEventIds: group.pinnedEventIds ?? [],
     },

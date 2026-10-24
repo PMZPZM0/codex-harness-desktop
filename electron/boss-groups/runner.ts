@@ -9,6 +9,8 @@
  *  ③ **审查/打回由宿主做**：模型只被叫醒来看结论。规则全在 state.ts（纯函数、守卫真跑）。
  */
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { readUsableExpertTeams } from "../expert-teams";
 import { bridgeDial } from "../main";
 import { readCustomModel } from "../main/01-model-catalog";
 import { TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
@@ -160,6 +162,63 @@ async function ensureMemberThread(group: BossGroup, member: GroupMember): Promis
   return threadId;
 }
 
+/* ── 本机外部 CLI agent（10-25 群聊重构：zcode/qoder/WorkBuddy/DeepSeek/豆包…） ── */
+/** 内置登记表：command 模板里 {prompt} 替换任务全文。检测/覆盖都允许 —— 拉人时探测，缺了会明说。 */
+const CLI_AGENT_REGISTRY: { name: string; role: string; command: string }[] = [
+  { name: "zcode", role: "本机 CLI agent（zcode）", command: 'zcode -p "{prompt}"' },
+  { name: "qoder", role: "本机 CLI agent（qoder）", command: 'qoder "{prompt}"' },
+  { name: "workbuddy", role: "本机 CLI agent（WorkBuddy）", command: 'workbuddy "{prompt}"' },
+  { name: "deepseek", role: "本机 CLI agent（DeepSeek harness）", command: 'deepseek "{prompt}"' },
+  { name: "doubao", role: "本机 CLI agent（豆包）", command: 'doubao "{prompt}"' },
+];
+
+function whereExe(exe: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    execFile("where", [exe], { timeout: 5000 }, (error) => resolve(!error));
+  });
+}
+
+/** 可拉名单：专家（teams 登记表，lead+成员）+ 本机 CLI agent（登记表，附 where 探测）。 */
+export async function poolForBoss(): Promise<{
+  experts: { teamId: string; teamName: string; memberId: string; name: string; role: string; model?: string; effort?: string }[];
+  cliAgents: { name: string; role: string; command: string; detected: boolean }[];
+}> {
+  let experts: { teamId: string; teamName: string; memberId: string; name: string; role: string; model?: string; effort?: string }[] = [];
+  try {
+    const teams = await readUsableExpertTeams();
+    for (const t of teams ?? []) {
+      for (const m of [t.lead, ...(t.members ?? [])]) {
+        if (!m?.id) continue;
+        const role = (m as any).profession?.zh ?? (m as any).description ?? "专家";
+        const teamName = (t as any).displayName?.zh ?? (t as any).displayName ?? t.teamId;
+        experts.push({ teamId: t.teamId, teamName, memberId: m.id, name: m.name, role, model: m.model, effort: m.effort });
+      }
+    }
+  } catch { /* 专家登记表读不到就只给 CLI 名单 */ }
+  const cliAgents = await Promise.all(CLI_AGENT_REGISTRY.map(async (a) => ({
+    ...a,
+    detected: await whereExe(a.name),
+  })));
+  return { experts, cliAgents };
+}
+
+/** CLI 成员的派遣：起子进程跑命令模板，stdout 尾部作为成品走同一条审查流水。 */
+async function runCliMember(group: BossGroup, member: GroupMember, task: GroupTask): Promise<void> {
+  const command = String(member.cliCommand ?? "").replace("{prompt}", memberPrompt(group, member, task, task.attempts[task.attempts.length - 1]?.n ?? 1).replace(/"/g, "'"));
+  try {
+    await new Promise<void>((resolve, reject) => {
+      execFile("cmd", ["/c", command], { cwd: group.workspace || process.cwd(), timeout: 600_000, maxBuffer: 4 * 1024 * 1024, windowsHide: true }, (error, stdout, stderr) => {
+        const text = String(stdout ?? "").trim() || String(stderr ?? "").trim();
+        if (error && !text) { reject(new Error(`CLI「${member.name}」执行失败：${String(error.message ?? error).slice(0, 200)}`)); return; }
+        void settleSubmission(task.id, text.slice(0, 16_000) || "（CLI 没有输出）");
+        resolve();
+      });
+    });
+  } catch (error: any) {
+    void failTask(task.id, String(error?.message ?? error));
+  }
+}
+
 /* ── 浏览器：ego lite（每个会话天然一个独立 TaskSpace） ─────────────────────── */
 export function browserStatus() {
   const cli = egoBrowserPath();
@@ -209,6 +268,15 @@ export async function dispatchTask(taskId: string, options: { memberId?: string 
     assignTask(state, task.id, member.id);
     bossStore.save();
     const attempt = task.attempts[task.attempts.length - 1];
+    /* ⛔ CLI 成员（本机外部 agent）没有引擎会话：起子进程跑命令行，stdout 就是它的成品，
+        走同一条 交活→独立评审 流水。 */
+    if (member.source === "cli") {
+      markRunning(state, task.id, { threadId: `cli:${member.name}` });
+      bossStore.save();
+      emit({ type: "boss-group", phase: "task", groupId: group.id, taskId: task.id, memberId: member.id, status: "running" });
+      void runCliMember(group, member, task);
+      return { ok: true, taskId: task.id, memberId: member.id };
+    }
     const threadId = await ensureMemberThread(group, member);
     const env = await providerEnv();
     const model = member.model || env.model;
@@ -424,20 +492,59 @@ export async function addTaskForBoss(input: { groupId: string; title: string; br
 export async function memberForBoss(input: {
   groupId: string; action: "add" | "remove";
   name?: string; role?: string; systemPrompt?: string; model?: string; effort?: string; memberId?: string;
-}): Promise<{ ok: boolean; member?: { id: string; name: string; role: string; status: string }; error?: string }> {
+  /** 拉人来源（10-25）：expert = 从专家/专家团登记表拉；cli = 本机外部 CLI agent；缺省 = 自定义。 */
+  from?: "custom" | "expert" | "cli";
+  expertTeamId?: string; expertMemberId?: string;
+  cliName?: string; cliCommand?: string;
+}): Promise<{ ok: boolean; member?: { id: string; name: string; role: string; status: string; source?: string }; error?: string }> {
   const state = await bossStore.load();
   try {
+    let addInput: Parameters<typeof addMember>[2] | null = null;
+    if (input.action === "add") {
+      if (input.from === "expert") {
+        const teams = await readUsableExpertTeams();
+        const team = (teams ?? []).find((t) => t.teamId === String(input.expertTeamId ?? ""));
+        const pool = team ? [team.lead, ...(team.members ?? [])] : [];
+        const m = pool.find((x) => x?.id === String(input.expertMemberId ?? "")) ?? pool.find((x) => x?.name === String(input.name ?? ""));
+        if (!m) return { ok: false, error: `专家名单里找不到「${input.expertMemberId || input.name}」（teamId=${input.expertTeamId ?? ""}），先用 group_status 看可拉名单` };
+        addInput = {
+          name: m.name, role: m.profession?.zh ?? "专家", systemPrompt: m.systemPrompt,
+          model: m.model, effort: m.effort, sandbox: m.sandbox, approvalPolicy: m.approvalPolicy,
+          source: "engine",
+        };
+      } else if (input.from === "cli") {
+        const reg = CLI_AGENT_REGISTRY.find((a) => a.name === String(input.cliName ?? input.name ?? "").toLowerCase());
+        const command = String(input.cliCommand ?? reg?.command ?? "").trim();
+        if (!command) return { ok: false, error: `拉 CLI agent 需要命令模板（cliCommand，{prompt} 会替换成任务全文）；登记表里没有「${input.cliName ?? ""}」` };
+        addInput = {
+          name: String(input.name ?? input.cliName ?? reg?.name ?? "cli-agent"),
+          role: String(input.role ?? reg?.role ?? "本机 CLI agent"),
+          systemPrompt: `你是从本机命令行 agent（${String(input.cliName ?? reg?.name ?? "")}）拉进群的成员。你的成品由宿主执行你的命令行得到，回答请直接给结论与依据。`,
+          source: "cli", cliCommand: command,
+        };
+      } else {
+        addInput = {
+          name: String(input.name ?? ""), role: String(input.role ?? ""),
+          systemPrompt: input.systemPrompt, model: input.model, effort: input.effort,
+        };
+      }
+    }
     const member = input.action === "add"
-      ? addMember(state, String(input.groupId ?? ""), { name: String(input.name ?? ""), role: String(input.role ?? ""), systemPrompt: input.systemPrompt, model: input.model, effort: input.effort })
+      ? addMember(state, String(input.groupId ?? ""), addInput!)
       : removeMember(state, String(input.groupId ?? ""), String(input.memberId ?? ""));
     bossStore.save();
     const group = groupOf(state, String(input.groupId ?? ""));
     emit({ type: "boss-group", phase: "member", groupId: group.id, memberId: member.id, status: member.status });
-    return { ok: true, member: { id: member.id, name: member.name, role: member.role, status: member.status } };
+    return { ok: true, member: { id: member.id, name: member.name, role: member.role, status: member.status, source: member.source ?? "engine" } };
   } catch (error: any) {
     bossStore.save();
     return { ok: false, error: String(error?.message ?? error) };
   }
+}
+
+/** 可拉名单（专家 + 本机 CLI agent）——group_status / 群面板共用。 */
+export async function poolForBossIpc() {
+  return poolForBoss();
 }
 
 /** 置顶 / 取消置顶某条群事件（群视图卡带用）。 */

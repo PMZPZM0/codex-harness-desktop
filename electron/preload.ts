@@ -838,6 +838,8 @@ contextBridge.exposeInMainWorld("codex", {
   bossGroupPin: (input: any) => __ipc("boss-groups:pin", 1, [input]),
   /* 创世 boss：你在群对话框里说话 → boss 线程（回复镜像回群流） */
   bossGroupSay: (input: any) => __ipc("boss-groups:say", 1, [input]),
+  /* 创世 boss：可拉名单（专家/专家团 + 本机 CLI agent，带探测结果） */
+  bossGroupPool: () => __ipc("boss-groups:pool", 0, []),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

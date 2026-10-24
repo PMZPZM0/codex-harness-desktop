@@ -1,45 +1,42 @@
 /**
- * 顶栏「群成员」按钮（10-24 用户令：做成在搜索历史图标**左边**，只有 BOSS 会话显示，
- * 自适应多尺寸下展示/隐藏 —— 窄屏由 CSS media query 收起）。
- *
- * 数据口径：当前会话 threadId 命中某个群的 bossThreadId 才渲染；成员增删与右侧面板走同一条
- * `boss-groups:member` 通道（真相源唯一）。点击弹成员 popover：chips + 拉人表单。
- *
- * ⛔ popover 必须 portal 到 body + fixed：`.topbar { overflow: hidden }`（10-04 防溢出裁剪）
- *    会把栏内绝对定位弹层整个切掉 —— 弹了也看不见（与当前会话搜索面板同坑，实测复现）。
+ * 顶栏「群成员」入口（10-25 群聊重构：**正常对话框也能看群成员列表** —— 有群就显示，不限于 BOSS 会话）。
+ * - 选中群：当前线程是某群 boss 线程 ⇒ 自动选它；否则沿用上次选择（panel store 的 groupId）；
+ * - popover：群选择器 + 成员列表 + 拉人（专家/本机 CLI agent）/移人，与面板同一条 `boss-groups:member` 通道；
+ * - ⛔ portal 到 body + fixed（`.topbar{overflow:hidden}` 会裁掉栏内绝对定位弹层，实测）；
+ * - 窄屏由 CSS media query 收起。
  */
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Network, Plus, UserMinus, X } from "lucide-react";
+import { getBossPanelState, setBossPanelGroup, subscribeBossPanel } from "./panel-store.mjs";
 
 type GroupLite = { id: string; name: string; bossThreadId?: string };
-type MemberLite = { id: string; name: string; role: string; status: string; lockedTaskIds: string[] };
+type MemberLite = { id: string; name: string; role: string; status: string; lockedTaskIds: string[]; source?: string };
 type SnapLite = { group: { id: string; name: string; members: MemberLite[] } };
 
 const MEMBER_TEXT: Record<string, string> = { idle: "空闲", busy: "正在做", reviewing: "交活待审", locked: "被锁", removed: "已移出" };
 
 export function BossGroupMembersButton({ threadId }: { threadId: string }) {
-  const [groupId, setGroupId] = useState("");
-  const [groupName, setGroupName] = useState("");
-  const [members, setMembers] = useState<MemberLite[]>([]);
+  const [groups, setGroups] = useState<GroupLite[]>([]);
+  const [snap, setSnap] = useState<SnapLite | null>(null);
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [draftRole, setDraftRole] = useState("");
   const [tick, setTick] = useState(0);
   const btnRef = useRef<HTMLButtonElement | null>(null);
+  const store = useStoreGroupId();
+
+  const groupId = (groups.find((g) => g.bossThreadId === threadId)?.id) || store.groupId || groups[0]?.id || "";
 
   const refresh = useCallback(async () => {
-    if (!threadId) { setGroupId(""); setOpen(false); return; }
     try {
       const list = (await window.codex.listBossGroups()) as GroupLite[];
-      const hit = (list ?? []).find((g) => g.bossThreadId === threadId);
-      if (!hit) { setGroupId(""); setOpen(false); return; }
-      setGroupId(hit.id);
-      setGroupName(hit.name);
-      const snap = (await window.codex.bossGroupStatus(hit.id)) as SnapLite;
-      setMembers(snap?.group?.members ?? []);
-    } catch { setGroupId(""); }
+      setGroups(list ?? []);
+      const id = (list ?? []).find((g) => g.bossThreadId === threadId)?.id || getBossPanelState().groupId || (list ?? [])[0]?.id || "";
+      if (id) setSnap((await window.codex.bossGroupStatus(id)) as SnapLite);
+      else setSnap(null);
+    } catch { setSnap(null); }
   }, [threadId]);
 
   useEffect(() => {
@@ -51,7 +48,6 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
     return () => { clearInterval(timer); off?.(); };
   }, [refresh, tick]);
 
-  // 点外面收起（portal 在 body 上，window 级 mousedown 才罩得住；按钮本身与弹层内部点击除外）
   useEffect(() => {
     if (!open) return;
     const onDown = (e: globalThis.MouseEvent) => {
@@ -64,7 +60,8 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
     return () => window.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  if (!groupId) return null;
+  if (!groups.length) return null;
+  const members = snap?.group?.members ?? [];
   const active = members.filter((m) => m.status !== "removed");
   const removed = members.filter((m) => m.status === "removed");
 
@@ -83,7 +80,7 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
         ref={btnRef}
         type="button"
         className={`icon-button ic-amber boss-members-btn${open ? " boss-members-btn-open" : ""}`}
-        title={`群成员（${groupName}）`}
+        title={`群成员（${groups.length} 个群）`}
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
@@ -91,15 +88,21 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
       </button>
       {open
         ? createPortal(
-          <div className="boss-members-pop" role="dialog" aria-label="群成员管理" style={popStyle}>
+          <div className="boss-members-pop" role="dialog" aria-label="群成员列表" style={popStyle}>
             <div className="boss-members-pop-head">
-              <b>{groupName}</b>
+              {groups.length > 1 ? (
+                <select className="boss-panel-select boss-members-pop-select" aria-label="切换群" value={groupId} onChange={(e) => { setBossPanelGroup(e.target.value); void refresh(); }}>
+                  {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              ) : (
+                <b>{snap?.group?.name ?? groups[0]?.name}</b>
+              )}
               <span>成员 {active.length}</span>
               <button type="button" className="boss-panel-mini" aria-label="关闭" onClick={() => setOpen(false)}><X size={11} /></button>
             </div>
             <div className="boss-members-pop-list">
               {active.map((m) => (
-                <span key={m.id} className="boss-groups-member" data-status={m.status} title={m.lockedTaskIds.length ? `锁在 ${m.lockedTaskIds.length} 条任务上` : undefined}>
+                <span key={m.id} className="boss-groups-member" data-status={m.status} title={`${m.role}${m.source === "cli" ? " · 本机 CLI agent" : ""}${m.lockedTaskIds.length ? ` · 锁在 ${m.lockedTaskIds.length} 条任务上` : ""}`}>
                   {m.name} · {MEMBER_TEXT[m.status] ?? m.status}
                   <button
                     type="button"
@@ -134,10 +137,16 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
               )}
             </div>
             {removed.length ? <div className="boss-panel-removed">已移出：{removed.map((m) => m.name).join("、")}</div> : null}
+            <div className="boss-members-pop-hint">拉专家 / 本机 CLI agent（zcode、豆包…）走群里对 BOSS 说「拉 XX 进群」，或用 group_add_member。</div>
           </div>,
           document.body,
         )
         : null}
     </div>
   );
+}
+
+/** store groupId 的订阅（跨开合记住上次选择的群）。 */
+function useStoreGroupId(): { groupId: string } {
+  return useSyncExternalStore(subscribeBossPanel, getBossPanelState);
 }

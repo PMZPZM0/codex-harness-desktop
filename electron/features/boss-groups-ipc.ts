@@ -11,7 +11,7 @@
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { bossStore } from "../boss-groups/store";
-import { addTaskForBoss, browserStatus, createGroupForBoss, dispatchTask, memberForBoss, pinForBoss, postToBoss, reviewTask, sayToGroup, setBossEventSink, statusForBoss, tickAll, watchBossReplies } from "../boss-groups/runner";
+import { addTaskForBoss, browserStatus, createGroupForBoss, dispatchTask, memberForBoss, pinForBoss, poolForBossIpc, postToBoss, reviewTask, sayToGroup, setBossEventSink, statusForBoss, tickAll, watchBossReplies } from "../boss-groups/runner";
 import { recordReview, resolveEscalation } from "../boss-groups/state";
 import type { EscalateChoice } from "../boss-groups/types";
 import { broadcastCodexEvent } from "./window-bus";
@@ -113,6 +113,11 @@ export const bossGroupsFeature = defineFeature<null>({
         model: input?.model ? String(input.model) : undefined,
         effort: input?.effort ? String(input.effort) : undefined,
         memberId: input?.memberId ? String(input.memberId) : undefined,
+        from: input?.from ? String(input.from) as any : undefined,
+        expertTeamId: input?.expertTeamId ? String(input.expertTeamId) : undefined,
+        expertMemberId: input?.expertMemberId ? String(input.expertMemberId) : undefined,
+        cliName: input?.cliName ? String(input.cliName) : undefined,
+        cliCommand: input?.cliCommand ? String(input.cliCommand) : undefined,
       });
     });
 
@@ -121,6 +126,9 @@ export const bossGroupsFeature = defineFeature<null>({
       await bossStore.load();
       return pinForBoss({ groupId: String(input?.groupId ?? ""), eventId: String(input?.eventId ?? ""), pinned: input?.pinned === true });
     });
+
+    /** 可拉名单：专家/专家团 + 本机 CLI agent（带探测）。 */
+    ipcHost.handle("boss-groups:pool", async () => poolForBossIpc());
 
     /** 你在群对话框里说话 → boss 线程（不新建会话/回合入口，回复镜像回群流）。 */
     ipcHost.handle("boss-groups:say", async (_event, input: any) => {
@@ -141,7 +149,7 @@ export const bossGroupsFeature = defineFeature<null>({
 
     ctx.effect(() => {
       setBossEventSink(null);
-      for (const channel of ["boss-groups:list", "boss-groups:status", "boss-groups:create", "boss-groups:assign", "boss-groups:review", "boss-groups:escalate", "boss-groups:browser", "boss-groups:recheck", "boss-groups:member", "boss-groups:pin", "boss-groups:say"]) {
+      for (const channel of ["boss-groups:list", "boss-groups:status", "boss-groups:create", "boss-groups:assign", "boss-groups:review", "boss-groups:escalate", "boss-groups:browser", "boss-groups:recheck", "boss-groups:member", "boss-groups:pin", "boss-groups:say", "boss-groups:pool"]) {
         ipcHost.removeHandler(channel);
       }
     });
