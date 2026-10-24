@@ -2237,6 +2237,7 @@ const CHECKS = [
         }
         if ((req.url || "").split("?")[0].endsWith("/models")) {
           modelsHits += 1;
+          modelsHits += 1;
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ data: mockModels.map((id) => ({ id })) }));
           return;
