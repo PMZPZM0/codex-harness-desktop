@@ -1149,6 +1149,14 @@ interface Window {
     cloudSyncConflictResolve(key: string, resolution: string): Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>;
     /* 10-18：列出本地会话供勾选上传（只读，不写游标） */
     cloudSyncList(): Promise<{ ok: boolean; error?: string; sessions: Array<{ id: string; title: string; project: string; lines: number; sizeBytes: number; updatedAt: number; path: string }> }>;
+    /* 团队工作模式：我加入的团队 */
+    teamList(): Promise<any>;
+    /* 进入团队模式（切团队记忆上游 + 接团队知识库） */
+    teamEnter(input?: { teamId?: string }): Promise<any>;
+    /* 退出团队模式（恢复个人知识库连接器） */
+    teamExit(): Promise<any>;
+    /* 团队模式当前生效状态 */
+    teamStatus(): Promise<any>;
 /* ═══ gen:end ═══ */
 
 

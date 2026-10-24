@@ -51,7 +51,8 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
       const ids: string[] = Array.isArray((result as any).models) ? (result as any).models : [];
       if (!ids.length) throw new Error("没有拉到可用模型，请检查 API 地址与密钥");
       const fetched = new Set(ids);
-      const currentIds = (draft.models ?? []).map((m: any) => m.id);
+      /* ⛔ 显式标注：`m` 是 any ⇒ `map` 出来是 any[]，下游 filter 的回调会变成隐式 any（noImplicitAny 报红） */
+      const currentIds: string[] = (draft.models ?? []).map((m: any) => String(m.id));
       const addedIds = ids.filter((id) => !currentIds.includes(id));
       const removed = currentIds.filter((id) => !fetched.has(id)).length;
       const changed = addedIds.length > 0 || removed > 0;

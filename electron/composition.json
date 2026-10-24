@@ -569,6 +569,13 @@
       "config": null
     },
     {
+      "id": "team",
+      "enabled": true,
+      "file": "features/team-mode.ts",
+      "export": "teamModeFeature",
+      "config": null
+    },
+    {
       "id": "team-runs",
       "enabled": true,
       "file": "features/team-runs-ipc.ts",

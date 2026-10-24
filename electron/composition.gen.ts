@@ -88,6 +88,7 @@ import { soulMarketFeature as feat_soul_market } from "./features/soul-market-ip
 import { sshFeature as feat_ssh } from "./features/ssh-ipc";
 import { subagentsFeature as feat_subagents } from "./features/subagents-ipc";
 import { tasksFeature as feat_tasks } from "./features/tasks-ipc";
+import { teamModeFeature as feat_team } from "./features/team-mode";
 import { teamRunsFeature as feat_team_runs } from "./features/team-runs-ipc";
 import { teamThreadsFeature as feat_team_threads } from "./features/team-threads-ipc";
 import { teamsFeature as feat_teams } from "./features/teams-ipc";
@@ -198,6 +199,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "ssh", plugin: feat_ssh as Plugin<unknown>, config: null },
   { id: "subagents", plugin: feat_subagents as Plugin<unknown>, config: null },
   { id: "tasks", plugin: feat_tasks as Plugin<unknown>, config: null },
+  { id: "team", plugin: feat_team as Plugin<unknown>, config: null },
   { id: "team-runs", plugin: feat_team_runs as Plugin<unknown>, config: null },
   { id: "team-threads", plugin: feat_team_threads as Plugin<unknown>, config: null },
   { id: "teams", plugin: feat_teams as Plugin<unknown>, config: null },

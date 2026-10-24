@@ -498,3 +498,69 @@
 }
 .cloud-acct-advanced[open] > summary::after { transform: rotate(180deg); }
 .cloud-acct-advanced > summary .cloud-acct-sub { color: var(--muted); font-size: 12px; font-weight: 400; }
+
+/* ── 团队工作模式（10-24）───────────────────────────────────────────────
+   云账号页里的独立区块：选团队 → 进入 = 记 channel 切换（团队记忆 + 团队知识库）。
+   ⛔ 记忆通道是独占的，界面上必须让用户看见"个人记忆暂停"这件事（区块底部有常驻说明）。 */
+.cloud-team-block {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel, transparent);
+}
+.cloud-team-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--text); }
+.cloud-team-head > b { font-weight: 550; }
+.cloud-team-refresh {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.cloud-team-refresh:hover { border-color: var(--line); color: var(--text); }
+.cloud-team-note { margin: 9px 0 0; font-size: 12px; line-height: 1.75; color: var(--muted); }
+.cloud-team-note b { color: var(--text); font-weight: 550; }
+.cloud-team-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 11px; }
+.cloud-team-pick {
+  flex: 1 1 240px;
+  min-width: 0;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--field, transparent);
+  color: var(--text);
+  font-size: 12.5px;
+}
+.cloud-team-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.cloud-team-btn:hover:not(:disabled) { border-color: var(--accent); }
+.cloud-team-btn.primary { border-color: var(--accent); color: var(--accent); }
+.cloud-team-btn:disabled { opacity: .45; cursor: default; }
+.cloud-team-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.cloud-team-hint { margin: 8px 0 0; font-size: 11.5px; line-height: 1.7; color: var(--faint); }
+.cloud-team-ok,
+.cloud-team-bad { margin: 8px 0 0; font-size: 12px; display: flex; align-items: center; gap: 5px; }
+.cloud-team-ok { color: var(--accent); }
+.cloud-team-bad { color: var(--red); }

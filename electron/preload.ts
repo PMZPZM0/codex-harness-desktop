@@ -194,7 +194,7 @@ contextBridge.exposeInMainWorld("codex", {
   prepareDataDir: (dir: string) => __ipc("dataDir:prepare", 1, [dir]),
   /* 应用级运行时开关（联网搜索等） */
   readAppSettings: () => __ipc("appSettings:read", 0, []),
-  saveAppSettings: (patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy"; functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean }) => __ipc("appSettings:save", 1, [patch]),
+  saveAppSettings: (patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off"; adaptiveTone?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy"; skillAutoUpdate?: boolean; functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean }) => __ipc("appSettings:save", 1, [patch]),
   themeApply: (theme: string) => __ipc("theme:apply", 1, [theme]),
   updateReveal: (filePath: string) => __ipc("updates:reveal", 1, [filePath]) as Promise<{ ok: boolean }>,
   /* SSH 服务器连接管理：列表 CRUD、批量启停、连接测试、命令执行、交互式会话、导入导出 */
@@ -806,6 +806,14 @@ contextBridge.exposeInMainWorld("codex", {
   cloudSyncConflictResolve: (key: string, resolution: string) => __ipc("cloud:sync/conflict/resolve", 2, [key, resolution]),
   /* 10-18：列出本地会话供勾选上传（只读，不写游标） */
   cloudSyncList: () => __ipc("cloud:sync/list", 0, []),
+  /* 团队工作模式：我加入的团队 */
+  teamList: () => __ipc("team:list", 0, []),
+  /* 进入团队模式（切团队记忆上游 + 接团队知识库） */
+  teamEnter: (input?: { teamId?: string }) => __ipc("team:enter", 0, [input]),
+  /* 退出团队模式（恢复个人知识库连接器） */
+  teamExit: () => __ipc("team:exit", 0, []),
+  /* 团队模式当前生效状态 */
+  teamStatus: () => __ipc("team:status", 0, []),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。
