@@ -137,6 +137,7 @@ import {
   Calculator,
   Telescope,
   CircleHelp,
+  CirclePlus,
   Video,
   Bell,
   CheckCheck,
@@ -422,12 +423,12 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
               {!sidebarCollapsed && <div><strong className="brand-name">Codex Harness</strong></div>}
             </div>
             <div className="sidebar-tabs" role="navigation" aria-label="导航">
-              {/* 10-21 用户要求：新建 / 搜索并排胶囊；快捷键仍然生效，但不显示键帽 */}
+              {/* 10-24 用户对照截图：改成整行「新会话」主按钮 + 下面一行「搜索任务」，不再并排胶囊。 */}
               <div className="sidebar-quick">
-                <button className="sidebar-tab sidebar-quick-btn primary ic-blue" title={`新建任务（${hk("Ctrl+N")}）`} onClick={() => { startNewThread(); }}>
-                  <MessageSquarePlus size={15} /><span>新建任务</span>
+                <button className="sidebar-tab sidebar-quick-btn primary ic-blue" title={`新会话（${hk("Ctrl+N")}）`} onClick={() => { startNewThread(); }}>
+                  <CirclePlus size={17} strokeWidth={2} /><span>新会话</span>
                 </button>
-                <button className="sidebar-tab sidebar-quick-btn ic-cyan" title={`搜索任务与操作（${hk("Ctrl+K")}）`} onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}>
+                <button className="sidebar-tab sidebar-quick-btn sidebar-quick-search ic-cyan" title={`搜索任务与操作（${hk("Ctrl+K")}）`} onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}>
                   <Search size={15} /><span>搜索任务</span>
                 </button>
               </div>

@@ -2602,7 +2602,7 @@ w.postMessage({id:1,op:"list",root});
       "【180】顶/底两种位置、教程、编辑弹窗样式在位（旧的对话框上方样式已移除）"
     );
   }
-  /* 布局：顶部只留「新建任务 / 搜索任务」；入口组在账户行**之上**，账户行是侧栏最后一条。
+  /* 布局：顶部只留「新会话 / 搜索任务」；入口组在账户行**之上**，账户行是侧栏最后一条。
      ⛔ 10-22 用户：「用户名那一排继续固定在页面最底部，不要移动位置」+「在用户名那一排上方的选项区域
         加折叠/展开」⇒ 结构从「用户名 → 入口」倒过来（入口在上、账户行贴底）—— 只有这样
         折叠入口组时账户行才可能 0 位移；写在账户行**下面**的方案折叠时整条会被拖着走。 */
@@ -2733,9 +2733,10 @@ w.postMessage({id:1,op:"list",root});
     "【180】专家 / 专家团 / 子智能体卡片直达各自内页（不先落到 agentteam 外层再点一次）"
   );
   const sideStyles180 = readStyles();
-  (/\.sidebar-quick\s*\{[\s\S]{0,260}?gap:\s*0/.test(sideStyles180)
-    && /\.sidebar-quick\s*\{[\s\S]{0,260}?border-radius:\s*999px/.test(sideStyles180) ? ok : fail)(
-    "【180】新建 / 搜索是共享外框的连体胶囊（gap 0 + 999px 圆角，中间一条分隔线）"
+  (/\.sidebar-quick\s*\{[\s\S]{0,260}?flex-direction:\s*column/.test(sideStyles180)
+    && /\.sidebar-quick \.sidebar-quick-btn\s*\{[\s\S]{0,260}?width:\s*100%[\s\S]{0,260}?border-radius:\s*12px/.test(sideStyles180)
+    && /\.sidebar-quick \.sidebar-quick-btn\.sidebar-quick-search\s*\{[\s\S]{0,120}?justify-content:\s*flex-start/.test(sideStyles180) ? ok : fail)(
+    "【180】新会话 / 搜索任务是上下两行、主按钮整行宽、搜索任务靠左（10-24 用户对照截图，不再并排胶囊）"
   );
   (/className="sidebar-tab sidebar-cap-row" title=\{meta\.title\}/.test(fmSrc180)
     && fmSrc180.includes("schedule: { label: \"自动化\"") ? ok : fail)(
@@ -2752,13 +2753,13 @@ w.postMessage({id:1,op:"list",root});
     "【180】能力入口弹窗样式存在（缺了弹窗会是一堆裸按钮）"
   );
   // ④ 模型配置入口的删除在【70】里（同轮把那两条正向断言翻成负向）
-  // ⑤ 新建 / 搜索并排胶囊：快捷键仍然生效，但不再显示键帽
+  // ⑤ 新会话 / 搜索任务上下两行：快捷键仍然生效，但不再显示键帽
   const navStart180 = side180.indexOf('aria-label="导航"');
   const navEnd180 = navStart180 >= 0 ? side180.indexOf("</div>", navStart180) : -1;
   const nav180 = navStart180 >= 0 && navEnd180 > navStart180 ? side180.slice(navStart180, navEnd180) : "";
-  (nav180.includes("sidebar-quick") && nav180.includes("新建任务") && nav180.includes("搜索任务")
-    && nav180.indexOf("搜索任务") > nav180.indexOf("新建任务") ? ok : fail)(
-    "【180】新建任务 / 搜索任务在并排胶囊区，搜索排在新建之后"
+  (nav180.includes("sidebar-quick") && nav180.includes("新会话") && nav180.includes("搜索任务")
+    && nav180.indexOf("搜索任务") > nav180.indexOf("新会话") ? ok : fail)(
+    "【180】新会话 / 搜索任务在顶部快捷区，搜索排在新建之后"
   );
   (!/<kbd>/.test(nav180) ? ok : fail)(
     "【180】快捷入口不再显示快捷键键帽（快捷键本身仍由全局监听生效）"

@@ -2,32 +2,32 @@
    全部走既有主题变量；没有新造同义色。弹窗复用 .info-modal 基座（遮罩/层级/入场动画），
    这里只补内容版式。 */
 
-/* ── 新建 / 搜索：连体胶囊（共享一圈外框，中间一条分隔线）。快捷键仍生效，只是不显示键帽 ── */
+/* ── 新会话 / 搜索任务：整行上下两行（10-24 用户对照 Qoder 截图，替代并排连体胶囊） ── */
 .sidebar-quick {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0;
-  margin: 10px 0 8px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  overflow: hidden;
-  background: var(--panel);
-}
-.sidebar-quick .sidebar-quick-btn {
-  width: auto;
-  height: 34px;
-  justify-content: center;
-  gap: 6px;
-  padding: 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 10px 0 10px;
   border: 0;
   border-radius: 0;
+  overflow: visible;
+  background: transparent;
+}
+.sidebar-quick .sidebar-quick-btn {
+  width: 100%;
+  height: 36px;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 12px;
   background: transparent;
   color: var(--text);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
 }
 .sidebar-quick .sidebar-quick-btn + .sidebar-quick-btn {
-  border-left: 1px solid var(--line);
+  border-left: 0;
 }
 .sidebar-quick .sidebar-quick-btn > span {
   flex: 0 1 auto;
@@ -38,12 +38,22 @@
   background: var(--panel-2);
 }
 .sidebar-quick .sidebar-quick-btn.primary {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  border-color: color-mix(in srgb, var(--accent) 20%, var(--line));
 }
 .sidebar-quick .sidebar-quick-btn.primary:hover {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
 }
 .sidebar-quick .sidebar-quick-btn.primary svg { color: var(--accent); }
+.sidebar-quick .sidebar-quick-btn.sidebar-quick-search {
+  height: 32px;
+  justify-content: flex-start;
+  color: var(--muted);
+}
+.sidebar-quick .sidebar-quick-btn.sidebar-quick-search:hover {
+  color: var(--text);
+}
 .sidebar-quick .sidebar-quick-btn:focus-visible {
   outline: none;
   box-shadow: inset 0 0 0 2px var(--accent);
