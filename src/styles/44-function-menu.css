@@ -31,12 +31,14 @@
 .function-menu-sidebar .function-menu-more-badge {
   margin-left: auto;
 }
-/* 侧栏顶部位置：紧贴「新会话 / 搜索任务」下面；入口组自己可折叠、滚动。 */
+/* 侧栏顶部位置：搜索任务下面的**常驻入口**（10-24 用户：不折叠、可从功能入口拓展）；
+   入口组超高时自己滚动，不把会话列表挤没。 */
 .sidebar-options-top {
   flex: none;
   margin: 6px 0 4px;
 }
-.sidebar-options-top .sidebar-nav-bottom { max-height: 32vh; }
+.sidebar-options-pinned { margin-top: 4px; }
+.sidebar-options-pinned .sidebar-nav-bottom { margin-top: 0; max-height: 32vh; }
 
 /* ── 更多弹层 ── */
 .function-menu-popover {
