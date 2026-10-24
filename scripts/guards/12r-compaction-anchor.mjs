@@ -107,11 +107,20 @@ ok(/\.ruler-tick\.wave-0,[\s\S]{0,160}?\.ruler-tick:hover \{[\s\S]{0,120}?width:
   && /\.ruler-tick\.wave-2 \{[^}]*margin-left:\s*12px/.test(css)
   && !/\.ruler-(?:tick|compaction)\.wave-[012][^{]*\{[^}]*margin-left:\s*(?:2|5|8)px/.test(css),
   "⛔ 波浪只朝聊天一侧变长：左端 margin-left 恒 12px（旧版两边同时伸缩的 2/5/8px 不许回来）");
-/* ── ④ 刻度尺联动（10-21 用户：当前阅读位置自动带起上下邻刻度的波浪；点击跳转） ── */
+/* ── ④ 刻度尺联动（10-24 用户：波浪只在滚轮滚动时触发，默认不呼吸；点击跳转） ── */
 ok(/const currentPos = currentItemId \? marks\.findIndex\(\(m\) => m\.itemId === currentItemId\) : -1/.test(ruler)
-  && /const activeIndex = hoverIndex != null \? hoverIndex : \(currentPos >= 0 \? currentPos : null\)/.test(ruler)
+  && /const activeIndex = hoverIndex != null \? hoverIndex : \(wheelWave && currentPos >= 0 \? currentPos : null\)/.test(ruler)
   && /const wave = dist === 0 \? " wave-0" : dist === 1 \? " wave-1" : dist === 2 \? " wave-2" : ""/.test(ruler),
-  "当前阅读位置自动成为波浪中心（hover 时以鼠标为准），上下两格按距离衰减");
+  "⛔ 波浪只在滚轮滚动期间触发（默认静止无波浪；hover 仍以鼠标为准），上下两格按距离衰减");
+ok(/addEventListener\("wheel", onWheel/.test(ruler)
+  && /setWheelWave\(true\)/.test(ruler)
+  && /setWheelWave\(false\), 600\)/.test(ruler)
+  && /removeEventListener\("wheel", onWheel\)/.test(ruler),
+  "滚轮点亮波浪 + 停止 600ms 自动收起 + 卸载时摘监听（⛔ 程序化滚动/贴底/跳转都不许触发）");
+ok(/const threadCompactToast = thread && compactToast && compactToast\.threadId === thread\.id \? compactToast : null/.test(timeline)
+  && /compactionStateOf\(win\.ordered, threadCompactToast\?\.state\)/.test(timeline)
+  && /compactionStateOf\(ordered, threadCompactToast\?\.state\)/.test(timeline),
+  "⛔ 压缩 toast 按会话隔离（A 会话的压缩成功切到 B 会话后，B 的刻度尺会凭空长出绿线 —— 10-24 用户实测）");
 ok(/contentOffsetTop\(el, scroller\) <= probe/.test(ruler) && !/if \(el\.offsetTop <= probe\)/.test(ruler),
   "⛔ 当前刻度用内容坐标（offsetTop 相对 .turn-group 恒接近 0 ⇒ 永远高亮最后一条）");
 ok(/className=\{`ruler-tick[\s\S]{0,900}?onClick=\{\(\) => onJump\(mark\.turnId\)\}/.test(ruler)

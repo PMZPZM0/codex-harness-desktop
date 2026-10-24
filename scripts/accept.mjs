@@ -774,7 +774,7 @@ const CHECKS = [
         }
         h.check("① 前置：找到显示刻度尺的会话（宽视口；≥8 根刻度）", Boolean(found), JSON.stringify(found && { ticks: found.ticks, cur: found.cur, id: String(foundId).slice(-8) }).slice(0, 160));
         if (!found) return;
-        /* 让当前刻度落在中间（左右各有两根邻居），再验证自动波浪。 */
+        /* 让当前刻度落在中间（左右各有两根邻居），再验证滚轮波浪。 */
         let info = found;
         const positionForWave = async () => {
           for (let attempt = 0; attempt < 5; attempt++) {
@@ -794,17 +794,33 @@ const CHECKS = [
           info = found;
           await positionForWave();
         }
-        const wave = info && info.cur >= 2 && info.cur <= info.ticks - 3
+        /* 10-24 用户：「默认不触发波浪效果，只有滚轮滚动的时候，才触发」「现在不滚动也触发，看着不太舒服」。
+           ① 程序化滚动/加载完成/贴底跟随都**不许**带出 wave 类；② 真滚轮才点亮；③ 停手自动收起。 */
+        const hasWave = (r) => Boolean(r && (r.waves || []).some((c) => /wave-[012]/.test(c)));
+        h.check("② 默认静止时不触发波浪（程序化滚动、刚加载完也不呼吸）",
+          Boolean(info && !hasWave(info)),
+          JSON.stringify({ cur: info && info.cur, waved: info ? info.waves.filter((c) => /wave-[012]/.test(c)) : [] }).slice(0, 220));
+        const wheelInfo = await (async () => {
+          await h.eval(`(function(){ var t=document.querySelector(".timeline"); t.dispatchEvent(new WheelEvent("wheel", { deltaY: 90, bubbles: true, cancelable: true })); return 1; })()`);
+          await wait(140);
+          return readRuler();
+        })();
+        const wave = wheelInfo && wheelInfo.cur >= 2 && wheelInfo.cur <= wheelInfo.ticks - 3
           ? {
-            center: String(info.waves[info.cur]).includes("wave-0") && Math.abs(info.widths[info.cur] - 26) <= 2,
-            near: String(info.waves[info.cur - 1]).includes("wave-1") && String(info.waves[info.cur + 1]).includes("wave-1") && Math.abs(info.widths[info.cur - 1] - 18) <= 2,
-            far: String(info.waves[info.cur - 2]).includes("wave-2") && String(info.waves[info.cur + 2]).includes("wave-2") && Math.abs(info.widths[info.cur - 2] - 15) <= 2,
+            center: String(wheelInfo.waves[wheelInfo.cur]).includes("wave-0") && Math.abs(wheelInfo.widths[wheelInfo.cur] - 26) <= 2,
+            near: String(wheelInfo.waves[wheelInfo.cur - 1]).includes("wave-1") && String(wheelInfo.waves[wheelInfo.cur + 1]).includes("wave-1") && Math.abs(wheelInfo.widths[wheelInfo.cur - 1] - 18) <= 2,
+            far: String(wheelInfo.waves[wheelInfo.cur - 2]).includes("wave-2") && String(wheelInfo.waves[wheelInfo.cur + 2]).includes("wave-2") && Math.abs(wheelInfo.widths[wheelInfo.cur - 2] - 15) <= 2,
             /* ⛔ 10-21 用户：「只有靠近对话框这边有波浪效果，左边不要」。所有刻度左端必须对齐同一 x。 */
-            leftAligned: Math.max(...info.lefts) - Math.min(...info.lefts) <= 1,
+            leftAligned: Math.max(...wheelInfo.lefts) - Math.min(...wheelInfo.lefts) <= 1,
           } : null;
-        h.check("② 当前阅读位置自动成为波浪中心（中心 26px、上下邻 18px / 15px；左端对齐不动、只朝聊天一侧变长）",
+        h.check("③ 滚轮滚动才触发波浪（中心 26px、上下邻 18px / 15px；左端对齐不动、只朝聊天一侧变长）",
           Boolean(wave && wave.center && wave.near && wave.far && wave.leftAligned),
-          JSON.stringify({ cur: info && info.cur, waves: info && info.waves.slice(Math.max(0, (info.cur||0)-2), (info.cur||0)+3), widths: info && info.widths.slice(Math.max(0, (info.cur||0)-2), (info.cur||0)+3), lefts: info && info.lefts.slice(Math.max(0, (info.cur||0)-2), (info.cur||0)+3) }).slice(0, 300));
+          JSON.stringify({ cur: wheelInfo && wheelInfo.cur, waves: wheelInfo && wheelInfo.waves.slice(Math.max(0, (wheelInfo.cur||0)-2), (wheelInfo.cur||0)+3), widths: wheelInfo && wheelInfo.widths.slice(Math.max(0, (wheelInfo.cur||0)-2), (wheelInfo.cur||0)+3), lefts: wheelInfo && wheelInfo.lefts.slice(Math.max(0, (wheelInfo.cur||0)-2), (wheelInfo.cur||0)+3) }).slice(0, 300));
+        await wait(900);
+        const settled = await readRuler();
+        h.check("④ 滚轮停止后波浪自动收起（不会常驻呼吸）",
+          Boolean(settled && !hasWave(settled)),
+          JSON.stringify({ cur: settled && settled.cur, waved: settled ? settled.waves.filter((c) => /wave-[012]/.test(c)) : [] }).slice(0, 220));
         const beforeItem = info && info.currentItem;
         let moved = null;
         let movedBy = "";
@@ -816,7 +832,7 @@ const CHECKS = [
         }
         if (!moved) {
           /* 极端内容（一整屏都是一个巨型回合）时滚动可能跨不过用户消息；用点击改变阅读位置，
-             同样验证“当前阅读位置 → 波浪中心”的联动，不把测试卡死在内容形态上。 */
+             同样验证“当前阅读位置 → 刻度高亮”的联动，不把测试卡死在内容形态上。 */
           const alt = await h.eval(`(function(){
             var ts=[...document.querySelectorAll(".ruler-tick")]; var cur=ts.findIndex(function(t){return t.classList.contains("current");});
             var t=ts[(cur>=0?cur:0)+2]; if(!t) return null; var item=t.dataset.itemId||""; t.click(); return { itemId:item };
@@ -825,14 +841,17 @@ const CHECKS = [
           moved = await readRuler();
           movedBy = `click ${alt && alt.itemId ? alt.itemId.slice(-8) : "?"}`;
         }
-        h.check("③ 滚动/跳转后波浪中心跟着阅读位置移动（刻度尺真的用起来）",
+        h.check("⑤ 滚动/跳转后当前刻度跟着阅读位置移动（刻度尺真的用起来）",
           Boolean(moved && beforeItem && moved.currentItem !== beforeItem),
           JSON.stringify({ by: movedBy, beforeItem: String(beforeItem).slice(-8), afterItem: String(moved && moved.currentItem).slice(-8), cur: moved && moved.cur }).slice(0, 200));
         /* 点一根离当前位置较远的刻度：目标回合应被滑窗挂载并贴顶。 */
         const target = await h.eval(`(function(){
           var ts=[...document.querySelectorAll(".ruler-tick")]; if(!ts.length) return null;
           var cur=ts.findIndex(function(t){return t.classList.contains("current");});
-          var idx=(cur>=0?cur:0)+3; if(idx>=ts.length) idx=0;
+          /* 目标取窗口内的另一根刻度：早先版本在越界时回绕到 idx 0，那根常是窗口最旧、
+             需要额外水合的历史回合（点击后 1.5s 内 group 还没挂上 ⇒ ⑥ 假红）。 */
+          var idx=(cur>=0?cur:0)+3; if(idx>=ts.length) idx=(cur>=0?cur:0)-3; if(idx<0) idx=ts.length-1;
+          if(idx===(cur>=0?cur:0)) idx=0;
           var t=ts[idx]; var turn=t.dataset.turnId||""; t.click(); return { turn:turn, idx:idx };
         })()`).catch(() => null);
         await wait(1500);
@@ -841,7 +860,7 @@ const CHECKS = [
           var g=document.getElementById("turn-"+${JSON.stringify(target?.turn || "")});
           return g ? { top:Math.round(g.getBoundingClientRect().top-t.getBoundingClientRect().top), groups:t.querySelectorAll(".turn-group").length } : null;
         })()`).catch(() => null);
-        h.check("④ 点击刻度线：目标回合真被滑窗挂载并贴顶（top 0..60px）",
+        h.check("⑥ 点击刻度线：目标回合真被滑窗挂载并贴顶（top 0..60px）",
           Boolean(target && hit && hit.top >= -2 && hit.top <= 60),
           JSON.stringify({ target, hit }).slice(0, 220));
         const green = await h.eval(`(function(){
@@ -857,6 +876,9 @@ const CHECKS = [
              先点绿线把阅读位置带到它所在回合，再断言它和相邻刻度一起变成波浪中心长度。 */
           await h.eval(`(function(){ var g=document.querySelector(".ruler-compaction"); if(g) g.click(); return 1; })()`);
           await wait(1500);
+          // 波浪只随滚轮出现：先滚一下再量绿线长度（静止时它是 12px）
+          await h.eval(`(function(){ var t=document.querySelector(".timeline"); t.dispatchEvent(new WheelEvent("wheel", { deltaY: 90, bubbles: true, cancelable: true })); return 1; })()`);
+          await wait(140);
           const greenWave = await h.eval(`(function(){
             var g=document.querySelector(".ruler-compaction"); if(!g) return null;
             var sib=g.nextElementSibling || g.previousElementSibling;
@@ -865,12 +887,12 @@ const CHECKS = [
               sibW:sib?Math.round(sib.getBoundingClientRect().width):null, sibCls:sib?String(sib.className):"",
               sibLeft:sib?Math.round(sib.getBoundingClientRect().left):null };
           })()`).catch(() => null);
-          h.check("⑤ 压缩绿线跟随波浪长短（静止 12px，波浪中心与相邻刻度同宽 26px；左端对齐）",
+          h.check("⑦ 压缩绿线跟随滚轮波浪长短（静止 12px，波浪中心与相邻刻度同宽 26px；左端对齐）",
             Boolean(greenWave && Math.abs(greenWave.w - (greenWave.sibW ?? -1)) <= 2 && greenWave.w >= 24 && /wave-0/.test(greenWave.cls) && /wave-0/.test(greenWave.sibCls) && Math.abs(greenWave.left - (greenWave.sibLeft ?? -1)) <= 1),
             JSON.stringify({ before: green, after: greenWave }).slice(0, 300));
           await wait(50);
           const gHit = await h.eval(`(function(){ var t=document.querySelector(".timeline"); var g=document.getElementById("turn-"+${JSON.stringify(green.turn)}); if(!g) return null; var r=g.getBoundingClientRect(), tr=t.getBoundingClientRect(); return { top:Math.round(r.top-tr.top), visible:r.bottom>tr.top+2 && r.top<tr.bottom-2 }; })()`).catch(() => null);
-          h.check("⑥ 点击压缩绿线也跳到压缩所在回合（目标回合可见）", Boolean(gHit && gHit.visible), JSON.stringify(gHit));
+          h.check("⑧ 点击压缩绿线也跳到压缩所在回合（目标回合可见）", Boolean(gHit && gHit.visible), JSON.stringify(gHit));
         } else {
           h.check("⑤/⑥ 压缩绿线（当前会话没有压缩记录，跳过长度/点击）", true, "no-green");
         }
@@ -5301,7 +5323,7 @@ const ROUND_OF = {
   "pet-activity": "10-21",   // 10-21 轮：桌宠活动气泡（running→review 持久 + 独立窗 + 打开清已看 + 拖拽）
   "reasoning-strip": "10-21",   // 10-21 晚：思考长条短内容不甩到最右（用户截图圈空白）+ 展开/收起
   "scroll-wheel-release": "10-21",   // 10-21 晚：滚轮解除跟随不看方向/目标（修「上滚自动回弹」)
-  "ruler-wave": "10-21",   // 10-21 轮：刻度尺当前阅读位置自动波浪 + 绿线等长 + 点击跳转
+  "ruler-wave": "10-24",   // 10-24 改：波浪只在滚轮滚动时触发（默认静止不呼吸）+ 绿线按会话隔离；10-21 轮原始项
   "compact-line": "10-07",   // 10-07 夜十一轮：压缩线（新会话 + 短回合 + 手动压缩 → 宿主侦测真链路 → 线出现 + 落盘）
   "devtools-install-ux": "10-11",   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）
   "free-gateway": "10-12",   // 10-12 轮：免费模型网关（第三方开源侧车 + 一键注册供应商；免责声明为契约）   // 10-11 轮：开发工具安装体验（常驻提示词复制图标 + 失败完整报错弹窗；层级顺序由守卫 11y 钉）

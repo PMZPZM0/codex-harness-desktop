@@ -377,11 +377,15 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
   }, [thread?.id, thread?.turns.length, historyTail, turnWindow, stickToBottomRef]);
   /* 刻度尺上的绿色压缩标记（10-18 用户：「刻度线里面如那两个中间产生压缩线，就在那两个中间产生一个绿色线」）。
      ⛔ 与时间线压缩线**同源**：同一个状态推导 + 同一个纯函数 ⇒ 两处口径不可能分叉。 */
+  /* ⛔ 压缩 toast 是**全局一份**、切换会话不会清（成功提示要留给用户看）⇒ 用它推导状态前
+     必须先按 threadId 过滤。否则在 A 会话做过压缩后切到 B，B 的刻度尺会凭空长出一条绿线
+     （10-24 用户实测：「这个绿色线，我没有压缩啊」）。 */
+  const threadCompactToast = thread && compactToast && compactToast.threadId === thread.id ? compactToast : null;
   const compactionMark = (() => {
     if (!thread) return { turnId: "", atEnd: false };
     /* 刻度尺/压缩线也跟**滑动窗口**走（不是“尾巴最后 5 个”）。 */
     const win = { ordered: timelineWindow.ordered, visible: historyPlan.visible };
-    const cs = compactionStateOf(win.ordered, compactToast?.state);
+    const cs = compactionStateOf(win.ordered, threadCompactToast?.state);
     const record = compactionRecordFor(thread.id);
     const boundary = cs.turnId || String(record?.turnId ?? "");
     const at = resolveCompactionAnchor(win.visible, boundary, { compactionAt: Number(record?.at ?? 0) });
@@ -455,7 +459,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                       /* ⛔ 压缩状态统一由 compaction-state.mjs 推导（10-17 用户令：四态可观测）。
                          之前这里自己扫一遍 item 判 in-progress，与 ItemView / compactToast 三处各写一份 ⇒
                          形状一变只有一处断（症状：没有压缩线、只剩通用工具卡）。 */
-                      const cs = compactionStateOf(ordered, compactToast?.state);
+                      const cs = compactionStateOf(ordered, threadCompactToast?.state);
                       reportCompactionState(thread.id, cs);
                       const lastCompaction: any = cs.state === "done" ? cs.item : null;
                       const lastCompactionTurnId = cs.state === "done" ? cs.turnId : "";
