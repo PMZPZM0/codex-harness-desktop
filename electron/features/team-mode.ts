@@ -22,7 +22,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
-import { cloudFetch, cloudHome, encrypt, fetchIntegrations } from "../cloud-api";
+import { accountsBase, cloudFetch, cloudHome, encrypt, fetchIntegrations } from "../cloud-api";
+import { readProxyToken } from "../cloud-token";
 import { readCloudMcpConnector, syncCloudMcpConnector } from "../cloud-mcp";
 import { readMemoryUpstream, resyncCloudUpstream, setMemoryUpstream } from "../cloud-provider";
 import { refreshEngineInstructions } from "../backend-routing";
@@ -155,11 +156,18 @@ export const teamModeFeature = defineFeature<null>({
       const mem = integ.memory ?? {};
       const kb = integ.knowledge ?? {};
 
-      /* ① 记忆：切到团队端点。⛔ 加密失败就整体失败 —— 宁可不进模式，也不写明文 key。 */
-      if (mem.ready && mem.baseUrl && mem.userKey) {
-        const encryptedUserKey = encrypt(String(mem.userKey));
-        if (!encryptedUserKey) return { ok: false, error: "safe-storage-unavailable" };
-        await setMemoryUpstream({ baseUrl: String(mem.baseUrl), encryptedUserKey });
+      /* ① 记忆 + 模型：**不再直连 MemHub**，改指到云端团队代理 `/proxy/t/<teamId>/v1`
+         —— 直连的话请求不经过我们，团队积分根本扣不到（用户令：团队模式走团队积分）。
+         鉴权用**本机代理令牌**（云端据此认人），团队 userKey 由云端注入、不下发客户端。 */
+      if (mem.ready && mem.baseUrl) {
+        const proxyToken = readProxyToken();
+        if (!proxyToken) {
+          return { ok: false, error: "no-proxy-token", message: "本机没有云端代理令牌，请先到云账号页「同步模型」一次" };
+        }
+        const encrypted = encrypt(proxyToken);
+        if (!encrypted) return { ok: false, error: "safe-storage-unavailable" };
+        const base = String(accountsBase() || "").replace(/\/+$/, "") + "/proxy/t/" + encodeURIComponent(teamId) + "/v1";
+        await setMemoryUpstream({ baseUrl: base, encryptedUserKey: encrypted });
       } else {
         await setMemoryUpstream(null);
       }
