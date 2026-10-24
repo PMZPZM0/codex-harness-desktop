@@ -1595,6 +1595,9 @@ const CHECKS = [
         const rect = group?.getBoundingClientRect();
         return { sidebar: !!document.querySelector(".function-menu-sidebar"), top: !!group,
           underQuick: Boolean(quick && rect && rect.top >= quick.bottom - 1 && rect.top <= quick.bottom + 28),
+          pinned: group?.classList.contains("sidebar-options-pinned") || false,
+          noToggle: !group?.querySelector(".sidebar-options-toggle"),
+          visible: !!group && getComputedStyle(group).display !== "none" && rect.height > 0,
           labels: [...document.querySelectorAll(".function-menu-sidebar .sidebar-cap-row")].map((b) => b.innerText.trim()),
           more: !!document.querySelector(".function-menu-sidebar .function-menu-more") };
       })()`).catch(() => null);
@@ -1602,10 +1605,12 @@ const CHECKS = [
         Boolean(base && base.sidebar && base.top && base.underQuick && base.labels.length === 8 && base.more
           && ["自动化", "前端开发", "拓展", "团队", "个性化&记忆", "登录管理", "新手教程"].every((label) => base.labels.includes(label))),
         JSON.stringify(base));
+      h.check("①b 搜索任务下面是常驻入口（无折叠头 / 不被 hidden / 高度可见），内容仍由功能入口配置驱动",
+        Boolean(base && base.pinned && base.noToggle && base.visible), JSON.stringify(base));
 
       // 首次悬停教程：清掉已看标记再 hover
       await h.eval(`localStorage.removeItem("function-menu-tour-seen-v1-top")`).catch(() => undefined);
-      await h.hover(".sidebar-options-top .sidebar-options-toggle");
+      await h.hover(".sidebar-options-top");
       await h.waitFor(`!!document.querySelector(".function-menu-tour")`, { timeoutMs: 3000 }).catch(() => undefined);
       const tour = await h.eval(`document.querySelector(".function-menu-tour")?.innerText || ""`).catch(() => "");
       h.check("② 首次悬停弹出教程（说明编辑菜单 / 拖进更多 / 设置里切换位置）",

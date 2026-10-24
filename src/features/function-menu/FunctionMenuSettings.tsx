@@ -17,11 +17,11 @@ export function FunctionMenuSettings({ onNotice }: { onNotice?: (text: string) =
     <section className="settings-section stack function-menu-settings">
       <div className="settings-copy">
         <h2>功能入口</h2>
-        <p>选择入口显示在「新会话 / 搜索任务」下面（老版位置），还是侧栏底部。两种位置共用同一套顺序与「更多」分组，改动即时生效。</p>
+        <p>选择入口显示在「新会话 / 搜索任务」下面（常驻展示，不折叠），还是侧栏底部（可折叠）。两种位置共用同一套顺序与「更多」分组，改动即时生效。</p>
       </div>
       <div className="fm-location-grid" role="group" aria-label="功能入口显示位置">
         <button type="button" className={`fm-location-card ${config.location === "top" ? "on" : ""}`} aria-pressed={config.location === "top"} onClick={() => choose("top")}>
-          <ArrowUpToLine size={16} /><span><b>侧栏顶部</b><small>「新会话 / 搜索任务」下面（老版位置）</small></span>{config.location === "top" && <Check size={14} />}
+          <ArrowUpToLine size={16} /><span><b>侧栏顶部</b><small>「新会话 / 搜索任务」下面（常驻不折叠）</small></span>{config.location === "top" && <Check size={14} />}
         </button>
         <button type="button" className={`fm-location-card ${config.location === "bottom" ? "on" : ""}`} aria-pressed={config.location === "bottom"} onClick={() => choose("bottom")}>
           <ArrowDownToLine size={16} /><span><b>侧栏底部</b><small>用户名上方，可折叠</small></span>{config.location === "bottom" && <Check size={14} />}
@@ -37,7 +37,7 @@ export function FunctionMenuSettings({ onNotice }: { onNotice?: (text: string) =
       </div>
       <div className="fm-settings-actions">
         <button type="button" className="secondary-setting" onClick={openFunctionMenuEditor}><Pencil size={13} />编辑菜单（拖动排序 / 收进更多）</button>
-        <small>{config.location === "top" ? "入口就在「新会话 / 搜索任务」下面；更多菜单里也能切换位置或打开编辑菜单。" : "更多菜单里也能随时切换位置或打开编辑菜单。"}</small>
+        <small>{config.location === "top" ? "入口常驻在「新会话 / 搜索任务」下面；更多菜单里也能切换位置或打开编辑菜单。" : "更多菜单里也能随时切换位置或打开编辑菜单。"}</small>
       </div>
     </section>
   );

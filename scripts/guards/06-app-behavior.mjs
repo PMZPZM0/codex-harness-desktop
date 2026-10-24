@@ -2543,11 +2543,11 @@ w.postMessage({id:1,op:"list",root});
     "【180】入口改名全在 FunctionMenu 元数据里（前端开发 / 拓展 / 团队 / 个性化&记忆 / 登录管理 / 新手教程）"
   );
   (side180.includes("<FunctionMenu location={menuLocation} />")
-    && /renderOptionsGroup\("top"\)/.test(side180) && /renderOptionsGroup\("bottom"\)/.test(side180)
+    && /renderPinnedOptions\(\)/.test(side180) && /renderOptionsGroup\("bottom"\)/.test(side180)
     && /functionMenu\.location === "top"/.test(side180) && /functionMenu\.location === "bottom"/.test(side180)
     && /setFunctionMenuActionHandler\(/.test(side180)
     && /id === "team"\) \{ setGuideKey\("agents"\)/.test(side180) ? ok : fail)(
-    "【180】侧栏接共享菜单：top/bottom 两处渲染，动作经总线回到 setGuideKey/setSettingsPage（团队仍开 agents 教程）"
+    "【180】侧栏接共享菜单：顶部常驻 / 底部折叠两处渲染，动作经总线回到 setGuideKey/setSettingsPage（团队仍开 agents 教程）"
   );
   {
     const moved = moveFunctionMenuItem(fmDefault180, "schedule", "overflow");
@@ -2576,12 +2576,12 @@ w.postMessage({id:1,op:"list",root});
   {
     const appearance180 = codeOnly(readFileSync(join(ROOT, "src", "features", "settings-appearance", "AppearanceSettingsSection.tsx"), "utf8"));
     const quickIdx = side180.indexOf('className="sidebar-quick"');
-    const topRenderIdx = side180.indexOf('renderOptionsGroup("top")');
+    const pinnedIdx = side180.indexOf("renderPinnedOptions()");
     const bottomRenderIdx = side180.indexOf('renderOptionsGroup("bottom")');
     const accountIdx = side180.indexOf('className="account-row"');
-    (quickIdx > 0 && topRenderIdx > quickIdx && bottomRenderIdx > quickIdx && bottomRenderIdx < accountIdx
+    (quickIdx > 0 && pinnedIdx > quickIdx && bottomRenderIdx > quickIdx && bottomRenderIdx < accountIdx
       && appearance180.includes("FunctionMenuSettings") ? ok : fail)(
-      "【180】顶部位置紧跟新建/搜索之后、底部位置在账户行之前；外观设置页有位置选择入口"
+      "【180】顶部常驻入口紧跟新建/搜索之后、底部位置在账户行之前；外观设置页有位置选择入口"
     );
     const composer180 = codeOnly(readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "02-main-stage", "03-composer.tsx"), "utf8"));
     (!composer180.includes("function-menu-composer") ? ok : fail)(
@@ -2597,6 +2597,7 @@ w.postMessage({id:1,op:"list",root});
   {
     const fmCss180 = readFileSync(join(ROOT, "src", "styles", "44-function-menu.css"), "utf8");
     (/\.sidebar-options-top\s*\{/.test(fmCss180) && /\.function-menu-tour\s*\{/.test(fmCss180)
+      && /\.sidebar-options-pinned \.sidebar-nav-bottom\s*\{[\s\S]{0,80}?max-height:\s*32vh/.test(fmCss180)
       && /\.function-menu-editor-backdrop\s*\{\s*z-index:\s*900/.test(fmCss180)
       && !/function-menu-composer/.test(fmCss180) ? ok : fail)(
       "【180】顶/底两种位置、教程、编辑弹窗样式在位（旧的对话框上方样式已移除）"
@@ -2612,8 +2613,16 @@ w.postMessage({id:1,op:"list",root});
     const accountIdx = side180.indexOf('className="account-row"');
     const bottomNavIdx = side180.indexOf('className="sidebar-nav sidebar-nav-bottom"');
     const optionsIdx = side180.indexOf("sidebar-options");
-    (quickIdx > 0 && topNavIdx === -1 && optionsIdx > 0 && optionsIdx < bottomNavIdx && bottomNavIdx < accountIdx && side180.indexOf('renderOptionsGroup("top")') > quickIdx ? ok : fail)(
+    (quickIdx > 0 && topNavIdx === -1 && optionsIdx > 0 && optionsIdx < bottomNavIdx && bottomNavIdx < accountIdx && side180.indexOf("renderPinnedOptions()") > quickIdx ? ok : fail)(
       "【180】顶部只剩新建/搜索（旧「能力入口」组已移除）；底部顺序 = 入口组 → 账户行（账户行最后一条 = 贴底锚）"
+    );
+    const pinnedStart = side180.indexOf("const renderPinnedOptions");
+    const pinnedEnd = side180.indexOf("const navigateGuideTarget", pinnedStart);
+    const pinned180 = pinnedStart >= 0 && pinnedEnd > pinnedStart ? side180.slice(pinnedStart, pinnedEnd) : "";
+    (pinned180.includes("sidebar-options-pinned") && pinned180.includes('maybeShowFunctionMenuTour("top"')
+      && pinned180.includes('<FunctionMenu location="top" />') && !pinned180.includes("sidebar-options-toggle")
+      && !pinned180.includes("hidden=") ? ok : fail)(
+      "【180】顶部入口常驻：无折叠头 / 无 hidden，内容由同一份功能入口配置渲染"
     );
     const tailAfterAccount = side180.slice(accountIdx);
     (!/className="sidebar-(?:nav|options)/.test(tailAfterAccount) ? ok : fail)(

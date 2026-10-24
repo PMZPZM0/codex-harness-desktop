@@ -280,7 +280,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     return () => setFunctionMenuActionHandler(null);
   }, [setSettingsPage, setSettingsOpen, setMobileNav]);
 
-  /** 同一套入口组渲染在「新建/搜索下面」或「侧栏底部」；两处共用一个折叠状态与菜单数据。 */
+  /** 同一套入口组渲染在「新会话 / 搜索任务」下面或「侧栏底部」；底部组可折叠。 */
   const renderOptionsGroup = (menuLocation: "top" | "bottom") => (
     <div className={`sidebar-options ${menuLocation === "top" ? "sidebar-options-top" : ""}`}>
       <button
@@ -297,6 +297,19 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       </button>
       <div className="sidebar-nav sidebar-nav-bottom" id="sidebar-options-body" role="group" aria-label="功能入口" hidden={optionsCollapsed}>
         <FunctionMenu location={menuLocation} />
+      </div>
+    </div>
+  );
+
+  /** 顶部入口 = 常驻列表（10-24 用户：「搜索任务下面可以从功能入口里面拓展功能过来，常驻展示」）：
+      直接挂在「搜索任务」下面，不画折叠头、不 hidden；内容和顺序仍由功能入口配置/编辑器驱动。 */
+  const renderPinnedOptions = () => (
+    <div
+      className="sidebar-options sidebar-options-top sidebar-options-pinned"
+      onMouseEnter={(event) => maybeShowFunctionMenuTour("top", event.currentTarget)}
+    >
+      <div className="sidebar-nav sidebar-nav-bottom" role="group" aria-label="功能入口">
+        <FunctionMenu location="top" />
       </div>
     </div>
   );
@@ -433,7 +446,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 </button>
               </div>
             </div>
-            {functionMenu.location === "top" && renderOptionsGroup("top")}
+            {functionMenu.location === "top" && renderPinnedOptions()}
             {guideKey && <SidebarGuideModal guideKey={guideKey} onNavigate={navigateGuideTarget} onClose={() => setGuideKey(null)} />}
             {/* 直达：关弹窗 + 直接开对应设置页（⛔ 不再经「设置 → 账户与模型」多一层） */}
             {loginMgrOpen && (
