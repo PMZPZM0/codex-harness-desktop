@@ -3819,4 +3819,21 @@ w.postMessage({id:1,op:"list",root});
     );
   }
 
+  /* 10-25 用户要求：熊系头像放进「用户中心 / Codex 内置形象」两边供选择，并把选择区放大。 */
+  {
+    const presetsSrc = readFileSync(join(ROOT, "src", "lib", "avatar-presets.ts"), "utf8");
+    const userPart = presetsSrc.slice(presetsSrc.indexOf("USER_AVATAR_PRESETS"), presetsSrc.indexOf("CODEX_AVATAR_PRESETS"));
+    const codexPart = presetsSrc.slice(presetsSrc.indexOf("CODEX_AVATAR_PRESETS"));
+    const bearFiles = ["bear-brown.png", "bear-white.png", "bear-pair.png"];
+    (bearFiles.every((file) => userPart.includes(file) && codexPart.includes(file)
+        && existsSync(join(ROOT, "public", "avatars", file))) ? ok : fail)(
+      "熊系头像：用户中心与 Codex 内置形象都能选棕熊 / 白熊 / 双熊，素材在位"
+    );
+    const ucCss = readFileSync(join(ROOT, "src", "styles", "16-settings-ssh.css"), "utf8");
+    (/\.uc-presets\s*\{[\s\S]{0,100}?grid-template-columns:\s*repeat\(5/.test(ucCss)
+      && /\.codex-id-preset-grid\s*\{[\s\S]{0,120}?grid-template-columns:\s*repeat\(5/.test(ucCss) ? ok : fail)(
+      "用户 / Codex 头像选择区放大到 5 列（缩略图变大，熊头像看得清）"
+    );
+  }
+
 }

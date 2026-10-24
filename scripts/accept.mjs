@@ -321,6 +321,28 @@ const CHECKS = [
       const gone = await h.eval(`(function(){ const m=document.querySelector(".settings-modal");
         return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(), has:(m.innerText||"").includes("思考板块展示") }; })()`);
       h.check("④ 控制台页：不再重复出现思考板块展示", gone?.page === "控制台" && gone?.has === false, JSON.stringify(gone));
+      // 10-25 用户令：熊系头像放进用户中心与 Codex 内置形象，选择区放大。
+      if (!(await h.eval(`!!document.querySelector(".settings-modal")`).catch(() => false))) {
+        await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+        await wait(1200);
+      }
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(x=>(x.textContent||"").trim()==="用户中心"); if(b) b.click(); return 1; })()`);
+      await wait(1200);
+      const bearAvatars = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const userBtns=[...m.querySelectorAll(".uc-presets button")];
+        const codexBtns=[...m.querySelectorAll(".codex-id-preset")];
+        const cols=(sel)=>{ const el=m.querySelector(sel); return el?getComputedStyle(el).gridTemplateColumns.split(" ").length:0; };
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          userTitles:userBtns.map((b)=>b.title), codexTitles:codexBtns.map((b)=>b.title),
+          userCols:cols(".uc-presets"), codexCols:cols(".codex-id-preset-grid") };
+      })()`).catch(() => null);
+      const bearer = (titles, label) => Array.isArray(titles) && titles.includes(label);
+      h.check("⑤ 用户中心 / Codex 内置形象都能选棕熊、白熊、双熊，且缩略图放大到 5 列",
+        Boolean(bearAvatars && bearAvatars.page === "用户中心"
+          && ["棕熊","白熊","双熊"].every((label) => bearer(bearAvatars.userTitles, label) && bearer(bearAvatars.codexTitles, label))
+          && bearAvatars.userCols === 5 && bearAvatars.codexCols === 5),
+        JSON.stringify(bearAvatars));
     },
   },
   {
