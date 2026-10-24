@@ -11,6 +11,18 @@
   flex-direction: column;
   gap: 2px;
 }
+/* 侧栏入口可直接拖动排序 / 拖进「更多」，落手即写回共享配置（10-24 用户：拖动实时生效） */
+.function-menu-sidebar .sidebar-cap-row[draggable="true"] { cursor: grab; }
+.function-menu-sidebar .sidebar-cap-row[draggable="true"]:active { cursor: grabbing; }
+.function-menu-sidebar .sidebar-cap-row.dragging { opacity: 0.45; }
+.function-menu-sidebar .sidebar-cap-row.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.function-menu-sidebar .function-menu-more.drop-into {
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
 .function-menu-more {
   color: var(--muted);
 }
@@ -200,7 +212,7 @@
 
 .fm-location-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin: 14px 0;
 }

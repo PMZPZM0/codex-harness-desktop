@@ -3,7 +3,7 @@
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
 import { Fragment, useEffect, useState } from "react";
-import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, useFunctionMenuConfig } from "../../function-menu";
+import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, showFunctionMenuAt, useFunctionMenuConfig } from "../../function-menu";
 import { hk } from "../../../lib/hk";
 import {
   AlertTriangle,
@@ -446,7 +446,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 </button>
               </div>
             </div>
-            {functionMenu.location === "top" && renderPinnedOptions()}
+            {showFunctionMenuAt(functionMenu, "top") && renderPinnedOptions()}
             {guideKey && <SidebarGuideModal guideKey={guideKey} onNavigate={navigateGuideTarget} onClose={() => setGuideKey(null)} />}
             {/* 直达：关弹窗 + 直接开对应设置页（⛔ 不再经「设置 → 账户与模型」多一层） */}
             {loginMgrOpen && (
@@ -548,7 +548,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 ⛔ 折叠**只收本组**（入口 `hidden` + 本组 `flex:none`）⇒ 空出来的高度被 `.thread-list`
                    （flex:1 1 0）吃掉；⛔ 别给账户行加占位/补白、⛔ 别把它挪进本组 —— 它是贴底的锚，
                    位置只由「侧栏最后一条」决定，与展开/折叠无关。 */}
-            {functionMenu.location === "bottom" && renderOptionsGroup("bottom")}
+            {showFunctionMenuAt(functionMenu, "bottom") && renderOptionsGroup("bottom")}
             <FunctionMenuTourHost />
             <FunctionMenuEditorHost />
             <div className="account-row">

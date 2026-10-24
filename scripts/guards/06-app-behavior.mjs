@@ -2535,8 +2535,9 @@ w.postMessage({id:1,op:"list",root});
   const fmDefault180 = normalizeFunctionMenu(null);
   (FUNCTION_MENU_DEFAULT_ORDER.join(">") === "schedule>frontend>extensions>team>identity>login>newbie"
     && fmDefault180.location === "top" && fmDefault180.overflow.length === 0
+    && normalizeFunctionMenu({ location: "both" }).location === "both"
     ? ok : fail)(
-    "【180】功能入口默认顺序 + 默认位置 = 新建/搜索下面（top），数据模型单一真相源"
+    "【180】功能入口默认顺序 + 默认位置 = 搜索任务下面（top），两处都显示（both）可归一化，数据模型单一真相源"
   );
   (["自动化", "前端开发", "拓展", "团队", "登录管理", "新手教程", "个性化&记忆"].every((label) => fmSrc180.includes(label))
     && fmSrc180.includes('schedule: { label: "自动化"') ? ok : fail)(
@@ -2544,10 +2545,16 @@ w.postMessage({id:1,op:"list",root});
   );
   (side180.includes("<FunctionMenu location={menuLocation} />")
     && /renderPinnedOptions\(\)/.test(side180) && /renderOptionsGroup\("bottom"\)/.test(side180)
-    && /functionMenu\.location === "top"/.test(side180) && /functionMenu\.location === "bottom"/.test(side180)
+    && /showFunctionMenuAt\(functionMenu, "top"\)/.test(side180) && /showFunctionMenuAt\(functionMenu, "bottom"\)/.test(side180)
     && /setFunctionMenuActionHandler\(/.test(side180)
     && /id === "team"\) \{ setGuideKey\("agents"\)/.test(side180) ? ok : fail)(
-    "【180】侧栏接共享菜单：顶部常驻 / 底部折叠两处渲染，动作经总线回到 setGuideKey/setSettingsPage（团队仍开 agents 教程）"
+    "【180】侧栏接共享菜单：顶部常驻 / 底部折叠，两者可同时显示；动作经总线回到 setGuideKey/setSettingsPage（团队仍开 agents 教程）"
+  );
+  (fmSrc180.includes('setFunctionMenuLocation("both")') && fmSrc180.includes("两处都显示")
+    && side180.includes("sidebar-options-pinned") && /moveFunctionMenuItemInMenu\(dragId, "visible"/.test(fmSrc180)
+    && /moveFunctionMenuItemInMenu\(dragId, "overflow"/.test(fmSrc180)
+    && fmSrc180.includes("drop-before") && fmSrc180.includes("drop-into") ? ok : fail)(
+    "【180】三种展示位置（含两处都显示）+ 侧栏入口可直接拖动排序/拖进更多，落手即写回配置"
   );
   {
     const moved = moveFunctionMenuItem(fmDefault180, "schedule", "overflow");
@@ -2747,11 +2754,11 @@ w.postMessage({id:1,op:"list",root});
     && /\.sidebar-quick \.sidebar-quick-btn\.sidebar-quick-search\s*\{[\s\S]{0,120}?justify-content:\s*flex-start/.test(sideStyles180) ? ok : fail)(
     "【180】新会话 / 搜索任务是上下两行、主按钮整行宽、搜索任务靠左（10-24 用户对照截图，不再并排胶囊）"
   );
-  (/className="sidebar-tab sidebar-cap-row" title=\{meta\.title\}/.test(fmSrc180)
+  (/className=\{`sidebar-tab sidebar-cap-row/.test(fmSrc180)
     && fmSrc180.includes("schedule: { label: \"自动化\"") ? ok : fail)(
     "【180】「自动化」与其它能力入口同一行样式（统一 sidebar-cap-row，不再单独一档）"
   );
-  (fmSrc180.includes("function-menu-more") && fmSrc180.includes("编辑菜单") && fmSrc180.includes("移到侧栏顶部")
+  (fmSrc180.includes("function-menu-more") && fmSrc180.includes("编辑菜单") && fmSrc180.includes("移到搜索任务下面")
     && !/moreHubOpen/.test(side180) ? ok : fail)(
     "【180】新的「更多」只收溢出入口 + 编辑菜单/切换位置（旧 AI 画布 moreHubOpen 已删除）"
   );
