@@ -13,6 +13,7 @@ export const USER_AVATAR_PRESETS: UserAvatarPreset[] = [
   { id: "lion", label: "小狮子", file: "user-lion.png" },
   { id: "koala", label: "考拉", file: "user-koala.png" },
   { id: "unicorn", label: "独角兽", file: "user-unicorn.png" },
+  { id: "bubu", label: "一二布布", file: "user-bubu.png" },
 ];
 
 /** Codex 的内置形象（10-21 用户要求：不能只有一个头像，要能一键切换）。
@@ -26,6 +27,7 @@ export const CODEX_AVATAR_PRESETS: UserAvatarPreset[] = [
   { id: "amber", label: "暖橙", file: "codex-amber.png" },
   { id: "sakura", label: "樱花", file: "codex-sakura.png" },
   { id: "obsidian", label: "曜石", file: "codex-obsidian.png" },
+  { id: "bubu", label: "一二布布", file: "codex-bubu.png" },
 ];
 
 export const CODEX_DEFAULT_AVATAR_FILE = "codex-hero.png";

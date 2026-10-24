@@ -593,3 +593,35 @@
 .settings-exp-shell .storage-page-card .work-logs-foot { flex-wrap: wrap; }
 /* 工作日志卡内的提示行放宽（与统计条同宽） */
 .settings-exp-shell .storage-page-card .work-logs-hint { max-width: none; }
+
+/* ── 一二布布主题包 + 用户人格（10-24 用户立项；用户中心两块新卡） ─────────────── */
+.settings-exp-shell .bubu-pack-body { display: flex; flex-direction: column; gap: 10px; }
+.settings-exp-shell .bubu-pack-preview { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.settings-exp-shell .bubu-pack-avatar { width: 64px; height: 64px; border-radius: 16px; object-fit: cover; border: 1px solid var(--line-soft); }
+.settings-exp-shell .bubu-pack-stickers { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.settings-exp-shell .bubu-pack-stickers img { width: 52px; height: 52px; border-radius: 12px; object-fit: cover; border: 1px solid var(--line-soft); }
+.settings-exp-shell .bubu-pack-body .primary-setting { align-self: flex-start; }
+.settings-exp-shell .bubu-pack-note { margin: 0; font-size: 11.5px; line-height: 1.7; color: var(--faint); }
+
+.settings-exp-shell .user-persona-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.settings-exp-shell .user-persona-card {
+  display: flex; flex-direction: column; gap: 6px; text-align: left;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel); cursor: pointer; color: var(--text); position: relative;
+}
+.settings-exp-shell .user-persona-card:hover { border-color: var(--muted); }
+.settings-exp-shell .user-persona-card.active { border-color: var(--accent, #6b8afd); }
+.settings-exp-shell .user-persona-card > span:first-child { display: flex; flex-direction: column; gap: 3px; }
+.settings-exp-shell .user-persona-card strong { font-size: 12.5px; }
+.settings-exp-shell .user-persona-card small { font-size: 11px; line-height: 1.6; color: var(--faint); }
+.settings-exp-shell .user-persona-tools { display: flex; flex-wrap: wrap; gap: 4px; }
+.settings-exp-shell .user-persona-tools em {
+  font-style: normal; font-size: 10px; padding: 1px 6px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--muted);
+}
+.settings-exp-shell .user-persona-card > svg { position: absolute; top: 10px; right: 10px; color: var(--accent, #6b8afd); }
+.settings-exp-shell .user-persona-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 8px; font-size: 11.5px; color: var(--faint);
+}
+.settings-exp-shell .user-persona-foot > span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }

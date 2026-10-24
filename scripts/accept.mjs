@@ -2244,6 +2244,64 @@ const CHECKS = [
   },
 
   {
+    id: "bubu-pack",
+    name: "🐤 一二布布主题包（表情包/双头像/人格/用户人格 一键成套；persona_apply 工具面由守卫 12ae 钉）",
+    run: async (h) => {
+      /* 10-24 用户立项：一二布布（熊猫一二×棕熊布布）表情包 + 双头像 + 人格 + 用户人格库。
+         本项走真 UI：打开用户中心 → 一键应用 → 读档案与语音设置对账；工具分发链不真跑回合。 */
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await wait(900);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll('.settings-nav button')].find(x=>(x.textContent||'').trim()==='用户中心'); b&&b.click(); return 1; })()`);
+      await h.waitFor(`(function(){ return [...document.querySelectorAll('.uc-panel-head strong')].some(x=>(x.textContent||'').includes('一二布布主题包')); })()`, { label: "主题包卡", timeoutMs: 8000 }).catch(() => undefined);
+      await wait(300);
+      const ui = await h.eval(`(function(){
+        const stickers=[...document.querySelectorAll('.bubu-pack-stickers img')];
+        const personaCards=[...document.querySelectorAll('.user-persona-card')];
+        return { pack: !!document.querySelector('.bubu-pack-panel'), stickers: stickers.length,
+          stickerSrc: (stickers[0]?.src||''), personas: personaCards.length,
+          applyBtn: [...document.querySelectorAll('button')].some(b=>(b.textContent||'').includes('一键换上一二布布')) };
+      })()`);
+      h.check("① 主题包卡在位（预览 5 张表情 + 用户人格 ≥10 张卡 + 一键按钮）",
+        Boolean(ui.pack && ui.stickers === 5 && ui.personas >= 10 && ui.applyBtn), JSON.stringify(ui));
+      const applied = await h.eval(`(async function(){
+        const b=[...document.querySelectorAll('button')].find(x=>(x.textContent||'').includes('一键换上一二布布')); b&&b.click();
+        for (let i=0;i<20;i++){ await new Promise(r=>setTimeout(r,400));
+          const av=document.querySelector('.uc-avatar img');
+          const persona=await window.codex.readPersonalization().catch(()=>null);
+          if (av && (av.src||'').includes('user-bubu') && persona && (persona.persona||'').includes('一二布布')) {
+            const voice=await window.codex.voiceSettingsGet().catch(()=>null);
+            return { avatar:(av.src||'').slice(-30), personaHasGuide: (persona.persona||'').includes('bubu://'),
+              assistantName: persona.assistantName||'', sid: voice&&voice.tts?voice.tts.sid:null, soulSlug: persona.soulSlug||'' };
+          }
+        }
+        return null;
+      })()`).catch(() => null);
+      h.check("② 一键应用：用户头像=布布、人格全文含触发表、soulSlug=yierbubu、名字=一二布布、语音包 sid=1",
+        Boolean(applied && applied.avatar.includes("user-bubu") && applied.personaHasGuide
+          && applied.assistantName === "一二布布" && applied.soulSlug === "yierbubu" && applied.sid === 1), JSON.stringify(applied));
+      const personaCard = await h.eval(`(async function(){
+        const card=[...document.querySelectorAll('.user-persona-card')].find(c=>(c.textContent||'').includes('程序员'));
+        card&&card.click();
+        for (let i=0;i<10;i++){ await new Promise(r=>setTimeout(r,300));
+          const p=await window.codex.readPersonalization().catch(()=>null);
+          if (p && (p.occupation||'').includes('程序员')) return { occupation:p.occupation||'', userContext:(p.userContext||'').slice(0,40) };
+        }
+        return null;
+      })()`).catch(() => null);
+      h.check("③ 用户人格：点「程序员」写入职业/背景档案", Boolean(personaCard && (personaCard.occupation||'').includes('程序员')), JSON.stringify(personaCard));
+      const restored = await h.eval(`(async function(){
+        const b=[...document.querySelectorAll('.user-persona-foot button')].find(x=>(x.textContent||'').includes('恢复空白')); b&&b.click();
+        for (let i=0;i<10;i++){ await new Promise(r=>setTimeout(r,300));
+          const p=await window.codex.readPersonalization().catch(()=>null);
+          if (p && !(p.occupation||'')) return { cleared: true };
+        }
+        return null;
+      })()`).catch(() => null);
+      h.check("④ 恢复空白：职业/背景清空", Boolean(restored), JSON.stringify(restored));
+    },
+  },
+  {
     id: "updates-simplified",
     name: "🧩 技能/插件更新收口（两个总开关 / 四个市场面板删除 / 已安装只留一个检查更新）",
     run: async (h) => {
@@ -5309,6 +5367,7 @@ const ROUND_OF = {
   "provider-autosetup": "10-24",   // 10-24 轮：供应商自动配置大弹窗（检测/全选/保存/旧供应商停用，本地 mock 网关真链路）
   "provider-login-autosetup": "10-24",   // 10-24 轮：登录页自定义 API → 自动弹窗 → 检测/勾选/保存 → 进主界面
   "settings-unified": "10-24",   // 10-24 轮：设置内页统一版式（长卡片 / 页头两行 / 无溢出 / 收藏夹单列）
+  "bubu-pack": "10-24",   // 10-24 轮：一二布布主题包（表情包/双头像/人格/用户人格一键成套）
   "updates-simplified": "10-24",   // 10-24 轮：技能/插件更新收口（两个总开关 / 删四块面板 / 已安装单个检查更新）
   "skills-bulk": "10-24",   // 10-24 轮：技能本地导入批量管理（位置/范围/样式）
   "effort-slider": "10-24",   // 10-24 轮：思考强度四档渐变滑杆（低/中/高/极高 + 白点 + 绿→蓝）

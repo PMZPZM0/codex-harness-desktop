@@ -534,6 +534,15 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   margin-top: 8px;
   display: block;
 }
+/* 一二布布表情包（bubu://）：贴纸自带奶油底色，做成圆角贴纸卡（比裸图更像表情包） */
+.message-image.bubu-sticker {
+  width: 128px;
+  height: 128px;
+  object-fit: cover;
+  border-radius: 18px;
+  border: 1px solid var(--line-soft);
+  cursor: zoom-in;
+}
 .message-footer {
   /* 关键：默认常驻固定行高，避免 hover 显隐按钮时把后续板块「往下挪」。 */
   /* WorkBuddy 式：操作条 hover 消息才显示，正文出字时不再顶着一排按键 */

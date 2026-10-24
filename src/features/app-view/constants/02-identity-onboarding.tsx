@@ -208,6 +208,31 @@ export const IDENTITY_ONBOARD_TOOL = {
   },
 };
 
+export /** 人格切换工具（10-24 用户立项：Codex 能改自己与用户的人格）。
+ *
+ *  ⛔ 与 identity_update 同一处境：没有工具时模型只能把「换人格」写进记忆，档案不会变。
+ *  ⛔ target=self 目前只内置 yierbubu（一二布布）；target=user 走用户人格库（bubu-pack.mjs 的
+ *     USER_PERSONAS，执行端校验）。应用 = 写 personalization.json + AGENTS.md（saveIdentity 通道），
+ *     **本会话已注入的旧人格不变**，下一个新会话生效 —— 描述里必须写明，让模型如实告知用户。
+ */
+const PERSONA_APPLY_TOOL = {
+  type: "function",
+  name: "persona_apply",
+  description:
+    "切换人格（写进用户档案，立即更新全局配置）："
+    + "① target=\"self\"：改**你自己**的人格，personaId 只内置 \"yierbubu\"（一二布布：小黄鸡工程师，自带表情包触发表）；"
+    + "② target=\"user\"：改**用户**的人格，personaId 取用户人格库的 id（coder 程序员 / product 产品经理 / designer 设计师 / writer 内容创作 / video 视频自媒体 / legal 法律 / finance 财务量化 / research 科研数据 / ops 运维 / teacher 教师）或 \"default\"（恢复空白）。"
+    + "⛔ 只有用户明确要求换人格时才调用；应用后告知：人格从下一个新会话开始完全生效（本会话语气可能仍带旧人格）。",
+  inputSchema: {
+    type: "object",
+    properties: {
+      target: { type: "string", enum: ["self", "user"], description: "self=改你自己的人格；user=改用户的人格" },
+      personaId: { type: "string", description: "self 固定传 yierbubu；user 取用户人格库 id 或 default" },
+    },
+    required: ["target", "personaId"],
+  },
+};
+
 export /** 行业分类 ID → 中文名（与专家团编辑器一致） */
 const EXPERT_CATEGORY_LABELS: Record<string, string> = {
   "01-ProductDesign": "产品设计", "02-Engineering": "技术工程", "03-GameSpatial": "游戏空间",

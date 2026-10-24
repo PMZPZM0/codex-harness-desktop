@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, UserRound, Briefcase, GraduationCap, Clock3, Heart, Languages, Lightbulb, Save, Wand2, LogOut, RotateCcw, Check, Sparkles } from "lucide-react";
+import { Camera, UserRound, Briefcase, GraduationCap, Clock3, Heart, Languages, Lightbulb, Save, Wand2, LogOut, RotateCcw, Check, Sparkles, Bird, Sticker, Volume2 } from "lucide-react";
 import { DefaultCodexAvatar } from "./DefaultCodexAvatar";
 import { CODEX_DEFAULT_NAME, type CodexAvatarSpec } from "../lib/codex-identity.mjs";
 import { avatarAsset, CODEX_AVATAR_PRESETS, CODEX_DEFAULT_AVATAR_FILE, USER_AVATAR_PRESETS } from "../lib/avatar-presets";
+import { BUBU_PACK, BUBU_PERSONA, BUBU_STICKERS, USER_PERSONAS, stickerAsset, userPersonaFields } from "../lib/bubu-pack.mjs";
 
 export type UserProfile = {
   nickname: string;
@@ -184,6 +185,45 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
       ? <span className="uc-avatar-emoji">{profile.avatar}</span>
       : <span className="uc-avatar-emoji">{profile.nickname ? profile.nickname.slice(0, 1).toUpperCase() : <UserRound size={26} />}</span>;
 
+  // ── 一二布布主题包 + 用户人格（10-24 用户立项）──
+  const [bubuApplying, setBubuApplying] = useState(false);
+  const [personaApplied, setPersonaApplied] = useState<string | null>(null);
+
+  const applyBubuPack = async () => {
+    if (bubuApplying) return;
+    setBubuApplying(true);
+    try {
+      pickPresetAvatar("user-bubu.png");
+      onCodexAvatarChange?.({ type: "image", value: avatarAsset("codex-bubu.png") });
+      onAssistantNameChange?.(BUBU_PACK.assistantName);
+      await window.codex.saveIdentity({ persona: BUBU_PERSONA, soulSlug: BUBU_PACK.personaSlug, assistantName: BUBU_PACK.assistantName });
+      // 语音包：内置音色 2 号；克隆档案让位（profileId 置空 = 回到内置预置音色）
+      try {
+        const current: any = await window.codex.voiceSettingsGet();
+        await window.codex.voiceSettingsSet({ tts: { ...(current?.tts ?? {}), sid: BUBU_PACK.voice.sid, profileId: "" } });
+      } catch { /* 语音模型未装时跳过：人格与表情不受影响 */ }
+      onNotice("一二布布主题包已应用：双头像立即生效，人格 / 表情包 / 语音包从下一个新会话开始");
+    } catch (err: any) {
+      onNotice(`主题包应用失败：${err?.message ?? err}`);
+    } finally {
+      setBubuApplying(false);
+    }
+  };
+
+  const applyUserPersona = async (personaId: string) => {
+    const fields = personaId === "default" ? { occupation: "", userContext: "" } : userPersonaFields(personaId);
+    if (!fields) { onNotice(`没有叫「${personaId}」的用户人格`); return; }
+    try {
+      await window.codex.saveIdentity(fields);
+      const hit = USER_PERSONAS.find((p) => p.id === personaId);
+      setField("occupation", fields.occupation);
+      setPersonaApplied(personaId === "default" ? null : personaId);
+      onNotice(hit ? `已应用「${hit.label}」用户人格（配套工具：${hit.tools.join("、")}）` : "已恢复空白用户人格");
+    } catch (err: any) {
+      onNotice(`用户人格应用失败：${err?.message ?? err}`);
+    }
+  };
+
   const styleLabel = STYLE_OPTIONS.find((option) => option.value === personality)?.label ?? "务实";
   const displayName = profile.nickname || username || "未设置昵称";
 
@@ -363,6 +403,62 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
               );
             })}
           </div>
+        </div>
+      </section>
+
+      {/* 一二布布主题包（10-24 用户立项）：表情包 / 双头像 / 人格 / 语音包 一键成套 */}
+      <section className="uc-panel bubu-pack-panel">
+        <div className="uc-panel-head">
+          <span className="uc-panel-icon"><Bird size={14} /></span>
+          <div><strong>一二布布主题包</strong><small>表情包 · 双头像 · 人格 · 语音包，一键成套</small></div>
+        </div>
+        <div className="bubu-pack-body">
+          <div className="bubu-pack-preview">
+            <img className="bubu-pack-avatar" src={avatarAsset("user-bubu.png")} alt="一二布布用户头像" />
+            <img className="bubu-pack-avatar" src={avatarAsset("codex-bubu.png")} alt="一二布布 Codex 头像" />
+            <div className="bubu-pack-stickers">
+              {BUBU_STICKERS.map((s) => (
+                <img key={s.id} src={stickerAsset(s.file)} alt={s.label} title={`${s.label}：${s.states.join(" / ")}`} />
+              ))}
+            </div>
+          </div>
+          <button type="button" className="primary-setting" disabled={bubuApplying} onClick={() => void applyBubuPack()}>
+            <Sticker size={14} />{bubuApplying ? "应用中…" : "一键换上一二布布"}
+          </button>
+          <p className="bubu-pack-note">
+            头像立即生效；人格、表情包与语音包从<b>下一个新会话</b>开始（表情包只在布布人格下由 Codex 使用）。
+            语音包 = 内置音色 2 号 + 语气自适应（不是克隆音色，可再到「设置 → 语音通话」细调）。
+          </p>
+        </div>
+      </section>
+
+      {/* 用户人格（10-24 用户立项）：各行各业精英预设 + 配套工具建议 */}
+      <section className="uc-panel user-persona-panel">
+        <div className="uc-panel-head">
+          <span className="uc-panel-icon"><Briefcase size={14} /></span>
+          <div><strong>用户人格</strong><small>选一个行业身份，Codex 按这个背景配合你（写进档案，随时可换 / 可清空）</small></div>
+        </div>
+        <div className="user-persona-grid">
+          {USER_PERSONAS.map((p) => {
+            const active = personaApplied === p.id;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                className={`user-persona-card ${active ? "active" : ""}`}
+                aria-pressed={active}
+                onClick={() => void applyUserPersona(p.id)}
+              >
+                <span><strong>{p.label}</strong><small>{p.userContext}</small></span>
+                <span className="user-persona-tools">{p.tools.map((t) => <em key={t}>{t}</em>)}</span>
+                {active ? <Check size={13} /> : null}
+              </button>
+            );
+          })}
+        </div>
+        <div className="user-persona-foot">
+          <span><Volume2 size={12} />配套工具只是建议，不自动改你的功能开关；要配套去「设置 → 对应板块」开启</span>
+          <button type="button" className="ghost-button" onClick={() => void applyUserPersona("default")}><RotateCcw size={12} />恢复空白</button>
         </div>
       </section>
     </section>

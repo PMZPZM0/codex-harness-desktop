@@ -17,6 +17,7 @@ import { MermaidDiagram } from "../../components/MermaidDiagram";
 import { codeFontStack, codeThemeStyle } from "../../lib/code-themes";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { markdownUrlTransform } from "../../lib/markdown-url";
+import { resolveStickerSrc } from "../../lib/bubu-pack.mjs";
 // 分块逻辑搬去 src/lib/markdown-blocks.mjs（纯函数 ⇒ 预检守卫可直接跑真值表）。
 // ⛔ 其中含一处容错：列表项后面顶格紧跟的结语行原先被 CommonMark 当 lazy 续行塞进最后一个
 //   <li>，渲染上缩进到 marker 之后、左侧空出 marker 宽度（用户 09-24：「最后一个总是歪的，
@@ -231,9 +232,12 @@ export const MD_COMPONENTS: Components = {
       {children}
     </a>
   ),
-  img: ({ src, alt }) => (
-    <img className="message-image" src={src} alt={alt ?? ""} onClick={() => src && openImageLightbox(src, alt ?? "")} />
-  ),
+  img: ({ src, alt }) => {
+    // 一二布布表情包：`bubu://<id>` 解析成内置贴纸；未知 id 回退 alt 文本（不让模型拼错 id 弄崩渲染）
+    const bubu = resolveStickerSrc(src);
+    if (bubu) return <img className="message-image bubu-sticker" src={bubu} alt={alt ?? ""} onClick={() => openImageLightbox(bubu, alt ?? "")} />;
+    return <img className="message-image" src={src} alt={alt ?? ""} onClick={() => src && openImageLightbox(src, alt ?? "")} />;
+  },
   code: MdCode,
   table: ({ children }) => <MdTable>{children}</MdTable>,
 };
