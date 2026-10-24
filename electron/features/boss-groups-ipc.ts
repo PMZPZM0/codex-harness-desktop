@@ -1,0 +1,118 @@
+/**
+ * boss-groups —— 创世 boss 的群编排域（独立板块，2026-10-24 立）
+ *
+ * 通道：boss-groups:list / :status / :create / :assign / :review / :escalate / :browser
+ *
+ * ⛔ 本域是**唯一**的状态入口：规则全在 `electron/boss-groups/state.ts`（纯函数），
+ *    执行在 `electron/boss-groups/runner.ts`。域只做「通道 + 定时器 + 广播」三件事。
+ * ⛔ 不做群时间线渲染（那是渲染层 P0 之后的事）：成员事件回投到 boss 会话，
+ *    看板读 `boss-groups:status`。这样不会在引擎之外伪造第二条会话。
+ */
+import { defineFeature } from "../context";
+import type { IpcHost } from "../ipc-host";
+import { bossStore } from "../boss-groups/store";
+import { addTaskForBoss, browserStatus, createGroupForBoss, dispatchTask, postToBoss, reviewTask, setBossEventSink, statusForBoss, tickAll } from "../boss-groups/runner";
+import { recordReview, resolveEscalation } from "../boss-groups/state";
+import type { EscalateChoice } from "../boss-groups/types";
+import { broadcastCodexEvent } from "./window-bus";
+
+const TICK_MS = 5000;
+
+export const bossGroupsFeature = defineFeature<null>({
+  id: "boss-groups",
+  inject: ["ipc"],
+  setup: (ctx) => {
+    const ipcHost = ctx.get<IpcHost>("ipc");
+    if (!ipcHost) throw new Error("boss-groups: 缺少 ipc 服务（宿主未提供）");
+
+    setBossEventSink((payload) => broadcastCodexEvent(payload));
+
+    ipcHost.handle("boss-groups:list", async () => {
+      const state = await bossStore.load();
+      return Object.values(state.groups).map((group) => ({
+        id: group.id,
+        name: group.name,
+        createdAt: group.createdAt,
+        paused: Boolean(group.paused),
+        bossThreadId: group.bossThreadId,
+        memberCount: group.members.length,
+        taskCount: Object.values(state.tasks).filter((task) => task.groupId === group.id).length,
+      }));
+    });
+
+    ipcHost.handle("boss-groups:status", async (_event, groupId: string) => {
+      await bossStore.load();
+      return statusForBoss(String(groupId ?? ""));
+    });
+
+    ipcHost.handle("boss-groups:create", async (_event, input: any) => {
+      await bossStore.load();
+      return createGroupForBoss({
+        name: String(input?.name ?? ""),
+        workspace: String(input?.workspace ?? ""),
+        bossThreadId: String(input?.bossThreadId ?? ""),
+        members: Array.isArray(input?.members) ? input.members : [],
+        policy: input?.policy ?? undefined,
+      });
+    });
+
+    ipcHost.handle("boss-groups:assign", async (_event, input: any) => {
+      await bossStore.load();
+      return addTaskForBoss({
+        groupId: String(input?.groupId ?? ""),
+        title: String(input?.title ?? ""),
+        brief: String(input?.brief ?? ""),
+        criteria: String(input?.criteria ?? ""),
+        assignee: input?.assignee ? String(input.assignee) : undefined,
+        autoDispatch: input?.autoDispatch !== false,
+      });
+    });
+
+    /** 人工/boss 直接给结论（P0 的审查默认走独立评审，这条是覆盖口）。 */
+    ipcHost.handle("boss-groups:review", async (_event, input: any) => {
+      const state = await bossStore.load();
+      const verdict = input?.verdict === "approved" ? "approved" : "rejected";
+      const task = recordReview(state, String(input?.taskId ?? ""), {
+        by: String(input?.by ?? "user"),
+        verdict,
+        reasons: Array.isArray(input?.reasons) ? input.reasons.map(String) : [],
+      });
+      bossStore.save();
+      const group = state.groups[task.groupId];
+      if (group) void postToBoss(group, `[群事件] 审查结论（人）：${verdict === "approved" ? "通过" : "打回"}「${task.title}」${input?.reasons?.length ? `：${input.reasons.join("；")}` : ""}`);
+      return { ok: true, task: { id: task.id, status: task.status, rejects: task.rejects, lockedAuthors: task.lockedAuthors } };
+    });
+
+    ipcHost.handle("boss-groups:escalate", async (_event, input: any) => {
+      const state = await bossStore.load();
+      const choice = String(input?.choice ?? "") as EscalateChoice;
+      if (!["retry-with-other-model", "relax-criteria", "user-takeover"].includes(choice)) {
+        throw new Error(`choice 只能是 retry-with-other-model / relax-criteria / user-takeover（收到「${choice}」）`);
+      }
+      const task = resolveEscalation(state, String(input?.taskId ?? ""), choice, String(input?.note ?? ""));
+      bossStore.save();
+      if (choice !== "user-takeover" && task.status === "queued") {
+        const dispatched = await dispatchTask(task.id);
+        return { ok: dispatched.ok, taskId: task.id, status: task.status, dispatched: dispatched.ok, error: dispatched.error };
+      }
+      return { ok: true, taskId: task.id, status: task.status };
+    });
+
+    ipcHost.handle("boss-groups:browser", async () => browserStatus());
+
+    /** 手动跑一次审查（模型自评之后不服、或评审会话丢了时用）。 */
+    ipcHost.handle("boss-groups:recheck", async (_event, taskId: string) => reviewTask(String(taskId ?? "")));
+
+    /* ⛔ ctx.effect 是**释放钩子**（dispose 时逆序执行），不是"立即执行"的 effect ——
+       定时器要在外面启动，这里只登记"怎么停"。 */
+    const tickTimer = setInterval(() => { void tickAll().catch(() => undefined); }, TICK_MS);
+    ctx.effect(() => clearInterval(tickTimer));
+
+    ctx.effect(() => {
+      setBossEventSink(null);
+      for (const channel of ["boss-groups:list", "boss-groups:status", "boss-groups:create", "boss-groups:assign", "boss-groups:review", "boss-groups:escalate", "boss-groups:browser", "boss-groups:recheck"]) {
+        ipcHost.removeHandler(channel);
+      }
+    });
+  },
+});

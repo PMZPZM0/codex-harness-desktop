@@ -12,7 +12,7 @@ import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } fr
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../lib/user-refs";
 import { basename } from "../../../../lib/basename";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
-import { DELEGATE_RAIL_LINGER_MS, IDENTITY_ONBOARD_INSTRUCTIONS, IDENTITY_ONBOARD_TOOL, IDENTITY_UPDATE_TOOL, MEMBER_LABELS, NOTICE_MAX, NOTICE_TTL_MS, QUICK_SITES } from "../../../app-view/constants";
+import { BOSS_GROUP_TOOLS, DELEGATE_RAIL_LINGER_MS, IDENTITY_ONBOARD_INSTRUCTIONS, IDENTITY_ONBOARD_TOOL, IDENTITY_UPDATE_TOOL, MEMBER_LABELS, NOTICE_MAX, NOTICE_TTL_MS, QUICK_SITES } from "../../../app-view/constants";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../app-view/types";
 import type { Bag } from "../bag-types";
 import { openThread as openThreadImpl } from "./01-seg/open-thread";
@@ -633,6 +633,10 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
          之后模型想改名字**没有任何工具** ⇒ 它只能写进记忆，界面上的名字永远不变。
          本工具每个会话都下发（描述里点名「不要只写进记忆」），落点是 personalization.json + AGENTS.md。 */
       IDENTITY_UPDATE_TOOL,
+      /* 创世 boss 的群编排面（10-24）：建群 → 派活 → 查账 → 审查覆盖 / 升级 → 浏览器能力检查。
+         ⛔ 只给带队会话用：成员会话不挂（成员不许拉人、不许审人）。
+         ⛔ 派活是异步的（宿主 turn/start 立刻返回），结果以 [群事件] 回投 —— 描述里已写死，别改成"等结果"。 */
+      ...(BOSS_GROUP_TOOLS as unknown as any[]),
     ];
   }, [bag.memoryEnabled, bag.memoryBackend]);
 bag.buildDynamicTools = buildDynamicTools as typeof bag.buildDynamicTools;

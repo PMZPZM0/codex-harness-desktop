@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 521,
+  "count": 529,
   "channels": [
     {
       "name": "request",
@@ -5181,6 +5181,86 @@
       "invokeArgs": "input",
       "cast": null,
       "note": "上传本机文件到团队知识库（走云端计费与权限闸）"
+    },
+    {
+      "name": "listBossGroups",
+      "channel": "boss-groups:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<any[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "创世 boss：所有群（看板列表）"
+    },
+    {
+      "name": "bossGroupStatus",
+      "channel": "boss-groups:status",
+      "paramsImpl": "groupId: string",
+      "paramsDecl": "groupId: string",
+      "returns": "Promise<any>",
+      "invokeArgs": "groupId",
+      "cast": null,
+      "note": "创世 boss：某群的账本快照（成员/任务/事件/打回）"
+    },
+    {
+      "name": "createBossGroup",
+      "channel": "boss-groups:create",
+      "paramsImpl": "input: any",
+      "paramsDecl": "input: any",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "创世 boss：建群 + 声明成员岗位（成员会话在建会话那刻定工具面）"
+    },
+    {
+      "name": "assignBossTask",
+      "channel": "boss-groups:assign",
+      "paramsImpl": "input: any",
+      "paramsDecl": "input: any",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "创世 boss：加任务并派活（异步，turn/start 立刻返回；结果靠后台回调）"
+    },
+    {
+      "name": "reviewBossTask",
+      "channel": "boss-groups:review",
+      "paramsImpl": "input: any",
+      "paramsDecl": "input: any",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "创世 boss：人工给审查结论（打回必须带理由，空理由会被拒）"
+    },
+    {
+      "name": "escalateBossTask",
+      "channel": "boss-groups:escalate",
+      "paramsImpl": "input: any",
+      "paramsDecl": "input: any",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "创世 boss：用户三选一（换模型重做 / 放宽标准 / 自己接手）"
+    },
+    {
+      "name": "bossBrowserStatus",
+      "channel": "boss-groups:browser",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ installed: boolean; cli: string; hint: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "创世 boss：成员浏览器能力（ego lite 是否可用；每人独立 TaskSpace）"
+    },
+    {
+      "name": "recheckBossTask",
+      "channel": "boss-groups:recheck",
+      "paramsImpl": "taskId: string",
+      "paramsDecl": "taskId: string",
+      "returns": "Promise<any>",
+      "invokeArgs": "taskId",
+      "cast": null,
+      "note": "创世 boss：重跑一次独立评审（评审会话丢了/结论过期时用）"
     }
   ]
 }

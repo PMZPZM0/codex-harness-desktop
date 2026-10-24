@@ -1159,6 +1159,22 @@ interface Window {
     teamStatus(): Promise<any>;
     /* 上传本机文件到团队知识库（走云端计费与权限闸） */
     teamUpload(input?: { paths?: string[] }): Promise<any>;
+    /* 创世 boss：所有群（看板列表） */
+    listBossGroups(): Promise<any[]>;
+    /* 创世 boss：某群的账本快照（成员/任务/事件/打回） */
+    bossGroupStatus(groupId: string): Promise<any>;
+    /* 创世 boss：建群 + 声明成员岗位（成员会话在建会话那刻定工具面） */
+    createBossGroup(input: any): Promise<any>;
+    /* 创世 boss：加任务并派活（异步，turn/start 立刻返回；结果靠后台回调） */
+    assignBossTask(input: any): Promise<any>;
+    /* 创世 boss：人工给审查结论（打回必须带理由，空理由会被拒） */
+    reviewBossTask(input: any): Promise<any>;
+    /* 创世 boss：用户三选一（换模型重做 / 放宽标准 / 自己接手） */
+    escalateBossTask(input: any): Promise<any>;
+    /* 创世 boss：成员浏览器能力（ego lite 是否可用；每人独立 TaskSpace） */
+    bossBrowserStatus(): Promise<{ installed: boolean; cli: string; hint: string }>;
+    /* 创世 boss：重跑一次独立评审（评审会话丢了/结论过期时用） */
+    recheckBossTask(taskId: string): Promise<any>;
 /* ═══ gen:end ═══ */
 
 
