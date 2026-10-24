@@ -1,0 +1,227 @@
+/**
+ * 设置页「外观与体验」四页统一版式（10-24）
+ * 控制台 / 外观 / 个性化 / 桌面宠物：统一头图、分组小标题、卡片皮肤；
+ * ⛔ 只改观感与阅读顺序，不动任何控件的类名与行为（验收/守卫依赖它们）。
+ */
+
+.settings-exp-page {
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 4px 2px 26px;
+}
+
+/* ── 统一页头 ── */
+.settings-exp-hero {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+  border-radius: 16px;
+  background:
+    radial-gradient(120% 180% at 0% 0%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 55%),
+    linear-gradient(180deg, color-mix(in srgb, var(--panel) 92%, var(--accent) 8%), var(--panel));
+}
+.settings-exp-hero-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #7c3aed));
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.settings-exp-hero-copy { flex: 1; min-width: 0; }
+.settings-exp-hero-copy h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.settings-exp-hero-copy p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.settings-exp-hero-hint {
+  flex: none;
+  align-self: flex-start;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ── 分组小标题 ── */
+.settings-exp-group-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 18px 2px 2px;
+}
+.settings-exp-group-head span {
+  flex: none;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+.settings-exp-group-head small {
+  min-width: 0;
+  color: var(--faint);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-exp-group-head::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-soft);
+}
+
+/* ── 统一卡片皮肤（沿用原有 settings-card 控件结构）── */
+.settings-exp-page .settings-card,
+.settings-exp-page .personalization-group,
+.settings-exp-page .pet-card,
+.settings-exp-card {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--panel) 96%, var(--accent) 4%), var(--panel));
+  overflow: hidden;
+  transition: border-color 0.16s, box-shadow 0.16s;
+}
+.settings-exp-page .settings-card:hover,
+.settings-exp-page .personalization-group:hover,
+.settings-exp-page .pet-card:hover,
+.settings-exp-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 5%, transparent);
+}
+.settings-exp-page .settings-card-head {
+  padding: 13px 16px;
+  gap: 9px;
+  font-size: 13.5px;
+}
+.settings-exp-page .settings-card-head > svg {
+  flex: none;
+  width: 27px;
+  height: 27px;
+  padding: 6px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--ic-page, var(--accent)) 12%, transparent);
+  color: var(--ic-page, var(--accent));
+}
+.settings-exp-page .settings-card-body { padding: 14px 16px 16px; }
+.settings-exp-page .settings-card-hint { color: var(--faint); font-size: 11.5px; line-height: 1.65; }
+.settings-exp-page .settings-subhead { margin-top: 0; }
+.settings-exp-page .settings-subhead-hint { color: var(--faint); }
+
+/* 外观页里的零散设置块也收成卡片 */
+.settings-exp-card { padding: 14px 16px 16px; }
+.settings-exp-card > .settings-subhead:first-child { margin-top: 0; }
+.settings-exp-card .settings-subhead { margin-top: 14px; }
+
+/* 高级 / 维护内容折叠 */
+.settings-exp-advanced {
+  margin-top: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--text) 2%, var(--panel));
+  padding: 0 14px;
+}
+.settings-exp-advanced > summary {
+  cursor: pointer;
+  padding: 12px 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.settings-exp-advanced > summary::-webkit-details-marker { display: none; }
+.settings-exp-advanced > summary::before {
+  content: "›";
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--faint);
+  transition: transform 0.15s;
+}
+.settings-exp-advanced[open] > summary::before { transform: rotate(90deg); }
+.settings-exp-advanced > summary small { color: var(--faint); font-weight: 400; margin-left: auto; }
+.settings-exp-advanced[open] { padding-bottom: 14px; }
+
+/* ── 外观页：主题/字号/嵌套设置块 ── */
+.appearance-page .theme-preview-grid { margin-top: 0; }
+.appearance-page .theme-switch { margin-top: 0; }
+.appearance-page .function-menu-settings { border: 0; background: transparent; padding: 0; min-height: 0; }
+.appearance-page .function-menu-settings > .settings-copy { display: none; }
+.appearance-page .function-menu-settings .fm-location-card { border-radius: 12px; }
+
+/* ── 个性化：称呼/风格/语气/指令四张卡 ── */
+.settings-exp-page.personalization-page { max-width: 780px; }
+.settings-exp-page .personalization-group { padding: 14px 16px 16px; }
+.settings-exp-page .personalization-group > .settings-subhead { margin: 0 0 12px; }
+.settings-exp-page .personalization-style-grid { gap: 10px; }
+.settings-exp-page .personalization-style-card {
+  border-radius: 12px;
+  padding: 12px;
+  transition: transform 0.15s, border-color 0.15s, background 0.15s;
+}
+.settings-exp-page .personalization-style-card:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+.settings-exp-page .personalization-style-card.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
+.settings-exp-page .personalization-section { max-width: none; padding: 0; min-height: 0; }
+.settings-exp-page .personalization-verify { border-radius: 14px; }
+.settings-exp-page .personalization-note {
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--text) 2%, var(--panel));
+  padding: 12px 14px;
+}
+.settings-exp-page .personalization-note p { color: var(--muted); font-size: 11.5px; line-height: 1.65; }
+
+/* ── 桌面宠物：更大的选择卡 + 统一卡皮肤 ── */
+.settings-exp-page.pet-settings { max-width: 780px; }
+.settings-exp-page .pet-card { padding: 14px 16px 16px; gap: 10px; }
+.settings-exp-page .pet-card > h4 { font-size: 13.5px; gap: 8px; }
+.settings-exp-page .pet-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.settings-exp-page .pet-item {
+  padding: 10px;
+  border-radius: 13px;
+  background: var(--panel-2);
+  transition: transform 0.15s, border-color 0.15s, background 0.15s;
+}
+.settings-exp-page .pet-item:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--accent) 34%, var(--line)); }
+.settings-exp-page .pet-item.is-active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent); }
+.settings-exp-page .pet-line { font-size: 12px; }
+.settings-exp-page .pet-card .pet-tip { font-size: 11px; }
+
+@media (max-width: 760px) {
+  .settings-exp-page { max-width: none; padding-left: 0; padding-right: 0; }
+  .settings-exp-hero { align-items: flex-start; padding: 14px; }
+  .settings-exp-hero-hint { display: none; }
+  .settings-exp-page .pet-grid { grid-template-columns: 1fr; }
+}

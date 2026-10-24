@@ -12,6 +12,7 @@ import { WallpaperSettingsSection } from "../wallpaper";
 import { BootIntroSettingsRow } from "./boot550c";
 import { THEMES } from "../../lib/themes";
 import { runVisualSwitch, themeLabelOf } from "../../lib/visual-switch";
+import { SettingsGroupHead, SettingsPageHero } from "../../components/SettingsPageHero";
 
 export type AppearanceSettingsSectionProps = { theme: any; setTheme: any; uiFont: any; setUiFont: any; onNotice?: (text: string) => void };
 
@@ -19,8 +20,10 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
   const { theme, setTheme, uiFont, setUiFont, onNotice } = props;
   return (
     <>
-      <section className="settings-section stack appearance-page">
-        <div className="settings-copy"><h2>外观</h2><p>主题、字号与代码显示，即时生效并保存在本机。</p></div>
+      <section className="settings-section stack appearance-page settings-exp-page">
+        <SettingsPageHero icon={<Sun size={20} />} title="外观" subtitle="主题、字号、代码与壁纸都在这里；改完即时生效，不用重启。" hint="点卡片即切换" />
+        <SettingsGroupHead title="基础外观" hint="主题 · 消息字号" />
+        <div className="settings-exp-card">
         <div className="settings-subhead"><Sun size={13} />主题<span className="settings-subhead-hint">点击预览卡片即时切换</span></div>
         <div className="theme-preview-grid" role="group" aria-label="主题">
           {/* 10-07 用户要求：切换加过渡 + 切换完成后给回执。
@@ -45,10 +48,13 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
           <button type="button" className={uiFont === "default" ? "active" : ""} onClick={() => { setUiFont("default"); localStorage.setItem("ui-font", "default"); }}><span className="fs-demo fs-demo-default">标准</span></button>
           <button type="button" className={uiFont === "large" ? "active" : ""} onClick={() => { setUiFont("large"); localStorage.setItem("ui-font", "large"); }}><span className="fs-demo fs-demo-large">大字</span></button>
         </div>
-        <FunctionMenuSettings onNotice={onNotice} />
-        <CodeAppearanceSection onNotice={onNotice} />
-        <BootIntroSettingsRow onNotice={onNotice} />
-        <WallpaperSettingsSection />
+        </div>
+        <SettingsGroupHead title="功能入口" hint="侧栏入口位置与顺序" />
+        <div className="settings-exp-card"><FunctionMenuSettings onNotice={onNotice} /></div>
+        <SettingsGroupHead title="更多外观" hint="壁纸 · 代码高亮 · 开机动画" />
+        <div className="settings-exp-card"><WallpaperSettingsSection /></div>
+        <div className="settings-exp-card"><CodeAppearanceSection onNotice={onNotice} /></div>
+        <div className="settings-exp-card"><BootIntroSettingsRow onNotice={onNotice} /></div>
       </section>
     </>
   );

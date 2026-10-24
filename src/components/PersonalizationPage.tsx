@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, Info, MessageSquare, RefreshCw, ShieldCheck, TriangleAlert, UserRound, Wrench } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Check, Info, MessageSquare, RefreshCw, ShieldCheck, Sparkles, TriangleAlert, UserRound, Wrench } from "lucide-react";
+import { SettingsGroupHead, SettingsPageHero } from "./SettingsPageHero";
 
 type PersonalizationConfig = { nickname?: string; customInstructions?: string };
 
@@ -28,10 +29,12 @@ export function PersonalizationPage({
   personality,
   onPersonalityChange,
   onNotice,
+  adaptiveToneSlot,
 }: {
   personality: string;
   onPersonalityChange: (value: string) => void;
   onNotice: (message: string) => void;
+  adaptiveToneSlot?: ReactNode;
 }) {
   const [config, setConfig] = useState<PersonalizationConfig>({});
   const [nickname, setNickname] = useState("");
@@ -91,11 +94,9 @@ export function PersonalizationPage({
   }
 
   return (
-    <section className="settings-section stack personalization-page">
-      <div className="settings-copy">
-        <h2>个性化</h2>
-        <p>决定 Codex 怎么称呼你、用什么语气说话、以及永远要遵守的约定。保存后写入引擎指令并自动重启，下一次对话生效。</p>
-      </div>
+    <section className="settings-section stack personalization-page settings-exp-page">
+      <SettingsPageHero icon={<Sparkles size={20} />} title="个性化" subtitle="让 Codex 知道怎么称呼你、用什么语气和写法，以及永远要遵守的约定。" hint="改完下一次对话生效" />
+      <SettingsGroupHead title="基础设定" hint="称呼 · 回复风格 · 语气" />
 
       {/* 分组规则（10-11 重排）：一处设置 = 一张组卡；组卡自带标题行（.settings-subhead）与 1px 边界，
           组间只用一个间距值 ⇒ 不再靠标题的零散 margin 撑版式。 */}
@@ -114,7 +115,7 @@ export function PersonalizationPage({
       </div>
 
       <div className="personalization-group">
-        <div className="settings-subhead"><MessageSquare size={13} />回复风格<span className="settings-subhead-hint">原输入框里的「务实」入口已移到这里</span></div>
+        <div className="settings-subhead"><MessageSquare size={13} />回复风格<span className="settings-subhead-hint">选择 Codex 平时怎么跟你说话</span></div>
         <div className="personalization-style-grid" role="group" aria-label="回复风格">
         {stylePresets.map((preset) => (
           <button
@@ -135,6 +136,9 @@ export function PersonalizationPage({
         </div>
       </div>
 
+      {adaptiveToneSlot}
+
+      <SettingsGroupHead title="进阶" hint="自定义指令 · 生效校验" />
       <div className="personalization-group">
         <div className="settings-subhead"><Wrench size={13} />自定义指令<span className="settings-subhead-hint">每次对话都生效，优先级高于风格默认</span></div>
         <textarea
