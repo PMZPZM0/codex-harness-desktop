@@ -68,9 +68,14 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
     localStorage.setItem("user-profile", JSON.stringify(profile));
   }, [profile]);
 
-  // 外部用户名变化（登录页填了 ppz / 主界面改名）时回填昵称
+  /* 昵称的真相源在外部（`username` = personalization.nickname，由「让 Codex 改名」的工具、
+     左下角账户名、启动回读三处写）。⛔⛔ 旧写法带 `!profile.nickname` 条件 —— 只有本地缓存
+     为空时才回填，于是模型**实时**改完称呼后：聊天区已经显示「小潘总」，这里输入框还写着
+     Administrator（10-24 用户截图点名「联动性太弱，名字生效就该是一个地方」）。
+     ⇒ 外部一改就无条件跟随；与下面 Codex 名字那栏的 `[assistantName]` 同步保持同一口径。 */
   useEffect(() => {
-    if (username && !profile.nickname) setProfile((p) => ({ ...p, nickname: username }));
+    if (!username) return;
+    setProfile((p) => (p.nickname === username ? p : { ...p, nickname: username }));
   }, [username]);
 
   /* 回复风格与「设置 → 个性化 → 回复风格」是**同一份设置**（personality）：
