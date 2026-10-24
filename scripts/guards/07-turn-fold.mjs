@@ -4951,6 +4951,7 @@ export async function run() {
     const stripSrc = readFileSync(join(ROOT, "src", "features", "shared", "ReasoningStrip.tsx"), "utf8").replace(/\r/g, "");
     const modeSrc = readFileSync(join(ROOT, "src", "lib", "reasoning-display-mode.ts"), "utf8").replace(/\r/g, "");
     const generalSrc = readFileSync(join(ROOT, "src", "features", "settings-general", "GeneralSettingsSection.tsx"), "utf8").replace(/\r/g, "");
+    const appearanceSrc = readFileSync(join(ROOT, "src", "features", "settings-appearance", "AppearanceSettingsSection.tsx"), "utf8").replace(/\r/g, "");
     const stylesEntry = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
     (modeSrc.includes('localStorage.getItem(KEY) === "strip" ? "strip" : "auto"') && /useReasoningDisplayMode/.test(modeSrc) && /window.dispatchEvent\(new CustomEvent/.test(modeSrc) && /addEventListener\("storage"/.test(modeSrc) ? ok : fail)(
       "【161】展示模式默认 auto、非法值回落 auto；同窗事件 + 跨窗 storage 即时同步"
@@ -4973,8 +4974,8 @@ export async function run() {
     (/\.reasoning-strip-marquee\.is-scrolling/.test(styles54) && /@keyframes reasoning-strip-marquee/.test(styles54) && /animation-play-state: paused/.test(styles54) && /prefers-reduced-motion/.test(styles54) && /\.reasoning-strip-body \{[\s\S]{0,200}max-height: min\(50vh, 420px\)/.test(styles54) && /styles\/40-reasoning-strip/.test(stylesEntry) ? ok : fail)(
       "【161】直播横滚用 CSS transform（不触发 scroll 事件 ⇒ 时间线不上下抖）；悬停暂停 / 减少动效静止；展开全文最高 50vh"
     );
-    (generalSrc.includes("思考板块展示") && generalSrc.includes('setReasoningDisplayMode("auto")') && generalSrc.includes('setReasoningDisplayMode("strip")') && generalSrc.includes("reasoning-mode-seg") ? ok : fail)(
-      "【161】设置 → 控制台有两档切换（自适应展开 / 长条按行），点击即时生效"
+    (appearanceSrc.includes("思考板块展示") && appearanceSrc.includes('setReasoningDisplayMode("auto")') && appearanceSrc.includes('setReasoningDisplayMode("strip")') && appearanceSrc.includes("reasoning-mode-seg") && appearanceSrc.indexOf("思考板块展示") < appearanceSrc.indexOf("<FunctionMenuSettings") && !generalSrc.includes("思考板块展示") ? ok : fail)(
+      "【161】设置 → 外观有两档切换（自适应展开 / 长条按行），在「功能入口」上方，点击即时生效"
     );
     // ⑮ 用户 10-20 审查「回合内容超长时，运行中会不会有不进折叠的」：
     //    直播只把**当前正在直播的思考**内联；已结束的思考与所有 foldable 过程
