@@ -417,8 +417,8 @@ export const IPC_DOMAINS: IpcDomainEntry[] = [
     channels: ["cloud-memory:sync", "cloud-memory:status"],
     note: "10-16 新增：云端记忆凭据（加密缓存）。⛔ 记忆中枢实测无 MCP 端点（/mcp、/v1/mcp、/sse 全 404），故不建连接器、如实回报 rest-only，等本地 stdio 适配器；服务端将来补 mcpUrl 即自动切换",
   },
-  { prefix: "team", count: 4, status: "in-features", file: "features/team-mode.ts",
-    channels: ["team:list", "team:enter", "team:exit", "team:status"],
+  { prefix: "team", count: 5, status: "in-features", file: "features/team-mode.ts",
+    channels: ["team:list", "team:enter", "team:exit", "team:status", "team:upload"],
     note: "10-24 新增：团队工作模式。⛔ 不是新工具 —— MemHub 无记忆 CRUD（10-16 实测），团队记忆靠把对话上游切到团队 userKey；团队知识库接成 cloud-kb-team 连接器（与个人 cloud-kb 互斥：两个 WeKnora 的工具名相同）",
   },
 ];

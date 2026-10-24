@@ -194,7 +194,7 @@ contextBridge.exposeInMainWorld("codex", {
   prepareDataDir: (dir: string) => __ipc("dataDir:prepare", 1, [dir]),
   /* 应用级运行时开关（联网搜索等） */
   readAppSettings: () => __ipc("appSettings:read", 0, []),
-  saveAppSettings: (patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off"; adaptiveTone?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy"; skillAutoUpdate?: boolean; functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean; modelCatalogRepairNotice?: string }) => __ipc("appSettings:save", 1, [patch]),
+  saveAppSettings: (patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off"; adaptiveTone?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy"; skillAutoUpdate?: boolean; pluginAutoUpdate?: boolean; modelCatalogRepairNotice?: string; functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean }) => __ipc("appSettings:save", 1, [patch]),
   themeApply: (theme: string) => __ipc("theme:apply", 1, [theme]),
   updateReveal: (filePath: string) => __ipc("updates:reveal", 1, [filePath]) as Promise<{ ok: boolean }>,
   /* SSH 服务器连接管理：列表 CRUD、批量启停、连接测试、命令执行、交互式会话、导入导出 */
@@ -814,6 +814,8 @@ contextBridge.exposeInMainWorld("codex", {
   teamExit: () => __ipc("team:exit", 0, []),
   /* 团队模式当前生效状态 */
   teamStatus: () => __ipc("team:status", 0, []),
+  /* 上传本机文件到团队知识库（走云端计费与权限闸） */
+  teamUpload: (input?: { paths?: string[] }) => __ipc("team:upload", 0, [input]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

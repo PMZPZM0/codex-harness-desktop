@@ -28,7 +28,7 @@ import { readMemoryUpstream, resyncCloudUpstream, setMemoryUpstream } from "../c
 import { refreshEngineInstructions } from "../backend-routing";
 import { notifyMemoryBackendChanged } from "./memory-backend-events";
 
-const CHANNELS = ["team:list", "team:enter", "team:exit", "team:status"];
+const CHANNELS = ["team:list", "team:enter", "team:exit", "team:status", "team:upload"];
 
 /** 团队知识库连接器 id（与个人 `cloud-kb` 分开，避免互相覆盖）。 */
 export const CLOUD_KB_TEAM_CONNECTOR_ID = "cloud-kb-team";
@@ -232,6 +232,42 @@ export const teamModeFeature = defineFeature<null>({
       clearContext();
       await settle();
       return { ok: true, note: "已退出团队模式：记忆回到纯模型端点，个人知识库按原状态恢复（个人记忆需在云账号页再同步一次）" };
+    });
+
+    /* 团队库上传（10-24）：选中本机文件 → base64 → 云端 `/teams/:id/kb/upload`。
+       ⛔ 必须走云端（不直连 WeKnora）：容量闸 / 积分闸 / 过期只读 / 「仅 owner 可上传」都在服务端，
+          绕过它就等于绕开计费与权限。 */
+    ipcHost.handle("team:upload", async (_event: unknown, input?: { paths?: string[] }) => {
+      const ctx = readContext();
+      if (!ctx) return { ok: false, error: "not-in-team", results: [] };
+      const paths = (input?.paths || []).filter((x) => typeof x === "string" && x.trim()).slice(0, 10);
+      if (!paths.length) return { ok: false, error: "no-file", results: [] };
+      const results: Array<{ name: string; ok: boolean; error?: string; message?: string; cost?: number; usedMb?: number; quotaMb?: number }> = [];
+      for (const file of paths) {
+        const name = path.basename(file);
+        try {
+          const buf = fs.readFileSync(file);
+          if (!buf.length) { results.push({ name, ok: false, error: "empty-file" }); continue; }
+          if (buf.length > 24 * 1024 * 1024) { results.push({ name, ok: false, error: "too-large", message: "单文件上限 24MB" }); continue; }
+          const res = await cloudFetch<{ ok?: boolean; error?: string; message?: string; cost?: number; usedMb?: number; quotaMb?: number }>(
+            `/teams/${encodeURIComponent(ctx.teamId)}/kb/upload`,
+            { method: "POST", body: { name, contentB64: buf.toString("base64") }, timeoutMs: 120_000 },
+          );
+          const d = res.data ?? {};
+          results.push({
+            name,
+            ok: res.ok && d.ok !== false,
+            error: d.error || (res.ok ? undefined : res.error),
+            message: d.message,
+            cost: d.cost,
+            usedMb: d.usedMb,
+            quotaMb: d.quotaMb,
+          });
+        } catch (e) {
+          results.push({ name, ok: false, error: String((e as Error)?.message || e).slice(0, 120) });
+        }
+      }
+      return { ok: results.some((r) => r.ok), results };
     });
 
     ipcHost.handle("team:status", async () => {
