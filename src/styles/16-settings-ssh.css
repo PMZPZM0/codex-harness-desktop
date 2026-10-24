@@ -1288,7 +1288,7 @@
 .uc-avatar-side-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .uc-avatar-side-head strong { font-size: 12.5px; font-weight: 600; color: var(--text); }
 .uc-avatar-side-head span { font-size: 12px; color: var(--muted); }
-.uc-presets { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 5px; }
+.uc-presets { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
 .uc-presets button {
   width: 100%;
   aspect-ratio: 1;
@@ -1426,7 +1426,7 @@
 .codex-id-presets-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
 .codex-id-presets-head strong { font-size: 12.5px; font-weight: 600; color: var(--text); }
 .codex-id-presets-head span { font-size: 12px; color: var(--muted); }
-.codex-id-preset-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; max-width: 336px; }
+.codex-id-preset-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; max-width: 392px; }
 .codex-id-preset {
   position: relative;
   width: 100%;
