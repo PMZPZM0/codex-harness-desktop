@@ -20,6 +20,9 @@ const RULER_MAX = 50;
 export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactionTurnId, compactionAtEnd }: { turns: Turn[]; onJump: (id: string) => void; scrollRef: useRefObject; containerRef: useRefObject; /** 压缩线所在回合（green 标记画在该回合用户消息的刻度之前；空串 = 无压缩线） */ compactionTurnId?: string; /** 压缩发生在最后一回合**之后**（手动压缩的空回合被过滤掉）⇒ 绿段画在最后一个刻度之后 */ compactionAtEnd?: boolean }) {
   const [tip, setTip] = useState<{ text: string; top: number } | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  /* 波浪**只在滚轮滚动时**出现（10-24 用户：「默认不触发波浪效果，只有滚轮滚动的时候才触发」
+     「现在不滚动也触发，看着不太舒服」）。hover 是显式交互，仍然以鼠标位置为准。 */
+  const [wheelWave, setWheelWave] = useState(false);
   const [currentItemId, setCurrentItemId] = useState<string | null>(null);
   const [scrollable, setScrollable] = useState(false);
   const [containerNarrow, setContainerNarrow] = useState(false);
@@ -138,13 +141,24 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
       if (raf) return;
       raf = requestAnimationFrame(() => { raf = 0; update(); });
     };
+    /* 波浪开关：只有真实滚轮输入才点亮（程序化滚动、贴底跟随、点击跳转都不算）。
+       最后一次滚轮后 600ms 自动收起 —— 用户要的是「滚动时才有波浪」，不是常驻呼吸。 */
+    let wheelTimer: ReturnType<typeof setTimeout> | undefined;
+    const onWheel = () => {
+      setWheelWave(true);
+      if (wheelTimer) clearTimeout(wheelTimer);
+      wheelTimer = setTimeout(() => setWheelWave(false), 600);
+    };
     const observer = new ResizeObserver(schedule);
     observer.observe(scroller);
     scroller.addEventListener("scroll", schedule, { passive: true });
+    scroller.addEventListener("wheel", onWheel, { passive: true });
     return () => {
       if (raf) cancelAnimationFrame(raf);
+      if (wheelTimer) clearTimeout(wheelTimer);
       observer.disconnect();
       scroller.removeEventListener("scroll", schedule);
+      scroller.removeEventListener("wheel", onWheel);
     };
     // 依赖里绝不能放 turns：流式出字每帧都换引用，会重建监听器 + ResizeObserver，
     // 并每帧强制同步布局 —— 这是长回复越往后越卡的主要来源之一。
@@ -190,9 +204,9 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
           /* ⛔ 10-18 用户：「刻度线里面如那两个中间产生压缩线，就在那两个中间产生一个绿色线」——
              段位固定 14px（2+8 padding+4 gap），与刻度槽同高 ⇒ 不破坏 visibleCount = h/14 的容量计算。 */
           const compactionHere = Boolean(compactionTurnId) && mark.turnId === compactionTurnId;
-          /* 波浪中心：hover 优先；否则跟**当前阅读位置**（视口 30% 处的那条用户消息）。
-             这样滚动时 activeIndex 变化、wave-0/1/2 跟着移动，刻度尺自己会“呼吸”。 */
-          const activeIndex = hoverIndex != null ? hoverIndex : (currentPos >= 0 ? currentPos : null);
+          /* 波浪中心：hover 优先；否则只在**滚轮滚动期间**跟当前阅读位置
+             （视口 30% 处的那条用户消息）。静止时 activeIndex = null ⇒ 全部回到普通长度。 */
+          const activeIndex = hoverIndex != null ? hoverIndex : (wheelWave && currentPos >= 0 ? currentPos : null);
           const dist = activeIndex == null ? 99 : Math.abs(index - activeIndex);
           const wave = dist === 0 ? " wave-0" : dist === 1 ? " wave-1" : dist === 2 ? " wave-2" : "";
           return (
@@ -220,7 +234,7 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
         {compactionAtEnd && (() => {
           /* 末尾绿段也参与波浪：以最后一根刻度为邻（它是“之后”的那条线）。 */
           const endIndex = marks.length - 1;
-          const activeIndex = hoverIndex != null ? hoverIndex : (currentPos >= 0 ? currentPos : null);
+          const activeIndex = hoverIndex != null ? hoverIndex : (wheelWave && currentPos >= 0 ? currentPos : null);
           const dist = activeIndex == null || endIndex < 0 ? 99 : Math.abs(endIndex - activeIndex);
           const endWave = dist === 0 ? " wave-0" : dist === 1 ? " wave-1" : dist === 2 ? " wave-2" : "";
           return (
