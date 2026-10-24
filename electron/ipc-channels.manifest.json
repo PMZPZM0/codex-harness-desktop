@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 516,
+  "count": 520,
   "channels": [
     {
       "name": "request",
@@ -908,7 +908,7 @@
       "channel": "appSettings:read",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: \"auto\" | \"force\" | \"off\"; adaptiveTone?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\"; skillAutoUpdate?: boolean }>",
+      "returns": "Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: \"auto\" | \"force\" | \"off\"; adaptiveTone?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\"; skillAutoUpdate?: boolean; functionMenu?: { location?: \"top\" | \"bottom\"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean }>",
       "invokeArgs": "",
       "cast": null,
       "note": "应用级运行时开关（联网搜索等）"
@@ -916,9 +916,9 @@
     {
       "name": "saveAppSettings",
       "channel": "appSettings:save",
-      "paramsImpl": "patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\" }",
-      "paramsDecl": "patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: \"auto\" | \"force\" | \"off\"; adaptiveTone?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\"; skillAutoUpdate?: boolean }",
-      "returns": "Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; adaptiveTone?: boolean; skillAutoUpdate?: boolean }>",
+      "paramsImpl": "patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: \"auto\" | \"force\" | \"off\"; adaptiveTone?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\"; skillAutoUpdate?: boolean; functionMenu?: { location?: \"top\" | \"bottom\"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean }",
+      "paramsDecl": "patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: \"auto\" | \"force\" | \"off\"; adaptiveTone?: boolean; downloadSource?: \"auto\" | \"mirror\" | \"ghproxy\" | \"ghfast\" | \"direct\" | \"proxy\"; skillAutoUpdate?: boolean; functionMenu?: { location?: \"top\" | \"bottom\"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean }",
+      "returns": "Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; adaptiveTone?: boolean; skillAutoUpdate?: boolean; functionMenu?: { location?: \"top\" | \"bottom\"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean }>",
       "invokeArgs": "patch",
       "cast": null,
       "note": null
@@ -5131,6 +5131,46 @@
       "invokeArgs": "",
       "cast": null,
       "note": "10-18：列出本地会话供勾选上传（只读，不写游标）"
+    },
+    {
+      "name": "teamList",
+      "channel": "team:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<any>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "团队工作模式：我加入的团队"
+    },
+    {
+      "name": "teamEnter",
+      "channel": "team:enter",
+      "paramsImpl": "input?: { teamId?: string }",
+      "paramsDecl": "input?: { teamId?: string }",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "进入团队模式（切团队记忆上游 + 接团队知识库）"
+    },
+    {
+      "name": "teamExit",
+      "channel": "team:exit",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<any>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "退出团队模式（恢复个人知识库连接器）"
+    },
+    {
+      "name": "teamStatus",
+      "channel": "team:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<any>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "团队模式当前生效状态"
     }
   ]
 }

@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（98 个能力域 / 516 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（99 个能力域 / 520 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -448,4 +448,8 @@ RPA 配方（录制好的桌面自动化流程）
 ### cloud-memory（2 通道）
 **云端记忆**的凭据与上游切换（10-16，10-17 修正）。⛔ 记忆中枢**没有记忆读写接口**（所有路径都是同一个 OpenAI 兼容转发口），**也没有 MCP 端点** ⇒ 记忆不是靠工具调用的，而是在**对话请求层**由服务端自动注入/写入。所以本域做的是：拿到该账号的 userKey 后把**对话上游切到记忆端点**（记忆即全域生效，且天然按账号隔离）。未开通/被停用时自动切回。用户说「云端记忆没生效 / 打开云端记忆」时用它。
 通道：cloud-memory:sync, cloud-memory:status
+
+### team（4 通道）
+**团队工作模式**（10-24）：list 我加入的团队 / enter 进入（把对话上游切到**团队记忆**端点 + 团队知识库接成 cloud-kb-team 连接器）/ exit 退出（记忆回落纯模型、个人知识库按原状态恢复）/ status 生效状态。⛔ 记忆通道是独占的：进入团队 = 个人记忆暂停；团队库与个人库不能同时接（两个 WeKnora 工具名相同）。用户说「切到团队 / 团队记忆不生效 / 团队知识库连不上」时用它
+通道：team:list, team:enter, team:exit, team:status
 `;

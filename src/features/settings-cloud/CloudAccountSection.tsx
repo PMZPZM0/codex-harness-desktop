@@ -19,6 +19,7 @@ import { cloudUserCenterUrl } from "../../lib/cloud-links.mjs";
 import { ProviderSetupDialog, type ProviderSetupCompleted, type ProviderSetupIntent } from "../provider-setup";
 
 import { SessionSyncDialog } from "./SessionSyncDialog";
+import { TeamModeSection } from "./TeamModeSection";
 import { ResultDialog, type ResultAction } from "./ResultDialog";
 type AccountView = { id: string; username: string; role: string; baseUrl: string; active: boolean; savedAt: number };
 type AuthStatus = { loggedIn: boolean; baseUrl: string; active: AccountView | null; accounts: AccountView[]; defaultBaseUrl: string };
@@ -884,6 +885,8 @@ export function CloudAccountSection() {
               )}
             </div>
           </details>
+
+          <TeamModeSection />
         </>
       )}
       {setupIntent && (
