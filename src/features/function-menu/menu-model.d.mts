@@ -1,4 +1,4 @@
-export type FunctionMenuLocation = "top" | "bottom" | "both";
+export type FunctionMenuLocation = "top" | "bottom";
 export type FunctionMenuItemId = "schedule" | "frontend" | "extensions" | "team" | "identity" | "login" | "newbie";
 export type FunctionMenuConfig = { location: FunctionMenuLocation; order: FunctionMenuItemId[]; overflow: FunctionMenuItemId[] };
 
@@ -10,7 +10,6 @@ export declare function isFunctionMenuId(id: unknown): id is FunctionMenuItemId;
 export declare function normalizeFunctionMenu(input?: unknown): FunctionMenuConfig;
 export declare function visibleFunctionMenuItems(config?: unknown): FunctionMenuItemId[];
 export declare function overflowFunctionMenuItems(config?: unknown): FunctionMenuItemId[];
-export declare function showFunctionMenuAt(config: unknown, location: FunctionMenuLocation): boolean;
 export declare function moveFunctionMenuItem(config: unknown, id: unknown, targetList: "visible" | "overflow", beforeId?: unknown): FunctionMenuConfig;
 export declare function setFunctionMenuItemOverflow(config: unknown, id: unknown, inOverflow: boolean): FunctionMenuConfig;
 export declare function nudgeFunctionMenuItem(config: unknown, id: unknown, delta: number): FunctionMenuConfig;

@@ -43,14 +43,13 @@
 .function-menu-sidebar .function-menu-more-badge {
   margin-left: auto;
 }
-/* 侧栏顶部位置：搜索任务下面的**常驻入口**（10-24 用户：不折叠、可从功能入口拓展）；
-   入口组超高时自己滚动，不把会话列表挤没。 */
+/* 侧栏顶部位置：紧贴搜索任务；展开/折叠靠统一的 grid 高度过渡（与底部组同款无缝效果）。 */
 .sidebar-options-top {
   flex: none;
-  margin: 6px 0 4px;
+  margin: 0 0 4px;
 }
-.sidebar-options-pinned { margin-top: 4px; }
-.sidebar-options-pinned .sidebar-nav-bottom { margin-top: 0; max-height: 32vh; }
+.sidebar-options-top .sidebar-options-toggle { margin-top: 2px; }
+.sidebar-options-top .sidebar-nav-bottom { max-height: 32vh; }
 
 /* ── 更多弹层 ── */
 .function-menu-popover {
@@ -212,7 +211,7 @@
 
 .fm-location-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin: 14px 0;
 }

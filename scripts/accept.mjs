@@ -1590,6 +1590,7 @@ const CHECKS = [
       await wait(400);
       await h.waitFor(`!!document.querySelector(".function-menu-sidebar")`, { label: "功能入口就绪", timeoutMs: 15000 }).catch(() => undefined);
       // 上次可能停在侧栏底部 / 两处都显示：先切回顶部（默认位置）
+      // 上次可能停在侧栏底部：先切回顶部（默认位置）
       const onlyTop = await h.eval(`!!document.querySelector(".sidebar-options-top") && !document.querySelector(".sidebar-options:not(.sidebar-options-top)")`).catch(() => false);
       if (!onlyTop) {
         await h.eval(`document.querySelector(".function-menu-sidebar .function-menu-more")?.click()`).catch(() => undefined);
@@ -1600,6 +1601,11 @@ const CHECKS = [
         await wait(250);
         await h.eval(`[...document.querySelectorAll(".fm-editor-foot button")].find((b) => b.innerText.includes("完成"))?.click()`).catch(() => undefined);
         await wait(400);
+      }
+      // 折叠态跨重启保留：上一轮收起了就先展开，后面要量真实高度/拖动
+      if (await h.eval(`document.querySelector(".sidebar-options-top .sidebar-options-body")?.classList.contains("is-collapsed")`).catch(() => false)) {
+        await h.eval(`document.querySelector(".sidebar-options-top .sidebar-options-toggle")?.click()`).catch(() => undefined);
+        await wait(350);
       }
       // 10-24 用户对照截图：顶部改成整行「新会话」+ 下一行「搜索任务」（不再并排胶囊）
       const quickLayout = await h.eval(`(function(){
@@ -1622,9 +1628,9 @@ const CHECKS = [
         const rect = group?.getBoundingClientRect();
         return { sidebar: !!document.querySelector(".function-menu-sidebar"), top: !!group,
           underQuick: Boolean(quick && rect && rect.top >= quick.bottom - 1 && rect.top <= quick.bottom + 28),
-          pinned: group?.classList.contains("sidebar-options-pinned") || false,
-          noToggle: !group?.querySelector(".sidebar-options-toggle"),
-          visible: !!group && getComputedStyle(group).display !== "none" && rect.height > 0,
+          gap: quick && rect ? Math.round(rect.top - quick.bottom) : 999,
+          toggle: !!group?.querySelector(".sidebar-options-toggle"),
+          body: !!group?.querySelector(".sidebar-options-body"),
           labels: [...document.querySelectorAll(".function-menu-sidebar .sidebar-cap-row")].map((b) => b.innerText.trim()),
           more: !!document.querySelector(".function-menu-sidebar .function-menu-more") };
       })()`).catch(() => null);
@@ -1632,12 +1638,12 @@ const CHECKS = [
         Boolean(base && base.sidebar && base.top && base.underQuick && base.labels.length === 8 && base.more
           && ["自动化", "前端开发", "拓展", "团队", "个性化&记忆", "登录管理", "新手教程"].every((label) => base.labels.includes(label))),
         JSON.stringify(base));
-      h.check("①b 搜索任务下面是常驻入口（无折叠头 / 不被 hidden / 高度可见），内容仍由功能入口配置驱动",
-        Boolean(base && base.pinned && base.noToggle && base.visible), JSON.stringify(base));
+      h.check("①b 顶部入口紧贴搜索任务（间距 ≤10px），且有折叠头 + 可动画折叠体",
+        Boolean(base && base.gap >= 0 && base.gap <= 10 && base.toggle && base.body), JSON.stringify(base));
 
       // 首次悬停教程：清掉已看标记再 hover
       await h.eval(`localStorage.removeItem("function-menu-tour-seen-v1-top")`).catch(() => undefined);
-      await h.hover(".sidebar-options-top");
+      await h.hover(".sidebar-options-top .sidebar-options-toggle");
       await h.waitFor(`!!document.querySelector(".function-menu-tour")`, { timeoutMs: 3000 }).catch(() => undefined);
       const tour = await h.eval(`document.querySelector(".function-menu-tour")?.innerText || ""`).catch(() => "");
       h.check("② 首次悬停弹出教程（说明编辑菜单 / 拖进更多 / 设置里切换位置）",
@@ -1656,8 +1662,8 @@ const CHECKS = [
           cols: [...document.querySelectorAll(".fm-edit-col")].map((c) => c.querySelectorAll(".fm-edit-row").length),
           locations: [...document.querySelectorAll(".fm-location-card")].map((b) => b.innerText.trim().split("\\n")[0]) };
       })()`).catch(() => null);
-      h.check("③ 更多 → 编辑菜单：弹窗有显示 / 更多两列 + 顶部/底部/两处都显示三个位置",
-        Boolean(editor && editor.open && editor.cols[0] >= 1 && editor.locations.length === 3 && editor.locations.includes("侧栏顶部") && editor.locations.includes("侧栏底部") && editor.locations.includes("两处都显示")),
+      h.check("③ 更多 → 编辑菜单：弹窗有显示 / 更多两列 + 顶部/底部两个展示位置",
+        Boolean(editor && editor.open && editor.cols[0] >= 1 && editor.locations.length === 2 && editor.locations.includes("侧栏顶部") && editor.locations.includes("侧栏底部")),
         JSON.stringify(editor));
 
       // 拖动第一项到「更多」列
@@ -1710,30 +1716,95 @@ const CHECKS = [
       h.check("⑥ 切到侧栏底部：入口组移到用户名上方、顶部组消失（共用顺序/更多配置）",
         Boolean(bottom && !bottom.top && bottom.bottom && bottom.aboveAccount && bottom.count === 8),
         JSON.stringify(bottom));
-      // ⑦ 两处都显示：搜索任务下面常驻区与侧栏底部组同时渲染
+      // ⑦ 底部组折叠/展开：grid 高度过渡到 0，再点恢复（两处位置都支持）
+      await h.eval(`document.querySelector(".sidebar-options:not(.sidebar-options-top) .sidebar-options-toggle")?.click()`).catch(() => undefined);
+      await wait(800);
+      const bottomCollapsed = await h.eval(`(function(){
+        const g=document.querySelector(".sidebar-options:not(.sidebar-options-top)");
+        const body=g?.querySelector(".sidebar-options-body");
+        const nav=g?.querySelector(".sidebar-nav-bottom");
+        return { cls:body?.classList.contains("is-collapsed")||false,
+          bodyH:body?Math.round(body.getBoundingClientRect().height):-1,
+          navH:nav?Math.round(nav.getBoundingClientRect().height):-1,
+          aria:nav?.getAttribute("aria-hidden")||"",
+          rows:body?getComputedStyle(body).gridTemplateRows:"",
+          display:body?getComputedStyle(body).display:"",
+          navOverflow:nav?getComputedStyle(nav).overflowY:"" };
+      })()`).catch(() => null);
+      h.check("⑦ 底部组可折叠：点击后高度收至 0 且 aria-hidden",
+        Boolean(bottomCollapsed && bottomCollapsed.cls && bottomCollapsed.bodyH <= 4 && bottomCollapsed.navH <= 4 && bottomCollapsed.aria === "true"),
+        JSON.stringify(bottomCollapsed));
+      await h.eval(`document.querySelector(".sidebar-options:not(.sidebar-options-top) .sidebar-options-toggle")?.click()`).catch(() => undefined);
+      await wait(600);
+      const bottomExpanded = await h.eval(`(function(){
+        const g=document.querySelector(".sidebar-options:not(.sidebar-options-top)");
+        const body=g?.querySelector(".sidebar-options-body");
+        const nav=g?.querySelector(".sidebar-nav-bottom");
+        return { cls:body?.classList.contains("is-collapsed")||false,
+          bodyH:body?Math.round(body.getBoundingClientRect().height):-1,
+          navH:nav?Math.round(nav.getBoundingClientRect().height):-1,
+          aria:nav?.getAttribute("aria-hidden")||"" };
+      })()`).catch(() => null);
+      h.check("⑦b 底部组再点展开：高度恢复、aria-hidden 复位（无缝动画）",
+        Boolean(bottomExpanded && !bottomExpanded.cls && bottomExpanded.bodyH > 80 && bottomExpanded.navH > 80 && bottomExpanded.aria === "false"),
+        JSON.stringify(bottomExpanded));
+
+      // ⑧ 切回顶部并恢复默认排序
       await h.eval(`document.querySelector(".sidebar-options:not(.sidebar-options-top) .function-menu-more")?.click()`).catch(() => undefined);
       await wait(250);
       await h.eval(`[...document.querySelectorAll(".function-menu-popover-item")].find((b) => b.innerText.includes("编辑菜单"))?.click()`).catch(() => undefined);
       await h.waitFor(`!!document.querySelector(".function-menu-editor")`, { timeoutMs: 4000 }).catch(() => undefined);
-      await h.eval(`document.querySelectorAll(".fm-location-card")[2]?.click()`).catch(() => undefined);
-      await wait(300);
+      await h.eval(`document.querySelectorAll(".fm-location-card")[0]?.click()`).catch(() => undefined);
+      await wait(250);
+      await h.eval(`[...document.querySelectorAll(".fm-editor-foot button")].find((b) => b.innerText.includes("恢复默认"))?.click()`).catch(() => undefined);
+      await wait(250);
       await h.eval(`[...document.querySelectorAll(".fm-editor-foot button")].find((b) => b.innerText.includes("完成"))?.click()`).catch(() => undefined);
       await wait(400);
-      const both = await h.eval(`(function(){
-        const top=document.querySelector(".sidebar-options-top");
-        const bottom=document.querySelector(".sidebar-options:not(.sidebar-options-top)");
-        let stored=null; try { stored=JSON.parse(localStorage.getItem("function-menu-v1") || "null"); } catch {}
-        const labels=(g)=>g?[...g.querySelectorAll(".sidebar-cap-row")].map((b)=>b.querySelector("span")?.innerText.trim()):[];
-        return { top:!!top, bottom:!!bottom, location: stored?.location || "",
-          topCount: labels(top).length, bottomCount: labels(bottom).length,
-          same: labels(top).join(">") === labels(bottom).join(">") };
+      const restored = await h.eval(`(function(){
+        const group = document.querySelector(".sidebar-options-top");
+        const quick = document.querySelector(".sidebar-quick")?.getBoundingClientRect();
+        const rect = group?.getBoundingClientRect();
+        return { top: !!group, bottom: !!document.querySelector(".sidebar-options:not(.sidebar-options-top)"),
+          underQuick: Boolean(quick && rect && rect.top >= quick.bottom - 1 && rect.top <= quick.bottom + 28),
+          count: group ? group.querySelectorAll(".sidebar-cap-row").length : 0,
+          badge: !!group?.querySelector(".function-menu-more-badge") };
       })()`).catch(() => null);
-      h.check("⑦ 选「两处都显示」：搜索任务下常驻区与侧栏底部组同时存在且顺序一致",
-        Boolean(both && both.top && both.bottom && both.location === "both" && both.topCount === 8 && both.bottomCount === 8 && both.same),
-        JSON.stringify(both));
+      h.check("⑧ 顶部位置恢复 + 默认排序（不留上一步的位置配置）",
+        Boolean(restored && restored.top && !restored.bottom && restored.underQuick && restored.count === 8 && !restored.badge),
+        JSON.stringify(restored));
+
+      // ⑨ 顶部组折叠/展开（与底部同款 grid 高度动画）
+      await h.eval(`document.querySelector(".sidebar-options-top .sidebar-options-toggle")?.click()`).catch(() => undefined);
+      await wait(600);
+      const topCollapsed = await h.eval(`(function(){
+        const g=document.querySelector(".sidebar-options-top");
+        const body=g?.querySelector(".sidebar-options-body");
+        const nav=g?.querySelector(".sidebar-nav-bottom");
+        return { cls:body?.classList.contains("is-collapsed")||false,
+          bodyH:body?Math.round(body.getBoundingClientRect().height):-1,
+          navH:nav?Math.round(nav.getBoundingClientRect().height):-1,
+          aria:nav?.getAttribute("aria-hidden")||"" };
+      })()`).catch(() => null);
+      h.check("⑨ 顶部组可折叠：点击后高度收至 0，搜索任务下方不再占位",
+        Boolean(topCollapsed && topCollapsed.cls && topCollapsed.bodyH <= 4 && topCollapsed.navH <= 4 && topCollapsed.aria === "true"),
+        JSON.stringify(topCollapsed));
+      await h.eval(`document.querySelector(".sidebar-options-top .sidebar-options-toggle")?.click()`).catch(() => undefined);
+      await wait(600);
+      const topExpanded = await h.eval(`(function(){
+        const g=document.querySelector(".sidebar-options-top");
+        const body=g?.querySelector(".sidebar-options-body");
+        const nav=g?.querySelector(".sidebar-nav-bottom");
+        return { cls:body?.classList.contains("is-collapsed")||false,
+          bodyH:body?Math.round(body.getBoundingClientRect().height):-1,
+          navH:nav?Math.round(nav.getBoundingClientRect().height):-1,
+          aria:nav?.getAttribute("aria-hidden")||"" };
+      })()`).catch(() => null);
+      h.check("⑨b 顶部组再点展开：高度恢复（与底部同款无缝过渡）",
+        Boolean(topExpanded && !topExpanded.cls && topExpanded.bodyH > 80 && topExpanded.navH > 80 && topExpanded.aria === "false"),
+        JSON.stringify(topExpanded));
       await h.screenshot("function-menu");
 
-      // ⑧ 侧栏里直接拖动排序：不用打开编辑弹窗，落手即写回配置（两处同步）
+      // ⑩ 侧栏里直接拖动排序：不用打开编辑弹窗，落手即写回配置
       const dragBefore = await h.eval(`(function(){
         const rows=[...document.querySelectorAll(".sidebar-options-top .sidebar-cap-row:not(.function-menu-more)")];
         let stored=null; try { stored=JSON.parse(localStorage.getItem("function-menu-v1") || "null"); } catch {}
@@ -1757,41 +1828,34 @@ const CHECKS = [
       await wait(350);
       const dragAfter = await h.eval(`(function(){
         const top=document.querySelector(".sidebar-options-top");
-        const bottom=document.querySelector(".sidebar-options:not(.sidebar-options-top)");
-        const labels=(g)=>g?[...g.querySelectorAll(".sidebar-cap-row:not(.function-menu-more)")].map((b)=>b.querySelector("span")?.innerText.trim()):[];
+        const labels=[...top.querySelectorAll(".sidebar-cap-row:not(.function-menu-more)")].map((b)=>b.querySelector("span")?.innerText.trim());
         let stored=null; try { stored=JSON.parse(localStorage.getItem("function-menu-v1") || "null"); } catch {}
-        return { labels: labels(top), bottomLabels: labels(bottom), order: stored?.order || [],
-          location: stored?.location || "", bottom: !!bottom };
+        return { labels, order: stored?.order || [], location: stored?.location || "",
+          bottom: !!document.querySelector(".sidebar-options:not(.sidebar-options-top)") };
       })()`).catch(() => null);
-      h.check("⑧ 侧栏直接拖动即生效：首两项立即换位、配置同步、底部副本一起更新（无需点完成）",
+      h.check("⑩ 侧栏直接拖动即生效：首两项立即换位、配置同步（无需点完成）",
         Boolean(dragBefore && dragAfter && dragBefore.labels[0] === dragAfter.labels[1] && dragBefore.labels[1] === dragAfter.labels[0]
-          && dragAfter.order[0] === dragBefore.order[1] && dragAfter.location === "both" && dragAfter.bottom
-          && dragAfter.labels.join(">") === dragAfter.bottomLabels.join(">")),
+          && dragAfter.order[0] === dragBefore.order[1] && dragAfter.location === "top" && !dragAfter.bottom),
         JSON.stringify({ before: dragBefore, after: dragAfter }));
 
-      // ⑨ 收尾恢复顶部位置与默认排序（不留测试配置）
+      // ⑪ 收尾恢复默认排序（不留测试配置）
       await h.eval(`document.querySelector(".sidebar-options-top .function-menu-more")?.click()`).catch(() => undefined);
       await wait(250);
       await h.eval(`[...document.querySelectorAll(".function-menu-popover-item")].find((b) => b.innerText.includes("编辑菜单"))?.click()`).catch(() => undefined);
       await h.waitFor(`!!document.querySelector(".function-menu-editor")`, { timeoutMs: 4000 }).catch(() => undefined);
-      await h.eval(`document.querySelectorAll(".fm-location-card")[0]?.click()`).catch(() => undefined);
-      await wait(250);
       await h.eval(`[...document.querySelectorAll(".fm-editor-foot button")].find((b) => b.innerText.includes("恢复默认"))?.click()`).catch(() => undefined);
       await wait(250);
       await h.eval(`[...document.querySelectorAll(".fm-editor-foot button")].find((b) => b.innerText.includes("完成"))?.click()`).catch(() => undefined);
       await wait(400);
-      const restored = await h.eval(`(function(){
+      const final = await h.eval(`(function(){
         const group = document.querySelector(".sidebar-options-top");
-        const quick = document.querySelector(".sidebar-quick")?.getBoundingClientRect();
-        const rect = group?.getBoundingClientRect();
-        return { top: !!group, bottom: !!document.querySelector(".sidebar-options:not(.sidebar-options-top)"),
-          underQuick: Boolean(quick && rect && rect.top >= quick.bottom - 1 && rect.top <= quick.bottom + 28),
-          count: group ? group.querySelectorAll(".sidebar-cap-row").length : 0,
-          badge: !!group?.querySelector(".function-menu-more-badge") };
+        return { top: !!group, count: group ? group.querySelectorAll(".sidebar-cap-row").length : 0,
+          badge: !!group?.querySelector(".function-menu-more-badge"),
+          collapsed: !!group?.querySelector(".sidebar-options-body.is-collapsed") };
       })()`).catch(() => null);
-      h.check("⑨ 收尾恢复顶部位置与默认排序（不留测试配置）",
-        Boolean(restored && restored.top && !restored.bottom && restored.underQuick && restored.count === 8 && !restored.badge),
-        JSON.stringify(restored));
+      h.check("⑪ 收尾恢复默认排序、顶部展开（不留测试配置）",
+        Boolean(final && final.top && final.count === 8 && !final.badge && !final.collapsed),
+        JSON.stringify(final));
     },
   },
   {

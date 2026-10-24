@@ -1,35 +1,32 @@
-import { ArrowDownToLine, ArrowUpToLine, Check, Layers, Pencil } from "lucide-react";
+import { ArrowDownToLine, ArrowUpToLine, Check, Pencil } from "lucide-react";
 import { overflowFunctionMenuItems, visibleFunctionMenuItems } from "./menu-model.mjs";
 import { FUNCTION_MENU_META } from "./FunctionMenu";
 import { openFunctionMenuEditor, setFunctionMenuLocation, useFunctionMenuConfig } from "./store";
 
-/** 外观设置里的「功能入口」：选展示位置 + 打开编辑菜单。三种位置共用同一份排序/更多分组。 */
+/** 外观设置里的「功能入口」：选展示位置 + 打开编辑菜单。两处位置共用同一份排序/更多分组，均可展开折叠。 */
 export function FunctionMenuSettings({ onNotice }: { onNotice?: (text: string) => void }) {
   const config = useFunctionMenuConfig();
   const visible = visibleFunctionMenuItems(config);
   const overflow = overflowFunctionMenuItems(config);
-  const choose = (location: "top" | "bottom" | "both") => {
+  const choose = (location: "top" | "bottom") => {
     if (config.location === location) return;
     setFunctionMenuLocation(location);
     onNotice?.(location === "top"
       ? "功能入口已移到「新会话 / 搜索任务」下面"
-      : location === "bottom" ? "功能入口已移回侧栏底部" : "功能入口已设为两处都显示");
+      : "功能入口已移回侧栏底部");
   };
   return (
     <section className="settings-section stack function-menu-settings">
       <div className="settings-copy">
         <h2>功能入口</h2>
-        <p>选择入口显示在「新会话 / 搜索任务」下面（常驻展示，不折叠）、侧栏底部（可折叠），还是两处都显示。三种位置共用同一套顺序与「更多」分组，改动即时生效。</p>
+        <p>选择入口显示在「新会话 / 搜索任务」下面，还是侧栏底部。两处都支持展开 / 折叠，共用同一套顺序与「更多」分组，改动即时生效。</p>
       </div>
       <div className="fm-location-grid" role="group" aria-label="功能入口显示位置">
         <button type="button" className={`fm-location-card ${config.location === "top" ? "on" : ""}`} aria-pressed={config.location === "top"} onClick={() => choose("top")}>
-          <ArrowUpToLine size={16} /><span><b>侧栏顶部</b><small>「新会话 / 搜索任务」下面（常驻不折叠）</small></span>{config.location === "top" && <Check size={14} />}
+          <ArrowUpToLine size={16} /><span><b>侧栏顶部</b><small>「新会话 / 搜索任务」下面（可折叠）</small></span>{config.location === "top" && <Check size={14} />}
         </button>
         <button type="button" className={`fm-location-card ${config.location === "bottom" ? "on" : ""}`} aria-pressed={config.location === "bottom"} onClick={() => choose("bottom")}>
-          <ArrowDownToLine size={16} /><span><b>侧栏底部</b><small>用户名上方，可折叠</small></span>{config.location === "bottom" && <Check size={14} />}
-        </button>
-        <button type="button" className={`fm-location-card ${config.location === "both" ? "on" : ""}`} aria-pressed={config.location === "both"} onClick={() => choose("both")}>
-          <Layers size={16} /><span><b>两处都显示</b><small>搜索任务下面常驻 + 侧栏底部可折叠</small></span>{config.location === "both" && <Check size={14} />}
+          <ArrowDownToLine size={16} /><span><b>侧栏底部</b><small>用户名上方（可折叠）</small></span>{config.location === "bottom" && <Check size={14} />}
         </button>
       </div>
       <div className="fm-settings-preview" aria-label="当前功能入口顺序">
@@ -42,7 +39,7 @@ export function FunctionMenuSettings({ onNotice }: { onNotice?: (text: string) =
       </div>
       <div className="fm-settings-actions">
         <button type="button" className="secondary-setting" onClick={openFunctionMenuEditor}><Pencil size={13} />编辑菜单（拖动排序 / 收进更多）</button>
-        <small>{config.location === "top" ? "入口常驻在「新会话 / 搜索任务」下面；也可以拖侧栏里的入口直接排序。" : config.location === "both" ? "两处都会显示；在侧栏里拖动排序，两处即时同步。" : "更多菜单里也能随时切换位置或打开编辑菜单。"}</small>
+        <small>{config.location === "top" ? "入口在「新会话 / 搜索任务」下面；也可以拖侧栏里的入口直接排序。" : "入口在用户名上方；也可以拖侧栏里的入口直接排序。"}</small>
       </div>
     </section>
   );

@@ -7,7 +7,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin: 10px 0 10px;
+  margin: 10px 0 4px;
   border: 0;
   border-radius: 0;
   overflow: visible;
@@ -444,6 +444,30 @@
   flex-direction: column;
   min-height: 0;
 }
+/* 展开/折叠：用 grid 行高过渡（0fr ↔ 1fr）做无缝高度动画，两处位置共用 */
+.sidebar-options-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  min-height: 0;
+  visibility: visible;
+  transition: grid-template-rows 0.2s ease, visibility 0s;
+}
+.sidebar-options-body > .sidebar-nav {
+  min-height: 0;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.sidebar-options-body.is-collapsed {
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition: grid-template-rows 0.2s ease, visibility 0s linear 0.2s;
+}
+.sidebar-options-body.is-collapsed > .sidebar-nav {
+  opacity: 0;
+  transform: translateY(-2px);
+  overflow: hidden;
+  margin-top: 0;
+  pointer-events: none;
+}
 /* 折叠头：整行可点（不是小箭头），标题常驻 ⇒ 收起后仍有一眼可见的入口 */
 .sidebar-options-toggle {
   flex: none;
@@ -489,8 +513,6 @@
   overscroll-behavior: contain;
   scrollbar-width: thin;
 }
-/* ⛔ `.sidebar-nav` 自带 `display:flex`，会压过 hidden 属性的 UA 样式 ⇒ 必须显式关掉 */
-.sidebar-nav-bottom[hidden] { display: none; }
 /* 7 行并排时行高收一点，给列表留空间（只在底部组生效，顶部快捷胶囊不受影响） */
 .sidebar-nav-bottom .sidebar-cap-row {
   height: 30px;
