@@ -293,6 +293,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         onMouseEnter={(event) => maybeShowFunctionMenuTour(menuLocation, event.currentTarget)}
         onClick={toggleOptions}
       >
+        <LayoutGrid size={15} />
         <span>功能入口</span>
         <ChevronDown size={13} className={`sidebar-options-chevron ${optionsCollapsed ? "" : "open"}`} />
       </button>

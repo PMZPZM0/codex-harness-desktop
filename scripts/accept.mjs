@@ -1628,11 +1628,15 @@ const CHECKS = [
         const group = document.querySelector(".sidebar-options-top");
         const quick = document.querySelector(".sidebar-quick")?.getBoundingClientRect();
         const rect = group?.getBoundingClientRect();
+        const searchText = document.querySelector(".sidebar-quick-search span")?.getBoundingClientRect().left;
+        const headerText = group?.querySelector(".sidebar-options-toggle > span")?.getBoundingClientRect().left;
         return { sidebar: !!document.querySelector(".function-menu-sidebar"), top: !!group,
           underQuick: Boolean(quick && rect && rect.top >= quick.bottom - 1 && rect.top <= quick.bottom + 28),
           gap: quick && rect ? Math.round(rect.top - quick.bottom) : 999,
           toggle: !!group?.querySelector(".sidebar-options-toggle"),
           body: !!group?.querySelector(".sidebar-options-body"),
+          icon: !!group?.querySelector(".sidebar-options-toggle svg"),
+          textAligned: searchText != null && headerText != null && Math.abs(searchText - headerText) <= 1,
           labels: [...document.querySelectorAll(".function-menu-sidebar .sidebar-cap-row")].map((b) => b.innerText.trim()),
           more: !!document.querySelector(".function-menu-sidebar .function-menu-more") };
       })()`).catch(() => null);
@@ -1640,8 +1644,8 @@ const CHECKS = [
         Boolean(base && base.sidebar && base.top && base.underQuick && base.labels.length === 8 && base.more
           && ["自动化", "前端开发", "拓展", "团队", "个性化&记忆", "登录管理", "新手教程"].every((label) => base.labels.includes(label))),
         JSON.stringify(base));
-      h.check("①b 顶部入口紧贴搜索任务（间距 ≤10px），且有折叠头 + 可动画折叠体",
-        Boolean(base && base.gap >= 0 && base.gap <= 10 && base.toggle && base.body), JSON.stringify(base));
+      h.check("①b 顶部入口紧贴搜索任务（间距 ≤10px），有图标且文字与「搜索任务」左对齐",
+        Boolean(base && base.gap >= 0 && base.gap <= 10 && base.toggle && base.body && base.icon && base.textAligned), JSON.stringify(base));
 
       // 首次悬停教程：清掉已看标记再 hover
       await h.eval(`localStorage.removeItem("function-menu-tour-seen-v1-top")`).catch(() => undefined);
