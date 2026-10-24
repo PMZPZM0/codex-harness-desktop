@@ -226,34 +226,6 @@
   .settings-exp-page .pet-grid { grid-template-columns: 1fr; }
 }
 
-/* ── 10-24 四页二轮：真正的双列仪表盘（不是只换皮） ── */
-.general-page.settings-exp-page,
-.appearance-page.settings-exp-page {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 12px;
-  align-items: start;
-}
-.general-page .settings-exp-hero,
-.general-page .settings-exp-group-head,
-.appearance-page .settings-exp-hero,
-.appearance-page .settings-exp-group-head,
-.general-page .card-permission,
-.general-page .card-engine,
-.general-page .card-auto-update,
-.appearance-base-card,
-.appearance-code-card {
-  grid-column: 1 / -1;
-}
-.general-page .settings-card,
-.appearance-page .settings-exp-card { margin-top: 0; }
-.general-page .card-auto-update > .settings-card { margin-top: 0; }
-
-@media (max-width: 760px) {
-  .general-page.settings-exp-page,
-  .appearance-page.settings-exp-page { grid-template-columns: 1fr; }
-}
-
 /* 桌面宠物：当前宠物展示区（大预览 + 开关 + 两个滑杆） */
 .pet-showcase {
   display: flex;
@@ -295,31 +267,3 @@
 }
 
 
-/* 工作区 / 启动与行为放在同一行：半宽时路径与开关改为纵向紧凑排布 */
-.general-page .card-workspace .path-row { flex-direction: column; align-items: stretch; gap: 4px; }
-.general-page .card-workspace .path-row-input { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.general-page .card-workspace .path-row-value { flex: 1 1 100%; }
-.general-page .card-startup .settings-toggle-row { align-items: flex-start; }
-.general-page .card-startup .settings-toggle-text small { font-size: 10.5px; }
-.appearance-page .appearance-function-card { grid-column: 1 / -1; }
-.personalization-page.settings-exp-page {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 12px;
-  align-items: start;
-}
-.personalization-page .settings-exp-hero,
-.personalization-page .settings-exp-group-head,
-.personalization-page .card-style,
-.personalization-page .card-instructions,
-.personalization-page .personalization-verify,
-.personalization-page .personalization-note {
-  grid-column: 1 / -1;
-}
-.personalization-page .personalization-group,
-.personalization-page .personalization-section { margin-top: 0; }
-.personalization-page > .personalization-section { grid-column: span 1; }
-@media (max-width: 760px) {
-  .personalization-page.settings-exp-page { grid-template-columns: 1fr; }
-  .personalization-page > .personalization-section { grid-column: 1 / -1; }
-}
