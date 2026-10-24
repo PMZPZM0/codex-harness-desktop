@@ -450,7 +450,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 </button>
                 {/* 10-24 用户令：「BOSS 会话」常驻在搜索任务下面（不进功能入口菜单）；
                     功能入口（top 位置）自适应排在本按钮之后。点击开右侧群面板。 */}
-                <button className="sidebar-tab sidebar-quick-btn ic-amber" title="BOSS 会话：拉群派活、盯进度、审不过打回重做" onClick={() => { openBossPanel(); }}>
+                <button className="sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-amber" title="BOSS 会话：拉群派活、盯进度、审不过打回重做" onClick={() => { openBossPanel(); }}>
                   <Crown size={15} /><span>BOSS 会话</span>
                 </button>
               </div>

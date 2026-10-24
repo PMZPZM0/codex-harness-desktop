@@ -11,7 +11,7 @@
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { bossStore } from "../boss-groups/store";
-import { addTaskForBoss, browserStatus, createGroupForBoss, dispatchTask, memberForBoss, pinForBoss, postToBoss, reviewTask, setBossEventSink, statusForBoss, tickAll } from "../boss-groups/runner";
+import { addTaskForBoss, browserStatus, createGroupForBoss, dispatchTask, memberForBoss, pinForBoss, postToBoss, reviewTask, sayToGroup, setBossEventSink, statusForBoss, tickAll, watchBossReplies } from "../boss-groups/runner";
 import { recordReview, resolveEscalation } from "../boss-groups/state";
 import type { EscalateChoice } from "../boss-groups/types";
 import { broadcastCodexEvent } from "./window-bus";
@@ -122,8 +122,17 @@ export const bossGroupsFeature = defineFeature<null>({
       return pinForBoss({ groupId: String(input?.groupId ?? ""), eventId: String(input?.eventId ?? ""), pinned: input?.pinned === true });
     });
 
+    /** 你在群对话框里说话 → boss 线程（不新建会话/回合入口，回复镜像回群流）。 */
+    ipcHost.handle("boss-groups:say", async (_event, input: any) => {
+      await bossStore.load();
+      return sayToGroup({ groupId: String(input?.groupId ?? ""), text: String(input?.text ?? "") });
+    });
+
     /** 手动跑一次审查（模型自评之后不服、或评审会话丢了时用）。 */
     ipcHost.handle("boss-groups:recheck", async (_event, taskId: string) => reviewTask(String(taskId ?? "")));
+
+    /* boss 线程的回复镜像进群流（「在群里回」）——全局只挂一次。 */
+    watchBossReplies();
 
     /* ⛔ ctx.effect 是**释放钩子**（dispose 时逆序执行），不是"立即执行"的 effect ——
        定时器要在外面启动，这里只登记"怎么停"。 */
@@ -132,7 +141,7 @@ export const bossGroupsFeature = defineFeature<null>({
 
     ctx.effect(() => {
       setBossEventSink(null);
-      for (const channel of ["boss-groups:list", "boss-groups:status", "boss-groups:create", "boss-groups:assign", "boss-groups:review", "boss-groups:escalate", "boss-groups:browser", "boss-groups:recheck", "boss-groups:member", "boss-groups:pin"]) {
+      for (const channel of ["boss-groups:list", "boss-groups:status", "boss-groups:create", "boss-groups:assign", "boss-groups:review", "boss-groups:escalate", "boss-groups:browser", "boss-groups:recheck", "boss-groups:member", "boss-groups:pin", "boss-groups:say"]) {
         ipcHost.removeHandler(channel);
       }
     });

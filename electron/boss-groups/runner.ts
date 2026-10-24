@@ -18,8 +18,8 @@ import { safeProviderId } from "../provider-id";
 import { server, threadCwd } from "../runtime-refs";
 import { egoBrowserPath } from "../toolchain";
 import { bossStore } from "./store";
-import { addMember, addTask, assignTask, checkBudget, createGroup, groupOf, markRunning, markStalled, memberOf, parseVerdict, pickReassignee, recordReview, removeMember, setPinned, snapshot, submitTask, taskOf } from "./state";
-import type { BossGroup, GroupMember, GroupTask } from "./types";
+import { addMember, addTask, assignTask, checkBudget, createGroup, groupOf, markRunning, markStalled, memberOf, parseVerdict, pickReassignee, pushEvent, recordReview, removeMember, setPinned, snapshot, submitTask, taskOf } from "./state";
+import type { BossGroup, BossState, GroupMember, GroupTask } from "./types";
 
 /** 事件出口（域层注入：本模块在 features/ 之外，不许反向 import 域）。 */
 type Sink = (payload: unknown) => void;
@@ -54,6 +54,65 @@ export async function postToBoss(group: BossGroup, text: string): Promise<boolea
     if (head?.id) await server.request("thread/queue/start", { threadId: boss, queuedSubmissionId: head.id }).catch(() => undefined);
     return true;
   } catch { return false; }
+}
+
+/**
+ * 你在群对话框里说的话 → boss 线程（turn/start，等 boss 回）。
+ * ⛔ 这就是「点击 BOSS 会话直接进入对话框」的落点：说话不新建会话、不新建回合入口，
+ *    boss 的回复由 watchBossReplies 镜像进群流。
+ */
+export async function sayToGroup(input: { groupId: string; text: string }): Promise<{ ok: boolean; error?: string }> {
+  const state = await bossStore.load();
+  const text = String(input.text ?? "").trim();
+  if (!text) return { ok: false, error: "说点啥再发" };
+  try {
+    const group = groupOf(state, String(input.groupId ?? ""));
+    pushEvent(state, { groupId: group.id, kind: "chat-user", text: text.slice(0, 600) });
+    bossStore.save();
+    emit({ type: "boss-group", phase: "chat", groupId: group.id });
+    const boss = String(group.bossThreadId ?? "");
+    if (!boss) return { ok: false, error: "这个群没有 boss 会话" };
+    const env = await providerEnv();
+    void server.request("turn/start", {
+      threadId: boss,
+      input: [{ type: "text", text, text_elements: [] }],
+      model: env.model,
+      effort: "high",
+    }).catch(() => undefined);
+    return { ok: true };
+  } catch (error: any) {
+    return { ok: false, error: String(error?.message ?? error) };
+  }
+}
+
+let bossWatchStarted = false;
+const mirroredTurns = new Set<string>();
+/** boss 线程的回复 → 群流（「在群里回」的实现：boss 在群里说话，而不是只在外面）。 */
+export function watchBossReplies(): void {
+  if (bossWatchStarted) return;
+  bossWatchStarted = true;
+  server.on("event", (event: any) => {
+    if (event?.kind !== "notification" || event.method !== "turn/completed") return;
+    const threadId = String(event.params?.threadId ?? "");
+    const turn = event.params?.turn;
+    if (!threadId || !turn?.id) return;
+    void (async () => {
+      try {
+        const state = await bossStore.load();
+        const group = Object.values(state.groups).find((g) => g.bossThreadId === threadId);
+        if (!group) return;
+        const key = `${threadId}:${turn.id}`;
+        if (mirroredTurns.has(key)) return;
+        mirroredTurns.add(key);
+        if (mirroredTurns.size > 400) { const first = mirroredTurns.values().next().value; if (first) mirroredTurns.delete(first); }
+        const text = turnOutputText(turn);
+        if (!text) return;
+        pushEvent(state, { groupId: group.id, kind: "chat-boss", text: text.slice(0, 600) });
+        bossStore.save();
+        emit({ type: "boss-group", phase: "chat", groupId: group.id });
+      } catch { /* 镜像失败不影响主流程 */ }
+    })();
+  });
 }
 
 /* ── 模型 / 会话 ──────────────────────────────────────────────────────────── */
@@ -197,16 +256,24 @@ async function failTask(taskId: string, reason: string) {
 }
 
 /* ── 交活 → 审查 → 通过 / 打回 → 换人 ─────────────────────────────────────── */
+/** 提交成品；返回「这条提交是否有效」（重复回调 ⇒ false，调用方据此跳过评审）。 */
+function submitTaskSafe(state: BossState, taskId: string, output: string): boolean {
+  try { submitTask(state, taskId, output); return true; } catch { return false; }
+}
 export async function settleSubmission(taskId: string, output: string): Promise<void> {
   const state = await bossStore.load();
   const task = state.tasks[taskId];
   if (!task) return;
   const group = state.groups[task.groupId];
   if (!group) return;
-  try { submitTask(state, taskId, output); } catch { /* 已经不在 running（重复回调）⇒ 忽略 */ }
+  const alreadyLeftRunning = submitTaskSafe(state, taskId, output);
+  pushEvent(state, {
+    groupId: group.id, taskId, memberId: task.assignee, kind: "chat-member",
+    text: String(output ?? "").slice(0, 600) || "（没有文本产出）",
+  });
   bossStore.save();
   emit({ type: "boss-group", phase: "task", groupId: group.id, taskId, status: "reviewing" });
-  await reviewTask(taskId);
+  if (alreadyLeftRunning) await reviewTask(taskId);   // 重复回调（已不在 running）⇒ 不再审
 }
 
 const REVIEW_PROMPT = (task: GroupTask, output: string) => `[SYSTEM TASK · 独立评审]
@@ -224,11 +291,30 @@ ${output.slice(0, 16000)}
 - pass=true 时 reasons 必须是空数组；
 - pass=false 时 reasons 至少一条，且必须指向验收标准里的具体条目，不要写"不够好""可以更好"这种空话。`;
 
+/** 同一任务同时只允许一次评审（settleSubmission 重复回调 / 人工与自动撞车 ⇒ 后到的直接跳过）。 */
+const inFlightReviews = new Set<string>();
+
 /** 独立评审：用一个**新鲜上下文**的会话判，判完落 verdict。 */
 export async function reviewTask(taskId: string): Promise<{ ok: boolean; verdict?: "approved" | "rejected"; error?: string }> {
+  if (inFlightReviews.has(taskId)) return { ok: false, error: "该任务已有一轮评审在进行，跳过重复触发" };
   const state = await bossStore.load();
   const task = state.tasks[taskId];
   if (!task) return { ok: false, error: "任务不存在" };
+  /* ⛔ 幂等闸（10-24 用户报「评审自动重试，正常也重试」）：只有 reviewing 状态才真正开评审；
+     approved / running / done / escalated 的重复触发一律跳过 —— 评审不是重试器。 */
+  if (task.status !== "reviewing" && task.status !== "submitted") {
+    return { ok: false, error: `任务当前是 ${task.status}，不需要评审（跳过重复触发）` };
+  }
+  inFlightReviews.add(taskId);
+  try {
+    return await runReview(state, taskId);
+  } finally {
+    inFlightReviews.delete(taskId);
+  }
+}
+
+async function runReview(state: BossState, taskId: string): Promise<{ ok: boolean; verdict?: "approved" | "rejected"; error?: string }> {
+  const task = state.tasks[taskId];
   const group = state.groups[task.groupId];
   if (!group) return { ok: false, error: "群不存在" };
   const attempt = task.attempts[task.attempts.length - 1];

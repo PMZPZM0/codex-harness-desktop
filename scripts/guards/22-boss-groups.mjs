@@ -34,7 +34,7 @@ try {
   ok(false, `dist-electron/boss-groups/state.js 加载失败（先跑 npm run build:electron）：${String(error?.message ?? error).slice(0, 120)}`);
 }
 if (state) {
-  const { emptyState, createGroup, addMember, addTask, assignTask, markRunning, submitTask, recordReview, pickReassignee, resolveEscalation, checkBudget, parseVerdict, removeMember, setPinned } = state;
+  const { emptyState, createGroup, addMember, addTask, assignTask, markRunning, submitTask, recordReview, pickReassignee, resolveEscalation, checkBudget, parseVerdict, removeMember, setPinned, pushEvent } = state;
   const { MAX_MEMBERS, DEFAULT_POLICY } = require(join(ROOT, "dist-electron", "boss-groups", "types.js"));
 
   const mkGroup = (stateObj, members, policy) => createGroup(stateObj, {
@@ -188,6 +188,17 @@ if (state) {
     ok(!g.pinnedEventIds.includes(ev.id), "取消置顶 ⇒ 移出");
   }
 
+  /* ── 8c. 群聊正文（10-24 用户令：回复要在群里，不在外面）── */
+  {
+    const s = emptyState();
+    const g = mkGroup(s, [{ name: "甲", role: "写" }]);
+    for (const kind of ["chat-user", "chat-boss", "chat-member"]) {
+      const ev = pushEvent(s, { groupId: g.id, kind, text: "hi" });
+      ok(ev.kind === kind && s.events.includes(ev), `群聊事件 kind=${kind} 可落账本`);
+    }
+    ok(s.events.filter((e) => e.kind === "chat-user").length === 1, "重复触发不会互相顶掉（各自独立入账）");
+  }
+
   /* ── 9. 评审输出解析：绝不默认通过 ── */
   {
     ok(parseVerdict('{"pass": true, "reasons": []}').verdict === "approved", "pass:true ⇒ approved");
@@ -202,7 +213,7 @@ if (state) {
 {
   const manifest = JSON.parse(read("electron/ipc-channels.manifest.json"));
   const channels = (manifest.channels ?? []).filter((c) => String(c.channel).startsWith("boss-groups:"));
-  ok(channels.length === 10, `manifest 有 10 个 boss-groups 通道（实测 ${channels.length}）`);
+  ok(channels.length === 11, `manifest 有 11 个 boss-groups 通道（实测 ${channels.length}）`);
   ok(manifest.count === manifest.channels.length, `manifest.count 与通道数一致（${manifest.count} / ${manifest.channels.length}）`);
   ok(channels.every((c) => typeof c.invokeArgs === "string" && Boolean(c.returns)
     && (!String(c.paramsImpl ?? "").trim() || String(c.invokeArgs ?? "").trim())),
@@ -215,11 +226,11 @@ if (state) {
   ok(read("electron/composition.gen.ts").includes("boss-groups-ipc"), "composition.gen.ts 已重生成（跑过 npm run gen:domains）");
 
   const registry = read("electron/ipc-registry.ts");
-  ok(/\{ prefix: "boss-groups", count: 10, status: "in-features", file: "features\/boss-groups-ipc\.ts"/.test(registry),
-    "ipc-registry.ts 账本已登记（count=10）");
+  ok(/\{ prefix: "boss-groups", count: 11, status: "in-features", file: "features\/boss-groups-ipc\.ts"/.test(registry),
+    "ipc-registry.ts 账本已登记（count=11）");
 
   const preload = read("electron/preload.ts");
-  for (const method of ["listBossGroups", "bossGroupStatus", "createBossGroup", "assignBossTask", "reviewBossTask", "escalateBossTask", "bossBrowserStatus", "recheckBossTask", "bossGroupMember", "bossGroupPin"]) {
+  for (const method of ["listBossGroups", "bossGroupStatus", "createBossGroup", "assignBossTask", "reviewBossTask", "escalateBossTask", "bossBrowserStatus", "recheckBossTask", "bossGroupMember", "bossGroupPin", "bossGroupSay"]) {
     ok(preload.includes(method), `preload 已生成 ${method}`);
   }
 

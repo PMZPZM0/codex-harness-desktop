@@ -112,3 +112,90 @@
 @media (prefers-reduced-motion: reduce) {
   .boss-panel, .boss-panel-mini, .boss-panel-pin { transition: none; }
 }
+
+/* ── 10-24 深夜改版：群对话框（聊天气泡 + 输入框）+ 顶栏成员图标 ── */
+
+/* 成员区已移到顶栏（用户令）；面板只剩 置顶带 + 群聊流 + 输入框 */
+.boss-panel {
+  display: flex; flex-direction: column;
+  /* ⛔ 群对话框布局：只有群聊流自己滚（feed flex:1），面板本体不滚 —— 否则输入框会被卷走 */
+  overflow: hidden;
+}
+
+.boss-panel-feed {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  min-height: 0;
+}
+
+.boss-chat-row { display: flex; flex-direction: column; max-width: 86%; }
+.boss-chat-row.side-right { align-self: flex-end; align-items: flex-end; }
+.boss-chat-row.side-left { align-self: flex-start; align-items: flex-start; }
+.boss-chat-row time { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+.boss-chat-bubble {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  font-size: 12.5px; line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.boss-chat-bubble .who { font-size: 11px; font-weight: 600; color: var(--muted); }
+.boss-chat-bubble[data-kind="chat-user"] { background: color-mix(in srgb, var(--accent) 12%, var(--panel)); border-color: color-mix(in srgb, var(--accent) 24%, var(--line)); }
+.boss-chat-bubble[data-kind="chat-user"] .who { color: var(--accent); }
+.boss-chat-bubble[data-kind="chat-boss"] { border-color: color-mix(in srgb, var(--amber, #d29922) 36%, var(--line)); }
+.boss-chat-bubble[data-kind="chat-boss"] .who { color: var(--amber, #d29922); }
+
+.boss-chat-sys {
+  display: flex; align-items: center; gap: 6px;
+  align-self: center; max-width: 96%;
+  font-size: 11px; color: var(--muted);
+  text-align: center;
+}
+.boss-chat-sys .text { overflow-wrap: anywhere; }
+.boss-chat-sys time { flex: none; opacity: 0.8; }
+
+.boss-panel-composer {
+  display: flex; gap: 6px; align-items: center;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line);
+  flex: none;
+}
+.boss-panel-composer-input { flex: 1 1 auto; min-width: 0; }
+.boss-panel-send { flex: none; }
+.boss-panel-send:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* 顶栏成员图标 + popover */
+.boss-members-wrap { position: relative; flex: none; }
+.boss-members-pop {
+  position: absolute; top: calc(100% + 8px); right: 0;
+  z-index: 60;
+  width: 300px; max-height: 60vh; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  padding: 10px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.boss-members-pop-head { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.boss-members-pop-head b { flex: none; }
+.boss-members-pop-head span { flex: 1; color: var(--muted); }
+.boss-members-pop-list { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* 自适应：窄屏收起顶栏成员图标（多尺寸展示/隐藏） */
+@media (max-width: 1180px) { .boss-members-wrap { display: none; } }
+
+/* BOSS 会话侧栏按钮与「搜索任务」同款：靠左对齐 + 图标（用户令） */
+.sidebar-quick .sidebar-quick-btn.sidebar-quick-boss {
+  height: 32px;
+  justify-content: flex-start;
+  color: var(--muted);
+}
+.sidebar-quick .sidebar-quick-btn.sidebar-quick-boss:hover { color: var(--text); }
+.sidebar-quick .sidebar-quick-btn.sidebar-quick-boss svg { color: var(--amber, #d29922); }
