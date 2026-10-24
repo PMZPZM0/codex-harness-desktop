@@ -106,6 +106,11 @@ const actionsAt = modelPage.indexOf("provider-card-actions");
 const actionsEnd = modelPage.indexOf("</span>", actionsAt);
 const actionsBlock = actionsAt >= 0 && actionsEnd > actionsAt ? modelPage.slice(actionsAt, actionsEnd) : "";
 ok(/provider-card-icon-btn/.test(modelPage) && actionsBlock.length > 0 && !/编辑<\/button>/.test(actionsBlock), "编辑入口只保留右上角铅笔（底部操作行不再重复）");
+ok(/refreshCardModels/.test(modelPage) && /provider-card-update[\s\S]{0,700}refreshCardModels/.test(modelPage), "「更新模型」直接刷新模型列表（不再只打开编辑弹窗）");
+const refreshAt = modelPage.indexOf("const refreshCardModels");
+const refreshEnd = modelPage.indexOf("const testProviderCard", refreshAt);
+const refreshBlock = refreshAt >= 0 && refreshEnd > refreshAt ? modelPage.slice(refreshAt, refreshEnd) : "";
+ok(refreshBlock.length > 0 && /addedIds/.test(refreshBlock) && /removed/.test(refreshBlock) && /saveCustomDraft/.test(refreshBlock) && /relaunchApp/.test(refreshBlock), "「更新模型」新增/移除模型都保存并重启（与编辑弹窗保存同口径）");
 for (const [key, title] of [["skills", "技能中心"], ["plugins", "插件"], ["mcp", "MCP"], ["commands", "命令"], ["hooks", "钩子"], ["ssh", "SSH 服务器"], ["agentteam", "专家和专家团"], ["storage", "数据管理"]]) {
   const text = pageSrc(key);
   const at = text.indexOf(`<h2>${title}`);
