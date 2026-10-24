@@ -103,7 +103,9 @@ export type GroupEvent = {
   groupId: string;
   taskId?: string;
   memberId?: string;
-  kind: "created" | "queued" | "assigned" | "running" | "submitted" | "reviewed" | "rejected" | "reassigned" | "done" | "escalated" | "stalled" | "budget" | "note";
+  kind: "created" | "queued" | "assigned" | "running" | "submitted" | "reviewed" | "rejected" | "reassigned" | "done" | "escalated" | "stalled" | "budget" | "note"
+    /* 群聊正文（10-24 用户令：「不在群里回，在外面回，没意思」）——boss/成员/你的发言直接进群流。 */
+    | "chat-user" | "chat-boss" | "chat-member";
   text: string;
   at: number;
 };

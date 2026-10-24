@@ -23,7 +23,7 @@ export function emptyState(): BossState {
   return { version: 1, groups: {}, tasks: {}, events: [] };
 }
 
-function pushEvent(state: BossState, event: Omit<GroupEvent, "id" | "at"> & { at?: number }): GroupEvent {
+export function pushEvent(state: BossState, event: Omit<GroupEvent, "id" | "at"> & { at?: number }): GroupEvent {
   const entry: GroupEvent = { id: makeId("e"), at: event.at ?? Date.now(), ...event } as GroupEvent;
   state.events.push(entry);
   if (state.events.length > MAX_EVENTS) state.events.splice(0, state.events.length - MAX_EVENTS);
