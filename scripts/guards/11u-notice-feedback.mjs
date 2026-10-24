@@ -154,7 +154,6 @@ const REFRESH_ENTRIES = [
   ["src/features/settings-skills/SkillsCenterSection.tsx", ["刷新技能市场"]],
   ["src/features/settings-automation/AutomationSettingsSection.tsx", ["检查自动更新"]],
   ["src/features/settings-general/AutoUpdateCard.tsx", ["重新检测组件版本"]],
-  ["src/features/settings-general/GeneralSettingsSection.tsx", ["检查引擎更新"]],
   ["src/features/storage-settings/StorageSettings.tsx", ["刷新变更列表"]],
   ["src/features/storage-settings/WorkLogsSection.tsx", ["重新扫描工作日志"]],
   ["src/features/settings-pet/PetSettingsSection.tsx", ["重新扫描宠物目录"]],

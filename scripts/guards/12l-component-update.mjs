@@ -13,7 +13,7 @@
  *  ⑦ **手动链 = 自动链**：后台循环与手动通道都调 updateComponent，不许按 kind 再写一套；
  *  ⑧ **开关关就不检查**：runCycle 里开关判定在 update 之前 continue（不是"查到了不装"）；
  *  ⑨ **界面不自己定默认值**：行数据自带 enabled，UI 不许再写一份缺省判断；
- *  ⑩ 控制台要有「检测 / 单个更新 / 一键更新全部」三个入口 + 台账有条目。
+ *  ⑩ 控制台要有「检测 / 单个更新」入口 + 台账有条目；「一键更新全部」已按用户要求删除（按键丑）。
  */
 import { readFileSync, existsSync } from "node:fs";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
@@ -144,7 +144,7 @@ ok(!/\["market-skill", "expert-skill", "soul"\]\.includes/.test(cardCode),
 console.log("【⑩ 控制台统一入口 + 台账】");
 ok(/window\.codex\.scanAutoUpdateComponents\(/.test(cardCode), "控制台有「检测更新」入口");
 ok(/window\.codex\.runAutoUpdateComponent\(row\.id\)/.test(cardCode), "控制台支持按名称/组件逐个更新");
-ok(/window\.codex\.runAllAutoUpdateComponents\?\.\(\)/.test(cardCode), "控制台有「一键更新全部」");
+ok(!/runAllAutoUpdateComponents/.test(cardCode) && !/一键更新全部/.test(cardCode), "⛔ 不再有「一键更新全部」（用户：按键真丑，已删）");
 ok(/auto-update-log/.test(cardCode), "有进度与结果输出区");
 ok(/noMirror|无可用镜像源/.test(cardCode), "⛔ 控制台显式标注「无可用镜像源」的条目");
 ok(/<AutoUpdateCard/.test(general), "卡片挂在「控制台」（general）页");
