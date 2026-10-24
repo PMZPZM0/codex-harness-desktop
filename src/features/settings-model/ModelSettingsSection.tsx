@@ -168,11 +168,6 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                           />
                           <FieldHelp text={"上下文用量达到所选比例时，引擎自动压缩较早对话。\n\n调整后会保存到本机设置，对新回合生效；压缩线会标在历史消息里。"} />
                         </span>
-                        {customModel && (
-                          <button className="secondary-setting" title={`测试当前生效供应商：${customModel.name} · ${customModel.model}`} disabled={!!probingProvider} onClick={() => void probeActiveProvider()}>
-                            {probingProvider === "test" ? <Spinner /> : <RefreshCw size={14} />}测试当前供应商
-                          </button>
-                        )}
                         <button className="primary-setting" onClick={openNewProvider}><Plus size={14} />添加供应商</button>
                       </div>
                     </div>
