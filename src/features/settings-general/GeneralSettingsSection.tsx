@@ -165,7 +165,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
 
                     {/* 全局审批权限：控制台一级入口。选择立即生效（当前会话马上推送引擎，
                         其余未手动改过权限的会话打开时跟随，新会话默认使用），无需重启。 */}
-                    <div className="settings-card">
+                    <div className="settings-card card-permission">
                       <div className="settings-card-head"><ShieldCheck size={15} /><strong>全局审批权限</strong><span className="settings-subhead-hint">选择立即生效，无需重启</span></div>
                       <div className="settings-card-body">
                         <div className="perm-seg">
@@ -181,7 +181,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                       </div>
                     </div>
 
-                    <div className="settings-card">
+                    <div className="settings-card card-workspace">
                       <div className="settings-card-head"><FolderOpen size={15} /><strong>工作区与数据</strong></div>
                       <div className="settings-card-body">
                         <div className="path-row">
@@ -198,7 +198,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                       </div>
                     </div>
 
-                    <div className="settings-card">
+                    <div className="settings-card card-startup">
                       <div className="settings-card-head"><Monitor size={15} /><strong>启动与行为</strong></div>
                       <div className="settings-card-body settings-toggle-list">
                         <div className="settings-toggle-row">
@@ -238,7 +238,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                         **唯一入口**（技能中心与自动化页只剩版本与手动更新）。
                         ⛔ 别在本页外层再传 props —— 卡片自己走 autoUpdate:status / autoUpdate:set，
                         清单、包名与每个开关的缺省值都在主进程（一处判据）。 */}
-                    <div className="settings-card">
+                    <div className="settings-card card-reply">
                       <div className="settings-card-head"><Sparkles size={15} /><strong>回复风格</strong><span className="settings-subhead-hint">只改模型怎么写，不改变它能做什么</span></div>
                       <div className="settings-card-body settings-toggle-list">
                         <BuiltinSkillSwitch
@@ -251,7 +251,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                       </div>
                     </div>
 
-                    <div className="settings-card">
+                    <div className="settings-card card-display">
                       <div className="settings-card-head"><Zap size={15} /><strong>显示与性能</strong><button type="button" className="icon-button accel-help-btn" title="渲染模式说明" aria-expanded={showAccelHelp} onClick={() => setShowAccelHelp((v) => !v)}><HelpCircle size={13} /></button></div>
                       <div className="settings-card-body">
                         <div className="settings-toggle-row">
@@ -268,7 +268,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                       </div>
                     </div>
 
-                    <div className="settings-card">
+                    <div className="settings-card card-reasoning">
                       <div className="settings-card-head"><Brain size={15} /><strong>思考板块展示</strong><span className="settings-subhead-hint">立即生效，无需重启</span></div>
                       <div className="settings-card-body">
                         <div className="perm-seg reasoning-mode-seg">
@@ -288,7 +288,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                     </div>
 
                     <SettingsGroupHead title="维护与更新" hint="快捷键 · 引擎升级 · 自动更新" />
-                    <div className="settings-card">
+                    <div className="settings-card card-shortcuts">
                       <div className="settings-card-head"><Keyboard size={15} /><strong>键盘快捷键</strong></div>
                       <div className="settings-card-body">
                         <div className="shortcut-preview">
@@ -300,7 +300,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                       </div>
                     </div>
 
-                    <div className="settings-card">
+                    <div className="settings-card card-engine">
                       <div className="settings-card-head"><RefreshCw size={15} /><strong>Codex 引擎更新</strong></div>
                       <div className="settings-card-body">
                         <div className="engine-status-row">
@@ -347,7 +347,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                         <p className="settings-card-hint">取源跟随「开发工具 → 下载源」设置（当前：{engineSourceLabel}）；改了下次检查立即生效，无需重启。配了引擎代理时两个源都走代理隧道。</p>
                       </div>
                     </div>
-                    <AutoUpdateCard onNotice={setNotice} />
+                    <div className="settings-exp-grid-item card-auto-update"><AutoUpdateCard onNotice={setNotice} /></div>
                   </section>
     </>
   );

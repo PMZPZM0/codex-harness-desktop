@@ -100,7 +100,7 @@ export function PersonalizationPage({
 
       {/* 分组规则（10-11 重排）：一处设置 = 一张组卡；组卡自带标题行（.settings-subhead）与 1px 边界，
           组间只用一个间距值 ⇒ 不再靠标题的零散 margin 撑版式。 */}
-      <div className="personalization-group">
+      <div className="personalization-group card-nickname">
         <div className="settings-subhead"><UserRound size={13} />称呼<span className="settings-subhead-hint">留空则不指定</span></div>
         <div className="personalization-field">
           <input
@@ -114,7 +114,9 @@ export function PersonalizationPage({
         </div>
       </div>
 
-      <div className="personalization-group">
+      {adaptiveToneSlot}
+
+      <div className="personalization-group card-style">
         <div className="settings-subhead"><MessageSquare size={13} />回复风格<span className="settings-subhead-hint">选择 Codex 平时怎么跟你说话</span></div>
         <div className="personalization-style-grid" role="group" aria-label="回复风格">
         {stylePresets.map((preset) => (
@@ -136,10 +138,8 @@ export function PersonalizationPage({
         </div>
       </div>
 
-      {adaptiveToneSlot}
-
       <SettingsGroupHead title="进阶" hint="自定义指令 · 生效校验" />
-      <div className="personalization-group">
+      <div className="personalization-group card-instructions">
         <div className="settings-subhead"><Wrench size={13} />自定义指令<span className="settings-subhead-hint">每次对话都生效，优先级高于风格默认</span></div>
         <textarea
           className="personalization-instructions"

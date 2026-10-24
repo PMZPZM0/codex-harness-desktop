@@ -23,7 +23,7 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
       <section className="settings-section stack appearance-page settings-exp-page">
         <SettingsPageHero icon={<Sun size={20} />} title="外观" subtitle="主题、字号、代码与壁纸都在这里；改完即时生效，不用重启。" hint="点卡片即切换" />
         <SettingsGroupHead title="基础外观" hint="主题 · 消息字号" />
-        <div className="settings-exp-card">
+        <div className="settings-exp-card appearance-base-card">
         <div className="settings-subhead"><Sun size={13} />主题<span className="settings-subhead-hint">点击预览卡片即时切换</span></div>
         <div className="theme-preview-grid" role="group" aria-label="主题">
           {/* 10-07 用户要求：切换加过渡 + 切换完成后给回执。
@@ -50,11 +50,11 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
         </div>
         </div>
         <SettingsGroupHead title="功能入口" hint="侧栏入口位置与顺序" />
-        <div className="settings-exp-card"><FunctionMenuSettings onNotice={onNotice} /></div>
+        <div className="settings-exp-card appearance-function-card"><FunctionMenuSettings onNotice={onNotice} /></div>
         <SettingsGroupHead title="更多外观" hint="壁纸 · 代码高亮 · 开机动画" />
-        <div className="settings-exp-card"><WallpaperSettingsSection /></div>
-        <div className="settings-exp-card"><CodeAppearanceSection onNotice={onNotice} /></div>
-        <div className="settings-exp-card"><BootIntroSettingsRow onNotice={onNotice} /></div>
+        <div className="settings-exp-card appearance-wallpaper-card"><WallpaperSettingsSection /></div>
+        <div className="settings-exp-card appearance-boot-card"><BootIntroSettingsRow onNotice={onNotice} /></div>
+        <div className="settings-exp-card appearance-code-card"><CodeAppearanceSection onNotice={onNotice} /></div>
       </section>
     </>
   );

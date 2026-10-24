@@ -13,7 +13,7 @@
  *    不需要读我们的代码。⛔ 校验不过的包照实显示原因，不静默隐藏。
  */
 import { useCallback, useEffect, useState } from "react";
-import { Check, Download, FolderOpen, Image as ImageIcon, PawPrint, RefreshCw, TriangleAlert } from "lucide-react";
+import { Download, FolderOpen, Image as ImageIcon, PawPrint, RefreshCw, TriangleAlert } from "lucide-react";
 import { petAssetUrl } from "../pet";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 import { SettingsGroupHead, SettingsPageHero } from "../../components/SettingsPageHero";
@@ -31,8 +31,8 @@ const SOURCE_LABEL: Record<PetPackage["source"], string> = {
 };
 
 /** 列表项的小预览：图集切第 0 行第 0 帧；动画包用 idle 静帧整张缩略。 */
-function PetThumb({ pkg }: { pkg: PetPackage }) {
-  const k = PREVIEW_H / (pkg.frameHeight || 208);
+function PetThumb({ pkg, height = PREVIEW_H }: { pkg: PetPackage; height?: number }) {
+  const k = height / (pkg.frameHeight || 208);
   const animationStill = pkg.animationSet?.idle?.stillSrc;
   const source = animationStill || pkg.spritesheet;
   return (
@@ -40,7 +40,7 @@ function PetThumb({ pkg }: { pkg: PetPackage }) {
       className="pet-thumb"
       style={{
         width: `${pkg.frameWidth * k}px`,
-        height: `${PREVIEW_H}px`,
+        height: `${height}px`,
         backgroundImage: source ? `url("${petAssetUrl(source)}")` : undefined,
         backgroundSize: animationStill ? "contain" : `${pkg.columns * pkg.frameWidth * k}px ${pkg.rows * pkg.frameHeight * k}px`,
         backgroundPosition: animationStill ? "center bottom" : "0 0",
@@ -137,37 +137,46 @@ export function PetSettingsSection({ onNotice }: PetSettingsSectionProps) {
       <SettingsPageHero icon={<PawPrint size={20} />} title="桌面宠物" subtitle="一只浮在桌面上的小宠物，跟着任务变状态。内置六只，选一只就能用。" hint="可拖动到任意位置" />
       <SettingsGroupHead title="常用" hint="显示 · 大小 · 透明度" />
 
-      <section className="pet-card">
-        <h4><Check size={14} />显示</h4>
-        <label className="pet-line">
-          <input type="checkbox" checked={settings.enabled} disabled={busy} onChange={(event) => void toggleEnabled(event.target.checked)} />
-          <span>
-            在桌面显示宠物
-            <small>透明置顶小窗，不占任务栏、不抢焦点；按住它可以直接拖到屏幕任意位置，位置会自动记住</small>
-          </span>
-        </label>
-        <label className="pet-line">
-          <input type="checkbox" checked={settings.enabled && open} readOnly />
-          <span>
-            当前状态
-            <small>{settings.enabled ? (open ? "已显示" : "已开启，但窗口未打开（点上面的开关重试）") : "已关闭"}</small>
-          </span>
-        </label>
-        <div className="pet-line pet-slider">
-          <span>大小<small>{Math.round(settings.scale * 100)}%</small></span>
-          <input
-            type="range" min={0.6} max={1.8} step={0.05}
-            value={settings.scale} disabled={busy}
-            onChange={(event) => void apply({ scale: Number(event.target.value) }, `宠物大小 ${Math.round(Number(event.target.value) * 100)}%`)}
-          />
+      <section className="pet-card pet-showcase-card">
+        <div className="pet-showcase">
+          <div className="pet-showcase-art">
+            {active ? <PetThumb pkg={active} height={120} /> : <span className="pet-showcase-empty"><PawPrint size={30} /></span>}
+          </div>
+          <div className="pet-showcase-info">
+            <h4>
+              {active ? active.name : "还没有选中宠物"}
+              {active && <span className={`pet-item-source source-${active.source}`}>{SOURCE_LABEL[active.source]}</span>}
+            </h4>
+            <small>{active?.description || "选一只宠物，它会跟着任务状态变化。"}</small>
+            <label className="pet-line">
+              <input type="checkbox" checked={settings.enabled} disabled={busy} onChange={(event) => void toggleEnabled(event.target.checked)} />
+              <span>
+                在桌面显示宠物
+                <small>透明置顶小窗，不占任务栏、不抢焦点；按住它可以直接拖到屏幕任意位置，位置会自动记住</small>
+              </span>
+            </label>
+            <small className="pet-showcase-status">
+              {settings.enabled ? (open ? "当前状态：已显示" : "已开启，但窗口未打开（点上面的开关重试）") : "当前状态：已关闭"}
+            </small>
+          </div>
         </div>
-        <div className="pet-line pet-slider">
-          <span>透明度<small>{Math.round(settings.opacity * 100)}%</small></span>
-          <input
-            type="range" min={0.4} max={1} step={0.02}
-            value={settings.opacity} disabled={busy}
-            onChange={(event) => void apply({ opacity: Number(event.target.value) }, `宠物透明度 ${Math.round(Number(event.target.value) * 100)}%`)}
-          />
+        <div className="pet-showcase-sliders">
+          <div className="pet-line pet-slider">
+            <span>大小<small>{Math.round(settings.scale * 100)}%</small></span>
+            <input
+              type="range" min={0.6} max={1.8} step={0.05}
+              value={settings.scale} disabled={busy}
+              onChange={(event) => void apply({ scale: Number(event.target.value) }, `宠物大小 ${Math.round(Number(event.target.value) * 100)}%`)}
+            />
+          </div>
+          <div className="pet-line pet-slider">
+            <span>透明度<small>{Math.round(settings.opacity * 100)}%</small></span>
+            <input
+              type="range" min={0.4} max={1} step={0.02}
+              value={settings.opacity} disabled={busy}
+              onChange={(event) => void apply({ opacity: Number(event.target.value) }, `宠物透明度 ${Math.round(Number(event.target.value) * 100)}%`)}
+            />
+          </div>
         </div>
       </section>
 
