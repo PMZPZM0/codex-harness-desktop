@@ -825,6 +825,29 @@ export class ElectronHarness {
 
   // ---------- 收尾 ----------
 
+  /** 强杀当前实例并用同一 profile 重新拉起（验收「重启后仍是用户改动后的状态」）。
+   *  ⛔ 故意用 taskkill /F 而不是优雅退出：用户报的场景就是强杀/更新重启时 localStorage
+   *  最后写入丢失，必须让主进程 app-settings.json 成为回灌源。 */
+  async restart() {
+    try { this.ws?.close(); } catch {}
+    this.ws = null;
+    const child = this.child;
+    this.child = null;
+    if (child && child.exitCode === null) {
+      try {
+        if (process.platform === "win32") execSync(`taskkill /F /PID ${child.pid} /T`, { stdio: "ignore" });
+        else child.kill("SIGKILL");
+      } catch { try { child.kill(); } catch {} }
+      await new Promise((resolve) => {
+        if (child.exitCode !== null) return resolve();
+        const timer = setTimeout(resolve, 2500);
+        child.once("exit", () => { clearTimeout(timer); resolve(); });
+      });
+    }
+    this._pending?.clear?.();
+    await this.launch();
+  }
+
   async close() {
     try {
       this.ws?.close();

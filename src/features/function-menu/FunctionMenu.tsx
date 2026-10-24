@@ -359,7 +359,7 @@ function FunctionMenuEditor() {
           </button>
           <button type="button" className={`fm-location-card ${config.location === "bottom" ? "on" : ""}`} aria-pressed={config.location === "bottom"}
             onClick={() => setFunctionMenuLocation("bottom")}>
-            <ArrowDownToLine size={16} /><span><b>侧栏底部</b><small>用户名上方</small></span>{config.location === "bottom" && <Check size={14} />}
+            <ArrowDownToLine size={16} /><span><b>侧栏底部</b><small>用户名上方（默认，可折叠）</small></span>{config.location === "bottom" && <Check size={14} />}
           </button>
         </div>
 

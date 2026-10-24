@@ -27,6 +27,12 @@ const configListeners = new Set<() => void>();
 
 function persist() {
   try { localStorage.setItem(CONFIG_KEY, JSON.stringify(config)); } catch { /* 隐私模式：本次仍生效 */ }
+  /* 主进程 app-settings.json 才是重启回灌源：强杀进程时 localStorage 最后一次写入可能没落盘。 */
+  try {
+    void window.codex?.saveAppSettings?.({
+      functionMenu: { location: config.location, order: [...config.order], overflow: [...config.overflow] },
+    })?.catch(() => undefined);
+  } catch { /* 桥不可用时只保留 localStorage */ }
 }
 
 function emit() {
@@ -72,6 +78,15 @@ export function nudgeFunctionMenuItemInMenu(id: FunctionMenuItemId, delta: numbe
 
 export function resetFunctionMenuLayoutToDefault() {
   update(resetFunctionMenuLayout(config));
+}
+
+/* 启动回灌：主进程保存过 → 以它为准（覆盖 localStorage 的旧值/丢失值）。 */
+if (typeof window !== "undefined") {
+  try {
+    void window.codex?.readAppSettings?.().then((settings) => {
+      if (settings?.functionMenu) update(normalizeFunctionMenu(settings.functionMenu));
+    }).catch(() => undefined);
+  } catch { /* 桥不可用时沿用 localStorage */ }
 }
 
 /* ── 编辑菜单弹窗（全局一份，侧栏 / 对话框上方 / 设置页都能打开）────────────── */

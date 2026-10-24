@@ -26,7 +26,7 @@ export function FunctionMenuSettings({ onNotice }: { onNotice?: (text: string) =
           <ArrowUpToLine size={16} /><span><b>侧栏顶部</b><small>「新会话 / 搜索任务」下面（可折叠）</small></span>{config.location === "top" && <Check size={14} />}
         </button>
         <button type="button" className={`fm-location-card ${config.location === "bottom" ? "on" : ""}`} aria-pressed={config.location === "bottom"} onClick={() => choose("bottom")}>
-          <ArrowDownToLine size={16} /><span><b>侧栏底部</b><small>用户名上方（可折叠）</small></span>{config.location === "bottom" && <Check size={14} />}
+          <ArrowDownToLine size={16} /><span><b>侧栏底部</b><small>用户名上方（默认，可折叠）</small></span>{config.location === "bottom" && <Check size={14} />}
         </button>
       </div>
       <div className="fm-settings-preview" aria-label="当前功能入口顺序">

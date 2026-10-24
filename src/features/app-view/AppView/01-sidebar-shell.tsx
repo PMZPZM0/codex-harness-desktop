@@ -260,12 +260,24 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
      ⛔ 只是**本组自己的显隐**：账户行压在侧栏最后一条、位置由贴底决定 ⇒ 折叠后它 0 位移。
      ⛔ 折叠态要跨重启保留（用户把入口都收起来就不会想每次重开）⇒ localStorage，与 `sidebar-collapsed` 同口径。 */
   const [optionsCollapsed, setOptionsCollapsed] = useState<boolean>(() => {
-    try { return localStorage.getItem("sidebar-options-collapsed") === "true"; } catch { return false; }
+    try { return localStorage.getItem("sidebar-options-collapsed") !== "false"; } catch { return true; }
   });
+  /* 启动回灌：主进程 app-settings.json 保存过折叠态就以它为准（强杀进程也不丢）。 */
+  useEffect(() => {
+    try {
+      void window.codex?.readAppSettings?.().then((settings) => {
+        if (typeof settings?.sidebarOptionsCollapsed === "boolean") {
+          setOptionsCollapsed(settings.sidebarOptionsCollapsed);
+          try { localStorage.setItem("sidebar-options-collapsed", String(settings.sidebarOptionsCollapsed)); } catch { /* 隐私模式 */ }
+        }
+      }).catch(() => undefined);
+    } catch { /* 桥不可用时沿用 localStorage */ }
+  }, []);
   const toggleOptions = () => {
     const next = !optionsCollapsed;
     setOptionsCollapsed(next);
     try { localStorage.setItem("sidebar-options-collapsed", String(next)); } catch { /* 隐私模式写不进属正常，别拦切换 */ }
+    try { void window.codex?.saveAppSettings?.({ sidebarOptionsCollapsed: next })?.catch(() => undefined); } catch { /* 桥不可用 */ }
   };
   /* 功能入口（10-24）：可配置排序 / 更多分组 / 两种展示位置；动作经总线回到侧栏壳。 */
   const functionMenu = useFunctionMenuConfig();

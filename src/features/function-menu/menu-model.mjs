@@ -12,7 +12,7 @@ export const FUNCTION_MENU_IDS = ["schedule", "frontend", "extensions", "team", 
 export const FUNCTION_MENU_DEFAULT_ORDER = [...FUNCTION_MENU_IDS];
 
 export const FUNCTION_MENU_DEFAULT = Object.freeze({
-  location: "top",
+  location: "bottom",
   order: FUNCTION_MENU_DEFAULT_ORDER,
   overflow: [],
 });
@@ -26,7 +26,8 @@ export function isFunctionMenuId(id) {
  *  - 未知 id 丢掉；重复 id 去重；
  *  - 旧配置里没有的新入口自动追加（升级不丢新功能）；
  *  - overflow 只能是 order 的子集；
- *  - location 只认 top（新建/搜索下面）/ bottom（侧栏底部）；旧值 sidebar→bottom、composer→top。
+ *  - location 认 top（新建/搜索下面）/ bottom（侧栏底部）；旧值 sidebar→bottom、composer→top；
+ *    缺省 = 侧栏底部（10-24 用户确认：安装后的默认布局是底部折叠）。
  */
 export function normalizeFunctionMenu(input) {
   const source = input && typeof input === "object" ? input : {};
@@ -42,7 +43,7 @@ export function normalizeFunctionMenu(input) {
     if (order.includes(id) && !overflow.includes(id)) overflow.push(id);
   }
   return {
-    location: source.location === "bottom" || source.location === "sidebar" ? "bottom" : "top",
+    location: source.location === "top" || source.location === "composer" ? "top" : "bottom",
     order,
     overflow,
   };
@@ -104,7 +105,7 @@ export function nudgeFunctionMenuItem(config, id, delta) {
 
 export function setFunctionMenuLocation(config, location) {
   const c = normalizeFunctionMenu(config);
-  return { ...c, location: location === "bottom" ? "bottom" : "top" };
+  return { ...c, location: location === "top" ? "top" : "bottom" };
 }
 
 /** 恢复默认只恢复排序与分组，**保留用户选的位置**（在对话框上方编辑时不该被弹回侧栏）。 */
