@@ -1192,6 +1192,25 @@ const appSrc4 = readAppUi();
     (atReconcile >= 0 && atServerStart >= 0 && atReconcile < atServerStart ? ok : fail)(
       "【136】启动链在 server.start() 之前 await reconcileRunning（放在之后 = 首个委派仍可能被占满的闸拒掉）"
     );
+    /* 10-24 用户报「启动不了：model-catalog.json EOF」：catalog 非原子写被强杀留 0 字节文件，
+       引擎按 config.toml 引用启动即拒载。自愈必须赶在 server.start 之前，写入必须走 rename。 */
+    const atCatalogHeal = bootSrc.indexOf("await healModelCatalogBeforeStart(custom)");
+    (atCatalogHeal >= 0 && atServerStart >= 0 && atCatalogHeal < atServerStart
+      && /try \{[\s\S]{0,120}await healModelCatalogBeforeStart/.test(bootSrc) ? ok : fail)(
+      "model-catalog 自愈在 server.start() 之前 + try/catch 兜底（启动后才修 = 引擎已经拒载，修了也白修）"
+    );
+    const catalogWriterSrc = readFileSync(join(ROOT, "electron", "main", "01-model-catalog.ts"), "utf8");
+    (/rename\(tmp, modelCatalogFile\)/.test(catalogWriterSrc) ? ok : fail)(
+      "model-catalog.json 写入必须走临时文件 + rename（直接覆盖 = 强杀留 0 字节文件）"
+    );
+    const appSettingsCatalogSrc = readFileSync(join(ROOT, "electron", "app-settings.ts"), "utf8");
+    const catalogNoticeSrc = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part01", "04-optimistic-turn-approval-e2e.tsx"), "utf8");
+    (/modelCatalogRepairNotice/.test(appSettingsCatalogSrc) ? ok : fail)(
+      "model-catalog 自愈回执字段在 app-settings（修复要能被用户看见，不能只 console.warn）"
+    );
+    (/modelCatalogRepairNotice/.test(catalogNoticeSrc) && /modelCatalogRepairNotice: ""/.test(catalogNoticeSrc) ? ok : fail)(
+      "渲染层读一次自愈回执弹可见提醒后清掉（不残留、不重复弹）"
+    );
     const delegationSrc = readFileSync(join(ROOT, "electron", "features", "delegation.ts"), "utf8");
     (/buildDelegateMemory\(\{[\s\S]{0,400}?\}\)\.catch\(/.test(delegationSrc) ? ok : fail)(
       "【136】buildDelegateMemory 失败必须降级（它位于 register() 之后、try 之前，抛出即泄漏一个 running 槽位）"

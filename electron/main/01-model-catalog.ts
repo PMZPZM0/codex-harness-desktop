@@ -154,6 +154,16 @@ export async function writeModelCatalogToml(entry: CustomModelFile): Promise<str
   const seen = new Set<string>();
   const models = providers.flatMap((candidate) => buildModelCatalog(candidate).models).filter((m) => !seen.has(m.slug) && seen.add(m.slug));
   if (!models.length) return "";
-  await fs.writeFile(modelCatalogFile, JSON.stringify({ models }, null, 2), "utf8");
+  // ⛔ 原子写（10-24 用户报「启动不了：model-catalog.json EOF」）：旧写法直接覆盖目标文件，
+  //    进程被强杀时可能留下 0 字节文件 → 引擎启动整份拒载。先写临时文件再 rename。
+  const tmp = `${modelCatalogFile}.tmp-${process.pid}-${Date.now()}`;
+  await fs.mkdir(path.dirname(modelCatalogFile), { recursive: true });
+  await fs.writeFile(tmp, JSON.stringify({ models }, null, 2), "utf8");
+  try {
+    await fs.rename(tmp, modelCatalogFile);
+  } catch {
+    await fs.rm(modelCatalogFile, { force: true }).catch(() => undefined);
+    await fs.rename(tmp, modelCatalogFile);
+  }
   return `model_catalog_json = "${escapeTomlString(modelCatalogFile)}"`;
 }
