@@ -517,3 +517,39 @@
 
 /* 关闭的 details 必须真的藏住内容：子元素自带 display:flex 会盖过 UA 的隐藏规则 */
 .settings-exp-advanced:not([open]) > :not(summary) { display: none !important; }
+
+/* 技能中心 · 本地导入批量管理：放进本地导入分组，做成一张独立白卡 */
+.settings-exp-shell .skill-installed-overview {
+  margin: 10px 2px 4px;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+.settings-exp-shell .skill-local-bulk {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 10px 0 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.settings-exp-shell .skill-local-bulk-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.settings-exp-shell .skill-local-bulk-count {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+.settings-exp-shell .skill-local-bulk .batch-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.settings-exp-shell .skill-local-bulk .batch-hint { color: var(--muted); font-size: 11.5px; line-height: 1.5; }

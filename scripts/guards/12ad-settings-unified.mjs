@@ -100,6 +100,11 @@ ok(/settings-copy channel-heading[\s\S]{0,1600}刷新/.test(soul), "人格市场
 const memory = pageSrc("memory");
 ok(/<h2>记忆<PageInfo[\s\S]{0,200}<p>/.test(memory), "记忆页头有新手可读的一句说明");
 ok(/\.settings-exp-shell \.memory-center \.memory-backends\s*\{[^}]*border-top/s.test(css), "「记忆存到哪里」与内容卡之间有分隔");
+const skillsPage = pageSrc("skills");
+ok(/manageable = \[\.\.\.localInstalled\]/.test(skillsPage), "技能批量管理只覆盖本地导入（市场/内置不参与）");
+ok(/skill-local-bulk/.test(skillsPage) && /本地导入/.test(skillsPage), "批量管理卡在本地导入分组内（不再挂在页面顶部）");
+ok(!/resource-toolbar secondary[sS]{0,500}BatchActions/.test(skillsPage), "顶部不再挂全局批量条");
+ok(/const selectable = sourceTag === "local"/.test(skillsPage), "市场/内置卡片不参与本地批量勾选");
 const modelPage = pageSrc("model");
 ok(/provider-card-actions[\s\S]{0,700}provider-card-update/.test(modelPage), "「更新模型」在供应商卡底部操作行（与测试/编辑并排，不再占模型芯片行）");
 const actionsAt = modelPage.indexOf("provider-card-actions");

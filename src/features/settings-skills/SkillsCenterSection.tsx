@@ -58,8 +58,8 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                       const marketInstalled = dedupedLocal.filter((entry) => (entry.source === "cocoloop" || entry.source === "skillhub") && match(entry));
                       const localInstalled = dedupedLocal.filter((entry) => entry.source !== "cocoloop" && entry.source !== "skillhub" && match(entry));
                       const shownBuiltin = builtinSkills.filter((skill: any) => match({ name: skill.name, description: skill.description ?? "" }));
-                      // 批量只处理本机可移除的技能，内置技能由引擎提供、不支持停用
-                      const manageable = [...marketInstalled, ...localInstalled];
+                      // 批量管理只服务「本地导入」：市场技能走市场更新/单卡开关，内置技能不可停用。
+                      const manageable = [...localInstalled];
                       const selectableFolders = manageable.map((skill) => skill.folder ?? skill.name);
                       // 筛选变化后取交集，避免已不可见的勾选项仍计入
                       const checkedFolders = skillChecked.filter((folder: any) => selectableFolders.includes(folder));
@@ -69,11 +69,12 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                       const toggleSkillChecked = (folder: string) => setSkillChecked((current: any) => current.includes(folder) ? current.filter((entry: any) => entry !== folder) : [...current, folder]);
                       const renderCard = (skill: { name: string; description: string; descriptionZh?: string; path?: string; source?: "cocoloop" | "skillhub" | "local"; folder?: string; enabled?: boolean; allowedTools?: string[]; category?: string; icon?: string }, sourceTag: "builtin" | "market" | "local") => {
                         const removable = sourceTag !== "builtin";
+                        const selectable = sourceTag === "local";
                         const folder = removable ? skill.folder ?? skill.name : null;
                         const sourceLabel = sourceTag === "builtin" ? "内置" : sourceTag === "market" ? "市场安装" : "本地导入";
                         const enabled = skill.enabled !== false;
                         const skillKey = folder ?? skill.name;
-                        const checked = removable && checkedFolders.includes(skillKey);
+                        const checked = selectable && checkedFolders.includes(skillKey);
                         const allowedTools = (skill.allowedTools ?? []).filter(Boolean);
                         // 卡片描述：中文注释优先（注释表 / 安装时存下的市场中文简介），没有中文才退回原文
                         const zhNote = skillZhNote(skill);
@@ -81,7 +82,7 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                         return <article className={`skill-card-compact source-${sourceTag} ${removable && !enabled ? "is-disabled" : ""} ${checked ? "is-checked" : ""}`} key={`${sourceTag}-${skill.name}`}>
                           <div className="skill-card-compact-head">
                             <div className="skill-card-head-left">
-                              <CheckCard checked={checked} disabled={!removable} label={`选择 ${skill.name}`} title={!removable ? "内置技能不可勾选" : checked ? `取消选择 ${skill.name}` : `勾选 ${skill.name}`} onChange={() => toggleSkillChecked(skillKey)} />
+                              <CheckCard checked={checked} disabled={!selectable} label={`选择 ${skill.name}`} title={!selectable ? (sourceTag === "builtin" ? "内置技能不可勾选" : "市场安装的技能请在市场里更新/管理") : checked ? `取消选择 ${skill.name}` : `勾选 ${skill.name}`} onChange={() => { if (selectable) toggleSkillChecked(skillKey); }} />
                               <SkillAvatar skill={skill} size={14} />
                               <span className={`skill-source-tag tag-${sourceTag}`}>{sourceLabel}</span>
                             </div>
@@ -112,20 +113,26 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                             手动逐项更新入口 = 卡片上的「重新安装」（同一条市场安装链）。 */}
                         <p className="settings-card-hint">「技能内容更新」的自动更新开关已统一移到<b>设置 → 控制台</b>的「自动更新」里（和桌面自动化、浏览器自动化、Mac 电脑操作、Codex 引擎放在一起）。</p>
                         <SkillPoolSection projects={props.projects} onNotice={setNotice} />
-                        <div className="resource-toolbar secondary">
-                          <SelectAllToggle total={selectableFolders.length} selected={checkedFolders.length} unit="个技能" onSelectAll={() => setSkillChecked(selectableFolders)} onClear={() => setSkillChecked([])} />
-                          <div className="skill-installed-summary">共 {installedTotalCount} 项 · 内置 {builtinSkills.length} · 市场 {localSkills.filter((entry: any) => entry.source === "cocoloop" || entry.source === "skillhub").length} · 本地 {localSkills.filter((entry: any) => entry.source !== "cocoloop" && entry.source !== "skillhub").length} · 停用 {localSkills.filter((entry: any) => entry.enabled === false).length}</div>
-                          <BatchActions
-                            hint={checkedFolders.length ? `选中里：${onList.length} 个启用中 · ${offList.length} 个已停用` : "勾选技能后可批量启用或停用"}
-                            actions={[
-                              { label: offList.length ? `启用所选 (${offList.length})` : "启用所选", icon: <Play size={13} />, disabled: !offList.length, busy: skillBatchBusy === "enable", onClick: () => void batchSetSkillEnabled(offList, true), title: offList.length ? `启用选中的 ${offList.length} 个已停用技能` : "没有勾选已停用的技能" },
-                              { label: onList.length ? `停用所选 (${onList.length})` : "停用所选", icon: <CircleStop size={13} />, tone: "danger", disabled: !onList.length, busy: skillBatchBusy === "disable", onClick: () => void batchSetSkillEnabled(onList, false), title: onList.length ? `停用选中的 ${onList.length} 个启用中技能` : "没有勾选启用中的技能" },
-                            ]}
-                          />
-                        </div>
+                        <div className="skill-installed-summary skill-installed-overview">共 {installedTotalCount} 项 · 内置 {builtinSkills.length} · 市场 {localSkills.filter((entry: any) => entry.source === "cocoloop" || entry.source === "skillhub").length} · 本地 {localSkills.filter((entry: any) => entry.source !== "cocoloop" && entry.source !== "skillhub").length} · 停用 {localSkills.filter((entry: any) => entry.enabled === false).length}</div>
                         {shownBuiltin.length > 0 && <section className="skill-installed-group"><header><span className="skill-group-dot tag-builtin" />Codex 内置技能<small>由 Codex app-server 自带，不支持停用</small></header><div className="skill-card-grid compact">{shownBuiltin.map((skill: any) => renderCard({ name: skill.name, description: skill.description ?? "由 Codex 引擎内置提供", path: skill.path }, "builtin"))}</div></section>}
                         {marketInstalled.length > 0 && <section className="skill-installed-group"><header><span className="skill-group-dot tag-market" />市场安装<small>从 SkillHub / CocoLoop 市场一键安装到 Codex 技能目录</small></header><div className="skill-card-grid compact">{marketInstalled.map((skill) => renderCard(skill, "market"))}</div></section>}
-                        {localInstalled.length > 0 && <section className="skill-installed-group"><header><span className="skill-group-dot tag-local" />本地导入<small>通过 SKILL.md 添加到本机，不会随 Codex 更新被覆盖</small></header><div className="skill-card-grid compact">{localInstalled.map((skill) => renderCard(skill, "local"))}</div></section>}
+                        {localInstalled.length > 0 && <section className="skill-installed-group">
+                          <header><span className="skill-group-dot tag-local" />本地导入<small>通过 SKILL.md 添加到本机，不会随 Codex 更新被覆盖</small></header>
+                          <div className="skill-local-bulk">
+                            <div className="skill-local-bulk-head">
+                              <SelectAllToggle total={selectableFolders.length} selected={checkedFolders.length} unit="个本地技能" onSelectAll={() => setSkillChecked(selectableFolders)} onClear={() => setSkillChecked([])} />
+                              <span className="skill-local-bulk-count">共 {localInstalled.length} 项 · 启用中 {localInstalled.filter((skill) => skill.enabled !== false).length} · 已停用 {localInstalled.filter((skill) => skill.enabled === false).length}</span>
+                            </div>
+                            <BatchActions
+                              hint={checkedFolders.length ? `已选 ${checkedFolders.length} / ${selectableFolders.length} 个本地技能：${onList.length} 个启用中 · ${offList.length} 个已停用` : "勾选本地导入的技能后可批量启用或停用（内置与市场安装的技能不参与）"}
+                              actions={[
+                                { label: offList.length ? `启用所选 (${offList.length})` : "启用所选", icon: <Play size={13} />, disabled: !offList.length, busy: skillBatchBusy === "enable", onClick: () => void batchSetSkillEnabled(offList, true), title: offList.length ? `启用选中的 ${offList.length} 个已停用本地技能` : "没有勾选已停用的本地技能" },
+                                { label: onList.length ? `停用所选 (${onList.length})` : "停用所选", icon: <CircleStop size={13} />, tone: "danger", disabled: !onList.length, busy: skillBatchBusy === "disable", onClick: () => void batchSetSkillEnabled(onList, false), title: onList.length ? `停用选中的 ${onList.length} 个启用中本地技能` : "没有勾选启用中的本地技能" },
+                              ]}
+                            />
+                          </div>
+                          <div className="skill-card-grid compact">{localInstalled.map((skill) => renderCard(skill, "local"))}</div>
+                        </section>}
                         {!shownBuiltin.length && !marketInstalled.length && !localInstalled.length && <p className="muted">{keyword ? "没有匹配的已安装技能，换个关键词试试。" : "还没有已安装技能。可通过“市场浏览”安装，或“从本地添加技能”导入 SKILL.md。"}</p>}
                       </div>;
                     })() : <div className="skill-card-grid page-turn" key={marketPage}>{marketSkills.slice((marketPage - 1) * marketPageSize, marketPage * marketPageSize).filter((skill: any) => (!skillHubFilterCategory || skill.category === skillHubFilterCategory) && (!skillHubSearch || `${skill.name} ${skill.description}`.toLowerCase().includes(skillHubSearch.toLowerCase()))
