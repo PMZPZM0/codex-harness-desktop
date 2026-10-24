@@ -16,6 +16,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Check, Download, FolderOpen, Image as ImageIcon, PawPrint, RefreshCw, TriangleAlert } from "lucide-react";
 import { petAssetUrl } from "../pet";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
+import { SettingsGroupHead, SettingsPageHero } from "../../components/SettingsPageHero";
 
 export type PetSettingsSectionProps = { onNotice?: (message: string) => void };
 
@@ -132,17 +133,9 @@ export function PetSettingsSection({ onNotice }: PetSettingsSectionProps) {
   const external = pets.filter((p) => p.source === "codex" || p.source === "petdex");
 
   return (
-    <section className="settings-section stack pet-settings">
-      <header className="settings-block-head">
-        <PawPrint size={16} />
-        <div>
-          <h3>桌面宠物</h3>
-          <p className="muted">
-            一只浮在桌面上的小宠物，跟着这里跑的任务变状态（思考 / 干活 / 等你确认 / 完成）。
-            兼容 <b>Codex 官方宠物格式</b>，官方宠物包和社区宠物包都能直接放进来；内置六只都用动画包格式。
-          </p>
-        </div>
-      </header>
+    <section className="settings-section stack pet-settings settings-exp-page">
+      <SettingsPageHero icon={<PawPrint size={20} />} title="桌面宠物" subtitle="一只浮在桌面上的小宠物，跟着任务变状态。内置六只，选一只就能用。" hint="可拖动到任意位置" />
+      <SettingsGroupHead title="常用" hint="显示 · 大小 · 透明度" />
 
       <section className="pet-card">
         <h4><Check size={14} />显示</h4>
@@ -178,6 +171,7 @@ export function PetSettingsSection({ onNotice }: PetSettingsSectionProps) {
         </div>
       </section>
 
+      <SettingsGroupHead title="选择宠物" hint="内置六只 · 点击切换" />
       <section className="pet-card">
         <h4><ImageIcon size={14} />选择宠物<small className="pet-count">{usable.length} 只可用</small></h4>
         {usable.length === 0 && (
@@ -209,6 +203,8 @@ export function PetSettingsSection({ onNotice }: PetSettingsSectionProps) {
         )}
       </section>
 
+      <details className="settings-exp-advanced">
+        <summary>宠物目录 / 导入 / 自己做一只<small>高级</small></summary>
       <section className="pet-card">
         <h4><FolderOpen size={14} />宠物目录<small className="pet-count">把官方宠物包整个文件夹丢进去即可</small></h4>
         <ul className="pet-roots">
@@ -247,6 +243,7 @@ export function PetSettingsSection({ onNotice }: PetSettingsSectionProps) {
           完整教程见仓库 <code>docs/PET-MAKING.md</code>。
         </p>
       </section>
+      </details>
     </section>
   );
 }

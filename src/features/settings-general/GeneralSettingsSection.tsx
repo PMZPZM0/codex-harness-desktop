@@ -10,7 +10,7 @@
  */
 import { AppSelect } from "../../components/AppSelect";
 import { useEffect, useState } from "react";
-import { Code2, Copy, FolderOpen, FolderTree, Globe2, HelpCircle, Keyboard, Monitor, MonitorUp, PanelRightOpen, RefreshCw, Search, ShieldCheck, Sparkles, Zap, Brain } from "lucide-react";
+import { Code2, Copy, FolderOpen, FolderTree, Globe2, HelpCircle, Keyboard, Monitor, MonitorUp, PanelRightOpen, RefreshCw, Search, Settings2, ShieldCheck, Sparkles, Zap, Brain } from "lucide-react";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { setReasoningDisplayMode, useReasoningDisplayMode } from "../../lib/reasoning-display-mode";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
@@ -18,6 +18,7 @@ import { Spinner } from "../../components/CardShell";
 import { BuiltinSkillSwitch } from "./BuiltinSkillSwitch";
 import { AutoUpdateCard } from "./AutoUpdateCard";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
+import { SettingsGroupHead, SettingsPageHero } from "../../components/SettingsPageHero";
 
 export type GeneralSettingsSectionProps = { globalPermApproval: any; applyGlobalPermissionMode: any; workspace: any; chooseWorkspace: any; userDataPath: any; setNotice: any; rightOpen: any; setRightOpen: any; capabilityHint: any; desktopAuto: any; groupBusy: any; toggleDesktopAuto: any; browserAuto: any; toggleBrowserAuto: any; ponytailOn: any; applyGroup: any; hardwareAccel: any; changeHardwareAccel: any; restartPending: any; SHORTCUT_GROUPS: any; setShortcutsOpen: any; engineVersion: any; engineCheck: any; engineUpdating: any; checkEngineUpdateNow: any; performEngineUpdateNow: any; engineUpdatePercent: any; engineUpdateStageText: any; engineUpdateLog: any; engineUpdateResult: any; relaunchCountdown: any; downloadSource: any };
 
@@ -158,8 +159,9 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
   const engineSourceLabel = ENGINE_SOURCE_LABEL[String(downloadSource ?? "auto")] ?? ENGINE_SOURCE_LABEL.auto;
   return (
     <>
-      <section className="settings-section stack general-page">
-                    <div className="settings-copy"><h2>控制台</h2><p>管理工作区、数据目录与应用行为。</p></div>
+      <section className="settings-section stack general-page settings-exp-page">
+                    <SettingsPageHero icon={<Settings2 size={20} />} title="控制台" subtitle="先把最常用的三项设好：权限、工作区、启动行为。其余按需往下看。" hint="新手先看" />
+                    <SettingsGroupHead title="常用" hint="权限 · 工作区 · 启动行为" />
 
                     {/* 全局审批权限：控制台一级入口。选择立即生效（当前会话马上推送引擎，
                         其余未手动改过权限的会话打开时跟随，新会话默认使用），无需重启。 */}
@@ -223,6 +225,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                       </div>
                     </div>
 
+                    <SettingsGroupHead title="对话与显示" hint="回复写法 · 思考展示 · 界面行为" />
                     {/* 回复风格（10-06 用户需求）：内置写作风格技能的**独立开关**。
                         ⛔ 真相源 = 技能池的全局停用集（electron/skill-pool.ts → skill-global-disabled.json）；
                            本卡片只是它的一个入口，另一个入口是「技能 → 我的技能 → 共享技能池」。
@@ -235,8 +238,6 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                         **唯一入口**（技能中心与自动化页只剩版本与手动更新）。
                         ⛔ 别在本页外层再传 props —— 卡片自己走 autoUpdate:status / autoUpdate:set，
                         清单、包名与每个开关的缺省值都在主进程（一处判据）。 */}
-                    <AutoUpdateCard onNotice={setNotice} />
-
                     <div className="settings-card">
                       <div className="settings-card-head"><Sparkles size={15} /><strong>回复风格</strong><span className="settings-subhead-hint">只改模型怎么写，不改变它能做什么</span></div>
                       <div className="settings-card-body settings-toggle-list">
@@ -286,6 +287,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                       </div>
                     </div>
 
+                    <SettingsGroupHead title="维护与更新" hint="快捷键 · 引擎升级 · 自动更新" />
                     <div className="settings-card">
                       <div className="settings-card-head"><Keyboard size={15} /><strong>键盘快捷键</strong></div>
                       <div className="settings-card-body">
@@ -345,6 +347,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                         <p className="settings-card-hint">取源跟随「开发工具 → 下载源」设置（当前：{engineSourceLabel}）；改了下次检查立即生效，无需重启。配了引擎代理时两个源都走代理隧道。</p>
                       </div>
                     </div>
+                    <AutoUpdateCard onNotice={setNotice} />
                   </section>
     </>
   );
