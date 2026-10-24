@@ -296,7 +296,7 @@ function FunctionMenuEditor() {
         <div className="fm-location-grid" role="group" aria-label="功能入口显示位置">
           <button type="button" className={`fm-location-card ${config.location === "top" ? "on" : ""}`} aria-pressed={config.location === "top"}
             onClick={() => setFunctionMenuLocation("top")}>
-            <ArrowUpToLine size={16} /><span><b>侧栏顶部</b><small>「新建任务 / 搜索任务」下面（老版位置）</small></span>{config.location === "top" && <Check size={14} />}
+            <ArrowUpToLine size={16} /><span><b>侧栏顶部</b><small>「新会话 / 搜索任务」下面（老版位置）</small></span>{config.location === "top" && <Check size={14} />}
           </button>
           <button type="button" className={`fm-location-card ${config.location === "bottom" ? "on" : ""}`} aria-pressed={config.location === "bottom"}
             onClick={() => setFunctionMenuLocation("bottom")}>

@@ -151,7 +151,7 @@ export function sandboxMode(policy: any): "danger-full-access" | "read-only" | "
 export /** 当前是否 macOS：优先 preload 暴露的 process.platform（打包/开发态都可靠），回退 navigator。
  *  09-17 mac 适配：全库快捷键原先只认 `event.ctrlKey`，而 mac 的「命令键」是 ⌘（metaKey）——
  *  旧判断里那句 `|| event.metaKey` 直接把 mac 的所有快捷键 return 掉：⌘O 打开工作区、
- *  ⌘N 新建任务、⌘K 命令面板、⌘, 设置……**在 mac 上全部无效**（用户报「项目地址功能用不了」）。 */
+ *  ⌘N 新会话、⌘K 命令面板、⌘, 设置……**在 mac 上全部无效**（用户报「项目地址功能用不了」）。 */
 /** 平台化的快捷键标签（只影响**显示**，不改变按键判断）：mac 上 Ctrl→⌘、Shift→⇧、Alt→⌥。
  *  转换规则在 src/lib/hotkey.mjs 里（纯函数 —— 本机是 Windows 跑不到 mac 分支，只有把它做成
  *  纯函数，预检才能对「mac 上显示成什么」给出确定性断言）。 */

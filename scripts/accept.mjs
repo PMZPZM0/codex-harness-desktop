@@ -333,7 +333,7 @@ const CHECKS = [
       await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
       await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
       await wait(1200);
-      const labels = ["技能", "插件", "组件库", "MCP", "命令", "人格市场", "记忆", "知识库", "自动化", "定时任务", "钩子", "SSH 服务器", "专家/专家团", "使用统计", "数据管理", "收藏夹"];
+      const labels = ["技能", "插件", "组件库", "MCP", "命令", "人格市场", "记忆", "知识库", "自动化", "定时任务", "钩子", "SSH 服务器", "专家/专家团", "使用统计", "数据管理", "收藏夹", "用户中心", "模型", "中转站", "云账号", "OpenAI 订阅", "开发工具", "拓展接口", "会话备份"];
       const bad = [];
       const titles = {};
       for (const label of labels) {
@@ -1557,7 +1557,7 @@ const CHECKS = [
     id: "function-menu",
     name: "🧩 功能入口：新建/搜索下面或侧栏底部 + 拖动排序 + 更多 + 首次教程（10-24）",
     run: async (h) => {
-      /* 用户 10-24：功能入口菜单要放在「新建任务 / 搜索任务」下面（老版位置），也可选侧栏底部；
+      /* 用户 10-24：功能入口菜单要放在「新会话 / 搜索任务」下面（老版位置），也可选侧栏底部；
          支持首次悬停教程、编辑菜单拖动排序、拖进「更多」。两种位置共用同一套配置。 */
       await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "界面就绪", timeoutMs: 40000 });
       await h.eval(`(function(){ document.querySelector(".office-overlay-close")?.click(); document.querySelector(".function-menu-editor .fm-editor-close")?.click(); return 1; })()`).catch(() => undefined);
@@ -1574,6 +1574,21 @@ const CHECKS = [
         await h.eval(`[...document.querySelectorAll(".fm-editor-foot button")].find((b) => b.innerText.includes("完成"))?.click()`).catch(() => undefined);
         await wait(400);
       }
+      // 10-24 用户对照截图：顶部改成整行「新会话」+ 下一行「搜索任务」（不再并排胶囊）
+      const quickLayout = await h.eval(`(function(){
+        const box=document.querySelector(".sidebar-quick");
+        const btns=[...box.querySelectorAll(".sidebar-quick-btn")];
+        const a=btns[0]?.getBoundingClientRect(), b=btns[1]?.getBoundingClientRect();
+        return { n:btns.length, labels:btns.map((x)=>x.innerText.trim()),
+          stacked:!!(a&&b&&b.top>=a.bottom-1), sameWidth:!!(a&&b&&Math.abs(a.width-b.width)<1),
+          sameLeft:!!(a&&b&&Math.abs(a.left-b.left)<1), width:a?.width||0,
+          searchAlign:btns[1]?getComputedStyle(btns[1]).justifyContent:"" };
+      })()`).catch(() => null);
+      h.check("⓪ 顶部为整行「新会话」+ 下一行左对齐「搜索任务」（上下堆叠、同宽同左，不再并排胶囊）",
+        Boolean(quickLayout && quickLayout.n === 2 && quickLayout.labels[0] === "新会话" && quickLayout.labels[1] === "搜索任务"
+          && quickLayout.stacked && quickLayout.sameWidth && quickLayout.sameLeft && quickLayout.width > 120
+          && quickLayout.searchAlign === "flex-start"),
+        JSON.stringify(quickLayout));
       const base = await h.eval(`(function(){
         const group = document.querySelector(".sidebar-options-top");
         const quick = document.querySelector(".sidebar-quick")?.getBoundingClientRect();
@@ -1583,7 +1598,7 @@ const CHECKS = [
           labels: [...document.querySelectorAll(".function-menu-sidebar .sidebar-cap-row")].map((b) => b.innerText.trim()),
           more: !!document.querySelector(".function-menu-sidebar .function-menu-more") };
       })()`).catch(() => null);
-      h.check("① 功能入口在「新建任务 / 搜索任务」下面（7 项 + 更多），整个入口组可见",
+      h.check("① 功能入口在「新会话 / 搜索任务」下面（7 项 + 更多），整个入口组可见",
         Boolean(base && base.sidebar && base.top && base.underQuick && base.labels.length === 8 && base.more
           && ["自动化", "前端开发", "拓展", "团队", "个性化&记忆", "登录管理", "新手教程"].every((label) => base.labels.includes(label))),
         JSON.stringify(base));
@@ -2393,7 +2408,7 @@ const CHECKS = [
           openState = await h.eval(`(function(){ const row = document.querySelector(${JSON.stringify(sel)}); if (!row) return "no-row"; (row.querySelector("button") || row).click(); return "clicked"; })()`).catch(() => "eval-err");
         }
         if (openState === "none" || openState === "no-row" || openState === "eval-err") {
-          await h.eval(`(function(){ const b = [...document.querySelectorAll(".sidebar-tab")].find(function(x){ return (x.textContent || "").includes("新建任务"); }); if (!b) return 0; b.click(); return 1; })()`);
+          await h.eval(`(function(){ const b = [...document.querySelectorAll(".sidebar-tab")].find(function(x){ return (x.textContent || "").includes("新会话"); }); if (!b) return 0; b.click(); return 1; })()`);
           openState = "created";
         }
         if (openState !== "already") {
@@ -3511,8 +3526,8 @@ const CHECKS = [
       const target = join(ROOT, "html-preview-acceptance.html");
       const cleanup = () => { try { rmSync(target, { force: true }); } catch { /* ignore */ } };
       cleanup();
-      const clicked = await h.eval(`(function(){ const b=[...document.querySelectorAll('.sidebar-tab')].find((x)=>(x.textContent||'').includes('新建任务')); if(!b) return 0; b.click(); return 1; })()`).catch(() => 0);
-      h.check("① 点到「新建任务」（前置）", clicked === 1, `clicked=${clicked}`);
+      const clicked = await h.eval(`(function(){ const b=[...document.querySelectorAll('.sidebar-tab')].find((x)=>(x.textContent||'').includes('新会话')); if(!b) return 0; b.click(); return 1; })()`).catch(() => 0);
+      h.check("① 点到「新会话」（前置）", clicked === 1, `clicked=${clicked}`);
       if (clicked !== 1) return;
       await wait(1200);
       /* 先收起右栏（如果开着）：验证是「写 HTML 自动打开的」，不是本来就开着。 */
@@ -3665,9 +3680,9 @@ const CHECKS = [
          广播 → 渲染层画线」整条宿主侦测链都是运行期行为，tsc 与静态守卫全看不见。
          这里用「新建会话 + 两条短回合 + 手动 thread/compact/start」走**真链路**（小上下文 =
          秒级、低成本；自动压缩（阈值触发）由探针与守卫覆盖，手动压缩走的是同一条侦测链）。 */
-      /* ① 新建任务（避开历史会话的状态耦合；也保证 thread 有新 id 可追） */
-      const clicked = await h.eval(`(function(){ const b=[...document.querySelectorAll('.sidebar-tab')].find((x)=>(x.textContent||'').includes('新建任务')); if(!b) return 0; b.click(); return 1; })()`);
-      h.check("① 点到「新建任务」（前置；点不到则整项作废）", clicked === 1, `clicked=${clicked}`);
+      /* ① 新会话（避开历史会话的状态耦合；也保证 thread 有新 id 可追） */
+      const clicked = await h.eval(`(function(){ const b=[...document.querySelectorAll('.sidebar-tab')].find((x)=>(x.textContent||'').includes('新会话')); if(!b) return 0; b.click(); return 1; })()`);
+      h.check("① 点到「新会话」（前置；点不到则整项作废）", clicked === 1, `clicked=${clicked}`);
       if (clicked !== 1) return;
       await wait(1500);
       const sendMsg = async (text) => {
@@ -3823,7 +3838,7 @@ const CHECKS = [
          （会话里可能有旧回合的条，querySelector 全局首个会打错回合 —— 10-06 悬停假红同款坑）。 */
       await h.waitFor(`!!document.querySelector('.composer-editor')`, { label: "输入框就绪", timeoutMs: 30000 }).catch(() => undefined);
       /* ① 新会话 + 发一条含 4 个 URL 的真回合（模型逐条 curl ⇒ 4 host ⇒ 3 圆标 + 「···」） */
-      await h.eval(`(function(){ var b=[...document.querySelectorAll('.sidebar-tab')].find(function(x){ return (x.textContent||'').includes('新建任务'); }); if(b) b.click(); return 1; })()`);
+      await h.eval(`(function(){ var b=[...document.querySelectorAll('.sidebar-tab')].find(function(x){ return (x.textContent||'').includes('新会话'); }); if(b) b.click(); return 1; })()`);
       await wait(1200);
       const prompt = "请用 shell 依次真的运行这4条 curl 并各用一行汇报返回里的标题：curl -s https://example.com 、curl -s https://www.wikipedia.org 、curl -s https://github.com 、curl -s https://registry.npmmirror.com 。不要做别的事情。";
       await h.eval(`(function(){
