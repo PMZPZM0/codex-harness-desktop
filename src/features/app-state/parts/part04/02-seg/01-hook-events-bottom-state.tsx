@@ -11,6 +11,14 @@ import { contentOffsetTop, hasHistoryPin, jumpToBottom, scrollToOffsetInstant, s
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 
+/* ── TEMP 诊断开关（10-24「最后汇总没撑满一屏时跟钉顶抢、上下跳动」）─────────────
+   用户的窗口里滚不了那么准，先用**现场自证**替代猜：update() 每次跑都留一个几何样本，
+   一旦 1.2s 内出现 ≥4 次方向翻转（累计幅度 ≥24px）就判定为抖动，把最近 260 帧 + `__adbg`
+   落盘到 `<workspace>/.codex-harness/diagnostics/pin-jitter.json`（15s 内只写一次）。
+   ⛔ 定位完**整段删掉**（含这个常量），别留成常驻写盘。 */
+const PIN_JITTER_TRACE = true;
+
+
 export function usePart04b1(bag: Bag) {
   // Hook 注入反馈：静默记录到回合徽标（不产生系统卡），最新回复 footer 末尾展示小钩子图标
   function addHookEvent(running: boolean, hookName: string) {
@@ -73,6 +81,10 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
     const scroller = bag.scrollRef.current;
     if (!scroller) return;
     let lastTop = scroller.scrollTop; // 供 update 识别「指针拖拽期间的位置变化」
+    /* TEMP 抖动诊断状态（见文件顶部 PIN_JITTER_TRACE） */
+    const jitterBuf: { t: number; top: number; max: number; pad: number; cb: number }[] = [];
+    let jitterDumpedAt = 0;
+    let jitterScanAt = 0;
     /** 最近一次真实滚轮的时刻：只用来判「用户是不是真的往上滚了」，不看 deltaY 方向。 */
     let lastWheelAt = 0;
     /** 上一次看到的「未加载历史占位区」高度：占位区变高/变矮都会把下方内容整体推走。 */
@@ -177,6 +189,38 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
       }
       shrinkAnchorPad();
       const cb = contentBottom();
+      if (PIN_JITTER_TRACE) {
+        /* TEMP 抖动自证（见文件顶部 PIN_JITTER_TRACE 注释） */
+        const nowMs = Date.now();
+        jitterBuf.push({ t: nowMs, top: Math.round(scroller.scrollTop), max: Math.round(scroller.scrollHeight - scroller.clientHeight), pad: Math.round(bag.anchorSpacerRef.current?.offsetHeight ?? 0), cb: Math.round(cb) });
+        if (jitterBuf.length > 400) jitterBuf.shift();
+        if (nowMs - jitterScanAt > 200 && nowMs - jitterDumpedAt > 15000) {
+          jitterScanAt = nowMs;
+          const win = jitterBuf.filter((s) => nowMs - s.t <= 1200);
+          let dir = 0, flips = 0, amp = 0;
+          for (let i = 1; i < win.length; i++) {
+            const d = win[i].top - win[i - 1].top;
+            if (!d) continue;
+            const sign = Math.sign(d);
+            if (dir && sign !== dir) { flips++; amp += Math.abs(d); }
+            dir = sign;
+          }
+          if (flips >= 4 && amp >= 24) {
+            jitterDumpedAt = nowMs;
+            const payload = { at: new Date().toISOString(), flips, amp, samples: jitterBuf.slice(-260), adbg: ((window as any).__adbg || []).slice(-260) };
+            /* ⛔ 路径必须是**应用数据目录的绝对路径**：fs:write 只认主进程可信根，
+               传相对路径会按进程 cwd 解析、直接被拒（实测：「仅允许保存会话工作区与应用数据目录内的文件」）。 */
+            void (async () => {
+              try {
+                const userData = String(await window.codex.getUserData() || "").replace(/\\/g, "/");
+                if (!userData) return;
+                await window.codex.writeFile(userData + "/pin-jitter.json", JSON.stringify(payload, null, 1), "");
+                bag.dbg("pin-jitter-dump", { flips, amp });
+              } catch { /* 诊断失败不影响滚动 */ }
+            })();
+          }
+        }
+      }
       const prevBottom = lastBottomRef.current;
       try {
         const dist = cb - scroller.scrollTop - scroller.clientHeight;
