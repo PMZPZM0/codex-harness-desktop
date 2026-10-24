@@ -12,7 +12,7 @@ import { PageInfo } from "../../components/SettingsHead";
 import { AVATAR_GRADIENTS, avatarToneOf } from "../../lib/entity-avatar";
 import { Spinner } from "../../components/CardShell";
 import { FieldHelp } from "../../features/auth";
-import { UpstreamProtocol } from "../../hooks/useModelProviders";
+import { classifyProviderProbeFailure, UpstreamProtocol } from "../../hooks/useModelProviders";
 import { ModelIdInput } from "../../components/ModelIdInput";
 import { matchModelSpec } from "../../lib/model-specs";
 import { FreeGatewayRecommendCard } from "../free-gateway";
@@ -27,10 +27,93 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
   /* 10-24 二轮（用户：「旧的供应商卡片改造成大卡片 + 二级弹窗预览」）：
      页面只保留大卡片；详细配置（原右侧表单）迁进二级弹窗。⛔ 表单里的功能一个不删。 */
   const [editorOpen, setEditorOpen] = useState(false);
+  /* 10-24 二轮（用户：「有考虑到如果密钥失效吗」）：卡片直接测试连接并标出密钥失效；
+     云端走 cloudModelsTest（401/403 自动重签），其它供应商提示更新 Key。 */
+  const [cardHealth, setCardHealth] = useState<Record<string, { state: "testing" | "ok" | "bad"; detail?: string; auth?: boolean }>>({});
+  const testProviderCard = async (p: any) => {
+    if (cardHealth[p.provider]?.state === "testing") return;
+    setCardHealth((cur) => ({ ...cur, [p.provider]: { state: "testing" } }));
+    try {
+      if (p.provider === "cloud") {
+        const api = window.codex as any;
+        if (!api.cloudModelsTest) throw new Error("当前构建不支持云端连通测试");
+        const r = await api.cloudModelsTest({ forceHeal: false });
+        if (!r?.ok) throw new Error(r?.error || "云端模型不可用");
+        if (r.healed) await api.cloudModelsActivate?.();
+        if (r.healed) void refreshActive?.();
+        const detail = `云端连接正常${r.model ? ` · ${r.model}` : ""}${r.latencyMs ? ` · ${r.latencyMs}ms` : ""}${r.healed ? " · 已自动重签并重启引擎" : ""}`;
+        setCardHealth((cur) => ({ ...cur, [p.provider]: { state: "ok", detail } }));
+        showToast?.(r.healed ? "云端密钥已自动修复" : "云端模型连接正常", detail);
+        return;
+      }
+      const model = p.model || (p.models ?? []).find((m: any) => m.enabled !== false)?.id || (p.models ?? [])[0]?.id;
+      if (!model) throw new Error("该供应商还没有模型，先点「更新模型」添加");
+      const r = await window.codex.probeCustomModel({ provider: p.provider, baseUrl: p.baseUrl, model, wireApi: "responses" });
+      const detail = `${model} · HTTP ${r.status} · ${r.latencyMs}ms`;
+      setCardHealth((cur) => ({ ...cur, [p.provider]: { state: "ok", detail } }));
+      showToast?.("连接正常", `${p.name} · ${detail}`);
+    } catch (error: any) {
+      const failure = classifyProviderProbeFailure(String(error?.message ?? error));
+      const auth = /认证失败|401|403|api\s*key|unauthorized|authentication/i.test(failure);
+      setCardHealth((cur) => ({ ...cur, [p.provider]: { state: "bad", detail: failure, auth } }));
+      setNotice?.(`${p.name} 连接失败：${failure}`);
+    }
+  };
+  const repairProviderCard = async (p: any) => {
+    if (p.provider !== "cloud") {
+      openProviderEditor(p, false);
+      showToast?.("更新密钥", "在配置弹窗里填入新的 API Key，保存后应用会重启生效");
+      return;
+    }
+    setCardHealth((cur) => ({ ...cur, [p.provider]: { state: "testing" } }));
+    try {
+      const api = window.codex as any;
+      const r = await api.cloudModelsTest?.({ forceHeal: true });
+      if (!r?.ok) throw new Error(r?.error || "云端密钥修复失败");
+      await api.cloudModelsActivate?.();
+      setCardHealth((cur) => ({ ...cur, [p.provider]: { state: "ok", detail: "云端密钥已修复并生效" } }));
+      void refreshActive?.();
+      showToast?.("云端密钥已修复", "已重签并重启引擎，供应商列表已自动刷新");
+    } catch (error: any) {
+      const failure = classifyProviderProbeFailure(String(error?.message ?? error));
+      setCardHealth((cur) => ({ ...cur, [p.provider]: { state: "bad", detail: failure, auth: true } }));
+      setNotice?.(`云端密钥修复失败：${failure}`);
+    }
+  };
   const realPptoken = providersList.some((p: any) => p.provider === "pptoken");
   const displayProviders = realPptoken
     ? [...providersList].sort((a: any, b: any) => (a.provider === "pptoken" ? 0 : 1) - (b.provider === "pptoken" ? 0 : 1))
     : [{ provider: "pptoken", name: "PPtoken", model: "", baseUrl: PPTokenEndpoints[0].url, wireApi: "responses" as const, hasKey: false, models: [], enabled: true }, ...providersList];
+  const draftForProvider = (p: any) => ({
+    provider: p.provider,
+    name: p.name,
+    model: p.model,
+    baseUrl: p.baseUrl,
+    contextWindow: String(p.contextWindow ?? 128000),
+    wireApi: p.wireApi ?? "responses",
+    apiKey: "",
+    models: p.models ?? (p.model ? [{ id: p.model }] : []),
+    enabled: p.enabled ?? true,
+  });
+  const selectProviderDraft = (p: any, isPseudo: boolean) => {
+    if (isPseudo) {
+      setCustomDraft({ provider: "pptoken", name: "PPtoken", model: "", baseUrl: PPTokenEndpoints[0].url, contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: !pptokenCardOff });
+      setEditingProvider(null);
+      return;
+    }
+    setEditingProvider(p.provider);
+    setCustomDraft(draftForProvider(p));
+  };
+  const openProviderEditor = (p: any, isPseudo: boolean) => {
+    selectProviderDraft(p, isPseudo);
+    setEditorOpen(true);
+  };
+  const openNewProvider = () => {
+    providerAutoOpenRef.current = true;
+    setCustomDraft({ provider: "custom" + (Date.now() % 1000), name: "", model: "", baseUrl: "", contextWindow: "128000", wireApi: "responses", apiKey: "", models: [], enabled: true });
+    setEditingProvider(null);
+    setEditorOpen(true);
+  };
   useEffect(() => {
     if (!editorOpen) return;
     const onKey = (event: KeyboardEvent) => {
@@ -66,20 +149,31 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
         <button className="primary-setting provider-setup-open" onClick={openAutoSetup}><Wand2 size={15} />打开自动配置</button>
       </div>
       <section className="model-settings-page">
-                    <div className="model-global-bar model-global-bar-standalone">
-                      <div className="model-global-item">
-                        <span className="model-global-label"><Zap size={13} />自动压缩比例</span>
-                        {/* ⛔ 落盘失败必须推翻那句"已设置"（10-06 用户：「很多开发都没有通知提醒」）：
-                            原来 `void …saveAppSettings(...)` 即发即忘 —— 盘上没写成功也照报成功。 */}
-                        <AppSelect value={String(autoCompactRatio)} onChange={(val) => { const v = Number(val); setAutoCompactRatio(v); void window.codex.saveAppSettings({ autoCompactRatio: v }).then(() => setNotice('自动压缩比例已设为 ' + Math.round(v * 100) + '% ，达到该用量时自动压缩上下文')).catch((error: any) => setNotice('自动压缩比例保存失败：' + (error?.message ?? error))); }} ariaLabel="自动压缩比例" options={[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95].map((r) => ({ value: String(r), label: `${Math.round(r * 100)}%` }))} />
-                        <small>上下文用量达到此比例时引擎自动压缩较早对话</small>
-                      </div>
-                    </div>
                     <div className="provider-page-toolbar">
                       <div className="provider-list-head">
                         <h2>模型供应商 <span className="provider-count">{displayProviders.length}</span>
                           <PageInfo text={<>两种方式二选一：登录 ChatGPT 订阅账号，或添加第三方供应商并填入密钥。配好后再选模型——两者齐了才能发消息。</>} helpKey="model" label="模型配置" />
                         </h2>
+                      </div>
+                      <div className="provider-page-actions">
+                        <span className="model-compact-control" title="上下文用量达到所选比例时，引擎自动压缩较早对话">
+                          <Zap size={12} />
+                          <span>自动压缩</span>
+                          <AppSelect
+                            className="model-compact-select"
+                            value={String(autoCompactRatio)}
+                            ariaLabel="自动压缩比例"
+                            options={[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95].map((r) => ({ value: String(r), label: `${Math.round(r * 100)}%` }))}
+                            onChange={(val) => { const v = Number(val); setAutoCompactRatio(v); void window.codex.saveAppSettings({ autoCompactRatio: v }).then(() => setNotice('自动压缩比例已设为 ' + Math.round(v * 100) + '%')).catch((error: any) => setNotice('自动压缩比例保存失败：' + (error?.message ?? error))); }}
+                          />
+                          <FieldHelp text={"上下文用量达到所选比例时，引擎自动压缩较早对话。\n\n调整后会保存到本机设置，对新回合生效；压缩线会标在历史消息里。"} />
+                        </span>
+                        {customModel && (
+                          <button className="secondary-setting" title={`测试当前生效供应商：${customModel.name} · ${customModel.model}`} disabled={!!probingProvider} onClick={() => void probeActiveProvider()}>
+                            {probingProvider === "test" ? <Spinner /> : <RefreshCw size={14} />}测试当前供应商
+                          </button>
+                        )}
+                        <button className="primary-setting" onClick={openNewProvider}><Plus size={14} />添加供应商</button>
                       </div>
                     </div>
                     <div className="provider-card-grid">
@@ -87,11 +181,14 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                         const isPseudoPptoken = p.provider === "pptoken" && !realPptoken;
                         const pseudoOff = isPseudoPptoken && pptokenCardOff;
                         const models = p.models ?? [];
+                        const health = cardHealth[p.provider];
                         return (
                           <div
                             key={p.provider}
                             className={`provider-item provider-card ${p.provider === "pptoken" ? "sponsor" : ""} ${(p.enabled === false || pseudoOff) ? "disabled" : ""} ${p.provider === editingProvider ? "selected" : ""}`}
+                            onClick={() => openProviderEditor(p, isPseudoPptoken)}
                             data-provider={p.provider}
+                            title="点击预览 / 编辑供应商，更新模型列表"
                           >
                             <div className="provider-card-top">
                               <span className="provider-item-icon" style={{ background: p.provider === "pptoken" ? "linear-gradient(135deg, #e64980, #9775fa)" : AVATAR_GRADIENTS[avatarToneOf(p.name)], color: "#fff" }}>
@@ -111,9 +208,11 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                                   {isPseudoPptoken ? (pseudoOff ? "已停用" : "未配置密钥") : p.hasKey === false && p.provider === "pptoken" ? "未配置密钥" : `${uniqueModelCount(models)} 个模型`}
                                 </small>
                               </div>
+                              <button type="button" className="provider-card-icon-btn" title="编辑供应商 / 更新模型列表" onClick={(event) => { event.stopPropagation(); openProviderEditor(p, isPseudoPptoken); }}><PenLine size={13} /></button>
                               <label
                                 className={`provider-switch ${(p.enabled === false || pseudoOff) ? "off" : ""}`}
                                 title={isPseudoPptoken ? (pseudoOff ? "推荐卡已停用 · 点击恢复展示" : "停用 PPtoken 推荐卡展示") : (p.enabled !== false ? "已启用 · 点击禁用" : "已禁用 · 点击启用（会自动停用当前供应商）")}
+                                onClick={(event) => { event.stopPropagation(); selectProviderDraft(p, isPseudoPptoken); }}
                               >
                                 <input type="checkbox" checked={isPseudoPptoken ? !pseudoOff : p.enabled !== false} onChange={(event) => { if (isPseudoPptoken) setPptokenCardOff(!event.target.checked); else void setProviderEnabled(p.provider, event.target.checked); }} />
                                 <span className="provider-switch-ui" />
@@ -122,11 +221,24 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                             <div className="provider-card-models">
                               {models.slice(0, 3).map((m: any) => <span className="provider-model-chip" key={m.id}>{m.id}</span>)}
                               {models.length > 3 && <span className="provider-model-chip more">+{models.length - 3}</span>}
-                              {!models.length && <span className="provider-card-empty">{isPseudoPptoken ? "填入 API Key 后即可使用" : "还没有模型 · 用上方自动配置添加"}</span>}
+                              {!models.length && <span className="provider-card-empty">{isPseudoPptoken ? "填入 API Key 后即可使用" : "还没有模型"}</span>}
+                              <button type="button" className="provider-card-update" onClick={(event) => { event.stopPropagation(); openProviderEditor(p, isPseudoPptoken); }}><RefreshCw size={11} />{isPseudoPptoken ? "配置" : "更新模型"}</button>
                             </div>
                             <div className="provider-card-foot">
                               {!isPseudoPptoken && <span className={`provider-dot ${p.provider === currentProvider ? "on" : ""}`} title={p.provider === currentProvider ? "当前生效供应商" : ""} />}
                               <span className="provider-card-status">{p.provider === currentProvider ? "当前生效" : (p.enabled === false || pseudoOff) ? "已停用" : "未生效"}</span>
+                              {health && (
+                                <span className={`provider-card-health ${health.state === "bad" ? "bad" : health.state === "ok" ? "ok" : ""}`} title={health.detail || ""}>
+                                  {health.state === "testing" ? "测试中…" : health.state === "bad" ? (health.auth ? "密钥失效" : "连接失败") : "连接正常"}
+                                </span>
+                              )}
+                              <span className="provider-card-actions">
+                                {health?.state === "bad" && health.auth && (
+                                  <button type="button" className="provider-card-action danger" onClick={(event) => { event.stopPropagation(); void repairProviderCard(p); }}>{p.provider === "cloud" ? "修复密钥" : "更新密钥"}</button>
+                                )}
+                                <button type="button" className="provider-card-action provider-card-test" disabled={health?.state === "testing"} onClick={(event) => { event.stopPropagation(); void testProviderCard(p); }}>{health?.state === "testing" ? <Spinner /> : <Zap size={11} />}测试</button>
+                                <button type="button" className="provider-card-action" onClick={(event) => { event.stopPropagation(); openProviderEditor(p, isPseudoPptoken); }}><PenLine size={11} />编辑</button>
+                              </span>
                             </div>
                           </div>
                         );

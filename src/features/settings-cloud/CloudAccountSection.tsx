@@ -243,13 +243,18 @@ export function CloudAccountSection() {
   const doProvision = () => run("provision", async () => {
     const api = cloudApi();
     setMsg(null);
-    const report = await provisionCloud(api, { activate: true, onlyIfEmpty: true });
+    /* 10-24 用户：「云账号一键同步 / 修复后，模型页会自动更新、并保存重启吗」
+       ⇒ 显式点击就走 restartIfActive：云端目录已同步时重写生效档案 + 重启引擎 + 广播
+       provider-activated，模型页卡片列表与当前会话模型都跟着刷新。 */
+    const report = await provisionCloud(api, { activate: true, onlyIfEmpty: true, restartIfActive: true });
     setProvisionReport(report);
     refreshProviders();
     setMsg({
       kind: report.ok ? "ok" : "err",
       text: report.ok
-        ? `已自动配置。${provisionSummary(report)}`
+        ? (report.activated
+          ? `已同步并重启引擎生效，模型页已自动刷新。${provisionSummary(report)}`
+          : `已同步。${provisionSummary(report)}`)
         : `自动配置未完成：${provisionSummary(report) || "请检查网络后重试"}`,
     });
     await refresh();

@@ -1843,6 +1843,12 @@ const CHECKS = [
          设置 → 模型 → 打开自动配置 → 填地址密钥 → 检测 → 勾选 → 保存 → 旧供应商消失。
          配置完成会自动重启；验收子进程带 CODEX_HARNESS_NO_RELAUNCH=1，真重启不会发生。 */
       const server = createServer((req, res) => {
+        /* 密钥失效用例：坏 key 必须真回 401（卡片测试要能识别成「密钥失效」）。 */
+        if (String(req.headers.authorization || "").includes("sk-bad")) {
+          res.writeHead(401, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: { message: "Invalid API key" } }));
+          return;
+        }
         if ((req.url || "").split("?")[0].endsWith("/models")) {
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ data: [{ id: "mock-alpha" }, { id: "mock-beta" }] }));
@@ -1868,14 +1874,41 @@ const CHECKS = [
         const modelUi = await h.eval(`(function(){
           const cards=[...document.querySelectorAll(".provider-card-grid .provider-card")];
           const real=cards.find(c=>c.querySelector(".provider-dot"));
-          const configure=document.querySelectorAll(".provider-card-configure").length;
+          const toolbar=document.querySelector(".provider-page-actions");
+          const buttons=[...document.querySelectorAll(".provider-page-actions button")].map(b=>(b.textContent||"").trim());
+          const cardFeatures={
+            test:!!real?.querySelector(".provider-card-test"),
+            update:!!real?.querySelector(".provider-card-update"),
+            edit:!!real?.querySelector(".provider-card-icon-btn"),
+          };
+          const compact=!!document.querySelector(".model-compact-control");
+          const oldBar=!!document.querySelector(".model-global-bar");
           const editorBefore=!!document.querySelector('[data-testid="provider-editor"]');
           if(real) real.click();
-          return { cards:cards.length, configure, editorBefore, editorAfter:!!document.querySelector('[data-testid="provider-editor"]') };
+          return { cards:cards.length, toolbar:!!toolbar, buttons, cardFeatures, compact, oldBar, editorBefore, clicked:!!real };
         })()`);
-        h.check("⓪ 模型页只保留自动配置：无手动「配置」按钮 / 二级弹窗，点卡片不弹表单",
-          Boolean(modelUi && modelUi.cards >= 2 && modelUi.configure === 0 && !modelUi.editorBefore && !modelUi.editorAfter),
-          JSON.stringify(modelUi));
+        let editorUi = null;
+        let editorOpened = false;
+        if (modelUi?.clicked) {
+          /* React setState 不在 click() 同步栈里落地 —— 必须等一帧再查弹窗（同步查会假红）。 */
+          editorOpened = await h.waitFor(`!!document.querySelector('[data-testid="provider-editor"]')`, { label: "二级配置弹窗", timeoutMs: 4000 }).then(() => true).catch(() => false);
+          if (editorOpened) {
+            await h.screenshot("provider-editor");
+            editorUi = await h.eval(`(function(){
+              const modal=document.querySelector('[data-testid="provider-editor"]');
+              return { modal:!!modal, fields:modal?modal.querySelectorAll(".provider-form .provider-field").length:0, modelBlock:!!modal?.querySelector(".model-list-block"), actions:!!modal?.querySelector(".settings-actions") };
+            })()`);
+            await h.eval(`document.querySelector(".provider-editor-head .icon-button")?.click()`);
+            await h.waitFor(`!document.querySelector('[data-testid="provider-editor"]')`, { label: "二级配置弹窗关闭", timeoutMs: 4000 });
+          }
+        }
+        h.check("⓪ 模型页：大卡片 + 手动编辑/更新模型入口 + 二级配置弹窗；自动压缩并进页头",
+          Boolean(modelUi && modelUi.cards >= 2 && !modelUi.editorBefore && modelUi.clicked && editorOpened
+            && modelUi.toolbar && modelUi.buttons.some((t)=>t.includes("添加供应商"))
+            && modelUi.cardFeatures.test && modelUi.cardFeatures.update && modelUi.cardFeatures.edit
+            && editorUi && editorUi.modal && editorUi.fields >= 3 && editorUi.modelBlock && editorUi.actions
+            && modelUi.compact && !modelUi.oldBar),
+          JSON.stringify({ modelUi, editorUi, editorOpened }));
         await h.screenshot("provider-autosetup-entry");
         /* 清掉上一轮同名的测试供应商，保证回执/after 不会取错行。 */
         await h.eval(`(async function(){
@@ -2022,10 +2055,55 @@ const CHECKS = [
             JSON.stringify(cloudDialog));
           await h.eval(`document.querySelector(".provider-setup-head .icon-button")?.click()`);
           await h.waitFor(`!document.querySelector('[data-testid="provider-setup"]')`, { label: "云端弹窗关闭", timeoutMs: 5000 });
+          /* ⑥b 用户问「一键同步 / 修复后会保存重启吗」：先把云端设为生效供应商（本项前半段
+             刚把测试供应商设成生效，provisionCloud 的 onlyIfEmpty 会正确地不抢位），再真点一次，
+             回执必须写明重启引擎。 */
+          await h.eval(`window.codex.setProviderEnabled({ provider: "cloud", enabled: true }).catch(()=>undefined)`);
+          await wait(1800);
+          const provisioned = await h.eval(`(function(){
+            const b=[...document.querySelectorAll("button")].find(x=>(x.textContent||"").includes("一键同步 / 修复"));
+            if(!b) return false; b.click(); return true;
+          })()`);
+          if (provisioned) {
+            await h.waitFor(`(function(){ const m=document.querySelector(".cloud-acct-msg"); return !!m && m.textContent.includes("重启引擎"); })()`, { label: "一键同步重启回执", timeoutMs: 30000 }).catch(() => undefined);
+            const provisionMsg = await h.eval(`document.querySelector(".cloud-acct-msg")?.textContent || ""`);
+            h.check("⑥b 云账号「一键同步 / 修复」：回执写明重启引擎，模型页随之刷新",
+              provisionMsg.includes("重启引擎"), JSON.stringify({ provisionMsg }));
+          }
         } else {
           h.check("⑥ 云账号走同一弹窗（本 profile 未登录云账号，跳过；登录后由登录页/云账号页共用同一组件）",
             true, JSON.stringify({ cloudLoggedIn, navCloud, openCloud }));
         }
+
+        /* ⑦ 密钥失效：建一个坏 Key 供应商（enabled:false，不重启引擎）→ 卡片「测试」→
+           必须显示「密钥失效」和「更新密钥」入口。⛔ 不落真实 Key，只用本地 mock 的 sk-bad。 */
+        await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(x=>(x.textContent||"").trim()==="模型"); if(!b) return false; b.click(); return true; })()`);
+        await h.waitFor(`!!document.querySelector(".provider-card-grid")`, { label: "回到模型页", timeoutMs: 6000 });
+        await h.eval(`(async function(){
+          await window.codex.saveCustomModel({ provider:"badkey-test", name:"失效密钥测试", model:"mock-alpha", baseUrl:${JSON.stringify(baseUrl)}, contextWindow:256000, wireApi:"responses", apiKey:"sk-bad", models:[{ id:"mock-alpha", contextWindow:256000 }], enabled:false });
+          window.__refreshProviders?.();
+          return true;
+        })()`);
+        await h.waitFor(`(function(){ return !!([...document.querySelectorAll(".provider-card")].find(x=>(x.textContent||"").includes("失效密钥测试"))); })()`, { label: "坏 Key 卡片", timeoutMs: 6000 });
+        await h.eval(`(function(){
+          const c=[...document.querySelectorAll(".provider-card")].find(x=>(x.textContent||"").includes("失效密钥测试"));
+          c?.querySelector(".provider-card-test")?.click();
+          return true;
+        })()`);
+        await h.waitFor(`(function(){ const c=[...document.querySelectorAll(".provider-card")].find(x=>(x.textContent||"").includes("失效密钥测试")); return !!c && c.textContent.includes("密钥失效"); })()`, { label: "卡片标记密钥失效", timeoutMs: 15000 });
+        const badKeyUi = await h.eval(`(function(){
+          const c=[...document.querySelectorAll(".provider-card")].find(x=>(x.textContent||"").includes("失效密钥测试"));
+          const danger=[...c.querySelectorAll(".provider-card-action")].find(b=>(b.textContent||"").includes("更新密钥"));
+          return { text:c?.innerText||"", danger:!!danger };
+        })()`);
+        await h.eval(`(async function(){
+          try { await window.codex.removeCustomModel("badkey-test"); } catch {}
+          window.__refreshProviders?.();
+          return true;
+        })()`).catch(() => undefined);
+        h.check("⑦ 密钥失效：卡片测试真发 401 → 标出「密钥失效」并给「更新密钥」入口",
+          Boolean(badKeyUi && badKeyUi.text.includes("密钥失效") && badKeyUi.danger),
+          JSON.stringify(badKeyUi));
         await h.screenshot("provider-autosetup");
       } finally {
         /* 复原：删掉测试供应商，把验收前的生效供应商切回来（失败也要复原，别污染下一轮）。 */
@@ -2034,6 +2112,8 @@ const CHECKS = [
             const l=await window.codex.listCustomModels();
             const test=l.providers.find(p=>p.name==="自动配置测试供应商");
             if(test) await window.codex.removeCustomModel(test.provider);
+            const bad=l.providers.find(p=>p.name==="失效密钥测试");
+            if(bad) await window.codex.removeCustomModel(bad.provider);
             if(${JSON.stringify(before.current || "")}) await window.codex.setProviderEnabled({ provider: ${JSON.stringify(before.current || "")}, enabled: true });
           } catch {}
           return true;
