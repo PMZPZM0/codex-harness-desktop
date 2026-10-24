@@ -2121,6 +2121,8 @@ const CHECKS = [
          本项用**真网关**（测试进程起一个本地 /v1/models mock）走完整链路：
          设置 → 模型 → 打开自动配置 → 填地址密钥 → 检测 → 勾选 → 保存 → 旧供应商消失。
          配置完成会自动重启；验收子进程带 CODEX_HARNESS_NO_RELAUNCH=1，真重启不会发生。 */
+      let modelsHits = 0;
+      let mockModels = ["mock-alpha", "mock-beta"];
       const server = createServer((req, res) => {
         /* 密钥失效用例：坏 key 必须真回 401（卡片测试要能识别成「密钥失效」）。 */
         if (String(req.headers.authorization || "").includes("sk-bad")) {
@@ -2130,7 +2132,7 @@ const CHECKS = [
         }
         if ((req.url || "").split("?")[0].endsWith("/models")) {
           res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify({ data: [{ id: "mock-alpha" }, { id: "mock-beta" }] }));
+          res.end(JSON.stringify({ data: mockModels.map((id) => ({ id })) }));
           return;
         }
         res.writeHead(404, { "content-type": "application/json" });
@@ -2313,6 +2315,42 @@ const CHECKS = [
         })()`);
         h.check("⑤b 当前会话的模型选择已跟到新供应商（不会继续发旧 model id）",
           String(composerModel).includes("mock-alpha"), JSON.stringify({ composerModel }));
+
+        /* 10-24 用户：「点击更新模型，直接更新就好了，还进来了编辑界面，又要点一遍更新」；
+           并且「新增了模型、减少了模型都要保存重启」。两段验证：先加一个、再删两个。 */
+        const clickUpdate = async () => {
+          const before = modelsHits;
+          const clicked = await h.eval(`(function(){
+            const card=[...document.querySelectorAll('.provider-item')].find(x=>x.getAttribute('data-provider')===${JSON.stringify(providerId)});
+            const btn=card?.querySelector('.provider-card-update');
+            if(!btn) return { found:false };
+            btn.click();
+            return { found:true, editorBefore:!!document.querySelector('.provider-editor-modal') };
+          })()`);
+          await wait(2200);
+          const after = await h.eval(`(function(){
+            return { editor:!!document.querySelector('.provider-editor-modal') };
+          })()`);
+          return { clicked, after, hits: modelsHits - before };
+        };
+        const listIds = () => h.eval(`(async function(){
+          const l=await window.codex.listCustomModels();
+          const row=l.providers.find(p=>p.provider===${JSON.stringify(providerId)});
+          return (row?.models||[]).map(m=>m.id);
+        })()`);
+        mockModels = ["mock-alpha", "mock-beta", "mock-gamma"];
+        const addRun = await clickUpdate();
+        const afterAdd = await listIds();
+        h.check("⑤c 卡片「更新模型」直接拉取并保存新增模型（不打开编辑弹窗）",
+          Boolean(addRun.clicked.found && !addRun.clicked.editorBefore && !addRun.after.editor && addRun.hits > 0 && afterAdd.includes("mock-gamma")),
+          JSON.stringify({ addRun, afterAdd }));
+        mockModels = ["mock-alpha"];
+        const removeRun = await clickUpdate();
+        const afterRemove = await listIds();
+        h.check("⑤d 卡片「更新模型」移除已下架模型并保存重启",
+          Boolean(removeRun.clicked.found && !removeRun.after.editor && removeRun.hits > 0 && afterRemove.length === 1 && afterRemove[0] === "mock-alpha"),
+          JSON.stringify({ removeRun, afterRemove }));
+
 
         /* 云账号同一条弹窗：登录后读云端目录（⛔ 不走 /models 探测）。只看不存，避免改服务端勾选。 */
         const cloudLoggedIn = await h.eval(`(async function(){ const s=await window.codex.cloudAuthStatus(); return !!s.loggedIn; })()`).catch(() => false);
