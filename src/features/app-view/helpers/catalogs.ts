@@ -6,7 +6,7 @@
  *
  * 代码与拆分前逐字一致；依赖边经 AST 依赖图核对，**不跨模块** ⇒ 本文件不 import 同目录其他模块。
  */
-import { Archive, BookOpen, Blocks, Bot, Camera, CircleGauge, Clock3, Cloud, Download, Heart, LayoutGrid, PawPrint, Settings2, Sparkles, Star, Store, TerminalSquare, Sun, Wrench, Wifi, Zap, Server, UserRound, Users, Workflow, Wallet, Database, Headphones } from "lucide-react";
+import { Archive, BookOpen, Blocks, Bot, Camera, CircleGauge, Clock3, Cloud, Download, Heart, Network, LayoutGrid, PawPrint, Settings2, Sparkles, Star, Store, TerminalSquare, Sun, Wrench, Wifi, Zap, Server, UserRound, Users, Workflow, Wallet, Database, Headphones } from "lucide-react";
 import { BuiltinCommandDef } from "../../../features/commands";
 import type { SettingsPage } from "../types";
 
@@ -92,7 +92,7 @@ export const settingsNav: { group: string; items: [SettingsPage, string, any, st
   { group: "外观与体验", items: [["general", "控制台", Settings2, "blue"], ["appearance", "外观", Sun, "pink"], ["personalization", "个性化", Sparkles, "violet"], ["pet", "桌面宠物", PawPrint, "amber"], ["voice", "语音通话", Headphones, "cyan"], ["screenshot", "截图", Camera, "amber"]] },
   { group: "能力与内容", items: [["skills", "技能", Zap, "violet"], ["plugins", "插件", Store, "amber"], ["component-library", "组件库", LayoutGrid, "pink"], ["mcp", "MCP", Wifi, "cyan"], ["commands", "命令", TerminalSquare, "green"]] },
   { group: "人格与记忆", items: [["soul-market", "人格市场", Heart, "pink"], ["memory", "记忆", Archive, "cyan"], ["knowledge-base", "知识库", BookOpen, "blue"]] },
-  { group: "自动化与智能体", items: [["automation", "自动化", Workflow, "violet"], ["schedule", "定时任务", Clock3, "amber"], ["hooks", "钩子", Wrench, "green"], ["ssh", "SSH 服务器", Server, "blue"], ["agentteam", "专家/专家团", Users, "pink"]] },
+  { group: "自动化与智能体", items: [["automation", "自动化", Workflow, "violet"], ["schedule", "定时任务", Clock3, "amber"], ["hooks", "钩子", Wrench, "green"], ["ssh", "SSH 服务器", Server, "blue"], ["agentteam", "专家/专家团", Users, "pink"], ["boss-groups", "群编排", Network, "cyan"]] },
   { group: "数据", items: [["usage", "使用统计", CircleGauge, "blue"], ["storage", "数据管理", Database, "cyan"], ["backup", "会话备份", Download, "green"], ["archive", "归档管理", Archive, "amber"], ["favorites", "收藏夹", Star, "pink"]] },
   { group: "开发", items: [["devtools", "开发工具", TerminalSquare, "green"], ["extensibility", "拓展接口", Blocks, "violet"]] },
 ];
