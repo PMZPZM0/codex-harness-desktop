@@ -2250,6 +2250,16 @@ const CHECKS = [
         JSON.stringify(consoleUi));
       h.check("② 逐技能 / 逐插件行已收起（组件清单里没有「技能」「插件」分组）",
         Boolean(consoleUi.found && !consoleUi.skillRow && !consoleUi.pluginRow), JSON.stringify(consoleUi.groups));
+      const cleaned = await h.eval(`(function(){
+        const card=[...document.querySelectorAll('.settings-card')].find(c=>(c.textContent||'').includes('技能与插件更新'));
+        return {
+          engineCard: document.querySelectorAll('.card-engine').length,
+          bulk: [...document.querySelectorAll('.ghost-button')].some(b=>(b.textContent||'').includes('一键更新全部')),
+          topSwitches: card ? [...card.querySelectorAll('.settings-toggle-row')].filter(r=>r.getClientRects().length>0).length : 0,
+        };
+      })()`).catch(() => null);
+      h.check("②b 引擎更新只剩组件清单一处（独立引擎卡与「一键更新全部」已删）",
+        Boolean(cleaned && cleaned.engineCard === 0 && cleaned.bulk === false && cleaned.topSwitches === 2), JSON.stringify(cleaned));
       const toggled = await h.eval(`(async function(){
         const card=[...document.querySelectorAll('.settings-card')].find(c=>(c.textContent||'').includes('技能与插件更新'));
         const row=[...card.querySelectorAll('.settings-toggle-row')].find(r=>(r.querySelector('strong')?.textContent||'').trim()==='插件自动更新');

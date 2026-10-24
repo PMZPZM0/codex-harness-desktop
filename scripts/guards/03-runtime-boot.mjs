@@ -617,11 +617,14 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   {
     const generalPath = join(ROOT, "src", "features", "settings-general", "GeneralSettingsSection.tsx");
     const generalSrc = existsSync(generalPath) ? readFileSync(generalPath, "utf8") : "";
+    const autoPath = join(ROOT, "src", "features", "settings-general", "AutoUpdateCard.tsx");
+    const autoSrc = existsSync(autoPath) ? readFileSync(autoPath, "utf8") : "";
     const registryPath = join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx");
     const registrySrc = existsSync(registryPath) ? readFileSync(registryPath, "utf8") : "";
-    (/ENGINE_SOURCE_LABEL/.test(generalSrc) && /downloadSource/.test(generalSrc)
+    (/downloadSource/.test(autoSrc) && /下载源/.test(autoSrc)
+      && /AutoUpdateCard[^\n]*downloadSource=\{downloadSource\}/.test(generalSrc)
       && /GeneralSettingsSection[^\n]*downloadSource=\{downloadSource\}/.test(registrySrc)
-      ? ok : fail)("引擎更新卡片显示当前取源（逻辑跟随下载源，界面也必须跟着说）");
+      ? ok : fail)("引擎更新取源跟随下载源并在控制台如实显示（独立引擎卡已合并进组件更新）");
   }
 
   // ⑦ 渲染层入参校验层（09-13 审计 S5；09-19 用户拍板「隐私第一」后全面收紧 fs 通道）

@@ -92,7 +92,9 @@ function describeComponent(row: ComponentRow): string {
   return row.detectable ? "等待检测…" : "已安装（该源不提供版本号，可执行「更新」重新拉取）";
 }
 
-export function AutoUpdateCard({ onNotice }: { onNotice?: (text: string) => void }) {
+const SOURCE_LABEL: Record<string, string> = { auto: "国内镜像优先", mirror: "国内镜像", direct: "官方源直连", proxy: "代理隧道", ghproxy: "国内镜像优先", ghfast: "国内镜像优先" };
+
+export function AutoUpdateCard({ onNotice, downloadSource }: { onNotice?: (text: string) => void; downloadSource?: string }) {
   const [switches, setSwitches] = useState<SwitchRow[]>([]);
   const [rows, setRows] = useState<ComponentRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -193,33 +195,10 @@ export function AutoUpdateCard({ onNotice }: { onNotice?: (text: string) => void
     }
   }
 
-  async function updateAll() {
-    setBusy((current) => ({ ...current, __all: true }));
-    push("开始一键更新全部组件…");
-    try {
-      const outcomes: any[] = await window.codex.runAllAutoUpdateComponents?.() ?? [];
-      const counted = { updated: 0, unchanged: 0, failed: 0, skipped: 0 } as Record<string, number>;
-      for (const item of outcomes) {
-        const action = String(item?.action ?? "skipped");
-        counted[action] = (counted[action] ?? 0) + 1;
-        const suffix = item?.message ? ` — ${item.message}` : "";
-        push(`${item?.label ?? "?"} · ${ACTION_TEXT[action as Outcome["action"]] ?? action}${suffix}`);
-      }
-      const summary = `更新全部完成：${counted.updated} 项已更新，${counted.unchanged} 项无需更新，${counted.failed} 项失败，${counted.skipped} 项跳过`;
-      push(summary);
-      onNotice?.(summary);
-    } catch (err: any) {
-      push(`一键更新失败：${err?.message ?? err}`);
-    } finally {
-      setBusy((current) => ({ ...current, __all: false }));
-      void scan();
-    }
-  }
 
   const updatable = useMemo(() => rows.filter((row) => !row.unsupported && row.installed), [rows]);
   const noMirror = useMemo(() => rows.filter((row) => !row.mirror), [rows]);
   const primarySwitches = useMemo(() => switches.filter((row) => row.kind === "skill" || row.kind === "plugin"), [switches]);
-  const otherSwitches = useMemo(() => switches.filter((row) => row.kind !== "skill" && row.kind !== "plugin"), [switches]);
 
 
   const renderSwitch = (row: SwitchRow) => {
@@ -277,11 +256,7 @@ export function AutoUpdateCard({ onNotice }: { onNotice?: (text: string) => void
             <button type="button" className="icon-button" disabled={scanning} title="重新检测全部组件的版本" onClick={() => void refreshWithReceipt(onNotice, "重新检测组件版本", scan)}>
               {scanning ? <RefreshCw size={13} className="spin" /> : <RefreshCw size={13} />}
             </button>
-            <button type="button" className="ghost-button" disabled={Boolean(busy.__all) || loading} onClick={() => void updateAll()}>
-              {busy.__all ? "更新中…" : "一键更新全部"}
-            </button>
           </div>
-          {otherSwitches.map(renderSwitch)}
         {/* ── ② 全组件清单：按 group 分段，含「不可单独更新」那批及其原因 ─────── */}
         <div className="auto-update-groups">
           {["工具", "引擎", "不可单独更新"].map((group) => {
@@ -345,6 +320,7 @@ export function AutoUpdateCard({ onNotice }: { onNotice?: (text: string) => void
 
         <p className="settings-card-hint">
           后台自动更新由主进程在启动后一次 + 每 6 小时一次执行（各开关互相独立；关掉哪一类，后台连版本比对都不做）。
+          引擎更新取源跟随「开发工具 → 下载源」设置（当前：{SOURCE_LABEL[String(downloadSource ?? "auto")] ?? "国内镜像优先"}）。
           更新源一律国内镜像：npm → npmmirror、pip → 清华源、GitHub → gh-proxy/ghfast 加速通道，失败自动回落下一档。
           每项更新前都会快照，失败自动回滚；内容与市场一致时不重复安装。共 {updatable.length} 项可更新
           {noMirror.length ? `，其中 ${noMirror.length} 项在结果里标注了「无可用镜像源」的原因` : ""}。
