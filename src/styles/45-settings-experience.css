@@ -511,9 +511,24 @@
 .settings-exp-shell .plugin-installed-head { align-items: center; }
 .settings-exp-shell .plugin-installed-head .plugin-update-all { margin-left: auto; }
 
-/* 控制台 · 技能/插件两个总开关；其他组件收进折叠区 */
-.settings-exp-shell .auto-update-advanced { margin-top: 12px; }
-.settings-exp-shell .auto-update-advanced-actions { justify-content: flex-start; margin: 10px 0 6px; }
+/* 控制台 · 技能/插件两个总开关；其他组件清单常显（10-24 用户：不要折叠隐藏） */
+.settings-exp-shell .auto-update-advanced-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+}
+.settings-exp-shell .auto-update-advanced-head > span {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.settings-exp-shell .auto-update-advanced-head strong { font-size: 13px; }
+.settings-exp-shell .auto-update-advanced-head small { color: var(--faint); font-size: 12px; }
+.settings-exp-shell .auto-update-advanced-head .icon-button { margin-left: auto; }
 
 /* 关闭的 details 必须真的藏住内容：子元素自带 display:flex 会盖过 UA 的隐藏规则 */
 .settings-exp-advanced:not([open]) > :not(summary) { display: none !important; }

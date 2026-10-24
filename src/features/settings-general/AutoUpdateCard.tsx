@@ -124,7 +124,14 @@ export function AutoUpdateCard({ onNotice, downloadSource }: { onNotice?: (text:
     setScanning(true);
     setError("");
     try {
-      const list = await window.codex.scanAutoUpdateComponents();
+      // ⛔ 渲染层再兜一层时限：主进程已按类限时，但 IPC 万一没回来也不许一直停在「正在读取组件清单…」。
+      const list = await Promise.race([
+        window.codex.scanAutoUpdateComponents(),
+        new Promise<never>((_, reject) => setTimeout(
+          () => reject(new Error("检测超时：20 秒内没有拿到组件清单，点右上角刷新重试")),
+          20_000,
+        )),
+      ]);
       setRows(Array.isArray(list) ? list : []);
       push(`检测完成：共 ${Array.isArray(list) ? list.length : 0} 个组件`);
       return "";
@@ -243,21 +250,24 @@ export function AutoUpdateCard({ onNotice, downloadSource }: { onNotice?: (text:
         <RefreshCw size={15} />
         <strong>技能与插件更新</strong>
         <span className="settings-subhead-hint">
-          技能 / 插件各一个总开关；逐项清单已收起
+          技能 / 插件各一个总开关；引擎与工具链逐项列出
         </span>
       </div>
 
       <div className="settings-card-body settings-toggle-list">
         {/* ── ① 开关区：藏在 typed 列表里，数据源与主进程判据同源 ───────────── */}
         {primarySwitches.map(renderSwitch)}
-        <details className="settings-exp-advanced auto-update-advanced">
-          <summary>其他组件更新（引擎 / 工具链）<small>检测、单个更新与日志</small></summary>
-          <div className="settings-heading-actions auto-update-advanced-actions">
-            <button type="button" className="icon-button" disabled={scanning} title="重新检测全部组件的版本" onClick={() => void refreshWithReceipt(onNotice, "重新检测组件版本", scan)}>
-              {scanning ? <RefreshCw size={13} className="spin" /> : <RefreshCw size={13} />}
-            </button>
-          </div>
-        {/* ── ② 全组件清单：按 group 分段，含「不可单独更新」那批及其原因 ─────── */}
+        {/* ── ② 其他组件：**常显**（10-24 用户：「展开折叠，正常展示工具就行了，不要隐藏」）── */}
+        <div className="auto-update-advanced-head">
+          <span>
+            <strong>其他组件更新（引擎 / 工具链）</strong>
+            <small>检测、单个更新与日志</small>
+          </span>
+          <button type="button" className="icon-button" disabled={scanning} title="重新检测全部组件的版本" onClick={() => void refreshWithReceipt(onNotice, "重新检测组件版本", scan)}>
+            {scanning ? <RefreshCw size={13} className="spin" /> : <RefreshCw size={13} />}
+          </button>
+        </div>
+        {/* ── ③ 全组件清单：按 group 分段，含「不可单独更新」那批及其原因 ─────── */}
         <div className="auto-update-groups">
           {["工具", "引擎", "不可单独更新"].map((group) => {
             const groupRows = rows.filter((row) => row.group === group);
@@ -270,13 +280,15 @@ export function AutoUpdateCard({ onNotice, downloadSource }: { onNotice?: (text:
                 </h4>
                 {groupRows.map((row) => {
                   const Icon = ICONS[row.specId] ?? (row.unsupported ? Boxes : Package);
+                  // 检测失败/超时的行也允许点「更新」——更新会重新检测，不能因为清单没查到版本就锁死
+                  const attemptable = row.installed || Boolean(row.error);
                   return (
                     <div className="auto-update-row" key={row.id}>
                       <span className="settings-toggle-icon"><Icon size={15} /></span>
                       <span className="auto-update-row-text">
                         <strong>
                           {row.label}
-                          {row.hasUpdate ? <em className="auto-update-badge">有更新</em> : null}
+                          {row.hasUpdate && row.installed ? <em className="auto-update-badge">有更新</em> : null}
                           {!row.mirror && row.specId !== "ego-lite" ? <em className="auto-update-badge warn">无可用镜像源</em> : null}
                         </strong>
                         <small>{describeComponent(row)}</small>
@@ -285,8 +297,8 @@ export function AutoUpdateCard({ onNotice, downloadSource }: { onNotice?: (text:
                         <button
                           type="button"
                           className="ghost-button tiny"
-                          disabled={Boolean(busy[row.id]) || !row.installed}
-                          title={row.installed ? `更新「${row.label}」` : "未安装，无需更新"}
+                          disabled={Boolean(busy[row.id]) || !attemptable}
+                          title={attemptable ? `更新「${row.label}」` : "未安装，无需更新"}
                           onClick={() => void updateOne(row)}
                         >
                           {busy[row.id] ? "更新中…" : "更新"}
@@ -307,11 +319,11 @@ export function AutoUpdateCard({ onNotice, downloadSource }: { onNotice?: (text:
               </section>
             );
           })}
-          {loading && <p className="settings-card-hint">正在读取组件清单…</p>}
+          {loading && <p className="settings-card-hint">正在读取组件清单（最慢的项 12 秒内也会给出结果，慢源会标注「检测超时」）…</p>}
           {!loading && !rows.length && <p className="settings-card-hint">暂时取不到组件清单，点右上角的刷新按钮重试。</p>}
         </div>
 
-        {/* ── ③ 反馈：进度与结果 ──────────────────────────────────────────── */}
+        {/* ── ④ 反馈：进度与结果 ──────────────────────────────────────────── */}
         <div className="auto-update-log" ref={logRef}>
           {log.length
             ? log.map((line, index) => <div key={index}>{line}</div>)
@@ -319,14 +331,14 @@ export function AutoUpdateCard({ onNotice, downloadSource }: { onNotice?: (text:
         </div>
 
         <p className="settings-card-hint">
-          后台自动更新由主进程在启动后一次 + 每 6 小时一次执行（各开关互相独立；关掉哪一类，后台连版本比对都不做）。
+          这张清单只负责「展示 + 手动更新」；后台自动更新由主进程独立执行，不依赖清单是否加载成功。
+          技能、插件分别是启动后 15 秒 / 60 秒一次 + 每 6 小时一次（各开关互相独立；关掉哪一类，后台连版本比对都不做）。
           引擎更新取源跟随「开发工具 → 下载源」设置（当前：{SOURCE_LABEL[String(downloadSource ?? "auto")] ?? "国内镜像优先"}）。
           更新源一律国内镜像：npm → npmmirror、pip → 清华源、GitHub → gh-proxy/ghfast 加速通道，失败自动回落下一档。
           每项更新前都会快照，失败自动回滚；内容与市场一致时不重复安装。共 {updatable.length} 项可更新
           {noMirror.length ? `，其中 ${noMirror.length} 项在结果里标注了「无可用镜像源」的原因` : ""}。
         </p>
         {error ? <p className="settings-card-hint">{error}</p> : null}
-        </details>
       </div>
     </div>
   );

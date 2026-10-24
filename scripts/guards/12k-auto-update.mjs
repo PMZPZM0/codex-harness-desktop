@@ -175,6 +175,23 @@ ok(/onNotice\?\.\(applied \?/.test(card) && /onNotice=\{setNotice\}/.test(genera
 ok(/readAutoUpdateSwitch/.test(settings) && /key === "skillAutoUpdate" \|\| key === "pluginAutoUpdate"[\s\S]{0,120}=== true/.test(settings),
   "缺省值分档只写一处：四类装包缺省开、技能/插件内容更新缺省关");
 
+console.log("【⑦d 清单扫描有上限 + 后台更新与清单解耦】");
+/* 10-24 用户实测：控制台「其他组件更新」一直停在「正在读取组件清单…」。
+   ⛔ 根因：scanAll 把十几类远端查版本放在一个 Promise.all 里，npm 2×20s / pip 5×20s，
+      任何一个源挂住整张清单就永远不返回 ⇒ 必须逐类限时，超时行给原因而不是整项消失。 */
+ok(/const SCAN_DEADLINE_MS = 12_000;/.test(board), "扫描有单类预算 SCAN_DEADLINE_MS（12 秒）");
+ok(/withDeadline\([\s\S]{0,160}scanRows\(spec, ctx\)/.test(board), "scanAll 里每一类都过 withDeadline（⛔ 不是只包整个 Promise.all）");
+ok(/检测超时/.test(card) && /attemptable/.test(card), "界面：超时行可重试「更新」，并明确标注超时原因");
+ok(/Promise\.race\(\[[\s\S]{0,200}20_000/.test(card), "渲染层再兜一层 20 秒时限（IPC 不回来也不许永久 loading）");
+ok(/不依赖清单是否加载成功/.test(card), "卡片明说：后台自动更新不依赖这张清单是否加载成功");
+ok(!/<details[\s>]/.test(card) && /auto-update-advanced-head/.test(card),
+  "⛔ 工具清单常显、不再折叠（10-24 用户：「展开折叠，正常展示工具就行了，不要隐藏」）");
+ok(/\{row\.hasUpdate && row\.installed \?/.test(card),
+  "「有更新」徽标只给已安装的组件（未安装行挂徽标 = 「有更新 / 未安装」自相矛盾）");
+ok(/row\.specId === "market-plugin" \|\| row\.specId === "official-plugin"\) continue;/.test(boardCode)
+  && /runPluginAutoUpdate/.test(read("electron/features/plugins-ipc.ts")),
+  "⛔ 插件自动更新只有一个 owner（plugins-ipc 的循环），本编排循环跳过插件行（否则两个循环同时重装）");
+
 console.log("【⑧ 域登记闭环 + 台账】");
 ok(/"id": "autoUpdate"/.test(composition) && /features\/auto-update-ipc\.ts/.test(composition) && /autoUpdateFeature/.test(composition),
   "composition.json 登记 autoUpdate 域");
