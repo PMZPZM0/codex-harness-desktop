@@ -24,7 +24,7 @@ import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 type SwitchRow = {
   id: string;
-  kind: "tool" | "engine" | "skill";
+  kind: "tool" | "engine" | "skill" | "plugin";
   label: string;
   pkg: string;
   enabled: boolean;
@@ -217,64 +217,74 @@ export function AutoUpdateCard({ onNotice }: { onNotice?: (text: string) => void
   }
 
   const updatable = useMemo(() => rows.filter((row) => !row.unsupported && row.installed), [rows]);
-  const pendingCount = useMemo(() => rows.filter((row) => row.hasUpdate).length, [rows]);
   const noMirror = useMemo(() => rows.filter((row) => !row.mirror), [rows]);
+  const primarySwitches = useMemo(() => switches.filter((row) => row.kind === "skill" || row.kind === "plugin"), [switches]);
+  const otherSwitches = useMemo(() => switches.filter((row) => row.kind !== "skill" && row.kind !== "plugin"), [switches]);
+
+
+  const renderSwitch = (row: SwitchRow) => {
+    const Icon = ICONS[row.id] ?? RefreshCw;
+    const off = "已关闭 —— 后台不会发起更新检查（既不比版本也不下载）。";
+    const text = row.error
+      ? row.error
+      : row.kind === "skill"
+        ? (row.enabled
+          ? "后台静默比对市场技能内容（技能没有版本号），有变化才更新；本地导入的技能不参与。开启后会覆盖你技能目录里的文件。"
+          : `${off}开启后会覆盖你技能目录里的文件。`)
+        : row.kind === "plugin"
+          ? (row.enabled
+            ? "后台检查 Gitee 镜像与 Codex 官方市场里已安装插件的版本，有新版才重装；本地导入的插件不参与。"
+            : `${off}开启后会改写插件目录并重启引擎。`)
+          : row.id === "ego-lite"
+            ? (row.enabled
+              ? `已装 ${row.current || "版本未知"} · 后台会运行官方 ego-browser upgrade（可能下载数百 MB），升级后自动接管新版本`
+              : `${off}Ego Lite 由官方应用自更新；开启后后台才会运行 ego-browser upgrade。`)
+            : `${row.current ? `已装 ${row.current}` : "未检测到已装版本"}${row.latest ? ` · 最新 ${row.latest}` : ""}${row.pkg ? ` · ${row.pkg}` : ""}${row.enabled ? "" : ` —— ${off}`}`;
+    return (
+      <div className="settings-toggle-row" key={`sw-${row.id}`}>
+        <span className="settings-toggle-icon"><Icon size={16} /></span>
+        <span className="settings-toggle-text">
+          <strong>{row.kind === "skill" ? "技能自动更新" : row.kind === "plugin" ? "插件自动更新" : row.label}</strong>
+          <small>{text}</small>
+        </span>
+        <ToggleSwitch
+          checked={row.enabled}
+          disabled={Boolean(busy[row.id])}
+          label={`${row.label} 自动更新`}
+          title={row.enabled ? `关闭「${row.label}」的自动更新` : `开启「${row.label}」的自动更新`}
+          onChange={(next: boolean) => void toggle(row, next)}
+        />
+      </div>
+    );
+  };
 
   return (
     <div className="settings-card">
       <div className="settings-card-head">
         <RefreshCw size={15} />
-        <strong>组件更新</strong>
+        <strong>技能与插件更新</strong>
         <span className="settings-subhead-hint">
-          {pendingCount ? `${pendingCount} 项有可用更新` : "全部已是最新"}
-        </span>
-        <span className="settings-heading-actions">
-          <button type="button" className="icon-button" disabled={scanning} title="重新检测全部组件的版本" onClick={() => void refreshWithReceipt(onNotice, "重新检测组件版本", scan)}>
-            {scanning ? <RefreshCw size={13} className="spin" /> : <RefreshCw size={13} />}
-          </button>
-          <button type="button" className="ghost-button" disabled={Boolean(busy.__all) || loading} onClick={() => void updateAll()}>
-            {busy.__all ? "更新中…" : "一键更新全部"}
-          </button>
+          技能 / 插件各一个总开关；逐项清单已收起
         </span>
       </div>
 
       <div className="settings-card-body settings-toggle-list">
         {/* ── ① 开关区：藏在 typed 列表里，数据源与主进程判据同源 ───────────── */}
-        {switches.map((row) => {
-          const Icon = ICONS[row.id] ?? RefreshCw;
-          const off = "已关闭 —— 后台不会发起更新检查（既不比版本也不下载）。";
-          const text = row.error
-            ? row.error
-            : row.kind === "skill"
-              ? (row.enabled
-                ? "后台静默比对市场技能内容（技能没有版本号），有变化才更新；本地导入的技能不参与。开启后会覆盖你技能目录里的文件。"
-                : `${off}开启后会覆盖你技能目录里的文件。`)
-              : row.id === "ego-lite"
-                ? (row.enabled
-                  ? `已装 ${row.current || "版本未知"} · 后台会运行官方 ego-browser upgrade（可能下载数百 MB），升级后自动接管新版本`
-                  : `${off}Ego Lite 由官方应用自更新；开启后后台才会运行 ego-browser upgrade。`)
-                : `${row.current ? `已装 ${row.current}` : "未检测到已装版本"}${row.latest ? ` · 最新 ${row.latest}` : ""}${row.pkg ? ` · ${row.pkg}` : ""}${row.enabled ? "" : ` —— ${off}`}`;
-          return (
-            <div className="settings-toggle-row" key={`sw-${row.id}`}>
-              <span className="settings-toggle-icon"><Icon size={16} /></span>
-              <span className="settings-toggle-text">
-                <strong>{row.label}</strong>
-                <small>{text}</small>
-              </span>
-              <ToggleSwitch
-                checked={row.enabled}
-                disabled={Boolean(busy[row.id])}
-                label={`${row.label} 自动更新`}
-                title={row.enabled ? `关闭「${row.label}」的自动更新` : `开启「${row.label}」的自动更新`}
-                onChange={(next: boolean) => void toggle(row, next)}
-              />
-            </div>
-          );
-        })}
-
+        {primarySwitches.map(renderSwitch)}
+        <details className="settings-exp-advanced auto-update-advanced">
+          <summary>其他组件更新（引擎 / 工具链）<small>检测、单个更新与日志</small></summary>
+          <div className="settings-heading-actions auto-update-advanced-actions">
+            <button type="button" className="icon-button" disabled={scanning} title="重新检测全部组件的版本" onClick={() => void refreshWithReceipt(onNotice, "重新检测组件版本", scan)}>
+              {scanning ? <RefreshCw size={13} className="spin" /> : <RefreshCw size={13} />}
+            </button>
+            <button type="button" className="ghost-button" disabled={Boolean(busy.__all) || loading} onClick={() => void updateAll()}>
+              {busy.__all ? "更新中…" : "一键更新全部"}
+            </button>
+          </div>
+          {otherSwitches.map(renderSwitch)}
         {/* ── ② 全组件清单：按 group 分段，含「不可单独更新」那批及其原因 ─────── */}
         <div className="auto-update-groups">
-          {["工具", "引擎", "技能", "插件", "不可单独更新"].map((group) => {
+          {["工具", "引擎", "不可单独更新"].map((group) => {
             const groupRows = rows.filter((row) => row.group === group);
             if (!groupRows.length) return null;
             return (
@@ -340,6 +350,7 @@ export function AutoUpdateCard({ onNotice }: { onNotice?: (text: string) => void
           {noMirror.length ? `，其中 ${noMirror.length} 项在结果里标注了「无可用镜像源」的原因` : ""}。
         </p>
         {error ? <p className="settings-card-hint">{error}</p> : null}
+        </details>
       </div>
     </div>
   );

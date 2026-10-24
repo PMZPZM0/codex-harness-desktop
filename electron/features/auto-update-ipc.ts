@@ -56,7 +56,7 @@ const AUTO_UPDATE_CHANNELS = ["autoUpdate:status", "autoUpdate:set", "autoUpdate
 const FIRST_DELAY_MS = 20_000;
 const INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-type AutoUpdateKind = "tool" | "engine" | "skill";
+type AutoUpdateKind = "tool" | "engine" | "skill" | "plugin";
 
 type AutoUpdateItem = {
   id: string;
@@ -90,6 +90,8 @@ function autoUpdateItems(): AutoUpdateItem[] {
   // 之后并入本清单，界面才能**一次请求拿到全部开关**（两个端点两套判据 = 迟早不一致）。
   // ⛔ 它的缺省是**关**（改用户技能目录里的文件，见 readAutoUpdateSwitch），与上面四类不同。
   items.push({ id: "skill", kind: "skill", label: "市场技能内容更新", pkg: "", key: "skillAutoUpdate" });
+  // 插件自动更新（10-24 用户令：技能 / 插件各留一个总开关；逐插件行不再透出）。
+  items.push({ id: "plugin", kind: "plugin", label: "市场插件自动更新", pkg: "", key: "pluginAutoUpdate" });
   return items;
 }
 

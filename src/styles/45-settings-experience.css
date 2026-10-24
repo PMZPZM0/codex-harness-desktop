@@ -506,3 +506,14 @@
 
 /* 「更新模型」已移到卡片底部操作行：取消旧位置的 margin-left:auto，与测试/编辑同款 */
 .settings-exp-shell .provider-card-action.provider-card-update { margin-left: 0; }
+
+/* 插件「已安装」屏：只留一份列表 + 一个检查更新按钮（10-24 用户：不要两块更新面板） */
+.settings-exp-shell .plugin-installed-head { align-items: center; }
+.settings-exp-shell .plugin-installed-head .plugin-update-all { margin-left: auto; }
+
+/* 控制台 · 技能/插件两个总开关；其他组件收进折叠区 */
+.settings-exp-shell .auto-update-advanced { margin-top: 12px; }
+.settings-exp-shell .auto-update-advanced-actions { justify-content: flex-start; margin: 10px 0 6px; }
+
+/* 关闭的 details 必须真的藏住内容：子元素自带 display:flex 会盖过 UA 的隐藏规则 */
+.settings-exp-advanced:not([open]) > :not(summary) { display: none !important; }

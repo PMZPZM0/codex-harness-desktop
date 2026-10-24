@@ -2218,6 +2218,67 @@ const CHECKS = [
   },
 
   {
+    id: "updates-simplified",
+    name: "🧩 技能/插件更新收口（两个总开关 / 四个市场面板删除 / 已安装只留一个检查更新）",
+    run: async (h) => {
+      /* 用户 10-24：「已安装插件为啥两张展示方式」「精简成一个技能更新开关，和插件更新开关就行，
+         但是更新都要更新那个插件和技能」。本项只量结构与开关真写盘，不触发真实市场下载。 */
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await wait(1000);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll('.settings-nav button')].find(x=>(x.textContent||'').trim()==='控制台'); b&&b.click(); return 1; })()`);
+      await h.waitFor(`(function(){
+        const card=[...document.querySelectorAll('.settings-card')].find(c=>(c.textContent||'').includes('技能与插件更新'));
+        return !!card && [...card.querySelectorAll('.settings-toggle-row')].filter(r=>r.getClientRects().length>0).length >= 2;
+      })()`, { label: "技能/插件两个总开关", timeoutMs: 12000 }).catch(() => undefined);
+      await wait(400);
+      const consoleUi = await h.eval(`(function(){
+        const card=[...document.querySelectorAll('.settings-card')].find(c=>(c.textContent||'').includes('技能与插件更新'));
+        if(!card) return { found:false };
+        const rows=[...card.querySelectorAll('.settings-toggle-row')];
+        const visible=rows.filter(r=>r.getClientRects().length>0).map(r=>({
+          label:(r.querySelector('strong')?.textContent||'').trim(),
+          checked:!!r.querySelector('input[type=checkbox]')?.checked,
+        }));
+        const groups=[...card.querySelectorAll('.auto-update-group h4')].map(x=>(x.textContent||'').trim());
+        return { found:true, visible, groups,
+          skillRow:groups.some(g=>g.startsWith('技能')), pluginRow:groups.some(g=>g.startsWith('插件')) };
+      })()`);
+      h.check("① 控制台默认只露「技能自动更新 / 插件自动更新」两个总开关",
+        Boolean(consoleUi.found && consoleUi.visible.length === 2
+          && consoleUi.visible.some(r=>r.label==="技能自动更新") && consoleUi.visible.some(r=>r.label==="插件自动更新")),
+        JSON.stringify(consoleUi));
+      h.check("② 逐技能 / 逐插件行已收起（组件清单里没有「技能」「插件」分组）",
+        Boolean(consoleUi.found && !consoleUi.skillRow && !consoleUi.pluginRow), JSON.stringify(consoleUi.groups));
+      const toggled = await h.eval(`(async function(){
+        const card=[...document.querySelectorAll('.settings-card')].find(c=>(c.textContent||'').includes('技能与插件更新'));
+        const row=[...card.querySelectorAll('.settings-toggle-row')].find(r=>(r.querySelector('strong')?.textContent||'').trim()==='插件自动更新');
+        row?.querySelector('button.toggle-switch')?.click();
+        await new Promise(r=>setTimeout(r,700));
+        const on=await window.codex.readAppSettings().then(s=>s.pluginAutoUpdate).catch(()=>null);
+        row?.querySelector('button.toggle-switch')?.click();
+        await new Promise(r=>setTimeout(r,700));
+        const off=await window.codex.readAppSettings().then(s=>s.pluginAutoUpdate).catch(()=>null);
+        return { on, off };
+      })()`).catch(() => null);
+      h.check("③ 「插件自动更新」开关真写 app-settings（pluginAutoUpdate 开→关）",
+        Boolean(toggled && toggled.on === true && toggled.off === false), JSON.stringify(toggled));
+
+      await h.eval(`(function(){ const b=[...document.querySelectorAll('.settings-nav button')].find(x=>(x.textContent||'').trim()==='插件'); b&&b.click(); return 1; })()`);
+      await wait(1600);
+      const tabs = ["Claude 插件镜像", "Codex 官方插件", "已安装"];
+      const tabProbes = [];
+      for (const label of tabs) {
+        const clicked = await h.eval(`(function(){ const b=[...document.querySelectorAll('.market-source-switch button')].find(x=>(x.textContent||'').trim()===${JSON.stringify(label)}); b&&b.click(); return !!b; })()`);
+        await wait(700);
+        const probe = await h.eval(`(function(){ return { panels:document.querySelectorAll('.market-update-panel').length, checkButtons:document.querySelectorAll('.plugin-update-all').length }; })()`);
+        tabProbes.push({ label, clicked, ...probe });
+      }
+      h.check("④ 三个插件来源都不再出现「插件更新 / 官方插件更新」面板", tabProbes.every(x=>x.clicked && x.panels === 0), JSON.stringify(tabProbes));
+      h.check("⑤ 「已安装」屏只留一个「检查更新」按钮", tabProbes.find(x=>x.label==="已安装")?.checkButtons === 1, JSON.stringify(tabProbes));
+    },
+  },
+  {
     id: "provider-autosetup",
     name: "🧭 供应商自动配置：检测 → 全选 → 保存启用 → 旧供应商自动停用（10-24）",
     run: async (h) => {
@@ -2236,7 +2297,6 @@ const CHECKS = [
           return;
         }
         if ((req.url || "").split("?")[0].endsWith("/models")) {
-          modelsHits += 1;
           modelsHits += 1;
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ data: mockModels.map((id) => ({ id })) }));
@@ -5119,6 +5179,7 @@ const ROUND_OF = {
   "provider-autosetup": "10-24",   // 10-24 轮：供应商自动配置大弹窗（检测/全选/保存/旧供应商停用，本地 mock 网关真链路）
   "provider-login-autosetup": "10-24",   // 10-24 轮：登录页自定义 API → 自动弹窗 → 检测/勾选/保存 → 进主界面
   "settings-unified": "10-24",   // 10-24 轮：设置内页统一版式（长卡片 / 页头两行 / 无溢出 / 收藏夹单列）
+  "updates-simplified": "10-24",   // 10-24 轮：技能/插件更新收口（两个总开关 / 删四块面板 / 已安装单个检查更新）
   "cloud-simple": "10-22",   // 10-22 轮：云账号登录即用（单卡登录 / 就绪清单 / 教程 / 手动流程折叠）
   "file-cards": "10-22",   // 10-22 轮：Qoder 式本轮产物文件卡 + 右栏工作区文件预览联动   // 10-22 轮：右栏标签撤终端、审阅顶到第二位（默认宽 308px 五个排不下）
   "ui-sketch": "10-06",   // ⛔ 10-06 重写：三形态探针（手机+电脑屏 / platform web 真落盘）+ 预览 + 还原；编号改执行顺序

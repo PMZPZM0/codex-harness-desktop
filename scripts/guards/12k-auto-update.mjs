@@ -166,14 +166,14 @@ ok(/autoUpdateRunning\) return;/.test(read("electron/features/skills-ipc.ts"))
   "⛔ 技能同理：关着时在 checkSkillUpdateRows 之前返回（连内容比对都不做）");
 
 console.log("【⑦c 每行有名称 / 说明 / tooltip / 状态反馈】");
-ok(/<strong>\{row\.label\}<\/strong>/.test(card) && /<small>\{(describeComponent\(row\)|text)\}<\/small>/.test(card),
-  "每行 = 名称 + 简要说明");
+ok(/<strong>\{row\.kind === "skill" \? "技能自动更新" : row\.kind === "plugin" \? "插件自动更新" : row\.label\}<\/strong>/.test(card) && /<small>\{text\}<\/small>/.test(card),
+  "每行 = 名称 + 简要说明（技能/插件两个总开关用统一标签）");
 ok(/title=\{row\.enabled \? `关闭/.test(card), "每行有 tooltip（说明开/关会做什么）");
 ok(/不会发起更新检查/.test(card), "关闭态明确写出「不会发起更新检查」（开关的语义，不是装饰）");
 ok(/onNotice\?\.\(applied \?/.test(card) && /onNotice=\{setNotice\}/.test(general),
   "写盘成功后有状态反馈（对齐控制台既有的 notice 用法）");
-ok(/readAutoUpdateSwitch/.test(settings) && /skillAutoUpdate === true/.test(settings),
-  "缺省值分档只写一处：四类装包缺省开、技能内容更新缺省关");
+ok(/readAutoUpdateSwitch/.test(settings) && /key === "skillAutoUpdate" \|\| key === "pluginAutoUpdate"[\s\S]{0,120}=== true/.test(settings),
+  "缺省值分档只写一处：四类装包缺省开、技能/插件内容更新缺省关");
 
 console.log("【⑧ 域登记闭环 + 台账】");
 ok(/"id": "autoUpdate"/.test(composition) && /features\/auto-update-ipc\.ts/.test(composition) && /autoUpdateFeature/.test(composition),
