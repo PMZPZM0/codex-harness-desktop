@@ -1371,3 +1371,49 @@
 .runtime-install-state .runtime-progress { margin: 0; }
 .runtime-modal-progress { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
 .runtime-modal-progress-meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+
+/* ── 10-24：思考强度改成「低/中/高/极高」四档 + 绿→蓝渐变滑杆（用户参考图） ──
+   一条厚圆角轨道、常显白色圆点；不再用分段色/亮珠/火苗。 */
+.effort-picker-pop { width: min(320px, calc(100vw - 24px)); padding: 14px 14px 10px; border-radius: 16px; }
+.effort-picker-head { align-items: baseline; gap: 8px; margin-bottom: 12px; }
+.effort-picker-current { color: var(--text); font-size: 13px; font-weight: 650; }
+.effort-picker-bar { height: 38px; margin: 0 1px; }
+.effort-picker-track {
+  height: 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 9%, var(--panel));
+}
+.effort-picker-fillwrap {
+  height: 14px;
+  border-radius: 999px;
+  box-shadow: none;
+}
+.effort-picker-fill { border-radius: 999px; box-shadow: none; }
+.effort-picker-fill::after { opacity: 0.35; }
+.effort-picker-thumb {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  background: #fff;
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  box-shadow: 0 2px 8px #0000002e, 0 0 0 1px #0000000f;
+}
+.effort-picker-bar:hover .effort-picker-thumb,
+.effort-picker-bar:focus-within .effort-picker-thumb { transform: translate(-50%, -50%) scale(1.04); }
+.effort-picker-bead,
+.effort-picker-dots,
+.effort-picker-flames { display: none !important; }
+/* 拉满不再切火焰色：四档始终是同一条绿→蓝渐变 */
+.effort-picker-bar.burn .effort-picker-fill {
+  background-image: linear-gradient(90deg, #16a34a 0%, #0ea5e9 100%) !important;
+  box-shadow: none;
+}
+.effort-picker-bar.burn .effort-picker-fillwrap { box-shadow: none; }
+.effort-picker-bar.burn .effort-picker-track { background: color-mix(in srgb, var(--text) 9%, var(--panel)); }
+.effort-picker-bar.burn .effort-picker-thumb { border: 0; box-shadow: 0 2px 8px #0000002e, 0 0 0 1px #0000000f; }
+.effort-picker-ticks { margin-top: 7px; }
+.effort-tick { font-size: 11.5px; color: var(--faint); }
+.effort-tick.on { color: var(--text); font-weight: 650; }
+.effort-picker-hint { margin-top: 9px; }
+.effort-picker-hint > span { color: var(--text); font-weight: 600; }

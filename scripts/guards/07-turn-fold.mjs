@@ -618,9 +618,17 @@ export async function run() {
     (!/勾选思考档位/.test(appNC))
       ? ok("【32】没有指向已删除勾选区的过时文案（模型下拉的「更多设置…」）")
       : fail("【32】有文案还让用户去模型配置「勾选思考档位」—— 入口已经不存在了");
-    (/levels=\{\[\.\.\.ALL_EFFORTS\]\}/.test(appNC))
-      ? ok("【32】思考菜单档位恒为全集（不再按模型声明过滤）")
-      : fail("【32】菜单档位又按模型声明过滤了 —— 用户会选不到想选的档（09-18 已删除声明机制）");
+    (/levels=\{\["low", "medium", "high", "xhigh"\]\}/.test(appNC))
+      ? ok("【32】思考强度固定四档（低/中/高/极高，10-24 用户定稿）")
+      : fail("【32】思考强度档位不是四档 —— 用户明确要「低中高极高这几个档位就行」");
+
+    // 10-24 用户参考图定稿：一条绿→蓝渐变厚滑杆 + 常显白色圆点，四档标签。
+    ok(/linear-gradient(90deg, #16a34a 0%, #0ea5e9 100%)/.test(effortPickerC), "【32】思考强度是绿→蓝连续渐变条");
+    const effortTail = cssNC.slice(cssNC.indexOf("10-24：思考强度改成"));
+    ok(/.effort-picker-thumb {[sS]{0,220}opacity: 1/s.test(effortTail), "【32】白色圆点常显（不再 hover 才出现）");
+    ok(/.effort-picker-bead[sS]{0,160}display: none/s.test(effortTail), "【32】亮珠 / 刻点 / 火苗已隐藏（简洁版）");
+    ok(/.effort-picker-bar.burn .effort-picker-fill[sS]{0,220}linear-gradient(90deg, #16a34a 0%, #0ea5e9 100%)/s.test(effortTail), "【32】拉满仍是绿→蓝（不再切火焰色）");
+
     const applyBody = appNC.slice(appNC.indexOf("function applyEffort"), appNC.indexOf("function changeEffort"));
     (/if \(threadRef\.current\?\.id\) saveThreadEffort\(threadRef\.current\.id, value\)/.test(applyBody)
       && /else localStorage\.setItem\("default-effort", value\)/.test(applyBody)

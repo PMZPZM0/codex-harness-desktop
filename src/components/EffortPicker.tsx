@@ -115,11 +115,8 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, autoMod
     if (next && next !== value) onCommit(next);
   };
   const isMax = draft >= levels.length - 1;
-  // 分段色带：每档一段纯色，左→右 = 低→高（铺满整条轨道，再由 fillwrap 裁到已选宽度）
-  const bands = `linear-gradient(90deg, ${levels.map((level, i) => {
-    const c = effortColor(level, i);
-    return `${c} ${(i / levels.length) * 100}%, ${c} ${((i + 1) / levels.length) * 100}%`;
-  }).join(", ")})`;
+  // 连续渐变条：左绿右蓝（用户 10-24 参考图的观感），四档只取样其中的四个位置。
+  const bands = "linear-gradient(90deg, #16a34a 0%, #0ea5e9 100%)";
   const pct = levels.length > 1 ? (draft / (levels.length - 1)) * 100 : 0;
   // 渐变按「整条轨道」铺：已选段越窄，背景就要放得越大，颜色才与档位位置对齐
   const fillScale = pct > 0 ? (100 / pct) * 100 : undefined;
@@ -153,6 +150,7 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, autoMod
         >
           <div className="effort-picker-head">
             <strong>思考强度</strong>
+            <b className="effort-picker-current">{labels[shown] ?? shown}</b>
             <span>越往右，Codex 想得越久、越细</span>
           </div>
           {/* Laya 自动档（10-01）：开启后发送前由本地 laya 模型判档，滑块让位 */}
@@ -210,14 +208,12 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, autoMod
           </div>
           <div className="effort-picker-ticks">
             {levels.map((level, i) => {
-              const c = effortColor(level, i);
               const on = i === draft;
               return (
                 <button
                   key={level}
                   type="button"
                   className={`effort-tick${on ? " on" : ""}${blockedSet.has(level) ? " blocked" : ""}`}
-                  style={on ? ({ color: c } as CSSProperties) : undefined}
                   title={blockedSet.has(level) ? `该模型上次报「不支持」这一档 —— 选它会报错并自动降档` : undefined}
                   onClick={() => { setDraft(i); commit(level); }}
                 >
@@ -228,8 +224,7 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, autoMod
           </div>
           {/* 当前档位 + 一句用途（随拖动实时更新） */}
           <div className="effort-picker-hint">
-            <i style={{ background: color }} aria-hidden />
-            <span style={{ color }}>{labels[shown] ?? shown}</span>
+            <span>{labels[shown] ?? shown}</span>
             <em>{EFFORT_HINTS[shown] ?? ""}</em>
           </div>
           {/* 09-18：档位是**会话级**的（每个会话各自记住自己选的档位）；模型真不支持某档时
