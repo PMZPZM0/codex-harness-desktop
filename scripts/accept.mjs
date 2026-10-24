@@ -1587,9 +1587,10 @@ const CHECKS = [
       await h.eval(`(function(){ document.querySelector(".office-overlay-close")?.click(); document.querySelector(".function-menu-editor .fm-editor-close")?.click(); return 1; })()`).catch(() => undefined);
       await wait(400);
       await h.waitFor(`!!document.querySelector(".function-menu-sidebar")`, { label: "功能入口就绪", timeoutMs: 15000 }).catch(() => undefined);
-      // 上次可能停在侧栏底部：先切回顶部（默认位置）
-      if (!(await h.eval(`!!document.querySelector(".sidebar-options-top")`).catch(() => false))) {
-        await h.eval(`document.querySelector(".sidebar-options .function-menu-more")?.click()`).catch(() => undefined);
+      // 上次可能停在侧栏底部 / 两处都显示：先切回顶部（默认位置）
+      const onlyTop = await h.eval(`!!document.querySelector(".sidebar-options-top") && !document.querySelector(".sidebar-options:not(.sidebar-options-top)")`).catch(() => false);
+      if (!onlyTop) {
+        await h.eval(`document.querySelector(".function-menu-sidebar .function-menu-more")?.click()`).catch(() => undefined);
         await wait(250);
         await h.eval(`[...document.querySelectorAll(".function-menu-popover-item")].find((b) => b.innerText.includes("编辑菜单"))?.click()`).catch(() => undefined);
         await h.waitFor(`!!document.querySelector(".function-menu-editor")`, { timeoutMs: 4000 }).catch(() => undefined);
@@ -1653,8 +1654,8 @@ const CHECKS = [
           cols: [...document.querySelectorAll(".fm-edit-col")].map((c) => c.querySelectorAll(".fm-edit-row").length),
           locations: [...document.querySelectorAll(".fm-location-card")].map((b) => b.innerText.trim().split("\\n")[0]) };
       })()`).catch(() => null);
-      h.check("③ 更多 → 编辑菜单：弹窗有显示 / 更多两列 + 顶部/底部两个展示位置",
-        Boolean(editor && editor.open && editor.cols[0] >= 1 && editor.locations.length === 2 && editor.locations.includes("侧栏顶部") && editor.locations.includes("侧栏底部")),
+      h.check("③ 更多 → 编辑菜单：弹窗有显示 / 更多两列 + 顶部/底部/两处都显示三个位置",
+        Boolean(editor && editor.open && editor.cols[0] >= 1 && editor.locations.length === 3 && editor.locations.includes("侧栏顶部") && editor.locations.includes("侧栏底部") && editor.locations.includes("两处都显示")),
         JSON.stringify(editor));
 
       // 拖动第一项到「更多」列
@@ -1707,10 +1708,67 @@ const CHECKS = [
       h.check("⑥ 切到侧栏底部：入口组移到用户名上方、顶部组消失（共用顺序/更多配置）",
         Boolean(bottom && !bottom.top && bottom.bottom && bottom.aboveAccount && bottom.count === 8),
         JSON.stringify(bottom));
+      // ⑦ 两处都显示：搜索任务下面常驻区与侧栏底部组同时渲染
+      await h.eval(`document.querySelector(".sidebar-options:not(.sidebar-options-top) .function-menu-more")?.click()`).catch(() => undefined);
+      await wait(250);
+      await h.eval(`[...document.querySelectorAll(".function-menu-popover-item")].find((b) => b.innerText.includes("编辑菜单"))?.click()`).catch(() => undefined);
+      await h.waitFor(`!!document.querySelector(".function-menu-editor")`, { timeoutMs: 4000 }).catch(() => undefined);
+      await h.eval(`document.querySelectorAll(".fm-location-card")[2]?.click()`).catch(() => undefined);
+      await wait(300);
+      await h.eval(`[...document.querySelectorAll(".fm-editor-foot button")].find((b) => b.innerText.includes("完成"))?.click()`).catch(() => undefined);
+      await wait(400);
+      const both = await h.eval(`(function(){
+        const top=document.querySelector(".sidebar-options-top");
+        const bottom=document.querySelector(".sidebar-options:not(.sidebar-options-top)");
+        let stored=null; try { stored=JSON.parse(localStorage.getItem("function-menu-v1") || "null"); } catch {}
+        const labels=(g)=>g?[...g.querySelectorAll(".sidebar-cap-row")].map((b)=>b.querySelector("span")?.innerText.trim()):[];
+        return { top:!!top, bottom:!!bottom, location: stored?.location || "",
+          topCount: labels(top).length, bottomCount: labels(bottom).length,
+          same: labels(top).join(">") === labels(bottom).join(">") };
+      })()`).catch(() => null);
+      h.check("⑦ 选「两处都显示」：搜索任务下常驻区与侧栏底部组同时存在且顺序一致",
+        Boolean(both && both.top && both.bottom && both.location === "both" && both.topCount === 8 && both.bottomCount === 8 && both.same),
+        JSON.stringify(both));
       await h.screenshot("function-menu");
 
-      // 再切回顶部（新建/搜索下面）
-      await h.eval(`document.querySelector(".sidebar-options:not(.sidebar-options-top) .function-menu-more")?.click()`).catch(() => undefined);
+      // ⑧ 侧栏里直接拖动排序：不用打开编辑弹窗，落手即写回配置（两处同步）
+      const dragBefore = await h.eval(`(function(){
+        const rows=[...document.querySelectorAll(".sidebar-options-top .sidebar-cap-row:not(.function-menu-more)")];
+        let stored=null; try { stored=JSON.parse(localStorage.getItem("function-menu-v1") || "null"); } catch {}
+        return { labels: rows.map((b)=>b.querySelector("span")?.innerText.trim()), order: stored?.order || [] };
+      })()`).catch(() => null);
+      await h.eval(`(function(){
+        const rows=[...document.querySelectorAll(".sidebar-options-top .sidebar-cap-row:not(.function-menu-more)")];
+        if (rows.length < 2) return 0;
+        const dt=new DataTransfer(); window.__fmDt=dt;
+        rows[1].dispatchEvent(new DragEvent("dragstart", { bubbles:true, cancelable:true, dataTransfer:dt }));
+        return 1;
+      })()`).catch(() => 0);
+      await wait(200);
+      await h.eval(`(function(){
+        const rows=[...document.querySelectorAll(".sidebar-options-top .sidebar-cap-row:not(.function-menu-more)")];
+        if (rows.length < 2) return 0;
+        rows[0].dispatchEvent(new DragEvent("dragover", { bubbles:true, cancelable:true, dataTransfer:window.__fmDt }));
+        rows[0].dispatchEvent(new DragEvent("drop", { bubbles:true, cancelable:true, dataTransfer:window.__fmDt }));
+        return 1;
+      })()`).catch(() => 0);
+      await wait(350);
+      const dragAfter = await h.eval(`(function(){
+        const top=document.querySelector(".sidebar-options-top");
+        const bottom=document.querySelector(".sidebar-options:not(.sidebar-options-top)");
+        const labels=(g)=>g?[...g.querySelectorAll(".sidebar-cap-row:not(.function-menu-more)")].map((b)=>b.querySelector("span")?.innerText.trim()):[];
+        let stored=null; try { stored=JSON.parse(localStorage.getItem("function-menu-v1") || "null"); } catch {}
+        return { labels: labels(top), bottomLabels: labels(bottom), order: stored?.order || [],
+          location: stored?.location || "", bottom: !!bottom };
+      })()`).catch(() => null);
+      h.check("⑧ 侧栏直接拖动即生效：首两项立即换位、配置同步、底部副本一起更新（无需点完成）",
+        Boolean(dragBefore && dragAfter && dragBefore.labels[0] === dragAfter.labels[1] && dragBefore.labels[1] === dragAfter.labels[0]
+          && dragAfter.order[0] === dragBefore.order[1] && dragAfter.location === "both" && dragAfter.bottom
+          && dragAfter.labels.join(">") === dragAfter.bottomLabels.join(">")),
+        JSON.stringify({ before: dragBefore, after: dragAfter }));
+
+      // ⑨ 收尾恢复顶部位置与默认排序（不留测试配置）
+      await h.eval(`document.querySelector(".sidebar-options-top .function-menu-more")?.click()`).catch(() => undefined);
       await wait(250);
       await h.eval(`[...document.querySelectorAll(".function-menu-popover-item")].find((b) => b.innerText.includes("编辑菜单"))?.click()`).catch(() => undefined);
       await h.waitFor(`!!document.querySelector(".function-menu-editor")`, { timeoutMs: 4000 }).catch(() => undefined);
@@ -1724,12 +1782,13 @@ const CHECKS = [
         const group = document.querySelector(".sidebar-options-top");
         const quick = document.querySelector(".sidebar-quick")?.getBoundingClientRect();
         const rect = group?.getBoundingClientRect();
-        return { top: !!group, underQuick: Boolean(quick && rect && rect.top >= quick.bottom - 1 && rect.top <= quick.bottom + 28),
+        return { top: !!group, bottom: !!document.querySelector(".sidebar-options:not(.sidebar-options-top)"),
+          underQuick: Boolean(quick && rect && rect.top >= quick.bottom - 1 && rect.top <= quick.bottom + 28),
           count: group ? group.querySelectorAll(".sidebar-cap-row").length : 0,
           badge: !!group?.querySelector(".function-menu-more-badge") };
       })()`).catch(() => null);
-      h.check("⑦ 收尾恢复顶部位置与默认排序（不留测试配置）",
-        Boolean(restored && restored.top && restored.underQuick && restored.count === 8 && !restored.badge),
+      h.check("⑨ 收尾恢复顶部位置与默认排序（不留测试配置）",
+        Boolean(restored && restored.top && !restored.bottom && restored.underQuick && restored.count === 8 && !restored.badge),
         JSON.stringify(restored));
     },
   },
