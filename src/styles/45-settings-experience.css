@@ -503,3 +503,6 @@
 /* 供应商小卡：多列 auto-fill，高度随内容；不再强制 152px 最小高度 */
 .settings-exp-shell .provider-card { min-height: 0; padding: 12px 13px; gap: 8px; }
 .settings-exp-shell .relay-add-card { background: var(--panel); border: 1px dashed var(--line); }
+
+/* 「更新模型」已移到卡片底部操作行：取消旧位置的 margin-left:auto，与测试/编辑同款 */
+.settings-exp-shell .provider-card-action.provider-card-update { margin-left: 0; }
