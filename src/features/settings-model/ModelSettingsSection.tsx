@@ -219,7 +219,6 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                               {models.slice(0, 3).map((m: any) => <span className="provider-model-chip" key={m.id}>{m.id}</span>)}
                               {models.length > 3 && <span className="provider-model-chip more">+{models.length - 3}</span>}
                               {!models.length && <span className="provider-card-empty">{isPseudoPptoken ? "填入 API Key 后即可使用" : "还没有模型"}</span>}
-                              <button type="button" className="provider-card-update" onClick={(event) => { event.stopPropagation(); openProviderEditor(p, isPseudoPptoken); }}><RefreshCw size={11} />{isPseudoPptoken ? "配置" : "更新模型"}</button>
                             </div>
                             <div className="provider-card-foot">
                               {!isPseudoPptoken && <span className={`provider-dot ${p.provider === currentProvider ? "on" : ""}`} title={p.provider === currentProvider ? "当前生效供应商" : ""} />}
@@ -230,6 +229,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                                 </span>
                               )}
                               <span className="provider-card-actions">
+                                <button type="button" className="provider-card-action provider-card-update" title="刷新该供应商的模型列表" onClick={(event) => { event.stopPropagation(); openProviderEditor(p, isPseudoPptoken); }}><RefreshCw size={11} />{isPseudoPptoken ? "配置" : "更新模型"}</button>
                                 {health?.state === "bad" && health.auth && (
                                   <button type="button" className="provider-card-action danger" onClick={(event) => { event.stopPropagation(); void repairProviderCard(p); }}>{p.provider === "cloud" ? "修复密钥" : "更新密钥"}</button>
                                 )}
