@@ -173,11 +173,28 @@ const VISION_INSTRUCTIONS = (mediaCommand: string) =>
 const REVIEW_INSTRUCTIONS =
   "\n6) fresh-context review — when you are about to hand over a non-trivial result (a code change, a plan, a document), prefer having it reviewed by a NEW session that cannot see this conversation.\n   IF the conversation carries the notice 「【调度已开启】」(the app posts it when the user flips this session's 调度 switch): dispatch the built-in subagent named \"评审（新鲜上下文）\" with kind=subagent. It judges only the material you hand it — which is the point: your own review is contaminated by the detour you just took.\n   How to write the query (the reviewer sees NOTHING else, so it must be self-contained): (a) what the material is and where it lives — file paths, or the full text if short; (b) what the goal was; (c) what you are unsure about. Do NOT paste this conversation, and do NOT narrate your reasoning.\n   IF that call comes back rejected with a reason about the 调度 switch (「总开关是关着的」/「不持有调度权限」/「没有开启…这一类」): scheduling is off for this session after all — do not retry, do not work around it, fall through to the next line.\n   IF there is no such notice, or a call was just rejected for that reason: scheduling is off for this session — do not try to work around it; review the material yourself and say explicitly that it was a self-review.\n   Skip this entirely for trivial edits, or when the user asked for speed.";
 
+/** ⛔⛔ 名字 / 称呼**不是**画像事实（10-24 实测定案，同一句要贴到每一档记忆文案里）。
+ *
+ *  事故形态（用户截图）：用户给助手取名「小布子」、自称「小潘总」，模型回「记住了」，
+ *  做法却是 `exec_command` 往 `USER.md` 追加两行画像 —— 界面上仍显示 `Codex` / `Administrator`。
+ *  为什么加了 `identity_update` 工具还是这样：模型是**照 7b 这条规则干活的**（「学到用户的稳定事实
+ *  就追加一行画像，可通过 profile API **或直接改文件**」），工具描述里那句「不要只写进记忆」压不动
+ *  一条写在规则正文里的硬要求。⇒ 必须在这一层改口，否则工具再全也会被绕过。
+ *
+ *  判据：名字只有一个落点（personalization.assistantName / nickname，由 `identity_update` 工具写，
+ *  写盘后渲染层立刻刷新）—— 进 USER.md/MEMORY.md/lessons/日志都不改变界面，只会让两处名字长期分叉。
+ */
+const IDENTITY_NOT_PROFILE =
+  " ⛔ NAMES ARE NOT A PROFILE FACT: the name the user gives you, and the name the user wants to be called, are **identity fields** — call the `identity_update` tool (the UI and AGENTS.md update instantly). ⛔ Never append 「给你起名…」/「用户自称…」 to `USER.md` (or MEMORY.md / lessons / logs): that does NOT change the displayed name, and saying 「记住了」while the header still shows the old name is exactly the bug users report.";
+
+const IDENTITY_NOT_PROFILE_ZH =
+  " ⛔ 名字/称呼不是画像：用户给你取的名字、或用户希望被称呼的名字，只能调 `identity_update` 工具写入（界面与 AGENTS.md 立刻生效）。⛔ 绝不把「给助手起名…」「用户自称…」追加进 `USER.md` 或任何记忆文件 —— 那样界面上的名字不会变，模型嘴上说「记住了」而标题还挂着旧名字，就是用户反复投诉的那个 bug。";
+
 /** 记忆分层 + 踩坑留痕（09-22 加：用户实测「犯的错、踩的坑都不记」） */
 const MEMORY_INSTRUCTIONS =
   "\n7) memory & pitfall log — this app keeps a layered memory for the workspace you are working in, and the standing context is injected automatically each turn. Write into it like this:\n" +
   "   a) PITFALLS YOU HIT OR WERE CORRECTED ON — you MUST leave a trace. Append ONE line to the right file under `<workspace>/.codex-harness/memory/lessons/` (one file per category, see f), format: `- YYYY-MM-DD ⚠️ 纠错：<现象（一句）> → <根因> → <以后怎么做>` (or `⚠️ 坑：` for a pitfall you hit yourself). Read the target file first; if the same 现象 is already there, do NOT duplicate it (and if your new insight corrects an old line, EDIT that line instead of adding another).\n" +
-  "   b) `.codex-harness/memory/project/MEMORY.md` (L1) is the distillation output — do not hand-write it; let distill fill it. `USER.md` (L0, cross-project) you MUST co-maintain: when you learn a STABLE fact about the user (role, stack preference, taste, taboo, working style), append ONE line `- YYYY-MM-DD 画像：<fact>` via the app's profile API or the file itself — dedupe first (if a similar line exists, skip), NEVER rewrite or delete existing lines. Daily turns are captured automatically into `logs/YYYY-MM-DD.md`; do not duplicate them.\n" +
+  "   b) `.codex-harness/memory/project/MEMORY.md` (L1) is the distillation output — do not hand-write it; let distill fill it. `USER.md` (L0, cross-project) you MUST co-maintain: when you learn a STABLE fact about the user (role, stack preference, taste, taboo, working style), append ONE line `- YYYY-MM-DD 画像：<fact>` via the app's profile API or the file itself — dedupe first (if a similar line exists, skip), NEVER rewrite or delete existing lines. Daily turns are captured automatically into `logs/YYYY-MM-DD.md`; do not duplicate them." + IDENTITY_NOT_PROFILE + "\n" +
   "   c) When the user says you got something wrong: first restate 现象/根因 in one line so the user can confirm, then fix it, then write that line into `lessons/corrections.md` BEFORE you report back.\n" +
   "   d) The `lessons/` files are injected at the TOP of the standing context every turn — treat them as binding rules for this workspace (the user calls them 「纪律」). Keep each line short; they are not a narrative log.\n" +
   "   e) PROMOTION: when the same 现象 shows up a SECOND time, upgrade it into a skill (see 8) and mark that line 「已升级为技能 …」 — a pitfall with no executable steps gets stepped in again.\n" +
@@ -191,7 +208,7 @@ const MEMORY_INSTRUCTIONS =
 const MCP_MEMORY_INSTRUCTIONS =
   "\n7) memory & pitfall log — this app keeps a layered memory for the workspace, and the standing context (L0 `USER.md` · L1 `project/MEMORY.md` · L2 `lessons/`) is injected automatically each turn. The current memory backend is the **MCP memory service** (see rule 10c / skill `memory-mcp-backend`).\n" +
   "   a) EXPLICIT MEMORY GOES THROUGH MCP — call the MCP tool `local_memory__memory_write` (`type` = code_fact / decision / mistake / pattern / task_archive; `importance` = number 1–5). ⛔ Do NOT append to `lessons/*.md`, `MEMORY.md` or the daily log: the built-in lesson write is disabled while MCP is active (the write would be a no-op), and duplicating the same fact in two stores is forbidden. ⛔ The exposed name is literally `<connector>__<tool>`: `local_memory__memory_write` — NOT `memory-write`, NOT `memory_write`, NOT `mcp__local-memory__memory-write`. If it is missing from your tool list, the MCP backend is not live — say so instead of hand-writing files.\n" +
-  "   b) `.codex-harness/memory/project/MEMORY.md` (L1) is the distillation output — never hand-write it. `USER.md` (L0, cross-project) you MUST co-maintain: when you learn a STABLE fact about the user (role, stack preference, taste, taboo, working style), append ONE line `- YYYY-MM-DD 画像：<fact>` via the app's profile API or the file itself — dedupe first, NEVER rewrite or delete existing lines. Daily turns are captured automatically into `logs/YYYY-MM-DD.md`; do not duplicate them.\n" +
+  "   b) `.codex-harness/memory/project/MEMORY.md` (L1) is the distillation output — never hand-write it. `USER.md` (L0, cross-project) you MUST co-maintain: when you learn a STABLE fact about the user (role, stack preference, taste, taboo, working style), append ONE line `- YYYY-MM-DD 画像：<fact>` via the app's profile API or the file itself — dedupe first, NEVER rewrite or delete existing lines. Daily turns are captured automatically into `logs/YYYY-MM-DD.md`; do not duplicate them." + IDENTITY_NOT_PROFILE + "\n" +
   "   c) When the user says you got something wrong: first restate 现象/根因 in one line so the user can confirm, then fix it, then store a `mistake` in MCP BEFORE you report back.\n" +
   "   d) The standing block is READ-ONLY injected context and binding for this workspace. The ONE exception is the `## 待入 MCP（自动捕获，落库后删除）` section: drain it — write each line to MCP with the mapped type (usually `mistake`), then delete that line. ⛔ Do not keep the rest of the block in sync with MCP: the local pyramid remains responsible for standing injection, L0/L4 auto-capture and 90% distillation (rule 9); MCP only replaces the explicit memory store.\n" +
   "   e) PROMOTION: when the same 现象 shows up a SECOND time, upgrade it into a skill (see 8) and mark the MCP entry or pending queue line 「已升级为技能 …」 — a pitfall with no executable steps gets stepped in again.\n" +
@@ -207,7 +224,7 @@ const CLOUD_MEMORY_INSTRUCTIONS =
   "\n7) MEMORY — 当前记忆后端是**云端 memapi**：记忆由对话上游在**请求层自动注入 / 自动写入**，按账号隔离。\n" +
   "   ⛔ 你**不需要**调用任何记忆工具（这个后端没有记忆工具），也⛔ **不要**往 `lessons/*.md`、`MEMORY.md` 或 `logs/` 手写 —— 那是内置金字塔的位置，云端读不到，写了等于没写。\n" +
   "   ✅ 正常回答即可。这条链路唯一的要求是**内容可检索**：讲决定/踩坑/约定时把「是什么 + 为什么 + 影响」说清楚，别只丢一个代号。\n" +
-  "   ⛔ 仍然要你维护的只有 `USER.md`（L0 用户画像，跨项目）：学到用户的稳定事实时追加一行 `- YYYY-MM-DD 画像：<fact>`，写前去重。\n" +
+  "   ⛔ 仍然要你维护的只有 `USER.md`（L0 用户画像，跨项目）：学到用户的稳定事实时追加一行 `- YYYY-MM-DD 画像：<fact>`，写前去重。" + IDENTITY_NOT_PROFILE_ZH + "\n" +
   "   ⛔ 切口令：设置 → 记忆 → 后端选项 切到「内置」或「MCP」后，本口径会在下一个线程生效；⛔ 不要在同一个回合里两套写法都试一遍。\n";
 
 const memoryInstructions = () => {
@@ -406,7 +423,7 @@ function gateAndReviewInstructions(): string {
   const R = memoryToolNames.read;
   const C = memoryToolNames.context;
   const memoryRule = route.backend === "mcp"
-    ? `   c) MEMORY WRITES GO THROUGH THE MCP MEMORY SERVICE: 当前记忆后端是 **MCP 记忆服务**（写法见 \`${memorySkill}\`）—— 要记东西时调 \`${W}\`（\`type\` 必须取自枚举 code_fact / decision / mistake / pattern / task_archive，\`importance\` 是 **1–5 的数字**；参数写错会被服务直接拒）。⛔ **不要**再往 \`lessons/*.md\`、\`MEMORY.md\` 或日志手写同一条 —— 内置写入已被后端开关让开（写了也进不去），重复写只会在两处维护两套记忆。⛔⛔ **工具名的铁规**：本应用暴露的名字是 \`<连接器>__<工具>\`（**下划线**、**没有** \`mcp__\` 前缀），即 \`${W}\` —— ⛔ 不要拿 \`memory-write\` / \`memory_write\` / \`mcp__local-memory__memory-write\` 这类别的写法去试；若 \`${W}\` **不在工具列表里**，说明 MCP 后端没生效（服务未装或后端已切走），**不要**改用 node 直连 MCP server、**更不要**把同一条内容在三处手写一遍 —— 按内容归属**只落一处**：关于用户本人（称呼/偏好/风格）→ USER.md；关于本项目（代号/架构/约定/事实）→ project/BACKGROUND.md；本次会话的临时结论 → 不落文件。回复里如实说一句「MCP 记忆服务不可达，已降级写入 <那一处>」，让用户知道降级了，而不是靠多写几份掩盖。检索用 \`${R}\`（query / id / 无参 recap），需要带预算的上下文用 \`${C}\`。常驻记忆（USER.md / MEMORY.md）仍作为只读上下文注入，⛔ 不要把它"同步"进 MCP。清理与整洁规则见 \`${MEMORY_HYGIENE_SKILL}\`（只作用于内置常驻层，仍照常适用）。`
+    ? `   c) MEMORY WRITES GO THROUGH THE MCP MEMORY SERVICE: 当前记忆后端是 **MCP 记忆服务**（写法见 \`${memorySkill}\`）—— 要记东西时调 \`${W}\`（\`type\` 必须取自枚举 code_fact / decision / mistake / pattern / task_archive，\`importance\` 是 **1–5 的数字**；参数写错会被服务直接拒）。⛔ **不要**再往 \`lessons/*.md\`、\`MEMORY.md\` 或日志手写同一条 —— 内置写入已被后端开关让开（写了也进不去），重复写只会在两处维护两套记忆。⛔⛔ **工具名的铁规**：本应用暴露的名字是 \`<连接器>__<工具>\`（**下划线**、**没有** \`mcp__\` 前缀），即 \`${W}\` —— ⛔ 不要拿 \`memory-write\` / \`memory_write\` / \`mcp__local-memory__memory-write\` 这类别的写法去试；若 \`${W}\` **不在工具列表里**，说明 MCP 后端没生效（服务未装或后端已切走），**不要**改用 node 直连 MCP server、**更不要**把同一条内容在三处手写一遍 —— 按内容归属**只落一处**：关于用户本人（偏好/风格/职业）→ USER.md（⛔ 名字/称呼例外：走 identity_update 工具）；关于本项目（代号/架构/约定/事实）→ project/BACKGROUND.md；本次会话的临时结论 → 不落文件。回复里如实说一句「MCP 记忆服务不可达，已降级写入 <那一处>」，让用户知道降级了，而不是靠多写几份掩盖。检索用 \`${R}\`（query / id / 无参 recap），需要带预算的上下文用 \`${C}\`。常驻记忆（USER.md / MEMORY.md）仍作为只读上下文注入，⛔ 不要把它"同步"进 MCP。清理与整洁规则见 \`${MEMORY_HYGIENE_SKILL}\`（只作用于内置常驻层，仍照常适用）。`
     : route.backend === "cloud"
       /* ⛔ cloud 分支**不点名任何工具**：这个后端没有记忆工具。写完就是一整段空指引。 */
       ? `   c) MEMORY IS AUTOMATIC IN THIS BACKEND: 当前记忆后端是**云端 memapi**（写法见 \`${memorySkill}\`）—— 记忆由对话上游在请求层自动注入/写入，⛔ **不需要你调任何记忆工具**，也⛔ **不要**往 \`lessons/*.md\` / \`MEMORY.md\` / 日志手写（那是内置金字塔的位置，云端读不到 ⇒ 等于没写）。收尾时只需要两件事：把本次的踩坑与结论**在回复里讲清楚**（上游按对话内容收记忆），可复用流程沉淀成技能（规则 8）。USER.md（L0 用户画像）仍由你维护。常驻注入与整洁规则照旧。`
