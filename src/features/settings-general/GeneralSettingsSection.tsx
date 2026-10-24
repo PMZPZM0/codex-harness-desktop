@@ -10,9 +10,8 @@
  */
 import { AppSelect } from "../../components/AppSelect";
 import { useEffect, useState } from "react";
-import { Code2, Copy, FolderOpen, FolderTree, Globe2, HelpCircle, Keyboard, Monitor, MonitorUp, PanelRightOpen, RefreshCw, Search, Settings2, ShieldCheck, Sparkles, Zap, Brain } from "lucide-react";
+import { Code2, Copy, FolderOpen, FolderTree, Globe2, HelpCircle, Keyboard, Monitor, MonitorUp, PanelRightOpen, RefreshCw, Search, Settings2, ShieldCheck, Sparkles, Zap } from "lucide-react";
 import { copyTextToClipboard } from "../../lib/clipboard";
-import { setReasoningDisplayMode, useReasoningDisplayMode } from "../../lib/reasoning-display-mode";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { Spinner } from "../../components/CardShell";
 import { BuiltinSkillSwitch } from "./BuiltinSkillSwitch";
@@ -154,7 +153,6 @@ function DataDirEditor({ currentPath, setNotice }: { currentPath: string; setNot
 export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
   const { globalPermApproval, applyGlobalPermissionMode, workspace, chooseWorkspace, userDataPath, setNotice, rightOpen, setRightOpen, capabilityHint, desktopAuto, groupBusy, toggleDesktopAuto, browserAuto, toggleBrowserAuto, ponytailOn, applyGroup, hardwareAccel, changeHardwareAccel, restartPending, SHORTCUT_GROUPS, setShortcutsOpen, engineVersion, engineCheck, engineUpdating, checkEngineUpdateNow, performEngineUpdateNow, engineUpdatePercent, engineUpdateStageText, engineUpdateLog, engineUpdateResult, relaunchCountdown, downloadSource } = props;
   const [showAccelHelp, setShowAccelHelp] = useState(false);
-  const reasoningDisplay = useReasoningDisplayMode();
   /** 引擎更新的实际取源（供卡片如实显示；口径见 ENGINE_SOURCE_LABEL）。 */
   const engineSourceLabel = ENGINE_SOURCE_LABEL[String(downloadSource ?? "auto")] ?? ENGINE_SOURCE_LABEL.auto;
   return (
@@ -265,25 +263,6 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                           · <strong>关闭</strong>：完全用 CPU 渲染（个别显卡与 GPU 通道冲突导致花屏/闪烁时用）
                         </div>}
                         {restartPending && <p className="settings-card-hint accel-restart-hint">⚡ 硬件加速设置已保存，重启应用后生效。</p>}
-                      </div>
-                    </div>
-
-                    <div className="settings-card card-reasoning">
-                      <div className="settings-card-head"><Brain size={15} /><strong>思考板块展示</strong><span className="settings-subhead-hint">立即生效，无需重启</span></div>
-                      <div className="settings-card-body">
-                        <div className="perm-seg reasoning-mode-seg">
-                          <button type="button" className={`perm-seg-btn ${reasoningDisplay === "auto" ? "on" : ""}`} onClick={() => setReasoningDisplayMode("auto")}>
-                            <strong>自适应展开</strong>
-                            <small>浮窗跟随输入框宽度，按可用空间自动向上/向下展开（默认）</small>
-                            {reasoningDisplay === "auto" && <em>当前</em>}
-                          </button>
-                          <button type="button" className={`perm-seg-btn ${reasoningDisplay === "strip" ? "on" : ""}`} onClick={() => setReasoningDisplayMode("strip")}>
-                            <strong>长条按行</strong>
-                            <small>消息流内长条按行展示思考内容，点击标题或正文展开全文</small>
-                            {reasoningDisplay === "strip" && <em>当前</em>}
-                          </button>
-                        </div>
-                        <p className="settings-card-hint">只影响思考内容的呈现方式，不会改变模型思考本身或历史记录。长条模式收起时与过程行同款，只显示最新一行（自动横向滚动）；当前正在直播的思考内联显示，已经结束的思考与其他过程在直播末段超过 8 条会自动收起，回合结束后统一收进「耗时」大折叠。点击长条展开全文，最高 50vh 内部滚动。</p>
                       </div>
                     </div>
 

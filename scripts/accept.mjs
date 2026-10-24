@@ -305,6 +305,22 @@ const CHECKS = [
         await wait(250);
       }
       h.check(`② ${list.length} 个设置页逐页打开无 ErrorBoundary`, bad.length === 0, bad.slice(0, 4).join(" ∣ "));
+      // 10-24 用户令：「思考板块」从控制台搬到外观，放在「功能入口」调整上方（搬走，不重复）。
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(x=>(x.textContent||"").trim()==="外观"); if(b) b.click(); return 1; })()`);
+      await wait(1200);
+      const moved = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal");
+        const card=[...m.querySelectorAll(".card-reasoning")].find(x=>(x.textContent||"").includes("思考板块展示"));
+        const fn=m.querySelector(".appearance-function-card");
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(), has:!!card,
+          above:!!(card&&fn&&card.getBoundingClientRect().top < fn.getBoundingClientRect().top) };
+      })()`);
+      h.check("③ 外观页：思考板块展示在「功能入口」上方", moved?.page === "外观" && moved?.has && moved?.above, JSON.stringify(moved));
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(x=>(x.textContent||"").trim()==="控制台"); if(b) b.click(); return 1; })()`);
+      await wait(1200);
+      const gone = await h.eval(`(function(){ const m=document.querySelector(".settings-modal");
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(), has:(m.innerText||"").includes("思考板块展示") }; })()`);
+      h.check("④ 控制台页：不再重复出现思考板块展示", gone?.page === "控制台" && gone?.has === false, JSON.stringify(gone));
     },
   },
   {

@@ -5,12 +5,13 @@
  * ⛔ 主题按钮由 src/lib/themes.ts 的 THEMES 注册表渲染：新增主题 = 表里加一行
  *    + styles 里加一段 `:root[data-theme="<id>"]` 变量块，这里与 bag 零改动。
  */
-import { Check, Moon, Sun, ZoomIn } from "lucide-react";
+import { Brain, Check, Moon, Sun, ZoomIn } from "lucide-react";
 import { CodeAppearanceSection } from "../../components/CodeAppearance";
 import { FunctionMenuSettings } from "../function-menu";
 import { WallpaperSettingsSection } from "../wallpaper";
 import { BootIntroSettingsRow } from "./boot550c";
 import { THEMES } from "../../lib/themes";
+import { setReasoningDisplayMode, useReasoningDisplayMode } from "../../lib/reasoning-display-mode";
 import { runVisualSwitch, themeLabelOf } from "../../lib/visual-switch";
 import { SettingsGroupHead, SettingsPageHero } from "../../components/SettingsPageHero";
 
@@ -18,6 +19,7 @@ export type AppearanceSettingsSectionProps = { theme: any; setTheme: any; uiFont
 
 export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps) {
   const { theme, setTheme, uiFont, setUiFont, onNotice } = props;
+  const reasoningDisplay = useReasoningDisplayMode();
   return (
     <>
       <section className="settings-section stack appearance-page settings-exp-page">
@@ -48,6 +50,25 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
           <button type="button" className={uiFont === "default" ? "active" : ""} onClick={() => { setUiFont("default"); localStorage.setItem("ui-font", "default"); }}><span className="fs-demo fs-demo-default">标准</span></button>
           <button type="button" className={uiFont === "large" ? "active" : ""} onClick={() => { setUiFont("large"); localStorage.setItem("ui-font", "large"); }}><span className="fs-demo fs-demo-large">大字</span></button>
         </div>
+        </div>
+        <SettingsGroupHead title="思考板块" hint="展示方式 · 立即生效" />
+        <div className="settings-card card-reasoning">
+          <div className="settings-card-head"><Brain size={15} /><strong>思考板块展示</strong><span className="settings-subhead-hint">立即生效，无需重启</span></div>
+          <div className="settings-card-body">
+            <div className="perm-seg reasoning-mode-seg">
+              <button type="button" className={`perm-seg-btn ${reasoningDisplay === "auto" ? "on" : ""}`} onClick={() => setReasoningDisplayMode("auto")}>
+                <strong>自适应展开</strong>
+                <small>浮窗跟随输入框宽度，按可用空间自动向上/向下展开（默认）</small>
+                {reasoningDisplay === "auto" && <em>当前</em>}
+              </button>
+              <button type="button" className={`perm-seg-btn ${reasoningDisplay === "strip" ? "on" : ""}`} onClick={() => setReasoningDisplayMode("strip")}>
+                <strong>长条按行</strong>
+                <small>消息流内长条按行展示思考内容，点击标题或正文展开全文</small>
+                {reasoningDisplay === "strip" && <em>当前</em>}
+              </button>
+            </div>
+            <p className="settings-card-hint">只影响思考内容的呈现方式，不会改变模型思考本身或历史记录。长条模式收起时与过程行同款，只显示最新一行（自动横向滚动）；当前正在直播的思考内联显示，已经结束的思考与其他过程在直播末段超过 8 条会自动收起，回合结束后统一收进「耗时」大折叠。点击长条展开全文，最高 50vh 内部滚动。</p>
+          </div>
         </div>
         <SettingsGroupHead title="功能入口" hint="侧栏入口位置与顺序" />
         <div className="settings-exp-card appearance-function-card"><FunctionMenuSettings onNotice={onNotice} /></div>
