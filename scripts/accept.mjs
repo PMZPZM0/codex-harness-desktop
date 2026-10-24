@@ -325,7 +325,7 @@ const CHECKS = [
   },
   {
     id: "settings-unified",
-    name: "⑳ 设置统一版式（16 页页头不截断 / 无横向溢出 / 入口与模板不留空格子 / 收藏夹说明单列）",
+    name: "⑳ 设置统一简洁风（24 页页头不截断 / 无横向溢出 / 一列长卡 / 收藏夹说明单列）",
     run: async (h) => {
       // 10-24 用户令：「我框住的这些，你也全部优化一下布局，还有那个收藏夹」「界面都做好看一点，
       // 风格统一，方便新手」。判据只量**真实布局**：页头是否被滚动位置截断、有没有横向溢出、
@@ -342,7 +342,13 @@ const CHECKS = [
           if(!b) return false; b.click(); return true;
         })()`);
         if (!clicked) { bad.push(`${label}: 导航项不存在`); continue; }
-        await wait(label === "知识库" || label === "插件" || label === "技能" ? 1800 : 1000);
+        // 等新页真正挂载（懒加载 chunk 首次可达 1s+）：骨架消失且页头出现再量，
+        // 否则读到的是上一页的页头（旧实现会误报「页头被截断」）。
+        await h.waitFor(`(function(){
+          const c = document.querySelector('.settings-content');
+          return !!c && !c.querySelector('.settings-boot') && !!c.querySelector('.settings-exp-hero, .settings-section > .settings-copy, .settings-section > .settings-block-head, .comp-lib-head');
+        })()`, { label: `${label} 页头`, timeoutMs: 8000 }).catch(() => undefined);
+        await wait(250);
         const probe = await h.eval(`(function(){
           const content = document.querySelector('.settings-content');
           const header = content?.querySelector('.settings-section > .settings-copy, .settings-section > .settings-block-head, .comp-lib-head');
@@ -362,7 +368,7 @@ const CHECKS = [
         if (!(probe?.top >= -1)) bad.push(`${label}: 页头被截断(top=${probe?.top})`);
         if (!(probe?.overflow <= 2)) bad.push(`${label}: 横向溢出(${probe?.overflow}px)`);
       }
-      h.check("① 16 页统一壳 + 页头完整 + 无横向溢出", bad.length === 0, bad.slice(0, 5).join(" ∣ "));
+      h.check("① 24 页统一壳 + 页头完整 + 无横向溢出", bad.length === 0, bad.slice(0, 5).join(" ∣ "));
       h.check("② 定时任务页标题正确（不再写成「自动化」）", titles["定时任务"] === "定时任务", `实得「${titles["定时任务"]}」`);
       h.check("③ 技能页头是两行网格（标题+操作一行、说明整宽一行）", await (async () => {
         await h.eval(`(function(){
@@ -407,6 +413,24 @@ const CHECKS = [
         return { found:true, display: cs.display, w: Math.round(el.getBoundingClientRect().width), sw: el.scrollWidth };
       })()`);
       h.check("⑦ 收藏夹页脚说明是单列块（不再被 flex 拆成多列）", foot?.found && foot.display === "block" && foot.sw <= foot.w + 2, JSON.stringify(foot));
+      // 简洁风：页头必须是纯标题（无卡片/渐变），模型供应商是一列白卡（不是彩色方卡）
+      await h.eval(`(function(){ var b=[...document.querySelectorAll('.settings-nav button')].find(function(x){ return (x.textContent||'').trim()==='模型'; }); b&&b.click(); return 1; })()`);
+      await wait(1400);
+      const flat = await h.eval(`(function(){
+        const header = document.querySelector('.settings-exp-shell .settings-section > .settings-copy');
+        const card = document.querySelector('.settings-exp-shell .provider-card');
+        const grid = document.querySelector('.settings-exp-shell .provider-card-grid');
+        const hcs = header ? getComputedStyle(header) : null;
+        const ccs = card ? getComputedStyle(card) : null;
+        const cols = grid ? getComputedStyle(grid).gridTemplateColumns : '';
+        return {
+          headerBg: hcs?.backgroundImage ?? 'missing', headerPad: hcs?.paddingTop ?? '',
+          cardBg: ccs?.backgroundImage ?? 'missing',
+          cardW: card ? Math.round(card.getBoundingClientRect().width) : 0,
+          cols, colCount: cols ? cols.split(' ').length : 0,
+        };
+      })()`);
+      h.check("⑧ 简洁风：页头无卡片/渐变，模型供应商一列白卡", flat.headerBg === "none" && flat.headerPad === "0px" && flat.cardBg === "none" && flat.cardW >= 600 && flat.colCount === 1, JSON.stringify(flat));
     },
   },
   {

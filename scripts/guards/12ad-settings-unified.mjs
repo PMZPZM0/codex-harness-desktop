@@ -58,29 +58,29 @@ const styles = read(FILES.styles);
 const accept = read(FILES.accept);
 const pageSrc = (key) => src(FILES[key]);
 
-/* ── ① 目标页集合与接线 ── */
-const TARGETS = [
-  "skills", "plugins", "component-library", "mcp", "commands",
-  "soul-market", "memory", "knowledge-base",
-  "automation", "schedule", "hooks", "ssh", "agentteam",
-  "usage", "storage", "backup", "archive", "favorites",
-];
-const missing = TARGETS.filter((id) => !new RegExp(`"${id}"`).test(content.slice(content.indexOf("EXP_SHELL_PAGES"), content.indexOf("EXP_SHELL_PAGES") + 700)));
-ok(missing.length === 0, `18 个目标设置页都在 EXP_SHELL_PAGES 里${missing.length ? `（缺 ${missing.join(", ")}）` : ""}`);
-ok(/EXP_SHELL_PAGES\.has\(settingsPage\)\s*\?\s*" settings-exp-shell"/.test(content), "当前页命中集合才挂 settings-exp-shell（不波及账户/模型/外观等页）");
-ok(/scrollTo\(\{\s*top:\s*0\s*\}\)/.test(content) && /\[settingsPage\]/.test(content), "切页把设置内容滚回顶部（页头不再被截在容器上沿）");
+/* ── ① 全设置页接线（10-24 四轮：不再按页白名单） ── */
+ok(/className="settings-content settings-exp-shell"/.test(content), "所有设置页无条件挂 settings-exp-shell（统一简洁风）");
+ok(!/EXP_SHELL_PAGES/.test(content), "⛔ 不再按页白名单判断（否则没列进去的页还是旧样式）");
+ok(/scrollTop\s*=\s*0/.test(content) && /\[settingsPage\]/.test(content) && /requestAnimationFrame/.test(content), "切页把设置内容滚回顶部（首帧后再补一次，压住自动聚焦的滚动）");
 
-/* ── ② 页头：标题 + 右侧操作一行，说明整宽一行 ── */
-ok(/\.settings-exp-shell > \.settings-section > \.settings-copy[\s\S]{0,260}display:\s*grid/.test(css), "页头用 grid（不是可换行的 flex）");
-ok(/\.settings-exp-shell > \.settings-section > \.settings-copy[\s\S]{0,400}grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/.test(css), "页头两列：标题弹性 + 操作定宽");
-ok(/\.settings-copy > div:not\(\.settings-heading-actions\)\s*\{\s*display:\s*contents/.test(css), "标题包装层摊平（长说明不会把按钮挤下去）");
-ok(/\.settings-exp-shell > \.settings-section > \.settings-copy h2[\s\S]{0,120}grid-column:\s*1;[\s\S]{0,80}grid-row:\s*1/.test(css), "标题固定第一行第一列");
-ok(/\.settings-exp-shell > \.settings-section > \.settings-copy p[\s\S]{0,120}grid-column:\s*1 \/ -1;[\s\S]{0,80}grid-row:\s*2/.test(css), "说明整宽第二行");
+/* ── ② 页头：平面标题 + 右侧操作一行，说明整宽一行 ── */
+const headerRule = css.slice(css.indexOf(".settings-exp-shell > .settings-section > .settings-copy,"), css.indexOf("/* 页头 = 第一行"));
+ok(/display:\s*grid/.test(headerRule), "页头用 grid（不是可换行的 flex）");
+ok(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/.test(headerRule), "页头两列：标题弹性 + 操作定宽");
+ok(/padding:\s*0;/.test(headerRule) && /background:\s*none;/.test(headerRule) && /border:\s*0;/.test(headerRule), "页头是平面标题，不做卡片");
+ok(/\.settings-exp-shell > \.settings-section > \.settings-copy > div:not\(\.settings-heading-actions\)\s*\{\s*display:\s*contents/.test(css), "标题包装层摊平（长说明不会把按钮挤下去）");
+ok(/\.settings-exp-shell > \.settings-section > \.settings-copy h2[\s\S]{0,160}grid-column:\s*1;[\s\S]{0,80}grid-row:\s*1/.test(css), "标题固定第一行第一列");
+ok(/\.settings-exp-shell > \.settings-section > \.settings-copy p[\s\S]{0,160}grid-column:\s*1 \/ -1;[\s\S]{0,80}grid-row:\s*2/.test(css), "说明整宽第二行");
 ok(/\.settings-exp-shell > \.settings-section > \.settings-copy > \.settings-heading-actions,[\s\S]{0,220}grid-column:\s*2;[\s\S]{0,80}grid-row:\s*1/.test(css), "操作按钮固定第一行第二列");
+ok(/\.settings-exp-hero\s*\{[^}]*background:\s*none/s.test(css), "四页头图组件也改成平面标题（不再用渐变卡）");
+ok(!/linear-gradient|radial-gradient/.test(css), "⛔ 统一简洁风里不再有渐变（回到旧观感会直接红）");
 
-/* ── ③ 长卡片 / 不留空格子 ── */
+/* ── ③ 白卡 + 中性图标 + 不留空格子 ── */
+ok(/\.settings-exp-shell \.settings-card\s*\{[^}]*background:\s*var\(--panel\)/s.test(css), "标准卡是平面白卡（无渐变）");
+ok(/\.settings-exp-shell \.settings-card-head > svg\s*\{[^}]*background:\s*var\(--panel-2\)[^}]*color:\s*var\(--muted\)/s.test(css), "卡头图标是中性灰胶囊（不按页面色相上色）");
 ok(/\.settings-exp-shell \.hub-card-grid\s*\{\s*grid-template-columns:\s*1fr/.test(css), "入口卡一列长卡（自动化 / 专家团不再三张方卡）");
 ok(/grid-template-areas:\s*"icon title"\s*"icon desc"\s*"icon version"/.test(css), "入口卡横向排布：图标 + 标题/说明/版本");
+ok(/\.settings-exp-shell \.hub-card-icon\s*\{[^}]*background:\s*var\(--panel-2\)[^}]*color:\s*var\(--muted\)/s.test(css), "入口卡图标也是中性灰");
 ok(/\.settings-exp-shell \.template-grid\s*\{\s*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/.test(css), "模板两列（不再是 auto-fill 三列）");
 ok(/\.template-card:last-child:nth-child\(odd\)\s*\{\s*grid-column:\s*1 \/ -1/.test(css), "落单的最后一张模板占满整行（没有空格子）");
 ok(/\.settings-exp-shell \.memory-center \.settings-cards\s*\{[^}]*grid-template-columns:\s*1fr/s.test(css), "记忆两张内容卡改成一列长卡");
