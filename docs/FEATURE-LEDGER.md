@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-25 | 运行过程「简洁 / 详细」+ 生成/修改文件浮窗 | 新增 | `src/lib/run-process-mode.ts`、`AppearanceSettingsSection.tsx`、`Status.tsx`、`04-cards-tools.css`、`electron/turn-file-watch.ts` | 用户：生成/修改文件像思考板块一样实时浮窗展示、自动跟随最新内容；生成/修改/编辑完自动折叠；外观加运行过程简洁（默认）/详细。实现：实时事件补 content/diff，详细档对最新变化文件弹同思考板块的自适应浮窗（同输入框宽、上下按空间选边、自动滚到底），停止变化 3s 自动收起；简洁档只保留文件行 +N -M。实机写文件验证浮窗显示内容与 diff。 | f5d15387c |
 | 2026-10-25 | 会话 / 项目自定义标签（文字 + 颜色） | 新增 | `src/lib/entity-tags.mjs`、`EntityTagEditor.tsx`、`02-thread-attention-rows.tsx`、`01-sidebar-shell.tsx`、`02-sidebar-threads.css` | 用户：普通会话与项目都要自定义标签，可改内容和颜色，默认无标签。会话「⋯ → 添加/编辑标签」、项目「⋯ → 添加/编辑标签」打开同一编辑器；8 色可选，会话标题前与项目名前显示彩色标签；localStorage 按 threadId / cwd 持久化，不参与引擎配置。CDP 实测写入「重要客户」「长期项目」并在列表显示，改色为绿色成功。 | c7e8af135 |
 | 2026-10-25 | 修：悬停会话时项目行「新建」按钮串亮 | 修复 | `src/styles/02-sidebar-threads.css` | 用户截图：鼠标放在会话上，项目分类行右侧「新建会话」图标跟着显示。根因是选择器写 `.project-item:hover`，覆盖了整个项目子树；改为 `.project-item-head:hover`，只在悬停项目标题行时显示。三仓同步。 | fe3a9034d |
 | 2026-10-25 | 会话运行中：状态入口置灰 + 模型/思考下回合生效 | 改动 | `AppView.tsx`、`part09/02-seg.tsx`、`Composer.tsx`、`composer-form.tsx`、`02-model-thread-settings.tsx`、`01-permission-effort-copy.tsx`、`DispatchMenu.tsx`、`02-sidebar-threads.css` | 用户：运行中独立弹窗/项目地址/调度开关等不能改，置灰、结束后恢复，按会话独立、普通/中枢一致；切模型提示下回合生效，切思考等级警告可能影响推理。实现：项目地址、独立弹窗、调度、任务菜单、权限在 activeThreadRunning 时禁用并在开跑时收起；模型同供应商切换提示「模型将在下回合生效」，跨供应商运行中拒绝；思考切换提示「下回合生效 + 可能影响推理」。三仓代码同步（云助手未部署）。 | 624db4d63 |
