@@ -782,8 +782,6 @@ export interface Bag {
   setHookBusy: React.Dispatch<React.SetStateAction<string | null>>;
   linkedBusy: string | null;
   setLinkedBusy: React.Dispatch<React.SetStateAction<string | null>>;
-  projectFilter: string | null;
-  setProjectFilter: React.Dispatch<React.SetStateAction<string | null>>;
   username: string;
   setUsername: React.Dispatch<React.SetStateAction<string>>;
   userAvatar: import("../../../lib/user-identity.mjs").UserAvatarSpec | null;

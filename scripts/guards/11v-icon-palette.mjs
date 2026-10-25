@@ -164,7 +164,7 @@ const SVG_OWN = [
   ["项目视图 tab", sidebar, /<FolderOpen size=\{14\} className="ic-amber"/],
   ["分类视图 tab", sidebar, /<Layers size=\{14\} className="ic-cyan"/],
   ["项目行文件夹", sidebar, /<FolderOpen size=\{13\} className="ic-amber"/],
-  ["筛选 chip 前缀文件夹", sidebar, /<FolderOpen size=\{12\} className="ic-amber"/],
+  // ④c 10-25 用户令：「只看该项目」筛选 chip 已随功能整段删除 ⇒ 该图标断言移除（防复活由 sidebar-shell 的负向检查承担）。
 ];
 for (const [label, src, re] of SVG_OWN) ok(re.test(src), `④c ${label}的图标自己挂了色相类`);
 

@@ -411,7 +411,6 @@ bag.releaseDispatchHolder = releaseDispatchHolder as typeof bag.releaseDispatchH
       bag.setPlanSteps([]);
       bag.setGoalText("");
     }
-    if (bag.projectFilter === cwd) bag.setProjectFilter(null);
   }
 bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
 
