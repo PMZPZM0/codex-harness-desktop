@@ -619,6 +619,7 @@
   html:not([data-motion="force"]) .voice-level i,
   html:not([data-motion="force"]) .voice-progress-bar span,
   html:not([data-motion="force"]) .voice-bot-gaze,
+  html:not([data-motion="force"]) .voice-bot-eye,
   html:not([data-motion="force"]) .voice-ball-keyboard,
   html:not([data-motion="force"]) .voice-keyboard-key {
     animation: none !important;
@@ -1589,6 +1590,9 @@
   border-radius: 999px;
   background: var(--bot-eye, #f8fafc);
   box-shadow: 0 0 0 0.5px color-mix(in srgb, #000000 10%, transparent);
+  /* 独立的 scale 属性：鼠标快速移动时瞳孔放大（与 transform 的眨眼/眯眼互不覆盖） */
+  scale: var(--bot-eye-scale, 1);
+  transition: scale .18s ease-out;
   animation: voice-bot-blink 4.6s ease-in-out infinite;
 }
 .voice-bot-eye--left { left: 27%; transform: translateY(-0.5px) rotate(3deg); }

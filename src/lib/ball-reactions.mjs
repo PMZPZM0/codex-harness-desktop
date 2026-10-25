@@ -23,6 +23,16 @@ export function gazeOffsets(clientX, clientY, rect, range = { x: 3, y: 2.2 }) {
   return { x: round2(nx * range.x), y: round2(ny * range.y) };
 }
 
+/**
+ * 指针移动速度 → 眼睛（瞳孔）放大倍数。
+ * 慢移也有一点反应（1.04x），快速划过最多 1.18x；停下由 CSS transition 回落到 1。
+ * @param {number} speed px/ms
+ */
+export function pupilScale(speed) {
+  if (!Number.isFinite(speed) || speed <= 0) return 1;
+  return round2(1 + Math.min(0.18, 0.04 + speed * 0.035));
+}
+
 /** 只有输入框 / 多行输入 / 可编辑区域里的敲键才算「用户在打字」。 */
 export function isTypingTarget(tagName, isContentEditable = false) {
   if (isContentEditable) return true;

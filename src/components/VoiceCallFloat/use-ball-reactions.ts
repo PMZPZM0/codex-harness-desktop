@@ -7,9 +7,10 @@
  * ⛔ 减动效：不跟随鼠标（位移归零），小键盘仍出现但动画由 CSS 关掉。
  */
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { gazeOffsets, isTypingKey, isTypingTarget } from "../../lib/ball-reactions.mjs";
+import { gazeOffsets, isTypingKey, isTypingTarget, pupilScale } from "../../lib/ball-reactions.mjs";
 
 const TYPING_HOLD_MS = 1100;
+const PUPIL_HOLD_MS = 140;
 
 export function useBallReactions({
   enabled,
@@ -22,14 +23,18 @@ export function useBallReactions({
   const timerRef = useRef<number | undefined>(undefined);
   const frameRef = useRef(0);
   const pointRef = useRef<{ x: number; y: number } | null>(null);
+  const lastPointRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  const pupilTimerRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     if (!enabled) {
       setTyping(false);
       window.clearTimeout(timerRef.current);
+      window.clearTimeout(pupilTimerRef.current);
       const el = ballRef.current;
       el?.style.removeProperty("--bot-gaze-x");
       el?.style.removeProperty("--bot-gaze-y");
+      el?.style.removeProperty("--bot-eye-scale");
       return;
     }
 
@@ -49,17 +54,33 @@ export function useBallReactions({
     };
 
     const onPointerMove = (event: PointerEvent) => {
+      const now = performance.now();
+      const prev = lastPointRef.current;
+      if (!reduced && prev) {
+        const dt = Math.max(1, now - prev.t);
+        const speed = Math.hypot(event.clientX - prev.x, event.clientY - prev.y) / dt;
+        const el = ballRef.current;
+        el?.style.setProperty("--bot-eye-scale", String(pupilScale(speed)));
+        window.clearTimeout(pupilTimerRef.current);
+        pupilTimerRef.current = window.setTimeout(() => {
+          ballRef.current?.style.setProperty("--bot-eye-scale", "1");
+        }, PUPIL_HOLD_MS);
+      }
+      lastPointRef.current = { x: event.clientX, y: event.clientY, t: now };
       pointRef.current = { x: event.clientX, y: event.clientY };
       if (!frameRef.current) frameRef.current = window.requestAnimationFrame(paint);
     };
 
     const resetGaze = () => {
       pointRef.current = null;
+      lastPointRef.current = null;
       window.cancelAnimationFrame(frameRef.current);
       frameRef.current = 0;
+      window.clearTimeout(pupilTimerRef.current);
       const el = ballRef.current;
       el?.style.removeProperty("--bot-gaze-x");
       el?.style.removeProperty("--bot-gaze-y");
+      el?.style.removeProperty("--bot-eye-scale");
     };
 
     const showTyping = () => {

@@ -5,6 +5,8 @@ export function gazeOffsets(
   range?: { x: number; y: number },
 ): { x: number; y: number };
 
+export function pupilScale(speed: number): number;
+
 export function isTypingTarget(tagName: string | null | undefined, isContentEditable?: boolean): boolean;
 
 export function isTypingKey(
