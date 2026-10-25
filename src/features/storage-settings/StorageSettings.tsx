@@ -194,7 +194,7 @@ export function ReviewPanel({ workspace, lastDiff, disabled, busy, report, onRev
           </button>
         </div>
         <div className="review-hero-stats">
-          <span><b>{files.length}</b> 个文件</span>
+          <span><b>{normalizedQuery ? visibleFiles.length : files.length}</b> 个文件</span>
           <span className="is-add">+{totals.added}</span>
           <span className="is-del">-{totals.deleted}</span>
         </div>
