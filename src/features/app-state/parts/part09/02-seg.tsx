@@ -511,7 +511,7 @@ bag.earlyView = earlyView as typeof bag.earlyView;
             ⛔ 同步清掉了 09-settings-workspace-memory.css 里的 `.tb-terminal` 规则 ——
                留着就是一条无主的死样式（守卫【160】那种"引用了但类没了"的方向相反：
                类没了规则还在）。*/}
-        <button className="icon-button tb-right-panel ic-blue" title={bag.rightOpen ? "收起右侧面板" : "展开右侧面板"} onClick={() => bag.setRightOpen(!bag.rightOpen)}>{bag.rightOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button>
+        <button className="icon-button tb-right-panel ic-blue" title={bag.rightOpen ? "收起右侧面板" : "展开右侧面板"} onClick={() => { if (!bag.rightOpen) { if (!bag.rightTab) bag.setRightTab("review"); bag.setRightOpen(true); } else bag.setRightOpen(false); }}>{bag.rightOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button>
     </>
   );
 bag.topbarActionsNode = topbarActionsNode as typeof bag.topbarActionsNode;

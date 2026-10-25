@@ -187,5 +187,26 @@ const diffLib = await import("../../src/lib/diff-view.mjs");
     + (res.status === 0 ? "" : `\n${out.slice(-600)}`));
 }
 
+/* ── 【118 变更页】右栏默认变更 + 主题界面 + 搜索 + 自适应不裁剪（10-25 用户）──
+   「侧边栏展开空唠唠的，展开默认展示变更界面…设计一个主题界面，加搜索框搜索内容，
+     内容根据尺寸自适应展示全，不要裁剪」。 */
+{
+  const reviewPanel = codeOnly(read("src/features/storage-settings/StorageSettings.tsx"));
+  const rightState = read("src/features/app-state/parts/part01/05-engine-ssh-connectors.tsx");
+  const toggle = read("src/features/app-state/parts/part09/02-seg.tsx");
+  const css = read("src/styles/05-composer-input.css");
+  ok(/rightTab[^\n]*useState<string>\(\(\) => "review"\)/.test(rightState)
+    && /!bag\.rightTab\) bag\.setRightTab\("review"\)/.test(toggle),
+    "右栏展开默认 = 变更（状态初值 + 切换按钮兜底，两处都改）");
+  ok(/review-hero/.test(reviewPanel) && /review-search/.test(reviewPanel)
+    && /normalizedQuery/.test(reviewPanel) && /file\.content\.toLowerCase\(\)\.includes\(normalizedQuery\)/.test(reviewPanel)
+    && /visibleFiles/.test(reviewPanel) && /FileTypeIcon/.test(reviewPanel),
+    "变更页有主题总览卡、搜索框（路径 + diff 内容双匹配）、文件类型图标");
+  ok(/\.review-file-path \{[^}]*overflow-wrap:\s*anywhere/.test(css)
+    && !/\.review-file-path \{[^}]*text-overflow:\s*ellipsis/.test(css)
+    && /\.review-panel-themed \{[^}]*overflow-x:\s*hidden/.test(css),
+    "路径换行展示全（⛔ 不再 ellipsis 裁剪），面板横向不溢出");
+}
+
 console.log(`\n【turn-review】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

@@ -373,7 +373,7 @@ bag.sidebarCollapsed = sidebarCollapsed as typeof bag.sidebarCollapsed; bag.setS
 
 
 
-  const [rightTab, setRightTab] = useState<string>(() => "");
+  const [rightTab, setRightTab] = useState<string>(() => "review");
 bag.rightTab = rightTab as typeof bag.rightTab; bag.setRightTab = setRightTab as typeof bag.setRightTab;
 
 
