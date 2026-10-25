@@ -48,6 +48,8 @@ export function AppLockSettingsSection({ onNotice }: { onNotice?: (text: string)
     try {
       const next = await window.codex.appLockStatus();
       setStatus(next);
+      /* 同步首帧缓存：下次启动没开锁时直接进主界面，不再停在「正在检查应用锁」。 */
+      try { localStorage.setItem("app-lock-enabled", next.enabled ? "1" : "0"); } catch { /* 忽略 */ }
       if (next.enabled && next.resetRequired) setDisableReset(true);
     } catch (error: any) {
       setLoadError(String(error?.message ?? error ?? "读取应用锁状态失败"));
