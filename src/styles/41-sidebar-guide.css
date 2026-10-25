@@ -471,8 +471,8 @@
   gap: 7px;
   width: 100%;
   height: 34px;
-  margin-top: -10px;
-  padding: 0 10px 0 11px;
+  margin-top: -13px;
+  padding: 0 10px 0 5px;
   border: 0;
   border-radius: 0;
   /* ⛔ 暗色下原生 button 会按浅色 UA 画成 #efefef 浅底（全站无 color-scheme）⇒ background+appearance 双保险 */
