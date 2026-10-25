@@ -20,6 +20,7 @@
  */
 import { app, shell } from "electron";
 import path from "node:path";
+import { statSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
@@ -30,6 +31,7 @@ import {
   defaultDownloadDir,
   pruneOldInstallers,
   downloadUpdate,
+  downloadUpdateDifferential,
   fileExists,
   installUpdate,
   UPDATE_CHANNEL,
@@ -61,17 +63,33 @@ export const updatesFeature = defineFeature<null>({
     // ★ 更新链的主进程侧权威（09-13 审计 P0）：下载地址与安装路径**不再由渲染层决定**。
     //   `updates:check` 拿到的 info 存在这里，下载用它自己的 downloadUrl + sha256 校验，
     //   安装只接受"刚刚校验通过的那个文件"——渲染层即使被注入也换不掉安装包。
-    let lastUpdateInfo: { downloadUrl?: string; sha256?: string; version?: string; filename?: string } | null = null;
+    let lastUpdateInfo: { downloadUrl?: string; sha256?: string; version?: string; tag?: string; filename?: string } | null = null;
     let lastVerifiedUpdatePath = "";
     /** 10-12：静默下载并发闸（重复触发时不重复下几百 MB）。 */
     let silentDownloading = false;
+
+    /** 10-25 差分优先：Windows 且有版本信息时先走 electron-updater；
+     *  任何失败（无 latest.yml / 无 blockmap / 镜像挂 / 校验失败）都返回 null，
+     *  调用方继续原有的完整包下载。 */
+    const tryDifferential = async (onProgress?: (info: { receivedBytes: number; totalBytes: number; percent: number }) => void) => {
+      const version = lastUpdateInfo?.version;
+      if (!version) return null;
+      try {
+        const result = await downloadUpdateDifferential({ version, tag: lastUpdateInfo?.tag }, onProgress);
+        lastVerifiedUpdatePath = result.path;
+        return { ...result, bytes: statSync(result.path).size };
+      } catch (error: any) {
+        console.warn("[updates] 差分更新失败，回退完整包：", error?.message ?? error);
+        return null;
+      }
+    };
 
     ipcHost.handle("updates:check", async () => {
       try {
         const currentVersion = String(app.getVersion() || "0.0.0");
         // ⛔ 09-15 用户定稿：更新源只剩 GitHub Releases（发布站不再分发安装包）
         const info = await checkLatestUpdate(currentVersion, process.platform, process.arch);
-        lastUpdateInfo = info ? { downloadUrl: (info as any).downloadUrl, sha256: (info as any).sha256, version: (info as any).version, filename: (info as any).filename } : null;
+        lastUpdateInfo = info ? { downloadUrl: (info as any).downloadUrl, sha256: (info as any).sha256, version: (info as any).version, tag: (info as any).tag, filename: (info as any).filename } : null;
         return { ok: true, info, currentVersion, channel: UPDATE_CHANNEL, source: "github" as const };
       } catch (err: any) {
         return { ok: false, error: err?.message || String(err) };
@@ -87,20 +105,26 @@ export const updatesFeature = defineFeature<null>({
         // 而且无论如何都会被 downloadUpdate 的 https + sha256 双重校验挡住。
         const url = lastUpdateInfo?.downloadUrl || input?.downloadUrl;
         if (!url) return { ok: false, error: "没有可用的更新地址（请先检查更新）" };
-        const dir = defaultDownloadDir(app.getPath("downloads"));
-        const safeName = String(input?.filename || lastUpdateInfo?.filename || "codex-harness-update.bin").replace(/[\\/:*?"<>|]/g, "_");
-        const dest = path.join(dir, safeName);
         let lastPushed = -1;
-        const info = await downloadUpdate(url, dest, ({ percent }) => {
+        const pushProgress = (percent: number) => {
           const pct = Math.round(percent * 100);
           // 每 2% 推一次（+ 必定推 100%），避免高频 IPC 刷屏
           if (pct !== lastPushed && (pct - lastPushed >= 2 || pct >= 100)) {
             lastPushed = pct;
             sender.sender.send("updates:download-progress", percent);
           }
-        }, lastUpdateInfo?.sha256);
+        };
+        // 10-25 差分优先：失败自动回退下面的完整包下载
+        const differential = await tryDifferential(({ percent }) => pushProgress(percent));
+        if (differential) {
+          return { ok: true, path: differential.path, bytes: differential.bytes, differential: true };
+        }
+        const dir = defaultDownloadDir(app.getPath("downloads"));
+        const safeName = String(input?.filename || lastUpdateInfo?.filename || "codex-harness-update.bin").replace(/[\\/:*?"<>|]/g, "_");
+        const dest = path.join(dir, safeName);
+        const info = await downloadUpdate(url, dest, ({ percent }) => pushProgress(percent), lastUpdateInfo?.sha256);
         lastVerifiedUpdatePath = info.path;   // 只有校验通过才会走到这里
-        return { ok: true, path: info.path, bytes: info.bytes };
+        return { ok: true, path: info.path, bytes: info.bytes, differential: false };
       } catch (err: any) {
         return { ok: false, error: err?.message || String(err) };
       }
@@ -155,7 +179,7 @@ export const updatesFeature = defineFeature<null>({
         try {
           const currentVersion = String(app.getVersion() || "0.0.0");
           const info = await checkLatestUpdate(currentVersion, process.platform, process.arch);
-          lastUpdateInfo = info ? { downloadUrl: (info as any).downloadUrl, sha256: (info as any).sha256, version: (info as any).version, filename: (info as any).filename } : null;
+          lastUpdateInfo = info ? { downloadUrl: (info as any).downloadUrl, sha256: (info as any).sha256, version: (info as any).version, tag: (info as any).tag, filename: (info as any).filename } : null;
         } catch {
           return { ok: false, error: "check_failed" };
         }
@@ -164,13 +188,19 @@ export const updatesFeature = defineFeature<null>({
       if (!url) return { ok: false, error: "no_update" };
       silentDownloading = true;
       try {
+        // 10-25 差分优先；失败继续走下面的完整包
+        const differential = await tryDifferential();
+        if (differential) {
+          sendToWindow("updates:ready", { version: lastUpdateInfo?.version, path: differential.path });
+          return { ok: true, version: lastUpdateInfo?.version, path: differential.path, differential: true };
+        }
         const dir = defaultDownloadDir(app.getPath("downloads"));
         const safeName = String(lastUpdateInfo?.filename || "codex-harness-update.bin").replace(/[\\/:*?"<>|]/g, "_");
         const info = await downloadUpdate(url, path.join(dir, safeName), undefined, lastUpdateInfo?.sha256);
         lastVerifiedUpdatePath = info.path;
         // ⛔ 主动推一条事件：渲染层可能没打开设置页，只能靠事件弹窗（需求 3）。
         sendToWindow("updates:ready", { version: lastUpdateInfo?.version, path: info.path });
-        return { ok: true, version: lastUpdateInfo?.version, path: info.path };
+        return { ok: true, version: lastUpdateInfo?.version, path: info.path, differential: false };
       } catch (err: any) {
         return { ok: false, error: err?.message || String(err) };
       } finally {

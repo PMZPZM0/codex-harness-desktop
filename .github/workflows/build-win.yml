@@ -63,5 +63,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: win-x64
-          path: release/*.exe
+          path: |
+            release/*.exe
+            release/*.exe.blockmap
+            release/latest.yml
           if-no-files-found: error

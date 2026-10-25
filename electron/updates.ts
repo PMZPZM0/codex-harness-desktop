@@ -81,6 +81,8 @@ export type LatestInfo = {
   reason: string;
   channel: string;
   version?: string;
+  /** Release tag（形如 v0.0.48）：差分更新按 tag 拼 release 目录。 */
+  tag?: string;
   filename?: string;
   size?: number;
   sha256?: string;
@@ -226,6 +228,7 @@ function pickLatestFrom(
     reason: "available",
     channel: UPDATE_CHANNEL,
     version,
+    tag: String(release.tag_name),
     filename: match.name,
     size: match.size,
     // ⛔ asset.digest（GitHub 自带的 sha256）→ updates-ipc 存进 lastUpdateInfo → 下载完强制比对。
@@ -348,9 +351,59 @@ export async function downloadUpdate(
   throw lastError;
 }
 
+export type DifferentialDownloadResult = { path: string; version: string; differential: true };
+
+/** 10-25 差分更新：electron-updater + NSIS blockmap。
+ *  ⛔ 只走 Windows NSIS；mac/其它平台直接抛错让上层回退完整包。
+ *  ⛔ 仍按镜像候选序切 feed；任一候选失败继续下一档，全部失败由调用方回退完整下载。
+ *  ⛔ 这里只下载并校验（electron-updater 会验 latest.yml 的 sha512），**不安装** ——
+ *    安装仍走现有的 `updates:restart-install`，保持「先起安装包、再退出」的既有顺序。 */
+export async function downloadUpdateDifferential(
+  info: Pick<LatestInfo, "version" | "tag">,
+  onProgress?: DownloadProgress,
+): Promise<DifferentialDownloadResult> {
+  if (process.platform !== "win32") throw new Error("differential_unsupported_platform");
+  const version = String(info.version ?? "").trim();
+  if (!version) throw new Error("differential_no_version");
+  const releaseBase = `https://github.com/${GITHUB_REPO}/releases/download/${String(info.tag ?? `v${version}`)}`;
+  const { autoUpdater } = await import("electron-updater");
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.allowDowngrade = false;
+  let lastError: unknown = new Error("differential_failed");
+  for (const feedUrl of mirrorCandidates(releaseBase)) {
+    try {
+      autoUpdater.setFeedURL({ provider: "generic", url: feedUrl });
+      const check = await autoUpdater.checkForUpdates();
+      const remoteVersion = String(check?.updateInfo?.version ?? "");
+      if (remoteVersion && compareVersions(remoteVersion, version) !== 0) {
+        throw new Error(`latest.yml 版本 ${remoteVersion} 与 Release ${version} 不一致`);
+      }
+      const onDownload = (progress: any) => {
+        onProgress?.({
+          receivedBytes: Number(progress?.transferred ?? 0),
+          totalBytes: Number(progress?.total ?? 0),
+          percent: Math.max(0, Math.min(1, Number(progress?.percent ?? 0) / 100)),
+        });
+      };
+      autoUpdater.on("download-progress", onDownload);
+      try {
+        const files = await autoUpdater.downloadUpdate() as unknown as string[];
+        const file = (Array.isArray(files) ? files : []).find((item) => item && existsSync(item));
+        if (!file) throw new Error("差分下载完成但没有安装包文件");
+        return { path: file, version, differential: true };
+      } finally {
+        autoUpdater.removeListener("download-progress", onDownload);
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
 /** 流式计算文件 sha256（大安装包不整份读进内存）。 */
-async function sha256OfFile(filePath: string): Promise<string> {
-  return new Promise((resolve, reject) => {
+async function sha256OfFile(filePath: string): Promise<string> {  return new Promise((resolve, reject) => {
     const hash = createHash("sha256");
     const stream = createReadStream(filePath);
     stream.on("data", (chunk) => hash.update(chunk));

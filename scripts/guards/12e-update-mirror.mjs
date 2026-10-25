@@ -86,5 +86,22 @@ if (IS_PPCODE) {
     "⛔ 检查更新同理：带令牌的 API 请求不走镜像前缀");
 }
 
+/* ── 主仓专属：NSIS 差分更新接线（10-25）──
+   electron-updater + blockmap/latest.yml；差分失败必须回退完整包（不能只剩差分一条路）。 */
+if (!IS_PPCODE) {
+  const pkg = read("package.json");
+  const ipc = codeOnly(read("electron/features/updates-ipc.ts"));
+  const buildWin = read(".github/workflows/build-win.yml");
+  const release = read(".github/workflows/release.yml");
+  ok(/"electron-updater"/.test(pkg) && /"provider": "generic"/.test(pkg) && /"artifactName": "Codex\.Harness\.Desktop-\$\{version\}-win-\$\{arch\}/.test(pkg),
+    "打包配置含 electron-updater 的 publish 元数据 + 与 Release 一致的 Windows 资产名");
+  ok(/export async function downloadUpdateDifferential/.test(updates) && /autoUpdater\.setFeedURL\(\{ provider: "generic", url: feedUrl \}\)/.test(updates) && /autoUpdater\.downloadUpdate\(\)/.test(updates),
+    "差分下载走 electron-updater generic feed（按 Release tag + 镜像序）");
+  ok(/const tryDifferential = async/.test(ipc) && /await tryDifferential\(/.test(ipc) && /downloadUpdate\(url, dest/.test(ipc),
+    "下载入口差分优先；失败回退原有完整包下载");
+  ok(/\.exe\.blockmap/.test(buildWin) && /latest\.yml/.test(buildWin) && /\.exe\.blockmap/.test(release) && /latest\.yml/.test(release),
+    "发布流水线同时上传 exe / .exe.blockmap / latest.yml（缺任一则客户端只能整包）");
+}
+
 console.log(`\n【update-mirror】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
