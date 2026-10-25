@@ -11,32 +11,63 @@ import { basename } from "../../../lib/basename";
 import { COMPOSER_CHIP_ICON } from "../../../features/shared/COMPOSER_CHIP_ICON";
 import { sendAnimStore } from "../../../lib/send-anim-store";
 import { COMPOSER_FILE_CHIP_ICON } from "../constants";
+import { imageDisplaySrc } from "../../../lib/image-src.mjs";
 
 
 
-let draggingChip: HTMLElement | null = null;
-
-export /** 生成内联附件 chip（contenteditable=false）：点主体打开/预览，点 X 删除。
- *  图片与文件**同一套**（09-18 用户：「把文件展示不要在输入框上面了，改成在输入框里面的
- *  chip，跟图片一样的展示」）——只有图标、title、点击语义三处按类型分叉。
- *  全部原生 DOM：输入框 DOM 由用户编辑与重建函数共同维护，不经 React 渲染。 */
+export /** 生成内联附件 chip（contenteditable=false）：点主体打开/预览，点 X 删除；**按住可拖动排序**。
+ *  图片与文件同一套外形：图片用真实缩略图、文件用图标。
+ *  ⛔ 拖动用 Pointer Events（HTML5 draggable 在 contenteditable 里会被编辑器吞掉，实测拖不动）。 */
 function createInlineAttachmentChip(kind: "image" | "file", path: string, onRemove: (path: string) => void, onOpen: (path: string) => void, onChange: () => void): HTMLElement {
   const image = kind === "image";
   const chip = document.createElement("span");
   chip.className = `composer-image-chip-inline composer-attach-chip-${kind}`;
   chip.setAttribute("contenteditable", "false");
-  // ⛔ 统一的往返属性：serializeComposerDom 靠它把 DOM 还原成占位符文本。
-  //    旧的 `data-image-path` 已并入 `data-attach-kind` + `data-attach-path`（只有本文件的
-  //    两处引用，已一并改完；留旧属性会让新旧两种 chip 各认一半）。
   chip.setAttribute("data-attach-kind", kind);
   chip.setAttribute("data-attach-path", path);
-  chip.innerHTML = `<span class="composer-image-chip-icon">${image ? COMPOSER_CHIP_ICON : COMPOSER_FILE_CHIP_ICON}</span><span class="composer-image-chip-name"></span><button type="button" class="composer-image-chip-close" title="${image ? "移除图片" : "移除文件"}">×</button>`;
+  const iconHtml = image
+    ? `<img class="composer-image-chip-thumb" src="${imageDisplaySrc(path)}" alt="">`
+    : COMPOSER_FILE_CHIP_ICON;
+  chip.innerHTML = `<span class="composer-image-chip-icon">${iconHtml}</span><span class="composer-image-chip-name"></span><button type="button" class="composer-image-chip-close" title="${image ? "移除图片" : "移除文件"}">×</button>`;
   chip.querySelector(".composer-image-chip-name")!.textContent = basename(path);
-  // 阻止 mousedown 默认行为：点 chip 不丢编辑光标
-  chip.addEventListener("mousedown", (event) => event.preventDefault());
+  let moved = false;
+  chip.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    if ((event.target as HTMLElement).closest(".composer-image-chip-close")) return;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let dragging = false;
+    moved = false;
+    try { chip.setPointerCapture(event.pointerId); } catch { /* 合成事件下不可捕获 */ }
+    const onMove = (ev: PointerEvent) => {
+      if (!dragging && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;
+      dragging = true;
+      moved = true;
+      chip.classList.add("dragging");
+      const under = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
+      const target = under?.closest?.(".composer-image-chip-inline") as HTMLElement | null;
+      if (target && target !== chip && target.parentNode) {
+        const rect = target.getBoundingClientRect();
+        const after = ev.clientX > rect.left + rect.width / 2;
+        target.parentNode.insertBefore(chip, after ? target.nextSibling : target);
+      }
+      ev.preventDefault();
+    };
+    const onUp = () => {
+      chip.classList.remove("dragging");
+      chip.removeEventListener("pointermove", onMove);
+      chip.removeEventListener("pointerup", onUp);
+      chip.removeEventListener("pointercancel", onUp);
+      if (dragging) onChange();
+    };
+    chip.addEventListener("pointermove", onMove);
+    chip.addEventListener("pointerup", onUp);
+    chip.addEventListener("pointercancel", onUp);
+  });
   chip.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
+    if (moved) { moved = false; return; }
     if ((event.target as HTMLElement).closest(".composer-image-chip-close")) {
       chip.remove();
       onRemove(path);

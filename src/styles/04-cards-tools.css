@@ -2430,3 +2430,58 @@
 }
 .turn-output-menu button:hover { background: var(--panel-2); }
 .turn-output-menu button > span { flex: 1 1 auto; }
+
+/* ── 10-25 输入框附件 chip 美化（图片真实缩略图 / 文件图标胶囊；可拖动排序） ── */
+.composer-image-chip-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 4px 0 5px;
+  margin: 0 3px;
+  vertical-align: middle;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 5%, var(--panel));
+  border: 1px solid var(--line-soft);
+  color: var(--text);
+  font-size: inherit;
+  line-height: 1;
+  max-width: 220px;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-drag: none;
+  touch-action: none;
+  transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
+}
+.composer-image-chip-inline:hover {
+  background: var(--panel-2);
+  border-color: var(--faint);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+.composer-image-chip-inline.dragging { opacity: 0.55; cursor: grabbing; }
+.composer-image-chip-inline .composer-image-chip-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex: none;
+  background: color-mix(in srgb, #b180d7 14%, transparent);
+  color: #b180d7;
+}
+.composer-image-chip-inline .composer-image-chip-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
+.composer-image-chip-inline .composer-image-chip-name { font-weight: 500; min-width: 0; }
+.composer-image-chip-inline .composer-image-chip-close {
+  width: 16px;
+  height: 16px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1;
+}
+.composer-image-chip-inline .composer-image-chip-close:hover { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); }
+.composer-image-chip-inline.composer-attach-chip-file .composer-image-chip-icon { background: color-mix(in srgb, var(--link) 12%, transparent); color: var(--link); }
