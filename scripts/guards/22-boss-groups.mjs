@@ -312,6 +312,12 @@ if (state) {
     "BOSS 会话独有的「?」说明组件在位");
   ok(/isBossMemberThread[\s\S]{0,260}?"BOSS 调度"/.test(read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx")),
     "侧栏给群成员会话打「BOSS 调度」标签（与普通「调度」区分）");
+  /* ── 14. rollout 丢失的会话要能自愈（10-25 用户实测：红条 + 消息发不出去 + 输入框被塞记忆）── */
+  const sendFile = read("src/features/app-state/parts/part08/02-seg/send.tsx");
+  ok(/unavailable = \/not found\|no such thread\|unloaded\|no rollout found\//.test(sendFile),
+    "turn/start 的「会话不可用」判定包含 no rollout found（否则直接 throw ⇒ 红条 + 发不出去）");
+  ok(/const failedText = userDisplayText\(/.test(sendFile),
+    "发送失败回填只还用户原文（⛔ 不能把记忆段 / SYSTEM TASK 塞回输入框）");
 }
 
 console.log(`\n【boss-groups】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
