@@ -1542,7 +1542,6 @@ html[data-os="win32"] #root { background: transparent !important; }
   height: calc(100% - 24px);
   border-radius: 26px;
   overflow: hidden;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.32);
 }
 [data-os="win32"][data-maximized="1"] .app-shell {
   margin: 0;
