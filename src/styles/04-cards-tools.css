@@ -2435,10 +2435,10 @@
 .composer-image-chip-inline {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 4px 0 5px;
-  margin: 0 3px;
+  gap: 4px;
+  height: 22px;
+  padding: 0 3px 0 4px;
+  margin: 0 2px;
   vertical-align: middle;
   border-radius: 8px;
   background: color-mix(in srgb, var(--text) 5%, var(--panel));
@@ -2460,8 +2460,8 @@
 }
 .composer-image-chip-inline.dragging { opacity: 0.55; cursor: grabbing; }
 .composer-image-chip-inline .composer-image-chip-icon {
-  width: 18px;
-  height: 18px;
+  width: 15px;
+  height: 15px;
   border-radius: 5px;
   display: inline-flex;
   align-items: center;
@@ -2474,8 +2474,8 @@
 .composer-image-chip-inline .composer-image-chip-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
 .composer-image-chip-inline .composer-image-chip-name { font-weight: 500; min-width: 0; }
 .composer-image-chip-inline .composer-image-chip-close {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   display: inline-grid;
   place-items: center;
   border-radius: 50%;
