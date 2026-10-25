@@ -3509,12 +3509,13 @@ export async function run() {
   (!/\{[^}]*&&\s*<p className="composer-disclaimer"/.test(appSrc77) ? ok : fail)(
     "【77】提示是静态渲染（不挂在条件里 —— 高度反复变化会触发反复贴底抖动）"
   );
-  // 位置 = composer 那一列的最下方：在 suggest-row 之后、</main> 之前
-  const iSug = appSrc77.indexOf('className="suggest-row"');
+  // 位置 = composer 那一列的最下方：在输入框（ComposerComposerForm）之后、</main> 之前
+  // （10-25 那排 suggest-row 快捷卡已按用户要求删除，锚点改到输入框组件本身）
+  const iForm = appSrc77.indexOf("<ComposerComposerForm app={app} />");
   const iDis = appSrc77.indexOf('className="composer-disclaimer"');
   const iMain = appSrc77.indexOf("</main>");
-  (iSug >= 0 && iDis > iSug && iMain > iDis ? ok : fail)(
-    "【77】位置在输入框那一列的最下方（suggest-row 之后、</main> 之前）"
+  (iForm >= 0 && iDis > iForm && iMain > iDis ? ok : fail)(
+    "【77】位置在输入框那一列的最下方（ComposerComposerForm 之后、</main> 之前）"
   );
   const rule77 = (/\.composer-disclaimer\s*\{([^}]*)\}/.exec(css77) || [])[1] ?? "";
   (rule77 && /text-align:\s*center/.test(rule77) ? ok : fail)(

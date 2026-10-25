@@ -534,8 +534,8 @@ if (state) {
     "BOSS 空态按「0 回合」判定，且三种入口都算（pending / 群 boss 线程 / home 锚点会话）");
   ok(/\{isBossEmpty \? <BossThreadIntro/.test(timeline),
     "BOSS 引导卡只在 isBossEmpty 时挂载（普通欢迎页条件保持 isEmpty && !isBossEmpty）");
-  ok(/isEmpty && !\(bossThreads\.pending/.test(read("src/features/app-view/AppView/02-main-stage/03-composer.tsx")),
-    "BOSS 会话不渲染「周报总结」那排新会话快捷任务");
+  ok(!/suggest-row|周报总结|报错修复|PPT 制作|闲时任务/.test(read("src/features/app-view/AppView/02-main-stage/03-composer.tsx")),
+    "新会话那排快捷任务（周报总结 / 报错修复 / PPT 制作 / 闲时任务）已按用户要求整体删除（⛔ 不许复活）");
   ok(/thread && historyPlan\.hiddenCount > 0/.test(read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx")),
     "空会话不显示「加载更早的消息」（空会话 hiddenCount=0）");
   ok(existsSync(join(ROOT, "src/features/boss-group-view/BossGroupHelpButton.tsx")),

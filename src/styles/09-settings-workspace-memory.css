@@ -673,42 +673,6 @@
   width: 100%;
   margin: 0;
 }
-.welcome-main .suggest-row {
-  margin-top: 2px;
-}
-.suggest-row button {
-  border: 1px solid var(--line);
-  background: var(--panel);
-  min-height: 56px;
-  min-width: 108px;
-  color: var(--muted);
-  cursor: pointer;
-  border-radius: 12px;
-  flex-direction: column;
-  justify-content: center;
-  gap: 5px;
-  padding: 8px 14px;
-  font-size: 12px;
-  display: inline-flex;
-  transition:
-    transform 0.16s cubic-bezier(0.22, 0.61, 0.36, 1),
-    color 0.16s,
-    border-color 0.16s,
-    background 0.16s,
-    box-shadow 0.16s;
-}
-.suggest-row button:hover {
-  color: var(--text);
-  background: var(--panel-2);
-  border-color: var(--link);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
-}
-.suggest-emoji {
-  font-size: 19px;
-  line-height: 1;
-  filter: saturate(1.05);
-}
 .palette-backdrop {
   z-index: 50;
   background: #1e1e1a52;

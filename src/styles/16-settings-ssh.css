@@ -193,7 +193,7 @@
 }
 
 
-/* ══ 输入框下方「观看演示」大卡片（空态 suggest-row 之下，弹窗播放完整流式演示） ══ */
+/* ══ 输入框下方「观看演示」大卡片（弹窗播放完整流式演示） ══ */
 .demo-card {
   display: flex;
   align-items: center;
