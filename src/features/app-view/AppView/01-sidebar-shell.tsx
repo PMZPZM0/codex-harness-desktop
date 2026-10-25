@@ -618,12 +618,12 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                             <button className="danger" onClick={() => { setProjectMenu(null); void deleteThreadsByCwd(cwd); }}><Trash2 size={14} />移除（删除全部对话）</button>
                           </div>}
                         </div>
-                        {expanded && <div className="project-item-body">{renderDispatchedList(
+                        {expanded && <div className="project-item-body">{items.length ? renderDispatchedList(
                           [...items]
                             // 子会话从顶层剔除（它们缩进挂在发起调度的会话下面，见 renderDispatchedList）
                             .filter((entry) => !sourcedChildIds.has(entry.id))
                             .sort((a, b) => Number(pinnedThreads.includes(b.id)) - Number(pinnedThreads.includes(a.id)) || b.updatedAt - a.updatedAt),
-                        )}</div>}
+                        ) : <div className="empty-list">这个项目还没有任务 —— 发第一条消息，或点上行 ＋ 在这里新建</div>}</div>}
                       </div>
                     );
                   }) : <div className="empty-list">暂无项目</div>}

@@ -1057,6 +1057,8 @@ export interface Bag {
   setPinnedThreads: React.Dispatch<React.SetStateAction<string[]>>;
   togglePinThread: (id: string) => void;
   projectGroups: [string, import("../../app-view/types.ts").Thread[]][];
+  /** 10-25 空项目展示：登记一个项目目录（新建项目/切 workspace 时调用；零会话也出现在项目列表）。 */
+  registerKnownProject: (cwd: string) => void;
   allProjectsCollapsed: boolean;
   toggleAllProjects: () => void;
   projectAutoExpandRef: React.RefObject<boolean>;
