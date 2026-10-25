@@ -254,10 +254,8 @@ export function AppViewMainStage({ app }: { app: HarnessAppApi }) {
     welcomeScratchDir,
     workspace,
   } = app;
-  if (bossStage.stage) return <main className="workspace"><BossGroupStage /></main>;
-
   return (
-    <main className="workspace">
+    <main className="workspace" style={bossStage.stage ? { visibility: "hidden" } : undefined}>
     
             <MainStageTimeline app={app} />
     
@@ -265,6 +263,8 @@ export function AppViewMainStage({ app }: { app: HarnessAppApi }) {
                 任务清单改由输入框上方的回合状态胶囊承载（「步骤 N/M · X 个文件已修改」，悬停展开）。 */}
     
             <MainStageComposer app={app} />
+            {/* BOSS 会话专属界面：同网格覆盖层（⛔ 主舞台保持挂载，切进切出零重建） */}
+            {bossStage.stage ? <BossGroupStage /> : null}
           </main>
   );
 }

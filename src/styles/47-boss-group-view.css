@@ -218,10 +218,10 @@
 .boss-stage {
   /* 在 main.workspace（grid rows: 1fr auto）里铺满两行 —— ⛔ 别自己再当网格子项排
      （曾写 grid-row:1 ⇒ 塞进顶栏那行，整块只剩 44px 高，实测）。 */
-  grid-area: 1 / 1 / -1 / -1;
+  grid-area: 1 / 1 / -1 / -1; /* 覆盖层：主舞台保持挂载只隐藏，这里叠在同一格 */
   display: flex; flex-direction: column;
   min-width: 0; min-height: 0;
-  background: var(--bg);
+  background: var(--bg); z-index: 2;
 }
 .boss-stage-head {
   display: flex; align-items: center; gap: 10px;
@@ -291,3 +291,17 @@
 /* popover 里的群选择器与提示 */
 .boss-members-pop-select { flex: 1; min-width: 0; max-width: none; }
 .boss-members-pop-hint { font-size: 10.5px; color: var(--faint, var(--muted)); border-top: 1px dashed var(--line); padding-top: 6px; }
+
+/* 头部成员图标（10-25 用户令：图标点击展示成员，0 人也在） */
+.boss-stage-members-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 26px; padding: 0 10px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--panel); color: var(--muted);
+  font: inherit; font-size: 12px; cursor: pointer;
+  flex: none;
+  appearance: none;
+}
+.boss-stage-members-btn:hover { color: var(--text); border-color: var(--line-strong); }
+.boss-stage-members-btn-on { color: var(--amber, #d29922); border-color: color-mix(in srgb, var(--amber, #d29922) 40%, var(--line)); }
+.boss-rail-empty { font-size: 10.5px; color: var(--faint, var(--muted)); text-align: center; line-height: 1.6; padding: 8px 2px; }
