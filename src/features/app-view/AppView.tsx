@@ -500,7 +500,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
               截图圈的就是右簇那个 📁）。点击开菜单 = 选择/切换工作区目录；窄屏（≤760px）隐藏规则
               见 09-settings-workspace-memory.css；守卫【250】的覆盖率清单跟着本位置走。 */}
           <div className="ctx-picker">
-            <button ref={ctxBtnRef} className="icon-button tb-workspace ic-amber" title="工作区上下文（当前会话使用的项目目录）" onClick={() => setCtxMenuOpen((current) => !current)}><FolderOpen size={16} /></button>
+            <button ref={ctxBtnRef} className="icon-button tb-workspace ic-amber" disabled={activeThreadRunning} title={activeThreadRunning ? "本轮运行中，项目地址不可切换（结束后恢复）" : "工作区上下文（当前会话使用的项目目录）"} onClick={() => setCtxMenuOpen((current) => !current)}><FolderOpen size={16} /></button>
             {ctxMenuOpen && (
               /* ⛔ 不渲染 menu-backdrop（10-06 夜八轮用户实测「点图标都不会自动消失、其他地方
                  点不了」）：全屏遮罩挂在顶栏拖拽区子树里，真实鼠标点击被 OS 吞成拖窗口 ⇒ 点击

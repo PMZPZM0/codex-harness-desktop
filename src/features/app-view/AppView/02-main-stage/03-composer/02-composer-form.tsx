@@ -578,7 +578,7 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                             </div>}
                               </div>}
                             </div>
-                            <ComposerMenu icon={ShieldCheck} label="权限" title="权限模式" tone={sandbox === "danger-full-access" ? "danger" : undefined} value={sandbox === "danger-full-access" ? "never" : approvalPolicy} options={approvalMenuOptions(sandbox === "danger-full-access")} onChange={changePermissionMode} />
+                            <ComposerMenu icon={ShieldCheck} label="权限" title={activeThreadRunning ? "本轮运行中，权限暂不可修改（结束后恢复）" : "权限模式"} disabled={activeThreadRunning} tone={sandbox === "danger-full-access" ? "danger" : undefined} value={sandbox === "danger-full-access" ? "never" : approvalPolicy} options={approvalMenuOptions(sandbox === "danger-full-access")} onChange={changePermissionMode} />
                             {/* 动态状态灯（10-12）：权限胶囊右侧的空位 —— 后台有状态就亮一盏小图标
                                 （目标模式 / 等待选择 / 挂起消息 / 配方 / 子智能体 / 专家团）。
                                 最多亮一盏、多盏每 3s 轮流（组件内）；窗口变窄 CSS 自适应隐藏。 */}

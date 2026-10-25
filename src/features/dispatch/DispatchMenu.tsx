@@ -34,6 +34,7 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
   const popRef = useRef<HTMLDivElement>(null);
   // 每次打开都从「当前生效值」起算：上一次没点确认就关掉时，草稿不该残留
   useEffect(() => { if (open) setDraft(dispatch); }, [open, dispatch]);
+  useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
   useEffect(() => {
     if (!open) return;
     /*⛔⛔ 2026-10-04 用户报「界面出来了，点一下又消失」——**我上一个提交造成的**。

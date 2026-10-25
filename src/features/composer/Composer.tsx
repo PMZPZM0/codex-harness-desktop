@@ -180,6 +180,7 @@ export function ComposerMenu({ icon, label, options, value, onChange, disabled, 
     window.addEventListener("keydown", onKey);
     return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
   }, [open]);
+  useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
   const current = options.find((option) => option.value === value);
   const Icon = icon;
   return (

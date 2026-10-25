@@ -22,6 +22,12 @@ export function usePart06b2(bag: Bag) {
     const next = bag.allModels.find((entry) => entry.id === value || entry.model === value);
     const nextLabel = next?.model ?? modelName(value);
     const currentThreadId = bag.threadRef.current?.id;
+    const isRunning = Boolean(currentThreadId && bag.activeThreadRunning);
+    // 跨供应商切换要重启应用、会中断正在跑的任务：运行中直接拒绝，结束后再切。
+    if (isRunning && provider && bag.customModel && provider !== bag.customModel.provider) {
+      bag.showToast("运行中不能切换供应商", "跨供应商切换需要重启应用；请等本轮结束后再试");
+      return;
+    }
     const saveSelection = (nextId: string) => {
       bag.setModelId(nextId);
       // 作用域：**有会话就只记到这个会话名下**（其它会话不受影响）；没有会话时选的才算
@@ -48,8 +54,12 @@ export function usePart06b2(bag: Bag) {
         return;
       }
     }
-    // 用户主动切模型时给一条会话内提醒（与引擎 sideband 的模型切换事件互为补充）
-    if (nextLabel && prevLabel && nextLabel !== prevLabel) bag.showToast("模型已切换", `${prevLabel} → ${nextLabel}`);
+    // 用户主动切模型时给一条会话内提醒（与引擎 sideband 的模型切换事件互为补充）。
+    // 运行中：本回合的 turn/start 参数已经固定，新模型从下一条消息开始生效。
+    if (nextLabel && prevLabel && nextLabel !== prevLabel) {
+      if (isRunning) bag.showToast("模型将在下回合生效", `${prevLabel} → ${nextLabel}；本回合仍用旧模型`);
+      else bag.showToast("模型已切换", `${prevLabel} → ${nextLabel}`);
+    }
     // 切模型的 effort 选择：该模型记过档位用之（本地 map 或档案 models[].effort——后者
     // 跨窗口/重装都在，「跟着模型保存」的读取端）；否则当前会话已有档位保持不变（会话内
     // 不突袭改档）；都没有才落到模型默认档

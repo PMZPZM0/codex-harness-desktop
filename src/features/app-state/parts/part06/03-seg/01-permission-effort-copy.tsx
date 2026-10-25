@@ -95,6 +95,9 @@ bag.applyEffort = applyEffort as typeof bag.applyEffort;
   function changeEffort(value: string) {
     // 档位声明（models[].efforts）已随模型配置里的勾选区一起删除（09-18）——
     // 这里不再 upsert 补声明：档位是纯会话级选择，不被支持时由发送失败自动降档兜底。
+    if (bag.activeThreadRunning && bag.threadRef.current?.id) {
+      bag.showToast("思考等级将在下回合生效", "中途切换可能影响模型推理；本回合仍用原等级");
+    }
     bag.applyEffort(value);
     // 自动模式下手选 = 一次性覆盖判定（下一条消息直接生效，芯片立即透出）
     if (bag.effortAuto) {
