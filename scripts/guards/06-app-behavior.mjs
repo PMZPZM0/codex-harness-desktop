@@ -3801,6 +3801,19 @@ w.postMessage({id:1,op:"list",root});
       && persSrc235.includes("向观众介绍你是 Codex")) ? ok : fail)(
       "【235】AGENTS.md 注入身份基线（被问「你是谁」按本应用回答；弹幕场景改用人设，不向观众自我介绍 Codex）"
     );
+    /* ⛔ 10-25 品牌不进同步面：主仓身份恒为 Codex Harness Desktop。
+       反向防线——从 PPcode 同步 UI 时若把 `BRAND_NAME = "PPcode"` / PP 品牌带回来，这里打红。 */
+    const mainSidebarBrandSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "01-sidebar-shell.tsx"), "utf8");
+    (mainSidebarBrandSrc.includes('<strong className="brand-name">Codex Harness</strong>')
+      && !mainSidebarBrandSrc.includes('BRAND_NAME = "PPcode"')
+      && !mainSidebarBrandSrc.includes('<strong className="brand-name">PPcode</strong>') ? ok : fail)(
+      "【235】主仓侧栏品牌 = Codex Harness（⛔ 不许被 PPcode 的品牌名覆盖）"
+    );
+    const mainWinFactorySrc = readFileSync(join(ROOT, "electron", "features", "window-factory.ts"), "utf8");
+    (mainWinFactorySrc.includes('title: "Codex Harness Desktop"')
+      && !mainWinFactorySrc.includes('title: "PPcode"') ? ok : fail)(
+      "【235】主仓窗口标题 = Codex Harness Desktop（⛔ 不许被 PPcode 标题覆盖）"
+    );
 
     /* ③ 独立设置页三件套（注册表 / 类型 / 导航）+ 帮助总览 + 域页面在位 */
     const registrySrc235 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8");
