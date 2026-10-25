@@ -23,7 +23,7 @@ import path from "node:path";
 import { readCustomModel, readCustomModels, writeCustomModels } from "./main/01-model-catalog";
 import { customModelFile } from "./runtime-paths";
 import { applyCustomModel } from "./features/custom-model-apply";
-import { cloudHome, encrypt, fetchIntegrations } from "./cloud-api";
+import { cloudHome, decrypt, encrypt, fetchIntegrations } from "./cloud-api";
 import { writeCloudMemoryActivation } from "./cloud-memory-activation";
 import { withExclusiveEnabled } from "./provider-exclusivity";
 import { sendToWindow } from "./features/window-bus";
@@ -77,6 +77,31 @@ function buildModels(rows: CloudCatalogModel[]): ProviderModel[] {
         ? { inputTypes: (m.supportsImages ? ["text", "image"] : ["text"]) as ("text" | "image" | "video")[] }
         : {}),
     }));
+}
+
+/** 云代理 `/models` 带回上游积分倍率（`credits`）；账号目录本身不一定带。
+ *  只按 id 合并 credits，失败静默 —— 没倍率时菜单照常。 */
+async function attachUpstreamCredits(models: ProviderModel[], proxyBaseUrl: string, encryptedKey: string): Promise<ProviderModel[]> {
+  if (!encryptedKey) return models;
+  try {
+    const key = decrypt(encryptedKey);
+    if (!key) return models;
+    const res = await fetch(`${proxyBaseUrl.replace(/\/$/, "")}/models`, {
+      headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return models;
+    const data: any = await res.json();
+    const rows: any[] = Array.isArray(data) ? data : data.data ?? data.models ?? [];
+    const credits = new Map<string, string>();
+    for (const row of rows) {
+      const id = row?.id ?? row?.name;
+      const credit = row?.credits ?? row?.credit;
+      if (id && credit) credits.set(String(id), String(credit));
+    }
+    if (!credits.size) return models;
+    return models.map((model) => credits.has(model.id) ? { ...model, credits: credits.get(model.id)! } : model);
+  } catch { return models; }
 }
 
 function shapeOf(row: CustomModelFile): string {
@@ -263,6 +288,7 @@ export async function applyCloudProvider(
   /* ⛔ 先把「纯模型」上游记下来（记忆开着时行里存的是记忆端点，没有这份就回不去），
      再用**合成结果**（记忆增强 ?? 纯模型）决定行里写什么 —— 见文件头「单一决策点」。 */
   const modelBaseUrl = `${opts.baseUrl.replace(/\/+$/, "")}${CLOUD_PROXY_SUFFIX}`;
+  const enrichedModels = await attachUpstreamCredits(models, modelBaseUrl, key);
   if (key) await writeModelUpstream({ baseUrl: modelBaseUrl, encryptedKey: key });
   const effective = (await resolveUpstream()) ?? { baseUrl: modelBaseUrl, encryptedKey: key };
   /* ⛔ 10-15 修「两个绿开关」（用户：云管理新增的供应商，上面的豆包没有自动停用）：
@@ -294,7 +320,7 @@ export async function applyCloudProvider(
        （`bridge-dial` + `upstream-protocols`），⛔ 不要往引擎字段里塞 chat。 */
     wireApi: "responses",
     upstreamProtocol: "chat",
-    models,
+    models: enrichedModels,
     /* ⛔ 10-15 起 `enabled` 由上面的条件决定（生效中 / 空场才为真），**不再恒 true**：
        恒 true 会让云端行与用户当前生效的供应商同时绿（用户截图两个开关都亮）。 */
     enabled,

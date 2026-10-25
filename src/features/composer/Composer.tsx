@@ -3,7 +3,7 @@ import { useLayoutEffect, useState, useRef, useEffect, useMemo } from "react";
 import type { KeyboardEvent } from "react";
 import { promptImagePaths } from "../../lib/prompt-images";
 import { promptFilePaths, shouldSavePastedTextAsFile } from "../../lib/composer-attachments.mjs";
-import { ChevronDown, Eye, Video, Search, Image, FileCode2 } from "lucide-react";
+import { ChevronDown, Eye, Video, Search, Image, FileCode2, Settings2 } from "lucide-react";
 import { rebuildComposerDom } from "../../lib/rebuild-composer-dom";
 import { serializeComposerDom } from "../../lib/serialize-composer-dom";
 import { basename } from "../../lib/basename";
@@ -191,7 +191,7 @@ export function ComposerMenu({ icon, label, options, value, onChange, disabled, 
             const itemTone = toneOf?.(option) ?? option.tone;
             return (
               <button type="button" role="option" aria-selected={option.value === value} key={option.value} data-value={option.value} className={option.value === value ? "active" : ""} onClick={() => { onChange(option.value); setOpen(false); }}>
-                <span className={`menu-item-icon${itemTone ? ` tone-dot tone-${itemTone}` : ""}${option.monogram ? " model-monogram" : ""}`}>{option.monogram ?? null}</span>
+                <span className={`menu-item-icon${itemTone ? ` tone-dot tone-${itemTone}` : ""}${option.monogram ? " model-monogram" : ""}`}>{option.monogram ?? (option.value === "__model_settings__" ? <Settings2 size={14} /> : null)}</span>
                 <span className="menu-item-text"><strong>{option.title}</strong>{option.desc && option.desc !== option.title ? <small>{option.desc}</small> : null}</span>
                 {option.badges?.length ? <span className="menu-item-badges">{option.badges.map((badge) => <em key={badge.text} className={badge.kind ? `badge-${badge.kind}` : undefined}>{badge.kind === "vision" ? <Eye size={10} /> : badge.kind === "video" ? <Video size={10} /> : null}{badge.text}</em>)}</span> : null}
                 {option.credits ? <span className="menu-item-credit" title="上游积分倍率">{creditLabel(option.credits)}</span> : null}

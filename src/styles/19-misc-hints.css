@@ -1211,8 +1211,8 @@
   border-radius: 0 0 8px 8px;
   padding-top: 7px;
 }
-.composer-menu-pop button[data-value="__model_settings__"] .menu-item-text {
-  padding-left: 28px;
+.composer-menu-pop button[data-value="__model_settings__"] .menu-item-icon {
+  color: var(--muted);
 }
 .composer-menu-pop button[data-value="__model_settings__"] .menu-item-text strong {
   color: var(--muted);

@@ -2,12 +2,15 @@
  * ComposerComposerForm —— MainStageComposer 的 JSX 第 2 段（09-22 从 03-composer.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { RelayBalanceBadge, RelayCenterPage } from "../../../../relay";
 /* 云账号板块经它自己的 barrel 取（⛔ 不深链内部文件 —— 分层契约）。 */
 import { CloudPointsBadge } from "../../../../settings-cloud";
 import { OpenaiBalanceBadge, OpenaiSubscriptionPage } from "../../../../openai";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../../lib/entity-avatar";
+/* BOSS 会话上下文（域间只走 barrel）—— ⛔ BOSS 会话的项目地址由**欢迎界面**独占设置，
+   输入框上方那枚「项目地址」芯片不能出现（它读的是全局 workspace ⇒ 会串到别的会话的目录）。 */
+import { getBossThreads, isBossSessionContext, subscribeBossThreads } from "../../../../boss-group-view";
 import {
   AlertTriangle,
   Archive,
@@ -155,6 +158,11 @@ import type { HarnessAppApi } from "../../../../app-state/useHarnessApp";
 import { Slot } from "../../../../../runtime/Slot";
 
 export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
+  /* BOSS 会话上下文：⛔ BOSS 会话里输入框上方那枚「项目地址」芯片**不渲染** ——
+     它显示的是全局 workspace（别的会话的目录），会让 BOSS 会话看起来装在别人的项目里。
+     BOSS 会话的项目地址改由**欢迎界面**上的按钮独占设置（10-25 用户实测）。 */
+  const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
+  const isBossSession = isBossSessionContext(bossThreads, app.thread?.id);
   const {
     activeThreadRunning,
     addContextItem,
@@ -377,7 +385,7 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                             （sidebar-tabs），那里才是配置类功能的固定位置。别再把它塞回输入框。 */}
             {/* 欢迎页「项目地址」选择（仅空态显示，发送首条消息后随欢迎态消失）：
                             与右上角 📁 同一全局 workspace 联动；「无项目」模式每次自动新建独立临时目录 */}
-                        {isEmpty && (
+                        {isEmpty && !isBossSession && (
                           <div className="welcome-cwd-picker">
                             <button type="button" className={`welcome-cwd-chip ${welcomeScratchDir ? "scratch" : ""}`} title={welcomeScratchDir ? "无项目 · 本会话使用独立临时目录（点击更改）" : "项目地址：" + (workspace || "未选择（点击选择）")} onClick={() => setWelcomeCwdMenuOpen((open) => !open)}>
                               {welcomeScratchDir ? <FileQuestion size={12} /> : <FolderOpen size={12} />}
@@ -577,7 +585,13 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                                   停用或切到别的供应商 ⇒ 组件返回 null，不占位也不轮询。 */}
                               <CloudPointsBadge active={customModel?.provider === "cloud"} />
                               <ContextUsageBadge tokenUsage={tokenUsage} fallbackWindow={customModel?.models?.find((m) => m.id === customModel?.model)?.contextWindow ?? customModel?.contextWindow} recentCompaction={recentCompaction} onCompact={() => { if (thread?.id) { compactPendingRef.current.add(thread.id); setCompactEventState("running"); window.codex.request("thread/compact/start", { threadId: thread.id }).catch((error: any) => { compactPendingRef.current.delete(thread.id); setCompactEventState("error", error.message); }); } }} />
-                              <ComposerMenu icon={Bot} label="模型" title="模型" disabled={!customModel} value={modelId} width={400} options={[...allModels.map((model) => ({
+                              <ComposerMenu icon={Bot} label="模型" title="模型" disabled={!customModel} value={modelId} width={400} onOpen={() => {
+                                /* 打开下拉顺手拉一次云目录：source/倍率可能还没同步过（10-25 用户「没看见倍率」）。 */
+                                if (customModel?.provider !== "cloud") return;
+                                void (window.codex as any).cloudModelsSync?.({ force: false }).then((result: any) => {
+                                  if (result?.ok) app.refreshActive?.();
+                                }).catch(() => undefined);
+                              }} options={[...allModels.map((model) => ({
                                 value: model.id,
                                 title: model.model,
                                 // 当前供应商不需要重复说明；跨供应商模型只补充供应商名称用于区分。
@@ -587,7 +601,7 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                                 credits: model.credits,
                                 tone: avatarToneOf(model.providerName || model.provider || model.model),
                                 monogram: model.model.replace(/^[^A-Za-z0-9]+/, "").slice(0, 1).toUpperCase() || "M",
-                              })), { value: "__model_settings__", title: "更多设置…", desc: "打开模型配置（思考强度在底栏选择）" }]} toneOf={(option) => option.value === "__model_settings__" ? undefined : avatarToneOf(option.desc || option.title)} onChange={(value) => {
+                              })), { value: "__model_settings__", title: "更多设置…" }]} toneOf={(option) => option.value === "__model_settings__" ? undefined : avatarToneOf(option.desc || option.title)} onChange={(value) => {
                                 if (value === "__model_settings__") { setSettingsPage("model"); setSettingsOpen(true); const live = customModel?.models?.find((m) => m.id === customModel?.model); if (live) openModelEditor(live); return; }
                                 chooseModel(value);
                               }} />

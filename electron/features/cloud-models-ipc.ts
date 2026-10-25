@@ -283,6 +283,9 @@ export const cloudModelsFeature = defineFeature<null>({
     let timer: NodeJS.Timeout | null = null;
     const minutes = Math.max(1, Number(process.env.HARNESS_CLOUD_SYNC_MINUTES || DEFAULT_INTERVAL_MINUTES));
     app.whenReady().then(() => {
+      /* 启动先同步一次：云行的 source/积分倍率依赖这次拉取；否则要等到 10 分钟轮询后
+         下拉才会出现倍率（用户 10-25「我没看见倍率」）。失败静默，不阻断启动。 */
+      if (loginState().loggedIn) void syncModels(false).catch(() => undefined);
       timer = setInterval(() => {
         if (!loginState().loggedIn) return;
         void syncModels(false).catch(() => undefined);
