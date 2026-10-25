@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-26 | 新手教程与设置总览按近期功能重做 | 改动 | `src/features/newbie-guide/*`、`src/components/HelpDialog.tsx`、`src/styles/14-model-onboarding.css`、`src/styles/31-newbie-guide.css`、`src/features/settings-appearance/AppearanceSettingsSection.tsx` | 用户：按最近提交与功能变化更新新手教程和设置总览，「做好一点」。教程新增「会话整理 / 运行过程 / 更新应用 / 指挥中枢」四节，重写界面速览、配置模型（账户来源倍率）、一次对话（运行中置灰 / 下回合生效）、语音播报（隐藏注入）、专家团队（办公室分间 / 群广播）与进阶技巧；左侧加章节搜索与分组计数、正文底部加上一节/下一节；弹窗改 portal 到 body，修掉被语音悬浮球（z240）压住文字的层级问题。总览加 10 条「我想做…→ 去哪页」快捷动线、逐页更新 32 页说明、补 7 条设置之外常用入口；外观「运行过程」说明改成与实现一致（只浮最新变化文件、静止 3 秒收起）。 | 8c51dfb35 |
 | 2026-10-25 | 运行过程「简洁 / 详细」+ 生成/修改文件浮窗 | 新增 | `src/lib/run-process-mode.ts`、`AppearanceSettingsSection.tsx`、`Status.tsx`、`04-cards-tools.css`、`electron/turn-file-watch.ts` | 用户：生成/修改文件像思考板块一样实时浮窗展示、自动跟随最新内容；生成/修改/编辑完自动折叠；外观加运行过程简洁（默认）/详细。实现：实时事件补 content/diff，详细档对最新变化文件弹同思考板块的自适应浮窗（同输入框宽、上下按空间选边、自动滚到底），停止变化 3s 自动收起；简洁档只保留文件行 +N -M。实机写文件验证浮窗显示内容与 diff。 | f5d15387c |
 | 2026-10-25 | 会话 / 项目自定义标签（文字 + 颜色） | 新增 | `src/lib/entity-tags.mjs`、`EntityTagEditor.tsx`、`02-thread-attention-rows.tsx`、`01-sidebar-shell.tsx`、`02-sidebar-threads.css` | 用户：普通会话与项目都要自定义标签，可改内容和颜色，默认无标签。会话「⋯ → 添加/编辑标签」、项目「⋯ → 添加/编辑标签」打开同一编辑器；8 色可选，会话标题前与项目名前显示彩色标签；localStorage 按 threadId / cwd 持久化，不参与引擎配置。CDP 实测写入「重要客户」「长期项目」并在列表显示，改色为绿色成功。 | c7e8af135 |
 | 2026-10-25 | 修：悬停会话时项目行「新建」按钮串亮 | 修复 | `src/styles/02-sidebar-threads.css` | 用户截图：鼠标放在会话上，项目分类行右侧「新建会话」图标跟着显示。根因是选择器写 `.project-item:hover`，覆盖了整个项目子树；改为 `.project-item-head:hover`，只在悬停项目标题行时显示。三仓同步。 | fe3a9034d |
