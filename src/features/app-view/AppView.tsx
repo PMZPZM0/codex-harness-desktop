@@ -436,6 +436,13 @@ export function AppView({ app }: { app: HarnessAppApi }) {
   const topbarDir = bossDirContext
     ? (thread?.cwd || (thread?.id ? bossDirState.dirByThread?.[thread.id] : bossDirState.pendingDir) || "")
     : (workspace || "");
+  /* ⛔ 工作区菜单里那行「选择…目录」的**可用性**（⛔ 不是为了好看，是为了不出现「点了没反应」）：
+     BOSS 会话一旦已经有自己的地址，**改不了** —— 引擎是用这个 cwd 起的会话，
+     再选一次只会写进 dirByThread[已存在的会话]（没有任何读取方，见 part08/01-seg 的
+     `sessionCwd`：它只在**建会话那一次**取值）⇒ 菜单项照旧显示就等于骗人。
+     ⇒ BOSS 上下文里：没地址才给「选择项目地址」；已有地址就收起这一项（地址只读回显仍在）。 */
+  const canPickDir = !bossDirContext || !topbarDir;
+  const pickDirLabel = bossDirContext ? "选择项目地址" : topbarDir ? "选择其他目录…" : "选择工作区目录";
   return (
     // 设置页的「?」要能打开完整帮助弹窗（气泡里的「查看完整帮助」）：用 context 注入 setHelpKey。
     // 不走逐页 prop —— 二十多个设置页头部每处都传一遍回调，漏传的那个会静默点不开。
@@ -488,7 +495,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
                   {/* 「打开项目地址」（10-06 夜八轮，用户点名加）：目录走 shellReveal = shell.openPath
                       在文件管理器里打开（shell-ipc 对目录的既定行为；工作区在可信根内，主进程放行）。 */}
                   {topbarDir && <button onClick={() => { setCtxMenuOpen(false); void window.codex.shellReveal(topbarDir); }}><FolderOpen size={14} /><span>打开项目地址</span></button>}
-                  <button onClick={() => { setCtxMenuOpen(false); if (bossDirContext) openBossDirDialog(); else void chooseWorkspace(); }}><FolderOpen size={14} />{topbarDir ? "选择其他目录…" : bossDirContext ? "选择项目地址" : "选择工作区目录"}</button>
+                  {canPickDir && <button onClick={() => { setCtxMenuOpen(false); if (bossDirContext) openBossDirDialog(); else void chooseWorkspace(); }}><FolderOpen size={14} />{pickDirLabel}</button>}
                   {topbarDir && <button onClick={() => setCtxMenuOpen(false)}><FolderOpen size={14} /><span className="ctx-current-name">资源管理器 · {basename(topbarDir)}</span><Check size={14} className="ctx-check" /></button>}
                 </div>,
                 document.body,
