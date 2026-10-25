@@ -969,10 +969,16 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     && reactions.isTypingTarget("DIV", true) && !reactions.isTypingTarget("BUTTON"),
     "只有输入框/多行输入/可编辑区域里的敲键才弹键盘（点按钮、快捷键不算）");
 
+  ok(reactions.pupilScale(0) === 1 && reactions.pupilScale(1) > 1.05
+    && reactions.pupilScale(100) === 1.18 && reactions.pupilScale(Number.NaN) === 1,
+    "瞳孔缩放：不动 = 1x，越快越大，上限 1.18x（非法速度回落 1）");
   const hookSrc = read("src/components/VoiceCallFloat/use-ball-reactions.ts");
   ok(/requestAnimationFrame/.test(hookSrc) && /setProperty\("--bot-gaze-x"/.test(hookSrc)
     && /removeProperty\("--bot-gaze-x"\)/.test(hookSrc) && !/useState<[^>]*gaze|const \[gaze/.test(hookSrc),
     "鼠标追踪只写 CSS 变量并 rAF 合并（⛔ 不进 React state：每次 pointermove 重渲通话组件会卡）");
+  ok(/setProperty\("--bot-eye-scale"/.test(hookSrc) && /removeProperty\("--bot-eye-scale"\)/.test(hookSrc)
+    && /pupilScale\(speed\)/.test(hookSrc),
+    "瞳孔缩放按指针速度写 --bot-eye-scale，停下复位（140ms 保持 + CSS 过渡回落）");
   ok(/prefers-reduced-motion/.test(hookSrc) && /compositionstart/.test(hookSrc)
     && /removeEventListener\("pointermove"/.test(hookSrc) && /removeEventListener\("keydown"/.test(hookSrc),
     "监听成对摘除；减动效不跟随；中文输入法 composition 也弹键盘");
@@ -988,9 +994,10 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     "两只眼睛包在同一个位移层里（眨眼动画与追踪互不覆盖）");
   const reactionCss = read("src/styles/18-openai-dialog.css");
   ok(/\.voice-bot-gaze \{[^}]*translate\(var\(--bot-gaze-x, 0px\), var\(--bot-gaze-y, 0px\)\)/.test(reactionCss)
+    && /\.voice-bot-eye \{[^}]*scale:\s*var\(--bot-eye-scale/.test(reactionCss)
     && /\.voice-ball-keyboard \{[^}]*pointer-events:\s*none/.test(reactionCss)
     && /\.voice-keyboard-key \{[^}]*animation:\s*voice-key-tap/.test(reactionCss),
-    "位移层与迷你键盘样式在位（键盘不占布局、不拦点击）");
+    "位移层、瞳孔缩放（独立 scale 属性）与迷你键盘样式在位（键盘不占布局、不拦点击）");
 }
 
 console.log(`\n【voice-call】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

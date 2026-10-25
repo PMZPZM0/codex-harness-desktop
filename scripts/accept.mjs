@@ -567,6 +567,18 @@ const CHECKS = [
       h.check("① 指针在左上时眼球往左上偏（真读 CSS 变量，不是只看类名）",
         gaze.x < -1 && gaze.y < -1, JSON.stringify(gaze));
 
+      await h.eval(`(function(){
+        const r=document.querySelector(".voice-ball").getBoundingClientRect();
+        window.dispatchEvent(new PointerEvent("pointermove",{clientX:r.left+r.width*0.85,clientY:r.top+r.height*0.85,bubbles:true}));
+        return 1;
+      })()`);
+      await wait(40);
+      const pupil = await h.eval(`parseFloat(document.querySelector(".voice-ball").style.getPropertyValue("--bot-eye-scale"))||1`);
+      h.check("② 鼠标快速划过 → 瞳孔按速度放大(>1.03)", pupil > 1.03, JSON.stringify({ pupil }));
+      await wait(500);
+      const pupilBack = await h.eval(`parseFloat(document.querySelector(".voice-ball").style.getPropertyValue("--bot-eye-scale"))||1`);
+      h.check("③ 停手后瞳孔回落到 1x", pupilBack <= 1.01, JSON.stringify({ pupilBack }));
+
       const typed = await h.eval(`(function(){
         const ed=document.querySelector(".composer-editor"); if(!ed) return 0;
         ed.focus();
@@ -580,13 +592,13 @@ const CHECKS = [
         keys: document.querySelectorAll(".voice-keyboard-key").length,
         hint: !!document.querySelector(".voice-hint-bubble"),
       })`);
-      h.check("② 输入框敲字 → 球上方弹出 3 排迷你键盘，提示气泡让位",
+      h.check("④ 输入框敲字 → 球上方弹出 3 排迷你键盘，提示气泡让位",
         typed === 1 && keyboard.kb && keyboard.rows === 3 && keyboard.keys === 16 && !keyboard.hint,
         JSON.stringify(keyboard));
 
       await wait(2200);
       const closed = await h.eval(`!document.querySelector(".voice-ball-keyboard")`);
-      h.check("③ 停手 1.1 秒后键盘自动收起（含后台节流余量）", closed, JSON.stringify({ closed }));
+      h.check("⑤ 停手 1.1 秒后键盘自动收起（含后台节流余量）", closed, JSON.stringify({ closed }));
     },
   },
 ];
