@@ -1,0 +1,10 @@
+export type EntityTag = { text: string; color: string };
+export type TagEditorState = { kind: "thread" | "project"; id: string; title: string; value: EntityTag | null } | null;
+export type TagColor = { id: string; label: string; value: string };
+export declare const TAG_COLORS: TagColor[];
+export declare function getEntityTagState(): { threads: Record<string, EntityTag>; projects: Record<string, EntityTag>; editor: TagEditorState; version: number };
+export declare function subscribeEntityTags(listener: () => void): () => void;
+export declare function openTagEditor(editor: TagEditorState): void;
+export declare function closeTagEditor(): void;
+export declare function setEntityTag(kind: "thread" | "project", id: string, tag: EntityTag): void;
+export declare function removeEntityTag(kind: "thread" | "project", id: string): void;
