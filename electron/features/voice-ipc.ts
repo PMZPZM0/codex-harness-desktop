@@ -38,7 +38,7 @@ const VOICE_CHANNELS = [
   "voice:models-cancel", "voice:models-import", "voice:models-reveal",
   "voice:models-uninstall", "voice:mic-permission", "voice:resource-set-enabled",
   "voice:announce-owner", "voice:announce-set-muted",
-  "voice:resource-delete", "voice:resource-status",
+  "voice:resource-delete", "voice:resource-status", "voice:tts-pack-install", "voice:tts-pack-cancel",
 ];
 
 export const voiceFeature = defineFeature<null>({

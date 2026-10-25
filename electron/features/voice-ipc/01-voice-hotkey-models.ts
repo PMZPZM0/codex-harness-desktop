@@ -7,7 +7,8 @@
 import { app, dialog, globalShortcut, shell, systemPreferences } from "electron";
 import { VoiceService } from "../../voice/voice-service";
 import { ALL_VOICE_REPOS, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "../../voice/model-manifest";
-import { ensureZipvoice, modelsSizeOnDisk, voiceModelsStatus } from "../../voice/model-store";
+import { ensureEmotivoice, ensureKokoro, ensureZipvoice, modelsSizeOnDisk, voiceModelsStatus } from "../../voice/model-store";
+import { EMOTIVOICE_DIR, EMOTIVOICE_FILES, EMOTIVOICE_HOST_NOTE, KOKORO_ARCHIVE, KOKORO_DIR, emotivoiceReady, kokoroReady } from "../../voice/model-manifest";
 import { isVoiceResourceEnabled, loadVoiceSettings, voiceResourceStates } from "../../voice/voice-settings";
 import { toolsRoot, writeToolsRoot } from "../../toolchain";
 import { sendToWindow } from "../window-bus";
@@ -48,12 +49,14 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
   ipcHost.handle("voice:status", () => svc().status());
 
   ipcHost.handle("voice:settings-get", () => {
-    const { loadVoiceSettings, TTS_VOICE_NAMES, MODEL_HOST_PRESETS, MODEL_HOST_LABELS } = require("../../voice/voice-settings");
+    const { loadVoiceSettings, ttsVoiceNamesFor, MODEL_HOST_PRESETS, MODEL_HOST_LABELS } = require("../../voice/voice-settings");
     const settings = svc().getSettings();
     // 把枚举的可选值一起回传，渲染层不用自己硬码
     return {
       settings,
-      ttsVoices: TTS_VOICE_NAMES,
+      /* ⛔ 音色表必须**跟着引擎走**：Kokoro 是 103 个音色，vits 是 5 个。
+         给错表 = 用户在下拉里选到不存在的音色（vits 的 sid=42 在 kokoro 里是另一个声音）。 */
+      ttsVoices: ttsVoiceNamesFor(settings.tts?.engine),
       modelHosts: MODEL_HOST_LABELS,
       modelHostOptions: Object.keys(MODEL_HOST_PRESETS),
     };
@@ -61,8 +64,15 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
 
   ipcHost.handle("voice:settings-set", async (_event, patch: any) => {
     const { saveVoiceSettings } = require("../../voice/voice-settings");
+    const prevEngine = svc().getSettings()?.tts?.engine;
     const next = saveVoiceSettings(app.getPath("userData"), patch ?? {});
     svc().updateSettings(next);
+    /* ⛔ 换了引擎 ⇒ 必须重建合成线程：TTS 模型在 worker `create` 时就固定了
+       （vits 的 model.onnx 与 kokoro 的 model.int8.onnx 是两套），
+       光改设置的话用户听到的还是旧引擎的声音。 */
+    if (next.tts?.engine !== prevEngine) {
+      await svc().reloadTtsVoice().catch(() => undefined);
+    }
     // ★ 广播出去：语音唤醒这类「按设置常驻」的能力必须能**立刻**重挂。
     //   旧实现：VoiceCallFloat 的唤醒 effect 只在 phase 变化时读一次设置 →
     //   在设置页打开开关后毫无反应（用户 09-13 反馈「唤醒功能不太行」的直接原因之一）。
@@ -207,6 +217,24 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
         bytes: KWS_ARCHIVE.bytes,
         dir: KWS_DIR,
       },
+      /* 10-26：两个可选**合成引擎**包（按需下载，与基础模型并存）。
+         ⛔ emotivoice 的 `runnable` 单独回：模型能下载 ≠ 能合成（还缺通用 onnxruntime）。
+            UI 必须照它给说法，不能点了没反应。 */
+      kokoro: {
+        ready: kokoroReady(modelsRoot()),
+        enabled: isVoiceResourceEnabled(settings, "kokoro"),
+        bytes: KOKORO_ARCHIVE.bytes,
+        dir: KOKORO_DIR,
+        runnable: true,
+      },
+      emotivoice: {
+        ready: emotivoiceReady(modelsRoot()),
+        enabled: isVoiceResourceEnabled(settings, "emotivoice"),
+        bytes: EMOTIVOICE_FILES.reduce((sum, f) => sum + f.bytes, 0),
+        dir: EMOTIVOICE_DIR,
+        runnable: false,
+        hostNote: EMOTIVOICE_HOST_NOTE,
+      },
       // 基础模型：readyFiles/totalFiles 已说明装了多少，这里补启用状态
       baseEnabled: isVoiceResourceEnabled(settings, "base"),
       resources: voiceResourceStates(settings),
@@ -238,6 +266,33 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
   });
   ipcHost.handle("voice:zipvoice-cancel", () => {
     zipvoiceAbort?.abort();
+    return { ok: true };
+  });
+
+  /* ── 10-26：可选**合成引擎**包（Kokoro / EmotiVoice）的按需下载 ──────────────
+     两个引擎共用这一对通道（入参 `pack` 区分），避免每种资源都造一对通道把通道表撑爆。
+     ⛔ 事件带 `target: pack`，渲染层按 target 归位到对应卡片。 */
+  let packAbort: AbortController | null = null;
+  ipcHost.handle("voice:tts-pack-install", async (_event: unknown, pack: string) => {
+    if (pack !== "kokoro" && pack !== "emotivoice") return { ok: false, error: `未知的引擎包：${String(pack)}` };
+    if (!isVoiceResourceEnabled(loadVoiceSettings(app.getPath("userData")), pack as any)) {
+      return { ok: false, error: "该模型已被停用 —— 请先重新启用再下载" };
+    }
+    if (packAbort) return { ok: false, error: "正在安装中" };
+    packAbort = new AbortController();
+    try {
+      const send = (progress: any) => sendToWindow("voice:event", { type: "download", ...progress, target: pack });
+      const result = pack === "kokoro"
+        ? await ensureKokoro(modelsRoot(), writeToolsRoot(), send, packAbort.signal)
+        : await ensureEmotivoice(modelsRoot(), send);
+      sendToWindow("voice:event", { type: "downloadDone", ok: result.ok, error: result.ok ? undefined : (result as any).error, target: pack });
+      return result;
+    } finally {
+      packAbort = null;
+    }
+  });
+  ipcHost.handle("voice:tts-pack-cancel", () => {
+    packAbort?.abort();
     return { ok: true };
   });
 

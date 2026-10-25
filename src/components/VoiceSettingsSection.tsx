@@ -8,6 +8,7 @@ import { PageInfo } from "./SettingsHead";
 import { hotkeyLabel } from "../lib/hotkey.mjs";
 import { useVoiceSettingsSectionState } from "./VoiceSettingsSection/use-voice-settings-section-state";
 import { VoiceSettingsSectionVoicePicker } from "./VoiceSettingsSection/01-voice-picker";
+import { VoiceSettingsSectionTtsEngines } from "./VoiceSettingsSection/02-tts-engines";
 import { VoiceSettingsSectionVoiceCloneProfile } from "./VoiceSettingsSection/02-voice-clone-profile";
 import { VoiceSettingsSectionMicDevices } from "./VoiceSettingsSection/03-mic-devices";
 import { VoiceSettingsSectionEndpointWait } from "./VoiceSettingsSection/04-endpoint-wait";
@@ -30,7 +31,10 @@ export const IS_MAC_UI = (() => {
 /** 快捷键展示：accelerator 原文 → 当前平台习惯写法（mac：⌘⇧M）。 */
 export const showHotkey = (accelerator: string) => hotkeyLabel(accelerator, IS_MAC_UI ? "darwin" : "other");
 export type Settings = {
-  tts: { sid: number; speed: number; volume: number; profileId?: string; numSteps?: number };
+  /* 10-26：合成引擎三选一。⛔ 渲染层与 electron 各有一份字面量（两边互不 import），
+     加字段必须**两边同改**（electron/voice/voice-settings.ts 的 VoiceSettings.tts.engine）。 */
+  tts: { sid: number; speed: number; volume: number; profileId?: string; numSteps?: number;
+    engine?: "vits" | "kokoro" | "emotivoice"; };
   asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
   mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
   barge: { gateDb: number; mode: "auto" | "manual" };
@@ -81,7 +85,7 @@ export async function playSamples(samples: Float32Array | undefined, sampleRate:
 }
 
 export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: string) => void }) {
-  const { settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, micTestRef, profiles, setProfiles, zipReady, setZipReady, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, apply, audition, toggleMicTest, captureHotkey, voiceOptions } = useVoiceSettingsSectionState({ onNotice });
+  const { settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, micTestRef, profiles, setProfiles, zipReady, setZipReady, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, apply, audition, toggleMicTest, captureHotkey, voiceOptions, reloadMeta } = useVoiceSettingsSectionState({ onNotice });
     if (!settings || !meta) {
     return (
       <section className="settings-section stack voice-settings">
@@ -105,6 +109,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
       <VoiceSettingsSectionVoicePicker apply={apply} audition={audition} auditionPhase={auditionPhase} saving={saving} settings={settings} voiceOptions={voiceOptions} activeProfileName={profiles.find((p: any) => p.id === settings.tts.profileId)?.name} zipReady={zipReady} />
 
       {/* 我的音色（音色克隆）：导入/录制一段参考音频 → 本机识别原文 → 用那个嗓音说话 */}
+      <VoiceSettingsSectionTtsEngines apply={apply} onNotice={onNotice} reloadMeta={reloadMeta} settings={settings} />
       <VoiceSettingsSectionVoiceCloneProfile applyPreset={applyPreset} draft={draft} draftName={draftName} importProfile={importProfile} uploadProfile={uploadProfile} presets={presets} previewProfile={previewProfile} profileBusy={profileBusy} profilePreview={profilePreview} profileRecording={profileRecording} profiles={profiles} recordingRef={recordingRef} removeProfile={removeProfile} saveDraft={saveDraft} selectProfile={selectProfile} setDraft={setDraft} setDraftName={setDraftName} setProfileBusy={setProfileBusy} settings={settings} startProfileRecord={startProfileRecord} zipReady={zipReady} />
 
       {/* 语音模型 + 音色克隆模型（10-08 从「开发工具」页**迁移**过来）：

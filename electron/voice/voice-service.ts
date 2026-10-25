@@ -17,6 +17,7 @@ import { DEFAULT_VOICE_SETTINGS, MODEL_HOST_PRESETS, VOICE_SAMPLE_TEXT, isVoiceR
 import { ASR_WORKER_SOURCE, KWS_WORKER_SOURCE, TTS_WORKER_SOURCE, VoiceWorkerClient, resolveSherpaPath } from "./workers";
 import { buildHomophoneMap, createWakeMatcher, phraseVocabHint, type WakeMatcher } from "./wake-match";
 import { buildKeywordLines, parseLexiconReadings } from "./kws-keywords";
+import { buildEngineWorkerData } from "./tts-engine-data";
 import fsPromises from "node:fs/promises";
 import path from "node:path";
 import { listProfiles, profileAudioPath, type VoiceProfile } from "./voice-profiles";
@@ -571,14 +572,15 @@ export class VoiceService {
         };
       }
     }
-    return {
-      mode: "vits",
-      sherpaPath,
-      numThreads,
-      model: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "model.onnx"),
-      lexicon: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "lexicon.txt"),
-      tokens: modelFilePath(this.deps.modelsRoot, TTS_REPO.repo, "tokens.txt"),
-    };
+    /* 10-26：合成引擎（vits / Kokoro）；装配在独立模块（本文件受守卫【265】棘轮，只许缩不许长）。
+     * ⛔ 优先级：克隆音色 > Kokoro > vits（克隆分支在上面先返回）。
+     */
+    const pick = buildEngineWorkerData({
+      modelsRoot: this.deps.modelsRoot, engine: this.currentSettings?.tts?.engine,
+      numThreads, sherpaPath, isEnabled: (kind) => isVoiceResourceEnabled(this.settingsNow(), kind),
+    });
+    if (pick.note) this.deps.log("info", pick.note);
+    return pick.workerData;
   }
 
   /** 合成一句话（渲染层按句调用，实现边生成边播）。 */
@@ -682,7 +684,8 @@ export class VoiceService {
    *    不能靠「空合成一句」—— 合成本身要几秒，反而会把第一句真正的播报排在它后面。
    */
   private async ensurePreviewWorker(sherpaPath: string, wanted: string, numThreads: number): Promise<VoiceWorkerClient> {
-    const key = `${wanted}|${numThreads}`;
+    /* ⛔ key 必须带引擎：换引擎后模型不同（vits ↔ kokoro），复用旧 worker = 听着还是旧引擎。 */
+    const key = `${wanted}|${numThreads}|${this.currentSettings?.tts?.engine ?? "vits"}`;
     if (this.previewTts && this.previewTts.alive && this.previewTtsKey === key) {
       this.schedulePreviewDispose();
       return this.previewTts;

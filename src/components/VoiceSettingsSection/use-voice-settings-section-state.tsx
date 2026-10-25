@@ -428,6 +428,20 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
 
 
 
+  /**
+   * 重拉设置元信息（音色表 / 镜像源）。
+   * ⛔ 换合成引擎后**必须调**：vits 只有 5 个音色、Kokoro 有 103 个，
+   *    音色表是主进程按当前引擎给的 ⇒ 不重拉就会出现"下拉里还是旧引擎的音色"。
+   */
+  const reloadMeta = useCallback(async () => {
+    try {
+      const res = await window.codex.voiceSettingsGet();
+      setMeta({ ttsVoices: res.ttsVoices, modelHosts: res.modelHosts });
+    } catch {
+      /* 读不到就保持原表，别把界面清空 */
+    }
+  }, []);
+
   const voiceOptions = useMemo(() => {
     if (!meta) return [] as { value: number; label: string }[];
     return Object.entries(meta.ttsVoices)
@@ -435,5 +449,5 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
       .sort((a, b) => a.value - b.value);
   }, [meta]);
 
-  return { onNotice, settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, micTestRef, profiles, setProfiles, zipReady, setZipReady, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, apply, audition, toggleMicTest, captureHotkey, voiceOptions };
+  return { onNotice, settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, micTestRef, profiles, setProfiles, zipReady, setZipReady, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, apply, audition, toggleMicTest, captureHotkey, voiceOptions, reloadMeta };
 }

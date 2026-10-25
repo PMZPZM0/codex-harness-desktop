@@ -14,7 +14,7 @@ import { spawn } from "node:child_process";
 import { createReadStream, createWriteStream, existsSync, statSync } from "fs";
 import { copyFile, mkdir, open, readdir, readFile, rename, rm, stat, unlink } from "fs/promises";
 import { basename, dirname, join } from "path";
-import { MODEL_HOSTS, modelUrl, type VoiceModelFile, type VoiceModelRepo, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_DIR, ZIPVOICE_ARCHIVE, zipvoiceReady } from "./model-manifest";
+import { MODEL_HOSTS, modelUrl, type VoiceModelFile, type VoiceModelRepo, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_DIR, ZIPVOICE_ARCHIVE, zipvoiceReady, EMOTIVOICE_DIR, EMOTIVOICE_FILES, EMOTIVOICE_HOST_NOTE, EMOTIVOICE_URLS, KOKORO_ARCHIVE, KOKORO_DIR, emotivoiceReady, kokoroReady } from "./model-manifest";
 
 export type VoiceDownloadProgress = {
   /** 当前仓库 id */
@@ -995,6 +995,99 @@ export async function ensureZipvoice(
   }
 
   report("完成", 100, "音色克隆模型就绪", 2, 2);
+  return { ok: true };
+}
+
+/**
+ * 安装/补齐**可选合成引擎 Kokoro**（归档型，140MB → 解压 206MB）。
+ * 与 zipvoice 同一条路：整包下载（含 GitHub 镜像前缀）→ SHA256 → 解压 → 回读就绪判定。
+ */
+export async function ensureKokoro(
+  modelsRoot: string,
+  resourcesToolsDir: string,
+  onProgress?: (p: VoiceDownloadProgress) => void,
+  signal?: AbortSignal,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (kokoroReady(modelsRoot)) return { ok: true };
+  const report = (percent: number, message: string) =>
+    onProgress?.({ repo: KOKORO_DIR, file: "模型包", doneFiles: 0, totalFiles: 1, percent, message });
+
+  const dir = join(modelsRoot, KOKORO_DIR);
+  const minOf = KOKORO_ARCHIVE.readyFileMinBytes;
+  const needMain = KOKORO_ARCHIVE.readyFiles.some((name) => {
+    try { return statSync(join(dir, name)).size < (minOf[name] ?? 1); } catch { return true; }
+  });
+  if (needMain) {
+    const archivePath = join(modelsRoot, ".cache", KOKORO_DIR + ".tar.bz2");
+    const cached = existsSync(archivePath)
+      ? await sha256File(archivePath).then((h) => h === KOKORO_ARCHIVE.sha256).catch(() => false)
+      : false;
+    if (!cached) {
+      report(0, "正在下载 Kokoro 模型（约 140MB）…");
+      const downloaded = await downloadUrlToFile(
+        KOKORO_ARCHIVE.url, archivePath, KOKORO_ARCHIVE.sha256, KOKORO_ARCHIVE.bytes,
+        (received, total) => report(total ? Math.round((received / total) * 100) : -1,
+          "正在下载 Kokoro " + (received / 1048576).toFixed(0) + "/" + (total / 1048576).toFixed(0) + "MB"),
+        signal,
+        GITHUB_MIRROR_PREFIXES,
+      );
+      if (!downloaded.ok) return downloaded;
+    }
+    report(100, "正在解压 Kokoro 模型…");
+    const extracted = await extractArchiveInto(archivePath, modelsRoot, KOKORO_DIR, resourcesToolsDir);
+    if (!extracted.ok) return extracted;
+    await unlink(archivePath).catch(() => undefined);
+  }
+  /* ⛔ 与 zipvoice 同口径：装完必须**回读就绪判定**，不能只信下载器说成功。 */
+  if (!kokoroReady(modelsRoot)) {
+    return { ok: false, error: "Kokoro 模型校验未通过（文件不完整或 espeak-ng-data 缺失），请重试下载" };
+  }
+  report(100, "Kokoro 模型就绪");
+  return { ok: true };
+}
+
+/**
+ * 安装**情感语音模型 EmotiVoice**。
+ *
+ * ⛔ 10-26 现状：除生成器 ONNX 外，其余文件都能从 ModelSpace 镜像直下；
+ *    但生成器 ONNX 是**本项目自行导出**的，还没有公开托管位 ⇒ 这里要**明确报错**，
+ *    绝不能静默返回 ok（那会让 UI 显示"已安装"却根本不能合成）。
+ */
+export async function ensureEmotivoice(
+  modelsRoot: string,
+  onProgress?: (p: VoiceDownloadProgress) => void,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const report = (file: string, percent: number, message: string, done: number) =>
+    onProgress?.({ repo: EMOTIVOICE_DIR, file, doneFiles: done, totalFiles: EMOTIVOICE_FILES.length, percent, message });
+  report("—", -1, "检查托管地址…", 0);
+
+  /* ⛔ 缺任何一个下载地址就**明确报错**（最常见的是自导出 ONNX 的基址还没配）。 */
+  const missingUrl = EMOTIVOICE_FILES.filter((f) => !EMOTIVOICE_URLS[f.name]);
+  if (missingUrl.length) {
+    return { ok: false, error: `${EMOTIVOICE_HOST_NOTE}（缺 ${missingUrl.length} 个文件的下载地址：${missingUrl.map((f) => f.name).join("、")}）` };
+  }
+  if (emotivoiceReady(modelsRoot)) return { ok: true };
+
+  for (let i = 0; i < EMOTIVOICE_FILES.length; i += 1) {
+    const f = EMOTIVOICE_FILES[i];
+    const target = join(modelsRoot, EMOTIVOICE_DIR, f.name);
+    const ok = existsSync(target) && (await sha256File(target).then((h) => h === f.sha256).catch(() => false));
+    if (ok) { report(f.name, 100, `${f.name} 已存在，跳过`, i + 1); continue; }
+    report(f.name, 0, `正在下载 ${f.name}（约 ${(f.bytes / 1048576).toFixed(0)}MB）…`, i + 1);
+    const r = await downloadUrlToFile(
+      EMOTIVOICE_URLS[f.name], target, f.sha256, f.bytes,
+      (received, total) => report(f.name, total ? Math.round((received / total) * 100) : -1,
+        `正在下载 ${f.name} ${(received / 1048576).toFixed(0)}/${(total / 1048576).toFixed(0)}MB`, i + 1),
+      undefined,
+      /* ModelSpace 已在国内；自导出产物若将来放 GitHub，这里沿用同一套镜像前缀。 */
+      GITHUB_MIRROR_PREFIXES,
+    );
+    if (!r.ok) return r;
+  }
+  if (!emotivoiceReady(modelsRoot)) {
+    return { ok: false, error: "情感语音模型校验未通过（文件不完整），请重试下载" };
+  }
+  report("完成", 100, "情感语音模型就绪", EMOTIVOICE_FILES.length);
   return { ok: true };
 }
 

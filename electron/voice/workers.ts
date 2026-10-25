@@ -232,6 +232,25 @@ function ensure() {
           refRate = parsed.sampleRate;
         }
       }
+    } else if (workerData.mode === "kokoro") {
+      /* 10-26：Kokoro v1.1-zh（103 音色）。与 vits 同一套运行时（sherpa-onnx），
+         ⛔ 但 sid 是**音色索引**（0..102，顺序与官方 voices.bin 一致），不是 vits 的说话人 id。
+         实测：加载后 sampleRate=24000、numSpeakers=103；中文含标点/数字/中英混排均正常。 */
+      const k = workerData.kokoro || {};
+      tts = new sherpa.OfflineTts({
+        model: {
+          kokoro: {
+            model: k.model,
+            voices: k.voices,
+            tokens: k.tokens,
+            dataDir: k.dataDir,
+            lexicon: k.lexicon,
+          },
+        },
+        maxNumSentences: 1,
+        numThreads: workerData.numThreads,
+        provider: "cpu",
+      });
     } else {
       tts = new sherpa.OfflineTts({
         model: {

@@ -30,6 +30,8 @@ export const VOICE_SETTINGS_VERSION = 7;
 export type VoiceSettings = {
   tts: {
     sid: number; speed: number; volume: number;
+    /** 10-26：合成引擎（三选一，按需下载、可并存）。缺省/未装 ⇒ 回落 vits。 */
+    engine?: VoiceTtsEngine;
     /** "我的音色"档案 id；空串/缺省 = 用内置预置音色 */ profileId?: string;
     /** 合成步数（10-24 新增，2–12）。步数越多音质越清晰、合成越慢。
      *  ⛔ 单一真相源：播报 / 通话 / 试听共用这一档（播报端曾写死 2 步换延迟，实测「沙哑听不清」）。 */
@@ -92,7 +94,8 @@ export type VoiceSettings = {
  * ⛔ 这里是**白名单**而不是任意字符串：主进程会拿它拼路径删文件，未登记的 kind 一律拒绝
  *    （渲染层传什么都不能越界删 `<userData>` 里的别的东西）。
  */
-export const VOICE_RESOURCE_KINDS = ["base", "zipvoice", "kws"] as const;
+/* 10-26 +2：可选**合成引擎**包（按需下载、与基础模型并存，互不影响）。 */
+export const VOICE_RESOURCE_KINDS = ["base", "zipvoice", "kws", "kokoro", "emotivoice"] as const;
 export type VoiceResourceKind = (typeof VOICE_RESOURCE_KINDS)[number];
 
 export function isVoiceResourceKind(v: unknown): v is VoiceResourceKind {
@@ -100,10 +103,23 @@ export function isVoiceResourceKind(v: unknown): v is VoiceResourceKind {
 }
 
 /** 资源的中文名（主进程回给渲染层显示，避免两边各写一份字面量）。 */
+/** 合成引擎（三选一）。⛔ 单一真相源：主进程按它选模型目录。 */
+export const VOICE_TTS_ENGINES = ["vits", "kokoro", "emotivoice"] as const;
+export type VoiceTtsEngine = (typeof VOICE_TTS_ENGINES)[number];
+
+/** 引擎的中文名（UI 与提示共用，避免两边各写一份字面量）。 */
+export const VOICE_TTS_ENGINE_LABELS: Record<VoiceTtsEngine, string> = {
+  vits: "轻量播报",
+  kokoro: "自然多音色",
+  emotivoice: "情感语气",
+};
+
 export const VOICE_RESOURCE_LABELS: Record<VoiceResourceKind, string> = {
   base: "语音基础模型",
   zipvoice: "音色克隆模型",
   kws: "语音唤醒模型",
+  kokoro: "自然多音色模型（Kokoro）",
+  emotivoice: "情感语音模型（EmotiVoice）",
 };
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
@@ -114,6 +130,8 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
      ⛔ 播报与通话共用这一份（单一真相源）⇒ 通话默认语速同步变成 1.25×。 */
   tts: {
     sid: 0, speed: 1.25, volume: 1.0,
+    /* 10-26：默认仍是 vits（现有行为零变化）；另两个引擎要**按需下载**后才可选。 */
+    engine: "vits",
     /* ⛔ 10-24 用户报「播报声音太沙哑，听不清」：播报端为压延迟写死 **2 步**（见 use-voice-announce
        的 ANNOUNCE_NUM_STEPS 历史注释：4 步 9.4s / 2 步 4.8s），而 2 步对这个蒸馏模型就是
        明显掉音质。改成**用户可选**、默认回到模型默认质量 4 步；要更清楚可在播报卡选 8 步。 */
@@ -156,6 +174,134 @@ export const TTS_VOICE_NAMES: Record<number, string> = {
   3: "音色 4",
   4: "音色 5",
 };
+
+/**
+ * Kokoro v1.1-zh 的 **103 个音色**（sid = 索引，顺序与官方 `voices.bin` 严格一致）。
+ *
+ * ⛔ 顺序不能改：voice id 是从模型 ONNX 元数据 `speaker_names` 里逐条抠出来的
+ *    （sherpa-onnx 的 C++ 侧同样按这个顺序读 `voices.bin`）⇒ 顺序错位 = 名字与声音对不上。
+ *    实测：103 条，与模型元数据 n_speakers=103 一致。
+ *
+ * ⛔ 名字里只标前缀不标性别：`zf_` / `zm_` 的性别归属**没有权威文档**，
+ *    本机实测基频（F0 自相关）区分度不可靠 ⇒ UI 一律不写"女声/男声"，只给原始 id。
+ */
+export const KOKORO_VOICE_NAMES: Record<number, string> = {
+  0: "af_maple",
+  1: "af_sol",
+  2: "bf_vale",
+  3: "zf_001",
+  4: "zf_002",
+  5: "zf_003",
+  6: "zf_004",
+  7: "zf_005",
+  8: "zf_006",
+  9: "zf_007",
+  10: "zf_008",
+  11: "zf_017",
+  12: "zf_018",
+  13: "zf_019",
+  14: "zf_021",
+  15: "zf_022",
+  16: "zf_023",
+  17: "zf_024",
+  18: "zf_026",
+  19: "zf_027",
+  20: "zf_028",
+  21: "zf_032",
+  22: "zf_036",
+  23: "zf_038",
+  24: "zf_039",
+  25: "zf_040",
+  26: "zf_042",
+  27: "zf_043",
+  28: "zf_044",
+  29: "zf_046",
+  30: "zf_047",
+  31: "zf_048",
+  32: "zf_049",
+  33: "zf_051",
+  34: "zf_059",
+  35: "zf_060",
+  36: "zf_067",
+  37: "zf_070",
+  38: "zf_071",
+  39: "zf_072",
+  40: "zf_073",
+  41: "zf_074",
+  42: "zf_075",
+  43: "zf_076",
+  44: "zf_077",
+  45: "zf_078",
+  46: "zf_079",
+  47: "zf_083",
+  48: "zf_084",
+  49: "zf_085",
+  50: "zf_086",
+  51: "zf_087",
+  52: "zf_088",
+  53: "zf_090",
+  54: "zf_092",
+  55: "zf_093",
+  56: "zf_094",
+  57: "zf_099",
+  58: "zm_009",
+  59: "zm_010",
+  60: "zm_011",
+  61: "zm_012",
+  62: "zm_013",
+  63: "zm_014",
+  64: "zm_015",
+  65: "zm_016",
+  66: "zm_020",
+  67: "zm_025",
+  68: "zm_029",
+  69: "zm_030",
+  70: "zm_031",
+  71: "zm_033",
+  72: "zm_034",
+  73: "zm_035",
+  74: "zm_037",
+  75: "zm_041",
+  76: "zm_045",
+  77: "zm_050",
+  78: "zm_052",
+  79: "zm_053",
+  80: "zm_054",
+  81: "zm_055",
+  82: "zm_056",
+  83: "zm_057",
+  84: "zm_058",
+  85: "zm_061",
+  86: "zm_062",
+  87: "zm_063",
+  88: "zm_064",
+  89: "zm_065",
+  90: "zm_066",
+  91: "zm_068",
+  92: "zm_069",
+  93: "zm_080",
+  94: "zm_081",
+  95: "zm_082",
+  96: "zm_089",
+  97: "zm_091",
+  98: "zm_095",
+  99: "zm_096",
+  100: "zm_097",
+  101: "zm_098",
+  102: "zm_100",
+};
+
+/**
+ * 按当前引擎取音色表（**单一真相源**：UI 看到的音色名必须与引擎对得上）。
+ *
+ * - vits：5 个预置音色（`TTS_VOICE_NAMES`）
+ * - kokoro：103 个音色（`KOKORO_VOICE_NAMES`）
+ * - emotivoice：目前不可用（缺 ONNX 推理运行时）⇒ 回落到 vits 的表，别给用户空列表
+ */
+export function ttsVoiceNamesFor(engine: VoiceTtsEngine | undefined): Record<number, string> {
+  if (engine === "kokoro") return KOKORO_VOICE_NAMES;
+  return TTS_VOICE_NAMES;
+}
 
 /** 试听用的示例句——简短、含常见声韵母，能听出音色差别。 */
 export const VOICE_SAMPLE_TEXT = "你好，我是你的语音助手，很高兴为你服务。";
@@ -316,10 +462,17 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
     : (announceRaw?.live !== false || announceRaw?.summary === true);   // 旧档案 {live, summary}：任一为真即开着
   const ball = raw.ball ?? d.ball;
   const modelHost = raw.modelHost && MODEL_HOST_PRESETS[raw.modelHost] ? raw.modelHost : d.modelHost;
+  /* ⛔ 引擎必须**归一化**：老档案没有这个字段 ⇒ 回落 vits（现有行为零变化）；
+     写了不认识的值 ⇒ 也回落 vits，绝不把垃圾值透传给合成层。 */
+  const engine: VoiceTtsEngine =
+    VOICE_TTS_ENGINES.includes((tts as any).engine) ? (tts as any).engine : d.tts.engine!;
   const aecMode = (raw as any).aec?.mode;
   return {
     tts: {
-      sid: clampInt(tts.sid, 0, 4, d.tts.sid),
+      /* ⛔ sid 的上界**跟着引擎走**：vits 只有 5 个说话人（0–4），Kokoro 有 103 个（0–102）。
+         用固定上界 4 ⇒ 选了 Kokoro 的第 50 个音色会被静默夹回 4 = "改了不生效"。
+         （10-26 加引擎时的同款坑：显式字段映射把新字段/新范围吞掉。） */
+      sid: clampInt(tts.sid, 0, engine === "kokoro" ? 102 : 4, d.tts.sid),
       speed: clampNum(tts.speed, 0.5, 2.0, d.tts.speed),
       volume: clampNum(tts.volume, 0, 2.0, d.tts.volume),
       /* 2 步是「能听清但发沙」的下限，12 步再往上只增延迟不给音质 ⇒ 夹在 2–12 */
@@ -327,6 +480,9 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
       // profileId 必须显式透传：这里是显式字段映射，漏写 = 「选用克隆音色后设置不持久，
       // 通话一直用内置音色」（09-12「显式字段映射吞新字段」同款坑，voice-presets 验收抓到）
       ...(typeof tts.profileId === "string" ? { profileId: tts.profileId } : {}),
+      /* ⛔ engine 同理必须显式透传：漏了 = 用户选了 Kokoro、设置里根本没这一项，
+         刷新后回落到 vits（表现为"切了没反应"）。 */
+      ...(VOICE_TTS_ENGINES.includes(engine) ? { engine } : {}),
     },
     asr: {
       rule1: clampNum(asr.rule1, 0.4, 6.0, d.asr.rule1),

@@ -8,7 +8,7 @@ import { app, dialog, globalShortcut, shell, systemPreferences } from "electron"
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { ALL_VOICE_REPOS, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "../../voice/model-manifest";
+import { ALL_VOICE_REPOS, EMOTIVOICE_DIR, emotivoiceReady, KOKORO_DIR, kokoroReady, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "../../voice/model-manifest";
 import { modelsSizeOnDisk } from "../../voice/model-store";
 import {
   VOICE_RESOURCE_LABELS,
@@ -33,6 +33,8 @@ const RESOURCE_DIRS: Record<VoiceResourceKind, string> = {
   base: "",
   zipvoice: ZIPVOICE_DIR,
   kws: KWS_DIR,
+  kokoro: KOKORO_DIR,
+  emotivoice: EMOTIVOICE_DIR,
 };
 
 /** 每种资源「是否已安装」的判定（复用既有 ready 判定，不另造一套）。 */
@@ -40,6 +42,8 @@ const RESOURCE_INSTALLED: Record<VoiceResourceKind, (modelsRoot: string) => bool
   base: (root) => ALL_VOICE_REPOS.every((r) => existsSync(path.join(root, ...r.repo.split("/")))),
   zipvoice: (root) => zipvoiceReady(root),
   kws: (root) => kwsReady(root),
+  kokoro: (root) => kokoroReady(root),
+  emotivoice: (root) => emotivoiceReady(root),
 };
 
 export function registerVoiceIpc3(ibA: ReturnType<typeof registerVoiceIpc1>) {
