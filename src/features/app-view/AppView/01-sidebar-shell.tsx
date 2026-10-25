@@ -168,7 +168,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         ⛔ 不每点一次就多一个「未命名任务」（用户 10-25 第二点）。 */
   const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
   const currentThreadId = app.thread?.id ?? "";
-  const bossOn = Boolean(currentThreadId) && bossThreads.bossIds.includes(currentThreadId);
+  /* 选中态：群 boss 线程 **或** 还没建群时的 home 锚点会话（否则点进去按钮不亮、看着像没进）。 */
+  const bossOn = Boolean(currentThreadId)
+    && (bossThreads.bossIds.includes(currentThreadId) || currentThreadId === bossThreads.homeId);
   /* 点「BOSS 会话」新建的那个会话，等它拿到 id 后记成 home（首条消息发出后引擎才分配）。 */
   const bossHomePending = useRef(false);
   useEffect(() => {

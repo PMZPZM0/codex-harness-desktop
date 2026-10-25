@@ -508,7 +508,7 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                     </div>
                   )}
                   <ComposerComposerForm app={app} />
-                  {isEmpty && !(bossThreads.pending || (Boolean(thread?.id) && bossThreads.bossIds.includes(String(thread?.id)))) && (
+                  {isEmpty && !(bossThreads.pending || (Boolean(thread?.id) && (bossThreads.bossIds.includes(String(thread?.id)) || String(thread?.id ?? "") === bossThreads.homeId))) && (
                     <div className="suggest-row">
                       {[["📊", "周报总结", "汇总本周的提交与改动，生成一份周报总结"], ["🐞", "报错修复", "定位并修复项目里最近的报错，并补充回归测试"], ["🎞️", "PPT 制作", "根据 README 制作一份项目介绍 PPT"], ["⏰", "闲时任务", "规划一个闲时后台自动化任务"]].map(([emoji, label, prompt]: any) => (
                         <button key={label} onClick={() => { if (label === "闲时任务") { setSettingsPage("schedule"); setSettingsOpen(true); } else setPrompt(prompt); }}><span className="suggest-emoji">{emoji}</span>{label}</button>

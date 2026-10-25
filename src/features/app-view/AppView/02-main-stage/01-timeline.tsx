@@ -407,7 +407,11 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
         所以这里自己判 0 回合（thread 存在但 turns 为空也算空态）。 */
   const noTurns = (thread?.turns ?? []).length === 0;
   const isBossThreadNow = Boolean(thread?.id) && bossThreads.bossIds.includes(String(thread?.id));
-  const isBossEmpty = bossThreads.pending || (isBossThreadNow && noTurns);
+  /* 还有第三种：**还没建群、但已经有 home 锚点**的那个 BOSS 会话（它是普通会话、不在群账本里，
+     只看 bossIds 会漏 ⇒ 进去看到的是普通欢迎页/空白）。用户 10-25：「就算没有创建会话，
+     进 BOSS 会话也要直接进去会话界面，不要在欢迎界面加载」。 */
+  const isBossHome = Boolean(thread?.id) && String(thread?.id) === bossThreads.homeId;
+  const isBossEmpty = (bossThreads.pending || isBossThreadNow || isBossHome) && noTurns;
 
   return (
     <div className="timeline-wrap" ref={timelineWrapRef}>
