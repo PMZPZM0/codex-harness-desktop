@@ -316,6 +316,16 @@ if (state) {
      主窗口与独立弹窗用的是同一个 topbarActionsNode，所以两处一起缺。 */
   ok(/bossThreads\.bossIds\.includes\(String\(bag\.thread\?\.id\)\) \|\| String\(bag\.thread\?\.id\) === bossThreads\.homeId/.test(read("src/features/app-state/parts/part09/02-seg.tsx")),
     "顶栏成员图标 /「?」三种 BOSS 入口都渲染（群 boss 线程 + home 锚点会话）");
+  /* ⛔⛔ 10-25 实测「独立弹窗没有成员图标和问号」：DOM 在、断言全绿，但 CSS 媒体查询把
+     `display` 设成了 none（当时断点是 1180，而默认窗口 1080 就命中）。
+     ⇒ 隐藏断点必须 ≤640，且断言只认 DOM 存在的写法不可再用于这两个图标。 */
+  const bossViewCss = read("src/styles/47-boss-group-view.css");
+  /* 只允许 ≤640 的断点隐藏这两个图标：出现更大的断点（如 1180）就是回归。 */
+  const hideRules = bossViewCss.split("\n").filter((line) => /@media/.test(line) && /boss-(members-wrap|help-btn)/.test(line));
+  ok(hideRules.every((line) => {
+    const m = line.match(/max-width:\s*(\d+)px/);
+    return !m || Number(m[1]) <= 640;
+  }), `成员/「?」图标的隐藏断点必须 ≤640（实测过 1180 在默认 1080 窗口里命中 ⇒ 图标不显示）：${JSON.stringify(hideRules)}`);
   const bossIpc = read("electron/features/boss-groups-ipc.ts");
   ok(/BOSS_HOME_AGENTS_VERSION/.test(bossIpc) && /不亲自执行任何任务/.test(bossIpc),
     "BOSS 角色提示词写明「不亲自执行」且版本化（内容升级会覆盖旧文件）");
