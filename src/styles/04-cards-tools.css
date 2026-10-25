@@ -2541,3 +2541,16 @@
   animation: composer-chip-caret 1s steps(2, start) infinite;
 }
 @keyframes composer-chip-caret { 50% { opacity: 0.3; } }
+
+/* 空白区拖动：跟随指针的浮动落点光标（文字行内时隐藏，改用虚线槽左缘的字符缝光标） */
+.composer-drag-caret {
+  position: fixed;
+  width: 2px;
+  height: 18px;
+  border-radius: 2px;
+  background: var(--accent, #6b8afd);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent, #6b8afd) 60%, transparent);
+  z-index: 10000;
+  pointer-events: none;
+  animation: composer-chip-caret 1s steps(2, start) infinite;
+}

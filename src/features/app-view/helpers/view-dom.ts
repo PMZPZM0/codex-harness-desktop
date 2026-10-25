@@ -45,8 +45,8 @@ function createInlineAttachmentChip(kind: "image" | "file", path: string, onRemo
     let gap: HTMLElement | null = null;
     moved = false;
     try { chip.setPointerCapture(event.pointerId); } catch { /* 合成事件下不可捕获 */ }
-    const placeGapAtPointer = (x: number, y: number) => {
-      if (!gap) return;
+    const placeGapAtPointer = (x: number, y: number): boolean => {
+      if (!gap) return false;
       /* 10-25：要能落到**文字中间**。caretRangeFromPoint 在 plaintext-only 里只回元素+子节点
          偏移（整段文字算一个子节点 ⇒ 只能首/尾），所以这里自己按字符位置二分：
          先找到指针所在行的文本节点，再用「折叠 Range 的光标矩形」二分出字符偏移，splitText 插入。 */
@@ -82,7 +82,7 @@ function createInlineAttachmentChip(kind: "image" | "file", path: string, onRemo
         try {
           const right = text.splitText(Math.max(0, Math.min(lo, text.length)));
           root.insertBefore(gap, right);
-          return;
+          return true;
         } catch { /* 落到兜底 */ }
       }
       let ref: Node | null = null;
@@ -95,9 +95,15 @@ function createInlineAttachmentChip(kind: "image" | "file", path: string, onRemo
         if (y < rect.top || (sameLine && x < rect.left + rect.width / 2)) { ref = child; break; }
       }
       try { root.insertBefore(gap, ref); } catch { /* 非法落点忽略 */ }
+      return false;
     };
     const onMove = (ev: PointerEvent) => {
       if (!dragging && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;
+      if (!dragCaret) {
+        dragCaret = document.createElement("i");
+        dragCaret.className = "composer-drag-caret";
+        document.body.appendChild(dragCaret);
+      }
       if (!dragging) {
         dragging = true;
         moved = true;
@@ -118,7 +124,15 @@ function createInlineAttachmentChip(kind: "image" | "file", path: string, onRemo
       }
       chip.style.left = `${ev.clientX - grabX}px`;
       chip.style.top = `${ev.clientY - grabY}px`;
-      placeGapAtPointer(ev.clientX, ev.clientY);
+      /* 先把浮动光标跟到指针（任何异常都不影响它跟手），落在文字行内时再隐藏、改用字符缝光标。 */
+      if (dragCaret) {
+        dragCaret.style.left = `${ev.clientX}px`;
+        dragCaret.style.top = `${ev.clientY - 9}px`;
+        dragCaret.style.display = "block";
+      }
+      let onTextLine = false;
+      try { onTextLine = placeGapAtPointer(ev.clientX, ev.clientY); } catch { onTextLine = false; }
+      if (dragCaret && onTextLine) dragCaret.style.display = "none";
       ev.preventDefault();
     };
     const finish = () => {
@@ -126,6 +140,8 @@ function createInlineAttachmentChip(kind: "image" | "file", path: string, onRemo
       window.removeEventListener("pointerup", finish, true);
       window.removeEventListener("pointercancel", finish, true);
       chip.classList.remove("dragging");
+      dragCaret?.remove();
+      dragCaret = null;
       if (gap) {
         try { root.insertBefore(chip, gap); } catch { root.appendChild(chip); }
         gap.remove();
