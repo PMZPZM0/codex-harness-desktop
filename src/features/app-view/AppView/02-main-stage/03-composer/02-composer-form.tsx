@@ -8,7 +8,7 @@ import { RelayBalanceBadge, RelayCenterPage } from "../../../../relay";
 import { CloudPointsBadge } from "../../../../settings-cloud";
 import { OpenaiBalanceBadge, OpenaiSubscriptionPage } from "../../../../openai";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../../lib/entity-avatar";
-/* BOSS 会话上下文（域间只走 barrel）—— ⛔ BOSS 会话的项目地址由**欢迎界面**独占设置，
+/*指挥中枢上下文（域间只走 barrel）—— ⛔ 指挥中枢的项目地址由**欢迎界面**独占设置，
    输入框上方那枚「项目地址」芯片不能出现（它读的是全局 workspace ⇒ 会串到别的会话的目录）。 */
 import { getBossDirDialogState, getBossThreads, isBossSessionContext, openBossDirDialog, subscribeBossDirDialog, subscribeBossThreads } from "../../../../boss-group-view";
 import {
@@ -158,9 +158,9 @@ import type { HarnessAppApi } from "../../../../app-state/useHarnessApp";
 import { Slot } from "../../../../../runtime/Slot";
 
 export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
-  /* BOSS 会话上下文：BOSS 会话的「项目地址」**不读全局 workspace**（那是别的会话的目录，会串项），
+  /*指挥中枢上下文：指挥中枢的「项目地址」**不读全局 workspace**（那是别的会话的目录，会串项），
      改读会话自己的目录。控件位置与普通会话完全一致（输入框左上角那枚 chip），
-     ⛔ 但**不自动弹窗** —— 10-25 用户令：「不要进 BOSS 会话欢迎界面就弹，改成点击那个选项再弹」。 */
+     ⛔ 但**不自动弹窗** —— 10-25 用户令：「不要进指挥欢迎界面就弹，改成点击那个选项再弹」。 */
   const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
   const bossDirState = useSyncExternalStore(subscribeBossDirDialog, getBossDirDialogState);
   const isBossSession = isBossSessionContext(bossThreads, app.thread?.id);
@@ -388,13 +388,13 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                             （sidebar-tabs），那里才是配置类功能的固定位置。别再把它塞回输入框。 */}
             {/* 欢迎页「项目地址」选择（仅空态显示，发送首条消息后随欢迎态消失）：
                             与右上角 📁 同一全局 workspace 联动；「无项目」模式每次自动新建独立临时目录 */}
-                        {/* BOSS 会话的项目地址（10-25 用户令）：**位置与普通会话同一处**（输入框左上角），
+                        {/*指挥中枢的项目地址（10-25 用户令）：**位置与普通会话同一处**（输入框左上角），
                             ⛔ 进来不自动弹窗 —— 点这枚 chip 才弹「选择项目地址 / 自动新建」对话框。
                             地址取本会话自己的（pendingDir / thread.cwd），⛔ 不取全局 workspace。 */}
                         {isEmpty && isBossSession && (
                           <div className="welcome-cwd-picker">
                             <button type="button" className="welcome-cwd-chip boss-cwd-chip"
-                              title={bossDir ? "BOSS 会话项目地址：" + bossDir + "（点击更换）" : "BOSS 会话还没选项目地址（点击选择）"}
+                              title={bossDir ? "指挥中枢项目地址：" + bossDir + "（点击更换）" : "指挥中枢还没选项目地址（点击选择）"}
                               onClick={() => openBossDirDialog()}>
                               <Crown size={12} />
                               <span>{bossDir ? bossDir.split(/[\\/]/).filter(Boolean).pop() || "项目地址" : "选择项目地址"}</span>

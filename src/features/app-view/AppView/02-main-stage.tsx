@@ -7,9 +7,9 @@ import { MainStageTimeline } from "./02-main-stage/01-timeline";
 import { MainStageComposer } from "./02-main-stage/03-composer";
 
 export function AppViewMainStage({ app }: { app: HarnessAppApi }) {
-  /* ⛔ 10-25 用户令：主舞台只有「正常对话框」这一种形态。曾经做过 BOSS 群聊覆盖层
+  /* ⛔ 10-25 用户令：主舞台只有「正常对话框」这一种形态。曾经做过中枢群聊覆盖层
      （visibility 隐藏原会话 + 群聊气泡），用户实测「一片空白 / 太丑」并明确要求
-     「新建一个会话，常驻成 BOSS 会话」⇒ 覆盖层整块删除，BOSS 会话就是普通会话。 */
+     「新建一个会话，常驻成指挥中枢」⇒ 覆盖层整块删除，指挥中枢就是普通会话。 */
   const {
     TURNS_PAGE,
     TURN_WINDOW,

@@ -175,7 +175,7 @@ export async function clearBossMemory(memoryDir: string): Promise<{ ok: boolean;
   const root = path.join(app.getPath("userData"), "boss-home", "memories");
   const resolved = path.resolve(dir);
   if (resolved !== path.resolve(root) && !resolved.startsWith(path.resolve(root) + path.sep)) {
-    return { ok: false, error: "拒绝清理该路径（不在 BOSS 记忆目录内）" };
+    return { ok: false, error: "拒绝清理该路径（不在指挥中枢记忆目录内）" };
   }
   try {
     await fs.rm(resolved, { recursive: true, force: true });

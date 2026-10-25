@@ -1387,9 +1387,9 @@ export interface Bag {
   collapseTurnWindow: (id: string) => void;
   allItems: import("../../../lib/thread-item.ts").ThreadItem[];
   isEmpty: boolean;
-  /** BOSS 会话识别快照（群 boss 线程 / home 锚点 / 成员会话集合），见 boss-threads-store */
+  /** 指挥中枢识别快照（群 boss 线程 / home 锚点 / 成员会话集合），见 boss-threads-store */
   bossThreads: BossThreadsState;
-  /** 当前会话是不是 BOSS 会话（顶栏成员图标 / 调度开关 / 空态引导都用它） */
+  /** 当前会话是不是指挥中枢（顶栏成员图标 / 调度开关 / 空态引导都用它） */
   isBossThread: boolean;
   switchingMeta: import("../../app-view/types.ts").Thread | null | undefined;
   paletteHandlersRef: React.RefObject<{ startNewThread: () => void; chooseWorkspace: () => Promise<void>; setSettingsPage: React.Dispatch<React.SetStateAction<import("../../app-view/types.ts").SettingsPage>>; setSettingsOpen: React.Dispatch<React.SetStateAction<boolean>>; setRightOpen: React.Dispatch<React.SetStateAction<boolean>>; openPanelTab: (key: string, name: string) => void; openThread: (id: string, freshThread?: import("../../app-view/types.ts").Thread | null | undefined) => Promise<void>; openFile: (path: string) => Promise<void>; }>;

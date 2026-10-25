@@ -1,7 +1,7 @@
 /**
- * 顶栏「群成员」入口（10-25 群聊重构：**正常对话框也能看群成员列表** —— 有群就显示，不限于 BOSS 会话）。
+ * 顶栏「群成员」入口（10-25 群聊重构：**正常对话框也能看群成员列表** —— 有群就显示，不限于指挥中枢）。
  * - 选中群：当前线程是某群 boss 线程 ⇒ 自动选它；否则用**本会话自己**上次选的群
- *   （panel store 的 groupIdByThread，⛔ 按会话隔离：BOSS 会话可以创建多个，A 会话选的群
+ *   （panel store 的 groupIdByThread，⛔ 按会话隔离：指挥中枢可以创建多个，A 会话选的群
  *    不会跑到 B 会话上 ⇒ 成员列表不串项）；
  * - popover：群选择器 + 成员列表 + 拉人（专家/本机 CLI agent）/移人，与面板同一条 `boss-groups:member` 通道；
  * - ⛔ portal 到 body + fixed（`.topbar{overflow:hidden}` 会裁掉栏内绝对定位弹层，实测）；
@@ -30,7 +30,7 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const store = useStoreGroupId(threadId);
 
-  /* ⛔ 群选择**按会话**解析（10-25 用户令：BOSS 会话可以创建多个，各会话互不干扰）：
+  /* ⛔ 群选择**按会话**解析（10-25 用户令：指挥中枢可以创建多个，各会话互不干扰）：
      ① 本会话是某群的 boss 线程 ⇒ 选那个群；
      ② 否则用**本会话自己**上次选的群（groupIdByThread[threadId]）；
      ③ 都没有 ⇒ 空（⛔ **不回落**到别的会话/任意群 —— 那就是成员列表串项）。
@@ -70,7 +70,7 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
 
   /* 10-25 用户令：图标**常驻**（没群也在，点开给「还没有群」的指引），不再静默消失
      ⛔ 10-25 用户要求第二轮：**未开始对话时置灰不可点击**（灰着、点了没反应），
-        开始对话（这个 BOSS 会话已经有成员）后才可点开看成员列表。
+        开始对话（这个指挥中枢已经有成员）后才可点开看成员列表。
         ⇒ 判据 = **当前会话自己的群**里有活跃成员（不是任意群 —— 别的群的成员跟这条会话无关）。
         置灰用 `disabled`（原生 disabled 不可聚焦 ⇒ 键盘用户也拿不到）⇒ 这里用 aria-disabled
         + 自己拦点击，保留键盘可达性，同时视觉上明确「现在不可用」。 */
@@ -79,7 +79,7 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
   const removed = members.filter((m) => m.status === "removed");
   /** 当前会话自己的群（bossThreadId 匹配）—— 空态时压根没有 ⇒ 置灰。 */
   const ownGroup = groups.find((g) => g.bossThreadId === threadId);
-  /** 这个 BOSS 会话已经「开始对话」了吗？（自己的群里有活跃成员） */
+  /** 这个指挥中枢已经「开始对话」了吗？（自己的群里有活跃成员） */
   const started = Boolean(ownGroup) && active.length > 0;
 
   const act = async (fn: () => Promise<unknown>) => { await fn(); await refresh(); setTick((n) => n + 1); };
@@ -97,7 +97,7 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
         ref={btnRef}
         type="button"
         className={`icon-button ic-amber boss-members-btn${open ? " boss-members-btn-open" : ""}${started ? "" : " boss-members-btn-idle"}`}
-        title={started ? `群成员（${active.length} 位）` : "还没开始对话 —— 先说需求，BOSS 拉人建群后这里就能看成员了"}
+        title={started ? `群成员（${active.length} 位）` : "还没开始对话 —— 先说需求，指挥中枢拉人建群后这里就能看成员了"}
         aria-expanded={open}
         aria-disabled={!started}
         onClick={() => { if (!started) return; setOpen((v) => !v); }}
@@ -165,7 +165,7 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
               )}
             </div>
             {removed.length ? <div className="boss-panel-removed">已移出：{removed.map((m) => m.name).join("、")}</div> : null}
-            <div className="boss-members-pop-hint">拉专家 / 本机 CLI agent（zcode、豆包…）走群里对 BOSS 说「拉 XX 进群」，或用 group_add_member。</div>
+            <div className="boss-members-pop-hint">拉专家 / 本机 CLI agent（zcode、豆包…）走群里对中枢说「拉 XX 进群」，或用 group_add_member。</div>
           </div>,
           document.body,
         )
@@ -174,7 +174,7 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
   );
 }
 
-/** 本会话选中的群 id 的订阅（⛔ 按会话隔离：BOSS 会话可创建多个，各会话各选各的）。 */
+/** 本会话选中的群 id 的订阅（⛔ 按会话隔离：指挥中枢可创建多个，各会话各选各的）。 */
 function useStoreGroupId(threadId: string): { groupId: string } {
   const state = useSyncExternalStore(subscribeBossPanel, getBossPanelState);
   return { groupId: state.groupIdByThread?.[threadId] ?? "" };

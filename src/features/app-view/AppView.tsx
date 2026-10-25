@@ -423,11 +423,11 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     .sort((a, b) => a.startedAt - b.startedAt);
   /* ⛔⛔ 顶栏那个「项目地址」= **本会话自己的目录**，⛔ 不是全局 `workspace`。
      10-25 用户实测：「你就是没选地址，他左上角也自动抓到了地址，项目地址这个，你还是要修一下，从根上」
-     —— 刚点开一条新 BOSS 会话、一个字都没发、地址一个都没选，左上角却显示别的会话的 `D:\测试`。
+     —— 刚点开一条新指挥中枢、一个字都没发、地址一个都没选，左上角却显示别的会话的 `D:\测试`。
      根因不在显示，在**取值口径**：`workspace` 是「下一个新会话打算用哪个目录」的全局记忆，
-     它从来不是「当前这条会话的事实」；只要有人（普通会话 / BOSS 会话）选过目录，它就一直挂着，
+     它从来不是「当前这条会话的事实」；只要有人（普通会话 /指挥中枢）选过目录，它就一直挂着，
      于是任何还没选地址的界面都会**借用别人的目录**（这就是用户反复说的「串项」）。
-     ⇒ 口径改成：BOSS 会话取自己那份（已建会话用 `thread.cwd`；还没建会话用建档前暂存的
+     ⇒ 口径改成：指挥中枢取自己那份（已建会话用 `thread.cwd`；还没建会话用建档前暂存的
        `pendingDir`，两者都没有就是空 ⇒ 显示「尚未选择项目地址」）；
        普通会话维持原样（它们的 workspace 语义就是全局记忆，行为不变）。 */
   const bossThreadsForDir = useSyncExternalStore(subscribeBossThreads, getBossThreads);
@@ -437,10 +437,10 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     ? (thread?.cwd || (thread?.id ? bossDirState.dirByThread?.[thread.id] : bossDirState.pendingDir) || "")
     : (workspace || "");
   /* ⛔ 工作区菜单里那行「选择…目录」的**可用性**（⛔ 不是为了好看，是为了不出现「点了没反应」）：
-     BOSS 会话一旦已经有自己的地址，**改不了** —— 引擎是用这个 cwd 起的会话，
+    指挥中枢一旦已经有自己的地址，**改不了** —— 引擎是用这个 cwd 起的会话，
      再选一次只会写进 dirByThread[已存在的会话]（没有任何读取方，见 part08/01-seg 的
      `sessionCwd`：它只在**建会话那一次**取值）⇒ 菜单项照旧显示就等于骗人。
-     ⇒ BOSS 上下文里：没地址才给「选择项目地址」；已有地址就收起这一项（地址只读回显仍在）。 */
+     ⇒中枢上下文里：没地址才给「选择项目地址」；已有地址就收起这一项（地址只读回显仍在）。 */
   const canPickDir = !bossDirContext || !topbarDir;
   const pickDirLabel = bossDirContext ? "选择项目地址" : topbarDir ? "选择其他目录…" : "选择工作区目录";
   return (
@@ -504,7 +504,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           </div>
           {inlineRename ? <input ref={inlineRenameRef} value={renameDraft} aria-label="任务名称" onChange={(event) => setRenameDraft(event.target.value)} onBlur={saveInlineRename} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); saveInlineRename(); } if (event.key === "Escape") { event.preventDefault(); setInlineRename(false); } }} /> : <strong title="双击修改任务名称" onDoubleClick={() => { if (!thread) return; setRenameDraft(cleanThreadDisplayTitle(thread.name, { preview: thread.preview })); setInlineRename(true); queueMicrotask(() => { inlineRenameRef.current?.focus(); inlineRenameRef.current?.select(); }); }}>{truncateThreadTitle(cleanThreadDisplayTitle(thread?.name, { preview: thread?.preview, fallback: cleanThreadDisplayTitle(switchingMeta?.name, { preview: switchingMeta?.preview, fallback: "新任务" }) }))}</strong>}
           {/* ⛔ 读 `topbarDir`（本会话自己的目录），⛔ 不是全局 `workspace`：否则没选地址的
-              BOSS 会话会显示成别的会话的项目（用户实测「没选地址，左上角也自动抓到了地址」）。 */}
+             指挥中枢会显示成别的会话的项目（用户实测「没选地址，左上角也自动抓到了地址」）。 */}
           <span>{topbarDir || (bossDirContext ? "尚未选择项目地址" : "尚未选择工作区")}</span>
           {subAgentRunning && <span className="subagent-badge" title={`子智能体「${subAgentRunning}」执行中`}><Bot size={13} className="subagent-pulse" /><em>{subAgentRunning}</em><i>执行中</i></span>}
         </div>
@@ -700,8 +700,8 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       {/* 悬浮球右键菜单里的「语音设置」：把「打开设置并跳到语音页」注册给 VoiceCallFloat
       （悬浮球是 body portal，拿不到这里的 setSettingsPage） */}
       <VoiceCallFloat threadId={thread?.id ?? ""} />
-      {/* BOSS 会话群面板（boss-groups 域）：右侧停靠浮层，全局开关在侧栏「BOSS 会话」按钮。
-          ⛔ 传入当前会话 id ⇒ 面板里的群/成员**按会话隔离**（BOSS 会话可创建多个，各会话互不串项）。 */}
+      {/*指挥中枢群面板（boss-groups 域）：右侧停靠浮层，全局开关在侧栏「指挥中枢」按钮。
+          ⛔ 传入当前会话 id ⇒ 面板里的群/成员**按会话隔离**（指挥中枢可创建多个，各会话互不串项）。 */}
       <BossGroupPanel threadId={thread?.id ?? ""} />
       <VoiceSettingsBridge onOpen={() => { setSettingsPage("voice"); setSettingsOpen(true); }} />
       {/* 语音通话 开/关 → 往对话里发一条告知（10-08 用户要求：让 Codex 感知实时语音何时开、何时关，

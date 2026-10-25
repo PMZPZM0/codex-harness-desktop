@@ -15,8 +15,8 @@ import { Turn } from "../../../../../lib/turn";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../app-view/types";
 import type { Bag } from "../../bag-types";
-/* ⛔ 切到任何**已有会话** ⇒ 不再是「刚点 BOSS 会话、还没落 id」的空会话，
-   清掉那个过渡标记，否则普通新会话的欢迎页会被 BOSS 引导卡顶掉（用户 10-25 点名）。 */
+/* ⛔ 切到任何**已有会话** ⇒ 不再是「刚点指挥中枢、还没落 id」的空会话，
+   清掉那个过渡标记，否则普通新会话的欢迎页会被中枢引导卡顶掉（用户 10-25 点名）。 */
 import { setBossPending } from "../../../../boss-group-view";
 
 export async function openThread(bag: Bag, id: string, freshThread?: Thread | null) {

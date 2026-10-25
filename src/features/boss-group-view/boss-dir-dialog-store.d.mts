@@ -2,7 +2,7 @@ export type BossDirDialogState = {
   open: boolean;
   /** 尚未建立会话时（新建流程）暂存的目录 */
   dir: string;
-  /** 按会话 id 记的已选目录（BOSS 会话可创建多个，各会话互不干扰） */
+  /** 按会话 id 记的已选目录（指挥中枢可创建多个，各会话互不干扰） */
   dirByThread: Record<string, string>;
   pendingDir: string;
 };

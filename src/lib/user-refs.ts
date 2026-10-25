@@ -126,7 +126,7 @@ export function parseUserRefs(text: string): ParsedUserRefs {
 export function userDisplayText(rawText: string): string {
   const refs = parseUserRefs(rawText);
   let text = refs.teamTask ? refs.teamTask.requirement : refs.cleanText;
-  /* ⛔ 10-25：BOSS 会话的角色说明是**注入给模型**的，用户在气泡里不该看到。
+  /* ⛔ 10-25：指挥中枢的角色说明是**注入给模型**的，用户在气泡里不该看到。
      它带 <!--boss-role-->…<!--/boss-role--> 标记 ⇒ 显示层剥掉，模型看得到。 */
   text = text.replace(/<!--boss-role-->[\s\S]*?<!--\/boss-role-->\s*/g, "");
   return stripImageTokens(text);

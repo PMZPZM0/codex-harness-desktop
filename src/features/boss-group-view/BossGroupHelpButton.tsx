@@ -1,5 +1,5 @@
 /**
- * BOSS 会话的「?」说明（10-25 用户令：在群成员图标旁边加一个 BOSS 会话独有的问号注释）。
+ *指挥中枢的「?」说明（10-25 用户令：在群成员图标旁边加一个指挥中枢独有的问号注释）。
  *
  * ⛔ portal 到 body + fixed：`.topbar{overflow:hidden}` 会把栏内绝对定位弹层裁掉（成员按钮踩过）。
  * ⛔ 内容只讲**用户视角**（这是什么、怎么用、钱花在哪），不写实现细节。
@@ -19,11 +19,11 @@ const ROWS: Array<{ title: string; body: string }> = [
   },
   {
     title: "成员在各自的会话里干活",
-    body: "派出去的活由成员自己开一个会话去做，侧栏会给它们标上「BOSS 调度」。它们干完把成品交回来，BOSS 审查，不过就打回重做（默认最多 2 次，再不过会来问你）。",
+    body: "派出去的活由成员自己开一个会话去做，侧栏会给它们标上「中枢调度」。它们干完把成品交回来，指挥中枢审查，不过就打回重做（默认最多 2 次，再不过会来问你）。",
   },
   {
     title: "这个会话会一直用下去",
-    body: "BOSS 会话是固定的那一个，不会每轮对话又新建一个。只有成员干活才会在下面多出会话。",
+    body: "指挥中枢是固定的那一个，不会每轮对话又新建一个。只有成员干活才会在下面多出会话。",
   },
   {
     title: "顶栏的「调度」开关这里不需要",
@@ -64,8 +64,8 @@ export function BossGroupHelpButton() {
         ref={btnRef}
         type="button"
         className="icon-button ic-amber boss-help-btn"
-        title="BOSS 会话怎么用"
-        aria-label="BOSS 会话怎么用"
+        title="指挥中枢怎么用"
+        aria-label="指挥中枢怎么用"
         aria-expanded={open}
         onClick={toggle}
       >
@@ -73,9 +73,9 @@ export function BossGroupHelpButton() {
       </button>
       {open && pos
         ? createPortal(
-            <div className="boss-help-pop" role="dialog" aria-label="BOSS 会话说明" style={{ top: pos.top, right: pos.right }}>
+            <div className="boss-help-pop" role="dialog" aria-label="指挥中枢说明" style={{ top: pos.top, right: pos.right }}>
               <div className="boss-help-head">
-                <b>BOSS 会话怎么用</b>
+                <b>指挥中枢怎么用</b>
                 <button type="button" className="boss-panel-mini" aria-label="关闭" onClick={() => setOpen(false)}><X size={11} /></button>
               </div>
               {ROWS.map((row) => (
