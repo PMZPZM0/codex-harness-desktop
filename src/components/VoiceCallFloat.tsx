@@ -263,15 +263,16 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
               <button
                 type="button"
                 role="menuitem"
+                title={!announceGlobalOn ? "语音播报总开关已关闭 —— 去「设置 → 语音通话 → 语音播报」打开" : undefined}
                 onClick={() => {
                   setMenu(null);
-                  if (!announceGlobalOn) void window.codex.voiceSettingsSet({ announce: { enabled: true } }).catch(() => undefined);
+                  if (!announceGlobalOn) requestVoiceOpenSettings();
                   else if (announceMuted) requestAnnounceResume(threadId);
                   else requestAnnounceStop(threadId);
                 }}
               >
                 {announceGlobalOn && !announceMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
-                {!announceGlobalOn ? "开启播报" : announceMuted ? "恢复播报" : "停止播报"}
+                {!announceGlobalOn ? "去设置开启播报" : announceMuted ? "恢复播报" : "停止播报"}
               </button>
               <button
                 type="button"

@@ -838,6 +838,20 @@
   background: var(--panel-2);
   border-color: var(--line);
 }
+/* 10-25 用户：「总开关关了，这个语音播报图标直接灰掉，鼠标提示去哪里开」——
+   全局总开关关闭时图标置灰、不可点；悬停 title 指路「设置 → 语音 → 语音播报」。 */
+.turn-head-announce.is-off {
+  color: var(--faint);
+  background: transparent;
+  border-color: transparent;
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.turn-head-announce.is-off:hover {
+  color: var(--faint);
+  background: transparent;
+  border-color: transparent;
+}
 /* 正在播报：声波依次扩散 + 一圈很淡的呼吸环（10-22 用户「喇叭播放特效」）。
    ⛔ 只动 transform/opacity；时长走 --dur-ui 附近的动效带，降级由全局 prefers-reduced-motion 兜底。 */
 .turn-head-announce.is-playing {
