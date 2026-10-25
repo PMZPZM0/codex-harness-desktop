@@ -287,10 +287,17 @@ if (state) {
     "没群时的 BOSS 会话有固定锚点（localStorage boss-home-thread）");
   ok(/memberThreadIds/.test(bossStore),
     "共享 store 汇总群成员会话 id（侧栏据此打「BOSS 调度」标签）");
+  ok(/boss-workspace/.test(sidebar) && /chooseDirectory/.test(sidebar) && /workspaceRef\.current = dir/.test(sidebar),
+    "BOSS 会话有独立项目目录：首次进入要选、选过记住、并同步 workspaceRef（否则首条消息用旧目录）");
   ok(/isBossThread \? null : \(/.test(read("src/features/app-state/parts/part09/02-seg.tsx")),
     "BOSS 会话隐藏顶栏「允许本会话调度」开关（群编排自带独立调度）");
-  ok(/boss-welcome/.test(read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx")),
-    "BOSS 会话空态有自己的引导语（你好 BOSS…）");
+  const timeline = read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx");
+  ok(/BossThreadIntro/.test(timeline) && /isEmpty && !isBossEmpty/.test(timeline),
+    "BOSS 会话空态走自己的组件（BossThreadIntro），普通欢迎页只给非 BOSS 会话");
+  ok(!/boss-welcome/.test(read("src/styles/47-boss-group-view.css")) && /boss-intro-card/.test(read("src/styles/47-boss-group-view.css")),
+    "BOSS 空态样式是独立的卡片（⛔ 不复用 .welcome-state 那套）");
+  ok(/isEmpty && !\(bossThreads\.pending/.test(read("src/features/app-view/AppView/02-main-stage/03-composer.tsx")),
+    "BOSS 会话不渲染「周报总结」那排新会话快捷任务");
   ok(/!isEmpty && \(historyPlan\.hiddenCount/.test(read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx")),
     "空会话不显示「加载更早的消息」");
   ok(existsSync(join(ROOT, "src/features/boss-group-view/BossGroupHelpButton.tsx")),

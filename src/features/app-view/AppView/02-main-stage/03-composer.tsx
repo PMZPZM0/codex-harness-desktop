@@ -3,6 +3,8 @@
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
 import { createPortal } from "react-dom";
+import { useSyncExternalStore } from "react";
+import { getBossThreads, subscribeBossThreads } from "../../../boss-group-view";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "../../../../lib/rate-limit-retry";
 import {
   AlertTriangle,
@@ -152,7 +154,11 @@ import { ArchiveToast } from "../../../../components/ArchiveToast";
 import { ComposerComposerForm } from "./03-composer/02-composer-form";
 
 export function MainStageComposer({ app }: { app: HarnessAppApi }) {
+  /* BOSS 会话的空白态有自己的一套引导（BossThreadIntro）⇒ 输入框下方那排「周报总结…」
+     快捷任务是**新会话欢迎页**的东西，BOSS 会话里不渲染（10-25 用户令：两者没关系）。 */
+  const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
   const {
+
     activeThreadRunning,
     activeTurnId,
     addContextItem,
@@ -502,7 +508,7 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                     </div>
                   )}
                   <ComposerComposerForm app={app} />
-                  {isEmpty && (
+                  {isEmpty && !(bossThreads.pending || (Boolean(thread?.id) && bossThreads.bossIds.includes(String(thread?.id)))) && (
                     <div className="suggest-row">
                       {[["📊", "周报总结", "汇总本周的提交与改动，生成一份周报总结"], ["🐞", "报错修复", "定位并修复项目里最近的报错，并补充回归测试"], ["🎞️", "PPT 制作", "根据 README 制作一份项目介绍 PPT"], ["⏰", "闲时任务", "规划一个闲时后台自动化任务"]].map(([emoji, label, prompt]: any) => (
                         <button key={label} onClick={() => { if (label === "闲时任务") { setSettingsPage("schedule"); setSettingsOpen(true); } else setPrompt(prompt); }}><span className="suggest-emoji">{emoji}</span>{label}</button>
