@@ -772,18 +772,21 @@ ok(/<span className="turn-head-name">\{codexName\}<\/span>\s*<SessionAnnounceTog
   && turnToggleIdx > turnHeadIdx,
   "📢 开关就渲染在回合头的 Codex 名字**后面**（不是别处；顺序错了用户找不到）");
 ok(/const muted = useSyncExternalStore\(/.test(announceToggleTsx)
-  && /isAnnounceMutedForThread\(threadId\)/.test(announceToggleTsx)
+  && /const globalOn = useSyncExternalStore\(/.test(announceToggleTsx)
+  && /const enabled = globalOn && !muted/.test(announceToggleTsx)
   && /function AnnounceIcon\(/.test(announceToggleTsx)
   && /announce-slash/.test(announceToggleTsx)
-  && /aria-pressed=\{!muted\}/.test(announceToggleTsx)
+  && /aria-pressed=\{enabled\}/.test(announceToggleTsx)
+  && /<AnnounceIcon muted=\{!enabled\}/.test(announceToggleTsx)
+  && /voiceSettingsSet\(\{ announce: \{ enabled: true \} \}\)/.test(announceToggleTsx)
   && /requestAnnounceStop\(threadId\)/.test(announceToggleTsx)
   && /requestAnnounceResume\(threadId\)/.test(announceToggleTsx),
-  "📢 是真实开关：同一 threadId 调停止/恢复，图标随状态切换，aria-pressed 反映开态");
+  "📢 反映**有效状态**（总开关 ∧ 未静音）：总开关关掉时划掉，点击去设置打开（⛔ 不是继续切会话静音）");
 ok(/subscribeAnnounceStatus/.test(announceToggleTsx)
-  && /const playing = !muted && status\.active/.test(announceToggleTsx)
+  && /const playing = enabled && status\.active/.test(announceToggleTsx)
   && /is-playing/.test(announceToggleTsx)
   && /announce-waves/.test(announceToggleTsx),
-  "喇叭播放特效：只在**正在播报且未静音**时点亮声波（10-22 用户「做个好看一点的图标和喇叭播放特效」）");
+  "喇叭播放特效：只在**正在播报且有效开启**时点亮声波（10-22 用户「做个好看一点的图标和喇叭播放特效」）");
 ok(/turn-head-announce-toast/.test(announceToggleTsx)
   && /已开启当前会话语音播报/.test(announceToggleTsx)
   && /已关闭当前会话语音播报/.test(announceToggleTsx)
@@ -801,9 +804,11 @@ ok(/\.turn-head-announce\s*\{[^}]*appearance:\s*none/.test(codeOnlyCss(turnHeadC
   && /\.turn-head-announce\.muted\s*\{[^}]*background:\s*var\(--panel-2\)/.test(codeOnlyCss(turnHeadCss)),
   "📢 按钮走项目变量（appearance:none 防暗色 UA 浅底 / focus-visible 焦点环 / 关态有底色，不只换色）");
 ok(/const announceMuted = useSyncExternalStore\(/.test(floatTsx)
-  && /if \(announceMuted\) requestAnnounceResume\(threadId\);\s*else requestAnnounceStop\(threadId\);/.test(floatTsx)
-  && /announceMuted \? "恢复播报" : "停止播报"/.test(floatTsx),
-  "悬浮球右键菜单与 📢 共用同一份会话状态：显示「停止/恢复」并按同一 threadId 操作");
+  && /const announceGlobalOn = useSyncExternalStore\(/.test(floatTsx)
+  && /if \(!announceGlobalOn\) void window\.codex\.voiceSettingsSet\(\{ announce: \{ enabled: true \} \}\)/.test(floatTsx)
+  && /else if \(announceMuted\) requestAnnounceResume\(threadId\);\s*else requestAnnounceStop\(threadId\);/.test(floatTsx)
+  && /!announceGlobalOn \? "开启播报" : announceMuted \? "恢复播报" : "停止播报"/.test(floatTsx),
+  "悬浮球右键菜单与 📢 共用同一份有效状态：总开关关 = 「开启播报」，会话静音 = 「恢复播报」");
 /* ── ⑱′ 静音状态必须到模型（10-22 用户：「我关掉了，codex 还说你播报，实际是播报不了的」）──
    只在本机拦播放不够：模型看得到全局 voice-settings.json 的 announce.enabled=true，于是继续
    声称「这条回复会被播报」，还白写 voice 播报稿。修法 = 把会话级 mute 写进该会话的

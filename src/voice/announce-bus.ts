@@ -169,11 +169,22 @@ export function subscribeAnnounceStatus(fn: StatusListener): () => void {
       写进会话的 developer instructions（隐藏注入，输入框与消息里都看不到）。
    ⛔ 会话级静音走 `isAnnounceMutedForThread`；两者一起才是有效状态。 */
 let announceGlobalEnabled: boolean | null = null;
+const globalEnabledListeners = new Set<(enabled: boolean | null) => void>();
 
 export function setAnnounceGlobalEnabled(enabled: boolean): void {
+  if (announceGlobalEnabled === enabled) return;
   announceGlobalEnabled = enabled;
+  for (const fn of globalEnabledListeners) {
+    try { fn(enabled); } catch { /* 单个订阅者失败不影响执行端 */ }
+  }
 }
 
 export function getAnnounceGlobalEnabled(): boolean | null {
   return announceGlobalEnabled;
+}
+
+/** 会话头 📢 订阅它：总开关关掉时图标要显示划掉（否则"看着开着、其实不播"）。 */
+export function subscribeAnnounceGlobalEnabled(fn: (enabled: boolean | null) => void): () => void {
+  globalEnabledListeners.add(fn);
+  return () => { globalEnabledListeners.delete(fn); };
 }

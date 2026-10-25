@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
+  getAnnounceGlobalEnabled,
   getAnnounceStatus,
   isAnnounceMutedForThread,
   requestAnnounceResume,
   requestAnnounceStop,
+  subscribeAnnounceGlobalEnabled,
   subscribeAnnounceStatus,
   subscribeAnnounceThreadMuted,
 } from "../../voice/announce-bus";
@@ -36,6 +38,14 @@ export function SessionAnnounceToggle({ threadId }: { threadId: string }) {
     () => isAnnounceMutedForThread(threadId),
     () => false,
   );
+  /* 10-25 用户：「明明开着，还说关的」——总开关关着时，会话头 📢 只反映 muted 会**
+     看起来是开的**，但实际不会出声。这里把「总开关 ∧ 未静音」作为图标状态：
+     总开关关 ⇒ 直接显示划掉，点击去设置打开（⛔ 不是继续切会话静音）。 */
+  const globalOn = useSyncExternalStore(
+    subscribeAnnounceGlobalEnabled,
+    () => getAnnounceGlobalEnabled() !== false,
+    () => true,
+  );
   const status = useSyncExternalStore(subscribeAnnounceStatus, getAnnounceStatus, getAnnounceStatus);
   const [notice, setNotice] = useState<{ text: string; key: number } | null>(null);
   const timerRef = useRef<number | null>(null);
@@ -45,13 +55,23 @@ export function SessionAnnounceToggle({ threadId }: { threadId: string }) {
   }, []);
 
   if (!threadId) return null;
-  const playing = !muted && status.active;
-  const action = muted ? "开启" : "关闭";
+  const enabled = globalOn && !muted;
+  const playing = enabled && status.active;
+  const action = !globalOn ? "去打开" : muted ? "开启" : "关闭";
 
   function toggle() {
-    if (muted) requestAnnounceResume(threadId);
-    else requestAnnounceStop(threadId);
-    setNotice({ text: muted ? "已开启当前会话语音播报" : "已关闭当前会话语音播报", key: Date.now() });
+    if (!globalOn) {
+      /* 总开关关着：图标是划掉的，点它 = 直接把总开关打开（并解开本会话静音，由设置广播联动）。
+         ⛔ 不再只是提示「去设置」——用户要的是「我点一下就开」。 */
+      void window.codex.voiceSettingsSet({ announce: { enabled: true } }).catch(() => undefined);
+      setNotice({ text: "已开启语音播报", key: Date.now() });
+    } else if (muted) {
+      requestAnnounceResume(threadId);
+      setNotice({ text: "已开启当前会话语音播报", key: Date.now() });
+    } else {
+      requestAnnounceStop(threadId);
+      setNotice({ text: "已关闭当前会话语音播报", key: Date.now() });
+    }
     if (timerRef.current != null) window.clearTimeout(timerRef.current);
     timerRef.current = window.setTimeout(() => setNotice(null), 2000);
   }
@@ -60,13 +80,13 @@ export function SessionAnnounceToggle({ threadId }: { threadId: string }) {
     <span className="turn-head-announce-wrap">
       <button
         type="button"
-        className={`turn-head-announce${muted ? " muted" : ""}${playing ? " is-playing" : ""}`}
-        aria-pressed={!muted}
+        className={`turn-head-announce${enabled ? "" : " muted"}${playing ? " is-playing" : ""}`}
+        aria-pressed={enabled}
         aria-label={`${action}当前会话语音播报${playing ? "（正在播报）" : ""}`}
-        title={muted ? "开启当前会话语音播报（与悬浮球的恢复播报同步）" : playing ? "正在播报 · 点击停止当前会话" : "关闭当前会话语音播报（与悬浮球的停止播报同步）"}
+        title={!globalOn ? "语音播报总开关已关闭 · 点击直接打开" : muted ? "开启当前会话语音播报（与悬浮球的恢复播报同步）" : playing ? "正在播报 · 点击停止当前会话" : "关闭当前会话语音播报（与悬浮球的停止播报同步）"}
         onClick={toggle}
       >
-        <AnnounceIcon muted={muted} playing={playing} />
+        <AnnounceIcon muted={!enabled} playing={playing} />
       </button>
       {notice ? (
         <span className="turn-head-announce-toast" role="status" aria-live="polite" key={notice.key}>
