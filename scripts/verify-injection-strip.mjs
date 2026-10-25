@@ -124,6 +124,12 @@ const CASES = [
     forbid: ["[专家团「", "资深前端"],
   },
   {
+    name: "会话告知块（调度已开启 · 随下一条消息注入）",
+    text: "\n\n<!--harness-notice-->\n【调度已开启】本会话已启用「调度」能力。开启的对象类别：【专家】【专家团】\n<!--/harness-notice-->\n\n把首页派给前端小张",
+    expect: "把首页派给前端小张",
+    forbid: ["harness-notice", "【调度已开启】", "对象类别"],
+  },
+  {
     name: "最坏组合（壳 + 记忆 + 时间 + 附件）",
     text: `${TEAM_PROMPT}[SYSTEM TASK · 团队会话]\n=== 用户需求 ===\n做个落地页\n=== END ===\n\nSOP 指令段。${MEMORY}${NOW}`,
     expect: "做个落地页",
@@ -235,6 +241,27 @@ async function main() {
       bad += 1;
       console.log(`✗ ${item.name} · parseUserRefs 没结构化（groupEvents=${refs.groupEvents?.length ?? 0}）`);
     }
+  }
+
+  /* ── 待注入告知队列（调度开关变化走它）────────────────────────────────── */
+  {
+    const store = await import(new URL("../src/lib/inline-notices.mjs", import.meta.url));
+    store._resetInlineNotices();
+    total += 3;
+    store.queueInlineNotice("t1", "【调度已开启】A");
+    store.queueInlineNotice("t1", "【调度范围已更新】B");
+    store.queueInlineNotice("t2", "【调度已关闭】C");
+    const t1 = store.takeInlineNotices("t1");
+    const t2 = store.takeInlineNotices("t2");
+    const again = store.takeInlineNotices("t1");
+    if (t1.length === 2 && t2.length === 1 && t2[0].includes("已关闭")) console.log("✓ 告知队列按会话分桶（A 的两条不会串进 B）");
+    else { bad += 1; console.log(`✗ 告知队列按会话分桶失败：t1=${JSON.stringify(t1)} t2=${JSON.stringify(t2)}`); }
+    if (again.length === 0) console.log("✓ 告知取出即清空（同一段只喂模型一次，不重复烧上下文）");
+    else { bad += 1; console.log("✗ 告知取走后仍在队列里（会每轮重复注入）"); }
+    const block = store.formatInlineNotice("【调度已开启】X");
+    if (block.includes(store.INLINE_NOTICE_MARK) && block.includes(store.INLINE_NOTICE_END)) console.log("✓ 告知块带标记（显示层据此整段剥离）");
+    else { bad += 1; console.log("✗ 告知块缺标记 ⇒ 会直接显示在气泡里"); }
+    store._resetInlineNotices();
   }
 
   total += 1;

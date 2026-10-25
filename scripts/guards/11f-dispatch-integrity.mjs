@@ -326,5 +326,25 @@ try {
   ok(turnEndOk, "共享真相源 electron/turn-end.ts 就位（本月同型缺陷共 7 处后立）");
 }
 
+/* ── 专家团：会不会自己埋头干（10-26 用户令「看看有没有漏洞，干活会不会积极调度」）──
+   ⛔ 这块此前**一条断言都没有**：协作铁律可以被随手改掉而没人发现。 */
+{
+  const teamTools = readFileSync(join(ROOT, "electron/expert-teams/06-team-tools.ts"), "utf8");
+  ok(/你不亲自干活/.test(teamTools) && /先派活，再说话/.test(teamTools),
+    "专家团铁律：⛔ 不亲自干活（可交付物必须来自成员）+ 先派活再动手");
+  ok(/team_phase_invoke/.test(teamTools) && /并行/.test(teamTools),
+    "并行阶段走 team_phase_invoke（并行由宿主保证，不靠模型自觉）");
+  const teamsIpc = readFileSync(join(ROOT, "electron/features/teams-ipc.ts"), "utf8");
+  ok(/第一步就把可并行的子任务/.test(teamsIpc),
+    "团队首条任务指令也要求「第一步就派活」（否则主理人容易先自己写一版）");
+  /* ⛔ 成员会话**不挂任何 dynamicTools** ⇒ 成员不能再派活，不会指数爆炸（team-invoke.ts 里明写） */
+  const teamInvoke = readFileSync(join(ROOT, "electron/team-invoke.ts"), "utf8");
+  ok(!/dynamicTools/.test(codeOnly(teamInvoke)),
+    "⛔ 成员会话不挂 dynamicTools（成员不能再派活 ⇒ 不会嵌套爆炸）");
+  /* ⛔ 派活必须宿主侧校验「团队存在 / 启用 / 成员归属」——模型编个 id 不能派出去 */
+  ok(/成员「\$\{input\.memberId\}」不存在于专家团/.test(teamInvoke) && /已停用/.test(teamInvoke),
+    "派活有宿主侧校验（团队存在 / 未停用 / memberId 属于该团）");
+}
+
 console.log("\n【dpcat】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));
 process.exit(fails ? 1 : 0);

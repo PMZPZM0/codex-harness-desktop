@@ -6,6 +6,7 @@
  * ⛔ 本段语句只引用「自己的局部声明」与 bag；跨段名字由组合根按入参转交。
  */
 import { isCompactionItem } from "../../../../../lib/compaction-item.mjs";
+import { queueInlineNotice } from "../../../../../lib/inline-notices.mjs";
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { resolveModelForOpen, shouldSyncOpenThread } from "../../../../../lib/model-scope.mjs";
@@ -179,14 +180,15 @@ bag.finalizePhraseRef = finalizePhraseRef as typeof bag.finalizePhraseRef;
           /* ⛔⛔ 会话作用域闸（10-04 用户报「新会话冒出调度已关闭」）：IPC 往返期间用户可能已切走会话，
              bag.thread 已变 ⇒ pending+send 会把 A 会话的通知发进 B。通知是给引擎的会话级告知，
              目标会话不在前台就该丢弃（开关本身已按 id 落库，不受影响）。 */
-          if (text && bag.threadRef.current?.id === id) { bag.pendingCommandTextRef.current = text; void bag.send(); }
+          /* ⛔ 10-26 用户令：不再单独发一轮（会凭空多一条"我说的"气泡）⇒ 记进队列，随**下一条消息**注入。 */
+          if (text && bag.threadRef.current?.id === id) queueInlineNotice(id, text);
         } catch { /* 告知失败不影响开关本身已生效 */ }
       } else if (!next.enabled && before.enabled) {
         // 关闭也要告知：让 Codex 立刻知道权限被收回，别白费回合去试
         try {
           const off: any = await window.codex.dispatchOffNotice();
           const text = String(off?.text ?? "");
-          if (text && bag.threadRef.current?.id === id) { bag.pendingCommandTextRef.current = text; void bag.send(); }
+          if (text && bag.threadRef.current?.id === id) queueInlineNotice(id, text);
         } catch { /* 同上 */ }
       } else if (next.enabled && before.enabled) {
         const changed = before.expert !== next.expert || before.team !== next.team || before.subagent !== next.subagent;
@@ -197,7 +199,7 @@ bag.finalizePhraseRef = finalizePhraseRef as typeof bag.finalizePhraseRef;
               { expert: next.expert, team: next.team, subagent: next.subagent },
             );
             const text = String(chg?.text ?? "");
-            if (text && bag.threadRef.current?.id === id) { bag.pendingCommandTextRef.current = text; void bag.send(); }
+            if (text && bag.threadRef.current?.id === id) queueInlineNotice(id, text);
           } catch { /* 同上 */ }
         }
       }

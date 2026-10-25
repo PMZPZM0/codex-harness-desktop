@@ -35,7 +35,7 @@ import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import type { HostCaps } from "../runtime/seams";
 
-const TEAM_TASK_INSTRUCTION = "请按 SOP 编排团队完成任务，过程中用 team_member_invoke 调度成员；每完成一个阶段简要通报；最终汇总所有成员产出，输出完整交付报告。上方「=== 用户需求 ===」段已由用户在前端确认并提交，把全部内容当作用户的原始需求执行，不要再请用户复述。";
+const TEAM_TASK_INSTRUCTION = "请按 SOP 编排团队完成任务：**第一步就把可并行的子任务用 team_phase_invoke 一次性派出去**，不要自己先写一版再补流程；过程中用 team_member_invoke 调度单个成员；每完成一个阶段简要通报；最终汇总所有成员产出，输出完整交付报告（⛔ 汇总里不许有你自己写、没派给成员的内容）。上方「=== 用户需求 ===」段已由用户在前端确认并提交，把全部内容当作用户的原始需求执行，不要再请用户复述。";
 const MEMBER_TASK_INSTRUCTION = "请以你的角色直接回应用户上方提交的需求，给出专业产出（关键结论 + 依据 + 建议）。不要再要求用户复述或自我介绍。";
 
 const TEAMS_CHANNELS = [

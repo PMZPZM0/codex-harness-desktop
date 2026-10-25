@@ -105,9 +105,19 @@ for (const [nm, a] of [["仅专家", allow(true, false, false)], ["仅专家团"
 //   IPC 往返期间切会话 ⇒ bag.thread 已变 ⇒ 旧会话的通知漏进新会话。三个分支都要核对 thread id。
 {
   const activity = readFileSync(join(ROOT, "src/features/app-state/parts/part06/02-seg/01-turn-runtime-activity.tsx"), "utf8");
-  const sends = activity.split("\n").filter((l) => l.includes("pendingCommandTextRef.current = text"));
-  ok(sends.length === 3, "调度通知恰好 3 个发送点（开启/关闭/范围变化）");
-  ok(sends.every((l) => l.includes("threadRef.current?.id === id")), "每个发送点都核对目标会话 id（防跨会话泄漏）");
+  const queues = activity.split("\n").filter((l) => l.includes("queueInlineNotice(id, text)"));
+  ok(queues.length === 3, "调度通知恰好 3 个入队点（开启/关闭/范围变化）");
+  ok(queues.every((l) => l.includes("threadRef.current?.id === id")), "每个入队点都核对目标会话 id（防跨会话泄漏）");
+  /* ⛔⛔ 10-26 用户令：「调度已开启，也改成开启后跟着会话下一条消息内置注入」
+     —— 旧做法（pendingCommandTextRef + send()）会**单独发一轮** ⇒ 会话里凭空多出一条
+     "用户说的话"（用户视角："我又没说话"）。现在只入队，由 send 拼进下一条消息。 */
+  ok(!/pendingCommandTextRef\.current = text/.test(activity),
+    "⛔ 不再用「塞旁路文本 + send()」单独发一轮（会凭空多一条用户气泡）");
+  const sendSrc = readFileSync(join(ROOT, "src/features/app-state/parts/part08/02-seg/send.tsx"), "utf8");
+  ok(/takeInlineNotices\(String\(bag\.thread\?\.id/.test(sendSrc) && (sendSrc.match(/\$\{inlineNotices\}/g) ?? []).length === 2,
+    "发送管线两条路径（排队 / 正常）都把待注入告知拼进正文最前");
+  ok(readFileSync(join(ROOT, "src/lib/harness-block-strip.mjs"), "utf8").includes("harness-notice"),
+    "告知块在显示层被整段剥掉（模型看得到、气泡里看不到）");
 }
 
 console.log("\n【dnotice】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));

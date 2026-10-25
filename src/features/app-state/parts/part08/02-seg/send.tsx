@@ -19,6 +19,7 @@ import { setTurnWindowTail } from "../../../../../lib/turn-history.mjs";
 import { ensureBossMemoryWorkspace, ensureBossSessionRegistered, getBossThreads, renameBossSessionId, setBossHomeThreadId } from "../../../../boss-group-view";
 import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, computeFoldSummary, topToolGroup, isTurnRunning, normalizeLoadedThread, type FoldUnit } from "../../../../../lib/turn-fold";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../lib/user-refs";
+import { formatInlineNotice, takeInlineNotices } from "../../../../../lib/inline-notices.mjs";
 import { effortLabels } from "../../../../../lib/effort-labels";
 import { fmtImportNote } from "../../../../../lib/fmt-import-note";
 import { justSentIds } from "../../../../../lib/just-sent-ids";
@@ -157,6 +158,10 @@ export async function send(bag: Bag, event?: FormEvent) {
       return;
     }
     const threadReferenceSuffix = threadReferenceBlocks ? `\n\n${threadReferenceBlocks}` : "";
+    /* ⛔ 10-26 用户令：调度开关那类**会话级告知**不再单独发一轮（会凭空多一条"我说的"气泡），
+       改为随用户这条消息一起注入。显示层按 <!--harness-notice--> 整段剥掉：模型看得到、
+       气泡里看不到；取出即清空 ⇒ 同一段告知只喂一次。两条路径（排队 / 正常发送）都要带上。 */
+    const inlineNotices = takeInlineNotices(String(bag.thread?.id ?? "")).map(formatInlineNotice).join("");
     if (bag.thread && bag.runningThreadIdsRef.current.has(bag.thread.id)) {
       // 排队消息与正常发送一样带上引用段（引用/文件/技能/上下文），渲染时解析成卡片
       const quotePrefix = bag.quoteItem ? `> ${bag.quoteItem.text.split("\n").join("\n> ")}\n\n` : "";
@@ -164,7 +169,7 @@ export async function send(bag: Bag, event?: FormEvent) {
       const skillPrefix = bag.selectedSkills.length ? `\n\n[本轮已引用技能]\n${bag.selectedSkills.map((skill) => `- ${skill.name}：${skill.description}`).join("\n")}\n[请按上述技能工作流执行]\n` : "";
       const filePrefix = inlineFilePaths.length ? `\n\n[附件文件]\n${inlineFilePaths.map((path) => `- ${path}`).join("\n")}\n[附件结束]\n` : "";
       const input = [
-        ...((messageText || threadReferenceBlocks || inlineFilePaths.length || bag.selectedSkills.length || bag.contextItems.length || bag.quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${nowBlock()}${threadReferenceSuffix}`, text_elements: [] }] : []),
+        ...((messageText || threadReferenceBlocks || inlineFilePaths.length || inlineNotices || bag.selectedSkills.length || bag.contextItems.length || bag.quoteItem) ? [{ type: "text", text: `${inlineNotices}${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${nowBlock()}${threadReferenceSuffix}`, text_elements: [] }] : []),
         ...inlineImagePaths.map((path) => ({ type: "localImage", path })),
         ...sendImages.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
       ];
@@ -356,7 +361,7 @@ export async function send(bag: Bag, event?: FormEvent) {
          会话级系统指令，气泡里看不到、也不占每轮上下文。
        ⛔ 别在这儿再加回来 —— 拼进用户消息就必然会被渲染成用户说过的话。 */
     const input = [
-      ...((messageText || threadReferenceBlocks || inlineFilePaths.length || bag.quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${memoryPrefix}${nowBlock()}${threadReferenceSuffix}`, text_elements: [] }] : []),
+      ...((messageText || threadReferenceBlocks || inlineFilePaths.length || inlineNotices || bag.quoteItem) ? [{ type: "text", text: `${inlineNotices}${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${memoryPrefix}${nowBlock()}${threadReferenceSuffix}`, text_elements: [] }] : []),
       ...inlineImagePaths.map((path) => ({ type: "localImage", path })),
       ...sendImages.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
     ];

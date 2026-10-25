@@ -42,7 +42,10 @@ export function stripHarnessBlocks(text) {
     .replace(/^\[Harness 相关记忆，仅供参考\][\s\S]*?^\[记忆结束\][ \t]*\r?\n?/gm, "")
     .replace(/^\[Harness 常驻记忆[^\]]*\][\s\S]*?^\[常驻记忆结束\][ \t]*\r?\n?/gm, "")
     // 09-23：每轮注入的当前时间块（now-block.mjs）——模型看得见，气泡/标题里必须剥掉
-    .replace(/^\[当前时间\][\s\S]*?^\[时间结束\][ \t]*\r?\n?/gm, "");
+    .replace(/^\[当前时间\][\s\S]*?^\[时间结束\][ \t]*\r?\n?/gm, "")
+    /* 10-26：会话级告知块（inline-notices.mjs：调度开关变化等）——⛔ 它不再单独发一轮，
+       随用户**下一条消息**注入；模型要看得见，气泡/标题/导出里必须剥掉。 */
+    .replace(/<!--harness-notice-->[\s\S]*?<!--\/harness-notice-->\s*/g, "");
 
   /* ② 残缺形态：残留头标签 + 其后是注入块特征 ⇒ 从该标签吃到串尾 */
   const hit = out.match(HEAD);
