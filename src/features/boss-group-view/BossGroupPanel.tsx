@@ -16,7 +16,7 @@ type Snapshot = {
   group: {
     id: string; name: string; paused: boolean; bossThreadId: string;
     policy: { maxRejects: number; stallMs: number; budgetMinutes: number };
-    members: { id: string; name: string; role: string; status: string; lockedTaskIds: string[] }[];
+    members: { id: string; name: string; role: string; status: string; lockedTaskIds: string[]; source?: string }[];
     pinnedEventIds: string[];
   };
   tasks: { id: string; title: string; status: string }[];
