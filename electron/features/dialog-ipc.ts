@@ -30,6 +30,7 @@ import type { HostCaps } from "../runtime/seams";
 const DIALOG_CHANNELS = [
   "dialog:directory", "dialog:directory-at", "dialog:images",
   "dialog:files", "dialog:ssh-key", "dialog:save-as",
+  "dialog:project-dir",
 ];
 
 export const dialogFeature = defineFeature<null>({
@@ -89,6 +90,33 @@ export const dialogFeature = defineFeature<null>({
       if (result.canceled || !result.filePath) return { ok: false };
       await fsP.copyFile(src, result.filePath);
       return { ok: true, savedTo: result.filePath };
+    });
+
+    // 新建项目弹窗（10-25，ZCode 式三选一）：
+    //   { parent, name } —— 在用户亲选的父目录下创建项目文件夹（mkdir recursive）；
+    //   { path }        —— 校验输入的路径是已存在的目录，不存在不放行（不替用户创建）。
+    // 两种形态的最终目录都登记进可信根（与 dialog:directory 同口径）。
+    ipcHost.handle("dialog:project-dir", async (_event, input: { parent?: string; name?: string; path?: string }) => {
+      const clean = (v: unknown) => String(v ?? "").trim();
+      if (clean(input.path)) {
+        const dir = path.resolve(clean(input.path));
+        const stat = await fsP.stat(dir).catch(() => null);
+        if (!stat?.isDirectory()) return { ok: false, error: "这个目录不存在（或不是文件夹）—— 用「新建文件夹」创建它，或检查路径" };
+        trustPicked([dir]);
+        return { ok: true, dir };
+      }
+      const parent = clean(input.parent);
+      const name = clean(input.name);
+      if (!parent || !name) return { ok: false, error: "请先选父目录并填写文件夹名" };
+      if (/[\\/:*?"<>|]/.test(name)) return { ok: false, error: "文件夹名不能包含 \\ / : * ? \" < > |" };
+      const dir = path.join(path.resolve(parent), name);
+      try {
+        await fsP.mkdir(dir, { recursive: true });
+      } catch (error: any) {
+        return { ok: false, error: `创建失败：${String(error?.message ?? error)}` };
+      }
+      trustPicked([dir]);
+      return { ok: true, dir };
     });
 
     ctx.effect(() => {

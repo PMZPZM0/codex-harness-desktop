@@ -1554,3 +1554,47 @@ html[data-ui-font="large"] .action-content pre {
 .project-item-head:hover .project-item-new-btn,
 .project-item-head:focus-within .project-item-new-btn { opacity: 1; }
 .project-item-new-btn:focus-visible { opacity: 1; }
+
+/* ── 10-25 新建项目弹窗（ZCode 式三选一）── */
+.new-project-backdrop { z-index: 400; }
+.new-project-modal {
+  width: min(440px, calc(100vw - 32px));
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 18px 18px 16px;
+}
+.new-project-modal > header {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 15px; margin-bottom: 12px;
+}
+.np-tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+.np-tabs button {
+  flex: 1;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px 6px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.np-tabs button:hover { color: var(--text); }
+.np-tabs button.on {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  color: var(--text);
+  font-weight: 600;
+}
+.np-body { display: flex; flex-direction: column; gap: 9px; }
+.np-hint { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.np-main { justify-content: center; min-height: 36px; }
+.np-main.np-main { width: 100%; }
+.np-input {
+  text-align: left;
+  font-size: 12.5px;
+  word-break: break-all;
+}
+.np-error { margin: 2px 0 0; font-size: 12px; color: var(--red); line-height: 1.5; }

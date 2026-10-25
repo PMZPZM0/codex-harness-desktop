@@ -136,6 +136,8 @@ contextBridge.exposeInMainWorld("codex", {
   readFile: (path: string, threadId?: string) => __ipc("fs:read", 1, [{ path, threadId }]),
   fileExists: (path: string) => __ipc("fs:exists", 1, [{ path }]),
   chooseDirectory: () => __ipc("dialog:directory", 0, []),
+  /* 10-25 新建项目弹窗（ZCode 式三选一）：{ parent, name } = 在父目录下建文件夹；{ path } = 校验已有目录（存在才放行）。建出的目录登记进可信根（与 dialog:directory 同口径）。 */
+  projectDir: (input: { parent?: string; name?: string; path?: string }) => __ipc("dialog:project-dir", 1, [{ input }]),
   chooseImages: () => __ipc("dialog:images", 0, []),
   chooseFiles: () => __ipc("dialog:files", 0, []),
   importSkill: () => __ipc("skills:import", 0, []),

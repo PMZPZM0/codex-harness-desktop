@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 540,
+  "count": 541,
   "channels": [
     {
       "name": "request",
@@ -502,6 +502,16 @@
       "invokeArgs": "",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "projectDir",
+      "channel": "dialog:project-dir",
+      "paramsImpl": "input: { parent?: string; name?: string; path?: string }",
+      "paramsDecl": "input: { parent?: string; name?: string; path?: string }",
+      "returns": "Promise<{ ok: boolean; dir?: string; error?: string }>",
+      "invokeArgs": "{ input }",
+      "cast": null,
+      "note": "10-25 新建项目弹窗（ZCode 式三选一）：{ parent, name } = 在父目录下建文件夹；{ path } = 校验已有目录（存在才放行）。建出的目录登记进可信根（与 dialog:directory 同口径）。"
     },
     {
       "name": "chooseImages",
