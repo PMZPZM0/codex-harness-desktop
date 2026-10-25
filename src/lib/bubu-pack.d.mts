@@ -13,7 +13,7 @@ export declare const BUBU_PACK: {
   userAvatar: string;
   codexAvatar: string;
   assistantName: string;
-  voice: { sid: number; tone: string };
+  voice: { sid: number; tone: string; options: { id: string; label: string; sid: number }[] };
 };
 export declare const USER_PERSONAS: BubuUserPersona[];
 export declare function userPersonaFields(personaId: string): { occupation: string; userContext: string } | null;

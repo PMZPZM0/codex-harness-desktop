@@ -66,8 +66,16 @@ export const BUBU_PACK = {
   userAvatar: "bubu",
   codexAvatar: "bubu",
   assistantName: "一二布布",
-  /** 语音包：内置 VITS 的说话人 id（0..4）+ 播报语气描述；不伪造克隆音色。 */
-  voice: { sid: 1, tone: "软萌元气（内置音色 2 号 + 语气自适应）" },
+  /** 语音包：内置 VITS 的说话人 id（0..4）+ 播报语气描述；不伪造克隆音色。
+   *  ⛔ 官方配音不随应用分发；这里用两个内置音色分别近似「布布（暖男）」与「一二（软萌）」。 */
+  voice: {
+    sid: 1,
+    tone: "软萌元气（内置音色 2 号 + 语气自适应）",
+    options: [
+      { id: "bubu", label: "布布 · 暖男（音色 2）", sid: 1 },
+      { id: "yier", label: "一二 · 软萌（音色 4）", sid: 3 },
+    ],
+  },
 };
 
 /**

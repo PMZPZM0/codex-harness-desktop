@@ -66,7 +66,7 @@ ok(/\.message-image\.bubu-sticker/.test(cssMsg), "贴纸有专属样式（贴纸
 /* ── ② 人格全文带触发表 + 主题包常量 ── */
 ok(/BUBU_PERSONA = `你是一二布布/.test(pack) && /bubuStickerGuide\(\)/.test(pack),
   "一二布布人格全文内嵌表情包触发表（⛔ 没有它 Codex 不知道何时发哪张）");
-ok(/voice: \{ sid: 1, tone:/.test(pack), "语音包口径如实（内置音色 sid + 语气，不伪造克隆音色）");
+ok(/voice: \{[\s\S]{0,60}?sid: 1[\s\S]{0,220}?label: "布布[\s\S]{0,220}?label: "一二/.test(pack), "语音包口径如实：布布 / 一二 两档内置音色，不伪造官方配音");
 ok(/⛔⛔ 形象说明|原创画风/.test(pack) || /原创画风/.test(pack), "美术口径写明是本应用原创画风（不许拿版权 IP 图冒充）");
 
 /* ── ③ 头像预设 + 用户中心两张卡 ── */
@@ -77,9 +77,10 @@ ok(/bubu-pack-panel/.test(center) && /一键换上一二布布/.test(center)
   "用户中心有一键应用：人格 + soulSlug + 名字走 saveIdentity（写档案 + AGENTS.md）");
 ok(/pickPresetAvatar\("user-bubu\.png"\)/.test(center)
   && /avatarAsset\("codex-bubu\.png"\)/.test(center)
-  && /voiceSettingsSet\(/.test(center) && /sid: BUBU_PACK\.voice\.sid/.test(center)
+  && /voiceSettingsSet\(/.test(center) && /sid: bubuVoiceSid/.test(center)
   && /announce: \{ \.\.\.\(current\?\.settings\?\.announce \?\? \{\}\), enabled: true \}/.test(center)
-  && /voicePreviewVoice\(\{ sid: BUBU_PACK\.voice\.sid/.test(center),
+  && /voicePreviewVoice\(\{ sid: bubuVoiceSid/.test(center)
+  && /bubu-pack-voice/.test(center),
   "一键应用同步双头像 + 语音包（sid + 开启播报 + 可试听）");
 ok(/user-persona-grid/.test(personaPanel) && /userPersonaFields\(personaId\)/.test(personaPanel)
   && /apply\("default"\)/.test(personaPanel)

@@ -600,6 +600,8 @@
 .settings-exp-shell .bubu-pack-avatar { width: 64px; height: 64px; border-radius: 16px; object-fit: cover; border: 1px solid var(--line-soft); }
 .settings-exp-shell .bubu-pack-stickers { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
 .settings-exp-shell .bubu-pack-stickers img { width: 52px; height: 52px; border-radius: 12px; object-fit: cover; border: 1px solid var(--line-soft); }
+.settings-exp-shell .bubu-pack-voice { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.settings-exp-shell .bubu-pack-voice .app-select { min-width: 190px; }
 .settings-exp-shell .bubu-pack-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .settings-exp-shell .bubu-pack-actions .primary-setting { align-self: auto; }
 .settings-exp-shell .bubu-pack-stickers img { background: transparent; }
