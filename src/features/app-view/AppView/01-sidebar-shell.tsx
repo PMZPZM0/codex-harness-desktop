@@ -474,7 +474,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   className={`sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-amber${bossOn ? " boss-open" : ""}`}
                   title={bossOn ? "当前就是 BOSS 会话（群编排的普通会话）" : "BOSS 会话：打开群编排会话（拉群派活、盯进度、审不过打回重做）"}
                   aria-pressed={bossOn}
-                  onClick={() => {
+                  onClick={async () => {
                     if (bossOn) return;                                   // 已在这个会话里，再点无动作
                     /* 已经是「刚点开、还没发消息」的 BOSS 空会话（还没有 thread id）⇒ 别再新建一个
                        （否则连点两次就多两个「未命名任务」）。 */
@@ -483,8 +483,21 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                     if (groupBoss) { void app.openThread(groupBoss); return; }   // 有群 ⇒ 打开它的 boss 线程
                     const home = bossThreads.homeId;                       // 还没群 ⇒ 回到固定的那个 BOSS 会话
                     if (home && (app.threads ?? []).some((t: any) => t.id === home)) { void app.openThread(home); return; }
-                    bossHomePending.current = true;                        // 全新：新建并记成 home
-                    setBossPending(true);                                  // 空态显示 BOSS 欢迎语
+                    /* 10-25 用户令：BOSS 会话有**独立项目目录**，进去要选（不默认套用当前会话的目录）。
+                       选过一次就记住（boss-workspace），之后直接用它。 */
+                    let dir = "";
+                    try { dir = localStorage.getItem("boss-workspace") ?? ""; } catch { /* 隐私模式 */ }
+                    if (!dir) {
+                      const picked = await window.codex.chooseDirectory();
+                      if (!picked) return;                                  // 用户取消 ⇒ 什么都不做
+                      dir = String(picked);
+                      try { localStorage.setItem("boss-workspace", dir); } catch { /* ignore */ }
+                    }
+                    app.setWorkspace(dir);
+                    app.workspaceRef.current = dir;                         // send 读 ref，必须同步
+                    try { localStorage.setItem("workspace", dir); } catch { /* ignore */ }
+                    bossHomePending.current = true;                         // 全新：新建并记成 home
+                    setBossPending(true);                                   // 空态显示 BOSS 引导卡
                     startNewThread();
                   }}
                 >

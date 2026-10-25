@@ -7,7 +7,7 @@ import { compactionStateOf, reportCompactionState } from "../../../../lib/compac
 import { compactionRecordFor, compactionVersion, subscribeCompactions } from "../../../../lib/compaction-records.mjs";
 import { resolveCompactionAnchor } from "../../../../lib/compaction-anchor.mjs";
 import { Fragment, useLayoutEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
-import { getBossThreads, subscribeBossThreads } from "../../../boss-group-view";
+import { BossThreadIntro, getBossThreads, subscribeBossThreads } from "../../../boss-group-view";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../lib/entity-avatar";
 import {
   AlertTriangle,
@@ -407,39 +407,18 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
   return (
     <div className="timeline-wrap" ref={timelineWrapRef}>
                   {thread && <MemoMessageRuler turns={thread.turns} scrollRef={scrollRef} containerRef={timelineWrapRef} onJump={jumpToTurnInWindow} compactionTurnId={compactionMark.turnId} compactionAtEnd={compactionMark.atEnd} />}
+                  {/* BOSS 会话的空白态：与 timeline 同级（绝对定位相对 .timeline-wrap），
+                     不进滚动内容流 —— 普通会话完全不受影响。 */}
+                  {isEmpty && isBossEmpty ? <BossThreadIntro onPick={(text) => { app.setPrompt(text); app.composerInputRef?.current?.focus(); }} /> : null}
                   <div className={`timeline ${isEmpty ? "empty-state" : ""}`} ref={scrollRef} onScroll={onTimelineScroll} data-history-hidden={historyPlan.hiddenCount} data-history-below={historyPlan.hiddenBelow} data-history-total={historyPlan.hiddenStubs + timelineWindow.ordered.length}>
-                  {isEmpty ? (
-                    isBossEmpty ? (
-                      /* 10-25 用户令：BOSS 会话的空态给专属引导语（发送后自然消失 —— 空态本来就只在
-                         没有回合时渲染）。示例 chip 只**填进输入框**，不自动发送，用户还能改。 */
-                      <div className="welcome-state boss-welcome">
-                        <div className="welcome-mark boss-welcome-mark"><Crown strokeWidth={1.2} size={52} /></div>
-                        <h1 className="welcome-greet">你好 BOSS，今天要做什么？</h1>
-                        <p className="welcome-sub">说需求就行 —— 我拉群喊人（专家 / 专家团 / 你本机 CLI agent），派活、盯进度、审不过打回重做。</p>
-                        <div className="boss-welcome-chips">
-                          {[
-                            "做个落地页：设计 + 前端 + 测试",
-                            "仓库过一遍，找安全问题",
-                            "写份竞品分析，三个视角",
-                          ].map((text) => (
-                            <button
-                              key={text}
-                              type="button"
-                              className="boss-welcome-chip"
-                              onClick={() => { app.setPrompt(text); app.composerInputRef?.current?.focus(); }}
-                            >
-                              {text}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="welcome-state">
-                        <div className="welcome-mark"><Code2 strokeWidth={0.5} size={96} /></div>
-                        <h1 className="welcome-greet">{greeting}</h1>
-                        <p className="welcome-sub">{greetSub}</p>
-                      </div>
-                    )
+                  {/* BOSS 会话的空白态是**它自己的一套**（10-25 用户令：跟欢迎界面没关系）——
+                     普通会话仍走 welcome-state，这里两者互不影响。 */}
+                  {isEmpty && !isBossEmpty ? (
+                    <div className="welcome-state">
+                      <div className="welcome-mark"><Code2 strokeWidth={0.5} size={96} /></div>
+                      <h1 className="welcome-greet">{greeting}</h1>
+                      <p className="welcome-sub">{greetSub}</p>
+                    </div>
                   ) : null}
                   {/* 导入会话记录后、尚未发送首条消息：记录预览卡常驻消息区顶部；发送后转为消息内的导入卡 */}
                   {thread && (thread.turns ?? []).length === 0 && pendingImportThreads[thread.id] ? <PendingImportSlot key={thread.id} threadId={thread.id} onDiscard={() => forgetPendingImport(thread.id)} /> : null}
