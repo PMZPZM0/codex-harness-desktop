@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-25 | 会话运行中：状态入口置灰 + 模型/思考下回合生效 | 改动 | `AppView.tsx`、`part09/02-seg.tsx`、`Composer.tsx`、`composer-form.tsx`、`02-model-thread-settings.tsx`、`01-permission-effort-copy.tsx`、`DispatchMenu.tsx`、`02-sidebar-threads.css` | 用户：运行中独立弹窗/项目地址/调度开关等不能改，置灰、结束后恢复，按会话独立、普通/中枢一致；切模型提示下回合生效，切思考等级警告可能影响推理。实现：项目地址、独立弹窗、调度、任务菜单、权限在 activeThreadRunning 时禁用并在开跑时收起；模型同供应商切换提示「模型将在下回合生效」，跨供应商运行中拒绝；思考切换提示「下回合生效 + 可能影响推理」。三仓代码同步（云助手未部署）。 | 624db4d63 |
 | 2026-10-25 | 顶栏按钮弹层改为按钮下方自适应居中 | 改动 | `useAnchoredPopover.ts`、`part09/02-seg.tsx`、`BossGroupMembersButton.tsx`、`BossGroupHelpButton.tsx` | 用户：对话框上面那排按键（含左上角项目地址）的弹窗改为贴对应按钮下方居中，越界自动内收。项目地址/任务菜单走 bottom-center；搜索面板、群成员、指挥中枢说明按实际宽度算中心；CDP 实测项目地址 center=0、gap=8，搜索面板贴边自动内收。PPcode/云助手同步。 | 75d11d933 |
 | 2026-10-25 | 更新方式 ? 改为行内，地址缩短 | 修复 | `01-sidebar-shell.tsx`、`17-visual-cards.css` | 用户：「放后面不是放下面这样太丑了」。? 图标改为行内跟在「补丁 / 完整包」后面，按钮 nowrap + inline-flex；「更新地址」缩短为 GitHub Releases，镜像顺序收进 ? 说明；不再换行。 | c199c1735 |
 | 2026-10-25 | 更新方式改名「补丁 / 完整包」+ 选项说明 + 三仓规则 | 改动 | `01-sidebar-shell.tsx`、`17-visual-cards.css`、三仓 `AGENTS.md` | 用户：「差分不知道啥意思，补丁大家都知道」。UI 两个选项改为「补丁 / 完整包」，各加 ❓ 说明；更新地址标注「国内镜像优先」（gh-proxy → ghfast → 直连）。三仓 AGENTS 写入补丁更新规则、各产品专用 GitHub Release 映射与三仓同步/推送纪律。 | 46186f0f8 |
