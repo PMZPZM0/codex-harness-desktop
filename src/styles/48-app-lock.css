@@ -110,19 +110,77 @@
   font-weight: 600;
 }
 .app-lock-meta { color: var(--faint); font-size: 11.5px; }
+.app-lock-state {
+  flex: none;
+  margin-left: 2px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+.app-lock-state.is-on { color: var(--green, #1a7f37); background: color-mix(in srgb, var(--green, #22c55e) 13%, transparent); }
+.app-lock-state.is-off { color: var(--faint); background: color-mix(in srgb, var(--faint) 10%, transparent); }
 .app-lock-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 .app-lock-loading { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
-.app-lock-rules ul { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
-.app-lock-rules li {
-  display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
+/* 开场提示：比一行灰字更像「操作前须知」，同时把按钮与说明分开。 */
+.app-lock-callout {
+  display: flex;
   gap: 10px;
-  padding-bottom: 9px;
-  border-bottom: 1px dashed var(--line);
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--amber, #f59e0b) 25%, var(--line));
+  border-left: 3px solid var(--amber, #f59e0b);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--amber, #f59e0b) 7%, var(--panel));
 }
-.app-lock-rules li:last-child { padding-bottom: 0; border-bottom: 0; }
-.app-lock-rules b { color: var(--text); font-size: 12.5px; }
-.app-lock-rules span { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.app-lock-callout-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--amber, #f59e0b) 14%, transparent);
+  color: var(--amber, #f59e0b);
+}
+.app-lock-callout b { display: block; color: var(--text); font-size: 12.5px; }
+.app-lock-callout p { margin: 3px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.65; }
+
+/* 规则卡片：短标题 + 说明的两栏网格；窄屏自动单列。 */
+.app-lock-rules-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.app-lock-rule {
+  display: flex;
+  gap: 9px;
+  padding: 11px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+.app-lock-rule.is-wide { grid-column: 1 / -1; }
+.app-lock-rule.is-danger {
+  border-color: color-mix(in srgb, var(--red, #ef4444) 26%, var(--line-soft));
+  background: color-mix(in srgb, var(--red, #ef4444) 5%, var(--panel-2));
+}
+.app-lock-rule-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+}
+.app-lock-rule.is-danger .app-lock-rule-icon {
+  background: color-mix(in srgb, var(--red, #ef4444) 12%, transparent);
+  color: var(--red, #ef4444);
+}
+.app-lock-rule b { display: block; color: var(--text); font-size: 12.5px; }
+.app-lock-rule p { margin: 3px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.65; }
 
 /* ── 开启 / 关闭弹窗（portal 到 body，压住设置弹窗）──────────────────────── */
 .app-lock-backdrop {
@@ -243,7 +301,8 @@
 .app-lock-modal-actions .primary-setting:disabled,
 .app-lock-modal-actions .secondary-setting:disabled { opacity: .45; cursor: not-allowed; }
 
-@media (max-width: 640px) {
-  .app-lock-rules li { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+@media (max-width: 720px) {
+  .app-lock-rules-grid { grid-template-columns: minmax(0, 1fr); }
+  .app-lock-rule.is-wide { grid-column: auto; }
   .app-lock-modal-body { padding: 12px; }
 }
