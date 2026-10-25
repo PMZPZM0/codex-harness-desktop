@@ -10,6 +10,7 @@
  * 只展示一个文件的 diff / 文件块不能折叠 / 三个菜单项没有真行为 / 切文件把右栏重新打开。
  */
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { codeOnly } from "./_ctx.mjs";
@@ -167,6 +168,23 @@ const diffLib = await import("../../src/lib/diff-view.mjs");
   ok(diffLib.isSingleSidedDiff(diffLib.parseDiffLines("@@ -0,0 +1,2 @@\n+a\n+b\n")) === true
     && diffLib.isSingleSidedDiff(real) === false,
     "单边新增/删除识别为单边（拆分视图自动退回统一视图）");
+}
+
+/* ── 10-25【118 尾】完成态折叠：汇总正文之后不许再有折叠组 ──────────────────
+   用户实测（截图实证）：「又出折叠会话到消息尾部了…重启应用，就跑到消息汇总下面」
+   +「必须全部进大折叠」。
+   真因：上游给的 item 顺序里，**最终答复后面可能还有过程单元**（引擎随后才补记那条
+   工具调用；重启走历史快照路径时更常见）⇒ 旧实现把它 flush 成**第二个折叠组**，
+   那个组渲染在**汇总消息下面**（「使用技能 ADH 写法」芯片落在汇总正文下方）。
+   修法（src/lib/turn-fold-plan.mjs）：尾巴里的过程单元**前移**并入同一个大折叠组。
+   细则与全部形态在独立回归脚本 scripts/verify-fold-tail.mjs（真跑 + 退出码判成败）。
+   ⛔ 本文件不在【265】棘轮名单 ⇒ 细则写这里；07-turn-fold.mjs 只许缩不许长。 */
+{
+  const res = spawnSync(process.execPath, [join(ROOT, "scripts", "verify-fold-tail.mjs")], { encoding: "utf8", timeout: 60000 });
+  const out = String(res.stdout ?? "") + String(res.stderr ?? "");
+  ok(res.status === 0,
+    `【118 尾】折叠尾巴回归全绿（汇总正文永远是最后一项；过程全进唯一大折叠组；scripts/verify-fold-tail.mjs exit=${res.status}）`
+    + (res.status === 0 ? "" : `\n${out.slice(-600)}`));
 }
 
 console.log(`\n【turn-review】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
