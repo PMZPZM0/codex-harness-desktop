@@ -44,12 +44,22 @@ function createInlineAttachmentChip(kind: "image" | "file", path: string, onRemo
       dragging = true;
       moved = true;
       chip.classList.add("dragging");
-      const under = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
-      const target = under?.closest?.(".composer-image-chip-inline") as HTMLElement | null;
-      if (target && target !== chip && target.parentNode) {
-        const rect = target.getBoundingClientRect();
-        const after = ev.clientX > rect.left + rect.width / 2;
-        target.parentNode.insertBefore(chip, after ? target.nextSibling : target);
+      /* 10-25 用户：要「拖到哪就在哪」——按指针坐标在所有子节点里找插入点
+         （文本节点也能落点；caretRangeFromPoint 在 plaintext-only 里不可靠，实测会抛）。 */
+      const root = chip.parentElement;
+      if (root) {
+        let ref: Node | null = null;
+        for (const child of Array.from(root.childNodes)) {
+          if (child === chip) continue;
+          const range = document.createRange();
+          range.selectNode(child);
+          const rect = range.getBoundingClientRect();
+          const sameLine = ev.clientY >= rect.top - 2 && ev.clientY <= rect.bottom + 2;
+          const beforeByY = ev.clientY < rect.top;
+          const beforeByX = ev.clientX < rect.left + rect.width / 2;
+          if (beforeByY || (sameLine && beforeByX)) { ref = child; break; }
+        }
+        try { root.insertBefore(chip, ref); } catch { /* 非法落点忽略 */ }
       }
       ev.preventDefault();
     };
