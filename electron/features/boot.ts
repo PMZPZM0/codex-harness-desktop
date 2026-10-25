@@ -869,16 +869,13 @@ export async function bootApp() {
         if (willCapture) {
           void workspaceMemoryEnabled(buffer.cwd).then((enabled: any) => memoryStore.captureTurn(p?.threadId ?? "", buffer.user, buffer.assistant, { workspace: buffer.cwd, includeWorkspace: enabled })).catch((error: any) => sendToWindow("harness:event", { type: "memory", message: `Memory Gateway 捕获失败：${error.message}`, at: Date.now() }));
         }
-        // 会话结束自动蒸馏：主进程内部节流（6 小时一次），异常全吞，绝不影响主流程
-        if (buffer.cwd) {
-          void workspaceMemoryEnabled(buffer.cwd).then((enabled: any) => {
-            if (!enabled) return null;
-            return memoryLayers.autoDistill(buffer.cwd!, distillSummarize).then((result: any) => {
-              if (result?.ok) sendToWindow("harness:event", { type: "memory", message: `记忆自动蒸馏完成：${result.dates.length} 天日志已提炼进项目记忆`, at: Date.now() });
-              return result;
-            });
-          }).catch(() => undefined);
-        }
+        /* ⛔⛔ 10-25 用户令：「这个记忆蒸馏器又是什么玩意啊…删了，让 codex 自己蒸馏记忆」。
+           原来这里在**会话结束时**自动调 autoDistill → 它会开一个内部只读会话
+           （首句「你是记忆蒸馏器。下面是某个项目过去的工作日志…」）⇒ 侧栏多出一堆垃圾会话。
+           ⇒ **应用不再自动蒸馏**：蒸馏由 Codex 自己按 memory-distill 技能做
+              （developer-instructions 第 9 条本来就写着「用户明确要求由你做，而不是由应用做」）。
+           记忆水位的判定与提示仍在（那条在常驻记忆块里，Codex 看到就自己蒸）。 */
+
       }
     }
   });

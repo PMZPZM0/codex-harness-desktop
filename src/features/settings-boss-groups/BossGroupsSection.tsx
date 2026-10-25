@@ -83,14 +83,6 @@ export function BossGroupsSection() {
     } finally { setBusy(""); }
   };
 
-  const recheck = async (taskId: string) => {
-    setBusy(taskId + "recheck");
-    try {
-      await window.codex.recheckBossTask(taskId);
-      const next = (await window.codex.bossGroupStatus(selected)) as Snapshot;
-      setSnap(next);
-    } finally { setBusy(""); }
-  };
 
   if (!groups.length) {
     return (
@@ -177,9 +169,6 @@ export function BossGroupsSection() {
                       ) : null}
                       {t.status === "reviewing" || t.status === "submitted" ? (
                         <div className="boss-groups-actions">
-                          <button type="button" className="boss-groups-btn" disabled={busy === t.id + "recheck"} onClick={() => void recheck(t.id)}>
-                            <RefreshCw size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} aria-hidden="true" />重新评审
-                          </button>
                           <button type="button" className="boss-groups-btn" disabled={busy === t.id + "approved"} onClick={() => void window.codex.reviewBossTask({ taskId: t.id, verdict: "approved", reasons: [], by: "user" }).then(() => void window.codex.bossGroupStatus(selected).then((s) => setSnap(s as Snapshot)))}>
                             直接通过
                           </button>

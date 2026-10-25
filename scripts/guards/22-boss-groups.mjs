@@ -227,7 +227,7 @@ if (state) {
 {
   const manifest = JSON.parse(read("electron/ipc-channels.manifest.json"));
   const channels = (manifest.channels ?? []).filter((c) => String(c.channel).startsWith("boss-groups:"));
-  ok(channels.length === 13, `manifest 有 13 个 boss-groups 通道（实测 ${channels.length}）`);
+  ok(channels.length === 12, `manifest 有 12 个 boss-groups 通道（实测 ${channels.length}）`);
   ok(manifest.count === manifest.channels.length, `manifest.count 与通道数一致（${manifest.count} / ${manifest.channels.length}）`);
   ok(channels.every((c) => typeof c.invokeArgs === "string" && Boolean(c.returns)
     && (!String(c.paramsImpl ?? "").trim() || String(c.invokeArgs ?? "").trim())),
@@ -240,11 +240,11 @@ if (state) {
   ok(read("electron/composition.gen.ts").includes("boss-groups-ipc"), "composition.gen.ts 已重生成（跑过 npm run gen:domains）");
 
   const registry = read("electron/ipc-registry.ts");
-  ok(/\{ prefix: "boss-groups", count: 13, status: "in-features", file: "features\/boss-groups-ipc\.ts"/.test(registry),
-    "ipc-registry.ts 账本已登记（count=13）");
+  ok(/\{ prefix: "boss-groups", count: 12, status: "in-features", file: "features\/boss-groups-ipc\.ts"/.test(registry),
+    "ipc-registry.ts 账本已登记（count=12）");
 
   const preload = read("electron/preload.ts");
-  for (const method of ["listBossGroups", "bossGroupStatus", "createBossGroup", "assignBossTask", "reviewBossTask", "escalateBossTask", "bossBrowserStatus", "recheckBossTask", "bossGroupMember", "bossGroupPin", "bossGroupSay", "bossGroupPool"]) {
+  for (const method of ["listBossGroups", "bossGroupStatus", "createBossGroup", "assignBossTask", "reviewBossTask", "escalateBossTask", "bossBrowserStatus", "bossGroupMember", "bossGroupPin", "bossGroupSay", "bossGroupPool"]) {
     ok(preload.includes(method), `preload 已生成 ${method}`);
   }
 
@@ -285,6 +285,19 @@ if (state) {
   const bossStore = read("src/features/boss-group-view/boss-threads-store.mjs");
   ok(/boss-home-thread/.test(bossStore) && /setBossHomeThreadId/.test(bossStore),
     "没群时的 BOSS 会话有固定锚点（localStorage boss-home-thread）");
+  /* ⛔⛔ 10-25 用户令（三条，截图实证）：
+     ① 「这个子成员都触发一次评审？评审机制有问题…评审上下文子智能体不要默认，删了，让 codex 自己创建」
+     ② 「记忆蒸馏器又是什么玩意…删了，让 codex 自己蒸馏记忆」+「到阈值了，会话自己蒸馏就行了」
+     ③ 「这个重试又是什么东西…重试删掉」 */
+  const runnerSrc = read("electron/boss-groups/runner.ts");
+  ok(!/REVIEW_PROMPT/.test(runnerSrc) && !/SYSTEM TASK · 独立评审/.test(runnerSrc),
+    "⛔ 不再有「独立评审」提示词/会话（评审由会话自己用技能做）");
+  ok(/已交活，请\*\*用你自己的评审技能\*\*判一下/.test(runnerSrc),
+    "⛔ 交活后回投给 BOSS（成品 + 验收标准），由它自己用技能判，不再另开评审会话");
+  ok(!/memoryLayers\.autoDistill/.test(read("electron/features/boot.ts")),
+    "⛔ 应用不再自动蒸馏记忆（不派内部会话；到 90% 蒸馏线由会话自己按技能蒸）");
+  ok(!/boss-groups:recheck/.test(read("electron/features/boss-groups-ipc.ts")) && !/recheckBossTask/.test(read("src/features/settings-boss-groups/BossGroupsSection.tsx")),
+    "⛔ 评审的「重跑/retry」通道与按钮已删");
   ok(/memberThreadIds/.test(bossStore),
     "共享 store 汇总群成员会话 id（侧栏据此打「BOSS 调度」标签）");
   ok(/boss-workspace/.test(sidebar) && /chooseDirectory/.test(sidebar),

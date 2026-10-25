@@ -218,7 +218,6 @@ export const bossGroupsFeature = defineFeature<null>({
     });
 
     /** 手动跑一次审查（模型自评之后不服、或评审会话丢了时用）。 */
-    ipcHost.handle("boss-groups:recheck", async (_event, taskId: string) => reviewTask(String(taskId ?? "")));
 
     /* boss 线程的回复镜像进群流（「在群里回」）——全局只挂一次。 */
     watchBossReplies();
@@ -230,7 +229,7 @@ export const bossGroupsFeature = defineFeature<null>({
 
     ctx.effect(() => {
       setBossEventSink(null);
-      for (const channel of ["boss-groups:list", "boss-groups:status", "boss-groups:create", "boss-groups:assign", "boss-groups:review", "boss-groups:escalate", "boss-groups:browser", "boss-groups:recheck", "boss-groups:member", "boss-groups:pin", "boss-groups:say", "boss-groups:pool"]) {
+      for (const channel of ["boss-groups:list", "boss-groups:status", "boss-groups:create", "boss-groups:assign", "boss-groups:review", "boss-groups:escalate", "boss-groups:browser", "boss-groups:member", "boss-groups:pin", "boss-groups:say", "boss-groups:pool"]) {
         ipcHost.removeHandler(channel);
       }
     });
