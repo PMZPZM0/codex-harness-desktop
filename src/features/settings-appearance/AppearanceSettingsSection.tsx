@@ -5,13 +5,14 @@
  * ⛔ 主题按钮由 src/lib/themes.ts 的 THEMES 注册表渲染：新增主题 = 表里加一行
  *    + styles 里加一段 `:root[data-theme="<id>"]` 变量块，这里与 bag 零改动。
  */
-import { Brain, Check, Moon, Sun, ZoomIn } from "lucide-react";
+import { Brain, Check, FileCode2, Moon, Sun, ZoomIn } from "lucide-react";
 import { CodeAppearanceSection } from "../../components/CodeAppearance";
 import { FunctionMenuSettings } from "../function-menu";
 import { WallpaperSettingsSection } from "../wallpaper";
 import { BootIntroSettingsRow } from "./boot550c";
 import { THEMES } from "../../lib/themes";
 import { setReasoningDisplayMode, useReasoningDisplayMode } from "../../lib/reasoning-display-mode";
+import { setRunProcessMode, useRunProcessMode } from "../../lib/run-process-mode";
 import { runVisualSwitch, themeLabelOf } from "../../lib/visual-switch";
 import { SettingsGroupHead, SettingsPageHero } from "../../components/SettingsPageHero";
 
@@ -20,6 +21,7 @@ export type AppearanceSettingsSectionProps = { theme: any; setTheme: any; uiFont
 export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps) {
   const { theme, setTheme, uiFont, setUiFont, onNotice } = props;
   const reasoningDisplay = useReasoningDisplayMode();
+  const runProcessMode = useRunProcessMode();
   return (
     <>
       <section className="settings-section stack appearance-page settings-exp-page">
@@ -68,6 +70,25 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
               </button>
             </div>
             <p className="settings-card-hint">只影响思考内容的呈现方式，不会改变模型思考本身或历史记录。长条模式收起时与过程行同款，只显示最新一行（自动横向滚动）；当前正在直播的思考内联显示，已经结束的思考与其他过程在直播末段超过 8 条会自动收起，回合结束后统一收进「耗时」大折叠。点击长条展开全文，最高 50vh 内部滚动。</p>
+          </div>
+        </div>
+        <SettingsGroupHead title="运行过程" hint="文件生成 / 修改的展示方式" />
+        <div className="settings-card card-run-process">
+          <div className="settings-card-head"><FileCode2 size={15} /><strong>运行过程</strong><span className="settings-subhead-hint">立即生效，无需重启</span></div>
+          <div className="settings-card-body">
+            <div className="perm-seg reasoning-mode-seg">
+              <button type="button" className={`perm-seg-btn ${runProcessMode === "simple" ? "on" : ""}`} onClick={() => setRunProcessMode("simple")}>
+                <strong>简洁</strong>
+                <small>只显示文件编辑行与实时 +N -M，不自动展开内容（默认）</small>
+                {runProcessMode === "simple" && <em>当前</em>}
+              </button>
+              <button type="button" className={`perm-seg-btn ${runProcessMode === "detailed" ? "on" : ""}`} onClick={() => setRunProcessMode("detailed")}>
+                <strong>详细</strong>
+                <small>生成文件自动展开最新内容、修改文件自动展开 diff 并跟随最新位置</small>
+                {runProcessMode === "detailed" && <em>当前</em>}
+              </button>
+            </div>
+            <p className="settings-card-hint">只影响运行过程中的文件展示，不改变生成/修改本身。详细模式会为每个生成、修改、编辑的文件自动展开内容或 diff，并自动滚动到最新位置；文件过多时仍最多展示 8 个。</p>
           </div>
         </div>
         <SettingsGroupHead title="拓展功能" hint="侧栏入口位置与顺序" />

@@ -10,6 +10,7 @@ import { DiffPreviewBody } from "./DiffPreview";
 import { FileCardMenu } from "../shared/InlineCards";
 import { getTurnFileChanges, getTurnLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
 import { useCenteredPopoverLeft } from "../../lib/use-centered-popover";
+import { useRunProcessMode } from "../../lib/run-process-mode";
 import { setTurnReview, primeTurnReview, clearTurnReview, getTurnReview } from "../../lib/turn-review-store.mjs";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { OutputFileCards } from "./OutputFileCards";
@@ -261,29 +262,116 @@ const LIVE_LIMIT = 8;
     这里只负责画（哑组件：给什么画什么，订阅与锚点都在 session-queue）。
     每行 = 铅笔 + 文件类型图标 + 文件名 + 所在目录 + 该文件实时的 +N -M（数字变化重放一次 live-tick）。
     数据源 = 主进程每 ~2.5s 一圈的轻量重扫（turn-file-changes-live，见 electron/turn-file-watch.ts）。 */
-export type LiveFileChange = { path: string; status: string; added: number; deleted: number };
+export type LiveFileChange = { path: string; status: string; added: number; deleted: number; diff?: string; content?: string };
+
+/** 运行过程「详细」档：像思考板块一样浮窗展示最新生成/修改文件，停止变化后自动收起。 */
+function LiveFileFloat({ file, anchorRef, onClose }: { file: LiveFileChange; anchorRef: { current: HTMLElement | null }; onClose: () => void }) {
+  const floatRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const positionFloat = () => {
+    const panel = floatRef.current;
+    const anchor = anchorRef.current;
+    if (!panel || !anchor || !anchor.isConnected) return;
+    const comp = document.querySelector(".composer");
+    const compRect = comp ? comp.getBoundingClientRect() : null;
+    const width = compRect ? Math.round(compRect.width) : Math.min(820, window.innerWidth - 46);
+    const left = compRect ? Math.round(compRect.left) : Math.round((window.innerWidth - width) / 2);
+    panel.style.width = width + "px";
+    panel.style.left = left + "px";
+    const rect = anchor.getBoundingClientRect();
+    const height = panel.offsetHeight || 160;
+    const spaceBelow = window.innerHeight - rect.bottom - 8;
+    const spaceAbove = rect.top - 8;
+    let top;
+    if (spaceBelow >= height) top = rect.bottom + 6;
+    else if (spaceAbove >= height) top = rect.top - 6 - height;
+    else if (spaceAbove >= spaceBelow) top = Math.max(8, rect.top - 6 - height);
+    else top = Math.min(rect.bottom + 6, window.innerHeight - 8 - height);
+    panel.style.top = Math.round(top) + "px";
+  };
+  useEffect(() => {
+    let raf = 0;
+    const loop = () => { positionFloat(); raf = requestAnimationFrame(loop); };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [file.path]);
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [file.content, file.diff]);
+  const { name } = segments(file.path);
+  return createPortal(
+    <div className="live-file-float" ref={floatRef} role="complementary" aria-label="正在生成或修改文件">
+      <div className="live-file-float-head">
+        <FileTypeIcon path={file.path} size={13} />
+        <strong>{name}</strong>
+        <small>{file.path}</small>
+        <button type="button" className="live-file-float-close" title="收起" onClick={onClose}><ChevronDown size={13} /></button>
+      </div>
+      <div className="live-file-float-body" ref={bodyRef}>
+        {file.content != null
+          ? <pre className="live-file-float-code">{file.content}</pre>
+          : file.diff ? <ToolCodeBlock language="diff" text={file.diff} /> : null}
+      </div>
+    </div>,
+    document.querySelector(".reasoning-float-host") ?? document.body,
+  );
+}
 
 export function LiveFileRows({ files }: { files: LiveFileChange[] }) {
+  const runProcessMode = useRunProcessMode();
+  const [tick, setTick] = useState(0);
+  const [floatPath, setFloatPath] = useState("");
+  const activeUntilRef = useRef(new Map<string, number>());
+  const signatureRef = useRef(new Map<string, string>());
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  useEffect(() => {
+    const timer = window.setInterval(() => setTick((value) => value + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    const now = Date.now();
+    for (const file of files) {
+      const signature = `${file.status}|${file.added}|${file.deleted}|${file.content?.length ?? 0}|${file.diff?.length ?? 0}`;
+      if (signatureRef.current.get(file.path) === signature) continue;
+      signatureRef.current.set(file.path, signature);
+      activeUntilRef.current.set(file.path, now + 3000);
+      // 只浮最新变化的那个文件；它停止变化后自动收起，不叠多个浮窗。
+      setFloatPath(file.path);
+    }
+    const alive = new Set(files.map((file) => file.path));
+    for (const path of [...activeUntilRef.current.keys()]) {
+      if (!alive.has(path)) { activeUntilRef.current.delete(path); signatureRef.current.delete(path); }
+    }
+    setTick((value) => value + 1);
+  }, [files]);
   if (!files.length) return null;
   const visible = files.slice(0, LIVE_LIMIT);
+  const now = Date.now();
+  const floatFile = runProcessMode === "detailed" && floatPath && (activeUntilRef.current.get(floatPath) ?? 0) > now
+    ? visible.find((file) => file.path === floatPath) ?? null
+    : null;
   return (
     <div className="live-edits" role="status" aria-label="正在编辑文件">
       {visible.map((file) => {
         const { name, dir } = segments(file.path);
         return (
-          <div className="live-edit-row" key={file.path} title={file.path}>
-            <span className="live-edit-action"><Pencil size={12} /><em>编辑</em></span>
-            <FileTypeIcon path={file.path} size={13} />
-            <code>{name}</code>
-            <small>{dir}</small>
-            {/* ⛔ key 带数字：数字一变就重挂载 ⇒ 重放 live-tick 动画（就是「实时跳动」的观感）。 */}
-            <span className="live-edit-stats" key={`${file.status}-${file.added}-${file.deleted}`}>
-              {file.status === "deleted" ? <i className="completed-file-gone">已删除</i> : <><b>+{file.added}</b><i>-{file.deleted}</i></>}
-            </span>
+          <div className="live-edit-item" key={file.path}>
+            <div className="live-edit-row" title={file.path} ref={(el) => { rowRefs.current[file.path] = el; }}>
+              <span className="live-edit-action"><Pencil size={12} /><em>编辑</em></span>
+              <FileTypeIcon path={file.path} size={13} />
+              <code>{name}</code>
+              <small>{dir}</small>
+              {/* ⛔ key 带数字：数字一变就重挂载 ⇒ 重放 live-tick 动画（就是「实时跳动」的观感）。 */}
+              <span className="live-edit-stats" key={`${file.status}-${file.added}-${file.deleted}`}>
+                {file.status === "deleted" ? <i className="completed-file-gone">已删除</i> : <><b>+{file.added}</b><i>-{file.deleted}</i></>}
+              </span>
+            </div>
           </div>
         );
       })}
       {files.length > LIVE_LIMIT && <div className="live-edits-more">还有 {files.length - LIVE_LIMIT} 个文件…</div>}
+      {floatFile ? <LiveFileFloat file={floatFile} anchorRef={{ current: rowRefs.current[floatFile.path] ?? null }} onClose={() => setFloatPath("")} /> : null}
     </div>
   );
 }
