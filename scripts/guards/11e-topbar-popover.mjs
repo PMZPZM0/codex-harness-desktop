@@ -163,8 +163,15 @@ ok(
   const segCode = codeOnly(seg);
   ok(/\.menu-backdrop\s*\{[^}]*-webkit-app-region:\s*no-drag/.test(cssTopbar),
     "⛔ .menu-backdrop 豁免拖拽（顶栏 drag 子树里的 backdrop 不豁免 = 点击被吞成拖窗口；搜索面板/任务菜单的 backdrop 共用此类一并修复）");
-  ok(appViewCode.includes("打开项目地址") && /shellReveal\(workspace\)/.test(appViewCode),
-    "工作区菜单含「打开项目地址」行 → shellReveal(workspace)（目录走 openPath 在文件管理器打开；10-06 夜八轮用户点名加）");
+  /* ⛔ 10-25：顶栏/菜单的目录取值口径从**全局 workspace** 改为**本会话自己的目录**
+     （`topbarDir`）—— 用户实测「没选地址，左上角也自动抓到了（别的会话的）地址」。
+     ⇒ 断言的判据跟着口径走：只要「打开项目地址」这行还在、且打开的是**当次取值**即可，
+       ⛔ 不许再钉死成 workspace（否则会逼着代码退回串项的老口径）。 */
+  ok(appViewCode.includes("打开项目地址") && /shellReveal\(topbarDir\)/.test(appViewCode),
+    "工作区菜单含「打开项目地址」行 → shellReveal(topbarDir)（目录走 openPath 在文件管理器打开；10-06 夜八轮用户点名加；10-25 改按会话取值）");
+  ok(/const topbarDir = bossDirContext/.test(appViewCode)
+    && !/<span>\{workspace \|\| "尚未选择工作区"\}<\/span>/.test(appViewCode),
+    "⛔ 顶栏项目名读的是**本会话**的目录（BOSS 会话没选地址 ⇒ 显示「尚未选择项目地址」），⛔ 不读全局 workspace");
   ok(/addEventListener\("mousedown", onDown\)/.test(segCode)
     && /target\?\.closest\?\.\("\.ctx-menu"\)/.test(segCode)
     && /ctxBtnRef\.current\?\.contains\(target as Node\)/.test(segCode)

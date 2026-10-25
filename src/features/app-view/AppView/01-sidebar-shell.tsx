@@ -148,6 +148,7 @@ import { basename } from "../../../lib/basename";
 import { copyTextToClipboard } from "../../../lib/clipboard";
 import { runVisualSwitch, themeLabelOf } from "../../../lib/visual-switch";
 import { refreshWithReceipt } from "../../../lib/refresh-receipt.mjs";
+import { UpdateProgressBar } from "../../../components/UpdateProgressBar";
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 // 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
 import { Slot } from "../../../runtime/registry";
@@ -358,10 +359,13 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         这个弹窗，不会跳转到 BOSS 欢迎界面，再跳这个弹窗」⇒ 顺序反了）——
         先建一个空的 BOSS 会话（pending=true ⇒ 时间线渲染 BossThreadIntro 欢迎界面），
         再由欢迎界面（已渲染出来）弹地址对话框（走 boss-dir-dialog-store 的自动弹出标记）。
-     ② 在**已有** BOSS 会话里再点 ⇒ 不动（不重开、不换地址）。
-     ③ 待发消息的空 BOSS 会话 ⇒ 不重复建。 */
+     ② ⛔⛔ **在已有 BOSS 会话里再点也必须能建**（10-25 用户实测第二轮：「这种情况我点不了上面
+        BOSS 会话选项，切不到 BOSS 会话界面，没修好啊」截图就是「当前在 BOSS 会话哈喽里」）——
+        原来这里第一行是 `if (bossOn) return;`，等于**当前是 BOSS 会话就点不动**（按钮变死按钮）。
+        行为对齐「新建任务」：每点一次 = 一条全新的 BOSS 会话（可无限建、各自独立）。
+     ③ 唯一不重复建的情形：**已经停在待发消息的 BOSS 欢迎界面**（pending 且还没有 thread id）
+        ⇒ 再点不重置，免得把用户刚打的提示词清掉、并重复弹对话框。 */
   const openBossSession = () => {
-    if (bossOn) return;
     if (bossThreads.pending && !currentThreadId) return;
     /* ① 先落进 BOSS 欢迎界面：置 pending（空态渲染欢迎界面）+ 起一个全新会话。
        ⛔ 会话是在**选定项目地址之后**才真正建（引擎发首条消息时才分配 id），
@@ -591,7 +595,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 </button>
                 <button
                   className={`sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-amber${bossOn ? " boss-open" : ""}`}
-                  title={bossOn ? "当前就是 BOSS 会话（群编排的普通会话）" : "BOSS 会话：打开群编排会话（拉群派活、盯进度、审不过打回重做）"}
+                  title={`新建 BOSS 会话（${bossShortcutLabel()}）：选项目地址后进 BOSS 欢迎界面；可建多个，互不干扰`}
                   aria-pressed={bossOn}
                   onClick={() => openBossSession()}
                 >
@@ -780,6 +784,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                     <button className="account-menu-item" onClick={() => void runUpdateCheck()} disabled={updateChecking}>
                       <RefreshCw size={15} className={updateChecking ? "spin" : ""} />
                       <span>{updateChecking ? "检查中…" : "检查更新"}</span>
+                      <UpdateProgressBar active={updateChecking} indeterminate />
                     </button>
                     {updateError ? <div className="account-menu-error">{updateError}</div> : null}
                     {updateInfo && !updateInfo.hasUpdate ? (
@@ -797,6 +802,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                       <button className="account-menu-item primary" onClick={() => void runUpdateDownload()} disabled={updateDownloading}>
                         <Download size={15} className={updateDownloading ? "pulse" : ""} />
                         <span>{updateDownloading ? (updateProgress > 0 ? `下载中 ${Math.round(updateProgress * 100)}%` : "下载中…") : "立即更新"}</span>
+                        <UpdateProgressBar active={updateDownloading} progress={updateProgress} indeterminate={updateProgress <= 0} />
                       </button>
                     </> : null}
                     <div className="account-menu-sep" />

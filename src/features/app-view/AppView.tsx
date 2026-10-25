@@ -5,6 +5,7 @@
  * · props 类型 = useHarnessApp() 的返回类型（type-only import ⇒ 运行时零依赖）。
  */
 import { createPortal } from "react-dom";
+import { useSyncExternalStore } from "react";
 import { hk } from "../../lib/hk";
 import { basename } from "../../lib/basename";
 import {
@@ -185,7 +186,7 @@ import { HtmlPreviewBridge } from "../html-preview";
 import { TurnReviewBridge } from "../status";
 // 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
 import { Slot } from "../../runtime/registry";
-import { BossGroupPanel } from "../boss-group-view";
+import { BossGroupPanel, getBossDirDialogState, getBossThreads, isBossSessionContext, openBossDirDialog, subscribeBossDirDialog, subscribeBossThreads } from "../boss-group-view";
 import { DeclaredPluginSlots } from "../../runtime/declared-plugin-slots";
 
 
@@ -420,6 +421,21 @@ export function AppView({ app }: { app: HarnessAppApi }) {
   const officeDelegates = Object.values(app.delegateRecords)
     .filter((record) => record.originThreadId === thread?.id && !record.archived)
     .sort((a, b) => a.startedAt - b.startedAt);
+  /* ⛔⛔ 顶栏那个「项目地址」= **本会话自己的目录**，⛔ 不是全局 `workspace`。
+     10-25 用户实测：「你就是没选地址，他左上角也自动抓到了地址，项目地址这个，你还是要修一下，从根上」
+     —— 刚点开一条新 BOSS 会话、一个字都没发、地址一个都没选，左上角却显示别的会话的 `D:\测试`。
+     根因不在显示，在**取值口径**：`workspace` 是「下一个新会话打算用哪个目录」的全局记忆，
+     它从来不是「当前这条会话的事实」；只要有人（普通会话 / BOSS 会话）选过目录，它就一直挂着，
+     于是任何还没选地址的界面都会**借用别人的目录**（这就是用户反复说的「串项」）。
+     ⇒ 口径改成：BOSS 会话取自己那份（已建会话用 `thread.cwd`；还没建会话用建档前暂存的
+       `pendingDir`，两者都没有就是空 ⇒ 显示「尚未选择项目地址」）；
+       普通会话维持原样（它们的 workspace 语义就是全局记忆，行为不变）。 */
+  const bossThreadsForDir = useSyncExternalStore(subscribeBossThreads, getBossThreads);
+  const bossDirState = useSyncExternalStore(subscribeBossDirDialog, getBossDirDialogState);
+  const bossDirContext = isBossSessionContext(bossThreadsForDir, thread?.id);
+  const topbarDir = bossDirContext
+    ? (thread?.cwd || (thread?.id ? bossDirState.dirByThread?.[thread.id] : bossDirState.pendingDir) || "")
+    : (workspace || "");
   return (
     // 设置页的「?」要能打开完整帮助弹窗（气泡里的「查看完整帮助」）：用 context 注入 setHelpKey。
     // 不走逐页 prop —— 二十多个设置页头部每处都传一遍回调，漏传的那个会静默点不开。
@@ -471,16 +487,18 @@ export function AppView({ app }: { app: HarnessAppApi }) {
                 <div className="task-menu ctx-menu ctx-menu-fixed" role="menu" style={ctxMenuStyle}>
                   {/* 「打开项目地址」（10-06 夜八轮，用户点名加）：目录走 shellReveal = shell.openPath
                       在文件管理器里打开（shell-ipc 对目录的既定行为；工作区在可信根内，主进程放行）。 */}
-                  {workspace && <button onClick={() => { setCtxMenuOpen(false); void window.codex.shellReveal(workspace); }}><FolderOpen size={14} /><span>打开项目地址</span></button>}
-                  <button onClick={() => { setCtxMenuOpen(false); void chooseWorkspace(); }}><FolderOpen size={14} />{workspace ? "选择其他目录…" : "选择工作区目录"}</button>
-                  {workspace && <button onClick={() => setCtxMenuOpen(false)}><FolderOpen size={14} /><span className="ctx-current-name">资源管理器 · {basename(workspace)}</span><Check size={14} className="ctx-check" /></button>}
+                  {topbarDir && <button onClick={() => { setCtxMenuOpen(false); void window.codex.shellReveal(topbarDir); }}><FolderOpen size={14} /><span>打开项目地址</span></button>}
+                  <button onClick={() => { setCtxMenuOpen(false); if (bossDirContext) openBossDirDialog(); else void chooseWorkspace(); }}><FolderOpen size={14} />{topbarDir ? "选择其他目录…" : bossDirContext ? "选择项目地址" : "选择工作区目录"}</button>
+                  {topbarDir && <button onClick={() => setCtxMenuOpen(false)}><FolderOpen size={14} /><span className="ctx-current-name">资源管理器 · {basename(topbarDir)}</span><Check size={14} className="ctx-check" /></button>}
                 </div>,
                 document.body,
               )
             )}
           </div>
           {inlineRename ? <input ref={inlineRenameRef} value={renameDraft} aria-label="任务名称" onChange={(event) => setRenameDraft(event.target.value)} onBlur={saveInlineRename} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); saveInlineRename(); } if (event.key === "Escape") { event.preventDefault(); setInlineRename(false); } }} /> : <strong title="双击修改任务名称" onDoubleClick={() => { if (!thread) return; setRenameDraft(cleanThreadDisplayTitle(thread.name, { preview: thread.preview })); setInlineRename(true); queueMicrotask(() => { inlineRenameRef.current?.focus(); inlineRenameRef.current?.select(); }); }}>{truncateThreadTitle(cleanThreadDisplayTitle(thread?.name, { preview: thread?.preview, fallback: cleanThreadDisplayTitle(switchingMeta?.name, { preview: switchingMeta?.preview, fallback: "新任务" }) }))}</strong>}
-          <span>{workspace || "尚未选择工作区"}</span>
+          {/* ⛔ 读 `topbarDir`（本会话自己的目录），⛔ 不是全局 `workspace`：否则没选地址的
+              BOSS 会话会显示成别的会话的项目（用户实测「没选地址，左上角也自动抓到了地址」）。 */}
+          <span>{topbarDir || (bossDirContext ? "尚未选择项目地址" : "尚未选择工作区")}</span>
           {subAgentRunning && <span className="subagent-badge" title={`子智能体「${subAgentRunning}」执行中`}><Bot size={13} className="subagent-pulse" /><em>{subAgentRunning}</em><i>执行中</i></span>}
         </div>
         <div className="topbar-actions">{topbarActionsNode}</div>

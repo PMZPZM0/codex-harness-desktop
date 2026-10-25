@@ -421,6 +421,16 @@ if (state) {
     "⛔ 点「BOSS 会话」不再「有群就跳旧群」⇒ 行为不随有没有群而变（用户实测：主仓不弹、PPcode 弹）");
   ok(/setBossPending\(true\)/.test(bossSideSrc) && /startNewThread\(\)/.test(bossSideSrc),
     "⛔ 点按钮**先落进 BOSS 欢迎界面**（置 pending + 起全新空会话）；会话在选定地址后才真正建");
+  /* ⛔⛔ 10-25 用户实测第二轮：「这种情况我点不了上面 BOSS 会话选项，切不到 BOSS 会话界面，没修好啊」
+     —— 截图就是**当前正停在一条 BOSS 会话里**。根因：openBossSession 第一行 `if (bossOn) return;`
+     ⇒ 当前是 BOSS 会话就点不动（按钮变死按钮，看着能点、点了没反应）。
+     行为必须对齐「新建任务」：每点一次 = 一条全新 BOSS 会话（可无限建、各自独立）。
+     ⛔ 判据在**剥注释后的代码**上跑：答案就在注释里写着这句（照抄源码会把注释也命中 ⇒ 假红）。 */
+  const bossSideCode = codeOnly(bossSideSrc);
+  const fnAt = bossSideCode.indexOf("const openBossSession");
+  const openBossFn = fnAt >= 0 ? bossSideCode.slice(fnAt, fnAt + 900) : "";
+  ok(openBossFn.length > 0 && !/if\s*\(\s*bossOn\s*\)\s*return/.test(openBossFn),
+    "⛔ 在已有 BOSS 会话里点「BOSS 会话」也必须能新建（不许 `if (bossOn) return` 死按钮）");
   ok(/BossMemoryPanel/.test(read("src/features/settings-memory/MemoryCenterSection.tsx"))
     && existsSync(join(ROOT, "src/features/settings-memory/BossMemoryPanel.tsx")),
     "记忆设置页有独立的「BOSS 会话记忆」板块（与项目共享记忆库分开）");
