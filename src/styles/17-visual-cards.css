@@ -464,6 +464,20 @@
 .account-menu-value.warn { color: #d97706; }
 .account-menu-value.mono { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace; }
 .account-menu-value.small { font-size: 11px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 更新方式切换（10-25）：差分 / 完整包；选中用底色，不用勾 */
+.update-mode-switch { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--panel-2); }
+.update-mode-switch button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.update-mode-switch button.active { background: var(--bg); color: var(--text); box-shadow: 0 0 0 1px var(--line); }
+.update-mode-switch button:hover:not(.active) { color: var(--text); }
 .account-menu-input { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 12px; color: var(--text); font-family: inherit; }
 .account-menu-input.mono { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace; }
 .account-menu-input:focus { outline: none; border-color: var(--accent); }

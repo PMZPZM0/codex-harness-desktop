@@ -71,7 +71,8 @@ export const updatesFeature = defineFeature<null>({
     /** 10-25 差分优先：Windows 且有版本信息时先走 electron-updater；
      *  任何失败（无 latest.yml / 无 blockmap / 镜像挂 / 校验失败）都返回 null，
      *  调用方继续原有的完整包下载。 */
-    const tryDifferential = async (onProgress?: (info: { receivedBytes: number; totalBytes: number; percent: number }) => void) => {
+    const tryDifferential = async (mode: "differential" | "full" | undefined, onProgress?: (info: { receivedBytes: number; totalBytes: number; percent: number }) => void) => {
+      if (mode === "full") return null;
       const version = lastUpdateInfo?.version;
       if (!version) return null;
       try {
@@ -96,7 +97,7 @@ export const updatesFeature = defineFeature<null>({
       }
     });
 
-    ipcHost.handle("updates:download", async (event: unknown, input: { downloadUrl?: string; filename?: string }) => {
+    ipcHost.handle("updates:download", async (event: unknown, input: { downloadUrl?: string; filename?: string; mode?: "differential" | "full" }) => {
       // ⛔ 容器把 event 收窄成 unknown（宿主不该假设回调知道 Electron 类型面）⇒ 这里显式收窄，
       //    且只取 sender.send 一个能力（不把整个 IpcMainInvokeEvent 泄漏进业务逻辑）。
       const sender = event as UpdateSender;
@@ -115,7 +116,7 @@ export const updatesFeature = defineFeature<null>({
           }
         };
         // 10-25 差分优先：失败自动回退下面的完整包下载
-        const differential = await tryDifferential(({ percent }) => pushProgress(percent));
+        const differential = await tryDifferential(input?.mode, ({ percent }) => pushProgress(percent));
         if (differential) {
           return { ok: true, path: differential.path, bytes: differential.bytes, differential: true };
         }
@@ -168,7 +169,7 @@ export const updatesFeature = defineFeature<null>({
      * ══════════════════════════════════════════════════════════════════════ */
 
     /** 后台静默下载 → 校验通过后置位；已就绪时再次调用直接返回（幂等）。 */
-    ipcHost.handle("updates:download-silent", async () => {
+    ipcHost.handle("updates:download-silent", async (_event, input?: { mode?: "differential" | "full" }) => {
       // ⛔ 幂等：已经下好并校验过就别重复下几百 MB。
       if (lastVerifiedUpdatePath && fileExists(lastVerifiedUpdatePath)) {
         return { ok: true, alreadyDone: true, version: lastUpdateInfo?.version, path: lastVerifiedUpdatePath };
@@ -189,7 +190,7 @@ export const updatesFeature = defineFeature<null>({
       silentDownloading = true;
       try {
         // 10-25 差分优先；失败继续走下面的完整包
-        const differential = await tryDifferential();
+        const differential = await tryDifferential(input?.mode);
         if (differential) {
           sendToWindow("updates:ready", { version: lastUpdateInfo?.version, path: differential.path });
           return { ok: true, version: lastUpdateInfo?.version, path: differential.path, differential: true };

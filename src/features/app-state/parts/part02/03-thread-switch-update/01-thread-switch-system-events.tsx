@@ -254,6 +254,16 @@ bag.updateError = updateError as typeof bag.updateError; bag.setUpdateError = se
   const [updateDownloading, setUpdateDownloading] = useState(false);
 bag.updateDownloading = updateDownloading as typeof bag.updateDownloading; bag.setUpdateDownloading = setUpdateDownloading as typeof bag.setUpdateDownloading;
 
+  /* 更新方式（10-25）：差分优先；用户可切到完整包绕开差分。持久化在 localStorage。 */
+  const [updateMode, setUpdateModeState] = useState<"differential" | "full">(() => {
+    try { return localStorage.getItem("update-mode-v1") === "full" ? "full" : "differential"; } catch { return "differential"; }
+  });
+  const setUpdateMode = (mode: "differential" | "full") => {
+    setUpdateModeState(mode);
+    try { localStorage.setItem("update-mode-v1", mode); } catch { /* 隐私模式忽略 */ }
+  };
+bag.updateMode = updateMode as typeof bag.updateMode; bag.setUpdateMode = setUpdateMode as typeof bag.setUpdateMode;
+
   const [updateProgress, setUpdateProgress] = useState(0);
 bag.updateProgress = updateProgress as typeof bag.updateProgress; bag.setUpdateProgress = setUpdateProgress as typeof bag.setUpdateProgress;
 
@@ -292,5 +302,5 @@ bag.accountMenuRef = accountMenuRef as typeof bag.accountMenuRef;
     // 仅启动时跑一次
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  return { buildStamp, bundleFile, lightbox, setLightbox, pastedText, setPastedText, systemEvents, setSystemEvents, hookPulse, setHookPulse, welcomeScratchDir, setWelcomeScratchDir, welcomeCwdMenuOpen, setWelcomeCwdMenuOpen, identityGreeted, setIdentityGreeted, ponytailOn, setPonytailOn, channelOnline, setChannelOnline, switchJumpRef, switchJumpPending, threadCacheRef, threadProviderRef, autoMigratedRef, switchingThreadId, setSwitchingThreadId, switchSeqRef, recentResumeAtRef, turnsCursorRef, switchingFading, setSwitchingFading, fadeOutTimerRef, switchHardTimerRef, theme, setTheme, accountMenuOpen, setAccountMenuOpen, accountMenuSub, setAccountMenuSub, updateInfo, setUpdateInfo, updateCurrentVersion, setUpdateCurrentVersion, updateChecking, setUpdateChecking, updateError, setUpdateError, updateDownloading, setUpdateDownloading, updateProgress, setUpdateProgress, updateNotice, setUpdateNotice, accountMenuRef };
+  return { buildStamp, bundleFile, lightbox, setLightbox, pastedText, setPastedText, systemEvents, setSystemEvents, hookPulse, setHookPulse, welcomeScratchDir, setWelcomeScratchDir, welcomeCwdMenuOpen, setWelcomeCwdMenuOpen, identityGreeted, setIdentityGreeted, ponytailOn, setPonytailOn, channelOnline, setChannelOnline, switchJumpRef, switchJumpPending, threadCacheRef, threadProviderRef, autoMigratedRef, switchingThreadId, setSwitchingThreadId, switchSeqRef, recentResumeAtRef, turnsCursorRef, switchingFading, setSwitchingFading, fadeOutTimerRef, switchHardTimerRef, theme, setTheme, accountMenuOpen, setAccountMenuOpen, accountMenuSub, setAccountMenuSub, updateInfo, setUpdateInfo, updateCurrentVersion, setUpdateCurrentVersion, updateChecking, setUpdateChecking, updateError, setUpdateError, updateDownloading, setUpdateDownloading, updateMode, setUpdateMode, updateProgress, setUpdateProgress, updateNotice, setUpdateNotice, accountMenuRef };
 }

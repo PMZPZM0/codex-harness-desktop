@@ -86,7 +86,7 @@ export function usePart02c2(bag: Bag) {
    */
   const tryArmUpdateReady = async () => {
     try {
-      const r = await window.codex.updateDownloadSilent?.();
+      const r = await window.codex.updateDownloadSilent?.({ mode: bag.updateMode });
       if (r?.ok) armUpdateReady(r.version || bag.updateInfo?.version);
     } catch {
       /* 静默失败不打扰用户 */
@@ -142,6 +142,7 @@ bag.runUpdateCheck = runUpdateCheck as typeof bag.runUpdateCheck;
       const r = await window.codex.updateDownload?.({
         downloadUrl: bag.updateInfo.downloadUrl,
         filename: bag.updateInfo.filename || "codex-harness-update.bin",
+        mode: bag.updateMode,
       });
       if (!r?.ok) throw new Error(r?.error || "下载失败");
       const started = await window.codex.updateInstall?.(r.path!);

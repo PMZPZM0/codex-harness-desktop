@@ -661,6 +661,9 @@ export interface Bag {
   setUpdateError: React.Dispatch<React.SetStateAction<string>>;
   updateDownloading: boolean;
   setUpdateDownloading: React.Dispatch<React.SetStateAction<boolean>>;
+  /** 更新方式：差分优先（默认）/ 强制完整包（差分出问题时兜底）。 */
+  updateMode: "differential" | "full";
+  setUpdateMode: (mode: "differential" | "full") => void;
   updateProgress: number;
   setUpdateProgress: React.Dispatch<React.SetStateAction<number>>;
   updateNotice: { version?: string | undefined; changelog?: string | undefined; size?: number | undefined; mandatory?: boolean | undefined; } | null;
