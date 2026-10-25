@@ -240,6 +240,14 @@ bag.togglePinThread = togglePinThread as typeof bag.togglePinThread;
     } catch { /* 隐私模式：登记表只影响空项目展示，失败可接受 */ }
   };
   bag.registerKnownProject = registerKnownProject as typeof bag.registerKnownProject;
+  /* 10-25 用户令：项目行菜单加「删除项目」—— 从侧栏摘除项目（登记表同步摘除），**会话保留**
+     （归到未分组），与「移除（删除全部对话）」形成两档。 */
+  const unregisterKnownProject = (cwd: string) => {
+    try {
+      localStorage.setItem("known-projects-v1", JSON.stringify(readKnownProjects().filter((v) => v !== cwd)));
+    } catch { /* 隐私模式：摘除失败只影响空项目展示 */ }
+  };
+  bag.unregisterKnownProject = unregisterKnownProject as typeof bag.unregisterKnownProject;
   useEffect(() => { if (bag.workspace) registerKnownProject(bag.workspace); }, [bag.workspace]);
 
   const projectGroups = useMemo<[string, Thread[]][]>(() => {
@@ -353,5 +361,5 @@ bag.teamMemberThreadIds = teamMemberThreadIds as typeof bag.teamMemberThreadIds;
     }).catch(() => undefined);
     return () => { alive = false; };
   }, []);
-  return { currentModelId, usingCustomModel, providerConfig, listThreads, dispatchCwdMap, viewTab, setViewTab, expandedProjects, setExpandedProjects, toggleProjectExpanded, cwdOverrides, setCwdOverrides, cwdOverridesRef, rememberThreadCwd, effectiveCwd, withCwdOverride, nameOverrides, setNameOverrides, nameOverridesRef, rememberThreadName, effectiveThreadName, withNameOverride, projectMenu, setProjectMenu, pinnedThreads, setPinnedThreads, togglePinThread, projectGroups, allProjectsCollapsed, toggleAllProjects, projectAutoExpandRef, sourcedThreads, sourcedDispatch, sourcedChildrenOf, sourcedChildIds, allSourceGroupsCollapsed, teamThreadsIndex, setTeamThreadsIndex, teamMemberThreadIds, setTeamMemberThreadIds };
+  return { currentModelId, usingCustomModel, providerConfig, listThreads, dispatchCwdMap, viewTab, setViewTab, expandedProjects, setExpandedProjects, toggleProjectExpanded, cwdOverrides, setCwdOverrides, cwdOverridesRef, rememberThreadCwd, effectiveCwd, withCwdOverride, nameOverrides, setNameOverrides, nameOverridesRef, rememberThreadName, effectiveThreadName, withNameOverride, projectMenu, setProjectMenu, registerKnownProject, unregisterKnownProject, pinnedThreads, setPinnedThreads, togglePinThread, projectGroups, allProjectsCollapsed, toggleAllProjects, projectAutoExpandRef, sourcedThreads, sourcedDispatch, sourcedChildrenOf, sourcedChildIds, allSourceGroupsCollapsed, teamThreadsIndex, setTeamThreadsIndex, teamMemberThreadIds, setTeamMemberThreadIds };
 }
