@@ -269,9 +269,14 @@
 }
 /* 小字副标题：一句说清这条会话干什么（与普通会话 .welcome-sub 同宽同字号 ⇒ 观感一致） */
 .boss-welcome-sub {
-  margin: 0; max-width: 440px; text-align: center;
+  margin: 0; max-width: 560px; text-align: center;
   font-size: 14px; line-height: 1.8; letter-spacing: 0.2px;
   color: var(--muted);
+  /* ⛔ 10-25 用户实测：「一个字换行呢？？」——副标题整句约 455px，而旧 max-width 是 440px，
+     ⇒ 最后一个「环。」被挤到第二行（孤字）。两道保险：
+       ① max-width 放到 560（整句一行装得下，不再为了 15px 之差折行）；
+       ② text-wrap: balance —— 真到窄窗口必须折行时**均分两行**，绝不出现只剩一两个字的孤行。 */
+  text-wrap: balance;
 }
 /* 引导清单：三步（说目标 / 看结果 / 认规矩）—— ⛔ 不放快捷键小字（用户嫌LOW），
    快捷键只留在侧栏按钮行尾的 kbd 徽标上。 */
