@@ -34,45 +34,77 @@ function createInlineAttachmentChip(kind: "image" | "file", path: string, onRemo
   chip.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
     if ((event.target as HTMLElement).closest(".composer-image-chip-close")) return;
+    const root = chip.parentElement;
+    if (!root) return;
     const startX = event.clientX;
     const startY = event.clientY;
+    const rect0 = chip.getBoundingClientRect();
+    const grabX = startX - rect0.left;
+    const grabY = startY - rect0.top;
     let dragging = false;
+    let gap: HTMLElement | null = null;
     moved = false;
     try { chip.setPointerCapture(event.pointerId); } catch { /* 合成事件下不可捕获 */ }
+    const placeGapAtPointer = (x: number, y: number) => {
+      if (!gap) return;
+      let ref: Node | null = null;
+      for (const child of Array.from(root.childNodes)) {
+        if (child === gap) continue;
+        const range = document.createRange();
+        range.selectNode(child);
+        const rect = range.getBoundingClientRect();
+        const sameLine = y >= rect.top - 2 && y <= rect.bottom + 2;
+        if (y < rect.top || (sameLine && x < rect.left + rect.width / 2)) { ref = child; break; }
+      }
+      try { root.insertBefore(gap, ref); } catch { /* 非法落点忽略 */ }
+    };
     const onMove = (ev: PointerEvent) => {
       if (!dragging && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;
-      dragging = true;
-      moved = true;
-      chip.classList.add("dragging");
-      /* 10-25 用户：要「拖到哪就在哪」——按指针坐标在所有子节点里找插入点
-         （文本节点也能落点；caretRangeFromPoint 在 plaintext-only 里不可靠，实测会抛）。 */
-      const root = chip.parentElement;
-      if (root) {
-        let ref: Node | null = null;
-        for (const child of Array.from(root.childNodes)) {
-          if (child === chip) continue;
-          const range = document.createRange();
-          range.selectNode(child);
-          const rect = range.getBoundingClientRect();
-          const sameLine = ev.clientY >= rect.top - 2 && ev.clientY <= rect.bottom + 2;
-          const beforeByY = ev.clientY < rect.top;
-          const beforeByX = ev.clientX < rect.left + rect.width / 2;
-          if (beforeByY || (sameLine && beforeByX)) { ref = child; break; }
-        }
-        try { root.insertBefore(chip, ref); } catch { /* 非法落点忽略 */ }
+      if (!dragging) {
+        dragging = true;
+        moved = true;
+        chip.classList.add("dragging");
+        /* 真·跟手：原 chip 自己 fixed 跟随指针，原位留一个等宽虚线占位（不用克隆，避免被重建吞掉）。 */
+        gap = document.createElement("span");
+        gap.className = "composer-chip-gap";
+        gap.style.width = `${rect0.width}px`;
+        gap.style.height = `${rect0.height}px`;
+        root.insertBefore(gap, chip);
+        chip.style.position = "fixed";
+        chip.style.left = `${rect0.left}px`;
+        chip.style.top = `${rect0.top}px`;
+        chip.style.width = `${rect0.width}px`;
+        chip.style.margin = "0";
+        chip.style.zIndex = "9999";
+        document.body.appendChild(chip);
       }
+      chip.style.left = `${ev.clientX - grabX}px`;
+      chip.style.top = `${ev.clientY - grabY}px`;
+      placeGapAtPointer(ev.clientX, ev.clientY);
       ev.preventDefault();
     };
-    const onUp = () => {
+    const finish = () => {
+      window.removeEventListener("pointermove", onMove, true);
+      window.removeEventListener("pointerup", finish, true);
+      window.removeEventListener("pointercancel", finish, true);
       chip.classList.remove("dragging");
-      chip.removeEventListener("pointermove", onMove);
-      chip.removeEventListener("pointerup", onUp);
-      chip.removeEventListener("pointercancel", onUp);
+      if (gap) {
+        try { root.insertBefore(chip, gap); } catch { root.appendChild(chip); }
+        gap.remove();
+        gap = null;
+      }
+      chip.style.position = "";
+      chip.style.left = "";
+      chip.style.top = "";
+      chip.style.width = "";
+      chip.style.margin = "";
+      chip.style.zIndex = "";
       if (dragging) onChange();
     };
-    chip.addEventListener("pointermove", onMove);
-    chip.addEventListener("pointerup", onUp);
-    chip.addEventListener("pointercancel", onUp);
+    /* ⛔ 必须挂 window（capture）：chip 为跟手会挪到 body，元素级监听会随 DOM 移动/重建失联。 */
+    window.addEventListener("pointermove", onMove, true);
+    window.addEventListener("pointerup", finish, true);
+    window.addEventListener("pointercancel", finish, true);
   });
   chip.addEventListener("click", (event) => {
     event.preventDefault();
