@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 import { useEffect } from "react";
-import { X, BookOpen } from "lucide-react";
+import { ArrowRight, X, BookOpen } from "lucide-react";
 
 /** 设置页「使用帮助」：面向新手的逐步说明弹窗。
  *
@@ -32,71 +32,74 @@ export type OverviewGroup = {
 export const OVERVIEW_GROUPS: OverviewGroup[] = [
   {
     group: "账户与模型",
-    purpose: "决定 Codex 用哪个「大脑」——要么登录官方账号，要么填第三方供应商的 Key。",
+    purpose: "决定 Codex 用哪个「大脑」：账户登录（云账号 / 中转站 / OpenAI 订阅）会自动生成供应商并带来源倍率；自定义供应商只认你自己的地址和 Key。",
     startHere: "模型",
     items: [
-      { page: "用户中心", what: "你的昵称、头像、个性和使用偏好", when: "想让 Codex 认识你、说话更合口味时" },
-      { page: "模型", what: "供应商与模型的添加、测试、切换", when: "第一次用必须配（否则发不出消息）" },
-      { page: "中转站", what: "一键接入常见中转服务", when: "手上有中转站账号、不想手填地址时" },
-      { page: "云账号", what: "登录云端账号，自动同步云端模型与云端知识库", when: "有云账号、想让模型列表自动跟上云端时" },
-      { page: "OpenAI 订阅", what: "登录 ChatGPT 账号用官方额度", when: "有订阅、想直接用官方模型时" },
+      { page: "用户中心", what: "昵称、头像（含 Codex 形象）、账户偏好与个性化入口", when: "想让 Codex 认识你、换个头像，或管理账户时" },
+      { page: "模型", what: "供应商与模型的添加、测试、切换；模型下拉显示能力徽标、账户来源与上游倍率（自定义供应商不显示倍率）", when: "第一次用必须配（否则发不出消息）；觉得模型慢 / 贵也来这里" },
+      { page: "中转站", what: "接入常见中转服务，多账号按额度 / 权重轮转；模型同样显示上游倍率", when: "手上有中转站账号、不想手填地址时" },
+      { page: "云账号", what: "登录一次，自动同步云端模型 / 知识库 / 记忆，并显示云端倍率与本轮积分", when: "有云账号、想让模型列表自动跟上云端时" },
+      { page: "OpenAI 订阅", what: "登录 ChatGPT 账号，直接用官方额度", when: "有订阅、想用官方模型时" },
     ],
   },
   {
     group: "外观与体验",
-    purpose: "界面长什么样、它怎么跟你说话、桌面上放什么——纯观感层，改了不影响它能做什么。",
+    purpose: "界面长什么样、它怎么跟你说话、桌面上放什么；改动都是即时的，不影响 Codex 的能力。",
+    startHere: "外观",
     items: [
-      { page: "控制台", what: "总开关与运行状态", when: "想确认引擎是否正常、调基础开关时" },
-      { page: "外观", what: "白天/黑夜主题、消息字号、代码高亮配色", when: "觉得字小/刺眼，或想换配色时" },
-      { page: "个性化", what: "称呼、回复风格、自定义指令（决定 Codex 怎么跟你说话）", when: "希望它说话更简短/更详细、别老客套时" },
-      { page: "桌面宠物", what: "一只浮在桌面上的小宠物，跟着任务变状态；支持 Codex 官方宠物包", when: "想一眼看出「在干活 / 在等你确认 / 干完了」时" },
-      { page: "语音通话", what: "本机离线语音识别与合成、音色", when: "想用嘴跟它聊、或让它读出来时" },
-      { page: "截图", what: "两种截图（全屏 / 框选）的全局快捷键绑定、是否隐藏窗口、保存目录", when: "想改截图快捷键，或截图没反应（键被别的程序占用时这里会明说）" },
+      { page: "控制台", what: "全局审批权限、工作区、启动行为、回复风格、硬件加速，以及技能 / 引擎这类组件的更新", when: "想改默认权限、开关桌面 / 浏览器自动化，或更新组件时" },
+      { page: "外观", what: "主题、消息字号、思考板块展示、运行过程（简洁 / 详细）、壁纸、代码高亮、开机动画", when: "字小 / 刺眼、想换配色，或想让文件改动实时弹窗时" },
+      { page: "个性化", what: "称呼、回复风格、自定义指令、语气自适应（决定 Codex 怎么跟你说话）", when: "希望它说话更简短 / 更详细、别老客套时" },
+      { page: "桌面宠物", what: "一只浮在桌面上的小宠物，跟着任务变状态；支持 Codex 官方形象", when: "想一眼看出「在干活 / 在等你确认 / 干完了」时" },
+      { page: "语音通话", what: "本机语音识别与合成、音色、播报总开关（默认开启）、语速", when: "想用嘴跟它聊、让它念重点，或克隆自己的音色时" },
+      { page: "截图", what: "两种截图（全屏 / 框选）的全局快捷键、是否隐藏窗口、保存目录", when: "想改截图快捷键，或截图没反应（键被别的程序占用时这里会明说）" },
     ],
   },
   {
     group: "能力与内容",
-    purpose: "往 Codex 里装本事——技能、插件、现成组件、MCP 外部工具、命令都在这里。",
+    purpose: "往 Codex 里装本事：技能、插件、现成组件、MCP 外部工具、快捷命令都在这里。",
+    startHere: "技能",
     items: [
-      { page: "技能", what: "领域知识包（写 PPT、查数据库等）", when: "同类任务反复教它、想让它一次做对时" },
-      { page: "插件", what: "从市场装插件，扩展指令/技能/钩子", when: "想要别人做好的整套能力时" },
-      { page: "组件库", what: "浏览 Uiverse 社区组件库（3800+ 个 HTML+CSS 组件，MIT）：点开看代码、一键复制，写自己的网页/软件时直接用；Codex 写前端时也会自动来这里查现成组件", when: "想找个现成的按钮/卡片/加载器效果，或让 Codex 做界面时想让它用上好组件" },
-      { page: "MCP", what: "连接器：连数据库、网盘、企业系统", when: "要它读你某个系统里的数据时" },
+      { page: "技能", what: "领域知识包（写 PPT、查数据库等），装上后 Codex 在合适任务里自动用", when: "同类任务反复教它、想让它一次做对时" },
+      { page: "插件", what: "从市场装插件，扩展指令 / 技能 / 钩子", when: "想要别人做好的整套能力时" },
+      { page: "组件库", what: "Uiverse 社区组件库（3800+ 个 HTML+CSS 组件，MIT）：看源码、一键复制；Codex 写前端时也会自动来查", when: "想找个现成按钮 / 卡片 / 加载器，或让 Codex 做界面时" },
+      { page: "MCP", what: "连接器：连数据库、网盘、企业系统，让 Codex 多一批对应工具", when: "要它读你某个系统里的数据时" },
       { page: "命令", what: "自定义快捷命令（输入 / 触发）", when: "有反复要输入的模板话术时" },
     ],
   },
   {
     group: "人格与记忆",
-    purpose: "给 Codex 换性格、记住偏好与项目背景，再放上项目资料。",
+    purpose: "给 Codex 换性格、记住偏好与项目背景，再放上项目资料；都在本机。",
     startHere: "记忆",
     items: [
-      { page: "人格市场", what: "SkillHub 现成人格（16 套）：一键应用，Codex 的性格与说话风格就换成 TA；写进全局个性化（AGENTS.md），下一个新会话生效，随时还原默认", when: "想让 Codex 换个性格/语气（比如更毒舌、更温柔的助手）时" },
-      { page: "记忆", what: "Codex 记住的偏好与项目背景，可编辑可删；本地金字塔 / MCP / 云端三种后端，开关选择", when: "发现它记错了、或想主动告诉它背景时" },
-      { page: "知识库", what: "项目级本地知识库：导入 md/txt 文档与笔记，Codex 在会话里可直接检索引用；文档随项目目录走", when: "想让 Codex 记住项目资料/规范/背景，并在干活时自己查" },
+      { page: "人格市场", what: "SkillHub 现成人格（16 套）：一键应用，性格与说话风格换成 TA；写进全局个性化，下一个新会话生效，随时还原", when: "想让 Codex 换个性格 / 语气时" },
+      { page: "记忆", what: "Codex 记住的偏好与项目背景，可编辑可删；内置金字塔 / MCP / 云端三种后端", when: "发现它记错了、或想主动告诉它背景时" },
+      { page: "知识库", what: "项目级本地知识库：导入 md/txt 文档与笔记，会话里可检索引用；文档随项目目录走", when: "想让 Codex 记住项目资料 / 规范 / 背景时" },
     ],
   },
   {
     group: "自动化与智能体",
-    purpose: "让它能操作电脑、连外部系统、按时间自己跑，或者交给专业角色与多角色协作。",
+    purpose: "让它操作电脑、连外部系统、按时间自己跑，或交给专业角色与多角色协作。",
     startHere: "专家/专家团",
     items: [
       { page: "自动化", what: "浏览器自动化、桌面自动化、RPA 配方", when: "要它帮你点网页、操作软件、复现固定流程时" },
-      { page: "定时任务", what: "让它按时间自动跑（每天/每周）", when: "有规律性的活（日报、巡检）时" },
+      { page: "定时任务", what: "让它按时间自动跑（每天 / 每周）", when: "有规律性的活（日报、巡检）时" },
       { page: "钩子", what: "在特定事件上自动执行脚本", when: "要在它干活前后加自动化动作时" },
-      { page: "SSH 服务器", what: "管理远程连接", when: "要它连你的服务器操作时" },
-      { page: "专家/专家团", what: "专家中心（单个角色）与专家团（多角色协作）", when: "做投资分析、法律审查、竞品研究这类需要专业流程的活时" },
-      { page: "群编排", what: "建群派活：把任务分给多个成员并跟踪进度", when: "一次要派多个角色干活、需要查账与审查时" },
+      { page: "SSH 服务器", what: "管理远程连接，把远程机器接进来当执行环境", when: "要它连你的服务器操作时" },
+      { page: "专家/专家团", what: "专家中心（单个角色）与专家团（多角色协作）；长期派活配合「指挥中枢」", when: "做投资分析、法律审查、竞品研究这类需要专业流程的活时" },
+      { page: "群编排", what: "建群、加成员、写职责与验收标准；成员交活会以「头像 + 名字 + 内容」广播回指挥中枢", when: "要长期把任务分给多个角色并验收时" },
     ],
   },
   {
     group: "数据",
-    purpose: "看用量、管占用、备份恢复、清理归档与收藏。",
+    purpose: "看用量、管占用、备份恢复、清理归档与收藏；标签只在本机显示，不随对话走。",
+    startHere: "会话备份",
     items: [
-      { page: "使用统计", what: "token 用量与花费趋势", when: "想控制成本、看哪个模型烧得快时" },
-      { page: "数据管理", what: "占用空间与清理", when: "磁盘紧张、想清旧数据时" },
-      { page: "会话备份", what: "备份与恢复会话历史", when: "要换机器或怕丢历史时" },
+      { page: "使用统计", what: "token 用量与花费趋势，按天 / 按模型看", when: "想控制成本、看哪个模型烧得快时" },
+      { page: "数据管理", what: "占用空间、每回合改动备份、引擎日志清理", when: "磁盘紧张、想清旧数据时" },
+      { page: "会话备份", what: "导出 / 导入整库会话；标签存在本机，不随对话内容走", when: "要换机器或怕丢历史时" },
       { page: "归档管理", what: "已归档会话的查看、恢复、删除", when: "侧栏看不到某个旧会话时来这儿找" },
-      { page: "收藏夹", what: "收藏的片段/截图/文件/链接的批量管理与「加入 Agent 记忆」", when: "想整理收藏、清理旧条目，或把某条收藏固化进记忆时" },
+      { page: "收藏夹", what: "收藏的片段 / 截图 / 文件 / 链接的批量管理与「加入 Agent 记忆」", when: "想整理收藏，或把某条收藏固化进记忆时" },
     ],
   },
   {
@@ -104,10 +107,35 @@ export const OVERVIEW_GROUPS: OverviewGroup[] = [
     purpose: "Codex 干活要用的工具链，以及本项目所有可扩展点的用途与改法。",
     startHere: "开发工具",
     items: [
-      { page: "开发工具", what: "工具安装状态与一键下载", when: "某个任务提示缺工具时来这里装" },
-      { page: "拓展接口", what: "本项目所有可扩展点（IPC/主题/技能/守卫…）的用途、改法、生效方式与配套守卫，可一键复制说明", when: "想自己加一个接口、主题或技能，或接手这份代码想知道从哪下手时" },
+      { page: "开发工具", what: "工具安装状态与一键下载（Python / Git / FFmpeg / 浏览器内核等）", when: "某个任务提示缺工具时来这里装" },
+      { page: "拓展接口", what: "本项目所有可扩展点（IPC / 主题 / 技能 / 守卫…）的用途、改法、生效方式与配套守卫，可一键复制说明", when: "想自己加一个接口、主题或技能，或接手这份代码想知道从哪下手时" },
     ],
   },
+];
+
+/** 10-26：总览顶部「我想做… → 去哪页」的动线。新手卡住的不是点哪个按钮，而是不知道去哪一页。 */
+export const OVERVIEW_ROUTES: { label: string; page: string }[] = [
+  { label: "第一次用 / 发不出消息", page: "模型" },
+  { label: "字小 / 刺眼 / 想换主题", page: "外观" },
+  { label: "让它说话合我口味", page: "个性化" },
+  { label: "装技能 / 插件 / 接 MCP", page: "技能" },
+  { label: "让它记住项目资料", page: "知识库" },
+  { label: "派一群 AI 干活", page: "专家/专家团" },
+  { label: "每天定时自动跑", page: "定时任务" },
+  { label: "换电脑 / 怕丢历史", page: "会话备份" },
+  { label: "看花了多少 token", page: "使用统计" },
+  { label: "想自己加功能", page: "拓展接口" },
+];
+
+/** 设置左侧导航之外的常用入口（新手最容易在设置里找不到的那几个）。 */
+export const OVERVIEW_OUTSIDE: { label: string; where: string; hint: string }[] = [
+  { label: "检查更新", where: "左下角头像 → 检查更新", hint: "应用本体更新：默认补丁，失败自动回完整包" },
+  { label: "新手教程", where: "侧栏底部「新手教程」", hint: "就是这份教程的分步版，带图示与上一节 / 下一节" },
+  { label: "会话 / 项目标签", where: "会话行或项目行的「⋯」", hint: "文字 + 8 色，默认无标签，只在本机显示" },
+  { label: "运行过程", where: "设置 → 外观 → 运行过程", hint: "简洁只列文件行；详细会弹浮窗跟内容，静止 3 秒收起" },
+  { label: "指挥中枢", where: "侧栏顶部（Ctrl+M / mac Cmd+Shift+B）", hint: "常驻会话，群编排派活、群广播与验收都在这里" },
+  { label: "命令面板", where: "Ctrl+K", hint: "直接搜任务与会话，不用翻侧栏" },
+  { label: "独立弹窗", where: "会话顶栏最右", hint: "把当前会话开到新窗口；运行中暂不可用" },
 ];
 
 export type HelpTopic = HelpKey | "overview";
@@ -397,7 +425,23 @@ export function HelpDialog({ helpKey, onClose, onNavigate }: { helpKey: HelpTopi
             <button className="icon-button" title="关闭（Esc）" onClick={onClose}><X size={16} /></button>
           </header>
           <div className="help-body">
-            <p className="help-intro">{renderRich(`设置分 ${OVERVIEW_GROUPS.length} 组、共 ${OVERVIEW_GROUPS.reduce((n, g) => n + g.items.length, 0)} 页。**新手只需先配「模型」**，其余按需——下面每页写了「它是干什么的」和「什么时候会用到它」，点页名可直接跳过去。`)}</p>
+            <p className="help-intro">{renderRich(`设置分 ${OVERVIEW_GROUPS.length} 组、共 ${OVERVIEW_GROUPS.reduce((n, g) => n + g.items.length, 0)} 页。**新手只需先配「模型」**，其余按需。不知道去哪一页，就先点下面的「我想做…」；每页都写了「它是干什么的」和「什么时候会用到它」，点页名可直接跳过去。`)}</p>
+            <div className="overview-quick">
+              <div className="overview-quick-head"><h3>我想做…</h3><span>点一下直接跳到那一页</span></div>
+              <div className="overview-quick-grid">
+                {OVERVIEW_ROUTES.map((route) => (
+                  <button
+                    type="button"
+                    className="overview-quick-btn"
+                    key={route.label}
+                    title={onNavigate ? `跳到「${route.page}」` : undefined}
+                    onClick={() => { onNavigate?.(route.page); onClose(); }}
+                  >
+                    {route.label}<ArrowRight size={11} />
+                  </button>
+                ))}
+              </div>
+            </div>
             {OVERVIEW_GROUPS.map((group) => (
               <div className="help-group" key={group.group}>
                 <div className="help-group-head">
@@ -427,13 +471,27 @@ export function HelpDialog({ helpKey, onClose, onNavigate }: { helpKey: HelpTopi
                 </div>
               </div>
             ))}
+            <div className="overview-outside">
+              <h3>设置之外，常用的几个入口</h3>
+              <p>这些不在左侧导航里，但新手最常找；记不住位置就回来查这一块。</p>
+              <ul>
+                {OVERVIEW_OUTSIDE.map((entry) => (
+                  <li key={entry.label}>
+                    <b>{entry.label}</b>
+                    <span className="overview-outside-where">{entry.where}</span>
+                    <span className="overview-outside-hint">{entry.hint}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
             <div className="help-tips">
               <h3>第一次使用的最短路径</h3>
               <ul>
                 <li>{renderRich("**① 模型**：登录官方账号，或添加一个供应商并填 Key（不配这条发不出消息）")}</li>
-                <li>{renderRich("**② 个性化**：填你的称呼与偏好，让它说话合你口味")}</li>
-                <li>{renderRich("**③ 外观**：太刺眼就切黑夜主题，觉得字小改「大字」")}</li>
+                <li>{renderRich("**② 外观**：太刺眼就切黑夜主题，觉得字小改「大字」；想让文件改动实时弹窗，把「运行过程」切成详细")}</li>
+                <li>{renderRich("**③ 个性化**：填你的称呼与偏好，让它说话合你口味")}</li>
                 <li>{renderRich("之后用到什么再回来配什么——技能、MCP、自动化都不影响你先把对话用起来")}</li>
+                <li>{renderRich("**想更新应用**：左下角头像 →「检查更新」，默认走补丁、失败自动回完整包")}</li>
               </ul>
             </div>
           </div>

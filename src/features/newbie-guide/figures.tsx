@@ -43,20 +43,20 @@ function WindowMap() {
       {[38, 54, 70, 86, 102].map((y) => (
         <rect key={y} x="14" y={y} width="100" height="8" rx="4" fill={panel2} />
       ))}
-      <text x="18" y="126">新建 · 搜索 / 定时</text>
-      <text x="18" y="142">能力入口</text>
+      <text x="18" y="126">新建 · 指挥中枢 · 搜索</text>
+      <text x="18" y="142">拓展功能（可配置）</text>
       <rect x="14" y="150" width="100" height="10" rx="5" fill={accent} opacity="0.25" />
-      <text x="18" y="176">项目 / 分类 视图</text>
+      <text x="18" y="176">项目 / 任务 视图</text>
       {[184, 200, 216].map((y) => (
         <rect key={y} x="14" y={y} width="100" height="8" rx="4" fill={panel2} />
       ))}
-      <text x="18" y="246">会话列表（悬停菜单）</text>
+      <text x="18" y="246">会话：标签 · 名称 · 时间</text>
       <rect x="14" y="262" width="100" height="16" rx="6" fill={panel2} />
-      <text x="18" y="274">新手引导</text>
+      <text x="18" y="274">新手教程 / 设置</text>
       {/* ② 顶栏 */}
       <rect x="125" y="3" width="392" height="34" fill={panel} stroke={line} />
       <text className="w-title" x="137" y="24">② 顶栏</text>
-      <text x="193" y="24">📁 工作区 · 标题 · 🔍 搜索 · 调度 · 右栏 · 独立弹窗</text>
+      <text x="193" y="24">📁 工作区 · 标题 · 🔍 · 调度 · 右栏 · 独立窗口</text>
       {/* ③ 对话区 */}
       <rect x="125" y="37" width="292" height="188" fill="none" stroke={line} strokeDasharray="4 4" />
       <text className="w-title" x="137" y="56">③ 对话区</text>
@@ -66,21 +66,23 @@ function WindowMap() {
       <rect x="247" y="114" width="158" height="34" rx="8" fill={panel} stroke={line} />
       <text x="255" y="130">Codex：先列清单，再动手</text>
       <text x="255" y="143">（改动的文件会汇总在回合底部）</text>
+      <text x="137" y="164">运行中：编辑行 +N −M；详细档弹浮窗</text>
       {/* 状态胶囊 */}
       <rect x="196" y="188" width="156" height="18" rx="9" fill={panel} stroke={line} />
       <text x="274" y="201">步骤 2/5 · 3 个文件 +12 −4</text>
       {/* ④ 输入框 */}
       <rect x="133" y="234" width="280" height="42" rx="10" fill={panel} stroke={accent} />
       <text className="w-title" x="143" y="252">④ 输入框</text>
-      <text x="143" y="267">+ 附件 · @ 文件 · # 技能 · / 命令 · 模型 · 权限 · 语音</text>
+      <text x="143" y="267">+ 附件 · @ · # · / · 模型（倍率）· 权限 · 语音</text>
       {/* ⑤ 右栏 */}
       <rect x="421" y="37" width="96" height="239" fill={panel} stroke={line} />
       <text className="w-title" x="432" y="56">⑤ 右栏</text>
       <text x="432" y="74">变更 / 终端</text>
       <text x="432" y="90">浏览器 / 项目树</text>
-      <text x="432" y="112">（消息区右侧头像轨</text>
-      <text x="432" y="126">末尾还有「办公室」：</text>
-      <text x="432" y="140">看专家团实时办公）</text>
+      <text x="432" y="112">（头像轨末尾</text>
+      <text x="432" y="126">有「办公室」：</text>
+      <text x="432" y="140">每间 6 人，</text>
+      <text x="432" y="154">可切间看）</text>
     </svg>
   );
 }

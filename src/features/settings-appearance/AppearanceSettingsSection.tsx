@@ -84,11 +84,11 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
               </button>
               <button type="button" className={`perm-seg-btn ${runProcessMode === "detailed" ? "on" : ""}`} onClick={() => setRunProcessMode("detailed")}>
                 <strong>详细</strong>
-                <small>生成文件自动展开最新内容、修改文件自动展开 diff 并跟随最新位置</small>
+                <small>文件变化时弹浮窗，跟随最新内容 / diff，静止 3 秒自动收起（只浮最近变化的那个）</small>
                 {runProcessMode === "detailed" && <em>当前</em>}
               </button>
             </div>
-            <p className="settings-card-hint">只影响运行过程中的文件展示，不改变生成/修改本身。详细模式会为每个生成、修改、编辑的文件自动展开内容或 diff，并自动滚动到最新位置；文件过多时仍最多展示 8 个。</p>
+            <p className="settings-card-hint">只影响运行过程中的文件展示，不改变生成/修改本身。详细模式在文件变化时弹出浮窗并自动滚到最新：新文件显示内容，修改 / 删除显示 diff；停止变化 3 秒后自动收起，多个文件同时改时只浮最近变化的那个。文件行最多列 8 个，其余收进「还有 N 个文件」。</p>
           </div>
         </div>
         <SettingsGroupHead title="拓展功能" hint="侧栏入口位置与顺序" />

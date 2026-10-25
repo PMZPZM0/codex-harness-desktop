@@ -13,7 +13,8 @@
  *   免得给 1,400 项的 bag 再添字段。
  */
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { ArrowRight, ExternalLink, Lightbulb, LoaderCircle, Rocket, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { ArrowRight, ChevronLeft, ChevronRight, ExternalLink, Lightbulb, LoaderCircle, Rocket, Search, X } from "lucide-react";
 import { GUIDE_SECTIONS, type GuideSection, type GuideTier } from "./sections";
 import { GuideFigureView } from "./figures";
 
@@ -44,9 +45,27 @@ export function NewbieGuide({ onOpenSettings, open: openProp, onOpenChange }: {
     else setOpenState(next);
   };
   const [activeId, setActiveId] = useState(GUIDE_SECTIONS[0]?.id ?? "start");
+  const [query, setQuery] = useState("");
   const [history, setHistory] = useState<HistoryState>({ status: "idle", entries: [] });
 
+  /* 10-26：章节变多后加搜索 —— 只按左列表标签 / 标题 / 导语过滤，不搜正文（正文由浏览器 Ctrl+F）。 */
+  const normalizedQuery = query.trim().toLowerCase();
+  const matchesQuery = (section: GuideSection) => !normalizedQuery
+    || [section.label, section.title, section.intro].some((text) => text.toLowerCase().includes(normalizedQuery));
+  const filteredSections = GUIDE_SECTIONS.filter(matchesQuery);
+  const searching = normalizedQuery.length > 0;
   const active: GuideSection | undefined = GUIDE_SECTIONS.find((section) => section.id === activeId) ?? GUIDE_SECTIONS[0];
+  const activeIndex = filteredSections.findIndex((section) => section.id === active?.id);
+  const prevSection = activeIndex > 0 ? filteredSections[activeIndex - 1] : null;
+  const nextSection = activeIndex >= 0 && activeIndex < filteredSections.length - 1 ? filteredSections[activeIndex + 1] : null;
+
+  const changeQuery = (next: string) => {
+    setQuery(next);
+    const keyword = next.trim().toLowerCase();
+    if (!keyword) return;
+    const first = GUIDE_SECTIONS.find((section) => [section.label, section.title, section.intro].some((text) => text.toLowerCase().includes(keyword)));
+    if (first) setActiveId(first.id);
+  };
 
   /* 版本日志**按需拉取** + 缓存：打开日志节才请求一次；失败可见（同组件库的错误可见口径）。 */
   const loadHistory = useCallback(() => {
@@ -69,6 +88,9 @@ export function NewbieGuide({ onOpenSettings, open: openProp, onOpenChange }: {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
+  /* 每次重新打开都回到「无搜索」状态：上次搜的词不该把这一轮导航锁剩几节。 */
+  useEffect(() => { if (open) setQuery(""); }, [open]);
+
   const jump = (page: string) => {
     setOpen(false);
     onOpenSettings?.(page);
@@ -84,20 +106,32 @@ export function NewbieGuide({ onOpenSettings, open: openProp, onOpenChange }: {
           <span className="guide-entry-sub">第一次用？</span>
         </button>
       )}
-      {open && (
+      {open && createPortal(
+        /* ⛔ 必须 portal 到 body：组件挂在侧栏里，而侧栏是 z-index:5 的层叠上下文 ——
+           留在里面时弹窗会被 body 级的语音悬浮球（z240）压住文字（实测截图抓到）。 */
         <div
           className="modal-backdrop guide-backdrop"
           onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}
         >
           <div className="guide-modal" role="dialog" aria-modal="true" aria-label="新手引导">
             <aside className="guide-nav">
-              <div className="guide-nav-head"><Rocket size={15} /><strong>新手引导</strong></div>
+              <div className="guide-nav-head"><Rocket size={15} /><strong>新手教程</strong></div>
+              <label className="guide-nav-search">
+                <Search size={13} />
+                <input
+                  value={query}
+                  placeholder="搜索章节"
+                  aria-label="搜索教程章节"
+                  onChange={(event) => changeQuery(event.target.value)}
+                />
+                {query && <button type="button" className="guide-nav-search-clear" title="清空搜索" aria-label="清空搜索" onClick={() => changeQuery("")}><X size={12} /></button>}
+              </label>
               {GUIDE_TIERS.map((tier) => {
-                const items = GUIDE_SECTIONS.filter((section) => section.tier === tier.id);
+                const items = filteredSections.filter((section) => section.tier === tier.id);
                 if (!items.length) return null;
                 return (
                   <Fragment key={tier.id}>
-                    <div className="guide-nav-group">{tier.label}</div>
+                    <div className="guide-nav-group">{tier.label}<em>{items.length}</em></div>
                     {items.map((section) => (
                       <button
                         key={section.id}
@@ -112,8 +146,8 @@ export function NewbieGuide({ onOpenSettings, open: openProp, onOpenChange }: {
                   </Fragment>
                 );
               })}
-              {GUIDE_SECTIONS.some((section) => !section.tier) && <div className="guide-nav-sep" aria-hidden />}
-              {GUIDE_SECTIONS.filter((section) => !section.tier).map((section) => (
+              {filteredSections.some((section) => !section.tier) && <div className="guide-nav-sep" aria-hidden />}
+              {filteredSections.filter((section) => !section.tier).map((section) => (
                 <button
                   key={section.id}
                   type="button"
@@ -124,6 +158,9 @@ export function NewbieGuide({ onOpenSettings, open: openProp, onOpenChange }: {
                   <span>{section.label}</span>
                 </button>
               ))}
+              {searching && !filteredSections.length && (
+                <div className="guide-nav-empty">没有匹配的章节，换个词试试</div>
+              )}
             </aside>
             <section className="guide-body">
               <header className="guide-body-head">
@@ -191,9 +228,21 @@ export function NewbieGuide({ onOpenSettings, open: openProp, onOpenChange }: {
                   )}
                 </>
               )}
+              {activeIndex >= 0 && filteredSections.length > 1 && (
+                <nav className="guide-pager" aria-label="章节切换">
+                  {prevSection
+                    ? <button type="button" className="guide-pager-btn" onClick={() => setActiveId(prevSection.id)}><ChevronLeft size={13} /><span>{prevSection.label}</span></button>
+                    : <span />}
+                  <em>{activeIndex + 1} / {filteredSections.length}</em>
+                  {nextSection
+                    ? <button type="button" className="guide-pager-btn next" onClick={() => setActiveId(nextSection.id)}><span>{nextSection.label}</span><ChevronRight size={13} /></button>
+                    : <span />}
+                </nav>
+              )}
             </section>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );

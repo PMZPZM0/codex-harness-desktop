@@ -50,12 +50,56 @@
 /* 10-18：左导航分「新手教程 / 高级教程」两组（用户：「分新手和高级教程」）。
    组标题是弱提示，不抢条目；更新日志不分组，用一条分隔线单独置底。 */
 .guide-nav-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
   padding: 10px 8px 3px;
   color: var(--faint);
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: .08em;
 }
+.guide-nav-group em { font-style: normal; font-weight: 500; letter-spacing: 0; color: var(--faint); }
+/* 10-26：章节多了以后加搜索（左列表 176px，输入框只用一行高度，不挤导航）。 */
+.guide-nav-search {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  margin: 0 4px 6px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--faint);
+}
+.guide-nav-search:focus-within { border-color: var(--accent); }
+.guide-nav-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+.guide-nav-search input::placeholder { color: var(--faint); }
+.guide-nav-search-clear {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+}
+.guide-nav-search-clear:hover { color: var(--text); background: var(--line); }
+.guide-nav-empty { padding: 10px 8px; color: var(--faint); font-size: 11.5px; line-height: 1.6; }
 .guide-nav-head + .guide-nav-group { padding-top: 2px; }
 .guide-nav-sep { flex: none; height: 1px; margin: 8px 10px 6px; background: var(--line); }
 .guide-nav-item {
@@ -146,6 +190,37 @@
   cursor: pointer;
 }
 .guide-action:hover { filter: brightness(1.08); }
+/* 上一节 / 下一节：正文底部的一条轻分隔，不抢主按钮。 */
+.guide-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+}
+.guide-pager em { font-style: normal; color: var(--faint); font-size: 11px; white-space: nowrap; }
+.guide-pager-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 40%;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.guide-pager-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guide-pager-btn:hover { color: var(--text); border-color: var(--faint); background: var(--panel-2); }
+.guide-pager-btn.next { margin-left: auto; }
+@media (max-width: 640px) {
+  .guide-modal { grid-template-columns: 148px minmax(0, 1fr); }
+  .guide-body { padding: 14px; }
+}
 
 /* 版本更新日志（数据 = whatsnew:history） */
 .guide-status { display: flex; align-items: center; gap: 6px; padding: 8px 0; color: var(--muted); font-size: 12.5px; }
