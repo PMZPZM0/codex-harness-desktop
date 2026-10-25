@@ -5,6 +5,7 @@
 import { AlertTriangle, ArrowUpRight, Bot, Check, ChevronDown, Clock3, Copy, Eye, EyeOff, FolderTree, Plus, Play, RefreshCw, Settings2, Sparkles, Trash2, X, Zap, CircleCheck, ChevronRight, Wallet, LogIn } from "lucide-react";
 import { resolveRelayTarget, writeRelayActive, readRelayActive, RelayActive } from "../../../lib/relay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCenteredPopoverLeft } from "../../../lib/use-centered-popover";
 export function shortGroupName(name: unknown, max: number) {
   const cleaned = String(name ?? "套餐").replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/gu, "").replace(/\s+/g, " ").trim() || "套餐";
   return cleaned.length > max ? cleaned.slice(0, max) + "…" : cleaned;
@@ -15,6 +16,9 @@ export function RelayBalanceBadge({ active }: { active: RelayActive | null }) {
   const [overview, setOverview] = useState<any>(null);
   const [err, setErr] = useState("");
   const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const popLeft = useCenteredPopoverLeft(open, triggerRef, popRef);
   // 强信号指纹：provider / apiKey / mode / groupId / switchedAt 任一变化都代表切换了账户或计费方式。
   // 原实现只按 provider 名做 useMemo，同网关换账号时 provider 字符串不变 → 徽标永不刷新、余额/套餐卡死在旧账号。
   const fingerprint = `${active?.provider ?? ""}|${active?.apiKey ?? ""}|${active?.mode ?? ""}|${active?.groupId ?? ""}|${active?.switchedAt ?? 0}`;
@@ -31,8 +35,10 @@ export function RelayBalanceBadge({ active }: { active: RelayActive | null }) {
   useEffect(() => {
     if (!open) return;
     const onDown = (event: globalThis.MouseEvent) => { if (!wrapRef.current?.contains(event.target as Node)) setOpen(false); };
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
     window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
   }, [open]);
   if (!active) return null;
   const subs: any[] = overview?.subscriptions ?? [];
@@ -48,11 +54,11 @@ export function RelayBalanceBadge({ active }: { active: RelayActive | null }) {
     // 该分组没有生效订阅：用量按量从账户余额扣（如站方把 key 分组清掉、或选了非订阅分组的老 key）
     label = overview ? `余额 $${Number(overview.balance).toFixed(2)}` : "余额 …";
   }
-  return <div className="relay-badge" ref={wrapRef}>
-    <button type="button" className="context-ring relay-badge-btn" title="中转站余额" aria-label="中转站余额" onClick={() => { setOpen((v) => !v); if (!overview) refresh(); }}>
+  return <div className="relay-badge" ref={wrapRef} onMouseLeave={() => setOpen(false)}>
+    <button ref={triggerRef} type="button" className="context-ring relay-badge-btn" title="中转站余额" aria-label="中转站余额" onClick={() => { setOpen((v) => !v); if (!overview) refresh(); }}>
       <Wallet size={13} /><small>{err ? "余额同步失败" : label}</small>
     </button>
-    {open && <div className="ctx-pop relay-pop" role="dialog" aria-label="中转站余额明细" onMouseLeave={() => setOpen(false)}>
+    {open && <div ref={popRef} className="ctx-pop relay-pop" role="dialog" aria-label="中转站余额明细" style={popLeft != null ? { left: popLeft } : undefined}>
       <div className="ctx-pop-head"><strong>{active.label || "中转站"}</strong></div>
       <div className="ctx-pop-sub">{overview?.email || ""}{err ? ` · ${err}` : ""}{active.apiKey ? ` · 密钥 …${active.apiKey.slice(-6)}` : ""}</div>
       <div className="ctx-pop-grid">

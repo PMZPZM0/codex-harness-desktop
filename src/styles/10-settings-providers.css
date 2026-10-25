@@ -736,17 +736,6 @@
 .composer-menu .composer-menu-pop {
   animation: 0.14s menu-pop;
 }
-/* 模型下拉：贴着「模型」选项按钮水平居中（10-25 用户：不是贴输入框，是贴按钮）。 */
-.model-controls .composer-menu-pop {
-  left: 50%;
-  bottom: calc(100% + 8px);
-  transform: translateX(-50%);
-  animation: 0.14s menu-pop-center;
-}
-@keyframes menu-pop-center {
-  0% { opacity: 0; transform: translate(-50%, 4px); }
-  to { opacity: 1; transform: translateX(-50%); }
-}
 @keyframes menu-pop {
   0% {
     opacity: 0;
@@ -868,7 +857,7 @@
   animation: 0.14s menu-pop;
   position: absolute;
   bottom: calc(100% + 8px);
-  right: 0;
+  left: 0;
   box-shadow: var(--shadow);
 }
 .ctx-pop-head {
