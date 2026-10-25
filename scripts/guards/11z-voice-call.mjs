@@ -335,8 +335,10 @@ ok(/voiceProfileUpload: \(input\?/.test(read("electron/preload.ts")) && /voicePr
   "生成物两侧都有 voiceProfileUpload（preload 内联段 + d.ts 生成段；跑过 gen:ipc，不是只改了 manifest）");
 const registrySrc = read("electron/ipc-registry.ts");
 /* count 是**事实账**：voice 域实列多少条就写多少（10-21 +2 = announce-owner / announce-set-muted）。 */
-ok(/\{ prefix: "voice", count: 44/.test(registrySrc) && /"voice:profile-upload"/.test(registrySrc),
-  "ipc-registry 的 voice 域计到 44 且列出新通道（不同步会被【107】/【90】报红）");
+/* ⛔ count 是**写死的数字**：加了 voice 域的通道必须同步改这里（否则守卫红）。
+   10-26 加了 2 条引擎包下载通道（tts-pack-install / tts-pack-cancel）⇒ 44 → 46。 */
+ok(/\{ prefix: "voice", count: 46/.test(registrySrc) && /"voice:profile-upload"/.test(registrySrc),
+  "ipc-registry 的 voice 域计到 46 且列出新通道（不同步会被【107】/【90】报红）");
 const settingsState = read("src/components/VoiceSettingsSection/use-voice-settings-section-state.tsx");
 ok(/voiceProfileUpload\(\{ source: "file" \}\)/.test(settingsState)
   && /uploadProfile=\{uploadProfile\}/.test(read("src/components/VoiceSettingsSection.tsx")),
@@ -861,7 +863,7 @@ ok(/broadcastToAll\("voice:call-state", \{ state: event\.state, active \}\)/.tes
   "通话状态旁路广播到**所有窗口**，且只转 state（⛔ 不把 partial/delta 塞进弹窗）");
 ok(/voice:announce-owner/.test(manifestJson) && /voice:announce-set-muted/.test(manifestJson)
   && /"voice:announce-owner","voice:announce-set-muted"\]/.test(registryForOwner)
-  && /count: 44/.test(registryForOwner),
+  && /count: 46/.test(registryForOwner),
   "两条新通道进 manifest + registry（count 42→44）—— 漏登记 = 预检【2】红 + 账本读不到");
 ok(/onAnnounceOwnerChanged: \(listener/.test(preloadSrc) && /onAnnounceMuted: \(listener/.test(preloadSrc)
   && /onVoiceCallState: \(listener/.test(preloadSrc),

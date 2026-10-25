@@ -216,7 +216,7 @@ type OfficialMarketPluginEntry = {
 type OfficialMarketListResult = { items: OfficialMarketPluginEntry[]; installedIds: string[]; live: boolean; catalogGeneratedAt: string; total: number; page: number; pageSize: number };
 type OfficialMarketInstallResult = { id: string; name: string; path: string; version: string; description: string; marketId: string; manifestPath: string; engineRegistered?: boolean; engineCheckMessage?: string };
 type LocalSkillEntry = { name: string; folder?: string; path: string; description: string; descriptionZh?: string; marketId?: string; pluginId?: string; sourceUrl?: string; installedAt?: string; engineRegistered?: boolean; engineCheckMessage?: string; source?: "cocoloop" | "skillhub" | "local"; enabled?: boolean; allowedTools?: string[]; icon?: string; category?: string; /** 专家市场包元技能（.skillhub.json kind=skillset） */ skillset?: boolean; /** 专家包子技能：所属包 slug（.skillhub.json kind=skillset-child） */ skillsetSlug?: string };
-type PersonalizationConfig = { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; onboarded?: boolean; greeted?: boolean };
+type PersonalizationConfig = { nickname?: string; customInstructions?: string; assistantName?: string; about?: string; occupation?: string; replyStyle?: string; tone?: string; interests?: string; habits?: string; userContext?: string; persona?: string; soulSlug?: string; onboarded?: boolean; profileGuideSeen?: boolean; greeted?: boolean };
 
 /** SSH 跳板机（ProxyJump）配置 */
 type SshJumpHost = {
@@ -606,7 +606,7 @@ interface Window {
     writeClipboard(text: string): Promise<boolean>;
     createScratchDir(): Promise<string>;
     /* ⛔ d.ts 历史上本有两处声明（宽口径 Record<string,string> 与窄口径 3 字段），提取去重保留宽口径 —— identity_onboard 调用点传 8 个字段，窄口径会爆 excess-property。 */
-    saveIdentity(input: Record<string, string>): Promise<unknown>;
+    saveIdentity(input: Record<string, unknown>): Promise<unknown>;
     applyCustomModel(): Promise<CustomModelState>;
     upsertProviderModel(input: { provider: string; model: ProviderModelConfig }): Promise<CustomModelState>;
     removeProviderModel(input: { provider: string; modelId: string }): Promise<CustomModelState>;
@@ -790,6 +790,10 @@ interface Window {
     voiceResourceDelete(input: { kind: string }): Promise<{ ok: boolean; error?: string }>;
     /* 10-03 单个资源的启用状态与占用 */
     voiceResourceStatus(input: { kind: string }): Promise<any>;
+    /* 10-26 可选合成引擎包（kokoro / emotivoice）按需下载；进度事件 voice:event 带 target=pack */
+    voiceTtsPackInstall(pack: string): Promise<any>;
+    /* 10-26 取消当前引擎包下载 */
+    voiceTtsPackCancel(): Promise<any>;
     voiceStop(): Promise<{ ok: boolean }>;
     voiceProfilesImport(): Promise<any>;
     /* 10-08 音色上传接口：source=base64/file 已实现；pack（音色包）**预留**、明确返回未开放。走与导入同一条草稿链（落盘→ASR 转写参考文本→用户校对） */
@@ -888,8 +892,8 @@ interface Window {
     voiceZipvoiceInstall(): Promise<{ ok: boolean; error?: string }>;
     voiceModelsImport(input: { sourceDir: string }): Promise<{ ok: boolean; failures: string[] }>;
     voiceMicPermission(): Promise<{ status: string; error?: string }>;
-    voiceSettingsGet(): Promise<{ settings: { tts: { sid: number; speed: number; volume: number }; asr: { rule1: number; rule2: number; rule3: number; numThreads: number }; mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean }; barge: { gateDb: number; mode: "auto" | "manual" }; aec?: { mode: "auto" | "on" | "off" }; modelHost: "auto" | "huggingface" | "hf-mirror"; hotkey: { enabled: boolean; accelerator: string }; dictationHotkey: { enabled: boolean; accelerator: string }; wake: { enabled: boolean; phrase: string }; announce: { enabled: boolean }; ball: { visible: boolean; hints: boolean; style?: string }; }; ttsVoices: Record<number, string>; modelHosts: Record<string, string>; modelHostOptions: string[]; }>;
-    voiceSettingsSet(patch: any): Promise<{ tts: { sid: number; speed: number; volume: number }; asr: { rule1: number; rule2: number; rule3: number; numThreads: number }; mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean }; barge: { gateDb: number; mode: "auto" | "manual" }; aec?: { mode: "auto" | "on" | "off" }; modelHost: "auto" | "huggingface" | "hf-mirror"; hotkey: { enabled: boolean; accelerator: string }; dictationHotkey: { enabled: boolean; accelerator: string }; wake: { enabled: boolean; phrase: string }; }>;
+    voiceSettingsGet(): Promise<{ settings: { tts: { sid: number; speed: number; volume: number; engine?: "vits" | "kokoro" | "emotivoice"; profileId?: string; numSteps: number }; asr: { rule1: number; rule2: number; rule3: number; numThreads: number }; mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean }; barge: { gateDb: number; mode: "auto" | "manual" }; aec?: { mode: "auto" | "on" | "off" }; modelHost: "auto" | "huggingface" | "hf-mirror"; hotkey: { enabled: boolean; accelerator: string }; dictationHotkey: { enabled: boolean; accelerator: string }; wake: { enabled: boolean; phrase: string }; announce: { enabled: boolean }; ball: { visible: boolean; hints: boolean; style: string }; resources?: Partial<Record<"base" | "zipvoice" | "kws" | "kokoro" | "emotivoice", boolean>>; version?: number }; ttsVoices: Record<number, string>; modelHosts: Record<string, string>; modelHostOptions: string[]; }>;
+    voiceSettingsSet(patch: any): Promise<{ tts: { sid: number; speed: number; volume: number; engine?: "vits" | "kokoro" | "emotivoice"; profileId?: string; numSteps: number }; asr: { rule1: number; rule2: number; rule3: number; numThreads: number }; mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean }; barge: { gateDb: number; mode: "auto" | "manual" }; aec?: { mode: "auto" | "on" | "off" }; modelHost: "auto" | "huggingface" | "hf-mirror"; hotkey: { enabled: boolean; accelerator: string }; dictationHotkey: { enabled: boolean; accelerator: string }; wake: { enabled: boolean; phrase: string }; announce: { enabled: boolean }; ball: { visible: boolean; hints: boolean; style: string }; resources?: Partial<Record<"base" | "zipvoice" | "kws" | "kokoro" | "emotivoice", boolean>>; version?: number }>;
     voiceHotkeySet(input: { accelerator: string; enabled?: boolean }): Promise<{ ok: boolean; error?: string }>;
     voiceWakeStart(): Promise<{ ok: boolean; error?: string; phrase?: string; hint?: string }>;
     voiceWakeAudio(samples: Float32Array): Promise<{ ok: boolean; matched: boolean }>;

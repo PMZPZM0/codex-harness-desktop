@@ -1,5 +1,5 @@
 import path from "node:path";
-import { statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 /**
  * 语音模型清单（纯数据，无副作用）。
  *
@@ -129,6 +129,106 @@ export function zipvoiceReady(modelsRoot: string): boolean {
   try {
     return statSync(path.join(dir, ZIPVOICE_ARCHIVE.vocoder.name)).size >= ZIPVOICE_ARCHIVE.vocoder.minBytes;
   } catch { return false; }
+}
+
+/**
+ * 可选合成引擎 ②：Kokoro v1.1 int8（中英，103 说话人）。
+ *
+ * ⛔ 为什么走「归档型资源」而不是逐文件清单：包里的 `espeak-ng-data/` 是 **120 个文件**的目录
+ *    （还有 `dict/` 目录），逐文件列清单不现实 —— 与 zipvoice 同一套路：整包下载 → 校验 → 解压。
+ *
+ * 全部数字为**本机实测**（2026-10-26）：压缩包 147,031,220 字节，解压后 206MB。
+ * 官方 RTF（Raspberry Pi 4B）：1/2/3/4 线程 = 7.635 / 4.470 / 3.430 / 3.191
+ *    （对比 vits-zh-ll 的 4.275 / 2.494 / 1.840 / 1.593 ⇒ **约慢 1.8 倍**，换来自然度与 103 音色）。
+ */
+export const KOKORO_DIR = "kokoro-int8-multi-lang-v1_1";
+export const KOKORO_ARCHIVE = {
+  dir: KOKORO_DIR,
+  url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_1.tar.bz2",
+  sha256: "a1e94694776049035c4f2c6529f003aaece993c76aae9a78995831c3c4dcafc6",
+  bytes: 147_031_220,
+  /** 解压后必须存在的关键文件（就绪判定用；体积为实测字节数） */
+  readyFiles: ["model.int8.onnx", "voices.bin", "tokens.txt", "lexicon-zh.txt"],
+  /** 最小合理体积：实测 114,299,010 / 53,790,720 / 1,111 / 2,119,465 ⇒ 取 ~30% 挡半截 */
+  readyFileMinBytes: {
+    "model.int8.onnx": 34_000_000,
+    "voices.bin": 16_000_000,
+    "tokens.txt": 300,
+    "lexicon-zh.txt": 600_000,
+  } as Record<string, number>,
+  /** espeak-ng-data 是目录，只按目录存在 + 文件数判定（解压中断最常见的残留形态） */
+  extra: { espeakDir: "espeak-ng-data", espeakMinFiles: 100 },
+} as const;
+
+export function kokoroReady(modelsRoot: string): boolean {
+  const dir = path.join(modelsRoot, KOKORO_DIR);
+  const minOf = KOKORO_ARCHIVE.readyFileMinBytes;
+  const ok = KOKORO_ARCHIVE.readyFiles.every((name) => {
+    try { return statSync(path.join(dir, name)).size >= (minOf[name] ?? 1); } catch { return false; }
+  });
+  if (!ok) return false;
+  try {
+    const espeak = path.join(dir, KOKORO_ARCHIVE.extra.espeakDir);
+    return statSync(espeak).isDirectory()
+      && readdirSync(espeak).length >= KOKORO_ARCHIVE.extra.espeakMinFiles;
+  } catch { return false; }
+}
+
+/**
+ * 可选合成引擎 ③：EmotiVoice（网易有道，Apache-2.0）——**真情绪控制**。
+ *
+ * ⛔ 说明：这套不是 sherpa-onnx 能直接吃的模型。生成器 ONNX 由我们从官方权重导出
+ *   （spike 验证：CPU RTF ≈ 0.19–0.38，20/40/80 音素与 PyTorch 输出逐点误差 ≤3.6e-4），
+ *   SimBERT 负责把「情绪提示 / 文本语义」编码成 768 维向量。
+ *   ⛔ 推理需要 onnxruntime —— 本项目现有运行时（sherpa-onnx）**不提供**通用 ONNX 加载，
+ *      所以本卡片的模型可以下载，但合成能力要等推理运行时接入后才可用（UI 会如实提示）。
+ *
+ * 体积与 SHA256 均为本机实测。⚠️ 托管地址：SimBERT 走 ModelSpace 镜像；
+ *   我们自导出的 ONNX 需要自己的托管位（见 `EMOTIVOICE_HOST_NOTE`）。
+ */
+export const EMOTIVOICE_DIR = "emotivoice";
+
+/**
+ * ⛔⛔ 更新通道（10-26 用户令「记得安排国内镜像源，和留更新通道」）。
+ *
+ * ① **国内镜像**：SimBERT 走 ModelSpace（国内直连，实测 200）；GitHub 上的归档走
+ *    `GITHUB_MIRROR_PREFIXES`（ghfast / gh-proxy，Kokoro 与 zipvoice 同路）。
+ * ② **更新通道**：自导出的生成器 ONNX 与两份音素/说话人表的**托管基址 + 版本号**都收在这两个常量里。
+ *    换 CDN / 换模型版本 ⇒ 只改这里（或将来改成读远程 manifest），**不用动下载逻辑**。
+ *    ⛔ 基址留空时安装必须**明确报错**，绝不能静默当成功（那会让 UI 显示"已安装"却不能合成）。
+ */
+export const EMOTIVOICE_SIMBERT_BASE =
+  "https://www.modelscope.cn/models/syq163/WangZeJun/resolve/master/simbert-base-chinese";
+/** 自导出产物（生成器 ONNX + 音素表 + 说话人表）的托管基址；空串 = 尚未配置。 */
+export const EMOTIVOICE_ONNX_BASE = "";
+/** 自导出产物的版本（改模型就 +1 ⇒ 旧文件 SHA256 不同会自然重下）。 */
+export const EMOTIVOICE_ONNX_VERSION = "2026-10-26";
+export const EMOTIVOICE_HOST_NOTE =
+  `生成器 ONNX 由本项目自行导出，托管地址待配置（版本 ${EMOTIVOICE_ONNX_VERSION}）`;
+
+/** 每个文件的下载地址；自导出产物在基址未配置时为**空串**（安装时会如实报错）。 */
+export const EMOTIVOICE_URLS: Record<string, string> = {
+  "simbert/pytorch_model.bin": `${EMOTIVOICE_SIMBERT_BASE}/pytorch_model.bin`,
+  "simbert/vocab.txt": `${EMOTIVOICE_SIMBERT_BASE}/vocab.txt`,
+  "tokenlist": EMOTIVOICE_ONNX_BASE ? `${EMOTIVOICE_ONNX_BASE}/tokenlist` : "",
+  "speaker2": EMOTIVOICE_ONNX_BASE ? `${EMOTIVOICE_ONNX_BASE}/speaker2` : "",
+  "emotivoice_generator_dyn.onnx": EMOTIVOICE_ONNX_BASE ? `${EMOTIVOICE_ONNX_BASE}/emotivoice_generator_dyn.onnx` : "",
+  "emotivoice_generator_dyn.onnx.data": EMOTIVOICE_ONNX_BASE ? `${EMOTIVOICE_ONNX_BASE}/emotivoice_generator_dyn.onnx.data` : "",
+};
+export const EMOTIVOICE_FILES: VoiceModelFile[] = [
+  { name: "simbert/pytorch_model.bin", sha256: "9c6db519d4e21bbda3cc7f2e871187d0f3073c5ed7a6a38329c4865a3fe7e0ee", bytes: 386_278_519 },
+  { name: "simbert/vocab.txt", sha256: "5c3df66617c12834db122e678e6fe8ca267045f8007a34979310ce5eca2dc449", bytes: 64_947 },
+  { name: "tokenlist", sha256: "d7d68a2f794b4d7563e6e6159e8c6a8c506a584590b8c1c757370c346a435244", bytes: 2_819 },
+  { name: "speaker2", sha256: "fabcda3089216f017fa76ad39929f1733445800f2658698d7ed6d0b7a59f29b2", bytes: 9_714 },
+  { name: "emotivoice_generator_dyn.onnx", sha256: "9e9a8991cc7ea71a6e5b91eb11f77fec1cee88bd9a325fb508f02790b9822032", bytes: 2_440_991 },
+  { name: "emotivoice_generator_dyn.onnx.data", sha256: "0e1610a0e744f51047d460a430bdb0051da706c67f7ec8d762cf6a3d7154e922", bytes: 223_357_120 },
+];
+
+export function emotivoiceReady(modelsRoot: string): boolean {
+  const dir = path.join(modelsRoot, EMOTIVOICE_DIR);
+  return EMOTIVOICE_FILES.every((f) => {
+    try { return statSync(path.join(dir, f.name)).size >= Math.max(1, Math.floor(f.bytes * 0.3)); } catch { return false; }
+  });
 }
 
 /**

@@ -1819,3 +1819,49 @@
   overflow-wrap: anywhere;
 }
 .voice-ball-style-check { flex: none; color: var(--accent); }
+
+/* ── 合成引擎三选一（10-26）────────────────────────────────────────────────
+   三张卡并列：名称 / 音色数 / 体积 / 状态 / 定位 / 优势 / 劣势 / 操作。
+   ⛔ 优势用绿色勾、劣势用琥珀警示，颜色即语义，别靠用户读小字分辨。 */
+.voice-engine-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.voice-engine-card {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 11px 12px; border-radius: 12px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--text) 3%, var(--panel));
+  min-width: 0;
+}
+.voice-engine-card.is-active { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
+.voice-engine-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.voice-engine-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.voice-engine-title strong { font-size: 13.5px; color: var(--text); }
+.voice-engine-tagline { font-size: 11px; color: var(--muted); word-break: break-all; }
+.voice-engine-flag {
+  flex: none; display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 6px; border-radius: 999px;
+  font-size: 10.5px; color: color-mix(in srgb, var(--accent) 80%, var(--text));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.voice-engine-meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 11px; color: var(--muted); }
+.voice-engine-meta > span {
+  padding: 1px 6px; border-radius: 5px;
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+.voice-engine-meta .voice-engine-state.ok { color: color-mix(in srgb, var(--green, #2f9e5f) 85%, var(--text)); }
+.voice-engine-role { font-size: 11.5px; line-height: 1.5; color: var(--muted); }
+.voice-engine-pros, .voice-engine-cons { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
+.voice-engine-pros li, .voice-engine-cons li { display: flex; gap: 5px; align-items: flex-start; font-size: 11.5px; line-height: 1.5; color: var(--text); }
+.voice-engine-pros svg { flex: none; margin-top: 2px; color: color-mix(in srgb, var(--green, #2f9e5f) 80%, var(--text)); }
+.voice-engine-cons li { color: var(--muted); }
+.voice-engine-cons svg { flex: none; margin-top: 2px; color: color-mix(in srgb, var(--amber) 80%, var(--text)); }
+.voice-engine-note {
+  padding: 6px 8px; border-radius: 8px; font-size: 11px; line-height: 1.55; color: var(--muted);
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--amber) 22%, transparent);
+}
+.voice-engine-progress { display: flex; flex-direction: column; gap: 4px; }
+.voice-engine-progress-bar { height: 4px; border-radius: 3px; background: color-mix(in srgb, var(--text) 10%, transparent); overflow: hidden; }
+.voice-engine-progress-bar > span { display: block; height: 100%; background: var(--accent); transition: width .2s; }
+.voice-engine-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; }
+.voice-engine-actions .secondary-setting { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
