@@ -588,13 +588,16 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 onClose={() => setLoginMgrOpen(false)}
               />
             )}
-            {/* 10-25 用户令（对照其图二）：视图行 = 「项目」tab + 🔍搜索任务 + 筛选（展开/折叠全部）+ 新建项目。
+            {/* 10-25 用户令（对照其图二）：视图行 = 「项目」tab + 「任务」tab + 刷新 + 🔍搜索任务
+                + 筛选（展开/折叠全部）+ 新建项目。
+                ⛔ 刷新会话列表按钮是用户点名要保留的（重排时曾被挤掉，守卫【11u】钉着动作名）。
                 ⛔ 分类视图（09-25）入口撤下：本地存过 "source" 的旧偏好由 useEffect 一次性回落 projects，
                 口径与渲染仍保留在 lib/thread-source.mjs（守卫【156】仍在用其数据）。 */}
             <div className="view-tabs" role="toolbar" aria-label="会话视图工具">
               <button className={`view-tab ${viewTab === "projects" ? "active" : ""}`} onClick={() => setViewTab("projects")} title="按项目分组查看"><FolderOpen size={14} className="ic-amber" /><span>项目</span></button>
               <button className={`view-tab ${viewTab === "tasks" ? "active" : ""}`} onClick={() => setViewTab("tasks")} title="平铺全部任务（不分组）"><ListChecks size={14} className="ic-blue" /><span>任务</span></button>
               <div className="view-toolbar">
+                <button className="view-toolbar-btn ic-blue" title="刷新会话列表" onClick={() => void refreshWithReceipt((text: string) => showToast(text), "刷新会话列表", refreshThreads)}><ListRestart size={14} /></button>
                 <button className="view-toolbar-btn ic-cyan" title="搜索任务" onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}><Search size={14} /></button>
                 <button className="view-toolbar-btn ic-violet" title={sidebarAllCollapsed ? "展开全部项目" : "折叠全部项目"} onClick={toggleAllSidebarSections} disabled={!projectGroups.length}>{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
                 <button className="view-toolbar-btn ic-green" title="新建项目（选择 / 创建 / 输入路径）" onClick={() => setNewProjectOpen(true)}><FolderPlus size={14} /></button>
