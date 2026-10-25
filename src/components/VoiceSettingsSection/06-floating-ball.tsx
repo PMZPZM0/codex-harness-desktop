@@ -4,6 +4,7 @@
  */
 import { Check, Sparkles } from "lucide-react";
 import { VOICE_BALL_STYLES } from "../../lib/voice-ball-styles.mjs";
+import VoiceMascot from "../VoiceMascot";
 import { Settings } from "../VoiceSettingsSection";
 
 type Props = {
@@ -51,7 +52,7 @@ export function VoiceSettingsSectionFloatingBall({ apply, saving, settings }: Pr
                         title={style.desc}
                         onClick={() => apply({ ball: { ...settings.ball, style: style.id } })}
                       >
-                        <span className={`voice-ball-style-swatch skin-${style.id}`} aria-hidden="true"><i /></span>
+                        <span className="voice-ball-style-preview" aria-hidden="true"><VoiceMascot mode="idle" size={28} skin={style.id} /></span>
                         <span className="voice-ball-style-text">
                           <strong>{style.name}</strong>
                           <small>{style.desc}</small>

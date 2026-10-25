@@ -920,10 +920,19 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
   const catalogs = await import("../../src/lib/voice-ball-styles.mjs");
   const styles = catalogs.VOICE_BALL_STYLES;
   ok(Array.isArray(styles) && styles.length >= 6
-    && styles.some((s) => s.id === "glass" && s.name)
-    && catalogs.normalizeVoiceBallStyle("not-a-skin") === "glass"
-    && catalogs.normalizeVoiceBallStyle("aurora") === "aurora",
-    "外观目录 ≥6 套、含默认 glass，未知 id 回落默认（设置文件手改/旧版本不炸）");
+    && styles.some((s) => s.id === "ink" && s.name)
+    && catalogs.normalizeVoiceBallStyle("not-a-skin") === "ink"
+    && catalogs.normalizeVoiceBallStyle("mint") === "mint",
+    "外观目录 ≥6 套、含默认墨黑，未知 id 回落默认（设置文件手改/旧版本不炸）");
+  const mascotSrc = read("src/components/VoiceMascot.tsx");
+  ok(/voice-bot-eye--left/.test(mascotSrc) && /voice-bot-eye--right/.test(mascotSrc)
+    && /voice-bot-blush--left/.test(mascotSrc) && /voice-bot-blush--right/.test(mascotSrc)
+    && !/mouth|nose|voice-mascot-orb/.test(mascotSrc),
+    "角色本身是 Grok Bot 式圆脸 + 两颗胶囊眼 + 腮红（⛔ 不是圆点眼/动物/加光圈了事）");
+  const botCss = read("src/styles/18-openai-dialog.css");
+  ok(/\.voice-bot-eye \{[^}]*width:\s*3px[^}]*height:\s*9px[^}]*border-radius:\s*999px/.test(botCss)
+    && !/\.voice-mascot-orb\b/.test(botCss) && /\.voice-bot--skin-ink \{/.test(botCss),
+    "胶囊眼竖长条样式在位（宽 3 / 高 9 / 全圆角），旧 Siri 球样式已删除");
   const voiceSettingsSrc = read("electron/voice/voice-settings.ts");
   ok(/ball: \{ visible: true, hints: true, style: DEFAULT_VOICE_BALL_STYLE \}/.test(voiceSettingsSrc)
     && /style: normalizeVoiceBallStyle\(\(ball as any\)\.style\)/.test(voiceSettingsSrc),
