@@ -12,7 +12,7 @@
  *   `dirByThread[会话id] = 目录`；会话还没建出来时暂存 `pendingDir`（新建流程只有一条）。
  *   ⛔ 否则 A 会话选了 /a、B 会话选了 /b，切回 A 会显示 /b（串项）。
  */
-let state = { open: false, dir: "", autoOpen: false, dirByThread: {}, pendingDir: "" };
+let state = { open: false, dir: "", dirByThread: {}, pendingDir: "" };
 const listeners = new Set();
 
 function emit() { for (const fn of listeners) fn(); }
@@ -22,25 +22,6 @@ export function openBossDirDialog() {
   if (state.open) return;
   state = { ...state, open: true };
   emit();
-}
-
-/**
- * 「进欢迎界面后**自动**弹出对话框」（10-25 用户实测第二轮）：
- * 点「BOSS 会话」⇒ 先落进 BOSS 欢迎界面 ⇒ **再**自动弹出项目地址对话框。
- * ⛔ 用 autoOpen 标记而不是直接 open：欢迎界面要先渲染出来（用户要先看到它），
- *    由欢迎界面挂载后消费这个标记再开弹窗（见 BossThreadIntro 的 useEffect）。
- */
-export function autoOpenBossDirDialog() {
-  state = { ...state, open: false, autoOpen: true };
-  emit();
-}
-
-/** 消费「自动弹出」标记（返回 true ⇒ 调用方应当打开弹窗）。 */
-export function consumeBossDirAutoOpen() {
-  if (!state.autoOpen) return false;
-  state = { ...state, autoOpen: false };
-  emit();
-  return true;
 }
 
 /** 关闭对话框（选完 / 取消都走它）。 */
