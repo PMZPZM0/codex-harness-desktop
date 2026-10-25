@@ -355,7 +355,7 @@ bag.earlyView = earlyView as typeof bag.earlyView;
      那种会话是普通会话、不在群账本里，于是顶栏的成员图标与「?」都不渲染（用户截图红框）。
      三种入口都要认（与 timeline 的 isBossEmpty 同一口径）。 */
   const isBossThread = Boolean(bag.thread?.id)
-    && (bossThreads.bossIds.includes(String(bag.thread?.id)) || String(bag.thread?.id) === bossThreads.homeId);
+    && (bossThreads.bossIds.includes(String(bag.thread?.id)) || (bossThreads.sessionIds ?? []).includes(String(bag.thread?.id)));
   const topbarActionsNode = (
     <>
       {/* ⛔ 顶栏操作簇顺序：🔍 搜索 → 调度开关 → 「独立弹窗 / 返回主应用」→ ⋯ 任务菜单 → 右栏开关。
