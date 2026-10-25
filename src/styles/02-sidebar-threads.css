@@ -1533,9 +1533,9 @@ html[data-ui-font="large"] .action-content pre {
 }
 
 /* ── win32 无边框大圆角窗（10-25 用户：Marvis 同款圆弧 + 四边都能拖）─────────────── */
-[data-os="win32"] html,
-[data-os="win32"] body,
-[data-os="win32"] #root { background: transparent; }
+html[data-os="win32"],
+html[data-os="win32"] body,
+html[data-os="win32"] #root { background: transparent !important; }
 [data-os="win32"] .app-shell {
   margin: 12px;
   width: calc(100% - 24px);
