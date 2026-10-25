@@ -271,6 +271,19 @@ if (state) {
   const mainStage = read("src/features/app-view/AppView/02-main-stage.tsx");
   ok(/bossStage\.enterThreadId/.test(mainStage) && !/stageEnterThreadId/.test(mainStage),
     "主舞台用 store 基线兜底比对，且不再用 useRef 存基线（重挂会丢）");
+
+  /* ── 13. 覆盖层的两条「看得见」判据（10-25 用户实测「空白」的两次真因，都必须钉死）──
+     ① 主舞台 stage 打开时是 visibility:hidden，而 visibility 会被子元素继承 ⇒ 覆盖层必须显式 visible，
+        否则 DOM 齐全、416px 高、文字都在，屏幕上一片白。
+     ② 覆盖层必须 absolute + inset:0，⛔ 不能 grid-area：`.workspace` 是两行网格，覆盖层占
+        `1/1/-1/-1` 会把自动放置的 timeline 挤进**隐式第三行**（实测 rows 416px 0px 340px），
+        群聊界面只剩 416px、底部多出一条 340px 空白带。 */
+  const bossCss = read("src/styles/47-boss-group-view.css");
+  const stageBlock = (bossCss.match(/\.boss-stage\s*\{[\s\S]*?\n\}/) ?? [""])[0];
+  ok(/visibility:\s*visible/.test(stageBlock),
+    "BOSS 覆盖层显式 visibility:visible（主舞台 hidden 会被子元素继承 ⇒ 整片看不见）");
+  ok(/position:\s*absolute/.test(stageBlock) && /inset:\s*0/.test(stageBlock) && !/^\s*grid-area\s*:/m.test(stageBlock),
+    "BOSS 覆盖层 absolute + inset:0 铺满（⛔ grid-area 会把时间线挤进隐式行，底部多出空白带）");
 }
 
 console.log(`\n【boss-groups】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

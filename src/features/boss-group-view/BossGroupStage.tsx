@@ -150,9 +150,14 @@ export function BossGroupStage() {
       </header>
 
       {!group ? (
+        /* ⛔ 空态不许只给文字：原文案「在下面说第一句话」下面并没有输入框（没有群就没法 say）
+           ⇒ 死路。这里给一个明确的出口，回普通会话里建群。 */
         <div className="boss-stage-empty">
           <b>还没有群</b>
-          在下面说第一句话，例如：<code>建个群：写手 + 前端，把 XX 派下去，验收标准是……</code>
+          <span>在普通会话里说一句：<code>建个群：写手 + 前端，把 XX 派下去，验收标准是……</code></span>
+          <button type="button" className="boss-panel-mini" onClick={() => closeBossStage()}>
+            回普通会话去建群
+          </button>
         </div>
       ) : (
         <>
