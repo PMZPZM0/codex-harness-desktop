@@ -401,15 +401,20 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     while (j < win.visible.length && !hasUser(win.visible[j])) j += 1;
     return { turnId: j < win.visible.length ? String(win.visible[j]?.id ?? "") : "", atEnd: j >= win.visible.length };
   })();
-  /* BOSS 会话的空态判定（10-25）：当前会话是某群 boss 线程，或刚点「BOSS 会话」还没落 id（pending）。 */
-  const isBossEmpty = bossThreads.pending || (Boolean(thread?.id) && bossThreads.bossIds.includes(String(thread?.id)));
+  /* BOSS 会话的空态判定（10-25）：当前会话是某群 boss 线程，或刚点「BOSS 会话」还没落 id（pending）。
+     ⛔⛔ 不能只判「是 boss 线程」：会话已建出来但**一条消息都没有**时 `isEmpty` 为 false
+        （它的定义是 `!thread && !allItems.length`，要求 thread 为 null）⇒ 空态分支进不去 ⇒ 整片空白。
+        所以这里自己判 0 回合（thread 存在但 turns 为空也算空态）。 */
+  const noTurns = (thread?.turns ?? []).length === 0;
+  const isBossThreadNow = Boolean(thread?.id) && bossThreads.bossIds.includes(String(thread?.id));
+  const isBossEmpty = bossThreads.pending || (isBossThreadNow && noTurns);
 
   return (
     <div className="timeline-wrap" ref={timelineWrapRef}>
                   {thread && <MemoMessageRuler turns={thread.turns} scrollRef={scrollRef} containerRef={timelineWrapRef} onJump={jumpToTurnInWindow} compactionTurnId={compactionMark.turnId} compactionAtEnd={compactionMark.atEnd} />}
                   {/* BOSS 会话的空白态：与 timeline 同级（绝对定位相对 .timeline-wrap），
                      不进滚动内容流 —— 普通会话完全不受影响。 */}
-                  {isEmpty && isBossEmpty ? <BossThreadIntro onPick={(text) => { app.setPrompt(text); app.composerInputRef?.current?.focus(); }} /> : null}
+                  {isBossEmpty ? <BossThreadIntro onPick={(text) => { app.setPrompt(text); app.composerInputRef?.current?.focus(); }} /> : null}
                   <div className={`timeline ${isEmpty ? "empty-state" : ""}`} ref={scrollRef} onScroll={onTimelineScroll} data-history-hidden={historyPlan.hiddenCount} data-history-below={historyPlan.hiddenBelow} data-history-total={historyPlan.hiddenStubs + timelineWindow.ordered.length}>
                   {/* BOSS 会话的空白态是**它自己的一套**（10-25 用户令：跟欢迎界面没关系）——
                      普通会话仍走 welcome-state，这里两者互不影响。 */}

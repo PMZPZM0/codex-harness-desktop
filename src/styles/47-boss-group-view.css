@@ -220,10 +220,14 @@
    ⛔ 不复用 .welcome-state：那是「新会话欢迎页」（大字标题铺上半屏 + 输入框下方一排快捷任务）。
    ⛔ 定位与 welcome-state 同一套（absolute 相对 .timeline-wrap + 下方留 54vh 让位输入框），
       但内容是**一张卡片**，且只在「当前是 BOSS 会话 && 没有回合」时渲染。 */
+/* ⛔ 不能用 `align-items:center + padding-bottom:54vh` 那套（welcome-state 的写法）：
+   矮窗口里可用高度不够时，flex 会**向上溢出**，卡片顶被裁掉（实测皇冠整个不见了）。
+   这里改成 column + 明确的上留白（11vh）+ 下让位（32vh），卡片永远从上方往下排。 */
 .boss-intro {
   position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  padding: 24px 24px calc(54vh + 32px);
+  display: flex; flex-direction: column; align-items: center;
+  padding: clamp(32px, 11vh, 110px) 24px clamp(120px, 32vh, 250px);
+  overflow: hidden;
   pointer-events: none;   /* 只有卡片本身可交互，不挡时间线的滚动/选中 */
 }
 .boss-intro-card {
