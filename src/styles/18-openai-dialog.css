@@ -1519,40 +1519,42 @@
   background: radial-gradient(ellipse at 35% 35%, rgba(255, 255, 255, .32), transparent 68%);
   pointer-events: none;
 }
+/* 尺寸用百分比 → 悬浮球 34px 与设置页预览 28px 同比例，不会一边大一边小。
+   ⛔ 10-25 用户实测「眼睛太小了」：胶囊眼占脸宽 16% / 脸高 34%，别再缩回 3×9。 */
 .voice-bot-eye {
   position: absolute;
-  top: 40%;
-  width: 3px;
-  height: 9px;
+  top: 37%;
+  width: 16%;
+  height: 34%;
   border-radius: 999px;
   background: var(--bot-eye, #f8fafc);
   box-shadow: 0 0 0 0.5px color-mix(in srgb, #000000 10%, transparent);
   animation: voice-bot-blink 4.6s ease-in-out infinite;
 }
-.voice-bot-eye--left { left: 31%; transform: translateY(-0.5px) rotate(3deg); }
-.voice-bot-eye--right { right: 31%; transform: translateY(0.5px) rotate(-3deg); }
+.voice-bot-eye--left { left: 27%; transform: translateY(-0.5px) rotate(3deg); }
+.voice-bot-eye--right { right: 27%; transform: translateY(0.5px) rotate(-3deg); }
 .voice-bot-blush {
   position: absolute;
-  top: 58%;
-  width: 6px;
-  height: 3.6px;
+  top: 72%;
+  width: 18%;
+  height: 9%;
   border-radius: 50%;
   background: var(--bot-blush, #fb7185);
   opacity: .78;
   filter: blur(.2px);
 }
-.voice-bot-blush--left { left: 17%; }
-.voice-bot-blush--right { right: 17%; }
+.voice-bot-blush--left { left: 13%; }
+.voice-bot-blush--right { right: 13%; }
 @keyframes voice-bot-blink {
   0%, 86%, 100% { transform: scaleY(1); }
   91%           { transform: scaleY(.12); }
 }
 /* 聆听：睁大眼 + 轻微前倾；思考：眯成短横线、左右交替；播报：腮红呼吸。 */
 .voice-mascot-listening .voice-bot { transform: rotate(-6deg) scale(1.04); filter: saturate(1.1) brightness(1.06); }
-.voice-mascot-listening .voice-bot-eye { height: 10px; animation: none; }
+.voice-mascot-listening .voice-bot-eye { height: 38%; animation: none; }
 .voice-mascot-thinking .voice-bot-eye {
-  width: 5px;
-  height: 2.5px;
+  width: 20%;
+  height: 8%;
   border-radius: 2px;
   animation: voice-bot-think 1.3s ease-in-out infinite;
 }

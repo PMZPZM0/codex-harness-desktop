@@ -930,9 +930,9 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     && !/mouth|nose|voice-mascot-orb/.test(mascotSrc),
     "角色本身是 Grok Bot 式圆脸 + 两颗胶囊眼 + 腮红（⛔ 不是圆点眼/动物/加光圈了事）");
   const botCss = read("src/styles/18-openai-dialog.css");
-  ok(/\.voice-bot-eye \{[^}]*width:\s*3px[^}]*height:\s*9px[^}]*border-radius:\s*999px/.test(botCss)
+  ok(/\.voice-bot-eye \{[^}]*width:\s*16%[^}]*height:\s*34%[^}]*border-radius:\s*999px/.test(botCss)
     && !/\.voice-mascot-orb\b/.test(botCss) && /\.voice-bot--skin-ink \{/.test(botCss),
-    "胶囊眼竖长条样式在位（宽 3 / 高 9 / 全圆角），旧 Siri 球样式已删除");
+    "胶囊眼是脸宽 16% / 脸高 34% 的竖长条（随 28/34px 预览同比缩放），旧 Siri 球样式已删除");
   const voiceSettingsSrc = read("electron/voice/voice-settings.ts");
   ok(/ball: \{ visible: true, hints: true, style: DEFAULT_VOICE_BALL_STYLE \}/.test(voiceSettingsSrc)
     && /style: normalizeVoiceBallStyle\(\(ball as any\)\.style\)/.test(voiceSettingsSrc),
