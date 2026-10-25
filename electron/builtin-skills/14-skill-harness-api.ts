@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（100 个能力域 / 534 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（100 个能力域 / 539 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -79,9 +79,9 @@ Laya 智能判断（GitHub NandhaKishorM/laya，Apache-2.0，非自回归决策�
 专家团运行记录查询
 通道：team-runs:list
 
-### boss-groups（12 通道）
+### boss-groups（13 通道）
 创世 boss 群编排：建群/派活/独立评审/打回换人/预算闸（成员各自一个常驻会话，浏览器用 ego lite 独立 TaskSpace）
-通道：boss-groups:list, boss-groups:status, boss-groups:create, boss-groups:assign, boss-groups:review, boss-groups:escalate, boss-groups:browser, boss-groups:member, boss-groups:pin, boss-groups:say, boss-groups:pool, boss-groups:rebind
+通道：boss-groups:list, boss-groups:status, boss-groups:create, boss-groups:assign, boss-groups:review, boss-groups:escalate, boss-groups:browser, boss-groups:member, boss-groups:pin, boss-groups:say, boss-groups:pool, boss-groups:rebind, boss-groups:session
 
 ### close-confirm（1 通道）
 关闭确认弹窗的回包（最小化到托盘 / 完全退出 / 取消，可勾不再询问）
@@ -369,9 +369,9 @@ SkillHub **人格市场**（skillhub.cn/soul，16 套现成人格）：list 浏�
 用系统默认浏览器打开外部链接
 通道：external:open
 
-### shell（2 通道）
+### shell（6 通道）
 系统默认方式打开文件/目录
-通道：shell:reveal, shell:open
+通道：shell:reveal, shell:open, shell:window-minimize, shell:window-toggle-maximize, shell:window-close, shell:window-state
 
 ### scratch（1 通道）
 临时便签（快速记一条）

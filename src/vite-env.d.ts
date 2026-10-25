@@ -691,6 +691,11 @@ interface Window {
     browserPopout(url: string): Promise<{ ok: boolean }>;
     shellReveal(target: string): Promise<void>;
     shellOpen(target: string): Promise<void>;
+    /* 窗口控制（无边框窗自定义按钮；只作用于调用者自己的窗口） */
+    windowMinimize(): Promise<{ ok: boolean }>;
+    windowToggleMaximize(): Promise<{ maximized: boolean }>;
+    windowClose(): Promise<{ ok: boolean }>;
+    windowState(): Promise<{ maximized: boolean }>;
     writeClipboardImage(filePath: string): Promise<boolean>;
     readClipboardFiles(): Promise<string[]>;
     doctor(cwd?: string): Promise<{ checks: { label: string; ok: boolean; detail: string }[]; at: number }>;
@@ -1185,6 +1190,8 @@ interface Window {
     bossGroupSay(input: any): Promise<any>;
     /* 创世 boss：可拉名单（专家/专家团 + 本机 CLI agent，带探测结果） */
     bossGroupPool(): Promise<any>;
+    /* BOSS 会话身份登记（add/remove/rename/list）—— 记忆路由的唯一真相源 */
+    bossGroupSession(input: any): Promise<any>;
 /* ═══ gen:end ═══ */
 
 

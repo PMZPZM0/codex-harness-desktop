@@ -10,7 +10,7 @@
  *
  * ⛔ 待接缝化（阶段 2）：`shell` 与 `fs` 是宿主能力，将来经 `"shell"` / `"fs"` 接缝注入。
  */
-import { shell } from "electron";
+import { BrowserWindow, shell } from "electron";
 import fs from "node:fs/promises";
 import { isInsideOrEqualTrustedRoots } from "../runtime-refs";
 import { defineFeature } from "../context";
@@ -47,9 +47,22 @@ export const shellFeature = defineFeature<null>({
       if (openErr) throw new Error(openErr);
     });
 
+    /* 无边框窗（win32 大圆角）的自定义窗口按钮：只操作**调用者自己的窗口**，不接任意 hwnd。 */
+    const winOf = (event: any) => BrowserWindow.fromWebContents(event.sender);
+    ipcHost.handle("shell:window-minimize", (event) => { winOf(event)?.minimize(); return { ok: true }; });
+    ipcHost.handle("shell:window-toggle-maximize", (event) => {
+      const win = winOf(event);
+      if (!win) return { maximized: false };
+      if (win.isMaximized()) win.unmaximize(); else win.maximize();
+      return { maximized: win.isMaximized() };
+    });
+    ipcHost.handle("shell:window-close", (event) => { winOf(event)?.close(); return { ok: true }; });
+    ipcHost.handle("shell:window-state", (event) => ({ maximized: Boolean(winOf(event)?.isMaximized()) }));
+
     ctx.effect(() => {
       ipcHost.removeHandler("shell:reveal");
       ipcHost.removeHandler("shell:open");
+      for (const ch of ["shell:window-minimize", "shell:window-toggle-maximize", "shell:window-close", "shell:window-state"]) ipcHost.removeHandler(ch);
     });
   },
 });

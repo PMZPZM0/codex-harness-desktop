@@ -1531,3 +1531,32 @@ html[data-ui-font="large"] .action-content pre {
   background: color-mix(in srgb, var(--amber, #d29922) 14%, transparent);
   font-weight: 600;
 }
+
+/* ── win32 无边框大圆角窗（10-25 用户：Marvis 同款圆弧 + 四边都能拖）─────────────── */
+[data-os="win32"] html,
+[data-os="win32"] body,
+[data-os="win32"] #root { background: transparent; }
+[data-os="win32"] .app-shell {
+  margin: 12px;
+  width: calc(100% - 24px);
+  height: calc(100% - 24px);
+  border-radius: 26px;
+  overflow: hidden;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.32);
+}
+[data-os="win32"][data-maximized="1"] .app-shell {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* 自定义窗口按钮：原生 overlay 已移除，不再需要 145px 预留 */
+[data-os="win32"] .topbar { padding-right: 8px; }
+.window-controls { display: flex; align-items: stretch; height: 44px; -webkit-app-region: no-drag; flex: none; }
+.window-controls button {
+  width: 44px; height: 44px; border: 0; background: transparent; color: var(--muted);
+  display: inline-flex; align-items: center; justify-content: center; cursor: default;
+}
+.window-controls button:hover { background: color-mix(in srgb, var(--text) 9%, transparent); color: var(--text); }
+.window-controls button.window-close:hover { background: #e81123; color: #fff; }
