@@ -26,6 +26,7 @@ const SHORTCUT_GROUPS: { group: string; shortcuts: { keys: string[]; desc: strin
     group: "新建与会话",
     shortcuts: [
       { keys: ["Ctrl+N", "Ctrl+Shift+N"], desc: "新建对话" },
+      { keys: ["Ctrl+Shift+B"], desc: "打开 BOSS 会话" },
       { keys: ["Ctrl+K", "Ctrl+P", "Ctrl+Shift+P"], desc: "打开命令面板" },
       { keys: ["Ctrl+O"], desc: "更换工作区目录" },
     ],
