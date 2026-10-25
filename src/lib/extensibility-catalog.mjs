@@ -19,7 +19,7 @@ export const EXTENSIBILITY_GROUPS = ["接口与契约", "界面与呈现", "智�
  * ⛔ 这个数字**由守卫【2】保证与 manifest 实际条数一致**（写死在别处必然过期 —— docs 里
  *    曾长期写着「251 个通道」，迁移到 315 后没人同步）。改 manifest 后若忘了改这里，预检会红。
  */
-export const IPC_CHANNEL_COUNT = 533;
+export const IPC_CHANNEL_COUNT = 541;
 
 export const EXTENSIBILITY_ENTRIES = [
   {
@@ -75,14 +75,18 @@ export const EXTENSIBILITY_ENTRIES = [
       "electron/capability-registry.ts",
       "electron/features/plugins-ipc.ts",
       "src/features/settings-mcp/",
+      "src/features/app-state/parts/part08/01-seg.tsx（dynamicTools 注册）",
+      "src/features/app-state/parts/part05/event-router/02-request.tsx（item/tool/call 分发）",
     ],
     steps: [
       "内置能力：在 capability-registry.ts 登记（id / label / 说明），渲染层用 capabilityRows 展示",
       "MCP 服务器：走 mcp-servers:* 通道的覆盖表（启用/禁用），权限档位用 mcp-servers:set-tool-permission",
       "市场插件：走 plugins:market-* 通道安装，安装后由引擎作为动态工具暴露",
+      "宿主自己的动态工具：part08 的 buildDynamicTools 注册 schema，part05 的 item/tool/call 分支执行；⛔ 新老会话都要有就必须同时挂 harness_tools 网关（引擎 0.157 起 MCP 工具延迟暴露，裸名调不到）",
+      "宿主能力网关：harness_tools 的 name/args → IPC agents:dispatch-call → dispatchRpcCall（与内置 MCP 同一套执行端）",
     ],
-    effect: "能力开关改动会重启引擎才生效（界面上有「改动已保存，任务结束后生效」提示）。",
-    guards: "【2】账本登记 + 通道三件套一致",
+    effect: "能力开关改动会重启引擎才生效（界面上有「改动已保存，任务结束后生效」提示）；dynamicTools 只在 thread/start / resume 注入，改完要新开会话或切走再切回。",
+    guards: "【2】账本登记 + 通道三件套一致；【11i】能力网关（名单 / 分发 / 身份）",
     pitfalls: ["dynamicTools 只在 thread/start 注入 —— 覆盖老会话要走 MCP，不能靠 dynamicTools"],
   },
   {
@@ -101,11 +105,36 @@ export const EXTENSIBILITY_ENTRIES = [
       "新建 src/features/settings-<域>/index.ts + 页面组件（收 props，不用全局单例）",
       "注册表 settingsPagesOf 里加一条（lazy import 页面）",
       "catalogs.ts 的 settingsNav 对应分组加 [\"<id>\", \"名称\", 图标]",
+      "HelpDialog.tsx 的 OVERVIEW_GROUPS 同一分组补 { page, what, when } —— 侧栏与总览必须**逐组同名同归属**（【247】）",
       "若是一级页之外的二级页（从别处进入），补 back 元数据",
     ],
     effect: "构建后即时可见（纯渲染层改动，无需重启主进程）。",
-    guards: "【101】：id 无重复、注册表覆盖 settingsNav 全部 id、content 无硬编码分支、二级页有 back",
-    pitfalls: ["导航与注册表必须同时改，缺一个就红（【101】）", "页面内不要写 settingsPage 分支逻辑"],
+    guards: "【101】：id 无重复、注册表覆盖 settingsNav 全部 id、content 无硬编码分支、二级页有 back；【247】：侧栏与总览逐组一致",
+    pitfalls: ["导航 / 注册表 / 总览**三处**必须同时改，缺一个就红或用户找不到页（【101】【247】）", "页面内不要写 settingsPage 分支逻辑"],
+  },
+  {
+    id: "function-menu",
+    group: "界面与呈现",
+    name: "主界面 · 功能入口（侧栏快捷组）",
+    purpose: "侧栏「新建任务 / BOSS 会话 / 拓展功能」下面那组可排序入口（底部位置时叫「功能入口」）：加一项 = 模型表一条 + 动作落到侧栏总线，两处展示位置共用同一份配置。",
+    where: [
+      "src/features/function-menu/menu-model.mjs（条目定义 / 默认顺序 / 分组）",
+      "src/features/function-menu/store.ts（排序、更多分组、top|bottom 位置持久化）",
+      "src/features/function-menu/FunctionMenu.tsx（渲染 / 拖动排序 / 更多分组）",
+      "src/features/app-view/AppView/01-sidebar-shell.tsx（两处落点 + 动作总线 setFunctionMenuActionHandler）",
+    ],
+    steps: [
+      "在 menu-model.mjs 加条目（id / label / 图标 / 默认所在 section），保持 id 稳定（配置里存的就是它）",
+      "动作统一经 `setFunctionMenuActionHandler` 回侧栏壳：设置页 / 画布 / 弹窗各自在这里分流，菜单本身不直接开窗",
+      "排序与「更多」分组由 store 持久化；top / bottom 两种展示位置共用同一份顺序，别各写一套",
+      "需要首次教程就挂进 FunctionMenuTourHost 的 tour 数据（不要另造引导层）",
+    ],
+    effect: "保存即生效（渲染层 + localStorage），不用重启；菜单项的动作若打开设置页则走设置注册表。",
+    guards: "验收 `function-menu`（拖动 / 两处位置 / 更多分组）；侧栏与总览的分组一致性由【247】管，菜单项自身没有专属静态守卫",
+    pitfalls: [
+      "菜单里别写业务分支：动作一律回侧栏壳，否则两处展示位置会分叉",
+      "id 改名 = 用户已有排序配置失联；只改 label，不改 id",
+    ],
   },
   {
     id: "global-shortcut",
