@@ -1225,7 +1225,6 @@
 }
 /* ── 拉满：燃烧特效 ── 填充切火焰配色、流光加速，右端三簇火苗＋整条轨道泛橙红 */
 .effort-picker-bar.burn .effort-picker-fill {
-  background-image: linear-gradient(90deg, #fbbf24, #f97316 45%, #ef4444 80%, #dc2626) !important;
   box-shadow: inset 0 1px 0 #ffffff66;
 }
 .effort-picker-bar.burn .effort-picker-fill::after {
@@ -1404,12 +1403,20 @@
 .effort-picker-bead,
 .effort-picker-dots,
 .effort-picker-flames { display: none !important; }
-/* 拉满不再切火焰色：四档始终是同一条绿→蓝渐变 */
-.effort-picker-bar.burn .effort-picker-fill {
-  background-image: linear-gradient(90deg, #16a34a 0%, #0ea5e9 100%) !important;
-  box-shadow: none;
-}
-.effort-picker-bar.burn .effort-picker-fillwrap { box-shadow: none; }
+/* 拉满：渐变由 JSX 按档位给出（xhigh 多一段蓝），这里补光晕与粒子特效 */
+.effort-picker-bar.burn .effort-picker-fillwrap { box-shadow: 0 0 16px rgba(37, 99, 235, 0.45), 0 0 28px rgba(14, 165, 233, 0.28); }
+.effort-picker-sparks { position: absolute; inset: 0; border-radius: 999px; overflow: hidden; pointer-events: none; }
+.effort-picker-sparks i { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: #fff; opacity: 0; box-shadow: 0 0 6px #fff; animation: effort-spark 1.8s ease-in-out infinite; }
+.effort-picker-sparks i:nth-child(1) { left: 12%; top: 30%; animation-delay: 0s; }
+.effort-picker-sparks i:nth-child(2) { left: 26%; top: 62%; animation-delay: .2s; }
+.effort-picker-sparks i:nth-child(3) { left: 38%; top: 24%; animation-delay: .45s; }
+.effort-picker-sparks i:nth-child(4) { left: 50%; top: 66%; animation-delay: .65s; }
+.effort-picker-sparks i:nth-child(5) { left: 62%; top: 28%; animation-delay: .9s; }
+.effort-picker-sparks i:nth-child(6) { left: 72%; top: 58%; animation-delay: 1.1s; }
+.effort-picker-sparks i:nth-child(7) { left: 84%; top: 34%; animation-delay: 1.3s; }
+.effort-picker-sparks i:nth-child(8) { left: 46%; top: 40%; animation-delay: .35s; }
+.effort-picker-sparks i:nth-child(9) { left: 66%; top: 44%; animation-delay: .8s; }
+@keyframes effort-spark { 0%, 100% { opacity: 0; transform: translateY(0) scale(.6); } 40% { opacity: .95; transform: translateY(-3px) scale(1); } 70% { opacity: .35; } }
 .effort-picker-bar.burn .effort-picker-track { background: color-mix(in srgb, var(--text) 9%, var(--panel)); }
 .effort-picker-bar.burn .effort-picker-thumb { border: 0; box-shadow: 0 2px 8px #0000002e, 0 0 0 1px #0000000f; }
 .effort-picker-ticks { margin-top: 7px; }

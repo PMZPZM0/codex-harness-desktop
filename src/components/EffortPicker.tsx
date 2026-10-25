@@ -32,6 +32,14 @@ export const EFFORT_HINTS: Record<string, string> = {
 };
 
 /** 取档位颜色：已知档位用固定色，未知档位按下标取备用色。 */
+export const EFFORT_BANDS: Record<string, string> = {
+  low: "linear-gradient(90deg, #22c55e 0%, #16a34a 100%)",
+  medium: "linear-gradient(90deg, #16a34a 0%, #0ea5e9 100%)",
+  high: "linear-gradient(90deg, #0ea5e9 0%, #2563eb 100%)",
+  xhigh: "linear-gradient(90deg, #16a34a 0%, #0ea5e9 55%, #2563eb 100%)",
+};
+
+/** 取档位颜色：已知档位用固定色，未知档位按下标取备用色。 */
 export function effortColor(level: string, index = 0): string {
   return EFFORT_COLORS[level] ?? SPARE_COLORS[index % SPARE_COLORS.length] ?? FALLBACK_COLOR;
 }
@@ -116,7 +124,8 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, autoMod
   };
   const isMax = draft >= levels.length - 1;
   // 连续渐变条：左绿右蓝（用户 10-24 参考图的观感），四档只取样其中的四个位置。
-  const bands = "linear-gradient(90deg, #16a34a 0%, #0ea5e9 100%)";
+  // 渐变随档位变化（10-25 用户对照 Qoder：拉满要有更强的绿→蓝与粒子特效）
+  const bands = EFFORT_BANDS[shown] ?? "linear-gradient(90deg, #16a34a 0%, #0ea5e9 100%)";
   const pct = levels.length > 1 ? (draft / (levels.length - 1)) * 100 : 0;
   // 渐变按「整条轨道」铺：已选段越窄，背景就要放得越大，颜色才与档位位置对齐
   const fillScale = pct > 0 ? (100 / pct) * 100 : undefined;
@@ -191,6 +200,7 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, autoMod
             <div className="effort-picker-bead" style={{ left: `${pct}%` }} aria-hidden />
             {/* ⚪ 滑块：默认隐藏，hover / 聚焦 / 拖动才出现 */}
             <div className="effort-picker-thumb" style={{ left: `${pct}%` }} aria-hidden />
+            {isMax && <div className="effort-picker-sparks" aria-hidden>{Array.from({ length: 9 }).map((_, i) => <i key={i} />)}</div>}
             {isMax && <div className="effort-picker-flames" aria-hidden><i /><i /><i /></div>}
             <input
               type="range"
