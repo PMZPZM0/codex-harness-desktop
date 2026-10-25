@@ -601,7 +601,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                           </button>
                           {/* 10-25 用户令（对照 ZCode）：项目行加「新建会话」图标（··· 之前）——
                               点击 = 切 workspace 到该项目 → 开新会话（首条消息发出时 cwd 落到该项目）。 */}
-                          <button className="project-item-new-btn" title={"在 " + basename(cwd) + " 新建任务"} onClick={(event) => { event.stopPropagation(); bagSetWorkspaceForProject(cwd); }}><MessageCirclePlus size={13} /></button>
+                          <button className="project-item-new-btn" title={"在 " + basename(cwd) + " 新建任务"} onClick={(event) => { event.stopPropagation(); event.currentTarget.blur(); bagSetWorkspaceForProject(cwd); }}><MessageCirclePlus size={13} /></button>
                           <button className="project-item-menu-btn" title="项目操作" aria-expanded={projectMenu === cwd} onClick={(event) => { event.stopPropagation(); setProjectMenu(projectMenu === cwd ? null : cwd); }}><MoreHorizontal size={14} /></button>
                           {projectMenu === cwd && <div className="project-menu">
                             <button className="danger" onClick={() => { setProjectMenu(null); unregisterKnownProject(cwd); void deleteThreadsByCwd(cwd); }}><Trash2 size={14} />删除项目（含全部会话）</button>
