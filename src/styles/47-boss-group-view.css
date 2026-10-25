@@ -36,6 +36,9 @@
   appearance: none;
   padding: 0 6px;
 }
+/* 统一下拉（AppSelect）版：守卫【197】禁原生 select，触发按钮自带 width:100%/min-height:32px，
+   这里收成面板尺度（两类的选择器，优先级高于 .app-select-trigger 单类）。 */
+.boss-panel-select.app-select-trigger { width: auto; height: 28px; min-height: 0; padding: 0 8px; }
 .boss-panel-x, .boss-panel-mini {
   display: inline-flex;
   align-items: center;

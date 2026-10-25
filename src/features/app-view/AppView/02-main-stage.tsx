@@ -5,24 +5,23 @@
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 import { MainStageTimeline } from "./02-main-stage/01-timeline";
 import { MainStageComposer } from "./02-main-stage/03-composer";
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { BossGroupStage, closeBossStage, getBossPanelState, subscribeBossPanel } from "../../boss-group-view";
 
 export function AppViewMainStage({ app }: { app: HarnessAppApi }) {
   /* BOSS 会话专属界面（10-25 用户令）：stage 激活时主舞台整块渲染成群聊视图。
-     ⛔ 自动退出：用户点了其它会话/新会话（thread id 变了）⇒ 回普通会话 —— 不能把普通会话
-        「藏」在 BOSS 视图后面。进入那一刻的 thread id 记在 ref 里做对比。 */
+     ⛔ 自动退出（10-25 用户实测「切到别的会话，主舞台空白，按钮还亮着」后重做）：
+        主路径是**事件驱动** —— openThread / startNewThread 一进去就 closeBossStage（见
+        app-state 那两处）；这里只做**兜底**：会话 id 与「进入 BOSS 那一刻的会话」不同就退出。
+     ⛔⛔ 基线存在 store（bossStage.enterThreadId），⛔ 不放 useRef —— 主舞台被卸载重挂时
+        ref 归零会把「当前会话」当成新基线，于是永远判不出用户已经切走 ⇒ 主舞台恒 hidden。 */
   const bossStage = useSyncExternalStore(subscribeBossPanel, getBossPanelState);
-  const stageEnterThreadId = useRef("");
   const currentThreadId = app.thread?.id ?? "";
-  if (bossStage.stage && stageEnterThreadId.current === "") stageEnterThreadId.current = currentThreadId;
   useEffect(() => {
-    if (bossStage.stage && stageEnterThreadId.current !== "" && currentThreadId !== stageEnterThreadId.current) {
-      closeBossStage();
-      stageEnterThreadId.current = "";
-    }
-    if (!bossStage.stage) stageEnterThreadId.current = "";
-  }, [bossStage.stage, currentThreadId]);
+    if (!bossStage.stage) return;
+    // 空 id 是切换/新建过程中的瞬态，不算「切到了别的会话」（新会话由 startNewThread 直接关）
+    if (currentThreadId && currentThreadId !== bossStage.enterThreadId) closeBossStage();
+  }, [bossStage.stage, bossStage.enterThreadId, currentThreadId]);
   const {
     TURNS_PAGE,
     TURN_WINDOW,

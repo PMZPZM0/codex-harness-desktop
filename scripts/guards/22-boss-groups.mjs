@@ -254,6 +254,23 @@ if (state) {
   ok(/thread\/queue\/add/.test(runner) && /thread\/queue\/start/.test(runner), "群事件用 queue/add + queue/start 回投（不打断 boss 在跑的回合）");
   ok(/codex-/.test(runner) && /ego-browser/.test(runner), "成员提示词写明浏览器走 ego-browser 且每会话独立 TaskSpace");
   ok(/TURN_WAIT_TIMEOUT_CODE/.test(runner) && /不判失败|转后台/.test(runner), "等待到点按「转后台」处理，不误判失败");
+
+  /* ── 12. BOSS 专属视图的进出契约（10-25 用户实测「切到别的会话后主舞台空白、按钮还亮着」）──
+     ⛔ 三条都必须成立，缺一条就会复现：
+       ① 基线存在 store（组件卸载重挂不丢）② 切会话/新会话在**动作入口**就关
+       ③ 渲染层只做兜底比对，不许再用 useRef 存基线（ref 会随重挂归零）。 */
+  const panelStore = read("src/features/boss-group-view/panel-store.mjs");
+  ok(/enterThreadId:\s*String\(threadId \|\| ""\)/.test(panelStore),
+    "openBossStage 把「进入那一刻的会话 id」记进 store（enterThreadId）");
+  ok(/export function closeBossStage\(\)\s*\{\s*[\s\S]{0,200}?if \(!state\.stage\) return;/.test(panelStore),
+    "closeBossStage 幂等（已关闭不重复广播）");
+  ok(/closeBossStage\(\)/.test(read("src/features/app-state/parts/part08/01-seg/open-thread.tsx")),
+    "openThread 入口关闭 BOSS 专属视图（切会话即退出）");
+  ok(/closeBossStage\(\)/.test(read("src/features/app-state/parts/part06/03-seg/02-context-fork-backup.tsx")),
+    "startNewThread 入口关闭 BOSS 专属视图（新会话即退出）");
+  const mainStage = read("src/features/app-view/AppView/02-main-stage.tsx");
+  ok(/bossStage\.enterThreadId/.test(mainStage) && !/stageEnterThreadId/.test(mainStage),
+    "主舞台用 store 基线兜底比对，且不再用 useRef 存基线（重挂会丢）");
 }
 
 console.log(`\n【boss-groups】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

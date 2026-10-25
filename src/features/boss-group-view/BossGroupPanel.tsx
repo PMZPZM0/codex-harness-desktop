@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Crown, Pin, PinOff, SendHorizontal, X } from "lucide-react";
 import { closeBossPanel, getBossPanelState, setBossPanelGroup, subscribeBossPanel, type BossPanelState } from "./panel-store.mjs";
+import { AppSelect } from "../../components/AppSelect";
 
 type GroupSummary = { id: string; name: string; paused: boolean; memberCount: number; taskCount: number };
 type Snapshot = {
@@ -105,14 +106,14 @@ export function BossGroupPanel() {
       <header className="boss-panel-head">
         <span className="boss-panel-title"><Crown size={14} aria-hidden="true" /> BOSS 会话</span>
         {groups.length > 1 ? (
-          <select
+          /* ⛔ 渲染层不许用原生 `<select>`（守卫【197】） */
+          <AppSelect
             className="boss-panel-select"
-            aria-label="切换群"
+            ariaLabel="切换群"
             value={groupId}
-            onChange={(e) => setBossPanelGroup(e.target.value)}
-          >
-            {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-          </select>
+            onChange={(next) => setBossPanelGroup(next)}
+            options={groups.map((g) => ({ value: g.id, label: g.name }))}
+          />
         ) : group ? (
           <span className="boss-panel-sub">{group.name}</span>
         ) : null}
