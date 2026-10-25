@@ -2549,3 +2549,51 @@
   pointer-events: none;
   animation: composer-chip-caret 1s steps(2, start) infinite;
 }
+
+/* ── 运行过程「详细」档：生成内容 / diff 自动展开并跟随底部（10-25）── */
+.live-edit-item { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.live-edit-detail {
+  max-height: 220px;
+  margin: 1px 0 6px 22px;
+  overflow: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.live-edit-code {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--text);
+  font: 11px/1.55 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 运行过程「详细」：最新生成/修改文件浮窗（10-25，与思考板块同款自适应定位） */
+.live-file-float {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--panel);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+  overflow: hidden;
+}
+.live-file-float-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--text);
+  font-size: 12px;
+}
+.live-file-float-head strong { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.live-file-float-head small { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); font-size: 10.5px; }
+.live-file-float-close { flex: none; width: 22px; height: 22px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); display: grid; place-items: center; cursor: pointer; }
+.live-file-float-close:hover { background: var(--panel-2); color: var(--text); }
+.live-file-float-body { max-height: min(46vh, 360px); overflow: auto; }
+.live-file-float-code { margin: 0; padding: 9px 11px; color: var(--text); font: 11px/1.55 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace; white-space: pre-wrap; word-break: break-word; }

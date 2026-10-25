@@ -248,7 +248,7 @@ const liveLastSent = new Map<string, string>();
 /* 10-22 用户实测「汇总消息下面没有文件卡片」：一轮里**创建后又删除**的文件，最终快照与开始一样
    ⇒ 最终报告为空；而收尾会清掉 live，卡片直接消失。这里留下最后一次 live 明细，结算时把
    最终快照里已经不存在的路径按 deleted 补回报告（只影响"本轮确实碰过"的文件）。 */
-const liveLastFiles = new Map<string, { turnId: string; files: { path: string; status: string; added: number; deleted: number }[] }>();
+const liveLastFiles = new Map<string, { turnId: string; files: { path: string; status: string; added: number; deleted: number; diff?: string; content?: string }[] }>();
 
 function ensureLiveTimer(): void {
   if (liveTimer) return;
@@ -276,17 +276,17 @@ async function pollLiveOnce(): Promise<void> {
     for (const [threadId, entry] of [...snaps]) {
       if (!entry.turnId) continue;
       const { map: next, truncated } = await walkLight(entry.cwd);
-      const files: { path: string; status: string; added: number; deleted: number }[] = [];
+      const files: { path: string; status: string; added: number; deleted: number; diff?: string; content?: string }[] = [];
       for (const [p, after] of next) {
         const before = entry.snap.get(p);
         if (!before) {
           const text = await readLiveText(p);
           const d = text != null ? lineDelta("", text) : { added: 0, deleted: 0 };
-          files.push({ path: p, status: "added", added: d.added, deleted: 0 });
+          files.push({ path: p, status: "added", added: d.added, deleted: 0, ...(text != null ? { content: text.length > 12000 ? text.slice(-12000) : text } : {}) });
         } else if (before.size !== after.size || before.mtime !== after.mtime) {
           const text = await readLiveText(p);
-          const d = before.content != null && text != null ? lineDelta(before.content, text) : { added: 0, deleted: 0 };
-          files.push({ path: p, status: "modified", added: d.added, deleted: d.deleted });
+          const d = before.content != null && text != null ? lineDelta(before.content, text) : { added: 0, deleted: 0, diff: "" };
+          files.push({ path: p, status: "modified", added: d.added, deleted: d.deleted, ...(d.diff ? { diff: d.diff } : {}) });
         }
       }
       // 截断时不做删除判定（10-07）：前后遍历的截断点会随本轮文件数漂移，边界文件会被
@@ -294,8 +294,8 @@ async function pollLiveOnce(): Promise<void> {
       if (!truncated) {
         for (const [p, before] of entry.snap) {
           if (next.has(p)) continue;
-          const d = before.content != null ? lineDelta(before.content, "") : { added: 0, deleted: 0 };
-          files.push({ path: p, status: "deleted", added: 0, deleted: d.deleted });
+          const d = before.content != null ? lineDelta(before.content, "") : { added: 0, deleted: 0, diff: "" };
+          files.push({ path: p, status: "deleted", added: 0, deleted: d.deleted, ...(d.diff ? { diff: d.diff } : {}) });
         }
       }
       files.sort((x, y) => y.added + y.deleted - (x.added + x.deleted));
