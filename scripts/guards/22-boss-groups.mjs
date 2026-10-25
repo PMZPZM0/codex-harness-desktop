@@ -280,8 +280,8 @@ if (state) {
   const sidebar = read("src/features/app-view/AppView/01-sidebar-shell.tsx");
   ok(/bossThreads\.bossIds\.includes\(currentThreadId\)/.test(sidebar),
     "侧栏选中态派生自「当前会话 = 某群 boss 线程」");
-  ok(/app\.openThread\(groupBoss\)/.test(sidebar) && /startNewThread\(\)/.test(sidebar) && !/app\.openThread\(home\)/.test(sidebar),
-    "点 BOSS 会话 = 有群就打开群 boss 线程，没有就**新建一个全新会话**（⛔ 不复用上一次的）");
+  ok(/setBossDirDialog\(true\)/.test(sidebar) && /startNewThread\(\)/.test(sidebar) && !/app\.openThread\(home\)/.test(sidebar),
+    "点 BOSS 会话 = 弹项目地址对话框 + **新建一个全新会话**（⛔ 不复用上一次的；⛔ 也不再「有群就跳旧群」）");
   const bossStore = read("src/features/boss-group-view/boss-threads-store.mjs");
   ok(/boss-home-thread/.test(bossStore) && /setBossHomeThreadId/.test(bossStore),
     "没群时的 BOSS 会话有固定锚点（localStorage boss-home-thread）");
@@ -360,6 +360,37 @@ if (state) {
     "BOSS 会话名单**写入**去重（并发 add 不会写两条）");
   ok(!/slice\(0, 8\)/.test(bossMemPanel),
     "⛔ 显示名不能只取 id 前 8 位（uuid v7 的时间戳前缀会撞）");
+  /* ⛔⛔ 10-25 用户实测三处（截图实证）：
+     ① 「这个弹窗真小气，而且…那个按键真丑」—— 之前复用了 `.close-confirm-*`
+        （那是给「确认/取消」两按钮设计的紧凑卡片）⇒ 卡片挤、两个选项被压成两行字、按钮换行。
+        ⇒ 现在用**自己的宽体样式** `.boss-dir-*`（≥480px 宽 + 两个大选项卡）。
+        ⛔ 断言不复用 close-confirm 样式（这类"视觉退化"编译器查不出，只能钉死）。
+     ② 「注释太业余」—— 侧栏那段注释被两处改写**嵌套**了 ⇒ 注释没闭合。
+        ⇒ 断言那段没有嵌套块注释。
+     ③ 「为啥我进主仓没这个弹窗，PPCODE弹了」—— 原来「有群 ⇒ 直接跳旧群的 boss 线程」
+        ⇒ **行为随有没有群而变**（新装用户看得到弹窗、老用户被跳走）。
+        ⇒ 断言：不再有「有群就跳走」那条分支；点按钮只弹对话框、不新建会话
+        （原来建一次、选完地址又建一次 ⇒ 两个空会话，点「取消」也留一个未命名任务）。 */
+  const bossDirDlg = read("src/features/boss-group-view/BossProjectDirDialog.tsx");
+  ok(!/close-confirm-card/.test(bossDirDlg) && /boss-dir-card/.test(bossDirDlg),
+    "⛔ 项目地址对话框用**自己的宽体样式**（不复用 close-confirm 的紧凑卡片）");
+  const bossDirCss = read("src/styles/47-boss-group-view.css");
+  ok(/\.boss-dir-card\s*\{[^}]*width:\s*min\(5\d\dpx/.test(bossDirCss),
+    "对话框卡片宽度 ≥500px（⛔ 旧版约 400 ⇒ 用户骂「真小气」）");
+  ok(/\.boss-dir-option\s*\{/.test(bossDirCss) && /\.boss-dir-option-body/.test(bossDirCss),
+    "两个选项是**大选项卡**（图标 + 标题 + 说明），不是并排小按钮");
+  const bossSideSrc = read("src/features/app-view/AppView/01-sidebar-shell.tsx");
+  const bossBlock = bossSideSrc.slice(Math.max(0, bossSideSrc.indexOf("sidebar-quick-boss") - 2600), bossSideSrc.indexOf("sidebar-quick-boss") + 400);
+  /* ⛔ 注释嵌套检测：**正则里不能出现块注释起始符**（那会把本守卫自己的注释提前闭合，
+     表现为 SyntaxError: Unexpected identifier）⇒ 用字符类拼出来。 */
+  const blockStart = new RegExp("\\/" + "\\*", "g");
+  const nestedComment = new RegExp("\\/" + "\\*[^\\n]*\\/" + "\\*[^\\n]*\\*" + "\\/", "g");
+  ok(!(blockStart.test(bossBlock) && nestedComment.test(bossBlock)),
+    "⛔ 侧栏 BOSS 那段注释没有嵌套坏掉（之前两段块注释套在一起）");
+  ok(!/openThread\(groupBoss\)/.test(bossSideSrc),
+    "⛔ 点「BOSS 会话」不再「有群就跳旧群」⇒ 行为不随有没有群而变（用户实测：主仓不弹、PPcode 弹）");
+  ok(!/setBossDirDialog\(true\);\s*startNewThread\(\)/.test(bossSideSrc),
+    "⛔ 点按钮只弹对话框、**不新建会话**（原来建两次 ⇒ 两个空会话，点取消也留一个）");
   ok(/BossMemoryPanel/.test(read("src/features/settings-memory/MemoryCenterSection.tsx"))
     && existsSync(join(ROOT, "src/features/settings-memory/BossMemoryPanel.tsx")),
     "记忆设置页有独立的「BOSS 会话记忆」板块（与项目共享记忆库分开）");
@@ -426,7 +457,9 @@ if (state) {
     "顶栏成员图标 /「?」都渲染（群 boss 线程 + 已登记的 BOSS 会话）");
   /* ⛔⛔ 10-25 实测「独立弹窗没有成员图标和问号」：DOM 在、断言全绿，但 CSS 媒体查询把
      `display` 设成了 none（当时断点是 1180，而默认窗口 1080 就命中）。
-     ⇒ 隐藏断点必须 ≤640，且断言只认 DOM 存在的写法不可再用于这两个图标。 */
+     ⇒ 隐藏断点必须 ≤640，且断言只认 DOM 存在的写法不可再用于这两个图标。
+     ⛔ 上一行那条正则的**末尾是右括号紧跟斜杠** ⇒ 会被解析成注释闭合符、提前闭合本注释 ⇒ 整文件 SyntaxError。
+     ⇒ 结尾补一个空格再接斜杠。 */
   const bossViewCss = read("src/styles/47-boss-group-view.css");
   /* 只允许 ≤640 的断点隐藏这两个图标：出现更大的断点（如 1180）就是回归。 */
   const hideRules = bossViewCss.split("\n").filter((line) => /@media/.test(line) && /boss-(members-wrap|help-btn)/.test(line));

@@ -335,3 +335,88 @@
 }
 .boss-member-strip .boss-avatar + .boss-avatar { margin-left: -6px; }
 .boss-chat-row.side-left { align-items: flex-start; }
+
+/* ── BOSS 会话项目地址对话框（10-25 用户实测「弹窗真小气、按键真丑」）──────
+   ⛔ **不复用 `.close-confirm-*`**：那是给「确认/取消」两按钮设计的紧凑卡片，
+      装两个选项就会挤成两行字（用户实测）。这里用宽体 + 大选项卡。
+   层级：与全局模态一致（400 起，确认框 950 在它之上 —— 这里不与确认框同屏出现）。 */
+.boss-dir-backdrop {
+  position: fixed; inset: 0; z-index: 900;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  background: color-mix(in srgb, #000 38%, transparent);
+  animation: boss-dir-fade 140ms ease-out;
+}
+@keyframes boss-dir-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.boss-dir-card {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+  display: flex; flex-direction: column; gap: 16px;
+  padding: 22px 24px 18px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 18px 48px color-mix(in srgb, #000 28%, transparent);
+  animation: boss-dir-rise 160ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+@keyframes boss-dir-rise { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
+
+.boss-dir-head { display: flex; align-items: flex-start; gap: 12px; }
+.boss-dir-head-copy { flex: 1; min-width: 0; }
+.boss-dir-title { margin: 0 0 4px; font-size: 16px; font-weight: 600; letter-spacing: 0.2px; }
+.boss-dir-sub { margin: 0; font-size: 13px; line-height: 1.65; color: var(--muted); }
+.boss-dir-sub strong { color: var(--text); font-weight: 600; }
+.boss-dir-x {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; padding: 0;
+  border: 1px solid transparent; border-radius: 8px;
+  background: transparent; color: var(--muted); cursor: pointer;
+}
+.boss-dir-x:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
+.boss-dir-x:disabled { opacity: 0.5; cursor: default; }
+
+/* 两个大选项卡（不是并排小按钮） */
+.boss-dir-options { display: flex; flex-direction: column; gap: 10px; }
+.boss-dir-option {
+  display: flex; align-items: flex-start; gap: 12px; width: 100%; text-align: left;
+  padding: 14px 16px; border-radius: 12px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+  color: var(--text); cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+.boss-dir-option:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--amber) 45%, var(--line));
+  background: color-mix(in srgb, var(--amber) 7%, transparent);
+}
+.boss-dir-option:active:not(:disabled) { transform: translateY(1px); }
+.boss-dir-option:disabled { opacity: 0.55; cursor: default; }
+.boss-dir-option:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.boss-dir-option-icon {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: 10px;
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 14%, transparent);
+}
+.boss-dir-option-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.boss-dir-option-body strong { font-size: 14px; font-weight: 600; line-height: 1.4; }
+.boss-dir-option-body small { font-size: 12.5px; line-height: 1.6; color: var(--muted); }
+.boss-dir-option-body code {
+  font-family: var(--mono); font-size: 12px;
+  padding: 1px 5px; border-radius: 5px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.boss-dir-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.boss-dir-foot-note { font-size: 12px; color: var(--muted); }
+.boss-dir-cancel {
+  padding: 6px 14px; min-height: 32px;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: transparent; color: var(--muted);
+  font-size: 13px; cursor: pointer;
+}
+.boss-dir-cancel:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
+.boss-dir-cancel:disabled { opacity: 0.55; cursor: default; }

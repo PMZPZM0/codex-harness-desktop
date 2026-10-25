@@ -26,6 +26,10 @@ export function BossMemoryPanel({ threads, onOpenThread, onNotice }: {
   onNotice?: (text: string) => void;
 }) {
   const [sessions, setSessions] = useState<BossSessionRow[]>([]);
+  /* 当前**生效**的记忆后端（⛔ 必读：MCP 未安装 / 云端未开通会自动回退 builtin）——
+     面板显示的是本地金字塔那份，切到 MCP/云端后它就不再被写入 ⇒ 必须说清楚，
+     否则用户看到空面板会以为坏了。 */
+  const [backend, setBackend] = useState<{ backend: string; effective: string; fallbackReason: string | null } | null>(null);
   const [activeId, setActiveId] = useState<string>("");
   const [snapshot, setSnapshot] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -46,7 +50,14 @@ export function BossMemoryPanel({ threads, onOpenThread, onNotice }: {
     };
     pull();
     const timer = setInterval(pull, 4000);
-    return () => { alive = false; clearInterval(timer); };
+    const pullBackend = () => {
+      Promise.resolve((window as any).codex?.readMemoryBackend?.())
+        .then((res: any) => { if (alive && res) setBackend({ backend: String(res.backend), effective: String(res.effective), fallbackReason: res.fallbackReason ?? null }); })
+        .catch(() => { if (alive) setBackend(null); });
+    };
+    pullBackend();
+    const timer2 = setInterval(pullBackend, 8000);
+    return () => { alive = false; clearInterval(timer); clearInterval(timer2); };
   }, []);
 
   const active = useMemo(() => sessions.find((s) => s.id === activeId) ?? null, [sessions, activeId]);
@@ -161,10 +172,24 @@ export function BossMemoryPanel({ threads, onOpenThread, onNotice }: {
             </small>
           </span>
           {loading ? <em className="lib-loading">读取中…</em> : null}
+          {backend ? (
+            <em className="boss-mem-backend" title={backend.fallbackReason ?? ""}>
+              记忆后端：{backend.effective === "builtin" ? "本地金字塔" : backend.effective === "mcp" ? "MCP 记忆服务" : "云端记忆"}
+              {backend.fallbackReason ? "（已回退）" : ""}
+            </em>
+          ) : null}
         </header>
 
         {active ? (
           <>
+            {backend && backend.effective !== "builtin" ? (
+              <p className="boss-mem-note">
+                ⛔ 当前生效后端是 <strong>{backend.effective === "mcp" ? "MCP 记忆服务" : "云端记忆"}</strong>，
+                下面这份**本地金字塔**目录已不再被自动捕获写入 —— 记忆进的是
+                {backend.effective === "mcp" ? "MCP 服务（模型自己调 memory_write）" : "云端（按会话 id 隔离）"}。
+                切回「本地金字塔」才会重新往这里写。
+              </p>
+            ) : null}
             <div className="boss-mem-layers">
               {layers.length === 0 && !loading ? <p className="lib-empty">这个 BOSS 会话还没有记忆内容。</p> : null}
               {layers.map((l: any) => {
