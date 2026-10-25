@@ -280,8 +280,12 @@ if (state) {
         （上一版就是布尔与真实会话脱钩：切到别的会话后按钮还亮着）。
      ⛔ 还没建群时要有 home 锚点（localStorage），否则每点一次就多一个「未命名任务」。 */
   const sidebar = read("src/features/app-view/AppView/01-sidebar-shell.tsx");
-  ok(/bossThreads\.bossIds\.includes\(currentThreadId\)/.test(sidebar),
-    "侧栏选中态派生自「当前会话 = 某群 boss 线程」");
+  /* ⛔ 本条原为「侧栏选中态派生自『当前会话 = 某群 boss 线程』」—— 10-25 用户当场否掉了这个设计：
+     「我选中下面已建的 BOSS 会话时候，上面那个 BOSS 会话选项不要亮」。
+     顶部按钮 = **动作**（新建），⛔ 不再有任何"我在不在 BOSS 会话里"的派生高亮；
+     身份只由会话列表的选中行表达（judgment 见本文件后段「不许 `boss-open`」两条）。 */
+  ok(!/bossThreads\.bossIds\.includes\(currentThreadId\)/.test(sidebar),
+    "⛔ 顶部「BOSS 会话」按钮不再派生当前会话的选中态（用户令：选下面的 BOSS 会话时它不许亮）");
   /* ⛔⛔ 10-25 用户实测（第二轮）：「点 BOSS 会话，先出来这个弹窗，不会跳转到 BOSS 欢迎界面，
      再跳这个弹窗」⇒ **顺序反了**。现在契约是：
      ① 点「BOSS 会话」→ **先落进 BOSS 欢迎界面**（置 pending + 起一个全新空会话）；
@@ -431,6 +435,14 @@ if (state) {
   const openBossFn = fnAt >= 0 ? bossSideCode.slice(fnAt, fnAt + 900) : "";
   ok(openBossFn.length > 0 && !/if\s*\(\s*bossOn\s*\)\s*return/.test(openBossFn),
     "⛔ 在已有 BOSS 会话里点「BOSS 会话」也必须能新建（不许 `if (bossOn) return` 死按钮）");
+  /* ⛔⛔ 10-25 用户令：「我选中下面已建的 BOSS 会话时候，上面那个 BOSS 会话选项不要亮」
+     ⇒ 顶部按钮是**动作**（新建一条 BOSS 会话），不是**状态**（我在不在 BOSS 会话里）。
+     它一旦挂上「随当前会话变化」的类名 / aria-pressed，选下面任意一条老 BOSS 会话就会跟着亮
+     （用户已两次点名）。⇒ 判据：侧栏代码里没有该类名与 aria-pressed，CSS 里也没有对应高亮。 */
+  ok(!/boss-open/.test(bossSideCode) && !/aria-pressed=\{bossOn\}/.test(bossSideCode),
+    "⛔ 顶部「BOSS 会话」按钮不随当前会话高亮（选下面任意一条 BOSS 会话，它都不许亮）");
+  ok(!/\.sidebar-quick-boss\.boss-open/.test(codeOnly(read("src/styles/47-boss-group-view.css"))),
+    "⛔ `.boss-open` 高亮样式已删除（不留死样式）");
   ok(/BossMemoryPanel/.test(read("src/features/settings-memory/MemoryCenterSection.tsx"))
     && existsSync(join(ROOT, "src/features/settings-memory/BossMemoryPanel.tsx")),
     "记忆设置页有独立的「BOSS 会话记忆」板块（与项目共享记忆库分开）");
