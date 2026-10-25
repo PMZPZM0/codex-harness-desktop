@@ -2489,3 +2489,39 @@
 /* ⛔ 缩略图必须禁掉浏览器原生图片拖拽：否则按下图片会进入 native drag，pointermove 全被取消（实测拖不动） */
 .composer-image-chip-inline .composer-image-chip-thumb { -webkit-user-drag: none; user-drag: none; pointer-events: none; }
 .composer-image-chip-inline.dragging { opacity: 0.85; cursor: grabbing; }
+
+/* ── 拖动中的跟手克隆 + 落点占位（10-25 用户：要按住拖动动画，不要延迟跳位） ── */
+.composer-image-chip-inline.drag-placeholder {
+  opacity: 0.18;
+  border-style: dashed;
+  box-shadow: none;
+}
+.composer-chip-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.96;
+  margin: 0;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18);
+  transition: transform 60ms linear;
+  will-change: transform;
+}
+
+/* 拖动占位：等宽虚线槽（真 chip 此刻 fixed 跟手） */
+.composer-chip-gap {
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0 3px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+  flex: none;
+}
+.composer-image-chip-inline.dragging {
+  opacity: 0.96;
+  cursor: grabbing;
+  transition: none;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18);
+}
