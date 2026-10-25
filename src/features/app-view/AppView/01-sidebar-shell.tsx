@@ -590,7 +590,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   {projectGroups.length ? projectGroups.map(([cwd, items]) => {
                     const expanded = expandedProjects.has(cwd);
                     return (
-                      <div key={cwd} className={`project-item ${expanded ? "expanded" : "collapsed"} ${projectMenu === cwd ? "menu-open" : ""}`}>
+                      <div key={cwd} className={`project-item ${expanded ? "expanded" : "collapsed"} ${projectMenu === cwd ? "menu-open" : ""} ${items.length ? "" : "is-empty"}`}>
                         <div className="project-item-head" onMouseLeave={() => setProjectMenu((current) => current === cwd ? null : current)}>
                           <button className="project-item-toggle" title={expanded ? "折叠项目" : "展开项目"} onClick={() => toggleProjectExpanded(cwd)}>
                             <ChevronDown size={12} className={`project-item-chevron ${expanded ? "open" : ""}`} />
@@ -611,7 +611,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                             // 子会话从顶层剔除（它们缩进挂在发起调度的会话下面，见 renderDispatchedList）
                             .filter((entry) => !sourcedChildIds.has(entry.id))
                             .sort((a, b) => Number(pinnedThreads.includes(b.id)) - Number(pinnedThreads.includes(a.id)) || b.updatedAt - a.updatedAt),
-                        ) : <div className="empty-list">这个项目还没有任务 —— 发第一条消息，或点上行 ＋ 在这里新建</div>}</div>}
+                        ) : <div className="empty-list">暂无任务</div>}</div>}
                       </div>
                     );
                   }) : <div className="empty-list">暂无项目</div>}
