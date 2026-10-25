@@ -13,20 +13,32 @@ import { KeyRound, LoaderCircle, RefreshCw, ShieldAlert, ShieldCheck } from "luc
 
 type LockStatus = Awaited<ReturnType<typeof window.codex.appLockStatus>>;
 const RELOCK_AFTER_HIDDEN_MS = 30_000;
+const ENABLED_CACHE_KEY = "app-lock-enabled";
+
+function readCachedEnabled(): boolean {
+  try { return localStorage.getItem(ENABLED_CACHE_KEY) === "1"; } catch { return false; }
+}
 
 export function AppLockGate({ children }: { children: ReactNode }) {
+  /* 10-26 用户：没开应用锁时不要每次启动都停在「正在检查应用锁」。
+     用上次的开关缓存做首帧判断：缓存=关 ⇒ 直接渲染 App，状态查询在后台静默核对；
+     只有缓存=开（或还没确认）时才显示检查页。开/关时设置页会同步更新这个缓存。 */
+  const cachedEnabledRef = useRef<boolean | null>(null);
+  if (cachedEnabledRef.current === null) cachedEnabledRef.current = readCachedEnabled();
+  const cachedEnabled = Boolean(cachedEnabledRef.current);
   const [status, setStatus] = useState<LockStatus | null>(null);
-  const [checking, setChecking] = useState(true);
+  const [checking, setChecking] = useState(cachedEnabled);
   const [error, setError] = useState("");
-  const [unlocked, setUnlocked] = useState(false);
+  const [unlocked, setUnlocked] = useState(!cachedEnabled);
   const [resetting, setResetting] = useState(false);
   const hiddenAtRef = useRef(0);
 
   const load = useCallback(async () => {
-    setChecking(true);
     setError("");
     try {
       const next = await window.codex.appLockStatus();
+      cachedEnabledRef.current = next.enabled;
+      try { localStorage.setItem(ENABLED_CACHE_KEY, next.enabled ? "1" : "0"); } catch { /* 忽略 */ }
       setStatus(next);
       setUnlocked(!next.enabled);
       setResetting(Boolean(next.enabled && next.resetRequired));
@@ -66,7 +78,8 @@ export function AppLockGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (error) {
+  /* 只有「上次是开启 / 当前处于锁定」时才失败关闭；缓存=关时允许正常进入，避免未开锁的用户被一次 IPC 抖动挡住。 */
+  if (error && !unlocked) {
     return (
       <div className="app-lock-screen" role="alert">
         <div className="app-lock-card app-lock-card-center">
@@ -74,7 +87,7 @@ export function AppLockGate({ children }: { children: ReactNode }) {
           <h2>无法读取应用锁状态</h2>
           <p>为了安全，暂时不加载应用内容。请重试。</p>
           <code className="app-lock-inline-error">{error}</code>
-          <button type="button" className="app-lock-primary" onClick={() => void load()}><RefreshCw size={14} />重试</button>
+          <button type="button" className="app-lock-primary" onClick={() => { setChecking(cachedEnabledRef.current === true); void load(); }}><RefreshCw size={14} />重试</button>
         </div>
       </div>
     );
