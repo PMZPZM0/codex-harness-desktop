@@ -287,9 +287,22 @@ export function consumeResetRequest(anchorDir: string, userDataDir: string): boo
   /* 标记属于哪个 profile 就只重置哪个；跨 profile 的标记一律不消费（留在原处，等它自己的进程处理）。 */
   const targetUserData = String(info?.userData ?? "").trim();
   if (targetUserData && path.resolve(targetUserData) !== path.resolve(userDataDir)) return false;
-  const targets = new Set<string>([anchorDir]);
-  if (userDataDir && confirmedCustomDir(anchorDir, userDataDir)) targets.add(userDataDir);
+  /* 只删「当前 profile 自己的数据」：
+     · 当前就是锚点目录 → 删锚点；
+     · 当前是 data-dir.json 明确指过的自定义目录 → 锚点里的指路牌与自定义目录一起删；
+     · 当前是 env/其它方式指定的自定义目录（没有指路牌）→ 只删它，**绝不碰默认锚点**
+       （否则测试 profile 的重置会清掉默认 profile —— 10-26 实测事故的第二种形态）。 */
+  const targets = new Set<string>();
+  const atAnchor = path.resolve(userDataDir) === path.resolve(anchorDir);
+  if (atAnchor) {
+    targets.add(anchorDir);
+  } else if (confirmedCustomDir(anchorDir, userDataDir)) {
+    targets.add(anchorDir);
+    targets.add(userDataDir);
+  } else if (userDataDir) {
+    targets.add(userDataDir);
+  }
   for (const dir of targets) removeDirBestEffort(dir);
-  try { fs.unlinkSync(marker); } catch { /* 锚点目录已被整体删除 */ }
+  try { fs.unlinkSync(marker); } catch { /* 锚点目录可能已被整体删除；或不在 targets 里 */ }
   return true;
 }

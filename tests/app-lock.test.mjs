@@ -140,14 +140,16 @@ test("重置标记过期不触发删除", () => {
   fs.rmSync(anchor, { recursive: true, force: true });
 });
 
-test("未被 data-dir.json 确认的自定义目录不删", () => {
+test("env 指定的自定义目录：只删它，不碰默认锚点", () => {
   const anchor = tempDir("anchor2");
-  const custom = tempDir("custom-unconfirmed");
-  fs.writeFileSync(path.join(custom, "keep.txt"), "keep", "utf8");
+  const custom = tempDir("custom-env");
+  fs.writeFileSync(path.join(anchor, "keep.txt"), "keep", "utf8");
+  fs.writeFileSync(path.join(custom, "custom.txt"), "custom", "utf8");
   requestAppDataReset(anchor, custom);
   const reset = consumeResetRequest(anchor, custom);
   assert.equal(reset, true);
-  assert.equal(fs.existsSync(anchor), false);
-  assert.equal(fs.existsSync(path.join(custom, "keep.txt")), true, "不能误删普通文件夹");
-  fs.rmSync(custom, { recursive: true, force: true });
+  assert.equal(fs.existsSync(path.join(anchor, "keep.txt")), true, "默认锚点不能被测试 profile 重置牵连");
+  assert.equal(fs.existsSync(custom), false);
+  assert.equal(fs.existsSync(resetMarkerPath(anchor)), false, "标记要被消费掉");
+  fs.rmSync(anchor, { recursive: true, force: true });
 });
