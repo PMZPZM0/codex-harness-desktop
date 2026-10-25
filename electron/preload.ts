@@ -832,8 +832,6 @@ contextBridge.exposeInMainWorld("codex", {
   escalateBossTask: (input: any) => __ipc("boss-groups:escalate", 1, [input]),
   /* 创世 boss：成员浏览器能力（ego lite 是否可用；每人独立 TaskSpace） */
   bossBrowserStatus: () => __ipc("boss-groups:browser", 0, []),
-  /* 创世 boss：重跑一次独立评审（评审会话丢了/结论过期时用） */
-  recheckBossTask: (taskId: string) => __ipc("boss-groups:recheck", 1, [taskId]),
   /* 创世 boss：拉人/移人（移人不删会话、不打断在跑任务） */
   bossGroupMember: (input: any) => __ipc("boss-groups:member", 1, [input]),
   /* 创世 boss：置顶/取消置顶群事件（群视图卡带，最多 3 条） */

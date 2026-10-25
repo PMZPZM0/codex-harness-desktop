@@ -269,7 +269,7 @@ export async function dispatchTask(taskId: string, options: { memberId?: string 
     bossStore.save();
     const attempt = task.attempts[task.attempts.length - 1];
     /* ⛔ CLI 成员（本机外部 agent）没有引擎会话：起子进程跑命令行，stdout 就是它的成品，
-        走同一条 交活→独立评审 流水。 */
+        走同一条 交活→BOSS 自评 流水。 */
     if (member.source === "cli") {
       markRunning(state, task.id, { threadId: `cli:${member.name}` });
       bossStore.save();
@@ -344,25 +344,11 @@ export async function settleSubmission(taskId: string, output: string): Promise<
   if (alreadyLeftRunning) await reviewTask(taskId);   // 重复回调（已不在 running）⇒ 不再审
 }
 
-const REVIEW_PROMPT = (task: GroupTask, output: string) => `[SYSTEM TASK · 独立评审]
-你是独立评审，**只能看到验收标准与成品**，看不到执行过程（这是故意的）。
-
-=== 验收标准 ===
-${task.criteria}
-
-=== 成品 ===
-${output.slice(0, 16000)}
-
-=== 要求 ===
-逐条对照验收标准判断是否满足。只输出一个 JSON，不要任何解释文字：
-{"pass": true|false, "reasons": ["未满足的具体条 + 证据（一句话）"]}
-- pass=true 时 reasons 必须是空数组；
-- pass=false 时 reasons 至少一条，且必须指向验收标准里的具体条目，不要写"不够好""可以更好"这种空话。`;
 
 /** 同一任务同时只允许一次评审（settleSubmission 重复回调 / 人工与自动撞车 ⇒ 后到的直接跳过）。 */
 const inFlightReviews = new Set<string>();
 
-/** 独立评审：用一个**新鲜上下文**的会话判，判完落 verdict。 */
+/** 评审：**不再另开会话**（10-25 用户令：评审由会话自己用技能做）。这里只把交活回投给 BOSS。 */
 export async function reviewTask(taskId: string): Promise<{ ok: boolean; verdict?: "approved" | "rejected"; error?: string }> {
   if (inFlightReviews.has(taskId)) return { ok: false, error: "该任务已有一轮评审在进行，跳过重复触发" };
   const state = await bossStore.load();
@@ -388,39 +374,24 @@ async function runReview(state: BossState, taskId: string): Promise<{ ok: boolea
   const attempt = task.attempts[task.attempts.length - 1];
   const output = attempt?.output ?? "";
   try {
-    const env = await providerEnv();
-    const model = env.model;
-    if (!model) throw new Error("未配置模型，无法评审");
-    const started: any = await server.request("thread/start", {
-      model, cwd: group.workspace || process.cwd(), approvalPolicy: "never", sandbox: "read-only",
-      modelProvider: env.provider, config: env.config,
-    });
-    const reviewThreadId = String(started.thread.id);
-    try { await server.request("thread/name/set", { threadId: reviewThreadId, name: `${group.name}·评审` }); } catch { /* 忽略 */ }
-    const turn: any = await server.request("turn/start", { threadId: reviewThreadId, input: [{ type: "text", text: REVIEW_PROMPT(task, output), text_elements: [] }], model, effort: "medium" });
-    const turnId = turn?.turn?.id;
-    if (!turnId) throw new Error("评审会话没有返回 turnId");
-    const completed = await waitForTurnCompletion(reviewThreadId, turnId);
-    const text = turnOutputText(completed) || "";
-    const verdict = parseVerdict(text);
-    const record = recordReview(state, taskId, { by: "fresh", verdict: verdict.verdict, reasons: verdict.reasons });
-    bossStore.save();
-    emit({ type: "boss-group", phase: "review", groupId: group.id, taskId, verdict: verdict.verdict });
-    // 通过 → 通知 boss；打回 → 自动换人重做（作者锁已在 recordReview 里落实）
-    if (verdict.verdict === "approved") {
-      await postToBoss(group, `[群事件] 「${task.title}」审查通过（尝试 ${attempt?.n ?? 1}）。`);
-    } else if (record.status === "rejected") {
-      const next = pickReassignee(state, record);
-      bossStore.save();
-      if (next) {
-        await postToBoss(group, `[群事件] 「${task.title}」被打回：${verdict.reasons.join("；")}\n已换人重做：${next.name}（原作者 ${memberOf(group, record.assignee).name} 本轮锁定，不许自改）。`);
-        // 延迟一点再派：同一 tick 里连派容易和刚结束的回合抢引擎
-        setTimeout(() => { void dispatchTask(taskId, { memberId: next.id }); }, 1200);
-      }
-    } else if (record.status === "escalated") {
-      await postToBoss(group, `[群事件] 「${task.title}」已升级给你：${verdict.reasons.join("；")}\n可选：换模型重做 / 放宽标准 / 你自己接手（告诉我哪个）。`);
-    }
-    return { ok: true, verdict: verdict.verdict };
+    /* ⛔⛔ 10-25 用户令：「这个子成员都触发一次评审？评审机制有问题…评审上下文子智能体不要默认，
+       删掉了，让 codex 自己创建」。
+       原来这里 thread/start 开一个**新鲜上下文的评审会话**（侧栏一堆独立评审会话）。
+       ⇒ 改成：把验收标准 + 成品**回投给 BOSS 会话**，由 Codex 自己判断；
+         要独立上下文/子智能体时**它自己创建**（系统不再自动开评审会话）。
+       ⇒ 结论由 Codex 调 group_review 回填（该通道已含 recordReview + 换人重做 + 回投，闭环不断）。 */
+    await postToBoss(group, `[群事件] 任务「${task.title}」已交活，请**用你自己的评审技能**判一下。
+
+=== 验收标准（criteria）===
+${task.criteria}
+
+=== 成品 ===
+${output.slice(0, 16000)}
+
+⛔ 用你自己的**评审技能**逐条对照验收标准判（⛔ 系统不再另开评审会话/子智能体，你要用就自己创建）。
+⛔ 判完把结论记回来：通过就调 group_review(taskId="${taskId}", verdict="approved")；
+   不通过就 verdict="rejected"，reasons 逐条写清**未满足验收标准的哪一条**（别写"不够好"这种空话）。`);
+    return { ok: true };
   } catch (error: any) {
     const message = String(error?.message ?? error);
     // 评审自己挂掉：宁可当"打回 + 理由写明"，也不要静默判通过（静默通过 = 制度失效）

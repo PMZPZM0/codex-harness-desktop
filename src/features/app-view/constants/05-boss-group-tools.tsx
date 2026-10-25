@@ -45,7 +45,7 @@ export const GROUP_ASSIGN_TOOL = {
   name: "group_assign",
   description:
     "给群里某个成员派一条任务。**立刻返回**（成员在它自己的会话里异步干活；交活、审查、打回都会回到你这里）。"
-    + "⛔ criteria（验收标准）必填 —— 独立评审按它判，打回理由也必须对得上它；没有标准就等于没法审。"
+    + "⛔ criteria（验收标准）必填 —— 验收按它判，打回理由也必须对得上它；没有标准就等于没法判。"
     + "⛔ 不要在一次回复里派完就等结果：派完先继续你的话，结果到了会有一条 [群事件] 找你。",
   inputSchema: {
     type: "object",
@@ -74,7 +74,7 @@ export const GROUP_REVIEW_TOOL = {
   type: "function",
   name: "group_review",
   description:
-    "对某条已交活的任务给结论（默认由独立评审做，这条是**人工覆盖口**：评审判得不对、或用户说要打回时用）。"
+    "对某条已交活的任务记结论（通过 / 打回 + 理由）。⛔ 评审由**会话自己用技能**做，这条只是把结论记回来。"
     + "⛔ verdict=rejected 必须给 reasons，且要指向验收标准里的具体条；空理由会被宿主直接拒绝。",
   inputSchema: {
     type: "object",
