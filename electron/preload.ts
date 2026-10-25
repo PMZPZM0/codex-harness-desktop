@@ -849,6 +849,8 @@ contextBridge.exposeInMainWorld("codex", {
   bossGroupPool: () => __ipc("boss-groups:pool", 0, []),
   /* BOSS 会话身份登记（add/remove/rename/list）—— 记忆路由的唯一真相源 */
   bossGroupSession: (input: any) => __ipc("boss-groups:session", 1, [input]),
+  /* 清空某个 BOSS 会话的专属记忆目录（⛔ 只清记忆，不删会话） */
+  clearBossMemory: (input: any) => __ipc("boss-groups:memory", 1, [input]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

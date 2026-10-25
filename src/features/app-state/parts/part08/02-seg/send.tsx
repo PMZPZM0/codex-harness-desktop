@@ -16,7 +16,7 @@ import { pickEnhanceHint, shouldShowHintAfterSends, isLongPrompt, HINT_COOLDOWN_
 import { nowBlock } from "../../../../../lib/now-block.mjs";
 import { setTurnWindowTail } from "../../../../../lib/turn-history.mjs";
 /* ⛔ 会话重建后要把 BOSS 归属搬过去（见下方 bossGroupRebind 那段注释）。 */
-import { BOSS_ROLE_PROMPT, getBossThreads, renameBossSessionId, setBossHomeThreadId } from "../../../../boss-group-view";
+import { BOSS_ROLE_PROMPT, ensureBossMemoryWorkspace, ensureBossSessionRegistered, getBossThreads, renameBossSessionId, setBossHomeThreadId } from "../../../../boss-group-view";
 import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, computeFoldSummary, topToolGroup, isTurnRunning, normalizeLoadedThread, type FoldUnit } from "../../../../../lib/turn-fold";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../lib/user-refs";
 import { effortLabels } from "../../../../../lib/effort-labels";
@@ -303,13 +303,22 @@ export async function send(bag: Bag, event?: FormEvent) {
       // 常驻层无条件前置：L0 用户档案 + L1 项目记忆 + L2 近 3 天日志。
       // L3 碎片池仍按当前输入按需召回，两者互不替代——只做召回的话，
       // 模型永远看不到「这个项目不能做什么」这类不出现在本轮提问里的约束。
+      /* ⛔⛔ 10-25 用户令：「记忆板块里面加一个BOSS会话记忆板块，跟普通会话完全拆开」。
+         BOSS 会话跑在用户选的项目目录里 ⇒ 若还用 `bag.workspace` 读记忆，读到的是**那个项目**的记忆，
+         BOSS 自己的记忆（与普通会话混在一起）反而读不到。
+         ⇒ BOSS 会话改读/召回它自己的专属记忆目录（主进程名单给的 memoryDir）。 */
+      /* ⛔ 时序：BOSS 会话首条消息时线程 id 刚分配，主进程名单可能还没登记上
+         ⇒ 先幂等登记一次（⛔ 只对已确认是 BOSS 会话的 id 生效，普通会话不受影响）。 */
+      await ensureBossSessionRegistered(String(bag.thread?.id ?? bag.threadRef.current?.id ?? ""));
+      const bossMemWs = await ensureBossMemoryWorkspace(String(bag.thread?.id ?? bag.threadRef.current?.id ?? ""));
+      const memWorkspace = bossMemWs || bag.workspace || undefined;
       try {
-        const standing = await window.codex.readMemoryContext(bag.workspace || undefined, bag.workspaceMemoryEnabled);
+        const standing = await window.codex.readMemoryContext(memWorkspace, bag.workspaceMemoryEnabled);
         if (standing.text) memoryPrefix += standing.text;
       } catch (error: any) { bag.setMemoryStatus(`常驻记忆读取失败：${error.message}`); }
       if (bag.workspaceMemoryEnabled) {
         try {
-          const recalled = await window.codex.recallMemory(messageText, bag.workspace || undefined);
+          const recalled = await window.codex.recallMemory(messageText, memWorkspace);
           if (recalled.context) memoryPrefix += `\n\n[Harness 相关记忆，仅供参考]\n${recalled.context}\n[记忆结束]\n`;
         } catch (error: any) { bag.setMemoryStatus(`记忆召回失败：${error.message}`); }
       }

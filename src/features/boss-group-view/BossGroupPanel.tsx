@@ -120,7 +120,7 @@ export function BossGroupPanel() {
         {/* 10-25 用户实测：「右侧群成员头像也没有」—— 群聊现场要能一眼看到成员在不在。 */}
         <div className="boss-member-strip" title="群成员">
           {(snap?.group.members ?? []).filter((m) => m.status !== "removed").map((m, i) => (
-            <span key={m.id} className="boss-avatar" data-status={m.status} style={{ ["--av-hue" as any]: `${(i * 47 + 210) % 360}` }} title={`${m.name}（${m.role}）`}>
+            <span key={m.id} className="boss-avatar" data-status={m.status} style={{ ["--boss-avatar-hue" as any]: `${(i * 47 + 210) % 360}` }} title={`${m.name}（${m.role}）`}>
               {String(m.name || "?").slice(0, 1)}
             </span>
           ))}
@@ -171,7 +171,7 @@ export function BossGroupPanel() {
                   <div key={e.id} className={`boss-chat-row side-${side}`}>
                     {/* 成员气泡带头像（群聊现场感）；你/BOSS 不带。 */}
                     {e.kind === "chat-member" ? (
-                      <span className="boss-avatar" data-status={member?.status} style={{ ["--av-hue" as any]: `${(((snap?.group.members ?? []).findIndex((m) => m.id === e.memberId) + 1) * 47 + 210) % 360}` }} title={who}>{String(who || "?").slice(0, 1)}</span>
+                      <span className="boss-avatar" data-status={member?.status} style={{ ["--boss-avatar-hue" as any]: `${(((snap?.group.members ?? []).findIndex((m) => m.id === e.memberId) + 1) * 47 + 210) % 360}` }} title={who}>{String(who || "?").slice(0, 1)}</span>
                     ) : null}
                     <div className="boss-chat-bubble" data-kind={e.kind}>
                       <span className="who">{who}</span>

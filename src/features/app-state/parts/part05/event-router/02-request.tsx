@@ -13,6 +13,7 @@ import { USER_PERSONAS, userPersonaFields } from "../../../../../lib/user-person
 /* 前端开发（10-05，两轮改名：界面草图 → 手机前端UI → 前端开发）：Codex 读写画布走**对方域的 barrel**（域↔域的唯一接口面）。
    会话单例在 ui-sketch 那边持有（iframe 由弹窗 attach），这里只发请求。 */
 import { applySketchDoc, requestSketchDoc, summarizeDoc, validateSketchDoc, waitSketchReady } from "../../../../ui-sketch";
+import { ensureBossMemoryWorkspace } from "../../../../boss-group-view";
 
 /** ⛔ 同一个 tool call 只执行一次（09-22 实测：一次 subagent_invoke 被渲染层执行 7 次 →
  *  7 个同名会话、每个约 1MB rollout、query 逐字相同 ⇒ 7 倍 token）。重复到达复用首次结果。 */
@@ -77,9 +78,13 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       角色会话的 promote 闸在主进程应答路径（boot.ts），那里才有身份硬闸。 */
                 const cat = String(args.category ?? "临时上下文");
                 const scope = args.scope === "project" ? "project" : "private";
+                /* ⛔⛔ 10-25：BOSS 会话的记忆必须写进它自己的专属目录 ——
+                   用 `bag.workspace`（用户选的项目）会把 BOSS 的记忆写进项目记忆里，
+                   与普通会话混在一起 ⇒ 与普通会话完全拆开的承诺就破了。 */
+                const bossMemWs = await ensureBossMemoryWorkspace(String(event.params?.threadId ?? bag.threadRef.current?.id ?? ""));
                 const result = await window.codex.writeFabricMemory({
                   threadId: String(event.params?.threadId ?? bag.threadRef.current?.id ?? ""),
-                  workspace: bag.workspace || "",
+                  workspace: bossMemWs || bag.workspace || "",
                   scope,
                   category: cat,
                   content: String(args.content ?? ""),

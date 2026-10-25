@@ -16,6 +16,8 @@ export type BossThreadsState = {
   sessionIds: string[];
   /** BOSS 会话自己的目录（<userData>/boss-home）：项目记忆/技能与任何项目隔离 */
   homeDir: string;
+  /** 每个 BOSS 会话的**专属记忆目录**（threadId → memoryDir）：与普通会话完全拆开 */
+  sessionMemoryDirs: Record<string, string>;
   pending: boolean;
   loaded: boolean;
 };
@@ -27,3 +29,9 @@ export function renameBossSessionId(previousId: string, nextId: string): void;
 export function setBossPending(pending: boolean): void;
 export function subscribeBossThreads(fn: () => void): () => void;
 export function getBossThreads(): BossThreadsState;
+/** 这个 BOSS 会话的专属记忆目录（空串 = 不是 BOSS 会话） */
+export function bossMemoryWorkspaceFor(threadId: string): string;
+/** 名单还没同步到时主动拉一次（返回专属记忆目录，空串 = 不是 BOSS 会话） */
+export function ensureBossMemoryWorkspace(threadId: string): Promise<string>;
+/** 确保主进程名单里有这个 BOSS 会话（幂等；⛔ 非 BOSS 会话返回 false） */
+export function ensureBossSessionRegistered(threadId: string): Promise<boolean>;

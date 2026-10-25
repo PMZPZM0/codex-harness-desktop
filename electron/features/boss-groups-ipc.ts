@@ -16,6 +16,7 @@ import type { IpcHost } from "../ipc-host";
 import { bossStore } from "../boss-groups/store";
 import { addTaskForBoss, browserStatus, createGroupForBoss, dispatchTask, memberForBoss, pinForBoss, poolForBossIpc, postToBoss, reviewTask, sayToGroup, setBossEventSink, statusForBoss, tickAll, watchBossReplies } from "../boss-groups/runner";
 import { recordReview, resolveEscalation } from "../boss-groups/state";
+import { backfillFromGroups, clearBossMemory, listBossSessions, registerBossSession, renameBossSession, unregisterBossSession } from "../boss-groups/session-registry";
 import type { EscalateChoice } from "../boss-groups/types";
 import { broadcastCodexEvent } from "./window-bus";
 
@@ -85,6 +86,45 @@ export const bossGroupsFeature = defineFeature<null>({
       try { needWrite = !fs.readFileSync(bossAgentsMd, "utf8").includes(stamp); } catch { needWrite = true; }
       if (needWrite) fs.writeFileSync(bossAgentsMd, BOSS_HOME_AGENTS_MD, "utf8");
     } catch { /* 建不了就让引擎报错，别吞 */ }
+    /* BOSS 会话身份登记（10-25 用户令：「记忆板块里面加一个BOSS会话记忆板块，跟普通会话完全拆开」）。
+       ⛔ **主进程是唯一真相源**：记忆层的读写以 workspace 为键，捕获写入在主进程跑 ——
+          渲染层 localStorage 主进程读不到 ⇒ 名单必须落主进程。
+       action：list / add / remove / rename */
+    ipcHost.handle("boss-groups:session", async (_event, input: any) => {
+      const action = String(input?.action ?? "list");
+      if (action === "add") {
+        const rec = await registerBossSession(String(input?.id ?? ""));
+        return { ok: Boolean(rec), session: rec };
+      }
+      if (action === "remove") {
+        const res = await unregisterBossSession(String(input?.id ?? ""));
+        return { ok: res.ok, removedDir: res.removedDir };
+      }
+      if (action === "rename") {
+        const ok = await renameBossSession(String(input?.previousId ?? ""), String(input?.id ?? ""));
+        return { ok };
+      }
+      return { ok: true, sessions: await listBossSessions() };
+    });
+
+    /* 启动补登（10-25）：老用户的 BOSS 会话可能只存在于群账本（boss-groups.json）里，
+       名单文件是新建的 ⇒ 拿群账本的 bossThreadId 补进来，别让他们的记忆路由失效。 */
+    void (async () => {
+      try {
+        const state = await bossStore.load();
+        const ids = Object.values(state.groups ?? {}).map((g: any) => String(g?.bossThreadId ?? "")).filter(Boolean);
+        const added = await backfillFromGroups(ids);
+        if (added) console.log("[boss-groups] 补登 BOSS 会话身份：", added);
+      } catch (error: any) {
+        console.warn("[boss-groups] 补登失败：", String(error?.message ?? error).slice(0, 160));
+      }
+    })();
+
+    /* 清空某个 BOSS 会话的专属记忆（⛔ 只清记忆目录，不删会话本身）。 */
+    ipcHost.handle("boss-groups:memory", async (_event, input: any) => {
+      return clearBossMemory(String(input?.memoryDir ?? ""));
+    });
+
     ipcHost.handle("boss-groups:list", async () => {
       const state = await bossStore.load();
       /* 10-25 用户实测：「成员也没有更新，完全看不懂」—— 同一个 BOSS 会话里建过两个群
@@ -100,6 +140,8 @@ export const bossGroupsFeature = defineFeature<null>({
         }
         return latest;
       };
+      /* ⛔ list 的返回形状是**数组**（多处消费方按数组用）⇒ BOSS 会话名单走独立的
+         `boss-groups:session`（action=list）通道，⛔ 不在这里夹带。 */
       return Object.values(state.groups).map((group) => ({
         id: group.id,
         name: group.name,

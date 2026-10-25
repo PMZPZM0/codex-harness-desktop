@@ -259,6 +259,9 @@
   --accent-soft: #2f6bdd14;
   --orange: #e8830c;
   --amber: #e8a020;
+  /* BOSS 成员头像的色相（⛔ 真定义：内联 style 会覆盖它，但要有定义 ——
+     守卫【160】要求每个 var() 引用都有定义，缺了就红）。 */
+  --boss-avatar-hue: 40;
   --purple: #8b5cf6;
   --mono: "Cascadia Code", Consolas, ui-monospace, monospace;
   --red: #d94f43;

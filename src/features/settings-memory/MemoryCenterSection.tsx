@@ -17,11 +17,12 @@ import { useState } from "react";
 import { PyramidPanel } from "./PyramidPanel";
 import { SharedLibraryPanel } from "./SharedLibraryPanel";
 import { BackendConsolePanel } from "./BackendConsolePanel";
+import { BossMemoryPanel } from "./BossMemoryPanel";
 import { MemoryBackendBoards, type MemoryBackendId } from "./MemoryBackendBoards";
 import { LayerRulesPane, MemoryEntriesPane, MemoryModePane, MemorySearchPane, MemorySourcesPane, ResidentMemoryPane } from "./MemoryPanes";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { PageInfo } from "../../components/SettingsHead";
-import { BookOpen, Cloud, Database, Layers, Server } from "lucide-react";
+import { BookOpen, Cloud, Crown, Database, Layers, Server } from "lucide-react";
 import { MemoryConfigModal } from "../../features/memory";
 import type { HarnessAppApi } from "../app-view/types";
 export type MemoryCenterSectionProps = {
@@ -53,10 +54,12 @@ export function MemoryCenterSection(props: MemoryCenterSectionProps) {
   const cardMeta: Record<string, { title: string; hint: string; tab: string; detail: string }> = {
     shared: { title: "项目共享记忆库", hint: "切换项目 · 用户档案 / 项目规则 / 工作纪律", tab: "layers", detail: "按**项目**维度共享的记忆：用户档案（跨项目一致，全项目共用一份）、项目规则（项目宪法 L1 + 项目背景 L3）、工作纪律（L2，注入时排最前）。切换上面的项目即可看别的项目。" },
     pyramid: { title: "金字塔记忆架构", hint: "每个会话独立 · 共享层只读 + 独立层自持", tab: "library", detail: "金字塔是**分层机制**：项目级共享层（L0–L6，本项目所有会话读同一份）+ 会话独立层（L7 碎片池与命名空间条目，别的会话读不到）。下面按**会话**展示：每个会话签到的共享层是同一份，独立层各不相同。" },
+    boss: { title: "BOSS 会话记忆", hint: "每个 BOSS 会话一份 · 与项目、普通会话完全拆开", tab: "boss", detail: "BOSS 会话的记忆**不在任何项目里**：每个 BOSS 会话一份专属目录（<userData>/boss-home/memories/<会话id>），与项目共享记忆、普通会话记忆互不相通。删掉 BOSS 会话，它的记忆目录一起清掉；新建就是全新的一份。" },
   };
   const cards = [
     { key: "shared", icon: <BookOpen size={15} />, title: "项目共享记忆库", desc: "切换项目，查看该项目的共享记忆：用户档案 · 项目规则 · 工作纪律", stat: `${(effectiveSharedProject.split(/[\\/]/).filter(Boolean).pop() || "未选项目")} · 3 类共享内容` },
     { key: "pyramid", icon: <Layers size={15} />, title: "金字塔记忆架构", desc: "每个会话独立的金字塔结构：共享层只读、独立层自持", stat: "按会话查看" },
+    { key: "boss", icon: <Crown size={15} />, title: "BOSS 会话记忆", desc: "每个 BOSS 会话一份独立记忆：与项目、普通会话完全拆开", stat: "按 BOSS 会话查看" },
   ];
   const openMeta = openCard ? cardMeta[openCard] : null;
   const backendMeta = backendDetail === "builtin"
@@ -128,6 +131,13 @@ return (
                         {/* ── 旧「记忆中心」搬来的两块（10-10 迁移）：分层规则 / 按来源看会话记忆 ── */}
                         <LayerRulesPane />
                         <MemorySourcesPane app={app} />
+                      </SettingsDialog>
+                    )}
+                    {openCard === "boss" && openMeta && (
+                      <SettingsDialog title="BOSS 会话记忆" icon={<Crown size={15} />} hint="每个 BOSS 会话一份 · 与项目、普通会话完全拆开" size="lg" onClose={() => setOpenCard(null)}>
+                        {/* ⛔ 独立板块（10-25 用户令）：BOSS 会话的记忆不在任何项目里 ——
+                            放「项目共享记忆库」里既找不到、也会让人误以为它属于某个项目。 */}
+                        <BossMemoryPanel threads={threads} onOpenThread={(id: string) => { setOpenCard(null); openThread?.(id); }} onNotice={app.setNotice} />
                       </SettingsDialog>
                     )}
                     {backendDetail && backendMeta && (

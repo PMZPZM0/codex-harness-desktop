@@ -17,7 +17,7 @@
  */
 const HOME_KEY = "boss-home-thread";
 
-let state = { groups: [], bossIds: [], memberIds: [], homeId: "", sessionIds: [], homeDir: "", pending: false, loaded: false };
+let state = { groups: [], bossIds: [], memberIds: [], homeId: "", sessionIds: [], sessionMemoryDirs: {}, homeDir: "", pending: false, loaded: false };
 const listeners = new Set();
 let timer = null;
 let off = null;
@@ -46,6 +46,11 @@ export function setBossHomeThreadId(id) {
       ids.push(next);
       localStorage.setItem("boss-session-ids", JSON.stringify(ids.slice(-50)));
       state = { ...state, sessionIds: ids };
+      /* ⛔⛔ 10-25：「记忆板块里加一个BOSS会话记忆板块，跟普通会话完全拆开」——
+         名单必须**同步到主进程**：记忆层的捕获写入在主进程跑，它要知道这个 thread
+         是 BOSS 会话才能把记忆写进它自己的目录（否则会写进用户选的项目目录）。
+         主进程那份是唯一真相源（boss-groups/session-registry.ts），localStorage 只是缓存。 */
+      void window.codex?.bossGroupSession?.({ action: "add", id: next })?.catch?.(() => undefined);
     }
   } catch { /* 隐私模式：忽略 */ }
   state = { ...state, homeId: next, pending: false };
@@ -63,6 +68,9 @@ export function removeBossSessionId(id) {
     if (readHome() === target) localStorage.setItem(HOME_KEY, ids[ids.length - 1] ?? "");
     state = { ...state, sessionIds: ids, homeId: ids[ids.length - 1] ?? "" };
     emit();
+    /* ⛔ 同步注销到主进程：删了 BOSS 会话，它的记忆目录也一起清掉
+       （用户令：「删除了BOSS会话，这里就同步更新」）。 */
+    void window.codex?.bossGroupSession?.({ action: "remove", id: target })?.catch?.(() => undefined);
   } catch { /* 隐私模式：忽略 */ }
 }
 
@@ -78,6 +86,8 @@ export function renameBossSessionId(previousId, nextId) {
     if (readHome() === prev) localStorage.setItem(HOME_KEY, next);
     state = { ...state, sessionIds: ids, homeId: readHome() };
     emit();
+    /* ⛔ 同步改名到主进程（会话重建 ⇒ 身份与记忆目录一起搬过去，别丢记忆）。 */
+    void window.codex?.bossGroupSession?.({ action: "rename", previousId: prev, id: next })?.catch?.(() => undefined);
   } catch { /* 隐私模式：忽略 */ }
 }
 
@@ -98,7 +108,20 @@ async function resolveHomeDir() {
 
 async function load() {
   try {
-    const [list, homeDir] = await Promise.all([window.codex.listBossGroups(), resolveHomeDir()]);
+    const [list, homeDir, sessionList] = await Promise.all([
+      window.codex.listBossGroups(),
+      resolveHomeDir(),
+      /* ⛔ BOSS 会话身份名单（主进程是唯一真相源）：顺带拿各自的**记忆目录**，
+         渲染层注入记忆时要按它取（⇒ BOSS 记忆与普通会话完全拆开）。 */
+      Promise.resolve(window.codex.bossGroupSession?.({ action: "list" })?.catch?.(() => null) ?? null),
+    ]);
+    const sessions = Array.isArray(sessionList?.sessions) ? sessionList.sessions : [];
+    const sessionMemoryDirs = {};
+    for (const entry of sessions) {
+      const id = String(entry?.id ?? "");
+      const dir = String(entry?.memoryDir ?? "");
+      if (id && dir) sessionMemoryDirs[id] = dir;
+    }
     const groups = Array.isArray(list) ? list : [];
     state = {
       groups,
@@ -107,6 +130,7 @@ async function load() {
       memberIds: groups.flatMap((g) => (Array.isArray(g.memberThreadIds) ? g.memberThreadIds : []).map(String)),
       homeId: readHome(),
       sessionIds: readSessionIds(),
+      sessionMemoryDirs,
       homeDir: homeDir || state.homeDir,
       pending: state.pending,
       loaded: true,
@@ -129,3 +153,45 @@ export function subscribeBossThreads(fn) {
 }
 
 export function getBossThreads() { return state; }
+
+/** 这个 BOSS 会话的**专属记忆目录**（空串 = 不是 BOSS 会话 / 名单还没同步）。 */
+export function bossMemoryWorkspaceFor(threadId) {
+  const id = String(threadId ?? "");
+  if (!id) return "";
+  return state.sessionMemoryDirs?.[id] ?? "";
+}
+
+/** 名单可能还没同步到（刚建会话的第一次发送）⇒ 主动拉一次。 */
+export async function ensureBossMemoryWorkspace(threadId) {
+  const id = String(threadId ?? "");
+  if (!id) return "";
+  const hit = bossMemoryWorkspaceFor(id);
+  if (hit) return hit;
+  try {
+    const res = await window.codex.bossGroupSession?.({ action: "list" });
+    const sessions = Array.isArray(res?.sessions) ? res.sessions : [];
+    const dirs = {};
+    for (const entry of sessions) {
+      const sid = String(entry?.id ?? "");
+      const dir = String(entry?.memoryDir ?? "");
+      if (sid && dir) dirs[sid] = dir;
+    }
+    state = { ...state, sessionMemoryDirs: dirs };
+    emit();
+    return dirs[id] ?? "";
+  } catch { return ""; }
+}
+
+/** 确保主进程名单里有这个 BOSS 会话（幂等）。
+ *  ⛔ **只在确认它是 BOSS 会话时调用**（sessionIds 命中）—— 否则普通会话会被误登记，
+ *     它的记忆就会被路由到 BOSS 目录（那就成了串台）。
+ *  ⛔ 时序：BOSS 会话首条消息时线程 id 刚分配，侧栏 effect 的登记可能晚一步 ⇒ 这里补一次。 */
+export async function ensureBossSessionRegistered(threadId) {
+  const id = String(threadId ?? "").trim();
+  if (!id) return false;
+  if (!(state.sessionIds ?? []).includes(id)) return false;
+  try {
+    await window.codex.bossGroupSession?.({ action: "add", id });
+    return true;
+  } catch { return false; }
+}
