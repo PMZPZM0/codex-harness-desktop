@@ -208,6 +208,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     }
   }, [currentThreadId]);
   const {
+    setWorkspace,
+    workspaceRef,
     chooseWorkspace,
     accountDraft,
     accountEditing,
@@ -331,6 +333,15 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     try { localStorage.setItem("sidebar-options-collapsed", String(next)); } catch { /* 隐私模式写不进属正常，别拦切换 */ }
     try { void window.codex?.saveAppSettings?.({ sidebarOptionsCollapsed: next })?.catch(() => undefined); } catch { /* 桥不可用 */ }
   };
+  /* 10-25：项目行的「+」= 在该项目下开新会话。先切 workspace（三处同步：state/ref/localStorage，
+     与 chooseWorkspace 同口径），再 startNewThread —— 新会话首条消息的 cwd 取 workspace。 */
+  const bagSetWorkspaceForProject = (cwd: string) => {
+    setWorkspace(cwd);
+    workspaceRef.current = cwd;
+    try { localStorage.setItem("workspace", cwd); } catch { /* 隐私模式 */ }
+    startNewThread();
+  };
+
   /* 拓展功能（10-24 立，10-25 更名；原「功能入口」）：可配置排序 / 更多分组 / 两种展示位置（上下移动），动作经总线回到侧栏壳。 */
   const functionMenu = useFunctionMenuConfig();
   useEffect(() => {
@@ -578,6 +589,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                             <strong>{basename(cwd)}</strong>
                             <em>{items.length}</em>
                           </button>
+                          {/* 10-25 用户令（对照 ZCode）：项目行加「新建会话」图标（··· 之前）——
+                              点击 = 切 workspace 到该项目 → 开新会话（首条消息发出时 cwd 落到该项目）。 */}
+                          <button className="project-item-new-btn" title={"在此项目新建会话：" + basename(cwd)} onClick={(event) => { event.stopPropagation(); bagSetWorkspaceForProject(cwd); }}><CirclePlus size={13} /></button>
                           <button className="project-item-menu-btn" title="项目操作" aria-expanded={projectMenu === cwd} onClick={(event) => { event.stopPropagation(); setProjectMenu(projectMenu === cwd ? null : cwd); }}><MoreHorizontal size={14} /></button>
                           {projectMenu === cwd && <div className="project-menu">
                             <button className="danger" onClick={() => { setProjectMenu(null); void deleteThreadsByCwd(cwd); }}><Trash2 size={14} />移除（删除全部对话）</button>

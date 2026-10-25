@@ -1533,3 +1533,19 @@ html[data-ui-font="large"] .action-content pre {
 }
 
 /* 无边框大圆角窗方案暂缓：等设计定稿后再上（当前恢复原生窗口） */
+
+/* ── 10-25 项目行「新建会话」图标（··· 之前，对照 ZCode）── */
+.project-item-new-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  flex: none;
+}
+.project-item-new-btn:hover { background: var(--panel-2); color: var(--accent); }
