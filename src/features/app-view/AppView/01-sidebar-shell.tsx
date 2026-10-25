@@ -3,9 +3,10 @@
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { BossProjectDirDialog, getBossThreads, setBossHomeThreadId, setBossPending, subscribeBossThreads } from "../../boss-group-view";
+import { BossProjectDirDialog, autoOpenBossDirDialog, bossShortcutLabel, closeBossDirDialog, getBossDirDialogState, getBossThreads, setBossDirChosen, setBossHomeThreadId, setBossPending, subscribeBossDirDialog, subscribeBossThreads } from "../../boss-group-view";
 import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, useFunctionMenuConfig } from "../../function-menu";
 import { hk } from "../../../lib/hk";
+import { isMacPlatform } from "../../../lib/is-mac-platform";
 import {
   AlertTriangle,
   Archive,
@@ -169,13 +170,20 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         ⛔ 不每点一次就多一个「未命名任务」（用户 10-25 第二点）。 */
   const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
   /* 10-25 用户令：新建 BOSS 会话时弹**应用内**对话框选项目地址（两个选项），
-     ⛔ 不用系统 messageBox、⛔ 不用 toast 内联提示。 */
-  const [bossDirDialog, setBossDirDialog] = useState(false);
+     ⛔ 不用系统 messageBox、⛔ 不用 toast 内联提示。
+     ⛔ 开关走**全局 store**（boss-dir-dialog-store）：点侧栏「BOSS 会话」先落进 BOSS 欢迎界面，
+        弹窗由欢迎界面里的「选择项目地址并开始」按钮叫出来 ⇒ 两处要能开同一个弹窗。 */
+  const bossDirState = useSyncExternalStore(subscribeBossDirDialog, getBossDirDialogState);
+  const bossDirOpen = bossDirState.open;
   const [bossDirBusy, setBossDirBusy] = useState(false);
 
-  /* 新建 BOSS 会话的项目地址对话框（应用内模态，两个选项） */
+  /* 新建 BOSS 会话的项目地址对话框（应用内模态，两个选项）
+     ⛔ 10-25 用户实测：「点 BOSS 会话」应**先落进 BOSS 欢迎界面**，再由界面上的
+        「选择项目地址并开始」叫出这个对话框 ⇒ 选地址这个动作不再由侧栏按钮直接触发。
+     ⛔ 这里**不再调 startNewThread()**：进入欢迎界面时已经起过一个新的空会话了，
+        再调一次会把用户刚在欢迎界面上打的提示词清掉（saveDraft + setPrompt("")）。 */
   const onBossProjectDir = async (choice: "pick" | "auto" | "cancel") => {
-    if (choice === "cancel") { setBossDirDialog(false); return; }
+    if (choice === "cancel") { closeBossDirDialog(); return; }
     setBossDirBusy(true);
     try {
       let dir = "";
@@ -189,10 +197,12 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       /* ⛔ 不写全局 localStorage("workspace")：普通会话的项目不能被 BOSS 带走。 */
       app.setWorkspace(dir);
       app.workspaceRef.current = dir;              // send 读 ref，必须同步
-      setBossDirDialog(false);
-      setBossPending(true);                        // 空态显示 BOSS 引导卡
+      closeBossDirDialog();
+      /* ⛔ 目录**按会话**记（10-25 用户令：BOSS 会话可创建多个，互不干扰）——
+         会话还没建出来（thread id 未分配）⇒ 暂存 pendingDir，会话建成后再按 id 落位。 */
+      setBossDirChosen(dir, currentThreadId);
+      setBossPending(true);                        // 空态继续显示 BOSS 引导卡
       bossHomePending.current = true;              // 这个新会话登记为 BOSS 会话（拿到 id 后）
-      startNewThread();                            // ⛔ 每次都是全新会话
     } catch { /* 目录没选成：对话框继续开着 */ }
     finally { setBossDirBusy(false); }
   };
@@ -336,16 +346,29 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     try { void window.codex?.saveAppSettings?.({ sidebarOptionsCollapsed: next })?.catch(() => undefined); } catch { /* 桥不可用 */ }
   };
   /* BOSS 会话按钮（历史与实测依据收在 scripts/guards/22-boss-groups.mjs，此处只留行为契约）：
-     在会话里再点无动作；待发消息的空 BOSS 会话不重复建；其余一律弹项目地址对话框，
-     会话在选定地址后才建（⛔ 不复用旧 BOSS 会话、不同步项目地址）。 */
+     ① **先跳到 BOSS 欢迎界面，再弹项目地址对话框**（10-25 用户实测：「点 BOSS 会话，先出来
+        这个弹窗，不会跳转到 BOSS 欢迎界面，再跳这个弹窗」⇒ 顺序反了）——
+        先建一个空的 BOSS 会话（pending=true ⇒ 时间线渲染 BossThreadIntro 欢迎界面），
+        再由欢迎界面（已渲染出来）弹地址对话框（走 boss-dir-dialog-store 的自动弹出标记）。
+     ② 在**已有** BOSS 会话里再点 ⇒ 不动（不重开、不换地址）。
+     ③ 待发消息的空 BOSS 会话 ⇒ 不重复建。 */
   const openBossSession = () => {
     if (bossOn) return;
     if (bossThreads.pending && !currentThreadId) return;
-    setBossDirDialog(true);
+    /* ① 先落进 BOSS 欢迎界面：置 pending（空态渲染欢迎界面）+ 起一个全新会话。
+       ⛔ 会话是在**选定项目地址之后**才真正建（引擎发首条消息时才分配 id），
+          这里只把界面切过去 —— 用户先看到 BOSS 欢迎界面。 */
+    setBossPending(true);
+    bossHomePending.current = true;              // 这个新会话登记为 BOSS 会话（拿到 id 后）
+    startNewThread();                            // ⛔ 每次都是全新会话
+    /* ② 再弹项目地址对话框：⛔ 用「自动弹出」标记 ⇒ 由**欢迎界面**消费后再弹，
+          保证用户先看到欢迎界面（直接 open 会让弹窗盖住它 ⇒ 顺序反了）。 */
+    autoOpenBossDirDialog();
   };
-  /* 10-25 用户：BOSS 会话快捷键（Win/Linux = Ctrl+M；mac 的 Cmd+M 是系统最小化，沿用 Cmd+Shift+B）。 */
+  /* 10-25 用户：BOSS 会话快捷键（Win/Linux = Ctrl+M；mac 的 Cmd+M 是系统最小化，沿用 Cmd+Shift+B）。
+     ⛔ 键位**单一真相源**在 boss-group-view/boss-shortcut.ts（侧栏 kbd 徽标、欢迎界面、快捷键清单共用）。 */
   useEffect(() => {
-    const mac = /mac/i.test(navigator.platform);
+    const mac = isMacPlatform();
     const onKey = (event: KeyboardEvent) => {
       const mod = mac ? event.metaKey : event.ctrlKey;
       if (!mod || event.altKey || (mac ? event.ctrlKey : event.metaKey)) return;
@@ -410,7 +433,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   const renderOptionsGroup = (menuLocation: "top" | "bottom") => (
     <div className={`sidebar-options ${menuLocation === "top" ? "sidebar-options-top" : ""}`}>
       {/* 新建 BOSS 会话：项目地址对话框（应用内模态；⛔ 不用系统弹窗 / 内联 toast） */}
-      <BossProjectDirDialog open={bossDirDialog} busy={bossDirBusy} onChoose={(choice) => void onBossProjectDir(choice)} />
+      <BossProjectDirDialog open={bossDirOpen} busy={bossDirBusy} onChoose={(choice) => void onBossProjectDir(choice)} />
       <button
         type="button"
         className="sidebar-options-toggle"
@@ -564,7 +587,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   aria-pressed={bossOn}
                   onClick={() => openBossSession()}
                 >
-                  <Crown size={15} /><span>BOSS 会话</span><kbd className="quick-kbd">{hk(/mac/i.test(navigator.platform) ? "Ctrl+Shift+B" : "Ctrl+M")}</kbd>
+                  <Crown size={15} /><span>BOSS 会话</span><kbd className="quick-kbd">{bossShortcutLabel()}</kbd>
                 </button>
                 {/* 10-25 用户令：拓展功能（技能 · 插件 · MCP）从折叠组拉出来常驻在这里；
                     搜索任务只在下方视图行的 🔍 里。动作与折叠组原入口同一总线（教程弹窗）。 */}

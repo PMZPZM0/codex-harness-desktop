@@ -154,6 +154,34 @@ export function subscribeBossThreads(fn) {
 
 export function getBossThreads() { return state; }
 
+/**
+ * 当前界面是不是「BOSS 会话上下文」（**顶栏图标与时间线空态共用同一份判定**）。
+ *
+ * ⛔ 为什么要有这个函数：顶栏（成员图标 /「?」）与时间线（BOSS 空态引导）以前各写一份
+ *   「是不是 BOSS 会话」的判断，条件差一点点 ⇒ 同一个会话在两处的表现不一致
+ *   （10-25 用户实测：欢迎界面出来了、顶栏的成员图标却没有）。
+ *   ⇒ 收成一份，两边都问它。
+ *
+ * 三种入口都算 BOSS 会话：
+ *   ① 群里的 boss 线程（bossIds）；
+ *   ② 已登记的 BOSS 会话（sessionIds，含 home 锚点会话）；
+ *   ③ 刚点「BOSS 会话」、**还没发出第一条消息**（pending ⇒ 引擎还没分配 thread id）。
+ *
+ * @param state   store 状态（通常直接传 getBossThreads() 的返回值）
+ * @param threadId 当前会话 id（空串 = 还没拿到 id）
+ */
+export function isBossSessionContext(state, threadId) {
+  const s = state ?? {};
+  const id = String(threadId ?? "");
+  if (id) {
+    if ((s.bossIds ?? []).includes(id)) return true;
+    if ((s.sessionIds ?? []).includes(id)) return true;
+    return false;
+  }
+  /* pending 只在「还没选中任何会话」时算数 —— 否则 pending 残留会把普通会话也染成 BOSS。 */
+  return Boolean(s.pending);
+}
+
 /** 这个 BOSS 会话的**专属记忆目录**（空串 = 不是 BOSS 会话 / 名单还没同步）。 */
 export function bossMemoryWorkspaceFor(threadId) {
   const id = String(threadId ?? "");

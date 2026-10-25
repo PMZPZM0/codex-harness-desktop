@@ -675,8 +675,9 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       {/* 悬浮球右键菜单里的「语音设置」：把「打开设置并跳到语音页」注册给 VoiceCallFloat
       （悬浮球是 body portal，拿不到这里的 setSettingsPage） */}
       <VoiceCallFloat threadId={thread?.id ?? ""} />
-      {/* BOSS 会话群面板（boss-groups 域）：右侧停靠浮层，全局开关在侧栏「BOSS 会话」按钮。 */}
-      <BossGroupPanel />
+      {/* BOSS 会话群面板（boss-groups 域）：右侧停靠浮层，全局开关在侧栏「BOSS 会话」按钮。
+          ⛔ 传入当前会话 id ⇒ 面板里的群/成员**按会话隔离**（BOSS 会话可创建多个，各会话互不串项）。 */}
+      <BossGroupPanel threadId={thread?.id ?? ""} />
       <VoiceSettingsBridge onOpen={() => { setSettingsPage("voice"); setSettingsOpen(true); }} />
       {/* 语音通话 开/关 → 往对话里发一条告知（10-08 用户要求：让 Codex 感知实时语音何时开、何时关，
           并在语音场景下走「快问快答」）。⛔ 会话闸：通话绑定会话，切走之后到达的告知必须丢弃。 */}

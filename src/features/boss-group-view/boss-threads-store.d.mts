@@ -27,6 +27,11 @@ export function removeBossSessionId(id: string): void;
 /** 会话重建时把身份登记从旧 id 换成新 id */
 export function renameBossSessionId(previousId: string, nextId: string): void;
 export function setBossPending(pending: boolean): void;
+/**
+ * 当前界面是不是「BOSS 会话上下文」（顶栏图标与时间线空态共用同一份判定）。
+ * 三种入口都算：① 群里的 boss 线程 ② 已登记的 BOSS 会话 ③ 刚点「BOSS 会话」还没拿到 id。
+ */
+export function isBossSessionContext(state: BossThreadsState, threadId: string | undefined | null): boolean;
 export function subscribeBossThreads(fn: () => void): () => void;
 export function getBossThreads(): BossThreadsState;
 /** 这个 BOSS 会话的专属记忆目录（空串 = 不是 BOSS 会话） */

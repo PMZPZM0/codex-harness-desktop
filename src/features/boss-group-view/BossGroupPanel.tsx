@@ -12,7 +12,7 @@ import { Crown, Pin, PinOff, SendHorizontal, X } from "lucide-react";
 import { closeBossPanel, getBossPanelState, setBossPanelGroup, subscribeBossPanel, type BossPanelState } from "./panel-store.mjs";
 import { AppSelect } from "../../components/AppSelect";
 
-type GroupSummary = { id: string; name: string; paused: boolean; memberCount: number; taskCount: number };
+type GroupSummary = { id: string; name: string; paused: boolean; memberCount: number; taskCount: number; bossThreadId?: string };
 type Snapshot = {
   group: {
     id: string; name: string; paused: boolean; bossThreadId: string;
@@ -31,7 +31,7 @@ function clock(ms: number): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function BossGroupPanel() {
+export function BossGroupPanel({ threadId = "" }: { threadId?: string }) {
   const panel = useSyncExternalStore(subscribeBossPanel, getBossPanelState) as BossPanelState;
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [snap, setSnap] = useState<Snapshot | null>(null);
@@ -42,18 +42,22 @@ export function BossGroupPanel() {
   const feedRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const groupId = panel.groupId || groups[0]?.id || "";
+  /* ⛔ 群选择**按会话**（10-25 用户令：BOSS 会话可以创建多个，各会话互不干扰）：
+     本会话是某群的 boss 线程 ⇒ 选那个群；否则用**本会话自己**上次选的。
+     都没有 ⇒ 回落到「最近活动的群」（面板是全局浮层，允许看别的群）—— 但**不读**别的会话的选中项。 */
+  const ownGroupId = (groups.find((g) => g.bossThreadId === threadId)?.id) || panel.groupIdByThread?.[threadId] || "";
+  const groupId = ownGroupId || groups[0]?.id || "";
   const group = groups.find((g) => g.id === groupId) ?? null;
 
   const refresh = useCallback(async () => {
     try {
       const list = (await window.codex.listBossGroups()) as GroupSummary[];
       setGroups(list ?? []);
-      const id = panel.groupId || list?.[0]?.id || "";
+      const id = (list ?? []).find((g) => g.bossThreadId === threadId)?.id || panel.groupIdByThread?.[threadId] || list?.[0]?.id || "";
       if (id) setSnap((await window.codex.bossGroupStatus(id)) as Snapshot);
       else setSnap(null);
     } catch { /* 主进程没起好：下一轮再试 */ }
-  }, [panel.groupId]);
+  }, [panel.groupIdByThread, threadId]);
 
   useEffect(() => {
     if (!panel.open) return;
@@ -76,7 +80,7 @@ export function BossGroupPanel() {
   // 打开时聚焦输入框（「直接进入对话框」的手感）
   useEffect(() => {
     if (panel.open) setTimeout(() => inputRef.current?.focus(), 80);
-  }, [panel.open, panel.groupId]);
+  }, [panel.open, ownGroupId]);
 
   if (!panel.open) return null;
 
@@ -111,7 +115,7 @@ export function BossGroupPanel() {
             className="boss-panel-select"
             ariaLabel="切换群"
             value={groupId}
-            onChange={(next) => setBossPanelGroup(next)}
+            onChange={(next) => setBossPanelGroup(next, threadId)}
             options={groups.map((g) => ({ value: g.id, label: g.name }))}
           />
         ) : group ? (

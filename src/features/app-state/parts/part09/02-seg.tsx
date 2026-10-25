@@ -9,7 +9,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { isCompactionItem } from "../../../../lib/compaction-item.mjs";
-import { BossGroupHelpButton, BossGroupMembersButton, getBossThreads, subscribeBossThreads } from "../../../../features/boss-group-view";
+import { BossGroupHelpButton, BossGroupMembersButton, getBossThreads, isBossSessionContext, subscribeBossThreads } from "../../../../features/boss-group-view";
 import "@xterm/xterm/css/xterm.css";
 import { FieldHelp, LoginScreen } from "../../../../features/auth";
 import { DispatchMenu, DispatchBadge } from "../../../../features/dispatch";
@@ -353,9 +353,12 @@ bag.earlyView = earlyView as typeof bag.earlyView;
   const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
   /* ⛔ 10-25 实测缺图标：只认 bossIds 会漏掉「还没建群时的 home 锚点会话」——
      那种会话是普通会话、不在群账本里，于是顶栏的成员图标与「?」都不渲染（用户截图红框）。
-     三种入口都要认（与 timeline 的 isBossEmpty 同一口径）。 */
-  const isBossThread = Boolean(bag.thread?.id)
-    && (bossThreads.bossIds.includes(String(bag.thread?.id)) || (bossThreads.sessionIds ?? []).includes(String(bag.thread?.id)));
+     三种入口都要认（与 timeline 的 isBossEmpty 同一口径）——
+     ⛔ 现在统一走**共享判定** isBossSessionContext（boss-group-view 域），
+        顶栏与时间线各写一份口径必然漂移（10-25 已经漂过一次：欢迎界面出来了、顶栏图标没有）。
+        它额外认「pending」：BOSS 欢迎界面（还没发出第一条消息、连 thread id 都没有）时，
+        顶栏的成员图标与「?」照样要在（用户要求：欢迎界面右上角要有这两个图标）。 */
+  const isBossThread = isBossSessionContext(bossThreads, bag.thread?.id);
   const topbarActionsNode = (
     <>
       {/* ⛔ 顶栏操作簇顺序：🔍 搜索 → 调度开关 → 「独立弹窗 / 返回主应用」→ ⋯ 任务菜单 → 右栏开关。

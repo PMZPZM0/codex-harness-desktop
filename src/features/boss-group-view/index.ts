@@ -12,13 +12,17 @@ export { BossGroupHelpButton } from "./BossGroupHelpButton";
 export { BossThreadIntro } from "./BossThreadIntro";
 export { BossProjectDirDialog } from "./BossProjectDirDialog";
 export { BOSS_ROLE_PROMPT, BOSS_ROLE_MARK, BOSS_ROLE_END } from "./boss-role";
+/* 快捷键标签（**单一真相源**：侧栏行尾 kbd + BOSS 欢迎界面 + 快捷键清单共用） */
+export { BOSS_SHORTCUT_LABEL, bossShortcutLabel } from "./boss-shortcut";
 /* store 动作也走 barrel（域内唯一出口） */
-export { closeBossPanel, getBossPanelState, openBossPanel, setBossPanelGroup, subscribeBossPanel } from "./panel-store.mjs";
+export { autoOpenBossDirDialog, bossDirFor, closeBossDirDialog, consumeBossDirAutoOpen, getBossDirDialogState, openBossDirDialog, setBossDirChosen, subscribeBossDirDialog } from "./boss-dir-dialog-store.mjs";
+export { bossPanelGroupFor, closeBossPanel, getBossPanelState, openBossPanel, setBossPanelGroup, subscribeBossPanel } from "./panel-store.mjs";
 export {
   bossMemoryWorkspaceFor,
   ensureBossMemoryWorkspace,
   ensureBossSessionRegistered,
   getBossThreads,
+  isBossSessionContext,
   removeBossSessionId,
   renameBossSessionId,
   setBossHomeThreadId,
@@ -26,3 +30,4 @@ export {
   subscribeBossThreads,
 } from "./boss-threads-store.mjs";
 export type { BossThreadsState } from "./boss-threads-store.mjs";
+export type { BossDirDialogState } from "./boss-dir-dialog-store.mjs";
