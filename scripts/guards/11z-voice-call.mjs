@@ -884,11 +884,16 @@ ok(/16\) VOICE ANNOUNCEMENT/.test(devInstr) && /【语音播报已开启】/.tes
   "引擎侧指令第 16 条按同一对标签判定播报开关（跨文件契约：改文案不改指令 ⇒ 模型认不出这条告知）");
 ok((/VOICE_ANNOUNCE_ON_TAG = "【语音播报已开启】"/.test(noticeTs) && /VOICE_ANNOUNCE_OFF_TAG = "【语音播报已关闭】"/.test(noticeTs)),
   "告知标签的真相源在 voice-notice.ts（与通话告知同文件、同范式）");
-ok(/setAnnounceNoticeHandler/.test(bus) && /setAnnounceNoticeHandler\(/.test(bridgeTsx) && /voiceAnnounceNoticeText\(enabled\)/.test(bridgeTsx)
-  && /<VoiceAnnounceNoticeBridge/.test(appViewSrc) && /notifyAnnounceToggle\(/.test(announceHook),
-  "开关翻转 → 告知进当前会话（总线 → 桥翻文案 → App 发送；Model 据此才知道要不要写那段稿）");
-ok(/let prev: boolean \| null = null;/.test(announceHook) && /if \(prev !== null && prev !== enabled\) notifyAnnounceToggle\(enabled\);/.test(announceHook),
-  "首次读到设置**不发**告知（初值 null 而不是 false —— 否则每次开窗口都往会话里塞一条「已开启」）");
+ok(/setAnnounceGlobalEnabled\(enabled\)/.test(announceHook)
+  && /getAnnounceGlobalEnabled/.test(bridgeTsx) && /isAnnounceMutedForThread/.test(bridgeTsx)
+  && /voiceAnnounceNoticeText\(next\)/.test(bridgeTsx)
+  && /<VoiceAnnounceNoticeBridge/.test(appViewSrc) && /lastTagState=/.test(appViewSrc)
+  && /VOICE_ANNOUNCE_ON_TAG/.test(appViewSrc) && /VOICE_ANNOUNCE_OFF_TAG/.test(appViewSrc),
+  "播报有效状态（总开关 ∧ 会话未静音）实时同步；切会话按历史最后一条告知对账纠偏");
+ok(/recordAnnounceNotice/.test(bridgeTsx) && /getAnnounceNoticeState/.test(bridgeTsx)
+  && /subscribeAnnounceThreadMuted/.test(bridgeTsx) && /subscribeAnnounceGlobalEnabled/.test(bridgeTsx)
+  && /lastSent === null/.test(bridgeTsx),
+  "首次知道状态只记账不刷屏；仅在有效状态变化 / 与历史告知不一致时发一条");
 const coreTools = read("electron/features/dispatch-core.ts");
 const rpcExec = read("electron/features/dispatch-rpc.ts");
 ok(/name: "voice_announce"/.test(coreTools) && /name: "voice_announce_stop"/.test(coreTools),
