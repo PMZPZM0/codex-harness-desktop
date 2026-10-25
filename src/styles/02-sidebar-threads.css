@@ -1537,10 +1537,13 @@ html[data-os="win32"],
 html[data-os="win32"] body,
 html[data-os="win32"] #root { background: transparent !important; }
 [data-os="win32"] .app-shell {
-  margin: 12px;
-  width: calc(100% - 24px);
-  height: calc(100% - 24px);
+  margin: 18px;
+  width: calc(100% - 36px);
+  height: calc(100% - 36px);
   border-radius: 26px;
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.12),
+    inset 0 0 0 1px color-mix(in srgb, var(--text) 7%, transparent);
   overflow: hidden;
 }
 [data-os="win32"][data-maximized="1"] .app-shell {
