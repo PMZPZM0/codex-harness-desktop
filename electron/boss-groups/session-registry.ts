@@ -54,9 +54,15 @@ async function readRegistry(): Promise<RegistryFile> {
   try {
     const raw = await fs.readFile(registryFile(), "utf8");
     const parsed = JSON.parse(raw);
-    const sessions = Array.isArray(parsed?.sessions)
+    /* ⛔⛔ 读时**按 id 去重**（10-25 实测：用户的 boss-sessions.json 里同一个 id 存了两条
+       ⇒ 面板列出两个同名条目、删一个另一个还在）。
+       根因在 backfillFromGroups（同一个 bossThreadId 出现在两个群里时会被加两次）
+       ⇒ 这里读时兜底去重（保留最早那条），并在写盘时也去重。 */
+    const rawList = Array.isArray(parsed?.sessions)
       ? parsed.sessions.filter((s: any) => String(s?.id ?? "")).map((s: any) => ({ id: String(s.id), createdAt: Number(s.createdAt ?? 0) || Date.now() }))
       : [];
+    const seen = new Set<string>();
+    const sessions = rawList.filter((s: { id: string; createdAt: number }) => (seen.has(s.id) ? false : (seen.add(s.id), true)));
     cache = { version: 1, sessions };
   } catch {
     cache = { version: 1, sessions: [] };
@@ -65,6 +71,11 @@ async function readRegistry(): Promise<RegistryFile> {
 }
 
 async function writeRegistry(next: RegistryFile): Promise<void> {
+  /* ⛔ 落盘前统一去重（同一 id 只留一条）—— 名单是「哪些会话是 BOSS 会话」的集合，
+     重复条目会让面板列出两个同名会话、删一个另一个还在（10-25 实测）。 */
+  const merged = new Map<string, BossSessionRecord>();
+  for (const s of next.sessions) if (!merged.has(s.id)) merged.set(s.id, s);
+  next = { version: 1, sessions: [...merged.values()] };
   cache = next;
   const file = registryFile();
   const tmp = `${file}.tmp`;
@@ -91,7 +102,12 @@ export async function registerBossSession(id: string): Promise<{ id: string; cre
   const hit = reg.sessions.find((s) => s.id === key);
   if (hit) return { ...hit, memoryDir: bossMemoryWorkspace(hit.id) };
   const entry: BossSessionRecord = { id: key, createdAt: Date.now() };
-  await writeRegistry({ version: 1, sessions: [...reg.sessions, entry] });
+  /* ⛔ 写盘前再查一次并去重：两个 add 并发（渲染层 setBossHomeThreadId + ensureBossSessionRegistered
+     可能同时发）时，两者都读到"没有这条" ⇒ 各写一份 ⇒ 名单里出现重复 id。 */
+  const merged = new Map<string, BossSessionRecord>();
+  for (const s of reg.sessions) merged.set(s.id, s);
+  merged.set(entry.id, entry);
+  await writeRegistry({ version: 1, sessions: [...merged.values()] });
   return { ...entry, memoryDir: bossMemoryWorkspace(entry.id) };
 }
 
@@ -142,7 +158,9 @@ export async function isBossSession(threadId: string): Promise<boolean> {
 export async function backfillFromGroups(bossThreadIds: string[]): Promise<number> {
   const reg = await readRegistry();
   const known = new Set(reg.sessions.map((s) => s.id));
-  const add = bossThreadIds.map(String).filter((id) => id && !known.has(id));
+  /* ⛔ 去重：同一个 bossThreadId 出现在**两个群里**时（用户换了个会话建新群，旧群还挂着它）
+     不去重就会把同一个 id 登记两次 ⇒ 面板出现两个同名条目（10-25 实测）。 */
+  const add = [...new Set(bossThreadIds.map(String).filter((id) => id && !known.has(id)))];
   if (!add.length) return 0;
   await writeRegistry({ version: 1, sessions: [...reg.sessions, ...add.map((id) => ({ id, createdAt: Date.now() }))] });
   return add.length;

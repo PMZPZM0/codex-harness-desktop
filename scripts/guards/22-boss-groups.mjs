@@ -341,6 +341,25 @@ if (state) {
     "删除/重建 BOSS 会话时同步主进程名单（⇒ 记忆目录跟着清掉/搬过去）");
   ok(/拒绝清理该路径/.test(bossRegistry) && /boss-home", "memories"/.test(bossRegistry),
     "⛔ 清空记忆有路径安全闸（只许删 BOSS 记忆目录内的路径）");
+  /* ⛔⛔ 10-25 用户实测两处（截图实证）：
+     ① 「旧的还是删不掉」—— 面板上「清空这份记忆」点了报「清空失败」。
+        根因：UI 调的方法名与 preload 不一致（写成 deleteBossMemory，preload 里是
+        clearBossMemory）⇒ optional call 静默返回 undefined ⇒ 必然失败。
+        ⇒ 断言 UI 里调的方法名**必须出现在 preload 里**（这类"名字对不上"编译器查不出）。
+     ② 列表里出现**两个同名**「BOSS 会话 01a171d5」——
+        真因：codex thread id 是 **uuid v7**，前 8 位是时间戳 ⇒ 同一分钟建的会话前缀一样；
+        而且同一个 bossThreadId 出现在**两个群里**时，补登会把它加两次 ⇒ 名单重复。
+        ⇒ 断言：registry 读/写/补登三处都去重；显示名不能只取 id 前 8 位。 */
+  const bossMemPanel = read("src/features/settings-memory/BossMemoryPanel.tsx");
+  const clearCall = /codex\?\.(\w+)\?\.\(\{ memoryDir/.exec(bossMemPanel);
+  ok(Boolean(clearCall) && read("electron/preload.ts").includes(clearCall[1] + ":"),
+    `面板调的记忆清理方法名必须在 preload 里存在（实测 ${clearCall ? clearCall[1] : "没匹配到"}）`);
+  ok(/seen\.has\(s\.id\)/.test(bossRegistry) && /new Set\(bossThreadIds/.test(bossRegistry),
+    "BOSS 会话名单**读/补登**都去重（同一个 bossThreadId 出现在两个群里也不会登记两次）");
+  ok(/merged\.set\(s\.id, s\)/.test(bossRegistry) && /merged\.set\(entry\.id, entry\)/.test(bossRegistry),
+    "BOSS 会话名单**写入**去重（并发 add 不会写两条）");
+  ok(!/slice\(0, 8\)/.test(bossMemPanel),
+    "⛔ 显示名不能只取 id 前 8 位（uuid v7 的时间戳前缀会撞）");
   ok(/BossMemoryPanel/.test(read("src/features/settings-memory/MemoryCenterSection.tsx"))
     && existsSync(join(ROOT, "src/features/settings-memory/BossMemoryPanel.tsx")),
     "记忆设置页有独立的「BOSS 会话记忆」板块（与项目共享记忆库分开）");

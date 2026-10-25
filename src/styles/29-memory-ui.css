@@ -801,3 +801,6 @@
 .boss-mem-layers { display: flex; flex-direction: column; gap: 6px; }
 .boss-mem-actions { display: inline-flex; gap: 6px; align-items: center; }
 .boss-mem-actions .danger { color: var(--red); }
+/* 会话已删（记忆目录还在磁盘上，用户需要看得见并能手动清掉） */
+.boss-mem-item.is-gone { opacity: 0.62; }
+.boss-mem-item-gone { margin-left: auto; font-size: 10px; font-style: normal; color: var(--muted); flex: none; }
