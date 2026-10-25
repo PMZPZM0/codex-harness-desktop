@@ -728,5 +728,14 @@ if (state) {
     "worker 生成物已重新生成（⛔ 改 .cjs 不跑 gen-rollout-worker 等于没改）");
 }
 
+/* 10-25 用户截图：「指挥中枢文字颜色上下两个不匹配，浅色的」——旧 BOSS 规则把文字
+   压成 var(--muted) 且高度 32，与上下两项（text / 34）不一致。 ⇒ 只保留皇冠图标的琥珀色。 */
+{
+  const bossQuickCss = codeOnly(read("src/styles/47-boss-group-view.css"));
+  ok(/\.sidebar-quick \.sidebar-quick-btn\.sidebar-quick-boss \{[^}]*height:\s*34px[^}]*color:\s*var\(--text\)/.test(bossQuickCss)
+    && !/\.sidebar-quick \.sidebar-quick-btn\.sidebar-quick-boss \{[^}]*color:\s*var\(--muted\)/.test(bossQuickCss),
+    "指挥中枢快捷项文字颜色/高度与上下两项一致（⛔ 不再 var(--muted) / 32px）");
+}
+
 console.log(`\n【boss-groups】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

@@ -310,11 +310,12 @@
   color: color-mix(in srgb, var(--ic-amber, var(--amber)) 70%, var(--text));
 }
 .boss-cwd-chip > svg:first-child { color: var(--ic-amber, var(--amber)); }
-/* BOSS 会话侧栏按钮与「搜索任务」同款：靠左对齐 + 图标（用户令） */
+/* 指挥中枢侧栏按钮：与「新建任务 / 拓展功能」同版式（同高、同文字颜色），
+   只把皇冠图标保留琥珀色。⛔ 旧规则把文字压成 --muted、高度 32 ⇒ 用户截图「上下两个颜色不匹配」。 */
 .sidebar-quick .sidebar-quick-btn.sidebar-quick-boss {
-  height: 32px;
+  height: 34px;
   justify-content: flex-start;
-  color: var(--muted);
+  color: var(--text);
 }
 .sidebar-quick .sidebar-quick-btn.sidebar-quick-boss:hover { color: var(--text); }
 .sidebar-quick .sidebar-quick-btn.sidebar-quick-boss svg { color: var(--amber); }
