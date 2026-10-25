@@ -50,6 +50,9 @@ export function BossMemoryPanel({ threads, onOpenThread, onNotice }: {
   }, []);
 
   const active = useMemo(() => sessions.find((s) => s.id === activeId) ?? null, [sessions, activeId]);
+  /* 会话是否还存在（threads 里找不到 = 会话已被删/已被引擎清掉）。
+     ⛔ 只**标记**、不隐藏 —— 记忆目录还在磁盘上，得让用户看得见、能手动清掉。 */
+  const sessionAlive = (id: string) => (threads ?? []).some((t) => t?.id === id);
 
   /* 层水位：按该会话的**专属记忆目录**读（不是项目目录）。 */
   useEffect(() => {
@@ -64,9 +67,31 @@ export function BossMemoryPanel({ threads, onOpenThread, onNotice }: {
     return () => { alive = false; };
   }, [active?.memoryDir, active?.id]);
 
+  /* ⛔ 名字不能只取 id 的一段：codex 的 thread id 是 **uuid v7** —— 前 8 位是时间戳
+     （同一分钟内建的会话前缀**完全一样**，10-25 实测：列表里两个「BOSS 会话 01a171d5」），
+     尾部也可能是连续位（同样会撞）。
+     ⇒ 取 **uuid 的第 3 段 + 尾部 4 位**（v7 的随机位集中在中间，最不容易撞），
+        并且同名列加序号兜底（万一还是撞，一眼能看出是两个不同条目）。 */
+  /** 显示名的**基名**（不含序号）—— 同名判定用。 */
+  const nameBaseOf = (id: string) => {
+    const hit = (threads ?? []).find((t) => t?.id === id);
+    const named = String(hit?.name ?? "").trim();
+    if (named) return named;
+    const raw = String(id);
+    const seg = raw.split("-");
+    const mid = seg.length >= 3 ? seg[2] : raw.slice(0, 4);
+    const tail = raw.length > 6 ? raw.slice(-4) : "";
+    return `BOSS 会话 ${mid.slice(0, 4)}…${tail}`;
+  };
+
   const nameOf = (id: string) => {
     const hit = (threads ?? []).find((t) => t?.id === id);
-    return String(hit?.name ?? "").trim() || `BOSS 会话 ${String(id).slice(0, 8)}`;
+    const named = String(hit?.name ?? "").trim();
+    if (named) return named;
+    const base = nameBaseOf(id);
+    /* 同名兜底：同一个显示名出现多次 ⇒ 加序号（列表里必须能分辨是两个条目） */
+    const same = sessions.filter((x) => x.id !== id && nameBaseOf(x.id) === base).length;
+    return same ? `${base} (${same + 1})` : base;
   };
 
   const layers: any[] = Array.isArray(snapshot?.layers) ? snapshot.layers : [];
@@ -76,7 +101,9 @@ export function BossMemoryPanel({ threads, onOpenThread, onNotice }: {
     if (!active?.memoryDir) return;
     const dir = active.memoryDir;
     try {
-      const res = await (window as any).codex?.deleteBossMemory?.({ memoryDir: dir });
+      /* ⛔ 方法名必须与 preload 一致：`clearBossMemory`（⛔ 之前写成 deleteBossMemory
+         ⇒ preload 上根本没有这个方法 ⇒ optional call 静默返回 undefined ⇒ 「清空失败」）。 */
+      const res = await (window as any).codex?.clearBossMemory?.({ memoryDir: dir });
       if (res?.ok) {
         onNotice?.(`已清空「${nameOf(active.id)}」的记忆`);
         setSnapshot(null);
@@ -88,6 +115,25 @@ export function BossMemoryPanel({ threads, onOpenThread, onNotice }: {
     }
   };
 
+  /* 移除这条记忆记录（⛔ 从主进程名单里摘掉 + 清掉它的目录 ⇒ 这一条彻底消失）。
+     用户令：「旧的还是删不掉」—— 光清空内容条目还在，得能**整条删掉**。 */
+  const removeEntry = async () => {
+    const id = active?.id;
+    if (!id) return;
+    try {
+      const res = await (window as any).codex?.bossGroupSession?.({ action: "remove", id });
+      if (res?.ok) {
+        onNotice?.(`已移除「${nameOf(id)}」的记忆记录`);
+        setSnapshot(null);
+        setActiveId("");
+      } else {
+        onNotice?.(res?.error || "移除失败");
+      }
+    } catch (error: any) {
+      onNotice?.(`移除失败：${error?.message ?? error}`);
+    }
+  };
+
   return (
     <div className="boss-mem-root">
       {/* ── 左：BOSS 会话名单（每个会话一份独立记忆）────────────────── */}
@@ -95,10 +141,11 @@ export function BossMemoryPanel({ threads, onOpenThread, onNotice }: {
         {sessions.length === 0 && <p className="lib-empty">还没有 BOSS 会话 —— 点侧栏「BOSS 会话」新建一个。</p>}
         {sessions.map((s) => (
           <button type="button" key={s.id} title={s.id} data-boss-mem-session={s.id}
-            className={`boss-mem-item ${activeId === s.id ? "is-active" : ""}`}
+            className={`boss-mem-item ${activeId === s.id ? "is-active" : ""}${sessionAlive(s.id) ? "" : " is-gone"}`}
             onClick={() => setActiveId(s.id)}>
             <span className="boss-mem-item-icon"><Crown size={12} /></span>
             <span className="boss-mem-item-name">{nameOf(s.id)}</span>
+            {sessionAlive(s.id) ? null : <em className="boss-mem-item-gone">会话已删</em>}
           </button>
         ))}
       </aside>
@@ -109,7 +156,9 @@ export function BossMemoryPanel({ threads, onOpenThread, onNotice }: {
           <span className="lib-head-icon"><Crown size={14} /></span>
           <span className="lib-head-copy">
             <strong>{active ? nameOf(active.id) : "未选 BOSS 会话"}</strong>
-            <small title={active?.memoryDir ?? ""}>{active?.memoryDir || "该会话还没有专属记忆目录"}</small>
+            <small title={active?.memoryDir ?? ""}>
+              {active && !sessionAlive(active.id) ? "⛔ 这个会话已被删除（记忆目录仍在磁盘上，可移除）" : (active?.memoryDir || "该会话还没有专属记忆目录")}
+            </small>
           </span>
           {loading ? <em className="lib-loading">读取中…</em> : null}
         </header>
@@ -143,8 +192,12 @@ export function BossMemoryPanel({ threads, onOpenThread, onNotice }: {
               </span>
               <span className="boss-mem-actions">
                 {onOpenThread && <button className="secondary-setting" onClick={() => onOpenThread(active.id)}>打开该会话</button>}
-                <button className="secondary-setting danger" onClick={() => void clearMemory()}>
-                  <Trash2 size={12} />清空这份记忆
+                <button className="secondary-setting" onClick={() => void clearMemory()}>
+                  <Trash2 size={12} />清空内容
+                </button>
+                {/* ⛔ 整条移除：清内容只是清空内容，条目还在列表里；这条才是真删。 */}
+                <button className="secondary-setting danger" onClick={() => void removeEntry()}>
+                  <Trash2 size={12} />移除这条记录
                 </button>
               </span>
             </footer>
