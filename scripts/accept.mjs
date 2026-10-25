@@ -343,6 +343,25 @@ const CHECKS = [
           && ["棕熊","白熊","双熊"].every((label) => bearer(bearAvatars.userTitles, label) && bearer(bearAvatars.codexTitles, label))
           && bearAvatars.userCols === 5 && bearAvatars.codexCols === 5),
         JSON.stringify(bearAvatars));
+      // 10-25 用户令：用户人格搬到 Codex 人格（人格市场）同页；布布包换真素材 + 可试听语音
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(x=>(x.textContent||"").trim()==="人格市场"); if(b) b.click(); return 1; })()`);
+      await wait(1800);
+      const personaTogether = await h.eval(`(function(){ const m=document.querySelector(".settings-modal"); if(!m) return null;
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          market:!!m.querySelector(".soul-market"), persona:!!m.querySelector(".user-persona-grid") }; })()`).catch(() => null);
+      h.check("⑥ 用户人格已搬到「人格市场」，与 Codex 人格同页", Boolean(personaTogether && personaTogether.page === "人格市场" && personaTogether.market && personaTogether.persona), JSON.stringify(personaTogether));
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(x=>(x.textContent||"").trim()==="用户中心"); if(b) b.click(); return 1; })()`);
+      await wait(1200);
+      const bubuUi = await h.eval(`(function(){ const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const panel=m.querySelector(".bubu-pack-panel");
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          avatars:panel?panel.querySelectorAll(".bubu-pack-avatar").length:0,
+          stickers:panel?panel.querySelectorAll(".bubu-pack-stickers img").length:0,
+          previewBtn:panel?[...panel.querySelectorAll("button")].some((b)=>(b.textContent||"").includes("试听语音")):false,
+          movedPersona:!m.querySelector(".user-persona-grid") }; })()`).catch(() => null);
+      h.check("⑦ 布布包：双头像 + 5 张贴纸 + 试听语音按钮，用户人格已移出用户中心",
+        Boolean(bubuUi && bubuUi.page === "用户中心" && bubuUi.avatars === 2 && bubuUi.stickers === 5 && bubuUi.previewBtn && bubuUi.movedPersona),
+        JSON.stringify(bubuUi));
     },
   },
   {
