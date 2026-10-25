@@ -321,6 +321,54 @@
 .voice-ball:hover { filter: brightness(1.05) drop-shadow(0 0 7px color-mix(in srgb, var(--ball-hover) 38%, transparent)); }
 .voice-ball:active { transform: scale(.95); }
 
+/* 打字时从球上方弹出迷你键盘（10-26 用户：「打字有键盘出来」）。
+   ⛔ 绝对定位、不占布局 ⇒ 不会把球顶上去；pointer-events:none ⇒ 不挡球与输入框操作。 */
+.voice-ball-keyboard {
+  position: absolute;
+  right: -2px;
+  bottom: calc(100% + 10px);
+  width: 76px;
+  padding: 5px 6px 6px;
+  display: grid;
+  gap: 3px;
+  border-radius: 9px;
+  background: var(--panel, #fff);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, .16);
+  pointer-events: none;
+  z-index: 7;
+  animation: voice-keyboard-in .16s ease-out;
+}
+.voice-ball-keyboard::after {
+  content: "";
+  position: absolute;
+  right: 18px;
+  bottom: -5px;
+  width: 8px;
+  height: 8px;
+  background: var(--panel, #fff);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  transform: rotate(45deg);
+}
+.voice-keyboard-row { display: flex; gap: 2.5px; }
+.voice-keyboard-row:last-child { padding: 0 10px; }
+.voice-keyboard-key {
+  flex: 1;
+  height: 6px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--muted) 30%, transparent);
+  animation: voice-key-tap .9s ease-in-out infinite;
+}
+@keyframes voice-key-tap {
+  0%, 100% { opacity: .38; transform: translateY(0); }
+  38%      { opacity: 1; transform: translateY(1px); }
+}
+@keyframes voice-keyboard-in {
+  from { opacity: 0; transform: translateY(4px) scale(.94); }
+  to   { opacity: 1; transform: none; }
+}
+
 /* 启动中：logo 保持可见，只略微降亮；白色 spinner 叠在正中。
    显式写 color:#fff，不能继承 button 的 color:transparent。 */
 .voice-ball.is-starting .voice-mascot {
@@ -569,7 +617,10 @@
   html:not([data-motion="force"]) .voice-ball,
   html:not([data-motion="force"]) .voice-ball-ring,
   html:not([data-motion="force"]) .voice-level i,
-  html:not([data-motion="force"]) .voice-progress-bar span {
+  html:not([data-motion="force"]) .voice-progress-bar span,
+  html:not([data-motion="force"]) .voice-bot-gaze,
+  html:not([data-motion="force"]) .voice-ball-keyboard,
+  html:not([data-motion="force"]) .voice-keyboard-key {
     animation: none !important;
     transition: none !important;
   }
@@ -1518,6 +1569,15 @@
   border-radius: 50%;
   background: radial-gradient(ellipse at 35% 35%, rgba(255, 255, 255, .32), transparent 68%);
   pointer-events: none;
+}
+/* 眼球位移层：鼠标追踪只写 --bot-gaze-x/y（不重渲 React），眨眼仍在各自的眼上做。
+   ⛔ 不要把 translate 直接写到 .voice-bot-eye —— blink 的 scaleY 动画会覆盖 transform。 */
+.voice-bot-gaze {
+  position: absolute;
+  inset: 0;
+  transform: translate(var(--bot-gaze-x, 0px), var(--bot-gaze-y, 0px));
+  transition: transform .14s ease-out;
+  will-change: transform;
 }
 /* 尺寸用百分比 → 悬浮球 34px 与设置页预览 28px 同比例，不会一边大一边小。
    ⛔ 10-25 用户实测「眼睛太小了」：胶囊眼占脸宽 16% / 脸高 34%，别再缩回 3×9。 */

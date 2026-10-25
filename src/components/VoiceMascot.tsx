@@ -26,8 +26,10 @@ export default function VoiceMascot({ mode, size = 44, skin }: Props) {
       style={{ width: size, height: size }}
       aria-hidden="true"
     >
-      <span className="voice-bot-eye voice-bot-eye--left" />
-      <span className="voice-bot-eye voice-bot-eye--right" />
+      <span className="voice-bot-gaze" aria-hidden="true">
+        <span className="voice-bot-eye voice-bot-eye--left" />
+        <span className="voice-bot-eye voice-bot-eye--right" />
+      </span>
       <span className="voice-bot-blush voice-bot-blush--left" />
       <span className="voice-bot-blush voice-bot-blush--right" />
     </span>
