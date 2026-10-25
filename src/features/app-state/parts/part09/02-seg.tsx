@@ -285,7 +285,7 @@ bag.earlyView = earlyView as typeof bag.earlyView;
      ⚠️ 只改 position 不够 —— 不 portal 仍在被裁的子树里。
      ⚠️ 宽度要与 CSS 实际宽度一致：`.task-menu` 是 226px（见 02-sidebar-threads.css）。 */
   const ctxBtnRef = useRef<HTMLButtonElement | null>(null);
-  const ctxMenuStyle = useAnchoredPopover(bag.ctxMenuOpen, ctxBtnRef, 226);
+  const ctxMenuStyle = useAnchoredPopover(bag.ctxMenuOpen, ctxBtnRef, 226, "bottom-center");
   /* 工作区浮层「关得掉」+ **非阻塞**（10-06 夜八轮，用户实测「点图标都不会自动消失、其他地方
      点不了、关都关不掉」）：
        根因＝原来靠 `.menu-backdrop`（fixed inset:0）当遮罩 —— 它挂在顶栏 drag 子树里，
@@ -312,7 +312,7 @@ bag.earlyView = earlyView as typeof bag.earlyView;
     };
   }, [bag.ctxMenuOpen]);
   const taskBtnRef = useRef<HTMLButtonElement | null>(null);
-  const taskMenuStyle = useAnchoredPopover(bag.taskMenuOpen, taskBtnRef, 226);
+  const taskMenuStyle = useAnchoredPopover(bag.taskMenuOpen, taskBtnRef, 226, "bottom-center");
   const closeHistoryPanel = useCallback(() => {
     bag.setChatSearchOpen(false);
     bag.setChatSearchQuery(""); // 关面板即清词：下次打开不留旧高亮 / 旧结果
@@ -385,9 +385,10 @@ bag.earlyView = earlyView as typeof bag.earlyView;
               // ⛔ 面板必须 portal 到 body + fixed：顶栏 .topbar 自带 z-index:30 的层叠上下文，
               //    面板 z 再高也只在其内部生效（与原通知面板同坑：DOM 查询全绿、画面上没有）。
               const r = historySearchBtnRef.current?.getBoundingClientRect();
+              const panelWidth = Math.min(460, window.innerWidth - 48);
               const posStyle = r
-                ? { top: r.bottom + 8, right: Math.max(12, window.innerWidth - r.right) }
-                : { top: 60, right: 12 };
+                ? { top: r.bottom + 8, left: Math.max(8, Math.min(r.left + r.width / 2 - panelWidth / 2, window.innerWidth - panelWidth - 8)) }
+                : { top: 60, left: Math.max(8, (window.innerWidth - panelWidth) / 2) };
               const query = bag.chatSearchQuery.trim();
               const hits = bag.chatSearchResults;
               const MAX_ITEMS = 50;

@@ -34,7 +34,7 @@ const ROWS: Array<{ title: string; body: string }> = [
 export function BossGroupHelpButton() {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement | null>(null);
-  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -53,7 +53,10 @@ export function BossGroupHelpButton() {
   const toggle = () => {
     if (!open) {
       const rect = btnRef.current?.getBoundingClientRect();
-      if (rect) setPos({ top: rect.bottom + 6, right: Math.max(8, window.innerWidth - rect.right) });
+      if (rect) {
+        const width = 340;
+        setPos({ top: rect.bottom + 6, left: Math.max(8, Math.min(rect.left + rect.width / 2 - width / 2, window.innerWidth - width - 8)) });
+      }
     }
     setOpen((v) => !v);
   };
@@ -73,7 +76,7 @@ export function BossGroupHelpButton() {
       </button>
       {open && pos
         ? createPortal(
-            <div className="boss-help-pop" role="dialog" aria-label="指挥中枢说明" style={{ top: pos.top, right: pos.right }}>
+            <div className="boss-help-pop" role="dialog" aria-label="指挥中枢说明" style={{ top: pos.top, left: pos.left, right: "auto" }}>
               <div className="boss-help-head">
                 <b>指挥中枢怎么用</b>
                 <button type="button" className="boss-panel-mini" aria-label="关闭" onClick={() => setOpen(false)}><X size={11} /></button>
