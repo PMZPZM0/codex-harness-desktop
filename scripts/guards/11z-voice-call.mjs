@@ -489,8 +489,9 @@ ok(/without being asked/.test(devInstr),
 /* ⛔ 只审第 16 条的正文区间：第 15 条（实时语音）**本来**就该"只看会话告知"（语音开没开
    无法从工具表推断），裸匹配会把那条正确的判据顶成假红。 */
 const devInstr16Body = codeOnlyTs(devInstr).slice(codeOnlyTs(devInstr).indexOf("16) VOICE ANNOUNCEMENT"));
-ok(!/Judge ONLY by that notice/.test(devInstr16Body) && /notice is newer than this line/.test(devInstr16Body),
-  "⛔ 第 16 条删掉旧的「只看那条告知」判据（它就是根因），改成：告知仍生效但以**更新的那条**为准");
+ok(/session-scope block/.test(devInstr16Body) && /当前会话语音播报/.test(devInstr16Body)
+  && !/notice is newer than this line/.test(devInstr16Body) && !/【语音播报已开启】/.test(devInstr16Body),
+  "⛔ 第 16 条以**会话作用域块**为权威（不再依赖对话里的可见告知 / 旧告知）");
 ok(!/still write that sentence in your reply text/.test(codeOnlyTs(devInstr))
   && !/照常用文字把这句话写清楚/.test(codeOnlyTs(rpcSrcForContract))
   && !/那句话照常用文字写出来/.test(genSkillSrc),
@@ -631,10 +632,8 @@ ok(/stripVoiceScript\(children\)/.test(markdownTsx) && /hasWidgetFence\(text\)/.
   /* 告知文案本身会作为**用户消息**被渲染 ⇒ 里面绝不能出现真正的 voice 围栏
      （出现就会被上面那条"渲染前剥离"吃掉，用户屏幕上只剩半截话）。
      ⛔ 这里读源文件而不是 import：voice-notice.ts 是 TS，守卫（裸 node）认不了。 */
-  /* ⛔ 工作区文件可能是 CRLF（autocrlf 检出），`\n}\n` 会失配成空体 ⇒ 断言恒红 —— 先归一再抓（10-12 实测）。 */
-  const noticeBody = (noticeTs.replace(/\r\n/g, "\n").match(/function voiceAnnounceNoticeText[\s\S]*?\n}\n/) || [""])[0];
-  ok(Boolean(noticeBody) && !/(\x60){3}/.test(noticeBody) && /VOICE_ANNOUNCE_ON_TAG/.test(noticeBody),
-    "告知文案里不写真围栏（原文注水讲究：写了会被当成播报稿剥掉，用户看到的是半截话）；格式由 ASR 指令兜底");
+  /* 10-25：可见告知整条链路已删除（改为 developer instructions 的隐藏注入）——
+     这里不再检查告知文案的围栏；改由下方 ⑭ 检查「作用域块每轮携带有效状态」。 */
 }
 
 /* ── ⑬ 播报进行中的实时反馈 + 随时停止（10-09 用户第三、四条要求）────── */
@@ -879,21 +878,15 @@ ok(/width:\s*max-content/.test((codeOnlyCss(stageCss).match(/\.voice-announce-ba
   && /el\.style\.maxWidth =/.test(indicatorTsx) && !/el\.style\.width =/.test(indicatorTsx),
   "⛔ 播报条宽度改为**贴合内容**（原先固定 280px 起 ⇒ 没有正文时也是一条空胶囊）；上限由 JS 的 maxWidth 管（CSS 块不写几何）");
 
-/* ── ⑭ 让 Codex 知晓 + 有可用工具（10-09 用户：「记得配套对应工具，没工具他调用不了」）── */
-ok(/16\) VOICE ANNOUNCEMENT/.test(devInstr) && /【语音播报已开启】/.test(devInstr) && /【语音播报已关闭】/.test(devInstr),
-  "引擎侧指令第 16 条按同一对标签判定播报开关（跨文件契约：改文案不改指令 ⇒ 模型认不出这条告知）");
-ok((/VOICE_ANNOUNCE_ON_TAG = "【语音播报已开启】"/.test(noticeTs) && /VOICE_ANNOUNCE_OFF_TAG = "【语音播报已关闭】"/.test(noticeTs)),
-  "告知标签的真相源在 voice-notice.ts（与通话告知同文件、同范式）");
-ok(/setAnnounceGlobalEnabled\(enabled\)/.test(announceHook)
-  && /getAnnounceGlobalEnabled/.test(bridgeTsx) && /isAnnounceMutedForThread/.test(bridgeTsx)
-  && /voiceAnnounceNoticeText\(next\)/.test(bridgeTsx)
-  && /<VoiceAnnounceNoticeBridge/.test(appViewSrc) && /lastTagState=/.test(appViewSrc)
-  && /VOICE_ANNOUNCE_ON_TAG/.test(appViewSrc) && /VOICE_ANNOUNCE_OFF_TAG/.test(appViewSrc),
-  "播报有效状态（总开关 ∧ 会话未静音）实时同步；切会话按历史最后一条告知对账纠偏");
-ok(/recordAnnounceNotice/.test(bridgeTsx) && /getAnnounceNoticeState/.test(bridgeTsx)
-  && /subscribeAnnounceThreadMuted/.test(bridgeTsx) && /subscribeAnnounceGlobalEnabled/.test(bridgeTsx)
-  && /lastSent === null/.test(bridgeTsx),
-  "首次知道状态只记账不刷屏；仅在有效状态变化 / 与历史告知不一致时发一条");
+/* ── ⑭ 让 Codex 知晓（10-25 改为**隐藏注入**：不往对话里发消息）────────────── */
+ok(/16\) VOICE ANNOUNCEMENT/.test(devInstr) && /当前会话语音播报/.test(devInstr) && !/【语音播报已开启】/.test(devInstr),
+  "引擎侧第 16 条改读会话作用域块（不再依赖对话里的可见告知）");
+ok(!/VOICE_ANNOUNCE_ON_TAG|voiceAnnounceNoticeText/.test(noticeTs) && !/VoiceAnnounceNoticeBridge/.test(appViewSrc),
+  "⛔ 不再往对话里发播报开关告知（10-25 用户：不要每次切换发个消息出去）");
+ok(/announceOn: getAnnounceGlobalEnabled\(\)/.test(runtimeActivityTsx) && /announceOn: input\.announceOn/.test(scopeSrc)
+  && /v\.announceOn === "1"/.test(scopeSrc) && /当前会话语音播报/.test(scopeSrc)
+  && /announceOn/.test(scopeSrc.slice(scopeSrc.indexOf('sessionScopeSignature'), scopeSrc.indexOf('sessionScopeSignature') + 240)),
+  "有效状态（总开关 ∧ 会话未静音）每轮注入 developer instructions（隐藏；签名含 announceOn ⇒ 下一轮下发）");
 const coreTools = read("electron/features/dispatch-core.ts");
 const rpcExec = read("electron/features/dispatch-rpc.ts");
 ok(/name: "voice_announce"/.test(coreTools) && /name: "voice_announce_stop"/.test(coreTools),

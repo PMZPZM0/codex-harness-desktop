@@ -147,6 +147,16 @@ console.log(C.bold("\n【4a-2】会话作用域块（会话级配置下发到会
     && mutedSig !== sig
     ? ok("作用域块写入本会话静音状态，且签名随静音变化（每轮发送前会重新下发）")
     : fail("会话静音没有进作用域/签名 —— 模型会继续按全局 announce.enabled=true 声称会播报");
+  /* 10-25 用户：「切换之后发下个消息的注入，系统提示当前会话已开启/已关闭，不要再发消息」——
+     开启也要有明确一行（旧版只在关的时候写），且开关两态签名必须不同。 */
+  const onBlock = sessionScopeBlock({ ...scope, announceOn: true });
+  const offBlock = sessionScopeBlock({ ...scope, announceOn: false });
+  const onSig = sessionScopeSignature({ ...scope, announceOn: true });
+  const offSig = sessionScopeSignature({ ...scope, announceOn: false });
+  onBlock.includes("当前会话语音播报：**已开启**") && offBlock.includes("当前会话语音播报：**已关闭**")
+    && onSig !== offSig
+    ? ok("作用域块两种状态都写（已开启/已关闭），且签名不同 ⇒ 下次发送前注入最新状态（无可见消息）")
+    : fail("开/关状态没有同时进作用域或签名 —— 切换后模型仍可能读到旧状态");
 
   // ④ 组合：基线原样在前（否则作用域块会把语言/工具/自动化说明顶掉），块在后
   const composed = composeScopeInstructions(base, block);

@@ -5,10 +5,9 @@
  * · props 类型 = useHarnessApp() 的返回类型（type-only import ⇒ 运行时零依赖）。
  */
 import { createPortal } from "react-dom";
-import { useMemo, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import { hk } from "../../lib/hk";
 import { basename } from "../../lib/basename";
-import { VOICE_ANNOUNCE_OFF_TAG, VOICE_ANNOUNCE_ON_TAG } from "../../voice/voice-notice";
 import {
   AlertTriangle,
   Archive,
@@ -150,7 +149,7 @@ import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextI
 import { MarketLogo, MarketPreviewModal, SkillAvatar, SkillInstallModal, SkillRemoveModal, PluginInstallModal } from "../skills-market";
 import { ImagePreview, ImageLightbox, SearchPreviewModal, PastedTextEditor } from "../preview";
 import { APPROVAL_MODES, CHANNEL_STATUS_KEY, CJK_TEXT_RE, COMPOSER_FILE_CHIP_ICON, DELEGATE_RAIL_LINGER_MS, DIFF_VIRTUAL_THRESHOLD, EXPERT_CATEGORY_DEFS, EXPERT_CATEGORY_LABELS, HOOK_EVENT_LABELS, IDENTITY_ONBOARD_INSTRUCTIONS, IDENTITY_ONBOARD_TOOL, LOCAL_MODEL_PRESETS, MEMBER_LABELS, MEMORY_CATEGORIES, NOTICE_MAX, NOTICE_TTL_MS, QUICK_SITES, RRULE_DAY_NAMES, RUN_PHRASES, RUN_PHRASES_BY_ACTIVITY, SANDBOX_MODES, SHORTCUT_GROUPS, SKILL_ZH_NOTES } from "./constants";
-import { RequestCard, ToolCard, VoiceAnnounceNoticeBridge, VoiceCallNoticeBridge, VoiceSettingsBridge, admitThreadRuntimeRef, ago, appendDelta, appendIndexedDelta, applyThreadEvent, approvalMenuOptions, armSendAnimationClaim, botChannelName, botOnlineOf, builtinCommandCatalog, categoryLabel, clampRruleNum, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, cronTemplates, deltaMethods, describeRrule, describeSchedule, displayPath, fmtImportTime, formatTimestamp, greetingForHour, groupThreadsByTime, hydrateTurnUserMessage, idleTemplates, imageExts, isActivityItem, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, localFormatDurationMs, locateMatchEl, markBufferedAgentReveal, markBufferedTurnReveal, matchSkillCatalog, mergeItem, mergeLongerStreams, mergeTurn, modelBadges, modelName, normSkillName, noticeTone, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDescription, pluginDisplayName, pluginMarketCategoryTabs, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, revealStepFor, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, settingsNav, shortSkillName, skillHubCategories, skillHubCategoryName, skillHubCategoryTabs, skillZhNote, slashCommands, stableItem, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, toFileUrl, uniqueModelCount, usageCounterSnapshot, writeThreadRuntimeMirror } from "./helpers";
+import { RequestCard, ToolCard, VoiceCallNoticeBridge, VoiceSettingsBridge, admitThreadRuntimeRef, ago, appendDelta, appendIndexedDelta, applyThreadEvent, approvalMenuOptions, armSendAnimationClaim, botChannelName, botOnlineOf, builtinCommandCatalog, categoryLabel, clampRruleNum, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, cronTemplates, deltaMethods, describeRrule, describeSchedule, displayPath, fmtImportTime, formatTimestamp, greetingForHour, groupThreadsByTime, hydrateTurnUserMessage, idleTemplates, imageExts, isActivityItem, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, localFormatDurationMs, locateMatchEl, markBufferedAgentReveal, markBufferedTurnReveal, matchSkillCatalog, mergeItem, mergeLongerStreams, mergeTurn, modelBadges, modelName, normSkillName, noticeTone, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDescription, pluginDisplayName, pluginMarketCategoryTabs, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, revealStepFor, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, settingsNav, shortSkillName, skillHubCategories, skillHubCategoryName, skillHubCategoryTabs, skillZhNote, slashCommands, stableItem, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, toFileUrl, uniqueModelCount, usageCounterSnapshot, writeThreadRuntimeMirror } from "./helpers";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "./types";
 import type { HarnessAppApi } from "../app-state/useHarnessApp";
 import { AppViewSidebarShell } from "./AppView/01-sidebar-shell";
@@ -444,21 +443,6 @@ export function AppView({ app }: { app: HarnessAppApi }) {
      ⇒中枢上下文里：没地址才给「选择项目地址」；已有地址就收起这一项（地址只读回显仍在）。 */
   const canPickDir = !bossDirContext || !topbarDir;
   const pickDirLabel = bossDirContext ? "选择项目地址" : topbarDir ? "选择其他目录…" : "选择工作区目录";
-  /* 10-25 修「明明开着，Codex 说关了」：历史里最后一条播报告知可能已经过期。
-     渲染层从最近 40 个回合里找出最后一条 ON/OFF 标记，交给告知桥与**当前有效状态**对账；
-     不一致就补一条（切会话 / 重启 / 在别的会话里改了总开关都会走到这里）。
-     ⛔ 只扫最近 40 回合：长会话全量扫描会把切会话拖慢，而告知本来就是最近的状态。 */
-  const lastAnnounceTagState = useMemo(() => {
-    if (!thread) return null;
-    const texts = collectMessageTexts({ ...thread, turns: (thread.turns ?? []).slice(-40) } as typeof thread);
-    for (let i = texts.length - 1; i >= 0; i--) {
-      const text = texts[i]?.text ?? "";
-      if (text.includes(VOICE_ANNOUNCE_ON_TAG)) return true;
-      if (text.includes(VOICE_ANNOUNCE_OFF_TAG)) return false;
-    }
-    return null;
-  }, [thread?.id, thread?.turns?.length]);
-
   return (
     // 设置页的「?」要能打开完整帮助弹窗（气泡里的「查看完整帮助」）：用 context 注入 setHelpKey。
     // 不走逐页 prop —— 二十多个设置页头部每处都传一遍回调，漏传的那个会静默点不开。
@@ -733,13 +717,6 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       <VoiceAnnounceBridge threadId={thread?.id ?? ""} />
       {/* 10-22：宠物活动气泡跟随当前会话（切会话立即重排，后台 waiting/running 仍保留）。 */}
       {!popoutThreadId && <PetFocusBridge threadId={thread?.id ?? ""} />}
-      {/* 播报开关翻转 → 往当前会话发一条告知（10-09：模型据此才知道要不要写结尾那段播报稿）。
-          ⛔ 同样要会话闸：设置可能在任意窗口改，告知只发给当前会话。 */}
-      <VoiceAnnounceNoticeBridge threadId={thread?.id ?? ""} lastTagState={lastAnnounceTagState} onNotify={(text, targetThreadId) => {
-        if (!targetThreadId || thread?.id !== targetThreadId) return;
-        pendingCommandTextRef.current = text;
-        void send();
-      }} />
       {/* 轮询板块（10-09）：把主进程广播的异步任务轮询事件收进本地任务表。
           卡挂在**回合**下（对话流里的独立分支），胶囊挂在输入框左上角 —— 两者读的是同一张表。
           ⛔ turnId 用「正在跑的回合，没有就最后一个回合」：主进程只知道 threadId，
