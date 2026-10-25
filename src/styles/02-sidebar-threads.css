@@ -403,6 +403,11 @@
 .topbar-actions > * {
   flex: none;
 }
+.topbar .icon-button:disabled,
+.composer-setting:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 .task-menu-wrap {
   position: relative;
   display: flex;

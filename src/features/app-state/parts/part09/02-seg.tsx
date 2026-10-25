@@ -296,6 +296,12 @@ bag.earlyView = earlyView as typeof bag.earlyView;
        子树里（DispatchMenu 的 10-04 事故：只判按钮 ⇒ 弹层内点一下就被当外部关掉）。
        Esc 并列监听：键盘用户与遮罩失效环境的最后退路。 */
   useEffect(() => {
+    if (!bag.activeThreadRunning) return;
+    // 运行开始时收掉会改会话状态的顶栏菜单；按钮本身也已 disabled。
+    bag.setCtxMenuOpen(false);
+    bag.setTaskMenuOpen(false);
+  }, [bag.activeThreadRunning]);
+  useEffect(() => {
     if (!bag.ctxMenuOpen) return;
     const onDown = (event: globalThis.MouseEvent) => {
       const target = event.target as Element | null;
@@ -457,7 +463,7 @@ bag.earlyView = earlyView as typeof bag.earlyView;
             topbar
             dispatch={bag.activeDispatch}
             targets={bag.dispatchInfo.targets}
-            disabled={!bag.thread?.id}
+            disabled={!bag.thread?.id || bag.activeThreadRunning}
             busy={bag.dispatchBusy}
             lockedBy={bag.dispatchHolderName}
             onReleaseHolder={() => { void bag.releaseDispatchHolder(); }}
@@ -468,7 +474,7 @@ bag.earlyView = earlyView as typeof bag.earlyView;
           {bag.popoutThreadId ? (
             <button className="icon-button popout-return-btn" title="返回主应用（关闭本独立窗口）" onClick={() => void window.codex.popoutClose(bag.thread?.id ?? null)}><Minimize2 size={16} /></button>
           ) : (
-            <button className="icon-button popout-open-btn ic-violet" title="独立会话弹窗：把当前会话开到新窗口（可拖出应用外，支持多个同时存在）" disabled={!bag.thread} onClick={() => { if (bag.thread) void bag.popoutCurrentThread(bag.thread.id); }}><Maximize2 size={16} /></button>
+            <button className="icon-button popout-open-btn ic-violet" title={bag.activeThreadRunning ? "本轮运行中，暂不能开独立弹窗（结束后恢复）" : "独立会话弹窗：把当前会话开到新窗口（可拖出应用外，支持多个同时存在）"} disabled={!bag.thread || bag.activeThreadRunning} onClick={() => { if (bag.thread) void bag.popoutCurrentThread(bag.thread.id); }}><Maximize2 size={16} /></button>
           )}
         {/* ⛔ 工作区 📁（.ctx-picker）10-06 夜七轮已挪去**标题最前**（AppView.tsx 的 .task-title）——
             用户令「把文件图标放到最前面」。挪走后：窄屏隐藏规则与守卫【250】覆盖率清单都跟着改到
@@ -477,7 +483,7 @@ bag.earlyView = earlyView as typeof bag.earlyView;
           {/* 10-06 夜三轮：原「目标与进程」常驻入口（Target 图标 + goals-pop 面板）已按用户令撤掉 ——
               任务清单改由输入框上方的回合状态胶囊承载（「步骤 N/M · X 个文件已修改」，悬停展开），
               ⛔ 别再往这里加回目标/清单类入口。 */}
-          <button ref={taskBtnRef} className="icon-button tb-task-menu ic-green" title="当前任务操作" onClick={() => bag.setTaskMenuOpen((current) => !current)}><MoreHorizontal size={18} /></button>
+          <button ref={taskBtnRef} className="icon-button tb-task-menu ic-green" disabled={bag.activeThreadRunning} title={bag.activeThreadRunning ? "本轮运行中，任务操作暂不可用（结束后恢复）" : "当前任务操作"} onClick={() => bag.setTaskMenuOpen((current) => !current)}><MoreHorizontal size={18} /></button>
           {bag.taskMenuOpen && <>
             <div className="menu-backdrop" onClick={bag.closeTaskMenu} />
             {createPortal(
