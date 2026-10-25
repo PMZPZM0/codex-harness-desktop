@@ -1543,21 +1543,21 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 22px;
+  height: 1.75em;
   padding: 0 4px 0 7px;
-  margin: 0 4px;
+  margin: 0 2px;
+  vertical-align: middle;
   border-radius: 100px;
   background: var(--panel-2);
   border: 1px solid var(--line);
   color: var(--text);
-  font-size: 12px;
-  line-height: 1;
-  vertical-align: -5px;
   max-width: 200px;
   cursor: pointer;
   user-select: none;
   transition: background-color .15s ease, border-color .15s ease;
 }
+.composer-image-chip-inline { cursor: grab; }
+.composer-image-chip-inline.dragging { opacity: 0.5; }
 .composer-image-chip-inline:hover {
   background: color-mix(in srgb, var(--text) 8%, var(--panel-2));
   border-color: var(--faint);
