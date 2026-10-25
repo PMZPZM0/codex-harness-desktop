@@ -8,6 +8,7 @@
  */
 import type { Thread } from "../types";
 import { itemText } from "../../../lib/item-text";
+import { userDisplayText } from "../../../lib/user-refs";
 
 
 
@@ -74,6 +75,10 @@ function collectMessageTexts(thread: Thread | null): { turnId: string; itemId: s
       //   「的」能命中 5 处 —— 一半内容搜不到，正是这个字段判断漏的。
       //   统一交给 itemText（它按 item.type 取正确字段：agentMessage→text、userMessage→content[]）。
       let text = itemText(item as never);
+      /* ⛔ 10-26：用户消息的检索文本要用**显示文本**（cleanText）—— 直接读原文会让搜索命中
+         注入段（搜「验收标准」「验收标准：」会把每条群成员会话都搜出来，而屏幕上根本没有这段字）。
+         与气泡/复制/标题同一口径（userDisplayText）。 */
+      if (item.type === "userMessage") text = userDisplayText(text);
       if (!text.trim()) {
         if (item.type === "reasoning") text = typeof item.text === "string" ? item.text : "";
         else if (typeof item.content === "string") text = item.content;

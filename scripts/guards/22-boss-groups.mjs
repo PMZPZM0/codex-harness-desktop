@@ -9,6 +9,7 @@
  * ⛔ 跑在 check 链上（不进 check-preflight 的 MODULES ⇒ 不占 EXPECTED_CHECKS 总账，同 11r/12w 的口径）。
  */
 import { createRequire } from "node:module";
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -666,6 +667,26 @@ if (state) {
     && /export function normalizeEscalateChoice/.test(bossState)
     && /"retry-with-other-model"\) return "retry"/.test(bossState),
     "⛔ 升级选项名与行为对齐（retry = 清锁重排，不换模型），且旧账本里的老值必须兼容");
+
+  /* ── 注入段剥离（10-26 全量审查）────────────────────────────────────────
+     中枢角色说明曾当用户消息显示（用户截图）⇒ 顺手把"同类注入"全查了一遍，又抓到三处：
+        · `[SYSTEM TASK · 群成员会话]`（群成员派活）没被剥，整段岗位/验收标准露在气泡里；
+        · `[SYSTEM TASK · 调度会话]`（delegation）同上，壳后还有一段角色提示；
+        · 团队/专家首条把系统提示词拼在壳**前面** ⇒ 删壳后那坨仍在正文里。
+     ⛔ 真跑（15 种真实格式、打包真实 parseUserRefs）：字符串契约靠读代码判断正是上次翻车的根因。 */
+  const strip = spawnSync(process.execPath, [join(ROOT, "scripts", "verify-injection-strip.mjs")], { cwd: ROOT, encoding: "utf8", timeout: 240_000 });
+  ok(strip.status === 0,
+    `注入段剥离回归：15 种真实注入格式，气泡里只留用户原文${strip.status === 0 ? "" : `（失败：${String(strip.stdout ?? "").split("\n").filter((l) => l.includes("✗")).slice(0, 3).join(" / ")}）`}`);
+  /* ⛔ 同一套剥壳规则有**三份副本**（渲染层 user-refs / 导出与备份 thread-backup / 标题 worker），
+     09-16 就因为漂移出过"侧栏标题显示机器提示词"。这里钉住后两份也必须认群成员格式。 */
+  const backupSrc = read("electron/thread-backup.ts");
+  const workerSrc = read("electron/rollout-worker.cjs");
+  ok(/本次任务/.test(backupSrc) && /发起方交给你的任务/.test(backupSrc) && /indexOf\("\[SYSTEM TASK"\)/.test(backupSrc),
+    "导出/备份的剥壳规则与渲染层同口径（认群成员格式 + 壳前系统提示词一起丢）");
+  ok(/本次任务/.test(workerSrc) && /indexOf\("\[SYSTEM TASK"\)/.test(workerSrc),
+    "侧栏标题的剥壳规则（worker）同口径 —— ⛔ 改一处必须改三处，漂移=标题里冒出机器提示词");
+  ok(/本次任务/.test(read("electron/rollout-worker-source.ts")),
+    "worker 生成物已重新生成（⛔ 改 .cjs 不跑 gen-rollout-worker 等于没改）");
 }
 
 console.log(`\n【boss-groups】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

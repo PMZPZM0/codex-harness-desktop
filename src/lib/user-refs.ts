@@ -1,6 +1,7 @@
 // 用户消息文本解析：把 userMessage 文本中的"附件/技能/上下文/SYSTEM TASK"等约定引用段
 // 剥离为结构化字段，留下对外展示用的 cleanText。
-// 纯函数、零 React 依赖，可独立编译跑 node:test（scripts/verify-user-refs.mjs）。
+// 纯函数、零 React 依赖，可独立编译跑 node:test（回归脚本：scripts/verify-injection-strip.mjs，
+// 由守卫 22-boss-groups 真跑；⛔ 别再在注释里指一个不存在的脚本 —— 那等于没验）。
 import { stripImageTokens } from "./prompt-images";
 import { stripHarnessBlocks } from "./harness-block-strip.mjs";
 
@@ -17,7 +18,7 @@ export type ParsedUserRefs = {
   files: string[];
   skills: { name: string; description: string }[];
   contexts: { role: string; text: string }[];
-  teamTask?: { kind: "team" | "member"; requirement: string };
+  teamTask?: { kind: "team" | "member"; /** 壳上的原始标签（团队会话 / 成员会话 / 群成员会话 / 调度会话…），渲染时原样展示 */ label?: string; requirement: string };
   imported?: { note: string; content: string };
   threadReferences: ThreadReferencePayload[];
 };
@@ -91,24 +92,48 @@ export function parseUserRefs(text: string): ParsedUserRefs {
   //    整段常驻记忆会铺进气泡与左栏标题）。放在本条链的**最后**统一跑，避免与上面的
   //    技能段/上下文段正则互相干扰。
   clean = stripHarnessBlocks(clean);
-  // 专家团/成员会话首条系统任务段：渲染层只展示用户需求原文，角色提示与编排指令折叠隐藏。
-  // 剥除范围 = [SYSTEM TASK ...] 到 === END === 之后的编排指令段（到下一个引用段标记或串尾为止），
-  // 否则"请按 SOP…"之类的指令会泄漏进 cleanText。
-  const teamTaskMatch = clean.match(/\[SYSTEM TASK · (团队会话|成员会话)\][\s\S]*?=== 用户需求 ===\s*\n([\s\S]*?)\n=== END ===[\s\S]*?(?=\n\[[^\]]+\]|$)/);
+  /* ── SYSTEM TASK 壳（10-26 全量审查）────────────────────────────────────────
+     ⛔ 一条硬规则：**壳里整条消息都是宿主拼的**，只有中间那段任务/需求属于用户。
+     ⛔ 旧实现只认 `团队会话|成员会话` 两种 kind，并且只删壳本身 ⇒ 三个真实泄漏：
+        · `[SYSTEM TASK · 群成员会话]`（runner 派活给群成员）—— kind 不在名单里，整个壳
+          连岗位 / 验收标准 / 交活要求原样露在这条成员会话的气泡里；
+        · `[SYSTEM TASK · 调度会话]`（delegation 派遣）—— 同上，壳后还有一段 `[角色：…]` 提示词；
+        · 壳**前面**会拼 `buildTeamSystemPrompt()`（团队 / 专家首条）⇒ 删掉壳之后，那坨系统
+          提示词还留在原地（用户打开团队会话看到的"第一条消息"其实是团队提示词）。
+     ⇒ 现在按"壳 = 全机器文本"处理：壳前、壳后一律丢弃，只保留中间的需求正文。 */
+  const SHELL_TAG = "[SYSTEM TASK · ";
+  const shellAt = clean.indexOf(SHELL_TAG);
   let teamTask: ParsedUserRefs["teamTask"] | undefined;
-  if (teamTaskMatch) {
-    clean = clean.replace(teamTaskMatch[0], "");
-    teamTask = {
-      kind: teamTaskMatch[1] === "团队会话" ? "team" : "member",
-      requirement: teamTaskMatch[2].trim(),
-    };
+  if (shellAt >= 0) {
+    const tail = clean.slice(shellAt);
+    const kindLabel = (tail.match(/^\[SYSTEM TASK · ([^\]\n]+)\]/) ?? [])[1] ?? "";
+    /* 两种真实内层格式：
+         === 用户需求 === … === END ===           （团队 / 成员 / 调度）
+         === 本次任务（第 N 次尝试）=== … === END ===   （群成员派活） */
+    const needMatch = tail.match(/===\s*用户需求\s*===\s*\r?\n([\s\S]*?)\r?\n===\s*END\s*===/);
+    const taskMatch = needMatch ? null : tail.match(/===\s*本次任务[^=\n]*===\s*\r?\n([\s\S]*?)\r?\n===\s*END\s*===/);
+    const body = (needMatch ?? taskMatch ?? [])[1] ?? "";
+    /* 需求正文常带来源标签（`发起方交给你的任务：` / `主理人分配的子任务：`），
+       气泡里显示标签没意义 ⇒ 去掉标签只留正文。群成员格式的 `标题：` 同理
+       （它会被截成会话标题，留着前缀就变成「标题：首页」）。 */
+    let requirement = body
+      .replace(/^\s*(?:发起方交给你的任务|主理人分配的子任务|用户任务)\s*[：:]\s*/, "")
+      .trim();
+    if (taskMatch) requirement = requirement.replace(/^标题\s*[：:]\s*/, "");
+    if (requirement) {
+      clean = "";
+      teamTask = { kind: kindLabel.includes("团队") ? "team" : "member", label: kindLabel || undefined, requirement };
+    } else {
+      /* 兜底（壳的格式以后变了，别把整条消息吞成空白）：至少剥掉壳头与尾部指令段。 */
+      clean = tail.replace(/^\[SYSTEM TASK · [^\]\n]+\]\s*/, "").replace(/===\s*END\s*===[\s\S]*$/, "").trim();
+    }
   }
   // 09-14 兜底：**无壳旧格式**。后台调度成员/子智能体（team_member_invoke 路径）曾经
   // 不包 SYSTEM TASK 壳，直接以「[专家团「…」成员 …（…）]\n<角色提示词>\n\n主理人分配的子任务：…」
   // 或「[子智能体 …] …用户任务：…」作为首条 userMessage——用户打开这类旧会话时整段
   // 提示词裸露在气泡里（用户实测反馈）。这里识别这两种开头并把角色段折叠，
   // 需求取「主理人分配的子任务：/用户任务：」之后的部分。
-  if (!teamTaskMatch) {
+  if (!teamTask) {
     const legacy = clean.match(/^\[专家团「[^」]+」(主理人|成员)[^\]]*\]\n[\s\S]*?(?:主理人分配的子任务|用户任务)：\s*\n?([\s\S]*$)/);
     if (legacy) {
       clean = "";

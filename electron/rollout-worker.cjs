@@ -41,9 +41,17 @@ const rolloutParseCache = new Map();  // 路径 -> 增强解析结果（含增�
  *  这种**机器编排提示词**，而备份/导出显示的是用户真正输入的那句话（实测 36 条里 4 条不一致）。
  *  两个文件都写着「同口径」，所以注释不能当证据 —— 改一处必须改另一处。 */
 function stripSystemTaskWrapper(text) {
-  const match = text.match(/\[SYSTEM TASK[^\]]*\]\s*=== 用户需求 ===\s*\n?([\s\S]*?)\s*\n=== END ===/);
-  if (match && match[1].trim()) return match[1].trim();
-  return text;
+  /* ⛔ 10-26：与 thread-backup.ts / src/lib/user-refs.ts 三处同口径（改一处必须改另外两处）。
+     旧规则只认 `=== 用户需求 ===` ⇒ 群成员会话的壳（`=== 本次任务（第 N 次尝试）===`）漏成
+     侧栏标题/列表标题里的整段机器提示词。壳前可能拼着团队系统提示词 ⇒ 从壳头切。 */
+  const at = text.indexOf("[SYSTEM TASK");
+  if (at < 0) return text;
+  const tail = text.slice(at);
+  const body =
+    (tail.match(/===\s*用户需求\s*===\s*\n([\s\S]*?)\s*\n===\s*END\s*===/) || [])[1]
+    || (tail.match(/===\s*本次任务[^=\n]*===\s*\n([\s\S]*?)\s*\n===\s*END\s*===/) || [])[1];
+  if (!body || !body.trim()) return text;
+  return body.trim().replace(/^\s*(?:发起方交给你的任务|主理人分配的子任务|用户任务)\s*[：:]\s*/, "");
 }
 
 /** harness 发送管线注入的机器可读块：记忆召回 / 技能引用。剥离后还原用户真实输入。 */
