@@ -233,9 +233,11 @@
   position: absolute; inset: 0;
   display: flex; flex-direction: column;
   justify-content: center; align-items: center;
-  gap: 12px;
+  gap: 10px;
   margin: 0;
-  padding: clamp(8px, 2vh, 24px) 24px calc(54vh + 40px);
+  /* ⛔ 下留白比普通会话略多（56vh + 28）：BOSS 版内容多一层（三条引导），
+     多留一点才不会被输入框压住；上面留白也给足 ⇒ 皇冠不会被顶栏裁掉。 */
+  padding: clamp(20px, 5vh, 56px) 24px calc(56vh + 28px);
   animation: 0.34s cubic-bezier(0.22, 0.61, 0.36, 1) both welcome-in;
   pointer-events: none;
   overflow: hidden;
@@ -244,7 +246,7 @@
 /* 大图标：琥珀色皇冠（普通会话是灰蓝 `</>` 水印 ⇒ 一眼可分） */
 .boss-welcome-mark {
   display: flex; align-items: center; justify-content: center;
-  width: 76px; height: 76px;
+  width: 64px; height: 64px;
   color: var(--ic-amber, var(--amber));
   opacity: 0.55;
   -webkit-user-select: none; user-select: none;
@@ -271,9 +273,33 @@
   font-size: 14px; line-height: 1.8; letter-spacing: 0.2px;
   color: var(--muted);
 }
-/* 行动区：主按钮（叫出项目地址对话框）+ 快捷键提示 */
+/* 引导清单：三步（说目标 / 看结果 / 认规矩）—— ⛔ 不放快捷键小字（用户嫌LOW），
+   快捷键只留在侧栏按钮行尾的 kbd 徽标上。 */
+.boss-welcome-guide {
+  margin: 2px 0 0; padding: 0;
+  list-style: none;
+  display: flex; flex-direction: column; gap: 5px;
+  max-width: 480px; width: 100%;
+}
+.boss-welcome-guide li {
+  display: flex; gap: 9px; align-items: baseline;
+  font-size: 12.5px; line-height: 1.6;
+}
+.boss-welcome-step {
+  flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%;
+  font-size: 11px; font-weight: 600; line-height: 1;
+  color: var(--ic-amber, var(--amber));
+  background: color-mix(in srgb, var(--ic-amber, var(--amber)) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ic-amber, var(--amber)) 30%, transparent);
+  transform: translateY(3px);
+}
+.boss-welcome-guide b { flex: none; font-weight: 600; color: var(--text); }
+.boss-welcome-guide li > span:last-child { color: var(--muted); }
+/* 行动区：主按钮（叫出项目地址对话框）+ 当前地址回显 */
 .boss-welcome-actions {
-  margin: 2px 0 0;
+  margin: 4px 0 0;
   display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: center;
 }
 .boss-welcome-primary {
@@ -291,14 +317,8 @@
   border-color: color-mix(in srgb, var(--ic-amber, var(--amber)) 62%, var(--line));
 }
 .boss-welcome-primary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.boss-welcome-keys { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11.5px; }
-.boss-welcome-kbd {
-  font-family: inherit; font-size: 10.5px; line-height: 1.5;
-  padding: 1px 6px; border-radius: 5px;
-  border: 1px solid var(--line); background: var(--panel-2); color: var(--muted);
-}
-/* 已选定的项目地址回显（选完地址后仍停在欢迎界面 ⇒ 用户要能看到成员会在哪干活） */
-.boss-welcome-dir { margin: 0; font-size: 11.5px; color: var(--muted); text-align: center; }
+/* 当前地址回显（选完地址后仍停在欢迎界面 ⇒ 用户要能看到成员会在哪干活） */
+.boss-welcome-dir { font-size: 12px; color: var(--muted); }
 .boss-welcome-dir code {
   font-family: var(--mono, monospace); font-size: 11px;
   padding: 1px 6px; border-radius: 5px;

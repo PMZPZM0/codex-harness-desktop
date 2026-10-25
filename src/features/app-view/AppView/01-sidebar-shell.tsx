@@ -194,9 +194,13 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       } else {
         dir = String(await window.codex.createBossProjectDir());
       }
-      /* ⛔ 不写全局 localStorage("workspace")：普通会话的项目不能被 BOSS 带走。 */
-      app.setWorkspace(dir);
-      app.workspaceRef.current = dir;              // send 读 ref，必须同步
+      /* ⛔⛔⛔ **不写全局 workspace**（10-25 用户实测：「下面已经自动选了别的会话的项目地址，
+         你这还有别的」「每次 BOSS 会话都不要自动选择旧的会话项目地址」）：
+         BOSS 的目录是**它自己会话的 cwd**，写进全局 workspace 会让：
+           ① 普通会话的顶栏/项目地址芯片显示成 BOSS 的目录（串项）；
+           ② 下一个新会话继承 BOSS 的目录。
+         ⇒ 这里只把目录记到 BOSS 会话自己的登记表（setBossDirChosen），
+            发首条消息建会话时由 createEmptyThread 用它当 cwd（见 part08/01-seg.tsx）。 */
       closeBossDirDialog();
       /* ⛔ 目录**按会话**记（10-25 用户令：BOSS 会话可创建多个，互不干扰）——
          会话还没建出来（thread id 未分配）⇒ 暂存 pendingDir，会话建成后再按 id 落位。 */
@@ -207,9 +211,13 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     finally { setBossDirBusy(false); }
   };
   const currentThreadId = app.thread?.id ?? "";
-  /* 选中态：群 boss 线程 **或** 还没建群时的 home 锚点会话（否则点进去按钮不亮、看着像没进）。 */
+  /* 选中态：**当前这个会话**是不是 BOSS 会话（10-25 用户实测：「如果我当前选的是下面已经创建的
+     BOSS 会话选项，上面这个会话 BOSS 会话也会跟着亮」⇒ 那是**两个不同的 BOSS 会话**，
+     上面那个按钮是「**新建**一个 BOSS 会话」的入口，不该跟着别的 BOSS 会话亮）。
+     ⇒ 判据只认「当前会话自己的身份」（bossIds / sessionIds），⛔ 不认 homeId 兜底
+        （homeId 是**最近一个** BOSS 会话，与当前选中的那个无关 ⇒ 串项）。 */
   const bossOn = Boolean(currentThreadId)
-    && (bossThreads.bossIds.includes(currentThreadId) || currentThreadId === bossThreads.homeId);
+    && (bossThreads.bossIds.includes(currentThreadId) || (bossThreads.sessionIds ?? []).includes(currentThreadId));
   /* 点「BOSS 会话」新建的那个会话，等它拿到 id 后记成 home（首条消息发出后引擎才分配）。 */
   const bossHomePending = useRef(false);
   useEffect(() => {
