@@ -779,11 +779,11 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                           注入的指纹与自身 URL 里的产物名，显示的就是正在执行的那份，不是磁盘现状。 */}
                       <div className="account-menu-row"><span className="account-menu-label">构建</span><span className="account-menu-value mono" title="构建期写进包体的指纹（YYYYMMDD-HHmm）">{buildStamp}</span></div>
                       <div className="account-menu-row"><span className="account-menu-label">产物</span><span className="account-menu-value mono" title="正在执行的渲染层 bundle（含内容 hash）">{bundleFile}</span></div>
-                      <div className="account-menu-row"><span className="account-menu-label">更新地址</span><span className="account-menu-value">GitHub Releases</span></div>
+                      <div className="account-menu-row"><span className="account-menu-label">更新地址</span><span className="account-menu-value">GitHub Releases · 国内镜像优先<span className="update-help" title="下载顺序：gh-proxy.com → ghfast.top → GitHub 直连；任一通道失败自动换下一档">?</span></span></div>
                       <div className="account-menu-row"><span className="account-menu-label">更新方式</span>
                         <span className="update-mode-switch" role="group" aria-label="更新方式">
-                          <button type="button" className={updateMode === "differential" ? "active" : ""} onClick={() => setUpdateMode("differential")}>差分</button>
-                          <button type="button" className={updateMode === "full" ? "active" : ""} onClick={() => setUpdateMode("full")}>完整包</button>
+                          <button type="button" className={updateMode === "differential" ? "active" : ""} onClick={() => setUpdateMode("differential")}>补丁<span className="update-help" title="只下载变化部分（blockmap），体积小、安装快；没有补丁或下载失败时自动改用完整包" onClick={(event) => event.stopPropagation()}>?</span></button>
+                          <button type="button" className={updateMode === "full" ? "active" : ""} onClick={() => setUpdateMode("full")}>完整包<span className="update-help" title="每次下载完整安装包，体积大但最稳；补丁更新异常时选这个" onClick={(event) => event.stopPropagation()}>?</span></button>
                         </span>
                       </div>
                     </div>

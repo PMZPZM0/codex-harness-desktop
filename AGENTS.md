@@ -19,6 +19,13 @@
 完整步骤见 **`docs/REPO-WORKFLOW.md`** —— 要点：本仓（主应用源码）与 `D://PPcode`（PPcode 副本，远端 = `PMZPZM0/PPcode`，源码与发布页**合一**；旧私有仓 ppcode-src 已删，10-13 换仓）同步走「主仓 diff → 逐文件 apply 预检 → 副本验证」；PPcode 发版 = 版本对齐 4 处 → mac 审计 → check → tag → CI 三端构建发布到本仓 Release；两仓 `AGENTS.md` 逐字镜像，改一边必须同步另一边。
 
 > ⛔⛔ **改动必须同轮同步全部三个仓（2026-10-13 用户令，对所有 Agent 生效，无例外）**：本产品有三个源码仓 —— 桌面版 `D://Codex Harness Desktop`（开发主线）、PPcode `D://PPcode`、云助手 `D://Codex Assistant`。**在任一仓完成一轮功能改动后，必须在同一轮把同一批改动同步到另外两个仓，并各自推送 `main`**；⛔ 只改一仓就收尾 = 这一轮工作**未完成**（10-13 用户点名「改动你都没有同步给 ppcode 和云助手」）。步骤见 `docs/REPO-WORKFLOW.md` §二：主仓 diff → **逐文件 `git apply --check` 预检**（⛔ 不整包瞎 apply）→ apply → 副本侧 `npm run build` + 受影响守卫 + `check-preflight` 验证 → `feat(sync)` 提交（写明主仓区间与判据）→ 推各仓远端（云助手推 `cloud`，⛔ 它的 `origin` 指向桌面版仓，推错就污染主线）。⛔ **同步面包含 `logs/` 结论档案**：条目文件与 `logs/index.jsonl` 都要跟；补录后各仓必须跑 `node scripts/logs.mjs reindex` 重建索引（sha256 与文件字节绑定，直接拷索引会哈希不符）。
+> ⛔⛔ **补丁更新规则（2026-10-25 用户令）**
+> · **补丁更新 = NSIS 差分**：GitHub Release 同时发布完整安装包、`*.exe.blockmap`、`latest.yml`；客户端用 electron-updater 只下载变化块，缺 blockmap / 下载失败自动回退完整包。⛔ 不自制覆盖补丁、不直接改安装目录、不从非 GitHub 仓拉可执行文件。
+> · **国内镜像固定顺序**：`gh-proxy.com → ghfast.top → GitHub 直连`（`electron/gh-mirror.ts` 单一真相源）。`latest.yml`、exe、blockmap 三类资产都走同一候选序；补丁资产请求⛔不带令牌。
+> · **更新面板**「更新方式」= `补丁`（默认）/ `完整包`；手动下载与后台静默下载都按所选方式执行；只有 Windows NSIS 用补丁，mac / 其它平台走完整包。
+> · **旧版本 blockmap 必须保留**：electron-updater 需要上一版 blockmap 做基线；从没有 blockmap 的旧版升级时允许整包，但⛔不许删/改历史 Release 资产。
+> · **各自 Release 专用**：桌面版 tag `v*`、资产 `Codex.Harness.Desktop-*`；PPcode 用 `PMZPZM0/PPcode` 自己的 Release；云助手 tag `cloud-v*`、资产 `CodexHarnessAssistant-*`。⛔ 永不使用 `/releases/latest`；⛔ 不跨仓复用安装包 / blockmap / latest.yml；不另建第三方补丁仓。
+> · **三仓 GitHub 对应**：主仓 `PMZPZM0/codex-harness-desktop`（推 `origin main`）；PPcode `PMZPZM0/PPcode`（推 `origin main`，源码+发布合一）；云助手 `PMZPZM0/codex-harness-cloud-src`（本地 `D://Codex Assistant`，推 `cloud main`，⛔ `origin` 指主仓）。补丁流水线改动按「三仓同轮同步」推齐，但各仓只更新自己的更新源与资产。
 > ⛔ 生成物（`electron/preload.ts`、`src/vite-env.d.ts`、`electron/composition.gen.ts`、`electron/builtin-skills/14-skill-harness-api.ts`）由**各仓自己**跑 `npm run gen:ipc` + `npm run gen:domains` 产出，⛔ 别直接套主线仓的（三仓通道数各不相同）；`electron/ipc-channels.manifest.json` 与 `electron/ipc-registry.ts` 是**手写源**，分叉处逐项手工合并；行数棘轮（守卫【265】）按各仓实测值更新。
 > ⛔⛔ **品牌不进同步面（2026-10-25 用户令：「codexharness logo 和 PPcode logo 不要串了」）**：三个仓各有自己的身份基线，**同步功能改动时品牌面保持各仓原样**。
 > · 桌面版（本仓）= **Codex Harness Desktop** + CH 图标（`public/icon.png` / `build/icon.*`），窗口标题同此；
