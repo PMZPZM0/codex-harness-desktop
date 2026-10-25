@@ -337,14 +337,12 @@
 }
 .sidebar-quick .sidebar-quick-btn.sidebar-quick-boss:hover { color: var(--text); }
 .sidebar-quick .sidebar-quick-btn.sidebar-quick-boss svg { color: var(--amber); }
-
-/* 侧栏 BOSS 按钮「选中效果」（用户点名）：面板开着 = 高亮，再点收起 */
-.sidebar-quick .sidebar-quick-btn.sidebar-quick-boss.boss-open {
-  background: color-mix(in srgb, var(--amber) 12%, var(--panel));
-  border-color: color-mix(in srgb, var(--amber) 30%, var(--line));
-  color: var(--text);
-}
-.sidebar-quick .sidebar-quick-btn.sidebar-quick-boss.boss-open svg { color: var(--amber); }
+/* ⛔⛔ 10-25 用户令：「我选中下面已建的 BOSS 会话时候，上面那个 BOSS 会话选项不要亮」
+   —— 这里原本有一条 `.boss-open` 高亮（面板开着 / 当前是 BOSS 会话 ⇒ 按钮变亮）。
+   但顶部这个按钮是**动作**（新建一条 BOSS 会话），不是**状态**；
+   把「当前会话是 BOSS」映射成它高亮，选下面任意一条老 BOSS 会话它就跟着亮，用户已两次点名否决。
+   ⇒ 样式与代码里的类名一并删除（不留死样式，也不许再长回来：守卫 22 钉住）。
+   「当前在哪个会话」只由侧栏会话列表的选中行表达。 */
 
 /* 顶栏成员按钮开合态 */
 .boss-members-btn.boss-members-btn-open { color: var(--amber); }
