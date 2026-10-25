@@ -1549,7 +1549,6 @@ html[data-ui-font="large"] .action-content pre {
   flex: none;
 }
 .project-item-new-btn:hover { background: var(--panel-2); color: var(--accent); }
-.project-item.is-empty .project-item-new-btn { opacity: 1; }
 /* 10-25 用户令：＋号默认隐藏，悬停项目行才显示（不与行文案抢注意力；过渡 0.12s）。 */
 .project-item-new-btn { opacity: 0; transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease; }
 .project-item:hover .project-item-new-btn { opacity: 1; }
