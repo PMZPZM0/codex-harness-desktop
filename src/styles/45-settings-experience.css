@@ -600,7 +600,9 @@
 .settings-exp-shell .bubu-pack-avatar { width: 64px; height: 64px; border-radius: 16px; object-fit: cover; border: 1px solid var(--line-soft); }
 .settings-exp-shell .bubu-pack-stickers { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
 .settings-exp-shell .bubu-pack-stickers img { width: 52px; height: 52px; border-radius: 12px; object-fit: cover; border: 1px solid var(--line-soft); }
-.settings-exp-shell .bubu-pack-body .primary-setting { align-self: flex-start; }
+.settings-exp-shell .bubu-pack-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.settings-exp-shell .bubu-pack-actions .primary-setting { align-self: auto; }
+.settings-exp-shell .bubu-pack-stickers img { background: transparent; }
 .settings-exp-shell .bubu-pack-note { margin: 0; font-size: 11.5px; line-height: 1.7; color: var(--faint); }
 
 .settings-exp-shell .user-persona-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }

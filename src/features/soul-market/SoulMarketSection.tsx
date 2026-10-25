@@ -14,6 +14,7 @@ import { Check, RefreshCw, UserRound, X } from "lucide-react";
 import { PageInfo } from "../../components/SettingsHead";
 import { Spinner } from "../../components/CardShell";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
+import { UserPersonaPanel } from "./UserPersonaPanel";
 
 type SoulEntry = { slug: string; displayName: string; summary: string; version: string };
 type SoulDetail = SoulEntry & { content: string };
@@ -100,6 +101,9 @@ export function SoulMarketSection({ onNotice }: SoulMarketSectionProps) {
 
       {error && <p className="soul-market-error comp-lib-error">⚠️ {error}</p>}
       {applied && <p className="muted soul-market-applied"><Check size={12} /> {applied}</p>}
+
+      {/* 用户人格（10-25 用户令：与 Codex 人格放在一起） */}
+      <UserPersonaPanel onNotice={onNotice} />
 
       {loading ? <p className="muted">正在加载人格列表…</p> : items.length === 0 ? (
         <p className="muted">人格列表为空（SkillHub 共 16 套，加载失败时看上方错误提示）。</p>

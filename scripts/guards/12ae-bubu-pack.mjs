@@ -37,6 +37,8 @@ const part08 = read("src/features/app-state/parts/part08/01-seg.tsx");
 const part05 = read("src/features/app-state/parts/part05/event-router/02-request.tsx");
 const css = read("src/styles/45-settings-experience.css");
 const cssMsg = read("src/styles/03-messages-turns.css");
+const personaPanel = read("src/features/soul-market/UserPersonaPanel.tsx");
+const soulPage = read("src/features/soul-market/SoulMarketSection.tsx");
 
 /* ── ① bubu:// 贴纸链（跑真值表） ── */
 const mod = await import(pathToFileURL(join(ROOT, "src/lib/bubu-pack.mjs")).href);
@@ -75,12 +77,15 @@ ok(/bubu-pack-panel/.test(center) && /一键换上一二布布/.test(center)
   "用户中心有一键应用：人格 + soulSlug + 名字走 saveIdentity（写档案 + AGENTS.md）");
 ok(/pickPresetAvatar\("user-bubu\.png"\)/.test(center)
   && /avatarAsset\("codex-bubu\.png"\)/.test(center)
-  && /voiceSettingsSet\(\{ tts: \{ \.\.\.\(current\?\.tts \?\? \{\}\), sid: BUBU_PACK\.voice\.sid, profileId: "" \} \}\)/.test(center),
-  "一键应用同步双头像 + 语音包（sid + 克隆档案让位）");
-ok(/user-persona-grid/.test(center) && /userPersonaFields\(personaId\)/.test(center)
-  && /applyUserPersona\("default"\)/.test(center)
-  && /配套工具只是建议，不自动改/.test(center),
-  "用户人格卡：预设网格 + 应用写档案 + 可恢复空白（⛔ 配套工具只是建议，不自动开关功能）");
+  && /voiceSettingsSet\(/.test(center) && /sid: BUBU_PACK\.voice\.sid/.test(center)
+  && /announce: \{ \.\.\.\(current\?\.settings\?\.announce \?\? \{\}\), enabled: true \}/.test(center)
+  && /voicePreviewVoice\(\{ sid: BUBU_PACK\.voice\.sid/.test(center),
+  "一键应用同步双头像 + 语音包（sid + 开启播报 + 可试听）");
+ok(/user-persona-grid/.test(personaPanel) && /userPersonaFields\(personaId\)/.test(personaPanel)
+  && /apply\("default"\)/.test(personaPanel)
+  && /配套工具只是建议，不自动改/.test(personaPanel)
+  && /<UserPersonaPanel/.test(soulPage) && !/user-persona-grid/.test(center),
+  "用户人格卡已搬到人格市场（与 Codex 人格同页）：预设网格 + 应用写档案 + 可恢复空白");
 ok(/bubu-pack-stickers/.test(css) && /user-persona-grid/.test(css), "两张卡的样式已定义（缺了会退化成裸元素）");
 
 /* ── ④ persona_apply 工具（注册 + 分发成对） ── */
