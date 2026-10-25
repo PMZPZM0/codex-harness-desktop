@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-25 | 顶栏按钮弹层改为按钮下方自适应居中 | 改动 | `useAnchoredPopover.ts`、`part09/02-seg.tsx`、`BossGroupMembersButton.tsx`、`BossGroupHelpButton.tsx` | 用户：对话框上面那排按键（含左上角项目地址）的弹窗改为贴对应按钮下方居中，越界自动内收。项目地址/任务菜单走 bottom-center；搜索面板、群成员、指挥中枢说明按实际宽度算中心；CDP 实测项目地址 center=0、gap=8，搜索面板贴边自动内收。PPcode/云助手同步。 | 75d11d933 |
 | 2026-10-25 | 更新方式 ? 改为行内，地址缩短 | 修复 | `01-sidebar-shell.tsx`、`17-visual-cards.css` | 用户：「放后面不是放下面这样太丑了」。? 图标改为行内跟在「补丁 / 完整包」后面，按钮 nowrap + inline-flex；「更新地址」缩短为 GitHub Releases，镜像顺序收进 ? 说明；不再换行。 | c199c1735 |
 | 2026-10-25 | 更新方式改名「补丁 / 完整包」+ 选项说明 + 三仓规则 | 改动 | `01-sidebar-shell.tsx`、`17-visual-cards.css`、三仓 `AGENTS.md` | 用户：「差分不知道啥意思，补丁大家都知道」。UI 两个选项改为「补丁 / 完整包」，各加 ❓ 说明；更新地址标注「国内镜像优先」（gh-proxy → ghfast → 直连）。三仓 AGENTS 写入补丁更新规则、各产品专用 GitHub Release 映射与三仓同步/推送纪律。 | 46186f0f8 |
 | 2026-10-25 | 更新面板新增「更新方式」：差分 / 完整包 | 改动 | `01-sidebar-shell.tsx`、`17-visual-cards.css`、`01-thread-switch-system-events.tsx`、`02-update-ui-settings.tsx`、`bag-types.ts`、`vite-env.d.ts`、`updates-ipc.ts` | 用户：「不得出一个新的更新选项嘛」。更新面板新增「更新方式」开关：默认差分，可切完整包绕开 blockmap；手动下载与静默下载都按所选方式执行，localStorage 持久化。CDP 实测开关在位、默认选中「差分」。 | e130ca8e0 |
