@@ -90,10 +90,8 @@ bag.providerConfig = providerConfig as typeof bag.providerConfig;
   }, [bag.threads, bossDelegateRecords, bag.teamThreadsIndex, bag.teamMemberThreadIds, bossSnap]);
 bag.dispatchCwdMap = dispatchCwdMap as typeof bag.dispatchCwdMap;
 
-  const listThreads = useMemo(() => {
-    const cwdOf = (entry: { id: string; cwd: string }) => dispatchCwdMap[entry.id] ?? entry.cwd;
-    return bag.projectFilter ? bag.threads.filter((entry) => cwdOf(entry) === bag.projectFilter) : bag.threads;
-  }, [bag.threads, bag.projectFilter, dispatchCwdMap]);
+  /* 10-25 用户令：「只看该项目」筛选整段删除（会话全量显示，项目只做分组不做过滤）。 */
+  const listThreads = bag.threads;
 bag.listThreads = listThreads as typeof bag.listThreads;
 
   // 侧边栏视图模式：项目（按 cwd） vs 分类（按会话来源）；与 WorkBuddy 项目列表对齐
@@ -127,7 +125,7 @@ bag.toggleProjectExpanded = toggleProjectExpanded as typeof bag.toggleProjectExp
    *  根因：引擎侧 `thread/settings/update {cwd}` 改的是**运行时**工作目录，而 `thread/list` 回包的 cwd
    *  仍是创建时写进 rollout 的那个 ⇒ 只发 settings/update 永远改不动侧栏（侧栏项目分组是按 entry.cwd 派的）。
    *  所以把用户**显式改过**的地址记在这里（threadId → cwd），并在列表刷新 / 打开会话时覆盖引擎值：
-   *  侧栏分组、「只看该项目」、重启之后三处都一致。 */
+   *  侧栏分组、重启之后两处一致。 */
   const [cwdOverrides, setCwdOverrides] = useState<Record<string, string>>(() => {
     try { return JSON.parse(localStorage.getItem("thread-cwd-override-v1") || "{}") as Record<string, string>; } catch { return {}; }
   });

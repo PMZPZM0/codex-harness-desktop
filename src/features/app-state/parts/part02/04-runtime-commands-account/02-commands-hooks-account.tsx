@@ -89,8 +89,6 @@ bag.hookBusy = hookBusy as typeof bag.hookBusy; bag.setHookBusy = setHookBusy as
 bag.linkedBusy = linkedBusy as typeof bag.linkedBusy; bag.setLinkedBusy = setLinkedBusy as typeof bag.setLinkedBusy;
 
 
-  const [projectFilter, setProjectFilter] = useState<string | null>(null);
-bag.projectFilter = projectFilter as typeof bag.projectFilter; bag.setProjectFilter = setProjectFilter as typeof bag.setProjectFilter;
 
 
   const [username, setUsername] = useState(() => localStorage.getItem("username") || "Codex 用户");
@@ -268,5 +266,5 @@ bag.activeBotId = activeBotId as typeof bag.activeBotId; bag.setActiveBotId = se
     });
   }, []);
 bag.setBotsPersist = setBotsPersist as typeof bag.setBotsPersist;
-  return { persistCommand, confirmDeleteCommand, useCommand, hookTrusting, setHookTrusting, hookBusy, setHookBusy, linkedBusy, setLinkedBusy, projectFilter, setProjectFilter, username, setUsername, userAvatar, setUserAvatar, accountEditing, setAccountEditing, accountDraft, setAccountDraft, accountNameRef, saveAccountName, startAccountEdit, greeting, greetSub, mobileRemoteOpen, setMobileRemoteOpen, botManagerOpen, setBotManagerOpen, botManagerOpenRef, botStream, setBotStream, updateBotStream, botBindings, setBotBindings, setBotBinding, bots, setBots, activeBotId, setActiveBotId, setBotsPersist };
+  return { persistCommand, confirmDeleteCommand, useCommand, hookTrusting, setHookTrusting, hookBusy, setHookBusy, linkedBusy, setLinkedBusy, username, setUsername, userAvatar, setUserAvatar, accountEditing, setAccountEditing, accountDraft, setAccountDraft, accountNameRef, saveAccountName, startAccountEdit, greeting, greetSub, mobileRemoteOpen, setMobileRemoteOpen, botManagerOpen, setBotManagerOpen, botManagerOpenRef, botStream, setBotStream, updateBotStream, botBindings, setBotBindings, setBotBinding, bots, setBots, activeBotId, setActiveBotId, setBotsPersist };
 }
