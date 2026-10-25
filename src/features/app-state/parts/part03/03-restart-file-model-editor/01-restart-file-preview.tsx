@@ -253,8 +253,10 @@ bag.customModelOption = customModelOption as typeof bag.customModelOption;
         seen.add(model);
         const modelMeta = (providerModels ?? []).find((m) => m.id === model);
         const spec4Badges = matchModelSpec(model);
-        /* 倍率只给账户登录自动生成的供应商（source=cloud/relay）；自定义供应商不展示。 */
-        const credits = (source === "cloud" || source === "relay") ? modelMeta?.credits : undefined;
+        /* 倍率只给账户登录自动生成的供应商（source=cloud/relay）；自定义供应商不展示。
+           存量云行可能还没打 source，按 provider=cloud 兜底识别（不推断 relay）。 */
+        const sourceKind = source ?? (provider === "cloud" ? "cloud" : undefined);
+        const credits = (sourceKind === "cloud" || sourceKind === "relay") ? modelMeta?.credits : undefined;
         out.push({
           ...(bag.customModelOption ?? { id: "", displayName: "", description: "", supportsPersonality: true, isDefault: false }),
           id: `custom:${provider}:${model}`,
