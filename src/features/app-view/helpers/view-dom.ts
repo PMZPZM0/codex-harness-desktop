@@ -47,6 +47,44 @@ function createInlineAttachmentChip(kind: "image" | "file", path: string, onRemo
     try { chip.setPointerCapture(event.pointerId); } catch { /* 合成事件下不可捕获 */ }
     const placeGapAtPointer = (x: number, y: number) => {
       if (!gap) return;
+      /* 10-25：要能落到**文字中间**。caretRangeFromPoint 在 plaintext-only 里只回元素+子节点
+         偏移（整段文字算一个子节点 ⇒ 只能首/尾），所以这里自己按字符位置二分：
+         先找到指针所在行的文本节点，再用「折叠 Range 的光标矩形」二分出字符偏移，splitText 插入。 */
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let target: Text | null = null;
+      let node: Node | null = walker.nextNode();
+      while (node) {
+        const r = document.createRange();
+        r.selectNodeContents(node);
+        for (const rect of Array.from(r.getClientRects())) {
+          if (y >= rect.top - 2 && y <= rect.bottom + 2 && x >= rect.left - 4 && x <= rect.right + 4) { target = node as Text; break; }
+        }
+        if (target) break;
+        node = walker.nextNode();
+      }
+      if (target && target.parentElement && !target.parentElement.closest(".composer-image-chip-inline") && target.parentElement.closest(".composer-editor")) {
+        const text = target;
+        let lo = 0;
+        let hi = text.length;
+        const range = document.createRange();
+        const caretRect = (index: number) => {
+          const at = Math.max(0, Math.min(index, text.length));
+          range.setStart(text, at);
+          range.setEnd(text, at);
+          return range.getBoundingClientRect();
+        };
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          const cr = caretRect(mid);
+          const sameLine = y >= cr.top - 4 && y <= cr.bottom + 4;
+          if (sameLine && cr.left < x) lo = mid + 1; else hi = mid;
+        }
+        try {
+          const right = text.splitText(Math.max(0, Math.min(lo, text.length)));
+          root.insertBefore(gap, right);
+          return;
+        } catch { /* 落到兜底 */ }
+      }
       let ref: Node | null = null;
       for (const child of Array.from(root.childNodes)) {
         if (child === gap) continue;
