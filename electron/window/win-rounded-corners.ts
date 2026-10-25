@@ -1,77 +1,96 @@
-// Windows 11 原生圆角：对窗口 HWND 设置 DWMWA_WINDOW_CORNER_PREFERENCE = DWMWCP_ROUND。
-// 这是系统级圆角——保留原生阴影、拉伸边框与右上角系统控制钮，仅磨圆四个角；
-// 最大化时系统自动回方（预期行为），还原后自动复圆。仅 Windows 生效，其余平台静默跳过。
-//
-// 通过 koffi（纯 FFI，N-API 模块，跨 Electron ABI 稳定）调用 dwmapi.dll，避免引入 C++ 原生插件。
-import { BrowserWindow } from "electron";
+// Windows 大圆角：DWM 原生圆角只给 ~8px 且仅 Win11；Win10 完全没有。
+// 用户 2026-10-25 要 Marvis 那种大圆弧 ⇒ 跟随 Marvis 在本机的实际做法（其日志：
+// `[FixLayeredWindowForDComp] Switched from ... to SetWindowRgn`）：
+// 用 CreateRoundRectRgn + SetWindowRgn 把顶层窗口裁成圆角。Win11 仍先设 DWM 圆角（更细腻，
+// 有系统阴影），随后区城裁剪覆盖成统一半径（两平台视觉一致）。
+import { BrowserWindow, screen } from "electron";
 import koffi from "koffi";
 
-// DWM_WINDOW_CORNER_PREFERENCE 枚举值（dwmapi.h）
 const DWMWA_WINDOW_CORNER_PREFERENCE = 33;
 const DWMWCP_ROUND = 2;
+/** 视觉半径（CSS px）；按显示器缩放换算成物理像素。Marvis 截图约 28px。 */
+const CORNER_RADIUS_CSS = 26;
 
-type DwmSetWindowAttributeFn = (
-  hwnd: bigint,
-  dwAttribute: number,
-  pvAttribute: Buffer,
-  cbAttribute: number
-) => number;
+type DwmSetWindowAttributeFn = (hwnd: bigint, attr: number, value: Buffer, size: number) => number;
+type CreateRoundRectRgnFn = (x1: number, y1: number, x2: number, y2: number, w: number, h: number) => bigint;
+type SetWindowRgnFn = (hwnd: bigint, rgn: bigint, redraw: number) => number;
 
 let dwmSetWindowAttribute: DwmSetWindowAttributeFn | null = null;
+let createRoundRectRgn: CreateRoundRectRgnFn | null = null;
+let setWindowRgn: SetWindowRgnFn | null = null;
 let libTried = false;
 
-function ensureDwm(): boolean {
-  if (libTried) return dwmSetWindowAttribute !== null;
+function ensureLibs(): boolean {
+  if (libTried) return Boolean(setWindowRgn);
   libTried = true;
   try {
-    const lib = koffi.load("dwmapi.dll");
-    dwmSetWindowAttribute = lib.func(
-      "long DwmSetWindowAttribute(uint64 hwnd, uint32 dwAttribute, void* pvAttribute, uint32 cbAttribute)"
-    ) as unknown as DwmSetWindowAttributeFn;
+    const dwm = koffi.load("dwmapi.dll");
+    dwmSetWindowAttribute = dwm.func("long DwmSetWindowAttribute(uint64 hwnd, uint32 attr, void* value, uint32 size)") as unknown as DwmSetWindowAttributeFn;
+    const gdi = koffi.load("gdi32.dll");
+    createRoundRectRgn = gdi.func("uint64 CreateRoundRectRgn(int x1, int y1, int x2, int y2, int w, int h)") as unknown as CreateRoundRectRgnFn;
+    const user = koffi.load("user32.dll");
+    setWindowRgn = user.func("int SetWindowRgn(uint64 hwnd, uint64 rgn, int redraw)") as unknown as SetWindowRgnFn;
     return true;
   } catch {
     return false;
   }
 }
 
-function roundOnce(win: BrowserWindow): void {
-  if (!ensureDwm() || !dwmSetWindowAttribute) return;
-  let handle: Buffer;
+function hwndOf(win: BrowserWindow): bigint | null {
   try {
-    handle = win.getNativeWindowHandle();
+    const handle = win.getNativeWindowHandle();
+    return handle && handle.length >= 8 ? handle.readBigUInt64LE(0) : null;
   } catch {
-    return;
-  }
-  if (!handle || handle.length < 8) return;
-  const hwnd = handle.readBigUInt64LE(0);
-  const pref = Buffer.alloc(4);
-  pref.writeUInt32LE(DWMWCP_ROUND, 0);
-  try {
-    // HRESULT：失败不致命，静默忽略（老系统/远端会话等不支持时不影响使用）。
-    dwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, pref, 4);
-  } catch {
-    /* no-op */
+    return null;
   }
 }
 
+function roundOnce(win: BrowserWindow): void {
+  if (!ensureLibs()) return;
+  const hwnd = hwndOf(win);
+  if (!hwnd) return;
+  if (win.isMaximized() || win.isFullScreen()) return;
+  // ① Win11 原生圆角（系统阴影/抗锯齿由 DWM 负责；Win10 上这次调用无效，静默跳过）
+  if (dwmSetWindowAttribute) {
+    const pref = Buffer.alloc(4);
+    pref.writeUInt32LE(DWMWCP_ROUND, 0);
+    try { dwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, pref, 4); } catch { /* no-op */ }
+  }
+  // ② 统一大圆弧：区域裁剪（SetWindowRgn 成功后 region 归系统所有，禁止再 DeleteObject）
+  if (createRoundRectRgn && setWindowRgn) {
+    try {
+      const bounds = win.getBounds();
+      const scale = screen.getDisplayMatching(bounds).scaleFactor || 1;
+      const radius = Math.round(CORNER_RADIUS_CSS * scale) * 2; // CreateRoundRectRgn 参数是椭圆的宽/高
+      const rgn = createRoundRectRgn(0, 0, bounds.width + 1, bounds.height + 1, radius, radius);
+      if (rgn) setWindowRgn(hwnd, rgn, 1);
+    } catch { /* 失败不影响使用（直角窗口） */ }
+  }
+}
+
+
+function clearRegion(win: BrowserWindow): void {
+  if (!ensureLibs() || !setWindowRgn) return;
+  const hwnd = hwndOf(win);
+  if (hwnd) { try { setWindowRgn(hwnd, 0n, 1); } catch { /* no-op */ } }
+}
+
 /**
- * 给窗口开启 Windows 11 原生圆角。非 win32 平台直接跳过。
+ * 给窗口开启大圆角（Windows：DWM 圆角 + SetWindowRgn 区域裁剪），其余平台跳过。
  *
- * 关键时序：本函数通常在 `new BrowserWindow(...)` 之后立即调用，但此时窗口尚未显示。
- * 对于使用 `titleBarOverlay`（titleBarStyle:"hidden"）的窗口，系统会在窗口**首次显示**
- * 时把边框延展进客户端区（DwmExtendFrameIntoClientArea），这一步会把构造期设置的
- * DWM 圆角属性覆盖回直角——这正是「主窗口/弹窗是方的、标准边框弹窗自动圆」的根因。
- * 因此必须在 'show' 事件之后（边框延展完成）再补设一次，圆角才能真正生效。
- * 同时：最大化时系统自动回方（预期），在 unmaximize 时防御性复圆。
+ * 时序同旧版：构造期设一次；'show' 后补设（titleBarOverlay 的边框延展会重置 DWM 圆角）；
+ * 还原/改变尺寸后重设（region 尺寸必须跟窗口一致）；最大化时清掉 region（否则四角会在屏幕边缘被裁）。
  */
 export function applyRoundedCorners(win: BrowserWindow): void {
   if (process.platform !== "win32") return;
-  // 创建后立即设一次（HWND 此时已存在；窗口未显示也不影响，仅为兜底层）。
   roundOnce(win);
-  // 首次显示后补设：让 show 引起的边框延展先完成，再覆盖回圆角，避免被系统重置。
-  win.once("show", () => {
-    setTimeout(() => roundOnce(win), 0);
-  });
-  // 还原窗口（从最大化恢复）后防御性复圆；用 .on 而非 .once 以覆盖多次最大化/还原。
+  win.once("show", () => { setTimeout(() => roundOnce(win), 0); });
   win.on("unmaximize", () => roundOnce(win));
+  win.on("maximize", () => clearRegion(win));
+  win.on("resize", () => {
+    if (win.isMaximized() || win.isFullScreen()) return;
+    clearTimeout((win as any).__roundRaf);
+    (win as any).__roundRaf = setTimeout(() => roundOnce(win), 60);
+  });
 }
+
