@@ -110,6 +110,23 @@ const CHECKS = [
         JSON.stringify(menu));
       await h.pressKey("Escape");
       await wait(200);
+      const hasCtxBadge = await h.eval(`!!document.querySelector(".ctx-badge-btn")`);
+      if (hasCtxBadge) {
+        await h.eval(`(function(){ document.querySelector(".ctx-badge-btn")?.click(); return 1; })()`);
+        await wait(400);
+        const ctx = await h.eval(`(function(){
+          const pop=document.querySelector(".ctx-pop"), btn=document.querySelector(".ctx-badge-btn");
+          if(!pop||!btn) return null;
+          const r=pop.getBoundingClientRect(), b=btn.getBoundingClientRect();
+          return { centerDelta:Math.abs((r.left+r.right)/2-(b.left+b.right)/2), gap:Math.round(b.top-r.bottom) };
+        })()`).catch(() => null);
+        await h.pressKey("Escape");
+        await wait(250);
+        const closed = await h.eval(`!document.querySelector(".ctx-pop")`);
+        h.check("⑤ 上下文弹窗：贴按钮居中 + Esc 自动关闭", Boolean(ctx && ctx.centerDelta <= 2 && ctx.gap >= 4 && ctx.gap <= 12 && closed), JSON.stringify({ ...ctx, closed }));
+      } else {
+        h.check("⑤ 上下文弹窗：贴按钮居中 + Esc 自动关闭", true, '{"skipped":"no-context-badge"}');
+      }
     },
   },
   {

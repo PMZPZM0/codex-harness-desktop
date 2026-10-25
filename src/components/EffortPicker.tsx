@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Zap } from "lucide-react";
 import { blockedEffortsOf } from "../lib/effort-support";
+import { useCenteredPopoverLeft } from "../lib/use-centered-popover";
 
 /** 每个档位一个固定色（由低到高：冷 → 暖）。
  *  用户 09-17：「每个等级颜色都不一样」。颜色按**档位名**取而不是按位置下标 ——
@@ -85,17 +86,18 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, autoMod
   const [blocked, setBlocked] = useState<string[]>(() => blockedEffortsOf(modelId));
   const blockedSet = new Set(blocked);
   const [open, setOpen] = useState(false);
-  const [anchor, setAnchor] = useState<{ right: number; bottom: number } | null>(null);
+  const [anchor, setAnchor] = useState<{ left: number; bottom: number } | null>(null);
   const [draft, setDraft] = useState(index);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
+  const popLeft = useCenteredPopoverLeft(open, triggerRef, popRef);
   // 外部值变化（菜单/命令切换、切会话）要同步回滑块
   useEffect(() => { setDraft(index); }, [index]);
 
   const openPanel = () => {
     const rect = triggerRef.current?.getBoundingClientRect();
     if (!rect) return;
-    setAnchor({ right: Math.max(12, window.innerWidth - rect.right), bottom: window.innerHeight - rect.top + 8 });
+    setAnchor({ left: 0, bottom: window.innerHeight - rect.top + 8 });
     setDraft(index);
     setBlocked(blockedEffortsOf(modelId)); // 打开时重读：刚被降档记下的、别的窗口记的，都立刻可见
     setOpen(true);
@@ -155,7 +157,7 @@ export function EffortPicker({ levels, value, labels, disabled, modelId, autoMod
           className="effort-picker-pop"
           role="dialog"
           aria-label="思考强度"
-          style={{ right: anchor.right, bottom: anchor.bottom, "--fill-color": color } as CSSProperties}
+          style={{ left: popLeft ?? anchor.left, bottom: anchor.bottom, "--fill-color": color } as CSSProperties}
         >
           <div className="effort-picker-head">
             <strong>思考强度</strong>

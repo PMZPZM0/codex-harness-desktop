@@ -9,6 +9,7 @@ import { serializeComposerDom } from "../../lib/serialize-composer-dom";
 import { basename } from "../../lib/basename";
 import { isImagePath } from "../../lib/is-image-path";
 import { isMacPlatform } from "../../lib/is-mac-platform";
+import { useCenteredPopoverLeft } from "../../lib/use-centered-popover";
 
 export function ThreadFilePicker({ query, onQuery, candidates, onPick, onClose }: { query: string; onQuery: (value: string) => void; candidates: { path: string; source: string }[]; onPick: (path: string) => void; onClose: () => void }) {
   const filtered = useMemo(() => {
@@ -168,6 +169,9 @@ function creditLabel(raw?: string): string {
 export function ComposerMenu({ icon, label, options, value, onChange, disabled, title, width, tone, toneOf, onOpen }: { icon: any; label: string; options: ComposerMenuOption[]; value: string; onChange: (value: string) => void; disabled?: boolean; title?: string; width?: number; tone?: "danger"; toneOf?: (option: ComposerMenuOption) => string | undefined; onOpen?: () => void }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const popLeft = useCenteredPopoverLeft(open, triggerRef, popRef);
   useEffect(() => {
     if (!open) return;
     const onDown = (event: globalThis.MouseEvent) => { if (!wrapRef.current?.contains(event.target as Node)) setOpen(false); };
@@ -180,13 +184,13 @@ export function ComposerMenu({ icon, label, options, value, onChange, disabled, 
   const Icon = icon;
   return (
     <div className={`composer-menu ${open ? "open" : ""}`} ref={wrapRef}>
-      <button type="button" className={`composer-setting ${tone === "danger" ? "danger" : ""}`} disabled={disabled} title={title ?? label} onClick={() => setOpen((currentOpen) => { const next = !currentOpen; if (next) onOpen?.(); return next; })}>
+      <button ref={triggerRef} type="button" className={`composer-setting ${tone === "danger" ? "danger" : ""}`} disabled={disabled} title={title ?? label} onClick={() => setOpen((currentOpen) => { const next = !currentOpen; if (next) onOpen?.(); return next; })}>
         <Icon size={14} />
         <span>{current?.title ?? label}</span>
         <ChevronDown size={12} className={`menu-caret ${open ? "up" : ""}`} />
       </button>
       {open && (
-        <div className="composer-menu-pop" role="listbox" aria-label={label} style={width ? { width } : undefined}>
+        <div ref={popRef} className="composer-menu-pop" role="listbox" aria-label={label} style={{ ...(width ? { width } : {}), ...(popLeft != null ? { left: popLeft } : {}) }}>
           {options.map((option) => {
             const itemTone = toneOf?.(option) ?? option.tone;
             return (

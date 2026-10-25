@@ -9,6 +9,7 @@ import { ToolCodeBlock } from "../shared/ToolCodeBlock";
 import { DiffPreviewBody } from "./DiffPreview";
 import { FileCardMenu } from "../shared/InlineCards";
 import { getTurnFileChanges, getTurnLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
+import { useCenteredPopoverLeft } from "../../lib/use-centered-popover";
 import { setTurnReview, primeTurnReview, clearTurnReview, getTurnReview } from "../../lib/turn-review-store.mjs";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { OutputFileCards } from "./OutputFileCards";
@@ -328,11 +329,16 @@ export type UsageCounterSnapshot = { input: number; cached: number; output: numb
 export function ContextUsageBadge({ tokenUsage, fallbackWindow, recentCompaction, onCompact }: { tokenUsage?: any; fallbackWindow?: number; recentCompaction?: boolean; onCompact?: () => void }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const popLeft = useCenteredPopoverLeft(open, triggerRef, popRef);
   useEffect(() => {
     if (!open) return;
     const onDown = (event: globalThis.MouseEvent) => { if (!wrapRef.current?.contains(event.target as Node)) setOpen(false); };
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
     window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
   }, [open]);
   const contextWindow = tokenUsage?.modelContextWindow ?? tokenUsage?.model_context_window ?? fallbackWindow;
   const lastUsage = usageBucket(tokenUsage, "last");
@@ -363,12 +369,12 @@ export function ContextUsageBadge({ tokenUsage, fallbackWindow, recentCompaction
   ].filter((entry) => entry.value != null) as { label: string; value: number }[];
   const rows = details.length ? details : [{ label: "已用", value: Math.round(percent * 10) / 10 }];
   return (
-    <div className="ctx-badge" ref={wrapRef}>
-      <button type="button" className="ctx-badge-btn" title={used != null ? `上下文 ${Math.round(percent)}%` : `上下文窗口 ${contextWindow.toLocaleString()} Token · 用量待同步`} aria-label="上下文容量" onClick={() => setOpen((currentOpen) => !currentOpen)} onMouseEnter={() => setOpen(true)}>
+    <div className="ctx-badge" ref={wrapRef} onMouseLeave={() => setOpen(false)}>
+      <button ref={triggerRef} type="button" className="ctx-badge-btn" title={used != null ? `上下文 ${Math.round(percent)}%` : `上下文窗口 ${contextWindow.toLocaleString()} Token · 用量待同步`} aria-label="上下文容量" onClick={() => setOpen((currentOpen) => !currentOpen)} onMouseEnter={() => setOpen(true)}>
         <ContextRing tokenUsage={tokenUsage} fallbackWindow={fallbackWindow} />
       </button>
       {open && (
-        <div className="ctx-pop" role="dialog" aria-label="上下文容量明细" onMouseLeave={() => setOpen(false)}>
+        <div ref={popRef} className="ctx-pop" role="dialog" aria-label="上下文容量明细" style={popLeft != null ? { left: popLeft } : undefined}>
           <div className="ctx-pop-head"><strong>上下文容量</strong></div>
           <div className="ctx-pop-sub">{used != null ? (used / 10000).toLocaleString(undefined, { maximumFractionDigits: 1 }) : "0.0"}万/{(contextWindow / 10000).toLocaleString()}万（{used != null ? Math.round(percent * 10) / 10 : "—"}%{summaryCacheRate != null ? ` · 累计 ${summaryCacheRate}% 缓存` : ""}）</div>
           {/* ⛔ 分子超过配置窗口时必须解释，不能只显示一个封顶的 100%：09-30 用户看到

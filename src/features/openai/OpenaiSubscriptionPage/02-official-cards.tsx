@@ -6,12 +6,16 @@ import { CircleGauge, Clock3, AlertTriangle, Bot, Check, Play, LogIn, Trash2, Pl
 import { OFFICIAL_MODELS } from "../../../lib/official-models";
 import { Spinner } from "../../../components/CardShell";
 import { useState, useRef, useCallback, useEffect } from "react";
+import { useCenteredPopoverLeft } from "../../../lib/use-centered-popover";
 import { parseOpenaiUsagePanel, openaiResetText } from "./01-usage-parsers";
 export function OpenaiBalanceBadge({ accountKey }: { accountKey?: string | null }) {
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<ReturnType<typeof parseOpenaiUsagePanel> | null>(null);
   const [err, setErr] = useState("");
   const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const popLeft = useCenteredPopoverLeft(open, triggerRef, popRef);
   const refresh = useCallback(async () => {
     try {
       setPanel(parseOpenaiUsagePanel(await window.codex.openaiUsage()));
@@ -29,17 +33,19 @@ export function OpenaiBalanceBadge({ accountKey }: { accountKey?: string | null 
   useEffect(() => {
     if (!open) return;
     const onDown = (event: globalThis.MouseEvent) => { if (!wrapRef.current?.contains(event.target as Node)) setOpen(false); };
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
     window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
   }, [open]);
   if (!accountKey) return null;
   const primary = panel?.windows[0];
   const summary = err ? "额度同步失败" : panel && primary ? `订阅已用 ${Math.round(primary.usedPercent)}%` : "订阅";
-  return <div className="relay-badge" ref={wrapRef}>
-    <button type="button" className="context-ring relay-badge-btn" title="OpenAI 订阅额度" aria-label="OpenAI 订阅额度" onClick={() => { setOpen((v) => !v); if (!panel) void refresh(); }}>
+  return <div className="relay-badge" ref={wrapRef} onMouseLeave={() => setOpen(false)}>
+    <button ref={triggerRef} type="button" className="context-ring relay-badge-btn" title="OpenAI 订阅额度" aria-label="OpenAI 订阅额度" onClick={() => { setOpen((v) => !v); if (!panel) void refresh(); }}>
       <CircleGauge size={13} /><small>{summary}</small>
     </button>
-    {open && <div className="ctx-pop relay-pop" role="dialog" aria-label="OpenAI 订阅额度明细" onMouseLeave={() => setOpen(false)}>
+    {open && <div ref={popRef} className="ctx-pop relay-pop" role="dialog" aria-label="OpenAI 订阅额度明细" style={popLeft != null ? { left: popLeft } : undefined}>
       <div className="ctx-pop-head"><strong>OpenAI 官方订阅</strong>{panel?.planType && <span className="openai-plan-badge">{panel.planType}</span>}</div>
       <div className="ctx-pop-sub">{err ? err : "额度每 5 分钟与官方同步"}</div>
       {panel && panel.windows.length > 0 && (

@@ -167,7 +167,8 @@
 .cloud-points-tip {
   position: absolute;
   bottom: calc(100% + 8px);
-  right: 0;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 30;
   display: none;
   flex-direction: column;
