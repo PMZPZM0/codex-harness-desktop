@@ -1,7 +1,8 @@
 /** 存储设置 / 复审面板（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
 import { useState, useEffect, useMemo } from "react";
 import { PageInfo } from "../../components/SettingsHead";
-import { ChevronDown, Check, RefreshCw, FileCode2, FolderOpen, Search, Download } from "lucide-react";
+import { ChevronDown, Check, RefreshCw, FileCode2, FolderOpen, Search, Download, GitBranch, X } from "lucide-react";
+import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { Spinner } from "../../components/CardShell";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 import { basename } from "../../lib/basename";
@@ -99,6 +100,8 @@ export function ReviewPanel({ workspace, lastDiff, disabled, busy, report, onRev
   const [installingGit, setInstallingGit] = useState(false);
   const [loading, setLoading] = useState(false);
   const [custom, setCustom] = useState("");
+  /* 10-25 用户：「加一个搜索框可以直接搜索内容」——按文件路径或 diff 内容过滤下面这份清单。 */
+  const [query, setQuery] = useState("");
   const refresh = async () => {
     if (scope === "last") { setOutput(lastDiff); setGitMissing(false); setNoWorkspace(false); setGitError(""); return ""; }
     if (!workspace) { setNoWorkspace(true); setGitMissing(false); setGitError(""); setOutput(""); return ""; }
@@ -135,38 +138,106 @@ export function ReviewPanel({ workspace, lastDiff, disabled, busy, report, onRev
   };
   useEffect(() => { void refresh(); }, [scope, workspace]);
   const files = useMemo(() => {
-    if (!output) return [] as { path: string; added: number; deleted: number }[];
-    const list: { path: string; added: number; deleted: number }[] = [];
-    let current: { path: string; added: number; deleted: number } | null = null;
+    type DiffRow = { path: string; dir: string; name: string; added: number; deleted: number; content: string };
+    if (!output) return [] as DiffRow[];
+    const list: DiffRow[] = [];
+    let current: DiffRow | null = null;
     for (const line of output.split("\n")) {
       const match = line.match(/^diff --git a\/(.+?) b\//);
-      if (match) { current = { path: match[1], added: 0, deleted: 0 }; list.push(current); continue; }
+      if (match) {
+        const path = match[1];
+        const cut = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+        current = {
+          path,
+          dir: cut >= 0 ? path.slice(0, cut) : "",
+          name: cut >= 0 ? path.slice(cut + 1) : path,
+          added: 0,
+          deleted: 0,
+          content: "",
+        };
+        list.push(current);
+        continue;
+      }
       if (!current) continue;
+      current.content += `${line}\n`;
       if (line.startsWith("+") && !line.startsWith("+++")) current.added += 1;
       else if (line.startsWith("-") && !line.startsWith("---")) current.deleted += 1;
     }
     return list;
   }, [output]);
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleFiles = useMemo(() => {
+    if (!normalizedQuery) return files;
+    return files.filter((file) => file.path.toLowerCase().includes(normalizedQuery) || file.content.toLowerCase().includes(normalizedQuery));
+  }, [files, normalizedQuery]);
+  const totals = useMemo(() => files.reduce((acc, file) => ({ added: acc.added + file.added, deleted: acc.deleted + file.deleted }), { added: 0, deleted: 0 }), [files]);
+  /* 搜到 diff 内容但路径不匹配时，给一行命中片段，避免「搜到了但界面啥也看不出来」。 */
+  const hitSnippet = (file: { path: string; content: string }) => {
+    if (!normalizedQuery || file.path.toLowerCase().includes(normalizedQuery)) return "";
+    const hit = file.content.split("\n").find((line) => line.toLowerCase().includes(normalizedQuery));
+    return hit ? hit.replace(/^[+\-\s]+/, "").trim().slice(0, 160) : "";
+  };
   const scopeLabel = reviewScopes.find(([value]) => value === scope)?.[1] ?? "未暂存";
   return (
-    <section className="review-panel">
-      <div className="review-bar">
-        <div className="scope-wrap">
-          <button className="scope-btn" title={reviewScopeHints[scope]} onClick={() => setMenuOpen((current) => !current)}>{scopeLabel}<ChevronDown size={13} /></button>
-          {menuOpen && <div className="scope-menu">
-            {reviewScopes.map(([value, label]) => <button key={value} title={reviewScopeHints[value]} onClick={() => { setScope(value); setMenuOpen(false); }}>{label}{scope === value && <Check size={13} />}</button>)}
-          </div>}
+    <section className="review-panel review-panel-themed">
+      {/* 10-25 用户：「右栏展开空唠唠的…设计一个主题界面，加搜索框，内容自适应展示全」
+          —— 顶部做成一张总览卡（范围 + 文件数 + 增删 + 搜索），下面文件按卡片整行展示。 */}
+      <div className="review-hero">
+        <div className="review-hero-main">
+          <span className="review-hero-icon"><GitBranch size={15} /></span>
+          <div className="review-hero-text">
+            <strong>{scopeLabel}改动</strong>
+            <small title={workspace}>{workspace ? basename(workspace) : "未选择工作区"}</small>
+          </div>
+          <button className="review-hero-refresh" title="刷新变更列表" onClick={() => void refreshWithReceipt(onNotice, "刷新变更列表", () => refresh())}>
+            {loading ? <Spinner /> : <RefreshCw size={14} />}
+          </button>
         </div>
-        <button className="review-refresh" title="刷新" onClick={() => void refreshWithReceipt(onNotice, "刷新变更列表", () => refresh())}>{loading ? <Spinner /> : <RefreshCw size={14} />}<span>刷新</span></button>
+        <div className="review-hero-stats">
+          <span><b>{files.length}</b> 个文件</span>
+          <span className="is-add">+{totals.added}</span>
+          <span className="is-del">-{totals.deleted}</span>
+        </div>
+        <div className="review-search">
+          <Search size={13} aria-hidden="true" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索文件或改动内容" aria-label="搜索文件或改动内容" />
+          {query && <button type="button" title="清空搜索" onClick={() => setQuery("")}><X size={12} /></button>}
+        </div>
+        <div className="review-scope-row">
+          <div className="scope-wrap">
+            <button className="scope-btn" title={reviewScopeHints[scope]} onClick={() => setMenuOpen((current) => !current)}>{scopeLabel}<ChevronDown size={13} /></button>
+            {menuOpen && <div className="scope-menu">
+              {reviewScopes.map(([value, label]) => <button key={value} title={reviewScopeHints[value]} onClick={() => { setScope(value); setMenuOpen(false); }}>{label}{scope === value && <Check size={13} />}</button>)}
+            </div>}
+          </div>
+          <small className="review-scope-hint">{reviewScopeHints[scope]}</small>
+        </div>
       </div>
       {noWorkspace ? <div className="git-missing"><FolderOpen size={36} /><strong>还没有选择工作区</strong><p>在会话里选一个项目目录，或从「文件」标签打开项目；选好后这里会列出 Git 改动。</p></div>
         : gitMissing ? <div className="git-missing"><FileCode2 size={36} /><strong>当前环境没有可用的 Git</strong><p>{gitError || "安装后就能查看未暂存 / 已暂存 / 分支起点 / 上一轮的文件改动。"}</p><button className="primary-setting" disabled={installingGit} onClick={() => void installGit()}>{installingGit ? <Spinner /> : <Download size={14} />}{installingGit ? "安装中…" : "一键安装 Git"}</button><small>也可以在「设置 → 开发工具」查看安装进度；装完会自动刷新。</small></div>
         : <>
           {gitError && <div className="git-note">{gitError}</div>}
-          {files.length ? <div className="diff-file-list">{files.map((file) => <div key={file.path}><code title={file.path}>{basename(file.path)}</code><span><b>+{file.added}</b> <i>-{file.deleted}</i></span></div>)}</div>
+          {visibleFiles.length ? <div className="review-file-cards">
+            {visibleFiles.map((file) => {
+              const snippet = hitSnippet(file);
+              return (
+                <div className="review-file-card" key={file.path}>
+                  <span className="review-file-type"><FileTypeIcon path={file.path} size={14} /></span>
+                  <div className="review-file-body">
+                    <div className="review-file-line">
+                      <strong className="review-file-name" title={file.path}>{file.name}</strong>
+                      <span className="review-file-counts"><b>+{file.added}</b><i>-{file.deleted}</i></span>
+                    </div>
+                    <div className="review-file-path" title={file.path}>{file.dir || file.path}</div>
+                    {snippet && <code className="review-file-hit" title={snippet}>{snippet}</code>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
             /* ⛔ 读不到变更时只说读到的那句：再说「没有改动」是两个互相矛盾的结论（10-22 用户截图里就是两条并存）。 */
             : gitError ? null
-            : <div className="git-empty"><p className="muted">{reviewEmptyCopy[scope].title}</p><small>{reviewEmptyCopy[scope].hint}</small></div>}
+            : <div className="git-empty"><p className="muted">{normalizedQuery ? "没有匹配的改动" : reviewEmptyCopy[scope].title}</p><small>{normalizedQuery ? `换个关键词试试；当前共 ${files.length} 个文件。` : reviewEmptyCopy[scope].hint}</small></div>}
         </>}
       <details className="ai-review">
         {/* ⛔ 不再把内部方法名 review/start 写在标题里（用户不需要知道 RPC 名，且看起来像未完成的功能）。 */}
