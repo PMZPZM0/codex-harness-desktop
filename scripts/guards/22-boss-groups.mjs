@@ -340,10 +340,11 @@ if (state) {
     "地址对话框开关是**全局 store**（跨组件触发：欢迎界面 ↔ 侧栏壳）");
   /* ⛔ 快捷键键位**单一真相源**：侧栏行尾 kbd 徽标 + BOSS 欢迎界面 + 快捷键清单三处共用一份，
      否则改键位必漏一处（历史教训：普通会话的 Ctrl+N 就是这么散在三处的）。 */
+  /* ⛔ 快捷键键位**单一真相源**：侧栏行尾 kbd 徽标 + 快捷键清单共用 boss-shortcut.ts
+     （欢迎界面上一轮已按用户要求撤掉那行小字提示 ⇒ 只剩这两处消费方）。 */
   ok(/export function bossShortcutLabel/.test(read("src/features/boss-group-view/boss-shortcut.ts"))
-    && /bossShortcutLabel\(\)/.test(read("src/features/app-view/AppView/01-sidebar-shell.tsx"))
-    && /bossShortcutLabel\(\)/.test(read("src/features/boss-group-view/BossThreadIntro.tsx")),
-    "BOSS 会话快捷键是**单一真相源**（侧栏 kbd 徽标 + 欢迎界面共用 boss-shortcut.ts）");
+    && /bossShortcutLabel\(\)/.test(read("src/features/app-view/AppView/01-sidebar-shell.tsx")),
+    "BOSS 会话快捷键是**单一真相源**（侧栏 kbd 徽标走 boss-shortcut.ts）");
   /* ⛔⛔ 10-25 用户令：「记忆板块里面加一个BOSS会话记忆板块，跟普通会话完全拆开」
      +「删除了BOSS会话，这里就同步更新，新建了就是新的」。
 
@@ -521,6 +522,27 @@ if (state) {
     "⛔ 已选项目地址按会话 id 记（dirByThread）—— 多个 BOSS 会话各用各的项目目录");
   ok(/cwd=\{thread\?\.cwd \?\? ""\}/.test(timeline),
     "⛔ BOSS 欢迎界面回显**本会话自己的**项目地址（thread.cwd）");
+  /* ⛔⛔ 10-25 用户实测两处（都是「串到别的会话」的 LOW 错误）：
+     ① 「下面已经自动选了别的会话的项目地址」—— BOSS 选目录时**写了全局 workspace**
+        ⇒ 普通会话的顶栏/项目地址芯片显示成 BOSS 的目录，下一个新会话也继承它。
+        ⇒ 断言：选地址**不写**全局 workspace（setWorkspace / workspaceRef 都不许出现在那段里），
+           建会话时的 cwd 取**本会话登记的目录**（bossDirFor）。
+     ② 「如果我当前选的是下面已经创建的 BOSS 会话选项，上面这个会话 BOSS 会话也会跟着亮」
+        —— 选中态判据里认了 homeId（= 最近一个 BOSS 会话）⇒ 与当前选中的那个无关 ⇒ 串项。
+        ⇒ 断言：侧栏选中态只认当前会话自己的身份，⛔ 不认 homeId 兜底。 */
+  const bossDirPickBlock = bossSideSrc.slice(Math.max(0, bossSideSrc.indexOf("onBossProjectDir") - 200), bossSideSrc.indexOf("onBossProjectDir") + 2200);
+  ok(!/setWorkspace\(|workspaceRef\.current =/.test(bossDirPickBlock),
+    "⛔ BOSS 选项目地址**不写全局 workspace**（否则普通会话的地址被顶掉、下个会话继承它）");
+  ok(/const sessionCwd = bossDirFor\(bag\.thread\?\.id\)/.test(read("src/features/app-state/parts/part08/01-seg.tsx")),
+    "⛔ BOSS 会话建会话时的 cwd 取**本会话登记的目录**（不继承别的会话的项目地址）");
+  ok(!/currentThreadId === bossThreads\.homeId/.test(bossSideSrc),
+    "⛔ 侧栏 BOSS 按钮的选中态不认 homeId（那是最近一个 BOSS 会话 ⇒ 与当前选中的无关 ⇒ 串项）");
+  ok(/isEmpty && !isBossSession/.test(read("src/features/app-view/AppView/02-main-stage/03-composer/02-composer-form.tsx")),
+    "⛔ BOSS 会话不渲染输入框上方那枚「项目地址」芯片（它显示全局 workspace ⇒ 串到别的会话）");
+  /* ⛔ 用户嫌「新建会话+快捷键」小字 LOW ⇒ 欢迎界面上**不放**快捷键小字，
+     快捷键只留在侧栏按钮行尾的 kbd 徽标上。 */
+  ok(!/boss-welcome-kbd/.test(bossWelcomeCss) && !/新建 BOSS 会话/.test(read("src/features/boss-group-view/BossThreadIntro.tsx")),
+    "⛔ 欢迎界面不放快捷键小字提示（用户原话：太LOW、一点个性没有）");
   /* ⛔⛔ 10-25 实测「独立弹窗没有成员图标和问号」：DOM 在、断言全绿，但 CSS 媒体查询把
      `display` 设成了 none（当时断点是 1180，而默认窗口 1080 就命中）。
      ⇒ 隐藏断点必须 ≤640，且断言只认 DOM 存在的写法不可再用于这两个图标。
