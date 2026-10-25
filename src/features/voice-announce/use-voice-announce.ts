@@ -62,10 +62,9 @@ import { createVoiceScriptStripper, dedupeSpokenSentences, resolveAnnounceSummar
 import { splitSentences } from "../../lib/voice-summary.mjs";
 import { createAutoSpeakTracker } from "../../lib/voice-auto-speak.mjs";
 import {
-  notifyAnnounceToggle,
   publishAnnounceEvent,
   publishAnnounceStatus,
-  setAnnounceNoticeHandler,
+  setAnnounceGlobalEnabled,
   setAnnounceResumeHandler,
   setAnnounceStopHandler,
   setAnnounceMutedForThread,
@@ -589,9 +588,6 @@ export function useVoiceAnnounce(threadId: string = ""): void {
   // ── 设置：挂载读一次 + 主进程保存时广播刷新（与悬浮球/唤醒同一套）──
   useEffect(() => {
     let alive = true;
-    /* ⛔ `prevRef` = 上一次**已知**的开关状态，初值为 null ⇒ 首次读到设置**不发**告知
-       （否则每次开窗口/刷新都会往会话里塞一条「语音播报已开启」，用户什么都没干却被告知）。 */
-    let prev: boolean | null = null;
     /* ⛔ 这里的解除动作走 ref 而不是 `resumePlayback`：本 effect 的依赖是 `[]`（只跑一次），
        直接引 `resumePlayback` 会拿到首帧的闭包。`mutedRef` / `stoppedRef` / `publishStatus`
        全是 ref 或稳定引用，读到的永远是最新值 —— 不制造过期闭包这个坑。 */
@@ -603,6 +599,9 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       const enabled = typeof a.enabled === "boolean"
         ? a.enabled
         : (a.live !== false || a.summary === true);
+      /* ⛔ 有效状态的「总开关」半边放到总线：告知桥要把「总开关 ∧ 会话未静音」一起判，
+         不能只让设置页/当前窗口的那份闭包知道。 */
+      setAnnounceGlobalEnabled(enabled);
       cfgRef.current = {
         enabled,
         volume: typeof raw.tts?.volume === "number" ? raw.tts.volume : cfgRef.current.volume,
@@ -632,8 +631,6 @@ export function useVoiceAnnounce(threadId: string = ""): void {
           .then((r: any) => { if (!r?.ok) warmKeyRef.current = null; })
           .catch(() => { warmKeyRef.current = null; });
       }
-      if (prev !== null && prev !== enabled) notifyAnnounceToggle(enabled);
-      prev = enabled;
     };
     void window.codex.voiceSettingsGet()
       .then((res: any) => { if (alive) applySettings(res?.settings); })

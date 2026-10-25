@@ -7,11 +7,11 @@
  * 代码与拆分前逐字一致；依赖边经 AST 依赖图核对，**不跨模块** ⇒ 本文件不 import 同目录其他模块。
  */
 import { AppSelect } from "../../../components/AppSelect";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Globe2, MessageSquarePlus, Monitor, Play, ShieldCheck, Wrench } from "lucide-react";
 import { ToolStatusEntry } from "../../../features/session-cards";
 import { setVoiceCallNoticeHandler, setVoiceOpenSettingsHandler } from "../../../voice/wave-level";
-import { setAnnounceNoticeHandler } from "../../../voice/announce-bus";
+import { getAnnounceGlobalEnabled, getAnnounceNoticeState, isAnnounceMutedForThread, recordAnnounceNotice, subscribeAnnounceGlobalEnabled, subscribeAnnounceThreadMuted } from "../../../voice/announce-bus";
 import { voiceAnnounceNoticeText, voiceCallNoticeText } from "../../../voice/voice-notice";
 import type { PendingRequest } from "../types";
 
@@ -199,10 +199,46 @@ function VoiceCallNoticeBridge({ onNotify }: { onNotify: (text: string, threadId
  * ⛔ `threadId` 由 App 传下来做会话闸：设置可能在**任意窗口**改，而告知只属于**当前会话**。
  */
 export /** 语音播报开关的告知桥（null 渲染）。 */
-function VoiceAnnounceNoticeBridge({ threadId, onNotify }: { threadId: string; onNotify: (text: string, threadId: string) => void }): null {
+function VoiceAnnounceNoticeBridge({ threadId, lastTagState, onNotify }: { threadId: string; lastTagState: boolean | null; onNotify: (text: string, threadId: string) => void }): null {
+  /* ⛔ onNotify 是 AppView 里的内联箭头函数：不能进 effect 依赖（每渲染都变），否则会反复
+     重注册订阅；真正要跟随的只有 threadId 与「历史里最后一次告知状态」。 */
+  const notifyRef = useRef(onNotify);
+  notifyRef.current = onNotify;
   useEffect(() => {
-    setAnnounceNoticeHandler((enabled) => onNotify(voiceAnnounceNoticeText(enabled), threadId));
-    return () => setAnnounceNoticeHandler(null);
-  }, [onNotify, threadId]);
+    if (!threadId) return;
+    /* 有效状态 = 总开关 ∧ 本会话没按过「停止」。⛔ 旧实现只看总开关 ⇒ 会话级静音时
+       模型仍以为在播报；只看会话级则总开关关掉后仍以为在播报。两者必须一起判。 */
+    const effective = (): boolean | null => {
+      const global = getAnnounceGlobalEnabled();
+      return global === null ? null : global && !isAnnounceMutedForThread(threadId);
+    };
+    /* 基线优先级：**历史消息里最后一条告知** > 已告知过的持久记录 > 当前有效状态。
+       ⛔ 历史必须优先：持久记录可能说「开」，但模型上下文里最后一条明明是 OFF
+       （旧版本/某次发送失败）⇒ 以模型**真正看过的那条**为准，才纠得回来。 */
+    let baseline: boolean | null = lastTagState !== null ? lastTagState : getAnnounceNoticeState(threadId);
+    if (baseline !== null) recordAnnounceNotice(threadId, baseline);
+    let lastSent = baseline;
+    const sync = () => {
+      const next = effective();
+      if (next === null) return;
+      if (lastSent === null) {
+        /* 第一次知道状态（新会话 / 设置刚读到）：只记账，⛔ 不发 —— 每条新会话都弹一条
+           「已开启」并触发模型回「收到」是纯噪声。 */
+        lastSent = next;
+        recordAnnounceNotice(threadId, next);
+        return;
+      }
+      if (next === lastSent) return;
+      lastSent = next;
+      recordAnnounceNotice(threadId, next);
+      notifyRef.current(voiceAnnounceNoticeText(next), threadId);
+    };
+    /* 启动先补一次：持久记录/历史告知与当前有效状态不一致时（切会话、重启、在别处改了
+       总开关），立刻纠偏。 */
+    sync();
+    const offGlobal = subscribeAnnounceGlobalEnabled(sync);
+    const offMuted = subscribeAnnounceThreadMuted(sync);
+    return () => { offGlobal(); offMuted(); };
+  }, [threadId, lastTagState]);
   return null;
 }
