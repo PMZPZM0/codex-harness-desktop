@@ -26,7 +26,7 @@ function createInlineAttachmentChip(kind: "image" | "file", path: string, onRemo
   chip.setAttribute("data-attach-kind", kind);
   chip.setAttribute("data-attach-path", path);
   const iconHtml = image
-    ? `<img class="composer-image-chip-thumb" src="${imageDisplaySrc(path)}" alt="">`
+    ? `<img class="composer-image-chip-thumb" src="${imageDisplaySrc(path)}" alt="" draggable="false">`
     : COMPOSER_FILE_CHIP_ICON;
   chip.innerHTML = `<span class="composer-image-chip-icon">${iconHtml}</span><span class="composer-image-chip-name"></span><button type="button" class="composer-image-chip-close" title="${image ? "移除图片" : "移除文件"}">×</button>`;
   chip.querySelector(".composer-image-chip-name")!.textContent = basename(path);
