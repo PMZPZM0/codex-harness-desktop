@@ -218,8 +218,6 @@ function truncateThreadTitle(text: string, max = 6): string {
   return chars.length > max ? chars.slice(0, max).join("") + "…" : value;
 }
 
-import { WindowControls } from "../../components/WindowControls";
-
 export function AppView({ app }: { app: HarnessAppApi }) {
 
 
@@ -486,7 +484,6 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           {subAgentRunning && <span className="subagent-badge" title={`子智能体「${subAgentRunning}」执行中`}><Bot size={13} className="subagent-pulse" /><em>{subAgentRunning}</em><i>执行中</i></span>}
         </div>
         <div className="topbar-actions">{topbarActionsNode}</div>
-        <WindowControls />
         {/* 10-04 渲染层插槽：插件可往标题栏右侧挂按钮（标题栏是 titleBarOverlay 的绘制区，
             插件按钮会落进窗口拖拽区右侧，不影响拖动）。守卫【268】盯它有真实消费点。 */}
         <Slot id="topbar.end" loader={() => import("../../runtime/plugin-slots")} />
