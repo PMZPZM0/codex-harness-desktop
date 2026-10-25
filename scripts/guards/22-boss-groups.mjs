@@ -443,6 +443,22 @@ if (state) {
     "⛔ 顶部「BOSS 会话」按钮不随当前会话高亮（选下面任意一条 BOSS 会话，它都不许亮）");
   ok(!/\.sidebar-quick-boss\.boss-open/.test(codeOnly(read("src/styles/47-boss-group-view.css"))),
     "⛔ `.boss-open` 高亮样式已删除（不留死样式）");
+  /* ⛔⛔ 10-25 用户实测：「我在 BOSS 会话欢迎界面，点这个项目上的新建他不会跳转到普通会话的欢迎界面」
+     —— 根因：`bossThreads.pending`（下一条会话是 BOSS）只在侧栏「新建任务」里清过，
+     项目行的 ＋ 走 `startNewThread` 却没清 ⇒ 标签页换新了、时间线还在渲染 BOSS 引导卡。
+     ⇒ 判据两条：
+       ① 「新建普通会话」的唯一漏斗 startNewThread 必须清这个标记（所有入口一次覆盖：新建任务 /
+          Ctrl+N / 项目行 ＋ / 命令面板 /new）；
+       ② BOSS 入口必须在 startNewThread **之后**才置 true（否则刚置上就被漏斗清掉，进不去欢迎界面）。 */
+  const newThreadCode = codeOnly(read("src/features/app-state/parts/part06/03-seg/02-context-fork-backup.tsx"));
+  const newThreadFnAt = newThreadCode.indexOf("function startNewThread()");
+  const newThreadFn = newThreadFnAt >= 0 ? newThreadCode.slice(newThreadFnAt, newThreadFnAt + 700) : "";
+  ok(newThreadFn.length > 0 && /setBossPending\(false\)/.test(newThreadFn),
+    "⛔ 新建普通会话的统一漏斗 startNewThread 清掉 BOSS 待建标记（否则停在 BOSS 欢迎界面时点项目新建切不过去）");
+  ok(openBossFn.length > 0
+    && openBossFn.indexOf("setBossPending(true)") > openBossFn.indexOf("startNewThread()")
+    && openBossFn.indexOf("startNewThread()") >= 0,
+    "⛔ BOSS 入口在 startNewThread **之后**才置 pending（顺序反了会被漏斗清掉 ⇒ 按钮进不去欢迎界面）");
   ok(/BossMemoryPanel/.test(read("src/features/settings-memory/MemoryCenterSection.tsx"))
     && existsSync(join(ROOT, "src/features/settings-memory/BossMemoryPanel.tsx")),
     "记忆设置页有独立的「BOSS 会话记忆」板块（与项目共享记忆库分开）");
