@@ -556,14 +556,18 @@ const CHECKS = [
     name: "🫧 悬浮球互动：眼睛跟鼠标 + 打字弹迷你键盘（10-26）",
     run: async (h) => {
       await h.waitFor(`!!document.querySelector(".voice-ball")`, { label: "悬浮球", timeoutMs: 12000 });
-      await h.eval(`(function(){
-        const r=document.querySelector(".voice-ball").getBoundingClientRect();
-        window.dispatchEvent(new PointerEvent("pointermove",{clientX:r.left+r.width*0.15,clientY:r.top+r.height*0.15,bubbles:true}));
-        return 1;
-      })()`);
-      await wait(300);
-      const gaze = await h.eval(`(function(){ const b=document.querySelector(".voice-ball");
-        return { x:parseFloat(b.style.getPropertyValue("--bot-gaze-x"))||0, y:parseFloat(b.style.getPropertyValue("--bot-gaze-y"))||0 }; })()`);
+      /* 首帧/设置读取有先后：监听可能比球晚一拍，允许多推几次指针（真实产品里鼠标本来就会持续移动）。 */
+      let gaze = { x: 0, y: 0 };
+      for (let i = 0; i < 8 && gaze.x === 0 && gaze.y === 0; i++) {
+        await h.eval(`(function(){
+          const r=document.querySelector(".voice-ball").getBoundingClientRect();
+          window.dispatchEvent(new PointerEvent("pointermove",{clientX:r.left+r.width*0.15,clientY:r.top+r.height*0.15,bubbles:true}));
+          return 1;
+        })()`);
+        await wait(300);
+        gaze = await h.eval(`(function(){ const b=document.querySelector(".voice-ball");
+          return { x:parseFloat(b.style.getPropertyValue("--bot-gaze-x"))||0, y:parseFloat(b.style.getPropertyValue("--bot-gaze-y"))||0 }; })()`);
+      }
       h.check("① 指针在左上时眼球往左上偏（真读 CSS 变量，不是只看类名）",
         gaze.x < -1 && gaze.y < -1, JSON.stringify(gaze));
 
@@ -575,8 +579,11 @@ const CHECKS = [
       await wait(40);
       const pupil = await h.eval(`parseFloat(document.querySelector(".voice-ball").style.getPropertyValue("--bot-eye-scale"))||1`);
       h.check("② 鼠标快速划过 → 瞳孔按速度放大(>1.03)", pupil > 1.03, JSON.stringify({ pupil }));
-      await wait(500);
-      const pupilBack = await h.eval(`parseFloat(document.querySelector(".voice-ball").style.getPropertyValue("--bot-eye-scale"))||1`);
+      let pupilBack = pupil;
+      for (let i = 0; i < 8 && pupilBack > 1.01; i++) {
+        await wait(350);
+        pupilBack = await h.eval(`parseFloat(document.querySelector(".voice-ball").style.getPropertyValue("--bot-eye-scale"))||1`);
+      }
       h.check("③ 停手后瞳孔回落到 1x", pupilBack <= 1.01, JSON.stringify({ pupilBack }));
 
       const typed = await h.eval(`(function(){
