@@ -351,7 +351,11 @@ bag.earlyView = earlyView as typeof bag.earlyView;
   /* 10-25 用户令：BOSS 会话有**独立的群编排调度**，顶栏那个手动的「允许本会话调度」开关
      在这个会话里收起（两套调度并存只会互相打架）。成员图标与「?」也只在 BOSS 会话出现。 */
   const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
-  const isBossThread = Boolean(bag.thread?.id) && bossThreads.bossIds.includes(String(bag.thread?.id));
+  /* ⛔ 10-25 实测缺图标：只认 bossIds 会漏掉「还没建群时的 home 锚点会话」——
+     那种会话是普通会话、不在群账本里，于是顶栏的成员图标与「?」都不渲染（用户截图红框）。
+     三种入口都要认（与 timeline 的 isBossEmpty 同一口径）。 */
+  const isBossThread = Boolean(bag.thread?.id)
+    && (bossThreads.bossIds.includes(String(bag.thread?.id)) || String(bag.thread?.id) === bossThreads.homeId);
   const topbarActionsNode = (
     <>
       {/* ⛔ 顶栏操作簇顺序：🔍 搜索 → 调度开关 → 「独立弹窗 / 返回主应用」→ ⋯ 任务菜单 → 右栏开关。

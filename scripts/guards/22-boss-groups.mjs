@@ -312,6 +312,16 @@ if (state) {
     "空会话不显示「加载更早的消息」");
   ok(existsSync(join(ROOT, "src/features/boss-group-view/BossGroupHelpButton.tsx")),
     "BOSS 会话独有的「?」说明组件在位");
+  /* ⛔ 10-25 实测：只认 bossIds 会让「还没建群时的 home 会话」顶栏缺成员图标与「?」——
+     主窗口与独立弹窗用的是同一个 topbarActionsNode，所以两处一起缺。 */
+  ok(/bossThreads\.bossIds\.includes\(String\(bag\.thread\?\.id\)\) \|\| String\(bag\.thread\?\.id\) === bossThreads\.homeId/.test(read("src/features/app-state/parts/part09/02-seg.tsx")),
+    "顶栏成员图标 /「?」三种 BOSS 入口都渲染（群 boss 线程 + home 锚点会话）");
+  const bossIpc = read("electron/features/boss-groups-ipc.ts");
+  ok(/BOSS_HOME_AGENTS_VERSION/.test(bossIpc) && /不亲自执行任何任务/.test(bossIpc),
+    "BOSS 角色提示词写明「不亲自执行」且版本化（内容升级会覆盖旧文件）");
+  const bossTools = read("src/features/app-view/constants/05-boss-group-tools.tsx");
+  ok(/from=\\"expert/.test(bossTools) && /from=\\"cli/.test(bossTools) && /cliName/.test(bossTools) && /cliCommand/.test(bossTools),
+    "拉人来源覆盖专家/专家团 + 本机 CLI（group_add_member 的 from 两个分支）");
   ok(/isBossMemberThread[\s\S]{0,260}?"BOSS 调度"/.test(read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx")),
     "侧栏给群成员会话打「BOSS 调度」标签（与普通「调度」区分）");
   /* ── 14. rollout 丢失的会话要能自愈（10-25 用户实测：红条 + 消息发不出去 + 输入框被塞记忆）── */
