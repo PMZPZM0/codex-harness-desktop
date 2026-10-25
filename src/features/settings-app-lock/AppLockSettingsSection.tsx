@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Copy, KeyRound, LoaderCircle, Lock, RefreshCw, ShieldAlert, ShieldCheck, Sparkles, X } from "lucide-react";
+import { Check, Copy, EyeOff, HardDrive, KeyRound, LoaderCircle, Lock, RefreshCw, ShieldAlert, ShieldCheck, Sparkles, X } from "lucide-react";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { SettingsGroupHead, SettingsPageHero } from "../../components/SettingsPageHero";
@@ -201,13 +201,13 @@ export function AppLockSettingsSection({ onNotice }: { onNotice?: (text: string)
         hint={enabled ? "已开启" : "默认关闭"}
       />
 
-      <SettingsGroupHead title="应用密码锁" hint="本机生效 · 密码只存哈希" />
+      <SettingsGroupHead title="开关" hint="本机生效 · 密码只存哈希" />
       <div className="settings-exp-card app-lock-status-card">
         <div className="settings-card">
           <div className="settings-card-head">
             <Lock size={15} />
             <strong>应用密码锁</strong>
-            <span className="settings-subhead-hint">{enabled ? "已开启" : "默认关闭"}</span>
+            <span className={`app-lock-state ${enabled ? "is-on" : "is-off"}`}>{enabled ? "已开启" : "默认关闭"}</span>
             <ToggleSwitch
               className="app-lock-toggle"
               checked={enabled}
@@ -236,7 +236,13 @@ export function AppLockSettingsSection({ onNotice }: { onNotice?: (text: string)
               </>
             ) : (
               <>
-                <p className="settings-card-hint">开启后生成一个解锁密码（随机或自定义）。密码<strong>只展示一次</strong>，请务必抄下并备份；连续输错 10 次会清空应用数据并重置。</p>
+                <div className="app-lock-callout">
+                  <span className="app-lock-callout-icon"><ShieldAlert size={15} /></span>
+                  <div>
+                    <b>开启前先准备备份</b>
+                    <p>会生成随机或自定义密码，只展示一次；连续输错 10 次会清空应用数据并重置。</p>
+                  </div>
+                </div>
                 <div className="app-lock-actions">
                   <button type="button" className="primary-setting" onClick={openEnable}><Sparkles size={14} />开启应用锁</button>
                 </div>
@@ -249,13 +255,28 @@ export function AppLockSettingsSection({ onNotice }: { onNotice?: (text: string)
       <SettingsGroupHead title="规则与边界" hint="开启前先看清楚" />
       <div className="settings-exp-card">
         <div className="settings-card app-lock-rules">
-          <ul>
-            <li><b>只展示一次</b><span>随机密码和自定义密码都只在开启流程里显示一次，关闭后无法再次查看。</span></li>
-            <li><b>10 次错误 = 重置</b><span>失败次数会落盘，重启应用也累计；第 10 次错误会清空应用数据（会话、配置、密钥、记忆、技能等）并重启，不可撤销。</span></li>
-            <li><b>忘记密码无法找回</b><span>没有备用密码、没有管理员通道；只能按上面的重置规则处理，请务必先备份密码。</span></li>
-            <li><b>这是界面门禁，不是磁盘加密</b><span>它能阻止别人在运行中的应用里操作；能直接读取本机文件的人仍可绕过，不要把重要数据只寄托在它上面。</span></li>
-            <li><b>重新显示会再锁</b><span>窗口隐藏/最小化超过 30 秒再回来需要重新输入；点「立即锁定」可马上回到锁屏。</span></li>
-          </ul>
+          <div className="app-lock-rules-grid">
+            <div className="app-lock-rule">
+              <span className="app-lock-rule-icon"><EyeOff size={15} /></span>
+              <div><b>密码只展示一次</b><p>随机或自定义密码都只在开启流程里出现一次，关闭后无法再次查看。</p></div>
+            </div>
+            <div className="app-lock-rule is-danger">
+              <span className="app-lock-rule-icon"><ShieldAlert size={15} /></span>
+              <div><b>10 次输错 = 重置</b><p>失败次数会落盘，重启也累计；第 10 次会清空会话、配置、密钥、记忆与技能并重启，不可撤销。</p></div>
+            </div>
+            <div className="app-lock-rule">
+              <span className="app-lock-rule-icon"><KeyRound size={15} /></span>
+              <div><b>忘记无法找回</b><p>没有备用密码或管理员通道；只能按 10 次重置规则处理，请务必先备份。</p></div>
+            </div>
+            <div className="app-lock-rule">
+              <span className="app-lock-rule-icon"><HardDrive size={15} /></span>
+              <div><b>界面门禁，不加密磁盘</b><p>能阻止别人在运行中的应用里操作；能直接读取本机文件的人仍可绕过。</p></div>
+            </div>
+            <div className="app-lock-rule is-wide">
+              <span className="app-lock-rule-icon"><RefreshCw size={15} /></span>
+              <div><b>重新显示会再锁</b><p>窗口隐藏或最小化超过 30 秒再回来需要重新输入；点「立即锁定」可马上回到锁屏。</p></div>
+            </div>
+          </div>
         </div>
       </div>
 
