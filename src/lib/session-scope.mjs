@@ -38,13 +38,19 @@ export function sessionScopeValues(input = {}) {
        会话级喇叭状态必须写进会话自己的 developer instructions，模型才不会在静音会话里
        继续声称「这条回复会被播报」。`1` = 本会话已静音。 */
     announceMuted: input.announceMuted === true || String(input.announceMuted ?? "") === "1" ? "1" : "0",
+    /* 10-25 用户：「切换之后发下个消息的注入，系统提示当前会话已开启/已关闭语音播报，
+       不要在对话里发消息」⇒ 有效状态（总开关 ∧ 本会话未静音）每一轮都写进作用域块。
+       `1` = 这一轮真的会念；缺省按开（设置默认开）。 */
+    announceOn: input.announceOn === false || String(input.announceOn ?? "") === "0"
+      ? "0"
+      : (input.announceMuted === true || String(input.announceMuted ?? "") === "1" ? "0" : "1"),
   };
 }
 
-/** 变更签名：模型/供应商/档位/权限/本会话喇叭任一变化即视为需要重新下发。 */
+/** 变更签名：模型/供应商/档位/权限/本会话喇叭/播报有效状态任一变化即视为需要重新下发。 */
 export function sessionScopeSignature(input = {}) {
   const v = sessionScopeValues(input);
-  return [v.model, v.provider, v.effort, v.sandbox, v.approval, v.announceMuted].join("|");
+  return [v.model, v.provider, v.effort, v.sandbox, v.approval, v.announceMuted, v.announceOn].join("|");
 }
 
 /**
@@ -61,14 +67,17 @@ export function sessionScopeBlock(input = {}) {
     `- 思考档位：${v.effort || "（默认）"}`,
     `- 执行权限：${v.sandbox || "（默认）"} / 审批 ${v.approval || "（默认）"}`,
     `- 工作区：${v.workspace || "（未指定）"}`,
-    ...(v.announceMuted === "1"
+    ...(v.announceOn === "1"
       ? [
-          "- 当前会话语音播报：**已关闭**（用户按下了本会话的喇叭开关）。",
+          "- 当前会话语音播报：**已开启**（总开关与本会话喇叭都为开）。",
+          "这一轮若需要，按第 16 条在回复末尾写 voice 播报稿。",
+        ]
+      : [
+          "- 当前会话语音播报：**已关闭**（总开关或本会话喇叭已关）。",
           "这一轮及之后不要再写 voice 播报稿，也不要说「这条回复会被播报 / 正在播报」——本会话确实不会出声。",
           "全局 voice-settings.json 的 announce.enabled 只是总开关，**不代表本会话**；",
-          "被问到「现在能播报吗 / 播报开没开」时，回答「本会话已关闭语音播报」，不要拿全局 true 当成能播。",
-        ]
-      : []),
+          "被问到「现在能播报吗 / 播报开没开」时，回答「本会话已关闭语音播报」。",
+        ]),
     "",
     "以上是本会话**生效的会话级配置**，每个会话各自独立、互不影响。",
     "全局 config.toml / custom-model.json 的顶层 model 与 effort 只是「新建会话时的默认值」，**不代表当前会话**。",

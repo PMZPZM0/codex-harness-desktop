@@ -163,57 +163,17 @@ export function subscribeAnnounceStatus(fn: StatusListener): () => void {
   return () => { statusListeners.delete(fn); };
 }
 
-/* ── 「播报开关」的**有效状态**（10-25 修「明明开着，Codex 说关了」）──────────────
-   ⛔ 旧实现只把**总开关**的布尔发进会话，而且只在当前窗口里发生翻转才发：
-     · 会话级喇叭（Codex 名字后的 📢）的关/恢复**从不告知模型**；
-     · 总开关在别的会话里被改 / 应用重启后，本会话永远收不到恢复告知；
-     · 模型只能记住几条历史告知 ⇒ 会出现「UI 开着、模型坚信关着」的自相矛盾。
-   ⇒ 现在把「总开关 ∧ 本会话未静音」这个**有效状态**放在总线，由桥统一比对并补发；
-     每个会话还落一份「最后一次告知过的状态」，用于切会话/重启后纠偏。 */
+/* ── 播报「有效状态」的总开关半边（10-25）──────────────────────────────────────
+   ⛔ 现在不再往对话里发可见告知（用户令：「不要每次切换还发个消息出去」）。
+      发送前的 `buildSessionScope` 会读这里，把「当前会话语音播报：已开启/已关闭」
+      写进会话的 developer instructions（隐藏注入，输入框与消息里都看不到）。
+   ⛔ 会话级静音走 `isAnnounceMutedForThread`；两者一起才是有效状态。 */
 let announceGlobalEnabled: boolean | null = null;
-const globalEnabledListeners = new Set<(enabled: boolean | null) => void>();
 
 export function setAnnounceGlobalEnabled(enabled: boolean): void {
-  if (announceGlobalEnabled === enabled) return;
   announceGlobalEnabled = enabled;
-  for (const fn of globalEnabledListeners) {
-    try { fn(enabled); } catch { /* 单个订阅者失败不影响执行端 */ }
-  }
 }
 
 export function getAnnounceGlobalEnabled(): boolean | null {
   return announceGlobalEnabled;
-}
-
-export function subscribeAnnounceGlobalEnabled(fn: (enabled: boolean | null) => void): () => void {
-  globalEnabledListeners.add(fn);
-  return () => { globalEnabledListeners.delete(fn); };
-}
-
-/* 每个会话「最后一次**已告知模型**的有效状态」——切会话/重启后的纠偏依据。
-   ⛔ 只记**真的发出去**的状态（通知被会话闸拦下时不记），否则会把旧值当真相。 */
-const NOTICE_STATE_KEY = "announce-notice-state-v1";
-function readNoticeStates(): Record<string, boolean> {
-  try {
-    const raw = JSON.parse(localStorage.getItem(NOTICE_STATE_KEY) || "{}");
-    if (!raw || typeof raw !== "object") return {};
-    const out: Record<string, boolean> = {};
-    for (const [key, value] of Object.entries(raw)) if (typeof value === "boolean") out[key] = value;
-    return out;
-  } catch {
-    return {};
-  }
-}
-const noticeStates = readNoticeStates();
-
-export function getAnnounceNoticeState(threadId: string): boolean | null {
-  const id = String(threadId ?? "");
-  return id && id in noticeStates ? noticeStates[id] : null;
-}
-
-export function recordAnnounceNotice(threadId: string, enabled: boolean): void {
-  const id = String(threadId ?? "");
-  if (!id || noticeStates[id] === enabled) return;
-  noticeStates[id] = enabled;
-  try { localStorage.setItem(NOTICE_STATE_KEY, JSON.stringify(noticeStates)); } catch { /* 隐私模式 */ }
 }
