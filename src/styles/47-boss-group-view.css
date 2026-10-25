@@ -218,60 +218,92 @@
 /* 与成员图标同一断点（避免窄屏只剩一个孤零零的问号） */
 @media (max-width: 640px) { .boss-help-btn { display: none; } }
 
-/* ── BOSS 会话的**专属**空白态（10-25 用户令：跟欢迎界面、跟其它会话都没关系）──
-   ⛔ 不复用 .welcome-state：那是「新会话欢迎页」（大字标题铺上半屏 + 输入框下方一排快捷任务）。
-   ⛔ 定位与 welcome-state 同一套（absolute 相对 .timeline-wrap + 下方留 54vh 让位输入框），
-      但内容是**一张卡片**，且只在「当前是 BOSS 会话 && 没有回合」时渲染。 */
-/* ⛔ 不能用 `align-items:center + padding-bottom:54vh` 那套（welcome-state 的写法）：
-   矮窗口里可用高度不够时，flex 会**向上溢出**，卡片顶被裁掉（实测皇冠整个不见了）。
-   这里改成 column + 明确的上留白（11vh）+ 下让位（32vh），卡片永远从上方往下排。 */
-.boss-intro {
+/* ── BOSS 会话的**专属**欢迎界面（10-25 用户令第二轮）──
+   ⛔ 骨架**沿用普通会话欢迎页**（`.welcome-state`：图标 → 渐变大字标题 → 小字副标题，
+      **居中**浮在上半屏）—— 用户原话：「普通会话的欢迎界面，那个就挺好看的，你稍微优化一下就好了」
+      +「欢迎界面的文案要跟普通会话的欢迎界面一样居中啊」。
+      ⇒ 这里不另起炉灶，只在三处做区分：
+        · 图标：普通会话是灰蓝 `</>` 水印 ⇒ 这里换**琥珀色皇冠**；
+        · 标题渐变：普通会话是品牌蓝 `--link` ⇒ 这里用**琥珀 `--ic-amber`**；
+        · 内容：普通会话讲通用待办 ⇒ 这里讲**群编排**（拉群 → 干活 → 验收打回）。
+   ⛔ **不做成大卡片**（用户令：「不要复用大卡片样式」）—— 靠留白与字号分层，不靠盒子。
+   ⛔ 定位与 `.welcome-state` 同一套（absolute 相对 .timeline-wrap + 下方留 54vh 让位输入框），
+      这样两屏的**垂直节奏**一致（内容浮在上半屏、输入框在下半屏），视觉上统一而不雷同。 */
+.boss-welcome {
   position: absolute; inset: 0;
-  display: flex; flex-direction: column; align-items: center;
-  padding: clamp(32px, 11vh, 110px) 24px clamp(120px, 32vh, 250px);
+  display: flex; flex-direction: column;
+  justify-content: center; align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: clamp(8px, 2vh, 24px) 24px calc(54vh + 40px);
+  animation: 0.34s cubic-bezier(0.22, 0.61, 0.36, 1) both welcome-in;
+  pointer-events: none;
   overflow: hidden;
-  pointer-events: none;   /* 只有卡片本身可交互，不挡时间线的滚动/选中 */
 }
-.boss-intro-card {
-  pointer-events: auto;
-  max-width: 600px;
-  display: flex; flex-direction: column; align-items: center; gap: 9px;
+.boss-welcome > * { pointer-events: auto; }
+/* 大图标：琥珀色皇冠（普通会话是灰蓝 `</>` 水印 ⇒ 一眼可分） */
+.boss-welcome-mark {
+  display: flex; align-items: center; justify-content: center;
+  width: 76px; height: 76px;
+  color: var(--ic-amber, var(--amber));
+  opacity: 0.55;
+  -webkit-user-select: none; user-select: none;
+  pointer-events: none;
+  margin: 0;
+}
+/* 大字标题：琥珀色渐变（普通会话是品牌蓝 `--link` 渐变） */
+.boss-welcome-title {
+  margin: 0;
+  font-size: 30px; font-weight: 650; letter-spacing: 0.3px;
+  background: linear-gradient(
+    100deg,
+    var(--ic-amber, var(--amber)) 0%,
+    color-mix(in srgb, var(--ic-amber, var(--amber)) 45%, var(--text)) 55%,
+    var(--text) 100%
+  );
+  background-clip: text; -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent; color: var(--text);
   text-align: center;
-  padding: 20px 20px 16px;
-  border: 1px solid color-mix(in srgb, var(--amber) 22%, var(--line));
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--amber) 5%, var(--panel));
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.10);
 }
-.boss-intro-mark {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 44px; height: 44px; border-radius: 50%;
-  color: color-mix(in srgb, var(--amber) 88%, var(--text));
-  background: color-mix(in srgb, var(--amber) 12%, var(--panel));
-  border: 1px solid color-mix(in srgb, var(--amber) 26%, var(--line));
+/* 小字副标题：一句说清这条会话干什么（与普通会话 .welcome-sub 同宽同字号 ⇒ 观感一致） */
+.boss-welcome-sub {
+  margin: 0; max-width: 440px; text-align: center;
+  font-size: 14px; line-height: 1.8; letter-spacing: 0.2px;
+  color: var(--muted);
 }
-.boss-intro-title { margin: 2px 0 0; font-size: 17px; font-weight: 600; color: var(--text); }
-.boss-intro-sub { margin: 0; font-size: 12.5px; line-height: 1.72; color: var(--muted); }
-.boss-intro-chips { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin-top: 6px; }
-.boss-intro-chip {
-  padding: 6px 13px;
-  border: 1px solid color-mix(in srgb, var(--amber) 26%, var(--line));
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--amber) 7%, var(--panel));
+/* 行动区：主按钮（叫出项目地址对话框）+ 快捷键提示 */
+.boss-welcome-actions {
+  margin: 2px 0 0;
+  display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: center;
+}
+.boss-welcome-primary {
+  padding: 7px 16px;
+  border: 1px solid color-mix(in srgb, var(--ic-amber, var(--amber)) 45%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ic-amber, var(--amber)) 12%, transparent);
   color: var(--text);
-  font: inherit; font-size: 12px; line-height: 1.4;
-  cursor: pointer;
-  appearance: none;
-  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+  font: inherit; font-size: 12.5px; font-weight: 600; line-height: 1.4;
+  cursor: pointer; appearance: none;
+  transition: background 120ms ease, border-color 120ms ease;
 }
-.boss-intro-chip:hover {
-  border-color: color-mix(in srgb, var(--amber) 52%, var(--line));
-  background: color-mix(in srgb, var(--amber) 12%, var(--panel));
-  transform: translateY(-1px);
+.boss-welcome-primary:hover {
+  background: color-mix(in srgb, var(--ic-amber, var(--amber)) 20%, transparent);
+  border-color: color-mix(in srgb, var(--ic-amber, var(--amber)) 62%, var(--line));
 }
-.boss-intro-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.boss-intro-foot { margin: 2px 0 0; font-size: 11px; color: var(--faint, var(--muted)); }
-
+.boss-welcome-primary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.boss-welcome-keys { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11.5px; }
+.boss-welcome-kbd {
+  font-family: inherit; font-size: 10.5px; line-height: 1.5;
+  padding: 1px 6px; border-radius: 5px;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--muted);
+}
+/* 已选定的项目地址回显（选完地址后仍停在欢迎界面 ⇒ 用户要能看到成员会在哪干活） */
+.boss-welcome-dir { margin: 0; font-size: 11.5px; color: var(--muted); text-align: center; }
+.boss-welcome-dir code {
+  font-family: var(--mono, monospace); font-size: 11px;
+  padding: 1px 6px; border-radius: 5px;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+}
 /* BOSS 会话侧栏按钮与「搜索任务」同款：靠左对齐 + 图标（用户令） */
 .sidebar-quick .sidebar-quick-btn.sidebar-quick-boss {
   height: 32px;
@@ -291,6 +323,15 @@
 
 /* 顶栏成员按钮开合态 */
 .boss-members-btn.boss-members-btn-open { color: var(--amber); }
+/* ⛔ 10-25 用户要求第二轮：**未开始对话时成员图标置灰不可点击**，开始对话后可点开成员列表。
+   ⛔ 用 aria-disabled（不是原生 disabled）：原生 disabled 的按钮不可聚焦 ⇒ 键盘用户拿不到，
+      也读不到 title 里的原因说明。 */
+.boss-members-btn.boss-members-btn-idle,
+.boss-members-btn.boss-members-btn-idle:hover {
+  color: var(--faint);
+  background: transparent;
+  cursor: not-allowed;
+}
 
 /* ── 10-25 用户令：群聊专属界面整块删除（BOSS 会话 = 普通会话）──
    原 .boss-stage* / .boss-rail* 规则随 BossGroupStage.tsx 一并移除；

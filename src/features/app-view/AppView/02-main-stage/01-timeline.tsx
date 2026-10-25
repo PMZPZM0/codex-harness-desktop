@@ -417,8 +417,9 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     <div className="timeline-wrap" ref={timelineWrapRef}>
                   {thread && <MemoMessageRuler turns={thread.turns} scrollRef={scrollRef} containerRef={timelineWrapRef} onJump={jumpToTurnInWindow} compactionTurnId={compactionMark.turnId} compactionAtEnd={compactionMark.atEnd} />}
                   {/* BOSS 会话的空白态：与 timeline 同级（绝对定位相对 .timeline-wrap），
-                     不进滚动内容流 —— 普通会话完全不受影响。 */}
-                  {isBossEmpty ? <BossThreadIntro onPick={(text) => { app.setPrompt(text); app.composerInputRef?.current?.focus(); }} /> : null}
+                     不进滚动内容流 —— 普通会话完全不受影响。
+                     ⛔ 传入**本会话自己的 cwd** ⇒ 多个 BOSS 会话各显示各的项目地址（不串项）。 */}
+                  {isBossEmpty ? <BossThreadIntro cwd={thread?.cwd ?? ""} /> : null}
                   <div className={`timeline ${isEmpty ? "empty-state" : ""}`} ref={scrollRef} onScroll={onTimelineScroll} data-history-hidden={historyPlan.hiddenCount} data-history-below={historyPlan.hiddenBelow} data-history-total={historyPlan.hiddenStubs + timelineWindow.ordered.length}>
                   {/* BOSS 会话的空白态是**它自己的一套**（10-25 用户令：跟欢迎界面没关系）——
                      普通会话仍走 welcome-state，这里两者互不影响。 */}

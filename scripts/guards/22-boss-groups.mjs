@@ -25,6 +25,8 @@ const ok = (condition, message) => {
   if (!condition) fails++;
 };
 const throws = (fn) => { try { fn(); return null; } catch (error) { return String(error?.message ?? error); } };
+/** 剥掉块注释与整行 // 注释（负向断言专用 —— 注释里提到某个类名不该被判红）。 */
+const codeOnly = (src) => String(src).replace(/\/\*[\s\S]*?\*\//g, "").split(/\r?\n/).filter((l) => !/^\s*\/\//.test(l)).join("\n");
 
 /* ── 0. 产物必须存在（预检会先 build，缺产物说明 build 挂了，别静默当 0 条通过） ── */
 let state = null;
@@ -280,8 +282,15 @@ if (state) {
   const sidebar = read("src/features/app-view/AppView/01-sidebar-shell.tsx");
   ok(/bossThreads\.bossIds\.includes\(currentThreadId\)/.test(sidebar),
     "侧栏选中态派生自「当前会话 = 某群 boss 线程」");
-  ok(/setBossDirDialog\(true\)/.test(sidebar) && /startNewThread\(\)/.test(sidebar) && !/app\.openThread\(home\)/.test(sidebar),
-    "点 BOSS 会话 = 弹项目地址对话框 + **新建一个全新会话**（⛔ 不复用上一次的；⛔ 也不再「有群就跳旧群」）");
+  /* ⛔⛔ 10-25 用户实测（第二轮）：「点 BOSS 会话，先出来这个弹窗，不会跳转到 BOSS 欢迎界面，
+     再跳这个弹窗」⇒ **顺序反了**。现在契约是：
+     ① 点「BOSS 会话」→ **先落进 BOSS 欢迎界面**（置 pending + 起一个全新空会话）；
+     ② 项目地址对话框由**欢迎界面上的按钮**再叫出来（走全局 store boss-dir-dialog-store）。
+     ⛔ 侧栏按钮自己**不再**直接弹对话框。 */
+  ok(/setBossPending\(true\)/.test(sidebar) && /startNewThread\(\)/.test(sidebar) && !/app\.openThread\(home\)/.test(sidebar),
+    "点 BOSS 会话 = **先落进 BOSS 欢迎界面**（pending + 全新空会话）；⛔ 不复用上一次的；⛔ 也不再「有群就跳旧群」");
+  ok(!/setBossDirDialog\(true\)/.test(sidebar),
+    "⛔ 侧栏按钮不再直接弹项目地址对话框（由欢迎界面的按钮触发 ⇒ 用户先看到欢迎界面）");
   const bossStore = read("src/features/boss-group-view/boss-threads-store.mjs");
   ok(/boss-home-thread/.test(bossStore) && /setBossHomeThreadId/.test(bossStore),
     "没群时的 BOSS 会话有固定锚点（localStorage boss-home-thread）");
@@ -315,6 +324,26 @@ if (state) {
   ok(/BossProjectDirDialog/.test(read("src/features/app-view/AppView/01-sidebar-shell.tsx"))
     && /createBossProjectDir/.test(read("src/features/app-view/AppView/01-sidebar-shell.tsx")),
     "新建 BOSS 会话走**应用内对话框**（选目录 / 在软件所在盘自动新建），⛔ 不用系统弹窗或内联 toast");
+  /* ⛔⛔ 10-25 用户实测（第二轮）：「点 BOSS 会话，先出来这个弹窗，不会跳转到 BOSS 欢迎界面，
+     再跳这个弹窗」⇒ 顺序必须是 **欢迎界面 → 欢迎界面上的按钮 → 地址对话框**。
+     ⇒ 对话框的开关必须走**全局 store**（欢迎界面在消息区、对话框在侧栏壳，两处要能互相触发）。 */
+  ok(/openBossDirDialog/.test(read("src/features/boss-group-view/BossThreadIntro.tsx"))
+    && !/openBossDirDialog/.test(read("src/features/app-view/AppView/01-sidebar-shell.tsx")),
+    "⛔ 项目地址对话框由 BOSS 欢迎界面上的按钮叫出来（⇒ 先看到欢迎界面，再弹对话框）；侧栏按钮自己不弹");
+  /* ⛔ 顺序契约（用户实测第二轮）：点「BOSS 会话」⇒ **先渲染欢迎界面、再自动弹对话框**。
+     ⇒ 侧栏只置「自动弹出」标记（autoOpenBossDirDialog），由欢迎界面挂载后消费（consumeBossDirAutoOpen）再开。 */
+  ok(/autoOpenBossDirDialog/.test(read("src/features/app-view/AppView/01-sidebar-shell.tsx"))
+    && /consumeBossDirAutoOpen/.test(read("src/features/boss-group-view/BossThreadIntro.tsx")),
+    "⛔ 点 BOSS 会话 = 先渲染欢迎界面，**再自动弹**项目地址对话框（顺序反了用户会以为没跳欢迎界面）");
+  ok(/export function openBossDirDialog/.test(read("src/features/boss-group-view/boss-dir-dialog-store.mjs"))
+    && /export function closeBossDirDialog/.test(read("src/features/boss-group-view/boss-dir-dialog-store.mjs")),
+    "地址对话框开关是**全局 store**（跨组件触发：欢迎界面 ↔ 侧栏壳）");
+  /* ⛔ 快捷键键位**单一真相源**：侧栏行尾 kbd 徽标 + BOSS 欢迎界面 + 快捷键清单三处共用一份，
+     否则改键位必漏一处（历史教训：普通会话的 Ctrl+N 就是这么散在三处的）。 */
+  ok(/export function bossShortcutLabel/.test(read("src/features/boss-group-view/boss-shortcut.ts"))
+    && /bossShortcutLabel\(\)/.test(read("src/features/app-view/AppView/01-sidebar-shell.tsx"))
+    && /bossShortcutLabel\(\)/.test(read("src/features/boss-group-view/BossThreadIntro.tsx")),
+    "BOSS 会话快捷键是**单一真相源**（侧栏 kbd 徽标 + 欢迎界面共用 boss-shortcut.ts）");
   /* ⛔⛔ 10-25 用户令：「记忆板块里面加一个BOSS会话记忆板块，跟普通会话完全拆开」
      +「删除了BOSS会话，这里就同步更新，新建了就是新的」。
 
@@ -389,8 +418,8 @@ if (state) {
     "⛔ 侧栏 BOSS 那段注释没有嵌套坏掉（之前两段块注释套在一起）");
   ok(!/openThread\(groupBoss\)/.test(bossSideSrc),
     "⛔ 点「BOSS 会话」不再「有群就跳旧群」⇒ 行为不随有没有群而变（用户实测：主仓不弹、PPcode 弹）");
-  ok(!/setBossDirDialog\(true\);\s*startNewThread\(\)/.test(bossSideSrc),
-    "⛔ 点按钮只弹对话框、**不新建会话**（原来建两次 ⇒ 两个空会话，点取消也留一个）");
+  ok(/setBossPending\(true\)/.test(bossSideSrc) && /startNewThread\(\)/.test(bossSideSrc),
+    "⛔ 点按钮**先落进 BOSS 欢迎界面**（置 pending + 起全新空会话）；会话在选定地址后才真正建");
   ok(/BossMemoryPanel/.test(read("src/features/settings-memory/MemoryCenterSection.tsx"))
     && existsSync(join(ROOT, "src/features/settings-memory/BossMemoryPanel.tsx")),
     "记忆设置页有独立的「BOSS 会话记忆」板块（与项目共享记忆库分开）");
@@ -435,9 +464,24 @@ if (state) {
     "群列表的成员数不含被移出的（弹窗下拉按群显示人数）");
   ok(/BossThreadIntro/.test(timeline) && /isEmpty && !isBossEmpty/.test(timeline),
     "BOSS 会话空态走自己的组件（BossThreadIntro），普通欢迎页只给非 BOSS 会话");
-  ok(!/boss-welcome/.test(read("src/styles/47-boss-group-view.css")) && /boss-intro-card/.test(read("src/styles/47-boss-group-view.css")),
-    "BOSS 空态样式是独立的卡片（⛔ 不复用 .welcome-state 那套）");
-  /* ⛔⛔ 10-25 实测：用 isEmpty 判 BOSS 空态会漏 —— 它要求 thread 为 null，而「会话已建出来但
+  /* ⛔⛔ 10-25 用户令第二轮：「不要复用大卡片样式，整体更简洁」+「欢迎界面的文案要跟普通会话的
+     欢迎界面一样居中啊」⇒ BOSS 欢迎界面沿用**普通会话那套骨架**（图标 → 渐变大字标题 → 小字副标题，
+     **居中**浮在上半屏），只换视觉语言（琥珀色皇冠 + 琥珀渐变标题）+ 换内容（群编排）。
+     ⛔ 且不共用普通会话的 .welcome-state 那一套类名（各自独立 ⇒ 改一边不影响另一边）。 */
+  const bossWelcomeCss = codeOnly(read("src/styles/47-boss-group-view.css"));
+  ok(/boss-welcome-mark/.test(bossWelcomeCss) && /boss-welcome-title/.test(bossWelcomeCss)
+    && /boss-welcome-sub/.test(bossWelcomeCss),
+    "BOSS 欢迎界面是独立的一套分层排版（大图标 / 大字标题 / 小字副标题）");
+  ok(!/\.boss-intro-card[\s{,]/.test(bossWelcomeCss) && !/\.boss-welcome-card[\s{,]/.test(bossWelcomeCss),
+    "⛔ BOSS 欢迎界面不做成大卡片（用户令：不要复用大卡片样式，整体更简洁）");
+  ok(!/^\s*\.welcome-(state|greet|sub)[\s{,]/m.test(bossWelcomeCss),
+    "⛔ BOSS 欢迎界面不共用普通会话 .welcome-state 那套样式（视觉上明显区分）");
+  ok(/boss-welcome\s*\{[^}]*align-items:\s*center/.test(bossWelcomeCss)
+    && /boss-welcome-sub\s*\{[^}]*text-align:\s*center/.test(bossWelcomeCss),
+    "⛔ BOSS 欢迎界面的文案**居中**（与普通会话欢迎页同一观感）");
+  ok(!/^\s*\.welcome-(state|greet|sub)[\s,{]/m.test(bossWelcomeCss),
+    "⛔ BOSS 欢迎界面不共用普通会话 .welcome-state 那套样式（视觉上明显区分）");
+  /* ⛔ 10-25 实测：用 isEmpty 判 BOSS 空态会漏 —— 它要求 thread 为 null，而「会话已建出来但
      一条消息都没有」时 thread 存在 ⇒ isEmpty 恒 false ⇒ 卡片不渲染 ⇒ 整片空白（用户截图）。 */
   ok(/const noTurns = \(thread\?\.turns \?\? \[\]\)\.length === 0/.test(timeline)
     && /isBossHome = Boolean\(thread\?\.id\)/.test(timeline)
@@ -452,9 +496,31 @@ if (state) {
   ok(existsSync(join(ROOT, "src/features/boss-group-view/BossGroupHelpButton.tsx")),
     "BOSS 会话独有的「?」说明组件在位");
   /* ⛔ 10-25 实测：只认 bossIds 会让「还没建群时的 home 会话」顶栏缺成员图标与「?」——
-     主窗口与独立弹窗用的是同一个 topbarActionsNode，所以两处一起缺。 */
-  ok(/bossThreads\.bossIds\.includes\(String\(bag\.thread\?\.id\)\) \|\| \(bossThreads\.sessionIds \?\? \[\]\)\.includes\(String\(bag\.thread\?\.id\)\)/.test(read("src/features/app-state/parts/part09/02-seg.tsx")),
-    "顶栏成员图标 /「?」都渲染（群 boss 线程 + 已登记的 BOSS 会话）");
+     主窗口与独立弹窗用的是同一个 topbarActionsNode，所以两处一起缺。
+     ⛔ 10-25 第二轮：改成**共享判定** isBossSessionContext（顶栏与时间线同源，
+        再多认一种：BOSS 欢迎界面 pending 时 —— 那时连 thread id 都没有，
+        但用户要求「欢迎界面右上角要有成员图标与问号图标」）。 */
+  ok(/isBossSessionContext\(bossThreads, bag\.thread\?\.id\)/.test(read("src/features/app-state/parts/part09/02-seg.tsx")),
+    "顶栏成员图标 /「?」走共享判定 isBossSessionContext（群 boss 线程 + 已登记 BOSS 会话 + BOSS 欢迎界面）");
+  ok(/export function isBossSessionContext/.test(read("src/features/boss-group-view/boss-threads-store.mjs")),
+    "共享判定 isBossSessionContext 在位（顶栏与时间线同一口径 ⇒ 不会再漂移出「一边有一边没有」）");
+  /* ⛔ 10-25 用户要求第二轮：成员图标在**未开始对话**时置灰不可点击，开始对话后可点开成员列表。 */
+  ok(/boss-members-btn-idle/.test(read("src/features/boss-group-view/BossGroupMembersButton.tsx"))
+    && /aria-disabled=\{!started\}/.test(read("src/features/boss-group-view/BossGroupMembersButton.tsx"))
+    && /boss-members-btn-idle/.test(bossWelcomeCss),
+    "成员图标未开始对话时置灰且不可点击（aria-disabled + 灰样式），开始对话后可点开成员列表");
+  /* ⛔⛔ 10-25 用户令第三轮：**BOSS 会话可以创建多个、互不干扰** ⇒ 一切「选中哪个群 / 选了哪个目录」
+     都必须**按会话 id** 记，不能是全局单值（否则 A 会话选的群会跑到 B 会话上 ⇒ 成员列表串项）。 */
+  const panelStoreSrc = read("src/features/boss-group-view/panel-store.mjs");
+  ok(/groupIdByThread/.test(panelStoreSrc) && !/let state = \{ open: false, groupId: "" \}/.test(panelStoreSrc),
+    "⛔ 面板的「选中群」按会话 id 记（groupIdByThread）—— BOSS 会话可创建多个，各会话互不串项");
+  ok(/bossPanelGroupFor\(threadId\)/.test(read("src/features/boss-group-view/BossGroupMembersButton.tsx"))
+    && !/groups\[0\]\?\.id/.test(read("src/features/boss-group-view/BossGroupMembersButton.tsx")),
+    "⛔ 成员按钮只认**本会话自己的群**，不回落到别的群（回落到 groups[0] 就是串项）");
+  ok(/dirByThread/.test(read("src/features/boss-group-view/boss-dir-dialog-store.mjs")),
+    "⛔ 已选项目地址按会话 id 记（dirByThread）—— 多个 BOSS 会话各用各的项目目录");
+  ok(/cwd=\{thread\?\.cwd \?\? ""\}/.test(timeline),
+    "⛔ BOSS 欢迎界面回显**本会话自己的**项目地址（thread.cwd）");
   /* ⛔⛔ 10-25 实测「独立弹窗没有成员图标和问号」：DOM 在、断言全绿，但 CSS 媒体查询把
      `display` 设成了 none（当时断点是 1180，而默认窗口 1080 就命中）。
      ⇒ 隐藏断点必须 ≤640，且断言只认 DOM 存在的写法不可再用于这两个图标。
