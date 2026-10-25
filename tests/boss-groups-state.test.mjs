@@ -106,6 +106,7 @@ test("打回超限 ⇒ 升级（不再无限重试）", { skip }, () => {
   S.submitTask(state, task.id, "v2"); S.recordReview(state, task.id, { by: "boss", verdict: "rejected", reasons: ["r2"] });
   assert.equal(task.status, "escalated");
   assert.ok(task.escalation && task.escalation.reasons.length === 1);
+  assert.deepEqual(task.escalation.options, ["retry", "relax-criteria", "user-takeover"]);
   assert.equal(task.rejects, 2);
 });
 
@@ -151,12 +152,32 @@ test("升级处理：relax 必须带新标准；retry 清锁且计数归零", { 
   S.submitTask(state, task.id, "v"); S.recordReview(state, task.id, { by: "boss", verdict: "rejected", reasons: ["r"] });
   assert.equal(task.status, "escalated");
   assert.throws(() => S.resolveEscalation(state, task.id, "relax-criteria", "  "), /放宽标准必须给出/);
+  /* D：选项名与行为对齐 —— 老值必须还能认（账本里存着改名前快照） */
+  assert.equal(S.normalizeEscalateChoice("retry-with-other-model"), "retry");
+  assert.equal(S.normalizeEscalateChoice("retry"), "retry");
+  assert.equal(S.normalizeEscalateChoice("胡写"), null);
   S.resolveEscalation(state, task.id, "relax-criteria", "新标准（允许占位）");
   assert.equal(task.criteria, "新标准（允许占位）");
   assert.equal(task.status, "queued");
   assert.equal(task.rejects, 0);
   assert.deepEqual(task.lockedAuthors, []);
   assert.equal(group.members.find((m) => m.id === a.id).status, "idle");
+});
+
+test("待审看门狗：交活久了没结论要能被捞出来（只报告，不替模型判）", { skip }, () => {
+  const { state, group } = freshGroup();
+  const [a] = people(group);
+  const fresh = S.addTask(state, { groupId: group.id, title: "刚交的", brief: "", criteria: "c" });
+  S.assignTask(state, fresh.id, a.id); S.markRunning(state, fresh.id, { threadId: "t1" });
+  S.submitTask(state, fresh.id, "v");
+  // 刚交活的：不催
+  assert.equal(S.markReviewStalled(state).length, 0);
+  // 11 分钟没动静：必须被捞出来
+  const stale = S.markReviewStalled(state, fresh.updatedAt + 11 * 60_000);
+  assert.equal(stale.length, 1);
+  assert.equal(stale[0].taskId, fresh.id);
+  // 捞出来之后状态不变（不许宿主自己判通过/打回）
+  assert.equal(fresh.status, "reviewing");
 });
 
 test("预算：过 100% ⇒ 全群暂停，且此后再派活直接拒绝", { skip }, () => {

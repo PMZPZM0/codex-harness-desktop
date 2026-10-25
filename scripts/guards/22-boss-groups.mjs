@@ -304,9 +304,13 @@ if (state) {
      ③ 「这个重试又是什么东西…重试删掉」 */
   const runnerSrc = read("electron/boss-groups/runner.ts");
   /* ⛔⛔ 10-25 用户实测：「成员会话的汇总消息没有发送到主对话…这叫什么群聊」「右侧群成员头像也没有」
-     「成员也没有更新，完全看不懂」（同一 BOSS 会话建过两个群，弹窗停在旧的） */
-  ok(/交活：「\$\{task\.title\}」/.test(runnerSrc) && /postToBoss\(group, `\[群事件\] \$\{deliverer\.name\} 交活/.test(runnerSrc),
-    "成员交活的成品要**汇总到主对话**（否则就是各说各话，不是群聊）");
+     「成员也没有更新，完全看不懂」（同一 BOSS 会话建过两个群，弹窗停在旧的）
+     ⛔ 10-25 审查后：投递方式改成**出站队列合并投递**（成品 + 评审请求合成一条），
+        所以判据从「有 postToBoss(交活…) 直调」改成「settleSubmission 把成品放进队列 delivering 项」。 */
+  ok(/kind: "deliverable"/.test(runnerSrc)
+    && /function settleSubmission[\s\S]{0,1200}?enqueueBoss\(group\.id, \{[\s\S]{0,200}?kind: "deliverable"/.test(runnerSrc)
+    && /\[群事件\] \$\{deliverables\[0\]\.who \?\? "成员"\} 交活/.test(runnerSrc),
+    "成员交活的成品要**汇总到主对话**（出站队列投递；单条且无评审时发全文，与评审同批时成品给摘要、全文在评审正文里）");
   ok(/boss-avatar/.test(read("src/features/boss-group-view/BossGroupPanel.tsx")) && /boss-member-strip/.test(read("src/features/boss-group-view/BossGroupPanel.tsx")),
     "群面板要有成员头像（顶栏头像条 + 成员气泡头像）");
   /* ⛔ 10-25 用户令：「我每次新建，就是全新的，跟旧的不要有任何关系」「BOSS 会话不要归档功能，
@@ -636,6 +640,23 @@ if (state) {
     "⛔ 塞进命令行的提示词要净化为单行且剥掉 shell 元字符（任务说明/验收标准都是外部输入 ⇒ 否则是命令注入）");
   ok(existsSync(join(ROOT, "tests/boss-groups-state.test.mjs")),
     "群编排有行为级测试（状态机 18 条不变量用例，npm test 真跑）");
+
+  /* ── 10-25 审查修的三个缺口（B 成品会丢 / C 待审没人管 / D 选项名不副实）─────────
+     ⛔ 这三条都是"看不出错、但用户会慢慢发现活干完了没人知道"的类型 ⇒ 各钉一条。 */
+  ok(/function enqueueBoss/.test(runnerSrc) && /function flushOutbox/.test(runnerSrc)
+    && /enqueueBoss\(group\.id, \{[\s\S]{0,120}?kind: "deliverable"/.test(runnerSrc)
+    && /enqueueBoss\(group\.id, \{[\s\S]{0,120}?kind: "review"/.test(runnerSrc),
+    "⛔ 成品与评审请求走出站队列（合并投递）—— ⛔ 不许退回「每条各发一条」的直接回投");
+  ok(/CRITICAL_MAX_PER_WINDOW/.test(runnerSrc) && /critical: true/.test(runnerSrc),
+    "⛔ 成品/评审请求用独立配额窗口（与闲聊配额分开），否则成员一多就把成品丢了");
+  ok(/box\.items\.unshift\(\.\.\.items\)/.test(runnerSrc),
+    "⛔ 配额用尽时成品要放回队列重试（⛔ 不许 return false 就丢）");
+  ok(/export function markReviewStalled/.test(bossState) && /markReviewStalled\(state\)/.test(runnerSrc),
+    "⛔ 待审看门狗：交活久了没结论要再催一次（只提醒，⛔ 不许宿主自己判通过）");
+  ok(/export type EscalateChoice = "retry"/.test(read("electron/boss-groups/types.ts"))
+    && /export function normalizeEscalateChoice/.test(bossState)
+    && /"retry-with-other-model"\) return "retry"/.test(bossState),
+    "⛔ 升级选项名与行为对齐（retry = 清锁重排，不换模型），且旧账本里的老值必须兼容");
 }
 
 console.log(`\n【boss-groups】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

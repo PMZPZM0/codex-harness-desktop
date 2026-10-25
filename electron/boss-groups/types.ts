@@ -92,7 +92,13 @@ export type GroupTask = {
   budgetWarned?: "80" | "100";
 };
 
-export type EscalateChoice = "retry-with-other-model" | "relax-criteria" | "user-takeover";
+/**
+ * 升级选项（P0：只出选项，不做自动决策）
+ * ⛔ 10-25 审查修正：原值 `retry-with-other-model` **名不副实** —— 实际既不换模型也不改任何设置，
+ *    只是解锁作者 + 清零打回计数后重新排队。按"名字必须描述真实行为"改名为 `retry`；
+ *    旧值由 state.ts 的 `normalizeEscalateChoice` 兼容（账本里可能存着老值）。
+ */
+export type EscalateChoice = "retry" | "relax-criteria" | "user-takeover";
 
 export type GroupPolicy = {
   /** 打回上限（Magentic 的 stall ≤2 同款思路）。默认 2。 */

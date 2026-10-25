@@ -91,13 +91,13 @@ export const GROUP_ESCALATE_TOOL = {
   type: "function",
   name: "group_escalate",
   description:
-    "任务升级后的三选一（打回超限 / 全群都被锁时用）：retry-with-other-model（换模型重做）、"
+    "任务升级后的三选一（打回超限 / 全群都被锁时用）：retry（清锁重排：解锁作者 + 清零打回计数后按原样重做，⛔ 不换模型）、"
     + "relax-criteria（放宽标准：必须给 note 写新标准）、user-takeover（用户自己接手）。",
   inputSchema: {
     type: "object",
     properties: {
       taskId: { type: "string" },
-      choice: { type: "string", enum: ["retry-with-other-model", "relax-criteria", "user-takeover"] },
+      choice: { type: "string", enum: ["retry", "relax-criteria", "user-takeover"] },
       note: { type: "string", description: "relax-criteria 时必填：新的验收标准原文" },
     },
     required: ["taskId", "choice"],

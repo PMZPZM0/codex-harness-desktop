@@ -15,9 +15,8 @@ import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { bossStore } from "../boss-groups/store";
 import { addTaskForBoss, browserStatus, createGroupForBoss, dispatchTask, memberForBoss, pinForBoss, poolForBossIpc, postToBoss, reviewTask, sayToGroup, setBossEventSink, statusForBoss, tickAll, watchBossReplies } from "../boss-groups/runner";
-import { recordReview, resolveEscalation } from "../boss-groups/state";
+import { normalizeEscalateChoice, recordReview, resolveEscalation } from "../boss-groups/state";
 import { backfillFromGroups, clearBossMemory, listBossSessions, registerBossSession, renameBossSession, unregisterBossSession } from "../boss-groups/session-registry";
-import type { EscalateChoice } from "../boss-groups/types";
 import { broadcastCodexEvent } from "./window-bus";
 
 /** BOSS 会话的角色提示（写进 `<userData>/boss-home/AGENTS.md`，引擎自动注入）。
@@ -222,9 +221,11 @@ export const bossGroupsFeature = defineFeature<null>({
 
     ipcHost.handle("boss-groups:escalate", async (_event, input: any) => {
       const state = await bossStore.load();
-      const choice = String(input?.choice ?? "") as EscalateChoice;
-      if (!["retry-with-other-model", "relax-criteria", "user-takeover"].includes(choice)) {
-        throw new Error(`choice 只能是 retry-with-other-model / relax-criteria / user-takeover（收到「${choice}」）`);
+      /* ⛔ 兼容旧值：账本里可能存着改名前的 `retry-with-other-model`（历史 escalation 快照），
+         用户从旧界面点过来时不能因为改名就报错。 */
+      const choice = normalizeEscalateChoice(input?.choice);
+      if (!choice) {
+        throw new Error(`choice 只能是 retry / relax-criteria / user-takeover（收到「${String(input?.choice ?? "")}」）`);
       }
       const task = resolveEscalation(state, String(input?.taskId ?? ""), choice, String(input?.note ?? ""));
       bossStore.save();
