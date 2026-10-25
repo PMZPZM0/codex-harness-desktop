@@ -5,23 +5,11 @@
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 import { MainStageTimeline } from "./02-main-stage/01-timeline";
 import { MainStageComposer } from "./02-main-stage/03-composer";
-import { useEffect, useSyncExternalStore } from "react";
-import { BossGroupStage, closeBossStage, getBossPanelState, subscribeBossPanel } from "../../boss-group-view";
 
 export function AppViewMainStage({ app }: { app: HarnessAppApi }) {
-  /* BOSS 会话专属界面（10-25 用户令）：stage 激活时主舞台整块渲染成群聊视图。
-     ⛔ 自动退出（10-25 用户实测「切到别的会话，主舞台空白，按钮还亮着」后重做）：
-        主路径是**事件驱动** —— openThread / startNewThread 一进去就 closeBossStage（见
-        app-state 那两处）；这里只做**兜底**：会话 id 与「进入 BOSS 那一刻的会话」不同就退出。
-     ⛔⛔ 基线存在 store（bossStage.enterThreadId），⛔ 不放 useRef —— 主舞台被卸载重挂时
-        ref 归零会把「当前会话」当成新基线，于是永远判不出用户已经切走 ⇒ 主舞台恒 hidden。 */
-  const bossStage = useSyncExternalStore(subscribeBossPanel, getBossPanelState);
-  const currentThreadId = app.thread?.id ?? "";
-  useEffect(() => {
-    if (!bossStage.stage) return;
-    // 空 id 是切换/新建过程中的瞬态，不算「切到了别的会话」（新会话由 startNewThread 直接关）
-    if (currentThreadId && currentThreadId !== bossStage.enterThreadId) closeBossStage();
-  }, [bossStage.stage, bossStage.enterThreadId, currentThreadId]);
+  /* ⛔ 10-25 用户令：主舞台只有「正常对话框」这一种形态。曾经做过 BOSS 群聊覆盖层
+     （visibility 隐藏原会话 + 群聊气泡），用户实测「一片空白 / 太丑」并明确要求
+     「新建一个会话，常驻成 BOSS 会话」⇒ 覆盖层整块删除，BOSS 会话就是普通会话。 */
   const {
     TURNS_PAGE,
     TURN_WINDOW,
@@ -254,7 +242,7 @@ export function AppViewMainStage({ app }: { app: HarnessAppApi }) {
     workspace,
   } = app;
   return (
-    <main className="workspace" style={bossStage.stage ? { visibility: "hidden" } : undefined}>
+    <main className="workspace">
     
             <MainStageTimeline app={app} />
     
@@ -262,8 +250,6 @@ export function AppViewMainStage({ app }: { app: HarnessAppApi }) {
                 任务清单改由输入框上方的回合状态胶囊承载（「步骤 N/M · X 个文件已修改」，悬停展开）。 */}
     
             <MainStageComposer app={app} />
-            {/* BOSS 会话专属界面：同网格覆盖层（⛔ 主舞台保持挂载，切进切出零重建） */}
-            {bossStage.stage ? <BossGroupStage /> : null}
           </main>
   );
 }

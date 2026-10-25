@@ -217,101 +217,18 @@
 /* 顶栏成员按钮开合态 */
 .boss-members-btn.boss-members-btn-open { color: var(--amber, #d29922); }
 
-/* ── 10-25 用户令：BOSS 会话**专属界面**（主舞台整块切换，不是侧边小面板）── */
-.boss-stage {
-  /* ⛔⛔ 必须 absolute 铺满，**不能**用 grid-area（10-25 实测）：`.workspace` 是
-     `grid-template-rows: minmax(0,1fr) auto` 的两行网格，覆盖层用 `grid-area: 1/1/-1/-1`
-     会把自动放置的 timeline 挤到**隐式第三行**（实测 rows 变成 `416px 0px 340px`）——
-     于是群聊界面只有 416px 高、底部多出一条 340px 的空白带（时间线被藏在那里）。
-     absolute + inset:0 不参与网格排版：时间线原地不动（hidden 但占位），覆盖层吃满全高。 */
-  position: absolute; inset: 0;
-  display: flex; flex-direction: column;
-  min-width: 0; min-height: 0;
-  background: var(--bg); z-index: 2;
-  /* ⛔⛔ 必须显式 visible：主舞台在 stage 打开时是 `visibility:hidden`（保留布局与状态），
-     而 visibility **会被子元素继承** —— 不写这行，群聊界面 DOM 齐全却整片看不见
-     （10-25 用户实测「空白」，DOM 里 416px 高、58 字，屏幕上什么都没有）。 */
-  visibility: visible;
-}
-.boss-stage-head {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--line);
-  flex: none;
-}
-.boss-stage-title { display: inline-flex; align-items: center; gap: 7px; font-size: 15px; font-weight: 500; flex: none; }
-.boss-stage-title svg { color: var(--amber, #d29922); }
-.boss-stage-group { font-size: 13px; flex: none; }
-.boss-stage-members { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
-.boss-stage-paused { flex: none; font-size: 11px; color: var(--red, #f85149); border: 1px solid color-mix(in srgb, var(--red, #f85149) 40%, transparent); border-radius: 999px; padding: 1px 8px; }
-.boss-stage-pins { flex: none; display: flex; flex-direction: column; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
-.boss-stage-feed {
-  flex: 1 1 auto; min-height: 0; overflow-y: auto;
-  display: flex; flex-direction: column; gap: 10px;
-  padding: 14px 24px;
-}
-.boss-stage-feed .boss-chat-row { max-width: 72%; }
-.boss-stage-feed .boss-chat-bubble { font-size: 13.5px; padding: 9px 13px; border-radius: 12px; }
-.boss-stage-empty {
-  flex: 1; display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center;
-  color: var(--muted); font-size: 13px; text-align: center;
-}
-.boss-stage-composer {
-  flex: none; display: flex; gap: 8px; align-items: center;
-  padding: 12px 16%;
-  border-top: 1px solid var(--line);
-}
-.boss-stage-composer-input { height: 38px; font-size: 13.5px; }
-.boss-stage-send { flex: none; }
+/* ── 10-25 用户令：群聊专属界面整块删除（BOSS 会话 = 普通会话）──
+   原 .boss-stage* / .boss-rail* 规则随 BossGroupStage.tsx 一并移除；
+   右侧群动态面板（.boss-panel*）与顶栏成员入口（.boss-members-*）保留。 */
 
-/* 正常群聊（10-25 用户令）：只有「你」在右；BOSS/成员在左 */
+/* 正常群聊语义：只有「你」在右；BOSS/成员在左 */
 .boss-chat-bubble[data-kind="chat-boss"] .who { color: var(--amber, #d29922); font-weight: 600; }
 .boss-panel-feed .boss-chat-row { max-width: 88%; }
 
-/* ── 10-25 群聊重构：汇总过滤 / 成员头像轨 / 常驻成员入口 ── */
-
-/* stage 布局：左 = 群聊主列（feed+composer），右 = 成员头像轨（原专家团轨道位置） */
-.boss-stage-body { flex: 1 1 auto; min-height: 0; display: flex; }
-.boss-stage-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
-.boss-stage-count { flex: none; font-size: 12px; color: var(--muted); }
-.boss-stage-dynamic { flex: none; font-size: 11px; }
-.boss-stage-dynamic-on { color: var(--amber, #d29922); border-color: color-mix(in srgb, var(--amber, #d29922) 40%, var(--line)); }
-
-/* 成员头像轨（复用专家团轨道的视觉语言：渐变底 + 状态环） */
-.boss-stage-rail {
-  flex: none; width: 64px;
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
-  padding: 12px 6px;
-  border-left: 1px solid var(--line);
-  overflow-y: auto;
-}
-.boss-rail-node { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 100%; }
-.boss-rail-avatar {
-  width: 34px; height: 34px; border-radius: 50%;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 14px; font-weight: 600; color: #fff;
-  background: linear-gradient(135deg, #7aa2f7, #9d7cd8);
-  border: 2px solid var(--line-strong);
-}
-.boss-rail-avatar[data-status="busy"] { border-color: var(--ok, #3fb950); }
-.boss-rail-avatar[data-status="reviewing"] { border-color: var(--amber, #d29922); }
-.boss-rail-avatar[data-status="locked"] { border-color: var(--red, #f85149); }
-.boss-rail-node small { font-size: 10px; color: var(--muted); max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 面板头部「群动态」开关（原 .boss-stage-dynamic，随覆盖层删除后归到面板名下） */
+.boss-panel-dynamic { flex: none; font-size: 11px; }
+.boss-panel-dynamic.is-on { color: var(--amber, #d29922); border-color: color-mix(in srgb, var(--amber, #d29922) 40%, var(--line)); }
 
 /* popover 里的群选择器与提示 */
 .boss-members-pop-select { flex: 1; min-width: 0; max-width: none; }
 .boss-members-pop-hint { font-size: 10.5px; color: var(--faint, var(--muted)); border-top: 1px dashed var(--line); padding-top: 6px; }
-
-/* 头部成员图标（10-25 用户令：图标点击展示成员，0 人也在） */
-.boss-stage-members-btn {
-  display: inline-flex; align-items: center; gap: 5px;
-  height: 26px; padding: 0 10px;
-  border: 1px solid var(--line); border-radius: 999px;
-  background: var(--panel); color: var(--muted);
-  font: inherit; font-size: 12px; cursor: pointer;
-  flex: none;
-  appearance: none;
-}
-.boss-stage-members-btn:hover { color: var(--text); border-color: var(--line-strong); }
-.boss-stage-members-btn-on { color: var(--amber, #d29922); border-color: color-mix(in srgb, var(--amber, #d29922) 40%, var(--line)); }
-.boss-rail-empty { font-size: 10.5px; color: var(--faint, var(--muted)); text-align: center; line-height: 1.6; padding: 8px 2px; }

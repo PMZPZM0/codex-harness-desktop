@@ -2,8 +2,7 @@
  * AppViewSidebarShell —— AppView 的 JSX 第 1 段（09-22 从 AppView.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
-import { Fragment, useEffect, useState, useSyncExternalStore } from "react";
-import { closeBossStage, getBossPanelState, openBossStage, subscribeBossPanel } from "../../boss-group-view/panel-store.mjs";
+import { Fragment, useEffect, useState } from "react";
 import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, useFunctionMenuConfig } from "../../function-menu";
 import { hk } from "../../../lib/hk";
 import {
@@ -158,8 +157,27 @@ import { CloseConfirmDialog } from "../../../components/CloseConfirmDialog";
 import { FileTrustDialog } from "../../../components/FileTrustDialog";
 
 export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppApi; onOpenSettings?: (page: string) => void }) {
-  /* BOSS 会话面板开合（10-24）：给侧栏按钮「选中效果」——用户点名要的。订阅模块级 store。 */
-  const bossStageOn = useSyncExternalStore(subscribeBossPanel, getBossPanelState).stage;
+  /* ── BOSS 会话 = **一个普通会话**（10-25 用户令，推翻覆盖层）──────────────────
+     用户原话：「一个正常对话框不会做嘛，新建一个会话，常驻成 BOSS 会话，不就好了嘛」。
+     ⇒ 点按钮就是 `openThread(群.bossThreadId)`：正常时间线、正常输入框、正常消息渲染，
+        不再有任何覆盖层/专属界面。
+     ⇒ 「选中效果」是**派生量**（当前会话 id 命中某个群的 boss 线程），⛔ 不再用 store 的
+        stage 布尔值 —— 那个布尔值和真实会话状态会对不上（用户实测：切走了按钮还亮着）。 */
+  const [bossGroups, setBossGroups] = useState<Array<{ id: string; name: string; bossThreadId?: string }>>([]);
+  const currentThreadId = app.thread?.id ?? "";
+  const bossOn = bossGroups.some((g) => g.bossThreadId && g.bossThreadId === currentThreadId);
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      void window.codex.listBossGroups()
+        .then((list: any) => { if (alive) setBossGroups(Array.isArray(list) ? list : []); })
+        .catch(() => { /* 主进程未就绪：下一轮再试 */ });
+    };
+    load();
+    const timer = setInterval(load, 8000);
+    const off = window.codex.onEvent((event: any) => { if (event?.type === "boss-group") load(); });
+    return () => { alive = false; clearInterval(timer); off?.(); };
+  }, []);
   const {
     accountDraft,
     accountEditing,
@@ -451,12 +469,18 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   <Search size={15} /><span>搜索任务</span>
                 </button>
                 {/* 10-24 用户令：「BOSS 会话」常驻在搜索任务下面（不进功能入口菜单）；
-                    功能入口（top 位置）自适应排在本按钮之后。点击开右侧群面板。 */}
+                    功能入口（top 位置）自适应排在本按钮之后。
+                    10-25 用户令：点它 = 打开那个 boss 会话（**正常对话框**），不再切专属界面。 */}
                 <button
-                  className={`sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-amber${bossStageOn ? " boss-open" : ""}`}
-                  title="BOSS 会话：切到群聊专属界面（拉群派活、盯进度、审不过打回重做）"
-                  aria-pressed={bossStageOn}
-                  onClick={() => { if (bossStageOn) { closeBossStage(); } else { openBossStage("", app.thread?.id ?? ""); } }}
+                  className={`sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-amber${bossOn ? " boss-open" : ""}`}
+                  title={bossOn ? "当前就是 BOSS 会话（群编排的普通会话）" : "BOSS 会话：打开群编排会话（拉群派活、盯进度、审不过打回重做）"}
+                  aria-pressed={bossOn}
+                  onClick={() => {
+                    if (bossOn) return;                                   // 已在这个会话里，再点无动作
+                    const target = bossGroups.find((g) => g.bossThreadId)?.bossThreadId;
+                    if (target) void app.openThread(target);              // 有群 ⇒ 直接打开它的 boss 线程
+                    else startNewThread();                               // 还没群 ⇒ 新建一个会话（在里面说「建个群：…」）
+                  }}
                 >
                   <Crown size={15} /><span>BOSS 会话</span>
                 </button>

@@ -9,7 +9,7 @@
  * ⛔ 跑在 check 链上（不进 check-preflight 的 MODULES ⇒ 不占 EXPECTED_CHECKS 总账，同 11r/12w 的口径）。
  */
 import { createRequire } from "node:module";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -255,35 +255,33 @@ if (state) {
   ok(/codex-/.test(runner) && /ego-browser/.test(runner), "成员提示词写明浏览器走 ego-browser 且每会话独立 TaskSpace");
   ok(/TURN_WAIT_TIMEOUT_CODE/.test(runner) && /不判失败|转后台/.test(runner), "等待到点按「转后台」处理，不误判失败");
 
-  /* ── 12. BOSS 专属视图的进出契约（10-25 用户实测「切到别的会话后主舞台空白、按钮还亮着」）──
-     ⛔ 三条都必须成立，缺一条就会复现：
-       ① 基线存在 store（组件卸载重挂不丢）② 切会话/新会话在**动作入口**就关
-       ③ 渲染层只做兜底比对，不许再用 useRef 存基线（ref 会随重挂归零）。 */
-  const panelStore = read("src/features/boss-group-view/panel-store.mjs");
-  ok(/enterThreadId:\s*String\(threadId \|\| ""\)/.test(panelStore),
-    "openBossStage 把「进入那一刻的会话 id」记进 store（enterThreadId）");
-  ok(/export function closeBossStage\(\)\s*\{\s*[\s\S]{0,200}?if \(!state\.stage\) return;/.test(panelStore),
-    "closeBossStage 幂等（已关闭不重复广播）");
-  ok(/closeBossStage\(\)/.test(read("src/features/app-state/parts/part08/01-seg/open-thread.tsx")),
-    "openThread 入口关闭 BOSS 专属视图（切会话即退出）");
-  ok(/closeBossStage\(\)/.test(read("src/features/app-state/parts/part06/03-seg/02-context-fork-backup.tsx")),
-    "startNewThread 入口关闭 BOSS 专属视图（新会话即退出）");
+  /* ── 12. BOSS 会话 = **普通会话**（10-25 用户令，推翻此前的群聊覆盖层）──
+     用户原话：「一个正常对话框不会做嘛，新建一个会话，常驻成 BOSS 会话，不就好了嘛」。
+     ⛔ 四条负向契约，任何一条被"顺手加回来"都会退回覆盖层形态：
+       ① 不许再有 BossGroupStage 组件/文件
+       ② 主舞台不许再对 .workspace 做 visibility 隐藏（父级 hidden 会被子元素继承 ⇒ 全白）
+       ③ store 不许再有 stage 布尔（它和真实会话状态对不上：切走了按钮还亮）
+       ④ CSS 不许再有 .boss-stage 根规则 */
+  ok(!existsSync(join(ROOT, "src/features/boss-group-view/BossGroupStage.tsx")),
+    "BOSS 群聊覆盖层组件已删除（BOSS 会话走普通对话框）");
   const mainStage = read("src/features/app-view/AppView/02-main-stage.tsx");
-  ok(/bossStage\.enterThreadId/.test(mainStage) && !/stageEnterThreadId/.test(mainStage),
-    "主舞台用 store 基线兜底比对，且不再用 useRef 存基线（重挂会丢）");
+  ok(!/BossGroupStage|bossStage|visibility:\s*"hidden"/.test(mainStage),
+    "主舞台不再渲染覆盖层、不再隐藏 .workspace");
+  const panelStore = read("src/features/boss-group-view/panel-store.mjs");
+  ok(!/stage:/.test(panelStore) && !/openBossStage|closeBossStage/.test(panelStore),
+    "panel-store 不再有 stage 布尔与开合动作（只留群选择 + 面板开关）");
+  ok(!/^\.boss-stage[\s-]/m.test(read("src/styles/47-boss-group-view.css")),
+    "47-boss-group-view.css 不再有 .boss-stage* 规则");
 
-  /* ── 13. 覆盖层的两条「看得见」判据（10-25 用户实测「空白」的两次真因，都必须钉死）──
-     ① 主舞台 stage 打开时是 visibility:hidden，而 visibility 会被子元素继承 ⇒ 覆盖层必须显式 visible，
-        否则 DOM 齐全、416px 高、文字都在，屏幕上一片白。
-     ② 覆盖层必须 absolute + inset:0，⛔ 不能 grid-area：`.workspace` 是两行网格，覆盖层占
-        `1/1/-1/-1` 会把自动放置的 timeline 挤进**隐式第三行**（实测 rows 416px 0px 340px），
-        群聊界面只剩 416px、底部多出一条 340px 空白带。 */
-  const bossCss = read("src/styles/47-boss-group-view.css");
-  const stageBlock = (bossCss.match(/\.boss-stage\s*\{[\s\S]*?\n\}/) ?? [""])[0];
-  ok(/visibility:\s*visible/.test(stageBlock),
-    "BOSS 覆盖层显式 visibility:visible（主舞台 hidden 会被子元素继承 ⇒ 整片看不见）");
-  ok(/position:\s*absolute/.test(stageBlock) && /inset:\s*0/.test(stageBlock) && !/^\s*grid-area\s*:/m.test(stageBlock),
-    "BOSS 覆盖层 absolute + inset:0 铺满（⛔ grid-area 会把时间线挤进隐式行，底部多出空白带）");
+  /* ── 13. 侧栏入口：点它 = 打开 boss 会话线程，选中态是**派生量** ──
+     ⛔ 选中态必须由「当前会话 id 命中某群 bossThreadId」算出来，不许再用一个独立布尔
+        （上一版就是布尔与真实会话脱钩：切到别的会话后按钮还亮着）。 */
+  const sidebar = read("src/features/app-view/AppView/01-sidebar-shell.tsx");
+  ok(/bossGroups\.some\(\(g\) => g\.bossThreadId && g\.bossThreadId === currentThreadId\)/.test(sidebar),
+    "侧栏选中态派生自「当前会话 = 某群 boss 线程」");
+  ok(/void app\.openThread\(target\)/.test(sidebar) && /startNewThread\(\)/.test(sidebar),
+    "点 BOSS 会话 = openThread(群.bossThreadId)；还没群则新建会话");
+  ok(/listBossGroups/.test(sidebar), "侧栏自己拉群列表（含 bossThreadId）判断归属");
 }
 
 console.log(`\n【boss-groups】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

@@ -119,7 +119,7 @@ export function BossGroupPanel() {
         ) : null}
         <button
           type="button"
-          className={`boss-panel-mini boss-stage-dynamic${showAll ? " boss-stage-dynamic-on" : ""}`}
+          className={`boss-panel-mini boss-panel-dynamic${showAll ? " is-on" : ""}`}
           aria-pressed={showAll}
           title="群动态：中间过程事件（默认只看汇总消息）"
           onClick={() => setShowAll((v) => !v)}
