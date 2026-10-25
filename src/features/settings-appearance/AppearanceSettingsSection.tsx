@@ -70,7 +70,7 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
             <p className="settings-card-hint">只影响思考内容的呈现方式，不会改变模型思考本身或历史记录。长条模式收起时与过程行同款，只显示最新一行（自动横向滚动）；当前正在直播的思考内联显示，已经结束的思考与其他过程在直播末段超过 8 条会自动收起，回合结束后统一收进「耗时」大折叠。点击长条展开全文，最高 50vh 内部滚动。</p>
           </div>
         </div>
-        <SettingsGroupHead title="功能入口" hint="侧栏入口位置与顺序" />
+        <SettingsGroupHead title="拓展功能" hint="侧栏入口位置与顺序" />
         <div className="settings-exp-card appearance-function-card"><FunctionMenuSettings onNotice={onNotice} /></div>
         <SettingsGroupHead title="更多外观" hint="壁纸 · 代码高亮 · 开机动画" />
         <div className="settings-exp-card appearance-wallpaper-card"><WallpaperSettingsSection /></div>

@@ -517,3 +517,23 @@
 .sidebar-nav-bottom .sidebar-cap-row {
   height: 30px;
 }
+
+/* ── 10-25 用户令重排：三行快捷按钮统一**简洁展示**（靠左、无底色，仅 hover 提亮）；
+   只有「新会话」透出快捷键尾标（kbd 右浮），其余按钮一律不透快捷键。 ── */
+.sidebar-quick .sidebar-quick-btn { justify-content: flex-start; }
+.sidebar-quick .sidebar-quick-btn.primary,
+.sidebar-quick .sidebar-quick-btn.primary:hover {
+  background: transparent;
+  border-color: transparent;
+}
+.sidebar-quick .sidebar-quick-btn .quick-kbd {
+  margin-left: auto;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel-2);
+  color: var(--faint);
+  font-family: inherit;
+  font-size: 10.5px;
+  line-height: 1.5;
+}

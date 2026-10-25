@@ -86,7 +86,7 @@ function MenuItemButton({ id, onDone, dragging, dropBefore, onDragStart, onDragE
   );
 }
 
-/** 一条功能入口菜单。top = 搜索任务下面，bottom = 侧栏底部；两个位置共用同一份排序/更多配置。
+/** 一条拓展功能菜单（10-25 前叫「功能入口」）。top = 搜索任务下面，bottom = 侧栏底部；两个位置共用同一份排序/更多配置。
  *  侧栏里的入口可直接拖动排序 / 拖进「更多」，落手即写回共享配置。 */
 export function FunctionMenu({ location }: { location: FunctionMenuLocation }) {
   const config = useFunctionMenuConfig();
@@ -110,7 +110,7 @@ export function FunctionMenu({ location }: { location: FunctionMenuLocation }) {
   };
   return (
     <div className={`function-menu function-menu-sidebar function-menu-${location}`}>
-      <div className="function-menu-items" role="group" aria-label="功能入口">
+      <div className="function-menu-items" role="group" aria-label="拓展功能">
         {visible.map((id) => (
           <MenuItemButton
             key={id}
@@ -196,7 +196,7 @@ function MorePopover({ anchor, overflow, otherLocation, onClose }: {
   }, [anchor, onClose]);
 
   return createPortal(
-    <div ref={ref} className="function-menu-popover" style={{ top: pos.top, left: pos.left, visibility: pos.ready ? "visible" : "hidden" }} role="menu" aria-label="更多功能入口">
+    <div ref={ref} className="function-menu-popover" style={{ top: pos.top, left: pos.left, visibility: pos.ready ? "visible" : "hidden" }} role="menu" aria-label="更多拓展功能">
       {overflow.length > 0 ? overflow.map((id) => {
         const meta = FUNCTION_MENU_META[id];
         const Icon = meta.Icon;
@@ -245,10 +245,10 @@ export function FunctionMenuTourHost() {
 
   if (!request) return null;
   return createPortal(
-    <div ref={ref} className="function-menu-tour" style={pos ? { top: pos.top, left: pos.left } : { visibility: "hidden" }} role="dialog" aria-label="功能入口使用提示">
+    <div ref={ref} className="function-menu-tour" style={pos ? { top: pos.top, left: pos.left } : { visibility: "hidden" }} role="dialog" aria-label="拓展功能使用提示">
       <div className="function-menu-tour-head">
         <span className="function-menu-tour-icon"><Sparkles size={14} /></span>
-        <b>让功能入口更顺手</b>
+        <b>让拓展功能更顺手</b>
         <button type="button" aria-label="关闭提示" onClick={dismissFunctionMenuTour}><X size={13} /></button>
       </div>
       <div className="function-menu-tour-demo" aria-hidden="true">
@@ -346,9 +346,9 @@ function FunctionMenuEditor() {
   return (
     <div className="modal-backdrop function-menu-editor-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeFunctionMenuEditor(); }}
       onKeyDown={(event) => { if (event.key === "Escape") closeFunctionMenuEditor(); }}>
-      <div className="function-menu-editor" role="dialog" aria-modal="true" aria-label="编辑功能入口">
+      <div className="function-menu-editor" role="dialog" aria-modal="true" aria-label="编辑拓展功能">
         <header className="fm-editor-head">
-          <div><h2>编辑功能入口</h2><p>拖动排序；拖到右边「更多」即收起。两种展示位置共用这一套。</p></div>
+          <div><h2>编辑拓展功能</h2><p>拖动排序；拖到右边「更多」即收起。两种展示位置共用这一套。</p></div>
           <button ref={closeRef} type="button" className="fm-editor-close" aria-label="关闭" onClick={closeFunctionMenuEditor}><X size={16} /></button>
         </header>
 

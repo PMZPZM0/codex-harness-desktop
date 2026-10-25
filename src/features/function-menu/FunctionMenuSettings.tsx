@@ -3,7 +3,7 @@ import { overflowFunctionMenuItems, visibleFunctionMenuItems } from "./menu-mode
 import { FUNCTION_MENU_META } from "./FunctionMenu";
 import { openFunctionMenuEditor, setFunctionMenuLocation, useFunctionMenuConfig } from "./store";
 
-/** 外观设置里的「功能入口」：选展示位置 + 打开编辑菜单。两处位置共用同一份排序/更多分组，均可展开折叠。 */
+/** 外观设置里的「拓展功能」（10-25 前叫「功能入口」）：选展示位置 + 打开编辑菜单。两处位置共用同一份排序/更多分组，均可展开折叠。 */
 export function FunctionMenuSettings({ onNotice }: { onNotice?: (text: string) => void }) {
   const config = useFunctionMenuConfig();
   const visible = visibleFunctionMenuItems(config);
@@ -12,16 +12,16 @@ export function FunctionMenuSettings({ onNotice }: { onNotice?: (text: string) =
     if (config.location === location) return;
     setFunctionMenuLocation(location);
     onNotice?.(location === "top"
-      ? "功能入口已移到「新会话 / 搜索任务」下面"
-      : "功能入口已移回侧栏底部");
+      ? "拓展功能已移到「新会话 / BOSS 会话 / 搜索任务」下面"
+      : "拓展功能已移回侧栏底部");
   };
   return (
     <section className="settings-section stack function-menu-settings">
       <div className="settings-copy">
-        <h2>功能入口</h2>
+        <h2>拓展功能</h2>
         <p>选择入口显示在「新会话 / 搜索任务」下面，还是侧栏底部。两处都支持展开 / 折叠，共用同一套顺序与「更多」分组，改动即时生效。</p>
       </div>
-      <div className="fm-location-grid" role="group" aria-label="功能入口显示位置">
+      <div className="fm-location-grid" role="group" aria-label="拓展功能显示位置">
         <button type="button" className={`fm-location-card ${config.location === "top" ? "on" : ""}`} aria-pressed={config.location === "top"} onClick={() => choose("top")}>
           <ArrowUpToLine size={16} /><span><b>侧栏顶部</b><small>「新会话 / 搜索任务」下面（可折叠）</small></span>{config.location === "top" && <Check size={14} />}
         </button>
@@ -29,7 +29,7 @@ export function FunctionMenuSettings({ onNotice }: { onNotice?: (text: string) =
           <ArrowDownToLine size={16} /><span><b>侧栏底部</b><small>用户名上方（默认，可折叠）</small></span>{config.location === "bottom" && <Check size={14} />}
         </button>
       </div>
-      <div className="fm-settings-preview" aria-label="当前功能入口顺序">
+      <div className="fm-settings-preview" aria-label="当前拓展功能顺序">
         {visible.map((id) => {
           const meta = FUNCTION_MENU_META[id];
           const Icon = meta.Icon;
