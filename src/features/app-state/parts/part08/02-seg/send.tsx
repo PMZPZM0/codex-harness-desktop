@@ -451,7 +451,10 @@ export async function send(bag: Bag, event?: FormEvent) {
       try {
         result = await startTurn(active);
       } catch (error: any) {
-        const unavailable = /not found|no such thread|unloaded/i.test(String(error?.message));
+        /* ⛔ 必须包含 "no rollout found"（10-25 实测）：rollout 丢了的会话 turn/start 报的正是
+           `no rollout found for thread id …`，漏了它 ⇒ 直接 throw ⇒ 用户看到红条、消息发不出去、
+           而且失败回填把整段记忆包装塞回输入框。 */
+        const unavailable = /not found|no such thread|unloaded|no rollout found/i.test(String(error?.message));
         if (!unavailable) throw error;
 
         // 刚由 thread/start 创建的空线程可能还没被 turn/start 立即看见。
@@ -467,7 +470,7 @@ export async function send(bag: Bag, event?: FormEvent) {
             const resumed = await resumeThreadWithTurns(bag, { threadId: active.id, excludeTurns: false });
             if (resumed?.thread) recovered = normalizeLoadedThread(resumed.thread);
           } catch (resumeError: any) {
-            if (!/not found|no such thread/i.test(String(resumeError?.message))) throw resumeError;
+            if (!/not found|no such thread|no rollout found/i.test(String(resumeError?.message))) throw resumeError;
           }
 
           if (recovered) {
@@ -616,10 +619,13 @@ export async function send(bag: Bag, event?: FormEvent) {
       bag.markThreadStopped(createdThreadId ?? bag.optimisticBaselineRef.current.threadId ?? bag.threadRef.current?.id);
       // 失败时把乐观气泡收回去（09-13 审计：气泡不回收 + 提示 2.6 秒后消失 = 看起来像已发出），
       // 并把正文还给输入框，用户可以改一下重发。
-      const failedText = (Array.isArray(sendInput) ? sendInput : [])
+      /* ⛔ 回填给用户看的必须是**用户自己打的原文**（10-25 实测：直接回填 sendInput 会把
+         `[Harness 常驻记忆]…` / SYSTEM TASK / 导入记录整段塞回输入框，用户以为发出去的是那坨东西）。
+         userDisplayText 就是显示层用的同一个剥离函数。 */
+      const failedText = userDisplayText((Array.isArray(sendInput) ? sendInput : [])
         .filter((part: any) => part?.type === "text")
         .map((part: any) => String(part.text ?? ""))
-        .join("");
+        .join(""));
       bag.setOptimisticInput(null);
       if (failedText) bag.setPrompt((current) => (String(current ?? "").trim() ? current : failedText));
       bag.setInterrupting(false);
