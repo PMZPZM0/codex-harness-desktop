@@ -804,3 +804,10 @@
 /* 会话已删（记忆目录还在磁盘上，用户需要看得见并能手动清掉） */
 .boss-mem-item.is-gone { opacity: 0.62; }
 .boss-mem-item-gone { margin-left: auto; font-size: 10px; font-style: normal; color: var(--muted); flex: none; }
+/* 当前生效的记忆后端（⛔ 必须显示：切到 MCP/云端后本地那份不再被写入） */
+.boss-mem-backend { margin-left: auto; font-size: 11px; font-style: normal; color: var(--muted); }
+.boss-mem-note {
+  margin: 0; padding: 8px 10px; border-radius: 8px; font-size: 12px; line-height: 1.6;
+  border: 1px solid color-mix(in srgb, var(--amber) 30%, var(--line-soft));
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+}

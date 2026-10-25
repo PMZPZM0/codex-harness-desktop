@@ -5,10 +5,16 @@
  *   或者自动在软件安装的对应盘…弹窗提醒，**不要系统弹窗和内联弹窗**，
  *   两个选项：选择 BOSS 会话项目地址 / 自动生成项目地址」
  *
- * ⇒ 这是**应用内模态**（复用 CloseConfirmDialog 的卡片样式，层级 950 = 全局最高），
+ * ── 这不是「确认框」，是**选择器** ────────────────────────────────────────
+ *   10-25 用户实测：「这个弹窗真小气…那个按键真丑」。
+ *   ⇒ 之前复用了 `.close-confirm-*`（那是给「确认/取消」两按钮设计的紧凑卡片），
+ *     结果：卡片挤、两个选项被压成两行字、按钮换行。
+ *   ⇒ 这里用**自己的宽体样式** `.boss-dir-*`：两个**大选项卡**（图标 + 标题 + 说明），
+ *     取消退到右上角 × 与遮罩点击。
+ *
  *   ⛔ 不用 Electron 原生 messageBox（系统弹窗），⛔ 不用 toast（内联弹窗）。
- *   真正的「选目录」仍然要走系统的目录选择器（浏览器/Electron 无法凭空取路径），
- *   但**这一步是用户主动点的按钮**，不是系统弹窗糊脸。
+ *     真正的「选目录」仍然要走系统的目录选择器（浏览器/Electron 无法凭空取路径），
+ *     但**那一步是用户主动点的按钮**，不是系统弹窗糊脸。
  */
 import { createPortal } from "react-dom";
 import { FolderOpen, FolderPlus, X } from "lucide-react";
@@ -26,31 +32,47 @@ export function BossProjectDirDialog({
 }) {
   if (!open || typeof document === "undefined") return null;
   return createPortal(
-    <div className="close-confirm-backdrop" role="dialog" aria-modal="true" aria-label="选择 BOSS 会话项目地址">
-      <div className="close-confirm-card">
-        <div className="close-confirm-head">
-          <span className="close-confirm-title">BOSS 会话的项目地址</span>
-          <button type="button" className="close-confirm-x" onClick={() => onChoose("cancel")} aria-label="取消">
-            <X size={15} />
+    <div
+      className="boss-dir-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label="选择 BOSS 会话的项目地址"
+      onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onChoose("cancel"); }}
+    >
+      <div className="boss-dir-card">
+        <header className="boss-dir-head">
+          <div className="boss-dir-head-copy">
+            <h3 className="boss-dir-title">BOSS 会话的项目地址</h3>
+            <p className="boss-dir-sub">
+              这个地址<strong>不跟其它会话同步</strong>，每次新建 BOSS 会话都要定一次。
+            </p>
+          </div>
+          <button type="button" className="boss-dir-x" onClick={() => onChoose("cancel")} aria-label="取消" disabled={busy}>
+            <X size={16} />
+          </button>
+        </header>
+
+        <div className="boss-dir-options">
+          <button type="button" className="boss-dir-option" onClick={() => onChoose("pick")} disabled={busy}>
+            <span className="boss-dir-option-icon"><FolderOpen size={18} /></span>
+            <span className="boss-dir-option-body">
+              <strong>选择项目地址</strong>
+              <small>从已有目录里挑一个 —— 群成员就在这个目录里干活。</small>
+            </span>
+          </button>
+          <button type="button" className="boss-dir-option" onClick={() => onChoose("auto")} disabled={busy}>
+            <span className="boss-dir-option-icon"><FolderPlus size={18} /></span>
+            <span className="boss-dir-option-body">
+              <strong>在软件所在盘自动新建</strong>
+              <small>建一个专属目录（如 <code>BOSS项目-2026-10-25</code>），互不干扰。</small>
+            </span>
           </button>
         </div>
-        <p className="close-confirm-desc">
-          BOSS 会话的项目地址<strong>不跟其他会话同步</strong>，每次新建都要定一次。
-          可以选一个已有的项目目录，或者在软件所在的盘自动新建一个专属目录。
-        </p>
-        <div className="close-confirm-actions">
-          <button type="button" className="close-confirm-btn" onClick={() => onChoose("cancel")} disabled={busy}>
-            取消
-          </button>
-          <button type="button" className="close-confirm-btn" onClick={() => onChoose("auto")} disabled={busy}>
-            <FolderPlus size={13} />
-            在软件所在盘自动新建
-          </button>
-          <button type="button" className="close-confirm-btn primary" onClick={() => onChoose("pick")} disabled={busy}>
-            <FolderOpen size={13} />
-            选择项目地址
-          </button>
-        </div>
+
+        <footer className="boss-dir-foot">
+          <span className="boss-dir-foot-note">也可以点外面取消。</span>
+          <button type="button" className="boss-dir-cancel" onClick={() => onChoose("cancel")} disabled={busy}>取消</button>
+        </footer>
       </div>
     </div>,
     document.body,
