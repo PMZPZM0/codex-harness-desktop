@@ -461,9 +461,89 @@
   color: var(--faint);
   overflow-wrap: anywhere;
 }
+/* 10-26 总览顶部「我想做…」快捷动线 + 设置之外入口 */
+.overview-quick {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.overview-quick-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.overview-quick-head h3 {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.overview-quick-head span { font-size: 11.5px; color: var(--faint); }
+.overview-quick-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.overview-quick-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease, color 0.14s ease;
+}
+.overview-quick-btn svg { color: var(--faint); }
+.overview-quick-btn:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel-2));
+  color: var(--text);
+}
+.overview-outside {
+  margin: 6px 0 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+}
+.overview-outside h3 {
+  margin: 0 0 3px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.overview-outside > p {
+  margin: 0 0 8px;
+  color: var(--faint);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+.overview-outside ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.overview-outside li {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1.15fr) minmax(0, 1.5fr);
+  gap: 10px;
+  align-items: start;
+  padding: 7px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  background: var(--panel-2);
+}
+.overview-outside b { font-size: 12px; color: var(--text); }
+.overview-outside-where { font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+.overview-outside-hint { font-size: 11.5px; color: var(--faint); overflow-wrap: anywhere; }
 /* 窄窗：三列挤不下 → 堆叠 */
 @media (max-width: 640px) {
-  .help-page-row {
+  .help-page-row,
+  .overview-outside li {
     grid-template-columns: minmax(0, 1fr);
     gap: 4px;
   }
