@@ -20,6 +20,11 @@
 
 > ⛔⛔ **改动必须同轮同步全部三个仓（2026-10-13 用户令，对所有 Agent 生效，无例外）**：本产品有三个源码仓 —— 桌面版 `D://Codex Harness Desktop`（开发主线）、PPcode `D://PPcode`、云助手 `D://Codex Assistant`。**在任一仓完成一轮功能改动后，必须在同一轮把同一批改动同步到另外两个仓，并各自推送 `main`**；⛔ 只改一仓就收尾 = 这一轮工作**未完成**（10-13 用户点名「改动你都没有同步给 ppcode 和云助手」）。步骤见 `docs/REPO-WORKFLOW.md` §二：主仓 diff → **逐文件 `git apply --check` 预检**（⛔ 不整包瞎 apply）→ apply → 副本侧 `npm run build` + 受影响守卫 + `check-preflight` 验证 → `feat(sync)` 提交（写明主仓区间与判据）→ 推各仓远端（云助手推 `cloud`，⛔ 它的 `origin` 指向桌面版仓，推错就污染主线）。⛔ **同步面包含 `logs/` 结论档案**：条目文件与 `logs/index.jsonl` 都要跟；补录后各仓必须跑 `node scripts/logs.mjs reindex` 重建索引（sha256 与文件字节绑定，直接拷索引会哈希不符）。
 > ⛔ 生成物（`electron/preload.ts`、`src/vite-env.d.ts`、`electron/composition.gen.ts`、`electron/builtin-skills/14-skill-harness-api.ts`）由**各仓自己**跑 `npm run gen:ipc` + `npm run gen:domains` 产出，⛔ 别直接套主线仓的（三仓通道数各不相同）；`electron/ipc-channels.manifest.json` 与 `electron/ipc-registry.ts` 是**手写源**，分叉处逐项手工合并；行数棘轮（守卫【265】）按各仓实测值更新。
+> ⛔⛔ **品牌不进同步面（2026-10-25 用户令：「codexharness logo 和 PPcode logo 不要串了」）**：三个仓各有自己的身份基线，**同步功能改动时品牌面保持各仓原样**。
+> · 桌面版（本仓）= **Codex Harness Desktop** + CH 图标（`public/icon.png` / `build/icon.*`），窗口标题同此；
+> · PPcode = **PPcode** + PP 图标（自己的 `public/icon.png` / `build/icon.*`），侧栏品牌名单一来源是 `01-sidebar-shell.tsx` 的 `BRAND_NAME = "PPcode"`，窗口标题 `PPcode`、AUMID `com.ppcode.desktop`、身份基线自称 PPcode —— **这些差异是故意的**；
+> · 云助手沿用桌面版品牌（Codex Harness Desktop + CH 图标），不是第三套。
+> ⛔ 具体纪律：① ⛔ 不把任一仓的 `icon.png` / `build/icon*` / 品牌文案拷到另一仓；② 从主仓 apply 到 PPcode 的 diff 若碰到品牌行，**必须保留 PPcode 侧**（冲突时手工合，不许"统一一下"）；③ 侧栏 `brand-name`、窗口标题、AUMID、登录页/启动页、企业微信接入文案、拓展页数据目录示例都算品牌面；④ 发版/截图核对时先确认左上角品牌名与图标属于该应用。PPcode 守卫 06【235】逐条钉住。
 
 ## 📐 架构改造计划（2026-09-21 立项，**已基本完成**：计划与盘点存档见 `docs/archive/`）
 
