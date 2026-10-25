@@ -280,8 +280,8 @@ if (state) {
   const sidebar = read("src/features/app-view/AppView/01-sidebar-shell.tsx");
   ok(/bossThreads\.bossIds\.includes\(currentThreadId\)/.test(sidebar),
     "侧栏选中态派生自「当前会话 = 某群 boss 线程」");
-  ok(/app\.openThread\(groupBoss\)/.test(sidebar) && /app\.openThread\(home\)/.test(sidebar) && /startNewThread\(\)/.test(sidebar),
-    "点 BOSS 会话 = 打开群 boss 线程 / home 锚点；两者都没有才新建会话");
+  ok(/app\.openThread\(groupBoss\)/.test(sidebar) && /startNewThread\(\)/.test(sidebar) && !/app\.openThread\(home\)/.test(sidebar),
+    "点 BOSS 会话 = 有群就打开群 boss 线程，没有就**新建一个全新会话**（⛔ 不复用上一次的）");
   const bossStore = read("src/features/boss-group-view/boss-threads-store.mjs");
   ok(/boss-home-thread/.test(bossStore) && /setBossHomeThreadId/.test(bossStore),
     "没群时的 BOSS 会话有固定锚点（localStorage boss-home-thread）");
@@ -296,6 +296,15 @@ if (state) {
     "成员交活的成品要**汇总到主对话**（否则就是各说各话，不是群聊）");
   ok(/boss-avatar/.test(read("src/features/boss-group-view/BossGroupPanel.tsx")) && /boss-member-strip/.test(read("src/features/boss-group-view/BossGroupPanel.tsx")),
     "群面板要有成员头像（顶栏头像条 + 成员气泡头像）");
+  /* ⛔ 10-25 用户令：「我每次新建，就是全新的，跟旧的不要有任何关系」「BOSS 会话不要归档功能，
+     有删除会话功能就行了」 */
+  ok(/sessionIds/.test(read("src/features/boss-group-view/boss-threads-store.d.mts")),
+    "BOSS 会话有独立身份标记 sessionIds（⛔ homeId 不再用于复用会话）");
+  const sideSrc = read("src/features/app-view/AppView/01-sidebar-shell.tsx");
+  ok(!/app\.openThread\(home\)/.test(sideSrc),
+    "⛔ 点「BOSS 会话」不再回到上一次的会话（每次都是全新会话）");
+  ok(/isBossOwnThread \? null : \([\s\S]{0,120}thread-archive-button/.test(read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx")),
+    "BOSS 会话不挂归档按钮（只保留删除）");
   ok(/lastActivityAt/.test(read("electron/features/boss-groups-ipc.ts")),
     "群列表按最近活动排序（同一会话建过多个群时，弹窗要落在**现在这个**群上）");
   ok(!/REVIEW_PROMPT/.test(runnerSrc) && !/SYSTEM TASK · 独立评审/.test(runnerSrc),
@@ -348,8 +357,8 @@ if (state) {
     "BOSS 会话独有的「?」说明组件在位");
   /* ⛔ 10-25 实测：只认 bossIds 会让「还没建群时的 home 会话」顶栏缺成员图标与「?」——
      主窗口与独立弹窗用的是同一个 topbarActionsNode，所以两处一起缺。 */
-  ok(/bossThreads\.bossIds\.includes\(String\(bag\.thread\?\.id\)\) \|\| String\(bag\.thread\?\.id\) === bossThreads\.homeId/.test(read("src/features/app-state/parts/part09/02-seg.tsx")),
-    "顶栏成员图标 /「?」三种 BOSS 入口都渲染（群 boss 线程 + home 锚点会话）");
+  ok(/bossThreads\.bossIds\.includes\(String\(bag\.thread\?\.id\)\) \|\| \(bossThreads\.sessionIds \?\? \[\]\)\.includes\(String\(bag\.thread\?\.id\)\)/.test(read("src/features/app-state/parts/part09/02-seg.tsx")),
+    "顶栏成员图标 /「?」都渲染（群 boss 线程 + 已登记的 BOSS 会话）");
   /* ⛔⛔ 10-25 实测「独立弹窗没有成员图标和问号」：DOM 在、断言全绿，但 CSS 媒体查询把
      `display` 设成了 none（当时断点是 1180，而默认窗口 1080 就命中）。
      ⇒ 隐藏断点必须 ≤640，且断言只认 DOM 存在的写法不可再用于这两个图标。 */

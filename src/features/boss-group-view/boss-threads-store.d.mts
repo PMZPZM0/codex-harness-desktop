@@ -12,6 +12,8 @@ export type BossThreadsState = {
   bossIds: string[];
   memberIds: string[];
   homeId: string;
+  /** 所有 BOSS 会话的 id（⛔ 只作身份标记，不用于复用：每次新建都是全新会话） */
+  sessionIds: string[];
   /** BOSS 会话自己的目录（<userData>/boss-home）：项目记忆/技能与任何项目隔离 */
   homeDir: string;
   pending: boolean;
