@@ -348,6 +348,11 @@ contextBridge.exposeInMainWorld("codex", {
   browserPopout: (url: string) => __ipc("browser:popout", 1, [url]),
   shellReveal: (target: string) => __ipc("shell:reveal", 1, [target]),
   shellOpen: (target: string) => __ipc("shell:open", 1, [target]),
+  /* 窗口控制（无边框窗自定义按钮；只作用于调用者自己的窗口） */
+  windowMinimize: () => __ipc("shell:window-minimize", 0, []),
+  windowToggleMaximize: () => __ipc("shell:window-toggle-maximize", 0, []),
+  windowClose: () => __ipc("shell:window-close", 0, []),
+  windowState: () => __ipc("shell:window-state", 0, []),
   writeClipboardImage: (filePath: string) => __ipc("clipboard:write-image", 1, [filePath]),
   readClipboardFiles: () => __ipc("clipboard:read-files", 0, []),
   doctor: (cwd?: string) => __ipc("app:doctor", 0, [{ cwd }]),
@@ -842,6 +847,8 @@ contextBridge.exposeInMainWorld("codex", {
   bossGroupSay: (input: any) => __ipc("boss-groups:say", 1, [input]),
   /* 创世 boss：可拉名单（专家/专家团 + 本机 CLI agent，带探测结果） */
   bossGroupPool: () => __ipc("boss-groups:pool", 0, []),
+  /* BOSS 会话身份登记（add/remove/rename/list）—— 记忆路由的唯一真相源 */
+  bossGroupSession: (input: any) => __ipc("boss-groups:session", 1, [input]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。
