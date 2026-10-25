@@ -56,6 +56,8 @@ export const appLockFeature = defineFeature<null>({
          新进程的删除只成功一半（实测会留下会话与配置）。 */
       setTimeout(() => {
         try { server?.stop(); } catch { /* 引擎可能没起 */ }
+        /* 云助手/部分产品线用单实例锁：不先释放，新实例拿不到锁会自杀（10-14 事故同型）。 */
+        try { (host.app as any).releaseSingleInstanceLock?.(); } catch { /* 没有该能力的产品线忽略 */ }
         try { host.app.relaunch(); } catch { /* 重启失败也退出，避免锁文件长期停在 attempts=10 */ }
         host.app.exit(0);
       }, 3000);
