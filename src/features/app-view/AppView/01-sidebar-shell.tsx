@@ -153,6 +153,7 @@ import { Slot } from "../../../runtime/registry";
 import { NewbieGuide } from "../../newbie-guide";
 import { SidebarGuideModal, type SidebarGuideKey, type SidebarGuideTarget } from "./SidebarGuideModal";
 import { LoginManagerModal, type LoginManagerTarget } from "./LoginManagerModal";
+import { NewProjectDialog } from "./NewProjectDialog";
 import { UpdateReadyToast } from "./UpdateReadyToast";
 import { CloseConfirmDialog } from "../../../components/CloseConfirmDialog";
 import { FileTrustDialog } from "../../../components/FileTrustDialog";
@@ -333,6 +334,16 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     try { localStorage.setItem("sidebar-options-collapsed", String(next)); } catch { /* 隐私模式写不进属正常，别拦切换 */ }
     try { void window.codex?.saveAppSettings?.({ sidebarOptionsCollapsed: next })?.catch(() => undefined); } catch { /* 桥不可用 */ }
   };
+  /* 10-25：新建项目弹窗（ZCode 式三选一）。选完目录后与 chooseWorkspace 同款落地：
+     workspace 三处同步（state/ref/localStorage）—— 不只改 state，侧栏项目分组才认。 */
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const applyNewProject = (dir: string) => {
+    setNewProjectOpen(false);
+    setWorkspace(dir);
+    workspaceRef.current = dir;
+    try { localStorage.setItem("workspace", dir); } catch { /* 隐私模式 */ }
+  };
+
   /* 10-25：项目行的「+」= 在该项目下开新会话。先切 workspace（三处同步：state/ref/localStorage，
      与 chooseWorkspace 同口径），再 startNewThread —— 新会话首条消息的 cwd 取 workspace。 */
   const bagSetWorkspaceForProject = (cwd: string) => {
@@ -541,6 +552,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
             </div>
             {functionMenu.location === "top" && renderOptionsGroup("top")}
             {guideKey && <SidebarGuideModal guideKey={guideKey} onNavigate={navigateGuideTarget} onClose={() => setGuideKey(null)} />}
+            <NewProjectDialog open={newProjectOpen} onClose={() => setNewProjectOpen(false)} onCreate={applyNewProject} />
             {/* 直达：关弹窗 + 直接开对应设置页（⛔ 不再经「设置 → 账户与模型」多一层） */}
             {loginMgrOpen && (
               <LoginManagerModal
@@ -562,7 +574,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
               <div className="view-toolbar">
                 <button className="view-toolbar-btn ic-cyan" title="搜索任务" onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}><Search size={14} /></button>
                 <button className="view-toolbar-btn ic-violet" title={sidebarAllCollapsed ? "展开全部项目" : "折叠全部项目"} onClick={toggleAllSidebarSections} disabled={!projectGroups.length}>{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
-                <button className="view-toolbar-btn ic-green" title="新建项目（选择一个目录作为项目地址）" onClick={() => void chooseWorkspace()}><FolderPlus size={14} /></button>
+                <button className="view-toolbar-btn ic-green" title="新建项目（选择 / 创建 / 输入路径）" onClick={() => setNewProjectOpen(true)}><FolderPlus size={14} /></button>
               </div>
             </div>
             {/* 10-04 渲染层插槽：侧栏顶部（在会话列表之上）。插件放这里 = 常驻可见的入口
