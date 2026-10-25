@@ -56,10 +56,20 @@
    ```
 4. **应用**：全部 OK → `git apply "$P"`（⛔ `git apply` 是**原子的**：一个文件失败整包不进，
    所以才要逐文件预检）；品牌差异文件 FAIL → `git apply --exclude=<该文件> "$P"` 后**手工改同一处语义**。
-   **已知品牌差异文件**（截至 2026-10-10）：
+   **已知品牌差异文件**（截至 2026-10-25，用户令「codexharness logo 和 PPcode logo 不要串了」）：
    - `electron/developer-instructions.ts` —— 品牌文案不同，只手工同步**同一处语义**；
    - `src/styles.css` —— 两仓样式编号序列独立，`@import` 尾行各自维护（新样式表文件本体可直接套）；
-   - 含品牌字面量（PPcode / Codex Harness）的 hunk —— 只咬含品牌字面量的那几行。
+   - **PPcode 品牌面（⛔ 一律保留 PPcode 侧，不许套主仓值）**：
+     · `src/features/app-view/AppView/01-sidebar-shell.tsx` 的 `BRAND_NAME = "PPcode"` 与侧栏品牌块；
+     · `electron/features/window-factory.ts` 窗口标题（`PPcode` / `PPcode — 独立会话`）；
+     · `electron/main.ts` 的 `app.setAppUserModelId("com.ppcode.desktop")`；
+     · `index.html` 的 `<title>PPcode</title>` 与启动文案；
+     · `src/components/BootSplash.tsx` / `src/features/auth/LoginScreen.tsx` 的品牌名；
+     · `electron/im-gateway/wecom-webhook-gateway.ts` 的「**PPcode** 已接入本群」；
+     · `src/lib/extensibility-catalog.mjs` 的 `%APPDATA%/PPcode` 示例；
+     · `electron/personalization.ts` 的身份基线（必须自称 PPcode）。
+   - ⛔ **图标资产永不互拷**：`public/icon.png`、`build/icon*`（含 ico/png 全套）各仓独立；PPcode = PP 标，主仓/云助手 = CH 标。
+   - 含品牌字面量（PPcode / Codex Harness）的 hunk —— 只咬含品牌字面量的那几行；冲突时手工合，⛔ 不许"统一一下"。
 5. **ppcode 侧验证**（顺序固定）：`unset NODE_OPTIONS && npx tsc -b` →
    受影响守卫单跑（如 `node scripts/guards/11q-live-edits.mjs`）→
    `CODEBUDDY_SAFE_DELETE_ENABLED=0 npm run check`（沙箱里 preflight 若被环境类挡住，
