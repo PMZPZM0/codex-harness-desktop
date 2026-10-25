@@ -478,6 +478,21 @@
 }
 .update-mode-switch button.active { background: var(--bg); color: var(--text); box-shadow: 0 0 0 1px var(--line); }
 .update-mode-switch button:hover:not(.active) { color: var(--text); }
+.update-help {
+  display: inline-grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  margin-left: 3px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  color: var(--faint);
+  font-size: 9px;
+  line-height: 1;
+  cursor: help;
+  vertical-align: 1px;
+}
+.update-mode-switch button.active .update-help { border-color: color-mix(in srgb, var(--text) 25%, transparent); color: var(--muted); }
 .account-menu-input { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 12px; color: var(--text); font-family: inherit; }
 .account-menu-input.mono { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace; }
 .account-menu-input:focus { outline: none; border-color: var(--accent); }
