@@ -183,7 +183,10 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       .filter((m: any) => m.name && m.role);
                     const res = await window.codex.createBossGroup({
                       name: String(args.name ?? ""),
-                      workspace: String(args.workspace ?? bag.workspace ?? ""),
+                      /* ⛔ BOSS 会话自己跑在 <userData>/boss-home（记忆独立），所以「群在哪干活」
+                         不能取 bag.workspace —— 取用户在 BOSS 会话里选的项目（boss-workspace）。
+                         模型显式传 workspace 时以它为准。 */
+                      workspace: String(args.workspace ?? (() => { try { return localStorage.getItem("boss-workspace") ?? ""; } catch { return ""; } })() ?? bag.workspace ?? ""),
                       // ⛔ boss 身份取引擎下发的 threadId（模型伪造不了），群事件靠它回投
                       bossThreadId: String(event.params?.threadId ?? bag.threadRef.current?.id ?? ""),
                       members,

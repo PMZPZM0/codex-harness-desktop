@@ -15,6 +15,8 @@ import { imageToken, splitPromptSegments, promptImagePaths, stripImageTokens, is
 import { pickEnhanceHint, shouldShowHintAfterSends, isLongPrompt, HINT_COOLDOWN_MS, HINT_AUTO_HIDE_MS } from "../../../../../lib/enhance-hints.mjs";
 import { nowBlock } from "../../../../../lib/now-block.mjs";
 import { setTurnWindowTail } from "../../../../../lib/turn-history.mjs";
+/* ⛔ 会话重建后要把 BOSS 归属搬过去（见下方 bossGroupRebind 那段注释）。 */
+import { setBossHomeThreadId } from "../../../../boss-group-view";
 import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, computeFoldSummary, topToolGroup, isTurnRunning, normalizeLoadedThread, type FoldUnit } from "../../../../../lib/turn-fold";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../lib/user-refs";
 import { effortLabels } from "../../../../../lib/effort-labels";
@@ -481,11 +483,21 @@ export async function send(bag: Bag, event?: FormEvent) {
             result = await startTurn(active);
             bag.showToast("会话已恢复", "已在原会话中继续发送");
           } else {
-            bag.threadCacheRef.current.delete(active.id);
+            /* ⛔⛔ 10-25 用户实测：「不要在下面新建会话，有 BOSS 会话选项为什么要在下面新建」。
+               rollout 丢了的会话引擎无法继续，只能重建 —— 但**归属必须跟着搬**，否则侧栏会多出
+               一个陌生会话、群事件也回不到 BOSS：
+                 · 群账本的 bossThreadId 交给主进程重绑（boss-groups:rebind）
+                 · 还没建群时的 home 锚点直接改指新会话 */
+            const previousId = active.id;
+            bag.threadCacheRef.current.delete(previousId);
             active = await bag.createEmptyThread();
             if (!active) throw error;
             createdThreadId = active.id;
-            bag.showToast("会话已重建", "原会话确实不存在，已新建会话并重新发送");
+            void window.codex.bossGroupRebind?.({ previousThreadId: previousId, threadId: active.id }).catch(() => undefined);
+            try {
+              if (localStorage.getItem("boss-home-thread") === previousId) setBossHomeThreadId(active.id);
+            } catch { /* 隐私模式 */ }
+            bag.showToast("会话已重建", "原会话确实不存在，已就地重建并重新发送（BOSS 归属已跟着搬过去）");
             result = await startTurn(active);
           }
         }
