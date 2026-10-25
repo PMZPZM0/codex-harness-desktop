@@ -60,7 +60,7 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
     return () => window.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  if (!groups.length) return null;
+  /* 10-25 用户令：图标**常驻**（没群也在，点开给「还没有群」的指引），不再静默消失 */
   const members = snap?.group?.members ?? [];
   const active = members.filter((m) => m.status !== "removed");
   const removed = members.filter((m) => m.status === "removed");
@@ -100,6 +100,9 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
               <span>成员 {active.length}</span>
               <button type="button" className="boss-panel-mini" aria-label="关闭" onClick={() => setOpen(false)}><X size={11} /></button>
             </div>
+            {!groups.length ? (
+              <div className="boss-members-pop-hint">还没有群。对 Codex 说「建个群：写手 + 前端，把 XX 派下去，验收标准是……」即可建群拉人。</div>
+            ) : null}
             <div className="boss-members-pop-list">
               {active.map((m) => (
                 <span key={m.id} className="boss-groups-member" data-status={m.status} title={`${m.role}${m.source === "cli" ? " · 本机 CLI agent" : ""}${m.lockedTaskIds.length ? ` · 锁在 ${m.lockedTaskIds.length} 条任务上` : ""}`}>

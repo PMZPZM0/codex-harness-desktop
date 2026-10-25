@@ -7,7 +7,7 @@
  * - 聊天气泡语义与面板一致：你/BOSS 右、成员左、系统事件居中小字；置顶带、底部输入框同款。
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Crown, Pin, PinOff, SendHorizontal, X } from "lucide-react";
+import { Crown, Network, Pin, PinOff, SendHorizontal, X } from "lucide-react";
 import { closeBossStage, getBossPanelState, setBossPanelGroup, subscribeBossPanel, type BossPanelState } from "./panel-store.mjs";
 
 type GroupSummary = { id: string; name: string; paused: boolean; memberCount: number; taskCount: number };
@@ -44,6 +44,7 @@ export function BossGroupStage() {
   const [sending, setSending] = useState(false);
   const [tick, setTick] = useState(0);
   const [showAll, setShowAll] = useState(false);   // 群动态开关：默认只看汇总消息（10-25 用户令）
+  const [railOpen, setRailOpen] = useState<boolean | null>(null);  // null = 跟随（有成员就显示）
   const feedRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -91,6 +92,7 @@ export function BossGroupStage() {
   const events = showAll ? allEvents : allEvents.filter((e) => isChatKind(e.kind));
   const pinnedCards = pinnedIds.map((id) => allEvents.find((e) => e.id === id)).filter(Boolean) as typeof allEvents;
   const activeMembers = (snap?.group.members ?? []).filter((m) => m.status !== "removed");
+  const railShown = railOpen === null ? activeMembers.length > 0 : railOpen;
 
   const send = async () => {
     const text = draft.trim();
@@ -117,7 +119,17 @@ export function BossGroupStage() {
         ) : (
           <b className="boss-stage-group">{snap?.group.name ?? group?.name ?? ""}</b>
         )}
-        <span className="boss-stage-count">成员 {activeMembers.length}</span>
+        {/* 10-25 用户令：头部给**成员图标**，点击展开/收起右侧成员轨（图标始终在，0 人也能点开看提示） */}
+        <button
+          type="button"
+          className={`boss-stage-members-btn${railShown ? " boss-stage-members-btn-on" : ""}`}
+          aria-expanded={railShown}
+          title="群成员列表"
+          onClick={() => setRailOpen((v) => (v === null ? !(activeMembers.length > 0) : !v))}
+        >
+          <Network size={14} />
+          <span>成员 {activeMembers.length}</span>
+        </button>
         {snap?.group.paused ? <span className="boss-stage-paused">已暂停</span> : null}
         <button
           type="button"
@@ -193,14 +205,15 @@ export function BossGroupStage() {
           </div>
 
           </div>
-          <aside className="boss-stage-rail" aria-label="群成员">
+          {railShown ? <aside className="boss-stage-rail" aria-label="群成员">
+            {!activeMembers.length ? <div className="boss-rail-empty">还没有成员<br />在下面说话拉人</div> : null}
             {activeMembers.map((m) => (
               <div key={m.id} className="boss-rail-node" data-status={m.status} title={`${m.name} · ${MEMBER_TEXT[m.status] ?? m.status}${m.source === "cli" ? " · 本机 CLI agent" : ""}`}>
                 <span className="boss-rail-avatar" data-status={m.status}>{m.name.slice(0, 1)}</span>
                 <small>{m.name}</small>
               </div>
             ))}
-          </aside>
+          </aside> : null}
           </div>
           <form className="boss-stage-composer" onSubmit={(ev) => { ev.preventDefault(); void send(); }}>
             <input
