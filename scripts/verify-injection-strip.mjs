@@ -13,7 +13,7 @@
  *   node scripts/verify-injection-strip.mjs
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 
@@ -131,10 +131,65 @@ const CASES = [
   },
 ];
 
-function main() {
+/* ── 群广播（10-26「只广播」方案）──────────────────────────────────────────
+   `[群事件]` 是宿主投进中枢会话的群消息。这里用**runner 里真实的四段文案**验证解析，
+   一旦生产者改文案而解析没跟（或反之），这条回归立刻红 —— 否则界面又退回"一坨机器文本"。 */
+const GROUP_CASES = [
+  {
+    name: "群广播 · 单人交活",
+    text: "[群事件] 前端小张 交活：「首页」\n第一屏做完了，移动端断点已补。\n自查：无横向滚动条。",
+    blocks: [{ type: "deliverable", who: "前端小张", title: "首页" }],
+    plain: "第一屏做完了",
+  },
+  {
+    name: "群广播 · 合并投递（2 条）",
+    text: "[群事件] 本轮 2 条交活（成品全文在群内消息流里，需要细节用 group_status 读）：\n- 「首页」（前端小张）：首屏完成…\n- 「配色」（设计小李）：主色定 #2b6cb0…",
+    blocks: [{ type: "batch", count: 2 }],
+    plain: "「首页」（前端小张）",
+  },
+  {
+    name: "群广播 · 单人待审请求（正文含验收标准与成品）",
+    text: "[群事件] 任务「首页」已交活，请**用你自己的评审技能**判一下。\n\n=== 验收标准（criteria）===\n移动端不塌\n\n=== 成品 ===\n<交付正文 16000 字>",
+    blocks: [{ type: "review", count: 1 }],
+    plain: "「首页」待评审",
+  },
+  {
+    name: "群广播 · 多条待审",
+    text: "[群事件] 有 2 条任务已交活待你判：\n· taskId=t_1「首页」\n· taskId=t_2「配色」\n\n⛔ 用你自己的**评审技能**逐条对照各任务的验收标准判。",
+    blocks: [{ type: "review", count: 2 }],
+    plain: "「首页」待评审",
+  },
+  {
+    name: "群广播 · 预算系统行",
+    text: "[群事件] 群「落地页」预算已用 80%（40/50 分钟）。",
+    blocks: [{ type: "notice" }],
+    plain: "预算已用 80%",
+  },
+  {
+    name: "群广播 · 交活 + 待审合并成一条",
+    text: "[群事件] 前端小张 交活：「首页」\n做完了。\n\n[群事件] 任务「首页」已交活，请**用你自己的评审技能**判一下。\n\n=== 验收标准（criteria）===\nc\n\n=== 成品 ===\nbody",
+    blocks: [{ type: "deliverable", who: "前端小张" }, { type: "review", count: 1 }],
+    plain: "做完了",
+  },
+];
+
+/** 生产者（runner.ts）里的文案锚点 —— 与上面的样本必须同时成立，防止单边漂移。 */
+const PRODUCER_ANCHORS = [
+  " 交活：「${",
+  "本轮 ${deliverables.length} 条交活",
+  "有 ${reviews.length} 条任务已交活待你判",
+  "任务「${task.title}」已交活",
+];
+
+async function main() {
   const mod = bundleUserRefs();
+  const { parseGroupEvents, groupEventPlainText } = await import(new URL("../src/lib/group-event-text.mjs", import.meta.url));
+  const cases = [...CASES.map((c) => ({ ...c, kind: "refs" }))];
   let bad = 0;
-  for (const item of CASES) {
+  let total = 0;
+
+  for (const item of cases) {
+    total += 1;
     const res = mod.parseUserRefs(item.text);
     const shown = mod.userDisplayText(item.text);
     const missing = !res.cleanText.includes(item.expect) && !(res.teamTask?.requirement ?? "").includes(item.expect);
@@ -150,12 +205,54 @@ function main() {
       console.log(`✓ ${item.name}`);
     }
   }
+
+  for (const item of GROUP_CASES) {
+    total += 1;
+    const blocks = parseGroupEvents(item.text) ?? [];
+    const plain = groupEventPlainText(blocks);
+    const wrong = item.blocks.filter((want, index) => {
+      const got = blocks[index];
+      if (!got) return true;
+      return got.type !== want.type || (want.who != null && got.who !== want.who) || (want.title != null && got.title !== want.title) || (want.count != null && got.count !== want.count);
+    });
+    const okPlain = plain.includes(item.plain);
+    const leftover = plain.includes("[群事件]");
+    if (wrong.length || !okPlain || leftover) {
+      bad += 1;
+      console.log(`✗ ${item.name}`);
+      if (wrong.length) console.log(`    分块不符：期望 ${JSON.stringify(item.blocks)} 实际 ${JSON.stringify(blocks.map((b) => ({ type: b.type, who: b.who, title: b.title, count: b.count })))}`);
+      if (!okPlain) console.log(`    纯文本缺「${item.plain}」：${JSON.stringify(plain.slice(0, 160))}`);
+      if (leftover) console.log("    纯文本里残留 [群事件] 标签");
+    } else {
+      console.log(`✓ ${item.name}`);
+    }
+    /* 同一段文本走 parseUserRefs 时也必须结构化（否则界面上仍是用户气泡） */
+    total += 1;
+    const refs = mod.parseUserRefs(item.text);
+    if (refs.groupEvents?.length === blocks.length && !refs.cleanText.includes("[群事件]")) {
+      console.log(`✓ ${item.name} · parseUserRefs 结构化`);
+    } else {
+      bad += 1;
+      console.log(`✗ ${item.name} · parseUserRefs 没结构化（groupEvents=${refs.groupEvents?.length ?? 0}）`);
+    }
+  }
+
+  total += 1;
+  const runner = readFileSync(join(ROOT, "electron", "boss-groups", "runner.ts"), "utf8");
+  const missingAnchors = PRODUCER_ANCHORS.filter((anchor) => !runner.includes(anchor));
+  if (missingAnchors.length) {
+    bad += 1;
+    console.log(`✗ 群事件文案漂移：runner.ts 里找不到 ${missingAnchors.map((a) => `「${a}」`).join("、")}（改了文案就要同步改 group-event-text.mjs + 本脚本）`);
+  } else {
+    console.log("✓ 群事件文案与 runner 同源（4 个锚点全在）");
+  }
+
   rmSync(TMP, { recursive: true, force: true });
   if (bad) {
-    console.log(`\n【注入段剥离】${bad}/${CASES.length} 项失败`);
+    console.log(`\n【注入段剥离】${bad}/${total} 项失败`);
     process.exit(1);
   }
-  console.log(`\n【注入段剥离】${CASES.length}/${CASES.length} 通过（气泡里只剩用户原文）`);
+  console.log(`\n【注入段剥离】${total}/${total} 通过（气泡里只剩用户原文；群广播按块渲染）`);
 }
 
 main();

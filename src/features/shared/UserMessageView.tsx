@@ -8,6 +8,7 @@ import { claimSendAnimation } from "../../lib/claim-send-animation";
 import { itemText } from "../../lib/item-text";
 import { parseUserRefs, userDisplayText, formatThreadReferenceBlock } from "../../lib/user-refs";
 import type { ParsedUserRefs } from "../../lib/user-refs";
+import type { GroupEventBlock } from "../../lib/group-event-text.mjs";
 import { isImagePart, promptImagePaths, imagePartSrc, splitPromptSegments } from "../../lib/prompt-images";
 import { stripAttachmentTokens, splitAttachmentSegments } from "../../lib/composer-attachments.mjs";
 import { lookupMessageOriginal } from "../../lib/user-message-originals.mjs";
@@ -71,6 +72,10 @@ export function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, o
       />
     );
   }
+  /* 群广播（10-26 用户令「方案就按只广播这个完成」）：中枢会话里的 `[群事件] …` 是成员汇总
+     进来的**群消息**，不是用户说的话 ⇒ 不能再套用户气泡（右对齐、名字写"你"、看不出谁交的活）。
+     整条交给群气泡渲染：成员头像 + 名字 + 内容；系统类事件走居中灰行。 */
+  if (refs.groupEvents?.length) return <GroupFeed blocks={refs.groupEvents} />;
   const refsImagePaths = new Set(refs.files.filter(isImagePath));
   // 文本占位符里出现过的图片以内联 chip 渲染在正文里，附件列表去重避免双份
   const inlineImageSet = new Set(promptImagePaths(rawText));
@@ -186,6 +191,73 @@ export function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, o
       </div>
     </div>
   );
+}
+
+/* ── 群气泡（"只广播"方案的呈现层）────────────────────────────────────────
+   ⛔ 为什么改在这一层、而不是换 timeline 渲染器：群事件在引擎里就是一条 **userMessage**。
+      换时间线渲染器会踩折叠 / 钉顶 / 贴底那套按"回合单元"算的不变量；在气泡这一层换样式，
+      只是改"这条用户消息长什么样"，回合逻辑一行不动。
+   ⛔ 成员之间不互读（用户令：只广播）—— 这里纯展示，不影响任何上下文。 */
+function GroupFeed({ blocks }: { blocks: GroupEventBlock[] }) {
+  return (
+    <div className="group-feed">
+      {blocks.map((block, index) => {
+        if (block.type === "deliverable") {
+          return (
+            <div className="group-msg" key={index}>
+              <span className="group-avatar" style={{ ["--group-hue" as any]: hueOf(block.who) }} aria-hidden>{initialOf(block.who)}</span>
+              <div className="group-msg-main">
+                <div className="group-msg-head">
+                  <b className="group-msg-name">{block.who}</b>
+                  <span className="group-msg-badge">交活</span>
+                  <span className="group-msg-title">「{block.title}」</span>
+                </div>
+                <div className="group-msg-body">{block.body}</div>
+              </div>
+            </div>
+          );
+        }
+        if (block.type === "batch") {
+          return (
+            <div className="group-msg" key={index}>
+              <span className="group-avatar" style={{ ["--group-hue" as any]: 205 }} aria-hidden>群</span>
+              <div className="group-msg-main">
+                <div className="group-msg-head">
+                  <b className="group-msg-name">群</b>
+                  <span className="group-msg-badge">{block.count} 条交活</span>
+                </div>
+                <ul className="group-msg-list">
+                  {block.items.map((item, i) => <li key={i}><b>{item.who}</b>「{item.title}」</li>)}
+                </ul>
+              </div>
+            </div>
+          );
+        }
+        if (block.type === "review") {
+          return (
+            <div className="group-sys" key={index}>
+              {block.count > 1
+                ? `${block.count} 条已交活，等中枢评审：${block.titles.map((title) => `「${title}」`).join("、")}`
+                : `「${block.titles[0] ?? "任务"}」已交活，等中枢评审`}
+            </div>
+          );
+        }
+        return <div className="group-sys" key={index}>{block.text}</div>;
+      })}
+    </div>
+  );
+}
+
+/** 头像色相：按名字散列 ⇒ 同一成员每次同色（切会话 / 重开都不变，⛔ 不用"列表下标"配色）。 */
+function hueOf(name: string): number {
+  let hue = 0;
+  for (let i = 0; i < name.length; i += 1) hue = (hue * 31 + name.charCodeAt(i)) % 360;
+  return hue;
+}
+
+function initialOf(name: string): string {
+  const text = String(name ?? "").trim();
+  return text.length ? text.slice(0, 1) : "?";
 }
 
 function UserMessageEditor({ initial, onCancel, onSubmit }: { initial: string; onCancel: () => void; onSubmit: (text: string) => void }) {
