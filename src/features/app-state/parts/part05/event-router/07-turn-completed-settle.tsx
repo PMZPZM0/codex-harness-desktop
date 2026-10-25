@@ -5,7 +5,7 @@
  */
 import "@xterm/xterm/css/xterm.css";
 import { AUTO_CONTINUE_MAX_ATTEMPTS, AUTO_CONTINUE_WINDOW_MS, autoContinuePrompt, isTruncatedEmptyTurn, truncationNotice } from "../../../../../lib/turn-truncation.mjs";
-import { isQueueAlreadyStartedError } from "../../../../../lib/queue-errors.mjs";
+import {isQueueAlreadyStartedError, isQueueBusyError } from "../../../../../lib/queue-errors.mjs";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../lib/user-refs";
 import { ThreadItem } from "../../../../../lib/thread-item";
 import { reasoningDuration } from "../../../../../lib/reasoning-duration";
@@ -140,6 +140,13 @@ export function handleEventRouter7(bag: Bag, params: any): boolean {
             //     （消息确实要出现，意图是对的）；只留一行 dbg 供排查。判据见 lib/queue-errors.mjs。
             if (isQueueAlreadyStartedError(message)) {
               bag.dbg("queue-autostart-raced-by-engine", { threadId: params.threadId, message });
+              return;
+            }
+            /* ⛔ 10-26 用户现场（截图顶部那条红错）：引擎回「thread already has an active or
+               pending turn」—— 这不是失败，是**引擎那边确实还有回合在跑**（队列里也可能有待启动的），
+               我们这次"启动下一条"本就不该成功 ⇒ 按成功处理：不弹红错、保留钉顶意图。 */
+            if (isQueueBusyError(message)) {
+              bag.dbg("queue-autostart-busy-thread", { threadId: params.threadId, message });
               return;
             }
             // 启动失败 ⇒ 那条消息不会出现，撤回意图（否则钉顶会去钉别的消息）

@@ -777,5 +777,47 @@ if (state) {
     "标签写入是「重读盘上最新值再合并本次那一条」（⛔ 整份覆盖会让另一个窗口刚写的标签掉）");
 }
 
+/* ── 10-26 晚：群事件投递**机制重做**的护栏 ─────────────────────────────────
+   原机制：群事件一律走引擎的**用户消息队列**（thread/queue/add）⇒
+     ① 排队面板把它们当成"用户的排队消息"显示（还挂立即/定时/编辑/删除）；
+     ② 引擎只在线程空闲时消化队列 ⇒ 中枢一卡住就无限堆积（真机 57~99 条）；
+     ③ 队列里的"待启动回合" ⇒ 引擎报 active/pending turn ⇒ 界面永远"运行中"。
+   新机制：**有回合在跑 ⇒ steer 追加进当前回合**（不进队列）；空闲才进队列；
+            停滞看门狗**不再回投**；队列里的刷屏条目每 5 秒清一次。 */
+{
+  const runnerSrc = codeOnly(read("electron/boss-groups/runner.ts"));
+  const hostQueue = codeOnly(read("src/lib/host-queue.mjs"));
+  const settleSrc = codeOnly(read("src/features/app-state/parts/part05/event-router/07-turn-completed-settle.tsx"));
+  const queueErrs = codeOnly(read("src/lib/queue-errors.mjs"));
+
+  ok(/turn\/steer/.test(runnerSrc)
+    && /expectedTurnId: turnId/.test(runnerSrc)
+    && /const turnId = activeTurnOf\(boss\)/.test(runnerSrc),
+    "群事件投递**优先 steer 进当前回合**（不进队列 ⇒ 不排队、不产生 pending turn、面板永远干净）");
+
+  ok(/function activeTurnOf\(threadId: string\)/.test(runnerSrc)
+    && /engineActiveTurnIds/.test(runnerSrc),
+    "活动回合一览取**引擎侧真相**（engineActiveTurnIds，boot 按 turn/started|completed 记）");
+
+  ok(!/没有进展（无进展 ×1）/i.test(runnerSrc)
+    && /仅记录，未打扰中枢/.test(runnerSrc),
+    "⛔ 停滞看门狗**不再往中枢会话回投**（用户 10-26：「你机制有问题，删掉」）");
+
+  ok(/REVIEW_REMINDED\.has\(task\.id\)/.test(runnerSrc)
+    && /REVIEW_REMINDED\.add\(task\.id\)/.test(runnerSrc),
+    "待审提醒**每个任务只催一次**（原来 12 条/10 分钟 ⇒ 灌爆引擎队列）");
+
+  ok(/export async function pruneBossQueue/.test(runnerSrc)
+    && /await pruneBossQueue\(group\)/.test(runnerSrc)
+    && /thread\/queue\/delete/.test(runnerSrc),
+    "队列清理：每 5 秒把看门狗刷屏条目删掉（⛔ 成品交活那种真消息不删）");
+
+  ok(/isWatchdogSpamText/.test(hostQueue) && /GROUP_EVENT_TAG/.test(hostQueue),
+    "宿主消息判定同时认**保留前缀**与**旧的 [群事件] 文本**（旧数据兼容，否则旧队列仍会显示）");
+
+  ok(/isQueueBusyError/.test(settleSrc) && /isQueueBusyError/.test(queueErrs),
+    "「thread already has an active or pending turn」按**良性**处理（不弹红错）");
+}
+
 console.log(`\n【boss-groups】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

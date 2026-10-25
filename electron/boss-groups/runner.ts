@@ -8,7 +8,7 @@
  *     群消息由宿主**回投**到 boss 会话（`thread/queue/add` + `queue/start`，不打断在跑的回合）。
  *  ③ **审查/打回由宿主做**：模型只被叫醒来看结论。规则全在 state.ts（纯函数、守卫真跑）。
  */
-import { hostQueueMessageId } from "../../src/lib/host-queue.mjs";
+import { hostQueueMessageId, isWatchdogSpamText, queueItemText } from "../../src/lib/host-queue.mjs";
 import { execFile } from "node:child_process";
 import { readUsableExpertTeams } from "../expert-teams";
 import { bridgeDial } from "../main";
@@ -17,7 +17,7 @@ import { TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from ".
 import { ensureProjectAgentsMd } from "../project-conventions";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { safeProviderId } from "../provider-id";
-import { server, threadCwd } from "../runtime-refs";
+import { engineActiveTurnIds, server, threadCwd } from "../runtime-refs";
 import { egoBrowserPath } from "../toolchain";
 import { bossStore } from "./store";
 import { addMember, addTask, assignTask, checkBudget, createGroup, groupOf, markReviewStalled, markRunning, markStalled, memberOf, parseVerdict, pickReassignee, pushEvent, recordReview, removeMember, setPinned, snapshot, submitTask, taskOf } from "./state";
@@ -37,6 +37,9 @@ const POST_MAX_PER_WINDOW = 12;
 /** 成品与评审请求：量大但**一条都不能丢**，单独一个更宽的窗口。 */
 const CRITICAL_MAX_PER_WINDOW = 40;
 
+/** 已催过评审的任务（10-26：待审提醒每个任务只发一次 ⇒ 不再刷爆引擎队列）。 */
+const REVIEW_REMINDED = new Set<string>();
+
 function quotaOk(key: string, max = POST_MAX_PER_WINDOW): boolean {
   const now = Date.now();
   const rec = POST_QUOTA.get(key);
@@ -44,6 +47,49 @@ function quotaOk(key: string, max = POST_MAX_PER_WINDOW): boolean {
   if (rec.count >= max) return false;
   rec.count += 1;
   return true;
+}
+
+/** 这个线程当前有没有回合在跑（引擎侧真相：turnId → threadId，boot 里按 turn/started|completed 记）。 */
+function activeTurnOf(threadId: string): string {
+  for (const [turnId, owner] of engineActiveTurnIds) if (owner === threadId) return turnId;
+  return "";
+}
+
+/**
+ * 清理中枢线程队列里的**看门狗刷屏条目**（10-26 用户现场：「给老子立刻清空」）。
+ *
+ * ⛔ 为什么需要：这些提醒走的是引擎的用户消息队列，而引擎**只在线程空闲时**才消化
+ *   ⇒ 线程一卡住（回合卡在"运行中"）就无限堆积（真机：57~99 条，全是同一批任务的
+ *   「已经 N 秒没有进展 / 已交活 N 分钟仍没有审查结论」）。
+ * ⛔ 只删看门狗那两类（isWatchdogSpamText）—— **成品交活 / 成员进出 / 预算**那些
+ *   是真消息，删了就是丢活。
+ * ⛔ 幂等：每 5 秒的 tick 都跑一次 ⇒ 应用一启动就把堆积清掉（用户看到的就是干净的队列）。
+ */
+export async function pruneBossQueue(group: BossGroup): Promise<number> {
+  const boss = String(group.bossThreadId ?? "");
+  if (!boss) return 0;
+  let list: any;
+  try {
+    /* ⛔ 线程没加载时队列读不到（空）⇒ 先 resume 再读（postToBoss 也这么做）。
+       ⛔ resume 失败不抛：读不到就当没队列。 */
+    await server.request("thread/resume", { threadId: boss, excludeTurns: false }).catch(() => undefined);
+    list = await server.request("thread/queue/list", { threadId: boss, limit: 200 });
+  } catch {
+    return 0;   // 线程还没加载/已被卸载 ⇒ 没有队列
+  }
+  const items = Array.isArray(list?.data) ? list.data : [];
+  if (!items.length) return 0;
+  let removed = 0;
+  for (const item of items) {
+    const text = queueItemText(item);
+    if (!isWatchdogSpamText(text)) continue;
+    try {
+      await server.request("thread/queue/delete", { threadId: boss, queuedSubmissionId: String(item.id ?? "") });
+      removed += 1;
+    } catch { /* 已被引擎取走（不是失败，队列本来就那样） */ }
+  }
+  if (removed) console.log(`[boss-groups] 清掉 ${removed} 条看门狗刷屏提醒（群「${group.name}」）`);
+  return removed;
 }
 
 /** 群事件 → 指挥中枢会话。⛔ 用 queue/add（不是 turn/start）：turn/start 会打断正在跑的回合。 */
@@ -59,10 +105,30 @@ export async function postToBoss(group: BossGroup, text: string, options: { crit
   if (!ok) return false;
   try {
     await server.request("thread/resume", { threadId: boss, excludeTurns: false }).catch(() => undefined);
-    /* ⛔⛔ 10-26 用户现场：「成员同步发出来的消息，还要排队吗」——
-       群消息走的是引擎的**用户消息队列**，引擎视角它就是"排队的用户消息"
-       ⇒ 应用的排队面板会把它显示成「排队中 1/3」的用户消息卡。
-       打上宿主保留前缀 ⇒ 渲染层按前缀过滤（引擎照收，投递链路不变）。 */
+    /* ⛔⛔⛔ 10-26 用户现场：「你阿妈b的啊」「删了重新做这个机制」。
+       ── 原机制（错在哪）────────────────────────────────────────────
+       群事件一律走引擎的**用户消息队列**（thread/queue/add）。后果：
+         ① 引擎视角它就是"用户的排队消息" ⇒ 应用的排队面板把它们当成**你的消息**显示
+            （还挂着立即/定时/编辑/删除，而你根本管不了它）；
+         ② 引擎**只在线程空闲时**才消化队列 ⇒ 中枢回合一卡住就无限堆积
+            （真机：同一个任务堆了几十条，全队列 57~99 条，界面直接"炸"开）；
+         ③ 队列里存在"待启动回合" ⇒ 引擎报「thread already has an active or pending turn」
+            ⇒ 界面永远显示"运行中"、用户发不出新消息。
+       ── 新机制 ───────────────────────────────────────────────────
+       **有回合在跑 ⇒ 直接 steer 追加进当前回合**（不进队列）：
+         立刻送达（不用等当前回合结束）、不进队列、不产生 pending turn、面板永远干净。
+       **中枢空闲 ⇒ 才进队列**（那时引擎会立刻消费，队列不会堆积）。
+       ⛔ 两种方式的内容都带 `[群事件]` 标记 ⇒ 时间线按群事件块渲染（不是"你"的气泡）。 */
+    const turnId = activeTurnOf(boss);
+    if (turnId) {
+      const steered = await server.request("turn/steer", {
+        threadId: boss,
+        expectedTurnId: turnId,
+        input: [{ type: "text", text, text_elements: [] }],
+      }).then(() => true).catch(() => false);
+      if (steered) return true;
+      /* steer 失败（回合刚好结束）⇒ 落到下面的队列路径。 */
+    }
     await server.request("thread/queue/add", { threadId: boss, input: [{ type: "text", text }], clientUserMessageId: hostQueueMessageId("boss") });
     const list: any = await server.request("thread/queue/list", { threadId: boss, limit: 1 }).catch(() => null);
     const head = list?.data?.[0];
@@ -547,6 +613,9 @@ export async function tickAll(): Promise<void> {
   const state = await bossStore.load();
   let dirty = false;
   for (const group of Object.values(state.groups)) {
+    /* ⛔ 10-26：先清掉队列里的看门狗刷屏条目（每 5 秒一次 ⇒ 启动后自动压平）。
+       ⛔ 失败不阻塞后面的扫描（清理是补救，不是主逻辑）。 */
+    await pruneBossQueue(group).catch(() => undefined);
     const before = group.paused;
     const budget = checkBudget(state, group.id);
     if (group.paused !== before) {
@@ -568,7 +637,17 @@ export async function tickAll(): Promise<void> {
     if (quotaOk(key)) {
       dirty = true;
       emit({ type: "boss-group", phase: "task", groupId: group.id, taskId: task.id, status: "stalled" });
-      await postToBoss(group, `[群事件] 「${task.title}」已经 ${Math.round(item.idleMs / 1000)} 秒没有进展（无进展 ×1），需要你看一眼。`);
+      /* ⛔⛔ 10-26 用户现场：「你机制有问题，删掉」。
+         原实现在这里**往中枢会话回投**「已经 N 秒没有进展（无进展 ×1）」——
+         而这条投递走的是引擎的用户消息队列，引擎只在**线程空闲**时才消化
+         ⇒ 线程一卡住就无限堆积（真机：同一个任务堆了几十条，全队列 57~99 条），
+         排队面板还把它们当成"用户的排队消息"显示。
+         ⇒ **这条回投整体删除**：停滞只作为**状态**存在（看板/事件流仍能看到"停滞"），
+            不再往对话里灌。⛔ 任务本身照跑（停滞不代表失败），不受影响。 */
+      pushEvent(state, {
+        groupId: group.id, taskId: task.id, kind: "note",
+        text: `「${task.title}」已 ${Math.round(item.idleMs / 1000)} 秒没有进展（仅记录，未打扰中枢）`,
+      });
     }
   }
   /* 待审看门狗（审查修的缺口 C）：评审交给会话自己判 ⇒ 它那一轮没看见、或忘了调 group_review，
@@ -578,7 +657,10 @@ export async function tickAll(): Promise<void> {
     const task = state.tasks[item.taskId];
     const group = state.groups[item.groupId];
     if (!task || !group) continue;
-    if (!quotaOk(`review:${task.id}`)) continue;
+    /* ⛔ 10-26：原来走配额闸（12 条/10 分钟/任务）⇒ 一个待审任务能灌几十条到引擎队列。
+       ⇒ 改成**每个任务只催一次**（进程内集合；催过就不再灌）。 */
+    if (REVIEW_REMINDED.has(task.id)) continue;
+    REVIEW_REMINDED.add(task.id);
     dirty = true;
     pushEvent(state, {
       groupId: group.id, taskId: task.id, kind: "note",

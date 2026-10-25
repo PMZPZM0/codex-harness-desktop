@@ -8,7 +8,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { isMacPlatform } from "../../../../../lib/is-mac-platform";
-import { isHostQueueItem } from "../../../../../lib/host-queue.mjs";
+import { isHostQueueItem, isWatchdogSpamText, queueItemText } from "../../../../../lib/host-queue.mjs";
 import { basename } from "../../../../../lib/basename";
 import { openImageLightbox, registerImageLightbox, openPastedTextEditor, registerOpenPastedTextEditor, registerOpenFileTextEditor, notifyToast, registerToast, requestClosePastedText, registerClosePastedText, resolveFilePath, registerResolveFilePath, lookupKnownFile, registerLookupKnownFile, notifyFileMissing, registerFileMissing } from "../../../../../lib/ui-channels";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
@@ -296,7 +296,19 @@ bag.scheduleSidebarRefresh = scheduleSidebarRefresh as typeof bag.scheduleSideba
          ⛔ 那些不是用户说的话，用户也不能编辑/删除/定时它 ⇒ 摆在排队面板里纯误导。
          宿主侧给它们打了保留前缀（host:…）⇒ 这里按前缀过滤掉。
          ⛔ 引擎那边照收照发，投递链路与 FIFO 一概不动（过滤只发生在**显示层**）。 */
-      const visible = (result.data ?? []).filter((entry: any) => !isHostQueueItem(entry));
+      const raw = result.data ?? [];
+      const visible = raw.filter((entry: any) => !isHostQueueItem(entry));
+      /* ⛔⛔ 10-26 用户现场：「一启动应用，直接炸了，50多条队列」。
+         引擎队列里的**看门狗刷屏提醒**（同一个任务反复报「已经 N 秒没有进展 / 已交活 N 分钟
+         仍没有审查结论」）不删掉的话：① 面板一进来就几十条；② 引擎把它们**逐条当用户消息
+         消费**（每个都是一回合）⇒ 中枢被垃圾消息灌几十轮、回合一直"运行中"。
+         ⇒ 读队列时顺手删掉它们（只删刷屏那两类；成品交活/成员进出是**真消息**，留着）。
+         ⛔ 引擎那边线程可能还没加载 ⇒ 删失败就跳过（主进程 tick 每 5 秒还会再清一次）。 */
+      for (const entry of raw) {
+        if (!isHostQueueItem(entry)) continue;
+        if (!isWatchdogSpamText(queueItemText(entry))) continue;
+        void window.codex.request("thread/queue/delete", { threadId, queuedSubmissionId: String(entry.id ?? "") }).catch(() => undefined);
+      }
       if (bag.threadRef.current?.id === threadId) bag.setQueue(visible);
     } catch { /* 空会话/无 rollout 的线程没有消息队列，静默跳过 */ }
   }
