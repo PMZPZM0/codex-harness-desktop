@@ -456,7 +456,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   className={`sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-amber${bossStageOn ? " boss-open" : ""}`}
                   title="BOSS 会话：切到群聊专属界面（拉群派活、盯进度、审不过打回重做）"
                   aria-pressed={bossStageOn}
-                  onClick={() => { if (bossStageOn) { closeBossStage(); } else { openBossStage(); } }}
+                  onClick={() => { if (bossStageOn) { closeBossStage(); } else { openBossStage("", app.thread?.id ?? ""); } }}
                 >
                   <Crown size={15} /><span>BOSS 会话</span>
                 </button>

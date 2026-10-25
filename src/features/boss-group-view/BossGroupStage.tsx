@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Crown, Network, Pin, PinOff, SendHorizontal, X } from "lucide-react";
 import { closeBossStage, getBossPanelState, setBossPanelGroup, subscribeBossPanel, type BossPanelState } from "./panel-store.mjs";
+import { AppSelect } from "../../components/AppSelect";
 
 type GroupSummary = { id: string; name: string; paused: boolean; memberCount: number; taskCount: number };
 type Snapshot = {
@@ -113,9 +114,14 @@ export function BossGroupStage() {
       <header className="boss-stage-head">
         <span className="boss-stage-title"><Crown size={16} aria-hidden="true" /> BOSS 会话</span>
         {groups.length > 1 ? (
-          <select className="boss-panel-select" aria-label="切换群" value={groupId} onChange={(e) => setBossPanelGroup(e.target.value)}>
-            {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-          </select>
+          /* ⛔ 渲染层不许用原生 `<select>`（守卫【197】）：系统 option 弹层无法样式化 */
+          <AppSelect
+            className="boss-panel-select"
+            ariaLabel="切换群"
+            value={groupId}
+            onChange={(next) => setBossPanelGroup(next)}
+            options={groups.map((g) => ({ value: g.id, label: g.name }))}
+          />
         ) : (
           <b className="boss-stage-group">{snap?.group.name ?? group?.name ?? ""}</b>
         )}

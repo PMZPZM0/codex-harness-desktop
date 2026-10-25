@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CS
 import { createPortal } from "react-dom";
 import { Network, Plus, UserMinus, X } from "lucide-react";
 import { getBossPanelState, setBossPanelGroup, subscribeBossPanel } from "./panel-store.mjs";
+import { AppSelect } from "../../components/AppSelect";
 
 type GroupLite = { id: string; name: string; bossThreadId?: string };
 type MemberLite = { id: string; name: string; role: string; status: string; lockedTaskIds: string[]; source?: string };
@@ -91,9 +92,14 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
           <div className="boss-members-pop" role="dialog" aria-label="群成员列表" style={popStyle}>
             <div className="boss-members-pop-head">
               {groups.length > 1 ? (
-                <select className="boss-panel-select boss-members-pop-select" aria-label="切换群" value={groupId} onChange={(e) => { setBossPanelGroup(e.target.value); void refresh(); }}>
-                  {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </select>
+                /* ⛔ 渲染层不许用原生 `<select>`（守卫【197】）；popover 里的下拉同样走 AppSelect */
+                <AppSelect
+                  className="boss-panel-select boss-members-pop-select"
+                  ariaLabel="切换群"
+                  value={groupId}
+                  onChange={(next) => { setBossPanelGroup(next); void refresh(); }}
+                  options={groups.map((g) => ({ value: g.id, label: g.name }))}
+                />
               ) : (
                 <b>{snap?.group?.name ?? groups[0]?.name}</b>
               )}

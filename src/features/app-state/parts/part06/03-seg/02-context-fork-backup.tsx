@@ -12,6 +12,8 @@ import { resolveImagePath } from "../../../../../lib/resolve-image-path";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../app-view/types";
 import type { Bag } from "../../bag-types";
+/* 新会话要退出 BOSS 群聊专属视图（同 openThread 的接线，见该处注释）。⛔ 走域 barrel（守卫【130】）。 */
+import { closeBossStage } from "../../../../boss-group-view";
 
 export function usePart06c2(bag: Bag) {
   async function copyImage(path: string) {
@@ -196,6 +198,9 @@ bag.forkThreadFromSidebar = forkThreadFromSidebar as typeof bag.forkThreadFromSi
 bag.importConversationMarkdown = importConversationMarkdown as typeof bag.importConversationMarkdown;
 
   function startNewThread() {
+    /* 新会话 = 离开 BOSS 群聊界面（同 openThread：切会话/新建会话都要退出专属视图，
+       否则主舞台一直停在群聊覆盖层、看不到新会话）。 */
+    closeBossStage();
     bag.setChatSearchOpen(false);
     const savedSandbox = localStorage.getItem("default-sandbox") ?? "danger-full-access";
     // ⛔ 输入框草稿（09-19）：先存走当前会话草稿（必须在置空 threadRef 之前），再恢复「新会话草稿」
