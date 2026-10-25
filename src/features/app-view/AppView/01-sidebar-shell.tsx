@@ -3,7 +3,7 @@
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { BossProjectDirDialog, autoOpenBossDirDialog, bossShortcutLabel, closeBossDirDialog, getBossDirDialogState, getBossThreads, setBossDirChosen, setBossHomeThreadId, setBossPending, subscribeBossDirDialog, subscribeBossThreads } from "../../boss-group-view";
+import { BossProjectDirDialog, bossShortcutLabel, closeBossDirDialog, getBossDirDialogState, getBossThreads, setBossDirChosen, setBossHomeThreadId, setBossPending, subscribeBossDirDialog, subscribeBossThreads } from "../../boss-group-view";
 import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, useFunctionMenuConfig } from "../../function-menu";
 import { hk } from "../../../lib/hk";
 import { isMacPlatform } from "../../../lib/is-mac-platform";
@@ -308,6 +308,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     updateDownloading,
     updateError,
     updateInfo,
+    updateMode,
+    setUpdateMode,
     updateProgress,
     // ⛔ 10-12 更新就绪弹窗（需求 3）：与设置页无关，独立挂在左下角。
     updateReady,
@@ -375,9 +377,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     bossHomePending.current = true;              // 这个新会话登记为 BOSS 会话（拿到 id 后）
     startNewThread();                            // ⛔ 每次都是全新会话
     setBossPending(true);                        // 必须在 startNewThread 之后（它会清这个标记）
-    /* ② 再弹项目地址对话框：⛔ 用「自动弹出」标记 ⇒ 由**欢迎界面**消费后再弹，
-          保证用户先看到欢迎界面（直接 open 会让弹窗盖住它 ⇒ 顺序反了）。 */
-    autoOpenBossDirDialog();
+    /* ⛔⛔ 10-25 用户令：「不要进 BOSS 会话欢迎界面就弹，改成点击那个选项再弹」
+       ⇒ 这里**不再**自动弹项目地址对话框；入口在输入框左上角那枚项目地址 chip
+         （`02-composer-form.tsx` 的 `boss-cwd-chip`，位置与普通会话欢迎界面一致），点它才弹。 */
   };
   /* 10-25 用户：BOSS 会话快捷键（Win/Linux = Ctrl+M；mac 的 Cmd+M 是系统最小化，沿用 Cmd+Shift+B）。
      ⛔ 键位**单一真相源**在 boss-group-view/boss-shortcut.ts（侧栏 kbd 徽标、欢迎界面、快捷键清单共用）。 */
@@ -778,6 +780,12 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                       <div className="account-menu-row"><span className="account-menu-label">构建</span><span className="account-menu-value mono" title="构建期写进包体的指纹（YYYYMMDD-HHmm）">{buildStamp}</span></div>
                       <div className="account-menu-row"><span className="account-menu-label">产物</span><span className="account-menu-value mono" title="正在执行的渲染层 bundle（含内容 hash）">{bundleFile}</span></div>
                       <div className="account-menu-row"><span className="account-menu-label">更新地址</span><span className="account-menu-value">GitHub Releases</span></div>
+                      <div className="account-menu-row"><span className="account-menu-label">更新方式</span>
+                        <span className="update-mode-switch" role="group" aria-label="更新方式">
+                          <button type="button" className={updateMode === "differential" ? "active" : ""} onClick={() => setUpdateMode("differential")}>差分</button>
+                          <button type="button" className={updateMode === "full" ? "active" : ""} onClick={() => setUpdateMode("full")}>完整包</button>
+                        </span>
+                      </div>
                     </div>
                     <button className="account-menu-item" onClick={() => void copyBuildDiagnostics()}>
                       <ClipboardList size={15} /><span>复制诊断信息</span>

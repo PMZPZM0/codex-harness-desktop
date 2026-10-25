@@ -331,14 +331,20 @@ if (state) {
   /* ⛔⛔ 10-25 用户实测（第二轮）：「点 BOSS 会话，先出来这个弹窗，不会跳转到 BOSS 欢迎界面，
      再跳这个弹窗」⇒ 顺序必须是 **欢迎界面 → 欢迎界面上的按钮 → 地址对话框**。
      ⇒ 对话框的开关必须走**全局 store**（欢迎界面在消息区、对话框在侧栏壳，两处要能互相触发）。 */
-  ok(/openBossDirDialog/.test(read("src/features/boss-group-view/BossThreadIntro.tsx"))
-    && !/openBossDirDialog/.test(read("src/features/app-view/AppView/01-sidebar-shell.tsx")),
-    "⛔ 项目地址对话框由 BOSS 欢迎界面上的按钮叫出来（⇒ 先看到欢迎界面，再弹对话框）；侧栏按钮自己不弹");
-  /* ⛔ 顺序契约（用户实测第二轮）：点「BOSS 会话」⇒ **先渲染欢迎界面、再自动弹对话框**。
-     ⇒ 侧栏只置「自动弹出」标记（autoOpenBossDirDialog），由欢迎界面挂载后消费（consumeBossDirAutoOpen）再开。 */
-  ok(/autoOpenBossDirDialog/.test(read("src/features/app-view/AppView/01-sidebar-shell.tsx"))
-    && /consumeBossDirAutoOpen/.test(read("src/features/boss-group-view/BossThreadIntro.tsx")),
-    "⛔ 点 BOSS 会话 = 先渲染欢迎界面，**再自动弹**项目地址对话框（顺序反了用户会以为没跳欢迎界面）");
+  /* ⛔⛔ 10-25 用户令（第四轮）：「这个弹窗逻辑改一下吧，不要进 BOSS 会话欢迎界面就弹，
+     改成点击那个选项再弹，然后把那个项目选项位置改一下，贴着输入框左上角，跟普通会话欢迎界面的位置和逻辑」
+     ⇒ 契约变成：**进来不弹**；入口 = 输入框左上角那枚「项目地址」chip（与普通会话同一处）。
+     ⇒ 三条一起钉：① 欢迎界面自己不许叫对话框（它只剩文案）；② 侧栏也不许自动弹；
+       ③ 入口在 composer 的 chip 上，且位置走 `.welcome-cwd-picker`（普通会话同一容器）。 */
+  const composerForm = read("src/features/app-view/AppView/02-main-stage/03-composer/02-composer-form.tsx");
+  ok(!/openBossDirDialog/.test(read("src/features/boss-group-view/BossThreadIntro.tsx"))
+    && !/autoOpenBossDirDialog|consumeBossDirAutoOpen/.test(read("src/features/boss-group-view/boss-dir-dialog-store.mjs"))
+    && !/autoOpenBossDirDialog/.test(read("src/features/app-view/AppView/01-sidebar-shell.tsx")),
+    "⛔ 进 BOSS 欢迎界面**不自动弹**项目地址对话框（用户令：点了才弹）");
+  ok(/welcome-cwd-picker[\s\S]{0,400}openBossDirDialog\(\)/.test(composerForm)
+    && /isEmpty && isBossSession/.test(composerForm)
+    && /bossDirState\.pendingDir/.test(composerForm),
+    "⛔ 项目地址入口在**输入框左上角**（`.welcome-cwd-picker` 容器，与普通会话同一位置），点它才弹对话框");
   ok(/export function openBossDirDialog/.test(read("src/features/boss-group-view/boss-dir-dialog-store.mjs"))
     && /export function closeBossDirDialog/.test(read("src/features/boss-group-view/boss-dir-dialog-store.mjs")),
     "地址对话框开关是**全局 store**（跨组件触发：欢迎界面 ↔ 侧栏壳）");
@@ -558,8 +564,8 @@ if (state) {
     "⛔ 成员按钮只认**本会话自己的群**，不回落到别的群（回落到 groups[0] 就是串项）");
   ok(/dirByThread/.test(read("src/features/boss-group-view/boss-dir-dialog-store.mjs")),
     "⛔ 已选项目地址按会话 id 记（dirByThread）—— 多个 BOSS 会话各用各的项目目录");
-  ok(/cwd=\{thread\?\.cwd \?\? ""\}/.test(timeline),
-    "⛔ BOSS 欢迎界面回显**本会话自己的**项目地址（thread.cwd）");
+  ok(/const bossDir = isBossSession \? \(app\.thread\?\.cwd \|\| bossDirState\.pendingDir \|\| ""\) : ""/.test(composerForm),
+    "⛔ 输入框左上角的项目地址 chip 读**本会话自己的**目录（thread.cwd / pendingDir），⛔ 不读全局 workspace");
   /* ⛔⛔ 10-25 用户实测两处（都是「串到别的会话」的 LOW 错误）：
      ① 「下面已经自动选了别的会话的项目地址」—— BOSS 选目录时**写了全局 workspace**
         ⇒ 普通会话的顶栏/项目地址芯片显示成 BOSS 的目录，下一个新会话也继承它。
