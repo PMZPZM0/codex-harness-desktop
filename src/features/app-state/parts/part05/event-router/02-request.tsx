@@ -78,8 +78,8 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       角色会话的 promote 闸在主进程应答路径（boot.ts），那里才有身份硬闸。 */
                 const cat = String(args.category ?? "临时上下文");
                 const scope = args.scope === "project" ? "project" : "private";
-                /* ⛔⛔ 10-25：BOSS 会话的记忆必须写进它自己的专属目录 ——
-                   用 `bag.workspace`（用户选的项目）会把 BOSS 的记忆写进项目记忆里，
+                /* ⛔⛔ 10-25：指挥中枢的记忆必须写进它自己的专属目录 ——
+                   用 `bag.workspace`（用户选的项目）会把中枢的记忆写进项目记忆里，
                    与普通会话混在一起 ⇒ 与普通会话完全拆开的承诺就破了。 */
                 const bossMemWs = await ensureBossMemoryWorkspace(String(event.params?.threadId ?? bag.threadRef.current?.id ?? ""));
                 const result = await window.codex.writeFabricMemory({
@@ -188,8 +188,8 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       .filter((m: any) => m.name && m.role);
                     const res = await window.codex.createBossGroup({
                       name: String(args.name ?? ""),
-                      /* ⛔ BOSS 会话自己跑在 <userData>/boss-home（记忆独立），所以「群在哪干活」
-                         不能取 bag.workspace —— 取用户在 BOSS 会话里选的项目（boss-workspace）。
+                      /* ⛔ 指挥中枢自己跑在 <userData>/boss-home（记忆独立），所以「群在哪干活」
+                         不能取 bag.workspace —— 取用户在指挥中枢里选的项目（boss-workspace）。
                          模型显式传 workspace 时以它为准。 */
                       workspace: String(args.workspace ?? (() => { try { return localStorage.getItem("boss-workspace") ?? ""; } catch { return ""; } })() ?? bag.workspace ?? ""),
                       // ⛔ boss 身份取引擎下发的 threadId（模型伪造不了），群事件靠它回投
@@ -311,7 +311,7 @@ ${st.hint}`);
               //    已整体删除（它与调度开关脱钩、还让专家/专家团永远被绕过），⛔ 不许加回来。
               else if (event.params?.tool === "agent_invoke") {
                 const dispatchOrigin = String(event.params?.threadId ?? bag.threadRef.current?.id ?? "");
-                /* ⛔ BOSS 群会话不用调度工具（10-25 用户令）：群里的派遣只有 group_assign 一条路，
+                /* ⛔中枢群会话不用调度工具（10-25 用户令）：群里的派遣只有 group_assign 一条路，
                    否则两套派遣并行会把账本撕裂。拒绝时告诉模型正确工具。 */
                 const bossHit = await (async () => {
                   try {
@@ -321,7 +321,7 @@ ${st.hint}`);
                 })();
                 if (bossHit) {
                   await toolCallRespond.send(event.id!, {
-                    contentItems: [{ type: "inputText", text: "你是群里的 BOSS：不用 agent_invoke 调度，改用 group_assign 派活（验收标准 criteria 必填）。" }],
+                    contentItems: [{ type: "inputText", text: "你是这个群的指挥中枢：不用 agent_invoke 调度，改用 group_assign 派活（验收标准 criteria 必填）。" }],
                     success: false,
                   });
                 } else {

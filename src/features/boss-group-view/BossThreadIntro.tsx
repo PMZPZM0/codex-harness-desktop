@@ -1,5 +1,5 @@
 /**
- * BOSS 会话的**专属欢迎界面**（10-25 用户令第二轮改版）。
+ *指挥中枢的**专属欢迎界面**（10-25 用户令第二轮改版）。
  *
  * ⛔ 骨架**沿用普通会话欢迎页**（`.welcome-state`：大图标 → 渐变大字标题 → 小字副标题，
  *    **居中**排布）—— 用户原话：「普通会话的欢迎界面，那个就挺好看的，你稍微优化一下就好了」
@@ -10,7 +10,7 @@
  *      · 内容：普通会话讲通用待办 ⇒ 这里讲**群编排**（拉群 → 干活 → 验收打回）。
  *    ⛔ **不做成大卡片**（用户令：「不要复用大卡片样式」）—— 靠留白分层，不靠盒子。
  *
- * ⛔ 「选择项目地址」按钮走 `boss-dir-dialog-store.mjs`（**全局开关**）：点侧栏「BOSS 会话」
+ * ⛔ 「选择项目地址」按钮走 `boss-dir-dialog-store.mjs`（**全局开关**）：点侧栏「指挥中枢」
  *    ⇒ 先落在这个欢迎界面上，再由这里把项目地址对话框叫出来。
  * ⛔ 快捷键提示**不放这里**（用户原话：「新建会话+快捷这个提示你也放这里，太LOW 了…
  *    小字提示太LOW 了，我不喜欢，一点个性没有」）⇒ 快捷键只留在侧栏按钮行尾的 kbd 徽标上，
@@ -26,7 +26,7 @@ const GUIDE = [
 ];
 
 export function BossThreadIntro() {
-  /* ⛔⛔ 10-25 用户令：「这个弹窗逻辑改一下吧，不要进 BOSS 会话欢迎界面就弹，改成点击那个选项再弹，
+  /* ⛔⛔ 10-25 用户令：「这个弹窗逻辑改一下吧，不要进指挥中枢就弹，改成点击那个选项再弹，
      然后把那个项目选项位置改一下，贴着输入框左上角，跟普通会话欢迎界面的位置和逻辑」
      ⇒ 本组件**只剩文案**：不再自动弹项目地址对话框，也不放「选地址」按钮
        （项目地址控件在输入框左上角那枚 chip 上，见 02-composer-form.tsx，位置与普通会话一致）。
@@ -34,8 +34,8 @@ export function BossThreadIntro() {
   return (
     <div className="boss-welcome">
       <div className="boss-welcome-mark"><Crown size={64} strokeWidth={0.7} /></div>
-      <h1 className="boss-welcome-title">BOSS 会话</h1>
-      <p className="boss-welcome-sub">这个会话当调度台用：拉群、派活、盯进度、验收打回，全在这儿闭环。</p>
+      <h1 className="boss-welcome-title">指挥中枢</h1>
+      <p className="boss-welcome-sub">一条会话当调度台：你提目标，我按岗位拉人、派活、盯进度、验收打回。</p>
 
       <ol className="boss-welcome-guide">
         {GUIDE.map(([title, text], index) => (

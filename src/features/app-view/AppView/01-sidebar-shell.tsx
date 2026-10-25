@@ -161,25 +161,25 @@ import { CloseConfirmDialog } from "../../../components/CloseConfirmDialog";
 import { FileTrustDialog } from "../../../components/FileTrustDialog";
 
 export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppApi; onOpenSettings?: (page: string) => void }) {
-  /* ── BOSS 会话 = **一个普通会话**（10-25 用户令，推翻覆盖层）──────────────────
-     用户原话：「一个正常对话框不会做嘛，新建一个会话，常驻成 BOSS 会话，不就好了嘛」。
+  /* ── 指挥中枢 = **一个普通会话**（10-25 用户令，推翻覆盖层）──────────────────
+     用户原话：「一个正常对话框不会做嘛，新建一个会话，常驻成指挥中枢，不就好了嘛」。
      ⇒ 点按钮就是 `openThread(群.bossThreadId)`：正常时间线、正常输入框、正常消息渲染，
         不再有任何覆盖层/专属界面。
      ⇒ 「选中效果」是**派生量**（当前会话 id 命中某个群的 boss 线程），⛔ 不再用 store 的
         stage 布尔值 —— 那个布尔值和真实会话状态会对不上（用户实测：切走了按钮还亮着）。
-     ⇒ 还没建群时用 localStorage 里的 `homeId` 当锚点：**同一个 BOSS 会话一直走**，
+     ⇒ 还没建群时用 localStorage 里的 `homeId` 当锚点：**同一个指挥中枢一直走**，
         ⛔ 不每点一次就多一个「未命名任务」（用户 10-25 第二点）。 */
   const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
-  /* 10-25 用户令：新建 BOSS 会话时弹**应用内**对话框选项目地址（两个选项），
+  /* 10-25 用户令：新建指挥中枢时弹**应用内**对话框选项目地址（两个选项），
      ⛔ 不用系统 messageBox、⛔ 不用 toast 内联提示。
-     ⛔ 开关走**全局 store**（boss-dir-dialog-store）：点侧栏「BOSS 会话」先落进 BOSS 欢迎界面，
+     ⛔ 开关走**全局 store**（boss-dir-dialog-store）：点侧栏「指挥中枢」先落进欢迎界面，
         弹窗由欢迎界面里的「选择项目地址并开始」按钮叫出来 ⇒ 两处要能开同一个弹窗。 */
   const bossDirState = useSyncExternalStore(subscribeBossDirDialog, getBossDirDialogState);
   const bossDirOpen = bossDirState.open;
   const [bossDirBusy, setBossDirBusy] = useState(false);
 
-  /* 新建 BOSS 会话的项目地址对话框（应用内模态，两个选项）
-     ⛔ 10-25 用户实测：「点 BOSS 会话」应**先落进 BOSS 欢迎界面**，再由界面上的
+  /* 新建指挥中枢的项目地址对话框（应用内模态，两个选项）
+     ⛔ 10-25 用户实测：「点指挥中枢」应**先落进欢迎界面**，再由界面上的
         「选择项目地址并开始」叫出这个对话框 ⇒ 选地址这个动作不再由侧栏按钮直接触发。
      ⛔ 这里**不再调 startNewThread()**：进入欢迎界面时已经起过一个新的空会话了，
         再调一次会把用户刚在欢迎界面上打的提示词清掉（saveDraft + setPrompt("")）。 */
@@ -196,29 +196,29 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         dir = String(await window.codex.createBossProjectDir());
       }
       /* ⛔⛔⛔ **不写全局 workspace**（10-25 用户实测：「下面已经自动选了别的会话的项目地址，
-         你这还有别的」「每次 BOSS 会话都不要自动选择旧的会话项目地址」）：
-         BOSS 的目录是**它自己会话的 cwd**，写进全局 workspace 会让：
-           ① 普通会话的顶栏/项目地址芯片显示成 BOSS 的目录（串项）；
-           ② 下一个新会话继承 BOSS 的目录。
-         ⇒ 这里只把目录记到 BOSS 会话自己的登记表（setBossDirChosen），
+         你这还有别的」「每次指挥中枢都不要自动选择旧的会话项目地址」）：
+        中枢的目录是**它自己会话的 cwd**，写进全局 workspace 会让：
+           ① 普通会话的顶栏/项目地址芯片显示成中枢的目录（串项）；
+           ② 下一个新会话继承中枢的目录。
+         ⇒ 这里只把目录记到指挥中枢自己的登记表（setBossDirChosen），
             发首条消息建会话时由 createEmptyThread 用它当 cwd（见 part08/01-seg.tsx）。 */
       closeBossDirDialog();
-      /* ⛔ 目录**按会话**记（10-25 用户令：BOSS 会话可创建多个，互不干扰）——
+      /* ⛔ 目录**按会话**记（10-25 用户令：指挥中枢可创建多个，互不干扰）——
          会话还没建出来（thread id 未分配）⇒ 暂存 pendingDir，会话建成后再按 id 落位。 */
       setBossDirChosen(dir, currentThreadId);
-      setBossPending(true);                        // 空态继续显示 BOSS 引导卡
-      bossHomePending.current = true;              // 这个新会话登记为 BOSS 会话（拿到 id 后）
+      setBossPending(true);                        // 空态继续显示中枢引导卡
+      bossHomePending.current = true;              // 这个新会话登记为指挥中枢（拿到 id 后）
     } catch { /* 目录没选成：对话框继续开着 */ }
     finally { setBossDirBusy(false); }
   };
   const currentThreadId = app.thread?.id ?? "";
-  /* ⛔⛔ 10-25 用户令：「我选中下面已建的 BOSS 会话时候，上面那个 BOSS 会话选项不要亮」
-     —— 顶部这个按钮是**动作**（新建一条 BOSS 会话），不是**状态**（我在不在 BOSS 会话里）。
-     把「当前会话是 BOSS」映射成按钮高亮/`aria-pressed`，等于给它挂了个跟它自己用途无关的状态：
-     选下面任意一条老 BOSS 会话，上面就跟着亮（前几轮已为此返工过一次），用户这次要求彻底去掉。
+  /* ⛔⛔ 10-25 用户令：「我选中下面已建的指挥中枢时候，上面那个指挥中枢选项不要亮」
+     —— 顶部这个按钮是**动作**（新建一条指挥中枢），不是**状态**（我在不在指挥中枢里）。
+     把「当前会话是中枢」映射成按钮高亮/`aria-pressed`，等于给它挂了个跟它自己用途无关的状态：
+     选下面任意一条老指挥中枢，上面就跟着亮（前几轮已为此返工过一次），用户这次要求彻底去掉。
      ⇒ 按钮恒为普通态；当前会话的身份只由**会话列表里的选中行**表达。
      ⛔ 别再引入任何 `bossOn` 之类的派生高亮。 */
-  /* 点「BOSS 会话」新建的那个会话，等它拿到 id 后记成 home（首条消息发出后引擎才分配）。 */
+  /* 点「指挥中枢」新建的那个会话，等它拿到 id 后记成 home（首条消息发出后引擎才分配）。 */
   const bossHomePending = useRef(false);
   useEffect(() => {
     if (bossHomePending.current && currentThreadId) {
@@ -355,33 +355,33 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     try { localStorage.setItem("sidebar-options-collapsed", String(next)); } catch { /* 隐私模式写不进属正常，别拦切换 */ }
     try { void window.codex?.saveAppSettings?.({ sidebarOptionsCollapsed: next })?.catch(() => undefined); } catch { /* 桥不可用 */ }
   };
-  /* BOSS 会话按钮（历史与实测依据收在 scripts/guards/22-boss-groups.mjs，此处只留行为契约）：
-     ① **先跳到 BOSS 欢迎界面，再弹项目地址对话框**（10-25 用户实测：「点 BOSS 会话，先出来
-        这个弹窗，不会跳转到 BOSS 欢迎界面，再跳这个弹窗」⇒ 顺序反了）——
-        先建一个空的 BOSS 会话（pending=true ⇒ 时间线渲染 BossThreadIntro 欢迎界面），
+  /*指挥中枢按钮（历史与实测依据收在 scripts/guards/22-boss-groups.mjs，此处只留行为契约）：
+     ① **先跳到 欢迎界面，再弹项目地址对话框**（10-25 用户实测：「点指挥中枢，先出来
+        这个弹窗，不会跳转到 欢迎界面，再跳这个弹窗」⇒ 顺序反了）——
+        先建一个空的指挥中枢（pending=true ⇒ 时间线渲染 BossThreadIntro 欢迎界面），
         再由欢迎界面（已渲染出来）弹地址对话框（走 boss-dir-dialog-store 的自动弹出标记）。
-     ② ⛔⛔ **在已有 BOSS 会话里再点也必须能建**（10-25 用户实测第二轮：「这种情况我点不了上面
-        BOSS 会话选项，切不到 BOSS 会话界面，没修好啊」截图就是「当前在 BOSS 会话哈喽里」）——
-        原来这里第一行是 `if (bossOn) return;`，等于**当前是 BOSS 会话就点不动**（按钮变死按钮）。
-        行为对齐「新建任务」：每点一次 = 一条全新的 BOSS 会话（可无限建、各自独立）。
-     ③ 唯一不重复建的情形：**已经停在待发消息的 BOSS 欢迎界面**（pending 且还没有 thread id）
+     ② ⛔⛔ **在已有指挥中枢里再点也必须能建**（10-25 用户实测第二轮：「这种情况我点不了上面
+       指挥中枢选项，切不到指挥中枢界面，没修好啊」截图就是「当前在指挥中枢哈喽里」）——
+        原来这里第一行是 `if (bossOn) return;`，等于**当前是指挥中枢就点不动**（按钮变死按钮）。
+        行为对齐「新建任务」：每点一次 = 一条全新的指挥中枢（可无限建、各自独立）。
+     ③ 唯一不重复建的情形：**已经停在待发消息的 欢迎界面**（pending 且还没有 thread id）
         ⇒ 再点不重置，免得把用户刚打的提示词清掉、并重复弹对话框。 */
   const openBossSession = () => {
     if (bossThreads.pending && !currentThreadId) return;
-    /* ① 起一个全新空会话，**然后**才置 pending ⇒ 落进 BOSS 欢迎界面。
+    /* ① 起一个全新空会话，**然后**才置 pending ⇒ 落进欢迎界面。
        ⛔⛔ 顺序不能反：`startNewThread()` 是所有「新建普通会话」的统一漏斗，它在开头会
-          `setBossPending(false)`（10-25 用户实测：项目行的 ＋ 不清这个标记 ⇒ 停在 BOSS 欢迎界面时
-          点项目新建，标签页换了、界面却还卡在 BOSS 引导卡）。所以 BOSS 入口必须**在它之后**置 true，
+          `setBossPending(false)`（10-25 用户实测：项目行的 ＋ 不清这个标记 ⇒ 停在 欢迎界面时
+          点项目新建，标签页换了、界面却还卡在中枢引导卡）。所以中枢入口必须**在它之后**置 true，
           否则刚置上就被它清掉、按钮点了进不去欢迎界面。
        ⛔ 会话是在**选定项目地址之后**才真正建（引擎发首条消息时才分配 id），这里只把界面切过去。 */
-    bossHomePending.current = true;              // 这个新会话登记为 BOSS 会话（拿到 id 后）
+    bossHomePending.current = true;              // 这个新会话登记为指挥中枢（拿到 id 后）
     startNewThread();                            // ⛔ 每次都是全新会话
     setBossPending(true);                        // 必须在 startNewThread 之后（它会清这个标记）
-    /* ⛔⛔ 10-25 用户令：「不要进 BOSS 会话欢迎界面就弹，改成点击那个选项再弹」
+    /* ⛔⛔ 10-25 用户令：「不要进指挥欢迎界面就弹，改成点击那个选项再弹」
        ⇒ 这里**不再**自动弹项目地址对话框；入口在输入框左上角那枚项目地址 chip
          （`02-composer-form.tsx` 的 `boss-cwd-chip`，位置与普通会话欢迎界面一致），点它才弹。 */
   };
-  /* 10-25 用户：BOSS 会话快捷键（Win/Linux = Ctrl+M；mac 的 Cmd+M 是系统最小化，沿用 Cmd+Shift+B）。
+  /* 10-25 用户：指挥中枢快捷键（Win/Linux = Ctrl+M；mac 的 Cmd+M 是系统最小化，沿用 Cmd+Shift+B）。
      ⛔ 键位**单一真相源**在 boss-group-view/boss-shortcut.ts（侧栏 kbd 徽标、欢迎界面、快捷键清单共用）。 */
   useEffect(() => {
     const mac = isMacPlatform();
@@ -448,7 +448,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       折叠态共用一个持久值（本地记录），高度过渡由 `.sidebar-options-body` 的 grid 动画完成。 */
   const renderOptionsGroup = (menuLocation: "top" | "bottom") => (
     <div className={`sidebar-options ${menuLocation === "top" ? "sidebar-options-top" : ""}`}>
-      {/* 新建 BOSS 会话：项目地址对话框（应用内模态；⛔ 不用系统弹窗 / 内联 toast） */}
+      {/* 新建指挥中枢：项目地址对话框（应用内模态；⛔ 不用系统弹窗 / 内联 toast） */}
       <BossProjectDirDialog open={bossDirOpen} busy={bossDirBusy} onChoose={(choice) => void onBossProjectDir(choice)} />
       <button
         type="button"
@@ -599,10 +599,10 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 </button>
                 <button
                   className="sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-amber"
-                  title={`新建 BOSS 会话（${bossShortcutLabel()}）：选项目地址后进 BOSS 欢迎界面；可建多个，互不干扰`}
+                  title={`新建指挥中枢（${bossShortcutLabel()}）：先选项目地址，再进欢迎界面；可建多个、互不干扰`}
                   onClick={() => openBossSession()}
                 >
-                  <Crown size={15} /><span>BOSS 会话</span><kbd className="quick-kbd">{bossShortcutLabel()}</kbd>
+                  <Crown size={15} /><span>指挥中枢</span><kbd className="quick-kbd">{bossShortcutLabel()}</kbd>
                 </button>
                 {/* 10-25 用户令：拓展功能（技能 · 插件 · MCP）从折叠组拉出来常驻在这里；
                     搜索任务只在下方视图行的 🔍 里。动作与折叠组原入口同一总线（教程弹窗）。 */}

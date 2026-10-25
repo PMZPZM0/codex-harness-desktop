@@ -51,11 +51,11 @@ bag.providerConfig = providerConfig as typeof bag.providerConfig;
      团队成员会话在「项目」视图里归到**发起调度那个会话**的 cwd 下，不再各自新开一个项目地址。
      ⛔ 只改「归到哪个项目」这一层，不动引擎侧的会话 cwd（会话自己的工作目录仍按原样）。
      口径在纯模块 src/lib/thread-source.mjs（resolveGroupCwd，可被预检真跑断言）。 */
-  /* ── BOSS 会话与它的成员会话（10-25 用户令：「只要他调度的会话，跟专家团那样，
+  /* ── 指挥中枢与它的成员会话（10-25 用户令：「只要他调度的会话，跟专家团那样，
         都显示调度在他下面」）──────────────────────────────────────────────
      成员会话是派活时 thread/start 新建的、不走 delegate 登记 ⇒ 这里补一份伪记录
      （originThreadId = 群 boss 会话）复用既有「跟随发起者 cwd + 缩进」机制。
-     ⛔ BOSS 会话实际 cwd 是 <userData>/boss-home（记忆独立），但**显示**归到群项目
+     ⛔ 指挥中枢实际 cwd 是 <userData>/boss-home（记忆独立），但**显示**归到群项目
         （boss-workspace）—— 否则它和成员会被拆进两个项目分组，缩进就看不出来了。 */
   const bossSnap = useSyncExternalStore(subscribeBossThreads, getBossThreads);
   const bossDelegateRecords = useMemo(() => {
@@ -78,7 +78,7 @@ bag.providerConfig = providerConfig as typeof bag.providerConfig;
       teamThreadIndex: bag.teamThreadsIndex,
       teamMemberThreadIds: bag.teamMemberThreadIds,
     });
-    /* BOSS 会话按「群项目」归组（仅显示口径） */
+    /*指挥中枢按「群项目」归组（仅显示口径） */
     let projectWs = "";
     try { projectWs = localStorage.getItem("boss-workspace") ?? ""; } catch { /* 隐私模式 */ }
     if (projectWs) {

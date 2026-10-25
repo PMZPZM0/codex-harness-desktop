@@ -6,7 +6,7 @@
  *    新增入口时只改这里 + 渲染层的图标表，旧配置会自动追加到末尾（不会丢）。
  */
 
-/* 10-25：extensions（拓展）拉出为快捷区常驻入口（新会话/BOSS 下面的第三行）⇒ 不再参与折叠组排序。
+/* 10-25：extensions（拓展）拉出为快捷区常驻入口（新会话/中枢下面的第三行）⇒ 不再参与折叠组排序。
        旧配置里的 extensions 会被归一化丢弃（is id 校验），不会报错。 */
 export const FUNCTION_MENU_IDS = ["schedule", "frontend", "team", "identity", "login", "newbie"];
 

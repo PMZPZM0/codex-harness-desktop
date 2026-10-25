@@ -12,7 +12,7 @@ export function FunctionMenuSettings({ onNotice }: { onNotice?: (text: string) =
     if (config.location === location) return;
     setFunctionMenuLocation(location);
     onNotice?.(location === "top"
-      ? "拓展功能已移到「新会话 / BOSS 会话 / 搜索任务」下面"
+      ? "拓展功能已移到「新会话 / 指挥中枢 / 搜索任务」下面"
       : "拓展功能已移回侧栏底部");
   };
   return (

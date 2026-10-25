@@ -15,7 +15,7 @@ import { imageToken, splitPromptSegments, promptImagePaths, stripImageTokens, is
 import { pickEnhanceHint, shouldShowHintAfterSends, isLongPrompt, HINT_COOLDOWN_MS, HINT_AUTO_HIDE_MS } from "../../../../../lib/enhance-hints.mjs";
 import { nowBlock } from "../../../../../lib/now-block.mjs";
 import { setTurnWindowTail } from "../../../../../lib/turn-history.mjs";
-/* ⛔ 会话重建后要把 BOSS 归属搬过去（见下方 bossGroupRebind 那段注释）。 */
+/* ⛔ 会话重建后要把中枢归属搬过去（见下方 bossGroupRebind 那段注释）。 */
 import { BOSS_ROLE_PROMPT, ensureBossMemoryWorkspace, ensureBossSessionRegistered, getBossThreads, renameBossSessionId, setBossHomeThreadId } from "../../../../boss-group-view";
 import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, computeFoldSummary, topToolGroup, isTurnRunning, normalizeLoadedThread, type FoldUnit } from "../../../../../lib/turn-fold";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../lib/user-refs";
@@ -303,12 +303,12 @@ export async function send(bag: Bag, event?: FormEvent) {
       // 常驻层无条件前置：L0 用户档案 + L1 项目记忆 + L2 近 3 天日志。
       // L3 碎片池仍按当前输入按需召回，两者互不替代——只做召回的话，
       // 模型永远看不到「这个项目不能做什么」这类不出现在本轮提问里的约束。
-      /* ⛔⛔ 10-25 用户令：「记忆板块里面加一个BOSS会话记忆板块，跟普通会话完全拆开」。
-         BOSS 会话跑在用户选的项目目录里 ⇒ 若还用 `bag.workspace` 读记忆，读到的是**那个项目**的记忆，
-         BOSS 自己的记忆（与普通会话混在一起）反而读不到。
-         ⇒ BOSS 会话改读/召回它自己的专属记忆目录（主进程名单给的 memoryDir）。 */
-      /* ⛔ 时序：BOSS 会话首条消息时线程 id 刚分配，主进程名单可能还没登记上
-         ⇒ 先幂等登记一次（⛔ 只对已确认是 BOSS 会话的 id 生效，普通会话不受影响）。 */
+      /* ⛔⛔ 10-25 用户令：「记忆板块里面加一个中枢会话记忆板块，跟普通会话完全拆开」。
+        指挥中枢跑在用户选的项目目录里 ⇒ 若还用 `bag.workspace` 读记忆，读到的是**那个项目**的记忆，
+        中枢自己的记忆（与普通会话混在一起）反而读不到。
+         ⇒ 指挥中枢改读/召回它自己的专属记忆目录（主进程名单给的 memoryDir）。 */
+      /* ⛔ 时序：指挥中枢首条消息时线程 id 刚分配，主进程名单可能还没登记上
+         ⇒ 先幂等登记一次（⛔ 只对已确认是指挥中枢的 id 生效，普通会话不受影响）。 */
       await ensureBossSessionRegistered(String(bag.thread?.id ?? bag.threadRef.current?.id ?? ""));
       const bossMemWs = await ensureBossMemoryWorkspace(String(bag.thread?.id ?? bag.threadRef.current?.id ?? ""));
       const memWorkspace = bossMemWs || bag.workspace || undefined;
@@ -350,8 +350,8 @@ export async function send(bag: Bag, event?: FormEvent) {
       } catch { /* 统一记忆读不到不阻塞发送（与上面两段同纪律） */ }
     }
     bag.dbg("send-memory", { ms: Math.round(performance.now() - memoryStartedAt) });
-    /* ⛔ 10-25：BOSS 会话每轮都带上角色说明（模型必须知道自己是 BOSS、干什么活）。
-       ⛔ 之前靠 <userData>/boss-home/AGENTS.md 注入，但 BOSS 会话的 cwd 改成用户自己选的
+    /* ⛔ 10-25：指挥中枢每轮都带上角色说明（模型必须知道自己是中枢、干什么活）。
+       ⛔ 之前靠 <userData>/boss-home/AGENTS.md 注入，但指挥中枢的 cwd 改成用户自己选的
           项目目录后，引擎只读 cwd 下的 AGENTS.md ⇒ 那份说明**根本读不到**。 */
     const bossRolePrefix = (() => {
       try {
@@ -503,9 +503,9 @@ export async function send(bag: Bag, event?: FormEvent) {
             result = await startTurn(active);
             bag.showToast("会话已恢复", "已在原会话中继续发送");
           } else {
-            /* ⛔⛔ 10-25 用户实测：「不要在下面新建会话，有 BOSS 会话选项为什么要在下面新建」。
+            /* ⛔⛔ 10-25 用户实测：「不要在下面新建会话，有指挥中枢选项为什么要在下面新建」。
                rollout 丢了的会话引擎无法继续，只能重建 —— 但**归属必须跟着搬**，否则侧栏会多出
-               一个陌生会话、群事件也回不到 BOSS：
+               一个陌生会话、群事件也回不到中枢：
                  · 群账本的 bossThreadId 交给主进程重绑（boss-groups:rebind）
                  · 还没建群时的 home 锚点直接改指新会话 */
             const previousId = active.id;
@@ -515,10 +515,10 @@ export async function send(bag: Bag, event?: FormEvent) {
             createdThreadId = active.id;
             void window.codex.bossGroupRebind?.({ previousThreadId: previousId, threadId: active.id }).catch(() => undefined);
             try {
-              /* ⛔⛔ 身份登记跟着搬，但**只有本来就是 BOSS 会话**的才搬。
-                 10-25 用户实测「BOSS 会话跟普通会话串了」：这里是**所有**会话都会走的自愈重建，
-                 之前无条件登记 ⇒ 普通会话被登记成 BOSS 会话 ⇒ 它被注入了 BOSS 角色说明
-                 （截图：普通会话「未命名任务」里冒出 BOSS 的口气）。 */
+              /* ⛔⛔ 身份登记跟着搬，但**只有本来就是指挥中枢**的才搬。
+                 10-25 用户实测「指挥中枢跟普通会话串了」：这里是**所有**会话都会走的自愈重建，
+                 之前无条件登记 ⇒ 普通会话被登记成指挥中枢 ⇒ 它被注入了中枢角色说明
+                 （截图：普通会话「未命名任务」里冒出中枢的口气）。 */
               try {
                 const boss = getBossThreads();
                 const wasBoss = (boss.sessionIds ?? []).includes(previousId) || (boss.bossIds ?? []).includes(previousId);
@@ -526,7 +526,7 @@ export async function send(bag: Bag, event?: FormEvent) {
               } catch { /* 忽略 */ }
               if (localStorage.getItem("boss-home-thread") === previousId) setBossHomeThreadId(active.id);
             } catch { /* 隐私模式 */ }
-            bag.showToast("会话已重建", "原会话确实不存在，已就地重建并重新发送（BOSS 归属已跟着搬过去）");
+            bag.showToast("会话已重建", "原会话确实不存在，已就地重建并重新发送（指挥中枢归属已跟着搬过去）");
             result = await startTurn(active);
           }
         }

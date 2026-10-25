@@ -114,7 +114,7 @@ export const bossGroupsFeature = defineFeature<null>({
         const state = await bossStore.load();
         const ids = Object.values(state.groups ?? {}).map((g: any) => String(g?.bossThreadId ?? "")).filter(Boolean);
         const added = await backfillFromGroups(ids);
-        if (added) console.log("[boss-groups] 补登 BOSS 会话身份：", added);
+        if (added) console.log("[boss-groups] 补登指挥中枢身份：", added);
       } catch (error: any) {
         console.warn("[boss-groups] 补登失败：", String(error?.message ?? error).slice(0, 160));
       }

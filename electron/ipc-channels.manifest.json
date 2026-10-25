@@ -2371,7 +2371,7 @@
       "returns": "Promise<string>",
       "invokeArgs": "",
       "cast": null,
-      "note": "10-25：在软件所在盘根新建 BOSS 会话专属项目目录，返回绝对路径"
+      "note": "10-25：在软件所在盘根新建指挥中枢专属项目目录，返回绝对路径"
     },
     {
       "name": "readBuiltinPlugins",

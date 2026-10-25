@@ -7,8 +7,8 @@
  *    改动后请重跑预检【92】与保真脚本（口径见 docs/archive/REFACTOR-PLAN-2026-09-21.md §10.2）。
  */
 import { removeBossSessionId } from "../../../boss-group-view";
-/* BOSS 会话的项目地址：⛔ **它自己的目录**，不是全局 workspace ——
-   10-25 用户实测：「下面已经自动选了别的会话的项目地址」「每次 BOSS 会话都不要自动选择旧的会话项目地址」。
+/*指挥中枢的项目地址：⛔ **它自己的目录**，不是全局 workspace ——
+   10-25 用户实测：「下面已经自动选了别的会话的项目地址」「每次指挥中枢都不要自动选择旧的会话项目地址」。
    ⇒ 建会话时 cwd 取本会话登记的目录（bossDirFor），没有才回落全局 workspace。 */
 import { bossDirFor, setBossDirChosen } from "../../../boss-group-view";
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
@@ -334,8 +334,8 @@ bag.deleteThreadCore = deleteThreadCore as typeof bag.deleteThreadCore;
     bag.setOpeningThread(id);
     try {
       await bag.deleteThreadCore(id);
-      /* ⛔ 10-25：BOSS 会话被删 ⇒ 从身份登记里摘掉（用户会频繁删了重建；
-         不摘的话旧 id 留着，新建的那个会被当成"旧的 BOSS 会话"）。 */
+      /* ⛔ 10-25：指挥中枢被删 ⇒ 从身份登记里摘掉（用户会频繁删了重建；
+         不摘的话旧 id 留着，新建的那个会被当成"旧的指挥中枢"）。 */
       removeBossSessionId(id);
     } catch (error: any) {
       bag.setNotice(`删除任务失败：${error.message}`);
@@ -677,9 +677,9 @@ bag.buildDynamicTools = buildDynamicTools as typeof bag.buildDynamicTools;
       approval: String(bag.approvalPolicy ?? ""),
       workspace: String(bag.welcomeScratchDir ?? bag.workspace ?? ""),
     }));
-    /* ⛔ 本会话的 cwd：优先 BOSS 会话自己登记的目录（选地址时记的），
+    /* ⛔ 本会话的 cwd：优先指挥中枢自己登记的目录（选地址时记的），
        其次「无项目」模式的独立临时目录，最后才是全局 workspace。
-       ⇒ BOSS 会话**不会**继承别的会话的项目地址，也不会污染全局。 */
+       ⇒ 指挥中枢**不会**继承别的会话的项目地址，也不会污染全局。 */
     const sessionCwd = bossDirFor(bag.thread?.id) || bag.welcomeScratchDir || bag.workspace;
     const developerInstructions = [scopeSeed, onboardingInstructions].filter(Boolean).join("\n\n");
     const started = await window.codex.request("thread/start", {
@@ -707,9 +707,9 @@ bag.buildDynamicTools = buildDynamicTools as typeof bag.buildDynamicTools;
       // （thread/start 传入的 model/effort/sandbox/approval 就是这些全局值，烙进去与
       //   引擎侧会话创建时的真实状态一致。）
       const tid = started.thread.id;
-      /* ⛔ BOSS 会话的项目地址**落位到会话 id**（10-25 用户实测：BOSS 会话不能继承别的会话的目录）：
+      /* ⛔ 指挥中枢的项目地址**落位到会话 id**（10-25 用户实测：指挥中枢不能继承别的会话的目录）：
          建会话前目录暂存在 pendingDir（还没 id）⇒ 这里拿到 id 后迁到 dirByThread[tid]，
-         之后这个会话永远用自己那一档，切到别的 BOSS 会话也不会串。 */
+         之后这个会话永远用自己那一档，切到别的指挥中枢也不会串。 */
       if (bossDirFor("")) setBossDirChosen(bossDirFor(""), tid);
       if (!loadThreadModel(tid)) saveThreadModel(tid, bag.modelId);
       if (!loadThreadEffort(tid) && bag.effort) saveThreadEffort(tid, bag.effort);

@@ -263,7 +263,7 @@ export const appFeature = defineFeature<null>({
     ipcHost.handle("app:boss-project-dir", async () => {
       const base = path.dirname(process.execPath);
       const root = path.parse(base).root || base;
-      const dir = path.join(root, `BOSS项目-${new Date().toISOString().slice(0, 10)}`);
+      const dir = path.join(root, `指挥中枢项目-${new Date().toISOString().slice(0, 10)}`);
       await fs.mkdir(dir, { recursive: true });
       return dir;
     });

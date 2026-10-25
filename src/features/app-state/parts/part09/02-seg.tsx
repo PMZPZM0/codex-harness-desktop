@@ -348,15 +348,15 @@ bag.earlyView = earlyView as typeof bag.earlyView;
   // 拖拽容器的【子元素】（no-drag 豁免），fixed 悬浮层会被拖拽区吞掉点击（实测）。
   // ⛔ 10-11：🔍 与调度**独立弹窗里也渲染**（此前弹窗分支把整簇换成只剩「返回主应用」，
   //    用户报「弹窗里少了两个图标」）—— 所以它们在这条三元之外，别再加回分支里。
-  /* 10-25 用户令：BOSS 会话有**独立的群编排调度**，顶栏那个手动的「允许本会话调度」开关
-     在这个会话里收起（两套调度并存只会互相打架）。成员图标与「?」也只在 BOSS 会话出现。 */
+  /* 10-25 用户令：指挥中枢有**独立的群编排调度**，顶栏那个手动的「允许本会话调度」开关
+     在这个会话里收起（两套调度并存只会互相打架）。成员图标与「?」也只在指挥中枢出现。 */
   const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
   /* ⛔ 10-25 实测缺图标：只认 bossIds 会漏掉「还没建群时的 home 锚点会话」——
      那种会话是普通会话、不在群账本里，于是顶栏的成员图标与「?」都不渲染（用户截图红框）。
      三种入口都要认（与 timeline 的 isBossEmpty 同一口径）——
      ⛔ 现在统一走**共享判定** isBossSessionContext（boss-group-view 域），
         顶栏与时间线各写一份口径必然漂移（10-25 已经漂过一次：欢迎界面出来了、顶栏图标没有）。
-        它额外认「pending」：BOSS 欢迎界面（还没发出第一条消息、连 thread id 都没有）时，
+        它额外认「pending」：欢迎界面（还没发出第一条消息、连 thread id 都没有）时，
         顶栏的成员图标与「?」照样要在（用户要求：欢迎界面右上角要有这两个图标）。 */
   const isBossThread = isBossSessionContext(bossThreads, bag.thread?.id);
   const topbarActionsNode = (
@@ -365,7 +365,7 @@ bag.earlyView = earlyView as typeof bag.earlyView;
           🔍 与调度 **主窗口与独立弹窗都渲染**（10-11 用户报「独立弹窗里少了两个图标」）；
           只有最右那个按钮按窗口类型二选一（弹窗里是「返回主应用」）。 */}
           {/* 10-24 用户令：群成员图标在「搜索历史」图标**左边**。
-              10-25 用户令：成员图标与「?」都是 **BOSS 会话独有**（普通会话没有群可看，留着只是噪音）。
+              10-25 用户令：成员图标与「?」都是 **指挥中枢独有**（普通会话没有群可看，留着只是噪音）。
               窄屏由 CSS media query 隐藏。 */}
           {isBossThread ? <BossGroupMembersButton threadId={bag.thread?.id ?? ""} /> : null}
           {isBossThread ? <BossGroupHelpButton /> : null}
@@ -450,7 +450,7 @@ bag.earlyView = earlyView as typeof bag.earlyView;
             })(), document.body)}
           </div>
           {/* 调度开关放独立窗口图标左边（09-16 用户要求）。
-              10-25：BOSS 会话隐藏 —— 群编排自带独立调度（谁做什么/进度/审查都在群里走）。 */}
+              10-25：指挥中枢隐藏 —— 群编排自带独立调度（谁做什么/进度/审查都在群里走）。 */}
           {isBossThread ? null : (
           <DispatchMenu
             topbar

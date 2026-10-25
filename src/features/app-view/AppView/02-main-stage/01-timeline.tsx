@@ -184,7 +184,7 @@ import { RequestCard, ToolCard, VoiceSettingsBridge, admitThreadRuntimeRef, ago,
 import type { HarnessAppApi } from "../../../app-state/useHarnessApp";
 
 export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
-  /* 10-25 用户令：BOSS 会话的空态要有自己的引导语（「你好 BOSS…」），发送后自然消失。
+  /* 10-25 用户令：指挥中枢的空态要有自己的引导语（「你好中枢…」），发送后自然消失。
      ⛔ 用共享 store 判断，别在这里再拉一次 listBossGroups。 */
   const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
   const {
@@ -401,27 +401,27 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     while (j < win.visible.length && !hasUser(win.visible[j])) j += 1;
     return { turnId: j < win.visible.length ? String(win.visible[j]?.id ?? "") : "", atEnd: j >= win.visible.length };
   })();
-  /* BOSS 会话的空态判定（10-25）：当前会话是某群 boss 线程，或刚点「BOSS 会话」还没落 id（pending）。
+  /*指挥中枢的空态判定（10-25）：当前会话是某群 boss 线程，或刚点「指挥中枢」还没落 id（pending）。
      ⛔⛔ 不能只判「是 boss 线程」：会话已建出来但**一条消息都没有**时 `isEmpty` 为 false
         （它的定义是 `!thread && !allItems.length`，要求 thread 为 null）⇒ 空态分支进不去 ⇒ 整片空白。
         所以这里自己判 0 回合（thread 存在但 turns 为空也算空态）。 */
   const noTurns = (thread?.turns ?? []).length === 0;
   const isBossThreadNow = Boolean(thread?.id) && bossThreads.bossIds.includes(String(thread?.id));
-  /* 还有第三种：**还没建群、但已经有 home 锚点**的那个 BOSS 会话（它是普通会话、不在群账本里，
+  /* 还有第三种：**还没建群、但已经有 home 锚点**的那个指挥中枢（它是普通会话、不在群账本里，
      只看 bossIds 会漏 ⇒ 进去看到的是普通欢迎页/空白）。用户 10-25：「就算没有创建会话，
-     进 BOSS 会话也要直接进去会话界面，不要在欢迎界面加载」。 */
+     进指挥中枢也要直接进去会话界面，不要在欢迎界面加载」。 */
   const isBossHome = Boolean(thread?.id) && (bossThreads.sessionIds ?? []).includes(String(thread?.id));
   const isBossEmpty = (bossThreads.pending || isBossThreadNow || isBossHome) && noTurns;
 
   return (
     <div className="timeline-wrap" ref={timelineWrapRef}>
                   {thread && <MemoMessageRuler turns={thread.turns} scrollRef={scrollRef} containerRef={timelineWrapRef} onJump={jumpToTurnInWindow} compactionTurnId={compactionMark.turnId} compactionAtEnd={compactionMark.atEnd} />}
-                  {/* BOSS 会话的空白态：与 timeline 同级（绝对定位相对 .timeline-wrap），
+                  {/*指挥中枢的空白态：与 timeline 同级（绝对定位相对 .timeline-wrap），
                      不进滚动内容流 —— 普通会话完全不受影响。
-                     ⛔ 传入**本会话自己的 cwd** ⇒ 多个 BOSS 会话各显示各的项目地址（不串项）。 */}
+                     ⛔ 传入**本会话自己的 cwd** ⇒ 多个指挥中枢各显示各的项目地址（不串项）。 */}
                   {isBossEmpty ? <BossThreadIntro /> : null}
                   <div className={`timeline ${isEmpty ? "empty-state" : ""}`} ref={scrollRef} onScroll={onTimelineScroll} data-history-hidden={historyPlan.hiddenCount} data-history-below={historyPlan.hiddenBelow} data-history-total={historyPlan.hiddenStubs + timelineWindow.ordered.length}>
-                  {/* BOSS 会话的空白态是**它自己的一套**（10-25 用户令：跟欢迎界面没关系）——
+                  {/*指挥中枢的空白态是**它自己的一套**（10-25 用户令：跟欢迎界面没关系）——
                      普通会话仍走 welcome-state，这里两者互不影响。 */}
                   {isEmpty && !isBossEmpty ? (
                     <div className="welcome-state">

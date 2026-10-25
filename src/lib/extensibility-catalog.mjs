@@ -116,7 +116,7 @@ export const EXTENSIBILITY_ENTRIES = [
     id: "function-menu",
     group: "界面与呈现",
     name: "主界面 · 功能入口（侧栏快捷组）",
-    purpose: "侧栏「新建任务 / BOSS 会话 / 拓展功能」下面那组可排序入口（底部位置时叫「功能入口」）：加一项 = 模型表一条 + 动作落到侧栏总线，两处展示位置共用同一份配置。",
+    purpose: "侧栏「新建任务 / 指挥中枢 / 拓展功能」下面那组可排序入口（底部位置时叫「功能入口」）：加一项 = 模型表一条 + 动作落到侧栏总线，两处展示位置共用同一份配置。",
     where: [
       "src/features/function-menu/menu-model.mjs（条目定义 / 默认顺序 / 分组）",
       "src/features/function-menu/store.ts（排序、更多分组、top|bottom 位置持久化）",

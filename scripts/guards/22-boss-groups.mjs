@@ -378,7 +378,7 @@ if (state) {
     "⛔ memory_write 写进 BOSS 专属目录（不污染项目记忆）");
   ok(/action: "remove"/.test(read("src/features/boss-group-view/boss-threads-store.mjs"))
     && /action: "rename"/.test(read("src/features/boss-group-view/boss-threads-store.mjs")),
-    "删除/重建 BOSS 会话时同步主进程名单（⇒ 记忆目录跟着清掉/搬过去）");
+    "删除/重建指挥中枢时同步主进程名单（⇒ 记忆目录跟着清掉/搬过去）");
   ok(/拒绝清理该路径/.test(bossRegistry) && /boss-home", "memories"/.test(bossRegistry),
     "⛔ 清空记忆有路径安全闸（只许删 BOSS 记忆目录内的路径）");
   /* ⛔⛔ 10-25 用户实测两处（截图实证）：
@@ -488,7 +488,7 @@ if (state) {
   ok(/memberThreadIds/.test(bossStore),
     "共享 store 汇总群成员会话 id（侧栏据此打「BOSS 调度」标签）");
   ok(/chooseDirectory/.test(sidebar),
-    "新建 BOSS 会话要**重新选**项目地址（⛔ 不沿用上一次的，也不跟其他会话同步）");
+    "新建指挥中枢要**重新选**项目地址（⛔ 不沿用上一次的，也不跟其他会话同步）");
   ok(/workspaceRef\.current = dir/.test(sidebar) && /createBossProjectDir/.test(sidebar),
     "BOSS 会话跑在**自己选的项目目录**（同步 workspaceRef；不写全局 workspace ⇒ 别的会话不受影响）");
   ok(/isBossThread \? null : \(/.test(read("src/features/app-state/parts/part09/02-seg.tsx")),
@@ -601,12 +601,14 @@ if (state) {
   }), `成员/「?」图标的隐藏断点必须 ≤640（实测过 1180 在默认 1080 窗口里命中 ⇒ 图标不显示）：${JSON.stringify(hideRules)}`);
   const bossIpc = read("electron/features/boss-groups-ipc.ts");
   ok(/BOSS_HOME_AGENTS_VERSION/.test(bossIpc) && /不亲自执行任何任务/.test(bossIpc),
-    "BOSS 角色提示词写明「不亲自执行」且版本化（内容升级会覆盖旧文件）");
+    "指挥中枢角色提示词写明「不亲自执行」且版本化（内容升级会覆盖旧文件）");
   const bossTools = read("src/features/app-view/constants/05-boss-group-tools.tsx");
   ok(/from=\\"expert/.test(bossTools) && /from=\\"cli/.test(bossTools) && /cliName/.test(bossTools) && /cliCommand/.test(bossTools),
     "拉人来源覆盖专家/专家团 + 本机 CLI（group_add_member 的 from 两个分支）");
-  ok(/isBossMemberThread[\s\S]{0,260}?"BOSS 调度"/.test(read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx")),
-    "侧栏给群成员会话打「BOSS 调度」标签（与普通「调度」区分）");
+  /* ⛔ 10-25 用户令：「BOSS 会话」这个称呼改叫**指挥中枢**（四字）⇒ 标签跟着改「中枢调度」
+     （与普通「调度」区分）。判据一起改，否则文案改了守卫还钉着旧字。 */
+  ok(/isBossMemberThread[\s\S]{0,260}?"中枢调度"/.test(read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx")),
+    "侧栏给群成员会话打「中枢调度」标签（与普通「调度」区分）");
   /* ── 14. rollout 丢失的会话要能自愈（10-25 用户实测：红条 + 消息发不出去 + 输入框被塞记忆）── */
   const sendFile = read("src/features/app-state/parts/part08/02-seg/send.tsx");
   ok(/unavailable = \/not found\|no such thread\|unloaded\|no rollout found\//.test(sendFile),

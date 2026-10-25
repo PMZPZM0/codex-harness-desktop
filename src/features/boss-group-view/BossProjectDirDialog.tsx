@@ -1,9 +1,9 @@
 /**
- * BOSS 会话的项目地址对话框（10-25 用户令）
+ *指挥中枢的项目地址对话框（10-25 用户令）
  *
- * 「BOSS 会话，项目地址，不要自动同步其他会话的项目地址，必须重新选项目地址，
+ * 「指挥中枢，项目地址，不要自动同步其他会话的项目地址，必须重新选项目地址，
  *   或者自动在软件安装的对应盘…弹窗提醒，**不要系统弹窗和内联弹窗**，
- *   两个选项：选择 BOSS 会话项目地址 / 自动生成项目地址」
+ *   两个选项：选择指挥中枢项目地址 / 自动生成项目地址」
  *
  * ── 这不是「确认框」，是**选择器** ────────────────────────────────────────
  *   10-25 用户实测：「这个弹窗真小气…那个按键真丑」。
@@ -36,15 +36,15 @@ export function BossProjectDirDialog({
       className="boss-dir-backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label="选择 BOSS 会话的项目地址"
+      aria-label="选择指挥中枢的项目地址"
       onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onChoose("cancel"); }}
     >
       <div className="boss-dir-card">
         <header className="boss-dir-head">
           <div className="boss-dir-head-copy">
-            <h3 className="boss-dir-title">BOSS 会话的项目地址</h3>
+            <h3 className="boss-dir-title">指挥中枢的项目地址</h3>
             <p className="boss-dir-sub">
-              这个地址<strong>不跟其它会话同步</strong>，每次新建 BOSS 会话都要定一次。
+              这个地址<strong>不跟其它会话同步</strong>，每次新建指挥中枢都要定一次。
             </p>
           </div>
           <button type="button" className="boss-dir-x" onClick={() => onChoose("cancel")} aria-label="取消" disabled={busy}>
@@ -64,7 +64,7 @@ export function BossProjectDirDialog({
             <span className="boss-dir-option-icon"><FolderPlus size={18} /></span>
             <span className="boss-dir-option-body">
               <strong>在软件所在盘自动新建</strong>
-              <small>建一个专属目录（如 <code>BOSS项目-2026-10-25</code>），互不干扰。</small>
+              <small>建一个专属目录（如 <code>指挥中枢项目-2026-10-25</code>），互不干扰。</small>
             </span>
           </button>
         </div>

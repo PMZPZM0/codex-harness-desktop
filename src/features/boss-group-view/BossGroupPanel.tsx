@@ -1,10 +1,10 @@
 /**
- * BOSS 会话面板（右侧停靠浮层，2026-10-24；23:40 按用户令重做成**群对话框**）
+ *指挥中枢面板（右侧停靠浮层，2026-10-24；23:40 按用户令重做成**群对话框**）
  *
- * 「点击 BOSS 会话直接进入这个对话框，而不是新建回合」：
+ * 「点击指挥中枢直接进入这个对话框，而不是新建回合」：
  *  - 底部输入框 = 你在群里说话（boss-groups:say → boss 线程，不新建会话/回合入口）；
  *  - 群流 = 聊天气泡（你右 / boss 右 / 成员左 / 系统事件居中小字）——回复发生在群里；
- *  - 成员展示移到顶栏图标（BossGroupMembersButton，仅 BOSS 会话显示），这里不再重复。
+ *  - 成员展示移到顶栏图标（BossGroupMembersButton，仅指挥中枢显示），这里不再重复。
  * ⛔ 真相源不变：账本在 `boss-groups.json`；本面板只做「说话 + 置顶」，其余只读。
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -42,7 +42,7 @@ export function BossGroupPanel({ threadId = "" }: { threadId?: string }) {
   const feedRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  /* ⛔ 群选择**按会话**（10-25 用户令：BOSS 会话可以创建多个，各会话互不干扰）：
+  /* ⛔ 群选择**按会话**（10-25 用户令：指挥中枢可以创建多个，各会话互不干扰）：
      本会话是某群的 boss 线程 ⇒ 选那个群；否则用**本会话自己**上次选的。
      都没有 ⇒ 回落到「最近活动的群」（面板是全局浮层，允许看别的群）—— 但**不读**别的会话的选中项。 */
   const ownGroupId = (groups.find((g) => g.bossThreadId === threadId)?.id) || panel.groupIdByThread?.[threadId] || "";
@@ -106,9 +106,9 @@ export function BossGroupPanel({ threadId = "" }: { threadId?: string }) {
   };
 
   return (
-    <aside className="boss-panel" role="complementary" aria-label="BOSS 会话群对话框">
+    <aside className="boss-panel" role="complementary" aria-label="指挥中枢群对话框">
       <header className="boss-panel-head">
-        <span className="boss-panel-title"><Crown size={14} aria-hidden="true" /> BOSS 会话</span>
+        <span className="boss-panel-title"><Crown size={14} aria-hidden="true" />指挥中枢</span>
         {groups.length > 1 ? (
           /* ⛔ 渲染层不许用原生 `<select>`（守卫【197】） */
           <AppSelect
@@ -168,12 +168,12 @@ export function BossGroupPanel({ threadId = "" }: { threadId?: string }) {
             {events.length === 0 ? <div className="boss-panel-sub">在下面说第一句话，把活派起来。</div> : null}
             {events.map((e) => {
               if (isChat(e.kind)) {
-                const side = e.kind === "chat-user" ? "right" : "left";   // 正常群聊：只有你在右，BOSS/成员都在左
-                const who = e.kind === "chat-user" ? "你" : e.kind === "chat-boss" ? "BOSS" : memberName(e.memberId);
+                const side = e.kind === "chat-user" ? "right" : "left";   // 正常群聊：只有你在右，中枢/成员都在左
+                const who = e.kind === "chat-user" ? "你" : e.kind === "chat-boss" ? "中枢" : memberName(e.memberId);
                 const member = e.kind === "chat-member" ? (snap?.group.members ?? []).find((m) => m.id === e.memberId) : undefined;
                 return (
                   <div key={e.id} className={`boss-chat-row side-${side}`}>
-                    {/* 成员气泡带头像（群聊现场感）；你/BOSS 不带。 */}
+                    {/* 成员气泡带头像（群聊现场感）；你/中枢不带。 */}
                     {e.kind === "chat-member" ? (
                       <span className="boss-avatar" data-status={member?.status} style={{ ["--boss-avatar-hue" as any]: `${(((snap?.group.members ?? []).findIndex((m) => m.id === e.memberId) + 1) * 47 + 210) % 360}` }} title={who}>{String(who || "?").slice(0, 1)}</span>
                     ) : null}
