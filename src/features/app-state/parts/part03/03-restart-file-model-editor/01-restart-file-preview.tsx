@@ -63,6 +63,7 @@ bag.pendingRestartRef = pendingRestartRef as typeof bag.pendingRestartRef;
         const saved = await window.codex.saveCustomModel({
           provider: resolved.provider,
           name: resolved.displayName,
+          source: "relay",
           model: defaultModel,
           baseUrl: resolved.gateway,
           contextWindow: matchModelSpec(defaultModel)?.contextWindow ?? 256000,
@@ -81,6 +82,8 @@ bag.pendingRestartRef = pendingRestartRef as typeof bag.pendingRestartRef;
               efforts: spec?.efforts?.length ? [...spec.efforts] : [...ALL_EFFORTS],
               inputTypes: spec?.inputTypes ?? (["text"] as ("text" | "image" | "video")[]),
               outputTypes: spec?.outputTypes ?? (["text"] as ("text" | "image" | "video")[]),
+              // 登录/切换时把分组倍率一并打在模型上（下拉右侧直接显示）；站点没给倍率就不写。
+              credits: resolved.active.rate != null ? `x${resolved.active.rate}` : undefined,
             };
           }),
           enabled: true,
@@ -244,12 +247,14 @@ bag.customModelOption = customModelOption as typeof bag.customModelOption;
       return declaredModelEfforts((providerModels ?? []).find((m) => m.id === modelId)?.efforts)
         .map((reasoningEffort) => ({ reasoningEffort, description: effortLabels[reasoningEffort] ?? reasoningEffort }));
     };
-    const pushModels = (provider: string, providerName: string, providerModels: ProviderModelConfig[] | undefined, modelIds: (string | undefined)[], isActive: boolean) => {
+    const pushModels = (provider: string, providerName: string, providerModels: ProviderModelConfig[] | undefined, modelIds: (string | undefined)[], isActive: boolean, source?: "cloud" | "relay" | "custom") => {
       for (const model of modelIds) {
         if (!model || seen.has(model)) continue;
         seen.add(model);
         const modelMeta = (providerModels ?? []).find((m) => m.id === model);
         const spec4Badges = matchModelSpec(model);
+        /* 倍率只给账户登录自动生成的供应商（source=cloud/relay）；自定义供应商不展示。 */
+        const credits = (source === "cloud" || source === "relay") ? modelMeta?.credits : undefined;
         out.push({
           ...(bag.customModelOption ?? { id: "", displayName: "", description: "", supportsPersonality: true, isDefault: false }),
           id: `custom:${provider}:${model}`,
@@ -264,19 +269,20 @@ bag.customModelOption = customModelOption as typeof bag.customModelOption;
           inputTypes: modelMeta?.inputTypes ?? spec4Badges?.inputTypes,
           contextWindow: modelMeta?.contextWindow ?? spec4Badges?.contextWindow,
           maxOutputTokens: modelMeta?.maxOutputTokens ?? spec4Badges?.maxOutputTokens,
+          credits,
         });
       }
     };
     // 当前生效供应商：models 列表 + 生效 model（排最前）
     const activeProvider = bag.customModel?.provider;
     const activeModels = [...new Set([...(bag.customModel?.models ?? []).filter((m) => m.enabled !== false).map((m) => m.id), bag.customModel?.model].filter(Boolean))] as string[];
-    if (activeModels.length) pushModels(activeProvider ?? "custom", bag.customModel?.name ?? "自定义供应商", bag.customModel?.models, activeModels, true);
+    if (activeModels.length) pushModels(activeProvider ?? "custom", bag.customModel?.name ?? "自定义供应商", bag.customModel?.models, activeModels, true, bag.customModel?.source);
     // 其他启用供应商：providersList 里 enabled !== false 且 provider !== 当前
     for (const p of bag.providersList) {
       if (p.provider === activeProvider) continue;
       if (p.enabled === false) continue;
       const models = [...new Set([...(p.models ?? []).filter((m) => m.enabled !== false).map((m) => m.id), p.model].filter(Boolean))] as string[];
-      if (models.length) pushModels(p.provider, p.name, p.models, models, false);
+      if (models.length) pushModels(p.provider, p.name, p.models, models, false, p.source);
     }
     // 没有已配置模型时回退到探测到的模型列表
     if (!out.length && providerModels?.length) {

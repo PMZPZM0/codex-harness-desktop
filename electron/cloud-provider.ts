@@ -70,6 +70,7 @@ function buildModels(rows: CloudCatalogModel[]): ProviderModel[] {
     .filter((m) => m.enabled && m.id)
     .map((m) => ({
       id: m.id,
+      ...(m.credits ? { credits: m.credits } : {}),
       ...(typeof m.contextLength === "number" ? { contextWindow: m.contextLength } : {}),
       ...(typeof m.maxOutputTokens === "number" ? { maxOutputTokens: m.maxOutputTokens } : {}),
       ...(typeof m.supportsImages === "boolean"
@@ -84,6 +85,7 @@ function shapeOf(row: CustomModelFile): string {
     baseUrl: row.baseUrl,
     model: row.model,
     enabled: row.enabled,
+    source: row.source,
     key: row.encryptedKey ?? "",
   });
 }
@@ -282,6 +284,7 @@ export async function applyCloudProvider(
     }),
     provider: CLOUD_PROVIDER_ID,
     name: CLOUD_PROVIDER_NAME,
+    source: "cloud",
     /* model 只保留"原本就选中且仍在勾选列表里"的那个，否则留空（留空 = 不抢任何人的生效位）。 */
     model: previous && models.some((m) => m.id === previous.model) ? previous.model : "",
     baseUrl: effective.baseUrl,

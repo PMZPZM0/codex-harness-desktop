@@ -15,6 +15,9 @@ export type CustomModelFile = {
   model: string;
   baseUrl: string;
   contextWindow: number;
+  /** 供应商来源标签（10-25）：云账户 / 中转站登录自动生成 vs 用户手填。
+   *  只影响展示（倍率只给云与中转站），不参与引擎配置。 */
+  source?: "cloud" | "relay" | "custom";
   wireApi?: "responses" | "chat";
   encryptedKey?: string;
   /** 当前生效模型的思考档位（档案 100% 同步口径，对齐顶层 model）：
@@ -36,6 +39,8 @@ export type CustomModelFile = {
 
 export type ProviderModel = {
   id: string;
+  /** 云账户目录下发的积分倍率（只用于模型下拉展示）。 */
+  credits?: string;
   /** 是否加入该供应商的可用模型列表；旧配置缺失时按 true 迁移。 */
   enabled?: boolean;
   contextWindow?: number;

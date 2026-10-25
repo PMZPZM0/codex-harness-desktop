@@ -3,6 +3,8 @@
 /** 与 electron/main.ts 的 ProviderModel 对应：供应商下的单个模型配置 */
 type ProviderModelConfig = {
   id: string;
+  /** 云账户目录的积分倍率（只用于下拉展示） */
+  credits?: string;
   enabled?: boolean;
   contextWindow?: number;
   maxOutputTokens?: number;
@@ -18,6 +20,8 @@ type ProviderModelConfig = {
 type CustomModelState = {
   provider: string;
   name: string;
+  /** 云账户 / 中转站 / 自定义（登录自动生成的供应商才显示倍率） */
+  source?: "cloud" | "relay" | "custom";
   model: string;
   baseUrl: string;
   contextWindow: number;

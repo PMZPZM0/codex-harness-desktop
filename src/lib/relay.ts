@@ -23,6 +23,8 @@ export type RelayActive = {
   /** 每次成功切换/激活时写入的时间戳；UI 用它作为刷新与重渲染的强信号，
    *  即便 provider 字符串因同网关复用而不变，也能强制监控与配置跟着切换。 */
   switchedAt?: number;
+  /** 所选分组的积分倍率（sub2api groups.rate_multiplier）：只用于模型下拉展示。 */
+  rate?: number;
 };
 
 export type RelayGroup = { group_id: number; group_name: string };
@@ -34,6 +36,14 @@ export function readRelayActive(): RelayActive | null {
 export function writeRelayActive(active: RelayActive | null) {
   if (active) localStorage.setItem("relay-active-v1", JSON.stringify(active));
   else localStorage.removeItem("relay-active-v1");
+}
+
+/** 从 overview.groups 里取所选分组的倍率（字段以 sub2api 的 rate_multiplier 为准）。 */
+function relayGroupRate(overview: any, groupId: number | null | undefined): number | undefined {
+  if (groupId === null || groupId === undefined) return undefined;
+  const group = (overview?.groups ?? []).find((row: any) => Number(row?.id ?? row?.group_id) === Number(groupId));
+  const rate = Number(group?.rate_multiplier ?? group?.rateMultiplier);
+  return Number.isFinite(rate) ? rate : undefined;
 }
 
 /** 按**候选**落地：复用/新建该候选的密钥 → 选计费 → 拼出供应商参数与「已生效」标记。
@@ -64,7 +74,7 @@ export async function resolveRelayCandidate(candidate: RelayCandidate, overview?
     apiKey: key.key,
     provider,
     displayName,
-    active: { provider, baseUrl, apiKey: key.key, mode: candidate.mode, groupId: candidate.groupId, label: displayName, email: ov?.email },
+    active: { provider, baseUrl, apiKey: key.key, mode: candidate.mode, groupId: candidate.groupId, label: displayName, email: ov?.email, rate: relayGroupRate(ov, candidate.groupId) },
   };
 }
 
@@ -116,7 +126,7 @@ export async function resolveRelayKeyTarget(keyRow: { id: any; name: any; key: s
     apiKey: keyRow.key,
     provider,
     displayName,
-    active: { provider, baseUrl, apiKey: keyRow.key, mode, groupId: keyRow.group_id ?? null, label: displayName, email: overview?.email },
+    active: { provider, baseUrl, apiKey: keyRow.key, mode, groupId: keyRow.group_id ?? null, label: displayName, email: overview?.email, rate: relayGroupRate(overview, keyRow.group_id) },
   };
 }
 

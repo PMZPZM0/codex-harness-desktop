@@ -1163,39 +1163,60 @@
    名称一行 + 参数徽标（图片/视频/上下文/输出），当前项勾选挪到最右侧，
    左侧图标位让给供应商色调圆点 —— 跨供应商的模型一眼看出是哪家。 */
 .composer-menu-pop .menu-item-badges {
-  gap: 4px;
+  gap: 6px;
   margin-left: auto;
   flex: none;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
-  max-width: 150px;
+  white-space: nowrap;
 }
 .composer-menu-pop .menu-item-badges em {
   align-items: center;
   gap: 3px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text) 7%, transparent);
-  color: var(--muted);
-  font-size: 10px;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--faint);
+  font-size: 10.5px;
   font-style: normal;
   white-space: nowrap;
   display: inline-flex;
 }
 .composer-menu-pop .menu-item-badges em.badge-vision {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  background: none;
   color: var(--accent);
   font-weight: 600;
 }
 .composer-menu-pop .menu-item-badges em.badge-video {
-  background: color-mix(in srgb, #7048e8 16%, transparent);
+  background: none;
   color: #7048e8;
   font-weight: 600;
 }
-.composer-menu-pop .menu-item-check {
-  color: var(--accent);
-  flex: none;
+/* 上游积分倍率：右列定宽 + 等宽数字，所有行的小数点对齐 */
+.composer-menu-pop .menu-item-credit {
+  flex: 0 0 46px;
+  width: 46px;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+/* 模型当前项只靠 active 底色标识，不再显示右侧勾选（10-25 用户） */
+/* 菜单脚注（更多设置）：与模型名同缩进，上方细分割线 */
+.composer-menu-pop button[data-value="__model_settings__"] {
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 8px 8px;
+  padding-top: 7px;
+}
+.composer-menu-pop button[data-value="__model_settings__"] .menu-item-text {
+  padding-left: 28px;
+}
+.composer-menu-pop button[data-value="__model_settings__"] .menu-item-text strong {
+  color: var(--muted);
+  font-weight: 500;
 }
 .composer-menu-pop button.active {
   background: color-mix(in srgb, var(--accent) 10%, var(--panel-2));

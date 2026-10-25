@@ -577,14 +577,17 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                                   停用或切到别的供应商 ⇒ 组件返回 null，不占位也不轮询。 */}
                               <CloudPointsBadge active={customModel?.provider === "cloud"} />
                               <ContextUsageBadge tokenUsage={tokenUsage} fallbackWindow={customModel?.models?.find((m) => m.id === customModel?.model)?.contextWindow ?? customModel?.contextWindow} recentCompaction={recentCompaction} onCompact={() => { if (thread?.id) { compactPendingRef.current.add(thread.id); setCompactEventState("running"); window.codex.request("thread/compact/start", { threadId: thread.id }).catch((error: any) => { compactPendingRef.current.delete(thread.id); setCompactEventState("error", error.message); }); } }} />
-                              <ComposerMenu icon={Bot} label="模型" title="模型" disabled={!customModel} value={modelId} width={330} options={[...allModels.map((model) => ({
+                              <ComposerMenu icon={Bot} label="模型" title="模型" disabled={!customModel} value={modelId} width={400} options={[...allModels.map((model) => ({
                                 value: model.id,
                                 title: model.model,
                                 // 当前供应商不需要重复说明；跨供应商模型只补充供应商名称用于区分。
                                 desc: model.isActive ? "" : model.providerName,
                                 // 徽标顺序刻意「能不能看图 → 能吞多少」：新用户最关心的两件事排前两位
                                 badges: modelBadges(model),
-                              })), { value: "__model_settings__", title: "更多设置…", desc: "打开模型配置（档位在输入框底栏的「思考强度」里选，按会话各自记忆）" }]} toneOf={(option) => option.value === "__model_settings__" ? undefined : avatarToneOf(option.desc || option.title)} onChange={(value) => {
+                                credits: model.credits,
+                                tone: avatarToneOf(model.providerName || model.provider || model.model),
+                                monogram: model.model.replace(/^[^A-Za-z0-9]+/, "").slice(0, 1).toUpperCase() || "M",
+                              })), { value: "__model_settings__", title: "更多设置…", desc: "打开模型配置（思考强度在底栏选择）" }]} toneOf={(option) => option.value === "__model_settings__" ? undefined : avatarToneOf(option.desc || option.title)} onChange={(value) => {
                                 if (value === "__model_settings__") { setSettingsPage("model"); setSettingsOpen(true); const live = customModel?.models?.find((m) => m.id === customModel?.model); if (live) openModelEditor(live); return; }
                                 chooseModel(value);
                               }} />

@@ -100,7 +100,7 @@ export const customModelFeature = defineFeature<null>({
       }
     });
 
-    ipcHost.handle("custom-model:save", async (_event, input: { provider: string; name: string; model: string; baseUrl: string; contextWindow?: string | number; wireApi?: "responses" | "chat"; apiKey?: string; models?: ProviderModel[]; enabled?: boolean; upstreamProtocol?: BridgeMode }) => {
+    ipcHost.handle("custom-model:save", async (_event, input: { provider: string; name: string; model: string; baseUrl: string; contextWindow?: string | number; wireApi?: "responses" | "chat"; apiKey?: string; models?: ProviderModel[]; enabled?: boolean; upstreamProtocol?: BridgeMode; source?: "cloud" | "relay" | "custom" }) => {
       const provider = safeProviderId(input.provider.trim());
       const name = input.name.trim();
       const requestedModel = input.model.trim();
@@ -154,7 +154,7 @@ export const customModelFeature = defineFeature<null>({
       const keylessThirdPartySave = !encryptedKey && provider !== "openai-official" && !isLocalEndpoint(baseUrl);
       // 上游协议（09-19）：归一为 auto/chat/responses；未传（旧渲染层）时沿用已有值，兜底 auto。
       const upstreamProtocol = normalizeUpstreamProtocol(input.upstreamProtocol ?? existing?.upstreamProtocol);
-      const saved = withModels({ provider, name, model, baseUrl, contextWindow, wireApi, encryptedKey, upstreamProtocol, enabled: keylessThirdPartySave ? false : (input.enabled ?? existing?.enabled ?? true), models: mergedModels }, model);
+      const saved = withModels({ provider, name, model, baseUrl, contextWindow, wireApi, encryptedKey, upstreamProtocol, enabled: keylessThirdPartySave ? false : (input.enabled ?? existing?.enabled ?? true), models: mergedModels, source: input.source ?? existing?.source ?? "custom" }, model);
       await upsertCustomModel(saved);
       const current = await readCustomModel();
       if (saved.enabled === false && current?.provider !== provider) {

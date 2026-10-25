@@ -29,6 +29,8 @@ export type Model = {
   /** 生效的上下文 / 最大输出（下拉徽标用；用户配置值优先，规格表兜底） */
   contextWindow?: number;
   maxOutputTokens?: number;
+  /** 云账户 / 中转站分组的积分倍率（下拉右侧；自定义供应商为空） */
+  credits?: string;
 };
 
 /** `rolloutMissing`：主进程在 thread/list 里标注的「引擎索引里有、磁盘上 rollout 没了」——
