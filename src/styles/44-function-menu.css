@@ -48,7 +48,7 @@
   flex: none;
   margin: 0 0 4px;
 }
-.sidebar-options-top .sidebar-options-toggle { margin-top: 2px; }
+.sidebar-options-top .sidebar-options-toggle { margin-top: -8px; padding-left: 11px; gap: 9px; }
 .sidebar-options-top .sidebar-nav-bottom { max-height: 32vh; }
 
 /* ── 更多弹层 ── */
