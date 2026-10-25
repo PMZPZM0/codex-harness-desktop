@@ -298,6 +298,23 @@ if (state) {
     "群面板要有成员头像（顶栏头像条 + 成员气泡头像）");
   /* ⛔ 10-25 用户令：「我每次新建，就是全新的，跟旧的不要有任何关系」「BOSS 会话不要归档功能，
      有删除会话功能就行了」 */
+  /* ⛔⛔ 10-25 用户实测三处：
+     ① 「BOSS 他根本不知道他这个会话是干嘛的」—— 之前靠 boss-home/AGENTS.md 注入，
+        cwd 改成用户项目后引擎读不到 ⇒ 改成**会话级注入**（每轮正文前挂一段，显示层剥掉）。
+     ② 「BOSS 会话跟普通会话串了」—— 自愈重建时无条件登记身份 ⇒ 普通会话被当成 BOSS。
+     ③ 「我要经常删了BOSS会话，重新建」—— 删了要从身份登记里摘掉，重建要搬迁而不是叠加。 */
+  const sendSrc = read("src/features/app-state/parts/part08/02-seg/send.tsx");
+  ok(/BOSS_ROLE_PROMPT/.test(sendSrc) && /bossRolePrefix/.test(sendSrc),
+    "BOSS 会话每轮都注入角色说明（⛔ 不再依赖 cwd 的 AGENTS.md）");
+  ok(/<!--boss-role-->/.test(read("src/lib/user-refs.ts")),
+    "角色说明在气泡里**不可见**（userDisplayText 剥掉带标记的段）");
+  ok(/wasBoss/.test(sendSrc) && /if \(wasBoss\) renameBossSessionId/.test(sendSrc),
+    "⛔ 身份搬迁只对**本来就是 BOSS 会话**的会话做（否则普通会话被串成 BOSS）");
+  ok(/removeBossSessionId\(id\)/.test(read("src/features/app-state/parts/part08/01-seg.tsx")),
+    "删除 BOSS 会话 ⇒ 从身份登记摘掉（删了重建不会被当成旧的）");
+  ok(/BossProjectDirDialog/.test(read("src/features/app-view/AppView/01-sidebar-shell.tsx"))
+    && /createBossProjectDir/.test(read("src/features/app-view/AppView/01-sidebar-shell.tsx")),
+    "新建 BOSS 会话走**应用内对话框**（选目录 / 在软件所在盘自动新建），⛔ 不用系统弹窗或内联 toast");
   ok(/sessionIds/.test(read("src/features/boss-group-view/boss-threads-store.d.mts")),
     "BOSS 会话有独立身份标记 sessionIds（⛔ homeId 不再用于复用会话）");
   const sideSrc = read("src/features/app-view/AppView/01-sidebar-shell.tsx");
@@ -317,10 +334,10 @@ if (state) {
     "⛔ 评审的「重跑/retry」通道与按钮已删");
   ok(/memberThreadIds/.test(bossStore),
     "共享 store 汇总群成员会话 id（侧栏据此打「BOSS 调度」标签）");
-  ok(/boss-workspace/.test(sidebar) && /chooseDirectory/.test(sidebar),
-    "BOSS 会话首次进入要选「群干活的项目目录」（存 boss-workspace）");
-  ok(/const sessionDir = bossThreads\.homeDir/.test(sidebar) && /workspaceRef\.current = sessionDir/.test(sidebar),
-    "BOSS 会话本身跑在独立目录 <userData>/boss-home（项目记忆/技能与任何项目隔离），并同步 workspaceRef");
+  ok(/chooseDirectory/.test(sidebar),
+    "新建 BOSS 会话要**重新选**项目地址（⛔ 不沿用上一次的，也不跟其他会话同步）");
+  ok(/workspaceRef\.current = dir/.test(sidebar) && /createBossProjectDir/.test(sidebar),
+    "BOSS 会话跑在**自己选的项目目录**（同步 workspaceRef；不写全局 workspace ⇒ 别的会话不受影响）");
   ok(/isBossThread \? null : \(/.test(read("src/features/app-state/parts/part09/02-seg.tsx")),
     "BOSS 会话隐藏顶栏「允许本会话调度」开关（群编排自带独立调度）");
   const timeline = read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx");
@@ -351,8 +368,8 @@ if (state) {
     "BOSS 引导卡只在 isBossEmpty 时挂载（普通欢迎页条件保持 isEmpty && !isBossEmpty）");
   ok(/isEmpty && !\(bossThreads\.pending/.test(read("src/features/app-view/AppView/02-main-stage/03-composer.tsx")),
     "BOSS 会话不渲染「周报总结」那排新会话快捷任务");
-  ok(/!isEmpty && \(historyPlan\.hiddenCount/.test(read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx")),
-    "空会话不显示「加载更早的消息」");
+  ok(/thread && historyPlan\.hiddenCount > 0/.test(read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx")),
+    "空会话不显示「加载更早的消息」（空会话 hiddenCount=0）");
   ok(existsSync(join(ROOT, "src/features/boss-group-view/BossGroupHelpButton.tsx")),
     "BOSS 会话独有的「?」说明组件在位");
   /* ⛔ 10-25 实测：只认 bossIds 会让「还没建群时的 home 会话」顶栏缺成员图标与「?」——

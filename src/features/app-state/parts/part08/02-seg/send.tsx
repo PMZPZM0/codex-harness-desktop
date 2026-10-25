@@ -16,7 +16,7 @@ import { pickEnhanceHint, shouldShowHintAfterSends, isLongPrompt, HINT_COOLDOWN_
 import { nowBlock } from "../../../../../lib/now-block.mjs";
 import { setTurnWindowTail } from "../../../../../lib/turn-history.mjs";
 /* ⛔ 会话重建后要把 BOSS 归属搬过去（见下方 bossGroupRebind 那段注释）。 */
-import { setBossHomeThreadId } from "../../../../boss-group-view";
+import { BOSS_ROLE_PROMPT, getBossThreads, renameBossSessionId, setBossHomeThreadId } from "../../../../boss-group-view";
 import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, computeFoldSummary, topToolGroup, isTurnRunning, normalizeLoadedThread, type FoldUnit } from "../../../../../lib/turn-fold";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../lib/user-refs";
 import { effortLabels } from "../../../../../lib/effort-labels";
@@ -341,8 +341,19 @@ export async function send(bag: Bag, event?: FormEvent) {
       } catch { /* 统一记忆读不到不阻塞发送（与上面两段同纪律） */ }
     }
     bag.dbg("send-memory", { ms: Math.round(performance.now() - memoryStartedAt) });
+    /* ⛔ 10-25：BOSS 会话每轮都带上角色说明（模型必须知道自己是 BOSS、干什么活）。
+       ⛔ 之前靠 <userData>/boss-home/AGENTS.md 注入，但 BOSS 会话的 cwd 改成用户自己选的
+          项目目录后，引擎只读 cwd 下的 AGENTS.md ⇒ 那份说明**根本读不到**。 */
+    const bossRolePrefix = (() => {
+      try {
+        const boss = getBossThreads();
+        const id = String(bag.thread?.id ?? "");
+        const isBoss = Boolean(id) && ((boss.sessionIds ?? []).includes(id) || (boss.bossIds ?? []).includes(id));
+        return isBoss ? BOSS_ROLE_PROMPT : "";
+      } catch { return ""; }
+    })();
     const input = [
-      ...((messageText || threadReferenceBlocks || inlineFilePaths.length || bag.quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${memoryPrefix}${nowBlock()}${threadReferenceSuffix}`, text_elements: [] }] : []),
+      ...((messageText || threadReferenceBlocks || inlineFilePaths.length || bag.quoteItem) ? [{ type: "text", text: `${bossRolePrefix}${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${memoryPrefix}${nowBlock()}${threadReferenceSuffix}`, text_elements: [] }] : []),
       ...inlineImagePaths.map((path) => ({ type: "localImage", path })),
       ...sendImages.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
     ];
@@ -495,6 +506,15 @@ export async function send(bag: Bag, event?: FormEvent) {
             createdThreadId = active.id;
             void window.codex.bossGroupRebind?.({ previousThreadId: previousId, threadId: active.id }).catch(() => undefined);
             try {
+              /* ⛔⛔ 身份登记跟着搬，但**只有本来就是 BOSS 会话**的才搬。
+                 10-25 用户实测「BOSS 会话跟普通会话串了」：这里是**所有**会话都会走的自愈重建，
+                 之前无条件登记 ⇒ 普通会话被登记成 BOSS 会话 ⇒ 它被注入了 BOSS 角色说明
+                 （截图：普通会话「未命名任务」里冒出 BOSS 的口气）。 */
+              try {
+                const boss = getBossThreads();
+                const wasBoss = (boss.sessionIds ?? []).includes(previousId) || (boss.bossIds ?? []).includes(previousId);
+                if (wasBoss) renameBossSessionId(previousId, active.id);
+              } catch { /* 忽略 */ }
               if (localStorage.getItem("boss-home-thread") === previousId) setBossHomeThreadId(active.id);
             } catch { /* 隐私模式 */ }
             bag.showToast("会话已重建", "原会话确实不存在，已就地重建并重新发送（BOSS 归属已跟着搬过去）");

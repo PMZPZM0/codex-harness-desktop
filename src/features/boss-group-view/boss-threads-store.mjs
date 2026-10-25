@@ -52,6 +52,35 @@ export function setBossHomeThreadId(id) {
   emit();
 }
 
+/** 删除 BOSS 会话时把它从身份登记里摘掉（10-25 用户令：「我要经常删了 BOSS 会话，重新建」——
+ *  不摘的话旧 id 会一直留在 sessionIds 里，新建的会话就被当成"旧的"）。 */
+export function removeBossSessionId(id) {
+  const target = String(id || "");
+  if (!target) return;
+  try {
+    const ids = readSessionIds().filter((x) => x !== target);
+    localStorage.setItem("boss-session-ids", JSON.stringify(ids));
+    if (readHome() === target) localStorage.setItem(HOME_KEY, ids[ids.length - 1] ?? "");
+    state = { ...state, sessionIds: ids, homeId: ids[ids.length - 1] ?? "" };
+    emit();
+  } catch { /* 隐私模式：忽略 */ }
+}
+
+/** 会话重建（rollout 丢失自愈）时把身份登记从旧 id 换成新 id。 */
+export function renameBossSessionId(previousId, nextId) {
+  const prev = String(previousId || "");
+  const next = String(nextId || "");
+  if (!prev || !next) return;
+  try {
+    const ids = readSessionIds().filter((x) => x !== prev);
+    ids.push(next);
+    localStorage.setItem("boss-session-ids", JSON.stringify(ids.slice(-50)));
+    if (readHome() === prev) localStorage.setItem(HOME_KEY, next);
+    state = { ...state, sessionIds: ids, homeId: readHome() };
+    emit();
+  } catch { /* 隐私模式：忽略 */ }
+}
+
 /** 「刚点 BOSS 会话、还没群也没 home」的过渡态：空会话要显示 BOSS 欢迎语（10-25 用户令）。 */
 export function setBossPending(pending) {
   state = { ...state, pending: Boolean(pending) };
