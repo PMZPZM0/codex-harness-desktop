@@ -627,6 +627,8 @@ export async function run() {
     const effortTail = cssNC.slice(cssNC.indexOf("10-24：思考强度改成"));
     ok(/.effort-picker-thumb {[sS]{0,220}opacity: 1/s.test(effortTail), "【32】白色圆点常显（不再 hover 才出现）");
     ok(/.effort-picker-bead[sS]{0,160}display: none/s.test(effortTail), "【32】亮珠 / 刻点 / 火苗已隐藏（简洁版）");
+  ok(/EFFORT_BANDS/.test(effortPickerC) && /xhigh: "linear-gradient(90deg, #16a34a 0%, #0ea5e9 55%, #2563eb 100%)"/.test(effortPickerC), "【32】渐变随档位变化（低偏绿 / 高偏蓝 / 极高绿→蓝→深蓝）");
+  ok(/effort-picker-sparks/.test(effortPickerC) && /effort-picker-sparks i:nth-child(9)/.test(cssNC) && /@keyframes effort-spark/.test(cssNC), "【32】拉到极高有粒子特效（9 颗白色小星 + 光晕）");
     ok(/.effort-picker-bar.burn .effort-picker-fill[sS]{0,220}linear-gradient(90deg, #16a34a 0%, #0ea5e9 100%)/s.test(effortTail), "【32】拉满仍是绿→蓝（不再切火焰色）");
 
     const applyBody = appNC.slice(appNC.indexOf("function applyEffort"), appNC.indexOf("function changeEffort"));
