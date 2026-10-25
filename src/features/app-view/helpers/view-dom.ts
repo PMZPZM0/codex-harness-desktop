@@ -14,6 +14,8 @@ import { COMPOSER_FILE_CHIP_ICON } from "../constants";
 
 
 
+let draggingChip: HTMLElement | null = null;
+
 export /** 生成内联附件 chip（contenteditable=false）：点主体打开/预览，点 X 删除。
  *  图片与文件**同一套**（09-18 用户：「把文件展示不要在输入框上面了，改成在输入框里面的
  *  chip，跟图片一样的展示」）——只有图标、title、点击语义三处按类型分叉。
