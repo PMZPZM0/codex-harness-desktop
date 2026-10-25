@@ -335,12 +335,19 @@ export async function settleSubmission(taskId: string, output: string): Promise<
   const group = state.groups[task.groupId];
   if (!group) return;
   const alreadyLeftRunning = submitTaskSafe(state, taskId, output);
+  /* ⛔⛔ 10-25 用户实测：「成员会话的汇总消息为什么没有发送到主对话，都是各种会话里面回复，
+     这叫什么群聊」。原来：成品只进了**成员自己的会话**（引擎回合）与群事件（还只截 600 字），
+     主对话里什么也没有 ⇒ 看起来就是"各说各话"。 */
+  const deliverable = String(output ?? "").trim() || "（没有文本产出）";
   pushEvent(state, {
     groupId: group.id, taskId, memberId: task.assignee, kind: "chat-member",
-    text: String(output ?? "").slice(0, 600) || "（没有文本产出）",
+    text: deliverable.slice(0, 4000),
   });
   bossStore.save();
   emit({ type: "boss-group", phase: "task", groupId: group.id, taskId, status: "reviewing" });
+  /* 成品**汇总到主对话**（BOSS 会话）—— 这是群聊的本体：成员干完活，成果出现在群里。 */
+  const deliverer = memberOf(group, task.assignee);
+  await postToBoss(group, `[群事件] ${deliverer.name} 交活：「${task.title}」\n${deliverable.slice(0, 4000)}`);
   if (alreadyLeftRunning) await reviewTask(taskId);   // 重复回调（已不在 running）⇒ 不再审
 }
 
