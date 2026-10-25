@@ -4,6 +4,8 @@
 // 由守卫 22-boss-groups 真跑；⛔ 别再在注释里指一个不存在的脚本 —— 那等于没验）。
 import { stripImageTokens } from "./prompt-images";
 import { stripHarnessBlocks } from "./harness-block-strip.mjs";
+import { groupEventPlainText, parseGroupEvents } from "./group-event-text.mjs";
+import type { GroupEventBlock } from "./group-event-text.mjs";
 
 /** 引用会话记录协议块的载荷：id=源会话 ID，note=折叠卡备注行（必须单行），content=记录全文。 */
 export type ThreadReferencePayload = { id: string; note: string; content: string };
@@ -21,6 +23,9 @@ export type ParsedUserRefs = {
   teamTask?: { kind: "team" | "member"; /** 壳上的原始标签（团队会话 / 成员会话 / 群成员会话 / 调度会话…），渲染时原样展示 */ label?: string; requirement: string };
   imported?: { note: string; content: string };
   threadReferences: ThreadReferencePayload[];
+  /** 群广播（`[群事件] …`）：宿主投进中枢会话的群消息，界面按块渲染成"头像 + 名字 + 内容"。
+   *  ⛔ 它**不是**用户说的话 —— 渲染层不许再套用户气泡（右对齐 + "你"）。 */
+  groupEvents?: GroupEventBlock[];
 };
 
 /** 最小 userMessage 形态（不依赖 App.tsx 内部的 ThreadItem），保留结构兼容即可。 */
@@ -146,7 +151,11 @@ export function parseUserRefs(text: string): ParsedUserRefs {
      ⛔ 不要在各渲染组件里各剥一次：漏一处就漏一处显示，这次的 bug 就是这么来的
         （userDisplayText 剥了，但 UserMessageView 正文只读 cleanText，等于没剥）。 */
   const withoutRole = clean.replace(/<!--boss-role-->[\s\S]*?<!--\/boss-role-->\s*/g, "");
-  return { cleanText: withoutRole.replace(/\n{3,}/g, "\n\n").trim(), files, skills, contexts, teamTask, imported, threadReferences };
+  /* 群广播（10-26「只广播」方案）：中枢会话里的 `[群事件] …` 是**群消息**，不是用户说的话。
+     结构化后：界面按块渲染气泡（成员头像 + 名字 + 内容），cleanText 只留可读正文给复制/搜索/标题。 */
+  const groupEvents = parseGroupEvents(withoutRole) ?? undefined;
+  const visible = groupEvents ? groupEventPlainText(groupEvents) : withoutRole.replace(/\n{3,}/g, "\n\n").trim();
+  return { cleanText: visible, files, skills, contexts, teamTask, imported, threadReferences, groupEvents };
 }
 
 /** 用户消息对外可见文本（复制/引用/标题/上下文选择/乐观消息匹配键使用）：

@@ -676,7 +676,19 @@ if (state) {
      ⛔ 真跑（15 种真实格式、打包真实 parseUserRefs）：字符串契约靠读代码判断正是上次翻车的根因。 */
   const strip = spawnSync(process.execPath, [join(ROOT, "scripts", "verify-injection-strip.mjs")], { cwd: ROOT, encoding: "utf8", timeout: 240_000 });
   ok(strip.status === 0,
-    `注入段剥离回归：15 种真实注入格式，气泡里只留用户原文${strip.status === 0 ? "" : `（失败：${String(strip.stdout ?? "").split("\n").filter((l) => l.includes("✗")).slice(0, 3).join(" / ")}）`}`);
+    `注入段剥离 + 群广播解析回归：28 项（15 种注入格式 + 6 组群事件 + 文案同源）${strip.status === 0 ? "" : `（失败：${String(strip.stdout ?? "").split("\n").filter((l) => l.includes("✗")).slice(0, 3).join(" / ")}）`}`);
+  /* ── 群广播（10-26 用户令「方案就按只广播这个完成」）───────────────────
+     `[群事件]` 是成员汇总进来的群消息，⛔ 不能再套用户气泡（右对齐 + "你"）。
+     呈现层只在**气泡这一层**换样式（群事件在引擎里就是一条 userMessage —— 换时间线渲染器会踩
+     折叠/钉顶/贴底那套按回合单元算的不变量）。 */
+  const userMsgView = read("src/features/shared/UserMessageView.tsx");
+  ok(/if \(refs\.groupEvents\?\.length\) return <GroupFeed/.test(userMsgView) && /function GroupFeed/.test(userMsgView),
+    "群消息走 GroupFeed（头像 + 名字 + 内容），⛔ 不再套用户气泡");
+  ok(/group-avatar/.test(userMsgView) && /group-msg-body/.test(userMsgView) && /group-sys/.test(userMsgView)
+    && /\.group-avatar \{/.test(read("src/styles/47-boss-group-view.css")),
+    "群气泡三件套（头像 / 正文 / 系统行）样式在位");
+  ok(/groupEvents/.test(read("src/lib/user-refs.ts")) && existsSync(join(ROOT, "src/lib/group-event-text.mjs")),
+    "群事件在解析层就结构化（cleanText 只留可读正文，复制/搜索不撞机器标签）");
   /* ⛔ 同一套剥壳规则有**三份副本**（渲染层 user-refs / 导出与备份 thread-backup / 标题 worker），
      09-16 就因为漂移出过"侧栏标题显示机器提示词"。这里钉住后两份也必须认群成员格式。 */
   const backupSrc = read("electron/thread-backup.ts");
