@@ -1123,11 +1123,6 @@
   min-height: 96px;
   box-shadow: 0 18px 44px #00000012;
 }
-.composer-wrap.docked-center .suggest-row {
-  justify-content: center;
-  gap: 10px;
-  margin-top: 18px;
-}
 .composer-wrap {
   transition: width 0.34s cubic-bezier(0.22, 0.61, 0.36, 1);
 }

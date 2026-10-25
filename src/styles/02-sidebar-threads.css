@@ -958,23 +958,6 @@
   background: var(--green);
   color: var(--accent-text);
 }
-.suggest-row {
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 14px;
-  display: flex;
-}
-.suggest-row button {
-  border: 1px solid var(--line);
-  background: var(--panel);
-  min-height: 32px;
-  color: var(--muted);
-  cursor: pointer;
-  border-radius: 16px;
-  padding: 0 13px;
-  font-size: 12px;
-}
 .turn-group {
   /* 回合与回合之间留出更多呼吸空间，避免 agent 末尾叙述贴到下一条用户消息 */
   margin: 0 0 32px;
