@@ -35,6 +35,9 @@ export const bossGroupsFeature = defineFeature<null>({
         createdAt: group.createdAt,
         paused: Boolean(group.paused),
         bossThreadId: group.bossThreadId,
+        /* 群成员的会话 id（10-25 用户令：侧栏给它们打「BOSS 调度」标签）。
+           ⛔ 成员会话是派活时新建的，不走 delegate 登记 ⇒ 只能从这里回给渲染层。 */
+        memberThreadIds: group.members.map((member) => member.threadId).filter(Boolean),
         memberCount: group.members.length,
         taskCount: Object.values(state.tasks).filter((task) => task.groupId === group.id).length,
       }));

@@ -9,6 +9,7 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { createPortal } from "react-dom";
 import "@xterm/xterm/css/xterm.css";
 import { DispatchMenu, DispatchBadge } from "../../../../../../features/dispatch";
+import { getBossThreads } from "../../../../../../features/boss-group-view";
 import {
   AlertTriangle,
   Archive,
@@ -214,7 +215,13 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
        「标签（已调度）主会话 / 调度会话--专家名字或者专家团名字或者子智能体随机名字」。
        角色信息在会话名里已经有了（调度时按对象命名），徽标只标"它是被调度的"。
        层级（挂主会话下面）由 buildDispatchChildren 的 childrenOf/childIds 负责（09-25 已有）。 */
-    const sourceBadge = delegateKind
+    /* 10-25 用户令：BOSS 群派出去的成员会话打「BOSS 调度」标签（区别于普通「调度」）。
+       ⛔ 成员会话是派活时 thread/start 新建的，不走 delegate 登记 ⇒ 只能由群账本回传的
+          memberThreadIds 认（store 由侧栏订阅，这里读快照即可，渲染期不发起请求）。 */
+    const isBossMemberThread = getBossThreads().memberIds.includes(entry.id);
+    const sourceBadge = isBossMemberThread
+      ? { tone: "dispatch", label: "BOSS 调度" }
+      : delegateKind
       ? { tone: "dispatch", label: "调度" }
       : variant === "lead" || expertRole?.kind === "team"
         ? leadBadge

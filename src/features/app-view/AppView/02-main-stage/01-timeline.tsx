@@ -7,6 +7,7 @@ import { compactionStateOf, reportCompactionState } from "../../../../lib/compac
 import { compactionRecordFor, compactionVersion, subscribeCompactions } from "../../../../lib/compaction-records.mjs";
 import { resolveCompactionAnchor } from "../../../../lib/compaction-anchor.mjs";
 import { Fragment, useLayoutEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
+import { getBossThreads, subscribeBossThreads } from "../../../boss-group-view";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../lib/entity-avatar";
 import {
   AlertTriangle,
@@ -183,6 +184,9 @@ import { RequestCard, ToolCard, VoiceSettingsBridge, admitThreadRuntimeRef, ago,
 import type { HarnessAppApi } from "../../../app-state/useHarnessApp";
 
 export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
+  /* 10-25 用户令：BOSS 会话的空态要有自己的引导语（「你好 BOSS…」），发送后自然消失。
+     ⛔ 用共享 store 判断，别在这里再拉一次 listBossGroups。 */
+  const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
   const {
     TURN_WINDOW,
     activeMember,
@@ -397,16 +401,48 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     while (j < win.visible.length && !hasUser(win.visible[j])) j += 1;
     return { turnId: j < win.visible.length ? String(win.visible[j]?.id ?? "") : "", atEnd: j >= win.visible.length };
   })();
+  /* BOSS 会话的空态判定（10-25）：当前会话是某群 boss 线程，或刚点「BOSS 会话」还没落 id（pending）。 */
+  const isBossEmpty = bossThreads.pending || (Boolean(thread?.id) && bossThreads.bossIds.includes(String(thread?.id)));
+
   return (
     <div className="timeline-wrap" ref={timelineWrapRef}>
                   {thread && <MemoMessageRuler turns={thread.turns} scrollRef={scrollRef} containerRef={timelineWrapRef} onJump={jumpToTurnInWindow} compactionTurnId={compactionMark.turnId} compactionAtEnd={compactionMark.atEnd} />}
                   <div className={`timeline ${isEmpty ? "empty-state" : ""}`} ref={scrollRef} onScroll={onTimelineScroll} data-history-hidden={historyPlan.hiddenCount} data-history-below={historyPlan.hiddenBelow} data-history-total={historyPlan.hiddenStubs + timelineWindow.ordered.length}>
                   {isEmpty ? (
-                    <div className="welcome-state">
-                      <div className="welcome-mark"><Code2 strokeWidth={0.5} size={96} /></div>
-                      <h1 className="welcome-greet">{greeting}</h1>
-                      <p className="welcome-sub">{greetSub}</p>
-                    </div>
+                    isBossEmpty ? (
+                      /* 10-25 用户令：BOSS 会话的空态给专属引导语（发送后自然消失 —— 空态本来就只在
+                         没有回合时渲染）。示例 chip 只**填进输入框**，不自动发送，用户还能改。 */
+                      <div className="welcome-state boss-welcome">
+                        <div className="welcome-mark boss-welcome-mark"><Crown strokeWidth={1.1} size={88} /></div>
+                        <h1 className="welcome-greet">你好 BOSS，今天要做什么？</h1>
+                        <p className="welcome-sub">
+                          说需求就行 —— 我来拉群喊人：专家、专家团、你本机的 CLI agent 都能叫来干活。<br />
+                          人齐了我派活、盯进度，审不过就打回重做。
+                        </p>
+                        <div className="boss-welcome-chips">
+                          {[
+                            "做个落地页：设计 + 前端 + 测试，验收要能跑通",
+                            "把这个仓库过一遍，找安全问题和明显 bug",
+                            "写一份竞品分析，要三个不同视角的人来写",
+                          ].map((text) => (
+                            <button
+                              key={text}
+                              type="button"
+                              className="boss-welcome-chip"
+                              onClick={() => { app.setPrompt(text); app.composerInputRef?.current?.focus(); }}
+                            >
+                              {text}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="welcome-state">
+                        <div className="welcome-mark"><Code2 strokeWidth={0.5} size={96} /></div>
+                        <h1 className="welcome-greet">{greeting}</h1>
+                        <p className="welcome-sub">{greetSub}</p>
+                      </div>
+                    )
                   ) : null}
                   {/* 导入会话记录后、尚未发送首条消息：记录预览卡常驻消息区顶部；发送后转为消息内的导入卡 */}
                   {thread && (thread.turns ?? []).length === 0 && pendingImportThreads[thread.id] ? <PendingImportSlot key={thread.id} threadId={thread.id} onDiscard={() => forgetPendingImport(thread.id)} /> : null}
@@ -422,7 +458,9 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                       <div className="timeline-history-skeleton"><i /><i /><i /></div>
                     </div>
                   )}
-                  {thread && (historyPlan.hiddenCount > 0 || hasEarlierCursor) && (
+                  {/* ⛔ 空会话不显示「加载更早」（10-25 用户令：没有消息的时候可以隐藏掉）——
+                      空会话里那条按钮既没有可加载的内容，又把欢迎语顶下去。 */}
+                  {thread && !isEmpty && (historyPlan.hiddenCount > 0 || hasEarlierCursor) && (
                     <button type="button" className="load-earlier-turns" aria-busy={earlierLoadingId === thread.id} onClick={() => void loadEarlierTurns(thread.id)}>
                       <ChevronDown size={13} style={{ transform: "rotate(180deg)" }} />
                       {earlierLoadingId === thread.id

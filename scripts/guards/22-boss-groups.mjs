@@ -275,13 +275,28 @@ if (state) {
 
   /* ── 13. 侧栏入口：点它 = 打开 boss 会话线程，选中态是**派生量** ──
      ⛔ 选中态必须由「当前会话 id 命中某群 bossThreadId」算出来，不许再用一个独立布尔
-        （上一版就是布尔与真实会话脱钩：切到别的会话后按钮还亮着）。 */
+        （上一版就是布尔与真实会话脱钩：切到别的会话后按钮还亮着）。
+     ⛔ 还没建群时要有 home 锚点（localStorage），否则每点一次就多一个「未命名任务」。 */
   const sidebar = read("src/features/app-view/AppView/01-sidebar-shell.tsx");
-  ok(/bossGroups\.some\(\(g\) => g\.bossThreadId && g\.bossThreadId === currentThreadId\)/.test(sidebar),
+  ok(/bossThreads\.bossIds\.includes\(currentThreadId\)/.test(sidebar),
     "侧栏选中态派生自「当前会话 = 某群 boss 线程」");
-  ok(/void app\.openThread\(target\)/.test(sidebar) && /startNewThread\(\)/.test(sidebar),
-    "点 BOSS 会话 = openThread(群.bossThreadId)；还没群则新建会话");
-  ok(/listBossGroups/.test(sidebar), "侧栏自己拉群列表（含 bossThreadId）判断归属");
+  ok(/app\.openThread\(groupBoss\)/.test(sidebar) && /app\.openThread\(home\)/.test(sidebar) && /startNewThread\(\)/.test(sidebar),
+    "点 BOSS 会话 = 打开群 boss 线程 / home 锚点；两者都没有才新建会话");
+  const bossStore = read("src/features/boss-group-view/boss-threads-store.mjs");
+  ok(/boss-home-thread/.test(bossStore) && /setBossHomeThreadId/.test(bossStore),
+    "没群时的 BOSS 会话有固定锚点（localStorage boss-home-thread）");
+  ok(/memberThreadIds/.test(bossStore),
+    "共享 store 汇总群成员会话 id（侧栏据此打「BOSS 调度」标签）");
+  ok(/isBossThread \? null : \(/.test(read("src/features/app-state/parts/part09/02-seg.tsx")),
+    "BOSS 会话隐藏顶栏「允许本会话调度」开关（群编排自带独立调度）");
+  ok(/boss-welcome/.test(read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx")),
+    "BOSS 会话空态有自己的引导语（你好 BOSS…）");
+  ok(/!isEmpty && \(historyPlan\.hiddenCount/.test(read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx")),
+    "空会话不显示「加载更早的消息」");
+  ok(existsSync(join(ROOT, "src/features/boss-group-view/BossGroupHelpButton.tsx")),
+    "BOSS 会话独有的「?」说明组件在位");
+  ok(/isBossMemberThread[\s\S]{0,260}?"BOSS 调度"/.test(read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx")),
+    "侧栏给群成员会话打「BOSS 调度」标签（与普通「调度」区分）");
 }
 
 console.log(`\n【boss-groups】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
