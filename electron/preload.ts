@@ -360,6 +360,8 @@ contextBridge.exposeInMainWorld("codex", {
   engineCheckUpdate: () => __ipc("engine:check-update", 0, []),
   enginePerformUpdate: () => __ipc("engine:perform-update", 0, []),
   relaunchApp: () => __ipc("app:relaunch", 0, []),
+  /* 10-25：在软件所在盘根新建 BOSS 会话专属项目目录，返回绝对路径 */
+  createBossProjectDir: () => __ipc("app:boss-project-dir", 0, []),
   readBuiltinPlugins: () => __ipc("builtin:read", 0, []),
   saveBuiltinPlugins: (cfg: unknown) => __ipc("builtin:save", 1, [cfg]),
   probeBuiltinModels: (input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }) => __ipc("builtin:probe", 1, [input]),

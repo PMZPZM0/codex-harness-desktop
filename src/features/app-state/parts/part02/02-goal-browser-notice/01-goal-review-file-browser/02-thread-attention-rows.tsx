@@ -221,7 +221,9 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
     const bossSnap = getBossThreads();
     const isBossMemberThread = bossSnap.memberIds.includes(entry.id);
     /* 10-25 用户令：自动新建的 BOSS 会话要**打标签**，跟普通会话一眼区分开。 */
-    const isBossOwnThread = bossSnap.bossIds.includes(entry.id) || entry.id === bossSnap.homeId;
+    /* ⛔ 统一口径：群 boss 线程 **或** 已登记的 BOSS 会话（sessionIds）⇒ 徽标/图标/注入三处一致，
+       不会出现"被当成 BOSS 却没有 BOSS 徽标"这种串台。 */
+    const isBossOwnThread = bossSnap.bossIds.includes(entry.id) || (bossSnap.sessionIds ?? []).includes(entry.id);
     const sourceBadge = isBossOwnThread
       ? { tone: "boss", label: "BOSS" }
       : isBossMemberThread

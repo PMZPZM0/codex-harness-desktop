@@ -20,6 +20,10 @@ export type BossThreadsState = {
   loaded: boolean;
 };
 export function setBossHomeThreadId(id: string): void;
+/** 删除 BOSS 会话时把它从身份登记里摘掉 */
+export function removeBossSessionId(id: string): void;
+/** 会话重建时把身份登记从旧 id 换成新 id */
+export function renameBossSessionId(previousId: string, nextId: string): void;
 export function setBossPending(pending: boolean): void;
 export function subscribeBossThreads(fn: () => void): () => void;
 export function getBossThreads(): BossThreadsState;

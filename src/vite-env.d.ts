@@ -703,6 +703,8 @@ interface Window {
     engineCheckUpdate(): Promise<{ current: string; latest: string; hasUpdate: boolean }>;
     enginePerformUpdate(): Promise<{ ok: boolean; version: string; message: string }>;
     relaunchApp(): Promise<void>;
+    /* 10-25：在软件所在盘根新建 BOSS 会话专属项目目录，返回绝对路径 */
+    createBossProjectDir(): Promise<string>;
     readBuiltinPlugins(): Promise<{ image?: { enabled?: boolean; baseUrl: string; apiKey: string; model: string }; vision?: { enabled?: boolean; baseUrl: string; apiKey: string; model: string } }>;
     saveBuiltinPlugins(cfg: unknown): Promise<unknown>;
     probeBuiltinModels(input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }): Promise<{ models: string[] }>;

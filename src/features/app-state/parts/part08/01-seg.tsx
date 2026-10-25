@@ -6,6 +6,7 @@
  *    每个名字要么是本段刚声明的局部，要么走 bag（跨 part 用），要么由段末 return 交给组合根转交 App。
  *    改动后请重跑预检【92】与保真脚本（口径见 docs/archive/REFACTOR-PLAN-2026-09-21.md §10.2）。
  */
+import { removeBossSessionId } from "../../../boss-group-view";
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "../../../../lib/session-scope.mjs";
@@ -329,6 +330,9 @@ bag.deleteThreadCore = deleteThreadCore as typeof bag.deleteThreadCore;
     bag.setOpeningThread(id);
     try {
       await bag.deleteThreadCore(id);
+      /* ⛔ 10-25：BOSS 会话被删 ⇒ 从身份登记里摘掉（用户会频繁删了重建；
+         不摘的话旧 id 留着，新建的那个会被当成"旧的 BOSS 会话"）。 */
+      removeBossSessionId(id);
     } catch (error: any) {
       bag.setNotice(`删除任务失败：${error.message}`);
     } finally {
