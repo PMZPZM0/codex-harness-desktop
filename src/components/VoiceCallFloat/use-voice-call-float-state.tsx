@@ -10,6 +10,7 @@ import { createSpeakFilter } from "../../lib/speak-text.mjs";
 import { CAPTURE_WORKLET_SOURCE } from "../../voice/capture-worklet";
 import { decodeFloat32Base64 } from "../../voice/audio-transport";
 import { patchVoiceStage, requestVoiceCallNotice, requestVoiceDictationSend, requestVoiceOpenSettings, resetVoiceStage, setVoiceDictationHandler, setVoiceLevel, setVoiceSkipHandler, setVoiceStopHandler } from "../../voice/wave-level";
+import { normalizeVoiceBallStyle } from "../../lib/voice-ball-styles.mjs";
 import { isLikelySelfEcho } from "../../lib/voice-echo.mjs";
 import { createVoiceScriptStripper, resolveAnnounceSummary } from "../../lib/voice-script.mjs";
 import { describeMicError } from "../../lib/mic-error.mjs";
@@ -49,6 +50,8 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
   // 悬浮球显隐（设置里可关）+ 随机提示气泡
   const [ballVisible, setBallVisible] = useState(true);
   const [hintsEnabled, setHintsEnabled] = useState(true);
+  /* 10-25：悬浮球外观（设置 → 语音通话 → 悬浮球），由主进程设置广播即时同步。 */
+  const [ballStyle, setBallStyle] = useState(() => normalizeVoiceBallStyle(undefined));
   const [hint, setHint] = useState<string | null>(null);
   // 右键菜单位置：做视口边界检测（看用户截图：之前直接用 clientX/Y 会跑出屏幕）
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -184,6 +187,7 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
       if (!b) return;
       setBallVisible(b.visible !== false);
       setHintsEnabled(b.hints !== false);
+      setBallStyle(normalizeVoiceBallStyle(b.style));
     }).catch(() => undefined);
   }, []);
 
@@ -236,8 +240,8 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
     setMenu(null);
     setHint(null);
     // 落盘，下次启动保持隐藏（设置页可以再打开）
-    void window.codex.voiceSettingsSet({ ball: { visible: false, hints: hintsEnabled } }).catch(() => undefined);
-  }, [hintsEnabled]);
+    void window.codex.voiceSettingsSet({ ball: { visible: false, hints: hintsEnabled, style: ballStyle } }).catch(() => undefined);
+  }, [hintsEnabled, ballStyle]);
 
   // ---- 主进程事件 ----
   useEffect(() => {
@@ -251,6 +255,7 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
         if (b) {
           setBallVisible(b.visible !== false);
           setHintsEnabled(b.hints !== false);
+          setBallStyle(normalizeVoiceBallStyle(b.style));
         }
         // 播报开关也走这条广播：设置页勾/取消后**当前通话立刻生效**（下一句起）
         const a = event.settings?.announce;
@@ -989,7 +994,7 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
 
   const modelsReady = models?.ready ?? false;
   // 他窗口通话中 → 球置灰（视觉 + 语义），挂断后轮询自动恢复
-  const ballClass = `voice-ball ${phase === "active" ? `is-${state}` : ""} ${phase === "starting" ? "is-starting" : ""} ${busyElsewhere && phase === "idle" ? "is-busy-elsewhere" : ""}`;
+  const ballClass = `voice-ball voice-ball--skin-${ballStyle} ${phase === "active" ? `is-${state}` : ""} ${phase === "starting" ? "is-starting" : ""} ${busyElsewhere && phase === "idle" ? "is-busy-elsewhere" : ""}`;
 
-  return { threadId, phase, setPhase, state, setState, expanded, setExpanded, levelRef, screenElRef, applyLevel, muted, setMuted, mutedRef, toggleMute, transcript, setTranscript, callStartedAt, setCallStartedAt, userText, setUserText, agentText, setAgentText, ballVisible, setBallVisible, hintsEnabled, setHintsEnabled, hint, setHint, menu, setMenu, agentTextRef, ballRef, notice, setNotice, endpointSec, setEndpointSec, models, setModels, download, setDownload, pos, setPos, mediaStreamRef, captureCtxRef, workletRef, playCtxRef, playQueueRef, playingCountRef, aecRef, bargeModeRef, micSettingsRef, volumeRef, gateRef, chunkerRef, speakFilterRef, scriptStripperRef, announceRef, prebufferRef, liveRef, refRingRef, refWriteRef, refReadRef, refDropsRef, endpointArmedRef, quietSinceRef, lastBargeAtRef, speakingRef, phaseRef, voiceModeRef, dragRef, refreshModels, busyElsewhere, setBusyElsewhere, onBallContextMenu, hideBall, pushRef, enqueuePlay, speechEpochRef, bumpSpeechEpoch, stopPlayback, skipCurrent, speakDelta, flushSpeech, speakScript, startCapture, teardown, startCall, endCall, startCallRef, callToggleRef, pushTranscript, installModels, draggedRef, onPointerDown, onPointerMove, onPointerUp, onBallClick, stateLabel, modelsReady, ballClass };
+  return { threadId, phase, setPhase, state, setState, expanded, setExpanded, levelRef, screenElRef, applyLevel, muted, setMuted, mutedRef, toggleMute, transcript, setTranscript, callStartedAt, setCallStartedAt, userText, setUserText, agentText, setAgentText, ballVisible, setBallVisible, hintsEnabled, setHintsEnabled, ballStyle, hint, setHint, menu, setMenu, agentTextRef, ballRef, notice, setNotice, endpointSec, setEndpointSec, models, setModels, download, setDownload, pos, setPos, mediaStreamRef, captureCtxRef, workletRef, playCtxRef, playQueueRef, playingCountRef, aecRef, bargeModeRef, micSettingsRef, volumeRef, gateRef, chunkerRef, speakFilterRef, scriptStripperRef, announceRef, prebufferRef, liveRef, refRingRef, refWriteRef, refReadRef, refDropsRef, endpointArmedRef, quietSinceRef, lastBargeAtRef, speakingRef, phaseRef, voiceModeRef, dragRef, refreshModels, busyElsewhere, setBusyElsewhere, onBallContextMenu, hideBall, pushRef, enqueuePlay, speechEpochRef, bumpSpeechEpoch, stopPlayback, skipCurrent, speakDelta, flushSpeech, speakScript, startCapture, teardown, startCall, endCall, startCallRef, callToggleRef, pushTranscript, installModels, draggedRef, onPointerDown, onPointerMove, onPointerUp, onBallClick, stateLabel, modelsReady, ballClass };
 }

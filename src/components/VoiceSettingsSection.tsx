@@ -37,7 +37,7 @@ export type Settings = {
   modelHost: "auto" | "huggingface" | "hf-mirror";
   hotkey: { enabled: boolean; accelerator: string };
   dictationHotkey: { enabled: boolean; accelerator: string };
-  ball: { visible: boolean; hints: boolean };
+  ball: { visible: boolean; hints: boolean; style: string };
   /** 语音播报（10-09 第二轮收成一个总开关）：开 = 念 Codex 写的 `voice` 播报稿（通话里正文朗读也由它门控）。
    *  ⛔ 语速不在这里另开一份 —— 与通话共用 tts.speed（单一真相源）。 */
   announce: { enabled: boolean };
