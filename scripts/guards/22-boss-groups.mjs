@@ -737,5 +737,45 @@ if (state) {
     "指挥中枢快捷项文字颜色/高度与上下两项一致（⛔ 不再 var(--muted) / 32px）");
 }
 
+/* ── 10-26 用户现场三条报障的护栏 ───────────────────────────────────────────
+   ① 「成员同步发出来的消息，还要排队吗」：群事件走引擎的**用户消息队列**
+      ⇒ 引擎视角它就是"排队的用户消息" ⇒ 应用的排队面板会显示成「排队中 1/3」。
+      修法：宿主注入的消息打保留前缀（host:…），渲染层按前缀过滤（引擎照收照发）。
+   ② 「中枢会话也会变成普通会话」：身份名单只读 localStorage，
+      而主进程那份登记表才是声明过的唯一真相源 ⇒ localStorage 一丢身份就没了。
+   ③ 「标签会掉」：标签模块每个渲染进程一份快照，旧实现整份覆盖
+      ⇒ 另一个窗口刚写的标签被顶掉 ⇒ 改成写前重读 + 只合并本次那一条。 */
+{
+  const hostQueue = codeOnly(read("src/lib/host-queue.mjs"));
+  const runnerSrc = codeOnly(read("electron/boss-groups/runner.ts"));
+  const delegateSrc = codeOnly(read("electron/delegation/delegate-report.ts"));
+  const queueTree = codeOnly(read("src/features/app-state/parts/part04/03-seg/01-chat-search-file-tree.tsx"));
+  const bossStore = codeOnly(read("src/features/boss-group-view/boss-threads-store.mjs"));
+  const tagStore = codeOnly(read("src/lib/entity-tags.mjs"));
+
+  ok(/export const HOST_QUEUE_PREFIX = "host:"/.test(hostQueue)
+    && /export function isHostQueueItem/.test(hostQueue)
+    && /export function hostQueueMessageId/.test(hostQueue),
+    "宿主注入消息的保留前缀与两个工具函数在单一真相源里（src/lib/host-queue.mjs）");
+
+  ok(/clientUserMessageId: hostQueueMessageId\("boss"\)/.test(runnerSrc)
+    && /clientUserMessageId: hostQueueMessageId\("delegate"\)/.test(delegateSrc),
+    "群事件与子智能体回报投递时都带宿主保留前缀（⛔ 不带就会被当成用户排队消息显示）");
+
+  ok(/isHostQueueItem/.test(queueTree)
+    && /filter\(\(entry: any\) => !isHostQueueItem\(entry\)\)/.test(queueTree),
+    "排队面板按宿主前缀过滤（用户自己的排队消息照常显示，引擎那边照收照发）");
+
+  ok(/const registryIds = sessions\.map/.test(bossStore)
+    && /const sessionIds = \[\.\.\.new Set\(\[\.\.\.registryIds, \.\.\.cachedIds\]\)\]/.test(bossStore)
+    && /\n      sessionIds,\n/.test(bossStore),
+    "中枢身份名单 = 主进程登记表 ∪ localStorage 缓存（⛔ 不许只读 localStorage，否则丢一次就退化成普通会话）");
+
+  ok(/function mergeMap\(key, patch\)/.test(tagStore)
+    && /\.\.\.readMap\(key\), \.\.\.\(patch \?\? \{\}\)/.test(tagStore)
+    && /mergeMap\(PROJECT_KEY, \{ \[id\]: \{ text, color \} \}\)/.test(tagStore),
+    "标签写入是「重读盘上最新值再合并本次那一条」（⛔ 整份覆盖会让另一个窗口刚写的标签掉）");
+}
+
 console.log(`\n【boss-groups】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

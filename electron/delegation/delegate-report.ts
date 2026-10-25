@@ -19,7 +19,7 @@
  * ── 防循环（⛔ 不做必烧钱）──────────────────────────────────────────────────
  * 主会话收到回报 → 又派活 → 又超时 → 又回报 …… 同一会话在窗口内最多 N 次，到上限静默停手。
  */
-import { randomUUID } from "node:crypto";
+import { hostQueueMessageId } from "../../src/lib/host-queue.mjs";
 import { server } from "../runtime-refs";
 
 /** 同一发起会话在多少毫秒内最多自动回投几次（防「回报 → 又派活 → 又超时 → 又回报」滚雪球）。 */
@@ -68,10 +68,11 @@ export async function reportBackgroundResult(input: {
        失败不致命（catch 掉继续试投）。 */
     await server.request("thread/resume", { threadId: origin, excludeTurns: false }).catch(() => undefined);
     /* ② 排队（⛔ 不用 turn/start —— 那会打断发起会话正在跑的回合）。 */
+    /* ⛔ 10-26：宿主注入（子智能体回报）同样打保留前缀 ⇒ 不进用户的「排队消息」面板。 */
     await server.request("thread/queue/add", {
       threadId: origin,
       input: [{ type: "text", text }],
-      clientUserMessageId: randomUUID(),
+      clientUserMessageId: hostQueueMessageId("delegate"),
     });
     /* ③ 启动队头：发起会话早已空闲 ⇒ 不 start 它就一直躺在队列里没人管。
        ⛔ 「找不到 / 已被引擎自己启动」是**伪失败**（引擎在回合结束后 ~9ms 就自己清队列，

@@ -8,7 +8,7 @@
  *     群消息由宿主**回投**到 boss 会话（`thread/queue/add` + `queue/start`，不打断在跑的回合）。
  *  ③ **审查/打回由宿主做**：模型只被叫醒来看结论。规则全在 state.ts（纯函数、守卫真跑）。
  */
-import { randomUUID } from "node:crypto";
+import { hostQueueMessageId } from "../../src/lib/host-queue.mjs";
 import { execFile } from "node:child_process";
 import { readUsableExpertTeams } from "../expert-teams";
 import { bridgeDial } from "../main";
@@ -59,7 +59,11 @@ export async function postToBoss(group: BossGroup, text: string, options: { crit
   if (!ok) return false;
   try {
     await server.request("thread/resume", { threadId: boss, excludeTurns: false }).catch(() => undefined);
-    await server.request("thread/queue/add", { threadId: boss, input: [{ type: "text", text }], clientUserMessageId: randomUUID() });
+    /* ⛔⛔ 10-26 用户现场：「成员同步发出来的消息，还要排队吗」——
+       群消息走的是引擎的**用户消息队列**，引擎视角它就是"排队的用户消息"
+       ⇒ 应用的排队面板会把它显示成「排队中 1/3」的用户消息卡。
+       打上宿主保留前缀 ⇒ 渲染层按前缀过滤（引擎照收，投递链路不变）。 */
+    await server.request("thread/queue/add", { threadId: boss, input: [{ type: "text", text }], clientUserMessageId: hostQueueMessageId("boss") });
     const list: any = await server.request("thread/queue/list", { threadId: boss, limit: 1 }).catch(() => null);
     const head = list?.data?.[0];
     if (head?.id) await server.request("thread/queue/start", { threadId: boss, queuedSubmissionId: head.id }).catch(() => undefined);

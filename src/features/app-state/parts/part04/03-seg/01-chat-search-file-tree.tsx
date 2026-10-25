@@ -8,6 +8,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { isMacPlatform } from "../../../../../lib/is-mac-platform";
+import { isHostQueueItem } from "../../../../../lib/host-queue.mjs";
 import { basename } from "../../../../../lib/basename";
 import { openImageLightbox, registerImageLightbox, openPastedTextEditor, registerOpenPastedTextEditor, registerOpenFileTextEditor, notifyToast, registerToast, requestClosePastedText, registerClosePastedText, resolveFilePath, registerResolveFilePath, lookupKnownFile, registerLookupKnownFile, notifyFileMissing, registerFileMissing } from "../../../../../lib/ui-channels";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
@@ -289,7 +290,14 @@ bag.scheduleSidebarRefresh = scheduleSidebarRefresh as typeof bag.scheduleSideba
   async function refreshQueue(threadId: string) {
     try {
       const result = await window.codex.request("thread/queue/list", { threadId, limit: 100 });
-      if (bag.threadRef.current?.id === threadId) bag.setQueue(result.data ?? []);
+      /* ⛔⛔ 10-26 用户现场：「成员同步发出来的消息，还要排队吗，这什么操作」——
+         宿主往会话投消息（群事件 / 子智能体回报）走的是引擎的**用户消息队列**，
+         引擎视角它就是「排队的用户消息」⇒ 排队面板会把它显示成「排队中 1/3」的用户消息卡。
+         ⛔ 那些不是用户说的话，用户也不能编辑/删除/定时它 ⇒ 摆在排队面板里纯误导。
+         宿主侧给它们打了保留前缀（host:…）⇒ 这里按前缀过滤掉。
+         ⛔ 引擎那边照收照发，投递链路与 FIFO 一概不动（过滤只发生在**显示层**）。 */
+      const visible = (result.data ?? []).filter((entry: any) => !isHostQueueItem(entry));
+      if (bag.threadRef.current?.id === threadId) bag.setQueue(visible);
     } catch { /* 空会话/无 rollout 的线程没有消息队列，静默跳过 */ }
   }
 bag.refreshQueue = refreshQueue as typeof bag.refreshQueue;
