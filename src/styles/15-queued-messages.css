@@ -724,6 +724,7 @@
 
 /* ===== 视图 tab 切换（分组 / 项目）+ 工具栏（WorkBuddy sidebar-v2 风格） ===== */
 .view-tabs {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 1px;
@@ -755,11 +756,32 @@
    回落 `currentColor` = 原先从按钮继承来的颜色（muted / hover 的 --text / active 的 --text）⇒ 零回归。 */
 .view-tab svg { opacity: 0.75; color: var(--ic, currentColor); }
 .view-tab.active svg { opacity: 1; }
+/* 10-26 用户：四个工具图标默认隐藏；鼠标放到「项目 / 任务」或图标区时从右向左滑出，
+   移开即收起。绝对定位 ⇒ 出现/收起都不挤动 tab 与会话列表。 */
 .view-toolbar {
-  margin-left: auto;
+  position: absolute;
+  top: 5px;
+  right: 6px;
   display: inline-flex;
   align-items: center;
   gap: 1px;
+  height: 26px;
+  padding-left: 14px;
+  border-radius: 7px;
+  background: linear-gradient(90deg, transparent, var(--bg) 22%);
+  opacity: 0;
+  transform: translateX(12px);
+  pointer-events: none;
+  transition: opacity 0.16s ease, transform 0.18s ease;
+}
+.view-tabs:hover .view-toolbar,
+.view-tabs:focus-within .view-toolbar {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .view-toolbar { transition: none; }
 }
 .view-toolbar-btn {
   display: inline-flex;
