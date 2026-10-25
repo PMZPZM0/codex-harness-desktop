@@ -16,10 +16,11 @@ import { pickEnhanceHint, shouldShowHintAfterSends, isLongPrompt, HINT_COOLDOWN_
 import { nowBlock } from "../../../../../lib/now-block.mjs";
 import { setTurnWindowTail } from "../../../../../lib/turn-history.mjs";
 /* ⛔ 会话重建后要把中枢归属搬过去（见下方 bossGroupRebind 那段注释）。 */
-import { ensureBossMemoryWorkspace, ensureBossSessionRegistered, getBossThreads, renameBossSessionId, setBossHomeThreadId } from "../../../../boss-group-view";
+import { BOSS_ROLE_PROMPT, ensureBossMemoryWorkspace, ensureBossSessionRegistered, getBossThreads, renameBossSessionId, setBossHomeThreadId } from "../../../../boss-group-view";
 import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, computeFoldSummary, topToolGroup, isTurnRunning, normalizeLoadedThread, type FoldUnit } from "../../../../../lib/turn-fold";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../lib/user-refs";
 import { formatInlineNotice, takeInlineNotices } from "../../../../../lib/inline-notices.mjs";
+import { BOSS_SEED_VERSION, TEAM_DISPATCH_SUPPLEMENT, TEAM_SEED_VERSION, isTeamLeadThread, markSeeded, needsSeed } from "../../../../../lib/prompt-seeds.mjs";
 import { effortLabels } from "../../../../../lib/effort-labels";
 import { fmtImportNote } from "../../../../../lib/fmt-import-note";
 import { justSentIds } from "../../../../../lib/just-sent-ids";
@@ -161,7 +162,35 @@ export async function send(bag: Bag, event?: FormEvent) {
     /* ⛔ 10-26 用户令：调度开关那类**会话级告知**不再单独发一轮（会凭空多一条"我说的"气泡），
        改为随用户这条消息一起注入。显示层按 <!--harness-notice--> 整段剥掉：模型看得到、
        气泡里看不到；取出即清空 ⇒ 同一段告知只喂一次。两条路径（排队 / 正常发送）都要带上。 */
-    const inlineNotices = takeInlineNotices(String(bag.thread?.id ?? "")).map(formatInlineNotice).join("");
+    /* 旧会话补种（10-26 用户令「适配一下旧会话，很多旧会话还在跑任务」）：
+       本版把**中枢角色说明**挪到了 thread/start 的 developerInstructions、把**团队铁律**挪进了
+       建会话时的系统提示词 ⇒ 升级前建的会话永远拿不到。它们下一次发送时补一次（显示层剥掉、用户看不见）。
+       记账在 localStorage（带版本号）⇒ 每条会话只补一次；改文案把版本 +1 就会再补一次。 */
+    const seedInjection = (() => {
+      try {
+        const id = String(bag.thread?.id ?? "");
+        if (!id) return "";
+        const boss = getBossThreads();
+        if ((boss.sessionIds ?? []).includes(id) || (boss.bossIds ?? []).includes(id)) {
+          if (!needsSeed(id, "boss", BOSS_SEED_VERSION)) return "";
+          markSeeded(id, "boss", BOSS_SEED_VERSION);
+          return BOSS_ROLE_PROMPT;                       // 自带 <!--boss-role--> 标记，显示层会剥
+        }
+        /* 团队**主理人**会话：⛔ 两个来源都要看 ——
+           · teamThreadConfigRef：本次启动新建的团（内存 ref，重启即丢）；
+           · isTeamLeadThread：主进程持久化的主理人名单（**旧会话重启后靠它认人**）。
+           ⛔ 成员直达会话不能补：那份纪律是"别自己干、先派活"，发给成员等于把它搞坏。 */
+        if ((bag.teamThreadConfigRef.current.has(id) || isTeamLeadThread(id)) && needsSeed(id, "team", TEAM_SEED_VERSION)) {
+          markSeeded(id, "team", TEAM_SEED_VERSION);
+          return formatInlineNotice(TEAM_DISPATCH_SUPPLEMENT);
+        }
+        return "";
+      } catch { return ""; }
+    })();
+    const inlineNotices = [
+      ...takeInlineNotices(String(bag.thread?.id ?? "")).map(formatInlineNotice),
+      seedInjection,
+    ].filter(Boolean).join("");
     if (bag.thread && bag.runningThreadIdsRef.current.has(bag.thread.id)) {
       // 排队消息与正常发送一样带上引用段（引用/文件/技能/上下文），渲染时解析成卡片
       const quotePrefix = bag.quoteItem ? `> ${bag.quoteItem.text.split("\n").join("\n> ")}\n\n` : "";
