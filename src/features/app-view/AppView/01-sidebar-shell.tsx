@@ -208,6 +208,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     }
   }, [currentThreadId]);
   const {
+    chooseWorkspace,
     accountDraft,
     accountEditing,
     accountMenuOpen,
@@ -297,6 +298,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     viewTab,
   } = app;
 
+  /* 分类视图已撤（10-25）：旧偏好 "source" 落到 projects（⛔ 副作用走 effect，不写在 JSX 里）。 */
+  useEffect(() => { if (viewTab === "source") setViewTab("projects"); }, [viewTab]);
+
   // ⛔ 10-21 用户要求：侧栏能力入口按用途分行（前端 UI / 技能插件 MCP / 智能体 / 人格记忆知识库），
   //   点击弹窗看教程；纯局部 UI 状态，不跨组件共享、不进 bag。
   const [guideKey, setGuideKey] = useState<SidebarGuideKey | null>(null);
@@ -327,7 +331,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     try { localStorage.setItem("sidebar-options-collapsed", String(next)); } catch { /* 隐私模式写不进属正常，别拦切换 */ }
     try { void window.codex?.saveAppSettings?.({ sidebarOptionsCollapsed: next })?.catch(() => undefined); } catch { /* 桥不可用 */ }
   };
-  /* 功能入口（10-24）：可配置排序 / 更多分组 / 两种展示位置；动作经总线回到侧栏壳。 */
+  /* 拓展功能（10-24 立，10-25 更名；原「功能入口」）：可配置排序 / 更多分组 / 两种展示位置（上下移动），动作经总线回到侧栏壳。 */
   const functionMenu = useFunctionMenuConfig();
   useEffect(() => {
     setFunctionMenuActionHandler((id) => {
@@ -351,16 +355,16 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         className="sidebar-options-toggle"
         aria-expanded={!optionsCollapsed}
         aria-controls="sidebar-options-body"
-        title={optionsCollapsed ? "展开功能入口" : "收起功能入口"}
+        title={optionsCollapsed ? "展开拓展功能" : "收起拓展功能"}
         onMouseEnter={(event) => maybeShowFunctionMenuTour(menuLocation, event.currentTarget)}
         onClick={toggleOptions}
       >
         <LayoutGrid size={15} />
-        <span>功能入口</span>
+        <span>拓展功能</span>
         <ChevronDown size={13} className={`sidebar-options-chevron ${optionsCollapsed ? "" : "open"}`} />
       </button>
       <div className={`sidebar-options-body ${optionsCollapsed ? "is-collapsed" : ""}`}>
-        <div className="sidebar-nav sidebar-nav-bottom" id="sidebar-options-body" role="group" aria-label="功能入口" aria-hidden={optionsCollapsed}>
+        <div className="sidebar-nav sidebar-nav-bottom" id="sidebar-options-body" role="group" aria-label="拓展功能" aria-hidden={optionsCollapsed}>
           <FunctionMenu location={menuLocation} />
         </div>
       </div>
@@ -491,14 +495,11 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
             <div className="sidebar-tabs" role="navigation" aria-label="导航">
               {/* 10-24 用户对照截图：改成整行「新会话」主按钮 + 下面一行「搜索任务」，不再并排胶囊。 */}
               <div className="sidebar-quick">
-                <button className="sidebar-tab sidebar-quick-btn primary ic-blue" title={`新会话（${hk("Ctrl+N")}）`} onClick={() => { setBossPending(false); startNewThread(); }}>
-                  <CirclePlus size={17} strokeWidth={2} /><span>新会话</span>
+                <button className="sidebar-tab sidebar-quick-btn" title={`新会话（${hk("Ctrl+N")}）`} onClick={() => { setBossPending(false); startNewThread(); }}>
+                  <CirclePlus size={16} strokeWidth={2} /><span>新会话</span><kbd className="quick-kbd">{hk("Ctrl+N")}</kbd>
                 </button>
-                <button className="sidebar-tab sidebar-quick-btn sidebar-quick-search ic-cyan" title={`搜索任务与操作（${hk("Ctrl+K")}）`} onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}>
-                  <Search size={15} /><span>搜索任务</span>
-                </button>
-                {/* 10-24 用户令：「BOSS 会话」常驻在搜索任务下面（不进功能入口菜单）；
-                    功能入口（top 位置）自适应排在本按钮之后。
+                {/* 10-25 用户令：BOSS 会话在搜索任务**上面**（不进拓展功能菜单）；
+                    拓展功能（top 位置）自适应排在搜索任务之后。
                     10-25 用户令：点它 = 打开那个 boss 会话（**正常对话框**），不再切专属界面。 */}
                 <button
                   className={`sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-amber${bossOn ? " boss-open" : ""}`}
@@ -520,6 +521,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 >
                   <Crown size={15} /><span>BOSS 会话</span>
                 </button>
+                <button className="sidebar-tab sidebar-quick-btn sidebar-quick-search ic-cyan" title="搜索任务与操作" onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}>
+                  <Search size={15} /><span>搜索任务</span>
+                </button>
               </div>
             </div>
             {functionMenu.location === "top" && renderOptionsGroup("top")}
@@ -536,20 +540,15 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 onClose={() => setLoginMgrOpen(false)}
               />
             )}
-            {/* ⛔ 只给前缀文件夹染色：这个 chip 里还有个"关闭 ×"，它是**动作**不是分类。 */}
-            <div className="view-tabs" role="tablist" aria-label="视图">
-              {/* ⛔ 「分组」（按时间）视图已于 09-25 按用户要求删除（原话：「分组可以删了」）。
-                  历史偏好值在 part03 里统一回落到「项目」。 */}
-              {/* 10-07 用户截图：`项目 / 分类` 这行与右侧工具条的图标也漏了彩色。
-                  色相分配：项目 = amber（与工作区 📁、项目行文件夹同色 —— 都是"文件夹/项目"语义）、
-                            分类 = cyan、刷新 = blue、全部折叠/展开 = violet。 */}
-              <button className={`view-tab ${viewTab === "projects" ? "active" : ""}`} onClick={() => setViewTab("projects")} title="按项目分组"><FolderOpen size={14} className="ic-amber" /><span>项目</span></button>
-              {/* 分类视图（09-25 用户要求）：按**会话来源**归类 —— 主代理 / 专家团主理人 /
-                  团队成员子任务 / 专家调度 / 子智能体调度 / 专家团调度（口径见 lib/thread-source.mjs） */}
-              <button className={`view-tab ${viewTab === "source" ? "active" : ""}`} onClick={() => setViewTab("source")} title="按会话来源分类"><Layers size={14} className="ic-cyan" /><span>分类</span></button>
+            {/* 10-25 用户令（对照其图二）：视图行 = 「项目」tab + 🔍搜索任务 + 筛选（展开/折叠全部）+ 新建项目。
+                ⛔ 分类视图（09-25）入口撤下：本地存过 "source" 的旧偏好由 useEffect 一次性回落 projects，
+                口径与渲染仍保留在 lib/thread-source.mjs（守卫【156】仍在用其数据）。 */}
+            <div className="view-tabs" role="toolbar" aria-label="会话视图工具">
+              <button className="view-tab active" onClick={() => setViewTab("projects")} title="按项目分组"><FolderOpen size={14} className="ic-amber" /><span>项目</span></button>
               <div className="view-toolbar">
-                <button className="view-toolbar-btn ic-blue" title="刷新会话列表" onClick={() => void refreshWithReceipt((text: string) => showToast(text), "刷新会话列表", refreshThreads)}><ListRestart size={14} /></button>
-                <button className="view-toolbar-btn ic-violet" title={sidebarAllCollapsed ? "全部展开" : "全部折叠"} onClick={toggleAllSidebarSections} disabled={viewTab === "source" ? !sourcedThreads.length : !projectGroups.length}>{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
+                <button className="view-toolbar-btn ic-cyan" title="搜索任务" onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}><Search size={14} /></button>
+                <button className="view-toolbar-btn ic-violet" title={sidebarAllCollapsed ? "展开全部项目" : "折叠全部项目"} onClick={toggleAllSidebarSections} disabled={!projectGroups.length}>{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
+                <button className="view-toolbar-btn ic-green" title="新建项目（选择一个目录作为项目地址）" onClick={() => void chooseWorkspace()}><FolderPlus size={14} /></button>
               </div>
             </div>
             {/* 10-04 渲染层插槽：侧栏顶部（在会话列表之上）。插件放这里 = 常驻可见的入口
@@ -607,7 +606,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 ))}</> : <div className="empty-list">{threads.length ? "当前筛选下暂无任务" : "暂无任务"}</div>
               )}
             </div>
-            {/* 10-04 第 10 个插槽位：**侧栏底部**（会话列表之下、功能入口组/账户行之上的常驻位）。
+            {/* 10-04 第 10 个插槽位：**侧栏底部**（会话列表之下、拓展功能组（bottom 位置）/账户行之上的常驻位）。
                 用户指定的位置（截图里红框处）。语义 =「贴在侧栏下沿的常驻入口」——
                 刚好是 sidebar.top（最上沿）的镜像，插件想"一直在但不抢顶部"就挂这里。
                 ⛔ 位置在 thread-list **之外**、account-row **之上**：插进thread-list 会

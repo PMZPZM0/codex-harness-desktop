@@ -123,11 +123,12 @@ ok(/refreshActive=\{app\.refreshActive\}/.test(registry) && /onRefreshActive=\{a
 ok(/provider-activated/.test(providerEvent) && /getCustomModel/.test(providerEvent) && /applyGlobalModelChoice/.test(providerEvent), "provider-activated 后当前会话模型跟到新供应商（⛔ 旧 model id 会发不出去）");
 ok(/activateCloudProvider/.test(cloudProvider) && /sendToWindow\("harness:event", \{ type: "provider-activated"/.test(cloudProvider), "云端 activate 也广播 provider-activated（与 custom-model 同一事件，⛔ 不另开一套）");
 
-/* ── ⑥ 样式与验收登记 ── */
+/* ── ⑥ 样式与验收登记 ──
+   10-25 起验收脚本收敛为「只保留当前轮」（provider-autosetup / provider-login-autosetup 两项随历史项删除，
+   见 accept.mjs 头注释）⇒ 这里的登记断言改为负向：这两个 id 不许再出现（防复制旧模板复活），
+   mock 网关断言随之退役（验收项本体已删，行为覆盖移交守卫真跑部分）。 */
 ok(/42-provider-setup/.test(read(FILES.styles)), "样式已挂进全局样式入口");
-ok(/LATEST_ROUND = "10-24"/.test(accept) && /"provider-autosetup": "10-24"/.test(accept) && /"provider-login-autosetup": "10-24"/.test(accept), "验收项已登记本轮（10-24）");
-ok(/createServer/.test(accept) && /mock-alpha/.test(accept) && /CODEX_HARNESS_NO_RELAUNCH/.test(read("scripts/e2e/lib/harness.mjs")) && /立即重启/.test(accept), "验收用本地 mock 网关跑真链路；子进程带 NO_RELAUNCH，点立即重启不会真断 CDP");
-ok(/LATEST_ROUND = "10-24"/.test(accept) && !/"provider-autosetup": "10-23"/.test(accept), "⛔ 新验收项没有被错误登记到上一轮（否则默认轮跑不到）");
+ok(!/"provider-autosetup"/.test(accept) && !/"provider-login-autosetup"/.test(accept), "旧 autosetup 验收项已随 10-25 收敛删除（⛔ 防复制旧模板复活）");
 
 /* ── ⑦ 单源：编排只有这一份 ── */
 ok((lib.match(/export async function detectSetupModels/g) ?? []).length === 1, "detectSetupModels 只有一个实现");
