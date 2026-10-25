@@ -30,15 +30,20 @@ import {
 
 const CHAR_URLS = [char0, char1, char2, char3, char4, char5];
 
-/* ⭐ 全局常驻 sim（2026-10-04）。
- * ⛔ 为什么必须是模块级而不是组件级：`OfficeCanvas` 每次打开预览都会重新挂载
+/* ⭐ 常驻 sim（10-04 立，10-25 起按「办公室」分间）。
+ * ⛔ 为什么必须是模块级而不是组件级：`OfficeCanvas` 每次打开预览/切换办公室都会重新挂载
  *   ⇒ 组件内的 sim（含 agents 数组）会一起销毁 ⇒ 每人退回门口初始位置、重播进场。
  *   sim 属于「整个应用的一份世界状态」，不属于「这块画布」。
- * ⛔ 不加「新 sim 继承旧 sim」那类接口：单例已解决重建问题，那类方法就是**没有调用方的死代码**。 */
-let officeSimSingletonRef: OfficeSim | null = null;
-function officeSimSingleton(): OfficeSim {
-  if (!officeSimSingletonRef) officeSimSingletonRef = new OfficeSim();
-  return officeSimSingletonRef;
+ * ⭐ 10-25 用户令：一个办公室 6 人，超过就开第二间（新员工进新办公室、老员工留在旧的）。
+ *   每间办公室 = 一个独立 sim（同一张地图、各自 6 个座位、各自的人物位置），
+ *   切换回来时人物仍在原处，不会重新从门口走进来。
+ * ⛔ 不加「新 sim 继承旧 sim」那类接口：单例/分间已解决重建问题，那类方法就是**没有调用方的死代码**。 */
+const officeSims = new Map<string, OfficeSim>();
+function officeSimFor(key: string): OfficeSim {
+  const id = key || "office";
+  let sim = officeSims.get(id);
+  if (!sim) { sim = new OfficeSim(); officeSims.set(id, sim); }
+  return sim;
 }
 
 /** 成员 id → 稳定整数（屏幕内容种子）。⛔ 同一个成员每次刷新必须同一套"代码"，不能乱跳。 */
@@ -94,6 +99,10 @@ export type OfficeEventState = {
 
 export type OfficeCanvasProps = {
   members: OfficeMemberState[];
+  /** ⭐ 10-25：这一块画布属于哪一间办公室（分间后每间一个独立 sim）。
+   *  ⛔ 必须由父层给稳定值（专家团 id / 本会话 id + 页码）：换页 = 换 sim，
+   *     切回来时上一间的人物位置原样保留。 */
+  simKey?: string;
   onOpenMember?: (memberId: string) => void;
   /** 取某成员的真实事件状态（null = 该成员当下无运行信息）。
    *  ⛔ 由上层从 run 记录派生（不订阅引擎，见 TeamOfficePreview 注释）。 */
@@ -156,7 +165,7 @@ function statusOf(a: Agent, nowMs: number): { text: string; color: string } {
   return { text: "待机", color: "#8ea3b8" };
 }
 
-export function OfficeCanvas({ members, onOpenMember, eventStateOf, controlsRef, onZoomChange }: OfficeCanvasProps) {
+export function OfficeCanvas({ members, simKey, onOpenMember, eventStateOf, controlsRef, onZoomChange }: OfficeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const membersRef = useRef(members);
   const openRef = useRef(onOpenMember);
@@ -276,9 +285,10 @@ export function OfficeCanvas({ members, onOpenMember, eventStateOf, controlsRef,
       /* ⛔⛔ 2026-10-04 用户报「每次打开办公室预览，人物就重新进办公室」——
          这里原本是 `new OfficeSim()`，而**每次打开预览 = 本组件重新挂载**
          ⇒ 新 sim ⇒ 成员回到门口初始位置 (`x:64,y:596`) ⇒ 每次都重播进场。
-         ⇒ 改为**模块级常驻单例**：整个应用生命周期内只建一次；
-            关掉预览只是画布卸载，sim（成员位置/座位/ID）原样留着，下次打开直接接着。 */
-      const sim = officeSimSingleton();
+         ⇒ 改为**模块级常驻 sim**：整个应用生命周期内只建一次；
+            关掉预览只是画布卸载，sim（成员位置/座位/ID）原样留着，下次打开直接接着。
+         ⭐ 10-25 分间：按 `simKey` 取——每间办公室各有一份，切回来仍在原处。 */
+      const sim = officeSimFor(simKey ?? "");
       /* 调试/e2e 句柄：探针据此断言 agents 状态（⛔ 只读使用，别在业务里碰它） */
       (window as unknown as Record<string, unknown>).__officeSim = sim;
       let lastSync = 0;

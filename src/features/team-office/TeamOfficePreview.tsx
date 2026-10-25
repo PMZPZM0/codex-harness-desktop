@@ -21,7 +21,7 @@
  *     并且**两条成员来源（专家团 / 普通会话委托）共用同一份推导**，不会各写一套。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronLeft, ChevronRight, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import {
   OfficeCanvas, OFFICE_ZOOM_MAX, OFFICE_ZOOM_MIN,
   type OfficeEventState, type OfficeZoomControls,
@@ -61,6 +61,8 @@ const ROLE_NAMES = [
   "UI 设计师", "运维工程师", "算法工程师", "文案策划", "技术文档",
   "安全审计", "性能调优",
 ];
+/** 一间办公室的座位数（= OfficeSim 的 SEATS 长度；⛔ 改动需与 office-sim 同步）。 */
+const OFFICE_SEATS = 6;
 function delegateNameOf(run: DelegateRecordEntry): string {
   // 优先用宿主给的名字；为空时才用随机角色名
   const given = String(run.name ?? "").trim();
@@ -159,12 +161,12 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
          ⇒ 办公室里永远是空的。⇒ 成员取**委托记录**（含已完成），跑完的坐工位待机。
          ⛔ 也别改用头像轨的 live 表（`delegatedRailRuns`）：那条表跑完只停留 20 秒就摘掉。 */
       /* ⭐ 「我」的工位排在最前（10-05 晚）：有它，本会话自己的事件才有显示器可演。
-         ⛔ 它不占别人的位：先给"我"留一个，剩下的座位按"最近派出的"填。 */
+         ⭐ 10-25 用户令：一个办公室 6 人，**超出的不再挤掉老人** —— 全部成员都在列表里，
+            由下面的分间逻辑按 6 人一间切开；新员工进新办公室，老员工留在原来的办公室。 */
       const mine: OfficeMemberState[] = self?.threadId
         ? [{ id: self.threadId, name: self.name || "本会话", profession: "本会话", running: self.running, hasThread: false }]
         : [];
       return [...mine, ...(delegatedRuns ?? [])
-        .slice(-(6 - mine.length))   // 工位只有 6 个；取**最近**的几个 ⇒ 新派的一定看得见，老的先离场
         .map((r) => ({
           //⛔ id 用 threadId（唯一且稳定）而不是数组下标 —— 下标会随列表变化导致人物"换位"。
           id: r.threadId,
@@ -176,7 +178,7 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
           hasThread: true,
         }))];
     }
-    const roster = [team.lead, ...team.members].slice(0, 6);
+    const roster = [team.lead, ...team.members];
     return roster.map((m) => {
       const run = runningByMember[m.id];
       const last = lastByMember[m.id];
@@ -197,6 +199,28 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
       };
     });
   }, [team, runningByMember, lastByMember, delegatedRuns, self]);
+
+  /* ⭐ 10-25 用户令：一间办公室坐 6 人，超过就自动开下一间（同一张办公室底图/座位）。
+     · 老员工留在原办公室，新员工进新开的那间；
+     · 新开一间时**自动切过去**（用户能立刻看到新员工），切回来仍看得到老人；
+     · 底部「办公室 N / M」的左右箭头手动切换。 */
+  const officePageCount = Math.max(1, Math.ceil(members.length / OFFICE_SEATS));
+  const [officePage, setOfficePage] = useState(0);
+  const prevOfficePageCount = useRef(officePageCount);
+  useEffect(() => {
+    // 新增了一间 ⇒ 跟到最新那间；成员变少导致当前页越界 ⇒ 收回最后一页
+    setOfficePage((page) => officePageCount > prevOfficePageCount.current ? officePageCount - 1 : Math.min(page, officePageCount - 1));
+    prevOfficePageCount.current = officePageCount;
+  }, [officePageCount]);
+  useEffect(() => {
+    // 换团队/换会话 = 换一整套办公室，从第一间看起
+    setOfficePage(0);
+    prevOfficePageCount.current = officePageCount;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamId]);
+  const visibleMembers = members.slice(officePage * OFFICE_SEATS, (officePage + 1) * OFFICE_SEATS);
+  /* ⛔ 每间办公室一份独立 sim（见 OfficeCanvas 的 officeSimFor）：切页不重置人物位置。 */
+  const officeSimKey = `${teamId ?? "office"}:${officePage}`;
 
   /** 点角色 → 该成员最近的会话（跑过才有；没跑过给出**明确提示**，⛔ 不静默）。 */
   const openMember = (memberId: string) => {
@@ -357,19 +381,50 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
       </header>
       <div className="office-overlay-stage">
         <OfficeCanvas
-          members={members}
+          key={officeSimKey}
+          simKey={officeSimKey}
+          members={visibleMembers}
           onOpenMember={openMember}
           eventStateOf={eventStateOf}
           controlsRef={zoomCtl}
           onZoomChange={setZoom}
         />
-        {members.length === 0 && (
+        {visibleMembers.length === 0 && (
           <p className="office-overlay-empty">
             {team ? "这个团队还没有成员。" : "还没有调度任何子会话 —— 派一个子智能体或专家出去，这里就会多一个人。"}
           </p>
         )}
         {/* 「点了没反应」的显式反馈：⛔ 不许静默 */}
-        {hint && <p className="office-overlay-hint" role="status">{hint}</p>}
+        {hint && <p className={`office-overlay-hint ${officePageCount > 1 ? "with-pager" : ""}`} role="status">{hint}</p>}
+        {/* ⭐ 10-25：超过 6 人 ⇒ 下面出现办公室切换键（上一间 / 办公室 N / M / 下一间）。 */}
+        {officePageCount > 1 && (
+          <div className="office-overlay-pager" role="group" aria-label="切换办公室">
+            <button
+              type="button"
+              className="office-overlay-pager-btn"
+              title="上一间办公室"
+              aria-label="上一间办公室"
+              disabled={officePage <= 0}
+              onClick={() => setOfficePage((page) => Math.max(0, page - 1))}
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <span className="office-overlay-pager-label">
+              办公室 {officePage + 1} / {officePageCount}
+              <em>· {visibleMembers.length} 人</em>
+            </span>
+            <button
+              type="button"
+              className="office-overlay-pager-btn"
+              title="下一间办公室"
+              aria-label="下一间办公室"
+              disabled={officePage >= officePageCount - 1}
+              onClick={() => setOfficePage((page) => Math.min(officePageCount - 1, page + 1))}
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
