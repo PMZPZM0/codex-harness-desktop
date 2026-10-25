@@ -206,5 +206,15 @@ ok(!/remotePairRotate\(\)\s*\.then\(\(r\) => setPairCode\(r\.code\)\)\s*\.catch\
   .test(codeOnly(read("src/features/app-view/AppView/05-remote-console.tsx"))),
   "⛔ 负向：机器人面板的「换配对码」不许回到 `.catch(() => undefined)`（全仓最典型的静默失败）");
 
+/* ⑤-5 侧栏视图工具条：刷新按钮必须真的在按钮上（10-25 用户实测「会话刷新按键被挤掉了」）。
+   ⛔ 上面 ⑤-2 只验「label 落在 refreshWithReceipt 实参里」——按钮被整段删掉时那条仍可能绿，
+      所以这里单独锚 JSX 里的 title="刷新会话列表" 与四个工具同排的不换行口径。 */
+const sidebarTabsSrc = codeOnly(read("src/features/app-view/AppView/01-sidebar-shell.tsx"));
+const tabsCss = codeOnly(read("src/styles/15-queued-messages.css"));
+ok(/view-toolbar[\s\S]{0,400}?title="刷新会话列表"/.test(sidebarTabsSrc),
+  "⑤-5 侧栏视图工具条保留「刷新会话列表」按钮（重排时被挤掉过 —— 用户点名）");
+ok(/\.view-tab \{[^}]*white-space:\s*nowrap/.test(tabsCss),
+  "⑤-5 视图 tab 不换行（工具图标同排时，tab 文字会被压成上下两行「项/目」）");
+
 console.log(`\n【notice-feedback】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
