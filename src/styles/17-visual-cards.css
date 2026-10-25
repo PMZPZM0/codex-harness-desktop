@@ -443,7 +443,7 @@
 .account-menu-section { padding: 4px 12px 6px; display: flex; flex-direction: column; gap: 4px; }
 .account-menu-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; }
 .account-menu-row.vert { flex-direction: column; align-items: stretch; gap: 4px; }
-.account-menu-label { color: var(--muted); }
+.account-menu-label { color: var(--muted); white-space: nowrap; }
 .account-menu-value { color: var(--text); }
 .account-menu-theme { cursor: default; }
 .account-menu-theme .theme-quick { display: flex; gap: 4px; margin-left: auto; }
@@ -465,32 +465,38 @@
 .account-menu-value.mono { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace; }
 .account-menu-value.small { font-size: 11px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 更新方式切换（10-25）：差分 / 完整包；选中用底色，不用勾 */
-.update-mode-switch { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--panel-2); }
+.update-mode-switch { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--panel-2); white-space: nowrap; }
 .update-mode-switch button {
   border: 0;
   background: transparent;
   color: var(--muted);
   font-size: 11px;
   line-height: 1;
-  padding: 4px 8px;
+  padding: 4px 7px;
   border-radius: 6px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
 }
 .update-mode-switch button.active { background: var(--bg); color: var(--text); box-shadow: 0 0 0 1px var(--line); }
 .update-mode-switch button:hover:not(.active) { color: var(--text); }
 .update-help {
-  display: inline-grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
   width: 13px;
   height: 13px;
-  margin-left: 3px;
+  margin-left: 2px;
   border-radius: 50%;
   border: 1px solid var(--line);
   color: var(--faint);
   font-size: 9px;
   line-height: 1;
   cursor: help;
-  vertical-align: 1px;
+  vertical-align: middle;
 }
 .update-mode-switch button.active .update-help { border-color: color-mix(in srgb, var(--text) 25%, transparent); color: var(--muted); }
 .account-menu-input { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 12px; color: var(--text); font-family: inherit; }
