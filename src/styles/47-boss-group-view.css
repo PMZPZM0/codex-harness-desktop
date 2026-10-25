@@ -197,6 +197,56 @@
 /* 自适应：窄屏收起顶栏成员图标（多尺寸展示/隐藏） */
 @media (max-width: 1180px) { .boss-members-wrap { display: none; } }
 
+/* ── BOSS 会话的「?」说明弹层（10-25 用户令：成员图标旁边，BOSS 会话独有）── */
+.boss-help-pop {
+  position: fixed;
+  z-index: 60;
+  width: 340px; max-height: min(70vh, 460px); overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.boss-help-head { display: flex; align-items: center; gap: 8px; }
+.boss-help-head b { flex: 1; font-size: 13px; }
+.boss-help-row { display: flex; flex-direction: column; gap: 3px; }
+.boss-help-title { font-size: 12px; font-weight: 600; color: var(--amber, #d29922); }
+.boss-help-body { font-size: 12px; line-height: 1.65; color: var(--muted); }
+/* 窄屏同样收起（与成员图标同步，避免只剩一个孤零零的问号） */
+@media (max-width: 1180px) { .boss-help-btn { display: none; } }
+
+/* ── BOSS 会话的空态引导（10-25 用户令：中间给「你好 BOSS…」，发送后消失）──
+   ⛔ 复用 .welcome-state 的居中骨架，只补 BOSS 专属的皇冠标记与示例 chip。 */
+.boss-welcome { gap: 16px; }
+.boss-welcome-mark {
+  color: color-mix(in srgb, var(--amber, #d29922) 72%, var(--text));
+  filter: drop-shadow(0 10px 30px color-mix(in srgb, var(--amber, #d29922) 26%, transparent));
+}
+.boss-welcome .welcome-greet { letter-spacing: 0.2px; }
+.boss-welcome .welcome-sub { line-height: 1.75; }
+.boss-welcome-chips {
+  display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+  max-width: 680px; margin-top: 8px;
+}
+.boss-welcome-chip {
+  padding: 7px 14px;
+  border: 1px solid color-mix(in srgb, var(--amber, #d29922) 26%, var(--line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--amber, #d29922) 7%, var(--panel));
+  color: var(--text);
+  font: inherit; font-size: 12.5px; line-height: 1.4;
+  cursor: pointer;
+  appearance: none;
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+.boss-welcome-chip:hover {
+  border-color: color-mix(in srgb, var(--amber, #d29922) 52%, var(--line));
+  background: color-mix(in srgb, var(--amber, #d29922) 12%, var(--panel));
+  transform: translateY(-1px);
+}
+.boss-welcome-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* BOSS 会话侧栏按钮与「搜索任务」同款：靠左对齐 + 图标（用户令） */
 .sidebar-quick .sidebar-quick-btn.sidebar-quick-boss {
   height: 32px;

@@ -8,5 +8,7 @@
  */
 export { BossGroupPanel } from "./BossGroupPanel";
 export { BossGroupMembersButton } from "./BossGroupMembersButton";
+export { BossGroupHelpButton } from "./BossGroupHelpButton";
 /* store 动作也走 barrel（域内唯一出口） */
 export { closeBossPanel, getBossPanelState, openBossPanel, setBossPanelGroup, subscribeBossPanel } from "./panel-store.mjs";
+export { getBossThreads, setBossHomeThreadId, setBossPending, subscribeBossThreads } from "./boss-threads-store.mjs";

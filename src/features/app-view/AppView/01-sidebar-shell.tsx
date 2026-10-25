@@ -2,7 +2,8 @@
  * AppViewSidebarShell —— AppView 的 JSX 第 1 段（09-22 从 AppView.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { getBossThreads, setBossHomeThreadId, setBossPending, subscribeBossThreads } from "../../boss-group-view";
 import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, useFunctionMenuConfig } from "../../function-menu";
 import { hk } from "../../../lib/hk";
 import {
@@ -162,22 +163,20 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
      ⇒ 点按钮就是 `openThread(群.bossThreadId)`：正常时间线、正常输入框、正常消息渲染，
         不再有任何覆盖层/专属界面。
      ⇒ 「选中效果」是**派生量**（当前会话 id 命中某个群的 boss 线程），⛔ 不再用 store 的
-        stage 布尔值 —— 那个布尔值和真实会话状态会对不上（用户实测：切走了按钮还亮着）。 */
-  const [bossGroups, setBossGroups] = useState<Array<{ id: string; name: string; bossThreadId?: string }>>([]);
+        stage 布尔值 —— 那个布尔值和真实会话状态会对不上（用户实测：切走了按钮还亮着）。
+     ⇒ 还没建群时用 localStorage 里的 `homeId` 当锚点：**同一个 BOSS 会话一直走**，
+        ⛔ 不每点一次就多一个「未命名任务」（用户 10-25 第二点）。 */
+  const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
   const currentThreadId = app.thread?.id ?? "";
-  const bossOn = bossGroups.some((g) => g.bossThreadId && g.bossThreadId === currentThreadId);
+  const bossOn = Boolean(currentThreadId) && bossThreads.bossIds.includes(currentThreadId);
+  /* 点「BOSS 会话」新建的那个会话，等它拿到 id 后记成 home（首条消息发出后引擎才分配）。 */
+  const bossHomePending = useRef(false);
   useEffect(() => {
-    let alive = true;
-    const load = () => {
-      void window.codex.listBossGroups()
-        .then((list: any) => { if (alive) setBossGroups(Array.isArray(list) ? list : []); })
-        .catch(() => { /* 主进程未就绪：下一轮再试 */ });
-    };
-    load();
-    const timer = setInterval(load, 8000);
-    const off = window.codex.onEvent((event: any) => { if (event?.type === "boss-group") load(); });
-    return () => { alive = false; clearInterval(timer); off?.(); };
-  }, []);
+    if (bossHomePending.current && currentThreadId) {
+      setBossHomeThreadId(currentThreadId);
+      bossHomePending.current = false;
+    }
+  }, [currentThreadId]);
   const {
     accountDraft,
     accountEditing,
@@ -462,7 +461,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
             <div className="sidebar-tabs" role="navigation" aria-label="导航">
               {/* 10-24 用户对照截图：改成整行「新会话」主按钮 + 下面一行「搜索任务」，不再并排胶囊。 */}
               <div className="sidebar-quick">
-                <button className="sidebar-tab sidebar-quick-btn primary ic-blue" title={`新会话（${hk("Ctrl+N")}）`} onClick={() => { startNewThread(); }}>
+                <button className="sidebar-tab sidebar-quick-btn primary ic-blue" title={`新会话（${hk("Ctrl+N")}）`} onClick={() => { setBossPending(false); startNewThread(); }}>
                   <CirclePlus size={17} strokeWidth={2} /><span>新会话</span>
                 </button>
                 <button className="sidebar-tab sidebar-quick-btn sidebar-quick-search ic-cyan" title={`搜索任务与操作（${hk("Ctrl+K")}）`} onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}>
@@ -477,9 +476,16 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   aria-pressed={bossOn}
                   onClick={() => {
                     if (bossOn) return;                                   // 已在这个会话里，再点无动作
-                    const target = bossGroups.find((g) => g.bossThreadId)?.bossThreadId;
-                    if (target) void app.openThread(target);              // 有群 ⇒ 直接打开它的 boss 线程
-                    else startNewThread();                               // 还没群 ⇒ 新建一个会话（在里面说「建个群：…」）
+                    /* 已经是「刚点开、还没发消息」的 BOSS 空会话（还没有 thread id）⇒ 别再新建一个
+                       （否则连点两次就多两个「未命名任务」）。 */
+                    if (bossThreads.pending && !currentThreadId) return;
+                    const groupBoss = bossThreads.bossIds[0];
+                    if (groupBoss) { void app.openThread(groupBoss); return; }   // 有群 ⇒ 打开它的 boss 线程
+                    const home = bossThreads.homeId;                       // 还没群 ⇒ 回到固定的那个 BOSS 会话
+                    if (home && (app.threads ?? []).some((t: any) => t.id === home)) { void app.openThread(home); return; }
+                    bossHomePending.current = true;                        // 全新：新建并记成 home
+                    setBossPending(true);                                  // 空态显示 BOSS 欢迎语
+                    startNewThread();
                   }}
                 >
                   <Crown size={15} /><span>BOSS 会话</span>
