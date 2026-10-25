@@ -15,14 +15,8 @@ import { Turn } from "../../../../../lib/turn";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../app-view/types";
 import type { Bag } from "../../bag-types";
-/* BOSS 群聊专属界面是「独立视图」，不属于任何会话（10-25 用户实测：切到别的会话后
-   主舞台还停在群聊覆盖层 = 一片空白）。切会话是用户离开它的**唯一主动作** ⇒ 在入口处关掉。
-   ⛔ 别改成在渲染层比对 thread id：主舞台卸载重挂会丢基线（见 02-main-stage 注释）。
-   ⛔ 走域 barrel（守卫【130】：域间禁深链内部文件）。 */
-import { closeBossStage } from "../../../../boss-group-view";
 
 export async function openThread(bag: Bag, id: string, freshThread?: Thread | null) {
-    closeBossStage();
     bag.switchStartRef.current = performance.now();
     // 新会话：重新等待「真实用户滚动」才允许自动续载（见 userScrolledRef）
     bag.userScrolledRef.current = false;
