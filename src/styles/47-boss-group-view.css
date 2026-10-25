@@ -218,24 +218,32 @@
 
 /* ── BOSS 会话的空态引导（10-25 用户令：中间给「你好 BOSS…」，发送后消失）──
    ⛔ 复用 .welcome-state 的居中骨架，只补 BOSS 专属的皇冠标记与示例 chip。 */
-.boss-welcome { gap: 16px; }
-.boss-welcome-mark {
-  color: color-mix(in srgb, var(--amber, #d29922) 72%, var(--text));
-  filter: drop-shadow(0 10px 30px color-mix(in srgb, var(--amber, #d29922) 26%, transparent));
+/* ⛔ 尺寸必须比普通欢迎态更紧凑：welcome-state 用 padding-bottom: calc(54vh+40) 让出输入框，
+   内容一旦变高就会压到输入框上（实测 88px 皇冠 + 两行说明 + 两行 chip 直接重叠）。
+   这里：小皇冠 + 单行说明 + 单行 chip + 让位再加 4vh。 */
+.boss-welcome { gap: 10px; padding-bottom: calc(58vh + 40px); }
+.boss-welcome .welcome-sub { max-width: 640px; }
+/* ⛔ 普通欢迎态的 .welcome-mark 是 display:none（去大水印）；BOSS 空态要它，
+   用两个类压过去（.boss-welcome .boss-welcome-mark），别改公共规则。 */
+.boss-welcome .boss-welcome-mark {
+  display: flex; align-items: center; justify-content: center;
+  color: color-mix(in srgb, var(--amber, #d29922) 80%, var(--text));
+  opacity: 0.92;
+  filter: drop-shadow(0 10px 28px color-mix(in srgb, var(--amber, #d29922) 24%, transparent));
 }
 .boss-welcome .welcome-greet { letter-spacing: 0.2px; }
 .boss-welcome .welcome-sub { line-height: 1.75; }
 .boss-welcome-chips {
-  display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
-  max-width: 680px; margin-top: 8px;
+  display: flex; flex-wrap: wrap; gap: 7px; justify-content: center;
+  max-width: 620px; margin-top: 4px;
 }
 .boss-welcome-chip {
-  padding: 7px 14px;
+  padding: 6px 13px;
   border: 1px solid color-mix(in srgb, var(--amber, #d29922) 26%, var(--line));
   border-radius: 999px;
   background: color-mix(in srgb, var(--amber, #d29922) 7%, var(--panel));
   color: var(--text);
-  font: inherit; font-size: 12.5px; line-height: 1.4;
+  font: inherit; font-size: 12px; line-height: 1.4;
   cursor: pointer;
   appearance: none;
   transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
