@@ -118,6 +118,9 @@ export const teamsFeature = defineFeature<null>({
       threadCwd.set(String(started.thread.id), String(input.cwd || process.cwd())); /* 文件变更追踪 cwd 登记（10-01） */
       // 线程 → 团队映射落主进程并持久化：任何窗口（含 popout）据此才知道这个会话属于哪个团
       teamRunStore.setThreadTeam(started.thread.id, team.teamId);
+      /* ⛔ 10-26：只有**开团**（主理人）走这条 ⇒ 顺手记成主理人会话。
+         旧会话补种团队纪律要靠它认人（渲染层的 teamThreadConfigRef 是内存 ref，重启即丢）。 */
+      teamRunStore.setThreadLead(started.thread.id);
       if (input.defer) {
         const threadName = team.displayName.zh;
         try { await server.request("thread/name/set", { threadId: started.thread.id, name: threadName }); } catch { /* 命名失败不阻塞进入会话 */ }

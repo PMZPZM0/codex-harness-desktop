@@ -52,6 +52,11 @@ export interface TeamThreadsDoc {
   threads: Record<string, string>;
   /** `teamId|memberId`（均小写） → 该成员长期复用的线程 id */
   members: Record<string, string>;
+  /** 10-26：团队**主理人**会话的线程 id。
+      ⛔ 为什么需要单独一份：`threads` 里既有主理人会话，也有「成员直达会话」（用户直接找某成员聊）
+      和委托出去的成员线程 —— 三者都挂了 teamId，**分不清**。旧会话补种团队纪律必须只发给主理人
+      （发给成员直达会话 ⇒ 等于告诉成员「别自己干活」，直接把它搞坏）。 */
+  leads: Record<string, true>;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -125,7 +130,7 @@ export function countParallelRuns(runs: TeamMemberRun[], windowMs = 1500): numbe
 export class TeamRunStore {
   private threadsFile: string;
   private runsDir: string;
-  private threadsDoc: TeamThreadsDoc = { threads: {}, members: {} };
+  private threadsDoc: TeamThreadsDoc = { threads: {}, members: {}, leads: {} };
   private loaded = false;
   private runsCache = new Map<string, TeamRunsDoc>();
   private threadsWriteTimer: NodeJS.Timeout | null = null;
@@ -147,9 +152,10 @@ export class TeamRunStore {
       this.threadsDoc = {
         threads: parsed?.threads && typeof parsed.threads === "object" ? parsed.threads : {},
         members: parsed?.members && typeof parsed.members === "object" ? parsed.members : {},
+        leads: parsed?.leads && typeof parsed.leads === "object" ? parsed.leads : {},
       };
     } catch {
-      this.threadsDoc = { threads: {}, members: {} };
+      this.threadsDoc = { threads: {}, members: {}, leads: {} };
     }
   }
 
@@ -195,6 +201,19 @@ export class TeamRunStore {
     return this.threadsDoc.threads[threadId] ?? "";
   }
 
+  /** 标记为团队**主理人**会话（只在开团会话时调；⛔ 成员会话一律不调）。 */
+  setThreadLead(threadId: string) {
+    if (!threadId) return;
+    this.ensureThreadsLoaded();
+    this.threadsDoc.leads[threadId] = true;
+    this.scheduleThreadsWrite();
+  }
+
+  isLeadThread(threadId: string): boolean {
+    this.ensureThreadsLoaded();
+    return this.threadsDoc.leads[threadId] === true;
+  }
+
   rememberMemberThread(teamId: string, memberId: string, memberThreadId: string) {
     if (!teamId || !memberId || !memberThreadId) return;
     this.ensureThreadsLoaded();
@@ -210,7 +229,7 @@ export class TeamRunStore {
 
   listThreads(): TeamThreadsDoc {
     this.ensureThreadsLoaded();
-    return { threads: { ...this.threadsDoc.threads }, members: { ...this.threadsDoc.members } };
+    return { threads: { ...this.threadsDoc.threads }, members: { ...this.threadsDoc.members }, leads: { ...this.threadsDoc.leads } };
   }
 
   /** 开始一次委托：注册活跃运行（成员线程的流式事件据此路由），并广播 started。 */

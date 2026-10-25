@@ -11,6 +11,7 @@ import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTea
 import { expertRoleLabel } from "../../../../../lib/expert-role-label";
 import { readPendingImportStore } from "../../../../../lib/read-pending-import-store";
 import { PENDING_IMPORT_STORE_KEY } from "../../../../../lib/pending-import-store-key";
+import { setTeamLeadThreads } from "../../../../../lib/prompt-seeds.mjs";
 import type { Bag } from "../../bag-types";
 
 export function usePart02a2(bag: Bag) {
@@ -108,6 +109,11 @@ bag.teamThreadConfigRef = teamThreadConfigRef as typeof bag.teamThreadConfigRef;
     void window.codex.teamThreadsMap?.().then((map) => {
       if (!alive || !map?.threads) return;
       for (const [threadId, teamId] of Object.entries(map.threads)) bag.teamThreadMapRef.current.set(threadId, String(teamId));
+      /* ⛔ 10-26：主理人会话名单（持久化在 main）⇒ **旧会话重启后**补种团队纪律靠它认人
+         （teamThreadConfigRef 是内存 ref，重启即空）。
+         窄转型：window.codex 的类型声明（vite-env.d.ts）由另一条工作线在改，leads 字段待其落地后再补声明。 */
+      const leadIds = (map as unknown as { leads?: Record<string, true> }).leads ?? {};
+      setTeamLeadThreads(Object.keys(leadIds));
       register();   // 灌满后再注册一遍（含本次启动未打开过的会话）
     }).catch(() => undefined);
     return () => { alive = false; for (const threadId of bag.teamThreadMapRef.current.keys()) unregisterThreadTeam(threadId); };

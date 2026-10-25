@@ -64,6 +64,7 @@ function stripHarnessBlocks(text) {
   out = out.replace(/^\[Harness 常驻记忆[^\]]*\][\s\S]*?^\[常驻记忆结束\][ \t]*\r?\n?/gm, "");
   out = out.replace(/^\[本轮已引用技能\][\s\S]*?^\[请按上述技能工作流执行\][ \t]*\r?\n?/gm, "");
   out = out.replace(/<!--harness-notice-->[\s\S]*?<!--\/harness-notice-->\s*/g, "");
+  out = out.replace(/<!--boss-role-->[\s\S]*?<!--\/boss-role-->\s*/g, "");
   return out.replace(/\n{3,}/g, "\n\n").trim();
 }
 

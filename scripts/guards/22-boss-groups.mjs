@@ -331,8 +331,13 @@ if (state) {
   ok(/BOSS_ROLE_PROMPT/.test(segSrc) && /bossRoleSeed/.test(segSrc)
     && /developerInstructions = \[bossRoleSeed/.test(segSrc),
     "指挥中枢角色说明走 thread/start 的 developerInstructions（内置注入，不是消息正文）");
-  ok(!/BOSS_ROLE_PROMPT/.test(sendSrc) && !/bossRolePrefix/.test(sendSrc),
-    "⛔ 角色说明**不许**拼进用户消息正文（拼进去就必然被渲染成用户说过的话）");
+  /* ⛔ 10-26 二次修正：补种（旧会话）**必须**在 send.tsx 里引用 BOSS_ROLE_PROMPT，
+     所以"不许出现"这条改成"只允许出现在补种分支里，且带记账"。 */
+  ok(!/bossRolePrefix/.test(sendSrc),
+    "⛔ 角色说明**不许**逐轮拼进用户消息正文（拼进去就必然被渲染成用户说过的话）");
+  const roleLines = sendSrc.split("\n").filter((l) => l.includes("BOSS_ROLE_PROMPT") && !l.trimStart().startsWith("import "));
+  ok(roleLines.length === 1 && /return BOSS_ROLE_PROMPT/.test(roleLines[0]),
+    `send.tsx 里 BOSS_ROLE_PROMPT 只出现一次、且只在补种分支里 return（实际 ${roleLines.length} 处）`);
   ok(/const withoutRole = clean\.replace\(\/<!--boss-role-->/.test(read("src/lib/user-refs.ts")),
     "⛔ 老会话的角色段在 parseUserRefs.cleanText 这一处剥掉（气泡/标题/复制同一口）");
   ok(/wasBoss/.test(sendSrc) && /if \(wasBoss\) renameBossSessionId/.test(sendSrc),
@@ -674,9 +679,31 @@ if (state) {
         · `[SYSTEM TASK · 调度会话]`（delegation）同上，壳后还有一段角色提示；
         · 团队/专家首条把系统提示词拼在壳**前面** ⇒ 删壳后那坨仍在正文里。
      ⛔ 真跑（15 种真实格式、打包真实 parseUserRefs）：字符串契约靠读代码判断正是上次翻车的根因。 */
+  /* ── 旧会话补种（10-26 用户令：「那要适配一下旧会话，用户很多都是旧会话有任务的」）──
+     ⛔ 中枢角色说明挪到 thread/start 的 developerInstructions 之后，**升级前建的会话永远拿不到**。
+     漏了 ⇒ 老中枢不知道自己是谁；重复 ⇒ 每轮多烧 900 字。两边都得钉。 */
+  {
+    const sendSrc = read("src/features/app-state/parts/part08/02-seg/send.tsx");
+    ok(/needsSeed\(id, "boss", BOSS_SEED_VERSION\)/.test(sendSrc)
+      && /markSeeded\(id, "boss", BOSS_SEED_VERSION\)/.test(sendSrc)
+      && /return BOSS_ROLE_PROMPT/.test(sendSrc),
+      "旧中枢会话在下一次发送时补一次角色说明（带记账，只补一次）");
+    const segSrc = read("src/features/app-state/parts/part08/01-seg.tsx");
+    ok(/if \(bossRoleSeed\) markSeeded\(tid, "boss", BOSS_SEED_VERSION\)/.test(segSrc),
+      "新建的中枢会话立刻记成已补种（⛔ 否则 developerInstructions 之外又多喂一遍）");
+    ok(/export const BOSS_SEED_VERSION/.test(read("src/lib/prompt-seeds.mjs"))
+      && /export const TEAM_SEED_VERSION/.test(read("src/lib/prompt-seeds.mjs")),
+      "补种带版本号：改文案把版本 +1，旧会话会再补一次");
+    /* ⛔ 补种段会进用户正文 ⇒ 侧栏标题 / 导出这两份副本必须同样剥掉 */
+    const backup = read("electron/thread-backup.ts");
+    const worker = read("electron/rollout-worker.cjs");
+    ok(backup.includes("boss-role") && worker.includes("boss-role"),
+      "补种的角色说明在导出正文与侧栏标题里也被剥掉（否则旧会话标题变成整段机器文本）");
+  }
+
   const strip = spawnSync(process.execPath, [join(ROOT, "scripts", "verify-injection-strip.mjs")], { cwd: ROOT, encoding: "utf8", timeout: 240_000 });
   ok(strip.status === 0,
-    `注入段剥离 + 群广播 + 告知队列回归：32 项（16 种注入格式 + 6 组群事件 + 3 条告知队列 + 文案同源）${strip.status === 0 ? "" : `（失败：${String(strip.stdout ?? "").split("\n").filter((l) => l.includes("✗")).slice(0, 3).join(" / ")}）`}`);
+    `注入段剥离 + 群广播 + 告知队列 + 旧会话补种回归：39 项（18 种注入格式 + 6 组群事件 + 3 条告知队列 + 6 条补种记账 + 文案同源）${strip.status === 0 ? "" : `（失败：${String(strip.stdout ?? "").split("\n").filter((l) => l.includes("✗")).slice(0, 3).join(" / ")}）`}`);
   /* ── 群广播（10-26 用户令「方案就按只广播这个完成」）───────────────────
      `[群事件]` 是成员汇总进来的群消息，⛔ 不能再套用户气泡（右对齐 + "你"）。
      呈现层只在**气泡这一层**换样式（群事件在引擎里就是一条 userMessage —— 换时间线渲染器会踩

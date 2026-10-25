@@ -11,6 +11,7 @@ import { removeBossSessionId } from "../../../boss-group-view";
    10-25 用户实测：「下面已经自动选了别的会话的项目地址」「每次指挥中枢都不要自动选择旧的会话项目地址」。
    ⇒ 建会话时 cwd 取本会话登记的目录（bossDirFor），没有才回落全局 workspace。 */
 import { BOSS_ROLE_PROMPT, bossDirFor, getBossThreads, setBossDirChosen } from "../../../boss-group-view";
+import { BOSS_SEED_VERSION, markSeeded } from "../../../../lib/prompt-seeds.mjs";
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "../../../../lib/session-scope.mjs";
@@ -716,6 +717,9 @@ bag.buildDynamicTools = buildDynamicTools as typeof bag.buildDynamicTools;
       // （thread/start 传入的 model/effort/sandbox/approval 就是这些全局值，烙进去与
       //   引擎侧会话创建时的真实状态一致。）
       const tid = started.thread.id;
+      /* ⛔ 10-26：中枢的角色说明已随 developerInstructions 下发 ⇒ 立刻记成"已补种"，
+         否则旧会话补种那条会在下一次发送时又往正文里塞一遍（≈900 字，纯浪费）。 */
+      if (bossRoleSeed) markSeeded(tid, "boss", BOSS_SEED_VERSION);
       /* ⛔ 指挥中枢的项目地址**落位到会话 id**（10-25 用户实测：指挥中枢不能继承别的会话的目录）：
          建会话前目录暂存在 pendingDir（还没 id）⇒ 这里拿到 id 后迁到 dirByThread[tid]，
          之后这个会话永远用自己那一档，切到别的指挥中枢也不会串。 */

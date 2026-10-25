@@ -130,6 +130,18 @@ const CASES = [
     forbid: ["harness-notice", "【调度已开启】", "对象类别"],
   },
   {
+    name: "旧中枢会话补种（角色说明挂在下一条消息前）",
+    text: "<!--boss-role-->\n【指挥中枢 · 角色说明（自动注入）】\n你现在是中枢（主控）…你是谁、要干什么…\n<!--/boss-role-->\n\n把首页派给前端小张",
+    expect: "把首页派给前端小张",
+    forbid: ["boss-role", "指挥中枢", "主控"],
+  },
+  {
+    name: "旧团队会话补种（团队纪律补充 · 告知块包裹）",
+    text: "\n<!--harness-notice-->\n【团队工作纪律 · 补发】\n0. ⛔ 你不亲自干活：只做拆解、派活、验收、汇总。\n1. ⛔ 先派活，再说话。\n<!--/harness-notice-->\n\n继续上一版，把测试补上",
+    expect: "继续上一版，把测试补上",
+    forbid: ["harness-notice", "团队工作纪律", "补发"],
+  },
+  {
     name: "最坏组合（壳 + 记忆 + 时间 + 附件）",
     text: `${TEAM_PROMPT}[SYSTEM TASK · 团队会话]\n=== 用户需求 ===\n做个落地页\n=== END ===\n\nSOP 指令段。${MEMORY}${NOW}`,
     expect: "做个落地页",
@@ -262,6 +274,47 @@ async function main() {
     if (block.includes(store.INLINE_NOTICE_MARK) && block.includes(store.INLINE_NOTICE_END)) console.log("✓ 告知块带标记（显示层据此整段剥离）");
     else { bad += 1; console.log("✗ 告知块缺标记 ⇒ 会直接显示在气泡里"); }
     store._resetInlineNotices();
+  }
+
+  /* ── 旧会话补种记账（prompt-seeds.mjs）────────────────────────────────────
+     ⛔ 关键：补种只能补**一次**。漏了 ⇒ 旧会话永远不知道自己是谁；重复 ⇒ 每轮多烧几百字。 */
+  {
+    const seeds = await import(new URL("../src/lib/prompt-seeds.mjs", import.meta.url));
+    seeds._resetPromptSeeds();
+    total += 4;
+    const V = seeds.BOSS_SEED_VERSION;
+    if (seeds.needsSeed("old-1", "boss", V)) console.log("✓ 旧会话第一次发送判定为「需要补种」");
+    else { bad += 1; console.log("✗ 旧会话没被判定为需要补种 ⇒ 永远拿不到角色说明"); }
+    seeds.markSeeded("old-1", "boss", V);
+    if (!seeds.needsSeed("old-1", "boss", V)) console.log("✓ 补过之后不再重复补（同一条会话只喂一次）");
+    else { bad += 1; console.log("✗ 补过了还在补 ⇒ 每轮多烧一段上下文"); }
+    if (seeds.needsSeed("old-2", "team", seeds.TEAM_SEED_VERSION)) console.log("✓ 记账按 kind 分桶（中枢补过不影响团队会话）");
+    else { bad += 1; console.log("✗ 记账串了 kind ⇒ 团队会话会被漏掉"); }
+    if (seeds.needsSeed("old-1", "boss", V + 1)) console.log("✓ 文案改版（版本 +1）会重新补一次");
+    else { bad += 1; console.log("✗ 版本 +1 后不再补 ⇒ 改了文案旧会话收不到"); }
+    /* ⛔ 认人必须跨重启：只靠内存 ref 的话，旧团队会话永远补不上（正是要修的场景） */
+    total += 2;
+    seeds.setTeamLeadThreads(["lead-1"]);
+    if (seeds.isTeamLeadThread("lead-1") && !seeds.isTeamLeadThread("member-1")) console.log("✓ 主理人名单认得准（成员会话不会被补发纪律）");
+    else { bad += 1; console.log("✗ 主理人名单判据错 ⇒ 会把「别自己干」发给成员会话"); }
+    seeds.setTeamLeadThreads([]);
+    if (!seeds.isTeamLeadThread("lead-1")) console.log("✓ 名单更新后旧条目清掉（不会残留）");
+    else { bad += 1; console.log("✗ 名单更新后旧条目还在"); }
+    seeds._resetPromptSeeds();
+  }
+
+  /* ── 补种文案与新建会话的系统提示词必须同义（否则新旧会话行为不一致）── */
+  total += 1;
+  {
+    const seeds = await import(new URL("../src/lib/prompt-seeds.mjs", import.meta.url));
+    const teamTools = readFileSync(join(ROOT, "electron", "expert-teams", "06-team-tools.ts"), "utf8");
+    const missing = ["你不亲自干活", "先派活，再说话"].filter((a) => !teamTools.includes(a) || !seeds.TEAM_DISPATCH_SUPPLEMENT.includes(a));
+    if (missing.length) {
+      bad += 1;
+      console.log(`✗ 团队纪律两处文案不同源：${missing.join("、")}（06-team-tools.ts 与 prompt-seeds.mjs 必须同义）`);
+    } else {
+      console.log("✓ 补发文案与新建会话的系统提示词同源（2 个锚点两处都在）");
+    }
   }
 
   total += 1;

@@ -346,5 +346,28 @@ try {
     "派活有宿主侧校验（团队存在 / 未停用 / memberId 属于该团）");
 }
 
+/* ── 旧团队会话补种（10-26）：铁律只在建会话时拼进系统提示词 ⇒ 老会话拿不到 ── */
+{
+  const sendSrc = readFileSync(join(ROOT, "src/features/app-state/parts/part08/02-seg/send.tsx"), "utf8");
+  ok(/teamThreadConfigRef\.current\.has\(id\)/.test(sendSrc)
+    && /isTeamLeadThread\(id\)/.test(sendSrc)
+    && /markSeeded\(id, "team", TEAM_SEED_VERSION\)/.test(sendSrc)
+    && /TEAM_DISPATCH_SUPPLEMENT/.test(sendSrc),
+    "旧团队主理人会话补发一次团队纪律（先派活 / 不亲自干），带记账只补一次");
+  /* ⛔⛔ 认人必须**跨重启**：teamThreadConfigRef 是内存 ref，重开应用就空了 ⇒
+     只靠它的话，旧会话（正是要修的场景）永远补不上。主进程那份持久名单才是关键。 */
+  const runs = readFileSync(join(ROOT, "electron", "team-runs.ts"), "utf8");
+  ok(/leads: Record<string, true>/.test(runs) && /setThreadLead\(/.test(runs)
+    && /leads: \{ \.\.\.this\.threadsDoc\.leads \}/.test(runs),
+    "主进程持久化「主理人会话」名单（leads 字段：写 / 读 / 随 team-threads:map 导出）");
+  ok(/teamRunStore\.setThreadLead\(started\.thread\.id\)/.test(readFileSync(join(ROOT, "electron", "features", "teams-ipc.ts"), "utf8")),
+    "开团（主理人）会话时才标记 leads（⛔ 成员会话不标 ⇒ 不会把「别自己干」发给成员）");
+  ok(/setTeamLeadThreads\(Object\.keys\(leadIds\)\)/.test(readFileSync(join(ROOT, "src/features/app-state/parts/part02/01-mcp-teams-plan/02-team-roles-import.tsx"), "utf8")),
+    "渲染层把主进程那份名单灌进来（重启后也认得出旧团队会话）");
+  const seeds = readFileSync(join(ROOT, "src/lib/prompt-seeds.mjs"), "utf8");
+  ok(/你不亲自干活/.test(seeds) && /先派活，再说话/.test(seeds),
+    "补发文案与 06-team-tools.ts 的铁律同义（新旧会话行为一致）");
+}
+
 console.log("\n【dpcat】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));
 process.exit(fails ? 1 : 0);

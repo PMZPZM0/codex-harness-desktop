@@ -249,6 +249,8 @@ export function stripHarnessBlocks(text: string): string {
   out = out.replace(/^\[本轮已引用技能\][\s\S]*?^\[请按上述技能工作流执行\][ \t]*\r?\n?/gm, "");
   /* 10-26：会话级告知块（调度开关变化）——随下一条消息注入，导出正文里不该出现。 */
   out = out.replace(/<!--harness-notice-->[\s\S]*?<!--\/harness-notice-->\s*/g, "");
+  /* 10-26：旧会话补种的中枢角色说明（send.tsx 的 seedInjection）——同样只在模型侧，导出正文不出现。 */
+  out = out.replace(/<!--boss-role-->[\s\S]*?<!--\/boss-role-->\s*/g, "");
   return out.replace(/\n{3,}/g, "\n\n").trim();
 }
 
