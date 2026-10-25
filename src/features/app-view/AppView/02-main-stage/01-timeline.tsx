@@ -413,17 +413,14 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                       /* 10-25 用户令：BOSS 会话的空态给专属引导语（发送后自然消失 —— 空态本来就只在
                          没有回合时渲染）。示例 chip 只**填进输入框**，不自动发送，用户还能改。 */
                       <div className="welcome-state boss-welcome">
-                        <div className="welcome-mark boss-welcome-mark"><Crown strokeWidth={1.1} size={88} /></div>
+                        <div className="welcome-mark boss-welcome-mark"><Crown strokeWidth={1.2} size={52} /></div>
                         <h1 className="welcome-greet">你好 BOSS，今天要做什么？</h1>
-                        <p className="welcome-sub">
-                          说需求就行 —— 我来拉群喊人：专家、专家团、你本机的 CLI agent 都能叫来干活。<br />
-                          人齐了我派活、盯进度，审不过就打回重做。
-                        </p>
+                        <p className="welcome-sub">说需求就行 —— 我拉群喊人（专家 / 专家团 / 你本机 CLI agent），派活、盯进度、审不过打回重做。</p>
                         <div className="boss-welcome-chips">
                           {[
-                            "做个落地页：设计 + 前端 + 测试，验收要能跑通",
-                            "把这个仓库过一遍，找安全问题和明显 bug",
-                            "写一份竞品分析，要三个不同视角的人来写",
+                            "做个落地页：设计 + 前端 + 测试",
+                            "仓库过一遍，找安全问题",
+                            "写份竞品分析，三个视角",
                           ].map((text) => (
                             <button
                               key={text}
