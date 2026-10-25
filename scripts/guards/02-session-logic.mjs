@@ -1594,4 +1594,17 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       "【281】侧栏 singles 同时排除「簇成员」与「各簇主会话」（memberIds + leadIds，二者缺一都会让行凭空消失或重复）"
     );
   }
+
+  /* ══ 【284】欢迎副语：每段 ≥10 条 + 避免连续重复（10-25 用户：「个性化词更新一下，丰富一下，看腻了」） ══ */
+  {
+    const greetSrc = codeOnly(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part02", "04-runtime-commands-account", "02-commands-hooks-account.tsx"), "utf8"));
+    for (const period of ["night", "morning", "noon", "afternoon", "evening"]) {
+      const m = new RegExp(`${period}: \\[([\\s\\S]*?)\\],\\r?\\n`).exec(greetSrc);
+      const count = m ? m[1].split(/\r?\n/).filter((line) => /^\s*"/.test(line)).length : 0;
+      (count >= 10 ? ok : fail)(`【284】欢迎副语「${period}」≥10 条（实际 ${count}）`);
+    }
+    (/welcome-greet-sub-v1/.test(greetSrc) && /candidate !== last/.test(greetSrc) ? ok : fail)(
+      "【284】欢迎副语避免连续重复（记住上一条；⛔ 别退回纯随机 —— 连撞同一句会显得「根本没变」）"
+    );
+  }
 }
