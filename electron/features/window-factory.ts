@@ -62,7 +62,7 @@ export function createWindow() {
     height: 800,
     minWidth: 640,
     minHeight: 480,
-    backgroundColor: process.platform === "win32" ? "#00000000" : "#ffffff",
+    backgroundColor: "#ffffff",
     title: "Codex Harness Desktop",
     icon: existsSync(windowIcon) ? windowIcon : undefined,
     autoHideMenuBar: true,
@@ -72,7 +72,10 @@ export function createWindow() {
     // 而渲染层按 Windows 预留的右上 145px 空白就成了纯浪费。mac 走 hiddenInset——
     // 红绿灯按系统标准内缩，渲染层用 [data-os="darwin"] 把顶行内容让开（styles.css）。
     ...(process.platform === "win32"
-      ? { frame: false, transparent: true }
+      ? {
+        titleBarStyle: "hidden" as const,
+        titleBarOverlay: { color: "#00000000", symbolColor: titleBarOverlayOptions().symbolColor, height: 43 },
+      }
       : { titleBarStyle: "hiddenInset" as const }),
     webPreferences: {
       preload: path.join(app.getAppPath(), "dist-electron", "preload.js"),
