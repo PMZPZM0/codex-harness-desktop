@@ -283,7 +283,8 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                                 <button type="button" className="provider-card-action provider-card-test" disabled={health?.state === "testing"} onClick={(event) => { event.stopPropagation(); void testProviderCard(p); }}>{health?.state === "testing" ? <Spinner /> : <Zap size={11} />}测试</button>
                                 {/* 10-25 用户令「已配置的供应商没有删除按键」：合成占位与云端行除外 ——
                                     占位卡没落盘没东西可删；云端行删了会被云同步幂等重建。 */}
-                                {!isPseudoPptoken && p.provider !== "cloud" && (
+                                {/* 10-25 用户令：内置 pptoken 卡（占位或已配置）不支持删除 —— 登录会原地更新它。 */}
+                                {p.provider !== "cloud" && p.provider !== "pptoken" && (
                                 <button type="button" className="provider-card-action danger" title="删除该供应商（不可撤销）"
                                   onClick={(event) => { event.stopPropagation(); void (async () => {
                                     if (!(await openAppConfirm("删除供应商", "供应商「" + p.name + "」将被删除，此操作无法撤销。", "删除"))) return;
