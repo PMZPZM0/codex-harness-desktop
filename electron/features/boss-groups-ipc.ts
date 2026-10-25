@@ -19,6 +19,34 @@ import { recordReview, resolveEscalation } from "../boss-groups/state";
 import type { EscalateChoice } from "../boss-groups/types";
 import { broadcastCodexEvent } from "./window-bus";
 
+/** BOSS 会话的角色提示（写进 `<userData>/boss-home/AGENTS.md`，引擎自动注入）。 */
+const BOSS_HOME_AGENTS_MD = `# 你是 BOSS
+
+这个会话是**BOSS 会话**：用户在这里提需求，你负责拉群、派活、审活。它不属于任何项目，
+不要在这里改代码 —— 干活的是你拉进来的成员会话（跑在用户选的项目目录里）。
+
+## 你的工具
+- \`group_create\` 建群：群名 + 成员清单（每人有名字、岗位；成员各自是一条常驻会话）
+- \`group_add_member\` / \`group_remove_member\` 拉人 / 移人：可从专家、专家团、本机 CLI agent 里拉
+- \`group_assign\` 派活：title / brief / criteria 三个都必填，criteria 是**验收标准**
+- \`group_status\` 看群：成员、任务、进度
+- \`group_review\` 审查：通过或打回重做
+- \`group_escalate\` 打回次数用尽时升级给用户
+- \`group_browser_setup\` 需要浏览器能力时检查
+
+## 怎么干活
+1. 用户说需求 → 判断要几个人、什么岗位 → \`group_create\`
+2. 立刻 \`group_assign\` 把第一个活派下去（⛔ 不要等用户催）
+3. 成员在各自会话里干活，完成后把成品交回来；你按 criteria 审查
+4. 不过就 \`group_review\` 打回（默认最多 2 次），还不行 \`group_escalate\` 问用户
+5. 全程中文、短句，别写长篇报告
+
+## 硬约束
+- 派活是**异步**的：不要在这里等结果，交活 / 审查 / 打回会以 [群事件] 回到你这里
+- 不要假装完成：没派活就说没派活
+- 这个会话会一直用下去，不会每轮新建
+`;
+
 const TICK_MS = 5000;
 
 export const bossGroupsFeature = defineFeature<null>({
@@ -35,7 +63,14 @@ export const bossGroupsFeature = defineFeature<null>({
        ⇒ 项目级记忆天然为空；群成员仍在用户选的项目目录里干活（group.workspace）。
        目录在这里顺手建好（复用 list 通道，⛔ 不为它新开一条 IPC）。 */
     const bossHomeDir = path.join(app.getPath("userData"), "boss-home");
-    try { fs.mkdirSync(bossHomeDir, { recursive: true }); } catch { /* 建不了就让引擎报错，别吞 */ }
+    try {
+      fs.mkdirSync(bossHomeDir, { recursive: true });
+      /* 10-25 用户令：「内置注入好提示词，让 Codex 知道」。
+         BOSS 会话的 cwd 就是这里 ⇒ 引擎自己会读这份 AGENTS.md，零额外注入通道。
+         ⛔ 只写一次（用户可能自己改过，绝不覆盖）。 */
+      const bossAgentsMd = path.join(bossHomeDir, "AGENTS.md");
+      if (!fs.existsSync(bossAgentsMd)) fs.writeFileSync(bossAgentsMd, BOSS_HOME_AGENTS_MD, "utf8");
+    } catch { /* 建不了就让引擎报错，别吞 */ }
     ipcHost.handle("boss-groups:list", async () => {
       const state = await bossStore.load();
       return Object.values(state.groups).map((group) => ({
