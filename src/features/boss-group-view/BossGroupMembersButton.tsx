@@ -86,9 +86,10 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
 
   const popStyle: CSSProperties = (() => {
     const r = btnRef.current?.getBoundingClientRect();
+    const width = 300;
     return r
-      ? { top: r.bottom + 8, right: Math.max(12, window.innerWidth - r.right) }
-      : { top: 60, right: 12 };
+      ? { top: r.bottom + 8, left: Math.max(8, Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - 8)), right: "auto" }
+      : { top: 60, left: Math.max(8, (window.innerWidth - width) / 2), right: "auto" };
   })();
 
   return (

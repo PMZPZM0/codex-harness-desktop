@@ -22,7 +22,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { CSSProperties, RefObject } from "react";
 
-export type AnchorPlacement = "bottom-right" | "bottom-left";
+export type AnchorPlacement = "bottom-right" | "bottom-left" | "bottom-center";
 
 export function useAnchoredPopover(
   open: boolean,
@@ -38,10 +38,13 @@ export function useAnchoredPopover(
     if (!rect) return;
     const gap = 8;
     const margin = 8;
+    const centered = rect.left + rect.width / 2 - width / 2;
     const left =
-      placement === "bottom-right"
-        ? Math.max(margin, Math.min(window.innerWidth - width - margin, rect.right - width))
-        : Math.max(margin, Math.min(window.innerWidth - width - margin, rect.left));
+      placement === "bottom-center"
+        ? Math.max(margin, Math.min(window.innerWidth - width - margin, centered))
+        : placement === "bottom-right"
+          ? Math.max(margin, Math.min(window.innerWidth - width - margin, rect.right - width))
+          : Math.max(margin, Math.min(window.innerWidth - width - margin, rect.left));
     setStyle({ top: Math.round(rect.bottom + gap), left: Math.round(left) });
   }, [anchorRef, width, placement]);
 
