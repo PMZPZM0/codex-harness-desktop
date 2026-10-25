@@ -268,7 +268,7 @@
     "publish": [
       {
         "provider": "generic",
-        "url": "https://github.com/PMZPZM0/codex-harness-desktop/releases/download/latest"
+        "url": "https://github.com/PMZPZM0/codex-harness-desktop/releases/download"
       }
     ],
     "nsis": {
