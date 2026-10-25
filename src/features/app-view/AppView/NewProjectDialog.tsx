@@ -1,23 +1,28 @@
 /**
- * 新建项目弹窗（10-25 用户令，对照 ZCode 的这一步）：应用内三选项模态。
+ * 新建项目弹窗（10-25 用户令，对照 ZCode）：居中大模态 + 竖排三选项（图标 + 标题 + 描述）。
  *
- * 用户原话：「我点新建项目，直接弹这个（系统目录框）了，我想要跟 ZCode 一样的这一步」。
- *   ① 打开现有文件夹 —— 系统「选择文件夹」框，选中的目录直接登记为新项目；
- *   ② 新建文件夹 —— 先选父目录（系统框），再在弹窗里输入文件夹名，创建后登记为新项目；
- *   ③ 输入路径 —— 手动粘贴绝对路径（已存在的目录直接用；不存在的给出提示，不替用户创建）。
- * ⛔ 路径校验在主进程（chooseDirectory / createScratchDir 同一道可信根），渲染层只做非空与格式预检。
+ *   ① 打开现有文件夹 —— 系统「选择文件夹」框；
+ *   ② 新建文件夹 —— 先选父目录，再输入文件夹名，主进程创建；
+ *   ③ 输入路径 —— 粘贴绝对路径，校验已存在（不替用户创建）。
+ * 落地走主进程 dialog:project-dir（可信根同口径）；onCreate 回调与侧栏 chooseWorkspace 同通道消费。
  */
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { FolderOpen, FolderPlus, Keyboard, X, Loader2 } from "lucide-react";
+import { FolderOpen, FolderPlus, Keyboard, X, Loader2, ChevronRight } from "lucide-react";
+
+type Option = { id: "open" | "new" | "path"; title: string; desc: string; Icon: typeof FolderOpen };
+const OPTIONS: Option[] = [
+  { id: "open", title: "打开现有文件夹", desc: "选择电脑上已有的文件夹作为项目地址", Icon: FolderOpen },
+  { id: "new", title: "新建文件夹", desc: "选一个位置，创建新的项目文件夹", Icon: FolderPlus },
+  { id: "path", title: "输入路径", desc: "直接粘贴项目文件夹的绝对路径", Icon: Keyboard },
+];
 
 export function NewProjectDialog({ open, onClose, onCreate }: {
   open: boolean;
   onClose: () => void;
-  /** 落地回调：拿到最终目录路径（与侧栏 chooseWorkspace 同一通道消费）。 */
   onCreate: (dir: string) => void;
 }) {
-  const [tab, setTab] = useState<"open" | "new" | "path">("open");
+  const [mode, setMode] = useState<"choose" | "new" | "path">("choose");
   const [parentDir, setParentDir] = useState("");
   const [folderName, setFolderName] = useState("");
   const [pathInput, setPathInput] = useState("");
@@ -27,17 +32,17 @@ export function NewProjectDialog({ open, onClose, onCreate }: {
 
   useEffect(() => {
     if (!open) return;
-    setTab("open"); setParentDir(""); setFolderName(""); setPathInput(""); setError(""); setBusy(false);
+    setMode("choose"); setParentDir(""); setFolderName(""); setPathInput(""); setError(""); setBusy(false);
     const prev = document.activeElement as HTMLElement | null;
     firstRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); if (mode === "choose") onClose(); else { setMode("choose"); setError(""); } } };
     window.addEventListener("keydown", onKey, true);
     return () => { window.removeEventListener("keydown", onKey, true); prev?.focus?.(); };
-  }, [open, onClose]);
+  }, [open, onClose, mode]);
 
   if (!open) return null;
 
-  const pickFolder = async () => {
+  const pickAndUse = async () => {
     setBusy(true); setError("");
     try {
       const dir: string | null = await window.codex.chooseDirectory();
@@ -57,7 +62,7 @@ export function NewProjectDialog({ open, onClose, onCreate }: {
 
   const createFolder = async () => {
     const name = folderName.trim();
-    if (!parentDir) { setError("先选一个父目录"); return; }
+    if (!parentDir) { setError("先选择一个位置（父目录）"); return; }
     if (!name || /[\\/:*?"<>|]/.test(name)) { setError("文件夹名不能为空，且不能包含 \\ / : * ? \" < > |"); return; }
     setBusy(true); setError("");
     try {
@@ -81,59 +86,79 @@ export function NewProjectDialog({ open, onClose, onCreate }: {
     finally { setBusy(false); }
   };
 
-  const tabs: [typeof tab, string, typeof FolderOpen][] = [["open", "打开现有文件夹", FolderOpen], ["new", "新建文件夹", FolderPlus], ["path", "输入路径", Keyboard]];
-
   return createPortal(
     <div className="modal-backdrop new-project-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <div className="new-project-modal" role="dialog" aria-modal="true" aria-label="新建项目">
-        <header>
-          <strong>新建项目</strong>
-          <button className="icon-button" title="关闭" onClick={onClose} disabled={busy}><X size={15} /></button>
+        <header className="np-head">
+          <div>
+            <strong>新建项目</strong>
+            <span>{mode === "choose" ? "选择一种方式开始" : mode === "new" ? "在选定的位置创建文件夹" : "粘贴已存在的文件夹路径"}</span>
+          </div>
+          <button className="icon-button" title="关闭" onClick={onClose} disabled={busy}><X size={16} /></button>
         </header>
-        <div className="np-tabs" role="tablist">
-          {tabs.map(([id, label, Icon]) => (
-            <button key={id} ref={id === "open" ? firstRef : undefined} role="tab" aria-selected={tab === id} className={tab === id ? "on" : ""}
-              onClick={() => { setTab(id); setError(""); }}>
-              <Icon size={14} /><span>{label}</span>
-            </button>
-          ))}
-        </div>
-        <div className="np-body">
-          {tab === "open" && (
-            <>
-              <p className="np-hint">选择一个已有的文件夹作为新项目的项目地址。</p>
-              <button className="primary-setting np-main" disabled={busy} onClick={() => void pickFolder()}>
-                {busy ? <><Loader2 size={14} className="authx-spin" />正在打开…</> : <><FolderOpen size={14} />选择文件夹</>}
+
+        {mode === "choose" && (
+          <div className="np-options" role="menu">
+            {OPTIONS.map(({ id, title, desc, Icon }, index) => (
+              <button key={id} ref={index === 0 ? firstRef : undefined} className="np-option" role="menuitem"
+                onClick={() => {
+                  if (id === "open") void pickAndUse();
+                  else { setMode(id); setError(""); }
+                }}>
+                <span className="np-option-icon"><Icon size={20} /></span>
+                <span className="np-option-text">
+                  <strong>{title}</strong>
+                  <small>{desc}</small>
+                </span>
+                <ChevronRight size={15} className="np-option-chevron" />
               </button>
-            </>
-          )}
-          {tab === "new" && (
-            <>
-              <p className="np-hint">先选父目录，再给新项目文件夹起名（会在父目录下创建）。</p>
-              <button className="secondary-setting np-main" disabled={busy} onClick={() => void pickParent()}>
-                {busy ? <Loader2 size={14} className="authx-spin" /> : <FolderOpen size={14} />}{parentDir || "选择父目录"}
+            ))}
+          </div>
+        )}
+
+        {mode === "new" && (
+          <div className="np-form">
+            <label className="np-form-field">
+              <span>位置</span>
+              <button className="np-parent-btn" disabled={busy} onClick={() => void pickParent()} title="选择父目录">
+                {busy ? <Loader2 size={14} className="authx-spin" /> : <FolderOpen size={14} />}
+                <b className="np-parent-path" title={parentDir}>{parentDir || "点击选择位置…"}</b>
               </button>
-              <input className="account-menu-input np-input" value={folderName} spellCheck={false}
-                placeholder="新文件夹名，如 my-project" onChange={(e) => setFolderName(e.target.value)}
+            </label>
+            <label className="np-form-field">
+              <span>文件夹名</span>
+              <input className="np-form-input" value={folderName} spellCheck={false} autoFocus
+                placeholder="例如 my-project" onChange={(e) => setFolderName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") void createFolder(); }} />
-              <button className="primary-setting np-main" disabled={busy || !parentDir || !folderName.trim()} onClick={() => void createFolder()}>
-                {busy ? <><Loader2 size={14} className="authx-spin" />正在创建…</> : <><FolderPlus size={14} />创建并作为项目</>}
+            </label>
+            <div className="np-form-actions">
+              <button className="secondary-setting" disabled={busy} onClick={() => { setMode("choose"); setError(""); }}>返回</button>
+              <button className="primary-setting" disabled={busy || !parentDir || !folderName.trim()} onClick={() => void createFolder()}>
+                {busy ? <><Loader2 size={14} className="authx-spin" />正在创建…</> : <><FolderPlus size={14} />创建项目</>}
               </button>
-            </>
-          )}
-          {tab === "path" && (
-            <>
-              <p className="np-hint">直接粘贴项目目录的绝对路径（目录需已存在）。</p>
-              <input className="account-menu-input np-input" value={pathInput} spellCheck={false}
+            </div>
+          </div>
+        )}
+
+        {mode === "path" && (
+          <div className="np-form">
+            <label className="np-form-field">
+              <span>项目路径（需已存在）</span>
+              <input className="np-form-input" value={pathInput} spellCheck={false} autoFocus
                 placeholder="D:\\我的项目" onChange={(e) => setPathInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") void usePath(); }} />
-              <button className="primary-setting np-main" disabled={busy || !pathInput.trim()} onClick={() => void usePath()}>
+            </label>
+            <div className="np-form-actions">
+              <button className="secondary-setting" disabled={busy} onClick={() => { setMode("choose"); setError(""); }}>返回</button>
+              <button className="primary-setting" disabled={busy || !pathInput.trim()} onClick={() => void usePath()}>
                 {busy ? <><Loader2 size={14} className="authx-spin" />正在检查…</> : <><Keyboard size={14} />使用这个路径</>}
               </button>
-            </>
-          )}
-          {error && <p className="np-error">{error}</p>}
-        </div>
+            </div>
+          </div>
+        )}
+
+        {busy && mode === "choose" && <div className="np-busy"><Loader2 size={14} className="authx-spin" />正在打开系统对话框…</div>}
+        {error && <p className="np-error">{error}</p>}
       </div>
     </div>,
     document.body,

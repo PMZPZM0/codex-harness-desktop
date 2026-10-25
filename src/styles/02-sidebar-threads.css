@@ -1555,46 +1555,70 @@ html[data-ui-font="large"] .action-content pre {
 .project-item-head:focus-within .project-item-new-btn { opacity: 1; }
 .project-item-new-btn:focus-visible { opacity: 1; }
 
-/* ── 10-25 新建项目弹窗（ZCode 式三选一）── */
+/* ── 10-25 新建项目弹窗（ZCode 式：居中大模态 + 竖排图标选项）── */
 .new-project-backdrop { z-index: 400; }
 .new-project-modal {
-  width: min(440px, calc(100vw - 32px));
+  width: min(480px, calc(100vw - 32px));
   background: var(--bg);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 16px;
   box-shadow: var(--shadow);
-  padding: 18px 18px 16px;
+  padding: 22px 22px 18px;
 }
-.new-project-modal > header {
-  display: flex; align-items: center; justify-content: space-between;
-  font-size: 15px; margin-bottom: 12px;
+.np-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; }
+.np-head strong { display: block; font-size: 16.5px; margin-bottom: 3px; }
+.np-head span { font-size: 12.5px; color: var(--muted); }
+.np-options { display: flex; flex-direction: column; gap: 8px; }
+.np-option {
+  display: flex; align-items: center; gap: 13px;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.12s ease, background 0.12s ease;
 }
-.np-tabs { display: flex; gap: 6px; margin-bottom: 14px; }
-.np-tabs button {
-  flex: 1;
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  padding: 8px 6px;
+.np-option:hover, .np-option:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+  outline: none;
+}
+.np-option-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; flex: none;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+.np-option-text { flex: 1; min-width: 0; }
+.np-option-text strong { display: block; font-size: 13.5px; margin-bottom: 2px; }
+.np-option-text small { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.np-option-chevron { color: var(--faint); flex: none; }
+.np-form { display: flex; flex-direction: column; gap: 13px; }
+.np-form-field { display: flex; flex-direction: column; gap: 6px; }
+.np-form-field > span { font-size: 12px; color: var(--muted); }
+.np-form-input, .np-parent-btn {
+  min-height: 38px;
+  padding: 0 12px;
   border: 1px solid var(--line);
   border-radius: 9px;
   background: var(--panel);
-  color: var(--muted);
-  font-size: 12.5px;
-  cursor: pointer;
-}
-.np-tabs button:hover { color: var(--text); }
-.np-tabs button.on {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
-  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
   color: var(--text);
-  font-weight: 600;
+  font-size: 13px;
 }
-.np-body { display: flex; flex-direction: column; gap: 9px; }
-.np-hint { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
-.np-main { justify-content: center; min-height: 36px; }
-.np-main.np-main { width: 100%; }
-.np-input {
+.np-form-input:focus { border-color: var(--accent); outline: none; }
+.np-parent-btn {
+  display: flex; align-items: center; gap: 9px;
+  cursor: pointer;
   text-align: left;
-  font-size: 12.5px;
-  word-break: break-all;
 }
-.np-error { margin: 2px 0 0; font-size: 12px; color: var(--red); line-height: 1.5; }
+.np-parent-btn:hover { border-color: var(--accent); }
+.np-parent-path {
+  flex: 1; min-width: 0;
+  font-weight: 400;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.np-form-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 3px; }
+.np-busy { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12.5px; color: var(--muted); }
+.np-error { margin: 12px 0 0; font-size: 12.5px; color: var(--red); line-height: 1.5; }
