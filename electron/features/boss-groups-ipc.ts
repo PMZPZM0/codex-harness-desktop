@@ -96,7 +96,10 @@ export const bossGroupsFeature = defineFeature<null>({
         /* 群成员的会话 id（10-25 用户令：侧栏给它们打「BOSS 调度」标签）。
            ⛔ 成员会话是派活时新建的，不走 delegate 登记 ⇒ 只能从这里回给渲染层。 */
         memberThreadIds: group.members.map((member) => member.threadId).filter(Boolean),
-        memberCount: group.members.length,
+        /* 10-25：**在群成员数**（不含被移出的）—— 被移出的那位不算群成员
+           （用户实测：「移除的群成员没有真实生效，Codex 还数着他」）。 */
+        memberCount: group.members.filter((m: any) => String(m?.status ?? "") !== "removed").length,
+        removedCount: group.members.filter((m: any) => String(m?.status ?? "") === "removed").length,
         taskCount: Object.values(state.tasks).filter((task) => task.groupId === group.id).length,
       }));
     });

@@ -11,7 +11,7 @@ import { Network, Plus, UserMinus, X } from "lucide-react";
 import { getBossPanelState, setBossPanelGroup, subscribeBossPanel } from "./panel-store.mjs";
 import { AppSelect } from "../../components/AppSelect";
 
-type GroupLite = { id: string; name: string; bossThreadId?: string };
+type GroupLite = { id: string; name: string; bossThreadId?: string; memberCount?: number; removedCount?: number };
 type MemberLite = { id: string; name: string; role: string; status: string; lockedTaskIds: string[]; source?: string };
 type SnapLite = { group: { id: string; name: string; members: MemberLite[] } };
 
@@ -98,12 +98,14 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
                   ariaLabel="切换群"
                   value={groupId}
                   onChange={(next) => { setBossPanelGroup(next); void refresh(); }}
-                  options={groups.map((g) => ({ value: g.id, label: g.name }))}
+                  /* 10-25：下拉里直接显示每个群的**在群人数**（不含已移出）——
+                     否则用户在一个群里拉了人、弹窗停在另一个群，就以为「没实时更新」。 */
+                  options={groups.map((g) => ({ value: g.id, label: `${g.name}（${g.memberCount ?? 0} 人${g.removedCount ? ` · 已移出 ${g.removedCount}` : ""}）` }))}
                 />
               ) : (
                 <b>{snap?.group?.name ?? groups[0]?.name}</b>
               )}
-              <span>成员 {active.length}</span>
+              <span>成员 {active.length}{removed.length ? ` · 已移出 ${removed.length}` : ""}</span>
               <button type="button" className="boss-panel-mini" aria-label="关闭" onClick={() => setOpen(false)}><X size={11} /></button>
             </div>
             {!groups.length ? (
