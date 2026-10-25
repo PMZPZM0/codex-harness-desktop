@@ -294,6 +294,19 @@ if (state) {
   ok(/isBossThread \? null : \(/.test(read("src/features/app-state/parts/part09/02-seg.tsx")),
     "BOSS 会话隐藏顶栏「允许本会话调度」开关（群编排自带独立调度）");
   const timeline = read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx");
+  /* ⛔⛔ 10-25 用户实测两处：
+     ① 「移除的群成员没有真实生效，Codex 不知道我移除了」—— group_status 原来把整份 snapshot
+        的 JSON 直接丢给模型，members 里带 status=removed 的那位，模型就照着数成"3 位成员"。
+     ② 「拉了群里，弹窗没有实时更新」—— 弹窗按 threadId 选群，看不到别的群的人数。 */
+  const requestFile = read("src/features/app-state/parts/part05/event-router/02-request.tsx");
+  ok(/activeMembers/.test(requestFile) && /removedMembers/.test(requestFile)
+    && /当前成员 \$\{activeMembers\.length\} 位/.test(requestFile),
+    "group_status 给模型明确口径：当前成员 N 位 + 已移出名单（⛔ 不能把 removed 也算进成员数）");
+  const runnerFile = read("electron/boss-groups/runner.ts");
+  ok(/成员已被用户移出群/.test(runnerFile) && /新成员进群/.test(runnerFile),
+    "成员增删都回投给 BOSS 会话（模型要实时知道，不该只能靠它自己查）");
+  ok(/memberCount: group\.members\.filter\(\(m: any\) => String\(m\?\.status \?\? ""\) !== "removed"\)\.length/.test(read("electron/features/boss-groups-ipc.ts")),
+    "群列表的成员数不含被移出的（弹窗下拉按群显示人数）");
   ok(/BossThreadIntro/.test(timeline) && /isEmpty && !isBossEmpty/.test(timeline),
     "BOSS 会话空态走自己的组件（BossThreadIntro），普通欢迎页只给非 BOSS 会话");
   ok(!/boss-welcome/.test(read("src/styles/47-boss-group-view.css")) && /boss-intro-card/.test(read("src/styles/47-boss-group-view.css")),

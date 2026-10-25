@@ -223,7 +223,24 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       await ok(`共 ${list?.length ?? 0} 个群：${(list ?? []).map((g: any) => `${g.name}(id=${g.id}${g.paused ? "，已暂停" : ""})`).join("；") || "（无）"}${poolText}`);
                     } else {
                       const snap = await window.codex.bossGroupStatus(groupId);
-                      await ok(JSON.stringify(snap).slice(0, 6000));
+                      /* ⛔⛔ 10-25 用户实测：「用户移除的群成员没有真实生效，Codex 不知道我移除了」。
+                         原来这里直接把整份 snapshot 的 JSON 丢给模型 —— members 里还带着
+                         status="removed" 的那几位，模型就照着数成"成员 3 位"（截图实证）。
+                         ⇒ 改成**明确口径**：当前成员 N 位（逐个列名字/岗位/id）+ 已移出名单单列。 */
+                      const gm = (snap as any)?.group;
+                      const allMembers: any[] = Array.isArray(gm?.members) ? gm.members : [];
+                      const activeMembers = allMembers.filter((m) => String(m?.status ?? "") !== "removed");
+                      const removedMembers = allMembers.filter((m) => String(m?.status ?? "") === "removed");
+                      const memberText = activeMembers.length
+                        ? activeMembers.map((m) => `${m.name}[${m.role}] id=${m.id}`).join("、")
+                        : "（一个都没有）";
+                      const removedText = removedMembers.length
+                        ? `\n已移出（**不在当前成员名单里、不再接任何新活**，只是保留会话与轨迹）：${removedMembers.map((m) => m.name).join("、")}`
+                        : "";
+                      const rest = { ...(snap as any) };
+                      if (rest?.group) rest.group = { ...rest.group, members: activeMembers, removedMembers };
+                      await ok(`群「${gm?.name ?? ""}」（id=${gm?.id ?? groupId}）当前成员 ${activeMembers.length} 位：${memberText}${removedText}
+（下面是其余状态：${JSON.stringify(rest).slice(0, 4000)}）`);
                     }
                   } else if (tool === "group_review") {
                     const res = await window.codex.reviewBossTask({

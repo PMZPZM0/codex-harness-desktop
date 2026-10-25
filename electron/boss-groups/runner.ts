@@ -535,6 +535,14 @@ export async function memberForBoss(input: {
     bossStore.save();
     const group = groupOf(state, String(input.groupId ?? ""));
     emit({ type: "boss-group", phase: "member", groupId: group.id, memberId: member.id, status: member.status });
+    /* ⛔⛔ 10-25 用户实测：「用户移除的群成员没有真实生效，Codex 不知道我移除了」。
+       成员变动必须**回投给 BOSS 会话**，否则模型只在自己查 group_status 时才可能看到，
+       而且那是旧口径（会把 removed 也数进去）。这里把增/移都主动告诉 BOSS。 */
+    if (input.action === "add") {
+      void postToBoss(group, `[群事件] 新成员进群：${member.name}（${member.role}${member.source === "cli" ? "，本机 CLI agent" : ""}，id=${member.id}）。`);
+    } else {
+      void postToBoss(group, `[群事件] 成员已被用户移出群：${member.name}（${member.role}，id=${member.id}）。\nTA **不在当前成员名单里、不再接任何新活**（会话与轨迹保留）；已在跑的任务不打断，交活后照常回投与审查。此后你 group_status 看到的成员数不含 TA。`);
+    }
     return { ok: true, member: { id: member.id, name: member.name, role: member.role, status: member.status, source: member.source ?? "engine" } };
   } catch (error: any) {
     bossStore.save();
