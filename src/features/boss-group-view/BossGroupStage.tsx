@@ -15,7 +15,7 @@ type Snapshot = {
   group: {
     id: string; name: string; paused: boolean; bossThreadId: string;
     policy: { maxRejects: number; stallMs: number; budgetMinutes: number };
-    members: { id: string; name: string; role: string; status: string; lockedTaskIds: string[] }[];
+    members: { id: string; name: string; role: string; status: string; lockedTaskIds: string[]; source?: string }[];
     pinnedEventIds: string[];
   };
   tasks: { id: string; title: string; status: string }[];
@@ -160,7 +160,7 @@ export function BossGroupStage() {
           <div className="boss-stage-feed" ref={feedRef}>
             {events.length === 0 ? <div className="boss-panel-sub">在下面说第一句话，把活派起来。</div> : null}
             {events.map((e) => {
-              if (isChat(e.kind)) {
+              if (isChatKind(e.kind)) {
                 const side = e.kind === "chat-user" ? "right" : "left";   // 正常群聊：只有你在右，BOSS/成员都在左
                 const who = e.kind === "chat-user" ? "你" : e.kind === "chat-boss" ? "BOSS" : memberName(e.memberId);
                 return (
