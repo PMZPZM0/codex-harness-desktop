@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_EFFORT, ALL_EFFORTS } from "../lib/effort";
 import { matchModelSpec } from "../lib/model-specs";
 
-export type ProviderModel = { id: string; enabled?: boolean; contextWindow?: number; maxOutputTokens?: number; inputTypes?: ("text" | "image" | "video")[]; outputTypes?: ("text" | "image" | "video")[]; efforts?: string[]; effort?: string };
+export type ProviderModel = { id: string; enabled?: boolean; contextWindow?: number; maxOutputTokens?: number; inputTypes?: ("text" | "image" | "video")[]; outputTypes?: ("text" | "image" | "video")[]; efforts?: string[]; effort?: string; credits?: string };
 
 /** 把「测试连接」的失败原文翻译成能直接照做的中文。
  *  认证失败是最容易被笼统提示吞掉的一类：供应商原文里的措辞决定排查方向不同——
@@ -30,7 +30,7 @@ export function classifyProviderProbeFailure(raw: string): string {
  *  Responses，写 chat 会让整份配置拒载）；`upstreamProtocol` 是告诉**本地桥**「上游真实是什么协议」。 */
 export type UpstreamProtocol = "auto" | "chat" | "responses" | "anthropic";
 
-export type CustomModel = { provider: string; name: string; model: string; baseUrl: string; contextWindow?: number; wireApi?: "responses" | "chat" | "auto"; hasKey?: boolean; effort?: string; models?: ProviderModel[]; enabled?: boolean; upstreamProtocol?: UpstreamProtocol };
+export type CustomModel = { provider: string; name: string; source?: "cloud" | "relay" | "custom"; model: string; baseUrl: string; contextWindow?: number; wireApi?: "responses" | "chat" | "auto"; hasKey?: boolean; effort?: string; models?: ProviderModel[]; enabled?: boolean; upstreamProtocol?: UpstreamProtocol };
 
 export type ProviderDraft = {
   provider: string;
@@ -55,6 +55,7 @@ export type ProviderSummary = {
   provider: string;
   name: string;
   model: string;
+  source?: "cloud" | "relay" | "custom";
   baseUrl: string;
   contextWindow?: number;
   wireApi?: "responses" | "chat" | "auto";

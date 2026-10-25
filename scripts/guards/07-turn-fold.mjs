@@ -595,10 +595,10 @@ export async function run() {
     (/setModelEditor\(\(editor\) => \{/.test(appC3) && /paramsDirty/.test(appC3))
       ? ok("【32】补全后的参数回填走函数式 setState + 尊重 paramsDirty（手改过不覆盖）")
       : fail("【32】参数回填用过期闭包或无视手改 —— 补全后参数可能没回填/被覆盖");
-    // 模型下拉徽标化（09-18 用户「选择样式还可以优化一下，现在不好看」）
-    (/function modelBadges\(/.test(appC3) && /badges: modelBadges\(model\)/.test(appC3) && /\.menu-item-badges/.test(cssNC) && /\.menu-item-check/.test(cssNC))
-      ? ok("【32】模型下拉每行带「图片/视频/上下文/输出」徽标 + 当前项右侧勾选")
-      : fail("【32】模型下拉没有参数徽标 —— 用户嫌「不好看」的那版");
+    // 模型下拉徽标化（09-18 用户「选择样式还可以优化一下，现在不好看」；10-25 当前项改用底色，不再显示勾选）
+    (/function modelBadges\(/.test(appC3) && /badges: modelBadges\(model\)/.test(appC3) && /\.menu-item-badges/.test(cssNC) && !/menu-item-check/.test(appC3))
+      ? ok("【32】模型下拉每行带「图片/视频/上下文/输出」徽标，当前项用底色标识（不显示勾选）")
+      : fail("【32】模型下拉徽标缺失，或右侧勾选又回来了（用户 10-25：选中有底色就行）");
     // 09-18 新形态（用户：「把模型配置里面思考选择删了，每个独立会话选择那个就生效那个」）：
     //   档位**不再是模型条目的属性** —— 模型配置里没有勾选区，菜单恒为全集，
     //   选哪个只落**当前会话**；模型/网关真不支持某档 → 发送失败自动学会 + 降档重发。
@@ -2819,7 +2819,7 @@ export async function run() {
   (/const upstreamProtocol = normalizeUpstreamProtocol\(input\.upstreamProtocol \?\? existing\?\.upstreamProtocol\);/.test(mainSrc72) ? ok : fail)(
     "【72】保存时归一并在未传值时沿用旧值"
   );
-  (/upstreamProtocol\?: BridgeMode \}\) => \{/.test(mainSrc72) ? ok : fail)("【72】custom-model:save 入参带该字段");
+  (/custom-model:save", async \(_event, input: \{[^}]*upstreamProtocol\?: BridgeMode/.test(mainSrc72) ? ok : fail)("【72】custom-model:save 入参带该字段");
   (/upstreamProtocol: dedupedDraft\.upstreamProtocol \?\? "auto"/.test(hookSrc72) ? ok : fail)(
     "【72】渲染层保存时带上该字段（缺省 auto）"
   );

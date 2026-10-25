@@ -723,18 +723,29 @@
   z-index: 30;
   border-radius: 11px;
   min-width: 150px;
-  max-height: 320px;
-  padding: 4px;
+  max-height: 360px;
+  padding: 5px;
   position: absolute;
   bottom: calc(100% + 8px);
   left: 0;
   overflow-y: auto;
   box-shadow: var(--shadow);
   width: max-content;
-  max-width: min(360px, calc(100vw - 64px));
+  max-width: min(440px, calc(100vw - 64px));
 }
 .composer-menu .composer-menu-pop {
   animation: 0.14s menu-pop;
+}
+/* 模型下拉：贴着「模型」选项按钮水平居中（10-25 用户：不是贴输入框，是贴按钮）。 */
+.model-controls .composer-menu-pop {
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  animation: 0.14s menu-pop-center;
+}
+@keyframes menu-pop-center {
+  0% { opacity: 0; transform: translate(-50%, 4px); }
+  to { opacity: 1; transform: translateX(-50%); }
 }
 @keyframes menu-pop {
   0% {
@@ -751,11 +762,12 @@
   text-align: left;
   background: 0 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 4px 9px;
+  min-height: 32px;
+  padding: 5px 8px;
   display: flex;
 }
 .composer-menu-pop button:hover,
@@ -763,13 +775,14 @@
   background: var(--panel-2);
 }
 .composer-menu-pop .menu-item-icon {
-  width: 16px;
+  width: 20px;
+  height: 20px;
   color: var(--text);
-  flex: 0 0 16px;
+  flex: 0 0 20px;
   place-items: center;
   display: grid;
 }
-/* 模型菜单按供应商着色：图标位显示稳定色调圆点（同一供应商所有模型同色） */
+/* 模型行：供应商色调圆点；有显示名时改成同色调的字母方块（与上游图标位对齐） */
 .composer-menu-pop .menu-item-icon.tone-dot::before {
   content: "";
   width: 9px;
@@ -777,6 +790,22 @@
   border-radius: 50%;
   display: block;
 }
+.composer-menu-pop .menu-item-icon.model-monogram {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+.composer-menu-pop .menu-item-icon.model-monogram::before { display: none; }
+.composer-menu-pop .menu-item-icon.model-monogram.tone-blue { background: color-mix(in srgb, #2f6bdd 15%, transparent); color: #2f6bdd; }
+.composer-menu-pop .menu-item-icon.model-monogram.tone-green { background: color-mix(in srgb, #1a7f37 15%, transparent); color: #1a7f37; }
+.composer-menu-pop .menu-item-icon.model-monogram.tone-amber { background: color-mix(in srgb, #e8830c 15%, transparent); color: #e8830c; }
+.composer-menu-pop .menu-item-icon.model-monogram.tone-pink { background: color-mix(in srgb, #d6409f 15%, transparent); color: #d6409f; }
+.composer-menu-pop .menu-item-icon.model-monogram.tone-violet { background: color-mix(in srgb, #7048e8 15%, transparent); color: #7048e8; }
+.composer-menu-pop .menu-item-icon.model-monogram.tone-cyan { background: color-mix(in srgb, #0b7285 15%, transparent); color: #0b7285; }
 .composer-menu-pop .menu-item-icon.tone-blue::before { background: #2f6bdd; }
 .composer-menu-pop .menu-item-icon.tone-green::before { background: #1a7f37; }
 .composer-menu-pop .menu-item-icon.tone-amber::before { background: #e8830c; }
@@ -792,6 +821,7 @@
 .composer-menu-pop .menu-item-icon.tone-violet > svg { color: #7048e8; }
 .composer-menu-pop .menu-item-icon.tone-cyan > svg { color: #0b7285; }
 .composer-menu-pop .menu-item-text {
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 1px;
   min-width: 0;
@@ -802,6 +832,9 @@
   color: var(--text);
   font-size: 12.5px;
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .composer-menu-pop .menu-item-text small {
   color: var(--faint);

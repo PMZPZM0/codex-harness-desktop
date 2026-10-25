@@ -3,7 +3,7 @@ import { useLayoutEffect, useState, useRef, useEffect, useMemo } from "react";
 import type { KeyboardEvent } from "react";
 import { promptImagePaths } from "../../lib/prompt-images";
 import { promptFilePaths, shouldSavePastedTextAsFile } from "../../lib/composer-attachments.mjs";
-import { ChevronDown, Eye, Video, CircleCheck, Search, Image, FileCode2 } from "lucide-react";
+import { ChevronDown, Eye, Video, Search, Image, FileCode2 } from "lucide-react";
 import { rebuildComposerDom } from "../../lib/rebuild-composer-dom";
 import { serializeComposerDom } from "../../lib/serialize-composer-dom";
 import { basename } from "../../lib/basename";
@@ -153,9 +153,19 @@ export function ComposerEditor({ value, placeholder, editorRef, domValueRef, mak
   );
 }
 
-export type ComposerMenuOption = { value: string; title: string; desc?: string; badges?: { text: string; kind?: "vision" | "video" }[] };
+export type ComposerMenuOption = { value: string; title: string; desc?: string; badges?: { text: string; kind?: "vision" | "video" }[]; credits?: string; monogram?: string; tone?: string };
 
-export function ComposerMenu({ icon, label, options, value, onChange, disabled, title, width, tone, toneOf }: { icon: any; label: string; options: ComposerMenuOption[]; value: string; onChange: (value: string) => void; disabled?: boolean; title?: string; width?: number; tone?: "danger"; toneOf?: (option: ComposerMenuOption) => string | undefined }) {
+/** 上游倍率 "x0.21" → "0.21x"；保留上游小数位（0.258 不能四舍五入成 0.26）。 */
+function creditLabel(raw?: string): string {
+  const text = String(raw ?? "").trim();
+  if (!text) return "";
+  const match = text.match(/-?\d+(?:\.\d+)?/);
+  if (!match) return text;
+  const trimmed = match[0].includes(".") ? match[0].replace(/0+$/, "").replace(/\.$/, "") : match[0];
+  return `${trimmed}x`;
+}
+
+export function ComposerMenu({ icon, label, options, value, onChange, disabled, title, width, tone, toneOf, onOpen }: { icon: any; label: string; options: ComposerMenuOption[]; value: string; onChange: (value: string) => void; disabled?: boolean; title?: string; width?: number; tone?: "danger"; toneOf?: (option: ComposerMenuOption) => string | undefined; onOpen?: () => void }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -170,7 +180,7 @@ export function ComposerMenu({ icon, label, options, value, onChange, disabled, 
   const Icon = icon;
   return (
     <div className={`composer-menu ${open ? "open" : ""}`} ref={wrapRef}>
-      <button type="button" className={`composer-setting ${tone === "danger" ? "danger" : ""}`} disabled={disabled} title={title ?? label} onClick={() => setOpen((currentOpen) => !currentOpen)}>
+      <button type="button" className={`composer-setting ${tone === "danger" ? "danger" : ""}`} disabled={disabled} title={title ?? label} onClick={() => setOpen((currentOpen) => { const next = !currentOpen; if (next) onOpen?.(); return next; })}>
         <Icon size={14} />
         <span>{current?.title ?? label}</span>
         <ChevronDown size={12} className={`menu-caret ${open ? "up" : ""}`} />
@@ -178,14 +188,13 @@ export function ComposerMenu({ icon, label, options, value, onChange, disabled, 
       {open && (
         <div className="composer-menu-pop" role="listbox" aria-label={label} style={width ? { width } : undefined}>
           {options.map((option) => {
-            const itemTone = toneOf?.(option);
+            const itemTone = toneOf?.(option) ?? option.tone;
             return (
-              <button type="button" role="option" aria-selected={option.value === value} key={option.value} className={option.value === value ? "active" : ""} onClick={() => { onChange(option.value); setOpen(false); }}>
-                <span className={`menu-item-icon${itemTone ? ` tone-dot tone-${itemTone}` : ""}`} />
+              <button type="button" role="option" aria-selected={option.value === value} key={option.value} data-value={option.value} className={option.value === value ? "active" : ""} onClick={() => { onChange(option.value); setOpen(false); }}>
+                <span className={`menu-item-icon${itemTone ? ` tone-dot tone-${itemTone}` : ""}${option.monogram ? " model-monogram" : ""}`}>{option.monogram ?? null}</span>
                 <span className="menu-item-text"><strong>{option.title}</strong>{option.desc && option.desc !== option.title ? <small>{option.desc}</small> : null}</span>
                 {option.badges?.length ? <span className="menu-item-badges">{option.badges.map((badge) => <em key={badge.text} className={badge.kind ? `badge-${badge.kind}` : undefined}>{badge.kind === "vision" ? <Eye size={10} /> : badge.kind === "video" ? <Video size={10} /> : null}{badge.text}</em>)}</span> : null}
-                {/* 勾选挪到最右侧：左侧图标位让给「供应商色调圆点」，跨供应商的模型一眼看出是哪家 */}
-                {option.value === value ? <CircleCheck size={14} className="menu-item-check" aria-hidden /> : null}
+                {option.credits ? <span className="menu-item-credit" title="上游积分倍率">{creditLabel(option.credits)}</span> : null}
               </button>
             );
           })}

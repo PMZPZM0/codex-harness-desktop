@@ -88,6 +88,31 @@ const CHECKS = [
     },
   },
   {
+    id: "model-menu",
+    name: "模型下拉：居中于输入框 + 倍率右列 + 当前项只用底色",
+    run: async (h) => {
+      await h.waitFor(`!!document.querySelector(".model-controls .composer-menu .composer-setting")`, { label: "模型按钮", timeoutMs: 15000 });
+      await h.eval(`(function(){ document.querySelector(".model-controls .composer-menu .composer-setting")?.click(); return 1; })()`);
+      await wait(500);
+      const menu = await h.eval(`(function(){
+        const pop=document.querySelector(".model-controls .composer-menu-pop");
+        const btn=document.querySelector(".model-controls .composer-menu .composer-setting");
+        if(!pop||!btn) return null;
+        const r=pop.getBoundingClientRect(), b=btn.getBoundingClientRect();
+        return { width:r.width, centerDelta:Math.abs((r.left+r.right)/2-(b.left+b.right)/2), gap:Math.round(b.top-r.bottom),
+          rows:pop.querySelectorAll("button").length,
+          checks:pop.querySelectorAll(".menu-item-check").length,
+          credits:[...pop.querySelectorAll(".menu-item-credit")].map((x)=>x.textContent) };
+      })()`).catch(() => null);
+      h.check("④ 模型下拉：贴着「模型」按钮居中、当前项无右侧勾选、倍率独立右列",
+        Boolean(menu && menu.width >= 360 && menu.centerDelta <= 2 && menu.gap >= 4 && menu.gap <= 12 && menu.rows >= 2 && menu.checks === 0
+          && menu.credits.every((text) => /^\d+(?:\.\d+)?x$/.test(text))),
+        JSON.stringify(menu));
+      await h.pressKey("Escape");
+      await wait(200);
+    },
+  },
+  {
     id: "function-menu",
     name: "🧩 功能入口：新建/搜索下面或侧栏底部 + 拖动排序 + 更多 + 首次教程（10-24）",
     run: async (h) => {
