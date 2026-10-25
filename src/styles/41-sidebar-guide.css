@@ -6,21 +6,23 @@
 .sidebar-quick {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin: 10px 0 4px;
+  gap: 2px;
+  margin: 10px 0 6px;
   border: 0;
   border-radius: 0;
   overflow: visible;
   background: transparent;
 }
+/* 10-25 用户令：三行（新建任务 / BOSS 会话 / 拓展功能）完全同版式 —— 同高、同字号、
+   同字重、统一靠左；只有新建任务带 kbd 快捷键尾标。 */
 .sidebar-quick .sidebar-quick-btn {
   width: 100%;
-  height: 36px;
-  justify-content: center;
-  gap: 7px;
+  height: 34px;
+  justify-content: flex-start;
+  gap: 8px;
   padding: 0 10px;
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: 10px;
   background: transparent;
   color: var(--text);
   font-size: 13px;
@@ -31,7 +33,7 @@
 }
 .sidebar-quick .sidebar-quick-btn > span {
   flex: 0 1 auto;
-  text-align: center;
+  text-align: left;
   white-space: nowrap;
 }
 .sidebar-quick .sidebar-quick-btn:hover {
@@ -46,14 +48,7 @@
   border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
 }
 .sidebar-quick .sidebar-quick-btn.primary svg { color: var(--accent); }
-.sidebar-quick .sidebar-quick-btn.sidebar-quick-search {
-  height: 32px;
-  justify-content: flex-start;
-  color: var(--muted);
-}
-.sidebar-quick .sidebar-quick-btn.sidebar-quick-search:hover {
-  color: var(--text);
-}
+/* search/拓展功能行与其它行完全一致（10-25 统一版式，不再矮 4px / 不再灰字）。 */
 .sidebar-quick .sidebar-quick-btn:focus-visible {
   outline: none;
   box-shadow: inset 0 0 0 2px var(--accent);
@@ -475,19 +470,18 @@
   align-items: center;
   gap: 7px;
   width: 100%;
-  height: 26px;
-  margin-top: 6px;
+  height: 34px;
+  margin-top: 2px;
   padding: 0 10px;
   border: 0;
-  border-top: 1px solid var(--line);
   border-radius: 0;
   /* ⛔ 暗色下原生 button 会按浅色 UA 画成 #efefef 浅底（全站无 color-scheme）⇒ background+appearance 双保险 */
   appearance: none;
   background: transparent;
-  color: var(--muted);
-  font-size: 11.5px;
+  color: var(--text);
+  font-size: 13px;
   font-weight: 500;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   text-align: left;
   cursor: pointer;
   transition: color 0.15s ease;
@@ -515,7 +509,10 @@
 }
 /* 7 行并排时行高收一点，给列表留空间（只在底部组生效，顶部快捷胶囊不受影响） */
 .sidebar-nav-bottom .sidebar-cap-row {
-  height: 30px;
+  height: 34px;
+  gap: 8px;
+  padding: 0 10px;
+  font-size: 13px;
 }
 
 /* ── 10-25 用户令重排：三行快捷按钮统一**简洁展示**（靠左、无底色，仅 hover 提亮）；
