@@ -151,6 +151,7 @@ import type { HarnessAppApi } from "../../../app-state/useHarnessApp";
 import { ComposerComposerCardStack } from "./03-composer/01-composer-card-stack";
 import { AgentAskCard } from "./03-composer/03-agent-ask-card";
 import { ArchiveToast } from "../../../../components/ArchiveToast";
+import { UpdateProgressBar } from "../../../../components/UpdateProgressBar";
 import { ComposerComposerForm } from "./03-composer/02-composer-form";
 
 export function MainStageComposer({ app }: { app: HarnessAppApi }) {
@@ -387,6 +388,7 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                         <button onClick={() => setUpdateNotice(null)}>稍后</button>
                         <button className="primary" onClick={() => void runUpdateDownload()} disabled={updateDownloading}>
                           {updateDownloading ? (updateProgress > 0 ? `下载中 ${Math.round(updateProgress * 100)}%` : "下载中…") : "立即更新"}
+                          <UpdateProgressBar active={updateDownloading} progress={updateProgress} indeterminate={updateProgress <= 0} />
                         </button>
                       </div>
                     </div>,

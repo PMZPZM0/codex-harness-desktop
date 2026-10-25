@@ -162,5 +162,32 @@ console.log(JSON.stringify(out));
   ok(envClass, `⚠ 真跑子进程被环境阻断（${behaviorDetail.slice(0, 60)}）——本条未跑，非逻辑红；环境恢复后复核`);
 }
 
+/* ⑤ 更新进度条（10-25 用户令：「检查更新和下载进度都加进度条，默认隐藏，鼠标放上去显示」）
+   ⛔ 三条一起成立才是这个需求：进行中才渲染 / 默认透明 / hover 或键盘聚焦显形。
+   检查更新没有百分比事件（只有 checking 布尔）⇒ 必须走 indeterminate；下载才有真实 0..1。 */
+{
+  const comp = readFileSync(join(ROOT, "src/components/UpdateProgressBar.tsx"), "utf8");
+  ok(/if \(!active\) return null;/.test(comp),
+    "进度条只在进行中渲染（空闲时 hover 出一条 0% 空槽 = 噪声）");
+  ok(/indeterminate/.test(comp) && /Math\.max\(0, Math\.min\(1/.test(comp),
+    "支持不确定态（检查更新无百分比）+ 下载百分比夹到 0..1");
+  const sidebarUi = readFileSync(join(ROOT, "src/features/app-view/AppView/01-sidebar-shell.tsx"), "utf8");
+  ok(/<UpdateProgressBar active=\{updateChecking\} indeterminate \/>/.test(sidebarUi),
+    "账号菜单「检查更新」挂 indeterminate 进度条");
+  ok(/<UpdateProgressBar active=\{updateDownloading\} progress=\{updateProgress\}/.test(sidebarUi),
+    "账号菜单「立即更新」挂真实下载进度");
+  const composerUi = readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/03-composer.tsx"), "utf8");
+  ok(/<UpdateProgressBar active=\{updateDownloading\} progress=\{updateProgress\}/.test(composerUi),
+    "更新提示卡「立即更新」也挂同一条进度条（两处下载入口不许一个有一个没有）");
+  const css = readFileSync(join(ROOT, "src/styles/17-visual-cards.css"), "utf8");
+  ok(/\.update-progress-bar \{[\s\S]{0,300}?opacity:\s*0/.test(css),
+    "进度条默认隐藏（opacity:0）");
+  ok(/\.account-menu-item:hover > \.update-progress-bar[\s\S]{0,400}?opacity:\s*1/.test(css)
+    && /\.update-card-actions button:hover > \.update-progress-bar/.test(css),
+    "hover 显形覆盖账号菜单与更新卡两个入口");
+  ok(/\.update-progress-bar\.indeterminate \.update-progress-fill \{[\s\S]{0,120}?animation:/.test(css),
+    "不确定态有循环动画（检查更新期间看得出来在动）");
+}
+
 console.log(`\n【update-persistence】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
