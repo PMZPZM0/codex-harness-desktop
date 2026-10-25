@@ -364,6 +364,18 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   /* 10-25：新建项目弹窗（ZCode 式三选一）。选完目录后与 chooseWorkspace 同款落地：
      workspace 三处同步（state/ref/localStorage）—— 不只改 state，侧栏项目分组才认。 */
   const [newProjectOpen, setNewProjectOpen] = useState(false);
+  /* 10-25 用户：项目名可改（只影响侧栏显示，不动磁盘目录）；存 localStorage。 */
+  const [projectNames, setProjectNames] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem("project-name-overrides-v1") || "{}") as Record<string, string>; } catch { return {}; }
+  });
+  const projectNameOf = (cwd: string) => (projectNames[cwd] ?? "").trim() || basename(cwd);
+  const renameProject = (cwd: string, name: string) => {
+    const next = { ...projectNames };
+    const trimmed = name.trim();
+    if (trimmed) next[cwd] = trimmed; else delete next[cwd];
+    setProjectNames(next);
+    try { localStorage.setItem("project-name-overrides-v1", JSON.stringify(next)); } catch { /* 隐私模式 */ }
+  };
   const applyNewProject = (dir: string) => {
     setNewProjectOpen(false);
     setWorkspace(dir);
@@ -614,13 +626,15 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                             <ChevronDown size={12} className={`project-item-chevron ${expanded ? "open" : ""}`} />
                             {/* 色相只给文件夹；箭头保持中性（它是展开/折叠的**状态**指示，染色会跟文件夹抢注意力） */}
                             <FolderOpen size={13} className="ic-amber" />
-                            <strong>{basename(cwd)}</strong>
+                            <strong>{projectNameOf(cwd)}</strong>
                           </button>
                           {/* 10-25 用户令（对照 ZCode）：项目行加「新建会话」图标（··· 之前）——
                               点击 = 切 workspace 到该项目 → 开新会话（首条消息发出时 cwd 落到该项目）。 */}
-                          <button className="project-item-new-btn" title={"在 " + basename(cwd) + " 新建任务"} onClick={(event) => { event.stopPropagation(); event.currentTarget.blur(); bagSetWorkspaceForProject(cwd); }}><MessageCirclePlus size={13} /></button>
+                          <button className="project-item-new-btn" title={"在 " + projectNameOf(cwd) + " 新建任务"} onClick={(event) => { event.stopPropagation(); event.currentTarget.blur(); bagSetWorkspaceForProject(cwd); }}><MessageCirclePlus size={13} /></button>
                           <button className="project-item-menu-btn" title="项目操作" aria-expanded={projectMenu === cwd} onClick={(event) => { event.stopPropagation(); setProjectMenu(projectMenu === cwd ? null : cwd); }}><MoreHorizontal size={14} /></button>
                           {projectMenu === cwd && <div className="project-menu">
+                            <button onClick={() => { setProjectMenu(null); void app.openAppPrompt("修改项目名称", projectNameOf(cwd)).then((next) => { if (next != null) renameProject(cwd, next); }); }}><PenLine size={14} />编辑项目名称</button>
+                            <button onClick={() => { setProjectMenu(null); void window.codex.shellReveal(cwd).catch(() => undefined); }}><FolderOpen size={14} />打开项目文件</button>
                             <button className="danger" onClick={() => { setProjectMenu(null); unregisterKnownProject(cwd); void deleteThreadsByCwd(cwd); }}><Trash2 size={14} />删除项目（含全部会话）</button>
                           </div>}
                         </div>
