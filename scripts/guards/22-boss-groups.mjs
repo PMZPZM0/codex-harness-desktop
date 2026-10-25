@@ -290,6 +290,14 @@ if (state) {
      ② 「记忆蒸馏器又是什么玩意…删了，让 codex 自己蒸馏记忆」+「到阈值了，会话自己蒸馏就行了」
      ③ 「这个重试又是什么东西…重试删掉」 */
   const runnerSrc = read("electron/boss-groups/runner.ts");
+  /* ⛔⛔ 10-25 用户实测：「成员会话的汇总消息没有发送到主对话…这叫什么群聊」「右侧群成员头像也没有」
+     「成员也没有更新，完全看不懂」（同一 BOSS 会话建过两个群，弹窗停在旧的） */
+  ok(/交活：「\$\{task\.title\}」/.test(runnerSrc) && /postToBoss\(group, `\[群事件\] \$\{deliverer\.name\} 交活/.test(runnerSrc),
+    "成员交活的成品要**汇总到主对话**（否则就是各说各话，不是群聊）");
+  ok(/boss-avatar/.test(read("src/features/boss-group-view/BossGroupPanel.tsx")) && /boss-member-strip/.test(read("src/features/boss-group-view/BossGroupPanel.tsx")),
+    "群面板要有成员头像（顶栏头像条 + 成员气泡头像）");
+  ok(/lastActivityAt/.test(read("electron/features/boss-groups-ipc.ts")),
+    "群列表按最近活动排序（同一会话建过多个群时，弹窗要落在**现在这个**群上）");
   ok(!/REVIEW_PROMPT/.test(runnerSrc) && !/SYSTEM TASK · 独立评审/.test(runnerSrc),
     "⛔ 不再有「独立评审」提示词/会话（评审由会话自己用技能做）");
   ok(/已交活，请\*\*用你自己的评审技能\*\*判一下/.test(runnerSrc),

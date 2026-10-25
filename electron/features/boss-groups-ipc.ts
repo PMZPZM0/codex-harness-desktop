@@ -87,6 +87,19 @@ export const bossGroupsFeature = defineFeature<null>({
     } catch { /* 建不了就让引擎报错，别吞 */ }
     ipcHost.handle("boss-groups:list", async () => {
       const state = await bossStore.load();
+      /* 10-25 用户实测：「成员也没有更新，完全看不懂」—— 同一个 BOSS 会话里建过两个群
+         （旧的成员全被移出、新的在跑），弹窗取的是**第一个匹配**的旧群。
+         ⇒ 按**最近活动**排序，弹窗/下拉取到的第一个匹配就是"现在这个群"。 */
+      const lastActivityAt = (groupId: string, createdAt: number) => {
+        let latest = createdAt || 0;
+        for (const event of state.events ?? []) {
+          if (event.groupId === groupId && Number(event.at ?? 0) > latest) latest = Number(event.at ?? 0);
+        }
+        for (const task of Object.values(state.tasks ?? {})) {
+          if (task.groupId === groupId && Number(task.updatedAt ?? 0) > latest) latest = Number(task.updatedAt ?? 0);
+        }
+        return latest;
+      };
       return Object.values(state.groups).map((group) => ({
         id: group.id,
         name: group.name,
@@ -100,8 +113,9 @@ export const bossGroupsFeature = defineFeature<null>({
            （用户实测：「移除的群成员没有真实生效，Codex 还数着他」）。 */
         memberCount: group.members.filter((m: any) => String(m?.status ?? "") !== "removed").length,
         removedCount: group.members.filter((m: any) => String(m?.status ?? "") === "removed").length,
+        lastActivityAt: lastActivityAt(group.id, Number(group.createdAt ?? 0)),
         taskCount: Object.values(state.tasks).filter((task) => task.groupId === group.id).length,
-      }));
+      })).sort((a: any, b: any) => Number(b.lastActivityAt ?? 0) - Number(a.lastActivityAt ?? 0));
     });
 
     /* BOSS 会话的会话 id 重绑（10-25）：rollout 丢了的会话引擎无法继续，渲染层会重建一个会话

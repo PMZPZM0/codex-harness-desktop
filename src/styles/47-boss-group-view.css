@@ -307,3 +307,29 @@
 /* popover 里的群选择器与提示 */
 .boss-members-pop-select { flex: 1; min-width: 0; max-width: none; }
 .boss-members-pop-hint { font-size: 10.5px; color: var(--faint, var(--muted)); border-top: 1px dashed var(--line); padding-top: 6px; }
+
+/* ── 群成员头像（10-25 用户实测：「右侧群成员头像也没有」）────────────────────
+   群聊现场要能一眼看到成员在不在、在忙还是在审。头像 = 名字首字 + 角色色环。 */
+.boss-avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; flex: none;
+  border-radius: 50%;
+  font-size: 11px; font-weight: 600; line-height: 1;
+  color: hsl(var(--av-hue, 40) 70% 34%);
+  background: hsl(var(--av-hue, 40) 72% 88%);
+  border: 1px solid hsl(var(--av-hue, 40) 55% 70%);
+}
+.boss-avatar[data-status="busy"], .boss-avatar[data-status="running"] {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 45%, transparent);
+}
+.boss-avatar[data-status="reviewing"] {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn, #d29922) 45%, transparent);
+}
+.boss-avatar[data-status="locked"] { opacity: 0.55; }
+.boss-member-strip {
+  display: inline-flex; align-items: center; gap: 4px;
+  max-width: 46%; overflow: hidden;
+  padding-right: 4px;
+}
+.boss-member-strip .boss-avatar + .boss-avatar { margin-left: -6px; }
+.boss-chat-row.side-left { align-items: flex-start; }
