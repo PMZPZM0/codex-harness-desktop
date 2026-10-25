@@ -317,14 +317,23 @@ if (state) {
      有删除会话功能就行了」 */
   /* ⛔⛔ 10-25 用户实测三处：
      ① 「BOSS 他根本不知道他这个会话是干嘛的」—— 之前靠 boss-home/AGENTS.md 注入，
-        cwd 改成用户项目后引擎读不到 ⇒ 改成**会话级注入**（每轮正文前挂一段，显示层剥掉）。
+        cwd 改成用户项目后引擎读不到 ⇒ 改成**会话级注入**。
+        ⚠️ 10-26 修正：当时是"每轮正文前挂一段 + 显示层剥"，结果被渲染成一大块用户消息（用户截图）
+        ⇒ 现在走 thread/start 的 developerInstructions（真正的内置注入）。
      ② 「BOSS 会话跟普通会话串了」—— 自愈重建时无条件登记身份 ⇒ 普通会话被当成 BOSS。
      ③ 「我要经常删了BOSS会话，重新建」—— 删了要从身份登记里摘掉，重建要搬迁而不是叠加。 */
   const sendSrc = read("src/features/app-state/parts/part08/02-seg/send.tsx");
-  ok(/BOSS_ROLE_PROMPT/.test(sendSrc) && /bossRolePrefix/.test(sendSrc),
-    "BOSS 会话每轮都注入角色说明（⛔ 不再依赖 cwd 的 AGENTS.md）");
-  ok(/<!--boss-role-->/.test(read("src/lib/user-refs.ts")),
-    "角色说明在气泡里**不可见**（userDisplayText 剥掉带标记的段）");
+  const segSrc = read("src/features/app-state/parts/part08/01-seg.tsx");
+  /* ⛔⛔ 10-26 用户截图：角色说明被当**用户消息**整块显示（连 <!--boss-role--> 标记都露出来）。
+     契约改成：**内置注入** = thread/start 的 developerInstructions（会话级系统指令），
+     既不在气泡里、也不每轮重发。 */
+  ok(/BOSS_ROLE_PROMPT/.test(segSrc) && /bossRoleSeed/.test(segSrc)
+    && /developerInstructions = \[bossRoleSeed/.test(segSrc),
+    "指挥中枢角色说明走 thread/start 的 developerInstructions（内置注入，不是消息正文）");
+  ok(!/BOSS_ROLE_PROMPT/.test(sendSrc) && !/bossRolePrefix/.test(sendSrc),
+    "⛔ 角色说明**不许**拼进用户消息正文（拼进去就必然被渲染成用户说过的话）");
+  ok(/const withoutRole = clean\.replace\(\/<!--boss-role-->/.test(read("src/lib/user-refs.ts")),
+    "⛔ 老会话的角色段在 parseUserRefs.cleanText 这一处剥掉（气泡/标题/复制同一口）");
   ok(/wasBoss/.test(sendSrc) && /if \(wasBoss\) renameBossSessionId/.test(sendSrc),
     "⛔ 身份搬迁只对**本来就是 BOSS 会话**的会话做（否则普通会话被串成 BOSS）");
   ok(/removeBossSessionId\(id\)/.test(read("src/features/app-state/parts/part08/01-seg.tsx")),

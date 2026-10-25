@@ -16,7 +16,7 @@ import { pickEnhanceHint, shouldShowHintAfterSends, isLongPrompt, HINT_COOLDOWN_
 import { nowBlock } from "../../../../../lib/now-block.mjs";
 import { setTurnWindowTail } from "../../../../../lib/turn-history.mjs";
 /* ⛔ 会话重建后要把中枢归属搬过去（见下方 bossGroupRebind 那段注释）。 */
-import { BOSS_ROLE_PROMPT, ensureBossMemoryWorkspace, ensureBossSessionRegistered, getBossThreads, renameBossSessionId, setBossHomeThreadId } from "../../../../boss-group-view";
+import { ensureBossMemoryWorkspace, ensureBossSessionRegistered, getBossThreads, renameBossSessionId, setBossHomeThreadId } from "../../../../boss-group-view";
 import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, computeFoldSummary, topToolGroup, isTurnRunning, normalizeLoadedThread, type FoldUnit } from "../../../../../lib/turn-fold";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../lib/user-refs";
 import { effortLabels } from "../../../../../lib/effort-labels";
@@ -350,19 +350,13 @@ export async function send(bag: Bag, event?: FormEvent) {
       } catch { /* 统一记忆读不到不阻塞发送（与上面两段同纪律） */ }
     }
     bag.dbg("send-memory", { ms: Math.round(performance.now() - memoryStartedAt) });
-    /* ⛔ 10-25：指挥中枢每轮都带上角色说明（模型必须知道自己是中枢、干什么活）。
-       ⛔ 之前靠 <userData>/boss-home/AGENTS.md 注入，但指挥中枢的 cwd 改成用户自己选的
-          项目目录后，引擎只读 cwd 下的 AGENTS.md ⇒ 那份说明**根本读不到**。 */
-    const bossRolePrefix = (() => {
-      try {
-        const boss = getBossThreads();
-        const id = String(bag.thread?.id ?? "");
-        const isBoss = Boolean(id) && ((boss.sessionIds ?? []).includes(id) || (boss.bossIds ?? []).includes(id));
-        return isBoss ? BOSS_ROLE_PROMPT : "";
-      } catch { return ""; }
-    })();
+    /* ⛔⛔ 10-26 用户实测截图：中枢的角色说明被当**用户消息**显示出来（一大块，连 <!--boss-role-->
+       标记都露在气泡里）。根因是它原来被拼在用户正文前面（「先能注入」优先于「注入得对不对」）。
+       ⇒ 已改到 `thread/start` 的 developerInstructions（part08/01-seg.tsx 的 bossRoleSeed）：
+         会话级系统指令，气泡里看不到、也不占每轮上下文。
+       ⛔ 别在这儿再加回来 —— 拼进用户消息就必然会被渲染成用户说过的话。 */
     const input = [
-      ...((messageText || threadReferenceBlocks || inlineFilePaths.length || bag.quoteItem) ? [{ type: "text", text: `${bossRolePrefix}${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${memoryPrefix}${nowBlock()}${threadReferenceSuffix}`, text_elements: [] }] : []),
+      ...((messageText || threadReferenceBlocks || inlineFilePaths.length || bag.quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${memoryPrefix}${nowBlock()}${threadReferenceSuffix}`, text_elements: [] }] : []),
       ...inlineImagePaths.map((path) => ({ type: "localImage", path })),
       ...sendImages.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
     ];
