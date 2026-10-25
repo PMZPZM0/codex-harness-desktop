@@ -202,12 +202,33 @@ export async function poolForBoss(): Promise<{
   return { experts, cliAgents };
 }
 
+/**
+ * 命令模板里 {prompt} 的替换值 —— ⛔ 必须净化为**单行、无 shell 元字符**：
+ *  · 命令交给系统 shell 解析，提示词里的 `& | < > ^ %` 会变成命令分隔 / 重定向 / 变量展开
+ *    ⇒ 任务说明或验收标准里只要出现 `& del ...` 这类内容，就是一条命令注入（两者都来自外部输入）。
+ *  · 换行会把命令截断（运行态压测实测：整条参数被截坏）。
+ *  ⇒ 压成单行 + 去掉元字符（提示词本质是自然语言，去掉这些符号不损失语义）。
+ */
+function promptForCli(text: string): string {
+  return String(text ?? "")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/["`]/g, "'")
+    .replace(/[&|<>^%]/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 /** CLI 成员的派遣：起子进程跑命令模板，stdout 尾部作为成品走同一条审查流水。 */
 async function runCliMember(group: BossGroup, member: GroupMember, task: GroupTask): Promise<void> {
-  const command = String(member.cliCommand ?? "").replace("{prompt}", memberPrompt(group, member, task, task.attempts[task.attempts.length - 1]?.n ?? 1).replace(/"/g, "'"));
+  const command = String(member.cliCommand ?? "").replace("{prompt}", promptForCli(memberPrompt(group, member, task, task.attempts[task.attempts.length - 1]?.n ?? 1)));
   try {
     await new Promise<void>((resolve, reject) => {
-      execFile("cmd", ["/c", command], { cwd: group.workspace || process.cwd(), timeout: 600_000, maxBuffer: 4 * 1024 * 1024, windowsHide: true }, (error, stdout, stderr) => {
+      /* ⛔⛔ 运行态压测实测（10-25）：`execFile("cmd", ["/c", command])` 会把整串命令**再包一层引号**
+         ⇒ 命令里的 `"C:\…\fake-cli-agent.js"` 变成 `"\"C:\…\fake-cli-agent.js\""`，
+         子进程收到带引号的路径，直接 `Cannot find module`。内置模板 `zcode -p "{prompt}"` 全都带引号
+         ⇒ **这条路径此前根本没跑通过**（拉得进来、派得出去、成品是报错）。`windowsVerbatimArguments`
+         让参数原样交给 shell，不再二次加引号。 */
+      execFile("cmd", ["/c", command], { cwd: group.workspace || process.cwd(), timeout: 600_000, maxBuffer: 4 * 1024 * 1024, windowsHide: true, windowsVerbatimArguments: true }, (error, stdout, stderr) => {
         const text = String(stdout ?? "").trim() || String(stderr ?? "").trim();
         if (error && !text) { reject(new Error(`CLI「${member.name}」执行失败：${String(error.message ?? error).slice(0, 200)}`)); return; }
         void settleSubmission(task.id, text.slice(0, 16_000) || "（CLI 没有输出）");
@@ -318,6 +339,13 @@ async function failTask(taskId: string, reason: string) {
   task.status = "failed";
   task.updatedAt = Date.now();
   const group = state.groups[task.groupId];
+  /* ⛔⛔ 释放成员（压测连带发现）：原来只把任务标 failed，成员还留在 busy。
+     加了「一次只能派一条活」的并发闸之后，这条不修就会**永久占死这个成员**（他手上那条任务已经
+     failed，却永远算"在办"）⇒ 之后所有派活都报"手上还有没做完的"。 */
+  const member = group?.members.find((m) => m.id === task.assignee);
+  if (member && member.status === "busy") {
+    member.status = member.lockedTaskIds.length ? "locked" : "idle";
+  }
   bossStore.save();
   emit({ type: "boss-group", phase: "task", groupId: task.groupId, taskId, status: "failed" });
   if (group) await postToBoss(group, `[群事件] 「${task.title}」执行失败：${String(reason).slice(0, 300)}\n需要你决定：换模型重做 / 放宽标准 / 你自己接手。`);

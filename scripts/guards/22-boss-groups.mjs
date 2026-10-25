@@ -615,6 +615,27 @@ if (state) {
     "turn/start 的「会话不可用」判定包含 no rollout found（否则直接 throw ⇒ 红条 + 发不出去）");
   ok(/const failedText = userDisplayText\(/.test(sendFile),
     "发送失败回填只还用户原文（⛔ 不能把记忆段 / SYSTEM TASK 塞回输入框）");
+
+  /* ── 压测抓到的四条真实缺陷：全部钉死，防被后来的重构改软 ───────────────────
+     依据：tests/boss-groups-state.test.mjs（18 条行为级用例）+ 运行态压测
+     （.workbuddy 脚本：真建群 / 真 CLI 子进程 / 40 条并发派活）。
+     ⛔ 这些是「制度失效」类缺陷：守卫 22 到此为止只查字符串，查不出语义 —— 所以这里钉的是
+        **每条闸的存在**，语义由那套 node:test 用例真跑（`npm test`）。 */
+  const bossState = read("electron/boss-groups/state.ts");
+  ok(/一次只能派一条活/.test(bossState),
+    "⛔ 派活有并发闸：同一成员一次只能有一条在办任务（否则两条提示词会进同一条常驻线程，成品/状态互相污染）");
+  ok(/const busyIds = new Set/.test(bossState) && /busyIds\.has\(member\.id\)/.test(bossState),
+    "⛔ 选人时跳过手上已有在办任务的成员（否则一次派多条活会对同一人连派，剩下的全报错）");
+  ok(/当前状态 \$\{task\.status\} 不能标 running/.test(bossState),
+    "⛔ markRunning 有状态闸：只有 assigned 能进 running（迟到回调不许把已打回/已完成的任务拉回来复用旧 attempt）");
+  ok(/member\.lockedTaskIds\.length \? "locked" : "idle"/.test(runnerSrc),
+    "⛔ 任务失败要释放成员（否则 busy 永远挂着，加上并发闸后等于永久占死这个人）");
+  ok(/windowsVerbatimArguments: true/.test(runnerSrc),
+    "⛔ CLI 派遣必须 verbatim 传参（默认会被二次加引号 ⇒ 子进程收到带引号的路径，内置 zcode/qoder 模板全跑不起来）");
+  ok(/function promptForCli/.test(runnerSrc) && /\[&|<>^%\]/.test(runnerSrc),
+    "⛔ 塞进命令行的提示词要净化为单行且剥掉 shell 元字符（任务说明/验收标准都是外部输入 ⇒ 否则是命令注入）");
+  ok(existsSync(join(ROOT, "tests/boss-groups-state.test.mjs")),
+    "群编排有行为级测试（状态机 18 条不变量用例，npm test 真跑）");
 }
 
 console.log(`\n【boss-groups】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

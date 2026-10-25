@@ -134,6 +134,17 @@ export function assignTask(state: BossState, taskId: string, memberId: string): 
   if (member.status === "locked" && member.lockedTaskIds.includes(task.id)) {
     throw new Error(`成员「${member.name}」当前被锁在任务「${task.title}」上`);
   }
+  /* ⛔⛔ 并发唯一性（压测抓到的真实缺陷）：原来这里不看他手上有没有活 ⇒ 同一个成员可以被同时派
+     两条任务并双双 running。成员的常驻线程只有一条 ⇒ 两条提示词会前后脚进同一个会话，
+     成员的上下文互相污染，交活时成员状态（busy/reviewing/idle 只有一个字段）互相踩。
+     ⇒ 一次只许一条「在办」（assigned / running）。reviewing 不算在办：那一步他不占线程，
+        等结论期间可以接新活（打回也只锁那条任务，不影响别的）。 */
+  const busyOn = Object.values(state.tasks).find((t) =>
+    t.groupId === group.id && t.id !== task.id && t.assignee === member.id
+    && (t.status === "assigned" || t.status === "running"));
+  if (busyOn) {
+    throw new Error(`成员「${member.name}」手上还有没做完的「${busyOn.title}」（${busyOn.status}），一次只能派一条活`);
+  }
   task.assignee = member.id;
   task.status = "assigned";
   task.updatedAt = Date.now();
@@ -146,8 +157,18 @@ export function assignTask(state: BossState, taskId: string, memberId: string): 
 export function markRunning(state: BossState, taskId: string, input: { threadId: string; turnId?: string }): GroupTask {
   const task = taskOf(state, taskId);
   const group = groupOf(state, task.groupId);
+  /* ⛔⛔ 状态闸（压测抓到的真实缺陷）：原来只要求"有 attempt" ⇒ 已打回 / 已完成 / 已升级的任务
+     都能被一个迟到的回调标回 running，而且复用的是**上一次的 attempt**（人还是被锁的那个作者）。
+     压测里就复现出「running 的任务派给了被锁作者」这种自相矛盾的状态。
+     ⇒ 只有 assigned 能进 running，且 attempt 的成员必须就是当前 assignee（并发派活时防串）。 */
+  if (task.status !== "assigned") {
+    throw new Error(`任务「${task.title}」当前状态 ${task.status} 不能标 running（只有 assigned 可以；迟到的回合回调请走 settleSubmission）`);
+  }
   const attempt = task.attempts[task.attempts.length - 1];
   if (!attempt) throw new Error(`任务「${task.title}」还没有 attempt，不能标 running`);
+  if (attempt.memberId && attempt.memberId !== task.assignee) {
+    throw new Error(`任务「${task.title}」的 attempt 属于 ${attempt.memberId}，与当前 assignee ${task.assignee} 不一致（并发派活）`);
+  }
   attempt.threadId = String(input.threadId ?? "");
   attempt.turnId = input.turnId;
   attempt.startedAt = Date.now();
@@ -310,8 +331,15 @@ export function setPinned(state: BossState, groupId: string, eventId: string, pi
 /** 下一个可派的人：不在锁名单、状态不是 locked。全被锁 ⇒ null（调用方必须升级，不许放行）。 */
 export function pickReassignee(state: BossState, task: GroupTask): GroupMember | null {
   const group = groupOf(state, task.groupId);
+  /* ⛔⛔ 手上已有在办任务的成员不能被选中。运行态压测实测：不筛这一条时，一次并发派 40 条活
+     会对**同一个空闲成员**连派 ⇒ 第 2 条起全被并发闸拒掉（实测 40 条只成功 1 条），
+     用户看到的就是「派活失败」，而不是「排队」。 */
+  const busyIds = new Set(Object.values(state.tasks)
+    .filter((t) => t.groupId === group.id && t.id !== task.id && (t.status === "assigned" || t.status === "running"))
+    .map((t) => t.assignee));
   for (const member of group.members) {
     if (member.status === "removed") continue;          // ⛔ 已移出的成员不再接新活
+    if (busyIds.has(member.id)) continue;               // ⛔ 手上还有没做完的活
     if (task.lockedAuthors.includes(member.id)) continue;
     if (member.status === "locked" && member.lockedTaskIds.includes(task.id)) continue;
     return member;
