@@ -17,6 +17,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
+import { DEFAULT_VOICE_BALL_STYLE, normalizeVoiceBallStyle } from "../../src/lib/voice-ball-styles.mjs";
 
 export type BargeMode = "auto" | "manual";
 export type ModelHost = "auto" | "huggingface" | "hf-mirror";
@@ -62,7 +63,8 @@ export type VoiceSettings = {
    */
   announce: { enabled: boolean };
   /** 悬浮球：是否显示 + 是否弹出随机的短提示气泡 */
-  ball: { visible: boolean; hints: boolean };
+  /** style = 悬浮球外观 id（目录见 src/lib/voice-ball-styles.mjs；未知值回落默认） */
+  ball: { visible: boolean; hints: boolean; style: string };
   /**
    * 已下载资源的启用状态（10-03 新增）。
    *
@@ -141,7 +143,7 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   // 10-09 第二轮：`announce` 收成一个总开关。默认 **true** —— 与旧结构里 `live` 的默认一致
   // （旧默认就是「播报开着」），升级不改老用户的开关状态，只改「念什么」（念播报稿，不再念正文/摘要）。
   announce: { enabled: true },
-  ball: { visible: true, hints: true },
+  ball: { visible: true, hints: true, style: DEFAULT_VOICE_BALL_STYLE },
   // 10-03：资源默认全部启用（老档案缺这个字段时也是这个效果 ⇒ 升级不改变任何现有行为）
   resources: {},
   version: VOICE_SETTINGS_VERSION,
@@ -359,6 +361,8 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
       // 隐藏后仍要留入口：右键菜单/设置页都能再打开，所以允许 false
       visible: ball.visible !== false,
       hints: ball.hints !== false,
+      /* 10-25：外观 id 走共享目录校验；旧档案没有这个字段 ⇒ normalize 回落默认。 */
+      style: normalizeVoiceBallStyle((ball as any).style),
     },
     // ⛔ 显式字段映射（本文件第 N 次踩同款坑：显式映射漏字段 = 用户改了不生效、且不报错）。
     //    10-09 第二轮：单开关 `enabled`（缺省 true = 播报开着；老档案的 {live, summary} 已在上面平移）。

@@ -915,5 +915,30 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
   "总线有 toolSpeak 且其**真的被发布**（⛔ 它**不受**两个播报开关管：显式调用就是用户想听这一句；"
   + "声明了却没人发 = 模型侧开了能力、执行端没有入口 —— 本仓最贵的一种假象）");
 
+/* ── ⑳ 悬浮球外观皮肤（10-25 用户：「配套一套好看的，设置语音通话里可以改样式」）── */
+{
+  const catalogs = await import("../../src/lib/voice-ball-styles.mjs");
+  const styles = catalogs.VOICE_BALL_STYLES;
+  ok(Array.isArray(styles) && styles.length >= 6
+    && styles.some((s) => s.id === "glass" && s.name)
+    && catalogs.normalizeVoiceBallStyle("not-a-skin") === "glass"
+    && catalogs.normalizeVoiceBallStyle("aurora") === "aurora",
+    "外观目录 ≥6 套、含默认 glass，未知 id 回落默认（设置文件手改/旧版本不炸）");
+  const voiceSettingsSrc = read("electron/voice/voice-settings.ts");
+  ok(/ball: \{ visible: true, hints: true, style: DEFAULT_VOICE_BALL_STYLE \}/.test(voiceSettingsSrc)
+    && /style: normalizeVoiceBallStyle\(\(ball as any\)\.style\)/.test(voiceSettingsSrc),
+    "主进程设置默认 + 显式映射 ball.style（⛔ 漏映射 = 设置页选了不生效）");
+  const floatStateSrc = read("src/components/VoiceCallFloat/use-voice-call-float-state.tsx");
+  ok(/voice-ball--skin-\$\{ballStyle\}/.test(floatStateSrc)
+    && /normalizeVoiceBallStyle\(b\.style\)/.test(floatStateSrc),
+    "悬浮球按设置切换 skin 类（设置广播即时生效）");
+  const ballSettingsSrc = read("src/components/VoiceSettingsSection/06-floating-ball.tsx");
+  ok(/VOICE_BALL_STYLES\.map/.test(ballSettingsSrc) && /style: style\.id/.test(ballSettingsSrc),
+    "设置页渲染外观卡片并写回 ball.style");
+  const ballCss = read("src/styles/18-openai-dialog.css");
+  const missing = styles.filter((s) => !new RegExp(`\\.voice-ball--skin-${s.id}\\b`).test(ballCss));
+  ok(missing.length === 0, `每套外观都有样式（缺：${missing.map((s) => s.id).join(",") || "无"}）`);
+}
+
 console.log(`\n【voice-call】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
