@@ -208,5 +208,21 @@ const diffLib = await import("../../src/lib/diff-view.mjs");
     "路径换行展示全（⛔ 不再 ellipsis 裁剪），面板横向不溢出");
 }
 
+/* ── 【118 浏览器起始页】主题界面 + 中央搜索 + 自适应（10-25 用户「设计的浏览器界面主题呢」）── */
+{
+  const browser = codeOnly(read("src/components/BrowserPane.tsx"));
+  const css = read("src/styles/17-visual-cards.css");
+  ok(/browser-start/.test(browser) && /browser-start-search/.test(browser)
+    && /<form className="browser-start-search"/.test(browser) && /navigate\(draft\)/.test(browser),
+    "浏览器空态 = 主题起始页（中央搜索/网址输入，回车或「打开」走同一套 navigate）");
+  ok(/bookmarks\.length/.test(browser) && /START_LINKS/.test(browser) && /browser-start-links/.test(browser),
+    "起始页展示收藏夹；没有收藏时给常用入口（不是死空态）");
+  ok(/\.browser-start \{[^}]*min-width:\s*0/.test(css)
+    && /\.browser-start-card \{[^}]*max-width:\s*560px/.test(css)
+    && /\.browser-start-links \{[^}]*grid-template-columns:\s*repeat\(auto-fit/.test(css)
+    && /\.browser-start-links button > span \{[^}]*overflow-wrap:\s*anywhere/.test(css),
+    "起始页窄栏/全屏自适应（卡片有上限、入口 auto-fit、文字换行不裁剪）");
+}
+
 console.log(`\n【turn-review】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

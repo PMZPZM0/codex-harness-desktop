@@ -1342,28 +1342,168 @@
   border: none;
   background: var(--bg);
 }
-/* 空状态：居中地球 + 标题 + 提示（参考图 1 一比一） */
-.browser-pane-empty {
+/* ── 浏览器起始页（10-25 主题界面）：窄栏 / 全屏都按容器自适应，内容不裁剪 ── */
+.browser-start {
+  position: relative;
   flex: 1;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(12px, 3vw, 40px);
+  overflow: auto;
+  background:
+    radial-gradient(120% 90% at 50% -10%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 62%),
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 4%, var(--bg)), var(--bg));
+}
+/* 主题点阵：很淡的一层，别抢搜索框的注意力。 */
+.browser-start::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  color: var(--text);
+  background-image: radial-gradient(currentColor 1px, transparent 1px);
+  background-size: 22px 22px;
+  opacity: 0.04;
+  pointer-events: none;
+}
+.browser-start-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 560px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  color: var(--faint);
-  user-select: none;
+  gap: 7px;
+  padding: clamp(14px, 3vw, 26px);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.08);
 }
-.browser-pane-empty h2 {
-  margin: 10px 0 0;
-  font-size: 15px;
-  font-weight: 500;
+.browser-start-logo {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.browser-start.is-panel .browser-start-logo { width: 40px; height: 40px; border-radius: 12px; }
+.browser-start h2 {
+  margin: 6px 0 0;
   color: var(--text);
+  font-size: clamp(15px, 2.2vw, 19px);
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
-.browser-pane-empty p {
+.browser-start p {
   margin: 0;
-  font-size: 12.5px;
   color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+  text-align: center;
 }
+.browser-start-search {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 11px;
+  padding: 5px 5px 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.browser-start-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.browser-start-search > svg { flex: none; color: var(--muted); }
+.browser-start-search input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+.browser-start-search input::placeholder { color: var(--faint); }
+.browser-start-search button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 30px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.browser-start-search button:disabled { opacity: 0.45; cursor: default; }
+.browser-start-links {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: 6px;
+  margin-top: 3px;
+}
+.browser-start-links button {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.14s ease, color 0.14s ease, background 0.14s ease;
+}
+.browser-start-links button:hover {
+  color: var(--text);
+  border-color: var(--line);
+  background: var(--panel-2);
+}
+.browser-start-links button > svg { flex: none; }
+.browser-start-links button > span {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+.browser-start-hint {
+  margin-top: 2px;
+  color: var(--faint);
+  font-size: 10.5px;
+  line-height: 1.5;
+  text-align: center;
+}
+.browser-start.is-panel { padding: 12px; }
+.browser-start.is-panel .browser-start-card { padding: 14px; border-radius: 14px; gap: 6px; }
+.browser-start.is-panel .browser-start-search { margin-top: 7px; }
+.browser-start.is-panel h2 { font-size: 15px; }
 /* 加载指示：顶部细进度条 */
 .browser-pane-loading {
   position: absolute;

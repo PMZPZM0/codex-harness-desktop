@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, ChevronDown, ExternalLink, Globe2, Maximize2, MoreHorizontal, Plus, RefreshCw, FileWarning, Star, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronDown, ExternalLink, Globe2, Maximize2, MoreHorizontal, Plus, RefreshCw, FileWarning, Star, X, Search } from "lucide-react";
 import { subscribeHtmlPreview } from "../lib/html-preview-store.mjs";
 
 /**
@@ -14,6 +14,13 @@ import { subscribeHtmlPreview } from "../lib/html-preview-store.mjs";
 type BrowserTab = { id: string; url: string; title: string; loading: boolean };
 
 const BOOKMARK_KEY = "browser-pane-bookmarks";
+
+/** 起始页空态下的常用入口（没有收藏时展示；只是导航入口，不代表推荐关系）。 */
+const START_LINKS: [string, string][] = [
+  ["GitHub", "https://github.com"],
+  ["Bing", "https://www.bing.com"],
+  ["知乎", "https://www.zhihu.com"],
+];
 
 /** 输入归一化：域名补 https://；非 URL 走搜索 */
 function normalizeUrl(raw: string): string {
@@ -295,10 +302,39 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
             <WebviewTag ref={wvRef} src={active.url} className="browser-pane-webview" allowpopups="true" />
           </>
         ) : (
-          <div className="browser-pane-empty">
-            <Globe2 size={56} strokeWidth={0.75} />
-            <h2>浏览器</h2>
-            <p>粘贴或输入 URL 以打开网页</p>
+          /* 10-25 用户：「设计的浏览器界面主题呢」——起始页做成主题画布：
+             中央搜索/网址输入 + 收藏或常用入口；窄栏与全屏都按容器自适应。 */
+          <div className={`browser-start ${variant === "panel" ? "is-panel" : ""}`}>
+            <div className="browser-start-card">
+              <span className="browser-start-logo"><Globe2 size={variant === "panel" ? 20 : 24} strokeWidth={1.6} /></span>
+              <h2>从一个网址，或一个问题开始</h2>
+              <p>输入网址直接打开；输入关键词会自动搜索。</p>
+              <form className="browser-start-search" onSubmit={(event) => { event.preventDefault(); navigate(draft); }}>
+                <Search size={15} aria-hidden="true" />
+                <input
+                  value={draft}
+                  spellCheck={false}
+                  placeholder="搜索或输入网址"
+                  aria-label="搜索或输入网址"
+                  onChange={(event) => setDraft(event.target.value)}
+                />
+                <button type="submit" disabled={!draft.trim()}>打开<ArrowRight size={13} /></button>
+              </form>
+              <div className="browser-start-links">
+                {bookmarks.length
+                  ? bookmarks.slice(0, 6).map((url) => (
+                      <button type="button" key={url} title={url} onClick={() => navigate(url)}>
+                        <Star size={13} /><span>{bookmarkLabel(url)}</span>
+                      </button>
+                    ))
+                  : START_LINKS.map(([label, url]) => (
+                      <button type="button" key={url} title={url} onClick={() => navigate(url)}>
+                        <Globe2 size={13} /><span>{label}</span>
+                      </button>
+                    ))}
+              </div>
+              <small className="browser-start-hint">{bookmarks.length ? "来自你的收藏夹" : "也可以在右上角地址栏粘贴链接"} · 支持直接粘贴网址</small>
+            </div>
           </div>
         )}
         {active.loading && <div className="browser-pane-loading" role="status" aria-label="加载中" />}
