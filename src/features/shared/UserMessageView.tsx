@@ -142,7 +142,9 @@ export function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, o
             <div className="user-message-team-task" title="已作为团队/成员会话发起需求提交">
               <div className="user-message-team-task-tag">
                 <Sparkles size={11} />
-                <span>{refs.teamTask.kind === "team" ? "团队会话 · 需求已发起" : "成员会话 · 需求已发起"}</span>
+                {/* 10-26：壳上的原始标签原样展示（团队会话 / 成员会话 / 群成员会话 / 调度会话…），
+                    旧实现写死两种 ⇒ 群成员与调度会话都被标成"成员会话"。 */}
+                <span>{(refs.teamTask.label ?? (refs.teamTask.kind === "team" ? "团队会话" : "成员会话")) + " · 需求已发起"}</span>
               </div>
               <div className="user-message-team-task-body">{refs.teamTask.requirement}</div>
             </div>

@@ -225,9 +225,18 @@ type MdMessage = { ts: string; role: "user" | "assistant"; text: string };
 
 /** 剥离 harness 首条消息的任务包装（[SYSTEM TASK …]/=== 用户需求 ===/=== END === 模板），还原用户原文 */
 export function stripSystemTaskWrapper(text: string): string {
-  const match = text.match(/\[SYSTEM TASK[^\]]*\]\s*=== 用户需求 ===\s*\n?([\s\S]*?)\s*\n=== END ===/);
-  if (match && match[1].trim()) return match[1].trim();
-  return text;
+  /* ⛔ 10-26：与 src/lib/user-refs.ts、rollout-worker 三处**同口径**（改一处必须改另外两处）。
+     旧规则只认 `=== 用户需求 ===` 一种内层格式 ⇒ 群成员会话的壳（`=== 本次任务（第 N 次尝试）===`）
+     匹配不上 ⇒ 侧栏标题/导出正文里出现整段「你是「群」里的 X（岗位）…验收标准：…」。
+     另：壳**前面**可能拼着团队系统提示词（`buildTeamSystemPrompt`）⇒ 从壳头开始切，前缀一起丢。 */
+  const at = text.indexOf("[SYSTEM TASK");
+  if (at < 0) return text;
+  const tail = text.slice(at);
+  const body =
+    (tail.match(/===\s*用户需求\s*===\s*\n([\s\S]*?)\s*\n===\s*END\s*===/) ?? [])[1]
+    ?? (tail.match(/===\s*本次任务[^=\n]*===\s*\n([\s\S]*?)\s*\n===\s*END\s*===/) ?? [])[1];
+  if (!body || !body.trim()) return text;
+  return body.trim().replace(/^\s*(?:发起方交给你的任务|主理人分配的子任务|用户任务)\s*[：:]\s*/, "");
 }
 
 /** harness 发送管线注入的机器可读块：记忆召回 / 技能引用。剥离后还原用户真实输入；附件与对话上下文保留（对 AI 有上下文价值）。 */
