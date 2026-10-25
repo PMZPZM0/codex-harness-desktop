@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-25 | 更新面板新增「更新方式」：差分 / 完整包 | 改动 | `01-sidebar-shell.tsx`、`17-visual-cards.css`、`01-thread-switch-system-events.tsx`、`02-update-ui-settings.tsx`、`bag-types.ts`、`vite-env.d.ts`、`updates-ipc.ts` | 用户：「不得出一个新的更新选项嘛」。更新面板新增「更新方式」开关：默认差分，可切完整包绕开 blockmap；手动下载与静默下载都按所选方式执行，localStorage 持久化。CDP 实测开关在位、默认选中「差分」。 | e130ca8e0 |
 | 2026-10-25 | NSIS 差分更新（blockmap / latest.yml） | 新增 | `electron/updates.ts`、`electron/features/updates-ipc.ts`、`package.json`、`.github/workflows/build-win.yml`、`.github/workflows/release.yml`、守卫 12e | 用户要求：在现有检查更新上新增补丁式增量更新，并由 GitHub Release 同步新更新源。接入 electron-updater：发布产物新增 `*.exe.blockmap`/`latest.yml`，下载按 Release tag + 镜像序走 generic feed，差分失败自动回退完整包；静默/手动下载共用，安装保持先起包再退出。本地打包已验证 exe + blockmap + latest.yml 三者齐全；守卫 12e 17/17。 | 984b00b50 |
 | 2026-10-25 | 云端积分浮层精简 | 改动 | `src/features/settings-cloud/CloudPointsBadge.tsx` | 用户截图：浮层注释太多。只保留余额 + 最近变动两行；去掉长 note（限时福利/模型说明）、未启用闲时提示与「设置 → 云账号」脚注；仅真正处于闲时显示「闲时 ×0.5」。 | a8af77862 |
 | 2026-10-25 | 输入框弹层统一：贴触发按钮居中 + 自动关闭 | 改动 | `src/lib/use-centered-popover.ts`、`Composer.tsx`、`EffortPicker.tsx`、`Status.tsx`、`01-balance-badge.tsx`、`02-official-cards.tsx`、`10-settings-providers.css`、`37-cloud-account.css`、验收 model-menu | 用户截图：上下文弹窗不自动隐藏，其他同款弹窗应按模型下拉规则贴按钮自适应居中。新增共用定位 hook（按实际宽度居中、左右越界收 8px）：模型/权限菜单、上下文、中转站/OpenAI 余额、思考强度全部统一；上下文/余额弹层补 Esc 与鼠标离开关闭。验收 ⑤ 上下文贴按钮居中 + Esc 关闭通过。 | 7f7c62887 |
