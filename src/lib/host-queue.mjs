@@ -20,6 +20,9 @@
 /** 保留前缀（clientUserMessageId 以它开头 = 宿主注入，不是用户说的话）。 */
 export const HOST_QUEUE_PREFIX = "host:";
 
+/** 群事件的文本约定（宿主投进中枢线程的机器文本；时间线按它拆块渲染）。 */
+export const GROUP_EVENT_TAG = "[群事件]";
+
 /** 宿主注入消息的 clientUserMessageId。tag 用来区分来源（boss / delegate …），便于排查。 */
 export function hostQueueMessageId(tag) {
   const who = String(tag || "host").replace(/[^a-zA-Z0-9_-]/g, "") || "host";
@@ -29,8 +32,37 @@ export function hostQueueMessageId(tag) {
   return `${HOST_QUEUE_PREFIX}${who}:${rand}`;
 }
 
-/** 这条排队项是不是宿主注入的（渲染层过滤用）。 */
+/** 排队项里的正文（引擎的 input 是 part 数组）。 */
+export function queueItemText(item) {
+  const input = Array.isArray(item?.input) ? item.input : [];
+  return input.map((part) => String(part?.text ?? "")).join("");
+}
+
+/**
+ * 这段正文是不是宿主注入的。
+ * ⛔ 兼容**修复前**入队的旧数据：它们没有 `clientUserMessageId` 前缀，
+ *    但正文带 `[群事件]` 标记（10-26 真机：旧队列里堆了 57~99 条这种）。
+ */
+export function isHostQueueText(text) {
+  return String(text ?? "").includes(GROUP_EVENT_TAG);
+}
+
+/** 这条排队项是不是宿主注入的（渲染层过滤 + 主进程清理都用它）。 */
 export function isHostQueueItem(item) {
   const id = String(item?.clientUserMessageId ?? item?.id ?? "");
-  return id.startsWith(HOST_QUEUE_PREFIX);
+  if (id.startsWith(HOST_QUEUE_PREFIX)) return true;
+  return isHostQueueText(queueItemText(item));
+}
+
+/**
+ * 看门狗**刷屏**那两类提醒（10-26 用户现场：真机队列里堆了 57~99 条，
+ * 同一个任务反复报「已经 N 秒没有进展」「已交活 N 分钟仍没有审查结论」）。
+ *
+ * ⛔ 只认这两类，**成品交活 / 成员进出 / 预算**那些不能删（丢了就是真丢消息）。
+ * ⛔ 判定按正文关键词（不是按 clientUserMessageId）—— 刷屏条目大多是修复前入队的，
+ *    没有保留前缀。
+ */
+export function isWatchdogSpamText(text) {
+  const s = String(text ?? "");
+  return /没有进展（无进展/.test(s) || /没有审查结论/.test(s);
 }

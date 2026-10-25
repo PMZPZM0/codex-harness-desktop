@@ -16,3 +16,18 @@
 export function isQueueAlreadyStartedError(message) {
   return /queued submission not found|queue is empty|no such (?:queued )?submission/i.test(String(message ?? ""));
 }
+
+/**
+ * 「线程已有活动或待处理回合」这一族（10-26 用户现场）。
+ *
+ * 真机报错原文：`[ERR_INVOKE_FAILED] coderequest: Error invoking remote method
+ * 'coderequest: Error: thread already has an active or pending turn'`。
+ *
+ * ⛔ 这**不是**失败：引擎那边确实还有一个回合在跑（或队列里有一条待启动）
+ *   ⇒ 我们这次"启动下一条"本就不该成功，引擎拒绝是**正确行为**。
+ *   ⛔ 之前它被当成失败弹了红错（用户截图顶部那条），纯属噪声。
+ *   ⇒ 按成功处理：不弹 toast、**保留**钉顶意图（那条消息确实会出现，只是晚点）。
+ */
+export function isQueueBusyError(message) {
+  return /thread already has an active or pending turn|already has an active or pending/i.test(String(message ?? ""));
+}
