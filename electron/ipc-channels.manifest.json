@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 541,
+  "count": 547,
   "channels": [
     {
       "name": "request",
@@ -42,6 +42,66 @@
       "invokeArgs": "",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "appLockStatus",
+      "channel": "app-lock:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ enabled: boolean; attempts: number; remaining: number; resetRequired: boolean; kind?: \"random\" | \"custom\"; createdAt?: number }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "应用锁状态（不含密码/哈希）；resetRequired=true 时主进程会写重置标记并重启"
+    },
+    {
+      "name": "appLockPrepare",
+      "channel": "app-lock:prepare",
+      "paramsImpl": "input: { mode?: string; password?: string }",
+      "paramsDecl": "input: { mode?: string; password?: string }",
+      "returns": "Promise<{ ok: boolean; setupId?: string; password?: string; kind?: \"random\" | \"custom\"; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "生成一次性密码（随机或自定义）：确认 enable 前不落盘，明文只在这次返回"
+    },
+    {
+      "name": "appLockEnable",
+      "channel": "app-lock:enable",
+      "paramsImpl": "setupId: string",
+      "paramsDecl": "setupId: string",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "setupId",
+      "cast": null,
+      "note": "用户确认已备份密码后提交开启"
+    },
+    {
+      "name": "appLockCancel",
+      "channel": "app-lock:cancel",
+      "paramsImpl": "setupId: string",
+      "paramsDecl": "setupId: string",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "setupId",
+      "cast": null,
+      "note": "取消尚未确认的开启流程（不落盘）"
+    },
+    {
+      "name": "appLockVerify",
+      "channel": "app-lock:verify",
+      "paramsImpl": "password: string",
+      "paramsDecl": "password: string",
+      "returns": "Promise<{ ok: boolean; remaining: number; reset?: boolean; error?: string }>",
+      "invokeArgs": "password",
+      "cast": null,
+      "note": "锁屏验证；错误次数落盘，第 10 次返回 reset=true"
+    },
+    {
+      "name": "appLockDisable",
+      "channel": "app-lock:disable",
+      "paramsImpl": "password: string",
+      "paramsDecl": "password: string",
+      "returns": "Promise<{ ok: boolean; remaining: number; reset?: boolean; error?: string }>",
+      "invokeArgs": "password",
+      "cast": null,
+      "note": "关闭应用锁需当前密码；错误同样计数"
     },
     {
       "name": "setAwake",
@@ -3355,8 +3415,8 @@
     {
       "name": "updateDownload",
       "channel": "updates:download",
-      "paramsImpl": "input: { downloadUrl: string; filename?: string }",
-      "paramsDecl": "input: { downloadUrl: string; filename?: string }",
+      "paramsImpl": "input: { downloadUrl: string; filename?: string; mode?: \"differential\" | \"full\" }",
+      "paramsDecl": "input: { downloadUrl: string; filename?: string; mode?: \"differential\" | \"full\" }",
       "returns": "Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>",
       "invokeArgs": "input",
       "cast": null,
@@ -3375,12 +3435,12 @@
     {
       "name": "updateDownloadSilent",
       "channel": "updates:download-silent",
-      "paramsImpl": "",
-      "paramsDecl": "",
+      "paramsImpl": "input?: { mode?: \"differential\" | \"full\" }",
+      "paramsDecl": "input?: { mode?: \"differential\" | \"full\" }",
       "returns": "Promise<{ ok: boolean; error?: string; version?: string; path?: string; alreadyDone?: boolean }>",
-      "invokeArgs": "",
+      "invokeArgs": "input",
       "cast": null,
-      "note": "10-12 后台静默下载：零参数（地址只认主进程自己的检查结果，绝不接受渲染层指定）"
+      "note": "10-12 后台静默下载：地址只认主进程自己的检查结果，绝不接受渲染层指定；10-25 可选 mode 只决定补丁/完整包"
     },
     {
       "name": "updateRestartInstall",

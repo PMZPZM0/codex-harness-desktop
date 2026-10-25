@@ -85,6 +85,18 @@ contextBridge.exposeInMainWorld("codex", {
   respond: (id: string | number, result: unknown) => __ipc("codex:respond", 2, [id, result]),
   getUsername: () => __ipc("user:name", 0, []),
   getUserData: () => __ipc("app:userData", 0, []),
+  /* 应用锁状态（不含密码/哈希）；resetRequired=true 时主进程会写重置标记并重启 */
+  appLockStatus: () => __ipc("app-lock:status", 0, []),
+  /* 生成一次性密码（随机或自定义）：确认 enable 前不落盘，明文只在这次返回 */
+  appLockPrepare: (input: { mode?: string; password?: string }) => __ipc("app-lock:prepare", 1, [input]),
+  /* 用户确认已备份密码后提交开启 */
+  appLockEnable: (setupId: string) => __ipc("app-lock:enable", 1, [setupId]),
+  /* 取消尚未确认的开启流程（不落盘） */
+  appLockCancel: (setupId: string) => __ipc("app-lock:cancel", 1, [setupId]),
+  /* 锁屏验证；错误次数落盘，第 10 次返回 reset=true */
+  appLockVerify: (password: string) => __ipc("app-lock:verify", 1, [password]),
+  /* 关闭应用锁需当前密码；错误同样计数 */
+  appLockDisable: (password: string) => __ipc("app-lock:disable", 1, [password]),
   setAwake: (on: boolean) => __ipc("awake:set", 1, [on]),
   showNotification: (title: string, body: string) => __ipc("notify:show", 2, [title, body]),
   toolStatus: () => __ipc("tools:status", 0, []),
@@ -367,7 +379,7 @@ contextBridge.exposeInMainWorld("codex", {
   engineCheckUpdate: () => __ipc("engine:check-update", 0, []),
   enginePerformUpdate: () => __ipc("engine:perform-update", 0, []),
   relaunchApp: () => __ipc("app:relaunch", 0, []),
-  /* 10-25：在软件所在盘根新建 BOSS 会话专属项目目录，返回绝对路径 */
+  /* 10-25：在软件所在盘根新建指挥中枢专属项目目录，返回绝对路径 */
   createBossProjectDir: () => __ipc("app:boss-project-dir", 0, []),
   readBuiltinPlugins: () => __ipc("builtin:read", 0, []),
   saveBuiltinPlugins: (cfg: unknown) => __ipc("builtin:save", 1, [cfg]),
@@ -490,10 +502,10 @@ contextBridge.exposeInMainWorld("codex", {
   readPastedText: (path: string) => __ipc("pasted-text:read", 1, [path]),
   updatePastedText: (path: string, content: string) => __ipc("pasted-text:update", 1, [{ path, content }]),
   updateCheck: () => __ipc("updates:check", 0, []),
-  updateDownload: (input: { downloadUrl: string; filename?: string }) => __ipc("updates:download", 1, [input]),
+  updateDownload: (input: { downloadUrl: string; filename?: string; mode?: "differential" | "full" }) => __ipc("updates:download", 1, [input]),
   updateInstall: (filePath: string) => __ipc("updates:install", 1, [filePath]),
-  /* 10-12 后台静默下载：零参数（地址只认主进程自己的检查结果，绝不接受渲染层指定） */
-  updateDownloadSilent: () => __ipc("updates:download-silent", 0, []),
+  /* 10-12 后台静默下载：地址只认主进程自己的检查结果，绝不接受渲染层指定；10-25 可选 mode 只决定补丁/完整包 */
+  updateDownloadSilent: (input?: { mode?: "differential" | "full" }) => __ipc("updates:download-silent", 0, [input]),
   /* 10-12 重启安装：零参数（先 spawn 已校验的安装包、再 quit 自己，顺序反了会被文件锁挡住） */
   updateRestartInstall: () => __ipc("updates:restart-install", 0, []),
   bridgeStatus: () => __ipc("bridge:status", 0, []),

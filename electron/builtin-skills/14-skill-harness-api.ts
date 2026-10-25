@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（100 个能力域 / 541 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（101 个能力域 / 547 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -316,6 +316,10 @@ MCP 服务器管理（配置/状态）
 ### appSettings（2 通道）
 应用级开关（联网搜索/桌面自动化/下载源等，写 app-settings.json）
 通道：appSettings:read, appSettings:save
+
+### app-lock（6 通道）
+应用密码锁（设置 → 应用锁，默认关闭）：开启时生成随机或自定义解锁密码，明文只展示一次、磁盘只存 scrypt 加盐哈希；应用启动/重新显示时先锁屏。错误次数落盘，连续 10 次错误会清空应用数据并重置。⛔ 这是界面门禁，不是磁盘加密；模型侧不调用它
+通道：app-lock:status, app-lock:prepare, app-lock:enable, app-lock:cancel, app-lock:verify, app-lock:disable
 
 ### model-specs（1 通道）
 模型规格（effort 档位等引擎参数）

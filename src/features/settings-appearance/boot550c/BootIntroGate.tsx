@@ -24,9 +24,17 @@ export function BootIntroGate({ stage, done }: { stage: BootStage; done: boolean
     /* ⛔ 只认"有没有这个参数"，不认它是不是空：`?popout=` 也是弹窗（会话 id 缺省时照样是分出去的窗口）。 */
     const popoutWindow =
       typeof location !== "undefined" && new URLSearchParams(location.search).has("popout");
+    /* 10-26 应用锁：锁屏刚解锁时不再播开机动画（用户已经等过一次解锁，再等十几秒很怪）。
+       标记由 AppLockGate 写入、这里消费一次；锁关闭时没有这个标记，行为不变。 */
+    let skipForAppLock = false;
+    try {
+      const session = typeof sessionStorage === "undefined" ? null : sessionStorage;
+      skipForAppLock = session?.getItem("app-lock-skip-boot") === "1";
+      if (skipForAppLock) session?.removeItem("app-lock-skip-boot");
+    } catch { /* 隐私模式等，按不跳过处理 */ }
     const mode = readBootIntroMode(storage);
     return {
-      play: shouldPlayBootIntro(mode, { reducedMotion, petWindow, popoutWindow }),
+      play: !skipForAppLock && shouldPlayBootIntro(mode, { reducedMotion, petWindow, popoutWindow }),
       mode: bootIntroPlayMode(mode),
       scheme: readBootIntroScheme(storage),
     };

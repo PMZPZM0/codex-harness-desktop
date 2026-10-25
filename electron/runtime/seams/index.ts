@@ -46,6 +46,8 @@ export type AppHost = {
   getAppPath: () => string;
   isPackaged: () => boolean;
   quit: () => void;
+  /** 强制退出（跳过关窗确认）；应用锁 10 次错误重置时用，避免“最小化到托盘”拦下退出流程。 */
+  exit: (code?: number) => void;
   relaunch: (args?: string) => void;
   /**
    * 订阅应用生命周期事件（10-03，laya 域需要 `will-quit` 关停子进程）。
@@ -114,6 +116,7 @@ const hostCaps: HostCaps = {
     getAppPath: () => app.getAppPath(),
     isPackaged: () => app.isPackaged,
     quit: () => app.quit(),
+    exit: (code = 0) => app.exit(code),
     // ⚠️ `app.isPackaged` 是**属性**不是方法（写 `isPackaged()` 会 TS2349）；
     //    `app.relaunch` 收的是 `{ args?: string[] }` 对象，不是裸字符串数组。
     relaunch: (args) => app.relaunch(typeof args === "string" ? { args: [args] } : undefined),
