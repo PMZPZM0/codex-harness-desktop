@@ -33,17 +33,22 @@ export function NewProjectDialog({ open, onClose, onCreate }: {
      （10-25 实测症状：「新建文件夹/输入路径」点击闪一下就没了）。Esc 用 ref 读当前 mode。 */
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  /* ⛔ onClose 也走 ref：侧栏传的是内联箭头函数，每次渲染都是新引用 ——
+     留在依赖里会让本 effect 随侧栏任何 state 变化重跑、表单被自动重置回 choose
+     （10-25 实测「进表单啥也没干就自动返回」的第二根因，与 mode 同型）。 */
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
     setMode("choose"); setParentDir(""); setFolderName(""); setPathInput(""); setError(""); setBusy(false);
     const prev = document.activeElement as HTMLElement | null;
     firstRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); if (modeRef.current === "choose") onClose(); else { setMode("choose"); setError(""); } } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); if (modeRef.current === "choose") onCloseRef.current(); else { setMode("choose"); setError(""); } } };
     window.addEventListener("keydown", onKey, true);
     return () => { window.removeEventListener("keydown", onKey, true); prev?.focus?.(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
