@@ -172,3 +172,50 @@
   font-size: 12px;
   pointer-events: none;
 }
+
+/* ⭐ 10-25：办公室分间（每间 6 人）。底部居中切换条：
+   左/右箭头 + 「办公室 N / M · X 人」。⛔ 画布是绝对定位、盖满舞台 ⇒
+   这一条必须自己抬 z-index 并收回 pointer-events，否则点不到。 */
+.office-overlay-pager {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(16, 18, 22, 0.82);
+  color: #eef0f4;
+  pointer-events: auto;
+  user-select: none;
+}
+.office-overlay-pager-btn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.14s ease;
+}
+.office-overlay-pager-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.18); }
+.office-overlay-pager-btn:disabled { opacity: 0.32; cursor: default; }
+.office-overlay-pager-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.office-overlay-pager-label em { font-style: normal; font-size: 11px; opacity: 0.66; }
+/* 有切换条时把临时提示抬上去，别叠在一起（无切换条时保持原来的底部位置）。 */
+.office-overlay-hint.with-pager { bottom: 68px; }

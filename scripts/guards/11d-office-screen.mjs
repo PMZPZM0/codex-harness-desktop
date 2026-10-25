@@ -219,16 +219,19 @@ ok(/Math\.min\(len \* u,/.test(screen) || /Math\.min\(len,/.test(screen),
      要钉的是「它被一个模块级变量持有、且那个变量不在组件里」。 */
 {
   const canvas = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
-  ok(/let officeSimSingletonRef\s*:\s*OfficeSim \| null = null/.test(canvas),
-    "⛔ sim 由模块级变量持有（不在组件里）—— 否则画布重挂载 ⇒ 位置全丢");
-  ok(/function officeSimSingleton\(\)\s*:\s*OfficeSim\s*\{[\s\S]{0,200}?if \(!officeSimSingletonRef\)[\s\S]{0,120}?officeSimSingletonRef = new OfficeSim\(\)/.test(canvas),
-    "⛔ 单例函数惰性创建 sim（重复 new 会退回到「每次进场」）");
+  /* ⭐ 10-25：单例 → **按办公室分间**（每间一个 sim）。原判据钉的是 `officeSimSingletonRef`；
+     现在等价契约为「模块级 Map 持有 + 惰性创建 + 画布按 simKey 取」——
+     ⛔ 仍然不许在组件/effect 里 new OfficeSim（那正是重播进场的病根）。 */
+  ok(/const officeSims = new Map<string, OfficeSim>\(\)/.test(canvas),
+    "⛔ sim 由模块级 Map 持有（不在组件里）—— 否则画布重挂载/切办公室 ⇒ 位置全丢");
+  ok(/function officeSimFor\(key: string\): OfficeSim\s*\{[\s\S]{0,220}?if \(!sim\) \{ sim = new OfficeSim\(\); officeSims\.set\(id, sim\); \}/.test(canvas),
+    "⛔ 按办公室惰性创建 sim（每间一份；重复 new 会退回到「每次进场」）");
   //⛔ 组件里**不许**再直接 new OfficeSim()
   const inEffect = /useEffect\(\(\) => \{[\s\S]*?\n {4}\}\);/.exec(canvas)?.[0] ?? "";
   ok(!/new OfficeSim\(\)/.test(inEffect),
     "⛔ useEffect 里没有直接 new OfficeSim()（那正是重播进场的病根）");
-  ok(/const sim = officeSimSingleton\(\)/.test(canvas),
-    "⛔ 画布用的是单例（而不是自己 new）");
+  ok(/const sim = officeSimFor\(simKey \?\? ""\)/.test(canvas),
+    "⛔ 画布按 simKey 取对应的办公室 sim（而不是全局唯一一份）");
 }
 
 /* ── 判据组 F：**普通会话也能开办公室**（2026-10-04 用户要求「给普通会话也加上，
@@ -537,6 +540,36 @@ console.log(bad === 0 ? "OK 事件分类全部符合" : "NO " + bad + " 条分�
   const filterIdx = seg.indexOf("params.threadId !== bag.threadRef.current?.id");
   ok(noteIdx > 0 && filterIdx > noteIdx,
     "⛔⛔ 办公室事件面接在**会话过滤之前**（放后面的话，后台会话的工具事件一条都到不了办公室）");
+}
+
+/* ── 判据组 H：**办公室分间**（10-25 用户令）──
+   「一个办公室 6 个员工，超过 6 个自动生成第二个一样的办公室界面；新员工进，
+     老员工还在旧办公室；下面加一个办公室切换按键」。
+   ⛔ 不许再像旧版那样 `slice(0, 6)` / `slice(-(6 - n))` 把超出的成员静默挤掉。 */
+{
+  const previewSrc = readFileSync(join(ROOT, "src", "features", "team-office", "TeamOfficePreview.tsx"), "utf8");
+  const css = readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8");
+  ok(/const OFFICE_SEATS = 6/.test(previewSrc)
+    && !/\.slice\(0, 6\)/.test(previewSrc)
+    && !/\.slice\(-\(6 - mine\.length\)\)/.test(previewSrc),
+    "⛔ 一间 6 人，但**不再截断**超出成员（截断 = 新员工挤掉老员工）");
+  ok(/Math\.ceil\(members\.length \/ OFFICE_SEATS\)/.test(previewSrc)
+    && /members\.slice\(officePage \* OFFICE_SEATS, \(officePage \+ 1\) \* OFFICE_SEATS\)/.test(previewSrc),
+    "⛔ 按 6 人一间切页（每页只把本间成员交给画布，老人在旧页）");
+  ok(/officePageCount > prevOfficePageCount\.current \? officePageCount - 1/.test(previewSrc)
+    && /Math\.min\(page, officePageCount - 1\)/.test(previewSrc),
+    "⛔ 新开一间自动切过去；成员减少时页码收回最后一页（不许停在空办公室）");
+  ok(/aria-label="切换办公室"/.test(previewSrc)
+    && /aria-label="上一间办公室"/.test(previewSrc)
+    && /aria-label="下一间办公室"/.test(previewSrc)
+    && /办公室 \{officePage \+ 1\} \/ \{officePageCount\}/.test(previewSrc),
+    "⛔ 底部有办公室切换键（上一间 / 办公室 N / M / 下一间）");
+  ok(/key=\{officeSimKey\}/.test(previewSrc) && /simKey=\{officeSimKey\}/.test(previewSrc)
+    && /members=\{visibleMembers\}/.test(previewSrc),
+    "⛔ 每间办公室一个独立 sim（切回来人物还在原处，不从门口重播进场）");
+  ok(/\.office-overlay-pager \{[^}]*pointer-events:\s*auto/.test(css)
+    && /\.office-overlay-hint\.with-pager \{ bottom:\s*68px/.test(css),
+    "⛔ 切换条能点（pointer-events:auto）且不压住临时提示");
 }
 
 console.log(`\n【screen】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
