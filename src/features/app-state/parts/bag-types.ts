@@ -1034,7 +1034,7 @@ export interface Bag {
   providerConfig: { modelProvider: "harness"; config: { model_provider: "harness"; model_providers: { harness: { name: string; base_url: string; env_key: string; wire_api: "responses"; requires_openai_auth: boolean; }; }; }; } | { modelProvider?: undefined; config?: undefined; };
   listThreads: import("../../app-view/types.ts").Thread[];
   dispatchCwdMap: Record<string, string>;
-  viewTab: "projects" | "source";
+  viewTab: "projects" | "tasks" | "source";
   setViewTab: React.Dispatch<React.SetStateAction<"projects" | "source">>;
   expandedProjects: Set<string>;
   setExpandedProjects: React.Dispatch<React.SetStateAction<Set<string>>>;

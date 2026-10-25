@@ -96,7 +96,7 @@ bag.listThreads = listThreads as typeof bag.listThreads;
 
   // 侧边栏视图模式：项目（按 cwd） vs 分类（按会话来源）；与 WorkBuddy 项目列表对齐
   // ⛔ 原「分组」（按时间）视图已于 09-25 按用户要求删除；旧偏好值一律回落到「项目」。
-  const [viewTab, setViewTab] = useState<"projects" | "source">(() => {
+  const [viewTab, setViewTab] = useState<"projects" | "tasks" | "source">(() => {
     const saved = localStorage.getItem("sidebar-view-tab-v1");
     return saved === "source" ? "source" : "projects";
   });
