@@ -10,6 +10,7 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import "@xterm/xterm/css/xterm.css";
 import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider } from "../../../../lib/provider-continuity.mjs";
 import { buildDispatchChildren, groupThreadsBySource, resolveGroupCwd } from "../../../../lib/thread-source.mjs";
+import { getBossThreads, subscribeBossThreads } from "../../../../features/boss-group-view";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../app-view/types";
 import type { Bag } from "../bag-types";
@@ -50,11 +51,43 @@ bag.providerConfig = providerConfig as typeof bag.providerConfig;
      团队成员会话在「项目」视图里归到**发起调度那个会话**的 cwd 下，不再各自新开一个项目地址。
      ⛔ 只改「归到哪个项目」这一层，不动引擎侧的会话 cwd（会话自己的工作目录仍按原样）。
      口径在纯模块 src/lib/thread-source.mjs（resolveGroupCwd，可被预检真跑断言）。 */
-  const dispatchCwdMap = useMemo(() => resolveGroupCwd(bag.threads, {
-    delegateRecords: bag.delegateRecords,
-    teamThreadIndex: bag.teamThreadsIndex,
-    teamMemberThreadIds: bag.teamMemberThreadIds,
-  }), [bag.threads, bag.delegateRecords, bag.teamThreadsIndex, bag.teamMemberThreadIds]);
+  /* ── BOSS 会话与它的成员会话（10-25 用户令：「只要他调度的会话，跟专家团那样，
+        都显示调度在他下面」）──────────────────────────────────────────────
+     成员会话是派活时 thread/start 新建的、不走 delegate 登记 ⇒ 这里补一份伪记录
+     （originThreadId = 群 boss 会话）复用既有「跟随发起者 cwd + 缩进」机制。
+     ⛔ BOSS 会话实际 cwd 是 <userData>/boss-home（记忆独立），但**显示**归到群项目
+        （boss-workspace）—— 否则它和成员会被拆进两个项目分组，缩进就看不出来了。 */
+  const bossSnap = useSyncExternalStore(subscribeBossThreads, getBossThreads);
+  const bossDelegateRecords = useMemo(() => {
+    const base: Record<string, any> = bag.delegateRecords ?? {};
+    const extra: Record<string, any> = {};
+    for (const group of bossSnap.groups ?? []) {
+      const parent = String(group.bossThreadId ?? "");
+      if (!parent) continue;
+      for (const memberId of group.memberThreadIds ?? []) {
+        if (!memberId || memberId === parent) continue;
+        extra[String(memberId)] = { ...(base[String(memberId)] ?? {}), originThreadId: parent, kind: "boss" };
+      }
+    }
+    return Object.keys(extra).length ? { ...base, ...extra } : base;
+  }, [bag.delegateRecords, bossSnap.groups]);
+
+  const dispatchCwdMap = useMemo(() => {
+    const map = resolveGroupCwd(bag.threads, {
+      delegateRecords: bossDelegateRecords,
+      teamThreadIndex: bag.teamThreadsIndex,
+      teamMemberThreadIds: bag.teamMemberThreadIds,
+    });
+    /* BOSS 会话按「群项目」归组（仅显示口径） */
+    let projectWs = "";
+    try { projectWs = localStorage.getItem("boss-workspace") ?? ""; } catch { /* 隐私模式 */ }
+    if (projectWs) {
+      for (const id of [...(bossSnap.bossIds ?? []), bossSnap.homeId]) {
+        if (id) map[String(id)] = projectWs;
+      }
+    }
+    return map;
+  }, [bag.threads, bossDelegateRecords, bag.teamThreadsIndex, bag.teamMemberThreadIds, bossSnap]);
 bag.dispatchCwdMap = dispatchCwdMap as typeof bag.dispatchCwdMap;
 
   const listThreads = useMemo(() => {
@@ -270,8 +303,8 @@ bag.sourcedThreads = sourcedThreads as typeof bag.sourcedThreads;
      团队成员会话不在这里（它们由既有团队聚类挂在主理人行下）⇒ 传 skipIds 避免重复。
      ⛔ 「分类」与「项目」两个视图**共用**这份归属（用户 09-25：「项目里面也这样展示可以嘛」）：
      childrenOf 给两个视图画缩进行，childIds 给两个视图把子会话从**顶层**剔除（否则同一会话显示两遍）。 */
-  const sourcedDispatch = useMemo(() => buildDispatchChildren(bag.listThreads, bag.delegateRecords, { skipIds: bag.teamMemberThreadIds }),
-    [bag.listThreads, bag.delegateRecords, bag.teamMemberThreadIds]);
+  const sourcedDispatch = useMemo(() => buildDispatchChildren(bag.listThreads, bossDelegateRecords, { skipIds: bag.teamMemberThreadIds }),
+    [bag.listThreads, bossDelegateRecords, bag.teamMemberThreadIds]);
 bag.sourcedDispatch = sourcedDispatch as typeof bag.sourcedDispatch;
 
   const sourcedChildrenOf = sourcedDispatch.childrenOf;

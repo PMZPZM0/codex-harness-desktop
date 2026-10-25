@@ -218,8 +218,13 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
     /* 10-25 用户令：BOSS 群派出去的成员会话打「BOSS 调度」标签（区别于普通「调度」）。
        ⛔ 成员会话是派活时 thread/start 新建的，不走 delegate 登记 ⇒ 只能由群账本回传的
           memberThreadIds 认（store 由侧栏订阅，这里读快照即可，渲染期不发起请求）。 */
-    const isBossMemberThread = getBossThreads().memberIds.includes(entry.id);
-    const sourceBadge = isBossMemberThread
+    const bossSnap = getBossThreads();
+    const isBossMemberThread = bossSnap.memberIds.includes(entry.id);
+    /* 10-25 用户令：自动新建的 BOSS 会话要**打标签**，跟普通会话一眼区分开。 */
+    const isBossOwnThread = bossSnap.bossIds.includes(entry.id) || entry.id === bossSnap.homeId;
+    const sourceBadge = isBossOwnThread
+      ? { tone: "boss", label: "BOSS" }
+      : isBossMemberThread
       ? { tone: "dispatch", label: "BOSS 调度" }
       : delegateKind
       ? { tone: "dispatch", label: "调度" }

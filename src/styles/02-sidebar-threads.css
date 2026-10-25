@@ -1523,3 +1523,11 @@ html[data-ui-font="large"] .action-content pre {
   border-color: color-mix(in srgb, var(--orange) 45%, var(--line-soft));
   background: color-mix(in srgb, var(--orange) 12%, transparent);
 }
+/* BOSS 会话自身的徽标（10-25 用户令：自动新建的 BOSS 会话要打标签）：
+   用琥珀金，与「调度」橙 / 专家蓝绿都区分开。 */
+.thread-source-badge.tone-boss {
+  color: var(--amber, #d29922);
+  border-color: color-mix(in srgb, var(--amber, #d29922) 50%, var(--line-soft));
+  background: color-mix(in srgb, var(--amber, #d29922) 14%, transparent);
+  font-weight: 600;
+}
