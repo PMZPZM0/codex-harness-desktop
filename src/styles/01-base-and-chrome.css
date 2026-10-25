@@ -939,7 +939,8 @@ button.brand-mark.sidebar-toggle:hover {
 .thread-row {
   border-radius: 8px;
   align-items: center;
-  min-height: 46px;
+  /* 10-25 用户令：会话行改**单行窄行**（标签 + 名称 + 尾部时间），别再给两行留 46px。 */
+  min-height: 34px;
   display: flex;
 }
 /* ⛔ 选中态不能与 hover 同色（用户 09-14 实测：「选择下面会话都没有反馈，

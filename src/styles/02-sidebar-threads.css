@@ -11,11 +11,15 @@
   cursor: pointer;
   background: 0 0;
   border: 0;
-  flex-direction: column;
+  /* 10-25 用户令：单行布局 —— 标签在前、标题居中、时间常驻尾部；
+     hover 时时间隐藏、右侧操作键展开（见 .thread-row:hover small 与 .thread-actions）。 */
+  flex-direction: row;
+  align-items: center;
   flex: 1;
-  gap: 3px;
+  gap: 6px;
   min-width: 0;
-  padding: 7px 6px 7px 10px;
+  min-height: 34px;
+  padding: 0 4px 0 10px;
   display: flex;
   position: relative;
 }
@@ -130,6 +134,11 @@
   font-size: 12.5px;
   overflow: hidden;
 }
+/* 标题行（标签 + 名称）吃掉整行的可用宽度；时间单独占尾部，不参与压缩。 */
+.thread-row > button:first-child > .thread-row-title-line {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 /* ⛔⛔ spinner 豁免上面那条（2026-10-04 用户反馈「是不是空间留少了」= 形状缺了一角）：
      上面 `.thread-row span` 是**标题省略号**规则（text-overflow:ellipsis + overflow:hidden），
      而 `.thread-running-indicator` 外层**正好是一个 `<span>`** ⇒ 直接吃到 overflow:hidden
@@ -151,11 +160,20 @@
   white-space: nowrap;
   font-size: 10.5px;
   overflow: hidden;
+  /* 10-25 用户令：时间常驻行尾；hover 时让位给操作键（见下一条规则）。 */
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+/* 鼠标移到行上：尾部时间换成置顶/归档/更多（运行中的行同样切换，转圈仍常驻在按键之后）。 */
+.thread-row:not(.is-member-row):hover > button:first-child > small {
+  display: none;
 }
 .thread-actions {
   justify-content: flex-end;
   align-items: center;
-  min-width: 30px;
+  min-width: 0;
+  flex: 0 0 auto;
   gap: 1px;
   display: flex;
 }
@@ -1496,10 +1514,11 @@ html[data-ui-font="large"] .action-content pre {
    放标题前一眼可辨；配色：专家团=accent（蓝）、专家=ok（绿）、代理=muted（灰）。 */
 .thread-source-badge {
   flex: none;
-  font-size: 10px;
+  /* 10-25 用户令：标签做窄一点，把宽度留给会话名称（仍是行首第一眼可辨的身份色）。 */
+  font-size: 9.5px;
   line-height: 1;
-  padding: 2px 5px;
-  border-radius: 4px;
+  padding: 1px 4px;
+  border-radius: 3px;
   border: 1px solid var(--line-soft);
   color: var(--muted);
   background: var(--panel-2);

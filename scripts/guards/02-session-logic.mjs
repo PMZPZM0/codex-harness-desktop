@@ -1529,6 +1529,29 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       && /<small>\{timeAgo\(rep\.updatedAt\)\}<\/small>/.test(rowsSrc282) ? ok : fail)(
       "【282】两处会话行小字仍保留时间（会话行 entry / 簇头兜底行 rep，各点独立锚定；⛔ 删地址 ≠ 删整行）"
     );
+    /* ══ 【282b】会话行 = 单行紧凑布局（10-25 用户令） ══
+       用户原话：「我们的太宽了，空白太多了，改成窄的标签在前面，对话框名字在后面，时间可以常驻展示在
+       尾部，如果鼠标放过去了，就动态切换展示成正常现在正常的按键，如果会话运行中，有那个转圈，
+       就隐藏时间，只有在会话没有运行状态的时候才展示时间」。
+       ⛔ 形态是三件事一起成立：① 单行（标签→名称→尾部时间）② 默认无操作键占位
+         ③ hover 时时间让位给操作键；少了任何一条都会退回"两行 + 右侧一片空白"。 */
+    console.log(C.bold("\n【282b】会话行单行紧凑布局（标签 → 名称 → 时间 / hover 切换操作键）"));
+    const css282b = ["01-base-and-chrome.css", "02-sidebar-threads.css", "19-misc-hints.css"]
+      .map((f) => readFileSync(join(ROOT, "src", "styles", f), "utf8")).join("\n");
+    const rowsSrc282b = codeOnly(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part02", "02-goal-browser-notice", "01-goal-review-file-browser", "02-thread-attention-rows.tsx"), "utf8"));
+    (/\.thread-row > button:first-child \{[^}]*flex-direction:\s*row/.test(css282b) && /\.thread-row \{[^}]*min-height:\s*34px/.test(css282b) ? ok : fail)(
+      "【282b】会话行单行布局（flex-direction: row + 行高 34px；退回 column = 时间又跑到第二行）"
+    );
+    (/\.thread-row:not\(\.is-member-row\):hover > button:first-child > small \{[^}]*display:\s*none/.test(css282b) ? ok : fail)(
+      "【282b】hover 时尾部时间隐藏（让位给置顶/归档/更多；成员行没有操作键，时间保持可见）"
+    );
+    (/\.thread-actions \{[^}]*min-width:\s*0/.test(css282b) ? ok : fail)(
+      "【282b】操作区默认不占宽（min-width: 0 —— 留着 30px 就是用户点名的「空白太多」）"
+    );
+    (/const showRowTime = !running && bag\.openingThread !== entry\.id;/.test(rowsSrc282b)
+      && /\{showRowTime && <small>\{timeAgo\(entry\.updatedAt\)\}<\/small>\}/.test(rowsSrc282b) ? ok : fail)(
+      "【282b】运行中/打开中不展示时间（尾部位置让给转圈；非运行态才展示时间）"
+    );
   }
 
   /* ══ 【281】侧栏「幽灵会话」：正在运行的会话不显示、也没有选中态（10-04 用户实测） ══ */
