@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { PetFloat, PetActivity } from "./features/pet";
+import { AppLockGate } from "./features/app-lock";
 import "./styles.css";
 
 /* 桌面宠物浮窗：`?pet=1` 渲染宠物本体，`?pet=activity` 渲染活动气泡（两个独立透明窗）。
@@ -34,7 +35,7 @@ window.addEventListener("vite:preloadError", (event) => {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
-      {isPetActivityWindow ? <PetActivity /> : isPetWindow ? <PetFloat /> : <App />}
+      {isPetActivityWindow ? <PetActivity /> : isPetWindow ? <PetFloat /> : <AppLockGate><App /></AppLockGate>}
     </ErrorBoundary>
   </StrictMode>,
 );

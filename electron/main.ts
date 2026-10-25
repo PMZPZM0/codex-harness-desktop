@@ -9,7 +9,8 @@ import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readF
 import path from "node:path";
 import http from "node:http";
 import { ChannelBotService, type ChannelBotConfig } from "./channel-bot";
-import { ensureTrustedProject, resolveStartupUserData } from "./data-dir";
+import { defaultUserDataDir, ensureTrustedProject, resolveStartupUserData } from "./data-dir";
+import { consumeResetRequest } from "./app-lock";
 import { CodexServer, codexBinaryPath } from "./codex-server";
 import { BotPairingService } from "./bots/bot-pairing";
 import { MemoryStore, type MemoryCategory, type MemoryRemoteConfig } from "./memory-store";
@@ -170,7 +171,12 @@ protocol.registerSchemesAsPrivileged([
 
 app.setName("Codex Harness Desktop");
 
-app.setPath("userData", resolveStartupUserData());
+/* 10-26 应用锁：第 10 次输错密码后主进程写重置标记并重启；这里在 Chromium/引擎碰到数据之前
+   清掉应用数据。锚点目录固定（appData/Codex Harness Desktop），自定义数据目录只有被
+   data-dir.json 明确指过才一起删 —— 不会误删用户随手选的普通文件夹。 */
+let startupUserData = resolveStartupUserData();
+if (consumeResetRequest(defaultUserDataDir(), startupUserData)) startupUserData = defaultUserDataDir();
+app.setPath("userData", startupUserData);
 
 /* ⛔ 域挂载点 = **此处**（userData 已定之后），不是 composition.gen 被 import 时 ——
    10-07 事故：模块体先于句体执行 ⇒ 挂载时的停用域判定用默认目录的 app-settings.json

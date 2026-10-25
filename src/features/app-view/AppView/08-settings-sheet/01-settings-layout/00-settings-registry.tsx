@@ -74,6 +74,7 @@ const FavoritesSettingsSection = lazy(() => import("../../../../settings-favorit
 /* 桌面宠物页（09-30）：官方 Codex 宠物格式的开关 / 选择 / 目录管理 */
 const ComponentLibrarySection = lazy(() => import("../../../../component-library").then((m) => ({ default: m.ComponentLibraryPage })));
 const PetSettingsSection = lazy(() => import("../../../../settings-pet/PetSettingsSection").then((m) => ({ default: m.PetSettingsSection })));
+const AppLockSettingsSection = lazy(() => import("../../../../settings-app-lock/AppLockSettingsSection").then((m) => ({ default: m.AppLockSettingsSection })));
 /* 人格市场页（10-01）：SkillHub 人格（skillhub.cn/soul），应用后下一个新会话生效 */
 const SoulMarketSection = lazy(() => import("../../../../soul-market/SoulMarketSection").then((m) => ({ default: m.SoulMarketSection })));
 /* 知识库页（10-01）：项目级本地知识库（导入/检索/管理） */
@@ -494,6 +495,7 @@ export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage
     "component-library": { render: () => <ComponentLibrarySection /> },
     "soul-market": { render: () => <SoulMarketSection onNotice={(m) => setNotice(m)} /> },
     "knowledge-base": { render: () => <KnowledgeBaseSection workspace={workspace} setNotice={(m) => setNotice(m)} /> },
+    "app-lock": { render: () => <AppLockSettingsSection onNotice={setNotice} /> },
     favorites: { render: () => <FavoritesSettingsSection
       favorites={favorites}
       busy={favoritesBusy}

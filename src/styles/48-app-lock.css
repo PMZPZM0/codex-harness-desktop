@@ -1,0 +1,249 @@
+/* ── 应用锁（10-26）：锁屏门禁 + 设置页 + 一次性密码弹窗 ─────────────────────
+   锁屏 z-index 10000：必须压住语音悬浮球（240）、全局弹窗（400）与设置弹层（700）。
+   ⛔ 锁屏底色用不透明 var(--bg)：App 尚未挂载（或重新上锁时已卸载），不能让下面透出内容。 */
+.app-lock-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 42%),
+    radial-gradient(circle at 82% 88%, color-mix(in srgb, var(--purple, #8b5cf6) 9%, transparent), transparent 46%),
+    var(--bg);
+  color: var(--text);
+}
+.app-lock-card {
+  width: min(420px, 100%);
+  padding: 28px 26px 24px;
+  display: grid;
+  gap: 12px;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--bg);
+  box-shadow: 0 24px 70px #00000038;
+}
+.app-lock-card-center { place-items: center; }
+.app-lock-card h2 { margin: 2px 0 0; font-size: 18px; color: var(--text); }
+.app-lock-card > p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
+.app-lock-emblem {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+.app-lock-emblem.is-warn { background: color-mix(in srgb, var(--amber, #f59e0b) 16%, transparent); color: var(--amber, #f59e0b); }
+.app-lock-input {
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 14px;
+  letter-spacing: 1px;
+  text-align: center;
+  outline: none;
+}
+.app-lock-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
+.app-lock-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.app-lock-primary:hover { filter: brightness(1.07); }
+.app-lock-primary:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+.app-lock-error { color: var(--red, #ef4444); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.app-lock-foot { margin-top: 2px !important; color: var(--faint) !important; font-size: 11px !important; }
+.app-lock-resetting {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--amber, #f59e0b) 12%, var(--panel));
+  color: var(--amber, #f59e0b);
+  font-size: 12.5px;
+}
+.app-lock-inline-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--red, #ef4444) 8%, var(--panel));
+  color: var(--red, #ef4444);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+/* ── 设置页 ─────────────────────────────────────────────────────────────── */
+.app-lock-toggle { margin-left: auto; }
+.app-lock-status-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.app-lock-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--green, #22c55e) 12%, transparent);
+  color: var(--green, #1a7f37);
+  font-size: 11px;
+  font-weight: 600;
+}
+.app-lock-meta { color: var(--faint); font-size: 11.5px; }
+.app-lock-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.app-lock-loading { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.app-lock-rules ul { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.app-lock-rules li {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 10px;
+  padding-bottom: 9px;
+  border-bottom: 1px dashed var(--line);
+}
+.app-lock-rules li:last-child { padding-bottom: 0; border-bottom: 0; }
+.app-lock-rules b { color: var(--text); font-size: 12.5px; }
+.app-lock-rules span { color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+/* ── 开启 / 关闭弹窗（portal 到 body，压住设置弹窗）──────────────────────── */
+.app-lock-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 700;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #1e1e1a61;
+}
+.app-lock-modal {
+  width: min(480px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 24px 70px #00000038;
+}
+.app-lock-modal > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.app-lock-modal > header > div { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.app-lock-modal-close {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.app-lock-modal-close:hover { color: var(--text); background: var(--panel-2); }
+.app-lock-modal-body { display: grid; gap: 12px; padding: 16px; }
+.app-lock-mode-seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.app-lock-mode-seg > button {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+}
+.app-lock-mode-seg > button.on { border-color: var(--accent); color: var(--text); background: color-mix(in srgb, var(--accent) 7%, var(--panel-2)); }
+.app-lock-mode-seg strong { font-size: 12.5px; }
+.app-lock-mode-seg small { font-size: 11px; line-height: 1.5; color: var(--faint); }
+.app-lock-field { display: grid; gap: 5px; }
+.app-lock-field > span { color: var(--muted); font-size: 11.5px; }
+.app-lock-field input {
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+.app-lock-field input:focus { border-color: var(--accent); }
+.app-lock-onetime-warning {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--amber, #f59e0b) 28%, var(--line));
+  border-left: 3px solid var(--amber, #f59e0b);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--amber, #f59e0b) 8%, var(--panel));
+  color: var(--amber, #f59e0b);
+}
+.app-lock-onetime-warning b { display: block; color: var(--text); font-size: 12.5px; }
+.app-lock-onetime-warning span { display: block; margin-top: 2px; color: var(--muted); font-size: 11.5px; line-height: 1.6; }
+.app-lock-password-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+.app-lock-password-box code {
+  flex: 1;
+  min-width: 200px;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 16px;
+  letter-spacing: 1.5px;
+  overflow-wrap: anywhere;
+}
+.app-lock-ack {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.6;
+  cursor: pointer;
+}
+.app-lock-ack input { margin-top: 2px; accent-color: var(--accent); }
+.app-lock-modal-hint { margin: 0; color: var(--faint); font-size: 11.5px; line-height: 1.6; }
+.app-lock-modal-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+.app-lock-modal-actions .primary-setting:disabled,
+.app-lock-modal-actions .secondary-setting:disabled { opacity: .45; cursor: not-allowed; }
+
+@media (max-width: 640px) {
+  .app-lock-rules li { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+  .app-lock-modal-body { padding: 12px; }
+}

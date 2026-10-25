@@ -32,6 +32,14 @@ const GUIDE_TIERS: { id: GuideTier; label: string }[] = [
  *   入口由调用方自己画（侧栏底部「新手教程」一行，与其它导航项同款）。
  *   ⛔ 不传 = 老行为（自带一行「新手引导」入口），别的调用方不用改。
  */
+/** 教程正文里的 **重点** 渲染成粗体（与 HelpDialog 同一口径；不引第三方 markdown）。 */
+function renderGuideRich(text?: string) {
+  if (!text) return null;
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => part.startsWith("**") && part.endsWith("**")
+    ? <b key={index}>{part.slice(2, -2)}</b>
+    : <span key={index}>{part}</span>);
+}
+
 export function NewbieGuide({ onOpenSettings, open: openProp, onOpenChange }: {
   onOpenSettings?: (page: string) => void;
   open?: boolean;
@@ -204,21 +212,21 @@ export function NewbieGuide({ onOpenSettings, open: openProp, onOpenChange }: {
                 </div>
               ) : (
                 <>
-                  <p className="guide-intro">{active?.intro}</p>
+                  <p className="guide-intro">{renderGuideRich(active?.intro)}</p>
                   {/* 10-18：图示 + 文字（用户：「画图+字结合起来」）—— 图是数据驱动的示意图，见 figures.tsx */}
                   <GuideFigureView figure={active?.figure} />
                   <ol className="guide-steps">
                     {active?.steps.map((step, index) => (
                       <li key={index}>
                         <span className="guide-step-index">{index + 1}</span>
-                        <div><b>{step.t}</b>{step.d ? <small>{step.d}</small> : null}</div>
+                        <div><b>{step.t}</b>{step.d ? <small>{renderGuideRich(step.d)}</small> : null}</div>
                       </li>
                     ))}
                   </ol>
                   {active?.tip && (
                     <aside className="guide-tip">
                       <Lightbulb size={14} />
-                      <div><b>{active.tip.t}</b>{active.tip.d ? <small>{active.tip.d}</small> : null}</div>
+                      <div><b>{active.tip.t}</b>{active.tip.d ? <small>{renderGuideRich(active.tip.d)}</small> : null}</div>
                     </aside>
                   )}
                   {active?.action && (

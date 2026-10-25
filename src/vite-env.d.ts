@@ -432,6 +432,18 @@ interface Window {
     respond(id: string | number, result: unknown): Promise<void>;
     getUsername(): Promise<string>;
     getUserData(): Promise<string>;
+    /* 应用锁状态（不含密码/哈希）；resetRequired=true 时主进程会写重置标记并重启 */
+    appLockStatus(): Promise<{ enabled: boolean; attempts: number; remaining: number; resetRequired: boolean; kind?: "random" | "custom"; createdAt?: number }>;
+    /* 生成一次性密码（随机或自定义）：确认 enable 前不落盘，明文只在这次返回 */
+    appLockPrepare(input: { mode?: string; password?: string }): Promise<{ ok: boolean; setupId?: string; password?: string; kind?: "random" | "custom"; error?: string }>;
+    /* 用户确认已备份密码后提交开启 */
+    appLockEnable(setupId: string): Promise<{ ok: boolean; error?: string }>;
+    /* 取消尚未确认的开启流程（不落盘） */
+    appLockCancel(setupId: string): Promise<{ ok: boolean }>;
+    /* 锁屏验证；错误次数落盘，第 10 次返回 reset=true */
+    appLockVerify(password: string): Promise<{ ok: boolean; remaining: number; reset?: boolean; error?: string }>;
+    /* 关闭应用锁需当前密码；错误同样计数 */
+    appLockDisable(password: string): Promise<{ ok: boolean; remaining: number; reset?: boolean; error?: string }>;
     setAwake(on: boolean): Promise<boolean>;
     showNotification(title: string, body: string): Promise<boolean>;
     toolStatus(): Promise<{ id: string; name: string; scope: "computer" | "browser"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string }[]>;
@@ -714,7 +726,7 @@ interface Window {
     engineCheckUpdate(): Promise<{ current: string; latest: string; hasUpdate: boolean }>;
     enginePerformUpdate(): Promise<{ ok: boolean; version: string; message: string }>;
     relaunchApp(): Promise<void>;
-    /* 10-25：在软件所在盘根新建 BOSS 会话专属项目目录，返回绝对路径 */
+    /* 10-25：在软件所在盘根新建指挥中枢专属项目目录，返回绝对路径 */
     createBossProjectDir(): Promise<string>;
     readBuiltinPlugins(): Promise<{ image?: { enabled?: boolean; baseUrl: string; apiKey: string; model: string }; vision?: { enabled?: boolean; baseUrl: string; apiKey: string; model: string } }>;
     saveBuiltinPlugins(cfg: unknown): Promise<unknown>;
@@ -837,10 +849,10 @@ interface Window {
     readPastedText(path: string): Promise<{ editable: boolean; content?: string | null }>;
     updatePastedText(path: string, content: string): Promise<{ ok: boolean; size: number }>;
     updateCheck(): Promise<{ ok: boolean; info?: { hasUpdate: boolean; reason: string; version?: string; filename?: string; size?: number; sha256?: string; changelog?: string; mandatory?: boolean; downloadUrl?: string }; currentVersion?: string; source?: string; error?: string }>;
-    updateDownload(input: { downloadUrl: string; filename?: string; mode?: "differential" | "full" }): Promise<{ ok: boolean; path?: string; bytes?: number; differential?: boolean; error?: string }>;
+    updateDownload(input: { downloadUrl: string; filename?: string; mode?: "differential" | "full" }): Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>;
     updateInstall(filePath: string): Promise<{ ok: boolean; error?: string }>;
-    /* 10-12 后台静默下载：零参数（地址只认主进程自己的检查结果，绝不接受渲染层指定） */
-    updateDownloadSilent(input?: { mode?: "differential" | "full" }): Promise<{ ok: boolean; error?: string; version?: string; path?: string; alreadyDone?: boolean; differential?: boolean }>;
+    /* 10-12 后台静默下载：地址只认主进程自己的检查结果，绝不接受渲染层指定；10-25 可选 mode 只决定补丁/完整包 */
+    updateDownloadSilent(input?: { mode?: "differential" | "full" }): Promise<{ ok: boolean; error?: string; version?: string; path?: string; alreadyDone?: boolean }>;
     /* 10-12 重启安装：零参数（先 spawn 已校验的安装包、再 quit 自己，顺序反了会被文件锁挡住） */
     updateRestartInstall(): Promise<{ ok: boolean; error?: string }>;
     bridgeStatus(): Promise<{ running: boolean; port: number; targets: number; requests: number; converted: number; forwarded: number; failures: number; modes: Record<string, "responses" | "chat"> }>;

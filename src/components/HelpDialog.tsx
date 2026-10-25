@@ -100,6 +100,7 @@ export const OVERVIEW_GROUPS: OverviewGroup[] = [
       { page: "会话备份", what: "导出 / 导入整库会话；标签存在本机，不随对话内容走", when: "要换机器或怕丢历史时" },
       { page: "归档管理", what: "已归档会话的查看、恢复、删除", when: "侧栏看不到某个旧会话时来这儿找" },
       { page: "收藏夹", what: "收藏的片段 / 截图 / 文件 / 链接的批量管理与「加入 Agent 记忆」", when: "想整理收藏，或把某条收藏固化进记忆时" },
+      { page: "应用锁", what: "应用密码锁（默认关闭）：随机或自定义密码，只展示一次；连续输错 10 次清空应用数据并重置", when: "想让别人打开应用时先输密码，或担心会话/密钥被随手翻看时" },
     ],
   },
   {
@@ -124,6 +125,7 @@ export const OVERVIEW_ROUTES: { label: string; page: string }[] = [
   { label: "每天定时自动跑", page: "定时任务" },
   { label: "换电脑 / 怕丢历史", page: "会话备份" },
   { label: "看花了多少 token", page: "使用统计" },
+  { label: "给应用加密码锁", page: "应用锁" },
   { label: "想自己加功能", page: "拓展接口" },
 ];
 
@@ -136,6 +138,7 @@ export const OVERVIEW_OUTSIDE: { label: string; where: string; hint: string }[] 
   { label: "指挥中枢", where: "侧栏顶部（Ctrl+M / mac Cmd+Shift+B）", hint: "常驻会话，群编排派活、群广播与验收都在这里" },
   { label: "命令面板", where: "Ctrl+K", hint: "直接搜任务与会话，不用翻侧栏" },
   { label: "独立弹窗", where: "会话顶栏最右", hint: "把当前会话开到新窗口；运行中暂不可用" },
+  { label: "应用锁", where: "设置 → 数据 → 应用锁", hint: "密码只显示一次；输错 10 次清空应用数据，务必先备份" },
 ];
 
 export type HelpTopic = HelpKey | "overview";

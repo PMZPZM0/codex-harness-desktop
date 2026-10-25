@@ -23,6 +23,13 @@
       "config": null
     },
     {
+      "id": "app-lock",
+      "enabled": true,
+      "file": "features/app-lock-ipc.ts",
+      "export": "appLockFeature",
+      "config": null
+    },
+    {
       "id": "appSettings",
       "enabled": true,
       "file": "features/app-settings-ipc.ts",
