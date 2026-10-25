@@ -229,23 +229,28 @@ bag.togglePinThread = togglePinThread as typeof bag.togglePinThread;
   /* 10-25 用户令：「新建完项目，肯定要在项目里面显示出来啊，就是没有会话也要展示出来」：
      本地维护「已知项目登记表」（localStorage known-projects-v1，新建项目/切 workspace 时登记），
      projectGroups 把登记表里**还没有会话**的项目以空分组并入 —— 空项目显示占位，不再是"建完就消失"。 */
-  const readKnownProjects = (): string[] => {
+  /* 10-25 修：登记表必须是 **React state**（localStorage 改了不会触发重渲染 ⇒
+     「删除项目」只写盘、行不消失，用户看到的就是“没有删除功能”）。 */
+  const [knownProjects, setKnownProjects] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem("known-projects-v1") || "[]").filter((v: unknown) => typeof v === "string" && v); } catch { return []; }
-  };
+  });
   const registerKnownProject = (cwd: string) => {
     if (!cwd) return;
-    try {
-      const next = [...new Set([cwd, ...readKnownProjects()])];
-      localStorage.setItem("known-projects-v1", JSON.stringify(next.slice(0, 60)));
-    } catch { /* 隐私模式：登记表只影响空项目展示，失败可接受 */ }
+    setKnownProjects((current) => {
+      const next = [...new Set([cwd, ...current])].slice(0, 60);
+      try { localStorage.setItem("known-projects-v1", JSON.stringify(next)); } catch { /* 隐私模式：登记表只影响空项目展示 */ }
+      return next;
+    });
   };
   bag.registerKnownProject = registerKnownProject as typeof bag.registerKnownProject;
   /* 10-25 用户令：项目行菜单加「删除项目」—— 从侧栏摘除项目（登记表同步摘除），**会话保留**
      （归到未分组），与「移除（删除全部对话）」形成两档。 */
   const unregisterKnownProject = (cwd: string) => {
-    try {
-      localStorage.setItem("known-projects-v1", JSON.stringify(readKnownProjects().filter((v) => v !== cwd)));
-    } catch { /* 隐私模式：摘除失败只影响空项目展示 */ }
+    setKnownProjects((current) => {
+      const next = current.filter((v) => v !== cwd);
+      try { localStorage.setItem("known-projects-v1", JSON.stringify(next)); } catch { /* 隐私模式 */ }
+      return next;
+    });
   };
   bag.unregisterKnownProject = unregisterKnownProject as typeof bag.unregisterKnownProject;
   useEffect(() => { if (bag.workspace) registerKnownProject(bag.workspace); }, [bag.workspace]);
@@ -258,9 +263,9 @@ bag.togglePinThread = togglePinThread as typeof bag.togglePinThread;
       map.set(cwd, [...(map.get(cwd) ?? []), entry]);
     }
     // 登记表里没有会话的项目 ⇒ 空分组并入（新建即显示，不靠首条会话才出现）
-    for (const cwd of readKnownProjects()) if (!map.has(cwd)) map.set(cwd, []);
+    for (const cwd of knownProjects) if (!map.has(cwd)) map.set(cwd, []);
     return [...map.entries()].sort((a, b) => Math.max(0, ...b[1].map((entry) => entry.updatedAt)) - Math.max(0, ...a[1].map((entry) => entry.updatedAt)));
-  }, [bag.listThreads, dispatchCwdMap]);
+  }, [bag.listThreads, dispatchCwdMap, knownProjects]);
 bag.projectGroups = projectGroups as typeof bag.projectGroups;
 
   const allProjectsCollapsed = bag.projectGroups.length > 0 && bag.projectGroups.every(([cwd]) => !bag.expandedProjects.has(cwd));
