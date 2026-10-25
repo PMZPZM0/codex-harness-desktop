@@ -152,8 +152,8 @@
 .boss-chat-bubble .who { font-size: 11px; font-weight: 600; color: var(--muted); }
 .boss-chat-bubble[data-kind="chat-user"] { background: color-mix(in srgb, var(--accent) 12%, var(--panel)); border-color: color-mix(in srgb, var(--accent) 24%, var(--line)); }
 .boss-chat-bubble[data-kind="chat-user"] .who { color: var(--accent); }
-.boss-chat-bubble[data-kind="chat-boss"] { border-color: color-mix(in srgb, var(--amber, #d29922) 36%, var(--line)); }
-.boss-chat-bubble[data-kind="chat-boss"] .who { color: var(--amber, #d29922); }
+.boss-chat-bubble[data-kind="chat-boss"] { border-color: color-mix(in srgb, var(--amber) 36%, var(--line)); }
+.boss-chat-bubble[data-kind="chat-boss"] .who { color: var(--amber); }
 
 .boss-chat-sys {
   display: flex; align-items: center; gap: 6px;
@@ -213,7 +213,7 @@
 .boss-help-head { display: flex; align-items: center; gap: 8px; }
 .boss-help-head b { flex: 1; font-size: 13px; }
 .boss-help-row { display: flex; flex-direction: column; gap: 3px; }
-.boss-help-title { font-size: 12px; font-weight: 600; color: var(--amber, #d29922); }
+.boss-help-title { font-size: 12px; font-weight: 600; color: var(--amber); }
 .boss-help-body { font-size: 12px; line-height: 1.65; color: var(--muted); }
 /* 与成员图标同一断点（避免窄屏只剩一个孤零零的问号） */
 @media (max-width: 640px) { .boss-help-btn { display: none; } }
@@ -238,26 +238,26 @@
   display: flex; flex-direction: column; align-items: center; gap: 9px;
   text-align: center;
   padding: 20px 20px 16px;
-  border: 1px solid color-mix(in srgb, var(--amber, #d29922) 22%, var(--line));
+  border: 1px solid color-mix(in srgb, var(--amber) 22%, var(--line));
   border-radius: 16px;
-  background: color-mix(in srgb, var(--amber, #d29922) 5%, var(--panel));
+  background: color-mix(in srgb, var(--amber) 5%, var(--panel));
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.10);
 }
 .boss-intro-mark {
   display: inline-flex; align-items: center; justify-content: center;
   width: 44px; height: 44px; border-radius: 50%;
-  color: color-mix(in srgb, var(--amber, #d29922) 88%, var(--text));
-  background: color-mix(in srgb, var(--amber, #d29922) 12%, var(--panel));
-  border: 1px solid color-mix(in srgb, var(--amber, #d29922) 26%, var(--line));
+  color: color-mix(in srgb, var(--amber) 88%, var(--text));
+  background: color-mix(in srgb, var(--amber) 12%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--amber) 26%, var(--line));
 }
 .boss-intro-title { margin: 2px 0 0; font-size: 17px; font-weight: 600; color: var(--text); }
 .boss-intro-sub { margin: 0; font-size: 12.5px; line-height: 1.72; color: var(--muted); }
 .boss-intro-chips { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin-top: 6px; }
 .boss-intro-chip {
   padding: 6px 13px;
-  border: 1px solid color-mix(in srgb, var(--amber, #d29922) 26%, var(--line));
+  border: 1px solid color-mix(in srgb, var(--amber) 26%, var(--line));
   border-radius: 999px;
-  background: color-mix(in srgb, var(--amber, #d29922) 7%, var(--panel));
+  background: color-mix(in srgb, var(--amber) 7%, var(--panel));
   color: var(--text);
   font: inherit; font-size: 12px; line-height: 1.4;
   cursor: pointer;
@@ -265,8 +265,8 @@
   transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
 }
 .boss-intro-chip:hover {
-  border-color: color-mix(in srgb, var(--amber, #d29922) 52%, var(--line));
-  background: color-mix(in srgb, var(--amber, #d29922) 12%, var(--panel));
+  border-color: color-mix(in srgb, var(--amber) 52%, var(--line));
+  background: color-mix(in srgb, var(--amber) 12%, var(--panel));
   transform: translateY(-1px);
 }
 .boss-intro-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -279,30 +279,30 @@
   color: var(--muted);
 }
 .sidebar-quick .sidebar-quick-btn.sidebar-quick-boss:hover { color: var(--text); }
-.sidebar-quick .sidebar-quick-btn.sidebar-quick-boss svg { color: var(--amber, #d29922); }
+.sidebar-quick .sidebar-quick-btn.sidebar-quick-boss svg { color: var(--amber); }
 
 /* 侧栏 BOSS 按钮「选中效果」（用户点名）：面板开着 = 高亮，再点收起 */
 .sidebar-quick .sidebar-quick-btn.sidebar-quick-boss.boss-open {
-  background: color-mix(in srgb, var(--amber, #d29922) 12%, var(--panel));
-  border-color: color-mix(in srgb, var(--amber, #d29922) 30%, var(--line));
+  background: color-mix(in srgb, var(--amber) 12%, var(--panel));
+  border-color: color-mix(in srgb, var(--amber) 30%, var(--line));
   color: var(--text);
 }
-.sidebar-quick .sidebar-quick-btn.sidebar-quick-boss.boss-open svg { color: var(--amber, #d29922); }
+.sidebar-quick .sidebar-quick-btn.sidebar-quick-boss.boss-open svg { color: var(--amber); }
 
 /* 顶栏成员按钮开合态 */
-.boss-members-btn.boss-members-btn-open { color: var(--amber, #d29922); }
+.boss-members-btn.boss-members-btn-open { color: var(--amber); }
 
 /* ── 10-25 用户令：群聊专属界面整块删除（BOSS 会话 = 普通会话）──
    原 .boss-stage* / .boss-rail* 规则随 BossGroupStage.tsx 一并移除；
    右侧群动态面板（.boss-panel*）与顶栏成员入口（.boss-members-*）保留。 */
 
 /* 正常群聊语义：只有「你」在右；BOSS/成员在左 */
-.boss-chat-bubble[data-kind="chat-boss"] .who { color: var(--amber, #d29922); font-weight: 600; }
+.boss-chat-bubble[data-kind="chat-boss"] .who { color: var(--amber); font-weight: 600; }
 .boss-panel-feed .boss-chat-row { max-width: 88%; }
 
 /* 面板头部「群动态」开关（原 .boss-stage-dynamic，随覆盖层删除后归到面板名下） */
 .boss-panel-dynamic { flex: none; font-size: 11px; }
-.boss-panel-dynamic.is-on { color: var(--amber, #d29922); border-color: color-mix(in srgb, var(--amber, #d29922) 40%, var(--line)); }
+.boss-panel-dynamic.is-on { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 40%, var(--line)); }
 
 /* popover 里的群选择器与提示 */
 .boss-members-pop-select { flex: 1; min-width: 0; max-width: none; }
@@ -315,15 +315,17 @@
   width: 24px; height: 24px; flex: none;
   border-radius: 50%;
   font-size: 11px; font-weight: 600; line-height: 1;
-  color: hsl(var(--av-hue, 40) 70% 34%);
-  background: hsl(var(--av-hue, 40) 72% 88%);
-  border: 1px solid hsl(var(--av-hue, 40) 55% 70%);
+  /* ⛔ 不用 var(--av-hue, 40)：项目没定义这个变量（守卫【160】会报「被引用但从未定义」）
+     ⇒ 色相由内联的 --boss-avatar-hue 传入（TSX 侧设 style），这里给兜底值。 */
+  color: hsl(var(--boss-avatar-hue, 40) 70% 34%);
+  background: hsl(var(--boss-avatar-hue, 40) 72% 88%);
+  border: 1px solid hsl(var(--boss-avatar-hue, 40) 55% 70%);
 }
 .boss-avatar[data-status="busy"], .boss-avatar[data-status="running"] {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 45%, transparent);
 }
 .boss-avatar[data-status="reviewing"] {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn, #d29922) 45%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--amber) 45%, transparent);
 }
 .boss-avatar[data-status="locked"] { opacity: 0.55; }
 .boss-member-strip {

@@ -227,7 +227,7 @@ if (state) {
 {
   const manifest = JSON.parse(read("electron/ipc-channels.manifest.json"));
   const channels = (manifest.channels ?? []).filter((c) => String(c.channel).startsWith("boss-groups:"));
-  ok(channels.length === 12, `manifest 有 12 个 boss-groups 通道（实测 ${channels.length}）`);
+  ok(channels.length === 14, `manifest 有 14 个 boss-groups 通道（实测 ${channels.length}）`);
   ok(manifest.count === manifest.channels.length, `manifest.count 与通道数一致（${manifest.count} / ${manifest.channels.length}）`);
   ok(channels.every((c) => typeof c.invokeArgs === "string" && Boolean(c.returns)
     && (!String(c.paramsImpl ?? "").trim() || String(c.invokeArgs ?? "").trim())),
@@ -240,7 +240,7 @@ if (state) {
   ok(read("electron/composition.gen.ts").includes("boss-groups-ipc"), "composition.gen.ts 已重生成（跑过 npm run gen:domains）");
 
   const registry = read("electron/ipc-registry.ts");
-  ok(/\{ prefix: "boss-groups", count: 12, status: "in-features", file: "features\/boss-groups-ipc\.ts"/.test(registry),
+  ok(/\{ prefix: "boss-groups", count: 14, status: "in-features", file: "features\/boss-groups-ipc\.ts"/.test(registry),
     "ipc-registry.ts 账本已登记（count=12）");
 
   const preload = read("electron/preload.ts");
@@ -315,6 +315,35 @@ if (state) {
   ok(/BossProjectDirDialog/.test(read("src/features/app-view/AppView/01-sidebar-shell.tsx"))
     && /createBossProjectDir/.test(read("src/features/app-view/AppView/01-sidebar-shell.tsx")),
     "新建 BOSS 会话走**应用内对话框**（选目录 / 在软件所在盘自动新建），⛔ 不用系统弹窗或内联 toast");
+  /* ⛔⛔ 10-25 用户令：「记忆板块里面加一个BOSS会话记忆板块，跟普通会话完全拆开」
+     +「删除了BOSS会话，这里就同步更新，新建了就是新的」。
+
+     ① **名单必须在主进程**：记忆层的捕获写入（boot.ts 的 captureTurn）在主进程跑，
+        它得知道这个 thread 是 BOSS 会话才能把记忆写进它自己的目录 ⇒ 渲染层
+        localStorage 那份不够用（主进程读不到）⇒ 登记表落 <userData>/boss-sessions.json。
+     ② **读写都要路由**：捕获写入（boot.ts）与渲染层注入（send.tsx）都用专属目录；
+        只改一边会出现「写进项目、读自己」或反之。
+     ③ **删除同步**：删 BOSS 会话 ⇒ 名单摘掉 + 记忆目录清掉；新建 ⇒ 全新目录、空记忆。
+     ④ **删除类操作要有路径安全闸**（只许删 boss-home/memories 下的目录）。 */
+  const bossRegistry = read("electron/boss-groups/session-registry.ts");
+  ok(/boss-sessions\.json/.test(bossRegistry) && /export function bossMemoryWorkspace/.test(bossRegistry),
+    "BOSS 会话身份登记表落主进程（<userData>/boss-sessions.json）+ 专属记忆目录");
+  ok(/isBossSession/.test(read("electron/features/boot.ts")) && /bossMemoryWorkspace/.test(read("electron/features/boot.ts")),
+    "⛔ 捕获写入按名单路由到 BOSS 专属目录（不写进用户选的项目）");
+  const sendMem = read("src/features/app-state/parts/part08/02-seg/send.tsx");
+  ok(/ensureBossMemoryWorkspace/.test(sendMem) && /memWorkspace/.test(sendMem),
+    "⛔ 渲染层注入的常驻记忆/召回按 BOSS 专属目录取（与项目记忆分开）");
+  const reqMem = read("src/features/app-state/parts/part05/event-router/02-request.tsx");
+  ok(/ensureBossMemoryWorkspace/.test(reqMem),
+    "⛔ memory_write 写进 BOSS 专属目录（不污染项目记忆）");
+  ok(/action: "remove"/.test(read("src/features/boss-group-view/boss-threads-store.mjs"))
+    && /action: "rename"/.test(read("src/features/boss-group-view/boss-threads-store.mjs")),
+    "删除/重建 BOSS 会话时同步主进程名单（⇒ 记忆目录跟着清掉/搬过去）");
+  ok(/拒绝清理该路径/.test(bossRegistry) && /boss-home", "memories"/.test(bossRegistry),
+    "⛔ 清空记忆有路径安全闸（只许删 BOSS 记忆目录内的路径）");
+  ok(/BossMemoryPanel/.test(read("src/features/settings-memory/MemoryCenterSection.tsx"))
+    && existsSync(join(ROOT, "src/features/settings-memory/BossMemoryPanel.tsx")),
+    "记忆设置页有独立的「BOSS 会话记忆」板块（与项目共享记忆库分开）");
   ok(/sessionIds/.test(read("src/features/boss-group-view/boss-threads-store.d.mts")),
     "BOSS 会话有独立身份标记 sessionIds（⛔ homeId 不再用于复用会话）");
   const sideSrc = read("src/features/app-view/AppView/01-sidebar-shell.tsx");

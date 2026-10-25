@@ -780,3 +780,24 @@
   .memory-backend-main { flex-wrap: wrap; }
   .memory-backend-switch { margin-left: auto; }
 }
+
+/* ── BOSS 会话记忆板块（10-25 用户令：「记忆板块里面加一个BOSS会话记忆板块，
+      跟普通会话完全拆开」）────────────────────────────────────────────────
+   形态沿用「书架」的左右分栏骨架（⛔ 与金字塔 / 控制台刻意不同），
+   但左列是 **BOSS 会话**（不是项目）—— 因为 BOSS 记忆不属于任何项目。 */
+.boss-mem-root { display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: 12px; align-items: start; }
+.boss-mem-list { display: flex; flex-direction: column; gap: 4px; border-right: 1px solid var(--line); padding-right: 10px; }
+.boss-mem-item {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%; padding: 6px 8px; text-align: left;
+  border: 1px solid transparent; border-radius: 8px;
+  background: transparent; color: var(--text); cursor: pointer; font-size: 12px;
+}
+.boss-mem-item:hover { background: var(--faint); }
+.boss-mem-item.is-active { border-color: color-mix(in srgb, var(--amber) 45%, var(--line-soft)); background: color-mix(in srgb, var(--amber) 12%, transparent); }
+.boss-mem-item-icon { display: inline-flex; color: var(--amber); flex: none; }
+.boss-mem-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.boss-mem-detail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.boss-mem-layers { display: flex; flex-direction: column; gap: 6px; }
+.boss-mem-actions { display: inline-flex; gap: 6px; align-items: center; }
+.boss-mem-actions .danger { color: var(--red); }

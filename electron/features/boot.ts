@@ -15,6 +15,7 @@ import os from "node:os";
 import { WeixinGateway } from "../weixin-gateway";
 import { markBoot } from "../boot-timing";
 import { debugMemoryCapture } from "../memory-capture-debug";
+import { bossMemoryWorkspace, isBossSession } from "../boss-groups/session-registry";
 import { debugTurnFiles } from "../debug/turn-files-debug";
 import { sendToWindow } from "./window-bus";
 import { getMusicStream } from "../music-streams";
@@ -867,7 +868,19 @@ export async function bootApp() {
         const willCapture = !isWelcomeGen && Boolean(buffer.user.trim() || buffer.assistant.trim());
         debugMemoryCapture({ method: "turn/completed", threadId, turnId: turnIdOf(p) || null, via: taken.via, userLen: buffer.user.length, assistantLen: buffer.assistant.length, itemsLen: items.length, cwd: buffer.cwd ?? null, isWelcomeGen, willCapture });
         if (willCapture) {
-          void workspaceMemoryEnabled(buffer.cwd).then((enabled: any) => memoryStore.captureTurn(p?.threadId ?? "", buffer.user, buffer.assistant, { workspace: buffer.cwd, includeWorkspace: enabled })).catch((error: any) => sendToWindow("harness:event", { type: "memory", message: `Memory Gateway 捕获失败：${error.message}`, at: Date.now() }));
+          /* ⛔⛔ 10-25 用户令：「记忆板块里面加一个BOSS会话记忆板块，跟普通会话完全拆开」。
+             BOSS 会话跑在用户选的项目目录里 ⇒ 捕获写入若还用 `buffer.cwd`，
+             它的日志/纪律会**写进那个项目的记忆** ⇒ 与普通会话混在一起。
+             ⇒ BOSS 会话改写它自己的专属记忆目录（`<userData>/boss-home/memories/<threadId>`）。
+                名单在主进程（session-registry.ts），这里能直接判。 */
+          void (async () => {
+            let ws = buffer.cwd;
+            try {
+              if (await isBossSession(threadId)) ws = bossMemoryWorkspace(threadId) || buffer.cwd;
+            } catch { /* 名单读不到就退回原行为（别把记忆写丢） */ }
+            const enabled = await workspaceMemoryEnabled(ws);
+            await memoryStore.captureTurn(threadId, buffer.user, buffer.assistant, { workspace: ws, includeWorkspace: enabled });
+          })().catch((error: any) => sendToWindow("harness:event", { type: "memory", message: `Memory Gateway 捕获失败：${error.message}`, at: Date.now() }));
         }
         /* ⛔⛔ 10-25 用户令：「这个记忆蒸馏器又是什么玩意啊…删了，让 codex 自己蒸馏记忆」。
            原来这里在**会话结束时**自动调 autoDistill → 它会开一个内部只读会话

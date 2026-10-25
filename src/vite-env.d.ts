@@ -1192,6 +1192,8 @@ interface Window {
     bossGroupPool(): Promise<any>;
     /* BOSS 会话身份登记（add/remove/rename/list）—— 记忆路由的唯一真相源 */
     bossGroupSession(input: any): Promise<any>;
+    /* 清空某个 BOSS 会话的专属记忆目录（⛔ 只清记忆，不删会话） */
+    clearBossMemory(input: any): Promise<any>;
 /* ═══ gen:end ═══ */
 
 

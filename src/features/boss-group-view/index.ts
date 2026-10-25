@@ -14,5 +14,15 @@ export { BossProjectDirDialog } from "./BossProjectDirDialog";
 export { BOSS_ROLE_PROMPT, BOSS_ROLE_MARK, BOSS_ROLE_END } from "./boss-role";
 /* store 动作也走 barrel（域内唯一出口） */
 export { closeBossPanel, getBossPanelState, openBossPanel, setBossPanelGroup, subscribeBossPanel } from "./panel-store.mjs";
-export { getBossThreads, removeBossSessionId, renameBossSessionId, setBossHomeThreadId, setBossPending, subscribeBossThreads } from "./boss-threads-store.mjs";
+export {
+  bossMemoryWorkspaceFor,
+  ensureBossMemoryWorkspace,
+  ensureBossSessionRegistered,
+  getBossThreads,
+  removeBossSessionId,
+  renameBossSessionId,
+  setBossHomeThreadId,
+  setBossPending,
+  subscribeBossThreads,
+} from "./boss-threads-store.mjs";
 export type { BossThreadsState } from "./boss-threads-store.mjs";
