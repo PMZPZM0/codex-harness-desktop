@@ -343,6 +343,20 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     if (bossThreads.pending && !currentThreadId) return;
     setBossDirDialog(true);
   };
+  /* 10-25 用户：BOSS 会话要有快捷键并显示在行尾（与新建任务同款 kbd）。 */
+  useEffect(() => {
+    const mac = /mac/i.test(navigator.platform);
+    const onKey = (event: KeyboardEvent) => {
+      const mod = mac ? event.metaKey : event.ctrlKey;
+      if (!mod || !event.shiftKey || event.altKey || (mac ? event.ctrlKey : event.metaKey)) return;
+      if (event.key.toLowerCase() !== "b") return;
+      event.preventDefault();
+      openBossSession();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bossOn, bossThreads.pending, currentThreadId]);
 
   /* 10-25：新建项目弹窗（ZCode 式三选一）。选完目录后与 chooseWorkspace 同款落地：
      workspace 三处同步（state/ref/localStorage）—— 不只改 state，侧栏项目分组才认。 */
@@ -535,7 +549,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   aria-pressed={bossOn}
                   onClick={() => openBossSession()}
                 >
-                  <Crown size={15} /><span>BOSS 会话</span>
+                  <Crown size={15} /><span>BOSS 会话</span><kbd className="quick-kbd">{hk("Ctrl+Shift+B")}</kbd>
                 </button>
                 {/* 10-25 用户令：拓展功能（技能 · 插件 · MCP）从折叠组拉出来常驻在这里；
                     搜索任务只在下方视图行的 🔍 里。动作与折叠组原入口同一总线（教程弹窗）。 */}
