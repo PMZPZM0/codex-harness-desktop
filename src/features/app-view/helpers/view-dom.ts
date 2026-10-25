@@ -15,6 +15,8 @@ import { imageDisplaySrc } from "../../../lib/image-src.mjs";
 
 
 
+let dragCaret: HTMLElement | null = null;
+
 export /** 生成内联附件 chip（contenteditable=false）：点主体打开/预览，点 X 删除；**按住可拖动排序**。
  *  图片与文件同一套外形：图片用真实缩略图、文件用图标。
  *  ⛔ 拖动用 Pointer Events（HTML5 draggable 在 contenteditable 里会被编辑器吞掉，实测拖不动）。 */
