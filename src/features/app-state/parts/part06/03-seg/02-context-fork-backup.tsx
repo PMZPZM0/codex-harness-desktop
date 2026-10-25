@@ -12,6 +12,10 @@ import { resolveImagePath } from "../../../../../lib/resolve-image-path";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../app-view/types";
 import type { Bag } from "../../bag-types";
+/* ⛔ 新建**普通**会话 = 离开「BOSS 欢迎界面」那个过渡态（10-25 用户实测：
+   「我在 BOSS 会话欢迎界面，点这个项目上的新建他不会跳转到普通会话的欢迎界面」）。
+   `pending` 是「下一条会话是 BOSS」的标记，只有 BOSS 入口该置它 ⇒ 这里统一清掉。 */
+import { setBossPending } from "../../../../boss-group-view";
 
 export function usePart06c2(bag: Bag) {
   async function copyImage(path: string) {
@@ -196,6 +200,13 @@ bag.forkThreadFromSidebar = forkThreadFromSidebar as typeof bag.forkThreadFromSi
 bag.importConversationMarkdown = importConversationMarkdown as typeof bag.importConversationMarkdown;
 
   function startNewThread() {
+    /* ⛔⛔ 这里是**所有**「新建普通会话」入口的唯一漏斗（新建任务 / Ctrl+N / 项目行的 ＋ /
+       命令面板 /new / 空白态按钮都走它）。10-25 用户实测：
+       「我在 BOSS 会话欢迎界面，点这个项目上的新建他不会跳转到普通会话的欢迎界面」
+       —— 根因是 `bossThreads.pending`（= 下一条会话是 BOSS）只在侧栏「新建任务」里被清过，
+       项目行那条路径没清 ⇒ 标签页都换新的了，时间线还在按 pending 渲染 BOSS 引导卡。
+       ⇒ 在漏斗里统一清：新建普通会话必然不是 BOSS 会话（BOSS 入口会在调用**之后**再置 true）。 */
+    setBossPending(false);
     bag.setChatSearchOpen(false);
     const savedSandbox = localStorage.getItem("default-sandbox") ?? "danger-full-access";
     // ⛔ 输入框草稿（09-19）：先存走当前会话草稿（必须在置空 threadRef 之前），再恢复「新会话草稿」

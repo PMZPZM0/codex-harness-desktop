@@ -366,12 +366,15 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         ⇒ 再点不重置，免得把用户刚打的提示词清掉、并重复弹对话框。 */
   const openBossSession = () => {
     if (bossThreads.pending && !currentThreadId) return;
-    /* ① 先落进 BOSS 欢迎界面：置 pending（空态渲染欢迎界面）+ 起一个全新会话。
-       ⛔ 会话是在**选定项目地址之后**才真正建（引擎发首条消息时才分配 id），
-          这里只把界面切过去 —— 用户先看到 BOSS 欢迎界面。 */
-    setBossPending(true);
+    /* ① 起一个全新空会话，**然后**才置 pending ⇒ 落进 BOSS 欢迎界面。
+       ⛔⛔ 顺序不能反：`startNewThread()` 是所有「新建普通会话」的统一漏斗，它在开头会
+          `setBossPending(false)`（10-25 用户实测：项目行的 ＋ 不清这个标记 ⇒ 停在 BOSS 欢迎界面时
+          点项目新建，标签页换了、界面却还卡在 BOSS 引导卡）。所以 BOSS 入口必须**在它之后**置 true，
+          否则刚置上就被它清掉、按钮点了进不去欢迎界面。
+       ⛔ 会话是在**选定项目地址之后**才真正建（引擎发首条消息时才分配 id），这里只把界面切过去。 */
     bossHomePending.current = true;              // 这个新会话登记为 BOSS 会话（拿到 id 后）
     startNewThread();                            // ⛔ 每次都是全新会话
+    setBossPending(true);                        // 必须在 startNewThread 之后（它会清这个标记）
     /* ② 再弹项目地址对话框：⛔ 用「自动弹出」标记 ⇒ 由**欢迎界面**消费后再弹，
           保证用户先看到欢迎界面（直接 open 会让弹窗盖住它 ⇒ 顺序反了）。 */
     autoOpenBossDirDialog();
@@ -589,7 +592,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
             </div>
             <div className="sidebar-tabs" role="navigation" aria-label="导航">
               <div className="sidebar-quick">
-                <button className="sidebar-tab sidebar-quick-btn" title={`新建任务（${hk("Ctrl+N")}）`} onClick={() => { setBossPending(false); startNewThread(); }}>
+                <button className="sidebar-tab sidebar-quick-btn" title={`新建任务（${hk("Ctrl+N")}）`} onClick={() => startNewThread()}>
                   <MessageCirclePlus size={16} strokeWidth={2} className="ic-blue" /><span>新建任务</span><kbd className="quick-kbd">{hk("Ctrl+N")}</kbd>
                 </button>
                 <button
