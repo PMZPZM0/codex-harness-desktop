@@ -521,8 +521,10 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 >
                   <Crown size={15} /><span>BOSS 会话</span>
                 </button>
-                <button className="sidebar-tab sidebar-quick-btn sidebar-quick-search ic-cyan" title="搜索任务与操作" onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}>
-                  <Search size={15} /><span>搜索任务</span>
+                {/* 10-25 用户令：拓展功能（技能 · 插件 · MCP）从折叠组拉出来常驻在这里；
+                    搜索任务只在下方视图行的 🔍 里。动作与折叠组原入口同一总线（教程弹窗）。 */}
+                <button className="sidebar-tab sidebar-quick-btn sidebar-quick-search ic-pink" title="技能 · 插件 · MCP：查看教程与入口" onClick={() => setGuideKey("extensions")}>
+                  <Zap size={15} className="ic-pink" /><span>拓展功能</span>
                 </button>
               </div>
             </div>
