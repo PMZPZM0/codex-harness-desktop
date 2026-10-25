@@ -29,16 +29,21 @@ export function NewProjectDialog({ open, onClose, onCreate }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const firstRef = useRef<HTMLButtonElement>(null);
+  /* ⛔ mode 不进 effect 依赖：切表单时 effect 重跑会把状态重置回 "choose"
+     （10-25 实测症状：「新建文件夹/输入路径」点击闪一下就没了）。Esc 用 ref 读当前 mode。 */
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   useEffect(() => {
     if (!open) return;
     setMode("choose"); setParentDir(""); setFolderName(""); setPathInput(""); setError(""); setBusy(false);
     const prev = document.activeElement as HTMLElement | null;
     firstRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); if (mode === "choose") onClose(); else { setMode("choose"); setError(""); } } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); if (modeRef.current === "choose") onClose(); else { setMode("choose"); setError(""); } } };
     window.addEventListener("keydown", onKey, true);
     return () => { window.removeEventListener("keydown", onKey, true); prev?.focus?.(); };
-  }, [open, onClose, mode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, onClose]);
 
   if (!open) return null;
 
