@@ -10,7 +10,7 @@ import { removeBossSessionId } from "../../../boss-group-view";
 /*指挥中枢的项目地址：⛔ **它自己的目录**，不是全局 workspace ——
    10-25 用户实测：「下面已经自动选了别的会话的项目地址」「每次指挥中枢都不要自动选择旧的会话项目地址」。
    ⇒ 建会话时 cwd 取本会话登记的目录（bossDirFor），没有才回落全局 workspace。 */
-import { bossDirFor, setBossDirChosen } from "../../../boss-group-view";
+import { BOSS_ROLE_PROMPT, bossDirFor, getBossThreads, setBossDirChosen } from "../../../boss-group-view";
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "../../../../lib/session-scope.mjs";
@@ -681,7 +681,16 @@ bag.buildDynamicTools = buildDynamicTools as typeof bag.buildDynamicTools;
        其次「无项目」模式的独立临时目录，最后才是全局 workspace。
        ⇒ 指挥中枢**不会**继承别的会话的项目地址，也不会污染全局。 */
     const sessionCwd = bossDirFor(bag.thread?.id) || bag.welcomeScratchDir || bag.workspace;
-    const developerInstructions = [scopeSeed, onboardingInstructions].filter(Boolean).join("\n\n");
+    /* ⛔⛔ 10-26 用户实测截图：中枢的角色说明被当**用户消息**整块显示在气泡里（连 <!--boss-role-->
+       标记都露出来）。它本来就该是「内置注入」——`thread/start` 的 developerInstructions 才是那个位置：
+         · 不在消息正文里 ⇒ 用户气泡里根本不会出现；
+         · 建会话时投一次，不占每轮上下文（原来每轮重发一遍 ~1.5KB，50 轮就是 75KB 重复）；
+         · 系统层比用户消息层更硬（模型不会把它当成"用户说过的话"）。
+       `pending` 只在「刚点中枢、会话还没建出来」这段为 true ⇒ 正好是这条会话的身份判据。 */
+    const bossRoleSeed = (() => {
+      try { return getBossThreads().pending ? BOSS_ROLE_PROMPT : ""; } catch { return ""; }
+    })();
+    const developerInstructions = [bossRoleSeed, scopeSeed, onboardingInstructions].filter(Boolean).join("\n\n");
     const started = await window.codex.request("thread/start", {
       model: bag.selectedModel?.model ?? modelName(bag.modelId),
       // 欢迎页「无项目」模式：本会话用自动创建的独立临时目录（每个会话单独一个）；

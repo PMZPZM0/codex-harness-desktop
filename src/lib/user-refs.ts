@@ -115,7 +115,13 @@ export function parseUserRefs(text: string): ParsedUserRefs {
       teamTask = { kind: "member", requirement: legacy[2].trim() };
     }
   }
-  return { cleanText: clean.replace(/\n{3,}/g, "\n\n").trim(), files, skills, contexts, teamTask, imported, threadReferences };
+  /* ⛔⛔ 10-26 用户实测截图：老会话（角色说明曾拼进用户正文的那批）打开时，整段
+     <!--boss-role-->…<!--/boss-role--> 连注释标记一起显示在气泡里。
+     收在**这里**剥（cleanText 是气泡正文 / 会话标题 / 编辑器初始值 / 复制 / 搜索 的公共来源）——
+     ⛔ 不要在各渲染组件里各剥一次：漏一处就漏一处显示，这次的 bug 就是这么来的
+        （userDisplayText 剥了，但 UserMessageView 正文只读 cleanText，等于没剥）。 */
+  const withoutRole = clean.replace(/<!--boss-role-->[\s\S]*?<!--\/boss-role-->\s*/g, "");
+  return { cleanText: withoutRole.replace(/\n{3,}/g, "\n\n").trim(), files, skills, contexts, teamTask, imported, threadReferences };
 }
 
 /** 用户消息对外可见文本（复制/引用/标题/上下文选择/乐观消息匹配键使用）：
@@ -126,8 +132,8 @@ export function parseUserRefs(text: string): ParsedUserRefs {
 export function userDisplayText(rawText: string): string {
   const refs = parseUserRefs(rawText);
   let text = refs.teamTask ? refs.teamTask.requirement : refs.cleanText;
-  /* ⛔ 10-25：指挥中枢的角色说明是**注入给模型**的，用户在气泡里不该看到。
-     它带 <!--boss-role-->…<!--/boss-role--> 标记 ⇒ 显示层剥掉，模型看得到。 */
+  /* 角色段在 parseUserRefs 里已经从 cleanText 剥掉；这里再兜一次是因为上面 branch 走的是
+     teamTask.requirement（团队/成员会话首条），那条路径不经过 cleanText。 */
   text = text.replace(/<!--boss-role-->[\s\S]*?<!--\/boss-role-->\s*/g, "");
   return stripImageTokens(text);
 }
