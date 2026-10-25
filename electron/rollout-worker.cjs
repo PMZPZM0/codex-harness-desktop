@@ -63,6 +63,7 @@ function stripHarnessBlocks(text) {
   // 与召回段同属内部上下文 —— 导出/备份的正文里不得出现（09-22 实测气泡侧已泄漏过一轮）。
   out = out.replace(/^\[Harness 常驻记忆[^\]]*\][\s\S]*?^\[常驻记忆结束\][ \t]*\r?\n?/gm, "");
   out = out.replace(/^\[本轮已引用技能\][\s\S]*?^\[请按上述技能工作流执行\][ \t]*\r?\n?/gm, "");
+  out = out.replace(/<!--harness-notice-->[\s\S]*?<!--\/harness-notice-->\s*/g, "");
   return out.replace(/\n{3,}/g, "\n\n").trim();
 }
 

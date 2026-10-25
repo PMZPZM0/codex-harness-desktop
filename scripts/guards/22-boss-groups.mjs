@@ -676,7 +676,7 @@ if (state) {
      ⛔ 真跑（15 种真实格式、打包真实 parseUserRefs）：字符串契约靠读代码判断正是上次翻车的根因。 */
   const strip = spawnSync(process.execPath, [join(ROOT, "scripts", "verify-injection-strip.mjs")], { cwd: ROOT, encoding: "utf8", timeout: 240_000 });
   ok(strip.status === 0,
-    `注入段剥离 + 群广播解析回归：28 项（15 种注入格式 + 6 组群事件 + 文案同源）${strip.status === 0 ? "" : `（失败：${String(strip.stdout ?? "").split("\n").filter((l) => l.includes("✗")).slice(0, 3).join(" / ")}）`}`);
+    `注入段剥离 + 群广播 + 告知队列回归：32 项（16 种注入格式 + 6 组群事件 + 3 条告知队列 + 文案同源）${strip.status === 0 ? "" : `（失败：${String(strip.stdout ?? "").split("\n").filter((l) => l.includes("✗")).slice(0, 3).join(" / ")}）`}`);
   /* ── 群广播（10-26 用户令「方案就按只广播这个完成」）───────────────────
      `[群事件]` 是成员汇总进来的群消息，⛔ 不能再套用户气泡（右对齐 + "你"）。
      呈现层只在**气泡这一层**换样式（群事件在引擎里就是一条 userMessage —— 换时间线渲染器会踩
