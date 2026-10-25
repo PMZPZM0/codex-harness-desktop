@@ -10,6 +10,7 @@ import { patchVoiceStage, requestVoiceDictationSend, requestVoiceOpenSettings, r
 // 非通话播报的「停止」出口（10-08）：播报域注册，这里只是触发 —— 基座不反向依赖域，走广播
 import { getAnnounceGlobalEnabled, isAnnounceMutedForThread, requestAnnounceResume, requestAnnounceStop, subscribeAnnounceGlobalEnabled, subscribeAnnounceThreadMuted } from "../voice/announce-bus";
 import { useVoiceCallFloatState } from "./VoiceCallFloat/use-voice-call-float-state";
+import { useBallReactions } from "./VoiceCallFloat/use-ball-reactions";
 
 export type VoicePhase = "idle" | "starting" | "active";
 export type VoiceState = "listening" | "thinking" | "speaking";
@@ -133,6 +134,8 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     () => true,
   );
   const { phase, setPhase, state, setState, expanded, setExpanded, levelRef, screenElRef, applyLevel, muted, setMuted, mutedRef, toggleMute, transcript, setTranscript, callStartedAt, setCallStartedAt, userText, setUserText, agentText, setAgentText, ballVisible, setBallVisible, hintsEnabled, setHintsEnabled, ballStyle, hint, setHint, menu, setMenu, agentTextRef, ballRef, notice, setNotice, endpointSec, setEndpointSec, models, setModels, download, setDownload, pos, setPos, mediaStreamRef, captureCtxRef, workletRef, playCtxRef, playQueueRef, playingCountRef, aecRef, bargeModeRef, micSettingsRef, volumeRef, gateRef, chunkerRef, speakFilterRef, prebufferRef, liveRef, refRingRef, refWriteRef, refReadRef, refDropsRef, endpointArmedRef, quietSinceRef, lastBargeAtRef, speakingRef, phaseRef, voiceModeRef, dragRef, refreshModels, busyElsewhere, setBusyElsewhere, onBallContextMenu, hideBall, pushRef, enqueuePlay, speechEpochRef, bumpSpeechEpoch, stopPlayback, skipCurrent, speakDelta, flushSpeech, startCapture, teardown, startCall, endCall, startCallRef, callToggleRef, pushTranscript, installModels, draggedRef, onPointerDown, onPointerMove, onPointerUp, onBallClick, stateLabel, modelsReady, ballClass } = useVoiceCallFloatState({ threadId });
+  // 眼球跟鼠标 / 打字弹小键盘：球可见就挂监听（互斥置灰态也可以看，别让状态切换把监听反复摘挂）
+  const typingBall = useBallReactions({ enabled: ballVisible, ballRef });
   return createPortal(
     <>
       {/* ⛔ 10-08 用户要求「不要做两个实时语音弹窗，展示一个就行了」：通话语义只保留**输入框上方的舞台条**。
@@ -208,8 +211,8 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
 
       {ballVisible && (
         <>
-          {/* 随机短提示气泡 */}
-          {hint && <div className="voice-hint-bubble" role="status">{hint}</div>}
+          {/* 随机短提示气泡（打字时不弹，避免和小键盘叠在一起） */}
+          {hint && !typingBall && <div className="voice-hint-bubble" role="status">{hint}</div>}
 
           <button
             ref={ballRef}
@@ -236,6 +239,22 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
             {phase === "starting" && (
               <span className="voice-ball-loading" aria-label="语音正在启动">
                 <LoaderCircle size={19} className="spin" />
+              </span>
+            )}
+            {/* 打字反馈：球上方弹一块迷你键盘（纯装饰，不接键盘事件） */}
+            {typingBall && (
+              <span className="voice-ball-keyboard" aria-hidden="true">
+                {[6, 6, 4].map((count, row) => (
+                  <span className="voice-keyboard-row" key={row}>
+                    {Array.from({ length: count }, (_, i) => (
+                      <i
+                        className="voice-keyboard-key"
+                        key={i}
+                        style={{ animationDelay: `${(row * 0.08 + i * 0.05).toFixed(2)}s` }}
+                      />
+                    ))}
+                  </span>
+                ))}
               </span>
             )}
           </button>

@@ -1,10 +1,11 @@
 // scripts/accept.mjs —— 当前版本验收（10-25 起只保留本轮功能，历史项已删除）
 //
 // 用户 10-25：「你这个验收脚本，老是跑很久之前的内容干嘛，能不能删了，重新写」。
-// 因此本文件只保留当前要守的三条链路：
+// 因此本文件只保留当前要守的链路：
 //   ① settings-pages：设置页逐页可打开 + 外观/外观头像 / 布布包 / 用户人格位置
 //   ② function-menu：侧栏顶部「新会话 / 搜索任务」+ 两处折叠 + 拖动 + 更多 + 教程
 //   ③ plugin-market-gitee：插件市场 Gitee raw / jsDelivr 兜底（403 限流回归）
+//   ④ voice-ball-reactions：悬浮球眼睛跟鼠标 + 打字弹迷你键盘（10-26）
 //
 // 用法：
 //   node scripts/accept.mjs                 # 跑全部当前项
@@ -548,6 +549,44 @@ const CHECKS = [
           cards: document.querySelectorAll('.plugin-market-card, .settings-modal [class*=market] [class*=card]').length }; })()`);
       h.check("③ 插件页市场源文案在位（Gitee / Codex 官方均可）+ 无 skillhub 残留",
         nav >= 0 && ui?.hasSource && ui?.noSkillhub, JSON.stringify(ui).slice(0, 120));
+    },
+  },
+  {
+    id: "voice-ball-reactions",
+    name: "🫧 悬浮球互动：眼睛跟鼠标 + 打字弹迷你键盘（10-26）",
+    run: async (h) => {
+      await h.waitFor(`!!document.querySelector(".voice-ball")`, { label: "悬浮球", timeoutMs: 12000 });
+      await h.eval(`(function(){
+        const r=document.querySelector(".voice-ball").getBoundingClientRect();
+        window.dispatchEvent(new PointerEvent("pointermove",{clientX:r.left+r.width*0.15,clientY:r.top+r.height*0.15,bubbles:true}));
+        return 1;
+      })()`);
+      await wait(300);
+      const gaze = await h.eval(`(function(){ const b=document.querySelector(".voice-ball");
+        return { x:parseFloat(b.style.getPropertyValue("--bot-gaze-x"))||0, y:parseFloat(b.style.getPropertyValue("--bot-gaze-y"))||0 }; })()`);
+      h.check("① 指针在左上时眼球往左上偏（真读 CSS 变量，不是只看类名）",
+        gaze.x < -1 && gaze.y < -1, JSON.stringify(gaze));
+
+      const typed = await h.eval(`(function(){
+        const ed=document.querySelector(".composer-editor"); if(!ed) return 0;
+        ed.focus();
+        ed.dispatchEvent(new KeyboardEvent("keydown",{key:"a",bubbles:true}));
+        return 1;
+      })()`);
+      await wait(220);
+      const keyboard = await h.eval(`({
+        kb: !!document.querySelector(".voice-ball-keyboard"),
+        rows: document.querySelectorAll(".voice-keyboard-row").length,
+        keys: document.querySelectorAll(".voice-keyboard-key").length,
+        hint: !!document.querySelector(".voice-hint-bubble"),
+      })`);
+      h.check("② 输入框敲字 → 球上方弹出 3 排迷你键盘，提示气泡让位",
+        typed === 1 && keyboard.kb && keyboard.rows === 3 && keyboard.keys === 16 && !keyboard.hint,
+        JSON.stringify(keyboard));
+
+      await wait(2200);
+      const closed = await h.eval(`!document.querySelector(".voice-ball-keyboard")`);
+      h.check("③ 停手 1.1 秒后键盘自动收起（含后台节流余量）", closed, JSON.stringify({ closed }));
     },
   },
 ];

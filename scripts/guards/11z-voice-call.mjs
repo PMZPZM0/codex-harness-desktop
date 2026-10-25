@@ -949,5 +949,49 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
   ok(missing.length === 0, `每套外观都有样式（缺：${missing.map((s) => s.id).join(",") || "无"}）`);
 }
 
+/* ── ㉑ 悬浮球轻互动（10-26 用户：「眼睛跟着鼠标走，打字有键盘出来」）── */
+{
+  const reactions = await import("../../src/lib/ball-reactions.mjs");
+  const rect = { left: 0, top: 0, width: 100, height: 100 };
+  const right = reactions.gazeOffsets(500, 50, rect);
+  const leftTop = reactions.gazeOffsets(0, 0, rect);
+  ok(Math.abs(right.x - 3) < 0.01 && Math.abs(right.y) < 0.01
+    && Math.abs(leftTop.x + 3) < 0.01 && Math.abs(leftTop.y + 2.2) < 0.01,
+    "眼球追踪：朝指针方向平移，最大水平 3px / 垂直 2.2px（⛔ 胶囊眼是整体平移，不是画瞳孔）");
+  ok(reactions.gazeOffsets(50, 50, rect).x === 0
+    && reactions.gazeOffsets(999, 999, { ...rect, width: 0 }).x === 0,
+    "指针在球心 = 归零；拿不到矩形 = 归零（不朝左上角乱看）");
+  ok(reactions.isTypingKey("a") && reactions.isTypingKey(" ") && reactions.isTypingKey("Backspace")
+    && reactions.isTypingKey("中") && !reactions.isTypingKey("a", { ctrlKey: true })
+    && !reactions.isTypingKey("ArrowLeft") && !reactions.isTypingKey("Shift"),
+    "打字判定：字符/空格/退格/中文算，Ctrl/⌘/Alt 组合与方向键/修饰键不算");
+  ok(reactions.isTypingTarget("INPUT") && reactions.isTypingTarget("textarea")
+    && reactions.isTypingTarget("DIV", true) && !reactions.isTypingTarget("BUTTON"),
+    "只有输入框/多行输入/可编辑区域里的敲键才弹键盘（点按钮、快捷键不算）");
+
+  const hookSrc = read("src/components/VoiceCallFloat/use-ball-reactions.ts");
+  ok(/requestAnimationFrame/.test(hookSrc) && /setProperty\("--bot-gaze-x"/.test(hookSrc)
+    && /removeProperty\("--bot-gaze-x"\)/.test(hookSrc) && !/useState<[^>]*gaze|const \[gaze/.test(hookSrc),
+    "鼠标追踪只写 CSS 变量并 rAF 合并（⛔ 不进 React state：每次 pointermove 重渲通话组件会卡）");
+  ok(/prefers-reduced-motion/.test(hookSrc) && /compositionstart/.test(hookSrc)
+    && /removeEventListener\("pointermove"/.test(hookSrc) && /removeEventListener\("keydown"/.test(hookSrc),
+    "监听成对摘除；减动效不跟随；中文输入法 composition 也弹键盘");
+  const floatSrc = read("src/components/VoiceCallFloat.tsx");
+  ok(/useBallReactions\(\{ enabled: ballVisible, ballRef \}\)/.test(floatSrc)
+    && /hint && !typingBall/.test(floatSrc),
+    "球可见即启用（互斥置灰态也不反复摘挂监听）；打字时提示气泡让位");
+  ok(/voice-ball-keyboard/.test(floatSrc) && /\[6, 6, 4\]/.test(floatSrc)
+    && /voice-keyboard-row/.test(floatSrc),
+    "打字时球上方渲染迷你键盘（三排 6/6/4 键）");
+  const mascotSrc2 = read("src/components/VoiceMascot.tsx");
+  ok(/voice-bot-gaze[\s\S]{0,200}?voice-bot-eye--left[\s\S]{0,200}?voice-bot-eye--right/.test(mascotSrc2),
+    "两只眼睛包在同一个位移层里（眨眼动画与追踪互不覆盖）");
+  const reactionCss = read("src/styles/18-openai-dialog.css");
+  ok(/\.voice-bot-gaze \{[^}]*translate\(var\(--bot-gaze-x, 0px\), var\(--bot-gaze-y, 0px\)\)/.test(reactionCss)
+    && /\.voice-ball-keyboard \{[^}]*pointer-events:\s*none/.test(reactionCss)
+    && /\.voice-keyboard-key \{[^}]*animation:\s*voice-key-tap/.test(reactionCss),
+    "位移层与迷你键盘样式在位（键盘不占布局、不拦点击）");
+}
+
 console.log(`\n【voice-call】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
