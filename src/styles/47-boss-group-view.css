@@ -194,8 +194,10 @@
 .boss-members-pop-head span { flex: 1; color: var(--muted); }
 .boss-members-pop-list { display: flex; flex-wrap: wrap; gap: 6px; }
 
-/* 自适应：窄屏收起顶栏成员图标（多尺寸展示/隐藏） */
-@media (max-width: 1180px) { .boss-members-wrap { display: none; } }
+/* 自适应：真正窄屏（≤640px）才收起顶栏成员图标。
+   ⛔ 原来是 1180px —— 用户默认窗口 1080px 就命中了 ⇒ 图标一直不显示，
+   看起来像「独立弹窗没有成员图标和问号」（实测：DOM 在、computed display:none）。 */
+@media (max-width: 640px) { .boss-members-wrap { display: none; } }
 
 /* ── BOSS 会话的「?」说明弹层（10-25 用户令：成员图标旁边，BOSS 会话独有）── */
 .boss-help-pop {
@@ -213,8 +215,8 @@
 .boss-help-row { display: flex; flex-direction: column; gap: 3px; }
 .boss-help-title { font-size: 12px; font-weight: 600; color: var(--amber, #d29922); }
 .boss-help-body { font-size: 12px; line-height: 1.65; color: var(--muted); }
-/* 窄屏同样收起（与成员图标同步，避免只剩一个孤零零的问号） */
-@media (max-width: 1180px) { .boss-help-btn { display: none; } }
+/* 与成员图标同一断点（避免窄屏只剩一个孤零零的问号） */
+@media (max-width: 640px) { .boss-help-btn { display: none; } }
 
 /* ── BOSS 会话的**专属**空白态（10-25 用户令：跟欢迎界面、跟其它会话都没关系）──
    ⛔ 不复用 .welcome-state：那是「新会话欢迎页」（大字标题铺上半屏 + 输入框下方一排快捷任务）。
