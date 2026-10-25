@@ -123,13 +123,26 @@ async function load() {
       if (id && dir) sessionMemoryDirs[id] = dir;
     }
     const groups = Array.isArray(list) ? list : [];
+    /* ⛔⛔ 10-26 用户现场：「中枢会话也会变成普通会话」。
+       根因：**身份名单只从 localStorage 读**，而主进程那份登记表
+       （electron/boss-groups/session-registry.ts → <userData>/boss-sessions.json）
+       才是声明过的**唯一真相源**（localStorage 只是它的缓存）。
+       ⇒ localStorage 一旦丢（清缓存 / 换源 / 重启丢写入），中枢身份就没了 ⇒
+          同一个会话在界面上退化成普通会话（顶栏成员图标、中枢空态引导、中枢记忆路由全失效）。
+       ⇒ 这里改成：**主进程登记表为准，localStorage 做并集兜底**（两边任一在就算中枢）。
+       ⛔ 家目录锚点（homeId）同理：localStorage 读不到时用登记表里最后一个当 home，
+          保住「点指挥中枢回到同一个会话」的行为。 */
+    const registryIds = sessions.map((entry) => String(entry?.id ?? "")).filter(Boolean);
+    const cachedIds = readSessionIds();
+    const sessionIds = [...new Set([...registryIds, ...cachedIds])];
+    const homeId = readHome() || (sessionIds.length ? sessionIds[sessionIds.length - 1] : "");
     state = {
       groups,
       bossIds: groups.map((g) => String(g.bossThreadId ?? "")).filter(Boolean),
       /* 群成员会话 id：侧栏据此打「中枢调度」标签（成员会话由派活时新建，不走 delegate 通道） */
       memberIds: groups.flatMap((g) => (Array.isArray(g.memberThreadIds) ? g.memberThreadIds : []).map(String)),
-      homeId: readHome(),
-      sessionIds: readSessionIds(),
+      homeId,
+      sessionIds,
       sessionMemoryDirs,
       homeDir: homeDir || state.homeDir,
       pending: state.pending,

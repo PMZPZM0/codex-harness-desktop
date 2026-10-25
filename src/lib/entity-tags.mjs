@@ -34,8 +34,23 @@ function readMap(key) {
   }
 }
 
+/** 整份写回 localStorage（调用方给的就是最终值）。 */
 function writeMap(key, map) {
   try { localStorage.setItem(key, JSON.stringify(map)); } catch { /* 隐私模式忽略 */ }
+  return map;
+}
+
+/**
+ * 合并写入：**重读盘上最新值**再叠本次改动的那一条。
+ *
+ * ⛔⛔ 10-26：起因是本模块「每个渲染进程一份快照」，而应用会开**第二个窗口**
+ *   （独立会话弹窗）⇒ 两个窗口各持一份旧快照。
+ *   旧实现直接用快照整份覆盖 ⇒ **另一个窗口刚写的标签会被这一份旧快照顶掉**
+ *   （用户侧表现：标签莫名掉了）。⇒ 写前重读 + 只合并本次改动的那一条。
+ */
+function mergeMap(key, patch) {
+  const merged = { ...readMap(key), ...(patch ?? {}) };
+  return writeMap(key, merged);
 }
 
 let snapshot = { threads: {}, projects: {}, editor: null, version: 0 };
@@ -81,12 +96,10 @@ export function setEntityTag(kind, id, tag) {
   if (!id || !text) return;
   const color = /^#[0-9a-f]{6}$/i.test(String(tag?.color ?? "")) ? String(tag.color) : TAG_COLORS[0].value;
   if (kind === "project") {
-    const projects = { ...snapshot.projects, [id]: { text, color } };
-    writeMap(PROJECT_KEY, projects);
+    const projects = mergeMap(PROJECT_KEY, { [id]: { text, color } });
     emit({ ...snapshot, projects, editor: null });
   } else {
-    const threads = { ...snapshot.threads, [id]: { text, color } };
-    writeMap(THREAD_KEY, threads);
+    const threads = mergeMap(THREAD_KEY, { [id]: { text, color } });
     emit({ ...snapshot, threads, editor: null });
   }
 }
@@ -94,15 +107,16 @@ export function setEntityTag(kind, id, tag) {
 export function removeEntityTag(kind, id) {
   ensureLoaded();
   if (!id) return;
+  /* ⛔ 删除同理：先重读盘上最新值再删这一条（不能拿旧快照整份覆盖）。 */
   if (kind === "project") {
-    const projects = { ...snapshot.projects };
-    delete projects[id];
-    writeMap(PROJECT_KEY, projects);
+    const onDisk = readMap(PROJECT_KEY);
+    delete onDisk[id];
+    const projects = writeMap(PROJECT_KEY, onDisk);
     emit({ ...snapshot, projects, editor: null });
   } else {
-    const threads = { ...snapshot.threads };
-    delete threads[id];
-    writeMap(THREAD_KEY, threads);
+    const onDisk = readMap(THREAD_KEY);
+    delete onDisk[id];
+    const threads = writeMap(THREAD_KEY, onDisk);
     emit({ ...snapshot, threads, editor: null });
   }
 }
