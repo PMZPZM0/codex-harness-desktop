@@ -20,7 +20,7 @@ import { safeProviderId } from "../provider-id";
 import { server, threadCwd } from "../runtime-refs";
 import { egoBrowserPath } from "../toolchain";
 import { bossStore } from "./store";
-import { addMember, addTask, assignTask, checkBudget, createGroup, groupOf, markRunning, markStalled, memberOf, parseVerdict, pickReassignee, pushEvent, recordReview, removeMember, setPinned, snapshot, submitTask, taskOf } from "./state";
+import { addMember, addTask, assignTask, checkBudget, createGroup, groupOf, markReviewStalled, markRunning, markStalled, memberOf, parseVerdict, pickReassignee, pushEvent, recordReview, removeMember, setPinned, snapshot, submitTask, taskOf } from "./state";
 import type { BossGroup, BossState, GroupMember, GroupTask } from "./types";
 
 /** 事件出口（域层注入：本模块在 features/ 之外，不许反向 import 域）。 */
@@ -29,25 +29,34 @@ let sink: Sink | null = null;
 export function setBossEventSink(fn: Sink | null) { sink = fn; }
 function emit(payload: unknown) { try { sink?.(payload); } catch { /* 广播失败不影响编排 */ } }
 
-/* ── 回投：往 boss 会话投一条群事件（不打断在跑的回合） ───────────────────────── */
+/* ── 回投：往指挥中枢会话投一条群事件（不打断在跑的回合） ───────────────────── */
 const POST_QUOTA = new Map<string, { count: number; since: number }>();
 const POST_WINDOW_MS = 10 * 60 * 1000;
+/** 闲聊类（预算提醒 / 停滞提醒 / 成员变动）：防刷屏，超了就不发。 */
 const POST_MAX_PER_WINDOW = 12;
+/** 成品与评审请求：量大但**一条都不能丢**，单独一个更宽的窗口。 */
+const CRITICAL_MAX_PER_WINDOW = 40;
 
-function quotaOk(key: string): boolean {
+function quotaOk(key: string, max = POST_MAX_PER_WINDOW): boolean {
   const now = Date.now();
   const rec = POST_QUOTA.get(key);
   if (!rec || now - rec.since > POST_WINDOW_MS) { POST_QUOTA.set(key, { count: 1, since: now }); return true; }
-  if (rec.count >= POST_MAX_PER_WINDOW) return false;
+  if (rec.count >= max) return false;
   rec.count += 1;
   return true;
 }
 
-/** 群事件 → boss 会话。⛔ 用 queue/add（不是 turn/start）：turn/start 会打断 boss 正在跑的回合。 */
-export async function postToBoss(group: BossGroup, text: string): Promise<boolean> {
+/** 群事件 → 指挥中枢会话。⛔ 用 queue/add（不是 turn/start）：turn/start 会打断正在跑的回合。 */
+export async function postToBoss(group: BossGroup, text: string, options: { critical?: boolean } = {}): Promise<boolean> {
   const boss = String(group.bossThreadId ?? "");
   if (!boss) return false;
-  if (!quotaOk(group.id)) return false;      // 防刷：群事件再多也不会把 boss 刷成刷屏机
+  /* ⛔ 配额分两档（10-25 审查修 B）：原来成品与闲聊共用 12 条/10 分钟，**超了直接 return false**
+     ⇒ 成员多、轮次多的时候，成品会被静默丢掉（调用方也不看返回值）。成品是群聊的本体，
+     丢了就等于"活干完了但没人知道"。⇒ critical 走独立窗口，且调用方（出站队列）失败会重试。 */
+  const ok = options.critical
+    ? quotaOk(`crit:${group.id}`, CRITICAL_MAX_PER_WINDOW)
+    : quotaOk(group.id);
+  if (!ok) return false;
   try {
     await server.request("thread/resume", { threadId: boss, excludeTurns: false }).catch(() => undefined);
     await server.request("thread/queue/add", { threadId: boss, input: [{ type: "text", text }], clientUserMessageId: randomUUID() });
@@ -56,6 +65,84 @@ export async function postToBoss(group: BossGroup, text: string): Promise<boolea
     if (head?.id) await server.request("thread/queue/start", { threadId: boss, queuedSubmissionId: head.id }).catch(() => undefined);
     return true;
   } catch { return false; }
+}
+
+/* ── 出站队列：成品/评审请求**不丢、也不刷屏**（10-25 审查修 B）────────────────
+   问题：每个成员交活会连发两条消息（成品 + 评审请求）。3 个成员并发就是 6 条，
+   撞上 12 条/10 分钟的老配额后，后面的直接被丢。
+   做法：交活/评审先进本队列，600ms 内合并成**一条**投给指挥中枢；
+   · 只有 1 条成品、且这批里没有评审请求 ⇒ 全文照发（跟以前一样）；
+   · 与评审请求同批 ⇒ 成品给 240 字摘要，但**评审正文里带着完整成品**（最多 16000 字）⇒ 信息不丢；
+   · 多条 ⇒ 每条 240 字摘要 + 提示"完整成品在群内消息流里，用 group_status 读"；
+   · 配额用尽 ⇒ **放回队列**、45 秒后重试，⛔ 不丢。 */
+type OutItem = { kind: "deliverable" | "review"; taskId: string; title: string; who?: string; body: string };
+type OutBox = { items: OutItem[]; timer: NodeJS.Timeout | null; retryAt: number; flushing: boolean };
+const OUTBOX = new Map<string, OutBox>();
+const OUTBOX_FLUSH_MS = 600;
+const OUTBOX_MAX_BATCH = 20;
+
+function enqueueBoss(groupId: string, item: OutItem): void {
+  const box = OUTBOX.get(groupId) ?? { items: [], timer: null, retryAt: 0, flushing: false };
+  OUTBOX.set(groupId, box);
+  box.items.push(item);
+  if (box.timer) return;
+  box.timer = setTimeout(() => { box.timer = null; void flushOutbox(groupId); }, OUTBOX_FLUSH_MS);
+  box.timer.unref?.();
+}
+
+function outboxText(items: OutItem[]): string {
+  const deliverables = items.filter((i) => i.kind === "deliverable");
+  const reviews = items.filter((i) => i.kind === "review");
+  const parts: string[] = [];
+  if (deliverables.length === 1 && !reviews.length) {
+    parts.push(`[群事件] ${deliverables[0].who ?? "成员"} 交活：「${deliverables[0].title}」\n${deliverables[0].body}`);
+  } else if (deliverables.length) {
+    parts.push(`[群事件] 本轮 ${deliverables.length} 条交活（成品全文在群内消息流里，需要细节用 group_status 读）：
+${deliverables.map((d) => `- 「${d.title}」（${d.who ?? "成员"}）：${d.body.replace(/\s+/g, " ").slice(0, 240)}…`).join("\n")}`);
+  }
+  if (reviews.length === 1) {
+    parts.push(reviews[0].body);
+  } else if (reviews.length > 1) {
+    parts.push(`[群事件] 有 ${reviews.length} 条任务已交活待你判：
+${reviews.map((r) => `· taskId=${r.taskId}「${r.title}」`).join("\n")}
+
+⛔ 用你自己的**评审技能**逐条对照各任务的验收标准判（group_status 里能拿到每条任务的 criteria 与成品全文）。
+⛔ 判完逐条回填：group_review(taskId=…, verdict="approved" | "rejected", reasons=[逐条写清未满足验收标准的哪一条])。`);
+  }
+  return parts.join("\n\n");
+}
+
+/** ⛔ 进程退出时队列里还没发出去的消息会丢（事件已落盘，指挥中枢可用 group_status 补读）——
+    这是可接受的取舍：为了它去阻塞 app 退出不值得。 */
+async function flushOutbox(groupId: string): Promise<void> {
+  const box = OUTBOX.get(groupId);
+  if (!box || !box.items.length) return;
+  if (box.flushing) return;                                   // ⛔ 串行化：两个 flush 交错会把顺序搞反
+  if (Date.now() < box.retryAt) return;                       // 上次被配额挡下，等窗口
+  box.flushing = true;
+  try {
+    const state = await bossStore.load();
+    const group = state.groups[groupId];
+    if (!group) { box.items = []; return; }
+    const items = box.items.splice(0, OUTBOX_MAX_BATCH);
+    const sent = await postToBoss(group, outboxText(items), { critical: true });
+    if (!sent) {
+      box.items.unshift(...items);                            // ⛔ 不丢：原样放回队首（顺序不乱）
+      box.retryAt = Date.now() + 45_000;
+      if (!box.timer) {
+        box.timer = setTimeout(() => { box.timer = null; void flushOutbox(groupId); }, 45_500);
+        box.timer.unref?.();
+      }
+      return;
+    }
+    box.retryAt = 0;
+    if (box.items.length && !box.timer) {                     // 一次没扫完（>20 条）⇒ 立刻续发
+      box.timer = setTimeout(() => { box.timer = null; void flushOutbox(groupId); }, 200);
+      box.timer.unref?.();
+    }
+  } finally {
+    box.flushing = false;
+  }
 }
 
 /**
@@ -373,9 +460,13 @@ export async function settleSubmission(taskId: string, output: string): Promise<
   });
   bossStore.save();
   emit({ type: "boss-group", phase: "task", groupId: group.id, taskId, status: "reviewing" });
-  /* 成品**汇总到主对话**（BOSS 会话）—— 这是群聊的本体：成员干完活，成果出现在群里。 */
+  /* 成品**汇总到主对话**（指挥中枢会话）—— 这是群聊的本体：成员干完活，成果出现在群里。
+     ⛔ 走出站队列（合并投递 + 失败重试），不再直接 post：并发交活时既不刷屏，也不会被配额丢掉。 */
   const deliverer = memberOf(group, task.assignee);
-  await postToBoss(group, `[群事件] ${deliverer.name} 交活：「${task.title}」\n${deliverable.slice(0, 4000)}`);
+  enqueueBoss(group.id, {
+    kind: "deliverable", taskId, title: task.title, who: deliverer.name,
+    body: deliverable.slice(0, 4000),
+  });
   if (alreadyLeftRunning) await reviewTask(taskId);   // 重复回调（已不在 running）⇒ 不再审
 }
 
@@ -415,7 +506,11 @@ async function runReview(state: BossState, taskId: string): Promise<{ ok: boolea
        ⇒ 改成：把验收标准 + 成品**回投给 BOSS 会话**，由 Codex 自己判断；
          要独立上下文/子智能体时**它自己创建**（系统不再自动开评审会话）。
        ⇒ 结论由 Codex 调 group_review 回填（该通道已含 recordReview + 换人重做 + 回投，闭环不断）。 */
-    await postToBoss(group, `[群事件] 任务「${task.title}」已交活，请**用你自己的评审技能**判一下。
+    /* ⛔ 评审请求也走出站队列：与成品合并成**一条**消息（同一任务的成品 + 裁决要求一起到），
+       既省掉一半消息量，也保证配额吃紧时不会只剩成品、丢掉"请你判一下"这句指令。 */
+    enqueueBoss(group.id, {
+      kind: "review", taskId, title: task.title,
+      body: `[群事件] 任务「${task.title}」已交活，请**用你自己的评审技能**判一下。
 
 === 验收标准（criteria）===
 ${task.criteria}
@@ -425,7 +520,8 @@ ${output.slice(0, 16000)}
 
 ⛔ 用你自己的**评审技能**逐条对照验收标准判（⛔ 系统不再另开评审会话/子智能体，你要用就自己创建）。
 ⛔ 判完把结论记回来：通过就调 group_review(taskId="${taskId}", verdict="approved")；
-   不通过就 verdict="rejected"，reasons 逐条写清**未满足验收标准的哪一条**（别写"不够好"这种空话）。`);
+   不通过就 verdict="rejected"，reasons 逐条写清**未满足验收标准的哪一条**（别写"不够好"这种空话）。`,
+    });
     return { ok: true };
   } catch (error: any) {
     const message = String(error?.message ?? error);
@@ -471,6 +567,26 @@ export async function tickAll(): Promise<void> {
       await postToBoss(group, `[群事件] 「${task.title}」已经 ${Math.round(item.idleMs / 1000)} 秒没有进展（无进展 ×1），需要你看一眼。`);
     }
   }
+  /* 待审看门狗（审查修的缺口 C）：评审交给会话自己判 ⇒ 它那一轮没看见、或忘了调 group_review，
+     任务会永远停在 reviewing（看板一直"等审查"，成品其实早交了）。这里按"多久没动静"再催一次。
+     ⛔ 只催，不替它下结论；同一个任务 10 分钟最多催一次（配额闸复用）。 */
+  for (const item of markReviewStalled(state)) {
+    const task = state.tasks[item.taskId];
+    const group = state.groups[item.groupId];
+    if (!task || !group) continue;
+    if (!quotaOk(`review:${task.id}`)) continue;
+    dirty = true;
+    pushEvent(state, {
+      groupId: group.id, taskId: task.id, kind: "note",
+      text: `「${task.title}」已交活 ${Math.round(item.idleMs / 60_000)} 分钟仍无审查结论，已再次提醒指挥中枢`,
+    });
+    emit({ type: "boss-group", phase: "task", groupId: group.id, taskId: task.id, status: "review-stale" });
+    await postToBoss(group, `[群事件] 「${task.title}」已交活 ${Math.round(item.idleMs / 60_000)} 分钟，仍没有审查结论。
+⛔ 别再等：现在就用你的评审技能对照验收标准判，然后调 group_review(taskId="${task.id}", verdict="approved" | "rejected", reasons=[…])。
+（成品全文用 group_status 或在群消息流里看）`);
+  }
+  /* 出站队列兜底：定时器可能因为进程挂起而丢，tick 时补一次 flushed。 */
+  for (const groupId of Array.from(OUTBOX.keys())) await flushOutbox(groupId);
   if (dirty) bossStore.save();
 }
 

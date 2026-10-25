@@ -240,7 +240,7 @@ export function recordReview(state: BossState, taskId: string, review: { by: str
     task.status = "escalated";
     task.escalation = {
       reasons,
-      options: ["retry-with-other-model", "relax-criteria", "user-takeover"],
+      options: ["retry", "relax-criteria", "user-takeover"],
       at: Date.now(),
     };
     pushEvent(state, {
@@ -347,18 +347,32 @@ export function pickReassignee(state: BossState, task: GroupTask): GroupMember |
   return null;
 }
 
+/**
+ * 旧账本兼容：老值 `retry-with-other-model` 归一成 `retry`。
+ * ⛔ 落盘里已经存着老值的升级记录（escalation.options 是历史快照）⇒ 读的时候必须能认，
+ *    否则用户点"重做"会撞一句"choice 只能是…"。
+ */
+export function normalizeEscalateChoice(choice: unknown): EscalateChoice | null {
+  const raw = String(choice ?? "").trim();
+  if (raw === "retry" || raw === "retry-with-other-model") return "retry";
+  if (raw === "relax-criteria" || raw === "user-takeover") return raw;
+  return null;
+}
+
 /** 用户的三个选项（P0：retry / relax / takeover 都只是把状态推进到可继续，不自动改标准）。 */
 export function resolveEscalation(state: BossState, taskId: string, choice: EscalateChoice, note?: string): GroupTask {
   const task = taskOf(state, taskId);
   const group = groupOf(state, task.groupId);
   if (task.status !== "escalated") throw new Error(`任务「${task.title}」不在升级状态（当前 ${task.status}）`);
-  if (choice === "user-takeover") {
+  const action = normalizeEscalateChoice(choice);
+  if (!action) throw new Error(`升级选项不认识：「${String(choice)}」（只有 retry / relax-criteria / user-takeover）`);
+  if (action === "user-takeover") {
     task.status = "done";
     task.endedAt = Date.now();
     pushEvent(state, { groupId: group.id, taskId: task.id, kind: "note", text: `用户接手「${task.title}」${note ? `：${note}` : ""}` });
     return task;
   }
-  if (choice === "relax-criteria") {
+  if (action === "relax-criteria") {
     // ⛔ 放宽标准必须**写进 criteria**（不然下一轮审查还按老的判，打回会再来一次）。
     const relaxed = String(note ?? "").trim();
     if (!relaxed) throw new Error("放宽标准必须给出放宽后的验收标准（note），否则审查仍按老标准打回");
@@ -377,7 +391,8 @@ export function resolveEscalation(state: BossState, taskId: string, choice: Esca
   }
   pushEvent(state, {
     groupId: group.id, taskId: task.id, kind: "note",
-    text: `用户决定：${choice === "relax-criteria" ? "放宽标准后重做" : "换模型重做"}「${task.title}」${member ? `（原锁：${member.name}）` : ""}`,
+    /* ⛔ 文案跟行为一致：这里**不换模型**，只是解锁 + 清零后按原样重排队。 */
+    text: `用户决定：${action === "relax-criteria" ? "放宽标准后重做" : "清锁重排队"}「${task.title}」${member ? `（原锁：${member.name}）` : ""}`,
   });
   return task;
 }
@@ -409,6 +424,25 @@ export function markStalled(state: BossState, now = Date.now()): { taskId: strin
     if (idleMs > group.policy.stallMs) stalled.push({ taskId: task.id, groupId: task.groupId, idleMs });
   }
   return stalled;
+}
+
+/**
+ * 待审看门狗（10-25 审查补的缺口 C）：
+ * 评审已改成"回投给指挥中枢、由它自己用技能判"，宿主只提醒不判定 —— 但**提醒只发一次**，
+ * 模型那一轮没看见（或没调 group_review），任务就永远停在 reviewing，看板上一直"等审查"，
+ * 而成品早就交上来了。这里按"多久没动静"把它捞出来，交给 tickAll 再催一次。
+ * ⛔ 只**报告**，不替模型下结论（制度上不许宿主自动通过/打回）。
+ */
+export function markReviewStalled(state: BossState, now = Date.now(), staleMs = 10 * 60_000): { taskId: string; groupId: string; idleMs: number }[] {
+  const stale: { taskId: string; groupId: string; idleMs: number }[] = [];
+  for (const task of Object.values(state.tasks)) {
+    if (task.status !== "reviewing" && task.status !== "submitted") continue;
+    const group = state.groups[task.groupId];
+    if (!group) continue;
+    const idleMs = now - task.updatedAt;
+    if (idleMs > staleMs) stale.push({ taskId: task.id, groupId: task.groupId, idleMs });
+  }
+  return stale;
 }
 
 /** 账本快照（给 boss 工具与看板用）：只读、可直接 JSON 化。 */

@@ -36,13 +36,17 @@ app.whenReady().then(async () => {
   const listeners = new Set();
   const turns = new Map();          // turnId -> { threadId, text }
   let engineDelay = 8;              // 模拟引擎出活耗时
+  const bossInbox = [];             // 投给指挥中枢会话的所有消息（判合并投递/催办）
   const fakeServer = {
     request: async (method, params) => {
       switch (method) {
         case "thread/start": return { thread: { id: `th_${++seq}` } };
         case "thread/resume": return { thread: { id: params?.threadId } };
         case "thread/name/set": return {};
-        case "thread/queue/add": return { id: `q_${++seq}` };
+        case "thread/queue/add": {
+          bossInbox.push(String(params?.input?.[0]?.text ?? ""));
+          return { id: `q_${++seq}` };
+        }
         case "thread/queue/list": return { data: [{ id: `q_${seq}` }] };
         case "thread/queue/start": return {};
         case "turn/start": {
@@ -208,6 +212,37 @@ app.whenReady().then(async () => {
       }
     } else {
       say("⑦ 跳过（没有 reviewing 的任务）");
+    }
+  }
+
+  /* ── ⑩ B：合并投递（成品不刷屏、也不丢）──────────────────────────────── */
+  {
+    const snap = state.snapshot(store.bossStore.get(), groupId);
+    const delivered = snap.tasks.filter((t) => ["reviewing", "done", "escalated"].includes(t.status) && t.attempts.some((a) => a.verdict !== null || t.status !== "escalated"));
+    const deliveredTitles = snap.tasks.filter((t) => t.status === "reviewing").map((t) => t.title);
+    const missing = deliveredTitles.filter((title) => !bossInbox.some((msg) => msg.includes(title)));
+    const merged = bossInbox.filter((t) => /本轮 \d+ 条交活/.test(t)).length;
+    const single = bossInbox.filter((t) => /交活：「/.test(t)).length;
+    say(`⑩ 投给中枢 ${bossInbox.length} 条；合并批 ${merged} 条 / 单条全文 ${single} 条；待审 ${deliveredTitles.length} 条`);
+    say(`⑩ 逐条核对：未出现在任何中枢消息里的任务 = ${missing.length ? missing.join("、") : "0 条（成品一条没丢）"}`);
+    say(`⑩ 刷屏对比：若按老口径（成品+评审各一条）应 ≈ ${deliveredTitles.length * 2} 条，实际 ${bossInbox.length} 条`);
+  }
+
+  /* ── ⑪ C：待审看门狗（交活久了没结论 ⇒ 再催一次）────────────────────── */
+  {
+    const snap = state.snapshot(store.bossStore.get(), groupId);
+    const target = snap.tasks.find((x) => x.status === "reviewing");
+    if (target) {
+      const raw = store.bossStore.get().tasks[target.id];
+      raw.updatedAt = Date.now() - 11 * 60_000;          // 伪造"11 分钟没动静"
+      const before = bossInbox.length;
+      await runner.tickAll();
+      await new Promise((r) => setTimeout(r, 300));
+      const nudge = bossInbox.slice(before).find((t) => /仍没有审查结论/.test(t));
+      say(`⑪ 待审看门狗：${nudge ? "已催办 ✓" : "没催（缺口没补上）"}；片段=${nudge ? JSON.stringify(nudge.slice(0, 60)) : "-"}`);
+      say(`⑪ 催办后任务状态=${raw.status}（必须仍是 reviewing —— 宿主不许自己判）`);
+    } else {
+      say("⑪ 跳过（没有 reviewing 任务）");
     }
   }
 

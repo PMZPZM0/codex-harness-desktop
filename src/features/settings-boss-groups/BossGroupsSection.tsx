@@ -176,8 +176,8 @@ export function BossGroupsSection() {
                       ) : null}
                       {t.status === "escalated" ? (
                         <div className="boss-groups-actions">
-                          <button type="button" className="boss-groups-btn" data-kind="primary" disabled={busy === t.id + "retry-with-other-model"} onClick={() => void escalate(t.id, "retry-with-other-model", "")}>
-                            换模型重做
+                          <button type="button" className="boss-groups-btn" data-kind="primary" disabled={busy === t.id + "retry"} onClick={() => void escalate(t.id, "retry", "")}>
+                            清锁重排（原样重做）
                           </button>
                           <button type="button" className="boss-groups-btn" disabled={busy === t.id + "relax-criteria" || !note.trim()} title={note.trim() ? "" : "先在右侧输入放宽后的验收标准"} onClick={() => void escalate(t.id, "relax-criteria", note)}>
                             放宽标准
