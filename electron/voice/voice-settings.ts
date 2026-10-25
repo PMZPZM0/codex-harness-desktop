@@ -24,7 +24,7 @@ export type ModelHost = "auto" | "huggingface" | "hf-mirror";
 export type AecMode = "auto" | "on" | "off";
 
 /** 设置文件结构版本：每次「默认值语义变了、老档案需要迁移」就 +1（见 migrateSettings） */
-export const VOICE_SETTINGS_VERSION = 6;
+export const VOICE_SETTINGS_VERSION = 7;
 
 export type VoiceSettings = {
   tts: {
@@ -264,6 +264,18 @@ export function migrateSettings(raw: Partial<VoiceSettings> | undefined): { sett
     const steps = Number(source.tts?.numSteps);
     if (!Number.isFinite(steps)) {
       source.tts = { ...(source.tts as any), numSteps: DEFAULT_VOICE_SETTINGS.tts.numSteps };
+      changed = true;
+    }
+  }
+  /* v6 → v7（10-25 用户令：「总开关默认开着就行，然后就会话级独立播报」）：
+     总开关不再作为日常控制（用户会把它跟会话级 📢 搞混：看起来开着、实际总开关是关的，
+     模型说关闭还被当成 bug）。档案里存着 false 的一律迁回 true；**真正的控制 = 每个会话的 📢**
+     （会话静音仍然独立持久，下一轮作用域块会写「已关闭」）。
+     ⚠️ 取舍：无法区分「用户显式关掉总开关」与「历史遗留 false」—— 两者都会被打开一次；
+        不想要的话在设置 → 语音里再关即可（但图标与注入会同步显示关闭，不会再出现视觉矛盾）。 */
+  if (version < 7) {
+    if (source.announce?.enabled !== true) {
+      source.announce = { enabled: true };
       changed = true;
     }
   }

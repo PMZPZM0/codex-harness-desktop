@@ -60,12 +60,8 @@ export function SessionAnnounceToggle({ threadId }: { threadId: string }) {
   const action = !globalOn ? "去打开" : muted ? "开启" : "关闭";
 
   function toggle() {
-    if (!globalOn) {
-      /* 总开关关着：图标是划掉的，点它 = 直接把总开关打开（并解开本会话静音，由设置广播联动）。
-         ⛔ 不再只是提示「去设置」——用户要的是「我点一下就开」。 */
-      void window.codex.voiceSettingsSet({ announce: { enabled: true } }).catch(() => undefined);
-      setNotice({ text: "已开启语音播报", key: Date.now() });
-    } else if (muted) {
+    if (!globalOn) return; /* 图标已 disabled，不会走到这里；保留防御 */
+    if (muted) {
       requestAnnounceResume(threadId);
       setNotice({ text: "已开启当前会话语音播报", key: Date.now() });
     } else {
@@ -80,10 +76,12 @@ export function SessionAnnounceToggle({ threadId }: { threadId: string }) {
     <span className="turn-head-announce-wrap">
       <button
         type="button"
-        className={`turn-head-announce${enabled ? "" : " muted"}${playing ? " is-playing" : ""}`}
+        className={`turn-head-announce${!globalOn ? " is-off" : muted ? " muted" : ""}${playing ? " is-playing" : ""}`}
         aria-pressed={enabled}
+        aria-disabled={!globalOn}
+        disabled={!globalOn}
         aria-label={`${action}当前会话语音播报${playing ? "（正在播报）" : ""}`}
-        title={!globalOn ? "语音播报总开关已关闭 · 点击直接打开" : muted ? "开启当前会话语音播报（与悬浮球的恢复播报同步）" : playing ? "正在播报 · 点击停止当前会话" : "关闭当前会话语音播报（与悬浮球的停止播报同步）"}
+        title={!globalOn ? "语音播报总开关已关闭 —— 去「设置 → 语音通话 → 语音播报」打开" : muted ? "开启当前会话语音播报（与悬浮球的恢复播报同步）" : playing ? "正在播报 · 点击停止当前会话" : "关闭当前会话语音播报（与悬浮球的停止播报同步）"}
         onClick={toggle}
       >
         <AnnounceIcon muted={!enabled} playing={playing} />
