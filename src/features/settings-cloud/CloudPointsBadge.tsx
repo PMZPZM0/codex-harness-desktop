@@ -41,10 +41,8 @@ function fmt(value: number): string {
 /** 闲时那一行的文案（10-18 用户令：管理员改了时段/系数，用户得能看见"现在算不算闲时"）。
  *  ⛔ 目录没拿到（未登录 / 网络失败）⇒ 返回 null ⇒ 整行不出现（不猜"未启用"，那是在说谎）。 */
 function offPeakText(offPeak: OffPeakConfig | null, win: TurnCreditEstimate["window"]) {
-  if (!offPeak) return null;
-  if (offPeak.enabled !== true) return { text: "闲时倍率：未启用（不折扣）", hot: false };
-  if (!win) return { text: "当前不在闲时时段（不折扣）", hot: false };
-  return { text: `当前闲时「${win.label || "时段"}」${win.start}–${win.end}点 ×${win.rate}`, hot: true };
+  if (!offPeak || offPeak.enabled !== true || !win) return null;
+  return { text: `闲时 ×${win.rate}`, hot: true };
 }
 
 /** @param active 云端模型是否为**当前供应商**。⛔ 10-17 用户令：停用/切走后必须隐藏，
@@ -83,13 +81,11 @@ export function CloudPointsBadge({ active }: { active: boolean }) {
           <small>
             {KIND_LABEL[last.kind || ""] || last.kind || "最近变动"} {(last.delta ?? 0) >= 0 ? "+" : ""}
             {fmt(last.delta ?? 0)}
-            {last.note ? ` · ${last.note}` : ""}
           </small>
         ) : (
-          <small>{points.signupGrant ? `注册赠送 ${fmt(points.signupGrant)} 积分` : "暂无变动记录"}</small>
+          <small>{points.signupGrant ? `注册赠送 ${fmt(points.signupGrant)}` : "暂无变动"}</small>
         )}
-        {off ? <small className={off.hot ? "cloud-points-offpeak" : undefined}>{off.text}</small> : null}
-        <small className="cloud-points-tip-foot">设置 → 云账号 可查看完整明细</small>
+        {off?.hot ? <small className="cloud-points-offpeak">{off.text}</small> : null}
       </span>
     </span>
   );
