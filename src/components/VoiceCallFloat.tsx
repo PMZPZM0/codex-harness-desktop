@@ -8,7 +8,7 @@ import { AlertCircle, AudioLines, Download, EyeOff, LoaderCircle, Mic, PhoneOff,
 import VoiceMascot from "./VoiceMascot";
 import { patchVoiceStage, requestVoiceDictationSend, requestVoiceOpenSettings, resetVoiceStage, setVoiceDictationHandler, setVoiceLevel, setVoiceStopHandler } from "../voice/wave-level";
 // 非通话播报的「停止」出口（10-08）：播报域注册，这里只是触发 —— 基座不反向依赖域，走广播
-import { isAnnounceMutedForThread, requestAnnounceResume, requestAnnounceStop, subscribeAnnounceThreadMuted } from "../voice/announce-bus";
+import { getAnnounceGlobalEnabled, isAnnounceMutedForThread, requestAnnounceResume, requestAnnounceStop, subscribeAnnounceGlobalEnabled, subscribeAnnounceThreadMuted } from "../voice/announce-bus";
 import { useVoiceCallFloatState } from "./VoiceCallFloat/use-voice-call-float-state";
 
 export type VoicePhase = "idle" | "starting" | "active";
@@ -125,6 +125,12 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     subscribeAnnounceThreadMuted,
     () => Boolean(threadId) && isAnnounceMutedForThread(String(threadId)),
     () => false,
+  );
+  /* 总开关关着时这里也不能只显示「停止播报」——实际压根不出声，应显示「开启播报」。 */
+  const announceGlobalOn = useSyncExternalStore(
+    subscribeAnnounceGlobalEnabled,
+    () => getAnnounceGlobalEnabled() !== false,
+    () => true,
   );
   const { phase, setPhase, state, setState, expanded, setExpanded, levelRef, screenElRef, applyLevel, muted, setMuted, mutedRef, toggleMute, transcript, setTranscript, callStartedAt, setCallStartedAt, userText, setUserText, agentText, setAgentText, ballVisible, setBallVisible, hintsEnabled, setHintsEnabled, hint, setHint, menu, setMenu, agentTextRef, ballRef, notice, setNotice, endpointSec, setEndpointSec, models, setModels, download, setDownload, pos, setPos, mediaStreamRef, captureCtxRef, workletRef, playCtxRef, playQueueRef, playingCountRef, aecRef, bargeModeRef, micSettingsRef, volumeRef, gateRef, chunkerRef, speakFilterRef, prebufferRef, liveRef, refRingRef, refWriteRef, refReadRef, refDropsRef, endpointArmedRef, quietSinceRef, lastBargeAtRef, speakingRef, phaseRef, voiceModeRef, dragRef, refreshModels, busyElsewhere, setBusyElsewhere, onBallContextMenu, hideBall, pushRef, enqueuePlay, speechEpochRef, bumpSpeechEpoch, stopPlayback, skipCurrent, speakDelta, flushSpeech, startCapture, teardown, startCall, endCall, startCallRef, callToggleRef, pushTranscript, installModels, draggedRef, onPointerDown, onPointerMove, onPointerUp, onBallClick, stateLabel, modelsReady, ballClass } = useVoiceCallFloatState({ threadId });
   return createPortal(
@@ -259,12 +265,13 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
                 role="menuitem"
                 onClick={() => {
                   setMenu(null);
-                  if (announceMuted) requestAnnounceResume(threadId);
+                  if (!announceGlobalOn) void window.codex.voiceSettingsSet({ announce: { enabled: true } }).catch(() => undefined);
+                  else if (announceMuted) requestAnnounceResume(threadId);
                   else requestAnnounceStop(threadId);
                 }}
               >
-                {announceMuted ? <Volume2 size={13} /> : <VolumeX size={13} />}
-                {announceMuted ? "恢复播报" : "停止播报"}
+                {announceGlobalOn && !announceMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+                {!announceGlobalOn ? "开启播报" : announceMuted ? "恢复播报" : "停止播报"}
               </button>
               <button
                 type="button"
