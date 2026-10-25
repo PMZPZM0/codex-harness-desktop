@@ -166,6 +166,7 @@ import { RightFileBridge } from "./AppView/RightFileBridge";
 import { DramaCanvas } from "../drama-canvas";
 import { UiSketchModal } from "../ui-sketch";
 import { WhatsNewDialog } from "../whats-new";
+import { ProfileOnboardingWizard } from "../profile-onboarding/ProfileOnboardingWizard";
 import { AppViewSettingsSheet } from "./AppView/08-settings-sheet";
 import { AppViewFilePreviewEditor } from "./AppView/09-file-preview-editor";
 import { ModelViewerBridge } from "../model-viewer";
@@ -602,6 +603,15 @@ export function AppView({ app }: { app: HarnessAppApi }) {
         />
       )}
       <AppViewSettingsSheet app={app} />
+      {/* 登录后的一次性新人配置引导：只有完全没配置过的新 profile 会弹；完成后不再出现。 */}
+      <ProfileOnboardingWizard
+        onNotice={showToast}
+        onUserAvatar={(avatar) => setUserAvatar(avatar)}
+        onApplied={(cfg) => {
+          if (cfg.nickname) setUsername(cfg.nickname);
+          app.setIdentityGreeted(true);
+        }}
+      />
       {/* 专家团像素办公室（v19）：成员流转轨「办公室」按钮进入。数据面 = teams + railRuns 的
           运行态（引擎事件流归约），无新 IPC；交互只有「点角色 → 打开该成员会话」。 */}
       {/* ⭐ 入口位置（10-05 用户定稿）：**专家团会话** = 成员流转轨末位节点；

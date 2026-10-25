@@ -139,6 +139,7 @@ export const OVERVIEW_OUTSIDE: { label: string; where: string; hint: string }[] 
   { label: "命令面板", where: "Ctrl+K", hint: "直接搜任务与会话，不用翻侧栏" },
   { label: "独立弹窗", where: "会话顶栏最右", hint: "把当前会话开到新窗口；运行中暂不可用" },
   { label: "应用锁", where: "设置 → 数据 → 应用锁", hint: "密码只显示一次；输错 10 次清空应用数据，务必先备份" },
+  { label: "用户配置引导", where: "首次登录后自动弹出", hint: "称呼 / 头像 / 职业 / Codex 人格 / 兴趣；填完下一条消息生效，也可稍后配置" },
 ];
 
 export type HelpTopic = HelpKey | "overview";

@@ -35,6 +35,9 @@ export type PersonalizationConfig = {
   soulSlug?: string;
   /** 首次对话身份引导是否已完成：完成后新会话不再注入引导指令 */
   onboarded?: boolean;
+  /** 登录后的一次性「用户配置引导」是否已看过（含用户点「稍后配置」）。与 onboarded 分开：
+      看过但跳过 ⇒ 新人对话里的身份引导仍可出现；已完整配置 ⇒ 两者都 true。 */
+  profileGuideSeen?: boolean;
   /** 引导**是否已经打过招呼**（09-12 用户反馈「怎么每次新会话都强制引导」）。
       只认第一印象：第一次对话引导过后就置 true，之后无论用户有没有回答那套提问，
       新会话都不再重复引导，直接开始干活。
@@ -70,6 +73,7 @@ export async function readPersonalization(): Promise<PersonalizationConfig> {
       persona: str(stored?.persona),
       soulSlug: str(stored?.soulSlug),
       onboarded: stored?.onboarded === true,
+      profileGuideSeen: stored?.profileGuideSeen === true,
       greeted: stored?.greeted === true,
     };
   } catch {
@@ -105,6 +109,7 @@ export async function writePersonalization(input: Record<string, unknown>): Prom
     persona: pick("persona", 12000),
     soulSlug: pick("soulSlug", 120),
     onboarded: input.onboarded === undefined ? current.onboarded : input.onboarded === true,
+    profileGuideSeen: input.profileGuideSeen === undefined ? current.profileGuideSeen : input.profileGuideSeen === true,
     greeted: input.greeted === undefined ? current.greeted : input.greeted === true,
   };
   await fs.writeFile(getPersonalizationFile(), JSON.stringify(config, null, 2), "utf8");
