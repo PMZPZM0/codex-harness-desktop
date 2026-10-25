@@ -633,7 +633,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
          之后模型想改名字**没有任何工具** ⇒ 它只能写进记忆，界面上的名字永远不变。
          本工具每个会话都下发（描述里点名「不要只写进记忆」），落点是 personalization.json + AGENTS.md。 */
       IDENTITY_UPDATE_TOOL,
-      /* 人格切换（10-24 用户立项）：Codex 能改自己（一二布布）与用户（行业精英库）的人格 */
+      /* 用户人格切换（10-24 用户立项）：把用户人格库里的职业与背景写进档案 */
       PERSONA_APPLY_TOOL,
       /* 创世 boss 的群编排面（10-24）：建群 → 派活 → 查账 → 审查覆盖 / 升级 → 浏览器能力检查。
          ⛔ 只给带队会话用：成员会话不挂（成员不许拉人、不许审人）。
