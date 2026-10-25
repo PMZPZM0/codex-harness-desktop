@@ -71,6 +71,20 @@ jobs:
             cp "${found[0]}" "dist-assets/${out}"
           }
           pick artifacts/win-x64   '*.exe' "Codex.Harness.Desktop-${VERSION}-win-x64.exe"
+          # 10-25 NSIS 差分更新：blockmap 与 latest.yml 必须跟安装包一起发；
+          # 缺任何一个，客户端都会自动回退到完整包（不会坏，但没有增量效果）。
+          pick artifacts/win-x64   '*.exe.blockmap' "Codex.Harness.Desktop-${VERSION}-win-x64.exe.blockmap"
+          LATEST=$(find artifacts/win-x64 -type f -name 'latest.yml' -print -quit)
+          if [ -z "${LATEST}" ]; then
+            echo "::error::缺少 latest.yml（electron-builder 未生成差分更新元数据）"
+            exit 1
+          fi
+          cp "${LATEST}" dist-assets/latest.yml
+          if ! grep -q "path: Codex.Harness.Desktop-${VERSION}-win-x64.exe" dist-assets/latest.yml; then
+            echo "::error::latest.yml 的 path 与最终资产名不一致："
+            grep -n "path:" dist-assets/latest.yml || true
+            exit 1
+          fi
           pick artifacts/mac-arm64 '*.zip' "Codex.Harness.Desktop-${VERSION}-arm64-mac.zip"
           pick artifacts/mac-x64   '*.zip' "Codex.Harness.Desktop-${VERSION}-x64-mac.zip"
           echo "=== 待发布资产 ==="
