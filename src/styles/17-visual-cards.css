@@ -1485,3 +1485,44 @@
 .flow-export-menu button:hover { background: color-mix(in srgb, var(--green) 8%, transparent); }
 .flow-export-menu button b { font-size: 12px; font-weight: 500; color: var(--text); }
 .flow-export-menu button small { font-size: 11px; color: var(--faint); line-height: 1.45; }
+
+/* ── 应用更新进度条（10-25 用户令：默认隐藏，鼠标放上去显示）──
+   ⛔ 只在检查/下载进行中渲染（UpdateProgressBar 的 active）；平时没有 DOM。
+   ⛔ 显形由**宿主按钮的 hover / 键盘聚焦**驱动 —— 用户明确要「默认隐藏」。
+   ⛔ fill 用 currentColor：账号菜单项是普通文字色、更新卡的 primary 是 accent 色，
+     一条规则同时成立；写 var(--accent) 会在 accent 底色的按钮上隐形。 */
+.account-menu-item,
+.update-card-actions button { position: relative; }
+.update-progress-bar {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 1px;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  pointer-events: none;
+}
+.account-menu-item:hover > .update-progress-bar,
+.account-menu-item:focus-visible > .update-progress-bar,
+.update-card-actions button:hover > .update-progress-bar,
+.update-card-actions button:focus-visible > .update-progress-bar { opacity: 1; }
+.update-progress-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: currentColor;
+  transition: width 0.18s ease;
+}
+.update-progress-bar.indeterminate .update-progress-fill {
+  width: 38%;
+  animation: update-progress-slide 1.1s ease-in-out infinite;
+}
+@keyframes update-progress-slide {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
