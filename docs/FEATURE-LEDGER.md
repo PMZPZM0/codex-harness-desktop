@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-25 | 更新方式 ? 改为行内，地址缩短 | 修复 | `01-sidebar-shell.tsx`、`17-visual-cards.css` | 用户：「放后面不是放下面这样太丑了」。? 图标改为行内跟在「补丁 / 完整包」后面，按钮 nowrap + inline-flex；「更新地址」缩短为 GitHub Releases，镜像顺序收进 ? 说明；不再换行。 | c199c1735 |
 | 2026-10-25 | 更新方式改名「补丁 / 完整包」+ 选项说明 + 三仓规则 | 改动 | `01-sidebar-shell.tsx`、`17-visual-cards.css`、三仓 `AGENTS.md` | 用户：「差分不知道啥意思，补丁大家都知道」。UI 两个选项改为「补丁 / 完整包」，各加 ❓ 说明；更新地址标注「国内镜像优先」（gh-proxy → ghfast → 直连）。三仓 AGENTS 写入补丁更新规则、各产品专用 GitHub Release 映射与三仓同步/推送纪律。 | 46186f0f8 |
 | 2026-10-25 | 更新面板新增「更新方式」：差分 / 完整包 | 改动 | `01-sidebar-shell.tsx`、`17-visual-cards.css`、`01-thread-switch-system-events.tsx`、`02-update-ui-settings.tsx`、`bag-types.ts`、`vite-env.d.ts`、`updates-ipc.ts` | 用户：「不得出一个新的更新选项嘛」。更新面板新增「更新方式」开关：默认差分，可切完整包绕开 blockmap；手动下载与静默下载都按所选方式执行，localStorage 持久化。CDP 实测开关在位、默认选中「差分」。 | e130ca8e0 |
 | 2026-10-25 | NSIS 差分更新（blockmap / latest.yml） | 新增 | `electron/updates.ts`、`electron/features/updates-ipc.ts`、`package.json`、`.github/workflows/build-win.yml`、`.github/workflows/release.yml`、守卫 12e | 用户要求：在现有检查更新上新增补丁式增量更新，并由 GitHub Release 同步新更新源。接入 electron-updater：发布产物新增 `*.exe.blockmap`/`latest.yml`，下载按 Release tag + 镜像序走 generic feed，差分失败自动回退完整包；静默/手动下载共用，安装保持先起包再退出。本地打包已验证 exe + blockmap + latest.yml 三者齐全；守卫 12e 17/17。 | 984b00b50 |
