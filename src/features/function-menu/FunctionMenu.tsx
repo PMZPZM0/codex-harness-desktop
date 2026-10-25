@@ -211,7 +211,7 @@ function MorePopover({ anchor, overflow, otherLocation, onClose }: {
       {otherLocation && (
         <button type="button" role="menuitem" className="function-menu-popover-item" onClick={() => { onClose(); setFunctionMenuLocation(otherLocation); }}>
           {otherLocation === "top" ? <ArrowUpToLine size={14} /> : <ArrowDownToLine size={14} />}
-          <span>{otherLocation === "top" ? "移到搜索任务下面" : "移到侧栏底部"}</span>
+          <span>{otherLocation === "top" ? "移到拓展功能下面" : "移到侧栏底部"}</span>
         </button>
       )}
     </div>,

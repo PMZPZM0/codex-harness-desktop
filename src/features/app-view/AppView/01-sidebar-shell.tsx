@@ -366,16 +366,16 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         className="sidebar-options-toggle"
         aria-expanded={!optionsCollapsed}
         aria-controls="sidebar-options-body"
-        title={optionsCollapsed ? "展开拓展功能" : "收起拓展功能"}
+        title={optionsCollapsed ? "展开功能入口" : "收起功能入口"}
         onMouseEnter={(event) => maybeShowFunctionMenuTour(menuLocation, event.currentTarget)}
         onClick={toggleOptions}
       >
         <LayoutGrid size={15} />
-        <span>拓展功能</span>
+        <span>功能入口</span>
         <ChevronDown size={13} className={`sidebar-options-chevron ${optionsCollapsed ? "" : "open"}`} />
       </button>
       <div className={`sidebar-options-body ${optionsCollapsed ? "is-collapsed" : ""}`}>
-        <div className="sidebar-nav sidebar-nav-bottom" id="sidebar-options-body" role="group" aria-label="拓展功能" aria-hidden={optionsCollapsed}>
+        <div className="sidebar-nav sidebar-nav-bottom" id="sidebar-options-body" role="group" aria-label="功能入口" aria-hidden={optionsCollapsed}>
           <FunctionMenu location={menuLocation} />
         </div>
       </div>
@@ -506,8 +506,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
             <div className="sidebar-tabs" role="navigation" aria-label="导航">
               {/* 10-24 用户对照截图：改成整行「新会话」主按钮 + 下面一行「搜索任务」，不再并排胶囊。 */}
               <div className="sidebar-quick">
-                <button className="sidebar-tab sidebar-quick-btn" title={`新会话（${hk("Ctrl+N")}）`} onClick={() => { setBossPending(false); startNewThread(); }}>
-                  <CirclePlus size={16} strokeWidth={2} /><span>新会话</span><kbd className="quick-kbd">{hk("Ctrl+N")}</kbd>
+                <button className="sidebar-tab sidebar-quick-btn" title={`新建任务（${hk("Ctrl+N")}）`} onClick={() => { setBossPending(false); startNewThread(); }}>
+                  <CirclePlus size={16} strokeWidth={2} className="ic-blue" /><span>新建任务</span><kbd className="quick-kbd">{hk("Ctrl+N")}</kbd>
                 </button>
                 {/* 10-25 用户令：BOSS 会话在搜索任务**上面**（不进拓展功能菜单）；
                     拓展功能（top 位置）自适应排在搜索任务之后。
@@ -557,7 +557,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 ⛔ 分类视图（09-25）入口撤下：本地存过 "source" 的旧偏好由 useEffect 一次性回落 projects，
                 口径与渲染仍保留在 lib/thread-source.mjs（守卫【156】仍在用其数据）。 */}
             <div className="view-tabs" role="toolbar" aria-label="会话视图工具">
-              <button className="view-tab active" onClick={() => setViewTab("projects")} title="按项目分组"><FolderOpen size={14} className="ic-amber" /><span>项目</span></button>
+              <button className={`view-tab ${viewTab === "projects" ? "active" : ""}`} onClick={() => setViewTab("projects")} title="按项目分组查看"><FolderOpen size={14} className="ic-amber" /><span>项目</span></button>
+              <button className={`view-tab ${viewTab === "tasks" ? "active" : ""}`} onClick={() => setViewTab("tasks")} title="平铺全部任务（不分组）"><ListChecks size={14} className="ic-blue" /><span>任务</span></button>
               <div className="view-toolbar">
                 <button className="view-toolbar-btn ic-cyan" title="搜索任务" onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}><Search size={14} /></button>
                 <button className="view-toolbar-btn ic-violet" title={sidebarAllCollapsed ? "展开全部项目" : "折叠全部项目"} onClick={toggleAllSidebarSections} disabled={!projectGroups.length}>{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
@@ -575,7 +576,11 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                    所以只允许追加在既有插槽之后，不许插到既有按钮之间。*/}
             <Slot id="sidebar.middle" props={{ onOpenSettings }} loader={() => import("../../settings-devtools/DomainsPanel")} />
             <div className="thread-list">
-              {loading ? Array.from({ length: 5 }).map((_, index) => <div className="thread-skeleton shimmer" key={index} />) : viewTab === "projects" ? (
+              {loading ? Array.from({ length: 5 }).map((_, index) => <div className="thread-skeleton shimmer" key={index} />) : viewTab === "tasks" ? (
+                /* 10-25 用户令：「项目选项旁边加一个任务选项」= 平铺全部会话（置顶优先、按最近活动排；
+                   与项目视图共用 renderDispatchedList 同一渲染器）。 */
+                <>{renderDispatchedList([...listThreads].sort((a, b) => Number(pinnedThreads.includes(b.id)) - Number(pinnedThreads.includes(a.id)) || b.updatedAt - a.updatedAt))}</>
+              ) : viewTab === "projects" ? (
                 <div className="project-list">
                   {projectGroups.length ? projectGroups.map(([cwd, items]) => {
                     const expanded = expandedProjects.has(cwd);
@@ -587,11 +592,10 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                             {/* 色相只给文件夹；箭头保持中性（它是展开/折叠的**状态**指示，染色会跟文件夹抢注意力） */}
                             <FolderOpen size={13} className="ic-amber" />
                             <strong>{basename(cwd)}</strong>
-                            <em>{items.length}</em>
                           </button>
                           {/* 10-25 用户令（对照 ZCode）：项目行加「新建会话」图标（··· 之前）——
                               点击 = 切 workspace 到该项目 → 开新会话（首条消息发出时 cwd 落到该项目）。 */}
-                          <button className="project-item-new-btn" title={"在此项目新建会话：" + basename(cwd)} onClick={(event) => { event.stopPropagation(); bagSetWorkspaceForProject(cwd); }}><CirclePlus size={13} /></button>
+                          <button className="project-item-new-btn" title={"在 " + basename(cwd) + " 新建任务"} onClick={(event) => { event.stopPropagation(); bagSetWorkspaceForProject(cwd); }}><CirclePlus size={13} /></button>
                           <button className="project-item-menu-btn" title="项目操作" aria-expanded={projectMenu === cwd} onClick={(event) => { event.stopPropagation(); setProjectMenu(projectMenu === cwd ? null : cwd); }}><MoreHorizontal size={14} /></button>
                           {projectMenu === cwd && <div className="project-menu">
                             <button className="danger" onClick={() => { setProjectMenu(null); void deleteThreadsByCwd(cwd); }}><Trash2 size={14} />移除（删除全部对话）</button>
