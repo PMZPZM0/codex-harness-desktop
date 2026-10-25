@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Briefcase, Check, RotateCcw, Volume2 } from "lucide-react";
-import { USER_PERSONAS, userPersonaFields } from "../../lib/bubu-pack.mjs";
+import { USER_PERSONAS, userPersonaFields } from "../../lib/user-personas.mjs";
 
 /** 用户人格（10-25 从用户中心搬到「人格市场」，与 Codex 人格同一页）：
  *  选一个行业身份，写进档案的 occupation / userContext，Codex 按这个背景配合你。 */

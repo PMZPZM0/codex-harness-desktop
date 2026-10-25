@@ -8,9 +8,8 @@ import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtin
 import type { Bag } from "../../bag-types";
 import { createToolCallDedupe } from "../../../../../lib/tool-call-dedupe.mjs";
 import { readStoredCodexAvatar, setCodexIdentity } from "../../../../../lib/codex-identity.mjs";
-/* 一二布布主题包（10-24 用户立项）：persona_apply 的注册表与人格全文都在这份纯模块里。 */
-import { BUBU_PACK, BUBU_PERSONA, USER_PERSONAS, userPersonaFields } from "../../../../../lib/bubu-pack.mjs";
-import { avatarAsset } from "../../../../../lib/avatar-presets";
+/* 用户人格库（行业身份预设）：与任何第三方 IP 无关。 */
+import { USER_PERSONAS, userPersonaFields } from "../../../../../lib/user-personas.mjs";
 /* 前端开发（10-05，两轮改名：界面草图 → 手机前端UI → 前端开发）：Codex 读写画布走**对方域的 barrel**（域↔域的唯一接口面）。
    会话单例在 ui-sketch 那边持有（iframe 由弹窗 attach），这里只发请求。 */
 import { applySketchDoc, requestSketchDoc, summarizeDoc, validateSketchDoc, waitSketchReady } from "../../../../ui-sketch";
@@ -146,23 +145,12 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                   await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `保存失败：${error.message}` }], success: false });
                 }
               } else if (event.params?.tool === "persona_apply") {
-                /* ⛔ 人格切换通道（10-24 用户立项）：Codex 改自己（一二布布）/ 改用户（行业精英库）。
+                /* 用户人格切换通道：Codex 按行业身份库改用户的 occupation / userContext。
                    与 identity_update 同一套落点（personalization:save-identity → AGENTS.md），
-                   ⛔ 本会话已注入的旧人格不会热替换，新会话才完整生效 —— 回执里必须写明。 */
+                   ⛔ 本会话已注入的旧背景不会热替换，新会话才完整生效 —— 回执里必须写明。 */
                 try {
                   const target = String(args.target ?? "");
                   const personaId = String(args.personaId ?? "").trim();
-                  if (target === "self") {
-                    if (personaId !== "yierbubu") {
-                      await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "self 目前只内置 \"yierbubu\"（一二布布）；其它人格请在「用户中心」安装人格包。" }], success: false });
-                      return;
-                    }
-                    await window.codex.saveIdentity({ persona: BUBU_PERSONA, soulSlug: "yierbubu", assistantName: BUBU_PACK.assistantName });
-                    setCodexIdentity({ name: BUBU_PACK.assistantName, avatar: { type: "image", value: avatarAsset("codex-bubu.png") } });
-                    bag.showToast("已切换为一二布布", "头像与名字已生效；人格/表情包下一个新会话开始");
-                    await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "已切换为一二布布人格：名字与头像已生效；人格全文与表情包触发表从下一个新会话开始完全生效（本会话回复可能仍带旧语气）。表情包按触发表在情绪到位时插入 `![一二布布·<label>](bubu://<id>)`。" }], success: true });
-                    return;
-                  }
                   if (target === "user") {
                     const fields = personaId === "default" ? { occupation: "", userContext: "" } : userPersonaFields(personaId);
                     if (!fields) {
@@ -177,7 +165,7 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       : "已恢复空白用户人格（职业与背景已清空）。" }], success: true });
                     return;
                   }
-                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "target 必须是 \"self\" 或 \"user\"。" }], success: false });
+                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "target 必须是 \"user\"。" }], success: false });
                 } catch (error: any) {
                   await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `人格切换失败：${error.message}` }], success: false });
                 }

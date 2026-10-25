@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, UserRound, Briefcase, GraduationCap, Clock3, Heart, Languages, Lightbulb, Save, Wand2, LogOut, RotateCcw, Check, Sparkles, Bird, Sticker, Volume2 } from "lucide-react";
+import { Camera, UserRound, Briefcase, GraduationCap, Clock3, Heart, Languages, Lightbulb, Save, Wand2, LogOut, RotateCcw, Check, Sparkles } from "lucide-react";
 import { DefaultCodexAvatar } from "./DefaultCodexAvatar";
-import { AppSelect } from "./AppSelect";
 import { CODEX_DEFAULT_NAME, type CodexAvatarSpec } from "../lib/codex-identity.mjs";
 import { avatarAsset, CODEX_AVATAR_PRESETS, CODEX_DEFAULT_AVATAR_FILE, USER_AVATAR_PRESETS } from "../lib/avatar-presets";
-import { BUBU_PACK, BUBU_PERSONA, BUBU_STICKERS, stickerAsset } from "../lib/bubu-pack.mjs";
-import { wavBase64FromFloat32Pcm } from "../lib/wav-encode.mjs";
 
 export type UserProfile = {
   nickname: string;
@@ -187,56 +184,6 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
       ? <span className="uc-avatar-emoji">{profile.avatar}</span>
       : <span className="uc-avatar-emoji">{profile.nickname ? profile.nickname.slice(0, 1).toUpperCase() : <UserRound size={26} />}</span>;
 
-  // ── 一二布布主题包（10-24 用户立项）──
-  const [bubuApplying, setBubuApplying] = useState(false);
-  const [bubuVoiceBusy, setBubuVoiceBusy] = useState(false);
-  const [bubuVoiceSid, setBubuVoiceSid] = useState(BUBU_PACK.voice.sid);
-
-  const applyBubuPack = async () => {
-    if (bubuApplying) return;
-    setBubuApplying(true);
-    try {
-      pickPresetAvatar("user-bubu.png");
-      onCodexAvatarChange?.({ type: "image", value: avatarAsset("codex-bubu.png") });
-      onAssistantNameChange?.(BUBU_PACK.assistantName);
-      await window.codex.saveIdentity({ persona: BUBU_PERSONA, soulSlug: BUBU_PACK.personaSlug, assistantName: BUBU_PACK.assistantName });
-      // 语音包：内置音色 2 号 + 直接打开播报总开关；克隆档案让位（profileId 置空 = 回到内置预置音色）
-      try {
-        const current: any = await window.codex.voiceSettingsGet();
-        await window.codex.voiceSettingsSet({
-          tts: { ...(current?.settings?.tts ?? {}), sid: bubuVoiceSid, profileId: "" },
-          announce: { ...(current?.settings?.announce ?? {}), enabled: true },
-        });
-      } catch { /* 语音模型未装时跳过：人格与表情不受影响 */ }
-      onNotice("一二布布主题包已应用：双头像与播报音色立即生效，人格 / 表情包从下一个新会话开始");
-    } catch (err: any) {
-      onNotice(`主题包应用失败：${err?.message ?? err}`);
-    } finally {
-      setBubuApplying(false);
-    }
-  };
-
-  /** 试听配套语音（内置音色 2）：本机没有专属布布克隆音色，这里如实用内置音色试听。 */
-  const previewBubuVoice = async () => {
-    if (bubuVoiceBusy) return;
-    setBubuVoiceBusy(true);
-    try {
-      const r = await window.codex.voicePreviewVoice({ sid: bubuVoiceSid, speed: 1.15, text: "你好呀，我是一二布布，今天也一起加油吧。" });
-      if (!r?.ok || !r.audioBase64 || !r.sampleRate) throw new Error(r?.error || "语音合成失败（可能还没安装语音基础模型）");
-      const wav = wavBase64FromFloat32Pcm(r.audioBase64, r.sampleRate);
-      await new Promise<void>((resolve, reject) => {
-        const audio = new Audio(`data:audio/wav;base64,${wav}`);
-        audio.onended = () => resolve();
-        audio.onerror = () => reject(new Error("播放失败"));
-        void audio.play().catch(reject);
-      });
-    } catch (err: any) {
-      onNotice(`语音试听失败：${err?.message ?? err}`);
-    } finally {
-      setBubuVoiceBusy(false);
-    }
-  };
-
   const styleLabel = STYLE_OPTIONS.find((option) => option.value === personality)?.label ?? "务实";
   const displayName = profile.nickname || username || "未设置昵称";
 
@@ -416,46 +363,6 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
               );
             })}
           </div>
-        </div>
-      </section>
-
-      {/* 一二布布主题包（10-24 用户立项）：表情包 / 双头像 / 人格 / 语音包 一键成套 */}
-      <section className="uc-panel bubu-pack-panel">
-        <div className="uc-panel-head">
-          <span className="uc-panel-icon"><Bird size={14} /></span>
-          <div><strong>一二布布主题包</strong><small>表情包 · 双头像 · 人格 · 语音包，一键成套</small></div>
-        </div>
-        <div className="bubu-pack-body">
-          <div className="bubu-pack-preview">
-            <img className="bubu-pack-avatar" src={avatarAsset("user-bubu.png")} alt="一二布布用户头像" />
-            <img className="bubu-pack-avatar" src={avatarAsset("codex-bubu.png")} alt="一二布布 Codex 头像" />
-            <div className="bubu-pack-stickers">
-              {BUBU_STICKERS.map((s) => (
-                <img key={s.id} src={stickerAsset(s.file)} alt={s.label} title={`${s.label}：${s.states.join(" / ")}`} />
-              ))}
-            </div>
-          </div>
-          <div className="bubu-pack-voice">
-            <span>角色音色</span>
-            <AppSelect
-              value={String(bubuVoiceSid)}
-              onChange={(v) => setBubuVoiceSid(Number(v))}
-              options={BUBU_PACK.voice.options.map((o: any) => ({ value: String(o.sid), label: o.label }))}
-              ariaLabel="一二布布角色音色"
-            />
-          </div>
-          <div className="bubu-pack-actions">
-            <button type="button" className="primary-setting" disabled={bubuApplying} onClick={() => void applyBubuPack()}>
-              <Sticker size={14} />{bubuApplying ? "应用中…" : "一键换上一二布布"}
-            </button>
-            <button type="button" className="secondary-setting" disabled={bubuVoiceBusy} onClick={() => void previewBubuVoice()}>
-              {bubuVoiceBusy ? <Sparkles size={14} /> : <Volume2 size={14} />}{bubuVoiceBusy ? "合成中…" : "试听语音"}
-            </button>
-          </div>
-          <p className="bubu-pack-note">
-            头像与播报音色立即生效；人格、表情包从<b>下一个新会话</b>开始（表情包只在布布人格下由 Codex 使用）。
-            语音包 = 内置音色（布布 / 一二 两档，已开启播报）；官方配音不随应用分发，可点「试听语音」先听，再到「设置 → 语音通话」细调。
-          </p>
         </div>
       </section>
 
