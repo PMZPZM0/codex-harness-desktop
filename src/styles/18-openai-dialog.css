@@ -1489,117 +1489,155 @@
 }
 
 
-/* ===== 语音小助手 logo：现代多色透明 3D 球 =====
-   整体只是 div + CSS 渐变，不画动物：参考 Siri / Google Assistant / Spotify 的共性
-   ——抽象、多色流动、半透明玻璃、状态变色、简洁的灵魂点。 */
-.voice-mascot-orb {
-  display: inline-block;
+/* ===== 语音角色：Grok Bot 式极简胶囊眼圆脸（10-25 用户点名）=====
+   ⛔ 风格硬约束：大圆脸 + 两颗**竖直胶囊眼**（无瞳孔/眼白/睫毛/高光）+ 两颊腮红，
+      **没有鼻子和嘴**；每套外观只换配色与一个小配件，不换角色。
+   ⛔ 别再退回「圆点眼睛的 Siri 球」或动物头像。 */
+.voice-bot {
   position: relative;
-  border-radius: 50%;
-  /* 三色 conic 渐变：紫蓝 → 粉 → 橙（品牌感）；球面被内部高光 + 阴影"压"出 3D 体感。
-     opacity 0.78 让背后的内容透出 = 透明 3D 玻璃 */
-  background: conic-gradient(
-    from 0deg at 50% 50%,
-    #a78bfa 0%,    /* 紫 */
-    #6366f1 22%,   /* 靛 */
-    #38bdf8 44%,   /* 天蓝 */
-    #f472b6 66%,   /* 粉 */
-    #fb923c 88%,   /* 橙 */
-    #a78bfa 100%   /* 回到紫（让旋转过渡自然） */
-  );
-  opacity: 0.82;
+  display: block;
+  flex: none;
+  border-radius: 46% 46% 48% 48%;
+  background: var(--bot-face, #17151a);
   box-shadow:
-    /* 内部"打光"：左上高光 + 右下阴影 = 球体光感 */
-    inset 4px 6px 14px color-mix(in srgb, #ffffff 60%, transparent),
-    inset -5px -6px 14px color-mix(in srgb, #1e1b4b 35%, transparent);
-  /* 09-13 性能：外发光改 ::before 光晕层（opacity/scale 合成器处理），不再用
-     box-shadow blur 逐帧 paint（见 .voice-call-avatar 的同款改造） */
+    inset 3px 4px 8px color-mix(in srgb, #ffffff 18%, transparent),
+    inset -4px -5px 10px color-mix(in srgb, #000000 26%, transparent),
+    0 4px 10px color-mix(in srgb, #000000 22%, transparent);
+  transform: rotate(-6deg);
+  transition: transform .18s ease, filter .18s ease;
   isolation: isolate;
-  /* 整体缓慢旋转 = 渐变色彩在球面流动（不靠 @property，靠整球 transform） */
-  animation: orb-spin 9s linear infinite;
-  will-change: transform;
 }
-/* 聆听：冷静青绿 + 旋快一点 + 眼睛更亮 */
-.voice-mascot-listening {
-  background: conic-gradient(
-    from 0deg at 50% 50%,
-    #5eead4 0%, #14b8a6 20%, #06b6d4 40%, #22d3ee 60%, #67e8f9 80%, #5eead4 100%
-  );
-  opacity: 0.85;
-  animation: orb-spin 4.5s linear infinite;
-}
-/* 播报：暖橙 + 更快旋转 + 跟音量微微脉动 */
-.voice-mascot-speaking {
-  background: conic-gradient(
-    from 0deg at 50% 50%,
-    #fb923c 0%, #f97316 18%, #f43f5e 36%, #ec4899 54%, #fb923c 72%, #fbbf24 90%, #fb923c 100%
-  );
-  opacity: 0.88;
-  animation: orb-spin 2.5s linear infinite, orb-pulse .42s ease-in-out infinite;
-  transform-origin: 50% 50%;
-}
-@keyframes orb-spin {
-  to { transform: rotate(360deg); }
-}
-@keyframes orb-pulse {
-  0%, 100% { transform: rotate(0deg) scale(1); }
-  50%      { transform: rotate(180deg) scale(calc(1 + var(--voice-level, 0) * 0.06)); }
-}
-
-/* orb 外发光：radial 光晕层替代 box-shadow blur（只动 opacity/scale = 合成器处理）。
-   悬浮球/通话界面共用一个 --voice-level（由最近的设置者决定）。 */
-.voice-mascot-orb::before {
+.voice-bot::after {
+  /* 玻璃高光：左上一点柔光，保留一点挂件质感但不抢脸 */
   content: "";
   position: absolute;
-  inset: -22%;
+  left: 18%;
+  top: 12%;
+  width: 42%;
+  height: 30%;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(167, 139, 250, .45) 0%, rgba(167, 139, 250, .14) 50%, rgba(167, 139, 250, 0) 72%);
-  opacity: calc(.35 + var(--voice-level, 0) * .65);
-  transform: scale(calc(1 + var(--voice-level, 0) * .3));
-  z-index: -1;
+  background: radial-gradient(ellipse at 35% 35%, rgba(255, 255, 255, .32), transparent 68%);
   pointer-events: none;
 }
-.voice-mascot-listening::before {
-  background: radial-gradient(circle, rgba(34, 211, 238, .4) 0%, rgba(34, 211, 238, .12) 50%, rgba(34, 211, 238, 0) 72%);
+.voice-bot-eye {
+  position: absolute;
+  top: 40%;
+  width: 3px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--bot-eye, #f8fafc);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, #000000 10%, transparent);
+  animation: voice-bot-blink 4.6s ease-in-out infinite;
 }
-.voice-mascot-speaking::before {
-  background: radial-gradient(circle, rgba(251, 146, 60, .48) 0%, rgba(251, 146, 60, .16) 50%, rgba(251, 146, 60, 0) 72%);
+.voice-bot-eye--left { left: 31%; transform: translateY(-0.5px) rotate(3deg); }
+.voice-bot-eye--right { right: 31%; transform: translateY(0.5px) rotate(-3deg); }
+.voice-bot-blush {
+  position: absolute;
+  top: 58%;
+  width: 6px;
+  height: 3.6px;
+  border-radius: 50%;
+  background: var(--bot-blush, #fb7185);
+  opacity: .78;
+  filter: blur(.2px);
+}
+.voice-bot-blush--left { left: 17%; }
+.voice-bot-blush--right { right: 17%; }
+@keyframes voice-bot-blink {
+  0%, 86%, 100% { transform: scaleY(1); }
+  91%           { transform: scaleY(.12); }
+}
+/* 聆听：睁大眼 + 轻微前倾；思考：眯成短横线、左右交替；播报：腮红呼吸。 */
+.voice-mascot-listening .voice-bot { transform: rotate(-6deg) scale(1.04); filter: saturate(1.1) brightness(1.06); }
+.voice-mascot-listening .voice-bot-eye { height: 10px; animation: none; }
+.voice-mascot-thinking .voice-bot-eye {
+  width: 5px;
+  height: 2.5px;
+  border-radius: 2px;
+  animation: voice-bot-think 1.3s ease-in-out infinite;
+}
+.voice-mascot-thinking .voice-bot-eye--right { animation-delay: .16s; }
+@keyframes voice-bot-think {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  50%      { transform: translateY(1px) scaleY(.7); }
+}
+.voice-mascot-speaking .voice-bot { transform: rotate(-6deg) scale(calc(1 + var(--voice-level, 0) * .06)); }
+.voice-mascot-speaking .voice-bot-blush { animation: voice-bot-blush .8s ease-in-out infinite; }
+@keyframes voice-bot-blush {
+  0%, 100% { opacity: .72; }
+  50%      { opacity: .95; }
 }
 
-/* 眼睛：两颗白色发光点（"灵魂"），不旋转（外层旋转不影响） */
-.voice-mascot-orb > .orb-eyes {
+/* 外观配色（与 src/lib/voice-ball-styles.mjs 的 id 一一对应；守卫 11z 对账）。
+   ⛔ 黑脸配白眼，浅色脸配深眼 —— 胶囊眼的对比度是这套风格成立的前提。 */
+.voice-bot--skin-ink { --bot-face: #17151a; --bot-eye: #f8fafc; --bot-blush: #fb7185; }
+.voice-bot--skin-cream { --bot-face: #f4ead9; --bot-eye: #1c1917; --bot-blush: #f6a38b; }
+.voice-bot--skin-mint { --bot-face: #bfe8d8; --bot-eye: #103c32; --bot-blush: #34d399; }
+.voice-bot--skin-peach { --bot-face: #ffd3c4; --bot-eye: #3b1d1a; --bot-blush: #fb7185; }
+.voice-bot--skin-sky { --bot-face: #c6e3ff; --bot-eye: #0f2b46; --bot-blush: #60a5fa; }
+.voice-bot--skin-moon { --bot-face: #e8ecf6; --bot-eye: #1f2937; --bot-blush: #a5b4fc; }
+/* 小配件：同一张脸，凭一个细节区分（不是换角色、也不加第二个图形）。 */
+.voice-bot--skin-mint::before {
+  content: "";
   position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 26%;
-  transform: rotate(0deg); /* 反向旋转抵消外层旋转，眼睛始终朝上 */
-  animation: orb-eyes-counter 9s linear infinite;
-  will-change: transform;
+  left: 10%;
+  top: -5px;
+  width: 8px;
+  height: 5px;
+  border-radius: 70% 20% 70% 20%;
+  background: #34d399;
+  transform: rotate(-32deg);
+  box-shadow: 5px -1px 0 -1px #10b981;
+  z-index: 2;
 }
-@keyframes orb-eyes-counter {
-  to { transform: rotate(-360deg); }
+.voice-bot--skin-peach::before {
+  content: "";
+  position: absolute;
+  right: 6%;
+  top: -4px;
+  width: 8px;
+  height: 8px;
+  background: #fb7185;
+  clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+  transform: rotate(8deg);
+  z-index: 2;
 }
-.orb-eye {
-  width: 5px; height: 5px;
+.voice-bot--skin-sky::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -7px;
+  width: 1.5px;
+  height: 7px;
+  border-radius: 1px;
+  background: #60a5fa;
+  transform: translateX(-50%);
+}
+.voice-bot--skin-sky::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -10px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
-  background: #ffffff;
-  box-shadow:
-    0 0 4px 2px rgba(255, 255, 255, 0.85),
-    0 0 12px 4px rgba(255, 255, 255, 0.45);
-  animation: orb-eye-blink 4.5s ease-in-out infinite;
+  background: #60a5fa;
+  transform: translateX(-50%);
 }
-.voice-mascot-listening > .orb-eyes .orb-eye,
-.voice-mascot-speaking > .orb-eyes .orb-eye {
-  box-shadow:
-    0 0 6px 3px rgba(255, 255, 255, 0.95),
-    0 0 18px 6px rgba(255, 255, 255, 0.6);
+.voice-bot--skin-moon::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -5px;
+  width: 78%;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid #a5b4fc;
+  transform: translateX(-50%) rotate(-8deg);
+  opacity: .8;
+  z-index: 2;
 }
-@keyframes orb-eye-blink {
-  0%, 88%, 100% { transform: scaleY(1); }
-  93%           { transform: scaleY(0.15); }
-}
+.voice-bot--skin-moon::after { opacity: .55; }
 
 /* ── 功能域清单（10-04 阶段 6，settings-devtools/DomainsPanel）─────────────── */
 .domains-list { display:flex; flex-direction:column; gap:4px; max-height:320px; overflow-y:auto; }
@@ -1636,50 +1674,14 @@
 .declared-plugins-notice { font-size:11.5px; color:var(--muted); }
 .declared-plugins-count { font-size:11px; color:var(--faint); }
 
-/* ── 悬浮球皮肤（10-25 用户：「配套一套好看的，设置语音通话里可以改样式」）──
-   ⛔ 只改 CSS 变量与一层底盘渐变；VoiceMascot 本体、交互、音量联动全部不动。
-   ⛔ 新增皮肤 = 在 src/lib/voice-ball-styles.mjs 加一项 + 这里加同名变量组（守卫 11z 对账）。 */
-.voice-ball--skin-glass { /* 默认，无覆盖 */ }
-.voice-ball--skin-aurora,
-.voice-ball-style-swatch.skin-aurora {
-  --ball-glow-a: rgba(45, 212, 191, .44);
-  --ball-glow-b: rgba(139, 92, 246, .20);
-  --ball-ring: rgba(45, 212, 191, .82);
-  --ball-hover: #2dd4bf;
-  --ball-disc: radial-gradient(circle at 32% 28%, rgba(45, 212, 191, .34), rgba(59, 130, 246, .16) 46%, rgba(139, 92, 246, .12) 70%, transparent 74%);
-}
-.voice-ball--skin-sunset,
-.voice-ball-style-swatch.skin-sunset {
-  --ball-glow-a: rgba(251, 146, 60, .46);
-  --ball-glow-b: rgba(244, 114, 182, .20);
-  --ball-ring: rgba(251, 146, 60, .82);
-  --ball-hover: #fb923c;
-  --ball-disc: radial-gradient(circle at 32% 28%, rgba(251, 146, 60, .36), rgba(244, 114, 182, .16) 48%, rgba(190, 24, 93, .10) 70%, transparent 74%);
-}
-.voice-ball--skin-neon,
-.voice-ball-style-swatch.skin-neon {
-  --ball-glow-a: rgba(34, 211, 238, .50);
-  --ball-glow-b: rgba(99, 102, 241, .24);
-  --ball-ring: rgba(34, 211, 238, .92);
-  --ball-hover: #22d3ee;
-  --ball-disc: radial-gradient(circle at 30% 26%, rgba(34, 211, 238, .38), rgba(59, 130, 246, .18) 44%, rgba(99, 102, 241, .16) 68%, transparent 73%);
-}
-.voice-ball--skin-moon,
-.voice-ball-style-swatch.skin-moon {
-  --ball-glow-a: rgba(226, 232, 240, .40);
-  --ball-glow-b: rgba(191, 219, 254, .16);
-  --ball-ring: rgba(224, 231, 255, .78);
-  --ball-hover: #e2e8f0;
-  --ball-disc: radial-gradient(circle at 32% 28%, rgba(241, 245, 249, .28), rgba(191, 219, 254, .14) 48%, rgba(148, 163, 184, .10) 70%, transparent 74%);
-}
-.voice-ball--skin-ember,
-.voice-ball-style-swatch.skin-ember {
-  --ball-glow-a: rgba(245, 158, 11, .44);
-  --ball-glow-b: rgba(180, 83, 9, .20);
-  --ball-ring: rgba(245, 158, 11, .78);
-  --ball-hover: #f59e0b;
-  --ball-disc: radial-gradient(circle at 32% 28%, rgba(245, 158, 11, .34), rgba(180, 83, 9, .16) 48%, rgba(120, 53, 15, .12) 70%, transparent 74%);
-}
+/* ── 悬浮球外圈光晕（颜色跟角色皮肤走；角色本体在 .voice-bot--skin-*）──
+   ⛔ 皮肤本体不是光圈：这里只负责球外发光/脉冲环颜色，别再加第二层底盘渐变。 */
+.voice-ball--skin-ink { --ball-glow-a: rgba(248,250,252,.22); --ball-glow-b: rgba(251,113,133,.14); --ball-ring: rgba(248,250,252,.72); --ball-hover: #f8fafc; --ball-disc: transparent; }
+.voice-ball--skin-cream { --ball-glow-a: rgba(246,238,222,.30); --ball-glow-b: rgba(246,163,139,.16); --ball-ring: rgba(246,238,222,.78); --ball-hover: #f4ead9; --ball-disc: transparent; }
+.voice-ball--skin-mint { --ball-glow-a: rgba(52,211,153,.36); --ball-glow-b: rgba(45,212,191,.16); --ball-ring: rgba(52,211,153,.78); --ball-hover: #34d399; --ball-disc: transparent; }
+.voice-ball--skin-peach { --ball-glow-a: rgba(251,113,133,.36); --ball-glow-b: rgba(251,146,60,.16); --ball-ring: rgba(251,113,133,.78); --ball-hover: #fb7185; --ball-disc: transparent; }
+.voice-ball--skin-sky { --ball-glow-a: rgba(96,165,250,.38); --ball-glow-b: rgba(147,197,253,.16); --ball-ring: rgba(96,165,250,.80); --ball-hover: #60a5fa; --ball-disc: transparent; }
+.voice-ball--skin-moon { --ball-glow-a: rgba(165,180,252,.34); --ball-glow-b: rgba(226,232,240,.16); --ball-ring: rgba(165,180,252,.78); --ball-hover: #a5b4fc; --ball-disc: transparent; }
 
 /* 设置页外观选择：卡片网格（窄屏自动一列/两列，内容不裁剪）。 */
 .voice-ball-styles {
@@ -1720,22 +1722,22 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .voice-ball-style-card:disabled { opacity: .6; cursor: default; }
-.voice-ball-style-swatch {
-  position: relative;
-  flex: none;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid var(--line);
-  background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, .3), transparent 62%), var(--panel-2);
-  box-shadow: inset 0 0 10px var(--ball-glow-b), 0 0 10px var(--ball-glow-a);
+.voice-ball-style-preview { flex: none; width: 32px; height: 32px; display: grid; place-items: center; }
+.voice-ball-style-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
 }
-.voice-ball-style-swatch > i {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: var(--ball-disc, transparent);
+.voice-ball-style-text strong { font-size: 12px; font-weight: 600; color: var(--text); }
+.voice-ball-style-text small {
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
+.voice-ball-style-check { flex: none; color: var(--accent); }
 .voice-ball-style-text {
   display: flex;
   flex-direction: column;
