@@ -2488,3 +2488,4 @@
 
 /* ⛔ 缩略图必须禁掉浏览器原生图片拖拽：否则按下图片会进入 native drag，pointermove 全被取消（实测拖不动） */
 .composer-image-chip-inline .composer-image-chip-thumb { -webkit-user-drag: none; user-drag: none; pointer-events: none; }
+.composer-image-chip-inline.dragging { opacity: 0.85; cursor: grabbing; }
