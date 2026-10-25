@@ -13,3 +13,4 @@ export { BossThreadIntro } from "./BossThreadIntro";
 /* store 动作也走 barrel（域内唯一出口） */
 export { closeBossPanel, getBossPanelState, openBossPanel, setBossPanelGroup, subscribeBossPanel } from "./panel-store.mjs";
 export { getBossThreads, setBossHomeThreadId, setBossPending, subscribeBossThreads } from "./boss-threads-store.mjs";
+export type { BossThreadsState } from "./boss-threads-store.mjs";

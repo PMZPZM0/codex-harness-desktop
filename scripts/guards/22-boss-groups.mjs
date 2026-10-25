@@ -227,7 +227,7 @@ if (state) {
 {
   const manifest = JSON.parse(read("electron/ipc-channels.manifest.json"));
   const channels = (manifest.channels ?? []).filter((c) => String(c.channel).startsWith("boss-groups:"));
-  ok(channels.length === 12, `manifest 有 12 个 boss-groups 通道（实测 ${channels.length}）`);
+  ok(channels.length === 13, `manifest 有 13 个 boss-groups 通道（实测 ${channels.length}）`);
   ok(manifest.count === manifest.channels.length, `manifest.count 与通道数一致（${manifest.count} / ${manifest.channels.length}）`);
   ok(channels.every((c) => typeof c.invokeArgs === "string" && Boolean(c.returns)
     && (!String(c.paramsImpl ?? "").trim() || String(c.invokeArgs ?? "").trim())),
@@ -240,8 +240,8 @@ if (state) {
   ok(read("electron/composition.gen.ts").includes("boss-groups-ipc"), "composition.gen.ts 已重生成（跑过 npm run gen:domains）");
 
   const registry = read("electron/ipc-registry.ts");
-  ok(/\{ prefix: "boss-groups", count: 12, status: "in-features", file: "features\/boss-groups-ipc\.ts"/.test(registry),
-    "ipc-registry.ts 账本已登记（count=12）");
+  ok(/\{ prefix: "boss-groups", count: 13, status: "in-features", file: "features\/boss-groups-ipc\.ts"/.test(registry),
+    "ipc-registry.ts 账本已登记（count=13）");
 
   const preload = read("electron/preload.ts");
   for (const method of ["listBossGroups", "bossGroupStatus", "createBossGroup", "assignBossTask", "reviewBossTask", "escalateBossTask", "bossBrowserStatus", "recheckBossTask", "bossGroupMember", "bossGroupPin", "bossGroupSay", "bossGroupPool"]) {
@@ -287,8 +287,10 @@ if (state) {
     "没群时的 BOSS 会话有固定锚点（localStorage boss-home-thread）");
   ok(/memberThreadIds/.test(bossStore),
     "共享 store 汇总群成员会话 id（侧栏据此打「BOSS 调度」标签）");
-  ok(/boss-workspace/.test(sidebar) && /chooseDirectory/.test(sidebar) && /workspaceRef\.current = dir/.test(sidebar),
-    "BOSS 会话有独立项目目录：首次进入要选、选过记住、并同步 workspaceRef（否则首条消息用旧目录）");
+  ok(/boss-workspace/.test(sidebar) && /chooseDirectory/.test(sidebar),
+    "BOSS 会话首次进入要选「群干活的项目目录」（存 boss-workspace）");
+  ok(/const sessionDir = bossThreads\.homeDir/.test(sidebar) && /workspaceRef\.current = sessionDir/.test(sidebar),
+    "BOSS 会话本身跑在独立目录 <userData>/boss-home（项目记忆/技能与任何项目隔离），并同步 workspaceRef");
   ok(/isBossThread \? null : \(/.test(read("src/features/app-state/parts/part09/02-seg.tsx")),
     "BOSS 会话隐藏顶栏「允许本会话调度」开关（群编排自带独立调度）");
   const timeline = read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx");

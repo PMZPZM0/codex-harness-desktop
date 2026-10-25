@@ -1163,6 +1163,8 @@ interface Window {
     listBossGroups(): Promise<any[]>;
     /* 创世 boss：某群的账本快照（成员/任务/事件/打回） */
     bossGroupStatus(groupId: string): Promise<any>;
+    /* 10-25：把群账本的 bossThreadId 重绑到重建后的会话（rollout 丢失自愈） */
+    bossGroupRebind(input: any): Promise<any>;
     /* 创世 boss：建群 + 声明成员岗位（成员会话在建会话那刻定工具面） */
     createBossGroup(input: any): Promise<any>;
     /* 创世 boss：加任务并派活（异步，turn/start 立刻返回；结果靠后台回调） */

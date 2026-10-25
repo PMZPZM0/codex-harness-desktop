@@ -485,19 +485,24 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                     if (groupBoss) { void app.openThread(groupBoss); return; }   // 有群 ⇒ 打开它的 boss 线程
                     const home = bossThreads.homeId;                       // 还没群 ⇒ 回到固定的那个 BOSS 会话
                     if (home && (app.threads ?? []).some((t: any) => t.id === home)) { void app.openThread(home); return; }
-                    /* 10-25 用户令：BOSS 会话有**独立项目目录**，进去要选（不默认套用当前会话的目录）。
-                       选过一次就记住（boss-workspace），之后直接用它。 */
-                    let dir = "";
-                    try { dir = localStorage.getItem("boss-workspace") ?? ""; } catch { /* 隐私模式 */ }
-                    if (!dir) {
+                    /* 10-25 用户令：BOSS 会话**完全独立** —— 项目记忆 / 技能 / logs 都不跟任何项目共享。
+                       所以它跑在自己的目录 `<userData>/boss-home`（主进程负责建，这里拼同一路径），
+                       那里没有 AGENTS.md、没有项目 .codex ⇒ 项目级记忆天然为空。
+                       「进去要选择」的那个目录是**群干活的项目**（成员会话在那里跑），存 boss-workspace；
+                       建群时 group_create 会用它（见 02-request 的 workspace 兜底）。 */
+                    let projectDir = "";
+                    try { projectDir = localStorage.getItem("boss-workspace") ?? ""; } catch { /* 隐私模式 */ }
+                    if (!projectDir) {
                       const picked = await window.codex.chooseDirectory();
                       if (!picked) return;                                  // 用户取消 ⇒ 什么都不做
-                      dir = String(picked);
-                      try { localStorage.setItem("boss-workspace", dir); } catch { /* ignore */ }
+                      projectDir = String(picked);
+                      try { localStorage.setItem("boss-workspace", projectDir); } catch { /* ignore */ }
                     }
-                    app.setWorkspace(dir);
-                    app.workspaceRef.current = dir;                         // send 读 ref，必须同步
-                    try { localStorage.setItem("workspace", dir); } catch { /* ignore */ }
+                    /* ⛔ 会话本身跑在独立目录；拿不到 homeDir（主进程未就绪）才退回项目目录。 */
+                    const sessionDir = bossThreads.homeDir || projectDir;
+                    app.setWorkspace(sessionDir);
+                    app.workspaceRef.current = sessionDir;                  // send 读 ref，必须同步
+                    /* ⛔ 不写全局 localStorage("workspace")：那是普通会话的项目，BOSS 不能把它带走。 */
                     bossHomePending.current = true;                         // 全新：新建并记成 home
                     setBossPending(true);                                   // 空态显示 BOSS 引导卡
                     startNewThread();

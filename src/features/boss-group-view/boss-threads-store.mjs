@@ -17,7 +17,7 @@
  */
 const HOME_KEY = "boss-home-thread";
 
-let state = { groups: [], bossIds: [], memberIds: [], homeId: "", pending: false, loaded: false };
+let state = { groups: [], bossIds: [], memberIds: [], homeId: "", homeDir: "", pending: false, loaded: false };
 const listeners = new Set();
 let timer = null;
 let off = null;
@@ -44,9 +44,18 @@ export function setBossPending(pending) {
   emit();
 }
 
+/** BOSS 会话自己的目录：`<userData>/boss-home`（主进程在 list 时顺手 mkdir，这里只拼路径）。
+ *  ⛔ 用户令「BOSS 会话完全独立」：它跑在这里 ⇒ 项目记忆 / 项目技能 / logs 都不跟任何项目共享。 */
+async function resolveHomeDir() {
+  try {
+    const ud = await window.codex.getUserData();
+    return ud ? `${String(ud).replace(/[\\/]+$/, "")}/boss-home` : "";
+  } catch { return ""; }
+}
+
 async function load() {
   try {
-    const list = await window.codex.listBossGroups();
+    const [list, homeDir] = await Promise.all([window.codex.listBossGroups(), resolveHomeDir()]);
     const groups = Array.isArray(list) ? list : [];
     state = {
       groups,
@@ -54,6 +63,7 @@ async function load() {
       /* 群成员会话 id：侧栏据此打「BOSS 调度」标签（成员会话由派活时新建，不走 delegate 通道） */
       memberIds: groups.flatMap((g) => (Array.isArray(g.memberThreadIds) ? g.memberThreadIds : []).map(String)),
       homeId: readHome(),
+      homeDir: homeDir || state.homeDir,
       pending: state.pending,
       loaded: true,
     };

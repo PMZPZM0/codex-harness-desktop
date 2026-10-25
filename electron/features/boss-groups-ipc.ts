@@ -8,6 +8,9 @@
  * ⛔ 不做群时间线渲染（那是渲染层 P0 之后的事）：成员事件回投到 boss 会话，
  *    看板读 `boss-groups:status`。这样不会在引擎之外伪造第二条会话。
  */
+import { app } from "electron";
+import fs from "node:fs";
+import path from "node:path";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { bossStore } from "../boss-groups/store";
@@ -27,6 +30,12 @@ export const bossGroupsFeature = defineFeature<null>({
 
     setBossEventSink((payload) => broadcastCodexEvent(payload));
 
+    /* ⛔ 10-25 用户令：BOSS 会话要**完全独立**（项目记忆 / 技能 / logs 都不跟普通会话共享）。
+       做法 = 它跑在自己的目录 `<userData>/boss-home`（那里没有 AGENTS.md、没有项目 .codex）
+       ⇒ 项目级记忆天然为空；群成员仍在用户选的项目目录里干活（group.workspace）。
+       目录在这里顺手建好（复用 list 通道，⛔ 不为它新开一条 IPC）。 */
+    const bossHomeDir = path.join(app.getPath("userData"), "boss-home");
+    try { fs.mkdirSync(bossHomeDir, { recursive: true }); } catch { /* 建不了就让引擎报错，别吞 */ }
     ipcHost.handle("boss-groups:list", async () => {
       const state = await bossStore.load();
       return Object.values(state.groups).map((group) => ({
@@ -41,6 +50,23 @@ export const bossGroupsFeature = defineFeature<null>({
         memberCount: group.members.length,
         taskCount: Object.values(state.tasks).filter((task) => task.groupId === group.id).length,
       }));
+    });
+
+    /* BOSS 会话的会话 id 重绑（10-25）：rollout 丢了的会话引擎无法继续，渲染层会重建一个会话
+       把消息发过去 —— 这里把群账本的 bossThreadId 改到新会话，群事件才回得到它。
+       ⛔ 不重绑 = 每次发消息侧栏多一个会话、群事件回不到 BOSS（用户点名「不要新建会话」）。 */
+    ipcHost.handle("boss-groups:rebind", async (_event, input: any) => {
+      const previous = String(input?.previousThreadId ?? "");
+      const next = String(input?.threadId ?? "");
+      if (!previous || !next) return { ok: false, error: "缺 previousThreadId / threadId" };
+      const state = await bossStore.load();
+      const hit = Object.values(state.groups).filter((group) => group.bossThreadId === previous);
+      for (const group of hit) group.bossThreadId = next;
+      if (hit.length) {
+        bossStore.save();
+        broadcastCodexEvent({ type: "boss-group", phase: "group", groupId: hit[0].id, status: "rebound" });
+      }
+      return { ok: true, rebound: hit.length };
     });
 
     ipcHost.handle("boss-groups:status", async (_event, groupId: string) => {
