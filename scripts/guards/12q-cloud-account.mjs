@@ -383,7 +383,11 @@ ok(
   `积分徽标预热目录：进入时一次 + 每次轮询一次（实测 ${(badgeSrc.match(/warmCloudCreditCatalog\(\)/g) || []).length} 次；⛔ 只剩轮询那次 ⇒ 徽标一直停在「未启用」直到用户发出第一回合）`,
 );
 ok(
-  /enabled !== true\) return \{ text: "闲时倍率：未启用/.test(badgeSrc) && /if \(!offPeak\) return null/.test(badgeSrc),
+  /* 10-26 更新：实现收敛成 `offPeakText()` 里一次判断（`!offPeak || enabled !== true || !win ⇒ null`），
+     比旧断言更严格（旧版在 enabled=false 时还会返回一句"未启用"文案）。
+     断言意图不变：**拿不到就整行不出现**，且全文件不许出现「未启用」这种猜测文案。 */
+  /if \(!offPeak \|\| offPeak\.enabled !== true \|\| !win\) return null;/.test(badgeSrc) &&
+  !/闲时倍率：未启用/.test(badgeSrc),
   "目录没拿到时整行不出现（⛔ 不许显示「未启用」—— 那是在说谎）",
 );
 const catalogEntry = (manifest.channels || []).find((c) => c.channel === "cloud-models:catalog") || {};

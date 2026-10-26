@@ -332,7 +332,12 @@ console.log(C.bold("\n【8】打包必备件：随包 automation-tools.zip（发
     const ddPath = join(ROOT, "electron", "data-dir.ts");
     const ddSrc = readFileSync(ddPath, "utf8");
     const mainSrc = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
-    (/app\.setPath\("userData",\s*resolveStartupUserData\(\)\)/.test(mainSrc) ? ok : fail)("【152】main.ts 的 setPath 走 resolveStartupUserData()（裸 env 判断不得回归）");
+    /* ⛔ 10-26：应用锁要在 Chromium/引擎碰数据之前清一次应用数据 ⇒ 先算进 `startupUserData`
+       再 setPath（多了一层 reset 覆盖）。意图不变：**必须走 resolveStartupUserData()**，
+       ⛔ 不许退回裸 `process.env` 判断（那会让指路牌/迁移整条链静默失效）。 */
+    (/app\.setPath\("userData",\s*startupUserData\)/.test(mainSrc)
+      && /let startupUserData = resolveStartupUserData\(\);/.test(mainSrc) ? ok : fail)(
+      "【152】main.ts 的 setPath 走 resolveStartupUserData()（裸 env 判断不得回归）");
     (/CODEX_HARNESS_USER_DATA/.test(ddSrc) ? ok : fail)("【152】env 覆盖优先级保留（CODEX_HARNESS_USER_DATA）");
     (ddSrc.includes("data-dir.json") && ddSrc.includes("defaultUserDataDir") ? ok : fail)("【152】指路牌落在默认目录（appData 锚点）下的 data-dir.json");
     (ddSrc.includes('base === "data-dir.json"') ? ok : fail)("【152】迁移排除指路牌本体（复制它会把新目录也标上旧指路）");
@@ -423,7 +428,9 @@ console.log(C.bold("\n【10】滚动与锚定状态：单一 owner + 默认值�
     // `scrollTop = scrollHeight` 在那里是正确的语义 —— 按"上文 15 行内绑定的容器"放行。
     .filter((entry) => {
       const context = srcLines.slice(Math.max(0, entry.no - 15), entry.no).join("\n");
-      return !/contentRef\.current|bodyRef\.current/.test(context);
+      /* 10-26：群面板 feed（BossGroupPanel 的 feedRef）也是**面板内部滚动容器** ——
+         里面没有尾部留白，`scrollTop = scrollHeight` 在这里同样是正确语义。 */
+      return !/contentRef\.current|bodyRef\.current|feedRef\.current/.test(context);
     });
   rawScrollHeightHits.length === 0
     ? ok("主时间线没有「scrollTop = scrollHeight」的直写（内容底部一律经 contentTailTarget 计算）")

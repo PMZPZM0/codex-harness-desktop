@@ -327,9 +327,12 @@ ok(/Math\.min\(len \* u,/.test(screen) || /Math\.min\(len,/.test(screen),
   ok(/onOpenOffice=\{\(\) => setCompanyPreviewTeamId\(OFFICE_SESSION_TEAM_ID\)\}/.test(tlSrc),
     "⛔ 普通会话的调度轨把入口接到预览状态（哨兵 teamId 开浮层）");
   // ⛔ 门槛不许再用 runs.length：那会让「还没调度过」的普通会话整条轨消失 ⇒ 入口无处安放
-  ok(/\{!railTeam && \(/.test(tlSrc) &&
+  // 10-26：轨道分了两支 —— 中枢会话（bossGroupId）走成员轨，普通会话走调度轨；
+  //   两支都以 `!railTeam` 为前提（专家团会话用团队轨，不重复挂入口）。
+  ok(/\{!railTeam && !bossGroupId && \(/.test(tlSrc) &&
+    /\{bossGroupId && !railTeam && \(/.test(tlSrc) &&
     !/delegatedRailRuns\.length > 0 && \(/.test(tlSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")),
-    "⛔ 轨道按「非专家团会话」渲染（⛔ 不拿 runs.length 当门槛，否则没调度过就没有入口）");
+    "⛔ 轨道按「非专家团会话」渲染（中枢 / 普通会话两支都在，⛔ 不拿 runs.length 当门槛）");
   ok(/OFFICE_SESSION_TEAM_ID\s*=\s*"__office-session__"/.test(
       readFileSync(join(ROOT, "src", "features", "team-office", "index.ts"), "utf8"),
     ), "⛔ 哨兵 teamId 定义在 team-office 域（timeline 与 AppView 都要用，留 AppView 会循环 import）");

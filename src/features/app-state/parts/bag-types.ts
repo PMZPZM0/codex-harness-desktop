@@ -664,6 +664,8 @@ export interface Bag {
   /** 更新方式：差分优先（默认）/ 强制完整包（差分出问题时兜底）。 */
   updateMode: "differential" | "full";
   setUpdateMode: (mode: "differential" | "full") => void;
+  /** 更新方式的状态 setter（设置页的「补丁 / 完整包」单选直接用 setState 语义）。 */
+  setUpdateModeState: React.Dispatch<React.SetStateAction<"differential" | "full">>;
   updateProgress: number;
   setUpdateProgress: React.Dispatch<React.SetStateAction<number>>;
   updateNotice: { version?: string | undefined; changelog?: string | undefined; size?: number | undefined; mandatory?: boolean | undefined; } | null;
@@ -1038,8 +1040,11 @@ export interface Bag {
   listThreads: import("../../app-view/types.ts").Thread[];
   dispatchCwdMap: Record<string, string>;
   viewTab: "projects" | "tasks" | "source";
-  setViewTab: React.Dispatch<React.SetStateAction<"projects" | "source">>;
+  setViewTab: React.Dispatch<React.SetStateAction<"projects" | "tasks" | "source">>;
   expandedProjects: Set<string>;
+  /** 项目列表里「见过」的项目根（项目分组的顺序与空项目兜底用）。 */
+  knownProjects: string[];
+  setKnownProjects: React.Dispatch<React.SetStateAction<string[]>>;
   setExpandedProjects: React.Dispatch<React.SetStateAction<Set<string>>>;
   toggleProjectExpanded: (cwd: string) => void;
   cwdOverrides: Record<string, string>;
@@ -1389,6 +1394,10 @@ export interface Bag {
   isEmpty: boolean;
   /** 指挥中枢识别快照（群 boss 线程 / home 锚点 / 成员会话集合），见 boss-threads-store */
   bossThreads: BossThreadsState;
+  /** 中枢会话对应的群快照（成员 / 任务 / 事件），成员轨与群面板共用。 */
+  bossSnap: BossThreadsState;
+  /** 被调度的子会话登记（渲染层按 originThreadId 挂「调度」徽标与缩进）。 */
+  bossDelegateRecords: Record<string, any>;
   /** 当前会话是不是指挥中枢（顶栏成员图标 / 调度开关 / 空态引导都用它） */
   isBossThread: boolean;
   switchingMeta: import("../../app-view/types.ts").Thread | null | undefined;

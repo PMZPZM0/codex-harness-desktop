@@ -56,7 +56,8 @@ for (const [name, rel] of Object.entries(FILES)) {
 const content = src(FILES.content);
 const css = read(FILES.css);
 const styles = read(FILES.styles);
-const accept = read(FILES.accept);
+/* ⛔ 不再 read(FILES.accept)：⑦ 的验收登记断言已随「验收脚本收敛为当前 3 项」一并删除，
+   变量留着就是死代码（FILES.accept 仍参与上面「文件在位」的存在性检查）。 */
 const pageSrc = (key) => src(FILES[key]);
 
 /* ── ① 全设置页接线（10-24 四轮：不再按页白名单） ── */
@@ -126,9 +127,11 @@ for (const [key, title] of [["skills", "技能中心"], ["plugins", "插件"], [
 /* ── ⑥ SSH 工具栏不落单 ── */
 ok(/\.settings-exp-shell \.ssh-toolbar \.search-field\s*\{[^}]*flex:\s*1 1 160px;[^}]*width:\s*auto\s*!important/s.test(css), "SSH 搜索框可收缩（导出/导入不再被挤到第二行单飞）");
 
-/* ── ⑦ 验收题同轮登记 ── */
-ok(/"settings-unified":\s*"10-24"/.test(accept), "验收 settings-unified 已登记到 10-24 轮（默认轮能跑到）");
-ok(/id:\s*"settings-unified"/.test(accept), "验收项本体存在");
+/* ── ⑦ 验收题同轮登记（⛔ 10-26 删除这两条）──
+   它们断言 accept.mjs 里有 `"settings-unified": "10-24"` 轮次表与 `id: "settings-unified"` 验收项，
+   但 `c1344271b`（「验收脚本收敛为当前 3 项」）已把轮次表机制与该项一起**有意删除**。
+   断言已不存在的对象 = 永远红或永远假绿，两种都没价值 ⇒ 去掉；
+   上面 ①~⑥ 的结构断言才是这条守卫真正在守的东西。 */
 
 console.log(`\n【shell】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);
