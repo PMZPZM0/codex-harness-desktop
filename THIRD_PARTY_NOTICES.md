@@ -56,6 +56,18 @@
 > **为什么内置这三个**：本应用把「写文档 / 改文案」作为常见用途之一，这三份技能是 MIT 许可的纯文本指令
 > （零依赖、零可执行代码），内置成本极低（合计约 47 KB）且能直接提升改稿质量。用户可在「设置 → 技能」里单独停用。
 
+### grill-me
+
+| | |
+|---|---|
+| 来源 | <https://github.com/mattpocock/skills>（`skills/productivity/grill-me` + `skills/productivity/grilling`） |
+| 作者 | Matt Pocock 及贡献者 |
+| 许可 | MIT |
+| 文件 | `skills/productivity/grill-me/SKILL.md`（3 行代理）+ `skills/productivity/grilling/SKILL.md`（方法论） |
+| 内置位置 | `electron/builtin-skills/24-skill-grill-me.ts` 的 `GRILL_ME_SKILL` 常量 → 落盘为 `skills/grill-me/SKILL.md` |
+| 内置日期 | 2026-10-26 |
+| 说明 | **改编，非逐字**。上游分两层：`grill-me` 正文只有一句「Call the Skill tool with "grilling"」——本应用没有 Claude Code 的 `Skill` 工具，照抄即是一条指向不存在能力的死指针，故把两份合成一份同名技能。方法论（设计树 / 轮次 / 前沿 / 每题附推荐答案 / 事实归 agent、决策归用户 / 未确认不动手）逐条保留；改写部分只有两处：① 去掉对 `Skill` 工具的委托；② 「事实由子智能体查」按本应用的子智能体与工具面表述。⛔ 因是改编，不参与预检【82】的 sha256 上游比对。原文未内置 `disable-model-invocation: true` —— 该字段引擎不执行（见 `i-have-adhd` 条目），改用 description 明写「不要自动触发」。 |
+
 ---
 
 ## 2. Python 依赖（可选安装，装在内置 Python 运行时里）
