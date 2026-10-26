@@ -1273,6 +1273,8 @@
   font-size: 12px;
 }
 .uc-chip svg { color: var(--accent); }
+.uc-chip-button { border: 1px solid var(--line); background: var(--panel); cursor: pointer; font-family: inherit; }
+.uc-chip-button:hover { color: var(--text); border-color: var(--faint); }
 
 .uc-avatar-side {
   flex: 1 1 300px;

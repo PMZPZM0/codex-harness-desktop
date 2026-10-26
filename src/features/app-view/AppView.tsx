@@ -620,6 +620,8 @@ export function AppView({ app }: { app: HarnessAppApi }) {
         onUserAvatar={(avatar) => setUserAvatar(avatar)}
         onApplied={(cfg) => {
           if (cfg.nickname) setUsername(cfg.nickname);
+          /* 引导里选的「务实 / 友好 / 默认」要同步到账户级回复风格；用户中心的风格胶囊读的是这个状态。 */
+          if (cfg.replyStyle !== undefined) changePersonality(cfg.replyStyle === "友好" ? "friendly" : cfg.replyStyle === "务实" ? "pragmatic" : "none");
           app.setIdentityGreeted(true);
         }}
       />
