@@ -143,13 +143,33 @@ ok(/if \(!boundary && !\(compactionAt > 0\)\) return \{ turnId: "", atEnd: false
 const userMsgSrc = read("src/features/shared/UserMessageView.tsx");
 ok(/if \(refs\.groupEvents\?\.length\) \{[\s\S]{0,700}?data-ruler-mark="user"/.test(userMsgSrc),
   "⛔ 群广播（中枢会话里绝大多数「用户消息」）也必须带 data-ruler-mark —— 漏了刻度尺一个参照点都没有，滚动不联动");
-ok(/playWheelTick\(waveDirRef\.current\)/.test(ruler) && /waveRef\.current && current/.test(ruler),
-  "滚轮滚动跨过一条消息时出声（⛔ 不许只在刻度尺自身的滚轮上响 —— 那样波浪就是静音的）");
+/* ⛔ 10-26 用户：「刻度线声音触发有延迟，延迟还挺高，有时候触发不出来」——三条一起钉住：
+   ① 音频上下文必须**预解锁**（懒创建 + suspended ⇒ 第一声丢/延迟）；
+   ② 三条播声路径各用**独立节流通道**（共用一个窗口会互相吞）；
+   ③ 悬停定位用**槽位数学**，不再逐格 getBoundingClientRect（12~50 次强制布局 = 延迟主因）。 */
+const tickSrc = read("src/lib/wheel-tick.mjs");
+ok(/export function primeWheelTick\(\)/.test(tickSrc)
+  && /latencyHint: "interactive"/.test(tickSrc)
+  && /const UNLOCK_EVENTS = \[/.test(tickSrc)
+  && /"wheel", \{ capture: true, passive: true \}/.test(tickSrc),
+  "音频上下文**预解锁**（pointerdown/keydown/wheel 任一次交互就建好 + latencyHint:interactive）");
+ok(/const lastAtByChannel = new Map\(\)/.test(tickSrc) && /channel/.test(tickSrc)
+  && !/let lastAt = 0;/.test(tickSrc),
+  "节流按 channel 分开（⛔ 三条路径共用一个 lastAt 会把彼此的声音吞掉）");
+ok(/if \(c\.state !== "running"\)/.test(tickSrc) && /return false;/.test(tickSrc),
+  "上下文没 running 时**不排延迟音**（排进去只会在恢复后突然响一下，比不响更怪）");
+ok(/playWheelTick\(waveDirRef\.current, \{ channel: "scroll"/.test(ruler)
+  && /playWheelTick\(-1, \{ channel: "hover"/.test(ruler)
+  && /playWheelTick\(direction, \{ channel: "ruler"/.test(ruler),
+  "三条播声路径各走各的通道（scroll / hover / ruler）");
+ok(/const startY = rect\.top \+ Math\.max\(0, \(rect\.height - total \* RULER_SLOT\) \/ 2\)/.test(ruler)
+  && !/tickEls\[i\]\.getBoundingClientRect\(\)/.test(ruler),
+  "悬停定位是**槽位数学**（1 次 rect，⛔ 不再逐格读布局 —— 每 mousemove 12~50 次强制布局就是延迟来源）");
 /* ⛔ 10-26 用户：「刻度线中间那么小一个缝隙，我鼠标在上面上下滑动，都会断，都没有很好的连贯性」
    ⇒ 悬停改成**整条轨道**按指针 Y 取最近刻度（每格自己 enter/leave 必然在缝隙处断开）。 */
 ok(/onMouseMove=\{\(event\) => hoverAt\(event\.clientY\)\}/.test(ruler)
   && /const hoverAt = \(clientY: number\) => \{/.test(ruler)
-  && /playWheelTick\(-1\)/.test(ruler),
+  && /playWheelTick\(-1, \{ channel: "hover"/.test(ruler),
   "悬停/划动是**整条轨道连续响应**（按指针取最近刻度，⛔ 不靠每格 enter/leave —— 缝隙处必断）");
 ok(!/onMouseEnter=\{\(event\) => \{[\s\S]{0,200}?setTip\(/.test(ruler),
   "刻度自身不再承担 hover（避免与轨道处理器互相打断：tip 闪断 / 声音漏）");
