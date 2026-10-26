@@ -10,15 +10,15 @@
 | 本地路径 | GitHub 仓库 | 可见性 | 角色 |
 |---|---|---|---|
 | `D:\Codex Harness Desktop` | `PMZPZM0/codex-harness-desktop` | 私有 | **主应用**（Codex Harness Desktop）源码；主应用自身的发版也在这里（tag → 本仓 CI → 本仓 Release） |
-| `D:\PPcode` | **`PMZPZM0/PPcode`（origin，唯一远端）** | 公开 | **PPcode 产品：源码 + 发布页合一**（10-12 重构 `9b58ee0 源码合入发布仓`）。应用内「检查更新」匿名拉它的 `/releases/latest`；CI 的 `PUBLISH_REPO` 也指向本仓（发布 = 本仓 Release，无跨仓 token） |
+| `D:\PPcode` | **`PMZPZM0/PPcode`（origin，唯一远端）** | 公开 | **PPcode 产品：源码 + 发布页合一**（10-12 重构 `9b58ee0 源码合入发布仓`）。应用内「检查更新」匿名拉它的 releases 列表（按 `v*` 前缀过滤 + semver 比较，⛔ 不碰 `/releases/latest` —— 那是按发布时间取，会串线）；CI 的 `PUBLISH_REPO` 也指向本仓（发布 = 本仓 Release，无跨仓 token） |
 | `D:\Codex Assistant` | **`PMZPZM0/codex-harness-cloud-src`（remote 名 `cloud`）** | 公开 | **云助手**：headless 跑真 `main.ts`、浏览器渲染桌面版 dist（登录门 + admin）。⛔ 与桌面版**彻底拆开**（独立 userData / AUMID / 安装目录 / 助手形态不建主窗）。⛔ 本仓 `origin` 历史遗留指向**桌面版仓** —— 推代码一律 `git push cloud main`，推 origin 会污染主线 |
 | —— | ~~`PMZPZM0/ppcode-src`~~ | **已删除**（2026-10-13 用户告知「PPCode 换 GitHub 仓库了」） | 旧私有源仓，⛔ 别再推 —— `git remote -v` 核对远端是 `PMZPZM0/PPcode` 再推 |
-| —— | 远端凭据 | — | 三仓远端都是 **SSH deploy key：只能推代码与 tag**。建 Release / 传资产只能在 Actions 里做（本机无 gh CLI、无 API token） |
+| —— | 远端凭据 | — | 三仓远端都是 **SSH deploy key：只能推代码与 tag**。建 Release / 传资产走 Actions；本机虽无 gh CLI，但**凭据管理器里有可用的 GitHub API 令牌**（`printf 'protocol=https\nhost=github.com\n\n' | git credential fill` 取 `password=`；10-26 撤包与资产验收都用它） |
 
 关键事实（都有代码锚点，别凭记忆）：
 
 - PPcode 应用内更新源：`electron/update-source.ts` → `DEFAULT_UPDATE_REPO = "PMZPZM0/PPcode"`
-  （匿名拉 `/releases/latest`）。
+  （匿名拉 releases 列表 + tag 前缀过滤 + semver 比较，⛔ 不碰 `/releases/latest`）。
 - 主应用更新源：`electron/updates.ts` → `GITHUB_REPO = "PMZPZM0/codex-harness-desktop"`。
 - **两仓更新链的网络都走国内镜像优先**（10-11）：`electron/gh-mirror.ts` 是镜像表单一真相源
   （gh-proxy → ghfast → 直连，10-11 实测 gh-proxy API/资产均通、ghfast API 已 403 只当下载通道、
