@@ -35,6 +35,10 @@ type PackState = {
 type EngineInfo = {
   id: PackId;
   name: string;
+  /** 角色标签（默认 / 可选·更自然 / 可选·有情绪）——新手第一眼要能分清"哪些是必装" */
+  badge: string;
+  /** 默认引擎（随基础模型一起装，不单独下载） */
+  isDefault?: boolean;
   tagline: string;
   /** 一句话说清它是干嘛的 */
   role: string;
@@ -49,7 +53,9 @@ const ENGINES: EngineInfo[] = [
   {
     id: "vits",
     name: "轻量播报",
-    tagline: "vits-zh-ll · 现在用的这个",
+    badge: "默认 · 随基础模型",
+    isDefault: true,
+    tagline: "vits-zh-ll · 装完基础模型就能用",
     role: "默认引擎。跟着基础语音模型一起装，不额外占地方。",
     sizeMB: 116,
     speakerCount: "5 个音色",
@@ -63,6 +69,7 @@ const ENGINES: EngineInfo[] = [
   {
     id: "kokoro",
     name: "自然多音色",
+    badge: "可选 · 更自然",
     tagline: "Kokoro v1.1 int8 · 中英 103 音色",
     role: "想让播报更像真人在说话时用它。",
     sizeMB: 140,
@@ -81,6 +88,7 @@ const ENGINES: EngineInfo[] = [
   {
     id: "emotivoice",
     name: "情感语气",
+    badge: "可选 · 有情绪",
     tagline: "EmotiVoice · 真情绪控制",
     role: "要「高兴 / 悲伤 / 愤怒」这种语气时用它。",
     sizeMB: 612,
@@ -102,6 +110,8 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
   const [packs, setPacks] = useState<Partial<Record<PackId, PackState>>>({});
   const [busy, setBusy] = useState<PackId | null>(null);
   const [progress, setProgress] = useState<{ pack: PackId; percent: number; message: string } | null>(null);
+  /** 卡片内反馈条（下载成功/失败、切换成功）—— ⛔ 不能只靠一闪而过的 toast */
+  const [flash, setFlash] = useState<{ pack: PackId; kind: "ok" | "err" | "info"; text: string } | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -129,6 +139,13 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
 
   useEffect(() => { void refresh(); }, [refresh]);
 
+  /* 反馈条 4 秒后收起；换一条新的会重置计时（同一张卡连着两次操作也看得见）。 */
+  useEffect(() => {
+    if (!flash) return;
+    const t = window.setTimeout(() => setFlash(null), 4200);
+    return () => window.clearTimeout(t);
+  }, [flash]);
+
   useEffect(() => {
     const unsub = window.codex.onVoiceEvent((event: any) => {
       const target = event?.target;
@@ -139,8 +156,15 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
         setProgress(null);
         setBusy(null);
         void refresh();
-        if (!event.ok) onNotice(`下载失败：${event.error ?? "未知原因"}`);
-        else onNotice(target === "kokoro" ? "Kokoro 模型已就绪，可切换试用" : "情感语音模型已下载");
+        if (!event.ok) {
+          const msg = `下载失败：${event.error ?? "未知原因"}`;
+          onNotice(msg);
+          setFlash({ pack: target, kind: "err", text: msg });
+        } else {
+          const msg = target === "kokoro" ? "Kokoro 已就绪，可以点「用它」切换" : "情感语音模型已下载（还缺推理运行时，暂不能合成）";
+          onNotice(msg);
+          setFlash({ pack: target, kind: "ok", text: msg });
+        }
       }
     });
     return () => { try { unsub?.(); } catch { /* 忽略 */ } };
@@ -153,7 +177,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
 
   const install = useCallback(async (id: PackId) => {
     if (id === "vits") {
-      onNotice("轻量播报跟着基础语音模型一起装：到下方「语音模型」里下载/导入基础模型即可");
+      onNotice("轻量播报跟着基础语音模型一起装：到上方「语音模型」区下载/导入基础模型即可");
       return;
     }
     setBusy(id);
@@ -163,7 +187,9 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
       if (!r?.ok) {
         setBusy(null);
         setProgress(null);
-        onNotice(r?.error ?? "下载失败");
+        const msg = r?.error ?? "下载失败";
+        onNotice(msg);
+        setFlash({ pack: id, kind: "err", text: msg });
       }
     } catch (e: any) {
       setBusy(null);
@@ -175,10 +201,13 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
   const remove = useCallback(async (id: PackId) => {
     try {
       const r: any = await window.codex.voiceResourceDelete({ kind: id });
-      if (!r?.ok) onNotice(r?.error ?? "删除失败");
+      if (!r?.ok) { onNotice(r?.error ?? "删除失败"); setFlash({ pack: id, kind: "err", text: r?.error ?? "删除失败" }); }
       else {
         onNotice("已删除，需要时可重新下载");
         if (current === id) apply({ tts: { ...settings.tts, engine: "vits" } });
+        /* ⛔ 删除后清掉这个包的下载态：否则卡片上会留着一条已经没意义的进度条。 */
+        setProgress((p) => (p?.pack === id ? null : p));
+        setBusy((b) => (b === id ? null : b));
       }
       void refresh();
     } catch (e: any) {
@@ -199,34 +228,102 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
     apply({ tts: { ...settings.tts, engine: id } });
     /* ⛔ 换引擎 ⇒ 音色表跟着换（主进程按引擎给）⇒ 必须重拉，否则下拉里还是旧引擎的音色。 */
     void reloadMeta();
-    onNotice(`已切换到「${packLabel(id)}」（通话与播报都用它）`);
+    const msg = `已切换到「${packLabel(id)}」（通话与播报都用它）`;
+    onNotice(msg);
+    setFlash({ pack: id, kind: "info", text: msg });
   }, [apply, current, onNotice, packs, reloadMeta, settings]);
+
+  /** 跳到「语音模型」区（基础模型的唯一下载入口）—— 引擎卡不再自己挂第二个下载按钮。 */
+  const jumpToModels = useCallback(() => {
+    const el = document.getElementById("voice-models");
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    el.classList.add("is-flash");
+    window.setTimeout(() => el.classList.remove("is-flash"), 1400);
+  }, []);
+
+  /* ⛔ 10-26：「当前」也要说真话 —— 设置里选的是它，但没装就合成不了。
+     另：三个都没装时整块给一句明确指路（用户原话「我模型都没下载呢」）。 */
+  const currentReady = Boolean(packs[current]?.ready);
+  const anyReady = Object.values(packs).some((p) => Boolean(p?.ready));
 
   return (
     <div className="voice-card voice-engines">
       <div className="voice-card-head">
         <Sparkles size={15} />
         <span>合成引擎</span>
-        <span className="voice-card-value">当前：{packLabel(current)}</span>
+        <span className="voice-card-value">
+          当前：{packLabel(current)}{currentReady ? "" : " · 未安装"}
+        </span>
       </div>
       <div className="voice-card-body">
         <div className="voice-card-hint">
           三个引擎并存、互不干扰：下载新的不会动旧的，删掉新的旧的照样能用。切换后通话与播报都用它。
         </div>
+        {!anyReady && (
+          <div className="voice-engine-empty">
+            <TriangleAlert size={13} />
+            <span>
+              现在<strong>一个合成引擎都还没装</strong>，语音通话与播报都无法出声。
+              先到本页上方「语音模型」下载基础模型（轻量播报随它一起装），或直接下载下面任一引擎包。
+            </span>
+          </div>
+        )}
         <div className="voice-engine-grid">
           {ENGINES.map((engine) => {
             const state = packs[engine.id];
-            const ready = engine.id === "vits" ? Boolean(state?.ready) : Boolean(state?.ready);
-            const active = current === engine.id;
+            const ready = Boolean(state?.ready);
+            const selected = current === engine.id;
+            /* ⛔⛔ 10-26 用户实测：「我都没下载，怎么显示使用中」——
+               `使用中` 是**能力声明**（能拿它合成），不是"设置里选了它"。
+               原来只比 `current === id` ⇒ 选中但**没装**的引擎照样打「使用中」，
+               同一张卡上还写着「未安装」，自相矛盾。
+               ⇒ 在用 = 选中 **且** 已安装；选中但没装 = 琥珀色「缺模型」。 */
+            const inUse = selected && ready;
             const downloading = busy === engine.id || progress?.pack === engine.id;
             return (
-              <div key={engine.id} className={`voice-engine-card${active ? " is-active" : ""}${ready ? " is-ready" : ""}`}>
+              <div
+                key={engine.id}
+                className={`voice-engine-card${inUse ? " is-active" : ""}${selected && !ready ? " is-pending" : ""}${ready ? " is-ready" : ""}`}
+              >
                 <div className="voice-engine-head">
                   <div className="voice-engine-title">
-                    <strong>{engine.name}</strong>
+                    <span className="voice-engine-name-row">
+                      <strong>{engine.name}</strong>
+                      <span className={`voice-engine-tag${engine.isDefault ? " is-default" : ""}`}>{engine.badge}</span>
+                    </span>
                     <span className="voice-engine-tagline">{engine.tagline}</span>
                   </div>
-                  {active && <span className="voice-engine-flag"><Check size={12} />使用中</span>}
+                  <div className="voice-engine-head-right">
+                    {inUse && <span className="voice-engine-flag"><Check size={12} />使用中</span>}
+                    {selected && !ready && (
+                      <span className="voice-engine-flag is-missing"><TriangleAlert size={12} />缺模型</span>
+                    )}
+                    <div className="voice-engine-actions">
+                      {ready ? (
+                        <>
+                          <button className="secondary-setting" onClick={() => choose(engine.id)} disabled={inUse}>
+                            {inUse ? "使用中" : "用它"}
+                          </button>
+                          {engine.id !== "vits" && (
+                            <button className="secondary-setting" onClick={() => void remove(engine.id)} title="删除这个引擎的模型文件">
+                              <Trash2 size={13} />删除
+                            </button>
+                          )}
+                        </>
+                      ) : engine.id === "vits" ? (
+                        /* ⛔ 10-26 用户：「好几个下载的地方，看的眼花缭乱」——
+                           基础模型只在「语音模型」区下载，这里只做跳转（别再加第二个下载入口）。 */
+                        <button className="secondary-setting" onClick={jumpToModels}>
+                          <Download size={13} />去装基础模型
+                        </button>
+                      ) : (
+                        <button className="secondary-setting" onClick={() => void install(engine.id)} disabled={downloading}>
+                          {downloading ? <><LoaderCircle size={13} className="spin" />下载中…</> : <><Download size={13} />下载引擎包</>}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="voice-engine-meta">
@@ -237,19 +334,35 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
 
                 <div className="voice-engine-role">{engine.role}</div>
 
-                <ul className="voice-engine-pros">
-                  {engine.pros.map((p) => <li key={p}><Check size={12} />{p}</li>)}
-                </ul>
-                <ul className="voice-engine-cons">
-                  {engine.cons.map((c) => <li key={c}><TriangleAlert size={12} />{c}</li>)}
-                </ul>
+                {/* 优点/缺点并排（窄宽度自动落成上下两段）——长卡片下这样不浪费横向空间 */}
+                <div className="voice-engine-lists">
+                  <ul className="voice-engine-pros">
+                    {engine.pros.map((p) => <li key={p}><Check size={12} />{p}</li>)}
+                  </ul>
+                  <ul className="voice-engine-cons">
+                    {engine.cons.map((c) => <li key={c}><TriangleAlert size={12} />{c}</li>)}
+                  </ul>
+                </div>
 
+                {/* 下载中：进度条 + 百分比 + 主进程给的阶段说明（"已下载 42MB / 140MB" 这类） */}
                 {downloading && (
                   <div className="voice-engine-progress">
                     <div className="voice-engine-progress-bar">
                       <span style={{ width: `${(progress?.percent ?? 0) >= 0 ? progress?.percent : 8}%` }} />
                     </div>
-                    <small>{progress?.message ?? "下载中…"}</small>
+                    <div className="voice-engine-progress-line">
+                      <small>{progress?.message ?? "下载中…"}</small>
+                      <b>{(progress?.percent ?? -1) >= 0 ? `${Math.round(progress!.percent)}%` : "…"}</b>
+                    </div>
+                  </div>
+                )}
+                {/* 结果反馈：成功 / 失败 / 已切换 —— 卡片内留一条，不靠一闪而过的提示 */}
+                {flash?.pack === engine.id && (
+                  <div className={`voice-engine-feedback is-${flash.kind}`}>
+                    {flash.kind === "ok" ? <Check size={12} />
+                      : flash.kind === "err" ? <TriangleAlert size={12} />
+                      : <Sparkles size={12} />}
+                    <span>{flash.text}</span>
                   </div>
                 )}
                 {engine.id === "emotivoice" && !state?.runnable && (
@@ -258,25 +371,6 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
                     {state?.hostNote ? ` 当前：${state.hostNote}` : ""}
                   </div>
                 )}
-
-                <div className="voice-engine-actions">
-                  {ready ? (
-                    <>
-                      <button className="secondary-setting" onClick={() => choose(engine.id)} disabled={active}>
-                        {active ? "使用中" : "用它"}
-                      </button>
-                      {engine.id !== "vits" && (
-                        <button className="secondary-setting" onClick={() => void remove(engine.id)} title="删除这个引擎的模型文件">
-                          <Trash2 size={13} />删除
-                        </button>
-                      )}
-                    </>
-                  ) : (
-                    <button className="secondary-setting" onClick={() => void install(engine.id)} disabled={downloading}>
-                      {downloading ? <><LoaderCircle size={13} className="spin" />下载中…</> : <><Download size={13} />下载模型</>}
-                    </button>
-                  )}
-                </div>
               </div>
             );
           })}

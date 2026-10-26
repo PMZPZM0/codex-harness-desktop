@@ -62,7 +62,12 @@ const STATE_BADGE: Record<ResourceState, string> = {
   partial: "warn",
 };
 
-export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: string) => void }) {
+/**
+ * `only` —— 只渲染其中一张卡（10-26 语音页重排：基础模型归「必需」组、
+ * 音色克隆模型归「用自己的声音」组，两者不再挤在同一个标题下）。
+ * ⛔ 状态仍在组件内（各自一遍 refresh + 订阅），别为了"省一个订阅"把它拆成两套真相源。
+ */
+export default function VoiceDevToolsSection({ onNotice, only }: { onNotice: (m: string) => void; only?: "base" | "zipvoice" }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [downloading, setDownloading] = useState<DownloadState>(null);
   // 音色克隆模型（ZipVoice）独立下载状态：与基础语音模型分开显示/取消
@@ -241,13 +246,14 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
 
   return (
     <>
+    {(!only || only === "base") && (
     <div className="voice-devtools-card">
       <div className="voice-devtools-card-head">
         <div className="voice-devtools-icon">
           {downloading ? <LoaderCircle className="spin" size={20} /> : ready ? <Mic size={20} /> : <Download size={20} />}
         </div>
         <div className="voice-devtools-title">
-          <strong>语音模型</strong>
+          <strong>基础语音模型</strong>
           <span className="voice-devtools-sub">sherpa-onnx（识别 zipformer + 端点检测 silero + 合成 vits-zh-ll）</span>
           {status && (
             <code className="voice-devtools-path-inline" title={status.root}>{status.root}</code>
@@ -373,10 +379,12 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
         )}
       </div>
     </div>
+    )}
 
     {/* 音色克隆模型（ZipVoice）：zero-shot 克隆，导入/录制一段参考音频即可拥有专属音色。
         按需下载、不进安装包；与基础语音模型（识别+合成）独立安装、独立卸载。 */}
-    <div className="voice-devtools-card" style={{ marginTop: 12 }}>
+    {(!only || only === "zipvoice") && (
+    <div className="voice-devtools-card" style={{ marginTop: only ? 0 : 12 }}>
       <div className="voice-devtools-card-head">
         <div className="voice-devtools-icon">
           {zipDownloading ? <LoaderCircle className="spin" size={20} /> : zipReady ? <Mic size={20} /> : <Download size={20} />}
@@ -457,6 +465,7 @@ export default function VoiceDevToolsSection({ onNotice }: { onNotice: (m: strin
         )}
       </div>
     </div>
+    )}
     </>
   );
 }
