@@ -49,7 +49,6 @@ import { expertMarketFeature as feat_expert_market } from "./features/expert-mar
 import { externalFeature as feat_external } from "./features/external-ipc";
 import { favoritesFeature as feat_favorites } from "./features/favorites/ipc";
 import { feishuFeature as feat_feishu } from "./features/feishu-ipc";
-import { freeGatewayFeature as feat_free_gateway } from "./features/free-gateway-ipc";
 import { fsFeature as feat_fs } from "./features/fs-ipc";
 import { gitFeature as feat_git } from "./features/git-ipc";
 import { historySearchFeature as feat_history } from "./features/history-search-ipc";
@@ -162,7 +161,6 @@ export const ENABLED: EnabledDomain[] = [
   { id: "external", plugin: feat_external as Plugin<unknown>, config: null },
   { id: "favorites", plugin: feat_favorites as Plugin<unknown>, config: null },
   { id: "feishu", plugin: feat_feishu as Plugin<unknown>, config: null },
-  { id: "free-gateway", plugin: feat_free_gateway as Plugin<unknown>, config: null },
   { id: "fs", plugin: feat_fs as Plugin<unknown>, config: null },
   { id: "git", plugin: feat_git as Plugin<unknown>, config: null },
   { id: "history", plugin: feat_history as Plugin<unknown>, config: null },

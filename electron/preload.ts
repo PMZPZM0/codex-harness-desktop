@@ -763,20 +763,6 @@ contextBridge.exposeInMainWorld("codex", {
   pollConfigSave: (input: { intervalMs?: number; timeoutMs?: number; maxRetry?: number }) => __ipc("poll:config-save", 1, [input]) as Promise<{ intervalMs: number; timeoutMs: number; maxRetry: number }>,
   /* 10-09 用户在界面上按「中止」→ 主进程的 wait 循环停下（任务本身不会被撤销） */
   pollAbort: (input: { taskId: string }) => __ipc("poll:abort", 1, [input]) as Promise<{ ok: boolean; aborted: boolean }>,
-  /* 免费模型网关（free-gateway 域，10-12）：第三方开源侧车服务的状态。⛔ 免责：上游与本项目开发者无关，渠道合规性与可用性由使用者自担 */
-  freeGatewayStatus: () => __ipc("free-gateway:status", 0, []),
-  /* 免费模型网关：从 gh 镜像下载上游仓库 zip 并用随包 7za 解压到 userData/free-gateway/app */
-  freeGatewayDownload: (input: { force?: boolean }) => __ipc("free-gateway:download", 1, [input]),
-  /* 免费模型网关：用随包 node 启动 standalone 网关（OFM_HOME 指向 userData/free-gateway/data），等 /health 就绪 */
-  freeGatewayStart: () => __ipc("free-gateway:start", 0, []),
-  /* 免费模型网关：停掉本应用拉起的侧车进程 */
-  freeGatewayStop: () => __ipc("free-gateway:stop", 0, []),
-  /* 免费模型网关：返回管理台地址（启动期捕获的一次性登录链接优先） */
-  freeGatewayOpenAdmin: () => __ipc("free-gateway:open-admin", 0, []),
-  /* 免费模型网关：主进程带 forwardKey 拉 /v1/models（⛔ 渲染层 fetch 会被 CORS 拦） */
-  freeGatewayModels: () => __ipc("free-gateway:models", 0, []),
-  /* 免费模型网关：卸载（停侧车 + 删本体 + 删数据目录；供应商注册由渲染层调 custom-model:remove 移除） */
-  freeGatewayUninstall: () => __ipc("free-gateway:uninstall", 0, []),
   /* 10-13 新增：主要组件的自动更新开关与版本号（技能 / 桌面 / 浏览器 / Mac 电脑操作 / 引擎）。⛔ 版本数据与 autoUpdate:scan 同源（都走 scanRows），两个端点不可能给出矛盾的结论 */
   readAutoUpdateStatus: () => __ipc("autoUpdate:status", 0, []),
   /* 10-13 新增：单独开关某一类自动更新（四个开关互相独立，patch 只写对应那一个 AppSettings 字段）；缺省值判据统一走 autoUpdateEnabled（!== false ⇒ 默认开） */

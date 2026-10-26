@@ -14,7 +14,6 @@ import { FieldHelp } from "../../features/auth";
 import { classifyProviderProbeFailure, UpstreamProtocol } from "../../hooks/useModelProviders";
 import { ModelIdInput } from "../../components/ModelIdInput";
 import { matchModelSpec } from "../../lib/model-specs";
-import { FreeGatewayRecommendCard } from "../free-gateway";
 import { ProviderSetupDialog, type ProviderSetupCompleted, type ProviderSetupIntent } from "../provider-setup";
 
 export type ModelSettingsSectionProps = { refreshActive?: () => void; autoCompactRatio: any; setAutoCompactRatio: any; setNotice: any; providersList: any; pptokenCardOff: any; editingProvider: any; setCustomDraft: any; setEditingProvider: any; uniqueModelCount: any; customModel: any; setPptokenCardOff: any; setProviderEnabled: any; currentProvider: any; probingProvider: any; probeActiveProvider: any; providerAutoOpenRef: any; customDraft: any; savingSettings: any; openAppConfirm: any; removeProvider: any; LOCAL_MODEL_PRESETS: any; showApiKey: any; setShowApiKey: any; probeProvider: any; saveCustomDraft: any; switchingModel: any; probeOneModel: any; openModelEditor: any; providerStatus: any; showToast: any; saveCustomModel: any; modelEditor: any; setModelEditor: any; targetProviderHint: any; applyModelIdInput: any; modelSuggestions: any; saveModelEditor: any };
@@ -308,33 +307,8 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                         );
                       })}
                     </div>
-                    <div className="provider-more-section">
-                      <div className="provider-list-head"><h2>更多供应商</h2></div>
-                      <FreeGatewayRecommendCard
-                        setNotice={setNotice}
-                        registered={providersList.some((p: any) => p.provider === "free-gateway")}
-                        onSelect={() => {
-                          const fg = providersList.find((p: any) => p.provider === "free-gateway");
-                          if (fg) { setEditingProvider("free-gateway"); setCustomDraft({ provider: "free-gateway", name: fg.name, model: fg.model, baseUrl: fg.baseUrl, contextWindow: String(fg.contextWindow ?? 128000), wireApi: "responses" as const, apiKey: "", models: fg.models ?? [], enabled: fg.enabled !== false }); setEditorOpen(true); }
-                        }}
-                        onRegistered={() => {
-                          setEditingProvider("free-gateway");
-                          setCustomDraft({ provider: "free-gateway", name: "免费模型网关", model: "", baseUrl: "http://127.0.0.1:18900/v1", contextWindow: "128000", wireApi: "responses" as const, apiKey: "", models: [], enabled: true });
-                          setEditorOpen(true);
-                          void window.codex.listCustomModels().then(({ providers }: any) => {
-                            const fg = providers.find((p: any) => p.provider === "free-gateway");
-                            if (fg) setCustomDraft({ provider: "free-gateway", name: fg.name, model: fg.model, baseUrl: fg.baseUrl, contextWindow: String(fg.contextWindow ?? 128000), wireApi: "responses" as const, apiKey: "", models: fg.models ?? [], enabled: true });
-                          });
-                          if (setProviderEnabled) setProviderEnabled("free-gateway", true);
-                          (window as any).__refreshProviders?.();
-                        }}
-                        onUninstalled={() => removeProvider("free-gateway")}
-                      />
-                    </div>
-                    {/* 底部浮动操作条（10-26 用户令：放界面右下角）：
-                        · `sticky bottom:0` ⇒ 内容比面板高时，滚到哪都贴着面板下沿，不用滚到底才看见；
-                        · `margin-top:auto` + 外层 flex 列 ⇒ 内容不满一屏时钉在页面最底部（不是紧跟卡片）。
-                        ⛔ 只靠 sticky 会在短内容时「停原位」贴在最后一张卡下面（42 里记过这个坑）。 */}
+                    {/* 页面级操作条（10-26 用户：「右下角太靠下了，位置不好看」）：
+                        紧跟供应商卡之后右对齐，不再 sticky / 不再 margin-top:auto 钉在弹窗最底部。 */}
                     <div className="model-page-dock">
                       <button className="primary-setting" onClick={openAutoSetup}><Wand2 size={15} />打开自动配置</button>
                       <button className="secondary-setting" disabled={restarting} onClick={() => void saveAndRestart()} title="配置已逐项保存；重启应用让引擎重新读取密钥与模型列表"><PowerOff size={14} />{restarting ? "重启中…" : "保存并重启"}</button>

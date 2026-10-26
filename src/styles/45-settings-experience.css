@@ -463,7 +463,6 @@
 .settings-exp-shell .provider-card.selected { background: var(--panel); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .settings-exp-shell .provider-item-icon { background: var(--panel-2) !important; color: var(--muted) !important; }
 .settings-exp-shell .provider-card-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
-.settings-exp-shell .provider-more-section .provider-item { border-color: var(--line-soft); background: var(--panel); }
 
 .settings-exp-shell .relay-sub-banner,
 .settings-exp-shell .relay-sub-banner[data-state="expiring"],

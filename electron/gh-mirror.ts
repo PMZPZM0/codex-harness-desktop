@@ -2,7 +2,7 @@
  * GitHub 国内加速前缀 —— 单一真相源（10-11 立）
  *
  * 背景：自更新检查/下载原来是 GitHub 裸连，国内用户检查更新超时/下载龟速是常态。
- * 插件市场（codex-official-market）与免费网关（free-gateway）已实测过「前缀镜像」这条路：
+ * 插件市场（codex-official-market）已实测过「前缀镜像」这条路：
  * 在 `https://github.com/...` / `https://api.github.com/...` 前面拼一个反代前缀即可走国内线路。
  * 本模块把镜像表收敛成一份， updates / 市场模块全部从这里取。
  *

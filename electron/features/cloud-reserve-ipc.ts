@@ -4,7 +4,7 @@
  * 定位：为云版产品线的后续功能**提前占位**，让渲染层/远端从今天起就能按稳定
  * 通道名开发，后端逐步把桩换成真实现 —— 通道名一旦发布即冻结（只增不改）。
  *
- * 五组接口（命名统一 `cloud:<组>/<动作>`，与 free-gateway:status 同风格）：
+ * 五组接口（命名统一 `cloud:<组>/<动作>`）：
  *   ① cloud:sync/*      云端存储（数据同步）—— handshake 里已声明 reserved，这里是 IPC 挂点
  *   ② cloud:device/*    设备/配对管理 —— 真实现（读写 HARNESS_CLOUD_HOME/users.json）
  *   ③ cloud:notify/*    站长公告/通知 —— 本地缓存已真实现，服务器拉取后续接入
