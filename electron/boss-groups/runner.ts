@@ -10,6 +10,9 @@
  */
 import { hostQueueMessageId, isWatchdogSpamText, queueItemText } from "../../src/lib/host-queue.mjs";
 import { execFile } from "node:child_process";
+import { app } from "electron";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { readUsableExpertTeams } from "../expert-teams";
 import { bridgeDial } from "../main";
 import { readCustomModel } from "../main/01-model-catalog";
@@ -58,7 +61,7 @@ function activeTurnOf(threadId: string): string {
  * ⛔ 为什么需要：这些提醒走的是引擎的用户消息队列，而引擎**只在线程空闲时**才消化
  *   ⇒ 线程一卡住（回合卡在"运行中"）就无限堆积（真机：57~99 条，全是同一批任务的
  *   「已经 N 秒没有进展 / 已交活 N 分钟仍没有审查结论」）。
- * ⛔ 只删看门狗那两类（isWatchdogSpamText）—— **成品交活 / 成员进出 / 预算**那些
+ * ⛔ 只删刷屏类（isWatchdogSpamText：停产看门狗 + 预算提醒）—— **成品交活 / 成员进出**那些
  *   是真消息，删了就是丢活。
  * ⛔ 幂等：每 5 秒的 tick 都跑一次 ⇒ 应用一启动就把堆积清掉（用户看到的就是干净的队列）。
  */
@@ -141,8 +144,11 @@ export async function postToBoss(group: BossGroup, text: string, options: { crit
    · 只有 1 条成品、且这批里没有评审请求 ⇒ 全文照发（跟以前一样）；
    · 与评审请求同批 ⇒ 成品给 240 字摘要，但**评审正文里带着完整成品**（最多 16000 字）⇒ 信息不丢；
    · 多条 ⇒ 每条 240 字摘要 + 提示"完整成品在群内消息流里，用 group_status 读"；
-   · 配额用尽 ⇒ **放回队列**、45 秒后重试，⛔ 不丢。 */
-type OutItem = { kind: "deliverable" | "review"; taskId: string; title: string; who?: string; body: string };
+   · 配额用尽 ⇒ **放回队列**、45 秒后重试，⛔ 不丢。
+   ⛔ 10-26 追加：**成品同时落盘成文件**（`群输出/<task>-<n>-<标题>.md`），
+      广播文本里带一行 `成品文件：<路径>` ⇒ 界面上出**文件卡**（点开右栏预览），
+      用户不用在几千字气泡里找方案正文（用户原话：「我看不见方案内容」）。 */
+type OutItem = { kind: "deliverable" | "review"; taskId: string; title: string; who?: string; body: string; file?: string };
 type OutBox = { items: OutItem[]; timer: NodeJS.Timeout | null; retryAt: number; flushing: boolean };
 const OUTBOX = new Map<string, OutBox>();
 const OUTBOX_FLUSH_MS = 600;
@@ -771,17 +777,12 @@ export async function tickAll(): Promise<void> {
        —— 而这只是为了清"看门狗刷屏"那批历史遗留；看门狗删掉后**不会再产生新的**。
        ⇒ 启动清一次即可；之后由渲染层读队列时顺手清（那里本来就在读）。 */
     const before = group.paused;
-    const budget = checkBudget(state, group.id);
-    if (group.paused !== before) {
-      dirty = true;
-      await postToBoss(group, `[群事件] 群「${group.name}」预算用尽（${Math.round(budget.usedMinutes)} 分钟），已暂停自动派活。`);
-    } else if (budget.warn === "80" && group.paused !== true) {
-      // 同一个群 10 分钟内只提醒一次（配额闸复用回投那套，别每个 tick 刷）
-      if (quotaOk(`budget80:${group.id}`)) {
-        dirty = true;
-        await postToBoss(group, `[群事件] 群「${group.name}」预算已用 80%（${Math.round(budget.usedMinutes)}/${group.policy.budgetMinutes} 分钟）。`);
-      }
-    }
+    /* ⛔⛔ 10-26 用户现场：「这什么狗几把玩意，一直刷屏，每次启动应用，进去就弹，给我删掉这玩意」。
+       预算照旧只做**静默执行**（80% 不吭声、100% 自动暂停），⛔ 不再往中枢会话回投任何预算提醒。
+       原实现 80% 每 10 分钟最多回投 12 条、tick 每 5 秒一次 ⇒ 真机一屏全是同一条；
+       而且配额表是进程内的，每次启动重新计数 ⇒ 每次开机又刷一批。 */
+    checkBudget(state, group.id);
+    if (group.paused !== before) dirty = true;
   }
   /* ⛔⛔⛔ 10-26 用户现场：「你不要加看门狗，Codex 自己哪有那么傻」。
      停滞看门狗（markStalled）**整体删除**：
