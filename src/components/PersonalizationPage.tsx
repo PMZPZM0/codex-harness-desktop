@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, Info, MessageSquare, RefreshCw, ShieldCheck, Sparkles, TriangleAlert, UserRound, Wrench } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, Info, MessageSquare, RefreshCw, ShieldCheck, Sparkles, TriangleAlert, Wrench } from "lucide-react";
 import { SettingsPageHero } from "./SettingsPageHero";
 
 type PersonalizationConfig = { nickname?: string; customInstructions?: string };
@@ -21,23 +21,23 @@ const stylePresets = [
 ];
 
 /**
- * 个性化设置页：称呼 + 回复风格 + 自定义指令。
- * 称呼与自定义指令写到 Codex 原生的 $CODEX_HOME/AGENTS.md，引擎每个会话开始时自动注入
+ * 个性化设置页：回复风格 + 自定义指令。
+ * 自定义指令写到 Codex 原生的 $CODEX_HOME/AGENTS.md，引擎每个会话开始时自动注入
  * （user 级指令层），并与项目仓库里的 AGENTS.md 分层合并；保存后自动重启引擎。
+ *
+ * 10-27 用户令：「个性化里面的用户称呼可以删了，还有语气自适应也删了，跟用户中心和控制台的ahd重复了」——
+ * 称呼已并入「用户中心 → 基本资料」，语气自适应的开关挪到「控制台 → 回复风格」，本页不再重复。
  */
 export function PersonalizationPage({
   personality,
   onPersonalityChange,
   onNotice,
-  adaptiveToneSlot,
 }: {
   personality: string;
   onPersonalityChange: (value: string) => void;
   onNotice: (message: string) => void;
-  adaptiveToneSlot?: ReactNode;
 }) {
   const [config, setConfig] = useState<PersonalizationConfig>({});
-  const [nickname, setNickname] = useState("");
   const [instructions, setInstructions] = useState("");
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -59,7 +59,6 @@ export function PersonalizationPage({
       .then((next) => {
         if (!alive) return;
         setConfig(next);
-        setNickname(next.nickname ?? "");
         setInstructions(next.customInstructions ?? "");
         initial.current = next;
       })
@@ -69,22 +68,23 @@ export function PersonalizationPage({
     return () => { alive = false; };
   }, [runVerify]);
 
-  const dirty = nickname.trim() !== (initial.current.nickname ?? "") || instructions.trim() !== (initial.current.customInstructions ?? "");
+  const dirty = instructions.trim() !== (initial.current.customInstructions ?? "");
 
   async function save() {
     if (saving) return;
     setSaving(true);
     try {
-      const next = await window.codex.savePersonalization({ nickname: nickname.trim(), customInstructions: instructions.trim() });
+      /* ⛔ 只传 customInstructions：昵称改到「用户中心」后这里就**不碰** nickname 了。
+         writePersonalization 是 partial 语义（字段 undefined = 保留原值），
+         所以昵称不会被这页保存误清掉。 */
+      const next = await window.codex.savePersonalization({ customInstructions: instructions.trim() });
       setConfig(next);
       initial.current = next;
-      // 同步左下角账户名缓存（App.tsx 启动时会以 nickname 为权威源覆盖）
-      localStorage.setItem("username", next.nickname ?? "");
       // 保存完立刻回读 AGENTS.md，确认真的写进去了再提示成功
       const check = await window.codex.verifyPersonalization().catch(() => null);
       if (check) setVerify(check);
       if (!check?.exists) onNotice("已保存，但引擎主目录还没生成——先去「模型」页配置一个供应商，个性化才会写入");
-      else if (check.inSync) onNotice(next.nickname || next.customInstructions ? "个性化已写入 AGENTS.md 并重启引擎，下次对话生效" : "已清空个性化设置，AGENTS.md 已同步移除");
+      else if (check.inSync) onNotice(next.customInstructions ? "个性化已写入 AGENTS.md 并重启引擎，下次对话生效" : "已清空个性化设置，AGENTS.md 已同步移除");
       else onNotice("已保存，但引擎的 AGENTS.md 还没对上——点「重新校验」确认，或重启应用");
     } catch (error: any) {
       onNotice(`保存个性化失败：${error?.message ?? error}`);
@@ -95,25 +95,10 @@ export function PersonalizationPage({
 
   return (
     <section className="settings-section stack personalization-page settings-exp-page">
-      <SettingsPageHero icon={<Sparkles size={20} />} title="个性化" subtitle="让 Codex 知道怎么称呼你、用什么语气和写法，以及永远要遵守的约定。" hint="改完下一次对话生效" />
+      <SettingsPageHero icon={<Sparkles size={20} />} title="个性化" subtitle="回复风格与自定义指令：让 Codex 用你顺手的写法说话，并永远遵守你的约定。" hint="改完下一次对话生效" />
 
       {/* 分组规则（10-11 重排）：一处设置 = 一张组卡；组卡自带标题行（.settings-subhead）与 1px 边界，
           组间只用一个间距值 ⇒ 不再靠标题的零散 margin 撑版式。 */}
-      <div className="personalization-group card-nickname">
-        <div className="settings-subhead"><UserRound size={13} />称呼<span className="settings-subhead-hint">留空则不指定</span></div>
-        <div className="personalization-field">
-          <input
-            value={nickname}
-            maxLength={60}
-            aria-label="称呼"
-            placeholder="例如：老王 / Alice / 老板"
-            onChange={(event) => setNickname(event.target.value)}
-          />
-          <span className="personalization-field-hint">{nickname.trim() ? `Codex 会称呼你「${nickname.trim()}」` : "未设置称呼"}</span>
-        </div>
-      </div>
-
-      {adaptiveToneSlot}
 
       <div className="personalization-group card-style">
         <div className="settings-subhead"><MessageSquare size={13} />回复风格<span className="settings-subhead-hint">选择 Codex 平时怎么跟你说话</span></div>
@@ -156,7 +141,7 @@ export function PersonalizationPage({
         </div>
       </div>
 
-      {/* 校验条独立成块：它汇报的是「称呼 + 指令」两者共同的落盘结果，不并入上面任何一组。 */}
+      {/* 校验条独立成块：它汇报的是「自定义指令」的落盘结果，不并入上面任何一组。 */}
       <div className={`personalization-verify ${verify ? (verify.inSync ? "ok" : "warn") : ""}`} role="status">
         {verifying ? <RefreshCw size={14} className="spin" />
           : verify?.inSync ? <ShieldCheck size={14} />
@@ -181,12 +166,12 @@ export function PersonalizationPage({
         <Info size={14} />
         <div>
           <strong>这些内容怎么生效</strong>
-          <p>称呼与自定义指令写入 Codex 原生的 <code>AGENTS.md</code>（引擎主目录），每个会话开始时引擎自动把它们注入对话——和你在项目仓库里放的 <code>AGENTS.md</code> 是同一条原生指令链，项目级约定会自动叠加在上面。纯 Markdown 落盘，随便写路径和引号都不会破坏配置。回复风格走 <code>thread/start</code> 的 personality，切换后下一个回合生效。上面的校验条是回读真实文件得出的，不是「保存成功」的乐观提示。</p>
+          <p>自定义指令写入 Codex 原生的 <code>AGENTS.md</code>（引擎主目录），每个会话开始时引擎自动把它注入对话——和你在项目仓库里放的 <code>AGENTS.md</code> 是同一条原生指令链，项目级约定会自动叠加在上面。纯 Markdown 落盘，随便写路径和引号都不会破坏配置。回复风格走 <code>thread/start</code> 的 personality，切换后下一个回合生效。上面的校验条是回读真实文件得出的，不是「保存成功」的乐观提示。</p>
         </div>
       </div>
 
-      {loaded && (config.nickname || config.customInstructions) ? (
-        <p className="settings-status">当前已保存：{config.nickname ? `称呼「${config.nickname}」` : "无称呼"}{config.customInstructions ? " · 有自定义指令" : " · 无自定义指令"}</p>
+      {loaded && config.customInstructions ? (
+        <p className="settings-status">当前已保存自定义指令</p>
       ) : null}
     </section>
   );

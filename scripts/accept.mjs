@@ -170,10 +170,13 @@ const CHECKS = [
         const page=m.querySelector(".general-page");
         const seg=[...m.querySelectorAll(".perm-seg-btn")];
         const cs=seg[0]?getComputedStyle(seg[0]):null;
+        const toneRow=[...m.querySelectorAll(".card-reply .settings-toggle-row")].find((x)=>(x.textContent||"").includes("语气自适应"));
+        const toneSw=toneRow?toneRow.querySelector('[role="switch"]'):null;
         return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
           groups:m.querySelectorAll(".settings-exp-group-head").length,
           cards:seg.length,
-          align:cs?cs.alignItems:"", ta:cs?cs.textAlign:"" };
+          align:cs?cs.alignItems:"", ta:cs?cs.textAlign:"",
+          toneInReply:!!toneRow, toneOn:toneSw?toneSw.getAttribute("aria-checked"):null };
       })()`).catch(() => null);
       await nav("外观");
       await wait(800);
@@ -182,6 +185,28 @@ const CHECKS = [
         Boolean(ctrl && ctrl.page === "控制台" && ctrl.groups === 0 && ctrl.cards === 3
           && ctrl.align === "center" && ctrl.ta === "center" && appGroups === 0),
         JSON.stringify({ ctrl, appGroups }));
+
+      /* 10-27 用户令：「个性化里面的用户称呼可以删了，还有语气自适应也删了，
+         跟用户中心和控制台的ahd重复了」⇒ 个性化页不再有这两块，语气开关改到控制台。 */
+      await nav("个性化");
+      await wait(900);
+      const per = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const page=m.querySelector(".personalization-page"); if(!page) return null;
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          hasNickInput:!!page.querySelector('input[aria-label="称呼"]'),
+          hasNickText:(page.textContent||"").includes("称呼"),
+          hasTone:(page.textContent||"").includes("语气自适应"),
+          hasStyle:!!page.querySelector(".personalization-style-grid"),
+          hasInstructions:!!page.querySelector(".personalization-instructions") };
+      })()`).catch(() => null);
+      h.check("⑧ 个性化：无称呼输入、无语气自适应；回复风格与自定义指令仍在",
+        Boolean(per && per.page === "个性化" && !per.hasNickInput && !per.hasNickText && !per.hasTone
+          && per.hasStyle && per.hasInstructions),
+        JSON.stringify(per));
+      h.check("⑨ 控制台回复风格卡：语气自适应开关在位（挪来这儿，不是删功能）",
+        Boolean(ctrl && ctrl.toneInReply && ctrl.toneOn !== null),
+        JSON.stringify({ toneInReply: ctrl && ctrl.toneInReply, toneOn: ctrl && ctrl.toneOn }));
 
       await nav("MCP");
       await wait(1000);

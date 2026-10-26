@@ -150,7 +150,6 @@
 }
 .settings-exp-page .personalization-style-card:hover { border-color: var(--line); }
 .settings-exp-page .personalization-style-card.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 5%, var(--panel)); }
-.settings-exp-page .personalization-section { max-width: none; padding: 0; min-height: 0; }
 .settings-exp-page .personalization-verify { border-radius: 12px; }
 .settings-exp-page .personalization-note {
   border: 1px solid var(--line-soft);

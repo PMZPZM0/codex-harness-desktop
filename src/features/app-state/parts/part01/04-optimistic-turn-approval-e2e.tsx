@@ -373,7 +373,7 @@ bag.toggleDesktopAuto = toggleDesktopAuto as typeof bag.toggleDesktopAuto;
 bag.toggleBrowserAuto = toggleBrowserAuto as typeof bag.toggleBrowserAuto;
 
 
-  /** 语气自适应开关（设置 → 个性化）：写 app-settings（全局开关），并让当前会话立刻跟上
+  /** 语气自适应开关（设置 → 控制台 → 回复风格）：写 app-settings（全局开关），并让当前会话立刻跟上
    *  —— 关掉时重下发一次作用域，把已注入的语气块摘掉（否则要等下次改配置才消失）。 */
   const changeAdaptiveTone = (next: boolean) => {
     bag.setAdaptiveTone(next);

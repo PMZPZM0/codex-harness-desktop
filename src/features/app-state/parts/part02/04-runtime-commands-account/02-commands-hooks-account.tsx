@@ -109,7 +109,7 @@ bag.username = username as typeof bag.username; bag.setUsername = setUsername as
 bag.userAvatar = userAvatar as typeof bag.userAvatar; bag.setUserAvatar = setUserAvatar as typeof bag.setUserAvatar;
 
 
-  // 用户名权威源是个性化 nickname（存 userData/personalization.json，重启不丢）：
+  // 用户名权威源是个性化 nickname（存 userData/personalization.json，重启不丢；改在「用户中心 → 基本资料」）：
   // 启动时异步回读并覆盖 localStorage 缓存（localStorage 在应用退出瞬间可能没 flush，导致"重启恢复默认"）。
   useEffect(() => {
     void window.codex.readPersonalization().then((cfg) => {
