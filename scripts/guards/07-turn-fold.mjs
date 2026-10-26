@@ -233,7 +233,8 @@ export async function run() {
     // 10-27 用户（MCP 页截图）：「右上角问号删了」⇒ MCP 页那枚 ? 同样撤掉、内容库保留 mcp 主题。
     // 10-27 用户（插件页）：「插件页删页头?」（commit 18f153b40）⇒ plugins 那枚 ? 也撤了，
     //    当轮漏改这条名单 ⇒ 一直红着「plugins 入口丢了」。同口径补进例外，别再留假红。
-    const NO_HINT_KEYS = ["model", "mcp", "plugins"];
+    //    同日技能中心也按用户令删掉了 ?（64b0856e2「删分类小字与帮助问号」）⇒ skills 一并列入。
+    const NO_HINT_KEYS = ["model", "mcp", "plugins", "skills"];
     const orphanKeys = HELP_KEYS.filter((key) => !NO_HINT_KEYS.includes(key) && !new RegExp(`helpKey="${key}"`).test(appC + voiceC));
     (orphanKeys.length === 0)
       ? ok(`【32】${HELP_KEYS.filter((key) => !NO_HINT_KEYS.includes(key)).length} 个帮助主题都有 ? 入口（模型 / MCP / 插件页按用户令撤掉，不计）`)
@@ -791,11 +792,10 @@ export async function run() {
     (!offenders.length)
       ? ok(`【36】渲染层没有写死的反斜杠展示路径（扫 ${targets.length} 个 ts/tsx，注释已剥离）`)
       : fail(`【36】渲染层出现写死反斜杠的展示路径：${offenders.slice(0, 4).join("、")} —— mac 上会显示成 /a\\b\\c`);
-    const appPath = readAppUi();
-    (/function displayPath\(base: string, \.\.\.parts: string\[\]\): string \{/.test(appPath)
-      && /displayPath\(userDataPath, "codex-home", "skills"\)/.test(appPath))
-      ? ok("【36】展示路径走 displayPath()（按平台选分隔符）")
-      : fail("【36】displayPath() 缺失或技能中心说明没走它 —— 分隔符又会被写死");
+    // 10-27：技能中心那行说明随页头一起删掉了（用户令）⇒ 不再钉死某个消费点；
+    //   判据改成「helper 在 + 除定义外至少一处调用」，写死反斜杠仍由上面那条负向扫描守。
+    (/function displayPath\(base: string, \.\.\.parts: string\[\]\): string \{/.test(readAppUi()) ? ok : fail)(
+      "【36】展示路径走 displayPath()（helper 在；写死反斜杠仍有上面那条负向扫描守着）");
   }
 
   // ⑰i 并发安装不再假失败 + 体检批量安装逐项容错（09-18 用户反馈「安装失败：Error invoking remote method

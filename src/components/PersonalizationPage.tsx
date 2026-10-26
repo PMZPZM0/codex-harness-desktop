@@ -15,13 +15,12 @@ type VerifyResult = {
 };
 
 const stylePresets = [
-  /* 10-27 用户令：「搭配 Grill-me 技能，回复风格加一个需求询问选项，启用这个选项就默认使用了这个技能」
-     ⇒ 这一档不改语气，只改**开工前的动作**：先按 grill-me 把需求问清再动手。
-     注入走 developer instructions（引擎 personality 只认官方三档），见 src/lib/reply-style.mjs。 */
-  { value: "inquiry", title: "需求询问", desc: "动手前先按 grill-me 技能问清目标 / 边界 / 验收，问完再做。适合需求还没定死的活。", sample: "开工前确认三点：1) 只改设置页还是全局？2) 老数据要迁移吗？3) 验收看哪一屏？" },
-  { value: "pragmatic", title: "务实", desc: "直接给结论和代码，少铺垫。适合赶进度的工程任务。", sample: "结论：把 offsetTop 换成相对滚动容器的坐标即可。" },
-  { value: "friendly", title: "友好", desc: "解释更详细耐心，会主动交代思路与取舍。适合边做边学。", sample: "我先说结论，再解释为什么：这个问题的根因是…" },
-  { value: "none", title: "默认", desc: "跟随模型默认风格，不额外注入语气指令。", sample: "（不注入风格指令，使用模型默认表达）" },
+  /* 10-27 用户令：「四个正方形卡片太丑了，Codex 回复风格尾部选项里面加上这四个选项，不需要过多文字赘述」
+     ⇒ 大卡片整块去掉，改成标题行右侧的胶囊分段控件；说明只留在 title 悬停里，界面上只有档位名。 */
+  { value: "inquiry", title: "需求询问", desc: "动手前先按 grill-me 技能问清目标 / 边界 / 验收，问完再做" },
+  { value: "pragmatic", title: "务实", desc: "直接给结论和代码，少铺垫" },
+  { value: "friendly", title: "友好", desc: "解释更详细，主动交代思路与取舍" },
+  { value: "none", title: "默认", desc: "跟随模型默认风格，不额外注入语气指令" },
 ];
 
 /**
@@ -105,24 +104,22 @@ export function PersonalizationPage({
           组间只用一个间距值 ⇒ 不再靠标题的零散 margin 撑版式。 */}
 
       <div className="personalization-group card-style">
-        <div className="settings-subhead"><MessageSquare size={13} />回复风格<span className="settings-subhead-hint">选择 Codex 平时怎么跟你说话</span></div>
-        <div className="personalization-style-grid" role="group" aria-label="回复风格">
-        {stylePresets.map((preset) => (
-          <button
-            key={preset.value}
-            type="button"
-            className={`personalization-style-card ${personality === preset.value ? "active" : ""}`}
-            aria-pressed={personality === preset.value}
-            onClick={() => onPersonalityChange(preset.value)}
-          >
-            <span className="personalization-style-head">
-              <strong>{preset.title}</strong>
-              {personality === preset.value ? <em><Check size={11} /></em> : null}
-            </span>
-            <span className="personalization-style-desc">{preset.desc}</span>
-            <span className="personalization-style-sample">{preset.sample}</span>
-          </button>
-        ))}
+        <div className="settings-subhead">
+          <MessageSquare size={13} />回复风格
+          <div className="segmented-tabs personalization-style-tabs" role="group" aria-label="回复风格">
+            {stylePresets.map((preset) => (
+              <button
+                key={preset.value}
+                type="button"
+                className={personality === preset.value ? "active" : ""}
+                aria-pressed={personality === preset.value}
+                title={preset.desc}
+                onClick={() => onPersonalityChange(preset.value)}
+              >
+                {preset.title}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

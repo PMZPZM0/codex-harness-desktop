@@ -1030,6 +1030,14 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 }
 /* 10-27 用户令：「四个正方形卡片太丑了」⇒ 回复风格改成标题行右侧的胶囊分段控件（与插件页来源 tab 同款），
    组卡里只剩这一行 ⇒ 底边距归零，卡片高度就是一行的高度。 */
+/* 10-27 再令：「不要那么宽，上下窄一点」⇒ 这张卡不再拉满整行（fit-content），
+   上下留白从 14/16 收到 8 —— 卡高 ≈ 46px，只有一行胶囊的量。 */
+.personalization-group.card-style:has(.personalization-style-tabs) {
+  width: fit-content;
+  max-width: 100%;
+  padding: 8px 10px 8px 14px;
+}
+.personalization-group.card-style:has(.personalization-style-tabs) > .settings-subhead { gap: 12px; }
 .personalization-style-tabs { margin-left: auto; flex: none; }
 .personalization-style-tabs button { font-size: 11.5px; }
 .personalization-group > .settings-subhead:last-child { margin-bottom: 0; }
