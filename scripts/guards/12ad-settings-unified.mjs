@@ -127,7 +127,7 @@ const refreshAt = modelPage.indexOf("const refreshCardModels");
 const refreshEnd = modelPage.indexOf("const testProviderCard", refreshAt);
 const refreshBlock = refreshAt >= 0 && refreshEnd > refreshAt ? modelPage.slice(refreshAt, refreshEnd) : "";
 ok(refreshBlock.length > 0 && /addedIds/.test(refreshBlock) && /removed/.test(refreshBlock) && /saveCustomDraft/.test(refreshBlock) && /relaunchApp/.test(refreshBlock), "「更新模型」新增/移除模型都保存并重启（与编辑弹窗保存同口径）");
-for (const [key, title] of [["skills", "技能中心"], ["mcp", "MCP"], ["commands", "命令"], ["hooks", "钩子"], ["ssh", "SSH 服务器"], ["agentteam", "专家和专家团"], ["storage", "数据管理"]]) {
+for (const [key, title] of [["skills", "技能中心"], ["commands", "命令"], ["hooks", "钩子"], ["ssh", "SSH 服务器"], ["agentteam", "专家和专家团"], ["storage", "数据管理"]]) {
   const text = pageSrc(key);
   const at = text.indexOf(`<h2>${title}`);
   const window = at >= 0 ? text.slice(at, at + 2200) : "";
@@ -136,6 +136,12 @@ for (const [key, title] of [["skills", "技能中心"], ["mcp", "MCP"], ["comman
      那样守卫会自洽地绿，而界面上一个字都没有）。 */
   ok(at >= 0 && /<PageInfo/.test(window), `${title}页头说明收进 ?（10-26 起副标题整排不显示）`);
 }
+
+/* 10-27 用户（MCP 页截图）：「右上角问号删了」⇒ MCP 页头整块撤掉，
+   进页直接是工具条与市场卡片。⛔ 名单里去掉 mcp 的同时单独钉一条，
+   免得以后「每页都有 ?」这条判据又把它悄悄加回来。 */
+const mcpHeaderSrc = pageSrc("mcp");
+ok(!/PageInfo/.test(mcpHeaderSrc) && !/settings-copy/.test(mcpHeaderSrc), "MCP 页不再挂 ? / 页头说明（进页直接是工具条与卡片）");
 
 /* 10-26 用户（中转站页截图）第二次令：「文字赘述删掉，问号删掉，大字就行」——
    本页连 ? 一起收掉，说明段、页脚、添加卡小字全部删除，只剩大字与操作。 */

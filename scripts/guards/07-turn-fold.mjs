@@ -230,9 +230,13 @@ export async function run() {
     // 10-26 二轮用户令：「自动配置和保存重启放到界面右下角，? 号删除」⇒ 模型页那枚 ? 随页头整块撤掉。
     //    这是**明确要求**，不是漏挂 ⇒ 下面把它从"必须有入口"的名单里摘出；内容库仍保留 model 主题，
     //    用户召回时再挂一个 ? 即可。⛔ 别把别的主题也塞进这个例外来消红（那正是本条要防的孤儿）。
-    const orphanKeys = HELP_KEYS.filter((key) => key !== "model" && !new RegExp(`helpKey="${key}"`).test(appC + voiceC));
+    // 10-27 用户（MCP 页截图）：「右上角问号删了」⇒ MCP 页那枚 ? 同样撤掉、内容库保留 mcp 主题。
+    // 10-27 用户（插件页）：「插件页删页头?」（commit 18f153b40）⇒ plugins 那枚 ? 也撤了，
+    //    当轮漏改这条名单 ⇒ 一直红着「plugins 入口丢了」。同口径补进例外，别再留假红。
+    const NO_HINT_KEYS = ["model", "mcp", "plugins"];
+    const orphanKeys = HELP_KEYS.filter((key) => !NO_HINT_KEYS.includes(key) && !new RegExp(`helpKey="${key}"`).test(appC + voiceC));
     (orphanKeys.length === 0)
-      ? ok(`【32】${HELP_KEYS.filter((key) => key !== "model").length} 个帮助主题都有 ? 入口（模型页按用户令撤掉，不计）`)
+      ? ok(`【32】${HELP_KEYS.filter((key) => !NO_HINT_KEYS.includes(key)).length} 个帮助主题都有 ? 入口（模型 / MCP / 插件页按用户令撤掉，不计）`)
       : fail(`【32】这些主题的帮助入口丢了：${orphanKeys.join(", ")} —— 内容库还在，但用户点不到`);
     // ⛔ 赘述回潮的可证伪判据：settings-copy 区块里不该再有 >40 字的内联段落。
     //    短句（≤40 字）允许内联 —— 它只占一行，硬收进 ? 反而让用户多点一次。

@@ -4,7 +4,6 @@
  * 纯搬迁：返回的 JSX / 体内语句与原块逐字一致（仅去掉外层缩进与 IIFE 包装）。
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
-import { PageInfo } from "../../components/SettingsHead";
 import { ArrowUpRight, Check, CircleStop, KeyRound, Link2, Play, Plus, RefreshCw, Search, Trash2, Wifi, Wrench, Zap } from "lucide-react";
 import { AppSelect } from "../../components/AppSelect";
 import { Spinner } from "../../components/CardShell";
@@ -68,7 +67,10 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
   const toggleMcpChecked = (id: string) => setMcpServerChecked((current: any) => current.includes(id) ? current.filter((entry: any) => entry !== id) : [...current, id]);
   return (
   <section className="settings-section stack">
-  <div className="settings-copy channel-heading"><div><h2>MCP<PageInfo text={<>上方卡片来自 SkillHub MCP 工具广场（skillhub.cn/mcp），点卡片看详情、带接入模板的可一键写入连接器；下方为已接入管理：保存后写入 Codex 配置、加密保存密钥并重启引擎，支持批量启用/停用。“可用”以 app-server 返回的运行/认证状态为准。</>} helpKey="mcp" label="MCP" /></h2><p>接入外部工具和数据源；市场可一键安装，也可以添加自己的 MCP 服务。</p></div></div>
+  {/* 10-27 用户令：「右上角问号删了」—— 页头整块（? + 副标题）撤掉，
+      进页直接是「分类 / 搜索 / 添加 MCP / 刷新」工具条与市场卡片。
+      ⛔ 新手帮助内容仍在 HelpDialog 的「MCP · 新手帮助」里（帮助库不删），
+         只是本页不再挂 ? 入口；守卫 07 的孤儿主题名单按这次用户令开了 mcp 的例外。 */}
     <div className="plugin-market-block">
       {/* 10-27 用户令：「那个分类做成筛选形式，几个市场跳转删了」——
           横向分类 tab 收成下拉筛选；SkillHub / AIbase 两个外链跳转删除，只留添加与刷新。 */}
