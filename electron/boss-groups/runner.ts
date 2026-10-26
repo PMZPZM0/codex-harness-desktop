@@ -301,6 +301,26 @@ function indexTaskTurn(taskId: string, turnId: string) {
   if (turnId) taskTurnIndex.set(turnId, taskId);
 }
 
+/**
+ * 取回合的成品文本 —— **事件里的 turn 常常不带 items**，必须能补拉。
+ *
+ * ⛔⛔ 10-26 真机实测（真实任务端到端）：`turn/completed` 事件的 `params.turn` 只有
+ *   id/status 这类字段，`items` 为空 ⇒ `turnOutputText()` 返回空 ⇒ 交活正文变成
+ *   「（成员没有返回文本产出）」，落盘文件、投递给中枢的群事件、界面上的文件卡**全是空的**。
+ *   ⇒ 事件里拿不到就按 `itemsView: "full"` 补拉一次 `thread/turns/list`（与启动对账同一口径）。
+ *   ⛔ 只在「拿不到」时补拉：能拿到时不多打一次引擎往返（这是交活热路径）。
+ */
+async function outputTextOf(threadId: string, turnId: string, turn: any): Promise<string> {
+  const direct = turnOutputText(turn);
+  if (direct) return direct;
+  const page: any = await server.request("thread/turns/list", {
+    threadId, limit: 20, sortDirection: "desc", itemsView: "full",
+  }).catch(() => null);
+  const turns = Array.isArray(page?.data) ? page.data : [];
+  const hit = turns.find((t: any) => String(t?.id ?? "") === turnId);
+  return turnOutputText(hit);
+}
+
 /** 引擎回合结束 → 结算对应任务（**只认 turn/completed**：aborted/failed 另走 failedTask）。 */
 function onEngineTurnCompleted(threadId: string, turnId: string, turn: any) {
   const taskId = taskTurnIndex.get(turnId);
@@ -308,13 +328,26 @@ function onEngineTurnCompleted(threadId: string, turnId: string, turn: any) {
   /* ⛔ 幂等闸：引擎事件与 Promise 兜底**两条路**都会走到这里 ⇒ 同一回合只结算一次。 */
   if (settlingTasks.has(taskId)) return;
   settlingTasks.add(taskId);
-  const text = turnOutputText(turn) || "（成员没有返回文本产出）";
-  void settleSubmission(taskId, text)
+  const finish = () => {
+    settlingTasks.delete(taskId);
+    taskTurnIndex.delete(turnId);
+  };
+  /* ⛔⛔ 10-26 真机实测（真实任务端到端）：**失败的回合也走 turn/completed**，只是
+     `turn.status = "failed"`。原实现不看 status ⇒ 把一次模型调用失败当成"成员交活"，
+     结果是：落盘一个空 md、给中枢投一条「（成员没有返回文本产出）」、任务卡在 reviewing
+     永远等不到结论。⇒ 非 completed 一律按失败处理（释放成员 + 回投原因），不产生交活。 */
+  const status = String(turn?.status ?? "");
+  if (status && status !== "completed") {
+    const detail = turn?.error?.message ?? turn?.error ?? "";
+    void failTask(taskId, `成员回合${status === "failed" ? "失败" : `未正常结束（${status}）`}${detail ? `：${String(detail).slice(0, 200)}` : ""}`)
+      .catch(() => undefined)
+      .finally(finish);
+    return;
+  }
+  void outputTextOf(threadId, turnId, turn)
+    .then((text) => settleSubmission(taskId, text || "（成员没有返回文本产出）"))
     .catch(() => undefined)
-    .finally(() => {
-      settlingTasks.delete(taskId);
-      taskTurnIndex.delete(turnId);
-    });
+    .finally(finish);
 }
 
 let settleWatchStarted = false;
@@ -652,7 +685,8 @@ export async function dispatchTask(taskId: string, options: { memberId?: string 
        ⇒ 现在：引擎事件是主路径（重启后依然有效），Promise 只在事件没来时兜底，
           且**走同一道幂等闸**（settlingTasks）⇒ 两条路不会重复结算。 */
     void waitForTurnCompletion(threadId, turnId).then((completed: any) => {
-      const text = turnOutputText(completed) || "（成员没有返回文本产出）";
+      /* ⛔ 文本由 onEngineTurnCompleted 统一取（含"事件里没 items 就补拉"那条路）——
+         原来这里先算一次 `text` 却从没用过（死变量），真取文本的地方在那边。 */
       onEngineTurnCompleted(threadId, turnId, completed);
     }).catch((error: any) => {
       if (error?.code === TURN_WAIT_TIMEOUT_CODE) {
