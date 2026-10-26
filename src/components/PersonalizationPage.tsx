@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, Info, MessageSquare, RefreshCw, ShieldCheck, Sparkles, TriangleAlert, UserRound, Wrench } from "lucide-react";
-import { SettingsGroupHead, SettingsPageHero } from "./SettingsPageHero";
+import { SettingsPageHero } from "./SettingsPageHero";
 
 type PersonalizationConfig = { nickname?: string; customInstructions?: string };
 
@@ -96,7 +96,6 @@ export function PersonalizationPage({
   return (
     <section className="settings-section stack personalization-page settings-exp-page">
       <SettingsPageHero icon={<Sparkles size={20} />} title="个性化" subtitle="让 Codex 知道怎么称呼你、用什么语气和写法，以及永远要遵守的约定。" hint="改完下一次对话生效" />
-      <SettingsGroupHead title="基础设定" hint="称呼 · 回复风格 · 语气" />
 
       {/* 分组规则（10-11 重排）：一处设置 = 一张组卡；组卡自带标题行（.settings-subhead）与 1px 边界，
           组间只用一个间距值 ⇒ 不再靠标题的零散 margin 撑版式。 */}
@@ -138,7 +137,6 @@ export function PersonalizationPage({
         </div>
       </div>
 
-      <SettingsGroupHead title="进阶" hint="自定义指令 · 生效校验" />
       <div className="personalization-group card-instructions">
         <div className="settings-subhead"><Wrench size={13} />自定义指令<span className="settings-subhead-hint">每次对话都生效，优先级高于风格默认</span></div>
         <textarea

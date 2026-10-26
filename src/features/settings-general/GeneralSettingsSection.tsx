@@ -15,7 +15,7 @@ import { copyTextToClipboard } from "../../lib/clipboard";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { BuiltinSkillSwitch } from "./BuiltinSkillSwitch";
 import { AutoUpdateCard } from "./AutoUpdateCard";
-import { SettingsGroupHead, SettingsPageHero } from "../../components/SettingsPageHero";
+import { SettingsPageHero } from "../../components/SettingsPageHero";
 
 export type GeneralSettingsSectionProps = { globalPermApproval: any; applyGlobalPermissionMode: any; workspace: any; chooseWorkspace: any; userDataPath: any; setNotice: any; rightOpen: any; setRightOpen: any; capabilityHint: any; desktopAuto: any; groupBusy: any; toggleDesktopAuto: any; browserAuto: any; toggleBrowserAuto: any; ponytailOn: any; applyGroup: any; hardwareAccel: any; changeHardwareAccel: any; restartPending: any; SHORTCUT_GROUPS: any; setShortcutsOpen: any; engineVersion: any; engineCheck: any; engineUpdating: any; checkEngineUpdateNow: any; performEngineUpdateNow: any; engineUpdatePercent: any; engineUpdateStageText: any; engineUpdateLog: any; engineUpdateResult: any; relaunchCountdown: any; downloadSource: any };
 
@@ -143,7 +143,6 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
     <>
       <section className="settings-section stack general-page settings-exp-page">
                     <SettingsPageHero icon={<Settings2 size={20} />} title="控制台" subtitle="先把最常用的三项设好：权限、工作区、启动行为。其余按需往下看。" hint="新手先看" />
-                    <SettingsGroupHead title="常用" hint="权限 · 工作区 · 启动行为" />
 
                     {/* 全局审批权限：控制台一级入口。选择立即生效（当前会话马上推送引擎，
                         其余未手动改过权限的会话打开时跟随，新会话默认使用），无需重启。 */}
@@ -207,7 +206,6 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                       </div>
                     </div>
 
-                    <SettingsGroupHead title="对话与显示" hint="回复写法 · 思考展示 · 界面行为" />
                     {/* 回复风格（10-06 用户需求）：内置写作风格技能的**独立开关**。
                         ⛔ 真相源 = 技能池的全局停用集（electron/skill-pool.ts → skill-global-disabled.json）；
                            本卡片只是它的一个入口，另一个入口是「技能 → 我的技能 → 共享技能池」。
@@ -250,7 +248,6 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                       </div>
                     </div>
 
-                    <SettingsGroupHead title="维护与更新" hint="快捷键 · 引擎升级 · 自动更新" />
                     <div className="settings-card card-shortcuts">
                       <div className="settings-card-head"><Keyboard size={15} /><strong>键盘快捷键</strong></div>
                       <div className="settings-card-body">

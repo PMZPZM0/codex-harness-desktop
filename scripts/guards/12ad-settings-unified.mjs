@@ -100,7 +100,7 @@ ok(/\.settings-exp-shell \.favorites-settings \.fav-foot > svg\s*\{[^}]*vertical
 const schedule = pageSrc("schedule");
 ok(/<h2>定时任务<\/h2>/.test(schedule) && !/<h2>自动化<\/h2>/.test(schedule), "定时任务页标题是「定时任务」（不再是「自动化」）");
 const knowledge = pageSrc("knowledge");
-ok(/<h2>知识库<PageInfo/.test(knowledge) && /settings-exp-group-head[\s\S]{0,240}本地文档/.test(knowledge), "知识库有页头，本地文档降为分组标题");
+ok(/<h2>知识库<PageInfo/.test(knowledge) && !/settings-exp-group-head/.test(knowledge), "知识库有页头，本地文档分组小字已删");
 const soul = pageSrc("soul");
 ok(/settings-copy channel-heading[\s\S]{0,1600}刷新/.test(soul), "人格市场的「刷新」收进页头操作区（不再单飞一行）");
 const memory = pageSrc("memory");
@@ -159,6 +159,23 @@ ok(!/PageInfo/.test(openaiPage) && !/settings-copy/.test(openaiPage), "OpenAI �
 const oaAddCards = [...openaiPage.matchAll(/className="relay-plan-card relay-add-card"([\s\S]*?)<\/button>/g)].map((m) => m[1]);
 ok(oaAddCards.length === 2 && oaAddCards.every((s) => !/<small>/.test(s)), "OpenAI 添加卡只留图标 + 大字（小字说明已删）");
 ok(/\.settings-exp-shell \.openai-account-grid \.relay-add-card\s*\{[^}]*grid-column:\s*auto/.test(css), "OpenAI 添加卡两列并排（不再横贯整行）");
+
+/* 10-26 用户：「左上角一排小字删除，其他设置界面还有的一起删」——
+   SettingsGroupHead / settings-exp-group-head 全部下线；权限卡片文字居中。 */
+const groupPages = [
+  "src/features/settings-general/GeneralSettingsSection.tsx",
+  "src/features/settings-appearance/AppearanceSettingsSection.tsx",
+  "src/features/settings-pet/PetSettingsSection.tsx",
+  "src/components/PersonalizationPage.tsx",
+  "src/features/settings-app-lock/AppLockSettingsSection.tsx",
+  "src/features/storage-settings/StorageSettings.tsx",
+  "src/features/storage-settings/WorkLogsSection.tsx",
+  "src/features/storage-settings/ChangeBackupSection.tsx",
+  "src/features/knowledge-base/KnowledgeBaseSection.tsx",
+];
+ok(groupPages.every((p) => !/SettingsGroupHead|settings-exp-group-head/.test(read(p))), "设置页不再出现「常用 / 基础外观」这类分组小字");
+ok(!/SettingsGroupHead/.test(read("src/components/SettingsPageHero.tsx")) && !/\.settings-exp-group-head/.test(css), "分组小字组件与样式已删除");
+ok(/\.perm-seg-btn\s*\{[^}]*align-items:\s*center[^}]*text-align:\s*center/.test(read("src/styles/02-sidebar-threads.css")), "权限三张卡文字居中");
 
 /* ── ⑥ SSH 工具栏不落单 ── */
 ok(/\.settings-exp-shell \.ssh-toolbar \.search-field\s*\{[^}]*flex:\s*1 1 160px;[^}]*width:\s*auto\s*!important/s.test(css), "SSH 搜索框可收缩（导出/导入不再被挤到第二行单飞）");

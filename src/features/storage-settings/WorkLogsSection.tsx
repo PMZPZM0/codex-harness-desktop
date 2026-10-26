@@ -105,7 +105,6 @@ export function WorkLogsSection({ onNotice, openAppConfirm }: {
 
   return (
     <section className="settings-section stack is-settings-flow work-logs-card">
-      <div className="settings-exp-group-head"><span>工作日志</span><small>项目里的工作记录与项目记忆（<code>.codex-harness/memory/</code>），不是对话记录</small></div>
       {/* 10-24 用户令「整齐划一」：统计条 / 列表 / 操作行收进同一张白卡 */}
       <div className="storage-page-card settings-card">
         <p className="muted work-logs-hint">Codex 在每个项目里写下的工作日志、长期记忆与坑与纪律：点条目看正文，勾选后可批量删除。注意这是项目里的工作记录，不是对话记录——会话的归档 / 删除在「归档管理」页，记忆档案在「记忆管理」页。</p>

@@ -16,7 +16,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Download, FolderOpen, Image as ImageIcon, PawPrint, RefreshCw, TriangleAlert } from "lucide-react";
 import { petAssetUrl } from "../pet";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
-import { SettingsGroupHead, SettingsPageHero } from "../../components/SettingsPageHero";
+import { SettingsPageHero } from "../../components/SettingsPageHero";
 
 export type PetSettingsSectionProps = { onNotice?: (message: string) => void };
 
@@ -135,7 +135,6 @@ export function PetSettingsSection({ onNotice }: PetSettingsSectionProps) {
   return (
     <section className="settings-section stack pet-settings settings-exp-page">
       <SettingsPageHero icon={<PawPrint size={20} />} title="桌面宠物" subtitle="一只浮在桌面上的小宠物，跟着任务变状态。内置六只，选一只就能用。" hint="可拖动到任意位置" />
-      <SettingsGroupHead title="常用" hint="显示 · 大小 · 透明度" />
 
       <section className="pet-card pet-showcase-card">
         <div className="pet-showcase">
@@ -180,7 +179,6 @@ export function PetSettingsSection({ onNotice }: PetSettingsSectionProps) {
         </div>
       </section>
 
-      <SettingsGroupHead title="选择宠物" hint="内置六只 · 点击切换" />
       <section className="pet-card">
         <h4><ImageIcon size={14} />选择宠物<small className="pet-count">{usable.length} 只可用</small></h4>
         {usable.length === 0 && (

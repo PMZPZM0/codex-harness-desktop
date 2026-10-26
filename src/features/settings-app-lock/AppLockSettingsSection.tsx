@@ -12,7 +12,7 @@ import { createPortal } from "react-dom";
 import { Check, Copy, EyeOff, HardDrive, KeyRound, LoaderCircle, Lock, RefreshCw, ShieldAlert, ShieldCheck, Sparkles, X } from "lucide-react";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
-import { SettingsGroupHead, SettingsPageHero } from "../../components/SettingsPageHero";
+import { SettingsPageHero } from "../../components/SettingsPageHero";
 
 type LockStatus = Awaited<ReturnType<typeof window.codex.appLockStatus>>;
 type Prepared = { setupId: string; password: string; kind: "random" | "custom" };
@@ -203,7 +203,6 @@ export function AppLockSettingsSection({ onNotice }: { onNotice?: (text: string)
         hint={enabled ? "已开启" : "默认关闭"}
       />
 
-      <SettingsGroupHead title="开关" hint="本机生效 · 密码只存哈希" />
       <div className="settings-exp-card app-lock-status-card">
         <div className="settings-card">
           <div className="settings-card-head">
@@ -254,7 +253,6 @@ export function AppLockSettingsSection({ onNotice }: { onNotice?: (text: string)
         </div>
       </div>
 
-      <SettingsGroupHead title="规则与边界" hint="开启前先看清楚" />
       <div className="settings-exp-card">
         <div className="settings-card app-lock-rules">
           <div className="app-lock-rules-grid">

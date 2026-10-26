@@ -14,7 +14,7 @@ import { THEMES } from "../../lib/themes";
 import { setReasoningDisplayMode, useReasoningDisplayMode } from "../../lib/reasoning-display-mode";
 import { setRunProcessMode, useRunProcessMode } from "../../lib/run-process-mode";
 import { runVisualSwitch, themeLabelOf } from "../../lib/visual-switch";
-import { SettingsGroupHead, SettingsPageHero } from "../../components/SettingsPageHero";
+import { SettingsPageHero } from "../../components/SettingsPageHero";
 
 export type AppearanceSettingsSectionProps = { theme: any; setTheme: any; uiFont: any; setUiFont: any; onNotice?: (text: string) => void };
 
@@ -26,7 +26,6 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
     <>
       <section className="settings-section stack appearance-page settings-exp-page">
         <SettingsPageHero icon={<Sun size={20} />} title="外观" subtitle="主题、字号、代码与壁纸都在这里；改完即时生效，不用重启。" hint="点卡片即切换" />
-        <SettingsGroupHead title="基础外观" hint="主题 · 消息字号" />
         <div className="settings-exp-card appearance-base-card">
         <div className="settings-subhead"><Sun size={13} />主题<span className="settings-subhead-hint">点击预览卡片即时切换</span></div>
         <div className="theme-preview-grid" role="group" aria-label="主题">
@@ -53,7 +52,6 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
           <button type="button" className={uiFont === "large" ? "active" : ""} onClick={() => { setUiFont("large"); localStorage.setItem("ui-font", "large"); }}><span className="fs-demo fs-demo-large">大字</span></button>
         </div>
         </div>
-        <SettingsGroupHead title="思考板块" hint="展示方式 · 立即生效" />
         <div className="settings-card card-reasoning">
           <div className="settings-card-head"><Brain size={15} /><strong>思考板块展示</strong><span className="settings-subhead-hint">立即生效，无需重启</span></div>
           <div className="settings-card-body">
@@ -72,7 +70,6 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
             <p className="settings-card-hint">只影响思考内容的呈现方式，不会改变模型思考本身或历史记录。长条模式收起时与过程行同款，只显示最新一行（自动横向滚动）；当前正在直播的思考内联显示，已经结束的思考与其他过程在直播末段超过 8 条会自动收起，回合结束后统一收进「耗时」大折叠。点击长条展开全文，最高 50vh 内部滚动。</p>
           </div>
         </div>
-        <SettingsGroupHead title="运行过程" hint="文件生成 / 修改的展示方式" />
         <div className="settings-card card-run-process">
           <div className="settings-card-head"><FileCode2 size={15} /><strong>运行过程</strong><span className="settings-subhead-hint">立即生效，无需重启</span></div>
           <div className="settings-card-body">
@@ -91,9 +88,7 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
             <p className="settings-card-hint">只影响运行过程中的文件展示，不改变生成/修改本身。详细模式在文件变化时弹出浮窗并自动滚到最新：新文件显示内容，修改 / 删除显示 diff；停止变化 3 秒后自动收起，多个文件同时改时只浮最近变化的那个。文件行最多列 8 个，其余收进「还有 N 个文件」。</p>
           </div>
         </div>
-        <SettingsGroupHead title="拓展功能" hint="侧栏入口位置与顺序" />
         <div className="settings-exp-card appearance-function-card"><FunctionMenuSettings onNotice={onNotice} /></div>
-        <SettingsGroupHead title="更多外观" hint="壁纸 · 代码高亮 · 开机动画" />
         <div className="settings-exp-card appearance-wallpaper-card"><WallpaperSettingsSection /></div>
         <div className="settings-exp-card appearance-boot-card"><BootIntroSettingsRow onNotice={onNotice} /></div>
         <div className="settings-exp-card appearance-code-card"><CodeAppearanceSection onNotice={onNotice} /></div>

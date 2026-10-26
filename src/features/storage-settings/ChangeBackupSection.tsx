@@ -92,7 +92,6 @@ export function ChangeBackupSection({ onNotice, openAppConfirm }: {
   if (!config) {
     return (
       <section className="settings-section stack is-settings-flow">
-        <div className="settings-exp-group-head"><span>改动备份</span><small>每个回合结束后记录改过的文件与变更内容</small></div>
         <div className="storage-page-card settings-card"><p className="muted">正在读取配置…</p></div>
       </section>
     );
@@ -100,7 +99,6 @@ export function ChangeBackupSection({ onNotice, openAppConfirm }: {
 
   return (
     <section className="settings-section stack is-settings-flow">
-      <div className="settings-exp-group-head"><span>改动备份</span><small>每个回合结束后记录改过的文件与变更内容</small></div>
       {/* 10-24 用户令「整齐划一」：开关 / 目录 / 产物概览收进同一张白卡（去内联样式） */}
       <div className="storage-page-card settings-card">
         {/* 功能开关 —— 默认关（用户没主动开之前不产生任何磁盘产物） */}
