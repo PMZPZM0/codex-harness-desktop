@@ -1,6 +1,16 @@
 import path from "node:path";
-import os from "node:os";
 import fs from "node:fs";
+import { app } from "electron";
+
+/** 凭据落点：**惰性**取 userData ——
+ *  ⛔ 模块顶层求值会早于 main.ts 的 `app.setPath("userData")` ⇒ 拿到默认目录（路径静默漂移）。
+ *  ⛔ 也不许写死 `AppData\Roaming\<应用名>`：mac 是 `~/Library/Application Support/`，
+ *     且 PPcode 的 userData 目录名与本仓不同 ⇒ 写死会读写到**另一个应用**的数据。
+ *  `CODEX_HARNESS_USER_DATA` 是测试开关（隔离 profile 用），优先级最高。 */
+function stateFilePath() {
+  const dir = process.env.CODEX_HARNESS_USER_DATA || app.getPath("userData");
+  return path.join(dir, "dingtalk-account.json");
+}
 // 钉钉机器人网关：官方 dingtalk-stream SDK（WebSocket 长连接，免公网 IP/免回调域名）。
 // 用户在 open-dev.dingtalk.com 建「企业内部应用」→ 添加「机器人」能力、消息接收模式选
 // 「Stream 模式」→ 拿 Client ID (AppKey) / Client Secret (AppSecret) 填入即连。
@@ -8,10 +18,6 @@ import fs from "node:fs";
 // 凭据持久化 userData/dingtalk-account.json，重启自动恢复。
 import DingTalkStream from "dingtalk-stream";
 
-const STATE_FILE = path.join(
-  process.env.CODEX_HARNESS_USER_DATA || path.join(os.homedir(), "AppData", "Roaming", "Codex Harness Desktop"),
-  "dingtalk-account.json",
-);
 
 export type DingtalkEvents = {
   onMessage: (message: { from: string; chatId: string; text: string; replyHint: string }) => void;
@@ -67,7 +73,7 @@ export class DingtalkGateway {
       return { code: 200 };
     });
     await this.client.connect();
-    try { fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true }); fs.writeFileSync(STATE_FILE, JSON.stringify({ clientId: id, clientSecret: secret }, null, 2), "utf8"); } catch { /* 持久化失败不阻塞 */ }
+    try { fs.mkdirSync(path.dirname(stateFilePath()), { recursive: true }); fs.writeFileSync(stateFilePath(), JSON.stringify({ clientId: id, clientSecret: secret }, null, 2), "utf8"); } catch { /* 持久化失败不阻塞 */ }
     this.log("info", "钉钉机器人已连接（Stream 模式）");
     return { ok: true, name: "钉钉机器人" };
   }
@@ -89,7 +95,7 @@ export class DingtalkGateway {
 
   async resume(): Promise<boolean> {
     try {
-      const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+      const raw = JSON.parse(fs.readFileSync(stateFilePath(), "utf8"));
       if (raw.clientId && raw.clientSecret) {
         await this.connect(String(raw.clientId), String(raw.clientSecret));
         return true;
@@ -107,7 +113,7 @@ export class DingtalkGateway {
     try { this.client?.disconnect?.(); } catch { /* 忽略 */ }
     this.client = null;
     this.sessions.clear();
-    try { fs.rmSync(STATE_FILE, { force: true }); } catch { /* 忽略 */ }
+    try { fs.rmSync(stateFilePath(), { force: true }); } catch { /* 忽略 */ }
     this.log("info", "钉钉登录态已清除，可重新绑定");
   }
 }

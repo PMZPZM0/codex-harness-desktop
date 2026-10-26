@@ -93,7 +93,7 @@ export const settingsNav: { group: string; items: [SettingsPage, string, any, st
   { group: "能力与内容", items: [["skills", "技能", Zap, "violet"], ["plugins", "插件", Store, "amber"], ["component-library", "组件库", LayoutGrid, "pink"], ["mcp", "MCP", Wifi, "cyan"], ["commands", "命令", TerminalSquare, "green"]] },
   { group: "人格与记忆", items: [["soul-market", "人格市场", Heart, "pink"], ["memory", "记忆", Archive, "cyan"], ["knowledge-base", "知识库", BookOpen, "blue"]] },
   { group: "自动化与智能体", items: [["automation", "自动化", Workflow, "violet"], ["schedule", "定时任务", Clock3, "amber"], ["hooks", "钩子", Wrench, "green"], ["ssh", "SSH 服务器", Server, "blue"], ["agentteam", "专家/专家团", Users, "pink"], ["boss-groups", "群编排", Network, "cyan"]] },
-  { group: "数据", items: [["usage", "使用统计", CircleGauge, "blue"], ["storage", "数据管理", Database, "cyan"], ["backup", "会话备份", Download, "green"], ["archive", "归档管理", Archive, "amber"], ["favorites", "收藏夹", Star, "pink"], ["app-lock", "应用锁", Lock, "red"]] },
+  { group: "数据", items: [["usage", "使用统计", CircleGauge, "blue"], ["storage", "数据管理", Database, "cyan"], ["backup", "会话备份", Download, "green"], ["archive", "归档管理", Archive, "amber"], ["favorites", "收藏夹", Star, "pink"], ["app-lock", "应用锁", Lock, "amber"]] },
   { group: "开发", items: [["devtools", "开发工具", TerminalSquare, "green"], ["extensibility", "拓展接口", Blocks, "violet"]] },
 ];
 

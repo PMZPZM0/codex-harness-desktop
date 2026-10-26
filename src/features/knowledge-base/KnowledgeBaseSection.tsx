@@ -10,6 +10,11 @@ import { Eye, FilePlus2, FolderOpen, Library, RefreshCw, Search, Trash2, X, Arro
 import { PageInfo } from "../../components/SettingsHead";
 import { Spinner } from "../../components/CardShell";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
+import { isMacPlatform } from "../../lib/is-mac-platform";
+
+/** 路径分隔符：mac/Linux 用 `/`，Windows 用 `\`（⛔ 渲染层没有 node:path，按平台取字面量）。
+ *  10-26 mac 适配审计：这里原来写死 `\.codex-harness\knowledge` ⇒ mac 上显示成 `/a\b\c`。 */
+const SEP = isMacPlatform() ? "/" : "\\";
 
 type KbDoc = { id: string; title: string; source: string; chunks: number; addedAt: string; bytes: number };
 type KbHit = { docId: string; title: string; chunkIndex: number; score: number; snippet: string };
@@ -191,7 +196,7 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
       ) : null}
       {/* ⛔ 10-20：这块讲的是**本地库**。云端后端下它不再生效，标题必须如实标明 ——
           否则用户看到「文档落在 <workspace>/…」会以为这就是模型正在查的东西（两套库是独立数据）。 */}
-      <div className="settings-exp-group-head"><span>本地文档</span><small>{kbBackend === "cloud" ? "当前后端为云端，这里仅可查看；切回本地即可继续导入与检索" : `存放在 ${workspace}\\.codex-harness\\knowledge`}</small></div>
+      <div className="settings-exp-group-head"><span>本地文档</span><small>{kbBackend === "cloud" ? "当前后端为云端，这里仅可查看；切回本地即可继续导入与检索" : `存放在 ${workspace}${SEP}.codex-harness${SEP}knowledge`}</small></div>
 
       {/* 本地语义后端：未安装时给下载卡片（进度/速度/剩余），装完卡片消失 */}
       {embedInstalled === false ? (

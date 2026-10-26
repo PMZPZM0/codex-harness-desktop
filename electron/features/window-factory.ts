@@ -19,7 +19,10 @@ import { flushBootTiming, markBoot } from "../boot-timing";
 import { installContextMenu } from "../main/10-window-menu";
 import { applyThemeToWindow, closeToTrayEnabled, closePromptSeen, closeConfirmBridge, engineActiveTurnIds, notifyPopoutClosed, popoutThreadIds } from "../runtime-refs";
 import { closePetWindow } from "./pet-window";
-import { mutableState, titleBarOverlayOptions } from "../main";
+/* ⛔ 10-26（守卫【132】）：`titleBarOverlayOptions` 的**真来源**是 runtime-refs，
+   main.ts 只是转发导出。域直接连真来源，别从 main 绕一圈（那会让 main 变成依赖黑洞）。 */
+import { mutableState } from "../main";
+import { titleBarOverlayOptions } from "../runtime-refs";
 import { isInsideTrustedRoots } from "../runtime-refs";
 export function createWindow() {
   /* ⛔⛔ 防重入（10-22 用户实测「应用还能重复打开」= 两个一模一样的主窗口）：
