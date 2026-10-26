@@ -542,3 +542,40 @@
 }
 .sidebar-quick .sidebar-quick-btn:hover .quick-kbd,
 .sidebar-quick .sidebar-quick-btn:focus-visible .quick-kbd { opacity: 1; }
+
+/* ── 功能入口右侧浮层（10-26 用户：「向右边展示，这样不占用上下空间」）──────────────
+   侧栏只留「功能入口」一行；入口组 portal 到 body，贴在侧栏右缘，浮在聊天区上。
+   ⛔ 不要改回侧栏内展开：7 行入口会吃掉 ~250px 纵向空间，矮窗口把会话列表压到保底。
+   ⛔ 浮层层级 68：低于「更多」弹层 70（它 portal 到 body，否则会被浮层盖住），
+      高于侧栏/顶栏，低于设置页 80+ 与全局模态 400。 */
+.sidebar-options-flyout {
+  position: fixed;
+  z-index: 68;
+  width: 232px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  animation: sidebar-options-flyout-in .14s ease-out;
+}
+/* ⛔ 浮层里不要再套一层 40vh 滚动：高度已由外层 maxHeight 按折叠头位置算好。 */
+.sidebar-options-flyout #sidebar-options-body {
+  max-height: none;
+  overflow: visible;
+  margin-top: 0;
+  flex: none;
+}
+.sidebar-options-flyout .sidebar-cap-row { padding-left: 10px; }
+@keyframes sidebar-options-flyout-in {
+  from { opacity: 0; transform: translateX(-4px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-options-flyout { animation: none; }
+}

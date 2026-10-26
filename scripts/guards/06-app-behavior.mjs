@@ -2620,6 +2620,10 @@ w.postMessage({id:1,op:"list",root});
       && !/margin-top:\s*-13px/.test(sideCss180) ? ok : fail)(
       "【180】底部入口组不得用负 margin 压住会话列表最后一行（10-26 实测：-13px 会盖住项目行，项目区/功能入口糊在一起）"
     );
+    (/\.sidebar-options-flyout\s*\{[^}]*position:\s*fixed[^}]*z-index:\s*68[^}]*width:\s*232px/.test(sideCss180)
+      && /\.sidebar-options-flyout #sidebar-options-body\s*\{[^}]*max-height:\s*none/.test(sideCss180) ? ok : fail)(
+      "【180】右侧浮层固定定位 232px、层级低于「更多」弹层、内部不再套 40vh 滚动"
+    );
   }
   /* 布局：顶部只留「新会话 / 搜索任务」；入口组在账户行**之上**，账户行是侧栏最后一条。
      ⛔ 10-22 用户：「用户名那一排继续固定在页面最底部，不要移动位置」+「在用户名那一排上方的选项区域
@@ -2653,9 +2657,16 @@ w.postMessage({id:1,op:"list",root});
     (/<span>功能入口<\/span>/.test(side180) && /aria-expanded=\{!optionsCollapsed\}/.test(side180) && /aria-controls="sidebar-options-body"/.test(side180) ? ok : fail)(
       "【180】折叠头有可见文案 + aria-expanded + aria-controls（不是只有一个裸箭头）"
     );
-    (/className=\{`sidebar-options-body \$\{optionsCollapsed \? "is-collapsed" : ""\}`\}/.test(side180)
+    (/className=\{`sidebar-options-body sidebar-options-flyout \$\{optionsCollapsed \? "is-collapsed" : ""\}`\}/.test(side180)
       && /aria-hidden=\{optionsCollapsed\}/.test(side180) ? ok : fail)(
-      "【180】折叠 = 折叠体加 is-collapsed + aria-hidden（真实隐藏 + 键盘/读屏不可达）"
+      "【180】入口组是右侧浮层（收起时不渲染，比 hidden 更彻底）"
+    );
+    (/createPortal\([\s\S]{0,700}?sidebar-options-flyout/.test(side180) && /document\.body/.test(side180) ? ok : fail)(
+      "【180】功能入口浮层 portal 到 body（⛔ 留在 .sidebar/.thread-list 里会被 overflow 裁掉）"
+    );
+    (/localStorage\.setItem\("sidebar-options-collapsed",\s*"true"\)/.test(side180)
+      && /if \(optionsCollapsed\) setOptionsCollapsed\(false\);\s*\n\s*else persistOptionsCollapsed\(true\);/.test(side180) ? ok : fail)(
+      "【180】浮层每次启动一律收起，打开态不落盘（⛔ 否则开机自动弹出来盖住聊天）"
     );
     (/localStorage\.setItem\("sidebar-options-collapsed"/.test(side180) ? ok : fail)(
       "【180】折叠态跨重启保留（sidebar-options-collapsed，与 sidebar-collapsed 同口径）"
