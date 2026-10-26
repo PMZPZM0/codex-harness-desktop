@@ -6,6 +6,7 @@ import { useState, useEffect, useMemo } from "react";
 import { justSentIds } from "../../lib/just-sent-ids";
 import { claimSendAnimation } from "../../lib/claim-send-animation";
 import { itemText } from "../../lib/item-text";
+import { isWatchdogSpamText } from "../../lib/host-queue.mjs";
 import { parseUserRefs, userDisplayText, formatThreadReferenceBlock } from "../../lib/user-refs";
 import type { ParsedUserRefs } from "../../lib/user-refs";
 import type { GroupEventBlock } from "../../lib/group-event-text.mjs";
@@ -215,11 +216,29 @@ function booked(title: string | undefined | null): string {
   return /《[^》]+》/.test(text) ? text : `《${text}》`;
 }
 
+/** 刷屏类系统提示 = **已废弃的一次性提醒**（10-26 用户：「一直刷屏…给我删掉这玩意」）。
+ *  宿主侧 `2349990bb` 起不再产生（预算静默执行、看门狗整体删除），但**历史消息仍在 rollout 里**
+ *  （改不动引擎数据）—— 界面也不再展示：同一句重复 N 遍没有任何信息量。
+ *  ⛔ 判据复用宿主侧的 `isWatchdogSpamText`（同一份名单，⛔ 不在这里另写一份正则副本）——
+ *     它覆盖预算 80%/用尽 + 停滞看门狗 + 待审看门狗三类。
+ *  ⛔ 只过滤这三类：成员进出 / 失败 / 超时这些系统事件仍要看得见。 */
 function GroupFeed({ blocks, onOpenFile }: { blocks: GroupEventBlock[]; onOpenFile?: (path: string) => void }) {
-  const deliverCount = blocks.filter((b) => b.type === "deliverable" || b.type === "batch").length;
-  const verdictCount = blocks.filter((b) => b.type === "verdict").length;
+  const shown = blocks.filter((b) => !(b.type === "notice" && isWatchdogSpamText(b.text)));
+  if (!shown.length) return null;
+  /* ⛔ 纯系统事件（没有任何成员汇报/结论）**不套卡片**：用户截图里一屏 7 张「群汇报」空卡，
+     就是「只有一行居中灰字」也硬套了细边框 + 极淡底 + 卡头 ⇒ 看着像一堆警告条。
+     这类就按群聊惯例渲染成紧凑系统行。 */
+  if (shown.every((b) => b.type === "notice")) {
+    return (
+      <div className="group-sys-stack">
+        {shown.map((b, index) => <div className="group-sys" key={index}>{(b as { text: string }).text}</div>)}
+      </div>
+    );
+  }
+  const deliverCount = shown.filter((b) => b.type === "deliverable" || b.type === "batch").length;
+  const verdictCount = shown.filter((b) => b.type === "verdict").length;
   /* 有文件卡时，成品全文已经在文件里 ⇒ 评审行不再重复挂一份全文（避免同屏两份正文）。 */
-  const hasFile = blocks.some((b) => (b.type === "deliverable" && Boolean(b.file)) || (b.type === "batch" && b.items.some((i) => Boolean(i.file))));
+  const hasFile = shown.some((b) => (b.type === "deliverable" && Boolean(b.file)) || (b.type === "batch" && b.items.some((i) => Boolean(i.file))));
   return (
     <div className="group-feed">
       <div className="group-feed-head">
@@ -227,7 +246,7 @@ function GroupFeed({ blocks, onOpenFile }: { blocks: GroupEventBlock[]; onOpenFi
         {deliverCount > 0 ? <span className="group-feed-count">{deliverCount} 份成品</span> : null}
         {verdictCount > 0 ? <span className="group-feed-count">{verdictCount} 条结论</span> : null}
       </div>
-      {blocks.map((block, index) => {
+      {shown.map((block, index) => {
         if (block.type === "deliverable") {
           return (
             <div className="group-msg" key={index}>
