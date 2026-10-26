@@ -84,6 +84,8 @@ const SKILL_ZH_NOTES: Record<string, string> = {
   "skill-audit": "技能审计：装第三方技能前的强制安全门禁",
   "memory-mcp-backend": "MCP 记忆后端：启用 MCP 记忆时的写入方式（与分类互斥）",
   "harness-api": "宿主接口清单：模型可调的全部 IPC 通道与拓展点",
+  "grill-me": "盘问方案：设计树 + 轮次把方案问到你没有静默假设（附推荐答案，不自动触发）",
+  "handoff": "交接文档：给零上下文的新会话写状态快照（在做什么/已完成/卡在哪/下一步/坑）",
   "zy-cinematic-realism": "造梦师：电影感 Prompt 工作流（Scene Master → 模型原生 Prompt → 修复 → 多帧连续性；CC BY-NC）",
   /* ── 专家技能包（resources/expert-skills/，随包分发）── */
   "cheat-on-content": "内容流量预测：打分 → 盲预测 → 发布 → 复盘 → 进化 rubric（知微专用）",
@@ -124,5 +126,8 @@ export const BUILTIN_DISTRIBUTED_SKILLS: string[] = [
   "harness-api",
   "frontend-canvas",
   "visualization-guide",
+  /* 10-26：盘问方案 + 交接文档（与 electron/builtin-skills.ts 的 entries 同轮登记） */
+  "grill-me",
+  "handoff",
   "zy-cinematic-realism",
 ];

@@ -29,6 +29,8 @@ import { KNOWLEDGE_SKILL } from "./builtin-skills/23-skill-knowledge";
 import { HARNESS_API_SKILL } from "./builtin-skills/14-skill-harness-api";
 import { FRONTEND_CANVAS_SKILL } from "./builtin-skills/20-skill-frontend-canvas";
 import { VISUALIZATION_SKILL } from "./builtin-skills/21-skill-visualization";
+import { GRILL_ME_SKILL } from "./builtin-skills/24-skill-grill-me";
+import { HANDOFF_SKILL } from "./builtin-skills/25-skill-handoff";
 import { effectiveMemoryBackend } from "./memory-backend";
 import { BUILTIN_SKILL_ZH_NOTES } from "./builtin-skills/00-skill-zh-notes";
 import { SKILL_FILE, SKILL_FILE_DISABLED, SKILL_FILE_POOL_DISABLED } from "./skill-pack";
@@ -143,6 +145,13 @@ export async function ensureBuiltinSkills(skillsDir: string) {
     // 10-17：可视化输出规范（用户立项「Codex 画可视化只会随手写 HTML」）——
     //  形态选择/硬性输出要求（单文件零外部依赖）/设计 token；输出走文件卡→预览→浏览器打开通道。
     ["visualization-guide", VISUALIZATION_SKILL],
+    // 10-26：把上游 mattpocock/skills 的 grill-me（+ grilling）内置进来 ——
+    //  用户点名「帮我内置成技能」。⛔ 两份合成一份：本应用没有 Claude Code 的 Skill 工具，
+    //  照抄代理层就是一条指向不存在能力的死指针。
+    ["grill-me", GRILL_ME_SKILL],
+    // 10-26：交接文档技能（写总结/提示词），与根目录 HANDOFF.md 配套 ——
+    //  五段结构直接来自用户原话；「生效方式」与「锚点」两段是本项目反复白干的教训。
+    ["handoff", HANDOFF_SKILL],
   ];
   for (const [name, content] of entries) {
     const dir = path.join(skillsDir, name);
