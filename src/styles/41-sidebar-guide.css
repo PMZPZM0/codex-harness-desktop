@@ -438,6 +438,8 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* 与会话列表之间留 4px 呼吸位（⛔ 不要用负 margin 去"贴"，滚动时会盖住最后一行）。 */
+  margin-top: 4px;
 }
 /* 展开/折叠：用 grid 行高过渡（0fr ↔ 1fr）做无缝高度动画，两处位置共用 */
 .sidebar-options-body {
@@ -471,7 +473,9 @@
   gap: 7px;
   width: 100%;
   height: 34px;
-  margin-top: -13px;
+  /* ⛔ 10-26 用户实测：旧值 -13px（想啃掉列表底部留白）在列表可滚动时会直接盖住最后一行，
+     项目区和功能入口看起来糊在一起。底部队列必须从 0 开始；顶部位置由 44 号文件覆写。 */
+  margin-top: 0;
   padding: 0 10px 0 5px;
   border: 0;
   border-radius: 0;
