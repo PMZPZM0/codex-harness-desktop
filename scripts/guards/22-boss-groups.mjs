@@ -63,7 +63,9 @@ if (state) {
     const g = mkGroup(s, [{ name: "甲", role: "写" }], { maxRejects: undefined, budgetMinutes: undefined });
     ok(g.policy.maxRejects === DEFAULT_POLICY.maxRejects && g.policy.budgetMinutes === DEFAULT_POLICY.budgetMinutes,
       `policy 传 undefined 时保留默认（maxRejects=${g.policy.maxRejects} / ${g.policy.budgetMinutes} 分钟，不是 NaN）`);
-    ok(Number.isFinite(g.policy.stallMs) && g.policy.stallMs > 0, "stallMs 有有效默认值");
+    /* ⛔ 10-26：stallMs（卡住阈值）**已随看门狗一起删除** ——
+       「成员多久没动算卡住」这个判定只服务于停滞看门狗；看门狗删了 ⇒ 阈值就是死配置。 */
+    ok(!("stallMs" in g.policy), "policy 里没有 stallMs（看门狗删除后不留死配置）");
   }
 
   /* ── 3. 加任务：验收标准是硬门槛 ── */
@@ -666,8 +668,6 @@ if (state) {
     "⛔ 成品/评审请求用独立配额窗口（与闲聊配额分开），否则成员一多就把成品丢了");
   ok(/box\.items\.unshift\(\.\.\.items\)/.test(runnerSrc),
     "⛔ 配额用尽时成品要放回队列重试（⛔ 不许 return false 就丢）");
-  ok(/export function markReviewStalled/.test(bossState) && /markReviewStalled\(state\)/.test(runnerSrc),
-    "⛔ 待审看门狗：交活久了没结论要再催一次（只提醒，⛔ 不许宿主自己判通过）");
   ok(/export type EscalateChoice = "retry"/.test(read("electron/boss-groups/types.ts"))
     && /export function normalizeEscalateChoice/.test(bossState)
     && /"retry-with-other-model"\) return "retry"/.test(bossState),
@@ -786,6 +786,7 @@ if (state) {
             停滞看门狗**不再回投**；队列里的刷屏条目每 5 秒清一次。 */
 {
   const runnerSrc = codeOnly(read("electron/boss-groups/runner.ts"));
+  const stateSrc = codeOnly(read("electron/boss-groups/state.ts"));
   const hostQueue = codeOnly(read("src/lib/host-queue.mjs"));
   const settleSrc = codeOnly(read("src/features/app-state/parts/part05/event-router/07-turn-completed-settle.tsx"));
   const queueErrs = codeOnly(read("src/lib/queue-errors.mjs"));
@@ -799,13 +800,17 @@ if (state) {
     && /engineActiveTurnIds/.test(runnerSrc),
     "活动回合一览取**引擎侧真相**（engineActiveTurnIds，boot 按 turn/started|completed 记）");
 
-  ok(!/没有进展（无进展 ×1）/i.test(runnerSrc)
-    && /仅记录，未打扰中枢/.test(runnerSrc),
-    "⛔ 停滞看门狗**不再往中枢会话回投**（用户 10-26：「你机制有问题，删掉」）");
+  /* ⛔⛔⛔ 10-26 用户现场：「你不要加看门狗，Codex 自己哪有那么傻」——
+     停滞看门狗 + 待审看门狗**整体删除**（不是只删回投）。
+     两条都要断：① runner 里不再有扫描/回投；② state.ts 里不再有扫描函数。 */
+  ok(!/markStalled/.test(runnerSrc)
+    && !/markReviewStalled/.test(runnerSrc)
+    && !/没有进展/.test(runnerSrc)
+    && !/仍没有审查结论/.test(runnerSrc),
+    "⛔ 停滞/待审**看门狗彻底不存在**（用户 10-26：「你不要加看门狗」）");
 
-  ok(/REVIEW_REMINDED\.has\(task\.id\)/.test(runnerSrc)
-    && /REVIEW_REMINDED\.add\(task\.id\)/.test(runnerSrc),
-    "待审提醒**每个任务只催一次**（原来 12 条/10 分钟 ⇒ 灌爆引擎队列）");
+  ok(!/markStalled/.test(stateSrc) && !/markReviewStalled/.test(stateSrc),
+    "⛔ state.ts 里的两个看门狗扫描函数也删了（不是只删调用点）");
 
   ok(/export async function pruneBossQueue/.test(runnerSrc)
     && /await pruneBossQueue\(group\)/.test(runnerSrc)
@@ -817,6 +822,53 @@ if (state) {
 
   ok(/isQueueBusyError/.test(settleSrc) && /isQueueBusyError/.test(queueErrs),
     "「thread already has an active or pending turn」按**良性**处理（不弹红错）");
+}
+
+/* ── 10-26 深夜：结算改引擎事件驱动 + 启动对账（"没人派活却显示正在做"的修复） ──
+   真机取证（<userData>/boss-groups.json）：3 个任务 status=running 且 attempt.endedAt=null
+   ⇒ 对应成员 status=busy ⇒ 界面永远「正在做」。
+   根因：结算**只**靠进程内 Promise（waitForTurnCompletion().then）⇒ 应用一重启
+   所有等待回调全丢 ⇒ 任务永远 running、成员永远 busy。
+   新机制：① 引擎 turn/completed 事件驱动结算（重启后依然有效）；② 启动对账残留；
+            ③ 引擎没就绪 / 读不到 ⇒ 跳过，绝不误判失败。 */
+{
+  const runnerSrc = codeOnly(read("electron/boss-groups/runner.ts"));
+  const bossIpcSrc = codeOnly(read("electron/features/boss-groups-ipc.ts"));
+
+  ok(/export function watchMemberSettlements/.test(runnerSrc)
+    && /event\.method !== "turn\/completed"/.test(runnerSrc)
+    && /taskTurnIndex\.get\(turnId\)/.test(runnerSrc),
+    "结算走**引擎 turn/completed 事件**（按 turnId 反查任务）⇒ 不依赖进程内 Promise，重启后依然有效");
+
+  ok(/function indexTaskTurn\(taskId: string, turnId: string\)/.test(runnerSrc)
+    && /indexTaskTurn\(task\.id, turnId\)/.test(runnerSrc),
+    "派活时登记 turnId → task 索引（引擎事件靠它反查）");
+
+  ok(/const settlingTasks = new Set<string>\(\)/.test(runnerSrc)
+    && /if \(settlingTasks\.has\(taskId\)\) return;/.test(runnerSrc),
+    "⛔ 幂等闸：引擎事件与 Promise 兜底两条路**只结算一次**（否则成品重复进群）");
+
+  ok(/export async function reconcileRunningTasks/.test(runnerSrc)
+    && /thread\/turns\/list/.test(runnerSrc)
+    && /indexTaskTurn\(task\.id, turnId\)/.test(runnerSrc),
+    "启动对账：用**引擎真相**（thread/turns/list）核对残留 running 任务，并重建索引");
+
+  ok(/if \(!engineReady\(\)\) return 0;/.test(runnerSrc)
+    && /export function engineReady/.test(runnerSrc)
+    && /event\.status === "ready"/.test(runnerSrc),
+    "⛔ 引擎没就绪 ⇒ 对账**跳过**（⛔ 否则会把正在跑的任务全误判失败）");
+
+  ok(/if \(!page\) continue;/.test(runnerSrc)
+    && /failTask\(task\.id, "这次派活的回合在引擎里没有找到（没能跑起来）", true\)/.test(runnerSrc),
+    "⛔ 读不到引擎数据 ⇒ 跳过不动状态；只有引擎**明确说没有这一回合**才判失败（且静默不回投中枢）");
+
+  ok(/async function failTask\(taskId: string, reason: string, quiet = false\)/.test(runnerSrc)
+    && /if \(group && !quiet\)/.test(runnerSrc),
+    "⛔ 对账时的失败是**静默**的（不回投中枢 —— 凭空造「执行失败」是噪声，且回投走的就是用户消息队列）");
+
+  ok(/watchMemberSettlements\(\);/.test(bossIpcSrc)
+    && /reconcileRunningTasks\(\)/.test(bossIpcSrc),
+    "boss 域启动时挂上事件监听 + 跑一次对账（两件事都接线了才算修好）");
 }
 
 console.log(`\n【boss-groups】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

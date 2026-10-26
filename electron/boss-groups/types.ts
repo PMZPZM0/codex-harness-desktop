@@ -103,8 +103,6 @@ export type EscalateChoice = "retry" | "relax-criteria" | "user-takeover";
 export type GroupPolicy = {
   /** 打回上限（Magentic 的 stall ≤2 同款思路）。默认 2。 */
   maxRejects: number;
-  /** 成员多久没有任何新活动算卡住。默认 90s。 */
-  stallMs: number;
   /** 审查档：P0 只实现 fresh（新鲜上下文独立评审）。 */
   reviewer: ReviewLevel;
   /** 预算：分钟（tokens 需要引擎用量口径，P1 再上，⛔ 别写成假字段骗自己）。 */
@@ -148,7 +146,6 @@ export type BossState = {
 
 export const DEFAULT_POLICY: GroupPolicy = {
   maxRejects: 2,
-  stallMs: 90_000,
   reviewer: "fresh",
   budgetMinutes: 40,
 };

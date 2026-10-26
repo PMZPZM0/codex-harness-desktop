@@ -32,6 +32,12 @@ export class BossGroupStore {
       if (parsed && parsed.version === 1 && parsed.groups && parsed.tasks) {
         this.state = parsed as BossState;
         if (!Array.isArray(this.state.events)) this.state.events = [];
+        /* ⛔ 10-26：清洗老档案里的**死配置**（stallMs 是停滞看门狗的阈值，看门狗已整体删除）。
+           不清的话：老群里带着一个没人读的配置，UI 上还显示「卡住阈值 90s」⇒ 骗自己。 */
+        for (const group of Object.values(this.state.groups ?? {})) {
+          const policy = group?.policy as Record<string, unknown> | undefined;
+          if (policy && "stallMs" in policy) delete policy.stallMs;
+        }
       }
     } catch { /* 文件不存在 / 损坏：从空账本开始（群丢了比启动不了好） */ }
     this.loaded = true;

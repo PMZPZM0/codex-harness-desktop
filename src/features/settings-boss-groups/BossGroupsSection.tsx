@@ -10,7 +10,7 @@ import { Crown, Network, RefreshCw } from "lucide-react";
 
 type GroupSummary = { id: string; name: string; paused: boolean; memberCount: number; taskCount: number };
 type Snapshot = {
-  group: { id: string; name: string; paused: boolean; policy: { maxRejects: number; stallMs: number; budgetMinutes: number }; members: { id: string; name: string; role: string; status: string; lockedTaskIds: string[] }[] };
+  group: { id: string; name: string; paused: boolean; policy: { maxRejects: number; budgetMinutes: number }; members: { id: string; name: string; role: string; status: string; lockedTaskIds: string[] }[] };
   counts: Record<string, number>;
   tasks: { id: string; title: string; status: string; assignee: string; rejects: number; criteria: string; lockedAuthors: string[]; escalation?: { reasons: string[] } | null; attempts: { n: number; memberId: string; endedAt: number | null; verdict: string | null; reasons: string[] }[] }[];
   events: { id: string; kind: string; text: string; at: number }[];
@@ -127,7 +127,7 @@ export function BossGroupsSection() {
               <div className="boss-groups-head">
                 <span className="boss-groups-title">{snap.group.name}</span>
                 <span className="boss-groups-sub">
-                  打回上限 {snap.group.policy.maxRejects} · 卡住阈值 {Math.round(snap.group.policy.stallMs / 1000)}s · 预算 {snap.group.policy.budgetMinutes} 分钟
+                  打回上限 {snap.group.policy.maxRejects} · 预算 {snap.group.policy.budgetMinutes} 分钟
                 </span>
               </div>
 

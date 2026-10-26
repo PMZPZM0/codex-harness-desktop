@@ -71,7 +71,6 @@ export function createGroup(state: BossState, input: {
       // ⛔ 逐字段挑，别 `{...DEFAULT, ...input.policy}` —— 渲染层传 {maxRejects: undefined}
       //    会把默认值覆盖成 undefined，之后所有比较都变 NaN（打回上限就失效了）。
       maxRejects: Number.isFinite(Number(input.policy?.maxRejects)) && Number(input.policy?.maxRejects) > 0 ? Number(input.policy?.maxRejects) : DEFAULT_POLICY.maxRejects,
-      stallMs: Number.isFinite(Number(input.policy?.stallMs)) && Number(input.policy?.stallMs) >= 10_000 ? Number(input.policy?.stallMs) : DEFAULT_POLICY.stallMs,
       reviewer: input.policy?.reviewer ?? DEFAULT_POLICY.reviewer,
       budgetMinutes: Number.isFinite(Number(input.policy?.budgetMinutes)) && Number(input.policy?.budgetMinutes) > 0 ? Number(input.policy?.budgetMinutes) : DEFAULT_POLICY.budgetMinutes,
     },
@@ -409,40 +408,6 @@ export function checkBudget(state: BossState, groupId: string, now = Date.now())
   }
   if (ratio >= 0.8) return { usedMinutes, ratio, warn: "80" };
   return { usedMinutes, ratio };
-}
-
-/** 停滞扫描：running 的 attempt 超过 stallMs 没有任何活动 ⇒ 标 stalled（只提醒，不擅自重派）。 */
-export function markStalled(state: BossState, now = Date.now()): { taskId: string; groupId: string; idleMs: number }[] {
-  const stalled: { taskId: string; groupId: string; idleMs: number }[] = [];
-  for (const task of Object.values(state.tasks)) {
-    if (task.status !== "running") continue;
-    const group = state.groups[task.groupId];
-    if (!group) continue;
-    const attempt = task.attempts[task.attempts.length - 1];
-    const lastAt = attempt?.startedAt ?? task.updatedAt;
-    const idleMs = now - lastAt;
-    if (idleMs > group.policy.stallMs) stalled.push({ taskId: task.id, groupId: task.groupId, idleMs });
-  }
-  return stalled;
-}
-
-/**
- * 待审看门狗（10-25 审查补的缺口 C）：
- * 评审已改成"回投给指挥中枢、由它自己用技能判"，宿主只提醒不判定 —— 但**提醒只发一次**，
- * 模型那一轮没看见（或没调 group_review），任务就永远停在 reviewing，看板上一直"等审查"，
- * 而成品早就交上来了。这里按"多久没动静"把它捞出来，交给 tickAll 再催一次。
- * ⛔ 只**报告**，不替模型下结论（制度上不许宿主自动通过/打回）。
- */
-export function markReviewStalled(state: BossState, now = Date.now(), staleMs = 10 * 60_000): { taskId: string; groupId: string; idleMs: number }[] {
-  const stale: { taskId: string; groupId: string; idleMs: number }[] = [];
-  for (const task of Object.values(state.tasks)) {
-    if (task.status !== "reviewing" && task.status !== "submitted") continue;
-    const group = state.groups[task.groupId];
-    if (!group) continue;
-    const idleMs = now - task.updatedAt;
-    if (idleMs > staleMs) stale.push({ taskId: task.id, groupId: task.groupId, idleMs });
-  }
-  return stale;
 }
 
 /** 账本快照（给 boss 工具与看板用）：只读、可直接 JSON 化。 */
