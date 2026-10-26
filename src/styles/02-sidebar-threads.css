@@ -1415,10 +1415,10 @@ html[data-ui-font="large"] .action-content pre {
 .perm-seg-btn {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: 2px;
   cursor: pointer;
-  text-align: left;
+  text-align: center;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--panel-2);

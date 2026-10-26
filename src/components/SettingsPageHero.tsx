@@ -13,13 +13,3 @@ export function SettingsPageHero({ icon, title, subtitle, hint }: { icon: ReactN
     </header>
   );
 }
-
-/** 分组小标题：把一页拆成「常用 / 外观与体验 / 维护与更新」，小白从上往下看即可。 */
-export function SettingsGroupHead({ title, hint }: { title: string; hint?: string }) {
-  return (
-    <div className="settings-exp-group-head">
-      <span>{title}</span>
-      {hint && <small>{hint}</small>}
-    </div>
-  );
-}

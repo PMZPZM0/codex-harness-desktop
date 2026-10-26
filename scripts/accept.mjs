@@ -154,6 +154,26 @@ const CHECKS = [
           && modelDock.pos !== "sticky" && modelDock.gap >= 8 && modelDock.gap <= 60
           && modelDock.labels.some((x)=>x.includes("打开自动配置")) && modelDock.labels.some((x)=>x.includes("保存并重启"))),
         JSON.stringify(modelDock));
+
+      await nav("控制台");
+      await wait(900);
+      const ctrl = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const page=m.querySelector(".general-page");
+        const seg=[...m.querySelectorAll(".perm-seg-btn")];
+        const cs=seg[0]?getComputedStyle(seg[0]):null;
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          groups:m.querySelectorAll(".settings-exp-group-head").length,
+          cards:seg.length,
+          align:cs?cs.alignItems:"", ta:cs?cs.textAlign:"" };
+      })()`).catch(() => null);
+      await nav("外观");
+      await wait(800);
+      const appGroups = await h.eval(`document.querySelectorAll(".settings-modal .settings-exp-group-head").length`).catch(() => -1);
+      h.check("⑦ 控制台：分组小字已删、权限卡文字居中；外观页同样无分组小字",
+        Boolean(ctrl && ctrl.page === "控制台" && ctrl.groups === 0 && ctrl.cards === 3
+          && ctrl.align === "center" && ctrl.ta === "center" && appGroups === 0),
+        JSON.stringify({ ctrl, appGroups }));
       await h.pressKey("Escape");
       await wait(300);
     },

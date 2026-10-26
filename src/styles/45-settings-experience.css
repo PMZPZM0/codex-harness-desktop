@@ -55,30 +55,6 @@
   white-space: nowrap;
 }
 
-/* ── 分组小标题：灰色小字，不画分隔线（Qoder 的「编程 / 通用」） ── */
-.settings-exp-group-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin: 22px 2px 8px;
-}
-.settings-exp-group-head span {
-  flex: none;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-.settings-exp-group-head small {
-  min-width: 0;
-  color: var(--faint);
-  font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.settings-exp-group-head::after { content: none; }
-
 /* ── 白卡 + 细线（统一 settings-card / 外观页卡片 / 宠物卡） ── */
 .settings-exp-page .settings-card,
 .settings-exp-page .personalization-group,

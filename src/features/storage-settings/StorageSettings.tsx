@@ -45,7 +45,6 @@ export function StorageSection({ onNotice, onClearMemoryCache, openAppConfirm }:
   return (
     <section className="settings-section stack is-settings-flow">
       <div className="settings-copy"><h2>数据管理<PageInfo text={<>查看各数据目录占用，并清理可安全的缓存。会话历史（rollout 原档）<strong>不随缓存清理</strong>；要归档或永久删除会话，去「归档管理」页。</>} /></h2><p>看清各类数据占多少空间，按需清理缓存；会话原档不受缓存清理影响。</p></div>
-      <div className="settings-exp-group-head"><span>存储占用</span><small>缓存可随手清理；会话记录永远保留</small></div>
       {/* 10-24 用户令「整齐划一」：占用行 + 恢复缓存行收进同一张白卡（每行一行分隔线，操作全部右对齐） */}
       <div className="storage-page-card settings-card">
         {info?.items.map((item) => (
