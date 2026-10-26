@@ -121,7 +121,10 @@ for (const [key, title] of [["skills", "技能中心"], ["plugins", "插件"], [
   const text = pageSrc(key);
   const at = text.indexOf(`<h2>${title}`);
   const window = at >= 0 ? text.slice(at, at + 2200) : "";
-  ok(at >= 0 && /<p>/.test(window), `${title}页头带一句说明（新手知道这页是干什么的）`);
+  /* 10-26 用户令：「界面左上角一排大字和下面一排小字都删了，纯多余」⇒ 页头不再显示副标题，
+     说明的唯一入口变成标题旁的 ?。判据跟着行为走（⛔ 不是"源码里还有 <p> 就算过"——
+     那样守卫会自洽地绿，而界面上一个字都没有）。 */
+  ok(at >= 0 && /<PageInfo/.test(window), `${title}页头说明收进 ?（10-26 起副标题整排不显示）`);
 }
 
 /* ── ⑥ SSH 工具栏不落单 ── */
