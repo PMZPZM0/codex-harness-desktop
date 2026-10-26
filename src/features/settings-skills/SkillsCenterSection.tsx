@@ -21,16 +21,8 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
     <>
       <section className="settings-section stack skill-center">
                     <div className="settings-copy channel-heading"><div><h2>技能中心<PageInfo text={<>技能清单来自腾讯 SkillHub 市场（skillhub.cn），一键安装自动写入 <code>{userDataPath ? displayPath(userDataPath, "codex-home", "skills") : "Codex 技能目录"}</code>，更新来源清单并重启引擎确认可用。</>} helpKey="skills" label="技能中心" /></h2><p>装现成技能或从本地导入，装好后 Codex 会自动在合适的任务里使用。</p></div></div>
-                    {/* 10-26 五轮用户令：「SkillHub 市场跳转可以删了；搜索框不用那么长；搜索框跟筛选放到下面一片来」
-                        ⇒ 第一排只留按键（贴右）；搜索 + 榜单筛选并进下面那条带框的分类条：
-                        `[搜索][⚙ 榜单▾] [分类芯片…] 当前榜单 N 个`。 */}
-                    <div className="resource-toolbar skill-market-toolbar">
-                      <div className="skill-toolbar-actions">
-                        <button className={skillsManageOnly ? "active-manage" : "secondary-setting"} onClick={() => setSkillsManageOnly(!skillsManageOnly)}><LayoutGrid size={14} />{skillsManageOnly ? "返回市场浏览" : `我的技能 ${installedTotalCount}`}</button>
-                        <button className="secondary-setting" onClick={() => void importSkill()}><Paperclip size={14} />从本地添加技能</button>
-                        <button className="icon-button" title="刷新技能市场" onClick={() => void refreshWithReceipt(setNotice, "刷新技能市场", () => refreshMarketSkills(skillHubCategory, skillHubSearch, marketPage))}>{marketLoading ? <Spinner /> : <RefreshCw size={14} />}</button>
-                      </div>
-                    </div>
+                    {/* 10-27 用户令：「我的技能 / 本地技能 / 刷新 放下面来，按键小一点的」——
+                        三颗按键从页头整排下移到筛选条底部，右对齐、28px 小尺寸。 */}
                     <div className="resource-toolbar secondary skill-filter-row">
                       <SearchField
                         value={skillsManageOnly ? skillManageSearch : skillHubSearch}
@@ -53,6 +45,11 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                           {marketSkills.length > 0 && <span className="skill-filter-count">当前榜单 {marketSkills.length} 个技能 · 分类 <b>{skillHubFilterCategory ? skillHubCategoryName(skillHubFilterCategory) : "全部"}</b></span>}
                         </>
                       )}
+                      <div className="skill-actions-line">
+                        <button className={`${skillsManageOnly ? "active-manage" : "secondary-setting"} skill-action-sm`} onClick={() => setSkillsManageOnly(!skillsManageOnly)}><LayoutGrid size={13} />{skillsManageOnly ? "返回市场浏览" : `我的技能 ${installedTotalCount}`}</button>
+                        <button className="secondary-setting skill-action-sm" onClick={() => void importSkill()}><Paperclip size={13} />从本地添加技能</button>
+                        <button className="icon-button skill-action-sm" title="刷新技能市场" onClick={() => void refreshWithReceipt(setNotice, "刷新技能市场", () => refreshMarketSkills(skillHubCategory, skillHubSearch, marketPage))}>{marketLoading ? <Spinner /> : <RefreshCw size={13} />}</button>
+                      </div>
                     </div>
                     {skillsManageOnly ? (() => {
                       // 技能规范化名：剥掉插件限定前缀（引擎对插件技能返回 `ponytail:ponytail-audit`，
