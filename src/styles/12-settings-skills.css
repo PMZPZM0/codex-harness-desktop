@@ -73,9 +73,12 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
    布局：`[搜索框(左)] [筛选 总排行▾] ←—— 其余空间 ——→ [我的技能][从本地添加][SkillHub][刷新]`
    ⛔ 按钮的 `margin-left:auto` 原来写死在 `.resource-toolbar > .secondary-setting` 上 ⇒ 三颗按钮各带一个
       auto ⇒ 会被平摊开。这里只让**第一颗**吃 auto，其余归零，按钮才成一组贴在右边。 */
-.skill-market-toolbar .search-field { flex: 0 1 260px; max-width: 260px; min-width: 180px; }
+/* 10-26 五轮：搜索 + 榜单筛选并进下面那条带框的分类条 —— 搜索**短一点**（220），
+   芯片占中间、统计贴右，整条只占一行（窄面板下条内自然换行，不会掉出框外）。 */
+.skill-filter-row .search-field { flex: 0 1 220px; min-width: 168px; }
+.skill-filter-row .skill-tabs { flex: 1 1 auto; min-width: 0; overflow-x: auto; }
 .skill-rank-filter { display: inline-flex; align-items: center; gap: 5px; flex: none; color: var(--muted); }
-.skill-rank-filter .app-select-trigger { min-width: 108px; }
+.skill-rank-filter .app-select-trigger { min-width: 104px; }
 .skill-toolbar-actions {
   display: flex;
   align-items: center;

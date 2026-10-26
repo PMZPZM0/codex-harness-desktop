@@ -7,6 +7,10 @@
 
 
 /* ══ app-server MCP 状态卡（设置 → 连接器中心 → 底部） ══════════════════════ */
+/* MCP 市场分类筛选（10-27 用户：分类做成筛选形式）——横向 tab 收成下拉，和搜索/操作同一行 */
+.mcp-category-filter { display: inline-flex; align-items: center; gap: 8px; flex: none; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.mcp-category-filter > span { flex: none; white-space: nowrap; }
+.mcp-category-select { min-width: 148px; }
 .mcp-server-grid {
   grid-template-columns: repeat(auto-fill, minmax(288px, 1fr));
   gap: 10px;
@@ -1108,7 +1112,9 @@
   padding: 16px 22px 18px;
 }
 .settings-section.builtin-plugins { padding-bottom: 8px; }
-.settings-section.plugin-center { padding-top: 10px; }
+/* 10-26 六轮用户令「中间缝隙还是很大」：内置插件块与本市场块是两个兄弟 section，
+   各自上下留白叠起来 ⇒ 中间空出近 60px。这里把市场块的上留白归零，只留兄弟块自己的 8px。 */
+.settings-section.plugin-center { padding-top: 0; }
 .settings-section.plugin-center .plugin-stats { margin-bottom: 12px; }
 .settings-copy h2 {
   color: var(--text);

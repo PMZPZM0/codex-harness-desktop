@@ -7,7 +7,6 @@
  * 09-27 追加（非搬迁部分）：顶部内置「视频生成接口」卡 + 各厂商凭证配置弹层 ——
  * 走内置 IPC `video:*`（国内外 8 家），不是市场里的可安装插件，所以独立成卡。
  */
-import { PageInfo } from "../../components/SettingsHead";
 import { useState } from "react";
 import { ArrowLeft, ArrowRight, ArrowUpRight, Check, CircleStop, Play, Plus, RefreshCw, Store, Trash2 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
@@ -106,10 +105,10 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
   // 两个市场数据源（10-03）：Gitee 上的 Claude Code 官方镜像 ⇄ Codex 官方 openai/plugins（GitHub 国内镜像读取）。
   // 各自的分类表、卡片与安装进度互不相干 ⇒ 切的是**整块**（用户拍板「按源给各自的分类 tab」），不是把 18 个分类混排。
   return <section className="settings-section stack plugin-center">
-    <div className="settings-copy channel-heading"><div><h2>插件<PageInfo text={<>上方卡片来自两个插件市场源：<b>Claude 插件镜像</b>（Gitee 国内源，48 个，全部与 Codex 兼容）与 <b>Codex 官方源</b>（GitHub <code>openai/plugins</code>，65 个官方插件，走国内镜像下载）。一键安装写入本地插件目录；官方源全部需要授权/配置服务凭据（其中 15 个依赖 ChatGPT 应用连接器），卡片上的提示就是这一条。下方为已安装插件管理（含引擎自带的 openai-api-curated 官方市场），停用后 Codex 不再加载该插件提供的指令、技能与钩子。</>} helpKey="plugins" label="插件" /></h2><p>两个市场源：Claude 插件镜像与 Codex 官方源；装好后在下方统一启停。</p></div></div>
-
     {/* 10-26 用户令（插件页截图）：「左右按键对齐，中间空白删除，把上面一排按键放下来，右边也是」
-        ⇒ 页头那两颗（在线市场 / 刷新）下来与三个来源 tab 同排：tab 贴左、按键贴右，中间不留空。 */}
+        ⇒ 页头那两颗（在线市场 / 刷新）下来与三个来源 tab 同排：tab 贴左、按键贴右，中间不留空。
+        六轮又令「插件市场 ? 号删除，中间缝隙还是很大」⇒ 页头整块（大字 + 隐藏副标题 + ?）也删掉，
+        上方那条空带随之消失，本页只剩这一行 + 下面的市场卡片。 */}
     <div className="market-source-switch">
       <SegmentedTabs
         value={marketSource}
