@@ -8,6 +8,7 @@ import { useRefObject } from "../../../lib/use-ref-object";
 import { itemText } from "../../../lib/item-text";
 import { userDisplayText } from "../../../lib/user-refs";
 import { playWheelTick } from "../../../lib/wheel-tick.mjs";
+import { visibleGroupBlocks } from "../../../lib/visible-group-blocks.mjs";
 import { contentOffsetTop } from "../../../components/scroll-utils";
 const RULER_PAGE = 5;
 
@@ -47,7 +48,14 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
         if (item.type !== "userMessage") continue;
         if (!itemText(item).trim()) continue;
         // 团队/成员会话首条 SYSTEM TASK 段不展示给用户（与气泡/复制/编辑一致）
-        const label = userDisplayText(itemText(item));
+        const raw = itemText(item);
+        const label = userDisplayText(raw);
+        /* ⛔⛔ 10-26 用户：「中枢会话刻度线要对应消息和群里展示的事件，不要对应那些不展示的」
+           ⇒ 判据不是"文本长得像刷屏"，而是**与群汇报卡同一份可见性**（visibleGroupBlocks）：
+             群事件里有能展示的块才出刻度；全是已废弃刷屏通知 ⇒ 界面根本不渲染它 ⇒ 也不该占刻度。
+           ⛔ 别再拿整段文本去套正则 —— 一条群事件可能混着"能显示的结论"和"该隐藏的通知"。 */
+        const blocks = visibleGroupBlocks(raw);
+        if (blocks && blocks.length === 0) continue;
         result.push({ id: `${turn.id}-${item.id}`, turnId: turn.id, itemId: item.id, type: "user", label: label || "（仅系统任务段）" });
       }
     }
@@ -113,6 +121,14 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
   const wheelCtxRef = useRef({ allMarks, windowSize, currentIndex, windowOffset });
   wheelCtxRef.current = { allMarks, windowSize, currentIndex, windowOffset };
 
+  /* 声音反馈（10-26 用户：「触发波浪效果没有声音反馈」）——
+     原来的咔哒声只挂在**刻度尺自身**的滚轮上（滑选区），滚动消息触发的波浪是静音的。
+     现在改成「阅读位置跨过一条消息就咔哒一声」：一格里最多一声，快速连滚不会糊成噪音
+     （playWheelTick 内部另有 30ms 节流）；方向跟随本次滚轮方向，与刻度尺自身滚轮同一套音色。 */
+  const waveRef = useRef(false);
+  const waveDirRef = useRef(1);
+  const prevMarkRef = useRef<string | null>(null);
+
   // 滚动联动：视口上沿 30% 处落在哪条消息上，就高亮对应刻度
   useEffect(() => {
     const scroller = scrollRef.current;
@@ -133,6 +149,9 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
         else break;
       }
       setCurrentItemId(current);
+      /* ⛔ 只在「滚轮滚动期间」且**跨过了一条消息**时响一声；静止、程序化滚动、跳转都不出声。 */
+      if (waveRef.current && current && current !== prevMarkRef.current) playWheelTick(waveDirRef.current);
+      prevMarkRef.current = current;
     };
     update();
     // rAF 节流：scroll/resize 高频触发，直接跑 update 会读 offsetTop/scrollTop 强制同步布局
@@ -144,10 +163,12 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
     /* 波浪开关：只有真实滚轮输入才点亮（程序化滚动、贴底跟随、点击跳转都不算）。
        最后一次滚轮后 600ms 自动收起 —— 用户要的是「滚动时才有波浪」，不是常驻呼吸。 */
     let wheelTimer: ReturnType<typeof setTimeout> | undefined;
-    const onWheel = () => {
+    const onWheel = (event: WheelEvent) => {
+      waveRef.current = true;
+      waveDirRef.current = event.deltaY > 0 ? 1 : -1;
       setWheelWave(true);
       if (wheelTimer) clearTimeout(wheelTimer);
-      wheelTimer = setTimeout(() => setWheelWave(false), 600);
+      wheelTimer = setTimeout(() => { waveRef.current = false; setWheelWave(false); }, 600);
     };
     const observer = new ResizeObserver(schedule);
     observer.observe(scroller);
@@ -221,7 +242,14 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
               />}
               <button
               className={`ruler-tick ${mark.type} ${mark.id === latestId ? "latest" : ""} ${mark.itemId === currentItemId ? "current" : ""}${wave}`}
-              onMouseEnter={(event) => { setHoverIndex(index); setTip({ text: mark.label, top: event.currentTarget.offsetTop + event.currentTarget.offsetHeight / 2 }); }}
+              onMouseEnter={(event) => {
+                setHoverIndex(index);
+                setTip({ text: mark.label, top: event.currentTarget.offsetTop + event.currentTarget.offsetHeight / 2 });
+                /* 10-26 用户：「鼠标放上去，挪动和滚动也要触发声音」——
+                   划过一格响一声（与滚轮同一套咔哒音，音调略高表示"选中"）。
+                   ⛔ playWheelTick 内部 30ms 节流：快速划过一串刻度不会糊成噪音。 */
+                playWheelTick(-1);
+              }}
               onMouseLeave={() => setTip(null)}
               onClick={() => onJump(mark.turnId)}
               aria-label={mark.label}

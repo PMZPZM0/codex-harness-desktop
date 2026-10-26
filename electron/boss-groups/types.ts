@@ -105,8 +105,11 @@ export type GroupPolicy = {
   maxRejects: number;
   /** 审查档：P0 只实现 fresh（新鲜上下文独立评审）。 */
   reviewer: ReviewLevel;
-  /** 预算：分钟（tokens 需要引擎用量口径，P1 再上，⛔ 别写成假字段骗自己）。 */
-  budgetMinutes: number;
+  /* ⛔ 10-26 用户令：删掉「整群时间预算」。
+     理由（用户原话）：「正常 Codex 派遣别人干活，不需要这个，Codex 也没有那么笨」
+     —— 到点自动暂停全群属于多余的产品判断，而且历史上只会往会话里刷「预算已用 80%」
+     这种噪音。⇒ 不再有预算闸、不再产生 budget 事件。
+     ⛔ 老 state.json 里可能还留着 `budgetMinutes` 字段：多出来的字段不影响解析，别为它写迁移。 */
 };
 
 export type GroupEvent = {
@@ -147,7 +150,6 @@ export type BossState = {
 export const DEFAULT_POLICY: GroupPolicy = {
   maxRejects: 2,
   reviewer: "fresh",
-  budgetMinutes: 40,
 };
 
 /** 事件流上限（按群裁剪后仍保留的总量上限，防 json 无限长）。 */

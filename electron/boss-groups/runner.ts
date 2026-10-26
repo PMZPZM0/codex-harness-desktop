@@ -23,7 +23,7 @@ import { safeProviderId } from "../provider-id";
 import { engineActiveTurnIds, server, threadCwd } from "../runtime-refs";
 import { egoBrowserPath } from "../toolchain";
 import { bossStore } from "./store";
-import { addMember, addTask, assignTask, checkBudget, createGroup, groupOf, markRunning, memberOf, parseVerdict, pickReassignee, pushEvent, recordReview, removeMember, setPinned, snapshot, submitTask, taskOf } from "./state";
+import { addMember, addTask, assignTask, createGroup, groupOf, markRunning, memberOf, parseVerdict, pickReassignee, pushEvent, recordReview, removeMember, setPinned, snapshot, submitTask, taskOf } from "./state";
 import type { BossGroup, BossState, GroupMember, GroupTask } from "./types";
 
 /** 事件出口（域层注入：本模块在 features/ 之外，不许反向 import 域）。 */
@@ -847,7 +847,6 @@ export async function tickAll(): Promise<void> {
        预算照旧只做**静默执行**（80% 不吭声、100% 自动暂停），⛔ 不再往中枢会话回投任何预算提醒。
        原实现 80% 每 10 分钟最多回投 12 条、tick 每 5 秒一次 ⇒ 真机一屏全是同一条；
        而且配额表是进程内的，每次启动重新计数 ⇒ 每次开机又刷一批。 */
-    checkBudget(state, group.id);
     if (group.paused !== before) dirty = true;
   }
   /* ⛔⛔⛔ 10-26 用户现场：「你不要加看门狗，Codex 自己哪有那么傻」。

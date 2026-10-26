@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo } from "react";
 import { justSentIds } from "../../lib/just-sent-ids";
 import { claimSendAnimation } from "../../lib/claim-send-animation";
 import { itemText } from "../../lib/item-text";
-import { isWatchdogSpamText } from "../../lib/host-queue.mjs";
+import { isHiddenNoticeBlock } from "../../lib/visible-group-blocks.mjs";
 import { parseUserRefs, userDisplayText, formatThreadReferenceBlock } from "../../lib/user-refs";
 import type { ParsedUserRefs } from "../../lib/user-refs";
 import type { GroupEventBlock } from "../../lib/group-event-text.mjs";
@@ -77,7 +77,24 @@ export function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, o
   /* 群广播（10-26 用户令「方案就按只广播这个完成」）：中枢会话里的 `[群事件] …` 是成员汇总
      进来的**群消息**，不是用户说的话 ⇒ 不能再套用户气泡（右对齐、名字写"你"、看不出谁交的活）。
      整条交给群气泡渲染：成员头像 + 名字 + 内容；系统类事件走居中灰行。 */
-  if (refs.groupEvents?.length) return <GroupFeed blocks={refs.groupEvents} onOpenFile={onOpenFile} />;
+  if (refs.groupEvents?.length) {
+    /* ⛔⛔ 10-26 用户实测（指挥中枢会话）：「这个刻度线跟消息和滚轮没有联动，滚动消息，刻度线没反应」
+       —— 群广播在引擎侧**就是一条 userMessage**（刻度尺也按 userMessage 出刻度），
+       但这里直接 return 了 GroupFeed，**没带 `data-ruler-mark="user"` / data-item-id**
+       ⇒ 中枢会话里几乎每条消息都是群事件 ⇒ 刻度尺一个参照点都找不到，
+       currentItemId 永远为 null，高亮与波浪都不动。
+       包一层只承载定位属性的 div（⛔ 不加类名、不带样式，避免动到群卡的布局）。 */
+    /* ⛔ 10-26 用户：「刻度线要对应消息和群里展示的事件，不要对应那些不展示的」——
+       全是已废弃刷屏通知的群事件**连外壳都不渲染**（GroupFeed 本来会返回 null，
+       但外层 div 还留着定位属性 ⇒ DOM 里一堆空壳，刻度尺会以为那里有条消息）。 */
+    const visibleBlocks = refs.groupEvents.filter((block) => !isHiddenNoticeBlock(block));
+    if (!visibleBlocks.length) return null;
+    return (
+      <div data-ruler-mark="user" data-turn-id={turn?.id} data-item-id={item.id}>
+        <GroupFeed blocks={visibleBlocks} onOpenFile={onOpenFile} />
+      </div>
+    );
+  }
   const refsImagePaths = new Set(refs.files.filter(isImagePath));
   // 文本占位符里出现过的图片以内联 chip 渲染在正文里，附件列表去重避免双份
   const inlineImageSet = new Set(promptImagePaths(rawText));
@@ -219,11 +236,11 @@ function booked(title: string | undefined | null): string {
 /** 刷屏类系统提示 = **已废弃的一次性提醒**（10-26 用户：「一直刷屏…给我删掉这玩意」）。
  *  宿主侧 `2349990bb` 起不再产生（预算静默执行、看门狗整体删除），但**历史消息仍在 rollout 里**
  *  （改不动引擎数据）—— 界面也不再展示：同一句重复 N 遍没有任何信息量。
- *  ⛔ 判据复用宿主侧的 `isWatchdogSpamText`（同一份名单，⛔ 不在这里另写一份正则副本）——
+ *  ⛔ 判据走 `visible-group-blocks`（刻度尺共用同一份，⛔ 不在这里另写一份正则副本）——
  *     它覆盖预算 80%/用尽 + 停滞看门狗 + 待审看门狗三类。
  *  ⛔ 只过滤这三类：成员进出 / 失败 / 超时这些系统事件仍要看得见。 */
 function GroupFeed({ blocks, onOpenFile }: { blocks: GroupEventBlock[]; onOpenFile?: (path: string) => void }) {
-  const shown = blocks.filter((b) => !(b.type === "notice" && isWatchdogSpamText(b.text)));
+  const shown = blocks.filter((b) => !isHiddenNoticeBlock(b));
   if (!shown.length) return null;
   /* ⛔ 纯系统事件（没有任何成员汇报/结论）**不套卡片**：用户截图里一屏 7 张「群汇报」空卡，
      就是「只有一行居中灰字」也硬套了细边框 + 极淡底 + 卡头 ⇒ 看着像一堆警告条。
