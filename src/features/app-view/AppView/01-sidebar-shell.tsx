@@ -2,7 +2,8 @@
  * AppViewSidebarShell —— AppView 的 JSX 第 1 段（09-22 从 AppView.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
-import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { BossProjectDirDialog, bossShortcutLabel, closeBossDirDialog, getBossDirDialogState, getBossThreads, setBossDirChosen, setBossHomeThreadId, setBossPending, subscribeBossDirDialog, subscribeBossThreads } from "../../boss-group-view";
 import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, useFunctionMenuConfig } from "../../function-menu";
 import { hk } from "../../../lib/hk";
@@ -336,29 +337,84 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   const [loginMgrOpen, setLoginMgrOpen] = useState(false);
   /* 新手教程（10-21 侧栏重排）：入口挪进底部导航组 ⇒ 打开状态提到这里（受控交给 NewbieGuide）。 */
   const [newbieOpen, setNewbieOpen] = useState(false);
-  /* 底部入口组折叠（10-22 用户要求：「用户名那一排上方加折叠/展开」）。
-     ⛔ 只是**本组自己的显隐**：账户行压在侧栏最后一条、位置由贴底决定 ⇒ 折叠后它 0 位移。
-     ⛔ 折叠态要跨重启保留（用户把入口都收起来就不会想每次重开）⇒ localStorage，与 `sidebar-collapsed` 同口径。 */
-  const [optionsCollapsed, setOptionsCollapsed] = useState<boolean>(() => {
-    try { return localStorage.getItem("sidebar-options-collapsed") !== "false"; } catch { return true; }
-  });
-  /* 启动回灌：主进程 app-settings.json 保存过折叠态就以它为准（强杀进程也不丢）。 */
+  /* 拓展功能（10-24 立，10-25 更名；原「功能入口」）：可配置排序 / 更多分组 / 两种展示位置（上下移动），动作经总线回到侧栏壳。
+     ⛔ 必须在下方浮层定位 effect 之前取（依赖数组会立刻求值，晚声明会 TDZ）。 */
+  const functionMenu = useFunctionMenuConfig();
+  /* 功能入口（10-26 用户：「向右边展示会不会更好，这样不占用上下空间」）。
+     ⛔ 侧栏里只留一行折叠头，入口组改为**右侧浮层**（portal 到 body）：
+        · 侧栏不再被 7 行入口吃掉 ~250px 高度，会话列表是主场；
+        · 浮层不受 .sidebar/.thread-list 的 overflow 裁剪，也不会把账户行顶走。
+     ⛔ 浮层是临时浮层：**每次启动一律收起**（打开态不落盘）——否则上次展开过，
+        下次开机就自动盖住聊天区。 */
+  const [optionsCollapsed, setOptionsCollapsed] = useState(true);
+  const optionsToggleRef = useRef<HTMLButtonElement | null>(null);
+  const optionsFlyoutRef = useRef<HTMLDivElement | null>(null);
+  const [optionsFlyoutStyle, setOptionsFlyoutStyle] = useState<{ left: number; top?: number; bottom?: number; maxHeight: number } | null>(null);
+  /* 启动一律收起，并把旧的「展开」偏好改回 true（升级用户/上一版展开态不自动弹浮层）。 */
   useEffect(() => {
-    try {
-      void window.codex?.readAppSettings?.().then((settings) => {
-        if (typeof settings?.sidebarOptionsCollapsed === "boolean") {
-          setOptionsCollapsed(settings.sidebarOptionsCollapsed);
-          try { localStorage.setItem("sidebar-options-collapsed", String(settings.sidebarOptionsCollapsed)); } catch { /* 隐私模式 */ }
-        }
-      }).catch(() => undefined);
-    } catch { /* 桥不可用时沿用 localStorage */ }
+    setOptionsCollapsed(true);
+    try { localStorage.setItem("sidebar-options-collapsed", "true"); } catch { /* 隐私模式 */ }
+    try { void window.codex?.saveAppSettings?.({ sidebarOptionsCollapsed: true })?.catch(() => undefined); } catch { /* 桥不可用 */ }
   }, []);
-  const toggleOptions = () => {
-    const next = !optionsCollapsed;
+  const persistOptionsCollapsed = useCallback((next: boolean) => {
     setOptionsCollapsed(next);
     try { localStorage.setItem("sidebar-options-collapsed", String(next)); } catch { /* 隐私模式写不进属正常，别拦切换 */ }
     try { void window.codex?.saveAppSettings?.({ sidebarOptionsCollapsed: next })?.catch(() => undefined); } catch { /* 桥不可用 */ }
+  }, []);
+  /* 打开只是本次会话的浮层（不写偏好）；关闭才落盘，保证下次启动仍是收起。 */
+  const toggleOptions = () => {
+    if (optionsCollapsed) setOptionsCollapsed(false);
+    else persistOptionsCollapsed(true);
   };
+  const closeOptions = useCallback(() => persistOptionsCollapsed(true), [persistOptionsCollapsed]);
+
+  /* 浮层贴折叠头右侧：底部队列以折叠头底边为锚向上展开，顶部队列以顶边为锚向下展开；
+     只跟窗口尺寸走（侧栏本身不滚动），超出视口自动收 maxHeight 自己滚。 */
+  useLayoutEffect(() => {
+    if (optionsCollapsed) { setOptionsFlyoutStyle(null); return; }
+    const place = () => {
+      const toggle = optionsToggleRef.current;
+      if (!toggle) return;
+      const rect = toggle.getBoundingClientRect();
+      const sidebarRect = toggle.closest(".sidebar")?.getBoundingClientRect();
+      const width = 232;
+      const left = Math.max(8, Math.min((sidebarRect?.right ?? rect.right) + 8, window.innerWidth - width - 8));
+      const maxHeight = Math.max(160, window.innerHeight - 24);
+      if (functionMenu.location === "bottom") {
+        setOptionsFlyoutStyle({
+          left,
+          bottom: Math.max(8, window.innerHeight - rect.bottom),
+          maxHeight: Math.min(maxHeight, Math.max(160, rect.bottom - 8)),
+        });
+      } else {
+        setOptionsFlyoutStyle({
+          left,
+          top: Math.max(8, rect.top),
+          maxHeight: Math.min(maxHeight, Math.max(160, window.innerHeight - rect.top - 8)),
+        });
+      }
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [optionsCollapsed, functionMenu.location]);
+
+  /* 点外部 / Esc 收起浮层（⛔ 折叠头自身不算外部：click 还要走 toggleOptions）。 */
+  useEffect(() => {
+    if (optionsCollapsed) return;
+    const onDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (optionsFlyoutRef.current?.contains(target) || optionsToggleRef.current?.contains(target)) return;
+      closeOptions();
+    };
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") closeOptions(); };
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [optionsCollapsed, closeOptions]);
   /*指挥中枢按钮（历史与实测依据收在 scripts/guards/22-boss-groups.mjs，此处只留行为契约）：
      ① **先跳到 欢迎界面，再弹项目地址对话框**（10-25 用户实测：「点指挥中枢，先出来
         这个弹窗，不会跳转到 欢迎界面，再跳这个弹窗」⇒ 顺序反了）——
@@ -435,8 +491,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     startNewThread();
   };
 
-  /* 拓展功能（10-24 立，10-25 更名；原「功能入口」）：可配置排序 / 更多分组 / 两种展示位置（上下移动），动作经总线回到侧栏壳。 */
-  const functionMenu = useFunctionMenuConfig();
+  /* 拓展功能动作经总线回到侧栏壳。 */
   useEffect(() => {
     setFunctionMenuActionHandler((id) => {
       if (id === "schedule") { setSettingsPage("schedule"); setSettingsOpen(true); setMobileNav(false); return; }
@@ -448,13 +503,14 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     return () => setFunctionMenuActionHandler(null);
   }, [setSettingsPage, setSettingsOpen, setMobileNav]);
 
-  /** 同一套入口组渲染在「新会话 / 搜索任务」下面或「侧栏底部」；两处都支持展开/折叠，
-      折叠态共用一个持久值（本地记录），高度过渡由 `.sidebar-options-body` 的 grid 动画完成。 */
+  /** 侧栏里只留折叠头；入口组是**右侧浮层**（portal 到 body），不再占用纵向空间。
+      ⛔ 浮层必须 portal：`.sidebar` 与 `.thread-list` 都有 overflow:hidden/auto，留在里面会被裁掉。 */
   const renderOptionsGroup = (menuLocation: "top" | "bottom") => (
     <div className={`sidebar-options ${menuLocation === "top" ? "sidebar-options-top" : ""}`}>
       {/* 新建指挥中枢：项目地址对话框（应用内模态；⛔ 不用系统弹窗 / 内联 toast） */}
       <BossProjectDirDialog open={bossDirOpen} busy={bossDirBusy} onChoose={(choice) => void onBossProjectDir(choice)} />
       <button
+        ref={optionsToggleRef}
         type="button"
         className="sidebar-options-toggle"
         aria-expanded={!optionsCollapsed}
@@ -467,11 +523,25 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         <span>功能入口</span>
         <ChevronDown size={13} className={`sidebar-options-chevron ${optionsCollapsed ? "" : "open"}`} />
       </button>
-      <div className={`sidebar-options-body ${optionsCollapsed ? "is-collapsed" : ""}`}>
-        <div className="sidebar-nav sidebar-nav-bottom" id="sidebar-options-body" role="group" aria-label="功能入口" aria-hidden={optionsCollapsed}>
-          <FunctionMenu location={menuLocation} />
-        </div>
-      </div>
+      {!optionsCollapsed && optionsFlyoutStyle && createPortal(
+        <div
+          ref={optionsFlyoutRef}
+          className={`sidebar-options-body sidebar-options-flyout ${optionsCollapsed ? "is-collapsed" : ""}`}
+          style={{ left: optionsFlyoutStyle.left, top: optionsFlyoutStyle.top, bottom: optionsFlyoutStyle.bottom, maxHeight: optionsFlyoutStyle.maxHeight }}
+          role="dialog"
+          aria-label="功能入口"
+          onClickCapture={(event) => {
+            const button = (event.target as HTMLElement | null)?.closest?.("button");
+            /* 「更多」要留在浮层里继续操作；点具体入口/更多项后收起浮层。 */
+            if (button && !button.classList.contains("function-menu-more")) closeOptions();
+          }}
+        >
+          <div className="sidebar-nav sidebar-nav-bottom" id="sidebar-options-body" role="group" aria-label="功能入口" aria-hidden={optionsCollapsed}>
+            <FunctionMenu location={menuLocation} />
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 
