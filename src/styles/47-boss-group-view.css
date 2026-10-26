@@ -737,6 +737,12 @@
 .group-file { margin-top: 2px; max-width: 520px; }
 .group-file .file-ref-card { width: 100%; }
 /* 系统行（预算 / 失败 / 成员进出 / 待审提醒）：居中、灰、短 */
+/* 纯系统事件的紧凑堆（⛔ 不套 `.group-feed` 卡片）：用户截图里一屏 7 张「群汇报」空卡
+   —— 每张只有一行居中灰字却带细边框 + 极淡底 + 卡头，看着像警告条刷屏。 */
+.group-sys-stack {
+  display: flex; flex-direction: column; gap: 2px;
+  margin: 6px 0; min-width: 0;
+}
 .group-sys {
   align-self: center; max-width: 92%;
   padding: 3px 10px; border-radius: 8px;
