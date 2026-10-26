@@ -720,7 +720,8 @@ const CHECKS = [
         const b=rows.find((x)=>(x.getAttribute("data-tree-path")||"").endsWith("package.json"))||rows.find((x)=>(x.getAttribute("data-tree-path")||"").match(/\\.[a-z0-9]{1,5}$/i));
         if(!b) return 0; b.click(); return 1;
       })()`);
-      await wait(900);
+      await h.waitFor(`(document.querySelector(".workspace-file-preview-path")?.textContent||"").trim().length > 0`, { label: "文件预览路径", timeoutMs: 8000 }).catch(() => undefined);
+      await wait(600);
 
       const geo = () => h.eval(`(function(){
         const t=document.querySelector(".workspace-files-tree")?.getBoundingClientRect();
