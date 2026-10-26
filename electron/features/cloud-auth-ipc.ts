@@ -37,7 +37,7 @@ export const cloudAuthFeature = defineFeature<null>({
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");
     if (!ipcHost) throw new Error("cloud-auth: 缺少 ipc 服务（宿主未提供）");
-    void CHANNELS; // 通道清单在 manifest 登记；保留常量便于守卫比对（同 free-gateway 做法）
+    void CHANNELS; // 通道清单在 manifest 登记；保留常量便于守卫比对（同其它域做法）
 
     ipcHost.handle(
       "cloud-auth:login",

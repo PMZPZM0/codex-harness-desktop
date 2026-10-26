@@ -419,7 +419,7 @@ async function movePath(from: string, to: string): Promise<void> {
      `EPERM: operation not permitted, rename …` —— 两边都在 D: 盘，纯粹是 **Windows 文件占用**。
      真因：本函数前面刚用 `runCommand(newBin, ["--version"])` **执行过**要搬的那棵树里的 exe，
      Windows 会**短暂持有刚退出的进程映像**（此外还有杀软 / 索引器扫新解压的 ~100MB 树），
-     此刻 rename 它的父目录就 EPERM。⇒ 与 `free-gateway-ipc.ts` 同款（那里 10-12 验收实测过），
+     此刻 rename 它的父目录就 EPERM。⇒ 同解压安装路径的先例（10-12 验收实测过），
      重试 5 次、间隔递增。⛔ 不重试的表现就是：下载/解压/自检全绿，落位一步失败并回滚。 */
   let lastErr: unknown = null;
   for (let attempt = 0; attempt < 5; attempt++) {

@@ -144,7 +144,6 @@ const REFRESH_ENTRIES = [
   ["src/features/knowledge-base/KnowledgeBaseSection.tsx", ["刷新知识库"]],
   ["src/features/expert-market/ExpertMarketSection.tsx", ["刷新技能包列表"]],
   ["src/features/soul-market/SoulMarketSection.tsx", ["刷新人格列表"]],
-  ["src/features/free-gateway/FreeGatewayCard.tsx", ["刷新网关状态"]],
   ["src/features/memory/MemoryPanels.tsx", ["重新读取常驻记忆"]],
   ["src/features/memory-ui/MemoryWorkbench.tsx", ["重新读取记忆"]],
   ["src/features/settings-memory/BackendConsolePanel.tsx", ["重新读取后端状态"]],

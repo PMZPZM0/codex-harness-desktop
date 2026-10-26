@@ -29,15 +29,14 @@ const ok = (condition, message) => {
 const mirrorSrc = read("electron/gh-mirror.ts");
 const updates = codeOnly(read("electron/updates.ts"));
 const official = codeOnly(read("electron/codex-official-market.ts"));
-const freeGw = codeOnly(read("electron/features/free-gateway-ipc.ts"));
 
 /* ── 单一真相源 ── */
 ok(/export const GH_MIRROR_PREFIXES = \["https:\/\/gh-proxy\.com\/", "https:\/\/ghfast\.top\/", ""\] as const/.test(mirrorSrc),
   "镜像表唯一一份在 gh-mirror.ts：gh-proxy → ghfast → 直连(空串)，顺序即契约");
-ok(!/"https:\/\/gh-proxy\.com\/"/.test(updates) && !/"https:\/\/gh-proxy\.com\/"/.test(official) && !/"https:\/\/gh-proxy\.com\/"/.test(freeGw),
-  "⛔ 镜像字面量不再散落：updates / 官方市场 / 免费网关都从 gh-mirror 取（voice/model-store 除外 —— 它的顺序是按实测速度排的，语义不同）");
-ok(/const MIRROR_PREFIXES = GH_MIRROR_PREFIXES/.test(official) && /const MIRRORS = GH_MIRROR_PREFIXES/.test(freeGw),
-  "两个既有消费方改成别名引用（局部语义与消费写法不变）");
+ok(!/"https:\/\/gh-proxy\.com\/"/.test(updates) && !/"https:\/\/gh-proxy\.com\/"/.test(official),
+  "⛔ 镜像字面量不再散落：updates / 官方市场都从 gh-mirror 取（voice/model-store 除外 —— 它的顺序是按实测速度排的，语义不同）");
+ok(/const MIRROR_PREFIXES = GH_MIRROR_PREFIXES/.test(official),
+  "既有消费方改成别名引用（局部语义与消费写法不变）");
 
 /* ── mirrorCandidates 真值表（真跑，不是读代码）── */
 {
