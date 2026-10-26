@@ -2602,9 +2602,9 @@ w.postMessage({id:1,op:"list",root});
   {
     const appSettingsSrc180 = codeOnly(readFileSync(join(ROOT, "electron", "app-settings.ts"), "utf8"));
     (fmStore180.includes("saveAppSettings") && fmStore180.includes("readAppSettings")
-      && /saveAppSettings(\?\.)?\(\{\s*sidebarOptionsCollapsed/.test(side180) && side180.includes("readAppSettings")
+      && /saveAppSettings(\?\.)?\(\{\s*sidebarOptionsCollapsed/.test(side180)
       && appSettingsSrc180.includes("functionMenu") && appSettingsSrc180.includes("sidebarOptionsCollapsed") ? ok : fail)(
-      "【180】功能入口位置/顺序/折叠态落主进程 app-settings，启动回灌（重启/强杀不丢用户改动）"
+      "【180】功能入口位置/顺序落主进程 app-settings；折叠态仍写回（10-26 浮层版启动固定收起，不再回灌展开态）"
     );
   }
   {
