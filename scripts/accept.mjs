@@ -220,6 +220,9 @@ const CHECKS = [
         return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
           hasSelect:!!sel, options:list?list.querySelectorAll(".app-select-option").length:0,
           tabs:m.querySelectorAll(".mcp-market-toolbar .skill-tabs").length,
+          hasInfo:!!m.querySelector(".page-info"),
+          hasCopy:!!m.querySelector(".settings-copy"),
+          toolbarTop:(()=>{ const t=m.querySelector(".mcp-market-toolbar"); return t?Math.round(t.getBoundingClientRect().top):0; })(),
           labelWrap:(()=>{ const el=m.querySelector(".mcp-category-filter > span"); return el?getComputedStyle(el).whiteSpace:""; })(),
           jumps:labels.filter((x)=>x.includes("广场")) };
       })()`).catch(() => null);
@@ -227,6 +230,11 @@ const CHECKS = [
         Boolean(mcp && mcp.page === "MCP" && mcp.hasSelect && mcp.options >= 5 && mcp.tabs === 0
           && mcp.labelWrap === "nowrap" && mcp.jumps.length === 0),
         JSON.stringify(mcp));
+      /* 10-27 用户（MCP 页截图）：「右上角问号删了」⇒ 页头整块撤掉，
+         进页第一屏就是工具条（没有 ? 占的那一行）。 */
+      h.check("⑩ MCP：右上角问号与页头说明已删，工具条顶到页面上沿",
+        Boolean(mcp && !mcp.hasInfo && !mcp.hasCopy && mcp.toolbarTop > 0 && mcp.toolbarTop < 190),
+        JSON.stringify({ hasInfo: mcp && mcp.hasInfo, hasCopy: mcp && mcp.hasCopy, toolbarTop: mcp && mcp.toolbarTop }));
       await h.pressKey("Escape");
       await wait(300);
 
