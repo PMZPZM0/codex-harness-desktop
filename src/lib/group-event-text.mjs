@@ -20,17 +20,23 @@ const TAG = "[群事件]";
 /** 交活正文落盘后的路径行（主进程写 ⇒ 这里读）。 */
 const FILE_LINE = /^成品文件：(.+)$/;
 
-/** 一条消息可能被合并投递（多段 `[群事件]`）⇒ 按标签切段，逐段归类。无标签返回 null（不是群消息）。 */
+/** 行首的群事件标签（`^` 或换行之后）。 */
+const TAG_AT_LINE_START = /(?:^|\n)\[群事件\]/g;
+
+/** 一条消息可能被合并投递（多段 `[群事件]`）⇒ 按标签切段，逐段归类。无标签返回 null（不是群消息）。
+ *  ⛔ 只认**行首**的标签（10-26 用户实测「他消息，在我的上面，倒反天罡了」）：
+ *     注入的 Harness 常驻记忆 / 日志正文里会引用 `[群事件]` 这个词（本项目的记忆里就有 5 处），
+ *     旧判据「全文出现即算」把用户自己发的消息误判成群广播 ⇒ 渲染层据此把它挪到回复**下方**。
+ *     宿主投递的群消息一律以标签开头（见 boss-groups/runner.ts 的 postToBoss），行首判定不误伤。 */
 export function parseGroupEvents(text) {
   const raw = String(text ?? "");
   if (!raw.includes(TAG)) return null;
-  const segments = [];
-  let at = raw.indexOf(TAG);
-  while (at >= 0) {
-    const next = raw.indexOf(TAG, at + TAG.length);
-    segments.push(raw.slice(at + TAG.length, next < 0 ? raw.length : next));
-    at = next;
+  const starts = [];
+  for (const match of raw.matchAll(TAG_AT_LINE_START)) {
+    starts.push(match.index + (match[0].length - TAG.length));
   }
+  if (!starts.length) return null;
+  const segments = starts.map((start, index) => raw.slice(start + TAG.length, index + 1 < starts.length ? starts[index + 1] : raw.length));
   const blocks = segments.map(classify).filter(Boolean);
   return blocks.length ? blocks : null;
 }
