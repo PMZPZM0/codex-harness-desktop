@@ -451,6 +451,12 @@
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
+  /* ⛔⛔ 底部必须留出 **64px**：右下角有个「回到底部」的浮按钮
+     （`.jump-bottom`：position:absolute; bottom:18px; right:26px; 34×34）
+     ⇒ 它占住底部 18~52px，而办公室节点钉在最底部 ⇒ **两者重叠**
+     （用户 10-26：「往上放一点，跟下面这个图标重叠了」）。
+     ⇒ 底部留 64px（52 + 12 间距）⇒ 办公室节点整体上移，让开那个浮按钮。 */
+  padding-bottom: 64px;
   padding-top: 18px;
   overflow: hidden;
   /* ⛔⛔ 必须 **column**！`.team-rail` 默认是 row（display:flex 未写 flex-direction）
