@@ -86,12 +86,66 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
     setProfile((p) => (p.style === personality ? p : { ...p, style: personality }));
   }, [personality]);
 
+  /* 10-26：新人引导写的是 personalization；用户中心此前只读自己的 user-profile 缓存，
+     会出现「引导里选了职业/兴趣/头像，进来还是旧值」。这里在挂载与引导保存事件后回读，
+     人物档案以 personalization 为准，头像以 user-profile 为准（两者都由引导同轮写入）。 */
+  useEffect(() => {
+    let alive = true;
+    const applyStored = () => {
+      try {
+        const raw = JSON.parse(localStorage.getItem("user-profile") || "{}");
+        if (raw && typeof raw === "object") {
+          /* 整份回读：只挑昵称/头像会让「职业/领域/兴趣/习惯」继续用旧 state，
+             随后本组件的 localStorage 回写又把引导刚写的新值覆盖掉（10-26 实测）。 */
+          setProfile((p) => {
+            const next = {
+              ...p,
+              ...raw,
+              ...(raw.nickname ? { nickname: raw.nickname } : {}),
+              ...(raw.avatarType ? { avatarType: raw.avatarType } : {}),
+              ...(raw.avatar ? { avatar: raw.avatar } : {}),
+            };
+            /* 旧档案把「职业」复制进了「领域」，引导/用户中心展示会出现产品经理 · 产品经理。 */
+            if (next.field && next.field === next.occupation) next.field = "";
+            return next;
+          });
+        }
+      } catch { /* 坏缓存忽略 */ }
+      void window.codex.readPersonalization().then((cfg) => {
+        if (!alive) return;
+        setProfile((p) => {
+          const occupation = cfg.occupation || p.occupation;
+          return {
+            ...p,
+            nickname: cfg.nickname || p.nickname,
+            occupation,
+            field: p.field && p.field !== occupation ? p.field : "",
+            hobby: cfg.interests || p.hobby,
+            habit: cfg.habits || p.habit,
+          };
+        });
+      }).catch(() => undefined);
+    };
+    applyStored();
+    window.addEventListener("codex-profile-updated", applyStored);
+    return () => { alive = false; window.removeEventListener("codex-profile-updated", applyStored); };
+  }, []);
+
   const save = () => {
     // 昵称是全局权威：主界面用户名 + 引擎称呼 + 用户中心 三处统一
     const name = profile.nickname.trim() || username.trim() || "Codex 用户";
     onUsernameChange(name);
     localStorage.setItem("username", name);
-    void window.codex.setNickname(name).catch(() => undefined);
+    /* 10-26：这里以前只落昵称，职业/兴趣/习惯只写 localStorage ⇒ 引擎根本不知道。
+       统一写进个性化档案（partial 合并，不会清掉引导里的其它字段）。 */
+    void window.codex.saveIdentity({
+      nickname: name,
+      occupation: profile.occupation,
+      interests: profile.hobby,
+      habits: profile.habit,
+    }).then(() => {
+      try { window.dispatchEvent(new Event("codex-profile-updated")); } catch { /* 忽略 */ }
+    }).catch(() => undefined);
     onPersonalityChange(personality);
     onProfileChange?.({ avatarType: profile.avatarType, avatar: profile.avatar });
     onNotice("用户资料已保存，Codex 会称呼你「" + name + "」");
@@ -201,10 +255,11 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
           <div className="uc-hero-copy">
             <div className="uc-hero-kicker">你的身份</div>
             <div className="uc-name">{displayName}</div>
-            <div className="uc-meta">{profile.occupation || "未填写职业"} · {profile.field || "未填写领域"}</div>
+            <div className="uc-meta">{[profile.occupation || "未填写职业", profile.field && profile.field !== profile.occupation ? profile.field : ""].filter(Boolean).join(" · ")}</div>
             <div className="uc-hero-chips">
               <span className="uc-chip"><Wand2 size={12} />{styleLabel}</span>
               <span className="uc-chip"><Languages size={12} />{profile.language || "中文"}</span>
+              <button type="button" className="uc-chip uc-chip-button" title="重新走一遍称呼/头像/职业/Codex 人格/兴趣配置" onClick={() => { try { window.dispatchEvent(new Event("codex-open-profile-guide")); } catch { /* 忽略 */ } }}><Wand2 size={12} />重新配置引导</button>
             </div>
           </div>
           <div className="uc-avatar-side">

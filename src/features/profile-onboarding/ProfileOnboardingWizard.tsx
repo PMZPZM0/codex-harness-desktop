@@ -139,6 +139,8 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
   });
   const [personaId, setPersonaId] = useState("");
   const [assistantPersonaId, setAssistantPersonaId] = useState("default");
+  /** 用户在本次引导里是否真的点过 Codex 人格卡；没点就保留档案里原有的人格（含人格市场）。 */
+  const [assistantPersonaTouched, setAssistantPersonaTouched] = useState(false);
   const [occupation, setOccupation] = useState("");
   const [customInterest, setCustomInterest] = useState("");
   const [interests, setInterests] = useState<string[]>([]);
@@ -146,6 +148,33 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
   const [tone, setTone] = useState<Tone>("none");
   const [habits, setHabits] = useState<string[]>([]);
   const [customInstructions, setCustomInstructions] = useState("");
+
+  /** 把档案灌回表单：首次自动弹出与「重新配置引导」共用，避免两套初始化逻辑漂移。 */
+  const hydrate = useCallback((stored: Config) => {
+    const cachedName = localStorage.getItem("username") ?? "";
+    setNickname(stored.nickname || (cachedName && cachedName !== "Codex 用户" && cachedName !== "Administrator" ? cachedName : ""));
+    setAssistantName(stored.assistantName || "");
+    const persona = inferPersona(stored);
+    setPersonaId(persona);
+    const matchedAssistant = ASSISTANT_PERSONAS.find((item) => item.persona && item.persona === stored.persona);
+    setAssistantPersonaId(matchedAssistant?.id ?? "default");
+    setAssistantPersonaTouched(false);
+    setOccupation(persona ? "" : stored.occupation || "");
+    const known = new Set(INTERESTS.map((item) => item.label));
+    const storedInterests = parseList(stored.interests);
+    setInterests(storedInterests.filter((item) => known.has(item)));
+    setCustomInterest(storedInterests.filter((item) => !known.has(item)).join("、"));
+    setReplyStyle(inferReplyStyle(stored.replyStyle));
+    setTone(inferTone(stored.tone));
+    setHabits(parseList(stored.habits).filter((item) => HABITS.includes(item)));
+    setCustomInstructions(stored.customInstructions || "");
+    try {
+      const profile = JSON.parse(localStorage.getItem("user-profile") || "{}");
+      if (profile.avatarType === "image" && profile.avatar) setUserAvatarState(String(profile.avatar));
+      const rawCodex = JSON.parse(localStorage.getItem("codex-avatar") || "{}");
+      if (rawCodex?.type === "image" && rawCodex.value) setCodexAvatarState(String(rawCodex.value));
+    } catch { /* 坏缓存忽略 */ }
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -155,24 +184,29 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
       setChecked(true);
       if (stored.onboarded || stored.profileGuideSeen || stored.greeted) return;
       setConfig(stored);
-      const cachedName = localStorage.getItem("username") ?? "";
-      setNickname(stored.nickname || (cachedName && cachedName !== "Codex 用户" && cachedName !== "Administrator" ? cachedName : ""));
-      setAssistantName(stored.assistantName || "");
-      const persona = inferPersona(stored);
-      setPersonaId(persona);
-      setOccupation(persona ? "" : stored.occupation || "");
-      const known = new Set(INTERESTS.map((item) => item.label));
-      const storedInterests = parseList(stored.interests);
-      setInterests(storedInterests.filter((item) => known.has(item)));
-      setCustomInterest(storedInterests.filter((item) => !known.has(item)).join("、"));
-      setReplyStyle(inferReplyStyle(stored.replyStyle));
-      setTone(inferTone(stored.tone));
-      setHabits(parseList(stored.habits).filter((item) => HABITS.includes(item)));
-      setCustomInstructions(stored.customInstructions || "");
+      hydrate(stored);
       setOpen(true);
     }).catch(() => { if (alive) setChecked(true); });
     return () => { alive = false; };
-  }, []);
+  }, [hydrate]);
+
+  /* 用户中心「重新配置引导」入口：已配置用户也能手动重开，改完立即覆盖档案。 */
+  useEffect(() => {
+    const onOpen = () => {
+      void window.codex.readPersonalization().then((raw) => {
+        const stored = raw as Config;
+        setConfig(stored);
+        hydrate(stored);
+        setError("");
+        setSaving(false);
+        setStep(0);
+        setChecked(true);
+        setOpen(true);
+      }).catch(() => undefined);
+    };
+    window.addEventListener("codex-open-profile-guide", onOpen);
+    return () => window.removeEventListener("codex-open-profile-guide", onOpen);
+  }, [hydrate]);
 
   const finish = useCallback(async (skipped: boolean) => {
     if (saving) return;
@@ -204,8 +238,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
         ...(tone !== "none" ? { tone: tone === "casual" ? "轻松幽默" : "专业中性" } : {}),
         ...(habitText ? { habits: habitText } : {}),
         ...(customInstructions.trim() ? { customInstructions: customInstructions.trim() } : {}),
-        persona: selectedAssistant.persona,
-        soulSlug: "",
+        ...(assistantPersonaTouched ? { persona: selectedAssistant.persona, soulSlug: "" } : {}),
       };
       const saved = (await window.codex.saveIdentity(payload as unknown as Record<string, string>)) as Config;
       try {
@@ -216,7 +249,9 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
           avatarType: "image",
           avatar: userAvatar,
           occupation: finalOccupation || profile.occupation || "",
-          field: selected?.label ?? profile.field ?? "",
+          /* 领域不要复制职业（否则用户中心会出现「产品经理 · 产品经理」）：
+             选了角色卡就不填领域；手填职业时只保留原本不同的领域。 */
+          field: selected ? "" : (profile.field && profile.field !== finalOccupation ? profile.field : ""),
           hobby: interestText || profile.hobby || "",
           habit: habitText || profile.habit || "",
           style: replyStyle === "pragmatic" ? "pragmatic" : replyStyle === "friendly" ? "friendly" : "none",
@@ -227,6 +262,8 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
       storeCodexAvatar(codexAvatarSpec);
       setCodexIdentity({ ...(assistantName.trim() && assistantName.trim() !== "Codex" ? { name: assistantName.trim() } : {}), avatar: codexAvatarSpec });
       onUserAvatar?.({ type: "image", value: userAvatar });
+      /* 通知已挂载的用户中心/其它资料面板重新回读档案（新用户首次通常还没挂载，但保存后再打开也要一致）。 */
+      try { window.dispatchEvent(new CustomEvent("codex-profile-updated")); } catch { /* 忽略 */ }
       setOpen(false);
       onApplied?.(saved as Config);
       onNotice?.("配置已保存，下一条消息起生效");
@@ -235,7 +272,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
     } finally {
       setSaving(false);
     }
-  }, [assistantName, assistantPersonaId, codexAvatar, config, customInstructions, customInterest, habits, interests, nickname, occupation, onApplied, onNotice, onUserAvatar, personaId, replyStyle, saving, tone, userAvatar]);
+  }, [assistantName, assistantPersonaId, assistantPersonaTouched, codexAvatar, config, customInstructions, customInterest, habits, interests, nickname, occupation, onApplied, onNotice, onUserAvatar, personaId, replyStyle, saving, tone, userAvatar]);
 
   useEffect(() => {
     if (!open) return;
@@ -295,8 +332,8 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
             {step === 0 && (
               <div className="profile-guide-hello">
                 <div className="profile-guide-avatar"><UserRound size={26} /></div>
-                <label className="profile-guide-field"><span>怎么称呼你</span><input autoFocus maxLength={20} value={nickname} onChange={(event) => setNickname(event.target.value)} placeholder="例如：老王 / Alice / 老板" /></label>
-                <label className="profile-guide-field"><span>给 Codex 取个名字 <em>可选</em></span><input maxLength={20} value={assistantName} onChange={(event) => setAssistantName(event.target.value)} placeholder="不填就是 Codex" /></label>
+                <label className="profile-guide-field"><span>怎么称呼你</span><input autoFocus autoComplete="off" maxLength={20} value={nickname} onChange={(event) => setNickname(event.target.value)} placeholder="例如：老王 / Alice / 老板" /></label>
+                <label className="profile-guide-field"><span>给 Codex 取个名字 <em>可选</em></span><input autoComplete="off" maxLength={20} value={assistantName} onChange={(event) => setAssistantName(event.target.value)} placeholder="不填就是 Codex" /></label>
                 <div className="profile-guide-avatar-picks">
                   <div>
                     <div className="profile-guide-label">你的头像</div>
@@ -345,7 +382,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
               <div className="profile-guide-assistant">
                 <div className="profile-guide-personas">
                   {ASSISTANT_PERSONAS.map((persona, index) => (
-                    <button type="button" key={persona.id} className={`profile-guide-persona ${assistantPersonaId === persona.id ? "on" : ""}`} onClick={() => setAssistantPersonaId(persona.id)}>
+                    <button type="button" key={persona.id} className={`profile-guide-persona ${assistantPersonaId === persona.id ? "on" : ""}`} onClick={() => { setAssistantPersonaId(persona.id); setAssistantPersonaTouched(true); }}>
                       <span className={`profile-guide-persona-mark tone-${index % 5}`}>{persona.label.slice(0, 1)}</span>
                       <div><strong>{persona.label}</strong><small>{persona.desc}</small></div>
                       {assistantPersonaId === persona.id && <Check size={14} className="profile-guide-check" />}
