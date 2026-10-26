@@ -1183,6 +1183,16 @@
   color: #a855f7;
   background: color-mix(in srgb, #a855f7 12%, transparent);
 }
+/* ⛔ 10-26：限 3 行硬切会让最后一行只剩半个字；文本容器 clamp 后带"…"
+   （⛔ 不能挂在 .voice-subtitle 上 —— 它是 flex，clamp 无效）。 */
+.voice-subtitle-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
 .voice-subtitle.user .voice-subtitle-text { color: var(--text); }
 .voice-subtitle.agent .voice-subtitle-text { color: var(--text); }
 

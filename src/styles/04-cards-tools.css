@@ -1630,11 +1630,21 @@
   white-space: nowrap;
 }
 .composer.composer-micro .composer-setting > span { display: none; }
-.composer:is(.composer-narrow, .composer-micro) .effort-trigger-label { display: none; }
+/* ⛔ 10-26 用户规则：「有位置就缩成图标，没位置的就隐藏」——
+   强度文字（极高/中/低）在 narrow 档放得下（70px 里有 40px 是字），只有 micro 才缩成图标。 */
+.composer.composer-narrow .effort-trigger-label {
+  max-width: 44px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer.composer-micro .effort-trigger-label { display: none; }
 .composer:is(.composer-narrow, .composer-micro) .composer-status-lights,
 .composer:is(.composer-narrow, .composer-micro) .relay-badge,
-.composer:is(.composer-narrow, .composer-micro) .cloud-points-badge,
-.composer:is(.composer-narrow, .composer-micro) .ctx-badge { display: none; }
+.composer:is(.composer-narrow, .composer-micro) .cloud-points-badge { display: none; } /* 可选动态灯：两档都先让位 */
+/* ⛔ 上下文环是 **35px 的纯图标**，本身没有"文字档"可缩 ⇒ 按「有位置就留」：
+   narrow 保留（它是这一档里信息密度最高的控件），只有 micro 才隐藏。 */
+.composer.composer-micro .ctx-badge { display: none; }
 /* 上方两个胶囊：同现时从「左右一排」改成上下两行，各自占满输入框宽度，不再互相挤/压字 */
 .composer-wrap:has(.composer-narrow) .composer-status-row,
 .composer-wrap:has(.composer-micro) .composer-status-row { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }

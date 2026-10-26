@@ -203,7 +203,8 @@
 @media (max-width: 760px) {
   .settings-exp-page { max-width: none; padding-left: 0; padding-right: 0; }
   .settings-exp-hero { align-items: flex-start; }
-  .settings-exp-hero-hint { display: none; }
+  /* ⛔ 10-26 同上：页头这一句是"这页干什么"的新手说明，藏掉等于让新手猜；窄屏允许换行。 */
+  .settings-exp-hero-hint { display: block; max-width: 100%; white-space: normal; }
   .settings-exp-page .pet-grid { grid-template-columns: 1fr; }
 }
 

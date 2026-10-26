@@ -677,6 +677,11 @@
   font-size: 12px;
   line-height: 1.5;
   overflow: hidden;
+  /* ⛔ 10-26：限两行却只 `overflow:hidden` ⇒ 第三行被砍一半、没有任何"还有内容"的提示。
+     用 line-clamp 让它显示成"……"（用户能看出被截断）。 */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 .auto-card-meta {
   color: var(--faint);
