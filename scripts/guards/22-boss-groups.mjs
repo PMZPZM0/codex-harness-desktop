@@ -815,7 +815,16 @@ if (state) {
   ok(/export async function pruneBossQueue/.test(runnerSrc)
     && /await pruneBossQueue\(group\)/.test(runnerSrc)
     && /thread\/queue\/delete/.test(runnerSrc),
-    "队列清理：每 5 秒把看门狗刷屏条目删掉（⛔ 成品交活那种真消息不删）");
+    "队列清理：启动把看门狗/预算刷屏条目删掉（⛔ 成品交活那种真消息不删）");
+
+  /* 10-26 用户：「这什么狗几把玩意，一直刷屏，每次启动应用，进去就弹，给我删掉这玩意」。
+     ⛔ 预算只做静默执行（80% 不吭声 / 100% 自动暂停），不许再回投群事件；旧队列由清理面兜底。 */
+  ok(!/群「\$\{group\.name\}」预算已用/.test(runnerSrc)
+    && !/群「\$\{group\.name\}」预算用尽/.test(runnerSrc),
+    "⛔ 预算是静默执行：tick 不再往中枢会话回投 80%/用尽提醒（旧实现 12 条/10 分钟 × 每 5 秒扫）");
+
+  ok(/预算已用 80%/.test(hostQueue) && /预算用尽/.test(hostQueue),
+    "刷屏清理面覆盖预算提醒（启动时把旧队列里堆的预算消息一并删掉）");
 
   ok(/isWatchdogSpamText/.test(hostQueue) && /GROUP_EVENT_TAG/.test(hostQueue),
     "宿主消息判定同时认**保留前缀**与**旧的 [群事件] 文本**（旧数据兼容，否则旧队列仍会显示）");

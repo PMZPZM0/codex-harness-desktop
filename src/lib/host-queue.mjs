@@ -64,5 +64,8 @@ export function isHostQueueItem(item) {
  */
 export function isWatchdogSpamText(text) {
   const s = String(text ?? "");
-  return /没有进展（无进展/.test(s) || /没有审查结论/.test(s);
+  /* 10-26 用户：「这什么狗几把玩意，一直刷屏…给我删掉这玩意」。
+     预算提醒也进这个清理面（旧队列里可能已堆了一串），启动时一并删掉。 */
+  return /没有进展（无进展/.test(s) || /没有审查结论/.test(s)
+    || /预算已用 80%/.test(s) || /预算用尽（\d+ 分钟），已暂停自动派活/.test(s);
 }
