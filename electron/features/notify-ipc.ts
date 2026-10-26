@@ -30,7 +30,16 @@ export const notifyFeature = defineFeature<null>({
     ipcHost.handle("notify:show", (_event, title: string, body: string) => {
       if (!Notification.isSupported()) return false;
       const n = new Notification({ title: String(title ?? "Codex Harness"), body: String(body ?? ""), silent: false });
-      n.on("click", () => { mainWindow?.show(); mainWindow?.focus(); });
+      /* ⛔ 10-26 用户实测：「点击通知不会打开应用，点通知弹窗没反应」——
+         原来只 show/focus：窗口**最小化**时不会还原（Windows 上就表现为"点了没反应"），
+         窗口已销毁时 mainWindow 也不为空。口径对齐 main.ts 的唤窗范式（isDestroyed + restore）。 */
+      n.on("click", () => {
+        const win = mainWindow;
+        if (!win || win.isDestroyed()) return;
+        if (win.isMinimized()) win.restore();
+        win.show();
+        win.focus();
+      });
       n.show();
       return true;
     });
