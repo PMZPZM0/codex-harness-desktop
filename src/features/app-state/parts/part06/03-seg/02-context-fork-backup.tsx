@@ -5,6 +5,7 @@
  * ⛔ 顺序即契约：段内含 hook 调用，React 靠**调用顺序**绑定 state ⇒ 组合根必须按文件名前缀顺序调用。
  * ⛔ 本段语句只引用「自己的局部声明」与 bag；跨段名字由组合根按入参转交。
  */
+import { enginePersonality } from "../../../../../lib/reply-style.mjs";
 import "@xterm/xterm/css/xterm.css";
 import { loadDraft, saveDraft } from "../../../../../lib/composer-draft.mjs";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../lib/user-refs";
@@ -183,7 +184,7 @@ bag.forkThreadFromSidebar = forkThreadFromSidebar as typeof bag.forkThreadFromSi
         effort: bag.effort || undefined,
         sandbox: bag.sandbox,
         approvalPolicy: bag.approvalPolicy,
-        personality: bag.selectedModel?.supportsPersonality ? bag.personality : null,
+        personality: bag.selectedModel?.supportsPersonality ? enginePersonality(bag.personality) : null,
       });
       if (!res) return; // 用户取消
       bag.rememberPendingImport(res.thread.id, res.imported);

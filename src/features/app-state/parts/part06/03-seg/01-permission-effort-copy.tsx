@@ -7,6 +7,7 @@
  */
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { declaredModelEfforts } from "../../../../../lib/effort";
+import { enginePersonality } from "../../../../../lib/reply-style.mjs";
 import "@xterm/xterm/css/xterm.css";
 import { copyTextToClipboard } from "../../../../../lib/clipboard";
 import { imageToken, splitPromptSegments, promptImagePaths, stripImageTokens, isImagePart, imagePartSrc, normalizeImagePartForSend } from "../../../../../lib/prompt-images";
@@ -208,7 +209,9 @@ bag.layaReady = layaReady as typeof bag.layaReady;
   function changePersonality(value: string) {
     bag.setPersonality(value);
     localStorage.setItem("default-personality", value);
-    void bag.updateThreadSettings({ personality: value === "none" ? null : value });
+    /* 10-27：引擎只认官方三档 ⇒ 「需求询问」这类自定义风格按 none 下发，
+       它真正的效果由 developer instructions 里的 grill-me 指令承担（见 src/lib/reply-style.mjs）。 */
+    void bag.updateThreadSettings({ personality: enginePersonality(value) });
   }
 bag.changePersonality = changePersonality as typeof bag.changePersonality;
 
@@ -335,7 +338,7 @@ bag.resolveThreadReferences = resolveThreadReferences as typeof bag.resolveThrea
         input,
         model: bag.selectedModel?.model ?? modelName(bag.modelId),
         effort: bag.effort || null,
-        personality: bag.selectedModel?.supportsPersonality ? bag.personality : null,
+        personality: bag.selectedModel?.supportsPersonality ? enginePersonality(bag.personality) : null,
         approvalPolicy: bag.approvalPolicy,
         // 沙箱逐回合下发：编辑重发就在原会话里跑，按该会话自己的权限（白名单校验后）
         sandboxPolicy: sandboxPolicy(threadSandboxOf(forked.thread.id) ?? bag.sandbox, forked.thread.cwd ?? bag.workspace ?? ""),

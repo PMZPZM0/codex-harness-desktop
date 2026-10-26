@@ -187,7 +187,9 @@ console.log(C.bold("\n【4a-2】会话作用域块（会话级配置下发到会
     // 下发点：collaborationMode 块里必须真的带上 developer_instructions（不能只 import 不用）。
     // 允许外面再包一层（09-19 起语气块用 composeMoodInstructions 包在作用域块外）——
     // 判据仍是「这条通道确实接上了」，不锁死拼接层数。
-    const wired = /collaborationMode:\s*\{[\s\S]{0,400}?developer_instructions:\s*(?:composeMoodInstructions\(\s*)?composeScopeInstructions\(/.test(scopeSrc);
+    // 10-27：「需求询问」风格块与语气块一起用数组拼接下发 ⇒ developer_instructions 后面可能先出现 `[`，
+    //   判据放行这一层包装，但仍必须链到 composeScopeInstructions（作用域没接上照样红）。
+    const wired = /collaborationMode:\s*\{[\s\S]{0,400}?developer_instructions:\s*[\[(]?\s*(?:composeMoodInstructions\(\s*)?composeScopeInstructions\(/.test(scopeSrc);
     // 覆盖三条路径：新建会话（thread/start 注入 + pushSessionScope）、打开旧会话、设置变更
     const covered = /pushSessionScope\(/.test(scopeSrc) && /buildSessionScope\(/.test(scopeSrc) && /thread\/settings\/update", \{ threadId: thread\.id, \.\.\.values/.test(scopeSrc);
     imported && wired && covered
