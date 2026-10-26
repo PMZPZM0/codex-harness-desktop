@@ -46,6 +46,7 @@ import { egoBrowserPath, egoBrowserVersion, runEgoUpgrade } from "../toolchain";
 import { componentSpec, visibleSpecs, type ComponentSpec, type DownloadSourceSetting } from "../update-registry";
 import { scanRows, updateComponent, type ComponentRow, type UpdateOutcome } from "../update-backends";
 import { sendToWindow } from "./window-bus";
+import { mainWindow } from "../runtime-refs";
 import { codexHome } from "../runtime-refs";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
@@ -134,6 +135,16 @@ function notifyUpdated(title: string, body: string): void {
   try {
     if (!Notification.isSupported()) return;
     const notice = new Notification({ title, body, silent: true });
+    /* ⛔⛔ 10-26 用户实测：「应用出来的通知，我点击不会打开应用，点击通知弹窗没反应」
+       —— 这里原来**连 click 都没接**，点了自然什么都不发生。
+       点通知 = 唤出主窗（最小化先还原、已销毁则跳过），与 main.ts 的唤窗范式同口径。 */
+    notice.on("click", () => {
+      const win = mainWindow;
+      if (!win || win.isDestroyed()) return;
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    });
     notice.show();
   } catch { /* 通知失败不影响更新结果 */ }
 }
