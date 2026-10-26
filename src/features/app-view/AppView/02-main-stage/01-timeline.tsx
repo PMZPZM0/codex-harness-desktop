@@ -393,8 +393,18 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     const win = { ordered: timelineWindow.ordered, visible: historyPlan.visible };
     const cs = compactionStateOf(win.ordered, threadCompactToast?.state);
     const record = compactionRecordFor(thread.id);
+    /* ⛔⛔ 10-26 用户两条实测：「都没压缩过，好多绿线」「绿线跟着滚轮跑，压根不是压缩线的位置」。
+       根因：**没有任何压缩证据时也照调 resolveCompactionAnchor("", {at:0})**，而它的兜底是
+       「visible 的最后一回合」⇒ 每个没压缩过的会话都会凭空长出一条绿线，窗口一滚它就跟着跑。
+       ⇒ 两道闸：
+         ① 没有压缩证据（渲染层窗口里没有压缩项 / 该会话没有压缩记录 / 没有该会话的 toast）⇒ 不画；
+         ② 有证据但**定不了位置**（既没有回合 id，也没有毫秒时间）⇒ 也不画（宁可不画，不画错位置）。 */
+    const hasEvidence = cs.state === "done" || cs.state === "compacting" || Boolean(record);
+    if (!hasEvidence) return { turnId: "", atEnd: false };
     const boundary = cs.turnId || String(record?.turnId ?? "");
-    const at = resolveCompactionAnchor(win.visible, boundary, { compactionAt: Number(record?.at ?? 0) });
+    const compactionAt = Number(record?.at ?? 0);
+    if (!boundary && !(compactionAt > 0)) return { turnId: "", atEnd: false };
+    const at = resolveCompactionAnchor(win.visible, boundary, { compactionAt });
     if (at < 0) return { turnId: "", atEnd: false };
     /* ⛔ 刻度尺只给**用户消息**画刻度：压缩落在空回合（手动压缩）上时，锚点那个回合没有刻度 ⇒
        绿色段要挂在「锚点位置之后第一个有用户消息的回合」的刻度之前；后面一个都没有 = 末尾。 */
