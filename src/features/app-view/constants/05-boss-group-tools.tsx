@@ -34,7 +34,6 @@ export const GROUP_CREATE_TOOL = {
         },
       },
       maxRejects: { type: "number", description: "打回上限，默认 2（超过就升级给用户）" },
-      budgetMinutes: { type: "number", description: "整群时间预算（分钟），默认 40；用尽自动暂停派活" },
     },
     required: ["name", "members"],
   },

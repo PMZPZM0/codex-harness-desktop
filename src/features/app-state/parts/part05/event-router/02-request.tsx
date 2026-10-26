@@ -195,13 +195,13 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       // ⛔ boss 身份取引擎下发的 threadId（模型伪造不了），群事件靠它回投
                       bossThreadId: String(event.params?.threadId ?? bag.threadRef.current?.id ?? ""),
                       members,
-                      policy: { maxRejects: args.maxRejects, budgetMinutes: args.budgetMinutes },
+                      policy: { maxRejects: args.maxRejects },
                     });
                     const group = res?.group;
                     if (!group) await bad(`建群失败：宿主没有返回群信息`);
                     else await ok(`群已建好：${group.group.name}（id=${group.group.id}）
 成员：${group.group.members.map((m: any) => `${m.name}[${m.role}] id=${m.id}`).join("、")}
-打回上限 ${group.group.policy.maxRejects} 次，时间预算 ${group.group.policy.budgetMinutes} 分钟。
+打回上限 ${group.group.policy.maxRejects} 次（没有时间预算：Codex 自己会安排节奏）。
 下一步用 group_assign 派活（⛔ criteria 必填）。`);
                   } else if (tool === "group_assign") {
                     const res = await window.codex.assignBossTask({

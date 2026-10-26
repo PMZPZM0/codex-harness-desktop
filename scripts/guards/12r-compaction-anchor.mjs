@@ -114,7 +114,7 @@ ok(/const currentPos = currentItemId \? marks\.findIndex\(\(m\) => m\.itemId ===
   "⛔ 波浪只在滚轮滚动期间触发（默认静止无波浪；hover 仍以鼠标为准），上下两格按距离衰减");
 ok(/addEventListener\("wheel", onWheel/.test(ruler)
   && /setWheelWave\(true\)/.test(ruler)
-  && /setWheelWave\(false\), 600\)/.test(ruler)
+  && /setWheelWave\(false\); \}, 600\)/.test(ruler)
   && /removeEventListener\("wheel", onWheel\)/.test(ruler),
   "滚轮点亮波浪 + 停止 600ms 自动收起 + 卸载时摘监听（⛔ 程序化滚动/贴底/跳转都不许触发）");
 ok(/const threadCompactToast = thread && compactToast && compactToast\.threadId === thread\.id \? compactToast : null/.test(timeline)
@@ -126,6 +126,24 @@ ok(/contentOffsetTop\(el, scroller\) <= probe/.test(ruler) && !/if \(el\.offsetT
 ok(/className=\{`ruler-tick[\s\S]{0,900}?onClick=\{\(\) => onJump\(mark\.turnId\)\}/.test(ruler)
   && /data-turn-id=\{mark\.turnId\}/.test(ruler),
   "每根刻度线都可点击跳转（带 data-turn-id，验收/键盘可用）");
+
+/* ── 与消息/滚落的联动（10-26 用户实测「中枢会话里刻度线跟消息和滚轮没有联动」「波浪没声音」）── */
+const userMsgSrc = read("src/features/shared/UserMessageView.tsx");
+ok(/if \(refs\.groupEvents\?\.length\) \{[\s\S]{0,700}?data-ruler-mark="user"/.test(userMsgSrc),
+  "⛔ 群广播（中枢会话里绝大多数「用户消息」）也必须带 data-ruler-mark —— 漏了刻度尺一个参照点都没有，滚动不联动");
+ok(/playWheelTick\(waveDirRef\.current\)/.test(ruler) && /waveRef\.current && current/.test(ruler),
+  "滚轮滚动跨过一条消息时出声（⛔ 不许只在刻度尺自身的滚轮上响 —— 那样波浪就是静音的）");
+ok(/onMouseEnter=\{\(event\) => \{[\s\S]{0,400}?playWheelTick\(-1\)/.test(ruler),
+  "鼠标划过刻度也出声（用户 10-26：「鼠标放上去，挪动和滚动也要触发声音」）");
+/* ⛔ 10-26 用户：「刻度线要对应消息和群里展示的事件，不要对应那些不展示的」——
+   判据不是"文本像刷屏"，而是**与群汇报卡同一份可见性**（visible-group-blocks 是唯一实现）。 */
+ok(/import \{ visibleGroupBlocks \} from "\.\.\/\.\.\/\.\.\/lib\/visible-group-blocks\.mjs"/.test(ruler)
+  && /const blocks = visibleGroupBlocks\(raw\);/.test(ruler)
+  && /blocks\.length === 0\) continue;/.test(ruler),
+  "刻度的取舍与群汇报卡**同一份**可见性判据（⛔ 别拿整段文本套正则：一条群事件可能混着该隐藏的通知）");
+
+ok(/wheelTimer = setTimeout\(\(\) => \{ waveRef\.current = false; setWheelWave\(false\); \}, 600\)/.test(ruler),
+  "停下 600ms 后波浪与声音一起收（⛔ 不许常驻呼吸）");
 
 console.log(fails ? `\n【compaction-anchor】${checks} 条断言 / ${fails} 条失败` : `\n【compaction-anchor】${checks} 条断言全部通过`);
 process.exit(fails ? 1 : 0);

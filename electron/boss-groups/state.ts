@@ -72,7 +72,7 @@ export function createGroup(state: BossState, input: {
       //    会把默认值覆盖成 undefined，之后所有比较都变 NaN（打回上限就失效了）。
       maxRejects: Number.isFinite(Number(input.policy?.maxRejects)) && Number(input.policy?.maxRejects) > 0 ? Number(input.policy?.maxRejects) : DEFAULT_POLICY.maxRejects,
       reviewer: input.policy?.reviewer ?? DEFAULT_POLICY.reviewer,
-      budgetMinutes: Number.isFinite(Number(input.policy?.budgetMinutes)) && Number(input.policy?.budgetMinutes) > 0 ? Number(input.policy?.budgetMinutes) : DEFAULT_POLICY.budgetMinutes,
+      /* ⛔ 10-26：预算字段已删除（用户令：正常派活不需要它）。渲染层即使还传 budgetMinutes 也一律忽略。 */
     },
     members: members.map((m, index) => ({
       id: `m${index + 1}_${String(m.name).trim().toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, "").slice(0, 12) || "member"}`,
@@ -396,19 +396,10 @@ export function resolveEscalation(state: BossState, taskId: string, choice: Esca
   return task;
 }
 
-/** 预算：只按**分钟**算（tokens 要引擎用量口径，P1 再接，别编）。返回是否刚刚越过阈值。 */
-export function checkBudget(state: BossState, groupId: string, now = Date.now()): { usedMinutes: number; ratio: number; warn?: "80" | "100" } {
-  const group = groupOf(state, groupId);
-  const usedMinutes = (now - group.createdAt) / 60000;
-  const ratio = group.policy.budgetMinutes > 0 ? usedMinutes / group.policy.budgetMinutes : 0;
-  if (ratio >= 1 && group.paused !== true) {
-    group.paused = true;
-    pushEvent(state, { groupId: group.id, kind: "budget", text: `预算用尽（${Math.round(usedMinutes)} 分钟 / ${group.policy.budgetMinutes} 分钟），全群暂停` });
-    return { usedMinutes, ratio, warn: "100" };
-  }
-  if (ratio >= 0.8) return { usedMinutes, ratio, warn: "80" };
-  return { usedMinutes, ratio };
-}
+/* ⛔ 10-26 用户令：**预算闸整体删除**（「正常 Codex 派遣别人干活，不需要这个，Codex 也没有那么笨」）。
+   原来这里按 `createdAt + budgetMinutes` 算 80%/100%，到点把整群 paused=true 并推一条 budget 事件
+   ⇒ 用户看到的就是「预算已用 80%」在会话里刷屏。现在：不统计、不暂停、不推事件。
+   ⛔ 别以"提醒一下更稳妥"为理由加回来 —— 它是纯噪音，而且 group_pause / group_resume 手动闸还在。 */
 
 /** 账本快照（给 boss 工具与看板用）：只读、可直接 JSON 化。 */
 export function snapshot(state: BossState, groupId: string) {

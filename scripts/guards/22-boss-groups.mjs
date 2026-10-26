@@ -37,7 +37,7 @@ try {
   ok(false, `dist-electron/boss-groups/state.js 加载失败（先跑 npm run build:electron）：${String(error?.message ?? error).slice(0, 120)}`);
 }
 if (state) {
-  const { emptyState, createGroup, addMember, addTask, assignTask, markRunning, submitTask, recordReview, pickReassignee, resolveEscalation, checkBudget, parseVerdict, removeMember, setPinned, pushEvent } = state;
+  const { emptyState, createGroup, addMember, addTask, assignTask, markRunning, submitTask, recordReview, pickReassignee, resolveEscalation, parseVerdict, removeMember, setPinned, pushEvent } = state;
   const { MAX_MEMBERS, DEFAULT_POLICY } = require(join(ROOT, "dist-electron", "boss-groups", "types.js"));
 
   const mkGroup = (stateObj, members, policy) => createGroup(stateObj, {
@@ -150,15 +150,17 @@ if (state) {
     ok(String(throws(() => resolveEscalation(s, t.id, "user-takeover")))?.includes("升级状态"), "非 escalated 状态不能再走升级流程");
   }
 
-  /* ── 8. 预算闸 ── */
+  /* ── 8. 预算闸**已删除**（10-26 用户令：「正常 Codex 派遣别人干活，不需要这个，Codex 也没有那么笨」）
+     ⛔ 负向断言：既不许自动暂停、也不许把 checkBudget 加回来（它只会往会话里刷「预算已用 80%」）。 */
   {
+    ok(typeof state.checkBudget === "undefined", "⛔ 预算闸已删除（checkBudget 不该再存在）");
     const s = emptyState();
-    const g = mkGroup(s, [{ name: "甲", role: "写" }], { budgetMinutes: 1 });
-    g.createdAt = Date.now() - 61_000;     // 假装已经用了 61 秒 / 预算 1 分钟
-    const res = checkBudget(s, g.id);
-    ok(res.warn === "100" && g.paused === true, "预算用尽 ⇒ paused + 告警 100");
-    const t = addTask(s, { groupId: g.id, title: "暂停后", brief: "", criteria: "x" });
-    ok(String(throws(() => assignTask(s, t.id, g.members[0].id)))?.includes("暂停"), "暂停后派活被拒（不会偷偷继续烧）");
+    const g = mkGroup(s, [{ name: "甲", role: "写" }]);
+    g.createdAt = Date.now() - 30 * 24 * 3600_000;   // 假装 30 天前建的群
+    const t = addTask(s, { groupId: g.id, title: "很久以后", brief: "", criteria: "x" });
+    assignTask(s, t.id, g.members[0].id);
+    ok(t.status === "assigned" && g.paused !== true,
+      "⛔ 没有任何「到点自动暂停」：再老的群也照常派活");
   }
 
   /* ── 8b. 动态成员：拉人 / 移人（10-24 用户令） ── */
@@ -709,8 +711,14 @@ if (state) {
      呈现层只在**气泡这一层**换样式（群事件在引擎里就是一条 userMessage —— 换时间线渲染器会踩
      折叠/钉顶/贴底那套按回合单元算的不变量）。 */
   const userMsgView = read("src/features/shared/UserMessageView.tsx");
-  ok(/if \(refs\.groupEvents\?\.length\) return <GroupFeed/.test(userMsgView) && /function GroupFeed/.test(userMsgView),
-    "群消息走 GroupFeed（头像 + 名字 + 内容），⛔ 不再套用户气泡");
+  /* ⛔ 10-26：群分支改成包一层只带定位属性的 div（刻度尺要它，见 12r）——
+     判据打「走 GroupFeed 且带 data-ruler-mark」，⛔ 别再锚死单行 return 的写法。 */
+  ok(/if \(refs\.groupEvents\?\.length\) \{/.test(userMsgView)
+    && /const visibleBlocks = refs\.groupEvents\.filter\(\(block\) => !isHiddenNoticeBlock\(block\)\)/.test(userMsgView)
+    && /if \(!visibleBlocks\.length\) return null;/.test(userMsgView)
+    && /<GroupFeed blocks=\{visibleBlocks\}/.test(userMsgView)
+    && /data-ruler-mark="user" data-turn-id=\{turn\?\.id\} data-item-id=\{item\.id\}/.test(userMsgView),
+    "群消息走 GroupFeed 并带刻度尺定位属性；全被过滤的刷屏事件**连外壳都不渲染**（⛔ 不套用户气泡）");
   ok(/group-avatar/.test(userMsgView) && /group-msg-body/.test(userMsgView) && /group-sys/.test(userMsgView)
     && /\.group-avatar \{/.test(read("src/styles/47-boss-group-view.css")),
     "群气泡三件套（头像 / 正文 / 系统行）样式在位");
