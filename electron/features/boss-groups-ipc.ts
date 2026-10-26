@@ -215,7 +215,14 @@ export const bossGroupsFeature = defineFeature<null>({
       });
       bossStore.save();
       const group = state.groups[task.groupId];
-      if (group) void postToBoss(group, `[群事件] 审查结论（人）：${verdict === "approved" ? "通过" : "打回"}「${task.title}」${input?.reasons?.length ? `：${input.reasons.join("；")}` : ""}`);
+      /* ⛔⛔ 10-26 用户令：「Codex 要区分出来成员广播汇总消息和用户消息，成员消息是汇报结果的」
+         ⇒ 审查结论（通过/打回）也要按**成员汇报**回投（带头像+名字+结论徽标），
+            而不是一条居中灰行。
+         ⛔ 文案带**成员名**（谁做的活被认可/打回）+ **判定方**（中枢/人工）——
+            解析器按这个格式出块（改文案必须同步改 group-event-text.mjs，否则会落回灰行）。 */
+      const reviewer = String(input?.by ?? "user") === "user" ? "人工" : "中枢";
+      const memberName = group?.members?.find((m: any) => m.id === task.assignee)?.name ?? "成员";
+      if (group) void postToBoss(group, `[群事件] 审查结论：${memberName} 的「${task.title}」${verdict === "approved" ? "通过" : "打回"}（${reviewer}判定）${input?.reasons?.length ? `：${input.reasons.join("；")}` : ""}`);
       return { ok: true, task: { id: task.id, status: task.status, rejects: task.rejects, lockedAuthors: task.lockedAuthors } };
     });
 

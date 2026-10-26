@@ -233,6 +233,23 @@ function GroupFeed({ blocks }: { blocks: GroupEventBlock[] }) {
             </div>
           );
         }
+        if (block.type === "verdict") {
+          /* ⛔ 审查结论 = **成员汇报结果**（10-26 用户令）⇒ 走成员气泡（头像+名字+结论徽标），
+             不是居中灰行 —— 让人一眼看出"谁的活被认可/被打回"。 */
+          return (
+            <div className={`group-msg${block.passed ? " is-pass" : " is-reject"}`} key={index}>
+              <span className="group-avatar" style={{ ["--group-hue" as any]: hueOf(block.who) }} aria-hidden>{initialOf(block.who)}</span>
+              <div className="group-msg-main">
+                <div className="group-msg-head">
+                  <b className="group-msg-name">{block.who}</b>
+                  <span className="group-msg-badge">{block.passed ? "通过" : "打回"}</span>
+                  <span className="group-msg-title">「{block.title}」{block.reviewer ? ` · ${block.reviewer}判定` : ""}</span>
+                </div>
+                {block.reasons ? <div className="group-msg-body">{block.reasons}</div> : null}
+              </div>
+            </div>
+          );
+        }
         if (block.type === "review") {
           return (
             <div className="group-sys" key={index}>

@@ -458,18 +458,36 @@ function whereExe(exe: string): Promise<boolean> {
 
 /** 可拉名单：专家（teams 登记表，lead+成员）+ 本机 CLI agent（登记表，附 where 探测）。 */
 export async function poolForBoss(): Promise<{
-  experts: { teamId: string; teamName: string; memberId: string; name: string; role: string; model?: string; effort?: string }[];
+  experts: {
+    teamId: string; teamName: string; memberId: string; name: string; role: string;
+    description?: string; model?: string; effort?: string;
+    sandbox?: string; approvalPolicy?: string; isLead?: boolean;
+  }[];
   cliAgents: { name: string; role: string; command: string; detected: boolean }[];
 }> {
-  let experts: { teamId: string; teamName: string; memberId: string; name: string; role: string; model?: string; effort?: string }[] = [];
+  let experts: {
+    teamId: string; teamName: string; memberId: string; name: string; role: string;
+    description?: string; model?: string; effort?: string;
+    sandbox?: string; approvalPolicy?: string; isLead?: boolean;
+  }[] = [];
   try {
     const teams = await readUsableExpertTeams();
     for (const t of teams ?? []) {
-      for (const m of [t.lead, ...(t.members ?? [])]) {
+      for (const [m, isLead] of [[t.lead, true], ...(t.members ?? []).map((x: any) => [x, false])] as any[]) {
         if (!m?.id) continue;
         const role = (m as any).profession?.zh ?? (m as any).description ?? "专家";
         const teamName = (t as any).displayName?.zh ?? (t as any).displayName ?? t.teamId;
-        experts.push({ teamId: t.teamId, teamName, memberId: m.id, name: m.name, role, model: m.model, effort: m.effort });
+        /* ⛔⛔ 10-26 用户令：「展示成员列表」「帮 cli 成员配置好模型等等」——
+           这里必须把**完整配置**带出去（model/effort/sandbox/approvalPolicy），
+           否则手动拉人加进来的成员是"半配置" ⇒ 派活时只能吃默认值（甚至派不出去）。
+           ⛔ 顺带带上 profession（渲染层据此选头像图标）与 isLead（区分组长）。 */
+        experts.push({
+          teamId: t.teamId, teamName, memberId: m.id, name: m.name, role,
+          description: (m as any).description,
+          model: m.model, effort: m.effort,
+          sandbox: (m as any).sandbox, approvalPolicy: (m as any).approvalPolicy,
+          isLead: Boolean(isLead),
+        });
       }
     }
   } catch { /* 专家登记表读不到就只给 CLI 名单 */ }
@@ -825,19 +843,44 @@ export async function memberForBoss(input: {
         const pool = team ? [team.lead, ...(team.members ?? [])] : [];
         const m = pool.find((x) => x?.id === String(input.expertMemberId ?? "")) ?? pool.find((x) => x?.name === String(input.name ?? ""));
         if (!m) return { ok: false, error: `专家名单里找不到「${input.expertMemberId || input.name}」（teamId=${input.expertTeamId ?? ""}），先用 group_status 看可拉名单` };
+        /* ⛔⛔ 10-26：专家成员的**完整配置**一起带进来（sandbox / approvalPolicy 原来就带了，
+           这里补上 isLead 语义与 description；关键是 model/effort 必须有 ——
+           缺了就是"半配置成员"，派活时只能吃全局默认，用户看着像没生效）。 */
+        /* ⛔⛔ 10-26 用户令：「帮 cli 成员配置好模型等等，最后能干活和派遣」
+           ⛔ 真机取证：13 个专家团 61 个专家，`model/effort` **全是 null**
+              ⇒ 手动拉进来后成员是"半配置"（界面显示不出模型、派活只能吃全局默认）。
+           ⇒ 拉人时**当场补齐**：登记表没写 model 就落**当前默认模型**（与其它成员同口径），
+              effort/sandbox/approvalPolicy 同理给默认值。
+           ⛔ 这样成员身上就有一份**完整可改**的配置（换模型/调权限时才有东西可改）。 */
+        const env = await providerEnv();
         addInput = {
           name: m.name, role: m.profession?.zh ?? "专家", systemPrompt: m.systemPrompt,
-          model: m.model, effort: m.effort, sandbox: m.sandbox, approvalPolicy: m.approvalPolicy,
+          model: m.model || env.model || undefined,
+          effort: m.effort || "high",
+          sandbox: m.sandbox || "workspace-write",
+          approvalPolicy: m.approvalPolicy || "on-request",
           source: "engine",
         };
       } else if (input.from === "cli") {
         const reg = CLI_AGENT_REGISTRY.find((a) => a.name === String(input.cliName ?? input.name ?? "").toLowerCase());
         const command = String(input.cliCommand ?? reg?.command ?? "").trim();
         if (!command) return { ok: false, error: `拉 CLI agent 需要命令模板（cliCommand，{prompt} 会替换成任务全文）；登记表里没有「${input.cliName ?? ""}」` };
+        /* ⛔⛔ 10-26 用户令：「cli成员就让Codex添加就行，帮cli成员配置好模型等等，最后能干活和派遣」
+           ⛔ 原来 CLI 成员的 model / effort / sandbox / approvalPolicy **全空** ⇒
+              界面显示不出配置、派活时只能吃默认值，而且"配置"这件事压根不存在。
+           ⇒ 这里把**当前默认模型**与执行参数**一起配齐**（CLI 自己跑自己的模型，
+              但宿主这边的配置要完整 —— 换模型/调权限时才有东西可改）。
+           ⛔ model 从 providerEnv() 取当前默认（与其它成员同一口径）。 */
+        const env = await providerEnv();
+        const cliName = String(input.cliName ?? reg?.name ?? "");
         addInput = {
           name: String(input.name ?? input.cliName ?? reg?.name ?? "cli-agent"),
           role: String(input.role ?? reg?.role ?? "本机 CLI agent"),
-          systemPrompt: `你是从本机命令行 agent（${String(input.cliName ?? reg?.name ?? "")}）拉进群的成员。你的成品由宿主执行你的命令行得到，回答请直接给结论与依据。`,
+          systemPrompt: `你是从本机命令行 agent（${cliName}）拉进群的成员。你的成品由宿主执行你的命令行得到，回答请直接给结论与依据。`,
+          model: env.model || undefined,
+          effort: "high",
+          sandbox: "workspace-write",
+          approvalPolicy: "on-request",
           source: "cli", cliCommand: command,
         };
       } else {

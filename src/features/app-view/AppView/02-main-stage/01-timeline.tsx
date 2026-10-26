@@ -6,7 +6,7 @@ import { isCompactionItem } from "../../../../lib/compaction-item.mjs";
 import { compactionStateOf, reportCompactionState } from "../../../../lib/compaction-state.mjs";
 import { compactionRecordFor, compactionVersion, subscribeCompactions } from "../../../../lib/compaction-records.mjs";
 import { resolveCompactionAnchor } from "../../../../lib/compaction-anchor.mjs";
-import { Fragment, useLayoutEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
+import { Fragment, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { BossThreadIntro, getBossThreads, subscribeBossThreads } from "../../../boss-group-view";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../lib/entity-avatar";
 import {
@@ -152,6 +152,8 @@ import { contentOffsetTop, historyPinStateFor, jumpToBottom, scrollToOffsetInsta
 import { visibleTurnWindow, mergeTurnListsById, turnHistoryPlan } from "../../../../lib/turn-order.mjs";
 import { setTurnHeightEstimate, setTurnWindowTail, subscribeTurnHistory, turnHistoryFor, turnHistoryVersion } from "../../../../lib/turn-history.mjs";
 import { ExpertTeamEditorModal, SubAgentEditorModal, TeamMemberRail, TeamMemberHistory, DelegatedRail, DelegatedRunPopup, TeamRunPopup } from "../../../experts-teams";
+import { BossGroupMemberRail } from "../../../boss-group-view/BossGroupMemberRail";
+import { useGroupMembers } from "../../../boss-group-view/group-members-store";
 /* ⭐ 10-05：普通会话的办公室入口迁到本文件的右侧轨道上 ⇒ 需要那个哨兵 teamId
    （从 team-office 域的 barrel 取，域间只许走 barrel）。 */
 import { OFFICE_SESSION_TEAM_ID } from "../../../team-office";
@@ -412,6 +414,16 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
      进指挥中枢也要直接进去会话界面，不要在欢迎界面加载」。 */
   const isBossHome = Boolean(thread?.id) && (bossThreads.sessionIds ?? []).includes(String(thread?.id));
   const isBossEmpty = (bossThreads.pending || isBossThreadNow || isBossHome) && noTurns;
+
+  /* ⛔⛔ 10-26 用户令：指挥中枢会话的**右侧群成员轨**（头像 + 工作中绿灯/光圈）。
+     ⛔ 群 id 从 bossThreads.groups 里按 bossThreadId 匹配当前会话（与顶栏成员按钮同一份判定）。
+     ⛔ 成员状态走**共享 store**（group-members-store）⇒ 与顶栏成员面板同一份快照 ⇒ 状态联动。 */
+  const bossGroupId = useMemo(() => {
+    if (!thread?.id) return "";
+    const hit = (bossThreads.groups ?? []).find((g: any) => String(g?.bossThreadId ?? "") === String(thread?.id));
+    return String(hit?.id ?? "");
+  }, [bossThreads.groups, thread?.id]);
+  const bossGroupMembers = useGroupMembers(bossGroupId);
 
   return (
     <div className="timeline-wrap" ref={timelineWrapRef}>
@@ -693,6 +705,14 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                   {/* 专家团成员头像轨 + 成员工作弹窗 + 历史记录（09-14 用户要求）。
                       头像轨是 timeline-wrap 的 flex 子项（占 92px / 紧凑 52px，容器窄了自动收起）；
                       两个面板绝对定位浮在消息区上，不遮输入框。 */}
+                  {/* ⛔⛔ 10-26：指挥中枢会话的**群成员轨**（头像 + 工作中绿灯/光圈 + 可滚动）。
+                     ⛔ 与下面两条轨**互斥**（同一时刻只能有一条右轨，否则两条叠在一起）：
+                       · 中枢会话 ⇒ 本轨；
+                       · 专家团会话 ⇒ TeamMemberRail；
+                       · 普通会话 ⇒ DelegatedRail。 */}
+                  {bossGroupId && !railTeam && (
+                    <BossGroupMemberRail members={bossGroupMembers.snapshot.members} />
+                  )}
                   {railTeam && (
                     <TeamMemberRail
                       team={railTeam}
@@ -729,7 +749,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                          · 专家团会话走上面的 TeamMemberRail（它自带办公室节点）⇒ 这里必须让开，否则两个办公室入口；
                          · `!runs.length` 时轨道也会渲染（只有一个办公室节点），
                            否则"没调度过"的普通会话根本没有右侧轨道、入口无处安放。 */}
-                  {!railTeam && (
+                  {!railTeam && !bossGroupId && (
                     <DelegatedRail
                       containerRef={timelineWrapRef}
                       runs={delegatedRailRuns}
