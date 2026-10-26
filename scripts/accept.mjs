@@ -86,6 +86,32 @@ const CHECKS = [
         return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
           has:!!card, above:!!(card&&fn&&card.getBoundingClientRect().top < fn.getBoundingClientRect().top) }; })()`).catch(() => null);
       h.check("③ 外观：思考板块在功能入口上方", Boolean(look && look.has && look.above), JSON.stringify(look));
+
+      await nav("中转站");
+      await wait(1200);
+      const relay = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const page=m.querySelector(".relay-center"); if(!page) return null;
+        const banner=page.querySelector(".relay-sub-banner");
+        const add=page.querySelector(".relay-add-card");
+        const addStyle=add?getComputedStyle(add):null;
+        const strong=banner?banner.querySelector(".relay-sub-banner-main > strong"):null;
+        const state=banner?(banner.dataset.state||""):"";
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          hasInfo:!!page.querySelector(".page-info"),
+          hasFoot:!!page.querySelector(".relay-center-foot"),
+          state,
+          guestParas: state==="guest" && banner ? banner.querySelectorAll(".relay-sub-banner-main > p").length : 0,
+          strongBig: strong ? parseFloat(getComputedStyle(strong).fontSize) : 0,
+          addSmall: add ? add.querySelectorAll("small").length : 0,
+          addDir: addStyle ? addStyle.flexDirection : "",
+          addHeight: add ? Math.round(add.getBoundingClientRect().height) : 0 };
+      })()`).catch(() => null);
+      h.check("④ 中转站：无问号/无页脚赘述，未登录只留大字，添加卡横向单行",
+        Boolean(relay && relay.page === "中转站" && !relay.hasInfo && !relay.hasFoot && relay.guestParas === 0
+          && (relay.state !== "guest" || relay.strongBig >= 15)
+          && relay.addSmall === 0 && relay.addDir === "row" && relay.addHeight >= 60),
+        JSON.stringify(relay));
       await h.pressKey("Escape");
       await wait(300);
     },

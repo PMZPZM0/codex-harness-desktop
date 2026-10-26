@@ -1575,9 +1575,6 @@
   color: var(--text);
   transform: translateY(-1px);
 }
-.relay-add-card small {
-  font-weight: 400;
-}
 .relay-modal-backdrop {
   align-items: center;
   background: rgba(15, 20, 25, 0.5);
