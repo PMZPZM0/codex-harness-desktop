@@ -716,7 +716,7 @@ const CHECKS = [
       await wait(500);
 
       const pick = await h.eval(`(function(){
-        const rows=[...document.querySelectorAll(".tree-entry")];
+        const rows=[...document.querySelectorAll(".tree-entry")].filter((x)=>!x.querySelector(".tree-chevron"));
         const b=rows.find((x)=>(x.getAttribute("data-tree-path")||"").endsWith("package.json"))||rows.find((x)=>(x.getAttribute("data-tree-path")||"").match(/\\.[a-z0-9]{1,5}$/i));
         if(!b) return 0; b.click(); return 1;
       })()`);
