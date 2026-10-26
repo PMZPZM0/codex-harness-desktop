@@ -7,9 +7,11 @@
  */
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Copy, FolderOpen, MoreHorizontal } from "lucide-react";
+import { Check, ChevronDown, Copy, FolderOpen, Maximize2, MoreHorizontal, Pencil } from "lucide-react";
 import { FileTypeIcon, fileExtOf } from "./FileTypeIcon";
 import { openRightFile } from "../lib/right-file.mjs";
+import { openFileTextEditor } from "../lib/ui-channels";
+import { BINARY_EXTENSIONS, IMAGE_EXTENSIONS } from "../hooks/useFilePreview";
 
 export type FileOpenMode = "workspace" | "editor" | "system";
 const MODE_KEY = "output-file-open-target";
@@ -59,6 +61,7 @@ export function FileRefCard({
   const anchorRef = useRef<HTMLElement | null>(null);
   const { name, dir } = splitPath(path);
   const ext = fileExtOf(path).toUpperCase();
+  const editable = !IMAGE_EXTENSIONS.has(fileExtOf(path)) && !BINARY_EXTENSIONS.has(fileExtOf(path));
 
   useEffect(() => {
     if (!menu) return;
@@ -87,7 +90,8 @@ export function FileRefCard({
     anchorRef.current = event.currentTarget;
     const rect = event.currentTarget.getBoundingClientRect();
     const width = kind === "mode" ? 168 : 180;
-    const height = kind === "mode" ? 128 : 92;
+    /* 10-26 用户：「我记得之前有灯箱预览和编辑功能，现在没有，加上，三个点里面加一个这个选项」 */
+    const height = kind === "mode" ? 128 : 20 + (editable ? 4 : 3) * 30;
     setMenu({ kind, left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)), top: Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - height - 8)) });
   };
 
@@ -134,6 +138,14 @@ export function FileRefCard({
             </button>
           )) : (
             <>
+              <button type="button" role="menuitem" onClick={() => { setMenu(null); onOpenEditor?.(path); }}>
+                <Maximize2 size={12} /><span>灯箱预览</span>
+              </button>
+              {editable && (
+                <button type="button" role="menuitem" onClick={() => { setMenu(null); openFileTextEditor(path, name); }}>
+                  <Pencil size={12} /><span>编辑</span>
+                </button>
+              )}
               <button type="button" role="menuitem" onClick={() => { try { void navigator.clipboard?.writeText(path); } catch { /* 剪贴板不可用 */ } setMenu(null); }}>
                 <Copy size={12} /><span>复制路径</span>
               </button>

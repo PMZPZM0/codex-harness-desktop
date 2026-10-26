@@ -7,6 +7,7 @@
 //   ③ plugin-market-gitee：插件市场 Gitee raw / jsDelivr 兜底（403 限流回归）
 //   ④ voice-ball-reactions：悬浮球眼睛跟鼠标 + 打字弹迷你键盘（10-26）
 //   ⑤ sidebar-adaptive：「功能入口」是侧栏右侧浮层，不占纵向空间；Esc 收起
+//   ⑥ file-preview-controls：右栏文件树/预览可拖动分栏 + 预览向上拉满（按钮/Alt+↑↓）
 //
 // 用法：
 //   node scripts/accept.mjs                 # 跑全部当前项
@@ -698,6 +699,66 @@ const CHECKS = [
         moreOpened && moreClicked === 1 && !afterMore.flyout && afterMore.editor, JSON.stringify({ moreOpened, moreClicked, ...afterMore }));
       await h.eval(`document.querySelector(".fm-editor-foot button:last-child")?.click()`).catch(() => undefined);
       await wait(250);
+    },
+  },
+  {
+    id: "file-preview-controls",
+    name: "🗂 右栏文件预览：拖动分栏 + 向上拉满（按钮 / Alt+↑↓）",
+    run: async (h) => {
+      /* 10-26 用户：「右边加一下，上下可以…展示，下面也可以往上展示的功能和对应按键」。 */
+      await h.eval(`localStorage.setItem("right-panel-open","true")`).catch(() => undefined);
+      await h.reload({ waitMs: 2200 });
+      await wait(1600);
+      await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "界面就绪", timeoutMs: 30000 });
+      await wait(700);
+      await h.eval(`(function(){const b=[...document.querySelectorAll(".panel-tab")].find((x)=>(x.textContent||"").includes("文件")); if(b)b.click(); return !!b})()`);
+      await h.waitFor(`document.querySelectorAll(".tree-entry").length > 0`, { label: "文件树", timeoutMs: 15000 });
+      await wait(500);
+
+      const pick = await h.eval(`(function(){
+        const rows=[...document.querySelectorAll(".tree-entry")];
+        const b=rows.find((x)=>(x.getAttribute("data-tree-path")||"").endsWith("package.json"))||rows.find((x)=>(x.getAttribute("data-tree-path")||"").match(/\\.[a-z0-9]{1,5}$/i));
+        if(!b) return 0; b.click(); return 1;
+      })()`);
+      await wait(900);
+
+      const geo = () => h.eval(`(function(){
+        const t=document.querySelector(".workspace-files-tree")?.getBoundingClientRect();
+        const p=document.querySelector(".workspace-file-preview")?.getBoundingClientRect();
+        return { treeH:t?Math.round(t.height):0, previewH:p?Math.round(p.height):0,
+          splitter:!!document.querySelector(".workspace-files-splitter"),
+          expanded:!!document.querySelector(".workspace-files.is-preview-expanded"),
+          path:(document.querySelector(".workspace-file-preview-path")?.textContent||"").trim(),
+          body:!!document.querySelector(".workspace-file-preview-body") };
+      })()`);
+
+      const base = await geo();
+      h.check("① 文件树与预览上下分栏，分栏条在位且预览已加载文件",
+        pick === 1 && Boolean(base.splitter) && base.treeH > 120 && base.previewH > 120 && base.body && base.path,
+        JSON.stringify(base));
+
+      await h.eval(`document.querySelector(".workspace-file-preview-expand")?.click()`);
+      await wait(400);
+      const expanded = await geo();
+      h.check("② 点「展开」：文件树收起、预览向上拉满",
+        expanded.expanded && expanded.treeH < 40 && expanded.previewH > base.previewH + 100,
+        JSON.stringify(expanded));
+
+      await h.eval(`document.querySelector(".workspace-file-preview-expand")?.click()`);
+      await wait(400);
+      const restored = await geo();
+      h.check("③ 点「恢复」：分栏回到原来的高度",
+        !restored.expanded && Math.abs(restored.treeH - base.treeH) <= 4 && Math.abs(restored.previewH - base.previewH) <= 4,
+        JSON.stringify(restored));
+
+      await h.eval(`window.dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowUp",altKey:true,bubbles:true}))`);
+      await wait(350);
+      const altUp = await geo();
+      await h.eval(`window.dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowDown",altKey:true,bubbles:true}))`);
+      await wait(350);
+      const altDown = await geo();
+      h.check("④ Alt+↑ 拉满 / Alt+↓ 恢复（按键与按钮同效）",
+        altUp.expanded && !altDown.expanded, JSON.stringify({ altUp, altDown }));
     },
   },
 ];
