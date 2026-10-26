@@ -526,11 +526,12 @@ export function CloudAccountSection() {
   const modelLive = Boolean(models?.active);
   const kbReady = Boolean(kb?.enabled);
   const memReady = Boolean(memory?.activation?.state === "active" && memory?.activation?.applied);
+  /* 10-26 二轮用户令「小文字简洁表达」：这三句都压到一行 —— 只留「现在能干什么 / 下一步点哪」。 */
   const overall = !modelReady
-    ? { tone: "off" as const, label: "待配置", hint: "登录成功，但云端模型还没同步 —— 点「一键同步 / 修复」，或去用户中心勾选模型。" }
+    ? { tone: "off" as const, label: "待配置", hint: "云端模型还没同步，点「一键同步 / 修复」。" }
     : !modelLive
-      ? { tone: "off" as const, label: "已同步，未生效", hint: "你现在用的是别的供应商（已保留）。需要云端出字时点「设为当前供应商」；知识库与记忆已自动接好。" }
-      : { tone: "on" as const, label: "已就绪", hint: "直接回聊天发消息即可；云端勾选与权益变动会每 10 分钟自动同步。" };
+      ? { tone: "off" as const, label: "已同步，未生效", hint: "当前用的是别的供应商；要云端出字点「设为当前供应商」。" }
+      : { tone: "on" as const, label: "已就绪", hint: "直接聊天即可；云端改动 10 分钟内自动同步。" };
 
   return (
     <section className="settings-section stack cloud-acct-section">
@@ -552,26 +553,9 @@ export function CloudAccountSection() {
           onClose={(result) => { setSessionDialog(null); if (result) { setMsg(result); void refresh(); } }}
         />
       )}
-      <div className="settings-copy channel-heading">
-        <div>
-          <h2>
-            云账号
-            <PageInfo
-              text={<>登录云账号后<b>自动配好</b>：云端勾选的模型同步到本机下拉框，<b>云端知识库与记忆</b>一并接通；没开通的会写明原因。云端管理里改了勾选 / 权益，本机最多 10 分钟自动跟上。<br />⛔ 这与「中转站」是两条独立的登录线，互不影响。</>}
-            />
-          </h2>
-          <p className="muted">
-            新手只需登录一次，剩下交给下面的一键配置；重签密钥 / 连通测试 / 上传下载会话等手动操作都收在「高级设置」里。
-          </p>
-        </div>
-        {/* 10-26 用户令：页头加「保存并重启」—— 复用连通测试成功时那颗按钮的同一套动作
-            （非强制同步把配置落定 → 重启应用，引擎只在启动时读 Key）。 */}
-        <div className="settings-heading-actions">
-          <button className="secondary-setting" disabled={!!busy} onClick={doSaveRestart} title="保存云端配置并重启应用，让引擎用上最新密钥与模型">
-            <RotateCcw size={14} />{busy === "save-restart" ? "保存中…" : "保存并重启"}
-          </button>
-        </div>
-      </div>
+      {/* 10-26 二轮用户令：「保存重启放一键修复嘴边，小文字简洁表达，右上角问号删除」
+         ⇒ 页头整块（大字 + 副标题 + ?）连 20px 空行一起去掉；「保存并重启」并进就绪卡的操作行，
+         紧挨「一键同步 / 修复」。⛔ 这页现在没有 ? 说明入口，是用户明确要求删的。 */}
 
       {msg && <div className={`cloud-acct-msg ${msg.kind}`}>{msg.text}</div>}
 
@@ -646,6 +630,11 @@ export function CloudAccountSection() {
                 <button className="primary-setting" disabled={!!busy} onClick={doProvision}>
                   <RefreshCw size={14} />{busy === "provision" ? "正在自动配置…" : "一键同步 / 修复"}
                 </button>
+                {/* 10-26 用户令：保存并重启紧挨「一键同步 / 修复」（与连通测试成功那颗按钮同一套动作：
+                    非强制同步把配置落定 → 重启应用，引擎只在启动时读 Key）。 */}
+                <button className="secondary-setting" disabled={!!busy} onClick={doSaveRestart} title="保存云端配置并重启应用，让引擎用上最新密钥与模型">
+                  <RotateCcw size={14} />{busy === "save-restart" ? "保存中…" : "保存并重启"}
+                </button>
                 <button className="secondary-setting" onClick={openUserCenter}>
                   <ExternalLink size={14} />用户中心
                 </button>
@@ -657,21 +646,21 @@ export function CloudAccountSection() {
                 label="云端模型"
                 tone={modelReady ? "on" : "off"}
                 tag={modelLive ? "当前生效" : modelReady ? "已同步" : "未注册"}
-                detail={modelReady ? `${models?.models ?? 0} 个可用 · 上次同步 ${agoText(models?.lastSyncAt ?? 0)}` : "云端还没有勾选模型（去用户中心勾选后点一键同步）"}
+                detail={modelReady ? `${models?.models ?? 0} 个可用 · 上次同步 ${agoText(models?.lastSyncAt ?? 0)}` : "云端还没勾选模型"}
               />
               <ReadyRow
                 icon={<BookOpen size={15} />}
                 label="云端知识库"
                 tone={kbReady ? "on" : "off"}
                 tag={kbReady ? "已接通" : kb?.exists ? "已停用" : "未开通"}
-                detail={kbReady ? "MCP 连接器已就绪，新会话可直接检索" : "开通后点「一键同步」即可接通（未开通不影响聊天）"}
+                detail={kbReady ? "新会话可直接检索" : "开通后点「一键同步」接通"}
               />
               <ReadyRow
                 icon={<Brain size={15} />}
                 label="云端记忆"
                 tone={memReady ? "on" : "off"}
                 tag={memReady ? (memory?.mode === "mcp" ? "已接通（MCP）" : "已接通（请求层）") : memory?.activation?.state === "unknown" ? "待确认" : "未开通"}
-                detail={memReady ? "每账号独立命名空间，自动注入与写入" : (memory?.activation?.reasonText || "开通后点「一键同步」即可接通")}
+                detail={memReady ? "每账号独立空间，自动读写" : (memory?.activation?.reasonText || "开通后点「一键同步」接通")}
               />
             </div>
             <div className="cloud-acct-hero-foot">
