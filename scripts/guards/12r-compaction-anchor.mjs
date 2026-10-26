@@ -93,8 +93,12 @@ ok(/prev\.compactionTurnId === next\.compactionTurnId/.test(ruler) && /prev\.com
 const css = read("src/styles/09-settings-workspace-memory.css");
 ok(/\.message-ruler \.ruler-compaction\s*\{[\s\S]{0,260}var\(--green\)/.test(css),
   "绿段颜色与压缩线同一个 token（var(--green)）");
-ok(/\.message-ruler \.ruler-compaction\s*\{[\s\S]{0,260}margin:\s*4px 0 4px 12px/.test(css),
-  "绿段与刻度同槽（2px 线 + 上下 4px margin + gap 4px = 14px，不撑乱 visibleCount = h/14）");
+/* ⛔ 10-26：为消灭刻度间 4px 死区，轨道 gap 4→0、上下 padding 4→6（单槽仍 14px，外观不变）。
+   判据打「命中区首尾相接」这个**结果**，别锚死某一代的 padding 数值。 */
+ok(/\.message-ruler \.ruler-track\s*\{[\s\S]{0,400}?gap:\s*0/.test(css)
+  && /\.message-ruler \.ruler-tick\s*\{[\s\S]{0,400}?padding:\s*6px 0/.test(css)
+  && /\.message-ruler \.ruler-compaction\s*\{[\s\S]{0,260}margin:\s*6px 0 6px 12px/.test(css),
+  "刻度与绿段同槽 14px 且**命中区首尾相接**（gap 0 + 上下 6px；⛔ 4px 缝隙会让悬停断开）");
 ok(/\.message-ruler \.ruler-compaction\s*\{[\s\S]{0,300}?width:\s*12px/.test(css)
   && /className=\{`ruler-compaction\$\{wave\}`\}/.test(ruler)
   && /className=\{`ruler-compaction\$\{endWave\}`\}/.test(ruler)
@@ -127,14 +131,28 @@ ok(/className=\{`ruler-tick[\s\S]{0,900}?onClick=\{\(\) => onJump\(mark\.turnId\
   && /data-turn-id=\{mark\.turnId\}/.test(ruler),
   "每根刻度线都可点击跳转（带 data-turn-id，验收/键盘可用）");
 
+/* ⛔ 10-26 用户：「都没压缩过，好多绿线」「绿线跟着滚轮跑，压根不是压缩线的位置」——
+   根因是**没有压缩证据也照画**（纯函数兜底 = visible 最后一回合 ⇒ 窗口一滚它就跟着跑）。 */
+const timelineSrc = read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx");
+ok(/const hasEvidence = cs\.state === "done" \|\| cs\.state === "compacting" \|\| Boolean\(record\);[\s\S]{0,200}?if \(!hasEvidence\) return \{ turnId: "", atEnd: false \};/.test(timelineSrc),
+  "⛔ 没有压缩证据就不画绿线（否则每个没压缩过的会话都凭空长一条）");
+ok(/if \(!boundary && !\(compactionAt > 0\)\) return \{ turnId: "", atEnd: false \};/.test(timelineSrc),
+  "⛔ 有证据但定不了位置也不画（宁可不画，不画到 visible 最后一回合 —— 那会跟着滚动跑）");
+
 /* ── 与消息/滚落的联动（10-26 用户实测「中枢会话里刻度线跟消息和滚轮没有联动」「波浪没声音」）── */
 const userMsgSrc = read("src/features/shared/UserMessageView.tsx");
 ok(/if \(refs\.groupEvents\?\.length\) \{[\s\S]{0,700}?data-ruler-mark="user"/.test(userMsgSrc),
   "⛔ 群广播（中枢会话里绝大多数「用户消息」）也必须带 data-ruler-mark —— 漏了刻度尺一个参照点都没有，滚动不联动");
 ok(/playWheelTick\(waveDirRef\.current\)/.test(ruler) && /waveRef\.current && current/.test(ruler),
   "滚轮滚动跨过一条消息时出声（⛔ 不许只在刻度尺自身的滚轮上响 —— 那样波浪就是静音的）");
-ok(/onMouseEnter=\{\(event\) => \{[\s\S]{0,400}?playWheelTick\(-1\)/.test(ruler),
-  "鼠标划过刻度也出声（用户 10-26：「鼠标放上去，挪动和滚动也要触发声音」）");
+/* ⛔ 10-26 用户：「刻度线中间那么小一个缝隙，我鼠标在上面上下滑动，都会断，都没有很好的连贯性」
+   ⇒ 悬停改成**整条轨道**按指针 Y 取最近刻度（每格自己 enter/leave 必然在缝隙处断开）。 */
+ok(/onMouseMove=\{\(event\) => hoverAt\(event\.clientY\)\}/.test(ruler)
+  && /const hoverAt = \(clientY: number\) => \{/.test(ruler)
+  && /playWheelTick\(-1\)/.test(ruler),
+  "悬停/划动是**整条轨道连续响应**（按指针取最近刻度，⛔ 不靠每格 enter/leave —— 缝隙处必断）");
+ok(!/onMouseEnter=\{\(event\) => \{[\s\S]{0,200}?setTip\(/.test(ruler),
+  "刻度自身不再承担 hover（避免与轨道处理器互相打断：tip 闪断 / 声音漏）");
 /* ⛔ 10-26 用户：「刻度线要对应消息和群里展示的事件，不要对应那些不展示的」——
    判据不是"文本像刷屏"，而是**与群汇报卡同一份可见性**（visible-group-blocks 是唯一实现）。 */
 ok(/import \{ visibleGroupBlocks \} from "\.\.\/\.\.\/\.\.\/lib\/visible-group-blocks\.mjs"/.test(ruler)

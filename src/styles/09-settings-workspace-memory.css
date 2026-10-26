@@ -1201,7 +1201,13 @@
   flex-direction: column;
   justify-content: center;
   align-items: flex-start;
-  gap: 4px;
+  /* ⛔⛔ 10-26 用户：「刻度线中间那么小一个缝隙，鼠标上下滑动都会断」——
+     原来是 2px 线 + 上下各 4px padding + **4px gap** ⇒ 每格之间有 4px 死区，
+     指针穿过就被判成 mouseleave（tip 闪断、波浪跳、声音漏）。
+     改成 **零 gap**：把上下 padding 4→6px，单槽仍是 14px（2+12），
+     线间距与整条尺子的外观**一模一样**，但命中区首尾相接、没有死区。
+     ⛔ 槽高仍是 14px ⇒ visibleCount = h/14 不用动。 */
+  gap: 0;
   display: flex;
   position: absolute;
   inset: 0;
@@ -1218,7 +1224,8 @@
   width: 12px;
   height: 2px;
   margin-left: 12px;
-  padding: 4px 0;
+  /* 2px 线 + 上下 6px = 14px 命中区（与轨道 gap:0 配合 ⇒ 相邻刻度命中区相接） */
+  padding: 6px 0;
   transition:
     width 0.26s cubic-bezier(0.22, 0.61, 0.36, 1),
     margin-left 0.26s cubic-bezier(0.22, 0.61, 0.36, 1),
@@ -1233,7 +1240,7 @@
   /* ⛔ 静止与普通刻度同长（12px）；波浪时同样**只向右**变长（左端对齐不动）。 */
   width: 12px;
   height: 2px;
-  margin: 4px 0 4px 12px;
+  margin: 6px 0 6px 12px;
   padding: 0;
   border: 0;
   border-radius: 1px;
