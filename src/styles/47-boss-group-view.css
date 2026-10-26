@@ -444,10 +444,11 @@
    ⛔ 复用 `.team-rail` 的外观体系（不另画一套：两处各写一份，图标/光圈很快会漂开）。
    ⛔ 与专家团轨/调度轨互斥（同一时刻只有一条右轨，见 timeline 的挂载门槛）。 */
 .boss-member-rail {
-  /* ⛔ 与专家团轨 / 普通会话轨**同一套布局**（垂直居中）：办公室节点在 track **内部**
-     ⇒ 同一根轴线 ⇒ 头像竖列天然对齐（曾把它放 track 外面 ⇒ 中心差 5px，
-     用户 10-26：「对齐啊」）。
-     ⛔ `justify-content: flex-start` 不用了：这条轨成员多（9+）⇒ 顶部对齐更稳。 */
+  /* ⛔⛔ **column** 布局：成员区（track，可滚动）在上，办公室节点在**轨道最底部**。
+     ⛔ `align-items: center`（不是 flex-start）⇒ track 与办公室节点**同轴**
+        （flex-start 会让 track 靠左、办公室满宽居中 ⇒ 中心差 20px，用户 10-26：「对齐啊」）。
+     ⛔ `justify-content: flex-start` = 垂直方向顶部对齐（成员多时往下长，不往上溢）。 */
+  flex-direction: column;
   align-items: center;
   justify-content: flex-start;
   padding-top: 18px;
@@ -460,16 +461,15 @@
         而用户要它**始终可见**在末位。 */
   flex-direction: column;
 }
-/* ⛔⛔ 办公室节点**贴在可视区底部**（sticky）：成员可滚动，但入口**始终可见**在末位
-   （用户红框标的位置）⇒ 滚动时成员从它上面滑过去。
-   ⛔ 需要不透明背景（否则滚动中的成员头像会从下面透出来）+ 顶部一条分隔线。 */
-.boss-member-rail-track > .team-rail-office {
-  position: sticky;
-  bottom: 0;
-  background: var(--bg);
+/* ⛔⛔ 办公室节点**钉在轨道最底部**（margin-top:auto）：成员不多时，下面那一大片空白
+   就由它占住（用户 10-26：「下面有那么多空白，非要挤上面？」）。
+   ⛔ ⛔ 不能用 `position: sticky`：内容不足高时 sticky 元素**停在原位**（贴着成员，不到底部）。
+   ⛔ 与成员区之间隔一条淡分隔线（视觉上分开"可滚动的成员"与"固定的入口"）。 */
+.boss-member-rail > .team-rail-office {
+  flex: 0 0 auto;
+  margin-top: auto;
   padding-top: 6px;
-  /* 顶部一条淡分隔线（把"滚动的成员"与"固定的办公室入口"分开） */
-  box-shadow: 0 -6px 10px -6px var(--bg), 0 -1px 0 var(--line);
+  box-shadow: 0 -1px 0 var(--line);
 }
 .boss-member-rail-track {
   /* ⛔⛔ 必须**满宽**（width:100%）：否则 track 宽度 = 内容撑开（≈40px）、
@@ -477,6 +477,9 @@
      （实测 memberAvatarCx=1229 vs officeAvatarCx=1234；用户 10-26：「对齐啊」）。
      ⇒ 满宽后两者同轴（中心都在轨道中心）。 */
   width: 100%;
+  /* ⛔ 成员区**不撑满**（flex: 0 1 auto）⇒ 成员少时下面留出空白，
+     那块空白由办公室节点（margin-top:auto）占住 ⇒ 办公室钉在**轨道最底部**。 */
+  flex: 0 1 auto;
   /* ⛔ 最多展示 6 个：超出部分**滚动**（不是省略号、不是分页）。
      高度按「6 个节点 + 间距」算（节点 34px 高 + 16px gap + 名字行 ≈ 52px）。 */
   max-height: calc(6 * 52px + 5 * 16px);
@@ -485,14 +488,18 @@
   /* ⛔⛔ padding-top 必须**大于 mask 的渐隐区**：否则第一个头像被渐隐削掉半边
      （实测：working 成员排最前 ⇒ 正好排第一 ⇒ 被削淡，看着像"没在干活"）。 */
   padding: 14px 4px 14px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line-strong) transparent;
+  /* ⛔⛔ 滚动条**必须隐藏**（不占位）！
+     Chromium 的 classic 滚动条会占掉 10px 宽 ⇒ 成员节点被挤到滚动条左边
+     ⇒ 头像中心比轨道中心**左偏 5px**（实测 memberAvatarCx=1213 vs 轨道中心 1218）
+     ⇒ 与办公室图标对不齐（用户 10-26：「对齐啊」「非挤上面」）。
+     ⇒ 隐藏滚动条 ⇒ 内容区满宽 ⇒ 与办公室同轴；
+        「还有更多」改用上下渐隐（mask）提示，用户用**滚轮**滚这条窄轨。 */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   /* ⛔ 滚动时要有边界提示：上下各 12px 渐隐（比 padding 小 ⇒ 不吃头像）。 */
   mask-image: linear-gradient(180deg, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
 }
-.boss-member-rail-track::-webkit-scrollbar { width: 5px; }
-.boss-member-rail-track::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 3px; }
-.boss-member-rail-track::-webkit-scrollbar-track { background: transparent; }
+.boss-member-rail-track::-webkit-scrollbar { width: 0; height: 0; display: none; }
 /* 工作中：头像亮起（放大 + 高亮边）+ 呼吸光圈 —— 与专家团轨同一套 class。 */
 .boss-member-rail .team-rail-node.is-running .team-rail-avatar {
   filter: none; opacity: 1; transform: scale(1.12);

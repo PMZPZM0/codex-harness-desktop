@@ -76,15 +76,16 @@ export function BossGroupMemberRail({ members, onOpen, onOpenOffice }: {
             </button>
           );
         })}
-        {/* ⛔⛔ 10-26 用户令：「办公室预览图标放这里」—— 群成员轨**末位**。
-         *  ⛔ **放在 track 内部**（与专家团轨 / 普通会话轨结构完全一致）⇒ 同一根轴线 ⇒
-         *    头像竖列天然对齐（放 track 外面时实测中心差 5px，用户 10-26：「对齐啊」）。
-         *  ⛔ `position: sticky; bottom: 0`（CSS 里）⇒ 成员滚动时它**始终贴在可视区底部**。
-         *  ⛔ title 口径是**群成员**（这里坐的是群里的人，不是专家团成员、也不是本会话派出的子会话）。 */}
-        {onOpenOffice ? (
-          <OfficeRailNode onOpen={onOpenOffice} title="办公室预览：群里正在干活的成员实时映射成像素办公室，点角色打开会话" />
-        ) : null}
       </div>
+      {/* ⛔⛔ 10-26 用户令：「办公室预览图标放这里」—— 群成员轨**末位**。
+       *  ⛔ 放在 track **外面**（CSS 里 `margin-top:auto`）⇒ **钉在轨道最底部**：
+       *    成员不多时下面那一大片空白正好被它占住（用户 10-26：「下面有那么多空白，非要挤上面？」）。
+       *    用 sticky 不行 —— 内容不足高时 sticky 元素会**停在原位**（贴着成员，不到底部）。
+       *  ⛔ 对齐：轨道是 column + align-items:center，track 满宽 ⇒ 成员头像与办公室图标**同一根轴线**。
+       *  ⛔ title 口径是**群成员**（这里坐的是群里的人，不是专家团成员、也不是本会话派出的子会话）。 */}
+      {onOpenOffice ? (
+        <OfficeRailNode onOpen={onOpenOffice} title="办公室预览：群里正在干活的成员实时映射成像素办公室，点角色打开会话" />
+      ) : null}
     </aside>
   );
 }
