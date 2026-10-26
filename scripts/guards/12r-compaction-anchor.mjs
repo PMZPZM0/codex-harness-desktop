@@ -159,9 +159,17 @@ ok(/const lastAtByChannel = new Map\(\)/.test(tickSrc) && /channel/.test(tickSrc
 ok(/if \(c\.state !== "running"\)/.test(tickSrc) && /return false;/.test(tickSrc),
   "上下文没 running 时**不排延迟音**（排进去只会在恢复后突然响一下，比不响更怪）");
 ok(/playWheelTick\(waveDirRef\.current, \{ channel: "scroll"/.test(ruler)
-  && /playWheelTick\(-1, \{ channel: "hover"/.test(ruler)
+  && /playWheelTick\(prev == null \|\| best > prev \? 1 : -1, \{ channel: "hover"/.test(ruler)
   && /playWheelTick\(direction, \{ channel: "ruler"/.test(ruler),
   "三条播声路径各走各的通道（scroll / hover / ruler）");
+/* ⛔ 10-26 用户：「从上往下有声音，从下往上没声音」——分方向埋点实测三个方向全出声（8/8/8），
+   根因是 hover **恒传 -1 ⇒ 两个方向同一个 2300Hz 高音**：划回去音调不变 + 快速扫回被节流压密
+   ⇒ 听觉适应后感知成"没声音"。⇒ 悬停必须有方向音（往下低 / 往上高，与棘轮同一套语义），
+   且上一格判定用 ref（⛔ hoverIndex 是渲染闭包旧值，快速划动时算出的方向是错的）。 */
+ok(/const lastHoverRef = useRef<number \| null>\(null\);/.test(ruler)
+  && /if \(best !== prev\) \{/.test(ruler)
+  && /lastHoverRef\.current = null; setHoverIndex\(null\);/.test(ruler),
+  "悬停方向音：上一格用 ref 判定（⛔ 用渲染闭包的 hoverIndex 快速划动时方向必算错），离开轨道重置");
 ok(/const startY = rect\.top \+ Math\.max\(0, \(rect\.height - total \* RULER_SLOT\) \/ 2\)/.test(ruler)
   && !/tickEls\[i\]\.getBoundingClientRect\(\)/.test(ruler),
   "悬停定位是**槽位数学**（1 次 rect，⛔ 不再逐格读布局 —— 每 mousemove 12~50 次强制布局就是延迟来源）");
@@ -169,8 +177,8 @@ ok(/const startY = rect\.top \+ Math\.max\(0, \(rect\.height - total \* RULER_SL
    ⇒ 悬停改成**整条轨道**按指针 Y 取最近刻度（每格自己 enter/leave 必然在缝隙处断开）。 */
 ok(/onMouseMove=\{\(event\) => hoverAt\(event\.clientY\)\}/.test(ruler)
   && /const hoverAt = \(clientY: number\) => \{/.test(ruler)
-  && /playWheelTick\(-1, \{ channel: "hover"/.test(ruler),
-  "悬停/划动是**整条轨道连续响应**（按指针取最近刻度，⛔ 不靠每格 enter/leave —— 缝隙处必断）");
+  && /minGapMs: 24/.test(ruler),
+  "悬停/划动是**整条轨道连续响应**（按指针取最近刻度，⛔ 不靠每格 enter/leave —— 缝隙处必断）；节流 24ms（45ms 快速扫回时密度不够 ⇒「划回去没声音」）");
 ok(!/onMouseEnter=\{\(event\) => \{[\s\S]{0,200}?setTip\(/.test(ruler),
   "刻度自身不再承担 hover（避免与轨道处理器互相打断：tip 闪断 / 声音漏）");
 /* ⛔ 10-26 用户：「刻度线要对应消息和群里展示的事件，不要对应那些不展示的」——
