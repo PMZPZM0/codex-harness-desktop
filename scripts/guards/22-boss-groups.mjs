@@ -878,6 +878,20 @@ if (state) {
   ok(/watchMemberSettlements\(\);/.test(bossIpcSrc)
     && /reconcileRunningTasks\(\)/.test(bossIpcSrc),
     "boss 域启动时挂上事件监听 + 跑一次对账（两件事都接线了才算修好）");
+
+  /* ── 15. 交活结算的两个真机坑（10-26 真实任务端到端实测）──
+     ⛔ 缺一条就会复现「成员明明失败了/有产出，群里却收到一条空交活」：
+       ① `turn/completed` 的 turn 对象**不一定带 items** ⇒ 文本取空时必须按 itemsView:"full" 补拉；
+       ② **失败的回合也走 turn/completed**（status=failed）⇒ 不看 status 就会把失败当交活，
+          落盘空 md、任务永远卡 reviewing。 */
+  ok(/async function outputTextOf\(threadId: string, turnId: string, turn: any\)/.test(runnerSrc)
+    && /if \(direct\) return direct;/.test(runnerSrc)
+    && /itemsView: "full"/.test(runnerSrc),
+    "⛔ 交活文本取空时按 itemsView:\"full\" 补拉（事件里的 turn 常不带 items）");
+  ok(/const status = String\(turn\?\.status \?\? ""\);/.test(runnerSrc)
+    && /if \(status && status !== "completed"\)/.test(runnerSrc)
+    && /failTask\(taskId, `成员回合/.test(runnerSrc),
+    "⛔ 非 completed 的回合走 failTask（失败不能当交活：空文件 + 卡在 reviewing）");
 }
 
 console.log(`\n【boss-groups】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
