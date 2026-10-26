@@ -112,6 +112,48 @@ const CHECKS = [
           && (relay.state !== "guest" || relay.strongBig >= 15)
           && relay.addSmall === 0 && relay.addDir === "row" && relay.addHeight >= 60),
         JSON.stringify(relay));
+
+      await nav("OpenAI 订阅");
+      await wait(1000);
+      const oa = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const page=m.querySelector(".relay-center"); if(!page) return null;
+        const grid=page.querySelector(".openai-account-grid");
+        const cards=[...page.querySelectorAll(".relay-add-card")];
+        const rects=cards.map(function(c){ const r=c.getBoundingClientRect(); return { top:Math.round(r.top), w:Math.round(r.width), h:Math.round(r.height), small:c.querySelectorAll("small").length }; });
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          hasInfo:!!page.querySelector(".page-info"),
+          hasCopy:!!page.querySelector(".settings-copy"),
+          gridW: grid ? Math.round(grid.getBoundingClientRect().width) : 0,
+          twoPerRow: rects.length === 2 && rects[0].top === rects[1].top,
+          rects };
+      })()`).catch(() => null);
+      h.check("⑤ OpenAI 订阅：无问号/无说明，添加卡两列矩形卡不拉满整行",
+        Boolean(oa && oa.page === "OpenAI 订阅" && !oa.hasInfo && !oa.hasCopy && oa.twoPerRow
+          && oa.rects.every(function(r){ return r.small === 0 && r.h <= 80 && r.w < oa.gridW - 20; })),
+        JSON.stringify(oa));
+
+      await nav("模型");
+      await wait(1000);
+      const modelDock = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const page=m.querySelector(".model-settings-page"); if(!page) return null;
+        const dock=page.querySelector(".model-page-dock");
+        const grid=page.querySelector(".provider-card-grid");
+        if(!dock||!grid) return null;
+        const d=dock.getBoundingClientRect(), g=grid.getBoundingClientRect();
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          freeCard:!!page.querySelector(".free-gateway-entry"),
+          moreSection:!!page.querySelector(".provider-more-section"),
+          pos:getComputedStyle(dock).position,
+          gap:Math.round(d.top-g.bottom),
+          labels:[...dock.querySelectorAll("button")].map((b)=>(b.textContent||"").trim()) };
+      })()`).catch(() => null);
+      h.check("⑥ 模型页：免费网关入口已移除，操作条紧跟供应商卡（不再贴底）",
+        Boolean(modelDock && modelDock.page === "模型" && !modelDock.freeCard && !modelDock.moreSection
+          && modelDock.pos !== "sticky" && modelDock.gap >= 8 && modelDock.gap <= 60
+          && modelDock.labels.some((x)=>x.includes("打开自动配置")) && modelDock.labels.some((x)=>x.includes("保存并重启"))),
+        JSON.stringify(modelDock));
       await h.pressKey("Escape");
       await wait(300);
     },

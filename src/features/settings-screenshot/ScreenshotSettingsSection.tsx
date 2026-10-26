@@ -145,14 +145,8 @@ export function ScreenshotSettingsSection({ onNotice }: ScreenshotSettingsSectio
 
   return (
     <section className="settings-section stack screenshot-settings">
-      <header className="settings-block-head">
-        <Camera size={16} />
-        <div>
-          <h3>截图</h3>
-          <p className="muted">按快捷键随时截图，图片会自动放进输入框（不会自动发送）。</p>
-        </div>
-      </header>
-
+      {/* 10-26 四轮用户令：「上面这块多余了，删除掉」⇒ 页头（相机图标 + 「截图」大字 + 副标题）
+          整块去掉，进页直接是「快捷键 / 截图行为 / 试试截图」三张卡。 */}
       {isMac && (
         <p className="shot-warn">
           <TriangleAlert size={13} />

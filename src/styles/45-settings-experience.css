@@ -493,6 +493,21 @@
 .settings-exp-shell .relay-add-card { flex-direction: row; gap: 8px; justify-content: center; min-height: 64px; font-size: 14px; }
 .settings-exp-shell .relay-sub-banner[data-state="guest"] .relay-sub-banner-main > strong { font-size: 15px; }
 
+/* 10-26 OpenAI 订阅页（用户：「账户长卡片改成长方形卡片，不要拉这么长」）：
+   账号卡与添加卡都走两列矩形卡，不再一张卡横贯整行。`.relay-add-card` 的
+   grid-column:1/-1 只留给中转站页——这里显式复位，两张添加卡并排。 */
+.settings-exp-shell .openai-account-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.settings-exp-shell .openai-account-grid .relay-add-card { grid-column: auto; }
+.openai-empty-line {
+  grid-column: 1 / -1;
+  align-items: center;
+  color: var(--faint);
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  font-size: 12.5px;
+}
+
 /* ── 开发工具 / 拓展接口 / 会话备份：一列长卡 + 中性图标 ── */
 .settings-exp-shell .devtools-cards { grid-template-columns: 1fr; }
 .settings-exp-shell .devtools-card { border-color: var(--line-soft); border-radius: 12px; background: var(--panel); }
