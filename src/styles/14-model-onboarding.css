@@ -1379,11 +1379,9 @@
 .workspace-files-splitter:active span { width: 48px; background: var(--muted); }
 /* 预览拉满：文件树收起（保留状态，按 Alt+↓ / 恢复按钮回来） */
 .workspace-files.is-preview-expanded .workspace-files-tree {
-  flex: 0 0 0;
-  max-height: 0;
-  min-height: 0;
-  border-bottom: 0;
-  overflow: hidden;
+  /* ⛔ 直接 display:none：max-height:0 + overflow:hidden 实测仍会留下 26px 的节点头部残影
+     （flex 子项 + padding 的布局盒），用户截图点名「这上面还有一点没弄干净」。 */
+  display: none;
 }
 .workspace-file-preview-actions .workspace-file-preview-expand { color: var(--accent); }
 .workspace-file-preview-head {

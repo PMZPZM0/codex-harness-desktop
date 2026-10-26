@@ -260,8 +260,8 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     "右栏文件树/预览可上下拖动分栏；Alt+↑ 拉满、Alt+↓ 恢复");
   ok(/workspace-file-preview-expand/.test(wsPreviewSrc) && /onToggleExpanded/.test(wsPreviewSrc)
     && /\.workspace-files-splitter\s*\{[^}]*cursor:\s*row-resize/.test(wsCss)
-    && /\.workspace-files\.is-preview-expanded \.workspace-files-tree\s*\{[^}]*max-height:\s*0/.test(wsCss),
-    "预览头部有「展开/恢复」按钮；分栏条可拖、拉满时文件树收起（CSS 与接线都在）");
+    && /\.workspace-files\.is-preview-expanded \.workspace-files-tree\s*\{[^}]*display:\s*none/.test(wsCss),
+    "预览头部有「展开/恢复」按钮；分栏条可拖、拉满时文件树直接 display:none（不留任何残影）");
 
   /* 10-22 用户实测「汇总消息下面没有文件卡片」：创建后又删除的文件首尾快照一致 ⇒ 最终报告空。
      必须留最后一次非空 live 明细，结算时把最终快照里没有的路径补成 deleted。 */
