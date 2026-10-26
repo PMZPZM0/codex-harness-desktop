@@ -23,6 +23,10 @@ const RULER_MAX = 50;
 export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactionTurnId, compactionAtEnd }: { turns: Turn[]; onJump: (id: string) => void; scrollRef: useRefObject; containerRef: useRefObject; /** 压缩线所在回合（green 标记画在该回合用户消息的刻度之前；空串 = 无压缩线） */ compactionTurnId?: string; /** 压缩发生在最后一回合**之后**（手动压缩的空回合被过滤掉）⇒ 绿段画在最后一个刻度之后 */ compactionAtEnd?: boolean }) {
   const [tip, setTip] = useState<{ text: string; top: number } | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  /* ⛔⛔ 10-26 二次事故：lastHoverRef 一度声明在下方 `if (…) return null` **之后** ⇒
+     提前 return 的渲染少调一个 hook ⇒ React #310 渲染层整页崩溃（用户截图实锤）。
+     hook 必须全部落在组件顶部 hooks 区 —— 提前 return 的组件里加 hook，只许加在这里。 */
+  const lastHoverRef = useRef<number | null>(null);
   /* 波浪**只在滚轮滚动时**出现（10-24 用户：「默认不触发波浪效果，只有滚轮滚动的时候才触发」
      「现在不滚动也触发，看着不太舒服」）。hover 是显式交互，仍然以鼠标位置为准。 */
   const [wheelWave, setWheelWave] = useState(false);
@@ -197,10 +201,13 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
   /* 当前阅读位置在**渲染出来的这一段刻度**里的下标。自动波浪以它为中心：
      往上/往下滚动 → currentItemId 变化 → 波浪跟着走（CSS transition 把相邻刻度
      的长度变化错峰，形成用户要的“波浪”；hover 时以鼠标位置为准）。 */
-  /* 悬停/划动改成**整条轨道连续响应**（10-26 用户：「刻度线中间那么小一个缝隙，鼠标在上面上下滑动，
-     都会断，都没有很好的连贯性」）：按指针 Y 取**最近的一条刻度**，不再依赖"正好落在某个 button 上"。
-     ⇒ 穿过缝隙、扫过绿段、快速上下划都不断（tip 不闪、波浪连续、声音不漏）。
-     ⛔ 只在**换格**时响一声，同一格里移动不重复响。 */
+  /* ⛔⛔ 10-26 用户：「从上往下有声音，从下往上没声音」——实测三个方向的声音全排出来了
+     （分方向埋点 8/8/8），根因是 **playWheelTick(-1) 恒传 -1 ⇒ 两个方向都是同一个 2300Hz 高音**：
+     往下划是"第一次听到"（有声音感），划回去音调一模一样 + 快速扫回被节流压密 ⇒
+     听觉适应后感知成"没声音"。棘轮滚轮本来就有方向音（上滑高/下滑低），悬停却恒定。
+     ⇒ 悬停补方向音：往下划低音 / 往上划高音（与棘轮同一套方向语义）。
+     ⛔ 判定上一格必须用 lastHoverRef（声明在组件顶部 hooks 区，⛔ 不能在这里 useRef ——
+        上面有提前 return，条件 hook = React #310）；hoverIndex 是渲染闭包的旧值，快速划动时方向必算错。 */
   const hoverAt = (clientY: number) => {
     const track = trackRef.current;
     if (!track) return;
@@ -215,10 +222,13 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
     let best = Math.floor((clientY - startY) / RULER_SLOT);
     if (best < 0) best = 0;
     if (best >= total) best = total - 1;
-    if (best !== hoverIndex) {
+    const prev = lastHoverRef.current;
+    if (best !== prev) {
+      lastHoverRef.current = best;
       setHoverIndex(best);
-      /* hover 独立通道 + 45ms（比滚动略宽）：快速划动不会糊成噪音，也不会被滚动的声音挤掉 */
-      playWheelTick(-1, { channel: "hover", minGapMs: 45 });
+      /* 往上划（best 变小）= 看更早 = 高音；往下划 = 低音 —— 方向立即可辨。
+         24ms（原 45ms）：快速扫回时出声密度翻倍，「划回去没声音」的密度问题一并解决。 */
+      playWheelTick(prev == null || best > prev ? 1 : -1, { channel: "hover", minGapMs: 24 });
     }
     setTip({ text: marks[best]?.label ?? "", top: best * RULER_SLOT + RULER_SLOT / 2 + Math.max(0, (rect.height - total * RULER_SLOT) / 2) });
   };
@@ -251,7 +261,7 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
           }, { passive: false });
         }}
         onMouseMove={(event) => hoverAt(event.clientY)}
-        onMouseLeave={() => { setHoverIndex(null); setTip(null); }}
+        onMouseLeave={() => { lastHoverRef.current = null; setHoverIndex(null); setTip(null); }}
       >
         {marks.map((mark, index) => {
           /* ⛔ 10-18 用户：「刻度线里面如那两个中间产生压缩线，就在那两个中间产生一个绿色线」——
