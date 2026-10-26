@@ -45,7 +45,7 @@
 | 内置 `grill-me` | 上游 `grill-me`(3 行代理) + `grilling`(方法论) 合成一份，去掉对 `Skill` 工具的委托；MIT 改编，声明见 `THIRD_PARTY_NOTICES.md` | `85b9274c7` |
 | 内置 `handoff` | 五段结构 + 生效方式 + 锚点要求 + 提示词模板 + 判据 | `85b9274c7` |
 | 消息顺序修复 | 用户消息被误判成群广播（原文里的记忆块提到 `[群事件]`）⇒ 渲染到回复**下方**；改判行首标签 + 剥注入段后再判 | `7fa2f686b` |
-| 刻度尺判据同源（审查补） | 刻度尺原读**原文**判群广播 ⇒ 注入块里的行首标签会让普通消息丢刻度；改走 `parseUserRefs(raw).groupEvents`，并加接线断言 | 本轮（`git log -1`） |
+| 刻度尺判据同源（审查补） | 刻度尺原读**原文**判群广播 ⇒ 注入块里的行首标签会让普通消息丢刻度；改走 `parseUserRefs(raw).groupEvents`，并加接线断言（12r + 注入剥离回归） | `f0832d0e0` |
 
 判据基线（全部当前绿）：守卫 12r **45/45** · 守卫 22 **204/204** · `npm run check` **0 红**（跑前先 `unset NODE_OPTIONS`，收尾看输出末尾确认 bag-types / dead-imports / require-paths 真跑过）。
 
