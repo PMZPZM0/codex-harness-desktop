@@ -235,8 +235,34 @@ const CHECKS = [
       h.check("⑩ MCP：右上角问号与页头说明已删，工具条顶到页面上沿",
         Boolean(mcp && !mcp.hasInfo && !mcp.hasCopy && mcp.toolbarTop > 0 && mcp.toolbarTop < 190),
         JSON.stringify({ hasInfo: mcp && mcp.hasInfo, hasCopy: mcp && mcp.hasCopy, toolbarTop: mcp && mcp.toolbarTop }));
-      await h.pressKey("Escape");
-      await wait(300);
+
+      /* 10-27 用户（语音页截图）：「把必须放到基础模型里面…首个卡片内容布局调一下…上面一块空白删除，
+         右上角帮助❓号…放到基础模型卡片右上角」⇒ 页头整块删掉（不留空行）、
+         必需标签与帮助 ? 都进基础模型卡的卡头、副标题与路径下沉正文区。 */
+      await nav("语音通话");
+      await wait(1200);
+      const voice = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const page=m.querySelector(".voice-settings"); if(!page) return null;
+        const card=page.querySelector(".voice-devtools-card");
+        const head=card?card.querySelector(".voice-devtools-card-head"):null;
+        const body=card?card.querySelector(".voice-devtools-body"):null;
+        const pi=head?head.querySelector(".page-info"):null;
+        const tag=head?head.querySelector(".voice-group-tag.is-required"):null;
+        const pr=page.getBoundingClientRect(), cr=card?card.getBoundingClientRect():null;
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          hasHeaderCopy:!!page.querySelector(".settings-copy"),
+          tagInHead:!!tag, helpInHead:!!pi,
+          subInBody:!!(body&&body.querySelector(":scope > .voice-devtools-sub")),
+          pathInBody:!!(body&&body.querySelector(":scope > .voice-devtools-path")),
+          gapToTop: cr ? Math.round(cr.top - pr.top) : 999,
+          headRows: head?getComputedStyle(head).flexDirection:"" };
+      })()`).catch(() => null);
+      h.check("⑪ 语音页：页头空行已删，必需标签与帮助 ? 在基础模型卡卡头，路径下沉正文",
+        Boolean(voice && voice.page === "语音通话" && !voice.hasHeaderCopy && voice.tagInHead
+          && voice.helpInHead && voice.subInBody && voice.pathInBody
+          && voice.gapToTop >= 0 && voice.gapToTop < 40 && voice.headRows === "row"),
+        JSON.stringify(voice));
 
       await nav("技能");
       await wait(1000);
@@ -252,15 +278,22 @@ const CHECKS = [
         return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
           buttons:btns.map((b)=>(b.textContent||"").trim()),
           heights:btns.map((b)=>Math.round(b.getBoundingClientRect().height)),
-          belowSearch:r.top >= s.bottom - 2,
+          sameRow:Math.abs((r.top+r.bottom)/2-(s.top+s.bottom)/2) <= 10,
+          inRow:line.closest(".skill-filter-row") === row,
           rightGap:Math.round(rr.right-r.right),
+          pageInfo:!!page.querySelector(".page-info"),
+          tabs:page.querySelectorAll(".skill-tabs").length,
+          count:!!page.querySelector(".skill-filter-count"),
           oldRow:!!page.querySelector(".skill-market-toolbar") };
       })()`).catch(() => null);
-      h.check("⑨ 技能页：我的技能/本地添加/刷新移到筛选条底部，小尺寸右对齐",
-        Boolean(skillsBar && skillsBar.page === "技能" && !skillsBar.oldRow && skillsBar.buttons.length === 3
+      h.check("⑨ 技能页：按键与搜索同一排，分类小字与右上角问号已删",
+        Boolean(skillsBar && skillsBar.page === "技能" && !skillsBar.oldRow && !skillsBar.pageInfo
+          && skillsBar.tabs === 0 && !skillsBar.count && skillsBar.buttons.length === 3
           && skillsBar.buttons.some((x)=>x.includes("我的技能"))
           && skillsBar.buttons.some((x)=>x.includes("从本地添加技能"))
-          && skillsBar.heights.every((h)=>h <= 30) && skillsBar.belowSearch && skillsBar.rightGap <= 40),
+          && skillsBar.heights.every((h)=>h <= 30) && skillsBar.sameRow && skillsBar.inRow
+          && skillsBar.rightGap <= 40
+          && !skillsBar.buttons.some((x)=>x.includes("SkillHub 市场"))),
         JSON.stringify(skillsBar));
       await h.pressKey("Escape");
       await wait(300);

@@ -73,10 +73,9 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
    布局：`[搜索框(左)] [筛选 总排行▾] ←—— 其余空间 ——→ [我的技能][从本地添加][SkillHub][刷新]`
    ⛔ 按钮的 `margin-left:auto` 原来写死在 `.resource-toolbar > .secondary-setting` 上 ⇒ 三颗按钮各带一个
       auto ⇒ 会被平摊开。这里只让**第一颗**吃 auto，其余归零，按钮才成一组贴在右边。 */
-/* 10-26 五轮：搜索 + 榜单筛选并进下面那条带框的分类条 —— 搜索**短一点**（220），
-   芯片占中间、统计贴右，整条只占一行（窄面板下条内自然换行，不会掉出框外）。 */
+/* 10-27 用户：「跟搜索框放一排；那一排分类小字删了」——
+   一行 = 搜索（短）+ 榜单筛选 + 三颗小按键（右对齐）；分类芯片行不再渲染。 */
 .skill-filter-row .search-field { flex: 0 1 220px; min-width: 168px; }
-.skill-filter-row .skill-tabs { flex: 1 1 auto; min-width: 0; overflow-x: auto; }
 .skill-rank-filter { display: inline-flex; align-items: center; gap: 5px; flex: none; color: var(--muted); }
 .skill-rank-filter .app-select-trigger { min-width: 104px; }
 .skill-toolbar-actions {
@@ -89,15 +88,15 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 }
 /* 组内的按钮不再各自吃 auto（否则会被平摊开） */
 .skill-toolbar-actions > button { margin-left: 0; flex: none; }
-/* 10-27 用户：我的技能 / 从本地添加 / 刷新 下移到筛选条底部，右对齐、小一号 */
+/* 10-27：我的技能 / 从本地添加 / 刷新与搜索同一行，贴右、小一号 */
 .skill-actions-line {
-  flex: 1 0 100%;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
   flex-wrap: wrap;
-  margin-top: 2px;
+  flex: none;
+  margin-left: auto;
 }
 .skill-actions-line > .skill-action-sm {
   min-height: 28px;
@@ -1029,6 +1028,11 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .personalization-group > .settings-subhead {
   margin: 0 0 12px;
 }
+/* 10-27 用户令：「四个正方形卡片太丑了」⇒ 回复风格改成标题行右侧的胶囊分段控件（与插件页来源 tab 同款），
+   组卡里只剩这一行 ⇒ 底边距归零，卡片高度就是一行的高度。 */
+.personalization-style-tabs { margin-left: auto; flex: none; }
+.personalization-style-tabs button { font-size: 11.5px; }
+.personalization-group > .settings-subhead:last-child { margin-bottom: 0; }
 /* 组标题排版统一到 13px/600。卡的直接子级 subhead 就是「组标题」。 */
 .personalization-group > .settings-subhead {
   color: var(--text);
