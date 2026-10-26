@@ -1614,15 +1614,23 @@
    ⛔ 不能用 viewport 媒体查询：右栏开合只改工作区宽度，viewport 还是 1280/1920。
    这两档由 03-composer.tsx 的 ResizeObserver 打在 .composer-wrap 上。 */
 .composer:is(.composer-narrow, .composer-micro) .composer-actions { gap: 3px; }
-.composer:is(.composer-narrow, .composer-micro) .composer-left { flex: 1 1 auto; min-width: 0; overflow: hidden; gap: 1px; }
-.composer:is(.composer-narrow, .composer-micro) .composer-right { flex: 0 1 auto; min-width: 0; gap: 0; overflow: hidden; }
+/* ⛔⛔ 10-26 用户三张截图：「全都没修好，没有自适应展示」—— 窄档下**右侧整组（上下文环/模型/
+   强度/麦克风/发送）整体消失**。根因就在这一行：`flex: 1 1 auto` 让左组**增长吃满**剩余空间，
+   而右组是 `flex: 0 1 auto` + `min-width: 0` ⇒ 被压到 0，再被 `overflow: hidden` 裁干净。
+   ⇒ 左组不增长（按内容排），`justify-content: space-between` 负责把右组推到右端；
+   真放不下时两组按比例收缩（左组内容少，先缩到 0），右组内部再由 .model-controls 整块让位。 */
+/* ⛔⛔ 10-26 用户实测：「都展示不出来弹窗你没看见吗」—— 上一版用 `overflow: hidden` 来"裁控件"，
+   把**绝对定位的胶囊弹层**一起裁掉了（`.composer-menu-pop` / 上下文容量浮层都挂在里面）：
+   点开什么都不显示。⇒ ⛔ 这里绝不能裁剪：按内容宽度排 + flex 收缩，弹层照常溢出显示。 */
+.composer:is(.composer-narrow, .composer-micro) .composer-left { flex: 0 1 auto; min-width: 0; gap: 1px; }
+.composer:is(.composer-narrow, .composer-micro) .composer-right { flex: 0 1 auto; min-width: 0; gap: 0; }
 .composer:is(.composer-narrow, .composer-micro) .model-controls { min-width: 0; gap: 0; }
 /* ⛔⛔ 10-26：胶囊/强度/发送 **不许被压扁**（压到 10px 图标就变形了），
    也 ⛔ 不许把「发送」挤出视口。可压缩的只有 .model-controls 这一整块：
    真放不下时它自己 overflow 裁 —— 这就是"没位置才隐藏"，而不是提前抹掉中间的图标。 */
 .composer:is(.composer-narrow, .composer-micro) .composer-setting,
 .composer:is(.composer-narrow, .composer-micro) .effort-trigger { flex: 0 0 auto; }
-.composer:is(.composer-narrow, .composer-micro) .model-controls { flex: 0 1 auto; overflow: hidden; }
+.composer:is(.composer-narrow, .composer-micro) .model-controls { flex: 0 1 auto; }
 .composer:is(.composer-narrow, .composer-micro) .composer-mic-button,
 .composer:is(.composer-narrow, .composer-micro) .send-button { flex: 0 0 auto; }
 .composer:is(.composer-narrow, .composer-micro) .composer-setting { padding: 0 5px; }
@@ -1815,7 +1823,12 @@
   top: var(--submenu-top, 0);
   bottom: auto;
   left: calc(100% + 6px);
-  width: 250px;
+  /* ⛔⛔ 10-26 用户截图：「第二个又被裁剪了」—— 固定 250px 装不下「图片 960K 上下文」
+     这类副标题，右侧被硬切（底部还留半行残片）。⇒ 按内容自适应宽度，
+     上限受视口约束；再长则由每项的 ellipsis 收口，而不是整块被裁。 */
+  width: max-content;
+  min-width: 240px;
+  max-width: min(368px, calc(100vw - 40px));
   max-height: min(340px, calc(100vh - 16px));
   overflow-y: auto;
   padding: 6px;

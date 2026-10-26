@@ -833,6 +833,13 @@
 .composer-menu-pop .menu-item-text small {
   color: var(--faint);
   font-size: 11px;
+  /* ⛔⛔ 10-26 用户截图：「你看看这两个弹窗」—— 模型菜单底部出现残片 + 一条滚动条。
+     根因：副标题（「图片 960K 上下文」这种长串）**没有 nowrap/ellipsis** ⇒ 会换行，
+     每项被撑高 ⇒ 整张弹层超出 max-height 被裁，最后一项只剩半行。
+     ⇒ 副标题固定单行 + 省略号（与 strong 同口径）；弹层高度就稳定了。 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ctx-badge {
   min-width: 0;
@@ -857,7 +864,11 @@
   background: var(--panel);
   z-index: 30;
   border-radius: 13px;
-  width: 268px;
+  /* ⛔ 10-26 用户截图：「第一个那么大干嘛，空白那么多」—— 固定 268px + 两列 1fr 等宽，
+     右列（缓存命中率/缓存输入）比左列短 ⇒ 右边整片空白。改按内容收缩，设下限保住两列排版。 */
+  width: max-content;
+  min-width: 250px;
+  max-width: 320px;
   padding: 13px 14px 11px;
   animation: 0.14s menu-pop;
   position: absolute;
