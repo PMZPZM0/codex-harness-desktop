@@ -526,12 +526,13 @@ export function CloudAccountSection() {
   const modelLive = Boolean(models?.active);
   const kbReady = Boolean(kb?.enabled);
   const memReady = Boolean(memory?.activation?.state === "active" && memory?.activation?.applied);
-  /* 10-26 二轮用户令「小文字简洁表达」：这三句都压到一行 —— 只留「现在能干什么 / 下一步点哪」。 */
+  /* 10-26 三轮用户令「小文字注释删了」：名字下面那行 hint 整条去掉，状态只由标签表达
+     （已就绪 / 待配置 / 已同步未生效）。⛔ 别再往标题下加第二行说明。 */
   const overall = !modelReady
-    ? { tone: "off" as const, label: "待配置", hint: "云端模型还没同步，点「一键同步 / 修复」。" }
+    ? { tone: "off" as const, label: "待配置" }
     : !modelLive
-      ? { tone: "off" as const, label: "已同步，未生效", hint: "当前用的是别的供应商；要云端出字点「设为当前供应商」。" }
-      : { tone: "on" as const, label: "已就绪", hint: "直接聊天即可；云端改动 10 分钟内自动同步。" };
+      ? { tone: "off" as const, label: "已同步，未生效" }
+      : { tone: "on" as const, label: "已就绪" };
 
   return (
     <section className="settings-section stack cloud-acct-section">
@@ -618,25 +619,21 @@ export function CloudAccountSection() {
           {/* 已登录：先给「就绪状态」，手动流程收进下面的高级折叠。 */}
           <div className="cloud-acct-card cloud-acct-hero cloud-acct-ready" data-testid="cloud-ready">
             <div className="cloud-acct-hero-top">
-              <span className="cloud-acct-hero-icon"><Cloud size={22} /></span>
+              <span className="cloud-acct-hero-icon"><Cloud size={20} /></span>
               <div className="cloud-acct-hero-main">
                 <h3>
-                  {status.active?.username}
+                  <span className="cloud-acct-name" title={status.active?.username || ""}>{status.active?.username}</span>
                   <span className={`cloud-acct-tag ${overall.tone}`}>{overall.label}</span>
                 </h3>
-                <p className="muted">{overall.hint}</p>
               </div>
+              {/* 10-26 三轮用户令：小字注释整条删掉（「直接聊天即可…」），名字一行不换行；
+                  操作只留两颗主按钮，用户中心下移到卡底与「退出登录」并排 —— 顶部不再挤成两行。 */}
               <div className="cloud-acct-hero-actions">
                 <button className="primary-setting" disabled={!!busy} onClick={doProvision}>
                   <RefreshCw size={14} />{busy === "provision" ? "正在自动配置…" : "一键同步 / 修复"}
                 </button>
-                {/* 10-26 用户令：保存并重启紧挨「一键同步 / 修复」（与连通测试成功那颗按钮同一套动作：
-                    非强制同步把配置落定 → 重启应用，引擎只在启动时读 Key）。 */}
                 <button className="secondary-setting" disabled={!!busy} onClick={doSaveRestart} title="保存云端配置并重启应用，让引擎用上最新密钥与模型">
                   <RotateCcw size={14} />{busy === "save-restart" ? "保存中…" : "保存并重启"}
-                </button>
-                <button className="secondary-setting" onClick={openUserCenter}>
-                  <ExternalLink size={14} />用户中心
                 </button>
               </div>
             </div>
@@ -669,6 +666,9 @@ export function CloudAccountSection() {
                 {points ? (points.ok ? `${Number(points.balance).toLocaleString()} 积分` : "积分读取失败") : "积分读取中…"}
               </span>
               <span className="cloud-acct-sub">{status.active?.role} · {status.active?.baseUrl}</span>
+              <button className="cloud-acct-link" onClick={openUserCenter} title="浏览器打开云端用户中心（不需要桌面端在线）">
+                <ExternalLink size={13} />用户中心
+              </button>
               <button className="cloud-acct-link" disabled={!!busy} onClick={() => doLogout(status.active?.id)}>
                 <LogOut size={13} />{confirmLogout ? "再点一次确认退出" : "退出登录"}
               </button>
