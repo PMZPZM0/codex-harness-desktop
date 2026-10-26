@@ -109,7 +109,9 @@ ok(/saved\?: any; models\?: string\[\]/.test(bagTypes), "bag 类型同步了 sav
 ok(/if \(ok && intent\.relayActive\) writeRelayActive/.test(login), "中转站 relay-active 只在保存成功且进入主界面后写（取消不写）");
 
 /* ── ⑤ 设置页 / 云账号页 / OpenAI 页 ── */
-ok(/provider-setup-hero/.test(modelPage) && /ProviderSetupDialog/.test(modelPage) && /refreshActive/.test(modelPage), "模型页大入口 + 弹窗 + 保存后刷新供应商列表");
+/* 10-26 用户令：自动配置从「下方大块（说明句 + 步骤条）」改成页头右侧一颗按钮 ⇒
+   锚点跟着接线走：入口是 openAutoSetup（不再靠 provider-setup-hero 那个大块）。 */
+ok(/openAutoSetup/.test(modelPage) && /ProviderSetupDialog/.test(modelPage) && /refreshActive/.test(modelPage), "模型页自动配置入口（页头按钮）+ 弹窗 + 保存后刷新供应商列表");
 ok(/relaunchApp/.test(modelPage), "模型页保存后自动重启应用");
 ok(/openNewProvider/.test(modelPage) && /openProviderEditor/.test(modelPage) && /provider-card-update/.test(modelPage), "模型页保留手动添加 / 编辑 / 更新模型入口（大卡片 + 二级弹窗，功能不删）");
 ok(/provider-card-test/.test(modelPage) && /classifyProviderProbeFailure/.test(modelPage) && /密钥失效/.test(modelPage), "卡片支持测试连接并标出「密钥失效」，云端可修复 / 其它提示更新 Key");

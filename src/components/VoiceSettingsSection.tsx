@@ -105,13 +105,15 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
   }
   return (
     <section className="settings-section stack voice-settings">
-      <div className="settings-section-title">
-        语音通话
-        <PageInfo
-          label="语音通话"
-          helpKey="voice"
-          text={<>本机离线识别与合成（<code>sherpa-onnx</code>）。点右下角悬浮球开始通话；改值后下次通话生效（试听即时）。</>}
-        />
+      <div className="settings-copy">
+        <h2>
+          语音通话
+          <PageInfo
+            label="语音通话"
+            helpKey="voice"
+            text={<>本机离线识别与合成（<code>sherpa-onnx</code>）。点右下角悬浮球开始通话；改值后下次通话生效（试听即时）。</>}
+          />
+        </h2>
       </div>
 
       {/* ⛔⛔ 10-26 用户两轮实测：「我看不懂…好几个下载的地方，看的眼花缭乱」/「分好类、排序好，

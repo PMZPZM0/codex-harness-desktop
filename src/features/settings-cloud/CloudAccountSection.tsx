@@ -564,6 +564,13 @@ export function CloudAccountSection() {
             新手只需登录一次，剩下交给下面的一键配置；重签密钥 / 连通测试 / 上传下载会话等手动操作都收在「高级设置」里。
           </p>
         </div>
+        {/* 10-26 用户令：页头加「保存并重启」—— 复用连通测试成功时那颗按钮的同一套动作
+            （非强制同步把配置落定 → 重启应用，引擎只在启动时读 Key）。 */}
+        <div className="settings-heading-actions">
+          <button className="secondary-setting" disabled={!!busy} onClick={doSaveRestart} title="保存云端配置并重启应用，让引擎用上最新密钥与模型">
+            <RotateCcw size={14} />{busy === "save-restart" ? "保存中…" : "保存并重启"}
+          </button>
+        </div>
       </div>
 
       {msg && <div className={`cloud-acct-msg ${msg.kind}`}>{msg.text}</div>}

@@ -618,3 +618,48 @@
   margin-top: 8px; font-size: 11.5px; color: var(--faint);
 }
 .settings-exp-shell .user-persona-foot > span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+
+/* ── 10-26 用户令：设置页左上角「标题大字 + 副标题小字」整排删除（「纯多余，不要这种」）；
+      帮助 ? 号不跟着删 —— 统一收到页头右上角，不再单独占一行（「每个界面都有一个帮助❓号」）。
+   实现要点：**标题用 font-size:0 隐藏，不是 display:none** —— ? 是 h2 的子节点，
+   把 h2 整个藏掉等于把每页唯一的新手说明入口一起藏掉（这坑踩过一次）。
+   剩下的 ? 绝对定位到页头右上角；同行有操作按钮时按钮组整体让出 26px，? 恒在最右。
+   ⛔ 别删上面的 grid 契约：守卫 12ad 靠它钉版式，这里隐藏的是文字不是规则。
+   ⛔ 本段必须留在文件末尾（源序）：下面 `.favorites-settings > .settings-block-head`
+      那类规则特异性更高，只有靠后写才压得住。 */
+.settings-exp-shell > .settings-section > .settings-copy { position: relative; }
+.settings-exp-shell > .settings-section > .settings-copy h2 {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  margin: 0;
+  font-size: 0;
+  line-height: 1;
+}
+.settings-exp-shell > .settings-section > .settings-copy h2 > svg { display: none; } /* 「拓展接口」那种标题前缀图标 */
+.settings-exp-shell > .settings-section > .settings-copy p,
+.settings-exp-shell .comp-lib-head h3,
+.settings-exp-shell .comp-lib-sub,
+.settings-exp-hero,
+.settings-exp-shell .settings-block-head,
+.settings-exp-shell .favorites-settings > .settings-block-head { display: none; }
+.settings-exp-shell > .settings-section > .settings-copy { margin: 0; }
+/* 只留一个 ? 的页头：撑到 ? 的高度（20×20）再留出与下方内容的间距 */
+.settings-exp-shell > .settings-section > .settings-copy:has(.page-info) { min-height: 20px; margin-bottom: 12px; }
+.settings-exp-shell > .settings-section > .settings-copy:has(> .settings-heading-actions, > .channel-enable, > button, > .archive-total) { margin: 0 0 14px; }
+.settings-exp-shell .comp-lib-head { margin: 0; }
+/* 只剩操作行的页头：按钮右对齐压在同一行，不再被「标题 / 说明」两列网格拉出空档 */
+.settings-exp-shell > .settings-section > .settings-copy:has(> .settings-heading-actions, > button) {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* 同一行里的操作按钮 / 开关 / 计数给 ? 让位 26px（? 恒贴右缘）。
+   ⛔ 必须给 `.channel-enable`（记忆页那个启用开关）也算进来：它同样 justify-self:end，
+      实测会和 ? 落在同一个 20px 里、把 ? 整个盖住（截图看不见，点击命中开关）。 */
+.settings-exp-shell > .settings-section > .settings-copy:has(h2 .page-info) > :is(.settings-heading-actions, .channel-enable, .archive-total, button) { margin-right: 26px; }

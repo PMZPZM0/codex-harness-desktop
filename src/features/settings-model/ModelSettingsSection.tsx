@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { AppSelect } from "../../components/AppSelect";
 import { PPTokenEndpoints } from "../../lib/pptoken-endpoints";
-import { Check, ChevronRight, ExternalLink, Eye, EyeOff, ListChecks, PenLine, Plus, RefreshCw, Rocket, Store, Trash2, Wand2, X, Zap } from "lucide-react";
+import { Check, ChevronRight, ExternalLink, Eye, EyeOff, ListChecks, PenLine, Plus, PowerOff, RefreshCw, Rocket, Store, Trash2, Wand2, X, Zap } from "lucide-react";
 import { PageInfo } from "../../components/SettingsHead";
 import { AVATAR_GRADIENTS, avatarToneOf } from "../../lib/entity-avatar";
 import { Spinner } from "../../components/CardShell";
@@ -177,6 +177,22 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
     while (providersList.some((p: any) => p.provider === `custom${n}`)) n = (n + 1) % 1000;
     setSetupIntent({ provider: `custom${n}`, name: "", baseUrl: "", apiKey: "", source: "custom", editable: true, autoStart: false });
   };
+  /* 10-26 用户令：页头加「保存并重启」。
+     ⛔ 不许假装有"待保存"：模型配置（供应商 / 模型列表 / 自动压缩）全部逐项即时落盘，
+     这里唯一的真实动作是**重启应用**，让引擎重新读 Key 与新配置 —— 文案如实这么写。 */
+  const [restarting, setRestarting] = useState(false);
+  const saveAndRestart = async () => {
+    if (restarting) return;
+    setRestarting(true);
+    showToast?.("配置已保存", "应用即将重启，重启后新配置生效");
+    await new Promise((resolve) => window.setTimeout(resolve, 700));
+    try {
+      await window.codex.relaunchApp();
+    } catch (error: any) {
+      setRestarting(false);
+      showToast?.("重启失败", String(error?.message ?? error));
+    }
+  };
   const finishAutoSetup = ({ result }: ProviderSetupCompleted, options: { restart: boolean }) => {
     const saved = result.saved;
     setSetupIntent(null);
@@ -191,21 +207,20 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
   return (
     <>
       <section className="settings-section stack model-page">
-      <div className="settings-copy"><h2>模型</h2><p>配置供应商与自动压缩；新供应商保存后旧供应商自动停用。</p></div>
-      <div className="provider-setup-hero" data-testid="provider-setup-entry">
-        <div className="provider-setup-hero-copy">
-          <span className="provider-setup-hero-title"><Wand2 size={15} /><b>自动配置模型</b><em>推荐</em></span>
-          <p>填入 API 地址与密钥 → 自动检测并刷新模型 → 勾选要用的模型（默认全选）→ 保存并启用。旧供应商会自动停用，应用重启后完全生效。</p>
-          <div className="provider-setup-hero-steps"><span>检测</span><span>勾选</span><span>保存启用</span><span>重启</span></div>
+      {/* 10-26 用户令：页标题大字与副标题整排删除；「自动配置」从下方大块挪到页头右侧，
+          旁边加「保存并重启」—— 那个块的说明句 / 步骤条也一并删掉（用户：「不用注释了，太丑」）。 */}
+      <div className="settings-copy">
+        <div className="settings-heading-actions">
+          <button className="primary-setting" onClick={openAutoSetup}><Wand2 size={15} />打开自动配置</button>
+          <button className="secondary-setting" disabled={restarting} onClick={() => void saveAndRestart()} title="配置已逐项保存；重启应用让引擎重新读取密钥与模型列表"><PowerOff size={14} />{restarting ? "重启中…" : "保存并重启"}</button>
+          {/* 10-26：全站页头帮助 ? 统一收到右上角 —— 这页的 ? 原挂在「模型供应商」区块标题旁，一并挪过来放最右 */}
+          <PageInfo text={<>两种方式二选一：登录 ChatGPT 订阅账号，或添加第三方供应商并填入密钥。配好后再选模型——两者齐了才能发消息。</>} helpKey="model" label="模型配置" />
         </div>
-        <button className="primary-setting provider-setup-open" onClick={openAutoSetup}><Wand2 size={15} />打开自动配置</button>
       </div>
       <div className="model-settings-page">
                     <div className="provider-page-toolbar">
                       <div className="provider-list-head">
-                        <h2>模型供应商 <span className="provider-count">{displayProviders.length}</span>
-                          <PageInfo text={<>两种方式二选一：登录 ChatGPT 订阅账号，或添加第三方供应商并填入密钥。配好后再选模型——两者齐了才能发消息。</>} helpKey="model" label="模型配置" />
-                        </h2>
+                        <h2>模型供应商 <span className="provider-count">{displayProviders.length}</span></h2>
                       </div>
                       <div className="provider-page-actions">
                         <span className="model-compact-control" title="上下文用量达到所选比例时，引擎自动压缩较早对话">
