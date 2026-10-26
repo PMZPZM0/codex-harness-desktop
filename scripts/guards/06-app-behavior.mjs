@@ -2664,6 +2664,11 @@ w.postMessage({id:1,op:"list",root});
     (/createPortal\([\s\S]{0,700}?sidebar-options-flyout/.test(side180) && /document\.body/.test(side180) ? ok : fail)(
       "【180】功能入口浮层 portal 到 body（⛔ 留在 .sidebar/.thread-list 里会被 overflow 裁掉）"
     );
+    (!/onClickCapture=/.test(side180)
+      && /target\.closest\("\.function-menu-popover"\)/.test(side180)
+      && /document\.addEventListener\("click", onClick\)/.test(side180) ? ok : fail)(
+      "【180】浮层入口可点：⛔ 禁止 capture 里关浮层（会在 click 前卸载按钮）、「更多」弹层不算外部、动作跑完再收"
+    );
     (/localStorage\.setItem\("sidebar-options-collapsed",\s*"true"\)/.test(side180)
       && /if \(optionsCollapsed\) setOptionsCollapsed\(false\);\s*\n\s*else persistOptionsCollapsed\(true\);/.test(side180) ? ok : fail)(
       "【180】浮层每次启动一律收起，打开态不落盘（⛔ 否则开机自动弹出来盖住聊天）"

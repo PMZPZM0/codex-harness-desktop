@@ -667,6 +667,37 @@ const CHECKS = [
       await h.pressKey("Escape").catch(() => undefined);
       await h._send("Emulation.clearDeviceMetricsOverride");
       await wait(300);
+
+      /* 10-26 用户实测「功能都点不动」：曾用 onClickCapture 先关浮层 ⇒ 按钮在 click 前被卸载。
+         这里真点一次具体入口 + 一次「更多 → 编辑菜单」，确保动作真的触发。 */
+      await h.eval(`document.querySelector(".sidebar-options-toggle")?.click()`);
+      await wait(300);
+      const rowClicked = await h.eval(`(function(){
+        const b=document.querySelector(".sidebar-options-flyout .sidebar-cap-row:not(.function-menu-more)");
+        if(!b) return 0; b.click(); return 1;
+      })()`);
+      await wait(500);
+      const afterRow = await h.eval(`({ flyout: !!document.querySelector(".sidebar-options-flyout"), settings: !!document.querySelector(".settings-modal") })`);
+      h.check("⑥ 点具体入口：浮层收起，且目标页真的打开（不是只关浮层）",
+        rowClicked === 1 && !afterRow.flyout && afterRow.settings, JSON.stringify(afterRow));
+      await h.pressKey("Escape").catch(() => undefined);
+      await wait(350);
+
+      await h.eval(`document.querySelector(".sidebar-options-toggle")?.click()`);
+      await wait(300);
+      await h.eval(`document.querySelector(".sidebar-options-flyout .function-menu-more")?.click()`);
+      await wait(300);
+      const moreOpened = await h.eval(`!!document.querySelector(".function-menu-popover")`);
+      const moreClicked = await h.eval(`(function(){
+        const b=[...document.querySelectorAll(".function-menu-popover-item")].find((x)=>x.textContent.includes("编辑菜单"));
+        if(!b) return 0; b.click(); return 1;
+      })()`);
+      await wait(500);
+      const afterMore = await h.eval(`({ flyout: !!document.querySelector(".sidebar-options-flyout"), editor: !!document.querySelector(".function-menu-editor") })`);
+      h.check("⑦ 「更多 → 编辑菜单」可点：弹层不被浮层卸载，编辑弹窗打开",
+        moreOpened && moreClicked === 1 && !afterMore.flyout && afterMore.editor, JSON.stringify({ moreOpened, moreClicked, ...afterMore }));
+      await h.eval(`document.querySelector(".fm-editor-foot button:last-child")?.click()`).catch(() => undefined);
+      await wait(250);
     },
   },
 ];

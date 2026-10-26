@@ -399,19 +399,33 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     return () => window.removeEventListener("resize", place);
   }, [optionsCollapsed, functionMenu.location]);
 
-  /* 点外部 / Esc 收起浮层（⛔ 折叠头自身不算外部：click 还要走 toggleOptions）。 */
+  /* 点外部 / Esc 收起浮层（⛔ 折叠头自身不算外部：click 还要走 toggleOptions）。
+     ⛔ 「更多」弹层是 portal 到 body 的兄弟节点，不算外部；否则 pointerdown 先关浮层，
+        弹层里的菜单项会在 click 前被卸载 —— 用户看到的就是「点了没反应」。 */
   useEffect(() => {
     if (optionsCollapsed) return;
     const onDown = (event: PointerEvent) => {
-      const target = event.target as Node;
+      const target = event.target as Element | null;
+      if (!target) return;
       if (optionsFlyoutRef.current?.contains(target) || optionsToggleRef.current?.contains(target)) return;
+      if (target.closest(".function-menu-popover")) return;
       closeOptions();
+    };
+    /* 具体入口/更多项：等它自己的 onClick 跑完再收浮层（⛔ 不能用 capture —— 会先卸载按钮）。 */
+    const onClick = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      if (!target) return;
+      const row = target.closest(".sidebar-options-flyout .sidebar-cap-row");
+      const item = target.closest(".function-menu-popover-item");
+      if ((row && !row.classList.contains("function-menu-more")) || item) closeOptions();
     };
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") closeOptions(); };
     document.addEventListener("pointerdown", onDown);
+    document.addEventListener("click", onClick);
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("click", onClick);
       document.removeEventListener("keydown", onKey);
     };
   }, [optionsCollapsed, closeOptions]);
@@ -530,11 +544,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
           style={{ left: optionsFlyoutStyle.left, top: optionsFlyoutStyle.top, bottom: optionsFlyoutStyle.bottom, maxHeight: optionsFlyoutStyle.maxHeight }}
           role="dialog"
           aria-label="功能入口"
-          onClickCapture={(event) => {
-            const button = (event.target as HTMLElement | null)?.closest?.("button");
-            /* 「更多」要留在浮层里继续操作；点具体入口/更多项后收起浮层。 */
-            if (button && !button.classList.contains("function-menu-more")) closeOptions();
-          }}
         >
           <div className="sidebar-nav sidebar-nav-bottom" id="sidebar-options-body" role="group" aria-label="功能入口" aria-hidden={optionsCollapsed}>
             <FunctionMenu location={menuLocation} />
