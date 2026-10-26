@@ -17,6 +17,7 @@ import { basename } from "../../lib/basename";
 import { attachChipName } from "../../lib/attach-chip-name.mjs";
 import { User, Sparkles, FileText, Film, Music2, Box } from "lucide-react";
 import { UserRefsRow } from "./InlineCards";
+import { FileRefCard } from "../../components/FileRefCard";
 import { ImportedRecordCard } from "./ImportRecords";
 import { openImageLightbox, openMediaPreview } from "../../lib/ui-channels";
 import { mediaKindOf } from "../../lib/media-kind.mjs";
@@ -75,7 +76,7 @@ export function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, o
   /* 群广播（10-26 用户令「方案就按只广播这个完成」）：中枢会话里的 `[群事件] …` 是成员汇总
      进来的**群消息**，不是用户说的话 ⇒ 不能再套用户气泡（右对齐、名字写"你"、看不出谁交的活）。
      整条交给群气泡渲染：成员头像 + 名字 + 内容；系统类事件走居中灰行。 */
-  if (refs.groupEvents?.length) return <GroupFeed blocks={refs.groupEvents} />;
+  if (refs.groupEvents?.length) return <GroupFeed blocks={refs.groupEvents} onOpenFile={onOpenFile} />;
   const refsImagePaths = new Set(refs.files.filter(isImagePath));
   // 文本占位符里出现过的图片以内联 chip 渲染在正文里，附件列表去重避免双份
   const inlineImageSet = new Set(promptImagePaths(rawText));
@@ -193,14 +194,39 @@ export function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, o
   );
 }
 
-/* ── 群气泡（"只广播"方案的呈现层）────────────────────────────────────────
-   ⛔ 为什么改在这一层、而不是换 timeline 渲染器：群事件在引擎里就是一条 **userMessage**。
-      换时间线渲染器会踩折叠 / 钉顶 / 贴底那套按"回合单元"算的不变量；在气泡这一层换样式，
-      只是改"这条用户消息长什么样"，回合逻辑一行不动。
+/* ── 群广播卡（10-26 用户令：「这个群事件展示优化一下，现在太丑了」
+   +「我看不见方案内容」+「放到消息下面，不要放上面」+「其他对话框里面可以文件预览的吧」）
+
+   四个诉求合成一张卡：
+   ① **成品全文可预览** ⇒ 成员交活时主进程已把正文落盘成 `群交付/*.md`，
+      这里出**文件卡**（与其它会话的产物卡同一套：点开 → 右栏预览）；
+      气泡里只留一行摘要，不再铺几千字。
+   ② **不再丑** ⇒ 去掉「左侧粗竖条 + 面板底色 + 内外双层方框」的三重框，
+      改成一张轻卡片：成员头像 + 名字 + 徽标 + 标题，正文小字灰。
+   ③ **位置** ⇒ 由 TurnView 决定：群广播渲染在**消息下方**（回合卡之后），不在消息上方。
    ⛔ 成员之间不互读（用户令：只广播）—— 这里纯展示，不影响任何上下文。 */
-function GroupFeed({ blocks }: { blocks: GroupEventBlock[] }) {
+
+/** 书名号包裹（⛔ 幂等）：任务标题常常**自己就带《》**（`出《口播视频制作规范》`），
+ *  再包一层就成了 `《出《口播视频制作规范》》` —— 10-26 截图实测的丑点。
+ *  ⛔ 判据不能只看首尾字符：`出《…》` 首字是「出」、尾字是「》」，仍会重复嵌套 ⇒
+ *     只要标题里**已经含有**一对书名号，就原样返回。 */
+function booked(title: string | undefined | null): string {
+  const text = String(title ?? "").trim() || "任务";
+  return /《[^》]+》/.test(text) ? text : `《${text}》`;
+}
+
+function GroupFeed({ blocks, onOpenFile }: { blocks: GroupEventBlock[]; onOpenFile?: (path: string) => void }) {
+  const deliverCount = blocks.filter((b) => b.type === "deliverable" || b.type === "batch").length;
+  const verdictCount = blocks.filter((b) => b.type === "verdict").length;
+  /* 有文件卡时，成品全文已经在文件里 ⇒ 评审行不再重复挂一份全文（避免同屏两份正文）。 */
+  const hasFile = blocks.some((b) => (b.type === "deliverable" && Boolean(b.file)) || (b.type === "batch" && b.items.some((i) => Boolean(i.file))));
   return (
     <div className="group-feed">
+      <div className="group-feed-head">
+        <span className="group-feed-tag">群汇报</span>
+        {deliverCount > 0 ? <span className="group-feed-count">{deliverCount} 份成品</span> : null}
+        {verdictCount > 0 ? <span className="group-feed-count">{verdictCount} 条结论</span> : null}
+      </div>
       {blocks.map((block, index) => {
         if (block.type === "deliverable") {
           return (
@@ -209,10 +235,11 @@ function GroupFeed({ blocks }: { blocks: GroupEventBlock[] }) {
               <div className="group-msg-main">
                 <div className="group-msg-head">
                   <b className="group-msg-name">{block.who}</b>
-                  <span className="group-msg-badge">交活</span>
-                  <span className="group-msg-title">「{block.title}」</span>
+                  <span className="group-msg-badge is-deliver">交活</span>
+                  <span className="group-msg-title">{booked(block.title)}</span>
                 </div>
-                <div className="group-msg-body">{block.body}</div>
+                {block.body ? <div className="group-msg-body">{excerpt(block.body)}</div> : null}
+                {block.file ? <GroupFileCard path={block.file} onOpenFile={onOpenFile} /> : null}
               </div>
             </div>
           );
@@ -223,11 +250,20 @@ function GroupFeed({ blocks }: { blocks: GroupEventBlock[] }) {
               <span className="group-avatar" style={{ ["--group-hue" as any]: 205 }} aria-hidden>群</span>
               <div className="group-msg-main">
                 <div className="group-msg-head">
-                  <b className="group-msg-name">群</b>
-                  <span className="group-msg-badge">{block.count} 条交活</span>
+                  <b className="group-msg-name">本轮交活</b>
+                  <span className="group-msg-badge is-deliver">{block.count} 份</span>
                 </div>
                 <ul className="group-msg-list">
-                  {block.items.map((item, i) => <li key={i}><b>{item.who}</b>「{item.title}」</li>)}
+                  {block.items.map((item, i) => (
+                    <li key={i}>
+                      <div className="group-msg-head">
+                        <b className="group-msg-name">{item.who}</b>
+                        <span className="group-msg-title">{booked(item.title)}</span>
+                      </div>
+                      {item.summary ? <div className="group-msg-body">{excerpt(item.summary)}</div> : null}
+                      {item.file ? <GroupFileCard path={item.file} onOpenFile={onOpenFile} /> : null}
+                    </li>
+                  ))}
                 </ul>
               </div>
             </div>
@@ -237,13 +273,13 @@ function GroupFeed({ blocks }: { blocks: GroupEventBlock[] }) {
           /* ⛔ 审查结论 = **成员汇报结果**（10-26 用户令）⇒ 走成员气泡（头像+名字+结论徽标），
              不是居中灰行 —— 让人一眼看出"谁的活被认可/被打回"。 */
           return (
-            <div className={`group-msg${block.passed ? " is-pass" : " is-reject"}`} key={index}>
+            <div className={`group-msg group-msg-verdict ${block.passed ? "is-pass" : "is-reject"}`} key={index}>
               <span className="group-avatar" style={{ ["--group-hue" as any]: hueOf(block.who) }} aria-hidden>{initialOf(block.who)}</span>
               <div className="group-msg-main">
                 <div className="group-msg-head">
                   <b className="group-msg-name">{block.who}</b>
-                  <span className="group-msg-badge">{block.passed ? "通过" : "打回"}</span>
-                  <span className="group-msg-title">「{block.title}」{block.reviewer ? ` · ${block.reviewer}判定` : ""}</span>
+                  <span className={`group-msg-badge ${block.passed ? "is-pass" : "is-reject"}`}>{block.passed ? "通过" : "打回"}</span>
+                  <span className="group-msg-title">{booked(block.title)}{block.reviewer ? ` · ${block.reviewer}判定` : ""}</span>
                 </div>
                 {block.reasons ? <div className="group-msg-body">{block.reasons}</div> : null}
               </div>
@@ -251,11 +287,28 @@ function GroupFeed({ blocks }: { blocks: GroupEventBlock[] }) {
           );
         }
         if (block.type === "review") {
+          /* ⛔ 待审请求是**给中枢的机器指令**（含验收标准）⇒ 主体只留一行提示；
+             但**成品正文要看得见**（用户原话：「我看不见方案内容」）⇒ 折叠展开。 */
           return (
-            <div className="group-sys" key={index}>
-              {block.count > 1
-                ? `${block.count} 条已交活，等中枢评审：${block.titles.map((title) => `「${title}」`).join("、")}`
-                : `「${block.titles[0] ?? "任务"}」已交活，等中枢评审`}
+            <div className="group-msg" key={index}>
+              <span className="group-avatar" style={{ ["--group-hue" as any]: 205 }} aria-hidden>群</span>
+              <div className="group-msg-main">
+                <div className="group-msg-head">
+                  <b className="group-msg-name">中枢评审</b>
+                  <span className="group-msg-badge">待评审</span>
+                  <span className="group-msg-title">
+                    {block.count > 1
+                      ? `${block.count} 条任务`
+                      : booked(block.titles[0])}
+                  </span>
+                </div>
+                {block.output && !hasFile ? (
+                  <details className="group-more">
+                    <summary>查看成品全文</summary>
+                    <div className="group-msg-body group-msg-body-full">{block.output}</div>
+                  </details>
+                ) : null}
+              </div>
             </div>
           );
         }
@@ -263,6 +316,28 @@ function GroupFeed({ blocks }: { blocks: GroupEventBlock[] }) {
       })}
     </div>
   );
+}
+
+/** 群广播里的**文件卡**（成品）—— 点开即预览全文，与其它会话的产物卡同一套手感。
+ *  ⛔ 默认走**居中预览**（`onOpenFile` → 文件预览弹窗，.md 走 Markdown 渲染）——
+ *     群交付文件在群项目目录里，不在当前会话的工作区树内 ⇒ 走右栏树会找不到位置。 */
+function GroupFileCard({ path, onOpenFile }: { path: string; onOpenFile?: (path: string) => void }) {
+  return (
+    <div className="group-file">
+      <FileRefCard
+        path={path}
+        title={`预览成品全文：${path}`}
+        onOpen={onOpenFile ? () => onOpenFile(path) : undefined}
+        onOpenEditor={onOpenFile}
+      />
+    </div>
+  );
+}
+
+/** 气泡里的正文只留一行摘要（全文在文件卡里）—— 群汇报是索引，不是正文墙。 */
+function excerpt(text: string): string {
+  const flat = String(text ?? "").replace(/\s+/g, " ").trim();
+  return flat.length > 160 ? `${flat.slice(0, 160)}…` : flat;
 }
 
 /** 头像色相：按名字散列 ⇒ 同一成员每次同色（切会话 / 重开都不变，⛔ 不用"列表下标"配色）。 */

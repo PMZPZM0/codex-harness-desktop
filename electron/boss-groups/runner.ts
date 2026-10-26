@@ -137,6 +137,35 @@ export async function postToBoss(group: BossGroup, text: string, options: { crit
   } catch { return false; }
 }
 
+/**
+ * 交活成品**落盘成文件**（10-26 用户令：「我看不见方案内容」）。
+ *
+ * 背景：成品正文动辄几千字，塞进气泡里既挤又难读（用户原话：「这个群事件展示…太丑了」，
+ *   「我看不见方案内容」）。⇒ 落盘成 `.md`，广播文本里带一行 `成品文件：<路径>`，
+ *   界面据此出**文件卡** —— 与其它会话里「产物文件点开预览」同一套手感。
+ *
+ * 落盘位置：**群工作区**（成员干活的那个目录）下的 `群交付/` ⇒ 用户在自己项目里就能找到；
+ *   群没有工作区时落到应用数据目录（`<userData>/boss-groups/outputs`）——那里恒在可信根内。
+ * ⛔ `app.getPath("userData")` 必须**惰性**求值（主进程在模块体里 setPath 过 userData，
+ *   模块体顶层求值会拿到默认目录 —— 记忆里的 91 号坑）。
+ */
+async function saveDeliverableFile(group: BossGroup, task: GroupTask, body: string): Promise<string> {
+  try {
+    const workspace = String(group.workspace ?? "").trim();
+    const base = workspace || path.join(app.getPath("userData"), "boss-groups", "outputs");
+    const dir = path.join(base, "群交付");
+    await fs.mkdir(dir, { recursive: true });
+    const safeTitle = String(task.title ?? "").replace(/[\\/:*?"<>|]/g, " ").trim().slice(0, 40) || "交付";
+    const file = path.join(dir, `${task.id}-${safeTitle}.md`);
+    const header = `# ${task.title}\n\n> 成员交活 · ${new Date().toLocaleString("zh-CN")}\n\n`;
+    await fs.writeFile(file, header + body, "utf8");
+    return file;
+  } catch (error: any) {
+    console.warn("[boss-groups] 成品落盘失败：", String(error?.message ?? error).slice(0, 160));
+    return "";
+  }
+}
+
 /* ── 出站队列：成品/评审请求**不丢、也不刷屏**（10-25 审查修 B）────────────────
    问题：每个成员交活会连发两条消息（成品 + 评审请求）。3 个成员并发就是 6 条，
    撞上 12 条/10 分钟的老配额后，后面的直接被丢。
@@ -168,10 +197,10 @@ function outboxText(items: OutItem[]): string {
   const reviews = items.filter((i) => i.kind === "review");
   const parts: string[] = [];
   if (deliverables.length === 1 && !reviews.length) {
-    parts.push(`[群事件] ${deliverables[0].who ?? "成员"} 交活：「${deliverables[0].title}」\n${deliverables[0].body}`);
+    parts.push(`[群事件] ${deliverables[0].who ?? "成员"} 交活：「${deliverables[0].title}」\n${deliverables[0].file ? `成品文件：${deliverables[0].file}\n` : ""}${deliverables[0].body}`);
   } else if (deliverables.length) {
     parts.push(`[群事件] 本轮 ${deliverables.length} 条交活（成品全文在群内消息流里，需要细节用 group_status 读）：
-${deliverables.map((d) => `- 「${d.title}」（${d.who ?? "成员"}）：${d.body.replace(/\s+/g, " ").slice(0, 240)}…`).join("\n")}`);
+${deliverables.map((d) => `- 「${d.title}」（${d.who ?? "成员"}）：${d.body.replace(/\s+/g, " ").slice(0, 240)}…${d.file ? `\n  成品文件：${d.file}` : ""}`).join("\n")}`);
   }
   if (reviews.length === 1) {
     parts.push(reviews[0].body);
@@ -690,11 +719,14 @@ export async function settleSubmission(taskId: string, output: string): Promise<
   bossStore.save();
   emit({ type: "boss-group", phase: "task", groupId: group.id, taskId, status: "reviewing" });
   /* 成品**汇总到主对话**（指挥中枢会话）—— 这是群聊的本体：成员干完活，成果出现在群里。
-     ⛔ 走出站队列（合并投递 + 失败重试），不再直接 post：并发交活时既不刷屏，也不会被配额丢掉。 */
+     ⛔ 走出站队列（合并投递 + 失败重试），不再直接 post：并发交活时既不刷屏，也不会被配额丢掉。
+     ⛔ 10-26：同时**落盘成文件**（`群交付/<task>-<标题>.md`）⇒ 界面出文件卡，正文可预览。 */
   const deliverer = memberOf(group, task.assignee);
+  const deliverableFile = await saveDeliverableFile(group, task, deliverable);
   enqueueBoss(group.id, {
     kind: "deliverable", taskId, title: task.title, who: deliverer.name,
     body: deliverable.slice(0, 4000),
+    file: deliverableFile,
   });
   if (alreadyLeftRunning) await reviewTask(taskId);   // 重复回调（已不在 running）⇒ 不再审
 }
