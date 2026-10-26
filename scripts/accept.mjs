@@ -229,6 +229,33 @@ const CHECKS = [
         JSON.stringify(mcp));
       await h.pressKey("Escape");
       await wait(300);
+
+      await nav("技能");
+      await wait(1000);
+      const skillsBar = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const page=m.querySelector(".skill-center"); if(!page) return null;
+        const row=page.querySelector(".skill-filter-row");
+        const line=page.querySelector(".skill-actions-line");
+        const search=page.querySelector(".skill-filter-row .search-field");
+        if(!row||!line||!search) return null;
+        const btns=[...line.querySelectorAll("button")];
+        const r=line.getBoundingClientRect(), rr=row.getBoundingClientRect(), s=search.getBoundingClientRect();
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          buttons:btns.map((b)=>(b.textContent||"").trim()),
+          heights:btns.map((b)=>Math.round(b.getBoundingClientRect().height)),
+          belowSearch:r.top >= s.bottom - 2,
+          rightGap:Math.round(rr.right-r.right),
+          oldRow:!!page.querySelector(".skill-market-toolbar") };
+      })()`).catch(() => null);
+      h.check("⑨ 技能页：我的技能/本地添加/刷新移到筛选条底部，小尺寸右对齐",
+        Boolean(skillsBar && skillsBar.page === "技能" && !skillsBar.oldRow && skillsBar.buttons.length === 3
+          && skillsBar.buttons.some((x)=>x.includes("我的技能"))
+          && skillsBar.buttons.some((x)=>x.includes("从本地添加技能"))
+          && skillsBar.heights.every((h)=>h <= 30) && skillsBar.belowSearch && skillsBar.rightGap <= 40),
+        JSON.stringify(skillsBar));
+      await h.pressKey("Escape");
+      await wait(300);
     },
   },
   {

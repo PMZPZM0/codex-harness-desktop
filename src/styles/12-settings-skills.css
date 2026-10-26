@@ -89,6 +89,25 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 }
 /* 组内的按钮不再各自吃 auto（否则会被平摊开） */
 .skill-toolbar-actions > button { margin-left: 0; flex: none; }
+/* 10-27 用户：我的技能 / 从本地添加 / 刷新 下移到筛选条底部，右对齐、小一号 */
+.skill-actions-line {
+  flex: 1 0 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.skill-actions-line > .skill-action-sm {
+  min-height: 28px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  gap: 5px;
+}
+.skill-actions-line > .icon-button.skill-action-sm { width: 28px; padding: 0; }
 /* 次级工具栏已自带边框与底色，里面的统计条去掉重复外框 */
 .resource-toolbar.secondary .skill-installed-summary {
   border: 0;
