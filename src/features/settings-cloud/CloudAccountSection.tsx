@@ -146,7 +146,7 @@ function CloudTutorial() {
   );
 }
 
-export function CloudAccountSection() {
+export function CloudAccountSection({ openAppConfirm }: { openAppConfirm?: (title: string, text: string, confirmLabel?: string) => Promise<boolean> }) {
   const [status, setStatus] = useState<AuthStatus | null>(null);
   const [models, setModels] = useState<ModelStatus | null>(null);
   const [points, setPoints] = useState<Points | null>(null);
@@ -165,8 +165,6 @@ export function CloudAccountSection() {
   const [sessionDialog, setSessionDialog] = useState<"upload" | "pull" | null>(null);
   /* 10-18：连通测试 / 刷新的**弹窗**反馈（内嵌 hint 会被滚动错过） */
   const [resultDialog, setResultDialog] = useState<{ title: string; tone: "ok" | "err" | "info"; message: string; details?: Array<{ label: string; value: string }>; actions?: ResultAction[] } | null>(null);
-  const confirmTimer = useRef<number | null>(null);
-  const [confirmLogout, setConfirmLogout] = useState(false);
 
   const refresh = useCallback(async () => {
     const api = cloudApi();
@@ -183,10 +181,7 @@ export function CloudAccountSection() {
     setModels(m); setKb(k); setMemory(mem); setPoints(pts);
   }, []);
 
-  useEffect(() => {
-    void refresh();
-    return () => { if (confirmTimer.current != null) window.clearTimeout(confirmTimer.current); };
-  }, [refresh]);
+  useEffect(() => { void refresh(); }, [refresh]);
 
   const run = useCallback(async (key: string, fn: () => Promise<void>) => {
     setBusy(key);
@@ -489,20 +484,20 @@ export function CloudAccountSection() {
     }
   });
 
-  const doLogout = (id?: string) => {
-    if (!confirmLogout) {
-      setConfirmLogout(true);
-      confirmTimer.current = window.setTimeout(() => setConfirmLogout(false), 4000);
-      return;
-    }
-    setConfirmLogout(false);
+  /* 10-26 三轮用户令：「退出登录没有调弹窗」⇒ 走应用统一确认框（与删除供应商同一个），
+     不再用「再点一次确认」的两击式（点击区域小、容易误触也容易忽略）。 */
+  const doLogout = async (id?: string, confirmTitle = "退出云账号") => {
+    const confirmed = openAppConfirm
+      ? await openAppConfirm(confirmTitle, "云端模型会从下拉框收起；本机配置保留，重新登录即恢复。", "确定")
+      : true;
+    if (!confirmed) return;
     void run("logout", async () => {
       const api = cloudApi();
       if (!api.cloudAuthLogout) return;
       const r = await api.cloudAuthLogout(id);
       refreshProviders();
       if (r.ok) setProvisionReport(null);
-      setMsg(r.ok ? { kind: "ok", text: "已退出云账号（云端模型已从下拉框收起，配置保留，重新登录即恢复）。" } : { kind: "err", text: "退出失败" });
+      setMsg(r.ok ? { kind: "ok", text: "已退出云账号。" } : { kind: "err", text: "退出失败" });
       await refresh();
     });
   };
@@ -624,6 +619,10 @@ export function CloudAccountSection() {
                 <h3>
                   <span className="cloud-acct-name" title={status.active?.username || ""}>{status.active?.username}</span>
                   <span className={`cloud-acct-tag ${overall.tone}`}>{overall.label}</span>
+                  {/* 10-26 三轮用户令：用户中心放到账户名后面（原来在卡底那行） */}
+                  <button className="cloud-acct-name-link" onClick={openUserCenter} title="浏览器打开云端用户中心（不需要桌面端在线）">
+                    <ExternalLink size={12} />用户中心
+                  </button>
                 </h3>
               </div>
               {/* 10-26 三轮用户令：小字注释整条删掉（「直接聊天即可…」），名字一行不换行；
@@ -666,11 +665,8 @@ export function CloudAccountSection() {
                 {points ? (points.ok ? `${Number(points.balance).toLocaleString()} 积分` : "积分读取失败") : "积分读取中…"}
               </span>
               <span className="cloud-acct-sub">{status.active?.role} · {status.active?.baseUrl}</span>
-              <button className="cloud-acct-link" onClick={openUserCenter} title="浏览器打开云端用户中心（不需要桌面端在线）">
-                <ExternalLink size={13} />用户中心
-              </button>
-              <button className="cloud-acct-link" disabled={!!busy} onClick={() => doLogout(status.active?.id)}>
-                <LogOut size={13} />{confirmLogout ? "再点一次确认退出" : "退出登录"}
+              <button className="cloud-acct-link" disabled={!!busy} onClick={() => void doLogout(status.active?.id)}>
+                <LogOut size={13} />退出登录
               </button>
             </div>
           </div>
@@ -711,8 +707,8 @@ export function CloudAccountSection() {
                 <button className="secondary-setting" onClick={openUserCenter}>
                   <ExternalLink size={14} />云端用户中心
                 </button>
-                <button className="secondary-setting danger" disabled={!!busy} onClick={() => doLogout(status.active?.id)}>
-                  <LogOut size={14} />{confirmLogout ? "再点一次确认退出" : "退出登录"}
+                <button className="secondary-setting danger" disabled={!!busy} onClick={() => void doLogout(status.active?.id)}>
+                  <LogOut size={14} />退出登录
                 </button>
                 {busyIcon("sync")}{busyIcon("resync")}
               </div>
@@ -843,7 +839,7 @@ export function CloudAccountSection() {
                     <label>{a.username}</label>
                     <span className="cloud-acct-sub" style={{ flex: 1 }}>{a.baseUrl}</span>
                     <button className="secondary-setting" disabled={!!busy} onClick={() => doSwitch(a.id)}>切为此账号</button>
-                    <button className="secondary-setting danger" disabled={!!busy} onClick={() => doLogout(a.id)}>移除</button>
+                    <button className="secondary-setting danger" disabled={!!busy} onClick={() => void doLogout(a.id, `移除云账号「${a.username}」`)}>移除</button>
                   </div>
                 ))}
               </div>

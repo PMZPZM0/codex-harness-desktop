@@ -15,8 +15,32 @@
   font-size: 13px;
   line-height: 1.6;
 }
-.cloud-acct-msg.ok { border-color: var(--green, #3B6D11); }
-.cloud-acct-msg.err { border-color: var(--red); }
+.cloud-acct-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+/* 10-26 三轮用户令：「反馈这个文字成功不好看」⇒ 成功态从「一圈绿边」改成淡绿底 + 圆点，
+   失败态同样给淡红底；文字仍用 --text，暗色下不会糊。 */
+.cloud-acct-msg.ok {
+  border-color: color-mix(in srgb, var(--green, #3B6D11) 45%, var(--line));
+  background: color-mix(in srgb, var(--green, #3B6D11) 9%, var(--panel));
+}
+.cloud-acct-msg.err {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--line));
+  background: color-mix(in srgb, var(--red) 9%, var(--panel));
+}
+.cloud-acct-msg.ok::before,
+.cloud-acct-msg.err::before {
+  content: "";
+  flex: 0 0 7px;
+  width: 7px;
+  height: 7px;
+  margin-top: 7px;
+  border-radius: 999px;
+  background: var(--green, #3B6D11);
+}
+.cloud-acct-msg.err::before { background: var(--red); }
 
 .cloud-acct-card {
   border: 1px solid var(--line);
@@ -290,6 +314,23 @@
   border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
 }
 .cloud-acct-hero-main { flex: 1 1 auto; min-width: 0; }
+/* 10-26 三轮用户令：用户中心跟在账户名后面（小号文字链接，不抢主操作按钮的视觉权重） */
+.cloud-acct-name-link {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 2px;
+  padding: 1px 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 400;
+  cursor: pointer;
+}
+.cloud-acct-name-link:hover { color: var(--text); border-color: var(--line); background: var(--panel-2); }
 .cloud-acct-hero-main h3 {
   margin: 0;
   display: flex;
@@ -358,18 +399,24 @@
   background: color-mix(in srgb, var(--panel-2) 55%, transparent);
   overflow: hidden;
 }
+/* 10-26 三轮用户令：「下面这三个做好看一点，整齐划一」——
+   原来是 flex 顺序排 ⇒ 标签长短不同（当前生效 / 已接通 / 已接通（请求层））会把右侧说明搓成三个起点。
+   改成**四列网格**：图标 / 名称 / 状态标签 / 说明，三者逐列对齐、行高一致。 */
 .cloud-acct-ready-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 16px 74px 116px minmax(0, 1fr);
   align-items: center;
-  gap: 9px;
-  padding: 9px 12px;
+  gap: 10px;
+  padding: 10px 12px;
   font-size: 12.5px;
   border-bottom: 1px solid var(--line);
 }
 .cloud-acct-ready-row:last-child { border-bottom: 0; }
 .cloud-acct-ready-ico { display: inline-flex; color: var(--muted); }
 .cloud-acct-ready-row.on .cloud-acct-ready-ico { color: var(--accent); }
-.cloud-acct-ready-row > b { flex: none; color: var(--text); font-weight: 550; }
+.cloud-acct-ready-row > b { color: var(--text); font-weight: 550; }
+/* 标签在本列内左对齐（宽度随内容，不再把后面的说明顶开） */
+.cloud-acct-ready-row > .cloud-acct-tag { justify-self: start; }
 .cloud-acct-ready-detail {
   flex: 1 1 auto;
   min-width: 0;
