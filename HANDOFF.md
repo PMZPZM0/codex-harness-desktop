@@ -42,8 +42,8 @@
 | 悬停连贯性 | 轨道 gap 4→0 + 上下 padding 4→6（单槽仍 14px）；悬停搬到整条轨道 `onMouseMove` 取最近刻度 | `32308728f` |
 | 绿线两道闸 | 无压缩证据不画、定不了位置不画 | `32308728f` |
 | 方向音 + 崩溃修复 | 悬停按方向传 frequency（下 1700 / 上 2300）；**React #310 修复**（见坑①） | `f2abed071` |
-| 内置 `grill-me` | 上游 `grill-me`(3 行代理) + `grilling`(方法论) 合成一份，去掉对 `Skill` 工具的委托；MIT 改编，声明见 `THIRD_PARTY_NOTICES.md` | 本轮（`git log -1`） |
-| 内置 `handoff` | 五段结构 + 生效方式 + 锚点要求 + 提示词模板 + 判据 | 本轮（`git log -1`） |
+| 内置 `grill-me` | 上游 `grill-me`(3 行代理) + `grilling`(方法论) 合成一份，去掉对 `Skill` 工具的委托；MIT 改编，声明见 `THIRD_PARTY_NOTICES.md` | `85b9274c7` |
+| 内置 `handoff` | 五段结构 + 生效方式 + 锚点要求 + 提示词模板 + 判据 | `85b9274c7` |
 
 判据基线（全部当前绿）：守卫 12r **45/45** · 守卫 22 **204/204** · `npm run check` **0 红**（跑前先 `unset NODE_OPTIONS`，收尾看输出末尾确认 bag-types / dead-imports / require-paths 真跑过）。
 
