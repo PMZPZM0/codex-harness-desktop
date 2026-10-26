@@ -15,6 +15,10 @@ type VerifyResult = {
 };
 
 const stylePresets = [
+  /* 10-27 用户令：「搭配 Grill-me 技能，回复风格加一个需求询问选项，启用这个选项就默认使用了这个技能」
+     ⇒ 这一档不改语气，只改**开工前的动作**：先按 grill-me 把需求问清再动手。
+     注入走 developer instructions（引擎 personality 只认官方三档），见 src/lib/reply-style.mjs。 */
+  { value: "inquiry", title: "需求询问", desc: "动手前先按 grill-me 技能问清目标 / 边界 / 验收，问完再做。适合需求还没定死的活。", sample: "开工前确认三点：1) 只改设置页还是全局？2) 老数据要迁移吗？3) 验收看哪一屏？" },
   { value: "pragmatic", title: "务实", desc: "直接给结论和代码，少铺垫。适合赶进度的工程任务。", sample: "结论：把 offsetTop 换成相对滚动容器的坐标即可。" },
   { value: "friendly", title: "友好", desc: "解释更详细耐心，会主动交代思路与取舍。适合边做边学。", sample: "我先说结论，再解释为什么：这个问题的根因是…" },
   { value: "none", title: "默认", desc: "跟随模型默认风格，不额外注入语气指令。", sample: "（不注入风格指令，使用模型默认表达）" },

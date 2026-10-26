@@ -25,6 +25,7 @@ export function defaultProfile(): UserProfile {
 }
 
 const STYLE_OPTIONS = [
+  { value: "inquiry", label: "需求询问", desc: "先问清需求再动手（个性化页可选）" },
   { value: "pragmatic", label: "务实", desc: "直接给结论和代码" },
   { value: "friendly", label: "友好", desc: "多解释思路与取舍" },
   { value: "none", label: "默认", desc: "不额外注入语气" },
@@ -317,30 +318,10 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
         </section>
       </div>
 
-      <section className="uc-panel">
-        <div className="uc-panel-head">
-          <span className="uc-panel-icon"><Sparkles size={14} /></span>
-          <div><strong>交流偏好</strong><small>与「设置 → 个性化 → 回复风格」联动，切换后下一个回合生效</small></div>
-        </div>
-        <div className="uc-style-options">
-          {STYLE_OPTIONS.map((option) => {
-            const active = personality === option.value;
-            return (
-              <button
-                type="button"
-                key={option.value}
-                className={`uc-style-option ${active ? "active" : ""}`}
-                aria-pressed={active}
-                onClick={() => { onPersonalityChange(option.value); setProfile((p) => ({ ...p, style: option.value })); }}
-              >
-                <span><strong>{option.label}</strong><small>{option.desc}</small></span>
-                {active ? <Check size={14} /> : null}
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
+      {/* 10-27 用户令：「这个回复风格跟用户中心重复了，那边前端删除这个选项，但不能影响新手引导生效」
+          ⇒ 「交流偏好」这一块整块从用户中心移除（回复风格只在「设置 → 个性化」调一次）。
+          ⛔ 只删界面：下面这些一条都不能删 —— 新手引导把 replyStyle 写进 personalization，
+             本页仍要读它并回显（hero 上的风格 chip），保存时也仍同步 profile.style。 */}
       <div className="uc-savebar">
         <span className="uc-savebar-note"><Sparkles size={13} />资料会同步到侧栏与 Codex 的称呼</span>
         <div className="uc-savebar-actions">

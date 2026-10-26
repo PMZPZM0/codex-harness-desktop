@@ -218,6 +218,12 @@ ok(/savePersonalization\(\{\s*customInstructions/.test(personalPage)
   "个性化保存只传自定义指令（不覆盖用户中心写的昵称）");
 ok(!existsSync(join(ROOT, "src/features/settings-personalization/PersonalizationSettingsSection.tsx")),
   "个性化旧区块组件已删除（语气自适应整块搬走）");
+/* 10-27 用户令：「回复风格跟用户中心重复了，那边前端删除这个选项，但不能影响新手引导生效；
+   搭配 Grill-me 技能加一个需求询问选项，启用就默认用这个技能」 */
+ok(/value: "inquiry"/.test(personalPage) && /需求询问/.test(personalPage),
+  "回复风格新增「需求询问」档（启用即按 grill-me 先问清需求）");
+ok(!/uc-style-options/.test(src("src/components/UserCenter.tsx")) && /STYLE_OPTIONS/.test(src("src/components/UserCenter.tsx")),
+  "用户中心不再重复「回复风格」选择区（唯一入口在个性化页），风格标签回显保留");
 const generalPage = pageSrc("general");
 ok(/语气自适应/.test(generalPage) && /ToggleSwitch/.test(generalPage)
   && /card-reply/.test(generalPage), "控制台「回复风格」卡里有语气自适应开关");

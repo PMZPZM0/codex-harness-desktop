@@ -13,6 +13,7 @@ import { resolveModelForOpen, shouldSyncOpenThread } from "../../../../../lib/mo
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "../../../../../lib/session-scope.mjs";
 import { getAnnounceGlobalEnabled, isAnnounceMutedForThread } from "../../../../../voice/announce-bus";
 import { advanceMood, composeMoodInstructions, emptyMood, moodBlock, moodSignature, moodTone, normalizeMood, userSignalOf } from "../../../../../lib/agent-mood.mjs";
+import { inquiryInstruction } from "../../../../../lib/reply-style.mjs";
 import { LEGACY_PREFIX, dispatchSignature, emptyDispatch, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeDispatch, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeKey, runtimeSignature } from "../../../../../lib/thread-runtime.mjs";
 import { describeTurnStop, turnHeadline, isAwaitingTurnClose } from "../../../../../lib/turn-stop-reason.mjs";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
@@ -315,7 +316,10 @@ bag.loadBaseInstructions = loadBaseInstructions as typeof bag.loadBaseInstructio
     const base = await bag.loadBaseInstructions();
     return {
       // 签名带上语气档：只有语气真的变了才重新下发（浮点不进签名，否则每回合都发一次 RPC）
-      signature: `${sessionScopeSignature(values)}|${bag.adaptiveToneRef.current ? moodSignature(bag.readMood(threadId)) : ""}`,
+      /* 签名带上回复风格：切到「需求询问」要立刻重下发 instructions（否则要等下次开新会话才生效） */
+      signature: `${sessionScopeSignature(values)}|${bag.adaptiveToneRef.current ? moodSignature(bag.readMood(threadId)) : ""}|style:${bag.personality ?? ""}`,
+      /* 10-27 需求询问：developer_instructions = [语气块, 「先用 grill-me 问清需求」块]。
+         后者是行为不是语气，不进引擎 personality（只认官方三档）。 */
       collaborationMode: {
         // 本应用引擎侧的会话协作模式恒为 default（rollout `task_started.collaboration_mode_kind`
         // 实证）；「计划模式」由 /plan 旗标 + turn/start 实现，不走引擎的 collaboration mode。
@@ -323,7 +327,7 @@ bag.loadBaseInstructions = loadBaseInstructions as typeof bag.loadBaseInstructio
         settings: {
           model,
           reasoning_effort: effortValue || null,
-          developer_instructions: composeMoodInstructions(composeScopeInstructions(base, sessionScopeBlock(values)), bag.adaptiveToneRef.current ? moodBlock(bag.readMood(threadId)) : ""),
+          developer_instructions: [composeMoodInstructions(composeScopeInstructions(base, sessionScopeBlock(values)), bag.adaptiveToneRef.current ? moodBlock(bag.readMood(threadId)) : ""), inquiryInstruction(bag.personality)].filter(Boolean).join("\n\n"),
         },
       },
     };
