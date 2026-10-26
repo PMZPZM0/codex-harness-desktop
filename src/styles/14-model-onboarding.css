@@ -1354,6 +1354,38 @@
   flex-direction: column;
   background: var(--bg);
 }
+/* 10-26 用户：「上下可以…展示，下面也可以往上展示」：树与预览之间可拖动分栏。
+   ⛔ 拖动条必须有 7px 命中面（3px 视觉条太难点）；touch-action:none 防触屏被滚动手势吃掉。 */
+.workspace-files-splitter {
+  flex: none;
+  height: 7px;
+  margin: -1px 0;
+  display: grid;
+  place-items: center;
+  cursor: row-resize;
+  touch-action: none;
+  background: transparent;
+  position: relative;
+  z-index: 2;
+}
+.workspace-files-splitter span {
+  width: 34px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--line);
+  transition: background .15s ease, width .15s ease;
+}
+.workspace-files-splitter:hover span,
+.workspace-files-splitter:active span { width: 48px; background: var(--muted); }
+/* 预览拉满：文件树收起（保留状态，按 Alt+↓ / 恢复按钮回来） */
+.workspace-files.is-preview-expanded .workspace-files-tree {
+  flex: 0 0 0;
+  max-height: 0;
+  min-height: 0;
+  border-bottom: 0;
+  overflow: hidden;
+}
+.workspace-file-preview-actions .workspace-file-preview-expand { color: var(--accent); }
 .workspace-file-preview-head {
   flex: none;
   display: flex;

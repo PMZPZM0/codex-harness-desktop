@@ -175,6 +175,46 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
   /* 10-22 文件卡 → 右栏预览：订阅事件箱里的目标路径；树里点文件也走同一个选中态。 */
   const [workspaceFile, setWorkspaceFile] = useState<string>(() => getRightFile()?.path || "");
   useEffect(() => subscribeRightFile(({ path }) => setWorkspaceFile(path)), []);
+  /* 10-26 用户：「右边加一下，上下可以…展示，下面也可以往上展示」。文件树与预览之间可拖动分栏；
+     预览头部「展开/恢复」把预览拉满（文件树收起），Alt+↑ / Alt+↓ 同效。分栏高度按会话记住。 */
+  const TREE_H_KEY = "workspace-files-tree-h";
+  const [treeHeight, setTreeHeight] = useState<number | null>(() => {
+    try { const n = Number(localStorage.getItem(TREE_H_KEY)); return Number.isFinite(n) && n >= 120 ? n : null; } catch { return null; }
+  });
+  const [previewExpanded, setPreviewExpanded] = useState(false);
+  const filesWrapRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (treeHeight == null) return;
+    try { localStorage.setItem(TREE_H_KEY, String(Math.round(treeHeight))); } catch { /* 隐私模式 */ }
+  }, [treeHeight]);
+  useEffect(() => {
+    if (rightTab !== "tree") return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (!event.altKey) return;
+      if (event.key === "ArrowUp") { event.preventDefault(); setPreviewExpanded(true); }
+      else if (event.key === "ArrowDown") { event.preventDefault(); setPreviewExpanded(false); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [rightTab]);
+  const startTreeResize = (event: ReactMouseEvent) => {
+    event.preventDefault();
+    const wrap = filesWrapRef.current;
+    const tree = wrap?.querySelector<HTMLElement>(".workspace-files-tree");
+    if (!wrap || !tree) return;
+    const startY = event.clientY;
+    const startH = tree.getBoundingClientRect().height;
+    const max = Math.max(160, wrap.getBoundingClientRect().height - 180);
+    const onMove = (move: PointerEvent) => {
+      setTreeHeight(Math.max(120, Math.min(max, startH + (move.clientY - startY))));
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
   const resolvedWorkspaceFile = useMemo(() => {
     if (!workspaceFile) return "";
     const looksRelative = !/^[A-Za-z]:[\\/]/.test(workspaceFile) && !workspaceFile.startsWith("/") && !workspaceFile.startsWith("~/");
@@ -202,8 +242,8 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
               <TurnReviewPanel workspace={workspace} active={rightTab === "turn-review"} onOpenFile={(path) => void openFile(path)} />
             </div>
             <div className={`panel-page ${rightTab === "tree" ? "" : "hidden"}`}>
-            <div className="workspace-files">
-            <section className="tree-section workspace-files-tree">
+            <div ref={filesWrapRef} className={`workspace-files${previewExpanded ? " is-preview-expanded" : ""}`}>
+            <section className="tree-section workspace-files-tree" style={!previewExpanded && treeHeight != null ? { flexBasis: treeHeight, maxHeight: treeHeight } : undefined}>
               <div className="panel-section-heading"><h2>工作区文件</h2><div className="panel-section-actions"><button className="icon-button" title="查看项目变更" onClick={() => openPanelTab("review", "变更")}><GitBranch size={14} /></button><button className="icon-button" title="刷新工作区文件" onClick={() => void refreshWithReceipt(setNotice, "刷新工作区文件", () => loadTree(treePath || workspace))}>{treeLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
               <div className="tree-location" title={treePath || workspace}>{treePath || workspace || "未选择工作区"}</div>
               {treeLoading ? <div className="panel-loading"><Spinner />读取中</div> : (() => {
@@ -247,7 +287,16 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
                 return <div className="tree-list">{renderRows(root, 0)}</div>;
               })()}
             </section>
-            <WorkspaceFilePreview path={resolvedWorkspaceFile} onOpenEditor={(path) => void openFile(path)} />
+            {!previewExpanded && (
+              <div
+                className="workspace-files-splitter"
+                role="separator"
+                aria-orientation="horizontal"
+                title="上下拖动：调整文件树与预览高度；Alt+↑ 预览拉满 / Alt+↓ 恢复"
+                onPointerDown={startTreeResize}
+              ><span /></div>
+            )}
+            <WorkspaceFilePreview path={resolvedWorkspaceFile} onOpenEditor={(path) => void openFile(path)} expanded={previewExpanded} onToggleExpanded={() => setPreviewExpanded((value) => !value)} />
             </div>
             </div>
             <div className={`panel-page ${rightTab === "browser" ? "" : "hidden"}`}>

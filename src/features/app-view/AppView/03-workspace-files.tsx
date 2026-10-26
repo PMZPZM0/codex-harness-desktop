@@ -5,7 +5,7 @@
  * ⛔ 读文件走 `window.codex.readFile`（同一道可信根闸）；⛔ 不在这里做写入/编辑（编辑仍走居中编辑器）。
  */
 import { useEffect, useState } from "react";
-import { ExternalLink, FileText, FolderOpen, RotateCcw } from "lucide-react";
+import { ExternalLink, FileText, FolderOpen, RotateCcw, ChevronsUp, ChevronsDown } from "lucide-react";
 import { FileTypeIcon, fileExtOf } from "../../../components/FileTypeIcon";
 import { Spinner } from "../../../components/CardShell";
 import { Markdown, FilePreviewCode } from "../../markdown";
@@ -33,7 +33,7 @@ function nameOf(path: string): string {
   return String(path || "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
 }
 
-export function WorkspaceFilePreview({ path, onOpenEditor }: { path: string; onOpenEditor: (path: string) => void }) {
+export function WorkspaceFilePreview({ path, onOpenEditor, expanded, onToggleExpanded }: { path: string; onOpenEditor: (path: string) => void; expanded?: boolean; onToggleExpanded?: () => void }) {
   const [state, setState] = useState<PreviewState>(IDLE);
   const [retry, setRetry] = useState(0);
 
@@ -75,6 +75,16 @@ export function WorkspaceFilePreview({ path, onOpenEditor }: { path: string; onO
         <strong title={path}>{name || "文件预览"}</strong>
         {ext && <span className="workspace-file-preview-ext">{ext.toUpperCase()}</span>}
         <div className="workspace-file-preview-actions">
+          {onToggleExpanded && (
+            <button
+              type="button"
+              className="workspace-file-preview-expand"
+              title={expanded ? "恢复文件树（预览收回下方，Alt+↓）" : "预览向上展开（收起文件树，Alt+↑）"}
+              onClick={onToggleExpanded}
+            >
+              {expanded ? <ChevronsDown size={12} /> : <ChevronsUp size={12} />}{expanded ? "恢复" : "展开"}
+            </button>
+          )}
           <button type="button" title="在编辑器打开" disabled={!path} onClick={() => path && onOpenEditor(path)}>在编辑器打开</button>
           <button type="button" title="用系统默认应用打开" disabled={!path} onClick={() => { if (path) void window.codex.shellOpen?.(path); }}>
             <ExternalLink size={12} />默认应用

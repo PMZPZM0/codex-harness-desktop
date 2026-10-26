@@ -248,6 +248,20 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     "文件引用卡默认右栏预览；编辑器 / 默认应用从下拉选择（⛔ 不再默认弹居中编辑器）");
   ok(fileRefCard.includes("MODE_KEY") && /localStorage\.getItem\(MODE_KEY\)/.test(fileRefCard) && /localStorage\.setItem\(MODE_KEY/.test(fileRefCard),
     "打开方式默认值跨卡片共用 localStorage（与回合产物卡同键 output-file-open-target）");
+  /* 10-26 用户：「我记得之前有灯箱预览和编辑功能，现在没有，加上，三个点里面加一个这个选项」。 */
+  ok(/灯箱预览/.test(fileRefCard) && /onOpenEditor\?\.\(path\)/.test(fileRefCard)
+    && /openFileTextEditor\(path, name\)/.test(fileRefCard) && /editable/.test(fileRefCard),
+    "文件卡「…」菜单提供灯箱预览 + 编辑（二进制/图片不给编辑，避免写坏文件）");
+  const reviewPanelSrc = read("src/features/app-view/AppView/03-review-panel.tsx");
+  const wsPreviewSrc = read("src/features/app-view/AppView/03-workspace-files.tsx");
+  const wsCss = read("src/styles/14-model-onboarding.css");
+  ok(/workspace-files-splitter/.test(reviewPanelSrc) && /startTreeResize/.test(reviewPanelSrc)
+    && /is-preview-expanded/.test(reviewPanelSrc) && /ArrowUp/.test(reviewPanelSrc) && /altKey/.test(reviewPanelSrc),
+    "右栏文件树/预览可上下拖动分栏；Alt+↑ 拉满、Alt+↓ 恢复");
+  ok(/workspace-file-preview-expand/.test(wsPreviewSrc) && /onToggleExpanded/.test(wsPreviewSrc)
+    && /\.workspace-files-splitter\s*\{[^}]*cursor:\s*row-resize/.test(wsCss)
+    && /\.workspace-files\.is-preview-expanded \.workspace-files-tree\s*\{[^}]*max-height:\s*0/.test(wsCss),
+    "预览头部有「展开/恢复」按钮；分栏条可拖、拉满时文件树收起（CSS 与接线都在）");
 
   /* 10-22 用户实测「汇总消息下面没有文件卡片」：创建后又删除的文件首尾快照一致 ⇒ 最终报告空。
      必须留最后一次非空 live 明细，结算时把最终快照里没有的路径补成 deleted。 */
