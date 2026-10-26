@@ -741,8 +741,8 @@ const CHECKS = [
       await h.eval(`document.querySelector(".workspace-file-preview-expand")?.click()`);
       await wait(400);
       const expanded = await geo();
-      h.check("② 点「展开」：文件树收起、预览向上拉满",
-        expanded.expanded && expanded.treeH < 40 && expanded.previewH > base.previewH + 100,
+      h.check("② 点「展开」：文件树完全收起（无残条）、预览向上拉满",
+        expanded.expanded && expanded.treeH < 2 && expanded.previewH > base.previewH + 100,
         JSON.stringify(expanded));
 
       await h.eval(`document.querySelector(".workspace-file-preview-expand")?.click()`);
