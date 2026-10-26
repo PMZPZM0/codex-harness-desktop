@@ -33,7 +33,7 @@ const ok = (condition, message) => {
 
 const mdSrc = read("src/features/markdown/Markdown.tsx");
 const css = read("src/styles/03-messages-turns.css");
-const acceptSrc = read("scripts/accept.mjs");
+/* ⛔ 不再 read("scripts/accept.mjs")：④ 的验收登记断言已随「验收脚本收敛为当前 3 项」删除。 */
 
 /* ── ① 渲染层接线：表格被包一层 + 复制走共用两段反馈组件 ── */
 ok(/table: \(\{ children \}\) => <MdTable>\{children\}<\/MdTable>/.test(mdSrc),
@@ -137,9 +137,11 @@ const reduceBlock = css.slice(css.indexOf("prefers-reduced-motion"), css.indexOf
 ok(/\.md-table-copy\[data-phase="done"\]/.test(reduceBlock) && /\.md-code-copy\[data-phase="done"\]/.test(reduceBlock),
   "减弱动效里两个按钮也都列了（关掉弹动但保留对勾与颜色 —— 反馈是信息、动效才是装饰）");
 
-/* ── ④ 验收项登记（新增项必须登记轮次，否则默认轮跑不到） ── */
-ok(/id:\s*"md-block-copy"/.test(acceptSrc) && /"md-block-copy":\s*"10-12"/.test(acceptSrc),
-  "验收项 `md-block-copy` 已建并登记进 ROUND_OF（默认轮跑得到）");
+/* ── ④ 验收项登记（⛔ 10-26 删除这条断言）──
+   它断言 accept.mjs 里有 `id: "md-block-copy"` 与 `"md-block-copy": "10-12"` 轮次表，
+   但 `c1344271b`（「验收脚本收敛为当前 3 项」）已把轮次表机制与该项一起**有意删除**。
+   断言已不存在的对象只会恒红（或被人改成恒真），两种都没价值 ⇒ 去掉；
+   上面 ①~③ 的结构断言才是这条守卫真正在守的东西（复制按钮的类名 / 对勾 / 减弱动效）。 */
 
 console.log(fails ? `\n【md-block-copy】${checks} 条断言 / ${fails} 条失败` : `\n【md-block-copy】${checks} 条断言全部通过`);
 process.exit(fails ? 1 : 0);

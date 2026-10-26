@@ -1826,8 +1826,10 @@ w.postMessage({id:1,op:"list",root});
     (/if \(!input\.occupied\) return "off";/.test(screenSrc154) ? ok : fail)(
       "【154】off 语义收窄为**空座**（⛔ 别再让「待机」共用它）"
     );
-    (/let officeSimSingletonRef/.test(canvasSrc154) ? ok : fail)(
-      "【154】sim 是模块级常驻单例（⛔ 组件级 ⇒ 每次打开预览都重播进场）"
+    /* ⛔ 10-26 办公室分间：单例改成「按办公室 key 的模块级 Map」（每间一个 sim，切回来人物还在原处）。
+       意图不变：**模块级常驻**，⛔ 不是组件级（组件级 ⇒ 每次打开预览都重播进场）。 */
+    (/const officeSims = new Map<string, OfficeSim>\(\)/.test(canvasSrc154) ? ok : fail)(
+      "【154】sim 是模块级常驻（按办公室分间的 Map，⛔ 组件级 ⇒ 每次打开预览都重播进场）"
     );
   }
 
@@ -2533,7 +2535,8 @@ w.postMessage({id:1,op:"list",root});
   const fmSrc180 = codeOnly(readFileSync(join(ROOT, "src", "features", "function-menu", "FunctionMenu.tsx"), "utf8"));
   const fmStore180 = codeOnly(readFileSync(join(ROOT, "src", "features", "function-menu", "store.ts"), "utf8"));
   const fmDefault180 = normalizeFunctionMenu(null);
-  (FUNCTION_MENU_DEFAULT_ORDER.join(">") === "schedule>frontend>extensions>team>identity>login>newbie"
+  /* ⛔ 10-26：拓展功能（技能/插件/MCP）独立成侧栏常驻行 ⇒ 从功能入口菜单的默认顺序里移出。 */
+  (FUNCTION_MENU_DEFAULT_ORDER.join(">") === "schedule>frontend>team>identity>login>newbie"
     && fmDefault180.location === "bottom" && fmDefault180.overflow.length === 0
     ? ok : fail)(
     "【180】功能入口默认顺序 + 默认位置 = 侧栏底部（安装默认，可折叠），数据模型单一真相源"
@@ -2774,16 +2777,18 @@ w.postMessage({id:1,op:"list",root});
     "【180】专家 / 专家团 / 子智能体卡片直达各自内页（不先落到 agentteam 外层再点一次）"
   );
   const sideStyles180 = readStyles();
+  /* ⛔ 10-26：三个按钮（新建任务 / 指挥中枢 / 搜索任务）统一整行宽 + 统一靠左，
+     不再给「搜索任务」单独特判（那会把「只有它是靠左」的旧形态钉死）；圆角随皮肤改到 10px。 */
   (/\.sidebar-quick\s*\{[\s\S]{0,260}?flex-direction:\s*column/.test(sideStyles180)
-    && /\.sidebar-quick \.sidebar-quick-btn\s*\{[\s\S]{0,260}?width:\s*100%[\s\S]{0,260}?border-radius:\s*12px/.test(sideStyles180)
-    && /\.sidebar-quick \.sidebar-quick-btn\.sidebar-quick-search\s*\{[\s\S]{0,120}?justify-content:\s*flex-start/.test(sideStyles180) ? ok : fail)(
-    "【180】新会话 / 搜索任务是上下两行、主按钮整行宽、搜索任务靠左（10-24 用户对照截图，不再并排胶囊）"
+    && /\.sidebar-quick \.sidebar-quick-btn\s*\{[\s\S]{0,300}?width:\s*100%[\s\S]{0,300}?justify-content:\s*flex-start[\s\S]{0,300}?border-radius:\s*10px/.test(sideStyles180) ? ok : fail)(
+    "【180】新建任务 / 指挥中枢 / 搜索任务上下排列、整行宽、统一靠左（10-24 用户对照截图，不再并排胶囊）"
   );
   (/className=\{`sidebar-tab sidebar-cap-row/.test(fmSrc180)
     && fmSrc180.includes("schedule: { label: \"自动化\"") ? ok : fail)(
     "【180】「自动化」与其它能力入口同一行样式（统一 sidebar-cap-row，不再单独一档）"
   );
-  (fmSrc180.includes("function-menu-more") && fmSrc180.includes("编辑菜单") && fmSrc180.includes("移到搜索任务下面")
+  (fmSrc180.includes("function-menu-more") && fmSrc180.includes("编辑菜单")
+    && fmSrc180.includes("移到拓展功能下面") && fmSrc180.includes("移到侧栏底部")
     && !/moreHubOpen/.test(side180) ? ok : fail)(
     "【180】新的「更多」只收溢出入口 + 编辑菜单/切换位置（旧 AI 画布 moreHubOpen 已删除）"
   );
@@ -2798,9 +2803,14 @@ w.postMessage({id:1,op:"list",root});
   const navStart180 = side180.indexOf('aria-label="导航"');
   const navEnd180 = navStart180 >= 0 ? side180.indexOf("</div>", navStart180) : -1;
   const nav180 = navStart180 >= 0 && navEnd180 > navStart180 ? side180.slice(navStart180, navEnd180) : "";
-  (nav180.includes("sidebar-quick") && nav180.includes("新会话") && nav180.includes("搜索任务")
-    && nav180.indexOf("搜索任务") > nav180.indexOf("新会话") ? ok : fail)(
-    "【180】新会话 / 搜索任务在顶部快捷区，搜索排在新建之后"
+  /* ⛔ 10-25 用户令：「拓展功能从折叠组拉出来常驻；**搜索任务只在下方视图行的 🔍 里**」
+     ⇒ 顶部快捷区现在是「新建任务 / 指挥中枢 / 拓展功能」，搜索不再是快捷区按钮。
+     意图不变：新建类入口在顶部快捷区，搜索入口仍**可见且靠后**（视图行工具条）。 */
+  (nav180.includes("sidebar-quick") && nav180.includes("新建任务") && nav180.includes("指挥中枢") ? ok : fail)(
+    "【180】新建任务 / 指挥中枢在顶部快捷区（搜索任务 10-25 移到视图行 🔍）"
+  );
+  (/className="view-toolbar-btn ic-cyan" title="搜索任务"/.test(side180) ? ok : fail)(
+    "【180】搜索任务入口在视图行工具条（🔍 + title，可点可发现）"
   );
   (!/<kbd>/.test(nav180) ? ok : fail)(
     "【180】快捷入口不再显示快捷键键帽（快捷键本身仍由全局监听生效）"
@@ -3337,7 +3347,10 @@ w.postMessage({id:1,op:"list",root});
       "【232】index.html 内联脚本在首帧前判定 ?pet=1 / ?pet=activity"
     );
     /* ⑦ 入口分流必须在 main.tsx（App() 里条件调用 useHarnessApp 会破坏 hook 调用序） */
-    (mainEntrySrc.includes('petSurface === "activity"') && mainEntrySrc.includes("isPetActivityWindow ? <PetActivity />") && mainEntrySrc.includes("isPetWindow ? <PetFloat /> : <App />") ? ok : fail)(
+    /* ⛔ 10-26：应用锁给主界面包了一层 AppLockGate（未开启锁时直接透传）⇒ 断言跟着改；
+       意图不变：**宠物窗/活动窗不经过 App()**（在入口分流，不在 App 里条件调用 hook）。 */
+    (mainEntrySrc.includes('petSurface === "activity"') && mainEntrySrc.includes("isPetActivityWindow ? <PetActivity />")
+      && mainEntrySrc.includes("isPetWindow ? <PetFloat /> : <AppLockGate><App /></AppLockGate>") ? ok : fail)(
       "【232】渲染入口按 ?pet=1 / ?pet=activity 分流（不在 App() 里条件调用 hook）"
     );
     /* ⑧ 浮窗**不登记 window-bus**：登记进去会白收 codex:event 广播，还会被卷进弹窗语义 */

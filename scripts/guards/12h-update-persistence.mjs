@@ -73,8 +73,13 @@ console.log("【④ 静默下载与重启安装的安全/顺序口径】");
 const dl = ui.slice(ui.indexOf('handle("updates:download-silent"'), ui.indexOf('handle("updates:restart-install"'));
 ok(/lastVerifiedUpdatePath && fileExists\(lastVerifiedUpdatePath\)/.test(dl),
   "静默下载幂等：已校验过就直接返回，不重复下几百 MB");
-ok(!/input\?\.|input\./.test(dl),
-  "⛔ 静默下载**不接受渲染层指定的下载地址**（同 09-13 P0：任意 exe 落盘执行）");
+/* ⛔ 10-26 收紧成「精确禁字段」：原来一刀切禁 `input.` 全字面 —— 10-25 差分更新加了
+   `input.mode`（只决定「差分 or 完整包」的受限枚举），一刀切会把这条安全断言顶成假红。
+   真正要防的是 **渲染层指定地址/路径/哈希**（09-13 P0：任意 exe 落盘执行）⇒ 逐个字段禁。 */
+ok(!/input\??\.(url|downloadUrl|href|path|filename|sha256|version)/.test(dl),
+  "⛔ 静默下载**不接受渲染层指定的下载地址/路径/哈希**（同 09-13 P0：任意 exe 落盘执行）");
+ok(/const url = lastUpdateInfo\?\.downloadUrl;/.test(dl),
+  "下载地址只取主进程校验过的 lastUpdateInfo（渲染层拿不到发言权）");
 ok(/silentDownloading\s*=\s*true/.test(dl) && /finally\s*\{\s*silentDownloading\s*=\s*false/.test(dl),
   "并发闸在 finally 里复位（异常路径漏复位会让后续静默下载永久失败）");
 ok(/sendToWindow\("updates:ready"/.test(dl),

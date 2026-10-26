@@ -162,7 +162,9 @@ ok(/\.view-toolbar-btn \{[\s\S]{0,400}?color:\s*var\(--ic,\s*var\(--muted\)\)/.t
 /* ② 只给那一个 svg 上色 —— 断言看的是「svg 标签上挂了 ic-*」，不是整行 */
 const SVG_OWN = [
   ["项目视图 tab", sidebar, /<FolderOpen size=\{14\} className="ic-amber"/],
-  ["分类视图 tab", sidebar, /<Layers size=\{14\} className="ic-cyan"/],
+  /* 10-25 分类视图撤下（只剩项目 / 任务两 tab）⇒ 断言跟着改成「任务」那一支；
+     ⛔ 别留着已删的 `Layers` 断言：它永远不匹配，等于这条守卫静默失效。 */
+  ["任务视图 tab", sidebar, /<ListChecks size=\{14\} className="ic-blue"/],
   ["项目行文件夹", sidebar, /<FolderOpen size=\{13\} className="ic-amber"/],
   // ④c 10-25 用户令：「只看该项目」筛选 chip 已随功能整段删除 ⇒ 该图标断言移除（防复活由 sidebar-shell 的负向检查承担）。
 ];
