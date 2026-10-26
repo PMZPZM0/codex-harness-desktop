@@ -85,7 +85,16 @@ export async function playSamples(samples: Float32Array | undefined, sampleRate:
 }
 
 export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: string) => void }) {
-  const { settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, micTestRef, profiles, setProfiles, zipReady, setZipReady, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, apply, audition, toggleMicTest, captureHotkey, voiceOptions, reloadMeta } = useVoiceSettingsSectionState({ onNotice });
+  const { settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, micTestRef, profiles, setProfiles, zipReady, setZipReady, ttsReady, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, apply, audition, toggleMicTest, captureHotkey, voiceOptions, reloadMeta } = useVoiceSettingsSectionState({ onNotice });
+  /** 缺模型时直达「必需 · 基础语音模型」组（与引擎卡的跳转同一处落点）。 */
+  const goModels = () => {
+    const el = document.getElementById("voice-models");
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    el.classList.add("is-flash");
+    window.setTimeout(() => el.classList.remove("is-flash"), 1400);
+  };
+
     if (!settings || !meta) {
     return (
       <section className="settings-section stack voice-settings">
@@ -155,7 +164,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
           <span className="voice-group-sub">只影响语音播报；语速与音量通话也共用</span>
         </div>
       {/* 语音播报：两个开关（实时正文 / 结束汇总） */}
-      <VoiceSettingsSectionAnnounce apply={apply} saving={saving} settings={settings} />
+      <VoiceSettingsSectionAnnounce apply={apply} saving={saving} settings={settings} ttsReady={ttsReady} onGoModels={goModels} />
 
       {/* 语速：档位 + 滑块（同一真相源 tts.speed —— 通话与语音播报共用） */}
       <div className="voice-card">

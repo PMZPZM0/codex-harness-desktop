@@ -43,6 +43,15 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
 
   const [zipReady, setZipReady] = useState(false);
 
+  /**
+   * 合成引擎就绪快照（10-26 用户：「我没有安装语音模型，是不是语音播报开关也不能打开」）。
+   * ⛔ 播报开关 / 试听 / 播报音质都依赖"当前引擎装没装" —— 没有这份状态，界面就会
+   *    「开关能打开、点了没声音」，这是最典型的静默失败。
+   * 下载完成事件（downloadDone）会重拉一次：装完立刻就能开播报，不必刷新页面。
+   */
+  const [packs, setPacks] = useState({ base: false, kokoro: false, emotivoice: false });
+  const ttsReadyRef = useRef(true);
+
   const [draft, setDraft] = useState<{ draftFile: string; refText: string; sourceName: string; durationSec: number } | null>(null);
 
   const [draftName, setDraftName] = useState("");
@@ -53,6 +62,28 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
 
   const recordingRef = useRef<{ stop: () => void } | null>(null);
 
+
+  const reloadPacks = useCallback(async () => {
+    try {
+      const st: any = await window.codex.voiceModelsStatus();
+      const total = Number(st?.totalFiles ?? 0);
+      const base = total > 0 ? Number(st?.readyFiles ?? 0) === total : Boolean(st?.ready);
+      setPacks({
+        base,
+        kokoro: Boolean(st?.kokoro?.ready) && st?.kokoro?.runnable !== false,
+        /* 情感语音：模型装了但缺推理运行时时**不算就绪**（合成会失败） */
+        emotivoice: Boolean(st?.emotivoice?.ready) && st?.emotivoice?.runnable === true,
+      });
+    } catch { /* 读不到就保持现状（开关仍按未就绪处理，⛔ 不假装能用） */ }
+  }, []);
+
+  useEffect(() => {
+    void reloadPacks();
+    const unsub = window.codex.onVoiceEvent((event: any) => {
+      if (event?.type === "downloadDone") void reloadPacks();
+    });
+    return () => { try { unsub?.(); } catch { /* 忽略 */ } };
+  }, [reloadPacks]);
 
   const reloadProfiles = useCallback(async () => {
     try {
@@ -224,6 +255,11 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
     // 换一个试听：先停掉正在播的
     playCtlRef.current?.stop();
     playCtlRef.current = null;
+    /* ⛔ 同「音色试听」：没有可用引擎时预览专属音色必然失败 —— 给说明，别让它空转 */
+    if (!ttsReadyRef.current) {
+      onNotice("还没有可用的合成引擎：先在「必需 · 基础语音模型」下载，再试听专属音色");
+      return;
+    }
     setProfilePreview({ id, phase: "synth" });
     try {
       const r = await window.codex.voiceProfilesPreview({ id });
@@ -293,6 +329,11 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
     // 播放中再点一次 = 停止播放
     if (playCtlRef.current) {
       playCtlRef.current.stop();
+      return;
+    }
+    /* ⛔ 没装引擎 ⇒ 合成必然失败：给一句能照做的说明，别让它静默失败或空转 */
+    if (!ttsReadyRef.current) {
+      onNotice("还没有可用的合成引擎：先在本页「必需 · 基础语音模型」下载（轻量播报随它一起装）");
       return;
     }
     setAuditionPhase("synth");
@@ -449,5 +490,10 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
       .sort((a, b) => a.value - b.value);
   }, [meta]);
 
-  return { onNotice, settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, micTestRef, profiles, setProfiles, zipReady, setZipReady, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, apply, audition, toggleMicTest, captureHotkey, voiceOptions, reloadMeta };
+  /* 当前引擎就绪与否（播报开关 / 试听的联动判据）——派生量，⛔ 不另存一份状态 */
+  const ttsEngineId = settings?.tts?.engine === "kokoro" || settings?.tts?.engine === "emotivoice" ? settings.tts.engine : "vits";
+  const ttsReady = ttsEngineId === "kokoro" ? packs.kokoro : ttsEngineId === "emotivoice" ? packs.emotivoice : packs.base;
+  ttsReadyRef.current = ttsReady;
+
+  return { onNotice, settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, micTestRef, profiles, setProfiles, zipReady, setZipReady, ttsReady, reloadPacks, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, apply, audition, toggleMicTest, captureHotkey, voiceOptions, reloadMeta };
 }
