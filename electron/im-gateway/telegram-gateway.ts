@@ -1,10 +1,19 @@
 import path from "node:path";
-import os from "node:os";
 import fs from "node:fs";
+import { app } from "electron";
+
+/** 凭据落点：**惰性**取 userData ——
+ *  ⛔ 模块顶层求值会早于 main.ts 的 `app.setPath("userData")` ⇒ 拿到默认目录（路径静默漂移）。
+ *  ⛔ 也不许写死 `AppData\Roaming\<应用名>`：mac 是 `~/Library/Application Support/`，
+ *     且 PPcode 的 userData 目录名与本仓不同 ⇒ 写死会读写到**另一个应用**的数据。
+ *  `CODEX_HARNESS_USER_DATA` 是测试开关（隔离 profile 用），优先级最高。 */
+function stateFile() {
+  const dir = process.env.CODEX_HARNESS_USER_DATA || app.getPath("userData");
+  return path.join(dir, "telegram-account.json");
+}
 // Telegram 机器人网关：官方 Bot API 长轮询（getUpdates）/ sendMessage。
 // 凭据：@BotFather 创建机器人拿 Bot Token，填入即可；重启自动恢复。
 const API = "https://api.telegram.org";
-const stateFile = path.join(process.env.CODEX_HARNESS_USER_DATA || path.join(os.homedir(), "AppData", "Roaming", "Codex Harness Desktop"), "telegram-account.json");
 const POLL_TIMEOUT_MS = 30_000;
 
 export type TelegramEvents = {
@@ -33,7 +42,7 @@ export class TelegramGateway {
     this.token = clean;
     this.running = true;
     this.log("info", `Telegram 机器人 @${me.result.username} 已连接`);
-    try { fs.mkdirSync(path.dirname(stateFile), { recursive: true }); fs.writeFileSync(stateFile, JSON.stringify({ token: clean, username: me.result.username }, null, 2)); } catch { /* 持久化失败不阻塞 */ }
+    try { fs.mkdirSync(path.dirname(stateFile()), { recursive: true }); fs.writeFileSync(stateFile(), JSON.stringify({ token: clean, username: me.result.username }, null, 2)); } catch { /* 持久化失败不阻塞 */ }
     void this.pollLoop();
     return { username: me.result.username as string };
   }
@@ -114,7 +123,7 @@ export class TelegramGateway {
   /** 重启恢复：有持久化 token 自动重连 */
   async resume() {
     try {
-      const raw = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+      const raw = JSON.parse(fs.readFileSync(stateFile(), "utf8"));
       if (raw.token) return await this.connect(raw.token);
     } catch { /* 未配置 */ }
     return false;
@@ -128,7 +137,7 @@ export class TelegramGateway {
     this.stop();
     this.token = "";
     this.offset = 0;
-    try { fs.rmSync(stateFile, { force: true }); } catch { /* 忽略 */ }
+    try { fs.rmSync(stateFile(), { force: true }); } catch { /* 忽略 */ }
     this.log("info", "Telegram 登录态已清除，可重新绑定");
   }
 }

@@ -10,18 +10,23 @@
  *
  * ⛔ 待接缝化（阶段 2）：`shell` 与 `fs` 是宿主能力，将来经 `"shell"` / `"fs"` 接缝注入。
  */
-import { BrowserWindow, shell } from "electron";
+import { shell } from "electron";
 import fs from "node:fs/promises";
 import { isInsideOrEqualTrustedRoots } from "../runtime-refs";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
+import type { HostCaps } from "../runtime/seams";
 
 export const shellFeature = defineFeature<null>({
   id: "shell",
-  inject: ["ipc"],
+  inject: ["ipc", "host"],
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");
     if (!ipcHost) throw new Error("shell: 缺少 ipc 服务（宿主未提供）");
+    /* ⛔ 窗口能力走接缝（守卫【266】：域不经接缝直取 BrowserWindow = 0 容忍）——
+       接缝只给「按调用者 webContents 反查自己的窗口」，不给任意窗口 id。 */
+    const host = ctx.get<HostCaps>("host");
+    if (!host) throw new Error("shell: 缺少 host 接缝（宿主未提供）");
 
     ipcHost.handle("shell:reveal", async (_event, target: string) => {
       if (!target) return;
@@ -48,7 +53,7 @@ export const shellFeature = defineFeature<null>({
     });
 
     /* 无边框窗（win32 大圆角）的自定义窗口按钮：只操作**调用者自己的窗口**，不接任意 hwnd。 */
-    const winOf = (event: any) => BrowserWindow.fromWebContents(event.sender);
+    const winOf = (event: any) => host.window.fromWebContents(event.sender);
     ipcHost.handle("shell:window-minimize", (event) => { winOf(event)?.minimize(); return { ok: true }; });
     ipcHost.handle("shell:window-toggle-maximize", (event) => {
       const win = winOf(event);

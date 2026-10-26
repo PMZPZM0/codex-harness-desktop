@@ -1,14 +1,20 @@
 import path from "node:path";
-import os from "node:os";
 import fs from "node:fs";
+import { app } from "electron";
+
+/** 凭据落点：**惰性**取 userData ——
+ *  ⛔ 模块顶层求值会早于 main.ts 的 `app.setPath("userData")` ⇒ 拿到默认目录（路径静默漂移）。
+ *  ⛔ 也不许写死 `AppData\Roaming\<应用名>`：mac 是 `~/Library/Application Support/`，
+ *     且 PPcode 的 userData 目录名与本仓不同 ⇒ 写死会读写到**另一个应用**的数据。
+ *  `CODEX_HARNESS_USER_DATA` 是测试开关（隔离 profile 用），优先级最高。 */
+function stateFilePath() {
+  const dir = process.env.CODEX_HARNESS_USER_DATA || app.getPath("userData");
+  return path.join(dir, "wecom-webhook.json");
+}
 // 企业微信群机器人 Webhook 网关（推送/通知型）：
 // 群里「添加机器人」拿 Webhook URL，粘贴即用。官方协议：POST https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx
 // 能力边界：只能向该群推送消息（markdown/text），不支持收消息/对话——企微群机器人无回调通道（腾讯限制）。
 // 凭据持久化 userData/wecom-webhook.json，重启自动恢复可用性校验。
-const STATE_FILE = path.join(
-  process.env.CODEX_HARNESS_USER_DATA || path.join(os.homedir(), "AppData", "Roaming", "Codex Harness Desktop"),
-  "wecom-webhook.json",
-);
 
 export type WecomWebhookEvents = {
   log?: (level: "info" | "error", message: string) => void;
@@ -39,7 +45,7 @@ export class WecomWebhookGateway {
     }).then((r) => r.json()) as any;
     if (res.errcode !== 0) throw new Error(`Webhook 无效：${res.errmsg ?? JSON.stringify(res).slice(0, 120)}`);
     this.webhookUrl = clean;
-    try { fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true }); fs.writeFileSync(STATE_FILE, JSON.stringify({ webhookUrl: clean }, null, 2), "utf8"); } catch { /* 持久化失败不阻塞 */ }
+    try { fs.mkdirSync(path.dirname(stateFilePath()), { recursive: true }); fs.writeFileSync(stateFilePath(), JSON.stringify({ webhookUrl: clean }, null, 2), "utf8"); } catch { /* 持久化失败不阻塞 */ }
     this.log("info", "企业微信群机器人 Webhook 已接入");
     return { ok: true, name: "企业微信群" };
   }
@@ -60,7 +66,7 @@ export class WecomWebhookGateway {
 
   async resume(): Promise<boolean> {
     try {
-      const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+      const raw = JSON.parse(fs.readFileSync(stateFilePath(), "utf8"));
       if (raw.webhookUrl && /^https:\/\/qyapi\.weixin\.qq\.com/i.test(String(raw.webhookUrl))) {
         this.webhookUrl = String(raw.webhookUrl);
         return true;
@@ -73,7 +79,7 @@ export class WecomWebhookGateway {
 
   logout() {
     this.webhookUrl = "";
-    try { fs.rmSync(STATE_FILE, { force: true }); } catch { /* 忽略 */ }
+    try { fs.rmSync(stateFilePath(), { force: true }); } catch { /* 忽略 */ }
     this.log("info", "企微 Webhook 已解除绑定");
   }
 }

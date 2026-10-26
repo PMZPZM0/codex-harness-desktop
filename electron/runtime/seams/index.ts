@@ -91,6 +91,9 @@ export type WindowHost = {
   create: (options: Record<string, unknown>) => BrowserWindow;
   getAll: () => BrowserWindow[];
   getFocused: () => BrowserWindow | null;
+  /** 由调用者的 webContents 反查它自己的窗口（⛔ 只用于「操作调用者自己的窗口」这类场景，
+   *  不接受任意 hwnd / 窗口 id —— 那等于给域开后门）。 */
+  fromWebContents: (webContents: unknown) => BrowserWindow | null;
 };
 
 const FORCED_WINDOW_WEB_PREFERENCES = {
@@ -149,6 +152,7 @@ const hostCaps: HostCaps = {
     },
     getAll: () => BrowserWindow.getAllWindows(),
     getFocused: () => BrowserWindow.getFocusedWindow(),
+    fromWebContents: (webContents) => BrowserWindow.fromWebContents(webContents as never),
   },
 };
 

@@ -1563,7 +1563,9 @@ html[data-ui-font="large"] .action-content pre {
 /* ⛔ 不加 :focus-within 常驻显示 —— 点击行内元素后焦点残留会让图标永不隐藏（10-25 用户实测）。 */
 
 /* ── 10-25 新建项目弹窗（ZCode 式：居中大模态 + 竖排图标选项）── */
-.new-project-backdrop { z-index: 400; }
+/* ⛔ 与 .modal-backdrop（400）叠用：同特异性按源顺序，后加载的类会把层级压回 400
+   ⇒ 新建项目框会被设置弹窗盖住（守卫【227】）。提到 900 系（与引导/帮助同档）。 */
+.new-project-backdrop { z-index: 900; }
 .new-project-modal {
   width: min(480px, calc(100vw - 32px));
   background: var(--bg);

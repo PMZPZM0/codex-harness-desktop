@@ -8,7 +8,6 @@
  */
 import { armSendAnimationClaim as armSendAnimationClaimLib } from "../../../lib/send-anim.mjs";
 import { basename } from "../../../lib/basename";
-import { COMPOSER_CHIP_ICON } from "../../../features/shared/COMPOSER_CHIP_ICON";
 import { sendAnimStore } from "../../../lib/send-anim-store";
 import { COMPOSER_FILE_CHIP_ICON } from "../constants";
 import { imageDisplaySrc } from "../../../lib/image-src.mjs";

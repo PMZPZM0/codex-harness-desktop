@@ -86,7 +86,12 @@ export function NewProjectDialog({ open, onClose, onCreate }: {
   const usePath = async () => {
     const p = pathInput.trim();
     if (!p) { setError("请输入项目目录的绝对路径"); return; }
-    if (!/^[a-zA-Z]:[\\/]/.test(p)) { setError("需要 Windows 绝对路径（如 D:\\我的项目）"); return; }
+    /* ⛔ 跨平台绝对路径（10-26 mac 适配审计抓到的真缺口）：原来只认 `C:\…` 盘符，
+       mac 上粘贴 `/Users/me/proj` 会被判"不是绝对路径"，新建项目直接走不通。
+       · Windows：盘符 `C:\` / `C:/`，或 UNC `\\server\share`
+       · mac / Linux：以 `/` 开头（`~/…` 不算绝对路径 —— 交给主进程去展开/报错） */
+    const isAbsolute = /^[a-zA-Z]:[\\/]/.test(p) || /^\\\\/.test(p) || p.startsWith("/");
+    if (!isAbsolute) { setError("需要绝对路径（如 /Users/你/项目 或 D:\\我的项目）"); return; }
     setBusy(true); setError("");
     try {
       const r: any = await window.codex.projectDir({ path: p });
