@@ -148,9 +148,11 @@ ok(/numSteps: options\?\.numSteps \?\? this\.currentSettings\.tts\.numSteps/.tes
   "speak 把 numSteps 下发到 worker（漏下发 = worker 用默认 4，设置里的档位形同虚设）");
 ok(/tts: \{ \.\.\.settings\.tts, numSteps: Number\(v\) \}/.test(announceCard),
   "设置页「播报音质」三档可选（写回 tts.numSteps，与播报/通话/试听共用）");
-ok(/checked=\{enabled\}/.test(announceCard) && /apply\(\{ announce: \{ enabled: e\.target\.checked \} \}\)/.test(announceCard)
+/* ⛔ 10-26：显示态改成 `enabled && ttsReady`（没装引擎时显示为关）——
+   意图不变：这一张卡上**只有一个**总开关，别把「正文实时 / 汇总」两个旧开关加回来。 */
+ok(/checked=\{enabled && ttsReady\}/.test(announceCard) && /apply\(\{ announce: \{ enabled: e\.target\.checked \} \}\)/.test(announceCard)
   && (announceCard.match(/type="checkbox"/g) || []).length === 1,
-  "设置页「语音播报」卡片上**只有一个**总开关（正文实时 / 汇总两个旧开关已删）");
+  "设置页「语音播报」卡片上**只有一个**总开关（旧的两个开关已删；显示态 = 设置值 AND 引擎就绪）");
 ok(/if \(announceRef\.current\.enabled\) void speakDelta\(piece\)/.test(hook),
   "通话的正文朗读受总开关门控（关掉 ⇒ 只出字幕不出声）");
 ok(/await flushSpeech\(\);[\s\S]{0,120}?await speakScript\(finalText\)/.test(hook),
@@ -1026,6 +1028,17 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     "每个引擎带角色标签（默认 / 可选·更自然 / 可选·有情绪）—— 新手第一眼能分清必装与可选");
   ok(/voice-group-tag is-required/.test(sectionSrc) && /voice-group-head/.test(sectionSrc),
     "页面分组带性质标签（必需 / 可选 / 选声音 / 日常），⛔ 标签只做说明、不做准入");
+  /* ── 缺模型联动（10-26 用户：「我没装语音模型，播报开关是不是也不能打开」）── */
+  const voiceHookSrc = read("src/components/VoiceSettingsSection/use-voice-settings-section-state.tsx");
+  const announceSrc = read("src/components/VoiceSettingsSection/10-announce.tsx");
+  ok(/const ttsReady = /.test(voiceHookSrc) && /ttsReady,/.test(voiceHookSrc),
+    "父级派生出「当前引擎是否可合成」的 ttsReady（⛔ 不能各卡片自己猜）");
+  ok(announceSrc.includes("checked={enabled && ttsReady}"),
+    "播报开关的**显示态** = 设置值 AND 引擎就绪（没装引擎时显示为关，⛔ 不许「开着却没声音」）");
+  ok(/if \(e\.target\.checked && !ttsReady\)/.test(announceSrc) && announceSrc.includes("去装模型"),
+    "缺引擎时打开播报被拦下，并给一句能照做的说明 + 直达下载（⛔ 不做点了没反应的灰按钮）");
+  ok(/ttsReadyRef\.current/.test(voiceHookSrc) && /还没有可用的合成引擎/.test(voiceHookSrc),
+    "试听（音色 / 专属音色）在缺引擎时直接给说明，⛔ 不进「合成中」空转");
 }
 
 console.log(`\n【voice-call】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
