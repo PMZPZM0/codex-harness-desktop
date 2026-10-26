@@ -1396,20 +1396,8 @@
 
 /* ═══ 设置页 · 截图（09-24）═══
    一张卡一件事：快捷键 / 截图行为 / 试试截图。键位用等宽字，和系统设置里的观感一致。 */
-.screenshot-settings .settings-block-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-.screenshot-settings .settings-block-head h3 {
-  margin: 0;
-  font-size: 14px;
-}
-.screenshot-settings .settings-block-head p {
-  margin: 2px 0 0;
-  font-size: 12px;
-}
+/* 10-26 四轮：页头整块删除（用户：「上面这块多余了」）⇒ 这三条皮肤一起撤掉，
+   否则它会压过 45 里 `.settings-exp-shell .settings-block-head{display:none}` 的隐藏规则。 */
 .screenshot-settings .shot-warn {
   display: flex;
   align-items: center;

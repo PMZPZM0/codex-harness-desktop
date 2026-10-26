@@ -50,6 +50,7 @@ const FILES = {
   relay: "src/features/relay/RelayCenterPage.tsx",
   relayBanner: "src/features/relay/RelayCenterPage/01-subscription-banner.tsx",
   relayGrid: "src/features/relay/RelayCenterPage/02-account-grid.tsx",
+  openai: "src/features/openai/OpenaiSubscriptionPage.tsx",
   accept: "scripts/accept.mjs",
 };
 for (const [name, rel] of Object.entries(FILES)) {
@@ -58,6 +59,7 @@ for (const [name, rel] of Object.entries(FILES)) {
 
 const content = src(FILES.content);
 const css = read(FILES.css);
+const providerCss = read("src/styles/42-provider-setup.css");
 const styles = read(FILES.styles);
 /* ⛔ 不再 read(FILES.accept)：⑦ 的验收登记断言已随「验收脚本收敛为当前 3 项」一并删除，
    变量留着就是死代码（FILES.accept 仍参与上面「文件在位」的存在性检查）。 */
@@ -141,6 +143,22 @@ ok(/<strong>付费订阅 · 开通即用<\/strong>/.test(guestBranch) && !/<p>/.
 const addCard = /className="relay-plan-card relay-add-card"([\s\S]*?)<\/button>/.exec(relayGrid)?.[1] ?? "";
 ok(/<Plus\b/.test(addCard) && /<strong>添加中转站账号<\/strong>/.test(addCard) && !/<small>/.test(addCard), "添加账号卡只留图标 + 大字（小字说明已删）");
 ok(/\.settings-exp-shell \.relay-add-card\s*\{[^}]*flex-direction:\s*row[^}]*min-height:\s*64px/.test(css), "添加账号卡横向单行（不再竖排留白）");
+
+/* 10-26 用户：「免费网关删了，配套也删掉」「右下角这个也太太靠下了，位置不好看」 */
+ok(!existsSync(join(ROOT, "src/features/free-gateway")) && !existsSync(join(ROOT, "electron/features/free-gateway-ipc.ts")) && !existsSync(join(ROOT, "scripts/guards/12c-free-gateway.mjs")), "免费网关渲染层 / IPC 域 / 守卫文件已删除");
+ok(!/free-gateway|免费模型网关/.test(modelPage) && !/provider-more-section/.test(modelPage), "模型页不再挂免费网关推荐卡与「更多供应商」区块");
+ok(!/free-gateway/.test(read("electron/ipc-channels.manifest.json")) && !/free-gateway/.test(read("electron/ipc-registry.ts")) && !/free-gateway/.test(read("electron/composition.json")), "manifest / registry / composition 不再登记免费网关");
+ok(!/12c-free-gateway/.test(read("package.json")), "package.json 的 check 链不再调用已删除的 12c 守卫");
+const dockRule = /\.model-page-dock\s*\{([^}]*)\}/.exec(providerCss)?.[1] ?? "";
+ok(/display:\s*flex/.test(dockRule) && /margin:\s*18px 0 2px/.test(dockRule) && !/position:\s*sticky/.test(dockRule) && !/margin-top:\s*auto/.test(dockRule), "模型页操作条紧跟内容（不再 sticky / margin-top:auto 贴底）");
+
+/* 10-26 用户（OpenAI 订阅页截图）：「问号删除，小文字注释删除大字就行，账户长卡片
+   改成长方形卡片，不要拉这么长」—— ? / 副标题 / 卡片小字全删；添加卡两列并排。 */
+const openaiPage = pageSrc("openai");
+ok(!/PageInfo/.test(openaiPage) && !/settings-copy/.test(openaiPage), "OpenAI 订阅页不再挂 ? / 页头说明（只留卡片大字）");
+const oaAddCards = [...openaiPage.matchAll(/className="relay-plan-card relay-add-card"([\s\S]*?)<\/button>/g)].map((m) => m[1]);
+ok(oaAddCards.length === 2 && oaAddCards.every((s) => !/<small>/.test(s)), "OpenAI 添加卡只留图标 + 大字（小字说明已删）");
+ok(/\.settings-exp-shell \.openai-account-grid \.relay-add-card\s*\{[^}]*grid-column:\s*auto/.test(css), "OpenAI 添加卡两列并排（不再横贯整行）");
 
 /* ── ⑥ SSH 工具栏不落单 ── */
 ok(/\.settings-exp-shell \.ssh-toolbar \.search-field\s*\{[^}]*flex:\s*1 1 160px;[^}]*width:\s*auto\s*!important/s.test(css), "SSH 搜索框可收缩（导出/导入不再被挤到第二行单飞）");

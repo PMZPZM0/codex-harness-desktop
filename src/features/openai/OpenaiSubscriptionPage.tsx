@@ -4,7 +4,6 @@
  */
 import { CircleGauge, Clock3, AlertTriangle, Bot, Check, Play, LogIn, Trash2, Plus, FileUp, X, RefreshCw } from "lucide-react";
 import { ProviderSetupDialog, type ProviderSetupCompleted, type ProviderSetupIntent } from "../provider-setup";
-import { PageInfo } from "../../components/SettingsHead";
 import { Spinner } from "../../components/CardShell";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
@@ -232,7 +231,8 @@ export function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, o
   };
   return (
     <section className="settings-section stack relay-center">
-      <div className="settings-copy channel-heading"><div><h2>OpenAI 订阅监控<PageInfo text={<>多账号统一监控：每张卡片实时显示订阅档位、有效期与额度用量；切换账号即写入引擎并重启生效。登录与额度查询需要可访问 OpenAI 的网络（代理）。</>} /></h2><p>多账号统一监控订阅与额度；切换后重启生效。</p></div></div>
+      {/* 10-26 用户令：「问号删除，小文字注释删除大字就行」——
+         页头 ? 与副标题整块删掉，卡片只留大字；别再补回来。 */}
       {err && <p className="relay-account-err"><AlertTriangle size={13} />{err}</p>}
       <div className="relay-plan-grid openai-account-grid">
         {accounts.map((a) => {
@@ -276,16 +276,14 @@ export function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, o
             </div>
           );
         })}
-        {!accounts.length && <div className="relay-plan-card"><div className="relay-plan-card-head"><Bot size={15} /><strong>暂无已保存账号</strong></div><p>点下方「添加 OpenAI 账号」设备码登录，或「导入账号文件」用已有的 auth.json / token 直接登入。</p></div>}
+        {!accounts.length && <p className="openai-empty-line"><Bot size={14} />暂无已保存账号</p>}
         <button className="relay-plan-card relay-add-card" onClick={() => setLoginModalOpen(true)}>
           <Plus size={18} />
           <strong>添加 OpenAI 账号</strong>
-          <small>ChatGPT 设备码登录 · 自动启用订阅</small>
         </button>
         <button className="relay-plan-card relay-add-card" disabled={importing} title="支持 Codex CLI 的 auth.json、扁平 token JSON、每行一个 accessToken 的文本（可多选）；导入后自动登录生效" onClick={() => importInputRef.current?.click()}>
           {importing ? <Spinner /> : <FileUp size={18} />}
           <strong>导入账号文件</strong>
-          <small>auth.json / token 文本 · 导入即登录生效</small>
         </button>
         <input ref={importInputRef} type="file" multiple accept=".json,.txt,.jsonl,application/json,text/plain" style={{ display: "none" }} onChange={(event) => void onImportFiles(event.target.files)} />
       </div>
