@@ -105,21 +105,55 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
         />
       </div>
 
-      {/* 音色 + 试听 */}
-      <VoiceSettingsSectionVoicePicker apply={apply} audition={audition} auditionPhase={auditionPhase} saving={saving} settings={settings} voiceOptions={voiceOptions} activeProfileName={profiles.find((p: any) => p.id === settings.tts.profileId)?.name} zipReady={zipReady} />
+      {/* ⛔⛔ 10-26 用户两轮实测：「我看不懂…好几个下载的地方，看的眼花缭乱」/「分好类、排序好，
+          不装用不了的和拓展音色的要分开」⇒ 整页按**用途与依赖**分 4 组，每组一个标签说明性质：
+             必需（基础模型）→ 可选（换引擎）→ 选声音（音色）→ 可选（克隆自己的声音）。
+          ⛔ 别再把"下载"入口散落各处：基础模型只在「必需」组下载，引擎卡缺模型时只做跳转。 */}
+      <div className="voice-group" id="voice-models">
+        <div className="voice-group-head">
+          <span className="voice-group-tag is-required">必需</span>
+          <strong>基础语音模型</strong>
+          <span className="voice-group-sub">不装什么都用不了：语音识别和默认播报都靠它（约 270MB）</span>
+        </div>
+        <VoiceDevToolsSection onNotice={onNotice} only="base" />
+      </div>
 
-      {/* 我的音色（音色克隆）：导入/录制一段参考音频 → 本机识别原文 → 用那个嗓音说话 */}
-      <VoiceSettingsSectionTtsEngines apply={apply} onNotice={onNotice} reloadMeta={reloadMeta} settings={settings} />
-      <VoiceSettingsSectionVoiceCloneProfile applyPreset={applyPreset} draft={draft} draftName={draftName} importProfile={importProfile} uploadProfile={uploadProfile} presets={presets} previewProfile={previewProfile} profileBusy={profileBusy} profilePreview={profilePreview} profileRecording={profileRecording} profiles={profiles} recordingRef={recordingRef} removeProfile={removeProfile} saveDraft={saveDraft} selectProfile={selectProfile} setDraft={setDraft} setDraftName={setDraftName} setProfileBusy={setProfileBusy} settings={settings} startProfileRecord={startProfileRecord} zipReady={zipReady} />
+      <div className="voice-group">
+        <div className="voice-group-head">
+          <span className="voice-group-tag is-optional">可选</span>
+          <strong>换一个更好听的引擎</strong>
+          <span className="voice-group-sub">不装也能用轻量播报；装好后到下面「音色」里挑声音</span>
+        </div>
+        <VoiceSettingsSectionTtsEngines apply={apply} onNotice={onNotice} reloadMeta={reloadMeta} settings={settings} />
+      </div>
 
-      {/* 语音模型 + 音色克隆模型（10-08 从「开发工具」页**迁移**过来）：
-          用户要求「将语音模型和音色克隆模型的选择项迁移到语音通话界面」——
-          语音相关的东西（音色 / 模型 / 播报 / 语速）现在全在本页，不用再跳到开发工具页找。
-          ⛔ 组件本身没动（同一个 VoiceDevToolsSection），只是换了渲染位置，
-            免得「同一份状态两处渲染」这类双真相源问题。 */}
-      <div className="settings-section-title" style={{ marginTop: 18 }}>语音模型</div>
-      <VoiceDevToolsSection onNotice={onNotice} />
+      <div className="voice-group">
+        <div className="voice-group-head">
+          <span className="voice-group-tag">选声音</span>
+          <strong>音色与试听</strong>
+          <span className="voice-group-sub">列表跟着当前引擎变（轻量播报 5 个 / Kokoro 103 个）</span>
+        </div>
+        <VoiceSettingsSectionVoicePicker apply={apply} audition={audition} auditionPhase={auditionPhase} saving={saving} settings={settings} voiceOptions={voiceOptions} activeProfileName={profiles.find((p: any) => p.id === settings.tts.profileId)?.name} zipReady={zipReady} />
+      </div>
 
+      <div className="voice-group">
+        <div className="voice-group-head">
+          <span className="voice-group-tag is-optional">可选</span>
+          <strong>用自己的声音（音色克隆）</strong>
+          <span className="voice-group-sub">先装 156MB 的克隆模型，再导入或录一段参考音频</span>
+        </div>
+        <VoiceDevToolsSection onNotice={onNotice} only="zipvoice" />
+        <VoiceSettingsSectionVoiceCloneProfile applyPreset={applyPreset} draft={draft} draftName={draftName} importProfile={importProfile} uploadProfile={uploadProfile} presets={presets} previewProfile={previewProfile} profileBusy={profileBusy} profilePreview={profilePreview} profileRecording={profileRecording} profiles={profiles} recordingRef={recordingRef} removeProfile={removeProfile} saveDraft={saveDraft} selectProfile={selectProfile} setDraft={setDraft} setDraftName={setDraftName} setProfileBusy={setProfileBusy} settings={settings} startProfileRecord={startProfileRecord} zipReady={zipReady} />
+      </div>
+
+
+      {/* 日常：只影响播报与音量（⛔ 与"装什么"分开，别和模型混在一起） */}
+      <div className="voice-group">
+        <div className="voice-group-head">
+          <span className="voice-group-tag">日常</span>
+          <strong>播报 / 语速 / 音量</strong>
+          <span className="voice-group-sub">只影响语音播报；语速与音量通话也共用</span>
+        </div>
       {/* 语音播报：两个开关（实时正文 / 结束汇总） */}
       <VoiceSettingsSectionAnnounce apply={apply} saving={saving} settings={settings} />
 
@@ -179,6 +213,10 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
         </div>
       </div>
 
+      </div>
+
+      <details className="settings-exp-advanced">
+        <summary>识别与通话细节 / 悬浮球 / 快捷键<small>高级</small></summary>
       {/* 麦克风 */}
       <VoiceSettingsSectionMicDevices apply={apply} micLevel={micLevel} micTesting={micTesting} mics={mics} saving={saving} settings={settings} toggleMicTest={toggleMicTest} />
 
@@ -305,6 +343,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
             : "自动模式下，播报时检测到真人插话（高于回声地板）即自动停 TTS 并 turn/interrupt。"}
         </span>
       </div>
+      </details>
     </section>
   );
 }

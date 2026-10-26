@@ -37,7 +37,7 @@ export function VoiceSettingsSectionVoiceCloneProfile({ applyPreset, draft, draf
             <div className="voice-card-body">
               {!zipReady ? (
                 <div className="voice-card-hint">
-                  还没安装音色克隆模型：到本页下方「语音模型 → 音色克隆模型」点「下载音色克隆模型」（约 156MB），装好后这里就能导入、上传或录制音色。
+                  还没安装音色克隆模型：到本页上方「语音模型 → 音色克隆模型」点「下载音色克隆模型」（约 156MB），装好后这里就能导入、上传或录制音色。
                 </div>
               ) : !draft ? (
                 <div className="voice-row">
@@ -134,7 +134,7 @@ export function VoiceSettingsSectionVoiceCloneProfile({ applyPreset, draft, draf
               <details className="voice-profile-guide">
                 <summary>音色上传 / 克隆使用教程</summary>
                 <ol>
-                  <li>先装好<strong>音色克隆模型</strong>（本页下方「语音模型」区域那张卡，约 156MB）。</li>
+                  <li>先装好<strong>音色克隆模型</strong>（本页上方「语音模型」区域那张卡，约 156MB）。</li>
                   <li>准备一段<strong>参考音频</strong>：16-bit PCM 的 <code>.wav</code>，10 秒左右效果最好（上限 60 秒）；
                       一个人连续说话、别叠背景音乐；mp3/m4a 请先转成 wav。</li>
                   <li>三个入口任选其一：<strong>上传音色</strong>（选一个 wav 文件）、<strong>导入音频</strong>、
