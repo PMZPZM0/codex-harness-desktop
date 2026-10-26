@@ -68,6 +68,24 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   flex: 1 1 190px;
   min-width: 160px;
 }
+
+/* ── 10-26 用户令（技能中心截图）：「框住这些做成一个筛选功能，搜索框靠左，上面一排按键放下来」 ──
+   布局：`[搜索框(左)] [筛选 总排行▾] ←—— 其余空间 ——→ [我的技能][从本地添加][SkillHub][刷新]`
+   ⛔ 按钮的 `margin-left:auto` 原来写死在 `.resource-toolbar > .secondary-setting` 上 ⇒ 三颗按钮各带一个
+      auto ⇒ 会被平摊开。这里只让**第一颗**吃 auto，其余归零，按钮才成一组贴在右边。 */
+.skill-market-toolbar .search-field { flex: 0 1 260px; max-width: 260px; min-width: 180px; }
+.skill-rank-filter { display: inline-flex; align-items: center; gap: 5px; flex: none; color: var(--muted); }
+.skill-rank-filter .app-select-trigger { min-width: 108px; }
+.skill-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+/* 组内的按钮不再各自吃 auto（否则会被平摊开） */
+.skill-toolbar-actions > button { margin-left: 0; flex: none; }
 /* 次级工具栏已自带边框与底色，里面的统计条去掉重复外框 */
 .resource-toolbar.secondary .skill-installed-summary {
   border: 0;
