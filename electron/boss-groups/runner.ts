@@ -20,7 +20,7 @@ import { safeProviderId } from "../provider-id";
 import { engineActiveTurnIds, server, threadCwd } from "../runtime-refs";
 import { egoBrowserPath } from "../toolchain";
 import { bossStore } from "./store";
-import { addMember, addTask, assignTask, checkBudget, createGroup, groupOf, markReviewStalled, markRunning, markStalled, memberOf, parseVerdict, pickReassignee, pushEvent, recordReview, removeMember, setPinned, snapshot, submitTask, taskOf } from "./state";
+import { addMember, addTask, assignTask, checkBudget, createGroup, groupOf, markRunning, memberOf, parseVerdict, pickReassignee, pushEvent, recordReview, removeMember, setPinned, snapshot, submitTask, taskOf } from "./state";
 import type { BossGroup, BossState, GroupMember, GroupTask } from "./types";
 
 /** 事件出口（域层注入：本模块在 features/ 之外，不许反向 import 域）。 */
@@ -36,9 +36,6 @@ const POST_WINDOW_MS = 10 * 60 * 1000;
 const POST_MAX_PER_WINDOW = 12;
 /** 成品与评审请求：量大但**一条都不能丢**，单独一个更宽的窗口。 */
 const CRITICAL_MAX_PER_WINDOW = 40;
-
-/** 已催过评审的任务（10-26：待审提醒每个任务只发一次 ⇒ 不再刷爆引擎队列）。 */
-const REVIEW_REMINDED = new Set<string>();
 
 function quotaOk(key: string, max = POST_MAX_PER_WINDOW): boolean {
   const now = Date.now();
@@ -242,6 +239,130 @@ export async function sayToGroup(input: { groupId: string; text: string }): Prom
   } catch (error: any) {
     return { ok: false, error: String(error?.message ?? error) };
   }
+}
+
+/* ── 结算：引擎事件驱动（⛔ 不再依赖进程内 Promise） ───────────────────────────
+   ⛔⛔⛔ 10-26 用户现场：「成员正在干活，我都没有发任务」——
+   真机取证（`<userData>/boss-groups.json`）：3 个任务 status=running 且 attempt.endedAt=null，
+   对应成员 status=busy ⇒ 界面上永远是「正在做」。
+   根因：结算**只**靠 `waitForTurnCompletion(...).then()` 那个进程内 Promise ——
+   应用一重启（我杀 app-server 那次）所有等待回调全部丢失 ⇒ 任务永远 running、成员永远 busy。
+   ⛔ 而且"谁该做什么"本来就是 Codex（指挥中枢）自己的判断 —— 宿主不该用看门狗去催（用户原话：
+     「你不要加看门狗，Codex 自己哪有那么傻」）。
+
+   ── 新机制 ───────────────────────────────────────────────────────────────
+   ① **引擎事件驱动**：全局监听 `turn/completed`，按 turnId 反查任务 → 结算。
+      不依赖任何进程内等待 ⇒ 应用重启后新回合照样能结算。
+   ② **启动对账**：启动时拿引擎真相（`thread/turns/list`）核对残留的 running 任务 ——
+      回合早已结束 ⇒ 补结算；引擎里根本没这一回合（从没跑起来）⇒ 标失败并释放成员。
+   ⛔ 两��都不产生任何"催中枢"的消息（那正是刷屏的根源）。 */
+
+/** turnId → 任务 id（派活时登记；引擎事件按它反查）。 */
+const taskTurnIndex = new Map<string, string>();
+/** 正在结算的任务（防同一回合重复结算）。 */
+const settlingTasks = new Set<string>();
+
+function indexTaskTurn(taskId: string, turnId: string) {
+  if (turnId) taskTurnIndex.set(turnId, taskId);
+}
+
+/** 引擎回合结束 → 结算对应任务（**只认 turn/completed**：aborted/failed 另走 failedTask）。 */
+function onEngineTurnCompleted(threadId: string, turnId: string, turn: any) {
+  const taskId = taskTurnIndex.get(turnId);
+  if (!taskId) return;
+  /* ⛔ 幂等闸：引擎事件与 Promise 兜底**两条路**都会走到这里 ⇒ 同一回合只结算一次。 */
+  if (settlingTasks.has(taskId)) return;
+  settlingTasks.add(taskId);
+  const text = turnOutputText(turn) || "（成员没有返回文本产出）";
+  void settleSubmission(taskId, text)
+    .catch(() => undefined)
+    .finally(() => {
+      settlingTasks.delete(taskId);
+      taskTurnIndex.delete(turnId);
+    });
+}
+
+let settleWatchStarted = false;
+/** 引擎是否就绪（app-server 起来后才 true）。 */
+let engineIsReady = false;
+
+/** 引擎就绪了吗（对账的前置闸）。 */
+export function engineReady(): boolean { return engineIsReady; }
+
+/** 挂引擎事件监听（全局只挂一次）。 */
+export function watchMemberSettlements(): void {
+  if (settleWatchStarted) return;
+  settleWatchStarted = true;
+  server.on("event", (event: any) => {
+    /* 引擎就绪信号 ⇒ 记下来（对账的前置闸）。 */
+    if (event?.kind === "status" && event.status === "ready") {
+      engineIsReady = true;
+      /* ⛔ 就绪后再对账一次：setup 那次必然被闸住（引擎还没起来）⇒ 残留任务在这里补。 */
+      void reconcileRunningTasks().catch(() => undefined);
+      return;
+    }
+    if (event?.kind !== "notification" || event.method !== "turn/completed") return;
+    const turnId = String(event.params?.turn?.id ?? "");
+    const threadId = String(event.params?.threadId ?? "");
+    if (!turnId || !threadId) return;
+    onEngineTurnCompleted(threadId, turnId, event.params?.turn);
+  });
+}
+
+/**
+ * 启动对账：把**残留**的 running 任务与引擎真相对齐（⛔ 不发任何催办消息）。
+ *
+ * 情形 A：引擎里这个回合**已经结束** ⇒ 补结算（交活 → 评审）。
+ * 情形 B：引擎里**没有**这个回合（派活后从没跑起来 / 回合被取消）⇒ 标失败 + 释放成员
+ *         （⛔ 否则成员永远 busy，界面永远"正在做"，而且再也不能接新活）。
+ */
+export async function reconcileRunningTasks(): Promise<number> {
+  /* ⛔⛔ 引擎没就绪 ⇒ **直接跳过**（10-26 修正）。
+     boss 域的 setup 跑在引擎起来之前 ⇒ 那时 `thread/turns/list` 会全部失败。
+     ⛔ 若不闸住：所有"读不到"都会走成"回合不存在" ⇒ 把正在跑的任务全标失败。 */
+  if (!engineReady()) return 0;
+  const state = await bossStore.load();
+  /* ⛔ 启动时清一次历史遗留的刷屏队列条目（看门狗删了 ⇒ 不会再产生新的）。
+     ⛔ 清理在**显示层判定**之外真删引擎队列（否则引擎会逐条当用户消息消费）。 */
+  for (const group of Object.values(state.groups)) {
+    await pruneBossQueue(group).catch(() => undefined);
+  }
+  const running = Object.values(state.tasks).filter((t) => t.status === "running");
+  if (!running.length) return 0;
+  let fixed = 0;
+  for (const task of running) {
+    const attempt = task.attempts[task.attempts.length - 1];
+    const threadId = String(attempt?.threadId ?? "");
+    const turnId = String(attempt?.turnId ?? "");
+    /* CLI 成员没有引擎会话（stdout 就是成品）⇒ 对账不了，跳过（它有子进程收尾）。 */
+    if (!threadId || threadId.startsWith("cli:")) continue;
+    /* ⛔ 读不到 ⇒ **跳过**（不动状态）：可能是引擎还没就绪 / 网络抖动 / 会话正在加载。
+       ⛔⛔ 绝不能因为"读不到"就判失败 —— 那会把**正在跑的任务**误杀（更糟：用户看到
+          "我什么都没派，成员却失败退出"）。判失败只认引擎**明确说没有这一回合**。 */
+    const page = await server.request("thread/turns/list", { threadId, limit: 20, sortDirection: "desc", itemsView: "full" })
+      .catch(() => null);
+    if (!page) continue;
+    const turns = Array.isArray((page as any)?.data) ? (page as any).data : [];
+    /* ⛔ 索引是进程内的（重启后丢）⇒ 这里按残留任务的 turnId **重建**，
+       否则重启后这一批任务永远收不到引擎事件。 */
+    if (turnId) indexTaskTurn(task.id, turnId);
+    const hit = turnId ? turns.find((t: any) => String(t?.id ?? "") === turnId) : undefined;
+    if (!hit) {
+      /* 引擎明确说：这条会话里没有这个回合 ⇒ 派活后从没跑起来（或被取消）⇒ 释放成员。
+         ⛔ 静默（不回投中枢）：这是纠正残留，不是新失败。 */
+      await failTask(task.id, "这次派活的回合在引擎里没有找到（没能跑起来）", true).catch(() => undefined);
+      fixed += 1;
+      continue;
+    }
+    const status = String(hit?.status ?? "");
+    const finished = ["completed", "failed", "aborted", "interrupted", "cancelled", "canceled"].includes(status);
+    if (!finished) continue;   /* 引擎那边还在跑 ⇒ 保持 running（真正常在干活） */
+    const text = turnOutputText(hit) || "（成员没有返回文本产出）";
+    await settleSubmission(task.id, text).catch(() => undefined);
+    fixed += 1;
+  }
+  if (fixed) console.log(`[boss-groups] 启动对账：修正 ${fixed} 条残留任务（成员不再卡「正在做」）`);
+  return fixed;
 }
 
 let bossWatchStarted = false;
@@ -467,12 +588,19 @@ export async function dispatchTask(taskId: string, options: { memberId?: string 
     const turnId = turn?.turn?.id;
     if (!turnId) throw new Error("引擎没有返回 turnId（派活失败）");
     markRunning(state, task.id, { threadId, turnId });
+    /* ⛔ 登记 turnId → task（引擎事件驱动结算靠它；不依赖进程内 Promise）。 */
+    indexTaskTurn(task.id, turnId);
     bossStore.save();
     emit({ type: "boss-group", phase: "task", groupId: group.id, taskId: task.id, memberId: member.id, status: "running" });
-    // 后台收尾：不 await（这就是"异步派活"的全部实现）
+    /* ⛔ 后台收尾：**结算走引擎事件**（onEngineTurnCompleted），这里只做**兜底**。
+       ⛔⛔ 原实现在这里 `waitForTurnCompletion(...).then(() => settleSubmission(...))` ——
+          那是**进程内 Promise**，应用一重启所有等待回调全部丢失
+          ⇒ 任务永远 running、成员永远 busy（真机 3 条残留，界面永远「正在做」）。
+       ⇒ 现在：引擎事件是主路径（重启后依然有效），Promise 只在事件没来时兜底，
+          且**走同一道幂等闸**（settlingTasks）⇒ 两条路不会重复结算。 */
     void waitForTurnCompletion(threadId, turnId).then((completed: any) => {
       const text = turnOutputText(completed) || "（成员没有返回文本产出）";
-      void settleSubmission(task.id, text);
+      onEngineTurnCompleted(threadId, turnId, completed);
     }).catch((error: any) => {
       if (error?.code === TURN_WAIT_TIMEOUT_CODE) {
         // ⛔ 等待到点 ≠ 失败：回合还在引擎里跑，交给停滞扫描与下次打开时对账。
@@ -489,7 +617,14 @@ export async function dispatchTask(taskId: string, options: { memberId?: string 
   }
 }
 
-async function failTask(taskId: string, reason: string) {
+/**
+ * 任务失败（释放成员）。
+ *
+ * @param quiet ⛔ 静默模式（启动对账用）：只改状态、释放成员、**不回投中枢**。
+ *   ⛔ 对账是在纠正"上次没结算完的残留"，不是新失败 ⇒ 往中枢回一条
+ *   「执行失败」等于凭空造一件用户没经历的事（而且这条投递走用户消息队列）。
+ */
+async function failTask(taskId: string, reason: string, quiet = false) {
   const state = await bossStore.load();
   const task = state.tasks[taskId];
   if (!task) return;
@@ -505,7 +640,7 @@ async function failTask(taskId: string, reason: string) {
   }
   bossStore.save();
   emit({ type: "boss-group", phase: "task", groupId: task.groupId, taskId, status: "failed" });
-  if (group) await postToBoss(group, `[群事件] 「${task.title}」执行失败：${String(reason).slice(0, 300)}\n需要你决定：换模型重做 / 放宽标准 / 你自己接手。`);
+  if (group && !quiet) await postToBoss(group, `[群事件] 「${task.title}」执行失败：${String(reason).slice(0, 300)}\n需要你决定：换模型重做 / 放宽标准 / 你自己接手。`);
 }
 
 /* ── 交活 → 审查 → 通过 / 打回 → 换人 ─────────────────────────────────────── */
@@ -613,9 +748,10 @@ export async function tickAll(): Promise<void> {
   const state = await bossStore.load();
   let dirty = false;
   for (const group of Object.values(state.groups)) {
-    /* ⛔ 10-26：先清掉队列里的看门狗刷屏条目（每 5 秒一次 ⇒ 启动后自动压平）。
-       ⛔ 失败不阻塞后面的扫描（清理是补救，不是主逻辑）。 */
-    await pruneBossQueue(group).catch(() => undefined);
+    /* ⛔⛔ 10-26：队列清理**从每 5 秒改成只在启动对账时跑一次**。
+       原实现每个 tick 都对每个群 resume + list 队列（两次引擎往返 × 群数 × 每 5 秒）
+       —— 而这只是为了清"看门狗刷屏"那批历史遗留；看门狗删掉后**不会再产生新的**。
+       ⇒ 启动清一次即可；之后由渲染层读队列时顺手清（那里本来就在读）。 */
     const before = group.paused;
     const budget = checkBudget(state, group.id);
     if (group.paused !== before) {
@@ -629,51 +765,25 @@ export async function tickAll(): Promise<void> {
       }
     }
   }
-  for (const item of markStalled(state)) {
-    const task = state.tasks[item.taskId];
-    const group = state.groups[item.groupId];
-    if (!task || !group) continue;
-    const key = `stall:${task.id}`;
-    if (quotaOk(key)) {
-      dirty = true;
-      emit({ type: "boss-group", phase: "task", groupId: group.id, taskId: task.id, status: "stalled" });
-      /* ⛔⛔ 10-26 用户现场：「你机制有问题，删掉」。
-         原实现在这里**往中枢会话回投**「已经 N 秒没有进展（无进展 ×1）」——
-         而这条投递走的是引擎的用户消息队列，引擎只在**线程空闲**时才消化
-         ⇒ 线程一卡住就无限堆积（真机：同一个任务堆了几十条，全队列 57~99 条），
-         排队面板还把它们当成"用户的排队消息"显示。
-         ⇒ **这条回投整体删除**：停滞只作为**状态**存在（看板/事件流仍能看到"停滞"），
-            不再往对话里灌。⛔ 任务本身照跑（停滞不代表失败），不受影响。 */
-      pushEvent(state, {
-        groupId: group.id, taskId: task.id, kind: "note",
-        text: `「${task.title}」已 ${Math.round(item.idleMs / 1000)} 秒没有进展（仅记录，未打扰中枢）`,
-      });
-    }
-  }
-  /* 待审看门狗（审查修的缺口 C）：评审交给会话自己判 ⇒ 它那一轮没看见、或忘了调 group_review，
-     任务会永远停在 reviewing（看板一直"等审查"，成品其实早交了）。这里按"多久没动静"再催一次。
-     ⛔ 只催，不替它下结论；同一个任务 10 分钟最多催一次（配额闸复用）。 */
-  for (const item of markReviewStalled(state)) {
-    const task = state.tasks[item.taskId];
-    const group = state.groups[item.groupId];
-    if (!task || !group) continue;
-    /* ⛔ 10-26：原来走配额闸（12 条/10 分钟/任务）⇒ 一个待审任务能灌几十条到引擎队列。
-       ⇒ 改成**每个任务只催一次**（进程内集合；催过就不再灌）。 */
-    if (REVIEW_REMINDED.has(task.id)) continue;
-    REVIEW_REMINDED.add(task.id);
-    dirty = true;
-    pushEvent(state, {
-      groupId: group.id, taskId: task.id, kind: "note",
-      text: `「${task.title}」已交活 ${Math.round(item.idleMs / 60_000)} 分钟仍无审查结论，已再次提醒指挥中枢`,
-    });
-    emit({ type: "boss-group", phase: "task", groupId: group.id, taskId: task.id, status: "review-stale" });
-    await postToBoss(group, `[群事件] 「${task.title}」已交活 ${Math.round(item.idleMs / 60_000)} 分钟，仍没有审查结论。
-⛔ 别再等：现在就用你的评审技能对照验收标准判，然后调 group_review(taskId="${task.id}", verdict="approved" | "rejected", reasons=[…])。
-（成品全文用 group_status 或在群消息流里看）`);
-  }
+  /* ⛔⛔⛔ 10-26 用户现场：「你不要加看门狗，Codex 自己哪有那么傻」。
+     停滞看门狗（markStalled）**整体删除**：
+       原实现每隔几秒扫一遍 running 任务，超过阈值就往中枢会话回投「已经 N 秒没有进展」——
+       而这条投递走引擎的**用户消息队列**，引擎只在线程空闲时才消化 ⇒ 线程一卡就无限堆积
+       （真机：同一任务堆了几十条，全队列 57~99 条，界面直接"炸"开）。
+     ⛔ 判定"该不该做"是 Codex（指挥中枢）自己的事 —— 它看得见成员会话在不在动。
+        宿主替代模型判断 = 制造噪声 + 卡死队列。**这里不再有任何看门狗。** */
+  /* ⛔⛔⛔ 10-26 用户现场：「你不要加看门狗」—— **待审看门狗也整体删除**。
+     原实现：任务停在 reviewing 超过 10 分钟就往中枢回投「仍没有审查结论，请你现在判」。
+     ⛔ 同样的坑：回投走用户消息队列 ⇒ 卡住时无限堆积（真机 57~99 条）。
+     ⛔ 而且"该不该审、审没审"是中枢自己的判断（它那一轮没看见就再看一眼的事），
+        宿主定时催 = 越权 + 噪声。**这里不再有任何看门狗。** */
   /* 出站队列兜底：定时器可能因为进程挂起而丢，tick 时补一次 flushed。 */
   for (const groupId of Array.from(OUTBOX.keys())) await flushOutbox(groupId);
   if (dirty) bossStore.save();
+  /* ⛔⛔ 这里**不再**跑对账（10-26 修正）：每 5 秒对每个 running 任务做一次
+     `thread/turns/list` 引擎往返 = 常驻开销；而结算的主路径已经是**引擎事件**
+     （watchMemberSettlements）+ 启动对账（reconcileRunningTasks，在 boss 域启动时跑一次）。
+     ⛔ 对账是"启动时纠正上次残留"，不是常驻轮询 —— 那正是看门狗的形态。 */
 }
 
 /* ── 给 boss 工具用的门面 ─────────────────────────────────────────────────── */

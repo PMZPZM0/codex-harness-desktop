@@ -14,7 +14,7 @@ import path from "node:path";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { bossStore } from "../boss-groups/store";
-import { addTaskForBoss, browserStatus, createGroupForBoss, dispatchTask, memberForBoss, pinForBoss, poolForBossIpc, postToBoss, reviewTask, sayToGroup, setBossEventSink, statusForBoss, tickAll, watchBossReplies } from "../boss-groups/runner";
+import { addTaskForBoss, browserStatus, createGroupForBoss, dispatchTask, memberForBoss, pinForBoss, poolForBossIpc, postToBoss, reconcileRunningTasks, reviewTask, sayToGroup, setBossEventSink, statusForBoss, tickAll, watchBossReplies, watchMemberSettlements } from "../boss-groups/runner";
 import { normalizeEscalateChoice, recordReview, resolveEscalation } from "../boss-groups/state";
 import { backfillFromGroups, clearBossMemory, listBossSessions, registerBossSession, renameBossSession, unregisterBossSession } from "../boss-groups/session-registry";
 import { broadcastCodexEvent } from "./window-bus";
@@ -278,6 +278,17 @@ export const bossGroupsFeature = defineFeature<null>({
 
     /* boss 线程的回复镜像进群流（「在群里回」）——全局只挂一次。 */
     watchBossReplies();
+
+    /* ⛔⛔ 成员回合结算改**引擎事件驱动**（10-26 用户现场：「成员正在干活，我都没有发任务」）。
+       真机取证：3 个任务卡 running、成员卡 busy ⇒ 界面永远「正在做」。
+       根因：结算只靠进程内 Promise ⇒ 应用一重启所有等待回调全丢。
+       ⇒ 挂引擎事件监听：回合结束按 turnId 反查任务并结算（重启后依然有效）。 */
+    watchMemberSettlements();
+
+    /* ⛔ 启动对账：把上次没结算完的**残留** running 任务与引擎真相对齐
+       （回合早结束 ⇒ 补结算；引擎里没这一回合 ⇒ 静默标失败并释放成员）。
+       ⛔ 静默：不回投中枢（凭空造"执行失败"是噪声，而回投走的就是用户消息队列）。 */
+    void reconcileRunningTasks().catch(() => undefined);
 
     /* ⛔ ctx.effect 是**释放钩子**（dispose 时逆序执行），不是"立即执行"的 effect ——
        定时器要在外面启动，这里只登记"怎么停"。 */
