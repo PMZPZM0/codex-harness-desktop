@@ -109,13 +109,15 @@ ok(/saved\?: any; models\?: string\[\]/.test(bagTypes), "bag 类型同步了 sav
 ok(/if \(ok && intent\.relayActive\) writeRelayActive/.test(login), "中转站 relay-active 只在保存成功且进入主界面后写（取消不写）");
 
 /* ── ⑤ 设置页 / 云账号页 / OpenAI 页 ── */
-/* 10-26 用户令：自动配置从「下方大块（说明句 + 步骤条）」改成页头右侧一颗按钮 ⇒
-   锚点跟着接线走：入口是 openAutoSetup（不再靠 provider-setup-hero 那个大块）。 */
-ok(/openAutoSetup/.test(modelPage) && /ProviderSetupDialog/.test(modelPage) && /refreshActive/.test(modelPage), "模型页自动配置入口（页头按钮）+ 弹窗 + 保存后刷新供应商列表");
+/* 10-26 用户令（两轮）：自动配置从「下方大块（说明句 + 步骤条）」→ 页头按钮 → 最后挪到
+   页面**底部右侧操作条**，同轮删掉本页唯一的 ?⇒ 锚点跟着接线走：入口仍是 openAutoSetup，
+   但落点必须是 `.model-page-dock`（页头那块已整块删除）。 */
+ok(/openAutoSetup/.test(modelPage) && /ProviderSetupDialog/.test(modelPage) && /refreshActive/.test(modelPage), "模型页自动配置入口（右下角操作条）+ 弹窗 + 保存后刷新供应商列表");
+ok(/model-page-dock/.test(modelPage) && /\.model-page-dock\s*\{[^}]*position:\s*sticky/s.test(css) && !/settings-heading-actions/.test(modelPage), "自动配置 / 保存并重启在底部操作条（sticky 贴右下角，页头与 ? 已删）");
 ok(/relaunchApp/.test(modelPage), "模型页保存后自动重启应用");
 ok(/openNewProvider/.test(modelPage) && /openProviderEditor/.test(modelPage) && /provider-card-update/.test(modelPage), "模型页保留手动添加 / 编辑 / 更新模型入口（大卡片 + 二级弹窗，功能不删）");
 ok(/provider-card-test/.test(modelPage) && /classifyProviderProbeFailure/.test(modelPage) && /密钥失效/.test(modelPage), "卡片支持测试连接并标出「密钥失效」，云端可修复 / 其它提示更新 Key");
-ok(/model-compact-control/.test(modelPage) && !/model-global-bar/.test(modelPage), "自动压缩并进页头（旧整行文字条已删，长说明收进 ?）");
+ok(/model-compact-control/.test(modelPage) && !/model-global-bar/.test(modelPage), "自动压缩在页内工具条（旧整行文字条已删，说明收进就地 ?，与页头帮助 ? 无关）");
 ok(/provisionCloud\(api, \{ activate: false \}\)/.test(cloudPage), "云账号登录自动配置不再偷偷抢生效位（activate:false 交给弹窗）");
 ok(/provisionCloud\(api, \{ activate: true, onlyIfEmpty: true, restartIfActive: true \}\)/.test(cloudPage), "云账号「一键同步 / 修复」重启引擎并自动刷新模型页（云端密钥失效后修复即生效）");
 ok(/选择模型并启用/.test(cloudPage) && /ProviderSetupDialog/.test(cloudPage) && /relaunchApp/.test(cloudPage), "云账号页有「选择模型并启用」入口 + 弹窗 + 重启");

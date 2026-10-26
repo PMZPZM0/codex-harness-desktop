@@ -8,7 +8,6 @@ import { useEffect, useState } from "react";
 import { AppSelect } from "../../components/AppSelect";
 import { PPTokenEndpoints } from "../../lib/pptoken-endpoints";
 import { Check, ChevronRight, ExternalLink, Eye, EyeOff, ListChecks, PenLine, Plus, PowerOff, RefreshCw, Rocket, Store, Trash2, Wand2, X, Zap } from "lucide-react";
-import { PageInfo } from "../../components/SettingsHead";
 import { AVATAR_GRADIENTS, avatarToneOf } from "../../lib/entity-avatar";
 import { Spinner } from "../../components/CardShell";
 import { FieldHelp } from "../../features/auth";
@@ -207,16 +206,10 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
   return (
     <>
       <section className="settings-section stack model-page">
-      {/* 10-26 用户令：页标题大字与副标题整排删除；「自动配置」从下方大块挪到页头右侧，
-          旁边加「保存并重启」—— 那个块的说明句 / 步骤条也一并删掉（用户：「不用注释了，太丑」）。 */}
-      <div className="settings-copy">
-        <div className="settings-heading-actions">
-          <button className="primary-setting" onClick={openAutoSetup}><Wand2 size={15} />打开自动配置</button>
-          <button className="secondary-setting" disabled={restarting} onClick={() => void saveAndRestart()} title="配置已逐项保存；重启应用让引擎重新读取密钥与模型列表"><PowerOff size={14} />{restarting ? "重启中…" : "保存并重启"}</button>
-          {/* 10-26：全站页头帮助 ? 统一收到右上角 —— 这页的 ? 原挂在「模型供应商」区块标题旁，一并挪过来放最右 */}
-          <PageInfo text={<>两种方式二选一：登录 ChatGPT 订阅账号，或添加第三方供应商并填入密钥。配好后再选模型——两者齐了才能发消息。</>} helpKey="model" label="模型配置" />
-        </div>
-      </div>
+      {/* 10-26 二轮用户令：「自动配置和保存重启放到界面右下角，? 号删除」。
+         ⇒ 页头整块（含本页唯一的 ?）删掉，两颗按钮改到页面底部右侧的浮动操作条。
+         ⛔ 这页现在**没有** ? 说明入口了 —— 是用户明确要求删的，别再「补一个」。
+         ⛔ 也别把标题大字 / 副标题加回来（上一轮已按用户令删除）。 */}
       <div className="model-settings-page">
                     <div className="provider-page-toolbar">
                       <div className="provider-list-head">
@@ -337,6 +330,14 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                         }}
                         onUninstalled={() => removeProvider("free-gateway")}
                       />
+                    </div>
+                    {/* 底部浮动操作条（10-26 用户令：放界面右下角）：
+                        · `sticky bottom:0` ⇒ 内容比面板高时，滚到哪都贴着面板下沿，不用滚到底才看见；
+                        · `margin-top:auto` + 外层 flex 列 ⇒ 内容不满一屏时钉在页面最底部（不是紧跟卡片）。
+                        ⛔ 只靠 sticky 会在短内容时「停原位」贴在最后一张卡下面（42 里记过这个坑）。 */}
+                    <div className="model-page-dock">
+                      <button className="primary-setting" onClick={openAutoSetup}><Wand2 size={15} />打开自动配置</button>
+                      <button className="secondary-setting" disabled={restarting} onClick={() => void saveAndRestart()} title="配置已逐项保存；重启应用让引擎重新读取密钥与模型列表"><PowerOff size={14} />{restarting ? "重启中…" : "保存并重启"}</button>
                     </div>
       </div>
       </section>
