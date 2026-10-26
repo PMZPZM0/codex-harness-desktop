@@ -22,7 +22,10 @@ import { useAvatarAnchor } from "./04-avatar-anchor";
  *   （专家团 = 团队成员；普通会话 = 本会话派出去的子会话），
  *   写死一句会让其中一条会话的悬停提示说假话。
  */
-function OfficeRailNode({ onOpen, title }: { onOpen: () => void; title: string }) {
+/* ⛔⛔ 10-26：改成 **export** —— 指挥中枢那条「群成员轨」也要用它（用户原话：「办公室预览图标放这里」，
+   红框标在成员轨末位）。⛔ 三条轨（专家团成员轨 / 普通会话调度轨 / 中枢群成员轨）**共用这一个节点** ——
+   各写一份的话图标/位置很快会漂开（10-05 用户正是为此报的）。 */
+export function OfficeRailNode({ onOpen, title }: { onOpen: () => void; title: string }) {
   return (
     <button type="button" className="team-rail-node team-rail-office" title={title} onClick={onOpen}>
       <span className="team-rail-avatar team-rail-office-avatar"><Building2 size={14} /></span>

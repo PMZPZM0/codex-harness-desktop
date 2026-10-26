@@ -48,6 +48,11 @@ export type TeamOfficePreviewProps = {
    *    成员全都只是"派出去的子会话" ⇒ 本会话自己干了什么**根本没有显示器可演**，
    *    办公室与对话框就对不上了。 */
   self?: { threadId: string; name: string; running: boolean } | null;
+  /** ⭐⭐ 指挥中枢会话的**群成员**（10-26 用户令：「办公室预览图标放这里」—— 放在成员轨末位）。
+   *  ⛔ 这是办公室的**第三条来源**（前两条：专家团 `teams` / 普通会话 `delegatedRuns`）：
+   *    中枢会话里坐的是**群里的人** —— 正在干活的敲键盘，其余待机。
+   *  ⛔ 传了就用它（优先级最高：中枢会话里 `teams` 查不到这个 id ⇒ 本来就落不到专家团分支）。 */
+  groupMembers?: { id: string; name: string; role: string; status: string; threadId?: string }[] | null;
 };
 
 /* ── 随机取名（2026-10-04 用户要求「卡通人物名字就随机取一个就行」）──
@@ -125,7 +130,7 @@ export function phaseOfRun(run: RunFacts | null | undefined, now: number): {
   };
 }
 
-export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, lastByMember, openThread, delegatedRuns, self }: TeamOfficePreviewProps) {
+export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, lastByMember, openThread, delegatedRuns, self, groupMembers }: TeamOfficePreviewProps) {
   const team = useMemo(() => teams.find((t) => t.teamId === teamId) ?? null, [teams, teamId]);
 
   /* ⭐ 「点了没反应」的显式反馈（10-05 晚）。
@@ -155,6 +160,20 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
      *   · 否则 ⇒ **本会话派出的委托记录**（宿主按 `originThreadId === 当前会话` 过滤好，
      *     正是"我调度了谁"；正在跑的敲键盘、跑完的坐工位待机、归档后才离场）
      */
+    /* ⛔⛔ 指挥中枢会话：坐的是**群里的人**（10-26）。
+       ⛔ 优先级最高：中枢会话的 teamId 不是专家团 id ⇒ 本来也落不到下面的专家团分支。
+       ⛔ 「正在做」= 敲键盘；其余（空闲/交活待审）= 坐工位待机（⛔ 不许按 running 过滤，
+         否则成员干完活就"消失"了 —— 10-05 用户报过同一个毛病）。 */
+    if (groupMembers && groupMembers.length) {
+      return groupMembers.map((m) => ({
+        id: m.id,
+        name: m.name || "成员",
+        profession: m.role || "群成员",
+        running: m.status === "busy",
+        /* ⛔ 有会话 ⇒ 有工位（点角色能打开会话）；没会话的成员也保留一个工位（不能凭空消失）。 */
+        hasThread: Boolean(m.threadId),
+      }));
+    }
     if (!team) {
       /* ⛔⛔ 不许按 `status === "running"` 过滤（10-05 用户报「我调度了一个专家，办公室预览里面
          没有更新成员」）：委托跑得极快（真机实测 3.7 秒），用户点开办公室时它已经不在 running
@@ -198,7 +217,7 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
         hasThread: Boolean(run || last) || selfLead,
       };
     });
-  }, [team, runningByMember, lastByMember, delegatedRuns, self]);
+  }, [team, runningByMember, lastByMember, delegatedRuns, self, groupMembers]);
 
   /* ⭐ 10-25 用户令：一间办公室坐 6 人，超过就自动开下一间（同一张办公室底图/座位）。
      · 老员工留在原办公室，新员工进新开的那间；
@@ -323,12 +342,17 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
         原来那个 `|| !team` 会把普通会话的浮层直接挡掉、永远不显示。 */
   if (!teamId) return null;
 
+  /* ⛔⛔ 10-26：中枢会话的办公室坐的是**群里的人** ⇒ 标题/副标题要说这个，
+     不能沿用「我的办公室 / 调度出去的子会话」（那是普通会话口径，说在这里就是假话）。 */
+  const isGroupOffice = Boolean(groupMembers && groupMembers.length);
   const title = team
     ? team.displayName?.zh || team.displayName?.en || "办公室"
-    : "我的办公室";
+    : isGroupOffice ? "群成员办公室" : "我的办公室";
   const subtitle = team
     ? "成员状态实时联动 · 点角色打开会话"
-    : "调度出去的子会话会变成办公室里的人 · 点角色打开子会话";
+    : isGroupOffice
+      ? "群里的人实时映射成工位 · 正在干活的敲键盘 · 点角色打开会话"
+      : "调度出去的子会话会变成办公室里的人 · 点角色打开子会话";
 
   return (
     <div className="office-overlay" role="dialog" aria-label="像素办公室">

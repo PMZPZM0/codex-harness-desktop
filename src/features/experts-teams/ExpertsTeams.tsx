@@ -8,6 +8,6 @@ import "./ExpertsTeams/03-popups";
 import "./ExpertsTeams/04-avatar-anchor";
 
 export { SubAgentEditorModal, ExpertTeamEditorModal } from "./ExpertsTeams/01-modals";
-export { TeamMemberRail, TeamMemberHistory, DelegatedRail } from "./ExpertsTeams/02-rails";
+export { TeamMemberRail, TeamMemberHistory, DelegatedRail, OfficeRailNode } from "./ExpertsTeams/02-rails";
 export { TeamRunPopup, DelegatedRunPopup } from "./ExpertsTeams/03-popups";
 export { useAvatarAnchor } from "./ExpertsTeams/04-avatar-anchor";

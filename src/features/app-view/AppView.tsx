@@ -5,7 +5,7 @@
  * · props 类型 = useHarnessApp() 的返回类型（type-only import ⇒ 运行时零依赖）。
  */
 import { createPortal } from "react-dom";
-import { useSyncExternalStore } from "react";
+import { useSyncExternalStore, useMemo } from "react";
 import { hk } from "../../lib/hk";
 import { basename } from "../../lib/basename";
 import {
@@ -188,6 +188,7 @@ import { TurnReviewBridge } from "../status";
 // 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
 import { Slot } from "../../runtime/registry";
 import { BossGroupPanel, getBossDirDialogState, getBossThreads, isBossSessionContext, openBossDirDialog, subscribeBossDirDialog, subscribeBossThreads } from "../boss-group-view";
+import { useGroupMembers } from "../boss-group-view/group-members-store";
 import { DeclaredPluginSlots } from "../../runtime/declared-plugin-slots";
 
 
@@ -419,6 +420,19 @@ export function AppView({ app }: { app: HarnessAppApi }) {
      取本会话派出的**委托登记表**（含已完成），⛔ 不是头像轨的 live 表 ——
      委托跑得极快（真机实测 3.7 秒），用 live 表 / 按 running 过滤 ⇒ 点开办公室时
      人已经"下班"了，办公室里永远是空的。 */
+  /* ⛔⛔ 10-26 用户令：「办公室预览图标放这里」（中枢成员轨末位）⇒
+     办公室在**中枢会话**里坐的是**群里的人**（第三条来源：专家团 / 普通会话委托 / 群成员）。
+     ⛔ 群 id 从 bossThreads 里按 bossThreadId 匹配当前会话（与轨道同一份判定）。 */
+  const bossThreadsForDir = useSyncExternalStore(subscribeBossThreads, getBossThreads);
+  const bossDirState = useSyncExternalStore(subscribeBossDirDialog, getBossDirDialogState);
+  const bossDirContext = isBossSessionContext(bossThreadsForDir, thread?.id);
+  const officeBossGroupId = useMemo(() => {
+    if (!thread?.id) return "";
+    const hit = (bossThreadsForDir.groups ?? []).find((g: any) => String(g?.bossThreadId ?? "") === String(thread?.id));
+    return String(hit?.id ?? "");
+  }, [bossThreadsForDir.groups, thread?.id]);
+  const officeGroupMembers = useGroupMembers(officeBossGroupId);
+
   const officeDelegates = Object.values(app.delegateRecords)
     .filter((record) => record.originThreadId === thread?.id && !record.archived)
     .sort((a, b) => a.startedAt - b.startedAt);
@@ -431,10 +445,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
      ⇒ 口径改成：指挥中枢取自己那份（已建会话用 `thread.cwd`；还没建会话用建档前暂存的
        `pendingDir`，两者都没有就是空 ⇒ 显示「尚未选择项目地址」）；
        普通会话维持原样（它们的 workspace 语义就是全局记忆，行为不变）。 */
-  const bossThreadsForDir = useSyncExternalStore(subscribeBossThreads, getBossThreads);
-  const bossDirState = useSyncExternalStore(subscribeBossDirDialog, getBossDirDialogState);
-  const bossDirContext = isBossSessionContext(bossThreadsForDir, thread?.id);
-  const topbarDir = bossDirContext
+    const topbarDir = bossDirContext
     ? (thread?.cwd || (thread?.id ? bossDirState.dirByThread?.[thread.id] : bossDirState.pendingDir) || "")
     : (workspace || "");
   /* ⛔ 工作区菜单里那行「选择…目录」的**可用性**（⛔ 不是为了好看，是为了不出现「点了没反应」）：
@@ -627,6 +638,8 @@ export function AppView({ app }: { app: HarnessAppApi }) {
         /* 普通会话也能开办公室 —— 传本会话派出的子会话（**委托登记表**，含已完成的，
            见文件上方 `officeDelegates` 的由来）。 */
         delegatedRuns={officeDelegates}
+        /* ⛔ 中枢会话：办公室坐的是**群里的人**（正在干活的敲键盘，其余待机）。 */
+        groupMembers={officeGroupMembers.snapshot.members}
         /* ⭐ 「我」的工位（10-05 晚）：非专家团模式下把**本会话自己**也放进办公室 ——
            否则本会话的事件（对话框里那些工具步骤）没有任何显示器可演，
            "所有事件接入显示器"就只兑现了一半。 */

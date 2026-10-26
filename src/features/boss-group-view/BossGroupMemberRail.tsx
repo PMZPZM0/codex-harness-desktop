@@ -20,14 +20,18 @@
  */
 import { useMemo, useRef } from "react";
 import { AVATAR_GRADIENTS, avatarToneOf } from "../../lib/entity-avatar";
+import { OfficeRailNode } from "../experts-teams";
 import type { GroupMemberLive } from "./group-members-store";
 
 /** 轨道最多同时展示几个（超出走滚动）。 */
 export const BOSS_RAIL_MAX = 6;
 
-export function BossGroupMemberRail({ members, onOpen }: {
+export function BossGroupMemberRail({ members, onOpen, onOpenOffice }: {
   members: GroupMemberLive[];
   onOpen?: (memberId: string) => void;
+  /** ⛔ 办公室预览入口（10-26 用户令：「办公室预览图标放这里」—— 放在**成员轨末位**）。
+   *  ⛔ 用专家团/普通会话**同一个** `OfficeRailNode`（位置/图标一致 ⇒ 不会各写一份漂开）。 */
+  onOpenOffice?: () => void;
 }) {
   const trackRef = useRef<HTMLDivElement | null>(null);
 
@@ -45,7 +49,6 @@ export function BossGroupMemberRail({ members, onOpen }: {
   }, [members]);
 
   if (!ordered.length) return null;
-  const overflow = ordered.length > BOSS_RAIL_MAX;
 
   return (
     <aside className="team-rail boss-member-rail" aria-label="群成员">
@@ -61,7 +64,7 @@ export function BossGroupMemberRail({ members, onOpen }: {
               type="button"
               data-member-id={m.id}
               className={`team-rail-node is-${state}`}
-              title={`${m.name}（${m.role}）· ${stateHint}${overflow ? "" : ""}｜点击查看成员`}
+              title={`${m.name}（${m.role}）· ${stateHint}｜点击查看成员`}
               onClick={() => onOpen?.(m.id)}
             >
               <span className="team-rail-avatar" style={{ background: AVATAR_GRADIENTS[avatarToneOf(m.id || m.name)] }}>
@@ -73,12 +76,15 @@ export function BossGroupMemberRail({ members, onOpen }: {
             </button>
           );
         })}
+        {/* ⛔⛔ 10-26 用户令：「办公室预览图标放这里」—— 群成员轨**末位**。
+         *  ⛔ **放在 track 内部**（与专家团轨 / 普通会话轨结构完全一致）⇒ 同一根轴线 ⇒
+         *    头像竖列天然对齐（放 track 外面时实测中心差 5px，用户 10-26：「对齐啊」）。
+         *  ⛔ `position: sticky; bottom: 0`（CSS 里）⇒ 成员滚动时它**始终贴在可视区底部**。
+         *  ⛔ title 口径是**群成员**（这里坐的是群里的人，不是专家团成员、也不是本会话派出的子会话）。 */}
+        {onOpenOffice ? (
+          <OfficeRailNode onOpen={onOpenOffice} title="办公室预览：群里正在干活的成员实时映射成像素办公室，点角色打开会话" />
+        ) : null}
       </div>
-      {overflow ? (
-        <div className="boss-member-rail-more" aria-hidden>
-          <span className="boss-member-rail-more-count">+{ordered.length - BOSS_RAIL_MAX}</span>
-        </div>
-      ) : null}
     </aside>
   );
 }
