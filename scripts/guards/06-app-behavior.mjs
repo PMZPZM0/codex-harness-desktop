@@ -2609,11 +2609,16 @@ w.postMessage({id:1,op:"list",root});
   }
   {
     const fmCss180 = readFileSync(join(ROOT, "src", "styles", "44-function-menu.css"), "utf8");
+    const sideCss180 = readFileSync(join(ROOT, "src", "styles", "41-sidebar-guide.css"), "utf8");
     (/\.sidebar-options-top\s*\{/.test(fmCss180) && /\.function-menu-tour\s*\{/.test(fmCss180)
       && /\.sidebar-options-top \.sidebar-options-toggle\s*\{\s*margin-top:\s*2px/.test(fmCss180)
       && /\.function-menu-editor-backdrop\s*\{\s*z-index:\s*900/.test(fmCss180)
       && !/function-menu-composer/.test(fmCss180) ? ok : fail)(
       "【180】顶/底两种位置、贴紧搜索任务、教程、编辑弹窗样式在位（旧的对话框上方样式已移除）"
+    );
+    (/\.sidebar-options-toggle\s*\{[^}]*margin-top:\s*0\s*;/.test(sideCss180)
+      && !/margin-top:\s*-13px/.test(sideCss180) ? ok : fail)(
+      "【180】底部入口组不得用负 margin 压住会话列表最后一行（10-26 实测：-13px 会盖住项目行，项目区/功能入口糊在一起）"
     );
   }
   /* 布局：顶部只留「新会话 / 搜索任务」；入口组在账户行**之上**，账户行是侧栏最后一条。

@@ -6,6 +6,7 @@
 //   ② function-menu：侧栏顶部「新会话 / 搜索任务」+ 两处折叠 + 拖动 + 更多 + 教程
 //   ③ plugin-market-gitee：插件市场 Gitee raw / jsDelivr 兜底（403 限流回归）
 //   ④ voice-ball-reactions：悬浮球眼睛跟鼠标 + 打字弹迷你键盘（10-26）
+//   ⑤ sidebar-adaptive：侧栏底部「功能入口」与会话列表不重叠，矮窗口两边各自滚
 //
 // 用法：
 //   node scripts/accept.mjs                 # 跑全部当前项
@@ -606,6 +607,44 @@ const CHECKS = [
       await wait(2200);
       const closed = await h.eval(`!document.querySelector(".voice-ball-keyboard")`);
       h.check("⑤ 停手 1.1 秒后键盘自动收起（含后台节流余量）", closed, JSON.stringify({ closed }));
+    },
+  },
+  {
+    id: "sidebar-adaptive",
+    name: "🧱 侧栏底部：会话列表与功能入口不重叠；矮窗口各自滚动（10-26）",
+    run: async (h) => {
+      /* 10-26 用户截图：底部「功能入口」标题压住会话列表最后一行（旧 .sidebar-options-toggle
+         用 margin-top:-13px 去啃列表底部留白，列表一滚就会盖住内容）。这里用真实几何守。 */
+      await h.eval(`window.codex.saveAppSettings({functionMenu:{location:"bottom"}})`).catch(() => undefined);
+      await wait(500);
+      await h.reload({ waitMs: 2200 });
+      await wait(1800);
+      await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "界面就绪", timeoutMs: 30000 });
+      await wait(800);
+
+      const geo = () => h.eval(`(function(){
+        const r=(sel)=>{const e=document.querySelector(sel); if(!e)return null; const b=e.getBoundingClientRect(); const s=getComputedStyle(e); return {top:b.top,bottom:b.bottom,h:b.height,marginTop:s.marginTop};};
+        const list=document.querySelector(".thread-list"), nav=document.querySelector(".sidebar-nav-bottom");
+        return {win:{w:innerWidth,h:innerHeight}, list:r(".thread-list"), toggle:r(".sidebar-options-toggle"), nav:r(".sidebar-nav-bottom"), account:r(".account-row"),
+          navScroll:{sh:nav?.scrollHeight||0, ch:nav?.clientHeight||0},
+          top:!!document.querySelector(".sidebar-options-top")};
+      })()`);
+
+      const tall = await geo();
+      h.check("① 底部功能入口标题在会话列表下方（不再盖住最后一行）",
+        Boolean(tall && !tall.top && tall.toggle && tall.list
+          && tall.toggle.top >= tall.list.bottom - 1 && Math.abs(parseFloat(tall.toggle.marginTop) || 0) < 0.5),
+        JSON.stringify({ top: tall?.top, listBottom: tall?.list?.bottom, toggleTop: tall?.toggle?.top, marginTop: tall?.toggle?.marginTop }));
+
+      await h._send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 620, deviceScaleFactor: 1, mobile: false });
+      await wait(700);
+      const short = await geo();
+      h.check("② 620 高：列表保底 ≥96px、功能入口自己滚、账户行不出界",
+        Boolean(short && short.list && short.nav && short.account
+          && short.list.h >= 95 && short.navScroll.sh > short.navScroll.ch && short.account.bottom <= short.win.h + 1),
+        JSON.stringify({ listH: short?.list?.h, nav: short?.navScroll, accountBottom: short?.account?.bottom, winH: short?.win?.h }));
+      await h._send("Emulation.clearDeviceMetricsOverride");
+      await wait(400);
     },
   },
 ];
