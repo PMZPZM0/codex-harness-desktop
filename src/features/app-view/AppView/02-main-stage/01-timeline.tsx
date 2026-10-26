@@ -711,7 +711,12 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                        · 专家团会话 ⇒ TeamMemberRail；
                        · 普通会话 ⇒ DelegatedRail。 */}
                   {bossGroupId && !railTeam && (
-                    <BossGroupMemberRail members={bossGroupMembers.snapshot.members} />
+                    <BossGroupMemberRail
+                      members={bossGroupMembers.snapshot.members}
+                      /* ⛔⛔ 10-26 用户令：「办公室预览图标放这里」—— 群成员轨**末位**。
+                         ⛔ 传的是**群 id**：办公室靠它认出"这是中枢会话"（坐的是群里的人）。 */
+                      onOpenOffice={() => setCompanyPreviewTeamId(bossGroupId)}
+                    />
                   )}
                   {railTeam && (
                     <TeamMemberRail

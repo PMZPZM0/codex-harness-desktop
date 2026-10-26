@@ -444,14 +444,39 @@
    ⛔ 复用 `.team-rail` 的外观体系（不另画一套：两处各写一份，图标/光圈很快会漂开）。
    ⛔ 与专家团轨/调度轨互斥（同一时刻只有一条右轨，见 timeline 的挂载门槛）。 */
 .boss-member-rail {
-  /* ⛔ 专家团那条轨是**垂直居中**；这条要**顶部对齐**（成员多时往下长），
-     否则 6 个头像会从中间往上溢、盖住消息区。 */
-  align-items: flex-start;
+  /* ⛔ 与专家团轨 / 普通会话轨**同一套布局**（垂直居中）：办公室节点在 track **内部**
+     ⇒ 同一根轴线 ⇒ 头像竖列天然对齐（曾把它放 track 外面 ⇒ 中心差 5px，
+     用户 10-26：「对齐啊」）。
+     ⛔ `justify-content: flex-start` 不用了：这条轨成员多（9+）⇒ 顶部对齐更稳。 */
+  align-items: center;
   justify-content: flex-start;
   padding-top: 18px;
   overflow: hidden;
+  /* ⛔⛔ 必须 **column**！`.team-rail` 默认是 row（display:flex 未写 flex-direction）
+     ⇒ 办公室节点（它在 track **外面**）会被排到 track 的**右侧**、变成并排的一列
+     （实测：officeRect.x=1241 在轨道右边，不在末位）。
+     改成 column ⇒ 成员轨在上、办公室节点落在**正下方末位**（与用户红框标注的位置一致）。
+     ⛔ 办公室节点**不进 track**：track 有 max-height + overflow-y:auto ⇒ 进去会被滚出去，
+        而用户要它**始终可见**在末位。 */
+  flex-direction: column;
+}
+/* ⛔⛔ 办公室节点**贴在可视区底部**（sticky）：成员可滚动，但入口**始终可见**在末位
+   （用户红框标的位置）⇒ 滚动时成员从它上面滑过去。
+   ⛔ 需要不透明背景（否则滚动中的成员头像会从下面透出来）+ 顶部一条分隔线。 */
+.boss-member-rail-track > .team-rail-office {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg);
+  padding-top: 6px;
+  /* 顶部一条淡分隔线（把"滚动的成员"与"固定的办公室入口"分开） */
+  box-shadow: 0 -6px 10px -6px var(--bg), 0 -1px 0 var(--line);
 }
 .boss-member-rail-track {
+  /* ⛔⛔ 必须**满宽**（width:100%）：否则 track 宽度 = 内容撑开（≈40px）、
+     而办公室节点是 width:100%（= 92px 满宽）⇒ 两者中心差 5px ⇒ 办公室图标偏右
+     （实测 memberAvatarCx=1229 vs officeAvatarCx=1234；用户 10-26：「对齐啊」）。
+     ⇒ 满宽后两者同轴（中心都在轨道中心）。 */
+  width: 100%;
   /* ⛔ 最多展示 6 个：超出部分**滚动**（不是省略号、不是分页）。
      高度按「6 个节点 + 间距」算（节点 34px 高 + 16px gap + 名字行 ≈ 52px）。 */
   max-height: calc(6 * 52px + 5 * 16px);
@@ -488,14 +513,6 @@
 }
 /* 空闲成员：灰掉（与专家团轨一致），但**保留一点可见度**（用户要能一眼数出几个人）。 */
 .boss-member-rail .team-rail-node.is-idle .team-rail-avatar { filter: grayscale(1); opacity: 0.5; }
-.boss-member-rail-more {
-  display: flex; justify-content: center; margin-top: 4px;
-  font-size: 10px; color: var(--faint, var(--muted));
-}
-.boss-member-rail-more-count {
-  padding: 1px 6px; border-radius: 999px;
-  border: 1px solid var(--line); background: var(--panel-2);
-}
 
 /* ── 群成员头像（10-25 用户实测：「右侧群成员头像也没有」）────────────────────
    群聊现场要能一眼看到成员在不在、在忙还是在审。头像 = 名字首字 + 角色色环。 */
