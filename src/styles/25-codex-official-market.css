@@ -3,8 +3,12 @@
    卡片本体复用 .skill-card 皮肤（与 Gitee 源同款），这里只补两件事：源切换条 + 「还要配什么」的鉴权提示。 */
 
 /* ── 源切换（Claude 镜像 ⇄ Codex 官方）─────────────────────────────────── */
-.market-source-switch { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.market-source-switch { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .market-source-switch .segmented-tabs { flex: none; }
+/* 10-26 用户令：「左右按键对齐，中间空白删除，右边也是」⇒ 在线市场 / 刷新 与来源 tab 同一行、贴右。
+   ⛔ 页头那块（.settings-copy）已不再挂按键 ⇒ 上方空出一整条（原截图红框）也没有了。 */
+.market-source-actions { display: flex; align-items: center; gap: 8px; flex: none; margin-left: auto; }
+.market-source-actions > button { flex: none; }
 
 /* ── 官方市场块（.plugin-market-block 的增量，两者同挂在一个容器上）────── */
 .codex-official-market-title-code { font-family: var(--mono); font-size: 11px; }
