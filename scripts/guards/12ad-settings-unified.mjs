@@ -122,7 +122,7 @@ const refreshAt = modelPage.indexOf("const refreshCardModels");
 const refreshEnd = modelPage.indexOf("const testProviderCard", refreshAt);
 const refreshBlock = refreshAt >= 0 && refreshEnd > refreshAt ? modelPage.slice(refreshAt, refreshEnd) : "";
 ok(refreshBlock.length > 0 && /addedIds/.test(refreshBlock) && /removed/.test(refreshBlock) && /saveCustomDraft/.test(refreshBlock) && /relaunchApp/.test(refreshBlock), "「更新模型」新增/移除模型都保存并重启（与编辑弹窗保存同口径）");
-for (const [key, title] of [["skills", "技能中心"], ["plugins", "插件"], ["mcp", "MCP"], ["commands", "命令"], ["hooks", "钩子"], ["ssh", "SSH 服务器"], ["agentteam", "专家和专家团"], ["storage", "数据管理"]]) {
+for (const [key, title] of [["skills", "技能中心"], ["mcp", "MCP"], ["commands", "命令"], ["hooks", "钩子"], ["ssh", "SSH 服务器"], ["agentteam", "专家和专家团"], ["storage", "数据管理"]]) {
   const text = pageSrc(key);
   const at = text.indexOf(`<h2>${title}`);
   const window = at >= 0 ? text.slice(at, at + 2200) : "";
@@ -153,6 +153,11 @@ ok(!/provider-list-head|provider-count/.test(modelPage) && !/model-page-dock/.te
 ok(/provider-page-toolbar[\s\S]*model-compact-control[\s\S]*provider-page-actions[\s\S]*自动配置[\s\S]*自定义供应商[\s\S]*保存重启/.test(modelPage), "模型页工具栏：压缩靠左，自动配置 / 自定义供应商 / 保存重启靠右");
 ok(/<button className="primary-setting" onClick=\{openAutoSetup\}[\s\S]{0,120}自动配置/.test(modelPage) && /<button className="secondary-setting" onClick=\{openNewProvider\}[\s\S]{0,120}自定义供应商/.test(modelPage), "绿色主按钮只给「自动配置」；「自定义供应商」是普通按钮");
 ok(/<button className="danger-setting" disabled=\{restarting\}[\s\S]{0,160}保存重启/.test(modelPage), "「保存重启」是红色警示按钮");
+
+/* 10-27 用户：「那个分类做成筛选形式，几个市场跳转删了」 */
+const mcpPage = src("src/features/settings-mcp/McpSettingsSection.tsx");
+ok(/<AppSelect[\s\S]{0,200}mcp-category-select/.test(mcpPage) && !/SkillHub MCP 广场|AIbase 广场/.test(mcpPage), "MCP 分类改成筛选下拉，两个市场跳转按钮已删");
+ok(/\.mcp-category-filter\s*\{[^}]*white-space:\s*nowrap/.test(read("src/styles/07-settings-mcp-connectors.css")), "MCP 分类标签不换行");
 
 /* 10-26 用户（OpenAI 订阅页截图）：「问号删除，小文字注释删除大字就行，账户长卡片
    改成长方形卡片，不要拉这么长」—— ? / 副标题 / 卡片小字全删；添加卡两列并排。 */
