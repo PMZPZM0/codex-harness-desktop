@@ -13,7 +13,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { BookOpen, Bot, Brain, CheckCircle2, Cloud, Coins, Database, ExternalLink, ListChecks, LogIn, LogOut, RefreshCw, RotateCcw, TriangleAlert } from "lucide-react";
 import { provisionCloud, provisionSummary, type CloudProvisionReport } from "../../lib/cloud-provision.mjs";
-import { PageInfo } from "../../components/SettingsHead";
 import { Spinner } from "../../components/CardShell";
 import { cloudUserCenterUrl } from "../../lib/cloud-links.mjs";
 import { ProviderSetupDialog, type ProviderSetupCompleted, type ProviderSetupIntent } from "../provider-setup";
@@ -146,7 +145,7 @@ function CloudTutorial() {
   );
 }
 
-export function CloudAccountSection({ openAppConfirm }: { openAppConfirm?: (title: string, text: string, confirmLabel?: string) => Promise<boolean> }) {
+export function CloudAccountSection() {
   const [status, setStatus] = useState<AuthStatus | null>(null);
   const [models, setModels] = useState<ModelStatus | null>(null);
   const [points, setPoints] = useState<Points | null>(null);
@@ -484,13 +483,13 @@ export function CloudAccountSection({ openAppConfirm }: { openAppConfirm?: (titl
     }
   });
 
-  /* 10-26 三轮用户令：「退出登录没有调弹窗」⇒ 走应用统一确认框（与删除供应商同一个），
-     不再用「再点一次确认」的两击式（点击区域小、容易误触也容易忽略）。 */
-  const doLogout = async (id?: string, confirmTitle = "退出云账号") => {
-    const confirmed = openAppConfirm
-      ? await openAppConfirm(confirmTitle, "云端模型会从下拉框收起；本机配置保留，重新登录即恢复。", "确定")
-      : true;
-    if (!confirmed) return;
+  /* 10-26 三轮用户令：「退出登录没有调弹窗」⇒ 真的弹窗（不再用「再点一次确认」的两击式）。
+     ⛔ 不用 bag.openAppConfirm：守卫 12q 钉死「设置页板块自包含、不吃 props / 不动 bag」，
+        本页复用页内已有的 ResultDialog（阻断式弹窗，与连通测试同一套皮肤）。 */
+  const [logoutAsk, setLogoutAsk] = useState<{ id?: string; title: string } | null>(null);
+  const doLogout = (id?: string, confirmTitle = "退出云账号") => setLogoutAsk({ id, title: confirmTitle });
+  const runLogout = (id?: string) => {
+    setLogoutAsk(null);
     void run("logout", async () => {
       const api = cloudApi();
       if (!api.cloudAuthLogout) return;
@@ -547,6 +546,19 @@ export function CloudAccountSection({ openAppConfirm }: { openAppConfirm?: (titl
         <SessionSyncDialog
           mode={sessionDialog}
           onClose={(result) => { setSessionDialog(null); if (result) { setMsg(result); void refresh(); } }}
+        />
+      )}
+      {/* 退出 / 移除云账号的确认弹窗（10-26 用户令：点了要有弹窗）。⛔ 与「再点一次」互斥，只走这一条。 */}
+      {logoutAsk && (
+        <ResultDialog
+          title={logoutAsk.title}
+          tone="info"
+          message="云端模型会从下拉框收起；本机配置保留，重新登录即恢复。"
+          actions={[
+            { label: "取消", onClick: () => setLogoutAsk(null) },
+            { label: "确定", primary: true, onClick: () => runLogout(logoutAsk.id) },
+          ]}
+          onClose={() => setLogoutAsk(null)}
         />
       )}
       {/* 10-26 二轮用户令：「保存重启放一键修复嘴边，小文字简洁表达，右上角问号删除」
