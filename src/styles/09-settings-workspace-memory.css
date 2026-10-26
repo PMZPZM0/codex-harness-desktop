@@ -378,9 +378,14 @@
   .panel-divider {
     display: none !important;
   }
+  /* ⛔⛔ 10-26 用户两次实测改判：「最小的里面这还有这么多空间呢，都展示出来图标不行吗」
+     —— 原来 760px 起就把**附件按钮和整块模型控件** display:none，而这一档侧栏已变浮层、
+     工作区反而更宽，底栏左组后面留着一大片空白 ⇒ 属于"有位置却整块删掉"。
+     现在只**缩成图标**（文字由 .composer-micro 档收起），真放不下时由右组 overflow 自然裁。 */
   .composer-left .icon-button,
   .model-controls {
-    display: none;
+    display: flex;
+    min-width: 0;
   }
 }
 @media (width<=640px) {
@@ -398,8 +403,8 @@
   .history-search-panel {
     display: none;
   }
-  .task-title span,
-  .model-controls label svg {
+  /* ⛔ 10-26 同上：图标是缩档后唯一还能显示的内容，⛔ 不能连 svg 一起藏（藏了就变成 0 宽的空气）。 */
+  .task-title span {
     display: none;
   }
   .composer-menu {
@@ -439,7 +444,10 @@
   .codex-turn .assistant-message {
     width: min(92%, 720px);
   }
-  .composer-setting svg,
+  /* ⛔⛔ 10-26 用户两次实测：「最小的里面这还有这么多空间呢，都展示出来图标不行吗」
+     —— 这一档连**胶囊的图标 svg** 都藏了，于是"缩成图标"变成"缩成空气"（实测胶囊只剩
+     padding 的 10px，看着像坏掉）。图标是缩档后唯一还能显示的内容 ⇒ 一律保留；
+     只收下拉箭头（menu-caret，那是"可以点开"的装饰，不是信息）。 */
   .composer-menu .menu-caret {
     display: none;
   }

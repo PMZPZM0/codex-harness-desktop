@@ -1617,6 +1617,14 @@
 .composer:is(.composer-narrow, .composer-micro) .composer-left { flex: 1 1 auto; min-width: 0; overflow: hidden; gap: 1px; }
 .composer:is(.composer-narrow, .composer-micro) .composer-right { flex: 0 1 auto; min-width: 0; gap: 0; overflow: hidden; }
 .composer:is(.composer-narrow, .composer-micro) .model-controls { min-width: 0; gap: 0; }
+/* ⛔⛔ 10-26：胶囊/强度/发送 **不许被压扁**（压到 10px 图标就变形了），
+   也 ⛔ 不许把「发送」挤出视口。可压缩的只有 .model-controls 这一整块：
+   真放不下时它自己 overflow 裁 —— 这就是"没位置才隐藏"，而不是提前抹掉中间的图标。 */
+.composer:is(.composer-narrow, .composer-micro) .composer-setting,
+.composer:is(.composer-narrow, .composer-micro) .effort-trigger { flex: 0 0 auto; }
+.composer:is(.composer-narrow, .composer-micro) .model-controls { flex: 0 1 auto; overflow: hidden; }
+.composer:is(.composer-narrow, .composer-micro) .composer-mic-button,
+.composer:is(.composer-narrow, .composer-micro) .send-button { flex: 0 0 auto; }
 .composer:is(.composer-narrow, .composer-micro) .composer-setting { padding: 0 5px; }
 /* ⛔ 10-26 用户实测（输入框缩窄后截图）：「缩到最新，直接挤没，明明还有很多空间」
    —— narrow（480~640）这一档右侧模型菜单已被压缩、行尾留着一片空白，却把权限/模型文字整段
@@ -1639,12 +1647,21 @@
   white-space: nowrap;
 }
 .composer.composer-micro .effort-trigger-label { display: none; }
+/* ⛔⛔ 10-26 用户实测第二张截图（最窄档）：「最小的里面这还有这么多空间呢，都展示出来图标不行吗」
+   —— 底栏左组之后明明还有一大片空白，却把上下文环 / 状态灯 / 余额徽标整档 display:none 掉。
+   ⇒ 按用户规则**不主动隐藏**：这些都缩成图标（或本来就只有图标）留在原位，
+      真放不下时由 `.composer-left` 的 `overflow: hidden` 自然裁掉（那才是"没位置才隐藏"）。
+      优先级也自然正确：`.composer-right`（麦克风/发送）是 `flex: none`，先被压的是左组的尾巴。 */
 .composer:is(.composer-narrow, .composer-micro) .composer-status-lights,
 .composer:is(.composer-narrow, .composer-micro) .relay-badge,
-.composer:is(.composer-narrow, .composer-micro) .cloud-points-badge { display: none; } /* 可选动态灯：两档都先让位 */
-/* ⛔ 上下文环是 **35px 的纯图标**，本身没有"文字档"可缩 ⇒ 按「有位置就留」：
-   narrow 保留（它是这一档里信息密度最高的控件），只有 micro 才隐藏。 */
-.composer.composer-micro .ctx-badge { display: none; }
+.composer:is(.composer-narrow, .composer-micro) .cloud-points-badge,
+.composer:is(.composer-narrow, .composer-micro) .ctx-badge {
+  display: flex;
+  flex: 0 0 auto;
+}
+.composer:is(.composer-narrow, .composer-micro) .composer-status-lights > *,
+.composer:is(.composer-narrow, .composer-micro) .relay-badge *,
+.composer:is(.composer-narrow, .composer-micro) .cloud-points-badge * { min-width: 0; }
 /* 上方两个胶囊：同现时从「左右一排」改成上下两行，各自占满输入框宽度，不再互相挤/压字 */
 .composer-wrap:has(.composer-narrow) .composer-status-row,
 .composer-wrap:has(.composer-micro) .composer-status-row { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
