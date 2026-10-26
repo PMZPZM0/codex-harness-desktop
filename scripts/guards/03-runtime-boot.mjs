@@ -1075,16 +1075,19 @@ const appSrc4 = readAppUi();
   // 滚轮滑窗声音反馈（用户 09-19：「鼠标放上去上下滑动，加一个声音反馈，选最贴合的」）：
   // 合成棘轮咔哒（src/lib/wheel-tick.mjs，无音频资产）；⛔ 只在窗口真的移动时响——
   // 响与不响的判据依赖最新 state，所以滚轮闭包必须走 wheelCtxRef（顺路修掉的 stale closure）。
-  (/const next = Math\.max\(-ctxNow\.currentIndex, Math\.min\(maxOffset, ctxNow\.windowOffset \+ direction \* RULER_PAGE\)\);[\s\S]{0,220}if \(next === ctxNow\.windowOffset\) return;[\s\S]{0,120}setWindowOffset\(next\);[\s\S]{0,80}playWheelTick\(direction\);/.test(appSrc4))
+  (/const next = Math\.max\(-ctxNow\.currentIndex, Math\.min\(maxOffset, ctxNow\.windowOffset \+ direction \* RULER_PAGE\)\);[\s\S]{0,220}if \(next === ctxNow\.windowOffset\) return;[\s\S]{0,120}setWindowOffset\(next\);[\s\S]{0,80}playWheelTick\(direction, \{ channel: "ruler"/.test(appSrc4))
     ? ok("刻度尺滚轮：先算 next、窗口真移动才 setWindowOffset + 播放棘轮咔哒（到顶/到底静默）")
     : fail("刻度尺滚轮的声音反馈被摘了 —— 或窗口移动判定没走 wheelCtxRef 最新值");
   (/const wheelCtxRef = useRef\(\{ allMarks, windowSize, currentIndex, windowOffset \}\);/.test(appSrc4) && /wheelCtxRef\.current = \{ allMarks, windowSize, currentIndex, windowOffset \};/.test(appSrc4))
     ? ok("滚轮监听的 stale closure 已修（最新 state 经 wheelCtxRef 进闭包）")
     : fail("滚轮监听又在闭包里直读 state —— 首帧绑死后钳制/容量全用旧值");
   const tickSrc = readFileSync(join(ROOT, "src/lib/wheel-tick.mjs"), "utf8");
-  (/THROTTLE_MS/.test(tickSrc) && /UP_FREQ/.test(tickSrc) && /DOWN_FREQ/.test(tickSrc) && /catch/.test(tickSrc))
-    ? ok("滑窗音效模块：方向音调区分 + 30ms 节流 + 异常静默降级（音频挂起绝不拖垮滚轮交互）")
-    : fail("wheel-tick.mjs 缺节流/方向音调/静默降级 —— 声音会把滚轮交互搞挂或吵人");
+  /* ⛔ 10-26：节流从「一个常量 THROTTLE_MS」改成「按 channel 的 minGapMs」（共用窗口会互相吞声音），
+     并加了预解锁。判据打**意图**：方向音调 + 有节流 + 异常静默降级 + 预解锁。 */
+  (/minGapMs/.test(tickSrc) && /lastAtByChannel/.test(tickSrc) && /UP_FREQ/.test(tickSrc)
+    && /DOWN_FREQ/.test(tickSrc) && /catch/.test(tickSrc) && /primeWheelTick/.test(tickSrc))
+    ? ok("滑窗音效模块：方向音调 + **按通道**节流 + 异常静默降级 + 预解锁（音频挂起绝不拖垮滚轮交互）")
+    : fail("wheel-tick.mjs 缺节流/方向音调/静默降级/预解锁 —— 声音会把滚轮交互搞挂、或吵人/没声");
 }
   }
 

@@ -11,6 +11,8 @@ import { playWheelTick } from "../../../lib/wheel-tick.mjs";
 import { visibleGroupBlocks } from "../../../lib/visible-group-blocks.mjs";
 import { contentOffsetTop } from "../../../components/scroll-utils";
 const RULER_PAGE = 5;
+/** 单槽高度：2px 线 + 上下 6px 命中区 = 14px（与 CSS 同口径；悬停/容量估算都用它） */
+const RULER_SLOT = 14;
 
 export type RulerMark = { id: string; turnId: string; itemId: string; type: "user" | "agent"; label: string };
 
@@ -150,7 +152,10 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
       }
       setCurrentItemId(current);
       /* ⛔ 只在「滚轮滚动期间」且**跨过了一条消息**时响一声；静止、程序化滚动、跳转都不出声。 */
-      if (waveRef.current && current && current !== prevMarkRef.current) playWheelTick(waveDirRef.current);
+      /* ⛔ 独立通道（scroll）：与 hover / 刻度尺自身滚轮互不吞声音 */
+      if (waveRef.current && current && current !== prevMarkRef.current) {
+        playWheelTick(waveDirRef.current, { channel: "scroll", minGapMs: 28 });
+      }
       prevMarkRef.current = current;
     };
     update();
@@ -199,21 +204,23 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
   const hoverAt = (clientY: number) => {
     const track = trackRef.current;
     if (!track) return;
-    const tickEls = Array.from(track.querySelectorAll<HTMLElement>(".ruler-tick"));
-    if (!tickEls.length) return;
-    let best = 0;
-    let bestDist = Number.POSITIVE_INFINITY;
-    for (let i = 0; i < tickEls.length; i += 1) {
-      const rect = tickEls[i].getBoundingClientRect();
-      const dist = Math.abs(rect.top + rect.height / 2 - clientY);
-      if (dist < bestDist) { bestDist = dist; best = i; }
-    }
+    const total = marks.length;
+    if (!total) return;
+    /* ⛔⛔ 10-26 用户：「声音触发有延迟，延迟还挺高」——
+       原来是**每根刻度读一次 getBoundingClientRect**（12~50 次强制同步布局/mousemove）⇒
+       主线程被拖住，声音排到后面才发。
+       轨道是 `justify-content: center` + 每槽固定 14px ⇒ 直接算，**一次 rect 读都不需要每个元素**。 */
+    const rect = track.getBoundingClientRect();
+    const startY = rect.top + Math.max(0, (rect.height - total * RULER_SLOT) / 2);
+    let best = Math.floor((clientY - startY) / RULER_SLOT);
+    if (best < 0) best = 0;
+    if (best >= total) best = total - 1;
     if (best !== hoverIndex) {
       setHoverIndex(best);
-      playWheelTick(-1);
+      /* hover 独立通道 + 45ms（比滚动略宽）：快速划动不会糊成噪音，也不会被滚动的声音挤掉 */
+      playWheelTick(-1, { channel: "hover", minGapMs: 45 });
     }
-    const el = tickEls[best];
-    setTip({ text: marks[best]?.label ?? "", top: el.offsetTop + el.offsetHeight / 2 });
+    setTip({ text: marks[best]?.label ?? "", top: best * RULER_SLOT + RULER_SLOT / 2 + Math.max(0, (rect.height - total * RULER_SLOT) / 2) });
   };
 
   const currentPos = currentItemId ? marks.findIndex((m) => m.itemId === currentItemId) : -1;
@@ -240,7 +247,7 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
             // 到顶/到底窗口不动 → 静默（自然的边界反馈）；真移动 → 滑一声棘轮咔哒（09-19 用户要求的声音反馈）
             if (next === ctxNow.windowOffset) return;
             setWindowOffset(next);
-            playWheelTick(direction);
+            playWheelTick(direction, { channel: "ruler", minGapMs: 30 });
           }, { passive: false });
         }}
         onMouseMove={(event) => hoverAt(event.clientY)}
