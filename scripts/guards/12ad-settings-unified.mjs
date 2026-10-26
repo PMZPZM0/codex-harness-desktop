@@ -51,6 +51,8 @@ const FILES = {
   relayBanner: "src/features/relay/RelayCenterPage/01-subscription-banner.tsx",
   relayGrid: "src/features/relay/RelayCenterPage/02-account-grid.tsx",
   openai: "src/features/openai/OpenaiSubscriptionPage.tsx",
+  personal: "src/components/PersonalizationPage.tsx",
+  general: "src/features/settings-general/GeneralSettingsSection.tsx",
   accept: "scripts/accept.mjs",
 };
 for (const [name, rel] of Object.entries(FILES)) {
@@ -192,6 +194,25 @@ ok(/\.settings-exp-shell \.ssh-toolbar \.search-field\s*\{[^}]*flex:\s*1 1 160px
    但 `c1344271b`（「验收脚本收敛为当前 3 项」）已把轮次表机制与该项一起**有意删除**。
    断言已不存在的对象 = 永远红或永远假绿，两种都没价值 ⇒ 去掉；
    上面 ①~⑥ 的结构断言才是这条守卫真正在守的东西。 */
+
+/* ── ⑧ 个性化页去重（10-27 用户令：「个性化里面的用户称呼可以删了，还有语气自适应也删了，
+     跟用户中心和控制台的ahd重复了」）──
+   称呼已并入「用户中心 → 基本资料」，语气自适应的开关挪到「控制台 → 回复风格」。
+   ⛔ 最要紧的一条是「保存不再传 nickname」：个性化页保存走 partial 语义
+   （字段 undefined = 保留原值），一旦这里传空字符串就会把用户中心写的昵称清掉。 */
+const personalPage = pageSrc("personal");
+ok(!/aria-label="称呼"/.test(personalPage) && !/setNickname/.test(personalPage)
+  && !/card-nickname/.test(personalPage), "个性化页不再有「用户称呼」输入（已并入用户中心）");
+ok(!/语气自适应/.test(personalPage) && !/adaptiveTone/.test(personalPage), "个性化页不再有「语气自适应」（已挪到控制台）");
+ok(/savePersonalization\(\{\s*customInstructions/.test(personalPage)
+  && !/savePersonalization\(\{[^}]*nickname/.test(personalPage),
+  "个性化保存只传自定义指令（不覆盖用户中心写的昵称）");
+ok(!existsSync(join(ROOT, "src/features/settings-personalization/PersonalizationSettingsSection.tsx")),
+  "个性化旧区块组件已删除（语气自适应整块搬走）");
+const generalPage = pageSrc("general");
+ok(/语气自适应/.test(generalPage) && /ToggleSwitch/.test(generalPage)
+  && /card-reply/.test(generalPage), "控制台「回复风格」卡里有语气自适应开关");
+ok(/changeAdaptiveTone/.test(generalPage), "控制台语气自适应开关接的是全局开关回调");
 
 console.log(`\n【shell】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);

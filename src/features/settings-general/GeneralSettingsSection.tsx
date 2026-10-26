@@ -10,14 +10,15 @@
  */
 import { AppSelect } from "../../components/AppSelect";
 import { useEffect, useState } from "react";
-import { Code2, Copy, FolderOpen, FolderTree, Globe2, HelpCircle, Keyboard, Monitor, MonitorUp, PanelRightOpen, RefreshCw, Settings2, ShieldCheck, Sparkles, Zap } from "lucide-react";
+import { Code2, Copy, FolderOpen, FolderTree, Globe2, HelpCircle, Keyboard, Monitor, MonitorUp, PanelRightOpen, RefreshCw, Settings2, ShieldCheck, Sparkles, Waves, Zap } from "lucide-react";
 import { copyTextToClipboard } from "../../lib/clipboard";
+import { moodTone } from "../../lib/agent-mood.mjs";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { BuiltinSkillSwitch } from "./BuiltinSkillSwitch";
 import { AutoUpdateCard } from "./AutoUpdateCard";
 import { SettingsPageHero } from "../../components/SettingsPageHero";
 
-export type GeneralSettingsSectionProps = { globalPermApproval: any; applyGlobalPermissionMode: any; workspace: any; chooseWorkspace: any; userDataPath: any; setNotice: any; rightOpen: any; setRightOpen: any; capabilityHint: any; desktopAuto: any; groupBusy: any; toggleDesktopAuto: any; browserAuto: any; toggleBrowserAuto: any; ponytailOn: any; applyGroup: any; hardwareAccel: any; changeHardwareAccel: any; restartPending: any; SHORTCUT_GROUPS: any; setShortcutsOpen: any; engineVersion: any; engineCheck: any; engineUpdating: any; checkEngineUpdateNow: any; performEngineUpdateNow: any; engineUpdatePercent: any; engineUpdateStageText: any; engineUpdateLog: any; engineUpdateResult: any; relaunchCountdown: any; downloadSource: any };
+export type GeneralSettingsSectionProps = { globalPermApproval: any; applyGlobalPermissionMode: any; workspace: any; chooseWorkspace: any; userDataPath: any; setNotice: any; rightOpen: any; setRightOpen: any; capabilityHint: any; desktopAuto: any; groupBusy: any; toggleDesktopAuto: any; browserAuto: any; toggleBrowserAuto: any; ponytailOn: any; applyGroup: any; hardwareAccel: any; changeHardwareAccel: any; restartPending: any; SHORTCUT_GROUPS: any; setShortcutsOpen: any; engineVersion: any; engineCheck: any; engineUpdating: any; checkEngineUpdateNow: any; performEngineUpdateNow: any; engineUpdatePercent: any; engineUpdateStageText: any; engineUpdateLog: any; engineUpdateResult: any; relaunchCountdown: any; downloadSource: any; adaptiveTone: any; changeAdaptiveTone: any; thread: any; readMood: any };
 
 /* ══ 配置目录自定义（09-25）═══════════════════════════════════════════════
  * 自持状态小组件（不占 bag）。写的是主进程指路牌（data-dir.json），
@@ -137,7 +138,7 @@ function DataDirEditor({ currentPath, setNotice }: { currentPath: string; setNot
 }
 
 export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
-  const { globalPermApproval, applyGlobalPermissionMode, workspace, chooseWorkspace, userDataPath, setNotice, rightOpen, setRightOpen, capabilityHint, desktopAuto, groupBusy, toggleDesktopAuto, browserAuto, toggleBrowserAuto, ponytailOn, applyGroup, hardwareAccel, changeHardwareAccel, restartPending, SHORTCUT_GROUPS, setShortcutsOpen, engineVersion, engineCheck, engineUpdating, checkEngineUpdateNow, performEngineUpdateNow, engineUpdatePercent, engineUpdateStageText, engineUpdateLog, engineUpdateResult, relaunchCountdown, downloadSource } = props;
+  const { globalPermApproval, applyGlobalPermissionMode, workspace, chooseWorkspace, userDataPath, setNotice, rightOpen, setRightOpen, capabilityHint, desktopAuto, groupBusy, toggleDesktopAuto, browserAuto, toggleBrowserAuto, ponytailOn, applyGroup, hardwareAccel, changeHardwareAccel, restartPending, SHORTCUT_GROUPS, setShortcutsOpen, engineVersion, engineCheck, engineUpdating, checkEngineUpdateNow, performEngineUpdateNow, engineUpdatePercent, engineUpdateStageText, engineUpdateLog, engineUpdateResult, relaunchCountdown, downloadSource, adaptiveTone, changeAdaptiveTone, thread, readMood } = props;
   const [showAccelHelp, setShowAccelHelp] = useState(false);
   return (
     <>
@@ -221,13 +222,25 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                     <div className="settings-card card-reply">
                       <div className="settings-card-head"><Sparkles size={15} /><strong>回复风格</strong><span className="settings-subhead-hint">只改模型怎么写，不改变它能做什么</span></div>
                       <div className="settings-card-body settings-toggle-list">
+                        {/* 语气自适应（10-27 用户令：「个性化里面的…语气自适应也删了，跟…控制台的ahd重复了」）：
+                            与直白写作（ADHD 风格）同属「输出写法」，收在这一张卡里，
+                            别再在个性化页开第二个语气开关（那边已删）。 */}
+                        <div className="settings-toggle-row">
+                          <span className="settings-toggle-icon"><Waves size={16} /></span>
+                          <span className="settings-toggle-text">
+                            <strong>语气自适应</strong>
+                            <small>每个会话各自维护语气状态：回合失败收紧、顺利轻快，空闲半小时慢慢回到基线。只影响说法，不影响内容；关掉即停止更新，并摘掉当前会话已注入的语气块。</small>
+                          </span>
+                          <ToggleSwitch checked={adaptiveTone} label="语气自适应" onChange={(next) => changeAdaptiveTone(next)} />
+                        </div>
+                        {thread?.id ? (() => { const t = moodTone(readMood(thread.id)); return <p className="settings-card-hint">当前会话语气：<b>{t.label}</b> —— {t.tone}</p>; })() : null}
                         <BuiltinSkillSwitch
                           skill="i-have-adhd"
                           title="直白写作（ADHD 风格）"
                           desc="内置写作风格技能 i-have-adhd（MIT）：结论先行、分步编号、抑制跑题、不说客套话。开启即生效——之后每一轮回复都按这套写法来，不用点名；关闭后恢复默认写法。默认开启，改动立即生效。"
                           onNotice={setNotice}
                         />
-                        <p className="settings-card-hint">这一类开关管的是输出写法，不摘任何工具或通道。其余写作风格技能（去 AI 味 / AI 味检测）仍按需被点名或由模型自行选用，要长期常驻可把它们也登记进输出风格名单（electron/output-styles.ts）。</p>
+                        <p className="settings-card-hint">这一类开关管的是输出写法，不摘任何工具或通道。语气自适应按每个会话自己的状态微调说法，直白写作是常驻的固定写法。其余写作风格技能（去 AI 味 / AI 味检测）仍按需被点名或由模型自行选用，要长期常驻可把它们也登记进输出风格名单（electron/output-styles.ts）。</p>
                       </div>
                     </div>
 
