@@ -1618,7 +1618,18 @@
 .composer:is(.composer-narrow, .composer-micro) .composer-right { flex: 0 1 auto; min-width: 0; gap: 0; overflow: hidden; }
 .composer:is(.composer-narrow, .composer-micro) .model-controls { min-width: 0; gap: 0; }
 .composer:is(.composer-narrow, .composer-micro) .composer-setting { padding: 0 5px; }
-.composer:is(.composer-narrow, .composer-micro) .composer-setting > span { display: none; }
+/* ⛔ 10-26 用户实测（输入框缩窄后截图）：「缩到最新，直接挤没，明明还有很多空间」
+   —— narrow（480~640）这一档右侧模型菜单已被压缩、行尾留着一片空白，却把权限/模型文字整段
+   display:none 掉 ⇒ 只剩一个图标，看着像"坏了"。⇒ 只有 micro（<480，真放不下）才藏字；
+   narrow 保留文字但限宽 + 省略号（与 1180 media 的 72px 同一口径，这里更紧一点）。 */
+.composer.composer-narrow .composer-setting > span {
+  display: inline-block;
+  max-width: 58px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer.composer-micro .composer-setting > span { display: none; }
 .composer:is(.composer-narrow, .composer-micro) .effort-trigger-label { display: none; }
 .composer:is(.composer-narrow, .composer-micro) .composer-status-lights,
 .composer:is(.composer-narrow, .composer-micro) .relay-badge,
