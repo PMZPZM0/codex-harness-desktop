@@ -44,6 +44,7 @@
 | 方向音 + 崩溃修复 | 悬停按方向传 frequency（下 1700 / 上 2300）；**React #310 修复**（见坑①） | `f2abed071` |
 | 内置 `grill-me` | 上游 `grill-me`(3 行代理) + `grilling`(方法论) 合成一份，去掉对 `Skill` 工具的委托；MIT 改编，声明见 `THIRD_PARTY_NOTICES.md` | `85b9274c7` |
 | 内置 `handoff` | 五段结构 + 生效方式 + 锚点要求 + 提示词模板 + 判据 | `85b9274c7` |
+| 消息顺序修复 | 用户消息被误判成群广播（原文里的记忆块提到 `[群事件]`）⇒ 渲染到回复**下方**；改判行首标签 + 剥注入段后再判 | `7fa2f686b` |
 
 判据基线（全部当前绿）：守卫 12r **45/45** · 守卫 22 **204/204** · `npm run check` **0 红**（跑前先 `unset NODE_OPTIONS`，收尾看输出末尾确认 bag-types / dead-imports / require-paths 真跑过）。
 
@@ -51,7 +52,7 @@
 
 **无真阻塞。** 三件挂起事项：
 
-1. **已发版的 v0.0.50 / v0.1.6 不含发版后的全部改动**（语音页重做、预算删除、刻度尺全系列、两个新技能）。tag 打在先、改动在后 —— 主仓 tag 后 **10 个**提交、PPcode tag 后 **9 个**提交未进包。⇒ **需要发 v0.0.51（主仓）与 v0.1.7（PPcode），但必须先获用户确认**（问过两次，用户两次都转去提新需求了）。
+1. **已发版的 v0.0.50 / v0.1.6 不含发版后的全部改动**（语音页重做、预算删除、刻度尺全系列、两个新技能、消息顺序修复）。tag 打在先、改动在后 —— 主仓 tag 后 **12 个**提交、PPcode tag 后 **10 个**提交未进包。⇒ **需要发 v0.0.51（主仓）与 v0.1.7（PPcode），但必须先获用户确认**（问过两次，用户两次都转去提新需求了）。
 2. v0.0.50 的 CI 资产没做最终验收（4 个安装包 + `latest.yml` + sha256）。本机无 gh CLI，取令牌手法见坑⑪。
 3. 悬停**方向音的听感**只有用户真机能确认。嫌弃密/吵就调 `src/lib/wheel-tick.mjs` 的 `minGapMs` / `PEAK_GAIN`。
 
@@ -75,16 +76,19 @@
 7. ⛔⛔ **新增内置技能要改四处，漏一处守卫【229】直接红**：① `electron/builtin-skills/NN-skill-*.ts` 常量；② `electron/builtin-skills.ts` 的 import + `entries`；③ `electron/builtin-skills/00-skill-zh-notes.ts` 导读；④ `src/features/app-view/constants/01-notices-labels.tsx` 的 `SKILL_ZH_NOTES` **和** `BUILTIN_DISTRIBUTED_SKILLS`（两处）。技能正文必须是**字面量**（预检【86】按源文件文本扫描，运行时拼装 = 恒真假绿）。
 8. ⛔ 照抄外部技能要先查它引用的能力**在本应用存不存在**：上游 `grill-me` 正文只有「Call the Skill tool with "grilling"」，本应用没有 `Skill` 工具 —— 直接内置就是一条死指针。
 
+9. ⛔⛔ **「消息属于哪一类」必须判在剥完注入段的文本上**：`isGroupEventText(原文)` 会把用户消息判成群广播 —— 每条原文都带 `[Harness 常驻记忆 …]`，记忆正文里提到过 `[群事件]`（本项目实测 5 处）⇒ 10-26 群汇报卡改版后该消息被渲染到回复**下方**（用户：「倒反天罡」）。判据收口到 `user-refs.isGroupEventMessage`，且 `parseGroupEvents` 只认**行首**标签。
+
 **流程级：**
 
-9. ⛔ **判定「某仓缺功能」前先怀疑自己的命令**：路径拼重（`src/features/src/features/x`）、搜错目录都会静默失败。用绝对路径 + 单文件 `ls` 复核。
-10. ⛔ **改 whats-new 后必须先 `npm run build:electron` 再跑守卫 11r**（探针读 `dist-electron` 产物，不重建 = 5 条假红）。
-11. ⛔ 本机无 gh CLI；GitHub API 令牌从凭据管理器取：`printf 'protocol=https\nhost=github.com\n\n' | GIT_TERMINAL_PROMPT=0 git credential fill` 取 `password=`（⛔ 别把 token 打到终端）。
-12. ⛔ **删 Release 顺序不可反**：先 `DELETE /releases/{id}`，再删 tag；只删 tag ⇒ Release 退草稿态（匿名不可见、更新器收不到）。
-13. ⛔ **heredoc 里写 Python 正则会把 `\s` 写坏成 `/s`** ⇒ 改守卫里正则密集的行，用 Edit 工具直写。
-14. ⛔ 守卫脚本变量名冲突 = 整条链 SyntaxError（不是断言失败），报错看第一行。
-15. ⛔ **未提交改动先查来历再收口**：云助手工作区曾残留他人 hunk（主仓已提交的同步漏网），查清后单独提交、不与本轮混提。
-16. ⛔ 云助手 `src/**` 改完必须 `node scripts/deploy-cloud-ui.mjs`，只 build 用户永远看不到。
+10. ⛔ **判定「某仓缺功能」前先怀疑自己的命令**：路径拼重（`src/features/src/features/x`）、搜错目录都会静默失败。用绝对路径 + 单文件 `ls` 复核。
+11. ⛔ **改 whats-new 后必须先 `npm run build:electron` 再跑守卫 11r**（探针读 `dist-electron` 产物，不重建 = 5 条假红）。
+12. ⛔ 本机无 gh CLI；GitHub API 令牌从凭据管理器取：`printf 'protocol=https\nhost=github.com\n\n' | GIT_TERMINAL_PROMPT=0 git credential fill` 取 `password=`（⛔ 别把 token 打到终端）。
+13. ⛔ **删 Release 顺序不可反**：先 `DELETE /releases/{id}`，再删 tag；只删 tag ⇒ Release 退草稿态（匿名不可见、更新器收不到）。
+14. ⛔ **heredoc 里写 Python 正则会把 `\s` 写坏成 `/s`** ⇒ 改守卫里正则密集的行，用 Edit 工具直写。
+15. ⛔ 守卫脚本变量名冲突 = 整条链 SyntaxError（不是断言失败），报错看第一行。
+16. ⛔ **未提交改动先查来历再收口**：云助手工作区曾残留他人 hunk（主仓已提交的同步漏网），查清后单独提交、不与本轮混提。
+17. ⛔ 云助手 `src/**` 改完必须 `node scripts/deploy-cloud-ui.mjs`，只 build 用户永远看不到。
+18. ⛔ **副本仓守卫可能比源码更旧**：PPcode 的守卫 22 仍在调 `checkBudget`（源码已删该函数）⇒ 一跑就 TypeError，这不等于本轮改坏了。验证本轮改动先单跑 `node scripts/verify-injection-strip.mjs`，再决定要不要收口那份 219 行的守卫差异。
 
 ## 七、验收手法速查
 
