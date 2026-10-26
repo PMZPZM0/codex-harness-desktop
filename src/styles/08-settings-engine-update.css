@@ -331,7 +331,9 @@
 .devtools-manifest-body .secondary-setting { align-self: flex-start; }
 @media (max-width: 700px) {
   .runtime-row { grid-template-columns: 22px minmax(0, 1fr) auto; }
-  .runtime-size { display: none; }
+  /* ⛔ 10-26 用户规则：「有位置就缩，没位置才隐藏」—— 体积是信息，别在 700px 就整个抹掉；
+     真放不下时给省略号（用户看得见"被截断"，而不是以为没有这个信息）。 */
+  .runtime-size { max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 .settings-toggle-list {
   display: flex;
