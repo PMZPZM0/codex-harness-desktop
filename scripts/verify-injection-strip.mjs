@@ -224,6 +224,26 @@ async function main() {
     }
   }
 
+  /* ⛔⛔ 误判回归（10-26 用户实测「Codex 消息怎么在我消息上面」）：
+     注入的记忆正文里提到过 `[群事件]`（本项目记忆里就有 5 处）⇒ 旧判据「原文出现即算」
+     把这名用户的消息判成群广播，渲染层据此把它挪到回复下方（倒反天罡）。
+     钉死两件事：① 记忆块里的提及不参与判定；② 行首的真实群消息照旧解析。 */
+  total += 1;
+  {
+    const noisy = `这个技能会用嘛\n\n[本轮已引用技能]\n- grill-me：\n[请按上述技能工作流执行]\n\n[Harness 常驻记忆 · 项目 / 团内 / 私有]\n## 23:29\n- 需求：[群事件] 「群内报到」审查通过（尝试 1）。\n[常驻记忆结束]\n`;
+    const refs = mod.parseUserRefs(noisy);
+    const rawBlocks = parseGroupEvents(noisy);
+    const shown = mod.userDisplayText(noisy);
+    const ok = !refs.groupEvents?.length && rawBlocks === null && shown === "这个技能会用嘛";
+    if (ok) {
+      console.log("✓ 群广播误判（记忆正文提到 [群事件]）");
+    } else {
+      bad += 1;
+      console.log("✗ 群广播误判（记忆正文提到 [群事件]）");
+      console.log(`    groupEvents=${JSON.stringify(refs.groupEvents?.length ?? null)} 原文解析=${JSON.stringify(rawBlocks?.length ?? null)} 可见文本=${JSON.stringify(shown)}`);
+    }
+  }
+
   for (const item of GROUP_CASES) {
     total += 1;
     const blocks = parseGroupEvents(item.text) ?? [];

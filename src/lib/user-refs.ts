@@ -172,6 +172,17 @@ export function userDisplayText(rawText: string): string {
   return stripImageTokens(text);
 }
 
+/** 这条 userMessage 原文是不是**真的**群广播（宿主注入的 `[群事件] …`）。
+ *  ⛔ 必须判在「剥掉 harness 注入块之后」的那份文本上（parseUserRefs 的 groupEvents 就是）：
+ *     记忆 / 日志正文里可能引用 `[群事件]` 这个词，按**原文**判会把用户自己发的消息误判成群广播
+ *     ——渲染层据此把它挪到回复**下方**（10-26 用户截图「Codex 消息怎么在我消息上面」）。
+ *  ⛔ 渲染层的「位置」判据必须与「样式」判据同源：都用这个（= refs.groupEvents），
+ *     别再各自 `isGroupEventText(原文)` 判一次。 */
+export function isGroupEventMessage(rawText: string): boolean {
+  if (!String(rawText ?? "").includes("[群事件]")) return false;
+  return Boolean(parseUserRefs(rawText).groupEvents?.length);
+}
+
 /** 判断服务端落地的 userMessage 是否对应本地乐观 input。
  * 服务端可能剥掉记忆/技能/引用等内部段，因此文本必须按用户可见正文比较；
  * 没有文字的纯附件消息按**附件文件列表**逐项同序比较（10-06），纯图片消息按本地图片路径顺序比较。 */

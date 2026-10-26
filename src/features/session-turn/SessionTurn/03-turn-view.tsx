@@ -18,7 +18,7 @@ import { CircleStop, AlertTriangle, FileText, Brain, ChevronDown } from "lucide-
 import { MessageFooter } from "../../shared/MessageFooter";
 import { collectTurnWebSources } from "../../../lib/turn-web-sources.mjs";
 import { UserMessageView } from "../../shared/UserMessageView";
-import { isGroupEventText } from "../../../lib/group-event-text.mjs";
+import { isGroupEventMessage } from "../../../lib/user-refs";
 import { itemText } from "../../../lib/item-text";
 import { isTaskTurn } from "../SessionTurn";
 import { Slot } from "../../../runtime/Slot";
@@ -48,8 +48,13 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
      压在回复上面（之前它就是一条 userMessage ⇒ 渲染在回复上方，看着像用户自己发的）。
      ⇒ 这里把它单独摘出来：普通用户消息照旧在卡片上方，**群广播渲染在整张卡片之后**
      （= 消息下方），与其它会话里"产物/文件卡贴在消息下面"同一套位置感。 */
-  const groupUserItems = userItems.filter((item) => isGroupEventText(itemText(item)));
-  const plainUserItems = userItems.filter((item) => !isGroupEventText(itemText(item)));
+  /* ⛔⛔ 10-26 用户实测（「Codex 消息怎么在我消息上面，这么离谱啊」「倒反天罡了」）：
+     判据原先用 **原文** `isGroupEventText(itemText(item))` —— 而每条消息的原文里都带着
+     注入的 Harness 记忆块，记忆正文提到过 `[群事件]` 这个词 ⇒ 用户自己的消息被判成群广播，
+     按下面的规则渲染到回复**下方**。现在改判「剥完注入段之后是否真是群广播」
+     （isGroupEventMessage = parseUserRefs 的 groupEvents，与气泡样式同源）。 */
+  const groupUserItems = userItems.filter((item) => isGroupEventMessage(itemText(item)));
+  const plainUserItems = userItems.filter((item) => !isGroupEventMessage(itemText(item)));
   // 回合已结束但个别工具/命令的 item/completed 事件丢失（状态仍 inProgress）→
   // 渲染层兜底落成完成态，避免「任务都完成了还卡在正在运行」。仅回合结束时兜底，
   // 正常流式期间（running）保持引擎原始状态不动。
