@@ -18,6 +18,8 @@ import { CircleStop, AlertTriangle, FileText, Brain, ChevronDown } from "lucide-
 import { MessageFooter } from "../../shared/MessageFooter";
 import { collectTurnWebSources } from "../../../lib/turn-web-sources.mjs";
 import { UserMessageView } from "../../shared/UserMessageView";
+import { isGroupEventText } from "../../../lib/group-event-text.mjs";
+import { itemText } from "../../../lib/item-text";
 import { isTaskTurn } from "../SessionTurn";
 import { Slot } from "../../../runtime/Slot";
 import { PollTaskBoard } from "../../polling";
@@ -41,6 +43,13 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
     if (!running) RUN_CLOCK.forget(turn.id);
   }, [running, turn.id]);
   const userItems = turn.items.filter((item) => item.type === "userMessage");
+  /* ⛔⛔ 10-26 用户令：「放到消息下面，不要放上面」——
+     群广播（宿主注入的 `[群事件] …`）**不是用户说的话**，不该占着"用户消息"的位置
+     压在回复上面（之前它就是一条 userMessage ⇒ 渲染在回复上方，看着像用户自己发的）。
+     ⇒ 这里把它单独摘出来：普通用户消息照旧在卡片上方，**群广播渲染在整张卡片之后**
+     （= 消息下方），与其它会话里"产物/文件卡贴在消息下面"同一套位置感。 */
+  const groupUserItems = userItems.filter((item) => isGroupEventText(itemText(item)));
+  const plainUserItems = userItems.filter((item) => !isGroupEventText(itemText(item)));
   // 回合已结束但个别工具/命令的 item/completed 事件丢失（状态仍 inProgress）→
   // 渲染层兜底落成完成态，避免「任务都完成了还卡在正在运行」。仅回合结束时兜底，
   // 正常流式期间（running）保持引擎原始状态不动。
@@ -71,7 +80,7 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
       : item.type === "reasoning" ? Boolean([...(item.summary ?? []), ...(item.content ?? [])].join("").trim())
         : true,
   );
-  const stoppedWithoutReply = Boolean(interruptedAt && userItems.length > 0 && !hasContent);
+  const stoppedWithoutReply = Boolean(interruptedAt && plainUserItems.length > 0 && !hasContent);
   // 「用户主动点了停止」——`interruptedAt` 只由本机的 interrupt() 写入（语音插话/手机端停止/
   // 引擎主动中止都不会写它），所以它是"这次是用户自己停的"的可靠判据。
   // ⛔ 09-18 用户：「用户如果点了停止，运行过程和内容要保持在，方便用户继续任务，
@@ -99,7 +108,7 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
   if (userItems.length === 0 && !hasRealContent) return null;
   return (
     <div className={`turn-group ${running ? "running" : turn.error ? "error" : "completed"}`} id={`turn-${turn.id}`} data-current-turn={isLastTurn ? "true" : undefined}>
-      {userItems.map((item) => <MemoUserMessageView item={item} turn={turn} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onImageCopy={handlers.onImageCopy} onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)} onOpenFile={handlers.onOpenFile} key={item.id} />)}
+      {plainUserItems.map((item) => <MemoUserMessageView item={item} turn={turn} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onImageCopy={handlers.onImageCopy} onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)} onOpenFile={handlers.onOpenFile} key={item.id} />)}
       {(userItems.length > 0 || hasVisible) && (
       <div className="turn-card">
         {/* 回合标识：一轮会话只有一份「头像 + 名字」（09-17 用户「一轮会话就一个 Codex 名字和
@@ -184,6 +193,23 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
         </div>
       </div>
       )}
+      {/* ⛔⛔ 10-26 用户令：「放到消息下面，不要放上面」——
+          群广播（成员汇报 / 交活 / 审查结论）渲染在**整张消息卡之后**，
+          与其它会话里「产物文件卡贴在消息下面」同一套位置感。
+          ⛔ 它是宿主注入的机器消息，不是用户说的话 ⇒ 不占用户气泡的位置。 */}
+      {groupUserItems.map((item) => (
+        <MemoUserMessageView
+          item={item}
+          turn={turn}
+          fallbackWindow={fallbackWindow}
+          onCopy={handlers.onCopy}
+          onQuote={handlers.onQuote}
+          onImageCopy={handlers.onImageCopy}
+          onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)}
+          onOpenFile={handlers.onOpenFile}
+          key={item.id}
+        />
+      ))}
     </div>
   );
 }

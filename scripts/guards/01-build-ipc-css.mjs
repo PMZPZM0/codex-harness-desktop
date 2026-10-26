@@ -396,8 +396,10 @@ if (!existsSync(stylesEntry)) {
   /* 白名单（各自有合法来源，不是「忘了定义」）：
      · --effort-color / --fill-color（EffortPicker 内联注入）· --t / --voice-level（VoiceCallFloat 注入）
      · --submenu-top（composer-form 内联注入）· --ic-page（08-settings-sheet 写在设置弹窗根上、消费端全带 fallback —— 10-07 补登记，此前它一直漏在名单外）· --composer-editor-h / --composer-editor-max（10-06 夜三轮：
-       composer-form 的输入框拖动把手内联注入，CSS 侧都带结构 fallback）· --vscode-scrollbar-shadow（xterm/VS Code 宿主约定，fallback #000） */
-  const whitelist = new Set(["--effort-color", "--fill-color", "--t", "--submenu-top", "--voice-level", "--vscode-scrollbar-shadow", "--composer-editor-h", "--composer-editor-max", "--ic-page"]);
+       composer-form 的输入框拖动把手内联注入，CSS 侧都带结构 fallback）· --vscode-scrollbar-shadow（xterm/VS Code 宿主约定，fallback #000）
+     · --group-hue（10-26：群汇报成员头像色相 —— UserMessageView 按成员名 hash 逐条内联注入，
+       消费端 `hsl(var(--group-hue, 205) …)` 带 fallback；同名成员恒同色，故不适合写进 CSS 单一值） */
+  const whitelist = new Set(["--effort-color", "--fill-color", "--t", "--submenu-top", "--voice-level", "--vscode-scrollbar-shadow", "--composer-editor-h", "--composer-editor-max", "--ic-page", "--group-hue"]);
   const orphan = [...refs].filter((v) => !defined.has(v) && !whitelist.has(v));
   (orphan.length === 0 ? ok : fail)(
     orphan.length
