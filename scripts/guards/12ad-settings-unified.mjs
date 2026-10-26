@@ -47,6 +47,9 @@ const FILES = {
   storage: "src/features/storage-settings/StorageSettings.tsx",
   model: "src/features/settings-model/ModelSettingsSection.tsx",
   favorites: "src/features/settings-favorites/FavoritesSettingsSection.tsx",
+  relay: "src/features/relay/RelayCenterPage.tsx",
+  relayBanner: "src/features/relay/RelayCenterPage/01-subscription-banner.tsx",
+  relayGrid: "src/features/relay/RelayCenterPage/02-account-grid.tsx",
   accept: "scripts/accept.mjs",
 };
 for (const [name, rel] of Object.entries(FILES)) {
@@ -126,6 +129,18 @@ for (const [key, title] of [["skills", "技能中心"], ["plugins", "插件"], [
      那样守卫会自洽地绿，而界面上一个字都没有）。 */
   ok(at >= 0 && /<PageInfo/.test(window), `${title}页头说明收进 ?（10-26 起副标题整排不显示）`);
 }
+
+/* 10-26 用户（中转站页截图）第二次令：「文字赘述删掉，问号删掉，大字就行」——
+   本页连 ? 一起收掉，说明段、页脚、添加卡小字全部删除，只剩大字与操作。 */
+const relayPage = pageSrc("relay");
+const relayBanner = pageSrc("relayBanner");
+const relayGrid = pageSrc("relayGrid");
+ok(!/PageInfo/.test(relayPage) && !/relay-center-foot/.test(relayPage), "中转站页不再挂 ?、页脚说明已删（只留大字）");
+const guestBranch = /state === "guest" \? \(([\s\S]*?)\) : expired/.exec(relayBanner)?.[1] ?? "";
+ok(/<strong>付费订阅 · 开通即用<\/strong>/.test(guestBranch) && !/<p>/.test(guestBranch), "未登录横幅只留大字标题（说明段已删）");
+const addCard = /className="relay-plan-card relay-add-card"([\s\S]*?)<\/button>/.exec(relayGrid)?.[1] ?? "";
+ok(/<Plus\b/.test(addCard) && /<strong>添加中转站账号<\/strong>/.test(addCard) && !/<small>/.test(addCard), "添加账号卡只留图标 + 大字（小字说明已删）");
+ok(/\.settings-exp-shell \.relay-add-card\s*\{[^}]*flex-direction:\s*row[^}]*min-height:\s*64px/.test(css), "添加账号卡横向单行（不再竖排留白）");
 
 /* ── ⑥ SSH 工具栏不落单 ── */
 ok(/\.settings-exp-shell \.ssh-toolbar \.search-field\s*\{[^}]*flex:\s*1 1 160px;[^}]*width:\s*auto\s*!important/s.test(css), "SSH 搜索框可收缩（导出/导入不再被挤到第二行单飞）");

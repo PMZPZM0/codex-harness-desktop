@@ -488,6 +488,10 @@
 .settings-exp-shell .relay-plan-card { border-color: var(--line-soft); border-radius: 12px; background: var(--panel); box-shadow: none; }
 .settings-exp-shell .relay-plan-card.selected { background: var(--panel); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .settings-exp-shell .relay-add-card { grid-column: 1 / -1; min-height: 0; }
+/* 10-26 用户（中转站页）：「文字赘述删掉，问号删掉，大字就行」——
+   小字删掉后别再竖排三行留白：压成一条横向大按钮，标题是唯一视觉重心。 */
+.settings-exp-shell .relay-add-card { flex-direction: row; gap: 8px; justify-content: center; min-height: 64px; font-size: 14px; }
+.settings-exp-shell .relay-sub-banner[data-state="guest"] .relay-sub-banner-main > strong { font-size: 15px; }
 
 /* ── 开发工具 / 拓展接口 / 会话备份：一列长卡 + 中性图标 ── */
 .settings-exp-shell .devtools-cards { grid-template-columns: 1fr; }
