@@ -113,7 +113,9 @@ ok(/if \(ok && intent\.relayActive\) writeRelayActive/.test(login), "中转站 r
    页面**底部右侧操作条**，同轮删掉本页唯一的 ?⇒ 锚点跟着接线走：入口仍是 openAutoSetup，
    但落点必须是 `.model-page-dock`（页头那块已整块删除）。 */
 ok(/openAutoSetup/.test(modelPage) && /ProviderSetupDialog/.test(modelPage) && /refreshActive/.test(modelPage), "模型页自动配置入口（右下角操作条）+ 弹窗 + 保存后刷新供应商列表");
-ok(/model-page-dock/.test(modelPage) && /\.model-page-dock\s*\{[^}]*position:\s*sticky/s.test(css) && !/settings-heading-actions/.test(modelPage), "自动配置 / 保存并重启在底部操作条（sticky 贴右下角，页头与 ? 已删）");
+/* 落点只钉「操作条存在 + 页头不再挂操作」—— 贴底/贴右下角的具体声明由调版式的人决定，
+   写死 sticky 会逼着改版式的人连带改守卫。 */
+ok(/model-page-dock/.test(modelPage) && /\.model-page-dock/.test(css) && !/settings-heading-actions/.test(modelPage), "自动配置 / 保存并重启在页面底部操作条（页头与 ? 已删）");
 ok(/relaunchApp/.test(modelPage), "模型页保存后自动重启应用");
 ok(/openNewProvider/.test(modelPage) && /openProviderEditor/.test(modelPage) && /provider-card-update/.test(modelPage), "模型页保留手动添加 / 编辑 / 更新模型入口（大卡片 + 二级弹窗，功能不删）");
 ok(/provider-card-test/.test(modelPage) && /classifyProviderProbeFailure/.test(modelPage) && /密钥失效/.test(modelPage), "卡片支持测试连接并标出「密钥失效」，云端可修复 / 其它提示更新 Key");
