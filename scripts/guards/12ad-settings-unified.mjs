@@ -149,8 +149,10 @@ ok(!existsSync(join(ROOT, "src/features/free-gateway")) && !existsSync(join(ROOT
 ok(!/free-gateway|免费模型网关/.test(modelPage) && !/provider-more-section/.test(modelPage), "模型页不再挂免费网关推荐卡与「更多供应商」区块");
 ok(!/free-gateway/.test(read("electron/ipc-channels.manifest.json")) && !/free-gateway/.test(read("electron/ipc-registry.ts")) && !/free-gateway/.test(read("electron/composition.json")), "manifest / registry / composition 不再登记免费网关");
 ok(!/12c-free-gateway/.test(read("package.json")), "package.json 的 check 链不再调用已删除的 12c 守卫");
-const dockRule = /\.model-page-dock\s*\{([^}]*)\}/.exec(providerCss)?.[1] ?? "";
-ok(/display:\s*flex/.test(dockRule) && /margin:\s*18px 0 2px/.test(dockRule) && !/position:\s*sticky/.test(dockRule) && !/margin-top:\s*auto/.test(dockRule), "模型页操作条紧跟内容（不再 sticky / margin-top:auto 贴底）");
+ok(!/provider-list-head|provider-count/.test(modelPage) && !/model-page-dock/.test(modelPage) && !/\.model-page-dock/.test(providerCss), "模型页不再显示「模型供应商 N」小字与底部操作条");
+ok(/provider-page-toolbar[\s\S]*model-compact-control[\s\S]*provider-page-actions[\s\S]*自动配置[\s\S]*自定义供应商[\s\S]*保存重启/.test(modelPage), "模型页工具栏：压缩靠左，自动配置 / 自定义供应商 / 保存重启靠右");
+ok(/<button className="primary-setting" onClick=\{openAutoSetup\}[\s\S]{0,120}自动配置/.test(modelPage) && /<button className="secondary-setting" onClick=\{openNewProvider\}[\s\S]{0,120}自定义供应商/.test(modelPage), "绿色主按钮只给「自动配置」；「自定义供应商」是普通按钮");
+ok(/<button className="danger-setting" disabled=\{restarting\}[\s\S]{0,160}保存重启/.test(modelPage), "「保存重启」是红色警示按钮");
 
 /* 10-26 用户（OpenAI 订阅页截图）：「问号删除，小文字注释删除大字就行，账户长卡片
    改成长方形卡片，不要拉这么长」—— ? / 副标题 / 卡片小字全删；添加卡两列并排。 */

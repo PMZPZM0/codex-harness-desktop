@@ -479,36 +479,17 @@
   min-height: 100%;
 }
 
-/* ── 模型页底部操作条（10-26 二轮用户令：「自动配置和保存重启放到界面右下角，? 号删除」）──
-   两种失效方式都要挡住：
-     · 只写 `position: sticky` ⇒ 内容不满一屏时它**停在原位**，贴着最后一张卡（不是右下角）
-       ⇒ 外层 section 改 flex 列、内容区 `flex:1`，dock 靠 `margin-top:auto` 钉到页面底；
-     · 只靠 `margin-top:auto` ⇒ 内容超一屏时它被推到页面最末，得滚到底才看得见
-       ⇒ 再加 `sticky bottom:0`，滚动过程中一直贴着面板下沿。
-   `padding-bottom: 0` 是刻意的：section 原本 34px 的下留白会让 dock 在「滚到底」时比「滚动中」
-   高 34px（跳动一下）⇒ 把留白交给 dock 自己的 padding，两种状态都是 14px。
-   渐隐背景用 `--bg`（与设置面板同色），卡片从按钮下方滚过时不打架。 */
+/* ── 模型页布局：一行工具栏 + 供应商大卡 ──
+   ⛔ align-items 必须显式 stretch：基类 `.settings-section` 是 `align-items:flex-start`
+     ⇒ 列方向下内容区只按内容宽度收缩（实测 240px，卡片网格挤成一列）。 */
 .settings-section.model-page {
   display: flex;
   flex-direction: column;
-  /* ⛔⛔ align-items 必须显式 stretch：基类 `.settings-section` 是 `align-items:flex-start`
-     ⇒ 列方向下内容区只按内容宽度收缩（实测 240px，卡片网格挤成一列、dock 也不贴右）。
-     与 `.settings-section.is-settings-flow` 同一处坑。 */
   align-items: stretch;
 }
-/* 下留白交给 dock 自己的 padding：45 里 `.settings-exp-shell > .settings-section{padding:…34px}`
-   是 `0,2,0` 且文件在后 ⇒ 这里必须用 `0,3,0` 才压得住（否则「滚到底」比「滚动中」高 34px）。 */
-.settings-exp-shell > .settings-section.model-page { padding-bottom: 0; }
 .settings-section.model-page > .model-settings-page {
   flex: 1 1 auto;
   min-height: 0;
-}
-.model-page-dock {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 9px;
-  margin: 18px 0 2px;
 }
 .model-global-bar-standalone {
   grid-column: auto;
@@ -526,21 +507,9 @@
   gap: 12px;
   flex-wrap: wrap;
 }
-.provider-page-toolbar .provider-list-head { margin: 0; }
-.provider-count {
-  display: inline-grid;
-  place-items: center;
-  min-width: 18px;
-  height: 18px;
-  margin-left: 4px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text) 7%, transparent);
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 600;
-}
 .provider-page-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* 保存重启用红色警示；高度/字号与旁边两颗按钮一致（用户：「不用刻意放大」） */
+.provider-page-actions .danger-setting { min-height: 34px; font-size: 12px; }
 
 .provider-card-grid {
   display: grid;
