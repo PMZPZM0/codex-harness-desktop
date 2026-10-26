@@ -273,13 +273,15 @@
 }
 .cloud-acct-hero-top {
   display: flex;
-  align-items: flex-start;
+  /* 10-26 三轮用户令：「别动不动就换行」⇒ 顶部一行定死：图标 + 名字 + 两颗按钮。
+     名字过长时**省略号**，不把按钮挤到第二行。 */
+  align-items: center;
   gap: 12px;
 }
 .cloud-acct-hero-icon {
-  flex: 0 0 42px;
-  width: 42px;
-  height: 42px;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
   border-radius: 12px;
   display: grid;
   place-items: center;
@@ -289,15 +291,26 @@
 }
 .cloud-acct-hero-main { flex: 1 1 auto; min-width: 0; }
 .cloud-acct-hero-main h3 {
-  margin: 0 0 4px;
+  margin: 0;
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
   font-size: 16px;
   font-weight: 600;
   color: var(--text);
 }
+/* 账户名超长走省略号（title 给全名），⛔ 不许换行 */
+.cloud-acct-ready .cloud-acct-hero-main .cloud-acct-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-acct-ready .cloud-acct-hero-main h3 .cloud-acct-tag { flex: 0 0 auto; }
+.cloud-acct-hero-top > .cloud-acct-hero-actions { flex: 0 0 auto; flex-wrap: nowrap; }
+.cloud-acct-hero-actions > button { white-space: nowrap; }
 .cloud-acct-hero-main p { margin: 0; font-size: 12.5px; line-height: 1.6; }
 .cloud-acct-hero-actions {
   display: flex;
@@ -526,6 +539,10 @@
 .cloud-team-refresh:hover { border-color: var(--line); color: var(--text); }
 .cloud-team-note { margin: 9px 0 0; font-size: 12px; line-height: 1.75; color: var(--muted); }
 .cloud-team-note b { color: var(--text); font-weight: 550; }
+/* 编号说明（10-26）：一条一行，别再糊成一团 */
+.cloud-team-steps { padding-left: 18px; }
+.cloud-team-steps li { margin: 1px 0; }
+.cloud-team-steps li::marker { color: var(--faint); }
 .cloud-team-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 11px; }
 .cloud-team-pick {
   flex: 1 1 240px;
