@@ -45,6 +45,7 @@
 | 内置 `grill-me` | 上游 `grill-me`(3 行代理) + `grilling`(方法论) 合成一份，去掉对 `Skill` 工具的委托；MIT 改编，声明见 `THIRD_PARTY_NOTICES.md` | `85b9274c7` |
 | 内置 `handoff` | 五段结构 + 生效方式 + 锚点要求 + 提示词模板 + 判据 | `85b9274c7` |
 | 消息顺序修复 | 用户消息被误判成群广播（原文里的记忆块提到 `[群事件]`）⇒ 渲染到回复**下方**；改判行首标签 + 剥注入段后再判 | `7fa2f686b` |
+| 刻度尺判据同源（审查补） | 刻度尺原读**原文**判群广播 ⇒ 注入块里的行首标签会让普通消息丢刻度；改走 `parseUserRefs(raw).groupEvents`，并加接线断言 | 本轮（`git log -1`） |
 
 判据基线（全部当前绿）：守卫 12r **45/45** · 守卫 22 **204/204** · `npm run check` **0 红**（跑前先 `unset NODE_OPTIONS`，收尾看输出末尾确认 bag-types / dead-imports / require-paths 真跑过）。
 
@@ -52,8 +53,8 @@
 
 **无真阻塞。** 三件挂起事项：
 
-1. **当前没有任何已发布版本**：`v0.0.50` / `v0.1.6` 的 Release 与 tag 已按用户指令撤包（10-26 21:30）⇒ 两仓最新 Release 回落到 `v0.0.47` / `v0.1.5`（10-23），下载页与 `latest.yml` 都指向旧版。**已装 0.0.50 的用户不会被降级，但此后收不到更新**。⇒ 需要重新发版，**版本号待用户定**：tag 已删，可复用 `0.0.50`/`0.1.6`（与上次 0.0.48/0.49 同样做法），也可 bump 到 `0.0.51`/`0.1.7`。
-2. ~~v0.0.50 的 CI 资产验收~~ —— 已不必做（资产随 Release 删除，共 11 个约 5 GB）。**重新发版后仍需验收一次**：4 个安装包 + `latest.yml` + PPcode 的 3 份 sha256。本机无 gh CLI，取令牌手法见坑⑫。
+1. **当前没有任何已发布版本**：`v0.0.50` / `v0.1.6` 的 Release 与 tag 已按用户指令撤包（10-26 21:30）⇒ 两仓最新 Release 回落到 `v0.0.47` / `v0.1.5`（10-23）。**已装 0.0.50 的用户不会被降级，但此后收不到更新**。⚠️ 应用内更新检查**不走 `latest.yml` 也不走 `/releases/latest`**（产品线隔离，见 `electron/updates.ts` 顶部注释）：它拉 releases 列表 + tag 前缀过滤 + semver 比较 ⇒ 现在判定 `up_to_date`（`0.0.47 < 0.0.50`）；`latest.yml` 只在手动下载那条路上用来验 sha512。⇒ 需要重新发版，**版本号待用户定**：tag 已删，可复用 `0.0.50`/`0.1.6`（与上次 0.0.48/0.49 同样做法），也可 bump 到 `0.0.51`/`0.1.7`。
+2. ~~v0.0.50 的 CI 资产验收~~ —— 已不必做（资产随 Release 删除，共 11 个约 5 GB：主仓 3 个安装包 + blockmap + `latest.yml`，PPcode 3 个安装包 + 3 份 sha256）。**重新发版后仍需验收一次**。本机无 gh CLI，取令牌手法见坑⑫。
 3. 悬停**方向音的听感**只有用户真机能确认。嫌弃密/吵就调 `src/lib/wheel-tick.mjs` 的 `minGapMs` / `PEAK_GAIN`。
 
 ## 五、下一步计划
@@ -76,7 +77,7 @@
 7. ⛔⛔ **新增内置技能要改四处，漏一处守卫【229】直接红**：① `electron/builtin-skills/NN-skill-*.ts` 常量；② `electron/builtin-skills.ts` 的 import + `entries`；③ `electron/builtin-skills/00-skill-zh-notes.ts` 导读；④ `src/features/app-view/constants/01-notices-labels.tsx` 的 `SKILL_ZH_NOTES` **和** `BUILTIN_DISTRIBUTED_SKILLS`（两处）。技能正文必须是**字面量**（预检【86】按源文件文本扫描，运行时拼装 = 恒真假绿）。
 8. ⛔ 照抄外部技能要先查它引用的能力**在本应用存不存在**：上游 `grill-me` 正文只有「Call the Skill tool with "grilling"」，本应用没有 `Skill` 工具 —— 直接内置就是一条死指针。
 
-9. ⛔⛔ **「消息属于哪一类」必须判在剥完注入段的文本上**：`isGroupEventText(原文)` 会把用户消息判成群广播 —— 每条原文都带 `[Harness 常驻记忆 …]`，记忆正文里提到过 `[群事件]`（本项目实测 5 处）⇒ 10-26 群汇报卡改版后该消息被渲染到回复**下方**（用户：「倒反天罡」）。判据收口到 `user-refs.isGroupEventMessage`，且 `parseGroupEvents` 只认**行首**标签。
+9. ⛔⛔ **「消息属于哪一类」必须判在剥完注入段的文本上**：`isGroupEventText(原文)` 会把用户消息判成群广播 —— 每条原文都带 `[Harness 常驻记忆 …]`，记忆正文里提到过 `[群事件]`（本项目实测 5 处）⇒ 10-26 群汇报卡改版后该消息被渲染到回复**下方**（用户：「倒反天罡」）。判据收口到 `user-refs.isGroupEventMessage`，且 `parseGroupEvents` 只认**行首**标签。**刻度尺是同一类错的第二个现场**（10-26 审查发现）：`01-message-ruler.tsx` 原调 `visibleGroupBlocks(原文)`，注入块里只要出现**行首** `[群事件]`，普通消息就被算成群广播 —— 块被全部过滤时它的刻度直接消失（气泡照常显示）。现改走 `parseUserRefs(raw).groupEvents`，并由 `verify-injection-strip` 的**接线断言**钉死（要求源码含该表达式、且不含 `visibleGroupBlocks(raw)`；⚠️ 连注释里写这串字都会判红 —— 敏感是有意的，别为此放松断言）。
 
 **流程级：**
 

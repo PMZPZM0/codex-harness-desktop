@@ -182,11 +182,15 @@ ok(/onMouseMove=\{\(event\) => hoverAt\(event\.clientY\)\}/.test(ruler)
 ok(!/onMouseEnter=\{\(event\) => \{[\s\S]{0,200}?setTip\(/.test(ruler),
   "刻度自身不再承担 hover（避免与轨道处理器互相打断：tip 闪断 / 声音漏）");
 /* ⛔ 10-26 用户：「刻度线要对应消息和群里展示的事件，不要对应那些不展示的」——
-   判据不是"文本像刷屏"，而是**与群汇报卡同一份可见性**（visible-group-blocks 是唯一实现）。 */
-ok(/import \{ visibleGroupBlocks \} from "\.\.\/\.\.\/\.\.\/lib\/visible-group-blocks\.mjs"/.test(ruler)
-  && /const blocks = visibleGroupBlocks\(raw\);/.test(ruler)
-  && /blocks\.length === 0\) continue;/.test(ruler),
-  "刻度的取舍与群汇报卡**同一份**可见性判据（⛔ 别拿整段文本套正则：一条群事件可能混着该隐藏的通知）");
+   判据不是"文本像刷屏"，而是**与群汇报卡同一份可见性**；并且必须判在**剥完注入段之后**
+   （`parseUserRefs(raw).groupEvents`）—— 读原文时，注入的记忆 / 引用记录里只要有一行
+   **以** `[群事件]` 开头，普通消息就被算成群广播：块被全部过滤时它的刻度直接消失
+   （气泡照常显示）。10-26 审查用真实探针实测过这个残留分支。 */
+ok(ruler.includes("parseUserRefs, userDisplayText")
+  && ruler.includes("parseUserRefs(raw).groupEvents")
+  && ruler.includes("groupBlocks.every(isHiddenNoticeBlock)")
+  && !ruler.includes("visibleGroupBlocks(raw)"),
+  "刻度的取舍与群汇报卡**同一份**可见性判据，且判在剥完注入段的文本上（⛔ 读原文会把行首标签算成群广播 ⇒ 普通消息丢刻度）");
 
 ok(/wheelTimer = setTimeout\(\(\) => \{ waveRef\.current = false; setWheelWave\(false\); \}, 600\)/.test(ruler),
   "停下 600ms 后波浪与声音一起收（⛔ 不许常驻呼吸）");

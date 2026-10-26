@@ -244,6 +244,26 @@ async function main() {
     }
   }
 
+  /* ⛔ 10-26 审查补：**刻度尺**必须与气泡/位置同一个判据（剥完注入段之后再判）。
+     原实现调 `visibleGroupBlocks(raw)` 读**原文** ⇒ 注入的记忆 / 引用记录里只要有一行
+     **以** `[群事件]` 开头，这条普通消息就被算成群广播（块被全部过滤时它的刻度直接消失，
+     而气泡照常显示）。钉两件事：① 判据结果；② **接线**（源码必须走 parseUserRefs，
+     ⛔ 不许再出现 `visibleGroupBlocks(raw)` —— 否则这条断言绿着、功能照旧错）。 */
+  total += 1;
+  {
+    const injected = `我的问题\n\n[Harness 常驻记忆 · 项目]\n[群事件] 「群内报到」审查通过（尝试 1）\n[常驻记忆结束]\n`;
+    const refs = mod.parseUserRefs(injected);
+    const rulerSrc = readFileSync(join(ROOT, "src", "features", "session-turn", "SessionTurn", "01-message-ruler.tsx"), "utf8");
+    const wired = rulerSrc.includes("parseUserRefs(raw).groupEvents") && !rulerSrc.includes("visibleGroupBlocks(raw)");
+    if (!refs.groupEvents?.length && wired) {
+      console.log("✓ 刻度尺判据与气泡同源（注入块里的行首标签不算群广播 + 源码接线在）");
+    } else {
+      bad += 1;
+      console.log("✗ 刻度尺判据与气泡同源");
+      console.log(`    groupEvents=${JSON.stringify(refs.groupEvents?.length ?? null)} 源码接线=${wired ? "在" : "缺失（还在读原文？）"}`);
+    }
+  }
+
   for (const item of GROUP_CASES) {
     total += 1;
     const blocks = parseGroupEvents(item.text) ?? [];

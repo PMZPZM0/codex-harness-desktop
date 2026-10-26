@@ -12,7 +12,7 @@
 同一套桌面体验的**云端形态**：浏览器打开 [ppz123.asia](https://ppz123.asia) 登录，配合本机助手即可在任何设备上访问**你电脑上的**助手（会话与数据仍在本地，云端只做账号与界面分发）。
 
 - **网页版**：免安装，任意浏览器即开即用
-- **应用版客户端**：[cloud-v0.0.1 下载](../../releases/tag/cloud-v0.0.1)（Windows 安装包 + macOS 双架构），双击即用、开机常驻
+- **应用版客户端**：[云助手客户端下载](https://github.com/PMZPZM0/codex-harness-cloud-src/releases/latest)（Windows 安装包 + macOS 双架构），双击即用、开机常驻
 - **实时推送**：消息与事件全走 SSE 推送，非轮询
 
 ## 🍴 定制版：PPcode

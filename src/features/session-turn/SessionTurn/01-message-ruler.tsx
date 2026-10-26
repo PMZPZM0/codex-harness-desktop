@@ -6,9 +6,9 @@ import { Turn } from "../../../lib/turn";
 import { Fragment, useEffect, useMemo, memo, useState, useRef } from "react";
 import { useRefObject } from "../../../lib/use-ref-object";
 import { itemText } from "../../../lib/item-text";
-import { userDisplayText } from "../../../lib/user-refs";
+import { parseUserRefs, userDisplayText } from "../../../lib/user-refs";
 import { playWheelTick } from "../../../lib/wheel-tick.mjs";
-import { visibleGroupBlocks } from "../../../lib/visible-group-blocks.mjs";
+import { isHiddenNoticeBlock } from "../../../lib/visible-group-blocks.mjs";
 import { contentOffsetTop } from "../../../components/scroll-utils";
 const RULER_PAGE = 5;
 /** 单槽高度：2px 线 + 上下 6px 命中区 = 14px（与 CSS 同口径；悬停/容量估算都用它） */
@@ -57,11 +57,15 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
         const raw = itemText(item);
         const label = userDisplayText(raw);
         /* ⛔⛔ 10-26 用户：「中枢会话刻度线要对应消息和群里展示的事件，不要对应那些不展示的」
-           ⇒ 判据不是"文本长得像刷屏"，而是**与群汇报卡同一份可见性**（visibleGroupBlocks）：
+           ⇒ 判据不是"文本长得像刷屏"，而是**与群汇报卡同一份可见性**：
              群事件里有能展示的块才出刻度；全是已废弃刷屏通知 ⇒ 界面根本不渲染它 ⇒ 也不该占刻度。
-           ⛔ 别再拿整段文本去套正则 —— 一条群事件可能混着"能显示的结论"和"该隐藏的通知"。 */
-        const blocks = visibleGroupBlocks(raw);
-        if (blocks && blocks.length === 0) continue;
+           ⛔ 别再拿整段文本去套正则 —— 一条群事件可能混着"能显示的结论"和"该隐藏的通知"。
+           ⛔⛔ 10-26 审查补：判据必须与气泡/位置**同源**，即 parseUserRefs 剥掉注入段之后的
+             `groupEvents`。原先这里读的是**原文**（visibleGroupBlocks 直接传 raw）——注入的记忆 /
+             引用记录里若有一行**以** `[群事件]` 开头，这条普通消息就被算成群广播：块被全部过滤时
+             它的刻度直接消失（气泡照常显示）。与用户报的「倒反天罡」是同一类错：判在原文上。 */
+        const groupBlocks = raw.includes("[群事件]") ? parseUserRefs(raw).groupEvents : undefined;
+        if (groupBlocks && groupBlocks.every(isHiddenNoticeBlock)) continue;
         result.push({ id: `${turn.id}-${item.id}`, turnId: turn.id, itemId: item.id, type: "user", label: label || "（仅系统任务段）" });
       }
     }
