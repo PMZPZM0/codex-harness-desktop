@@ -5,7 +5,7 @@
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
 import { PageInfo } from "../../components/SettingsHead";
-import { ArrowUpRight, Check, CircleStop, LayoutGrid, Paperclip, Play, Plus, Quote, RefreshCw, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Check, CircleStop, LayoutGrid, Paperclip, Play, Plus, Quote, RefreshCw, SlidersHorizontal, Trash2 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { BatchActions, CheckCard, SearchField, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
 import { AppSelect } from "../../components/AppSelect";
@@ -21,39 +21,39 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
     <>
       <section className="settings-section stack skill-center">
                     <div className="settings-copy channel-heading"><div><h2>技能中心<PageInfo text={<>技能清单来自腾讯 SkillHub 市场（skillhub.cn），一键安装自动写入 <code>{userDataPath ? displayPath(userDataPath, "codex-home", "skills") : "Codex 技能目录"}</code>，更新来源清单并重启引擎确认可用。</>} helpKey="skills" label="技能中心" /></h2><p>装现成技能或从本地导入，装好后 Codex 会自动在合适的任务里使用。</p></div></div>
-                    {/* 10-26 用户令：搜索框靠左；原来页头那排按键（我的技能 / 从本地添加 / SkillHub 市场 / 刷新）
-                        放下来并进同一排；榜单四个 tab（总排行 / 近期最热 / 最新上传 / 官方精选）
-                        收成一个「筛选」下拉 —— 一行讲清"搜什么、按什么榜、还有哪些操作"。 */}
+                    {/* 10-26 五轮用户令：「SkillHub 市场跳转可以删了；搜索框不用那么长；搜索框跟筛选放到下面一片来」
+                        ⇒ 第一排只留按键（贴右）；搜索 + 榜单筛选并进下面那条带框的分类条：
+                        `[搜索][⚙ 榜单▾] [分类芯片…] 当前榜单 N 个`。 */}
                     <div className="resource-toolbar skill-market-toolbar">
+                      <div className="skill-toolbar-actions">
+                        <button className={skillsManageOnly ? "active-manage" : "secondary-setting"} onClick={() => setSkillsManageOnly(!skillsManageOnly)}><LayoutGrid size={14} />{skillsManageOnly ? "返回市场浏览" : `我的技能 ${installedTotalCount}`}</button>
+                        <button className="secondary-setting" onClick={() => void importSkill()}><Paperclip size={14} />从本地添加技能</button>
+                        <button className="icon-button" title="刷新技能市场" onClick={() => void refreshWithReceipt(setNotice, "刷新技能市场", () => refreshMarketSkills(skillHubCategory, skillHubSearch, marketPage))}>{marketLoading ? <Spinner /> : <RefreshCw size={14} />}</button>
+                      </div>
+                    </div>
+                    <div className="resource-toolbar secondary skill-filter-row">
                       <SearchField
                         value={skillsManageOnly ? skillManageSearch : skillHubSearch}
                         onChange={(next) => { if (skillsManageOnly) setSkillManageSearch(next); else { setSkillHubSearch(next); setMarketPage(1); } }}
                         placeholder={skillsManageOnly ? "搜索已安装技能的名称或描述" : "搜索 SkillHub 技能"}
                       />
                       {!skillsManageOnly && (
-                        <span className="skill-rank-filter" title="按榜单筛选">
-                          <SlidersHorizontal size={13} />
-                          <AppSelect
-                            className="skill-rank-select"
-                            value={skillHubCategory}
-                            ariaLabel="榜单筛选"
-                            options={skillHubCategories.map((category: any) => ({ value: category, label: category }))}
-                            onChange={(next) => { setSkillHubCategory(next); setMarketPage(1); setSkillsManageOnly(false); }}
-                          />
-                        </span>
+                        <>
+                          <span className="skill-rank-filter" title="按榜单筛选">
+                            <SlidersHorizontal size={13} />
+                            <AppSelect
+                              className="skill-rank-select"
+                              value={skillHubCategory}
+                              ariaLabel="榜单筛选"
+                              options={skillHubCategories.map((category: any) => ({ value: category, label: category }))}
+                              onChange={(next) => { setSkillHubCategory(next); setMarketPage(1); setSkillsManageOnly(false); }}
+                            />
+                          </span>
+                          <div className="skill-tabs">{skillHubCategoryTabs.map(([label, value]: any) => <button key={label} className={skillHubFilterCategory === value ? "active" : ""} onClick={() => { setSkillHubFilterCategory(value); setMarketPage(1); }}>{label}</button>)}</div>
+                          {marketSkills.length > 0 && <span className="skill-filter-count">当前榜单 {marketSkills.length} 个技能 · 分类 <b>{skillHubFilterCategory ? skillHubCategoryName(skillHubFilterCategory) : "全部"}</b></span>}
+                        </>
                       )}
-                      {/* 按键成组贴右：面板窄时整组掉到第二排仍保持右对齐（散落单颗最难看的形态） */}
-                      <div className="skill-toolbar-actions">
-                        <button className={skillsManageOnly ? "active-manage" : "secondary-setting"} onClick={() => setSkillsManageOnly(!skillsManageOnly)}><LayoutGrid size={14} />{skillsManageOnly ? "返回市场浏览" : `我的技能 ${installedTotalCount}`}</button>
-                        <button className="secondary-setting" onClick={() => void importSkill()}><Paperclip size={14} />从本地添加技能</button>
-                        <button className="secondary-setting" title="打开腾讯 SkillHub 技能市场" onClick={() => void window.codex.openExternal("https://skillhub.tencent.com/")}><ArrowUpRight size={14} />SkillHub 市场</button>
-                        <button className="icon-button" title="刷新技能市场" onClick={() => void refreshWithReceipt(setNotice, "刷新技能市场", () => refreshMarketSkills(skillHubCategory, skillHubSearch, marketPage))}>{marketLoading ? <Spinner /> : <RefreshCw size={14} />}</button>
-                      </div>
                     </div>
-                    {!skillsManageOnly && <div className="resource-toolbar secondary skill-filter-row">
-                      <div className="skill-tabs">{skillHubCategoryTabs.map(([label, value]: any) => <button key={label} className={skillHubFilterCategory === value ? "active" : ""} onClick={() => { setSkillHubFilterCategory(value); setMarketPage(1); }}>{label}</button>)}</div>
-                      {marketSkills.length > 0 && <span className="skill-filter-count">当前榜单 {marketSkills.length} 个技能 · 分类 <b>{skillHubFilterCategory ? skillHubCategoryName(skillHubFilterCategory) : "全部"}</b></span>}
-                    </div>}
                     {skillsManageOnly ? (() => {
                       // 技能规范化名：剥掉插件限定前缀（引擎对插件技能返回 `ponytail:ponytail-audit`，
                       // 本地目录同名技能是 `ponytail-audit`）——不归一化会让同一个技能重复出现在两组。

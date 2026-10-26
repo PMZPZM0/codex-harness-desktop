@@ -6,6 +6,7 @@
  */
 import { PageInfo } from "../../components/SettingsHead";
 import { ArrowUpRight, Check, CircleStop, KeyRound, Link2, Play, Plus, RefreshCw, Search, Trash2, Wifi, Wrench, Zap } from "lucide-react";
+import { AppSelect } from "../../components/AppSelect";
 import { Spinner } from "../../components/CardShell";
 import { SKILLHUB_MCP_CATALOG, SKILLHUB_MCP_CATEGORIES, skillhubMcpDetailUrl } from "../../lib/skillhub-mcp";
 import { BatchActions, CheckCard, SearchField, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
@@ -69,15 +70,22 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
   <section className="settings-section stack">
   <div className="settings-copy channel-heading"><div><h2>MCP<PageInfo text={<>上方卡片来自 SkillHub MCP 工具广场（skillhub.cn/mcp），点卡片看详情、带接入模板的可一键写入连接器；下方为已接入管理：保存后写入 Codex 配置、加密保存密钥并重启引擎，支持批量启用/停用。“可用”以 app-server 返回的运行/认证状态为准。</>} helpKey="mcp" label="MCP" /></h2><p>接入外部工具和数据源；市场可一键安装，也可以添加自己的 MCP 服务。</p></div></div>
     <div className="plugin-market-block">
-      {/* 10-26 用户令：「mcp 这一排字删除，上面按键放下来」⇒ 市场标题行整条删掉，
-          页头四颗按键下移到分类 tab 那一排（右侧成组）；来源信息本来就在卡片与弹窗里，不重复说。 */}
+      {/* 10-27 用户令：「那个分类做成筛选形式，几个市场跳转删了」——
+          横向分类 tab 收成下拉筛选；SkillHub / AIbase 两个外链跳转删除，只留添加与刷新。 */}
       <div className="resource-toolbar mcp-market-toolbar">
-        <div className="skill-tabs">{SKILLHUB_MCP_CATEGORIES.map((category) => <button key={category} className={mcpMarketCategory === category ? "active" : ""} onClick={() => { setMcpMarketCategory(category); setMcpMarketSearch(""); }}>{category}</button>)}</div>
+        <div className="mcp-category-filter">
+          <span>分类</span>
+          <AppSelect
+            className="mcp-category-select"
+            value={mcpMarketCategory}
+            ariaLabel="MCP 分类筛选"
+            options={SKILLHUB_MCP_CATEGORIES.map((category) => ({ value: category, label: category }))}
+            onChange={(value) => { setMcpMarketCategory(value); setMcpMarketSearch(""); }}
+          />
+        </div>
         <SearchField value={mcpMarketSearch} onChange={setMcpMarketSearch} placeholder="搜索 MCP 服务名称或简介" />
         <div className="skill-toolbar-actions">
           <button className="secondary-setting" onClick={() => { setConnectorSecret(""); setConnectorDraft({ name: "", transport: "stdio", command: "", args: [], url: "", headers: {}, env: {}, secrets: {} }); setConnectorEditorOpen(true); }}><Plus size={14} />添加 MCP</button>
-          <button className="secondary-setting" title="打开 SkillHub MCP 工具广场" onClick={() => void window.codex.openExternal("https://skillhub.cn/mcp")}><ArrowUpRight size={14} />SkillHub MCP 广场</button>
-          <button className="secondary-setting" title="打开 AIbase MCP 广场找服务" onClick={() => void window.codex.openExternal("https://mcp.aibase.com/zh/explore")}><ArrowUpRight size={14} />AIbase 广场</button>
           <button className="icon-button" title="刷新 MCP 状态" onClick={() => void refreshWithReceipt(setNotice, "刷新 MCP 状态", () => refreshSettingsResources())}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button>
         </div>
       </div>
