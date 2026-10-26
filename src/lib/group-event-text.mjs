@@ -46,6 +46,21 @@ function classify(raw) {
     return { type: "batch", count: Number(batch[1]) || items.length, items };
   }
 
+  /* ②b 审查结论（10-26）：`审查结论：<成员> 的「<任务>」通过|打回（<判定方>判定）：<理由>`
+     ⛔ 这条是**成员汇报结果**（成员干完了、被认可还是被打回）⇒ 走成员气泡（头像+名字+徽标），
+        不是居中灰行 —— 用户原话：「成员消息是汇报结果的」。 */
+  const verdict = s.match(/^审查结论：(.+?) 的「(.+?)」(通过|打回)（(.+?)判定）?(.*)$/s);
+  if (verdict) {
+    return {
+      type: "verdict",
+      who: verdict[1].trim(),
+      title: verdict[2].trim(),
+      passed: verdict[3] === "通过",
+      reviewer: verdict[4]?.trim() || "",
+      reasons: (verdict[5] ?? "").replace(/^[：:]/, "").trim(),
+    };
+  }
+
   /* ③ 待审请求（一条或多条）：`任务「X」已交活…` / `有 N 条任务已交活待你判…`
      ⛔ 这两段的正文里带着验收标准与最多 16k 成品 —— 成品在上面那条交付气泡里已经显示过，
         界面只留一句"等中枢评审"，不再整段铺开（否则群里一半版面是重复内容）。 */
@@ -68,6 +83,7 @@ export function groupEventPlainText(blocks) {
       if (b.type === "deliverable") return b.body;
       if (b.type === "batch") return b.items.map((i) => `「${i.title}」（${i.who}）`).join("、");
       if (b.type === "review") return b.titles.map((t) => `「${t}」待评审`).join("、");
+      if (b.type === "verdict") return `「${b.title}」${b.passed ? "通过" : "打回"}（${b.who}）`;
       return b.text;
     })
     .filter(Boolean)

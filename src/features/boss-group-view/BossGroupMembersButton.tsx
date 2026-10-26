@@ -12,6 +12,9 @@ import { createPortal } from "react-dom";
 import { Network, Plus, UserMinus, X } from "lucide-react";
 import { bossPanelGroupFor, getBossPanelState, setBossPanelGroup, subscribeBossPanel } from "./panel-store.mjs";
 import { AppSelect } from "../../components/AppSelect";
+import { BossGroupMemberPicker, type PoolExpert, type PoolCliAgent } from "./BossGroupMemberPicker";
+import { invalidateGroupMembers, useGroupMembers } from "./group-members-store";
+import { AVATAR_GRADIENTS, avatarToneOf } from "../../lib/entity-avatar";
 
 type GroupLite = { id: string; name: string; bossThreadId?: string; memberCount?: number; removedCount?: number };
 type MemberLite = { id: string; name: string; role: string; status: string; lockedTaskIds: string[]; source?: string };
@@ -21,11 +24,12 @@ const MEMBER_TEXT: Record<string, string> = { idle: "空闲", busy: "正在做",
 
 export function BossGroupMembersButton({ threadId }: { threadId: string }) {
   const [groups, setGroups] = useState<GroupLite[]>([]);
-  const [snap, setSnap] = useState<SnapLite | null>(null);
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [draftName, setDraftName] = useState("");
-  const [draftRole, setDraftRole] = useState("");
+  /* ⛔⛔ 10-26 用户令重做拉人：候选来自**真实专家团登记表**（不是手打名字）。
+     pool = { experts: 专家团全员（含完整配置）, cliAgents: 本机 CLI agent }。 */
+  const [pool, setPool] = useState<{ experts: PoolExpert[]; cliAgents: PoolCliAgent[] }>({ experts: [], cliAgents: [] });
+  const [addingBusy, setAddingBusy] = useState(false);
   const [tick, setTick] = useState(0);
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const store = useStoreGroupId(threadId);
@@ -37,15 +41,36 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
    */
   const groupId = (groups.find((g) => g.bossThreadId === threadId)?.id) || store.groupId || "";
 
+  /* ⛔⛔ 10-26 用户令：「成员和轨道头像显示的状态，联动起来」
+     ⇒ 成员状态**不再由本组件自己轮询**，改用**共享 store**（group-members-store）——
+       右侧成员轨与这个面板读**同一份快照** ⇒ 两处状态必然一致。
+     这里只保留「群列表」（哪些群可选）—— 那份数据与成员状态无关。 */
   const refresh = useCallback(async () => {
     try {
       const list = (await window.codex.listBossGroups()) as GroupLite[];
       setGroups(list ?? []);
-      const id = (list ?? []).find((g) => g.bossThreadId === threadId)?.id || bossPanelGroupFor(threadId);
-      if (id) setSnap((await window.codex.bossGroupStatus(id)) as SnapLite);
-      else setSnap(null);
-    } catch { setSnap(null); }
+    } catch { setGroups([]); }
   }, [threadId]);
+
+  /* 当前会话对应的群 id（与右侧轨道同一判定：按 bossThreadId 匹配）。 */
+  const ownGroupId = groups.find((g) => g.bossThreadId === threadId)?.id || bossPanelGroupFor(threadId) || "";
+  const { snapshot: liveSnap } = useGroupMembers(ownGroupId);
+  const snap: SnapLite | null = liveSnap.members.length || liveSnap.name
+    ? { group: { id: liveSnap.groupId, name: liveSnap.name, members: liveSnap.members } }
+    : null;
+
+  /* ⛔ 拉人时才去取专家名单（读盘 + 探测 CLI 可执行文件，别每次刷新都做）。 */
+  useEffect(() => {
+    if (!adding) return;
+    let alive = true;
+    void window.codex.bossGroupPool()
+      .then((p: any) => {
+        if (!alive) return;
+        setPool({ experts: Array.isArray(p?.experts) ? p.experts : [], cliAgents: Array.isArray(p?.cliAgents) ? p.cliAgents : [] });
+      })
+      .catch(() => { if (alive) setPool({ experts: [], cliAgents: [] }); });
+    return () => { alive = false; };
+  }, [adding]);
 
   useEffect(() => {
     void refresh();
@@ -82,7 +107,13 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
   /** 这个指挥中枢已经「开始对话」了吗？（自己的群里有活跃成员） */
   const started = Boolean(ownGroup) && active.length > 0;
 
-  const act = async (fn: () => Promise<unknown>) => { await fn(); await refresh(); setTick((n) => n + 1); };
+  const act = async (fn: () => Promise<unknown>) => {
+    await fn();
+    await refresh();
+    /* ⛔ 拉人/移人后让共享快照立即失效（不等 4 秒轮询）⇒ 面板与轨道**立刻**同步。 */
+    invalidateGroupMembers(ownGroupId);
+    setTick((n) => n + 1);
+  };
 
   const popStyle: CSSProperties = (() => {
     const r = btnRef.current?.getBoundingClientRect();
@@ -131,8 +162,18 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
             ) : null}
             <div className="boss-members-pop-list">
               {active.map((m) => (
-                <span key={m.id} className="boss-groups-member" data-status={m.status} title={`${m.role}${m.source === "cli" ? " · 本机 CLI agent" : ""}${m.lockedTaskIds.length ? ` · 锁在 ${m.lockedTaskIds.length} 条任务上` : ""}`}>
-                  {m.name} · {MEMBER_TEXT[m.status] ?? m.status}
+                /* ⛔⛔ 10-26 用户令：「成员列表做好看一点，头像+名字，运行中的绿灯」
+                   —— 原实现是一行纯文字（名字 · 状态），头像与状态灯都没有。 */
+                <span key={m.id} className="boss-members-row" data-status={m.status} title={`${m.role}${m.source === "cli" ? " · 本机 CLI agent" : ""}${m.lockedTaskIds.length ? ` · 锁在 ${m.lockedTaskIds.length} 条任务上` : ""}`}>
+                  <span className="boss-members-avatar" style={{ background: AVATAR_GRADIENTS[avatarToneOf(m.id || m.name)] }}>
+                    {String(m.name || "?").slice(0, 1)}
+                    {m.status === "busy" ? <i className="boss-members-lamp" aria-hidden /> : null}
+                  </span>
+                  <span className="boss-members-who">
+                    <strong>{m.name}</strong>
+                    <small>{m.role}</small>
+                  </span>
+                  <span className="boss-members-state" data-status={m.status}>{MEMBER_TEXT[m.status] ?? m.status}</span>
                   <button
                     type="button"
                     className="boss-panel-mini"
@@ -148,25 +189,28 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
                 <button type="button" className="boss-panel-mini boss-panel-add" onClick={() => setAdding(true)}>
                   <Plus size={12} /> 拉人
                 </button>
-              ) : (
-                <span className="boss-panel-addform">
-                  <input className="boss-panel-input" aria-label="成员名" placeholder="名字" value={draftName} onChange={(e) => setDraftName(e.target.value)} />
-                  <input className="boss-panel-input" aria-label="岗位" placeholder="岗位" value={draftRole} onChange={(e) => setDraftRole(e.target.value)} />
-                  <button
-                    type="button"
-                    className="boss-panel-mini"
-                    disabled={!draftName.trim() || !draftRole.trim()}
-                    onClick={() => {
-                      void act(() => window.codex.bossGroupMember({ groupId, action: "add", name: draftName, role: draftRole }));
-                      setDraftName(""); setDraftRole(""); setAdding(false);
-                    }}
-                  >加入</button>
-                  <button type="button" className="boss-panel-mini" aria-label="取消拉人" onClick={() => setAdding(false)}><X size={11} /></button>
-                </span>
-              )}
+              ) : null}
             </div>
             {removed.length ? <div className="boss-panel-removed">已移出：{removed.map((m) => m.name).join("、")}</div> : null}
-            <div className="boss-members-pop-hint">拉专家 / 本机 CLI agent（zcode、豆包…）走群里对中枢说「拉 XX 进群」，或用 group_add_member。</div>
+            {/* ⛔⛔ 10-26：拉人面板重做 —— 候选是**真实专家团名单**（头像+名字+岗位），点一下即进群。
+                ⛔ CLI 成员不手动加（要命令行模板 + 探测结果）⇒ 交给 Codex 拉。 */}
+            {adding ? (
+              <BossGroupMemberPicker
+                experts={pool.experts}
+                cliAgents={pool.cliAgents}
+                inGroupNames={active.map((m) => m.name)}
+                busy={addingBusy}
+                onClose={() => setAdding(false)}
+                onPick={(expert) => {
+                  setAddingBusy(true);
+                  void act(() => window.codex.bossGroupMember({
+                    groupId, action: "add", from: "expert",
+                    expertTeamId: expert.teamId, expertMemberId: expert.memberId,
+                    name: expert.name, role: expert.role,
+                  })).finally(() => setAddingBusy(false));
+                }}
+              />
+            ) : null}
           </div>,
           document.body,
         )
