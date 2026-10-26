@@ -138,21 +138,29 @@ const CHECKS = [
       const modelDock = await h.eval(`(function(){
         const m=document.querySelector(".settings-modal"); if(!m) return null;
         const page=m.querySelector(".model-settings-page"); if(!page) return null;
-        const dock=page.querySelector(".model-page-dock");
-        const grid=page.querySelector(".provider-card-grid");
-        if(!dock||!grid) return null;
-        const d=dock.getBoundingClientRect(), g=grid.getBoundingClientRect();
+        const toolbar=page.querySelector(".provider-page-toolbar");
+        const compact=toolbar?toolbar.querySelector(".model-compact-control"):null;
+        const actions=toolbar?toolbar.querySelector(".provider-page-actions"):null;
+        if(!toolbar||!compact||!actions) return null;
+        const cr=compact.getBoundingClientRect(), ar=actions.getBoundingClientRect();
         return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
-          freeCard:!!page.querySelector(".free-gateway-entry"),
-          moreSection:!!page.querySelector(".provider-more-section"),
-          pos:getComputedStyle(dock).position,
-          gap:Math.round(d.top-g.bottom),
-          labels:[...dock.querySelectorAll("button")].map((b)=>(b.textContent||"").trim()) };
+          head:!!page.querySelector(".provider-list-head"),
+          dock:!!page.querySelector(".model-page-dock"),
+          compactText:(compact.textContent||"").trim(),
+          sameRow:Math.abs((cr.top+cr.bottom)/2-(ar.top+ar.bottom)/2) <= 10,
+          left:cr.left < ar.left,
+          labels:[...actions.querySelectorAll("button")].map((b)=>(b.textContent||"").trim()),
+          classes:[...actions.querySelectorAll("button")].map((b)=>b.className) };
       })()`).catch(() => null);
-      h.check("⑥ 模型页：免费网关入口已移除，操作条紧跟供应商卡（不再贴底）",
-        Boolean(modelDock && modelDock.page === "模型" && !modelDock.freeCard && !modelDock.moreSection
-          && modelDock.pos !== "sticky" && modelDock.gap >= 8 && modelDock.gap <= 60
-          && modelDock.labels.some((x)=>x.includes("打开自动配置")) && modelDock.labels.some((x)=>x.includes("保存并重启"))),
+      h.check("⑥ 模型页：小字与底部条已删；压缩靠左、三个按钮靠右同一行",
+        Boolean(modelDock && modelDock.page === "模型" && !modelDock.head && !modelDock.dock
+          && modelDock.compactText.includes("自动压缩") && modelDock.sameRow && modelDock.left
+          && modelDock.labels.some((x)=>x.includes("自动配置"))
+          && modelDock.labels.some((x)=>x.includes("自定义供应商"))
+          && modelDock.labels.some((x)=>x.includes("保存重启"))
+          && modelDock.classes.length === 3 && modelDock.classes[0].includes("primary-setting")
+          && modelDock.classes[1].includes("secondary-setting") && !modelDock.classes[1].includes("primary-setting")
+          && modelDock.classes[2].includes("danger-setting")),
         JSON.stringify(modelDock));
 
       await nav("控制台");

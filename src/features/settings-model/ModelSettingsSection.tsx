@@ -205,29 +205,27 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
   return (
     <>
       <section className="settings-section stack model-page">
-      {/* 10-26 二轮用户令：「自动配置和保存重启放到界面右下角，? 号删除」。
-         ⇒ 页头整块（含本页唯一的 ?）删掉，两颗按钮改到页面底部右侧的浮动操作条。
-         ⛔ 这页现在**没有** ? 说明入口了 —— 是用户明确要求删的，别再「补一个」。
-         ⛔ 也别把标题大字 / 副标题加回来（上一轮已按用户令删除）。 */}
+      {/* 10-26 三轮用户令：「模型供应商那几个小字删除，把压缩选项放到这一行靠左，
+         自动配置 / 自定义供应商 / 保存重启 三个靠右」⇒ 页头只留一行工具栏，
+         不显示标题与数量；底部浮动操作条随之撤掉。 */}
       <div className="model-settings-page">
                     <div className="provider-page-toolbar">
-                      <div className="provider-list-head">
-                        <h2>模型供应商 <span className="provider-count">{displayProviders.length}</span></h2>
-                      </div>
+                      <span className="model-compact-control" title="上下文用量达到所选比例时，引擎自动压缩较早对话">
+                        <Zap size={12} />
+                        <span>自动压缩</span>
+                        <AppSelect
+                          className="model-compact-select"
+                          value={String(autoCompactRatio)}
+                          ariaLabel="自动压缩比例"
+                          options={[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95].map((r) => ({ value: String(r), label: `${Math.round(r * 100)}%` }))}
+                          onChange={(val) => { const v = Number(val); setAutoCompactRatio(v); void window.codex.saveAppSettings({ autoCompactRatio: v }).then(() => setNotice('自动压缩比例已设为 ' + Math.round(v * 100) + '%')).catch((error: any) => setNotice('自动压缩比例保存失败：' + (error?.message ?? error))); }}
+                        />
+                        <FieldHelp text={"上下文用量达到所选比例时，引擎自动压缩较早对话。\n\n调整后会保存到本机设置，对新回合生效；压缩线会标在历史消息里。"} />
+                      </span>
                       <div className="provider-page-actions">
-                        <span className="model-compact-control" title="上下文用量达到所选比例时，引擎自动压缩较早对话">
-                          <Zap size={12} />
-                          <span>自动压缩</span>
-                          <AppSelect
-                            className="model-compact-select"
-                            value={String(autoCompactRatio)}
-                            ariaLabel="自动压缩比例"
-                            options={[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95].map((r) => ({ value: String(r), label: `${Math.round(r * 100)}%` }))}
-                            onChange={(val) => { const v = Number(val); setAutoCompactRatio(v); void window.codex.saveAppSettings({ autoCompactRatio: v }).then(() => setNotice('自动压缩比例已设为 ' + Math.round(v * 100) + '%')).catch((error: any) => setNotice('自动压缩比例保存失败：' + (error?.message ?? error))); }}
-                          />
-                          <FieldHelp text={"上下文用量达到所选比例时，引擎自动压缩较早对话。\n\n调整后会保存到本机设置，对新回合生效；压缩线会标在历史消息里。"} />
-                        </span>
-                        <button className="primary-setting" onClick={openNewProvider}><Plus size={14} />添加供应商</button>
+                        <button className="primary-setting" onClick={openAutoSetup}><Wand2 size={14} />自动配置</button>
+                        <button className="secondary-setting" onClick={openNewProvider}><Plus size={14} />自定义供应商</button>
+                        <button className="danger-setting" disabled={restarting} onClick={() => void saveAndRestart()} title="配置已逐项保存；重启应用让引擎重新读取密钥与模型列表"><PowerOff size={14} />{restarting ? "重启中…" : "保存重启"}</button>
                       </div>
                     </div>
                     <div className="provider-card-grid">
@@ -306,12 +304,6 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                           </div>
                         );
                       })}
-                    </div>
-                    {/* 页面级操作条（10-26 用户：「右下角太靠下了，位置不好看」）：
-                        紧跟供应商卡之后右对齐，不再 sticky / 不再 margin-top:auto 钉在弹窗最底部。 */}
-                    <div className="model-page-dock">
-                      <button className="primary-setting" onClick={openAutoSetup}><Wand2 size={15} />打开自动配置</button>
-                      <button className="secondary-setting" disabled={restarting} onClick={() => void saveAndRestart()} title="配置已逐项保存；重启应用让引擎重新读取密钥与模型列表"><PowerOff size={14} />{restarting ? "重启中…" : "保存并重启"}</button>
                     </div>
       </div>
       </section>
