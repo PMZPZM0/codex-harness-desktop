@@ -216,16 +216,16 @@ export async function run() {
     // 都不好看」）：各页那个占位的「帮助」按钮已退休、长说明收进标题旁的 ?。所以断言从
     // "帮助按钮数"改成三层：① ? 挂载数 ② 兼作帮助入口的 ? 数 ③ 「赘述回潮」判据。
     const hintCount = (appC.match(/<PageInfo\b/g) || []).length;
-    // 10-27：用户连续令「各页右上角 ? 删了」（模型 / MCP / 插件 / 人格市场 / 子智能体页头…）
-    //   ⇒ 下限跟着实测降到 11；这条守的是「说明别摊回标题下」，不是「? 必须越多越好」。
-    (hintCount >= 11)
-      ? ok(`【32】设置页挂了 ${hintCount} 处 ? 号（说明收进 ?，头部恒为一行）`)
-      : fail(`【32】? 号只有 ${hintCount} 处 —— 说明又被摊回标题下了（赘述回潮）`);
-    const keyedHints = (appC.match(/helpKey="/g) || []).length;
-    /* 兼作「完整帮助」的 ? 同步按实测降到 5（同上：撤掉的是页头那几枚，内容库仍在）。 */
-    (keyedHints >= 5)
+    // 10-28：用户令「统一那 13 页旧页头」⇒ 页面标题/副标题/页头 ? 整排删除，
+    //   只剩内容卡里的上下文 ?（语音基础模型卡等）。不再要求数量，只防「说明摊回标题下」。
+    (hintCount >= 1)
+      ? ok(`【32】设置页保留 ${hintCount} 处上下文 ?（页头说明已随页头删除）`)
+      : fail(`【32】设置页一个 ? 都不剩 —— 连内容卡里的说明入口也被误删了？`);
+    const keyedHints = ((appC + voiceC).match(/helpKey="/g) || []).length;
+    /* 兼作「完整帮助」的 ?：页头大清洗后只剩语音卡与专家团（团队页）两处。 */
+    (keyedHints >= 1)
       ? ok(`【32】${keyedHints} 处 ? 兼作「完整帮助」入口（HelpButton 退休后入口没丢）`)
-      : fail(`【32】兼帮助入口的 ? 只有 ${keyedHints} 处 —— 有页面的完整帮助从此打不开`);
+      : fail(`【32】兼帮助入口的 ? 一个都不剩 —— 有页面的完整帮助从此打不开`);
     // ⛔ 比"数量够"更强的判据：**每个帮助主题都必须有 ? 入口**。数量达标不代表没有孤儿 ——
     //    「模型」页（标题是 provider-list-head、不是 settings-copy）与「专家和专家团」页
     //    （说明只有一句短话、不在收编名单里）的入口就真被漏掉了：内容库还在，用户点不到。
@@ -237,10 +237,11 @@ export async function run() {
     // 10-27 用户（插件页）：「插件页删页头?」（commit 18f153b40）⇒ plugins 那枚 ? 也撤了，
     //    当轮漏改这条名单 ⇒ 一直红着「plugins 入口丢了」。同口径补进例外，别再留假红。
     //    同日技能中心也按用户令删掉了 ?（64b0856e2「删分类小字与帮助问号」）⇒ skills 一并列入。
-    const NO_HINT_KEYS = ["model", "mcp", "plugins", "skills"];
+    // 10-28 用户令「统一那 13 页旧页头」⇒ 开发工具页头整块删除，devtools 一并列入例外（内容库保留）。
+    const NO_HINT_KEYS = ["model", "mcp", "plugins", "skills", "devtools"];
     const orphanKeys = HELP_KEYS.filter((key) => !NO_HINT_KEYS.includes(key) && !new RegExp(`helpKey="${key}"`).test(appC + voiceC));
     (orphanKeys.length === 0)
-      ? ok(`【32】${HELP_KEYS.filter((key) => !NO_HINT_KEYS.includes(key)).length} 个帮助主题都有 ? 入口（模型 / MCP / 插件页按用户令撤掉，不计）`)
+      ? ok(`【32】${HELP_KEYS.filter((key) => !NO_HINT_KEYS.includes(key)).length} 个帮助主题都有 ? 入口（模型 / MCP / 插件 / 技能 / 开发工具按用户令撤掉，不计）`)
       : fail(`【32】这些主题的帮助入口丢了：${orphanKeys.join(", ")} —— 内容库还在，但用户点不到`);
     // ⛔ 赘述回潮的可证伪判据：settings-copy 区块里不该再有 >40 字的内联段落。
     //    短句（≤40 字）允许内联 —— 它只占一行，硬收进 ? 反而让用户多点一次。

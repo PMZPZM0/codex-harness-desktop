@@ -4,7 +4,6 @@
  * 纯搬迁：返回的 JSX 与原块逐字一致（仅去掉外层缩进）。
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
-import { PageInfo } from "../../components/SettingsHead";
 import { Bot, LayoutGrid, Users } from "lucide-react";
 
 export type AgentTeamSettingsSectionProps = { setSettingsPage: any };
@@ -14,7 +13,6 @@ export function AgentTeamSettingsSection(props: AgentTeamSettingsSectionProps) {
   return (
     <>
                     <section className="settings-section stack">
-                      <div className="settings-copy"><h2>专家和专家团<PageInfo text={<>单体专家与多角色团队的总入口。</>} helpKey="agentteam" label="专家/专家团" /></h2><p>三种协作方式：子智能体、专家中心、专家团。先选一个入口。</p></div>
                       <div className="hub-card-grid hub-card-grid-3">
                         <button className="hub-card" onClick={() => setSettingsPage("agents")}>
                           <span className="hub-card-icon"><Bot size={20} /></span>

@@ -16,7 +16,6 @@ export function ScheduleSettingsSection(props: ScheduleSettingsSectionProps) {
   return (
     <>
       <section className="settings-section stack">
-                    <div className="settings-copy channel-heading"><div><h2>定时任务</h2><p>创建定时任务，或排队在闲时算力空闲时后台执行。</p></div></div>
                     <div className="auto-card">
                       {scheduledTasks.length === 0 ? (
                         <div className="auto-empty">

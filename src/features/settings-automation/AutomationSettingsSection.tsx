@@ -112,7 +112,6 @@ export function AutomationSettingsSection(props: AutomationSettingsSectionProps)
   return (
     <>
                     <section className="settings-section stack">
-                      <div className="settings-copy"><h2>自动化</h2><p>浏览器、桌面与 RPA 三类自动化能力的总入口。</p></div>
                       <div className="hub-card-grid">
                         <button className="hub-card" onClick={() => setSettingsPage("browser")}>
                           <span className="hub-card-icon"><Globe2 size={20} /></span>
@@ -134,10 +133,7 @@ export function AutomationSettingsSection(props: AutomationSettingsSectionProps)
                     </section>
 
                     <section className="settings-section stack">
-                      <div className="settings-copy">
-                        <h2>版本与手动更新</h2>
-                        <p>这里显示各工具链的当前/最新版本并可手动升级（走国内镜像）。<b>自动更新开关已统一移到「设置 → 控制台」</b>，和技能内容更新放在一起。Mac 电脑操作只在 macOS 上出现（它由 mac 专属工具链提供，其它平台不列也不检查）。</p>
-                      </div>
+                      <div className="settings-section-title"><strong>版本与手动更新</strong><small>自动更新开关在「控制台」</small></div>
                       <div className="runtime-list">
                         {rows.map((row) => {
                           const busy = busyId === row.id;

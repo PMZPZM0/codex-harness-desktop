@@ -110,11 +110,6 @@ export function ExtensibilitySettingsSection(props: ExtensibilitySettingsSection
   return (
     <>
       <section className="settings-section stack ext-page">
-        <div className="settings-copy">
-          <h2><Blocks size={15} /> 拓展接口</h2>
-          <p>这里集中列出本项目所有可以扩展的地方：用途、改哪个文件、怎么改、改完怎么生效、有哪些守卫在看着。</p>
-        </div>
-
         <div className="ext-stats">
           <span><b>{IPC_CHANNEL_COUNT}</b> 个 IPC 通道</span>
           <span><b>{THEMES.length}</b> 套主题</span>
