@@ -547,6 +547,41 @@ if (state) {
   ok(/boss-welcome\s*\{[^}]*align-items:\s*center/.test(bossWelcomeCss)
     && /boss-welcome-sub\s*\{[^}]*text-align:\s*center/.test(bossWelcomeCss),
     "⛔ BOSS 欢迎界面的文案**居中**（与普通会话欢迎页同一观感）");
+  /* ── 10-27 用户令：「删掉三排文字；主句字号调大、醒目突出；下面加一批语气词 / 情绪表达
+     （搞笑 / 哄老板 / 生气 / 无聊），把用户当 BOSS，轮播展示、按早中晚时间」──
+     ⛔ 下面四条一起钉住这个形态，免得后面又长回「三步引导 + 小字说明」。 */
+  const bossIntroSrc = read("src/features/boss-group-view/BossThreadIntro.tsx");
+  ok(!/boss-welcome-guide|boss-welcome-step/.test(bossWelcomeCss) && !/const GUIDE/.test(bossIntroSrc),
+    "⛔ BOSS 欢迎界面不再有三步引导清单（10-27 用户令：删掉那三排）");
+  ok((bossIntroSrc.match(/tone: "(hype|coax|funny|angry|bored)"/g) || []).length >= 40
+    && /morning:/.test(bossIntroSrc) && /noon:/.test(bossIntroSrc) && /evening:/.test(bossIntroSrc) && /night:/.test(bossIntroSrc),
+    "BOSS 欢迎界面的语气句按早 / 午 / 下午 / 晚 / 深夜分池，且有 40 条以上（用户令：内容太少）");
+  /* 10-27 用户令：「前面都没有加称呼，BOSS、老板之类的」⇒ 每条必须带称呼，且不许有重复句
+     （原话「老是重复轮播一样的语句」）。数据就在源码里，直接数。 */
+  {
+    const lines = [...bossIntroSrc.matchAll(/\{ text: "([^"]+)", tone: "(hype|coax|funny|angry|bored)" \}/g)];
+    const texts = lines.map((m) => m[1]);
+    ok(texts.length >= 40
+      && texts.every((t) => /老板|BOSS/.test(t))
+      && new Set(texts).size === texts.length,
+      `BOSS 欢迎界面的情绪句：每条都带「老板 / BOSS」称呼且互不重复（当前 ${texts.length} 条，去重 ${new Set(texts).size}）`);
+    ok(/shuffledIndices/.test(bossIntroSrc),
+      "情绪句顺序每时段洗牌（⛔ 别退回固定轮转 —— 第二轮就会被记住，用户报过「老是重复」）");
+    /* 10-27 用户令：「还有时间，不同时间进去，语句都要不一样」⇒ 时段键 + 本地记住最近说过的话。 */
+    ok(/const bucketOfHour/.test(bossIntroSrc) && /SEEN_KEY/.test(bossIntroSrc) && /loadSeen\(/.test(bossIntroSrc)
+      && /rememberSeen\(/.test(bossIntroSrc),
+      "情绪句按「时段键 + 本时段最近说过的 8 条排到队尾」（换时间点进来不撞同一句）");
+  }
+  ok(/MOOD_ROTATE_MS/.test(bossIntroSrc) && /setInterval\([\s\S]{0,120}?MOOD_ROTATE_MS/.test(bossIntroSrc)
+    && /prefers-reduced-motion: reduce/.test(bossIntroSrc),
+    "语气句按时轮播，且尊重 prefers-reduced-motion（关动画也不自动翻）");
+  ok(/\.boss-welcome-hero\s*\{[^}]*font-size:\s*clamp\(/.test(bossWelcomeCss)
+    && /\.boss-mood-(hype|coax|funny|angry|bored)/.test(bossWelcomeCss)
+    && !/boss-mood-tag/.test(bossWelcomeCss) && !/boss-mood-tag/.test(bossIntroSrc),
+    "主句字号放大（clamp）+ 五类语气各有配色，且**没有**分类小标签（⛔ 用户令：不要展示标签）");
+  /* 10-27 用户令：「轮播速度太快了，慢一点」⇒ 停留时长写在常量里，且不得低于 8 秒。 */
+  ok(/const MOOD_ROTATE_MS = (\d+)/.test(bossIntroSrc) && Number(bossIntroSrc.match(/const MOOD_ROTATE_MS = (\d+)/)[1]) >= 8000,
+    "情绪句轮播够慢（≥ 8s/条，用户令：太快了）");
   ok(!/^\s*\.welcome-(state|greet|sub)[\s,{]/m.test(bossWelcomeCss),
     "⛔ BOSS 欢迎界面不共用普通会话 .welcome-state 那套样式（视觉上明显区分）");
   /* ⛔ 10-25 实测：用 isEmpty 判 BOSS 空态会漏 —— 它要求 thread 为 null，而「会话已建出来但

@@ -361,30 +361,72 @@
        ② text-wrap: balance —— 真到窄窗口必须折行时**均分两行**，绝不出现只剩一两个字的孤行。 */
   text-wrap: balance;
 }
-/* 引导清单：三步（说目标 / 看结果 / 认规矩）—— ⛔ 不放快捷键小字（用户嫌LOW），
-   快捷键只留在侧栏按钮行尾的 kbd 徽标上。 */
-.boss-welcome-guide {
-  margin: 2px 0 0; padding: 0;
-  list-style: none;
-  display: flex; flex-direction: column; gap: 5px;
-  max-width: 480px; width: 100%;
+/* ── 10-27 用户令：「删除当前的三排文字；把这排字号调大、视觉美化，让它醒目突出；
+   下方加一批语气词 / 情绪表达（搞笑 / 哄老板 / 生气 / 无聊），把用户当 BOSS，轮播展示，按早中晚时间」──
+   ① 三步引导清单（.boss-welcome-guide / .boss-welcome-step）**整块删除**，样式一并撤掉；
+   ② 副标题 → 主句「我和我的小伙伴们都准备好了」（21px / 600）：核心半句琥珀高亮（底纹条 = marker 效果）；
+   ③ 主句下面挂一条语气胶囊（5 类语气各一色），5.2s 换一条、淡入上浮。
+   ⛔ 仍然是「图标 / 标题 / 一句主句 / 一条情绪」四层，⛔ 不许长回卡片或多段说明。 */
+.boss-welcome-hero {
+  margin: 2px 0 0;
+  max-width: 620px;
+  /* ⛔ 21px 起步：实测 1.55vw 在 1080 宽窗口只落到 17px（clamp 下界被吃到）⇒ 用户要的「字号调大」不成立。
+     改成 1.9vw 后：1080 宽 ≈ 20.5px，窄窗仍有 18px 下限、超宽屏封顶 22px。 */
+  font-size: clamp(18px, 1.9vw, 22px);
+  font-weight: 600;
+  line-height: 1.55;
+  letter-spacing: 0.3px;
+  color: var(--text);
 }
-.boss-welcome-guide li {
-  display: flex; gap: 9px; align-items: baseline;
-  font-size: 12.5px; line-height: 1.6;
+/* 后半句：琥珀 marker 底纹（纯 CSS 背景条，不引入渐变元素、不额外套盒子） */
+.boss-hero-strong {
+  padding: 0 3px;
+  border-radius: 4px;
+  color: color-mix(in srgb, var(--ic-amber, var(--amber)) 62%, var(--text));
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--ic-amber, var(--amber)) 34%, transparent),
+    color-mix(in srgb, var(--ic-amber, var(--amber)) 16%, transparent)
+  );
+  background-repeat: no-repeat;
+  background-size: 100% 40%;
+  background-position: 0 94%;
 }
-.boss-welcome-step {
-  flex: none;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 18px; height: 18px; border-radius: 50%;
-  font-size: 11px; font-weight: 600; line-height: 1;
-  color: var(--ic-amber, var(--amber));
-  background: color-mix(in srgb, var(--ic-amber, var(--amber)) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--ic-amber, var(--amber)) 30%, transparent);
-  transform: translateY(3px);
+/* 语气胶囊：固定高度容器 ⇒ 换条时整块不跳高（换行句也不会把输入框顶下去） */
+.boss-welcome-mood {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 32px;
+  margin-top: 8px;
 }
-.boss-welcome-guide b { flex: none; font-weight: 600; color: var(--text); }
-.boss-welcome-guide li > span:last-child { color: var(--muted); }
+/* 语气胶囊：固定高度容器 ⇒ 换条时整块不跳高（换行句也不会把输入框顶下去）。
+   ⛔ 10-27 用户令：「前面这个情绪怎么还有标签，不要展示这个」⇒ 没有分类小标签了，
+      情绪只靠**胶囊配色 + 句子**表达：文字直接用语气色（与正文混到可读），边框同色淡染。 */
+.boss-mood {
+  display: inline-flex; align-items: center;
+  max-width: min(560px, 86vw);
+  padding: 6px 15px;
+  border: 1px solid color-mix(in srgb, var(--mood, var(--amber)) 40%, var(--line-soft));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--mood, var(--amber)) 8%, var(--panel));
+  font-size: 13px; line-height: 1.5;
+  /* 62% 语气色 + 38% 正文色：既保住「一色一情绪」，又不至于淡成灰（实测 72% 偏浅） */
+  color: color-mix(in srgb, var(--mood, var(--amber)) 62%, var(--text));
+  animation: boss-mood-in 0.42s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.boss-mood-text { min-width: 0; text-wrap: pretty; }
+/* 五类语气一色：元气=琥珀（BOSS 主色）· 哄老板=粉 · 搞笑=紫 · 生气=红 · 无聊=青 */
+.boss-mood-hype { --mood: var(--ic-amber, var(--amber)); }
+.boss-mood-coax { --mood: var(--ic-pink); }
+.boss-mood-funny { --mood: var(--purple); }
+.boss-mood-angry { --mood: var(--red); }
+.boss-mood-bored { --mood: var(--cyan); }
+@keyframes boss-mood-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+/* ⛔ 系统「减少动态效果」：不淡入（JS 那边同时不再自动翻条） */
+@media (prefers-reduced-motion: reduce) {
+  .boss-mood { animation: none; }
+}
 /* ⛔ 10-25 用户令：欢迎界面里**不再有**「选项目地址」按钮（也不自动弹窗）。
    项目地址控件搬到**输入框左上角**，与普通会话欢迎界面同一处（`.welcome-cwd-chip` 骨架，
    见 `02-composer-form.tsx` 的 `boss-cwd-chip`）⇒ 这里只补 BOSS 那点琥珀色辨识度。 */
