@@ -123,7 +123,9 @@ export function CodexOfficialMarketSection({ onResourcesChanged, refreshSlot, ta
     {error && <p className="codex-official-market-error">{error}<button className="secondary-setting" onClick={() => void reload()}>重试</button></p>}
     {!error && !live && <p className="codex-official-market-note">暂时连不上上游，下面的列表来自<b>内置快照</b>（{snapshotAt || "日期未知"}）· 已安装状态仍读本地目录，不受影响。</p>}
     <div className="resource-toolbar">
-      {/* 10-27 用户令：「上面的分类做成下拉框选项」⇒ 一排 chips 收成下拉，跟另两个视图同一形态 */}
+      {/* 10-27 用户令：「插件搜索框放前面去」⇒ 整条顺序统一成：搜索 → 分类下拉 → 来源三键 → 刷新。
+          （之前分类是照着旧 chips 的位置摆的，搜索被夹在中间。） */}
+      <SearchField value={query} onChange={(next) => { setQuery(next); setPage(1); }} placeholder="搜索官方插件名称、简介或分类" />
       <span className="market-category-filter">
         <AppSelect
           className="market-category-select"
@@ -133,7 +135,6 @@ export function CodexOfficialMarketSection({ onResourcesChanged, refreshSlot, ta
           onChange={(next) => { setCategory(next); setPage(1); }}
         />
       </span>
-      <SearchField value={query} onChange={(next) => { setQuery(next); setPage(1); }} placeholder="搜索官方插件名称、简介或分类" />
       {tabsSlot}
       {refreshSlot}
     </div>
