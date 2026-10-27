@@ -51,7 +51,11 @@ export function ComponentLibraryPage() {
 
   useEffect(() => setPage(1), [cat, query]);
 
-  const shown = results.slice(0, page * PAGE);
+  /* 10-27 用户令：「加一个翻页功能」⇒ 从「加载更多」改成**真分页**：
+     每页固定 PAGE 个，页码切换只换这一屏，不再无限下拉。 */
+  const totalPages = Math.max(1, Math.ceil(results.length / PAGE));
+  const currentPage = Math.min(page, totalPages);
+  const shown = results.slice((currentPage - 1) * PAGE, currentPage * PAGE);
 
   const openDetail = async (catArg: string, id: string, name: string, author: string) => {
     const r = await loadCategory(catArg);
@@ -117,10 +121,22 @@ export function ComponentLibraryPage() {
           </button>
         ))}
       </div>
-      {shown.length < results.length && (
-        <button type="button" className="ui-skin-more" onClick={() => setPage((p) => p + 1)}>
-          加载更多（{results.length - shown.length} 个剩余）
-        </button>
+      {results.length > PAGE && (
+        <div className="comp-lib-pager">
+          <span className="comp-lib-pager-info">共 {results.length} 个 · 第 <b>{currentPage}</b> / {totalPages} 页</span>
+          <div className="comp-lib-pager-actions">
+            <button type="button" className="secondary-setting" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>上一页</button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter((n) => n === 1 || n === totalPages || Math.abs(n - currentPage) <= 1)
+              .map((n, idx, arr) => (
+                <span key={n} className="comp-lib-pager-slot">
+                  {idx > 0 && arr[idx - 1] !== n - 1 ? <span className="comp-lib-pager-gap">…</span> : null}
+                  <button type="button" className={`comp-lib-pager-num${n === currentPage ? " active" : ""}`} onClick={() => setPage(n)}>{n}</button>
+                </span>
+              ))}
+            <button type="button" className="secondary-setting" disabled={currentPage >= totalPages} onClick={() => setPage(currentPage + 1)}>下一页</button>
+          </div>
+        </div>
       )}
       {results.length === 0 && !loadErr && <p className="ui-skin-empty">没有匹配的组件。</p>}
 
