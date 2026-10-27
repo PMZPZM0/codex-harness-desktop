@@ -20,6 +20,10 @@
 /* ⛔ 分类 chips 上有一条 `flex: 1 1 420px`（把它当主内容撑满）⇒ 搜索/刷新被挤到第二行。
    卡内工具条里 chips 只占内容宽、超长时横向滚动，整条恒为一行。 */
 .plugin-center .resource-toolbar > .skill-tabs { flex: 0 1 auto; min-width: 0; overflow-x: auto; }
+/* 10-27 用户令：「上面一排按键放到卡片里面来，空间不够就缩小按键」
+   ⇒ 来源 tab 成为卡内第一行；尺寸比外面的 pagination 按钮小一号，一行永远放得下。 */
+.plugin-market-block > .market-source-switch { margin-bottom: 8px; }
+.plugin-market-block > .market-source-switch .segmented-tabs button { height: 24px; padding: 0 9px; font-size: 11.5px; }
 .plugin-market-filter .search-field { flex: 0 1 220px; min-width: 168px; }
 .market-category-filter { display: inline-flex; align-items: center; flex: none; }
 .market-category-select { min-width: 120px; }
