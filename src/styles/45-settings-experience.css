@@ -92,6 +92,14 @@
 .settings-exp-page .settings-subhead-hint { color: var(--faint); }
 
 /* 外观页里的零散设置块也收成卡 */
+/* 10-27 用户令：「外观界面的菜单连贯性要做好，不要中间断」
+   ⇒ 外观页那五张卡（显示四项 / 拓展功能 / 壁纸 / 开机动画 / 代码高亮）**连成一条**：
+   去掉卡间的 10px 间隙与各自的圆角，相邻卡共用一条 1px 线，只在最上和最下补回圆角。
+   ⛔ 别给每张卡单独留 margin-top —— 那 10px 就是「中间断」的来源。 */
+.appearance-page > .settings-exp-card { margin-top: 0; border-radius: 0; }
+.appearance-page > .settings-exp-card + .settings-exp-card { border-top: 0; }
+.appearance-page > .settings-exp-hero + .settings-exp-card { border-radius: 12px 12px 0 0; }
+.appearance-page > .appearance-code-card { border-radius: 0 0 12px 12px; }
 .settings-exp-card { padding: 14px 16px 16px; }
 .settings-exp-card > .settings-subhead:first-child { margin-top: 0; }
 .settings-exp-card .settings-subhead { margin-top: 14px; }
