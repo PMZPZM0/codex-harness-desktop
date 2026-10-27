@@ -9,7 +9,7 @@
  * 生产构建**不会**把模型打进安装包（已确认：sherpa-onnx 原生 addon 在 asarUnpack，
  * 模型数据走 `<userData>/voice-models/` 按需下载）。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Download, ExternalLink, FolderOpen, LoaderCircle, Mic, Power, Trash2, X } from "lucide-react";
 
 type Status = {
@@ -66,8 +66,13 @@ const STATE_BADGE: Record<ResourceState, string> = {
  * `only` —— 只渲染其中一张卡（10-26 语音页重排：基础模型归「必需」组、
  * 音色克隆模型归「用自己的声音」组，两者不再挤在同一个标题下）。
  * ⛔ 状态仍在组件内（各自一遍 refresh + 订阅），别为了"省一个订阅"把它拆成两套真相源。
+ *
+ * `helpSlot` —— 卡头右上角的帮助 ?（10-27 用户：「右上角帮助❓号…放到基础模型卡片右上角」）。
+ * ⛔ 由调用方（VoiceSettingsSection.tsx）创建并传进来，**不在本组件里 new**：
+ *    守卫 07 的「语音页 ? 在」判据只扫 VoiceSettingsSection.tsx 及其子目录，
+ *    ? 写在这里会被判成「帮助入口丢了」。所以本体留在调用方，这里只负责摆位置。
  */
-export default function VoiceDevToolsSection({ onNotice, only }: { onNotice: (m: string) => void; only?: "base" | "zipvoice" }) {
+export default function VoiceDevToolsSection({ onNotice, only, helpSlot }: { onNotice: (m: string) => void; only?: "base" | "zipvoice"; helpSlot?: ReactNode }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [downloading, setDownloading] = useState<DownloadState>(null);
   // 音色克隆模型（ZipVoice）独立下载状态：与基础语音模型分开显示/取消
@@ -248,25 +253,29 @@ export default function VoiceDevToolsSection({ onNotice, only }: { onNotice: (m:
     <>
     {(!only || only === "base") && (
     <div className="voice-devtools-card">
+      {/* 10-27 用户：「把必须放到基础模型里面…首个卡片内容布局调一下，现在有点乱」——
+          卡头收成**一行**：图标 + 必需标签 + 名称 + 状态徽标 + 帮助 ?；
+          副标题与安装路径下沉到正文区各占一行（标题列不再被挤窄、路径不再被省略号吃掉一半）。 */}
       <div className="voice-devtools-card-head">
         <div className="voice-devtools-icon">
           {downloading ? <LoaderCircle className="spin" size={20} /> : ready ? <Mic size={20} /> : <Download size={20} />}
         </div>
-        <div className="voice-devtools-title">
-          <strong>基础语音模型</strong>
-          <span className="voice-devtools-sub">sherpa-onnx（识别 zipformer + 端点检测 silero + 合成 vits-zh-ll）</span>
-          {status && (
-            <code className="voice-devtools-path-inline" title={status.root}>{status.root}</code>
-          )}
-        </div>
+        <span className="voice-group-tag is-required">必需</span>
+        <strong className="voice-devtools-name">基础语音模型</strong>
         <span className={`voice-devtools-badge ${STATE_BADGE[baseState]}`}>
           {status ? (baseState === "ready" ? "已就绪" : baseState === "disabled" ? "已停用" : baseState === "partial" ? `未装全 ${status.ready}/${status.total}` : `${sizeMB} MB · ${status.ready}/${status.total}`) : "读取中…"}
         </span>
+        {helpSlot}
       </div>
 
       <div className="voice-devtools-body">
+        <span className="voice-devtools-sub">sherpa-onnx（识别 zipformer + 端点检测 silero + 合成 vits-zh-ll）</span>
+        {status && (
+          <code className="voice-devtools-path" title={status.root}>{status.root}</code>
+        )}
         <div className="voice-devtools-desc">
-          <strong>总大小约 270MB</strong>——首次使用按需下载（HF / hf-mirror 镜像自动测速），或从本地目录导入。
+          <strong>不装什么都用不了</strong>：语音识别和默认播报都靠它（约 270MB）。
+          首次使用按需下载（HF / hf-mirror 镜像自动测速），或从本地目录导入。
           {baseDisabled && (
             <div className="voice-resource-note">
               该模型已<strong>停用</strong>：文件仍保留在本机（不占额外空间，也不需要重新下载），
@@ -389,16 +398,14 @@ export default function VoiceDevToolsSection({ onNotice, only }: { onNotice: (m:
         <div className="voice-devtools-icon">
           {zipDownloading ? <LoaderCircle className="spin" size={20} /> : zipReady ? <Mic size={20} /> : <Download size={20} />}
         </div>
-        <div className="voice-devtools-title">
-          <strong>音色克隆模型</strong>
-          <span className="voice-devtools-sub">ZipVoice zero-shot 克隆（中英双语 · 约 156MB）——导入或录制一段参考音频，就能用那个嗓音朗读任意文本；现有 5 个内置音色不受影响</span>
-        </div>
+        <strong className="voice-devtools-name">音色克隆模型</strong>
         <span className={`voice-devtools-badge ${STATE_BADGE[zipState]}`}>
           {status ? STATE_TEXT[zipState] : "读取中…"}
         </span>
       </div>
 
       <div className="voice-devtools-body">
+        <span className="voice-devtools-sub">ZipVoice zero-shot 克隆（中英双语 · 约 156MB）——导入或录制一段参考音频，就能用那个嗓音朗读任意文本；现有 5 个内置音色不受影响</span>
         {zipDisabled && (
           <div className="voice-resource-note">
             该模型已<strong>停用</strong>：156MB 文件仍保留在本机（无需重新下载），但语音合成不会使用它 ——

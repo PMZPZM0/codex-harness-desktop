@@ -105,28 +105,24 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
   }
   return (
     <section className="settings-section stack voice-settings">
-      <div className="settings-copy">
-        <h2>
-          语音通话
-          <PageInfo
-            label="语音通话"
-            helpKey="voice"
-            text={<>本机离线识别与合成（<code>sherpa-onnx</code>）。点右下角悬浮球开始通话；改值后下次通话生效（试听即时）。</>}
-          />
-        </h2>
-      </div>
+      {/* 10-27 用户（语音页截图）：「把必须放到基础模型里面，然后这个首个卡片内容布局调一下，
+          现在有点乱，然后上面一块空白删除，右上角帮助❓号里面的内容更新一下，放到基础模型卡片右上角」——
+          ① 页头（.settings-copy）整块删掉：它只撑着 ? 的高度，删了上方那条空白行才真的消失；
+          ② 「必需」标签 + 组说明并进基础模型卡（VoiceDevToolsSection 的卡头）；
+          ③ 帮助 ? 改挂在基础模型卡右上角，文案重写成「这块是什么、怎么装」。 */}
 
       {/* ⛔⛔ 10-26 用户两轮实测：「我看不懂…好几个下载的地方，看的眼花缭乱」/「分好类、排序好，
           不装用不了的和拓展音色的要分开」⇒ 整页按**用途与依赖**分 4 组，每组一个标签说明性质：
              必需（基础模型）→ 可选（换引擎）→ 选声音（音色）→ 可选（克隆自己的声音）。
           ⛔ 别再把"下载"入口散落各处：基础模型只在「必需」组下载，引擎卡缺模型时只做跳转。 */}
       <div className="voice-group" id="voice-models">
-        <div className="voice-group-head">
-          <span className="voice-group-tag is-required">必需</span>
-          <strong>基础语音模型</strong>
-          <span className="voice-group-sub">不装什么都用不了：语音识别和默认播报都靠它（约 270MB）</span>
-        </div>
-        <VoiceDevToolsSection onNotice={onNotice} only="base" />
+        <VoiceDevToolsSection onNotice={onNotice} only="base" helpSlot={
+          <PageInfo
+            label="基础语音模型"
+            helpKey="voice"
+            text={<>必需模型：语音识别（zipformer）、断句端点检测（silero）、默认播报合成（vits-zh-ll）都在这一包里（约 270MB）。首次使用点「下载模型」——自动测速选最快的镜像；已有文件就点「本地导入」，支持 HF 快照 / 单个仓库 / 仓库根三种目录结构。不装它，语音通话与默认播报都用不了；换引擎（Kokoro 等）也仍要靠它做识别。</>}
+          />
+        } />
       </div>
 
       <div className="voice-group">

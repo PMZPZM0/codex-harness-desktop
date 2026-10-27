@@ -744,6 +744,32 @@
 .voice-devtools-title { display:flex; flex-direction:column; gap:1px; min-width:0; flex:1 1 auto; }
 .voice-devtools-title strong { font-size:12.5px; font-weight:600; color: var(--text); }
 .voice-devtools-title .voice-devtools-sub { font-size:11px; color: var(--muted); line-height:1.35; }
+/* 10-27 用户（语音页截图）：「把必须放到基础模型里面…首个卡片内容布局调一下，现在有点乱」——
+   卡头收成**一行**：图标 + 性质标签 + 名称 + 状态徽标 + 帮助 ?；
+   副标题与安装路径下沉到正文区各占一行（原来挤在标题窄列里，路径被省略号吃掉一半）。
+   ⛔ 卡头是 flex 行 ⇒ 徽标/ ? 靠 margin-left:auto 顶到最右，不要靠 justify-content。 */
+.voice-devtools-name {
+  font-size:12.5px; font-weight:600; color: var(--text);
+  flex:0 1 auto; min-width:0;
+}
+/* 徽标顶到最右，后面的帮助 ? 紧随其后（⛔ 别给 ? 再加 auto 外边距，否则两者之间被撑开一条缝）。 */
+.voice-devtools-card-head > .voice-devtools-badge { margin-left: auto; }
+.voice-devtools-card-head > .page-info { flex: 0 0 auto; }
+.voice-devtools-body > .voice-devtools-sub { font-size:11px; color: var(--muted); line-height:1.4; }
+/* 路径独占正文一行：整宽显示。
+   ⛔ **不要用 direction:rtl** —— 那个「让文件名留在左端」的旧技巧在整宽下没必要，
+   而且会把路径里的点号/斜杠当中性字符按段落方向甩到段尾（实测
+   "D:\Codex Harness Desktop\.e2e-profile" 显示成 ",e2e-profile"）。左到右最省心，
+   超长时省略号落在末尾，完整路径在 title 里。 */
+.voice-devtools-path {
+  display:block; width:100%;
+  padding:4px 8px; border-radius:6px;
+  background: color-mix(in srgb, var(--muted) 7%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size:10.5px; color: var(--muted);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  text-align:left;
+}
 .voice-devtools-badge {
   flex:0 0 auto; padding:2px 8px; border-radius:999px;
   font-size:10.5px; font-weight:500;
