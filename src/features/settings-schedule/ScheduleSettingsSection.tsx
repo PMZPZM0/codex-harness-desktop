@@ -16,7 +16,7 @@ export function ScheduleSettingsSection(props: ScheduleSettingsSectionProps) {
   return (
     <>
       <section className="settings-section stack">
-                    <div className="settings-copy channel-heading"><div><h2>定时任务</h2><p>创建定时任务，或排队在闲时算力空闲时后台执行。</p></div><button className="primary-setting" onClick={() => { setScheduleDraft({ ...emptyScheduleDraft(workspace || ""), name: "", prompt: "" }); setAutoFormVisible(true); }}><Plus size={14} />新增定时任务</button></div>
+                    <div className="settings-copy channel-heading"><div><h2>定时任务</h2><p>创建定时任务，或排队在闲时算力空闲时后台执行。</p></div></div>
                     <div className="auto-card">
                       {scheduledTasks.length === 0 ? (
                         <div className="auto-empty">
@@ -53,7 +53,9 @@ export function ScheduleSettingsSection(props: ScheduleSettingsSectionProps) {
                       )}
                     </div>
                     <div className="auto-awake"><Info size={14} /><span>Codex 运行会话时保持电脑唤醒。</span><input type="checkbox" checked={keepAwake} onChange={(event) => { const on = event.target.checked; setKeepAwake(on); localStorage.setItem("keep-awake", String(on)); /* ⛔ 勾选也要回执（10-06 用户：开关没反馈）；失败更要说 —— 主进程没开成功时电脑照样会睡。 */ void window.codex.setAwake(on).then(() => setNotice(on ? "已开启：会话运行期间保持电脑唤醒" : "已关闭：不再阻止电脑休眠")).catch((error: any) => setNotice(`保持唤醒设置失败：${error?.message ?? error}`)); }} /></div>
-                    <div className="auto-templates"><h3>闲时任务模板</h3><div className="template-grid">
+                    {/* 10-27 用户令：「新增定时任务放到闲时模板那一排字，这行靠右」
+                        ⇒ 从页头右上角挪到「闲时任务模板」标题同一行、贴右。 */}
+                    <div className="auto-templates"><div className="auto-templates-head"><h3>闲时任务模板</h3><button className="primary-setting" onClick={() => { setScheduleDraft({ ...emptyScheduleDraft(workspace || ""), name: "", prompt: "" }); setAutoFormVisible(true); }}><Plus size={14} />新增定时任务</button></div><div className="template-grid">
                       {idleTemplates.map((tpl: any) => <button className="template-card" key={tpl.name} onClick={() => { setAutoFormVisible(true); setScheduleDraft({ ...emptyScheduleDraft(workspace || ""), name: tpl.name, prompt: tpl.prompt, effort: "high" }); }}><strong><ListFilter size={13} />{tpl.name}</strong><p>{tpl.desc}</p><small>最早可用时段</small></button>)}
                     </div></div>
                     <div className="auto-templates"><h3>定时任务模板</h3><div className="template-grid">
