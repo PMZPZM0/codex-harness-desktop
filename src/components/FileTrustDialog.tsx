@@ -20,6 +20,21 @@ export function FileTrustDialog() {
 
   useEffect(() => onFileTrustAsk((payload: Ask) => setAsk(payload)), []);
 
+  /* ⛔ 10-28 审查（对话框组件）：同 CloseConfirmDialog —— 原来只能鼠标点，Esc 无反应。
+     Esc = 拒绝（安全方向：不会因为误按 Esc 就授权一个工作区外的目录）。 */
+  useEffect(() => {
+    if (!ask) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setAsk(null);
+      respondFileTrust(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [ask]);
+
   if (!ask || typeof document === "undefined") return null;
 
   const close = (allowed: boolean) => {
