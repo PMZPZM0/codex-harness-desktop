@@ -5,7 +5,7 @@
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
 import { PageInfo } from "../../components/SettingsHead";
-import { Briefcase, FolderOpen, MessageSquarePlus, PenLine, Plus, RefreshCw, Rocket, RotateCcw, Tag, Trash2, Users, Workflow, X } from "lucide-react";
+import { Briefcase, FolderOpen, MessageSquarePlus, PenLine, Plus, RefreshCw, Rocket, RotateCcw, Tag, Trash2, Users, Workflow, X, ArrowLeft } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { expertIconOf } from "../../lib/expert-icon-of";
 import { expertRoleLabel } from "../../lib/expert-role-label";
@@ -13,16 +13,14 @@ import { AVATAR_GRADIENTS, avatarToneOf } from "../../lib/entity-avatar";
 import { ExpertTeamEditorModal } from "../../features/experts-teams";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
-export type TeamsSettingsSectionProps = { openNewExpertTeam: any; resetExpertTeams: any; refreshExpertTeams: any; resourceLoading: any; expertTeams: any; toggleExpertTeamEnabled: any; categoryLabel: any; expertTeamMemberRunning: any; expertTeamMemberDirect: any; startMemberDirectSession: any; teamCwdMap: any; workspace: any; chooseTeamCwd: any; clearTeamCwd: any; startTeamSession: any; expertTeamRunning: any; openEditExpertTeam: any; deleteExpertTeam: any; expertTeamEditorOpen: any; expertTeamDraft: any; setExpertTeamDraft: any; setExpertTeamEditorOpen: any; saveExpertTeam: any; setNotice: any };
+export type TeamsSettingsSectionProps = { openNewExpertTeam: any; resetExpertTeams: any; refreshExpertTeams: any; resourceLoading: any; expertTeams: any; toggleExpertTeamEnabled: any; categoryLabel: any; expertTeamMemberRunning: any; expertTeamMemberDirect: any; startMemberDirectSession: any; teamCwdMap: any; workspace: any; chooseTeamCwd: any; clearTeamCwd: any; startTeamSession: any; expertTeamRunning: any; openEditExpertTeam: any; deleteExpertTeam: any; expertTeamEditorOpen: any; expertTeamDraft: any; setExpertTeamDraft: any; setExpertTeamEditorOpen: any; saveExpertTeam: any; setNotice: any; onBack?: () => void };
 
 export function TeamsSettingsSection(props: TeamsSettingsSectionProps) {
-  const { openNewExpertTeam, resetExpertTeams, refreshExpertTeams, resourceLoading, expertTeams, toggleExpertTeamEnabled, categoryLabel, expertTeamMemberRunning, expertTeamMemberDirect, startMemberDirectSession, teamCwdMap, workspace, chooseTeamCwd, clearTeamCwd, startTeamSession, expertTeamRunning, openEditExpertTeam, deleteExpertTeam, expertTeamEditorOpen, expertTeamDraft, setExpertTeamDraft, setExpertTeamEditorOpen, saveExpertTeam, setNotice } = props;
+  const { openNewExpertTeam, resetExpertTeams, refreshExpertTeams, resourceLoading, expertTeams, toggleExpertTeamEnabled, categoryLabel, expertTeamMemberRunning, expertTeamMemberDirect, startMemberDirectSession, teamCwdMap, workspace, chooseTeamCwd, clearTeamCwd, startTeamSession, expertTeamRunning, openEditExpertTeam, deleteExpertTeam, expertTeamEditorOpen, expertTeamDraft, setExpertTeamDraft, setExpertTeamEditorOpen, saveExpertTeam, setNotice, onBack } = props;
   return (
     <>
       <section className="settings-section stack expert-team-center">
-                    <div className="settings-copy channel-heading"><div><h2>专家团<PageInfo text={<>复刻 WorkBuddy 团队协作：主理人编排，成员按 SOP 分阶段独立产出，最终汇总交付。</>} helpKey="agentteam" label="专家团" /></h2></div><div className="settings-heading-actions"><button className="primary-setting" onClick={openNewExpertTeam}><Plus size={14} />新建专家团</button><button className="secondary-setting" onClick={() => void resetExpertTeams()}><RotateCcw size={13} />恢复内置</button><button className="icon-button" title="刷新专家团" onClick={() => void refreshWithReceipt(setNotice, "刷新专家团", () => refreshExpertTeams())}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
-
-                    <div className="subagent-banner"><Users size={16} /><div><strong>让 Codex 真正会带团队协作</strong><p>发起会话后，主理人（lead）会在独立会话中通过 <code>team_member_invoke(memberId, query)</code> 按 SOP 调度成员，成员独立产出后回传，主理人最终汇总交付。</p></div></div>
+                    <div className="settings-copy channel-heading">{onBack && <button type="button" className="settings-back-row teams-back" onClick={onBack}><ArrowLeft size={14} />返回智能体团队</button>}<div><h2>专家团<PageInfo text={<>复刻 WorkBuddy 团队协作：主理人编排，成员按 SOP 分阶段独立产出，最终汇总交付。</>} helpKey="agentteam" label="专家团" /></h2></div><div className="settings-heading-actions"><button className="primary-setting" onClick={openNewExpertTeam}><Plus size={14} />新建专家团</button><button className="secondary-setting" onClick={() => void resetExpertTeams()}><RotateCcw size={13} />恢复内置</button><button className="icon-button" title="刷新专家团" onClick={() => void refreshWithReceipt(setNotice, "刷新专家团", () => refreshExpertTeams())}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
 
                     <div className="expert-team-grid-list">{expertTeams.map((team: any) => <article className={`subagent-card ${team.enabled ? "enabled" : "disabled"}`} key={team.teamId}>
                       <div className="subagent-card-head"><span className="subagent-avatar expert-team-avatar"><Users size={16} /></span><label className="channel-enable" title={team.enabled ? "停用" : "启用"}><input type="checkbox" checked={team.enabled} onChange={() => void toggleExpertTeamEnabled(team)} /><span>{team.enabled ? "已启用" : "已停用"}</span></label></div>
