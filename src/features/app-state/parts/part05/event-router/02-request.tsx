@@ -174,7 +174,7 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                 } catch (error: any) {
                   await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `人格切换失败：${error.message}` }], success: false });
                 }
-              } else if (["group_create", "group_assign", "group_status", "group_review", "group_escalate", "group_add_member", "group_remove_member", "group_browser_setup"].includes(String(event.params?.tool))) {
+              } else if (["group_create", "group_assign", "group_status", "group_review", "group_escalate", "group_add_member", "group_remove_member", "group_delete", "group_browser_setup"].includes(String(event.params?.tool))) {
                 /* 创世 boss 的群编排（10-24）：六个工具共用一条分支。
                    ⛔ 规则不在这里：状态机在 electron/boss-groups/state.ts（纯函数 + 守卫真跑），
                       本分支只做「参数整形 + 转 IPC + 把结果讲成模型能读的一句话」。 */
@@ -284,6 +284,17 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                     });
                     if (!res?.ok) await bad(`移人失败：${res?.error ?? "未知原因"}`);
                     else await ok(`已移出：${res.member?.name}。会话与轨迹保留；TA 正在跑的任务不打断（交活后照常审查），未派的任务会自动换人。`);
+                  } else if (tool === "group_delete") {
+                    const res = await window.codex.deleteBossGroup({
+                      groupId: String(args.groupId ?? ""),
+                      by: "boss",
+                      reason: args.reason ? String(args.reason) : undefined,
+                    });
+                    if (!res?.ok) await bad(`删群失败：${res?.error ?? "未知原因"}`);
+                    else await ok(`群「${res?.deleted?.name ?? ""}」已删除：清掉 ${res?.deleted?.tasks ?? 0} 条任务与 ${res?.deleted?.events ?? 0} 条事件`
+                      + `${res?.deleted?.running ? `，${res.deleted.running} 条未完成的活已终止` : ""}`
+                      + `${res?.deleted?.notified === false ? "（注意：中枢回投没成功，这条结果就是通知）" : ""}。`
+                      + `成员会话与产出文件保留；要接着干就重新 group_create。`);
                   } else {
                     const st = await window.codex.bossBrowserStatus();
                     if (!st?.installed) {

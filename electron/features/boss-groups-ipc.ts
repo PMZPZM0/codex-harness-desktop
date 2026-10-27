@@ -1,7 +1,7 @@
 /**
  * boss-groups —— 创世 boss 的群编排域（独立板块，2026-10-24 立）
  *
- * 通道：boss-groups:list / :status / :create / :assign / :review / :escalate / :browser
+ * 通道：boss-groups:list / :status / :create / :delete / :assign / :review / :escalate / :browser
  *
  * ⛔ 本域是**唯一**的状态入口：规则全在 `electron/boss-groups/state.ts`（纯函数），
  *    执行在 `electron/boss-groups/runner.ts`。域只做「通道 + 定时器 + 广播」三件事。
@@ -14,15 +14,15 @@ import path from "node:path";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { bossStore } from "../boss-groups/store";
-import { addTaskForBoss, browserStatus, createGroupForBoss, dispatchTask, memberForBoss, pinForBoss, poolForBossIpc, postToBoss, reconcileRunningTasks, reviewTask, sayToGroup, setBossEventSink, statusForBoss, tickAll, watchBossReplies, watchMemberSettlements } from "../boss-groups/runner";
+import { addTaskForBoss, browserStatus, createGroupForBoss, deleteGroupForBoss, dispatchTask, memberForBoss, pinForBoss, poolForBossIpc, postToBoss, reconcileRunningTasks, reviewTask, sayToGroup, setBossEventSink, statusForBoss, tickAll, watchBossReplies, watchMemberSettlements } from "../boss-groups/runner";
 import { normalizeEscalateChoice, recordReview, resolveEscalation } from "../boss-groups/state";
 import { backfillFromGroups, clearBossMemory, listBossSessions, registerBossSession, renameBossSession, unregisterBossSession } from "../boss-groups/session-registry";
 import { broadcastCodexEvent } from "./window-bus";
 
 /** BOSS 会话的角色提示（写进 `<userData>/boss-home/AGENTS.md`，引擎自动注入）。
  *  ⛔ 改内容必须同时抬 BOSS_HOME_AGENTS_VERSION —— 否则老用户的旧文件不会更新（只写一次）。 */
-const BOSS_HOME_AGENTS_VERSION = "v3";
-const BOSS_HOME_AGENTS_MD = `<!-- boss-home-agents:${"v3"} -->
+const BOSS_HOME_AGENTS_VERSION = "v4";
+const BOSS_HOME_AGENTS_MD = `<!-- boss-home-agents:${"v4"} -->
 # 你是 BOSS（主控），不亲自干活
 
 用户在这里提需求。你的职责**只有六件**：拆需求 → 组队 → 拉群 → 派活 → 推进 → 监督与验收。
@@ -30,12 +30,13 @@ const BOSS_HOME_AGENTS_MD = `<!-- boss-home-agents:${"v3"} -->
    用户如果直接说"你帮我改"，回答一句"我拉个人来做"，然后 group_create + group_assign。
    唯一允许你自己动手的：读群状态（group_status）、审查成品（group_review）、拉人/移人。
 
-## 你的工具（8 个）
+## 你的工具（9 个）
 - \`group_create\` 建群：群名 + 成员清单（每人有名字、岗位；成员各自是一条常驻会话）
 - \`group_add_member\` 拉人：\`from="expert"\` 从专家/专家团登记表拉（expertTeamId + expertMemberId，或按花名 name）；
   \`from="cli"\` 拉本机命令行 agent（cliName ∈ zcode / qoder / workbuddy / deepseek / doubao，或自定义 cliCommand，
   模板里 {prompt} 换成任务全文）。**用户点名要谁就拉谁**，不要自作主张换人。
 - \`group_remove_member\` 移人
+- \`group_delete\` 删群（用户明确说「删掉 / 不要这个群了」才用；⛔ 不可撤销，会话与产出保留）
 - \`group_assign\` 派活：title / brief / criteria 三个都必填，criteria 是**验收标准**
 - \`group_status\` 看群：成员、任务、进度、以及**可拉名单**（专家团成员 + 本机 CLI 是否已安装）
 - \`group_review\` 审查：通过，或打回重做
@@ -192,6 +193,18 @@ export const bossGroupsFeature = defineFeature<null>({
       });
     });
 
+    /* 删群（10-27 用户令：「光界面删了，codex 那边不知道群删了不行」）。
+       ⛔ 联动就在 runner 里：先往中枢回投 [群事件]，再清群/任务/事件三处账本。
+       ⛔ 会话不删（成员产出与轨迹保留）；memberThreadIds 也随之失效，侧栏的「中枢调度」标签自然消失。 */
+    ipcHost.handle("boss-groups:delete", async (_event, input: any) => {
+      await bossStore.load();
+      return deleteGroupForBoss({
+        groupId: String(input?.groupId ?? ""),
+        by: input?.by === "boss" ? "boss" : "user",
+        reason: input?.reason ? String(input.reason) : "",
+      });
+    });
+
     ipcHost.handle("boss-groups:assign", async (_event, input: any) => {
       await bossStore.load();
       return addTaskForBoss({
@@ -304,7 +317,7 @@ export const bossGroupsFeature = defineFeature<null>({
 
     ctx.effect(() => {
       setBossEventSink(null);
-      for (const channel of ["boss-groups:list", "boss-groups:status", "boss-groups:create", "boss-groups:assign", "boss-groups:review", "boss-groups:escalate", "boss-groups:browser", "boss-groups:member", "boss-groups:pin", "boss-groups:say", "boss-groups:pool"]) {
+      for (const channel of ["boss-groups:list", "boss-groups:status", "boss-groups:create", "boss-groups:delete", "boss-groups:assign", "boss-groups:review", "boss-groups:escalate", "boss-groups:browser", "boss-groups:member", "boss-groups:pin", "boss-groups:say", "boss-groups:pool"]) {
         ipcHost.removeHandler(channel);
       }
     });

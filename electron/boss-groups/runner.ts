@@ -998,3 +998,52 @@ export async function pinForBoss(input: { groupId: string; eventId: string; pinn
 export function statusForBoss(groupId: string) {
   return snapshot(bossStore.get(), groupId);
 }
+
+/**
+ * 删除群（10-27 用户令：「群编排没有管理功能，codex 自己也删不掉… 但这个删要联动 codex 那边，
+ * 不然光界面删了，codex 那边不知道群删了不行」）。
+ *
+ * ⛔⛔ **先回投中枢、再清账**：`postToBoss` 要靠 group.bossThreadId 才找得到那条会话，
+ *    群一删就再也通知不到了 ⇒ 顺序不能反。回投的是 `[群事件]`，模型下一回合就知道这个群没了，
+ *    不会拿着旧 groupId 继续派活/审查（那才是用户说的"两边不一致"）。
+ * ⛔ 只删群账本（群 / 任务 / 事件）——**会话不删**：成员会话里的成品与轨迹仍可回看，
+ *    产出文件也都在群 workspace 里（用户明确要「群真的消失，会话与产出保留」，看 delete 前那版界面文案）。
+ * ⛔ 立即 `flush()`：删群是销毁性操作，不能等 120ms 合并写（崩在中间 = 界面已消失、账本还在）。
+ */
+export async function deleteGroupForBoss(input: { groupId: string; by?: "user" | "boss"; reason?: string }): Promise<{
+  ok: boolean;
+  error?: string;
+  deleted?: { id: string; name: string; tasks: number; events: number; running: number; notified: boolean };
+}> {
+  const state = await bossStore.load();
+  const group = state.groups[String(input.groupId ?? "")];
+  if (!group) return { ok: false, error: "群不存在（可能已经被删掉了）" };
+
+  const tasks = Object.values(state.tasks).filter((task) => task.groupId === group.id);
+  const running = tasks.filter((task) => ["queued", "assigned", "running", "submitted", "reviewing"].includes(task.status)).length;
+  const events = (state.events ?? []).filter((event) => event.groupId === group.id).length;
+  const who = input.by === "boss" ? "中枢" : "用户";
+
+  /* ① 先通知中枢（群还在，才找得到 boss 会话） */
+  const notified = await postToBoss(
+    group,
+    `[群事件] 群「${group.name}」(id=${group.id}) 已被${who}删除。\n`
+    + `⛔ 该群的 ${tasks.length} 条任务账本与 ${events} 条事件记录已一并清除`
+    + `${running ? `，其中 ${running} 条未完成的活已终止` : ""}。\n`
+    + `${String(input.reason ?? "").trim() ? `删除原因：${String(input.reason).trim().slice(0, 200)}\n` : ""}`
+    + `此后不要再对这个 groupId 派活 / 审查 / 查状态；需要继续就重新 group_create 建群。`
+    + `成员会话与产出文件都保留，可在侧栏回看。`,
+    /* critical：这条**不能**被闲聊配额吃掉 —— 模型不知道群没了，就会拿旧 groupId 继续派活。 */
+    { critical: true },
+  ).catch(() => false);
+
+  /* ② 再清账（群 / 任务 / 事件三处，缺一处就会在列表或状态里"诈尸"） */
+  for (const task of tasks) delete state.tasks[task.id];
+  state.events = (state.events ?? []).filter((event) => event.groupId !== group.id);
+  delete state.groups[group.id];
+  bossStore.save();
+  await bossStore.flush();
+  emit({ type: "boss-group", phase: "group", groupId: group.id, status: "deleted" });
+
+  return { ok: true, deleted: { id: group.id, name: group.name, tasks: tasks.length, events, running, notified } };
+}
