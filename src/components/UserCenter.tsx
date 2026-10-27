@@ -244,8 +244,6 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
 
   return (
     <section className="settings-section stack user-center">
-      <div className="settings-copy uc-page-head"><h2>用户中心</h2><p>你的身份与个性化资料，让 Codex 更懂你。</p></div>
-
       <div className="uc-hero">
         <div className="uc-hero-main">
           <div className="uc-avatar uc-avatar-hero">

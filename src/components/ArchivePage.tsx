@@ -186,13 +186,9 @@ export default function ArchivePage({
 
   return (
     <section className="settings-section stack archive-page">
-      <div className="settings-copy channel-heading">
-        <div><h2>归档管理</h2><p>被归档的任务集中在这里，可恢复回侧边栏或永久删除。</p></div>
-        <span className="archive-total">{items.length} 条归档</span>
-      </div>
-
       <div className="archive-toolbar">
         <SearchField value={query} onChange={setQuery} placeholder="搜索归档任务名称、内容或项目" width={260} />
+        <span className="archive-total">{items.length} 条归档</span>
         <span className="archive-toolbar-spacer" />
         <BatchActions
           hint={selectedCount ? `已选 ${selectedCount} 条` : undefined}

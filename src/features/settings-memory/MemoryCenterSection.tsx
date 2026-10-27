@@ -21,7 +21,7 @@ import { BossMemoryPanel } from "./BossMemoryPanel";
 import { MemoryBackendBoards, type MemoryBackendId } from "./MemoryBackendBoards";
 import { LayerRulesPane, MemoryEntriesPane, MemoryModePane, MemorySearchPane, MemorySourcesPane, ResidentMemoryPane } from "./MemoryPanes";
 import { SettingsDialog } from "../../components/SettingsDialog";
-import { PageInfo } from "../../components/SettingsHead";
+import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { BookOpen, Cloud, Crown, Database, Layers, Server } from "lucide-react";
 import { MemoryConfigModal } from "../../features/memory";
 import type { HarnessAppApi } from "../app-view/types";
@@ -74,7 +74,11 @@ export function MemoryCenterSection(props: MemoryCenterSectionProps) {
 return (
     <>
       <section className="settings-section stack memory-center">
-                    <div className="settings-copy channel-heading"><div><h2>记忆<PageInfo text={<>记忆分「常驻记忆」与「记忆条目」两部分：常驻记忆每轮对话自动注入；条目按需召回，按重要度分 P0–P3 管理。</>} /></h2><p>决定 Codex 跨会话记住什么；本地、MCP 与云端三选一。</p></div><label className="channel-enable"><input type="checkbox" checked={memoryEnabled} onChange={(event) => void setMemoryEnabled(event.target.checked)} /><span>{memoryEnabled ? "已启用" : "已停用"}</span></label></div>
+                    <div className="settings-card settings-toggle-row memory-master-row">
+                      <span className="settings-toggle-icon"><Database size={16} /></span>
+                      <span className="settings-toggle-text"><strong>记忆</strong></span>
+                      <ToggleSwitch checked={Boolean(memoryEnabled)} label="记忆已启用" onChange={(next) => void setMemoryEnabled(next)} />
+                    </div>
 
                     {/* ⛔⛔ 10-20 用户反馈「这两个选项怎么进不去了」：上一版给前两张卡加了
                         disabled={onlyBuiltin && backend!=="builtin"} —— 渲染层 backend 初值可能是

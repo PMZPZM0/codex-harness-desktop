@@ -4,7 +4,6 @@
  * 纯搬迁：返回的 JSX / 体内语句与原块逐字一致（仅去掉外层缩进与 IIFE 包装）。
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
-import { PageInfo } from "../../components/SettingsHead";
 import { Spinner } from "../../components/CardShell";
 import { RefreshCw, ShieldCheck, Wrench } from "lucide-react";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
@@ -55,7 +54,10 @@ export function HooksSettingsSection(props: HooksSettingsSectionProps) {
   // 插件组的开关状态由插件本身决定（钩子列表可能为空），自定义组则由钩子决定
   const groupEnabled = (group: typeof groups[number]) => group.pluginId ? group.pluginEnabled !== false : group.hooks.some((hook: any) => hook.enabled !== false);
   return <section className="settings-section stack hook-center">
-    <div className="settings-copy channel-heading"><div><h2>钩子<PageInfo text={<>钩子的启停会<b>联动所属插件与它提供的技能</b>。另外 Codex <b>不会执行未信任的钩子</b>——新装后必须点一次「信任全部」，否则装了等于没装。</>} /></h2><p>插件带来的自动化动作；未信任的钩子不会执行，装好后先点一次「信任全部」。</p></div><div className="settings-heading-actions">{untrusted.length > 0 && <button className="primary-setting" disabled={hookTrusting} onClick={() => void trustAllHooks()}>{hookTrusting ? <Spinner /> : <ShieldCheck size={14} />}信任全部 {untrusted.length}</button>}<button className="icon-button" title="刷新钩子" onClick={() => void refreshWithReceipt(setNotice, "刷新钩子", () => refreshSettingsResources())}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+    <div className="settings-actions-row">
+      {untrusted.length > 0 && <button className="primary-setting" disabled={hookTrusting} onClick={() => void trustAllHooks()}>{hookTrusting ? <Spinner /> : <ShieldCheck size={14} />}信任全部 {untrusted.length}</button>}
+      <button className="icon-button" title="刷新钩子" onClick={() => void refreshWithReceipt(setNotice, "刷新钩子", () => refreshSettingsResources())}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button>
+    </div>
 
     <div className="hook-stats">
       <div className="hook-stat"><span>钩子总数</span><strong>{hooks.length}</strong></div>

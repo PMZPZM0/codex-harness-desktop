@@ -19,7 +19,6 @@
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { PageInfo } from "../../components/SettingsHead";
 import { AlertTriangle, Boxes, Brain, ChevronRight, CircleCheck, Copy, Film, Music2, Puzzle, Smartphone, Wrench, X } from "lucide-react";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { copyTextToClipboard } from "../../lib/clipboard";
@@ -81,7 +80,6 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
   return (
     <>
       <section className="settings-section stack">
-        <div className="settings-copy"><h2>开发工具<PageInfo text={<>桌面自动化（Nuphus）与写代码模式插件随应用内置、开箱即用；浏览器自动化**首选通道** Ego Lite 走官方安装器（不内置 611MB 浏览器，每个 Codex 会话一个独立 Space；未装回落 browse-skills 默认浏览器）；其余工具链按需下载（国内镜像优先，失败自动回落官方源），安装后自动加入 Codex 环境（不改系统 PATH）。</>} helpKey="devtools" label="开发工具" /></h2></div>
         <p className="settings-card-hint">每个板块独立成页：点下面的卡片打开详情。主界面只保留分类与当前状态，具体操作都在弹窗里。</p>
         <div className="devtools-cards" data-count={cards.length}>
           {cards.map((card) => (

@@ -691,3 +691,34 @@
    ⛔ 必须给 `.channel-enable`（记忆页那个启用开关）也算进来：它同样 justify-self:end，
       实测会和 ? 落在同一个 20px 里、把 ? 整个盖住（截图看不见，点击命中开关）。 */
 .settings-exp-shell > .settings-section > .settings-copy:has(h2 .page-info) > :is(.settings-heading-actions, .channel-enable, .archive-total, button) { margin-right: 26px; }
+
+/* ── 10-28：13 页旧页头清理后的公共件（页面不再有标题行，操作/分区标题留在正文里） ── */
+.settings-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.settings-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+.settings-section-title strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.settings-section-title small {
+  color: var(--faint);
+  font-size: 11px;
+}
+.memory-master-row { margin-bottom: 10px; }
+.archive-toolbar .archive-total {
+  color: var(--faint);
+  font-size: 11px;
+  white-space: nowrap;
+}

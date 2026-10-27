@@ -100,15 +100,15 @@ ok(/\.settings-exp-shell \.favorites-settings \.fav-foot > svg\s*\{[^}]*vertical
 
 /* ── ⑤ 页面自身：标题、页头与分组 ── */
 const schedule = pageSrc("schedule");
-ok(/<h2>定时任务<\/h2>/.test(schedule) && !/<h2>自动化<\/h2>/.test(schedule), "定时任务页标题是「定时任务」（不再是「自动化」）");
+ok(!/<h2>自动化<\/h2>/.test(schedule) && /(auto-card|auto-templates)/.test(schedule), "定时任务页不再挂「自动化」标题（页头已收起）");
 const knowledge = pageSrc("knowledge");
-ok(/<h2>知识库<PageInfo/.test(knowledge) && !/settings-exp-group-head/.test(knowledge), "知识库有页头，本地文档分组小字已删");
+ok(!/settings-copy/.test(knowledge) && !/PageInfo/.test(knowledge) && /memory-mode-switch/.test(knowledge), "知识库页头已收起，本地/云端来源切换在位");
 const soul = pageSrc("soul");
 /* 10-27 用户令：「刷新放到第一个标题卡片里面，帮助❓号删了，codex 在下面用户在上面」
    ⇒ 页头整块撤掉、刷新进「用户人格」卡标题行、用户人格排在 Codex 人格之前。 */
 ok(!/PageInfo/.test(soul) && /UserPersonaPanel[\s\S]{0,600}action=\{<button/.test(soul) && soul.indexOf("<UserPersonaPanel") < soul.indexOf("soul-market-status"), "人格市场：无 ?，刷新在用户人格卡标题行，用户人格在 Codex 人格之上");
 const memory = pageSrc("memory");
-ok(/<h2>记忆<PageInfo[\s\S]{0,200}<p>/.test(memory), "记忆页头有新手可读的一句说明");
+ok(!/settings-copy/.test(memory) && /memory-master-row/.test(memory) && /ToggleSwitch/.test(memory), "记忆页头已收起，启用总开关在首行卡片");
 ok(/\.settings-exp-shell \.memory-center \.memory-backends\s*\{[^}]*border-top/s.test(css), "「记忆存到哪里」与内容卡之间有分隔");
 const skillsPage = pageSrc("skills");
 ok(/skill-actions-line/.test(skillsPage) && !/skill-market-toolbar|settings-heading-actions/.test(skillsPage) && !/<div className="skill-tabs">/.test(skillsPage) && !/<span className="skill-filter-count">/.test(skillsPage), "技能页：按键与搜索同排，分类小字与页头按键已删");
@@ -173,16 +173,11 @@ const refreshAt = modelPage.indexOf("const refreshCardModels");
 const refreshEnd = modelPage.indexOf("const testProviderCard", refreshAt);
 const refreshBlock = refreshAt >= 0 && refreshEnd > refreshAt ? modelPage.slice(refreshAt, refreshEnd) : "";
 ok(refreshBlock.length > 0 && /addedIds/.test(refreshBlock) && /removed/.test(refreshBlock) && /saveCustomDraft/.test(refreshBlock) && /relaunchApp/.test(refreshBlock), "「更新模型」新增/移除模型都保存并重启（与编辑弹窗保存同口径）");
-/* 10-27 用户令（数据管理页截图）：「右上角的帮助问号删了」⇒ 该页页头整块撤掉，
-   从这条「必须有 ? 入口」的名单里移出（其余两页逻辑不变）。 */
-for (const [key, title] of [["hooks", "钩子"], ["agentteam", "专家和专家团"]]) {
+/* 10-28 用户令：「统一那 13 页旧页头」⇒ 页面标题/副标题/帮助 ? 全部收起；
+   这两页的动作与入口必须还在正文里（不是把功能一起删掉）。 */
+for (const [key, title, marker] of [["hooks", "钩子", "settings-actions-row"], ["agentteam", "专家和专家团", "hub-card-grid"]]) {
   const text = pageSrc(key);
-  const at = text.indexOf(`<h2>${title}`);
-  const window = at >= 0 ? text.slice(at, at + 2200) : "";
-  /* 10-26 用户令：「界面左上角一排大字和下面一排小字都删了，纯多余」⇒ 页头不再显示副标题，
-     说明的唯一入口变成标题旁的 ?。判据跟着行为走（⛔ 不是"源码里还有 <p> 就算过"——
-     那样守卫会自洽地绿，而界面上一个字都没有）。 */
-  ok(at >= 0 && /<PageInfo/.test(window), `${title}页头说明收进 ?（10-26 起副标题整排不显示）`);
+  ok(!text.includes(`<h2>${title}`) && !/PageInfo/.test(text) && text.includes(marker), `${title}页头已收起（无标题/无 ?，内容入口在位）`);
 }
 
 /* 10-27 用户（MCP 页截图）：「右上角问号删了」⇒ MCP 页头整块撤掉，

@@ -8,7 +8,6 @@
  * （exportThreadsMarkdown/Backup 本来就收 id 数组，缺的只是选择 UI）。
  */
 import { useMemo, useState } from "react";
-import { PageInfo } from "../../components/SettingsHead";
 import { Archive, FileText, FileUp, Info, ListChecks, MessageSquare, Upload } from "lucide-react";
 import { cleanThreadDisplayTitle } from "../../lib/user-refs";
 import { Spinner } from "../../components/CardShell";
@@ -34,7 +33,6 @@ export function BackupSettingsSection(props: BackupSettingsSectionProps) {
   return (
     <>
       <section className="settings-section stack backup-page">
-                    <div className="settings-copy"><h2>会话备份<PageInfo text={<>Markdown 用于阅读和交给其他 AI；JSON 用于完整迁移与恢复。</>} /></h2></div>
                     <div className="backup-grid">
                       <article className="backup-card backup-card--current">
                         <div className="backup-card-head"><span><MessageSquare size={16} /></span><div><strong>当前会话</strong><small>{thread ? cleanThreadDisplayTitle(thread.name, { preview: thread.preview }) : "尚未打开会话"}</small></div></div>

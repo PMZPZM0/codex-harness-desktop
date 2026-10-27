@@ -7,7 +7,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Eye, FilePlus2, FolderOpen, Library, RefreshCw, Search, Trash2, X, ArrowDown } from "lucide-react";
-import { PageInfo } from "../../components/SettingsHead";
 import { Spinner } from "../../components/CardShell";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 import { isMacPlatform } from "../../lib/is-mac-platform";
@@ -162,7 +161,6 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
   if (!workspace) {
     return (
       <section className="settings-section stack kb-page">
-        <div className="settings-copy"><h2>知识库<PageInfo text="项目级本地知识库：文档落在 <项目>/.codex-harness/knowledge/，随项目走。" helpKey="knowledge-base" label="知识库" /></h2><p>知识库按项目存放：先选一个工作文件夹，就能开始导入和检索。</p></div>
         <p className="muted">还没有选择工作目录——知识库是**项目级**的，先在会话里选择一个工作文件夹。</p>
       </section>
     );
@@ -170,7 +168,6 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
 
   return (
     <section className="settings-section stack kb-page">
-      <div className="settings-copy"><h2>知识库<PageInfo text={<>项目级本地知识库：文档落在 <code>{workspace}\.codex-harness\knowledge\</code>，随项目走。检索 v1 = 分块全文评分（零依赖、离线可用）；语义向量检索后端（LanceDB + 本地 embedding）将在开发工具页按需提供。</>} helpKey="knowledge-base" label="知识库" /></h2><p>先选来源：本地库随项目走、离线可用；云端库按账号隔离、由 MCP 工具检索。</p></div>
       {/* 10-20：知识库后端二选一 —— 本地项目库 / 云端 weknora（MCP）。
           ⛔ 切换**必须**落到连接器上（`kb:backend-set` 会启用/停用 cloud-kb 连接器并失效工具缓存），
              否则设置变了、云端 6 个工具还在模型工具列表里 ⇒ 模型拿云端工具去查本地库。 */}
