@@ -58,6 +58,13 @@
       "config": null
     },
     {
+      "id": "boss-groups",
+      "enabled": true,
+      "file": "features/boss-groups-ipc.ts",
+      "export": "bossGroupsFeature",
+      "config": null
+    },
+    {
       "id": "bot",
       "enabled": true,
       "file": "features/bot-ipc.ts",
@@ -76,13 +83,6 @@
       "enabled": true,
       "file": "features/bot-stream-ipc.ts",
       "export": "botStreamFeature",
-      "config": null
-    },
-    {
-      "id": "boss-groups",
-      "enabled": true,
-      "file": "features/boss-groups-ipc.ts",
-      "export": "bossGroupsFeature",
       "config": null
     },
     {
@@ -324,6 +324,13 @@
       "config": null
     },
     {
+      "id": "html-preview",
+      "enabled": true,
+      "file": "features/html-preview-ipc.ts",
+      "export": "htmlPreviewFeature",
+      "config": null
+    },
+    {
       "id": "html-video",
       "enabled": true,
       "file": "features/html-video-ipc.ts",
@@ -342,13 +349,6 @@
       "enabled": true,
       "file": "features/knowledge-base-ipc.ts",
       "export": "knowledgeBaseFeature",
-      "config": null
-    },
-    {
-      "id": "html-preview",
-      "enabled": true,
-      "file": "features/html-preview-ipc.ts",
-      "export": "htmlPreviewFeature",
       "config": null
     },
     {
@@ -398,6 +398,13 @@
       "enabled": true,
       "file": "features/openai-ipc.ts",
       "export": "openaiFeature",
+      "config": null
+    },
+    {
+      "id": "openfilm",
+      "enabled": true,
+      "file": "features/openfilm-ipc.ts",
+      "export": "openfilmFeature",
       "config": null
     },
     {
