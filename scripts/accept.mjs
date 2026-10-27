@@ -295,7 +295,7 @@ const CHECKS = [
           && skillsBar.categoryText.includes("全部分类") && skillsBar.categoryRow
           && skillsBar.tabs === 0 && !skillsBar.count && skillsBar.buttons.length === 3
           && skillsBar.buttons.some((x)=>x.includes("我的技能"))
-          && skillsBar.buttons.some((x)=>x.includes("本地技能"))
+          && skillsBar.buttons.some((x)=>x.includes("导入技能"))
           && skillsBar.heights.every((h)=>h <= 30) && skillsBar.sameRow && skillsBar.inRow
           && skillsBar.rightGap <= 40
           && !skillsBar.buttons.some((x)=>x.includes("SkillHub 市场"))),

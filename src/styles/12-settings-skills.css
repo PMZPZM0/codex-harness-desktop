@@ -75,9 +75,11 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
       auto ⇒ 会被平摊开。这里只让**第一颗**吃 auto，其余归零，按钮才成一组贴在右边。 */
 /* 10-27 用户：「跟搜索框放一排；那一排分类小字删了」——
    一行 = 搜索（短）+ 榜单筛选 + 三颗小按键（右对齐）；分类芯片行不再渲染。 */
-.skill-filter-row .search-field { flex: 0 1 220px; min-width: 168px; }
+.skill-filter-row .search-field { flex: 0 1 160px; min-width: 130px; }
 .skill-rank-filter { display: inline-flex; align-items: center; gap: 5px; flex: none; color: var(--muted); }
-.skill-rank-filter .app-select-trigger { min-width: 104px; }
+.skill-rank-filter .app-select-trigger { min-width: 76px; }
+.skill-category-filter { display: inline-flex; align-items: center; flex: none; }
+.skill-category-filter .app-select-trigger { min-width: 96px; }
 .skill-toolbar-actions {
   display: flex;
   align-items: center;
@@ -101,7 +103,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .skill-actions-line > .skill-action-sm {
   min-height: 28px;
   height: 28px;
-  padding: 0 10px;
+  padding: 0 8px;
   border-radius: 8px;
   font-size: 11.5px;
   gap: 5px;
@@ -128,6 +130,13 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   gap: 2px;
   display: flex;
 }
+/* ── 10-27 用户令：「控制台审批选项、外观的主题 / 消息字号 / 思考板块 / 运行过程，都按回复风格样式改」
+   统一一条规则：胶囊组贴右（row-pills），整卡只留一行（card-pills：卡内边距 8/14、头 0）。
+   ⛔ 宽度仍随容器自适应（不要 fit-content —— 用户上一轮刚否掉）。 */
+.segmented-tabs.row-pills { margin-left: auto; flex: none; }
+.segmented-tabs.row-pills button { font-size: 11.5px; }
+.settings-exp-shell .settings-card.card-pills { padding: 8px 14px; }
+.settings-exp-shell .settings-card.card-pills > .settings-card-head { padding: 0; }
 .segmented-tabs button {
   height: 26px;
   border: 0;
