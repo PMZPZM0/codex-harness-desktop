@@ -579,9 +579,10 @@ if (state) {
     && /\.boss-mood-(hype|coax|funny|angry|bored)/.test(bossWelcomeCss)
     && !/boss-mood-tag/.test(bossWelcomeCss) && !/boss-mood-tag/.test(bossIntroSrc),
     "主句字号放大（clamp）+ 五类语气各有配色，且**没有**分类小标签（⛔ 用户令：不要展示标签）");
-  /* 10-27 用户令：「轮播速度太快了，慢一点」⇒ 停留时长写在常量里，且不得低于 8 秒。 */
-  ok(/const MOOD_ROTATE_MS = (\d+)/.test(bossIntroSrc) && Number(bossIntroSrc.match(/const MOOD_ROTATE_MS = (\d+)/)[1]) >= 8000,
-    "情绪句轮播够慢（≥ 8s/条，用户令：太快了）");
+  /* 10-27 用户令：「轮播速度太快了，慢一点」→ 再「轮播速度改成 1 分钟」
+     ⇒ 停留时长写在常量里，且不得低于 60 秒（⛔ 别再按秒级调，用户已经两次嫌快）。 */
+  ok(/const MOOD_ROTATE_MS = 60_000;/.test(bossIntroSrc),
+    "情绪句轮播 60 秒一条（用户令：改成 1 分钟）");
   ok(!/^\s*\.welcome-(state|greet|sub)[\s,{]/m.test(bossWelcomeCss),
     "⛔ BOSS 欢迎界面不共用普通会话 .welcome-state 那套样式（视觉上明显区分）");
   /* ⛔ 10-25 实测：用 isEmpty 判 BOSS 空态会漏 —— 它要求 thread 为 null，而「会话已建出来但
