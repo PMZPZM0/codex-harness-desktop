@@ -13,7 +13,6 @@ export function BrowserSettingsSection(props: BrowserSettingsSectionProps) {
   return (
     <>
       <section className="settings-section stack">
-                    <div className="settings-copy"><h2>浏览器控制</h2><p>内置浏览器面板与自动化浏览器工具链。</p></div>
                     <div className="settings-grid">
                       <label className="wide"><span>默认起始页</span><div className="input-button"><input value={browserHome} onChange={(event) => setBrowserHome(event.target.value)} placeholder="https://" /><button className="secondary-setting" onClick={() => { localStorage.setItem("browser-home", browserHome.trim()); setBrowserDraft(browserHome.trim()); setNotice("浏览器默认页已保存"); }}><Check size={14} />保存</button></div></label>
                     </div>

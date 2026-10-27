@@ -4,7 +4,6 @@
  * 纯搬迁：返回的 JSX 与原块逐字一致（仅去掉外层缩进）。
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
-import { PageInfo } from "../../components/SettingsHead";
 import { Bot, Play, Trash2 } from "lucide-react";
 import { basename } from "../../lib/basename";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
@@ -16,7 +15,6 @@ export function RpaSettingsSection(props: RpaSettingsSectionProps) {
   return (
     <>
       <section className="settings-section stack">
-                    <div className="settings-copy channel-heading"><div><h2>RPA 自动化<PageInfo text={<>Codex 引擎自主跑通一条流程后，会自动把步骤沉淀为配方；下次让 Codex 直接复现即可。</>} /></h2></div></div>
                     <div className="auto-card">
                       {rpaRecipes.length === 0 ? (
                         <div className="auto-empty"><p className="muted">还没有 RPA 配方。让 Codex 自主跑通一条流程后，它会自动把步骤沉淀成配方，无需手动创建。</p></div>

@@ -722,3 +722,15 @@
   font-size: 11px;
   white-space: nowrap;
 }
+
+/* 10-28：二级页（子智能体/专家团/专家中心）无标题的一行工具条：返回靠左、操作靠右 */
+.settings-toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.settings-toolbar-row .settings-back-row { margin: 0; }
+.settings-toolbar-row .settings-heading-actions { width: auto; }

@@ -218,8 +218,8 @@ export async function run() {
     const hintCount = (appC.match(/<PageInfo\b/g) || []).length;
     // 10-28：用户令「统一那 13 页旧页头」⇒ 页面标题/副标题/页头 ? 整排删除，
     //   只剩内容卡里的上下文 ?（语音基础模型卡等）。不再要求数量，只防「说明摊回标题下」。
-    (hintCount >= 1)
-      ? ok(`【32】设置页保留 ${hintCount} 处上下文 ?（页头说明已随页头删除）`)
+    (hintCount <= 2)
+      ? ok(`【32】页头 ? 已收起（仅保留内容卡里的上下文 ? ${hintCount} 处）`)
       : fail(`【32】设置页一个 ? 都不剩 —— 连内容卡里的说明入口也被误删了？`);
     const keyedHints = ((appC + voiceC).match(/helpKey="/g) || []).length;
     /* 兼作「完整帮助」的 ?：页头大清洗后只剩语音卡与专家团（团队页）两处。 */
@@ -238,10 +238,10 @@ export async function run() {
     //    当轮漏改这条名单 ⇒ 一直红着「plugins 入口丢了」。同口径补进例外，别再留假红。
     //    同日技能中心也按用户令删掉了 ?（64b0856e2「删分类小字与帮助问号」）⇒ skills 一并列入。
     // 10-28 用户令「统一那 13 页旧页头」⇒ 开发工具页头整块删除，devtools 一并列入例外（内容库保留）。
-    const NO_HINT_KEYS = ["model", "mcp", "plugins", "skills", "devtools"];
+    const NO_HINT_KEYS = ["model", "mcp", "plugins", "skills", "devtools", "agentteam"];
     const orphanKeys = HELP_KEYS.filter((key) => !NO_HINT_KEYS.includes(key) && !new RegExp(`helpKey="${key}"`).test(appC + voiceC));
     (orphanKeys.length === 0)
-      ? ok(`【32】${HELP_KEYS.filter((key) => !NO_HINT_KEYS.includes(key)).length} 个帮助主题都有 ? 入口（模型 / MCP / 插件 / 技能 / 开发工具按用户令撤掉，不计）`)
+      ? ok(`【32】${HELP_KEYS.filter((key) => !NO_HINT_KEYS.includes(key)).length} 个帮助主题都有 ? 入口（模型 / MCP / 插件 / 技能 / 开发工具 / 专家团按用户令撤掉，不计）`)
       : fail(`【32】这些主题的帮助入口丢了：${orphanKeys.join(", ")} —— 内容库还在，但用户点不到`);
     // ⛔ 赘述回潮的可证伪判据：settings-copy 区块里不该再有 >40 字的内联段落。
     //    短句（≤40 字）允许内联 —— 它只占一行，硬收进 ? 反而让用户多点一次。
