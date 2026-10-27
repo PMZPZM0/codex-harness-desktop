@@ -21,7 +21,8 @@ export function CommandsSettingsSection(props: CommandsSettingsSectionProps) {
   const customVisible = customCommands.filter((entry: any) => !commandSearch || `${entry.name} ${entry.description} ${entry.argumentHint}`.toLowerCase().includes(commandSearch.toLowerCase()));
   const builtinVisible = builtinCommandCatalog.filter((cmd: any) => !commandSearch || `${cmd.name} ${cmd.description} ${cmd.hint ?? ""}`.toLowerCase().includes(commandSearch.toLowerCase()));
   const skillVisible = skillCommands.filter((skill: any) => !commandSearch || `${skill.name} ${skill.description ?? ""}`.toLowerCase().includes(commandSearch.toLowerCase()));
-  const builtinCategories = ["会话管理", "上下文与状态", "模型与权限", "审查与代码", "信息查询", "运行控制"];
+  /* 分类顺序与条目同源（catalogs 里本就按类分组）：硬编码清单会让新类目的命令**永远不显示**。 */
+  const builtinCategories: string[] = Array.from(new Set<string>((builtinCommandCatalog as any[]).map((cmd: any) => String(cmd?.category ?? "")).filter(Boolean)));
   const totalCount = builtinCommandCatalog.length + customCommands.length + skillCommands.length;
   const filterTabs: { key: "all" | "custom" | "builtin" | "skill"; label: string; count: number }[] = [
     { key: "all", label: "全部", count: totalCount },

@@ -4,7 +4,7 @@
  * 纯搬迁：返回的 JSX / 体内语句与原块逐字一致（仅去掉外层缩进与 IIFE 包装）。
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
-import { Check, CircleStop, LayoutGrid, Paperclip, Play, Plus, Quote, RefreshCw, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, CircleStop, LayoutGrid, Paperclip, Play, Plus, Quote, RefreshCw, SlidersHorizontal, Trash2 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { BatchActions, CheckCard, SearchField, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
 import { AppSelect } from "../../components/AppSelect";
@@ -16,6 +16,15 @@ export type SkillsCenterSectionProps = { openAppConfirm: (title: string, text: s
 
 export function SkillsCenterSection(props: SkillsCenterSectionProps) {
   const { openAppConfirm, userDataPath, displayPath, skillsManageOnly, setSkillsManageOnly, installedTotalCount, importSkill, refreshMarketSkills, skillHubCategory, skillHubSearch, marketPage, marketLoading, skillHubCategories, setSkillHubCategory, setMarketPage, skillManageSearch, setSkillManageSearch, setSkillHubSearch, skillHubCategoryTabs, skillHubFilterCategory, setSkillHubFilterCategory, marketSkills, skillHubCategoryName, localSkills, settingsResources, skillChecked, setSkillChecked, skillZhNote, toggleSkillEnabled, setSelectedSkills, setSettingsOpen, removeLocalSkill, skillBatchBusy, batchSetSkillEnabled, marketPageSize, setMarketPreview, setNotice, installMarketSkill, installingMarketSkill } = props;
+  /* ⛔ 10-27 审查：筛选必须在分页切片**之前**。原先先切当前页再 filter ⇒ 在第二页选分类
+     只过滤那 12 张卡、翻页总数还是全量（用户看到「分类里没东西」）。 */
+  const marketFiltered = marketSkills.filter((skill: any) =>
+    (!skillHubFilterCategory || skill.category === skillHubFilterCategory)
+    && (!skillHubSearch || `${skill.name} ${skill.description}`.toLowerCase().includes(skillHubSearch.toLowerCase()))
+    && !localSkills.some((entry: any) => entry.marketId === skill.id));
+  const marketPageSizeSafe = Math.max(1, Number(marketPageSize) || 12);
+  const marketTotalPages = Math.max(1, Math.ceil(marketFiltered.length / marketPageSizeSafe));
+  const marketSafePage = Math.min(Math.max(1, Number(marketPage) || 1), marketTotalPages);
   return (
     <>
       <section className="settings-section stack skill-center">
@@ -53,7 +62,7 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                       <div className="skill-actions-line">
                         <button className={`${skillsManageOnly ? "active-manage" : "secondary-setting"} skill-action-sm`} onClick={() => setSkillsManageOnly(!skillsManageOnly)}><LayoutGrid size={13} />{skillsManageOnly ? "返回市场浏览" : `我的技能 ${installedTotalCount}`}</button>
                         <button className="secondary-setting skill-action-sm" onClick={() => void importSkill()}><Paperclip size={13} />导入技能</button>
-                        <button className="icon-button skill-action-sm" title="刷新技能市场" onClick={() => void refreshWithReceipt(setNotice, "刷新技能市场", () => refreshMarketSkills(skillHubCategory, skillHubSearch, marketPage))}>{marketLoading ? <Spinner /> : <RefreshCw size={13} />}</button>
+                        <button className="icon-button skill-action-sm" title="刷新技能市场" onClick={() => void refreshWithReceipt(setNotice, "刷新技能市场", () => { setMarketPage(1); return refreshMarketSkills(skillHubCategory, skillHubSearch, 1); })}>{marketLoading ? <Spinner /> : <RefreshCw size={13} />}</button>
                       </div>
                     </div>
                     {skillsManageOnly ? (() => {
@@ -159,9 +168,7 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                         </section>}
                         {!shownBuiltin.length && !marketInstalled.length && !localInstalled.length && <p className="muted">{keyword ? "没有匹配的已安装技能，换个关键词试试。" : "还没有已安装技能。可通过“市场浏览”安装，或“从本地添加技能”导入 SKILL.md。"}</p>}
                       </div>;
-                    })() : <div className="skill-card-grid page-turn" key={marketPage}>{marketSkills.slice((marketPage - 1) * marketPageSize, marketPage * marketPageSize).filter((skill: any) => (!skillHubFilterCategory || skill.category === skillHubFilterCategory) && (!skillHubSearch || `${skill.name} ${skill.description}`.toLowerCase().includes(skillHubSearch.toLowerCase()))
-                      /* ⛔ 10-06 用户定案：市场里不再显示已安装的（装了的进上方「市场安装」分组）——与插件/MCP 市场同一口径。 */
-                      && !localSkills.some((entry: any) => entry.marketId === skill.id)).map((skill: any) => { const installed = localSkills.some((entry: any) => entry.marketId === skill.id); return <article className={`skill-card ${installed ? "installed" : ""}`} key={skill.name} onClick={() => setMarketPreview({
+                    })() : <><div className="skill-card-grid page-turn" key={marketSafePage}>{marketFiltered.slice((marketSafePage - 1) * marketPageSizeSafe, marketSafePage * marketPageSizeSafe).map((skill: any) => { const installed = localSkills.some((entry: any) => entry.marketId === skill.id); return <article className={`skill-card ${installed ? "installed" : ""}`} key={skill.name} onClick={() => setMarketPreview({
                               kind: "skill",
                               title: skill.name,
                               subtitle: `${skillHubCategoryName(skill.category)}${skill.subCategory ? ` · ${skill.subCategory}` : ""} · SkillHub 技能市场`,
@@ -175,7 +182,7 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                               externalUrl: "https://skillhub.tencent.com/",
                               externalLabel: "SkillHub 查看",
                               note2: installed ? undefined : "安装到 Codex 技能目录，对话中可直接引用",
-                            })}><div className="skill-card-head"><SkillAvatar skill={skill} /><button className="skill-add" title={installed ? "在对话中使用已安装技能" : "一键安装到 Codex 技能目录"} disabled={Boolean(installingMarketSkill)} onClick={(event) => { event.stopPropagation(); if (installed) { setSelectedSkills((current: any) => current.some((entry: any) => entry.name === skill.name) ? current : [...current, skill]); setSettingsOpen(false); setNotice(`已引用技能：${skill.name}`); } else void installMarketSkill(skill); }}>{installed ? <Check size={14} /> : <Plus size={14} />}</button></div><strong>{skill.name}</strong><p>{skill.description}</p><footer><span title={skill.category}>{skillHubCategoryName(skill.category)}{skill.subCategory ? ` · ${skill.subCategory}` : ""}</span><a href="https://skillhub.tencent.com/" onClick={(event) => { event.preventDefault(); event.stopPropagation(); void window.codex.openExternal("https://skillhub.tencent.com/"); }}>SkillHub 查看</a></footer></article>; })}</div>}
+                            })}><div className="skill-card-head"><SkillAvatar skill={skill} /><button className="skill-add" title={installed ? "在对话中使用已安装技能" : "一键安装到 Codex 技能目录"} disabled={Boolean(installingMarketSkill)} onClick={(event) => { event.stopPropagation(); if (installed) { setSelectedSkills((current: any) => current.some((entry: any) => entry.name === skill.name) ? current : [...current, skill]); setSettingsOpen(false); setNotice(`已引用技能：${skill.name}`); } else void installMarketSkill(skill); }}>{installed ? <Check size={14} /> : <Plus size={14} />}</button></div><strong>{skill.name}</strong><p>{skill.description}</p><footer><span title={skill.category}>{skillHubCategoryName(skill.category)}{skill.subCategory ? ` · ${skill.subCategory}` : ""}</span><a href="https://skillhub.tencent.com/" onClick={(event) => { event.preventDefault(); event.stopPropagation(); void window.codex.openExternal("https://skillhub.tencent.com/"); }}>SkillHub 查看</a></footer></article>; })}</div>{marketTotalPages > 1 && <div className="skill-market-pagination"><span>共 {marketFiltered.length} 个技能 · 第 {marketSafePage} / {marketTotalPages} 页</span><div><button className="secondary-setting" disabled={marketSafePage <= 1} onClick={() => setMarketPage(marketSafePage - 1)}><ArrowLeft size={14} />上一页</button><button className="secondary-setting" disabled={marketSafePage >= marketTotalPages} onClick={() => setMarketPage(marketSafePage + 1)}>下一页<ArrowRight size={14} /></button></div></div>}</>}
                   </section>
     </>
   );

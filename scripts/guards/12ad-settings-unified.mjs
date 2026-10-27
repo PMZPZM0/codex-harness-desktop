@@ -114,12 +114,18 @@ const skillsPage = pageSrc("skills");
 ok(/skill-actions-line/.test(skillsPage) && !/skill-market-toolbar|settings-heading-actions/.test(skillsPage) && !/<div className="skill-tabs">/.test(skillsPage) && !/<span className="skill-filter-count">/.test(skillsPage), "技能页：按键与搜索同排，分类小字与页头按键已删");
 ok(!/PageInfo/.test(skillsPage), "技能页右上角帮助问号已删");
 ok(/<AppSelect[\s\S]{0,200}skill-category-select/.test(skillsPage) && /skillHubFilterCategory \|\| skill\.category === skillHubFilterCategory/.test(skillsPage), "技能分类筛选下拉回来了（卡片按分类过滤）");
+/* 10-27 审查：分类/搜索必须在分页切片**之前** —— 先切页再 filter 只会过滤当前 12 张卡，
+   分页总数也还是全量（用户表现为「选了分类翻页还是那些」）。 */
+ok(/const marketFiltered = marketSkills\.filter/.test(skillsPage) && /marketFiltered\.slice\(/.test(skillsPage)
+  && !/marketSkills\.slice\(\(marketPage/.test(skillsPage) && /共 \{marketFiltered\.length\} 个技能/.test(skillsPage),
+  "技能市场先筛选再分页（分类/搜索不会只过滤当前页）");
 const skillsCss = read("src/styles/12-settings-skills.css");
 ok(/\.skill-actions-line\s*\{[^}]*margin-left:\s*auto/.test(skillsCss) && /\.skill-action-sm\s*\{[^}]*height:\s*28px/.test(skillsCss), "技能页按键与搜索同一行、右对齐且小尺寸（28px）");
 const commandsPage = pageSrc("commands");
 ok(!/settings-copy|PageInfo|settings-heading-actions/.test(commandsPage) && /command-actions-line/.test(commandsPage), "命令页页头按键/问号已删，新建与刷新并进搜索行");
 ok(!/还没有自定义命令/.test(commandsPage), "命令页不再显示「还没有自定义命令」空态注释");
 ok(/<AppSelect[\s\S]{0,200}command-filter-select/.test(commandsPage) && !/command-stats|command-tabs/.test(commandsPage), "命令分类收成下拉筛选（统计小字与 tab 已删）");
+ok(/new Set\(builtinCommandCatalog\.map/.test(commandsPage) && !/builtinCategories = \["/.test(commandsPage), "命令分组从内置清单派生（新增类目不会漏显示）");
 const commandCss = read("src/styles/14-model-onboarding.css");
 ok(/\.command-actions-line\s*\{/.test(commandCss) && /\.command-action-sm\s*\{[^}]*height:\s*28px/.test(commandCss) && /\.command-filter-select\s*\{/.test(commandCss), "命令页按键小尺寸（28px）、筛选下拉在位");
 const pluginsPage = pageSrc("plugins");
