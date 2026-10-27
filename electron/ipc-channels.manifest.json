@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 552,
+  "count": 566,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -2074,6 +2074,66 @@
       "note": "在应用内弹「图像工坊」浮层给用户看一张图。只读展示、**不自动收起**（由用户自己关）。零凭证"
     },
     {
+      "name": "journalAppend",
+      "channel": "journal:append",
+      "paramsImpl": "date: string, title: string, body: string",
+      "paramsDecl": "date: string, title: string, body: string",
+      "returns": "Promise<{ days: JournalDay[]; date: string }>",
+      "invokeArgs": "date, title, body",
+      "cast": null,
+      "note": "追加一条（## HH:mm 标题 + 正文）"
+    },
+    {
+      "name": "journalList",
+      "channel": "journal:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ days: JournalDay[]; dir: string; today: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "journalRead",
+      "channel": "journal:read",
+      "paramsImpl": "date: string",
+      "paramsDecl": "date: string",
+      "returns": "Promise<{ date: string; content: string }>",
+      "invokeArgs": "date",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "journalRemove",
+      "channel": "journal:remove",
+      "paramsImpl": "date: string",
+      "paramsDecl": "date: string",
+      "returns": "Promise<{ days: JournalDay[] }>",
+      "invokeArgs": "date",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "journalSave",
+      "channel": "journal:save",
+      "paramsImpl": "date: string, content: string",
+      "paramsDecl": "date: string, content: string",
+      "returns": "Promise<{ days: JournalDay[]; date: string }>",
+      "invokeArgs": "date, content",
+      "cast": null,
+      "note": "整篇覆盖（编辑器保存）"
+    },
+    {
+      "name": "journalSearch",
+      "channel": "journal:search",
+      "paramsImpl": "query: string",
+      "paramsDecl": "query: string",
+      "returns": "Promise<{ hits: { date: string; lines: string[] }[] }>",
+      "invokeArgs": "query",
+      "cast": null,
+      "note": null
+    },
+    {
       "name": "addKnowledgeFiles",
       "channel": "kb:add-files",
       "paramsImpl": "input: { workspace?: string; paths?: string[] }",
@@ -2732,6 +2792,36 @@
       "invokeArgs": "input ?? {}",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "openfilmDesktopDownload",
+      "channel": "openfilm:desktop-download",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; path?: string; error?: string; version?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "下载并校验官方安装包（走 updates.downloadUpdate：镜像候选 + 302 + 强制 https + asset.digest 的 sha256；校验不过换下一档并删半截文件）。进度事件 {type:openfilm, phase:desktop}"
+    },
+    {
+      "name": "openfilmDesktopInfo",
+      "channel": "openfilm:desktop-info",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ supported: boolean; reason: string; platform: string; installed: { installed: boolean; path: string; version: string }; version: string; error: string; asset: { name: string; size: number } | null; local: { path: string; size: number } | null; localOutdated: boolean; runningApp: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "桌面端状态：能不能装 / 已装在哪 / 上游最新版 / 本地安装包。⛔ 不代跑它的 electron-updater（App 更新归 App）"
+    },
+    {
+      "name": "openfilmDesktopRun",
+      "channel": "openfilm:desktop-run",
+      "paramsImpl": "action?: unknown",
+      "paramsDecl": "action?: \"install\" | \"silent\" | \"reveal\" | \"uninstall\"",
+      "returns": "Promise<{ ok: boolean; action: string; error?: string; note?: string }>",
+      "invokeArgs": "action",
+      "cast": null,
+      "note": "运行安装器（Win 带界面 / /S 静默；macOS hdiutil 挂载 + cp + xattr 清 quarantine）/ 打开安装包所在目录 / 卸载引导（⛔ 我们绝不代删 /Applications 或 Program Files）"
     },
     {
       "name": "openfilmInstall",
@@ -4789,6 +4879,46 @@
       "note": null
     },
     {
+      "name": "vaultCopy",
+      "channel": "vault:copy",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; reason?: string }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": "主进程解密后直写剪贴板（明文不返回渲染层）"
+    },
+    {
+      "name": "vaultList",
+      "channel": "vault:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ items: VaultItem[]; encrypted: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "密码本列表（不含明文，只有 hasSecret）"
+    },
+    {
+      "name": "vaultRemove",
+      "channel": "vault:remove",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ items: VaultItem[] }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "vaultSave",
+      "channel": "vault:save",
+      "paramsImpl": "input: Record<string, unknown>",
+      "paramsDecl": "input: { id?: string; title?: string; username?: string; url?: string; note?: string; password?: string }",
+      "returns": "Promise<{ items: VaultItem[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "保存/更新一条；password 省略=保留原密码"
+    },
+    {
       "name": "videoConcat",
       "channel": "video:concat",
       "paramsImpl": "input: { workspace: string; name: string; files: string[]; width?: number; height?: number; fps?: number }",
@@ -5491,6 +5621,16 @@
       "invokeArgs": "",
       "cast": null,
       "note": "扫各项目的**工作日志与项目记忆**（<项目>/.codex-harness/memory/**：长期记忆 / 坑与纪律 / logs 日报 / archive / project）。项目清单来自 rollout 扫出的 cwd 集合。⛔ 这是项目里的工作记录，与会话本身的归档 / 删除（「归档管理」页）不是一回事"
+    },
+    {
+      "name": "extensionsCatalog",
+      "channel": "extensions:catalog",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ rail: RailPanelSpec[]; menu: MenuEntrySpec[]; file: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "输入框竖条 + 功能入口菜单的可扩展目录（内置 + userData/extensions.json）"
     }
   ]
 }

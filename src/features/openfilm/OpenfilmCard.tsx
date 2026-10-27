@@ -24,6 +24,20 @@ type Status = {
   attribution: { home: string; site: string; license: string; trademark: string };
 };
 
+/** 桌面端状态（上游官方安装包；⛔ 我们不重打包、不代删系统目录） */
+type Desktop = {
+  supported: boolean;
+  reason: string;
+  platform: string;
+  installed: { installed: boolean; path: string; version: string };
+  version: string;
+  error: string;
+  asset: { name: string; size: number } | null;
+  local: { path: string; size: number } | null;
+  localOutdated: boolean;
+  runningApp: boolean;
+};
+
 type Progress = { step?: "cli" | "chromium" | "verify"; label?: string; pct?: number; log?: string; error?: string; message?: string; phase?: string };
 /** 启动检查/手动检查的版本事件（主进程 autoUpdateOnStartup 广播） */
 type UpdateEvent = { phase: "update"; current: string; latest: string; source: string; hasUpdate: boolean };
@@ -40,12 +54,18 @@ export function OpenfilmCard() {
   const [progress, setProgress] = useState<Progress | null>(null);
   const [notice, setNotice] = useState<{ tone: "ok" | "warn" | "err"; text: string } | null>(null);
   const [update, setUpdate] = useState<{ latest: string; hasUpdate: boolean; source: string } | null>(null);
+  const [desktop, setDesktop] = useState<Desktop | null>(null);
+  const [desktopBusy, setDesktopBusy] = useState(false);
   const mounted = useRef(true);
 
   const refresh = async () => {
     try {
       const next = await window.codex.openfilmStatus();
       if (mounted.current) setStatus(next as Status);
+      /* 桌面端信息独立拉：它要打 GitHub API（慢/可能失败），⛔ 不能把整张卡的状态拖住 */
+      void window.codex.openfilmDesktopInfo()
+        .then((info) => { if (mounted.current) setDesktop(info as Desktop); })
+        .catch(() => undefined);
     } catch (error: any) {
       if (mounted.current) setNotice({ tone: "err", text: `读取状态失败：${String(error?.message ?? error)}` });
     }
@@ -123,6 +143,23 @@ export function OpenfilmCard() {
     } catch (error: any) {
       setNotice({ tone: "err", text: String(error?.message ?? error) });
     } finally { setBusy(false); }
+  };
+
+  /* 桌面端三件事：下载（含校验）/ 运行安装器 / 卸载引导。
+     ⛔ 下载与安装**分两步**：265MB 下完就自动弹安装向导，用户会不知道刚才点了什么。 */
+  const desktopAction = async (action: "download" | "install" | "silent" | "reveal" | "uninstall") => {
+    setDesktopBusy(true); setNotice(null);
+    try {
+      const result: any = action === "download"
+        ? await window.codex.openfilmDesktopDownload()
+        : await window.codex.openfilmDesktopRun(action);
+      if (!result?.ok) setNotice({ tone: "err", text: `${result?.error ?? "操作失败"}`.trim() });
+      else setNotice({ tone: "ok", text: result?.note || (action === "download" ? "安装包已下载并校验" : "完成") });
+      const fresh = await window.codex.openfilmDesktopInfo().catch(() => null);
+      if (mounted.current && fresh) setDesktop(fresh as Desktop);
+    } catch (error: any) {
+      setNotice({ tone: "err", text: String(error?.message ?? error) });
+    } finally { setDesktopBusy(false); setProgress(null); }
   };
 
   const saveSettings = async (patch: Partial<Status["settings"]>) => {
@@ -236,6 +273,65 @@ export function OpenfilmCard() {
           {status.studio.version ? ` · ${status.studio.version}` : ""}
         </p>
       )}
+
+      {/* ── 桌面端（可选）：用户「有桌面端会更方便」─────────────────────────────
+          上游的图形界面版：自带 ffmpeg + 浏览器、双击即用，与这里的剪辑共用同一套项目库。
+          ⛔ 我们只做三件事：下载官方安装包（校验 sha256）、启动它的安装器、卸载引导。
+             不重打包、不代删 /Applications 或 Program Files、不代跑它的 electron-updater。 */}
+      <section className="openfilm-desktop" data-installed={desktop?.installed.installed ? "1" : "0"}>
+        <div className="openfilm-desktop-head">
+          <strong>桌面端（可选，更方便）</strong>
+          <span className={`openfilm-badge tone-${desktop?.installed.installed ? "ok" : desktop?.local ? "warn" : "muted"}`}>
+            {desktop?.installed.installed ? "已安装" : desktop?.local ? "已下载，待安装" : "未安装"}
+          </span>
+        </div>
+        <p className="openfilm-fineprint">
+          上游的图形界面版：自带 ffmpeg 与渲染浏览器、双击即用，和这里的剪辑共用同一个项目库（改哪边都同步）。
+        </p>
+        {desktop && !desktop.supported && <p className="openfilm-notice tone-warn">{desktop.reason}</p>}
+        {desktop?.supported && desktop.error && <p className="openfilm-notice tone-warn">{desktop.error}</p>}
+        {desktop?.supported && (
+          <div className="openfilm-actions">
+            {!desktop.local && (
+              <button type="button" className="primary-setting" disabled={desktopBusy} onClick={() => void desktopAction("download")}>
+                {desktopBusy ? <LoaderCircle size={13} className="spin" /> : <Download size={13} />}
+                下载桌面端{desktop.asset ? `（${Math.round(desktop.asset.size / 1048576)}MB）` : ""}
+              </button>
+            )}
+            {desktop.local && !desktop.installed.installed && (
+              <>
+                <button type="button" className="primary-setting" disabled={desktopBusy} onClick={() => void desktopAction("install")}>
+                  {desktopBusy ? <LoaderCircle size={13} className="spin" /> : <Download size={13} />}
+                  {desktop.platform === "darwin" ? "安装到「应用程序」" : "运行安装程序"}
+                </button>
+                <button type="button" className="secondary-setting" disabled={desktopBusy} onClick={() => void desktopAction("reveal")}>打开安装包</button>
+                {desktop.platform === "win32" && (
+                  <button type="button" className="secondary-setting" disabled={desktopBusy} title="NSIS /S：不弹界面直接装（首次可能弹 UAC）"
+                    onClick={() => void desktopAction("silent")}>静默安装</button>
+                )}
+              </>
+            )}
+            {desktop.installed.installed && (
+              <>
+                <button type="button" className="secondary-setting" disabled={desktopBusy} onClick={() => void desktopAction("reveal")}>打开安装位置</button>
+                <button type="button" className="secondary-setting danger-lite" disabled={desktopBusy} onClick={() => void desktopAction("uninstall")}>卸载引导</button>
+              </>
+            )}
+            {desktop.local && (
+              <button type="button" className="secondary-setting" disabled={desktopBusy} onClick={() => void desktopAction("download")}>重新下载</button>
+            )}
+          </div>
+        )}
+        <p className="openfilm-fineprint">
+          {desktop?.platform === "darwin"
+            ? "macOS：上游包未公证，首次启动若被系统拦下，去「系统设置 → 隐私与安全性」点「仍要打开」。"
+            : "Windows：只有 x64 安装包；首次安装可能弹一次 UAC 授权。"}
+          {desktop?.version ? ` 上游最新 ${desktop.version}。` : ""}
+          {desktop?.localOutdated ? " 本地包不是最新版，建议重新下载。" : ""}
+          {desktop?.runningApp ? " 当前 Studio 就是桌面端起的。" : ""}
+          卸载请用它自带的卸载程序 —— 我们不会替你删系统目录。
+        </p>
+      </section>
 
       {/* 控制台开关：自动更新三档 + 镜像策略 */}
       <div className="openfilm-settings">

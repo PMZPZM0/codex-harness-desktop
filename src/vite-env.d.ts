@@ -372,6 +372,26 @@ type FavoriteItem = {
   lastUsedAt?: string;
 };
 type FavoriteDeleteResult = { items: FavoriteItem[]; removed: number };
+
+/* ── 输入框左侧竖条的两个本地库（10-27）────────────────────────────────────
+   vault   = 密码本（safeStorage 加密；渲染层只拿 hasSecret，永远没有明文）
+   journal = 开发日记（userData/dev-journal/YYYY-MM-DD.md，按天一个文件） */
+type VaultItem = {
+  id: string;
+  title: string;
+  username?: string;
+  url?: string;
+  note?: string;
+  /** 有密码 = true。⛔ 明文永远不返回渲染层（复制走 vaultCopy，由主进程写剪贴板） */
+  hasSecret: boolean;
+  updatedAt: string;
+};
+type JournalDay = { date: string; title: string; bytes: number; updatedAt: string };
+
+/* 竖条面板 / 功能入口菜单的扩展目录（extensions:catalog）。扩展项只能声明封闭动作集。 */
+type ExtAction = { type: "url"; target: string } | { type: "settings"; target: string } | { type: "text"; body: string };
+type RailPanelSpec = { id: string; label: string; icon?: string; kind: "builtin" | "external"; action?: ExtAction; order?: number };
+type MenuEntrySpec = { id: string; label: string; icon?: string; action: ExtAction; order?: number };
 /** 写入记忆金字塔的层：user=L0 用户档案 · project=L1 项目记忆 · background=L3 项目背景 · lessons=L2 纪律 */
 type MemoryLayerScope = "user" | "project" | "background" | "lessons";
 type FavoritesToMemoryResult = { ok: boolean; written: number; error?: string };
@@ -746,6 +766,14 @@ interface Window {
     readImage(path: string): Promise<{ data: Uint8Array; size: number }>;
     /* 在应用内弹「图像工坊」浮层给用户看一张图。只读展示、**不自动收起**（由用户自己关）。零凭证 */
     imageView(input: { path: string; title?: string }): Promise<{ ok: boolean; output: string; error?: string }>;
+    /* 追加一条（## HH:mm 标题 + 正文） */
+    journalAppend(date: string, title: string, body: string): Promise<{ days: JournalDay[]; date: string }>;
+    journalList(): Promise<{ days: JournalDay[]; dir: string; today: string }>;
+    journalRead(date: string): Promise<{ date: string; content: string }>;
+    journalRemove(date: string): Promise<{ days: JournalDay[] }>;
+    /* 整篇覆盖（编辑器保存） */
+    journalSave(date: string, content: string): Promise<{ days: JournalDay[]; date: string }>;
+    journalSearch(query: string): Promise<{ hits: { date: string; lines: string[] }[] }>;
     addKnowledgeFiles(input: { workspace?: string; paths?: string[] }): Promise<{ imported: { title: string; id: string }[]; failures: string[] }>;
     addKnowledgeText(input: { workspace?: string; title?: string; text?: string; source?: string }): Promise<KbDocMeta>;
     /* 读取知识库后端：local=项目本地库 / cloud=云端 weknora（MCP） */
@@ -839,6 +867,12 @@ interface Window {
     openaiSetProxy(proxy: string): Promise<{ ok: boolean }>;
     openaiToggleAccount(input: { id: string; disabled: boolean }): Promise<{ ok: boolean; disabled: boolean; deactivated?: boolean }>;
     openaiUsage(input?: { email?: string }): Promise<any>;
+    /* 下载并校验官方安装包（走 updates.downloadUpdate：镜像候选 + 302 + 强制 https + asset.digest 的 sha256；校验不过换下一档并删半截文件）。进度事件 {type:openfilm, phase:desktop} */
+    openfilmDesktopDownload(): Promise<{ ok: boolean; path?: string; error?: string; version?: string }>;
+    /* 桌面端状态：能不能装 / 已装在哪 / 上游最新版 / 本地安装包。⛔ 不代跑它的 electron-updater（App 更新归 App） */
+    openfilmDesktopInfo(): Promise<{ supported: boolean; reason: string; platform: string; installed: { installed: boolean; path: string; version: string }; version: string; error: string; asset: { name: string; size: number } | null; local: { path: string; size: number } | null; localOutdated: boolean; runningApp: boolean }>;
+    /* 运行安装器（Win 带界面 / /S 静默；macOS hdiutil 挂载 + cp + xattr 清 quarantine）/ 打开安装包所在目录 / 卸载引导（⛔ 我们绝不代删 /Applications 或 Program Files） */
+    openfilmDesktopRun(action?: "install" | "silent" | "reveal" | "uninstall"): Promise<{ ok: boolean; action: string; error?: string; note?: string }>;
     /* 按需安装（三步可单步重试；npm 走 npmmirror、chromium 走 cdn.npmmirror，失败回官方） */
     openfilmInstall(step?: "cli" | "chromium" | "verify"): Promise<{ ok: boolean; code?: string; error?: string; status: OpenfilmStatus }>;
     /* 单步重试（缺省 verify） */
@@ -1127,6 +1161,13 @@ interface Window {
     updateRestartInstall(): Promise<{ ok: boolean; error?: string }>;
     updateReveal(filePath: string): Promise<{ ok: boolean }>;
     getUsername(): Promise<string>;
+    /* 主进程解密后直写剪贴板（明文不返回渲染层） */
+    vaultCopy(id: string): Promise<{ ok: boolean; reason?: string }>;
+    /* 密码本列表（不含明文，只有 hasSecret） */
+    vaultList(): Promise<{ items: VaultItem[]; encrypted: boolean }>;
+    vaultRemove(id: string): Promise<{ items: VaultItem[] }>;
+    /* 保存/更新一条；password 省略=保留原密码 */
+    vaultSave(input: { id?: string; title?: string; username?: string; url?: string; note?: string; password?: string }): Promise<{ items: VaultItem[] }>;
     /* 按顺序合并视频片段成一条成片（整片导出）：先 -c copy，失败回落统一重编码；输出 <workspace>/.drama-canvas/export/ */
     videoConcat(input: { workspace: string; name: string; files: string[]; width?: number; height?: number; fps?: number }): Promise<{ path: string; bytes: number; mode: "copy" | "reencode"; parts: number }>;
     /* 各厂商凭证（userData/video-providers.json） */
@@ -1222,6 +1263,8 @@ interface Window {
     workLogsRead(input: { path: string }): Promise<{ path: string; text: string; bytes: number; mtime: number }>;
     /* 扫各项目的**工作日志与项目记忆**（<项目>/.codex-harness/memory/**：长期记忆 / 坑与纪律 / logs 日报 / archive / project）。项目清单来自 rollout 扫出的 cwd 集合。⛔ 这是项目里的工作记录，与会话本身的归档 / 删除（「归档管理」页）不是一回事 */
     workLogsScan(): Promise<{ projects: Array<{ cwd: string; name: string; memoryDir: string; exists: boolean; bytes: number; files: Array<{ path: string; rel: string; kind: string; bytes: number; mtime: number }> }> }>;
+    /* 输入框竖条 + 功能入口菜单的可扩展目录（内置 + userData/extensions.json） */
+    extensionsCatalog(): Promise<{ rail: RailPanelSpec[]; menu: MenuEntrySpec[]; file: string }>;
 /* ═══ gen:end ═══ */
 
 

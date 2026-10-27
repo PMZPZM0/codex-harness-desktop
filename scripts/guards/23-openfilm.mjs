@@ -40,9 +40,10 @@ const probe = code("electron/openfilm/probe.ts");
 const studio = code("electron/openfilm/studio.ts");
 const tools = code("electron/openfilm/tools.ts");
 const brand = code("electron/openfilm/brand.ts");
+const desktop = code("electron/openfilm/desktop.ts");
 
-ok(Boolean(ipc) && Boolean(paths) && Boolean(runner) && Boolean(probe) && Boolean(studio) && Boolean(tools) && Boolean(brand),
-  "主进程六件套在位（ipc / paths / runner / probe / studio / tools / brand）");
+ok(Boolean(ipc) && Boolean(paths) && Boolean(runner) && Boolean(probe) && Boolean(studio) && Boolean(tools) && Boolean(brand) && Boolean(desktop),
+  "主进程七件套在位（ipc / paths / runner / probe / studio / tools / brand / desktop）");
 
 /* ── 1. 域登记：一个前缀、9 条通道、生成物齐 ─────────────────────────── */
 {
@@ -54,21 +55,23 @@ ok(Boolean(ipc) && Boolean(paths) && Boolean(runner) && Boolean(probe) && Boolea
 
   const manifest = JSON.parse(read("electron/ipc-channels.manifest.json"));
   const channels = manifest.channels.filter((c) => String(c.channel ?? "").startsWith("openfilm:")).map((c) => c.channel);
-  ok(channels.length === 9, `manifest 有 9 条 openfilm 通道（实测 ${channels.length}）`);
+  ok(channels.length === 12, `manifest 有 12 条 openfilm 通道（实测 ${channels.length}）`);
   ok(["openfilm:status", "openfilm:install", "openfilm:retry", "openfilm:uninstall", "openfilm:settings-get", "openfilm:settings-set",
-    "openfilm:update-check", "openfilm:studio-open", "openfilm:studio-status"]
-    .every((name) => channels.includes(name)), "9 条通道名与实现一致（含批次二的 studio-open / studio-status）");
+    "openfilm:update-check", "openfilm:studio-open", "openfilm:studio-status",
+    "openfilm:desktop-info", "openfilm:desktop-download", "openfilm:desktop-run"]
+    .every((name) => channels.includes(name)), "12 条通道名与实现一致（含批次二 studio / 批次三 desktop）");
   /* ⛔ 没有"关闭 Studio"通道：那个实例可能正被上游桌面 App 或别的 agent 用着，杀它 = 丢用户没保存的手改 */
   ok(!channels.some((name) => /studio-close|studio-kill/.test(name)),
     "⛔ 不提供关闭 Studio 的通道（可能是别人正在用的实例）");
 
   const registry = read("electron/ipc-registry.ts");
-  ok(/\{ prefix: "openfilm", count: 9, status: "in-features", file: "features\/openfilm-ipc\.ts"/.test(registry),
-    "ipc-registry.ts 账本已登记（count=9）");
+  ok(/\{ prefix: "openfilm", count: 12, status: "in-features", file: "features\/openfilm-ipc\.ts"/.test(registry),
+    "ipc-registry.ts 账本已登记（count=12）");
 
   const preload = read("electron/preload.ts");
   for (const method of ["openfilmStatus", "openfilmInstall", "openfilmRetry", "openfilmUninstall", "openfilmSettingsGet",
-    "openfilmSettingsSet", "openfilmUpdateCheck", "openfilmStudioOpen", "openfilmStudioStatus"]) {
+    "openfilmSettingsSet", "openfilmUpdateCheck", "openfilmStudioOpen", "openfilmStudioStatus",
+    "openfilmDesktopInfo", "openfilmDesktopDownload", "openfilmDesktopRun"]) {
     ok(preload.includes(method), `preload 已生成 ${method}`);
   }
 }
@@ -206,7 +209,46 @@ ok(Boolean(ipc) && Boolean(paths) && Boolean(runner) && Boolean(probe) && Boolea
     "应答排在 filterForRenderer **之前**（被裁掉就再也拿不到了）");
 }
 
-/* ── 9. 技能：内置一份手册，正文与工具实现一致 ───────────────────────── */
+/* ── 9. 桌面端：只用官方安装包，不代删系统目录，不代跑它的更新器 ──────── */
+{
+  ok(/api\.github\.com\/repos\/\$\{REPO\}\/releases\/latest/.test(desktop) && /const REPO = "openfilm\/openfilm"/.test(desktop),
+    "只从上游官方 Release 取包（openfilm/openfilm 的 releases/latest）");
+  ok(/mirrorCandidates\(RELEASE_API\)/.test(desktop),
+    "API 与资产都走 gh-mirror 的候选序（⛔ 不在这里另写一份镜像表）");
+  ok(/downloadUpdate\(asset\.url, target/.test(desktop) && /asset\.digest\.replace\(\/\^sha256:\/i, ""\)/.test(desktop),
+    "下载复用 updates.downloadUpdate 并强制校验 asset.digest 的 sha256（第三方反代能改包体 ⇒ 必须比对）");
+  ok(/OpenFilm-Setup-\.\*\.exe/.test(desktop) || /\^OpenFilm-Setup-.*\\\.exe\$/.test(desktop),
+    "Windows 取 OpenFilm-Setup-*.exe（上游只发 x64）");
+  ok(!/arm64.*\.exe|Setup-arm64/i.test(desktop),
+    "⛔ 不假装 Windows 有 arm64 包（上游没有；ARM 设备如实说明只能走 CLI）");
+  ok(/arch === "arm64" \? find\(\/arm64\\\.dmg\$\/i\) : find\(\/x64\\\.dmg\$\/i\)/.test(desktop),
+    "macOS 按 arch 选 dmg（arm64 / x64 两种产物）");
+  ok(/hdiutil.*attach/.test(desktop) && /\["-R", source, target\]/.test(desktop) && /xattr.*com\.apple\.quarantine/.test(desktop),
+    "macOS 自动安装：hdiutil 挂载 → cp -R 到 /Applications → 清 com.apple.quarantine（未公证包不清会被 Gatekeeper 拦）");
+  ok(!/rm\(.*Applications|rmSync\(.*Applications|rm\(.*ProgramFiles/.test(desktop) && !/rm -rf/.test(desktop),
+    "⛔ 绝不代删 /Applications 或 Program Files（卸载只做引导：启动它的卸载器 / 在 Finder 选中）");
+  ok(/Uninstall.*\.exe/.test(desktop) && /launchDetached\(uninstaller/.test(desktop),
+    "Windows 卸载 = 启动上游自带的 Uninstall*.exe（不是我们删目录）");
+  ok(/open.*-R/.test(desktop) && /拖进废纸篓/.test(desktop),
+    "macOS 卸载 = Finder 里选中 .app 让用户自己扔（⛔ 不代删）");
+  ok(!/autoUpdater|electron-updater/.test(desktop),
+    "⛔ 不代跑上游的 electron-updater（App 更新归 App 自己）");
+  ok(/desktopDir\(\)/.test(desktop) && /path\.join\(desktopDir\(\), asset\.name\)/.test(desktop),
+    "安装包落在自己的 <安装根>/desktop/ 下（⛔ 不塞下载目录、不改名）");
+  ok(/export function launchDetached/.test(runner) && /detached: true/.test(runner),
+    "安装器用 runner 的 detached 启动器（⛔ 不 await 一个会一直开着的 NSIS 向导）");
+  ok(/entry === "runtime"/.test(ipc) && !/entry === "desktop"/.test(ipc),
+    "「卸载运行时」不带走已下载的安装包（两者分开，别互相连坐）");
+  const desktopCard = code("src/features/openfilm/OpenfilmCard.tsx");
+  ok(/openfilmDesktopDownload\(\)/.test(desktopCard) && /openfilmDesktopRun\(action\)/.test(desktopCard),
+    "卡片能下载并运行安装器（desktop-download / desktop-run）");
+  ok(/未公证/.test(desktopCard) && /UAC/.test(desktopCard),
+    "卡片写清了 macOS 未公证与 Windows UAC 的真实情况（⛔ 不假装已签名）");
+  ok(/卸载引导/.test(desktopCard) && /不会替你删系统目录/.test(desktopCard),
+    "卡片明确：卸载只做引导，不代删系统目录");
+}
+
+/* ── 10. 技能：内置一份手册，正文与工具实现一致 ───────────────────────── */
 {
   const builtin = code("electron/builtin-skills.ts");
   ok(/\["openfilm-video-editing", OPENFILM_SKILL\]/.test(builtin),
@@ -222,7 +264,7 @@ ok(Boolean(ipc) && Boolean(paths) && Boolean(runner) && Boolean(probe) && Boolea
     "技能明令：模型不许自己 npm install（必须让用户点卡片）");
 }
 
-/* ── 10. 渲染层：卡片挂在开发工具页，且开关只有这套语义 ─────────────── */
+/* ── 11. 渲染层：卡片挂在开发工具页，且开关只有这套语义 ─────────────── */
 {
   const card = code("src/features/openfilm/OpenfilmCard.tsx");
   ok(Boolean(card) && /window\.codex\.openfilmStatus\(\)/.test(card), "卡片自取状态（window.codex.openfilmStatus）");

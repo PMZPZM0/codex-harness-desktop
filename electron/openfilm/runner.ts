@@ -70,6 +70,37 @@ export function runExe(exe: string, args: string[], opts: RunOptions, extraEnv: 
   });
 }
 
+/**
+ * 启动一个**长驻/交互式**程序后立刻放手（安装器、卸载器、打开安装包）。
+ *
+ * ⛔ 不能用 runExe：NSIS 安装器会一直开着等用户点"下一步"，等它 close 就是等用户关窗
+ *    （而且静默装时 UAC 弹框在另一个进程里，我们等不到任何输出）。
+ * ⇒ 只负责"起来了吗"：立刻 exit 且非 0 才算失败（缺文件 / 无权限），其余都当成功。
+ */
+export function launchDetached(exe: string, args: string[], opts: { cwd?: string } = {}): Promise<{ ok: boolean; error?: string }> {
+  return new Promise((resolve) => {
+    try {
+      const child = spawn(exe, args, {
+        cwd: opts.cwd,
+        env: { ...process.env },
+        detached: true,
+        stdio: "ignore",
+        windowsHide: false,   // 安装器要看得见（⛔ 藏起来会让用户以为"点了没反应"）
+        shell: false,
+      });
+      let settled = false;
+      const done = (result: { ok: boolean; error?: string }) => { if (!settled) { settled = true; resolve(result); } };
+      child.on("error", (error: any) => done({ ok: false, error: String(error?.message ?? error) }));
+      /* 3 秒内就退出的：要么失败（缺权限/文件损坏），要么安装器已经自己拉起了真正的进程 ——
+         code 0 当前者也算成功（部分 NSIS 会先起一个引导进程）。 */
+      child.on("exit", (code) => done(code === 0 ? { ok: true } : { ok: false, error: `安装器立刻退出（退出码 ${code}）` }));
+      setTimeout(() => { child.unref(); done({ ok: true }); }, 3000).unref?.();
+    } catch (error: any) {
+      resolve({ ok: false, error: String(error?.message ?? error) });
+    }
+  });
+}
+
 /* ── OpenFilm CLI ───────────────────────────────────────────────────────── */
 
 /** 允许从模型侧执行的命令（白名单；⛔ `update` / `doctor` 之类的维护命令不开放给模型）。 */
