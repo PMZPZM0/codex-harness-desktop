@@ -69,7 +69,9 @@ export default function ArchivePage({
       : items;
   }, [items, query]);
 
-  const checkedList = useMemo(() => items.filter((item) => checked.has(item.id)), [items, checked]);
+  // ⛔ 批量计数与操作只认**当前可见**的勾选：搜索把某些行藏起来时，不能把看不见的
+  //    归档一起恢复/删除（与 SSH / 插件 / 收藏夹同口径）。
+  const checkedList = useMemo(() => visible.filter((item) => checked.has(item.id)), [visible, checked]);
   const checkedIds = useMemo(() => checkedList.map((item) => item.id), [checkedList]);
   const totalCount = visible.length;
   const selectedCount = checkedIds.length;

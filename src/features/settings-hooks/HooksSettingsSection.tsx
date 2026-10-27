@@ -55,7 +55,7 @@ export function HooksSettingsSection(props: HooksSettingsSectionProps) {
   // 插件组的开关状态由插件本身决定（钩子列表可能为空），自定义组则由钩子决定
   const groupEnabled = (group: typeof groups[number]) => group.pluginId ? group.pluginEnabled !== false : group.hooks.some((hook: any) => hook.enabled !== false);
   return <section className="settings-section stack hook-center">
-    <div className="settings-copy channel-heading"><div><h2>钩子<PageInfo text={<>钩子的启停会<b>联动所属插件与它提供的技能</b>。另外 Codex <b>不会执行未信任的钩子</b>——新装后必须点一次「信任」，否则装了等于没装。</>} /></h2><p>插件带来的自动化动作；未信任的钩子不会执行，装好后先点一次「信任」。</p></div><div className="settings-heading-actions">{untrusted.length > 0 && <button className="primary-setting" disabled={hookTrusting} onClick={() => void trustAllHooks()}>{hookTrusting ? <Spinner /> : <ShieldCheck size={14} />}信任全部 {untrusted.length}</button>}<button className="icon-button" title="刷新钩子" onClick={() => void refreshWithReceipt(setNotice, "刷新钩子", () => refreshSettingsResources())}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
+    <div className="settings-copy channel-heading"><div><h2>钩子<PageInfo text={<>钩子的启停会<b>联动所属插件与它提供的技能</b>。另外 Codex <b>不会执行未信任的钩子</b>——新装后必须点一次「信任全部」，否则装了等于没装。</>} /></h2><p>插件带来的自动化动作；未信任的钩子不会执行，装好后先点一次「信任全部」。</p></div><div className="settings-heading-actions">{untrusted.length > 0 && <button className="primary-setting" disabled={hookTrusting} onClick={() => void trustAllHooks()}>{hookTrusting ? <Spinner /> : <ShieldCheck size={14} />}信任全部 {untrusted.length}</button>}<button className="icon-button" title="刷新钩子" onClick={() => void refreshWithReceipt(setNotice, "刷新钩子", () => refreshSettingsResources())}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
 
     <div className="hook-stats">
       <div className="hook-stat"><span>钩子总数</span><strong>{hooks.length}</strong></div>
@@ -107,7 +107,9 @@ export function HooksSettingsSection(props: HooksSettingsSectionProps) {
           <code className="hook-command" title={hook.command}>{hook.command ?? hook.scriptPath ?? "—"}</code>
           <div className="hook-card-foot">
             <span className="hook-source" title={hook.sourcePath}>{hook.matcher ? <>匹配 <code>{hook.matcher}</code> · </> : null}{hook.timeoutSec ? <>{hook.timeoutSec}s · </> : null}{hook.sourcePath ? String(hook.sourcePath).replace(/^.*[\\/]/, "") : (hook.source ?? "user")}</span>
-            {!trusted && <button className="secondary-setting hook-trust-button" disabled={hookTrusting} onClick={() => void trustAllHooks()}><ShieldCheck size={12} />信任</button>}
+            {/* 10-28 审查：主进程只提供「批量信任待信任钩子」（hooks:trust），没有单条信任通道。
+                这里原先每条未信任钩子都放一颗「信任」，点哪条都会信任**全部** ⇒ 误导。
+                唯一入口保留在页头「信任全部 N」。 */}
           </div>
         </article>;
       })}
