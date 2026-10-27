@@ -3,19 +3,11 @@
    （10-01 个性化皮肤已删，工坊专属类随之清理；组件库复用其中的 cats/search/grid/cell。） */
 
 /* ── 设置页骨架 ── */
-.ui-skin-cats { display: flex; gap: 6px; flex-wrap: wrap; }
-.ui-skin-cat {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  color: var(--muted);
-  padding: 4px 10px;
-  border-radius: 999px;
-  cursor: pointer;
-  font-size: 12px;
-  font-family: inherit;
-}
-.ui-skin-cat.active { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
-.ui-skin-cat i { font-style: normal; opacity: 0.6; margin-left: 3px; }
+/* 10-27：分类胶囊收成下拉，与搜索同一行右侧；搜索不再拉满整行 */
+.comp-lib-filter-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.comp-lib-filter-row .ui-skin-search { flex: 0 1 340px; min-width: 180px; }
+.comp-lib-cat-filter { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; flex: none; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.comp-lib-cat-select { min-width: 130px; }
 
 .ui-skin-search {
   padding: 7px 10px;
