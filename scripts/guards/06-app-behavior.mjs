@@ -2685,13 +2685,12 @@ w.postMessage({id:1,op:"list",root});
       && /\.sidebar-options-body\.is-collapsed\s*\{[\s\S]{0,160}?grid-template-rows:\s*0fr/.test(css41) ? ok : fail)(
       "【180】折叠用 grid 行高过渡（0fr ↔ 1fr + transition），无缝高度动画"
     );
-    /* 箭头方向：**横向**指（10-27 用户第 3 次反馈「这个展开朝向，看我箭头」）。
-       面板是 `left = 侧栏右缘 + 8` 的右侧浮层，顶部 / 底部两种位置都在右边 ⇒
-       收起 ›（朝右，点了从右边滑出）、展开 ‹（朝左，点了收回）。
-       ⛔ 别再按 top/bottom 位置区分方向：前两版按「上下」想，用户连续两次报方向不对。 */
-    (/\.sidebar-options \.sidebar-options-chevron\s*\{\s*transform:\s*rotate\(-90deg\)/.test(css41)
-      && /\.sidebar-options \.sidebar-options-chevron\.open\s*\{\s*transform:\s*rotate\(90deg\)/.test(css41) ? ok : fail)(
-      "【180】箭头横向指（收起 ›朝右 / 展开 ‹朝左，与右侧浮层的方向一致）"
+    /* 箭头方向：**横向**指，收起 ‹ / 展开 ›（10-27 用户第 4 次定版：「反了，收起朝左，展开朝右」）。
+       面板是 `left = 侧栏右缘 + 8` 的右侧浮层，顶部 / 底部两种位置都在右边。
+       ⛔ 别再按 top/bottom 或上下的思路改 —— 前两版按「上下」、第三版把左右弄反，各被否一次。 */
+    (/\.sidebar-options \.sidebar-options-chevron\s*\{\s*transform:\s*rotate\(90deg\)/.test(css41)
+      && /\.sidebar-options \.sidebar-options-chevron\.open\s*\{\s*transform:\s*rotate\(-90deg\)/.test(css41) ? ok : fail)(
+      "【180】箭头横向指（收起 ‹朝左 / 展开 ›朝右）"
     );
     (/sidebar-options-chevron \$\{optionsCollapsed \? "" : "open"\}/.test(side180) ? ok : fail)(
       "【180】箭头只由 optionsCollapsed 一个变量驱动（⛔ 不许再写第二份展开判定）"
