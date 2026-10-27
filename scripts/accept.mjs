@@ -288,7 +288,7 @@ const CHECKS = [
         const r=(el)=>el?el.getBoundingClientRect():null;
         const br=r(back), nr=r(neu);
         return { hasBanner:!!page.querySelector(".subagent-banner"),
-          shellBackRow:!!m.querySelector(".settings-back-row"),
+          shellBackRow:!!m.querySelector(".settings-back-row:not(.subagent-back)"),
           hasBack:!!back,
           sameRow: br&&nr ? Math.abs((br.top+br.bottom)/2-(nr.top+nr.bottom)/2) <= 8 : false,
           backLeft: br&&nr ? br.left < nr.left - 40 : false };

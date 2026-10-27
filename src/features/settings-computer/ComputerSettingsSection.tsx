@@ -5,7 +5,6 @@
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
 import { AppSelect } from "../../components/AppSelect";
-import { PageInfo } from "../../components/SettingsHead";
 import { Monitor } from "lucide-react";
 
 export type ComputerSettingsSectionProps = { approvalPolicy: any; sandbox: any; changeApproval: any; changeSandbox: any; personality: any; changePersonality: any; toolsStatus: any; ToolCard: any };
@@ -15,7 +14,6 @@ export function ComputerSettingsSection(props: ComputerSettingsSectionProps) {
   return (
     <>
       <section className="settings-section stack">
-                    <div className="settings-copy"><h2>电脑控制<PageInfo text={<>审批与沙箱决定 Codex 能对这台电脑做什么；完全访问会关闭审批询问。</>} /></h2></div>
                     <div className="settings-grid three">
                       <label><span>审批</span><AppSelect value={approvalPolicy} onChange={(v) => changeApproval(v)} options={[{ value: "on-request", label: "按需询问" }, { value: "untrusted", label: "仅可信命令" }, { value: "never", label: "从不询问" }]} disabled={sandbox === "danger-full-access"} /></label>
                       <label><span>沙箱</span><AppSelect value={sandbox} onChange={(v) => changeSandbox(v)} options={[{ value: "workspace-write", label: "工作区可写" }, { value: "read-only", label: "只读" }, { value: "danger-full-access", label: "完全访问" }]} /></label>

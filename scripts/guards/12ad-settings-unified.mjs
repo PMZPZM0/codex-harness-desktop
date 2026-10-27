@@ -111,7 +111,7 @@ const memory = pageSrc("memory");
 ok(!/settings-copy/.test(memory) && /memory-master-row/.test(memory) && /ToggleSwitch/.test(memory), "记忆页头已收起，启用总开关在首行卡片");
 ok(/\.settings-exp-shell \.memory-center \.memory-backends\s*\{[^}]*border-top/s.test(css), "「记忆存到哪里」与内容卡之间有分隔");
 /* 10-28 页头统一：其余页也不许再长回 .settings-copy / PageInfo。 */
-for (const rel of ["src/components/UserCenter.tsx", "src/components/UsagePanel.tsx", "src/components/ArchivePage.tsx", "src/features/settings-backup/BackupSettingsSection.tsx", "src/features/settings-automation/AutomationSettingsSection.tsx", "src/features/settings-extensibility/ExtensibilitySettingsSection.tsx", "src/features/settings-devtools/DevtoolsSettingsSection.tsx"]) {
+for (const rel of ["src/components/UserCenter.tsx", "src/components/UsagePanel.tsx", "src/components/ArchivePage.tsx", "src/features/settings-backup/BackupSettingsSection.tsx", "src/features/settings-automation/AutomationSettingsSection.tsx", "src/features/settings-extensibility/ExtensibilitySettingsSection.tsx", "src/features/settings-devtools/DevtoolsSettingsSection.tsx", "src/features/settings-agents/AgentsSettingsSection.tsx", "src/features/settings-teams/TeamsSettingsSection.tsx", "src/features/settings-computer/ComputerSettingsSection.tsx", "src/features/settings-rpa/RpaSettingsSection.tsx", "src/features/settings-browser/BrowserSettingsSection.tsx", "src/features/settings-expert-center/ExpertCenterSection.tsx"]) {
   const fileSrc = read(rel);
   ok(!/settings-copy/.test(fileSrc) && !/PageInfo/.test(fileSrc), `页头已收起：${rel.split("/").pop()}`);
 }

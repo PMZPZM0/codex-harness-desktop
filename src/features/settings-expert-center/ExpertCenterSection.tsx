@@ -22,7 +22,7 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
   if (rest.length) groups.push({ title: "更多专家", blurb: "自定义团队与外部导入的专家", icon: Users, cards: rest });
   return (
   <section className="settings-section stack expert-center-page">
-    <div className="settings-copy channel-heading expert-center-head">
+    <div className="settings-toolbar-row expert-center-head">
       {onBack && <button type="button" className="settings-back-row" onClick={onBack}><ArrowLeft size={14} />返回智能体团队</button>}
       <div className="settings-heading-actions">{onOpenMarket && <button className="secondary-setting" title="SkillHub 专家市场包：一键安装整套专家工作流，装完自动出现在这里" onClick={onOpenMarket}><Package size={14} />专家市场</button>}</div>
     </div>

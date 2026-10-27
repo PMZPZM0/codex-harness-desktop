@@ -13,8 +13,8 @@
 /* 10-27 用户令：「返智能体团队按键，跟新建子智能体放一排，靠左」——
    返回键挪进页头操作行、吃 margin-right:auto 顶到最左；「新建 / 刷新」仍靠右。
    ⛔ 操作行必须撑满整行（width:100%），否则 auto 外边距没有可推的空间，返回键还是跟新建挨在一起。 */
-.subagent-center .subagent-head-actions { width: 100%; }
-.subagent-center .subagent-head-actions > .subagent-back { margin-right: auto; }
+.subagent-center .subagent-head-actions { width: auto; }
+.subagent-center .settings-toolbar-row > .subagent-back { margin-right: 0; }
 .subagent-grid {
   grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
   gap: 11px;
