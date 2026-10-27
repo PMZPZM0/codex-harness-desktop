@@ -136,6 +136,24 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .segmented-tabs.row-pills { margin-left: auto; flex: none; }
 .segmented-tabs.row-pills button { font-size: 11.5px; }
 .settings-exp-shell .settings-card.card-pills { padding: 8px 14px; }
+/* 10-27 用户令：「都被隔开了」⇒ 同一组显示项合成**一张卡里的多行**（行间 1px 细线），
+   不再一行一张卡。卡自己不留内边距，交给每行 10/14，行高一致。 */
+/* 卡自己不留内边距（.settings-card 与 .settings-exp-card 两种壳都要压住），
+   否则行留白 = 卡 16 + 行 14 = 30，分隔线也会缩进成半截。 */
+.settings-exp-shell .settings-card.card-pill-rows,
+.settings-exp-shell .card-pill-rows { padding: 0; }
+.card-pill-rows > .settings-pill-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
+.card-pill-rows > .settings-pill-row + .settings-pill-row { border-top: 1px solid var(--line-soft); }
+.settings-pill-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.settings-pill-row-label > svg { color: var(--green); }
 .settings-exp-shell .settings-card.card-pills > .settings-card-head { padding: 0; }
 .segmented-tabs button {
   height: 26px;

@@ -26,37 +26,35 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
     <>
       <section className="settings-section stack appearance-page settings-exp-page">
         <SettingsPageHero icon={<Sun size={20} />} title="外观" subtitle="主题、字号、代码与壁纸都在这里；改完即时生效，不用重启。" hint="点卡片即切换" />
-        {/* 10-27 用户令：「外观里面的主题切换、消息字号、思考板块、运行过程，都按这个回复风格样式改」
-            ⇒ 一律「标题行左 + 胶囊右」的单行卡；原来那些带预览窗/字号示范的大块与长段说明撤掉，
-            说明只留在每颗胶囊的 title 里。 */}
-        <div className="settings-exp-card appearance-base-card">
-          <div className="settings-subhead"><Sun size={13} />主题
+        {/* 10-27 用户令：「你觉得这个界面现在好看嘛，都被隔开了」
+            ⇒ 四个显示项不再各占一张卡，**合成一张卡里四行**（细线分隔），像一份设置清单；
+            标题行左、胶囊右，说明只留在悬停提示里。 */}
+        <div className="settings-exp-card appearance-base-card card-pill-rows">
+          <div className="settings-pill-row">
+            <span className="settings-pill-row-label"><Sun size={13} />主题</span>
             <div className="segmented-tabs row-pills" role="group" aria-label="主题">
               {THEMES.map((t) => (
                 <button key={t.id} type="button" className={theme === t.id ? "active" : ""} aria-pressed={theme === t.id} title={`切换到${t.label}主题`} onClick={() => runVisualSwitch("主题", themeLabelOf(t.id), () => setTheme(t.id), onNotice)}>{t.label}</button>
               ))}
             </div>
           </div>
-          <div className="settings-subhead"><ZoomIn size={13} />消息字号
+          <div className="settings-pill-row">
+            <span className="settings-pill-row-label"><ZoomIn size={13} />消息字号</span>
             <div className="segmented-tabs row-pills" role="group" aria-label="消息字号">
               {[{ v: "compact", t: "紧凑" }, { v: "default", t: "标准" }, { v: "large", t: "大字" }].map((opt) => (
                 <button key={opt.v} type="button" className={uiFont === opt.v ? "active" : ""} aria-pressed={uiFont === opt.v} title={`对话正文与过程内容用「${opt.t}」字号`} onClick={() => { setUiFont(opt.v); localStorage.setItem("ui-font", opt.v); }}>{opt.t}</button>
               ))}
             </div>
           </div>
-        </div>
-        <div className="settings-card card-reasoning card-pills">
-          <div className="settings-card-head">
-            <Brain size={15} /><strong>思考板块展示</strong>
+          <div className="settings-pill-row">
+            <span className="settings-pill-row-label"><Brain size={13} />思考板块</span>
             <div className="segmented-tabs row-pills" role="group" aria-label="思考板块展示">
               <button type="button" className={reasoningDisplay === "auto" ? "active" : ""} aria-pressed={reasoningDisplay === "auto"} title="浮窗跟随输入框宽度，按可用空间自动向上 / 向下展开（默认）" onClick={() => setReasoningDisplayMode("auto")}>自适应展开</button>
               <button type="button" className={reasoningDisplay === "strip" ? "active" : ""} aria-pressed={reasoningDisplay === "strip"} title="消息流内长条按行展示思考内容，点击标题或正文展开全文" onClick={() => setReasoningDisplayMode("strip")}>长条按行</button>
             </div>
           </div>
-        </div>
-        <div className="settings-card card-run-process card-pills">
-          <div className="settings-card-head">
-            <FileCode2 size={15} /><strong>运行过程</strong>
+          <div className="settings-pill-row">
+            <span className="settings-pill-row-label"><FileCode2 size={13} />运行过程</span>
             <div className="segmented-tabs row-pills" role="group" aria-label="运行过程">
               <button type="button" className={runProcessMode === "simple" ? "active" : ""} aria-pressed={runProcessMode === "simple"} title="只显示文件编辑行与实时 +N -M，不自动展开内容（默认）" onClick={() => setRunProcessMode("simple")}>简洁</button>
               <button type="button" className={runProcessMode === "detailed" ? "active" : ""} aria-pressed={runProcessMode === "detailed"} title="文件变化时弹浮窗，跟随最新内容 / diff，静止 3 秒自动收起" onClick={() => setRunProcessMode("detailed")}>详细</button>
