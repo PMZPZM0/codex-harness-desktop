@@ -526,6 +526,33 @@ if (state) {
     && /当前成员 \$\{activeMembers\.length\} 位/.test(requestFile),
     "group_status 给模型明确口径：当前成员 N 位 + 已移出名单（⛔ 不能把 removed 也算进成员数）");
   const runnerFile = read("electron/boss-groups/runner.ts");
+  /* ── 10-27 用户令：「群编排没有管理功能，codex 自己也删不掉…配套一下删除群的工具，界面上加群管理，
+     但这个删要联动 codex 那边，不然光界面删了，codex 那边不知道群删了不行」──
+     ① 通道登记；② runner 里**先回投中枢、再清账本**（顺序反了就通知不到）；
+     ③ 工具面与界面都在（模型能自己删，用户也能伸手指点）。 */
+  {
+    const ipcSrc = read("electron/features/boss-groups-ipc.ts");
+    const registrySrc = read("electron/ipc-registry.ts");
+    ok(/boss-groups:delete/.test(registrySrc) && /boss-groups:delete/.test(ipcSrc),
+      "删群通道 boss-groups:delete 已在域表与 IPC 注册");
+    const postAt = runnerFile.indexOf("await postToBoss(");
+    const clearAt = runnerFile.indexOf("delete state.groups[group.id]");
+    ok(postAt > 0 && clearAt > postAt && /deleteGroupForBoss/.test(runnerFile),
+      "删群**先回投 [群事件] 给中枢、再清账本**（⛔ 顺序反了模型永远不知道群没了）");
+    ok(/group_delete/.test(read("src/features/app-view/constants/05-boss-group-tools.tsx"))
+      && /group_delete/.test(read("src/features/app-state/parts/part05/event-router/02-request.tsx")),
+      "模型侧有 group_delete 工具且已接线（codex 自己能删群）");
+    const boardSrc = read("src/features/settings-boss-groups/BossGroupsSection.tsx");
+    ok(/deleteBossGroup/.test(boardSrc) && /openAppConfirm/.test(boardSrc) && /askDeleteGroup/.test(boardSrc),
+      "群编排界面有删除入口 + **全站确认弹窗**（⛔ 不许退回标题行内联确认：用户截图否过）");
+    /* 10-27 用户令：「删除成功加一个反馈效果」⇒ 行淡出动画 + 统一 toast（两条缺一不可）。 */
+    ok(/is-removing/.test(boardSrc) && /onNotice\(/.test(boardSrc)
+      && /\.boss-groups-group-item\.is-removing/.test(read("src/styles/46-boss-groups.css")),
+      "删群成功有反馈：列表行淡出 → 重排，并 toast 出「已删除群…」");
+    ok(/group_delete/.test(ipcSrc) && /boss-home-agents:v4/.test(ipcSrc),
+      "中枢角色提示词已更新到 v4 并写明 group_delete（⛔ 不抬版本老用户读不到）");
+  }
+
   ok(/成员已被用户移出群/.test(runnerFile) && /新成员进群/.test(runnerFile),
     "成员增删都回投给 BOSS 会话（模型要实时知道，不该只能靠它自己查）");
   ok(/memberCount: group\.members\.filter\(\(m: any\) => String\(m\?\.status \?\? ""\) !== "removed"\)\.length/.test(read("electron/features/boss-groups-ipc.ts")),

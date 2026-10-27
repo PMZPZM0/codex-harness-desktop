@@ -158,6 +158,47 @@
   color: var(--accent-text);
 }
 .boss-groups-btn[data-kind="primary"]:hover { color: var(--accent-text); opacity: 0.92; }
+/* ── 10-27 群管理（用户令：「界面上加上群管理功能，方便用户删」）──
+   头部右侧只放一颗「删除群」：点它弹**全站确认框**（层级 950），确认后才真删。
+   ⛔ 别再往标题行塞内联确认/说明文字 —— 用户截图实测：标题被挤成一字一行，丑。 */
+.boss-groups-head { flex-wrap: wrap; }
+/* ⛔ 标题必须能省略：群名很长时（「万圣节方案」那种窄卡）不许一个字一行地竖着折 */
+.boss-groups-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.boss-groups-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex: none;
+}
+.boss-groups-btn[data-kind="danger"] {
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 38%, var(--line));
+}
+.boss-groups-btn[data-kind="danger"]:hover {
+  color: var(--red);
+  border-color: var(--red);
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+}
+/* 删除成功的**反馈效果**：列表里那一行先淡出+右移收起（260ms），再重排；
+   同时全局 toast 出一条「已删除群「X」…」。⛔ 只靠 toast 不行动，用户会觉得"点了没反应"。 */
+.boss-groups-group-item.is-removing {
+  animation: boss-group-remove 0.26s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  pointer-events: none;
+}
+@keyframes boss-group-remove {
+  0% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateX(14px) scale(0.98); }
+}
+/* 系统「减少动态效果」：不播动画，直接消失 */
+@media (prefers-reduced-motion: reduce) {
+  .boss-groups-group-item.is-removing { animation: none; opacity: 0; }
+}
 .boss-groups-note {
   flex: 1;
   min-width: 200px;

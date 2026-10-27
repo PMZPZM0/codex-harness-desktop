@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（100 个能力域 / 542 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（100 个能力域 / 543 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -79,9 +79,9 @@ Laya 智能判断（GitHub NandhaKishorM/laya，Apache-2.0，非自回归决策�
 专家团运行记录查询
 通道：team-runs:list
 
-### boss-groups（14 通道）
+### boss-groups（15 通道）
 创世 boss 群编排：建群/派活/独立评审/打回换人/预算闸（成员各自一个常驻会话，浏览器用 ego lite 独立 TaskSpace）
-通道：boss-groups:list, boss-groups:status, boss-groups:create, boss-groups:assign, boss-groups:review, boss-groups:escalate, boss-groups:browser, boss-groups:member, boss-groups:pin, boss-groups:say, boss-groups:pool, boss-groups:rebind, boss-groups:session, boss-groups:memory
+通道：boss-groups:list, boss-groups:status, boss-groups:create, boss-groups:delete, boss-groups:assign, boss-groups:review, boss-groups:escalate, boss-groups:browser, boss-groups:member, boss-groups:pin, boss-groups:say, boss-groups:pool, boss-groups:rebind, boss-groups:session, boss-groups:memory
 
 ### close-confirm（1 通道）
 关闭确认弹窗的回包（最小化到托盘 / 完全退出 / 取消，可勾不再询问）

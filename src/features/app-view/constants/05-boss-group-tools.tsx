@@ -156,7 +156,29 @@ export const GROUP_REMOVE_MEMBER_TOOL = {
   },
 };
 
-/** 工具面批量注入用（顺序 = 模型看到的顺序：建群 → 派活 → 查账 → 审/升级 → 成员管理 → 浏览器）。 */
+/** 删除群（10-27 用户令：「群编排没有管理功能，codex 自己也删不掉」+「这个删要联动 codex 那边」）。
+ *  ⛔ 宿主侧会先往这条 boss 会话回投一条 [群事件]，再清群/任务/事件账本 —— 所以调用方
+ *     不需要自己再补一句"群已删"，也不要删完继续拿旧 groupId 派活。
+ *  ⛔ 只删群账本，**不删成员会话**（成品与轨迹保留）。 */
+export const GROUP_DELETE_TOOL = {
+  type: "function",
+  name: "group_delete",
+  description:
+    "删除一个群：清掉该群的任务账本与事件记录，并回投一条 [群事件] 告知本会话。"
+    + "⛔ 不可撤销，且只在用户明确要求删群时调用（用户说「删掉」「不要这个群了」）；"
+    + "⚠️ 成员会话与产出文件**保留**（侧栏仍能看到那些会话），只是不再属于任何群。"
+    + "删完若要继续，必须重新 group_create。",
+  inputSchema: {
+    type: "object",
+    properties: {
+      groupId: { type: "string", description: "群 id（group_status 不带 groupId 时会列出全部群 id）" },
+      reason: { type: "string", description: "可选：为什么删（写进事件流，便于事后追溯）" },
+    },
+    required: ["groupId"],
+  },
+};
+
+/** 工具面批量注入用（顺序 = 模型看到的顺序：建群 → 派活 → 查账 → 审/升级 → 成员管理 → 删群 → 浏览器）。 */
 export const BOSS_GROUP_TOOLS = [
   GROUP_CREATE_TOOL,
   GROUP_ASSIGN_TOOL,
@@ -165,5 +187,6 @@ export const BOSS_GROUP_TOOLS = [
   GROUP_ESCALATE_TOOL,
   GROUP_ADD_MEMBER_TOOL,
   GROUP_REMOVE_MEMBER_TOOL,
+  GROUP_DELETE_TOOL,
   GROUP_BROWSER_TOOL,
 ];
