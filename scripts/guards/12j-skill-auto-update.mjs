@@ -33,7 +33,9 @@ console.log("【① 插件页只留一份更新入口】");
 const pluginsPage = read("src/features/settings-plugins/PluginsMarketSection.tsx");
 ok(pluginsPage.length > 0, "插件页文件在位");
 ok(!/MarketUpdatePanel|market-updates/.test(pluginsPage), "⛔ 插件页不再引用两块市场更新面板");
-ok(/plugin-update-all/.test(pluginsPage) && /checkAndUpdatePlugins/.test(pluginsPage), "已安装屏只有一个「检查更新」按钮");
+/* 10-27 用户令：「检查更新不要了，因为控制台有自动技能更新，卡片里这一行留一个刷新图标就行」
+   ⇒ 已安装屏不再挂手动「检查更新」按钮；更新能力本身留着（自动更新链仍在跑）。 */
+ok(!/plugin-update-all/.test(pluginsPage) && /checkAndUpdatePlugins/.test(pluginsPage), "已安装屏不再挂手动「检查更新」（自动更新链保留）");
 ok(/checkPluginUpdates\(\)/.test(pluginsPage) && /checkOfficialPluginUpdates\(\)/.test(pluginsPage), "检查更新同时查 Gitee 镜像与 Codex 官方两个市场");
 ok(/updatePlugin\(row\.slug\)/.test(pluginsPage) && /updateOfficialPlugin\(row\.slug\)/.test(pluginsPage), "有新版时按来源逐个更新（走与安装同一链路）");
 ok(!existsSync(join(ROOT, "src/features/market-updates/MarketUpdatePanel.tsx")), "⛔ 旧的 MarketUpdatePanel 已删除（不留死组件）");
