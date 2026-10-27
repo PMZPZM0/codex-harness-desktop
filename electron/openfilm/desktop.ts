@@ -63,7 +63,13 @@ export function desktopInstalled(): DesktopInstalled {
 }
 
 /** GitHub API（镜像候选序：gh-proxy 通、ghfast 对 API 已 403、直连兜底）。 */
+/** Release 缓存（60s）。⛔ 未鉴权的 GitHub API 只有 60 次/小时 —— 卡片每次刷新 + 每个动作后都会问一次，
+ *  不缓存的话连点几下按钮就会把自己限流，界面显示成"读取最新版失败"（看起来像上游挂了）。 */
+let releaseCache: { at: number; release: DesktopRelease } | null = null;
+const RELEASE_TTL_MS = 60_000;
+
 async function fetchRelease(): Promise<DesktopRelease> {
+  if (releaseCache && Date.now() - releaseCache.at < RELEASE_TTL_MS) return releaseCache.release;
   let lastError = "";
   for (const candidate of mirrorCandidates(RELEASE_API)) {
     const controller = new AbortController();
@@ -83,7 +89,9 @@ async function fetchRelease(): Promise<DesktopRelease> {
         url: String(item?.browser_download_url ?? ""),
       })).filter((item: Asset) => item.name && item.url);
       if (!tag || !assets.length) { lastError = "release 里没有资产"; continue; }
-      return { version: tag.replace(/^v/i, ""), tag, assets, from: new URL(candidate).host || "github.com" };
+      const release = { version: tag.replace(/^v/i, ""), tag, assets, from: new URL(candidate).host || "github.com" };
+      releaseCache = { at: Date.now(), release };
+      return release;
     } catch (error: any) {
       lastError = String(error?.message ?? error);
     } finally { clearTimeout(timer); }
@@ -96,6 +104,24 @@ export function pickAsset(assets: Asset[], platform = process.platform, arch = p
   const find = (pattern: RegExp) => assets.find((asset) => pattern.test(asset.name)) ?? null;
   if (platform === "win32") return find(/^OpenFilm-Setup-.*\.exe$/i) ?? find(/\.exe$/i);
   if (platform === "darwin") return arch === "arm64" ? find(/arm64\.dmg$/i) : find(/x64\.dmg$/i);
+  return null;
+}
+
+/**
+ * 本地**任意**已下载的安装包（不看上游资产名）。
+ * ⛔ 为什么需要它：`runDesktop("install")` 若只靠 `desktopInfo()` 的 asset 找包，
+ *    断网/API 被限流时 asset 为空 ⇒ 明明下过包却报"还没下载安装包"（用户会以为文件丢了）。
+ *    ⇒ 运行/打开这类**纯本地动作**只认磁盘。
+ */
+function localPackageAny(): { path: string; size: number } | null {
+  try {
+    for (const name of fs.readdirSync(desktopDir())) {
+      if (!/\.(exe|dmg)$/i.test(name)) continue;
+      const full = path.join(desktopDir(), name);
+      const stat = fs.statSync(full);
+      if (stat.isFile()) return { path: full, size: stat.size };
+    }
+  } catch { /* 目录不存在 = 没下过 */ }
   return null;
 }
 
@@ -259,8 +285,8 @@ async function installMacDmg(dmg: string): Promise<{ ok: boolean; error?: string
  */
 export async function runDesktop(action: DesktopAction): Promise<DesktopRunResult> {
   const info = await desktopInfo();
-  const asset = info.asset;
-  const local = asset ? localPackage(asset.name) : null;
+  /* ⛔ 本地动作（install / reveal / uninstall）先认磁盘，再认 API 给的资产名 —— 见 localPackageAny 的说明 */
+  const local = localPackage(info.asset?.name ?? "") ?? localPackageAny();
   const pkg = local?.path ?? "";
 
   if (action === "reveal") {
