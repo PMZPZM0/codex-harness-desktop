@@ -224,12 +224,23 @@ const CHECKS = [
           hasCopy:!!m.querySelector(".settings-copy"),
           toolbarTop:(()=>{ const t=m.querySelector(".mcp-market-toolbar"); return t?Math.round(t.getBoundingClientRect().top):0; })(),
           labelWrap:(()=>{ const el=m.querySelector(".mcp-category-filter > span"); return el?getComputedStyle(el).whiteSpace:""; })(),
+          /* 10-27 用户：「搜索框靠左，分类选项放到搜索框后面」⇒ 量真实几何，不看 DOM 顺序 */
+          order:(()=>{ const bar=m.querySelector(".mcp-market-toolbar"); return bar?[...bar.children].map((x)=>x.className.split(" ")[0]).slice(0,2).join(">"):""; })(),
+          searchBeforeCat:(()=>{ const bar=m.querySelector(".mcp-market-toolbar"); if(!bar) return false;
+            const s=bar.querySelector(".search-field"), c=bar.querySelector(".mcp-category-filter");
+            if(!s||!c) return false;
+            const sr=s.getBoundingClientRect(), cr=c.getBoundingClientRect();
+            return sr.left < cr.left - 20 && Math.abs((sr.top+sr.bottom)/2-(cr.top+cr.bottom)/2) <= 10; })(),
           jumps:labels.filter((x)=>x.includes("广场")) };
       })()`).catch(() => null);
       h.check("⑧ MCP：分类改成筛选下拉，市场跳转按钮已删",
         Boolean(mcp && mcp.page === "MCP" && mcp.hasSelect && mcp.options >= 5 && mcp.tabs === 0
           && mcp.labelWrap === "nowrap" && mcp.jumps.length === 0),
         JSON.stringify(mcp));
+      /* 10-27 用户：「搜索框靠左，分类选项放到搜索框后面」—— 搜索在最左、分类紧跟其后同一行 */
+      h.check("⑫ MCP 工具条：搜索框在最左，分类筛选跟在搜索框后面（同一行）",
+        Boolean(mcp && mcp.order === "search-field>mcp-category-filter" && mcp.searchBeforeCat),
+        JSON.stringify({ order: mcp && mcp.order, searchBeforeCat: mcp && mcp.searchBeforeCat }));
       /* 10-27 用户（MCP 页截图）：「右上角问号删了」⇒ 页头整块撤掉，
          进页第一屏就是工具条（没有 ? 占的那一行）。 */
       h.check("⑩ MCP：右上角问号与页头说明已删，工具条顶到页面上沿",
@@ -263,6 +274,32 @@ const CHECKS = [
           && voice.helpInHead && voice.subInBody && voice.pathInBody
           && voice.gapToTop >= 0 && voice.gapToTop < 40 && voice.headRows === "row"),
         JSON.stringify(voice));
+
+      /* 10-27 用户（子智能体页截图）：「不要内置子智能体…这个卡片删除；返智能体团队按键，
+         跟新建子智能体放一排，靠左」⇒ 横幅卡没了、返回键并进页头操作行且靠左、
+         壳层不再单独占一行。⛔ 内置评审"删了又回来"的根治在启动链（不再种入），
+         这里只量界面；回归验证见提交说明。 */
+      await nav("专家/专家团");
+      await wait(1000);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-modal .hub-card")].find((x)=>(x.textContent||"").includes("子智能体")); if (b) b.click(); return 1; })()`);
+      await wait(1200);
+      const agentsPg = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const page=m.querySelector(".subagent-center"); if(!page) return null;
+        const back=page.querySelector(".subagent-back");
+        const neu=[...page.querySelectorAll(".subagent-head-actions button")].find((b)=>(b.textContent||"").includes("新建子智能体"));
+        const r=(el)=>el?el.getBoundingClientRect():null;
+        const br=r(back), nr=r(neu);
+        return { hasBanner:!!page.querySelector(".subagent-banner"),
+          shellBackRow:!!m.querySelector(".settings-back-row"),
+          hasBack:!!back,
+          sameRow: br&&nr ? Math.abs((br.top+br.bottom)/2-(nr.top+nr.bottom)/2) <= 8 : false,
+          backLeft: br&&nr ? br.left < nr.left - 40 : false };
+      })()`).catch(() => null);
+      h.check("⑬ 子智能体页：横幅卡已删；返回键与「新建」同一排且靠左（壳层不再单独占一行）",
+        Boolean(agentsPg && !agentsPg.hasBanner && agentsPg.hasBack && !agentsPg.shellBackRow
+          && agentsPg.sameRow && agentsPg.backLeft),
+        JSON.stringify(agentsPg));
 
       await nav("技能");
       await wait(1000);
@@ -452,10 +489,7 @@ const CHECKS = [
       h.check("⑱ 专家团：返回键并进操作行靠左，Codex 说明卡已删",
         Boolean(teamsHead && teamsHead.sameRow && teamsHead.backLeft && !teamsHead.banner && teamsHead.backs === 1),
         JSON.stringify(teamsHead));
-      await h.pressKey("Escape");
-      await wait(300);
-    },
-  },
+
       /* ⑲ 10-27 用户（新建子智能体截图）：「这个新建子智能体更新一下，都是旧的，工具也是」
          ⇒ 推理强度只剩四档、开关是共享胶囊、工具说明给 agent_invoke + subagent_save。 */
       await h.pressKey("Escape");

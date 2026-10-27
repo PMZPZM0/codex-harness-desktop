@@ -144,8 +144,8 @@ export const GROUP_REMOVE_MEMBER_TOOL = {
   type: "function",
   name: "group_remove_member",
   description:
-    "把成员移出群。⛔ 会话与轨迹保留（不删）；TA 手上正在跑的任务**不打断**——交活后照常审查，之后不再派活；"
-    + "TA 的未派任务会自动换人（被移出视同锁死）。",
+    "把成员移出群。⛔ 移出即**删掉 TA 的成员会话**（用户令 10-27：会话同步清理），正在跑的活随之终止；"
+    + "TA 的未派任务会自动换人（被移出视同锁死）。移出后 TA 不会出现在成员名单/办公室/成员轨里。",
   inputSchema: {
     type: "object",
     properties: {

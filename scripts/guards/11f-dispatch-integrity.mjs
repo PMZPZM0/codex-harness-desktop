@@ -55,7 +55,12 @@ try {
 
   ok(nExpert > 0, "专家类非 0（面板「专家」那一行）—— 0 就是数据没到 UI");
   ok(nTeam > 0, "专家团类非 0（面板「专家团」那一行）");
-  ok(nSub > 0, "子智能体类非 0（面板「子智能体」那一行）");
+  /* ⛔⛔ 10-27 用户令：「不要内置子智能体…这个卡片删除」⇒ 出厂**没有**内置子智能体，
+     用户不自己建就是 0 条 ⇒ 这里不能再断言"非 0"（那是数据依赖，不是契约）。
+     ⛔ 但结构契约仍要验（分节 / kind / 勾选过滤）⇒ 下面用**探针条目**把 0 条的情形补齐。 */
+  ok(nSub === 0 || targets.filter((t) => t.kind === "subagent").every((t) => Boolean(t.name)),
+    "子智能体条目都有名字（0 条也合法：出厂无内置，用户自己建的才有）");
+  const probeTargets = nSub > 0 ? targets : [...targets, { kind: "subagent", name: "结构探针", description: "guard 结构断言用的探针条目" }];
 
   // ③ 每条都必须有名字（UI 直接显示 target.name）
   const noName = targets.filter((t) => !t.name);
@@ -78,7 +83,7 @@ try {
 
   // ⑤ 工具描述非空（模型靠它知道有哪些对象可派）
   const { dispatchToolDescription } = req(join(ROOT, "dist-electron/dispatch.js"));
-  const desc = dispatchToolDescription(targets);
+  const desc = dispatchToolDescription(probeTargets);
   ok(desc.length > 40, "工具描述非空（" + desc.length + " 字符）");
   ok(desc.includes("subagent") || desc.includes("子智能体"), "描述里出现子智能体（模型才知道能派谁）");
 
@@ -86,7 +91,7 @@ try {
      两个漏：① 描述不按勾选生成（三类全列）② 勾选变了不重取描述。
      ⇒ 判据：只勾一类时，描述必须**只列那一类**、且对其余两类**显式否定**。 */
   {
-    const only = dispatchToolDescription(targets, { expert: false, team: false, subagent: true });
+    const only = dispatchToolDescription(probeTargets, { expert: false, team: false, subagent: true });
     ok(/只开启了：子智能体/.test(only), "只勾子智能体时描述首句写明「只开启了：子智能体」");
     ok(!only.includes('kind="expert"') && !only.includes('kind="team"'),
       "只勾子智能体时**不列**任何专家/专家团条目（列了模型就会派错）");
@@ -94,11 +99,11 @@ try {
       "未勾选的类别被**显式否定**（不是隐藏 —— 隐藏会让模型以为不存在而反复试错）");
     ok(only.includes('kind="subagent"'), "勾选的子智能体仍然列出");
     // 反向：全勾时三类都要出现
-    const all = dispatchToolDescription(targets, { expert: true, team: true, subagent: true });
+    const all = dispatchToolDescription(probeTargets, { expert: true, team: true, subagent: true });
     ok(all.includes('kind="expert"') && all.includes('kind="team"') && all.includes('kind="subagent"'),
       "三类全勾时三类都列出（不得被 allow 误伤）");
     // 退化：allow=null 时全列（保持旧行为，不让描述变空）
-    const dflt = dispatchToolDescription(targets, null);
+    const dflt = dispatchToolDescription(probeTargets, null);
     ok(dflt.includes('kind="expert"') && dflt.includes('kind="subagent"'), "allow=null 退化为全列（旧行为不破）");
   }
 

@@ -41,7 +41,10 @@ const codeOnly = (source) => String(source)
 const HUB = "src/features/app-state/parts/part02/02-goal-browser-notice/02-approval-notice-center.tsx";
 const hub = has(HUB) ? read(HUB) : "";
 const hubCode = codeOnly(hub);
-ok(/bag\.setNotices\(\[\{ id, text, threadId, scope \}\]\)/.test(hubCode),
+/* ⛔ 判据别锁死字段清单：10-27 给通知加了 tone（新建任务=蓝 / 中枢=琥珀），
+   写成 `{ id, text, threadId, scope }` 的全字面量会**因为多一个字段就假红**（守卫比实现更脆）。
+   真契约是「整体替换数组」而不是「往旧数组里 push」⇒ 只锚到 setNotices([{ 这一层。 */
+ok(/bag\.setNotices\(\[\{ id, text, threadId, scope/.test(hubCode),
   "⛔ setNotice 用**整体替换**入队（只留最新一条）—— 用户 10-06：不要上下叠加好几条");
 ok(!/\[\.\.\.current,\s*\{\s*id,\s*text,\s*threadId,\s*scope\s*\}/.test(hubCode),
   "⛔ 负向：不许退回「追加进队列」的写法（那就是叠加本身）");

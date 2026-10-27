@@ -8,7 +8,7 @@
  */
 import {
   DEFAULT_POLICY, MAX_MEMBERS, MAX_EVENTS,
-  type BossGroup, type BossState, type EscalateChoice, type GroupEvent, type GroupMember, type GroupPolicy,
+  type BossGroup, type BossState, type EscalateChoice, type GroupEvent, type GroupMember, type GroupMemberStatus, type GroupPolicy,
   type GroupTask, type ReviewRecord, type TaskStatus,
 } from "./types";
 
@@ -173,8 +173,7 @@ export function markRunning(state: BossState, taskId: string, input: { threadId:
   attempt.startedAt = Date.now();
   task.status = "running";
   task.updatedAt = Date.now();
-  const member = memberOf(group, task.assignee);
-  member.status = "busy";
+  const member = setMemberStatus(group, task.assignee, "busy");
   pushEvent(state, { groupId: group.id, taskId: task.id, memberId: member.id, kind: "running", text: `${member.name} 开始做「${task.title}」` });
   return task;
 }
@@ -192,8 +191,7 @@ export function submitTask(state: BossState, taskId: string, output: string): Gr
   attempt.endedAt = Date.now();
   task.status = "reviewing";
   task.updatedAt = Date.now();
-  const member = memberOf(group, task.assignee);
-  member.status = "reviewing";
+  const member = setMemberStatus(group, task.assignee, "reviewing");
   pushEvent(state, { groupId: group.id, taskId: task.id, memberId: member.id, kind: "submitted", text: `${member.name} 交活「${task.title}」（尝试 ${attempt.n}）` });
   return task;
 }
@@ -221,7 +219,7 @@ export function recordReview(state: BossState, taskId: string, review: { by: str
   if (review.verdict === "approved") {
     task.status = "done";
     task.endedAt = Date.now();
-    member.status = "idle";
+    setMemberStatus(group, member.id, "idle");
     member.lockedTaskIds = member.lockedTaskIds.filter((id) => id !== task.id);
     pushEvent(state, { groupId: group.id, taskId: task.id, memberId: member.id, kind: "done", text: `审查通过：「${task.title}」（${member.name}，尝试 ${attempt?.n ?? 1}）` });
     return task;
@@ -231,7 +229,7 @@ export function recordReview(state: BossState, taskId: string, review: { by: str
   // ⛔ 作者锁：锁住的是"这条任务的这一版作者"，不是这个人。他别的活照做。
   if (!task.lockedAuthors.includes(task.assignee)) task.lockedAuthors.push(task.assignee);
   if (!member.lockedTaskIds.includes(task.id)) member.lockedTaskIds.push(task.id);
-  member.status = "locked";
+  setMemberStatus(group, member.id, "locked");
 
   const nextAssignee = pickReassignee(state, task);
   const overLimit = task.rejects >= group.policy.maxRejects;
@@ -291,23 +289,46 @@ export function addMember(state: BossState, groupId: string, input: {
 }
 
 /**
- * 移人：**会话保留**（轨迹不丢），成员标 removed —— 不再接新活。
- * ⛔ 正在跑的任务**不打断**（默认口径：等它交活，结果照常回投与审查；之后由换人逻辑接管）。
+ * 移人：成员标 removed（终态）+ **会话与在办任务一并终止**。
+ *
+ * ⛔⛔ 10-27 用户令（原话）：「codex 移除了群成员，这个旧的群成员回合就同步删除掉会话，
+ *    同步自动刷新会话列表」。⇒ 口径从「会话与轨迹保留、在跑的不打断」改成：
+ *    移出 = 会话删掉 = 那个回合不可能再交活 ⇒ **在办任务必须同时结清**。
+ *    ⛔ 不结清的话任务永远 running：界面「正在做」卡死、成员占着并发闸、中枢再也等不到交活。
+ *
+ * 返回值多带 `terminatedTasks`（被终止的任务标题）：runner 拿它回投给 BOSS，
+ * 让中枢知道「哪几条活跟着人一起没了」（⛔ 别让模型自己猜）。
  */
-export function removeMember(state: BossState, groupId: string, memberId: string): GroupMember {
+export function removeMember(state: BossState, groupId: string, memberId: string): GroupMember & { terminatedTasks: string[] } {
   const group = groupOf(state, groupId);
   const member = memberOf(group, memberId);
   if (member.status === "removed") throw new Error(`成员「${member.name}」已经被移出了`);
-  const running = Object.values(state.tasks).some((t) => t.groupId === group.id && t.status === "running" && t.assignee === member.id);
   member.status = "removed";
   member.lockedTaskIds = [];
+  /* 终止 TA 手上所有未结的任务（queued 不归他：那是还没派出去的，交给换人逻辑）。 */
+  const terminatedTasks: string[] = [];
+  for (const task of Object.values(state.tasks)) {
+    if (task.groupId !== group.id || task.assignee !== member.id) continue;
+    if (!["assigned", "running", "submitted", "reviewing"].includes(task.status)) continue;
+    const attempt = task.attempts[task.attempts.length - 1];
+    if (attempt && !attempt.endedAt) attempt.endedAt = Date.now();
+    task.status = "failed";
+    task.updatedAt = Date.now();
+    terminatedTasks.push(task.title);
+    pushEvent(state, {
+      groupId: group.id, taskId: task.id, memberId: member.id, kind: "note",
+      text: `${member.name} 已移出群 ⇒ 「${task.title}」随之终止（任务标失败，可重新派给别人）。`,
+    });
+  }
   pushEvent(state, {
     groupId: group.id, memberId: member.id, kind: "note",
-    text: running
-      ? `${member.name} 已移出群；TA 手上正在跑的任务**不打断**，交活后照常审查，之后不再派活。`
-      : `${member.name} 已移出群（TA 的会话与轨迹保留）。`,
+    /* 10-27 用户令：移出成员 = 连会话一起删（渲染层拿到 removedThreadId 会走 deleteThreadCore）。 */
+    text: terminatedTasks.length
+      ? `${member.name} 已移出群；TA 的成员会话与 ${terminatedTasks.length} 条在办任务一并终止。`
+      : `${member.name} 已移出群，TA 的成员会话一并删除。`,
   });
-  return member;
+  /* ⛔ 返回**副本**：`terminatedTasks` 是本次调用的返回值，不该被落盘进成员档案。 */
+  return { ...member, terminatedTasks };
 }
 
 /** 置顶/取消置顶某条群事件（视图层收藏，最多 3 条，超出挤掉最旧）。 */
@@ -328,6 +349,22 @@ export function setPinned(state: BossState, groupId: string, eventId: string, pi
 }
 
 /** 下一个可派的人：不在锁名单、状态不是 locked。全被锁 ⇒ null（调用方必须升级，不许放行）。 */
+/**
+ * 改成员状态的**唯一口**（10-27 用户实测：「我明明移过他们，状态被后来的打回逻辑改回去了」）。
+ *
+ * ⛔⛔ `removed` 是**终态**：任务结算 / 打回 / 通过 / 开跑 / 放锁 都会写 member.status，
+ *    过去它们直接赋值 ⇒ 被移出的人被后来的一次打回改成 locked、或一次通过改成 idle，
+ *    于是 `group_status` 里又冒出「策划 locked / 落纸 idle」这种已在群外的异常成员。
+ *    ⇒ 一律走这里：removed 直接原样返回（状态不改、事件照旧记在任务上）。
+ * ⛔ 谁要写 member.status 就必须调它 —— 守卫 22 会扫直接赋值。
+ */
+function setMemberStatus(group: BossGroup, memberId: string, next: GroupMemberStatus): GroupMember {
+  const member = memberOf(group, memberId);
+  if (member.status === "removed") return member;
+  member.status = next;
+  return member;
+}
+
 export function pickReassignee(state: BossState, task: GroupTask): GroupMember | null {
   const group = groupOf(state, task.groupId);
   /* ⛔⛔ 手上已有在办任务的成员不能被选中。运行态压测实测：不筛这一条时，一次并发派 40 条活

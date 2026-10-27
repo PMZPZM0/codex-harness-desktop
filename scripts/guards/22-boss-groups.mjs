@@ -45,6 +45,56 @@ if (state) {
     members, policy,
   });
 
+  /* ── 0. 移出是**终态**（10-27 用户实测：「我明明移过他们，状态被后来的打回逻辑改回去了」）──
+     ⛔ 真跑状态机，两条都要成立：
+       ① **新口径**：移出即终止在办任务 ⇒ 后续评审根本进不来（状态闸先拒），成员不可能被"救活"；
+       ② **老账本兼容**：旧版落盘的形态是「成员 removed + 任务还挂在 reviewing」——
+          这时评审仍会跑，而通过/打回**都不许**把 removed 改回 idle / locked。
+          （这正是用户截图里「已移出的人又挂在群成员里」的现场形态。） */
+  {
+    const s = emptyState();
+    const g = mkGroup(s, [{ name: "甲", role: "写手" }, { name: "乙", role: "评审" }]);
+    const t = addTask(s, { groupId: g.id, title: "写一版", brief: "b", criteria: "c", assignee: g.members[0].id });
+    assignTask(s, t.id, g.members[0].id);
+    markRunning(s, t.id, { threadId: "th-a" });
+    submitTask(s, t.id, "成品");
+    removeMember(s, g.id, g.members[0].id);
+    ok(g.members[0].status === "removed", "移出后状态是 removed");
+    ok(t.status === "failed", "移出即终止在办任务 ⇒ 任务已 failed（会话都删了，等不到交活）");
+    ok(String(throws(() => recordReview(s, t.id, { by: "fresh", verdict: "rejected", reasons: ["缺结论"] })))?.includes("待审"),
+      "已终止的任务不允许再评审（打回逻辑进不来 ⇒ 状态不会被改回 locked）");
+
+    /* 老账本形态：成员 removed 但任务停在 reviewing（10-27 之前的落盘） */
+    const s2 = emptyState();
+    const g2 = mkGroup(s2, [{ name: "甲", role: "写手" }, { name: "乙", role: "评审" }]);
+    const t2 = addTask(s2, { groupId: g2.id, title: "再写一版", brief: "b", criteria: "c", assignee: g2.members[0].id });
+    assignTask(s2, t2.id, g2.members[0].id);
+    markRunning(s2, t2.id, { threadId: "th-b" });
+    submitTask(s2, t2.id, "成品2");
+    g2.members[0].status = "removed";           // 模拟旧账本：人已移出，任务还在待审
+    recordReview(s2, t2.id, { by: "fresh", verdict: "approved", reasons: [] });
+    ok(g2.members[0].status === "removed", "老账本：移出成员被**通过**后仍是 removed（⛔ 不许改回 idle）");
+
+    const s3 = emptyState();
+    const g3 = mkGroup(s3, [{ name: "甲", role: "写手" }, { name: "乙", role: "评审" }]);
+    const t3 = addTask(s3, { groupId: g3.id, title: "第三版", brief: "b", criteria: "c", assignee: g3.members[0].id });
+    assignTask(s3, t3.id, g3.members[0].id);
+    markRunning(s3, t3.id, { threadId: "th-c" });
+    submitTask(s3, t3.id, "成品3");
+    g3.members[0].status = "removed";
+    recordReview(s3, t3.id, { by: "fresh", verdict: "rejected", reasons: ["缺结论"] });
+    ok(g3.members[0].status === "removed", "老账本：移出成员被**打回**后仍是 removed（⛔ 不许改回 locked）");
+    /* 改派：群里只剩被移出的那一个人 ⇒ 必须返回 null（⛔ 派给他就是把活交给已离群的人）。
+       ⛔ 用**单人组**测，别拿上面的双人组：那个组还有「乙」可派，返回非 null 是对的。 */
+    const s4 = emptyState();
+    const g4 = mkGroup(s4, [{ name: "独苗", role: "写手" }]);
+    const t4 = addTask(s4, { groupId: g4.id, title: "只剩他", brief: "b", criteria: "c", assignee: g4.members[0].id });
+    assignTask(s4, t4.id, g4.members[0].id);
+    removeMember(s4, g4.id, g4.members[0].id);
+    ok(!pickReassignee(s4, t4), "群成员全被移出时改派返回 null（不会派给已移出的人）");
+    ok(pickReassignee(s, t)?.id === g.members[1].id, "还有在群成员可派时改派选中他（移出的人被跳过）");
+  }
+
   /* ── 1. 建群：成员数边界 ── */
   {
     const s = emptyState();
@@ -178,15 +228,22 @@ if (state) {
     const t = addTask(s, { groupId: g.id, title: "T", brief: "", criteria: "能用" });
     assignTask(s, t.id, m2.id);
     markRunning(s, t.id, { threadId: "x" });
-    removeMember(s, g.id, m2.id);
+    const removedRes = removeMember(s, g.id, m2.id);
     ok(m2.status === "removed" && pickReassignee(s, t)?.id !== m2.id, "移出 ⇒ removed 且不再被挑中");
-    // ⛔ 双闸都在：running 状态闸先拒；就算任务回到可派状态，成员状态闸也拒（“已移出群”）
+    /* ⛔⛔ 10-27 用户令（口径变更）：「移除了群成员，这个旧的群成员回合就同步删除掉会话」
+       ⇒ 旧口径「在跑的不打断」已废：会话都删了，那个回合不可能再交活。
+         不结清 ⇒ 任务永远 running（界面「正在做」卡死 + 成员占着并发闸）。 */
+    ok(t.status === "failed",
+      "移出成员 ⇒ 他手上的在办任务**一并终止**（标 failed，不再永远 running）");
+    ok(Array.isArray(removedRes.terminatedTasks) && removedRes.terminatedTasks.includes("T"),
+      "removeMember 回传被终止的任务标题（runner 拿它回投给中枢，模型不用猜）");
+    ok(!("terminatedTasks" in m2), "⛔ terminatedTasks 是返回值、不落进成员档案（回传的是副本）");
+    // ⛔ 双闸都在：任务状态闸先拒（已 failed）；成员状态闸也拒（“已移出群”）
     ok(Boolean(throws(() => assignTask(s, t.id, m2.id))), "派活给已移出成员 ⇒ 被拒");
     {
       const t2 = addTask(s, { groupId: g.id, title: "T2", brief: "", criteria: "能用" });
       ok(String(throws(() => assignTask(s, t2.id, m2.id)))?.includes("移出"), "queued 任务派给已移出成员 ⇒ 成员状态闸拒绝");
     }
-    ok(t.status === "running", "移人不打断在跑任务（等它交活，默认口径）");
     // 置顶：事件由 addMember/removeMember 产生，取一条真实事件
     const ev = s.events[s.events.length - 1];
     setPinned(s, g.id, ev.id, true);
@@ -234,7 +291,7 @@ if (state) {
 {
   const manifest = JSON.parse(read("electron/ipc-channels.manifest.json"));
   const channels = (manifest.channels ?? []).filter((c) => String(c.channel).startsWith("boss-groups:"));
-  ok(channels.length === 14, `manifest 有 14 个 boss-groups 通道（实测 ${channels.length}）`);
+  ok(channels.length === 15, `manifest 有 15 个 boss-groups 通道（含 10-27 新增的 boss-groups:delete，实测 ${channels.length}）`);
   ok(manifest.count === manifest.channels.length, `manifest.count 与通道数一致（${manifest.count} / ${manifest.channels.length}）`);
   ok(channels.every((c) => typeof c.invokeArgs === "string" && Boolean(c.returns)
     && (!String(c.paramsImpl ?? "").trim() || String(c.invokeArgs ?? "").trim())),
@@ -247,8 +304,8 @@ if (state) {
   ok(read("electron/composition.gen.ts").includes("boss-groups-ipc"), "composition.gen.ts 已重生成（跑过 npm run gen:domains）");
 
   const registry = read("electron/ipc-registry.ts");
-  ok(/\{ prefix: "boss-groups", count: 14, status: "in-features", file: "features\/boss-groups-ipc\.ts"/.test(registry),
-    "ipc-registry.ts 账本已登记（count=12）");
+  ok(/\{ prefix: "boss-groups", count: 15, status: "in-features", file: "features\/boss-groups-ipc\.ts"/.test(registry),
+    "ipc-registry.ts 账本已登记（count=15）");
 
   const preload = read("electron/preload.ts");
   for (const method of ["listBossGroups", "bossGroupStatus", "createBossGroup", "assignBossTask", "reviewBossTask", "escalateBossTask", "bossBrowserStatus", "bossGroupMember", "bossGroupPin", "bossGroupSay", "bossGroupPool"]) {
@@ -313,7 +370,7 @@ if (state) {
      ⛔ 10-25 审查后：投递方式改成**出站队列合并投递**（成品 + 评审请求合成一条），
         所以判据从「有 postToBoss(交活…) 直调」改成「settleSubmission 把成品放进队列 delivering 项」。 */
   ok(/kind: "deliverable"/.test(runnerSrc)
-    && /function settleSubmission[\s\S]{0,1200}?enqueueBoss\(group\.id, \{[\s\S]{0,200}?kind: "deliverable"/.test(runnerSrc)
+    && /function settleSubmission[\s\S]{0,1600}?enqueueBoss\(group\.id, \{[\s\S]{0,200}?kind: "deliverable"/.test(runnerSrc)
     && /\[群事件\] \$\{deliverables\[0\]\.who \?\? "成员"\} 交活/.test(runnerSrc),
     "成员交活的成品要**汇总到主对话**（出站队列投递；单条且无评审时发全文，与评审同批时成品给摘要、全文在评审正文里）");
   ok(/boss-avatar/.test(read("src/features/boss-group-view/BossGroupPanel.tsx")) && /boss-member-strip/.test(read("src/features/boss-group-view/BossGroupPanel.tsx")),
@@ -480,13 +537,15 @@ if (state) {
           Ctrl+N / 项目行 ＋ / 命令面板 /new）；
        ② BOSS 入口必须在 startNewThread **之后**才置 true（否则刚置上就被漏斗清掉，进不去欢迎界面）。 */
   const newThreadCode = codeOnly(read("src/features/app-state/parts/part06/03-seg/02-context-fork-backup.tsx"));
-  const newThreadFnAt = newThreadCode.indexOf("function startNewThread()");
-  const newThreadFn = newThreadFnAt >= 0 ? newThreadCode.slice(newThreadFnAt, newThreadFnAt + 700) : "";
+  /* ⛔ 函数签名带可选参（opts?: { boss?: boolean }）⇒ 只锚函数名前缀，别锚空括号（10-27 加参数后恒不匹配）。 */
+  const newThreadFnAt = newThreadCode.indexOf("function startNewThread(");
+  /* ⛔ 窗口 1600：函数体开头有一段 10-25/10-27 的说明注释，700 字够不到真正的 setBossPending(false)。 */
+  const newThreadFn = newThreadFnAt >= 0 ? newThreadCode.slice(newThreadFnAt, newThreadFnAt + 1600) : "";
   ok(newThreadFn.length > 0 && /setBossPending\(false\)/.test(newThreadFn),
     "⛔ 新建普通会话的统一漏斗 startNewThread 清掉 BOSS 待建标记（否则停在 BOSS 欢迎界面时点项目新建切不过去）");
   ok(openBossFn.length > 0
-    && openBossFn.indexOf("setBossPending(true)") > openBossFn.indexOf("startNewThread()")
-    && openBossFn.indexOf("startNewThread()") >= 0,
+    && openBossFn.indexOf("setBossPending(true)") > openBossFn.indexOf("startNewThread(")
+    && openBossFn.indexOf("startNewThread(") >= 0,
     "⛔ BOSS 入口在 startNewThread **之后**才置 pending（顺序反了会被漏斗清掉 ⇒ 按钮进不去欢迎界面）");
   ok(/BossMemoryPanel/.test(read("src/features/settings-memory/MemoryCenterSection.tsx"))
     && existsSync(join(ROOT, "src/features/settings-memory/BossMemoryPanel.tsx")),
@@ -549,8 +608,38 @@ if (state) {
     ok(/is-removing/.test(boardSrc) && /onNotice\(/.test(boardSrc)
       && /\.boss-groups-group-item\.is-removing/.test(read("src/styles/46-boss-groups.css")),
       "删群成功有反馈：列表行淡出 → 重排，并 toast 出「已删除群…」");
-    ok(/group_delete/.test(ipcSrc) && /boss-home-agents:v4/.test(ipcSrc),
-      "中枢角色提示词已更新到 v4 并写明 group_delete（⛔ 不抬版本老用户读不到）");
+    ok(/group_delete/.test(ipcSrc) && /const BOSS_HOME_AGENTS_VERSION = "v5"/.test(ipcSrc),
+      "中枢角色提示词已更新到 v5 并写明 group_delete / 移出即删会话（⛔ 不抬版本老用户读不到）");
+  }
+
+  /* ── 10-27 用户实测三条联动缺口（截图实证）——
+     「codex 移除了群成员，这个旧的群成员回合就同步删除掉会话，同步自动刷新会话列表」
+     「状态被后来的打回逻辑改回去了」「办公室预览没有同步刷新员工数量」。
+     ⛔ 三条都是**跨层**契约（主进程 → 渲染层 → 展示面），单层测不出来 ⇒ 各钉一条接线证据。 */
+  {
+    const reqSrc = codeOnly(read("src/features/app-state/parts/part05/event-router/02-request.tsx"));
+    const membersStoreSrc = codeOnly(read("src/features/boss-group-view/group-members-store.ts"));
+    const ipcSrcForLink = read("electron/features/boss-groups-ipc.ts");
+    const stateSrcForLink = codeOnly(read("electron/boss-groups/state.ts"));
+    ok(/removedThreadId: removedThreadId \|\| undefined/.test(runnerFile)
+      && /String\(member\.threadId \?\? ""\)/.test(runnerFile),
+      "主进程移人时把**成员会话 id** 回给渲染层（removedThreadId；主进程不自己删文件）");
+    ok(/deleteThreadCore\(removedThreadId\)/.test(reqSrc) && /sameAsBoss/.test(reqSrc),
+      "渲染层拿 removedThreadId 走**唯一删除链路** deleteThreadCore（引擎删除 + 墓碑 + 侧栏剔行），且跳过「当前会话」");
+    ok(/void refreshGroupMembers\(/.test(reqSrc),
+      "移人后立刻重拉成员快照（成员名单 / 办公室 / 成员轨同一份，不等 4 秒轮询）");
+    ok(/export function activeMembersOf/.test(membersStoreSrc),
+      "在群成员口径有**单一真相源** activeMembersOf（⛔ 各处各写一份 filter 就会漂移）");
+    const appViewSrc = codeOnly(read("src/features/app-view/AppView.tsx"));
+    ok(/activeMembersOf\(officeGroupMembers\.snapshot\.members\)/.test(appViewSrc)
+      && /groupMembers=\{officeGroupMembersActive\}/.test(appViewSrc),
+      "办公室预览传的是**在群成员**（用户实测：已移出的人还占着工位 / 人数不对）");
+    ok(/String\(member\.status \?\? ""\) !== "removed"\)\.map\(\(member\) => member\.threadId\)/.test(ipcSrcForLink),
+      "已移出成员的会话 id 不再进 memberThreadIds（侧栏不会再给旧会话打「中枢调度」标签）");
+    ok(/function setMemberStatus/.test(stateSrcForLink) && /if \(member\.status === "removed"\) return member;/.test(stateSrcForLink),
+      "成员状态只有 setMemberStatus 一个写入口，且 removed 是**终态**（打回/通过/开跑都改不动）");
+    ok(/=== "removed"\) return;/.test(runnerFile) && /terminatedTasks/.test(runnerFile),
+      "移出即结清：在办任务一并终止、且已移出成员的迟到交活直接丢弃（⛔ 不许再往群里投「已移出的人交活」）");
   }
 
   ok(/成员已被用户移出群/.test(runnerFile) && /新成员进群/.test(runnerFile),
@@ -677,7 +766,8 @@ if (state) {
      颜色由调用方显式指定（中枢 warning=琥珀 / 普通 info=蓝）。 */
   {
     const forkSrc = read("src/features/app-state/parts/part06/03-seg/02-context-fork-backup.tsx");
-    ok(/左上角的「选择项目地址」/.test(forkSrc) && !/右上角/.test(forkSrc),
+    /* ⛔ 负向判据必须剥注释：10-27 那段说明里引用了错误文案「右上角」（讲"别再写右上角"）。 */
+    ok(/左上角的「选择项目地址」/.test(forkSrc) && !/右上角/.test(codeOnly(forkSrc)),
       "未选工作区的提示指向**左上角**的「选择项目地址」（⛔ 旧文案写的右上角是错的）");
     ok(/opts\?\.boss\s*\?\s*"warning"\s*:\s*"info"/.test(forkSrc)
       && /startNewThread\(\{ boss: true \}\)/.test(bossSideSrc),

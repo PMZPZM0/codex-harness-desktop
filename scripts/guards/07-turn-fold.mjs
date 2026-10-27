@@ -216,13 +216,14 @@ export async function run() {
     // 都不好看」）：各页那个占位的「帮助」按钮已退休、长说明收进标题旁的 ?。所以断言从
     // "帮助按钮数"改成三层：① ? 挂载数 ② 兼作帮助入口的 ? 数 ③ 「赘述回潮」判据。
     const hintCount = (appC.match(/<PageInfo\b/g) || []).length;
-    // 10-27：用户连续令「各页右上角 ? 删了」（模型 / MCP / 插件 / 人格市场…）⇒ 下限跟着实测降到 14，
-    //   这条守的是「说明别摊回标题下」，不是「? 必须越多越好」。
-    (hintCount >= 14)
+    // 10-27：用户连续令「各页右上角 ? 删了」（模型 / MCP / 插件 / 人格市场 / 子智能体页头…）
+    //   ⇒ 下限跟着实测降到 11；这条守的是「说明别摊回标题下」，不是「? 必须越多越好」。
+    (hintCount >= 11)
       ? ok(`【32】设置页挂了 ${hintCount} 处 ? 号（说明收进 ?，头部恒为一行）`)
       : fail(`【32】? 号只有 ${hintCount} 处 —— 说明又被摊回标题下了（赘述回潮）`);
     const keyedHints = (appC.match(/helpKey="/g) || []).length;
-    (keyedHints >= 6)
+    /* 兼作「完整帮助」的 ? 同步按实测降到 5（同上：撤掉的是页头那几枚，内容库仍在）。 */
+    (keyedHints >= 5)
       ? ok(`【32】${keyedHints} 处 ? 兼作「完整帮助」入口（HelpButton 退休后入口没丢）`)
       : fail(`【32】兼帮助入口的 ? 只有 ${keyedHints} 处 —— 有页面的完整帮助从此打不开`);
     // ⛔ 比"数量够"更强的判据：**每个帮助主题都必须有 ? 入口**。数量达标不代表没有孤儿 ——
@@ -3007,7 +3008,10 @@ export async function run() {
   (!/const \[notice, setNotice\] = useState\(""\)/.test(noticeHub73) ? ok : fail)(
     "【73】通知中枢不得回退成单槽 notice useState（多会话并发时会互相覆盖）"
   );
-  (/const setNotice = useCallback\(\(text: string, threadId\?: string\) => \{[\s\S]{0,2000}?setNotices\(\[\{ id, text, threadId, scope \}\]\)/.test(app73) ? ok : fail)(
+  /* ⛔ 判据别锁死参数/字段清单：10-27 加了第三个可选参 tone（新建任务=蓝 / 中枢=琥珀）
+     ⇒ 原来写死 `(text, threadId?)` + `{ id, text, threadId, scope }` 会因为**多一个可选项**假红。
+     真契约是「useCallback 稳定引用 + 浮层只留最新一条」⇒ 锚到这两个就够了。 */
+  (/const setNotice = useCallback\(\(text: string, threadId\?: string[\s\S]{0,2000}?setNotices\(\[\{ id, text, threadId, scope/.test(app73) ? ok : fail)(
     "【73】setNotice 保持兼容签名与稳定引用（useCallback；空串仍=清空全部），但浮层**只留最新一条**——10-06 用户改口径：「不要一下上下展示好几个通知叠加」，原「推一条入队」的叠加写法已废"
   );
   (/notice-stack/.test(app73) && /\.notice-stack \{/.test(css73) ? ok : fail)(

@@ -26,6 +26,13 @@ export type GroupMemberLive = {
   threadId?: string;
 };
 
+/** ⛔ 10-27 用户令：「办公室预览没有同步刷新员工数量，现在就剩三个，他还显示有删除过的员工」
+ *  ⇒ 成员快照里带着 `removed`（那是有意的：成员面板要单列「已移出」），
+ *    但**办公室 / 成员轨 / 人数统计**只该看在群的人 ⇒ 统一用这个口径过滤，别各处自己写 filter。 */
+export function activeMembersOf(members: GroupMemberLive[]): GroupMemberLive[] {
+  return (members ?? []).filter((m) => String(m?.status ?? "") !== "removed");
+}
+
 export type GroupLiveSnapshot = {
   groupId: string;
   name: string;

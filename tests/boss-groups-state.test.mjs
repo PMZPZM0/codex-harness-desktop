@@ -47,8 +47,11 @@ test("建群：成员上限与空名校验", { skip }, () => {
 test("建群：policy 传 undefined 字段不会把默认值冲成 NaN（打回上限不许失效）", { skip }, () => {
   const { group } = freshGroup({ maxRejects: undefined, budgetMinutes: undefined, stallMs: undefined });
   assert.equal(group.policy.maxRejects, 2);
-  assert.equal(group.policy.budgetMinutes, 40);
-  assert.equal(group.policy.stallMs, 90_000);
+  /* 传 undefined 的字段不许变成 NaN（NaN 会让「打回几次算超限」永远为假）。 */
+  assert.equal(Number.isNaN(group.policy.maxRejects), false);
+  /* ⛔ 10-26 用户令删掉了停滞看门狗与预算闸 ⇒ 那两个阈值已经是死配置，policy 里不该再有。 */
+  assert.equal("stallMs" in group.policy, false);
+  assert.equal("budgetMinutes" in group.policy, false);
 });
 
 test("任务：没有验收标准一律拒绝（审查的唯一依据）", { skip }, () => {
@@ -125,23 +128,26 @@ test("全员被锁 ⇒ 无人可派也必须升级（⛔ 不许静默放行）",
   assert.ok(task.lockedAuthors.length >= 2, `升级时被锁作者应该有多个，实际 ${task.lockedAuthors.length}`);
 });
 
-test("移出成员：不再接新活；正在跑的任务不打断但之后必须换人", { skip }, () => {
+test("移出成员：不再接新活；在办任务随会话终止（10-27 口径：移出即删会话）", { skip }, () => {
   const { state, group } = freshGroup();
   const [a, b] = people(group);
   const task = S.addTask(state, { groupId: group.id, title: "活", brief: "", criteria: "c" });
   S.assignTask(state, task.id, a.id);
   S.markRunning(state, task.id, { threadId: "t1" });
-  S.removeMember(state, group.id, a.id);
+  const removed = S.removeMember(state, group.id, a.id);
   assert.equal(group.members.find((m) => m.id === a.id).status, "removed");
+  /* ⛔ 10-27 用户令：「移除了群成员，这个旧的群成员回合就同步删除掉会话」
+     ⇒ 会话没了就等不到交活，任务必须同时结清（否则永远 running）。 */
+  assert.equal(task.status, "failed");
+  assert.deepEqual(removed.terminatedTasks, ["活"]);
+  assert.equal("terminatedTasks" in group.members.find((m) => m.id === a.id), false);
   // 移出后新任务不许派给他
   const t2 = S.addTask(state, { groupId: group.id, title: "活2", brief: "", criteria: "c" });
   assert.throws(() => S.assignTask(state, t2.id, a.id), /已移出群/);
-  // 正在跑的那条：交活后打回，必须换到乙
-  S.submitTask(state, task.id, "v");
-  S.recordReview(state, task.id, { by: "boss", verdict: "rejected", reasons: ["不行"] });
-  assert.equal(task.status, "rejected");
-  const next = S.pickReassignee(state, task);
-  assert.equal(next?.id, b.id);
+  // 已终止的那条不许再交活（迟到回调不许把任务拉回 reviewing）
+  assert.throws(() => S.submitTask(state, task.id, "v"), /不在可交活阶段/);
+  // 换人照常：乙可以接新活
+  assert.equal(S.pickReassignee(state, t2)?.id, b.id);
 });
 
 test("升级处理：relax 必须带新标准；retry 清锁且计数归零", { skip }, () => {
@@ -164,30 +170,30 @@ test("升级处理：relax 必须带新标准；retry 清锁且计数归零", { 
   assert.equal(group.members.find((m) => m.id === a.id).status, "idle");
 });
 
-test("待审看门狗：交活久了没结论要能被捞出来（只报告，不替模型判）", { skip }, () => {
+test("待审/停滞看门狗**已删除**（10-26 用户令：不要看门狗）", { skip }, () => {
+  /* 原实现按 11 分钟没动静捞"待审太久"的任务回投中枢 ⇒ 用户原话「你不要加看门狗，Codex 自己哪有那么傻」。
+     ⛔ 负向断言：函数不许回来（回来了就会重新往会话里刷催办消息）。 */
+  assert.equal(typeof S.markReviewStalled, "undefined");
+  assert.equal(typeof S.markStalled, "undefined");
   const { state, group } = freshGroup();
   const [a] = people(group);
   const fresh = S.addTask(state, { groupId: group.id, title: "刚交的", brief: "", criteria: "c" });
   S.assignTask(state, fresh.id, a.id); S.markRunning(state, fresh.id, { threadId: "t1" });
   S.submitTask(state, fresh.id, "v");
-  // 刚交活的：不催
-  assert.equal(S.markReviewStalled(state).length, 0);
-  // 11 分钟没动静：必须被捞出来
-  const stale = S.markReviewStalled(state, fresh.updatedAt + 11 * 60_000);
-  assert.equal(stale.length, 1);
-  assert.equal(stale[0].taskId, fresh.id);
-  // 捞出来之后状态不变（不许宿主自己判通过/打回）
+  /* 放再久也没人动它：状态由中枢自己评审推进（不替模型判）。 */
   assert.equal(fresh.status, "reviewing");
 });
 
-test("预算：过 100% ⇒ 全群暂停，且此后再派活直接拒绝", { skip }, () => {
+test("预算闸**已删除**（10-26 用户令：正常派遣不需要这个）", { skip }, () => {
+  /* ⛔ 负向断言：checkBudget 不许回来，再老的群也不会「到点自动暂停」。
+     回来了就会重现「成员一多就往中枢刷预算提醒 + 莫名暂停」那套噪声。 */
+  assert.equal(typeof S.checkBudget, "undefined");
   const { state, group } = freshGroup({ budgetMinutes: 1 });
-  const later = group.createdAt + 61_000;
-  const b = S.checkBudget(state, group.id, later);
-  assert.equal(b.warn, "100");
-  assert.equal(group.paused, true);
+  group.createdAt = Date.now() - 30 * 24 * 3600_000;
+  assert.notEqual(group.paused, true);
   const task = S.addTask(state, { groupId: group.id, title: "活", brief: "", criteria: "c" });
-  assert.throws(() => S.assignTask(state, task.id, ids(group)[0]), /已暂停/);
+  S.assignTask(state, task.id, ids(group)[0]);
+  assert.equal(task.status, "assigned");
 });
 
 test("评审解析：非 JSON 一律打回，绝不默认通过", { skip }, () => {
