@@ -270,6 +270,20 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
   ok(wsCss.includes(".workspace-file-preview-body > .file-preview-code")
     && /overflow:\s*visible\s*!important/.test(wsCss),
     "右栏预览：代码块不再自己滚（改由预览容器当唯一滚动体 ⇒ 横向滚动条钉在可视区底沿，不用滚到文件末尾）");
+  /* 10-27 二改（用户：「重文件走纯文本是为不卡应用，要不然很卡」+「底部左右滑动条我咋没看见」）：
+     ①**反卡顿通道不许被动**：重文件仍走纯文本（无 token 着色 / 无行号）—— 只为修滚动条去恢复整篇高亮 = 本末倒置；
+     ②那条纯文本分支的内层是带**内联 `overflow:auto`** 的 `<div>`（不是 `<pre>`）⇒ 旧规则
+       `.file-preview-code pre` 盖不住它，横向滚动条又被推到整篇代码末尾。给它类名 + 显式盖掉。 */
+  const mdPreview0 = read("src/features/markdown/Markdown.tsx");
+  const previewCss = read("src/styles/09-settings-workspace-memory.css");
+  ok(/className="file-preview-code-inner"/.test(mdPreview0) && /styles\.code/.test(mdPreview0),
+    "纯文本代码块的内层 div 有类名 file-preview-code-inner（CSS 才盖得住它的内联 overflow）");
+  ok(/\.workspace-file-preview-body > \.file-preview-code > \.file-preview-code-inner[\s\S]{0,240}?overflow:\s*visible\s*!important/.test(previewCss)
+    && /\.file-preview > \.file-preview-code > \.file-preview-code-inner[\s\S]{0,240}?overflow:\s*visible\s*!important/.test(previewCss),
+    "右栏 + 文档预览弹窗：纯文本代码块都不自己滚（横向滚动条钉在可视区底沿，灯箱同样）");
+  ok(/\.file-preview-code::-webkit-scrollbar-thumb[\s\S]{0,200}?background:\s*color-mix/.test(previewCss)
+    && /\.workspace-file-preview-body::-webkit-scrollbar-thumb/.test(previewCss),
+    "两处代码预览的滚动条有**实色**滑块（全局 --panel-2 压在 --panel 上等于看不见 —— 用户就是没看见才来问）");
   ok(/PREVIEW_MAX_CHARS = 60_000/.test(wsPreviewSrc) && /PREVIEW_PLAIN_CHARS = 12_000/.test(wsPreviewSrc)
     && /plain=\{state\.content\.length > PREVIEW_PLAIN_CHARS\}/.test(wsPreviewSrc),
     "右栏只预览前 60K 字符，超 12K 不做语法高亮（右栏窄面板里整篇高亮 = 卡到点不动）");

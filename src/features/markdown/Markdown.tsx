@@ -114,7 +114,7 @@ export const MdCode = memo(function MdCode({ className, children, ...props }: an
     const styles = plainCodeStyles(codeThemeStyle(settings.theme));
     return withCopy(
       <div ref={wrapRef} className="code-highlight" data-plain-code="1">
-        <div style={{ ...styles.pre, fontSize, fontFamily, margin: 0 }}><code style={styles.code}>{code}</code></div>
+        <div className="file-preview-code-inner" style={{ ...styles.pre, fontSize, fontFamily, margin: 0 }}><code style={styles.code}>{code}</code></div>
       </div>
     );
   }
@@ -122,7 +122,7 @@ export const MdCode = memo(function MdCode({ className, children, ...props }: an
     const styles = plainCodeStyles(codeThemeStyle(settings.theme));
     return withCopy(
       <div ref={wrapRef} className="code-highlight" data-lazy-highlight="pending">
-        <div style={{ ...styles.pre, fontSize, fontFamily, margin: 0 }}><code style={styles.code}>{code}</code></div>
+        <div className="file-preview-code-inner" style={{ ...styles.pre, fontSize, fontFamily, margin: 0 }}><code style={styles.code}>{code}</code></div>
       </div>
     );
   }
@@ -167,7 +167,7 @@ export const FilePreviewCode = memo(function FilePreviewCode({ language, content
     const styles = plainCodeStyles(codeThemeStyle(settings.theme));
     return (
       <div ref={wrapRef} className="file-preview-code code-highlight" data-lazy-highlight={heavy ? "plain-heavy" : plain ? "plain" : "pending"}>
-        <div style={{ ...styles.pre, fontSize, fontFamily, margin: 0 }}><code style={styles.code}>{code}</code></div>
+        <div className="file-preview-code-inner" style={{ ...styles.pre, fontSize, fontFamily, margin: 0 }}><code style={styles.code}>{code}</code></div>
       </div>
     );
   }

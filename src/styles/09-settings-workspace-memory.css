@@ -165,6 +165,44 @@
     monospace;
   overflow: auto;
 }
+/* 10-27 用户：「文件灯箱预览和右侧栏的代码文件预览底部的左右滑动条…我咋没看见」——
+   ⛔ 滚动本身早在（灯箱的 `.file-preview-code` 自带 overflow:auto；右栏由外层
+      `.workspace-file-preview-body` 当滚动体），问题是**看不见滑块**：
+      全局滚动条滑块是 --panel-2，压在 --panel 底的代码预览上几乎同色。
+   ⇒ 这两处代码预览单独给实色滑块 + 浅轨道（宽度沿用全局 10px，不做两套尺寸）。 */
+.file-preview-code::-webkit-scrollbar,
+.workspace-file-preview-body::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.file-preview-code::-webkit-scrollbar-track,
+.workspace-file-preview-body::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+.file-preview-code::-webkit-scrollbar-thumb,
+.workspace-file-preview-body::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 75%, transparent);
+  border: 0;
+  border-radius: 999px;
+}
+.file-preview-code::-webkit-scrollbar-thumb:hover,
+.workspace-file-preview-body::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+.file-preview-code::-webkit-scrollbar-corner,
+.workspace-file-preview-body::-webkit-scrollbar-corner {
+  background: transparent;
+}
+/* ⛔⛔ 10-27 补刀（用户：「…我咋没看见」）：**重文件**走纯文本分支时，内层是带高亮主题
+   **内联 `overflow:auto`** 的 `<div>`（不是 `<pre>`）⇒ 旧规则 `.file-preview-code pre` 盖不住它，
+   横向滚动条又被推到整篇代码的最末尾（长文件滚到第 1000 行才够得着，等于没有）。
+   这里把内层的溢出交还给外层滚动体：灯箱 = `.file-preview-code`（flex:1 有界），
+   右栏 = `.workspace-file-preview-body`。⛔ 必须 !important：内联 style 优先级最高。 */
+.workspace-file-preview-body > .file-preview-code > .file-preview-code-inner,
+.file-preview > .file-preview-code > .file-preview-code-inner {
+  overflow: visible !important;
+  max-width: none;
+}
 /* md 文档视图（09-27）：.md 文件按排版渲染（像 WorkBuddy 的文档视图），不是暗底代码。
    排版规则全部复用聊天的 .markdown 体系（03-messages-turns.css），这里只管"当一页文档读"的壳：
    白底、舒展内边距、可读行宽居中、独立滚动。 */
