@@ -230,13 +230,23 @@
 }
 
 /* ── 全设置页统一壳：页头、白卡、分组、工具条 ── */
+/* ── 10-27 用户令：「设置界面逐个检查，很多隔断，中间有小白条」──
+   根因：框架给**每一段**都留 8px 上 + **34px 下**留白。一个页面有几段，中间就出现几道白条，
+   看起来像被切断。改法：段上/下留白归零，段与段的节奏交给段内卡片自己的 10px margin；
+   8px / 26px 只留给**第一段的顶**与**最后一段的底**（页面呼吸感不丢）。 */
 .settings-exp-shell > .settings-section,
 .settings-exp-shell > .comp-lib {
   width: 100%;
   max-width: 100%;
-  padding: 8px 22px 34px;
+  padding: 0 22px;
 }
-.settings-exp-shell > .settings-section.settings-exp-page { padding: 4px 2px 26px; }
+.settings-exp-shell > .settings-section:first-of-type,
+.settings-exp-shell > .comp-lib:first-of-type { padding-top: 8px; }
+.settings-exp-shell > .settings-section:last-of-type,
+.settings-exp-shell > .comp-lib:last-of-type { padding-bottom: 26px; }
+.settings-exp-shell > .settings-section.settings-exp-page { padding: 0 2px; }
+.settings-exp-shell > .settings-section.settings-exp-page:first-of-type { padding-top: 4px; }
+.settings-exp-shell > .settings-section.settings-exp-page:last-of-type { padding-bottom: 26px; }
 .settings-exp-shell > .settings-section > .settings-copy,
 .settings-exp-shell > .settings-section > .settings-block-head,
 .settings-exp-shell .comp-lib-head {
