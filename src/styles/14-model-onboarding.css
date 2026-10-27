@@ -173,8 +173,7 @@
 }
 /* 标题与 ? 同行居中（09-17）：说明收进 ? 后，标题这一行就是头部的全部文字内容。
    ? 直接内联在 <h2> 里 —— 不改各页 JSX 结构，也不必逐页改成新组件（改动面最小）。 */
-.settings-copy h2,
-.provider-list-head h2 {
+.settings-copy h2 {
   display: flex;
   align-items: center;
   gap: 7px;

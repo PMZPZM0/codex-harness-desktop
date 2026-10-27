@@ -15,38 +15,6 @@
    ⛔ 操作行必须撑满整行（width:100%），否则 auto 外边距没有可推的空间，返回键还是跟新建挨在一起。 */
 .subagent-center .subagent-head-actions { width: 100%; }
 .subagent-center .subagent-head-actions > .subagent-back { margin-right: auto; }
-.subagent-banner {
-  border: 1px solid color-mix(in srgb, var(--green) 22%, var(--line-soft));
-  background: linear-gradient(135deg, color-mix(in srgb, var(--green) 7%, var(--panel)), var(--panel) 70%);
-  border-radius: 12px;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px 14px;
-  display: flex;
-}
-.subagent-banner > svg {
-  color: var(--green);
-  flex: none;
-  margin-top: 1px;
-}
-.subagent-banner strong {
-  color: var(--text);
-  margin-bottom: 3px;
-  font-size: 12.5px;
-  display: block;
-}
-.subagent-banner p {
-  color: var(--muted);
-  margin: 0;
-  font-size: 11.5px;
-  line-height: 1.6;
-}
-.subagent-banner code {
-  background: var(--panel-2);
-  border-radius: 4px;
-  padding: 1px 4px;
-  font-size: 11px;
-}
 .subagent-grid {
   grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
   gap: 11px;

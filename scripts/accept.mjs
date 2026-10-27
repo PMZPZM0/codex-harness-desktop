@@ -81,7 +81,7 @@ const CHECKS = [
       await nav("外观");
       await wait(1000);
       const look = await h.eval(`(function(){ const m=document.querySelector(".settings-modal"); if(!m) return null;
-        const card=[...m.querySelectorAll(".card-reasoning")].find((x)=>(x.textContent||"").includes("思考板块展示"));
+        const card=[...m.querySelectorAll(".appearance-base-card .settings-pill-row")].find((x)=>(x.textContent||"").includes("思考板块"));
         const fn=m.querySelector(".appearance-function-card");
         return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
           has:!!card, above:!!(card&&fn&&card.getBoundingClientRect().top < fn.getBoundingClientRect().top) }; })()`).catch(() => null);
@@ -168,22 +168,19 @@ const CHECKS = [
       const ctrl = await h.eval(`(function(){
         const m=document.querySelector(".settings-modal"); if(!m) return null;
         const page=m.querySelector(".general-page");
-        const seg=[...m.querySelectorAll(".perm-seg-btn")];
-        const cs=seg[0]?getComputedStyle(seg[0]):null;
+        const perm=m.querySelector(".card-permission .row-pills");
         const toneRow=[...m.querySelectorAll(".card-reply .settings-toggle-row")].find((x)=>(x.textContent||"").includes("语气自适应"));
         const toneSw=toneRow?toneRow.querySelector('[role="switch"]'):null;
         return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
           groups:m.querySelectorAll(".settings-exp-group-head").length,
-          cards:seg.length,
-          align:cs?cs.alignItems:"", ta:cs?cs.textAlign:"",
+          permPills:perm?perm.querySelectorAll("button").length:0,
           toneInReply:!!toneRow, toneOn:toneSw?toneSw.getAttribute("aria-checked"):null };
       })()`).catch(() => null);
       await nav("外观");
       await wait(800);
       const appGroups = await h.eval(`document.querySelectorAll(".settings-modal .settings-exp-group-head").length`).catch(() => -1);
-      h.check("⑦ 控制台：分组小字已删、权限卡文字居中；外观页同样无分组小字",
-        Boolean(ctrl && ctrl.page === "控制台" && ctrl.groups === 0 && ctrl.cards === 3
-          && ctrl.align === "center" && ctrl.ta === "center" && appGroups === 0),
+      h.check("⑦ 控制台：分组小字已删、权限收成一张卡（三档胶囊）；外观页同样无分组小字",
+        Boolean(ctrl && ctrl.page === "控制台" && ctrl.groups === 0 && ctrl.permPills >= 3 && appGroups === 0),
         JSON.stringify({ ctrl, appGroups }));
 
       /* 10-27 用户令：「个性化里面的用户称呼可以删了，还有语气自适应也删了，
@@ -197,7 +194,7 @@ const CHECKS = [
           hasNickInput:!!page.querySelector('input[aria-label="称呼"]'),
           hasNickText:(page.textContent||"").includes("称呼"),
           hasTone:(page.textContent||"").includes("语气自适应"),
-          hasStyle:!!page.querySelector(".personalization-style-grid"),
+          hasStyle:!!page.querySelector(".personalization-style-tabs"),
           hasInstructions:!!page.querySelector(".personalization-instructions") };
       })()`).catch(() => null);
       h.check("⑧ 个性化：无称呼输入、无语气自适应；回复风格与自定义指令仍在",
@@ -492,15 +489,18 @@ const CHECKS = [
 
       /* ⑲ 10-27 用户（新建子智能体截图）：「这个新建子智能体更新一下，都是旧的，工具也是」
          ⇒ 推理强度只剩四档、开关是共享胶囊、工具说明给 agent_invoke + subagent_save。 */
-      await h.pressKey("Escape");
-      await wait(300);
+      if (!(await h.eval(`!!document.querySelector(".settings-modal")`))) {
+        await h.eval(`document.querySelector(".sidebar-settings")?.click()`);
+        await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+        await wait(600);
+      }
       await nav("专家/专家团");
       await wait(800);
       await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-modal .hub-card")].find((x)=>(x.querySelector("strong")?.textContent||"").trim()==="子智能体"); b?.click(); return b?1:0; })()`);
-      await h.waitFor(`!!document.querySelector(".subagent-center")`, { label: "子智能体页", timeoutMs: 5000 }).catch(() => undefined);
-      await wait(500);
+      await h.waitFor(`!!document.querySelector(".subagent-center .subagent-head-actions")`, { label: "子智能体页", timeoutMs: 12000 }).catch(() => undefined);
+      await wait(300);
       await h.eval(`(function(){ const b=[...document.querySelectorAll(".subagent-head-actions button")].find((x)=>(x.textContent||"").includes("新建子智能体")); b?.click(); return b?1:0; })()`);
-      await h.waitFor(`!!document.querySelector(".subagent-editor-modal")`, { label: "新建子智能体弹窗", timeoutMs: 5000 }).catch(() => undefined);
+      await h.waitFor(`!!document.querySelector(".subagent-editor-modal")`, { label: "新建子智能体弹窗", timeoutMs: 8000 }).catch(() => undefined);
       await wait(400);
       const subModalBase = await h.eval(`(function(){
         const m=document.querySelector(".subagent-editor-modal"); if(!m) return null;

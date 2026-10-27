@@ -1465,17 +1465,6 @@ button.search-box:hover {
   display: flex;
   overflow-y: auto;
 }
-.provider-list-head {
-  align-items: center;
-  margin: 0 2px 8px;
-  display: flex;
-}
-.provider-list-head h2 {
-  color: var(--faint);
-  margin: 0;
-  font-size: 11px;
-  font-weight: 500;
-}
 .provider-item {
   cursor: pointer;
   border: 1px solid #0000;
