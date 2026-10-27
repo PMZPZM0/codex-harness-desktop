@@ -17,6 +17,9 @@
 /** 文件名里必须像路径（带扩展名），避免把一堆普通字符串当路径。 */
 const PATH_RE = /(?:[A-Za-z]:[\\/]|\.{0,2}[\\/])?[\w.@\- \u4e00-\u9fa5]+(?:[\\/][\w.@\- \u4e00-\u9fa5]+)*\.[A-Za-z0-9]{1,8}/g;
 
+/** 工具项 → 归类结果缓存（对象身份稳定：已完成项不会被重建）。 */
+const ITEM_CACHE = new WeakMap();
+
 const SKIP_DIR_RE = /(^|[\\/])(node_modules|\.git|dist|dist-electron|release|\.e2e-profile|\.e2e-artifacts)([\\/]|$)/;
 
 /** 工具名归类：⛔ 顺序有意义（先补丁/编辑，再写，再读，最后搜索类）。 */
@@ -83,13 +86,26 @@ export function fileActionsOf(input = {}) {
 
   for (const item of items) {
     if (!item || typeof item !== "object") continue;
+    /* ⛔ 逐项缓存（WeakMap 按对象身份）：流式期间 items 数组每帧换新，但**已完成的工具项是同一对象**
+       —— 没有缓存的话，一个 10KB 的 apply_patch 参数会被每帧 stringify + 正则扫一遍。 */
+    const cached = ITEM_CACHE.get(item);
+    if (cached) {
+      for (const path of cached.paths) {
+        if (cached.bucket === "read") push(read, seenRead, path);
+        else if (cached.bucket === "edited") push(edited, seenEdited, path);
+        else push(modified, seenModified, path);
+      }
+      continue;
+    }
     const name = item.name ?? item.toolName ?? item.tool ?? item.type ?? "";
     const command = item.command ?? item.cmd ?? "";
     const bucket = bucketOf(name, command);
     if (!bucket) continue;
     const args = item.arguments ?? item.args ?? item.input ?? item.params ?? "";
     const blob = typeof args === "string" ? args : JSON.stringify(args ?? "");
-    for (const path of pathsIn(`${blob} ${command}`)) {
+    const paths = pathsIn(`${blob} ${command}`);
+    ITEM_CACHE.set(item, { bucket, paths });
+    for (const path of paths) {
       if (bucket === "read") push(read, seenRead, path);
       else if (bucket === "edited") push(edited, seenEdited, path);
       else push(modified, seenModified, path);
