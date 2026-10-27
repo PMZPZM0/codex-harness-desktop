@@ -407,6 +407,29 @@ const CHECKS = [
           && ["导入", "导出", "新建连接"].every((label)=>sshBar.buttons.some((x)=>x.includes(label)))
           && sshBar.heights.every((h)=>h <= 30)),
         JSON.stringify(sshBar));
+
+      await nav("专家/专家团");
+      await wait(800);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-modal .hub-card")].find((x)=>(x.querySelector("strong")?.textContent||"").trim()==="专家中心"); b?.click(); return b?1:0; })()`);
+      await h.waitFor(`!!document.querySelector(".expert-center-head")`, { label: "专家中心页头", timeoutMs: 5000 }).catch(() => undefined);
+      await wait(400);
+      const expertHead = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const page=m.querySelector(".expert-center-page"); if(!page) return null;
+        const head=page.querySelector(".expert-center-head");
+        const back=head?head.querySelector(".settings-back-row"):null;
+        const market=head?head.querySelector(".settings-heading-actions button"):null;
+        if(!head||!back||!market) return null;
+        const br=back.getBoundingClientRect(), mr=market.getBoundingClientRect();
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          sameRow:Math.abs((br.top+br.bottom)/2-(mr.top+mr.bottom)/2) <= 10,
+          backLeft:br.left < mr.left,
+          backs:page.querySelectorAll(".settings-back-row").length,
+          pageInfo:!!page.querySelector(".page-info") };
+      })()`).catch(() => null);
+      h.check("⑰ 专家中心：返回与专家市场同一排（返回靠左），问号已删",
+        Boolean(expertHead && expertHead.sameRow && expertHead.backLeft && expertHead.backs === 1 && !expertHead.pageInfo),
+        JSON.stringify(expertHead));
       await h.pressKey("Escape");
       await wait(300);
     },

@@ -4037,39 +4037,30 @@ export async function run() {
   );
 }
 
-// ---------- 【88】新鲜上下文的 reviewer：写的人不审自己（09-21 用户点名）----------
-// 做法：随应用种入一个内置子智能体（幂等），复用现有委派链路（含防套娃 / 独占锁 / 身份闸），
-// **不新造工具** —— 新工具会把那些安全闸重写一遍、还可能绕过去。
+// ---------- 【88】不再内置「评审」子智能体（10-27 用户令翻转）----------
+// 原判据（09-21～10-26）钉的是「随应用种入一个内置评审子智能体」。
+// 10-27 用户：「这个子智能体，我删除了，又出来了…不要内置子智能体」——
+// 种入是**幂等**的（缺了就补），所以用户每删一次、下次启动又回来。
+// ⇒ 整条链路摘掉：内置配置、种入函数、启动调用、指令里"派内置评审"那段。
+// ⛔ 判据翻成**负向**：这些只要回来一条，用户删掉的东西就会再冒出来。
 {
-  const agents88 = readFileSync(join(ROOT, "electron", "builtin-agents.ts"), "utf8");
-  const main88 = readMainSource();
   const di88 = readFileSync(join(ROOT, "electron", "developer-instructions.ts"), "utf8");
+  const main88 = readMainSource();
+  const agentsMain88 = readFileSync(join(ROOT, "electron", "main", "09-agents-plugins.ts"), "utf8");
+  const boot88 = readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8");
 
-  (/export const FRESH_REVIEW_ID = "fresh-review"/.test(agents88) ? ok : fail)(
-    "【88】内置评审子智能体 id 固定（fresh-review —— 幂等种入依赖它）"
+  (!existsSync(join(ROOT, "electron", "builtin-agents.ts")) ? ok : fail)(
+    "【88】内置评审子智能体的配置模块已删除（electron/builtin-agents.ts）"
   );
-  (/看不到/.test(agents88) && /具体位置/.test(agents88) && /未发现/.test(agents88) ? ok : fail)(
-    "【88】提示词保留三条纪律：声明看不到历史 / 只报能定位的问题 / 允许说「未发现」（缺一条就会退化成夸一遍）"
+  (!/ensureBuiltinReviewer/.test(main88 + boot88) && !/ensureBuiltinReviewer/.test(agentsMain88) ? ok : fail)(
+    "【88】不再种入内置评审子智能体（启动链 / 主进程 / boot 都不许再有 ensureBuiltinReviewer）"
   );
-  (/effort: "high"/.test(agents88) ? ok : fail)("【88】审阅 effort 给 high（想清楚再说话，贪快会漏）");
-  (/if \(list\.some\(\(agent\) => agent\.id === FRESH_REVIEW_ID\)\) return;/.test(main88) ? ok : fail)(
-    "【88】种入幂等（已存在就返回 —— 用户改过提示词或停用过，不许覆盖）"
+  (!/评审（新鲜上下文）/.test(di88) && !/fresh-context review/.test(di88) ? ok : fail)(
+    "【88】指令里不再让模型去派「评审（新鲜上下文）」（对象都没了，命令只会让它白烧一个回合）"
   );
-  (/try \{ await ensureBuiltinReviewer\(\); \} catch/.test(main88) ? ok : fail)(
-    "【88】调用包在 try/catch 里（启动链一处裸 await 抛出会掐死整条链）"
-  );
-  // ⛔⛔ 10-05 修正：09-21 那两条判据都失效了 ——「调用被拒（含「不持有调度权限」）」已不是唯一
-  //    拒绝理由（还有「总开关是关着的」/「没有开启…这一类」）；而「工具表里有没有」**恒真**
-  //    （agent_invoke 现为渲染层注册的 dynamicTool，注册刻意不带开关条件）⇒ 会白烧回合。
-  //    真实信号 = 会话里那条告知 + 调用被拒文案。⛔ 只判 REVIEW_INSTRUCTIONS 那一段：别的
-  //    指令也写着 "in your tool list"（生图/视频/组件库），按全文判会假绿。
-  {
-    const reviewStr = di88.slice(di88.indexOf("const REVIEW_INSTRUCTIONS ="), di88.indexOf("const MEMORY_INSTRUCTIONS ="));
-    (/【调度已开启】/.test(reviewStr) && /不持有调度权限/.test(reviewStr) ? ok : fail)("【88】复审指引以「会话里那条【调度已开启】告知 + 被拒文案」为判据（工具表判据 10-05 已失效）");
-    (!/in your tool list/.test(reviewStr) ? ok : fail)("【88】复审指引不再拿「工具表里有没有」当调度开关的判据（dynamicTools 注册后恒真，会白烧回合）");
-  }
-  (/text \+= REVIEW_INSTRUCTIONS;/.test(di88) ? ok : fail)(
-    "【88】复审指引真的被注入（算了常量却没拼进去 = 死代码）"
+  (/REVIEW_INSTRUCTIONS/.test(di88) && /self-review before handing over/.test(di88)
+    && /text \+= REVIEW_INSTRUCTIONS;/.test(di88) ? ok : fail)(
+    "【88】交付前自查仍在：改成模型自己复查（⛔ 算了常量却没拼进去 = 死代码）"
   );
 }
 

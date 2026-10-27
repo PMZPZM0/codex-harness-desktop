@@ -106,7 +106,6 @@ import { readMcpOverrides, mcpOverrideEnabled } from "./main/06-mcp-overrides";
 // 不属于任何功能域；那里的路径求值是**惰性**的 —— 见该文件头的搬迁纪律①）。
 import { installCrashDiagnostics, placeholderPngResponse } from "./runtime/host/diagnostics";
 import { escapeToml, readConnectors } from "./main/07-connectors-io";
-import { ensureBuiltinReviewer } from "./main/09-agents-plugins";
 import { classifyProbeError, migrateLegacyRolloutHome, describeNetworkError } from "./main/11-maintenance";
 import { devInstructionsInput, refreshSkillDiscipline } from "./main/12-skill-discipline";
 /* 断环用叶子模块（2026-09-24）：路径常量(runtime-paths) / 上游协议表(upstream-protocols) /
@@ -1132,7 +1131,7 @@ app.on("activate", () => {
 
 // ── 依赖注入给 features/boot.ts（必须在所有顶层声明之后调用：它按值取这些单例）──
 bindBoot({
-  codexHome, loadDeletedThreads, deletedThreadIds, responsesBridge, userSkillsDir, ensureBuiltinReviewer, refreshSkillDiscipline, readCustomModel, server, isInsideTrustedRoots, placeholderPngResponse, createWindow, filterForRenderer, channelBot, voiceService, syncEngineWatchdog, eventThreadId, purgeDeletedThread, threadRuntimeStore, teamRunStore, delegateRegistry, dispatchProbes, stableKey, engineActiveTurnIds, botStreamSessions, stopWeixinTyping, botStreamPlanFor, botStreamFile, startWeixinTyping, captureBuffers, threadCwd, remoteEventForwarders, internalThreads, workspaceMemoryEnabled, memoryStore, memoryLayers, distillSummarize, resolveLiveProxy, connectorEnv, readConnectors, migrateLegacyRolloutHome, healRolloutLineage, readCustomModels, ensureDispatchHttp, writeModelCatalogToml, devInstructionsInput, ensureDispatchToken, applyMemoryMode, scheduler, remote,
+  codexHome, loadDeletedThreads, deletedThreadIds, responsesBridge, userSkillsDir, refreshSkillDiscipline, readCustomModel, server, isInsideTrustedRoots, placeholderPngResponse, createWindow, filterForRenderer, channelBot, voiceService, syncEngineWatchdog, eventThreadId, purgeDeletedThread, threadRuntimeStore, teamRunStore, delegateRegistry, dispatchProbes, stableKey, engineActiveTurnIds, botStreamSessions, stopWeixinTyping, botStreamPlanFor, botStreamFile, startWeixinTyping, captureBuffers, threadCwd, remoteEventForwarders, internalThreads, workspaceMemoryEnabled, memoryStore, memoryLayers, distillSummarize, resolveLiveProxy, connectorEnv, readConnectors, migrateLegacyRolloutHome, healRolloutLineage, readCustomModels, ensureDispatchHttp, writeModelCatalogToml, devInstructionsInput, ensureDispatchToken, applyMemoryMode, scheduler, remote,
   DISPATCH_FIXED_PORT, mcpOverrideEnabled, readMcpOverrides, escapeToml, applyCustomModel, readMemoryMode, autoInstallGitIfNeeded, healReservedProviderConfig, handleWeixinMessage, channelLogs, persistChannelLog, telegramGateway, feishuGateway, dingtalkGateway, qqGateway, wecomWebhookGateway, readChannelBot,
   setWeixinGateway,
   // dispatchToken 是 let 且运行时才赋值 ⇒ 必须给 getter（按值 bind 会拿到旧值）

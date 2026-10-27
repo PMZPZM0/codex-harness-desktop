@@ -155,23 +155,12 @@ const LAYA_INSTRUCTIONS = `\n\nLOCAL LAYA JUDGE (only if \`laya_judge\` is in yo
 const VISION_INSTRUCTIONS = (mediaCommand: string) =>
   `\n5) describe_image — let a vision model describe an image you cannot parse directly. Invoke: ${mediaCommand} vision "<image>" [focus question] where <image> can be a LOCAL FILE PATH (fastest — pass it as-is, the helper reads and encodes it for you), a remote http(s) URL, or a data URL. Do NOT base64-encode local files yourself before calling — pass the path directly. Stdout is JSON {"text":"..."}; treat the text as the image content and continue the task.`;
 
-/** 新鲜上下文复审（09-21）：写的人不审自己。
- *  为什么要写进指令：模型不会自发想到"派一个看不到本次对话历史的自己去复审"。
- *  ⛔ 必须写成**条件式**（与 BROWSER_INSTRUCTIONS 同一纪律）：调度是**会话级**开关，而这里是
- *     全局指令 —— 直接命令"用 agent_invoke"会让没开调度的会话去调不存在的工具，把「没开」
- *     误判成「坏了」。
- *  ⛔⛔ 判据演进（10-05 第三次修正，前两次都踩空）：
- *     · 09-21 版用「调用被拒（原因含「不持有调度权限」）」—— 对，但已不是唯一拒绝理由；
- *     · 09-21 补的「工具表里有没有」判据**已彻底失效**：10-05 起 `agent_invoke` 是宿主
- *       注册的 dynamicTool，**永远在工具表里**（见 part08/01-seg.tsx 的 buildDynamicTools：
- *       注册刻意不带开关条件，否则用户中途打开调度时工具面不重建）。这条判据恒真 ⇒
- *       模型会对着"没开调度"的会话反复尝试。
- *     ⇒ 现在以**会话里那条告知**为主判据（`【调度已开启】`，用户扳开关时由应用发出、
- *       关掉时有 `【调度已关闭】`；它按勾选逐类列出可派对象，是会话级真相），
- *       并保留"调用被拒就收手"的兜底 —— 拒绝文案会让模型读到「当前开启：X」。
- *  对应的执行者是随应用种入的内置子智能体（electron/builtin-agents.ts，id=fresh-review）。 */
+/** 交付前自查（09-21 起是「派内置评审子智能体复审」；10-27 用户令「不要内置子智能体」后
+ *  改成**自己复查**——不再随应用种入任何子智能体，也不许叫一个不存在的名字）。
+ *  ⛔ 保留这条的原因：模型仍然会"写完就交"，交付前过一遍是唯一不依赖额外对象的质量兜底。
+ *  ⛔ 必须写成条件式（与 BROWSER_INSTRUCTIONS 同一纪律）：这里是全局指令，别命令"必须复审"。 */
 const REVIEW_INSTRUCTIONS =
-  "\n6) fresh-context review — when you are about to hand over a non-trivial result (a code change, a plan, a document), prefer having it reviewed by a NEW session that cannot see this conversation.\n   IF the conversation carries the notice 「【调度已开启】」(the app posts it when the user flips this session's 调度 switch): dispatch the built-in subagent named \"评审（新鲜上下文）\" with kind=subagent. It judges only the material you hand it — which is the point: your own review is contaminated by the detour you just took.\n   How to write the query (the reviewer sees NOTHING else, so it must be self-contained): (a) what the material is and where it lives — file paths, or the full text if short; (b) what the goal was; (c) what you are unsure about. Do NOT paste this conversation, and do NOT narrate your reasoning.\n   IF that call comes back rejected with a reason about the 调度 switch (「总开关是关着的」/「不持有调度权限」/「没有开启…这一类」): scheduling is off for this session after all — do not retry, do not work around it, fall through to the next line.\n   IF there is no such notice, or a call was just rejected for that reason: scheduling is off for this session — do not try to work around it; review the material yourself and say explicitly that it was a self-review.\n   Skip this entirely for trivial edits, or when the user asked for speed.";
+  "\n6) self-review before handing over — for a non-trivial result (a code change, a plan, a document), re-read what you are about to deliver before calling it done: does it actually do what was asked, are the paths/commands/APIs real (not remembered), did you leave half-finished edits or debug leftovers. Fix what you find, and say plainly what you checked. Do not dispatch a reviewer subagent for this — there is no built-in one; if the user created their own subagent and this session has 调度 on, you may use it, otherwise review it yourself. Skip this for trivial edits, or when the user asked for speed.";
 
 /** ⛔⛔ 名字 / 称呼**不是**画像事实（10-24 实测定案，同一句要贴到每一档记忆文案里）。
  *

@@ -1674,6 +1674,9 @@
   background: var(--panel-2);
   color: var(--text);
 }
+/* 10-27：专家中心「返回智能体团队」与「专家市场」并排，返回靠左、市场靠右 */
+.expert-center-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.expert-center-head .settings-back-row { margin-bottom: 0; }
 .settings-group-label {
   color: var(--faint);
   padding: 0 10px 4px;

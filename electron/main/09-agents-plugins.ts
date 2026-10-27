@@ -4,7 +4,6 @@
  */
 import fs from "node:fs/promises";
 import { safeStorage } from "electron";
-import { FRESH_REVIEW_ID, freshReviewSpec } from "../builtin-agents";
 import { builtinPluginsFile, subAgentsFile } from "../runtime-paths";
 
 /** 内置插件的一段配置（生图 / 视觉）—— **内存态**：`apiKey` 是解出来的明文。 */
@@ -153,15 +152,3 @@ export async function readSubAgents(): Promise<SubAgentConfig[]> {
 }
 
 export async function writeSubAgents(list: SubAgentConfig[]) { await fs.writeFile(subAgentsFile, JSON.stringify(list, null, 2), "utf8"); }
-
-/** 种入内置「评审」子智能体（新鲜上下文复审）。
- *  **幂等**：已存在就不动 —— 用户可能改过提示词、调过 effort 或直接停用它，那些都不该被覆盖。
- *  为什么用子智能体而不是新工具：见 electron/builtin-agents.ts —— 复用整条委派链路
- *  （含防套娃/独占锁/身份闸），且它在界面上看得见、改得动、停得了。 */
-export async function ensureBuiltinReviewer() {
-  const list = await readSubAgents();
-  if (list.some((agent) => agent.id === FRESH_REVIEW_ID)) return;
-  const now = new Date().toISOString();
-  await writeSubAgents([...list, { ...freshReviewSpec(), createdAt: now, updatedAt: now }]);
-  console.log(`[reviewer] 已种入内置评审子智能体（${FRESH_REVIEW_ID}）：用干净上下文复审，写的人不审自己`);
-}
