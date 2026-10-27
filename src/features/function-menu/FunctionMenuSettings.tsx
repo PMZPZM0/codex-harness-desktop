@@ -16,30 +16,27 @@ export function FunctionMenuSettings({ onNotice }: { onNotice?: (text: string) =
       : "拓展功能已移回侧栏底部");
   };
   return (
-    <section className="settings-section stack function-menu-settings">
-      <div className="settings-copy">
-        <h2>拓展功能</h2>
-        <p>选择入口显示在「新会话 / 搜索任务」下面，还是侧栏底部。两处都支持展开 / 折叠，共用同一套顺序与「更多」分组，改动即时生效。</p>
+    /* 10-27 用户令：「把中间这个简洁化一下，跟上面一样，下面卡片线条太多了」
+       ⇒ 两张带图标+副标题的选项大卡 → 收成「标签 + 胶囊」一行（思考板块 / 运行过程同款）；
+          功能入口 chips 去掉虚线框、和「编辑菜单」并成一条淡行，整块只剩一行主控 + 一行说明性内容。 */
+    <section className="function-menu-settings fm-compact">
+      <div className="settings-pill-row">
+        <span className="settings-pill-row-label"><ArrowUpToLine size={13} />拓展功能</span>
+        <div className="segmented-tabs row-pills" role="group" aria-label="拓展功能显示位置">
+          <button type="button" className={config.location === "top" ? "active" : ""} aria-pressed={config.location === "top"} title="入口显示在「新会话 / 搜索任务」下面（可折叠）" onClick={() => choose("top")}>侧栏顶部</button>
+          <button type="button" className={config.location === "bottom" ? "active" : ""} aria-pressed={config.location === "bottom"} title="入口显示在用户名上方（可折叠）" onClick={() => choose("bottom")}>侧栏底部</button>
+        </div>
       </div>
-      <div className="fm-location-grid" role="group" aria-label="拓展功能显示位置">
-        <button type="button" className={`fm-location-card ${config.location === "top" ? "on" : ""}`} aria-pressed={config.location === "top"} onClick={() => choose("top")}>
-          <ArrowUpToLine size={16} /><span><b>侧栏顶部</b><small>「新会话 / 搜索任务」下面（可折叠）</small></span>{config.location === "top" && <Check size={14} />}
-        </button>
-        <button type="button" className={`fm-location-card ${config.location === "bottom" ? "on" : ""}`} aria-pressed={config.location === "bottom"} onClick={() => choose("bottom")}>
-          <ArrowDownToLine size={16} /><span><b>侧栏底部</b><small>用户名上方（默认，可折叠）</small></span>{config.location === "bottom" && <Check size={14} />}
-        </button>
-      </div>
-      <div className="fm-settings-preview" aria-label="当前拓展功能顺序">
-        {visible.map((id) => {
-          const meta = FUNCTION_MENU_META[id];
-          const Icon = meta.Icon;
-          return <span className="fm-settings-chip" key={id}><Icon size={12} className={meta.tone} />{meta.label}</span>;
-        })}
-        {overflow.length > 0 && <span className="fm-settings-chip fm-settings-more">更多 <em>{overflow.length}</em></span>}
-      </div>
-      <div className="fm-settings-actions">
-        <button type="button" className="secondary-setting" onClick={openFunctionMenuEditor}><Pencil size={13} />编辑菜单（拖动排序 / 收进更多）</button>
-        <small>{config.location === "top" ? "入口在「新会话 / 搜索任务」下面；也可以拖侧栏里的入口直接排序。" : "入口在用户名上方；也可以拖侧栏里的入口直接排序。"}</small>
+      <div className="fm-compact-meta">
+        <div className="fm-settings-chips" aria-label="当前拓展功能顺序">
+          {visible.map((id) => {
+            const meta = FUNCTION_MENU_META[id];
+            const Icon = meta.Icon;
+            return <span className="fm-settings-chip" key={id}><Icon size={12} className={meta.tone} />{meta.label}</span>;
+          })}
+          {overflow.length > 0 && <span className="fm-settings-chip fm-settings-more">更多 <em>{overflow.length}</em></span>}
+        </div>
+        <button type="button" className="secondary-setting fm-compact-edit" onClick={openFunctionMenuEditor} title="拖动排序 / 收进更多"><Pencil size={12} />编辑菜单</button>
       </div>
     </section>
   );
