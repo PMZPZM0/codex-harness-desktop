@@ -916,6 +916,16 @@
   margin: 6px 0 8px;
   font-size: 13px;
 }
+/* 10-27 用户令：「新增定时任务放到闲时模板那一排字，这行靠右」⇒ 标题行左右分置。 */
+.auto-templates-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 6px 0 8px;
+}
+.auto-templates-head h3 { margin: 0; }
+.auto-templates-head > button { flex: none; }
 .template-grid {
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 10px;
