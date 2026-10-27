@@ -498,7 +498,15 @@
   color: var(--faint);
   transition: transform 0.15s ease, color 0.15s ease;
 }
-.sidebar-options-chevron.open { transform: rotate(180deg); }
+/* ── 10-27 用户令：「这个展开图标显示的方向不对」──
+   图标必须指**面板真正出现的方向**，否则方向就是反的：
+   · 底部位置（默认）：浮层以折叠头底边为锚**向上**展开 ⇒ 收起时朝上（点它会往上开）、展开时朝下（点它收回去）；
+   · 顶部位置：浮层以顶边为锚**向下**展开 ⇒ 收起时朝下、展开时朝上。
+   ⛔ 这里仍然只由 `.open` 一个开关驱动（展开判定只有 optionsCollapsed 一处），
+     两个方向靠外层 `.sidebar-options-top` 区分，不写第二份 JS 判定。 */
+.sidebar-options:not(.sidebar-options-top) .sidebar-options-chevron { transform: rotate(180deg); }
+.sidebar-options:not(.sidebar-options-top) .sidebar-options-chevron.open { transform: rotate(0deg); }
+.sidebar-options-top .sidebar-options-chevron.open { transform: rotate(180deg); }
 .sidebar-options-toggle:hover .sidebar-options-chevron { color: var(--muted); }
 
 .sidebar-nav-bottom {

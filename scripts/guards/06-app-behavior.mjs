@@ -2685,10 +2685,16 @@ w.postMessage({id:1,op:"list",root});
       && /\.sidebar-options-body\.is-collapsed\s*\{[\s\S]{0,160}?grid-template-rows:\s*0fr/.test(css41) ? ok : fail)(
       "【180】折叠用 grid 行高过渡（0fr ↔ 1fr + transition），无缝高度动画"
     );
-    /* 箭头方向：行画在折叠头**下方** ⇒ 与全站折叠组同向（收起 ⌄ / 展开翻转成 ⌃）。
-       ⛔ 别按"底部锚点"想当然改成镜像 —— 内容在头下面，方向跟顶部组一样才对。 */
-    (/\.sidebar-options-chevron\.open\s*\{\s*transform:\s*rotate\(180deg\);?\s*\}/.test(css41) ? ok : fail)(
-      "【180】箭头翻转规则在（收起 ⌄ / 展开 ⌃，与全站折叠组同向）"
+    /* 箭头方向：**指面板真正展开的方向**（10-27 用户截图报「展开图标方向不对」）。
+       10-26 起入口组改成折叠头右侧的浮层（portal，不再画在头下方）——
+       旧的「内容在头下面、与全站折叠组同向」注释已经过期：底部位置的面板以折叠头底边为锚
+       **向上**展开，所以收起时必须朝上、展开时朝下；顶部位置才是收起朝下、展开朝上。 */
+    (/\.sidebar-options:not\(\.sidebar-options-top\) \.sidebar-options-chevron\s*\{\s*transform:\s*rotate\(180deg\)/
+      .test(css41)
+      && /\.sidebar-options:not\(\.sidebar-options-top\) \.sidebar-options-chevron\.open\s*\{\s*transform:\s*rotate\(0deg\)/
+        .test(css41)
+      && /\.sidebar-options-top \.sidebar-options-chevron\.open\s*\{\s*transform:\s*rotate\(180deg\)/.test(css41) ? ok : fail)(
+      "【180】箭头指向面板真正的展开方向（底部位置 收起⌃/展开⌄，顶部位置 收起⌄/展开⌃）"
     );
     (/sidebar-options-chevron \$\{optionsCollapsed \? "" : "open"\}/.test(side180) ? ok : fail)(
       "【180】箭头只由 optionsCollapsed 一个变量驱动（⛔ 不许再写第二份展开判定）"
