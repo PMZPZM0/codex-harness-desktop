@@ -32,6 +32,7 @@ import { normalizeAutoCompactRatio, readAppSettings, readAppSettingsSync, saveAp
 import { backupTurnIfEnabled as backupTurnIfEnabledImpl, normalizeBackupDir } from "./change-backup";
 import { broadcastCodexEvent, broadcastHarnessEvent } from "./window-bus";
 import { handleRoleMemoryToolCall } from "../role-memory-tool";
+import { handleOpenfilmToolCall } from "../openfilm/tools";
 import { handleMcpToolCall } from "../mcp-bridge";
 import { handleDelegateHarnessToolCall } from "../delegate-harness-tool";
 import { handleTeamToolCall } from "../team-tool-fallback";
@@ -649,6 +650,12 @@ export async function bootApp() {
        filterForRenderer 裁掉 ⇒ 必须在主进程应答。
        ⛔ 只回答 `harness_tools` 一个工具名；返回 false = 不是它，照原流程往下走。 */
     void handleDelegateHarnessToolCall({ userDataDir: app.getPath("userData"), event, respond: (id, result) => server.respond(id as any, result) })
+      .catch(() => false);
+    /* 10-27 OpenFilm 工具（openfilm_status / make_film / check / render / get / skill）：
+       命令全在主进程 spawn，前台会话与后台会话走同一条路 —— ⛔ 不排这一层的话，
+       被 filterForRenderer 裁掉的会话（专家/子智能体）调了工具没人应答，一直挂到超时。
+       返回 false = 不是 openfilm_ 前缀，照原流程往下走。 */
+    void handleOpenfilmToolCall({ event, respond: (id, result) => server.respond(id as any, result) })
       .catch(() => false);
     /* 10-22 专家团工具兜底（`team_member_invoke` / `team_phase_invoke`）：这两条原来只由渲染层应答，
        而 `item/tool/call` 不在跨会话白名单里 ⇒ 后台跑的团队主理人（从普通会话 agent_invoke(kind:"team")

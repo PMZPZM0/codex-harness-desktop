@@ -493,15 +493,19 @@ contextBridge.exposeInMainWorld("codex", {
   openaiToggleAccount: (input: { id: string; disabled: boolean }) => __ipc("openai:toggle-account", 1, [input]),
   openaiUsage: (input?: { email?: string }) => __ipc("openai:usage", 0, [input ?? {}]),
   /* 按需安装（三步可单步重试；npm 走 npmmirror、chromium 走 cdn.npmmirror，失败回官方） */
-  openfilmInstall: (step: unknown) => __ipc("openfilm:install", 1, [step]),
+  openfilmInstall: (step?: unknown) => __ipc("openfilm:install", 0, [step]),
   /* 单步重试（缺省 verify） */
-  openfilmRetry: (step: unknown) => __ipc("openfilm:retry", 1, [step]),
+  openfilmRetry: (step?: unknown) => __ipc("openfilm:retry", 0, [step]),
   /* 读 OpenFilm 组件设置（自动更新三档 + 镜像策略） */
   openfilmSettingsGet: () => __ipc("openfilm:settings-get", 0, []),
   /* 写设置（取值归一化后落盘） */
   openfilmSettingsSet: (patch: unknown) => __ipc("openfilm:settings-set", 1, [patch]),
   /* 扫描安装状态（CLI 版本 / 内置 node / chromium 缓存 / ffmpeg / 设置 / 开源声明） */
   openfilmStatus: () => __ipc("openfilm:status", 0, []),
+  /* 打开（或切到）某部影片的 Studio 页面：跑 open <dir>（OPENFILM_NO_BROWSER=1），从 stdout 抓 Studio 行，写 session.json 并广播 openfilm/studio 事件（渲染层据此开进内置浏览器）。⛔ 不提供「关闭」——实例可能被桌面 App 或别的 agent 用着 */
+  openfilmStudioOpen: (filmDir?: unknown) => __ipc("openfilm:studio-open", 0, [filmDir]),
+  /* Studio 探活（~/.openfilm/run.json + GET /api/health；⛔ 不看 HTTP 200，认 product=openfilm-studio） */
+  openfilmStudioStatus: () => __ipc("openfilm:studio-status", 0, []),
   /* 卸载运行时（只删 runtime，绝不碰用户 film 目录） */
   openfilmUninstall: () => __ipc("openfilm:uninstall", 0, []),
   /* 查最新版（npm dist-tag，镜像优先；比较只认 compareVersions） */

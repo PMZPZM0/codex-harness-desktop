@@ -246,10 +246,15 @@ ready → studio-running → (studio-stale) → ready
 6. 进程守护：`session.pid` 存活探测（Windows `tasklist /FI "PID eq …"`，macOS `kill -0`）；
    退出应用时**不强杀**（用户可能还在看），只在"重新 open"时复用同一 pid。
 
-### 3.4 模型工具（dynamicTools，5 个，白名单命令）
+### 3.4 模型工具（dynamicTools，**6 个**，白名单命令）
+
+> 实施后比原方案多一个 `openfilm_status`：模型需要一次纯读的"现在能不能干"，
+> 否则「先 make_film 再看报错」会先触发一次 spawn。注册**不带安装条件** —— 未安装时它的第一个动作
+> 就是告诉模型"缺什么、让用户去卡片点安装"（工具隐藏 = 模型只会说自己没有这个能力）。
 
 | 工具 | 参数 | 行为 |
 |---|---|---|
+| `openfilm_status` | — | 只读：phase / CLI / node / 渲染引擎 / ffmpeg / Studio 连接 / 设置 / 开源声明 + 下一步建议 |
 | `openfilm_make_film` | `brief`, `filmDir?`, `open?` | 确保 ready（必要时先返回"需要安装 + 让用户点一次"）→ `open <dir>` → 返回 `{studioUrl, manualDigest}` |
 | `openfilm_check` | `filmDir`, `at?` | `look`（无 at）/`look <t>`（单帧）/`look a-b`（区间）；返回问题清单摘要 |
 | `openfilm_render` | `filmDir`, `range?`, `fps?`, `alpha?`, `subtitles?`, `fourK?`, `out?` | `render`；返回产物绝对路径（不返回二进制） |
@@ -304,30 +309,38 @@ ready → studio-running → (studio-stale) → ready
 ## 4. 数据与状态（落盘）
 
 ```
+<tools>/openfilm/                 # 安装根（随工具目录走，覆盖安装/重装保留）
+  runtime/                        # npm 私有 prefix（node_modules/openfilm + playwright-core）
+  .installing                     # 安装中标记（异常退出后 status 报 installing）
 <userData>/openfilm/
-  settings.json          # { autoUpdate: "startup"|"auto"|"off", mirror: "auto"|"official", ffmpegPolicy }
-  session.json           # { projectPath, studioUrl, port, pid, startedAt }
-  install.log            # 最近一次安装的分步日志（截断 200 行）
-  runtime/               # npm 私有 prefix（node_modules/openfilm + .bin/openfilm）
+  settings.json                   # { autoUpdate, mirror, lastCheckedAt }
+  session.json                    # { url, origin, projectPath, pid, version, app, startedAt }
+~/.openfilm/                      # ⚠️ 上游的机器级目录（我们只读，不接管）
+  run.json                        # { pid, supervisor, origin, key, version, app } ← Studio 真 pid 在这
+  key / studio.json               # Studio 的密钥与项目库索引（App 与 CLI 共享）
 ```
 
 ⛔ 不放二进制 ffmpeg；⛔ 不缓存渲染产物（产物都在 film 目录里）。
+⛔ `session.json` 只是"上次连的是谁"的备忘：**存活判据永远是 `run.json` + `/api/health`**（见 §11.2）。
 
 ---
 
 ## 5. IPC 通道清单（manifest → gen:ipc）
 
-| 通道 | 方向 | 载荷 |
+| 通道 | 方向 | 载荷（**已实施**，批次一 + 批次二） |
 |---|---|---|
-| `openfilm:status` | invoke | → `{ phase, version?, node?, ffmpeg?, browser?, error? }` |
-| `openfilm:install` | invoke + 事件 | `{ steps }` / 进度事件 `openfilm:install-progress { step, pct, log }` |
-| `openfilm:retry` | invoke | `{ step }` 单步重试 |
-| `openfilm:uninstall` | invoke | `{ keepFilms: true }`（⛔ 永不删用户 film 目录） |
-| `openfilm:update` | invoke | `{ check: boolean }` → `{ current, latest, action }` |
-| `openfilm:settings` | invoke | 读写 `settings.json` |
-| `openfilm:studio-open` | invoke | `{ filmDir }` → `{ url }`（内部开内置浏览器） |
-| `openfilm:run` | invoke | `{ verb, args, filmDir }`（白名单：`look/render/get/skill/doctor/skills`） |
-| `openfilm:studio-changed` | 主→渲 | `{ url, projectPath, alive }` |
+| `openfilm:status` | invoke | → `{ phase, cli, node, browser, ffmpeg, studio, settings, attribution }` |
+| `openfilm:install` | invoke + 事件 | `step?`（`cli`/`chromium`/`verify`，缺省=三步全跑）；进度事件 `{type:"openfilm", phase:"install", step, pct, log}` |
+| `openfilm:retry` | invoke | `step?`（缺省 `verify`）单步重试 |
+| `openfilm:uninstall` | invoke | 只清 `runtime` + 安装标记（⛔ 不碰影片） |
+| `openfilm:update-check` | invoke | → `{ current, latest, source, hasUpdate }` |
+| `openfilm:settings-get` / `settings-set` | invoke | 读 / 写 `settings.json`（取值归一化后落盘） |
+| `openfilm:studio-open` | invoke | `filmDir?` → `{ ok, url, origin, projectPath, pid, version, note, error? }`；内部跑 `open` 并广播 `{type:"openfilm", phase:"studio"}` |
+| `openfilm:studio-status` | invoke | → `{ alive, url, origin, projectPath, pid, version, app, checkedAt }`（`run.json` + `/api/health`） |
+
+⛔ **没有 `openfilm:run` 通道**：`look/render/get/skill` 只从模型工具面进来（主进程直接 spawn），
+渲染层不需要、也不该有"任意跑一条 CLI"的入口 —— 少一个面就少一处会被绕过的闸。
+⛔ **没有 `studio-close`**：那个实例可能正被上游桌面 App 或另一个 agent 用着（理由见 §11.2）。
 
 域登记：`ipc-registry.ts` 里 `{ prefix: "openfilm", count: 9, status: "in-features" }`；
 `composition.json` 加一行 `openfilm`；跑 `gen:ipc` + `gen:domains`（⛔ 生成物各仓自产）。
@@ -425,6 +438,60 @@ OpenFilm（第三方开源项目）
 
 - 仓库：https://github.com/openfilm/openfilm
 - 手册（给 agent）：`packages/openfilm/MANUAL.md`
+- CLI 入口：`packages/openfilm/bin/openfilm.mjs`（输出与退出码的唯一真相源）
+- Studio 客户端：`packages/openfilm/studio/client.mjs`（`ensureStudio` / `openInStudio` / `running`）
+- 项目库：`packages/openfilm/studio/server/projects.mjs`（`openProject` / `refuse` / `studioHome`）
+
+---
+
+## 11. 实施记录（批次二，10-27 晚）
+
+### 11.1 落地形态
+
+| 文件 | 职责 |
+|---|---|
+| `electron/features/openfilm-ipc.ts` | IPC 面（9 通道）+ 安装器（npm/playwright/doctor）+ 启动检查 |
+| `electron/openfilm/paths.ts` | 安装根 / CLI 入口 / `settings.json`（唯一真相源，⛔ 别处不再算一遍） |
+| `electron/openfilm/runner.ts` | **唯一子进程出口**：`spawn(args[])`、超时、内置 node、`toolchainEnv()`、命令白名单 |
+| `electron/openfilm/probe.ts` | 「现在什么状态」：CLI / node / 渲染引擎 / ffmpeg / Studio |
+| `electron/openfilm/studio.ts` | Studio 打开（`open` + 抓 URL）、`run.json` + `/api/health` 探活、`session.json` |
+| `electron/openfilm/tools.ts` | 6 个 dynamicTools + 主进程应答 + 目录闸 |
+| `electron/openfilm/brand.ts` | 开源声明常量（界面/文档/技能引同一份） |
+| `src/features/openfilm/OpenfilmBridge.tsx` | `studio` 事件 → 右栏内置浏览器 |
+| `electron/builtin-skills/26-skill-openfilm.ts` | 内置技能 `openfilm-video-editing`（含中文导读） |
+| `scripts/guards/23-openfilm.mjs` | 81 条断言（域登记 / 镜像 / 卸载闸 / 版本单一真相源 / Studio / 工具 / 技能 / 卡片） |
+
+### 11.2 读上游源码后**修正**的三处设计
+
+1. **`Studio <url>` 在 stdout，不是 stderr**。`bin/openfilm.mjs` 里 `result.lines` 走 `console.log`；
+   只有进度与告警走 `console.error`。原方案"从 stdout 抓"是对的，但**必须同时容忍 `project  <path>` 这一行**
+   （没项目时它写的是一句人话 `none yet: …`，不是路径 —— 直接当路径存会得到一个假目录）。
+2. **Studio 的 pid 不在我们手上**。`open` 只是 POST `/api/open` 就退出；Studio 由
+   `ensureStudio()` 以 `detached + unref()` 拉起，真 pid 写在 `~/.openfilm/run.json`（还有 `supervisor`）。
+   ⇒ "进程守护"改为 **读 `run.json` + `GET {origin}/api/health`（认 `product=openfilm-studio`）**，
+   而不是跟踪子进程；也不再需要"重启时复用同一 pid"这类自造状态。
+3. **不提供"关闭 Studio"**。它是机器级单实例，可能正被上游桌面 App 或另一个 agent 用着；
+   杀它 = 丢用户没保存的手改。要重启就让 `open` 幂等再连一次（它自己会在版本不符时替换）。
+
+### 11.3 顺带修掉的一个真 bug（批次一带出来的）
+
+`openfilm:install` / `openfilm:retry` / `openfilm:studio-open` 的 `paramsImpl` 写成了必填
+（`step: unknown`），生成器据此算出 `minArgs=1` ⇒ 卡片上「下载并安装」这类**不传参**的调用
+会在渲染层被 `ERR_MISSING_ARGS` 挡掉（点了没反应）。已改成 `step?: unknown` / `filmDir?: unknown`。
+
+### 11.4 实测结论（本机，2026-10-27）
+
+| 项 | 结果 |
+|---|---|
+| 状态探测 | `phase=absent`、内置 node `24.19.0`、渲染引擎未下载、ffmpeg 缺失（未安装形态下的正确读数） |
+| 新通道 | `openfilm:studio-open` 未安装时返回 `OF_E_NOT_READY` + "去卡片点一次下载并安装"；`studio-status` 返回 `alive:false` |
+| 工具定义 | 编译产物里 6 个工具名/参数正确；非 `openfilm_` 前缀一律 `pass-through`（不会吞掉 `harness_tools` 等） |
+| 目录闸 | 工作区内 `ALLOW`；home / 盘根 / `~/.openfilm` / 工作区之外 `DENY`（真跑 `resolveFilmDir`） |
+| 卡片 | 5 盏灯（Node / 渲染引擎 / ffmpeg / CLI / Studio）+ 声明链接 + 3 档自动更新 + 2 档下载源 |
+| 守卫 | `23-openfilm` 81/81；`npm run check` 全链绿 |
+
+**仍未做的（P4）**：桌面 App 形态（`OpenFilm-Setup-x64.exe` / dmg 的下载与静默安装、Gatekeeper 引导）。
+当前只做 CLI 形态 —— 它已经能完成"下载 → 安装 → 连接 → 剪辑 → 导出"整条链。
 - 格式规范：`packages/openfilm/SPEC.md`
 - 商标：`packages/openfilm/TRADEMARK.md`；第三方：`packages/openfilm/THIRD_PARTY_NOTICES.md`
 - 发布资产：https://github.com/openfilm/openfilm/releases/tag/v0.2.6

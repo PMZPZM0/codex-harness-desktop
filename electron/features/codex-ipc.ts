@@ -90,6 +90,17 @@ export const codexFeature = defineFeature<null>({
         } catch (error: any) {
           console.warn("[mcp-bridge] 注入失败（不影响 thread/start）：", String(error?.message ?? error).slice(0, 160));
         }
+        /* 10-27：OpenFilm 的 6 个工具（status / make_film / check / render / get / skill）。
+           ⛔ **不带安装条件**：没装时这些工具照样要在工具面上 —— 它们的第一个动作就是
+              "告诉模型去引导用户点安装"（工具隐藏 = 模型只会说"我没有这个能力"，用户永远装不上）。
+           执行端在 `openfilm/tools.ts`，命令白名单 + 目录闸都在那里（工具可见 ≠ 操作被允许）。 */
+        try {
+          const { buildOpenfilmTools } = await import("../openfilm/tools");
+          const existing = Array.isArray((params as any)?.dynamicTools) ? (params as any).dynamicTools : [];
+          (params as any).dynamicTools = [...existing, ...buildOpenfilmTools()];
+        } catch (error: any) {
+          console.warn("[openfilm] 工具注入失败（不影响 thread/start）：", String(error?.message ?? error).slice(0, 160));
+        }
         /* 10-21：给工具面注入可选 `step` —— 模型填一句中文「这一步在干什么」，卡片直接当标题。
            ⛔ 位置必须在 MCP 合并**之后**：并进来的那批也要有；且要放在 try **外面**，
               合并失败时渲染层自己那批照样能拿到（漏掉就是"工具卡有时没标题"的幽灵差异）。

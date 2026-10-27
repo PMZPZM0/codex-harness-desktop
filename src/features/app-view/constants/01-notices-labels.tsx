@@ -129,5 +129,8 @@ export const BUILTIN_DISTRIBUTED_SKILLS: string[] = [
   /* 10-26：盘问方案 + 交接文档（与 electron/builtin-skills.ts 的 entries 同轮登记） */
   "grill-me",
   "handoff",
+  /* 10-27：OpenFilm 剪辑手册（与 electron/builtin-skills.ts 的 entries 同轮登记）。
+     ⛔ 漏这里 = 用户在 # 面板看不到它（引擎清单要等重扫，保底是唯一无条件透出的通道）。 */
+  "openfilm-video-editing",
   "zy-cinematic-realism",
 ];

@@ -27,6 +27,7 @@ import { MEMORY_MCP_SKILL } from "./builtin-skills/13-skill-memory-mcp";
 import { MEMORY_CLOUD_SKILL } from "./builtin-skills/22-skill-memory-cloud";
 import { KNOWLEDGE_SKILL } from "./builtin-skills/23-skill-knowledge";
 import { HARNESS_API_SKILL } from "./builtin-skills/14-skill-harness-api";
+import { OPENFILM_SKILL } from "./builtin-skills/26-skill-openfilm";
 import { FRONTEND_CANVAS_SKILL } from "./builtin-skills/20-skill-frontend-canvas";
 import { VISUALIZATION_SKILL } from "./builtin-skills/21-skill-visualization";
 import { GRILL_ME_SKILL } from "./builtin-skills/24-skill-grill-me";
@@ -138,6 +139,10 @@ export async function ensureBuiltinSkills(skillsDir: string) {
     // 09-25：宿主接口清单与可拓展能力（生成器产物，用户：「不用一个个去扫」）——
     //  ⛔ 内容来自 scripts/gen-capability-skill.mjs，勿手改；加通道后重跑生成器（守卫【153】比对）
     ["harness-api", HARNESS_API_SKILL],
+    // 10-27：OpenFilm 剪辑配套技能（用户立项：需求即自动完成下载/安装/连接/剪辑）。
+    //  ⛔ 正文里的边界必须与工具实现一致：6 个工具（status/make_film/check/render/get/skill），
+    //    装不上就引导用户去卡片点一次，模型自己不许 npm install。
+    ["openfilm-video-editing", OPENFILM_SKILL],
     // 10-05 夜：前端开发画布（m3e-canvas）的组件手册（用户：「UI里面的组件…再丰富一些」）——
     //  36 种组件的字段速查 + 手机/电脑/网页三种形态 + 导航/主题；与工具 frontend_* 及
     //  指令第 13 条（FRONTEND_CANVAS_INSTRUCTIONS）同源，名字改了要一起改（守卫【283】钉）。

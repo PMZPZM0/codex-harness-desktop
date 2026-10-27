@@ -10,7 +10,7 @@
  * ⛔ 不内置、不分发上游二进制：这里只显示"从 npm/GitHub 获取"的入口与许可声明。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, Download, ExternalLink, LoaderCircle, RefreshCw, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, ExternalLink, Globe2, LoaderCircle, RefreshCw, Trash2 } from "lucide-react";
 
 type Status = {
   phase: "absent" | "installing" | "ready" | "broken";
@@ -18,11 +18,15 @@ type Status = {
   node: { path: string; version: string; embedded: boolean };
   browser: { installed: boolean; cacheRoots: string[] };
   ffmpeg: { ok: boolean; path: string; version: string };
-  settings: { autoUpdate: "off" | "startup" | "auto"; mirror: "auto" | "official" };
+  settings: { autoUpdate: "off" | "startup" | "auto"; mirror: "auto" | "official"; lastCheckedAt?: number };
+  /** Studio 现状（批次二）：是不是连上了、在看哪部片 */
+  studio: { alive: boolean; url: string; origin: string; projectPath: string; pid: number; version: string; app: boolean; checkedAt: number };
   attribution: { home: string; site: string; license: string; trademark: string };
 };
 
-type Progress = { step: "cli" | "chromium" | "verify"; label?: string; pct?: number; log?: string; error?: string; message?: string };
+type Progress = { step?: "cli" | "chromium" | "verify"; label?: string; pct?: number; log?: string; error?: string; message?: string; phase?: string };
+/** 启动检查/手动检查的版本事件（主进程 autoUpdateOnStartup 广播） */
+type UpdateEvent = { phase: "update"; current: string; latest: string; source: string; hasUpdate: boolean };
 
 const AUTO_UPDATE_OPTIONS: { value: Status["settings"]["autoUpdate"]; label: string; hint: string }[] = [
   { value: "off", label: "关闭", hint: "不检查更新（手动点「检查更新」仍可用）" },
@@ -52,7 +56,17 @@ export function OpenfilmCard() {
     void refresh();
     const off = window.codex.onEvent((event: any) => {
       if (event?.type !== "openfilm") return;
-      const next = event as Progress & { phase?: string };
+      const next = event as Progress & Partial<UpdateEvent>;
+      /* 启动检查 / 手动检查的版本事件：只提示，不弹进度条（⛔ 别把"有新版"画成"正在装"） */
+      if (next.phase === "update") {
+        if (!next.latest) return;
+        setUpdate({ latest: String(next.latest), hasUpdate: Boolean(next.hasUpdate), source: String(next.source ?? "") });
+        setNotice(next.hasUpdate
+          ? { tone: "warn", text: `OpenFilm 有新版本 ${next.latest}（当前 ${next.current || "未安装"}）` }
+          : { tone: "ok", text: `OpenFilm 已是最新（${next.current}）` });
+        return;
+      }
+      if (next.phase === "studio") { void refresh(); return; }
       setProgress(next);
       if (next.phase === "install" && next.error) setNotice({ tone: "err", text: String(next.message ?? next.error) });
       if (next.step === "verify" && next.pct === 100) setNotice({ tone: "ok", text: "OpenFilm 安装完成" });
@@ -94,6 +108,20 @@ export function OpenfilmCard() {
           text: result.hasUpdate ? `有新版本 ${result.latest}（当前 ${result.current || "未安装"}）` : `已是最新（${result.current || "未安装"}）`,
         });
       }
+    } finally { setBusy(false); }
+  };
+
+  /* 「打开 Studio」= 连接与配对：主进程跑 open（幂等），事件回来时 OpenfilmBridge 会开进内置浏览器。
+     ⛔ 不传 filmDir：不带参数是上游定义的"打开上次那部 / 当前目录那部"，正是卡片按钮的语义。 */
+  const openStudio = async () => {
+    setBusy(true); setNotice(null);
+    try {
+      const result: any = await window.codex.openfilmStudioOpen();
+      if (!result?.ok) setNotice({ tone: "err", text: `${result?.code ?? ""} ${result?.error ?? "Studio 打开失败"}`.trim() });
+      else setNotice({ tone: "ok", text: result.projectPath ? `Studio 已连上：${result.projectPath}` : "Studio 已连上（还没选影片）" });
+      await refresh();
+    } catch (error: any) {
+      setNotice({ tone: "err", text: String(error?.message ?? error) });
     } finally { setBusy(false); }
   };
 
@@ -151,6 +179,7 @@ export function OpenfilmCard() {
           <span data-ok={status.browser.installed ? "1" : "0"}>渲染引擎 {status.browser.installed ? "就绪" : "未下载"}</span>
           <span data-ok={status.ffmpeg.ok ? "1" : "0"}>ffmpeg {status.ffmpeg.ok ? status.ffmpeg.version : "缺失"}</span>
           <span data-ok={status.cli.installed ? "1" : "0"}>CLI {status.cli.version || "未安装"}</span>
+          <span data-ok={status.studio.alive ? "1" : "0"}>Studio {status.studio.alive ? "已连接" : "未连接"}</span>
         </div>
       )}
 
@@ -168,6 +197,12 @@ export function OpenfilmCard() {
           {busy ? <LoaderCircle size={13} className="spin" /> : <Download size={13} />}
           {status?.cli.installed ? "重新安装 / 修复" : "下载并安装"}
         </button>
+        {status?.cli.installed && (
+          <button type="button" className="secondary-setting" disabled={busy} onClick={() => void openStudio()}
+            title={status.studio.alive ? "在内置浏览器里打开 Studio（幂等：已有页面只切项目）" : "启动 Studio 并在内置浏览器连上它"}>
+            <Globe2 size={13} />{status.studio.alive ? "打开 Studio" : "连接 Studio"}
+          </button>
+        )}
         {status?.cli.installed && (
           <button type="button" className="secondary-setting" disabled={busy} onClick={() => void checkUpdate()}>
             <RefreshCw size={13} />检查更新
@@ -190,6 +225,15 @@ export function OpenfilmCard() {
       {status && !status.ffmpeg.ok && (
         <p className="openfilm-notice tone-warn">
           没有可用的 ffmpeg：剪辑校验与导出都会失败。到「开发工具 → 运行时与工具链」安装 FFmpeg（装一次即可）。
+        </p>
+      )}
+
+      {/* 连接状态：谁在看这部片（Studio 里手改会直接写回影片文件，模型下一轮 check 就能看到） */}
+      {status?.studio.alive && (
+        <p className="openfilm-notice tone-ok">
+          Studio 已连接：{status.studio.projectPath ? status.studio.projectPath : "还没选影片"}
+          {status.studio.app ? "（上游桌面 App 的实例）" : ""}
+          {status.studio.version ? ` · ${status.studio.version}` : ""}
         </p>
       )}
 
