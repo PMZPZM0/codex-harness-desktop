@@ -235,6 +235,13 @@ ok(Boolean(ipc) && Boolean(paths) && Boolean(runner) && Boolean(probe) && Boolea
     "⛔ 不代跑上游的 electron-updater（App 更新归 App 自己）");
   ok(/desktopDir\(\)/.test(desktop) && /path\.join\(desktopDir\(\), asset\.name\)/.test(desktop),
     "安装包落在自己的 <安装根>/desktop/ 下（⛔ 不塞下载目录、不改名）");
+  /* ⛔ 断网/API 限流时"运行安装程序"不能报"还没下载"—— 本地动作只认磁盘 */
+  ok(/function localPackageAny/.test(desktop) && /localPackage\(info\.asset\?\.name \?\? ""\) \?\? localPackageAny\(\)/.test(desktop),
+    "install/reveal 先认磁盘上的包（⛔ 不靠 GitHub API 决定文件在不在）");
+  ok(/RELEASE_TTL_MS = 60_000/.test(desktop) && /releaseCache/.test(desktop),
+    "Release 查询有 60s 缓存（未鉴权 API 只有 60 次/小时，不缓存会把自己限流）");
+  ok(/desktopSummary\(info\)/.test(tools),
+    "openfilm_status 里带上桌面端一句话（模型能主动建议，⛔ 不另写一份判断）");
   ok(/export function launchDetached/.test(runner) && /detached: true/.test(runner),
     "安装器用 runner 的 detached 启动器（⛔ 不 await 一个会一直开着的 NSIS 向导）");
   ok(/entry === "runtime"/.test(ipc) && !/entry === "desktop"/.test(ipc),

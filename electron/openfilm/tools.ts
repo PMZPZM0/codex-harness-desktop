@@ -24,6 +24,7 @@ import { cliEntry, cliVersion, filmsRootFor, openfilmRoot, studioHome } from "./
 import { openfilmStatus } from "./probe";
 import { runCli } from "./runner";
 import { openStudio } from "./studio";
+import { desktopInfo, desktopSummary } from "./desktop";
 import { OPENFILM_HOME, OPENFILM_LICENSE } from "./brand";
 
 /* ── 工具定义 ───────────────────────────────────────────────────────────── */
@@ -250,6 +251,9 @@ function notReadyText(status: Awaited<ReturnType<typeof openfilmStatus>>): strin
 
 async function toolStatus(): Promise<string> {
   const status = await openfilmStatus();
+  const desktopLine = await desktopInfo()
+    .then((info) => desktopSummary(info))
+    .catch(() => "");
   const lines = [
     `状态：${status.phase === "ready" ? "就绪" : status.phase === "broken" ? "装了一半（缺渲染引擎或 ffmpeg）" : status.phase === "installing" ? "安装中" : "未安装"}`,
     `CLI：${status.cli.version || "未安装"}${status.cli.path ? `（${status.cli.path}）` : ""}`,
@@ -258,6 +262,9 @@ async function toolStatus(): Promise<string> {
     `ffmpeg：${status.ffmpeg.ok ? status.ffmpeg.version : "缺失（look / render 会失败）"}`,
     `Studio：${status.studio.alive ? `在跑 · ${status.studio.url || status.studio.origin}${status.studio.projectPath ? ` · 当前影片 ${status.studio.projectPath}` : ""}` : "没连上（openfilm_make_film 会启动它）"}`,
     `自动更新：${status.settings.autoUpdate} · 下载源：${status.settings.mirror === "official" ? "仅官方" : "国内镜像优先"}`,
+    /* 桌面端一句话（用户：「有桌面端会更方便」）—— 让模型能主动建议，而不是等用户自己找设置。
+       ⛔ 失败静默：这是一条附加信息，⛔ 不许因为 GitHub API 读不到就让整个 status 失败。 */
+    desktopLine,
     `开源：${OPENFILM_HOME}（${OPENFILM_LICENSE}；名称与图标为该项目商标，本产品与其无隶属关系）`,
   ];
   if (status.phase !== "ready") lines.push("", notReadyText(status));
