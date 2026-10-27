@@ -430,6 +430,28 @@ const CHECKS = [
       h.check("⑰ 专家中心：返回与专家市场同一排（返回靠左），问号已删",
         Boolean(expertHead && expertHead.sameRow && expertHead.backLeft && expertHead.backs === 1 && !expertHead.pageInfo),
         JSON.stringify(expertHead));
+
+      await nav("专家/专家团");
+      await wait(800);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-modal .hub-card")].find((x)=>(x.querySelector("strong")?.textContent||"").trim()==="专家团"); b?.click(); return b?1:0; })()`);
+      await h.waitFor(`!!document.querySelector(".expert-team-center")`, { label: "专家团页", timeoutMs: 5000 }).catch(() => undefined);
+      await wait(400);
+      const teamsHead = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const page=m.querySelector(".expert-team-center"); if(!page) return null;
+        const back=page.querySelector(".teams-back");
+        const actions=page.querySelector(".settings-heading-actions");
+        if(!back||!actions) return null;
+        const br=back.getBoundingClientRect(), ar=actions.getBoundingClientRect();
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          sameRow:Math.abs((br.top+br.bottom)/2-(ar.top+ar.bottom)/2) <= 10,
+          backLeft:br.left < ar.left,
+          banner:!!page.querySelector(".subagent-banner"),
+          backs:page.querySelectorAll(".settings-back-row").length };
+      })()`).catch(() => null);
+      h.check("⑱ 专家团：返回键并进操作行靠左，Codex 说明卡已删",
+        Boolean(teamsHead && teamsHead.sameRow && teamsHead.backLeft && !teamsHead.banner && teamsHead.backs === 1),
+        JSON.stringify(teamsHead));
       await h.pressKey("Escape");
       await wait(300);
     },
