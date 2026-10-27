@@ -200,7 +200,9 @@ bag.forkThreadFromSidebar = forkThreadFromSidebar as typeof bag.forkThreadFromSi
   }
 bag.importConversationMarkdown = importConversationMarkdown as typeof bag.importConversationMarkdown;
 
-  function startNewThread() {
+  /* opts.boss：这一路是**指挥中枢**入口（颜色与文案不同，见下面那条提示）。
+     ⛔ 只有中枢入口传 true；其余所有「新建普通会话」的路径保持默认。 */
+  function startNewThread(opts?: { boss?: boolean }) {
     /* ⛔⛔ 这里是**所有**「新建普通会话」入口的唯一漏斗（新建任务 / Ctrl+N / 项目行的 ＋ /
        命令面板 /new / 空白态按钮都走它）。10-25 用户实测：
        「我在指挥欢迎界面，点这个项目上的新建他不会跳转到普通会话的欢迎界面」
@@ -214,8 +216,20 @@ bag.importConversationMarkdown = importConversationMarkdown as typeof bag.import
     saveDraft(bag.threadRef.current?.id ?? null, bag.promptRef.current);
     bag.threadRef.current = null;
     bag.setThread(null);
-    // 标准会话未选工作区：不悄悄默认，提醒用户自选（发送时才会真正用到目录）
-    if (!bag.workspace) bag.setNotice("尚未选择工作区：当前会话暂用主目录，建议点右上角 📁 选择项目目录");
+    /* 未选工作区：不悄悄默认，提醒用户自选（发送时才会真正用到目录）。
+       ⛔ 10-27 用户令：「这个提示不对，项目地址选项在左上角」—— chip 就在输入框左上角
+          （`02-composer-form.tsx` 的 cwd chip），别再写「右上角」。
+       ⛔ 同日：「新建任务，提示要是蓝色；指挥中枢进去提醒现在这个颜色可以」
+          ⇒ 显式指定语气：普通新建 = info（蓝），中枢 = warning（琥珀），不再让颜色由文案猜。 */
+    if (!bag.workspace) {
+      bag.setNotice(
+        opts?.boss
+          ? "尚未选择项目地址：中枢会话暂用主目录，点输入框左上角的「选择项目地址」"
+          : "尚未选择工作区：当前会话暂用主目录，点输入框左上角的「选择项目地址」",
+        undefined,
+        opts?.boss ? "warning" : "info",
+      );
+    }
     // 重置滚动：上个会话若滚在中间，欢迎页会被顶出视口（顶部只露半截建议 chips 幻影）
     requestAnimationFrame(() => { const el = bag.scrollRef.current; if (el) el.scrollTop = 0; });
     bag.draftJustRestoredRef.current = true;

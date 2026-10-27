@@ -10,6 +10,7 @@ import "@xterm/xterm/css/xterm.css";
 import { basename } from "../../../../../lib/basename";
 import { DELEGATE_RAIL_LINGER_MS, IDENTITY_ONBOARD_INSTRUCTIONS, IDENTITY_ONBOARD_TOOL, MEMBER_LABELS, NOTICE_TTL_MS, QUICK_SITES } from "../../../../app-view/constants";
 import type { Bag } from "../../bag-types";
+import type { NoticeTone } from "../../../../app-view/helpers/text";
 
 export function usePart02b2(bag: Bag) {
   // 完全自主模式：所有新任务默认拥有完整本机访问与无需审批的执行权限。
@@ -44,13 +45,13 @@ bag.personality = personality as typeof bag.personality; bag.setPersonality = se
   //    加上 2.6s 统一清空，用户永远只看得到最后一条。现在每条独立入队、独立倒计时。
   //    scope 决定弹窗**贴着哪 anchoring**：设置页产生的贴设置弹窗内居中，会话产生的贴对话区居中
   //    （09-20 用户：「设置页产生的弹窗在设置弹窗居中，对话框产生的弹窗在对话框区域居中」）。
-  const [notices, setNotices] = useState<{ id: number; text: string; threadId?: string; scope: "settings" | "chat" }[]>([]);
+  const [notices, setNotices] = useState<{ id: number; text: string; threadId?: string; scope: "settings" | "chat"; tone?: NoticeTone }[]>([]);
 bag.notices = notices as typeof bag.notices; bag.setNotices = setNotices as typeof bag.setNotices;
 
   // ── 通知中心（09-20 用户要求）：每条浮层通知同时落一份到中心，可按对话分组查看、
   //    单条/批量标记已读（已读灰显）与删除；未读数显示在顶栏通知图标徽标上。
   //    持久化到 localStorage（上限 200 条，防无限膨胀）。
-  const [noticeCenter, setNoticeCenter] = useState<{ id: number; text: string; threadId?: string; scope: "settings" | "chat"; at: number; read: boolean }[]>(() => {
+  const [noticeCenter, setNoticeCenter] = useState<{ id: number; text: string; threadId?: string; scope: "settings" | "chat"; at: number; read: boolean; tone?: NoticeTone }[]>(() => {
     try {
       const parsed = JSON.parse(localStorage.getItem("notice-center-v1") ?? "[]");
       return Array.isArray(parsed) ? parsed.filter((entry) => entry && typeof entry.text === "string") : [];
@@ -110,7 +111,7 @@ bag.dismissNotice = dismissNotice as typeof bag.dismissNotice;
   //    ⛔ 必须 useCallback 保持引用稳定：它被当 `onNotice` 传给子组件、并出现在子组件 15 处
   //    effect 依赖里（VoiceSettingsSection 等）——普通函数每次 render 换引用会让那些 effect
   //    全部重跑（反复拉取/重挂监听）。旧实现是 useState setter（天然稳定），不能在这里退化。
-  const setNotice = useCallback((text: string, threadId?: string) => {
+  const setNotice = useCallback((text: string, threadId?: string, tone?: NoticeTone) => {
     if (!text) {
       for (const timer of bag.noticeTimersRef.current.values()) window.clearTimeout(timer);
       bag.noticeTimersRef.current.clear();
@@ -128,7 +129,7 @@ bag.dismissNotice = dismissNotice as typeof bag.dismissNotice;
     // （此前"非当前会话才不收"的口径把这些也收了进去，用户点名纠正）。
     const belongsToOtherThread = Boolean(threadId && threadId !== bag.threadRef.current?.id);
     if (belongsToOtherThread) {
-      bag.setNoticeCenter((current) => [{ id, text, threadId, scope, at: Date.now(), read: false }, ...current].slice(0, 200));
+      bag.setNoticeCenter((current) => [{ id, text, threadId, scope, at: Date.now(), read: false, tone }, ...current].slice(0, 200));
     }
     // ⛔ 「不准跨对话框展示」（09-20）：设置弹窗开着时，会话来源的通知**不再弹浮层**
     //    （否则会横跨盖在设置弹窗上面）——静默进通知中心，靠顶栏徽标提醒。
@@ -147,7 +148,7 @@ bag.dismissNotice = dismissNotice as typeof bag.dismissNotice;
         bag.noticeTimersRef.current.delete(entry.id);
       }
     }
-    bag.setNotices([{ id, text, threadId, scope }]);
+    bag.setNotices([{ id, text, threadId, scope, tone }]);
     bag.noticeTimersRef.current.set(id, window.setTimeout(() => bag.dismissNotice(id), NOTICE_TTL_MS));
   }, [bag.dismissNotice]);
 bag.setNotice = setNotice as typeof bag.setNotice;

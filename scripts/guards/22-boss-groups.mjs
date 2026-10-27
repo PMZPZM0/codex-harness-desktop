@@ -644,6 +644,18 @@ if (state) {
     "⛔ BOSS 会话不渲染输入框上方那枚「项目地址」芯片（它显示全局 workspace ⇒ 串到别的会话）");
   /* ⛔ 用户嫌「新建会话+快捷键」小字 LOW ⇒ 欢迎界面上**不放**快捷键小字，
      快捷键只留在侧栏按钮行尾的 kbd 徽标上。 */
+  /* ── 10-27 用户令（截图）：「这个提示不对，项目地址选项在左上角」「新建任务提示要是蓝色，
+     指挥中枢进去现在这个颜色可以」──
+     提示在 part06 的新建会话漏斗里（所有「新建普通会话」入口共用），文案必须指左上角那枚 chip，
+     颜色由调用方显式指定（中枢 warning=琥珀 / 普通 info=蓝）。 */
+  {
+    const forkSrc = read("src/features/app-state/parts/part06/03-seg/02-context-fork-backup.tsx");
+    ok(/左上角的「选择项目地址」/.test(forkSrc) && !/右上角/.test(forkSrc),
+      "未选工作区的提示指向**左上角**的「选择项目地址」（⛔ 旧文案写的右上角是错的）");
+    ok(/opts\?\.boss\s*\?\s*"warning"\s*:\s*"info"/.test(forkSrc)
+      && /startNewThread\(\{ boss: true \}\)/.test(bossSideSrc),
+      "提示语气显式指定：指挥中枢=warning（琥珀）/ 普通新建=info（蓝），中枢入口传 boss:true");
+  }
   ok(!/boss-welcome-kbd/.test(bossWelcomeCss) && !/新建 BOSS 会话/.test(read("src/features/boss-group-view/BossThreadIntro.tsx")),
     "⛔ 欢迎界面不放快捷键小字提示（用户原话：太LOW、一点个性没有）");
   /* ⛔⛔ 10-25 实测「独立弹窗没有成员图标和问号」：DOM 在、断言全绿，但 CSS 媒体查询把

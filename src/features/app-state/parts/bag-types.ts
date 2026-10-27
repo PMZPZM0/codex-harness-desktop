@@ -7,6 +7,7 @@
  */
 import type * as React from "react";
 import type { RateLimitCtx, BotEntry } from "./types";
+import type { NoticeTone } from "../../app-view/helpers/text";
 import type { BossThreadsState } from "../../boss-group-view";
 import type { FavoriteRequest } from "../../../lib/favorite-bridge";
 import type { PollTask } from "../../../polling/poll-store";
@@ -583,10 +584,12 @@ export interface Bag {
   setSandbox: React.Dispatch<React.SetStateAction<string>>;
   personality: string;
   setPersonality: React.Dispatch<React.SetStateAction<string>>;
-  notices: { id: number; text: string; threadId?: string | undefined; scope: "settings" | "chat"; }[];
-  setNotices: React.Dispatch<React.SetStateAction<{ id: number; text: string; threadId?: string | undefined; scope: "settings" | "chat"; }[]>>;
-  noticeCenter: { id: number; text: string; threadId?: string | undefined; scope: "settings" | "chat"; at: number; read: boolean; }[];
-  setNoticeCenter: React.Dispatch<React.SetStateAction<{ id: number; text: string; threadId?: string | undefined; scope: "settings" | "chat"; at: number; read: boolean; }[]>>;
+  /* 10-27：通知可显式带语气（tone）——「未选工作区/项目地址」这类提示按场景着色，
+     不再全靠 noticeTone() 从文案里猜（普通会话=蓝 info，中枢=琥珀 warning）。 */
+  notices: { id: number; text: string; threadId?: string | undefined; scope: "settings" | "chat"; tone?: NoticeTone | undefined; }[];
+  setNotices: React.Dispatch<React.SetStateAction<{ id: number; text: string; threadId?: string | undefined; scope: "settings" | "chat"; tone?: NoticeTone | undefined; }[]>>;
+  noticeCenter: { id: number; text: string; threadId?: string | undefined; scope: "settings" | "chat"; at: number; read: boolean; tone?: NoticeTone | undefined; }[];
+  setNoticeCenter: React.Dispatch<React.SetStateAction<{ id: number; text: string; threadId?: string | undefined; scope: "settings" | "chat"; at: number; read: boolean; tone?: NoticeTone | undefined; }[]>>;
   noticeCenterOpen: boolean;
   setNoticeCenterOpen: React.Dispatch<React.SetStateAction<boolean>>;
   noticeCenterBtnRef: React.RefObject<HTMLButtonElement | null>;
@@ -602,7 +605,7 @@ export interface Bag {
   noticeAnchorTick: number;
   setNoticeAnchorTick: React.Dispatch<React.SetStateAction<number>>;
   dismissNotice: (id: number) => void;
-  setNotice: (text: string, threadId?: string | undefined) => void;
+  setNotice: (text: string, threadId?: string | undefined, tone?: NoticeTone | undefined) => void;
   compactToast: { state: "error" | "running" | "success" | "cancelled"; message?: string | undefined; threadId: string; } | null;
   setCompactToast: React.Dispatch<React.SetStateAction<{ state: "error" | "running" | "success" | "cancelled"; message?: string | undefined; threadId: string; } | null>>;
   infoModal: { title: string; body: string; markdown?: boolean | undefined; } | null;
@@ -1293,7 +1296,7 @@ export interface Bag {
   exportThreadsMarkdown: (threadIds?: string[] | undefined) => Promise<void>;
   forkThreadFromSidebar: (entry: import("../../app-view/types.ts").Thread) => Promise<void>;
   importConversationMarkdown: () => Promise<void>;
-  startNewThread: () => void;
+  startNewThread: (opts?: { boss?: boolean } | undefined) => void;
   runSlashCommand: (value: string) => Promise<boolean>;
   startReview: (instructions: string) => void;
   chooseWorkspace: () => Promise<void>;
