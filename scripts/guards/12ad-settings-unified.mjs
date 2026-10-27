@@ -167,7 +167,9 @@ const refreshAt = modelPage.indexOf("const refreshCardModels");
 const refreshEnd = modelPage.indexOf("const testProviderCard", refreshAt);
 const refreshBlock = refreshAt >= 0 && refreshEnd > refreshAt ? modelPage.slice(refreshAt, refreshEnd) : "";
 ok(refreshBlock.length > 0 && /addedIds/.test(refreshBlock) && /removed/.test(refreshBlock) && /saveCustomDraft/.test(refreshBlock) && /relaunchApp/.test(refreshBlock), "「更新模型」新增/移除模型都保存并重启（与编辑弹窗保存同口径）");
-for (const [key, title] of [["hooks", "钩子"], ["agentteam", "专家和专家团"], ["storage", "数据管理"]]) {
+/* 10-27 用户令（数据管理页截图）：「右上角的帮助问号删了」⇒ 该页页头整块撤掉，
+   从这条「必须有 ? 入口」的名单里移出（其余两页逻辑不变）。 */
+for (const [key, title] of [["hooks", "钩子"], ["agentteam", "专家和专家团"]]) {
   const text = pageSrc(key);
   const at = text.indexOf(`<h2>${title}`);
   const window = at >= 0 ? text.slice(at, at + 2200) : "";
@@ -268,6 +270,15 @@ const generalPage = pageSrc("general");
 ok(/语气自适应/.test(generalPage) && /ToggleSwitch/.test(generalPage)
   && /card-reply/.test(generalPage), "控制台「回复风格」卡里有语气自适应开关");
 ok(/changeAdaptiveTone/.test(generalPage), "控制台语气自适应开关接的是全局开关回调");
+
+/* 10-27 用户令：「就在 codex 的个性化指令里面加一条，让 codex 自主询问（是否 handoff 交接）」
+   ⇒ 指令片段挂在 lib 里（纯函数、可断言），拼进每回合下发的 developer instructions。
+   ⛔ 三条硬约束缺一不可：大致阈值 / 只问一次 / 走 handoff 技能写 HANDOFF.md。 */
+const nudgeSrc = src("src/lib/handoff-nudge.mjs");
+ok(/40~50 轮/.test(nudgeSrc) && /只问一次/.test(nudgeSrc) && /handoff/.test(nudgeSrc) && /HANDOFF\.md/.test(nudgeSrc),
+  "长会话交接提醒的三条约束在位（阈值 / 只问一次 / 写 HANDOFF.md）");
+ok(/handoffNudge\(\)/.test(src("src/features/app-state/parts/part06/02-seg/01-turn-runtime-activity.tsx")),
+  "交接提醒已拼进 developer instructions（不是写了没接线）");
 
 console.log(`\n【shell】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);
