@@ -126,6 +126,7 @@ const pluginsPage = pageSrc("plugins");
 ok(/<AppSelect[\s\S]{0,200}market-category-select/.test(pluginsPage) && !/<div className="skill-tabs">/.test(pluginsPage) && !/>在线市场<\/button>/.test(pluginsPage), "插件市场分类收成下拉，在线市场跳转已删");
 const compLibSrc = read("src/features/component-library/ComponentLibrary.tsx");
 ok(/comp-lib-cat-select/.test(compLibSrc) && !/ui-skin-cats/.test(compLibSrc) && /\.comp-lib-filter-row/.test(read("src/styles/23-ui-skin.css")), "组件库分类收成搜索行右侧下拉（搜索不再拉满）");
+ok(/\.comp-lib-grid\s*\{[^}]*max-height:\s*calc\(100vh/.test(read("src/styles/23-ui-skin.css")), "组件库网格高度跟窗口走（不再固定 460px 留空白）");
 ok(/manageable = \[\.\.\.localInstalled\]/.test(skillsPage), "技能批量管理只覆盖本地导入（市场/内置不参与）");
 ok(/skill-local-bulk/.test(skillsPage) && /本地导入/.test(skillsPage), "批量管理卡在本地导入分组内（不再挂在页面顶部）");
 ok(!/resource-toolbar secondary[sS]{0,500}BatchActions/.test(skillsPage), "顶部不再挂全局批量条");

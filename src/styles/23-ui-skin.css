@@ -86,7 +86,8 @@
 .comp-lib-head h3 { margin: 0 0 4px; font-size: 14px; }
 .comp-lib-sub { margin: 0; color: var(--muted); font-size: 11.5px; line-height: 1.6; }
 .comp-lib-error { margin: 0; color: var(--red, #d94f43); font-size: 11.5px; }
-.comp-lib-grid { max-height: 460px; }
+/* 10-27 用户：「下面那么多空白」——网格高度跟窗口走，别再固定 460px 留一截空白 */
+.comp-lib-grid { max-height: calc(100vh - 250px); }
 .comp-lib-cell .comp-lib-copy-hint {
   font-size: 9.5px;
   color: var(--accent);
