@@ -49,14 +49,17 @@ const PANEL_SIZE: Record<string, { w: number; h: number }> = {
 const DEFAULT_SIZE = { w: 380, h: 360 };
 
 /** 弹层定位：右开优先 → 放不下翻左 → 都夹进视口（8px 安全边）。 */
-export function placePanel(anchor: DOMRect, size: { w: number; h: number }, viewport = { w: window.innerWidth, h: window.innerHeight }) {
+export function placePanel(anchor: DOMRect, size: { w: number; h: number }, prefer: "auto" | "right" | "left" = "auto", viewport = { w: window.innerWidth, h: window.innerHeight }) {
   const gap = 10;
   const pad = 8;
   const w = Math.min(size.w, viewport.w - pad * 2);
   const h = Math.min(size.h, viewport.h - pad * 2);
   const rightRoom = viewport.w - anchor.right - gap;
   const leftRoom = anchor.left - gap;
-  let left = rightRoom >= w || rightRoom >= leftRoom ? anchor.right + gap : anchor.left - gap - w;
+  /* ⛔ 用户报「这个按键点击没反应」：原来每次都是同样的 auto 判定 ⇒ 算出同一个位置。
+     现在带 prefer：点一次在「右开 / 左开」之间真的翻，翻过去放不下才回落到能放的一侧。 */
+  const wantRight = prefer === "right" || (prefer === "auto" && (rightRoom >= w || rightRoom >= leftRoom));
+  let left = wantRight ? anchor.right + gap : anchor.left - gap - w;
   left = Math.max(pad, Math.min(left, viewport.w - w - pad));
   const centerY = anchor.top + anchor.height / 2;
   let top = centerY - h / 2;
@@ -71,6 +74,8 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
   const [panels, setPanels] = useState<RailPanelSpec[]>(FALLBACK_PANELS);
   const [panelId, setPanelId] = useState<string | null>(null);
   const [rect, setRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  /** 贴边按钮：auto → 右 → 左 → 右 …（真翻边，不是重算同一个位置） */
+  const [prefer, setPrefer] = useState<"auto" | "right" | "left">("auto");
   const railRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -85,6 +90,19 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
 
   const active = panels.find((entry) => entry.id === panelId) ?? null;
 
+  /* 10-27 用户：「这个一直展示不会自动隐藏，10秒后自动隐藏，打开了这些按键的里面的弹窗
+     就暂时不触发自动隐藏」⇒ 展开后 10s 自动收回；**有面板打开时不收**；
+     鼠标进竖条 / 移动一次重新计时（不然手刚伸过去就消失了）。 */
+  const [bump, setBump] = useState(0);
+  useEffect(() => {
+    if (!open || panelId) return;
+    const timer = window.setTimeout(() => {
+      setOpen(false);
+      try { localStorage.setItem("composer-rail-open", "0"); } catch { /* 隐私模式 */ }
+    }, 10_000);
+    return () => window.clearTimeout(timer);
+  }, [open, panelId, bump]);
+
   const toggleOpen = useCallback(() => {
     setOpen((prev) => {
       const next = !prev;
@@ -97,8 +115,8 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
   const reposition = useCallback(() => {
     const anchor = railRef.current?.getBoundingClientRect();
     if (!anchor || !panelId) { setRect(null); return; }
-    setRect(placePanel(anchor, PANEL_SIZE[panelId] ?? DEFAULT_SIZE));
-  }, [panelId]);
+    setRect(placePanel(anchor, PANEL_SIZE[panelId] ?? DEFAULT_SIZE, prefer));
+  }, [panelId, prefer]);
 
   useLayoutEffect(() => { reposition(); }, [reposition, open]);
 
@@ -130,7 +148,7 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
   }, [app]);
 
   return (
-    <div className={`composer-rail${open ? " is-open" : ""}`} ref={railRef}>
+    <div className={`composer-rail${open ? " is-open" : ""}`} ref={railRef} onMouseEnter={() => setBump((value) => value + 1)} onMouseMove={() => setBump((value) => value + 1)}>
       <button
         type="button"
         className="composer-rail-toggle"
@@ -175,7 +193,7 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
           <header className="crp-head">
             <span className="crp-title">{(() => { const Icon = ICONS[String(active.icon ?? "")] ?? (active.kind === "external" ? Puzzle : Bookmark); return <Icon size={15} />; })()}{active.label}</span>
             <span className="crp-head-actions">
-              <button type="button" className="icon-button" title="重新贴边（换到另一边）" aria-label="重新贴边" onClick={reposition}><ChevronRight size={14} /></button>
+              <button type="button" className="icon-button" title="重新贴边（换到另一边）" aria-label="重新贴边" onClick={() => { const anchor = railRef.current?.getBoundingClientRect(); const onRight = anchor && rect ? rect.left >= anchor.left : true; setPrefer(onRight ? "left" : "right"); }}><ChevronRight size={14} /></button>
               <button type="button" className="icon-button" title="关闭 (Esc)" aria-label="关闭" onClick={() => setPanelId(null)}><X size={15} /></button>
             </span>
           </header>
@@ -198,7 +216,7 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
             )}
             {active.id === "passwords" && <PasswordBookPanel onToast={app.showToast} onNotice={app.setNotice} />}
             {active.id === "journal" && <DevJournalPanel onInsert={(text) => app.setPrompt((current) => (current.trim() ? `${current}\n\n${text}` : text))} />}
-            {active.id === "stickers" && <MoodStickersPanel onInsert={(text) => app.setPrompt((current: string) => (current.trim() ? `${current} ${text}` : text))} />}
+            {active.id === "stickers" && <MoodStickersPanel onDone={() => setPanelId(null)} onInsert={(text) => app.setPrompt((current: string) => (current.trim() ? `${current} ${text}` : text))} />}
             {active.kind === "external" && (
               <div className="crp-external">
                 {active.action?.type === "text" ? <p>{active.action.body}</p> : (
