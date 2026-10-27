@@ -147,19 +147,16 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
 
                     {/* 全局审批权限：控制台一级入口。选择立即生效（当前会话马上推送引擎，
                         其余未手动改过权限的会话打开时跟随，新会话默认使用），无需重启。 */}
-                    <div className="settings-card card-permission">
-                      <div className="settings-card-head"><ShieldCheck size={15} /><strong>全局审批权限</strong><span className="settings-subhead-hint">选择立即生效，无需重启</span></div>
-                      <div className="settings-card-body">
-                        <div className="perm-seg">
+                    {/* 10-27 用户令：「控制台里面的审批选项，按这个回复风格样式改」
+                        ⇒ 标题行左、胶囊右，一张卡一行；说明收进每颗胶囊的悬停提示，不再有长段赘述。 */}
+                    <div className="settings-card card-permission card-pills">
+                      <div className="settings-card-head">
+                        <ShieldCheck size={15} /><strong>全局审批权限</strong>
+                        <div className="segmented-tabs row-pills" role="group" aria-label="全局审批权限">
                           {[{ v: "never", t: "完全访问", d: "自动执行，减少确认次数" }, { v: "on-request", t: "变更前确认", d: "改文件前先问我" }, { v: "untrusted", t: "自动编辑", d: "自动编辑文件" }].map((opt) => (
-                            <button key={opt.v} type="button" className={`perm-seg-btn ${globalPermApproval === opt.v ? "on" : ""}`} onClick={() => applyGlobalPermissionMode(opt.v)}>
-                              <strong>{opt.t}</strong>
-                              <small>{opt.d}</small>
-                              {globalPermApproval === opt.v && <em>当前</em>}
-                            </button>
+                            <button key={opt.v} type="button" className={globalPermApproval === opt.v ? "active" : ""} aria-pressed={globalPermApproval === opt.v} title={opt.d} onClick={() => applyGlobalPermissionMode(opt.v)}>{opt.t}</button>
                           ))}
                         </div>
-                        <p className="settings-card-hint">所有未手动改过权限的会话与新会话都使用此档位；在对话里手动改过权限的对话框保留自己的选择，不跟随。重启后保持不变。</p>
                       </div>
                     </div>
 
