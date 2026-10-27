@@ -336,6 +336,27 @@ const CHECKS = [
           && commandBar.heights.every((h)=>h <= 30) && commandBar.sameRow && commandBar.inRow
           && commandBar.rightGap <= 30),
         JSON.stringify(commandBar));
+
+      await nav("插件");
+      await wait(1200);
+      const pluginMarket = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const page=m.querySelector(".plugin-center"); if(!page) return null;
+        const block=page.querySelector(".plugin-market-block");
+        const sel=block?block.querySelector(".market-category-select"):null;
+        const search=block?block.querySelector(".search-field"):null;
+        if(!block||!sel||!search) return null;
+        const sr=sel.getBoundingClientRect(), ir=search.getBoundingClientRect();
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          selectText:(sel.textContent||"").trim(),
+          sameRow:Math.abs((sr.top+sr.bottom)/2-(ir.top+ir.bottom)/2) <= 10,
+          tabs:block.querySelectorAll(".skill-tabs").length,
+          jumps:[...page.querySelectorAll("button")].map((b)=>(b.textContent||"").trim()).filter((x)=>x.includes("在线市场")) };
+      })()`).catch(() => null);
+      h.check("⑬ 插件市场：分类下拉与搜索同一行，在线市场跳转已删",
+        Boolean(pluginMarket && pluginMarket.page === "插件" && pluginMarket.selectText.includes("全部分类")
+          && pluginMarket.sameRow && pluginMarket.tabs === 0 && pluginMarket.jumps.length === 0),
+        JSON.stringify(pluginMarket));
       await h.pressKey("Escape");
       await wait(300);
     },
