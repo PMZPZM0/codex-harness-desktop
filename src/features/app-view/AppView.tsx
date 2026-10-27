@@ -479,7 +479,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           全应用表面（侧栏/聊天/输入框周边）之下、内容之上；用户关掉时不在 DOM。 */}
       <WallpaperLayer />
       {!popoutThreadId && <HtmlPreviewBridge app={app} />}
-      <OpenfilmBridge app={{ openInBrowserPane: app.openInBrowserPane, setNotice: app.setNotice }} />
+      <OpenfilmBridge app={{ openInBrowserPane: app.openInBrowserPane, setNotice: app.setNotice, rightOpen: app.rightOpen, rightTab: app.rightTab }} />
       {!popoutThreadId && <CloudAccountSyncBridge />}
       {!popoutThreadId && <RightFileBridge app={app} />}
       {!popoutThreadId && <TurnReviewBridge onOpen={() => {

@@ -278,6 +278,17 @@ ok(Boolean(ipc) && Boolean(paths) && Boolean(runner) && Boolean(probe) && Boolea
     "卡片明确：卸载只做引导，不代删系统目录");
 }
 
+  /* ── 批次一/二的复查修复（用户：「前面的改动不是光审适配，改动就要审」）────── */
+  ok(/30 \* 60_000/.test(probe) && /rmSync\(marker, \{ force: true \}\)/.test(probe),
+    "⛔ .installing 陈旧标记会自愈（崩溃/断电后不让界面永久停在「安装中」）");
+  ok(/if \(origin\) writeSession\(session\)/.test(studio),
+    "拿到 URL 就落盘 session（health 竞态不许吞掉唯一一份页面地址）");
+  const bridge = code("src/features/openfilm/OpenfilmBridge.tsx");
+  ok(/const alreadyShowing = url === lastUrlRef\.current/.test(bridge) && /rightTab \?\? ""\) === "browser"/.test(bridge),
+    "Studio 事件去重看「同 URL + 右栏正开着浏览器页」（⛔ 关掉右栏后再点按钮不能静默无反应）");
+  ok(/rightOpen: app\.rightOpen, rightTab: app\.rightTab/.test(code("src/features/app-view/AppView.tsx")),
+    "OpenfilmBridge 拿到右栏状态（不传就退化成老的 URL 去重）");
+
 /* ── 10. 技能：内置一份手册，正文与工具实现一致 ───────────────────────── */
 {
   const builtin = code("electron/builtin-skills.ts");
