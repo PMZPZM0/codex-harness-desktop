@@ -110,6 +110,12 @@ ok(!/PageInfo/.test(soul) && /UserPersonaPanel[\s\S]{0,600}action=\{<button/.tes
 const memory = pageSrc("memory");
 ok(!/settings-copy/.test(memory) && /memory-master-row/.test(memory) && /ToggleSwitch/.test(memory), "记忆页头已收起，启用总开关在首行卡片");
 ok(/\.settings-exp-shell \.memory-center \.memory-backends\s*\{[^}]*border-top/s.test(css), "「记忆存到哪里」与内容卡之间有分隔");
+/* 10-28 页头统一：其余页也不许再长回 .settings-copy / PageInfo。 */
+for (const rel of ["src/components/UserCenter.tsx", "src/components/UsagePanel.tsx", "src/components/ArchivePage.tsx", "src/features/settings-backup/BackupSettingsSection.tsx", "src/features/settings-automation/AutomationSettingsSection.tsx", "src/features/settings-extensibility/ExtensibilitySettingsSection.tsx", "src/features/settings-devtools/DevtoolsSettingsSection.tsx"]) {
+  const fileSrc = read(rel);
+  ok(!/settings-copy/.test(fileSrc) && !/PageInfo/.test(fileSrc), `页头已收起：${rel.split("/").pop()}`);
+}
+
 const skillsPage = pageSrc("skills");
 ok(/skill-actions-line/.test(skillsPage) && !/skill-market-toolbar|settings-heading-actions/.test(skillsPage) && !/<div className="skill-tabs">/.test(skillsPage) && !/<span className="skill-filter-count">/.test(skillsPage), "技能页：按键与搜索同排，分类小字与页头按键已删");
 ok(!/PageInfo/.test(skillsPage), "技能页右上角帮助问号已删");
