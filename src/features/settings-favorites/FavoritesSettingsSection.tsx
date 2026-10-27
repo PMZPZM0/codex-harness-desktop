@@ -17,7 +17,7 @@
  */
 import { AppSelect } from "../../components/AppSelect";
 import { useEffect, useMemo, useState } from "react";
-import { Archive, Bookmark, Check, ClipboardCopy, FileText, Image, Link2, Pencil, Plus, Search, Send, Star, Trash2, TriangleAlert, X } from "lucide-react";
+import { Archive, Bookmark, Check, CheckSquare, ClipboardCopy, FileText, Image, Link2, Pencil, Plus, Search, Send, Trash2 } from "lucide-react";
 
 export type FavoritesSettingsSectionProps = {
   favorites: FavoriteItem[];
@@ -36,7 +36,7 @@ export type FavoritesSettingsSectionProps = {
 
 type KindFilter = "all" | FavoriteKind;
 
-const KIND_META: Record<FavoriteKind, { label: string; icon: typeof Star }> = {
+const KIND_META: Record<FavoriteKind, { label: string; icon: typeof Bookmark }> = {
   text: { label: "片段", icon: Bookmark },
   image: { label: "截图", icon: Image },
   file: { label: "文件", icon: FileText },
@@ -133,62 +133,66 @@ export function FavoritesSettingsSection(props: FavoritesSettingsSectionProps) {
 
   return (
     <section className="settings-section stack favorites-settings">
-      <header className="settings-block-head">
-        <Star size={16} />
-        <div>
-          <h3>收藏夹 <span className="fav-count">{favorites.length}</span></h3>
-          <p className="muted">
-            收藏对你有用的回答片段、链接或文件；在输入框的 <b>+ → 收藏夹</b> 里可以一键插入或直接发送，也能写进 Agent 记忆。
-          </p>
-        </div>
-      </header>
-
-      <div className="fav-toolbar">
-        <div className="fav-search"><Search size={13} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题 / 内容 / 备注 / 标签" /></div>
-        <div className="fav-kinds">
-          {(["all", "text", "image", "file", "link"] as KindFilter[]).map((value) => (
-            <button key={value} type="button" className={kind === value ? "active" : ""} onClick={() => setKind(value)}>
-              {value === "all" ? "全部" : KIND_META[value].label}
-              <em>{value === "all" ? favorites.length : favorites.filter((item) => item.kind === value).length}</em>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="fav-batch">
-        <label className="fav-check"><input type="checkbox" checked={list.length > 0 && activeSelection.length === list.length} onChange={toggleAll} /><span>全选（{list.length}）</span></label>
-        <span className="fav-selected">已选 <b>{activeSelection.length}</b> 条</span>
-        <AppSelect value={scope} onChange={(v) => setScope(v as MemoryLayerScope)} options={[...((Object.keys(SCOPE_LABEL) as MemoryLayerScope[])).map((value) => ({ value: (value), label: (`${SCOPE_LABEL[value]}`), }))]} ariaLabel="加入记忆时写到哪一层" title="加入记忆时写到哪一层" />
-        <button type="button" disabled={!activeSelection.length || busy} onClick={() => void batchMemory()}><Archive size={13} />加入 Agent 记忆</button>
-        <button type="button" className="danger" disabled={!activeSelection.length || busy} onClick={() => void batchRemove()}><Trash2 size={13} />删除选中</button>
+      {/* 10-27 用户令：「文字赘述过多，简洁一点…多个选项的改成选择下拉框，
+          批量管理 删除清空、新建，跟搜索框放一排，下面其他赘述不需要写」——
+          ⇒ 页头说明、独立批量条、页脚说明全部删除；分类芯片收成下拉；
+            搜索 / 分类 / 批量 / 新建压在**一行**。 */}
+      <div className="fav-bar">
+        <span className="fav-search"><Search size={13} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题 / 内容 / 标签" aria-label="搜索收藏" /></span>
+        <AppSelect
+          className="fav-kind-select"
+          value={kind}
+          onChange={(value) => setKind(value as KindFilter)}
+          ariaLabel="按类型筛选"
+          options={(["all", "text", "image", "file", "link"] as KindFilter[]).map((value) => ({
+            value,
+            label: `${value === "all" ? "全部" : KIND_META[value].label} ${value === "all" ? favorites.length : favorites.filter((item) => item.kind === value).length}`,
+          }))}
+        />
+        {list.length > 0 && (
+          <button type="button" className={`fav-selectall${activeSelection.length === list.length ? " active" : ""}`} title={activeSelection.length === list.length ? "取消全选" : "全选"} aria-label="全选" onClick={toggleAll}>
+            <CheckSquare size={14} />
+          </button>
+        )}
+        {activeSelection.length > 0 && (
+          <>
+            <AppSelect
+              className="fav-scope-select"
+              value={scope}
+              onChange={(value) => setScope(value as MemoryLayerScope)}
+              ariaLabel="加入记忆写到哪一层"
+              title="加入记忆写到哪一层"
+              options={(Object.keys(SCOPE_LABEL) as MemoryLayerScope[]).map((value) => ({ value, label: SCOPE_LABEL[value] }))}
+            />
+            <button type="button" className="fav-act" disabled={busy} onClick={() => void batchMemory()} title="把选中的收藏追加到所选记忆层"><Archive size={13} />加入记忆</button>
+            <button type="button" className="fav-act danger" disabled={busy} onClick={() => void batchRemove()}><Trash2 size={13} />删除 {activeSelection.length}</button>
+          </>
+        )}
         <span className="fav-spacer" />
-        <button type="button" onClick={() => setDraftOpen((open) => !open)}><Plus size={13} />新建收藏</button>
         {confirmClear ? (
           <>
-            <button type="button" className="danger" disabled={busy} onClick={async () => { await onRemove(favorites.map((item) => item.id)); setSelected([]); setConfirmClear(false); await onRefresh(); }}>确认清空 {favorites.length} 条？</button>
-            <button type="button" onClick={() => setConfirmClear(false)}><X size={13} />取消</button>
+            <button type="button" className="fav-act danger" disabled={busy} onClick={async () => { await onRemove(favorites.map((item) => item.id)); setSelected([]); setConfirmClear(false); await onRefresh(); }}>确认清空 {favorites.length}？</button>
+            <button type="button" className="fav-act" onClick={() => setConfirmClear(false)}>取消</button>
           </>
-        ) : (
-          <button type="button" className="danger ghost" disabled={!favorites.length || busy} onClick={() => setConfirmClear(true)}>清空全部</button>
-        )}
+        ) : favorites.length > 0 ? (
+          <button type="button" className="fav-act danger ghost" disabled={busy} onClick={() => setConfirmClear(true)}><Trash2 size={13} />清空</button>
+        ) : null}
+        <button type="button" className="fav-act primary" onClick={() => setDraftOpen((open) => !open)}><Plus size={13} />新建</button>
       </div>
 
       {draftOpen && (
         <div className="fav-draft">
-          <textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows={3} placeholder="粘贴要收藏的内容（链接、代码、结论…）；整条绝对路径会按「文件」收藏" />
+          <textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows={3} placeholder="粘贴要收藏的内容；整条路径按「文件」、http(s) 按「链接」收藏" aria-label="新建收藏内容" />
           <div className="fav-draft-actions">
-            <span className="muted">将收藏为：<b>{KIND_META[kindOfInput(draft)].label}</b></span>
-            <button type="button" disabled={!draft.trim()} onClick={() => void saveDraft()}><Check size={13} />保存</button>
-            <button type="button" onClick={() => { setDraft(""); setDraftOpen(false); }}>取消</button>
+            <button type="button" className="fav-act" onClick={() => { setDraft(""); setDraftOpen(false); }}>取消</button>
+            <button type="button" className="fav-act primary" disabled={!draft.trim()} onClick={() => void saveDraft()}><Check size={13} />保存为{KIND_META[kindOfInput(draft)].label}</button>
           </div>
         </div>
       )}
 
       {!list.length && (
         <p className="fav-empty">
-          {favorites.length
-            ? "没有匹配的收藏"
-            : "还没有收藏。在任意消息右下角点 ☆ 即可收藏；也可以用上面的「新建收藏」手写一条。"}
+          {favorites.length ? "没有匹配的收藏" : "还没有收藏。消息右下角点 ☆ 即可收藏，或用「新建」手写一条。"}
         </p>
       )}
 
@@ -199,17 +203,21 @@ export function FavoritesSettingsSection(props: FavoritesSettingsSectionProps) {
           const checked = activeSelection.includes(item.id);
           return (
             <div className={`fav-item ${checked ? "selected" : ""}`} key={item.id}>
-              <label className="fav-check"><input type="checkbox" checked={checked} onChange={() => toggleOne(item.id)} /></label>
+              <label className="fav-check"><input type="checkbox" checked={checked} onChange={() => toggleOne(item.id)} aria-label="选择这条收藏" /></label>
               <div className="fav-item-body">
                 <div className="fav-item-head">
                   <Icon size={13} />
                   <strong title={item.title}>{item.title || item.content.slice(0, 40)}</strong>
-                  <small>{meta.label} · {agoLabel(item.createdAt)}{item.useCount > 0 ? ` · 用过 ${item.useCount} 次` : ""}</small>
+                  <small>{meta.label} · {agoLabel(item.createdAt)}</small>
                 </div>
                 <p className="fav-item-text" title={item.content}>{item.content.replace(/\s+/g, " ").slice(0, 220)}</p>
-                {item.note && <p className="fav-item-note">备注：{item.note}</p>}
-                {item.tags.length > 0 && <div className="fav-tags">{item.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
-                {item.source?.threadName && <small className="fav-source">来自会话：{item.source.threadName}</small>}
+                {(item.note || item.tags.length > 0) && (
+                  <p className="fav-item-note">
+                    {item.note ? item.note : null}
+                    {item.note && item.tags.length ? " · " : null}
+                    {item.tags.length ? item.tags.join(" · ") : null}
+                  </p>
+                )}
                 {editing?.id === item.id && (
                   <div className="fav-edit">
                     <input value={editing.title} onChange={(event) => setEditing({ ...editing, title: event.target.value })} placeholder="标题" />
@@ -223,21 +231,16 @@ export function FavoritesSettingsSection(props: FavoritesSettingsSectionProps) {
                 )}
               </div>
               <div className="fav-item-actions">
-                <button type="button" title="插入到输入框" onClick={() => onInsert(item)}><ClipboardCopy size={13} /></button>
-                <button type="button" title="一键发送" onClick={() => onSend(item)}><Send size={13} /></button>
-                <button type="button" title="加入 Agent 记忆" onClick={() => void onToMemory([item.id], scope !== "user" && !workspace ? "user" : scope)}><Archive size={13} /></button>
-                <button type="button" title="编辑" onClick={() => setEditing({ id: item.id, title: item.title, note: item.note ?? "", tags: item.tags.join(" ") })}><Pencil size={13} /></button>
-                <button type="button" className="danger" title="删除这条收藏" onClick={async () => { await onRemove([item.id]); setSelected((current) => current.filter((id) => id !== item.id)); await onRefresh(); }}><Trash2 size={13} /></button>
+                <button type="button" title="插入到输入框" aria-label="插入到输入框" onClick={() => onInsert(item)}><ClipboardCopy size={13} /></button>
+                <button type="button" title="一键发送" aria-label="一键发送" onClick={() => onSend(item)}><Send size={13} /></button>
+                <button type="button" title="加入 Agent 记忆" aria-label="加入 Agent 记忆" onClick={() => void onToMemory([item.id], scope !== "user" && !workspace ? "user" : scope)}><Archive size={13} /></button>
+                <button type="button" title="编辑" aria-label="编辑" onClick={() => setEditing({ id: item.id, title: item.title, note: item.note ?? "", tags: item.tags.join(" ") })}><Pencil size={13} /></button>
+                <button type="button" className="danger" title="删除这条收藏" aria-label="删除这条收藏" onClick={async () => { await onRemove([item.id]); setSelected((current) => current.filter((id) => id !== item.id)); await onRefresh(); }}><Trash2 size={13} /></button>
               </div>
             </div>
           );
         })}
       </div>
-
-      <p className="fav-foot muted">
-        <TriangleAlert size={12} />
-        收藏保存在本机 <code>userData/favorites.json</code>；「加入 Agent 记忆」只<b>追加</b>到所选层，单条最长 300 字（避免撑爆记忆注入预算）。
-      </p>
     </section>
   );
 }
