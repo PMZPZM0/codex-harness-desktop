@@ -295,6 +295,41 @@ const CHECKS = [
           && skillsBar.rightGap <= 40
           && !skillsBar.buttons.some((x)=>x.includes("SkillHub 市场"))),
         JSON.stringify(skillsBar));
+
+      await nav("命令");
+      await wait(900);
+      const commandBar = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const page=m.querySelector(".command-center"); if(!page) return null;
+        const bar=page.querySelector(".command-toolbar");
+        const line=page.querySelector(".command-actions-line");
+        const search=page.querySelector(".command-search");
+        const sel=page.querySelector(".command-filter-select");
+        if(!bar||!line||!search||!sel) return null;
+        const btns=[...line.querySelectorAll("button")];
+        const r=line.getBoundingClientRect(), br=bar.getBoundingClientRect(), s=search.getBoundingClientRect(), sr=sel.getBoundingClientRect();
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          buttons:btns.map((b)=>(b.textContent||"").trim()),
+          heights:btns.map((b)=>Math.round(b.getBoundingClientRect().height)),
+          selectText:(sel.textContent||"").trim(),
+          sameRow:Math.abs((r.top+r.bottom)/2-(s.top+s.bottom)/2) <= 10,
+          selectRow:Math.abs((sr.top+sr.bottom)/2-(s.top+s.bottom)/2) <= 10,
+          inRow:line.closest(".command-toolbar") === bar,
+          rightGap:Math.round(br.right-r.right),
+          stats:!!page.querySelector(".command-stats"),
+          tabs:page.querySelectorAll(".command-tabs").length,
+          groupSmall:page.querySelectorAll(".command-group > header small").length,
+          pageInfo:!!page.querySelector(".page-info"),
+          headingActions:!!page.querySelector(".settings-heading-actions") };
+      })()`).catch(() => null);
+      h.check("⑫ 命令页：分类收成下拉，新建/刷新与搜索同一排",
+        Boolean(commandBar && commandBar.page === "命令" && !commandBar.pageInfo && !commandBar.headingActions
+          && commandBar.selectText.includes("全部") && commandBar.selectRow && !commandBar.stats
+          && commandBar.tabs === 0 && commandBar.groupSmall === 0
+          && commandBar.buttons.length === 2 && commandBar.buttons.some((x)=>x.includes("新建命令"))
+          && commandBar.heights.every((h)=>h <= 30) && commandBar.sameRow && commandBar.inRow
+          && commandBar.rightGap <= 30),
+        JSON.stringify(commandBar));
       await h.pressKey("Escape");
       await wait(300);
     },
