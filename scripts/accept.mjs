@@ -381,6 +381,32 @@ const CHECKS = [
         Boolean(compLib && compLib.page === "组件库" && compLib.selectText.length > 0
           && compLib.sameRow && compLib.searchWidth <= 400 && compLib.gridHeight >= 500 && compLib.cats === 0),
         JSON.stringify(compLib));
+
+      await nav("SSH 服务器");
+      await wait(900);
+      const sshBar = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const page=m.querySelector(".ssh-page"); if(!page) return null;
+        const search=page.querySelector(".search-field");
+        const sel=page.querySelector(".ssh-status-select");
+        const line=page.querySelector(".ssh-actions-line");
+        if(!search||!sel||!line) return null;
+        const btns=[...line.querySelectorAll("button")];
+        const sr=sel.getBoundingClientRect(), ir=search.getBoundingClientRect(), br=line.getBoundingClientRect();
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          selectText:(sel.textContent||"").trim(),
+          buttons:btns.map((b)=>(b.textContent||"").trim()),
+          heights:btns.map((b)=>Math.round(b.getBoundingClientRect().height)),
+          sameRow:Math.abs((sr.top+sr.bottom)/2-(ir.top+ir.bottom)/2) <= 10 && Math.abs((br.top+br.bottom)/2-(ir.top+ir.bottom)/2) <= 10,
+          pageInfo:!!page.querySelector(".page-info"),
+          headingActions:!!page.querySelector(".settings-heading-actions") };
+      })()`).catch(() => null);
+      h.check("⑮ SSH 页：搜索 + 状态下拉 + 导入/导出/新建连接同一行，问号已删",
+        Boolean(sshBar && sshBar.page === "SSH 服务器" && !sshBar.pageInfo && !sshBar.headingActions
+          && sshBar.selectText.includes("全部") && sshBar.sameRow
+          && ["导入", "导出", "新建连接"].every((label)=>sshBar.buttons.some((x)=>x.includes(label)))
+          && sshBar.heights.every((h)=>h <= 30)),
+        JSON.stringify(sshBar));
       await h.pressKey("Escape");
       await wait(300);
     },
