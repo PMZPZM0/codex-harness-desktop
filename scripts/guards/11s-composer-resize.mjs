@@ -64,7 +64,9 @@ ok(/\.composer-resize-grip \{[^}]*width: 56px/.test(css),
   /* ① 空图标位 + 150px 下限 = 两侧白站（权限三条既无色点也无字母方块） */
   ok(/\.composer-menu-pop \{[^}]*min-width: 0;/.test(popCss) && !/\.composer-menu-pop \{[^}]*min-width: 150px;/.test(popCss),
     "权限菜单按内容收紧（min-width 150px 已删 —— 短菜单不再两侧各留 20px 空白）");
-  ok(/const hasIcon = Boolean\(itemTone \|\| option\.monogram \|\| option\.value === "__model_settings__"\)/.test(menuSrc)
+  /* ⛔ 判据只锚「有没有图标内容才算图标槽」这个结构：各仓 ComposerMenuOption 的字段不同
+     （云助手没有 monogram / __model_settings__）⇒ 别把字段清单写进断言。 */
+  ok(/const hasIcon = Boolean\(itemTone/.test(menuSrc)
     && /\{hasIcon && <span className=\{`menu-item-icon/.test(menuSrc),
     "没有图标内容的行**不占 20px 图标槽**（权限那三条的左侧空白就是它）");
   /* ② 位置/高度自适应：挑空间大的一侧 + 按实测高度铺开（⛔ 不回退到写死 360px） */
