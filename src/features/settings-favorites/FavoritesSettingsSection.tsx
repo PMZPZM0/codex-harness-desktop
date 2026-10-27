@@ -96,9 +96,10 @@ export function FavoritesSettingsSection(props: FavoritesSettingsSectionProps) {
         || item.tags.some((tag) => tag.toLowerCase().includes(q)));
   }, [favorites, kind, query]);
 
-  // 选中的 id 必须**跟着列表收敛**：删完之后残留的幽灵 id 会让下一次批量操作命中不存在的对象
-  const alive = new Set(favorites.map((item) => item.id));
-  const activeSelection = selected.filter((id) => alive.has(id));
+  // 选中的 id 必须**跟着可见列表收敛**：删完残留幽灵 id、或被筛选/搜索藏起来的条目，
+  // 都不能再计入批量操作（否则「删除 3 条」里混着看不见的收藏）。与 SSH / 插件页同口径。
+  const visibleIds = new Set(list.map((item) => item.id));
+  const activeSelection = selected.filter((id) => visibleIds.has(id));
 
   const toggleOne = (id: string) => { setConfirmBatch(false); setSelected((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id])); };
   const toggleAll = () => { setConfirmBatch(false); setSelected(activeSelection.length === list.length ? [] : list.map((item) => item.id)); };
