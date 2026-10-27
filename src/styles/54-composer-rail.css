@@ -1,0 +1,329 @@
+/**
+ * 输入框左侧竖条 + 四个弹层（10-27）。
+ *
+ * 用户令：「在输入框左边…加一个小粗条，做好展开折叠两种状态反馈，点击展开竖着的小窗口，
+ * 自适应展示位置…跟输入框一样高，宽度就一个图标宽度…默认隐藏的，点击小粗条自适应位置展示」。
+ *
+ * 规约：颜色/字号/圆角/阴影全部走既有变量；间距只取 4 的倍数；
+ * 弹层定位由 JS 实测矩形给 left/top（这里只管观感，不写死位置）。
+ */
+
+/* ── 竖条本体：骑在输入框**左边界外侧**，垂直居中，高度≈输入框高度 ── */
+/* 竖条**骑在输入框左边框那条线上**（10-27 用户二改：「小粗体跟线一样，竖着放在线上的，不是横的」）——
+   与顶部拖动把手同一做法：容器钉在 left:0（边框线），row-reverse 让图标列向左长出，
+   手柄用 -50% 平移把 6px 的粗条**居中压在线**上；展开时粗条仍在线上、图标往左展开。
+   ⛔ 不要把整条竖条放到框外 34px：用户要的是「线上一根竖粗条」，不是框外另一个小条。 */
+.composer-rail {
+  position: absolute;
+  /* 右边缘 = 输入框左边界（right:100%）⇒ 手柄正好压在边框线上，图标列向左展开 */
+  right: 100%;
+  top: 6px;
+  bottom: 6px;
+  z-index: 30;
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  justify-content: flex-start;
+  pointer-events: auto;
+}
+/* 折叠态：一根 6px 宽的手柄（命中区给到 14px，别让用户点不到） */
+.composer-rail-toggle {
+  /* 命中区 14px，视觉只有中间 6px 那根粗条 —— 正好压在边框线上 */
+  transform: translateX(50%);
+  width: 14px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 999px;
+}
+.composer-rail-grip {
+  width: 6px;
+  height: 64px;
+  border-radius: 999px;
+  /* 用户点名「小粗条」：它是**唯一**的展开affordance ⇒ 别调成几乎看不见的浅灰（第一版 45% 实测太淡） */
+  background: color-mix(in srgb, var(--muted) 72%, transparent);
+  transition: background 0.16s ease, height 0.16s ease;
+}
+.composer-rail-toggle:hover .composer-rail-grip,
+.composer-rail-toggle:focus-visible .composer-rail-grip {
+  background: var(--muted);
+  height: 80px;
+}
+/* 展开态：手柄收短，紧挨图标列（两段状态肉眼可分：短粗条 vs 一整列图标） */
+.composer-rail.is-open .composer-rail-toggle { width: 10px; height: 40px; }
+.composer-rail.is-open .composer-rail-grip { height: 32px; background: var(--line); }
+
+/* 图标列：宽 = 一个图标位，高 = 输入框高度（JS 不用给，100% 由 .composer 的相对定位决定） */
+.composer-rail-icons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 4px 3px;
+  margin-left: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 10px 24px rgba(0, 0, 0, 0.07);
+}
+.composer-rail-icon {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.composer-rail-icon:hover { background: var(--panel-2); color: var(--text); }
+.composer-rail-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* 当前打开的项：底色 + 文字色**两重**标识（不靠颜色单打独斗） */
+.composer-rail-icon.is-active { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.composer-rail-collapse { color: var(--faint); margin-top: 2px; }
+
+/* ── 弹层：portal 到 body，left/top/宽高由 JS 实测给 ── */
+.composer-rail-panel {
+  position: fixed;
+  z-index: 1200; /* 与其它浮层同一档带（见 index.css 的层级表），不写 9999 */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 16px 40px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+.crp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  flex: none;
+}
+.crp-title { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text); }
+.crp-title svg { color: var(--muted); }
+.crp-head-actions { display: inline-flex; align-items: center; gap: 2px; }
+.crp-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 12px 12px; }
+
+/* ── 通用：搜索框 / 空态 / 页脚 ── */
+.vault-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--faint);
+}
+.vault-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+.vault-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 12px;
+  text-align: center;
+  color: var(--muted);
+}
+.vault-empty strong { color: var(--text); font-size: 13px; }
+.vault-empty p { margin: 0; font-size: 12px; line-height: 1.6; max-width: 30ch; }
+.vault-empty svg { color: var(--faint); }
+.vault-footer {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--faint);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.vault-warn {
+  margin: 8px 0 0;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--orange) 30%, var(--line));
+  background: color-mix(in srgb, var(--orange) 8%, transparent);
+  border-radius: 8px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.vault-danger { color: var(--red) !important; }
+
+/* ── 密码本 ── */
+.vault-bar { display: flex; align-items: center; gap: 8px; }
+.vault-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.vault-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.vault-item-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.vault-item-main strong { font-size: 12.5px; color: var(--text); }
+.vault-item-sub { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vault-item-url { font-family: var(--mono, ui-monospace), monospace; }
+.vault-item-note { font-size: 11.5px; color: var(--faint); line-height: 1.5; }
+.vault-item-actions { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+.vault-editor { display: flex; flex-direction: column; gap: 10px; }
+.vault-field { display: flex; flex-direction: column; gap: 4px; }
+.vault-field > label { font-size: 11.5px; color: var(--muted); }
+.vault-field input,
+.vault-field textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 7px 9px;
+  outline: 0;
+  resize: vertical;
+}
+.vault-field input:focus-visible,
+.vault-field textarea:focus-visible { border-color: var(--accent); outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); outline-offset: 1px; }
+.vault-password-row { display: flex; align-items: center; gap: 6px; }
+.vault-password-row input { flex: 1 1 auto; min-width: 0; }
+.vault-hint { display: flex; align-items: flex-start; gap: 5px; margin: 0; font-size: 11.5px; line-height: 1.55; color: var(--faint); }
+.vault-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* ── 开发日记 ── */
+.journal-bar { display: flex; align-items: center; gap: 8px; }
+.journal-compose {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.journal-compose input,
+.journal-compose textarea {
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 6px 8px;
+  outline: 0;
+  resize: vertical;
+}
+.journal-compose-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.journal-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.journal-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.journal-item-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+.journal-item-main:hover strong { color: var(--accent); }
+.journal-item-main strong { font-size: 12.5px; color: var(--text); display: inline-flex; align-items: center; gap: 6px; }
+.journal-today { font-style: normal; font-size: 10.5px; color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 999px; padding: 0 5px; }
+.journal-item-sub { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.journal-hit { font-size: 11.5px; color: var(--muted); font-family: var(--mono, ui-monospace), monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.journal-item-actions { display: inline-flex; gap: 4px; flex: none; }
+.journal-editor { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; }
+.journal-editor-bar { display: flex; align-items: center; gap: 8px; flex: none; }
+.journal-editor-bar strong { font-size: 12.5px; color: var(--text); }
+.journal-editor-actions { margin-left: auto; display: inline-flex; gap: 6px; }
+.journal-textarea {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font: 12.5px/1.7 var(--mono, ui-monospace), monospace;
+  padding: 10px;
+  outline: 0;
+  resize: none;
+}
+
+/* ── 心情表情 ── */
+.stickers-hint { margin: 0 0 8px; font-size: 11.5px; line-height: 1.55; color: var(--muted); }
+.stickers-group { margin-top: 10px; }
+.stickers-group > h4 { margin: 0 0 6px; font-size: 11px; font-weight: 600; color: var(--faint); letter-spacing: 0.04em; }
+.stickers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
+.sticker {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 7px 4px 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, transform 0.12s ease;
+}
+.sticker:hover { border-color: var(--line); background: var(--panel-2); transform: translateY(-1px); }
+.sticker:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sticker-emoji { font-size: 20px; line-height: 1.1; }
+.sticker-label { font-size: 11px; }
+.sticker-ok {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--green);
+  color: #fff;
+}
+.stickers-foot { margin: 12px 0 0; font-size: 11px; color: var(--faint); }

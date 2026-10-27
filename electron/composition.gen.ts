@@ -46,6 +46,7 @@ import { domainsFeature as feat_domains } from "./features/domains-ipc";
 import { dramaCanvasFeature as feat_drama_canvas } from "./features/drama-canvas";
 import { engineFeature as feat_engine } from "./features/engine-ipc";
 import { expertMarketFeature as feat_expert_market } from "./features/expert-market-ipc";
+import { extensionsFeature as feat_extensions } from "./features/extensions-ipc";
 import { externalFeature as feat_external } from "./features/external-ipc";
 import { favoritesFeature as feat_favorites } from "./features/favorites/ipc";
 import { feishuFeature as feat_feishu } from "./features/feishu-ipc";
@@ -56,6 +57,7 @@ import { hooksFeature as feat_hooks } from "./features/hooks-ipc";
 import { htmlPreviewFeature as feat_html_preview } from "./features/html-preview-ipc";
 import { htmlVideoFeature as feat_html_video } from "./features/html-video-ipc";
 import { imageLabFeature as feat_image_lab } from "./features/image-lab";
+import { journalFeature as feat_journal } from "./features/journal-ipc";
 import { knowledgeBaseFeature as feat_kb } from "./features/knowledge-base-ipc";
 import { layaFeature as feat_laya } from "./features/laya-service";
 import { mcpServersFeature as feat_mcp_servers } from "./features/mcp-servers-ipc";
@@ -101,6 +103,7 @@ import { threadsFeature as feat_threads } from "./features/threads-ipc";
 import { toolsFeature as feat_tools } from "./features/tools-ipc";
 import { updatesFeature as feat_updates } from "./features/updates-ipc";
 import { userFeature as feat_user } from "./features/user-ipc";
+import { vaultFeature as feat_vault } from "./features/vault-ipc";
 import { videoFeature as feat_video } from "./features/video-gen";
 import { voiceFeature as feat_voice } from "./features/voice-ipc";
 import { wecomWebhookFeature as feat_wecom_webhook } from "./features/wecom-webhook-ipc";
@@ -159,6 +162,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "drama-canvas", plugin: feat_drama_canvas as Plugin<unknown>, config: null },
   { id: "engine", plugin: feat_engine as Plugin<unknown>, config: null },
   { id: "expert-market", plugin: feat_expert_market as Plugin<unknown>, config: null },
+  { id: "extensions", plugin: feat_extensions as Plugin<unknown>, config: null },
   { id: "external", plugin: feat_external as Plugin<unknown>, config: null },
   { id: "favorites", plugin: feat_favorites as Plugin<unknown>, config: null },
   { id: "feishu", plugin: feat_feishu as Plugin<unknown>, config: null },
@@ -169,6 +173,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "html-preview", plugin: feat_html_preview as Plugin<unknown>, config: null },
   { id: "html-video", plugin: feat_html_video as Plugin<unknown>, config: null },
   { id: "image-lab", plugin: feat_image_lab as Plugin<unknown>, config: null },
+  { id: "journal", plugin: feat_journal as Plugin<unknown>, config: null },
   { id: "kb", plugin: feat_kb as Plugin<unknown>, config: null },
   { id: "laya", plugin: feat_laya as Plugin<unknown>, config: null },
   { id: "mcp-servers", plugin: feat_mcp_servers as Plugin<unknown>, config: null },
@@ -214,6 +219,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "tools", plugin: feat_tools as Plugin<unknown>, config: null },
   { id: "updates", plugin: feat_updates as Plugin<unknown>, config: null },
   { id: "user", plugin: feat_user as Plugin<unknown>, config: null },
+  { id: "vault", plugin: feat_vault as Plugin<unknown>, config: null },
   { id: "video", plugin: feat_video as Plugin<unknown>, config: null },
   { id: "voice", plugin: feat_voice as Plugin<unknown>, config: null },
   { id: "wecom-webhook", plugin: feat_wecom_webhook as Plugin<unknown>, config: null },

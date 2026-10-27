@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ComponentType, type DragEvent } from "react";
-import {
+import { Puzzle,
   ArrowDown,
   ArrowDownToLine,
   ArrowUp,
@@ -91,6 +91,9 @@ function MenuItemButton({ id, onDone, dragging, dropBefore, onDragStart, onDragE
 export function FunctionMenu({ location }: { location: FunctionMenuLocation }) {
   const config = useFunctionMenuConfig();
   const [moreOpen, setMoreOpen] = useState(false);
+  /* 10-27 用户：「功能入口菜单也留好IPC接口」—— 用户扩展项来自 extensions:catalog（只收 url 动作）。 */
+  const [extMenu, setExtMenu] = useState<MenuEntrySpec[]>([]);
+  useEffect(() => { void window.codex.extensionsCatalog?.().then((catalog) => setExtMenu(catalog?.menu ?? [])).catch(() => undefined); }, []);
   const moreRef = useRef<HTMLButtonElement | null>(null);
   const [dragId, setDragId] = useState<FunctionMenuItemId | null>(null);
   const [dropBefore, setDropBefore] = useState<FunctionMenuItemId | null>(null);
@@ -128,6 +131,17 @@ export function FunctionMenu({ location }: { location: FunctionMenuLocation }) {
             }}
             onDrop={(event) => { event.preventDefault(); event.stopPropagation(); dropVisible(id); }}
           />
+        ))}
+        {extMenu.map((entry) => (
+          <button
+            key={entry.id}
+            type="button"
+            className="sidebar-tab sidebar-cap-row"
+            title={entry.label}
+            onClick={() => { if (entry.action.type === "url") void window.codex.openExternal(entry.action.target); }}
+          >
+            <Puzzle size={15} className="ic-cyan" /><span>{entry.label}</span><ChevronRight size={13} className="sidebar-cap-chevron" />
+          </button>
         ))}
         <button
           ref={moreRef}
