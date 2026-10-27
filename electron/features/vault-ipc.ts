@@ -18,16 +18,8 @@ import path from "node:path";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
-export type VaultItem = {
-  id: string;
-  title: string;
-  username?: string;
-  url?: string;
-  note?: string;
-  /** 有密码 = true（**只给布尔，不给明文**） */
-  hasSecret: boolean;
-  updatedAt: string;
-};
+import type { VaultItem } from "../../src/lib/rail-ipc-types";
+export type { VaultItem };
 
 type StoredItem = Omit<VaultItem, "hasSecret"> & { secret?: string };
 

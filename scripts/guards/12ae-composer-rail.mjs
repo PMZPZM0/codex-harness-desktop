@@ -109,5 +109,13 @@ ok(/确认删除 \$\{activeSelection\.length\} 条？/.test(read("src/features/s
 ok(/md-table-scroll" tabIndex=\{0\}/.test(read("src/features/markdown/Markdown.tsx")),
   "表格滚动层可键盘聚焦（宽表键盘用户也能左右滚，WCAG 2.1.1）");
 
+/* 10-27 审查二：类型单一来源 + 扩展项设置页白名单 */
+ok(existsSync(join(ROOT, "src/lib/rail-ipc-types.d.ts")) && /declare global/.test(read("src/lib/rail-ipc-types.d.ts"))
+  && ["electron/features/vault-ipc.ts", "electron/features/journal-ipc.ts", "electron/features/extensions-ipc.ts"]
+    .every((rel) => /rail-ipc-types/.test(read(rel))),
+  "跨进程类型只有一份（src/lib/rail-ipc-types.d.ts），三个域都 import type 它、不再本地重写");
+ok(/SETTINGS_PAGES/.test(extMain) && /SETTINGS_PAGES\.has\(target\)/.test(extMain),
+  "扩展项的 settings 动作按白名单校验目标页（页名写错不会跳到空白页）");
+
 console.log(`\n【rail】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);

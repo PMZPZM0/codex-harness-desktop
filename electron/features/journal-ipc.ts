@@ -15,7 +15,8 @@ import path from "node:path";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
-export type JournalDay = { date: string; title: string; bytes: number; updatedAt: string };
+import type { JournalDay } from "../../src/lib/rail-ipc-types";
+export type { JournalDay };
 
 const dir = () => path.join(app.getPath("userData"), "dev-journal");
 const fileOf = (date: string) => path.join(dir(), `${date}.md`);
