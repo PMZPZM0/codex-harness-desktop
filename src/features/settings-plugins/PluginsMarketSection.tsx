@@ -8,6 +8,7 @@
  * 走内置 IPC `video:*`（国内外 8 家），不是市场里的可安装插件，所以独立成卡。
  */
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { ArrowLeft, ArrowRight, Check, CircleStop, Play, Plus, RefreshCw, Store, Trash2 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { AppSelect } from "../../components/AppSelect";
@@ -36,10 +37,10 @@ function pluginChannelTone(plugin: any): string {
   return "ch-local";
 }
 
-export type PluginsMarketSectionProps = { openAppConfirm: (title: string, text: string, confirmLabel?: string) => Promise<boolean>; settingsResources: any; pluginSearch: any; pluginInstalledOnly: any; pluginDisplayName: any; pluginDescription: any; pluginChecked: any; setPluginChecked: any; refreshPluginsPage: any; resourceLoading: any; pluginMarketLoading: any; pluginMarketCategoryTabs: any; pluginMarketCategory: any; setPluginMarketCategory: any; setPluginMarketPage: any; pluginMarketSearch: any; setPluginMarketSearch: any; pluginMarketItems: any; installingMarketPlugin: any; setMarketPreview: any; installMarketPlugin: any; pluginMarketTotal: any; pluginMarketPage: any; pluginMarketPageSize: any; setPluginInstalledOnly: any; setPluginSearch: any; pluginBatchBusy: any; batchSetPluginEnabled: any; pluginBusy: any; setPluginEnabled: any; changePlugin: any; setNotice: any };
+export type PluginsMarketSectionProps = { /** 内置插件三件（10-27：只在「已安装」视图里出现） */ builtinSlot?: ReactNode; openAppConfirm: (title: string, text: string, confirmLabel?: string) => Promise<boolean>; settingsResources: any; pluginSearch: any; pluginInstalledOnly: any; pluginDisplayName: any; pluginDescription: any; pluginChecked: any; setPluginChecked: any; refreshPluginsPage: any; resourceLoading: any; pluginMarketLoading: any; pluginMarketCategoryTabs: any; pluginMarketCategory: any; setPluginMarketCategory: any; setPluginMarketPage: any; pluginMarketSearch: any; setPluginMarketSearch: any; pluginMarketItems: any; installingMarketPlugin: any; setMarketPreview: any; installMarketPlugin: any; pluginMarketTotal: any; pluginMarketPage: any; pluginMarketPageSize: any; setPluginInstalledOnly: any; setPluginSearch: any; pluginBatchBusy: any; batchSetPluginEnabled: any; pluginBusy: any; setPluginEnabled: any; changePlugin: any; setNotice: any };
 
 export function PluginsMarketSection(props: PluginsMarketSectionProps) {
-  const { openAppConfirm, settingsResources, pluginSearch, pluginInstalledOnly, pluginDisplayName, pluginDescription, pluginChecked, setPluginChecked, refreshPluginsPage, resourceLoading, pluginMarketLoading, pluginMarketCategoryTabs, pluginMarketCategory, setPluginMarketCategory, setPluginMarketPage, pluginMarketSearch, setPluginMarketSearch, pluginMarketItems, installingMarketPlugin, setMarketPreview, installMarketPlugin, pluginMarketTotal, pluginMarketPage, pluginMarketPageSize, setPluginInstalledOnly, setPluginSearch, pluginBatchBusy, batchSetPluginEnabled, pluginBusy, setPluginEnabled, changePlugin, setNotice } = props;
+  const { builtinSlot, openAppConfirm, settingsResources, pluginSearch, pluginInstalledOnly, pluginDisplayName, pluginDescription, pluginChecked, setPluginChecked, refreshPluginsPage, resourceLoading, pluginMarketLoading, pluginMarketCategoryTabs, pluginMarketCategory, setPluginMarketCategory, setPluginMarketPage, pluginMarketSearch, setPluginMarketSearch, pluginMarketItems, installingMarketPlugin, setMarketPreview, installMarketPlugin, pluginMarketTotal, pluginMarketPage, pluginMarketPageSize, setPluginInstalledOnly, setPluginSearch, pluginBatchBusy, batchSetPluginEnabled, pluginBusy, setPluginEnabled, changePlugin, setNotice } = props;
   const all = settingsResources.plugins as any[];
   // 10-04：源切换器（Claude 镜像 / Codex 官方 / 已安装）。⛔ 必须声明在 visible 之前——
   //   visible 要按它过滤（已装屏只显示已装的）。
@@ -201,7 +202,9 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
         与市场列表**并列**而不是塞进去 —— 它管的是「已装的那批要不要更新」，
         两个源各自独立比对（gitee 镜像 / Codex 官方），在「已安装」屏两块都出。 */}
 
-    {marketSource === "installed" ? <div className="plugin-market-block">
+    {marketSource === "installed" ? <>
+      {builtinSlot}
+      <div className="plugin-market-block">
       {/* 10-27 用户令：「已启用 / 已停用做成下拉框选项，已安装不要了，检查更新不要了，
           卡片里面这一行留一个刷新图标就行」⇒ 统计三连撤掉、检查更新撤掉，
           一行只剩：搜索 + 状态下拉（全部 / 启用中 N / 已停用 N）+ 刷新。 */}
@@ -266,6 +269,7 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
       })}
       {!visible.length && <div className="plugin-empty"><Store size={26} /><strong>{all.length ? "没有匹配的插件" : "还没有安装任何插件"}</strong><p>{all.length ? "换个关键词试试。" : "去上面两个市场装一个，或在 Codex 配置里添加 marketplace 后，插件会出现在这里。"}</p></div>}
     </div>
-    </div> : null}
+    </div>
+    </> : null}
   </section>;
 }

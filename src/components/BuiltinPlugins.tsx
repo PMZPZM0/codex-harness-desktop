@@ -102,6 +102,9 @@ export function BuiltinPluginsSection({ onNotice }: { onNotice: (m: string) => v
           state={state}
           tone={ready ? (off ? "off" : "ready") : "none"}
           actionLabel={ready ? "配置" : "去配置"}
+          /* 10-27 用户令：「这三个插件是内置的，不要支持删除」—— 随包分发，只有「配置」一个入口，
+             标「内置」把这件事说在明处（⛔ 别加卸载/移除按钮）。 */
+          badge="内置"
           onAction={() => setEditing(kind)}
         />
 
