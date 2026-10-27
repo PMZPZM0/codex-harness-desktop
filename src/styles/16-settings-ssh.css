@@ -1487,6 +1487,10 @@
   min-height: auto;
   padding-bottom: 10px;
 }
+/* 10-27 用户令：「中间的缝隙删一下」——两块之间的空隙其实是框架给每段留的 26px 下留白
+   （`.settings-exp-shell > .settings-section { padding: 4px 2px 26px }`，0,2,0）+ 这里的 8px。
+   ⇒ 内置块下留白归零、市场块只留 8px；特异性必须 ≥ 0,3,0 才压得住框架那条。 */
+.settings-exp-shell > .settings-section.builtin-plugins { padding-bottom: 0; }
 .builtin-plugins + .plugin-center {
   min-height: auto;
   padding-top: 8px;
