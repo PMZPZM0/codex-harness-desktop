@@ -1323,6 +1323,9 @@
   background: var(--panel);
 }
 .uc-panel-head { display: flex; align-items: flex-start; gap: 10px; }
+/* 10-27 用户令：人格市场的「刷新」放进第一个标题卡片（用户人格）里，贴该行右侧。 */
+.user-persona-panel .uc-panel-head { align-items: center; }
+.uc-panel-action { margin-left: auto; flex: none; display: flex; align-items: center; gap: 8px; }
 .uc-panel-icon {
   width: 30px;
   height: 30px;

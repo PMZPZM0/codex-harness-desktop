@@ -11,7 +11,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, RefreshCw, UserRound, X } from "lucide-react";
-import { PageInfo } from "../../components/SettingsHead";
 import { Spinner } from "../../components/CardShell";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 import { UserPersonaPanel } from "./UserPersonaPanel";
@@ -84,7 +83,19 @@ export function SoulMarketSection({ onNotice }: SoulMarketSectionProps) {
   const activeEntry = items.find((entry) => entry.slug === activeSlug);
   return (
     <section className="settings-section stack soul-market">
-      <div className="settings-copy channel-heading"><div><h2>人格市场<PageInfo text={<>来自 SkillHub（skillhub.cn/soul）的现成人格：选一个装上，Codex 的性格、语气、说话风格就换成 TA。生效方式 = 写入全局个性化并同步引擎的 AGENTS.md，<b>下一个新会话开始生效</b>（不用重启应用；正开着的会话保持原样）。「还原默认」随时退回。</>} helpKey="soul-market" label="人格市场" /></h2><p>选一套现成人格，Codex 的语气和性格会跟着变；应用后从下一个新会话开始生效。</p></div><div className="settings-heading-actions"><button className="secondary-setting" title="刷新人格列表与生效状态" onClick={() => void refreshWithReceipt(onNotice, "刷新人格列表", () => load())}>{loading ? <Spinner /> : <RefreshCw size={14} />}刷新</button></div></div>
+      {/* 10-27 用户令：「刷新放到第一个标题卡片里面，帮助❓号删了」⇒ 页头整块（大字 + 副标题 + ?）撤掉，
+          刷新按钮下移到「用户人格」卡的标题行右侧（见下方 UserPersonaPanel 的 action）。
+          ⛔ 这页不再有 ? 说明入口，是用户明确要求删的。 */}
+
+      {error && <p className="soul-market-error comp-lib-error">⚠️ {error}</p>}
+      {applied && <p className="muted soul-market-applied"><Check size={12} /> {applied}</p>}
+
+      {/* 10-27 用户令：「codex 在下面用户在上面，刷新放到第一个标题卡片里面」
+          ⇒ 用户人格卡排第一，刷新按钮放进它的标题行右侧；Codex 人格（生效状态）卡挪到它下面。 */}
+      <UserPersonaPanel
+        onNotice={onNotice}
+        action={<button className="secondary-setting" title="刷新人格列表与生效状态" onClick={() => void refreshWithReceipt(onNotice, "刷新人格列表", () => load())}>{loading ? <Spinner /> : <RefreshCw size={14} />}刷新</button>}
+      />
 
       {/* 当前生效状态卡（10-01 用户：「怎么检查我的人格是否生效」）：persona 落了档 = 已写入；
           生效时点 = 下一个新会话。persona 有内容但 slug 为空 = 用户在个性化里手填过，同样算生效。 */}
@@ -99,11 +110,6 @@ export function SoulMarketSection({ onNotice }: SoulMarketSectionProps) {
         {(activeSlug || activePersona) && <button className="secondary-setting" disabled={Boolean(busy)} onClick={() => void apply(null)}>{busy === "__reset__" ? <Spinner /> : null}还原默认人格</button>}
       </div>
 
-      {error && <p className="soul-market-error comp-lib-error">⚠️ {error}</p>}
-      {applied && <p className="muted soul-market-applied"><Check size={12} /> {applied}</p>}
-
-      {/* 用户人格（10-25 用户令：与 Codex 人格放在一起） */}
-      <UserPersonaPanel onNotice={onNotice} />
 
       {loading ? <p className="muted">正在加载人格列表…</p> : items.length === 0 ? (
         <p className="muted">人格列表为空（SkillHub 共 16 套，加载失败时看上方错误提示）。</p>
