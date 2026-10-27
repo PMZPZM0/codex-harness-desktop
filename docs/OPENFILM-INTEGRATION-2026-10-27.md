@@ -337,12 +337,15 @@ ready → studio-running → (studio-stale) → ready
 | `openfilm:settings-get` / `settings-set` | invoke | 读 / 写 `settings.json`（取值归一化后落盘） |
 | `openfilm:studio-open` | invoke | `filmDir?` → `{ ok, url, origin, projectPath, pid, version, note, error? }`；内部跑 `open` 并广播 `{type:"openfilm", phase:"studio"}` |
 | `openfilm:studio-status` | invoke | → `{ alive, url, origin, projectPath, pid, version, app, checkedAt }`（`run.json` + `/api/health`） |
+| `openfilm:desktop-info` | invoke | → `{ supported, platform, installed, version, asset, local, localOutdated, runningApp }` |
+| `openfilm:desktop-download` | invoke + 事件 | 下载官方安装包并校验 sha256；事件 `{type:"openfilm", phase:"desktop", step:"download", pct, log}` |
+| `openfilm:desktop-run` | invoke | `action: install / silent / reveal / uninstall`（动作白名单，落空的 action 一律拒） |
 
 ⛔ **没有 `openfilm:run` 通道**：`look/render/get/skill` 只从模型工具面进来（主进程直接 spawn），
 渲染层不需要、也不该有"任意跑一条 CLI"的入口 —— 少一个面就少一处会被绕过的闸。
 ⛔ **没有 `studio-close`**：那个实例可能正被上游桌面 App 或另一个 agent 用着（理由见 §11.2）。
 
-域登记：`ipc-registry.ts` 里 `{ prefix: "openfilm", count: 9, status: "in-features" }`；
+域登记：`ipc-registry.ts` 里 `{ prefix: "openfilm", count: 12, status: "in-features" }`；
 `composition.json` 加一行 `openfilm`；跑 `gen:ipc` + `gen:domains`（⛔ 生成物各仓自产）。
 
 ---
@@ -351,9 +354,9 @@ ready → studio-running → (studio-stale) → ready
 
 | 维度 | Windows | macOS | 我们的处理 |
 |---|---|---|---|
-| **桌面 App 产物** | 只有 `OpenFilm-Setup-x64.exe`（**无 arm64**） | `OpenFilm-{arm64,x64}.dmg` + `-mac.zip` | 按 `process.arch` 选包；Windows ARM 用户**:只能用 CLI 形态**，UI 明说 |
-| 安装方式 | NSIS 静默 `/S`（**首次**可能弹 UAC；`--all-users` 需管理员） | 挂载 dmg → `cp -R` 到 `/Applications` → **`xattr -dr com.apple.quarantine`** | dmg 里的 app **未公证**，不清 quarantine 会被 Gatekeeper 拦（文案要写清这是上游现状） |
-| 卸载 | `%LOCALAPPDATA%\Programs\OpenFilm\Uninstall OpenFilm.exe /S` | 删 `/Applications/OpenFilm.app` + `~/Library/Application Support/OpenFilm` | 我们只管 CLI 形态的卸载；App 形态给"打开卸载器"按钮，不代删 |
+| **桌面 App 产物** | 只有 `OpenFilm-Setup-x64.exe`（**无 arm64**） | `OpenFilm-{arm64,x64}.dmg` + `-mac.zip` | **已实现**：按 arch 选包；Windows ARM 用户**只能用 CLI 形态**，UI 明说；包只从上游 Release 取、按 `asset.digest` 校验 sha256 |
+| 安装方式 | NSIS 静默 `/S`（**首次**可能弹 UAC；`--all-users` 需管理员） | 挂载 dmg → `cp -R` 到 `/Applications` → **`xattr -dr com.apple.quarantine`** | **已实现**：Windows 默认**带界面**跑安装器（看得见），另给「静默安装」；macOS 走 hdiutil + cp + xattr。未公证如实写进卡片文案 |
+| 卸载 | 启动它自带的 `Uninstall*.exe` | 在 Finder 里选中 `.app`，用户自己拖废纸篓 | **已实现**：⛔ 绝不代删 `/Applications` 或 `Program Files`（删除系统目录不是我们的权限面） |
 | CLI 入口 | `node_modules\.bin\openfilm.cmd`（**必须走 cmd 或 node 直接执行 mjs**；不要 `shell:true`） | `node_modules/.bin/openfilm`（symlink） | 统一用 `node <runtime>/node_modules/openfilm/bin/openfilm.mjs` 调用，绕过 .cmd/.ps1 差异 |
 | Chromium 缓存 | `%LOCALAPPDATA%\ms-playwright` | `~/Library/Caches/ms-playwright` | 安装前探测是否已有（有就跳过下载，省 100MB） |
 | ffmpeg | `winget install Gyan.FFmpeg`（需用户确认） | `brew install ffmpeg`；无 Homebrew 时给官网 | ⛔ 不代装系统包；⛔ 不内置二进制（GPL 传染风险） |
@@ -490,8 +493,30 @@ OpenFilm（第三方开源项目）
 | 卡片 | 5 盏灯（Node / 渲染引擎 / ffmpeg / CLI / Studio）+ 声明链接 + 3 档自动更新 + 2 档下载源 |
 | 守卫 | `23-openfilm` 81/81；`npm run check` 全链绿 |
 
-**仍未做的（P4）**：桌面 App 形态（`OpenFilm-Setup-x64.exe` / dmg 的下载与静默安装、Gatekeeper 引导）。
-当前只做 CLI 形态 —— 它已经能完成"下载 → 安装 → 连接 → 剪辑 → 导出"整条链。
+### 11.5 批次三：桌面端（用户：「有桌面端会更方便」）
+
+**做的是"把官方安装包弄到用户手上"，不是"再做一套壳"**：上游桌面端自带 ffmpeg + 渲染浏览器、
+双击即用，且与 CLI **共用同一个项目库**（`~/.openfilm` 与 `libraryRoot()` 都是机器级的），
+所以两条形态能并存、改哪边都同步。
+
+| 动作 | Windows | macOS |
+|---|---|---|
+| 取包 | `OpenFilm-Setup-x64.exe`（265MB，**上游无 arm64**） | `OpenFilm-arm64.dmg` / `OpenFilm-x64.dmg`（按 `process.arch` 选） |
+| 下载 | 复用 `updates.downloadUpdate`（gh-proxy → ghfast → 直连 + 跟随 302 + 强制 https + **sha256**） | 同左 |
+| 校验 | `asset.digest`（GitHub 对每个资产自带 `sha256:…`；截图实测 13 个资产全带） | 同左 |
+| 安装 | 默认**带界面**跑安装器（看得见、UAC 由系统弹）；另给 `/S` 静默档 | `hdiutil attach` → `cp -R` 到 `/Applications` → `xattr -dr com.apple.quarantine`（未公证包不清会被拦） |
+| 卸载 | 启动它自带的 `Uninstall*.exe`；找不到就定位安装目录 | Finder 里选中 `.app`，用户自己拖废纸篓 |
+
+**边界（写进守卫的）**：
+- ⛔ 不重打包、不改名、不做自家 CDN —— 装的是上游原包，我们只负责搬与校验。
+- ⛔ 不代删 `/Applications` 或 `Program Files`（系统目录不在我们的权限面内）。
+- ⛔ 不代跑它的 `electron-updater`：App 更新归 App（菜单 → Check for Updates）。
+- **「卸载运行时」不带走已下载的安装包**：运行时与安装包分属两个目录，别互相连坐。
+
+**实测（本机 win32/x64，2026-10-27）**：`desktop-info` 真拉到上游 `v0.2.6` → 资产
+`OpenFilm-Setup-x64.exe`（265MB）、`supported:true`、`installed:false`；
+`desktop-run("reveal"/"install")` 在没下载时被拦（不会空跑）；
+`desktop-run("rm -rf /")` 这类落空 action 一律「不支持的动作」。
 - 格式规范：`packages/openfilm/SPEC.md`
 - 商标：`packages/openfilm/TRADEMARK.md`；第三方：`packages/openfilm/THIRD_PARTY_NOTICES.md`
 - 发布资产：https://github.com/openfilm/openfilm/releases/tag/v0.2.6

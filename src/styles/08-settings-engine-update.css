@@ -2006,3 +2006,9 @@
 .openfilm-seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
 .openfilm-seg button { padding: 3px 9px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 11.5px; cursor: pointer; }
 .openfilm-seg button.active { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px #0000001a; }
+
+/* ── OpenFilm 桌面端区块（10-27 批次三）────────────────────────────────────
+   与上面同一套卡片语言：标题行 + 说明 + 动作行。⛔ 不出现上游 Logo（品牌面纪律）。 */
+.openfilm-desktop { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.openfilm-desktop-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.openfilm-desktop-head strong { color: var(--text); font-size: 12.5px; font-weight: 600; }

@@ -42,6 +42,11 @@ export function pkgDir(): string {
   return path.join(runtimeDir(), "node_modules", PKG);
 }
 
+/** 桌面端安装包的落点（`<安装根>/desktop/`；⛔ 不跟运行时混在一起，卸载运行时不该顺手删掉它）。 */
+export function desktopDir(): string {
+  return path.join(openfilmRoot(), "desktop");
+}
+
 /** CLI 入口（用 node 直接跑 .mjs；⛔ 不依赖 .bin 里的符号链接/cmd 包装）。 */
 export function cliEntry(): string {
   return path.join(pkgDir(), "bin", "openfilm.mjs");

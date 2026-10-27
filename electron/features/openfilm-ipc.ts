@@ -5,6 +5,7 @@
  * 通道（9）：
  *   openfilm:status / settings-get / settings-set / install / retry / uninstall / update-check
  *   openfilm:studio-open / studio-status（批次二新增：Studio 连接与探活）
+ *   openfilm:desktop-info / desktop-download / desktop-run（批次三新增：桌面端）
  *
  * ⛔⛔ 三条硬纪律（照 docs/OPENFILM-INTEGRATION-2026-10-27.md）：
  *   ① **不内置任何 OpenFilm 二进制**：CLI 由 npm 装进 `<tools>/openfilm/runtime`（覆盖安装可保留），
@@ -19,6 +20,7 @@
  *   openfilm/probe.ts   「现在什么状态」（CLI/浏览器/ffmpeg/Studio）
  *   openfilm/studio.ts  Studio 打开与 session 探活
  *   openfilm/tools.ts   模型工具面（6 个 dynamicTools + 主进程应答）
+ *   openfilm/desktop.ts 桌面端（官方安装包：下载 → 校验 → 启动安装器 / 卸载引导）
  *   本文件 = **IPC 面 + 安装器**
  *
  * ⛔ 惰性求值：本模块**不得**在顶层调 `app.getPath()` / `writeToolsRoot()`
@@ -40,6 +42,8 @@ import {
 import { runNode } from "../openfilm/runner";
 import { browserInstalled, ffmpegState, openfilmStatus, type OpenfilmPhase, type OpenfilmStatus } from "../openfilm/probe";
 import { openStudio, probeStudio } from "../openfilm/studio";
+/* 批次三：桌面端（上游官方安装包：下载 → 校验 → 启动它的安装器）。⛔ 不重打包、不代删系统目录。 */
+import { desktopInfo, downloadDesktop, runDesktop, type DesktopAction } from "../openfilm/desktop";
 
 /* 声明常量（界面/文档/技能同一份事实；⛔ 前端不另写文案） */
 export { OPENFILM_HOME, OPENFILM_LICENSE, OPENFILM_SITE, OPENFILM_TRADEMARK_NOTE } from "../openfilm/brand";
@@ -262,6 +266,15 @@ export const openfilmFeature = defineFeature<null>({
        这个实例可能正被上游桌面 App 或另一个 agent 用着，杀它 = 丢用户没保存的手改。 */
     ipcHost.handle("openfilm:studio-open", (_event, filmDir?: unknown) => openStudio({ filmDir: String(filmDir ?? "") }));
     ipcHost.handle("openfilm:studio-status", () => probeStudio());
+    /* 批次三：桌面端。⛔ 只有 info / download / run 三条 —— 下载与安装分两步，
+       因为 265MB 下完就自动跑安装器会让用户"点一下突然弹出安装向导"，不知道发生了什么。 */
+    ipcHost.handle("openfilm:desktop-info", () => desktopInfo());
+    ipcHost.handle("openfilm:desktop-download", () => downloadDesktop());
+    ipcHost.handle("openfilm:desktop-run", (_event, action?: unknown) => {
+      const allowed: DesktopAction[] = ["install", "silent", "reveal", "uninstall"];
+      const picked = allowed.find((name) => name === action);
+      return picked ? runDesktop(picked) : Promise.resolve({ ok: false, action: "install" as DesktopAction, error: "不支持的动作" });
+    });
 
     /* 启动检查：延后 20s（不拖慢启动，也不与首屏抢网络） */
     void app.whenReady().then(() => {
