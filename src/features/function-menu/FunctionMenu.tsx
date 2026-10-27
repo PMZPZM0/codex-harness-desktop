@@ -1,4 +1,5 @@
 import { createPortal } from "react-dom";
+import { AnchorPopover } from "../../components/AnchorPopover";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ComponentType, type DragEvent } from "react";
 import { Puzzle,
   ArrowDown,
@@ -179,38 +180,9 @@ function MorePopover({ anchor, overflow, otherLocation, onClose }: {
   otherLocation: FunctionMenuLocation;
   onClose: () => void;
 }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const [pos, setPos] = useState<{ top: number; left: number; ready: boolean }>({ top: 0, left: 0, ready: false });
-
-  useLayoutEffect(() => {
-    const place = () => {
-      const rect = anchor.getBoundingClientRect();
-      const width = 232;
-      const height = ref.current?.offsetHeight ?? 180;
-      const above = rect.top > height + 12;
-      const top = above ? rect.top - height - 8 : rect.bottom + 8;
-      const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
-      setPos({ top: Math.max(12, Math.min(top, window.innerHeight - height - 12)), left, ready: true });
-    };
-    place();
-    window.addEventListener("resize", place);
-    return () => window.removeEventListener("resize", place);
-  }, [anchor, overflow.length]);
-
-  useEffect(() => {
-    const onDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (ref.current?.contains(target) || anchor.contains(target)) return;
-      onClose();
-    };
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
-    document.addEventListener("mousedown", onDown, true);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDown, true); document.removeEventListener("keydown", onKey); };
-  }, [anchor, onClose]);
-
-  return createPortal(
-    <div ref={ref} className="function-menu-popover" style={{ top: pos.top, left: pos.left, visibility: pos.ready ? "visible" : "hidden" }} role="menu" aria-label="更多拓展功能">
+  /* 10-27 架构审查 P1-3：定位/点外关闭/Esc/跟随滚动统一交给 AnchorPopover（本文件不再自己量）。 */
+  return (
+    <AnchorPopover open anchor={anchor} onClose={onClose} axis="y" align="start" prefer="auto" width={232} className="function-menu-popover" role="menu" ariaLabel="更多拓展功能">
       {overflow.length > 0 ? overflow.map((id) => {
         const meta = FUNCTION_MENU_META[id];
         const Icon = meta.Icon;
@@ -228,38 +200,17 @@ function MorePopover({ anchor, overflow, otherLocation, onClose }: {
           <span>{otherLocation === "top" ? "移到拓展功能下面" : "移到侧栏底部"}</span>
         </button>
       )}
-    </div>,
-    document.body,
+    </AnchorPopover>
   );
 }
 
 /** 首次悬停教程（每个展示位置一次）。Qoder 同款：先看一次怎么编辑，再自己玩。 */
 export function FunctionMenuTourHost() {
   const request = useSyncExternalStore(subscribeFunctionMenuTour, getFunctionMenuTour, () => null);
-  const ref = useRef<HTMLDivElement | null>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-
-  useLayoutEffect(() => {
-    if (!request) return;
-    const rect = request.anchor.getBoundingClientRect();
-    const width = 300;
-    const height = ref.current?.offsetHeight ?? 180;
-    const above = rect.top > height + 12;
-    const top = above ? rect.top - height - 10 : rect.bottom + 10;
-    const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
-    setPos({ top: Math.max(12, Math.min(top, window.innerHeight - height - 12)), left });
-  }, [request]);
-
-  useEffect(() => {
-    if (!request) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") dismissFunctionMenuTour(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [request]);
-
+  /* 10-27 P1-3：位置/关闭统一交给 AnchorPopover（本文件第三处手写定位也一并收掉）。 */
   if (!request) return null;
-  return createPortal(
-    <div ref={ref} className="function-menu-tour" style={pos ? { top: pos.top, left: pos.left } : { visibility: "hidden" }} role="dialog" aria-label="拓展功能使用提示">
+  return (
+    <AnchorPopover open anchor={request.anchor} onClose={dismissFunctionMenuTour} axis="y" align="start" prefer="auto" width={300} className="function-menu-tour" ariaLabel="拓展功能使用提示">
       <div className="function-menu-tour-head">
         <span className="function-menu-tour-icon"><Sparkles size={14} /></span>
         <b>让拓展功能更顺手</b>
@@ -274,8 +225,7 @@ export function FunctionMenuTourHost() {
         <button type="button" className="primary-setting" onClick={() => { dismissFunctionMenuTour(); openFunctionMenuEditor(); }}>编辑菜单</button>
         <button type="button" className="secondary-setting" onClick={dismissFunctionMenuTour}>知道了</button>
       </div>
-    </div>,
-    document.body,
+    </AnchorPopover>
   );
 }
 

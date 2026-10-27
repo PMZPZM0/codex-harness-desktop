@@ -60,5 +60,17 @@ if (anyCount > ANY_CAP) {
   console.log("      新增大头（按文件）：", perFile.slice(0, 6).map(([f, n]) => `${f.replace(ROOT, "")}=${n}`).join("  "));
 }
 
+/* 10-27 架构审查 P1-3：浮层定位统一（37 处手写 getBoundingClientRect ⇒ 一个原语） */
+const popoverSrc = read("src/components/AnchorPopover.tsx");
+ok(/export function placePopover/.test(popoverSrc) && /export function AnchorPopover/.test(popoverSrc)
+  && /maxHeight/.test(popoverSrc) && /ResizeObserver/.test(popoverSrc),
+  "统一浮层原语在位（夹进视口 / 翻转 / maxHeight 内部滚动 / 点外关闭 / Esc / 跟随 resize·scroll）");
+const railSrc = read("src/features/composer-rail/ComposerRail.tsx");
+ok(/AnchorPopover/.test(railSrc) && !/placePanel/.test(railSrc) && !/getBoundingClientRect/.test(railSrc),
+  "输入框竖条已改用原语（本文件不再自己算位置）");
+const menuSrc2 = read("src/features/function-menu/FunctionMenu.tsx");
+ok(/AnchorPopover/.test(menuSrc2) && !/const above = rect\.top/.test(menuSrc2),
+  "侧栏「更多」浮层已改用原语（不再手写上下翻转）");
+
 console.log(`\n【架构】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);
