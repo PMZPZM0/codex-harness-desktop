@@ -171,7 +171,8 @@ export function ComposerComposerCardStack({ app }: { app: HarnessAppApi }) {
                               style={{ top: r.top + 12, left: r.left + r.width / 2, maxWidth: Math.min(480, r.width - 24) }}
                             >
                               {group.items.map((entry) => {
-                                const tone = noticeTone(entry.text);
+                                /* 10-27：调用方显式给的语气优先（缺省仍按文案推断）。 */
+                                const tone = entry.tone ?? noticeTone(entry.text);
                                 const NoticeIcon = tone === "success" ? <CircleCheck size={16} /> : tone === "error" ? <X size={16} /> : tone === "warning" ? <AlertTriangle size={16} /> : <Info size={16} />;
                                 return (
                                   <div key={entry.id} className={`notice notice-toast notice--${tone}`}>

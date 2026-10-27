@@ -447,7 +447,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
           否则刚置上就被它清掉、按钮点了进不去欢迎界面。
        ⛔ 会话是在**选定项目地址之后**才真正建（引擎发首条消息时才分配 id），这里只把界面切过去。 */
     bossHomePending.current = true;              // 这个新会话登记为指挥中枢（拿到 id 后）
-    startNewThread();                            // ⛔ 每次都是全新会话
+    startNewThread({ boss: true });              // ⛔ 每次都是全新会话；boss=true ⇒ 未选地址的提示用琥珀色
     setBossPending(true);                        // 必须在 startNewThread 之后（它会清这个标记）
     /* ⛔⛔ 10-25 用户令：「不要进指挥欢迎界面就弹，改成点击那个选项再弹」
        ⇒ 这里**不再**自动弹项目地址对话框；入口在输入框左上角那枚项目地址 chip

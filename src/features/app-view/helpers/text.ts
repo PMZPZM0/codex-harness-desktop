@@ -30,7 +30,13 @@ export function prettifyHookLabel(raw: string): string {
   return match[2] ? `${label} #${match[2]}` : label;
 }
 
-export function noticeTone(text: string): "success" | "error" | "warning" | "info" {
+/** 通知语气（决定浮层配色）。
+    10-27：除 `noticeTone()` 按文案推断外，**调用方也可以显式指定**——
+    「尚未选择工作区 / 项目地址」这种同一件事在不同场景要用不同颜色
+    （普通新建任务 = 蓝 info；指挥中枢 = 琥珀 warning）。 */
+export type NoticeTone = "success" | "error" | "warning" | "info";
+
+export function noticeTone(text: string): NoticeTone {
   if (/失败|错误|无效|无法|不存在|请先|剪贴板中没有|不能为空/i.test(text)) return "error";
   if (/已复制|已保存|已安装|已卸载|已切换|已生效|成功|已发送|已提供|已开启|已关闭|已更新|已重命名|已创建|已启动/i.test(text)) return "success";
   if (/警告|注意|即将|可能|建议|重试|部分/.test(text)) return "warning";
