@@ -11,6 +11,13 @@
 .mcp-category-filter { display: inline-flex; align-items: center; gap: 8px; flex: none; color: var(--muted); font-size: 12px; white-space: nowrap; }
 .mcp-category-filter > span { flex: none; white-space: nowrap; }
 .mcp-category-select { min-width: 148px; }
+/* 10-27 用户：「搜索框靠左，分类选项放到搜索框后面」——
+   [搜索] [分类▾] 靠左成一组，操作按钮照旧被 .skill-toolbar-actions 的 margin-left:auto 顶到右边。
+   ⛔ 搜索框必须**有固定上限**：继承 .resource-toolbar .search-field 的 flex:1 1 190px 会把它拉满整行，
+      分类被挤到最右、贴着按钮，看起来就不像「跟在搜索后面」了。
+   ⛔ 选择器要写成 `.resource-toolbar.mcp-market-toolbar`（特异度 0,3,0）：12-settings-skills.css
+      里那条 `.resource-toolbar .search-field` 同特异度但**后导入**，只写两个类会被它压回去（实测过）。 */
+.resource-toolbar.mcp-market-toolbar .search-field { flex: 0 1 240px; min-width: 170px; }
 .mcp-server-grid {
   grid-template-columns: repeat(auto-fill, minmax(288px, 1fr));
   gap: 10px;

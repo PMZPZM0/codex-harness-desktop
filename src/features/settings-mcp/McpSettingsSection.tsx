@@ -73,8 +73,11 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
          只是本页不再挂 ? 入口；守卫 07 的孤儿主题名单按这次用户令开了 mcp 的例外。 */}
     <div className="plugin-market-block">
       {/* 10-27 用户令：「那个分类做成筛选形式，几个市场跳转删了」——
-          横向分类 tab 收成下拉筛选；SkillHub / AIbase 两个外链跳转删除，只留添加与刷新。 */}
+          横向分类 tab 收成下拉筛选；SkillHub / AIbase 两个外链跳转删除，只留添加与刷新。
+          10-27 再令：「搜索框靠左，分类选项放到搜索框后面」⇒ 顺序改成
+          [搜索] [分类▾] …………………… [添加 MCP][刷新]，与技能页同一套排法。 */}
       <div className="resource-toolbar mcp-market-toolbar">
+        <SearchField value={mcpMarketSearch} onChange={setMcpMarketSearch} placeholder="搜索 MCP 服务名称或简介" />
         <div className="mcp-category-filter">
           <span>分类</span>
           <AppSelect
@@ -85,7 +88,6 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
             onChange={(value) => { setMcpMarketCategory(value); setMcpMarketSearch(""); }}
           />
         </div>
-        <SearchField value={mcpMarketSearch} onChange={setMcpMarketSearch} placeholder="搜索 MCP 服务名称或简介" />
         <div className="skill-toolbar-actions">
           <button className="secondary-setting" onClick={() => { setConnectorSecret(""); setConnectorDraft({ name: "", transport: "stdio", command: "", args: [], url: "", headers: {}, env: {}, secrets: {} }); setConnectorEditorOpen(true); }}><Plus size={14} />添加 MCP</button>
           <button className="icon-button" title="刷新 MCP 状态" onClick={() => void refreshWithReceipt(setNotice, "刷新 MCP 状态", () => refreshSettingsResources())}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button>

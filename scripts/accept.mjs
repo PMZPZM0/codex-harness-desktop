@@ -357,6 +357,28 @@ const CHECKS = [
         Boolean(pluginMarket && pluginMarket.page === "插件" && pluginMarket.selectText.includes("全部分类")
           && pluginMarket.sameRow && pluginMarket.tabs === 0 && pluginMarket.jumps.length === 0),
         JSON.stringify(pluginMarket));
+
+      await nav("组件库");
+      await wait(600);
+      await h.waitFor(`!!document.querySelector(".comp-lib-cat-select")`, { label: "组件库筛选下拉", timeoutMs: 5000 }).catch(() => undefined);
+      await wait(300);
+      const compLib = await h.eval(`(function(){
+        const m=document.querySelector(".settings-modal"); if(!m) return null;
+        const page=m.querySelector(".comp-lib"); if(!page) return null;
+        const search=page.querySelector(".ui-skin-search");
+        const sel=page.querySelector(".comp-lib-cat-select");
+        if(!search||!sel) return null;
+        const sr=sel.getBoundingClientRect(), ir=search.getBoundingClientRect();
+        return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
+          selectText:(sel.textContent||"").trim(),
+          sameRow:Math.abs((sr.top+sr.bottom)/2-(ir.top+ir.bottom)/2) <= 10,
+          searchWidth:Math.round(ir.width),
+          cats:page.querySelectorAll(".ui-skin-cat").length };
+      })()`).catch(() => null);
+      h.check("⑭ 组件库：分类收成搜索行右侧下拉，搜索框不再拉满",
+        Boolean(compLib && compLib.page === "组件库" && compLib.selectText.length > 0
+          && compLib.sameRow && compLib.searchWidth <= 400 && compLib.cats === 0),
+        JSON.stringify(compLib));
       await h.pressKey("Escape");
       await wait(300);
     },
