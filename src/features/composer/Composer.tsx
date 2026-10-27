@@ -210,7 +210,10 @@ export function ComposerMenu({ icon, label, options, value, onChange, disabled, 
     <div className={`composer-menu ${open ? "open" : ""}`} ref={wrapRef}>
       <button ref={triggerRef} type="button" className={`composer-setting ${tone === "danger" ? "danger" : ""}`} disabled={disabled} title={title ?? label} onClick={() => setOpen((currentOpen) => { const next = !currentOpen; if (next) onOpen?.(); return next; })}>
         <Icon size={14} />
-        <span>{current?.title ?? label}</span>
+        {/* ⛔ 10-28 实测：输入框窄时这个胶囊会被压到 144px，`cn:deepseek-v4.1-flash` 显示成
+            `cn:deepseek-v4.1-…`（少了版本尾巴，用户分不清是哪个模型）。
+            ⇒ 补一个 title：视觉截断时悬停能看全（⛔ 不改宽度/布局 —— 那一行已经挤了 6 个控件）。 */}
+        <span title={current?.title ?? label}>{current?.title ?? label}</span>
         <ChevronDown size={12} className={`menu-caret ${open ? "up" : ""}`} />
       </button>
       {open && (
