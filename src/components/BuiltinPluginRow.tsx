@@ -19,6 +19,7 @@ export function BuiltinPluginRow({
   tone = "none",
   actionLabel,
   onAction,
+  badge,
 }: {
   icon: LucideIcon;
   title: string;
@@ -29,12 +30,14 @@ export function BuiltinPluginRow({
   tone?: "ready" | "off" | "none";
   actionLabel: string;
   onAction: () => void;
+  /** 行尾角标（10-27：内置插件标「内置」—— 随包分发，不提供卸载） */
+  badge?: string;
 }) {
   return (
     <article className={`bi-row is-${tone}`}>
       <span className="bi-row-icon"><Icon size={16} /></span>
       <div className="bi-row-text">
-        <b>{title}</b>
+        <b>{title}{badge ? <i className="bi-row-badge">{badge}</i> : null}</b>
         <small title={desc}>{desc}</small>
       </div>
       <span className="bi-row-state">{state}</span>

@@ -1712,6 +1712,18 @@
   white-space: nowrap;
 }
 .bi-row.is-ready .bi-row-state { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 34%, var(--line)); }
+/* 10-27：内置插件行标「内置」——随包分发、不可卸载（只读标记，不是按钮） */
+.bi-row-badge {
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 500;
+  vertical-align: 1px;
+}
 .bi-row.is-off .bi-row-state { color: var(--orange); border-color: color-mix(in srgb, var(--orange) 34%, var(--line)); }
 
 /* 二级弹窗的体/脚（外壳复用通用 .connector-setup-modal，与视频卡同一套） */

@@ -1491,6 +1491,9 @@
    （`.settings-exp-shell > .settings-section { padding: 4px 2px 26px }`，0,2,0）+ 这里的 8px。
    ⇒ 内置块下留白归零、市场块只留 8px；特异性必须 ≥ 0,3,0 才压得住框架那条。 */
 .settings-exp-shell > .settings-section.builtin-plugins { padding-bottom: 0; }
+/* 10-27：内置三件现在嵌在插件页（已安装视图）里面 ⇒ 它不再是框架的直接子段，
+   必须把 `.settings-section` 的 26/28 内边距与 min-height 归零，否则整块被内缩一圈。 */
+.plugin-center .builtin-plugins { padding: 0; min-height: auto; gap: 0; align-items: stretch; }
 .builtin-plugins + .plugin-center {
   min-height: auto;
   padding-top: 8px;
