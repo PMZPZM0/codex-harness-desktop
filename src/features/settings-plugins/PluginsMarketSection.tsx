@@ -114,8 +114,10 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
   const refreshButton = <button className="icon-button market-refresh" title="刷新：已装插件 / 技能 / 钩子 / 记忆 / 任务 / MCP + 插件市场（沿用当前分类与搜索）" onClick={() => void refreshWithReceipt(setNotice, "刷新插件与市场", () => refreshPluginsPage())}>{(resourceLoading || pluginMarketLoading) ? <Spinner /> : <RefreshCw size={14} />}</button>;
   /* 10-27 用户令：「上面一排按键放到卡片里面来，空间不够就缩小按键」
      ⇒ 来源 tab 不再是卡片外面的一行，而是每张卡的第一行；按钮尺寸收小一号（.market-shell 里调）。 */
+  /* 10-27 用户令：「那三个按键放到刷新旁边，搜索框靠左，分类按键在搜索框后面」
+     ⇒ 来源 tab 不再是单独一行，而是塞进**同一行工具条**的右端（紧挨刷新）。 */
   const sourceTabs = (
-    <div className="market-source-switch">
+    <div className="market-inline-tabs">
       <SegmentedTabs
         value={marketSource}
         onChange={(next) => setMarketSource(next === "official" ? "official" : next === "installed" ? "installed" : "gitee")}
@@ -127,6 +129,7 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
       />
     </div>
   );
+
   return <section className="settings-section stack plugin-center">
     {/* 10-26 用户令（插件页截图）：「左右按键对齐，中间空白删除，把上面一排按键放下来，右边也是」
         ⇒ 页头那两颗（在线市场 / 刷新）下来与三个来源 tab 同排：tab 贴左、按键贴右，中间不留空。
@@ -137,9 +140,8 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
         （与生图/视觉插件并列，见 BuiltinPluginsSection）。本页只负责**插件市场**：
         外部市场的可安装列表 + 已安装插件管理。两件事混在一页会让人分不清「自带」与「要装」。 */}
     {marketSource === "installed" ? null : marketSource === "official"
-      ? <CodexOfficialMarketSection onResourcesChanged={() => void refreshPluginsPage()} refreshSlot={refreshButton} sourceSwitch={sourceTabs} />
+      ? <CodexOfficialMarketSection onResourcesChanged={() => void refreshPluginsPage()} refreshSlot={refreshButton} tabsSlot={sourceTabs} />
       : <div className="plugin-market-block">
-      {sourceTabs}
       {/* 10-26 用户令：「插件市场，来自 GitHub 这一排字删了」（来源已在上面 tab 里说明一次） */}
       <div className="resource-toolbar plugin-market-filter">
         <SearchField value={pluginMarketSearch} onChange={(next) => { setPluginMarketSearch(next); setPluginMarketPage(1); }} placeholder="搜索插件名称、简介或作者" />
@@ -156,6 +158,7 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
             onChange={(next) => { setPluginMarketCategory(next); setPluginMarketPage(1); }}
           />
         </span>
+        {sourceTabs}
         {refreshButton}
       </div>
       {pluginMarketItems.length > 0 ? <div className="skill-card-grid page-turn" key={pluginMarketPage}>
@@ -199,7 +202,6 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
         两个源各自独立比对（gitee 镜像 / Codex 官方），在「已安装」屏两块都出。 */}
 
     {marketSource === "installed" ? <div className="plugin-market-block">
-      {sourceTabs}
       {/* 10-27 用户令：「已启用 / 已停用做成下拉框选项，已安装不要了，检查更新不要了，
           卡片里面这一行留一个刷新图标就行」⇒ 统计三连撤掉、检查更新撤掉，
           一行只剩：搜索 + 状态下拉（全部 / 启用中 N / 已停用 N）+ 刷新。 */}
@@ -214,6 +216,7 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
             onChange={(next) => setInstalledState(next as "all" | "on" | "off")}
           />
         </span>
+        {sourceTabs}
         {refreshButton}
       </div>
     <div className="resource-toolbar secondary">
