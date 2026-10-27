@@ -59,8 +59,8 @@ ok(/extensionsCatalog/.test(menuSrc) && /extMenu\.map/.test(menuSrc), "功能入
 ok(/function placePanel\(anchor: DOMRect/.test(rail) && /Math\.min\(left, viewport\.w - w - pad\)/.test(rail)
   && /Math\.min\(top, viewport\.h - h - pad\)/.test(rail),
   "弹层按实测矩形定位并夹进视口（不写死坐标，小窗口/主窗口都不会被切）");
-ok(/rightRoom >= w \|\| rightRoom >= leftRoom \? anchor\.right \+ gap : anchor\.left - gap - w/.test(rail),
-  "右开优先、右边放不下就翻到左边");
+ok(/const wantRight = prefer === "right" \|\| \(prefer === "auto" && \(rightRoom >= w \|\| rightRoom >= leftRoom\)\)/.test(rail),
+  "右开优先、右边放不下就翻到左边；显式 prefer 可强制换边（贴边按钮用）");
 ok(/createPortal\(/.test(rail), "弹层 portal 到 body（不被输入区的 overflow 裁掉）");
 ok(/\.composer-rail-icons\s*\{[^}]*max-height:\s*100%/s.test(railCss), "图标列不超出输入框高度（超出内部滚动）");
 
@@ -79,7 +79,14 @@ const journalMain = src("electron/features/journal-ipc.ts");
 ok(/dev-journal/.test(journalMain) && /`\$\{date\}\.md`/.test(journalMain), "开发日记：一天一个 md（userData/dev-journal）");
 ok(/journal:append/.test(journalMain) && /## \$\{hhmm\}/.test(journalMain), "同日多条按 `## HH:mm 标题` 追加");
 const stickers = src("src/features/composer-rail/MoodStickersPanel.tsx");
-ok(/`\$\{sticker\.emoji\}（\$\{sticker\.gloss\}）`/.test(stickers), "表情插入「emoji +（中文释义）」，模型直接读得懂");
+ok(/onInsert\(sticker\.emoji\)/.test(stickers) && !/（\$\{sticker\.gloss\}）/.test(stickers),
+  "表情只插 emoji（10-27 用户改口：「不要带文字，一个表情就行了」）；含义靠引擎图例（personalization 里的 mood bar 一行）");
+ok(/onDone\?\.\(\)/.test(stickers) && /MoodStickersPanel onDone=\{\(\) => setPanelId\(null\)\}/.test(rail),
+  "选中表情后弹层自动收起（用户：「选择了表情，表情界面自动隐藏」）");
+ok(/10_000/.test(rail) && /if \(!open \|\| panelId\) return/.test(rail),
+  "竖条展开后 10s 自动收起；有面板打开时不收（用户：「这个一直展示不会自动隐藏」）");
+ok(/prefer === "right"/.test(rail) && /setPrefer\(onRight \? "left" : "right"\)/.test(rail),
+  "贴边按钮真的换边（用户：「这个按键点击没反应」）");
 
 /* ⑥ 三处登记 */
 const manifest = read("electron/ipc-channels.manifest.json");

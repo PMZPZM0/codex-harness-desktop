@@ -178,6 +178,9 @@ const EMOJI_GUIDELINES = [
   "  - Lists: a leading emoji is fine when all sibling items have one (keep the same family for parallel items); otherwise plain bullets — do not mix emoji bullets with plain ones in the same list.",
   "  - Moderation: no emoji runs (🚀🚀🚀), no emoji in every sentence of long prose; short chat replies may use at most 1–2. When the user's message is formal/serious (errors, incidents, data loss), drop decorative emoji and keep only status markers.",
   "  - Consistency: pick one emoji per recurring concept and reuse it throughout the reply (e.g. if ✅ marks completed steps, do not switch to ✔️ midway).",
+  /* 10-27：输入框左侧竖条的「心情表情」只插 emoji（用户：「选择到输入框不要带文字，一个表情就行了」）
+     ⇒ 含义只能靠这张表让模型认得。⛔ 只列应用内置的那 14 个，别扩成通用 emoji 词典（占预算且会误导）。 */
+  "  - Mood bar emoji (the user may send ONE of these alone): 👍认可 · 🎉搞定 · 🚀继续冲 · 🙏拜托 · 💡有想法 · 😤不满 · 🤔存疑 · 😑又来了 · 🫠出事了 · ⏳太慢 · 👀看到了 · 🤝成交 · 🧪先验证 · 📌记下来. Other sentiment emoji in the same family (😡🤦🙃🥲🔥👏✅🕐📊…) mean what they look like — these 14 are just the most common. Read all of them as the user's sentiment about the current work, not as decoration; when one arrives alone, adjust your tone/pace accordingly (e.g. 😤 → say what went wrong and fix it; 🧪 → smallest verification first).",
 ].join("\n");
 
 /** 中文语言指令（内置基础段，随 AGENTS.md 注入所有会话）。

@@ -192,7 +192,7 @@ export function FavoritesSettingsSection(props: FavoritesSettingsSectionProps) {
 
       {!list.length && (
         <p className="fav-empty">
-          {favorites.length ? "没有匹配的收藏" : "还没有收藏。消息右下角点 ☆ 即可收藏，或用「新建」手写一条。"}
+          {favorites.length ? "没有匹配的收藏" : "还没有收藏"}
         </p>
       )}
 
