@@ -23,6 +23,15 @@ type PreviewState = {
 
 const IDLE: PreviewState = { status: "idle", kind: "text", content: "", language: "text" };
 
+/* ⛔⛔ 10-27 用户实测：「右侧栏的文件，预览一点，界面就卡卡」——
+   右栏是**窄栏**（默认 420px、半屏高度），在这里把整篇文件高亮 + 加行号是纯亏：
+   boss-groups.json 这种几万字符的文件一进面板就是上万个 span，滚动/重排全卡。
+   ⇒ 三条同时收：① 只预览前 60K 字符（要全文就去「在编辑器打开」，那是整屏的活）；
+                ② 超 12K 字符不做语法高亮（纯文本渲染，外观同源、只少 token 上色）；
+                ③ 截断时明说"只展示了前面一部分"。 */
+const PREVIEW_MAX_CHARS = 60_000;
+const PREVIEW_PLAIN_CHARS = 12_000;
+
 function looksBinary(bytes: Uint8Array): boolean {
   const limit = Math.min(bytes.length, 4096);
   for (let i = 0; i < limit; i += 1) if (bytes[i] === 0) return true;
@@ -55,8 +64,9 @@ export function WorkspaceFilePreview({ path, onOpenEditor, expanded, onToggleExp
           setState({ status: "ok", kind: "binary", content: "", language: ext });
           return;
         }
-        const content = decodeText(bytes).slice(0, 200_000);
-        setState({ status: "ok", kind: "text", content, language: ext || "text", truncated: bytes.length > 200_000 });
+        const raw = decodeText(bytes);
+        const content = raw.slice(0, PREVIEW_MAX_CHARS);
+        setState({ status: "ok", kind: "text", content, language: ext || "text", truncated: raw.length > PREVIEW_MAX_CHARS });
       } catch (error: any) {
         if (cancelled) return;
         const message = String(error?.message ?? error).replace(/^Error invoking remote method '[^']+':\s*/i, "");
@@ -123,7 +133,13 @@ export function WorkspaceFilePreview({ path, onOpenEditor, expanded, onToggleExp
         ) : /^mdx?$|^markdown$/i.test(state.language) ? (
           <div className="workspace-file-preview-markdown markdown"><Markdown>{state.content}</Markdown></div>
         ) : (
-          <FilePreviewCode language={state.language} content={state.content} truncated={state.truncated} />
+          <FilePreviewCode
+            language={state.language}
+            content={state.content}
+            truncated={state.truncated}
+            hint={`右栏只预览前 ${Math.round(PREVIEW_MAX_CHARS / 1000)}K 字符，完整内容请用「在编辑器打开」`}
+            plain={state.content.length > PREVIEW_PLAIN_CHARS}
+          />
         )}
       </div>
     </div>

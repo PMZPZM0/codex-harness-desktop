@@ -1448,6 +1448,23 @@
   min-height: 0;
   overflow: auto;
 }
+/* ⛔⛔ 10-27 用户令：「当前文件内容展示不完整时，请在内容区域底部添加一个水平左右滚动功能」。
+   病根：代码块自己带着 `overflow:auto`（`.file-preview-code`）⇒ 横向滚动条挂在**整篇内容的最末尾**，
+   长文件要滚到第 1000 行才够得着它（用户视角 = 这个预览根本没有左右滚动）。
+   ⇒ 只让**预览容器**当滚动体（内容块自己不滚、按原样溢出进来）：
+     横向滚动条就钉在可视区底沿，随时能拖；纵向仍是同一个滚动条（不出现双滚动条）。
+   ⛔ 不要给代码块加 `width:max-content`：那会让「自动换行」设置失效（长行永远不折）。 */
+.workspace-file-preview-body > .file-preview-code,
+.workspace-file-preview-body > .file-preview-code pre {
+  /* ⛔ 必须 !important：高亮主题(`codeThemeStyle`)把 `overflow:auto` 以**内联 style**
+     打在 pre 上（inline 胜过一切选择器）。这是本仓唯一合理的 !important 用法 ——
+     覆盖面被外层容器类名限死，不会外溢到对话里的代码块 / 预览弹窗。 */
+  overflow: visible !important;
+  max-width: none;
+}
+/* 代码块不再裁内容 ⇒ 横向滚到右边时露出的是容器底色：跟着代码面板同色，
+   否则右侧会突然变白/变深一条（观感像"内容被截断"）。 */
+.workspace-file-preview-body:has(> .file-preview-code) { background: var(--panel); }
 .workspace-file-preview-empty,
 .workspace-file-preview-loading {
   height: 100%;

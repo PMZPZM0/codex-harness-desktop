@@ -172,6 +172,29 @@ export function ComposerMenu({ icon, label, options, value, onChange, disabled, 
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const popLeft = useCenteredPopoverLeft(open, triggerRef, popRef);
+  /* ⛔⛔ 10-27 用户令：「这个模型弹窗要自适应位置展示全，不要滚轮」
+     第二句补充：「模型下拉框显示是在应用窄界面的时候，展示不全，出现滚轮」。
+     病因两条：① CSS 把弹层钉在 `max-height:360px` + `overflow-y:auto` ⇒ 模型一多就滚；
+              ② 弹层**恒定向上展开**，窄/矮窗口里上方没那么多空间，也不换边。
+     ⇒ 打开时实测触发器上下两侧的真实可用高度：**挑空间大的一侧**展开，
+       并把 max-height 设成那一侧的空间 —— 装得下就整份铺开（不出滚动条），
+       真装不下才滚（那是物理空间不够，不是设计选择）。⛔ 别写死像素值：窗口尺寸随时变。
+     ⛔ 窗口尺寸变化要重算（窄界面下拖动/分屏正是这条要覆盖的场景）。 */
+  const [popPlace, setPopPlace] = useState<{ side: "up" | "down"; maxHeight: number }>({ side: "up", maxHeight: 0 });
+  useLayoutEffect(() => {
+    if (!open) { setPopPlace({ side: "up", maxHeight: 0 }); return; }
+    const measure = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const above = rect.top - 12;                                    // 8px 间距 + 4px 余量
+      const below = window.innerHeight - rect.bottom - 12;
+      const side: "up" | "down" = above >= below ? "up" : "down";
+      setPopPlace({ side, maxHeight: Math.max(160, Math.floor(side === "up" ? above : below)) });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [open, options.length]);
   useEffect(() => {
     if (!open) return;
     const onDown = (event: globalThis.MouseEvent) => { if (!wrapRef.current?.contains(event.target as Node)) setOpen(false); };
@@ -191,12 +214,17 @@ export function ComposerMenu({ icon, label, options, value, onChange, disabled, 
         <ChevronDown size={12} className={`menu-caret ${open ? "up" : ""}`} />
       </button>
       {open && (
-        <div ref={popRef} className="composer-menu-pop" role="listbox" aria-label={label} style={{ ...(width ? { width } : {}), ...(popLeft != null ? { left: popLeft } : {}) }}>
+        <div ref={popRef} className="composer-menu-pop" role="listbox" aria-label={label} style={{ ...(width ? { width } : {}), ...(popLeft != null ? { left: popLeft } : {}), ...(popPlace.maxHeight ? { maxHeight: popPlace.maxHeight } : {}), ...(popPlace.side === "down" ? { top: "calc(100% + 8px)", bottom: "auto" } : {}) }}>
           {options.map((option) => {
             const itemTone = toneOf?.(option) ?? option.tone;
+            /* ⛔ 10-27 用户令：「这个权限选项弹窗展示紧凑一点，两边空白太多了」。
+               病根：权限那三条既没有色调圆点也没有字母方块，却照样渲染了 20px 的
+               `.menu-item-icon` 空槽 + 8px gap ⇒ 每行左侧白站 28px，右边还有内边距，
+               看着就是"两边空白"。⇒ **没有图标内容就不占位**（模型行有 tone/字母，照旧）。 */
+            const hasIcon = Boolean(itemTone || option.monogram || option.value === "__model_settings__");
             return (
               <button type="button" role="option" aria-selected={option.value === value} key={option.value} data-value={option.value} className={option.value === value ? "active" : ""} onClick={() => { onChange(option.value); setOpen(false); }}>
-                <span className={`menu-item-icon${itemTone ? ` tone-dot tone-${itemTone}` : ""}${option.monogram ? " model-monogram" : ""}`}>{option.monogram ?? (option.value === "__model_settings__" ? <Settings2 size={14} /> : null)}</span>
+                {hasIcon && <span className={`menu-item-icon${itemTone ? ` tone-dot tone-${itemTone}` : ""}${option.monogram ? " model-monogram" : ""}`}>{option.monogram ?? (option.value === "__model_settings__" ? <Settings2 size={14} /> : null)}</span>}
                 <span className="menu-item-text"><strong>{option.title}</strong>{option.desc && option.desc !== option.title ? <small>{option.desc}</small> : null}</span>
                 {option.badges?.length ? <span className="menu-item-badges">{option.badges.map((badge) => <em key={badge.text} className={badge.kind ? `badge-${badge.kind}` : undefined}>{badge.kind === "vision" ? <Eye size={10} /> : badge.kind === "video" ? <Video size={10} /> : null}{badge.text}</em>)}</span> : null}
                 {option.credits ? <span className="menu-item-credit" title="上游积分倍率">{creditLabel(option.credits)}</span> : null}

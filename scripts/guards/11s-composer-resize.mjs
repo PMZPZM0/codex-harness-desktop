@@ -55,5 +55,28 @@ ok(/\n\.composer \{[^}]*position: relative/.test(css),
 ok(/\.composer-resize-grip \{[^}]*width: 56px/.test(css),
   "胶囊加长 40→56px（用户：「可以稍微长一点点，现在有点短」）");
 
+/* ── 10-27 输入框胶囊弹层两条用户实测（同一块组件，一起钉）──
+   ① 「这个权限选项弹窗展示紧凑一点，两边空白太多了」
+   ② 「模型下拉框显示是在应用窄界面的时候，展示不全，出现滚轮」 */
+{
+  const popCss = read("src/styles/10-settings-providers.css");
+  const menuSrc = read("src/features/composer/Composer.tsx");
+  /* ① 空图标位 + 150px 下限 = 两侧白站（权限三条既无色点也无字母方块） */
+  ok(/\.composer-menu-pop \{[^}]*min-width: 0;/.test(popCss) && !/\.composer-menu-pop \{[^}]*min-width: 150px;/.test(popCss),
+    "权限菜单按内容收紧（min-width 150px 已删 —— 短菜单不再两侧各留 20px 空白）");
+  ok(/const hasIcon = Boolean\(itemTone \|\| option\.monogram \|\| option\.value === "__model_settings__"\)/.test(menuSrc)
+    && /\{hasIcon && <span className=\{`menu-item-icon/.test(menuSrc),
+    "没有图标内容的行**不占 20px 图标槽**（权限那三条的左侧空白就是它）");
+  /* ② 位置/高度自适应：挑空间大的一侧 + 按实测高度铺开（⛔ 不回退到写死 360px） */
+  ok(/const \[popPlace, setPopPlace\] = useState<\{ side: "up" \| "down"; maxHeight: number \}>/.test(menuSrc)
+    && /const side: "up" \| "down" = above >= below \? "up" : "down";/.test(menuSrc)
+    && /addEventListener\("resize", measure\)/.test(menuSrc),
+    "胶囊弹层按触发器上下**实测空间挑边**展开，并随窗口尺寸重算（窄界面不再被 360px 卡出滚轮）");
+  ok(/\.\.\.\(popPlace\.side === "down" \? \{ top: "calc\(100% \+ 8px\)", bottom: "auto" \} : \{\}\)/.test(menuSrc),
+    "向下展开时改用 top 定位（bottom:auto，两侧不同时生效）");
+  ok(!/max-height: 360px;/.test(popCss),
+    "⛔ 弹层不再写死 max-height:360px（那是「模型一多就出滚轮」的直接原因）");
+}
+
 console.log(`\n【composer-resize】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

@@ -727,8 +727,13 @@
   background: var(--panel);
   z-index: 30;
   border-radius: 11px;
-  min-width: 150px;
-  max-height: 360px;
+  /* ⛔ 10-27 用户令：「这个权限选项弹窗展示紧凑一点，两边空白太多了」——
+     原来 min-width:150px 会让内容只有 110px 的短菜单也撑到 150（两侧各多 20px 空）。
+     ⇒ 宽度完全跟内容走（`width: max-content`），不再设下限。
+     ⛔ 10-27 同日：「模型弹窗要自适应位置展示全，不要滚轮」——max-height 由 ComposerMenu
+        按"触发胶囊到视口上沿的距离"动态下发（内联 style）；这里只留一个够宽的首帧兜底。 */
+  min-width: 0;
+  max-height: min(560px, 70vh);
   padding: 5px;
   position: absolute;
   bottom: calc(100% + 8px);
