@@ -15,18 +15,27 @@
 /* 10-27：插件市场分类收成下拉，与搜索同一行（照技能页） */
 /* 10-27 用户令：「搜索框不用那么长」「刷新按键放到卡片里面来，三个界面统一」
    ⇒ 三个视图的卡内工具条同一套：搜索短一点（220）、刷新固定贴右。 */
-.plugin-center .resource-toolbar .search-field { flex: 0 1 220px; min-width: 168px; }
+/* 搜索框可伸缩：宽面板最多 200、窄面板能收到 110 —— 来源键不用改字也能同排 */
+.plugin-center .resource-toolbar .search-field { flex: 1 1 160px; min-width: 110px; max-width: 200px; }
 .market-refresh { margin-left: auto; flex: none; }
 /* ⛔ 分类 chips 上有一条 `flex: 1 1 420px`（把它当主内容撑满）⇒ 搜索/刷新被挤到第二行。
    卡内工具条里 chips 只占内容宽、超长时横向滚动，整条恒为一行。 */
 .plugin-center .resource-toolbar > .skill-tabs { flex: 0 1 auto; min-width: 0; overflow-x: auto; }
 /* 10-27 用户令（三改）：「那三个按键放到刷新旁边，搜索框靠左，分类在搜索框后面」
    ⇒ 来源 tab 与刷新同一行、贴右：`[搜索][分类] …… [三个来源 tab][⟳]`；按钮收小一号保证一行放得下。 */
-.market-inline-tabs { margin-left: auto; flex: none; display: flex; align-items: center; }
-.market-inline-tabs .segmented-tabs button { height: 24px; padding: 0 8px; font-size: 11.5px; }
+/* 10-27 四改：真实面板只有 ~540px 内宽 ⇒ 三个来源键一挤就把刷新顶到第二行。
+   ⇒ 整条一起收：搜索 180、分类 96、来源键 22px 高、行间距 8；来源键仍贴右但与刷新留 8px 呼吸。
+   「位置往左挪一点点」= 给它一个 margin-right，而不是贴死在刷新左边。 */
+.market-inline-tabs { margin-left: auto; margin-right: 8px; flex: none; display: flex; align-items: center; }
+/* 按键再小一号（10.5px / 左右 5px）：把宽度让给搜索框，占位提示不至于被截断 */
+.market-inline-tabs .segmented-tabs button { height: 22px; padding: 0 5px; font-size: 10.5px; }
+/* ⛔ flex-wrap: wrap 时浏览器**先换行再收缩** ⇒ 搜索框永远不会被压小，来源键就被顶到第二行。
+   这一条工具条必须 nowrap，让搜索框真的可缩。 */
+/* ⛔ 特异性要压过 12 里的 `.resource-toolbar { flex-wrap: wrap }`（同 0,1,0 且它在后）⇒ 提到 0,3,0 */
+.plugin-center .resource-toolbar.plugin-market-filter { gap: 8px; flex-wrap: nowrap; }
 .plugin-market-filter .search-field { flex: 0 1 220px; min-width: 168px; }
 .market-category-filter { display: inline-flex; align-items: center; flex: none; }
-.market-category-select { min-width: 120px; }
+.market-category-select { min-width: 96px; }
 .plugin-market-block {
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--panel) 55%, transparent);
