@@ -498,15 +498,14 @@
   color: var(--faint);
   transition: transform 0.15s ease, color 0.15s ease;
 }
-/* ── 10-27 用户令：「这个展开图标显示的方向不对」──
-   图标必须指**面板真正出现的方向**，否则方向就是反的：
-   · 底部位置（默认）：浮层以折叠头底边为锚**向上**展开 ⇒ 收起时朝上（点它会往上开）、展开时朝下（点它收回去）；
-   · 顶部位置：浮层以顶边为锚**向下**展开 ⇒ 收起时朝下、展开时朝上。
-   ⛔ 这里仍然只由 `.open` 一个开关驱动（展开判定只有 optionsCollapsed 一处），
-     两个方向靠外层 `.sidebar-options-top` 区分，不写第二份 JS 判定。 */
-.sidebar-options:not(.sidebar-options-top) .sidebar-options-chevron { transform: rotate(180deg); }
-.sidebar-options:not(.sidebar-options-top) .sidebar-options-chevron.open { transform: rotate(0deg); }
-.sidebar-options-top .sidebar-options-chevron.open { transform: rotate(180deg); }
+/* ── 10-27 用户令（第 3 次）：「这个展开朝向，看我箭头」──
+   面板是**横向**出现在侧栏右侧的（`left = 侧栏右缘 + 8`，顶部 / 底部两种位置都靠右），
+   所以箭头必须横向指 —— 前两版都按「上下」想（⌄ / ⌃），方向永远对不上：
+   · 收起 ⇒ ›（朝右）：点它，面板从右边滑出来；
+   · 展开 ⇒ ‹（朝左）：点它，收回到侧栏这边。
+   ⛔ 仍只由 `.open` 一个开关驱动；⛔ 别再按 top/bottom 位置区分方向 —— 两个位置的面板都在右边。 */
+.sidebar-options .sidebar-options-chevron { transform: rotate(-90deg); }
+.sidebar-options .sidebar-options-chevron.open { transform: rotate(90deg); }
 .sidebar-options-toggle:hover .sidebar-options-chevron { color: var(--muted); }
 
 .sidebar-nav-bottom {
