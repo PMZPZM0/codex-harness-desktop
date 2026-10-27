@@ -131,6 +131,7 @@ const sshPage = pageSrc("ssh");
 ok(!/PageInfo|settings-copy/.test(sshPage) && /ssh-status-select/.test(sshPage) && /ssh-actions-line/.test(sshPage), "SSH 页问号/页头已删，状态筛选下拉与三颗操作并进搜索行");
 const sshCss = read("src/styles/16-settings-ssh.css");
 ok(/\.ssh-filter-row/.test(sshCss) && /\.ssh-action-sm\s*\{[^}]*height:\s*28px/.test(sshCss), "SSH 操作按钮小尺寸（28px）");
+ok(/\.app-lock-actions\s*\{[^}]*justify-content:\s*flex-end/.test(read("src/styles/48-app-lock.css")), "应用锁操作按钮靠右");
 ok(/manageable = \[\.\.\.localInstalled\]/.test(skillsPage), "技能批量管理只覆盖本地导入（市场/内置不参与）");
 ok(/skill-local-bulk/.test(skillsPage) && /本地导入/.test(skillsPage), "批量管理卡在本地导入分组内（不再挂在页面顶部）");
 ok(!/resource-toolbar secondary[sS]{0,500}BatchActions/.test(skillsPage), "顶部不再挂全局批量条");

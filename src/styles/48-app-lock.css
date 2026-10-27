@@ -121,7 +121,7 @@
 }
 .app-lock-state.is-on { color: var(--green, #1a7f37); background: color-mix(in srgb, var(--green, #22c55e) 13%, transparent); }
 .app-lock-state.is-off { color: var(--faint); background: color-mix(in srgb, var(--faint) 10%, transparent); }
-.app-lock-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.app-lock-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; justify-content: flex-end; }
 .app-lock-loading { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
 /* 开场提示：比一行灰字更像「操作前须知」，同时把按钮与说明分开。 */
 .app-lock-callout {
