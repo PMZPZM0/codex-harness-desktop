@@ -1448,6 +1448,10 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       ((appSrc2.match(/dispatch-children-label/g) || []).length === 1 ? ok : fail)("【156】调度归属渲染只有一份实现（⛔ 不许分类/项目各写一份再分叉）");
       (appSrc2.includes("renderDispatchedList(g.items)") ? ok : fail)("【156】分类视图用共用的调度归属渲染器");
       (/renderDispatchedList\([\s\S]{0,260}?sourcedChildIds\.has\(entry\.id\)/.test(appSrc2) ? ok : fail)("【156】项目视图用同一渲染器 + 先把子会话从顶层剔除（否则同一会话显示两遍）");
+      /* 10-27 用户令（截图）：「已经显示调度会话，任务列表外面又全部显示一次」
+         ⇒ 「任务」（平铺）视图必须与项目/分类视图同口径剔除 sourcedChildIds，
+            否则每个被调度会话既在父会话的「↳ 调度会话 · N」块里，又在顶层平铺一行。 */
+      (/viewTab === "tasks"[\s\S]{0,700}?sourcedChildIds\.has\(entry\.id\)/.test(appSrc2) ? ok : fail)("【156】任务（平铺）视图同样先把被调度会话从顶层剔除（不再与「↳ 调度会话」块重复）");
       /* 折叠收纳（09-25 用户：「默认被调度和专家团会话都折叠状态」+「被调度的会话也要支持跟专家团
          那样折叠收纳起来」）：调度块默认**收起**，键 dispatch:<父会话 id>，与专家团聚簇同一套交互。 */
       /* 默认折叠用**展开集合**（命中=展开、默认空=全收起）。⛔ 不许用 collapsedSections 判「收起」——
