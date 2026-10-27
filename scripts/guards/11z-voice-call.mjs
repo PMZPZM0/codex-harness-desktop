@@ -14,7 +14,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { ROOT } from "./_ctx.mjs";
+import { ROOT, codeOnly } from "./_ctx.mjs";
 import { isLikelySelfEcho, echoSimilarity, ECHO_TAIL_MS } from "../../src/lib/voice-echo.mjs";
 import { splitSentences } from "../../src/lib/voice-summary.mjs";
 import { AUTO_TOOL_CALL_LIMIT, REWORK_REPEAT_LIMIT, createAutoSpeakTracker, isWorkItem } from "../../src/lib/voice-auto-speak.mjs";
@@ -1026,8 +1026,17 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     "安装成功/失败、切换引擎都在卡片内留一条反馈（⛔ 不靠一闪而过的 toast）");
   ok(/voice-engine-tag/.test(enginesSrc) && /badge: "默认 · 随基础模型"/.test(enginesSrc),
     "每个引擎带角色标签（默认 / 可选·更自然 / 可选·有情绪）—— 新手第一眼能分清必装与可选");
-  ok(/voice-group-tag is-required/.test(sectionSrc) && /voice-group-head/.test(sectionSrc),
+  /* 10-27 用户（语音页截图）：「把必须放到基础模型里面…上面一块空白删除，
+     右上角帮助❓号…放到基础模型卡片右上角」⇒ 「必需」标签并进基础模型卡头、
+     页头 .settings-copy 整块删掉、帮助 ? 挂到卡头右上角。
+     ⛔ 标签的判据要跟着落点走：原来在 VoiceSettingsSection.tsx 的组头上，
+        现在在 VoiceDevToolsSection.tsx 的卡头里 —— 断言「有标签」而不是「标签在哪个文件」。 */
+  const devtoolsSrc = read("src/components/VoiceDevToolsSection.tsx");
+  ok(/voice-group-tag is-required/.test(sectionSrc + devtoolsSrc) && /voice-group-head/.test(sectionSrc),
     "页面分组带性质标签（必需 / 可选 / 选声音 / 日常），⛔ 标签只做说明、不做准入");
+  ok(!/settings-copy/.test(codeOnly(sectionSrc)) && /<PageInfo[\s\S]{0,400}?helpKey="voice"/.test(sectionSrc)
+    && /helpSlot/.test(sectionSrc) && /helpSlot/.test(devtoolsSrc),
+    "语音页页头已删（上方不留空行）；帮助 ? 由本页创建、挂到基础模型卡卡头右上角");
   /* ── 缺模型联动（10-26 用户：「我没装语音模型，播报开关是不是也不能打开」）── */
   const voiceHookSrc = read("src/components/VoiceSettingsSection/use-voice-settings-section-state.tsx");
   const announceSrc = read("src/components/VoiceSettingsSection/10-announce.tsx");

@@ -272,12 +272,16 @@ const CHECKS = [
         const row=page.querySelector(".skill-filter-row");
         const line=page.querySelector(".skill-actions-line");
         const search=page.querySelector(".skill-filter-row .search-field");
+        const cat=page.querySelector(".skill-category-select");
         if(!row||!line||!search) return null;
         const btns=[...line.querySelectorAll("button")];
         const r=line.getBoundingClientRect(), rr=row.getBoundingClientRect(), s=search.getBoundingClientRect();
+        const cr=cat?cat.getBoundingClientRect():null;
         return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
           buttons:btns.map((b)=>(b.textContent||"").trim()),
           heights:btns.map((b)=>Math.round(b.getBoundingClientRect().height)),
+          categoryText:cat?(cat.textContent||"").trim():"",
+          categoryRow:cr?Math.abs((cr.top+cr.bottom)/2-(s.top+s.bottom)/2) <= 10:false,
           sameRow:Math.abs((r.top+r.bottom)/2-(s.top+s.bottom)/2) <= 10,
           inRow:line.closest(".skill-filter-row") === row,
           rightGap:Math.round(rr.right-r.right),
@@ -288,9 +292,10 @@ const CHECKS = [
       })()`).catch(() => null);
       h.check("⑨ 技能页：按键与搜索同一排，分类小字与右上角问号已删",
         Boolean(skillsBar && skillsBar.page === "技能" && !skillsBar.oldRow && !skillsBar.pageInfo
+          && skillsBar.categoryText.includes("全部分类") && skillsBar.categoryRow
           && skillsBar.tabs === 0 && !skillsBar.count && skillsBar.buttons.length === 3
           && skillsBar.buttons.some((x)=>x.includes("我的技能"))
-          && skillsBar.buttons.some((x)=>x.includes("从本地添加技能"))
+          && skillsBar.buttons.some((x)=>x.includes("本地技能"))
           && skillsBar.heights.every((h)=>h <= 30) && skillsBar.sameRow && skillsBar.inRow
           && skillsBar.rightGap <= 40
           && !skillsBar.buttons.some((x)=>x.includes("SkillHub 市场"))),
