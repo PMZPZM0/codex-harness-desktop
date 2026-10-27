@@ -849,6 +849,10 @@ interface Window {
     openfilmSettingsSet(patch: Partial<OpenfilmSettings>): Promise<OpenfilmSettings>;
     /* 扫描安装状态（CLI 版本 / 内置 node / chromium 缓存 / ffmpeg / 设置 / 开源声明） */
     openfilmStatus(): Promise<OpenfilmStatus>;
+    /* 打开（或切到）某部影片的 Studio 页面：跑 open <dir>（OPENFILM_NO_BROWSER=1），从 stdout 抓 Studio 行，写 session.json 并广播 openfilm/studio 事件（渲染层据此开进内置浏览器）。⛔ 不提供「关闭」——实例可能被桌面 App 或别的 agent 用着 */
+    openfilmStudioOpen(filmDir?: string): Promise<{ ok: boolean; code?: string; error?: string; url: string; origin: string; projectPath: string; pid: number; version: string; note: string }>;
+    /* Studio 探活（~/.openfilm/run.json + GET /api/health；⛔ 不看 HTTP 200，认 product=openfilm-studio） */
+    openfilmStudioStatus(): Promise<{ alive: boolean; url: string; origin: string; projectPath: string; pid: number; version: string; app: boolean; startedAt: number; checkedAt: number }>;
     /* 卸载运行时（只删 runtime，绝不碰用户 film 目录） */
     openfilmUninstall(): Promise<{ ok: boolean; removed: number; error?: string }>;
     /* 查最新版（npm dist-tag，镜像优先；比较只认 compareVersions） */

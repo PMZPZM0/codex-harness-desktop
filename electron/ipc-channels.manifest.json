@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 550,
+  "count": 552,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -2736,7 +2736,7 @@
     {
       "name": "openfilmInstall",
       "channel": "openfilm:install",
-      "paramsImpl": "step: unknown",
+      "paramsImpl": "step?: unknown",
       "paramsDecl": "step?: \"cli\" | \"chromium\" | \"verify\"",
       "returns": "Promise<{ ok: boolean; code?: string; error?: string; status: OpenfilmStatus }>",
       "invokeArgs": "step",
@@ -2746,7 +2746,7 @@
     {
       "name": "openfilmRetry",
       "channel": "openfilm:retry",
-      "paramsImpl": "step: unknown",
+      "paramsImpl": "step?: unknown",
       "paramsDecl": "step?: \"cli\" | \"chromium\" | \"verify\"",
       "returns": "Promise<{ ok: boolean; code?: string; error?: string; status: OpenfilmStatus }>",
       "invokeArgs": "step",
@@ -2782,6 +2782,26 @@
       "invokeArgs": "",
       "cast": null,
       "note": "扫描安装状态（CLI 版本 / 内置 node / chromium 缓存 / ffmpeg / 设置 / 开源声明）"
+    },
+    {
+      "name": "openfilmStudioOpen",
+      "channel": "openfilm:studio-open",
+      "paramsImpl": "filmDir?: unknown",
+      "paramsDecl": "filmDir?: string",
+      "returns": "Promise<{ ok: boolean; code?: string; error?: string; url: string; origin: string; projectPath: string; pid: number; version: string; note: string }>",
+      "invokeArgs": "filmDir",
+      "cast": null,
+      "note": "打开（或切到）某部影片的 Studio 页面：跑 open <dir>（OPENFILM_NO_BROWSER=1），从 stdout 抓 Studio 行，写 session.json 并广播 openfilm/studio 事件（渲染层据此开进内置浏览器）。⛔ 不提供「关闭」——实例可能被桌面 App 或别的 agent 用着"
+    },
+    {
+      "name": "openfilmStudioStatus",
+      "channel": "openfilm:studio-status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ alive: boolean; url: string; origin: string; projectPath: string; pid: number; version: string; app: boolean; startedAt: number; checkedAt: number }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "Studio 探活（~/.openfilm/run.json + GET /api/health；⛔ 不看 HTTP 200，认 product=openfilm-studio）"
     },
     {
       "name": "openfilmUninstall",

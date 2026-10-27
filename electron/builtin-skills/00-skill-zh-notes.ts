@@ -119,6 +119,13 @@ Blender（python-bridge）做建模 / 场景 / 渲染的实操路径，外加「
 来源：mattpocock/skills 的 grill-me + grilling（MIT，两份合成一份，见 THIRD_PARTY_NOTICES.md）。
 什么时候用：用户说「盘问我 / 挑刺 / 压测这个方案」时。⛔ 不要自动触发。`,
 
+  "openfilm-video-editing": `# OpenFilm 剪辑（中文导读）
+第三方开源剪辑工具（github.com/openfilm/openfilm，MIT + 商标条款）的用法：
+影片 = 一个目录（film.html 是剪辑表，每个镜头是一页暴露 frame(t) 的网页），
+6 个工具的顺序是 status → make_film → 写片 → check → render。
+什么时候用：用户说「剪视频 / 做片子 / 口播 / 加字幕 / 封面动效 / 长转短」时先读它。
+⛔ 没装就引导用户到「设置 → 开发工具 → OpenFilm 视频剪辑」点一次安装，模型自己不许 npm install。`,
+
   "handoff": `# 交接文档（中文导读）
 写给「完全没有上下文的新会话」的状态快照，不是日志：我们在做什么 / 生效方式 / 已完成（带提交号等锚点）/
 当前卡在哪 / 下一步（可直接执行）/ 踩过的坑（症状→根因→绕法）。
