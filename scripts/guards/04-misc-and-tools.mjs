@@ -798,6 +798,29 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
         `★ subagents:invoke 旁路已断根（manifest 无该通道=${channelGone} + 域不直连引擎派活=${noDirectStart}）`
       );
     }
+    /* ── 10-27 子智能体：设置表单与 Codex 工具同口径 ──────────────────────────
+       用户：「新建子智能体更新一下，都是旧的，工具也是，还有配套的 code 自己新建子智能体工具」。
+       旧工具自己写一份默认值（中文名当 id、强制继承/启用、不认模型/沙箱/审批）⇒
+       模型保存一次就把用户在表单里改的配置抹掉。判据锚**接线与消费点**，不是常量存在。 */
+    {
+      const subCfg = readFileSync(join(ROOT, "electron", "subagent-config.ts"), "utf8");
+      const coreSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "dispatch-core.ts"), "utf8"));
+      const rpcSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "dispatch-rpc.ts"), "utf8"));
+      const ipcSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "subagents-ipc.ts"), "utf8"));
+      const delegateSrc = codeOnly(readFileSync(join(ROOT, "electron", "features", "delegation.ts"), "utf8"));
+      const saveAt = coreSrc.indexOf('name: "subagent_save"');
+      const saveSchema = saveAt >= 0 ? coreSrc.slice(saveAt, saveAt + 1600) : "";
+      (["low", "medium", "high", "xhigh"].every((x) => saveSchema.includes(`"${x}"`))
+        && /sandbox:\s*\{/.test(saveSchema) && /approvalPolicy:\s*\{/.test(saveSchema) && /model:\s*\{/.test(saveSchema)
+        ? ok : fail)("★ subagent_save 工具带四档推理强度 + 模型/沙箱/审批（与表单同口径）");
+      (/saveSubAgentConfig\(/.test(rpcSrc) && /saveSubAgentConfig\(/.test(ipcSrc)
+        ? ok : fail)("★ IPC 保存与 Codex 工具走同一个 saveSubAgentConfig（不各写一份默认值）");
+      (!/safeAgentId/.test(ipcSrc) && /normalizeEffort/.test(subCfg) && /safeAgentId/.test(subCfg)
+        ? ok : fail)("★ id/档位归一只有一处实现（electron/subagent-config.ts）");
+      (/subAgentConfig\??\.effort/.test(delegateSrc) && /subAgentConfig\.inheritSandbox/.test(delegateSrc)
+        && /subAgentConfig\.inheritApproval/.test(delegateSrc) && /subAgentConfig\.inheritModel/.test(delegateSrc)
+        ? ok : fail)("★ 派活真正消费子智能体的推理强度/模型/沙箱/审批（表单不再只写不读）");
+    }
     /* 勾选必须**在执行端硬拦** kind。只删工具不加闸 ⇒ 模型仍能凭 agent_invoke 的参数拼出
        被取消的类别（用户报的正是「取消勾选还是能调」）。⛔ 断言分两层：纯函数**取值** + **接线**
        —— 写了没接 = 恒绿死函数（本仓反复踩过的坑）。 */

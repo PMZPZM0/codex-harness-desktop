@@ -159,16 +159,119 @@
 .subagent-editor-modal {
   max-width: 640px;
 }
+/* 10-27：行式配置比旧三列高 —— 收掉多余间距，底部「取消 / 保存」不进滚动区 */
+.subagent-editor-modal > header {
+  padding: 16px 20px 12px;
+}
+.subagent-editor-modal .connector-form {
+  gap: 10px;
+  padding: 6px 20px 16px;
+}
+.subagent-editor-modal > footer {
+  padding: 12px 20px 14px;
+}
 .subagent-config-grid {
   gap: 10px;
+  align-items: end;
+}
+.subagent-field {
+  color: var(--muted);
+  gap: 6px;
+  font-size: 11px;
+  display: grid;
+}
+.subagent-field > span {
+  align-items: baseline;
+  gap: 6px;
+  display: flex;
 }
 .subagent-toggle {
   flex-direction: row;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
+  min-height: 38px;
   color: var(--muted);
   font-size: 11px;
   display: flex;
+}
+.subagent-toggle span {
+  white-space: nowrap;
+}
+/* 模型 / 沙箱 / 审批：行式清单（10-27 重做；原生大蓝勾选框已换成共享胶囊开关） */
+.subagent-config-list {
+  border: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--panel-2) 55%, transparent);
+  border-radius: 11px;
+  overflow: hidden;
+}
+.subagent-config-row {
+  align-items: center;
+  gap: 14px;
+  padding: 7px 12px;
+  display: flex;
+}
+.subagent-config-row + .subagent-config-row {
+  border-top: 1px solid var(--line-soft);
+}
+.subagent-config-name {
+  gap: 2px;
+  min-width: 118px;
+  display: grid;
+}
+.subagent-config-name strong {
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 550;
+}
+.subagent-config-name small {
+  color: var(--faint);
+  font-size: 10px;
+}
+.subagent-config-body {
+  flex: 1;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  display: flex;
+  flex-wrap: wrap;
+}
+.subagent-config-body input {
+  width: 210px;
+}
+.subagent-config-body .app-select-trigger {
+  min-width: 132px;
+}
+.subagent-config-body .subagent-toggle {
+  min-height: 30px;
+}
+.subagent-tool-box {
+  border: 1px dashed var(--line);
+  background: color-mix(in srgb, var(--link) 6%, transparent);
+  border-radius: 10px;
+  gap: 4px;
+  padding: 8px 12px;
+  display: grid;
+}
+.subagent-tool-row {
+  align-items: baseline;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  display: flex;
+}
+.subagent-tool-row code {
+  color: var(--link);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+}
+.subagent-tool-row small {
+  color: var(--faint);
+  font-size: 10px;
+}
+.subagent-tool-kind {
+  color: var(--faint);
+  font-size: 10px;
+  min-width: 34px;
 }
 
 /* ══ 记忆页卡片：分类色条 + 悬停操作（沿用现有 class，仅增强） ══════════ */
@@ -220,25 +323,6 @@
   html:not([data-motion="force"]) .memory-card:hover {
     transform: none;
   }
-}
-
-/* ══ 子智能体编辑器：工具名只读展示（此前裸奔，无对应样式） ══════════════ */
-.subagent-tool-name {
-  border: 1px dashed var(--line);
-  background: color-mix(in srgb, var(--link) 7%, transparent);
-  border-radius: 8px;
-  min-height: 30px;
-  align-items: center;
-  padding: 0 10px;
-  font-size: 11.5px;
-  display: flex;
-}
-.subagent-tool-name code {
-  color: var(--link);
-  background: none;
-  padding: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11.5px;
 }
 
 /* ══ 专家团（Team 型专家）页面：复刻 WorkBuddy 团队协作 UI ════════════════ */

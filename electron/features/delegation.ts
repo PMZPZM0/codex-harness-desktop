@@ -19,7 +19,7 @@ import type { DispatchKind } from "../dispatch";
 import { buildDispatchCatalog, restrictedThreadRole } from "../features/dispatch-core";
 import { readCustomModel } from "../main/01-model-catalog";
 import { TURN_WAIT_BACKGROUND_NOTE, TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
-import { readSubAgents } from "../main/09-agents-plugins";
+import { readSubAgents, type SubAgentConfig } from "../main/09-agents-plugins";
 import { delegateRegistry, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
 import { bridgeDial } from "../main";
 import { ensureProjectAgentsMd } from "../project-conventions";
@@ -67,6 +67,9 @@ export async function runDelegatedTask(input: {
   let rolePrompt = "";
   let displayName = target.name;
   let teamTools: unknown[] = [];
+  /* 子智能体自带的运行配置（10-27）：模型 / 沙箱 / 审批 / 推理强度以前**只写不读**
+     ⇒ 表单里改了也不生效。这里取一次，往下按「跟随主对话」开关决定用不用。 */
+  let subAgentConfig: SubAgentConfig | null = null;
   /* 10-05 角色私有记忆的归属键：四类角色各有稳定 id，显示名会改、id 不会。
      ⛔ 归属只在这里算一次并往下传，别在下游各自拼（拼错 = 记忆写到别人名下）。 */
   let roleRef: RoleRef | null = null;
@@ -75,6 +78,7 @@ export async function runDelegatedTask(input: {
     const sub = subs.find((entry) => entry.id === target.key);
     if (!sub) return { ok: false, output: "", error: `子智能体「${input.name}」不存在` };
     rolePrompt = sub.systemPrompt ?? "";
+    subAgentConfig = sub;
     roleRef = { kind: "subagent", id: target.key, label: target.name };
   } else {
     const teams = await readUsableExpertTeams();
@@ -104,15 +108,26 @@ export async function runDelegatedTask(input: {
   const providerName = customModel?.name ?? provider;
   const apiKey = customModel?.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(customModel.encryptedKey, "base64")) : "";
   if (apiKey) server.setApiKey(apiKey);
-  const effectiveModel = input.model || customModel?.model;
+  const effectiveModel = input.model
+    || (subAgentConfig && !subAgentConfig.inheritModel ? subAgentConfig.model : undefined)
+    || customModel?.model;
   if (!effectiveModel) return { ok: false, output: "", error: "尚未配置模型，无法发起调度" };
+  /* 10-27：子智能体表单里的四项配置真正生效（未关闭继承时仍用主对话的值）。
+     ⛔ effort 没有"继承"开关 —— 它就是子智能体自己的档位，缺省 high。 */
+  const effectiveEffort = input.effort || subAgentConfig?.effort || undefined;
+  const effectiveSandbox = input.sandbox
+    || (subAgentConfig && !subAgentConfig.inheritSandbox ? subAgentConfig.sandbox : undefined)
+    || "workspace-write";
+  const effectiveApproval = input.approvalPolicy
+    || (subAgentConfig && !subAgentConfig.inheritApproval ? subAgentConfig.approvalPolicy : undefined)
+    || "never";
 
   ensureProjectAgentsMd(input.cwd || process.cwd());
   const started: any = await server.request("thread/start", {
     model: effectiveModel,
     cwd: input.cwd || process.cwd(),
-    approvalPolicy: input.approvalPolicy || "never",
-    sandbox: input.sandbox || "workspace-write",
+    approvalPolicy: effectiveApproval,
+    sandbox: effectiveSandbox,
     modelProvider: provider,
     config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name: providerName, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
     // 10-05 角色私有记忆：被委派会话拿得到「写自己记忆」的工具（主进程侧应答，见 role-memory-tool）。
@@ -193,7 +208,7 @@ export async function runDelegatedTask(input: {
       threadId,
       input: [{ type: "text", text: finalQuery, text_elements: [] }],
       model: effectiveModel,
-      effort: input.effort || undefined,
+      effort: effectiveEffort,
     });
     const turnId = turn?.turn?.id;
     if (!turnId) throw new Error("调度失败：未返回 turnId");
