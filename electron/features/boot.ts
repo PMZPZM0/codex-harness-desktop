@@ -59,7 +59,6 @@ let loadDeletedThreads!: any;
 let deletedThreadIds!: any;
 let responsesBridge!: any;
 let userSkillsDir!: any;
-let ensureBuiltinReviewer!: any;
 let refreshSkillDiscipline!: any;
 let readCustomModel!: any;
 let server!: any;
@@ -263,7 +262,6 @@ export function bindBoot(deps: Record<string, any>) {
   deletedThreadIds = deps.deletedThreadIds;
   responsesBridge = deps.responsesBridge;
   userSkillsDir = deps.userSkillsDir;
-  ensureBuiltinReviewer = deps.ensureBuiltinReviewer;
   refreshSkillDiscipline = deps.refreshSkillDiscipline;
   readCustomModel = deps.readCustomModel;
   server = deps.server;
@@ -366,9 +364,6 @@ export async function bootApp() {
     const action = await syncLocalMemoryConnector();
     if (action !== "absent") console.log(`[memory] 本地 MCP 连接器：${action}（记忆后端=${action === "enabled" ? "mcp" : "builtin"}）`);
   } catch (error) { console.warn("[memory] 本地 MCP 连接器同步失败（不影响启动）：", error); }
-  // 内置「评审」子智能体（09-21）：用干净上下文复审的现成对象。⚠️ 必须包 try/catch ——
-  // 启动链里一处裸 await 抛出会掐死整条链（界面能开、核心服务没起来，日志只有一行）。
-  try { await ensureBuiltinReviewer(); } catch (error) { console.warn("[reviewer] 内置评审子智能体种入失败（不影响启动）：", error); }
   // 启动自愈：剥掉已安装技能 SKILL.md 的 UTF-8 BOM。带 BOM 的文件引擎会判「缺 frontmatter」
   // 整份拒载（装了但永远不被使用），市场包/本地导入都可能带 BOM——这里兜住存量文件。
   try {
