@@ -24,7 +24,8 @@ const meta = (kind: PluginKind) => kind === "image"
   ? { title: "生图插件", desc: "配置图像生成 API；画布「生成图」与 Codex 需要配图时都调它", Icon: ImagePlus }
   : { title: "视觉辅助插件", desc: "主模型不支持图片时，用多模态模型识图", Icon: Eye };
 
-export function BuiltinPluginsSection({ onNotice }: { onNotice: (m: string) => void }) {
+/** 三个内置插件面板本体（不带外壳）—— 行/卡两种容器共用同一份状态与弹窗。 */
+function BuiltinPanels({ onNotice }: { onNotice: (m: string) => void }) {
   const [cfg, setCfg] = useState<BuiltinCfg>({});
   const [savedCfg, setSavedCfg] = useState<BuiltinCfg>({});
   const [imageModels, setImageModels] = useState<string[]>([]);
@@ -158,19 +159,26 @@ export function BuiltinPluginsSection({ onNotice }: { onNotice: (m: string) => v
     );
   };
 
+  return <>
+    {panel("image")}
+    {panel("vision")}
+    <VideoGenBuiltInCard />
+  </>;
+}
+
+/** 独立一段（旧的「内置插件」区块形态，保留给别处按需复用）。 */
+export function BuiltinPluginsSection({ onNotice }: { onNotice: (m: string) => void }) {
   return <section className="settings-section stack builtin-plugins">
     <div className="settings-copy">
       <h2>内置插件</h2>
-      <p>随应用自带、无需安装的能力：生图 / 识图 / 视频生成。填好配置后引擎自动重载，所有会话（含已打开的）都能调用。</p>
+      <p>随应用自带、无需安装的能力：生图 / 识图 / 视频生成。</p>
     </div>
-    {/* ⛔ 09-28：三张内置卡**同一区块同构**（用户：「三个内置插件跟下面插件市场区分开」）。
-        视频生成接口原先挂在插件市场页顶部的「内置接口」块里，和市场的可安装插件混在一页 ——
-        现在搬过来与生图/视觉并列，三张卡共用 .bi-plugin 规格（图标+标题+状态 / 字段或摘要 / 底部动作）。
-        插件市场是另一件事（外部市场的可安装列表），在它自己的区块里。 */}
-    <div className="bi-plugin-grid">
-      {panel("image")}
-      {panel("vision")}
-      <VideoGenBuiltInCard />
-    </div>
+    <div className="bi-plugin-grid"><BuiltinPanels onNotice={onNotice} /></div>
   </section>;
+}
+
+/** 10-27 用户令：「我让你做成卡片放已安装里面」⇒ 只输出三张卡（无标题、无外壳），
+    由插件页塞进「已安装」的卡片网格里，和已安装插件同排。⛔ 内置 = 不可卸载，只有「配置」。 */
+export function BuiltinPluginCards({ onNotice }: { onNotice: (m: string) => void }) {
+  return <BuiltinPanels onNotice={onNotice} />;
 }

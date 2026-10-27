@@ -1681,6 +1681,21 @@
   min-width: 0;
   box-sizing: border-box;
 }
+/* 10-27 用户令：「我让你做成卡片放已安装里面」⇒ 内置三件排进已安装的卡片网格，
+   在网格里改成**竖版卡片**（图标/标题在上、说明一行、状态与「配置」在底部），
+   与相邻的 .plugin-card 同一观感。⛔ 仍只有「配置」一个动作，不提供卸载。 */
+.plugin-card-grid > .bi-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--panel);
+}
+.plugin-card-grid > .bi-row .bi-row-text { min-width: 0; }
+.plugin-card-grid > .bi-row .bi-row-text small { white-space: normal; line-height: 1.5; }
+.plugin-card-grid > .bi-row .bi-row-state { align-self: flex-start; }
+.plugin-card-grid > .bi-row > button { width: 100%; margin-top: 2px; }
 /* 右侧固定件一律不许被压扁：中文没有空格，flex item 的 min-content 只有「一个字」宽，
    不写 flex:none 时状态胶囊与按钮会被挤成一条（同画布按钮那次事故）。 */
 .bi-row > .bi-row-state,
