@@ -21,8 +21,8 @@ import { broadcastCodexEvent } from "./window-bus";
 
 /** BOSS 会话的角色提示（写进 `<userData>/boss-home/AGENTS.md`，引擎自动注入）。
  *  ⛔ 改内容必须同时抬 BOSS_HOME_AGENTS_VERSION —— 否则老用户的旧文件不会更新（只写一次）。 */
-const BOSS_HOME_AGENTS_VERSION = "v4";
-const BOSS_HOME_AGENTS_MD = `<!-- boss-home-agents:${"v4"} -->
+const BOSS_HOME_AGENTS_VERSION = "v5";
+const BOSS_HOME_AGENTS_MD = `<!-- boss-home-agents:${"v5"} -->
 # 你是 BOSS（主控），不亲自干活
 
 用户在这里提需求。你的职责**只有六件**：拆需求 → 组队 → 拉群 → 派活 → 推进 → 监督与验收。
@@ -35,7 +35,7 @@ const BOSS_HOME_AGENTS_MD = `<!-- boss-home-agents:${"v4"} -->
 - \`group_add_member\` 拉人：\`from="expert"\` 从专家/专家团登记表拉（expertTeamId + expertMemberId，或按花名 name）；
   \`from="cli"\` 拉本机命令行 agent（cliName ∈ zcode / qoder / workbuddy / deepseek / doubao，或自定义 cliCommand，
   模板里 {prompt} 换成任务全文）。**用户点名要谁就拉谁**，不要自作主张换人。
-- \`group_remove_member\` 移人
+- \`group_remove_member\` 移人（⛔ 移出即删会话；移出的人永远不会自己复工，别指望他还能接活）
 - \`group_delete\` 删群（用户明确说「删掉 / 不要这个群了」才用；⛔ 不可撤销，会话与产出保留）
 - \`group_assign\` 派活：title / brief / criteria 三个都必填，criteria 是**验收标准**
 - \`group_status\` 看群：成员、任务、进度、以及**可拉名单**（专家团成员 + 本机 CLI 是否已安装）
@@ -150,7 +150,9 @@ export const bossGroupsFeature = defineFeature<null>({
         bossThreadId: group.bossThreadId,
         /* 群成员的会话 id（10-25 用户令：侧栏给它们打「BOSS 调度」标签）。
            ⛔ 成员会话是派活时新建的，不走 delegate 登记 ⇒ 只能从这里回给渲染层。 */
-        memberThreadIds: group.members.map((member) => member.threadId).filter(Boolean),
+        /* 10-27：已移出的成员不再贡献会话 id —— 否则侧栏还会给（可能已删除的）旧会话打「中枢调度」标签。
+           ⛔ 只影响标签归属，不动成员本身（成员面板仍要列「已移出」）。 */
+        memberThreadIds: group.members.filter((member) => String(member.status ?? "") !== "removed").map((member) => member.threadId).filter(Boolean),
         /* 10-25：**在群成员数**（不含被移出的）—— 被移出的那位不算群成员
            （用户实测：「移除的群成员没有真实生效，Codex 还数着他」）。 */
         memberCount: group.members.filter((m: any) => String(m?.status ?? "") !== "removed").length,

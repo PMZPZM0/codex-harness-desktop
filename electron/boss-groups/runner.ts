@@ -741,6 +741,10 @@ export async function settleSubmission(taskId: string, output: string): Promise<
   if (!task) return;
   const group = state.groups[task.groupId];
   if (!group) return;
+  /* ⛔⛔ 10-27：成员已被移出群 ⇒ 他的会话已删、任务已在 removeMember 里结清。
+     这条回调只可能是删除会话之前的半截回合（或迟到的 turn/completed）——
+     ⛔ 不能再把它的产出投进群（否则群里冒出一条「已移出的人交活」，还会把任务拉回 reviewing）。 */
+  if (group.members.find((m) => m.id === task.assignee)?.status === "removed") return;
   const alreadyLeftRunning = submitTaskSafe(state, taskId, output);
   /* ⛔⛔ 10-25 用户实测：「成员会话的汇总消息为什么没有发送到主对话，都是各种会话里面回复，
      这叫什么群聊」。原来：成品只进了**成员自己的会话**（引擎回合）与群事件（还只截 600 字），
@@ -898,7 +902,7 @@ export async function memberForBoss(input: {
   from?: "custom" | "expert" | "cli";
   expertTeamId?: string; expertMemberId?: string;
   cliName?: string; cliCommand?: string;
-}): Promise<{ ok: boolean; member?: { id: string; name: string; role: string; status: string; source?: string }; error?: string }> {
+}): Promise<{ ok: boolean; member?: { id: string; name: string; role: string; status: string; source?: string }; removedThreadId?: string; error?: string }> {
   const state = await bossStore.load();
   try {
     let addInput: Parameters<typeof addMember>[2] | null = null;
@@ -959,18 +963,32 @@ export async function memberForBoss(input: {
     const member = input.action === "add"
       ? addMember(state, String(input.groupId ?? ""), addInput!)
       : removeMember(state, String(input.groupId ?? ""), String(input.memberId ?? ""));
+    /* 移人会把在办任务一并结清（见 state.removeMember）⇒ 这里接住标题，回投时告诉中枢。 */
+    const terminatedTasks: string[] = (member as { terminatedTasks?: string[] }).terminatedTasks ?? [];
     bossStore.save();
     const group = groupOf(state, String(input.groupId ?? ""));
     emit({ type: "boss-group", phase: "member", groupId: group.id, memberId: member.id, status: member.status });
     /* ⛔⛔ 10-25 用户实测：「用户移除的群成员没有真实生效，Codex 不知道我移除了」。
        成员变动必须**回投给 BOSS 会话**，否则模型只在自己查 group_status 时才可能看到，
        而且那是旧口径（会把 removed 也数进去）。这里把增/移都主动告诉 BOSS。 */
+    /* 10-27 用户令：「codex 移除了群成员，这个旧的群成员回合就同步删除掉会话，同步自动刷新会话列表」
+       ⇒ 移人时把**成员会话 id**一起回给渲染层（它会走 deleteThreadCore：引擎 thread/delete + 墓碑 +
+          侧栏剔行 + 失效成员快照），主进程不自己删文件（删除入口只有渲染层那一条链路）。
+       ⛔ 保留 `removedThreadId` 字段名：渲染层据此判断"要不要顺手删会话"。 */
+    const removedThreadId = input.action === "add" ? "" : String(member.threadId ?? "");
     if (input.action === "add") {
       void postToBoss(group, `[群事件] 新成员进群：${member.name}（${member.role}${member.source === "cli" ? "，本机 CLI agent" : ""}，id=${member.id}）。`);
     } else {
-      void postToBoss(group, `[群事件] 成员已被用户移出群：${member.name}（${member.role}，id=${member.id}）。\nTA **不在当前成员名单里、不再接任何新活**（会话与轨迹保留）；已在跑的任务不打断，交活后照常回投与审查。此后你 group_status 看到的成员数不含 TA。`);
+      const ended = terminatedTasks.length
+        ? `\nTA 手上 ${terminatedTasks.length} 条在办任务已随会话一并终止（任务标失败，可重新派给别人）：${terminatedTasks.map((t) => `「${t}」`).join("、")}。`
+        : "";
+      void postToBoss(group, `[群事件] 成员已被用户移出群：${member.name}（${member.role}，id=${member.id}）。\nTA **不在当前成员名单里、不再接任何新活**，TA 的成员会话已被删除（按用户要求：移出即清会话）。${ended}此后你 group_status 看到的成员数不含 TA。`);
     }
-    return { ok: true, member: { id: member.id, name: member.name, role: member.role, status: member.status, source: member.source ?? "engine" } };
+    return {
+      ok: true,
+      member: { id: member.id, name: member.name, role: member.role, status: member.status, source: member.source ?? "engine" },
+      removedThreadId: removedThreadId || undefined,
+    };
   } catch (error: any) {
     bossStore.save();
     return { ok: false, error: String(error?.message ?? error) };

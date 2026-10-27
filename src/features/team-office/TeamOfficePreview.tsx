@@ -164,6 +164,9 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
        ⛔ 优先级最高：中枢会话的 teamId 不是专家团 id ⇒ 本来也落不到下面的专家团分支。
        ⛔ 「正在做」= 敲键盘；其余（空闲/交活待审）= 坐工位待机（⛔ 不许按 running 过滤，
          否则成员干完活就"消失"了 —— 10-05 用户报过同一个毛病）。 */
+    /* ⛔ 10-27：已移出的人（status=removed）不派工位 —— 用户实测「就剩三个，他还显示有删除过的员工」。
+       过滤口径由**调用方**统一决定（`activeMembersOf`，AppView 传参处一处生效）：
+       ⛔ 本组件不认识"群成员语义"（对专家团/委托同样复用），别再在这里写第二份 filter。 */
     if (groupMembers && groupMembers.length) {
       return groupMembers.map((m) => ({
         id: m.id,

@@ -188,7 +188,7 @@ import { TurnReviewBridge } from "../status";
 // 10-04 阶段 5 渲染层插槽：插件往界面挂内容的唯一入口（未注册时渲染 null ⇒ DOM 不变）。
 import { Slot } from "../../runtime/registry";
 import { BossGroupPanel, getBossDirDialogState, getBossThreads, isBossSessionContext, openBossDirDialog, subscribeBossDirDialog, subscribeBossThreads } from "../boss-group-view";
-import { useGroupMembers } from "../boss-group-view/group-members-store";
+import { activeMembersOf, useGroupMembers } from "../boss-group-view";
 import { DeclaredPluginSlots } from "../../runtime/declared-plugin-slots";
 
 
@@ -432,6 +432,12 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     return String(hit?.id ?? "");
   }, [bossThreadsForDir.groups, thread?.id]);
   const officeGroupMembers = useGroupMembers(officeBossGroupId);
+  /* ⛔ 办公室只坐在群的人（10-27：已移出的不派工位）。useMemo 保住数组身份 ——
+     办公室的坐席表是 memo 出来的，每次渲染都换新数组会让它整份重算。 */
+  const officeGroupMembersActive = useMemo(
+    () => activeMembersOf(officeGroupMembers.snapshot.members),
+    [officeGroupMembers.snapshot.members],
+  );
 
   const officeDelegates = Object.values(app.delegateRecords)
     .filter((record) => record.originThreadId === thread?.id && !record.archived)
@@ -640,8 +646,10 @@ export function AppView({ app }: { app: HarnessAppApi }) {
         /* 普通会话也能开办公室 —— 传本会话派出的子会话（**委托登记表**，含已完成的，
            见文件上方 `officeDelegates` 的由来）。 */
         delegatedRuns={officeDelegates}
-        /* ⛔ 中枢会话：办公室坐的是**群里的人**（正在干活的敲键盘，其余待机）。 */
-        groupMembers={officeGroupMembers.snapshot.members}
+        /* ⛔ 中枢会话：办公室坐的是**群里的人**（正在干活的敲键盘，其余待机）。
+           ⛔ 10-27 用户实测「办公室还显示已删除的员工」⇒ 快照里带 removed（成员面板要单列），
+              办公室只坐在群的人 ⇒ 在**传参这一处**用共享口径过滤（team-office 域不认识群成员语义）。 */
+        groupMembers={officeGroupMembersActive}
         /* ⭐ 「我」的工位（10-05 晚）：非专家团模式下把**本会话自己**也放进办公室 ——
            否则本会话的事件（对话框里那些工具步骤）没有任何显示器可演，
            "所有事件接入显示器"就只兑现了一半。 */

@@ -153,7 +153,7 @@ import { visibleTurnWindow, mergeTurnListsById, turnHistoryPlan } from "../../..
 import { setTurnHeightEstimate, setTurnWindowTail, subscribeTurnHistory, turnHistoryFor, turnHistoryVersion } from "../../../../lib/turn-history.mjs";
 import { ExpertTeamEditorModal, SubAgentEditorModal, TeamMemberRail, TeamMemberHistory, DelegatedRail, DelegatedRunPopup, TeamRunPopup } from "../../../experts-teams";
 import { BossGroupMemberRail } from "../../../boss-group-view/BossGroupMemberRail";
-import { useGroupMembers } from "../../../boss-group-view/group-members-store";
+import { activeMembersOf, useGroupMembers } from "../../../boss-group-view/group-members-store";
 /* ⭐ 10-05：普通会话的办公室入口迁到本文件的右侧轨道上 ⇒ 需要那个哨兵 teamId
    （从 team-office 域的 barrel 取，域间只许走 barrel）。 */
 import { OFFICE_SESSION_TEAM_ID } from "../../../team-office";
@@ -722,7 +722,8 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                        · 普通会话 ⇒ DelegatedRail。 */}
                   {bossGroupId && !railTeam && (
                     <BossGroupMemberRail
-                      members={bossGroupMembers.snapshot.members}
+                      /* ⛔ 已移出的成员不再出现在轨上（10-27：与办公室/成员名单同口径） */
+                      members={activeMembersOf(bossGroupMembers.snapshot.members)}
                       /* ⛔⛔ 10-26 用户令：「办公室预览图标放这里」—— 群成员轨**末位**。
                          ⛔ 传的是**群 id**：办公室靠它认出"这是中枢会话"（坐的是群里的人）。 */
                       onOpenOffice={() => setCompanyPreviewTeamId(bossGroupId)}

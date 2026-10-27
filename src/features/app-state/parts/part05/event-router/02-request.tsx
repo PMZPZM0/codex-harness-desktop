@@ -14,6 +14,7 @@ import { USER_PERSONAS, userPersonaFields } from "../../../../../lib/user-person
    会话单例在 ui-sketch 那边持有（iframe 由弹窗 attach），这里只发请求。 */
 import { applySketchDoc, requestSketchDoc, summarizeDoc, validateSketchDoc, waitSketchReady } from "../../../../ui-sketch";
 import { ensureBossMemoryWorkspace } from "../../../../boss-group-view";
+import { refreshGroupMembers } from "../../../../boss-group-view";
 
 /** ⛔ 同一个 tool call 只执行一次（09-22 实测：一次 subagent_invoke 被渲染层执行 7 次 →
  *  7 个同名会话、每个约 1MB rollout、query 逐字相同 ⇒ 7 倍 token）。重复到达复用首次结果。 */
@@ -282,8 +283,22 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       groupId: String(args.groupId ?? ""), action: "remove",
                       memberId: String(args.memberId ?? ""),
                     });
-                    if (!res?.ok) await bad(`移人失败：${res?.error ?? "未知原因"}`);
-                    else await ok(`已移出：${res.member?.name}。会话与轨迹保留；TA 正在跑的任务不打断（交活后照常审查），未派的任务会自动换人。`);
+                    if (!res?.ok) { await bad(`移人失败：${res?.error ?? "未知原因"}`); }
+                    else {
+                      /* 10-27 用户令：「移除了群成员，这个旧的群成员回合就同步删除掉会话，同步自动刷新会话列表」
+                         ⇒ 宿主回的 removedThreadId 走**渲染层唯一删除链路** deleteThreadCore
+                            （引擎 thread/delete + 墓碑 + 缓存 + 侧栏剔行），不另写一份删除。
+                         ⛔ 不删就会在侧栏留一串「中枢调度」孤儿会话（用户截图实证）。 */
+                      const removedThreadId = String(res.removedThreadId ?? "");
+                      const sameAsBoss = removedThreadId && removedThreadId === String(event.params?.threadId ?? "");
+                      if (removedThreadId && !sameAsBoss) {
+                        await bag.deleteThreadCore(removedThreadId).catch(() => undefined);
+                      }
+                      /* 成员名单 / 办公室 / 成员轨共用同一份快照 ⇒ 立刻重拉，不等 4s 轮询。 */
+                      void refreshGroupMembers(String(args.groupId ?? ""));
+                      await ok(`已移出：${res.member?.name}。TA 的成员会话已删除${sameAsBoss ? "（跳过：正好是当前会话）" : ""}，`
+                        + `正在跑的活随之终止，未派的任务会自动换人；成员名单与办公室已同步刷新。`);
+                    }
                   } else if (tool === "group_delete") {
                     const res = await window.codex.deleteBossGroup({
                       groupId: String(args.groupId ?? ""),
