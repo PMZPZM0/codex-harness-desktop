@@ -260,7 +260,12 @@ export function cleanThreadDisplayTitle(
 
   const picked = firstNonEmptyLine(raw) || firstNonEmptyLine(opts?.preview) || "";
   if (!picked) return fallback;
-  return picked.length > maxLength ? picked.slice(0, maxLength).trimEnd() + "…" : picked;
+  /* ⛔ 10-28 实测（主界面左栏截图）：老会话的首条消息是群成员派活格式 `标题：xxx`，
+     引擎把整行当会话名 ⇒ 左栏显示成「标题：探讨：回三行字」。
+     用户正文里的 `标题：` 是**投递协议的一部分**，不是名字（同本文件群成员那处的判断）。
+     ⇒ 只在**显示层**剥掉这个前缀，⛔ 不改存储（改存储会让老会话的历史名对不上）。 */
+  const unprefixed = picked.replace(/^标题\s*[：:]\s*/, "").trim() || picked;
+  return unprefixed.length > maxLength ? unprefixed.slice(0, maxLength).trimEnd() + "…" : unprefixed;
 }
 
 // —— 引用会话记录协议：生成侧（与 parseUserRefs 的 threadRefPattern 同文件维护，防格式漂移） ——
