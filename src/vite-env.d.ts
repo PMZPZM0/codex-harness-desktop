@@ -373,25 +373,7 @@ type FavoriteItem = {
 };
 type FavoriteDeleteResult = { items: FavoriteItem[]; removed: number };
 
-/* ── 输入框左侧竖条的两个本地库（10-27）────────────────────────────────────
-   vault   = 密码本（safeStorage 加密；渲染层只拿 hasSecret，永远没有明文）
-   journal = 开发日记（userData/dev-journal/YYYY-MM-DD.md，按天一个文件） */
-type VaultItem = {
-  id: string;
-  title: string;
-  username?: string;
-  url?: string;
-  note?: string;
-  /** 有密码 = true。⛔ 明文永远不返回渲染层（复制走 vaultCopy，由主进程写剪贴板） */
-  hasSecret: boolean;
-  updatedAt: string;
-};
-type JournalDay = { date: string; title: string; bytes: number; updatedAt: string };
-
-/* 竖条面板 / 功能入口菜单的扩展目录（extensions:catalog）。扩展项只能声明封闭动作集。 */
-type ExtAction = { type: "url"; target: string } | { type: "settings"; target: string } | { type: "text"; body: string };
-type RailPanelSpec = { id: string; label: string; icon?: string; kind: "builtin" | "external"; action?: ExtAction; order?: number };
-type MenuEntrySpec = { id: string; label: string; icon?: string; action: ExtAction; order?: number };
+/* 输入框竖条 / 密码本 / 开发日记 / 扩展目录的类型统一定义在 src/lib/rail-ipc-types.d.ts（跨进程单一来源）。 */
 /** 写入记忆金字塔的层：user=L0 用户档案 · project=L1 项目记忆 · background=L3 项目背景 · lessons=L2 纪律 */
 type MemoryLayerScope = "user" | "project" | "background" | "lessons";
 type FavoritesToMemoryResult = { ok: boolean; written: number; error?: string };

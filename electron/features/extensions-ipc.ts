@@ -22,29 +22,13 @@ import path from "node:path";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
-export type ExternalAction =
-  | { type: "url"; target: string }
-  | { type: "settings"; target: string }
-  | { type: "text"; body: string };
+import type { ExtAction, MenuEntrySpec, RailPanelSpec } from "../../src/lib/rail-ipc-types";
+export type { ExtAction, MenuEntrySpec, RailPanelSpec };
+/* 兼容旧名字：ExternalAction 就是 ExtAction（同一定义，别再各写一份） */
+export type ExternalAction = ExtAction;
 
-export type RailPanelSpec = {
-  id: string;
-  label: string;
-  /** 图标名（渲染层映射到 lucide 图标；认不出就用默认图标） */
-  icon?: string;
-  /** builtin = 应用自带面板；external = 用户扩展（按 action 渲染） */
-  kind: "builtin" | "external";
-  action?: ExternalAction;
-  order?: number;
-};
-
-export type MenuEntrySpec = {
-  id: string;
-  label: string;
-  icon?: string;
-  action: ExternalAction;
-  order?: number;
-};
+/* 10-27 审查：扩展项只能跳**真实存在的**设置页 —— 白名单与渲染层侧栏同一份（settingsNav）。 */
+const SETTINGS_PAGES = new Set(["general","appearance","personalization","pet","voice","screenshot","model","relay","openai","cloud","agents","agentteam","expert-center","teams","boss-groups","automation","schedule","hooks","ssh","skills","plugins","ui-skin","mcp","commands","soul-market","memory","knowledge-base","favorites","app-lock","devtools","storage","usage","backup","archive"]);
 
 const BUILTIN_RAIL: RailPanelSpec[] = [
   { id: "favorites", label: "收藏夹", icon: "bookmark", kind: "builtin", order: 10 },
@@ -62,7 +46,7 @@ function normalizeAction(raw: unknown): ExternalAction | null {
   const type = String(input.type ?? "").trim();
   const target = String(input.target ?? "").trim();
   if (type === "url") return /^https?:\/\//i.test(target) ? { type: "url", target } : null;
-  if (type === "settings") return target ? { type: "settings", target } : null;
+  if (type === "settings") return target && SETTINGS_PAGES.has(target) ? { type: "settings", target } : null;
   if (type === "text") return target ? { type: "text", body: target } : null;
   return null;
 }
