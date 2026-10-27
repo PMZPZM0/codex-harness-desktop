@@ -4992,7 +4992,7 @@ export async function run() {
     (/\.reasoning-strip-marquee\.is-scrolling/.test(styles54) && /@keyframes reasoning-strip-marquee/.test(styles54) && /animation-play-state: paused/.test(styles54) && /prefers-reduced-motion/.test(styles54) && /\.reasoning-strip-body \{[\s\S]{0,200}max-height: min\(50vh, 420px\)/.test(styles54) && /styles\/40-reasoning-strip/.test(stylesEntry) ? ok : fail)(
       "【161】直播横滚用 CSS transform（不触发 scroll 事件 ⇒ 时间线不上下抖）；悬停暂停 / 减少动效静止；展开全文最高 50vh"
     );
-    (appearanceSrc.includes("思考板块展示") && appearanceSrc.includes('setReasoningDisplayMode("auto")') && appearanceSrc.includes('setReasoningDisplayMode("strip")') && appearanceSrc.includes("reasoning-mode-seg") && appearanceSrc.indexOf("思考板块展示") < appearanceSrc.indexOf("<FunctionMenuSettings") && !generalSrc.includes("思考板块展示") ? ok : fail)(
+    (appearanceSrc.includes("思考板块展示") && appearanceSrc.includes('setReasoningDisplayMode("auto")') && appearanceSrc.includes('setReasoningDisplayMode("strip")') && appearanceSrc.includes('aria-label="思考板块展示"') && appearanceSrc.indexOf("思考板块展示") < appearanceSrc.indexOf("<FunctionMenuSettings") && !generalSrc.includes("思考板块展示") ? ok : fail)(
       "【161】设置 → 外观有两档切换（自适应展开 / 长条按行），在「功能入口」上方，点击即时生效"
     );
     // ⑮ 用户 10-20 审查「回合内容超长时，运行中会不会有不进折叠的」：
