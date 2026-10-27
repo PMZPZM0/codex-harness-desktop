@@ -735,8 +735,14 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
             <div className="thread-list">
               {loading ? Array.from({ length: 5 }).map((_, index) => <div className="thread-skeleton shimmer" key={index} />) : viewTab === "tasks" ? (
                 /* 10-25 用户令：「项目选项旁边加一个任务选项」= 平铺全部会话（置顶优先、按最近活动排；
-                   与项目视图共用 renderDispatchedList 同一渲染器）。 */
-                <>{renderDispatchedList([...listThreads].sort((a, b) => Number(pinnedThreads.includes(b.id)) - Number(pinnedThreads.includes(a.id)) || b.updatedAt - a.updatedAt))}</>
+                   与项目视图共用 renderDispatchedList 同一渲染器）。
+                   10-27 用户令（截图）：「已经显示调度会话，任务列表外面又全部显示一次」
+                   ⇒ 与项目视图同口径：**先按 sourcedChildIds 把被调度会话从顶层剔除**，
+                      它们缩进挂在发起调度的会话下面（同一个「↳ 调度会话 · N」折叠块），不再平铺重复。
+                   ⛔ 这是 renderDispatchedList 的既有契约（见上面那段注释），漏了就是每个子会话多一行。 */
+                <>{renderDispatchedList([...listThreads]
+                  .filter((entry) => !sourcedChildIds.has(entry.id))
+                  .sort((a, b) => Number(pinnedThreads.includes(b.id)) - Number(pinnedThreads.includes(a.id)) || b.updatedAt - a.updatedAt))}</>
               ) : viewTab === "projects" ? (
                 <div className="project-list">
                   {projectGroups.length ? projectGroups.map(([cwd, items]) => {
