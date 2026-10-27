@@ -425,14 +425,17 @@ function dispatchMcpTools(): unknown[] {
     },
     {
       name: "subagent_save",
-      description: "创建或更新一个子智能体（轻量单人代理）。name 与 systemPrompt 必填；同 name 即更新。",
+      description: "创建或更新一个子智能体（轻量自定义角色，独立上下文）。name 与 systemPrompt 必填，同 name 即更新；省略的字段保持原值（新建时模型/沙箱/审批默认跟随主对话）。保存后到「设置 → 专家/专家团 → 子智能体」刷新即可见；会话「调度」面板勾选「子智能体」后，用 agent_invoke（kind=\"subagent\"）派活。",
       inputSchema: {
         type: "object",
         properties: {
           name: { type: "string", description: "子智能体名（如「周报整理员」）" },
           systemPrompt: { type: "string", description: "系统提示词（角色 + 工作方式 + 输出规范；必填）" },
           description: { type: "string", description: "可选：一句话说明它负责什么（缺省自动生成）" },
-          effort: { type: "string", description: "可选：推理力度（缺省 high）" },
+          effort: { type: "string", enum: ["low", "medium", "high", "xhigh"], description: "可选：推理强度（低/中/高/极高，缺省 high）" },
+          model: { type: "string", description: "可选：模型 id（省略 = 新建跟随主对话 / 更新保持原值）" },
+          sandbox: { type: "string", enum: ["read-only", "workspace-write", "danger-full-access"], description: "可选：沙箱（省略 = 新建跟随主对话 / 更新保持原值）" },
+          approvalPolicy: { type: "string", enum: ["never", "on-request", "on-failure", "untrusted"], description: "可选：审批策略（省略 = 新建跟随主对话 / 更新保持原值）" },
         },
         required: ["name", "systemPrompt"],
       },

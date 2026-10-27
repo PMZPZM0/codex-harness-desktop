@@ -7,6 +7,7 @@
  */
 import "@xterm/xterm/css/xterm.css";
 import type { Bag } from "../../bag-types";
+import { normalizeSubagentEffort } from "../../../../../lib/effort";
 
 export function usePart07b1(bag: Bag) {
   // 单卡开关：停用后该 MCP 整段从引擎 config.toml 移除，启用时写回，配置与密钥始终保留
@@ -134,7 +135,7 @@ bag.deleteSubAgent = deleteSubAgent as typeof bag.deleteSubAgent;
 bag.openNewSubAgent = openNewSubAgent as typeof bag.openNewSubAgent;
 
   function openEditSubAgent(agent: SubAgentEntry) {
-    bag.setSubAgentDraft({ ...agent });
+    bag.setSubAgentDraft({ ...agent, effort: normalizeSubagentEffort(agent.effort) });
     bag.setSubAgentEditorOpen(true);
   }
 bag.openEditSubAgent = openEditSubAgent as typeof bag.openEditSubAgent;

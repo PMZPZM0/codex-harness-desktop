@@ -20,13 +20,9 @@
  */
 
 import { readSubAgents, writeSubAgents } from "../main/09-agents-plugins";
-import type { SubAgentConfig } from "../main";
+import { saveSubAgentConfig } from "../subagent-config";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
-
-function safeAgentId(name: string) {
-  return String(name ?? "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64) || `agent-${Date.now()}`;
-}
 
 export const subagentsFeature = defineFeature<null>({
   id: "subagents",
@@ -40,32 +36,7 @@ export const subagentsFeature = defineFeature<null>({
       return list;
     });
     ipcHost.handle("subagents:save", async (_event, input: any) => {
-      const list = await readSubAgents();
-      const now = new Date().toISOString();
-      const name = String(input.name ?? "").trim();
-      if (!name) throw new Error("子智能体名称不能为空");
-      const description = String(input.description ?? "").trim() || `由「${name}」负责的子任务`;
-      const systemPrompt = String(input.systemPrompt ?? "").trim() || `你是「${name}」，请按你的角色完成任务并返回结构化结果。`;
-      const effort = String(input.effort ?? "high");
-      const inheritModel = input.inheritModel !== false;
-      const inheritSandbox = input.inheritSandbox !== false;
-      const inheritApproval = input.inheritApproval !== false;
-      const id = input.id ? safeAgentId(String(input.id)) : safeAgentId(name);
-      const config: SubAgentConfig = {
-        id, name, description, systemPrompt, effort,
-        inheritModel,
-        model: inheritModel ? undefined : String(input.model ?? "").trim() || undefined,
-        inheritSandbox,
-        sandbox: inheritSandbox ? undefined : (input.sandbox ?? "workspace-write"),
-        inheritApproval,
-        approvalPolicy: inheritApproval ? undefined : (input.approvalPolicy ?? "on-request"),
-        enabled: input.enabled !== false,
-        createdAt: list.find((entry) => entry.id === id)?.createdAt ?? now,
-        updatedAt: now,
-      };
-      const next = list.some((entry) => entry.id === id) ? list.map((entry) => entry.id === id ? config : entry) : [config, ...list];
-      await writeSubAgents(next);
-      return config;
+      return (await saveSubAgentConfig(input ?? {})).agent;
     });
     ipcHost.handle("subagents:remove", async (_event, id: string) => {
       const list = await readSubAgents();

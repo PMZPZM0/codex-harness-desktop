@@ -22,7 +22,7 @@ import { loadVoiceSettings } from "../voice/voice-settings";
 import { encodeWav16 } from "../voice/voice-profiles";
 import { writeConnectors } from "../connector-store";
 import { boardsFileOf, readWorkflowBoards, writeWorkflowBoards } from "./drama-workflow-boards";
-import { readSubAgents, writeSubAgents } from "../main/09-agents-plugins";
+import { saveSubAgentConfig } from "../subagent-config";
 import { runDelegatedTask } from "../features/delegation";
 import { delegateRegistry, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
 import { mutableState, scheduler } from "../main";
@@ -325,24 +325,23 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     return { ok: true, output: lines.join("\n") };
   }
   if (name === "subagent_save") {
-    const list = await readSubAgents();
-    const now = new Date().toISOString();
     const agentName = String(args.name ?? "").trim();
     if (!agentName) return { ok: false, error: "name 必填" };
-    const config = {
-      id: agentName, name: agentName,
-      description: String(args.description ?? "").trim() || `由「${agentName}」负责的子任务`,
-      systemPrompt: String(args.systemPrompt ?? "").trim(),
-      effort: String(args.effort ?? "high"),
-      inheritModel: true, inheritSandbox: true, inheritApproval: true,
-      enabled: true,
-      createdAt: list.find((entry) => entry.id === agentName)?.createdAt ?? now,
-      updatedAt: now,
-    };
-    const existed = list.some((entry) => entry.id === agentName);
-    const next = existed ? list.map((entry) => (entry.id === agentName ? config : entry)) : [config, ...list];
-    await writeSubAgents(next);
-    return { ok: true, output: `已${existed ? "更新" : "创建"}子智能体「${agentName}」（id: ${agentName}）。列表在重启应用后可见。` };
+    if (!String(args.systemPrompt ?? "").trim()) return { ok: false, error: "systemPrompt 必填（子智能体没有系统提示词就无法工作）" };
+    try {
+      const { agent, created } = await saveSubAgentConfig({
+        name: agentName,
+        description: args.description === undefined ? undefined : String(args.description),
+        systemPrompt: String(args.systemPrompt),
+        effort: args.effort === undefined ? undefined : String(args.effort),
+        model: args.model === undefined ? undefined : String(args.model),
+        sandbox: args.sandbox === undefined ? undefined : String(args.sandbox),
+        approvalPolicy: args.approvalPolicy === undefined ? undefined : String(args.approvalPolicy),
+      });
+      return { ok: true, output: `已${created ? "创建" : "更新"}子智能体「${agent.name}」（id: ${agent.id}，推理强度: ${agent.effort}）。在「设置 → 专家/专家团 → 子智能体」刷新即可见；会话顶栏「调度」面板勾选「子智能体」后，用 agent_invoke（kind="subagent"）派活。` };
+    } catch (error: any) {
+      return { ok: false, error: error?.message ?? String(error) };
+    }
   }
   if (name === "voice_generate") {
     const text = String(args.text ?? "").trim();

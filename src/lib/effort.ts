@@ -33,6 +33,15 @@ export function normalizeEffort(value: string | null | undefined): string {
   return (ALL_EFFORTS as readonly string[]).includes(value) ? value : DEFAULT_EFFORT;
 }
 
+/** 子智能体的推理强度与聊天滑块同一套四档；历史扩展档（极简/最高/max）归一到相邻档。 */
+export function normalizeSubagentEffort(value: string | null | undefined): string {
+  const raw = String(value ?? "").trim();
+  if ((CUSTOM_MODEL_EFFORTS as readonly string[]).includes(raw)) return raw;
+  if (raw === "minimal") return "low";
+  if (raw === "ultra" || raw === "max") return "xhigh";
+  return DEFAULT_EFFORT;
+}
+
 /**
  * 模型声明的档位列表 → UI 菜单/catalog 实际可选项。
  * ① 未声明（undefined / 空数组）→ 新默认四档；② 旧版自动生成的声明（精确等于

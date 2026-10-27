@@ -8,6 +8,8 @@ import { PageInfo } from "../../components/SettingsHead";
 import { ArrowLeft, Bot, Check, Code2, PenLine, Plus, RefreshCw, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { effortLabels } from "../../lib/effort-labels";
+import { normalizeSubagentEffort } from "../../lib/effort";
+import { SUBAGENT_APPROVAL_OPTIONS, SUBAGENT_SANDBOX_OPTIONS, subagentFieldLabel } from "../../lib/subagent-fields";
 import { SubAgentEditorModal } from "../../features/experts-teams";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
@@ -31,16 +33,16 @@ export function AgentsSettingsSection(props: AgentsSettingsSectionProps) {
                       <strong className="subagent-name">{agent.name}</strong>
                       <p className="subagent-desc">{agent.description || "暂无描述"}</p>
                       <div className="subagent-meta">
-                        <span title="推理强度"><Sparkles size={11} />{effortLabels[agent.effort] ?? agent.effort}</span>
+                        <span title="推理强度"><Sparkles size={11} />{effortLabels[normalizeSubagentEffort(agent.effort)] ?? agent.effort}</span>
                         <span title="模型"><Code2 size={11} />{agent.inheritModel ? "跟随主对话" : (agent.model || "未指定")}</span>
-                        <span title="沙箱"><ShieldCheck size={11} />{agent.inheritSandbox ? "跟随主对话" : (agent.sandbox ?? "未指定")}</span>
+                        <span title="沙箱"><ShieldCheck size={11} />{agent.inheritSandbox ? "跟随主对话" : subagentFieldLabel(SUBAGENT_SANDBOX_OPTIONS, agent.sandbox)}</span>
                       </div>
                       <div className="subagent-meta">
-                        <span title="审批策略"><Check size={11} />{agent.inheritApproval ? "跟随主对话" : (agent.approvalPolicy ?? "未指定")}</span>
-                        <span title="调度工具"><Bot size={11} />agent_invoke · subagent</span>
+                        <span title="审批策略"><Check size={11} />{agent.inheritApproval ? "跟随主对话" : subagentFieldLabel(SUBAGENT_APPROVAL_OPTIONS, agent.approvalPolicy)}</span>
+                        <span title="Codex 调用工具"><Bot size={11} />agent_invoke</span>
                       </div>
                       <div className="subagent-card-actions"><button className="secondary-setting" onClick={() => openEditSubAgent(agent)}><PenLine size={12} />编辑</button><button className="icon-button" title="删除" onClick={() => void deleteSubAgent(agent.id)}><Trash2 size={13} /></button></div>
-                    </article>)}{!subAgents.length && <div className="subagent-empty"><Bot size={28} /><strong>还没有子智能体</strong><p>点击「新建子智能体」即可创建；它会跟随当前会话配置（模型、推理强度、沙箱、审批），并可按会话开启的「调度」被派活。</p><button className="primary-setting" onClick={openNewSubAgent}><Plus size={14} />创建第一个子智能体</button></div>}</div>
+                    </article>)}{!subAgents.length && <div className="subagent-empty"><Bot size={28} /><strong>还没有子智能体</strong><p>点击「新建子智能体」即可创建；模型 / 沙箱 / 审批默认跟随当前会话，也可以在会话顶栏「调度」面板勾选「子智能体」后派活。</p><button className="primary-setting" onClick={openNewSubAgent}><Plus size={14} />创建第一个子智能体</button></div>}</div>
 
                     {subAgentEditorOpen && subAgentDraft && <SubAgentEditorModal draft={subAgentDraft} onChange={setSubAgentDraft} onClose={() => { setSubAgentEditorOpen(false); setSubAgentDraft(null); }} onSave={(draft) => void saveSubAgent(draft)} />}
                   </section>

@@ -1,12 +1,25 @@
 /**
  * ExpertsTeams 的「modals」部分（09-22 从同目录 ExpertsTeams.tsx 按顶层声明分出，纯搬迁、零改写）。
  * ⛔ 逻辑与原地逐字一致，只补了顶部 import 与 `export`。
+ * 10-27：子智能体编辑器重做（四档推理强度 / 共享胶囊开关 / 行式继承项 / 工具说明）—— 仅此段偏离"纯搬迁"。
  */
 import { AppSelect } from "../../../components/AppSelect";
+import { ToggleSwitch } from "../../../components/SettingsWidgets";
 import { createPortal } from "react-dom";
-import { Users, X, Plus, Trash2, Info, Check, Bot, Sparkles, LoaderCircle, Clock3 } from "lucide-react";
-import { ALL_EFFORTS } from "../../../lib/effort";
+import { Users, X, Plus, Trash2, Info, Check, Bot } from "lucide-react";
+import { CUSTOM_MODEL_EFFORTS } from "../../../lib/effort";
 import { effortLabels } from "../../../lib/effort-labels";
+import { SUBAGENT_APPROVAL_OPTIONS, SUBAGENT_SANDBOX_OPTIONS } from "../../../lib/subagent-fields";
+
+function SubAgentToggle({ checked, label, onChange }: { checked: boolean; label: string; onChange: (next: boolean) => void }) {
+  return (
+    <div className="subagent-toggle">
+      <ToggleSwitch checked={checked} label={label} onChange={onChange} />
+      <span>{label}</span>
+    </div>
+  );
+}
+
 export function SubAgentEditorModal({ draft, onChange, onClose, onSave }: { draft: SubAgentEntry; onChange: (draft: SubAgentEntry) => void; onClose: () => void; onSave: (draft: SubAgentEntry) => void }) {
   const valid = Boolean(draft.name.trim() && draft.systemPrompt.trim());
   return createPortal(
@@ -15,38 +28,48 @@ export function SubAgentEditorModal({ draft, onChange, onClose, onSave }: { draf
         <header>
           <div className="connector-setup-title">
             <span><Bot size={17} /></span>
-            <div><strong>{draft.id ? `编辑「${draft.name}」` : "新建子智能体"}</strong><p>子智能体会跟随主对话的模型/沙箱/审批配置；保存后会被 Codex 通过 dynamicTools 调用。</p></div>
+            <div><strong>{draft.id ? `编辑「${draft.name}」` : "新建子智能体"}</strong><p>轻量自定义角色，独立上下文、独立产出；模型 / 沙箱 / 审批默认跟随主对话。</p></div>
           </div>
           <button className="icon-button relay-modal-close" title="关闭" onClick={onClose}><X size={16} /></button>
         </header>
         <div className="connector-form">
           <label><span>名称 <em>必填</em></span><input autoFocus value={draft.name} onChange={(event) => onChange({ ...draft, name: event.target.value })} placeholder="例如：代码审查员 / Bug Hunter / 测试工程师" /></label>
           <label><span>简介 <small>一句话说明它负责什么</small></span><input value={draft.description} onChange={(event) => onChange({ ...draft, description: event.target.value })} placeholder="例如：专门审查 PR 改动并列出潜在问题" /></label>
-          <label><span>系统提示词 <em>必填</em></span><textarea rows={6} value={draft.systemPrompt} onChange={(event) => onChange({ ...draft, systemPrompt: event.target.value })} placeholder="例如：你是一名资深前端审查员，专注 React 性能、可访问性与安全问题。请基于用户给定的代码或需求给出结构化结论。" /></label>
-          <div className="settings-grid three subagent-config-grid">
-            <label><span>推理强度</span><AppSelect value={draft.effort} onChange={(v) => onChange({ ...draft, effort: v })} options={[...(ALL_EFFORTS).map((level) => ({ value: (level), label: (`${effortLabels[level] ?? level}`), }))]} /></label>
-            <label><span>模型</span>
-              <label className="subagent-toggle"><input type="checkbox" checked={draft.inheritModel} onChange={(event) => onChange({ ...draft, inheritModel: event.target.checked, model: event.target.checked ? undefined : draft.model })} />跟随主对话</label>
-              {!draft.inheritModel && <input value={draft.model ?? ""} onChange={(event) => onChange({ ...draft, model: event.target.value })} placeholder="例如：claude-sonnet-4" />}
-            </label>
-            <label><span>沙箱</span>
-              <label className="subagent-toggle"><input type="checkbox" checked={draft.inheritSandbox} onChange={(event) => onChange({ ...draft, inheritSandbox: event.target.checked, sandbox: event.target.checked ? undefined : draft.sandbox })} />跟随主对话</label>
-              {!draft.inheritSandbox && <AppSelect value={draft.sandbox ?? "workspace-write"} onChange={(v) => onChange({ ...draft, sandbox: v as any })} options={[{ value: "read-only", label: "只读" }, { value: "workspace-write", label: "工作区写入" }, { value: "danger-full-access", label: "完全访问" }]} />}
-            </label>
+          <label><span>系统提示词 <em>必填</em></span><textarea rows={4} value={draft.systemPrompt} onChange={(event) => onChange({ ...draft, systemPrompt: event.target.value })} placeholder="例如：你是一名资深前端审查员，专注 React 性能、可访问性与安全问题。请基于用户给定的代码或需求给出结构化结论。" /></label>
+          <div className="settings-grid two subagent-config-grid">
+            <label><span>推理强度</span><AppSelect value={draft.effort} onChange={(v) => onChange({ ...draft, effort: v })} options={CUSTOM_MODEL_EFFORTS.map((level) => ({ value: level, label: effortLabels[level] ?? level }))} /></label>
+            <div className="subagent-field"><span>状态</span>
+              <SubAgentToggle checked={draft.enabled} label={draft.enabled ? "已启用" : "已停用"} onChange={(next) => onChange({ ...draft, enabled: next })} />
+            </div>
           </div>
-          <div className="settings-grid three subagent-config-grid">
-            <label><span>审批策略</span>
-              <label className="subagent-toggle"><input type="checkbox" checked={draft.inheritApproval} onChange={(event) => onChange({ ...draft, inheritApproval: event.target.checked, approvalPolicy: event.target.checked ? undefined : draft.approvalPolicy })} />跟随主对话</label>
-              {!draft.inheritApproval && <AppSelect value={draft.approvalPolicy ?? "on-request"} onChange={(v) => onChange({ ...draft, approvalPolicy: v as any })} options={[{ value: "never", label: "从不" }, { value: "on-request", label: "按需" }, { value: "on-failure", label: "失败时" }, { value: "untrusted", label: "不可信" }]} />}
-            </label>
-            <label><span>状态</span>
-              <label className="subagent-toggle"><input type="checkbox" checked={draft.enabled} onChange={(event) => onChange({ ...draft, enabled: event.target.checked })} />已启用</label>
-            </label>
-            <label><span>工具名</span>
-              <div className="subagent-tool-name"><code>agent_invoke · subagent</code></div>
-            </label>
+          <div className="subagent-config-list">
+            <div className="subagent-config-row">
+              <div className="subagent-config-name"><strong>模型</strong><small>关闭继承后可填模型 id</small></div>
+              <div className="subagent-config-body">
+                <SubAgentToggle checked={draft.inheritModel} label="跟随主对话" onChange={(next) => onChange({ ...draft, inheritModel: next, model: next ? undefined : draft.model })} />
+                {!draft.inheritModel && <input value={draft.model ?? ""} onChange={(event) => onChange({ ...draft, model: event.target.value })} placeholder="模型 id（如 gpt-6-astra）" />}
+              </div>
+            </div>
+            <div className="subagent-config-row">
+              <div className="subagent-config-name"><strong>沙箱</strong><small>能读写哪些文件</small></div>
+              <div className="subagent-config-body">
+                <SubAgentToggle checked={draft.inheritSandbox} label="跟随主对话" onChange={(next) => onChange({ ...draft, inheritSandbox: next, sandbox: next ? undefined : draft.sandbox })} />
+                {!draft.inheritSandbox && <AppSelect value={draft.sandbox ?? "workspace-write"} onChange={(v) => onChange({ ...draft, sandbox: v as any })} options={SUBAGENT_SANDBOX_OPTIONS} />}
+              </div>
+            </div>
+            <div className="subagent-config-row">
+              <div className="subagent-config-name"><strong>审批策略</strong><small>执行动作前要不要问你</small></div>
+              <div className="subagent-config-body">
+                <SubAgentToggle checked={draft.inheritApproval} label="跟随主对话" onChange={(next) => onChange({ ...draft, inheritApproval: next, approvalPolicy: next ? undefined : draft.approvalPolicy })} />
+                {!draft.inheritApproval && <AppSelect value={draft.approvalPolicy ?? "on-request"} onChange={(v) => onChange({ ...draft, approvalPolicy: v as any })} options={SUBAGENT_APPROVAL_OPTIONS} />}
+              </div>
+            </div>
           </div>
-          <div className="connector-example"><Info size={14} /><span>Codex 调用时会附带 <code>name</code> 与 <code>query</code>；主会话配置变更后，子智能体会自动跟随。</span></div>
+          <div className="subagent-tool-box">
+            <div className="subagent-tool-row"><span className="subagent-tool-kind">派活</span><code>agent_invoke</code><small>kind="subagent"，附 name / query</small></div>
+            <div className="subagent-tool-row"><span className="subagent-tool-kind">建 / 改</span><code>subagent_save</code><small>harness_tools 网关，同名即更新</small></div>
+          </div>
+          <div className="connector-example"><Info size={14} /><span>先在会话顶栏「调度」面板勾选「子智能体」，Codex 才会派活；未关闭继承的项会随主对话实时生效。</span></div>
         </div>
         <footer>
           <button className="secondary-setting" onClick={onClose}>取消</button>
