@@ -17,7 +17,7 @@
  * 跨会话：挂在输入框上 ⇒ 每个会话同一个组件；展开状态存 localStorage，所有会话一致。
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { AnchorPopover } from "../../components/AnchorPopover";
 import { Bookmark, ChevronRight, ExternalLink, KeyRound, NotebookPen, Puzzle, Smile, X } from "lucide-react";
 import type { HarnessAppApi } from "../app-state/useHarnessApp";
 import { FavoritesSettingsSection } from "../settings-favorites/FavoritesSettingsSection";
@@ -48,32 +48,12 @@ const PANEL_SIZE: Record<string, { w: number; h: number }> = {
 };
 const DEFAULT_SIZE = { w: 380, h: 360 };
 
-/** 弹层定位：右开优先 → 放不下翻左 → 都夹进视口（8px 安全边）。 */
-export function placePanel(anchor: DOMRect, size: { w: number; h: number }, prefer: "auto" | "right" | "left" = "auto", viewport = { w: window.innerWidth, h: window.innerHeight }) {
-  const gap = 10;
-  const pad = 8;
-  const w = Math.min(size.w, viewport.w - pad * 2);
-  const h = Math.min(size.h, viewport.h - pad * 2);
-  const rightRoom = viewport.w - anchor.right - gap;
-  const leftRoom = anchor.left - gap;
-  /* ⛔ 用户报「这个按键点击没反应」：原来每次都是同样的 auto 判定 ⇒ 算出同一个位置。
-     现在带 prefer：点一次在「右开 / 左开」之间真的翻，翻过去放不下才回落到能放的一侧。 */
-  const wantRight = prefer === "right" || (prefer === "auto" && (rightRoom >= w || rightRoom >= leftRoom));
-  let left = wantRight ? anchor.right + gap : anchor.left - gap - w;
-  left = Math.max(pad, Math.min(left, viewport.w - w - pad));
-  const centerY = anchor.top + anchor.height / 2;
-  let top = centerY - h / 2;
-  top = Math.max(pad, Math.min(top, viewport.h - h - pad));
-  return { left, top, width: w, height: h };
-}
-
 export function ComposerRail({ app }: { app: HarnessAppApi }) {
   const [open, setOpen] = useState<boolean>(() => {
     try { return localStorage.getItem("composer-rail-open") === "1"; } catch { return false; }
   });
   const [panels, setPanels] = useState<RailPanelSpec[]>(FALLBACK_PANELS);
   const [panelId, setPanelId] = useState<string | null>(null);
-  const [rect, setRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   /** 贴边按钮：auto → 右 → 左 → 右 …（真翻边，不是重算同一个位置） */
   const [prefer, setPrefer] = useState<"auto" | "right" | "left">("auto");
   const railRef = useRef<HTMLDivElement>(null);
@@ -111,32 +91,6 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
       return next;
     });
   }, []);
-
-  const reposition = useCallback(() => {
-    const anchor = railRef.current?.getBoundingClientRect();
-    if (!anchor || !panelId) { setRect(null); return; }
-    setRect(placePanel(anchor, PANEL_SIZE[panelId] ?? DEFAULT_SIZE, prefer));
-  }, [panelId, prefer]);
-
-  useLayoutEffect(() => { reposition(); }, [reposition, open]);
-
-  useEffect(() => {
-    if (!panelId) return;
-    const onDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (panelRef.current?.contains(target) || railRef.current?.contains(target)) return;
-      setPanelId(null);
-    };
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setPanelId(null); };
-    window.addEventListener("mousedown", onDown, true);
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("resize", reposition);
-    return () => {
-      window.removeEventListener("mousedown", onDown, true);
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", reposition);
-    };
-  }, [panelId, reposition]);
 
   /** 用户扩展项：按封闭动作集执行（⛔ 不执行命令）。 */
   const runExternal = useCallback((entry: RailPanelSpec) => {
@@ -182,18 +136,24 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
         </div>
       )}
 
-      {active && rect && createPortal(
-        <div
+      {active && (
+        <AnchorPopover
+          open
+          anchor={railRef.current}
+          ignoreRef={railRef}
+          onClose={() => setPanelId(null)}
+          axis="x"
+          align="center"
+          prefer={prefer}
+          width={PANEL_SIZE[active.id]?.w ?? DEFAULT_SIZE.w}
+          height={PANEL_SIZE[active.id]?.h ?? DEFAULT_SIZE.h}
           className="composer-rail-panel"
-          ref={panelRef}
-          role="dialog"
-          aria-label={active.label}
-          style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
+          ariaLabel={active.label}
         >
           <header className="crp-head">
             <span className="crp-title">{(() => { const Icon = ICONS[String(active.icon ?? "")] ?? (active.kind === "external" ? Puzzle : Bookmark); return <Icon size={15} />; })()}{active.label}</span>
             <span className="crp-head-actions">
-              <button type="button" className="icon-button" title="重新贴边（换到另一边）" aria-label="重新贴边" onClick={() => { const anchor = railRef.current?.getBoundingClientRect(); const onRight = anchor && rect ? rect.left >= anchor.left : true; setPrefer(onRight ? "left" : "right"); }}><ChevronRight size={14} /></button>
+              <button type="button" className="icon-button" title="重新贴边（换到另一边）" aria-label="重新贴边" onClick={() => setPrefer((current) => (current === "right" ? "left" : "right"))}><ChevronRight size={14} /></button>
               <button type="button" className="icon-button" title="关闭 (Esc)" aria-label="关闭" onClick={() => setPanelId(null)}><X size={15} /></button>
             </span>
           </header>
@@ -225,8 +185,7 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
               </div>
             )}
           </div>
-        </div>,
-        document.body,
+        </AnchorPopover>
       )}
     </div>
   );
