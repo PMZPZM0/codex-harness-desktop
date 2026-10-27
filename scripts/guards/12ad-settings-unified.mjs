@@ -120,6 +120,8 @@ ok(!/还没有自定义命令/.test(commandsPage), "命令页不再显示「还�
 ok(/<AppSelect[\s\S]{0,200}command-filter-select/.test(commandsPage) && !/command-stats|command-tabs/.test(commandsPage), "命令分类收成下拉筛选（统计小字与 tab 已删）");
 const commandCss = read("src/styles/14-model-onboarding.css");
 ok(/\.command-actions-line\s*\{/.test(commandCss) && /\.command-action-sm\s*\{[^}]*height:\s*28px/.test(commandCss) && /\.command-filter-select\s*\{/.test(commandCss), "命令页按键小尺寸（28px）、筛选下拉在位");
+const pluginsPage = pageSrc("plugins");
+ok(/<AppSelect[\s\S]{0,200}market-category-select/.test(pluginsPage) && !/<div className="skill-tabs">/.test(pluginsPage) && !/>在线市场<\/button>/.test(pluginsPage), "插件市场分类收成下拉，在线市场跳转已删");
 ok(/manageable = \[\.\.\.localInstalled\]/.test(skillsPage), "技能批量管理只覆盖本地导入（市场/内置不参与）");
 ok(/skill-local-bulk/.test(skillsPage) && /本地导入/.test(skillsPage), "批量管理卡在本地导入分组内（不再挂在页面顶部）");
 ok(!/resource-toolbar secondary[sS]{0,500}BatchActions/.test(skillsPage), "顶部不再挂全局批量条");

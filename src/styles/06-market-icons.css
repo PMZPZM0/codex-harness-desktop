@@ -12,6 +12,10 @@
 .skill-filter-row { margin-top: 2px; }
 .skill-filter-count { color: var(--faint); font-size: 11px; margin-left: auto; white-space: nowrap; }
 .skill-filter-count b { color: var(--muted); font-weight: 600; }
+/* 10-27：插件市场分类收成下拉，与搜索同一行（照技能页） */
+.plugin-market-filter .search-field { flex: 0 1 240px; min-width: 180px; }
+.market-category-filter { display: inline-flex; align-items: center; flex: none; }
+.market-category-select { min-width: 120px; }
 .plugin-market-block {
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--panel) 55%, transparent);
