@@ -192,9 +192,12 @@ Chromium 的来源（决定镜像策略）：CLI 里 `installChromium()` 用
         openfilm_make_film / openfilm_check / openfilm_render / openfilm_get / openfilm_skill
 ```
 
-`film` 库位置（**决定成败的一条**）：放在**用户项目目录** `<workspace>/films/`，不放在 `userData`。
-原因：我们的 `userData` 路径含空格与中文（`Codex Harness Desktop`），macOS 侧还要经过 dmg 拷贝；
-上游 0.2.6 才修 Windows 非英文路径乱码，跨版本行为不稳。⛔ 不要为了"整洁"塞进安装目录。
+`film` 库位置（**决定成败的一条**）：默认放**用户项目目录** `<workspace>/films/`，不放在 `userData`。
+理由：`userData` 路径含空格与中文（`Codex Harness Desktop`），而影片目录会被 `openfilm open` 记住、
+被 git 版本化、被 Studio 库索引 —— 放在用户项目里既可见也可备份。
+**含空格的路径只告警、不阻断**：上游 0.2.6 已修 Windows 非英文路径乱码，但仍建议无空格；
+若 `check`/`render` 在含空格路径下失败，UI 给一键「改用无空格目录」（默认 `~/OpenFilm/films`，
+Windows 为 `%USERPROFILE%\OpenFilm\films`）。⛔ 不要为了"整洁"塞进安装目录。
 
 ### 3.2 安装器（按需下载入口）
 
@@ -341,7 +344,7 @@ ready → studio-running → (studio-stale) → ready
 | CLI 入口 | `node_modules\.bin\openfilm.cmd`（**必须走 cmd 或 node 直接执行 mjs**；不要 `shell:true`） | `node_modules/.bin/openfilm`（symlink） | 统一用 `node <runtime>/node_modules/openfilm/bin/openfilm.mjs` 调用，绕过 .cmd/.ps1 差异 |
 | Chromium 缓存 | `%LOCALAPPDATA%\ms-playwright` | `~/Library/Caches/ms-playwright` | 安装前探测是否已有（有就跳过下载，省 100MB） |
 | ffmpeg | `winget install Gyan.FFmpeg`（需用户确认） | `brew install ffmpeg`；无 Homebrew 时给官网 | ⛔ 不代装系统包；⛔ 不内置二进制（GPL 传染风险） |
-| 路径 | 空格/中文在 0.2.6 前有乱码 bug | 同上 | film 库固定 `<workspace>/films`，并在创建前校验"无空格、无中文"失败即提示换目录 |
+| 路径 | 空格/中文在 0.2.6 前有乱码 bug（已修） | 同上 | film 库默认 `<workspace>/films`；含空格只**告警**，失败时可一键切 `~/OpenFilm/films`（⛔ 不阻断用户） |
 | 端口 | 随机；被占用时由 Studio 自己选 | 同左 | 只从 stdout 抓，不猜端口；拿不到 → `OF_E_PORT` |
 | 进程结束 | `taskkill /PID <pid> /T /F`（Studio 是 node 子树） | `kill -TERM <pid>` | 只在"重开/卸载"时结束，退出应用不动它 |
 | 退出码 | Node 24.17 曾返回 127（0.2.6 已修） | 正常 | 统一按 0/1/2 分流，其余归 `OF_E_*` + 原样 stderr |
