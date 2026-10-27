@@ -1588,7 +1588,11 @@
   font-size: 12px;
   line-height: 1.6;
 }
-.favorites-settings .fav-toolbar {
+/* 10-27 用户：「文字赘述过多，简洁一点…多个选项的改成选择下拉框，
+   批量管理 删除清空、新建，跟搜索框放一排，下面其他赘述不需要写」——
+   一行工具条：[搜索][类型▾][全选][记忆层▾][加入记忆][删除 N] …… [清空][新建]。
+   ⛔ 旧的分类芯片行（.fav-kinds）与独立批量条（.fav-batch）已删除，别再长回来。 */
+.favorites-settings .fav-bar {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1598,9 +1602,10 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  flex: 1;
-  min-width: 200px;
-  padding: 6px 10px;
+  flex: 1 1 120px;
+  min-width: 110px;
+  padding: 0 10px;
+  height: 32px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
@@ -1615,74 +1620,43 @@
   color: var(--text);
   font-size: 12.5px;
 }
-.favorites-settings .fav-kinds {
-  display: flex;
-  gap: 4px;
-}
-.favorites-settings .fav-kinds button {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 9px;
+/* AppSelect 的 trigger 默认 width:100%（会独占一行）⇒ 这里给它固定宽度，才能跟搜索框同一行 */
+.favorites-settings .fav-kind-select { flex: none; width: 104px; }
+.favorites-settings .fav-kind-select > .app-select-trigger { width: 104px; }
+/* 记忆层只在「有选中」时才出现，也必须固定宽度，别把整行挤换行 */
+.favorites-settings .fav-scope-select { flex: none; width: 116px; }
+.favorites-settings .fav-scope-select > .app-select-trigger { width: 116px; }
+.favorites-settings .fav-selectall {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--panel);
   color: var(--muted);
   cursor: pointer;
-  font-size: 11.5px;
 }
-.favorites-settings .fav-kinds button.active {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-soft);
-}
-.favorites-settings .fav-kinds em {
-  font-style: normal;
-  opacity: .75;
-}
-.favorites-settings .fav-batch {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin: 10px 0;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel-2);
-  font-size: 12px;
-}
-.favorites-settings .fav-batch button {
+.favorites-settings .fav-selectall.active { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.favorites-settings .fav-act {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 10px;
+  height: 30px;
+  padding: 0 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
   color: var(--text);
   cursor: pointer;
   font-size: 11.5px;
+  white-space: nowrap;
 }
-.favorites-settings .fav-batch button:disabled {
-  opacity: .45;
-  cursor: default;
-}
-.favorites-settings .fav-batch button.danger {
-  border-color: color-mix(in srgb, var(--red) 45%, var(--line));
-  color: var(--red);
-}
-.favorites-settings .fav-batch button.ghost {
-  background: transparent;
-}
-.favorites-settings .fav-batch select {
-  padding: 4px 6px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-  color: var(--text);
-  font-size: 11.5px;
-}
+.favorites-settings .fav-act:disabled { opacity: .45; cursor: default; }
+.favorites-settings .fav-act.danger { border-color: color-mix(in srgb, var(--red) 45%, var(--line)); color: var(--red); }
+.favorites-settings .fav-act.ghost { background: transparent; }
+.favorites-settings .fav-act.primary { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .favorites-settings .fav-check {
   display: inline-flex;
   align-items: center;
