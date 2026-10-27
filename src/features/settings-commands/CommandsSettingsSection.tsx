@@ -60,7 +60,7 @@ export function CommandsSettingsSection(props: CommandsSettingsSectionProps) {
         <div className="command-chips">{entry.argumentHint ? <span className="command-chip hint"><Type size={11} />{entry.argumentHint}</span> : null}{entry.allowedTools ? <span className="command-chip tools" title={entry.allowedTools}><Shield size={11} />{entry.allowedTools}</span> : null}{entry.model ? <span className="command-chip model"><Bot size={11} />{entry.model}</span> : null}</div>
         <button className="command-use" onClick={() => useCommand(entry.name, "custom")}><Play size={12} />使用</button>
       </article>
-    ))}</div></section> : <p className="muted command-empty">{commandSearch ? "没有匹配的自定义命令，换个关键词试试。" : "还没有自定义命令。"}</p>) : null}
+    ))}</div></section> : (commandSearch ? <p className="muted command-empty">没有匹配的自定义命令，换个关键词试试。</p> : null)) : null}
     {showAll || commandFilter === "builtin" ? builtinVisible.length ? builtinCategories.map((category) => {
       const categoryCommands = builtinVisible.filter((cmd: any) => cmd.category === category);
       if (!categoryCommands.length) return null;

@@ -115,6 +115,7 @@ const skillsCss = read("src/styles/12-settings-skills.css");
 ok(/\.skill-actions-line\s*\{[^}]*margin-left:\s*auto/.test(skillsCss) && /\.skill-action-sm\s*\{[^}]*height:\s*28px/.test(skillsCss), "技能页按键与搜索同一行、右对齐且小尺寸（28px）");
 const commandsPage = pageSrc("commands");
 ok(!/settings-copy|PageInfo|settings-heading-actions/.test(commandsPage) && /command-actions-line/.test(commandsPage), "命令页页头按键/问号已删，新建与刷新并进搜索行");
+ok(!/还没有自定义命令/.test(commandsPage), "命令页不再显示「还没有自定义命令」空态注释");
 ok(/<AppSelect[\s\S]{0,200}command-filter-select/.test(commandsPage) && !/command-stats|command-tabs/.test(commandsPage), "命令分类收成下拉筛选（统计小字与 tab 已删）");
 const commandCss = read("src/styles/14-model-onboarding.css");
 ok(/\.command-actions-line\s*\{/.test(commandCss) && /\.command-action-sm\s*\{[^}]*height:\s*28px/.test(commandCss) && /\.command-filter-select\s*\{/.test(commandCss), "命令页按键小尺寸（28px）、筛选下拉在位");
