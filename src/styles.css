@@ -4,59 +4,68 @@
  * 原先这里是 25,454 行的单文件，已按域拆到 src/styles/ 下的 19 个分节文件；
  * 本文件只做按序引入。
  *
- * ⛔ 下面 @import 的**顺序就是级联优先级**，禁止随意调换或插入 —— 拆分前后构建产物
- *    逐字节一致（scripts 侧有校验）。
+ * ⛔ 10-27 起**层叠顺序由下面声明的 @layer 决定**（导入顺序只决定同层内次序）；
+ *    改优先级请换层，不要靠调换导入顺序或堆选择器特异性（理由与判据见下方注释块）。
  * ⛔ @import 必须位于所有其它规则之前（CSS 规范），别在本文件里直接写选择器。
  * 新增样式：加到对应分节文件；新域：在 src/styles/ 新增分节并在下面按顺序引入。
  */
 
-@import "./styles/01-base-and-chrome";
-@import "./styles/02-sidebar-threads";
-@import "./styles/03-messages-turns";
-@import "./styles/04-cards-tools";
-@import "./styles/05-composer-input";
-@import "./styles/06-market-icons";
-@import "./styles/07-settings-mcp-connectors";
-@import "./styles/08-settings-engine-update";
-@import "./styles/09-settings-workspace-memory";
-@import "./styles/10-settings-providers";
-@import "./styles/11-settings-secrets";
-@import "./styles/12-settings-skills";
-@import "./styles/13-subagents-page";
-@import "./styles/14-model-onboarding";
-@import "./styles/15-queued-messages";
-@import "./styles/16-settings-ssh";
-@import "./styles/17-visual-cards";
-@import "./styles/18-openai-dialog";
-@import "./styles/19-misc-hints";
-@import "./styles/20-team-office";
-@import "./styles/21-drama-canvas";
-@import "./styles/22-pet";
-@import "./styles/23-ui-skin";
-@import "./styles/24-soul-market";
-@import "./styles/37-update-ready";
-@import "./styles/38-close-confirm";
-@import "./styles/25-codex-official-market";
-@import "./styles/26-ui-sketch";
-@import "./styles/27-model-viewer";
-@import "./styles/28-wallpaper";
-@import "./styles/29-memory-ui";
-@import "./styles/30-whats-new";
-@import "./styles/31-newbie-guide";
-@import "./styles/32-polling";
-@import "./styles/33-image-lab";
-@import "./styles/34-devtools-cards";
-@import "./styles/36-boot-550c";
-@import "./styles/37-cloud-account";
-@import "./styles/39-media-preview";
-@import "./styles/40-reasoning-strip";
-@import "./styles/41-sidebar-guide";
-@import "./styles/44-function-menu";
-@import "./styles/42-provider-setup";
-@import "./styles/43-ego-lite";
-@import "./styles/45-settings-experience";
-@import "./styles/46-boss-groups";
-@import "./styles/47-boss-group-view";
-@import "./styles/48-app-lock";
-@import "./styles/49-profile-guide";
-@import "./styles/54-composer-rail";
+/* ⛔ 10-27 架构审查：**层叠顺序由 @layer 决定，不再靠文件导入顺序**（导入顺序仍保留，作为同层内的次序）。
+   base      = 设计令牌 / 全局基础（01）
+   components = 组件与各域样式（02 … 44）
+   pages      = 页面级覆盖（45 设置体验壳 起，含 46~54）
+   overrides  = 预留：只给「必须赢」的极少数规则（目前为空，别随手往里塞）
+   规则：① 新样式选对层，不要靠「多写两个类」去压别层；② 不要再写不带 layer 的 @import
+   （无层规则优先于所有层 ⇒ 一条裸导入就能让全部层失效，守卫 12af 会红）。 */
+@layer base, components, pages, overrides;
+
+@import "./styles/01-base-and-chrome" layer(base);
+@import "./styles/02-sidebar-threads" layer(components);
+@import "./styles/03-messages-turns" layer(components);
+@import "./styles/04-cards-tools" layer(components);
+@import "./styles/05-composer-input" layer(components);
+@import "./styles/06-market-icons" layer(components);
+@import "./styles/07-settings-mcp-connectors" layer(components);
+@import "./styles/08-settings-engine-update" layer(components);
+@import "./styles/09-settings-workspace-memory" layer(components);
+@import "./styles/10-settings-providers" layer(components);
+@import "./styles/11-settings-secrets" layer(components);
+@import "./styles/12-settings-skills" layer(components);
+@import "./styles/13-subagents-page" layer(components);
+@import "./styles/14-model-onboarding" layer(components);
+@import "./styles/15-queued-messages" layer(components);
+@import "./styles/16-settings-ssh" layer(components);
+@import "./styles/17-visual-cards" layer(components);
+@import "./styles/18-openai-dialog" layer(components);
+@import "./styles/19-misc-hints" layer(components);
+@import "./styles/20-team-office" layer(components);
+@import "./styles/21-drama-canvas" layer(components);
+@import "./styles/22-pet" layer(components);
+@import "./styles/23-ui-skin" layer(components);
+@import "./styles/24-soul-market" layer(components);
+@import "./styles/37-update-ready" layer(components);
+@import "./styles/38-close-confirm" layer(components);
+@import "./styles/25-codex-official-market" layer(components);
+@import "./styles/26-ui-sketch" layer(components);
+@import "./styles/27-model-viewer" layer(components);
+@import "./styles/28-wallpaper" layer(components);
+@import "./styles/29-memory-ui" layer(components);
+@import "./styles/30-whats-new" layer(components);
+@import "./styles/31-newbie-guide" layer(components);
+@import "./styles/32-polling" layer(components);
+@import "./styles/33-image-lab" layer(components);
+@import "./styles/34-devtools-cards" layer(components);
+@import "./styles/36-boot-550c" layer(components);
+@import "./styles/37-cloud-account" layer(components);
+@import "./styles/39-media-preview" layer(components);
+@import "./styles/40-reasoning-strip" layer(components);
+@import "./styles/41-sidebar-guide" layer(components);
+@import "./styles/44-function-menu" layer(components);
+@import "./styles/42-provider-setup" layer(components);
+@import "./styles/43-ego-lite" layer(components);
+@import "./styles/45-settings-experience" layer(pages);
+@import "./styles/46-boss-groups" layer(pages);
+@import "./styles/47-boss-group-view" layer(pages);
+@import "./styles/48-app-lock" layer(pages);
+@import "./styles/49-profile-guide" layer(pages);
+@import "./styles/54-composer-rail" layer(pages);
