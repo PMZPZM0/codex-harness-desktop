@@ -20,18 +20,19 @@
  *      外部仓库源那 3 条直接标「不支持一键安装」，不给人点了才发现报错。
  */
 import { useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { Plus, ShieldCheck } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { SearchField } from "../../components/SettingsWidgets";
 import { MarketLogo, PluginInstallModal } from "../skills-market";
 
-type Props = { onResourcesChanged?: () => void };
+type Props = { onResourcesChanged?: () => void; /** 工具条最右格（10-27：插件页把「刷新」放进卡里，三个视图同一位置） */ refreshSlot?: ReactNode };
 type Category = { key: string; displayName: string; count: number };
 /** 弹层六步的落点（与 part05 里 `plugin-install` 的口径逐字一致，两个源共用同一张进度条） */
 const STAGE_POSITIONS: Record<string, number> = { resolve: 1, download: 2, install: 3, register: 4, engine: 5, verify: 6, complete: 7, pending: 7 };
 const PAGE_SIZE = 18;
 
-export function CodexOfficialMarketSection({ onResourcesChanged }: Props) {
+export function CodexOfficialMarketSection({ onResourcesChanged, refreshSlot }: Props) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [category, setCategory] = useState("全部");
   const [query, setQuery] = useState("");
@@ -116,14 +117,14 @@ export function CodexOfficialMarketSection({ onResourcesChanged }: Props) {
   const tabs: [string, string][] = [["全部", "全部"], ...categories.map((entry) => [entry.displayName, entry.key] as [string, string])];
 
   return <div className="plugin-market-block codex-official-market">
-    <div className="plugin-market-title">Codex 官方插件市场
-      <small>来自 GitHub <code>openai/plugins</code>（Codex 官方市场原档）· 走国内镜像下载 · {total} 个官方插件，其中已安装 {installedIds.length} 个</small>
-    </div>
+    {/* 10-27 用户令：「三个界面风格统一，文字注释不要」⇒ 这块标题 + 来源小字删掉，
+        与其他两个视图一致：卡里只有「分类 chips + 搜索 + 刷新」一行。 */}
     {error && <p className="codex-official-market-error">{error}<button className="secondary-setting" onClick={() => void reload()}>重试</button></p>}
     {!error && !live && <p className="codex-official-market-note">暂时连不上上游，下面的列表来自<b>内置快照</b>（{snapshotAt || "日期未知"}）· 已安装状态仍读本地目录，不受影响。</p>}
     <div className="resource-toolbar">
       <div className="skill-tabs">{tabs.map(([label, value]) => <button key={value} className={category === value ? "active" : ""} onClick={() => { setCategory(value); setPage(1); }}>{label}</button>)}</div>
       <SearchField value={query} onChange={(next) => { setQuery(next); setPage(1); }} placeholder="搜索官方插件名称、简介或分类" />
+      {refreshSlot}
     </div>
     {notice && <p className="codex-official-market-note">{notice}</p>}
     {items.length > 0 ? <div className="skill-card-grid page-turn" key={page}>

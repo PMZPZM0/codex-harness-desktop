@@ -766,10 +766,10 @@ export async function run() {
     //   （App.tsx 在前、features 在后），indexOf 返回 -1 ⇒ 切出空串 ⇒ 假红「(section 没切出来)」。
     const end = appSrc.indexOf("</section>", start);
     const pluginSection = start >= 0 && end > start ? appSrc.slice(start, end) : "";
-    const refreshButtons = (pluginSection.match(/title="刷新[^"]*"/g) || []);
-    (pluginSection && refreshButtons.length === 1 && !/title="刷新插件市场"/.test(appSrc))
-      ? ok("【35】插件页只有一个刷新入口（市场工具栏那颗已去掉，不再是两个同款 🔄）")
-      : fail(`【35】插件页刷新入口数 = ${refreshButtons.length}（应为 1）：${refreshButtons.join(" / ") || "(section 没切出来)"}`);
+    // 10-27：刷新收成组件内一个 `const refreshButton`（三个视图各挂一次，同一时刻只显示一颗）
+    //   ⇒ 判据看**定义**数（在 return 之外，切不进 pluginSection）+ 卡内是否真的挂上了。
+    const refreshDefs = (readFileSync(join(ROOT, "src/features/settings-plugins/PluginsMarketSection.tsx"), "utf8").match(/title="刷新[^"]*"/g) || []);
+    (refreshDefs.length === 1 && /\{refreshButton\}/.test(pluginSection) && !/title="刷新插件市场"/.test(appSrc) ? ok : fail)("【35】插件页只有一个刷新入口（refreshButton 挂在各视图卡内）");
     (/async function refreshPluginsPage\(\)[\s\S]{0,240}?refreshSettingsResources\(\)[\s\S]{0,140}?refreshMarketPlugins\(/.test(appSrc))
       ? ok("【35】那一个刷新确实两处都刷（页面资源 + 当前筛选的市场列表）")
       : fail("【35】refreshPluginsPage 没同时刷市场列表 —— 合并后市场再也刷不动，且界面不报错");

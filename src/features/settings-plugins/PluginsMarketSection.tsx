@@ -9,8 +9,8 @@
  */
 import { useState } from "react";
 import { ArrowLeft, ArrowRight, Check, CircleStop, Play, Plus, RefreshCw, Store, Trash2 } from "lucide-react";
-import { AppSelect } from "../../components/AppSelect";
 import { Spinner } from "../../components/CardShell";
+import { AppSelect } from "../../components/AppSelect";
 import { BatchActions, CheckCard, SearchField, SegmentedTabs, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
 import { MarketLogo } from "../../features/skills-market";
 import { CodexOfficialMarketSection } from "../codex-official-market";
@@ -105,6 +105,9 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
   };
   // 两个市场数据源（10-03）：Gitee 上的 Claude Code 官方镜像 ⇄ Codex 官方 openai/plugins（GitHub 国内镜像读取）。
   // 各自的分类表、卡片与安装进度互不相干 ⇒ 切的是**整块**（用户拍板「按源给各自的分类 tab」），不是把 18 个分类混排。
+  /* 10-27 用户令：「把刷新按键放到卡片里面来，三个界面风格统一」⇒ 刷新不再是来源 tabs 行右侧的孤儿，
+     而是每张市场卡工具条的最右一格（三个视图同一位置）。 */
+  const refreshButton = <button className="icon-button market-refresh" title="刷新：已装插件 / 技能 / 钩子 / 记忆 / 任务 / MCP + 插件市场（沿用当前分类与搜索）" onClick={() => void refreshWithReceipt(setNotice, "刷新插件与市场", () => refreshPluginsPage())}>{(resourceLoading || pluginMarketLoading) ? <Spinner /> : <RefreshCw size={14} />}</button>;
   return <section className="settings-section stack plugin-center">
     {/* 10-26 用户令（插件页截图）：「左右按键对齐，中间空白删除，把上面一排按键放下来，右边也是」
         ⇒ 页头那两颗（在线市场 / 刷新）下来与三个来源 tab 同排：tab 贴左、按键贴右，中间不留空。
@@ -120,20 +123,21 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
           { value: "installed", label: "已安装" },
         ]}
       />
-      <div className="market-source-actions">
-        <button className="icon-button" title="刷新：已装插件 / 技能 / 钩子 / 记忆 / 任务 / MCP + 插件市场（沿用当前分类与搜索）" onClick={() => void refreshWithReceipt(setNotice, "刷新插件与市场", () => refreshPluginsPage())}>{(resourceLoading || pluginMarketLoading) ? <Spinner /> : <RefreshCw size={14} />}</button>
-      </div>
     </div>
 
     {/* ⛔ 09-28：「内置接口（视频生成接口）」块**搬走**了 —— 它属于「内置插件」那一组
         （与生图/视觉插件并列，见 BuiltinPluginsSection）。本页只负责**插件市场**：
         外部市场的可安装列表 + 已安装插件管理。两件事混在一页会让人分不清「自带」与「要装」。 */}
     {marketSource === "installed" ? null : marketSource === "official"
-      ? <CodexOfficialMarketSection onResourcesChanged={() => void refreshPluginsPage()} />
+      ? <CodexOfficialMarketSection onResourcesChanged={() => void refreshPluginsPage()} refreshSlot={refreshButton} />
       : <div className="plugin-market-block">
       {/* 10-26 用户令：「插件市场，来自 GitHub 这一排字删了」（来源已在上面 tab 里说明一次） */}
       <div className="resource-toolbar plugin-market-filter">
         <SearchField value={pluginMarketSearch} onChange={(next) => { setPluginMarketSearch(next); setPluginMarketPage(1); }} placeholder="搜索插件名称、简介或作者" />
+        {/* 10-27 用户令：「搜索框不用那么长，三个界面风格统一，刷新放进卡片」
+            ⇒ 分类仍用下拉（守卫【shell】钉着「收成下拉」），但**不再留一个空的 chips 容器**
+               —— 那个空 div 被 `flex: 1 1 420px` 撑满，正是截图里搜索框右边那块空白。
+            整条恒为一行：搜索(220) + 分类下拉 + 刷新贴右。 */}
         <span className="market-category-filter">
           <AppSelect
             className="market-category-select"
@@ -143,6 +147,7 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
             onChange={(next) => { setPluginMarketCategory(next); setPluginMarketPage(1); }}
           />
         </span>
+        {refreshButton}
       </div>
       {pluginMarketItems.length > 0 ? <div className="skill-card-grid page-turn" key={pluginMarketPage}>
         {pluginMarketItems.map((plugin: any) => {
@@ -184,7 +189,7 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
         与市场列表**并列**而不是塞进去 —— 它管的是「已装的那批要不要更新」，
         两个源各自独立比对（gitee 镜像 / Codex 官方），在「已安装」屏两块都出。 */}
 
-    {marketSource === "installed" ? <><div className="plugin-market-title plugin-installed-head">已安装插件<small>本机已安装的插件 · 停用后 Codex 不再加载它提供的指令、技能与钩子（文件仍在，不占不到磁盘）</small><button className="secondary-setting plugin-update-all" disabled={pluginUpdating} onClick={() => void checkAndUpdatePlugins()}>{pluginUpdating ? <Spinner /> : <RefreshCw size={13} />}{pluginUpdating ? "更新中…" : "检查更新"}</button></div>    <div className="plugin-stats">
+    {marketSource === "installed" ? <><div className="plugin-market-title plugin-installed-head">已安装插件<button className="secondary-setting plugin-update-all" disabled={pluginUpdating} onClick={() => void checkAndUpdatePlugins()}>{pluginUpdating ? <Spinner /> : <RefreshCw size={13} />}{pluginUpdating ? "更新中…" : "检查更新"}</button></div>    <div className="plugin-stats">
       <div className="plugin-stat"><span>已安装</span><strong>{installed.length}</strong></div>
       <div className="plugin-stat"><span>启用中</span><strong className="stat-ok">{enabledCount}</strong></div>
       <div className="plugin-stat"><span>已停用</span><strong className="stat-off">{disabledCount}</strong></div>
@@ -192,6 +197,7 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
 
     <div className="resource-toolbar">
       <SearchField value={pluginSearch} onChange={setPluginSearch} placeholder="搜索已安装插件的名称、描述或来源" />
+      {refreshButton}
     </div>
     <div className="resource-toolbar secondary">
       <SelectAllToggle total={selectableIds.length} selected={checkedIds.length} unit="个插件" onSelectAll={() => setPluginChecked(selectableIds)} onClear={() => setPluginChecked([])} />
