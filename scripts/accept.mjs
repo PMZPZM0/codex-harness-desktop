@@ -319,13 +319,14 @@ const CHECKS = [
           stats:!!page.querySelector(".command-stats"),
           tabs:page.querySelectorAll(".command-tabs").length,
           groupSmall:page.querySelectorAll(".command-group > header small").length,
+          emptyNote:(page.textContent||"").includes("还没有自定义命令"),
           pageInfo:!!page.querySelector(".page-info"),
           headingActions:!!page.querySelector(".settings-heading-actions") };
       })()`).catch(() => null);
       h.check("⑫ 命令页：分类收成下拉，新建/刷新与搜索同一排",
         Boolean(commandBar && commandBar.page === "命令" && !commandBar.pageInfo && !commandBar.headingActions
           && commandBar.selectText.includes("全部") && commandBar.selectRow && !commandBar.stats
-          && commandBar.tabs === 0 && commandBar.groupSmall === 0
+          && commandBar.tabs === 0 && commandBar.groupSmall === 0 && !commandBar.emptyNote
           && commandBar.buttons.length === 2 && commandBar.buttons.some((x)=>x.includes("新建命令"))
           && commandBar.heights.every((h)=>h <= 30) && commandBar.sameRow && commandBar.inRow
           && commandBar.rightGap <= 30),
