@@ -216,7 +216,9 @@ export async function run() {
     // 都不好看」）：各页那个占位的「帮助」按钮已退休、长说明收进标题旁的 ?。所以断言从
     // "帮助按钮数"改成三层：① ? 挂载数 ② 兼作帮助入口的 ? 数 ③ 「赘述回潮」判据。
     const hintCount = (appC.match(/<PageInfo\b/g) || []).length;
-    (hintCount >= 15)
+    // 10-27：用户连续令「各页右上角 ? 删了」（模型 / MCP / 插件 / 人格市场…）⇒ 下限跟着实测降到 14，
+    //   这条守的是「说明别摊回标题下」，不是「? 必须越多越好」。
+    (hintCount >= 14)
       ? ok(`【32】设置页挂了 ${hintCount} 处 ? 号（说明收进 ?，头部恒为一行）`)
       : fail(`【32】? 号只有 ${hintCount} 处 —— 说明又被摊回标题下了（赘述回潮）`);
     const keyedHints = (appC.match(/helpKey="/g) || []).length;

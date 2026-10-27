@@ -104,7 +104,9 @@ ok(/<h2>定时任务<\/h2>/.test(schedule) && !/<h2>自动化<\/h2>/.test(schedu
 const knowledge = pageSrc("knowledge");
 ok(/<h2>知识库<PageInfo/.test(knowledge) && !/settings-exp-group-head/.test(knowledge), "知识库有页头，本地文档分组小字已删");
 const soul = pageSrc("soul");
-ok(/settings-copy channel-heading[\s\S]{0,1600}刷新/.test(soul), "人格市场的「刷新」收进页头操作区（不再单飞一行）");
+/* 10-27 用户令：「刷新放到第一个标题卡片里面，帮助❓号删了，codex 在下面用户在上面」
+   ⇒ 页头整块撤掉、刷新进「用户人格」卡标题行、用户人格排在 Codex 人格之前。 */
+ok(!/PageInfo/.test(soul) && /UserPersonaPanel[\s\S]{0,600}action=\{<button/.test(soul) && soul.indexOf("<UserPersonaPanel") < soul.indexOf("soul-market-status"), "人格市场：无 ?，刷新在用户人格卡标题行，用户人格在 Codex 人格之上");
 const memory = pageSrc("memory");
 ok(/<h2>记忆<PageInfo[\s\S]{0,200}<p>/.test(memory), "记忆页头有新手可读的一句说明");
 ok(/\.settings-exp-shell \.memory-center \.memory-backends\s*\{[^}]*border-top/s.test(css), "「记忆存到哪里」与内容卡之间有分隔");
