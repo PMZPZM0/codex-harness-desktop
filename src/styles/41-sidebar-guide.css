@@ -498,14 +498,13 @@
   color: var(--faint);
   transition: transform 0.15s ease, color 0.15s ease;
 }
-/* ── 10-27 用户令（第 3 次）：「这个展开朝向，看我箭头」──
-   面板是**横向**出现在侧栏右侧的（`left = 侧栏右缘 + 8`，顶部 / 底部两种位置都靠右），
-   所以箭头必须横向指 —— 前两版都按「上下」想（⌄ / ⌃），方向永远对不上：
-   · 收起 ⇒ ›（朝右）：点它，面板从右边滑出来；
-   · 展开 ⇒ ‹（朝左）：点它，收回到侧栏这边。
-   ⛔ 仍只由 `.open` 一个开关驱动；⛔ 别再按 top/bottom 位置区分方向 —— 两个位置的面板都在右边。 */
-.sidebar-options .sidebar-options-chevron { transform: rotate(-90deg); }
-.sidebar-options .sidebar-options-chevron.open { transform: rotate(90deg); }
+/* ── 10-27 用户令（第 4 次，最终）：「反了，收起朝左，展开朝右」──
+   面板是**横向**出现在侧栏右侧的（`left = 侧栏右缘 + 8`，顶部 / 底部两种位置都靠右）：
+   · 收起 ⇒ ‹（朝左）：面板此刻是收起的，箭头指回侧栏本身；
+   · 展开 ⇒ ›（朝右）：面板已经弹在右边，箭头指着它。
+   ⛔ 仍只由 `.open` 一个开关驱动；⛔ 别再按上下的思路改（前两版就错在这里）。 */
+.sidebar-options .sidebar-options-chevron { transform: rotate(90deg); }
+.sidebar-options .sidebar-options-chevron.open { transform: rotate(-90deg); }
 .sidebar-options-toggle:hover .sidebar-options-chevron { color: var(--muted); }
 
 .sidebar-nav-bottom {
