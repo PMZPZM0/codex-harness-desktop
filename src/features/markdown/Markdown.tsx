@@ -140,10 +140,10 @@ export const MdCode = memo(function MdCode({ className, children, ...props }: an
   );
 });
 
-export const FilePreviewCode = memo(function FilePreviewCode({ language, content, truncated }: { language: string; content: string; truncated?: boolean }) {
+export const FilePreviewCode = memo(function FilePreviewCode({ language, content, truncated, hint, plain }: { language: string; content: string; truncated?: boolean; hint?: string; plain?: boolean }) {
   const settings = useCodeSettings();
   const normalized = String(language ?? "").replace(/^\./, "").toLowerCase();
-  const code = content.replace(/\n$/, "") + (truncated ? "\n…（文件过大，仅展示前 200K 字符）" : "");
+  const code = content.replace(/\n$/, "") + (truncated ? `\n…（${hint || "文件过大，仅展示前面一部分；完整内容请用「在编辑器打开」"}）` : "");
   const renderer = useMemo(() => {
     if (!HIGHLIGHT_CACHE.shouldCache(code)) return undefined;
     return makeCachedHighlightRenderer(highlightCacheKey({ language: normalized, code, theme: settings.theme, lineNumbers: true, wrapLongLines: settings.wrap }));
@@ -154,10 +154,19 @@ export const FilePreviewCode = memo(function FilePreviewCode({ language, content
   const nearViewport = useNearViewport(wrapRef, lazy);
   const fontSize = codeFontSize(settings.fontScale);
   const fontFamily = codeFontStack(settings.font);
-  if (lazy && !nearViewport) {
+  /* ⛔⛔ 10-27 用户实测（两张截图）：打开 158KB / 5086 行、最长行 5925 字符的
+     `boss-groups.json` 时，**右栏文件预览**与**居中文档预览弹窗**双双卡到点不动
+     （「应用直接点不了那种」）。根因两条叠加：
+       ① 整篇语法高亮 + 行号 ⇒ 每行一个行号 span + 上千个 token span；
+       ② `white-space: pre` 下那条 5925 字符的行盒极宽，重排/绘制代价爆炸。
+     ⇒ 判定「重文件」= 总量 > 20K 字符 **或** 存在 > 300 字符的长行，直接走**纯文本渲染**：
+       单个文本节点、无行号、无 token 着色（外观仍取同一份主题基样式）。
+       ⛔ 横向滚动照旧在（用户要的左右滚不砍）；⛔ 也别加"折行"来回避 —— 那是另一条用户明确否过的口径。 */
+  const heavy = useMemo(() => content.length > 20_000 || content.split("\n").some((line) => line.length > 300), [content]);
+  if (plain || heavy || (lazy && !nearViewport)) {
     const styles = plainCodeStyles(codeThemeStyle(settings.theme));
     return (
-      <div ref={wrapRef} className="file-preview-code code-highlight" data-lazy-highlight="pending">
+      <div ref={wrapRef} className="file-preview-code code-highlight" data-lazy-highlight={heavy ? "plain-heavy" : plain ? "plain" : "pending"}>
         <div style={{ ...styles.pre, fontSize, fontFamily, margin: 0 }}><code style={styles.code}>{code}</code></div>
       </div>
     );

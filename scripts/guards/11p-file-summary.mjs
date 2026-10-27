@@ -263,6 +263,23 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     && /\.workspace-files\.is-preview-expanded \.workspace-files-tree\s*\{[^}]*display:\s*none/.test(wsCss),
     "预览头部有「展开/恢复」按钮；分栏条可拖、拉满时文件树直接 display:none（不留任何残影）");
 
+  /* ── 10-27 用户两张截图（boss-groups.json 158KB / 5086 行 / 最长行 5925 字符）──
+     ① 「文件内容展示不完整，没有左右滚动」：横向滚动条挂在代码块自己的最底部（滚到第 5000 行才见）。
+     ② 「只要这两个随便哪个出来都巨卡，应用直接点不了」：整篇高亮 + 行号 + 超长行盒。
+     ⛔ 这两条是同一份内容的两面：滚动条位置靠 CSS 契约，卡顿靠渲染路径契约，各钉一条。 */
+  ok(wsCss.includes(".workspace-file-preview-body > .file-preview-code")
+    && /overflow:\s*visible\s*!important/.test(wsCss),
+    "右栏预览：代码块不再自己滚（改由预览容器当唯一滚动体 ⇒ 横向滚动条钉在可视区底沿，不用滚到文件末尾）");
+  ok(/PREVIEW_MAX_CHARS = 60_000/.test(wsPreviewSrc) && /PREVIEW_PLAIN_CHARS = 12_000/.test(wsPreviewSrc)
+    && /plain=\{state\.content\.length > PREVIEW_PLAIN_CHARS\}/.test(wsPreviewSrc),
+    "右栏只预览前 60K 字符，超 12K 不做语法高亮（右栏窄面板里整篇高亮 = 卡到点不动）");
+  {
+    const mdPreview = read("src/features/markdown/Markdown.tsx");
+    ok(/const heavy = useMemo\(\(\) => content\.length > 20_000 \|\| content\.split\("\\n"\)\.some\(\(line\) => line\.length > 300\)/.test(mdPreview)
+      && /if \(plain \|\| heavy \|\|/.test(mdPreview),
+      "重文件（>20K 字符 或 有 >300 字长行）走**纯文本**渲染，不整篇高亮 + 行号（居中预览弹窗同样吃这条）");
+  }
+
   /* 10-22 用户实测「汇总消息下面没有文件卡片」：创建后又删除的文件首尾快照一致 ⇒ 最终报告空。
      必须留最后一次非空 live 明细，结算时把最终快照里没有的路径补成 deleted。 */
   const turnWatch = read("electron/turn-file-watch.ts");
