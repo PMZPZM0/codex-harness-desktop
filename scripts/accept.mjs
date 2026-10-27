@@ -367,17 +367,19 @@ const CHECKS = [
         const page=m.querySelector(".comp-lib"); if(!page) return null;
         const search=page.querySelector(".ui-skin-search");
         const sel=page.querySelector(".comp-lib-cat-select");
+        const grid=page.querySelector(".comp-lib-grid");
         if(!search||!sel) return null;
         const sr=sel.getBoundingClientRect(), ir=search.getBoundingClientRect();
         return { page:(m.querySelector(".settings-nav button.active")?.textContent||"").trim(),
           selectText:(sel.textContent||"").trim(),
           sameRow:Math.abs((sr.top+sr.bottom)/2-(ir.top+ir.bottom)/2) <= 10,
           searchWidth:Math.round(ir.width),
+          gridHeight:grid?Math.round(grid.getBoundingClientRect().height):0,
           cats:page.querySelectorAll(".ui-skin-cat").length };
       })()`).catch(() => null);
       h.check("⑭ 组件库：分类收成搜索行右侧下拉，搜索框不再拉满",
         Boolean(compLib && compLib.page === "组件库" && compLib.selectText.length > 0
-          && compLib.sameRow && compLib.searchWidth <= 400 && compLib.cats === 0),
+          && compLib.sameRow && compLib.searchWidth <= 400 && compLib.gridHeight >= 500 && compLib.cats === 0),
         JSON.stringify(compLib));
       await h.pressKey("Escape");
       await wait(300);
