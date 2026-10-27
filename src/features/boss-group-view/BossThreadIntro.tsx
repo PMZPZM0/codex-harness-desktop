@@ -18,11 +18,13 @@
  */
 import { Crown } from "lucide-react";
 
-/** 欢迎界面上要讲清的三件事（不是装饰，是「下一步怎么做」）。 */
+/** 欢迎界面上要讲清的三件事（不是装饰，是「下一步怎么做」）。
+    10-27 用户令：「这个词太生硬了，简洁一点，表达核心就行」
+    ⇒ 副标题去掉「调度台」这类比喻，三行也各砍掉一半字：一句话说清做什么 / 结果怎么回 / 这条会话的规矩。 */
 const GUIDE = [
-  ["说目标", "提一句要什么，我按岗位拉专家、专家团、本机 CLI agent 进群"],
-  ["看结果", "成员各自开会话干活，成品汇总回这条会话，审不过我打回重做"],
-  ["认规矩", "这条会话一直用下去，不每轮新建；记忆与目录都跟普通会话分开"],
+  ["说目标", "一句话要什么，我按岗位拉专家、专家团、本机 CLI 进群"],
+  ["看结果", "成员各自干活，成品汇总回这条会话，不满意我重做"],
+  ["接着聊", "不每轮新建，记忆与目录跟普通会话分开"],
 ];
 
 export function BossThreadIntro() {
@@ -35,7 +37,7 @@ export function BossThreadIntro() {
     <div className="boss-welcome">
       <div className="boss-welcome-mark"><Crown size={64} strokeWidth={0.7} /></div>
       <h1 className="boss-welcome-title">指挥中枢</h1>
-      <p className="boss-welcome-sub">一条会话当调度台：你提目标，我按岗位拉人、派活、盯进度、验收打回。</p>
+      <p className="boss-welcome-sub">你说目标，我拉人、派活、验收。</p>
 
       <ol className="boss-welcome-guide">
         {GUIDE.map(([title, text], index) => (
