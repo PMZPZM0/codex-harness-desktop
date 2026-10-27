@@ -645,15 +645,16 @@
 /* CommandCenter styles - appended 2026-08-31 */
 .command-center .skill-search { width: min(360px, 100%); }
 .command-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.command-search { flex: 1 1 260px; }
-.command-stats { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
-.command-stats span { border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 999px; height: 26px; font-size: 10.5px; align-items: center; gap: 4px; padding: 0 10px; display: inline-flex; }
-.command-stats b { color: var(--text); font-weight: 600; }
-.command-tabs { flex: none; }
-.command-tabs small { color: var(--faint); font-size: 9.5px; margin-left: 2px; }
+.command-search { flex: 0 1 240px; min-width: 170px; }
+/* 10-27：分类做成筛选下拉（原 tab 与统计小字重复） */
+.command-filter { display: inline-flex; align-items: center; gap: 6px; flex: none; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.command-filter-select { min-width: 120px; }
+/* 10-27：新建命令 / 刷新并进搜索同一行右侧，小尺寸（与技能页一致） */
+.command-actions-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.command-actions-line .command-action-sm { min-height: 28px; height: 28px; padding: 0 10px; border-radius: 8px; font-size: 11.5px; gap: 5px; }
+.command-actions-line .icon-button.command-action-sm { width: 28px; padding: 0; }
 .command-group { display: flex; flex-direction: column; gap: 8px; }
 .command-group > header { color: var(--muted); font-size: 11.5px; font-weight: 600; align-items: center; gap: 7px; display: flex; }
-.command-group > header small { color: var(--faint); font-weight: 400; font-size: 10px; }
 .command-group-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .command-group-dot.custom { background: var(--link); }
 .command-group-dot.builtin { background: var(--orange); }
