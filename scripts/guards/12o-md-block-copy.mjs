@@ -120,6 +120,23 @@ const btnRule = (() => {
   return i < 0 ? "" : css.slice(i, css.indexOf("}", i));
 })();
 ok(/position:\s*relative/.test(wrapRule), "锚点容器 `.md-table-wrap` 是 relative（否则绝对定位的按钮跑到别处）");
+/* 10-27 用户（截图）：「汇总消息，表格展示补齐，卡片底下左右滑动条…灯箱文件预览…右侧侧边栏的
+   文件预览也是，这个要是自适应的」——
+   表格按自然宽度排版、超出时在卡片内横向滚动；复制按钮必须留在**不滚动**的外层，
+   否则会跟着表格一起被滚出可视区（与代码块同一个坑）。 */
+ok(/className="md-table-wrap"/.test(mdSrc) && /className="md-table-scroll"/.test(mdSrc)
+  && mdSrc.indexOf('<div className="md-table-scroll">') < mdSrc.indexOf("<table>"),
+  "表格外面套了一层 `.md-table-scroll`（横向滚动容器），table 在它里面");
+ok(mdSrc.indexOf('className="md-table-copy"') < mdSrc.indexOf('className="md-table-scroll"'),
+  "复制按钮在外层卡片上、**不在**滚动容器里（否则跟着表格一起被滚走）");
+const scrollRule = ruleOf(".md-table-scroll");
+ok(/overflow-x:\s*auto/.test(scrollRule) && /overscroll-behavior-x:\s*contain/.test(scrollRule),
+  "滚动层 `overflow-x:auto` + `overscroll-behavior-x:contain`（滚到头不带着整个对话一起滚）");
+ok(/\.md-table-scroll::-webkit-scrollbar\s*\{[^}]*height:\s*\d+px/.test(css)
+  && /\.md-table-scroll::-webkit-scrollbar-thumb\s*\{[^}]*background:/.test(css),
+  "卡片底部横向滚动条可见（给了高度与滑块底色 —— 只留默认细线等于看不见）");
+ok(/\.md-table-wrap table\s*\{[^}]*width:\s*max-content[^}]*min-width:\s*100%/.test(css),
+  "表格按**自然宽度**排版（max-content + min-width:100%）：窄表撑满、宽表滚动，不再被压成一列一个字");
 ok(/position:\s*absolute/.test(btnRule) && /top:\s*\d+px/.test(btnRule) && /right:\s*\d+px/.test(btnRule),
   "按钮绝对定位在**右上角**（top/right 都给了值）");
 // ⛔ 10-14 二改（用户口径「常驻且更醒目」）：**常驻可见**，不再 hover 才显形。
