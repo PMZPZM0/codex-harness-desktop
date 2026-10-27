@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 import { UI_SKIN_CATALOG, UI_SKIN_CATS } from "../../lib/ui-skin/catalog.gen";
 import { loadCategory } from "../../lib/ui-skin/load";
 import { SkinHost } from "../../components/SkinHost";
+import { AppSelect } from "../../components/AppSelect";
 
 const PAGE = 24;
 
@@ -79,19 +80,25 @@ export function ComponentLibraryPage() {
           开发自己的网页 / 软件时直接粘过去用。要在本应用里换控件外观请去「控件皮肤」。
         </p>
       </div>
-      <div className="ui-skin-cats">
-        {UI_SKIN_CATS.map((c) => (
-          <button key={c.cat} type="button" className={`ui-skin-cat ${c.cat === cat ? "active" : ""}`} onClick={() => setCat(c.cat)}>
-            {catLabel(c.cat)} <i>{c.count}</i>
-          </button>
-        ))}
+      {/* 10-27 用户：「搜索框太长，分类做成下拉框选项，在搜索框这一排靠右」 */}
+      <div className="comp-lib-filter-row">
+        <input
+          className="ui-skin-search"
+          placeholder="搜索组件名 / 作者…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <span className="comp-lib-cat-filter">
+          <span>分类</span>
+          <AppSelect
+            className="comp-lib-cat-select"
+            value={cat}
+            ariaLabel="组件分类筛选"
+            options={UI_SKIN_CATS.map((c) => ({ value: c.cat, label: `${catLabel(c.cat)} ${c.count}` }))}
+            onChange={(next) => setCat(next)}
+          />
+        </span>
       </div>
-      <input
-        className="ui-skin-search"
-        placeholder="搜索组件名 / 作者…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
       {loadErr && <p className="comp-lib-error" role="alert">{loadErr}</p>}
       <div className="ui-skin-grid comp-lib-grid">
         {shown.map((e) => (
