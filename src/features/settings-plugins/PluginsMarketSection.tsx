@@ -203,7 +203,6 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
         两个源各自独立比对（gitee 镜像 / Codex 官方），在「已安装」屏两块都出。 */}
 
     {marketSource === "installed" ? <>
-      {builtinSlot}
       <div className="plugin-market-block">
       {/* 10-27 用户令：「已启用 / 已停用做成下拉框选项，已安装不要了，检查更新不要了，
           卡片里面这一行留一个刷新图标就行」⇒ 统计三连撤掉、检查更新撤掉，
@@ -234,6 +233,8 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
     </div>
 
     <div className="plugin-card-grid">
+      {/* 10-27 用户令：「做成卡片放已安装里面」⇒ 三张内置卡直接排进这张网格，和已安装插件同列。 */}
+      {builtinSlot}
       {visible.map((plugin: any) => {
         const key = plugin.id ?? plugin.name ?? Math.random();
         const busy = pluginBusy === String(plugin.id ?? plugin.name ?? key);
