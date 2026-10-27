@@ -10,7 +10,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { codeOnly } from "./_ctx.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -157,6 +157,48 @@ ok(composer.includes("<TurnStatusCapsule") && composer.includes("taskList={taskL
     "询问/审批卡 = **临时覆盖层**（composer-overlay-stack absolute 盖在状态区上，关掉即露出）");
   ok(composer.indexOf("composer-status-row") < composer.indexOf("<QueuedMessageList"),
     "⛔ 排队消息渲染在两胶囊**下方**（正常流、不覆盖任何元素）");
+
+  /* ── 10-27 用户令（截图）：「在运行过程中展示已编辑文件、已修改文件和已查看文件的文件名列表，
+     所有文件名均使用高亮字体呈现，并支持点击交互：点击任一文件名后，右侧预览区联动显示对应文件
+     的内容，同时保持当前预览状态与所选文件同步更新」。──────────────────────────────────
+     ⛔ 归类口径必须在**纯函数**里（`lib/turn-file-actions.mjs`）：组件里再写一份正则 =
+        两份真相源，只读文件迟早被漏掉。这里真跑真值表，不看字符串。 */
+  {
+    const { fileActionsOf } = await import(pathToFileURL(join(ROOT, "src/lib/turn-file-actions.mjs")).href);
+    const items = [
+      { type: "mcpToolCall", tool: "read_file", arguments: '{"path":"C:/w/src/a.tsx"}' },
+      { type: "mcpToolCall", tool: "read_file", arguments: '{"path":"C:/w/src/a.tsx"}' },   // 去重
+      { type: "commandExecution", command: 'cat C:/w/docs/spec.md' },                       // shell 读
+      { type: "mcpToolCall", tool: "edit_file", arguments: '{"file_path":"C:/w/src/b.ts"}' },
+      { type: "commandExecution", command: "apply_patch <<'PATCH'\n*** Update File: C:/w/src/c.ts\nPATCH" },
+      { type: "mcpToolCall", tool: "write_file", arguments: '{"path":"C:/w/src/new.json"}' },
+      { type: "mcpToolCall", tool: "grep", arguments: '{"pattern":"x","path":"C:/w/node_modules/pkg/i.js"}' },
+    ];
+    const got = fileActionsOf({ items, liveChanges: [{ path: "C:/w/src/c.ts" }, { path: "C:/w/dist/out.js" }] });
+    ok(got.read.length === 2 && got.read.every((row) => /a\.tsx|spec\.md/.test(row.path)),
+      "已查看 = read_file / cat 读到的文件（同文件只列一次；node_modules 下的噪音被跳过）");
+    ok(got.edited.length === 2 && got.edited.some((row) => row.path.endsWith("b.ts")) && got.edited.some((row) => row.path.endsWith("c.ts")),
+      "已编辑 = edit_file 与 apply_patch（补丁式就地改）");
+    ok(got.modified.length === 2 && got.modified.some((row) => row.path.endsWith("new.json"))
+      && got.modified.some((row) => row.path.endsWith("dist/out.js")),
+      "已修改 = write_file 新建 + 磁盘 live 扫描到的改动（工具项没抓到的子进程写入也不漏）");
+    ok(!got.modified.some((row) => row.path.endsWith("c.ts")),
+      "⛔ 已在「已编辑」里的文件不再重复进「已修改」（同一处改动只报一次）");
+    const empty = fileActionsOf({ items: [] });
+    ok(!empty.read.length && !empty.edited.length && !empty.modified.length, "空回合 ⇒ 三组都为空（不编造文件）");
+  }
+  ok(/const FILE_GROUPS: \{ key: keyof FileActions; label: string \}\[\] = \[\s*\{ key: "edited", label: "已编辑" \},\s*\{ key: "modified", label: "已修改" \},\s*\{ key: "read", label: "已查看" \}/.test(capsule),
+    "胶囊按「已编辑 / 已修改 / 已查看」三组渲染（顺序与用户列举一致）");
+  ok(/onClick=\{\(\) => openRightFile\(entry\.path\)\}/.test(capsule)
+    && /from "\.\.\/\.\.\/lib\/right-file\.mjs"/.test(capsule),
+    "点文件名 → openRightFile（既有右栏桥：补全路径 + 展开项目树 + 打开右栏并放宽）");
+  ok(/subscribeRightFile\(\(\{ path \}: \{ path: string \}\) => setActivePath/.test(capsule)
+    && /edited-files-row\$\{active \? " active" : ""\}/.test(capsule),
+    "选中态订阅 right-file 广播 ⇒ 列表高亮项与右栏正在预览的文件始终同步");
+  ok(/code\.edited-files-link \{ color: var\(--accent\)/.test(css) && /\.edited-files-row\.active \{/.test(css),
+    "文件名用高亮色（--accent）+ 选中行有底色（用户：所有文件名均使用高亮字体呈现）");
+  ok(/composer[\s\S]{0,400}turns=\{thread\.turns\}/.test(composer),
+    "调用方把**本回合工具项**交给胶囊（只看磁盘改动的 live 扫描看不到「只读没改」的文件）");
 
 /* ── 六-c、新回合开工清上一轮清单（10-06 夜六轮，用户实测「新回合，旧的任务清单还在」）────────
    上一轮停下（todo/doing 残留）的清单不许跨回合冒出来：空闲直发 → 宿主 tasks:clear（真通道+广播）
