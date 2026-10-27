@@ -18,7 +18,6 @@
     "dump-config": "node scripts/gen-domain-registry.mjs --dump-config",
     "e2e": "node scripts/accept.mjs",
     "e2e:list": "node scripts/accept.mjs --list",
-    "engine:verify": "node scripts/upgrade-codex-engine.cjs --verify-only",
     "gen:domains": "node scripts/gen-domain-registry.mjs",
     "gen:domains:minimal": "node scripts/gen-domain-registry.mjs --profile=minimal",
     "gen:ipc": "node scripts/gen-ipc-bridge.mjs generate && node scripts/gen-capability-skill.mjs",
