@@ -113,6 +113,16 @@ export const vaultFeature = defineFeature<null>({
         return { ok: false, reason: "解密失败（可能换了系统账户或数据被改过）" };
       }
       clipboard.writeText(plain);
+      /* 10-27 审查（界面承诺了「30 秒内粘贴」却没实现）：30s 后若剪贴板仍是这串密码就清掉；
+         用户中途复制了别的东西则不动（别把人家刚复制的内容抹了）。 */
+      setTimeout(() => {
+        try {
+          /* 兼容两种声明（同步 string / 异步 Promise<string>）：统一 Promise.resolve 后再比 */
+          void Promise.resolve(clipboard.readText()).then((current) => {
+            if (current === plain) clipboard.clear();
+          }).catch(() => undefined);
+        } catch { /* 剪贴板被占用等情况忽略 */ }
+      }, 30_000);
       return { ok: true };
     });
 

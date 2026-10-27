@@ -1575,14 +1575,7 @@
   margin: 0;
   font-size: 14px;
 }
-.favorites-settings .fav-count {
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 500;
-}
+
 .favorites-settings .settings-block-head p {
   margin: 2px 0 0;
   font-size: 12px;
@@ -1769,22 +1762,9 @@
   color: var(--faint);
   font-size: 11.5px;
 }
-.favorites-settings .fav-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.favorites-settings .fav-tags span {
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--panel-2);
-  color: var(--muted);
-  font-size: 10.5px;
-}
-.favorites-settings .fav-source {
-  color: var(--faint);
-  font-size: 11px;
-}
+
+
+
 .favorites-settings .fav-edit {
   display: flex;
   flex-direction: column;
@@ -1837,20 +1817,8 @@
   color: var(--text);
 }
 .favorites-settings .fav-item-actions button.danger:hover { color: var(--red); }
-.favorites-settings .fav-foot {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin: 12px 0 0;
-  font-size: 11.5px;
-  line-height: 1.6;
-}
-.favorites-settings .fav-foot code {
-  padding: 1px 5px;
-  border-radius: 5px;
-  background: var(--panel-2);
-  font: 11px/1.4 Cascadia Code, Consolas, ui-monospace, monospace;
-}
+
+
 
 /* ===== 历史会话搜索（09-24）：顶栏 🔍 弹出面板 ===== */
 .history-search-wrap { position: relative; display: inline-flex; }

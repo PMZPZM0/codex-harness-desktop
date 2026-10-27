@@ -101,5 +101,13 @@ for (const domain of ["vault", "journal", "extensions"]) {
 ok(existsSync(join(ROOT, "electron/features/vault-ipc.ts")) && existsSync(join(ROOT, "electron/features/journal-ipc.ts")) && existsSync(join(ROOT, "electron/features/extensions-ipc.ts")),
   "三个域文件在位");
 
+/* 10-27 审查补丁：界面承诺的防护必须有实现，不然就是假承诺 */
+ok(/30_000/.test(vaultMain) && /clipboard\.readText/.test(vaultMain) && /clipboard\.clear\(\)/.test(vaultMain),
+  "复制密码后 30s 自动清空剪贴板（只在内容仍是这串密码时清）—— 界面写了「30 秒」就必须真做");
+ok(/确认删除 \$\{activeSelection\.length\} 条？/.test(read("src/features/settings-favorites/FavoritesSettingsSection.tsx")),
+  "收藏夹批量删除两步确认（收藏删了没法从会话复原）");
+ok(/md-table-scroll" tabIndex=\{0\}/.test(read("src/features/markdown/Markdown.tsx")),
+  "表格滚动层可键盘聚焦（宽表键盘用户也能左右滚，WCAG 2.1.1）");
+
 console.log(`\n【rail】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);

@@ -508,6 +508,9 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   overscroll-behavior-x: contain; /* 滚到头别把整个对话一起带着滚 */
   scrollbar-width: thin;
 }
+.md-table-scroll { outline: 0; }
+/* 键盘聚焦时要看得见落点（可聚焦之后必须给焦点环，见 10-27 审查） */
+.md-table-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 8px; }
 .md-table-scroll::-webkit-scrollbar { height: 10px; }
 /* 10-27 用户特意圈了「卡片底下那条左右滑条」⇒ 轨道给底色、滑块给实色，
    别只留一条几乎看不见的细线（第一版用 --line 做滑块，截图里根本看不见）。 */

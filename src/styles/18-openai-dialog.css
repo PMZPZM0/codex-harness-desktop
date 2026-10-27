@@ -741,9 +741,6 @@
   background: color-mix(in srgb, var(--link) 12%, var(--bg));
   color: var(--link); flex:0 0 auto;
 }
-.voice-devtools-title { display:flex; flex-direction:column; gap:1px; min-width:0; flex:1 1 auto; }
-.voice-devtools-title strong { font-size:12.5px; font-weight:600; color: var(--text); }
-.voice-devtools-title .voice-devtools-sub { font-size:11px; color: var(--muted); line-height:1.35; }
 /* 10-27 用户（语音页截图）：「把必须放到基础模型里面…首个卡片内容布局调一下，现在有点乱」——
    卡头收成**一行**：图标 + 性质标签 + 名称 + 状态徽标 + 帮助 ?；
    副标题与安装路径下沉到正文区各占一行（原来挤在标题窄列里，路径被省略号吃掉一半）。
@@ -1023,19 +1020,7 @@
 .dev-runtime-modal-spinner svg { animation: spin 1s linear infinite; }
 
 /* 路径内联到标题区，不单独占一行 */
-.voice-devtools-path-inline {
-  display: inline-block;
-  margin-top: 4px;
-  padding: 2px 7px;
-  background: color-mix(in srgb, var(--muted) 8%, transparent);
-  border-radius: 4px;
-  font-size: 10.5px;
-  color: var(--muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  max-width: 100%;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  direction: rtl; /* 让文件名的左端（短）保留，长的中间省略号；鼠标悬浮看完整路径 */
-}
+
 
 
 /* ===== 实时语音舞台：输入框上方的彩色波浪 + 字幕 ===== */
