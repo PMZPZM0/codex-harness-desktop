@@ -105,9 +105,11 @@ export async function probeStudio(): Promise<StudioState> {
   const sameInstance = Boolean(session?.origin) && session?.origin === run.origin;
   return {
     alive: true,
-    /* 项目页地址只能从 `open` 的 stdout 拿到（Studio 不提供"当前页地址"接口）⇒ 用上次记下的；
-       ⛔ 换了实例（origin 变了）就不能复用旧 url（那个 key 属于上个进程）。 */
-    url: sameInstance && session ? session.url : run.origin,
+    /* 项目页地址只能从 `open` 的 stdout 拿到（Studio 不提供"当前页地址"接口）⇒ 用上次记下的。
+       ⛔ 换了实例（origin 变了）**不能**退化成 `run.origin`：页面地址里带 Studio 的 key，
+         给个裸 origin 会在内置浏览器里开出一张 401 白页（用户以为坏了）。
+         ⇒ 宁可留空（卡片提示"点连接 Studio 重新拿地址"），也不开错页面。 */
+    url: sameInstance && session ? session.url : "",
     origin: run.origin,
     projectPath: sameInstance && session ? session.projectPath : "",
     pid: run.pid ?? 0,

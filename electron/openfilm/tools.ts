@@ -251,9 +251,12 @@ function notReadyText(status: Awaited<ReturnType<typeof openfilmStatus>>): strin
 
 async function toolStatus(): Promise<string> {
   const status = await openfilmStatus();
-  const desktopLine = await desktopInfo()
-    .then((info) => desktopSummary(info))
-    .catch(() => "");
+  /* ⛔ 3 秒上限：模型调 status 是为了"现在能不能干活"，不能因为 GitHub API 慢（三候选各 12s）
+     把工具卡住。超时就当没有这条附加信息。 */
+  const desktopLine = await Promise.race([
+    desktopInfo().then((info) => desktopSummary(info)).catch(() => ""),
+    new Promise<string>((resolve) => { setTimeout(() => resolve(""), 3000).unref?.(); }),
+  ]);
   const lines = [
     `状态：${status.phase === "ready" ? "就绪" : status.phase === "broken" ? "装了一半（缺渲染引擎或 ffmpeg）" : status.phase === "installing" ? "安装中" : "未安装"}`,
     `CLI：${status.cli.version || "未安装"}${status.cli.path ? `（${status.cli.path}）` : ""}`,

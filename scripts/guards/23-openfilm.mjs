@@ -235,9 +235,32 @@ ok(Boolean(ipc) && Boolean(paths) && Boolean(runner) && Boolean(probe) && Boolea
     "⛔ 不代跑上游的 electron-updater（App 更新归 App 自己）");
   ok(/desktopDir\(\)/.test(desktop) && /path\.join\(desktopDir\(\), asset\.name\)/.test(desktop),
     "安装包落在自己的 <安装根>/desktop/ 下（⛔ 不塞下载目录、不改名）");
+  /* ── 系统检测 → 安装版本对应（用户明确要求；真值表已实测：win32/x64→Setup-x64、
+        win32/arm64→Setup-x64 + ARM 提示、darwin/arm64→arm64.dmg、darwin/x64→x64.dmg、linux→null） ── */
+  ok(/export function platformNotes\(\): string\[\]/.test(desktop) && /notes: platformNotes\(\)/.test(desktop),
+    "平台检测结论随 desktop-info 下发（notes 字段，界面直接展示）");
+  ok(/if \(process\.arch === "arm64"\) notes\.push/.test(desktop) && /x64 模拟运行/.test(desktop),
+    "Windows ARM 如实说明「上游只发 x64，由系统模拟运行」（⛔ 不假装有 arm64 包）");
+  ok(/win < 10|win && win < 10/.test(desktop) && /Windows 10 及以上/.test(desktop),
+    "Windows 低于 10 给出版本不足提示（Electron 44 的最低线）");
+  ok(/darwin < 21/.test(desktop) && /macOS 12/.test(desktop),
+    "macOS 低于 12（Darwin 21）给出版本不足提示");
+  ok(/arch === "arm64" \? find\(\/arm64\\\.dmg\$\/i\)/.test(desktop) && /x64 运行时/.test(desktop),
+    "macOS 按 arch 选包，并在 x64 运行时提示 Rosetta 路径");
+  ok(/const clean = await runExe\("xattr"/.test(desktop) && /没能清掉 quarantine/.test(desktop),
+    "xattr 清 quarantine 失败要如实说（⛔ 不能笼统报「已装好」让用户撞 Gatekeeper）");
+  ok(/url: sameInstance && session \? session\.url : ""/.test(studio),
+    "⛔ Studio 换实例后不给裸 origin（页面地址带 key，裸 origin 会开出 401 白页）");
+  ok(/env: \{ \.\.\.toolchainEnv\(\) \}/.test(runner),
+    "launchDetached 走 toolchainEnv（macOS 的 open/hdiutil 在 /usr/bin，裸 process.env 的 PATH 可能被裁剪）");
+  ok(/Promise\.race\(\[\s*desktopInfo\(\)/.test(tools) && /3000/.test(tools),
+    "openfilm_status 里的桌面端信息有 3s 上限（⛔ 不让 GitHub API 拖住工具）");
+
   /* ⛔ 断网/API 限流时"运行安装程序"不能报"还没下载"—— 本地动作只认磁盘 */
   ok(/function localPackageAny/.test(desktop) && /localPackage\(info\.asset\?\.name \?\? ""\) \?\? localPackageAny\(\)/.test(desktop),
     "install/reveal 先认磁盘上的包（⛔ 不靠 GitHub API 决定文件在不在）");
+  ok(/\(asset \? localPackage\(asset\.name\) : null\) \?\? localPackageAny\(\)/.test(desktop),
+    "desktop-info 的「已下载」也认磁盘（上游换资产名时不能把下过的包显示成未下载）");
   ok(/RELEASE_TTL_MS = 60_000/.test(desktop) && /releaseCache/.test(desktop),
     "Release 查询有 60s 缓存（未鉴权 API 只有 60 次/小时，不缓存会把自己限流）");
   ok(/desktopSummary\(info\)/.test(tools),

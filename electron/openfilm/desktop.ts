@@ -135,6 +135,28 @@ function localPackage(name: string): { path: string; size: number } | null {
   } catch { return null; }
 }
 
+/**
+ * 平台适配说明（**不阻断**，只如实告知）—— 用户明确要求"系统检测对应安装版本"。
+ *  · Windows ARM：上游只发 x64（`OpenFilm-Setup-x64.exe`），能装，但由系统的 x64 模拟层跑；
+ *  · Windows < 10 / macOS < 12：上游壳是 Electron 44，低于这条线装上也起不来（我们仍然允许下载，
+ *    因为判断版本号的依据是 os.release()，它不等于"一定能跑/一定不能跑"，⛔ 不替用户做这个决定）。
+ */
+export function platformNotes(): string[] {
+  const notes: string[] = [];
+  if (process.platform === "win32") {
+    const win = Number(String(os.release()).split(".")[0] || 0);   // Win10/11 都是 10.x
+    if (win && win < 10) notes.push(`系统是 Windows ${os.release()}：桌面端要求 Windows 10 及以上，装上也起不来（建议用 CLI 形态）`);
+    if (process.arch === "arm64") notes.push("这台是 ARM 设备：上游只发 x64 安装包，由 Windows 的 x64 模拟运行（能装，性能略降）");
+  }
+  if (process.platform === "darwin") {
+    /* Darwin 21 = macOS 12（Monterey）—— Electron 44 的最低线 */
+    const darwin = Number(String(os.release()).split(".")[0] || 0);
+    if (darwin && darwin < 21) notes.push(`系统是 Darwin ${os.release()}（低于 macOS 12）：桌面端起不来，请用 CLI 形态`);
+    if (process.arch === "x64") notes.push("当前是 x64 运行时：会下载 x64 安装包（Apple Silicon 上经 Rosetta 也能跑）");
+  }
+  return notes;
+}
+
 export type DesktopInfo = {
   /** 这台机器能不能装桌面端（Linux / Windows ARM 都不行 —— 上游没产物） */
   supported: boolean;
@@ -151,6 +173,8 @@ export type DesktopInfo = {
   localOutdated: boolean;
   /** Studio 是不是桌面 App 起的（说明用户已经在用桌面端） */
   runningApp: boolean;
+  /** 平台适配说明（版本/架构），界面直接展示，⛔ 不阻断 */
+  notes: string[];
 };
 
 export async function desktopInfo(): Promise<DesktopInfo> {
@@ -161,7 +185,7 @@ export async function desktopInfo(): Promise<DesktopInfo> {
     supported: platform !== "linux",
     reason: platform === "linux" ? "上游目前只发 Windows / macOS 产物（Linux 可用 CLI 形态）" : "",
     platform, installed, version: "", error: "", asset: null, local: null, localOutdated: false,
-    runningApp: Boolean(studio?.app),
+    runningApp: Boolean(studio?.app), notes: platformNotes(),
   };
   if (!base.supported) return base;
   let release: DesktopRelease;
@@ -171,7 +195,9 @@ export async function desktopInfo(): Promise<DesktopInfo> {
     return { ...base, error: String(error?.message ?? error) };
   }
   const asset = pickAsset(release.assets);
-  const local = asset ? localPackage(asset.name) : null;
+  /* ⛔ 资产名带不带版本是上游的事（dmg/exe 不带、zip 带）⇒ 上一版下过的包换个名字就"看不见"了。
+     先按当前资产名找，找不到再退到"目录里任意包"（配合 localOutdated 提示重下）。 */
+  const local = (asset ? localPackage(asset.name) : null) ?? localPackageAny();
   /* 包名里带版本（`OpenFilm-0.2.6-arm64-mac.zip`），dmg / exe 不带 ⇒ 用"上游版本 vs 上次记录的版本"判断过期。
      ⛔ 不去猜本地包的版本（文件名不可靠），只看下载记录文件。 */
   return {
@@ -266,10 +292,15 @@ async function installMacDmg(dmg: string): Promise<{ ok: boolean; error?: string
     }
     const copy = await runExe("cp", ["-R", source, target], { timeoutMs: 300_000 });
     if (copy.code !== 0) return { ok: false, error: `拷贝到 /Applications 失败：${(copy.stderr || copy.stdout).trim().slice(-300)}` };
-    /* 未公证包：不清 quarantine 会被 Gatekeeper 拦下 */
-    await runExe("xattr", ["-dr", "com.apple.quarantine", target], { timeoutMs: 60_000 });
+    /* 未公证包：不清 quarantine 会被 Gatekeeper 拦下。⛔ 清失败要如实说，不能报"已装好"了事 */
+    const clean = await runExe("xattr", ["-dr", "com.apple.quarantine", target], { timeoutMs: 60_000 });
     await launchDetached("open", ["-a", target]);
-    return { ok: true, note: `已安装到 ${target} 并启动（上游包未公证，已替你清掉 quarantine）` };
+    return {
+      ok: true,
+      note: clean.code === 0
+        ? `已安装到 ${target} 并启动（上游包未公证，已替你清掉 quarantine）`
+        : `已安装到 ${target}，但没能清掉 quarantine：首次打开若被系统拦下，去「系统设置 → 隐私与安全性」点「仍要打开」`,
+    };
   } finally {
     await runExe("hdiutil", ["detach", mountPoint, "-quiet"], { timeoutMs: 120_000 }).catch(() => undefined);
     try { fs.rmdirSync(mountPoint); } catch { /* 非空/已被卸载 */ }
