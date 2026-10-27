@@ -97,19 +97,20 @@ export function SoulMarketSection({ onNotice }: SoulMarketSectionProps) {
         action={<button className="secondary-setting" title="刷新人格列表与生效状态" onClick={() => void refreshWithReceipt(onNotice, "刷新人格列表", () => load())}>{loading ? <Spinner /> : <RefreshCw size={14} />}刷新</button>}
       />
 
-      {/* 当前生效状态卡（10-01 用户：「怎么检查我的人格是否生效」）：persona 落了档 = 已写入；
-          生效时点 = 下一个新会话。persona 有内容但 slug 为空 = 用户在个性化里手填过，同样算生效。 */}
-      <div className={`soul-market-status${activeSlug ? " active" : ""}`}>
-        <span className="soul-market-avatar"><UserRound size={16} /></span>
-        <div className="soul-market-status-main">
-          <strong>{activeEntry ? `${activeEntry.displayName}（生效中）` : activePersona ? "自定义人格（生效中）" : "默认人格"}</strong>
-          <small>{activePersona
-            ? `人设已写入全局个性化并同步引擎 AGENTS.md（${activePersona.length} 字）；新开的会话自动带上这套人设，正开着的会话不受影响。`
-            : "还没有应用人格——Codex 按默认风格对话。点下面任意人格卡片的「应用」即可换上。"}</small>
+      {/* 10-27 用户令：「codex 跟下面他自己的人格连着，也加一个恢复默认人格选项，跟用户人格卡区分开」
+          ⇒ Codex 人格改成**一个组**：组头（当前生效状态 + 恢复默认人格）＋ 下面的人格卡片网格，
+          与被描边/底色区分开的「用户人格」卡形成两块；「恢复默认人格」不再只在生效时才出现。 */}
+      <section className="soul-codex-group">
+        <div className={`soul-market-status soul-codex-head${activeSlug ? " active" : ""}`}>
+          <span className="soul-market-avatar"><UserRound size={16} /></span>
+          <div className="soul-market-status-main">
+            <strong>{activeEntry ? `${activeEntry.displayName}（生效中）` : activePersona ? "自定义人格（生效中）" : "默认人格"}</strong>
+            <small>{activePersona
+              ? `人设已写入全局个性化并同步引擎 AGENTS.md（${activePersona.length} 字）；新开的会话自动带上这套人设，正开着的会话不受影响。`
+              : "还没有应用人格——Codex 按默认风格对话。点下面任意人格卡片的「应用」即可换上。"}</small>
+          </div>
+          <button className="secondary-setting" disabled={Boolean(busy) || (!activeSlug && !activePersona)} title={activeSlug || activePersona ? "清空人设，回到 Codex 默认风格" : "当前已是默认人格"} onClick={() => void apply(null)}>{busy === "__reset__" ? <Spinner /> : null}恢复默认人格</button>
         </div>
-        {(activeSlug || activePersona) && <button className="secondary-setting" disabled={Boolean(busy)} onClick={() => void apply(null)}>{busy === "__reset__" ? <Spinner /> : null}还原默认人格</button>}
-      </div>
-
 
       {loading ? <p className="muted">正在加载人格列表…</p> : items.length === 0 ? (
         <p className="muted">人格列表为空（SkillHub 共 16 套，加载失败时看上方错误提示）。</p>
@@ -134,6 +135,7 @@ export function SoulMarketSection({ onNotice }: SoulMarketSectionProps) {
           })}
         </div>
       )}
+      </section>
 
       {/* 人设全文三级弹窗：⛔ 必须 portal 到 body——设置页容器带 transform，会把 position:fixed
           劫持成相对设置页定位（用户截图：弹窗贴在设置页下半截）。portal 出去后 info-modal-mask

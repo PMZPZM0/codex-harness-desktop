@@ -424,6 +424,14 @@
 .settings-exp-shell .uc-hero-kicker { color: var(--muted); }
 .settings-exp-shell .uc-chip { background: var(--panel-2); border-color: var(--line-soft); color: var(--muted); }
 .settings-exp-shell .uc-panel { border: 1px solid var(--line-soft); border-radius: 12px; background: var(--panel); box-shadow: none; }
+/* 10-27 用户令：「用户人格和 codex 卡片区分开」⇒ 用户人格用强调色描边 + 极淡斜向底色，
+   与下面中性的 Codex 人格组一眼分得开。⛔ 特异性必须 ≥ `.settings-exp-shell .uc-panel`（0,2,0），
+   写 `.user-persona-panel` 单类会被上面那条压掉（实测白写了）。 */
+.settings-exp-shell .user-persona-panel {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
+  /* ⛔ 统一简洁风里不许出现渐变（守卫 12ad 直接扫这个字符串）⇒ 只允许纯色淡染。 */
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel));
+}
 .settings-exp-shell .uc-panel-icon { background: var(--panel-2); color: var(--muted); }
 
 .settings-exp-shell .provider-setup-hero-title em { background: var(--panel-2); color: var(--muted); }

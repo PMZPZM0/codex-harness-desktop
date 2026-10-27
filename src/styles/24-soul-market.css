@@ -25,6 +25,28 @@
 /* 当前生效状态卡（10-01 用户：「怎么检查我的人格是否生效」） */
 .soul-market-status { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 10px 12px; }
 .soul-market-status.active { border-color: var(--accent); background: var(--accent-soft); }
+/* ── 10-27 用户令：「用户人格和 codex 卡片区分开；codex 跟下面他自己的人格连着；codex 也加一个恢复默认人格」 ──
+   Codex 人格 = **一个组**：无边框的组头（当前生效状态 + 恢复默认人格）＋ 组内的人格卡片网格，
+   整组共用一张卡面 ⇒ 视觉上「Codex + 它的人格们」是一块。 */
+.soul-codex-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+}
+/* 组头不要自己再画一圈边框（否则「卡中卡」，又回到被隔开的问题） */
+.soul-codex-group > .soul-codex-head {
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: 0;
+  background: none;
+  padding: 0 0 10px;
+}
+.soul-codex-group > .soul-codex-head.active { background: none; }
+.soul-codex-head > button { flex: none; }
 .soul-market-status-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .soul-market-status-main strong { font-size: 13px; color: var(--text); }
 .soul-market-status-main small { font-size: 11px; color: var(--muted); }
