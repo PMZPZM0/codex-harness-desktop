@@ -1,6 +1,5 @@
 /** 存储设置 / 复审面板（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
 import { useState, useEffect, useMemo } from "react";
-import { PageInfo } from "../../components/SettingsHead";
 import { ChevronDown, Check, RefreshCw, FileCode2, FolderOpen, Search, Download, GitBranch, X } from "lucide-react";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { Spinner } from "../../components/CardShell";
@@ -44,7 +43,8 @@ export function StorageSection({ onNotice, onClearMemoryCache, openAppConfirm }:
   };
   return (
     <section className="settings-section stack is-settings-flow">
-      <div className="settings-copy"><h2>数据管理<PageInfo text={<>查看各数据目录占用，并清理可安全的缓存。会话历史（rollout 原档）<strong>不随缓存清理</strong>；要归档或永久删除会话，去「归档管理」页。</>} /></h2><p>看清各类数据占多少空间，按需清理缓存；会话原档不受缓存清理影响。</p></div>
+      {/* 10-27 用户令：「右上角的帮助问号删了」⇒ 页头整块（大字 / 副标题 / ?）撤掉，
+          进页直接是占用卡 + 工作日志卡。 */}
       {/* 10-24 用户令「整齐划一」：占用行 + 恢复缓存行收进同一张白卡（每行一行分隔线，操作全部右对齐） */}
       <div className="storage-page-card settings-card">
         {info?.items.map((item) => (

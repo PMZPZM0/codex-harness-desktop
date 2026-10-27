@@ -582,6 +582,15 @@
 /* ── 数据管理页（10-24 用户令「整齐划一」）：三段统一为分组小标题 + 单张白卡，行间细分隔线 ──
    ⛔ 全部作用域在 .storage-page-* 下（34-devtools-cards 教训：不许裸写 .settings-card 级全局改写）。
    旧行样式（.storage-row 自带边框底色）在卡内关掉 —— 行与行用分隔线，不再一格一格。 */
+/* ── 10-27 用户令：「这个界面也是分断太严重了」──
+   数据管理页是**两个并列的 .is-settings-flow 段**（占用卡 / 工作日志卡），框架给每段各留
+   26px 下留白 + 4px 上留白 ⇒ 中间空出 30px，看着像断成两块。这里把段留白归零、两卡共用一条线：
+   只有最上一张留上圆角、最下一张留下圆角，中间那条重复边框去掉。 */
+.settings-exp-shell > .is-settings-flow { padding-top: 0; padding-bottom: 0; }
+.settings-exp-shell > .is-settings-flow + .is-settings-flow { padding-top: 0; }
+.settings-exp-shell .is-settings-flow > .storage-page-card { margin-top: 0; border-radius: 0; }
+.settings-exp-shell > .is-settings-flow:first-of-type > .storage-page-card { border-radius: 12px 12px 0 0; }
+.settings-exp-shell > .is-settings-flow + .is-settings-flow > .storage-page-card { border-top: 0; border-radius: 0 0 12px 12px; }
 .settings-exp-shell .storage-page-card { display: flex; flex-direction: column; padding: 2px 14px; }
 .settings-exp-shell .storage-page-card > * { padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
 .settings-exp-shell .storage-page-card > *:first-child { padding-top: 14px; }
