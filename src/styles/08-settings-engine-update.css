@@ -1972,3 +1972,37 @@
 }
 .auto-update-row button.ghost-button:disabled,
 .settings-card-head button.ghost-button:disabled { opacity: 0.5; cursor: default; }
+
+/* ── OpenFilm 视频剪辑卡（10-27）───────────────────────────────────────────
+   放在开发工具页的二级弹窗里。⛔ 卡片里**不出现上游 Logo**（品牌面纪律），只用文字链接 + 声明。
+   配色一律用主题变量（暗色下不瞎）。 */
+.openfilm-card { display: flex; flex-direction: column; gap: 10px; }
+.openfilm-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.openfilm-head strong { display: block; color: var(--text); font-size: 13.5px; font-weight: 600; }
+.openfilm-head small { display: block; margin-top: 3px; color: var(--faint); font-size: 11.5px; line-height: 1.6; }
+.openfilm-badge { display: inline-flex; align-items: center; gap: 5px; flex: none; padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 11px; color: var(--muted); background: var(--panel-2); }
+.openfilm-badge.tone-ok { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, var(--line)); }
+.openfilm-badge.tone-warn { color: #b7791f; border-color: color-mix(in srgb, #b7791f 40%, var(--line)); }
+.openfilm-attribution { margin: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--muted); font-size: 11.5px; line-height: 1.7; }
+.openfilm-fineprint { color: var(--faint); font-size: 11px; line-height: 1.7; }
+.openfilm-link { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; }
+.openfilm-link:hover { text-decoration: underline; }
+.openfilm-deps { display: flex; flex-wrap: wrap; gap: 6px; }
+.openfilm-deps span { padding: 2px 7px; border-radius: 6px; border: 1px solid var(--line); font-size: 11px; color: var(--faint); }
+.openfilm-deps span[data-ok="1"] { color: var(--green); border-color: color-mix(in srgb, var(--green) 35%, var(--line)); }
+.openfilm-deps span[data-ok="0"] { color: var(--del); border-color: color-mix(in srgb, var(--del) 35%, var(--line)); }
+.openfilm-progress { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); font-size: 11.5px; color: var(--muted); }
+.openfilm-progress code { flex: 1 0 100%; color: var(--faint); font-size: 10.5px; white-space: pre-wrap; word-break: break-all; }
+.openfilm-bar { flex: 1 1 120px; height: 4px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
+.openfilm-bar i { display: block; height: 100%; background: var(--accent); transition: width .2s; }
+.openfilm-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.openfilm-actions .secondary-setting.danger-lite { color: var(--del); }
+.openfilm-notice { margin: 0; font-size: 11.5px; line-height: 1.6; }
+.openfilm-notice.tone-ok { color: var(--green); }
+.openfilm-notice.tone-warn { color: #b7791f; }
+.openfilm-notice.tone-err { color: var(--del); }
+.openfilm-settings { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.openfilm-setting-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--text); }
+.openfilm-seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+.openfilm-seg button { padding: 3px 9px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 11.5px; cursor: pointer; }
+.openfilm-seg button.active { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px #0000001a; }
