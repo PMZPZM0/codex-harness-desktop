@@ -181,7 +181,10 @@ export async function openStudio(input: { filmDir?: string; cwd?: string } = {})
     app: Boolean(said?.app || readRunJson()?.app),
     startedAt: Date.now(),
   };
-  if (said) writeSession(session);
+  /* ⛔ 只要拿到 URL 就落盘：`open` 打印地址时 health 可能还没就绪（端口刚 listen），
+     原来 `if (said)` 会把这唯一一份"页面地址"丢掉 ⇒ 接下来 status 的 url 变空、卡片显示"未连接"，
+     而用户其实已经能打开页面了。said 只用来补 version / app 两个字段。 */
+  if (origin) writeSession(session);
   const studio = await probeStudio();
   /* 渲染层据此把 URL 开进内置浏览器（⛔ 主进程不去开 —— 内置浏览器是渲染层的 webview） */
   broadcastCodexEvent({ type: "openfilm", phase: "studio", url, projectPath, origin, alive: Boolean(said) });

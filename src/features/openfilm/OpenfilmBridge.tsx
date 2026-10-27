@@ -16,10 +16,16 @@ import { useEffect, useRef } from "react";
 export type OpenfilmHost = {
   openInBrowserPane: (url: string) => void;
   setNotice?: (text: string) => void;
+  /** 右栏当前状态：用来判断"同一个 URL 是不是已经显示着"（⛔ 不传就退回"只按 URL 去重"） */
+  rightOpen?: boolean;
+  rightTab?: string;
 };
 
 export function OpenfilmBridge({ app }: { app: OpenfilmHost }) {
-  /* 同一 URL 连续广播（重连/切项目）只开一次：seq 相同就跳过，避免右栏反复重载 */
+  /* 同一 URL 连续广播只开一次，避免右栏反复重载。
+     ⛔ 但"去重"不能只看 URL：用户把右栏关掉（或切到别的页签）后再点「打开 Studio」，
+        广播的 URL 与上次**完全相同**，只看 URL 就会静默什么都不做（用户以为按钮坏了）。
+     ⇒ 只有「同一 URL **且** 右栏正开着浏览器页」才跳过。 */
   const lastUrlRef = useRef("");
   const actionsRef = useRef(app);
   actionsRef.current = app;
@@ -30,7 +36,10 @@ export function OpenfilmBridge({ app }: { app: OpenfilmHost }) {
       if (String(event?.phase ?? "") !== "studio") return;
       const url = String(event?.url ?? "");
       if (!/^https?:\/\//.test(url)) return;
-      if (url === lastUrlRef.current) return;
+      const alreadyShowing = url === lastUrlRef.current
+        && actionsRef.current.rightOpen === true
+        && String(actionsRef.current.rightTab ?? "") === "browser";
+      if (alreadyShowing) return;
       lastUrlRef.current = url;
       actionsRef.current.openInBrowserPane(url);
       /* 让用户知道"谁在改我的片子"：Studio 打开 = 模型接下来的改动会实时落在这个页面里 */

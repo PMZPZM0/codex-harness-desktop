@@ -87,7 +87,20 @@ export async function openfilmStatus(): Promise<OpenfilmStatus> {
   const version = cliVersion();
   const browser = { installed: browserInstalled(), cacheRoots: browserCacheRoots() };
   const ff = await ffmpegState();
-  const installing = fs.existsSync(path.join(openfilmRoot(), ".installing"));
+  /* ⛔ 陈旧标记自愈：安装进程崩溃 / 断电 / 强杀后 `.installing` 会留在盘上，
+     原来只看"存在吗" ⇒ 界面永久停在「安装中…」、按钮全灰，用户没有任何自救入口。
+     标记里写的就是开始时间（runInstall 写的 Date.now()），超过 30 分钟一律视为陈旧并清掉
+     （真装一次最多几分钟；宁可让用户重试，也不能把 UI 锁死）。 */
+  const installing = (() => {
+    const marker = path.join(openfilmRoot(), ".installing");
+    let startedAt = 0;
+    try { startedAt = Number(fs.readFileSync(marker, "utf8").trim()); } catch { return false; }
+    if (!Number.isFinite(startedAt) || startedAt <= 0 || Date.now() - startedAt > 30 * 60_000) {
+      try { fs.rmSync(marker, { force: true }); } catch { /* 删不掉就忽略（下次还会判陈旧） */ }
+      return false;
+    }
+    return true;
+  })();
   const phase: OpenfilmPhase = installing
     ? "installing"
     : version && browser.installed && ff.ok

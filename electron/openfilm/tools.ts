@@ -22,7 +22,7 @@ import os from "node:os";
 import { threadCwd } from "../runtime-refs";
 import { cliEntry, cliVersion, filmsRootFor, openfilmRoot, studioHome } from "./paths";
 import { openfilmStatus } from "./probe";
-import { runCli } from "./runner";
+import { runCli, verbTimeout } from "./runner";
 import { openStudio } from "./studio";
 import { desktopInfo, desktopSummary } from "./desktop";
 import { OPENFILM_HOME, OPENFILM_LICENSE } from "./brand";
@@ -319,7 +319,8 @@ async function toolCheck(args: any, workspace: string): Promise<{ ok: boolean; t
   }
   const result = await runCli(cliEntry(), ["look", ...(at ? [at] : [])], { verb: "look", cwd: gate.dir });
   const body = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n").slice(-6000);
-  if (result.timedOut) return { ok: false, text: `校验超时（${Math.round(180_000 / 1000)}s）：${body}` };
+  /* ⛔ 用 runner 的真实超时值，别在这里再写一个字面量（改超时就会对不上） */
+  if (result.timedOut) return { ok: false, text: `校验超时（${Math.round(verbTimeout("look") / 1000)}s）：${body}` };
   if (result.code !== 0) return { ok: false, text: `校验失败（退出码 ${result.code}）：\n${body}` };
   return { ok: true, text: `校验通过（${gate.dir}）\n${body}` };
 }
