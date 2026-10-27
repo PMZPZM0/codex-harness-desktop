@@ -148,7 +148,7 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
   }, [app]);
 
   return (
-    <div className={`composer-rail${open ? " is-open" : ""}`} ref={railRef} onMouseEnter={() => setBump((value) => value + 1)} onMouseMove={() => setBump((value) => value + 1)}>
+    <div className={`composer-rail${open ? " is-open" : ""}`} ref={railRef} onMouseEnter={() => setBump((value) => value + 1)}>
       <button
         type="button"
         className="composer-rail-toggle"
@@ -173,7 +173,7 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
                 aria-pressed={isPanel ? panelId === entry.id : undefined}
                 aria-label={entry.label}
                 title={entry.label}
-                onClick={() => (isPanel ? (setPanelId((current) => (current === entry.id ? null : entry.id)), reposition()) : runExternal(entry))}
+                onClick={() => (isPanel ? setPanelId((current) => (current === entry.id ? null : entry.id)) : runExternal(entry))}
               >
                 <Icon size={16} />
               </button>

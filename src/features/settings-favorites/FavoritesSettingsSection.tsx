@@ -78,6 +78,8 @@ export function FavoritesSettingsSection(props: FavoritesSettingsSectionProps) {
   const [draftOpen, setDraftOpen] = useState(false);
   const [editing, setEditing] = useState<{ id: string; title: string; note: string; tags: string } | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  /* 10-27 审查：批量删除原来一次点击就删（收藏删了没法从会话复原），补两步确认；改动选择即复位 */
+  const [confirmBatch, setConfirmBatch] = useState(false);
 
   /* 挂载时拉一次（主进程是真相源，镜像可能落后：另一个窗口改过、或本页上次打开后又新增）。
      只拉不写 ⇒ 幂等，重复挂载无副作用。 */
@@ -98,12 +100,13 @@ export function FavoritesSettingsSection(props: FavoritesSettingsSectionProps) {
   const alive = new Set(favorites.map((item) => item.id));
   const activeSelection = selected.filter((id) => alive.has(id));
 
-  const toggleOne = (id: string) => setSelected((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
-  const toggleAll = () => setSelected(activeSelection.length === list.length ? [] : list.map((item) => item.id));
+  const toggleOne = (id: string) => { setConfirmBatch(false); setSelected((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id])); };
+  const toggleAll = () => { setConfirmBatch(false); setSelected(activeSelection.length === list.length ? [] : list.map((item) => item.id)); };
 
   async function batchRemove() {
     if (!activeSelection.length) return;
     const removed = await onRemove(activeSelection);
+    setConfirmBatch(false);
     if (removed) { setSelected([]); await onRefresh(); }
   }
 
@@ -165,7 +168,7 @@ export function FavoritesSettingsSection(props: FavoritesSettingsSectionProps) {
               options={(Object.keys(SCOPE_LABEL) as MemoryLayerScope[]).map((value) => ({ value, label: SCOPE_LABEL[value] }))}
             />
             <button type="button" className="fav-act" disabled={busy} onClick={() => void batchMemory()} title="把选中的收藏追加到所选记忆层"><Archive size={13} />加入记忆</button>
-            <button type="button" className="fav-act danger" disabled={busy} onClick={() => void batchRemove()}><Trash2 size={13} />删除 {activeSelection.length}</button>
+            <button type="button" className="fav-act danger" disabled={busy} onClick={() => (confirmBatch ? void batchRemove() : setConfirmBatch(true))}><Trash2 size={13} />{confirmBatch ? `确认删除 ${activeSelection.length} 条？` : `删除 ${activeSelection.length}`}</button>
           </>
         )}
         <span className="fav-spacer" />

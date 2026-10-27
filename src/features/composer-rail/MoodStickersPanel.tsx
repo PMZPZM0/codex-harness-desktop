@@ -8,8 +8,6 @@
  * 表情给人看、括号里的中文释义给模型看，**不用改引擎提示词**；用户发出前可以删掉括号。
  * 释义写得像一句人话（「我不满意」「这个方向对」），比「emoji: angry」更容易被模型正确理解。
  */
-import { useState } from "react";
-import { Check } from "lucide-react";
 
 type Sticker = { emoji: string; label: string; gloss: string; group: "正向" | "负向" | "中性" };
 
@@ -68,17 +66,14 @@ const STICKERS: Sticker[] = [
 ];
 
 export function MoodStickersPanel({ onInsert, onDone }: { onInsert: (text: string) => void; onDone?: () => void }) {
-  const [justAdded, setJustAdded] = useState<string | null>(null);
   const groups: Sticker["group"][] = ["正向", "负向", "中性"];
 
   /* 10-27 用户改口：「选择到输入框不要带文字，一个表情就行了」⇒ 只插 emoji。
      含义靠**悬停提示 + 引擎侧图例**（AGENTS.md 里那张表）传达，不往输入框里塞括号。 */
   const pick = (sticker: Sticker) => {
     onInsert(sticker.emoji);
-    setJustAdded(sticker.emoji);
     /* 10-27 用户：「选择了表情，表情界面自动隐藏，不要还一直显示」⇒ 选完直接收起弹层 */
     onDone?.();
-    window.setTimeout(() => setJustAdded((current) => (current === sticker.emoji ? null : current)), 900);
   };
 
   return (
@@ -92,14 +87,13 @@ export function MoodStickersPanel({ onInsert, onDone }: { onInsert: (text: strin
               <button
                 key={sticker.emoji}
                 type="button"
-                className={`sticker${justAdded === sticker.emoji ? " is-added" : ""}`}
+                className="sticker"
                 title={`${sticker.label} —— ${sticker.gloss}`}
                 aria-label={`${sticker.label}：${sticker.gloss}`}
                 onClick={() => pick(sticker)}
               >
                 <span className="sticker-emoji">{sticker.emoji}</span>
                 <span className="sticker-label">{sticker.label}</span>
-                {justAdded === sticker.emoji ? <span className="sticker-ok"><Check size={11} /></span> : null}
               </button>
             ))}
           </div>

@@ -90,7 +90,7 @@ export function PasswordBookPanel({ onToast, onNotice }: { onToast: OnToast; onN
   async function copyPassword(item: VaultItem) {
     try {
       const result = await window.codex.vaultCopy(item.id);
-      if (result.ok) onToast("密码已复制", "30 秒内粘贴到目标处；密码明文没有经过界面");
+      if (result.ok) onToast("密码已复制", "30 秒后自动清空剪贴板；明文没有经过界面");
       else onNotice(result.reason ?? "复制失败");
     } catch (error: any) {
       onNotice(`复制失败：${error?.message ?? error}`);
