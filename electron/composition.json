@@ -275,6 +275,13 @@
       "config": null
     },
     {
+      "id": "extensions",
+      "enabled": true,
+      "file": "features/extensions-ipc.ts",
+      "export": "extensionsFeature",
+      "config": null
+    },
+    {
       "id": "external",
       "enabled": true,
       "file": "features/external-ipc.ts",
@@ -342,6 +349,13 @@
       "enabled": true,
       "file": "features/image-lab.ts",
       "export": "imageLabFeature",
+      "config": null
+    },
+    {
+      "id": "journal",
+      "enabled": true,
+      "file": "features/journal-ipc.ts",
+      "export": "journalFeature",
       "config": null
     },
     {
@@ -657,6 +671,13 @@
       "enabled": true,
       "file": "features/user-ipc.ts",
       "export": "userFeature",
+      "config": null
+    },
+    {
+      "id": "vault",
+      "enabled": true,
+      "file": "features/vault-ipc.ts",
+      "export": "vaultFeature",
       "config": null
     },
     {

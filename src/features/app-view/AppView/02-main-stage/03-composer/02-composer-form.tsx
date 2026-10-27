@@ -148,6 +148,7 @@ import {
 import { CardStatusIcon, Spinner, useCardOpen, type ActionStatus } from "../../../../../components/CardShell";
 import { EffortPicker } from "../../../../../components/EffortPicker";
 import { ComposerEditor, ComposerMenu, ThreadFilePicker } from "../../../../composer";
+import { ComposerRail } from "../../../../composer-rail/ComposerRail";
 import { basename } from "../../../../../lib/basename";
 import { effortLabels } from "../../../../../lib/effort-labels";
 import { expertRoleLabel } from "../../../../../lib/expert-role-label";
@@ -383,6 +384,9 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
         onPointerDown={onResizePointerDown} onDoubleClick={onResizeDoubleClick}>
         <span className="composer-resize-grip" aria-hidden />
       </div>
+      {/* 10-27 用户令：输入框左侧那条竖条（收藏夹 / 密码本 / 开发日记 / 心情表情）。
+          挂在这里 ⇒ 每个会话都是同一个组件（跨会话一致）；默认只露一根粗条。 */}
+      <ComposerRail app={app} />
                         {/* ⛔ 09-19 用户明令删除输入框内的「还没配模型」提示条（原话：「排版太丑，不要吸在
                             输入框上面吧」「输入框里面的删了」）。入口改为**左侧栏的「模型配置」菜单**
                             （sidebar-tabs），那里才是配置类功能的固定位置。别再把它塞回输入框。 */}
