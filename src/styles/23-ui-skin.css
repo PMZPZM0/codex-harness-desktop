@@ -97,6 +97,71 @@
 }
 .comp-lib-cell:hover .comp-lib-copy-hint { opacity: 1; }
 
+/* ── 10-27 用户令：「优化一下展示，现在不太好看」 ──
+   实测问题：① 预览区高度随组件本身浮动 ⇒ 网格行高参差、下半截空一块；
+             ② 卡片内部「名称 / 复制代码」两行挤在一起且 hint 只在 hover 才出现，扫读时不知道能复制。
+   修法：预览区钉成固定高（内容居中裁切）、名称单行省略、复制提示常驻为右侧小徽标、
+   卡片 hover 只提边框与底色，不再靠变形（避免整屏抖动）。 */
+/* ⛔ 分页后不再让网格自己滚（否则页面底部的分页条会被内部滚动挡在外面，出现双滚动条） */
+.comp-lib-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; padding: 2px 2px 4px; max-height: none; overflow: visible; }
+.comp-lib-cell { padding: 10px; border-radius: 12px; gap: 8px; transition: border-color 0.12s, background 0.12s; }
+.comp-lib-cell:hover { background: color-mix(in srgb, var(--accent) 5%, var(--panel)); }
+.comp-lib-grid .ui-skin-preview { height: 96px; min-height: 96px; padding: 4px; }
+.comp-lib-cell .ui-skin-cell-name {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+}
+.comp-lib-cell .comp-lib-copy-hint {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 86%, transparent);
+  border: 1px solid var(--line-soft);
+  font-size: 9.5px;
+  color: var(--accent);
+  opacity: 0;
+}
+.comp-lib-cell:hover .comp-lib-copy-hint { opacity: 1; }
+
+/* 分页条（10-27：替代「加载更多」） */
+.comp-lib-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 2px 2px 0;
+}
+.comp-lib-pager-info { color: var(--faint); font-size: 11.5px; }
+.comp-lib-pager-info b { color: var(--text); }
+.comp-lib-pager-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.comp-lib-pager-slot { display: inline-flex; align-items: center; gap: 6px; }
+.comp-lib-pager-gap { color: var(--faint); font-size: 11px; }
+.comp-lib-pager-num {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.comp-lib-pager-num:hover { border-color: var(--accent); color: var(--text); }
+.comp-lib-pager-num.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+  color: var(--text);
+  font-weight: 600;
+}
+
 /* 代码详情浮层（画布内弹层，层级遵守 DESIGN.md 层叠带：设置内 backdrop 80~97） */
 .comp-lib-detail-backdrop {
   position: absolute;
