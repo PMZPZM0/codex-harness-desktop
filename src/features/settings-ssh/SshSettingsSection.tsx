@@ -4,9 +4,9 @@
  * 纯搬迁：返回的 JSX 与原块逐字一致（仅去掉外层缩进）。
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
-import { PageInfo } from "../../components/SettingsHead";
 import { Copy, Download, KeyRound, PenLine, Play, Plus, PowerOff, Search, Server, Star, TerminalSquare, Trash2, Upload, Wifi } from "lucide-react";
-import { BatchActions, CheckCard, SearchField, SegmentedTabs, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
+import { BatchActions, CheckCard, SearchField, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
+import { AppSelect } from "../../components/AppSelect";
 import { Spinner } from "../../components/CardShell";
 
 export type SshSettingsSectionProps = { setSshEditorTest: any; setSshDraft: any; emptySshDraft: any; sshQuery: any; setSshQuery: any; sshFilter: any; setSshFilter: any; sshServers: any; exportSshEntries: any; sshBatchBusy: any; importSshEntries: any; sshVisible: any; sshChecked: any; setSshChecked: any; toggleSshBatch: any; testSshBatch: any; removeSshEntries: any; sshBusyId: any; sshTestingId: any; sshCheckedSet: any; sshToggleChecked: any; toggleSshFavorite: any; toggleSshEntry: any; setSshTerminal: any; testSshEntry: any; setSshExecTarget: any; duplicateSshEntry: any };
@@ -16,30 +16,27 @@ export function SshSettingsSection(props: SshSettingsSectionProps) {
   return (
     <>
       <section className="settings-section stack ssh-page">
-                    <div className="settings-copy channel-heading">
-                      <div>
-                        <h2>SSH 服务器<PageInfo text={<>集中管理远程主机：保存连接与凭据，分组打标签，配置跳板机与登录后命令；可逐台或批量启用/停用、测试连通性、直接开终端或下发一次性命令。凭据仅保存在本机配置目录（ssh-servers.json）。</>} /></h2>
-                        <p>保存常用服务器，Codex 可以直接开终端或下发命令；凭据只留在本机。</p>
+                    <div className="ssh-toolbar ssh-filter-row">
+                      <SearchField value={sshQuery} onChange={setSshQuery} placeholder="搜索名称 / 主机 / 标签 / 备注" width={220} />
+                      <span className="ssh-status-filter">
+                        <AppSelect
+                          className="ssh-status-select"
+                          value={sshFilter}
+                          ariaLabel="SSH 状态筛选"
+                          options={[
+                            { value: "all", label: `全部 ${sshServers.length}` },
+                            { value: "on", label: `已启用 ${sshServers.filter((server: any) => server.enabled).length}` },
+                            { value: "off", label: `已停用 ${sshServers.filter((server: any) => !server.enabled).length}` },
+                            { value: "star", label: `收藏 ${sshServers.filter((server: any) => server.favorite).length}` },
+                          ]}
+                          onChange={(value) => setSshFilter(value as "all" | "on" | "off" | "star")}
+                        />
+                      </span>
+                      <div className="ssh-actions-line">
+                        <button className="secondary-setting ssh-action-sm" title="从 JSON 文件导入连接" disabled={sshBatchBusy} onClick={() => void importSshEntries()}><Upload size={13} />导入</button>
+                        <button className="secondary-setting ssh-action-sm" title="导出为 JSON（不含密码与私钥）" disabled={!sshServers.length} onClick={() => void exportSshEntries(false)}><Download size={13} />导出</button>
+                        <button className="primary-setting ssh-action-sm" onClick={() => { setSshEditorTest(null); setSshDraft(emptySshDraft()); }}><Plus size={13} />新建连接</button>
                       </div>
-                      <div className="settings-heading-actions">
-                        <button className="primary-setting" onClick={() => { setSshEditorTest(null); setSshDraft(emptySshDraft()); }}><Plus size={14} />新建连接</button>
-                      </div>
-                    </div>
-                    <div className="ssh-toolbar">
-                      <SearchField value={sshQuery} onChange={setSshQuery} placeholder="搜索名称 / 主机 / 标签 / 备注" width={240} />
-                      <SegmentedTabs
-                        value={sshFilter}
-                        onChange={(value) => setSshFilter(value as "all" | "on" | "off" | "star")}
-                        options={[
-                          { value: "all", label: "全部", count: sshServers.length },
-                          { value: "on", label: "已启用", count: sshServers.filter((server: any) => server.enabled).length },
-                          { value: "off", label: "已停用", count: sshServers.filter((server: any) => !server.enabled).length },
-                          { value: "star", label: "收藏", count: sshServers.filter((server: any) => server.favorite).length },
-                        ]}
-                      />
-                      <span className="ssh-toolbar-spacer" />
-                      <button className="secondary-setting" title="导出为 JSON（不含密码与私钥）" disabled={!sshServers.length} onClick={() => void exportSshEntries(false)}><Download size={14} />导出</button>
-                      <button className="secondary-setting" title="从 JSON 文件导入连接" disabled={sshBatchBusy} onClick={() => void importSshEntries()}><Upload size={14} />导入</button>
                     </div>
                     {sshServers.length > 0 && <div className="ssh-bulk-bar">
                       <SelectAllToggle

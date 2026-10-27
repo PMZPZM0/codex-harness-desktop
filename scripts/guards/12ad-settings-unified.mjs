@@ -127,6 +127,10 @@ ok(/<AppSelect[\s\S]{0,200}market-category-select/.test(pluginsPage) && !/<div c
 const compLibSrc = read("src/features/component-library/ComponentLibrary.tsx");
 ok(/comp-lib-cat-select/.test(compLibSrc) && !/ui-skin-cats/.test(compLibSrc) && /\.comp-lib-filter-row/.test(read("src/styles/23-ui-skin.css")), "组件库分类收成搜索行右侧下拉（搜索不再拉满）");
 ok(/\.comp-lib-grid\s*\{[^}]*max-height:\s*calc\(100vh/.test(read("src/styles/23-ui-skin.css")), "组件库网格高度跟窗口走（不再固定 460px 留空白）");
+const sshPage = pageSrc("ssh");
+ok(!/PageInfo|settings-copy/.test(sshPage) && /ssh-status-select/.test(sshPage) && /ssh-actions-line/.test(sshPage), "SSH 页问号/页头已删，状态筛选下拉与三颗操作并进搜索行");
+const sshCss = read("src/styles/16-settings-ssh.css");
+ok(/\.ssh-filter-row/.test(sshCss) && /\.ssh-action-sm\s*\{[^}]*height:\s*28px/.test(sshCss), "SSH 操作按钮小尺寸（28px）");
 ok(/manageable = \[\.\.\.localInstalled\]/.test(skillsPage), "技能批量管理只覆盖本地导入（市场/内置不参与）");
 ok(/skill-local-bulk/.test(skillsPage) && /本地导入/.test(skillsPage), "批量管理卡在本地导入分组内（不再挂在页面顶部）");
 ok(!/resource-toolbar secondary[sS]{0,500}BatchActions/.test(skillsPage), "顶部不再挂全局批量条");
@@ -142,7 +146,7 @@ const refreshAt = modelPage.indexOf("const refreshCardModels");
 const refreshEnd = modelPage.indexOf("const testProviderCard", refreshAt);
 const refreshBlock = refreshAt >= 0 && refreshEnd > refreshAt ? modelPage.slice(refreshAt, refreshEnd) : "";
 ok(refreshBlock.length > 0 && /addedIds/.test(refreshBlock) && /removed/.test(refreshBlock) && /saveCustomDraft/.test(refreshBlock) && /relaunchApp/.test(refreshBlock), "「更新模型」新增/移除模型都保存并重启（与编辑弹窗保存同口径）");
-for (const [key, title] of [["hooks", "钩子"], ["ssh", "SSH 服务器"], ["agentteam", "专家和专家团"], ["storage", "数据管理"]]) {
+for (const [key, title] of [["hooks", "钩子"], ["agentteam", "专家和专家团"], ["storage", "数据管理"]]) {
   const text = pageSrc(key);
   const at = text.indexOf(`<h2>${title}`);
   const window = at >= 0 ? text.slice(at, at + 2200) : "";
