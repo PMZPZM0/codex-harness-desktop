@@ -35,6 +35,22 @@ export function CloseConfirmDialog() {
     });
   }, []);
 
+  /* ⛔ 10-28 审查（对话框组件）：这个确认框原来**只能用鼠标**关 —— 有 role/aria-modal、有取消按钮，
+     但没有 Esc，键盘用户按 Esc 什么都不会发生（全局 Esc 还会去关别的面板）。
+     ⇒ capture 阶段拦 Esc = 取消（方向安全：Esc 永远不会误触"退出应用"）。 */
+  useEffect(() => {
+    if (!ask) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setSending(true);
+      void window.codex.respondCloseConfirm?.("cancel", remember).catch(() => undefined).finally(() => setAsk(null));
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [ask, remember]);
+
   if (!ask || typeof document === "undefined") return null;
 
   const respond = (action: CloseAction) => {
