@@ -489,9 +489,55 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
    ⛔ 两段反馈的动画选择器在下面 `[data-phase="done"]` 那条里**一并列了它们**（漏了就只有变色、没有弹动）。
    ⛔ 代码块的按钮锚在**外层 `.markdown pre`**（`:has` 规则）而不是包裹层：`pre` 是横向滚动容器，
       锚在包裹层上按钮会跟着代码一起被滚出可视区。 */
+/* 10-27 用户（截图）：「汇总消息，表格展示补齐，卡片底下左右滑动条…灯箱文件预览…右侧侧边栏的
+   文件预览也是，这个要是自适应的」——
+   表格不再被 `width:100%` 压进容器硬折行：整表按**自然宽度**排版，超出时在卡片底部横向滚动。
+   ⛔ 结构分两层：外层 `.md-table-wrap` = 不滚动的卡片（复制按钮的绝对定位锚 + 圆角裁切），
+      内层 `.md-table-scroll` = 横向滚动容器。把按钮放进滚动层会跟着表格一起被滚走。 */
 .md-table-wrap {
   position: relative;
+  margin: 10px 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden; /* 圆角要裁住内层滚动容器 */
 }
+.md-table-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain; /* 滚到头别把整个对话一起带着滚 */
+  scrollbar-width: thin;
+}
+.md-table-scroll::-webkit-scrollbar { height: 10px; }
+/* 10-27 用户特意圈了「卡片底下那条左右滑条」⇒ 轨道给底色、滑块给实色，
+   别只留一条几乎看不见的细线（第一版用 --line 做滑块，截图里根本看不见）。 */
+.md-table-scroll::-webkit-scrollbar-track { background: color-mix(in srgb, var(--text) 7%, transparent); border-radius: 999px; }
+.md-table-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 75%, transparent);
+  border-radius: 999px;
+}
+.md-table-scroll::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+.md-table-scroll::-webkit-scrollbar-corner { background: transparent; }
+/* ⛔ `max-content` + `min-width:100%`：窄表撑满卡片（不留一条细表），宽表保持自然宽度去滚动。
+   ⛔ 每格给最小宽 —— 中文可在任意字间断行，没有下限时长表会被压成一列一个字。 */
+.md-table-wrap table {
+  border-collapse: collapse;
+  width: max-content;
+  min-width: 100%;
+}
+.md-table-wrap th,
+.md-table-wrap td {
+  border: 0;
+  border-right: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+  min-width: 88px;
+}
+.md-table-wrap tr > :last-child { border-right: 0; }
+.md-table-wrap tbody tr:last-child > * { border-bottom: 0; }
+.md-table-wrap thead th { background: var(--panel-2); font-weight: 600; }
 .markdown pre:has(.md-code-wrap) {
   position: relative;
 }

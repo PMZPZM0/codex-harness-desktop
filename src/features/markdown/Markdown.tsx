@@ -217,7 +217,13 @@ const MdTable = memo(function MdTable({ children }: { children?: React.ReactNode
         doneIcon={<Check size={13} />}
         onFire={copyTable}
       />
-      <table>{children}</table>
+      {/* 10-27 用户（截图）：「汇总消息，表格展示补齐，卡片底下左右滑动条…灯箱文件预览…右侧侧边栏
+          的文件预览也是，这个要是自适应的」—— 表格按**自然宽度**排版，超出卡片时在这层横向滚动。
+          ⛔ 滚动容器必须是**内层**：复制按钮留在不滚动的外卡片上（`position:absolute`），
+            否则按钮会跟着表格一起被滚出可视区（与代码块同一个坑）。 */}
+      <div className="md-table-scroll">
+        <table>{children}</table>
+      </div>
     </div>
   );
 });
