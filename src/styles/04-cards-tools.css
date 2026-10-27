@@ -664,7 +664,10 @@
 }
 .edited-files-pop.pop-above { bottom: calc(100% + 6px); }
 .edited-files-pop.pop-below { top: calc(100% + 6px); }
-.edited-files-row { display: flex; align-items: center; gap: 7px; padding: 4px 6px; font-size: 12px; }
+.edited-files-row { display: flex; align-items: center; gap: 7px; padding: 4px 6px; font-size: 12px; border-radius: 7px; cursor: pointer; }
+/* 10-27 用户令：文件名**高亮**（蓝色可点感）+ 点击联动右栏预览；选中项 = 右栏正在预览的那个文件。 */
+.edited-files-row:hover { background: var(--panel-2); }
+.edited-files-row.active { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .edited-files-row code {
   flex: 1;
   min-width: 0;
@@ -673,6 +676,32 @@
   white-space: nowrap;
   color: var(--text);
 }
+.edited-files-row code.edited-files-link { color: var(--accent); }
+.edited-files-row.active code.edited-files-link { color: var(--accent); font-weight: 550; }
+/* 三组标题：已编辑 / 已修改 / 已查看（组内空则整组不渲染） */
+.edited-files-group + .edited-files-group { margin-top: 4px; border-top: 1px solid var(--line); padding-top: 4px; }
+.edited-files-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px 2px;
+  color: var(--faint);
+  font-size: 11px;
+}
+.edited-files-group-title span { color: var(--muted); font-size: 10.5px; }
+/* 行尾的「改动」小按钮（保留 diff 预览入口，不与文件名的主点击抢） */
+.edited-files-diff {
+  flex: none;
+  padding: 0 6px;
+  height: 18px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.edited-files-diff:hover { color: var(--text); background: var(--panel-2); }
 .edited-files-stats { flex: none; display: inline-flex; gap: 6px; }
 .edited-files-stats b { color: var(--add); font-style: normal; font-weight: 500; }
 .edited-files-stats i { color: var(--del); font-style: normal; }

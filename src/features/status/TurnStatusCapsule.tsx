@@ -22,11 +22,13 @@
  * ⛔ 文件区数据源、自适应弹层定位逻辑沿用 Round J 版本（那套用户逐条验收过：按空间选边、
  *   按可用空间收窄、以胶囊中心居中、left 写相对卡片偏移——写视口坐标会叠卡片左缘画歪）。
  */
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CircleCheck, Circle, ListChecks, LoaderCircle } from "lucide-react";
 import { getTurnLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
+import { getRightFile, openRightFile, subscribeRightFile } from "../../lib/right-file.mjs";
 import { mergeTaskSteps } from "../../lib/task-steps.mjs";
+import { fileActionsOf } from "../../lib/turn-file-actions.mjs";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { ToolCodeBlock } from "../shared/ToolCodeBlock";
 import { isImagePath } from "../../lib/is-image-path";
@@ -41,8 +43,20 @@ function baseName(path: string): string {
 }
 
 type StepRow = { id: string; text: string; state: string };
+type FileAction = { path: string; name: string };
+type FileActions = { read: FileAction[]; edited: FileAction[]; modified: FileAction[] };
 
-export function TurnStatusCapsule({ runningTurnId, taskList }: { runningTurnId: string | null; taskList: any[] }) {
+/** 三组的标题与顺序（10-27 用户令：已编辑 / 已修改 / 已查看）。
+ *  ⛔ 顺序按「改得最深 → 最后只是看一眼」，与用户列举的语义一致；组内保持工具调用先后。 */
+const FILE_GROUPS: { key: keyof FileActions; label: string }[] = [
+  { key: "edited", label: "已编辑" },
+  { key: "modified", label: "已修改" },
+  { key: "read", label: "已查看" },
+];
+
+const normPath = (path: string) => String(path ?? "").replaceAll("\\", "/").toLowerCase();
+
+export function TurnStatusCapsule({ runningTurnId, taskList, turns, fileActions }: { runningTurnId: string | null; taskList: any[]; turns?: any[]; fileActions?: FileActions }) {
   const [, setTick] = useState(0);
   const [zone, setZone] = useState<"steps" | "files" | null>(null);
   const [popSide, setPopSide] = useState<"above" | "below">("above");
@@ -119,6 +133,31 @@ export function TurnStatusCapsule({ runningTurnId, taskList }: { runningTurnId: 
     pop.style.right = "auto";
   }, [zone]);
   const files = runningTurnId ? getTurnLiveFileChanges(runningTurnId) : [];
+  /* 10-27 用户令（截图）：「在运行过程中展示已编辑文件、已修改文件和已查看文件的文件名列表，
+     所有文件名均使用高亮字体呈现，并支持点击交互：点击任一文件名后，右侧预览区联动显示对应文件
+     的内容，同时保持当前预览状态与所选文件同步更新」。
+     · 三个分组的来源 = 调用方按**本回合工具项**归类的结果（lib/turn-file-actions.mjs）：
+       只读没改的文件磁盘扫描永远看不到，所以不能再只靠 live changes；
+     · 「当前预览的是哪个文件」由 right-file 事件箱广播 ⇒ 订阅它做**选中态**，
+       列表与右栏预览始终同源（这是"保持当前预览状态与所选文件同步更新"的落点）。 */
+  /* ⛔ 调用方没直接给分组时，从本回合的工具项就地归类（少一层 props 传递）。
+     依赖用 items 引用 + live 改动列表：流式期间 items 会换新数组 ⇒ 每帧重算，但只是线性扫一遍
+     若干工具项的参数串（毫秒级），比在链路上多传一路 state 划算。 */
+  /* ⛔ 取「运行中那个回合」的工具项（拿不到就退化成最后一个回合）—— 由胶囊自己从 turns 里挑，
+     调用方只交一份 turns，不多传一路派生值。 */
+  const turnItems = useMemo(() => {
+    const list = Array.isArray(turns) ? turns : [];
+    return (list.find((turn) => turn?.id === runningTurnId) ?? list[list.length - 1])?.items;
+  }, [turns, runningTurnId]);
+  const derived = useMemo(() => fileActionsOf({ items: turnItems, liveChanges: files }), [turnItems, files]);
+  const actions: FileActions = fileActions ?? derived;
+  const groupTotal = actions.edited.length + actions.modified.length + actions.read.length;
+  const [activePath, setActivePath] = useState<string>(() => String(getRightFile()?.path ?? ""));
+  useEffect(() => {
+    setActivePath(String(getRightFile()?.path ?? ""));
+    return subscribeRightFile(({ path }: { path: string }) => setActivePath(String(path ?? "")));
+  }, []);
+  const statOf = new Map(files.map((file) => [normPath(file.path), file]));
   /* 步骤按**创建顺序**展示（①②③④ 从上往下读；store 接口的顺序是 updatedAt 倒序）。
      ★ 10-22 用户截图「任务清单重复渲染」：胶囊写「步骤 0/10」，磁盘上只有 5 条 —— 同一条
        `task_add` 被两路写入（重放时 call id 会变，按 id 去重拦不住）。归并口径收进纯函数
@@ -131,7 +170,9 @@ export function TurnStatusCapsule({ runningTurnId, taskList }: { runningTurnId: 
        · 步骤全部完成 ⇒ 隐藏（这轮收工了没内容可跟；running 中也一样，与夜四轮行为一致）。
      下一轮开工时宿主 tasks:clear + 模型自己的 task_add 会带上新清单，步骤区随之重新出现。 */
   const hasSteps = Boolean(runningTurnId) && steps.length > 0 && steps.some((step) => step.state !== "done");
-  const hasFiles = Boolean(runningTurnId) && files.length > 0;
+  /* ⛔ 只要有**任何**文件动作就出文件区（10-27 起含"只读了没改"的回合：用户要看已查看列表），
+     否则仍按老口径「有磁盘改动才出」。 */
+  const hasFiles = Boolean(runningTurnId) && (files.length > 0 || groupTotal > 0);
   if (!hasSteps && !hasFiles) return null;
   const doneCount = steps.filter((step) => step.state === "done").length;
   const totals = files.reduce((sum, file) => ({ added: sum.added + (file.added ?? 0), deleted: sum.deleted + (file.deleted ?? 0) }), { added: 0, deleted: 0 });
@@ -155,20 +196,61 @@ export function TurnStatusCapsule({ runningTurnId, taskList }: { runningTurnId: 
             </>
           ) : (
             <>
-              {(expanded ? files : files.slice(0, POP_LIMIT)).map((file) => (
-                <div className="edited-files-row" key={file.path} title={`${file.path} · 点击查看改动区域`}
-                  role="button" tabIndex={0} onClick={() => openDiff(file)}>
+              {/* ⛔ 三组：已编辑 / 已修改 / 已查看（10-27 用户令）。文件名是可点的**高亮链接**——
+                  点它 → 右栏「文件」页预览该文件（openRightFile 走既有桥：补全相对路径 +
+                  项目树展开 + 打开右栏并放宽到 420px）。
+                  · 有 diff 的行保留一枚「改动」小按钮（原来的改动预览没删，只是不再抢文件名的主点击）；
+                  · 选中态跟着 right-file 广播走，列表与右栏预览永远同一个文件。 */}
+              {FILE_GROUPS.map(({ key, label }) => {
+                const list = actions[key];
+                if (!list.length) return null;
+                const shown = expanded ? list : list.slice(0, POP_LIMIT);
+                return (
+                  <div className="edited-files-group" key={key}>
+                    <div className="edited-files-group-title">{label}<span>{list.length}</span></div>
+                    {shown.map((entry) => {
+                      const stat = statOf.get(normPath(entry.path));
+                      const active = activePath && normPath(activePath) === normPath(entry.path);
+                      return (
+                        <div className={`edited-files-row${active ? " active" : ""}`} key={`${key}:${entry.path}`}
+                          title={`${entry.path} · 点击在右侧预览`} role="button" tabIndex={0}
+                          onClick={() => openRightFile(entry.path)}>
+                          <FileTypeIcon path={entry.path} size={12} />
+                          <code className="edited-files-link">{entry.name}</code>
+                          {key !== "read" && stat ? (
+                            <span className="edited-files-stats">
+                              {stat.status === "deleted" ? <i className="completed-file-gone">已删除</i> : <><b>+{stat.added}</b><i>-{stat.deleted}</i></>}
+                            </span>
+                          ) : null}
+                          {key !== "read" && stat?.diff ? (
+                            <button type="button" className="edited-files-diff"
+                              title="查看这个文件的改动（diff）"
+                              onClick={(event) => { event.stopPropagation(); openDiff(stat); }}>改动</button>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                    {list.length > POP_LIMIT && !expanded ? (
+                      <button type="button" className="edited-files-more" onClick={() => setExpanded(true)}>
+                        还有 {list.length - POP_LIMIT} 个…
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+              {/* ⛔ 老口径兜底：调用方没传分组（或工具项还没解析出来）时，至少把磁盘改动列出来。 */}
+              {!groupTotal && (expanded ? files : files.slice(0, POP_LIMIT)).map((file) => (
+                <div className="edited-files-row" key={file.path} title={`${file.path} · 点击在右侧预览`}
+                  role="button" tabIndex={0} onClick={() => openRightFile(file.path)}>
                   <FileTypeIcon path={file.path} size={12} />
-                  <code>{baseName(file.path)}</code>
+                  <code className="edited-files-link">{baseName(file.path)}</code>
                   <span className="edited-files-stats">
                     {file.status === "deleted" ? <i className="completed-file-gone">已删除</i> : <><b>+{file.added}</b><i>-{file.deleted}</i></>}
                   </span>
                 </div>
               ))}
-              {files.length > POP_LIMIT && (
-                <button type="button" className="edited-files-more" onClick={() => setExpanded((v) => !v)}>
-                  {expanded ? "收起" : `还有 ${files.length - POP_LIMIT} 个文件…`}
-                </button>
+              {expanded && (
+                <button type="button" className="edited-files-more" onClick={() => setExpanded(false)}>收起</button>
               )}
             </>
           )}
@@ -187,10 +269,11 @@ export function TurnStatusCapsule({ runningTurnId, taskList }: { runningTurnId: 
         {hasFiles && (
           <span className="capsule-zone capsule-zone-files" role="button" tabIndex={0}
             onMouseEnter={() => setZone("files")} onClick={() => openZone("files")}
-            title="悬停 / 点击查看已修改的文件（点击后常驻，可点文件行看改动）">
-            <span>{files.length} 个文件已修改</span>
-            <b>+{totals.added}</b>
-            <i>-{totals.deleted}</i>
+            title="悬停 / 点击查看已编辑 / 已修改 / 已查看的文件（点击后常驻，点文件名在右侧预览）">
+            {/* ⛔ 有磁盘改动时仍是老文案（+A -D 是这一区的信息主体）；只在"纯查看"回合退化成文件数。 */}
+            {files.length > 0
+              ? <><span>{files.length} 个文件已修改</span><b>+{totals.added}</b><i>-{totals.deleted}</i></>
+              : <span>{groupTotal} 个文件</span>}
           </span>
         )}
       </button>

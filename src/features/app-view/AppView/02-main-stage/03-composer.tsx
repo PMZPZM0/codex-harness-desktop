@@ -497,8 +497,9 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                         if (!askCard && !approvals) return null;
                         return <div className="composer-overlay-stack">{askCard}{approvals}</div>;
                       })()}
+                      {/* 10-27：胶囊按本回合工具项归类「已编辑/已修改/已查看」（口径见 lib/turn-file-actions.mjs） */}
                       <div className="composer-status-row">
-                        <TurnStatusCapsule taskList={taskList} runningTurnId={activeThreadRunning ? (activeTurnId || thread.turns[thread.turns.length - 1]?.id || null) : null} />
+                        <TurnStatusCapsule taskList={taskList} turns={thread.turns} runningTurnId={activeThreadRunning ? (activeTurnId || thread.turns.at(-1)?.id || null) : null} />
                         <BackgroundTaskCapsule threadId={thread.id} />
                       </div>
                       <QueuedMessageList entries={queue} timers={queueTimers[thread.id] ?? {}} onSetTimer={(entry, runAt) => void setQueuedTimer(thread.id, entry.id, runAt)} onOpenFile={messageHandlers.onOpenFile} onQuote={messageHandlers.onQuote} onDelete={(id) => void deleteQueued(id)} onStart={(id) => void startQueued(id)} onSave={(entry, text) => void saveQueued(entry, text)} onReorder={(from, to) => void reorderQueued(from, to)} dragIndex={queueDragIndex} setDragIndex={setQueueDragIndex} />
