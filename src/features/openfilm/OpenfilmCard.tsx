@@ -36,6 +36,7 @@ type Desktop = {
   local: { path: string; size: number } | null;
   localOutdated: boolean;
   runningApp: boolean;
+  notes: string[];
 };
 
 type Progress = { step?: "cli" | "chromium" | "verify"; label?: string; pct?: number; log?: string; error?: string; message?: string; phase?: string };
@@ -289,6 +290,8 @@ export function OpenfilmCard() {
           上游的图形界面版：自带 ffmpeg 与渲染浏览器、双击即用，和这里的剪辑共用同一个项目库（改哪边都同步）。
         </p>
         {desktop && !desktop.supported && <p className="openfilm-notice tone-warn">{desktop.reason}</p>}
+        {/* 平台检测结论（版本 / 架构）：⛔ 只告知，不替用户决定能不能装 */}
+        {(desktop?.notes ?? []).map((note) => <p className="openfilm-notice tone-warn" key={note}>{note}</p>)}
         {desktop?.supported && desktop.error && <p className="openfilm-notice tone-warn">{desktop.error}</p>}
         {desktop?.supported && (
           <div className="openfilm-actions">

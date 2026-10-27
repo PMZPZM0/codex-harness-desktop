@@ -82,7 +82,9 @@ export function launchDetached(exe: string, args: string[], opts: { cwd?: string
     try {
       const child = spawn(exe, args, {
         cwd: opts.cwd,
-        env: { ...process.env },
+        /* ⛔ 用 toolchainEnv 而不是裸 process.env：macOS 侧的 `open` / `hdiutil` 在 /usr/bin，
+           而我们的 PATH 可能被裁剪（GUI 进程的 PATH 与终端不同）⇒ 裸命令会 ENOENT。 */
+        env: { ...toolchainEnv() },
         detached: true,
         stdio: "ignore",
         windowsHide: false,   // 安装器要看得见（⛔ 藏起来会让用户以为"点了没反应"）
