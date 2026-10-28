@@ -1016,6 +1016,30 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   );
 }
 
+/* ══ 【139b】手机远控的会话列表只显示标题（10-28 用户实测：一条消息正文把整屏撑满）══
+   根因：会话行标题写成 `t.name || t.preview` —— 引擎的 preview 是**整条消息正文**，
+   无标题的老会话直接把正文当标题，而 `.thread-row b` 又没有单行截断。
+   判据锚**渲染代码形态**（标题走 threadTitle / 副标题只有时间 / 两行都省略），
+   ⛔ 不要退化成"检查某个 CSS 类是否存在"（改回多行也照样绿）。 */
+{
+  const pageSrc = readFileSync(join(ROOT, "electron", "remote", "web-page.ts"), "utf8");
+  const listAt = pageSrc.indexOf("async function loadThreads()");
+  const listBody = listAt >= 0 ? pageSrc.slice(listAt, pageSrc.indexOf("function toggleThreads()")) : "";
+  (/function threadTitle\(t\) \{/.test(pageSrc) && /querySelector\("b"\)\.textContent = threadTitle\(t\)/.test(pageSrc) ? ok : fail)(
+    "【139b】会话行标题必须走 threadTitle（截断 24 字），不得直接拿预览当标题"
+  );
+  (/querySelector\("small"\)\.textContent = new Date\(t\.updatedAt \* 1000\)\.toLocaleString\(\);/.test(pageSrc) ? ok : fail)(
+    "【139b】会话行副标题只显示时间（不再拼预览正文）"
+  );
+  (!/t\.name \|\| t\.preview/.test(listBody) ? ok : fail)(
+    "【139b】不得退回「name 缺失就整段 preview 当标题」—— 列表会被一条消息撑满一屏"
+  );
+  (/\.thread-row b\{[^}]*white-space:nowrap;overflow:hidden;text-overflow:ellipsis[^}]*\}/.test(pageSrc)
+    && /\.thread-row small\{[^}]*white-space:nowrap;overflow:hidden;text-overflow:ellipsis[^}]*\}/.test(pageSrc) ? ok : fail)(
+    "【139b】标题与副标题都必须单行省略（多行正文会把行高撑爆）"
+  );
+}
+
 /* ══ 【140】看门狗是**有意停用**的，不得被"顺手接回来"（09-24，评估报告 §4.1 复核结论）══
    评估报告原判"死代码 / 开关骗人"，复核后**推翻**：startWatchdog/stopWatchdog 是空实现，
    但那是 2026-09-09 **用户拍板**的整体移除 —— 原因是心跳误判（MCP worker 慢/忙时 thread/list

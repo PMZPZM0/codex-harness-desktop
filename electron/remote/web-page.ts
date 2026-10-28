@@ -52,8 +52,8 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 10px;font-size:12px;
 #threads.open{display:flex}
 #threads .list{flex:1;overflow:auto;padding:8px}
 .thread-row{padding:12px;border-bottom:1px solid #f0f0ee;cursor:pointer}
-.thread-row b{display:block;font-size:14px}
-.thread-row small{color:#8a8a84;font-size:12px}
+.thread-row b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.thread-row small{display:block;margin-top:2px;color:#8a8a84;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #msglist{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
 .msg{max-width:86%;padding:10px 13px;border-radius:14px;font-size:14.5px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
 .msg.user{align-self:flex-end;background:#1e1e1c;color:#fff;border-bottom-right-radius:4px}
@@ -117,6 +117,17 @@ function push(role, text, cls, pending) {
   list.scrollTop = list.scrollHeight;
   return div;
 }
+// 会话行只显示标题：引擎的 preview 是**整条消息正文**（常含换行），直接当标题会把列表撑成一屏一条
+function clipText(value, max) {
+  const chars = [...value];
+  return chars.length > max ? chars.slice(0, max).join("") + "…" : value;
+}
+function threadTitle(t) {
+  const named = (t.name || "").trim();
+  if (named) return clipText(named, 24);
+  const line = (t.preview || "").split("\\n").map((s) => s.trim()).find(Boolean) || "";
+  return line ? clipText(line, 24) : "未命名任务";
+}
 async function loadThreads() {
   const r = await rpc({ type: "list-threads" });
   const el = document.getElementById("thread-list");
@@ -130,9 +141,9 @@ async function loadThreads() {
     const row = document.createElement("div");
     row.className = "thread-row" + (t.id === currentThreadId ? " active" : "");
     row.innerHTML = "<b></b><small></small>";
-    row.querySelector("b").textContent = t.name || t.preview || "未命名任务";
-    row.querySelector("small").textContent = new Date(t.updatedAt * 1000).toLocaleString() + " · " + (t.preview || "").slice(0, 40);
-    row.onclick = () => { currentThreadId = t.id; localStorage.setItem(THREAD_KEY, t.id); document.getElementById("threads").classList.remove("open"); loadMessages(); updateThreadLabel(t.name || t.preview || "未命名任务"); saveSession(); };
+    row.querySelector("b").textContent = threadTitle(t);
+    row.querySelector("small").textContent = new Date(t.updatedAt * 1000).toLocaleString();
+    row.onclick = () => { currentThreadId = t.id; localStorage.setItem(THREAD_KEY, t.id); document.getElementById("threads").classList.remove("open"); loadMessages(); updateThreadLabel(threadTitle(t)); saveSession(); };
     el.appendChild(row);
   }
 }
@@ -242,7 +253,7 @@ pollLoop();
       currentThreadId = t.id;
       localStorage.setItem(THREAD_KEY, t.id);
       await loadMessages();
-      updateThreadLabel(t.name || t.preview || "未命名任务");
+      updateThreadLabel(threadTitle(t));
       saveSession();
       return;
     }
