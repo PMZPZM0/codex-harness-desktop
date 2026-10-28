@@ -86,6 +86,14 @@ ok(/\.composer-rail-icons\s*\{[^}]*flex-wrap:\s*wrap/s.test(railCss)
 ok(/\.composer-rail-icon\s*\{[^}]*width:\s*28px/s.test(railCss)
   && /\.composer-rail-icon\s*\{[^}]*flex:\s*none/s.test(railCss),
   "图标 28px 且 flex:none（不被压扁）");
+/* ⛔⛔ 10-28 真事故：换列后卡片宽度仍按单列算（实测 42px）⇒ 第 4/5 个图标**溢出卡片 22px**，
+   正好盖住边框线上的手柄 —— 用户："遮住，小粗条了都"。卡片必须 max-content 包住所有列。 */
+ok(/\.composer-rail-icons\s*\{[^}]*width:\s*max-content/s.test(railCss)
+  && /\.composer-rail-icons\s*\{[^}]*flex:\s*none/s.test(railCss),
+  "图标卡片宽度 max-content（换列时包住两列，图标不许溢出压到手柄/边框线）");
+/* 10-28 用户：「要不左边，要不右边，不要在，小粗条上」⇒ 卡片与手柄之间留可见间隙 */
+ok(/\.composer-rail-icons\s*\{[^}]*margin:\s*0\s+10px\s+0\s+0/s.test(railCss),
+  "图标卡片与手柄之间留 10px 间隙（手柄整根骑在边框线上，不被卡片压住）");
 /* 10-28 用户：「加一个拖动顺序功能」 */
 ok(/draggable/.test(rail) && /onDrop=/.test(rail) && /composerRailOrder/.test(rail),
   "图标可拖拽排序，顺序落 app-settings.composerRailOrder");
