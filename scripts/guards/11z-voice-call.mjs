@@ -358,7 +358,7 @@ ok(/<VoiceDevToolsSection[\s\S]{0,80}?only="base"/.test(read("src/components/Voi
   "语音模型 / 音色克隆模型的卡片渲染在「语音通话」页（两处分开挂：必需组 / 可选克隆组）");
 ok(!/<VoiceDevToolsSection/.test(codeOnlyTs(devtoolsPage)),
   "开发工具页**不再渲染**它（是迁移不是复制 —— 同一份状态两处渲染 = 双真相源）");
-ok(!/VoiceDevToolsSection/.test(readSettingsSurface()),
+ok(!/VoiceDevToolsSection/.test(codeOnly(readSettingsSurface())),
   "settings-registry 里那条 prop 传递也清掉了（死 prop 只会骗下一个读它的人）");
 ok(/设置 → 语音通话/.test(devtoolsPage),
   "开发工具页留了一句指路（按老习惯找不到时不至于迷路）");
