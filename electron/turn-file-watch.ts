@@ -307,7 +307,8 @@ async function pollLiveOnce(): Promise<void> {
       const sig = report.map((f) => `${f.path}|${f.status}|${f.added}|${f.deleted}`).join("\n");
       if (sig === liveLastSent.get(threadId)) continue;
       liveLastSent.set(threadId, sig);
-      if (broadcastFn) broadcastFn({ type: "turn-file-changes-live", turnId: entry.turnId, files: report });
+      // threadId 一并带上：手机端按会话过滤（渲染层忽略多余字段）
+      if (broadcastFn) broadcastFn({ type: "turn-file-changes-live", threadId, turnId: entry.turnId, files: report });
     }
   } catch { /* 扫描失败下一拍再试（轮询不抛） */ } finally {
     liveBusy = false;

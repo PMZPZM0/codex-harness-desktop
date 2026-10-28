@@ -1100,6 +1100,12 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   (/kind: "output"/.test(bootSrc) && /outputDelta/.test(bootSrc) && /event\.kind === "output"/.test(pageSrc) && /step-out/.test(pageSrc) ? ok : fail)(
     "【139b】命令输出同步：outputDelta 转发并挂在对应命令步骤下（桌面的命令卡有结果，手机不能只有一行命令）"
   );
+  {
+    const watchSrc = readFileSync(join(ROOT, "electron", "turn-file-watch.ts"), "utf8");
+    (/turn-file-changes-live", threadId, turnId/.test(watchSrc) && /remoteFilesText/.test(bootSrc) && /event\.kind === "files"/.test(pageSrc) && /step-files/.test(pageSrc) ? ok : fail)(
+      "【139b】文件变更 +N −M：宿主追踪器的 live 报告带 threadId 转发到手机，页面一行原地更新（引擎 fileChange 不带行数）"
+    );
+  }
   (/remoteThinkKey/.test(bootSrc) && /p\.delta \?\? p\.text/.test(bootSrc) ? ok : fail)(
     "【139b】思考去重按**条目**（按回合会把一轮里的第二段整段误跳过）；增量取 delta ?? text（两种字段都出现过）"
   );
