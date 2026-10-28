@@ -140,7 +140,7 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
             空窗期反馈由乐观气泡 + 底部 working-indicator 覆盖。 */}
         {/* ⛔ 10-28 用户（截图）：「回合第一个思考出来的时候，上面还有一排小字『思考中』，
             跟下面重复了」—— 这条占位头（● 思考中 / 生成中）已删除：
-            真正的过程状态由底部运行状态行（准备中/发送中/等待模型回复/正在思考…）承担，
+            真正的过程状态由底部运行状态行（准备中/发送中/等待模型回复/生成回复中…）承担，
             思考卡自己也有「深度思考中」芯片，这里再写一遍就是三重重复。 */}
         <div className="turn-card-body">
           <div className="codex-turn">
