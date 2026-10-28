@@ -721,6 +721,13 @@
       "file": "features/work-logs.ts",
       "export": "workLogsFeature",
       "config": null
+    },
+    {
+      "id": "shortcuts",
+      "enabled": true,
+      "file": "features/shortcuts-ipc.ts",
+      "export": "shortcutsFeature",
+      "config": null
     }
   ]
 }

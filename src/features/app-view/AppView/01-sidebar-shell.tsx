@@ -9,6 +9,8 @@ import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFu
 import { hk } from "../../../lib/hk";
 import { getEntityTagState, openTagEditor, subscribeEntityTags } from "../../../lib/entity-tags.mjs";
 import { EntityTagEditorHost } from "../../../components/EntityTagEditor";
+import { useShortcuts } from "../../shortcuts/use-shortcuts";
+import { bindingMatches } from "../../../lib/shortcut-catalog.mjs";
 import { isMacPlatform } from "../../../lib/is-mac-platform";
 import {
   AlertTriangle,
@@ -453,24 +455,24 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
        ⇒ 这里**不再**自动弹项目地址对话框；入口在输入框左上角那枚项目地址 chip
          （`02-composer-form.tsx` 的 `boss-cwd-chip`，位置与普通会话欢迎界面一致），点它才弹。 */
   };
+  const { bindings: bossShortcutBindings } = useShortcuts();
   /* 10-25 用户：指挥中枢快捷键（Win/Linux = Ctrl+M；mac 的 Cmd+M 是系统最小化，沿用 Cmd+Shift+B）。
      ⛔ 键位**单一真相源**在 boss-group-view/boss-shortcut.ts（侧栏 kbd 徽标、欢迎界面、快捷键清单共用）。 */
   useEffect(() => {
+    /* 10-28：中枢键同样读用户配置（默认两套：Ctrl+M / Ctrl+Shift+B ——
+       mac 上 ⌘M 被系统最小化占用，第二套才是 mac 的常用键）。
+       ⛔ 键位只写在 src/lib/shortcut-catalog.mjs 的 boss-session，这里不写死。 */
     const mac = isMacPlatform();
+    const bossKeys = bossShortcutBindings["boss-session"] ?? [];
     const onKey = (event: KeyboardEvent) => {
-      const mod = mac ? event.metaKey : event.ctrlKey;
-      if (!mod || event.altKey || (mac ? event.ctrlKey : event.metaKey)) return;
-      const key = event.key.toLowerCase();
-      if (mac) {
-        if (!event.shiftKey || key !== "b") return;
-      } else if (event.shiftKey || key !== "m") return;
+      if (!bossKeys.some((binding) => bindingMatches(event, binding, mac))) return;
       event.preventDefault();
       openBossSession();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bossThreads.pending, currentThreadId]);
+  }, [bossThreads.pending, currentThreadId, bossShortcutBindings]);
 
   /* 10-25：新建项目弹窗（ZCode 式三选一）。选完目录后与 chooseWorkspace 同款落地：
      workspace 三处同步（state/ref/localStorage）—— 不只改 state，侧栏项目分组才认。 */

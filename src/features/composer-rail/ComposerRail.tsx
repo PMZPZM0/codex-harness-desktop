@@ -16,9 +16,9 @@
  * 弹层：portal 到 body，按**实测矩形**定位，右开优先、放不下翻左、上下夹进视口。
  * 跨会话：挂在输入框上 ⇒ 每个会话同一个组件；展开状态存 localStorage，所有会话一致。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bookmark, ExternalLink, KeyRound, NotebookPen, Puzzle, Smile, X } from "lucide-react";
+import { Bookmark, ExternalLink, Keyboard, KeyRound, NotebookPen, Puzzle, Smile, X } from "lucide-react";
 import type { HarnessAppApi } from "../app-state";
 import { FavoritesSettingsSection } from "../settings-favorites";
 import { PasswordBookPanel } from "./PasswordBookPanel";
@@ -31,6 +31,7 @@ const FALLBACK_PANELS: RailPanelSpec[] = [
   { id: "passwords", label: "密码本", icon: "key", kind: "builtin", order: 20 },
   { id: "journal", label: "开发日记", icon: "notebook", kind: "builtin", order: 30 },
   { id: "stickers", label: "心情表情", icon: "smile", kind: "builtin", order: 40 },
+  { id: "shortcuts", label: "快捷键", icon: "keyboard", kind: "builtin", order: 50 },
 ];
 
 const ICONS: Record<string, typeof Bookmark> = {
@@ -38,6 +39,7 @@ const ICONS: Record<string, typeof Bookmark> = {
   key: KeyRound,
   notebook: NotebookPen,
   smile: Smile,
+  keyboard: Keyboard,
 };
 
 /* 10-28 用户令：「这四个按键都做成弹窗…这个弹窗可以应用居中，不用非要贴这里，展示太少了，
@@ -51,6 +53,10 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
   });
   const [panels, setPanels] = useState<RailPanelSpec[]>(FALLBACK_PANELS);
   const [panelId, setPanelId] = useState<string | null>(null);
+  /* 10-28 用户：「加一个拖动顺序功能」—— 拖拽只改**渲染顺序**并落 app-settings，
+     ⛔ 不去改主进程 extensions.json（那是扩展目录的真相源，内置项的 order 也是它的语义）。 */
+  const [order, setOrder] = useState<string[]>([]);
+  const dragIdRef = useRef<string | null>(null);
   /** 用户已经手动开合过：回灌不许再覆盖他的操作 */
   const userTouchedRef = useRef(false);
   /** 居中弹窗容器：打开时把焦点收进来（键盘用户 Tab 不会从背后开始）。 */
@@ -111,9 +117,29 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
     void window.codex.readAppSettings?.().then((settings) => {
       if (!alive || userTouchedRef.current) return;
       if (typeof settings?.composerRailOpen === "boolean") setOpen(settings.composerRailOpen);
+      if (Array.isArray(settings?.composerRailOrder)) setOrder(settings.composerRailOrder);
     }).catch(() => undefined);
     return () => { alive = false; };
   }, []);
+
+  /** 用户顺序优先；order 里没有的（新加的内置项 / 用户扩展项）保持目录原顺序排在后面。 */
+  const orderedPanels = useMemo(() => {
+    if (!order.length) return panels;
+    const rank = new Map(order.map((id, index) => [id, index]));
+    return [...panels].sort((a, b) => (rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.id) ?? Number.MAX_SAFE_INTEGER));
+  }, [panels, order]);
+
+  /** 把 fromId 拖到 toId 的位置；结果立即落盘（双写：state 供本次渲染，app-settings 供重启）。 */
+  const moveIcon = useCallback((fromId: string, toId: string) => {
+    if (!fromId || !toId || fromId === toId) return;
+    const ids = orderedPanels.map((entry) => entry.id);
+    const from = ids.indexOf(fromId);
+    const to = ids.indexOf(toId);
+    if (from < 0 || to < 0) return;
+    ids.splice(to, 0, ids.splice(from, 1)[0]);
+    setOrder(ids);
+    void window.codex.saveAppSettings?.({ composerRailOrder: ids })?.catch(() => undefined);
+  }, [orderedPanels]);
 
   const active = panels.find((entry) => entry.id === panelId) ?? null;
 
@@ -166,20 +192,32 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
 
       {open && (
         <div className="composer-rail-icons" role="toolbar" aria-label="输入框快捷条">
-          {panels.map((entry) => {
+          {orderedPanels.map((entry) => {
             const Icon = ICONS[String(entry.icon ?? "")] ?? (entry.kind === "external" ? Puzzle : Bookmark);
             const isPanel = entry.kind === "builtin" || entry.action?.type === "text";
             return (
               <button
                 key={entry.id}
                 type="button"
+                /* 拖动排序（10-28）：拖动只换位置，不触发面板；配合下面的 onDrop 落盘。 */
+                draggable
+                onDragStart={() => { dragIdRef.current = entry.id; }}
+                onDragEnd={() => { dragIdRef.current = null; }}
+                onDragOver={(event) => { event.preventDefault(); }}
+                onDrop={(event) => { event.preventDefault(); const from = dragIdRef.current; dragIdRef.current = null; if (from) moveIcon(from, entry.id); }}
                 className={`composer-rail-icon${panelId === entry.id ? " is-active" : ""}`}
                 aria-pressed={isPanel ? panelId === entry.id : undefined}
                 aria-label={entry.label}
-                title={entry.label}
-                onClick={() => (isPanel ? setPanelId((current) => (current === entry.id ? null : entry.id)) : runExternal(entry))}
+                title={`${entry.label}（可拖动排序）`}
+                onClick={() => {
+                  /* ⛔ 快捷键不是 rail 内联面板（内容太大、还要搜索/批量编辑）：直接开全局弹窗。
+                     与「设置 → 控制台 → 键盘快捷键」是同一个组件 ⇒ 两处永远一致。 */
+                  if (entry.id === "shortcuts") { setPanelId(null); app.setShortcutsOpen?.(true); return; }
+                  if (isPanel) setPanelId((current) => (current === entry.id ? null : entry.id));
+                  else runExternal(entry);
+                }}
               >
-                <Icon size={16} />
+                <Icon size={18} />
               </button>
             );
           })}

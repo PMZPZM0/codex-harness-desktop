@@ -37,6 +37,9 @@ export type AppSettings = {
   sidebarOptionsCollapsed?: boolean;
   /** 输入框左侧竖条的展开态（10-27）：同上双写约定 —— localStorage 只是缓存，重启后以本文件为准。 */
   composerRailOpen?: boolean;
+  /** 快捷条图标的用户顺序（10-28）：拖拽排序后写入 id 数组；
+   *  未列出的（新增的内置/用户扩展项）按目录原顺序排在后面。 */
+  composerRailOrder?: string[];
   /** 模型目录自愈回执（10-24）：启动时修复损坏的 model-catalog.json 后写入，
    *  渲染层读一次展示成可见提醒后就清掉（不残留）。 */
   modelCatalogRepairNotice?: string;
