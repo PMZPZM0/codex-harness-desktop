@@ -848,6 +848,50 @@ const CHECKS = [
     },
   },
   {
+    id: "voice-ball-task",
+    name: "🎯 悬浮球任务姿态 + 安静陪伴（10-29）",
+    run: async (h) => {
+      await h.waitFor(`!!document.querySelector(".voice-ball")`, { label: "悬浮球", timeoutMs: 12000 });
+      const base = await h.eval(`(function(){ const b=document.querySelector(".voice-ball");
+        return { task:b.getAttribute("data-task"), quiet:b.getAttribute("data-quiet") }; })()`).catch(() => null);
+      h.check("① 球挂任务姿态（data-task 存在，初始 idle）+ 安静标志位",
+        Boolean(base && base.task !== null && base.quiet !== null), JSON.stringify(base));
+
+      /* 右键菜单里有「安静陪伴」，点了立刻生效（data-quiet + 落盘）。 */
+      await h.eval(`(function(){ const b=document.querySelector(".voice-ball");
+        b.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,cancelable:true})); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".voice-ball-menu")`, { label: "球菜单", timeoutMs: 5000 }).catch(() => undefined);
+      const menu = await h.eval(`(function(){ const m=document.querySelector(".voice-ball-menu"); if(!m) return null;
+        const btn=[...m.querySelectorAll("button")].find(x=>(x.textContent||"").includes("安静陪伴"));
+        if(!btn) return { has:false };
+        btn.click(); return { has:true, clicked:true }; })()`).catch(() => null);
+      await wait(600);
+      const after = await h.eval(`(async function(){ const b=document.querySelector(".voice-ball");
+        const s=await window.codex.voiceSettingsGet(); return { quietAttr:b.getAttribute("data-quiet"), saved:s?.settings?.ball?.quiet === true }; })()`).catch(() => null);
+      h.check("② 菜单「安静陪伴」一键生效（data-quiet=1 + voice-settings 落盘 true）",
+        Boolean(menu && menu.has && menu.clicked && after && after.quietAttr === "1" && after.saved), JSON.stringify({ menu, after }));
+
+      /* 恢复：再从设置页关掉，验证同一字段双向同步。 */
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(x=>(x.textContent||"").trim()==="语音通话"); b?.click(); return 1; })()`);
+      await wait(1200);
+      const toggled = await h.eval(`(function(){
+        const label=[...document.querySelectorAll(".voice-card label")].find(x=>(x.textContent||"").includes("安静陪伴"));
+        if(!label) return null; const input=label.querySelector("input");
+        if(!input || !input.checked) return { found:!!label, checked:input?input.checked:null };
+        input.click(); return { found:true, clicked:true }; })()`).catch(() => null);
+      await wait(900);
+      const restored = await h.eval(`(async function(){ const s=await window.codex.voiceSettingsGet();
+        const b=document.querySelector(".voice-ball"); return { saved:s?.settings?.ball?.quiet === true, attr:b?b.getAttribute("data-quiet"):null }; })()`).catch(() => null);
+      h.check("③ 设置页同一开关可关（quiet 回 false，球回 data-quiet=0）",
+        Boolean(toggled && toggled.clicked && restored && restored.saved === false && restored.attr === "0"),
+        JSON.stringify({ toggled, restored }));
+      await h.eval(`(function(){ document.querySelector(".settings-modal .settings-modal-close, .settings-modal [aria-label*='关闭'], .settings-modal .settings-close")?.click(); return 1; })()`);
+      await wait(400);
+    },
+  },
+  {
     id: "sidebar-adaptive",
     name: "🧱 侧栏「功能入口」改为右侧浮层，不占纵向空间（10-26）",
     run: async (h) => {

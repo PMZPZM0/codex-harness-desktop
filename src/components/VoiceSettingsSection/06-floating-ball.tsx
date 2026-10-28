@@ -37,6 +37,16 @@ export function VoiceSettingsSectionFloatingBall({ apply, saving, settings }: Pr
                   />
                   <span>冒随机的短提示气泡</span>
                 </label>
+                {/* 安静陪伴（10-29）：比 hints 更高一级 —— 全部气泡（含任务反馈）都停，只留表情。 */}
+                <label className="voice-toggle">
+                  <input
+                    type="checkbox"
+                    checked={settings.ball.quiet === true}
+                    onChange={(e) => apply({ ball: { ...settings.ball, quiet: e.target.checked } })}
+                    disabled={saving}
+                  />
+                  <span>安静陪伴（不说话，只跟任务做表情）</span>
+                </label>
               </div>
               <div className="voice-ball-styles">
                 <div className="voice-ball-styles-head">悬浮球外观</div>
