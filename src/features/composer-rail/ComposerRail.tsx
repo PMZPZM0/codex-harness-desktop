@@ -53,20 +53,45 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
   const [panelId, setPanelId] = useState<string | null>(null);
   /** 用户已经手动开合过：回灌不许再覆盖他的操作 */
   const userTouchedRef = useRef(false);
-  /** 居中弹窗容器：打开时把焦点收进来（键盘用户 Tab 不会跑到背后的输入框）。 */
+  /** 居中弹窗容器：打开时把焦点收进来（键盘用户 Tab 不会从背后开始）。 */
   const modalRef = useRef<HTMLElement>(null);
+  /** 打开弹窗之前焦点在哪：关闭时还回去（否则焦点掉到 body，键盘用户要从头 Tab）。 */
+  const returnFocusRef = useRef<HTMLElement | null>(null);
 
-  /* Esc 关弹窗：用 capture 阶段并阻断冒泡 —— 全站还有别的 Esc 处理器（关浮层/关设置），
-     同一次按键不该同时关掉两层。 */
+  /* Esc / Tab 都在这里处理（capture 阶段）：
+     · Esc 只关这一层 —— `stopPropagation()` 防止同一次按键连带关掉背后的浮层/设置；
+     · Tab 在弹窗内**首尾循环** —— 已经声明 `aria-modal="true"`，就必须把焦点圈住，
+       否则 Tab 会跑到背后输入框里，声明与行为不一致（键盘用户会迷路）。 */
   useEffect(() => {
-    if (!panelId) return;
+    const panel = modalRef.current;
+    if (!panel) {
+      /* 关闭态：把焦点还给打开它的那颗图标（只在"曾经打开过"时做，避免首帧抢焦点）。 */
+      returnFocusRef.current?.focus?.();
+      returnFocusRef.current = null;
+      return;
+    }
+    /* ⛔ 只在第一次打开时记录：面板之间切换（A → B）时旧面板已卸载，此刻 activeElement 是 body，
+       若每次都覆盖就会把"该还给谁"丢失，关闭后焦点落到 body。 */
+    if (!returnFocusRef.current) returnFocusRef.current = (document.activeElement as HTMLElement | null) ?? null;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.stopPropagation();
-      setPanelId(null);
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        setPanelId(null);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusables = Array.from(panel.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )).filter((el) => el.offsetParent !== null);
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const current = document.activeElement as HTMLElement | null;
+      if (!event.shiftKey && current === last) { event.preventDefault(); first.focus(); }
+      else if (event.shiftKey && (current === first || current === panel)) { event.preventDefault(); last.focus(); }
     };
     window.addEventListener("keydown", onKey, true);
-    modalRef.current?.focus();
+    panel.focus();
     return () => window.removeEventListener("keydown", onKey, true);
   }, [panelId]);
 
