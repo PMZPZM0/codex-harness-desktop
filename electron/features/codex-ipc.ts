@@ -135,6 +135,15 @@ export const codexFeature = defineFeature<null>({
         result = await server.request(method, params);
       } catch (error: any) {
         const firstMessage = String(error?.message ?? "");
+        /* ⛔ 10-28 用户截图：`thread-store conflict: thread … already has an active writer` 被
+           原样弹成红条（前缀还是 `[ERR_INVOKE_FAILED] coderequest:`），用户看不懂也不知道怎么办。
+           含义其实很确定：同一份 codex-home 里**另一个引擎进程**正持有这条会话的 rollout writer
+           （典型来源 = 上一次没退干净的实例，它的 pwsh/MCP 子进程还活着）。
+           处置已配套：退出时连树杀（codex-server.stop）+ 启动时清遗留 pid（launchOnce），
+           所以下面这句话不是"认命"，而是告诉用户"重发即可；不行就重启应用，重启会自动清场"。 */
+        if (/already has an active writer|thread-store conflict/i.test(firstMessage)) {
+          throw new Error("这条会话正被另一个引擎进程占用（上一次的进程没退干净）。请直接重发；若仍失败，完全退出应用再打开一次 —— 重启会自动清掉遗留进程。");
+        }
         // ⛔ 僵尸会话根治（10-04 用户：「删不掉的僵尸会话给老子解决掉」）：引擎的 thread/delete
         //   只认 archived_sessions/ 里的 rollout，活会话的 rollout 还在 sessions/ ⇒ 引擎直接拒删
         //   （报 "rollout path … must be in archived sessions directory"），删除永远失败。
