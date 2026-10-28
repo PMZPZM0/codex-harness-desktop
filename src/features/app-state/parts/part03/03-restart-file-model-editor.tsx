@@ -8,7 +8,6 @@ import { usePart03c1 } from "./03-restart-file-model-editor/01-restart-file-prev
 import { usePart03c2 } from "./03-restart-file-model-editor/02-concurrency-model-editor";
 import type { Bag } from "../bag-types";
 
-import "@xterm/xterm/css/xterm.css";
 import type { usePart03b } from "./02-composer-memory-models";
 
 export function usePart03c(bag: Bag, ibB: ReturnType<typeof usePart03b>) {

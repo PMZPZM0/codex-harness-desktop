@@ -8,7 +8,6 @@ import { usePart07a1 } from "./01-seg/01-command-review-workspace";
 import { usePart07a2 } from "./01-seg/02-files-market-connectors";
 import type { Bag } from "../bag-types";
 
-import "@xterm/xterm/css/xterm.css";
 
 export function usePart07a(bag: Bag) {
   const a = usePart07a1(bag);

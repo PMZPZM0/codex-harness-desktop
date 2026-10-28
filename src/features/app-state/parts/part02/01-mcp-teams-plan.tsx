@@ -8,7 +8,6 @@ import { usePart02a1 } from "./01-mcp-teams-plan/01-mcp-subagents-state";
 import { usePart02a2 } from "./01-mcp-teams-plan/02-team-roles-import";
 import type { Bag } from "../bag-types";
 
-import "@xterm/xterm/css/xterm.css";
 
 export function usePart02a(bag: Bag) {
   const a = usePart02a1(bag);

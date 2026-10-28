@@ -3,7 +3,6 @@
  * ⛔ 语义等价要点：原体里的 `return` 是**从 onEvent 回调退出**；本函数把它改成 `return true`，
  *    调用处 `if (handleN(...)) return;` —— 提前退出的效果逐位保留（回调的返回值本来就被丢弃）。
  */
-import "@xterm/xterm/css/xterm.css";
 import { currentStreak, dayKey, formatTokens, lastDays, readUsageStats, recordTurnUsage, resetUsageStats, totalTokens } from "../../../../../lib/usage-stats";
 import { usageBucket } from "../../../../../lib/usage-bucket";
 import { loadThreadModel, modelName } from "../../../../app-view/helpers";

@@ -7,7 +7,6 @@
  *    改动后请重跑预检【92】与保真脚本（口径见 docs/archive/REFACTOR-PLAN-2026-09-21.md §10.2）。
  */
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import "@xterm/xterm/css/xterm.css";
 import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider } from "../../../../lib/provider-continuity.mjs";
 import { buildDispatchChildren, groupThreadsBySource, resolveGroupCwd } from "../../../../lib/thread-source.mjs";
 import { getBossThreads, subscribeBossThreads } from "../../../../features/boss-group-view";

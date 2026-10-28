@@ -8,7 +8,6 @@ import { usePart02b11 } from "./01-goal-review-file-browser/01-goal-review-file-
 import { usePart02b12 } from "./01-goal-review-file-browser/02-thread-attention-rows";
 import type { Bag } from "../../bag-types";
 
-import "@xterm/xterm/css/xterm.css";
 
 export function usePart02b1(bag: Bag) {
   const a = usePart02b11(bag);

@@ -8,7 +8,6 @@
 import { isCompactionItem } from "../../../../../lib/compaction-item.mjs";
 import { queueInlineNotice } from "../../../../../lib/inline-notices.mjs";
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import "@xterm/xterm/css/xterm.css";
 import { resolveModelForOpen, shouldSyncOpenThread } from "../../../../../lib/model-scope.mjs";
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "../../../../../lib/session-scope.mjs";
 import { getAnnounceGlobalEnabled, isAnnounceMutedForThread } from "../../../../../voice/announce-bus";

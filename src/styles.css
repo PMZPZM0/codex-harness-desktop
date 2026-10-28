@@ -22,6 +22,10 @@
    （无层规则优先于所有层 ⇒ 一条裸导入就能让全部层失效，守卫 12af 会红）。 */
 @layer base, components, pages, overrides;
 
+/* 第三方：xterm 的终端样式。⛔ 只在这里导入一次（原来是 68 个 TSX 各 import 一遍），
+   且必须落在 base 层**最前面** —— 同层内后写的赢，01 里的覆盖才能压过它。
+   不挂层会让它变成"未分层"，反过来压掉我们所有分层规则。 */
+@import "@xterm/xterm/css/xterm.css" layer(base);
 @import "./styles/01-base-and-chrome" layer(base);
 @import "./styles/02-sidebar-threads" layer(components);
 @import "./styles/03-messages-turns" layer(components);

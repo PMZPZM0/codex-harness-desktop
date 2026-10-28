@@ -10,7 +10,6 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { createPortal } from "react-dom";
 import { isCompactionItem } from "../../../../lib/compaction-item.mjs";
 import { BossGroupHelpButton, BossGroupMembersButton, getBossThreads, isBossSessionContext, subscribeBossThreads } from "../../../../features/boss-group-view";
-import "@xterm/xterm/css/xterm.css";
 import { FieldHelp, LoginScreen } from "../../../../features/auth";
 import { DispatchMenu, DispatchBadge } from "../../../../features/dispatch";
 import {

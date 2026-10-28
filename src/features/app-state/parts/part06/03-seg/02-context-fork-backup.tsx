@@ -6,7 +6,6 @@
  * ⛔ 本段语句只引用「自己的局部声明」与 bag；跨段名字由组合根按入参转交。
  */
 import { enginePersonality } from "../../../../../lib/reply-style.mjs";
-import "@xterm/xterm/css/xterm.css";
 import { loadDraft, saveDraft } from "../../../../../lib/composer-draft.mjs";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../lib/user-refs";
 import { resolveImagePath } from "../../../../../lib/resolve-image-path";

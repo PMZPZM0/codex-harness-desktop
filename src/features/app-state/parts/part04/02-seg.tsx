@@ -8,7 +8,6 @@ import { usePart04b1 } from "./02-seg/01-hook-events-bottom-state";
 import { usePart04b2 } from "./02-seg/02-chat-search-history";
 import type { Bag } from "../bag-types";
 
-import "@xterm/xterm/css/xterm.css";
 
 export function usePart04b(bag: Bag) {
   const a = usePart04b1(bag);
