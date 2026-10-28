@@ -15,6 +15,9 @@
    components = 组件与各域样式（02 … 44）
    pages      = 页面级覆盖（45 设置体验壳 起，含 46~54）
    overrides  = 预留：只给「必须赢」的极少数规则（目前为空，别随手往里塞）
+   ⛔⛔ **base 层禁止新增 `!important`**：important 声明的层序是**反的**（早层赢），
+   base 里一条同属性不同值的 important 会莫名其妙压过 pages —— 极难排查。
+   base 现有 10 处全是 xterm 覆盖与 reduced-motion 兜底，守卫 12af 按实测基线卡死，只许降。
    规则：① 新样式选对层，不要靠「多写两个类」去压别层；② 不要再写不带 layer 的 @import
    （无层规则优先于所有层 ⇒ 一条裸导入就能让全部层失效，守卫 12af 会红）。 */
 @layer base, components, pages, overrides;

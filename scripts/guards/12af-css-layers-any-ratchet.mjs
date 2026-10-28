@@ -37,6 +37,17 @@ const usedLayers = new Set([...styles.matchAll(/layer\((base|components|pages|ov
 ok(usedLayers.size >= 3 && [...usedLayers].every((name) => ["base", "components", "pages", "overrides"].includes(name)),
   `只用了登记过的四个层（实际用到：${[...usedLayers].join(" / ")}）`);
 
+/* ── ①b base 层 !important 棘轮（important 的层序是反的：早层赢，base 里新增会莫名压过 pages）── */
+const BASE_IMPORTANT_CAP = 10;
+let baseImportant = 0;
+for (const line of imports) {
+  const hit = line.match(/styles\/([^"]+)" layer\(base\)/);
+  if (!hit) continue;
+  baseImportant += (read("src/styles/" + hit[1] + ".css").match(/!important/g) || []).length;
+}
+ok(baseImportant <= BASE_IMPORTANT_CAP,
+  `base 层 !important 不超基线（${baseImportant} ≤ ${BASE_IMPORTANT_CAP}；important 是早层优先，base 里新增会莫名压过 pages）`);
+
 /* ── ② any 棘轮 ── */
 /** 基线 = 10-27 实测值（`: any` + `as any`，排除 src 下 .d.ts 生成物）。只许降。 */
 const ANY_CAP = 1696;
