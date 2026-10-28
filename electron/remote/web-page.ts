@@ -92,6 +92,10 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
 .run-steps .step{padding:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .run-steps .step-files{white-space:pre-line;word-break:break-all;max-height:120px;overflow:auto}
 .run-steps .step-notice{color:#8a6d1f;background:#fdf6e0;border-radius:6px;padding:3px 6px;white-space:normal;overflow:visible;text-overflow:clip}
+.ask-card{margin:6px 0;padding:8px;border:1px solid #e6d9a8;background:#fffdf3;border-radius:10px;display:flex;flex-direction:column;gap:6px}
+.ask-q{font-size:12.5px;color:#6a5a1f;line-height:1.5;white-space:pre-wrap}
+.ask-opts{display:flex;flex-wrap:wrap;gap:6px}
+.ask-opt{padding:6px 12px;font-size:12px;color:var(--accent);background:#fff;border:1px solid #cfdcf7;border-radius:999px}
 .step-more{align-self:flex-start;margin-top:3px;padding:2px 8px;font-size:11px;color:var(--accent);background:none;border:1px solid #cfdcf7;border-radius:999px}
 #goalbar{padding:6px 12px;background:#fff6f8;border-top:1px solid var(--line);font-size:12px;color:#8a2f4a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #taskbar{padding:6px 12px;background:#fff;border-top:1px solid var(--line);font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -833,6 +837,49 @@ async function pollLoop() {
         notice.className = "step step-notice";
         notice.textContent = event.text;
         stepBox.appendChild(notice);
+        list.scrollTop = list.scrollHeight;
+      } else if (event.kind === "ask") {
+        // 询问 / 审批：可直接在手机上点（引擎原生请求由主进程回包；agent_ask 走渲染层桥）
+        hideThinking();
+        setRunning(true);
+        if (!stepBox) {
+          stepBox = document.createElement("div");
+          stepBox.className = "run-steps";
+          list.appendChild(stepBox);
+        }
+        const askData = event.data || {};
+        const card = document.createElement("div");
+        card.className = "ask-card";
+        const question = document.createElement("div");
+        question.className = "ask-q";
+        question.textContent = event.text || "请选择";
+        card.appendChild(question);
+        const optionsRow = document.createElement("div");
+        optionsRow.className = "ask-opts";
+        (askData.options || []).forEach((option) => {
+          const button = document.createElement("button");
+          button.className = "ask-opt";
+          button.textContent = String(option.label ?? "");
+          button.onclick = async () => {
+            try {
+              await rpc({
+                type: "answer",
+                kind: askData.kind,
+                requestId: askData.requestId,
+                questionId: askData.questionId,
+                choice: button.textContent,
+                threadId: event.threadId,
+              });
+              card.remove();
+              push("system", "已选择：" + button.textContent);
+            } catch (error) {
+              push("system", "提交失败：" + error.message);
+            }
+          };
+          optionsRow.appendChild(button);
+        });
+        card.appendChild(optionsRow);
+        stepBox.appendChild(card);
         list.scrollTop = list.scrollHeight;
       } else if (event.kind === "think") {
         // 思考内容：与桌面折叠区同一股摘要流，实时展开显示
