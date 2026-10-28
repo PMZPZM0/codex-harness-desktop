@@ -21,6 +21,12 @@ const MOBILE_MARKDOWN_SOURCE = (() => {
   }
 })();
 
+/** ⛔ botName 来自 URL 查询串：拼进 HTML 前必须转义（已配对用户点一个构造链接就能在本域执行脚本，
+ *  同源 cookie 可直接调 /api/rpc 控制电脑）。 */
+function escapeHtmlText(value: unknown): string {
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[ch] ?? ch);
+}
+
 export function buildRemotePageHtml(code: string, botId?: string, botName?: string): string {
     const bindingMode = Boolean(botId);
     if (bindingMode) {
@@ -34,7 +40,7 @@ button{width:100%;margin-top:14px;padding:13px;border:0;border-radius:12px;backg
 button.ghost{background:#fff;color:#23231f;border:1px solid #d7d9d4}
 .ok{color:#1a7f37;font-weight:600}
 </style>
-<div class="card"><h1>绑定机器人「${botName ?? ""}」</h1><p>确认后，这台手机将作为该机器人的控制端：<br>可查看对话、随时发消息，与电脑实时同步。</p><p id="state">正在校验绑定码…</p><div id="btns" style="display:none"><button onclick="doBind()">确认登录</button><button class="ghost" onclick="document.getElementById('btns').style.display='none'">取消</button></div></div>
+<div class="card"><h1>绑定机器人「${escapeHtmlText(botName)}」</h1><p>确认后，这台手机将作为该机器人的控制端：<br>可查看对话、随时发消息，与电脑实时同步。</p><p id="state">正在校验绑定码…</p><div id="btns" style="display:none"><button onclick="doBind()">确认登录</button><button class="ghost" onclick="document.getElementById('btns').style.display='none'">取消</button></div></div>
 <script>
 const code = ${JSON.stringify(code)};
 const botId = ${JSON.stringify(botId ?? "")};
@@ -207,6 +213,8 @@ let currentOutputEl = null;
 // 文件变更那一行（宿主追踪器每拍推一次，原地更新）
 let filesEl = null;
 let filesBtn = null;
+// 本回合的实时文件清单（「查看改动」运行中优先用它，落盘报告只到回合结束才有）
+let lastFilesData = null;
 // 当前会话是否在跑：发送键在运行时变成「停止」
 let turnRunning = false;
 const list = document.getElementById("msglist");
@@ -317,6 +325,8 @@ async function newThread() {
   list.innerHTML = "";
   stepBox = null; // 旧容器已从 DOM 移除，不重置的话新回合的步骤会渲染到看不见的节点上
   currentOutputEl = null;
+
+  lastFilesData = null;
   setRunning(false);
   push("system", "已新建会话，直接发消息开始对话");
   updateThreadLabel("新会话");
@@ -329,6 +339,8 @@ async function loadMessages() {
     list.innerHTML = "";
     stepBox = null;
     currentOutputEl = null;
+
+    lastFilesData = null;
     setRunning(false);
     void refreshGoal();
     void refreshTasks();
@@ -342,11 +354,24 @@ async function loadMessages() {
       const firstUser = msgs.find((m) => m.role === "user");
       updateThreadLabel(firstUser ? firstUser.text.slice(0, 20) : "会话");
     }
-  } catch {
-    // 会话已失效（被删除等）：退回新建
-    currentThreadId = "";
-    localStorage.removeItem(THREAD_KEY);
-    await newThread();
+  } catch (error) {
+    // 只有「会话真的不在了」才退回新建；引擎重启 / 网络抖动一律留人 + 重试 ——
+    // 一抖就悄悄换会话，用户看到的是「我的会话没了」。
+    const message = String(error?.message ?? error ?? "未知错误");
+    if (/not found|no such|unknown thread|不存在|未找到/i.test(message)) {
+      currentThreadId = "";
+      localStorage.removeItem(THREAD_KEY);
+      await newThread();
+      push("system", "原会话已不存在（可能被删除），已新建会话");
+      return;
+    }
+    list.innerHTML = "";
+    push("system", "会话加载失败：" + message);
+    const retry = document.createElement("button");
+    retry.className = "step-more";
+    retry.textContent = "重试";
+    retry.onclick = () => { retry.remove(); void loadMessages(); };
+    list.appendChild(retry);
   }
 }
 async function sendCmd() {
@@ -355,6 +380,8 @@ async function sendCmd() {
   if (!v && !pendingImages.length) return;
   stepBox = null; // 新一轮从空步骤列表开始
   currentOutputEl = null;
+
+  lastFilesData = null;
   const shots = pendingImages.slice();
   pendingImages = [];
   renderImages();
@@ -559,10 +586,8 @@ function openPreview(path) {
 }
 function openTurnFiles() {
   const node = document.createElement("div");
-  node.appendChild(panelMessage("加载中…"));
   showPanel("本轮改动", node, null);
-  rpc({ type: "turn-files", threadId: currentThreadId }).then((r) => {
-    const files = r.files || [];
+  const render = (files) => {
     node.innerHTML = "";
     if (!files.length) { node.appendChild(panelMessage("这一轮没有文件改动记录")); return; }
     for (const file of files) {
@@ -578,7 +603,12 @@ function openTurnFiles() {
       row.onclick = () => openTurnDiff(file.path);
       node.appendChild(row);
     }
-  }).catch((error) => { node.innerHTML = ""; node.appendChild(panelMessage("加载失败：" + error.message)); });
+  };
+  // 运行中优先用实时清单：落盘报告要回合结束才写，拿它会是上一轮的
+  if (lastFilesData && lastFilesData.length) { render(lastFilesData); return; }
+  node.appendChild(panelMessage("加载中…"));
+  rpc({ type: "turn-files", threadId: currentThreadId }).then((r) => render(r.files || []))
+    .catch((error) => { node.innerHTML = ""; node.appendChild(panelMessage("加载失败：" + error.message)); });
 }
 function openTurnDiff(path) {
   const node = document.createElement("div");
@@ -702,6 +732,8 @@ async function runCommand(id) {
       list.innerHTML = "";
       stepBox = null;
       currentOutputEl = null;
+
+      lastFilesData = null;
       push("system", "已新建会话");
       loadThreads();
       saveSession();
@@ -743,6 +775,16 @@ window.__remoteBack = function () {
   return false;
 };
 document.getElementById("cmd").addEventListener("keydown", (e) => { if (e.key === "Enter") sendCmd(); });
+/* 助手正文里的链接是 target="_blank"：安卓壳没有新窗口能力（点了没反应）⇒ 壳内改成当前窗导航，
+   由 WebViewClient 把外部域名交给系统浏览器（桌面浏览器照旧新开标签页）。 */
+document.addEventListener("click", (event) => {
+  if (navigator.userAgent.indexOf("CodexHarnessRemote") < 0) return;
+  const link = event.target && event.target.closest ? event.target.closest("a") : null;
+  if (!link || !/^https?:/i.test(link.href)) return;
+  if (link.href.indexOf(location.origin) === 0) return;
+  event.preventDefault();
+  location.href = link.href;
+});
 let pollSince = Date.now() - 60000;
 async function pollLoop() {
   try {
@@ -816,6 +858,8 @@ async function pollLoop() {
           stepBox.appendChild(filesEl);
         }
         filesEl.textContent = event.text;
+        // 实时清单随事件到位：落盘报告要回合结束才写，运行中点「查看改动」只能用这份
+        if (Array.isArray(event.data?.files)) lastFilesData = event.data.files;
         if (!filesBtn || !stepBox.contains(filesBtn)) {
           filesBtn = document.createElement("button");
           filesBtn.className = "step-more";
@@ -907,12 +951,13 @@ async function pollLoop() {
         setRunning(false);
         const el = list.querySelector(".streaming");
         if (el) el.classList.remove("streaming");
-        // 回合结束：没有任何文字的「思考：」空壳删掉（供应商标了 reasoning 却没内容）
+        // 回合结束：空「思考：」壳、以及没来得及答的询问卡都清掉（卡已失效，留着点了也是死请求）
         if (stepBox) {
           stepBox.querySelectorAll(".think").forEach((node) => {
             const body = node.querySelector(".think-text");
             if (!body || !String(body.textContent || "").trim()) node.remove();
           });
+          stepBox.querySelectorAll(".ask-card").forEach((node) => node.remove());
         }
         // 步骤收成「运行过程 · N 步」，点开可看
         if (stepBox && stepBox.children.length) {
@@ -927,6 +972,8 @@ async function pollLoop() {
         }
         stepBox = null;
         currentOutputEl = null;
+
+        lastFilesData = null;
         void refreshTasks();
       } else if (event.kind === "user") {
         const pending = list.querySelector('.msg.user[data-pending="1"]');

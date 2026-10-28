@@ -1146,6 +1146,29 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   (/role: "think"/.test(mainSrc) && /pushThinkHistory/.test(pageSrc) ? ok : fail)(
     "【139b】读历史也带思考：reasoning 摘要进历史接口，手机端折叠展示（只做实时 = 翻上去一片空白）"
   );
+  /* 10-28 审查修复的四处：每处都是「看着接好了，真机点下去是错的」那类 */
+  (/if \(Array\.isArray\(event\.data\?\.files\)\) lastFilesData = event\.data\.files;/.test(pageSrc)
+    && /if \(lastFilesData && lastFilesData\.length\) \{ render\(lastFilesData\); return; \}/.test(pageSrc) ? ok : fail)(
+    "【139b】运行中「查看改动」必须优先用实时清单 —— 落盘报告要回合结束才写，拿它显示的是上一轮"
+  );
+  (/stepBox\.querySelectorAll\("\.ask-card"\)\.forEach\(\(node\) => node\.remove\(\)\);/.test(pageSrc) ? ok : fail)(
+    "【139b】回合结束必须清掉没答的询问卡（卡已失效，留着点了也是死请求）"
+  );
+  (/if \(method\.includes\("permissions"\)\) return null;/.test(bootSrc) ? ok : fail)(
+    "【139b】权限请求不得压成 approval 卡：回包形状是 {permissions, scope}，按 decision 回会被引擎拒"
+  );
+  (/questions\.length !== 1/.test(bootSrc) ? ok : fail)(
+    "【139b】多问题 requestUserInput 不得只答一半（answers 要按 question id 全填，否则回落「去电脑端确认」）"
+  );
+  (/escapeHtmlText\(botName\)/.test(pageSrc) && /function escapeHtmlText/.test(pageSrc) ? ok : fail)(
+    "【139b】绑定页的机器人名来自 URL 查询串，拼 HTML 前必须转义（同源 XSS 能借 cookie 调 RPC 控制电脑）"
+  );
+  (/会话加载失败/.test(pageSrc) && /retry\.textContent = "重试"/.test(pageSrc) ? ok : fail)(
+    "【139b】消息加载失败必须留人 + 重试（网络抖一下就悄悄换新会话 = 用户看到「我的会话没了」）"
+  );
+  (/CodexHarnessRemote/.test(pageSrc) && /link\.href\.indexOf\(location\.origin\)/.test(pageSrc) ? ok : fail)(
+    "【139b】安卓壳内链接改当前窗导航（target=_blank 在 WebView 里没窗口可开 = 点了没反应）"
+  );
 }
 
 /* ══ 【139c】手机远控走自建中转（安卓 App / 固定域名）：端口要固定、固定地址要压过隧道（10-28）══

@@ -183,8 +183,13 @@ function remoteAskOf(method: string, params: any, event: any): { kind: string; r
     if (!options.length) return null;
     return { kind: "agentAsk", question, options, text: `❓ ${question}` };
   }
+  // ⛔ 权限请求的回包形状是 `{ permissions: {}, scope: "turn" }`（不是 decision）⇒ 手机上不给按钮，
+  //    回落「去电脑端确认」，免得点出一个形状不对的回包。
+  if (method.includes("permissions")) return null;
   if (method === "item/tool/requestUserInput") {
     const questions = Array.isArray(params?.questions) ? params.questions : [];
+    // 多问题形态手机上给不全（answers 要按 question id 全填）⇒ 回落提示，别只答一半
+    if (questions.length !== 1) return null;
     const first = questions[0];
     const options = (Array.isArray(first?.options) ? first.options : [])
       .map((option: any) => ({ label: String(option?.label ?? ""), description: String(option?.description ?? "") }))
@@ -399,7 +404,14 @@ setTurnFileWatchBroadcast((payload: any) => {
   // 手机端「运行步骤」里的文件变更：引擎的 fileChange 不带行数，只有宿主追踪器有 ±N
   if (payload?.type === "turn-file-changes-live" && payload.threadId && Array.isArray(payload.files)) {
     const text = remoteFilesText(payload.files);
-    if (text) for (const forward of remoteEventForwarders) forward({ threadId: String(payload.threadId), kind: "files", text });
+    // data 带结构化清单：运行中「查看改动」用它（落盘报告要回合结束才写，拿它会是上一轮的）
+    const files = payload.files.map((file: any) => ({
+      path: String(file?.path ?? ""),
+      status: String(file?.status ?? ""),
+      added: Number(file?.added) || 0,
+      deleted: Number(file?.deleted) || 0,
+    }));
+    if (text) for (const forward of remoteEventForwarders) forward({ threadId: String(payload.threadId), kind: "files", text, data: { files } });
   }
 });
 
@@ -969,7 +981,16 @@ export async function bootApp() {
         if (!internalThreads.has(askThreadId)) {
           const ask = remoteAskOf(String(event.method ?? ""), p, event);
           if (ask) for (const forward of remoteEventForwarders) forward({ threadId: askThreadId, kind: "ask", text: ask.text, data: ask });
-          else for (const forward of remoteEventForwarders) forward({ threadId: askThreadId, kind: "notice", text: `⚠ 需要在电脑端确认：${String(event.method).includes("fileChange") ? "文件修改" : "命令执行"}` });
+          else {
+            const why = String(event.method ?? "").includes("permissions")
+              ? "权限申请"
+              : event.method === "item/tool/requestUserInput"
+                ? "多项选择"
+                : String(event.method ?? "").includes("fileChange")
+                  ? "文件修改"
+                  : "命令执行";
+            for (const forward of remoteEventForwarders) forward({ threadId: askThreadId, kind: "notice", text: `⚠ 需要在电脑端确认：${why}` });
+          }
         }
       } else if (event.method === "item/completed" && p?.item?.type === "commandExecution") {
         // 命令结束：引擎带 exitCode / status 时给出结论（不带就静默，别瞎猜）
@@ -977,7 +998,9 @@ export async function bootApp() {
         const status = String(p?.item?.status ?? "");
         const text = exitCode != null
           ? (Number(exitCode) === 0 ? "命令完成" : `命令失败（退出码 ${exitCode}）`)
-          : (status && status !== "inProgress" && status !== "running" ? `命令 · ${status}` : "");
+          : /^(completed|succeeded|success)$/i.test(status) ? "命令完成"
+          : /^(failed|error)$/i.test(status) ? "命令失败"
+          : "";
         if (text && !internalThreads.has(String(p?.threadId ?? ""))) for (const forward of remoteEventForwarders) forward({ threadId: p.threadId, kind: "step", text });
       } else if (event.method === "item/started" || event.method === "item/completed") {
         /* 手机端「运行步骤」：与桌面对话框同一批 item 事件 —— 命令 / 文件变更 / 工具 / 搜索 / 思考，

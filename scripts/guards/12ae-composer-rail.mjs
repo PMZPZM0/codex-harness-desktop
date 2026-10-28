@@ -55,18 +55,24 @@ ok(!/exec|spawn|shell\.openPath/i.test(extMain), "⛔ 扩展目录不提供执�
 const menuSrc = src("src/features/function-menu/FunctionMenu.tsx");
 ok(/extensionsCatalog/.test(menuSrc) && /extMenu\.map/.test(menuSrc), "功能入口菜单也接入了同一份扩展目录");
 
-/* ③ 弹层自适应 */
-ok(/function placePanel\(anchor: DOMRect/.test(rail) && /Math\.min\(left, viewport\.w - w - pad\)/.test(rail)
-  && /Math\.min\(top, viewport\.h - h - pad\)/.test(rail),
-  "弹层按实测矩形定位并夹进视口（不写死坐标，小窗口/主窗口都不会被切）");
-ok(/const wantRight = prefer === "right" \|\| \(prefer === "auto" && \(rightRoom >= w \|\| rightRoom >= leftRoom\)\)/.test(rail),
+/* ③ 弹层自适应（10-27 起统一交给 AnchorPopover：竖条只负责传轴 / 尺寸 / prefer） */
+const popover = src("src/components/AnchorPopover.tsx");
+ok(/<AnchorPopover/.test(rail) && /axis="x"/.test(rail) && /function placePopover\(anchor: AnchorRect/.test(popover)
+  && /Math\.max\(pad, Math\.min\(left, viewport\.w - w - pad\)\)/.test(popover)
+  && /Math\.max\(pad, Math\.min\(top, viewport\.h - h - pad\)\)/.test(popover),
+  "弹层按实测矩形定位并夹进视口（AnchorPopover 纯函数，小窗口/主窗口都不会被切）");
+ok(/space\.right >= w \|\| space\.right >= space\.left \? "right" : "left"/.test(popover)
+  && /if \(prefer !== "auto"\) side = prefer;/.test(popover),
   "右开优先、右边放不下就翻到左边；显式 prefer 可强制换边（贴边按钮用）");
-ok(/createPortal\(/.test(rail), "弹层 portal 到 body（不被输入区的 overflow 裁掉）");
+ok(/createPortal\(/.test(popover), "弹层 portal 到 body（不被输入区的 overflow 裁掉）");
 ok(/\.composer-rail-icons\s*\{[^}]*max-height:\s*100%/s.test(railCss), "图标列不超出输入框高度（超出内部滚动）");
 
 /* ④ 密码本：明文不进渲染层 */
 const vaultMain = src("electron/features/vault-ipc.ts");
-ok(/safeStorage\.encryptString/.test(vaultMain) && /safeStorage\.decryptString/.test(vaultMain), "密码本用系统 safeStorage 加解密");
+// 10-27 起域不许直取 safeStorage（用户数据目录 / 密钥库都走 host 接缝），判据跟到接缝调用
+ok(/inject: \["ipc", "host"\]/.test(vaultMain) && /const secure = host\.secure/.test(vaultMain)
+  && /secure\.encryptString\(/.test(vaultMain) && /secure\.decryptString\(/.test(vaultMain),
+  "密码本用系统 safeStorage 加解密（经 host.secure 接缝）");
 ok(/const \{ secret, \.\.\.rest \} = item/.test(vaultMain) && /hasSecret: Boolean\(secret\)/.test(vaultMain),
   "列表只回 hasSecret、**不回明文**（渲染层拿不到密码）");
 ok(/clipboard\.writeText\(plain\)/.test(vaultMain) && /本机加密不可用，无法安全保存密码/.test(vaultMain),
@@ -85,7 +91,8 @@ ok(/onDone\?\.\(\)/.test(stickers) && /MoodStickersPanel onDone=\{\(\) => setPan
   "选中表情后弹层自动收起（用户：「选择了表情，表情界面自动隐藏」）");
 ok(/10_000/.test(rail) && /if \(!open \|\| panelId\) return/.test(rail),
   "竖条展开后 10s 自动收起；有面板打开时不收（用户：「这个一直展示不会自动隐藏」）");
-ok(/prefer === "right"/.test(rail) && /setPrefer\(onRight \? "left" : "right"\)/.test(rail),
+ok(/const \[prefer, setPrefer\] = useState<"auto" \| "right" \| "left">/.test(rail) && /prefer=\{prefer\}/.test(rail)
+  && /setPrefer\(\(current\) => \(current === "right" \? "left" : "right"\)\)/.test(rail),
   "贴边按钮真的换边（用户：「这个按键点击没反应」）");
 
 /* ⑥ 三处登记 */
