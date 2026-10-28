@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-28 | any 棘轮补「逐文件基线」 | 基建 | `scripts/guards/12af-css-layers-any-ratchet.mjs`、`scripts/guards/any-baseline.json` | 原来只卡总数（1,696），漏了个洞：A 文件涨 5 条、B 文件顺手降 5 条，总数不动 ⇒ 增长的大头悄悄搬家。现在按文件记基线（208 个文件），只许降不许涨；降了就 `--update-any-baseline` 记账（棘轮只往一个方向走）。负向实测：给 ComposerRail 加一条 `any` 立刻报红并指名文件与 1→2 的差值。 | 待提交 |
 | 2026-10-28 | 输入框竖条补真机验收（composer-rail 7 条） | 流程 | `scripts/accept.mjs`、`scripts/guards/09-structural.mjs`（棘轮基线） | 竖条是本项目最新的用户可见功能，此前只有结构守卫（12ae），**一条真点击验收都没有**。新增 7 条：默认收起为夹在输入框左边线上的窄条（中心距边线 ≤3px、宽 ≤16、高 36–90）、点开四个入口、表情弹层完整在视口内且 ≥40 个、选表情只插一个表情且弹层自动收、**弹层开着 11 秒不自动收起**、重载后仍是展开态（双写回灌）、空闲 10 秒自动收起。实测 7/7 通过；顺带确认输入框是 contentEditable(.composer-editor)，不是 textarea。 | 待提交 |
 | 2026-10-28 | archive/ 取消 git 跟踪（三仓） | 基建 | `.gitignore`（已有 `archive/`）、仓库索引 | `archive/` 早在 .gitignore 里，但 39 个历史文件仍被跟踪（截图/海报/日志共 ~14MB）。`git rm -r --cached` 取消索引、文件保留在本机。⛔ `release-site/` **保持跟踪**：.gitignore 里写明「发布站源码纳入版本控制」（只排除 .env 与数据），撤销它会和既有决定冲突。 | 待提交 |
 | 2026-10-28 | 设置注册表按导航分组拆页（P1-2） | 基建 | `src/features/app-view/AppView/08-settings-sheet/01-settings-layout/`（注册表 + 新增 pages/*、types.ts）、`scripts/guards/_ctx.mjs` 与 10 个读注册表的守卫 | 559 行注册表里 39 个页面共用一份 363 行的 `const { … } = app` 解构块，读一页要跨 300 行找绑定。按 settingsNav 七个分组拆进 pages/*.tsx，每页只解构自己用到的字段；注册表退回 20 行派发表（仍导出 settingsPagesOf，一 id 一 render 不变），JSX 逐字搬运。守卫新增 `readSettingsSurface()`（注册表 + pages/** 的并集，与 readAppUi 同口径），【101】【128】【129】等按内容写的断言改读它 —— 只读注册表会把 39 页全判成缺失。验证：tsc 0 错、设置页验收 22/22、预检全绿。 | 5d7e8220b |
