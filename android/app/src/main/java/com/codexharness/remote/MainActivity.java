@@ -62,7 +62,9 @@ public class MainActivity extends AppCompatActivity {
                     openChat(digitsOfScan);
                     return;
                 }
-                String scanned = originOf(normalize(raw));
+                /* 10-29：中转地址是 https://<域名>/t/<设备ID>，必须**连路径前缀一起存**
+                   （只存 origin 会丢设备 ID，打开就是 404）。没有 /r/ 的链接仍只取 origin。 */
+                String scanned = baseOf(normalize(raw));
                 if (scanned.isEmpty()) {
                     showSetup("二维码内容不是 https 链接：" + raw);
                     return;
@@ -88,7 +90,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.0");
+        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.2");
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(web, true);
@@ -179,7 +181,8 @@ public class MainActivity extends AppCompatActivity {
 
         String fallback = decodeBase(BuildConfig.BASE_URL_B64);
         String stored = prefs().getString(KEY_BASE, "");
-        String origin = originOf(stored);
+        /* 存的值可能带中转前缀（/t/<设备ID>）：整段 baseOf 才算完整入口 */
+        String origin = baseOf(stored);
         baseUrl = origin.isEmpty() ? fallback : origin;
         // 连过一次之后，再打开 App 直接进对话：不带连接码，页面会用设备秘密自动登录；
         // 电脑端在线就永远是对话页，不需要重新连接。
@@ -208,6 +211,18 @@ public class MainActivity extends AppCompatActivity {
         }
         while (value.endsWith("/")) value = value.substring(0, value.length() - 1);
         return value;
+    }
+
+    /** 完整入口 = scheme://host[:port] + 中转路径前缀（/t/<设备ID>）。
+     *  ⛔ 只取 origin 会丢设备 ID（打开就是 404）；没有 /r/ 的普通链接仍只取 origin。 */
+    private String baseOf(String url) {
+        String origin = originOf(url);
+        if (origin.isEmpty()) return "";
+        Uri uri = Uri.parse(url);
+        String path = uri.getPath() == null ? "" : uri.getPath();
+        int cut = path.indexOf("/r/");
+        if (cut > 0) return origin + path.substring(0, cut);
+        return origin;
     }
 
     /** 只留 scheme://host[:port]：二维码里常带 `?p=1` 之类参数，拼路径前必须剥掉。 */

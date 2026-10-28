@@ -9,15 +9,16 @@ import { net } from "electron";
 import { existingToolPath, toolsRoot } from "./toolchain";
 import { mirrorCandidates } from "./gh-mirror";
 import { buildRemotePageHtml } from "./remote/web-page";
+import { RelayTunnel, type RelayStatus } from "./relay-tunnel";
 
 /** 手机安装包所在的 Release tag（⛔ 不是桌面版安装包的 v* 发布，别混用） */
-const REMOTE_APK_RELEASE = "mobile-remote-v0.1.0";
+const REMOTE_APK_RELEASE = "mobile-remote-v0.1.2";
 
 /** 安装包校验和（GitHub 资产自带的 digest）：镜像层可能被篡改，对不上就不落盘 —— 与 updates.ts 同口径。
  *  ⛔ 重新发布同名资产时必须同步改这里，否则手机端会一直报「校验和不匹配」。 */
 const REMOTE_APK_SHA256: Record<string, string> = {
-  "CodexRemote-0.1.1.apk": "cbb07bab38d984d898aa59b5c1ff26071e01bf9d8d18efe29dfd820aa9c631b6",
-  "PPcodeRemote-0.1.1.apk": "2c9025324f35c7eff50c1f427654dad4cb418340531ae2828687bfc7dce78f27",
+  "CodexRemote-0.1.2.apk": "c80a0f6254db0adfe980c2880928cee279c29b0a42b7a8fefbc0277282033685",
+  "PPcodeRemote-0.1.2.apk": "5eb8fc407742a70135bae56f74fea4749eb073fb8851010c0fbd3c7702d1d421",
 };
 
 /** cloudflared 可执行文件（手机配对的公网隧道）。
@@ -76,6 +77,8 @@ type RemoteEvents = {
   answer?: (payload: { kind: string; requestId?: string; questionId?: string; choice: string; threadId?: string }) => Promise<void>;
   /** 本产品在 GitHub Release 上的 APK 资产文件名（按品牌不同由 main 传入） */
   apkFile?: string;
+  /** 内置中转隧道的状态变化（界面显示「中转在线/离线 + 原因」） */
+  onRelayStatus?: (status: RelayStatus) => void;
   /** 手机页品牌名（⛔ 各仓自有：Codex Harness / PPcode），首页与标题用它 */
   brandName?: string;
   /** 引擎流式事件转发给已连接手机（turn 增量） */
@@ -129,6 +132,10 @@ const PAIR_CODE_MAX_TRIES = 10;
 /** 审批请求 2 分钟没人理就作废（手机端轮询到 expired） */
 const PAIR_REQUEST_TTL = 2 * 60_000;
 
+/** 内置中转站的默认根地址（手机远控「装完即用」的线上网关）。
+ *  ⛔ 换域名只改这一处 + 各仓的 APK 内置地址；运行时可用 HARNESS_RELAY_URL / relay-url.txt 覆盖。 */
+const RELAY_DEFAULT_BASE = "https://remote.ppz123.asia";
+
 /** 手机远控的固定本地端口：自建中转（frp）要把它转发出去，⛔ 别改回随机端口 ——
  *  端口每次启动都变，服务端的转发配置就永远对不上（安卓 App / 固定域名场景直接连不上）。 */
 export const REMOTE_PORT = 17891;
@@ -145,6 +152,8 @@ type BindSession = {
 export class RemoteControlService {
   private server: http.Server | null = null;
   private port = 0;
+  /** 内置隧道（10-29）：装完即用，不再依赖人工装 frpc */
+  private relay: RelayTunnel | null = null;
   private devices = new Map<string, Device>();
   private bindSessions = new Map<string, BindSession>();
   private tunnelProc: ChildProcess | null = null;
@@ -245,6 +254,7 @@ export class RemoteControlService {
     // ⛔ 不再自动添加防火墙放行规则（09-13 审计：静默改动系统网络策略，是这次"零鉴权暴露在
     // 局域网上"的一环）。规则已存在则续用；不存在只记日志 + 在页面给出提示，由用户显式放行。
     this.reportFirewallState();
+    this.startRelayTunnel();
     this.startTunnel();
     // 订阅引擎流式事件 → 推给手机对话页（含轮询缓冲）
     this.events.onThreadEvent?.((event) => this.broadcastThreadEvent(event));
@@ -253,6 +263,40 @@ export class RemoteControlService {
 
   /** Cloudflare 快速隧道（零注册）：给配对服务一个 https://xxx.trycloudflare.com 公网域名，
    * 微信/相机扫码可直接打开。失败静默回退本机地址。 */
+  /** 内置中转（10-29）：App 主动连网关，按设备 ID 路由 —— 用户装完即用，不必装 frpc。 */
+  private startRelayTunnel() {
+    if (this.relay || !this.storageFile) return;
+    this.relay = new RelayTunnel({
+      userData: path.dirname(this.storageFile),
+      localPort: () => this.port,
+      relayBase: () => this.relayBaseUrl(),
+      onStatus: (status) => { try { this.events.onRelayStatus?.(status); } catch { /* 忽略 */ } },
+    });
+    this.relay.start();
+  }
+
+  /** 中转站根地址：环境变量 → 数据目录 relay-url.txt → 内置默认（线上网关） */
+  private relayBaseUrl() {
+    const fromEnv = String(process.env.HARNESS_RELAY_URL ?? "").trim();
+    if (/^https?:\/\//i.test(fromEnv)) return fromEnv.replace(/\/+$/, "");
+    try {
+      if (this.storageFile) {
+        const file = path.join(path.dirname(this.storageFile), "relay-url.txt");
+        if (fs.existsSync(file)) {
+          const value = String((fs.readFileSync(file, "utf8").split(/\r?\n/)[0] ?? "")).trim();
+          if (/^https?:\/\//i.test(value)) return value.replace(/\/+$/, "");
+        }
+      }
+    } catch { /* 忽略 */ }
+    return RELAY_DEFAULT_BASE;
+  }
+
+  /** 中转状态快照（界面 / 二维码状态用） */
+  relayStatus(): RelayStatus {
+    return this.relay?.getStatus()
+      ?? { state: "offline", id: "", base: this.relayBaseUrl(), publicBase: "", error: "未启动", since: Date.now() };
+  }
+
   private startTunnel() {
     const fixed = this.fixedPublicUrl();
     if (fixed) {
@@ -390,6 +434,9 @@ export class RemoteControlService {
    * 隧道不可用时只回退局域网 IPv4 地址（同一 Wi-Fi 下微信可打开）。
    * 绝不回退 IPv6 地址——微信内置浏览器会拦截纯 IP。 */
   private externalBase() {
+    /* 10-29：内置中转优先（装完即用的产品路径）；离线时退回旧固定地址 / 临时隧道 / 局域网 */
+    const relay = this.relay?.publicBase();
+    if (relay) return relay;
     const fixed = this.fixedPublicUrl();
     if (fixed) return fixed;
     if (this.tunnelUrl) return this.tunnelUrl;
@@ -1043,6 +1090,8 @@ else autoLogin();
   }
 
   stop() {
+    try { this.relay?.stop(); } catch { /* 忽略 */ }
+    this.relay = null;
     try { this.tunnelProc?.kill(); } catch { /* not running */ }
     this.tunnelProc = null;
     this.tunnelUrl = "";
