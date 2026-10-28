@@ -168,20 +168,41 @@ ok(composer.includes("<TurnStatusCapsule") && composer.includes("taskList={taskL
     const items = [
       { type: "mcpToolCall", tool: "read_file", arguments: '{"path":"C:/w/src/a.tsx"}' },
       { type: "mcpToolCall", tool: "read_file", arguments: '{"path":"C:/w/src/a.tsx"}' },   // 去重
-      { type: "commandExecution", command: 'cat C:/w/docs/spec.md' },                       // shell 读
+      { type: "commandExecution", command: 'cat C:/w/docs/spec.md' },                       // shell 读（unix）
+      /* ⛔ 10-28 真机抓到的形态：Windows 上引擎的命令项是 Get-Content / Select-String，
+         只认 cat/head/tail 的话「已查看」恒空 ⇒ 整个胶囊不渲染（用户看不到刚读过哪些文件）。 */
+      { type: "commandExecution", command: 'Get-Content -LiteralPath "C:\\w\\src\\win-read.ts" -TotalCount 2' },
+      { type: "commandExecution", command: 'Select-String -Path "C:\\w\\docs\\hit.md" -Pattern foo' },
+      { type: "commandExecution", command: 'Set-Content -Path "C:\\w\\src\\win-write.ts" -Value hi' },
       { type: "mcpToolCall", tool: "edit_file", arguments: '{"file_path":"C:/w/src/b.ts"}' },
       { type: "commandExecution", command: "apply_patch <<'PATCH'\n*** Update File: C:/w/src/c.ts\nPATCH" },
       { type: "mcpToolCall", tool: "write_file", arguments: '{"path":"C:/w/src/new.json"}' },
       { type: "mcpToolCall", tool: "grep", arguments: '{"pattern":"x","path":"C:/w/node_modules/pkg/i.js"}' },
     ];
     const got = fileActionsOf({ items, liveChanges: [{ path: "C:/w/src/c.ts" }, { path: "C:/w/dist/out.js" }] });
-    ok(got.read.length === 2 && got.read.every((row) => /a\.tsx|spec\.md/.test(row.path)),
-      "已查看 = read_file / cat 读到的文件（同文件只列一次；node_modules 下的噪音被跳过）");
+    ok(got.read.length === 4 && got.read.every((row) => /a\.tsx|spec\.md|win-read\.ts|hit\.md/.test(row.path)),
+      "已查看 = read_file / cat / Get-Content / Select-String 读到的文件（同文件只列一次；node_modules 下的噪音被跳过）");
+    ok(!got.read.some((row) => /^type\s/i.test(row.name)),
+      "⛔ 文件名不粘 shell 动词（`type package.json` 不能显示成「type package.json」）");
+    /* ⛔ 10-28 真机：同一文件以「相对 + 绝对」两种写法各出现一次（列表里并排两行同名）；
+       以及「从 1 加到 400」被当成文件 `1..400`。两者都是用户直接看到的脏数据。 */
+    {
+      const dedupe = fileActionsOf({ items: [
+        { type: "commandExecution", command: `Get-Content -LiteralPath 'C:\\w\\src\\dup.ts'` },
+        { type: "commandExecution", command: `type dup.ts` },
+      ] });
+      ok(dedupe.read.length === 1, "⛔ 相对/绝对两种写法的同一文件只列一次（保留更完整的路径）");
+      const noise = fileActionsOf({ items: [{ type: "commandExecution", command: `Get-Content -TotalCount 2 'C:\\w\\a.md'` }] });
+      ok(noise.read.length === 1, "数字区间（1..400）之类不是路径，别列进已查看");
+    }
+    ok(got.modified.some((row) => row.path.endsWith("win-write.ts")),
+      "Set-Content（PowerShell 写入）归到「已修改」");
     ok(got.edited.length === 2 && got.edited.some((row) => row.path.endsWith("b.ts")) && got.edited.some((row) => row.path.endsWith("c.ts")),
       "已编辑 = edit_file 与 apply_patch（补丁式就地改）");
-    ok(got.modified.length === 2 && got.modified.some((row) => row.path.endsWith("new.json"))
-      && got.modified.some((row) => row.path.endsWith("dist/out.js")),
-      "已修改 = write_file 新建 + 磁盘 live 扫描到的改动（工具项没抓到的子进程写入也不漏）");
+    ok(got.modified.length === 3 && got.modified.some((row) => row.path.endsWith("new.json"))
+      && got.modified.some((row) => row.path.endsWith("dist/out.js"))
+      && got.modified.some((row) => row.path.endsWith("win-write.ts")),
+      "已修改 = write_file 新建 + Set-Content 写入 + 磁盘 live 扫描到的改动（工具项没抓到的子进程写入也不漏）");
     ok(!got.modified.some((row) => row.path.endsWith("c.ts")),
       "⛔ 已在「已编辑」里的文件不再重复进「已修改」（同一处改动只报一次）");
     const empty = fileActionsOf({ items: [] });
