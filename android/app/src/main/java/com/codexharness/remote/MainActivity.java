@@ -45,12 +45,18 @@ public class MainActivity extends AppCompatActivity {
     private final ActivityResultLauncher<ScanOptions> scanLauncher =
             registerForActivityResult(new ScanContract(), result -> {
                 if (result.getContents() == null) return;
-                String scanned = normalize(result.getContents());
-                if (!scanned.startsWith("https://")) {
-                    // 扫到的不是链接（例如只扫到一串数字）就当连接码用
-                    String digits = scanned.replaceAll("[^0-9]", "");
-                    if (digits.length() == 6) code.setText(digits);
-                    else showSetup("二维码内容不是 https 链接：" + scanned);
+                String raw = result.getContents().trim();
+                // ⛔ 先判纯数字再 normalize：normalize 会给任意串补 https://，
+                //    放后面的话「扫到 6 位码」这条永远走不到（会去加载 https://123456）。
+                String digitsOfScan = raw.replaceAll("[^0-9]", "");
+                if (!raw.toLowerCase(java.util.Locale.ROOT).startsWith("http") && digitsOfScan.length() == 6) {
+                    code.setText(digitsOfScan);
+                    openChat(digitsOfScan);
+                    return;
+                }
+                String scanned = originOf(normalize(raw));
+                if (scanned.isEmpty()) {
+                    showSetup("二维码内容不是 https 链接：" + raw);
                     return;
                 }
                 baseUrl = scanned;
@@ -110,7 +116,10 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        baseUrl = prefs().getString(KEY_BASE, decodeBase(BuildConfig.BASE_URL_B64));
+        String fallback = decodeBase(BuildConfig.BASE_URL_B64);
+        String stored = prefs().getString(KEY_BASE, "");
+        String origin = originOf(stored);
+        baseUrl = origin.isEmpty() ? fallback : origin;
         // 连过一次之后，再打开 App 直接进对话：不带连接码，页面会用设备秘密自动登录；
         // 电脑端在线就永远是对话页，不需要重新连接。
         if (prefs().getBoolean(KEY_CONNECTED, false)) resumeSession();
@@ -122,7 +131,7 @@ public class MainActivity extends AppCompatActivity {
         hint.setText("");
         setup.setVisibility(View.GONE);
         web.setVisibility(View.VISIBLE);
-        web.loadUrl(baseUrl);
+        web.loadUrl(baseUrl + "/r/mobile");
     }
 
     private SharedPreferences prefs() {
@@ -132,9 +141,22 @@ public class MainActivity extends AppCompatActivity {
     private String normalize(String raw) {
         String value = raw == null ? "" : raw.trim();
         if (value.isEmpty()) return "";
-        if (!value.startsWith("http://") && !value.startsWith("https://")) value = "https://" + value;
+        if (!value.toLowerCase(java.util.Locale.ROOT).startsWith("http://")
+                && !value.toLowerCase(java.util.Locale.ROOT).startsWith("https://")) {
+            value = "https://" + value;
+        }
         while (value.endsWith("/")) value = value.substring(0, value.length() - 1);
         return value;
+    }
+
+    /** 只留 scheme://host[:port]：二维码里常带 `?p=1` 之类参数，拼路径前必须剥掉。 */
+    private String originOf(String url) {
+        Uri uri = Uri.parse(url);
+        String scheme = uri.getScheme();
+        String host = uri.getHost();
+        if (scheme == null || host == null) return "";
+        if (!"https".equalsIgnoreCase(scheme)) return "";
+        return scheme.toLowerCase(java.util.Locale.ROOT) + "://" + host + (uri.getPort() > 0 ? ":" + uri.getPort() : "");
     }
 
     /** 内置中转地址在 APK 里是 XOR+base64：界面上不显示、strings 里也搜不到明文。 */
@@ -156,7 +178,8 @@ public class MainActivity extends AppCompatActivity {
         prefs().edit().putBoolean(KEY_CONNECTED, true).apply();
         setup.setVisibility(View.GONE);
         web.setVisibility(View.VISIBLE);
-        web.loadUrl(baseUrl + "/#code=" + digits);
+        // ⛔ 直接开 /r/mobile：根路径会 302 一次，没必要（且避免刷新时把码丢掉）
+        web.loadUrl(baseUrl + "/r/mobile#code=" + digits);
     }
 
     private void startScan() {

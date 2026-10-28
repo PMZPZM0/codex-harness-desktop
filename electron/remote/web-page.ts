@@ -192,6 +192,7 @@ async function newThread() {
   localStorage.setItem(THREAD_KEY, currentThreadId);
   document.getElementById("threads").classList.remove("open");
   list.innerHTML = "";
+  stepBox = null; // 旧容器已从 DOM 移除，不重置的话新回合的步骤会渲染到看不见的节点上
   push("system", "已新建会话，直接发消息开始对话");
   updateThreadLabel("新会话");
   loadThreads();
