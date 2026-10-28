@@ -610,9 +610,11 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                       运行时反证：改回原顺序 → 气泡 top=80 / 状态条 top=51（正是用户截图的比例）。 */}
                   {runActivity && (
                     <div className="run-activity-bar" role="status" aria-live="polite">
-                      <span className="run-activity-spinner" aria-hidden><i /><i /><i /></span>
+                      {/* ⛔ 10-28 用户令：去掉状态前的三个点（原来那组跳动的 i 就是"前面的省略号"）——
+                          状态由**文字本身**表达，动画改在文字上（CSS 扫光 + 呼吸，见 .run-activity-text）。 */}
                       <span className="run-activity-text shimmer-text" key={runActivity}>{runActivity}</span>
-                      {runPhrase && <span className="run-activity-phrase">· {runPhrase}</span>}
+                      {/* ⛔ 准备中 / 发送中 不配随机短语：那是"回答阶段"的话术，放在发送阶段自相矛盾。 */}
+                      {runPhrase && runActivity !== "准备中" && runActivity !== "发送中" && <span className="run-activity-phrase">· {runPhrase}</span>}
                     </div>
                   )}
                   {lightbox && <ImageLightbox path={lightbox.path} alt={lightbox.alt} onClose={() => setLightbox(null)} onCopy={() => void copyImage(lightbox.path)} />}

@@ -268,6 +268,9 @@ export async function send(bag: Bag, event?: FormEvent) {
       }
     }
     bag.setSending(true);
+    /* 10-28：三阶段第一段 —— 从这里到 `turn/start` 真正发出之前都是"准备中"
+       （模型解析 / 附件 / 记忆包装 / laya 判档都在这一段里，慢的时候用户能看到在做什么）。 */
+    bag.setSendPhase("准备中");
     // 同 queue 分支：注解「chip 原始位置」，渲染层据此内联而不是堆到尾部
     saveMessageOriginal(messageText, value);
     // 立即点亮侧边栏转圈（turn/start 返回前也转）：复用当前会话时立刻标记运行中；
@@ -459,7 +462,12 @@ export async function send(bag: Bag, event?: FormEvent) {
       if (startModelNow !== wantedModelNow) {
         bag.showToast?.("模型已迁移", `「${wantedModelNow}」不在当前供应商的可用清单里，本会话已改用「${startModelNow}」`);
       }
-      const startTurn = async (target: Thread) => window.codex.request("turn/start", {
+      /* 10-28：三阶段第二段 —— 请求**已发出**、等引擎回 turn（含会话重建后的多次重发）。
+         ⛔ 用 finally 清空：成功 → 交给 runActivity 的「等待模型回复」；失败 → 状态条不能卡在"发送中"。 */
+      const startTurn = async (target: Thread) => {
+        bag.setSendPhase("发送中");
+        try {
+          return await window.codex.request("turn/start", {
         threadId: target.id,
         input: sendInput,
         model: resolveStartModel(bag),
@@ -475,7 +483,11 @@ export async function send(bag: Bag, event?: FormEvent) {
         sandboxPolicy: sandboxPolicy(bag.sandbox, target.cwd ?? bag.workspace ?? ""),
         // 协作模式的 settings 优先于顶层 effort；漏传时计划模式会回落 medium。
         ...(bag.planOnceRef.current ? { collaborationMode: { mode: "plan", settings: { model: resolveStartModel(bag), reasoning_effort: effectiveEffort } } } : {}),
-      });
+          });
+        } finally {
+          bag.setSendPhase("");
+        }
+      };
       let active = bag.thread;
       if (!active) {
         active = await bag.createEmptyThread();
@@ -616,6 +628,7 @@ export async function send(bag: Bag, event?: FormEvent) {
         const retryThreadId = createdThreadId ?? bag.optimisticBaselineRef.current.threadId ?? bag.threadRef.current?.id;
         if (retryThreadId) {
           bag.setSending(false);
+          bag.setSendPhase("");
           bag.setInterrupting(false);
           bag.setWorkStartedAt(null);
           bag.markThreadStopped(retryThreadId);
@@ -642,6 +655,7 @@ export async function send(bag: Bag, event?: FormEvent) {
           // （菜单里的"该模型不支持"标记由 EffortPicker 打开时重读，不需要这里同步 state）
           bag.applyEffort(fallback);
           bag.setSending(false);
+          bag.setSendPhase("");
           bag.setInterrupting(false);
           bag.setWorkStartedAt(null);
           bag.markThreadStopped(retryThreadId);

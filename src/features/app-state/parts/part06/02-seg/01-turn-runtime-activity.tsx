@@ -19,16 +19,35 @@ import { describeTurnStop, turnHeadline, isAwaitingTurnClose } from "../../../..
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 
+/**
+ * fileChange → 「正在生成文件」还是「正在编辑文件」。
+ *
+ * 引擎的 FileChange 只有 `changes[{ path, diff }]`（部分版本另带 kind/status）：
+ * 新增文件的 diff 以 `--- /dev/null` 开头（或带 `new file mode`）。
+ * ⛔ 判据只在这里：状态文案别在渲染层再判一次（两处判定迟早漂移）。
+ */
+function fileChangeActivity(item: any): "正在生成文件" | "正在编辑文件" {
+  const changes = Array.isArray(item?.changes) ? item.changes : [];
+  if (!changes.length) return "正在编辑文件";
+  const allNew = changes.every((change: any) => {
+    const kind = String(change?.kind ?? change?.status ?? "").toLowerCase();
+    if (kind === "add" || kind === "added" || kind === "create" || kind === "created") return true;
+    const diff = String(change?.diff ?? "");
+    return /^---\s+\/dev\/null/m.test(diff) || /^new file mode/m.test(diff);
+  });
+  return allNew ? "正在生成文件" : "正在编辑文件";
+}
+
 export function usePart06b1(bag: Bag) {
   // ── 运行动态状态行（09-16，学 WorkBuddy 消息底部那个）─────────────────────────
   // 状态 = 当前会话**最后一个进行中的 item** 的类型（执行命令/编辑文件/思考…），
-  // 找不到进行中 item 时兜底「正在生成回复」；话语 = 任务开始时随机锁定一句，运行期不换。
+  // 找不到进行中 item 时兜底「等待模型回复」；话语 = 任务开始时随机锁定一句，运行期不换。
   const taskRunning = Boolean(bag.sending || bag.activeTurnId);
 bag.taskRunning = taskRunning as typeof bag.taskRunning;
 
 
   // ⛔ 收尾等待（09-18）：判据独立成布尔量，**不要用展示文案做状态判断** ——
-  //   原先写成 `runActivity === "正文已完整，等待模型收尾"`，把可读文案当逻辑判据，
+  //   原先写成 `runActivity === "正文已完整，等待模型收尾"`（旧文案），把可读文案当逻辑判据，
   //   改一个字（文案优化）就会静默失效、退回「正在生成回复」而没人发现（审查抓出）。
   const lastTurnOfThread = bag.thread?.turns?.[bag.thread.turns.length - 1];
 bag.lastTurnOfThread = lastTurnOfThread as typeof bag.lastTurnOfThread;
@@ -40,34 +59,60 @@ bag.turnFinalizing = turnFinalizing as typeof bag.turnFinalizing;
 
   const runActivity = useMemo(() => {
     if (!bag.taskRunning || !bag.thread) return "";
-    const turns = bag.thread.turns ?? [];
+    const thread = bag.thread;
+    /* ⛔ 三阶段的前两段来自**发送链路的真实事件边界**（send.tsx: 点发送→turn/start 发出→引擎回 turn），
+       不是按时间瞎猜：有值时它最高优先，没有才轮到下面的 item 扫描。 */
+    if (bag.sendPhase) return bag.sendPhase;
+    /* ⛔ 待审批是**用户阻塞**状态，优先级高于"模型在干活"：审批卡已经弹出来了，
+       状态行再写「正在运行命令」会让人以为它自己在跑（实际在等你点）。
+       ⛔ 只认**本会话**的请求（pending 里可能有别的会话的）。 */
+    const myPending = (bag.pending ?? []).filter((request) => {
+      const tid = String((request?.params as any)?.threadId ?? "");
+      return (!tid || tid === thread.id) && /approval/i.test(String(request?.method ?? ""));
+    });
+    if (myPending.length) return "等待你确认";
+    const turns = thread.turns ?? [];
     for (let i = turns.length - 1; i >= 0; i--) {
       const items = turns[i].items ?? [];
       for (let j = items.length - 1; j >= 0; j--) {
         const item = items[j] as any;
-        if (item?.status !== "inProgress" && item?.status !== "running") continue;
+        /* ⛔ 10-28 用户实测（截图）：「思考板块输出思考内容的时候，映射的文字是『生成回复中』」——
+           原因是流式中的 item 常常**还没有 status/durationMs**（引擎先建 item、后补状态），
+           旧判据只看 status ⇒ 跳过它 ⇒ 掉到兜底文案。
+           ⇒ 最后一个 item 只要没标完成，且在跑的回合里，就按"进行中"算。 */
+        const started = item?.status === "inProgress" || item?.status === "running";
+        const statusless = !item?.status && !item?.durationMs && j === items.length - 1 && i === turns.length - 1;
+        if (!started && !statusless) continue;
         // ⛔ contextCompaction 不是「生成回复」（09-26 用户截图：压缩期间状态条挂
-        //    「正在生成回复 · 正在落笔」）—— 压缩有自己的指示（时间线压缩分隔线转圈 +
-        //    compact toast），状态条这里跳过它继续找真实活动；找不到就静默（见兜底）。
+        //    「正在生成回复 · 正在落笔」）—— 压缩有自己的指示，但**状态条也不该装作在写回复**；
+        //    这里如实说「正在整理上下文」，找不到真实活动才走兜底。
         if (isCompactionItem(item)) continue;
+        /* ⛔ 10-28 用户令：状态精简为五种主状态 ——
+             等待模型回复 / 正在思考 / 正在编辑文件 / 正在运行命令 / 正在生成文件。
+           其余状态** truthful 才出现**（搜索网页 / 调用工具），不参与"五种"的命名口径。
+           ⛔ 文案是**逻辑的唯一出口**：别在别处再拼一份（bag-types 的联合类型同步改）。 */
         switch (item.type) {
-          case "commandExecution": return "正在执行命令";
-          case "fileChange": return "正在编辑文件";
-          case "reasoning": return "正在深度思考";
+          case "commandExecution": return "正在运行命令";
+          case "fileChange": return fileChangeActivity(item);
+          case "reasoning": return "正在思考";
+          /* 正文在写：说「正在生成回复」才是实话（说「等待模型回复」会让人以为还没开始）。 */
+          case "agentMessage": return "正在生成回复";
           case "webSearch": return "正在搜索网页";
-          case "mcpToolCall": return "正在调用工具";
+          case "mcpToolCall":
+          case "dynamicToolCall":
+          case "collabAgentToolCall":
+          case "subAgentActivity": return "正在调用工具";
         }
       }
     }
-    // ⛔ 压缩进行中不给任何兜底（09-26 用户截图）：此时说「正在生成回复/正在落笔」是
-    //    错的 —— 引擎在压缩上下文，不在写回复。压缩指示由分隔线与 compact toast 承担。
-    if (bag.compactPendingRef.current.has(bag.thread.id)) return "";
+    // ⛔ 压缩进行中不给「等待模型回复」：引擎在压缩上下文，不在等回复（09-26 用户的原始抱怨）。
+    if (bag.compactPendingRef.current.has(thread.id)) return "正在整理上下文";
     // ⛔ 兜底要分两种（09-18 用户实测「回复完了还没结束，啥情况」）：GPT 系模型输出完正文后，
     //   上游迟迟不发流结束信号（真机实测 gpt-5.6-sol 正文完成后 28 秒零事件才 task_complete），
-    //   此时说「正在生成回复」会让人以为还在憋正文 —— 如实说「正文已完整，等待模型收尾」。
+    //   此时说「等待模型回复」会让人以为还在憋正文 —— 如实说「等待模型收尾」。
     //   判据**复用纯函数**，不在这里抄第二份（两份判定迟早漂移，且纯函数那份有行为断言守着）。
-    return bag.turnFinalizing ? "正文已完整，等待模型收尾" : "正在生成回复";
-  }, [bag.taskRunning, bag.thread, bag.turnFinalizing]);
+    return bag.turnFinalizing ? "等待模型收尾" : "等待模型回复";
+  }, [bag.taskRunning, bag.thread, bag.turnFinalizing, bag.sendPhase]);
 bag.runActivity = runActivity as typeof bag.runActivity;
 
 
@@ -86,7 +131,7 @@ bag.runActivityRef = runActivityRef as typeof bag.runActivityRef;
 
 
   useEffect(() => {
-    if (bag.taskRunning && !bag.runPhrase) bag.setRunPhrase(pickRunPhrase(bag.runActivityRef.current || "正在生成回复"));
+    if (bag.taskRunning && !bag.runPhrase) bag.setRunPhrase(pickRunPhrase(bag.runActivityRef.current || "等待模型回复"));
     else if (!bag.taskRunning && bag.runPhrase) bag.setRunPhrase("");
   }, [bag.taskRunning, bag.runPhrase]);
 
@@ -105,7 +150,7 @@ bag.finalizePhraseRef = finalizePhraseRef as typeof bag.finalizePhraseRef;
     if (!bag.taskRunning) { bag.finalizePhraseRef.current = false; return; }
     if (bag.turnFinalizing === bag.finalizePhraseRef.current) return;
     bag.finalizePhraseRef.current = bag.turnFinalizing;
-    bag.setRunPhrase(bag.turnFinalizing ? pickRunPhraseExact("正文已完整，等待模型收尾") : pickRunPhrase(bag.runActivity || "正在生成回复"));
+    bag.setRunPhrase(bag.turnFinalizing ? pickRunPhraseExact("等待模型收尾") : pickRunPhrase(bag.runActivity || "等待模型回复"));
   }, [bag.taskRunning, bag.turnFinalizing, bag.runActivity]);
 
 

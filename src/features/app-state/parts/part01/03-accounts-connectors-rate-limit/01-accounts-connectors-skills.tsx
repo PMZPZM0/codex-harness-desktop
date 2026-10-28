@@ -92,6 +92,14 @@ bag.loading = loading as typeof bag.loading; bag.setLoading = setLoading as type
   const [sending, setSending] = useState(false);
 bag.sending = sending as typeof bag.sending; bag.setSending = setSending as typeof bag.setSending;
 
+  /* 发送三阶段（10-28 用户令）：「准备中 → 发送中 → 等待模型回复」。
+     ⛔ 必须映射**真实事件**，不是凭空捏造：
+       · 准备中 = 点发送后到 `turn/start` 真正发出（这段在做模型解析 / 附件 / 记忆包装）；
+       · 发送中 = `turn/start` 已发出、等引擎回 turn（send.tsx 的 startTurn 包住这一段）；
+       · 等待模型回复 = 引擎已接单、还没有任何在跑 item（part06 的 runActivity 兜底）。 */
+  const [sendPhase, setSendPhase] = useState<"" | "准备中" | "发送中">("");
+bag.sendPhase = sendPhase as typeof bag.sendPhase; bag.setSendPhase = setSendPhase as typeof bag.setSendPhase;
+
   const sendInFlightRef = useRef(false);
 bag.sendInFlightRef = sendInFlightRef as typeof bag.sendInFlightRef;
 
