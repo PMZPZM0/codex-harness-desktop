@@ -46,6 +46,8 @@
   border-radius: 999px;
   /* 用户点名「小粗条」：它是**唯一**的展开affordance ⇒ 别调成几乎看不见的浅灰（第一版 45% 实测太淡） */
   background: color-mix(in srgb, var(--muted) 72%, transparent);
+  /* 10-28 用户：「两个小粗条的边框上加上边框线的颜色，不然像挂着什么」⇒ 描边取输入框同色 --line */
+  box-shadow: 0 0 0 1px var(--line);
   transition: background 0.16s ease, height 0.16s ease;
 }
 .composer-rail-toggle:hover .composer-rail-grip,
@@ -333,14 +335,14 @@
       深色主题保持原灰（白条在深色里太刺眼）。竖条长度同步收短（64/80/32 → 36/44/22）。 */
 :root:not([data-theme="dark"]) .composer-rail-grip {
   background: #fff;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--line) 75%, transparent);
+  box-shadow: 0 0 0 1px var(--line);
 }
 :root:not([data-theme="dark"]) .composer-rail-toggle:hover .composer-rail-grip,
 :root:not([data-theme="dark"]) .composer-rail-toggle:focus-visible .composer-rail-grip {
   background: #fff;
-  box-shadow: 0 0 0 1px var(--faint);
+  box-shadow: 0 0 0 1px var(--line);
 }
 :root:not([data-theme="dark"]) .composer-rail.is-open .composer-rail-grip {
   background: #fff;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--line) 75%, transparent);
+  box-shadow: 0 0 0 1px var(--line);
 }

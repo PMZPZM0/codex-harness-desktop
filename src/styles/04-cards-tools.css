@@ -1519,6 +1519,8 @@
   height: 4px;
   border-radius: 999px;
   background: var(--faint);   /* 骑在 --line 的边框线上：默认色要比边框亮一档才看得见 */
+  /* 10-28 用户：「两个小粗条的边框上加上边框线的颜色，不然像挂着什么」⇒ 描边取输入框同色 --line */
+  box-shadow: 0 0 0 1px var(--line);
   transition: background 0.12s ease;
 }
 .composer-resize-handle:hover .composer-resize-grip { background: var(--muted); }
@@ -2682,9 +2684,9 @@
 /* 10-28 用户（浅色截图）：输入框顶部拖动条改白色（深色保持原灰）。 */
 :root:not([data-theme="dark"]) .composer-resize-grip {
   background: #fff;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--line) 75%, transparent);
+  box-shadow: 0 0 0 1px var(--line);
 }
 :root:not([data-theme="dark"]) .composer-resize-handle:hover .composer-resize-grip {
   background: #fff;
-  box-shadow: 0 0 0 1px var(--faint);
+  box-shadow: 0 0 0 1px var(--line);
 }
