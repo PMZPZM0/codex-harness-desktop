@@ -378,6 +378,17 @@
   line-height: 1.6;
 }
 
+/* ── 钩子页工具栏（10-28 用户令：「改成搜索框 + 筛选 + 刷新」）──────────────
+   一行：搜索（左）+ 状态筛选 + 来源筛选 + 匹配计数 ←→ 信任全部 / 刷新（右）。 */
+.hook-filter-row .search-field { flex: 0 1 220px; min-width: 160px; }
+.hook-filter-select { display: inline-flex; align-items: center; flex: none; }
+.hook-filter-select .app-select-trigger { min-width: 96px; }
+.hook-filter-count { color: var(--faint); font-size: 11px; white-space: nowrap; }
+/* ⛔ 页内必须保留 .settings-actions-row（12ad 判据），但放进工具栏后要去掉它自带的
+   10px 下边距与整行占位，否则工具条会被撑高、按钮掉到第二行。 */
+.hook-filter-row .hook-actions-line { margin-left: auto; margin-bottom: 0; flex: none; }
+.hook-clear-filters { margin-top: 4px; }
+
 /* —— 使用统计 —— */
 .usage-hero {
   border: 1px solid var(--line);
