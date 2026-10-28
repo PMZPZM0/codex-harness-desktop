@@ -1065,6 +1065,30 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   );
 }
 
+/* ══ 【139c】手机远控走自建中转（安卓 App / 固定域名）：端口要固定、固定地址要压过隧道（10-28）══
+   背景：安卓 App 与服务端 frp 都按**固定**地址与端口配置。端口每次启动随机、或二维码仍指向
+   随机 trycloudflare 域名，用户装完 App 也连不上（症状是「连不上/每次地址都变」）。 */
+{
+  const relaySrc = readFileSync(join(ROOT, "electron", "remote.ts"), "utf8");
+  (/export const REMOTE_PORT = 17891/.test(relaySrc) && /async start\(port = REMOTE_PORT\)/.test(relaySrc) && !/async start\(port = 0\)/.test(relaySrc) ? ok : fail)(
+    "【139c】远控端口固定 17891 —— frpc 配的就是它，改回随机等于服务端转发永远对不上"
+  );
+  (/HARNESS_REMOTE_PUBLIC_URL/.test(relaySrc) && /private fixedPublicUrl\(\)/.test(relaySrc) && /remote-public-url\.txt/.test(relaySrc) ? ok : fail)(
+    "【139c】支持固定公网地址（环境变量 + 数据目录 remote-public-url.txt）：二维码 / 配对链接 / 安全 cookie 都走它"
+  );
+  const baseBody = relaySrc.slice(relaySrc.indexOf("private externalBase()"), relaySrc.indexOf("private lanV4Address()"));
+  (/fixedPublicUrl\(\)/.test(baseBody) && baseBody.indexOf("fixedPublicUrl()") < baseBody.indexOf("tunnelUrl") ? ok : fail)(
+    "【139c】固定地址必须**优先于**隧道地址（否则二维码仍指向随机 trycloudflare 域名，App 无从连接）"
+  );
+  const tunnelBody = relaySrc.slice(relaySrc.indexOf("private startTunnel()"), relaySrc.indexOf("private fixedPublicUrl()"));
+  (/fixedPublicUrl\(\)/.test(tunnelBody) && /return;/.test(tunnelBody) ? ok : fail)(
+    "【139c】配了固定地址就不许再起 cloudflared（两条公网入口并存会让地址随机漂移）"
+  );
+  (/server\.once\("error", onError\)/.test(relaySrc) && /reject\(new Error\(/.test(relaySrc) ? ok : fail)(
+    "【139c】固定端口 listen 失败必须 reject 并清 server —— 不挂 error 时 Promise 永远悬着，界面「点了没反应」"
+  );
+}
+
 /* ══ 【140】看门狗是**有意停用**的，不得被"顺手接回来"（09-24，评估报告 §4.1 复核结论）══
    评估报告原判"死代码 / 开关骗人"，复核后**推翻**：startWatchdog/stopWatchdog 是空实现，
    但那是 2026-09-09 **用户拍板**的整体移除 —— 原因是心跳误判（MCP worker 慢/忙时 thread/list

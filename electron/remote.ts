@@ -89,6 +89,10 @@ const PAIR_CODE_MAX_TRIES = 10;
 /** 审批请求 2 分钟没人理就作废（手机端轮询到 expired） */
 const PAIR_REQUEST_TTL = 2 * 60_000;
 
+/** 手机远控的固定本地端口：自建中转（frp）要把它转发出去，⛔ 别改回随机端口 ——
+ *  端口每次启动都变，服务端的转发配置就永远对不上（安卓 App / 固定域名场景直接连不上）。 */
+export const REMOTE_PORT = 17891;
+
 /** 机器人绑定会话：扫码 → 手机确认 → 应用侧标记已绑定 */
 type BindSession = {
   botId: string;
@@ -165,7 +169,7 @@ export class RemoteControlService {
     } catch { /* 写盘失败忽略 */ }
   }
 
-  async start(port = 0) {
+  async start(port = REMOTE_PORT) {
     if (this.server) return this.port;
     // ★ 控制面凭据（09-13 审计 P0：此前 remote 全文件**没有任何鉴权代码**…）。
     //   09-13 二次加固：**accessToken 不再出现在二维码/配对链接里**（能力式 URL 会随
@@ -178,11 +182,20 @@ export class RemoteControlService {
     this.rotatePairingCode();
     this.port = port;
     this.server = http.createServer((req, res) => this.route(req, res));
-    await new Promise<void>((resolve) => {
+    await new Promise<void>((resolve, reject) => {
+      const server = this.server!;
+      // ⛔ 固定端口后 listen 可能失败（端口被占用）：不挂 error 时这个 Promise 会永远悬着，
+      //    界面表现成「点了开始没反应」⇒ 失败必须清掉 server 并带端口号报错。
+      const onError = (error: Error) => {
+        this.server = null;
+        reject(new Error(`手机远控端口 ${this.port} 监听失败（自建中转要求固定端口 ${REMOTE_PORT}）：${error.message}`));
+      };
+      server.once("error", onError);
       // 双栈监听 [::]（同时接受 IPv4 映射连接）：本机有公网 IPv6 时手机蜂窝网络可直连，
       // 没有时退化为同一 Wi-Fi 内 IPv4 访问——两种场景都覆盖
-      this.server!.listen(this.port, "::", () => {
-        this.port = (this.server!.address() as any).port;
+      server.listen(this.port, "::", () => {
+        server.removeListener("error", onError);
+        this.port = (server.address() as any).port;
         console.log(`[remote] listening on [::]:${this.port} (dual stack)`);
         resolve();
       });
@@ -199,6 +212,12 @@ export class RemoteControlService {
   /** Cloudflare 快速隧道（零注册）：给配对服务一个 https://xxx.trycloudflare.com 公网域名，
    * 微信/相机扫码可直接打开。失败静默回退本机地址。 */
   private startTunnel() {
+    const fixed = this.fixedPublicUrl();
+    if (fixed) {
+      // 自建中转（frp + nginx）已经给了固定域名：再起 quick tunnel 只会让二维码指向随机地址
+      console.log(`[remote] 已配置固定公网地址 ${fixed}：跳过 cloudflared 隧道`);
+      return;
+    }
     const bin = resolveCloudflaredBin();
     if (!bin) return;
     try { this.tunnelProc?.kill(); } catch { /* not running */ }
@@ -221,9 +240,33 @@ export class RemoteControlService {
     }, 5_000);
   }
 
-  /** 配对地址：优先 https 隧道域名（微信可直接打开）；隧道不可用时只回退局域网 IPv4
-   * 地址（同一 Wi-Fi 下微信可打开）。绝不回退 IPv6 地址——微信内置浏览器会拦截纯 IP。 */
+  /** 自建中转（frp + nginx）给出的固定公网地址：设了它就以它为唯一入口 ——
+   *  二维码 / 配对链接 / https 安全 cookie 都用这个域名，cloudflared 也不起。
+   *  ⛔ 只认 http(s) 开头；写错（漏协议、带空格）一律回落旧逻辑，别静默当成域名。 */
+  private fixedPublicUrl() {
+    // 环境变量优先；其次读数据目录里的 remote-public-url.txt（一行，给 GUI 启动的用户留的手动口）
+    const raw = String(process.env.HARNESS_REMOTE_PUBLIC_URL ?? "").trim() || this.readPublicUrlFile();
+    const value = raw.trim().replace(/\/+$/, "");
+    return /^https?:\/\//i.test(value) ? value : "";
+  }
+
+  private readPublicUrlFile() {
+    if (!this.storageFile) return "";
+    try {
+      const file = path.join(path.dirname(this.storageFile), "remote-public-url.txt");
+      if (!fs.existsSync(file)) return "";
+      return (fs.readFileSync(file, "utf8").split(/\r?\n/)[0] ?? "").trim();
+    } catch {
+      return "";
+    }
+  }
+
+  /** 配对地址：优先固定公网地址（自建中转）；其次 https 隧道域名（微信可直接打开）；
+   * 隧道不可用时只回退局域网 IPv4 地址（同一 Wi-Fi 下微信可打开）。
+   * 绝不回退 IPv6 地址——微信内置浏览器会拦截纯 IP。 */
   private externalBase() {
+    const fixed = this.fixedPublicUrl();
+    if (fixed) return fixed;
     if (this.tunnelUrl) return this.tunnelUrl;
     const v4 = this.lanV4Address();
     if (v4) return `http://${v4}:${this.port}`;
