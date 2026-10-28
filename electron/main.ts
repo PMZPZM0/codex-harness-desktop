@@ -627,6 +627,8 @@ const remote = new RemoteControlService({
     remoteEventForwarders.push(listener);
     return () => { const index = remoteEventForwarders.indexOf(listener); if (index >= 0) remoteEventForwarders.splice(index, 1); };
   },
+  // 手机安装包资产名：按产品品牌区分（GitHub Release：mobile-remote-v0.1.0）
+  apkFile: app.getName().toLowerCase().includes("ppcode") ? "PPcodeRemote-0.1.0.apk" : "CodexRemote-0.1.0.apk",
 });
 
 const rpaFile = path.join(app.getPath("userData"), "rpa-recipes.json");

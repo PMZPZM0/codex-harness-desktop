@@ -1,5 +1,6 @@
 package com.codexharness.remote;
 
+import android.app.DownloadManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
@@ -90,6 +91,25 @@ public class MainActivity extends AppCompatActivity {
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(web, true);
+
+        // 页面导航到 /apk 这类下载地址时交给系统下载管理器（带 cookie 走中转），装完通知栏点开即装
+        web.setDownloadListener((url, userAgent, contentDisposition, mimetype, contentLength) -> {
+            try {
+                DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+                String cookie = CookieManager.getInstance().getCookie(url);
+                if (cookie != null) request.addRequestHeader("Cookie", cookie);
+                if (mimetype != null && mimetype.length() > 0) request.setMimeType(mimetype);
+                request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                String name = (contentDisposition != null && contentDisposition.contains("filename=\""))
+                        ? contentDisposition.split("filename=\"")[1].split("\"")[0] : "CodexRemote.apk";
+                request.setDestinationInExternalFilesDir(this, android.os.Environment.DIRECTORY_DOWNLOADS, name);
+                DownloadManager manager = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+                if (manager != null) manager.enqueue(request);
+            } catch (Exception ignored) {
+                // 下载管理器不可用就退回系统浏览器
+                try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))); } catch (Exception ignored2) { }
+            }
+        });
 
         // ⛔ 不实现 onShowFileChooser 的话，页面里 <input type=file> 点了没反应 —— 手机相册选图全靠它
         web.setWebChromeClient(new WebChromeClient() {

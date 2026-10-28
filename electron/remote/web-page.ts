@@ -87,7 +87,7 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
 .mask.on{display:block}
 #sheet{position:fixed;left:0;right:0;bottom:0;z-index:30;display:none;background:#fff;border-top:1px solid var(--line);border-radius:16px 16px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,.12);padding:12px 12px calc(14px + env(safe-area-inset-bottom))}
 #sheet.open{display:block}
-#sheet .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+#sheet .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
 #sheet .grid button{border:0;background:#f4f4f1;border-radius:12px;padding:12px 6px;font-size:12px;color:var(--ink);display:flex;flex-direction:column;align-items:center;gap:6px}
 #sheet .grid button b{font-size:18px;font-weight:600}
 .panel{position:fixed;inset:0;z-index:40;display:none;flex-direction:column;background:#fff}
@@ -131,6 +131,7 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
   <button onclick="openFiles()"><b>📄</b>文件</button>
   <button onclick="openSkills()"><b>#</b>技能</button>
   <button onclick="openCommands()"><b>/</b>指令</button>
+  <button onclick="openApk()"><b>⬇</b>安装包</button>
 </div></div>
 <div id="panel" class="panel">
   <div class="panel-head"><button onclick="closePanel()">← 返回</button><b id="panel-title"></b><span style="width:64px"></span></div>
@@ -537,6 +538,11 @@ function openCommands() {
       node.appendChild(row);
     }
   }).catch((error) => { node.innerHTML = ""; node.appendChild(panelMessage("加载失败：" + error.message)); });
+}
+function openApk() {
+  closeSheet();
+  // ⛔ 直接导航到 /apk：WebView 会把它交给 App 的 DownloadListener（带 cookie 走中转下载）
+  location.href = baseUrl + "/apk";
 }
 async function runCommand(id) {
   closePanel();

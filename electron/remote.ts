@@ -5,8 +5,13 @@ import crypto from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { net } from "electron";
 import { existingToolPath, toolsRoot } from "./toolchain";
+import { mirrorCandidates } from "./gh-mirror";
 import { buildRemotePageHtml } from "./remote/web-page";
+
+/** 手机安装包所在的 Release tag（⛔ 不是桌面版安装包的 v* 发布，别混用） */
+const REMOTE_APK_RELEASE = "mobile-remote-v0.1.0";
 
 /** cloudflared 可执行文件（手机配对的公网隧道）。
  *  ⛔ mac 适配（09-17 审计）：旧实现写死 `path.join(process.cwd(), "resources", "tools", "cloudflared.exe")` ——
@@ -49,6 +54,8 @@ type RemoteEvents = {
   readFile?: (threadId: string, relPath: string) => Promise<{ kind: string; text?: string; dataUrl?: string; error?: string }>;
   archiveThread?: (threadId: string) => Promise<void>;
   setGoal?: (threadId: string, objective: string) => Promise<void>;
+  /** 本产品在 GitHub Release 上的 APK 资产文件名（按品牌不同由 main 传入） */
+  apkFile?: string;
   /** 引擎流式事件转发给已连接手机（turn 增量） */
   onThreadEvent?: (listener: (event: { threadId: string; kind: string; text: string }) => void) => () => void;
   /** 设备会话记忆持久化文件（userData/remote-sessions.json）；不传则不持久化 */
@@ -122,6 +129,7 @@ export class RemoteControlService {
   private tunnelUrl = "";
   private events: RemoteEvents;
   private storageFile: string;
+  private apkFile: string;
   /** 设备（手机端 localStorage 生成的 deviceId）→ 上次使用的会话 threadId */
   private deviceThreads = new Map<string, string>();
   /** 6 位配对码（首次配对的第二道关：光拿到链接还不够，还得看得见电脑屏幕上这串数字） */
@@ -136,6 +144,7 @@ export class RemoteControlService {
   constructor(opts: RemoteEvents) {
     this.events = opts;
     this.storageFile = opts.storageFile ?? "";
+    this.apkFile = opts.apkFile ?? "";
     this.approvedFile = this.storageFile ? path.join(path.dirname(this.storageFile), "remote-devices.json") : "";
     this.loadDeviceThreads();
     this.loadApproved();
@@ -257,6 +266,35 @@ export class RemoteControlService {
   /** 手机上传的图片目录（sendMessage 只认这个目录内的路径，见 main 侧的校验） */
   uploadsDir() {
     return this.storageFile ? path.join(path.dirname(this.storageFile), "remote-uploads") : "";
+  }
+
+  /** 手机安装包缓存：<userData>/apk-cache/<资产名>；/apk 按需从 GitHub Release 镜像链现取 */
+  private apkCachePath(): string {
+    if (!this.storageFile || !this.apkFile) return "";
+    return path.join(path.dirname(this.storageFile), "apk-cache", this.apkFile);
+  }
+
+  private async ensureApkCached(): Promise<string> {
+    const target = this.apkCachePath();
+    if (!target) throw new Error("安装包未配置");
+    if (fs.existsSync(target)) return target;
+    const base = `https://github.com/PMZPZM0/codex-harness-desktop/releases/download/${REMOTE_APK_RELEASE}/${this.apkFile}`;
+    let lastError = "未知错误";
+    for (const candidate of mirrorCandidates(base)) {
+      try {
+        const response = await net.fetch(candidate);
+        if (!response.ok) { lastError = `HTTP ${response.status}`; continue; }
+        const buffer = Buffer.from(await response.arrayBuffer());
+        // 镜像挂了常回一个 HTML 错误页：小于 1MB 的"APK"一定是假的
+        if (buffer.length < 1024 * 1024) { lastError = "下载内容太小，疑似镜像失败"; continue; }
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, buffer);
+        return target;
+      } catch (error: any) {
+        lastError = String(error?.message ?? error);
+      }
+    }
+    throw new Error("安装包下载失败（镜像与直连都试过了）：" + lastError);
   }
 
   private fixedPublicUrl() {
@@ -485,6 +523,24 @@ export class RemoteControlService {
           this.json(res, 200, { ok: false, error: error.message });
         }
       });
+      return;
+    }
+    // 手机安装包下载（＋ 菜单 → 安装包）：缓存命中直接回；未命中按镜像链现取（gh-proxy → ghfast → 直连）
+    if (url === "/apk" || url.startsWith("/apk?")) {
+      void (async () => {
+        try {
+          const file = await this.ensureApkCached();
+          const buffer = fs.readFileSync(file);
+          res.writeHead(200, {
+            "content-type": "application/vnd.android.package-archive",
+            "content-length": String(buffer.length),
+            "content-disposition": `attachment; filename="${this.apkFile}"`,
+          });
+          res.end(buffer);
+        } catch (error: any) {
+          this.json(res, 502, { error: error.message });
+        }
+      })();
       return;
     }
     // 手机对话页 RPC over HTTP（WebSocket 不可用时的同功能入口）
