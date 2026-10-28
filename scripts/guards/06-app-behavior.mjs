@@ -6,7 +6,7 @@
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
  */
 import {
-  C, ROOT, codeOnly, createRequire, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, readAppUi, readBuiltinSkillsSource, readFileSync, readMainSource, readResponsesBridgeSource, readStyles, readdirSync, relative, rmSync, sliceHandle, spawnSync, statSync, typesSrc,
+  C, ROOT, codeOnly, createRequire, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, readAppUi, readBuiltinSkillsSource, readFileSync, readMainSource, readResponsesBridgeSource, readSettingsSurface, readStyles, readdirSync, relative, rmSync, sliceHandle, spawnSync, statSync, typesSrc,
 } from "./_ctx.mjs";
 import { FUNCTION_MENU_DEFAULT_ORDER, moveFunctionMenuItem, normalizeFunctionMenu, resetFunctionMenuLayout, setFunctionMenuItemOverflow } from "../../src/features/function-menu/menu-model.mjs";
 
@@ -3393,7 +3393,7 @@ w.postMessage({id:1,op:"list",root});
     /* ⑭ 设置页三处注册齐全（类型 / 导航 / 渲染注册表）—— 少一处就是"导航里有、点开空白" */
     const settingsTypesSrc = readFileSync(join(ROOT, "src", "features", "app-view", "types.ts"), "utf8");
     const catalogsSrc = readFileSync(join(ROOT, "src", "features", "app-view", "helpers", "catalogs.ts"), "utf8");
-    const registrySrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8");
+    const registrySrc = readSettingsSurface();
     (settingsTypesSrc.includes('| "pet"') ? ok : fail)("【232】SettingsPage 类型含 pet");
     (catalogsSrc.includes('["pet", "桌面宠物"') ? ok : fail)("【232】设置导航含「桌面宠物」入口");
     (registrySrc.includes("PetSettingsSection") && /pet:\s*\{\s*render/.test(registrySrc) ? ok : fail)(
@@ -3852,7 +3852,7 @@ w.postMessage({id:1,op:"list",root});
     );
 
     /* ③ 独立设置页三件套（注册表 / 类型 / 导航）+ 帮助总览 + 域页面在位 */
-    const registrySrc235 = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8");
+    const registrySrc235 = readSettingsSurface();
     const typesSrc235 = readFileSync(join(ROOT, "src", "features", "app-view", "types.ts"), "utf8");
     const catalogsSrc235 = readFileSync(join(ROOT, "src", "features", "app-view", "helpers", "catalogs.ts"), "utf8");
     const helpSrc235 = readFileSync(join(ROOT, "src", "components", "HelpDialog.tsx"), "utf8");

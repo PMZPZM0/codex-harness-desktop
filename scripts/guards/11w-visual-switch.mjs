@@ -19,7 +19,7 @@
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { ROOT } from "./_ctx.mjs";
+import { ROOT, readSettingsSurface } from "./_ctx.mjs";
 
 let checks = 0, fails = 0;
 const ok = (c, m) => { checks++; console.log(`  ${c ? "✓" : "✗"} 【visual-switch】${m}`); if (!c) fails++; };
@@ -52,7 +52,7 @@ const sidebarQuick = (read(SIDEBAR).match(/runVisualSwitch\("主题"/g) ?? []).l
 ok(sidebarQuick === 2, `① 侧栏快捷明暗钮（浅色/深色）都走统一入口（实测 ${sidebarQuick}/2）`);
 
 /* 回执通道真的接上了（三处都要能把提示送出去） */
-ok(/onNotice/.test(read(APPEAR)) && /onNotice=\{setNotice\}/.test(read("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx")),
+ok(/onNotice/.test(read(APPEAR)) && /onNotice=\{setNotice\}/.test(readSettingsSurface()),
   "① 设置页的回执通道由注册表穿透（appearance 页真的拿到了 setNotice）");
 ok(/onNotice\?:/.test(read(CODEAPP)) && /onNotice=\{onNotice\}/.test(read(APPEAR)),
   "① 代码高亮卡的回执由外观页下传（⛔ 可选通道：拿不到就静默，绝不阻止切换）");

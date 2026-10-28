@@ -6,7 +6,7 @@
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
  */
 import {
-  C, ROOT, codeOnly, createRequire, existsSync, fail, join, mainSrc, ok, pathToFileURL, readAppUi, readFileSync, readMainSource, readStyles, readdirSync, relative, warn,
+  C, ROOT, codeOnly, createRequire, existsSync, fail, join, mainSrc, ok, pathToFileURL, readAppUi, readFileSync, readMainSource, readSettingsSurface, readStyles, readdirSync, relative, warn,
 } from "./_ctx.mjs";
 
 export async function run() {
@@ -299,7 +299,7 @@ console.log(C.bold("\n【工具取消/卸载】10-07 重构的四条不变量"))
 console.log(C.bold("\n【dtIA】开发工具页两级 IA 契约"));
 {
   const dtPage = readFileSync(join(ROOT, "src", "features", "settings-devtools", "DevtoolsSettingsSection.tsx"), "utf8");
-  const dtReg = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx"), "utf8");
+  const dtReg = readSettingsSurface();
   const dtCss = readFileSync(join(ROOT, "src", "styles", "34-devtools-cards.css"), "utf8");
   const dtStylesEntry = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
 

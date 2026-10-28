@@ -15,7 +15,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { codeOnly } from "./_ctx.mjs";
+import { codeOnly, readSettingsSurface } from "./_ctx.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel) => readFileSync(join(ROOT, rel), "utf8");
@@ -59,7 +59,7 @@ const handleLogin = src(FILES.handleLogin);
 const modelPage = src(FILES.modelPage);
 const cloudPage = src(FILES.cloudPage);
 const openaiPage = src(FILES.openaiPage);
-const registry = src(FILES.registry);
+const registry = readSettingsSurface();
 const providerEvent = src(FILES.providerEvent);
 const cloudProvider = src(FILES.cloudProvider);
 const bagTypes = src(FILES.bagTypes);

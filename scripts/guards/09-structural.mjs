@@ -6,7 +6,7 @@
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
  */
 import {
-  C, ROOT, codeOnly, dirname, existsSync, fail, join, ok, pathToFileURL, readFileSync, readdirSync, relative, statSync, warn,
+  C, ROOT, codeOnly, dirname, existsSync, fail, join, ok, pathToFileURL, readFileSync, readSettingsSurface, readdirSync, relative, statSync, warn,
 } from "./_ctx.mjs";
 import { resolve as resolvePath } from "node:path";
 import { createRequire } from "node:module";
@@ -409,6 +409,9 @@ export async function run() {
   const CATALOG = "src/features/app-view/helpers/catalogs.ts";
   const contentSrc = readFileSync(join(ROOT, CONTENT), "utf8");
   const regSrc = readFileSync(join(ROOT, REGISTRY), "utf8");
+  /* 10-28 P1-2：注册表按 nav 分组拆进 pages/**，条目搬走后「id 齐全 / 返回入口」要读整个设置台渲染面
+     （语义不变：盯的是设置台里有没有这一页；只读注册表会把 39 个页面全判成缺失）。 */
+  const regSurface = readSettingsSurface();
   const catSrc = readFileSync(join(ROOT, CATALOG), "utf8");
 
   /* ① 硬编码渲染分支必须归零（注释里提到不算：只数 `{settingsPage === "x" &&` 形态） */
@@ -420,7 +423,7 @@ export async function run() {
   (/export function settingsPagesOf\(/.test(regSrc) ? ok : fail)("【101】注册表导出 settingsPagesOf");
 
   /* ③ id 无重复 + 覆盖 settingsNav 全部 id */
-  const regIds = [...regSrc.matchAll(/^\s{4}(?:"([\w-]+)"|([A-Za-z_$][\w$]*)):\s*\{/gm)].map((m) => m[1] || m[2]);
+  const regIds = [...regSurface.matchAll(/^\s{4}(?:"([\w-]+)"|([A-Za-z_$][\w$]*)):\s*\{/gm)].map((m) => m[1] || m[2]);
   const dup = regIds.filter((id, i) => regIds.indexOf(id) !== i);
   (dup.length === 0 ? ok : fail)(`【101】注册表 id 无重复${dup.length ? "，重复：" + dup.join(",") : `（共 ${regIds.length} 个）`}`);
   const navIds = [...catSrc.matchAll(/\["([\w-]+)",\s*"/g)].map((m) => m[1]);
@@ -431,7 +434,7 @@ export async function run() {
   //    专家团 / 子智能体把返回键并进页头操作行，由 registry 传 onBack，壳层不再单独占一行）。
   const SECONDARY = ["browser", "computer", "rpa", "agents", "teams", "expert-center"];
   const noBack = SECONDARY.filter((id) => {
-    const line = regSrc.split(/\r?\n/).find((l) => new RegExp("^\\s{4}\"?" + id + "\"?\\s*:\\s*\\{").test(l)) || "";
+    const line = regSurface.split(/\r?\n/).find((l) => new RegExp("^\\s{4}\"?" + id + "\"?\\s*:\\s*\\{").test(l)) || "";
     return !(/back:\s*\{/.test(line) || /onBack=\{/.test(line));
   });
   (noBack.length === 0 ? ok : fail)(`【101】二级入口页都有返回入口（壳层 back 或页面 onBack）${noBack.length ? "，缺：" + noBack.join(",") : `（${SECONDARY.length} 个）`}`);
@@ -447,7 +450,6 @@ export async function run() {
   console.log(C.bold("\n【128】拓展接口目录（完整性 / 数字一致 / 注册在位）"));
   const CATALOG = "src/lib/extensibility-catalog.mjs";
   const PAGE = "src/features/settings-extensibility/ExtensibilitySettingsSection.tsx";
-  const REGISTRY_FILE = "src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx";
   const catalogPath = join(ROOT, CATALOG);
   (existsSync(catalogPath) ? ok : fail)("【128】目录数据文件存在（src/lib/extensibility-catalog.mjs）");
   if (existsSync(catalogPath)) {
@@ -483,7 +485,7 @@ export async function run() {
     (/EXTENSIBILITY_ENTRIES|EXTENSIBILITY_GROUPS/.test(pageSrc) ? ok : fail)("【128】页面确实消费清单（分组/条目都来自数据文件）");
     (/ext-page/.test(pageSrc) ? ok : fail)("【128】页面使用 ext- 前缀样式（styles/19-misc-hints.css 末节）");
   }
-  const regNow = readFileSync(join(ROOT, REGISTRY_FILE), "utf8");
+  const regNow = readSettingsSurface(); // 10-28 拆页后读整个设置台渲染面（含 pages/**）
   (/extensibility:\s*\{ render:/.test(regNow) ? ok : fail)("【128】设置注册表已注册 extensibility 页");
   const typeNow = readFileSync(join(ROOT, "src", "features", "app-view", "types.ts"), "utf8");
   (/"extensibility"/.test(typeNow) ? ok : fail)("【128】SettingsPage 联合类型含 extensibility");
@@ -509,7 +511,6 @@ export async function run() {
   const APP_PART = join(ROOT, "src", "features", "app-state", "parts", "part07", "03-seg.tsx");
   const FAV_PAGE = join(ROOT, "src", "features", "settings-favorites", "FavoritesSettingsSection.tsx");
   const SHOT_PAGE = join(ROOT, "src", "features", "settings-screenshot", "ScreenshotSettingsSection.tsx");
-  const REG_FILE = join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx");
   const NAV_FILE = join(ROOT, "src", "features", "app-view", "helpers", "catalogs.ts");
   const TYPES_FILE = join(ROOT, "src", "features", "app-view", "types.ts");
   const HELP_FILE = join(ROOT, "src", "components", "HelpDialog.tsx");
@@ -910,7 +911,7 @@ export async function run() {
   /* ⑤ 页面与导航注册在位（缺一处用户就找不到/进不去）。
      ⛔ 四处用的写法不同：注册表是对象键（`screenshot: { render:`）、导航与总览用中文标签、
      类型用字符串字面量 —— 不能拿同一个模式去套四个文件（曾据此误报过）。 */
-  const regSrc = readFileSync(REG_FILE, "utf8");
+  const regSrc = readSettingsSurface(); // 10-28 拆页后读整个设置台渲染面（含 pages/**）
   (/screenshot:\s*\{\s*render:/.test(regSrc) && /favorites:\s*\{\s*render:/.test(regSrc) ? ok : fail)("【129】截图页与收藏夹页在注册表里都有登记");
   const navSrc = readFileSync(NAV_FILE, "utf8");
   (/\["screenshot",\s*"截图"/.test(navSrc) && /\["favorites",\s*"收藏夹"/.test(navSrc) ? ok : fail)("【129】截图页与收藏夹页在 settingsNav 里都有登记");
@@ -921,7 +922,7 @@ export async function run() {
   if (existsSync(FAV_PAGE)) {
     const page = readFileSync(FAV_PAGE, "utf8");
     (/确认清空 \{favorites\.length\} 条？/.test(page) ? ok : fail)("【129】清空全部是二次确认（不可再生数据不许一击清空）");
-    (/selected\.filter\(\(id\) => alive\.has\(id\)\)/.test(page) ? ok : fail)("【129】选中集合跟着列表收敛（防幽灵 id 命中下一次批量操作）");
+    (/selected\.filter\(\(id\) => \w+\.has\(id\)\)/.test(page) ? ok : fail)("【129】选中集合跟着列表收敛（防幽灵 id 命中下一次批量操作）");
   }
 }
   }
@@ -1535,11 +1536,11 @@ export async function run() {
       const GIANT_CAP = {
         "scripts/guards/04-misc-and-tools.mjs": 1043,   // 10-27 +22（实测净行）：子智能体表单与 Codex 工具同口径（工具 schema 四档 + 共用 saveSubAgentConfig + 派活消费配置）；此前 1021 = 10-21 新登记（实测净行）：虚拟滚动条 + 滑窗的 turnHistoryPlan 真值表（尾窗/滑窗/钳制/去重）把本文件推过 1000；守卫载体，按实测记账
         "scripts/guards/07-turn-fold.mjs": 3950,   // 10-25 +2（实测净行）：并行线 b89950947「渐变随档位变化 + 极高粒子特效」两条断言未同步基线 ⇒ 本轮按实测补记账（⛔ 本轮 10-25「折叠尾巴」修复**未改**本文件：细则与回归脚本放 scripts/guards/12aa-turn-review.mjs（不在棘轮名单）+ scripts/verify-fold-tail.mjs）   // 10-24 +1（实测净行）：思考板块两档设置从控制台搬到外观（断言改读 appearance 源 + 顺序在功能入口上方 + 控制台不再出现）   // 10-22 +4（ego 优先 / browse-skills 回落；删除 Playwright 断言）   // 10-22 +57（实测净行）：命令卡/操作卡的「折叠态只留中文 + 展开看详情」判据（含旧口径改判）= 10-21 +63（实测净行；工具卡 step 标题那批已提交的守卫，7fb641b）= 思考长条短内容左对齐后继续扩的 step 断言；此前 3811 = 10-21 晚 +6（实测净行）= 思考长条短内容左对齐 + 负向（无条件 flex-end 不许回来）；此前 3805 = 完成态停滚 / 直播 CSS transform 判据；此前 3802 = 直播末段整段上限   // 10-17 +1 = 【165】新契约：运行中压缩线归位渲染（in-progress 项所在回合），旋转+可停止   // 10-07 夜 +9 = 【161】⑫⑬ 三条防复活断言（组件级探针实测：单块思考直播期间放大 10 次 / 缩小 10 次 ⇒ 直播期间追字追平不许收 ×2 + 吸入动画只给用户点收起）。此前 3750 = 10-07 轮 3697→3750（实测；+53 = 压缩链宿主侦测五条（watchTurnCompleted / rollout tail / 广播 / 渲染层记录 / timeline 第三来源）+【159】下限 0.1 与缓存按路径归属三条 + 【165】互斥链改三源 + 两处烂断言修复（锚点 regex 随 boundaryTurnId 更新 / persist 判据重写）+3 + 压缩侦测判据二次修正（记录按 turn_id 归因 / 不许退回非渲染层回合判据 / worker 增量扫描）+15）
-        "scripts/accept.mjs": 1155,   // 10-27 晚间 1155（实测净行）= MCP 工具条 ⑫（搜索框在最左 + 分类紧跟同一行）+ 子智能体页 ⑬（横幅卡删除 / 返回键并进操作行）两条验收；此前 1126 = 本轮子智能体 ⑲ +32；此前 1094 = 上一轮专家中心/专家团两项 +21（当时基线未跟，HEAD 上本就红）⇒ 按实测一并补记账；更早 1073 = 控制台/模型/MCP/技能/命令/插件/组件库/SSH/专家中心验收
+        "scripts/accept.mjs": 1157,   // 10-28 +2（实测净行）＝ 输入框竖条那轮的两条验收（自动隐藏开弹层不触发 / 选表情后弹层收起）漏记账，按实测补；10-27 晚间 1155（实测净行）= MCP 工具条 ⑫（搜索框在最左 + 分类紧跟同一行）+ 子智能体页 ⑬（横幅卡删除 / 返回键并进操作行）两条验收；此前 1126 = 本轮子智能体 ⑲ +32；此前 1094 = 上一轮专家中心/专家团两项 +21（当时基线未跟，HEAD 上本就红）⇒ 按实测一并补记账；更早 1073 = 控制台/模型/MCP/技能/命令/插件/组件库/SSH/专家中心验收
         "scripts/guards/06-app-behavior.mjs": 3111,   // 10-27 晚 3111（实测净行）= 侧栏「功能选项」箭头朝向断言 +2；此前 3109 = 10-24 -4（实测净行）：移除 both 断言，改为两处位置共用 grid 折叠体 + 贴紧搜索任务 + 直接拖动；此前 3053 = both/拖动   // 10-22 底部入口组可折叠 2907→2946（实测净行）：结构倒置（入口组→账户行）+ 折叠 4 条 + 箭头 2 条 + hidden CSS / 账户行 42px 2 条   // 10-21 侧栏重排 2894→2907（实测净行：底部导航组顺序 + 布局位置 + 新手教程受控 4 条断言）   // 10-21 登录管理收口 2882→2894（实测净行：+4 条可达性断言）；此前并行线在途 +23   // 10-21 模型探活 +9（桥 auto 回落 chat / 指定模型真推理）；10-21 侧栏 +6（专家/专家团/子智能体卡片直达内页）；此前 2844 美术第二轮 +6（实测净行）：【232】③ 动画包看帧改为可选；此前 2819 = 10-21 +16（侧栏重排：连体胶囊 / 定时同款 / 删更多 / 知识库并入人格入口 / 紧凑卡片）；此前 +3（按守卫自身口径实测净行）=【232】入口分流改 ?pet=1 / ?pet=activity + 活动归约判据   // 10-20 +13 = 多租户隔离加固判据（双证一致 / identity-mismatch / memKey-only 不归属 / 扣费用 effectiveUsername）；上一条 +14 = 云端记忆身份判据（桥补 X-Tdai-User-Key + 账号服务按 memKey 映射真实用户）；10-15 2739→2775（实测净行；06 里已新加断言而上限没跟着走 ⇒ check 整链被这一条卡住，棘轮口径按实测值更新）；10-09 +5（2734→2739，实测净行）：【232】⑯ 第 4 条断言改成**按 closed 处理器切片**锚定 —— 变异测试抓到它原先只判「字符串存在」是假绿（closePetWindow 里也有同一行，删 closed 那处仍绿）。此前 10-09 +3（2731→2734，实测净行）：【232】⑯ 负向断言补 codeOnly 剥注释（注释里写着「第一版挂在 mousemove+elementFromPoint 上」被自己顶红 ⇒ 剥完再匹配，含本仓多次同型）。此前 10-09 +19（2712→2731，实测净行）：【232】⑯「宠物透明区域鼠标穿透」四条断言——用户报「打开应用后软件外面无法点」，根因 = 宠物窗是透明矩形且 .pet-float 整块 drag 区，默认整块吃鼠标；修法 = 主进程默认 setIgnoreMouseEvents(true,{forward:true}) + 渲染层按指针是否在宠物本体上（elementFromPoint 取最深元素）动态翻转 + 光标离开窗口回到穿透。此前 2712 = 10-08 夜三 +8（2704→2712，实测净行）：【243】⑥「MinGW 安装支不许绕开共享纪律」——用户报「MinGW-w64 下载失败」，现场 = 临时目录里躺着完好 zip 而 tools/mingw 连目录都没建；该支原先直接调 BSDTAR（无三级降级）且对坏缓存走续传。此前 2704 = 10-08 夜二 +32（2672→2704，实测净行）：【286】「装完不更新」整类根因 5 条断言（pip 元数据单一真相源 pipMetadataDirs / 卸载连元数据一起删 / 装前清孤儿元数据 / 装完复核包目录 / 三条真实安装路径回读 runtimeInstalled）+【241】随 python 判定平台无关化改锚点。此前 10-08 夜 +23（2649→2672，实测净行）：【255】补一条「四条安装链都不让引擎重启失败变成安装失败」——起因：SkillHub「编程专家.Skill」与 Gitee「Agent SDK 开发套件」两次实测，文件都装好了，最后一步重启引擎报 `Codex app-server exited (1)` ⇒ 整体被报成安装失败。⛔ 本段注释续行必须带 ` * ` 前缀，否则被算成净代码行（10-08 实测踩过）。此前 2649 = 10-07 夜三 +27（2622→2649，实测净行）：【285】装/判/卸落点同源三条（用户实测「知识库本地语义检索 / CloakBrowser 卸载不更新状态，一直显示已安装」= 四个根因：marker 推导出不存在的路径、判定认双落位而卸载只删一个、worker 占文件 EBUSY 被吞成成功、包体 join 多一层 node_modules）+ 【242】npmShimPaths 调用形态随显式接根参数更新。此前 2622 = 10-07 夜二 +26（npm 布局双候选 + bundledNpmCli 单一真相源）：1060 那段 = 【27】区补三条 npm 断言（verify-packaged-tools 必须按候选列表探测两种解包布局 + 不许单平台硬编码 + toolchain.bundledNpmCli 是唯一真相源），另 816 段 = 「npm CLI 字面量在主进程源码里只许出现 1 次」（mac 真缺口：runtime-ipc / kb-embed-backend 曾各自写死 Windows zip 布局 ⇒ mac 上「开发工具 / 知识库」装不上）。此前 2596 = 10-07 夜 +4 = 【27】补「resources/tools/node 也要一条独立 node_modules 映射」（实测事故：包内有 node.exe 却无 npm ⇒「开发工具」/知识库全部装不上；builder 只剪 from 根级 node_modules，dev 态不复现）+ 【29】随包源判据泛化（`<X>/node_modules` 姐妹条目的可造性由父条目 X 决定，别再逐条开后门）。此前 2592 / 2590 = 10-07 并行会话在途 +18（【154】办公室缩放钮断言：控制组在关闭钮左 / 三个 zoom 调用 / 缩放回报与句柄 / 托盘 pointer-events），按实测记账。此前 10-05 深夜+1 = 办公室轮（b0e83ff）修活【154】（删陈旧【168】门 + 换当前实现 23 条断言）留下的净增量，回填补账。此前：10-05：【29】防线二从「固定 900 字符窗口」改成按**同级分支边界**切片 + 加一条「切片确实跨到分支体」前置（净 +3）—— 本轮往 boot.ts 那个分支加了一条委托登记表清理，旧窗口立刻假红；窗口类判据一律按边界切，别调大数字。另：本文件 ok/fail 是**单参**版，写 ok(cond,msg) 会恒真
         "scripts/guards/02-session-logic.mjs": 1255,   // 10-27 晚 1255（实测净行）= 并行线在途 +3（本线未改本文件，按实测记账）；此前 1252 = 10-08 +12（1229→1241，实测净行）：语音「打断链路」判据由**固定字符窗口**改成按**同级分支边界**切片（branchBody：取 event.type==="X" 到下一个 event.type==="Y" 之间），并加「切片非空」前置防恒真假绿 —— 起因：realtime voice 的 final 分支开头插了外放回声剔除（约 8 行），把原来的 `[\s\S]{0,300}?` 撑破 ⇒ 假红。本文件是守卫载体（侧栏会话逻辑域）：每加一条规则基线随之上移 —— 10-04 新增【281】侧栏幽灵消失三条（兜底收编不吃 preview / memberIds 必须是派生量 / singles 与簇体同源）+20；10-04 新增【282】侧栏会话行不展示项目地址两条（渲染器不再引用 cwd / 两处小字各自锚定）+11
         "src/features/app-state/parts/bag-types.ts": 1422,   // 10-27 晚 1422（实测净行）= 并行线在途 +2（同段声明面，按实测记账）；此前 1420 = 10-17 +1 = deferredCompactRef（排队压缩）   // 生成物（段内顶层声明的类型面）：本文件不承载任何逻辑，长度随「段内顶层声明数」变化 —— 10-04 补 5 条漏接线的声明（ctxBtnRef / ctxMenuStyle / taskBtnRef / taskMenuStyle / dispatchKey，守卫【93】报的 missing）；10-05 界面草图那一位（uiSketchOpen + setter，【283】钉）+2，非业务代码增长
-        "scripts/guards/09-structural.mjs": 1736,   // 10-21 新登记 04 棘轮一行；本文件是守卫载体：每加一条规则基线随之上移（历史：→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916；10-06 净行口径实测回归 1665）；+1 = 棘轮名单新登记 scripts/accept.mjs 一行；10-07 轮 +15 = 【253】② 改「挂载时机」两段判据（生成物只导出 mountEnabledDomains + 壳在 setPath 后调用，调用形态认 nextTick/裸调用两种）+ 【270】③ require 不自动挂载的负向判据；10-07 夜 +45（1681→1690→1735，**两次实测**）＝ ① +9 = 【100】补统一记忆（fabric）剥离的三条正例 + 一条负例 + 两个样例常量 + 一行读 memory-fabric 源（用户实测「项目记忆铺进气泡 + 同一条消息渲染两遍」的判据盲区）；② +36 = 【253】③ 打包白名单/读取路径两条 + 【268-c】同一 slot id 重复消费两条（含对照组）+ 复用【268-b】那趟扫描的 slotIdsOf 收集（用户实测「功能域全是 0」+「重复展示两次」两位数级事故，两条判据都是它们唯一的结构防线）
+        "scripts/guards/09-structural.mjs": 1736,   // 10-28 净 0（实测净行）＝ 【101】【128】【129】改读设置台渲染面（readSettingsSurface：注册表 + pages/**），拆页后按 id/返回条断言不假红；同时删掉两处只剩一次读取的路径常量；10-21 新登记 04 棘轮一行；本文件是守卫载体：每加一条规则基线随之上移（历史：→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916；10-06 净行口径实测回归 1665）；+1 = 棘轮名单新登记 scripts/accept.mjs 一行；10-07 轮 +15 = 【253】② 改「挂载时机」两段判据（生成物只导出 mountEnabledDomains + 壳在 setPath 后调用，调用形态认 nextTick/裸调用两种）+ 【270】③ require 不自动挂载的负向判据；10-07 夜 +45（1681→1690→1735，**两次实测**）＝ ① +9 = 【100】补统一记忆（fabric）剥离的三条正例 + 一条负例 + 两个样例常量 + 一行读 memory-fabric 源（用户实测「项目记忆铺进气泡 + 同一条消息渲染两遍」的判据盲区）；② +36 = 【253】③ 打包白名单/读取路径两条 + 【268-c】同一 slot id 重复消费两条（含对照组）+ 复用【268-b】那趟扫描的 slotIdsOf 收集（用户实测「功能域全是 0」+「重复展示两次」两位数级事故，两条判据都是它们唯一的结构防线）
         "scripts/guards/13-drama-gen.mjs": 1070,
         "electron/main.ts": 594,   // 10-22 并行提交（单实例 / createWindow 防重入）+6（实测净行）；此前 588 = 10-21 577→588（实测净行；step 标题/工具面那批已提交改动，7fb641b —— 上一轮并行线提交时没刷新本数，按实测补记账）；此前 10-20 576→577（实测净行；⚠️ 这 +2 来自**并行工作线**的 harness-media 协议注册，本轮未改该文件 —— 该线提交时请按自身实测复核本数）   // 10-16 557→576（**实测净行**；不是本轮刷新回执的改动）= 主题跟随两笔**已提交**改动（7588b08 主题广播 + 渲染层订阅、1be2dde 独立会话弹窗原生外观按当前主题补设）给 main.ts 加了 19 净行却没同步本条 ⇒ check 整链在 HEAD 上就已经是红的，按「实测值更新」补记账（棘轮只许缩不许长，增长是既成事实，不补就永远卡住后面的守卫）。此前 10-10 +1（556→557，实测净行）= 记忆容量倍率：模块体里**同步**读 app-settings 并 memoryLayers.setScale（⛔ 异步会晚于下面的 setLayers 生效）。此前 10-07 轮 546→556（实测）：组合层改具名 import + setPath(userData) 后 process.nextTick(mountEnabledDomains)（挂载时机修复 + 循环 require 窗口规避，【253】钉）
         "scripts/guards/03-runtime-boot.mjs": 1120,   // 10-22 +10（实测净行）：单实例（第二实例不 boot）+ createWindow 防重入   // 10-21 滑窗 +18（实测净行）= 渲染滑窗切片/总回合去重/切回恢复关自动跳底；此前虚拟滚动条 +59= 【14】新增：notLoaded 元数据 / 总回合占位区 / 首帧 layout effect 补偿 / 占位边界触发 / 下滚不水合 / contentBottomOf 不扣顶部占位 / HISTORY_PAGE 等；此前 10-20 945→948（按守卫自身口径实测净行；并行工作线在途，⚠️ 该线提交时按其实测复核本数）；10-20 935→945（实测净行；+7 = dd93820 同步扩断言漏记棘轮；+3 = 另一并行工作线在途改动（11:47 仍在写该文件）—— ⚠️ 该线提交时按其自身实测复核本数）；10-08 夜 +18（917→935，实测净行）：引擎启动容错事故（用户实测「装技能/插件报安装失败，其实已经装好了」）四条——doRestart 等旧进程真退出后才 spawn / launch 启动重试接线 / fail 在启动序列中直接返回 / exit|error 监听比对进程身份

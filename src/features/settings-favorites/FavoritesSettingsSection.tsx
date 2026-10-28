@@ -175,7 +175,7 @@ export function FavoritesSettingsSection(props: FavoritesSettingsSectionProps) {
         <span className="fav-spacer" />
         {confirmClear ? (
           <>
-            <button type="button" className="fav-act danger" disabled={busy} onClick={async () => { await onRemove(favorites.map((item) => item.id)); setSelected([]); setConfirmClear(false); await onRefresh(); }}>确认清空 {favorites.length}？</button>
+            <button type="button" className="fav-act danger" disabled={busy} onClick={async () => { await onRemove(favorites.map((item) => item.id)); setSelected([]); setConfirmClear(false); await onRefresh(); }}>确认清空 {favorites.length} 条？</button>
             <button type="button" className="fav-act" onClick={() => setConfirmClear(false)}>取消</button>
           </>
         ) : favorites.length > 0 ? (

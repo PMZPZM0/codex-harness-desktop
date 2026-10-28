@@ -14,7 +14,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { ROOT, codeOnly } from "./_ctx.mjs";
+import { ROOT, codeOnly, readSettingsSurface } from "./_ctx.mjs";
 import { isLikelySelfEcho, echoSimilarity, ECHO_TAIL_MS } from "../../src/lib/voice-echo.mjs";
 import { splitSentences } from "../../src/lib/voice-summary.mjs";
 import { AUTO_TOOL_CALL_LIMIT, REWORK_REPEAT_LIMIT, createAutoSpeakTracker, isWorkItem } from "../../src/lib/voice-auto-speak.mjs";
@@ -358,7 +358,7 @@ ok(/<VoiceDevToolsSection[\s\S]{0,80}?only="base"/.test(read("src/components/Voi
   "语音模型 / 音色克隆模型的卡片渲染在「语音通话」页（两处分开挂：必需组 / 可选克隆组）");
 ok(!/<VoiceDevToolsSection/.test(codeOnlyTs(devtoolsPage)),
   "开发工具页**不再渲染**它（是迁移不是复制 —— 同一份状态两处渲染 = 双真相源）");
-ok(!/VoiceDevToolsSection/.test(read("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx")),
+ok(!/VoiceDevToolsSection/.test(readSettingsSurface()),
   "settings-registry 里那条 prop 传递也清掉了（死 prop 只会骗下一个读它的人）");
 ok(/设置 → 语音通话/.test(devtoolsPage),
   "开发工具页留了一句指路（按老习惯找不到时不至于迷路）");
