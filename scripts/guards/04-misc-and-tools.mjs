@@ -1185,6 +1185,19 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   (/type: "boss-groups"/.test(pageSrc) && /home-group/.test(pageSrc) && /groupAvatarNode/.test(pageSrc) ? ok : fail)(
     "【139b】中枢首页群卡：群头像（成员首字拼图）+ 成员 + 事件 + 未读点（数据来自 boss-groups）"
   );
+  /* 10-28 审查修复（都是「真机才看得出来」的那类） */
+  (/#msglist\[hidden\]\{display:none\}/.test(pageSrc) ? ok : fail)(
+    "【139b】首页要真正藏住消息区：#msglist 自带 display:flex，会盖掉 UA 的 [hidden]（必须显式 display:none）"
+  );
+  (/const seq = \+\+homeRenderSeq;/.test(pageSrc) && /if \(seq !== homeRenderSeq\) return;/.test(pageSrc) ? ok : fail)(
+    "【139b】切首页页签防串台：慢网下旧请求回来不许覆盖新页签内容"
+  );
+  (/memberHasNews\(group, member\.id, seenAt\)/.test(pageSrc) ? ok : fail)(
+    "【139b】群管理面板必须先取旧 seen 再 mark：否则「有新动静」永远显示不出来"
+  );
+  (/新建会话失败[\s\S]{0,220}?if \(homeVisible\) \{[\s\S]{0,140}?home-body/.test(pageSrc) ? ok : fail)(
+    "【139b】首页态新建会话失败必须显示在首页上（消息区被首页盖着 = 用户看到「点了没反应」）"
+  );
   (/thread-tag boss/.test(pageSrc) && /中枢调度/.test(pageSrc) && /kind === "boss"/.test(pageSrc) ? ok : fail)(
     "【139b】会话列表标签：中枢（带群名） / 中枢调度 —— 身份由主进程给出，手机端不自己猜"
   );
