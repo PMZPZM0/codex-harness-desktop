@@ -63,8 +63,15 @@ ok(/createPortal\(/.test(rail) && /modal-backdrop/.test(rail) && /composer-rail-
   && /\.composer-rail-panel\s*\{[^}]*max-height:\s*min\(520px/s.test(railCss),
   "四个入口都是**居中弹窗**（portal + modal-backdrop + 宽 640 / 高自适应上限 520），不再是贴边内联浮层");
 ok(/onMouseDown=\{\(event\) => \{ if \(event\.target === event\.currentTarget\) setPanelId\(null\); \}\}/.test(rail)
-  && /event\.key !== "Escape"/.test(rail),
-  "点遮罩 / 按 Esc 关闭（Esc 用 capture + stopPropagation，不连带关掉背后的层）");
+  && /addEventListener\("keydown", onKey, true\)/.test(rail)
+  && /event\.key === "Escape"/.test(rail) && /event\.stopPropagation\(\)/.test(rail),
+  "点遮罩 / 按 Esc 关闭（capture + stopPropagation，不连带关掉背后的层）");
+/* 10-28 审查补：声明了 aria-modal 就必须把焦点圈住 + 关闭后归还（否则键盘用户掉到 body）。 */
+ok(/event\.key !== "Tab"/.test(rail) && /event\.preventDefault\(\); first\.focus\(\)/.test(rail)
+  && /event\.preventDefault\(\); last\.focus\(\)/.test(rail),
+  "Tab 在弹窗内首尾循环（aria-modal 声明与实际一致，不会跑回背后输入框）");
+ok(/returnFocusRef/.test(rail) && /returnFocusRef\.current\?\.focus\?\.\(\)/.test(rail),
+  "关闭后焦点还给触发它的那颗图标（不落到 body）");
 ok(/function placePopover\(anchor: AnchorRect/.test(popover) && /createPortal\(/.test(popover),
   "统一浮层原语仍在（其它域：功能菜单 / 下拉仍走 AnchorPopover）");
 ok(/\.composer-rail-icons\s*\{[^}]*max-height:\s*100%/s.test(railCss), "图标列不超出输入框高度（超出内部滚动）");
