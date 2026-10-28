@@ -1605,6 +1605,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (androidSrc.includes("baseOf(normalize(raw))") && androidSrc.includes("baseOf(stored)") && androidSrc.includes('indexOf("/r/")') ? ok : fail)(
       "【139e】APK 存扫码链接时必须保留 /t/<id> 前缀（只存 origin 会 404）"
     );
+    (relaySrc.includes("const API_BASE = (function(){ const p = location.pathname") && !relaySrc.includes('fetch("/api/pair' ) ? ok : fail)(
+      "【139e】配对页也必须走 API_BASE（中转路径下 /api/pair 绝对路径 = 配对永远失败）"
+    );
     (relaySrc.includes("mobile-remote-v0.1.2") ? ok : fail)(
       "【139e】安装包版本与 Release 对齐（0.1.2，APK 才能用中转前缀）"
     );
