@@ -178,7 +178,7 @@ export async function run() {
     const mainSrc228 = readFileSync(join(ROOT, "electron", "main.ts"), "utf8");
     const registry228 = readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8");
     const manifest228 = readFileSync(join(ROOT, "electron", "ipc-channels.manifest.json"), "utf8");
-    const regSrc228 = readSettingsSurface();
+    const regSrc228 = codeOnly(readSettingsSurface());
     const idx228 = readFileSync(join(ROOT, "src", "features", "storage-settings", "index.ts"), "utf8");
 
     (!existsSync(join(ROOT, "electron", "features", "codex-logs.ts")) ? ok : fail)(
@@ -277,7 +277,7 @@ export async function run() {
     /* 【226】工作日志管理（09-30 用户：「记忆有记忆管理，会话有归档管理，现在就是工作日志这个
        没有地方管理」）—— 各块各管各的，⛔ 不许把「项目工作日志」和「会话本身」混成一个东西。 */
     const wlSrc226 = readFileSync(join(ROOT, "electron", "features", "work-logs.ts"), "utf8");
-    const regSrc226 = readSettingsSurface();
+    const regSrc226 = codeOnly(readSettingsSurface());
     const wlComp226 = readFileSync(join(ROOT, "src", "features", "storage-settings", "WorkLogsSection.tsx"), "utf8");
     (/work-logs:scan/.test(wlSrc226) && /work-logs:read/.test(wlSrc226) && /work-logs:delete/.test(wlSrc226) ? ok : fail)(
       "【226】work-logs 三通道齐（scan 扫各项目 memory / read 看正文 / delete 删文件）"

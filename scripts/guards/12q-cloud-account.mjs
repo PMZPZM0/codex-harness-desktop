@@ -155,7 +155,7 @@ ok(/HARNESS_CLOUD_SYNC_MINUTES/.test(modelsCode), "轮询间隔可配（HARNESS_
 /* ── ⑩ 渲染层：设置页三件套（注册表 / 导航 / 帮助总览）+ 页面自包含 ──────
    ⛔ 这三处必须同轮改齐：漏注册表 ⇒【101】红；漏帮助总览 ⇒【32】红；
      漏导航 ⇒ 用户根本进不去那一页（守卫查不到，但功能等于没做）。 */
-const registrySrc = readSettingsSurface();
+const registrySrc = codeOnly(readSettingsSurface());
 const navSrc = read("src/features/app-view/helpers/catalogs.ts");
 const helpSrc = read("src/components/HelpDialog.tsx");
 const typesSrc = read("src/features/app-view/types.ts");
