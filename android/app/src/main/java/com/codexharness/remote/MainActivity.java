@@ -203,12 +203,18 @@ public class MainActivity extends AppCompatActivity {
             super.onBackPressed();
             return;
         }
-        if (web.canGoBack()) {
-            web.goBack();
-            return;
-        }
-        // 回到连接码页：换连接码 / 换服务器都不需要清数据重装
-        showSetup("");
+        // 先让页面收掉面板 / ＋ 菜单再退出 —— 否则按返回直接把人踢回连接码页
+        web.evaluateJavascript("(window.__remoteBack && window.__remoteBack()) ? '1' : '0'", value -> {
+            if ("\"1\"".equals(value)) return;
+            runOnUiThread(() -> {
+                if (web != null && web.canGoBack()) {
+                    web.goBack();
+                    return;
+                }
+                // 回到连接码页：换连接码 / 换服务器都不需要清数据重装
+                showSetup("");
+            });
+        });
     }
 
     @Override

@@ -5,7 +5,7 @@
 import { Menu, Notification, app, BrowserWindow, clipboard, globalShortcut, ipcMain, nativeTheme, net, powerSaveBlocker, protocol, safeStorage, session, shell, systemPreferences } from "electron";
 import { execSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import fs from "node:fs/promises";
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, watch as watchFs, writeFileSync, type Dirent } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, watch as watchFs, writeFileSync, type Dirent } from "node:fs";
 import path from "node:path";
 import http from "node:http";
 import { ChannelBotService, type ChannelBotConfig } from "./channel-bot";
@@ -543,10 +543,22 @@ const remote = new RemoteControlService({
     };
   },
   interruptThread: async (threadId) => {
+    /* ⛔ 引擎的 turn/interrupt 必须带 turnId（桌面端也是先拿 turnId 才发）。
+       报「expected active turn id X but found Y」时按 Y 重试一次 —— 与桌面停止链路同口径，
+       委派 / 自动续跑场景高发，不重试就会永远停不下来。 */
     const turnId = [...engineActiveTurnIds.entries()].find(([, owner]) => owner === threadId)?.[0] ?? "";
-    await server.request("turn/interrupt", { threadId, ...(turnId ? { turnId } : {}) });
+    if (!turnId) throw new Error("这个会话当前没有在跑的回合");
+    try {
+      await server.request("turn/interrupt", { threadId, turnId });
+    } catch (error: any) {
+      const found = String(error?.message ?? "").match(/but found ([0-9a-f-]{8,64})/i);
+      if (!found) throw error;
+      await server.request("turn/interrupt", { threadId, turnId: found[1] });
+    }
   },
   compactThread: async (threadId) => {
+    // ⛔ 回合运行中调 thread/compact/start 会**打断当前回合**（桌面端也只在空闲时调）
+    if ([...engineActiveTurnIds.values()].includes(threadId)) throw new Error("回合进行中，先停止再压缩");
     await server.request("thread/compact/start", { threadId });
   },
   listFiles: async (threadId) => {
@@ -579,7 +591,11 @@ const remote = new RemoteControlService({
     const target = safeJoin(root, relPath);
     if (!target) return { kind: "other", error: "路径不合法" };
     try {
-      const info = statSync(target);
+      // ⛔ safeJoin 只做字面校验：工作区里的软链可以指向外面 ⇒ 再按真实路径校一次
+      const realRoot = realpathSync(root);
+      const realTarget = realpathSync(target);
+      if (realTarget !== realRoot && !realTarget.startsWith(realRoot + path.sep)) return { kind: "other", error: "路径不合法" };
+      const info = statSync(realTarget);
       if (!info.isFile()) return { kind: "other", error: "不是文件" };
       const kind = previewKind(target);
       if (kind === "image") {

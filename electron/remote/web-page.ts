@@ -110,6 +110,7 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
 #cmd:focus{border-color:var(--accent);background:#fff}
 #send{flex:0 0 auto;width:auto;margin:0;height:44px;padding:0 18px;font-size:14px;font-weight:600;color:#fff;background:var(--accent);border:0;border-radius:14px}
 #send:active{opacity:.85}
+#send.stop{background:#c0392b}
 .confirm-card{margin:40vh auto 0;max-width:340px;text-align:center}
 </style>
 <header>
@@ -121,7 +122,7 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
 <div id="threads"><div class="threads-head"><button onclick="toggleThreads()">← 返回</button><b>选择会话</b><button class="new-thread" onclick="newThread()">＋ 新建</button></div><div class="list" id="thread-list"></div></div>
 <div id="msglist"></div>
 <div id="imgs"></div>
-<div id="inputbar"><button id="plus" onclick="openSheet()">＋</button><input id="cmd" placeholder="输入消息，发送给 Codex"><button id="send" onclick="sendCmd()">发送</button></div>
+<div id="inputbar"><button id="plus" onclick="openSheet()">＋</button><input id="cmd" placeholder="输入消息，发送给 Codex"><button id="send" onclick="handleSend()">发送</button></div>
 <input type="file" id="file-pick" accept="image/*" multiple>
 <div id="sheet-mask" class="mask" onclick="closeSheet()"></div>
 <div id="sheet"><div class="grid">
@@ -149,6 +150,8 @@ let stepBox = null;
 let pendingImages = [];
 let catalogCache = null;
 let panelBack = null;
+// 当前会话是否在跑：发送键在运行时变成「停止」
+let turnRunning = false;
 const list = document.getElementById("msglist");
 // 设备身份：localStorage 固定生成，服务端用它记住「这台手机上次用的会话」
 let deviceId = localStorage.getItem("chm-device-id");
@@ -237,6 +240,7 @@ async function newThread() {
   document.getElementById("threads").classList.remove("open");
   list.innerHTML = "";
   stepBox = null; // 旧容器已从 DOM 移除，不重置的话新回合的步骤会渲染到看不见的节点上
+  setRunning(false);
   push("system", "已新建会话，直接发消息开始对话");
   updateThreadLabel("新会话");
   loadThreads();
@@ -247,6 +251,7 @@ async function loadMessages() {
   try {
     list.innerHTML = "";
     stepBox = null;
+    setRunning(false);
     const r = await rpc({ type: "get-messages", threadId: currentThreadId });
     const msgs = r.messages || [];
     for (const m of msgs) push(m.role, m.text);
@@ -273,6 +278,7 @@ async function sendCmd() {
   push("user", label, "", true);
   input.value = "";
   showThinking();
+  setRunning(true);
   try {
     const paths = [];
     for (const shot of shots) {
@@ -296,7 +302,34 @@ async function sendCmd() {
     saveSession();
   } catch (error) {
     hideThinking();
+    setRunning(false);
     push("system", "发送失败：" + error.message);
+  }
+}
+function setRunning(on) {
+  turnRunning = !!on;
+  const btn = document.getElementById("send");
+  if (btn) {
+    btn.textContent = turnRunning ? "停止" : "发送";
+    btn.classList.toggle("stop", turnRunning);
+  }
+  const status = document.getElementById("status");
+  if (status) status.textContent = turnRunning ? "● 运行中" : "● 在线";
+}
+function handleSend() {
+  if (turnRunning) { void stopTurn(); return; }
+  void sendCmd();
+}
+async function stopTurn() {
+  if (!currentThreadId) { setRunning(false); return; }
+  try {
+    await rpc({ type: "interrupt", threadId: currentThreadId });
+    push("system", "已请求停止");
+    // 兜底：中断事件万一没回来，别让按钮永远停在「停止」
+    setTimeout(() => { if (turnRunning) setRunning(false); }, 10000);
+  } catch (error) {
+    setRunning(false);
+    push("system", "停止失败：" + error.message);
   }
 }
 function showThinking() {
@@ -363,7 +396,7 @@ async function uploadImage(shot) {
   if (!data || !data.ok) throw new Error((data && data.error) || "上传失败");
   return data.path;
 }
-function insertAtCursor(text) {
+function insertText(text) {
   const input = document.getElementById("cmd");
   input.value = (input.value ? input.value.replace(/\s*$/, " ") : "") + text;
   input.focus();
@@ -459,7 +492,7 @@ function openSkills() {
         desc.textContent = skill.description;
         row.appendChild(desc);
       }
-      row.onclick = () => { insertAtCursor("#" + skill.name + " "); closePanel(); };
+      row.onclick = () => { insertText("#" + skill.name + " "); closePanel(); };
       node.appendChild(row);
     }
   }).catch((error) => { node.innerHTML = ""; node.appendChild(panelMessage("加载失败：" + error.message)); });
@@ -495,12 +528,20 @@ async function runCommand(id) {
       return;
     }
     if (!currentThreadId) { push("system", "先选一个会话"); return; }
-    if (id === "stop") { await rpc({ type: "interrupt", threadId: currentThreadId }); push("system", "已请求停止当前回合"); return; }
+    if (id === "stop") { await stopTurn(); return; }
     if (id === "compact") { await rpc({ type: "compact", threadId: currentThreadId }); push("system", "已请求压缩上下文"); return; }
   } catch (error) {
     push("system", "指令失败：" + error.message);
   }
 }
+// 安卓系统返回键：先收面板 / ＋ 菜单，再考虑退出（MainActivity 会先问这个钩子）
+window.__remoteBack = function () {
+  const panel = document.getElementById("panel");
+  if (panel && panel.classList.contains("open")) { closePanel(); return true; }
+  const sheet = document.getElementById("sheet");
+  if (sheet && sheet.classList.contains("open")) { closeSheet(); return true; }
+  return false;
+};
 document.getElementById("cmd").addEventListener("keydown", (e) => { if (e.key === "Enter") sendCmd(); });
 let pollSince = Date.now() - 60000;
 async function pollLoop() {
@@ -512,6 +553,7 @@ async function pollLoop() {
       if (event.threadId !== currentThreadId) continue;
       if (event.kind === "delta") {
         hideThinking();
+        setRunning(true);
         let el = list.querySelector(".streaming");
         if (!el) el = push("assistant", "", "assistant streaming");
         el.textContent += event.text;
@@ -519,6 +561,7 @@ async function pollLoop() {
       } else if (event.kind === "step") {
         // 运行步骤：与桌面对话框同一批事件（命令 / 文件 / 工具 / 搜索 / 思考）
         hideThinking();
+        setRunning(true);
         if (!stepBox) {
           stepBox = document.createElement("div");
           stepBox.className = "run-steps";
@@ -534,6 +577,7 @@ async function pollLoop() {
         }
       } else if (event.kind === "done") {
         hideThinking();
+        setRunning(false);
         const el = list.querySelector(".streaming");
         if (el) el.classList.remove("streaming");
         // 回合结束：步骤收成「运行过程 · N 步」，点开可看

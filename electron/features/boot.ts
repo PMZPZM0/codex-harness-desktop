@@ -887,6 +887,8 @@ export async function bootApp() {
       //    下一次兜底会错取到它（L2 记忆串台到上一回合）
       if (/^turn\/(aborted|failed|interrupted)$/.test(String(event.method ?? ""))) {
         takeCaptureBuffer(String(p?.threadId ?? ""), turnIdOf(p));
+        // 手机端「运行中」也只认 done：中断/失败/中止同样要收尾，否则停止后按钮/状态一直挂着
+        if (!internalThreads.has(String(p?.threadId ?? ""))) for (const forward of remoteEventForwarders) forward({ threadId: p?.threadId, kind: "done", text: "" });
       }
       if (event.method === "turn/completed" && !internalThreads.has(String(p?.threadId))) {
         const threadId = String(p?.threadId ?? "");
