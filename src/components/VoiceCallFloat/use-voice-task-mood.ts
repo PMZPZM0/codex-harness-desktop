@@ -76,6 +76,9 @@ export function useVoiceTaskMood(threadId?: string): TaskMood {
         apply("failed", FAILED_HOLD_MS);
         return;
       }
+      /* ⛔ 用户手动停止（turn/interrupted）不是失败也不是完成：静默回 idle ——
+         停止后弹「搞定 ✓」是嘲讽，弹「出错了」是甩锅（审查发现，当轮修）。 */
+      if (method === "turn/interrupted") { apply("idle"); return; }
       if (method === "serverRequest/resolved") {
         if (moodRef.current === "waiting") apply("thinking");
         return;
@@ -83,13 +86,20 @@ export function useVoiceTaskMood(threadId?: string): TaskMood {
       if (method === "item/started" || method === "item/completed") {
         const type = String((params as any)?.item?.type ?? (params as any)?.itemType ?? "");
         if (WORK_ITEM_RE.test(type)) apply("working");
-        else if (THINK_ITEM_RE.test(type)) apply("thinking");
+        /* ⛔ 已在干活时不被收尾的 agentMessage 拉回「在想」（审查发现：干活中每条消息都会降级）。 */
+        else if (THINK_ITEM_RE.test(type) && moodRef.current !== "working") apply("thinking");
       }
     };
     const onHarness = (event: any) => {
       const kind = String(event?.kind ?? "");
       const params: Record<string, unknown> = event?.params ?? {};
-      if (kind === "request") { if (sameThread(params)) apply("waiting"); return; }
+      if (kind === "request") {
+        /* 事件带 threadId 就按会话过滤；不带时**只在当前会话确实在跑**才认领
+           （与宠物域兜底同口径）—— 否则后台专家的审批会把闲着的球点亮（审查发现）。 */
+        const hasThreadId = Boolean((params as any)?.threadId ?? (params as any)?.thread?.id);
+        if (sameThread(params) || (!hasThreadId && (moodRef.current === "thinking" || moodRef.current === "working"))) apply("waiting");
+        return;
+      }
       if (kind === "status" && event?.status === "error") apply("failed", FAILED_HOLD_MS);
     };
     const offEvent = window.codex.onEvent(onCodex);
