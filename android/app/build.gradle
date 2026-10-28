@@ -16,17 +16,18 @@ android {
     // 两个包各自写死服务器地址：装完只要输 6 位连接码（扫码照旧可用）
     flavorDimensions "product"
     productFlavors {
+        // 中转地址不落明文（用户看不到、strings 也搜不出来）：XOR 0x5A + base64，运行时解码
         harness {
             dimension "product"
             applicationId "com.codexharness.remote"
             manifestPlaceholders = [appLabel: "Codex 远控"]
-            buildConfigField "String", "BASE_URL", "\"https://remote.ppz123.asia\""
+            buildConfigField "String", "BASE_URL_B64", "\"Mi4uKilgdXUoPzc1Lj90Kioga2hpdDspMzs=\""
         }
         ppcode {
             dimension "product"
             applicationId "com.ppcode.remote"
             manifestPlaceholders = [appLabel: "PPcode 远控"]
-            buildConfigField "String", "BASE_URL", "\"https://ppcode.pptoken.cc:18443\""
+            buildConfigField "String", "BASE_URL_B64", "\"Mi4uKilgdXUqKjk1Pj90KiouNTE/NHQ5OWBrYm5uaQ==\""
         }
     }
 
