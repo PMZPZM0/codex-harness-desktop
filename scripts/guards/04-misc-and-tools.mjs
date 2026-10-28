@@ -1088,6 +1088,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   (/stripHarnessBlocks\(/.test(gmBody) ? ok : fail)(
     "【139b】手机读历史必须剥掉注入块（常驻记忆 / 当前时间），否则整段机器文本铺进气泡"
   );
+  (/role: "think"/.test(mainSrc) && /pushThinkHistory/.test(pageSrc) ? ok : fail)(
+    "【139b】读历史也带思考：reasoning 摘要进历史接口，手机端折叠展示（只做实时 = 翻上去一片空白）"
+  );
 }
 
 /* ══ 【139c】手机远控走自建中转（安卓 App / 固定域名）：端口要固定、固定地址要压过隧道（10-28）══

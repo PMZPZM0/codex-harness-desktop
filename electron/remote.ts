@@ -47,7 +47,7 @@ type RemoteEvents = {
   onCommand?: (command: string, device: { id: string; name: string }) => void;
   /** 手机端对话 UI 需要的引擎桥：会话列表 / 读取某会话消息 / 新建会话 / 向某会话发消息 */
   listThreads?: () => Promise<{ id: string; name: string; preview: string; updatedAt: number }[]>;
-  getThreadMessages?: (threadId: string) => Promise<{ role: "user" | "assistant" | "system"; text: string }[]>;
+  getThreadMessages?: (threadId: string) => Promise<{ role: "user" | "assistant" | "system" | "think"; text: string }[]>;
   newThread?: () => Promise<{ id: string }>;
   /** images = 本机绝对路径（只接受 /api/upload 刚落盘的 remote-uploads 内的文件）；effort ∈ low/medium/high/xhigh */
   sendMessage?: (threadId: string, text: string, images?: string[], effort?: string) => Promise<void>;
