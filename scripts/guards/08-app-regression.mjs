@@ -23,6 +23,10 @@ export async function run() {
     const src = readFileSync(join(ROOT, "electron", name), "utf8");
     src.split(/\r?\n/).forEach((line, i) => {
       if (/^(?:export\s+)?(?:const|let|var)\s+[\w$]+\s*(?::[^=]+)?=.*app\.getPath\(\s*["']userData["']/.test(line)) {
+        /* 惰性函数形态（`const f = () => … app.getPath(…)`）本来就在调用时才求值 ——
+           10-28 之前这条按「同一行出现」判，把正确的惰性写法一起判红（【91】要守的是**模块体求值**，
+           不是这一行有没有出现字面量）。 */
+        if (/=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/.test(line)) return;
         offenders.push(`${name}:${i + 1}`);
       }
     });

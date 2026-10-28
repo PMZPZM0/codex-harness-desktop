@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（101 个能力域 / 552 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（104 个能力域 / 566 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -195,9 +195,9 @@ QQ 通道
 账号库（OpenAI 账号多账号管理：导入/切换/启停/用量概览）
 通道：relay:login, relay:load-account, relay:accounts, relay:toggle-account, relay:switch-account, relay:remove-account, relay:overview, relay:create-key, relay:select, relay:key-billing, relay:register, relay:payment-plans, relay:open-purchase, relay:keys-all, relay:delete-key, relay:update-key-group
 
-### openfilm（9 通道）
+### openfilm（12 通道）
 OpenFilm 视频剪辑（第三方开源 github.com/openfilm/openfilm，MIT + 商标条款）对接：设置 → 工具页可**按需下载**命令行与渲染引擎（npm 走 npmmirror、Chromium 走 cdn.npmmirror，失败自动回官方），可卸载、可查最新版（自动更新三档）。数据面只有状态/安装/卸载/查版本；⛔ 不内置上游二进制，卸载只删运行时、不碰用户 film 目录
-通道：openfilm:status, openfilm:settings-get, openfilm:settings-set, openfilm:install, openfilm:retry, openfilm:uninstall, openfilm:update-check, openfilm:studio-open, openfilm:studio-status
+通道：openfilm:status, openfilm:settings-get, openfilm:settings-set, openfilm:install, openfilm:retry, openfilm:uninstall, openfilm:update-check, openfilm:studio-open, openfilm:studio-status, openfilm:desktop-info, openfilm:desktop-download, openfilm:desktop-run
 
 ### openai（12 通道）
 OpenAI 账号鉴权（登录/凭据/额度）
@@ -312,6 +312,18 @@ MCP 服务器管理（配置/状态）
 ### personalization（6 通道）
 个性化（昵称/自定义指令，落 personalization.json 并写入引擎 AGENTS.md）
 通道：personalization:mark-greeted, personalization:read, personalization:save, personalization:save-identity, personalization:setNickname, personalization:verify
+
+### vault（4 通道）
+本机**密码本**（输入框左侧竖条 → 密码本）：list 列条目 / save 新增或改（password 省略即保留原密码）/ remove 删除 / copy 把某条密码写入系统剪贴板（30 秒后若还是这条就自动清空）。⛔ 密码用系统 safeStorage 加密落 userData/vault.json，**明文永不落盘、渲染层与模型侧都拿不到**；加密不可用时拒绝保存。模型侧用不到它
+通道：vault:copy, vault:list, vault:remove, vault:save
+
+### extensions（1 通道）
+竖条与功能入口菜单的**可扩展目录**（extensions:catalog）：内置四项面板 + userData/extensions.json 里用户自建项，渲染层据此渲染，不改代码就能多一个入口。⛔ 扩展项只能声明封闭动作集（http(s) 链接 / 跳到某个设置页 / 纯说明文字）—— 没有「执行命令」这类动作
+通道：extensions:catalog
+
+### journal（6 通道）
+**开发日记**（竖条 → 开发日记）：按天一个 Markdown 文件（userData/dev-journal/YYYY-MM-DD.md）—— list 列日期与摘要 / read 看当天全文 / save 整篇覆盖 / append 追加一条「## HH:mm 标题 + 正文」/ remove 删当天 / search 全文检索。⛔ 与会话归档、项目工作日志是三件不同的事
+通道：journal:append, journal:list, journal:read, journal:remove, journal:save, journal:search
 
 ### appSettings（2 通道）
 应用级开关（联网搜索/桌面自动化/下载源等，写 app-settings.json）
