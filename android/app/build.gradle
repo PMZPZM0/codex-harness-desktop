@@ -26,10 +26,27 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+
+    // release 出包不跑 lintVital（本机 Windows 路径下它会报「文件名语法不正确」而中断构建）；
+    // 需要静态检查时单独跑 ./gradlew lint，不挡打包。
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
 }
 
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
     implementation 'com.google.zxing:core:3.5.3'
+}
+
+// zxing-android-embedded 4.3.0 带的是 kotlin-stdlib 1.6.x，和 appcompat 拉上来的 1.8.x
+// 有重复类（kotlin.io.path.*）。1.8 起 jdk7/jdk8 只是空壳 ⇒ 三个一起对齐即可。
+configurations.configureEach {
+    resolutionStrategy {
+        force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
+        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'
+        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
+    }
 }
