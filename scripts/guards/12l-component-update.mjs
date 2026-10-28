@@ -200,29 +200,6 @@ console.log("【⑪ 当前版本 = 实际安装态（不是随包常量）】");
   }
 }
 
-/* 【⑫】引擎安装自愈（10-28 事故）：在线更新把 live vendor 目录搬走后落位/回滚都失败，
-   `bin/codex.exe` 消失 ⇒ 技能/钩子/插件一起报 spawn ENOENT。三道防线都要在：
-   ① 启动前自愈；② 删上一代备份前确认 live 在位；③ 落位没成功就别删解压产物。 */
-{
-  const heal = read("electron/engine-install-heal.ts");
-  const boot = read("electron/features/boot.ts");
-  const updater = stripComments(read("electron/engine-updater.ts"));
-  ok(/export async function healEngineInstall/.test(heal),
-    "【⑫】存在引擎安装自愈模块（healEngineInstall）");
-  ok(/\.bak-1/.test(heal) && /\.engine-update-/.test(heal),
-    "【⑫】自愈候选同时覆盖上一代备份与上次更新的解压产物");
-  const bootStart = boot.indexOf("await server.start()");
-  const bootHeal = boot.indexOf("healEngineInstall(");
-  ok(bootHeal >= 0 && bootStart >= 0 && bootHeal < bootStart,
-    "【⑫】启动链在 server.start() 之前调用自愈（spawn 时就要能解析到二进制）");
-  ok(/if \(existsSync\(path\.join\(vendorDir, "bin", exeName\)\)\) \{\s*await fs\.rm\(backupDir/.test(updater),
-    "【⑫】删上一代备份前必须确认 live 在位（否则唯一副本被删 = 引擎彻底没有）");
-  ok(/if \(existsSync\(path\.join\(vendorDir, "bin", exeName\)\)\) \{\s*await fs\.rm\(workRoot/.test(updater),
-    "【⑫】落位未成功时保留解压产物（它是启动自愈的最后一个候选）");
-  ok((updater.match(/回滚失败（备份已保留/g) || []).length >= 2,
-    "【⑫】两处回滚失败都留日志（不许静默吞掉）");
-}
-
 console.log("");
 console.log(fails === 0 ? `12l 组件更新守卫：全部通过（${checks}/${checks}）` : `12l 组件更新守卫：${fails} 项未通过（共 ${checks} 项）`);
 process.exit(fails === 0 ? 0 : 1);

@@ -16,7 +16,6 @@ import { WeixinGateway } from "../weixin-gateway";
 import { markBoot } from "../boot-timing";
 import { debugMemoryCapture } from "../memory-capture-debug";
 import { bossMemoryWorkspace, isBossSession } from "../boss-groups/session-registry";
-import { healEngineInstall } from "../engine-install-heal";
 import { debugTurnFiles } from "../debug/turn-files-debug";
 import { sendToWindow } from "./window-bus";
 import { getMusicStream } from "../music-streams";
@@ -979,14 +978,6 @@ export async function bootApp() {
         }
       }
     } catch (error) { console.warn("[memory] 启动清扫失败:", error); }
-    /* ⛔ 10-28 实测事故：在线更新把 live vendor 目录搬走后落位/回滚都失败，`bin/codex.exe` 消失
-       ⇒ 技能 / 钩子 / 插件读取全报 `spawn … ENOENT`（设置页一片红，看着像功能坏了）。
-       启动时从上一代备份或上次解压产物搬回来；必须在 server.start() 之前（spawn 时就要能解析到二进制）。 */
-    try {
-      const healed = await healEngineInstall();
-      if (healed.healed) console.log(`[boot] ${healed.message}（来源：${healed.from}）`);
-      else if (healed.message !== "引擎在位") console.warn(`[boot] ${healed.message}`);
-    } catch (error) { console.warn("[boot] 引擎自愈失败：", error); }
     await server.start();
   } catch (error) {
     broadcastCodexEvent({ kind: "status", status: "error", message: String(error) });
