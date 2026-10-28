@@ -1070,8 +1070,11 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
    随机 trycloudflare 域名，用户装完 App 也连不上（症状是「连不上/每次地址都变」）。 */
 {
   const relaySrc = readFileSync(join(ROOT, "electron", "remote.ts"), "utf8");
-  (/export const REMOTE_PORT = 17891/.test(relaySrc) && /async start\(port = REMOTE_PORT\)/.test(relaySrc) && !/async start\(port = 0\)/.test(relaySrc) ? ok : fail)(
-    "【139c】远控端口固定 17891 —— frpc 配的就是它，改回随机等于服务端转发永远对不上"
+  (/export const REMOTE_PORT = 17891/.test(relaySrc) && /async start\(port = this\.resolvedPort\(\)\)/.test(relaySrc) && !/async start\(port = 0\)/.test(relaySrc) ? ok : fail)(
+    "【139c】远控端口默认 17891 —— frpc 配的就是它，改回随机等于服务端转发永远对不上"
+  );
+  (/HARNESS_REMOTE_PORT/.test(relaySrc) && /remote-port\.txt/.test(relaySrc) ? ok : fail)(
+    "【139c】端口可覆盖（桌面版与 PPcode 同机双开远控，不能抢同一个 17891）"
   );
   (/HARNESS_REMOTE_PUBLIC_URL/.test(relaySrc) && /private fixedPublicUrl\(\)/.test(relaySrc) && /remote-public-url\.txt/.test(relaySrc) ? ok : fail)(
     "【139c】支持固定公网地址（环境变量 + 数据目录 remote-public-url.txt）：二维码 / 配对链接 / 安全 cookie 都走它"
