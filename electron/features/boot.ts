@@ -161,15 +161,16 @@ let remoteEventForwarders!: any;
  *  ⛔ 必须到条目粒度：一个回合里模型常有多段思考，按回合记会把后一段（未流式的）整段误跳过。 */
 const remoteThinkStreamed = new Set<string>();
 
-/** 文件变更压成一行：`修改文件 · a.ts +12 −3、b.md +2 −0 等 5 个`（最多列 3 个） */
+/** 文件变更：逐文件一行（最多 5 行，与桌面文件卡同口径：+N −M / 已删除） */
 function remoteFilesText(files: any[]): string {
   const list = files.filter((file) => file && file.path);
   if (!list.length) return "";
-  const top = list.slice(0, 3).map((file) => {
+  const lines = list.slice(0, 5).map((file) => {
     if (file.status === "deleted") return `${file.path} 已删除`;
     return `${file.path} +${Number(file.added) || 0} −${Number(file.deleted) || 0}`;
   });
-  return `修改文件 · ${top.join("、")}${list.length > 3 ? ` 等 ${list.length} 个` : ""}`;
+  if (list.length > 5) lines.push(`等 ${list.length} 个文件`);
+  return `修改文件 · ${list.length} 个\n` + lines.join("\n");
 }
 
 function remoteThinkKey(p: any): string {
@@ -191,8 +192,15 @@ function remoteStepOf(item: any, phase: "started" | "completed"): string {
     return cmd ? `命令 · ${cmd.slice(0, 60)}` : "命令";
   }
   // 文件变更不在这里报：引擎的 fileChange 不带行数，改由宿主追踪器的 live 报告（kind:"files"）
-  if (type === "mcpToolCall" || type === "functionCall") {
-    return `工具 · ${String(item?.tool ?? item?.name ?? "工具").slice(0, 40)}`;
+  if (type === "mcpToolCall" || type === "dynamicToolCall" || type === "functionCall") {
+    /* 与桌面工具卡同口径：带 server 前缀 + 参数摘要（截断），手机端至少能看出「调了什么、传了什么」 */
+    const server = String(item?.server ?? "").slice(0, 24);
+    const tool = String(item?.tool ?? item?.name ?? "工具").slice(0, 48);
+    let args = "";
+    try {
+      if (item?.arguments) args = JSON.stringify(item.arguments).replace(/\s+/g, " ").slice(0, 80);
+    } catch { args = ""; }
+    return `工具 · ${server ? `${server}/` : ""}${tool}${args ? ` ${args}` : ""}`;
   }
   if (type === "webSearch") {
     const query = String(item?.query ?? "").slice(0, 40);
