@@ -23,12 +23,13 @@ import { markdownUrlTransform } from "../../lib/markdown-url";
 //   前面空那么多」）。详见 softenListTailLazyContinuation 注释。
 import { splitMarkdown } from "../../lib/markdown-blocks.mjs";
 import { tableToTsv } from "../../lib/md-table-text.mjs";
+import { tableToXlsx, xlsxFileName } from "../../lib/xlsx-sheet.mjs";
 import { isBlockCode } from "../../lib/md-code-block.mjs";
 import { lazy, Suspense } from "react";
 /** 交互式流程图（React Flow）：按需加载，避免把图画布打进首屏。 */
 const GraphCanvas = lazy(() => import("../graph/GraphCanvas"));
 import { stripVoiceScript } from "../../lib/voice-script.mjs";
-import { Globe2, Copy, Check } from "lucide-react";
+import { Globe2, Copy, Check, FileDown } from "lucide-react";
 import { FeedbackIconButton } from "../shared/FeedbackIconButton";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
@@ -207,16 +208,51 @@ const MdTable = memo(function MdTable({ children }: { children?: React.ReactNode
     void window.codex.writeClipboard(text);
     return true;
   };
+  /* ⛔ 10-28 用户令：「在表格展示区域的复制图标左侧增加一个『导出为 Excel』的文件下载按钮」。
+     数据源与复制**同一份**（已渲染的 DOM 行/单元格）：另找 markdown 源码既远又得重复解析。
+     ⛔ 真 .xlsx（不是 .xls 的 HTML 伪装、也不是 CSV 改后缀）：见 lib/xlsx-sheet.mjs，零依赖 store ZIP。
+     ⛔ 触发用 a[download] + blob：Electron 落到默认下载目录，不弹"另存为"（用户点的是下载）；
+        拿不到表格就返回 false，不演"已导出"。 */
+  const exportExcel = () => {
+    const table = wrapRef.current?.querySelector("table");
+    if (!table || !table.rows.length) return false;
+    const rows = [...table.rows].map((row) => [...row.cells].map((cell) => (cell as HTMLElement).innerText ?? ""));
+    if (!rows.length) return false;
+    const bytes = tableToXlsx(rows);
+    if (!bytes?.length) return false;
+    const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = xlsxFileName();
+    anchor.rel = "noopener";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+    return true;
+  };
   return (
     <div className="md-table-wrap" ref={wrapRef}>
-      <FeedbackIconButton
-        className="md-table-copy"
-        title="复制表格"
-        doneTitle="已复制表格"
-        icon={<Copy size={13} />}
-        doneIcon={<Check size={13} />}
-        onFire={copyTable}
-      />
+      {/* ⛔ 按钮组改由容器定位（原来每个按钮各自 absolute）：导出在左、复制在右，间距 4px。 */}
+      <div className="md-table-actions">
+        <FeedbackIconButton
+          className="md-table-export"
+          title="导出为 Excel"
+          doneTitle="已导出 Excel"
+          icon={<FileDown size={13} />}
+          doneIcon={<Check size={13} />}
+          onFire={exportExcel}
+        />
+        <FeedbackIconButton
+          className="md-table-copy"
+          title="复制表格"
+          doneTitle="已复制表格"
+          icon={<Copy size={13} />}
+          doneIcon={<Check size={13} />}
+          onFire={copyTable}
+        />
+      </div>
       {/* 10-27 用户（截图）：「汇总消息，表格展示补齐，卡片底下左右滑动条…灯箱文件预览…右侧侧边栏
           的文件预览也是，这个要是自适应的」—— 表格按**自然宽度**排版，超出卡片时在这层横向滚动。
           ⛔ 滚动容器必须是**内层**：复制按钮留在不滚动的外卡片上（`position:absolute`），
