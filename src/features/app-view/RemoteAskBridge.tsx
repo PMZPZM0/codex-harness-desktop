@@ -12,12 +12,12 @@ import { useEffect } from "react";
 
 type Props = {
   agentAsk: { threadId?: string; resolve?: (answer: string) => void } | null | undefined;
-  setAgentAsk: (value: any) => void;
+  setAgentAsk: (value: null) => void;
 };
 
 export function RemoteAskBridge({ agentAsk, setAgentAsk }: Props) {
   useEffect(() => {
-    const off = window.codex.onHarnessEvent((payload: any) => {
+    const off = window.codex.onHarnessEvent((payload) => {
       if (payload?.type !== "remote-agent-ask-answer") return;
       if (!agentAsk || typeof agentAsk.resolve !== "function") return;
       const askThread = String(agentAsk.threadId ?? "");

@@ -210,7 +210,7 @@ ok(/export function setToolAbortHandler\(/.test(read("src/polling/poll-store.ts"
 /* ── ⑥ 样式与层级 ─────────────────────────────────────────────────────────── */
 const stylesEntry = read("src/styles.css");
 const css = read("src/styles/32-polling.css");
-ok(/@import "\.\/styles\/32-polling";/.test(stylesEntry), "样式入口引入了 32-polling.css（漏了就是全裸无样式）");
+ok(/@import "\.\/styles\/32-polling"(?: layer\([^)]*\))?;/.test(stylesEntry), "样式入口引入了 32-polling.css（漏了就是全裸无样式；10-26 起带 layer(...)）");
 ok(/\.poll-card \{[\s\S]{0,240}?font-size: 12\.5px/.test(css) && /\.poll-card \{[\s\S]{0,240}?background: transparent/.test(css),
   "卡与 `.action-card` 同形态（12.5px / 无底色无边框）—— 与对话流、thinking 板块同一套语言");
 ok(/@keyframes poll-appear[\s\S]{0,160}?0\.18s|animation: poll-appear 0\.18s ease-out both/.test(css) && /prefers-reduced-motion[\s\S]{0,240}?\.poll-body/.test(css),

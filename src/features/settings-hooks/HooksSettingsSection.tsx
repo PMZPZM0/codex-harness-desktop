@@ -73,7 +73,7 @@ export function HooksSettingsSection(props: HooksSettingsSectionProps) {
 
   const keyword = query.trim().toLowerCase();
   const filtering = keyword !== "" || statusFilter !== "all" || sourceFilter !== "all";
-  const hookMatches = (hook: any, group: typeof groups[number]) => {
+  const hookMatches = (hook: Record<string, unknown>, group: typeof groups[number]) => {
     const trusted = Boolean(hook.trustStatus && hook.trustStatus !== "trusted");
     const on = hook.enabled !== false;
     if (statusFilter === "on" && !on) return false;

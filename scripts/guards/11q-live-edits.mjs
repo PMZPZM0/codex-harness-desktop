@@ -41,8 +41,8 @@ ok(watch.includes("const LIVE_POLL_MS = 2500;") && watch.includes("setInterval((
   "2.5s 轮询器存在（比这更密 = 白扫；删了 = 运行中永远是死画面）");
 ok(watch.includes("ensureLiveTimer();"),
   "快照建立后立刻启动轮询（漏掉 = 运行中永远没有实时行）");
-ok(watch.includes('broadcastFn({ type: "turn-file-changes-live", turnId: entry.turnId, files: report })'),
-  "live 广播带**回合 id**（与最终报告同一条 id 链，否则挂不到回合上）");
+ok(/broadcastFn\(\{ type: "turn-file-changes-live",(?: threadId,)? turnId: entry\.turnId, files: report \}\)/.test(watch),
+  "live 广播带**回合 id**（与最终报告同一条 id 链，否则挂不到回合上）；threadId 是手机端筛选用的（10-28 加）");
 ok(!watch.includes('turn-file-changes-live", turnId: entry.turnId, files: []')
   && watch.includes('if (broadcastFn) broadcastFn({ type: "turn-file-changes", turnId: entry.turnId, files: report });'),
   "收尾**不再发空 live 清场**、最终报告无条件广播（10-06 夜二改：编辑行冻结续命；渲染层收到 final 才清 live）");

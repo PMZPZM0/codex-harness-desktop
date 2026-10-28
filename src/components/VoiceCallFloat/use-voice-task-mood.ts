@@ -27,6 +27,16 @@ const FAILED_HOLD_MS = 4000;
 const WORK_ITEM_RE = /command|exec|tool|mcp|websearch|webfetch|web_search|filechange|patch|applypatch|image|screenshot|browser/i;
 const THINK_ITEM_RE = /reasoning|agentmessage|message|plan|todo/i;
 
+/** 事件负载是外部输入：按对象取字段，别用 any 一路点下去（any 棘轮 + 取错字段都是静默的）。 */
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+
+/** 会话 id：`params.threadId` 优先，退回 `params.thread.id`（两种形态都出现过） */
+const threadIdOf = (params: Record<string, unknown>): string => {
+  const thread = asRecord(params.thread);
+  return String(params.threadId ?? thread.id ?? "");
+};
+
 export function useVoiceTaskMood(threadId?: string): TaskMood {
   const [mood, setMood] = useState<TaskMood>("idle");
   const moodRef = useRef<TaskMood>("idle");
@@ -57,17 +67,17 @@ export function useVoiceTaskMood(threadId?: string): TaskMood {
       }
     };
     const sameThread = (params: Record<string, unknown> | undefined) => {
-      const id = String((params as any)?.threadId ?? (params as any)?.thread?.id ?? "");
+      const id = threadIdOf(params ?? {});
       if (!id) return true;
       return id === threadRef.current;
     };
-    const onCodex = (event: any) => {
+    const onCodex = (event: CodexEvent) => {
       const method = String(event?.method ?? "");
-      const params: Record<string, unknown> = event?.params ?? {};
+      const params = asRecord(event?.params);
       if (!sameThread(params)) return;
       if (method === "turn/started") { apply("thinking"); return; }
       if (method === "turn/completed") {
-        const status = String((params as any)?.turn?.status ?? (params as any)?.status ?? "");
+        const status = String(asRecord(params.turn).status ?? params.status ?? "");
         const failed = /fail|error|abort|interrupt/i.test(status);
         apply(failed ? "failed" : "done", failed ? FAILED_HOLD_MS : DONE_HOLD_MS);
         return;
@@ -84,19 +94,19 @@ export function useVoiceTaskMood(threadId?: string): TaskMood {
         return;
       }
       if (method === "item/started" || method === "item/completed") {
-        const type = String((params as any)?.item?.type ?? (params as any)?.itemType ?? "");
+        const type = String(asRecord(params.item).type ?? params.itemType ?? "");
         if (WORK_ITEM_RE.test(type)) apply("working");
         /* ⛔ 已在干活时不被收尾的 agentMessage 拉回「在想」（审查发现：干活中每条消息都会降级）。 */
         else if (THINK_ITEM_RE.test(type) && moodRef.current !== "working") apply("thinking");
       }
     };
-    const onHarness = (event: any) => {
+    const onHarness = (event: { kind?: string; status?: string; params?: unknown }) => {
       const kind = String(event?.kind ?? "");
-      const params: Record<string, unknown> = event?.params ?? {};
+      const params = asRecord(event?.params);
       if (kind === "request") {
         /* 事件带 threadId 就按会话过滤；不带时**只在当前会话确实在跑**才认领
            （与宠物域兜底同口径）—— 否则后台专家的审批会把闲着的球点亮（审查发现）。 */
-        const hasThreadId = Boolean((params as any)?.threadId ?? (params as any)?.thread?.id);
+        const hasThreadId = Boolean(threadIdOf(params));
         if (sameThread(params) || (!hasThreadId && (moodRef.current === "thinking" || moodRef.current === "working"))) apply("waiting");
         return;
       }

@@ -40,7 +40,8 @@ const ok = (condition, message) => {
     ["src/features/expert-market/ExpertMarketSection.tsx", "skill-card-grid page-turn\" key={page}", "专家包市场"],
     ["src/features/settings-plugins/PluginsMarketSection.tsx", "skill-card-grid page-turn\" key={pluginMarketPage}", "插件市场（Gitee）"],
     ["src/features/codex-official-market/CodexOfficialMarketSection.tsx", "skill-card-grid page-turn\" key={page}", "Codex 官方市场"],
-    ["src/features/settings-skills/SkillsCenterSection.tsx", "skill-card-grid page-turn\" key={marketPage}", "技能市场"],
+    // 键用**夹过的页码**（marketSafePage）：筛选后页数变少时不会停在空页，翻页动画照样按页重放
+    ["src/features/settings-skills/SkillsCenterSection.tsx", "skill-card-grid page-turn\" key={marketSafePage}", "技能市场"],
   ];
   for (const [file, needle, label] of cases) {
     ok(codeOnly(read(file)).includes(needle), `${label}：网格 key={页码} + page-turn`);
