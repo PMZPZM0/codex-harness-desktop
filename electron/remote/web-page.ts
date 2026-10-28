@@ -75,6 +75,7 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
 .run-steps summary::before{content:"▸ "}
 .run-steps[open] summary::before{content:"▾ "}
 .run-steps .step{padding:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.run-steps .think{margin-top:5px;padding-top:5px;border-top:1px dashed #ddd9d2;color:#6f6f69;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto}
 #plus{flex:0 0 auto;width:44px;height:44px;margin:0;padding:0;font-size:22px;line-height:40px;color:var(--ink);background:#f2f2ef;border:1px solid var(--line);border-radius:14px}
 #file-pick{display:none}
 #imgs{display:none;gap:8px;padding:8px 12px 0;background:#fff;overflow-x:auto}
@@ -297,7 +298,7 @@ async function sendCmd() {
       localStorage.setItem(THREAD_KEY, currentThreadId);
       loadThreads();
     }
-    await rpc({ type: "send-message", threadId: currentThreadId, text: v, images: paths });
+    await rpc({ type: "send-message", threadId: currentThreadId, text: v, images: paths, effort: localStorage.getItem("chm-effort") || "high" });
     updateThreadLabel((v || "图片").slice(0, 20));
     saveSession();
   } catch (error) {
@@ -511,6 +512,30 @@ function openCommands() {
       row.onclick = () => runCommand(command.id);
       node.appendChild(row);
     }
+    const archiveRow = document.createElement("div");
+    archiveRow.className = "cmd-row";
+    archiveRow.textContent = "/归档当前会话";
+    archiveRow.onclick = () => runCommand("archive");
+    node.appendChild(archiveRow);
+    const goalRow = document.createElement("div");
+    goalRow.className = "cmd-row";
+    goalRow.textContent = "/设为目标（用输入框里的内容）";
+    goalRow.onclick = () => runCommand("goal");
+    node.appendChild(goalRow);
+    const effHead = document.createElement("div");
+    effHead.className = "cmd-row";
+    effHead.style.fontWeight = "600";
+    effHead.textContent = "思考强度（对后面的消息生效）";
+    node.appendChild(effHead);
+    const currentEffort = localStorage.getItem("chm-effort") || "high";
+    const efforts = [["low", "低"], ["medium", "中"], ["high", "高"], ["xhigh", "极高"]];
+    for (const pair of efforts) {
+      const row = document.createElement("div");
+      row.className = "cmd-row";
+      row.textContent = pair[1] + (pair[0] === currentEffort ? " ✓" : "");
+      row.onclick = () => { localStorage.setItem("chm-effort", pair[0]); openCommands(); };
+      node.appendChild(row);
+    }
   }).catch((error) => { node.innerHTML = ""; node.appendChild(panelMessage("加载失败：" + error.message)); });
 }
 async function runCommand(id) {
@@ -530,6 +555,25 @@ async function runCommand(id) {
     if (!currentThreadId) { push("system", "先选一个会话"); return; }
     if (id === "stop") { await stopTurn(); return; }
     if (id === "compact") { await rpc({ type: "compact", threadId: currentThreadId }); push("system", "已请求压缩上下文"); return; }
+    if (id === "archive") {
+      await rpc({ type: "archive", threadId: currentThreadId });
+      push("system", "已归档当前会话");
+      const r = await rpc({ type: "list-threads" });
+      const first = (r.threads || [])[0];
+      loadThreads();
+      if (first) { currentThreadId = first.id; localStorage.setItem(THREAD_KEY, first.id); await loadMessages(); }
+      else { currentThreadId = ""; localStorage.removeItem(THREAD_KEY); await newThread(); }
+      return;
+    }
+    if (id === "goal") {
+      const input = document.getElementById("cmd");
+      const objective = input.value.trim();
+      if (!objective) { push("system", "先把目标写进输入框，再点这条指令"); return; }
+      await rpc({ type: "goal", threadId: currentThreadId, objective });
+      input.value = "";
+      push("system", "已设为目标，Codex 会朝它自动推进");
+      return;
+    }
   } catch (error) {
     push("system", "指令失败：" + error.message);
   }
@@ -575,6 +619,27 @@ async function pollLoop() {
           stepBox.appendChild(line);
           list.scrollTop = list.scrollHeight;
         }
+      } else if (event.kind === "think") {
+        // 思考内容：与桌面折叠区同一股摘要流，实时展开显示
+        hideThinking();
+        setRunning(true);
+        if (!stepBox) {
+          stepBox = document.createElement("div");
+          stepBox.className = "run-steps";
+          list.appendChild(stepBox);
+        }
+        let thinkEl = stepBox.querySelector(".think");
+        if (!thinkEl) {
+          thinkEl = document.createElement("div");
+          thinkEl.className = "think";
+          thinkEl.appendChild(document.createTextNode("思考："));
+          const body = document.createElement("span");
+          body.className = "think-text";
+          thinkEl.appendChild(body);
+          stepBox.appendChild(thinkEl);
+        }
+        thinkEl.querySelector(".think-text").textContent += event.text;
+        list.scrollTop = list.scrollHeight;
       } else if (event.kind === "done") {
         hideThinking();
         setRunning(false);

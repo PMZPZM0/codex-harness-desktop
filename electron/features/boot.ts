@@ -179,7 +179,7 @@ function remoteStepOf(item: any, phase: "started" | "completed"): string {
     const query = String(item?.query ?? "").slice(0, 40);
     return query ? `搜索 · ${query}` : "搜索";
   }
-  if (type === "reasoning") return "思考";
+  // 思考不在这里报一行标签：它有自己的摘要流（kind:"think"），内容实时可见
   return "";
 }
 let internalThreads!: any;
@@ -866,6 +866,9 @@ export async function bootApp() {
         const buffer = peekCaptureBuffer(String(p.threadId), turnIdOf(p));
         if (buffer) buffer.assistant += p.delta;
         for (const forward of remoteEventForwarders) forward({ threadId: p.threadId, kind: "delta", text: p.delta });
+      } else if (event.method === "item/reasoning/summaryTextDelta" && p?.delta) {
+        // 手机端「思考内容」：与桌面折叠区同一股摘要流（原始 textDelta 太长，只发摘要）
+        if (!internalThreads.has(String(p?.threadId ?? ""))) for (const forward of remoteEventForwarders) forward({ threadId: p.threadId, kind: "think", text: p.delta });
       } else if (event.method === "item/completed" && p?.item?.type === "agentMessage" && p.item.text) {
         const buffer = peekCaptureBuffer(String(p.threadId), turnIdOf(p));
         if (buffer) buffer.assistant = p.item.text;
