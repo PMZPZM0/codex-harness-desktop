@@ -65,8 +65,12 @@ export function ReasoningStrip({ head, text, running, revealing }: {
               ) : (
                 <span className="reasoning-strip-static" ref={contentRef}>{latestLine}</span>
               )}
-              <ChevronDown size={13} className="reasoning-strip-caret" aria-hidden />
+              {/* ⛔ 直播态不放在 preview 里：marquee 是整段等宽、会铺满并溢出，
+                  箭头跟着它会被 overflow:hidden 裁掉（等于没有展开入口）。
+                  那时"内容尾部"也没意义（一直在滚）⇒ 留在 preview 之后、行尾即可。 */}
+              {!running ? <ChevronDown size={13} className="reasoning-strip-caret" aria-hidden /> : null}
             </span>
+            {running ? <ChevronDown size={13} className="reasoning-strip-caret" aria-hidden /> : null}
           </>
         ) : null}
         {hasText && expanded ? <ChevronDown size={13} className="reasoning-strip-caret" aria-hidden /> : null}

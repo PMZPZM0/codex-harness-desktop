@@ -68,6 +68,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* ⛔ 溢出时**不能再缩**：10-21 的规则是「裁掉左边、直接露出最新尾部」。
+   允许 shrink + ellipsis 会把尾巴换成「开头…」（行为被打回），所以这里恢复固有宽度，
+   由 preview 的 overflow:hidden + justify-content:flex-end 从左侧裁切。 */
+.reasoning-strip.done .reasoning-strip-preview.is-overflowing .reasoning-strip-static {
+  flex: none;
+  text-overflow: clip;
+}
 /* 直播横滚：CSS transform 动画（合成器执行，不触发 scroll 事件 ⇒ 不会让时间线误以为用户在滚）。
    两段文本各带 48px 右间距，translateX(-50%) 正好接上第二段，循环无缝。 */
 .reasoning-strip-marquee {
