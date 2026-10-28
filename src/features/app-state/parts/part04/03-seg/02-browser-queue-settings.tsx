@@ -526,8 +526,13 @@ bag.startQueued = startQueued as typeof bag.startQueued;
     const safe = async (label: string, run: () => Promise<any>, fallback: any) => {
       try { return await run(); } catch (error: any) {
         let msg = String(error.message ?? error);
+        // 引擎二进制缺失（在线更新落位失败 / 被占用）时，技能/钩子/插件会一起报 spawn ENOENT ——
+        // 给一句能照做的提示，别把 spawn 原始文本甩给用户（启动时会自愈，见 electron/engine-install-heal.ts）。
+        if (/ENOENT/.test(msg) && /spawn/i.test(msg) && /codex/i.test(msg)) {
+          msg = "引擎文件缺失（应用启动时会自动修复；仍失败请到 设置 → 开发工具 重新安装引擎）";
+        }
         // Cloudflare 挑战页/超长 HTML 不要甩到界面上，降级成一句人话
-        if (/<html|__cf_chl|challenge/i.test(msg)) msg = "请求被 Cloudflare 人机验证拦截（该项需要可直连 OpenAI 的网络或代理）";
+        else if (/<html|__cf_chl|challenge/i.test(msg)) msg = "请求被 Cloudflare 人机验证拦截（该项需要可直连 OpenAI 的网络或代理）";
         else if (msg.length > 160) msg = msg.slice(0, 160) + "…";
         failures.push(`${label}（${msg}）`);
         return fallback;
