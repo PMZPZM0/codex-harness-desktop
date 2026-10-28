@@ -988,6 +988,14 @@
       两个动画都只动合成/低成本属性（10-10 实测：动画改 gradient/background-position 时用 steps(24)
       把重绘从 60 次/秒压到 11 次/秒；opacity 由合成器执行，几乎零成本）。
    ⛔ 别再往状态行前面加任何"转动/跳动"的装饰 —— 用户明确要纯文字。 */
+/* 状态文字前的图标（10-28 用户：配一个对应图标更好看）—— 与文字同为 13px，主色，静态不闪。 */
+.run-activity-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  color: var(--accent);
+}
+.run-activity-icon svg { display: block; }
 .run-activity-text {
   font-weight: 500;
   color: var(--text);
