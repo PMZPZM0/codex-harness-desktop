@@ -6,7 +6,7 @@
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
  */
 import {
-  ALIGN_RESULT, C, CONTINUITY_TEXT, ROOT, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, mkdtempSync, planCompletedFold, readAppUi, readFileSync, readMainSource, readStyles, readVoiceCallFloatSrc, rmSync, shouldAlignProvider, sliceHandle, spawnSync, statSync, tmpdir, warn, writeFileSync,
+  ALIGN_RESULT, C, CONTINUITY_TEXT, ROOT, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, mkdtempSync, planCompletedFold, readAppUi, readFileSync, readMainSource, readSettingsSurface, readStyles, readVoiceCallFloatSrc, rmSync, shouldAlignProvider, sliceHandle, spawnSync, statSync, tmpdir, warn, writeFileSync,
 } from "./_ctx.mjs";
 
 export async function run() {
@@ -660,8 +660,7 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
     const generalSrc = existsSync(generalPath) ? readFileSync(generalPath, "utf8") : "";
     const autoPath = join(ROOT, "src", "features", "settings-general", "AutoUpdateCard.tsx");
     const autoSrc = existsSync(autoPath) ? readFileSync(autoPath, "utf8") : "";
-    const registryPath = join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout", "00-settings-registry.tsx");
-    const registrySrc = existsSync(registryPath) ? readFileSync(registryPath, "utf8") : "";
+    const registrySrc = readSettingsSurface();
     (/downloadSource/.test(autoSrc) && /下载源/.test(autoSrc)
       && /AutoUpdateCard[^\n]*downloadSource=\{downloadSource\}/.test(generalSrc)
       && /GeneralSettingsSection[^\n]*downloadSource=\{downloadSource\}/.test(registrySrc)

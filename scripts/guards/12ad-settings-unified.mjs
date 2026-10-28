@@ -16,7 +16,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { codeOnly } from "./_ctx.mjs";
+import { codeOnly, readSettingsSurface } from "./_ctx.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel) => readFileSync(join(ROOT, rel), "utf8");
@@ -148,10 +148,10 @@ ok(/\.ssh-filter-row/.test(sshCss) && /\.ssh-action-sm\s*\{[^}]*height:\s*28px/.
 ok(/\.app-lock-actions\s*\{[^}]*justify-content:\s*flex-end/.test(read("src/styles/48-app-lock.css")), "应用锁操作按钮靠右");
 const expertCenterSrc = read("src/features/settings-expert-center/ExpertCenterSection.tsx");
 ok(/expert-center-head/.test(expertCenterSrc) && /onBack/.test(expertCenterSrc) && !/PageInfo/.test(expertCenterSrc), "专家中心返回与专家市场并排，帮助问号已删");
-ok(!/"expert-center": \{ back:/.test(read("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx")), "专家中心返回键不再由壳层单独占一行");
+ok(!/"expert-center": \{ back:/.test(readSettingsSurface()), "专家中心返回键不再由壳层单独占一行");
 const teamsSrc = read("src/features/settings-teams/TeamsSettingsSection.tsx");
 ok(/teams-back/.test(teamsSrc) && !/subagent-banner/.test(teamsSrc) && /onBack/.test(teamsSrc), "专家团返回并进操作行，Codex 说明卡已删");
-ok(!/teams: \{ back:/.test(read("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx")), "专家团返回键不再由壳层单独占一行");
+ok(!/teams: \{ back:/.test(readSettingsSurface()), "专家团返回键不再由壳层单独占一行");
 /* ── ⑨ 子智能体编辑器（10-27 用户：「新建子智能体更新一下，都是旧的，工具也是」）──
    ⛔ 只断言 SubAgentEditorModal 段：专家团弹窗在同一个文件里，它的「启用状态」仍是原生 checkbox。 */
 const subAgentModal = codeOnly(read("src/features/experts-teams/ExpertsTeams/01-modals.tsx").split("export function ExpertTeamEditorModal")[0]);

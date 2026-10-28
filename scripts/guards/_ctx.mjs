@@ -349,6 +349,21 @@ function readModuleWithDir(relBase) {
 }
 const readBuiltinSkillsSource = () => readModuleWithDir("electron/builtin-skills");
 const readResponsesBridgeSource = () => readModuleWithDir("electron/responses-bridge");
+/** 设置台「渲染面」= 01-settings-layout 下注册表 + pages/**（10-28 P1-2 拆页）。
+ *
+ *  ⛔ 与 readAppUi 同一口径：断言盯的是「这段内容存在于设置台里」，不关心它落在注册表
+ *  还是某个分组页。只读注册表会在拆页后把每条「props 真的传下去了」的断言顶成假红
+ *  （字面量搬走了，语义没变）。负面断言因此更严格（范围是超集），安全方向。 */
+function readSettingsSurface() {
+  const dir = join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout");
+  if (!existsSync(dir)) return "";
+  const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+    const p = join(d, e.name);
+    if (e.isDirectory()) return walk(p);
+    return /\.tsx?$/.test(e.name) ? [readFileSync(p, "utf8")] : [];
+  });
+  return walk(dir).join("\n");
+}
 function readStyles() {
   const base = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
   const dir = join(ROOT, "src", "styles");
@@ -367,7 +382,7 @@ const typesSrc = existsSync(typesPath) ? readFileSync(typesPath, "utf8") : "";
 
 /* 守卫共享面：ESM 活绑定导出（守卫只读，不写这些名字） */
 export {
-  ALIGN_RESULT, AUTO_CONTINUE_MAX_ATTEMPTS, GATE_DEFAULTS, indexOfHandle, indexOfHandleAfter, sliceHandle, AUTO_CONTINUE_WINDOW_MS, C, CONTINUITY_TEXT, MOOD_HEADING, OWN_WRITE_TTL_MS, ROOT, SESSION_SCOPE_HEADING, SKIP_DIRS, TRUNCATE_OUTPUT_MAX_CHARS, TRUNCATE_REASONING_MIN_CHARS, applyMoodSignal, checks, codeOnly, composeMoodInstructions, composeScopeInstructions, createAec, createEchoGate, createHash, createRequire, createSentenceChunker, createSpeakFilter, decayMood, dirname, emptyMood, emptyRuntime, existsSync, fail, fileURLToPath, hardFails, homedir, isOwnEcho, isTruncatedEmptyTurn, join, legacyMirror, mainSrc, migrateRuntime, mkdirSync, mkdtempSync, moodBlock, moodSignature, moodTone, normalizeMood, normalizeNumbers, normalizeRuntime, numberToChinese, ok, patchRuntime, pathToFileURL, planCompletedFold, preloadSrc, readAppUi, readBuiltinSkillsSource, readFileSync, readMainSource, readModuleWithDir, readResponsesBridgeSource, readStyles, readVoiceCallFloatSrc, readVoiceSettingsSrc, readdirSync, relative, rememberOwnWrite, resampleLinear, resolveModelForOpen, rmSync, rmsOf, runtimeSignature, sessionScopeBlock, sessionScopeSignature, shouldAlignProvider, shouldSyncOpenThread, spawnSync, statSync, stripMoodBlock, stripScopeBlock, tmpdir, toSpeakableText, topLevelKeys, truncationNotice, turnOutputStats, typesPath, typesSrc, walk, warn, warns, writeFileSync,
+  ALIGN_RESULT, AUTO_CONTINUE_MAX_ATTEMPTS, GATE_DEFAULTS, indexOfHandle, indexOfHandleAfter, sliceHandle, AUTO_CONTINUE_WINDOW_MS, C, CONTINUITY_TEXT, MOOD_HEADING, OWN_WRITE_TTL_MS, ROOT, SESSION_SCOPE_HEADING, SKIP_DIRS, TRUNCATE_OUTPUT_MAX_CHARS, TRUNCATE_REASONING_MIN_CHARS, applyMoodSignal, checks, codeOnly, composeMoodInstructions, composeScopeInstructions, createAec, createEchoGate, createHash, createRequire, createSentenceChunker, createSpeakFilter, decayMood, dirname, emptyMood, emptyRuntime, existsSync, fail, fileURLToPath, hardFails, homedir, isOwnEcho, isTruncatedEmptyTurn, join, legacyMirror, mainSrc, migrateRuntime, mkdirSync, mkdtempSync, moodBlock, moodSignature, moodTone, normalizeMood, normalizeNumbers, normalizeRuntime, numberToChinese, ok, patchRuntime, pathToFileURL, planCompletedFold, preloadSrc, readAppUi, readBuiltinSkillsSource, readFileSync, readMainSource, readModuleWithDir, readResponsesBridgeSource, readSettingsSurface, readStyles, readVoiceCallFloatSrc, readVoiceSettingsSrc, readdirSync, relative, rememberOwnWrite, resampleLinear, resolveModelForOpen, rmSync, rmsOf, runtimeSignature, sessionScopeBlock, sessionScopeSignature, shouldAlignProvider, shouldSyncOpenThread, spawnSync, statSync, stripMoodBlock, stripScopeBlock, tmpdir, toSpeakableText, topLevelKeys, truncationNotice, turnOutputStats, typesPath, typesSrc, walk, warn, warns, writeFileSync,
 };
 
 /** 汇总与退出码（原文件尾部逐字搬入） */
