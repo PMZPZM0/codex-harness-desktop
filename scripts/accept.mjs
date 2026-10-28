@@ -892,6 +892,36 @@ const CHECKS = [
     },
   },
   {
+    id: "dev-port",
+    name: "🌐 本机测试端口：命令输出出现 localhost:端口 ⇒ 自动展开右栏浏览器（10-29）",
+    run: async (h) => {
+      /* ⛔ 秒级验收：真回合链路依赖模型执行命令（环境 401 时白等几分钟），改走桥的
+         确定性入口（CustomEvent "dev-port:open" —— 与 onEvent 扫描共用同一条 openUrl）。
+         扫描逻辑（URL 提取 / 去重 / 会话闸）由 12ag 守卫的真值表钉住。 */
+      await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "主界面", timeoutMs: 30000 });
+      /* ⛔ app-shell 首帧后有一次重载，早派发的事件会丢 —— 等 AppView 挂载完成（球出现）再触发。 */
+      await h.waitFor(`!!document.querySelector(".voice-ball")`, { label: "悬浮球挂载", timeoutMs: 20000 });
+      await h.eval(`(function(){
+        window.dispatchEvent(new CustomEvent("dev-port:open", { detail: { url: "http://127.0.0.1:4173/preview" } }));
+        return 1; })()`);
+      await wait(1500);
+      const probe = await h.eval(`(function(){
+        const wv=document.querySelector(".browser-pane-webview");
+        const dock=document.querySelector(".context-panel");
+        return { src: wv ? String(wv.src || "") : "", width: dock ? Math.round(dock.getBoundingClientRect().width) : 0 };
+      })()`).catch(() => null);
+      h.check("① 端口事件 ⇒ 右栏浏览器自动打开该地址",
+        Boolean(probe && probe.src.includes("127.0.0.1:4173")), JSON.stringify(probe));
+      h.check("② 右栏自动加宽到 ≥360（给预览让位）", Boolean(probe && probe.width >= 360), String(probe && probe.width));
+      /* 去重：同一 URL 再派发一次，不得重复开新标签（tab 数不变）。 */
+      const tabsBefore = await h.eval(`document.querySelectorAll(".browser-pane-tabs .browser-pane-tab").length`).catch(() => 0);
+      await h.eval(`(function(){ window.dispatchEvent(new CustomEvent("dev-port:open", { detail: { url: "http://127.0.0.1:4173/preview" } })); return 1; })()`);
+      await wait(800);
+      const tabsAfter = await h.eval(`document.querySelectorAll(".browser-pane-tabs .browser-pane-tab").length`).catch(() => 0);
+      h.check("③ 同一 URL 去重（不重复开标签）", tabsAfter === tabsBefore && tabsBefore > 0, `${tabsBefore}→${tabsAfter}`);
+    },
+  },
+  {
     id: "sidebar-adaptive",
     name: "🧱 侧栏「功能入口」改为右侧浮层，不占纵向空间（10-26）",
     run: async (h) => {
