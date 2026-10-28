@@ -8,6 +8,7 @@ import { compactionRecordFor, compactionVersion, subscribeCompactions } from "..
 import { resolveCompactionAnchor } from "../../../../lib/compaction-anchor.mjs";
 import { Fragment, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { BossThreadIntro, getBossThreads, subscribeBossThreads } from "../../../boss-group-view";
+import { HomeView } from "../../../home";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../lib/entity-avatar";
 import {
   AlertTriangle,
@@ -26,7 +27,6 @@ import {
   CircleStop,
   Cloud,
   CloudOff,
-  Code2,
   Copy,
   Eye,
   EyeOff,
@@ -142,8 +142,38 @@ import {
   Video,
   Bell,
   CheckCheck,
+  /* 运行状态行的前置图标（10-28 用户：状态文字前面加对应图标）
+     ⛔ 只补原本没导入的：Globe2 / PenLine / Send / Wrench 文件里已有（重复导入 = TS2300）。 */
+  Timer,
+  Hourglass,
+  Pencil,
+  Terminal,
+  FilePlus2,
+  Layers,
+  ShieldQuestion,
 } from "lucide-react";
 import { CardStatusIcon, Spinner, useCardOpen, type ActionStatus } from "../../../../components/CardShell";
+
+/**
+ * 运行状态 → 前置图标（10-28 用户：「正在执行命令和正在编辑文件和文件生成中前面加上这种对应图标」
+ * 「其他映射状态的文字前面也都加上对应图标」）。
+ * ⛔ 这只是**视觉映射**，不参与状态判定（判定在 part06 的 runActivity，单一出口）。
+ * ⛔ 新增状态必须在这里补一行，否则状态行只有文字没有图标（用户会立刻看出来不一致）。
+ */
+const RUN_ACTIVITY_ICONS: Record<string, typeof Timer> = {
+  "准备中": Timer,
+  "发送中": Send,
+  "等待模型回复": Hourglass,
+  "生成回复中": PenLine,
+  "正在编辑文件": Pencil,
+  "正在运行命令": Terminal,
+  "正在生成文件": FilePlus2,
+  "正在搜索网页": Globe2,
+  "正在调用工具": Wrench,
+  "正在整理上下文": Layers,
+  "等待模型收尾": Hourglass,
+  "等待你确认": ShieldQuestion,
+};
 // 启动页分派（10-11）：档位开启时播 550C 片头，否则回落既有启动页。逻辑属外观域，经其 barrel 消费。
 import { BootIntroGate } from "../../../settings-appearance";
 import { HelpDialog, type HelpTopic } from "../../../../components/HelpDialog";
@@ -445,11 +475,13 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                   <div className={`timeline ${isEmpty ? "empty-state" : ""}`} ref={scrollRef} onScroll={onTimelineScroll} data-history-hidden={historyPlan.hiddenCount} data-history-below={historyPlan.hiddenBelow} data-history-total={historyPlan.hiddenStubs + timelineWindow.ordered.length}>
                   {/*指挥中枢的空白态是**它自己的一套**（10-25 用户令：跟欢迎界面没关系）——
                      普通会话仍走 welcome-state，这里两者互不影响。 */}
+                  {/* 10-28 首页：没有选中会话时**不再直接给一段空对话**，而是落到首页
+                      （普通 / 中枢两种，可切换；发消息才建会话 —— 用户令「不会一进去就是对话」）。
+                      ⛔ 中枢引导卡（isBossEmpty）仍优先：刚点「指挥中枢/新建中枢会话」那一刻要看引导，
+                        不是首页；首页只在「没选中会话且不是中枢待发」时出现。 */}
                   {isEmpty && !isBossEmpty ? (
-                    <div className="welcome-state">
-                      <div className="welcome-mark"><Code2 strokeWidth={0.5} size={96} /></div>
-                      <h1 className="welcome-greet">{greeting}</h1>
-                      <p className="welcome-sub">{greetSub}</p>
+                    <div className="home-state">
+                      <HomeView app={app} />
                     </div>
                   ) : null}
                   {/* 导入会话记录后、尚未发送首条消息：记录预览卡常驻消息区顶部；发送后转为消息内的导入卡 */}
@@ -612,6 +644,10 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                     <div className="run-activity-bar" role="status" aria-live="polite">
                       {/* ⛔ 10-28 用户令：去掉状态前的三个点（原来那组跳动的 i 就是"前面的省略号"）——
                           状态由**文字本身**表达，动画改在文字上（CSS 扫光 + 呼吸，见 .run-activity-text）。 */}
+                      {(() => {
+                        const ActivityIcon = RUN_ACTIVITY_ICONS[runActivity];
+                        return ActivityIcon ? <span className="run-activity-icon" aria-hidden><ActivityIcon size={13} /></span> : null;
+                      })()}
                       <span className="run-activity-text shimmer-text" key={runActivity}>{runActivity}</span>
                       {/* ⛔ 准备中 / 发送中 不配随机短语：那是"回答阶段"的话术，放在发送阶段自相矛盾。 */}
                       {runPhrase && runActivity !== "准备中" && runActivity !== "发送中" && <span className="run-activity-phrase">· {runPhrase}</span>}
