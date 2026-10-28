@@ -8,9 +8,11 @@ import android.text.TextUtils;
 import android.util.Base64;
 import android.view.View;
 import android.webkit.CookieManager;
+import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
+import android.webkit.ValueCallback;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.EditText;
@@ -35,6 +37,10 @@ public class MainActivity extends AppCompatActivity {
     private static final String PREFS = "remote";
     private static final String KEY_BASE = "server_base";
     private static final String KEY_CONNECTED = "connected_once";
+    private static final int FILE_CHOOSER_REQUEST = 2001;
+
+    /** WebView 文件选择回调（＋ → 图片）。⚠️ 一次选择期间只允许一个挂起回调。 */
+    private ValueCallback<Uri[]> fileChooserCallback;
 
     private WebView web;
     private View setup;
@@ -84,6 +90,27 @@ public class MainActivity extends AppCompatActivity {
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(web, true);
+
+        // ⛔ 不实现 onShowFileChooser 的话，页面里 <input type=file> 点了没反应 —— 手机相册选图全靠它
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (fileChooserCallback != null) fileChooserCallback.onReceiveValue(null);
+                fileChooserCallback = callback;
+                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("image/*");
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                try {
+                    startActivityForResult(Intent.createChooser(intent, "选择图片"), FILE_CHOOSER_REQUEST);
+                } catch (Exception error) {
+                    fileChooserCallback = null;
+                    showSetup("没有可以选图的应用");
+                    return false;
+                }
+                return true;
+            }
+        });
 
         web.setWebViewClient(new WebViewClient() {
             @Override
@@ -215,6 +242,26 @@ public class MainActivity extends AppCompatActivity {
                 showSetup("");
             });
         });
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode != FILE_CHOOSER_REQUEST) { super.onActivityResult(requestCode, resultCode, data); return; }
+        ValueCallback<Uri[]> callback = fileChooserCallback;
+        fileChooserCallback = null;
+        if (callback == null) return;
+        Uri[] results = null;
+        if (resultCode == RESULT_OK && data != null) {
+            if (data.getClipData() != null) {
+                // 多选：上限 4 张，与页面端一致
+                int count = Math.min(data.getClipData().getItemCount(), 4);
+                results = new Uri[count];
+                for (int i = 0; i < count; i++) results[i] = data.getClipData().getItemAt(i).getUri();
+            } else if (data.getData() != null) {
+                results = new Uri[]{ data.getData() };
+            }
+        }
+        callback.onReceiveValue(results);
     }
 
     @Override
