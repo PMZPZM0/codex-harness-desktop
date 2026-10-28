@@ -48,7 +48,10 @@ const walk = (dir) => {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) { walk(full); continue; }
     if (!/\.(ts|tsx)$/.test(entry.name) || /\.d\.ts$/.test(entry.name)) continue;
-    const text = readFileSync(full, "utf8");
+    /* ⛔ 先剥注释再数：注释里写「原来是 : any」这种说明会把计数虚高，棘轮就会失去意义 */
+    const text = readFileSync(full, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n").filter((line) => !line.trim().startsWith("//")).join("\n");
     const n = (text.match(/:\s*any\b/g) || []).length + (text.match(/\bas\s+any\b/g) || []).length;
     if (n) { anyCount += n; perFile.push([full, n]); }
   }
