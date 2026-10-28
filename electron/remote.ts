@@ -169,7 +169,7 @@ export class RemoteControlService {
     } catch { /* 写盘失败忽略 */ }
   }
 
-  async start(port = REMOTE_PORT) {
+  async start(port = this.resolvedPort()) {
     if (this.server) return this.port;
     // ★ 控制面凭据（09-13 审计 P0：此前 remote 全文件**没有任何鉴权代码**…）。
     //   09-13 二次加固：**accessToken 不再出现在二维码/配对链接里**（能力式 URL 会随
@@ -248,6 +248,26 @@ export class RemoteControlService {
     const raw = String(process.env.HARNESS_REMOTE_PUBLIC_URL ?? "").trim() || this.readPublicUrlFile();
     const value = raw.trim().replace(/\/+$/, "");
     return /^https?:\/\//i.test(value) ? value : "";
+  }
+
+  /** 远控端口：默认 17891。桌面版与 PPcode 是同一套代码、装在同一台机器上，
+   *  两边同时开远控会抢同一个端口 ⇒ 允许用环境变量或数据目录 remote-port.txt 覆盖。 */
+  private resolvedPort(): number {
+    const valid = (n: number) => Number.isInteger(n) && n > 0 && n < 65536;
+    const fromEnv = Number(String(process.env.HARNESS_REMOTE_PORT ?? "").trim());
+    if (valid(fromEnv)) return fromEnv;
+    if (this.storageFile) {
+      try {
+        const file = path.join(path.dirname(this.storageFile), "remote-port.txt");
+        if (fs.existsSync(file)) {
+          const n = Number((fs.readFileSync(file, "utf8").split(/\r?\n/)[0] ?? "").trim());
+          if (valid(n)) return n;
+        }
+      } catch {
+        // 读不到就用默认端口
+      }
+    }
+    return REMOTE_PORT;
   }
 
   private readPublicUrlFile() {
