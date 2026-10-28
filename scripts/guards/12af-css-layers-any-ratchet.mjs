@@ -105,5 +105,33 @@ const menuSrc2 = read("src/features/function-menu/FunctionMenu.tsx");
 ok(/AnchorPopover/.test(menuSrc2) && !/const above = rect\.top/.test(menuSrc2),
   "侧栏「更多」浮层已改用原语（不再手写上下翻转）");
 
+/**
+ * ②b 每个文件的 `any` 棘轮（10-28 补）。
+ *
+ * ⛔ 只卡总数有个洞：A 文件涨 5 条、B 文件顺手降 5 条，总数不动 —— 增长的大头悄悄搬家，
+ * 而「哪一页在烂」正是要盯的。这里按文件记基线（`any-baseline.json`），
+ * 只许降不许涨；降下来后跑 `--update-any-baseline` 把新值写回去（棘轮只会往一个方向走）。
+ */
+const BASELINE_FILE = join(ROOT, "scripts", "guards", "any-baseline.json");
+const relOf = (f) => f.replace(ROOT, "").replace(/\\/g, "/").replace(/^\//, "");
+const current = Object.fromEntries(perFile.map(([f, n]) => [relOf(f), n]));
+if (process.argv.includes("--update-any-baseline")) {
+  const { writeFileSync } = await import("node:fs");
+  writeFileSync(BASELINE_FILE, JSON.stringify(current, null, 2) + "\n", "utf8");
+  console.log(`已写入 ${relOf(BASELINE_FILE)}：${Object.keys(current).length} 个文件 / ${anyCount} 处 any`);
+  process.exit(0);
+}
+const baseline = JSON.parse(readFileSync(BASELINE_FILE, "utf8"));
+const grew = Object.entries(current)
+  .filter(([f, n]) => n > (baseline[f] ?? 0))
+  .map(([f, n]) => `${f}(${baseline[f] ?? 0}→${n})`);
+const shrunk = Object.entries(baseline)
+  .filter(([f, n]) => (current[f] ?? 0) < n)
+  .map(([f, n]) => `${f}(${n}→${current[f] ?? 0})`);
+ok(grew.length === 0,
+  `单个文件的 any 不超基线（基线 ${Object.keys(baseline).length} 个文件）`
+  + (grew.length ? `；${grew.slice(0, 4).join("、")} —— 改小了就 --update-any-baseline 记账，改大了请写理由` : ""));
+if (shrunk.length) console.log(`      可顺手记账（已降）：${shrunk.slice(0, 4).join("、")}`);
+
 console.log(`\n【架构】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);
