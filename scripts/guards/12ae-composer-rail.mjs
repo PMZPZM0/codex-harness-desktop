@@ -55,16 +55,18 @@ ok(!/exec|spawn|shell\.openPath/i.test(extMain), "⛔ 扩展目录不提供执�
 const menuSrc = src("src/features/function-menu/FunctionMenu.tsx");
 ok(/extensionsCatalog/.test(menuSrc) && /extMenu\.map/.test(menuSrc), "功能入口菜单也接入了同一份扩展目录");
 
-/* ③ 弹层自适应（10-27 起统一交给 AnchorPopover：竖条只负责传轴 / 尺寸 / prefer） */
+/* ③ 弹层形态（10-28 用户令：「这四个按键都做成弹窗…应用居中…适当大一点，不要内联弹窗」；
+      尺寸经三调：460×236（贴边，太小）→ 940×740（太大）→ 780×600（仍偏大）→ **640×520**） */
 const popover = src("src/components/AnchorPopover.tsx");
-ok(/<AnchorPopover/.test(rail) && /axis="x"/.test(rail) && /function placePopover\(anchor: AnchorRect/.test(popover)
-  && /Math\.max\(pad, Math\.min\(left, viewport\.w - w - pad\)\)/.test(popover)
-  && /Math\.max\(pad, Math\.min\(top, viewport\.h - h - pad\)\)/.test(popover),
-  "弹层按实测矩形定位并夹进视口（AnchorPopover 纯函数，小窗口/主窗口都不会被切）");
-ok(/space\.right >= w \|\| space\.right >= space\.left \? "right" : "left"/.test(popover)
-  && /if \(prefer !== "auto"\) side = prefer;/.test(popover),
-  "右开优先、右边放不下就翻到左边；显式 prefer 可强制换边（贴边按钮用）");
-ok(/createPortal\(/.test(popover), "弹层 portal 到 body（不被输入区的 overflow 裁掉）");
+ok(/createPortal\(/.test(rail) && /modal-backdrop/.test(rail) && /composer-rail-backdrop/.test(rail)
+  && /\.composer-rail-panel\s*\{[^}]*width:\s*min\(640px/s.test(railCss)
+  && /\.composer-rail-panel\s*\{[^}]*max-height:\s*min\(520px/s.test(railCss),
+  "四个入口都是**居中弹窗**（portal + modal-backdrop + 宽 640 / 高自适应上限 520），不再是贴边内联浮层");
+ok(/onMouseDown=\{\(event\) => \{ if \(event\.target === event\.currentTarget\) setPanelId\(null\); \}\}/.test(rail)
+  && /event\.key !== "Escape"/.test(rail),
+  "点遮罩 / 按 Esc 关闭（Esc 用 capture + stopPropagation，不连带关掉背后的层）");
+ok(/function placePopover\(anchor: AnchorRect/.test(popover) && /createPortal\(/.test(popover),
+  "统一浮层原语仍在（其它域：功能菜单 / 下拉仍走 AnchorPopover）");
 ok(/\.composer-rail-icons\s*\{[^}]*max-height:\s*100%/s.test(railCss), "图标列不超出输入框高度（超出内部滚动）");
 
 /* ④ 密码本：明文不进渲染层 */
@@ -91,9 +93,10 @@ ok(/onDone\?\.\(\)/.test(stickers) && /MoodStickersPanel onDone=\{\(\) => setPan
   "选中表情后弹层自动收起（用户：「选择了表情，表情界面自动隐藏」）");
 ok(/10_000/.test(rail) && /if \(!open \|\| panelId\) return/.test(rail),
   "竖条展开后 10s 自动收起；有面板打开时不收（用户：「这个一直展示不会自动隐藏」）");
-ok(/const \[prefer, setPrefer\] = useState<"auto" \| "right" \| "left">/.test(rail) && /prefer=\{prefer\}/.test(rail)
-  && /setPrefer\(\(current\) => \(current === "right" \? "left" : "right"\)\)/.test(rail),
-  "贴边按钮真的换边（用户：「这个按键点击没反应」）");
+/* ⛔ 10-28：「重新贴边」按钮随贴边浮层一起删除（居中弹窗没有左右贴边可换）——
+   负向断言防它被顺手加回来（否则同一排会同时出现"贴边"和"居中"两套语义）。 */
+ok(!/setPrefer|prefer=\{prefer\}/.test(rail),
+  "已删除「重新贴边 / 换边」按钮（居中弹窗不需要，别再长回来）");
 
 /* ⑥ 三处登记 */
 const manifest = read("electron/ipc-channels.manifest.json");

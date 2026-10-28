@@ -99,8 +99,11 @@ ok(/export function placePopover/.test(popoverSrc) && /export function AnchorPop
   && /maxHeight/.test(popoverSrc) && /ResizeObserver/.test(popoverSrc),
   "统一浮层原语在位（夹进视口 / 翻转 / maxHeight 内部滚动 / 点外关闭 / Esc / 跟随 resize·scroll）");
 const railSrc = read("src/features/composer-rail/ComposerRail.tsx");
-ok(/AnchorPopover/.test(railSrc) && !/placePanel/.test(railSrc) && !/getBoundingClientRect/.test(railSrc),
-  "输入框竖条已改用原语（本文件不再自己算位置）");
+/* 10-28：竖条的面板改成**居中弹窗**（modal-backdrop），不再需要 AnchorPopover 定位；
+   判据的实质没变 —— "本文件不许自己算位置"。 */
+ok(/createPortal/.test(railSrc) && /modal-backdrop/.test(railSrc)
+  && !/placePanel/.test(railSrc) && !/getBoundingClientRect/.test(railSrc),
+  "输入框竖条走居中弹窗壳（portal + modal-backdrop），本文件仍不自己算位置");
 const menuSrc2 = read("src/features/function-menu/FunctionMenu.tsx");
 ok(/AnchorPopover/.test(menuSrc2) && !/const above = rect\.top/.test(menuSrc2),
   "侧栏「更多」浮层已改用原语（不再手写上下翻转）");
