@@ -279,6 +279,12 @@ async function sendCmd() {
       try { paths.push(await uploadImage(shot)); }
       catch (error) { push("system", "图片上传失败：" + error.message); }
     }
+    // 图全传失败了又没有文字：不能发空回合，否则「思考中」会一直挂着
+    if (!v && !paths.length) {
+      hideThinking();
+      push("system", "没有可发送的内容（图片上传失败？）");
+      return;
+    }
     if (!currentThreadId) {
       const r = await rpc({ type: "new-thread" });
       currentThreadId = r.threadId;
