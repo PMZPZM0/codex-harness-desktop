@@ -768,7 +768,7 @@ input{width:100%;box-sizing:border-box;margin-top:14px;padding:14px;font-size:22
 button{width:100%;margin-top:14px;padding:13px;border:0;border-radius:12px;background:#1e1e1c;color:#fff;font-size:15px;cursor:pointer}
 .err{color:#c0392b} .ok{color:#1a7f37;font-weight:600} .wait{color:#8a6d1f}
 </style>
-<div class="card"><h1>配对这台手机</h1><p>在电脑上的 Codex Harness 里打开「手机远控」，把界面上显示的 <b>6 位配对码</b>填进来。</p>
+<div class="card"><h1>配对这台手机</h1><p>打开电脑端「手机远控」，填入 <b>6 位连接码</b>。<br>首次连接需在电脑上点「允许」。</p>
 <input id="code" inputmode="numeric" maxlength="6" placeholder="······" autocomplete="one-time-code">
 <button onclick="submit()">配对并请求连接</button><p id="state"></p></div>
 <script>
