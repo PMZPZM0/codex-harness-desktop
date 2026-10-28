@@ -274,15 +274,14 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
     void window.codex.voiceSettingsSet({ ball: { visible: false, hints: hintsEnabled, style: ballStyle, quiet } }).catch(() => undefined);
   }, [hintsEnabled, ballStyle, quiet]);
 
-  /** 安静陪伴开关：右键菜单与设置页共用。开着 = 只呼吸/眨眼，不弹任何气泡。 */
+  /** 安静陪伴开关：右键菜单与设置页共用。开着 = 只呼吸/眨眼，不弹任何气泡。
+   *  ⛔ 副作用不进 setState updater（StrictMode 下 updater 会双调 ⇒ 落盘写两遍）。 */
   const toggleQuiet = useCallback(() => {
-    setQuiet((prev) => {
-      const next = !prev;
-      if (next) setHint(null);
-      void window.codex.voiceSettingsSet({ ball: { visible: ballVisible, hints: hintsEnabled, style: ballStyle, quiet: next } }).catch(() => undefined);
-      return next;
-    });
-  }, [ballVisible, hintsEnabled, ballStyle]);
+    const next = !quiet;
+    setQuiet(next);
+    if (next) setHint(null);
+    void window.codex.voiceSettingsSet({ ball: { visible: ballVisible, hints: hintsEnabled, style: ballStyle, quiet: next } }).catch(() => undefined);
+  }, [quiet, ballVisible, hintsEnabled, ballStyle]);
 
   /** 球上任何交互（点击 / 菜单 / 拖动起点）都算「用户在理我」：清零降噪计数，解除当天静音。 */
   const noteBallInteraction = useCallback(() => {
