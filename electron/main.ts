@@ -470,13 +470,21 @@ const remote = new RemoteControlService({
   },
   getThreadMessages: async (threadId) => {
     const resumed = await server.request("thread/resume", { threadId, excludeTurns: false }) as any;
-    const messages: { role: "user" | "assistant" | "system"; text: string }[] = [];
+    const messages: { role: "user" | "assistant" | "system" | "think"; text: string }[] = [];
     for (const turn of resumed.thread?.turns ?? []) {
       for (const item of turn.items ?? []) {
         if (item.type === "userMessage") {
           // 手机是「阅读」视角：常驻记忆 / 当前时间 / 会话告知等机器块，与桌面一样剥掉
           const text = stripHarnessBlocks((item.content ?? []).filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n")).trim();
           if (text) messages.push({ role: "user", text });
+        }
+        else if (item.type === "reasoning") {
+          // 历史里的思考：与实时同一口径（摘要优先，退回正文），手机端折叠展示
+          const think = [
+            ...(item.summary ?? []).map((part: any) => String(part?.text ?? "")),
+            ...(item.content ?? []).map((part: any) => String(part?.text ?? "")),
+          ].join("").trim();
+          if (think) messages.push({ role: "think", text: think });
         }
         else if (item.type === "agentMessage" && item.text?.trim()) messages.push({ role: "assistant", text: item.text });
       }

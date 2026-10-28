@@ -183,6 +183,19 @@ function push(role, text, cls, pending) {
   list.scrollTop = list.scrollHeight;
   return div;
 }
+// 历史里的思考：折叠成一块（默认收起，点开看全文）
+function pushThinkHistory(text) {
+  const box = document.createElement("details");
+  box.className = "run-steps";
+  const summary = document.createElement("summary");
+  summary.textContent = "思考";
+  const body = document.createElement("div");
+  body.className = "think";
+  body.textContent = text;
+  box.appendChild(summary);
+  box.appendChild(body);
+  list.appendChild(box);
+}
 // 会话行只显示标题：引擎的 preview 是**整条消息正文**（常含换行），直接当标题会把列表撑成一屏一条
 function clipText(value, max) {
   const chars = [...value];
@@ -256,7 +269,10 @@ async function loadMessages() {
     setRunning(false);
     const r = await rpc({ type: "get-messages", threadId: currentThreadId });
     const msgs = r.messages || [];
-    for (const m of msgs) push(m.role, m.text);
+    for (const m of msgs) {
+      if (m.role === "think") pushThinkHistory(m.text);
+      else push(m.role, m.text);
+    }
     if (msgs.length > 0) {
       const firstUser = msgs.find((m) => m.role === "user");
       updateThreadLabel(firstUser ? firstUser.text.slice(0, 20) : "会话");
