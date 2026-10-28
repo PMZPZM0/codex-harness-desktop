@@ -13,7 +13,6 @@ import { removeBossSessionId } from "../../../boss-group-view";
 import { BOSS_ROLE_PROMPT, bossDirFor, getBossThreads, setBossDirChosen } from "../../../boss-group-view";
 import { BOSS_SEED_VERSION, markSeeded } from "../../../../lib/prompt-seeds.mjs";
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import "@xterm/xterm/css/xterm.css";
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "../../../../lib/session-scope.mjs";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../lib/user-refs";
 import { basename } from "../../../../lib/basename";
@@ -420,6 +419,9 @@ bag.releaseDispatchHolder = releaseDispatchHolder as typeof bag.releaseDispatchH
       bag.setPlanSteps([]);
       bag.setGoalText("");
     }
+    /* 10-25 用户令（删除/保存/刷新类操作要有反馈）：删除项目成功必须通知 ——
+       此前静默完成，用户不知道删了多少条、也不知道已经生效。 */
+    bag.showToast?.("项目已删除", `「${basename(cwd)}」及其 ${ids.length} 条任务已删除`);
   }
 bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
 
