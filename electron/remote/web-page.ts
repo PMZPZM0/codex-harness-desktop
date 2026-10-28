@@ -75,6 +75,33 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
 .run-steps summary::before{content:"▸ "}
 .run-steps[open] summary::before{content:"▾ "}
 .run-steps .step{padding:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#plus{flex:0 0 auto;width:44px;height:44px;margin:0;padding:0;font-size:22px;line-height:40px;color:var(--ink);background:#f2f2ef;border:1px solid var(--line);border-radius:14px}
+#file-pick{display:none}
+#imgs{display:none;gap:8px;padding:8px 12px 0;background:#fff;overflow-x:auto}
+#imgs.on{display:flex}
+#imgs .chip{position:relative;width:56px;height:56px;flex:0 0 auto;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+#imgs .chip img{width:100%;height:100%;object-fit:cover;display:block}
+#imgs .chip button{position:absolute;top:2px;right:2px;width:18px;height:18px;margin:0;padding:0;border:0;border-radius:9px;background:rgba(0,0,0,.55);color:#fff;font-size:11px;line-height:18px}
+.mask{position:fixed;inset:0;background:rgba(0,0,0,.25);z-index:29;display:none}
+.mask.on{display:block}
+#sheet{position:fixed;left:0;right:0;bottom:0;z-index:30;display:none;background:#fff;border-top:1px solid var(--line);border-radius:16px 16px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,.12);padding:12px 12px calc(14px + env(safe-area-inset-bottom))}
+#sheet.open{display:block}
+#sheet .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+#sheet .grid button{border:0;background:#f4f4f1;border-radius:12px;padding:12px 6px;font-size:12px;color:var(--ink);display:flex;flex-direction:column;align-items:center;gap:6px}
+#sheet .grid button b{font-size:18px;font-weight:600}
+.panel{position:fixed;inset:0;z-index:40;display:none;flex-direction:column;background:#fff}
+.panel.open{display:flex}
+.panel-head{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.panel-head b{flex:1;font-size:15px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.panel-head button{width:auto;margin:0;padding:7px 12px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--ink)}
+.panel-body{flex:1;overflow:auto;padding:4px 0 24px}
+.panel-body pre{margin:0;padding:14px;font-size:12.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word;color:var(--ink)}
+.panel-body img{max-width:100%;display:block;margin:12px auto}
+.file-row,.cmd-row{display:flex;gap:8px;align-items:center;padding:12px 16px;border-bottom:1px solid #f2f2ef;font-size:13.5px}
+.file-row .nm{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.file-row small{color:var(--muted);font-size:11px}
+.cmd-row{flex-direction:column;align-items:flex-start}
+.cmd-row small{color:var(--muted);font-size:12px;margin-top:3px}
 .thinking-indicator{align-self:flex-start;display:flex;align-items:center;gap:6px;padding:6px 4px;color:var(--muted);font-size:12px}
 .thinking-indicator .dot{width:6px;height:6px;background:#e8b34b;border-radius:50%;animation:throb 1.2s infinite}
 @keyframes throb{0%,100%{opacity:.4;transform:scale(.8)}50%{opacity:1;transform:scale(1.2)}}
@@ -93,7 +120,20 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
 </header>
 <div id="threads"><div class="threads-head"><button onclick="toggleThreads()">← 返回</button><b>选择会话</b><button class="new-thread" onclick="newThread()">＋ 新建</button></div><div class="list" id="thread-list"></div></div>
 <div id="msglist"></div>
-<div id="inputbar"><input id="cmd" placeholder="输入消息，发送给 Codex"><button id="send" onclick="sendCmd()">发送</button></div>
+<div id="imgs"></div>
+<div id="inputbar"><button id="plus" onclick="openSheet()">＋</button><input id="cmd" placeholder="输入消息，发送给 Codex"><button id="send" onclick="sendCmd()">发送</button></div>
+<input type="file" id="file-pick" accept="image/*" multiple>
+<div id="sheet-mask" class="mask" onclick="closeSheet()"></div>
+<div id="sheet"><div class="grid">
+  <button onclick="pickImage()"><b>🖼</b>图片</button>
+  <button onclick="openFiles()"><b>📄</b>文件</button>
+  <button onclick="openSkills()"><b>#</b>技能</button>
+  <button onclick="openCommands()"><b>/</b>指令</button>
+</div></div>
+<div id="panel" class="panel">
+  <div class="panel-head"><button onclick="closePanel()">← 返回</button><b id="panel-title"></b><span style="width:64px"></span></div>
+  <div class="panel-body" id="panel-body"></div>
+</div>
 <script>
 const code = ${JSON.stringify(code)};
 const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/" + code);
@@ -105,6 +145,10 @@ let currentThreadId = localStorage.getItem(THREAD_KEY) || "";
 let streaming = "";
 // 当前回合的「运行步骤」容器（命令/文件/工具/思考）；回合结束收成可折叠块
 let stepBox = null;
+// 待发图片（本地预览，发送时才上传）+ 能力目录缓存 + 面板返回动作
+let pendingImages = [];
+let catalogCache = null;
+let panelBack = null;
 const list = document.getElementById("msglist");
 // 设备身份：localStorage 固定生成，服务端用它记住「这台手机上次用的会话」
 let deviceId = localStorage.getItem("chm-device-id");
@@ -217,17 +261,37 @@ async function loadMessages() {
     await newThread();
   }
 }
-function sendCmd() {
+async function sendCmd() {
   const input = document.getElementById("cmd");
   const v = input.value.trim();
-  if (!v) return;
+  if (!v && !pendingImages.length) return;
   stepBox = null; // 新一轮从空步骤列表开始
-  push("user", v, "", true);
+  const shots = pendingImages.slice();
+  pendingImages = [];
+  renderImages();
+  const label = v + (shots.length ? (v ? "\\n" : "") + "📷 " + shots.length + " 张图" : "");
+  push("user", label, "", true);
   input.value = "";
   showThinking();
-  if (!currentThreadId) {
-    rpc({ type: "new-thread" }).then((r) => { currentThreadId = r.threadId; localStorage.setItem(THREAD_KEY, currentThreadId); loadThreads(); return rpc({ type: "send-message", threadId: currentThreadId, text: v }); }).then(() => { updateThreadLabel(v.slice(0, 20)); saveSession(); }).catch((e) => { hideThinking(); push("system", "发送失败：" + e.message); });
-  } else rpc({ type: "send-message", threadId: currentThreadId, text: v }).catch((e) => { hideThinking(); push("system", "发送失败：" + e.message); });
+  try {
+    const paths = [];
+    for (const shot of shots) {
+      try { paths.push(await uploadImage(shot)); }
+      catch (error) { push("system", "图片上传失败：" + error.message); }
+    }
+    if (!currentThreadId) {
+      const r = await rpc({ type: "new-thread" });
+      currentThreadId = r.threadId;
+      localStorage.setItem(THREAD_KEY, currentThreadId);
+      loadThreads();
+    }
+    await rpc({ type: "send-message", threadId: currentThreadId, text: v, images: paths });
+    updateThreadLabel((v || "图片").slice(0, 20));
+    saveSession();
+  } catch (error) {
+    hideThinking();
+    push("system", "发送失败：" + error.message);
+  }
 }
 function showThinking() {
   if (list.querySelector(".thinking-indicator")) return;
@@ -240,6 +304,196 @@ function showThinking() {
 function hideThinking() {
   const el = list.querySelector(".thinking-indicator");
   if (el) el.remove();
+}
+/* ── ＋ 菜单：图片 / 文件 / 技能 / 指令（都在电脑端执行，手机只发请求） ── */
+function openSheet() {
+  document.getElementById("sheet-mask").classList.add("on");
+  document.getElementById("sheet").classList.add("open");
+}
+function closeSheet() {
+  document.getElementById("sheet-mask").classList.remove("on");
+  document.getElementById("sheet").classList.remove("open");
+}
+function pickImage() {
+  closeSheet();
+  document.getElementById("file-pick").click();
+}
+function renderImages() {
+  const box = document.getElementById("imgs");
+  box.innerHTML = "";
+  pendingImages.forEach((shot, index) => {
+    const chip = document.createElement("div");
+    chip.className = "chip";
+    const img = document.createElement("img");
+    img.src = shot.dataUrl;
+    chip.appendChild(img);
+    const del = document.createElement("button");
+    del.textContent = "×";
+    del.onclick = () => { pendingImages.splice(index, 1); renderImages(); };
+    chip.appendChild(del);
+    box.appendChild(chip);
+  });
+  box.classList.toggle("on", pendingImages.length > 0);
+}
+document.getElementById("file-pick").addEventListener("change", (event) => {
+  const picked = Array.prototype.slice.call(event.target.files || []);
+  const room = Math.max(0, 4 - pendingImages.length);
+  const files = picked.slice(0, room);
+  if (picked.length > room) push("system", "一次最多 4 张图");
+  let left = files.length;
+  const done = () => { if (--left <= 0) event.target.value = ""; };
+  if (!left) { event.target.value = ""; return; }
+  files.forEach((file) => {
+    if (file.size > 8 * 1024 * 1024) { push("system", "图片太大（上限 8MB）：" + file.name); done(); return; }
+    const reader = new FileReader();
+    reader.onload = () => { pendingImages.push({ dataUrl: String(reader.result || ""), name: file.name }); renderImages(); done(); };
+    reader.onerror = () => { push("system", "读取图片失败：" + file.name); done(); };
+    reader.readAsDataURL(file);
+  });
+});
+async function uploadImage(shot) {
+  const res = await fetch("/api/upload", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dataUrl: shot.dataUrl, name: shot.name }) });
+  const data = await res.json();
+  if (!data || !data.ok) throw new Error((data && data.error) || "上传失败");
+  return data.path;
+}
+function insertAtCursor(text) {
+  const input = document.getElementById("cmd");
+  input.value = (input.value ? input.value.replace(/\s*$/, " ") : "") + text;
+  input.focus();
+}
+function showPanel(title, node, back) {
+  panelBack = back || null;
+  document.getElementById("panel-title").textContent = title;
+  const body = document.getElementById("panel-body");
+  body.innerHTML = "";
+  body.appendChild(node);
+  document.getElementById("panel").classList.add("open");
+}
+function closePanel() {
+  if (panelBack) { const back = panelBack; panelBack = null; back(); return; }
+  document.getElementById("panel").classList.remove("open");
+}
+function panelMessage(text) {
+  const node = document.createElement("div");
+  node.className = "empty-tip";
+  node.textContent = text;
+  return node;
+}
+async function loadCatalog() {
+  if (catalogCache) return catalogCache;
+  catalogCache = await rpc({ type: "catalog" });
+  return catalogCache;
+}
+function humanSize(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return n + "B";
+  if (n < 1024 * 1024) return Math.round(n / 1024) + "KB";
+  return (n / 1024 / 1024).toFixed(1) + "MB";
+}
+function openFiles() {
+  closeSheet();
+  const node = document.createElement("div");
+  node.appendChild(panelMessage("加载中…"));
+  showPanel("工作区文件", node, null);
+  rpc({ type: "files-list", threadId: currentThreadId }).then((r) => {
+    const files = (r.files || []).filter((f) => !f.dir);
+    node.innerHTML = "";
+    if (!files.length) { node.appendChild(panelMessage("这个会话还没有可预览的文件")); return; }
+    for (const file of files) {
+      const row = document.createElement("div");
+      row.className = "file-row";
+      const name = document.createElement("span");
+      name.className = "nm";
+      name.textContent = file.path;
+      const size = document.createElement("small");
+      size.textContent = humanSize(file.size);
+      row.appendChild(name);
+      row.appendChild(size);
+      row.onclick = () => openPreview(file.path);
+      node.appendChild(row);
+    }
+  }).catch((error) => { node.innerHTML = ""; node.appendChild(panelMessage("加载失败：" + error.message)); });
+}
+function openPreview(path) {
+  const node = document.createElement("div");
+  node.appendChild(panelMessage("加载中…"));
+  showPanel(String(path).split("/").pop(), node, () => openFiles());
+  rpc({ type: "file-read", threadId: currentThreadId, path }).then((r) => {
+    node.innerHTML = "";
+    if (r.error) { node.appendChild(panelMessage(r.error)); return; }
+    if (r.kind === "image" && r.dataUrl) {
+      const img = document.createElement("img");
+      img.src = r.dataUrl;
+      node.appendChild(img);
+      return;
+    }
+    const pre = document.createElement("pre");
+    pre.textContent = r.text || "";
+    node.appendChild(pre);
+  }).catch((error) => { node.innerHTML = ""; node.appendChild(panelMessage("读取失败：" + error.message)); });
+}
+function openSkills() {
+  closeSheet();
+  const node = document.createElement("div");
+  node.appendChild(panelMessage("加载中…"));
+  showPanel("技能", node, null);
+  loadCatalog().then((catalog) => {
+    const skills = catalog.skills || [];
+    node.innerHTML = "";
+    if (!skills.length) { node.appendChild(panelMessage("没有可用技能（引擎可能还没就绪）")); return; }
+    for (const skill of skills) {
+      const row = document.createElement("div");
+      row.className = "cmd-row";
+      const name = document.createElement("b");
+      name.textContent = "#" + skill.name;
+      row.appendChild(name);
+      if (skill.description) {
+        const desc = document.createElement("small");
+        desc.textContent = skill.description;
+        row.appendChild(desc);
+      }
+      row.onclick = () => { insertAtCursor("#" + skill.name + " "); closePanel(); };
+      node.appendChild(row);
+    }
+  }).catch((error) => { node.innerHTML = ""; node.appendChild(panelMessage("加载失败：" + error.message)); });
+}
+function openCommands() {
+  closeSheet();
+  const node = document.createElement("div");
+  node.appendChild(panelMessage("加载中…"));
+  showPanel("指令", node, null);
+  loadCatalog().then((catalog) => {
+    node.innerHTML = "";
+    for (const command of catalog.commands || []) {
+      const row = document.createElement("div");
+      row.className = "cmd-row";
+      row.textContent = "/" + command.label;
+      row.onclick = () => runCommand(command.id);
+      node.appendChild(row);
+    }
+  }).catch((error) => { node.innerHTML = ""; node.appendChild(panelMessage("加载失败：" + error.message)); });
+}
+async function runCommand(id) {
+  closePanel();
+  try {
+    if (id === "new") {
+      const r = await rpc({ type: "new-thread" });
+      currentThreadId = r.threadId;
+      localStorage.setItem(THREAD_KEY, currentThreadId);
+      list.innerHTML = "";
+      stepBox = null;
+      push("system", "已新建会话");
+      loadThreads();
+      saveSession();
+      return;
+    }
+    if (!currentThreadId) { push("system", "先选一个会话"); return; }
+    if (id === "stop") { await rpc({ type: "interrupt", threadId: currentThreadId }); push("system", "已请求停止当前回合"); return; }
+    if (id === "compact") { await rpc({ type: "compact", threadId: currentThreadId }); push("system", "已请求压缩上下文"); return; }
+  } catch (error) {
+    push("system", "指令失败：" + error.message);
+  }
 }
 document.getElementById("cmd").addEventListener("keydown", (e) => { if (e.key === "Enter") sendCmd(); });
 let pollSince = Date.now() - 60000;

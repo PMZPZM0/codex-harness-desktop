@@ -23,6 +23,7 @@ import { ThreadRuntimeStore } from "./thread-runtime-store";
 import { TerminalService } from "./terminal";
 import { RemoteControlService } from "./remote";
 import { stripHarnessBlocks } from "../src/lib/harness-block-strip.mjs";
+import { safeJoin, previewKind } from "../src/lib/remote-files.mjs";
 import QRCode from "qrcode";
 import { readPersonalization, writePersonalization, applyPersonalizationToAgentsMd, buildAgentsMd, migrateGreetedForExistingUsers } from "./personalization";
 import { readAppSettings, readAppSettingsSync, saveAppSettings, type AppSettings } from "./app-settings";
@@ -488,6 +489,7 @@ const remote = new RemoteControlService({
     const apiKey = model.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(model.encryptedKey, "base64")) : "";
     server.setApiKey(apiKey);
     ensureProjectAgentsMd(process.cwd());
+    // 手机新建的会话也要登记 cwd：文件预览靠它定位工作区（桌面端那条链在 codex-ipc 里登记）
     const started = await server.request("thread/start", {
       model: model.model,
       cwd: process.cwd(),
@@ -497,11 +499,104 @@ const remote = new RemoteControlService({
       // 传给 thread/start 会导致流反复断开重连——省略让引擎走内置 openai + ChatGPT 登录凭据
       ...(model.provider === "openai-official" ? {} : { modelProvider: model.provider }),
     }) as any;
+    threadCwd.set(String(started.thread.id), process.cwd());
     return { id: started.thread.id };
   },
-  sendMessage: async (threadId, text) => {
+  sendMessage: async (threadId, text, images = []) => {
     const model = await readCustomModel();
-    await server.request("turn/start", { threadId, input: [{ type: "text", text, text_elements: [] }], model: model?.model, effort: "high" });
+    /* ⛔ 图片路径来自手机（外部输入）：只认 /api/upload 刚落进 remote-uploads 的文件，
+       别的路径（..、任意盘符）一律丢弃 —— 这是「手机只能读自己刚上传的图」的唯一闸。 */
+    const uploadsRoot = remote.uploadsDir();
+    const allowed = (uploadsRoot ? images : []).filter((candidate) => {
+      const resolved = path.resolve(String(candidate));
+      return resolved.startsWith(path.resolve(uploadsRoot) + path.sep) && existsSync(resolved);
+    });
+    const input: any[] = [];
+    if (String(text ?? "").trim()) input.push({ type: "text", text: String(text), text_elements: [] });
+    for (const file of allowed) input.push({ type: "localImage", path: file });
+    if (!input.length) return;
+    await server.request("turn/start", { threadId, input, model: model?.model, effort: "high" });
+  },
+  catalog: async () => {
+    const skills: { name: string; description?: string }[] = [];
+    try {
+      const result: any = await server.request("skills/list", { cwds: [], forceReload: false });
+      const seen = new Set<string>();
+      for (const entry of result?.data ?? []) {
+        for (const skill of entry?.skills ?? []) {
+          const name = String(skill?.name ?? "").trim();
+          if (!name || seen.has(name)) continue;
+          seen.add(name);
+          skills.push({ name, description: String(skill?.description ?? "").slice(0, 80) });
+        }
+      }
+    } catch {
+      // 引擎未就绪：指令照给，技能列表空着（手机端会提示）
+    }
+    return {
+      commands: [
+        { id: "new", label: "新会话" },
+        { id: "stop", label: "停止当前回合" },
+        { id: "compact", label: "压缩上下文" },
+      ],
+      skills,
+    };
+  },
+  interruptThread: async (threadId) => {
+    const turnId = [...engineActiveTurnIds.entries()].find(([, owner]) => owner === threadId)?.[0] ?? "";
+    await server.request("turn/interrupt", { threadId, ...(turnId ? { turnId } : {}) });
+  },
+  compactThread: async (threadId) => {
+    await server.request("thread/compact/start", { threadId });
+  },
+  listFiles: async (threadId) => {
+    const root = threadCwd.get(threadId) || process.cwd();
+    const skip = new Set(["node_modules", ".git", "dist", "dist-electron", "build", "release", ".workbuddy", "out"]);
+    const files: { path: string; dir: boolean; size: number }[] = [];
+    const walk = (dir: string, prefix: string, depth: number) => {
+      if (depth > 2 || files.length >= 300) return;
+      let entries: any[] = [];
+      try { entries = readdirSync(dir, { withFileTypes: true }) as any[]; } catch { return; }
+      for (const entry of entries) {
+        if (files.length >= 300) return;
+        if (entry.name.startsWith(".") || skip.has(entry.name)) continue;
+        const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) {
+          files.push({ path: rel, dir: true, size: 0 });
+          walk(path.join(dir, entry.name), rel, depth + 1);
+        } else {
+          let size = 0;
+          try { size = statSync(path.join(dir, entry.name)).size; } catch { /* ignore */ }
+          files.push({ path: rel, dir: false, size });
+        }
+      }
+    };
+    walk(root, "", 1);
+    return files;
+  },
+  readFile: async (threadId, relPath) => {
+    const root = threadCwd.get(threadId) || process.cwd();
+    const target = safeJoin(root, relPath);
+    if (!target) return { kind: "other", error: "路径不合法" };
+    try {
+      const info = statSync(target);
+      if (!info.isFile()) return { kind: "other", error: "不是文件" };
+      const kind = previewKind(target);
+      if (kind === "image") {
+        if (info.size > 4 * 1024 * 1024) return { kind: "image", error: "图片太大（上限 4MB）" };
+        const ext = path.extname(target).slice(1).toLowerCase();
+        return { kind: "image", dataUrl: `data:image/${ext === "jpg" ? "jpeg" : ext};base64,${readFileSync(target).toString("base64")}` };
+      }
+      if (kind === "text") {
+        if (info.size > 512 * 1024) return { kind: "text", error: "文件太大（上限 512KB）" };
+        const text = readFileSync(target, "utf8");
+        if (text.includes("\u0000")) return { kind: "other", error: "二进制文件" };
+        return { kind: "text", text };
+      }
+      return { kind: "other", error: "这个类型暂不支持预览" };
+    } catch (error: any) {
+      return { kind: "other", error: String(error?.message ?? error) };
+    }
   },
   onThreadEvent: (listener) => {
     remoteEventForwarders.push(listener);

@@ -37,7 +37,16 @@ type RemoteEvents = {
   listThreads?: () => Promise<{ id: string; name: string; preview: string; updatedAt: number }[]>;
   getThreadMessages?: (threadId: string) => Promise<{ role: "user" | "assistant" | "system"; text: string }[]>;
   newThread?: () => Promise<{ id: string }>;
-  sendMessage?: (threadId: string, text: string) => Promise<void>;
+  /** images = 本机绝对路径（只接受 /api/upload 刚落盘的 remote-uploads 内的文件） */
+  sendMessage?: (threadId: string, text: string, images?: string[]) => Promise<void>;
+  /** 手机端能力目录：可执行指令 + 技能清单（# 引用用） */
+  catalog?: () => Promise<{ commands: { id: string; label: string }[]; skills: { name: string; description?: string }[] }>;
+  interruptThread?: (threadId: string) => Promise<void>;
+  compactThread?: (threadId: string) => Promise<void>;
+  /** 列当前会话工作区文件（相对路径，最多两层） */
+  listFiles?: (threadId: string) => Promise<{ path: string; dir: boolean; size: number }[]>;
+  /** 读一个工作区文件（手机只读；越界/超大/二进制会被拒） */
+  readFile?: (threadId: string, relPath: string) => Promise<{ kind: string; text?: string; dataUrl?: string; error?: string }>;
   /** 引擎流式事件转发给已连接手机（turn 增量） */
   onThreadEvent?: (listener: (event: { threadId: string; kind: string; text: string }) => void) => () => void;
   /** 设备会话记忆持久化文件（userData/remote-sessions.json）；不传则不持久化 */
@@ -243,6 +252,11 @@ export class RemoteControlService {
   /** 自建中转（frp + nginx）给出的固定公网地址：设了它就以它为唯一入口 ——
    *  二维码 / 配对链接 / https 安全 cookie 都用这个域名，cloudflared 也不起。
    *  ⛔ 只认 http(s) 开头；写错（漏协议、带空格）一律回落旧逻辑，别静默当成域名。 */
+  /** 手机上传的图片目录（sendMessage 只认这个目录内的路径，见 main 侧的校验） */
+  uploadsDir() {
+    return this.storageFile ? path.join(path.dirname(this.storageFile), "remote-uploads") : "";
+  }
+
   private fixedPublicUrl() {
     // 环境变量优先；其次读数据目录里的 remote-public-url.txt（一行，给 GUI 启动的用户留的手动口）
     const raw = String(process.env.HARNESS_REMOTE_PUBLIC_URL ?? "").trim() || this.readPublicUrlFile();
@@ -448,6 +462,29 @@ export class RemoteControlService {
       });
       return;
     }
+    // 图片上传（+ 号）：只收 dataUrl 图片，落盘到 userData/remote-uploads，回本机绝对路径
+    if (url === "/api/upload" && req.method === "POST") {
+      void this.readBody(req).then((body) => {
+        try {
+          const data = JSON.parse(body);
+          const match = String(data.dataUrl ?? "").match(/^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/=]+)$/);
+          if (!match) { this.json(res, 200, { ok: false, error: "只支持 png / jpeg / webp / gif" }); return; }
+          const buffer = Buffer.from(match[2], "base64");
+          if (!buffer.length) { this.json(res, 200, { ok: false, error: "图片是空的" }); return; }
+          if (buffer.length > 8 * 1024 * 1024) { this.json(res, 200, { ok: false, error: "图片太大（上限 8MB）" }); return; }
+          const dir = this.uploadsDir();
+          if (!dir) { this.json(res, 200, { ok: false, error: "服务未就绪" }); return; }
+          fs.mkdirSync(dir, { recursive: true });
+          const ext = match[1] === "jpeg" ? "jpg" : match[1];
+          const file = path.join(dir, `${crypto.randomBytes(8).toString("hex")}.${ext}`);
+          fs.writeFileSync(file, buffer);
+          this.json(res, 200, { ok: true, path: file });
+        } catch (error: any) {
+          this.json(res, 200, { ok: false, error: error.message });
+        }
+      });
+      return;
+    }
     // 手机对话页 RPC over HTTP（WebSocket 不可用时的同功能入口）
     if (url.startsWith("/api/rpc") && req.method === "POST") {
       void this.readBody(req).then(async (body) => {
@@ -457,7 +494,16 @@ export class RemoteControlService {
           if (data.type === "list-threads") result = { threads: await (this.events.listThreads?.() ?? Promise.resolve([])) };
           else if (data.type === "get-messages") result = { messages: await (this.events.getThreadMessages?.(String(data.threadId ?? "")) ?? Promise.resolve([])) };
           else if (data.type === "new-thread") result = { threadId: (await (this.events.newThread?.() ?? Promise.reject(new Error("unsupported")))).id };
-          else if (data.type === "send-message") { await (this.events.sendMessage?.(String(data.threadId ?? ""), String(data.text ?? "")) ?? Promise.resolve()); result = { ok: true }; }
+          else if (data.type === "send-message") {
+            const images = Array.isArray(data.images) ? data.images.map((p: any) => String(p ?? "")).filter(Boolean) : [];
+            await (this.events.sendMessage?.(String(data.threadId ?? ""), String(data.text ?? ""), images) ?? Promise.resolve());
+            result = { ok: true };
+          }
+          else if (data.type === "catalog") result = await (this.events.catalog?.() ?? Promise.resolve({ commands: [], skills: [] }));
+          else if (data.type === "interrupt") { await (this.events.interruptThread?.(String(data.threadId ?? "")) ?? Promise.resolve()); result = { ok: true }; }
+          else if (data.type === "compact") { await (this.events.compactThread?.(String(data.threadId ?? "")) ?? Promise.resolve()); result = { ok: true }; }
+          else if (data.type === "files-list") result = { files: await (this.events.listFiles?.(String(data.threadId ?? "")) ?? Promise.resolve([])) };
+          else if (data.type === "file-read") result = await (this.events.readFile?.(String(data.threadId ?? ""), String(data.path ?? "")) ?? Promise.resolve({ kind: "other" }));
           else result = { error: "unknown rpc type" };
           this.json(res, 200, { reqId: data.reqId, ...result });
         } catch (error: any) {
@@ -585,7 +631,8 @@ export class RemoteControlService {
         return;
       }
       if (data.type === "send-message") {
-        void (this.events.sendMessage?.(String(data.threadId ?? ""), String(data.text ?? "")) ?? Promise.resolve()).then(() => reply({ ok: true })).catch((e) => reply({ error: e.message }));
+        const images = Array.isArray(data.images) ? data.images.map((p: any) => String(p ?? "")).filter(Boolean) : [];
+        void (this.events.sendMessage?.(String(data.threadId ?? ""), String(data.text ?? ""), images) ?? Promise.resolve()).then(() => reply({ ok: true })).catch((e) => reply({ error: e.message }));
         return;
       }
     } catch { /* ignore */ }
@@ -707,9 +754,18 @@ export class RemoteControlService {
   private readBody(request: http.IncomingMessage): Promise<string> {
     return new Promise((resolve) => {
       let body = "";
-      request.on("data", (chunk: Buffer) => (body += chunk.toString("utf8")));
-      request.on("end", () => resolve(body));
-      request.on("error", () => resolve(""));
+      let done = false;
+      const finish = (value: string) => { if (!done) { done = true; resolve(value); } };
+      request.on("data", (chunk: Buffer) => {
+        body += chunk.toString("utf8");
+        // 图片上传是未鉴权之外唯一的写入口：超过 16MB 直接断开，别让内存被撑爆
+        if (body.length > 16 * 1024 * 1024) {
+          try { request.destroy(); } catch { /* noop */ }
+          finish("");
+        }
+      });
+      request.on("end", () => finish(body));
+      request.on("error", () => finish(""));
     });
   }
 
