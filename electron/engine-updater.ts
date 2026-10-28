@@ -23,6 +23,7 @@ import path from "node:path";
 import os from "node:os";
 import { codexBinaryPath } from "./codex-server";
 import { readAppSettings } from "./app-settings";
+import { healEngineInstall } from "./engine-install-heal";
 
 const NPMJS = "https://registry.npmjs.org";
 const NPMMIRROR = "https://registry.npmmirror.com";
@@ -297,6 +298,10 @@ export async function performEngineUpdate(
   const { vendorDir, exeName } = platformPackageDir();
   const targetTriple = path.basename(vendorDir); // x86_64-pc-windows-msvc 等
 
+  /* ⛔ 10-28 事故：上一轮更新把 live 目录搬走后落位失败，live 一直缺；而更新开头又会 rm `.bak-1`
+     ⇒ 唯一可用副本被删，引擎彻底没了。先自愈（live 缺失时从备份/解压产物恢复），再谈更新。 */
+  await healEngineInstall((message) => console.log(`[updater] ${message}`));
+
   report({ stage: "query", detail: "正在查询最新版本…" });
   let latest: string;
   try {
@@ -366,7 +371,10 @@ export async function performEngineUpdate(
     // 4) 停引擎（调用方负责，见 main.ts handler），替换 vendor 目录
     report({ stage: "replace", detail: "替换引擎文件…" });
     const backupDir = `${vendorDir}.bak-1`;
-    await fs.rm(backupDir, { recursive: true, force: true }).catch(() => undefined);
+    /* ⛔ 只有 live 在位才允许删上一代备份：live 缺失时它是唯一可恢复副本（10-28 事故就是这么丢的）。 */
+    if (existsSync(path.join(vendorDir, "bin", exeName))) {
+      await fs.rm(backupDir, { recursive: true, force: true }).catch(() => undefined);
+    }
     try {
       await movePath(vendorDir, backupDir);
     } catch (err) {
@@ -375,7 +383,10 @@ export async function performEngineUpdate(
     try {
       await movePath(newVendorDir, vendorDir);
     } catch (err) {
-      await movePath(backupDir, vendorDir).catch(() => undefined);
+      /* ⛔ 回滚失败不能静默吞掉（10-28 事故）：live 会一直缺，要靠启动自愈兜底 —— 至少留条日志。 */
+      await movePath(backupDir, vendorDir).catch((rollbackError) => {
+        console.error("[updater] 回滚失败（备份已保留，下次启动会自愈）：", rollbackError);
+      });
       /* ⛔ 提示要指向真因：EXDEV = 跨盘，不是「文件坏了」。旧文案只丢原始错误串，用户看不懂。 */
       const moveCode = (err as NodeJS.ErrnoException)?.code;
       const moveHint =
@@ -391,7 +402,9 @@ export async function performEngineUpdate(
     if (!finalProbe.ok || !trimVersion(finalProbe.out).includes(latest)) {
       // 回滚
       await fs.rm(vendorDir, { recursive: true, force: true }).catch(() => undefined);
-      await movePath(backupDir, vendorDir).catch(() => undefined);
+      await movePath(backupDir, vendorDir).catch((rollbackError) => {
+        console.error("[updater] 回滚失败（备份已保留，下次启动会自愈）：", rollbackError);
+      });
       throw new Error("替换后自检失败，已回滚旧版本");
     }
     /* ⛔⛔ 复验通过 ⇒ **旧引擎不再保留**（10-17 用户令：「只保留最新版本，旧的自动清理」）。
@@ -404,7 +417,12 @@ export async function performEngineUpdate(
   } catch (err) {
     return { ok: false, version: current, message: err instanceof Error ? err.message : String(err) };
   } finally {
-    await fs.rm(workRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }).catch(() => undefined);
+    /* ⛔ 落位没成功就别删解压产物：它是启动自愈的最后一个候选（10-28 实测就是靠它救回来的）。 */
+    if (existsSync(path.join(vendorDir, "bin", exeName))) {
+      await fs.rm(workRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }).catch(() => undefined);
+    } else {
+      console.warn("[updater] 引擎未落位：保留解压产物，供下次启动自愈");
+    }
   }
 }
 
