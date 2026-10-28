@@ -102,12 +102,17 @@
 /* ⛔ 10-28 用户（截图）：「展开折叠图标自适应在内容尾部就行，鼠标放上去展示，默认隐藏」
    ⇒ ① 箭头默认不可见（不是半透明，连占位都不抢眼）；
       ② 只在**整行悬停 / 键盘聚焦**时显形；展开态常显（否则收起入口会消失）；
-      ③ 「展开 / 收起」两个字的文案已从 JSX 删除 —— 图标即语义，可读性靠 button 的 title。 */
+      ③ 「展开 / 收起」两个字的文案已从 JSX 删除 —— 图标即语义，可读性靠 button 的 title。
+   ⛔⛔ 10-28 晚（用户：「怎么是上下箭头，跟别的箭头不一样」）：
+      方向必须与折叠头 `.wb-fold-caret` 一致 —— **收起=向右（-90°）、展开=向下（0°）**。
+      原来这里让箭头从「下」转到「上」(180°)，与全站其它三角方向相反。
+      改方向只能改这两条 transform，别再引入 180°。 */
 .reasoning-strip-caret {
   flex: none;
   color: var(--faint);
   opacity: 0;
   visibility: hidden;
+  transform: rotate(-90deg);
   transition: transform 0.18s ease, opacity 0.18s ease, visibility 0.18s ease;
 }
 .reasoning-strip-head:hover .reasoning-strip-caret,
@@ -117,8 +122,8 @@
   visibility: visible;
 }
 .reasoning-strip.expanded .reasoning-strip-caret {
-  transform: rotate(180deg);
-  opacity: 1;
+  /* 展开=向下（0°），与 .wb-fold 一致 */
+  transform: rotate(0deg);
 }
 .reasoning-strip-body {
   max-height: min(50vh, 420px);

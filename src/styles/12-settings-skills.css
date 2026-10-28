@@ -459,8 +459,10 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   opacity: 0.7;
   transition: transform 0.18s, opacity 0.18s;
 }
+/* ⛔ 10-28：展开=向下（0°）、收起=向右（-90°）——与 .wb-fold-caret / .reasoning-strip-caret 同一套。
+   原来 open 写的是 180°（指上），用户在思考板块看到「上下箭头」与别处不一致。 */
 .reasoning-card.open .reasoning-caret {
-  transform: rotate(180deg);
+  transform: rotate(0deg);
   opacity: 0.9;
 }
 .reasoning-card.collapsed .reasoning-caret {
