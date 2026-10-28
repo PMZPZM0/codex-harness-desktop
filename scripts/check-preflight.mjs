@@ -25,8 +25,16 @@ async function auditNegativeAsserts() {
     const dir = path.join(ROOT_FOR_AUDIT, "scripts", "guards");
     let total = 0;
     const offenders = [];
-    for (const f of fs.readdirSync(dir).filter((x) => x.endsWith(".mjs") && x !== "_ctx.mjs")) {
-      const lines = fs.readFileSync(path.join(dir, f), "utf8").split(/\r?\n/);
+    /* ⛔ 必须**递归**：06/07 这两组在 10-28 按语句边界拆进了 guards/<组>/ —— 只扫一层会让
+       这些段里的负向断言**悄悄脱离自检**（自检是告警，脱离不报红 ⇒ 无人发现）。 */
+    const walkGuards = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) return walkGuards(p);
+      return e.name.endsWith(".mjs") && e.name !== "_ctx.mjs" ? [p] : [];
+    });
+    for (const file of walkGuards(dir)) {
+      const f = path.relative(dir, file).replace(/\\/g, "/");
+      const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
       /* ⛔ 判定「这条断言对应的源码变量有没有剥过注释」**看赋值来源，不看变量名**
          （09-25 审查：`hardCode` 是「hard-coded」缩写、不是 codeOnly 产物，靠名字猜会误判；
          实际它是手写剥注释版 `src.replace(/\/\*…\/g,"").replace(/\/\/…/g,"")` ⇒ 结论正确纯属侥幸）。
