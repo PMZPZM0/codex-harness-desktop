@@ -8,7 +8,6 @@ import { compactionRecordFor, compactionVersion, subscribeCompactions } from "..
 import { resolveCompactionAnchor } from "../../../../lib/compaction-anchor.mjs";
 import { Fragment, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { BossThreadIntro, getBossThreads, subscribeBossThreads } from "../../../boss-group-view";
-import { HomeView } from "../../../home";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../lib/entity-avatar";
 import {
   AlertTriangle,
@@ -27,6 +26,7 @@ import {
   CircleStop,
   Cloud,
   CloudOff,
+  Code2,
   Copy,
   Eye,
   EyeOff,
@@ -475,13 +475,11 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                   <div className={`timeline ${isEmpty ? "empty-state" : ""}`} ref={scrollRef} onScroll={onTimelineScroll} data-history-hidden={historyPlan.hiddenCount} data-history-below={historyPlan.hiddenBelow} data-history-total={historyPlan.hiddenStubs + timelineWindow.ordered.length}>
                   {/*指挥中枢的空白态是**它自己的一套**（10-25 用户令：跟欢迎界面没关系）——
                      普通会话仍走 welcome-state，这里两者互不影响。 */}
-                  {/* 10-28 首页：没有选中会话时**不再直接给一段空对话**，而是落到首页
-                      （普通 / 中枢两种，可切换；发消息才建会话 —— 用户令「不会一进去就是对话」）。
-                      ⛔ 中枢引导卡（isBossEmpty）仍优先：刚点「指挥中枢/新建中枢会话」那一刻要看引导，
-                        不是首页；首页只在「没选中会话且不是中枢待发」时出现。 */}
                   {isEmpty && !isBossEmpty ? (
-                    <div className="home-state">
-                      <HomeView app={app} />
+                    <div className="welcome-state">
+                      <div className="welcome-mark"><Code2 strokeWidth={0.5} size={96} /></div>
+                      <h1 className="welcome-greet">{greeting}</h1>
+                      <p className="welcome-sub">{greetSub}</p>
                     </div>
                   ) : null}
                   {/* 导入会话记录后、尚未发送首条消息：记录预览卡常驻消息区顶部；发送后转为消息内的导入卡 */}
