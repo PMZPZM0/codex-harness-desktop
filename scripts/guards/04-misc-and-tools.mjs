@@ -1070,9 +1070,19 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   (/remoteThinkStreamed/.test(bootSrc) && /item\?\.type === "reasoning"/.test(bootSrc) && /summary \?\? \[\]/.test(bootSrc) ? ok : fail)(
     "【139b】思考内容兜底：中转供应商不流式时，用 item/completed 的完整摘要补发（流式过的不重复）"
   );
+  (/kind: "output"/.test(bootSrc) && /outputDelta/.test(bootSrc) && /event\.kind === "output"/.test(pageSrc) && /step-out/.test(pageSrc) ? ok : fail)(
+    "【139b】命令输出同步：outputDelta 转发并挂在对应命令步骤下（桌面的命令卡有结果，手机不能只有一行命令）"
+  );
   (/remoteThinkKey/.test(bootSrc) && /p\.delta \?\? p\.text/.test(bootSrc) ? ok : fail)(
     "【139b】思考去重按**条目**（按回合会把一轮里的第二段整段误跳过）；增量取 delta ?? text（两种字段都出现过）"
   );
+  {
+    const tcAt = bootSrc.indexOf('event.method === "turn/completed"');
+    const tcBody = tcAt >= 0 ? bootSrc.slice(tcAt, tcAt + 2400) : "";
+    (/turn\?\.items \?\? \[\]/.test(tcBody) && tcBody.indexOf('kind: "think"') >= 0 && tcBody.indexOf('kind: "think"') < tcBody.indexOf('kind: "done"') ? ok : fail)(
+      "【139b】整轮结束兜底：从 turn.items 补发没发过的思考，且必须在 done **之前**（done 一到手机就折叠了运行块）"
+    );
+  }
   (/aborted\|failed\|interrupted/.test(bootSrc) && /turnRunning/.test(pageSrc) && /handleSend/.test(pageSrc) && /setRunning\(false\)/.test(pageSrc) ? ok : fail)(
     "【139b】运行中可一键停止：发送键切「停止」+ 中断/失败/中止同样发 done（否则停完一直挂「运行中」）"
   );

@@ -889,6 +889,9 @@ export async function bootApp() {
           remoteThinkStreamed.add(remoteThinkKey(p));
           for (const forward of remoteEventForwarders) forward({ threadId: p.threadId, kind: "think", text: String(p.delta ?? p.text) });
         }
+      } else if (event.method === "item/commandExecution/outputDelta" && p?.delta) {
+        // 命令输出：桌面对话框的「命令卡」里有结果，手机端也要（挂在对应命令步骤下面）
+        if (!internalThreads.has(String(p?.threadId ?? ""))) for (const forward of remoteEventForwarders) forward({ threadId: p.threadId, kind: "output", text: String(p.delta) });
       } else if (event.method === "item/completed" && p?.item?.type === "reasoning") {
         /* ⛔ 中转供应商常常**不流式**发思考摘要（实测 rollout 里 reasoning 条目的 summary 齐全，
            但一条 summaryTextDelta 都没有）⇒ 只转发增量的话手机端永远空白。这里用完整条目兜底，
@@ -914,7 +917,23 @@ export async function bootApp() {
           for (const forward of remoteEventForwarders) forward({ threadId: p.threadId, kind: "step", text: step });
         }
       } else if (event.method === "turn/completed") {
-        if (!internalThreads.has(String(p?.threadId))) for (const forward of remoteEventForwarders) forward({ threadId: p?.threadId, kind: "done", text: "" });
+        if (!internalThreads.has(String(p?.threadId))) {
+          /* 最后一道兜底：有些供应商连单条的 item/completed 都不发，整轮的 items 里却齐全。
+             在 done **之前**把没发过的思考补上（done 一到手机就把运行块折叠了）。 */
+          for (const item of p?.turn?.items ?? []) {
+            if (item?.type !== "reasoning") continue;
+            const key = `${p.threadId}:${turnIdOf(p)}:${String(item?.id ?? "")}`;
+            if (remoteThinkStreamed.has(key)) continue;
+            const text = [
+              ...(item.summary ?? []).map((part: any) => String(part?.text ?? "")),
+              ...(item.content ?? []).map((part: any) => String(part?.text ?? "")),
+            ].join("").trim();
+            if (!text) continue;
+            remoteThinkStreamed.add(key);
+            for (const forward of remoteEventForwarders) forward({ threadId: p.threadId, kind: "think", text });
+          }
+          for (const forward of remoteEventForwarders) forward({ threadId: p?.threadId, kind: "done", text: "" });
+        }
         /* 引擎真压缩的宿主侦测（10-07）：当前引擎的压缩不发 item 事件（item 只落 rollout，
            且自动压缩是**内联**在用户回合里完成的）——这里每个回合结束时增量扫 rollout 新增段、
            按压缩记录自己的 turn_id 归因（== 刚完成回合 id 才认）→ 命中则落盘 + 广播（渲染层画线）。 */
