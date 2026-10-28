@@ -100,7 +100,10 @@ export function AnchorPopover({
     const rect: AnchorRect | null = element ? element.getBoundingClientRect() : (anchor as AnchorRect | null);
     if (!rect) { setPlacement(null); return; }
     const measured = panelRef.current?.offsetHeight ?? height;
-    setPlacement(placePopover(rect, { w: width, h: Math.min(measured, height) || height }, { axis, prefer, align, gap }));
+    const next = placePopover(rect, { w: width, h: Math.min(measured, height) || height }, { axis, prefer, align, gap });
+    /* ⛔ 值没变就别 setState：滚动事件是高频的，面板里还挂着收藏夹/日记列表（节点多）
+       —— 每滚一帧重渲染一次纯属浪费。 */
+    setPlacement((prev) => (prev && prev.left === next.left && prev.top === next.top && prev.width === next.width && prev.maxHeight === next.maxHeight ? prev : next));
   }, [anchor, axis, prefer, align, width, height, gap]);
 
   useLayoutEffect(() => { if (open) reposition(); else setPlacement(null); }, [open, reposition]);
