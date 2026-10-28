@@ -1137,6 +1137,91 @@ const CHECKS = [
     },
   },
   {
+    id: "composer-rail",
+    name: "🧷 输入框竖条：默认收起 / 四个入口 / 弹层贴边 / 选表情只插表情 / 弹层期间不自动收起（10-28）",
+    run: async (h) => {
+      /* 10-27 用户要的是「贴输入框左边的一条小粗条」，四条判据都是他当场打回来的：
+         ① 竖着贴线（不是横着压在输入框上）；② 点得开；③ 选表情只插一个表情、面板自己收；
+         ④ 10 秒不碰自动收起，但开着弹层时不收。守卫 12ae 只验结构，这里走真点击。 */
+      await h.eval(`localStorage.setItem("composer-rail-open","0")`).catch(() => undefined);
+      await h.eval(`window.codex?.saveAppSettings?.({composerRailOpen:false})`).catch(() => undefined);
+      await h.reload({ waitMs: 2200 });
+      await wait(1600);
+      await h.waitFor(`!!document.querySelector(".composer-rail-toggle")`, { label: "竖条出现", timeoutMs: 30000 });
+      await wait(600);
+
+      const geo = () => h.eval(`(function(){
+        const r=(sel)=>{const e=document.querySelector(sel); if(!e)return null; const b=e.getBoundingClientRect(); return {left:Math.round(b.left),right:Math.round(b.right),top:Math.round(b.top),bottom:Math.round(b.bottom),w:Math.round(b.width),h:Math.round(b.height)};};
+        const panel=document.querySelector(".composer-rail-panel")?.getBoundingClientRect();
+        return {win:{w:innerWidth,h:innerHeight}, composer:r(".composer"), toggle:r(".composer-rail-toggle"),
+          icons:document.querySelectorAll(".composer-rail-icon").length, grip:!!document.querySelector(".composer-rail-grip"),
+          panel: panel?{left:Math.round(panel.left),top:Math.round(panel.top),right:Math.round(panel.right),bottom:Math.round(panel.bottom)}:null,
+          stickers:document.querySelectorAll(".sticker").length,
+          prompt:(document.querySelector(".composer-editor")?.textContent ?? "")};
+      })()`);
+
+      const closed = await geo();
+      const c = closed.composer, t = closed.toggle;
+      h.check("① 默认收起：只有一条竖着夹在输入框左边线上的窄条（不占横向空间）",
+        Boolean(c && t) && t.w <= 16 && t.h >= 36 && t.h <= 90
+          && Math.abs((t.left + t.right) / 2 - c.left) <= 3 && closed.grip && closed.icons === 0 && !closed.panel,
+        JSON.stringify({ toggle: t, composer: c, icons: closed.icons }));
+
+      await h.eval(`document.querySelector(".composer-rail-toggle")?.click()`);
+      await wait(350);
+      const opened = await geo();
+      h.check("② 点一下展开：四个入口横向排在输入框左侧，右缘仍贴着输入框",
+        opened.icons >= 4 && Boolean(opened.toggle)
+          && opened.toggle.right <= c.left + 120 && opened.toggle.left >= c.left - 160,
+        JSON.stringify({ icons: opened.icons, toggle: opened.toggle, composerLeft: c.left }));
+
+      await h.eval(`document.querySelector('.composer-rail-icon[title="心情表情"]')?.click()`);
+      await wait(500);
+      const panel = await geo();
+      h.check("③ 点「心情表情」：弹层完整落在视口内，表情足够多（≥40）",
+        Boolean(panel.panel) && panel.panel.left >= 0 && panel.panel.top >= 0
+          && panel.panel.right <= panel.win.w + 1 && panel.panel.bottom <= panel.win.h + 1 && panel.stickers >= 40,
+        JSON.stringify({ panel: panel.panel, win: panel.win, stickers: panel.stickers }));
+
+      const picked = await h.eval(`(function(){
+        const b=document.querySelector(".sticker"); if(!b) return null;
+        const emo=(b.querySelector(".sticker-emoji")?.textContent||"").trim();
+        b.click(); return emo;
+      })()`);
+      await wait(450);
+      const afterPick = await geo();
+      h.check("④ 选一个表情：只把那个表情插进输入框，弹层自己收（不留着挡视线）",
+        Boolean(picked) && afterPick.prompt.trim().endsWith(picked) && !afterPick.panel,
+        JSON.stringify({ picked, prompt: afterPick.prompt, panel: afterPick.panel }));
+
+      /* ⑤ 弹层开着不自动收起：竖条 10s 自动收，但「打开着弹层」是明确的用户意图 */
+      await h.eval(`document.querySelector('.composer-rail-icon[title="收藏夹"]')?.click()`);
+      await wait(400);
+      await wait(11000);
+      const holding = await geo();
+      h.check("⑤ 弹层开着超过 10 秒：竖条不收起、弹层还在（不是「点开就被自动收起打断」）",
+        Boolean(holding.panel) && holding.icons >= 4,
+        JSON.stringify({ panel: Boolean(holding.panel), icons: holding.icons }));
+
+      /* ⑥ 展开态跨重启保留（localStorage + app-settings 双写） */
+      await h.reload({ waitMs: 2200 });
+      await wait(1800);
+      await h.waitFor(`!!document.querySelector(".composer-rail-toggle")`, { label: "竖条回灌", timeoutMs: 20000 });
+      await wait(500);
+      const restored = await geo();
+      h.check("⑥ 重载后仍是展开态（展开状态双写回灌，不是靠内存）",
+        restored.icons >= 4 && !restored.panel,
+        JSON.stringify({ icons: restored.icons, panel: Boolean(restored.panel) }));
+
+      /* ⑦ 空闲 10 秒自动收起（用户原话「这个一直展示不会自动隐藏，10秒后自动隐藏」） */
+      await wait(11500);
+      const idle = await geo();
+      h.check("⑦ 空闲 10 秒后自动收起成一条窄竖条",
+        idle.icons === 0 && !idle.panel && Boolean(idle.toggle) && idle.toggle.w <= 16,
+        JSON.stringify({ icons: idle.icons, toggle: idle.toggle }));
+    },
+  },
+  {
     id: "file-preview-controls",
     name: "🗂 右栏文件预览：拖动分栏 + 向上拉满（按钮 / Alt+↑↓）",
     run: async (h) => {
