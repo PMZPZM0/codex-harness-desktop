@@ -78,15 +78,25 @@
      3 个一列后：5 个 → 3+2、8 个 → 3+3+2，始终均衡。 */
   max-height: 104px;
   overflow: visible;
+  /* ⛔⛔ 换列时必须让**卡片跟着变宽**：`flex-wrap` 变列后，若宽度仍按单列算
+     （实测 42px），第 4/5 个图标会**溢出卡片 22px**，正好压在手柄与边框线上
+     —— 这就是用户 10-28 说的「遮住，小粗条了都」。`max-content` + `flex:none` 让卡片包住两列。 */
+  width: max-content;
+  flex: none;
   padding: 5px 4px;
-  margin-left: 2px;
+  /* ⛔ 10-28 用户：「要不左边，要不右边，不要在，小粗条上」——
+     图标列与手柄之间必须留出**看得见的间隙**（原来 3px，视觉糊成一团，手柄像卡在卡片边上）。
+     10px + 卡片右缘距边框线 = 手柄右侧还留 2px，手柄整根落在"线上"，两侧都不被压。 */
+  margin: 0 10px 0 0;
   border: 1px solid var(--line);
   /* 原来是 999px 胶囊：单列好看，两列会变成一头尖一头圆的怪形状 ⇒ 固定圆角 */
   border-radius: 14px;
   /* ⛔ 10-28 用户：「展开可以加底色」—— 原来用 --panel（与输入框同色）贴在白底上看不出边界；
      换 --panel-2 是**一档区分**的语义变量（浅色更灰、深色更亮），不写死颜色 ⇒ 主题/皮肤都跟得上。 */
   background: var(--panel-2);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 10px 24px rgba(0, 0, 0, 0.07);
+  /* ⛔ 去掉 24px 外扩阴影：那圈阴影会漫过边框线，观感像"半透明的东西浮在线上"（用户：透明展示）。
+     只留 2px 贴地阴影，卡片边界清清楚楚。 */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 .composer-rail-icon {
   /* 22 → 28（10-28 用户：「图标可以大一点…都不好点」）：命中面积从 484px² 提到 784px² */
@@ -429,8 +439,7 @@
     flex-flow: row nowrap;    /* 一排横放 */
     max-height: none;
     overflow: visible;
-    margin-left: 0;
-    margin-top: 2px;
+    margin: 6px 0 0;          /* 横排时手柄在上、图标行在下 ⇒ 间隙放到上边 */
   }
   /* 正文让位：横向条高 ~36，正文从下面开始 */
   .composer .composer-editor,
