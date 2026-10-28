@@ -349,20 +349,25 @@ function readModuleWithDir(relBase) {
 }
 const readBuiltinSkillsSource = () => readModuleWithDir("electron/builtin-skills");
 const readResponsesBridgeSource = () => readModuleWithDir("electron/responses-bridge");
-/** 设置台「渲染面」= 01-settings-layout 下注册表 + pages/**（10-28 P1-2 拆页）。
+/** 设置台「渲染面」= 注册表 + pages/**（10-28 P1-2 拆页）。
  *
- *  ⛔ 与 readAppUi 同一口径：断言盯的是「这段内容存在于设置台里」，不关心它落在注册表
+ *  ⛔ 与 readAppUi 同一口径：断言盯的是「这段内容存在于设置台的派发表里」，不关心它落在注册表
  *  还是某个分组页。只读注册表会在拆页后把每条「props 真的传下去了」的断言顶成假红
- *  （字面量搬走了，语义没变）。负面断言因此更严格（范围是超集），安全方向。 */
+ *  （字面量搬走了，语义没变）。负面断言因此更严格（范围是超集），安全方向。
+ *  ⚠️ 只并「注册表 + pages/」，**不并同目录的 01-settings-nav / 02-settings-content**：
+ *     那两个文件里有自己的 `id: {` 形状（导航表/派发），并进来会让【101】的 id 扫描多出假项。 */
 function readSettingsSurface() {
   const dir = join(ROOT, "src", "features", "app-view", "AppView", "08-settings-sheet", "01-settings-layout");
-  if (!existsSync(dir)) return "";
+  const registry = join(dir, "00-settings-registry.tsx");
+  const parts = existsSync(registry) ? [readFileSync(registry, "utf8")] : [];
+  const pages = join(dir, "pages");
+  if (!existsSync(pages)) return parts.join("\n");
   const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => {
     const p = join(d, e.name);
     if (e.isDirectory()) return walk(p);
     return /\.tsx?$/.test(e.name) ? [readFileSync(p, "utf8")] : [];
   });
-  return walk(dir).join("\n");
+  return parts.concat(walk(pages)).join("\n");
 }
 function readStyles() {
   const base = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
