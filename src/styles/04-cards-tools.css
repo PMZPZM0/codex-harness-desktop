@@ -1518,12 +1518,13 @@
   width: 56px;          /* 40 → 56：用户「现在有点短」（夜九轮） */
   height: 4px;
   border-radius: 999px;
-  background: var(--faint);   /* 骑在 --line 的边框线上：默认色要比边框亮一档才看得见 */
-  /* 10-28 用户：「两个小粗条的边框上加上边框线的颜色，不然像挂着什么」⇒ 描边取输入框同色 --line */
+  /* ⛔ 10-28 三改：本体取**输入框底色**、轮廓才是边框色 ⇒ 视觉上是"边框线加粗成一小节"。
+     曾把本体填成 --faint（灰），用户："变成灰色粗条了，不是跟着边框线亮"。 */
+  background: var(--bg);
   box-shadow: 0 0 0 1px var(--line);
-  transition: background 0.12s ease;
+  transition: background 0.12s ease, box-shadow 0.12s ease;
 }
-.composer-resize-handle:hover .composer-resize-grip { background: var(--muted); }
+.composer-resize-handle:hover .composer-resize-grip { background: var(--muted); box-shadow: 0 0 0 1px var(--muted); }
 .composer textarea {
   resize: vertical;
   width: 100%;

@@ -44,8 +44,10 @@
   width: 6px;
   height: 36px;
   border-radius: 999px;
-  /* 用户点名「小粗条」：它是**唯一**的展开affordance ⇒ 别调成几乎看不见的浅灰（第一版 45% 实测太淡） */
-  background: color-mix(in srgb, var(--muted) 72%, transparent);
+  /* 用户点名「小粗条」：它是**唯一**的展开affordance，必须有轮廓可见。
+     ⛔ 10-28 三改：本体取**输入框底色**、轮廓才是边框色 —— 视觉上等于"边框线在这一小节加粗成胶囊"。
+        第一版把本体填成灰色 ⇒ 用户："变成灰色粗条了，不是跟着边框线亮"。 */
+  background: var(--bg);
   /* 10-28 用户：「两个小粗条的边框上加上边框线的颜色，不然像挂着什么」⇒ 描边取输入框同色 --line */
   box-shadow: 0 0 0 1px var(--line);
   transition: background 0.16s ease, height 0.16s ease;
@@ -57,7 +59,7 @@
 }
 /* 展开态：手柄收短，紧挨图标列（两段状态肉眼可分：短粗条 vs 一整列图标） */
 .composer-rail.is-open .composer-rail-toggle { width: 10px; height: 40px; }
-.composer-rail.is-open .composer-rail-grip { height: 22px; background: var(--line); }
+.composer-rail.is-open .composer-rail-grip { height: 22px; }
 
 /* 图标列：宽 = 一个图标位，高 = 输入框高度（JS 不用给，100% 由 .composer 的相对定位决定） */
 .composer-rail-icons {
@@ -351,48 +353,32 @@
 .stickers-foot { margin: 12px 0 0; font-size: 11px; color: var(--faint); }
 
 
-/* ── 10-28 用户（浅色截图）：两条灰色拖动/快捷条在浅色下不好看 ⇒ 改白色；
-      深色主题保持原灰（白条在深色里太刺眼）。竖条长度同步收短（64/80/32 → 36/44/22）。 */
-:root:not([data-theme="dark"]) .composer-rail-grip {
-  background: #fff;
-  box-shadow: 0 0 0 1px var(--line);
-}
-:root:not([data-theme="dark"]) .composer-rail-toggle:hover .composer-rail-grip,
-:root:not([data-theme="dark"]) .composer-rail-toggle:focus-visible .composer-rail-grip {
-  background: #fff;
-  box-shadow: 0 0 0 1px var(--line);
-}
-:root:not([data-theme="dark"]) .composer-rail.is-open .composer-rail-grip {
-  background: #fff;
-  box-shadow: 0 0 0 1px var(--line);
-}
-
-/* ── 聚焦态跟随输入框边框（10-28 用户：「输入框聚焦、待输入或者在打字，边框线亮起来了的时候，
-      这两个小粗条没有跟着亮边框线，就不好看了」）──
-   输入框的聚焦态是 `.composer:focus-within { border-color: var(--faint) }`，
-   所以两个手柄（顶部拖动把手 `.composer-resize-grip` + 左侧竖条 `.composer-rail-grip`）
-   在聚焦时必须走到**同一档颜色**，否则边框一亮、手柄还暗着，像两个不相干的零件。
-   ⛔ 浅色主题的竖条本体是白的（10-28 已定，见上一条），所以那里只提**描边**，背景保持白。
-   ⛔ 特异性：要压过上面 `.is-open` / `:hover` 那几条（它们带 `:root:not(...)` 前缀），
-      故浅色分支把 `.is-open` / `:hover` 变体一并枚举，不做全局变量改造（那要动边框本体，风险更大）。 */
+/* ── 手柄的统一形态：**本体 = 输入框底色，轮廓 = 边框色**（10-28 三改）────────────
+   用户第一次说「聚焦时两个小粗条没跟着边框亮」→ 我把本体填成 --faint（灰）；
+   第二次指出「上面的小粗条亮边框的时候变成灰色粗条了，不是跟着边框线亮」——
+   ⇒ 要的是**线条质感**：本体与输入框同色（浅 #fff / 深 #1b1b1a），只有 1px 轮廓随边框走。
+   ⛔ 所以原来那三条"浅色强制 #fff"的特例不再需要（`--bg` 浅色就是 #fff），一并删掉。
+   ⛔ 悬停才允许实心填充（`--muted`），那是"可拖 / 可点"的即时反馈，不是常态。 */
 .composer:focus-within .composer-resize-grip,
-.composer:focus-within .composer-rail-grip {
-  background: var(--faint);
+.composer:focus-within .composer-rail-grip,
+.composer:focus-within .composer-rail.is-open .composer-rail-grip {
+  background: var(--bg);
   box-shadow: 0 0 0 1px var(--faint);
 }
-:root:not([data-theme="dark"]) .composer:focus-within .composer-rail-grip,
-:root:not([data-theme="dark"]) .composer:focus-within .composer-rail.is-open .composer-rail-grip {
-  background: #fff;
-  box-shadow: 0 0 0 1px var(--faint);
-}
-/* 聚焦 + 悬停：仍要再亮一档（否则鼠标划上去毫无反应） */
 .composer:focus-within .composer-resize-handle:hover .composer-resize-grip,
 .composer:focus-within .composer-rail-toggle:hover .composer-rail-grip {
   background: var(--muted);
   box-shadow: 0 0 0 1px var(--muted);
 }
-:root:not([data-theme="dark"]) .composer:focus-within .composer-rail-toggle:hover .composer-rail-grip,
-:root:not([data-theme="dark"]) .composer:focus-within .composer-rail.is-open .composer-rail-toggle:hover .composer-rail-grip {
-  background: #fff;
+/* 失焦态也保持同一形态（只是轮廓回到 --line），避免"聚焦是线、失焦变块"的跳变 */
+.composer-resize-grip,
+.composer-rail-grip {
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.composer-resize-handle:hover .composer-resize-grip,
+.composer-rail-toggle:hover .composer-rail-grip,
+.composer-rail-toggle:focus-visible .composer-rail-grip {
+  background: var(--muted);
   box-shadow: 0 0 0 1px var(--muted);
 }
