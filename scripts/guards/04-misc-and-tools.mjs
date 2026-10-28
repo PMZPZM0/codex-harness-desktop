@@ -1108,6 +1108,49 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   );
 }
 
+/* ══ 【139d】手机远控四件基础能力：＋ 图片 / 文件预览 / # 技能 / / 指令（10-28）══
+   ⛔ 手机传来的路径是**外部输入**：图片只认刚落盘的上传目录，文件只认会话工作区；
+      越界（`..`、绝对路径、盘符）一律拒绝。 */
+{
+  const relaySrc2 = readFileSync(join(ROOT, "electron", "remote.ts"), "utf8");
+  const mainSrc2 = readMainSource();
+  const pageSrc2 = readFileSync(join(ROOT, "electron", "remote", "web-page.ts"), "utf8");
+  (/url === "\/api\/upload"/.test(relaySrc2) && /data:image/.test(relaySrc2) && /8 \* 1024 \* 1024/.test(relaySrc2) ? ok : fail)(
+    "【139d】图片上传只收 dataUrl 图片且限 8MB（/api/upload）"
+  );
+  (/uploadsRoot/.test(mainSrc2) && /type: "localImage"/.test(mainSrc2) && /startsWith\(path\.resolve\(uploadsRoot\)/.test(mainSrc2) ? ok : fail)(
+    "【139d】发图片只认 remote-uploads 目录内的路径（手机传来的绝对路径不许直接进引擎）"
+  );
+  (/safeJoin\(root, relPath\)/.test(mainSrc2) && /512 \* 1024/.test(mainSrc2) ? ok : fail)(
+    "【139d】文件预览走 safeJoin + 大小上限（越界 / 超大 / 二进制都拒）"
+  );
+  (["catalog", "files-list", "file-read", "interrupt", "compact"].every((t) => relaySrc2.includes(`"${t}"`)) ? ok : fail)(
+    "【139d】/api/rpc 覆盖 catalog / files-list / file-read / interrupt / compact"
+  );
+  (["openSheet", "/api/upload", "files-list", "insertAtCursor", "runCommand"].every((t) => pageSrc2.includes(t)) ? ok : fail)(
+    "【139d】手机页有 ＋ 菜单（图片 / 文件 / 技能 / 指令），四条链路都接上"
+  );
+  // 真跑路径守卫真值表（纯模块，node 直接 import）
+  const rf = await import(pathToFileURL(join(ROOT, "src", "lib", "remote-files.mjs")).href);
+  const root = "C:/work/proj";
+  const inside = rf.safeJoin(root, "docs/a.md");
+  const cases = [
+    inside.endsWith("docs/a.md") || inside.endsWith("docs\\a.md"),
+    rf.safeJoin(root, "../etc/passwd") === "",
+    rf.safeJoin(root, "/etc/passwd") === "",
+    rf.safeJoin(root, "C:/Windows/win.ini") === "",
+    rf.safeJoin(root, "..") === "",
+    rf.safeJoin(root, "") === "",
+    rf.safeJoin(root, "sub/../a.md") !== "",
+    rf.previewKind("a.png") === "image",
+    rf.previewKind("a.md") === "text",
+    rf.previewKind("a.exe") === "other",
+  ];
+  (cases.every(Boolean) ? ok : fail)(
+    "【139d】safeJoin 真跑：目录内放行，`..` / 绝对路径 / 盘符 / 空串全拒；预览类型分档正确"
+  );
+}
+
 /* ══ 【140】看门狗是**有意停用**的，不得被"顺手接回来"（09-24，评估报告 §4.1 复核结论）══
    评估报告原判"死代码 / 开关骗人"，复核后**推翻**：startWatchdog/stopWatchdog 是空实现，
    但那是 2026-09-09 **用户拍板**的整体移除 —— 原因是心跳误判（MCP worker 慢/忙时 thread/list
