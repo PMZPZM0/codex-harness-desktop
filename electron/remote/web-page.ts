@@ -256,7 +256,8 @@ const apiUrl = (path) => PATH_PREFIX + path;
 let rpcSeq = 0;
 const rpcWaiters = new Map();
 // 会话记忆 key 固定（不绑定随机 code）：同一地址下扫码进入都能恢复上次会话
-const THREAD_KEY = "chm-thread";
+/* ⛔ 全部 localStorage 键都带 PATH_PREFIX：同一部手机连两台电脑时，线程/偏好/秘密互不覆盖 */
+const THREAD_KEY = "chm-thread" + PATH_PREFIX;
 let currentThreadId = localStorage.getItem(THREAD_KEY) || "";
 let streaming = "";
 // 当前回合的「运行步骤」容器（命令/文件/工具/思考）；回合结束收成可折叠块
@@ -283,10 +284,10 @@ let groupSeen = {};
 let turnRunning = false;
 const list = document.getElementById("msglist");
 // 设备身份：localStorage 固定生成，服务端用它记住「这台手机上次用的会话」
-let deviceId = localStorage.getItem("chm-device-id");
+let deviceId = localStorage.getItem("chm-device-id" + PATH_PREFIX);
 if (!deviceId) {
   deviceId = "dev-" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-  localStorage.setItem("chm-device-id", deviceId);
+  localStorage.setItem("chm-device-id" + PATH_PREFIX, deviceId);
 }
 function saveSession() {
   // 首页态没有会话可记：别用空 id 覆盖「上次会话」映射（否则下次进来永远回到首页也找不到上次）
@@ -471,7 +472,7 @@ async function sendCmd() {
       localStorage.setItem(THREAD_KEY, currentThreadId);
       loadThreads();
     }
-    await rpc({ type: "send-message", threadId: currentThreadId, text: v, images: paths, effort: localStorage.getItem("chm-effort") || "high" });
+    await rpc({ type: "send-message", threadId: currentThreadId, text: v, images: paths, effort: localStorage.getItem("chm-effort" + PATH_PREFIX) || "high" });
     updateThreadLabel((v || "图片").slice(0, 20));
     saveSession();
   } catch (error) {
@@ -534,14 +535,14 @@ function greetingHome() {
 }
 function readHomePrefs() {
   try {
-    homeMode = localStorage.getItem("chm-home") === "hub" ? "hub" : "normal";
-    groupSeen = JSON.parse(localStorage.getItem("chm-group-seen") || "{}") || {};
+    homeMode = localStorage.getItem("chm-home" + PATH_PREFIX) === "hub" ? "hub" : "normal";
+    groupSeen = JSON.parse(localStorage.getItem("chm-group-seen" + PATH_PREFIX) || "{}") || {};
   } catch (error) { homeMode = "normal"; groupSeen = {}; }
 }
 function markGroupSeen(groupId) {
   if (!groupId) return;
   groupSeen[String(groupId)] = Date.now();
-  try { localStorage.setItem("chm-group-seen", JSON.stringify(groupSeen)); } catch (error) { /* 忽略 */ }
+  try { localStorage.setItem("chm-group-seen" + PATH_PREFIX), JSON.stringify(groupSeen)); } catch (error) { /* 忽略 */ }
 }
 function groupHasNews(group) {
   const seen = Number(groupSeen[String(group && group.id || "")] || 0);
@@ -580,7 +581,7 @@ function hideHome() {
 }
 function switchHome(tab) {
   homeMode = tab === "hub" ? "hub" : "normal";
-  try { localStorage.setItem("chm-home", homeMode); } catch (error) { /* 忽略 */ }
+  try { localStorage.setItem("chm-home" + PATH_PREFIX, homeMode); } catch (error) { /* 忽略 */ }
   showHome();
 }
 function avatarTone(seed) {
@@ -1072,13 +1073,13 @@ function openCommands() {
     effHead.style.fontWeight = "600";
     effHead.textContent = "思考强度（对后面的消息生效）";
     node.appendChild(effHead);
-    const currentEffort = localStorage.getItem("chm-effort") || "high";
+    const currentEffort = localStorage.getItem("chm-effort" + PATH_PREFIX) || "high";
     const efforts = [["low", "低"], ["medium", "中"], ["high", "高"], ["xhigh", "极高"]];
     for (const pair of efforts) {
       const row = document.createElement("div");
       row.className = "cmd-row";
       row.textContent = pair[1] + (pair[0] === currentEffort ? " ✓" : "");
-      row.onclick = () => { localStorage.setItem("chm-effort", pair[0]); openCommands(); };
+      row.onclick = () => { localStorage.setItem("chm-effort" + PATH_PREFIX, pair[0]); openCommands(); };
       node.appendChild(row);
     }
   }).catch((error) => { node.innerHTML = ""; node.appendChild(panelMessage("加载失败：" + error.message)); });
