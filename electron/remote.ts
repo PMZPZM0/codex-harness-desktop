@@ -1007,10 +1007,10 @@ button{width:100%;margin-top:14px;padding:13px;border:0;border-radius:12px;backg
 <input id="code" inputmode="numeric" maxlength="6" placeholder="······" autocomplete="one-time-code">
 <button onclick="submit()">配对并请求连接</button><p id="state"></p></div>
 <script>
-const KEY_DEVICE = "chm-pair-device";
+const KEY_DEVICE = "chm-pair-device" + API_BASE;
 /* 中转前缀（10-29）：经 /t/<设备ID> 访问时接口与跳转都要带前缀，否则一律 404 */
 const API_BASE = (function(){ const p = location.pathname; const i = p.indexOf("/r/"); return i > 0 ? p.slice(0, i) : ""; })();
-const KEY_SECRET = "chm-pair-secret";
+const KEY_SECRET = "chm-pair-secret" + API_BASE;
 let deviceId = localStorage.getItem(KEY_DEVICE);
 if (!deviceId) { deviceId = "dev-" + Math.random().toString(36).slice(2,10) + Date.now().toString(36); localStorage.setItem(KEY_DEVICE, deviceId); }
 let deviceSecret = localStorage.getItem(KEY_SECRET) || "";
