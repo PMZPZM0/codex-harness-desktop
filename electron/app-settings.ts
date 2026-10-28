@@ -35,6 +35,8 @@ export type AppSettings = {
   functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] };
   /** 功能入口折叠态（10-24）：与 localStorage 双写，启动后以本文件为准。 */
   sidebarOptionsCollapsed?: boolean;
+  /** 输入框左侧竖条的展开态（10-27）：同上双写约定 —— localStorage 只是缓存，重启后以本文件为准。 */
+  composerRailOpen?: boolean;
   /** 模型目录自愈回执（10-24）：启动时修复损坏的 model-catalog.json 后写入，
    *  渲染层读一次展示成可见提醒后就清掉（不残留）。 */
   modelCatalogRepairNotice?: string;

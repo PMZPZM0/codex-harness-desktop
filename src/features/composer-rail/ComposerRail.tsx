@@ -57,6 +57,8 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
   /** 贴边按钮：auto → 右 → 左 → 右 …（真翻边，不是重算同一个位置） */
   const [prefer, setPrefer] = useState<"auto" | "right" | "left">("auto");
   const railRef = useRef<HTMLDivElement>(null);
+  /** 用户已经手动开合过：回灌不许再覆盖他的操作 */
+  const userTouchedRef = useRef(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
   /* 目录：内置 + 用户扩展（userData/extensions.json）。失败就用兜底，绝不让竖条消失。 */
@@ -64,6 +66,17 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
     let alive = true;
     void window.codex.extensionsCatalog?.().then((catalog) => {
       if (alive && Array.isArray(catalog?.rail) && catalog.rail.length) setPanels(catalog.rail);
+    }).catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
+
+  /* 10-27 审查：展开态按本仓既有约定**双写**（localStorage 只是缓存，app-settings 才是重启后的回灌源）
+     —— 之前只写 localStorage，清缓存/换数据目录就静默回到折叠。 */
+  useEffect(() => {
+    let alive = true;
+    void window.codex.readAppSettings?.().then((settings) => {
+      if (!alive || userTouchedRef.current) return;
+      if (typeof settings?.composerRailOpen === "boolean") setOpen(settings.composerRailOpen);
     }).catch(() => undefined);
     return () => { alive = false; };
   }, []);
@@ -79,6 +92,7 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
     const timer = window.setTimeout(() => {
       setOpen(false);
       try { localStorage.setItem("composer-rail-open", "0"); } catch { /* 隐私模式 */ }
+      void window.codex.saveAppSettings?.({ composerRailOpen: false })?.catch(() => undefined);
     }, 10_000);
     return () => window.clearTimeout(timer);
   }, [open, panelId, bump]);
@@ -86,7 +100,9 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
   const toggleOpen = useCallback(() => {
     setOpen((prev) => {
       const next = !prev;
+      userTouchedRef.current = true;
       try { localStorage.setItem("composer-rail-open", next ? "1" : "0"); } catch { /* 隐私模式 */ }
+      void window.codex.saveAppSettings?.({ composerRailOpen: next })?.catch(() => undefined);
       if (!next) setPanelId(null);
       return next;
     });
