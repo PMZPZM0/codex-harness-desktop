@@ -167,7 +167,8 @@ function remoteFilesText(files: any[]): string {
   if (!list.length) return "";
   const lines = list.slice(0, 5).map((file) => {
     if (file.status === "deleted") return `${file.path} 已删除`;
-    return `${file.path} +${Number(file.added) || 0} −${Number(file.deleted) || 0}`;
+    const badge = file.status === "added" ? "新建 " : "";
+    return `${badge}${file.path} +${Number(file.added) || 0} −${Number(file.deleted) || 0}`;
   });
   if (list.length > 5) lines.push(`等 ${list.length} 个文件`);
   return `修改文件 · ${list.length} 个\n` + lines.join("\n");
@@ -930,6 +931,20 @@ export async function bootApp() {
       } else if (event.method === "item/completed" && p?.item?.type === "agentMessage" && p.item.text) {
         const buffer = peekCaptureBuffer(String(p.threadId), turnIdOf(p));
         if (buffer) buffer.assistant = p.item.text;
+      } else if (/^item\/(?:commandExecution|fileChange)\/requestApproval$/.test(String(event.method ?? "")) || event.method === "item/tool/requestUserInput") {
+        /* 审批 / 询问：手机端没有交互 UI —— 至少明确告诉用户「去电脑上点确认」，别让人对着手机干等 */
+        if (!internalThreads.has(String(p?.threadId ?? ""))) {
+          const label = event.method === "item/tool/requestUserInput" ? "选择项" : String(event.method).includes("fileChange") ? "文件修改" : "命令执行";
+          for (const forward of remoteEventForwarders) forward({ threadId: p.threadId, kind: "notice", text: `⚠ 需要在电脑端确认：${label}` });
+        }
+      } else if (event.method === "item/completed" && p?.item?.type === "commandExecution") {
+        // 命令结束：引擎带 exitCode / status 时给出结论（不带就静默，别瞎猜）
+        const exitCode = p?.item?.exitCode;
+        const status = String(p?.item?.status ?? "");
+        const text = exitCode != null
+          ? (Number(exitCode) === 0 ? "命令完成" : `命令失败（退出码 ${exitCode}）`)
+          : (status && status !== "inProgress" && status !== "running" ? `命令 · ${status}` : "");
+        if (text && !internalThreads.has(String(p?.threadId ?? ""))) for (const forward of remoteEventForwarders) forward({ threadId: p.threadId, kind: "step", text });
       } else if (event.method === "item/started" || event.method === "item/completed") {
         /* 手机端「运行步骤」：与桌面对话框同一批 item 事件 —— 命令 / 文件变更 / 工具 / 搜索 / 思考，
            手机只会看到被打平的一行行短标签（桌面的折叠区同理，只是形态更细）。 */

@@ -24,6 +24,7 @@ import { TerminalService } from "./terminal";
 import { RemoteControlService } from "./remote";
 import { stripHarnessBlocks } from "../src/lib/harness-block-strip.mjs";
 import { safeJoin, previewKind } from "../src/lib/remote-files.mjs";
+import { storedReportsForThread } from "./turn-file-watch";
 import QRCode from "qrcode";
 import { readPersonalization, writePersonalization, applyPersonalizationToAgentsMd, buildAgentsMd, migrateGreetedForExistingUsers } from "./personalization";
 import { readAppSettings, readAppSettingsSync, saveAppSettings, type AppSettings } from "./app-settings";
@@ -577,6 +578,41 @@ const remote = new RemoteControlService({
     const text = String(objective ?? "").trim();
     if (!text) throw new Error("目标内容是空的");
     await server.request("thread/goal/set", { threadId, objective: text });
+  },
+  listTasks: async () => {
+    const tasks = await rpaStore.listTasks();
+    return { tasks: tasks.map((task: any) => ({ id: String(task?.id ?? ""), title: String(task?.title ?? ""), state: String(task?.state ?? "") })) };
+  },
+  turnFiles: async (threadId) => {
+    const reports = storedReportsForThread(threadId);
+    const last = reports[reports.length - 1];
+    const files = Array.isArray(last?.files) ? (last!.files as any[]) : [];
+    return {
+      files: files.map((file: any) => ({
+        path: String(file?.path ?? ""),
+        status: String(file?.status ?? ""),
+        added: Number(file?.added) || 0,
+        deleted: Number(file?.deleted) || 0,
+      })),
+    };
+  },
+  fileDiff: async (threadId, relPath) => {
+    const target = String(relPath ?? "");
+    if (!target) return { diff: "", error: "路径是空的" };
+    const reports = storedReportsForThread(threadId);
+    for (let index = reports.length - 1; index >= 0; index -= 1) {
+      const found = (reports[index].files as any[]).find((file: any) => String(file?.path ?? "") === target);
+      if (found) return { path: target, diff: String(found.diff ?? "") };
+    }
+    return { path: target, diff: "", error: "没有这个文件的改动记录" };
+  },
+  goalGet: async (threadId) => {
+    try {
+      const result: any = await server.request("thread/goal/get", { threadId });
+      return { objective: String(result?.goal?.objective ?? ""), status: String(result?.goal?.status ?? "") };
+    } catch {
+      return { objective: "", status: "" };
+    }
   },
   listFiles: async (threadId) => {
     const root = threadCwd.get(threadId) || process.cwd();
