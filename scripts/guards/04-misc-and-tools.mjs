@@ -1103,7 +1103,10 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   {
     const watchSrc = readFileSync(join(ROOT, "electron", "turn-file-watch.ts"), "utf8");
     (/turn-file-changes-live", threadId, turnId/.test(watchSrc) && /remoteFilesText/.test(bootSrc) && /event\.kind === "files"/.test(pageSrc) && /step-files/.test(pageSrc) ? ok : fail)(
-      "【139b】文件变更 +N −M：宿主追踪器的 live 报告带 threadId 转发到手机，页面一行原地更新（引擎 fileChange 不带行数）"
+      "【139b】文件变更 +N −M：宿主追踪器的 live 报告带 threadId 转发到手机，页面逐文件展示（引擎 fileChange 不带行数）"
+    );
+    (/\?\? \.arguments/.test(bootSrc) || /item\?\.arguments/.test(bootSrc)) && /dynamicToolCall/.test(bootSrc) ? ok : fail(
+      "【139b】工具步骤带 server 前缀 + 参数摘要（与桌面工具卡同口径，手机上看得出来调了什么）"
     );
   }
   (/remoteThinkKey/.test(bootSrc) && /p\.delta \?\? p\.text/.test(bootSrc) ? ok : fail)(
