@@ -1060,6 +1060,33 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   (/\.msg\.user\{[^}]*var\(--accent-soft\)/.test(pageSrc) && !/\.msg\.user\{[^}]*#1e1e1c/.test(pageSrc) ? ok : fail)(
     "【139b】用户气泡走浅色主色底，不得回到黑底白字"
   );
+  (/renderMarkdownHtml/.test(pageSrc) && /_mdText/.test(pageSrc) && /MOBILE_MARKDOWN_SOURCE/.test(pageSrc) ? ok : fail)(
+    "【139b】助手消息走 Markdown 渲染（页面内联的就是 src/lib/mobile-markdown.mjs 同一份源码）"
+  );
+  {
+    const md = await import(pathToFileURL(join(ROOT, "src", "lib", "mobile-markdown.mjs")).href);
+    const bold = md.renderMarkdownHtml("**粗**");
+    const code = md.renderMarkdownHtml("`a<b`");
+    const xss = md.renderMarkdownHtml("<img src=x onerror=1>");
+    const jsLink = md.renderMarkdownHtml("[x](javascript:alert(1))");
+    const okLink = md.renderMarkdownHtml("[站点](https://example.com)");
+    const fence = md.renderMarkdownHtml("```js\nconst a = 1;\n```");
+    const table = md.renderMarkdownHtml("| a | b |\n| --- | --- |\n| 1 | 2 |");
+    const list = md.renderMarkdownHtml("- 一\n- 二");
+    const heading = md.renderMarkdownHtml("## 标题");
+    (bold.includes("<strong>粗</strong>")
+      && code.includes("<code>a&lt;b</code>")
+      && xss.includes("&lt;img") && !xss.includes("<img")
+      && !jsLink.includes("<a ")
+      && okLink.includes('href="https://example.com"')
+      && fence.includes('<pre class="md-pre"') && fence.includes("const a = 1;")
+      && table.includes("<table>") && (table.match(/<td>/g) || []).length === 2
+      && (list.match(/<li>/g) || []).length === 2
+      && heading.includes("md-h2")
+      ? ok : fail)(
+      "【139b】Markdown 真跑：粗体 / 行内代码转义 / 围栏 / 表格 / 列表 / 标题，且原始 HTML 与 javascript: 链接都被挡"
+    );
+  }
   const bootSrc = readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8");
   (/kind: "step"/.test(bootSrc) && /event\.kind === "step"/.test(pageSrc) ? ok : fail)(
     "【139b】运行步骤：主进程按 item 事件转发（命令/文件/工具/搜索/思考），手机页渲染成可折叠「运行过程」"

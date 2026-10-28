@@ -6,6 +6,21 @@
  * ⛔ 页面内容（HTML/CSS/JS）原样搬运，一个字都没动。
  */
 
+import fs from "node:fs";
+import path from "node:path";
+
+/** 手机端 Markdown 渲染器：**内联同一份纯模块源码**（预检真跑的就是它，别在页面里另写一套）。
+ *  ⛔ 读不到也不能把页面打挂：退回纯文本。 */
+const MOBILE_MARKDOWN_SOURCE = (() => {
+  try {
+    return fs
+      .readFileSync(path.join(__dirname, "..", "..", "src", "lib", "mobile-markdown.mjs"), "utf8")
+      .replace(/^export\s+/gm, "");
+  } catch {
+    return "function renderMarkdownHtml(value) { return String(value || ''); }\nfunction renderMarkdownInline(value) { return String(value || ''); }";
+  }
+})();
+
 export function buildRemotePageHtml(code: string, botId?: string, botName?: string): string {
     const bindingMode = Boolean(botId);
     if (bindingMode) {
@@ -40,7 +55,7 @@ async function doBind(){
 }
 </script></html>`;
     }
-    return `<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+    const pageHtml = `<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>Codex 对话</title><style>
 *{box-sizing:border-box}
 :root{--accent:#2f6bdd;--accent-soft:#eaf1fd;--line:#e8e8e4;--muted:#8a8a84;--ink:#23231f;--bg:#f7f7f5}
@@ -78,6 +93,26 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
 .run-steps .think{margin-top:5px;padding-top:5px;border-top:1px dashed #ddd9d2;color:#6f6f69;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto}
 .run-steps .step-out{display:none;margin:2px 0 6px;padding:6px 8px;background:#fff;border:1px solid var(--line);border-radius:8px;font-size:11px;line-height:1.5;max-height:160px;overflow:auto;white-space:pre-wrap;word-break:break-all;color:#4a4a46}
 .run-steps .step-out.on{display:block}
+.msg.assistant.md{white-space:normal}
+.msg p{margin:6px 0}
+.msg p:first-child{margin-top:0}
+.msg p:last-child{margin-bottom:0}
+.md-h{font-weight:600;margin:10px 0 4px}
+.md-h1{font-size:17px}.md-h2{font-size:16px}.md-h3{font-size:15px}
+.md-h4,.md-h5,.md-h6{font-size:14px}
+.msg .md-pre{margin:8px 0;padding:8px 10px;background:#f4f4f1;border:1px solid var(--line);border-radius:8px;overflow:auto;font-size:12px;line-height:1.5}
+.msg .md-pre code{font-family:ui-monospace,Consolas,monospace;white-space:pre;background:none;padding:0}
+.msg code{font-family:ui-monospace,Consolas,monospace;background:#f0f0ec;border-radius:4px;padding:0 4px;font-size:12.5px}
+.msg .md-table{overflow:auto;margin:8px 0}
+.msg table{border-collapse:collapse;font-size:12.5px}
+.msg th,.msg td{border:1px solid var(--line);padding:4px 8px;text-align:left;white-space:nowrap}
+.msg th{background:#f6f6f3;font-weight:600}
+.msg blockquote{margin:8px 0;padding:2px 10px;border-left:3px solid var(--line);color:#6f6f69}
+.msg ul,.msg ol{margin:6px 0;padding-left:20px}
+.msg li{margin:2px 0}
+.msg li.md-sub{margin-left:14px;list-style:circle}
+.msg a{color:var(--accent);text-decoration:underline}
+.msg hr{border:0;border-top:1px solid var(--line);margin:10px 0}
 #plus{flex:0 0 auto;width:44px;height:44px;margin:0;padding:0;font-size:22px;line-height:40px;color:var(--ink);background:#f2f2ef;border:1px solid var(--line);border-radius:14px}
 #file-pick{display:none}
 #imgs{display:none;gap:8px;padding:8px 12px 0;background:#fff;overflow-x:auto}
@@ -126,6 +161,8 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
 <div id="msglist"></div>
 <div id="imgs"></div>
 <div id="inputbar"><button id="plus" onclick="openSheet()">＋</button><input id="cmd" placeholder="输入消息，发送给 Codex"><button id="send" onclick="handleSend()">发送</button></div>
+<!-- 占位：构建时替换成 src/lib/mobile-markdown.mjs 的源码 -->
+<script>/*__MOBILE_MARKDOWN__*/</script>
 <input type="file" id="file-pick" accept="image/*" multiple>
 <div id="sheet-mask" class="mask" onclick="closeSheet()"></div>
 <div id="sheet"><div class="grid">
@@ -180,9 +217,15 @@ async function rpc(payload) {
 }
 function push(role, text, cls, pending) {
   const div = document.createElement("div");
-  div.className = "msg " + (cls || role);
+  div.className = "msg " + (cls || role) + (role === "assistant" ? " md" : "");
   if (pending) div.dataset.pending = "1";
-  div.textContent = text;
+  if (role === "assistant") {
+    // 助手消息走 Markdown（渲染器输出已转义，见 src/lib/mobile-markdown.mjs）
+    div._mdText = String(text || "");
+    div.innerHTML = renderMarkdownHtml(div._mdText);
+  } else {
+    div.textContent = text;
+  }
   list.appendChild(div);
   list.scrollTop = list.scrollHeight;
   return div;
@@ -630,7 +673,9 @@ async function pollLoop() {
         setRunning(true);
         let el = list.querySelector(".streaming");
         if (!el) el = push("assistant", "", "assistant streaming");
-        el.textContent += event.text;
+        // 流式：每次把累计文本重新渲染（聊天量级下开销可忽略，换来边流边排版）
+        el._mdText = (el._mdText || "") + event.text;
+        el.innerHTML = renderMarkdownHtml(el._mdText);
         list.scrollTop = list.scrollHeight;
       } else if (event.kind === "step") {
         // 运行步骤：与桌面对话框同一批事件（命令 / 文件 / 工具 / 搜索 / 思考）
@@ -757,4 +802,5 @@ pollLoop();
   await newThread();
 })();
 </script>`;
+    return pageHtml.replace("/*__MOBILE_MARKDOWN__*/", MOBILE_MARKDOWN_SOURCE);
 }
