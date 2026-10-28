@@ -1133,8 +1133,11 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   (["catalog", "files-list", "file-read", "interrupt", "compact"].every((t) => relaySrc2.includes(`"${t}"`)) ? ok : fail)(
     "【139d】/api/rpc 覆盖 catalog / files-list / file-read / interrupt / compact"
   );
-  (["openSheet", "/api/upload", "files-list", "insertText", "runCommand", "__remoteBack"].every((t) => pageSrc2.includes(t)) ? ok : fail)(
-    "【139d】手机页有 ＋ 菜单（图片 / 文件 / 技能 / 指令），四条链路 + 返回键钩子都接上"
+  (["openSheet", "/api/upload", "files-list", "insertText", "runCommand", "__remoteBack", "openApk"].every((t) => pageSrc2.includes(t)) ? ok : fail)(
+    "【139d】手机页有 ＋ 菜单（图片 / 文件 / 技能 / 指令 / 安装包），链路 + 返回键钩子都接上"
+  );
+  (/url === "\/apk"/.test(relaySrc2) && /mirrorCandidates/.test(relaySrc2) && /apkFile/.test(relaySrc2) && /REMOTE_APK_RELEASE/.test(relaySrc2) ? ok : fail)(
+    "【139d】安装包：/apk 按需从 GitHub Release 镜像链（gh-proxy→ghfast→直连）取并缓存到 apk-cache"
   );
   (/but found/.test(mainSrc2) && /先停止再压缩/.test(mainSrc2) && /realpathSync/.test(mainSrc2) ? ok : fail)(
     "【139d】停止按引擎真实 turnId 重试；压缩拒绝在回合中执行；文件读再做一次真实路径校验（防软链逃逸）"
