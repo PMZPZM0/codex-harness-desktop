@@ -40,22 +40,33 @@
                 android:textColor="@color/muted"
                 android:textSize="13sp" />
 
-            <EditText
-                android:id="@+id/url"
+            <TextView
+                android:id="@+id/server_info"
                 android:layout_width="match_parent"
-                android:layout_height="52dp"
-                android:layout_marginTop="22dp"
-                android:autofillHints="url"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:textColor="@color/muted"
+                android:textSize="12sp" />
+
+            <EditText
+                android:id="@+id/code"
+                android:layout_width="match_parent"
+                android:layout_height="58dp"
+                android:layout_marginTop="18dp"
+                android:autofillHints="oneTimeCode"
                 android:background="@drawable/field"
-                android:hint="@string/url_hint"
+                android:gravity="center"
+                android:hint="@string/code_hint"
                 android:importantForAutofill="yes"
-                android:inputType="textUri"
+                android:inputType="number"
+                android:letterSpacing="0.35"
+                android:maxLength="6"
                 android:maxLines="1"
                 android:paddingStart="14dp"
                 android:paddingEnd="14dp"
                 android:textColor="@color/ink"
                 android:textColorHint="@color/muted"
-                android:textSize="15sp" />
+                android:textSize="24sp" />
 
             <LinearLayout
                 android:layout_width="match_parent"

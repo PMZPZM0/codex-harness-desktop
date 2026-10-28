@@ -69,6 +69,12 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
 .msg.assistant{align-self:flex-start;background:#fff;border:1px solid var(--line);border-bottom-left-radius:6px;box-shadow:0 1px 2px rgba(35,35,31,.04)}
 .msg.assistant.streaming{border-color:#e8b34b;box-shadow:0 1px 2px rgba(232,179,75,.12)}
 .msg.system{align-self:center;background:#efefec;color:var(--muted);font-size:12px;padding:4px 12px;border-radius:999px}
+.run-steps{align-self:flex-start;max-width:84%;font-size:12px;color:var(--muted);background:#f1f1ee;border:1px solid #e6e6e2;border-radius:12px;padding:6px 10px;box-sizing:border-box}
+.run-steps summary{cursor:pointer;list-style:none;color:var(--muted)}
+.run-steps summary::-webkit-details-marker{display:none}
+.run-steps summary::before{content:"▸ "}
+.run-steps[open] summary::before{content:"▾ "}
+.run-steps .step{padding:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .thinking-indicator{align-self:flex-start;display:flex;align-items:center;gap:6px;padding:6px 4px;color:var(--muted);font-size:12px}
 .thinking-indicator .dot{width:6px;height:6px;background:#e8b34b;border-radius:50%;animation:throb 1.2s infinite}
 @keyframes throb{0%,100%{opacity:.4;transform:scale(.8)}50%{opacity:1;transform:scale(1.2)}}
@@ -97,6 +103,8 @@ const rpcWaiters = new Map();
 const THREAD_KEY = "chm-thread";
 let currentThreadId = localStorage.getItem(THREAD_KEY) || "";
 let streaming = "";
+// 当前回合的「运行步骤」容器（命令/文件/工具/思考）；回合结束收成可折叠块
+let stepBox = null;
 const list = document.getElementById("msglist");
 // 设备身份：localStorage 固定生成，服务端用它记住「这台手机上次用的会话」
 let deviceId = localStorage.getItem("chm-device-id");
@@ -193,6 +201,7 @@ async function loadMessages() {
   if (!currentThreadId) return;
   try {
     list.innerHTML = "";
+    stepBox = null;
     const r = await rpc({ type: "get-messages", threadId: currentThreadId });
     const msgs = r.messages || [];
     for (const m of msgs) push(m.role, m.text);
@@ -211,6 +220,7 @@ function sendCmd() {
   const input = document.getElementById("cmd");
   const v = input.value.trim();
   if (!v) return;
+  stepBox = null; // 新一轮从空步骤列表开始
   push("user", v, "", true);
   input.value = "";
   showThinking();
@@ -245,10 +255,37 @@ async function pollLoop() {
         if (!el) el = push("assistant", "", "assistant streaming");
         el.textContent += event.text;
         list.scrollTop = list.scrollHeight;
+      } else if (event.kind === "step") {
+        // 运行步骤：与桌面对话框同一批事件（命令 / 文件 / 工具 / 搜索 / 思考）
+        hideThinking();
+        if (!stepBox) {
+          stepBox = document.createElement("div");
+          stepBox.className = "run-steps";
+          list.appendChild(stepBox);
+        }
+        const lastStep = stepBox.lastElementChild;
+        if (!lastStep || lastStep.textContent !== event.text) {
+          const line = document.createElement("div");
+          line.className = "step";
+          line.textContent = event.text;
+          stepBox.appendChild(line);
+          list.scrollTop = list.scrollHeight;
+        }
       } else if (event.kind === "done") {
         hideThinking();
         const el = list.querySelector(".streaming");
         if (el) el.classList.remove("streaming");
+        // 回合结束：步骤收成「运行过程 · N 步」，点开可看
+        if (stepBox && stepBox.children.length) {
+          const box = document.createElement("details");
+          box.className = "run-steps";
+          const sum = document.createElement("summary");
+          sum.textContent = "运行过程 · " + stepBox.children.length + " 步";
+          box.appendChild(sum);
+          while (stepBox.firstChild) box.appendChild(stepBox.firstChild);
+          stepBox.replaceWith(box);
+        }
+        stepBox = null;
       } else if (event.kind === "user") {
         const pending = list.querySelector('.msg.user[data-pending="1"]');
         if (pending && pending.textContent === event.text) {

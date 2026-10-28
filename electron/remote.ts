@@ -820,7 +820,11 @@ async function autoLogin(){
   } catch { /* 网络不通就留在表单 */ }
   el.className = ""; el.textContent = "";
 }
-autoLogin();
+// App 内置了服务器地址、只让人填 6 位连接码：码走 URL 片段（#code=…，不会进服务器日志），
+// 到这里自动填好并提交；没有码才走「设备秘密自动登录」。
+const hashCode = (location.hash.match(/code=([0-9]{6})/) || [])[1] || "";
+if (hashCode) { document.getElementById("code").value = hashCode; submit(); }
+else autoLogin();
 </script></html>`;
   }
 

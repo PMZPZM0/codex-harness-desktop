@@ -7,11 +7,31 @@ android {
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.codexharness.remote"
         minSdk 26
         targetSdk 34
         versionCode 1
         versionName "0.1.0"
+    }
+
+    // 两个包各自写死服务器地址：装完只要输 6 位连接码（扫码照旧可用）
+    flavorDimensions "product"
+    productFlavors {
+        harness {
+            dimension "product"
+            applicationId "com.codexharness.remote"
+            manifestPlaceholders = [appLabel: "Codex 远控"]
+            buildConfigField "String", "BASE_URL", "\"https://remote.ppz123.asia\""
+        }
+        ppcode {
+            dimension "product"
+            applicationId "com.ppcode.remote"
+            manifestPlaceholders = [appLabel: "PPcode 远控"]
+            buildConfigField "String", "BASE_URL", "\"https://ppcode.pptoken.cc:18443\""
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     buildTypes {

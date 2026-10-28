@@ -157,6 +157,31 @@ function peekCaptureBuffer(threadId: string, turnId: unknown) {
 }
 let threadCwd!: any;
 let remoteEventForwarders!: any;
+
+/** 把引擎 item 压成手机端能看懂的一行步骤（返回空串 = 这一步不上报）。 */
+function remoteStepOf(item: any, phase: "started" | "completed"): string {
+  const type = String(item?.type ?? "");
+  if (phase === "completed") return "";
+  if (type === "commandExecution") {
+    const cmd = String(item?.command ?? "").replace(/\s+/g, " ").trim();
+    return cmd ? `命令 · ${cmd.slice(0, 60)}` : "命令";
+  }
+  if (type === "fileChange") {
+    const paths = (item?.changes ?? []).map((c: any) => String(c?.path ?? "")).filter(Boolean);
+    if (!paths.length) return "修改文件";
+    const head = paths.slice(0, 2).join("、");
+    return `修改文件 · ${head}${paths.length > 2 ? ` 等 ${paths.length} 个` : ""}`;
+  }
+  if (type === "mcpToolCall" || type === "functionCall") {
+    return `工具 · ${String(item?.tool ?? item?.name ?? "工具").slice(0, 40)}`;
+  }
+  if (type === "webSearch") {
+    const query = String(item?.query ?? "").slice(0, 40);
+    return query ? `搜索 · ${query}` : "搜索";
+  }
+  if (type === "reasoning") return "思考";
+  return "";
+}
 let internalThreads!: any;
 let workspaceMemoryEnabled!: any;
 let memoryStore!: any;
@@ -844,6 +869,13 @@ export async function bootApp() {
       } else if (event.method === "item/completed" && p?.item?.type === "agentMessage" && p.item.text) {
         const buffer = peekCaptureBuffer(String(p.threadId), turnIdOf(p));
         if (buffer) buffer.assistant = p.item.text;
+      } else if (event.method === "item/started" || event.method === "item/completed") {
+        /* 手机端「运行步骤」：与桌面对话框同一批 item 事件 —— 命令 / 文件变更 / 工具 / 搜索 / 思考，
+           手机只会看到被打平的一行行短标签（桌面的折叠区同理，只是形态更细）。 */
+        const step = remoteStepOf(p?.item, event.method === "item/started" ? "started" : "completed");
+        if (step && !internalThreads.has(String(p?.threadId ?? ""))) {
+          for (const forward of remoteEventForwarders) forward({ threadId: p.threadId, kind: "step", text: step });
+        }
       } else if (event.method === "turn/completed") {
         if (!internalThreads.has(String(p?.threadId))) for (const forward of remoteEventForwarders) forward({ threadId: p?.threadId, kind: "done", text: "" });
         /* 引擎真压缩的宿主侦测（10-07）：当前引擎的压缩不发 item 事件（item 只落 rollout，

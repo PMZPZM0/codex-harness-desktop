@@ -1046,8 +1046,12 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   );
   const pairSrc = readFileSync(join(ROOT, "electron", "remote.ts"), "utf8");
   const autoAt = pairSrc.indexOf("async function autoLogin()");
-  const autoBody = autoAt >= 0 ? pairSrc.slice(autoAt, pairSrc.indexOf("autoLogin();", autoAt)) : "";
-  (autoAt >= 0 && /^autoLogin\(\);$/m.test(pairSrc) ? ok : fail)(
+  // 只取函数体（到行首的 `}`）：外面还有「有连接码就直接提交、否则 autoLogin」的分支，
+  // ⛔ 用 indexOf("autoLogin();") 切片会把那段分支也算进来 ⇒ 「不带 code」判据假红。
+  // ⛔ 用 "\n}" 而不是 "\n}\n"：工作树是 CRLF，行尾是 \r\n，后者永远找不到 ⇒ autoBody 为空 ⇒ 假红
+  const autoEnd = autoAt >= 0 ? pairSrc.indexOf("\n}", autoAt) : -1;
+  const autoBody = autoEnd > autoAt ? pairSrc.slice(autoAt, autoEnd) : "";
+  (autoAt >= 0 && /autoLogin\(\)/.test(pairSrc) ? ok : fail)(
     "【139b】配对页必须尝试「设备秘密自动登录」—— accessToken 每次启动重生成，不自动换就得每次重批"
   );
   (/deviceSecret/.test(autoBody) && !/\bcode\b/.test(autoBody) ? ok : fail)(
@@ -1055,6 +1059,10 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   );
   (/\.msg\.user\{[^}]*var\(--accent-soft\)/.test(pageSrc) && !/\.msg\.user\{[^}]*#1e1e1c/.test(pageSrc) ? ok : fail)(
     "【139b】用户气泡走浅色主色底，不得回到黑底白字"
+  );
+  const bootSrc = readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8");
+  (/kind: "step"/.test(bootSrc) && /event\.kind === "step"/.test(pageSrc) ? ok : fail)(
+    "【139b】运行步骤：主进程按 item 事件转发（命令/文件/工具/搜索/思考），手机页渲染成可折叠「运行过程」"
   );
   const mainSrc = readMainSource();
   const gmAt = mainSrc.indexOf("getThreadMessages:");
@@ -1089,6 +1097,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   );
   (/server\.once\("error", onError\)/.test(relaySrc) && /reject\(new Error\(/.test(relaySrc) ? ok : fail)(
     "【139c】固定端口 listen 失败必须 reject 并清 server —— 不挂 error 时 Promise 永远悬着，界面「点了没反应」"
+  );
+  (/const hashCode = \(location\.hash\.match/.test(relaySrc) && /if \(hashCode\) \{[\s\S]{0,120}submit\(\);/.test(relaySrc) ? ok : fail)(
+    "【139c】配对页支持 #code= 自动提交 —— 安卓包内置地址后只让人输一次连接码"
   );
 }
 
