@@ -11,6 +11,10 @@
   min-height: 100%;
   display: flex;
   flex-direction: column;
+  /* ⛔ 10-28 回归修复：全局 .settings-section 是 align-items:flex-start（组件层），
+     会把本页的直接子卡压成内容宽（个性化页截图：卡片只占左半、右边一大片空）。
+     本页在 pages 层，必须显式 stretch 才能让卡片自适应撑到右边。 */
+  align-items: stretch;
   gap: 0;
   padding: 4px 2px 26px;
 }
