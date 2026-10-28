@@ -76,6 +76,8 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
 .run-steps[open] summary::before{content:"▾ "}
 .run-steps .step{padding:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .run-steps .think{margin-top:5px;padding-top:5px;border-top:1px dashed #ddd9d2;color:#6f6f69;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto}
+.run-steps .step-out{display:none;margin:2px 0 6px;padding:6px 8px;background:#fff;border:1px solid var(--line);border-radius:8px;font-size:11px;line-height:1.5;max-height:160px;overflow:auto;white-space:pre-wrap;word-break:break-all;color:#4a4a46}
+.run-steps .step-out.on{display:block}
 #plus{flex:0 0 auto;width:44px;height:44px;margin:0;padding:0;font-size:22px;line-height:40px;color:var(--ink);background:#f2f2ef;border:1px solid var(--line);border-radius:14px}
 #file-pick{display:none}
 #imgs{display:none;gap:8px;padding:8px 12px 0;background:#fff;overflow-x:auto}
@@ -152,6 +154,8 @@ let stepBox = null;
 let pendingImages = [];
 let catalogCache = null;
 let panelBack = null;
+// 当前命令步骤的输出块（桌面对话框的命令卡里有结果，手机端挂在对应命令下面）
+let currentOutputEl = null;
 // 当前会话是否在跑：发送键在运行时变成「停止」
 let turnRunning = false;
 const list = document.getElementById("msglist");
@@ -255,6 +259,7 @@ async function newThread() {
   document.getElementById("threads").classList.remove("open");
   list.innerHTML = "";
   stepBox = null; // 旧容器已从 DOM 移除，不重置的话新回合的步骤会渲染到看不见的节点上
+  currentOutputEl = null;
   setRunning(false);
   push("system", "已新建会话，直接发消息开始对话");
   updateThreadLabel("新会话");
@@ -266,6 +271,7 @@ async function loadMessages() {
   try {
     list.innerHTML = "";
     stepBox = null;
+    currentOutputEl = null;
     setRunning(false);
     const r = await rpc({ type: "get-messages", threadId: currentThreadId });
     const msgs = r.messages || [];
@@ -289,6 +295,7 @@ async function sendCmd() {
   const v = input.value.trim();
   if (!v && !pendingImages.length) return;
   stepBox = null; // 新一轮从空步骤列表开始
+  currentOutputEl = null;
   const shots = pendingImages.slice();
   pendingImages = [];
   renderImages();
@@ -569,6 +576,7 @@ async function runCommand(id) {
       localStorage.setItem(THREAD_KEY, currentThreadId);
       list.innerHTML = "";
       stepBox = null;
+      currentOutputEl = null;
       push("system", "已新建会话");
       loadThreads();
       saveSession();
@@ -639,8 +647,32 @@ async function pollLoop() {
           line.className = "step";
           line.textContent = event.text;
           stepBox.appendChild(line);
+          if (event.text.indexOf("命令") === 0) {
+            currentOutputEl = document.createElement("pre");
+            currentOutputEl.className = "step-out";
+            stepBox.appendChild(currentOutputEl);
+          }
           list.scrollTop = list.scrollHeight;
         }
+      } else if (event.kind === "output") {
+        // 命令输出：接在最近一条命令步骤下面（超过 6000 字只留尾部，别把页面撑爆）
+        hideThinking();
+        setRunning(true);
+        if (!stepBox) {
+          stepBox = document.createElement("div");
+          stepBox.className = "run-steps";
+          list.appendChild(stepBox);
+        }
+        if (!currentOutputEl) {
+          currentOutputEl = document.createElement("pre");
+          currentOutputEl.className = "step-out";
+          stepBox.appendChild(currentOutputEl);
+        }
+        currentOutputEl.textContent += event.text;
+        if (currentOutputEl.textContent.length > 6000) currentOutputEl.textContent = currentOutputEl.textContent.slice(-6000);
+        currentOutputEl.classList.add("on");
+        currentOutputEl.scrollTop = currentOutputEl.scrollHeight;
+        list.scrollTop = list.scrollHeight;
       } else if (event.kind === "think") {
         // 思考内容：与桌面折叠区同一股摘要流，实时展开显示
         hideThinking();
@@ -679,12 +711,14 @@ async function pollLoop() {
           const box = document.createElement("details");
           box.className = "run-steps";
           const sum = document.createElement("summary");
-          sum.textContent = "运行过程 · " + stepBox.children.length + " 步";
+          const hasThink = Boolean(stepBox.querySelector(".think .think-text"));
+          sum.textContent = "运行过程 · " + stepBox.children.length + " 步" + (hasThink ? " · 含思考" : "");
           box.appendChild(sum);
           while (stepBox.firstChild) box.appendChild(stepBox.firstChild);
           stepBox.replaceWith(box);
         }
         stepBox = null;
+        currentOutputEl = null;
       } else if (event.kind === "user") {
         const pending = list.querySelector('.msg.user[data-pending="1"]');
         if (pending && pending.textContent === event.text) {
