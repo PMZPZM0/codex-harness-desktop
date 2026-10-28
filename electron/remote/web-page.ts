@@ -27,7 +27,7 @@ function escapeHtmlText(value: unknown): string {
   return String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[ch] ?? ch);
 }
 
-export function buildRemotePageHtml(code: string, botId?: string, botName?: string): string {
+export function buildRemotePageHtml(code: string, botId?: string, botName?: string, brandName = "Codex Harness"): string {
     const bindingMode = Boolean(botId);
     if (bindingMode) {
       // 绑定模式：确认登录 → 确认成功后 location 换成不带 ?bot= 的对话页
@@ -165,14 +165,63 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
 #send:active{opacity:.85}
 #send.stop{background:#c0392b}
 .confirm-card{margin:40vh auto 0;max-width:340px;text-align:center}
+/* ── 首页（普通 / 中枢）── */
+#home{flex:1;overflow:auto;padding:16px 14px 24px}
+#home[hidden]{display:none}
+.home-tabs{display:flex;gap:6px;padding:3px;border:1px solid var(--line);border-radius:999px;background:#f4f4f1;width:max-content;margin:0 auto 16px}
+.home-tab{border:0;background:transparent;color:var(--muted);font-size:12.5px;padding:7px 16px;border-radius:999px;cursor:pointer}
+.home-tab.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgb(0 0 0 / 7%)}
+.home-hero{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;padding:26px 10px 6px}
+.home-logo{width:64px;height:64px;border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:30px;background:linear-gradient(135deg,var(--accent),#6aa8ff);color:#fff;margin-bottom:4px}
+.home-hero h2{margin:0;font-size:20px;color:var(--ink)}
+.home-hero p{margin:0;color:var(--muted);font-size:13px;line-height:1.7;max-width:300px}
+.home-hint{margin:14px auto 0;color:var(--faint,#a3a39c);font-size:11.5px;text-align:center;line-height:1.7;max-width:300px}
+.home-sec-head{display:flex;align-items:center;justify-content:space-between;margin:4px 2px 8px}
+.home-sec-head b{font-size:13.5px;color:var(--ink)}
+.home-sec-head button{border:0;background:transparent;color:var(--accent);font-size:12.5px;padding:4px 2px}
+.home-group{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--line);border-radius:14px;background:#fff;margin-bottom:10px}
+.home-group.has-news{border-color:#e6c07a}
+.home-group-head{display:flex;align-items:center;gap:10px;min-width:0}
+.home-group-title{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.home-group-title b{font-size:14px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-group-title small{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-dot{width:8px;height:8px;border-radius:50%;background:#e0a33f;flex:none}
+.home-avatars{position:relative;width:42px;height:42px;flex:none}
+.home-avatar{position:absolute;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:600;border:1.5px solid #fff}
+.home-avatar.news{box-shadow:0 0 0 2px #e0a33f}
+.home-members{display:flex;gap:4px;flex-wrap:wrap}
+.home-mchip{padding:2px 8px;border-radius:999px;background:#f4f4f1;color:var(--muted);font-size:11px}
+.home-mchip.news{background:#fdf3e0;color:#8a5c0e}
+.home-events{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px}
+.home-events li{display:flex;gap:8px;font-size:11.5px;color:var(--muted);min-width:0}
+.home-events time{color:#a3a39c;flex:none;font-variant-numeric:tabular-nums}
+.home-events span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-actions{display:flex;gap:8px;margin-top:2px}
+.home-actions button{flex:1;padding:9px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);font-size:12.5px}
+.home-actions button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.home-empty{padding:36px 16px;text-align:center;color:var(--muted);font-size:12.5px;line-height:1.8}
+.home-empty button{margin-top:12px;padding:9px 16px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);font-size:12.5px}
+.thread-tag{display:inline-block;margin-right:5px;padding:1px 6px;border-radius:6px;font-size:10.5px;font-style:normal;vertical-align:1px}
+.thread-tag.boss{background:#fdf3e0;color:#8a5c0e}
+.thread-tag.member{background:#eef4ff;color:#3b5fa8}
+.panel-row{padding:11px 16px;border-bottom:1px solid #f2f2ef;font-size:13px;display:flex;gap:8px;align-items:center;justify-content:space-between}
+.panel-row small{color:var(--muted);font-size:11.5px}
+.panel-note{padding:14px 16px;color:#8a8a84;font-size:11.5px;line-height:1.7}
+.home-retry{margin:14px auto 0;display:block;padding:8px 16px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);font-size:12.5px}
+.home-manage-enter{margin:12px 16px;display:block;width:calc(100% - 32px);padding:11px;border:0;border-radius:11px;background:var(--accent);color:#fff;font-size:13.5px;font-weight:600}
 </style>
 <header>
+  <button id="btn-home" onclick="openHome()" title="回到首页">首页</button>
   <button id="btn-threads" onclick="toggleThreads()">会话</button>
   <h1 id="title">Codex 对话</h1>
   <span id="thread-label" style="font-size:11px;color:#8a8a84;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px"></span>
   <span class="status" id="status">连接中…</span>
 </header>
-<div id="threads"><div class="threads-head"><button onclick="toggleThreads()">← 返回</button><b>选择会话</b><button class="new-thread" onclick="newThread()">＋ 新建</button></div><div class="list" id="thread-list"></div></div>
+<div id="threads"><div class="threads-head"><button onclick="toggleThreads()">← 返回</button><b>选择会话</b><button class="new-thread" onclick="openNewThreadMenu()">＋ 新建</button></div><div class="list" id="thread-list"></div></div>
+<div id="home" hidden>
+  <div class="home-tabs"><button class="home-tab on" data-tab="normal" onclick="switchHome('normal')">普通会话</button><button class="home-tab" data-tab="hub" onclick="switchHome('hub')">👑 中枢会话</button></div>
+  <div class="home-body" id="home-body"></div>
+</div>
 <div id="msglist"></div>
 <div id="goalbar" hidden></div>
 <div id="taskbar" hidden></div>
@@ -195,6 +244,8 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
 </div>
 <script>
 const code = ${JSON.stringify(code)};
+// 品牌面（⛔ 各仓自有：桌面版 Codex Harness / PPcode 仓 PPcode；首页与标题都读它）
+const BRAND = ${JSON.stringify(brandName)};
 const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/" + code);
 let rpcSeq = 0;
 const rpcWaiters = new Map();
@@ -215,6 +266,13 @@ let filesEl = null;
 let filesBtn = null;
 // 本回合的实时文件清单（「查看改动」运行中优先用它，落盘报告只到回合结束才有）
 let lastFilesData = null;
+/* 首页（10-28）：应用不再一进去就是一段对话。
+   · normal = 普通会话首页（发消息 = 建普通会话）
+   · hub   = 中枢会话首页（群卡 / 群事件 / 群管理；发消息 = 建中枢会话）
+   ⛔ 首页态不隶属任何会话：currentThreadId 置空，选中会话或发送时才真正进入会话。 */
+let homeMode = "normal";
+let homeVisible = false;
+let groupSeen = {};
 // 当前会话是否在跑：发送键在运行时变成「停止」
 let turnRunning = false;
 const list = document.getElementById("msglist");
@@ -225,6 +283,8 @@ if (!deviceId) {
   localStorage.setItem("chm-device-id", deviceId);
 }
 function saveSession() {
+  // 首页态没有会话可记：别用空 id 覆盖「上次会话」映射（否则下次进来永远回到首页也找不到上次）
+  if (!currentThreadId) return;
   try {
     fetch("/api/session", { method: "POST", headers: {"content-type":"application/json"}, body: JSON.stringify({ device: deviceId, threadId: currentThreadId }) });
   } catch { /* 忽略 */ }
@@ -306,9 +366,13 @@ async function loadThreads() {
     const row = document.createElement("div");
     row.className = "thread-row" + (t.id === currentThreadId ? " active" : "");
     row.innerHTML = "<b></b><small></small>";
-    row.querySelector("b").textContent = threadTitle(t);
+    const title = row.querySelector("b");
+    /* 10-28 会话列表标签：中枢（带群名） / 中枢调度 —— 一眼分清会话类型 */
+    if (t.kind === "boss") title.appendChild(makeEl("i", "thread-tag boss", "中枢" + (t.groupName ? " · " + t.groupName : "")));
+    else if (t.kind === "bossMember") title.appendChild(makeEl("i", "thread-tag member", "中枢调度"));
+    title.appendChild(document.createTextNode(threadTitle(t)));
     row.querySelector("small").textContent = new Date(t.updatedAt * 1000).toLocaleString();
-    row.onclick = () => { currentThreadId = t.id; localStorage.setItem(THREAD_KEY, t.id); document.getElementById("threads").classList.remove("open"); loadMessages(); updateThreadLabel(threadTitle(t)); saveSession(); };
+    row.onclick = () => { hideHome(); currentThreadId = t.id; localStorage.setItem(THREAD_KEY, t.id); document.getElementById("threads").classList.remove("open"); loadMessages(); updateThreadLabel(threadTitle(t)); saveSession(); };
     el.appendChild(row);
   }
 }
@@ -317,21 +381,10 @@ function updateThreadLabel(name) {
   const el = document.getElementById("thread-label");
   if (el) el.textContent = name || "";
 }
-async function newThread() {
-  const r = await rpc({ type: "new-thread" });
-  currentThreadId = r.threadId;
-  localStorage.setItem(THREAD_KEY, currentThreadId);
-  document.getElementById("threads").classList.remove("open");
-  list.innerHTML = "";
-  stepBox = null; // 旧容器已从 DOM 移除，不重置的话新回合的步骤会渲染到看不见的节点上
-  currentOutputEl = null;
-
-  lastFilesData = null;
-  setRunning(false);
-  push("system", "已新建会话，直接发消息开始对话");
-  updateThreadLabel("新会话");
-  loadThreads();
-  saveSession();
+/* 新建会话统一入口（10-28）：boss=true ⇒ 中枢会话；其余走默认会话。
+   ⛔ 首页只负责「选类型」，真正建会话都在这里（与弹窗菜单共用一条链）。 */
+async function newThread(boss) {
+  return startSession(Boolean(boss));
 }
 async function loadMessages() {
   if (!currentThreadId) return;
@@ -378,6 +431,9 @@ async function sendCmd() {
   const input = document.getElementById("cmd");
   const v = input.value.trim();
   if (!v && !pendingImages.length) return;
+  /* 10-28：首页发消息 = 建会话。中枢首页 ⇒ 中枢会话（其余入口一律普通会话）。 */
+  const startAsBoss = homeVisible && homeMode === "hub";
+  hideHome();
   stepBox = null; // 新一轮从空步骤列表开始
   currentOutputEl = null;
 
@@ -404,7 +460,7 @@ async function sendCmd() {
       return;
     }
     if (!currentThreadId) {
-      const r = await rpc({ type: "new-thread" });
+      const r = await rpc({ type: "new-thread", boss: startAsBoss });
       currentThreadId = r.threadId;
       localStorage.setItem(THREAD_KEY, currentThreadId);
       loadThreads();
@@ -455,6 +511,283 @@ function showThinking() {
 function hideThinking() {
   const el = list.querySelector(".thinking-indicator");
   if (el) el.remove();
+}
+/* ── 首页（10-28 用户立项）：普通 / 中枢两种，默认普通 ─────────────────────
+   ⛔ 首页不隶属任何会话（currentThreadId 置空）；发消息时才建会话：
+       普通首页 → 普通会话；中枢首页 → 中枢会话（主进程 cwd=boss-home + 登记中枢身份）。
+   ⛔ 纯字符串拼接，别用模板字符串（整页本身是 TS 模板串，插值会被外层吃掉）。 */
+function makeEl(tag, cls, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text != null) node.textContent = text;
+  return node;
+}
+function greetingHome() {
+  const h = new Date().getHours();
+  return h < 6 ? "夜深了" : h < 11 ? "早上好" : h < 14 ? "中午好" : h < 18 ? "下午好" : "晚上好";
+}
+function readHomePrefs() {
+  try {
+    homeMode = localStorage.getItem("chm-home") === "hub" ? "hub" : "normal";
+    groupSeen = JSON.parse(localStorage.getItem("chm-group-seen") || "{}") || {};
+  } catch (error) { homeMode = "normal"; groupSeen = {}; }
+}
+function markGroupSeen(groupId) {
+  if (!groupId) return;
+  groupSeen[String(groupId)] = Date.now();
+  try { localStorage.setItem("chm-group-seen", JSON.stringify(groupSeen)); } catch (error) { /* 忽略 */ }
+}
+function groupHasNews(group) {
+  const seen = Number(groupSeen[String(group && group.id || "")] || 0);
+  return (group && group.recentEvents || []).some((event) => Number(event && event.at || 0) > seen);
+}
+function memberHasNews(group, memberId) {
+  const seen = Number(groupSeen[String(group && group.id || "")] || 0);
+  return (group && group.recentEvents || []).some((event) => String(event && event.memberId || "") === String(memberId)
+    && Number(event && event.at || 0) > seen
+    && ["submitted", "chat-member", "done", "escalated"].indexOf(String(event && event.kind || "")) >= 0);
+}
+function openHome() { homeVisible = true; showHome(); }
+function showHome() {
+  homeVisible = true;
+  currentThreadId = "";
+  try { localStorage.removeItem(THREAD_KEY); } catch (error) { /* 忽略 */ }
+  document.getElementById("home").hidden = false;
+  document.getElementById("msglist").hidden = true;
+  document.getElementById("goalbar").hidden = true;
+  document.getElementById("taskbar").hidden = true;
+  document.getElementById("threads").classList.remove("open");
+  setRunning(false);
+  updateThreadLabel("首页");
+  const input = document.getElementById("cmd");
+  if (input) input.placeholder = homeMode === "hub" ? "发消息给中枢：会新建一条中枢会话" : "输入消息，发送给 " + BRAND;
+  renderHome();
+}
+function hideHome() {
+  if (!homeVisible) return;
+  homeVisible = false;
+  document.getElementById("home").hidden = true;
+  document.getElementById("msglist").hidden = false;
+  const input = document.getElementById("cmd");
+  if (input) input.placeholder = "输入消息，发送给 " + BRAND;
+}
+function switchHome(tab) {
+  homeMode = tab === "hub" ? "hub" : "normal";
+  try { localStorage.setItem("chm-home", homeMode); } catch (error) { /* 忽略 */ }
+  showHome();
+}
+function avatarTone(seed) {
+  const tones = ["#e0873f", "#3f9a6a", "#4a6fd0", "#b3578a", "#7357c9", "#3f8e96"];
+  let hash = 0;
+  const text = String(seed || "");
+  for (let i = 0; i < text.length; i += 1) hash = (hash * 31 + text.charCodeAt(i)) % 997;
+  return tones[hash % tones.length];
+}
+function initialOf(name) {
+  const text = String(name || "").trim();
+  if (!text) return "?";
+  const first = Array.from(text)[0];
+  return /[a-z]/.test(first) ? first.toUpperCase() : first;
+}
+function groupAvatarNode(group, size) {
+  const box = makeEl("div", "home-avatars");
+  box.style.width = size + "px";
+  box.style.height = size + "px";
+  const members = (group && group.members || []).filter((member) => member && member.name).slice(0, 3);
+  if (!members.length) {
+    const solo = makeEl("div", "home-avatar", initialOf(group && group.name));
+    solo.style.background = avatarTone(group && group.name);
+    solo.style.width = (size * 0.62) + "px";
+    solo.style.height = (size * 0.62) + "px";
+    solo.style.left = (size * 0.19) + "px";
+    solo.style.top = (size * 0.19) + "px";
+    box.appendChild(solo);
+    return box;
+  }
+  const base = Math.round(size * 0.44);
+  members.forEach((member, index) => {
+    const face = makeEl("div", "home-avatar" + (memberHasNews(group, member.id) ? " news" : ""), initialOf(member.name));
+    face.style.background = avatarTone(member.name);
+    face.style.width = base + "px";
+    face.style.height = base + "px";
+    face.style.left = (members.length === 1 ? (size - base) / 2 : size * 0.06 + index * (size * 0.24)) + "px";
+    face.style.top = (members.length === 1 ? (size - base) / 2 : size * 0.1 + (index % 2) * (size * 0.36)) + "px";
+    box.appendChild(face);
+  });
+  return box;
+}
+function clockOf(ms) {
+  const at = Number(ms || 0);
+  if (!at) return "";
+  const d = new Date(at);
+  const pad = (n) => String(n).padStart(2, "0");
+  return pad(d.getHours()) + ":" + pad(d.getMinutes());
+}
+async function renderHome() {
+  document.querySelectorAll(".home-tab").forEach((button) => {
+    button.classList.toggle("on", button.getAttribute("data-tab") === homeMode);
+  });
+  const body = document.getElementById("home-body");
+  if (!body) return;
+  body.innerHTML = "";
+  if (homeMode !== "hub") {
+    const hero = makeEl("div", "home-hero");
+    hero.appendChild(makeEl("div", "home-logo", "✦"));
+    hero.appendChild(makeEl("h2", null, greetingHome()));
+    hero.appendChild(makeEl("p", null, BRAND + " · 今天想做点什么？直接说，我来干。"));
+    body.appendChild(hero);
+    body.appendChild(makeEl("div", "home-hint", "在下面输入框发消息 = 新建一条普通会话；找以前的会话，点左上角「会话」。"));
+    return;
+  }
+  body.appendChild(makeEl("div", "empty-tip", "加载群…"));
+  let groups = [];
+  try {
+    const result = await rpc({ type: "boss-groups" });
+    groups = result && result.groups || [];
+  } catch (error) {
+    body.innerHTML = "";
+    body.appendChild(makeEl("div", "empty-tip", "群加载失败：" + (error.message || "未知错误")));
+    const retry = makeEl("button", "home-retry", "重试");
+    retry.onclick = () => { void renderHome(); };
+    body.appendChild(retry);
+    return;
+  }
+  body.innerHTML = "";
+  const head = makeEl("div", "home-sec-head");
+  head.appendChild(makeEl("b", null, "我的群"));
+  body.appendChild(head);
+  if (!groups.length) {
+    const empty = makeEl("div", "home-empty");
+    empty.appendChild(makeEl("div", null, "还没有群。"));
+    empty.appendChild(makeEl("div", null, "在电脑端建群（群管理）后，这里会出现群卡：成员、事件、未完成都能看，也能直接进中枢。"));
+    body.appendChild(empty);
+    return;
+  }
+  groups.forEach((group) => {
+    const news = groupHasNews(group);
+    const card = makeEl("div", "home-group" + (news ? " has-news" : ""));
+    const header = makeEl("div", "home-group-head");
+    header.onclick = () => openGroupThread(group);
+    header.appendChild(groupAvatarNode(group, 42));
+    const title = makeEl("div", "home-group-title");
+    title.appendChild(makeEl("b", null, group.name || "未命名群"));
+    title.appendChild(makeEl("small", null, (group.memberCount || 0) + " 位成员"
+      + (group.paused ? " · 已暂停" : "")
+      + (typeof group.openTaskCount === "number" ? " · " + group.openTaskCount + " 项未完成" : "")));
+    header.appendChild(title);
+    if (news) header.appendChild(makeEl("span", "home-dot"));
+    card.appendChild(header);
+
+    if (group.members && group.members.length) {
+      const chips = makeEl("div", "home-members");
+      group.members.slice(0, 6).forEach((member) => {
+        chips.appendChild(makeEl("span", "home-mchip" + (memberHasNews(group, member.id) ? " news" : ""), String(member.name || "")));
+      });
+      card.appendChild(chips);
+    }
+
+    const events = makeEl("ul", "home-events");
+    const recent = (group.recentEvents || []).slice(0, 3);
+    if (!recent.length) events.appendChild(makeEl("li", null, "群里还没有动静"));
+    recent.forEach((event) => {
+      const line = makeEl("li");
+      line.appendChild(makeEl("time", null, clockOf(event.at)));
+      line.appendChild(makeEl("span", null, String(event.text || "")));
+      events.appendChild(line);
+    });
+    card.appendChild(events);
+
+    const actions = makeEl("div", "home-actions");
+    const enter = makeEl("button", "primary", "进入中枢");
+    enter.onclick = () => openGroupThread(group);
+    const manage = makeEl("button", null, "群管理");
+    manage.onclick = () => openGroupManage(group);
+    actions.appendChild(enter);
+    actions.appendChild(manage);
+    card.appendChild(actions);
+    body.appendChild(card);
+  });
+  body.appendChild(makeEl("div", "home-hint", "群增删 / 派活 / 审查在电脑端操作；手机上直接说话即可。"));
+}
+function openGroupThread(group) {
+  const threadId = String(group && group.bossThreadId || "");
+  if (!threadId) { push("system", "这个群还没有中枢会话"); return; }
+  markGroupSeen(group.id);
+  hideHome();
+  currentThreadId = threadId;
+  try { localStorage.setItem(THREAD_KEY, threadId); } catch (error) { /* 忽略 */ }
+  document.getElementById("threads").classList.remove("open");
+  void loadMessages();
+  updateThreadLabel(group.name || "中枢会话");
+  saveSession();
+}
+function openGroupManage(group) {
+  const node = document.createElement("div");
+  showPanel("群管理 · " + String(group && group.name || "群"), node, null);
+  const seenAt = Number(groupSeen[String(group && group.id || "")] || 0);
+  markGroupSeen(group && group.id);
+  const members = (group && group.members || []);
+  const rowHead = makeEl("div", "panel-row");
+  rowHead.appendChild(makeEl("b", null, "成员 " + members.length));
+  rowHead.appendChild(makeEl("small", null, (group && group.paused ? "已暂停" : "运行中")));
+  node.appendChild(rowHead);
+  if (!members.length) node.appendChild(makeEl("div", "panel-note", "这个群还没有成员。"));
+  members.forEach((member) => {
+    const row = makeEl("div", "panel-row");
+    row.appendChild(makeEl("span", null, String(member.name || "成员") + (member.role ? " · " + member.role : "")));
+    row.appendChild(makeEl("small", null, memberHasNews(group, member.id) ? "有新动静" : ""));
+    node.appendChild(row);
+  });
+  const taskRow = makeEl("div", "panel-row");
+  taskRow.appendChild(makeEl("b", null, "任务"));
+  taskRow.appendChild(makeEl("small", null, (group && typeof group.openTaskCount === "number" ? group.openTaskCount + " 项未完成 / " : "") + (group && group.taskCount || 0) + " 项总计"));
+  node.appendChild(taskRow);
+  node.appendChild(makeEl("div", "panel-row")).appendChild(makeEl("b", null, "最近事件"));
+  (group && group.recentEvents || []).forEach((event) => {
+    const row = makeEl("div", "panel-row");
+    row.appendChild(makeEl("span", null, String(event.text || "")));
+    row.appendChild(makeEl("small", null, (Number(event.at || 0) > seenAt ? "NEW · " : "") + clockOf(event.at)));
+    node.appendChild(row);
+  });
+  const enter = makeEl("button", "home-manage-enter", "进入中枢会话");
+  enter.onclick = () => { closePanel(); openGroupThread(group); };
+  node.appendChild(enter);
+  node.appendChild(makeEl("div", "panel-note", "成员的增删 / 派活 / 审查 / 打回请在电脑端群面板操作（手机只做查看与对话）。"));
+}
+function openNewThreadMenu() {
+  const node = document.createElement("div");
+  showPanel("新建会话", node, null);
+  const add = (title, desc, boss) => {
+    const row = makeEl("div", "cmd-row");
+    row.appendChild(makeEl("b", null, title));
+    row.appendChild(makeEl("small", null, desc));
+    row.onclick = () => { startSession(boss); };
+    node.appendChild(row);
+  };
+  add("默认会话", "普通对话，直接开干", false);
+  add("中枢会话", "带群，能派活、盯进度、验收", true);
+}
+async function startSession(boss) {
+  closePanel();
+  closeSheet();
+  try {
+    const result = await rpc({ type: "new-thread", boss: Boolean(boss) });
+    hideHome();
+    currentThreadId = result.threadId;
+    try { localStorage.setItem(THREAD_KEY, currentThreadId); } catch (error) { /* 忽略 */ }
+    document.getElementById("threads").classList.remove("open");
+    list.innerHTML = "";
+    stepBox = null;
+    currentOutputEl = null;
+    lastFilesData = null;
+    setRunning(false);
+    push("system", boss ? "已新建中枢会话：可以直接派活，或让它建群" : "已新建会话，直接发消息开始对话");
+    updateThreadLabel(boss ? "中枢会话" : "新会话");
+    void loadThreads();
+    saveSession();
+  } catch (error) {
+    push("system", "新建会话失败：" + (error.message || "未知错误"));
+  }
 }
 /* ── ＋ 菜单：图片 / 文件 / 技能 / 指令（都在电脑端执行，手机只发请求） ── */
 function openSheet() {
@@ -989,29 +1322,13 @@ async function pollLoop() {
   setTimeout(pollLoop, 1500);
 }
 pollLoop();
-(async () => {
-  // 恢复上次会话：① 本地记录 ② 服务端设备映射 ③ 最近会话兜底，全无才新建
-  if (currentThreadId) { await loadMessages(); saveSession(); return; }
-  try {
-    const r = await fetch("/api/session?device=" + deviceId);
-    const j = await r.json();
-    if (j.threadId) { currentThreadId = j.threadId; localStorage.setItem(THREAD_KEY, currentThreadId); await loadMessages(); saveSession(); return; }
-  } catch { /* 服务不可用则走兜底 */ }
-  try {
-    const r = await rpc({ type: "list-threads" });
-    const threads = r.threads || [];
-    if (threads.length) {
-      const t = threads[0];
-      currentThreadId = t.id;
-      localStorage.setItem(THREAD_KEY, t.id);
-      await loadMessages();
-      updateThreadLabel(threadTitle(t));
-      saveSession();
-      return;
-    }
-  } catch { /* 引擎不可用则新建 */ }
-  await newThread();
-})();
+/* ⛔ 10-28 用户令：应用默认停在**首页**（「不会一进去就是对话」）。
+   以前这里会自动恢复上次会话、没有会话就连带新建一条（留一堆空会话）；
+   现在首页负责落地，点会话或发第一条消息时才进入会话。 */
+readHomePrefs();
+const titleEl = document.getElementById("title");
+if (titleEl) titleEl.textContent = BRAND + " 对话";
+showHome();
 </script>`;
     return pageHtml.replace("/*__MOBILE_MARKDOWN__*/", MOBILE_MARKDOWN_SOURCE);
 }

@@ -1025,7 +1025,7 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   const pageSrc = readFileSync(join(ROOT, "electron", "remote", "web-page.ts"), "utf8");
   const listAt = pageSrc.indexOf("async function loadThreads()");
   const listBody = listAt >= 0 ? pageSrc.slice(listAt, pageSrc.indexOf("function toggleThreads()")) : "";
-  (/function threadTitle\(t\) \{/.test(pageSrc) && /querySelector\("b"\)\.textContent = threadTitle\(t\)/.test(pageSrc) ? ok : fail)(
+  (/function threadTitle\(t\) \{/.test(pageSrc) && /title\.appendChild\(document\.createTextNode\(threadTitle\(t\)\)\)/.test(pageSrc) ? ok : fail)(
     "【139b】会话行标题必须走 threadTitle（截断 24 字），不得直接拿预览当标题"
   );
   (/querySelector\("small"\)\.textContent = new Date\(t\.updatedAt \* 1000\)\.toLocaleString\(\);/.test(pageSrc) ? ok : fail)(
@@ -1131,10 +1131,12 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   (/aborted\|failed\|interrupted/.test(bootSrc) && /turnRunning/.test(pageSrc) && /handleSend/.test(pageSrc) && /setRunning\(false\)/.test(pageSrc) ? ok : fail)(
     "【139b】运行中可一键停止：发送键切「停止」+ 中断/失败/中止同样发 done（否则停完一直挂「运行中」）"
   );
-  const ntAt = pageSrc.indexOf("async function newThread()");
-  const ntBody = ntAt >= 0 ? pageSrc.slice(ntAt, pageSrc.indexOf("async function loadMessages()", ntAt)) : "";
-  (/stepBox = null/.test(ntBody) ? ok : fail)(
-    "【139b】新建会话必须重置步骤容器 —— 旧容器已从 DOM 移除，不重置就看不到新回合的步骤"
+  /* 10-28 起新建会话统一走 startSession（newThread 只是带 boss 参数的薄壳） */
+  const ssAt = pageSrc.indexOf("async function startSession(");
+  const ssEnd = ssAt >= 0 ? pageSrc.indexOf("\nfunction ", ssAt) : -1;
+  const ssBody = ssEnd > ssAt ? pageSrc.slice(ssAt, ssEnd) : "";
+  (/stepBox = null/.test(ssBody) && /type: "new-thread", boss: Boolean\(boss\)/.test(ssBody) ? ok : fail)(
+    "【139b】新建会话必须重置步骤容器 —— 旧容器已从 DOM 移除，不重置就看不到新回合的步骤（中枢/普通两条都必须走 startSession）"
   );
   const mainSrc = readMainSource();
   const gmAt = mainSrc.indexOf("getThreadMessages:");
@@ -1169,6 +1171,36 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   (/CodexHarnessRemote/.test(pageSrc) && /link\.href\.indexOf\(location\.origin\)/.test(pageSrc) ? ok : fail)(
     "【139b】安卓壳内链接改当前窗导航（target=_blank 在 WebView 里没窗口可开 = 点了没反应）"
   );
+  /* 10-28 手机端首页（普通 / 中枢）：默认落首页，发消息才建会话 */
+  (/readHomePrefs\(\);[\s\S]{0,200}?showHome\(\);/.test(pageSrc)
+    && !/if \(currentThreadId\) \{ await loadMessages\(\); saveSession\(\); return; \}/.test(pageSrc) ? ok : fail)(
+    "【139b】手机端默认落**首页**（开机不再自动恢复/新建会话 —— 用户令「不会一进去就是对话」）"
+  );
+  (/const startAsBoss = homeVisible && homeMode === "hub"/.test(pageSrc) && /rpc\(\{ type: "new-thread", boss: startAsBoss \}\)/.test(pageSrc) ? ok : fail)(
+    "【139b】中枢首页发消息 = 建**中枢会话**（普通首页仍 boss:false）"
+  );
+  (/openNewThreadMenu/.test(pageSrc) && /add\("默认会话"/.test(pageSrc) && /add\("中枢会话"/.test(pageSrc) ? ok : fail)(
+    "【139b】新建会话必须先选类型（默认会话 / 中枢会话两项）"
+  );
+  (/type: "boss-groups"/.test(pageSrc) && /home-group/.test(pageSrc) && /groupAvatarNode/.test(pageSrc) ? ok : fail)(
+    "【139b】中枢首页群卡：群头像（成员首字拼图）+ 成员 + 事件 + 未读点（数据来自 boss-groups）"
+  );
+  (/thread-tag boss/.test(pageSrc) && /中枢调度/.test(pageSrc) && /kind === "boss"/.test(pageSrc) ? ok : fail)(
+    "【139b】会话列表标签：中枢（带群名） / 中枢调度 —— 身份由主进程给出，手机端不自己猜"
+  );
+  {
+    const relaySrc2 = readFileSync(join(ROOT, "electron", "remote.ts"), "utf8");
+    const mainSrc2 = readMainSource();
+    (/this\.events\.brandName/.test(relaySrc2) && /this\.events\.newThread\?\.\(Boolean\(data\.boss\)\)/.test(relaySrc2) && /listBossGroups/.test(relaySrc2) ? ok : fail)(
+      "【139b】手机页品牌名 / 中枢建会话 / 群快照都走主进程回调（⛔ 页面不硬编码品牌、不自造群数据）"
+    );
+    (/ensureBossHomeDir/.test(mainSrc2) && /registerBossSession\(id\)/.test(mainSrc2) ? ok : fail)(
+      "【139b】手机建中枢会话：cwd = boss-home（AGENTS 即中枢职责）+ 登记中枢身份"
+    );
+    (/listBossGroupSummaries/.test(mainSrc2) ? ok : fail)(
+      "【139b】群卡数据与桌面群列表**同一份**映射（⛔ 不各写一份，成员/事件/未完成不许漂移）"
+    );
+  }
 }
 
 /* ══ 【139c】手机远控走自建中转（安卓 App / 固定域名）：端口要固定、固定地址要压过隧道（10-28）══

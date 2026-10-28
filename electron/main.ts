@@ -25,6 +25,9 @@ import { RemoteControlService } from "./remote";
 import { stripHarnessBlocks } from "../src/lib/harness-block-strip.mjs";
 import { safeJoin, previewKind } from "../src/lib/remote-files.mjs";
 import { storedReportsForThread } from "./turn-file-watch";
+/* 手机端中枢首页 / 中枢会话（10-28）：与桌面共用同一份群快照与中枢目录（⛔ 不各写一份） */
+import { ensureBossHomeDir, listBossGroupSummaries } from "./features/boss-groups-ipc";
+import { listBossSessions, registerBossSession } from "./boss-groups/session-registry";
 import QRCode from "qrcode";
 import { readPersonalization, writePersonalization, applyPersonalizationToAgentsMd, buildAgentsMd, migrateGreetedForExistingUsers } from "./personalization";
 import { readAppSettings, readAppSettingsSync, saveAppSettings, type AppSettings } from "./app-settings";
@@ -463,12 +466,32 @@ const remote = new RemoteControlService({
   // 手机对话 UI 的引擎桥：选会话 / 新建会话 / 发消息 / 实时收流式回复
   listThreads: async () => {
     const result = await server.request("thread/list", { limit: 30, sortKey: "updated_at", sortDirection: "desc", archived: false }) as any;
+    /* 10-28 手机端「会话列表加标签」：中枢 / 中枢调度 / 普通 在这里定 ——
+       身份真相源是主进程（群账本 bossThreadId + 中枢登记表），⛔ 不让手机端自己猜。 */
+    const groups = await listBossGroupSummaries().catch(() => [] as any[]);
+    const sessions = await listBossSessions().catch(() => [] as any[]);
+    const bossIds = new Set<string>(groups.map((group: any) => String(group?.bossThreadId ?? "")).filter(Boolean));
+    const ownBossIds = new Set<string>((Array.isArray(sessions) ? sessions : []).map((entry: any) => String(entry?.id ?? "")).filter(Boolean));
+    const memberIds = new Set<string>(groups.flatMap((group: any) => (Array.isArray(group?.memberThreadIds) ? group.memberThreadIds : []).map(String)));
+    const groupNameOf = (id: string) => String(groups.find((group: any) => String(group?.bossThreadId ?? "") === id)?.name ?? "");
     // 已永久删除的会话不进手机端列表：这条链路直接打引擎（不过 thread/list 的合并逻辑），
     // 不挡的话手机上会看到电脑端已经删掉的会话（见 purgeDeletedThread 注释）。
     return (result.data ?? [])
       .filter((entry: any) => !deletedThreadIds.has(String(entry.id ?? "").toLowerCase()))
-      .map((entry: any) => ({ id: entry.id, name: entry.name ?? null, preview: entry.preview ?? "", updatedAt: entry.updatedAt ?? 0 }));
+      .map((entry: any) => {
+        const id = String(entry.id ?? "");
+        const isBoss = bossIds.has(id) || ownBossIds.has(id);
+        return {
+          id: entry.id,
+          name: entry.name ?? null,
+          preview: entry.preview ?? "",
+          updatedAt: entry.updatedAt ?? 0,
+          kind: isBoss ? "boss" : memberIds.has(id) ? "bossMember" : "normal",
+          groupName: isBoss ? groupNameOf(id) : "",
+        };
+      });
   },
+  listBossGroups: async () => listBossGroupSummaries(),
   getThreadMessages: async (threadId) => {
     const resumed = await server.request("thread/resume", { threadId, excludeTurns: false }) as any;
     const messages: { role: "user" | "assistant" | "system" | "think"; text: string }[] = [];
@@ -492,24 +515,31 @@ const remote = new RemoteControlService({
     }
     return messages;
   },
-  newThread: async () => {
+  newThread: async (boss = false) => {
     const model = await readCustomModel();
     if (!model) throw new Error("尚未配置自定义模型");
     const apiKey = model.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(model.encryptedKey, "base64")) : "";
     server.setApiKey(apiKey);
-    ensureProjectAgentsMd(process.cwd());
+    /* 10-28 手机「中枢首页发消息 = 建中枢会话」：
+       · cwd = <userData>/boss-home（那里的 AGENTS.md 就是中枢职责，引擎自动注入）；
+       · 建完登记进中枢名单（记忆路由 / 标签都靠它）。
+       ⛔ 普通会话仍走 process.cwd()，不受影响。 */
+    const cwd = boss ? ensureBossHomeDir() : process.cwd();
+    if (!boss) ensureProjectAgentsMd(process.cwd());
     // 手机新建的会话也要登记 cwd：文件预览靠它定位工作区（桌面端那条链在 codex-ipc 里登记）
     const started = await server.request("thread/start", {
       model: model.model,
-      cwd: process.cwd(),
+      cwd,
       approvalPolicy: "never",
       sandbox: "danger-full-access",
       // 官方订阅是伪供应商：引擎配置里没有 model_providers.openai-official 段，
       // 传给 thread/start 会导致流反复断开重连——省略让引擎走内置 openai + ChatGPT 登录凭据
       ...(model.provider === "openai-official" ? {} : { modelProvider: model.provider }),
     }) as any;
-    threadCwd.set(String(started.thread.id), process.cwd());
-    return { id: started.thread.id };
+    const id = String(started.thread.id);
+    threadCwd.set(id, cwd);
+    if (boss) await registerBossSession(id).catch(() => null);
+    return { id };
   },
   sendMessage: async (threadId, text, images = [], effort = "high") => {
     const model = await readCustomModel();
@@ -695,6 +725,8 @@ const remote = new RemoteControlService({
   },
   // 手机安装包资产名：按产品品牌区分（GitHub Release：mobile-remote-v0.1.0）
   apkFile: app.getName().toLowerCase().includes("ppcode") ? "PPcodeRemote-0.1.1.apk" : "CodexRemote-0.1.1.apk",
+  /* 手机首页的品牌面（⛔ 各仓自有：桌面版 = Codex Harness；PPcode 仓的 main.ts 写 PPcode） */
+  brandName: app.getName().toLowerCase().includes("ppcode") ? "PPcode" : "Codex Harness",
 });
 
 const rpaFile = path.join(app.getPath("userData"), "rpa-recipes.json");
