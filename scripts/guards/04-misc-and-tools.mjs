@@ -1064,6 +1064,11 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   (/kind: "step"/.test(bootSrc) && /event\.kind === "step"/.test(pageSrc) ? ok : fail)(
     "【139b】运行步骤：主进程按 item 事件转发（命令/文件/工具/搜索/思考），手机页渲染成可折叠「运行过程」"
   );
+  const ntAt = pageSrc.indexOf("async function newThread()");
+  const ntBody = ntAt >= 0 ? pageSrc.slice(ntAt, pageSrc.indexOf("async function loadMessages()", ntAt)) : "";
+  (/stepBox = null/.test(ntBody) ? ok : fail)(
+    "【139b】新建会话必须重置步骤容器 —— 旧容器已从 DOM 移除，不重置就看不到新回合的步骤"
+  );
   const mainSrc = readMainSource();
   const gmAt = mainSrc.indexOf("getThreadMessages:");
   const gmEnd = gmAt >= 0 ? mainSrc.indexOf("newThread: async", gmAt) : -1;
