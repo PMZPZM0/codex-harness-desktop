@@ -366,3 +366,33 @@
   background: #fff;
   box-shadow: 0 0 0 1px var(--line);
 }
+
+/* ── 聚焦态跟随输入框边框（10-28 用户：「输入框聚焦、待输入或者在打字，边框线亮起来了的时候，
+      这两个小粗条没有跟着亮边框线，就不好看了」）──
+   输入框的聚焦态是 `.composer:focus-within { border-color: var(--faint) }`，
+   所以两个手柄（顶部拖动把手 `.composer-resize-grip` + 左侧竖条 `.composer-rail-grip`）
+   在聚焦时必须走到**同一档颜色**，否则边框一亮、手柄还暗着，像两个不相干的零件。
+   ⛔ 浅色主题的竖条本体是白的（10-28 已定，见上一条），所以那里只提**描边**，背景保持白。
+   ⛔ 特异性：要压过上面 `.is-open` / `:hover` 那几条（它们带 `:root:not(...)` 前缀），
+      故浅色分支把 `.is-open` / `:hover` 变体一并枚举，不做全局变量改造（那要动边框本体，风险更大）。 */
+.composer:focus-within .composer-resize-grip,
+.composer:focus-within .composer-rail-grip {
+  background: var(--faint);
+  box-shadow: 0 0 0 1px var(--faint);
+}
+:root:not([data-theme="dark"]) .composer:focus-within .composer-rail-grip,
+:root:not([data-theme="dark"]) .composer:focus-within .composer-rail.is-open .composer-rail-grip {
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--faint);
+}
+/* 聚焦 + 悬停：仍要再亮一档（否则鼠标划上去毫无反应） */
+.composer:focus-within .composer-resize-handle:hover .composer-resize-grip,
+.composer:focus-within .composer-rail-toggle:hover .composer-rail-grip {
+  background: var(--muted);
+  box-shadow: 0 0 0 1px var(--muted);
+}
+:root:not([data-theme="dark"]) .composer:focus-within .composer-rail-toggle:hover .composer-rail-grip,
+:root:not([data-theme="dark"]) .composer:focus-within .composer-rail.is-open .composer-rail-toggle:hover .composer-rail-grip {
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--muted);
+}
