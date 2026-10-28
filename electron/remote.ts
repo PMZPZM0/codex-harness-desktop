@@ -48,7 +48,10 @@ type RemoteEvents = {
   /** 手机端对话 UI 需要的引擎桥：会话列表 / 读取某会话消息 / 新建会话 / 向某会话发消息 */
   listThreads?: () => Promise<{ id: string; name: string; preview: string; updatedAt: number }[]>;
   getThreadMessages?: (threadId: string) => Promise<{ role: "user" | "assistant" | "system" | "think"; text: string }[]>;
-  newThread?: () => Promise<{ id: string }>;
+  /** boss=true ⇒ 建**中枢会话**（cwd = boss-home、登记中枢身份）；手机中枢首页发消息走它 */
+  newThread?: (boss?: boolean) => Promise<{ id: string }>;
+  /** 群快照（手机中枢首页的群卡 / 群详情）：与桌面群列表同一份映射 */
+  listBossGroups?: () => Promise<any[]>;
   /** images = 本机绝对路径（只接受 /api/upload 刚落盘的 remote-uploads 内的文件）；effort ∈ low/medium/high/xhigh */
   sendMessage?: (threadId: string, text: string, images?: string[], effort?: string) => Promise<void>;
   /** 手机端能力目录：可执行指令 + 技能清单（# 引用用） */
@@ -73,6 +76,8 @@ type RemoteEvents = {
   answer?: (payload: { kind: string; requestId?: string; questionId?: string; choice: string; threadId?: string }) => Promise<void>;
   /** 本产品在 GitHub Release 上的 APK 资产文件名（按品牌不同由 main 传入） */
   apkFile?: string;
+  /** 手机页品牌名（⛔ 各仓自有：Codex Harness / PPcode），首页与标题用它 */
+  brandName?: string;
   /** 引擎流式事件转发给已连接手机（turn 增量） */
   onThreadEvent?: (listener: (event: { threadId: string; kind: string; text: string; data?: any }) => void) => () => void;
   /** 设备会话记忆持久化文件（userData/remote-sessions.json）；不传则不持久化 */
@@ -438,7 +443,7 @@ export class RemoteControlService {
   }
 
   private html(code: string, botId?: string, botName?: string) {
-    return buildRemotePageHtml(code, botId, botName);
+    return buildRemotePageHtml(code, botId, botName, this.events.brandName);
   }
 
   private route(req: http.IncomingMessage, res: http.ServerResponse) {
@@ -597,7 +602,8 @@ export class RemoteControlService {
           let result: any = {};
           if (data.type === "list-threads") result = { threads: await (this.events.listThreads?.() ?? Promise.resolve([])) };
           else if (data.type === "get-messages") result = { messages: await (this.events.getThreadMessages?.(String(data.threadId ?? "")) ?? Promise.resolve([])) };
-          else if (data.type === "new-thread") result = { threadId: (await (this.events.newThread?.() ?? Promise.reject(new Error("unsupported")))).id };
+          else if (data.type === "new-thread") result = { threadId: (await (this.events.newThread?.(Boolean(data.boss)) ?? Promise.reject(new Error("unsupported")))).id };
+          else if (data.type === "boss-groups") result = { groups: await (this.events.listBossGroups?.() ?? Promise.resolve([])) };
           else if (data.type === "send-message") {
             const images = Array.isArray(data.images) ? data.images.map((p: any) => String(p ?? "")).filter(Boolean) : [];
             const effort = ["low", "medium", "high", "xhigh"].includes(String(data.effort ?? "")) ? String(data.effort) : undefined;
@@ -748,7 +754,11 @@ export class RemoteControlService {
         return;
       }
       if (data.type === "new-thread") {
-        void (this.events.newThread?.() ?? Promise.reject(new Error("not supported"))).then((thread) => reply({ threadId: thread.id })).catch((e) => reply({ error: e.message }));
+        void (this.events.newThread?.(Boolean(data.boss)) ?? Promise.reject(new Error("not supported"))).then((thread) => reply({ threadId: thread.id })).catch((e) => reply({ error: e.message }));
+        return;
+      }
+      if (data.type === "boss-groups") {
+        void (this.events.listBossGroups?.() ?? Promise.resolve([])).then((groups) => reply({ groups })).catch((e) => reply({ error: e.message }));
         return;
       }
       if (data.type === "send-message") {

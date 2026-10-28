@@ -59,6 +59,63 @@ const BOSS_HOME_AGENTS_MD = `<!-- boss-home-agents:${"v5"} -->
 
 const TICK_MS = 5000;
 
+/** 指挥中枢自己的目录（`<userData>/boss-home`）：建好目录并把角色提示写进 AGENTS.md。
+ *  ⛔ 单一真相源：桌面侧建会话走这个 cwd，**手机端建中枢会话**也调它 —— 别各写一份 AGENTS。 */
+export function ensureBossHomeDir(): string {
+  const dir = path.join(app.getPath("userData"), "boss-home");
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    /* 10-25 用户令：「内置注入好提示词，让 Codex 知道」。BOSS 会话的 cwd 就是这里 ⇒ 引擎自己读这份文件。
+       ⛔ 版本化：内容升级就覆盖，否则只写一次（用户不该手改系统文件；不覆盖会让老用户停在旧提示词）。 */
+    const agents = path.join(dir, "AGENTS.md");
+    const stamp = `boss-home-agents:${BOSS_HOME_AGENTS_VERSION}`;
+    let needWrite = true;
+    try { needWrite = !fs.readFileSync(agents, "utf8").includes(stamp); } catch { needWrite = true; }
+    if (needWrite) fs.writeFileSync(agents, BOSS_HOME_AGENTS_MD, "utf8");
+  } catch { /* 建不了就让引擎报错，别吞 */ }
+  return dir;
+}
+
+/** 群列表快照（桌面首页群卡 / **手机端中枢首页**共用）。
+ *  ⛔ 与 `boss-groups:list` 是同一份映射：成员名字、最近 3 条事件、未完成数都在这；
+ *    消费方别再按群逐个查 status（N 个群 N 次 IPC，首页一开就抖）。 */
+export async function listBossGroupSummaries(): Promise<any[]> {
+  const state = await bossStore.load();
+  const lastActivityAt = (groupId: string, createdAt: number) => {
+    let latest = createdAt || 0;
+    for (const event of state.events ?? []) {
+      if (event.groupId === groupId && Number(event.at ?? 0) > latest) latest = Number(event.at ?? 0);
+    }
+    for (const task of Object.values(state.tasks ?? {})) {
+      if (task.groupId === groupId && Number(task.updatedAt ?? 0) > latest) latest = Number(task.updatedAt ?? 0);
+    }
+    return latest;
+  };
+  return Object.values(state.groups).map((group) => ({
+    id: group.id,
+    name: group.name,
+    createdAt: group.createdAt,
+    paused: Boolean(group.paused),
+    bossThreadId: group.bossThreadId,
+    memberThreadIds: group.members.filter((member) => String(member.status ?? "") !== "removed").map((member) => member.threadId).filter(Boolean),
+    memberCount: group.members.filter((m: any) => String(m?.status ?? "") !== "removed").length,
+    removedCount: group.members.filter((m: any) => String(m?.status ?? "") === "removed").length,
+    lastActivityAt: lastActivityAt(group.id, Number(group.createdAt ?? 0)),
+    taskCount: Object.values(state.tasks).filter((task) => task.groupId === group.id).length,
+    /* 10-28 首页（群卡 / 会话行群头像）：一次把卡上要的都带上。 */
+    members: group.members
+      .filter((member) => String(member.status ?? "") !== "removed")
+      .map((member) => ({ id: member.id, name: member.name, role: member.role, status: member.status })),
+    recentEvents: (state.events ?? [])
+      .filter((event) => event.groupId === group.id)
+      .slice(-3)
+      .reverse()
+      .map((event) => ({ id: event.id, kind: event.kind, text: event.text, at: event.at, memberId: event.memberId })),
+    openTaskCount: Object.values(state.tasks)
+      .filter((task) => task.groupId === group.id && task.status !== "done" && task.status !== "failed").length,
+  })).sort((a: any, b: any) => Number(b.lastActivityAt ?? 0) - Number(a.lastActivityAt ?? 0));
+}
+
 export const bossGroupsFeature = defineFeature<null>({
   id: "boss-groups",
   inject: ["ipc"],
@@ -72,20 +129,7 @@ export const bossGroupsFeature = defineFeature<null>({
        做法 = 它跑在自己的目录 `<userData>/boss-home`（那里没有 AGENTS.md、没有项目 .codex）
        ⇒ 项目级记忆天然为空；群成员仍在用户选的项目目录里干活（group.workspace）。
        目录在这里顺手建好（复用 list 通道，⛔ 不为它新开一条 IPC）。 */
-    const bossHomeDir = path.join(app.getPath("userData"), "boss-home");
-    try {
-      fs.mkdirSync(bossHomeDir, { recursive: true });
-      /* 10-25 用户令：「内置注入好提示词，让 Codex 知道」。
-         BOSS 会话的 cwd 就是这里 ⇒ 引擎自己会读这份 AGENTS.md，零额外注入通道。
-         ⛔ 只写一次（用户可能自己改过，绝不覆盖）。 */
-      const bossAgentsMd = path.join(bossHomeDir, "AGENTS.md");
-      /* ⛔ 版本化：内容升级（BOSS_HOME_AGENTS_VERSION 变了）就覆盖，否则只写一次。
-         这是系统文件，用户不该手改；不覆盖的话老用户永远停在旧提示词（实测过的坑）。 */
-      const stamp = `boss-home-agents:${BOSS_HOME_AGENTS_VERSION}`;
-      let needWrite = true;
-      try { needWrite = !fs.readFileSync(bossAgentsMd, "utf8").includes(stamp); } catch { needWrite = true; }
-      if (needWrite) fs.writeFileSync(bossAgentsMd, BOSS_HOME_AGENTS_MD, "utf8");
-    } catch { /* 建不了就让引擎报错，别吞 */ }
+    ensureBossHomeDir();
     /* BOSS 会话身份登记（10-25 用户令：「记忆板块里面加一个BOSS会话记忆板块，跟普通会话完全拆开」）。
        ⛔ **主进程是唯一真相源**：记忆层的读写以 workspace 为键，捕获写入在主进程跑 ——
           渲染层 localStorage 主进程读不到 ⇒ 名单必须落主进程。
@@ -126,40 +170,10 @@ export const bossGroupsFeature = defineFeature<null>({
     });
 
     ipcHost.handle("boss-groups:list", async () => {
-      const state = await bossStore.load();
-      /* 10-25 用户实测：「成员也没有更新，完全看不懂」—— 同一个 BOSS 会话里建过两个群
-         （旧的成员全被移出、新的在跑），弹窗取的是**第一个匹配**的旧群。
-         ⇒ 按**最近活动**排序，弹窗/下拉取到的第一个匹配就是"现在这个群"。 */
-      const lastActivityAt = (groupId: string, createdAt: number) => {
-        let latest = createdAt || 0;
-        for (const event of state.events ?? []) {
-          if (event.groupId === groupId && Number(event.at ?? 0) > latest) latest = Number(event.at ?? 0);
-        }
-        for (const task of Object.values(state.tasks ?? {})) {
-          if (task.groupId === groupId && Number(task.updatedAt ?? 0) > latest) latest = Number(task.updatedAt ?? 0);
-        }
-        return latest;
-      };
       /* ⛔ list 的返回形状是**数组**（多处消费方按数组用）⇒ BOSS 会话名单走独立的
-         `boss-groups:session`（action=list）通道，⛔ 不在这里夹带。 */
-      return Object.values(state.groups).map((group) => ({
-        id: group.id,
-        name: group.name,
-        createdAt: group.createdAt,
-        paused: Boolean(group.paused),
-        bossThreadId: group.bossThreadId,
-        /* 群成员的会话 id（10-25 用户令：侧栏给它们打「BOSS 调度」标签）。
-           ⛔ 成员会话是派活时新建的，不走 delegate 登记 ⇒ 只能从这里回给渲染层。 */
-        /* 10-27：已移出的成员不再贡献会话 id —— 否则侧栏还会给（可能已删除的）旧会话打「中枢调度」标签。
-           ⛔ 只影响标签归属，不动成员本身（成员面板仍要列「已移出」）。 */
-        memberThreadIds: group.members.filter((member) => String(member.status ?? "") !== "removed").map((member) => member.threadId).filter(Boolean),
-        /* 10-25：**在群成员数**（不含被移出的）—— 被移出的那位不算群成员
-           （用户实测：「移除的群成员没有真实生效，Codex 还数着他」）。 */
-        memberCount: group.members.filter((m: any) => String(m?.status ?? "") !== "removed").length,
-        removedCount: group.members.filter((m: any) => String(m?.status ?? "") === "removed").length,
-        lastActivityAt: lastActivityAt(group.id, Number(group.createdAt ?? 0)),
-        taskCount: Object.values(state.tasks).filter((task) => task.groupId === group.id).length,
-      })).sort((a: any, b: any) => Number(b.lastActivityAt ?? 0) - Number(a.lastActivityAt ?? 0));
+         `boss-groups:session`（action=list）通道，⛔ 不在这里夹带。
+         10-28：映射收进 `listBossGroupSummaries()`（手机端中枢首页共用同一份：成员 / 最近事件 / 未完成数）。 */
+      return listBossGroupSummaries();
     });
 
     /* BOSS 会话的会话 id 重绑（10-25）：rollout 丢了的会话引擎无法继续，渲染层会重建一个会话
