@@ -20,7 +20,23 @@ const PATH_RE = /(?:[A-Za-z]:[\\/]|\.{0,2}[\\/])?[\w.@\- \u4e00-\u9fa5]+(?:[\\/]
 /** 工具项 → 归类结果缓存（对象身份稳定：已完成项不会被重建）。 */
 const ITEM_CACHE = new WeakMap();
 
-const SKIP_DIR_RE = /(^|[\\/])(node_modules|\.git|dist|dist-electron|release|\.e2e-profile|\.e2e-artifacts)([\\/]|$)/;
+const SKIP_DIR_RE = /(^|[\\/])(node_modules|\.git|dist|dist-electron|release|\.e2e-profile|\.e2e-artifacts|resources[\\/]tools)([\\/]|$)/;
+/** 解释器/二进制不是"用户看过的文件"（Windows 的命令串开头就是 `"…\pwsh.exe"`，不剔会排在最前面）。 */
+const BINARY_RE = /\.(exe|dll|node|bin|so|dylib)$/i;
+
+/**
+ * shell 动词白名单（读 / 写）。
+ *
+ * ⛔⛔ 10-28 真机实测（Windows）：命中这一步要过**三道坎**，少一道就是「胶囊整块不渲染」：
+ *   ① 命令形态是 `"…\pwsh.exe" -Command "Get-Content -LiteralPath 'D:\…\package.json'"` ——
+ *      **动词前面是引号**，只写 `[\s;&|]` 边界匹配不到；
+ *   ② 只能认 unix 的 cat/head/tail 时，PowerShell 的 Get-Content / Select-String 一个都不匹配；
+ *   ③ `pwsh.exe` 自身也像"文件路径"，会被当成"读过的文件"（纯噪音，要在 pathsIn 里剔掉）。
+ *   ⇒ 边界含引号与括号；读/写分开且**先写后读**（`Get-Content a | Set-Content b` 算写更接近事实）。
+ *   ⛔ 只扫**命令串**，不看输出内容 —— 拿输出里的路径当"读过"会成倍误报。
+ */
+const SHELL_READ_RE = /(^|[\s;&|(){}"'])(cat|head|tail|type|less|more|get-content|gc|select-string|findstr|get-childitem|gci|dir|tree|rg|grep|find|where)(\s|$)/;
+const SHELL_WRITE_RE = /(^|[\s;&|(){}"'])(set-content|add-content|out-file|tee|new-item|copy-item|move-item|rename-item|del|erase|remove-item)(\s|$)/;
 
 /** 工具名归类：⛔ 顺序有意义（先补丁/编辑，再写，再读，最后搜索类）。 */
 function bucketOf(name, command) {
@@ -29,12 +45,16 @@ function bucketOf(name, command) {
   if (/apply_patch|update_file|str_replace/.test(n) || /apply_patch/.test(c)) return "edited";
   if (/(^|[^a-z])(edit|edit_file|multi_edit|multiedit|patch|replace_string|insert_code)([^a-z]|$)/.test(n)) return "edited";
   if (/(^|[^a-z])(write|write_file|create|create_file|new_file|save_file)([^a-z]|$)/.test(n)) return "modified";
+  /* ⛔ 写先于读：`Get-Content a | Set-Content b` 这种管道两种动词都有，算写更接近事实。 */
+  if (SHELL_WRITE_RE.test(c)) return "modified";
   if (/(^|[^a-z])(read|read_file|view|view_file|open_file|get_file|cat)([^a-z]|$)/.test(n)) return "read";
   if (/(^|[^a-z])(grep|rg|search|glob|list_dir|ls|codebase_search)([^a-z]|$)/.test(n)) return "read";
-  /* shell 类（commandExecution）：cat/head/tail/type = 看；strip 掉参数后仍按动词判。 */
-  if (/(^|\s)(cat|head|tail|type|less|more)\s/.test(c)) return "read";
+  if (SHELL_READ_RE.test(c)) return "read";
   return null;
 }
+
+/** 路径前面粘着的 shell 动词（`type package.json` 会被整段当成路径 ⇒ 显成一个叫「type package.json」的文件）。 */
+const LEADING_VERB_RE = /^(?:cat|head|tail|less|more|type|gc|get-content|select-string|findstr|dir|tree|grep|rg|find|where|set-content|add-content|out-file|tee|new-item|copy-item|move-item|del|erase|remove-item)\s+/i;
 
 /** 从一段任意文本里抠出像文件路径的片段（去重、去噪）。 */
 export function pathsIn(text, limit = 12) {
@@ -43,8 +63,19 @@ export function pathsIn(text, limit = 12) {
   const source = String(text ?? "");
   for (const match of source.matchAll(PATH_RE)) {
     let path = match[0].trim().replace(/^["'`]+|["'`,.)]+$/g, "");
+    /* ⛔ 剥前导动词（可能不止一个：`Get-Content -Path x` 的 `-Path` 不是动词，不会被剥） */
+    while (LEADING_VERB_RE.test(path)) path = path.replace(LEADING_VERB_RE, "").trim();
+    /* 残余的前导相对标记一律去掉（`.\src\a.ts` / `\a.ts`）：相对路径本来就相对工作区，
+       留着会让「同一个文件」以两种写法各占一行，也会让预览标题显示成 `\package.json`。
+       ⛔ 只去 Windows 的 `\` 与 `./`、`.\` —— POSIX 的 `/home/x/a.ts` 是**绝对路径**，不能动。 */
+    path = path.replace(/^\.[\\/]/, "").replace(/^\\+/, "").trim();
     if (!path || path.length > 260) continue;
+    /* 首段必须像目录/文件名（挡掉 `--- package.json` 这类输出分隔符拼出来的假路径） */
+    if (!/[\w\u4e00-\u9fa5]/.test(path.split(/[\\/]/)[0])) continue;
     if (SKIP_DIR_RE.test(path)) continue;
+    if (BINARY_RE.test(path)) continue;
+    /* ⛔ 名字里带 `..` 的是文本不是文件（真机撞到：「从 1 加到 400」被当成文件 `1..400` 列进已查看）。 */
+    if (/\.\./.test(path.split(/[\\/]/).pop() || "")) continue;
     /* 纯数字/版本号（1.2.3）不是路径 */
     if (/^\d+(\.\d+)+$/.test(path)) continue;
     const key = path.replaceAll("\\", "/").toLowerCase();
@@ -62,9 +93,23 @@ function baseName(path) {
 }
 
 function push(list, seen, path) {
-  const key = String(path ?? "").replaceAll("\\", "/").toLowerCase();
-  if (!key || seen.has(key)) return;
-  seen.add(key);
+  const normalized = String(path ?? "").replaceAll("\\", "/").replace(/^(["'`]+)|(["'`]+)$/g, "");
+  /* ⛔ 相对标记归一（`./src/a.ts` 与 `src/a.ts` 是同一个文件）；POSIX 绝对路径的 `/` 保留。
+     （Windows 的前导 `\` 已在 pathsIn 里剥掉，这里不用再管。） */
+  const norm = normalized.replace(/^\.\//, "").toLowerCase();
+  if (!norm) return;
+  /* ⛔ 同一文件会以两种写法出现（`Get-Content package.json` 的相对路径 + 另一条命令的绝对路径），
+     只按字符串去重会并排显示两行同名文件。⇒ 「一个是另一个的后缀」即视为同一份，保留更完整的那个。 */
+  for (let i = 0; i < list.length; i++) {
+    const existing = String(list[i].path).replaceAll("\\", "/").replace(/^\.\//, "").toLowerCase();
+    if (existing === norm) return;
+    if (existing.endsWith(`/${norm}`) || norm.endsWith(`/${existing}`)) {
+      if (norm.length > existing.length) list[i] = { path: String(path), name: baseName(path) };
+      return;
+    }
+  }
+  if (seen.has(norm)) return;
+  seen.add(norm);
   list.push({ path: String(path), name: baseName(path) });
 }
 
