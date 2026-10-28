@@ -37,6 +37,78 @@ const MAX_PER_MINUTE = 900;
 /* 安装包公开下载（不要求已配对）：老版本 App 的「安装包」入口坏了，也能用手机浏览器更新 */
 const APK_URL = process.env.RELAY_APK_URL
   || "https://github.com/PMZPZM0/codex-harness-desktop/releases/download/mobile-remote-v0.1.2/CodexRemote-0.1.2.apk";
+/* 安装包**由网关自己缓存后再发**：国内手机直连 GitHub Release 经常超时（实测 302 过去就挂），
+   ⛔ 不要退回「302 到 GitHub」——那等于把可用性交给墙。镜像顺序与 gh-mirror.ts 同源。 */
+const APK_DIR = process.env.RELAY_APK_DIR || "/var/lib/relay/apk";
+let apkFetching = null;
+function apkCandidates() {
+  return [
+    "https://gh-proxy.com/" + APK_URL,
+    "https://ghfast.top/" + APK_URL,
+    APK_URL,
+  ];
+}
+async function ensureApkFile() {
+  const file = path.join(APK_DIR, path.basename(new URL(APK_URL).pathname));
+  try { const info = fs.statSync(file); if (info.size > 1024 * 1024) return file; } catch { /* 需要下载 */ }
+  if (apkFetching) return apkFetching;
+  apkFetching = (async () => {
+    let lastError = "未知错误";
+    for (const url of apkCandidates()) {
+      try {
+        const response = await fetch(url, { redirect: "follow" });
+        if (!response.ok) { lastError = `HTTP ${response.status}`; continue; }
+        const buffer = Buffer.from(await response.arrayBuffer());
+        /* 镜像挂了常回一个 HTML 错误页：小于 1MB 的「APK」一定是假的 */
+        if (buffer.length < 1024 * 1024) { lastError = "下载内容太小，疑似镜像失败"; continue; }
+        fs.mkdirSync(APK_DIR, { recursive: true });
+        const tmp = `${file}.tmp`;
+        fs.writeFileSync(tmp, buffer);
+        fs.renameSync(tmp, file);
+        return file;
+      } catch (error) {
+        lastError = String(error?.message ?? error);
+      }
+    }
+    throw new Error("安装包下载失败（镜像与直连都试过了）：" + lastError);
+  })().finally(() => { apkFetching = null; });
+  return apkFetching;
+}
+async function serveApk(req, res) {
+  try {
+    const file = await ensureApkFile();
+    const buffer = fs.readFileSync(file);
+    const name = path.basename(file);
+    const range = String(req.headers.range ?? "");
+    const matchRange = /^bytes=(\d+)-(\d*)$/.exec(range);
+    if (matchRange) {
+      const start = Number(matchRange[1]);
+      const end = matchRange[2] ? Number(matchRange[2]) : buffer.length - 1;
+      const slice = buffer.subarray(start, end + 1);
+      res.writeHead(206, {
+        "content-type": "application/vnd.android.package-archive",
+        "content-length": String(slice.length),
+        "content-range": `bytes ${start}-${end}/${buffer.length}`,
+        "content-disposition": `attachment; filename="${name}"`,
+        "cache-control": "public, max-age=600",
+        "accept-ranges": "bytes",
+      });
+      res.end(slice);
+      return;
+    }
+    res.writeHead(200, {
+      "content-type": "application/vnd.android.package-archive",
+      "content-length": String(buffer.length),
+      "content-disposition": `attachment; filename="${name}"`,
+      "cache-control": "public, max-age=600",
+      "accept-ranges": "bytes",
+    });
+    res.end(buffer);
+  } catch (error) {
+    res.writeHead(502, { "content-type": "text/plain; charset=utf-8", "retry-after": "5" });
+    res.end("安装包暂时取不到：" + String(error?.message ?? error));
+  }
+}
 
 /** id → { tokenHash, connectedAt, lastSeen } */
 const devices = new Map();
@@ -164,8 +236,7 @@ async function handleTunnelRequest(id, restPath, req, res) {
 const server = http.createServer((req, res) => {
   const url = req.url ?? "/";
   if (url === "/apk" || url.startsWith("/apk?")) {
-    res.writeHead(302, { Location: APK_URL, "cache-control": "no-store" });
-    res.end();
+    void serveApk(req, res);
     return;
   }
   const match = url.match(/^\/t\/([a-z0-9]{8,24})(\/.*)?$/);
