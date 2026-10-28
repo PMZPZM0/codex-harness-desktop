@@ -16,11 +16,11 @@
  *
  * 通道：extensions:catalog
  */
-import { app } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
+import type { HostCaps } from "../runtime/seams";
 
 import type { ExtAction, MenuEntrySpec, RailPanelSpec } from "../../src/lib/rail-ipc-types";
 export type { ExtAction, MenuEntrySpec, RailPanelSpec };
@@ -37,7 +37,8 @@ const BUILTIN_RAIL: RailPanelSpec[] = [
   { id: "stickers", label: "心情表情", icon: "smile", kind: "builtin", order: 40 },
 ];
 
-const file = () => path.join(app.getPath("userData"), "extensions.json");
+/* 用户数据目录只在 setPath 之后才准求值 ⇒ 由 setup 经接缝取一次再传进来（【91】）。 */
+const fileOf = (base: string) => path.join(base, "extensions.json");
 
 /** 只认封闭动作集 + http(s) 网址；认不出的整条丢掉（不猜、不半信半疑地执行）。 */
 function normalizeAction(raw: unknown): ExternalAction | null {
@@ -51,9 +52,9 @@ function normalizeAction(raw: unknown): ExternalAction | null {
   return null;
 }
 
-async function readUserExtensions(): Promise<{ rail: RailPanelSpec[]; menu: MenuEntrySpec[] }> {
+async function readUserExtensions(base: string): Promise<{ rail: RailPanelSpec[]; menu: MenuEntrySpec[] }> {
   let raw: any = null;
-  try { raw = JSON.parse(await fs.readFile(file(), "utf8")); } catch { return { rail: [], menu: [] }; }
+  try { raw = JSON.parse(await fs.readFile(fileOf(base), "utf8")); } catch { return { rail: [], menu: [] }; }
   const rail: RailPanelSpec[] = [];
   for (const entry of Array.isArray(raw?.rail) ? raw.rail : []) {
     const id = String(entry?.id ?? "").trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
@@ -77,16 +78,19 @@ async function readUserExtensions(): Promise<{ rail: RailPanelSpec[]; menu: Menu
 
 export const extensionsFeature = defineFeature<null>({
   id: "extensions",
-  inject: ["ipc"],
+  inject: ["ipc", "host"],
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");
+    const host = ctx.get<HostCaps>("host");
     if (!ipcHost) throw new Error("extensions: 缺少 ipc 服务（宿主未提供）");
+    if (!host) throw new Error("extensions: 缺少 host 接缝（宿主未提供）");
+    const base = () => host.app.getPath("userData");
 
     ipcHost.handle("extensions:catalog", async (): Promise<{ rail: RailPanelSpec[]; menu: MenuEntrySpec[]; file: string }> => {
-      const user = await readUserExtensions();
+      const user = await readUserExtensions(base());
       const rail = [...BUILTIN_RAIL, ...user.rail].sort((a, b) => (a.order ?? 90) - (b.order ?? 90));
       const menu = [...user.menu].sort((a, b) => (a.order ?? 90) - (b.order ?? 90));
-      return { rail, menu, file: file() };
+      return { rail, menu, file: fileOf(base()) };
     });
 
     ctx.effect(() => { ipcHost.removeHandler("extensions:catalog"); });

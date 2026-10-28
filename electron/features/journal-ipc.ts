@@ -9,17 +9,18 @@
  *
  * 通道：journal:list / journal:read / journal:save / journal:append / journal:remove / journal:search
  */
-import { app } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
+import type { HostCaps } from "../runtime/seams";
 
 import type { JournalDay } from "../../src/lib/rail-ipc-types";
 export type { JournalDay };
 
-const dir = () => path.join(app.getPath("userData"), "dev-journal");
-const fileOf = (date: string) => path.join(dir(), `${date}.md`);
+/* 用户数据目录只在 setPath 之后才准求值 ⇒ 由 setup 经接缝取一次，再传进这些纯函数（【91】）。 */
+const dirOf = (base: string) => path.join(base, "dev-journal");
+const fileOf = (base: string, date: string) => path.join(dirOf(base), `${date}.md`);
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const today = () => {
   const d = new Date();
@@ -27,19 +28,19 @@ const today = () => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
 
-async function ensureDir(): Promise<void> {
-  await fs.mkdir(dir(), { recursive: true, mode: 0o700 });
+async function ensureDir(base: string): Promise<void> {
+  await fs.mkdir(dirOf(base), { recursive: true, mode: 0o700 });
 }
 
-async function listDays(): Promise<JournalDay[]> {
-  await ensureDir();
-  const names = await fs.readdir(dir()).catch(() => [] as string[]);
+async function listDays(base: string): Promise<JournalDay[]> {
+  await ensureDir(base);
+  const names = await fs.readdir(dirOf(base)).catch(() => [] as string[]);
   const days: JournalDay[] = [];
   for (const name of names) {
     if (!name.endsWith(".md")) continue;
     const date = name.slice(0, -3);
     if (!DATE_RE.test(date)) continue;
-    const full = path.join(dir(), name);
+    const full = path.join(dirOf(base), name);
     const stat = await fs.stat(full).catch(() => null);
     if (!stat) continue;
     const head = await fs.readFile(full, "utf8").catch(() => "");
@@ -52,18 +53,21 @@ async function listDays(): Promise<JournalDay[]> {
 
 export const journalFeature = defineFeature<null>({
   id: "journal",
-  inject: ["ipc"],
+  inject: ["ipc", "host"],
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");
+    const host = ctx.get<HostCaps>("host");
     if (!ipcHost) throw new Error("journal: 缺少 ipc 服务（宿主未提供）");
+    if (!host) throw new Error("journal: 缺少 host 接缝（宿主未提供）");
+    const base = () => host.app.getPath("userData");
 
     ipcHost.handle("journal:list", async (): Promise<{ days: JournalDay[]; dir: string; today: string }> =>
-      ({ days: await listDays(), dir: dir(), today: today() }));
+      ({ days: await listDays(base()), dir: dirOf(base()), today: today() }));
 
     ipcHost.handle("journal:read", async (_event, date: string): Promise<{ date: string; content: string }> => {
       const day = String(date ?? "");
       if (!DATE_RE.test(day)) throw new Error("日期格式必须是 YYYY-MM-DD");
-      const content = await fs.readFile(fileOf(day), "utf8").catch(() => "");
+      const content = await fs.readFile(fileOf(base(), day), "utf8").catch(() => "");
       return { date: day, content };
     });
 
@@ -71,43 +75,43 @@ export const journalFeature = defineFeature<null>({
     ipcHost.handle("journal:save", async (_event, date: string, content: unknown): Promise<{ days: JournalDay[]; date: string }> => {
       const day = String(date ?? "");
       if (!DATE_RE.test(day)) throw new Error("日期格式必须是 YYYY-MM-DD");
-      await ensureDir();
+      await ensureDir(base());
       const text = String(content ?? "");
-      if (text.trim()) await fs.writeFile(fileOf(day), text.endsWith("\n") ? text : `${text}\n`, "utf8");
-      else await fs.rm(fileOf(day), { force: true });
-      return { days: await listDays(), date: day };
+      if (text.trim()) await fs.writeFile(fileOf(base(), day), text.endsWith("\n") ? text : `${text}\n`, "utf8");
+      else await fs.rm(fileOf(base(), day), { force: true });
+      return { days: await listDays(base()), date: day };
     });
 
     /** 追加一条：`## HH:mm 标题` + 正文；同日多次记录按时间顺序落在同一个文件里。 */
     ipcHost.handle("journal:append", async (_event, date: string, title: unknown, body: unknown): Promise<{ days: JournalDay[]; date: string }> => {
       const day = DATE_RE.test(String(date ?? "")) ? String(date) : today();
-      await ensureDir();
+      await ensureDir(base());
       const now = new Date();
       const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
       const head = String(title ?? "").trim().slice(0, 120);
       const text = String(body ?? "").trim();
       const chunk = `## ${hhmm}${head ? ` ${head}` : ""}\n\n${text}\n\n`;
-      let existing = await fs.readFile(fileOf(day), "utf8").catch(() => "");
+      let existing = await fs.readFile(fileOf(base(), day), "utf8").catch(() => "");
       if (!existing.trim()) existing = `# 开发日记 · ${day}\n\n`;
-      await fs.writeFile(fileOf(day), `${existing.replace(/\s*$/, "\n\n")}${chunk}`, "utf8");
-      return { days: await listDays(), date: day };
+      await fs.writeFile(fileOf(base(), day), `${existing.replace(/\s*$/, "\n\n")}${chunk}`, "utf8");
+      return { days: await listDays(base()), date: day };
     });
 
     ipcHost.handle("journal:remove", async (_event, date: string): Promise<{ days: JournalDay[] }> => {
       const day = String(date ?? "");
       if (!DATE_RE.test(day)) throw new Error("日期格式必须是 YYYY-MM-DD");
-      await fs.rm(fileOf(day), { force: true });
-      return { days: await listDays() };
+      await fs.rm(fileOf(base(), day), { force: true });
+      return { days: await listDays(base()) };
     });
 
     /** 全文检索：命中文件名 + 命中的行（渲染层直接展示，不用再拉全文）。 */
     ipcHost.handle("journal:search", async (_event, query: unknown): Promise<{ hits: { date: string; lines: string[] }[] }> => {
       const needle = String(query ?? "").trim().toLowerCase();
       if (!needle) return { hits: [] };
-      const days = await listDays();
+      const days = await listDays(base());
       const hits: { date: string; lines: string[] }[] = [];
       for (const day of days) {
-        const text = await fs.readFile(fileOf(day.date), "utf8").catch(() => "");
+        const text = await fs.readFile(fileOf(base(), day.date), "utf8").catch(() => "");
         const lines = text.split("\n").filter((line) => line.toLowerCase().includes(needle)).slice(0, 3);
         if (lines.length) hits.push({ date: day.date, lines: lines.map((line) => line.trim().slice(0, 160)) });
       }

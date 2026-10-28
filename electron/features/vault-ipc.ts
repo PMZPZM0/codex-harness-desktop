@@ -12,30 +12,31 @@
  *
  * 通道：vault:list / vault:save / vault:remove / vault:copy
  */
-import { app, clipboard, safeStorage } from "electron";
+import { clipboard } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
+import type { HostCaps } from "../runtime/seams";
 
 import type { VaultItem } from "../../src/lib/rail-ipc-types";
 export type { VaultItem };
 
 type StoredItem = Omit<VaultItem, "hasSecret"> & { secret?: string };
 
-const vaultFile = () => path.join(app.getPath("userData"), "vault.json");
+const vaultFile = (userData: string) => path.join(userData, "vault.json");
 
-async function readAll(): Promise<StoredItem[]> {
+async function readAll(userData: string): Promise<StoredItem[]> {
   try {
-    const raw = JSON.parse(await fs.readFile(vaultFile(), "utf8"));
+    const raw = JSON.parse(await fs.readFile(vaultFile(userData), "utf8"));
     return Array.isArray(raw?.items) ? raw.items : [];
   } catch {
     return [];
   }
 }
 
-async function writeAll(items: StoredItem[]): Promise<void> {
-  const file = vaultFile();
+async function writeAll(userData: string, items: StoredItem[]): Promise<void> {
+  const file = vaultFile(userData);
   await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
   await fs.writeFile(file, JSON.stringify({ version: 1, items }, null, 2), { mode: 0o600 });
 }
@@ -50,25 +51,30 @@ const newId = () => `pw_${Date.now().toString(36)}_${Math.random().toString(36).
 
 export const vaultFeature = defineFeature<null>({
   id: "vault",
-  inject: ["ipc"],
+  inject: ["ipc", "host"],
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");
+    const host = ctx.get<HostCaps>("host");
     if (!ipcHost) throw new Error("vault: 缺少 ipc 服务（宿主未提供）");
+    if (!host) throw new Error("vault: 缺少 host 接缝（宿主未提供）");
+    /* 路径与加解密一律走接缝（用户数据目录只在 setPath 之后才准求值；safeStorage 是密钥库，域不许直取）。 */
+    const userData = () => host.app.getPath("userData");
+    const secure = host.secure;
 
     ipcHost.handle("vault:list", async (): Promise<{ items: VaultItem[]; encrypted: boolean }> => {
-      const items = await readAll();
-      return { items: items.map(toPublic), encrypted: safeStorage.isEncryptionAvailable() };
+      const items = await readAll(userData());
+      return { items: items.map(toPublic), encrypted: secure.isEncryptionAvailable() };
     });
 
     /** 保存：password 省略/空 ⇒ 保留原密码（编辑时不必重输）。 */
     ipcHost.handle("vault:save", async (_event, input: Record<string, unknown>): Promise<{ items: VaultItem[] }> => {
-      const items = await readAll();
+      const items = await readAll(userData());
       const id = clean(input.id, 80);
       const password = typeof input.password === "string" ? input.password : undefined;
-      if (password && !safeStorage.isEncryptionAvailable()) {
+      if (password && !secure.isEncryptionAvailable()) {
         throw new Error("本机加密不可用，无法安全保存密码（没有写入任何明文）");
       }
-      const secret = password ? safeStorage.encryptString(password).toString("base64") : undefined;
+      const secret = password ? secure.encryptString(password).toString("base64") : undefined;
       const now = new Date().toISOString();
       const patch = {
         title: clean(input.title, 120) || "未命名",
@@ -83,24 +89,24 @@ export const vaultFeature = defineFeature<null>({
       } else {
         items.unshift({ id: newId(), ...patch, ...(secret ? { secret } : {}) });
       }
-      await writeAll(items);
+      await writeAll(userData(), items);
       return { items: items.map(toPublic) };
     });
 
     ipcHost.handle("vault:remove", async (_event, id: string): Promise<{ items: VaultItem[] }> => {
-      const items = (await readAll()).filter((item) => item.id !== String(id ?? ""));
-      await writeAll(items);
+      const items = (await readAll(userData())).filter((item) => item.id !== String(id ?? ""));
+      await writeAll(userData(), items);
       return { items: items.map(toPublic) };
     });
 
     /** 复制到剪贴板：明文只在主进程内存里出现一瞬，渲染层拿不到。 */
     ipcHost.handle("vault:copy", async (_event, id: string): Promise<{ ok: boolean; reason?: string }> => {
-      const item = (await readAll()).find((entry) => entry.id === String(id ?? ""));
+      const item = (await readAll(userData())).find((entry) => entry.id === String(id ?? ""));
       if (!item?.secret) return { ok: false, reason: "这条没有保存密码" };
-      if (!safeStorage.isEncryptionAvailable()) return { ok: false, reason: "本机加密不可用，无法解密" };
+      if (!secure.isEncryptionAvailable()) return { ok: false, reason: "本机加密不可用，无法解密" };
       let plain = "";
       try {
-        plain = safeStorage.decryptString(Buffer.from(item.secret, "base64"));
+        plain = secure.decryptString(Buffer.from(item.secret, "base64"));
       } catch {
         return { ok: false, reason: "解密失败（可能换了系统账户或数据被改过）" };
       }

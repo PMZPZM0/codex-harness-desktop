@@ -19,8 +19,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnchorPopover } from "../../components/AnchorPopover";
 import { Bookmark, ChevronRight, ExternalLink, KeyRound, NotebookPen, Puzzle, Smile, X } from "lucide-react";
-import type { HarnessAppApi } from "../app-state/useHarnessApp";
-import { FavoritesSettingsSection } from "../settings-favorites/FavoritesSettingsSection";
+import type { HarnessAppApi } from "../app-state";
+import { FavoritesSettingsSection } from "../settings-favorites";
 import { PasswordBookPanel } from "./PasswordBookPanel";
 import { DevJournalPanel } from "./DevJournalPanel";
 import { MoodStickersPanel } from "./MoodStickersPanel";
