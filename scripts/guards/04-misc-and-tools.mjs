@@ -1067,6 +1067,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   (/kind: "think"/.test(bootSrc) && /summaryTextDelta/.test(bootSrc) && /event\.kind === "think"/.test(pageSrc) && /think-text/.test(pageSrc) ? ok : fail)(
     "【139b】思考内容：reasoning 摘要流转发到手机页实时展开（只报一行「思考」标签不算数）"
   );
+  (/remoteThinkStreamed/.test(bootSrc) && /item\?\.type === "reasoning"/.test(bootSrc) && /summary \?\? \[\]/.test(bootSrc) ? ok : fail)(
+    "【139b】思考内容兜底：中转供应商不流式时，用 item/completed 的完整摘要补发（流式过的回合不重复）"
+  );
   (/aborted\|failed\|interrupted/.test(bootSrc) && /turnRunning/.test(pageSrc) && /handleSend/.test(pageSrc) && /setRunning\(false\)/.test(pageSrc) ? ok : fail)(
     "【139b】运行中可一键停止：发送键切「停止」+ 中断/失败/中止同样发 done（否则停完一直挂「运行中」）"
   );
