@@ -116,6 +116,8 @@ for (const rel of ["src/components/UserCenter.tsx", "src/components/UsagePanel.t
   ok(!/settings-copy/.test(fileSrc) && !/PageInfo/.test(fileSrc), `页头已收起：${rel.split("/").pop()}`);
 }
 
+ok(/\.settings-exp-page\s*\{[^}]*align-items:\s*stretch/s.test(css), "设置体验页 stretch（卡片自适应到右边，不被全局 flex-start 压窄）");
+
 const skillsPage = pageSrc("skills");
 ok(/skill-actions-line/.test(skillsPage) && !/skill-market-toolbar|settings-heading-actions/.test(skillsPage) && !/<div className="skill-tabs">/.test(skillsPage) && !/<span className="skill-filter-count">/.test(skillsPage), "技能页：按键与搜索同排，分类小字与页头按键已删");
 ok(!/PageInfo/.test(skillsPage), "技能页右上角帮助问号已删");
