@@ -161,6 +161,17 @@ let remoteEventForwarders!: any;
  *  ⛔ 必须到条目粒度：一个回合里模型常有多段思考，按回合记会把后一段（未流式的）整段误跳过。 */
 const remoteThinkStreamed = new Set<string>();
 
+/** 文件变更压成一行：`修改文件 · a.ts +12 −3、b.md +2 −0 等 5 个`（最多列 3 个） */
+function remoteFilesText(files: any[]): string {
+  const list = files.filter((file) => file && file.path);
+  if (!list.length) return "";
+  const top = list.slice(0, 3).map((file) => {
+    if (file.status === "deleted") return `${file.path} 已删除`;
+    return `${file.path} +${Number(file.added) || 0} −${Number(file.deleted) || 0}`;
+  });
+  return `修改文件 · ${top.join("、")}${list.length > 3 ? ` 等 ${list.length} 个` : ""}`;
+}
+
 function remoteThinkKey(p: any): string {
   return `${p?.threadId ?? ""}:${turnIdOf(p)}:${String(p?.itemId ?? p?.item?.id ?? "")}`;
 }
@@ -179,12 +190,7 @@ function remoteStepOf(item: any, phase: "started" | "completed"): string {
     const cmd = String(item?.command ?? "").replace(/\s+/g, " ").trim();
     return cmd ? `命令 · ${cmd.slice(0, 60)}` : "命令";
   }
-  if (type === "fileChange") {
-    const paths = (item?.changes ?? []).map((c: any) => String(c?.path ?? "")).filter(Boolean);
-    if (!paths.length) return "修改文件";
-    const head = paths.slice(0, 2).join("、");
-    return `修改文件 · ${head}${paths.length > 2 ? ` 等 ${paths.length} 个` : ""}`;
-  }
+  // 文件变更不在这里报：引擎的 fileChange 不带行数，改由宿主追踪器的 live 报告（kind:"files"）
   if (type === "mcpToolCall" || type === "functionCall") {
     return `工具 · ${String(item?.tool ?? item?.name ?? "工具").slice(0, 40)}`;
   }
@@ -349,7 +355,14 @@ export function bindBoot(deps: Record<string, any>) {
   remote = deps.remote;
 }
 
-setTurnFileWatchBroadcast((payload: unknown) => sendToWindow("harness:event", payload));
+setTurnFileWatchBroadcast((payload: any) => {
+  sendToWindow("harness:event", payload);
+  // 手机端「运行步骤」里的文件变更：引擎的 fileChange 不带行数，只有宿主追踪器有 ±N
+  if (payload?.type === "turn-file-changes-live" && payload.threadId && Array.isArray(payload.files)) {
+    const text = remoteFilesText(payload.files);
+    if (text) for (const forward of remoteEventForwarders) forward({ threadId: String(payload.threadId), kind: "files", text });
+  }
+});
 
 export async function bootApp() {
   markBoot("app-ready");   // 启动耗时测量（见 electron/boot-timing.ts）

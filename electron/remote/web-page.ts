@@ -193,6 +193,8 @@ let catalogCache = null;
 let panelBack = null;
 // 当前命令步骤的输出块（桌面对话框的命令卡里有结果，手机端挂在对应命令下面）
 let currentOutputEl = null;
+// 文件变更那一行（宿主追踪器每拍推一次，原地更新）
+let filesEl = null;
 // 当前会话是否在跑：发送键在运行时变成「停止」
 let turnRunning = false;
 const list = document.getElementById("msglist");
@@ -717,6 +719,22 @@ async function pollLoop() {
         if (currentOutputEl.textContent.length > 6000) currentOutputEl.textContent = currentOutputEl.textContent.slice(-6000);
         currentOutputEl.classList.add("on");
         currentOutputEl.scrollTop = currentOutputEl.scrollHeight;
+        list.scrollTop = list.scrollHeight;
+      } else if (event.kind === "files") {
+        // 文件变更：一行原地更新（宿主每拍都会推，不能一行行追加）
+        hideThinking();
+        setRunning(true);
+        if (!stepBox) {
+          stepBox = document.createElement("div");
+          stepBox.className = "run-steps";
+          list.appendChild(stepBox);
+        }
+        if (!filesEl || !stepBox.contains(filesEl)) {
+          filesEl = document.createElement("div");
+          filesEl.className = "step step-files";
+          stepBox.appendChild(filesEl);
+        }
+        filesEl.textContent = event.text;
         list.scrollTop = list.scrollHeight;
       } else if (event.kind === "think") {
         // 思考内容：与桌面折叠区同一股摘要流，实时展开显示
