@@ -93,32 +93,52 @@
 .composer-rail-icon.is-active { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
 .composer-rail-collapse { color: var(--faint); margin-top: 2px; }
 
-/* ── 弹层：portal 到 body，left/top/宽高由 JS 实测给 ── */
+/* ── 面板：**居中弹窗**（10-28 用户：「这个弹窗可以应用居中，不用非要贴这里，展示太少了，
+      弹窗都太小了…做成弹窗居中，适当大一点弹窗，不要内联弹窗」，且「这四个按键都做成弹窗」）
+   ⛔ 不再按实测矩形贴边：位置/尺寸全部在这里定，容器是 `.modal-backdrop`（grid 居中 + 遮罩）。
+   ⛔ 类名沿用 `.composer-rail-panel`：`scripts/accept.mjs` 的 CDP 选择器依赖它（只断言"在视口内"，
+      与贴边无关），改名会白断一片验收。 */
 .composer-rail-panel {
-  position: fixed;
-  z-index: 1200; /* 与其它浮层同一档带（见 index.css 的层级表），不写 9999 */
+  /* 10-28 三调（用户先嫌小、再嫌大、再嫌大）：旧贴边浮层实测 460×236（内容被压成一条）⇒ 太小；
+     940×740 几乎占满窗口 ⇒ 太大；780×600 ≈72% 仍偏大。
+     定稿 640×520（≈1280×800 视口的 50%×65%，1080 宽窗口里约 59%）：面积是旧版的 3.1 倍，四周上下文清楚可见。 */
+  width: min(640px, 64vw);
+  /* ⛔ 高度**按内容自适应**（用户三调：太小 → 太大 → 还太大）：空态（如"还没有收藏"）只占 300px，
+     数据多时撑到 520px 上限、内部滚动 —— 固定高度在空态时就是一大片空白。
+     ⛔ 下界必须写在这条规则里，且**不能再出现第二行 `min-height: 0`**：后者会把它覆盖掉
+        （实测收藏夹空态掉到 202px，就是被老规则的 `min-height: 0` 盖了）。 */
+  height: auto;
+  min-height: 300px;
+  max-height: min(520px, 70vh);
   display: flex;
   flex-direction: column;
-  min-height: 0;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--panel);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 16px 40px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 24px 64px rgba(0, 0, 0, 0.28);
   overflow: hidden;
+}
+.composer-rail-panel:focus-visible { outline: none; }
+/* 窄窗口：把留白让给内容（`.modal-backdrop` 自带 24px padding） */
+@media (max-width: 720px) {
+  .composer-rail-panel { width: 92vw; max-height: 80vh; }
 }
 .crp-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 8px 8px 12px;
+  padding: 10px 10px 10px 16px;
   border-bottom: 1px solid var(--line-soft);
   flex: none;
 }
-.crp-title { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text); }
+.crp-title { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text); }
 .crp-title svg { color: var(--muted); }
 .crp-head-actions { display: inline-flex; align-items: center; gap: 2px; }
-.crp-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 12px 12px; }
+.crp-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 16px 20px 20px; }
+/* 收藏夹面板复用设置页组件（`.settings-section` 在设置页里自带 26/28 留白 + min-height:100%），
+   放进弹窗会变成"双层留白 + 撑高" ⇒ 这里收掉，只留 `.crp-body` 那一层。 */
+.composer-rail-panel .settings-section { padding: 0; min-height: 0; }
 
 /* ── 通用：搜索框 / 空态 / 页脚 ── */
 .vault-search {

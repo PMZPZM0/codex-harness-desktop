@@ -16,9 +16,9 @@
  * 弹层：portal 到 body，按**实测矩形**定位，右开优先、放不下翻左、上下夹进视口。
  * 跨会话：挂在输入框上 ⇒ 每个会话同一个组件；展开状态存 localStorage，所有会话一致。
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AnchorPopover } from "../../components/AnchorPopover";
-import { Bookmark, ChevronRight, ExternalLink, KeyRound, NotebookPen, Puzzle, Smile, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Bookmark, ExternalLink, KeyRound, NotebookPen, Puzzle, Smile, X } from "lucide-react";
 import type { HarnessAppApi } from "../app-state";
 import { FavoritesSettingsSection } from "../settings-favorites";
 import { PasswordBookPanel } from "./PasswordBookPanel";
@@ -40,13 +40,10 @@ const ICONS: Record<string, typeof Bookmark> = {
   smile: Smile,
 };
 
-const PANEL_SIZE: Record<string, { w: number; h: number }> = {
-  favorites: { w: 460, h: 560 },
-  passwords: { w: 430, h: 560 },
-  journal: { w: 460, h: 580 },
-  stickers: { w: 360, h: 420 },
-};
-const DEFAULT_SIZE = { w: 380, h: 360 };
+/* 10-28 用户令：「这四个按键都做成弹窗…这个弹窗可以应用居中，不用非要贴这里，展示太少了，
+   弹窗都太小了，看的东西很少，做成弹窗居中，适当大一点弹窗，不要内联弹窗」
+   ⇒ 四个面板统一走**居中弹窗**（`.modal-backdrop` + `.composer-rail-modal`），
+     尺寸与位置交给 CSS（这里不再按面板逐个算宽高，也不再有"贴边/翻边"）。 */
 
 export function ComposerRail({ app }: { app: HarnessAppApi }) {
   const [open, setOpen] = useState<boolean>(() => {
@@ -54,12 +51,24 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
   });
   const [panels, setPanels] = useState<RailPanelSpec[]>(FALLBACK_PANELS);
   const [panelId, setPanelId] = useState<string | null>(null);
-  /** 贴边按钮：auto → 右 → 左 → 右 …（真翻边，不是重算同一个位置） */
-  const [prefer, setPrefer] = useState<"auto" | "right" | "left">("auto");
-  const railRef = useRef<HTMLDivElement>(null);
   /** 用户已经手动开合过：回灌不许再覆盖他的操作 */
   const userTouchedRef = useRef(false);
-  const panelRef = useRef<HTMLDivElement>(null);
+  /** 居中弹窗容器：打开时把焦点收进来（键盘用户 Tab 不会跑到背后的输入框）。 */
+  const modalRef = useRef<HTMLElement>(null);
+
+  /* Esc 关弹窗：用 capture 阶段并阻断冒泡 —— 全站还有别的 Esc 处理器（关浮层/关设置），
+     同一次按键不该同时关掉两层。 */
+  useEffect(() => {
+    if (!panelId) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      setPanelId(null);
+    };
+    window.addEventListener("keydown", onKey, true);
+    modalRef.current?.focus();
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [panelId]);
 
   /* 目录：内置 + 用户扩展（userData/extensions.json）。失败就用兜底，绝不让竖条消失。 */
   useEffect(() => {
@@ -118,7 +127,7 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
   }, [app]);
 
   return (
-    <div className={`composer-rail${open ? " is-open" : ""}`} ref={railRef} onMouseEnter={() => setBump((value) => value + 1)}>
+    <div className={`composer-rail${open ? " is-open" : ""}`} onMouseEnter={() => setBump((value) => value + 1)}>
       <button
         type="button"
         className="composer-rail-toggle"
@@ -152,28 +161,26 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
         </div>
       )}
 
-      {active && (
-        <AnchorPopover
-          open
-          anchor={railRef.current}
-          ignoreRef={railRef}
-          onClose={() => setPanelId(null)}
-          axis="x"
-          align="center"
-          prefer={prefer}
-          width={PANEL_SIZE[active.id]?.w ?? DEFAULT_SIZE.w}
-          height={PANEL_SIZE[active.id]?.h ?? DEFAULT_SIZE.h}
-          className="composer-rail-panel"
-          ariaLabel={active.label}
+      {active && createPortal(
+        <div
+          className="modal-backdrop composer-rail-backdrop"
+          onMouseDown={(event) => { if (event.target === event.currentTarget) setPanelId(null); }}
         >
-          <header className="crp-head">
-            <span className="crp-title">{(() => { const Icon = ICONS[String(active.icon ?? "")] ?? (active.kind === "external" ? Puzzle : Bookmark); return <Icon size={15} />; })()}{active.label}</span>
-            <span className="crp-head-actions">
-              <button type="button" className="icon-button" title="重新贴边（换到另一边）" aria-label="重新贴边" onClick={() => setPrefer((current) => (current === "right" ? "left" : "right"))}><ChevronRight size={14} /></button>
-              <button type="button" className="icon-button" title="关闭 (Esc)" aria-label="关闭" onClick={() => setPanelId(null)}><X size={15} /></button>
-            </span>
-          </header>
-          <div className="crp-body">
+          <section
+            className="composer-rail-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label={active.label}
+            tabIndex={-1}
+            ref={modalRef}
+          >
+            <header className="crp-head">
+              <span className="crp-title">{(() => { const Icon = ICONS[String(active.icon ?? "")] ?? (active.kind === "external" ? Puzzle : Bookmark); return <Icon size={16} />; })()}{active.label}</span>
+              <span className="crp-head-actions">
+                <button type="button" className="icon-button" title="关闭（Esc）" aria-label="关闭" onClick={() => setPanelId(null)}><X size={16} /></button>
+              </span>
+            </header>
+            <div className="crp-body">
             {active.id === "favorites" && (
               <FavoritesSettingsSection
                 favorites={app.favorites}
@@ -201,7 +208,9 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
               </div>
             )}
           </div>
-        </AnchorPopover>
+          </section>
+        </div>,
+        document.body,
       )}
     </div>
   );
