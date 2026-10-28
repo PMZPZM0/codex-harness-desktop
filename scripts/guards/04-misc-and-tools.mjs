@@ -1064,6 +1064,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   (/kind: "step"/.test(bootSrc) && /event\.kind === "step"/.test(pageSrc) ? ok : fail)(
     "【139b】运行步骤：主进程按 item 事件转发（命令/文件/工具/搜索/思考），手机页渲染成可折叠「运行过程」"
   );
+  (/aborted\|failed\|interrupted/.test(bootSrc) && /turnRunning/.test(pageSrc) && /handleSend/.test(pageSrc) && /setRunning\(false\)/.test(pageSrc) ? ok : fail)(
+    "【139b】运行中可一键停止：发送键切「停止」+ 中断/失败/中止同样发 done（否则停完一直挂「运行中」）"
+  );
   const ntAt = pageSrc.indexOf("async function newThread()");
   const ntBody = ntAt >= 0 ? pageSrc.slice(ntAt, pageSrc.indexOf("async function loadMessages()", ntAt)) : "";
   (/stepBox = null/.test(ntBody) ? ok : fail)(
@@ -1127,8 +1130,11 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   (["catalog", "files-list", "file-read", "interrupt", "compact"].every((t) => relaySrc2.includes(`"${t}"`)) ? ok : fail)(
     "【139d】/api/rpc 覆盖 catalog / files-list / file-read / interrupt / compact"
   );
-  (["openSheet", "/api/upload", "files-list", "insertAtCursor", "runCommand"].every((t) => pageSrc2.includes(t)) ? ok : fail)(
-    "【139d】手机页有 ＋ 菜单（图片 / 文件 / 技能 / 指令），四条链路都接上"
+  (["openSheet", "/api/upload", "files-list", "insertText", "runCommand", "__remoteBack"].every((t) => pageSrc2.includes(t)) ? ok : fail)(
+    "【139d】手机页有 ＋ 菜单（图片 / 文件 / 技能 / 指令），四条链路 + 返回键钩子都接上"
+  );
+  (/but found/.test(mainSrc2) && /先停止再压缩/.test(mainSrc2) && /realpathSync/.test(mainSrc2) ? ok : fail)(
+    "【139d】停止按引擎真实 turnId 重试；压缩拒绝在回合中执行；文件读再做一次真实路径校验（防软链逃逸）"
   );
   // 真跑路径守卫真值表（纯模块，node 直接 import）
   const rf = await import(pathToFileURL(join(ROOT, "src", "lib", "remote-files.mjs")).href);
