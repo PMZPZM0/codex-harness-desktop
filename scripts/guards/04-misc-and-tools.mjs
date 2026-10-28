@@ -1139,6 +1139,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   (/url === "\/apk"/.test(relaySrc2) && /mirrorCandidates/.test(relaySrc2) && /apkFile/.test(relaySrc2) && /REMOTE_APK_RELEASE/.test(relaySrc2) ? ok : fail)(
     "【139d】安装包：/apk 按需从 GitHub Release 镜像链（gh-proxy→ghfast→直连）取并缓存到 apk-cache"
   );
+  (/REMOTE_APK_SHA256/.test(relaySrc2) && /createHash\("sha256"\)/.test(relaySrc2) && /校验和不匹配/.test(relaySrc2) ? ok : fail)(
+    "【139d】安装包必须按 sha256 校验（镜像可能被篡改；与 updates.ts 的 asset.digest 同口径）"
+  );
   (/but found/.test(mainSrc2) && /先停止再压缩/.test(mainSrc2) && /realpathSync/.test(mainSrc2) ? ok : fail)(
     "【139d】停止按引擎真实 turnId 重试；压缩拒绝在回合中执行；文件读再做一次真实路径校验（防软链逃逸）"
   );

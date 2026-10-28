@@ -13,6 +13,13 @@ import { buildRemotePageHtml } from "./remote/web-page";
 /** 手机安装包所在的 Release tag（⛔ 不是桌面版安装包的 v* 发布，别混用） */
 const REMOTE_APK_RELEASE = "mobile-remote-v0.1.0";
 
+/** 安装包校验和（GitHub 资产自带的 digest）：镜像层可能被篡改，对不上就不落盘 —— 与 updates.ts 同口径。
+ *  ⛔ 重新发布同名资产时必须同步改这里，否则手机端会一直报「校验和不匹配」。 */
+const REMOTE_APK_SHA256: Record<string, string> = {
+  "CodexRemote-0.1.0.apk": "3d13ee5404b367b5beaf6a703ae7e90ca014e5df5f7933b1982917911baa4b16",
+  "PPcodeRemote-0.1.0.apk": "c9bfa0696100fda18aca5cdd4e76681866dd5affbcbbf1a546766c716fb4c361",
+};
+
 /** cloudflared 可执行文件（手机配对的公网隧道）。
  *  ⛔ mac 适配（09-17 审计）：旧实现写死 `path.join(process.cwd(), "resources", "tools", "cloudflared.exe")` ——
  *  ① 用**进程当前目录**而不是应用资源目录：打包后能不能命中全靠「启动目录碰巧是安装目录」，
@@ -274,11 +281,36 @@ export class RemoteControlService {
     return path.join(path.dirname(this.storageFile), "apk-cache", this.apkFile);
   }
 
-  private async ensureApkCached(): Promise<string> {
+  /** 并发去重：连点两下「安装包」只下载一次 */
+  private apkFetch: Promise<string> | null = null;
+
+  private ensureApkCached(): Promise<string> {
+    if (this.apkFetch) return this.apkFetch;
+    this.apkFetch = this.fetchApk().finally(() => { this.apkFetch = null; });
+    return this.apkFetch;
+  }
+
+  private apkDigestOk(file: string): boolean {
+    const expected = REMOTE_APK_SHA256[this.apkFile];
+    if (!expected) return false; // 没登记校验和的资产一律不认
+    try {
+      return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex") === expected;
+    } catch {
+      return false;
+    }
+  }
+
+  private async fetchApk(): Promise<string> {
     const target = this.apkCachePath();
     if (!target) throw new Error("安装包未配置");
-    if (fs.existsSync(target)) return target;
+    if (fs.existsSync(target)) {
+      if (this.apkDigestOk(target)) return target;
+      // 缓存损坏 / 是旧包：删掉重下（删不掉就直接覆盖写）
+      try { fs.rmSync(target, { force: true }); } catch { /* 覆盖写也能兜住 */ }
+    }
     const base = `https://github.com/PMZPZM0/codex-harness-desktop/releases/download/${REMOTE_APK_RELEASE}/${this.apkFile}`;
+    const expected = REMOTE_APK_SHA256[this.apkFile];
+    if (!expected) throw new Error(`没有登记 ${this.apkFile} 的校验和，拒绝下载`);
     let lastError = "未知错误";
     for (const candidate of mirrorCandidates(base)) {
       try {
@@ -287,6 +319,10 @@ export class RemoteControlService {
         const buffer = Buffer.from(await response.arrayBuffer());
         // 镜像挂了常回一个 HTML 错误页：小于 1MB 的"APK"一定是假的
         if (buffer.length < 1024 * 1024) { lastError = "下载内容太小，疑似镜像失败"; continue; }
+        if (crypto.createHash("sha256").update(buffer).digest("hex") !== expected) {
+          lastError = "校验和不匹配（镜像可能被篡改）";
+          continue;
+        }
         fs.mkdirSync(path.dirname(target), { recursive: true });
         fs.writeFileSync(target, buffer);
         return target;
