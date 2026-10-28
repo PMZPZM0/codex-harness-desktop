@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（104 个能力域 / 566 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（105 个能力域 / 569 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -324,6 +324,10 @@ MCP 服务器管理（配置/状态）
 ### journal（6 通道）
 **开发日记**（竖条 → 开发日记）：按天一个 Markdown 文件（userData/dev-journal/YYYY-MM-DD.md）—— list 列日期与摘要 / read 看当天全文 / save 整篇覆盖 / append 追加一条「## HH:mm 标题 + 正文」/ remove 删当天 / search 全文检索。⛔ 与会话归档、项目工作日志是三件不同的事
 通道：journal:append, journal:list, journal:read, journal:remove, journal:save, journal:search
+
+### shortcuts（3 通道）
+键盘快捷键统一读口（10-28）：应用内快捷键存 userData/shortcuts.json，弹窗与「设置 → 控制台 → 键盘快捷键」读写同一份；截图/语音的全局键仍存各自设置文件（它们的 setter 要先注册成功 globalShortcut 再落盘），本域只读来聚合展示。⛔ 模型侧不调用它——改键是用户界面动作，不是工具能力
+通道：shortcuts:read, shortcuts:reset, shortcuts:save
 
 ### appSettings（2 通道）
 应用级开关（联网搜索/桌面自动化/下载源等，写 app-settings.json）

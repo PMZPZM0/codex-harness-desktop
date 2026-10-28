@@ -35,6 +35,9 @@ const BUILTIN_RAIL: RailPanelSpec[] = [
   { id: "passwords", label: "密码本", icon: "key", kind: "builtin", order: 20 },
   { id: "journal", label: "开发日记", icon: "notebook", kind: "builtin", order: 30 },
   { id: "stickers", label: "心情表情", icon: "smile", kind: "builtin", order: 40 },
+  /* 10-28 用户：「在面板里表情下方新增一个快捷键图标，点击后打开弹窗，集中展示应用内所有快捷键」
+     —— 它不是 rail 的内联面板（内容太大），点击直接打开全局弹窗（见 ComposerRail 的特判）。 */
+  { id: "shortcuts", label: "快捷键", icon: "keyboard", kind: "builtin", order: 50 },
 ];
 
 /* 用户数据目录只在 setPath 之后才准求值 ⇒ 由 setup 经接缝取一次再传进来（【91】）。 */

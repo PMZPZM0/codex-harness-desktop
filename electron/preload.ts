@@ -898,6 +898,12 @@ contextBridge.exposeInMainWorld("codex", {
   workLogsScan: () => __ipc("work-logs:scan", 0, []),
   /* 输入框竖条 + 功能入口菜单的可扩展目录（内置 + userData/extensions.json） */
   extensionsCatalog: () => __ipc("extensions:catalog", 0, []),
+  /* 聚合读取：应用内键（shortcuts.json）+ 截图/语音键（各自真存储） */
+  shortcutsRead: () => __ipc("shortcuts:read", 0, []),
+  /* 只写应用内键；截图/语音由各自通道写（先注册成功再落盘） */
+  shortcutsSave: (input: { bindings?: Record<string, string[]> } = {}) => __ipc("shortcuts:save", 0, [input]),
+  /* 恢复默认：删 shortcuts.json（截图/语音不动） */
+  shortcutsReset: () => __ipc("shortcuts:reset", 0, []),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

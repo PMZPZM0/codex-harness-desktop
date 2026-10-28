@@ -13,6 +13,8 @@ import { openImageLightbox, registerImageLightbox, openPastedTextEditor, registe
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../app-view/types";
 import type { Bag } from "../../bag-types";
+import { useShortcuts } from "../../../../shortcuts/use-shortcuts";
+import { bindingMatches } from "../../../../../lib/shortcut-catalog.mjs";
 
 export function usePart04c1(bag: Bag) {
   // 搜索结果消息高亮打标（DOM 级，随结果/当前项变化重打）
@@ -161,36 +163,38 @@ bag.knownFilesRef = knownFilesRef as typeof bag.knownFilesRef;
     return () => { offPair(); offBotPair(); };
   }, []);
 
+  /* 10-28 用户令：快捷键要能在面板/设置里改并生效 ⇒ 分发器不再写死键位，
+     改为按**用户配置**（`shortcuts:read`，见 features/shortcuts）匹配 id 后派发。
+     ⛔ 动作表是唯一的地方：加一个快捷键 = 目录（src/lib/shortcut-catalog.mjs）加一条 + 这里加一个动作。
+     ⛔ 别把键位判断写回这里（那会和配置表形成第二份真相，改键立刻失效）。 */
+  const { bindings: shortcutBindings } = useShortcuts();
   useEffect(() => {
     if (bag.showLogin) return;
+    const mac = isMacPlatform();
+    const actions: Record<string, () => void> = {
+      "focus-input": () => bag.composerInputRef.current?.focus(),
+      "chat-search": () => { bag.setChatSearchOpen(true); queueMicrotask(() => bag.chatSearchRef.current?.focus()); },
+      "new-thread": () => bag.startNewThread(),
+      "palette": () => { bag.setPaletteOpen(true); bag.setPaletteQuery(""); bag.setPaletteTab("all"); },
+      "workspace": () => { void bag.chooseWorkspace(); },
+      "toggle-right": () => bag.setRightOpen((current) => !current),
+      "terminal": () => { bag.setRightOpen(true); bag.openPanelTab("terminal", bag.workspace ? basename(bag.workspace) : "终端"); },
+      "settings": () => { bag.setSettingsPage("general"); bag.setSettingsOpen(true); },
+      "shortcuts": () => bag.setShortcutsOpen(true),
+    };
     function onKey(event: globalThis.KeyboardEvent) {
-      // mac 的「命令键」是 ⌘（metaKey），Windows/Linux 才是 Ctrl —— 平台分叉判断（见 isMacPlatform 注释：
-      // 旧版写死 `!event.ctrlKey || event.metaKey`，mac 上所有快捷键都被这里 return 掉了）。
-      const mac = isMacPlatform();
-      const mod = mac ? event.metaKey : event.ctrlKey;
-      const otherMod = mac ? event.ctrlKey : event.metaKey;
-      if (!mod || event.altKey || otherMod) return;
-      const key = event.key.toLowerCase();
-      if (event.shiftKey) {
-        if (key === "f") { event.preventDefault(); bag.setChatSearchOpen(true); queueMicrotask(() => bag.chatSearchRef.current?.focus()); }
-        else if (key === "n") { event.preventDefault(); bag.startNewThread(); }
-        else if (key === "p") { event.preventDefault(); bag.setPaletteOpen(true); bag.setPaletteQuery(""); bag.setPaletteTab("all"); }
-        else if (key === "s") { event.preventDefault(); bag.setSettingsPage("general"); bag.setSettingsOpen(true); }
-        else if (key === "/") { event.preventDefault(); bag.composerInputRef.current?.focus(); }
+      for (const [id, run] of Object.entries(actions)) {
+        const keys = shortcutBindings[id] ?? [];
+        if (!keys.some((binding) => bindingMatches(event, binding, mac))) continue;
+        event.preventDefault();
+        run();
         return;
       }
-      if (key === "n") { event.preventDefault(); bag.startNewThread(); }
-      else if (key === "k") { event.preventDefault(); bag.setPaletteOpen(true); bag.setPaletteQuery(""); bag.setPaletteTab("all"); }
-      else if (key === "o") { event.preventDefault(); void bag.chooseWorkspace(); }
-      else if (key === "b") { event.preventDefault(); bag.setRightOpen((current) => !current); }
-      else if (key === "j") { event.preventDefault(); bag.setRightOpen(true); bag.openPanelTab("terminal", bag.workspace ? basename(bag.workspace) : "终端"); }
-      else if (key === ",") { event.preventDefault(); bag.setSettingsPage("general"); bag.setSettingsOpen(true); }
-      else if (key === "l") { event.preventDefault(); bag.composerInputRef.current?.focus(); }
-      else if (key === "p") { event.preventDefault(); bag.setPaletteOpen(true); bag.setPaletteQuery(""); bag.setPaletteTab("all"); }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [bag.showLogin]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bag.showLogin, shortcutBindings]);
 
   // 全局 ESC：从最上层弹窗开始关闭；焦点在输入控件里时先退出焦点，再按同一栈关弹窗
   // （否则问答卡/输入弹窗聚焦时按 ESC 会被这里吞掉，转而关掉底下的设置弹窗）。

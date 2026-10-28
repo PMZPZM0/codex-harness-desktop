@@ -468,8 +468,8 @@ interface Window {
     storageInfo(): Promise<any>;
     getUserData(): Promise<string>;
     /* 应用级运行时开关（联网搜索等） */
-    readAppSettings(): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off"; adaptiveTone?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy"; skillAutoUpdate?: boolean; pluginAutoUpdate?: boolean; modelCatalogRepairNotice?: string; functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean; composerRailOpen?: boolean }>;
-    saveAppSettings(patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off"; adaptiveTone?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy"; skillAutoUpdate?: boolean; pluginAutoUpdate?: boolean; modelCatalogRepairNotice?: string; functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean; composerRailOpen?: boolean }): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; adaptiveTone?: boolean; skillAutoUpdate?: boolean; pluginAutoUpdate?: boolean; modelCatalogRepairNotice?: string; functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean; composerRailOpen?: boolean }>;
+    readAppSettings(): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off"; adaptiveTone?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy"; skillAutoUpdate?: boolean; pluginAutoUpdate?: boolean; modelCatalogRepairNotice?: string; functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean; composerRailOpen?: boolean; composerRailOrder?: string[] }>;
+    saveAppSettings(patch: { webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; autoCompactRatio?: number; engineProxyUrl?: string; hardwareAcceleration?: "auto" | "force" | "off"; adaptiveTone?: boolean; downloadSource?: "auto" | "mirror" | "ghproxy" | "ghfast" | "direct" | "proxy"; skillAutoUpdate?: boolean; pluginAutoUpdate?: boolean; modelCatalogRepairNotice?: string; functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean; composerRailOpen?: boolean; composerRailOrder?: string[] }): Promise<{ webSearch?: boolean; desktopAutomation?: boolean; browserAutomation?: boolean; engineWatchdog?: boolean; adaptiveTone?: boolean; skillAutoUpdate?: boolean; pluginAutoUpdate?: boolean; modelCatalogRepairNotice?: string; functionMenu?: { location?: "top" | "bottom"; order?: string[]; overflow?: string[] }; sidebarOptionsCollapsed?: boolean; composerRailOpen?: boolean; composerRailOrder?: string[] }>;
     /* 10-13 统一更新体系：按行 id 更新指定组件。幂等（内容一致 ⇒ unchanged，不重装）；有目标目录的一律先快照、失败自动回滚（electron/update-safety.ts）。更新源一律国内镜像：npm→npmmirror、pip→清华、GitHub→gh-mirror 通道 */
     runAutoUpdateComponent(id: string): Promise<{ id: string; label: string; action: "updated" | "unchanged" | "failed" | "skipped"; before: string; after: string; message: string }>;
     /* 10-13 统一更新体系：一键更新全部组件（手动入口，不按开关过滤 —— 用户点了就是授权）。逐项返回结��，单项失败不影响其余 */
@@ -1247,6 +1247,12 @@ interface Window {
     workLogsScan(): Promise<{ projects: Array<{ cwd: string; name: string; memoryDir: string; exists: boolean; bytes: number; files: Array<{ path: string; rel: string; kind: string; bytes: number; mtime: number }> }> }>;
     /* 输入框竖条 + 功能入口菜单的可扩展目录（内置 + userData/extensions.json） */
     extensionsCatalog(): Promise<{ rail: RailPanelSpec[]; menu: MenuEntrySpec[]; file: string }>;
+    /* 聚合读取：应用内键（shortcuts.json）+ 截图/语音键（各自真存储） */
+    shortcutsRead(): Promise<{ bindings: Record<string, string[]>; overrides: Record<string, string[]>; defaults: Record<string, string[]>; conflicts: string[][] }>;
+    /* 只写应用内键；截图/语音由各自通道写（先注册成功再落盘） */
+    shortcutsSave(input?: { bindings?: Record<string, string[]> }): Promise<{ ok: boolean; error?: string; bindings?: Record<string, string[]>; conflicts?: string[][] }>;
+    /* 恢复默认：删 shortcuts.json（截图/语音不动） */
+    shortcutsReset(): Promise<{ ok: boolean; bindings: Record<string, string[]>; conflicts: string[][] }>;
 /* ═══ gen:end ═══ */
 
 

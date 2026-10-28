@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 import { useSyncExternalStore, useMemo } from "react";
 import { hk } from "../../lib/hk";
 import { basename } from "../../lib/basename";
+import { ShortcutsDialog } from "../shortcuts/ShortcutsDialog";
 import {
   AlertTriangle,
   Archive,
@@ -726,7 +727,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           }}
         />
       )}
-      {shortcutsOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShortcutsOpen(false); }}><div className="shortcuts-modal" role="dialog" aria-modal="true" aria-label="键盘快捷键"><header><div><Keyboard size={17} /><strong>键盘快捷键</strong><span className="esc-hint" title="按 ESC 关闭弹窗">ESC</span></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setShortcutsOpen(false)}><X size={17} /></button></header><div className="shortcuts-body">{SHORTCUT_GROUPS.map((group) => <section className="shortcuts-group" key={group.group}><h3>{group.group}</h3>{group.shortcuts.map((item) => <div className="shortcuts-row" key={item.keys.join("+")}><span className="shortcut-desc">{item.desc}</span><span className="shortcut-keys">{item.keys.map((key, index) => <kbd key={index}>{key}</kbd>)}</span></div>)}</section>)}<footer><span className="muted">部分快捷键在输入框聚焦时优先用于文本编辑。</span></footer></div></div></div>}
+      {shortcutsOpen && <ShortcutsDialog open onClose={() => setShortcutsOpen(false)} />}
       {marketPreview && <MarketPreviewModal state={marketPreview} onClose={() => setMarketPreview(null)} />}
       {skillInstall && <SkillInstallModal state={skillInstall} onClose={() => setSkillInstall(null)} onUse={() => { const skill = { name: skillInstall.skill.name, description: skillInstall.skill.description }; setSelectedSkills((current) => current.some((entry) => entry.name === skill.name) ? current : [...current, skill]); setSkillInstall(null); setSettingsOpen(false); setNotice(`已引用技能：${skill.name}`); }} />}
       {skillRemove && <SkillRemoveModal state={skillRemove} onClose={() => setSkillRemove(null)} />}

@@ -298,6 +298,14 @@ export const IPC_DOMAINS: IpcDomainEntry[] = [
     channels: ["journal:append", "journal:list", "journal:read", "journal:remove", "journal:save", "journal:search"],
     note: "开发日记：按天一个 md，追加式记录 + 全文检索",
   },
+  /* 10-28：快捷键统一读口。应用内键存 userData/shortcuts.json（本域独占）；
+     截图 / 语音仍是各自存储（它们的 setter 要先注册成功 globalShortcut 再落盘）——
+     本域只读来聚合展示，写入由渲染层走 screenshot:hotkey-set / voice:hotkey-set，
+     所以弹窗与设置页读写的是同一份真相（双向联动由此成立，无第二套数据）。 */
+  { prefix: "shortcuts", count: 3, status: "in-features", file: "features/shortcuts-ipc.ts",
+    channels: ["shortcuts:read", "shortcuts:reset", "shortcuts:save"],
+    note: "快捷键目录读口：应用内键落 shortcuts.json，截图/语音键只读聚合（写入走各自通道）",
+  },
   { prefix: "appSettings", count: 2, status: "in-features", file: "features/app-settings-ipc.ts",
     channels: ["appSettings:read", "appSettings:save"],
     note: "09-21 拆出：跨域符号经 main 导出的活绑定取用",
