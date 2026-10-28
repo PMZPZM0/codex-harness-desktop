@@ -61,6 +61,14 @@ type RemoteEvents = {
   readFile?: (threadId: string, relPath: string) => Promise<{ kind: string; text?: string; dataUrl?: string; error?: string }>;
   archiveThread?: (threadId: string) => Promise<void>;
   setGoal?: (threadId: string, objective: string) => Promise<void>;
+  /** 任务清单（与桌面「步骤 N/M」胶囊同源） */
+  listTasks?: () => Promise<{ tasks: { id: string; title: string; state: string }[] }>;
+  /** 本轮文件改动清单（来自宿主追踪器落盘报告） */
+  turnFiles?: (threadId: string) => Promise<{ files: { path: string; status: string; added: number; deleted: number }[] }>;
+  /** 单文件 diff（同一份落盘报告里的 unified diff） */
+  fileDiff?: (threadId: string, relPath: string) => Promise<{ path?: string; diff?: string; error?: string }>;
+  /** 当前目标（引擎 thread/goal/get） */
+  goalGet?: (threadId: string) => Promise<{ objective?: string; status?: string }>;
   /** 本产品在 GitHub Release 上的 APK 资产文件名（按品牌不同由 main 传入） */
   apkFile?: string;
   /** 引擎流式事件转发给已连接手机（turn 增量） */
@@ -599,6 +607,10 @@ export class RemoteControlService {
           else if (data.type === "compact") { await (this.events.compactThread?.(String(data.threadId ?? "")) ?? Promise.resolve()); result = { ok: true }; }
           else if (data.type === "archive") { await (this.events.archiveThread?.(String(data.threadId ?? "")) ?? Promise.resolve()); result = { ok: true }; }
           else if (data.type === "goal") { await (this.events.setGoal?.(String(data.threadId ?? ""), String(data.objective ?? "")) ?? Promise.resolve()); result = { ok: true }; }
+          else if (data.type === "tasks") result = await (this.events.listTasks?.() ?? Promise.resolve({ tasks: [] }));
+          else if (data.type === "turn-files") result = await (this.events.turnFiles?.(String(data.threadId ?? "")) ?? Promise.resolve({ files: [] }));
+          else if (data.type === "file-diff") result = await (this.events.fileDiff?.(String(data.threadId ?? ""), String(data.path ?? "")) ?? Promise.resolve({ diff: "", error: "不支持" }));
+          else if (data.type === "goal-get") result = await (this.events.goalGet?.(String(data.threadId ?? "")) ?? Promise.resolve({}));
           else if (data.type === "files-list") result = { files: await (this.events.listFiles?.(String(data.threadId ?? "")) ?? Promise.resolve([])) };
           else if (data.type === "file-read") result = await (this.events.readFile?.(String(data.threadId ?? ""), String(data.path ?? "")) ?? Promise.resolve({ kind: "other" }));
           else result = { error: "unknown rpc type" };

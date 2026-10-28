@@ -91,6 +91,10 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
 .run-steps[open] summary::before{content:"▾ "}
 .run-steps .step{padding:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .run-steps .step-files{white-space:pre-line;word-break:break-all;max-height:120px;overflow:auto}
+.run-steps .step-notice{color:#8a6d1f;background:#fdf6e0;border-radius:6px;padding:3px 6px;white-space:normal;overflow:visible;text-overflow:clip}
+.step-more{align-self:flex-start;margin-top:3px;padding:2px 8px;font-size:11px;color:var(--accent);background:none;border:1px solid #cfdcf7;border-radius:999px}
+#goalbar{padding:6px 12px;background:#fff6f8;border-top:1px solid var(--line);font-size:12px;color:#8a2f4a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#taskbar{padding:6px 12px;background:#fff;border-top:1px solid var(--line);font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .run-steps .think{margin-top:5px;padding-top:5px;border-top:1px dashed #ddd9d2;color:#6f6f69;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto}
 .run-steps .step-out{display:none;margin:2px 0 6px;padding:6px 8px;background:#fff;border:1px solid var(--line);border-radius:8px;font-size:11px;line-height:1.5;max-height:160px;overflow:auto;white-space:pre-wrap;word-break:break-all;color:#4a4a46}
 .run-steps .step-out.on{display:block}
@@ -160,6 +164,8 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
 </header>
 <div id="threads"><div class="threads-head"><button onclick="toggleThreads()">← 返回</button><b>选择会话</b><button class="new-thread" onclick="newThread()">＋ 新建</button></div><div class="list" id="thread-list"></div></div>
 <div id="msglist"></div>
+<div id="goalbar" hidden></div>
+<div id="taskbar" hidden></div>
 <div id="imgs"></div>
 <div id="inputbar"><button id="plus" onclick="openSheet()">＋</button><input id="cmd" placeholder="输入消息，发送给 Codex"><button id="send" onclick="handleSend()">发送</button></div>
 <!-- 占位：构建时替换成 src/lib/mobile-markdown.mjs 的源码 -->
@@ -196,6 +202,7 @@ let panelBack = null;
 let currentOutputEl = null;
 // 文件变更那一行（宿主追踪器每拍推一次，原地更新）
 let filesEl = null;
+let filesBtn = null;
 // 当前会话是否在跑：发送键在运行时变成「停止」
 let turnRunning = false;
 const list = document.getElementById("msglist");
@@ -319,6 +326,8 @@ async function loadMessages() {
     stepBox = null;
     currentOutputEl = null;
     setRunning(false);
+    void refreshGoal();
+    void refreshTasks();
     const r = await rpc({ type: "get-messages", threadId: currentThreadId });
     const msgs = r.messages || [];
     for (const m of msgs) {
@@ -350,6 +359,7 @@ async function sendCmd() {
   input.value = "";
   showThinking();
   setRunning(true);
+  void refreshTasks();
   try {
     const paths = [];
     for (const shot of shots) {
@@ -543,6 +553,71 @@ function openPreview(path) {
     node.appendChild(pre);
   }).catch((error) => { node.innerHTML = ""; node.appendChild(panelMessage("读取失败：" + error.message)); });
 }
+function openTurnFiles() {
+  const node = document.createElement("div");
+  node.appendChild(panelMessage("加载中…"));
+  showPanel("本轮改动", node, null);
+  rpc({ type: "turn-files", threadId: currentThreadId }).then((r) => {
+    const files = r.files || [];
+    node.innerHTML = "";
+    if (!files.length) { node.appendChild(panelMessage("这一轮没有文件改动记录")); return; }
+    for (const file of files) {
+      const row = document.createElement("div");
+      row.className = "file-row";
+      const name = document.createElement("span");
+      name.className = "nm";
+      name.textContent = (file.status === "added" ? "新建 " : "") + file.path;
+      const meta = document.createElement("small");
+      meta.textContent = file.status === "deleted" ? "已删除" : ("+" + file.added + " −" + file.deleted);
+      row.appendChild(name);
+      row.appendChild(meta);
+      row.onclick = () => openTurnDiff(file.path);
+      node.appendChild(row);
+    }
+  }).catch((error) => { node.innerHTML = ""; node.appendChild(panelMessage("加载失败：" + error.message)); });
+}
+function openTurnDiff(path) {
+  const node = document.createElement("div");
+  node.appendChild(panelMessage("加载中…"));
+  showPanel(String(path).split("/").pop(), node, () => openTurnFiles());
+  rpc({ type: "file-diff", threadId: currentThreadId, path }).then((r) => {
+    node.innerHTML = "";
+    if (r.error || !r.diff) { node.appendChild(panelMessage(r.error || "这条改动没有 diff")); return; }
+    const pre = document.createElement("pre");
+    pre.textContent = r.diff;
+    node.appendChild(pre);
+  }).catch((error) => { node.innerHTML = ""; node.appendChild(panelMessage("读取失败：" + error.message)); });
+}
+function setTaskText(text) {
+  const el = document.getElementById("taskbar");
+  if (!el) return;
+  el.textContent = text || "";
+  el.hidden = !text;
+}
+async function refreshTasks() {
+  if (!currentThreadId) { setTaskText(""); return; }
+  try {
+    const r = await rpc({ type: "tasks" });
+    const pending = (r.tasks || []).filter((task) => task.state !== "done");
+    setTaskText(pending.length ? ("清单 · " + pending.length + " 项未完成 · " + pending[0].title) : "");
+  } catch { setTaskText(""); }
+}
+function setGoalText(text) {
+  const el = document.getElementById("goalbar");
+  if (!el) return;
+  el.textContent = text || "";
+  el.hidden = !text;
+}
+async function refreshGoal() {
+  if (!currentThreadId) { setGoalText(""); return; }
+  try {
+    const r = await rpc({ type: "goal-get", threadId: currentThreadId });
+    const objective = String(r.objective || "").trim();
+    const status = String(r.status || "");
+    const state = status === "paused" ? "（已暂停）" : status === "complete" || status === "completed" ? "（已完成）" : "";
+    setGoalText(objective ? ("🎯 目标：" + objective + state) : "");
+  } catch { setGoalText(""); }
+}
 function openSkills() {
   closeSheet();
   const node = document.createElement("div");
@@ -648,6 +723,7 @@ async function runCommand(id) {
       await rpc({ type: "goal", threadId: currentThreadId, objective });
       input.value = "";
       push("system", "已设为目标，Codex 会朝它自动推进");
+      void refreshGoal();
       return;
     }
   } catch (error) {
@@ -736,6 +812,27 @@ async function pollLoop() {
           stepBox.appendChild(filesEl);
         }
         filesEl.textContent = event.text;
+        if (!filesBtn || !stepBox.contains(filesBtn)) {
+          filesBtn = document.createElement("button");
+          filesBtn.className = "step-more";
+          filesBtn.textContent = "查看改动";
+          filesBtn.onclick = () => openTurnFiles();
+          stepBox.appendChild(filesBtn);
+        }
+        list.scrollTop = list.scrollHeight;
+      } else if (event.kind === "notice") {
+        // 审批 / 询问：手机端没有交互，明确让用户去电脑上点
+        hideThinking();
+        setRunning(true);
+        if (!stepBox) {
+          stepBox = document.createElement("div");
+          stepBox.className = "run-steps";
+          list.appendChild(stepBox);
+        }
+        const notice = document.createElement("div");
+        notice.className = "step step-notice";
+        notice.textContent = event.text;
+        stepBox.appendChild(notice);
         list.scrollTop = list.scrollHeight;
       } else if (event.kind === "think") {
         // 思考内容：与桌面折叠区同一股摘要流，实时展开显示
@@ -783,6 +880,7 @@ async function pollLoop() {
         }
         stepBox = null;
         currentOutputEl = null;
+        void refreshTasks();
       } else if (event.kind === "user") {
         const pending = list.querySelector('.msg.user[data-pending="1"]');
         if (pending && pending.textContent === event.text) {

@@ -1105,6 +1105,12 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (/turn-file-changes-live", threadId, turnId/.test(watchSrc) && /remoteFilesText/.test(bootSrc) && /event\.kind === "files"/.test(pageSrc) && /step-files/.test(pageSrc) ? ok : fail)(
       "【139b】文件变更 +N −M：宿主追踪器的 live 报告带 threadId 转发到手机，页面逐文件展示（引擎 fileChange 不带行数）"
     );
+    (/kind: "notice"/.test(bootSrc) && /requestApproval/.test(bootSrc) && /event\.kind === "notice"/.test(pageSrc) && /step-notice/.test(pageSrc) ? ok : fail)(
+      "【139b】审批 / 询问：手机端没有交互 UI，必须推一条「去电脑端确认」提示（否则打开桌面会话会对着手机干等）"
+    );
+    (/exitCode/.test(bootSrc) ? ok : fail)(
+      "【139b】命令结束状态：引擎带 exitCode / status 时给结论（不带就静默，不瞎猜）"
+    );
     (/\?\? \.arguments/.test(bootSrc) || /item\?\.arguments/.test(bootSrc)) && /dynamicToolCall/.test(bootSrc) ? ok : fail(
       "【139b】工具步骤带 server 前缀 + 参数摘要（与桌面工具卡同口径，手机上看得出来调了什么）"
     );
@@ -1202,6 +1208,12 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   );
   (/thread\/archive/.test(mainSrc2) && /thread\/goal\/set/.test(mainSrc2) && /chm-effort/.test(pageSrc2) ? ok : fail)(
     "【139d】归档 / 设目标 / 思考强度（low/medium/high/xhigh 随消息下发）三件接线"
+  );
+  (["tasks", "turn-files", "file-diff", "goal-get"].every((t) => relaySrc2.includes(`"${t}"`)) ? ok : fail)(
+    "【139d】任务清单 / 本轮改动 / 单文件 diff / 目标读取四个 RPC 都在"
+  );
+  (/openTurnDiff/.test(pageSrc2) && /refreshTasks/.test(pageSrc2) && /refreshGoal/.test(pageSrc2) && /storedReportsForThread/.test(mainSrc2) ? ok : fail)(
+    "【139d】手机端：改动面板可点开单文件 diff；任务清单与目标条有刷新链路（数据取自落盘报告）"
   );
   // 真跑路径守卫真值表（纯模块，node 直接 import）
   const rf = await import(pathToFileURL(join(ROOT, "src", "lib", "remote-files.mjs")).href);
