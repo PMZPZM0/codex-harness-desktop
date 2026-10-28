@@ -8,7 +8,6 @@ import { usePart06a1 } from "./01-seg/01-ui-ready-mood-refs";
 import { usePart06a2 } from "./01-seg/02-runtime-dispatch-roles";
 import type { Bag } from "../bag-types";
 
-import "@xterm/xterm/css/xterm.css";
 
 export function usePart06a(bag: Bag) {
   const a = usePart06a1(bag);

@@ -4,7 +4,6 @@
  * ⛔ 顺序即契约：part 内含 hook 调用，顺序变化会让 state 归属错位。
  */
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import "@xterm/xterm/css/xterm.css";
 import { usePart01 } from "./parts/part01";
 import { usePart02 } from "./parts/part02";
 import { usePart03 } from "./parts/part03";

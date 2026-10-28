@@ -8,7 +8,6 @@ import { usePart07b1 } from "./02-seg/01-connectors-subagents-teams";
 import { usePart07b2 } from "./02-seg/02-team-sessions-skills";
 import type { Bag } from "../bag-types";
 
-import "@xterm/xterm/css/xterm.css";
 
 export function usePart07b(bag: Bag) {
   const a = usePart07b1(bag);

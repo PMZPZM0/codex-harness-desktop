@@ -8,7 +8,6 @@ import { usePart06c1 } from "./03-seg/01-permission-effort-copy";
 import { usePart06c2 } from "./03-seg/02-context-fork-backup";
 import type { Bag } from "../bag-types";
 
-import "@xterm/xterm/css/xterm.css";
 
 export function usePart06c(bag: Bag) {
   const a = usePart06c1(bag);

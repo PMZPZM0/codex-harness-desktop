@@ -7,7 +7,6 @@
  */
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import "@xterm/xterm/css/xterm.css";
 import { DispatchMenu, DispatchBadge } from "../../../../../../features/dispatch";
 import { getBossThreads } from "../../../../../../features/boss-group-view";
 import {

@@ -8,7 +8,6 @@ import { usePart02c1 } from "./03-thread-switch-update/01-thread-switch-system-e
 import { usePart02c2 } from "./03-thread-switch-update/02-update-ui-settings";
 import type { Bag } from "../bag-types";
 
-import "@xterm/xterm/css/xterm.css";
 
 export function usePart02c(bag: Bag) {
   const a = usePart02c1(bag);

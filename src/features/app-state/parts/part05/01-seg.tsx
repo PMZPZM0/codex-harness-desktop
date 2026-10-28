@@ -11,7 +11,6 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 
 /** 引擎警告气泡同文去重（09-28）：initialize 与各 session 恢复会对同一 configWarning 各推一次。 */
 const warnDedupe = new Map<string, number>();
-import "@xterm/xterm/css/xterm.css";
 import { translateEngineNotice } from "../../../../lib/engine-notices-zh";
 import { performRelayLogin, resolveRelayAutoTarget, resolveRelayTarget, resolveRelayKeyTarget, writeRelayActive, readRelayActive, type RelayActive } from "../../../../lib/relay";
 import {

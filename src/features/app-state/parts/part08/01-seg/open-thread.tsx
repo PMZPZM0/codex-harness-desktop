@@ -4,7 +4,6 @@
  * ⛔ 原函数对宿主局部绑定的闭包 = 0（跨段依赖全走 bag）⇒ 只需补一个 `bag` 首参，函数体逐字照搬。
  * ⛔ 宿主里留同名薄壳转调，调用点与函数提升语义都不变。
  */
-import "@xterm/xterm/css/xterm.css";
 import { loadDraft, saveDraft } from "../../../../../lib/composer-draft.mjs";
 import { setTurnWindowTail } from "../../../../../lib/turn-history.mjs";
 import { DEFAULT_EFFORT, pickDefaultEffort, normalizeEffort, ALL_EFFORTS, declaredModelEfforts } from "../../../../../lib/effort";

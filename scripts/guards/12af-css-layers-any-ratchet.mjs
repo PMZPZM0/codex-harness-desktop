@@ -48,6 +48,25 @@ for (const line of imports) {
 ok(baseImportant <= BASE_IMPORTANT_CAP,
   `base 层 !important 不超基线（${baseImportant} ≤ ${BASE_IMPORTANT_CAP}；important 是早层优先，base 里新增会莫名压过 pages）`);
 
+/* 第三方 CSS 只许从这里**分层**导入一次（否则未分层会反过来压掉所有层） */
+ok(/@import "@xterm\/xterm\/css\/xterm\.css" layer\(base\);/.test(styles),
+  "xterm.css 在 styles.css 里挂 base 层导入一次（不再散落在 68 个 TSX 里，也不做未分层导入）");
+const xtermInTsx = (() => {
+  let hits = 0;
+  const walkTsx = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === "node_modules" || e.name.startsWith(".")) continue;
+      const full = join(dir, e.name);
+      if (e.isDirectory()) { walkTsx(full); continue; }
+      if (!/.(tsx|ts)$/.test(e.name)) continue;
+      if (readFileSync(full, "utf8").includes("@xterm/xterm/css/xterm.css")) hits++;
+    }
+  };
+  walkTsx(join(ROOT, "src"));
+  return hits;
+})();
+ok(xtermInTsx === 0, "TS/TSX 里不再直接 import xterm.css（实测 " + xtermInTsx + " 处）");
+
 /* ── ② any 棘轮 ── */
 /** 基线 = 10-27 实测值（`: any` + `as any`，排除 src 下 .d.ts 生成物）。只许降。 */
 const ANY_CAP = 1696;

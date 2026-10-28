@@ -4,7 +4,6 @@
  * 搬出后 `App.tsx` 与 `useHarnessApp` 都从这里取类型 ⇒ 打破 App ⇄ hook 循环。
  */
 
-import "@xterm/xterm/css/xterm.css";
 import { Turn } from "../../lib/turn";
 
 /* 组合根 API 类型（10-10）：由**组装层**转发给其它域用。

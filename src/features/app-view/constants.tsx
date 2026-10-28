@@ -2,7 +2,6 @@
  * constants —— **barrel**：全部声明已按域分到同目录 constants/（09-22 结构改造）。
  * ⛔ 顺序即契约（若含 hook / 副作用注册，调用顺序 == 原文件顺序）⇒ 只能按文件名前缀顺序 import。
  */
-import "@xterm/xterm/css/xterm.css";
 import "./constants/01-notices-labels";
 import "./constants/02-identity-onboarding";
 import "./constants/03-ui-options";
