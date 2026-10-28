@@ -1,8 +1,9 @@
 <resources>
     <string name="app_name">Codex 远控</string>
-    <string name="setup_title">连接你的 Codex</string>
-    <string name="setup_desc">填服务器转发过来的地址（https://你的域名），或在电脑端「手机远控」里扫码。\n\n第一次连接要在电脑上输入 6 位配对码并点「允许」；之后会自动登录，不用再批。</string>
-    <string name="url_hint">https://remote.example.com</string>
+    <string name="setup_title">输入连接码</string>
+    <string name="setup_desc">在电脑端「手机远控」面板上会显示 6 位数字，填进来点连接。\n第一次连接还要在电脑上点一次「允许」；之后会自动登录。</string>
+    <string name="server_prefix">服务器：</string>
+    <string name="code_hint">6 位连接码</string>
     <string name="connect">连接</string>
     <string name="scan">扫码</string>
 </resources>
