@@ -545,6 +545,7 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   position: relative;
 }
 .md-table-copy,
+.md-table-export,
 .md-code-copy {
   position: absolute;
   top: 4px;
@@ -568,7 +569,25 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   right: 8px;
   background: var(--panel-2);
 }
+/* ⛔ 10-28 用户令：表格右上角要**两个**按钮（导出 Excel 在左、复制在右）。
+   定位收在容器上，按钮自身恢复 static —— 各自 absolute 时第二个会盖住第一个。 */
+.md-table-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 2;
+}
+.md-table-actions .md-table-copy,
+.md-table-actions .md-table-export {
+  position: static;
+  top: auto;
+  right: auto;
+}
 .md-table-copy:hover,
+.md-table-export:hover,
 .md-code-copy:hover {
   color: var(--text);
   background: var(--panel-2);
