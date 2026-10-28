@@ -85,6 +85,7 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
 .thread-row small{display:block;margin-top:3px;color:var(--muted);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .thread-row.active{background:var(--accent-soft)}
 #msglist{flex:1;overflow-y:auto;padding:16px 14px 24px;display:flex;flex-direction:column;gap:12px}
+#msglist[hidden]{display:none}
 .msg{max-width:84%;padding:11px 14px;border-radius:16px;font-size:15px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
 .msg.user{align-self:flex-end;background:var(--accent-soft);color:var(--ink);border:1px solid #d9e4fb;border-bottom-right-radius:6px}
 .msg.assistant{align-self:flex-start;background:#fff;border:1px solid var(--line);border-bottom-left-radius:6px;box-shadow:0 1px 2px rgba(35,35,31,.04)}
@@ -541,8 +542,9 @@ function groupHasNews(group) {
   const seen = Number(groupSeen[String(group && group.id || "")] || 0);
   return (group && group.recentEvents || []).some((event) => Number(event && event.at || 0) > seen);
 }
-function memberHasNews(group, memberId) {
-  const seen = Number(groupSeen[String(group && group.id || "")] || 0);
+function memberHasNews(group, memberId, seenOverride) {
+  /* ⛔ seenOverride：群管理面板会先 markGroupSeen 再渲染 —— 不传旧值的话「有新动静」永远是空的 */
+  const seen = seenOverride != null ? Number(seenOverride) : Number(groupSeen[String(group && group.id || "")] || 0);
   return (group && group.recentEvents || []).some((event) => String(event && event.memberId || "") === String(memberId)
     && Number(event && event.at || 0) > seen
     && ["submitted", "chat-member", "done", "escalated"].indexOf(String(event && event.kind || "")) >= 0);
@@ -621,9 +623,15 @@ function clockOf(ms) {
   if (!at) return "";
   const d = new Date(at);
   const pad = (n) => String(n).padStart(2, "0");
-  return pad(d.getHours()) + ":" + pad(d.getMinutes());
+  /* 跨天的事件要带日期：只给「21:30」会让人以为是今天 */
+  const today = new Date();
+  const sameDay = d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
+  return (sameDay ? "" : (d.getMonth() + 1) + "/" + d.getDate() + " ") + pad(d.getHours()) + ":" + pad(d.getMinutes());
 }
+let homeRenderSeq = 0;
 async function renderHome() {
+  /* ⛔ 防串台：切页签会重新渲染；群列表慢的时候旧请求回来不许覆盖新页签的内容 */
+  const seq = ++homeRenderSeq;
   document.querySelectorAll(".home-tab").forEach((button) => {
     button.classList.toggle("on", button.getAttribute("data-tab") === homeMode);
   });
@@ -643,8 +651,10 @@ async function renderHome() {
   let groups = [];
   try {
     const result = await rpc({ type: "boss-groups" });
+    if (seq !== homeRenderSeq) return;
     groups = result && result.groups || [];
   } catch (error) {
+    if (seq !== homeRenderSeq) return;
     body.innerHTML = "";
     body.appendChild(makeEl("div", "empty-tip", "群加载失败：" + (error.message || "未知错误")));
     const retry = makeEl("button", "home-retry", "重试");
@@ -666,6 +676,7 @@ async function renderHome() {
   groups.forEach((group) => {
     const news = groupHasNews(group);
     const card = makeEl("div", "home-group" + (news ? " has-news" : ""));
+    card.setAttribute("data-gid", String(group.id));
     const header = makeEl("div", "home-group-head");
     header.onclick = () => openGroupThread(group);
     header.appendChild(groupAvatarNode(group, 42));
@@ -709,10 +720,21 @@ async function renderHome() {
   });
   body.appendChild(makeEl("div", "home-hint", "群增删 / 派活 / 审查在电脑端操作；手机上直接说话即可。"));
 }
+function clearGroupNewsUI(groupId) {
+  const id = String(groupId || "");
+  document.querySelectorAll(".home-group").forEach((card) => {
+    if (card.getAttribute("data-gid") !== id) return;
+    card.classList.remove("has-news");
+    const dot = card.querySelector(".home-dot");
+    if (dot) dot.remove();
+    card.querySelectorAll(".home-avatar.news, .home-mchip.news").forEach((node) => node.classList.remove("news"));
+  });
+}
 function openGroupThread(group) {
   const threadId = String(group && group.bossThreadId || "");
   if (!threadId) { push("system", "这个群还没有中枢会话"); return; }
   markGroupSeen(group.id);
+  clearGroupNewsUI(group.id);
   hideHome();
   currentThreadId = threadId;
   try { localStorage.setItem(THREAD_KEY, threadId); } catch (error) { /* 忽略 */ }
@@ -726,6 +748,7 @@ function openGroupManage(group) {
   showPanel("群管理 · " + String(group && group.name || "群"), node, null);
   const seenAt = Number(groupSeen[String(group && group.id || "")] || 0);
   markGroupSeen(group && group.id);
+  clearGroupNewsUI(group && group.id);
   const members = (group && group.members || []);
   const rowHead = makeEl("div", "panel-row");
   rowHead.appendChild(makeEl("b", null, "成员 " + members.length));
@@ -735,7 +758,7 @@ function openGroupManage(group) {
   members.forEach((member) => {
     const row = makeEl("div", "panel-row");
     row.appendChild(makeEl("span", null, String(member.name || "成员") + (member.role ? " · " + member.role : "")));
-    row.appendChild(makeEl("small", null, memberHasNews(group, member.id) ? "有新动静" : ""));
+    row.appendChild(makeEl("small", null, memberHasNews(group, member.id, seenAt) ? "有新动静" : ""));
     node.appendChild(row);
   });
   const taskRow = makeEl("div", "panel-row");
@@ -786,7 +809,12 @@ async function startSession(boss) {
     void loadThreads();
     saveSession();
   } catch (error) {
-    push("system", "新建会话失败：" + (error.message || "未知错误"));
+    /* ⛔ 失败时首页还盖着消息区：报错必须显示在首页上，否则用户只看到「点了没反应」 */
+    const text = "新建会话失败：" + (error.message || "未知错误");
+    if (homeVisible) {
+      const body = document.getElementById("home-body");
+      if (body) body.appendChild(makeEl("div", "empty-tip", text));
+    } else push("system", text);
   }
 }
 /* ── ＋ 菜单：图片 / 文件 / 技能 / 指令（都在电脑端执行，手机只发请求） ── */
