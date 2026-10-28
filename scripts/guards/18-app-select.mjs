@@ -48,8 +48,11 @@ export async function run() {
   (/ArrowDown/.test(comp) && /ArrowUp/.test(comp) && /"Escape"/.test(comp) ? ok : fail)(
     "【197】AppSelect 支持键盘导航（↑↓ 移动 / Esc 关闭 —— 原生 select 的可达性不能退化）"
   );
-  (/openUp/.test(comp) ? ok : fail)(
-    "【197】AppSelect 弹层支持视口翻转（下方放不下开向上，不裁切）"
+  /* 10-28：定位不再自己算 —— 统一调 AnchorPopover 的 placePopover()（全仓唯一实现）。
+     ⛔ 判据落在「用了原语」而不是「有 openUp 这个字段」：后者只是样式分支，随便写的翻转逻辑也能满足。 */
+  (/import\s*\{[^}]*placePopover[^}]*\}\s*from\s*"\.\/AnchorPopover"/.test(comp)
+    && /placePopover\(/.test(comp) && /side === "above"/.test(comp) ? ok : fail)(
+    "【197】AppSelect 弹层走统一浮层原语（placePopover 的翻转 / 夹视口 / 可用高度，不再自写贴边逻辑）"
   );
   (/stopPropagation/.test(comp) ? ok : fail)(
     "【197】AppSelect 点击防冒泡（画布/卡片内嵌下拉不得触发父级选中或拖拽）"
