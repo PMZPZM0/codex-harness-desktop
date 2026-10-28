@@ -210,7 +210,7 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
                 aria-label={entry.label}
                 title={`${entry.label}（可拖动排序）`}
                 onClick={() => {
-                  /* ⛔ 快捷键不是 rail 内联面板（内容太大、还要搜索/批量编辑）：直接开全局弹窗。
+                  /* ⛔ 快捷键不是 rail 内联面板（内容太大、要搜索/逐条改键）：直接开全局弹窗。
                      与「设置 → 控制台 → 键盘快捷键」是同一个组件 ⇒ 两处永远一致。 */
                   if (entry.id === "shortcuts") { setPanelId(null); app.setShortcutsOpen?.(true); return; }
                   if (isPanel) setPanelId((current) => (current === entry.id ? null : entry.id));
