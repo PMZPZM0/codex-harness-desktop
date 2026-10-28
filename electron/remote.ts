@@ -16,8 +16,8 @@ const REMOTE_APK_RELEASE = "mobile-remote-v0.1.0";
 /** 安装包校验和（GitHub 资产自带的 digest）：镜像层可能被篡改，对不上就不落盘 —— 与 updates.ts 同口径。
  *  ⛔ 重新发布同名资产时必须同步改这里，否则手机端会一直报「校验和不匹配」。 */
 const REMOTE_APK_SHA256: Record<string, string> = {
-  "CodexRemote-0.1.0.apk": "3d13ee5404b367b5beaf6a703ae7e90ca014e5df5f7933b1982917911baa4b16",
-  "PPcodeRemote-0.1.0.apk": "c9bfa0696100fda18aca5cdd4e76681866dd5affbcbbf1a546766c716fb4c361",
+  "CodexRemote-0.1.1.apk": "cbb07bab38d984d898aa59b5c1ff26071e01bf9d8d18efe29dfd820aa9c631b6",
+  "PPcodeRemote-0.1.1.apk": "2c9025324f35c7eff50c1f427654dad4cb418340531ae2828687bfc7dce78f27",
 };
 
 /** cloudflared 可执行文件（手机配对的公网隧道）。

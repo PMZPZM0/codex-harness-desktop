@@ -12,6 +12,7 @@ import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.ValueCallback;
 import android.webkit.WebView;
@@ -159,6 +160,19 @@ public class MainActivity extends AppCompatActivity {
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request.isForMainFrame()) {
                     showSetup("连不上：" + error.getDescription());
+                }
+            }
+
+            // ⛔ 502/4xx 走的是 onReceivedHttpError（不是 onReceivedError）——不接的话手机上就是
+            //    一整页英文“网页无法打开 / ERR_HTTP_RESPONSE_CODE_FAILURE”，看不出是电脑端没开
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
+                if (!request.isForMainFrame()) return;
+                int code = response.getStatusCode();
+                if (code >= 400) {
+                    showSetup(code == 502
+                            ? "连不上：电脑端应用没打开，或远控服务没启动（HTTP 502）"
+                            : "连不上：服务返回 HTTP " + code);
                 }
             }
         });
