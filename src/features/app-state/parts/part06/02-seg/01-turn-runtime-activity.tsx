@@ -91,15 +91,18 @@ bag.turnFinalizing = turnFinalizing as typeof bag.turnFinalizing;
         //    这里如实说「正在整理上下文」，找不到真实活动才走兜底。
         if (isCompactionItem(item)) continue;
         /* ⛔ 10-28 用户令：状态精简为五种主状态 ——
-             等待模型回复 / 正在思考 / 正在编辑文件 / 正在运行命令 / 正在生成文件。
+             等待模型回复 / 生成回复中 / 正在编辑文件 / 正在运行命令 / 正在生成文件。
            其余状态** truthful 才出现**（搜索网页 / 调用工具），不参与"五种"的命名口径。
            ⛔ 文案是**逻辑的唯一出口**：别在别处再拼一份（bag-types 的联合类型同步改）。 */
         switch (item.type) {
           case "commandExecution": return "正在运行命令";
           case "fileChange": return fileChangeActivity(item);
-          case "reasoning": return "正在思考";
-          /* 正文在写：说「正在生成回复」才是实话（说「等待模型回复」会让人以为还没开始）。 */
-          case "agentMessage": return "正在生成回复";
+          /* ⛔ 10-28 用户二次确认（两次原话）：「思考板块输出思考内容的时候，映射的文字就是生成回复中」
+             「正在思考下面映射的文字要是生成回复中」⇒ 思考与正文**都算在产出回复**，
+             统一映射为「生成回复中」；「正在思考」不再单独出现在状态行
+             （思考卡自己写着「深度思考中」，状态行再写一遍就是同屏重复）。 */
+          case "reasoning":
+          case "agentMessage": return "生成回复中";
           case "webSearch": return "正在搜索网页";
           case "mcpToolCall":
           case "dynamicToolCall":
