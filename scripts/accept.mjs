@@ -247,6 +247,48 @@ const CHECKS = [
         Boolean(mcp && !mcp.hasInfo && !mcp.hasCopy && mcp.toolbarTop > 0 && mcp.toolbarTop < 190),
         JSON.stringify({ hasInfo: mcp && mcp.hasInfo, hasCopy: mcp && mcp.hasCopy, toolbarTop: mcp && mcp.toolbarTop }));
 
+      /* 10-28：下拉框定位改用统一浮层原语（placePopover）—— 这里真点开、真选一项，确认
+         ① 弹层完整在视口内且与触发按钮左对齐；② 选中后触发文案跟着变、弹层关闭。
+         ⛔ 只验结构（守卫 197）不够：这类"贴边算错"的问题只有真开一次才看得见。 */
+      const dd = await h.eval(`(function(){
+        const sel=document.querySelector(".settings-modal .mcp-category-select");
+        const list=document.querySelector(".app-select-list");
+        if(!sel||!list) return null;
+        const sb=sel.getBoundingClientRect(), lb=list.getBoundingClientRect();
+        return { win:{w:innerWidth,h:innerHeight}, sel:{l:Math.round(sb.left),t:Math.round(sb.top),b:Math.round(sb.bottom)},
+          list:{l:Math.round(lb.left),t:Math.round(lb.top),r:Math.round(lb.right),b:Math.round(lb.bottom)},
+          label:(sel.querySelector(".app-select-value")?.textContent||"").trim(),
+          first:(list.querySelector(".app-select-option")?.textContent||"").trim() };
+      })()`).catch(() => null);
+      h.check("⑬ MCP 分类下拉：弹层完整在视口内、左缘与触发按钮对齐",
+        Boolean(dd) && dd.list.l >= 0 && dd.list.t >= 0 && dd.list.r <= dd.win.w + 1 && dd.list.b <= dd.win.h + 1
+          && Math.abs(dd.list.l - dd.sel.l) <= 2,
+        JSON.stringify(dd));
+      const before = dd && dd.label;
+      const pickLabel = await h.eval(`(function(){
+        const opts=[...document.querySelectorAll(".app-select-list .app-select-option")];
+        const target=opts.find((o)=>(o.textContent||"").trim() && (o.textContent||"").trim() !== ${JSON.stringify(before)});
+        if(!target) return null; const t=(target.textContent||"").trim(); target.click(); return t;
+      })()`).catch(() => null);
+      await wait(400);
+      const afterPick = await h.eval(`(function(){
+        const sel=document.querySelector(".settings-modal .mcp-category-select");
+        return { label:(sel?.querySelector(".app-select-value")?.textContent||"").trim(), open:!!document.querySelector(".app-select-list") };
+      })()`).catch(() => null);
+      h.check("⑭ MCP 分类下拉：点第二项后触发文案跟着变、弹层关闭",
+        Boolean(pickLabel && afterPick && !afterPick.open && afterPick.label === pickLabel),
+        JSON.stringify({ pickLabel, afterPick }));
+      /* 还原成「全部分类」，避免把筛选态留给后面的断言 */
+      await h.eval(`(function(){
+        const sel=document.querySelector(".settings-modal .mcp-category-select"); sel?.click(); return 1;
+      })()`);
+      await wait(300);
+      await h.eval(`(function(){
+        const opt=[...document.querySelectorAll(".app-select-list .app-select-option")].find((o)=>(o.textContent||"").trim() === ${JSON.stringify(before || "全部分类")});
+        opt?.click(); return 1;
+      })()`);
+      await wait(300);
+
       /* 10-27 用户（语音页截图）：「把必须放到基础模型里面…首个卡片内容布局调一下…上面一块空白删除，
          右上角帮助❓号…放到基础模型卡片右上角」⇒ 页头整块删掉（不留空行）、
          必需标签与帮助 ? 都进基础模型卡的卡头、副标题与路径下沉正文区。 */

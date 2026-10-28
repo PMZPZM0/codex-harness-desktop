@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check } from "lucide-react";
+import { placePopover } from "./AnchorPopover";
 
 /**
  * 统一的自定义下拉框（09-28）：替代原生 `<select>`。
@@ -11,7 +12,8 @@ import { Check } from "lucide-react";
  * 实现要点：
  *  - 弹层 **createPortal 到 body**：设置面板/弹窗的祖先链有 transform/contain 时，
  *    position:fixed 会退化成相对定位（09-28 弹窗事故同款坑）—— portal 对任何祖先免疫。
- *  - 触发按钮 rect 对齐 + 视口翻转（下方放不下开向上）。
+ *  - 定位**不再自己算**（10-28）：翻转 / 夹进视口 / 可用高度统一用 AnchorPopover 的
+ *    `placePopover()` —— 这是全仓唯一实现，省得下拉框又是另一套"自己写的贴边逻辑"。
  *  - 键盘：Enter/Space/ArrowDown 打开，↑↓ 移动，Enter 选中，Esc/Tab 关闭。
  *  - 选项文本单行省略（title 给全文）—— 定时任务的会话清单里有超长 preview。
  */
@@ -31,7 +33,7 @@ export function AppSelect({ value, onChange, options, ariaLabel, className, disa
   const [active, setActive] = useState(() => Math.max(0, options.findIndex((o) => o.value === value)));
   const btnRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const [rect, setRect] = useState<{ left: number; top: number; width: number; openUp: boolean } | null>(null);
+  const [rect, setRect] = useState<{ left: number; top: number; width: number; maxHeight: number; anchorTop: number; openUp: boolean } | null>(null);
 
   const current = options.find((o) => o.value === value);
 
@@ -39,13 +41,20 @@ export function AppSelect({ value, onChange, options, ariaLabel, className, disa
     if (disabled) return;
     const r = btnRef.current?.getBoundingClientRect();
     if (!r) return;
-    const listMaxH = Math.min(288, window.innerHeight - 24);
-    const spaceBelow = window.innerHeight - r.bottom;
+    /* 定位统一走 placePopover（axis=y）：下方够放就往下、不够就翻上、另一轴夹进视口，
+       可用高度由它按所选侧算 —— 本组件只负责"贴着触发按钮等宽"这一件事。 */
+    const placed = placePopover(
+      { left: r.left, right: r.right, top: r.top, bottom: r.bottom },
+      { w: r.width, h: Math.min(288, window.innerHeight - 24) },
+      { axis: "y", gap: 4 },
+    );
     setRect({
-      left: r.left,
-      top: spaceBelow > Math.min(listMaxH, 200) + 8 || spaceBelow > r.top ? r.bottom + 4 : Math.max(8, r.top - 4),
-      width: r.width,
-      openUp: !(spaceBelow > Math.min(listMaxH, 200) + 8 || spaceBelow > r.top),
+      left: placed.left,
+      top: placed.top,
+      width: placed.width,
+      maxHeight: Math.min(288, placed.maxHeight),
+      anchorTop: r.top,
+      openUp: placed.side === "above",
     });
     setActive(Math.max(0, options.findIndex((o) => o.value === value)));
     setOpen(true);
@@ -114,8 +123,9 @@ export function AppSelect({ value, onChange, options, ariaLabel, className, disa
             aria-label={ariaLabel}
             ref={listRef}
             style={rect.openUp
-              ? { left: rect.left, width: rect.width, bottom: window.innerHeight - rect.top + 4, maxHeight: Math.min(288, rect.top - 12) }
-              : { left: rect.left, top: rect.top, width: rect.width, maxHeight: Math.min(288, window.innerHeight - rect.top - 12) }}
+              /* 向上开：仍以触发按钮**底边**为锚（面板底贴按钮上沿），高度由 placePopover 给的可用值封顶 */
+              ? { left: rect.left, width: rect.width, bottom: window.innerHeight - rect.anchorTop + 4, maxHeight: rect.maxHeight }
+              : { left: rect.left, top: rect.top, width: rect.width, maxHeight: rect.maxHeight }}
           >
             {options.map((opt, idx) => (
               <div
