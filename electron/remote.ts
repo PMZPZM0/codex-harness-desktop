@@ -69,10 +69,12 @@ type RemoteEvents = {
   fileDiff?: (threadId: string, relPath: string) => Promise<{ path?: string; diff?: string; error?: string }>;
   /** 当前目标（引擎 thread/goal/get） */
   goalGet?: (threadId: string) => Promise<{ objective?: string; status?: string }>;
+  /** 手机端回答询问 / 审批（引擎原生请求走 server.respond；agent_ask 转给渲染层 resolve） */
+  answer?: (payload: { kind: string; requestId?: string; questionId?: string; choice: string; threadId?: string }) => Promise<void>;
   /** 本产品在 GitHub Release 上的 APK 资产文件名（按品牌不同由 main 传入） */
   apkFile?: string;
   /** 引擎流式事件转发给已连接手机（turn 增量） */
-  onThreadEvent?: (listener: (event: { threadId: string; kind: string; text: string }) => void) => () => void;
+  onThreadEvent?: (listener: (event: { threadId: string; kind: string; text: string; data?: any }) => void) => () => void;
   /** 设备会话记忆持久化文件（userData/remote-sessions.json）；不传则不持久化 */
   storageFile?: string;
   /** 09-13 二次加固：手机首次配对需要「6 位配对码 + 电脑端审批」。
@@ -611,6 +613,16 @@ export class RemoteControlService {
           else if (data.type === "turn-files") result = await (this.events.turnFiles?.(String(data.threadId ?? "")) ?? Promise.resolve({ files: [] }));
           else if (data.type === "file-diff") result = await (this.events.fileDiff?.(String(data.threadId ?? ""), String(data.path ?? "")) ?? Promise.resolve({ diff: "", error: "不支持" }));
           else if (data.type === "goal-get") result = await (this.events.goalGet?.(String(data.threadId ?? "")) ?? Promise.resolve({}));
+          else if (data.type === "answer") {
+            await (this.events.answer?.({
+              kind: String(data.kind ?? ""),
+              requestId: String(data.requestId ?? ""),
+              questionId: String(data.questionId ?? ""),
+              choice: String(data.choice ?? ""),
+              threadId: String(data.threadId ?? ""),
+            }) ?? Promise.reject(new Error("不支持回答")));
+            result = { ok: true };
+          }
           else if (data.type === "files-list") result = { files: await (this.events.listFiles?.(String(data.threadId ?? "")) ?? Promise.resolve([])) };
           else if (data.type === "file-read") result = await (this.events.readFile?.(String(data.threadId ?? ""), String(data.path ?? "")) ?? Promise.resolve({ kind: "other" }));
           else result = { error: "unknown rpc type" };
@@ -750,7 +762,7 @@ export class RemoteControlService {
 
   /** 把引擎流式事件推给所有已连接手机（对话实时同步）；
    * 同时落到轮询缓冲：Cloudflare 免费隧道对裸 WebSocket 握手兼容差，手机页用 HTTP 轮询兜底 */
-  broadcastThreadEvent(event: { threadId: string; kind: string; text: string }) {
+  broadcastThreadEvent(event: { threadId: string; kind: string; text: string; data?: any }) {
     this.pollBuffer.push({ ...event, at: Date.now() });
     if (this.pollBuffer.length > 400) this.pollBuffer.splice(0, this.pollBuffer.length - 400);
     const payload = JSON.stringify({ type: "thread-event", ...event });
@@ -761,7 +773,7 @@ export class RemoteControlService {
   pollEvents(since: number) {
     return this.pollBuffer.filter((entry) => entry.at > since);
   }
-  private pollBuffer: { threadId: string; kind: string; text: string; at: number }[] = [];
+  private pollBuffer: { threadId: string; kind: string; text: string; data?: any; at: number }[] = [];
 
   private send(device: Device, text: string) {
     const payload = Buffer.from(text, "utf8");

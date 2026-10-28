@@ -1105,8 +1105,11 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (/turn-file-changes-live", threadId, turnId/.test(watchSrc) && /remoteFilesText/.test(bootSrc) && /event\.kind === "files"/.test(pageSrc) && /step-files/.test(pageSrc) ? ok : fail)(
       "【139b】文件变更 +N −M：宿主追踪器的 live 报告带 threadId 转发到手机，页面逐文件展示（引擎 fileChange 不带行数）"
     );
+    (/kind: "ask"/.test(bootSrc) && /remoteAskOf/.test(bootSrc) && /event\.kind === "ask"/.test(pageSrc) && /ask-opt/.test(pageSrc) ? ok : fail)(
+      "【139b】询问 / 审批可在手机上直接点：ask 卡片 + 选项按钮（引擎原生请求走 server.respond，agent_ask 走渲染层桥）"
+    );
     (/kind: "notice"/.test(bootSrc) && /requestApproval/.test(bootSrc) && /event\.kind === "notice"/.test(pageSrc) && /step-notice/.test(pageSrc) ? ok : fail)(
-      "【139b】审批 / 询问：手机端没有交互 UI，必须推一条「去电脑端确认」提示（否则打开桌面会话会对着手机干等）"
+      "【139b】无法结构化时回落「去电脑端确认」提示（绝不让人对着手机干等）"
     );
     (/exitCode/.test(bootSrc) ? ok : fail)(
       "【139b】命令结束状态：引擎带 exitCode / status 时给结论（不带就静默，不瞎猜）"
@@ -1215,6 +1218,13 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   (/openTurnDiff/.test(pageSrc2) && /refreshTasks/.test(pageSrc2) && /refreshGoal/.test(pageSrc2) && /storedReportsForThread/.test(mainSrc2) ? ok : fail)(
     "【139d】手机端：改动面板可点开单文件 diff；任务清单与目标条有刷新链路（数据取自落盘报告）"
   );
+  {
+    const bridgeSrc = readFileSync(join(ROOT, "src", "features", "app-view", "RemoteAskBridge.tsx"), "utf8");
+    const viewSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView.tsx"), "utf8");
+    (/"answer"/.test(relaySrc2) && /server\.respond\(requestId/.test(mainSrc2) && /remote-agent-ask-answer/.test(bridgeSrc) && /<RemoteAskBridge/.test(viewSrc) ? ok : fail)(
+      "【139d】询问回包：RPC answer → 主进程 server.respond（引擎原生）或渲染层桥 resolve（agent_ask），且桥已挂进 AppView"
+    );
+  }
   // 真跑路径守卫真值表（纯模块，node 直接 import）
   const rf = await import(pathToFileURL(join(ROOT, "src", "lib", "remote-files.mjs")).href);
   const root = "C:/work/proj";

@@ -174,6 +174,36 @@ function remoteFilesText(files: any[]): string {
   return `修改文件 · ${list.length} 个\n` + lines.join("\n");
 }
 
+/** 询问 / 审批压成手机端可点的卡片数据（引擎原生请求与 agent_ask 两种来源） */
+function remoteAskOf(method: string, params: any, event: any): { kind: string; requestId?: string; questionId?: string; question: string; options: { label: string; description?: string }[]; text: string } | null {
+  if (method === "item/tool/call") {
+    const args = params?.arguments ?? {};
+    const options = (Array.isArray(args.options) ? args.options : []).map((option: any) => ({ label: String(option ?? "") })).filter((option: any) => option.label).slice(0, 8);
+    const question = String(args.question ?? "请选择：");
+    if (!options.length) return null;
+    return { kind: "agentAsk", question, options, text: `❓ ${question}` };
+  }
+  if (method === "item/tool/requestUserInput") {
+    const questions = Array.isArray(params?.questions) ? params.questions : [];
+    const first = questions[0];
+    const options = (Array.isArray(first?.options) ? first.options : [])
+      .map((option: any) => ({ label: String(option?.label ?? ""), description: String(option?.description ?? "") }))
+      .filter((option: any) => option.label)
+      .slice(0, 8);
+    if (!options.length) return null;
+    const question = String(first?.question ?? first?.header ?? "请选择");
+    return { kind: "userInput", requestId: String(event?.id ?? ""), questionId: String(first?.id ?? ""), question, options, text: `❓ ${question}` };
+  }
+  const isFile = method.includes("fileChange");
+  return {
+    kind: "approval",
+    requestId: String(event?.id ?? ""),
+    question: isFile ? "允许修改这些文件吗？" : "允许执行这条命令吗？",
+    options: [{ label: "允许" }, { label: "拒绝" }],
+    text: `❓ ${isFile ? "文件修改" : "命令执行"}需要确认`,
+  };
+}
+
 function remoteThinkKey(p: any): string {
   return `${p?.threadId ?? ""}:${turnIdOf(p)}:${String(p?.itemId ?? p?.item?.id ?? "")}`;
 }
@@ -931,11 +961,15 @@ export async function bootApp() {
       } else if (event.method === "item/completed" && p?.item?.type === "agentMessage" && p.item.text) {
         const buffer = peekCaptureBuffer(String(p.threadId), turnIdOf(p));
         if (buffer) buffer.assistant = p.item.text;
-      } else if (/^item\/(?:commandExecution|fileChange)\/requestApproval$/.test(String(event.method ?? "")) || event.method === "item/tool/requestUserInput") {
-        /* 审批 / 询问：手机端没有交互 UI —— 至少明确告诉用户「去电脑上点确认」，别让人对着手机干等 */
-        if (!internalThreads.has(String(p?.threadId ?? ""))) {
-          const label = event.method === "item/tool/requestUserInput" ? "选择项" : String(event.method).includes("fileChange") ? "文件修改" : "命令执行";
-          for (const forward of remoteEventForwarders) forward({ threadId: p.threadId, kind: "notice", text: `⚠ 需要在电脑端确认：${label}` });
+      } else if (/requestApproval$/.test(String(event.method ?? "")) || event.method === "item/tool/requestUserInput" || (event.method === "item/tool/call" && p?.tool === "agent_ask")) {
+        /* 询问 / 审批：手机端做成**可点卡片**。
+           · 引擎原生请求（requestUserInput / 两种 requestApproval）→ 主进程 server.respond 回包；
+           · agent_ask 是宿主动态工具，应答必须经渲染层 resolve（见 AppView 的 remote-agent-ask-answer 桥）。 */
+        const askThreadId = String(p?.threadId ?? "");
+        if (!internalThreads.has(askThreadId)) {
+          const ask = remoteAskOf(String(event.method ?? ""), p, event);
+          if (ask) for (const forward of remoteEventForwarders) forward({ threadId: askThreadId, kind: "ask", text: ask.text, data: ask });
+          else for (const forward of remoteEventForwarders) forward({ threadId: askThreadId, kind: "notice", text: `⚠ 需要在电脑端确认：${String(event.method).includes("fileChange") ? "文件修改" : "命令执行"}` });
         }
       } else if (event.method === "item/completed" && p?.item?.type === "commandExecution") {
         // 命令结束：引擎带 exitCode / status 时给出结论（不带就静默，别瞎猜）

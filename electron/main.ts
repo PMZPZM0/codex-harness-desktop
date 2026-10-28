@@ -451,7 +451,7 @@ setThreadRuntimeStore(new ThreadRuntimeStore(threadRuntimeFile));
 
 
 /** 引擎流式事件 → 手机对话页转发器（remote.ts 的 onThreadEvent 注册） */
-const remoteEventForwarders: ((event: { threadId: string; kind: string; text: string }) => void)[] = [];
+const remoteEventForwarders: ((event: { threadId: string; kind: string; text: string; data?: any }) => void)[] = [];
 
 const remote = new RemoteControlService({
   getStatus: () => "idle",
@@ -613,6 +613,28 @@ const remote = new RemoteControlService({
     } catch {
       return { objective: "", status: "" };
     }
+  },
+  answer: async (payload) => {
+    if (payload.kind === "agentAsk") {
+      // 宿主动态工具：真正的回包在渲染层（AppView 的 remote-agent-ask-answer 桥负责 resolve）
+      sendToWindow("harness:event", { type: "remote-agent-ask-answer", threadId: String(payload.threadId ?? ""), answer: payload.choice });
+      return;
+    }
+    const requestId = String(payload.requestId ?? "");
+    if (!requestId) throw new Error("这个请求已经失效，请在电脑上处理");
+    if (payload.kind === "approval") {
+      // 形状照协议 schema：decision 枚举 accept / decline（见 turn-overlays 头注）
+      server.respond(requestId as any, { decision: payload.choice === "允许" ? "accept" : "decline" });
+      return;
+    }
+    if (payload.kind === "userInput") {
+      // 形状照 ToolRequestUserInputResponse：questions id → { answers: [label] }
+      const answers: Record<string, { answers: string[] }> = {};
+      answers[String(payload.questionId ?? "")] = { answers: [payload.choice] };
+      server.respond(requestId as any, { answers });
+      return;
+    }
+    throw new Error("未知的询问类型");
   },
   listFiles: async (threadId) => {
     const root = threadCwd.get(threadId) || process.cwd();
