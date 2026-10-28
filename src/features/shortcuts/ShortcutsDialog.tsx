@@ -218,6 +218,8 @@ export function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () 
                             className={`shortcut-record${isRecording ? " is-recording" : ""}`}
                             onClick={() => { setRecording(entry.id); setError(""); }}
                             title="点击后按下新组合键（Esc 取消）"
+                            /* 屏读器只读到"Ctrl+B"会缺上下文：把「哪个动作 + 当前键 + 可点」一次说全 */
+                            aria-label={`${entry.label}，当前 ${bindingLabel(keys, false) || "未设置"}，点击修改`}
                           >
                             {isRecording ? "按下新组合键…" : bindingLabel(keys, false)}
                           </button>
