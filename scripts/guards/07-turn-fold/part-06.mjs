@@ -475,9 +475,9 @@ export async function run() {
   (/if \(isCompactionItem\(item\)\) continue;/.test(activitySrc) ? ok : fail)(
     "【163】runActivity 扫描跳过 contextCompaction（压缩不是「生成回复」，指示归分隔线与 toast）"
   );
-  // ② 压缩进行中兜底必须给空串：此时「正在生成回复/正在落笔」是错的。
-  (/compactPendingRef\.current\.has\(bag\.thread\.id\)\) return "";/.test(activitySrc) ? ok : fail)(
-    "【163】压缩进行中 runActivity 兜底为空串（状态条静默，分隔线转圈承担指示）"
+  // ② 压缩进行中如实说「正在整理上下文」（10-28）：说在写回复是错的，但静默会让人以为卡死。
+  (/compactPendingRef\.current\.has\([^)]*\)\) return "正在整理上下文";/.test(activitySrc) ? ok : fail)(
+    "【163】压缩进行中如实说「正在整理上下文」（既不说在写回复，也不再静默）"
   );
   // ③ 压缩完成必须结算运行态（两个完成事件都要接）：turn/started 点亮的状态没人熄灭 = 永久挂。
   ((part05Src.match(/bag\.settleAfterCompaction\(/g) || []).length >= 2 ? ok : fail)(

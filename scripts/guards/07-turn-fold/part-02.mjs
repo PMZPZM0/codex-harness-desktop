@@ -126,7 +126,7 @@ export async function run() {
     const timerFn = timerIdx >= 0 ? appSrc.slice(timerIdx, appSrc.indexOf("\n}", timerIdx) + 2) : "";
     (timerFn && !/等待模型收尾/.test(timerFn) ? ok : fail)("【44】收尾提示只在底部状态行说一次（计时条不再重复同一句）");
     (/const turnFinalizing = Boolean\([^)]*isAwaitingTurnClose\(/.test(appSrc) ? ok : fail)("【44】收敛为一个布尔判据（状态行与短语共用，不各写一份）");
-    (/turnFinalizing \? "正文已完整，等待模型收尾"/.test(appSrc) ? ok : fail)("【44】状态行在收尾等待时如实说（不再写「正在生成回复」）");
+    (/turnFinalizing \? "等待模型收尾"/.test(appSrc) ? ok : fail)("【44】状态行在收尾等待时如实说（不再写「正在生成回复」）");
     // ⛔ 反向守卫：判据**不许**写成 `runActivity === "某中文文案"` —— 文案一改就静默失效，
     //   界面会悄悄退回「正在生成回复」，而预检照样全绿（09-18 审查抓出的隐患）。
     //   ⛔ 必须先去掉注释再判：注释里解释这条隐患时也会出现同样的写法，直接正则会假红（本轮踩到）。

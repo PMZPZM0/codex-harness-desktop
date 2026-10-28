@@ -26,10 +26,12 @@ import type { Bag } from "../../bag-types";
  * 新增文件的 diff 以 `--- /dev/null` 开头（或带 `new file mode`）。
  * ⛔ 判据只在这里：状态文案别在渲染层再判一次（两处判定迟早漂移）。
  */
-function fileChangeActivity(item: any): "正在生成文件" | "正在编辑文件" {
-  const changes = Array.isArray(item?.changes) ? item.changes : [];
+type FileChangeLike = { path?: string; filePath?: string; diff?: string; kind?: string; status?: string };
+
+function fileChangeActivity(item: { changes?: FileChangeLike[] } | null | undefined): "正在生成文件" | "正在编辑文件" {
+  const changes: FileChangeLike[] = Array.isArray(item?.changes) ? item!.changes! : [];
   if (!changes.length) return "正在编辑文件";
-  const allNew = changes.every((change: any) => {
+  const allNew = changes.every((change) => {
     const kind = String(change?.kind ?? change?.status ?? "").toLowerCase();
     if (kind === "add" || kind === "added" || kind === "create" || kind === "created") return true;
     const diff = String(change?.diff ?? "");
@@ -67,7 +69,8 @@ bag.turnFinalizing = turnFinalizing as typeof bag.turnFinalizing;
        状态行再写「正在运行命令」会让人以为它自己在跑（实际在等你点）。
        ⛔ 只认**本会话**的请求（pending 里可能有别的会话的）。 */
     const myPending = (bag.pending ?? []).filter((request) => {
-      const tid = String((request?.params as any)?.threadId ?? "");
+      const params = (request as { params?: { threadId?: string | null } } | null)?.params;
+      const tid = String(params?.threadId ?? "");
       return (!tid || tid === thread.id) && /approval/i.test(String(request?.method ?? ""));
     });
     if (myPending.length) return "等待你确认";
