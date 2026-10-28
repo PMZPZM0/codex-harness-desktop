@@ -2677,3 +2677,14 @@
 .live-file-float-close:hover { background: var(--panel-2); color: var(--text); }
 .live-file-float-body { max-height: min(46vh, 360px); overflow: auto; }
 .live-file-float-code { margin: 0; padding: 9px 11px; color: var(--text); font: 11px/1.55 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
+
+
+/* 10-28 用户（浅色截图）：输入框顶部拖动条改白色（深色保持原灰）。 */
+:root:not([data-theme="dark"]) .composer-resize-grip {
+  background: #fff;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--line) 75%, transparent);
+}
+:root:not([data-theme="dark"]) .composer-resize-handle:hover .composer-resize-grip {
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--faint);
+}

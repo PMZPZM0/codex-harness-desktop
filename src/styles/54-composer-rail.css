@@ -42,7 +42,7 @@
 }
 .composer-rail-grip {
   width: 6px;
-  height: 64px;
+  height: 36px;
   border-radius: 999px;
   /* 用户点名「小粗条」：它是**唯一**的展开affordance ⇒ 别调成几乎看不见的浅灰（第一版 45% 实测太淡） */
   background: color-mix(in srgb, var(--muted) 72%, transparent);
@@ -51,11 +51,11 @@
 .composer-rail-toggle:hover .composer-rail-grip,
 .composer-rail-toggle:focus-visible .composer-rail-grip {
   background: var(--muted);
-  height: 80px;
+  height: 44px;
 }
 /* 展开态：手柄收短，紧挨图标列（两段状态肉眼可分：短粗条 vs 一整列图标） */
 .composer-rail.is-open .composer-rail-toggle { width: 10px; height: 40px; }
-.composer-rail.is-open .composer-rail-grip { height: 32px; background: var(--line); }
+.composer-rail.is-open .composer-rail-grip { height: 22px; background: var(--line); }
 
 /* 图标列：宽 = 一个图标位，高 = 输入框高度（JS 不用给，100% 由 .composer 的相对定位决定） */
 .composer-rail-icons {
@@ -327,3 +327,20 @@
   color: #fff;
 }
 .stickers-foot { margin: 12px 0 0; font-size: 11px; color: var(--faint); }
+
+
+/* ── 10-28 用户（浅色截图）：两条灰色拖动/快捷条在浅色下不好看 ⇒ 改白色；
+      深色主题保持原灰（白条在深色里太刺眼）。竖条长度同步收短（64/80/32 → 36/44/22）。 */
+:root:not([data-theme="dark"]) .composer-rail-grip {
+  background: #fff;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--line) 75%, transparent);
+}
+:root:not([data-theme="dark"]) .composer-rail-toggle:hover .composer-rail-grip,
+:root:not([data-theme="dark"]) .composer-rail-toggle:focus-visible .composer-rail-grip {
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--faint);
+}
+:root:not([data-theme="dark"]) .composer-rail.is-open .composer-rail-grip {
+  background: #fff;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--line) 75%, transparent);
+}
