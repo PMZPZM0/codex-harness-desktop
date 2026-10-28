@@ -42,22 +42,22 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
             <span className="settings-pill-row-label"><ZoomIn size={13} />消息字号</span>
             <div className="segmented-tabs row-pills" role="group" aria-label="消息字号">
               {[{ v: "compact", t: "紧凑" }, { v: "default", t: "标准" }, { v: "large", t: "大字" }].map((opt) => (
-                <button key={opt.v} type="button" className={uiFont === opt.v ? "active" : ""} aria-pressed={uiFont === opt.v} title={`对话正文与过程内容用「${opt.t}」字号`} onClick={() => { setUiFont(opt.v); localStorage.setItem("ui-font", opt.v); }}>{opt.t}</button>
+                <button key={opt.v} type="button" className={uiFont === opt.v ? "active" : ""} aria-pressed={uiFont === opt.v} title={`对话正文与过程内容用「${opt.t}」字号`} onClick={() => { if (uiFont === opt.v) return; setUiFont(opt.v); localStorage.setItem("ui-font", opt.v); onNotice?.(`消息字号：${opt.t}`); }}>{opt.t}</button>
               ))}
             </div>
           </div>
           <div className="settings-pill-row">
             <span className="settings-pill-row-label"><Brain size={13} />思考板块</span>
             <div className="segmented-tabs row-pills" role="group" aria-label="思考板块展示">
-              <button type="button" className={reasoningDisplay === "auto" ? "active" : ""} aria-pressed={reasoningDisplay === "auto"} title="浮窗跟随输入框宽度，按可用空间自动向上 / 向下展开（默认）" onClick={() => setReasoningDisplayMode("auto")}>自适应展开</button>
-              <button type="button" className={reasoningDisplay === "strip" ? "active" : ""} aria-pressed={reasoningDisplay === "strip"} title="消息流内长条按行展示思考内容，点击标题或正文展开全文" onClick={() => setReasoningDisplayMode("strip")}>长条按行</button>
+              <button type="button" className={reasoningDisplay === "auto" ? "active" : ""} aria-pressed={reasoningDisplay === "auto"} title="浮窗跟随输入框宽度，按可用空间自动向上 / 向下展开（默认）" onClick={() => { if (reasoningDisplay === "auto") return; setReasoningDisplayMode("auto"); onNotice?.("思考板块：自适应展开"); }}>自适应展开</button>
+              <button type="button" className={reasoningDisplay === "strip" ? "active" : ""} aria-pressed={reasoningDisplay === "strip"} title="消息流内长条按行展示思考内容，点击标题或正文展开全文" onClick={() => { if (reasoningDisplay === "strip") return; setReasoningDisplayMode("strip"); onNotice?.("思考板块：长条按行"); }}>长条按行</button>
             </div>
           </div>
           <div className="settings-pill-row">
             <span className="settings-pill-row-label"><FileCode2 size={13} />运行过程</span>
             <div className="segmented-tabs row-pills" role="group" aria-label="运行过程">
-              <button type="button" className={runProcessMode === "simple" ? "active" : ""} aria-pressed={runProcessMode === "simple"} title="只显示文件编辑行与实时 +N -M，不自动展开内容（默认）" onClick={() => setRunProcessMode("simple")}>简洁</button>
-              <button type="button" className={runProcessMode === "detailed" ? "active" : ""} aria-pressed={runProcessMode === "detailed"} title="文件变化时弹浮窗，跟随最新内容 / diff，静止 3 秒自动收起" onClick={() => setRunProcessMode("detailed")}>详细</button>
+              <button type="button" className={runProcessMode === "simple" ? "active" : ""} aria-pressed={runProcessMode === "simple"} title="只显示文件编辑行与实时 +N -M，不自动展开内容（默认）" onClick={() => { if (runProcessMode === "simple") return; setRunProcessMode("simple"); onNotice?.("运行过程：简洁"); }}>简洁</button>
+              <button type="button" className={runProcessMode === "detailed" ? "active" : ""} aria-pressed={runProcessMode === "detailed"} title="文件变化时弹浮窗，跟随最新内容 / diff，静止 3 秒自动收起" onClick={() => { if (runProcessMode === "detailed") return; setRunProcessMode("detailed"); onNotice?.("运行过程：详细"); }}>详细</button>
             </div>
           </div>
         </div>

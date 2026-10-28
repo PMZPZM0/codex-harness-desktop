@@ -42,8 +42,11 @@ ok(/className="md-table-wrap"/.test(mdSrc) && /querySelector\("table"\)/.test(md
   "表格被包进 .md-table-wrap（绝对定位的锚），复制时从**容器内**取 table（不抓全页第一张）");
 ok((() => {
   const body = mdSrc.slice(mdSrc.indexOf("const MdTable = memo"), mdSrc.indexOf("export const MD_COMPONENTS"));
-  return /<FeedbackIconButton/.test(body) && !/useState/.test(body) && !/setTimeout/.test(body);
-})(), "两段反馈**复用** `FeedbackIconButton`（变对勾 + 1.1s 回位是它的时序；自己写 useState/setTimeout = 全仓两套反馈）");
+  /* 自制两段反馈的形态 = 本地 useState 存 done + 组件自设 data-phase（FeedbackIconButton 在它内部
+     管这两样）。⌛ 非反馈的 setTimeout（如导出 Excel 后 revokeObjectURL 的清理）不在禁列 ——
+     10-28 起从「禁 setTimeout」收窄到「禁自设 data-phase」，清约定时器不再被误伤。 */
+  return /<FeedbackIconButton/.test(body) && !/useState/.test(body) && !/data-phase/.test(body);
+})(), "两段反馈**复用** `FeedbackIconButton`（变对勾 + 1.1s 回位是它的时序；自设 useState/data-phase = 全仓两套反馈）");
 ok(/window\.codex\.writeClipboard\(text\)/.test(mdSrc),
   "真写剪贴板走主进程通道 `window.codex.writeClipboard`（不是 navigator.clipboard 直写 —— 全应用同一口径）");
 ok(/tableToTsv\(table\.rows\)/.test(mdSrc),

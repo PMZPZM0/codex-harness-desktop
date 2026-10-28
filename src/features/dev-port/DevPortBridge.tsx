@@ -43,7 +43,7 @@ export function DevPortBridge({ app, threadId }: { app: DevPortHost; threadId?: 
 
   useEffect(() => {
     const sameThread = (params: Record<string, unknown> | undefined) => {
-      const id = String((params as any)?.threadId ?? "");
+      const id = String(params?.threadId ?? "");
       if (!id) return true;
       return id === threadRef.current;
     };
@@ -61,7 +61,7 @@ export function DevPortBridge({ app, threadId }: { app: DevPortHost; threadId?: 
       if (!url) return;
       openUrl(url);
     };
-    const onCodex = (event: any) => {
+    const onCodex = (event: CodexEvent) => {
       const method = String(event?.method ?? "");
       const params: Record<string, unknown> = event?.params ?? {};
       if (method === "turn/started") {
@@ -78,7 +78,7 @@ export function DevPortBridge({ app, threadId }: { app: DevPortHost; threadId?: 
       }
       if (method === "item/started" || method === "item/completed") {
         if (!sameThread(params)) return;
-        const item = (params as any)?.item ?? {};
+        const item = (params?.item ?? {}) as { type?: unknown; command?: unknown; aggregatedOutput?: unknown };
         if (String(item?.type ?? "") !== "commandExecution") return;
         consider(`${item.command ?? ""}\n${item.aggregatedOutput ?? ""}`);
       }

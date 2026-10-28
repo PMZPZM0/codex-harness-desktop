@@ -229,7 +229,7 @@ export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
                   <div className="remote-col">
                     <div className="remote-col-title"><Link2 size={15} /><strong>使用 Bot Channel</strong></div>
                     <p className="remote-col-desc">连接聊天 Bot，适合更长时间的移动端访问。</p>
-                    {[["微信", "", "从微信会话打开这个工作区。"], ["飞书", "中国", "在飞书群里 @机器人 打开这个工作区。"]].map(([name, region, desc]: any) => (
+                    {[["微信", "", "从微信会话打开这个工作区。"], ["飞书", "中国", "在飞书群里 @机器人 打开这个工作区。"]].map(([name, region, desc]) => (
                       <div className="bot-channel-card" key={name}>
                         <div className="bot-channel-head">
                           <strong>{name}{region && <span className="bot-region">{region}</span>}</strong>
