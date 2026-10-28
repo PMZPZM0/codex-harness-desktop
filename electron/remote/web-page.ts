@@ -44,9 +44,11 @@ button.ghost{background:#fff;color:#23231f;border:1px solid #d7d9d4}
 <script>
 const code = ${JSON.stringify(code)};
 const botId = ${JSON.stringify(botId ?? "")};
+/* 中转前缀（10-29）：手机经 /t/<设备ID> 访问时，所有接口都要带上这段前缀 */
+const API_BASE = (function(){ const p = location.pathname; const i = p.indexOf("/r/"); return i > 0 ? p.slice(0, i) : ""; })();
 async function check(){
   try{
-    const r = await fetch("/api/bind-status?code=" + code + "&bot=" + botId);
+    const r = await fetch(API_BASE + "/api/bind-status?code=" + code + "&bot=" + botId);
     const j = await r.json();
     if(j.ok){ document.getElementById("state").textContent = "绑定码有效"; document.getElementById("btns").style.display = "block"; }
     else document.getElementById("state").textContent = "绑定码已失效，请回到应用重新生成二维码。";
@@ -54,9 +56,9 @@ async function check(){
 }
 check();
 async function doBind(){
-  const r = await fetch("/api/bind-confirm", { method: "POST", headers: {"content-type":"application/json"}, body: JSON.stringify({ code, botId, deviceName: navigator.userAgent.includes("iPhone") ? "iPhone" : navigator.userAgent.includes("Android") ? "Android 手机" : "手机" }) });
+  const r = await fetch(API_BASE + "/api/bind-confirm", { method: "POST", headers: {"content-type":"application/json"}, body: JSON.stringify({ code, botId, deviceName: navigator.userAgent.includes("iPhone") ? "iPhone" : navigator.userAgent.includes("Android") ? "Android 手机" : "手机" }) });
   const j = await r.json();
-  if (j.ok) { document.querySelector(".card").innerHTML = "<h1 class='ok'>✓ 绑定成功</h1><p>正在进入对话…</p>"; setTimeout(() => { location.href = "/r/" + code; }, 800); }
+  if (j.ok) { document.querySelector(".card").innerHTML = "<h1 class='ok'>✓ 绑定成功</h1><p>正在进入对话…</p>"; setTimeout(() => { location.href = API_BASE + "/r/" + code; }, 800); }
   else document.getElementById("state").textContent = "绑定失败：" + (j.error ?? "未知错误");
 }
 </script></html>`;
@@ -175,8 +177,8 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
 .home-hero{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;padding:26px 10px 6px}
 .home-logo{width:64px;height:64px;border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:30px;background:linear-gradient(135deg,var(--accent),#6aa8ff);color:#fff;margin-bottom:4px}
 .home-hero h2{margin:0;font-size:20px;color:var(--ink)}
-.home-hero p{margin:0;color:var(--muted);font-size:13px;line-height:1.7;max-width:300px}
-.home-hint{margin:14px auto 0;color:var(--faint,#a3a39c);font-size:11.5px;text-align:center;line-height:1.7;max-width:300px}
+.home-hero p{margin:0;color:var(--muted);font-size:13px;line-height:1.7;text-align:center;white-space:nowrap}
+.home-hint{margin:14px auto 0;color:var(--faint,#a3a39c);font-size:11.5px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:92%}
 .home-sec-head{display:flex;align-items:center;justify-content:space-between;margin:4px 2px 8px}
 .home-sec-head b{font-size:13.5px;color:var(--ink)}
 .home-sec-head button{border:0;background:transparent;color:var(--accent);font-size:12.5px;padding:4px 2px}
@@ -247,7 +249,10 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
 const code = ${JSON.stringify(code)};
 // 品牌面（⛔ 各仓自有：桌面版 Codex Harness / PPcode 仓 PPcode；首页与标题都读它）
 const BRAND = ${JSON.stringify(brandName)};
-const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/" + code);
+/* 中转前缀（10-29）：经 /t/<设备ID> 访问时给所有接口加上前缀；直连（局域网/旧固定地址）时为空串 */
+const PATH_PREFIX = (function(){ const p = location.pathname; const i = p.indexOf("/r/"); return i > 0 ? p.slice(0, i) : ""; })();
+const apiUrl = (path) => PATH_PREFIX + path;
+/* 事件走 HTTP 轮询；原来那条 WebSocket 从未挂处理器（死代码），中转路径下也没有 WS，直接去掉 */
 let rpcSeq = 0;
 const rpcWaiters = new Map();
 // 会话记忆 key 固定（不绑定随机 code）：同一地址下扫码进入都能恢复上次会话
@@ -287,13 +292,13 @@ function saveSession() {
   // 首页态没有会话可记：别用空 id 覆盖「上次会话」映射（否则下次进来永远回到首页也找不到上次）
   if (!currentThreadId) return;
   try {
-    fetch("/api/session", { method: "POST", headers: {"content-type":"application/json"}, body: JSON.stringify({ device: deviceId, threadId: currentThreadId }) });
+    fetch(apiUrl("/api/session"), { method: "POST", headers: {"content-type":"application/json"}, body: JSON.stringify({ device: deviceId, threadId: currentThreadId }) });
   } catch { /* 忽略 */ }
 }
 
 async function rpc(payload) {
   const reqId = String(++rpcSeq);
-  const res = await fetch("/api/rpc", { method: "POST", headers: {"content-type":"application/json"}, body: JSON.stringify({ ...payload, reqId }) });
+  const res = await fetch(apiUrl("/api/rpc"), { method: "POST", headers: {"content-type":"application/json"}, body: JSON.stringify({ ...payload, reqId }) });
   const data = await res.json();
   if (data.error) throw new Error(data.error);
   return data;
@@ -642,9 +647,9 @@ async function renderHome() {
     const hero = makeEl("div", "home-hero");
     hero.appendChild(makeEl("div", "home-logo", "✦"));
     hero.appendChild(makeEl("h2", null, greetingHome()));
-    hero.appendChild(makeEl("p", null, BRAND + " · 今天想做点什么？直接说，我来干。"));
+    hero.appendChild(makeEl("p", null, "直接说，我来干"));
     body.appendChild(hero);
-    body.appendChild(makeEl("div", "home-hint", "在下面输入框发消息 = 新建一条普通会话；找以前的会话，点左上角「会话」。"));
+    body.appendChild(makeEl("div", "home-hint", "发消息即新建会话"));
     return;
   }
   body.appendChild(makeEl("div", "empty-tip", "加载群…"));
@@ -864,7 +869,7 @@ document.getElementById("file-pick").addEventListener("change", (event) => {
   });
 });
 async function uploadImage(shot) {
-  const res = await fetch("/api/upload", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dataUrl: shot.dataUrl, name: shot.name }) });
+  const res = await fetch(apiUrl("/api/upload"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dataUrl: shot.dataUrl, name: shot.name }) });
   const data = await res.json();
   if (!data || !data.ok) throw new Error((data && data.error) || "上传失败");
   return data.path;
@@ -1081,7 +1086,7 @@ function openCommands() {
 function openApk() {
   closeSheet();
   // ⛔ 直接导航到 /apk：WebView 会把它交给 App 的 DownloadListener（带 cookie 走中转下载）
-  location.href = baseUrl + "/apk";
+  location.href = apiUrl("/apk");
 }
 async function runCommand(id) {
   closePanel();
@@ -1149,7 +1154,7 @@ document.addEventListener("click", (event) => {
 let pollSince = Date.now() - 60000;
 async function pollLoop() {
   try {
-    const res = await fetch("/api/events?since=" + pollSince);
+    const res = await fetch(apiUrl("/api/events?since=" + pollSince));
     const data = await res.json();
     pollSince = data.now || Date.now();
     for (const event of data.events || []) {

@@ -138,10 +138,25 @@ import {
   Bell,
   CheckCheck,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 import { refreshWithReceipt } from "../../../lib/refresh-receipt.mjs";
 
 export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
+  /* 中转状态（10-29）：装完即用的内置隧道是否在线 —— 只看二维码猜不出「为什么连不上」 */
+  const [relay, setRelay] = useState<{ state: string; id: string; error: string } | null>(null);
+  useEffect(() => {
+    if (!app.mobileRemoteOpen) return;
+    let alive = true;
+    const pull = () => {
+      void window.codex.remoteStatus()
+        .then((status: any) => { if (alive) setRelay(status?.relay ?? null); })
+        .catch(() => undefined);
+    };
+    pull();
+    const timer = window.setInterval(pull, 5000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [app.mobileRemoteOpen]);
   const {
     loadPairStates,
     mobileRemoteOpen,
@@ -246,6 +261,9 @@ export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
                         .catch((error: any) => setNotice(`复制失败：${String(error?.message ?? error)}`));
                     }}><Copy size={13} />复制链接</button>
                   </div>
+                  <p className={"remote-relay-line" + (relay?.state === "online" ? " online" : "")} data-relay-state={relay?.state ?? "unknown"}>
+                    {relay?.state === "online" ? "中转在线 · 设备 " + relay.id : relay?.state === "connecting" ? "中转连接中…" : "中转离线" + (relay?.error ? "：" + relay.error : "")}
+                  </p>
                   {remoteUrl ? (
                     <div className="remote-qr-box" dangerouslySetInnerHTML={{ __html: remoteQr }} />
                   ) : (

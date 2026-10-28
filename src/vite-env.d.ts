@@ -997,7 +997,7 @@ interface Window {
     remoteRevoke(deviceId: string): Promise<{ ok: boolean }>;
     remoteSend(cmd: string): Promise<{ ok: boolean }>;
     remoteStart(): Promise<{ port: number; url: string }>;
-    remoteStatus(): Promise<{ status: string; devices: any[]; url: string }>;
+    remoteStatus(): Promise<{ status: string; devices: any[]; url: string; relay: { state: string; id: string; base: string; publicBase: string; error: string; since: number } }>;
     remoteStop(): Promise<{ ok: boolean }>;
     deleteRpaRecipe(id: string): Promise<void>;
     listRpaRecipes(): Promise<any[]>;

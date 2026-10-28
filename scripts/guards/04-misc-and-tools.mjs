@@ -1554,4 +1554,59 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       "【250】缩到 <=980px 必须**逻辑关掉**任务操作浮层（只靠 CSS ⇒ 按钮没了浮层点不掉）"
     );
   }
+
+  /* ══ 【139e】手机远控「装完即用」：内置隧道 + 中转网关（10-29）══
+     背景：以前每台电脑都要人工装 frpc、服务器手工配通道 ⇒ 只有开发者能用。
+     现在链路：App 内置隧道（主动连网关）→ 网关按设备 ID 路由 → 本机 17891。
+     ⛔ 这三段任何一段被"简化掉"，普通用户装完就连不上。 */
+  {
+    const gwSrc = readFileSync(join(ROOT, "scripts", "relay-gateway.mjs"), "utf8");
+    const tunnelSrc = readFileSync(join(ROOT, "electron", "relay-tunnel.ts"), "utf8");
+    const relaySrc = readFileSync(join(ROOT, "electron", "remote.ts"), "utf8");
+    const tunnelPage = readFileSync(join(ROOT, "electron", "remote", "web-page.ts"), "utf8");
+    const androidSrc = readFileSync(join(ROOT, "android", "app", "src", "main", "java", "com", "codexharness", "remote", "MainActivity.java"), "utf8");
+
+    (gwSrc.includes("handleTunnelRequest") && gwSrc.includes("const match = url.match") && gwSrc.includes("tunnels.get(id)") ? ok : fail)(
+      "【139e】网关按 /t/<设备ID> 路由到对应隧道（不是所有人共用一条通道）"
+    );
+    (gwSrc.includes("tokenHash") && gwSrc.includes('type !== "hello"') && !gwSrc.includes('searchParams.get("token")') ? ok : fail)(
+      "【139e】设备身份：hello 帧校验令牌（TOFU 绑定）；⛔ 令牌不许放查询串（会进访问日志）"
+    );
+    (gwSrc.includes("proxyLegacy(req, res)") && gwSrc.includes("LEGACY_TARGET") ? ok : fail)(
+      "【139e】网关保留旧通道（/t/ 以外的请求转回原端口）—— 已发出去的二维码/老 APK 不能失效"
+    );
+    (gwSrc.includes("Path=/t/${id}") && gwSrc.includes("next.startsWith(\"/\")") ? ok : fail)(
+      "【139e】网关必须重写 Location 与 Set-Cookie Path：否则手机跳出中转前缀、两台电脑的 cookie 互相覆盖"
+    );
+    (gwSrc.includes("MAX_INFLIGHT") && gwSrc.includes("MAX_PER_MINUTE") && gwSrc.includes("MAX_BODY") ? ok : fail)(
+      "【139e】网关有并发/速率/体积上限（公网入口不许无限转发）"
+    );
+    (gwSrc.includes('url === "/apk"') && gwSrc.includes("APK_URL") ? ok : fail)(
+      "【139e】网关公开 /apk 跳转（老 APK 的安装包入口坏了也能用浏览器更新）"
+    );
+    (tunnelSrc.includes("relay-device.json") && tunnelSrc.includes("randomBytes(32)") && tunnelSrc.includes("scheduleRetry") ? ok : fail)(
+      "【139e】内置隧道身份稳定（设备 ID + 令牌落 userData）、断线退避重连"
+    );
+    (tunnelSrc.includes('type: "hello", token: this.identity.token') ? ok : fail)(
+      "【139e】隧道连上先发 hello 帧（令牌不进 URL）"
+    );
+    (tunnelSrc.includes('state === "online" ? this.status.publicBase : ""') ? ok : fail)(
+      "【139e】离线时 publicBase 为空 —— 二维码必须退回旧通道，不能给用户一个死地址"
+    );
+    (relaySrc.includes("startRelayTunnel()") && relaySrc.includes("RELAY_DEFAULT_BASE") && relaySrc.includes("const relay = this.relay?.publicBase();") ? ok : fail)(
+      "【139e】远控服务启动即连中转，配对基址中转优先（离线才退回固定地址/临时隧道/局域网）"
+    );
+    (tunnelPage.includes("const PATH_PREFIX") && tunnelPage.includes('apiUrl("/api/rpc")') && !tunnelPage.includes('fetch("/api/') ? ok : fail)(
+      "【139e】手机页所有接口走 PATH_PREFIX（经 /t/<id> 访问时绝对路径会跑出前缀）"
+    );
+    (tunnelPage.includes('apiUrl("/apk")') && !tunnelPage.includes('baseUrl + "/apk"') ? ok : fail)(
+      "【139e】安装包入口用 apiUrl（旧实现引用了未定义的 baseUrl ⇒ 点了必抛错）"
+    );
+    (androidSrc.includes("baseOf(normalize(raw))") && androidSrc.includes("baseOf(stored)") && androidSrc.includes('indexOf("/r/")') ? ok : fail)(
+      "【139e】APK 存扫码链接时必须保留 /t/<id> 前缀（只存 origin 会 404）"
+    );
+    (relaySrc.includes("mobile-remote-v0.1.2") ? ok : fail)(
+      "【139e】安装包版本与 Release 对齐（0.1.2，APK 才能用中转前缀）"
+    );
+  }
 }

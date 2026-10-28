@@ -35,7 +35,7 @@ export const remoteFeature = defineFeature<null>({
     if (!ipcHost) throw new Error("remote: 缺少 ipc 服务（宿主未提供）");
 
     ipcHost.handle("remote:start", async () => { const port = await remote.start(); return { port, url: remote.pairUrlAuth() }; });
-    ipcHost.handle("remote:status", () => ({ status: "idle", devices: remote.listDevices(), url: remote.pairUrlAuth() }));
+    ipcHost.handle("remote:status", () => ({ status: "idle", devices: remote.listDevices(), url: remote.pairUrlAuth(), relay: remote.relayStatus() }));
     ipcHost.handle("remote:devices", () => remote.listDevices());
     ipcHost.handle("remote:send", (_event, cmd: string) => { mainWindow?.webContents.send("remote:command", { command: String(cmd), device: { id: "local", name: "本机" } }); return { ok: true }; });
     ipcHost.handle("remote:stop", () => { remote.stop(); return { ok: true }; });

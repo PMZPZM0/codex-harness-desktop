@@ -3745,7 +3745,7 @@
       "channel": "remote:status",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ status: string; devices: any[]; url: string }>",
+      "returns": "Promise<{ status: string; devices: any[]; url: string; relay: { state: string; id: string; base: string; publicBase: string; error: string; since: number } }>",
       "invokeArgs": "",
       "cast": null,
       "note": null
