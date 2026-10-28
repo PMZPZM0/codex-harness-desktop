@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 import path from "node:path";
 import nodeFs from "node:fs";
@@ -33,6 +33,57 @@ const ENGINE_START_ATTEMPTS = 3;
 const ENGINE_START_RETRY_MS = [300, 900];
 /** doRestart 等待旧引擎进程真正退出的上限（Windows 上 kill = TerminateProcess，实测毫秒级）。 */
 const ENGINE_EXIT_WAIT_MS = 3_000;
+
+/* ── 引擎进程台账与树杀（10-28 用户：「每次关闭应用带着进程一起杀掉，保留干净的后台」）────
+   ⛔ 只 kill 父进程不够：codex 会派 pwsh / node / MCP 子进程，父进程一死它们变孤儿，
+      继续占着会话 rollout 的 writer ⇒ 下次打开同一会话时引擎报
+      `thread-store conflict: thread … already has an active writer`（10-28 用户截图那条红条）。
+   ⛔ 台账落盘（而不是只记内存）：应用被强杀/崩溃时内存里的 pid 一起没了，
+      只能靠上一次 spawn 时写下的文件知道"谁是我留下的"。
+   ⛔ 路径必须惰性求值：本模块的顶层求值早于 `app.setPath("userData", …)`（见【91】）。 */
+function enginePidFile(): string {
+  try { return path.join(app.getPath("userData"), "engine.pid"); } catch { return ""; }
+}
+
+function readEnginePid(): number {
+  try {
+    const pid = Number(String(nodeFs.readFileSync(enginePidFile(), "utf8")).trim().split(/\s+/)[0]);
+    return Number.isInteger(pid) && pid > 1 && pid !== process.pid ? pid : 0;
+  } catch { return 0; }
+}
+
+function writeEnginePid(pid: number | undefined) {
+  if (!pid) return;
+  try { nodeFs.writeFileSync(enginePidFile(), String(pid)); } catch { /* 台账写不进去不该挡住启动 */ }
+}
+
+function clearEnginePid() {
+  try { nodeFs.unlinkSync(enginePidFile()); } catch { /* 本来就不存在 */ }
+}
+
+/** 该 pid 仍是 codex 引擎吗（防 PID 复用误杀无关进程）：只认镜像名。 */
+function isCodexProcess(pid: number): boolean {
+  if (process.platform !== "win32") {
+    try { return /^codex/i.test(nodeFs.readFileSync(`/proc/${pid}/comm`, "utf8").trim()); } catch { return false; }
+  }
+  try {
+    const out = spawnSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+      encoding: "utf8", windowsHide: true, timeout: 5_000,
+    });
+    return /^"codex[^"]*\.exe"/i.test(String(out.stdout ?? "").trim());
+  } catch { return false; }
+}
+
+/** 连**子进程树**一起杀：`/T` 走 Windows 的父链，codex 派生的 pwsh/node/MCP 一并清掉。 */
+function killProcessTree(pid: number | undefined) {
+  if (!pid || pid <= 1 || pid === process.pid) return;
+  if (process.platform === "win32") {
+    try { spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, timeout: 8_000 }); } catch { /* 已退出 */ }
+    return;
+  }
+  try { process.kill(-pid, "SIGKILL"); } catch { /* 无进程组 */ }
+  try { process.kill(pid, "SIGKILL"); } catch { /* 已退出 */ }
+}
 
 export type CodexEvent = {
   kind: "notification" | "request" | "status" | "log";
@@ -178,6 +229,8 @@ export class CodexServer extends EventEmitter {
   private deferredRestart: { reason: string } | null = null;
   /** 重启台账（诊断用：谁在什么时候触发的重启、当时有几个任务在跑、最终是立即还是推迟） */
   private restartLog: { t: number; reason: string; busy: boolean; activeTurns: number; action: "now" | "defer" | "flush" | "force" }[] = [];
+  /** 上次实例遗留的引擎只清一次（每次 spawn 都做会多花一次 tasklist/taskkill）。 */
+  private reapedPreviousEngine = false;
 
   /** 注入「当前有几个回合在跑」的判定（主进程用 turn/started|completed 的真实记账）。
    *  ⛔ 返回**数量**而不是布尔：台账里要能看出"当时确实有 2 个任务在跑"，
@@ -261,7 +314,12 @@ export class CodexServer extends EventEmitter {
         const finish = () => { if (settled) return; settled = true; clearTimeout(timer); resolve(); };
         const timer = setTimeout(finish, ENGINE_EXIT_WAIT_MS);
         dying.once("exit", finish);
+        const dyingPid = dying.pid;
         try { dying.kill(); } catch { finish(); }
+        /* ⛔ 重启同样要连树杀（10-28）：只结束 app-server 本体时，它派生的 pwsh / MCP 会留在
+           后台并继续握着会话 writer —— 下一个进程打开同一会话就报 already has an active writer。
+           ⛔ 必须在等 exit **之前**同步做完：异步树杀会在"新进程已 spawn、旧子进程还在"的窗口里打架。 */
+        killProcessTree(dyingPid);
       });
     }
     for (const { reject, timer } of this.pending.values()) {
@@ -311,6 +369,22 @@ export class CodexServer extends EventEmitter {
   }
 
   private async launchOnce() {
+    /* 10-28：首次 spawn 前先清掉**上一个实例**留下的引擎（应用被强杀/崩溃时来不及 stop）。
+       证据 = 上次 spawn 写下的 pid 台账；同一 userData 只会有一个实例在跑（单实例锁），
+       所以这条 pid 必然属于已退出的那个实例 —— 杀掉不会误伤别人的任务。
+       ⛔ 不做这一步，旧引擎会一直握着会话 writer，新实例打开该会话就报
+          `thread-store conflict: already has an active writer`（用户 10-28 截图）。 */
+    if (!this.reapedPreviousEngine) {
+      this.reapedPreviousEngine = true;
+      const stalePid = readEnginePid();
+      if (stalePid) {
+        if (isCodexProcess(stalePid)) {
+          this.debugLog(`[spawn] 清理上次遗留的引擎进程 PID=${stalePid}（异常退出留下的孤儿，占着会话 writer）`);
+          killProcessTree(stalePid);
+        }
+        clearEnginePid();
+      }
+    }
     this.emitEvent({ kind: "status", status: "starting" });
     const binary = codexBinaryPath();
     const spawnEnv: Record<string, string> = {
@@ -344,6 +418,8 @@ export class CodexServer extends EventEmitter {
       env: spawnEnv,
     });
     this.child = child;
+    /* 台账：崩溃/强杀后下次启动靠它找出"我上次留下的引擎"（见 launchOnce 开头的清理）。 */
+    writeEnginePid(child.pid);
     this.debugLog(`[spawn] HTTPS_PROXY=${spawnEnv.HTTPS_PROXY ?? "(无)"} NO_PROXY=${spawnEnv.NO_PROXY ?? "(无)"} CODEX_HOME=${spawnEnv.CODEX_HOME} provider 相关 env 已注入 ${this.externalEnv.HTTPS_PROXY ? "externalEnv" : "externalEnv 无代理"} | connectorEnv 键=${Object.keys(this.externalEnv).filter((key) => !/^(HTTPS?_PROXY|NO_PROXY|no_proxy)$/.test(key)).join(",") || "(无)"}`);
     // ⛔ 进程级清账（09-19，用户：「每个会话都是绝对独立运行状态，互不影响」）：
     //   新引擎 = 旧进程里那些回合**全部不存在了**（它们的子进程/会话随进程销毁）。主进程那份
@@ -447,10 +523,17 @@ export class CodexServer extends EventEmitter {
     // **重新 spawn** 出来（孤儿 codex.exe 占同一份 codex-home），引擎自更新时还会和
     // codex.exe 的文件替换抢占用，正好破坏"先停引擎才能换二进制"这个前提。
     this.stopping = true;
+    const pid = this.child?.pid;
     this.child?.removeAllListeners("exit");
     this.child?.removeAllListeners("error");
     this.child?.kill();
     this.child = undefined;
+    /* ⛔ 10-28 用户令「每次关闭应用带着进程一起杀掉，保留干净的后台」：
+       `child.kill()` 只结束 app-server 本体，它派生的 pwsh / node / MCP 会变成孤儿并**继续
+       占着会话 rollout 的 writer**（下次启动打开同一会话 ⇒ `already has an active writer`）。
+       ⇒ 退出一律连树杀一遍（同步执行，保证进程真的死透再让 Electron 退出）。 */
+    killProcessTree(pid);
+    clearEnginePid();
   }
 
   private write(message: unknown) {
