@@ -502,8 +502,9 @@ const remote = new RemoteControlService({
     threadCwd.set(String(started.thread.id), process.cwd());
     return { id: started.thread.id };
   },
-  sendMessage: async (threadId, text, images = []) => {
+  sendMessage: async (threadId, text, images = [], effort = "high") => {
     const model = await readCustomModel();
+    const validEffort = ["low", "medium", "high", "xhigh"].includes(String(effort ?? "")) ? String(effort) : "high";
     /* ⛔ 图片路径来自手机（外部输入）：只认 /api/upload 刚落进 remote-uploads 的文件，
        别的路径（..、任意盘符）一律丢弃 —— 这是「手机只能读自己刚上传的图」的唯一闸。 */
     const uploadsRoot = remote.uploadsDir();
@@ -515,7 +516,7 @@ const remote = new RemoteControlService({
     if (String(text ?? "").trim()) input.push({ type: "text", text: String(text), text_elements: [] });
     for (const file of allowed) input.push({ type: "localImage", path: file });
     if (!input.length) return;
-    await server.request("turn/start", { threadId, input, model: model?.model, effort: "high" });
+    await server.request("turn/start", { threadId, input, model: model?.model, effort: validEffort });
   },
   catalog: async () => {
     const skills: { name: string; description?: string }[] = [];
@@ -560,6 +561,14 @@ const remote = new RemoteControlService({
     // ⛔ 回合运行中调 thread/compact/start 会**打断当前回合**（桌面端也只在空闲时调）
     if ([...engineActiveTurnIds.values()].includes(threadId)) throw new Error("回合进行中，先停止再压缩");
     await server.request("thread/compact/start", { threadId });
+  },
+  archiveThread: async (threadId) => {
+    await server.request("thread/archive", { threadId });
+  },
+  setGoal: async (threadId, objective) => {
+    const text = String(objective ?? "").trim();
+    if (!text) throw new Error("目标内容是空的");
+    await server.request("thread/goal/set", { threadId, objective: text });
   },
   listFiles: async (threadId) => {
     const root = threadCwd.get(threadId) || process.cwd();

@@ -37,8 +37,8 @@ type RemoteEvents = {
   listThreads?: () => Promise<{ id: string; name: string; preview: string; updatedAt: number }[]>;
   getThreadMessages?: (threadId: string) => Promise<{ role: "user" | "assistant" | "system"; text: string }[]>;
   newThread?: () => Promise<{ id: string }>;
-  /** images = 本机绝对路径（只接受 /api/upload 刚落盘的 remote-uploads 内的文件） */
-  sendMessage?: (threadId: string, text: string, images?: string[]) => Promise<void>;
+  /** images = 本机绝对路径（只接受 /api/upload 刚落盘的 remote-uploads 内的文件）；effort ∈ low/medium/high/xhigh */
+  sendMessage?: (threadId: string, text: string, images?: string[], effort?: string) => Promise<void>;
   /** 手机端能力目录：可执行指令 + 技能清单（# 引用用） */
   catalog?: () => Promise<{ commands: { id: string; label: string }[]; skills: { name: string; description?: string }[] }>;
   interruptThread?: (threadId: string) => Promise<void>;
@@ -47,6 +47,8 @@ type RemoteEvents = {
   listFiles?: (threadId: string) => Promise<{ path: string; dir: boolean; size: number }[]>;
   /** 读一个工作区文件（手机只读；越界/超大/二进制会被拒） */
   readFile?: (threadId: string, relPath: string) => Promise<{ kind: string; text?: string; dataUrl?: string; error?: string }>;
+  archiveThread?: (threadId: string) => Promise<void>;
+  setGoal?: (threadId: string, objective: string) => Promise<void>;
   /** 引擎流式事件转发给已连接手机（turn 增量） */
   onThreadEvent?: (listener: (event: { threadId: string; kind: string; text: string }) => void) => () => void;
   /** 设备会话记忆持久化文件（userData/remote-sessions.json）；不传则不持久化 */
@@ -496,12 +498,15 @@ export class RemoteControlService {
           else if (data.type === "new-thread") result = { threadId: (await (this.events.newThread?.() ?? Promise.reject(new Error("unsupported")))).id };
           else if (data.type === "send-message") {
             const images = Array.isArray(data.images) ? data.images.map((p: any) => String(p ?? "")).filter(Boolean) : [];
-            await (this.events.sendMessage?.(String(data.threadId ?? ""), String(data.text ?? ""), images) ?? Promise.resolve());
+            const effort = ["low", "medium", "high", "xhigh"].includes(String(data.effort ?? "")) ? String(data.effort) : undefined;
+            await (this.events.sendMessage?.(String(data.threadId ?? ""), String(data.text ?? ""), images, effort) ?? Promise.resolve());
             result = { ok: true };
           }
           else if (data.type === "catalog") result = await (this.events.catalog?.() ?? Promise.resolve({ commands: [], skills: [] }));
           else if (data.type === "interrupt") { await (this.events.interruptThread?.(String(data.threadId ?? "")) ?? Promise.resolve()); result = { ok: true }; }
           else if (data.type === "compact") { await (this.events.compactThread?.(String(data.threadId ?? "")) ?? Promise.resolve()); result = { ok: true }; }
+          else if (data.type === "archive") { await (this.events.archiveThread?.(String(data.threadId ?? "")) ?? Promise.resolve()); result = { ok: true }; }
+          else if (data.type === "goal") { await (this.events.setGoal?.(String(data.threadId ?? ""), String(data.objective ?? "")) ?? Promise.resolve()); result = { ok: true }; }
           else if (data.type === "files-list") result = { files: await (this.events.listFiles?.(String(data.threadId ?? "")) ?? Promise.resolve([])) };
           else if (data.type === "file-read") result = await (this.events.readFile?.(String(data.threadId ?? ""), String(data.path ?? "")) ?? Promise.resolve({ kind: "other" }));
           else result = { error: "unknown rpc type" };
@@ -632,7 +637,8 @@ export class RemoteControlService {
       }
       if (data.type === "send-message") {
         const images = Array.isArray(data.images) ? data.images.map((p: any) => String(p ?? "")).filter(Boolean) : [];
-        void (this.events.sendMessage?.(String(data.threadId ?? ""), String(data.text ?? ""), images) ?? Promise.resolve()).then(() => reply({ ok: true })).catch((e) => reply({ error: e.message }));
+        const effort = ["low", "medium", "high", "xhigh"].includes(String(data.effort ?? "")) ? String(data.effort) : undefined;
+        void (this.events.sendMessage?.(String(data.threadId ?? ""), String(data.text ?? ""), images, effort) ?? Promise.resolve()).then(() => reply({ ok: true })).catch((e) => reply({ error: e.message }));
         return;
       }
     } catch { /* ignore */ }

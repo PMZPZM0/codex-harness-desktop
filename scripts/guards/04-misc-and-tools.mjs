@@ -1064,6 +1064,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   (/kind: "step"/.test(bootSrc) && /event\.kind === "step"/.test(pageSrc) ? ok : fail)(
     "【139b】运行步骤：主进程按 item 事件转发（命令/文件/工具/搜索/思考），手机页渲染成可折叠「运行过程」"
   );
+  (/kind: "think"/.test(bootSrc) && /summaryTextDelta/.test(bootSrc) && /event\.kind === "think"/.test(pageSrc) && /think-text/.test(pageSrc) ? ok : fail)(
+    "【139b】思考内容：reasoning 摘要流转发到手机页实时展开（只报一行「思考」标签不算数）"
+  );
   (/aborted\|failed\|interrupted/.test(bootSrc) && /turnRunning/.test(pageSrc) && /handleSend/.test(pageSrc) && /setRunning\(false\)/.test(pageSrc) ? ok : fail)(
     "【139b】运行中可一键停止：发送键切「停止」+ 中断/失败/中止同样发 done（否则停完一直挂「运行中」）"
   );
@@ -1135,6 +1138,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   );
   (/but found/.test(mainSrc2) && /先停止再压缩/.test(mainSrc2) && /realpathSync/.test(mainSrc2) ? ok : fail)(
     "【139d】停止按引擎真实 turnId 重试；压缩拒绝在回合中执行；文件读再做一次真实路径校验（防软链逃逸）"
+  );
+  (/thread\/archive/.test(mainSrc2) && /thread\/goal\/set/.test(mainSrc2) && /chm-effort/.test(pageSrc2) ? ok : fail)(
+    "【139d】归档 / 设目标 / 思考强度（low/medium/high/xhigh 随消息下发）三件接线"
   );
   // 真跑路径守卫真值表（纯模块，node 直接 import）
   const rf = await import(pathToFileURL(join(ROOT, "src", "lib", "remote-files.mjs")).href);
