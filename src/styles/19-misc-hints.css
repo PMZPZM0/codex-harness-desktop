@@ -982,21 +982,29 @@
    该回合的 32px 底边距会与状态行叠出一行空白。用 :has 反向选中「紧贴状态行
    的那个回合」，把边距压掉；空闲态（无状态行）间距保持不变。 */
 .timeline > .turn-group:has(+ .run-activity-bar) { margin-bottom: 4px; }
-.run-activity-spinner { display: inline-flex; gap: 3px; flex: none; }
-.run-activity-spinner i {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: run-activity-bounce 1.2s ease-in-out infinite;
+/* ⛔ 10-28 用户令：
+   ① 去掉状态文字前面那组跳动的三个点（`.run-activity-spinner`，用户称之为「省略号/三个点」）；
+   ② 动画改到**文字本身**：扫光（`.shimmer-text` 的 background-position）+ 呼吸（opacity 明暗）。
+      两个动画都只动合成/低成本属性（10-10 实测：动画改 gradient/background-position 时用 steps(24)
+      把重绘从 60 次/秒压到 11 次/秒；opacity 由合成器执行，几乎零成本）。
+   ⛔ 别再往状态行前面加任何"转动/跳动"的装饰 —— 用户明确要纯文字。 */
+.run-activity-text {
+  font-weight: 500;
+  color: var(--text);
+  animation: run-activity-breathe 1.8s ease-in-out infinite;
 }
-.run-activity-spinner i:nth-child(2) { animation-delay: 0.15s; }
-.run-activity-spinner i:nth-child(3) { animation-delay: 0.3s; }
-.run-activity-text { font-weight: 500; color: var(--text); }
+/* ⛔ 必须合并成一条：`.shimmer-text` 也声明 animation，两条分开写会互相覆盖（后者生效、前者失效）。 */
+.run-activity-text.shimmer-text {
+  animation: shimmer-sweep 2.2s steps(24) infinite, run-activity-breathe 1.8s ease-in-out infinite;
+}
 .run-activity-phrase { color: var(--muted); }
-@keyframes run-activity-bounce {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
-  30% { transform: translateY(-3px); opacity: 1; }
+@keyframes run-activity-breathe {
+  0%, 100% { opacity: 0.62; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .run-activity-text,
+  .run-activity-text.shimmer-text { animation: none; opacity: 1; -webkit-text-fill-color: currentColor; }
 }
 @keyframes run-activity-in {
   from { opacity: 0; transform: translateY(4px); }

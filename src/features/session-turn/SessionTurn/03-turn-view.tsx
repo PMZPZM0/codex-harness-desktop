@@ -95,9 +95,6 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
   const userStopped = Boolean(interruptedAt);
   // 结束原因（纯函数，见 src/lib/turn-stop-reason.mjs）：running/completed 时 label 为空串
   const stopReason = describeTurnStop(turn);
-  const statusLabel = running
-    ? (turn.items.some((item) => item.type === "reasoning" && (item.status === "inProgress" || item.status === "running" || (!item.status && !item.durationMs))) ? "思考中" : "生成中")
-    : stopReason.label || (turn.durationMs ? `已用 ${formatDuration(turn.durationMs)}` : "已完成");
   const hookBadge = hooks && hooks.length > 0 ? <HookBadge hooks={hooks} /> : undefined;
   // ⛔ 空推进回合整组不渲染（09-26 用户截图「三条线」）：引擎会把上下文压缩这类内部动作跑成
   //    **独立回合**（没有 userMessage、除压缩项外也没有任何实质内容）⇒ 原先会渲染出一个空卡，
@@ -141,10 +138,10 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
         {/* 占位头必须等回合内已有 userMessage：turn/started 先建回合、userMessage item 晚到，
             若不等就会渲染在乐观用户气泡上方（切会话后首条消息时肉眼可见错位，09-04 反馈）。
             空窗期反馈由乐观气泡 + 底部 working-indicator 覆盖。 */}
-        {running && !hasVisible && userItems.length > 0 && <header className="turn-card-header">
-          <span className="turn-card-dot" aria-hidden />
-          <span className="turn-card-status shimmer-text">{statusLabel}</span>
-        </header>}
+        {/* ⛔ 10-28 用户（截图）：「回合第一个思考出来的时候，上面还有一排小字『思考中』，
+            跟下面重复了」—— 这条占位头（● 思考中 / 生成中）已删除：
+            真正的过程状态由底部运行状态行（准备中/发送中/等待模型回复/正在思考…）承担，
+            思考卡自己也有「深度思考中」芯片，这里再写一遍就是三重重复。 */}
         <div className="turn-card-body">
           <div className="codex-turn">
           {stoppedWithoutReply && <div className="interrupted-turn"><CircleStop size={15} /><div><strong>你在 {elapsedSeconds ?? 0} 秒后停止了</strong><span>Codex 尚未开始回复，因此没有生成内容。</span></div></div>}

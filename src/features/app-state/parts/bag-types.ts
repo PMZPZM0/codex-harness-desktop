@@ -1236,7 +1236,16 @@ export interface Bag {
   taskRunning: boolean;
   lastTurnOfThread: import("../../../lib/turn.ts").Turn | undefined;
   turnFinalizing: boolean;
-  runActivity: "" | "正在执行命令" | "正在编辑文件" | "正在深度思考" | "正在搜索网页" | "正在调用工具" | "正文已完整，等待模型收尾" | "正在生成回复";
+  /* ⛔ 10-28 用户令：**五种主状态**（等待模型回复 / 正在思考 / 正在编辑文件 / 正在运行命令 / 正在生成文件）
+     + 三个"truthful 才出现"的扩展态（搜索网页 / 调用工具 / 整理上下文）+ 收尾态。
+     ⛔ 唯一产出点在 part06/02-seg/01-turn-runtime-activity.tsx；改文案必须同步这里，否则赋值处直接类型报错。 */
+  runActivity: "" | "准备中" | "发送中" | "等待模型回复" | "正在思考" | "正在生成回复" | "正在编辑文件" | "正在运行命令" | "正在生成文件"
+    | "正在搜索网页" | "正在调用工具" | "正在整理上下文" | "等待模型收尾" | "等待你确认";
+  /* 发送三阶段的前两段（真实事件边界，见 part01/03-.../01-accounts-connectors-skills.tsx 的注释）：
+     准备中 = 点发送 → turn/start 真正发出；发送中 = 已发出 → 引擎回 turn。
+     第三段不在这里：引擎接单后由 runActivity 的兜底给出「等待模型回复」。 */
+  sendPhase: "" | "准备中" | "发送中";
+  setSendPhase: React.Dispatch<React.SetStateAction<"" | "准备中" | "发送中">>;
   runPhrase: string;
   setRunPhrase: React.Dispatch<React.SetStateAction<string>>;
   runActivityRef: React.RefObject<string>;

@@ -1035,54 +1035,6 @@
   box-shadow: none;
   border-color: #0000;
 }
-.turn-card-header {
-  min-height: 0;
-  color: var(--faint);
-  background: 0 0;
-  border-bottom: 0;
-  justify-content: flex-start;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 0 4px;
-  font-size: 11px;
-  display: flex;
-}
-.turn-group.running .turn-card-header,
-.turn-group.error .turn-card-header {
-  background: 0 0;
-}
-.turn-card-dot {
-  background: var(--faint);
-  border-radius: 50%;
-  flex: none;
-  width: 7px;
-  height: 7px;
-  transition: background 0.2s;
-  box-shadow: 0 0 #0000;
-}
-.turn-group.running .turn-card-dot {
-  background: var(--accent);
-  animation: 1.6s ease-in-out infinite turn-dot-pulse;
-}
-.turn-group.error .turn-card-dot {
-  background: var(--red);
-}
-.turn-card-status {
-  color: var(--faint);
-  font-size: 11px;
-  font-weight: 500;
-}
-.turn-group.running .turn-card-status {
-  color: var(--accent);
-}
-.turn-group.error .turn-card-status {
-  color: var(--red);
-}
-.turn-card-meta {
-  color: var(--faint);
-  margin-left: 6px;
-  font-size: 11px;
-}
 .turn-card-body {
   padding: 0;
 }
@@ -1194,15 +1146,6 @@
 /* 被中断（用户/客户端中止）不是错误：用中性灰，别吓人 */
 .turn-stop-notice.stop-interrupted {
   border-left-color: var(--muted);
-}
-@keyframes turn-dot-pulse {
-  0%,
-  to {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
-  }
-  50% {
-    box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 0%, transparent);
-  }
 }
 .codex-turn {
   position: relative;

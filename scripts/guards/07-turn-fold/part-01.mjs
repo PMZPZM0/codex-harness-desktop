@@ -465,13 +465,14 @@ export async function run() {
     // RunningProcessTime 加 finalizing prop 时整行字面量匹配不上，两条守卫当场假红。
     const procCall = appC3.match(/\{running && userItems\.length > 0 && <RunningProcessTime[^>]*\/>/);
     const procIdx = procCall ? appC3.indexOf(procCall[0]) : -1;
-    const cardIdx = appC3.indexOf('{running && !hasVisible && userItems.length > 0 && <header className="turn-card-header">');
     (procIdx > 0)
       ? ok("【32】「正在处理 N 秒 + 灰线」不再依赖工具调用（回合内 userMessage 一到就显示）")
       : fail("【32】RunningProcessTime 的条件又被改掉（缺 userItems 会顶到用户消息上方；挂回 isTaskTurn 则纯聊天看不到）");
-    (procIdx > 0 && cardIdx > 0 && procIdx < cardIdx)
-      ? ok("【32】顺序：正在处理 + 灰线在「生成中」之上（用户 09-17 明确定的顺序）")
-      : fail("【32】「生成中」跑到灰线上面了 —— 用户明确否过这个顺序「你这顺序不对吧」");
+    /* ⛔ 10-28 用户（截图）：「回合第一个思考出来的时候，上面还有一排小字『思考中』，跟下面重复了」
+       ⇒ 那条占位头（● 思考中 / 生成中）整块删除。负向断言：不许长回来。 */
+    (!/turn-card-header/.test(appC3) && !/\? "思考中" : "生成中"/.test(appC3))
+      ? ok("【32】回合内不再有「● 思考中 / 生成中」占位小字（与思考卡重复；10-28 用户令）")
+      : fail("【32】占位小字又长回来了 —— 用户明确说它和下面的「深度思考中」重复");
     (/\{optimisticInput && !optimisticConfirmed && <>[\s\S]{0,700}?turn-head-avatar/.test(appNC))
       ? ok("【32】乐观阶段也渲染回合头（引擎回声前就有头像 + 名字）")
       : fail("【32】乐观阶段没有回合头 —— 头像名字要等引擎回声（正是用户报的「没第一时间出来」）");
