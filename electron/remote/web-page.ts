@@ -651,7 +651,14 @@ async function pollLoop() {
         setRunning(false);
         const el = list.querySelector(".streaming");
         if (el) el.classList.remove("streaming");
-        // 回合结束：步骤收成「运行过程 · N 步」，点开可看
+        // 回合结束：没有任何文字的「思考：」空壳删掉（供应商标了 reasoning 却没内容）
+        if (stepBox) {
+          stepBox.querySelectorAll(".think").forEach((node) => {
+            const body = node.querySelector(".think-text");
+            if (!body || !String(body.textContent || "").trim()) node.remove();
+          });
+        }
+        // 步骤收成「运行过程 · N 步」，点开可看
         if (stepBox && stepBox.children.length) {
           const box = document.createElement("details");
           box.className = "run-steps";

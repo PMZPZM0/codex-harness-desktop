@@ -157,8 +157,19 @@ function peekCaptureBuffer(threadId: string, turnId: unknown) {
 }
 let threadCwd!: any;
 let remoteEventForwarders!: any;
-/** 已经流式发过思考摘要的回合（`threadId:turnId`）：完整条目兜底时跳过，免得同一段思考出现两遍 */
+/** 已经流式发过思考摘要的**条目**（`threadId:turnId:itemId`）：完整条目兜底时跳过，免得出现两遍。
+ *  ⛔ 必须到条目粒度：一个回合里模型常有多段思考，按回合记会把后一段（未流式的）整段误跳过。 */
 const remoteThinkStreamed = new Set<string>();
+
+function remoteThinkKey(p: any): string {
+  return `${p?.threadId ?? ""}:${turnIdOf(p)}:${String(p?.itemId ?? p?.item?.id ?? "")}`;
+}
+
+/** 回合收尾时清掉这个回合的思考去重记录（中断的回合没有 item/completed） */
+function dropRemoteThinkKeys(threadId: string, turnId: string): void {
+  const prefix = `${threadId}:${turnId}:`;
+  for (const key of remoteThinkStreamed) if (key.startsWith(prefix)) remoteThinkStreamed.delete(key);
+}
 
 /** 把引擎 item 压成手机端能看懂的一行步骤（返回空串 = 这一步不上报）。 */
 function remoteStepOf(item: any, phase: "started" | "completed"): string {
@@ -871,18 +882,19 @@ export async function bootApp() {
       } else if (event.method === "item/started" && p?.item?.type === "reasoning") {
         // 思考开始：先给手机一个空块（页面会显示「思考：」），后到的增量/全文往里填
         if (!internalThreads.has(String(p?.threadId ?? ""))) for (const forward of remoteEventForwarders) forward({ threadId: p.threadId, kind: "think", text: "" });
-      } else if (event.method === "item/reasoning/summaryTextDelta" && p?.delta) {
+      } else if (event.method === "item/reasoning/summaryTextDelta" && (p?.delta || p?.text)) {
         // 手机端「思考内容」：与桌面折叠区同一股摘要流（原始 textDelta 太长，只发摘要）
+        // ⛔ 取文本必须 delta ?? text —— 引擎这条事件两种字段都出现过（桌面端也是这么取的）
         if (!internalThreads.has(String(p?.threadId ?? ""))) {
-          remoteThinkStreamed.add(`${p.threadId}:${turnIdOf(p)}`);
-          for (const forward of remoteEventForwarders) forward({ threadId: p.threadId, kind: "think", text: p.delta });
+          remoteThinkStreamed.add(remoteThinkKey(p));
+          for (const forward of remoteEventForwarders) forward({ threadId: p.threadId, kind: "think", text: String(p.delta ?? p.text) });
         }
       } else if (event.method === "item/completed" && p?.item?.type === "reasoning") {
         /* ⛔ 中转供应商常常**不流式**发思考摘要（实测 rollout 里 reasoning 条目的 summary 齐全，
            但一条 summaryTextDelta 都没有）⇒ 只转发增量的话手机端永远空白。这里用完整条目兜底，
-           增量已经到过的回合不重复发（否则同一段思考会出现两遍）。 */
-        const turnKey = `${p?.threadId ?? ""}:${turnIdOf(p)}`;
-        if (!internalThreads.has(String(p?.threadId ?? "")) && !remoteThinkStreamed.has(turnKey)) {
+           已经流式发过的**这一条**不重复发（否则同一段思考会出现两遍）。 */
+        const thinkKey = remoteThinkKey(p);
+        if (!internalThreads.has(String(p?.threadId ?? "")) && !remoteThinkStreamed.has(thinkKey)) {
           const item = p?.item ?? {};
           const text = [
             ...(item.summary ?? []).map((part: any) => String(part?.text ?? "")),
@@ -890,7 +902,7 @@ export async function bootApp() {
           ].join("").trim();
           if (text) for (const forward of remoteEventForwarders) forward({ threadId: p.threadId, kind: "think", text });
         }
-        remoteThinkStreamed.delete(turnKey);
+        remoteThinkStreamed.delete(thinkKey);
       } else if (event.method === "item/completed" && p?.item?.type === "agentMessage" && p.item.text) {
         const buffer = peekCaptureBuffer(String(p.threadId), turnIdOf(p));
         if (buffer) buffer.assistant = p.item.text;
@@ -912,7 +924,7 @@ export async function bootApp() {
       //    下一次兜底会错取到它（L2 记忆串台到上一回合）
       if (/^turn\/(aborted|failed|interrupted)$/.test(String(event.method ?? ""))) {
         takeCaptureBuffer(String(p?.threadId ?? ""), turnIdOf(p));
-        remoteThinkStreamed.delete(`${p?.threadId ?? ""}:${turnIdOf(p)}`);
+        dropRemoteThinkKeys(String(p?.threadId ?? ""), turnIdOf(p));
         // 手机端「运行中」也只认 done：中断/失败/中止同样要收尾，否则停止后按钮/状态一直挂着
         if (!internalThreads.has(String(p?.threadId ?? ""))) for (const forward of remoteEventForwarders) forward({ threadId: p?.threadId, kind: "done", text: "" });
       }
