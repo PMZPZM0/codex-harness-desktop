@@ -17,7 +17,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, CornerDownLeft, RotateCcw, Save, Search, X } from "lucide-react";
+import { RotateCcw, Save, Search, X } from "lucide-react";
 import { AppSelect } from "../../components/AppSelect";
 import { SHORTCUT_CATALOG, SHORTCUT_GROUPS, bindingLabel, findConflicts, normalizeBinding } from "../../lib/shortcut-catalog.mjs";
 import { useShortcuts, type ShortcutBindings } from "./use-shortcuts";
@@ -42,8 +42,8 @@ export function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () 
   const [draft, setDraft] = useState<ShortcutBindings>(() => ({ ...bindings }));
   const [query, setQuery] = useState("");
   const [group, setGroup] = useState("all");
-  /** 批量编辑：开启后才允许改（用户点名要这个按钮；关闭时是纯查看态，防误触） */
-  const [editing, setEditing] = useState(false);
+  /** 10-29 用户：「快捷键也要支持单独修改，小文字赘述不用」⇒ 去掉「批量编辑」前置开关，
+      每条可编辑项**本身就是录制按钮**（点哪条改哪条），说明小字与底部说明一并删掉。 */
   const [recording, setRecording] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -51,7 +51,7 @@ export function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () 
 
   /* 打开时把真实值灌进草稿：上次没保存的改动不跨次残留 */
   useEffect(() => {
-    if (!open) { setEditing(false); setRecording(null); setMessage(""); setError(""); return; }
+    if (!open) { setRecording(null); setMessage(""); setError(""); return; }
     setDraft({ ...bindings });
   }, [open, bindings]);
 
@@ -173,22 +173,13 @@ export function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () 
           <button type="button" className="icon-button" title="关闭" aria-label="关闭" onClick={onClose}><X size={17} /></button>
         </header>
 
-        {/* 顶部顺序按用户指定：搜索框 → 筛选分类 → 批量编辑 → 保存 */}
+        {/* 顶部顺序：搜索框 → 筛选分类 → 保存（10-29 去掉「批量编辑」：每条直接点着改） */}
         <div className="shortcuts-toolbar">
           <label className="shortcuts-search">
             <Search size={13} />
             <input value={query} placeholder="搜索快捷键或动作" aria-label="搜索快捷键" onChange={(event) => setQuery(event.target.value)} />
           </label>
           <AppSelect className="shortcuts-group-select" value={group} onChange={setGroup} ariaLabel="按分类筛选" options={groupOptions} />
-          <button
-            type="button"
-            className={`shortcuts-edit-toggle${editing ? " is-on" : ""}`}
-            aria-pressed={editing}
-            title={editing ? "退出批量编辑" : "批量编辑：打开后可逐条改键"}
-            onClick={() => { setEditing((current) => !current); setRecording(null); }}
-          >
-            {editing ? <Check size={13} /> : <CornerDownLeft size={13} />}<span>批量编辑</span>
-          </button>
           <button type="button" className="shortcuts-save" disabled={saving || !dirty} onClick={save}>
             <Save size={13} /><span>{saving ? "保存中…" : "保存"}</span>
           </button>
@@ -219,12 +210,9 @@ export function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () 
                   const hot = conflictIds.has(entry.id);
                   return (
                     <div className={`shortcuts-row${hot ? " is-conflict" : ""}`} key={entry.id}>
-                      <span className="shortcut-desc">
-                        {entry.label}
-                        {entry.desc ? <small>{entry.desc}</small> : null}
-                      </span>
+                      <span className="shortcut-desc">{entry.label}</span>
                       <span className="shortcut-keys">
-                        {editing && entry.editable ? (
+                        {entry.editable ? (
                           <button
                             type="button"
                             className={`shortcut-record${isRecording ? " is-recording" : ""}`}
@@ -249,7 +237,6 @@ export function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () 
         </div>
 
         <footer>
-          <span className="muted">应用内快捷键保存后立即生效；截图 / 语音键保存后会重新注册系统级快捷键（失败会明确提示）。</span>
           <button type="button" className="shortcuts-reset" onClick={resetAll} disabled={saving}>
             <RotateCcw size={12} /><span>恢复默认</span>
           </button>
