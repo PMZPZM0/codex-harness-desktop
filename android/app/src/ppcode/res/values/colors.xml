@@ -1,0 +1,4 @@
+<resources>
+    <!-- 前景整幅铺满，背景只在蒙版外露一点，取 logo 渐变里的紫色 -->
+    <color name="pp_bg">#6C5CE7</color>
+</resources>
