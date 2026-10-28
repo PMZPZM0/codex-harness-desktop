@@ -41,8 +41,12 @@ ok(/localStorage\.getItem\("composer-rail-open"\)/.test(rail) && /localStorage\.
   "展开/折叠状态持久化（用户：「所有会话点击展示都一样」）");
 ok(/className="composer-rail-grip"/.test(rail) && /\.composer-rail\s*\{[^}]*right:\s*100%/s.test(railCss)
   && /\.composer-rail-toggle\s*\{[^}]*transform:\s*translateX\(50%\)/s.test(railCss)
-  && /\.composer-rail\s*\{[^}]*top:\s*\d+px[^}]*bottom:\s*\d+px/s.test(railCss),
-  "竖条**竖着骑在输入框左边框线上**（right:100% + 手柄 translateX(50%)，10-27 用户二改）；top/bottom 拉伸 ⇒ 跟输入框一样高");
+  && /\.composer-rail\s*\{[^}]*top:\s*-?\d+px[^}]*bottom:\s*-?\d+px/s.test(railCss),
+  "宽屏：竖条骑在输入框左边框线上（right:100% + translateX(50%)），上下各探出 ⇒ 比输入框高一些（10-28 用户：「可以比输入框高一些，现在太小了」）");
+/* 10-28：小屏（≤1100）收进输入框内部横排 —— 竖列放不下 5×28 高，实测会被裁。 */
+ok(/@media \(max-width: 1100px\)/.test(railCss) && /flex-flow:\s*row nowrap/.test(railCss)
+  && /padding-top:\s*40px/.test(railCss),
+  "小屏（≤1100px）自适应：快捷条收进输入框内部横排一行，正文 padding-top 让位；其余宽度仍在输入框外侧");
 
 /* ② 扩展目录（用户：「留好IPC接口，方便后续拓展和用户拓展」） */
 ok(/window\.codex\.extensionsCatalog/.test(rail), "竖条面板清单来自 IPC `extensions:catalog`（不是写死四个）");
@@ -74,7 +78,17 @@ ok(/returnFocusRef/.test(rail) && /returnFocusRef\.current\?\.focus\?\.\(\)/.tes
   "关闭后焦点还给触发它的那颗图标（不落到 body）");
 ok(/function placePopover\(anchor: AnchorRect/.test(popover) && /createPortal\(/.test(popover),
   "统一浮层原语仍在（其它域：功能菜单 / 下拉仍走 AnchorPopover）");
-ok(/\.composer-rail-icons\s*\{[^}]*max-height:\s*100%/s.test(railCss), "图标列不超出输入框高度（超出内部滚动）");
+/* 10-28：图标 22→28 后放不下就**换列**（每列上限 3 个），不再靠滚动裁切；
+   ⛔ 不设上限时会排成 4+1（第二列只剩一个图标），所以必须钉住 104px 这个「3 个」的边界。 */
+ok(/\.composer-rail-icons\s*\{[^}]*flex-wrap:\s*wrap/s.test(railCss)
+  && /\.composer-rail-icons\s*\{[^}]*max-height:\s*104px/s.test(railCss),
+  "图标列高度不够时换列（每列上限 3 个 → 5 个排 3+2），不是滚动裁切");
+ok(/\.composer-rail-icon\s*\{[^}]*width:\s*28px/s.test(railCss)
+  && /\.composer-rail-icon\s*\{[^}]*flex:\s*none/s.test(railCss),
+  "图标 28px 且 flex:none（不被压扁）");
+/* 10-28 用户：「加一个拖动顺序功能」 */
+ok(/draggable/.test(rail) && /onDrop=/.test(rail) && /composerRailOrder/.test(rail),
+  "图标可拖拽排序，顺序落 app-settings.composerRailOrder");
 
 /* ④ 密码本：明文不进渲染层 */
 const vaultMain = src("electron/features/vault-ipc.ts");
