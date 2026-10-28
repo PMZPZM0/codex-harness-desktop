@@ -1538,7 +1538,7 @@ export async function run() {
         "scripts/accept.mjs": 1113,   // 10-28 审查按实测记账 1043→1113（并行工作线在途且仍在增长：1083→1113 是本线收尾时又测到的；本线未改本文件，⚠️ 该线提交时按自身实测复核本数）   // 10-28 +39（实测净行）＝ MCP 分类下拉两条真开真选（弹层在视口内/左对齐、选中后文案变且关闭）；此前净 −226 = 1004＝ function-menu 那项按 10-26 的「侧栏浮层」模型重写（旧的整段折叠动画判据已不存在，长期假红），同时新增 composer-rail 7 条；此前 1230 = +73 composer-rail；更早 1157（实测净行）= MCP 工具条 ⑫（搜索框在最左 + 分类紧跟同一行）+ 子智能体页 ⑬（横幅卡删除 / 返回键并进操作行）两条验收；此前 1126 = 本轮子智能体 ⑲ +32；此前 1094 = 上一轮专家中心/专家团两项 +21（当时基线未跟，HEAD 上本就红）⇒ 按实测一并补记账；更早 1073 = 控制台/模型/MCP/技能/命令/插件/组件库/SSH/专家中心验收
         "scripts/guards/02-session-logic.mjs": 1255,   // 10-27 晚 1255（实测净行）= 并行线在途 +3（本线未改本文件，按实测记账）；此前 1252 = 10-08 +12（1229→1241，实测净行）：语音「打断链路」判据由**固定字符窗口**改成按**同级分支边界**切片（branchBody：取 event.type==="X" 到下一个 event.type==="Y" 之间），并加「切片非空」前置防恒真假绿 —— 起因：realtime voice 的 final 分支开头插了外放回声剔除（约 8 行），把原来的 `[\s\S]{0,300}?` 撑破 ⇒ 假红。本文件是守卫载体（侧栏会话逻辑域）：每加一条规则基线随之上移 —— 10-04 新增【281】侧栏幽灵消失三条（兜底收编不吃 preview / memberIds 必须是派生量 / singles 与簇体同源）+20；10-04 新增【282】侧栏会话行不展示项目地址两条（渲染器不再引用 cwd / 两处小字各自锚定）+11
         "src/features/app-state/parts/bag-types.ts": 1429,   // 10-28 按实测记账 1422→1429（并行工作线在途：同段声明面；本线未改本文件）；此前 10-27 晚 1422 = 并行线在途 +2（同段声明面，按实测记账）；此前 1420 = 10-17 +1 = deferredCompactRef（排队压缩）   // 生成物（段内顶层声明的类型面）：本文件不承载任何逻辑，长度随「段内顶层声明数」变化 —— 10-04 补 5 条漏接线的声明（ctxBtnRef / ctxMenuStyle / taskBtnRef / taskMenuStyle / dispatchKey，守卫【93】报的 missing）；10-05 界面草图那一位（uiSketchOpen + setter，【283】钉）+2，非业务代码增长
-        "scripts/guards/09-structural.mjs": 1736,   // 10-28 净 0（实测净行）＝ 【101】【128】【129】改读设置台渲染面（readSettingsSurface：注册表 + pages/**），拆页后按 id/返回条断言不假红；同时删掉两处只剩一次读取的路径常量；10-21 新登记 04 棘轮一行；本文件是守卫载体：每加一条规则基线随之上移（历史：→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916；10-06 净行口径实测回归 1665）；+1 = 棘轮名单新登记 scripts/accept.mjs 一行；10-07 轮 +15 = 【253】② 改「挂载时机」两段判据（生成物只导出 mountEnabledDomains + 壳在 setPath 后调用，调用形态认 nextTick/裸调用两种）+ 【270】③ require 不自动挂载的负向判据；10-07 夜 +45（1681→1690→1735，**两次实测**）＝ ① +9 = 【100】补统一记忆（fabric）剥离的三条正例 + 一条负例 + 两个样例常量 + 一行读 memory-fabric 源（用户实测「项目记忆铺进气泡 + 同一条消息渲染两遍」的判据盲区）；② +36 = 【253】③ 打包白名单/读取路径两条 + 【268-c】同一 slot id 重复消费两条（含对照组）+ 复用【268-b】那趟扫描的 slotIdsOf 收集（用户实测「功能域全是 0」+「重复展示两次」两位数级事故，两条判据都是它们唯一的结构防线）
+        "scripts/guards/09-structural.mjs": 1750,   // 10-28 +14（实测净行 1736→1750）＝ 【270】真跑段收尾：留挂载句柄 + finally 里卸载所有已挂载域（真跑 mountEnabledDomains 会把每个域的 setup 都执行 —— remote 起 HTTP / scheduler 起 tick / codex 拉引擎，不收拾则守卫永不退出且每跑一次漏一个 codex.exe 握着会话 writer）；此前 1736 = 10-28 净 0（实测净行）＝ 【101】【128】【129】改读设置台渲染面（readSettingsSurface：注册表 + pages/**），拆页后按 id/返回条断言不假红；同时删掉两处只剩一次读取的路径常量；10-21 新登记 04 棘轮一行；本文件是守卫载体：每加一条规则基线随之上移（历史：→1571→1618→1660→1691→1813→1820→1823→1829→1904→1916；10-06 净行口径实测回归 1665）；+1 = 棘轮名单新登记 scripts/accept.mjs 一行；10-07 轮 +15 = 【253】② 改「挂载时机」两段判据（生成物只导出 mountEnabledDomains + 壳在 setPath 后调用，调用形态认 nextTick/裸调用两种）+ 【270】③ require 不自动挂载的负向判据；10-07 夜 +45（1681→1690→1735，**两次实测**）＝ ① +9 = 【100】补统一记忆（fabric）剥离的三条正例 + 一条负例 + 两个样例常量 + 一行读 memory-fabric 源（用户实测「项目记忆铺进气泡 + 同一条消息渲染两遍」的判据盲区）；② +36 = 【253】③ 打包白名单/读取路径两条 + 【268-c】同一 slot id 重复消费两条（含对照组）+ 复用【268-b】那趟扫描的 slotIdsOf 收集（用户实测「功能域全是 0」+「重复展示两次」两位数级事故，两条判据都是它们唯一的结构防线）
         "scripts/guards/13-drama-gen.mjs": 1070,
         "electron/features/boot.ts": 1048,   // 10-28 审查 +19（实测净行）：询问/审批不再把权限请求压成 approval（回包形状不同）+ 多问题回落提示 + 命令结束状态本地化（命令完成/失败）+ files 事件带结构化清单（运行中「查看改动」用）与无法结构化时的准确提示文案；此前 1029 = 新登记：手机远控事件转发（思考 / 步骤 / 文件 / 工具 / 询问）持续加厚
         "electron/main.ts": 802,   // 10-28 手机首页 +28（实测净行）：listThreads 标中枢/中枢调度 + 群名、listBossGroups 回调、newThread(boss) 走 boss-home 并登记中枢、品牌名；此前 774 = +122（实测净行）：读历史带 reasoning 摘要；此前 712 = +115：归档 / 设目标 / 思考强度 / 安装包资产名：归档 / 设目标 / 思考强度 / 安装包资产名（按品牌）；：停止按真实 turnId 重试 / 压缩拒绝回合中执行 / 文件读真实路径校验；此前 689 = +92：手机四件能力 + 登记 cwd：手机四件能力（图片 localImage 闸 / 技能目录 / 中断 / 压缩 / 列文件 / 读文件）；此前 597 = +3：手机读历史剥注入块（stripHarnessBlocks 接线）；此前 594 = 10-22 并行提交（单实例 / createWindow 防重入）+6（实测净行）；此前 588 = 10-21 577→588（实测净行；step 标题/工具面那批已提交改动，7fb641b —— 上一轮并行线提交时没刷新本数，按实测补记账）；此前 10-20 576→577（实测净行；⚠️ 这 +2 来自**并行工作线**的 harness-media 协议注册，本轮未改该文件 —— 该线提交时请按自身实测复核本数）   // 10-16 557→576（**实测净行**；不是本轮刷新回执的改动）= 主题跟随两笔**已提交**改动（7588b08 主题广播 + 渲染层订阅、1be2dde 独立会话弹窗原生外观按当前主题补设）给 main.ts 加了 19 净行却没同步本条 ⇒ check 整链在 HEAD 上就已经是红的，按「实测值更新」补记账（棘轮只许缩不许长，增长是既成事实，不补就永远卡住后面的守卫）。此前 10-10 +1（556→557，实测净行）= 记忆容量倍率：模块体里**同步**读 app-settings 并 memoryLayers.setScale（⛔ 异步会晚于下面的 setLayers 生效）。此前 10-07 轮 546→556（实测）：组合层改具名 import + setPath(userData) 后 process.nextTick(mountEnabledDomains)（挂载时机修复 + 循环 require 窗口规避，【253】钉）
@@ -1948,12 +1948,16 @@ export async function run() {
           const electronStub = mkStub();
           const moduleAny = createRequire(import.meta.url);
           const loadOrig = moduleAny("node:module")._load;
+          /** ⛔ 真跑产物会把**所有启用域的 setup** 执行一遍（remote 起 HTTP / scheduler 起 tick /
+              codex 拉引擎）。挂载句柄必须留到 finally 才能收尾 —— 见下面的卸载。 */
+          let genG = null;
           try {
             moduleAny("node:module")._load = function (request, ...rest) {
               if (String(request) === "electron") return electronStub;
               return loadOrig.call(this, request, ...rest);
             };
             const g = moduleAny(genDist);
+            genG = g;
             // ⛔ 10-07：挂载挪进显式函数 ⇒ 先钉「require 本身不挂任何域」（模块作用域自动挂载
             //    正是 app-settings 缓存被写坏的事故源头），再调 mountEnabledDomains() 验装卸语义。
             (typeof g.mountEnabledDomains === "function" ? ok : fail)(
@@ -1983,6 +1987,18 @@ export async function run() {
             fail(`【270】真跑 dist-electron/composition.gen.js 失败：${error270 instanceof Error ? error270.message : String(error270)}`);
           } finally {
             moduleAny("node:module")._load = loadOrig;
+            /* ⛔⛔ 10-28（用户：「保留干净的后台」的根因之一）：这一段 `mountEnabledDomains()` 真跑
+               会把**每个启用域的 setup** 都执行 → remote 起 HTTP 监听、scheduler 起 tick、
+               codex 域拉起一个 codex.exe app-server。不收拾就有两个后果：
+                 ① 守卫进程永不退出（remote server 常驻）⇒ 卡死（实测 09 跑 9 分钟不结束）；
+                 ② 每跑一次预检漏一个 codex.exe，它握着会话 rollout 的 writer
+                    ⇒ 应用里发消息报 `thread … already has an active writer`。
+               ⇒ 断言跑完必须把所有挂载过的域卸掉（域把 stop/关闭挂在 ctx.effect 里，卸载即收尾）。 */
+            try {
+              for (const id of genG?.mountedDomainIds?.() ?? []) {
+                try { genG.unmountDomainById(id); } catch { /* 单个域卸载失败不该连坐 */ }
+              }
+            } catch { /* 句柄结构变了也不该让预检崩 */ }
           }
         }
       }
