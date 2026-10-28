@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.util.Base64;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.WebResourceError;
@@ -39,7 +40,6 @@ public class MainActivity extends AppCompatActivity {
     private View setup;
     private EditText code;
     private TextView hint;
-    private TextView serverInfo;
     private String baseUrl;
 
     private final ActivityResultLauncher<ScanOptions> scanLauncher =
@@ -55,7 +55,6 @@ public class MainActivity extends AppCompatActivity {
                 }
                 baseUrl = scanned;
                 prefs().edit().putString(KEY_BASE, baseUrl).apply();
-                updateServerInfo();
                 openChat(code.getText().toString());
             });
 
@@ -68,7 +67,6 @@ public class MainActivity extends AppCompatActivity {
         setup = findViewById(R.id.setup);
         code = findViewById(R.id.code);
         hint = findViewById(R.id.hint);
-        serverInfo = findViewById(R.id.server_info);
         findViewById(R.id.connect).setOnClickListener(v -> openChat(code.getText().toString()));
         findViewById(R.id.scan).setOnClickListener(v -> startScan());
 
@@ -112,8 +110,7 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        baseUrl = prefs().getString(KEY_BASE, BuildConfig.BASE_URL);
-        updateServerInfo();
+        baseUrl = prefs().getString(KEY_BASE, decodeBase(BuildConfig.BASE_URL_B64));
         // 连过一次之后，再打开 App 直接进对话：不带连接码，页面会用设备秘密自动登录；
         // 电脑端在线就永远是对话页，不需要重新连接。
         if (prefs().getBoolean(KEY_CONNECTED, false)) resumeSession();
@@ -140,11 +137,12 @@ public class MainActivity extends AppCompatActivity {
         return value;
     }
 
-    private void updateServerInfo() {
-        Uri uri = Uri.parse(baseUrl);
-        String host = uri.getHost() == null ? baseUrl : uri.getHost();
-        int port = uri.getPort();
-        serverInfo.setText(getString(R.string.server_prefix) + host + (port > 0 ? ":" + port : ""));
+    /** 内置中转地址在 APK 里是 XOR+base64：界面上不显示、strings 里也搜不到明文。 */
+    private static String decodeBase(String encoded) {
+        byte[] raw = Base64.decode(encoded, Base64.NO_WRAP);
+        byte[] out = new byte[raw.length];
+        for (int i = 0; i < raw.length; i++) out[i] = (byte) (raw[i] ^ 0x5a);
+        return new String(out, java.nio.charset.StandardCharsets.UTF_8);
     }
 
     /** 连接码走 URL 片段（#code=…）：不会进服务器日志，配对页读到就自动提交。 */

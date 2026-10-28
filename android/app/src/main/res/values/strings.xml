@@ -2,7 +2,6 @@
     <string name="app_name">Codex 远控</string>
     <string name="setup_title">输入连接码</string>
     <string name="setup_desc">在电脑端「手机远控」面板上会显示 6 位数字，填进来点连接。\n第一次连接还要在电脑上点一次「允许」；之后会自动登录。</string>
-    <string name="server_prefix">服务器：</string>
     <string name="code_hint">6 位连接码</string>
     <string name="connect">连接</string>
     <string name="scan">扫码</string>
