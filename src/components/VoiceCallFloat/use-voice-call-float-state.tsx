@@ -15,8 +15,14 @@ import { isLikelySelfEcho } from "../../lib/voice-echo.mjs";
 import { createVoiceScriptStripper, resolveAnnounceSummary } from "../../lib/voice-script.mjs";
 import { describeMicError } from "../../lib/mic-error.mjs";
 import { VoicePhase, VoiceState, ModelsStatus, POS_KEY, CAPTURE_RATE, BARGUE_COOLDOWN_MS, REF_RING_SECONDS, AEC_MAX_DELAY_SAMPLES, AEC_DEFAULT_DELAY_SAMPLES, PREBUFFER_MAX_SAMPLES, ENDPOINT_QUIET_RMS, ENDPOINT_QUIET_MS, pickHint, readPos } from "../VoiceCallFloat";
+import type { TaskMood } from "./use-voice-task-mood";
 
-export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
+/** 自适应降噪：连续这么多条提示都没人理 ⇒ 当天不再主动冒泡（10-29 情绪价值边界）。 */
+const HINT_IGNORE_LIMIT = 3;
+const HINT_MUTE_KEY = "voice-ball-hint-muted-date";
+const todayKey = () => new Date().toISOString().slice(0, 10);
+
+export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { threadId?: string; taskMood?: TaskMood }) {
   const [phase, setPhase] = useState<VoicePhase>("idle");
   const [state, setState] = useState<VoiceState>("listening");
   const [expanded, setExpanded] = useState(false);
@@ -53,6 +59,13 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
   /* 10-25：悬浮球外观（设置 → 语音通话 → 悬浮球），由主进程设置广播即时同步。 */
   const [ballStyle, setBallStyle] = useState(() => normalizeVoiceBallStyle(undefined));
   const [hint, setHint] = useState<string | null>(null);
+  /* 安静陪伴（10-29 用户令）：只呼吸/眨眼，不弹任何气泡。设置页与右键菜单共用一个开关。 */
+  const [quiet, setQuiet] = useState(false);
+  /** 当天被降噪静音（连续 3 次提示没人理）。与 quiet 分开：这是**系统**收敛，不是用户选择。 */
+  const [autoMuted, setAutoMuted] = useState(() => {
+    try { return localStorage.getItem(HINT_MUTE_KEY) === todayKey(); } catch { return false; }
+  });
+  const ignoredHintsRef = useRef(0);
   // 右键菜单位置：做视口边界检测（看用户截图：之前直接用 clientX/Y 会跑出屏幕）
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   // 应用内通话界面（全屏遮罩，像手机来电那样的界面；关掉 ≠ 挂断）
@@ -180,7 +193,7 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
     return () => { alive = false; window.clearInterval(timer); };
   }, [phase, threadId]);
 
-  // 读悬浮球显隐 + 气泡开关（设置页改完即时生效）
+  // 读悬浮球显隐 + 气泡开关 + 安静陪伴（设置页改完即时生效）
   useEffect(() => {
     void window.codex.voiceSettingsGet().then((s: any) => {
       const b = s?.settings?.ball;
@@ -188,25 +201,43 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
       setBallVisible(b.visible !== false);
       setHintsEnabled(b.hints !== false);
       setBallStyle(normalizeVoiceBallStyle(b.style));
+      setQuiet(b.quiet === true);
     }).catch(() => undefined);
   }, []);
 
-  // 随机短提示气泡：按当前 phase/state/模型就绪 选池子
+  // 随机短提示气泡：按当前 phase/state/模型就绪/任务姿态 选池子
   // 频率刻意调低：首次 3 秒，之后每 15~25 秒冒一句，显示 3 秒后收起
   // （之前 7~12 秒一次、显示 4 秒——用户反馈"太吵 + 太长会盖住输入框"）
+  // ⛔ 三道闸：用户关了气泡 / 安静陪伴 / 当天降噪静音 —— 任何一个都不冒泡。
   useEffect(() => {
-    if (!hintsEnabled) { setHint(null); return; }
+    if (!hintsEnabled || quiet || autoMuted) { setHint(null); return; }
     let timer = 0;
     let hideTimer = 0;
     const tick = () => {
-      setHint(pickHint(phase, state, models?.ready ?? false, models?.baseEnabled === false));
+      setHint(pickHint(phase, state, models?.ready ?? false, models?.baseEnabled === false, taskMood));
       hideTimer = window.setTimeout(() => setHint(null), 3000);
+      /* 没人理就计数：到限当天静音。球上任何交互（点击 / 菜单 / 拖动）都会清零。 */
+      ignoredHintsRef.current += 1;
+      if (ignoredHintsRef.current >= HINT_IGNORE_LIMIT) {
+        try { localStorage.setItem(HINT_MUTE_KEY, todayKey()); } catch { /* 忽略 */ }
+        setAutoMuted(true);
+      }
       timer = window.setTimeout(tick, 15000 + Math.random() * 10000);
     };
     timer = window.setTimeout(tick, 3000);
     return () => { window.clearTimeout(timer); window.clearTimeout(hideTimer); };
-    // 依赖 phase/state/modelsReady —— 状态变了下一条提示会立刻刷新成对应池
-  }, [hintsEnabled, phase, state, models?.ready]);
+    // 依赖 phase/state/modelsReady/taskMood —— 状态变了下一条提示会立刻刷新成对应池
+  }, [hintsEnabled, quiet, autoMuted, phase, state, models?.ready, taskMood]);
+
+  /* 收尾反馈（10-29）：等你确认 / 干完了 立刻冒一句（不等随机节奏）；failed 只做姿态不说话。
+     ⛔ 不计入降噪计数：这是事件驱动的反馈，不是主动搭话。 */
+  useEffect(() => {
+    if (!hintsEnabled || quiet || autoMuted) return;
+    if (taskMood !== "waiting" && taskMood !== "done") return;
+    setHint(pickHint(phase, state, models?.ready ?? false, models?.baseEnabled === false, taskMood));
+    const hide = window.setTimeout(() => setHint(null), 2800);
+    return () => window.clearTimeout(hide);
+  }, [taskMood, hintsEnabled, quiet, autoMuted, phase, state, models?.ready]);
 
   // 点空白处收起右键菜单
   useEffect(() => {
@@ -224,10 +255,10 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
   const onBallContextMenu = useCallback((e: ReactMouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // 菜单大小约 158×150（4 项）。鼠标处为锚点，越右/下边就贴回视口边内
-    // —— 直接用 clientX/Y 在 52px 的小窗口里会被聊天区遮住、跑出屏幕。
+    // 菜单大小约 158×186（5 项：面板 / 停播报 / 安静陪伴 / 语音设置 / 隐藏）。
+    // 鼠标处为锚点，越右/下边就贴回视口边内 —— 直接用 clientX/Y 在 52px 的小窗口里会被聊天区遮住。
     const W = 158;
-    const H = 150;
+    const H = 186;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const x = Math.max(6, Math.min(e.clientX, vw - W - 6));
@@ -240,8 +271,28 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
     setMenu(null);
     setHint(null);
     // 落盘，下次启动保持隐藏（设置页可以再打开）
-    void window.codex.voiceSettingsSet({ ball: { visible: false, hints: hintsEnabled, style: ballStyle } }).catch(() => undefined);
-  }, [hintsEnabled, ballStyle]);
+    void window.codex.voiceSettingsSet({ ball: { visible: false, hints: hintsEnabled, style: ballStyle, quiet } }).catch(() => undefined);
+  }, [hintsEnabled, ballStyle, quiet]);
+
+  /** 安静陪伴开关：右键菜单与设置页共用。开着 = 只呼吸/眨眼，不弹任何气泡。 */
+  const toggleQuiet = useCallback(() => {
+    setQuiet((prev) => {
+      const next = !prev;
+      if (next) setHint(null);
+      void window.codex.voiceSettingsSet({ ball: { visible: ballVisible, hints: hintsEnabled, style: ballStyle, quiet: next } }).catch(() => undefined);
+      return next;
+    });
+  }, [ballVisible, hintsEnabled, ballStyle]);
+
+  /** 球上任何交互（点击 / 菜单 / 拖动起点）都算「用户在理我」：清零降噪计数，解除当天静音。 */
+  const noteBallInteraction = useCallback(() => {
+    ignoredHintsRef.current = 0;
+    setAutoMuted((prev) => {
+      if (!prev) return prev;
+      try { localStorage.removeItem(HINT_MUTE_KEY); } catch { /* 忽略 */ }
+      return false;
+    });
+  }, []);
 
   // ---- 主进程事件 ----
   useEffect(() => {
@@ -256,6 +307,7 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
           setBallVisible(b.visible !== false);
           setHintsEnabled(b.hints !== false);
           setBallStyle(normalizeVoiceBallStyle(b.style));
+          setQuiet(b.quiet === true);
         }
         // 播报开关也走这条广播：设置页勾/取消后**当前通话立刻生效**（下一句起）
         const a = event.settings?.announce;
@@ -996,5 +1048,5 @@ export function useVoiceCallFloatState({ threadId }: { threadId?: string }) {
   // 他窗口通话中 → 球置灰（视觉 + 语义），挂断后轮询自动恢复
   const ballClass = `voice-ball voice-ball--skin-${ballStyle} ${phase === "active" ? `is-${state}` : ""} ${phase === "starting" ? "is-starting" : ""} ${busyElsewhere && phase === "idle" ? "is-busy-elsewhere" : ""}`;
 
-  return { threadId, phase, setPhase, state, setState, expanded, setExpanded, levelRef, screenElRef, applyLevel, muted, setMuted, mutedRef, toggleMute, transcript, setTranscript, callStartedAt, setCallStartedAt, userText, setUserText, agentText, setAgentText, ballVisible, setBallVisible, hintsEnabled, setHintsEnabled, ballStyle, hint, setHint, menu, setMenu, agentTextRef, ballRef, notice, setNotice, endpointSec, setEndpointSec, models, setModels, download, setDownload, pos, setPos, mediaStreamRef, captureCtxRef, workletRef, playCtxRef, playQueueRef, playingCountRef, aecRef, bargeModeRef, micSettingsRef, volumeRef, gateRef, chunkerRef, speakFilterRef, scriptStripperRef, announceRef, prebufferRef, liveRef, refRingRef, refWriteRef, refReadRef, refDropsRef, endpointArmedRef, quietSinceRef, lastBargeAtRef, speakingRef, phaseRef, voiceModeRef, dragRef, refreshModels, busyElsewhere, setBusyElsewhere, onBallContextMenu, hideBall, pushRef, enqueuePlay, speechEpochRef, bumpSpeechEpoch, stopPlayback, skipCurrent, speakDelta, flushSpeech, speakScript, startCapture, teardown, startCall, endCall, startCallRef, callToggleRef, pushTranscript, installModels, draggedRef, onPointerDown, onPointerMove, onPointerUp, onBallClick, stateLabel, modelsReady, ballClass };
+  return { threadId, phase, setPhase, state, setState, expanded, setExpanded, levelRef, screenElRef, applyLevel, muted, setMuted, mutedRef, toggleMute, transcript, setTranscript, callStartedAt, setCallStartedAt, userText, setUserText, agentText, setAgentText, ballVisible, setBallVisible, hintsEnabled, setHintsEnabled, ballStyle, hint, setHint, menu, setMenu, agentTextRef, ballRef, notice, setNotice, endpointSec, setEndpointSec, models, setModels, download, setDownload, pos, setPos, mediaStreamRef, captureCtxRef, workletRef, playCtxRef, playQueueRef, playingCountRef, aecRef, bargeModeRef, micSettingsRef, volumeRef, gateRef, chunkerRef, speakFilterRef, scriptStripperRef, announceRef, prebufferRef, liveRef, refRingRef, refWriteRef, refReadRef, refDropsRef, endpointArmedRef, quietSinceRef, lastBargeAtRef, speakingRef, phaseRef, voiceModeRef, dragRef, refreshModels, busyElsewhere, setBusyElsewhere, onBallContextMenu, hideBall, pushRef, enqueuePlay, speechEpochRef, bumpSpeechEpoch, stopPlayback, skipCurrent, speakDelta, flushSpeech, speakScript, startCapture, teardown, startCall, endCall, startCallRef, callToggleRef, pushTranscript, installModels, draggedRef, onPointerDown, onPointerMove, onPointerUp, onBallClick, stateLabel, modelsReady, ballClass, quiet, autoMuted, toggleQuiet, noteBallInteraction };
 }

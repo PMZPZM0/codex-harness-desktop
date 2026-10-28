@@ -321,6 +321,32 @@
 .voice-ball:hover { filter: brightness(1.05) drop-shadow(0 0 7px color-mix(in srgb, var(--ball-hover) 38%, transparent)); }
 .voice-ball:active { transform: scale(.95); }
 
+/* ── 任务姿态（10-29 用户令：人性化联动 + 情绪价值）────────────────────────
+   data-task 由 use-voice-task-mood 喂（引擎回合状态折算）。
+   ⛔ 只动 .voice-mascot（内层）与光晕/环的 CSS 变量 —— button 本体的 transform 是
+   --voice-level 电平缩放的领地，碰它会跟通话电平打架。 */
+.voice-ball[data-task="thinking"] { --ball-glow-a: rgba(167, 139, 250, .45); --ball-glow-b: rgba(167, 139, 250, .14); --ball-ring: rgba(167, 139, 250, .7); }
+.voice-ball[data-task="thinking"] .voice-mascot { animation: voice-task-think 3.2s ease-in-out infinite; }
+.voice-ball[data-task="working"] { --ball-glow-a: rgba(56, 189, 248, .45); --ball-glow-b: rgba(56, 189, 248, .14); --ball-ring: rgba(56, 189, 248, .7); }
+.voice-ball[data-task="working"] .voice-mascot { animation: voice-task-work 1.5s ease-in-out infinite; }
+.voice-ball[data-task="waiting"] { --ball-glow-a: rgba(250, 204, 21, .5); --ball-glow-b: rgba(250, 204, 21, .16); --ball-ring: rgba(250, 204, 21, .8); }
+.voice-ball[data-task="waiting"] .voice-mascot { animation: voice-task-wait 1.1s ease-in-out infinite; }
+.voice-ball[data-task="done"] { --ball-glow-a: rgba(74, 222, 128, .5); --ball-glow-b: rgba(74, 222, 128, .14); --ball-ring: rgba(74, 222, 128, .8); }
+.voice-ball[data-task="done"] .voice-mascot { animation: voice-task-done .55s ease-out 3; }
+.voice-ball[data-task="failed"] { --ball-glow-a: rgba(248, 113, 113, .42); --ball-glow-b: rgba(248, 113, 113, .12); --ball-ring: rgba(248, 113, 113, .7); }
+.voice-ball[data-task="failed"] .voice-mascot { animation: voice-task-fail .45s ease-in-out 2; }
+.voice-ball[data-task="failed"] .voice-bot-eye { opacity: .55; }
+
+@keyframes voice-task-think { 0%, 100% { transform: rotate(0deg); } 40%, 60% { transform: rotate(-3deg) translateY(-1px); } }
+@keyframes voice-task-work { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+@keyframes voice-task-wait { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3.5px); } }
+@keyframes voice-task-done { 0% { transform: scale(1); } 40% { transform: scale(1.12); } 100% { transform: scale(1); } }
+@keyframes voice-task-fail { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-1.5px); } 75% { transform: translateX(1.5px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-ball[data-task] .voice-mascot { animation: none !important; }
+}
+
 /* 打字时从球上方弹出迷你键盘（10-26 用户：「打字有键盘出来」）。
    ⛔ 绝对定位、不占布局 ⇒ 不会把球顶上去；pointer-events:none ⇒ 不挡球与输入框操作。 */
 .voice-ball-keyboard {

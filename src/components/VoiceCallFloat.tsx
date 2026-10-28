@@ -4,8 +4,10 @@
  */
 import { createPortal } from "react-dom";
 import { useSyncExternalStore } from "react";
-import { AlertCircle, AudioLines, Download, EyeOff, LoaderCircle, Mic, PhoneOff, Settings2, Volume2, VolumeX, X } from "lucide-react";
+import { AlertCircle, AudioLines, BellOff, BellRing, Download, EyeOff, LoaderCircle, Mic, PhoneOff, Settings2, Volume2, VolumeX, X } from "lucide-react";
 import VoiceMascot from "./VoiceMascot";
+import { useVoiceTaskMood } from "./VoiceCallFloat/use-voice-task-mood";
+import type { TaskMood } from "./VoiceCallFloat/use-voice-task-mood";
 import { patchVoiceStage, requestVoiceDictationSend, requestVoiceOpenSettings, resetVoiceStage, setVoiceDictationHandler, setVoiceLevel, setVoiceStopHandler } from "../voice/wave-level";
 // 非通话播报的「停止」出口（10-08）：播报域注册，这里只是触发 —— 基座不反向依赖域，走广播
 import { getAnnounceGlobalEnabled, isAnnounceMutedForThread, requestAnnounceResume, requestAnnounceStop, subscribeAnnounceGlobalEnabled, subscribeAnnounceThreadMuted } from "../voice/announce-bus";
@@ -87,21 +89,30 @@ const HINT_POOLS: Record<string, string[]> = {
     "启用后才能通话",
   ],
 };
-/** 按当前 phase/state/模型状态挑一个最合适的池子随机抽 */
-export function pickHint(phase: VoicePhase, state: VoiceState, modelsReady: boolean, modelsDisabled = false): string {
-  let pool: string[];
-  if (!modelsReady && modelsDisabled && phase !== "active") {
-    pool = HINT_POOLS.modelsDisabled;
-  } else if (!modelsReady && phase !== "active") {
-    pool = HINT_POOLS.modelsMissing;
-  } else if (phase === "active") {
-    pool = HINT_POOLS[state] ?? HINT_POOLS.idle;
-  } else if (phase === "starting") {
-    pool = HINT_POOLS.starting;
-  } else {
-    pool = HINT_POOLS.idle;
-  }
-  return pool[Math.floor(Math.random() * pool.length)];
+/**
+ * 任务姿态的提示词（10-29 用户令：人性化联动 + 情绪价值）。
+ * ⛔ 同样压到 6 字以内：气泡从球往左弹，太长会盖住输入框。
+ * ⛔ 失败态**不弹文案**（由提示池外置控制：调度器只给 waiting/done 弹，failed 只做姿态）——
+ *    挫败的时候最烦话多，这是用户原话里的取舍。
+ */
+const TASK_HINT_POOLS: Record<Exclude<TaskMood, "idle" | "failed">, string[]> = {
+  thinking: ["在想…", "让我想想", "算一下…"],
+  working: ["在干活", "跑着呢", "稍等…"],
+  waiting: ["等你确认", "点一下我", "看一眼？"],
+  done: ["搞定 ✓", "干完了", "收工"],
+};
+
+/** 按当前 phase/state/模型状态/任务姿态挑一个最合适的池子随机抽 */
+export function pickHint(phase: VoicePhase, state: VoiceState, modelsReady: boolean, modelsDisabled = false, taskMood: TaskMood = "idle"): string {
+  const pick = (pool: string[]) => pool[Math.floor(Math.random() * pool.length)];
+  /* 模型没就绪 / 通话中 / 启动中：沿用原有优先级（这几种状态的提示更紧急）。 */
+  if (!modelsReady && modelsDisabled && phase !== "active") return pick(HINT_POOLS.modelsDisabled);
+  if (!modelsReady && phase !== "active") return pick(HINT_POOLS.modelsMissing);
+  if (phase === "active") return pick(HINT_POOLS[state] ?? HINT_POOLS.idle);
+  if (phase === "starting") return pick(HINT_POOLS.starting);
+  /* 待机时按任务姿态说话；failed 不进池（只做表情/姿态）。 */
+  if (taskMood !== "idle" && taskMood !== "failed") return pick(TASK_HINT_POOLS[taskMood]);
+  return pick(HINT_POOLS.idle);
 }
 function formatBytes(bytes: number): string {
   if (!bytes || bytes <= 0) return "0 MB";
@@ -133,7 +144,9 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
     () => getAnnounceGlobalEnabled() !== false,
     () => true,
   );
-  const { phase, setPhase, state, setState, expanded, setExpanded, levelRef, screenElRef, applyLevel, muted, setMuted, mutedRef, toggleMute, transcript, setTranscript, callStartedAt, setCallStartedAt, userText, setUserText, agentText, setAgentText, ballVisible, setBallVisible, hintsEnabled, setHintsEnabled, ballStyle, hint, setHint, menu, setMenu, agentTextRef, ballRef, notice, setNotice, endpointSec, setEndpointSec, models, setModels, download, setDownload, pos, setPos, mediaStreamRef, captureCtxRef, workletRef, playCtxRef, playQueueRef, playingCountRef, aecRef, bargeModeRef, micSettingsRef, volumeRef, gateRef, chunkerRef, speakFilterRef, prebufferRef, liveRef, refRingRef, refWriteRef, refReadRef, refDropsRef, endpointArmedRef, quietSinceRef, lastBargeAtRef, speakingRef, phaseRef, voiceModeRef, dragRef, refreshModels, busyElsewhere, setBusyElsewhere, onBallContextMenu, hideBall, pushRef, enqueuePlay, speechEpochRef, bumpSpeechEpoch, stopPlayback, skipCurrent, speakDelta, flushSpeech, startCapture, teardown, startCall, endCall, startCallRef, callToggleRef, pushTranscript, installModels, draggedRef, onPointerDown, onPointerMove, onPointerUp, onBallClick, stateLabel, modelsReady, ballClass } = useVoiceCallFloatState({ threadId });
+  /* 任务姿态（10-29）：引擎回合状态 → 在想/在干活/等你确认/干完/出错。 */
+  const taskMood: TaskMood = useVoiceTaskMood(threadId);
+  const { phase, setPhase, state, setState, expanded, setExpanded, levelRef, screenElRef, applyLevel, muted, setMuted, mutedRef, toggleMute, transcript, setTranscript, callStartedAt, setCallStartedAt, userText, setUserText, agentText, setAgentText, ballVisible, setBallVisible, hintsEnabled, setHintsEnabled, ballStyle, hint, setHint, menu, setMenu, agentTextRef, ballRef, notice, setNotice, endpointSec, setEndpointSec, models, setModels, download, setDownload, pos, setPos, mediaStreamRef, captureCtxRef, workletRef, playCtxRef, playQueueRef, playingCountRef, aecRef, bargeModeRef, micSettingsRef, volumeRef, gateRef, chunkerRef, speakFilterRef, prebufferRef, liveRef, refRingRef, refWriteRef, refReadRef, refDropsRef, endpointArmedRef, quietSinceRef, lastBargeAtRef, speakingRef, phaseRef, voiceModeRef, dragRef, refreshModels, busyElsewhere, setBusyElsewhere, onBallContextMenu, hideBall, pushRef, enqueuePlay, speechEpochRef, bumpSpeechEpoch, stopPlayback, skipCurrent, speakDelta, flushSpeech, startCapture, teardown, startCall, endCall, startCallRef, callToggleRef, pushTranscript, installModels, draggedRef, onPointerDown, onPointerMove, onPointerUp, onBallClick, stateLabel, modelsReady, ballClass, quiet, autoMuted, toggleQuiet, noteBallInteraction } = useVoiceCallFloatState({ threadId, taskMood: taskMood });
   // 眼球跟鼠标 / 打字弹小键盘：球可见就挂监听（互斥置灰态也可以看，别让状态切换把监听反复摘挂）
   const typingBall = useBallReactions({ enabled: ballVisible, ballRef });
   return createPortal(
@@ -217,14 +230,16 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
           <button
             ref={ballRef}
             className={ballClass}
+            data-task={taskMood}
+            data-quiet={quiet ? "1" : "0"}
             title={phase === "active" ? "语音通话进行中（点击展开/收起，右键更多）" : busyElsewhere ? "其他窗口正在语音通话中（挂断后此处恢复）" : "语音通话（本机离线，右键更多）"}
             aria-label={phase === "active" ? "语音通话进行中" : "开始语音通话"}
-            onPointerDown={onPointerDown}
+            onPointerDown={(e) => { noteBallInteraction(); onPointerDown(e); }}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
-            onClick={onBallClick}
-            onContextMenu={onBallContextMenu}
+            onClick={() => { noteBallInteraction(); onBallClick(); }}
+            onContextMenu={(e) => { noteBallInteraction(); onBallContextMenu(e); }}
           >
             {/* 两圈脉冲环（错开动画，音量越大扩散越远） */}
             <span className="voice-ball-ring" aria-hidden />
@@ -293,6 +308,15 @@ export default function VoiceCallFloat({ threadId }: { threadId?: string }) {
               >
                 {announceGlobalOn && !announceMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
                 {!announceGlobalOn ? "去设置开启播报" : announceMuted ? "恢复播报" : "停止播报"}
+              </button>
+              {/* 安静陪伴（10-29）：一键「只陪你不说话」——呼吸/眨眼照旧，气泡全停（含任务反馈）。 */}
+              <button
+                type="button"
+                role="menuitem"
+                title={quiet ? "安静陪伴已开：气泡全部停了，点这里恢复" : "只陪你不说话：表情跟任务走，但不弹气泡"}
+                onClick={() => { setMenu(null); toggleQuiet(); }}
+              >
+                {quiet ? <BellRing size={13} /> : <BellOff size={13} />}{quiet ? "恢复陪伴气泡" : "安静陪伴（不说话）"}
               </button>
               <button
                 type="button"
