@@ -22,6 +22,7 @@ import { DelegateRegistry } from "./delegate-registry";
 import { ThreadRuntimeStore } from "./thread-runtime-store";
 import { TerminalService } from "./terminal";
 import { RemoteControlService } from "./remote";
+import { stripHarnessBlocks } from "../src/lib/harness-block-strip.mjs";
 import QRCode from "qrcode";
 import { readPersonalization, writePersonalization, applyPersonalizationToAgentsMd, buildAgentsMd, migrateGreetedForExistingUsers } from "./personalization";
 import { readAppSettings, readAppSettingsSync, saveAppSettings, type AppSettings } from "./app-settings";
@@ -471,7 +472,11 @@ const remote = new RemoteControlService({
     const messages: { role: "user" | "assistant" | "system"; text: string }[] = [];
     for (const turn of resumed.thread?.turns ?? []) {
       for (const item of turn.items ?? []) {
-        if (item.type === "userMessage") messages.push({ role: "user", text: (item.content ?? []).filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n") });
+        if (item.type === "userMessage") {
+          // 手机是「阅读」视角：常驻记忆 / 当前时间 / 会话告知等机器块，与桌面一样剥掉
+          const text = stripHarnessBlocks((item.content ?? []).filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n")).trim();
+          if (text) messages.push({ role: "user", text });
+        }
         else if (item.type === "agentMessage" && item.text?.trim()) messages.push({ role: "assistant", text: item.text });
       }
     }

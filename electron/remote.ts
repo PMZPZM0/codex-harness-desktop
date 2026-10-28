@@ -745,6 +745,19 @@ async function poll(rid){
   }
   el.className = "err"; el.textContent = "等待批准超时，请重试";
 }
+// 老朋友自动登录：accessToken 每次应用启动都会重生成、旧 cookie 必然失效 ——
+// 带着配对时拿到的设备秘密直接换新凭据，不再让人重新输码 + 电脑端再批一次。
+async function autoLogin(){
+  if (!deviceSecret) return;
+  el.className = "wait"; el.textContent = "正在自动登录…";
+  try {
+    const r = await fetch("/api/pair", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ deviceId, deviceName, deviceSecret }) });
+    const j = await r.json();
+    if (j.ok && j.approved) { el.className = "ok"; el.textContent = "已登录，正在进入…"; location.href = "/r/mobile"; return; }
+  } catch { /* 网络不通就留在表单 */ }
+  el.className = ""; el.textContent = "";
+}
+autoLogin();
 </script></html>`;
   }
 

@@ -1038,6 +1038,31 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     && /\.thread-row small\{[^}]*white-space:nowrap;overflow:hidden;text-overflow:ellipsis[^}]*\}/.test(pageSrc) ? ok : fail)(
     "【139b】标题与副标题都必须单行省略（多行正文会把行高撑爆）"
   );
+  (/class="new-thread"/.test(pageSrc) && /onclick="toggleThreads\(\)">← 返回/.test(pageSrc) ? ok : fail)(
+    "【139b】会话面板必须有「返回」（列表空白时否则无退路）且新建按钮走胶囊样式"
+  );
+  (/会话列表加载失败/.test(pageSrc) && /retry\.textContent = "重试"/.test(pageSrc) ? ok : fail)(
+    "【139b】会话列表加载失败必须显示原因 + 重试（引擎未就绪时不能只留一片白）"
+  );
+  const pairSrc = readFileSync(join(ROOT, "electron", "remote.ts"), "utf8");
+  const autoAt = pairSrc.indexOf("async function autoLogin()");
+  const autoBody = autoAt >= 0 ? pairSrc.slice(autoAt, pairSrc.indexOf("autoLogin();", autoAt)) : "";
+  (autoAt >= 0 && /^autoLogin\(\);$/m.test(pairSrc) ? ok : fail)(
+    "【139b】配对页必须尝试「设备秘密自动登录」—— accessToken 每次启动重生成，不自动换就得每次重批"
+  );
+  (/deviceSecret/.test(autoBody) && !/\bcode\b/.test(autoBody) ? ok : fail)(
+    "【139b】自动登录只凭设备秘密、不带配对码（带 code 等于又要求人输一次）"
+  );
+  (/\.msg\.user\{[^}]*var\(--accent-soft\)/.test(pageSrc) && !/\.msg\.user\{[^}]*#1e1e1c/.test(pageSrc) ? ok : fail)(
+    "【139b】用户气泡走浅色主色底，不得回到黑底白字"
+  );
+  const mainSrc = readMainSource();
+  const gmAt = mainSrc.indexOf("getThreadMessages:");
+  const gmEnd = gmAt >= 0 ? mainSrc.indexOf("newThread: async", gmAt) : -1;
+  const gmBody = gmEnd > gmAt ? mainSrc.slice(gmAt, gmEnd) : "";
+  (/stripHarnessBlocks\(/.test(gmBody) ? ok : fail)(
+    "【139b】手机读历史必须剥掉注入块（常驻记忆 / 当前时间），否则整段机器文本铺进气泡"
+  );
 }
 
 /* ══ 【140】看门狗是**有意停用**的，不得被"顺手接回来"（09-24，评估报告 §4.1 复核结论）══

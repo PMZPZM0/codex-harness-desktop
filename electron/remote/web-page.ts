@@ -43,31 +43,40 @@ async function doBind(){
     return `<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>Codex 对话</title><style>
 *{box-sizing:border-box}
-body{font-family:system-ui,sans-serif;background:#f7f7f5;margin:0;color:#23231f;display:flex;flex-direction:column;height:100vh}
-header{padding:12px 16px;background:#fff;border-bottom:1px solid #e7e7e4;display:flex;align-items:center;gap:10px;flex:0 0 auto}
-header h1{font-size:15px;margin:0;flex:1}
-header .status{font-size:11px;color:#1a7f37;background:#e7f3ea;border-radius:10px;padding:2px 8px}
-header button{flex:0 0 auto;width:auto;margin:0;padding:6px 10px;font-size:12px;background:#fff;color:#23231f;border:1px solid #d7d9d4;border-radius:8px}
+:root{--accent:#2f6bdd;--accent-soft:#eaf1fd;--line:#e8e8e4;--muted:#8a8a84;--ink:#23231f;--bg:#f7f7f5}
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);margin:0;color:var(--ink);display:flex;flex-direction:column;height:100vh;height:100dvh}
+header{padding:10px 14px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;flex:0 0 auto}
+header h1{font-size:15px;font-weight:600;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+header .status{font-size:11px;color:#1a7f37;background:#e7f3ea;border-radius:999px;padding:3px 9px;white-space:nowrap}
+header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:999px}
 #threads{position:fixed;inset:0;background:#fff;z-index:20;display:none;flex-direction:column}
 #threads.open{display:flex}
-#threads .list{flex:1;overflow:auto;padding:8px}
-.thread-row{padding:12px;border-bottom:1px solid #f0f0ee;cursor:pointer}
-.thread-row b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.thread-row small{display:block;margin-top:2px;color:#8a8a84;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#msglist{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
-.msg{max-width:86%;padding:10px 13px;border-radius:14px;font-size:14.5px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
-.msg.user{align-self:flex-end;background:#1e1e1c;color:#fff;border-bottom-right-radius:4px}
-.msg.assistant{align-self:flex-start;background:#fff;border:1px solid #e7e7e4;border-bottom-left-radius:4px}
-.msg.assistant.streaming{border-color:#e8b34b}
-.msg.system{align-self:center;background:transparent;color:#8a8a84;font-size:12px}
-.thinking-indicator{align-self:flex-start;display:flex;align-items:center;gap:6px;padding:8px 0;color:#8a8a84;font-size:12px}
+#threads .list{flex:1;overflow:auto;padding:4px 0 20px}
+.threads-head{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);background:#fff}
+.threads-head b{flex:1;font-size:15px;font-weight:600;text-align:center}
+.threads-head button{width:auto;margin:0;padding:7px 12px;font-size:12px;background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:999px}
+.threads-head .new-thread{background:var(--accent-soft);color:var(--accent);border-color:transparent;font-weight:600}
+.empty-tip{text-align:center;color:#adada6;padding:40px 16px;font-size:13px;line-height:1.8}
+.empty-tip button{width:auto;margin-top:10px;padding:7px 16px;font-size:13px;background:#fff;color:var(--accent);border:1px solid #cfdcf7;border-radius:999px}
+.thread-row{padding:13px 16px;border-bottom:1px solid #f2f2ef;cursor:pointer}
+.thread-row:active{background:#f6f6f3}
+.thread-row b{display:block;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.thread-row small{display:block;margin-top:3px;color:var(--muted);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.thread-row.active{background:var(--accent-soft)}
+#msglist{flex:1;overflow-y:auto;padding:16px 14px 24px;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:84%;padding:11px 14px;border-radius:16px;font-size:15px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
+.msg.user{align-self:flex-end;background:var(--accent-soft);color:var(--ink);border:1px solid #d9e4fb;border-bottom-right-radius:6px}
+.msg.assistant{align-self:flex-start;background:#fff;border:1px solid var(--line);border-bottom-left-radius:6px;box-shadow:0 1px 2px rgba(35,35,31,.04)}
+.msg.assistant.streaming{border-color:#e8b34b;box-shadow:0 1px 2px rgba(232,179,75,.12)}
+.msg.system{align-self:center;background:#efefec;color:var(--muted);font-size:12px;padding:4px 12px;border-radius:999px}
+.thinking-indicator{align-self:flex-start;display:flex;align-items:center;gap:6px;padding:6px 4px;color:var(--muted);font-size:12px}
 .thinking-indicator .dot{width:6px;height:6px;background:#e8b34b;border-radius:50%;animation:throb 1.2s infinite}
 @keyframes throb{0%,100%{opacity:.4;transform:scale(.8)}50%{opacity:1;transform:scale(1.2)}}
-.empty-tip{text-align:center;color:#b0b0a8;padding:40px 16px;font-size:13px}
-.thread-row.active{background:#f4f4f2}
-#inputbar{flex:0 0 auto;display:flex;gap:8px;padding:10px 12px;background:#fff;border-top:1px solid #e7e7e4;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
-#cmd{flex:1;padding:11px 14px;border:1px solid #d7d9d4;border-radius:12px;font-size:15px}
-#send{width:auto;margin:0;padding:11px 20px;font-size:14px;border-radius:12px}
+#inputbar{flex:0 0 auto;display:flex;gap:8px;align-items:center;padding:10px 12px;background:#fff;border-top:1px solid var(--line);padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+#cmd{flex:1;padding:12px 14px;border:1px solid var(--line);border-radius:14px;font-size:15px;background:#fafaf8;color:var(--ink);outline:none}
+#cmd:focus{border-color:var(--accent);background:#fff}
+#send{flex:0 0 auto;width:auto;margin:0;height:44px;padding:0 18px;font-size:14px;font-weight:600;color:#fff;background:var(--accent);border:0;border-radius:14px}
+#send:active{opacity:.85}
 .confirm-card{margin:40vh auto 0;max-width:340px;text-align:center}
 </style>
 <header>
@@ -76,7 +85,7 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 10px;font-size:12px;
   <span id="thread-label" style="font-size:11px;color:#8a8a84;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px"></span>
   <span class="status" id="status">连接中…</span>
 </header>
-<div id="threads"><div style="padding:12px 16px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center"><b>选择会话</b><button onclick="newThread()" style="margin:0">＋ 新会话</button></div><div class="list" id="thread-list"></div></div>
+<div id="threads"><div class="threads-head"><button onclick="toggleThreads()">← 返回</button><b>选择会话</b><button class="new-thread" onclick="newThread()">＋ 新建</button></div><div class="list" id="thread-list"></div></div>
 <div id="msglist"></div>
 <div id="inputbar"><input id="cmd" placeholder="输入消息，发送给 Codex"><button id="send" onclick="sendCmd()">发送</button></div>
 <script>
@@ -129,12 +138,29 @@ function threadTitle(t) {
   return line ? clipText(line, 24) : "未命名任务";
 }
 async function loadThreads() {
-  const r = await rpc({ type: "list-threads" });
   const el = document.getElementById("thread-list");
+  el.innerHTML = "<div class='empty-tip'>加载中…</div>";
+  let threads = [];
+  try {
+    const r = await rpc({ type: "list-threads" });
+    threads = r.threads || [];
+  } catch (e) {
+    // 引擎未就绪 / 凭据失效时不能只留一片白：给出原因与重试（手机上看不到控制台）
+    el.innerHTML = "";
+    const tip = document.createElement("div");
+    tip.className = "empty-tip";
+    tip.textContent = "会话列表加载失败：" + (e.message || "未知错误");
+    const retry = document.createElement("button");
+    retry.textContent = "重试";
+    retry.onclick = () => loadThreads();
+    tip.appendChild(document.createElement("br"));
+    tip.appendChild(retry);
+    el.appendChild(tip);
+    return;
+  }
   el.innerHTML = "";
-  const threads = r.threads || [];
   if (!threads.length) {
-    el.innerHTML = "<div class='empty-tip'>暂无会话，点击右上角「＋ 新会话」开始</div>";
+    el.innerHTML = "<div class='empty-tip'>暂无会话，点右上角「＋ 新建」开始</div>";
     return;
   }
   for (const t of threads) {
