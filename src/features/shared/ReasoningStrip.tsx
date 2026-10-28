@@ -50,6 +50,9 @@ export function ReasoningStrip({ head, text, running, revealing }: {
         {hasText && !expanded ? (
           <>
             <span className="reasoning-strip-sep" aria-hidden>·</span>
+            {/* ⛔ 10-28 用户（截图）：「后面有展开…展开折叠图标自适应在内容尾部就行，鼠标放上去展示，默认隐藏」
+                ⇒ 箭头放进 preview **内部**、紧贴正文末尾（不再被 flex:1 的 preview 顶到行尾），
+                   并去掉「展开 / 收起」两个字的文案（图标即语义，标题属性兜可读性）。 */}
             <span className={`reasoning-strip-preview${overflowing ? " is-overflowing" : ""}`} ref={previewRef} title={latestLine}>
               {running ? (
                 <span
@@ -62,11 +65,11 @@ export function ReasoningStrip({ head, text, running, revealing }: {
               ) : (
                 <span className="reasoning-strip-static" ref={contentRef}>{latestLine}</span>
               )}
+              <ChevronDown size={13} className="reasoning-strip-caret" aria-hidden />
             </span>
           </>
         ) : null}
-        {hasText ? <span className="reasoning-strip-hint">{expanded ? "收起" : "展开"}</span> : null}
-        {hasText ? <ChevronDown size={13} className="reasoning-strip-caret" /> : null}
+        {hasText && expanded ? <ChevronDown size={13} className="reasoning-strip-caret" aria-hidden /> : null}
       </button>
       {hasText && expanded ? (
         <div className="reasoning-strip-body">
