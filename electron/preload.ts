@@ -374,8 +374,6 @@ contextBridge.exposeInMainWorld("codex", {
   feishuQrCancel: () => __ipc("feishu:qr-cancel", 0, []) as Promise<{ ok: boolean }>,
   feishuQrStart: () => __ipc("feishu:qr-start", 0, []),
   feishuQrStatus: () => __ipc("feishu:qr-status", 0, []),
-  /* 10-18：用户点击「允许并预览」后放行该目录（持久化到 userData/trusted-paths.json）。只能由渲染层用户手势触发 */
-  allowFsPath: (path: string) => __ipc("fs:allow", 1, [{ path }]),
   fileExists: (path: string) => __ipc("fs:exists", 1, [{ path }]),
   readFile: (path: string, threadId?: string) => __ipc("fs:read", 1, [{ path, threadId }]),
   /* 在系统资源管理器中定位文件（可信根校验同 fs:read）；画布生成产物「打开文件夹」 */

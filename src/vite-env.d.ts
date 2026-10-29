@@ -743,8 +743,6 @@ interface Window {
     feishuQrCancel(): Promise<{ ok: boolean }>;
     feishuQrStart(): Promise<{ state: string; qr?: string; userCode?: string; name?: string; error?: string }>;
     feishuQrStatus(): Promise<{ state: string; qr?: string; userCode?: string; name?: string; error?: string }>;
-    /* 10-18：用户点击「允许并预览」后放行该目录（持久化到 userData/trusted-paths.json）。只能由渲染层用户手势触发 */
-    allowFsPath(path: string): Promise<{ ok: boolean; dir: string }>;
     fileExists(path: string): Promise<{ exists: boolean }>;
     readFile(path: string, threadId?: string): Promise<{ dataBase64: string; size: number }>;
     /* 在系统资源管理器中定位文件（可信根校验同 fs:read）；画布生成产物「打开文件夹」 */

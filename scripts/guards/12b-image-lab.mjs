@@ -51,10 +51,12 @@ ok(
   labDist.includes('"image-lab:read"') && /exports\.resolveImagePath\s*=/.test(labDist),
   "image-lab:read 已注册 + resolveImagePath 已导出（路径闸唯一入口，读通道与编辑共用）",
 );
-// ⛔ 三件套查**产物**（编译后仍在）；tsc 会把调用改写成 `!(0, runtime_refs_1.isInsideTrustedRoots)(candidate)`
+// ⛔ 10-29 用户令推翻了这里的「可信根」一项（「不用授权弹窗，不管哪里的文件都要能预览和编辑」）：
+//    图片工坊现在**故意**不判可信根 ⇒ 断言改成「扩展名白名单 + 大小上限仍在，且可信根被摘掉」，
+//    防的是有人把闸悄悄加回去（那会让工作区外的图片又变成"预览失败"，正是本次要修的症状）。
 ok(
-  /isInsideTrustedRoots\)?\(candidate\)/.test(labDist) && labDist.includes(".png") && /MAX_IMAGE_BYTES/.test(labDist),
-  "路径闸三件套（产物层）：可信根 + 图片扩展名白名单 + 大小上限（⛔ 任意路径读写 = XSS 读写全盘）",
+  labDist.includes(".png") && /MAX_IMAGE_BYTES/.test(labDist) && !/isInsideTrustedRoots\)?\(candidate\)/.test(labDist),
+  "路径闸两件套（产物层）：图片扩展名白名单 + 大小上限；⛔ 不再判可信根（10-29 用户令）",
 );
 ok(
   /exports\.imageEditCore\s*=/.test(labDist) && /exports\.imageInfoCore\s*=/.test(labDist),

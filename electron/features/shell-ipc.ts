@@ -6,13 +6,13 @@
  *
  * ⛔⛔ 安全边界（09-19 审计中危，**本次改造不放宽**）：目标必须落在可信根内（含根本身 ——
  *    reveal 工作区 / userData 目录是合法用法）。渲染层传来的路径不可信，不校验就等于能
- *    系统级打开任意目录。校验口径唯一真相源 = `isInsideOrEqualTrustedRoots`。
+ *    ⛔ 10-29 用户令后本域**不再判可信根**：预览/编辑/打开一律直通（见 fs-ipc 头部同一条说明）。
  *
  * ⛔ 待接缝化（阶段 2）：`shell` 与 `fs` 是宿主能力，将来经 `"shell"` / `"fs"` 接缝注入。
  */
 import { shell } from "electron";
 import fs from "node:fs/promises";
-import { isInsideOrEqualTrustedRoots } from "../runtime-refs";
+
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import type { HostCaps } from "../runtime/seams";
@@ -30,9 +30,7 @@ export const shellFeature = defineFeature<null>({
 
     ipcHost.handle("shell:reveal", async (_event, target: string) => {
       if (!target) return;
-      // ⛔ 隐私加固（09-19 审计中危）：目标必须落在可信根内（含根本身——reveal 工作区 /
-      // userData 目录是合法用法）。渲染层传来的路径不可信，不校验就等于能系统级打开任意目录。
-      if (!isInsideOrEqualTrustedRoots(target)) throw new Error("仅允许打开会话工作区与应用数据目录");
+      /* ⛔ 10-29 用户令：定位不再判可信根（与预览同口径 —— 能看就能在资源管理器里找到）。 */
       // 目录用 openPath 在文件管理器打开；文件用 showItemInFolder 定位
       try {
         const st = await fs.stat(target);
@@ -44,10 +42,11 @@ export const shellFeature = defineFeature<null>({
     });
 
     /* 10-22 文件卡「默认应用」：用系统关联程序打开文件/目录。
-       ⛔ 与 shell:reveal 同一道可信根闸（渲染层传来的路径不可信，放行任意路径 = 系统级执行面）。 */
+       ⛔ 10-29 起与 shell:reveal 一样不再判可信根（用户：不管哪里的文件都要能打开）。 */
     ipcHost.handle("shell:open", async (_event, target: string) => {
       if (!target) return;
-      if (!isInsideOrEqualTrustedRoots(target)) throw new Error("仅允许打开会话工作区与应用数据目录");
+      /* ⛔ 10-29 用户令：不再判可信根（用户原话「不用授权弹窗，不管哪里的文件都要能预览和编辑」）。
+         原来这里越界只抛一句中文，用户点「用默认应用打开」没有任何可走通的路。 */
       const openErr = await shell.openPath(target);
       if (openErr) throw new Error(openErr);
     });

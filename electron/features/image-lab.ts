@@ -21,7 +21,7 @@
  */
 import path from "node:path";
 import fs from "node:fs/promises";
-import { isInsideTrustedRoots, threadCwd } from "../runtime-refs";
+import { threadCwd } from "../runtime-refs";
 import { readBuiltinPlugins } from "../main";
 import { generateImageResilient } from "./builtin-ipc";
 import { defineFeature } from "../context";
@@ -53,8 +53,8 @@ export async function resolveImagePath(rawPath: string): Promise<string> {
   if (!IMAGE_EXTENSIONS.includes(path.extname(candidate).toLowerCase())) {
     throw new Error(`只支持图片文件（${IMAGE_EXTENSIONS.join(" / ")}）`);
   }
-  // ⛔ isInsideTrustedRoots 是内核独占判定（fs:read 同款，不经接缝）——任意路径读 = XSS 即可读全盘
-  if (!isInsideTrustedRoots(candidate)) throw new Error("路径不在可信目录内（会话工作目录 / 应用数据目录）");
+  /* ⛔ 10-29 用户令：不再判可信根 —— 任意位置的图片都要能看、能修（不再弹授权）。
+     仍然保留：图片扩展名白名单 + 必须存在 + 128MB 上限。 */
   const stat = await fs.stat(candidate).catch(() => null);
   if (!stat?.isFile()) throw new Error(`图片不存在：${rawPath}`);
   if (stat.size > MAX_IMAGE_BYTES) {
@@ -263,7 +263,7 @@ export async function imageEditCore(input: ImageEditInput): Promise<ImageEditRes
     let dest: string;
     if (input.output) {
       dest = path.resolve(String(input.output));
-      if (!isInsideTrustedRoots(dest)) throw new Error("输出路径不在可信目录内（会话工作目录 / 应用数据目录）");
+      /* ⛔ 10-29 用户令：显式 output 也不再判可信根（默认输出本来就写在源图旁边，两处口径要一致）。 */
     } else {
       const dir = path.dirname(source);
       const base = path.basename(source, srcExt);
