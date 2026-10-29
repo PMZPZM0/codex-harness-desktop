@@ -1668,6 +1668,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (androidSrc.includes("for (int attempt = 0; attempt < 3") && androidSrc.includes("removeIf") && androidSrc.includes("postDelayed(() -> web.loadUrl") ? ok : fail)(
       "【139e】冷启动自动登录要重试（中转未就绪不许让人白输码）+ Cookie 去重 + 进页前等一拍"
     );
+    (tunnelPage.includes("function maybeReauth") && tunnelPage.includes("data.error === \"unauthorized\"") ? ok : fail)(
+      "【139e】电脑端重启后旧页面 401 必须自动重载恢复（⛔ 不能只弹「加载失败：unauthorized」等到用户手点）"
+    );
     (relaySrc.includes("secretHash: typeof value.secretHash") ? ok : fail)(
       "【139e】已配对设备读盘必须带回 secretHash（丢了 = 重启电脑端后手机被迫重输码）"
     );
