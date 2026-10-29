@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 589,
+  "count": 593,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -893,6 +893,46 @@
       "paramsDecl": "filePath: string",
       "returns": "Promise<boolean>",
       "invokeArgs": "filePath",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "listCliAgents",
+      "channel": "cliagents:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ items: CliAgentEntry[]; categories: { key: string; label: string; hint: string }[] }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "10-29 CLI 智能体板块：分类表跟着列表下发（渲染层不复制第二份分类字面量）"
+    },
+    {
+      "name": "detectCliAgent",
+      "channel": "cliagents:detect",
+      "paramsImpl": "input?: { id?: string; bin?: string }",
+      "paramsDecl": "input?: { id?: string; bin?: string }",
+      "returns": "Promise<{ installed: boolean; path: string; version: string; error: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "只在用户点「检测」时调：有子进程（where/which + --version）"
+    },
+    {
+      "name": "saveCliAgent",
+      "channel": "cliagents:save",
+      "paramsImpl": "input?: { id?: string; name?: string; category?: string; bin?: string; installCmd?: string; docs?: string; description?: string; promptHint?: string; enabled?: boolean }",
+      "paramsDecl": "input?: { id?: string; name?: string; category?: string; bin?: string; installCmd?: string; docs?: string; description?: string; promptHint?: string; enabled?: boolean }",
+      "returns": "Promise<{ ok: boolean; error?: string; item?: CliAgentEntry }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "新增/更新；内置项不可删只能关停"
+    },
+    {
+      "name": "removeCliAgent",
+      "channel": "cliagents:remove",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "id",
       "cast": null,
       "note": null
     },
@@ -5807,7 +5847,7 @@
       "channel": "feishu-cli:status",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ installed: boolean; path: string; version: string; configured: boolean; loggedIn: boolean; user: string; detail: string; error: string }>",
+      "returns": "Promise<{ installed: boolean; path: string; version: string; configured: boolean; loggedIn: boolean; appId: string; user: string; detail: string; error: string }>",
       "invokeArgs": "",
       "cast": null,
       "note": "10-29 飞书官方 CLI（@larksuite/cli）状态：是否安装 / 是否配置应用 / 是否已登录"

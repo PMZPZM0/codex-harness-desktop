@@ -34,7 +34,7 @@ function openUrl(url: string): void {
   void shell.openExternal(url).catch(() => undefined);
 }
 
-type CliResult = { installed: boolean; path: string; version: string; configured: boolean; loggedIn: boolean; user: string; detail: string; error: string };
+type CliResult = { installed: boolean; path: string; version: string; configured: boolean; loggedIn: boolean; appId: string; user: string; detail: string; error: string };
 
 /** CLI 可执行文件候选（npm-global 的两种布局都查：win / mac 分叉见 toolchain） */
 function cliPath(): string {
@@ -94,7 +94,7 @@ let versionCache = { value: "", at: 0 };
 
 async function statusOf(): Promise<CliResult> {
   const binary = cliPath();
-  const base: CliResult = { installed: Boolean(binary), path: binary, version: "", configured: false, loggedIn: false, user: "", detail: "", error: "" };
+  const base: CliResult = { installed: Boolean(binary), path: binary, version: "", configured: false, loggedIn: false, appId: "", user: "", detail: "", error: "" };
   if (!binary) return base;
   try {
     if (!versionCache.value || Date.now() - versionCache.at > 60_000) {
@@ -118,6 +118,8 @@ async function statusOf(): Promise<CliResult> {
     const bot = identities?.bot ?? null;
     const userIdentity = identities?.user ?? null;
     base.configured = Boolean(data?.appId) || String(bot?.status ?? "").toLowerCase() === "ready" || data?.ok === true;
+    /* appId 是「重新配置（换个应用）」完成与否的**唯一判据**：切换后它一定变。 */
+    base.appId = String(data?.appId ?? "");
     const userStatus = String(userIdentity?.status ?? data?.user?.status ?? "").toLowerCase();
     base.loggedIn = userIdentity
       ? Boolean(userIdentity.available) || userStatus === "ready"
