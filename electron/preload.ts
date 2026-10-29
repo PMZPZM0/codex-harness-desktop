@@ -700,6 +700,12 @@ contextBridge.exposeInMainWorld("codex", {
   /* 开关内置技能的**全局**生效态并立即投影磁盘（cwd 可空；只动全局集，不改项目集） */
   setBuiltinSkillSwitch: (input: { name: string; enabled: boolean; cwd?: string }) => __ipc("skills:builtin-switch-set", 1, [input]),
   importSkill: () => __ipc("skills:import", 0, []),
+  /* 精选技能包（10-30）：三个第三方技能包的安装状态（已装技能名来自本板块自己写的 marker） */
+  listSkillPacks: () => __ipc("skill-packs:list", 0, []),
+  /* 下载仓库 skills/ 子树 → 逐个 auditSkill → 落 codex-home/skills → 重启引擎；同名目录跳过、不覆盖 */
+  installSkillPack: (input: { id: string }) => __ipc("skill-packs:install", 1, [input]),
+  /* 只删本板块 marker 记下的技能目录（⛔ 用户自建的目录不动） */
+  uninstallSkillPack: (input: { id: string }) => __ipc("skill-packs:uninstall", 1, [input]),
   listLocalSkills: () => __ipc("skills:local-list", 0, []),
   removeLocalSkill: (input: { folder: string; name?: string }) => __ipc("skills:local-remove", 1, [input]),
   installMarketSkill: (skill: unknown) => __ipc("skills:market-install", 1, [skill]),

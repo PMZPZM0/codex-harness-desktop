@@ -1158,6 +1158,43 @@ const CHECKS = [
         altUp.expanded && !altDown.expanded, JSON.stringify({ altUp, altDown }));
     },
   },
+  {
+    id: "skill-packs",
+    name: "📦 开发工具 · 精选技能包：3 行带许可/配套说明，面板只在二级弹窗（10-30）",
+    run: async (h) => {
+      /* 只验 UI 与清单贯通（真下载 37MB 不适合放进秒级验收）：卡片、许可徽标、配套工具行，
+         以及「面板只在二级弹窗里」这条两级 IA 纪律。 */
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await wait(600);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="开发工具"; }); if(!b) return 0; b.click(); return 1; })()`);
+      await wait(900);
+      const cardHit = await h.eval(`(function(){
+        const c=document.querySelector('.devtools-card[data-card="skill-packs"]');
+        if(!c) return null;
+        return { text:(c.textContent||"").trim(), stat:(c.querySelector(".devtools-card-stat")?.textContent||"").trim() };
+      })()`).catch(() => null);
+      h.check("① 一级卡片在位且带状态（未安装 / 已装 n / 读取中）",
+        Boolean(cardHit && cardHit.text.includes("精选技能包") && cardHit.stat.length > 0), JSON.stringify(cardHit));
+      const firstLevelPanel = await h.eval(`!!document.querySelector(".devtools-cards .skill-pack-row")`).catch(() => true);
+      h.check("② 面板没有内嵌在一级页（两级 IA）", firstLevelPanel === false, String(firstLevelPanel));
+      await h.eval(`document.querySelector('.devtools-card[data-card="skill-packs"]').click()`);
+      await h.waitFor(`document.querySelectorAll(".settings-dialog .skill-pack-row").length === 3`, { label: "三个技能包卡", timeoutMs: 20000 });
+      const packs = await h.eval(`[...document.querySelectorAll(".settings-dialog .skill-pack-row")].map(function(c){
+        return { id:c.dataset.pack||"", name:(c.querySelector(".skill-pack-line1 strong")?.textContent||"").trim(),
+          badge:((c.querySelector(".skill-pack-line3")?.textContent||"").match(/MIT|CC BY[^·]*/)||[""])[0].trim(),
+          companion:(c.querySelector(".skill-pack-line3")?.textContent||"").trim(),
+          button:(c.querySelector("button.primary-setting,button.secondary-setting")?.textContent||"").trim() };
+      })`).catch(() => null);
+      h.check("③ 三张卡各有：名称 / 许可徽标 / 配套工具行 / 动作按钮",
+        Array.isArray(packs) && packs.length === 3 && packs.every((p) => p.name && p.badge && p.companion.startsWith("配套") && p.button),
+        JSON.stringify(packs));
+      h.check("④ 清单来自主进程且三条 id 各不相同",
+        Array.isArray(packs) && new Set(packs.map((p) => p.id)).size === 3, JSON.stringify(packs && packs.map((p) => p.id)));
+      await h.eval(`document.querySelector(".settings-dialog-close")?.click()`);
+      await wait(300);
+    },
+  },
 ];
 
 if (flag("list")) {

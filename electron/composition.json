@@ -583,6 +583,13 @@
       "config": null
     },
     {
+      "id": "skill-packs",
+      "enabled": true,
+      "file": "features/skill-packs-ipc.ts",
+      "export": "skillPacksFeature",
+      "config": null
+    },
+    {
       "id": "skills",
       "enabled": true,
       "file": "features/skills-ipc.ts",

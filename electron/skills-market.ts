@@ -224,7 +224,7 @@ export function auditSkill(content: string, files: string[]) {
   return findings;
 }
 
-async function expandZip(zipPath: string, outputDir: string) {
+export async function expandZip(zipPath: string, outputDir: string) {
   if (process.platform === "win32") {
     const command = `$ErrorActionPreference = 'Stop'; Expand-Archive -LiteralPath '${psLiteral(zipPath)}' -DestinationPath '${psLiteral(outputDir)}' -Force`;
     await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-EncodedCommand", psEncoded(command)], { windowsHide: true, maxBuffer: 1024 * 1024 });

@@ -127,3 +127,35 @@ button.settings-card:hover .settings-card-arrow { color: var(--green); }
    进弹窗后由 body 提供边距 ⇒ 去掉自身的首尾外边距，避免翻倍留白。 */
 .settings-dialog-body > .settings-section { padding: 0; }
 .settings-dialog-body > .settings-section > :first-child { margin-top: 0; }
+
+/* ── 精选技能包（10-30）────────────────────────────────────────────
+   形态与「运行时与工具链」一致的**单行列表**：一整块细线框 + 行间分隔线，行内不套卡片。
+   10-30 用户实测「界面乱糟糟」：原来每行套一层卡片 + 两段长文 + 三个按钮 ⇒ 统一成
+   [图标] 名称/一句说明/小字（配套·许可·体积·仓库） … 右侧一个动作。
+   ⛔ 颜色只走主题变量。 */
+.skill-pack-list { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); overflow: hidden; }
+.skill-pack-row { display: flex; align-items: flex-start; gap: 10px; padding: 11px 14px; }
+.skill-pack-row + .skill-pack-row { border-top: 1px solid var(--line); }
+.skill-pack-icon {
+  flex: none; width: 28px; height: 28px; display: grid; place-items: center; margin-top: 1px;
+  border-radius: 8px; background: color-mix(in srgb, var(--green) 12%, var(--bg)); color: var(--green);
+}
+.skill-pack-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.skill-pack-line1 { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.skill-pack-line1 strong { font-size: 13px; font-weight: 600; }
+.skill-pack-state { font-style: normal; font-size: 10.5px; color: var(--green); }
+.skill-pack-line2 { font-size: 11.5px; line-height: 1.5; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skill-pack-line3 { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: 10.5px; color: var(--muted); }
+.skill-pack-link {
+  display: inline-flex; align-items: center; gap: 3px; border: 0; background: transparent; padding: 0;
+  color: var(--muted); font-size: 11px; cursor: pointer; text-decoration: none;
+}
+.skill-pack-link:hover { color: var(--link); text-decoration: underline; }
+.skill-pack-actions { flex: none; display: flex; align-items: center; gap: 6px; }
+.skill-pack-actions .primary-setting,
+.skill-pack-actions .secondary-setting { display: inline-flex; align-items: center; gap: 5px; }
+.skill-pack-remove { color: var(--muted); }
+.skill-pack-remove:hover { color: var(--danger, #c0392b); }
+.skill-pack-stage { font-size: 11px; color: var(--accent, var(--green)); }
+.skill-pack-result { font-size: 11px; color: var(--muted); }
+.skill-pack-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--danger, #c0392b); }

@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 592,
+  "count": 595,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -4090,6 +4090,36 @@
       "note": null
     },
     {
+      "name": "listSkillPacks",
+      "channel": "skill-packs:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ id: string; name: string; repo: string; license: string; licenseUrl: string; size: string; description: string; companion: string; installed: boolean; installedSkills: string[]; installedAt: string }[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "精选技能包（10-30）：三个第三方技能包的安装状态（已装技能名来自本板块自己写的 marker）"
+    },
+    {
+      "name": "installSkillPack",
+      "channel": "skill-packs:install",
+      "paramsImpl": "input: { id: string }",
+      "paramsDecl": "input: { id: string }",
+      "returns": "Promise<{ installed: string[]; skipped: string[]; rejected: string[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "下载仓库 skills/ 子树 → 逐个 auditSkill → 落 codex-home/skills → 重启引擎；同名目录跳过、不覆盖"
+    },
+    {
+      "name": "uninstallSkillPack",
+      "channel": "skill-packs:uninstall",
+      "paramsImpl": "input: { id: string }",
+      "paramsDecl": "input: { id: string }",
+      "returns": "Promise<{ removed: string[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "只删本板块 marker 记下的技能目录（⛔ 用户自建的目录不动）"
+    },
+    {
       "name": "listLocalSkills",
       "channel": "skills:local-list",
       "paramsImpl": "",
@@ -5621,6 +5651,16 @@
       "invokeArgs": "",
       "cast": null,
       "note": "输入框竖条 + 功能入口菜单的可扩展目录（内置 + userData/extensions.json）"
+    },
+    {
+      "name": "extensionsMenuSet",
+      "channel": "extensions:menu-set",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { entries: { id: string; label: string; icon?: string; order?: number; action: { type: "url" | "settings"; target: string } }[] }",
+      "returns": "Promise<{ ok: boolean; menu: MenuEntrySpec[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "10-29 保存功能入口的自定义设置页条目（整表覆盖 menu 字段，rail 保留；url/settings 白名单，40 条上限）"
     },
     {
       "name": "shortcutsRead",

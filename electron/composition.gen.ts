@@ -90,6 +90,7 @@ import { sessionWorkspaceFeature as feat_sessionspace } from "./features/session
 import { screenshotFeature as feat_screenshot } from "./features/screenshot-ipc";
 import { shellFeature as feat_shell } from "./features/shell-ipc";
 import { skillDisciplineFeature as feat_skill_discipline } from "./features/skill-discipline-ipc";
+import { skillPacksFeature as feat_skill_packs } from "./features/skill-packs-ipc";
 import { skillsFeature as feat_skills } from "./features/skills-ipc";
 import { soulMarketFeature as feat_soul_market } from "./features/soul-market-ipc";
 import { sshFeature as feat_ssh } from "./features/ssh-ipc";
@@ -211,6 +212,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "screenshot", plugin: feat_screenshot as Plugin<unknown>, config: null },
   { id: "shell", plugin: feat_shell as Plugin<unknown>, config: null },
   { id: "skill-discipline", plugin: feat_skill_discipline as Plugin<unknown>, config: null },
+  { id: "skill-packs", plugin: feat_skill_packs as Plugin<unknown>, config: null },
   { id: "skills", plugin: feat_skills as Plugin<unknown>, config: null },
   { id: "soul-market", plugin: feat_soul_market as Plugin<unknown>, config: null },
   { id: "ssh", plugin: feat_ssh as Plugin<unknown>, config: null },
