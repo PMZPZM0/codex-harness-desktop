@@ -71,7 +71,23 @@ export function useFilePreview({ workspace, onNotice }: Options) {
   // 最近一次请求的路径：慢响应回来时校验，防止连点多个文件后被旧响应覆盖
   const activeReqRef = useRef("");
 
-  async function openFile(path: string) {
+  /* ⛔⛔ 10-29 用户报「项目地址外的文件预览不了，总是显示预览失败 / 打开失败」——
+     一半原因是**相对路径**：命令卡与文件卡片给的常是 `./cmd-demo/a.txt` 这种相对形态，
+     直接丢给主进程会按**应用自己的 cwd**（安装目录）解析 ⇒ 必然"文件不存在或不可读"。
+     ⇒ 相对路径一律按当前会话工作目录拼成绝对路径；绝对路径原样透传（含盘符 / UNC / 根斜杠）。 */
+  function resolveOpenPath(raw: string): string {
+    const value = String(raw ?? "").trim();
+    if (!value) return value;
+    const absolute = /^[A-Za-z]:[\\/]/.test(value) || value.startsWith("\\\\") || value.startsWith("/");
+    if (absolute || !workspace) return value;
+    const base = workspace.replace(/[\\/]+$/, "");
+    const sep = base.includes("\\") ? "\\" : "/";
+    const rel = value.replace(/^\.\//, "").replace(/^[\\/]+/, "");
+    return `${base}${sep}${rel.replace(/[\\/]+/g, sep)}`;
+  }
+
+  async function openFile(rawPath: string) {
+    const path = resolveOpenPath(rawPath);
     activeReqRef.current = path;
     setFileTabs((prev) => (prev.includes(path) ? prev : [...prev, path]));
     const cached = cacheRef.current.get(path);
