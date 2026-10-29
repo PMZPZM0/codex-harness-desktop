@@ -8,7 +8,9 @@ export {
   setFunctionMenuSettingsTargets,
   setFunctionMenuSettingsOpener,
   openSettingsFromFunctionMenu,
+  appendFunctionMenuItems,
   bumpCustomMenuRevision,
+  removeFunctionMenuItems,
   useCustomMenuRevision,
   useFunctionMenuSettingsTargets,
 } from "./store";
