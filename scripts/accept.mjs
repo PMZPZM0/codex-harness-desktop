@@ -1195,6 +1195,51 @@ const CHECKS = [
       await wait(300);
     },
   },
+  {
+    id: "skill-update-panel",
+    name: "🔄 控制台 · 技能自动更新：能进入面板、能装能卸、有反馈（10-30）",
+    run: async (h) => {
+      /* 只验入口与面板结构（检查更新要打市场接口，不放进秒级验收；更新链路由 12j 守卫钉）。 */
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await wait(600);
+      const navTo = async (label) => h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()===${JSON.stringify(label)}; }); if(!b) return 0; b.click(); return 1; })()`);
+      await navTo("控制台");
+      // 开关行要等 autoUpdate:status（内部最多 2.5s 扫描）回来才渲染
+      await h.waitFor(`[...document.querySelectorAll(".card-auto-update button")].some(function(b){ return (b.textContent||"").trim()==="技能更新…"; })`, { label: "技能更新入口", timeoutMs: 20000 });
+      await wait(300);
+      const entry = await h.eval(`(function(){
+        const card=document.querySelector(".card-auto-update");
+        if(!card) return null;
+        const btn=[...card.querySelectorAll("button")].find(function(b){ return (b.textContent||"").trim()==="技能更新…"; });
+        const page=[...card.querySelectorAll("button")].find(function(b){ return (b.textContent||"").trim()==="技能页"; });
+        const sw=card.querySelector(".settings-toggle-row");
+        return { hasUpdate:!!btn, hasPage:!!page, hasSwitch:(sw?.textContent||"").includes("技能自动更新") };
+      })()`).catch(() => null);
+      h.check("① 技能行有「技能更新…」「技能页」两个出口 + 原来的开关还在",
+        Boolean(entry && entry.hasUpdate && entry.hasPage && entry.hasSwitch), JSON.stringify(entry));
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".card-auto-update button")].find(function(x){ return (x.textContent||"").trim()==="技能更新…"; }); b&&b.click(); return !!b; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-dialog .skill-update-panel")`, { label: "技能更新面板", timeoutMs: 8000 });
+      await wait(400);
+      const panel = await h.eval(`(function(){
+        const p=document.querySelector(".settings-dialog .skill-update-panel");
+        if(!p) return null;
+        const texts=[...p.querySelectorAll("button")].map(function(b){ return (b.textContent||"").trim(); });
+        return { texts, log:!!p.querySelector(".skill-update-log"), list:!!p.querySelector(".skill-update-list"), switches:p.querySelectorAll(".settings-toggle-row").length };
+      })()`).catch(() => null);
+      h.check("② 面板有：检查更新 / 更新全部 / 去技能市场安装",
+        Boolean(panel && panel.texts.some((t) => t.includes("检查更新")) && panel.texts.some((t) => t.includes("更新全部")) && panel.texts.some((t) => t.includes("去技能市场安装"))),
+        JSON.stringify(panel && panel.texts));
+      h.check("③ 面板带安装反馈日志 + 技能行列表，且没有第二个开关",
+        Boolean(panel && panel.log && panel.list && panel.switches === 0), JSON.stringify({ log: panel?.log, list: panel?.list, switches: panel?.switches }));
+      await h.eval(`document.querySelector(".settings-dialog-close")?.click()`);
+      await wait(500);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".card-auto-update button")].find(function(x){ return (x.textContent||"").trim()==="技能页"; }); b&&b.click(); return !!b; })()`);
+      await wait(1200);
+      const page = await h.eval(`(document.querySelector(".settings-modal .settings-nav button.active")?.textContent||"").trim()`).catch(() => "");
+      h.check("④ 点「技能页」直接进入技能设置页（安装与批量管理在那里）", page === "技能", String(page));
+    },
+  },
 ];
 
 if (flag("list")) {

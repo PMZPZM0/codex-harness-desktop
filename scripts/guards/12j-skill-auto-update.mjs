@@ -28,6 +28,8 @@ const ok = (cond, label) => {
 const read = (p) => {
   try { return readFileSync(join(ROOT, p), "utf8"); } catch { return ""; }
 };
+/** 剥注释后再匹配：本仓注释里常引用代码片段，裸正则会被注释顶成假红/假绿。 */
+const codeOnly = (s) => String(s).replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/[^\n]*/g, "$1");
 
 console.log("【① 插件页只留一份更新入口】");
 const pluginsPage = read("src/features/settings-plugins/PluginsMarketSection.tsx");
@@ -73,6 +75,28 @@ const skillsIpc = read("electron/features/skills-ipc.ts");
 ok(/runSkillAutoUpdate/.test(skillsIpc) && /checkSkillUpdateRows\(\)/.test(skillsIpc), "技能后台循环存在并复用检查函数");
 ok(/row\.state !== "update"[\s\S]{0,120}updateSkillFolder\(row\.folder\)/.test(skillsIpc), "技能只更新有变化的项");
 ok(/readAppSettingsSync\(app\.getPath\("userData"\)\)\.skillAutoUpdate/.test(skillsIpc), "技能循环读 skillAutoUpdate");
+/* ★ 10-30 用户令：「能安装也要能卸载，还要能进入技能自动更新功能，还要下载安装反馈」。 */
+ok(/updated\.push\(row\.name\)/.test(skillsIpc) && /type: "skill-auto-update"/.test(skillsIpc),
+  "后台更新有结果时广播 skill-auto-update（⛔ 原来全程静默，用户不知道它动过技能目录）");
+ok(/if \(updated\.length \|\| failed\)/.test(skillsIpc) || /if \(updated\.length \|\| failed /.test(skillsIpc),
+  "全部一致时不打扰（只有真动过或有失败才广播）");
+
+console.log("【⑥ 控制台入口 + 技能更新面板（10-30）】");
+const cardSrc = codeOnly(read("src/features/settings-general/AutoUpdateCard.tsx"));
+const panelSrc = codeOnly(read("src/features/settings-general/SkillUpdatePanel.tsx"));
+ok(/技能更新…/.test(cardSrc) && /setSkillPanelOpen\(true\)/.test(cardSrc) && /<SkillUpdatePanel/.test(cardSrc),
+  "控制台技能行能进入技能更新面板（不再是只有一个开关）");
+ok(/onOpenSkills\?\.\(true\)/.test(cardSrc) && /onOpenSkills\?\.\(false\)/.test(cardSrc),
+  "两个出口：技能页（安装与批量管理）/ 技能市场安装");
+ok(/window\.codex\.checkSkillUpdates\(\)/.test(panelSrc) && /window\.codex\.updateSkill\(/.test(panelSrc),
+  "面板能检查更新并逐项更新");
+ok(/window\.codex\.removeLocalSkill\(/.test(panelSrc) && /openAppConfirm/.test(panelSrc),
+  "面板能卸载（走 openAppConfirm 确认，不静默删目录）");
+ok(/onHarnessEvent/.test(panelSrc) && /skill-install/.test(panelSrc) && /skill-update-log/.test(panelSrc),
+  "面板有下载安装反馈（进度事件 + 日志）");
+ok(!/ToggleSwitch/.test(panelSrc), "⛔ 面板里不再画第二个开关（开关只有控制台那一个真相源）");
+ok(/event\.type === "skill-auto-update"/.test(read("src/features/app-state/parts/part05/01-seg.tsx")),
+  "后台更新结果会弹 toast（渲染层接住了广播）");
 
 console.log("【⑤ 台账同步】");
 const ledger = read("docs/FEATURE-LEDGER.md");

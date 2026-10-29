@@ -294,10 +294,17 @@ export const skillsFeature = defineFeature<null>({
       autoUpdateRunning = true;
       try {
         const rows = await checkSkillUpdateRows();
+        const updated: string[] = [];
+        let failed = 0;
         for (const row of rows) {
           if (row.state !== "update") continue;
-          try { await updateSkillFolder(row.folder); }
-          catch { /* 单个失败（下架/网络/审查不过）不影响其余；下个周期再试 */ }
+          try { await updateSkillFolder(row.folder); updated.push(row.name); }
+          catch { failed += 1; /* 单个失败（下架/网络/审查不过）不影响其余；下个周期再试 */ }
+        }
+        /* 10-30 用户令「下载安装反馈」：后台更新原来**全程静默**（用户不知道它动过技能目录）。
+           ⇒ 有结果就广播一条，渲染层弹 toast；⛔ 什么都没更新（全部一致）时不打扰。 */
+        if (updated.length || failed) {
+          sendToWindow("harness:event", { type: "skill-auto-update", updated, failed, at: Date.now() });
         }
       } catch { /* 检查失败：静默，下个周期再试 */ }
       finally { autoUpdateRunning = false; }

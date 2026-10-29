@@ -2132,3 +2132,38 @@
   border-top: 1px solid var(--line-soft);
   flex: none;
 }
+
+/* ── 技能内容更新面板（10-30）──────────────────────────────────────────
+   控制台「技能自动更新」行 → 「技能更新…」弹窗。列表形态与设置页一致：
+   一行一个市场技能（状态图标 + 名称/说明 + 更新/卸载），下面一条日志给下载安装反馈。
+   ⛔ 颜色只走主题变量。 */
+.auto-update-switch-actions { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.skill-update-panel { gap: 10px; }
+.skill-update-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.skill-update-actions .primary-setting,
+.skill-update-actions .secondary-setting { display: inline-flex; align-items: center; gap: 5px; }
+.skill-update-stage { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--accent, var(--green)); font-size: 11.5px; }
+.skill-update-error { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--danger, #c0392b); font-size: 11.5px; }
+.skill-update-list { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); overflow: hidden; }
+.skill-update-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; }
+.skill-update-row + .skill-update-row { border-top: 1px solid var(--line); }
+.skill-update-state { flex: none; width: 22px; height: 22px; display: grid; place-items: center; color: var(--muted); }
+.skill-update-state.update { color: var(--accent, var(--green)); }
+.skill-update-state.current { color: var(--green); }
+.skill-update-state.unresolved { color: var(--muted); }
+.skill-update-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.skill-update-copy strong { font-size: 12.5px; display: flex; align-items: baseline; gap: 8px; }
+.skill-update-copy strong em { font-style: normal; font-size: 10.5px; color: var(--muted); }
+.skill-update-row[data-state="update"] .skill-update-copy strong em { color: var(--accent, var(--green)); }
+.skill-update-copy small { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.skill-update-buttons { flex: none; display: flex; align-items: center; gap: 6px; }
+.skill-update-buttons .primary-setting,
+.skill-update-buttons .secondary-setting { display: inline-flex; align-items: center; gap: 5px; }
+.skill-update-remove { color: var(--muted); }
+.skill-update-remove:hover { color: var(--danger, #c0392b); }
+.skill-update-log {
+  max-height: 140px; overflow: auto; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px;
+  background: color-mix(in srgb, var(--line) 22%, var(--bg));
+  display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--muted);
+}
+.skill-update-remove.confirming { color: var(--danger, #c0392b); border-color: color-mix(in srgb, var(--danger, #c0392b) 45%, var(--line)); }

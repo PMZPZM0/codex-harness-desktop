@@ -18,7 +18,7 @@ import { BuiltinSkillSwitch } from "./BuiltinSkillSwitch";
 import { AutoUpdateCard } from "./AutoUpdateCard";
 import { SettingsPageHero } from "../../components/SettingsPageHero";
 
-export type GeneralSettingsSectionProps = { globalPermApproval: any; applyGlobalPermissionMode: any; workspace: any; chooseWorkspace: any; userDataPath: any; setNotice: any; rightOpen: any; setRightOpen: any; capabilityHint: any; desktopAuto: any; groupBusy: any; toggleDesktopAuto: any; browserAuto: any; toggleBrowserAuto: any; ponytailOn: any; applyGroup: any; hardwareAccel: any; changeHardwareAccel: any; restartPending: any; SHORTCUT_GROUPS: any; setShortcutsOpen: any; engineVersion: any; engineCheck: any; engineUpdating: any; checkEngineUpdateNow: any; performEngineUpdateNow: any; engineUpdatePercent: any; engineUpdateStageText: any; engineUpdateLog: any; engineUpdateResult: any; relaunchCountdown: any; downloadSource: any; adaptiveTone: any; changeAdaptiveTone: any; thread: any; readMood: any };
+export type GeneralSettingsSectionProps = { globalPermApproval: any; applyGlobalPermissionMode: any; workspace: any; chooseWorkspace: any; userDataPath: any; setNotice: any; rightOpen: any; setRightOpen: any; capabilityHint: any; desktopAuto: any; groupBusy: any; toggleDesktopAuto: any; browserAuto: any; toggleBrowserAuto: any; ponytailOn: any; applyGroup: any; hardwareAccel: any; changeHardwareAccel: any; restartPending: any; SHORTCUT_GROUPS: any; setShortcutsOpen: any; engineVersion: any; engineCheck: any; engineUpdating: any; checkEngineUpdateNow: any; performEngineUpdateNow: any; engineUpdatePercent: any; engineUpdateStageText: any; engineUpdateLog: any; engineUpdateResult: any; relaunchCountdown: any; downloadSource: any; adaptiveTone: any; changeAdaptiveTone: any; thread: any; readMood: any; onOpenSkills?: (manage: boolean) => void; openAppConfirm?: (title: string, text: string, confirmLabel?: string) => Promise<boolean> };
 
 /* ══ 配置目录自定义（09-25）═══════════════════════════════════════════════
  * 自持状态小组件（不占 bag）。写的是主进程指路牌（data-dir.json），
@@ -270,7 +270,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                       </div>
                     </div>
 
-                    <div className="settings-exp-grid-item card-auto-update"><AutoUpdateCard onNotice={setNotice} downloadSource={downloadSource} /></div>
+                    <div className="settings-exp-grid-item card-auto-update"><AutoUpdateCard onNotice={setNotice} downloadSource={downloadSource} onOpenSkills={props.onOpenSkills} openAppConfirm={props.openAppConfirm} /></div>
                   </section>
     </>
   );

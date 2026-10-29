@@ -20,6 +20,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Boxes, Check, Cpu, Globe2, Monitor, Package, Puzzle, RefreshCw, ScanSearch, ShieldCheck, Sparkles, Wand2 } from "lucide-react";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
+import { SettingsDialog } from "../../components/SettingsDialog";
+import { SkillUpdatePanel } from "./SkillUpdatePanel";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 type SwitchRow = {
@@ -94,7 +96,10 @@ function describeComponent(row: ComponentRow): string {
 
 const SOURCE_LABEL: Record<string, string> = { auto: "国内镜像优先", mirror: "国内镜像", direct: "官方源直连", proxy: "代理隧道", ghproxy: "国内镜像优先", ghfast: "国内镜像优先" };
 
-export function AutoUpdateCard({ onNotice, downloadSource }: { onNotice?: (text: string) => void; downloadSource?: string }) {
+export function AutoUpdateCard({ onNotice, downloadSource, onOpenSkills, openAppConfirm }: { onNotice?: (text: string) => void; downloadSource?: string; onOpenSkills?: (manage: boolean) => void; openAppConfirm?: (title: string, text: string, confirmLabel?: string) => Promise<boolean> }) {
+  /* 10-30：技能行多两个出口 —— 「技能更新」打开本面板（检查/逐项更新/卸载），
+     「技能页」跳到技能设置页（安装与批量管理在那）。⛔ 不在控制台再造一个市场。 */
+  const [skillPanelOpen, setSkillPanelOpen] = useState(false);
   const [switches, setSwitches] = useState<SwitchRow[]>([]);
   const [rows, setRows] = useState<ComponentRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -233,6 +238,12 @@ export function AutoUpdateCard({ onNotice, downloadSource }: { onNotice?: (text:
           <strong>{row.kind === "skill" ? "技能自动更新" : row.kind === "plugin" ? "插件自动更新" : row.label}</strong>
           <small>{text}</small>
         </span>
+        {row.kind === "skill" ? (
+          <span className="auto-update-switch-actions">
+            <button type="button" className="ghost-button tiny" title="检查 / 更新 / 卸载市场技能" onClick={() => setSkillPanelOpen(true)}>技能更新…</button>
+            <button type="button" className="ghost-button tiny" title="打开技能设置页（安装与批量管理）" onClick={() => onOpenSkills?.(true)}>技能页</button>
+          </span>
+        ) : null}
         <ToggleSwitch
           checked={row.enabled}
           disabled={Boolean(busy[row.id])}
@@ -245,6 +256,7 @@ export function AutoUpdateCard({ onNotice, downloadSource }: { onNotice?: (text:
   };
 
   return (
+    <>
     <div className="settings-card">
       <div className="settings-card-head">
         <RefreshCw size={15} />
@@ -341,5 +353,15 @@ export function AutoUpdateCard({ onNotice, downloadSource }: { onNotice?: (text:
         {error ? <p className="settings-card-hint">{error}</p> : null}
       </div>
     </div>
+    {skillPanelOpen && (
+      <SettingsDialog title="技能内容更新" icon={<Sparkles size={15} />} hint="检查 / 更新 / 卸载市场技能 · 本地导入不参与" size="md" onClose={() => setSkillPanelOpen(false)}>
+        <SkillUpdatePanel
+          setNotice={onNotice ? (title: string, detail?: string) => onNotice(detail ? `${title}：${detail}` : title) : undefined}
+          openAppConfirm={openAppConfirm}
+          onOpenMarket={() => { setSkillPanelOpen(false); onOpenSkills?.(false); }}
+        />
+      </SettingsDialog>
+    )}
+    </>
   );
 }
