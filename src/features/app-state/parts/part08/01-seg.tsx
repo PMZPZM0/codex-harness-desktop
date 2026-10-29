@@ -225,6 +225,8 @@ bag.cascadeTeamCluster = cascadeTeamCluster as typeof bag.cascadeTeamCluster;
         requestAnimationFrame(() => bag.composerInputRef.current?.focus());
       }
       // 提示浮层（**窗口正中间** / 3 秒自动消失 / 可手动关，09-23 改）；token 递增保证连续归档都拿到完整 3 秒
+      /* 10-29：归档只**打状态标记**，工作区目录保留 —— 取消归档后要能接着用同一个目录。 */
+      void window.codex.sessionspaceSetState?.(id, "archived").catch(() => undefined);
       bag.setArchiveToast((current) => ({ name: archivedName, token: (current?.token ?? 0) + 1 }));
     } catch (error: any) {
       const msg = String(error?.message ?? error);
@@ -293,6 +295,8 @@ bag.clearCurrentConversation = clearCurrentConversation as typeof bag.clearCurre
     // 同 archiveThread（09-26）：unarchive 也曾被静默吞错（历史归档区点恢复没反应 = 引擎报错看不见）
     try {
       await window.codex.request("thread/unarchive", { threadId: id });
+      /* 10-29：回到 active（目录还在，见 archiveThread） */
+      void window.codex.sessionspaceSetState?.(id, "active").catch(() => undefined);
       bag.setThreads((current) => current.filter((entry) => entry.id !== id));
     } catch (error: any) {
       console.error("[unarchive] 取消归档失败:", error);
@@ -732,6 +736,8 @@ bag.buildDynamicTools = buildDynamicTools as typeof bag.buildDynamicTools;
          建会话前目录暂存在 pendingDir（还没 id）⇒ 这里拿到 id 后迁到 dirByThread[tid]，
          之后这个会话永远用自己那一档，切到别的指挥中枢也不会串。 */
       if (bossDirFor("")) setBossDirChosen(bossDirFor(""), tid);
+      /* 10-29：工作区由**主进程**在 thread/start 的响应里建（那里拿到的是引擎实际 cwd；
+         渲染层的 bag.workspace 在新建会话这一刻可能还没落定 —— 实测为空、一个都没建出来）。 */
       if (!loadThreadModel(tid)) saveThreadModel(tid, bag.modelId);
       if (!loadThreadEffort(tid) && bag.effort) saveThreadEffort(tid, bag.effort);
       saveThreadPermissions(tid, bag.sandbox, bag.approvalPolicy);

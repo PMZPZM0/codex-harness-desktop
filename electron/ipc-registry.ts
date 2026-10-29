@@ -384,6 +384,13 @@ export const IPC_DOMAINS: IpcDomainEntry[] = [
     channels: ["scratch:create"],
     note: "09-21 拆出：跨域符号经 main 导出的活绑定取用",
   },
+  /* 10-29 用户令：每个会话在**项目地址下**一个专属工作区（生命周期：建→归档保留→删除清理）。
+     ⛔ 工作区目录**不是**记忆 workspace —— 记忆仍按项目根寻址（见 session-workspace.ts 头注）。 */
+  { prefix: "sessionspace", count: 6, status: "in-features", file: "features/session-workspace-ipc.ts",
+    channels: ["sessionspace:ensure", "sessionspace:state", "sessionspace:list",
+      "sessionspace:set-state", "sessionspace:remove", "sessionspace:gc"],
+    note: "会话专属工作区：建/查/列/改态/删/收孤儿；无删除类越界（安全闸在实现里）",
+  },
   { prefix: "custom-model", count: 12, status: "in-features", file: "features/custom-model-ipc.ts",
     channels: ["custom-model:apply", "custom-model:list", "custom-model:probe", "custom-model:read", "custom-model:remove", "custom-model:remove-model", "custom-model:save", "custom-model:select", "custom-model:set-effort", "custom-model:set-enabled", "custom-model:set-model", "custom-model:upsert-model"],
     note: "09-21 拆出：跨域符号经 main 导出的活绑定取用",

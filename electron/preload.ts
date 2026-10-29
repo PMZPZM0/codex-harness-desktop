@@ -932,6 +932,18 @@ contextBridge.exposeInMainWorld("codex", {
   dataaccessVaultSave: (input: { threadId: string; item: Record<string, unknown> }) => __ipc("dataaccess:vault-save", 1, [input]),
   /* 清内置浏览器（persist:harness-browser）的登录态/缓存；kind=all 连缓存一起清 */
   browserClearData: (kind?: string) => __ipc("browser:clear-data", 0, [kind]),
+  /* 为会话建专属工作区 <project>/.codex-harness/sessions/<threadId>（幂等） */
+  sessionspaceEnsure: (threadId: string, projectRoot: string) => __ipc("sessionspace:ensure", 2, [threadId, projectRoot]),
+  /* 查某会话的工作区记录 */
+  sessionspaceState: (threadId: string) => __ipc("sessionspace:state", 1, [threadId]),
+  /* 列全部会话工作区记录 */
+  sessionspaceList: () => __ipc("sessionspace:list", 0, []),
+  /* 改状态 active/archived（删除走 remove） */
+  sessionspaceSetState: (threadId: string, state: string) => __ipc("sessionspace:set-state", 2, [threadId, state]),
+  /* 删会话工作区（目录+记录）；有安全闸，只删 sessions 下本进程算出的路径 */
+  sessionspaceRemove: (threadId: string) => __ipc("sessionspace:remove", 1, [threadId]),
+  /* 收口孤儿：记录在目录不在 / 目录在记录不在（后者超过 maxAgeDays 才删） */
+  sessionspaceGc: (options?: { maxAgeDays?: number; dryRun?: boolean }) => __ipc("sessionspace:gc", 0, [options]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（106 个能力域 / 581 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（107 个能力域 / 587 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -400,6 +400,10 @@ SkillHub **人格市场**（skillhub.cn/soul，16 套现成人格）：list 浏�
 ### scratch（1 通道）
 临时便签（快速记一条）
 通道：scratch:create
+
+### sessionspace（6 通道）
+会话专属工作区（10-29）：每个会话在项目地址下有一个 \`<project>/.codex-harness/sessions/<threadId>/\`，作为本会话的产物与临时落点。生命周期：新建即建、归档保留（可恢复）、永久删除时目录一并清理、启动时收口孤儿。⛔ 它不是记忆 workspace —— 项目记忆仍按项目根寻址（跨会话共享），会话私有走 private 层
+通道：sessionspace:ensure, sessionspace:state, sessionspace:list, sessionspace:set-state, sessionspace:remove, sessionspace:gc
 
 ### custom-model（12 通道）
 自定义模型供应商（接入任意 OpenAI 兼容端点：CRUD/探测/测活）

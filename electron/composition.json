@@ -548,6 +548,13 @@
       "config": null
     },
     {
+      "id": "sessionspace",
+      "enabled": true,
+      "file": "features/session-workspace-ipc.ts",
+      "export": "sessionWorkspaceFeature",
+      "config": null
+    },
+    {
       "id": "screenshot",
       "enabled": true,
       "file": "features/screenshot-ipc.ts",
