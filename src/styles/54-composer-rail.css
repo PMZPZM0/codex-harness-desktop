@@ -417,8 +417,44 @@
    触发条件取窗口宽 1100：这一档以下主区已被侧栏挤窄，竖条再往左外侧长会顶到侧栏
    （实测 1080 宽窗口里 rail 左缘已贴到侧栏右缘）。
    ⛔ 挪进内部就必须给正文让位（`.composer-editor` 的 padding-left），否则第一行文字被图标压住。 */
-/* ── 10-29 用户：「主要小尺寸的」───────────────────────────────────────────
-   这里原本有一条 `@media (max-width: 1100px)`：小屏把图标塞进输入框**内部左上角横排**，
-   还给正文加了 padding-top:40 让位（用户截图看到的就是这个形态，被判不合格）。
-   ⇒ 整条删掉：小尺寸与宽屏**同一套形态** —— 图标两列骑在左边框线上（69×104，装得进框高），
-      空间不够时它盖在侧栏上（z-index 40），而不是变形或钻进框里。 */
+
+/* ── 10-29 用户定稿的三态（原话）：「三种状态，两排，一排长条，跟输入最下面对齐，
+      最小瓶，就在输入框上面展示」─────────────────────────────────────────────
+   ① 两排（默认）：3 个一列 × 两列，69×104，垂直居中骑线 —— 上面的基础规则。
+   ② 一排长条：收成**一列到底**，且**底边对齐输入框底边**（向上溢出，不往输入框里长）。
+   ③ 最小屏：整条挪到**输入框上面**横排（不再挤在左侧，也就不会被侧栏盖住）。
+   判据在组件里（avail 三级），这里只管形态。 */
+.composer-rail.is-single .composer-rail-icons {
+  flex-flow: column nowrap;   /* 一列到底，不换列 */
+  max-height: none;
+  /* ⛔ 用户要的是「跟输入最下面对齐」：不是上下居中溢出，而是**贴输入框底边**往上长。
+     rail 本体 top/bottom 各 -8（比输入框高 16），所以底边再加 8 补偿。 */
+  align-self: flex-end;
+  margin-bottom: 8px;
+}
+
+.composer-rail.is-top {
+  right: auto;
+  left: 0;
+  top: auto;
+  bottom: 100%;              /* 整条到输入框上方 */
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding-bottom: 2px;
+}
+.composer-rail.is-top .composer-rail-toggle {
+  transform: none;           /* 横条的手柄：一条短横，不再压线 */
+  width: 40px;
+  height: 12px;
+}
+.composer-rail.is-top .composer-rail-grip {
+  width: 22px;
+  height: 4px;
+}
+.composer-rail.is-top .composer-rail-icons {
+  flex-flow: row nowrap;     /* 一排横放 */
+  max-height: none;
+  overflow: visible;
+  margin: 4px 0 0;
+}
