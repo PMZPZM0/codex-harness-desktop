@@ -85,9 +85,13 @@ export class MemoryStore {
 
   remoteStatus() { return { configured: Boolean(this.remote), endpoint: this.remote?.endpoint ?? "" }; }
 
-  async recall(query: string, opts?: { workspace?: string; strictWorkspace?: boolean }) {
+  async recall(query: string, opts?: { workspace?: string; strictWorkspace?: boolean; threadId?: string }) {
     if (!this.remote) return { context: (await this.search(query, 10, opts)).map((entry) => `[${entry.category}] ${entry.content}`).join("\n"), remote: false };
-    const response = await this.remoteRequest("/recall", { query, session_key: this.remote.sessionKey, user_id: this.remote.userId });
+    /* ⛔⛔ 10-29 审查：云端召回的 session_key 必须**带上会话 id**。
+       原来只发 this.remote.sessionKey（网关级常量）⇒ 云端模式下所有会话共享一个召回空间，
+       而 captureTurn 早就用了 `${sessionKey}:${threadId}`（写入按会话、召回不按会话 = 单向串扰）。 */
+    const sessionKey = opts?.threadId ? `${this.remote.sessionKey}:${opts.threadId}` : this.remote.sessionKey;
+    const response = await this.remoteRequest("/recall", { query, session_key: sessionKey, user_id: this.remote.userId });
     return { context: String(response.context ?? ""), remote: true, memoryCount: response.memory_count ?? 0 };
   }
 

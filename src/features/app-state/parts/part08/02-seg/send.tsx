@@ -377,9 +377,13 @@ export async function send(bag: Bag, event?: FormEvent) {
            （不相关的记忆挂在本轮开头是纯噪声，实跑验证过）。
            ⛔ 走的是**同一个 handler**：主会话、被调度专家、用户亲自与某角色对话，
               在这里完全同路 —— 这是「共用同一套实现」的关键。 */
+        /* ⛔⛔ 10-29 审查：这里原来写死 bag.workspace，与上面常驻层/召回层用的
+           memWorkspace（= bossMemWs || bag.workspace）**不是同一个工作区** ⇒
+           指挥中枢会话的 fabric 段（project/private）会落到用户选的项目里，
+           与「中枢记忆与普通会话完全拆开」的承诺相反。三处必须同源。 */
         const roleCtx = await window.codex.readRoleMemoryContext({
           threadId: bag.thread?.id ?? "",
-          workspace: bag.workspace || "",
+          workspace: memWorkspace || "",
           query: messageText.slice(0, 400),
         });
         if (roleCtx?.text) memoryPrefix += `\n\n[Harness 常驻记忆 · 统一记忆（项目 / 团内 / 私有）]\n${roleCtx.text}\n[常驻记忆结束]\n`;
