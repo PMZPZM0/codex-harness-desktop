@@ -1585,6 +1585,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (feishuSrc.includes("let setupChild") && feishuSrc.includes("setupChild?.kill()") ? ok : fail)(
       "【139f】重复点「去配置」不会起第二个 config init 进程（先杀旧的；两个 CLI 抢同一份配置会写出半套）"
     );
+    (feishuSrc.includes("shell.openExternal") && feishuSrc.includes('"feishu-cli:cancel"') && cardSrc.includes("feishuCliCancel") && cardSrc.includes("runtime-row") ? ok : fail)(
+      "【139f】授权链接自动用默认浏览器打开 + 可取消授权 + 卡片三行用 runtime-row 结构（⛔ 只贴链接不拉起浏览器 / 自造无 CSS 的 step 结构 = 10-29 用户截图投诉那次）"
+    );
     (feishuSrc.includes("spawn(binary, args") ? ok : fail)(
       "【139f】CLI 执行用参数数组 spawn（⛔ 模型传入的 args 不能拼 shell）"
     );

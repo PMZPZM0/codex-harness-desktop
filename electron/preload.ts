@@ -947,6 +947,8 @@ contextBridge.exposeInMainWorld("codex", {
   /* 用户登录 device flow：auth login --recommend --no-wait --json 拿链接，后台用 --device-code 完成 */
   feishuCliLoginStart: () => __ipc("feishu-cli:login-start", 0, []),
   feishuCliLogout: () => __ipc("feishu-cli:logout", 0, []),
+  /* 取消本次授权：杀掉挂在后台的 config init / device-code 轮询进程 */
+  feishuCliCancel: () => __ipc("feishu-cli:cancel", 0, []),
   /* Codex 工具 feishu_cli 的执行端：参数数组直传 lark-cli（⛔ 不过 shell） */
   feishuCliRun: (input: unknown) => __ipc("feishu-cli:run", 1, [input]),
   /* ═══ gen:end ═══ */

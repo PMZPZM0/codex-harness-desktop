@@ -12,6 +12,7 @@
  */
 import { spawn } from "node:child_process";
 import os from "node:os";
+import { shell } from "electron";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { npmGlobalRootCandidates } from "../toolchain";
@@ -24,6 +25,14 @@ const MAX_OUTPUT = 20_000;
 /** `config init --new` 会一直挂着等用户在浏览器里完成（它可能就是写配置的那个进程）。
  *  ⛔ 同一时刻只留一个：重复点「去配置」起两个进程会抢同一份配置文件。 */
 let setupChild: import("node:child_process").ChildProcess | null = null;
+/** device flow 的后台轮询（`auth login --device-code`）。取消授权时要能杀掉它。 */
+let loginChild: import("node:child_process").ChildProcess | null = null;
+
+/** 授权链接直接交给系统默认浏览器 —— ⛔ 只把链接显示在卡片里 = 用户还得自己复制（10-29 用户截图投诉）。 */
+function openUrl(url: string): void {
+  if (!url) return;
+  void shell.openExternal(url).catch(() => undefined);
+}
 
 type CliResult = { installed: boolean; path: string; version: string; configured: boolean; loggedIn: boolean; user: string; detail: string; error: string };
 
@@ -124,7 +133,7 @@ export const feishuCliFeature = defineFeature<null>({
           buffer = (buffer + String(chunk)).slice(-8000);
           if (!url) {
             const found = firstUrl(buffer);
-            if (found) { url = found; clearTimeout(timer); resolve({ ok: true, url }); }
+            if (found) { url = found; clearTimeout(timer); openUrl(found); resolve({ ok: true, url }); }
           }
         };
         child.stdout?.on("data", onData);
@@ -144,9 +153,14 @@ export const feishuCliFeature = defineFeature<null>({
       if (!url || !deviceCode) return { ok: false, error: String(data?.error?.message ?? result.stderr ?? "没有拿到授权链接").slice(0, 300) };
       /* 后台完成轮询：这个命令会阻塞到用户在浏览器里确认（或超时），结果由界面轮询 status 反映 */
       try {
-        const child = spawn(binary, ["auth", "login", "--device-code", deviceCode], { windowsHide: true, detached: true, stdio: "ignore", env: { ...process.env, NO_COLOR: "1" } });
+        try { loginChild?.kill(); } catch { /* 已退出 */ }
+        const child = spawn(binary, ["auth", "login", "--device-code", deviceCode], { windowsHide: true, detached: true, stdio: "ignore", env: { ...process.env, NO_COLOR: "1", LARK_CLI_NO_ANALYTICS: "1" } });
+        loginChild = child;
+        child.on("close", () => { if (loginChild === child) loginChild = null; });
+        child.on("error", () => { if (loginChild === child) loginChild = null; });
         child.unref();
       } catch { /* 后台轮询起不来：用户仍可用 status 手动刷新 */ }
+      openUrl(url);
       return { ok: true, url, deviceCode };
     });
 
@@ -154,6 +168,18 @@ export const feishuCliFeature = defineFeature<null>({
       if (!cliPath()) return { ok: false, error: "飞书 CLI 还没安装" };
       const result = await execCli(["auth", "logout"], { timeoutMs: 15_000 });
       return { ok: result.code === 0, error: result.code === 0 ? "" : (result.stderr || result.stdout).slice(0, 300) };
+    });
+
+    /** 取消授权：杀掉还挂着的 config init / device-code 轮询进程（界面随后自己清空链接与等待态）。
+     *  ⛔ 只清界面不杀进程 = 用户看到「已取消」，后台仍在轮询并可能悄悄登录成功。 */
+    ipcHost.handle("feishu-cli:cancel", async () => {
+      for (const child of [setupChild, loginChild]) {
+        if (!child) continue;
+        try { child.kill(); } catch { /* 已退出 */ }
+      }
+      setupChild = null;
+      loginChild = null;
+      return { ok: true };
     });
 
     /** Codex 工具入口：参数数组直传 CLI（⛔ 不过 shell） */
@@ -172,7 +198,7 @@ export const feishuCliFeature = defineFeature<null>({
     });
 
     ctx.effect(() => {
-      for (const channel of ["feishu-cli:status", "feishu-cli:setup-start", "feishu-cli:login-start", "feishu-cli:logout", "feishu-cli:run"]) {
+      for (const channel of ["feishu-cli:status", "feishu-cli:setup-start", "feishu-cli:login-start", "feishu-cli:logout", "feishu-cli:cancel", "feishu-cli:run"]) {
         ipcHost.removeHandler(channel);
       }
     });

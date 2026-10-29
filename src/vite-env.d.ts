@@ -1296,6 +1296,8 @@ interface Window {
     /* 用户登录 device flow：auth login --recommend --no-wait --json 拿链接，后台用 --device-code 完成 */
     feishuCliLoginStart(): Promise<{ ok: boolean; url?: string; deviceCode?: string; error?: string }>;
     feishuCliLogout(): Promise<{ ok: boolean; error: string }>;
+    /* 取消本次授权：杀掉挂在后台的 config init / device-code 轮询进程 */
+    feishuCliCancel(): Promise<{ ok: boolean }>;
     /* Codex 工具 feishu_cli 的执行端：参数数组直传 lark-cli（⛔ 不过 shell） */
     feishuCliRun(input: { args: string[]; cwd?: string }): Promise<{ ok: boolean; code: number; stdout: string; stderr: string; error?: string }>;
 /* ═══ gen:end ═══ */
