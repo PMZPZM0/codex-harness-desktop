@@ -81,10 +81,49 @@ const PLUGIN_PATH_RE = /[\\/](?:connectors-marketplace|plugins)[\\/](?:cache[\\/
 
 /** 已知技能名 → 中文名（路径命中时用它美化，认不出就用目录名本身）。 */
 function labelForSkillName(name) {
-  const known = KNOWN_SKILLS.get(String(name ?? "").toLowerCase());
-  if (known) return known;
+  const known = knownSkillOf(name);
+  if (known) return known.label;
   const builtin = SKILL_MATCHERS.find((entry) => entry.skill === name);
   return builtin ? builtin.label : name;
+}
+
+/** 技能名 → 清单里那一份描述（`{ label, description }`）；没登记返回 null。
+ *  ⛔ 技能卡「它是干什么的」只认这一份（渲染层不读盘，见下面 KNOWN_SKILLS 的注释）。 */
+export function knownSkillOf(name) {
+  const key = String(name ?? "").trim().toLowerCase();
+  return key ? KNOWN_SKILLS.get(key) ?? null : null;
+}
+
+/**
+ * 这次「用技能」**具体做了什么**（技能卡的动作行，唯一真相源）。
+ *
+ * 引擎不会告诉渲染层"这是技能调用"，模型用技能最常见的三个形态都能从命令字面认出来：
+ *   ① 读技能说明（`Get-Content …/skills/<名>/SKILL.md`）；
+ *   ② 跑技能自带脚本（`…/skills/<名>/xxx.ps1|.mjs|.py…`）；
+ *   ③ 其余（技能目录里的其它命令）。
+ * ⛔ 认不出就返回**空串**（调用方不显示这一行），绝不编一个"执行操作"这类假动作。
+ * @param {string} command 引擎给的命令原文
+ * @returns {string}
+ */
+export function skillActionOf(command) {
+  const raw = String(command ?? "");
+  if (!raw.trim()) return "";
+  if (/SKILL\.md/i.test(raw)) return "读取技能说明";
+  const script = raw.match(/([A-Za-z0-9._-]+\.(?:ps1|mjs|cjs|js|py|sh|bat|cmd))\b/i);
+  if (script) return `运行技能脚本 ${script[1]}`;
+  return "执行技能命令";
+}
+
+/**
+ * 技能文件路径（读 SKILL.md 时拿得到，用于"打开技能说明"）：命令里那段 `…/skills/<名>/SKILL.md`。
+ * 认不出返回空串。
+ * @param {string} command
+ * @returns {string}
+ */
+export function skillFilePathOf(command) {
+  const raw = String(command ?? "");
+  const hit = raw.match(/["']?([^"'\s]*SKILL\.md)["']?/i);
+  return hit ? hit[1] : "";
 }
 
 /* ── 本地技能清单（09-24）：把「目录名」翻成人话的唯一真相源 ─────────────
@@ -97,6 +136,10 @@ const KNOWN_SKILLS = new Map();
 
 /**
  * 注册本地技能清单（App 启动拉一次 `skills:local-list` 后调用即可，可重复调用）。
+ *
+ * 10-29：登记项从「一句中文名」升级成 `{ label, description }` —— 技能卡要把
+ * **这个技能是干什么的**直接铺在卡片上（用户原话：「下面也没有使用技能映射反馈」），
+ * 只留 18 字的标签不够用；`label` 仍按旧口径截断（折叠芯片/表头用），`description` 给整段。
  * @param {Array<{ name?: string, folder?: string, descriptionZh?: string, description?: string }>} list
  * @returns {number} 实际登记条数
  */
@@ -108,10 +151,11 @@ export function registerKnownSkills(list) {
     if (!name) continue;
     const pretty = String(entry?.descriptionZh ?? entry?.description ?? "").replace(/\s+/g, " ").trim();
     const label = pretty ? (pretty.length > 18 ? `${pretty.slice(0, 18)}…` : pretty) : name;
-    KNOWN_SKILLS.set(name.toLowerCase(), label);
+    const record = { label, description: pretty };
+    KNOWN_SKILLS.set(name.toLowerCase(), record);
     // 目录名与技能名不同（市场装的技能常见）时两条都登记
     const folder = String(entry?.folder ?? "").trim();
-    if (folder && folder.toLowerCase() !== name.toLowerCase()) KNOWN_SKILLS.set(folder.toLowerCase(), label);
+    if (folder && folder.toLowerCase() !== name.toLowerCase()) KNOWN_SKILLS.set(folder.toLowerCase(), record);
     count++;
   }
   return count;
@@ -126,8 +170,12 @@ export function knownSkillCount() {
  * 这条工具调用属于哪个技能？认不出返回 null（调用方保持原样显示，别硬贴标签）。
  * ① 先按工具/命令特征（desktop_*、markitdown …）；② 再按**技能目录路径**（`…/skills/<name>/…`）
  * —— 用户自建技能、以及模型直接跑技能脚本的形态都靠 ② 兜住（09-24：会话里技能多半是这么用的）。
+ *
+ * 10-29：返回值多带一个 `description`（这个技能是干什么的，来自 `skills:local-list` 的清单；
+ * 没登记就是空串）。技能卡把它直接铺在卡片上 —— 用户要看的是"用了什么技能、它管什么"，
+ * 光一个名字不够。
  * @param {{ type?: string, server?: string, tool?: string, command?: string }} item
- * @returns {{ skill: string, label: string } | null}
+ * @returns {{ skill: string, label: string, description: string } | null}
  */
 export function skillOfItem(item) {
   const type = String(item?.type ?? "");
@@ -141,10 +189,10 @@ export function skillOfItem(item) {
   if (hay && item?.arguments) hay += " " + JSON.stringify(item.arguments).slice(0, 2000);
   if (!hay.trim()) return null;
   for (const matcher of SKILL_MATCHERS) {
-    if (matcher.re.test(hay)) return { skill: matcher.skill, label: matcher.label };
+    if (matcher.re.test(hay)) return { skill: matcher.skill, label: matcher.label, description: knownSkillOf(matcher.skill)?.description ?? "" };
   }
   const byPath = hay.match(SKILL_PATH_RE);
-  if (byPath) return { skill: byPath[1], label: labelForSkillName(byPath[1]) };
+  if (byPath) return { skill: byPath[1], label: labelForSkillName(byPath[1]), description: knownSkillOf(byPath[1])?.description ?? "" };
   return null;
 }
 

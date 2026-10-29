@@ -25,12 +25,16 @@ export function HookBadge({ hooks }: { hooks: { name: string; label?: string; do
 
 export type ToolStatusEntry = { id: string; name: string; scope: "computer" | "browser"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string };
 
-export function ActionCard({ icon, verb, target, info, status, statusText, autoOpen, defaultExpanded, children }: {
+export function ActionCard({ icon, verb, target, subtitle, info, status, statusText, autoOpen, defaultExpanded, children }: {
   icon: React.ReactNode;
   verb: React.ReactNode;
   /** 折叠行上的**短目标**（10-22 用户：「读取/编辑这类精确到文件，不要地址」）——文件名/查询词，
    *  ⛔ 完整路径与入参只进 `info`（展开体）。 */
   target?: React.ReactNode;
+  /** 表头**第二行**的一句话（10-29 技能卡需要「这个技能是干什么的」常驻可见）。
+   *  ⛔ 只放**人话**（中文说明），别把命令原文/地址塞回来 —— 那是 10-22 已经否掉的形态；
+   *     给了 subtitle 表头就变两行（`.action-head.has-sub`），单行卡完全不受影响。 */
+  subtitle?: React.ReactNode;
   info?: React.ReactNode;
   status: ActionStatus;
   statusText?: React.ReactNode;
@@ -48,27 +52,31 @@ export function ActionCard({ icon, verb, target, info, status, statusText, autoO
   const hasBody = info != null || children != null;
   const head = (
     <>
-      <span className="action-icon">{icon}</span>
-      <span className="action-verb">{verb}</span>
-      {target != null && <span className="action-target">{target}</span>}
-      <span className="action-status">
-        <CardStatusIcon status={status} />
-        {statusText != null && <span className="action-status-text">{statusText}</span>}
-      </span>
-      {hasBody && (
-        /* ★ 10-22 用户：「『展开』字样不要，鼠标放上去再浮出箭头，移开就隐藏」
-           ⛔ 不要再写回文案；展开态靠 aria-expanded + 箭头方向表达。 */
-        <span className="action-toggle" aria-hidden="true">
-          <ChevronDown size={13} className="action-chevron" />
+      <span className="action-row">
+        <span className="action-icon">{icon}</span>
+        <span className="action-verb">{verb}</span>
+        {target != null && <span className="action-target">{target}</span>}
+        <span className="action-status">
+          <CardStatusIcon status={status} />
+          {statusText != null && <span className="action-status-text">{statusText}</span>}
         </span>
-      )}
+        {hasBody && (
+          /* ★ 10-22 用户：「『展开』字样不要，鼠标放上去再浮出箭头，移开就隐藏」
+             ⛔ 不要再写回文案；展开态靠 aria-expanded + 箭头方向表达。 */
+          <span className="action-toggle" aria-hidden="true">
+            <ChevronDown size={13} className="action-chevron" />
+          </span>
+        )}
+      </span>
+      {/* 第二行（10-29）：只有给了 subtitle 才渲染；单行卡的表头结构因此一字未变。 */}
+      {subtitle != null && <span className="action-sub">{subtitle}</span>}
     </>
   );
   return (
     <div className={`action-card ${status} ${open ? "open" : "closed"}`}>
       {hasBody
-        ? <button type="button" className="action-head" onClick={toggle} aria-expanded={open}>{head}</button>
-        : <div className="action-head static">{head}</div>}
+        ? <button type="button" className={`action-head ${subtitle != null ? "has-sub" : ""}`} onClick={toggle} aria-expanded={open}>{head}</button>
+        : <div className={`action-head static ${subtitle != null ? "has-sub" : ""}`}>{head}</div>}
       {hasBody && (
         <Fold open={open}>
           <div className="action-content">

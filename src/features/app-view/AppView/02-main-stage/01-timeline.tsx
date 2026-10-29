@@ -148,6 +148,7 @@ import {
   Hourglass,
   Pencil,
   Terminal,
+  /* 10-29：「正在使用技能」用 Sparkles（文件上部已导入，别重复导入 = TS2300） */
   FilePlus2,
   Layers,
   ShieldQuestion,
@@ -167,6 +168,7 @@ const RUN_ACTIVITY_ICONS: Record<string, typeof Timer> = {
   "生成回复中": PenLine,
   "正在编辑文件": Pencil,
   "正在运行命令": Terminal,
+  "正在使用技能": Sparkles,
   "正在生成文件": FilePlus2,
   "正在搜索网页": Globe2,
   "正在调用工具": Wrench,

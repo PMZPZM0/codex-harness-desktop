@@ -12,7 +12,6 @@ import { ToolCodeBlock } from "../shared/ToolCodeBlock";
 import { formatDuration } from "../../lib/format-duration";
 import { basename } from "../../lib/basename";
 import { INTENT_VERB, commandAction, commandIntentOf, commandPurpose, commandTarget } from "../../lib/command-display.mjs";
-import { skillOfItem, skillTargetLabel } from "../../lib/tool-display.mjs";
 
 function commandCodeLanguage(command: string): { language: string; label: string } {
   if (/\b(?:powershell|pwsh)(?:\.exe)?\b/i.test(command)) return { language: "powershell", label: "PowerShell" };
@@ -54,22 +53,18 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive }: {
        · 后面优先显示**文件目标**，没有目标就显示从脚本输出标签提炼的**用途**（commandPurpose，
          如 `"=== 结构 ==="` → 「结构」），再没有才退回剥壳截断的命令原文。
      ⛔ 展开里的完整命令仍是引擎原文（用户要照着复现），只动表头这一行。 */
-  // ★ 技能优先于命令意图（09-24 用户：「工具板块不显示使用了那个技能」+ 真回合实测）：
-  //   模型"用技能"最常见的动作就是一条命令 —— **读 SKILL.md**（真机抓到的是
-  //   `Get-Content -LiteralPath '…/skills/humanizer/SKILL.md'`）。以前这里只按命令意图
-  //   显示「已查看 …/skills/humanizer/SKILL.md」，看不出那是**在用技能**。
-  //   ⛔ Console: 与折叠芯片同一个真相源 `skillOfItem` / `skillTargetLabel`（守卫【127】）。
-  const skill = command ? skillOfItem({ type: "commandExecution", command }) : null;
+  /* ⛔ 10-29：技能**不在这里**了 —— 命中技能的调用由 features/skill-usage 的技能卡渲染
+     （用户原话：「为啥使用技能是运行命令呢…不要展示运行命令」）。命令卡只管真命令，
+     表头动词永远按命令意图走；两边各管一种形态，不再互相让位。 */
   const intent = commandIntentOf(command);
   const intentVerb = INTENT_VERB[intent] ?? "运行";
   const target = command ? commandTarget(command) : "";
   const purpose = command ? commandPurpose(command) : "";
   /* 表头映射串 = 用途 · 目标（有哪个用哪个）：
      「已查看 结构 · …/.codex-harness」「已定位 pin-shrink-follow」「已运行 npm run build」
-     命中技能时换成技能中文名（目标按上面的规则取舍）。
      ★ 10-22：**不再进折叠态表头**（用户：「折叠态后面不再显示地址与耗时」）——它连同耗时一起
        落到展开体的元信息行，想看清"这条到底动了哪儿"的仍然一眼能看到。 */
-  const hint = skill ? skillTargetLabel(target) || skill.label : [purpose, target].filter(Boolean).join(" · ");
+  const hint = [purpose, target].filter(Boolean).join(" · ");
   /* ★ 动作短语（10-21，参照 WorkBuddy 的命令标题形态）：把「已运行 npm run check」升级成
      「跑全量检查」——看得出**这一步在干什么**，而不只是"在操作什么"。
      ⛔ 来源限制：引擎只给 `command` 字面（没有模型给的 description），所以是**模式识别**
@@ -78,17 +73,13 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive }: {
      ⛔ 状态仍由右侧图标表达（✓/!/○）：有 action 时不再在标题前加「已/正在」，
         与 WorkBuddy 同形；失败时保留「失败」后缀（红色卡片 + 图标之外再给一处明确文字）。 */
   const action = command ? commandAction(command) : "";
-  /* ⛔ 两处**让位**（自查抓到的回归）：动作短语是"这句命令在干什么"，但有两种情况它的优先级更低——
-     ① 命中技能（09-24 用户明确要求「工具板块要显示用了哪个技能」）：读 SKILL.md 也是一条命令，
-        显示「跑脚本 xxx」会把「已使用技能 humanizer」盖掉 ⇒ 技能态必须优先；
-     ② 等待批准：用户此刻要知道的是"在等我点"，不是"这条命令在干什么"。
-     技能态下技能名仍跟在标题后面（`cmd-name`），信息不丢。 */
-  const headline = action && !skill && !(waitingForApproval && running)
+  /* ⛔ 只有一处**让位**：动作短语是"这句命令在干什么"，但等待批准时用户要知道的是
+     "在等我点"，不是"这条命令在干什么"。（技能态已整体搬去技能卡，不再参与这里的取舍。） */
+  const headline = action && !(waitingForApproval && running)
     ? (failed ? `${action}失败` : action)
     : "";
   const verb = waitingForApproval && running ? "等待批准"
-    : skill ? (running ? "正在使用技能" : failed ? "使用技能失败" : "已使用技能")
-      : running ? `正在${intentVerb}` : failed ? `${intentVerb}失败` : `已${intentVerb}`;
+    : running ? `正在${intentVerb}` : failed ? `${intentVerb}失败` : `已${intentVerb}`;
   const status: ActionStatus = running ? (waitingForApproval ? "pending" : "running") : failed ? "error" : "done";
   const emptySuccess = !running && !failed && output === "";
   const shell = commandCodeLanguage(command);
@@ -111,8 +102,6 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive }: {
         <span className="cmd-icon"><TerminalSquare size={14} /></span>
         <span className="cmd-verb">{headline || verb}</span>
         {targetName ? <span className="cmd-target" title={target}>{targetName}</span> : null}
-        {/* 技能名（09-24 用户点名「看得出用了哪个技能」）：是专有名词、不是命令内容，留在折叠行 */}
-        {skill?.label ? <span className="cmd-name">{skill.label}</span> : null}
         <span className="cmd-status"><CardStatusIcon status={status} /></span>
         {/* 明确的展开标识：文案 + 箭头一起变（只有一个小箭头不够明确 —— 用户 10-22 点名） */}
         {/* ★ 10-22 用户：「『展开』字样不要，鼠标放上去再浮出箭头，移开就隐藏」。

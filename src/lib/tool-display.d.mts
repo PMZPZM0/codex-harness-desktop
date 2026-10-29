@@ -14,8 +14,17 @@ export function registerKnownSkills(
 /** 已登记的技能条目数（探针/守卫用） */
 export function knownSkillCount(): number;
 
+/** 技能名 → 清单里那一份 `{ label, description }`；没登记返回 null */
+export function knownSkillOf(name: string): { label: string; description: string } | null;
+
+/** 这次「用技能」具体做了什么（读取技能说明 / 运行技能脚本 X / 执行技能命令）；认不出返回空串 */
+export function skillActionOf(command: string): string;
+
+/** 命令里那段 SKILL.md 的路径（用于「打开技能说明」）；认不出返回空串 */
+export function skillFilePathOf(command: string): string;
+
 /** 这条调用属于哪个技能（工具特征 / 技能目录路径）；认不出返回 null */
-export function skillOfItem(item: { type?: string; server?: string; tool?: string; command?: string }): { skill: string; label: string } | null;
+export function skillOfItem(item: { type?: string; server?: string; tool?: string; command?: string }): { skill: string; label: string; description: string } | null;
 
 /** 技能卡的目标显示规则（技能目录内/半截路径 ⇒ 丢弃，长路径只留文件名） */
 export function skillTargetLabel(target: string): string;

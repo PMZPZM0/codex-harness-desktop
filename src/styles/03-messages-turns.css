@@ -1022,6 +1022,38 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
 .action-card:hover .action-head {
   color: var(--text);
 }
+/* ★ 10-29 表头两行形态（技能卡：第一行动作+技能名，第二行「这个技能是干什么的」常驻可见）。
+   单行卡完全不受影响：`.action-row` 与原来的 `.action-head` 同一套 inline-flex + gap，
+   只有带 `.has-sub` 时才把表头改成列向。⛔ 第二行只放人话，别把地址/命令塞回来（10-22 已否）。 */
+.action-card .action-head .action-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+.action-card .action-head.has-sub {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+.action-card .action-sub {
+  /* 两行截断（10-29 实测：技能说明是英文长句，一行只能看到半句）。
+     ⛔ 不能再用 `white-space: nowrap` —— line-clamp 需要正常换行才生效。 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  max-width: min(560px, 62vw);
+  overflow: hidden;
+  padding-left: 22px;   /* 与第一行的文字起点（图标 16 + gap 6）对齐 */
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.45;
+}
+/* 展开后**收起**第二行：展开体里已经有整段说明，再挂一份就是同屏重复（实测两次看到同一句）。 */
+.action-card.open .action-sub {
+  display: none;
+}
 .action-card .action-icon {
   /* 去掉圆形背景：icon 直接跟随状态色，视觉上更像「chip」而非独立小色块 */
   background: transparent;
@@ -1446,15 +1478,25 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   line-height: 0;
   color: inherit;
 }
-.wb-fold-dot {
+/* 折叠头的**状态图标**（10-29）：进行中转圈 / 完成打勾 / 有失败打叉。
+   ⛔ 取代原来的 7px 小圆点（`.wb-fold-dot`）：圆点区分不出「完成」和「还在跑」，
+      而且 `.wb-fold--completed` 那条 `display:none` 让回合级大折叠连点都看不见。
+      颜色全部走主题变量（浅色/深色各自取色，暗色下不会糊成一团）。 */
+.wb-fold-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--green);
+  width: 14px;
+  height: 14px;
+  line-height: 0;
+  color: var(--green);
 }
-.wb-fold-dot.error {
-  background: var(--red);
+.wb-fold-state.error {
+  color: var(--red);
+}
+.wb-fold-state.running {
+  color: var(--accent);
 }
 .wb-fold-title {
   font-size: 12.5px;
@@ -1623,11 +1665,10 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
 .wb-fold--completed .wb-fold .wb-fold-header {
   border-bottom: 0;
 }
+/* ⛔ 10-29：`display:none` 那条已删 —— 回合级大折叠的状态图标（转圈/勾/叉）必须可见，
+   它就是用户要的「状态类提示用可区分状态的图标」。 */
 .wb-fold--completed .wb-fold-header:hover {
   color: var(--muted);
-}
-.wb-fold--completed .wb-fold-dot {
-  display: none;
 }
 .wb-fold--completed .wb-fold-title {
   /* ⛔ 不能是 flex:1：标题撑满会把箭头推到行尾（旧形态），而用户要求箭头**紧跟内容之后**。

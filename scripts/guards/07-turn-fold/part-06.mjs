@@ -75,8 +75,8 @@ export async function run() {
     (/const action = command \? commandAction\(command\) : "";/.test(termCode) && /\{headline \|\| verb\}/.test(termCode) ? ok : fail)(
       "【127】命令卡表头优先用动作短语、认不出退回 verb（`headline || verb`）"
     );
-    (/const headline = action && !skill && !\(waitingForApproval && running\)/.test(termCode) ? ok : fail)(
-      "【127】⛔ 动作短语**给技能态与审批态让位**（读 SKILL.md 也是一条命令：不许把「已使用技能」盖成「跑脚本 x」；审批中要显示「等待批准」）"
+    (/const headline = action && !\(waitingForApproval && running\)/.test(termCode) ? ok : fail)(
+      "【127】动作短语只给审批态让位（技能态已整体搬去技能卡 10-29，命令卡不再因子句让位）"
     );
     (/\[purpose, target\]\.filter\(Boolean\)\.join\(" · "\)/.test(termCode) ? ok : fail)(
       "【127】元信息串 = 用途 · 目标（10-22 起只在**展开体**里显示，看不出目的才算没映射）"
@@ -223,14 +223,28 @@ export async function run() {
     (/cache\[\\\\\/\]\[A-Za-z0-9\._-\]\+\[\\\\\/\]\)?/.test(toolCode) ? ok : fail)(
       "【127】插件路径取插件名而不是 vendor 名（`plugins/cache/<vendor>/<plugin>`，取错等于没信息）"
     );
-    (/const skill = command \? skillOfItem\(\{ type: "commandExecution", command \}\) : null;/.test(termSrc) ? ok : fail)(
-      "【127】命令行卡也走技能识别（模型用技能多半是一条读 SKILL.md 的命令 —— 只按意图显示就看不出在用技能）"
+    /* ── 技能使用卡（10-29 用户：「为啥使用技能是运行命令呢…做一个使用技能展示，不要展示运行命令」）──
+       ⛔ 技能从命令卡里**整体搬出**：命中技能 ⇒ ItemView 走 skill-usage 的卡，命令卡不再兼职。
+          以下判据钉的就是这次搬家的三件事：路由、动词、说明（映射反馈）。 */
+    const skillSrc = readFileSync(join(ROOT, "src/features/skill-usage/SkillUsageCard.tsx"), "utf8").replace(/\r/g, "");
+    const skillCode = skillSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    (/if \(skillOfItem\(item\)\) return <SkillUsageCard/.test(itemsCode) ? ok : fail)(
+      "【127】命中技能的命令走**技能卡**（ItemView 分流，命令卡完全不参与 ⇒ 不会出现「正在运行命令」）"
     );
-    (/skill \? \(running \? "正在使用技能" : failed \? "使用技能失败" : "已使用技能"\)/.test(termSrc) ? ok : fail)(
-      "【127】命令行卡动词按技能走（正在/已使用技能，含失败态）"
+    (!/skillOfItem|skillTargetLabel/.test(termCode) ? ok : fail)(
+      "【127】⛔ 命令卡里不再有技能分支（一份形态一个渲染口；两处兼职必然漂移）"
     );
-    (/skillTargetLabel\(target\) \|\| skill\.label/.test(termSrc) ? ok : fail)(
-      "【127】技能没有目标时显示技能中文名（不许退回剥壳后的命令原文）"
+    (/const skill = skillOfItem\(item\);/.test(skillCode) && /skill\.description/.test(skillCode) ? ok : fail)(
+      "【127】技能卡带**说明**（「这个技能是干什么的」常驻表头第二行 —— 用户要的映射反馈）"
+    );
+    (/running \? "正在使用技能"[\s\S]{0,90}"使用技能失败"[\s\S]{0,50}"已使用技能"/.test(skillCode) ? ok : fail)(
+      "【127】技能卡动词按技能走（正在使用技能 / 使用技能失败 / 已使用技能 三态齐全）"
+    );
+    (/target=\{<code>\{skill\.label\}<\/code>\}/.test(skillCode) ? ok : fail)(
+      "【127】技能卡表头显示技能中文名（不许退回剥壳后的命令原文）"
+    );
+    (!/skill-usage-command|command\}<\/code>/.test(skillCode) ? ok : fail)(
+      "【127】⛔ 技能卡不展示命令原文（用户 10-29：「不要展示运行命令」）"
     );
     (/skillTargetLabel\(/.test(foldCode) ? ok : fail)(
       "【127】折叠芯片的技能目标走 skillTargetLabel（半截路径 / 技能目录内 / 纯点目录 一律丢弃）"

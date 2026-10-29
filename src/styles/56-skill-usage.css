@@ -1,0 +1,48 @@
+/**
+ * 技能使用卡（10-29 新板块 `src/features/skill-usage/` 的样式）。
+ *
+ * 卡片外壳复用 `.action-card`（session-cards 的 ActionCard），这里只给它**技能专属**的三块：
+ *   ① 展开体里的说明段落（`.skill-usage-desc`）；
+ *   ② 「打开技能说明」按钮（`.skill-usage-open`）；
+ *   ③ 动作行（`.skill-usage-action`）与输出块间距。
+ * ⛔ 不在这里重写卡片骨架：表头两行（`.action-head.has-sub` / `.action-sub`）属于 ActionCard，
+ *    样式在 03-messages-turns.css 里，两处各自分节会漂移。
+ * ⛔ 也不给技能卡加"命令原文"块 —— 用户 10-29 明确「不要展示运行命令」。
+ */
+.action-card .skill-usage-desc {
+  margin: 0 0 6px;
+  max-width: min(620px, 62vw);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+/* 动作行：与 meta 的英文技能 id 分开一档（人话在前、机器名在后） */
+.action-card .skill-usage-action {
+  color: var(--text);
+  font-size: 11.5px;
+}
+.action-card .skill-usage-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 2px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.action-card .skill-usage-open:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+  background: var(--panel-2);
+}
+/* 输出块（跑技能脚本时的产出；读 SKILL.md 不显示，说明已经在上面了） */
+.action-card .skill-usage-output {
+  margin-top: 6px;
+}
