@@ -59,7 +59,17 @@ export function stripShellLauncher(command) {
   const head = original.match(/^(?:&\s*)?(?:"([^"]*)"|'([^']*)'|(\S+))/);
   if (!head) return original;
   const token = head[1] ?? head[2] ?? head[3] ?? "";
-  if (!SHELL_NAMES.test(basename(token))) return original;
+  if (!SHELL_NAMES.test(basename(token))) {
+    // ⛔ 整条命令被一层引号包住（引擎偶尔这么记）⇒ 脱掉再处理：否则 action/purpose 会把
+    //   整段脚本当成一个"字符串字面量"（实测表头直接显示整段脚本）。
+    //   ⛔ 只脱**真正包住整条命令**的那层：`'a' + 'b'` 这种表达式首尾也是引号，脱了就改写原意。
+    const q = original[0];
+    if ((q === '"' || q === "'") && original.length > 2 && original.endsWith(q)) {
+      const inner = unwrapQuotes(original);
+      if (inner && inner !== original && !inner.includes(q)) return stripShellLauncher(inner);
+    }
+    return original;
+  }
   let rest = original.slice(head[0].length).trim();
   // 逐个吃掉启动器开关（`-NoProfile` / `-ExecutionPolicy Bypass` / `-lc` …），遇到第一个非开关就停
   for (;;) {
@@ -203,7 +213,11 @@ export function commandPurpose(command, max = 40) {
   const text = stripShellLauncher(command);
   if (!text) return "";
   const withoutAssign = text.replace(/\$[\w:.]+\s*=\s*(?:"[^"\n]*"|'[^'\n]*')\s*;?/g, " ");
-  const literals = [...withoutAssign.matchAll(/"([^"\n]{2,60})"|'([^'\n]{2,60})'/g)].map((m) => m[1] ?? m[2] ?? "");
+  const literals = [...withoutAssign.matchAll(/"([^"\n]{2,60})"|'([^'\n]{2,60})'/g)]
+    .map((m) => m[1] ?? m[2] ?? "")
+    // ⛔ 整条脚本被一层引号包住时，**外层引号**会被当成一个"字面量"（实测：表头变成整段脚本）。
+    //   ⇒ 含引号 / 语句分隔 / 插值的候选一律不当用途标签，继续找里面真正的标签字面量。
+    .filter((value) => !/["'`]/.test(value) && !/[;|]|\$\(|\$\{/.test(value));
   const cjk = literals.find((value) => /[\u3400-\u9fff]/.test(value));
   const pick = cjk
     ?? literals.find((value) => !/[\\/]/.test(value) && !value.trim().startsWith("-") && value.trim().length >= 2);
@@ -278,7 +292,12 @@ const ACTION_RULES = [
   [/\bnpm\s+(?:install|ci|i)\b/i, () => "装依赖"],
   // node 脚本
   [/\bnode\s+(?:--experimental-strip-types\s+|--no-warnings\s+)*(?:"([^"]+)"|'([^']+)'|(\S+))/i,
-    (m) => scriptAction(m[1] ?? m[2] ?? m[3])],
+    (m) => {
+      const target = m[1] ?? m[2] ?? m[3] ?? "";
+      // ⛔ 裸开关不是脚本名（实测：`node --version` 显示成「跑脚本 --version」）——
+      //   交给后面的通用子命令（→「看 node 版本」）或原文兜底。
+      return target.startsWith("-") ? "" : scriptAction(target);
+    }],
   // git
   [/\bgit\s+commit\b/i, () => "提交改动"],
   [/\bgit\s+push\b/i, () => "推送远端"],
@@ -294,6 +313,15 @@ const ACTION_RULES = [
   // 写文件（heredoc / 覆盖写）
   [/(?:cat|tee)\s*>+\s*(?:"([^"]+)"|'([^']+)'|(\S+))/i, (m) => `写文件 ${actName(m[1] ?? m[2] ?? m[3]) || ""}`.trim()],
   [/Set-Content|Out-File|WriteAllText|WriteAllLines|WriteAllBytes|writeFileSync|appendFileSync/i, () => "写文件"],
+  // node 内联脚本（`node -e …`）：排在写文件之后 —— 内联代码里写文件时上面已判成「写文件」
+  [/\bnode\s+(?:-e|--eval|-p|--print)\b/i, () => "跑 node 脚本"],
+  // 读文件：带上文件名（实测「已查看 Get-Content -LiteralPath "…config.toml"」看不出在读什么）
+  [/(?:Get-Content|ReadAllText|ReadAllLines|readFileSync)\b(?:\s+-\w+)*\s+["']?([^"'\s|;<>]+)/i,
+    (m) => { const name = actName(m[1]); return name ? `读文件 ${name}` : "读文件"; }],
+  [/\bcat\s+(?:"([^"]+)"|'([^']+)'|(\S+))/i,
+    (m) => { const name = actName(m[1] ?? m[2] ?? m[3]); return name ? `读文件 ${name}` : ""; }],
+  // 列目录（实测 `dir` 只剩「已查看 dir」）
+  [/^(?:dir|ls|Get-ChildItem)\b/i, () => "看目录内容"],
   // 增删移拷
   [/Remove-Item[^|\n]*-Recurse|\brm\s+-r|\brm\s+-rf/i, () => "删目录"],
   [/Remove-Item\b|\brm\s+/i, () => "删文件"],
@@ -370,6 +398,29 @@ function actionOfOne(text) {
   return genericCliAction(body);
 }
 
+/** 只在引号外拆 `&&` / `;`（⛔ 不能裸 split：`node -e "a;b"` 会被拆成两段，
+ *  拼出「跑 node 脚本并写文件」这种把一段代码当两步的说法）*/
+function splitTopLevel(text) {
+  const parts = [];
+  let buf = "";
+  let quote = "";
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      buf += ch;
+      if (ch === quote) quote = "";
+      else if (ch === "\\" && quote === '"' && i + 1 < text.length) buf += text[++i];
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; buf += ch; continue; }
+    if (ch === ";") { parts.push(buf); buf = ""; continue; }
+    if (ch === "&" && text[i + 1] === "&") { parts.push(buf); buf = ""; i++; continue; }
+    buf += ch;
+  }
+  parts.push(buf);
+  return parts.map((part) => part.trim()).filter(Boolean);
+}
+
 /**
  * 命令 → **动作短语**（≤ max 字，命令卡表头的标题）。
  *
@@ -383,8 +434,9 @@ function actionOfOne(text) {
 export function commandAction(command, max = 24) {
   const text = stripShellLauncher(command);
   if (!text) return "";
-  // 复合拆分：只拆 `&&` / `;`（⛔ 不拆 `|` 管道 —— 它是同一条处理链，拆开语义就错了）
-  const parts = text.split(/\s*(?:&&|;)\s*/).map((part) => part.trim()).filter(Boolean);
+  // 复合拆分：只拆 `&&` / `;`（⛔ 不拆 `|` 管道 —— 它是同一条处理链，拆开语义就错了；
+  // ⛔ 也不拆引号里的 —— `node -e "a;b"` 是一段代码，不是两步命令）
+  const parts = splitTopLevel(text);
   const actions = [];
   for (const part of parts.slice(0, 3)) {
     const action = actionOfOne(part);

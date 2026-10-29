@@ -715,6 +715,26 @@ export async function run() {
       (cd.shortenPath("D:\\a\\b\\c\\d\\e\\f\\g\\h\\i\\01-seg.tsx").endsWith("01-seg.tsx") ? ok : fail)(
         "【118】超长路径从左截（保文件名，不许把文件名切掉）"
       );
+      /* ⛔ 10-29 用户实测（「已运行为啥后面不显示运行了啥命令」）：标题映射的**真值表** ——
+         用户截图里这几种都是坏映射（「跑脚本 --version」「跑脚本 -e」「已查看 dir」），逐条钉住。 */
+      (cd.commandAction("node --version") === "看 node 版本" ? ok : fail)(
+        `【118】裸开关不算脚本名（实得 ${JSON.stringify(cd.commandAction("node --version"))}）`
+      );
+      (cd.commandAction('node -e "console.log(1)"') === "跑 node 脚本" ? ok : fail)(
+        "【118】node 内联脚本给中性动作（不把 -e 当脚本名）"
+      );
+      (cd.commandAction('node -e "const x=\'a\';fs.writeFileSync(\'b\',\'c\')"') === "写文件" ? ok : fail)(
+        "【118】内联脚本里写文件时按「写文件」判（写语义优先；引号里的 `;` 不许拆成两步 ⇒ 否则拼出「跑 node 脚本并写文件」）"
+      );
+      (cd.commandAction("dir") === "看目录内容" && cd.commandAction("ls -la") === "看目录内容" ? ok : fail)(
+        "【118】列目录有中文动作（原来只剩「已查看 dir」）"
+      );
+      (cd.commandAction("cat package.json") === "读文件 package.json" ? ok : fail)(
+        "【118】读文件带上文件名"
+      );
+      (cd.commandPurpose('"Write-Output \'=== 当前目录 ===\'; Get-Location"') === "当前目录" ? ok : fail)(
+        "【118】整段命令被一层引号包住时，用途取里面的标签字面量（不许把整段脚本当标签）"
+      );
     }
 
     /* ③ 折叠口径（真跑 planCompletedFold）—— ⛔⛔ 10-10 用户定稿（原话）：
