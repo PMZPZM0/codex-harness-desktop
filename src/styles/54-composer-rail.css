@@ -449,23 +449,34 @@
   }
 }
 
-/* ── 10-29：被侧栏挡住时「一排往上」─────────────────────────────────────────
-   用户：「这个小粗条展开，就是被侧边栏展示后，小粗条展示面板被切了一半，
-          这时候可以自适应变成一排往上」。
-   触发由组件实测决定（elementsFromPoint 发现图标列被遮挡 ⇒ 加 `.is-top`），
-   ⛔ 不是媒体查询：同样是 1080 宽，右栏开/关时留给左侧的空间差 200px。 */
+/* ── 10-29（二改）：空间不够时收成**一排（一列到底）**，仍在输入框左侧 ──────
+   用户：「正常展示两行在旁边，距离不够就展示一排，这样，不要贴到输入框上面」。
+   ⛔ 上一版把它挪到输入框**上方**横排 —— 被用户否掉了（"贴到输入框上面"）。
+   现在两档形态都在左侧、都骑在左边框线上，只有图标排列方式不同：
+     · 默认（够宽）：3 个一列、最多两列（两行，宽 76px）
+     · 不够宽（会被侧栏挤到）：收成**单列一到底**（宽 38px，高度可以探出输入框）
+   宽度从 76 降到 38 正是为了塞进被侧栏挤压后的那点空间。 */
+.composer-rail.is-single .composer-rail-icons {
+  flex-flow: column nowrap;   /* 一列到底，不再换列 */
+  max-height: none;           /* 允许比输入框高（用户早先明确过"可以比输入框高一些"） */
+  overflow: visible;
+}
+
+/* ── 第三档（10-29 用户：「最小界面，左边没空间的时候，再展示在输入框上面」）────
+   只在**左侧连单列都塞不下**时才启用（判据见 ComposerRail 的 avail 三级）。
+   ⛔ 这是兜底，不是默认：能在左边就在左边。 */
 .composer-rail.is-top {
   right: auto;
   left: 0;
   top: auto;
-  bottom: 100%;              /* 整条挪到输入框**上方** */
-  flex-direction: column;    /* 手柄在上、图标排在下的横条 */
+  bottom: 100%;              /* 整条到输入框上方 */
+  flex-direction: column;
   align-items: flex-start;
   justify-content: flex-end;
   padding-bottom: 2px;
 }
 .composer-rail.is-top .composer-rail-toggle {
-  transform: none;           /* 不再压线：横条的手柄是一条短横 */
+  transform: none;           /* 横条的手柄：一条短横，不再压线 */
   width: 40px;
   height: 12px;
 }
@@ -477,5 +488,5 @@
   flex-flow: row nowrap;     /* 一排横放 */
   max-height: none;
   overflow: visible;
-  margin: 4px 0 0;           /* 只留上边 4px：与手柄分开 */
+  margin: 4px 0 0;
 }

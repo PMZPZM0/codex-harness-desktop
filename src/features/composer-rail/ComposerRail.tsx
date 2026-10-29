@@ -72,10 +72,13 @@ export function ComposerRail({ app, threadId = "" }: { app: HarnessAppApi; threa
   const railRef = useRef<HTMLDivElement>(null);
   /** 图标列容器：判「是否被侧栏等元素遮住」用 */
   const iconsRef = useRef<HTMLDivElement>(null);
-  /** 10-29 用户：「被侧边栏展示后小粗条展示面板被切了一半，这时候可以自适应变成一排往上」
-      left = 图标列向输入框**左侧**竖着长（默认）；top = 改成一排**向上**横放。
-      判据不是窗口宽度，而是"打开后这一列**是否真的被别的元素盖住**"（实测 elementsFromPoint）。 */
-  const [layout, setLayout] = useState<"left" | "top">("left");
+  /** 10-29 用户三档（原文）：「正常展示两行在旁边，距离不够就展示一排…不要贴到输入框上面」
+      +「最小界面，左边没空间的时候，再展示在输入框上面」。
+      · columns = 左侧两列（默认，宽 76）
+      · single  = 左侧单列一到底（宽 38）—— 左边收紧但仍放得下
+      · top     = 上方横排（**兜底**：左边连单列都塞不下时才用）
+      ⛔ 优先级：能两列就两列，其次单列，最后才是上方。 */
+  const [layout, setLayout] = useState<"columns" | "single" | "top">("columns");
 
   /* Esc / Tab 都在这里处理（capture 阶段）：
      · Esc 只关这一层 —— `stopPropagation()` 防止同一次按键连带关掉背后的浮层/设置；
@@ -156,25 +159,32 @@ export function ComposerRail({ app, threadId = "" }: { app: HarnessAppApi; threa
 
   const active = panels.find((entry) => entry.id === panelId) ?? null;
 
-  /* 10-29：打开后量一次「图标列有没有被盖住」，被盖住就换成"一排往上"。
-     ⛔ 必须在 useLayoutEffect 里量（paint 之前拿到真实矩形），⛔ 不靠窗口宽度猜：
-        同样是 1080 宽，右栏开/关时主区左缘差 200px，用宽度阈值会把两种都判成"够用"。 */
+  /* 10-29：打开后量一次「两列放不放得下」，放不下就收成一列（仍在输入框左侧）。
+     ⛔⛔ 判据必须用**不随布局变化的量**（输入框左缘 + 固定宽度），不能拿当前图标列位置判：
+        上一版用 `icons.left` 判，而 icons 本身就在 layout 里 ⇒ 一旦判成单列、左缘右移，
+        再判时又"贴边"，宽屏也被收成单列（实测 1280 宽 single=true，自证陷阱）。
+     两列 rail 总宽 ≈ 76(两列图标) + 10(与手柄的间隙) + 6(手柄) = 92。 */
   useLayoutEffect(() => {
-    if (!open) { setLayout("left"); return; }
+    if (!open) { setLayout("columns"); return; }
     const el = iconsRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
-    /* 取图标列**左缘**的一点探测：左侧竖排时它最先撞到侧栏。
-       侧栏盖住时 elementsFromPoint 里根本不会有这个容器（或它的祖先）⇒ 判为遮挡。 */
-    const hit = document.elementsFromPoint(Math.max(rect.left + 2, 1), rect.top + rect.height / 2);
-    const covered = hit.length > 0 && !hit.some((node) => el === node || el.contains(node) || node.contains(el));
-    /* ⛔ 只判"被盖住"不够：10-29 实测 1200 宽时图标列左缘正好 215px = 侧栏右缘 ——
-       差 0 像素没重叠，判为"够用"，但视觉上已经贴死侧栏（用户说的"被切了一半"就是这一档）。
-       ⇒ 再判一次"是否贴边"：主区左缘（= 侧栏右缘）留不出 6px 余量就换成一排往上。 */
-    const hostLeft = (el.closest(".composer")?.parentElement ?? el.parentElement)?.getBoundingClientRect().left ?? 0;
-    const tooClose = rect.left < hostLeft + 6;
-    setLayout(covered || tooClose ? "top" : "left");
+    const composerEl = el?.closest(".composer") as HTMLElement | null;
+    if (!el || !composerEl) return;
+    const composerRect = composerEl.getBoundingClientRect();
+    /* 左侧可用空间的右端点 = 侧栏右缘（没有侧栏就当 0） */
+    const sidebar = document.querySelector(".sidebar") as HTMLElement | null;
+    const leftBound = sidebar ? sidebar.getBoundingClientRect().right : 0;
+    /* 预留宽度（含与手柄的 10px 间隙 + 手柄 6px）：两列 76+16=92、单列 38+16=54 */
+    const RAIL_COLUMNS = 92;
+    const RAIL_SINGLE = 54;
+    const avail = composerRect.left - leftBound;
+    /* 两列将占据的那块是不是被浮层/工具栏盖着（elementsFromPoint 实测） */
+    const probeX = Math.max(composerRect.left - RAIL_COLUMNS + 2, 1);
+    const hit = document.elementsFromPoint(probeX, composerRect.top + composerRect.height / 2);
+    const blocked = hit.length > 0 && !hit.some((node) => node.contains(el) || el.contains(node));
+    /* 三级：两列 → 单列 → 上方横排（最后才是上方，用户：「左边没空间的时候，再展示在输入框上面」） */
+    if (avail < RAIL_SINGLE + 6) setLayout("top");
+    else if (avail < RAIL_COLUMNS + 6 || blocked) setLayout("single");
+    else setLayout("columns");
   }, [open, panels, order]);
 
   /* 10-27 用户：「这个一直展示不会自动隐藏，10秒后自动隐藏，打开了这些按键的里面的弹窗
@@ -231,7 +241,7 @@ export function ComposerRail({ app, threadId = "" }: { app: HarnessAppApi; threa
   }, [app]);
 
   return (
-    <div className={`composer-rail${open ? " is-open" : ""}${layout === "top" ? " is-top" : ""}`} ref={railRef} onMouseEnter={() => setBump((value) => value + 1)}>
+    <div className={`composer-rail${open ? " is-open" : ""}${layout === "single" ? " is-single" : layout === "top" ? " is-top" : ""}`} ref={railRef} onMouseEnter={() => setBump((value) => value + 1)}>
       <button
         type="button"
         className="composer-rail-toggle"
