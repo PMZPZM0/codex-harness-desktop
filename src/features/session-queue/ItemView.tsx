@@ -74,7 +74,7 @@ export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWi
          见 features/skill-usage）。⛔ 别再让命令卡兼职显示技能：那正是"上面说用了技能、
          下面说正在运行命令"的来源（命令卡的动词映射表只懂命令意图，不懂技能）。 */
     if (skillOfItem(item)) return <SkillUsageCard item={item} waitingForApproval={waitingForApproval} onOpenFile={onOpenFile} />;
-    return <CommandExecutionCard item={item} waitingForApproval={waitingForApproval} turnActive={turnActive} />;
+    return <CommandExecutionCard item={item} waitingForApproval={waitingForApproval} turnActive={turnActive} onOpenFile={onOpenFile} />;
   }
   if (item.type === "fileChange") {
     return <FileChangeCard item={item} turnActive={turnActive} />;

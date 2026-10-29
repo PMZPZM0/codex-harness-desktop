@@ -455,3 +455,47 @@ export function commandAction(command, max = 24) {
   if (!out) return "";
   return out.length > max ? `${out.slice(0, max)}…` : out;
 }
+
+/**
+ * 写文件类命令的**行数统计**（10-29 用户令：「编辑文件 / 修改文件 / 生成文件，只要动了文件
+ * 后面都要加 +N -M」）。
+ *
+ * ⛔⛔ 只给**数得出来**的数字：
+ *   · `added` = 这条命令**写入的内容行数**（heredoc / here-string / 数组字面量逐条数；
+ *     实在认不出就按 1 行算 —— 一次 `Set-Content` 至少写了一行）；
+ *   · `deleted` = 只有能确定时才给：追加（`-Append` / `>>`）确定是 0；
+ *     **覆盖写一律返回 null**（旧文件原来有多少行，命令执行后就无从得知，历史会话更不可能回读）。
+ *     ⛔ 不编 `-0` —— 假数字比没有数字更糟（用户会拿它判断"改了多少"）。
+ * 返回 null = 这条命令不写文件（调用方不渲染统计）。
+ * @param {string} command 引擎给的命令字面（带不带 shell 启动器外壳都行）
+ * @returns {{ added: number, deleted: number | null } | null}
+ */
+export function commandWriteStats(command) {
+  const text = stripShellLauncher(command);
+  if (!text) return null;
+  /* 写文件的判据与 commandIntentOf 的 "modify" 同源，但**不含** `mkdir` / `Remove-Item` /
+     `Rename-Item` 这类不产生行数的动作（给它们标 +1 就是编）。 */
+  const writes = /Set-Content|Out-File|Add-Content|WriteAllText|WriteAllLines|WriteAllBytes|writeFileSync|appendFileSync|\btee\b|(?<![0-9=<>])>(?![>&])/i.test(text);
+  if (!writes) return null;
+
+  let added = 0;
+  // bash heredoc：`cat > f <<'EOF' … EOF`
+  const heredoc = /<<-?\s*['"]?([A-Za-z_]\w*)['"]?\r?\n([\s\S]*?)\r?\n\s*\1/.exec(text);
+  if (heredoc) added = heredoc[2].split(/\r?\n/).filter((line) => line.trim()).length;
+  // PowerShell here-string：`@" … "@` / `@' … '@`
+  if (!added) {
+    const here = /@["']\r?\n([\s\S]*?)\r?\n["']@/.exec(text);
+    if (here) added = here[1].split(/\r?\n/).filter((line) => line.trim()).length;
+  }
+  // 数组字面量：`@('a','b')` / `('a','b')`（本仓最常见的多行写入形态）
+  if (!added) {
+    const arr = /@\(([\s\S]*?)\)/.exec(text);
+    if (arr) added = (arr[1].match(/'[^']*'|"[^"]*"/g) ?? []).length;
+  }
+  if (!added) added = 1;
+
+  /* 追加写的三种形态：PowerShell `-Append`、shell `>>`、以及自带追加语义的 API
+     （`Add-Content` / `appendFileSync`）—— 追加不会删任何东西，所以 deleted 能确定是 0。 */
+  const appended = /-Append\b|>>|Add-Content|appendFileSync/i.test(text);
+  return { added: Math.max(1, added), deleted: appended ? 0 : null };
+}

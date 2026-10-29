@@ -23,3 +23,6 @@ export const INTENT_VERB: Record<string, string>;
 
 /** 命令的动作短语（「跑守卫 11z」「构建并跑全量检查」）；**认不出返回空串**，调用方退回原 hint */
 export function commandAction(command: string, max?: number): string;
+
+/** 写文件类命令的行数统计（added 可数；deleted 为 null = 数不出来，例如覆盖写） */
+export function commandWriteStats(command: string): { added: number; deleted: number | null } | null;

@@ -11,7 +11,7 @@ import { Fold } from "../shared/Fold";
 import { ToolCodeBlock } from "../shared/ToolCodeBlock";
 import { formatDuration } from "../../lib/format-duration";
 import { basename } from "../../lib/basename";
-import { INTENT_VERB, commandAction, commandIntentOf, commandPurpose, commandTarget, displayCommand } from "../../lib/command-display.mjs";
+import { INTENT_VERB, commandAction, commandIntentOf, commandPurpose, commandTarget, commandWriteStats, displayCommand } from "../../lib/command-display.mjs";
 
 function commandCodeLanguage(command: string): { language: string; label: string } {
   if (/\b(?:powershell|pwsh)(?:\.exe)?\b/i.test(command)) return { language: "powershell", label: "PowerShell" };
@@ -36,7 +36,7 @@ function iconOfCommand(command: string, intent: string) {
   return TerminalSquare;
 }
 
-export function CommandExecutionCard({ item, waitingForApproval, turnActive }: { item: ThreadItem; waitingForApproval?: boolean; turnActive?: boolean }) {
+export function CommandExecutionCard({ item, waitingForApproval, turnActive, onOpenFile }: { item: ThreadItem; waitingForApproval?: boolean; turnActive?: boolean; onOpenFile?: (path: string) => void }) {
   const running = item.status === "inProgress" || item.status === "running";
   const failed = !running && item.exitCode != null && item.exitCode !== 0;
   const command = String(item.command ?? "").trim();
@@ -83,6 +83,10 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive }: {
   const intentVerb = INTENT_VERB[intent] ?? "运行";
   /* 图标按动作分类（读 / 改 / 找 / 目录 / git / 命令），⛔ 不再一律 TerminalSquare。 */
   const CmdIcon = iconOfCommand(commandText, intent);
+  /* 写文件类命令的行数统计（用户 10-29：「编辑文件 / 修改文件 / 生成文件，只要动了文件
+     后面都要加 +N -M」）。⛔ deleted 为 null 表示**数不出来**（覆盖写），只渲染 +N，
+     绝不编一个 -0 —— 假数字比没有更糟。 */
+  const writeStats = commandText ? commandWriteStats(commandText) : null;
   const target = commandText ? commandTarget(commandText) : "";
   const purpose = commandText ? commandPurpose(commandText) : "";
   /* 表头映射串 = 用途 · 目标（有哪个用哪个）：
@@ -102,18 +106,28 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive }: {
         非仓库里 `git status` 也非零），标成失败只会让人误以为出错。
         退出码仍留在展开体（`.cmd-exit`），真要看细节的人点开就有。 */
   const action = commandText ? commandAction(commandText) : "";
+  /* 折叠行的短目标（10-22 用户：「读取/编辑这类精确到文件，不要再地址」）：
+     `commandTarget` 给的是路径 ⇒ 只取最后一段；完整路径留在展开体的元信息行里。 */
+  const targetName = target ? basename(target) : "";
+  /* ⛔⛔ 10-29 用户实测截图：「读文件 TerminalPanel.tsx TerminalPanel.tsx」——**文件名出现了两次**。
+     根因：`commandAction` 的规则**故意**把文件名拼进动作短语（只写「读文件」看不出读的是哪个），
+     而表头后面本来还有一枚 `cmd-target`。⇒ 把短语尾部的文件名剥掉，让目标只出现一次，
+     而且那一次是**可点击、可高亮**的元素（而不是一段死文本）。 */
+  const actionVerb = targetName && action.endsWith(targetName)
+    ? action.slice(0, action.length - targetName.length).trim()
+    : action;
   /* 10-29 用户令：「已运行为啥后面不显示运行了啥命令，把命令映射成中文展示它是干嘛的」。
      表头优先级：动作短语（规则/通用子命令）→ 用途（脚本里的中文字面量）→ 「动词 + 剥壳命令原文」。
      ⛔ 都认不出时**一定**给命令原文（截断），不允许只剩一个「已运行」。
      ⛔ 等待批准时目标换成"在等我点"（同原让位逻辑）。 */
-  const headlineText = action || purpose;
+  const headlineText = actionVerb || purpose;
   /* ⛔⛔ 10-29 用户实测截图：「编辑文件 / 运行过程中 / 运行完成后那个都不见了」——
      原来动作短语一旦命中就**只剩「写文件」这种无状态的说法**，运行中和已完成长得一样，
      状态全靠右侧那枚 12px 的小图标。⇒ 运行时补「正在」前缀（动作短语本身是动词，读起来自然：
      「正在写文件」/「正在看 git 配置」）；完成时保持简洁（不加「已」，与 WorkBuddy 同形）。
      ⛔ 只给 action 加：`purpose`/原文兜底不是动词短语，拼「正在」会成了病句。 */
   const headline = headlineText && !(waitingForApproval && running)
-    ? (running && action ? `正在${action}` : headlineText)
+    ? (running && actionVerb ? `正在${actionVerb}` : headlineText)
     : "";
   const commandSnippet = headline || !commandText ? "" : displayCommand(commandText, 46);
   const verb = waitingForApproval && running ? "等待批准"
@@ -123,9 +137,6 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive }: {
   const shell = commandCodeLanguage(command);
   /* 耗时只进展开体（10-22 用户点名）——`formatDuration` 返回中文口径（"9.1 秒"） */
   const duration = formatDuration(item.durationMs);
-  /* 折叠行的短目标（10-22 用户：「读取/编辑这类精确到文件，不要再地址」）：
-     `commandTarget` 给的是路径 ⇒ 只取最后一段；完整路径留在展开体的元信息行里。 */
-  const targetName = target ? basename(target) : "";
   const codeText = [
     command,
     terminalInput ? `$ ${terminalInput}` : "",
@@ -136,11 +147,53 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive }: {
        收进展开体。原因是命令字面自带一长串绝对路径，扫时间线时看不出"这一步在干什么"。
        ⛔ 原文一个字都不删：展开体里仍是引擎原样的 `command`（用户要能照着复现）。 */
     <div className={`cmd-card ${status} ${open ? "open" : ""}`}>
-      <button type="button" className="cmd-head" onClick={toggle} aria-expanded={open} title={command || undefined}>
+      {/* ⛔⛔ 表头从 `<button>` 改成 `div[role=button]`（10-29）：里面要放**可点击的文件名**，
+          `<button>` 套 `<button>` 是非法 HTML —— 浏览器会自动闭合外层，整行结构被拆坏。
+          键盘可达性手动补（Enter / Space 切换），原生 button 自带的那部分等价替代。 */}
+      <div
+        className="cmd-head"
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={toggle}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          toggle();
+        }}
+        title={command || undefined}
+      >
         <span className="cmd-icon"><CmdIcon size={14} /></span>
         <span className="cmd-verb">{headline || verb}</span>
         {commandSnippet ? <span className="cmd-snippet" title={command}>{commandSnippet}</span> : null}
-        {targetName ? <span className="cmd-target" title={target}>{targetName}</span> : null}
+        {targetName ? (
+          onOpenFile ? (
+            /* 文件名可点 ⇒ **联动右侧审阅面板打开这个文件**（用户 10-29：「点击也不会联动右边展开」）。
+               ⛔ stopPropagation 必须要有：外层就是折叠开关，不拦的话点文件名会顺带把卡片收起来。 */
+            <button
+              type="button"
+              className="cmd-target is-link"
+              title={`打开 ${target}`}
+              onClick={(event) => { event.stopPropagation(); onOpenFile(target); }}
+            >{targetName}</button>
+          ) : (
+            <span className="cmd-target" title={target}>{targetName}</span>
+          )
+        ) : null}
+        {writeStats && !running ? (
+          /* 写文件类命令的行数（用户 10-29：「只要动了文件后面都要加 +N -M」，参考形态 `+2 -0`）。
+             `deleted` 为 null 时按 **0** 显示，因为命令写文件绝大多数是**新建**（旧行数=0）；
+             覆盖写才会低估 —— 这一点写进 tooltip，⛔ 不假装能数出来。 */
+          <span
+            className="cmd-diff-stats"
+            title={writeStats.deleted == null
+              ? `写入 ${writeStats.added} 行（若是覆盖已有文件，被替换掉的旧行数无法从命令字面推断）`
+              : `写入 ${writeStats.added} 行，未删除任何行（追加）`}
+          >
+            <b>+{writeStats.added}</b>
+            <i>-{writeStats.deleted ?? 0}</i>
+          </span>
+        ) : null}
         <span className="cmd-status"><CardStatusIcon status={status} /></span>
         {/* 明确的展开标识：文案 + 箭头一起变（只有一个小箭头不够明确 —— 用户 10-22 点名） */}
         {/* ★ 10-22 用户：「『展开』字样不要，鼠标放上去再浮出箭头，移开就隐藏」。
@@ -148,7 +201,7 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive }: {
         <span className="cmd-toggle" aria-hidden="true">
           <ChevronDown size={13} className="cmd-chevron" />
         </span>
-      </button>
+      </div>
       <Fold open={open}>
         <div className="cmd-content" ref={contentRef}>
           {waitingForApproval && running && <div className="cmd-approval"><ShieldCheck size={13} />需要批准才能继续</div>}

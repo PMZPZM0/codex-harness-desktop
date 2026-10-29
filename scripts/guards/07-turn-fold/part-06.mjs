@@ -92,9 +92,29 @@ export async function run() {
     /* 10-29 用户实测：「编辑文件 / 运行过程中 / 运行完成后那个都不见了」——
        动作短语一旦命中就只剩「写文件」这种无状态说法，运行中和已完成长得一样。
        ⇒ 运行时补「正在」前缀（只给 action：purpose/原文不是动词短语，拼「正在」是病句）。 */
-    (/running && action \? `正在\$\{action\}`/.test(termCode) ? ok : fail)(
+    // 10-29：动作短语尾部的文件名已剥到 `actionVerb`（⛔ 表头不能出现两次文件名）⇒ 前缀基于 actionVerb
+    (/running && actionVerb \? `正在\$\{actionVerb\}`/.test(termCode) ? ok : fail)(
       "【127】运行中的命令卡补「正在」前缀（否则运行中与已完成在表头上完全一样）"
     );
+    /* 10-29 用户实测：「读文件 TerminalPanel.tsx TerminalPanel.tsx」——文件名重复两次。
+       根因是动作规则把文件名拼进短语，表头后面还有一枚 cmd-target ⇒ 必须剥掉尾部目标名。 */
+    (/const actionVerb = targetName && action\.endsWith\(targetName\)/.test(termCode) ? ok : fail)(
+      "【127】动作短语尾部的文件名要剥掉（表头只留一处文件名，且那一处可点）"
+    );
+    /* 10-29 用户实测：「文件名字都没有亮，点击也不会联动右边展开」——
+       文件名必须是**可点按钮**（onOpenFile → 右侧预览），而不是一段死文本。 */
+    (/className="cmd-target is-link"/.test(termCode) && /onOpenFile\(target\)/.test(termCode) ? ok : fail)(
+      "【127】命令卡文件名可点（联动右侧预览），且不再是死文本"
+    );
+    /* 10-29 用户令：「编辑文件 / 修改文件 / 生成文件，只要动了文件后面都要加 +N -M」。
+       ⛔ 真跑纯函数：写文件才有统计（数组 2 行 → +2），读文件必须返回 null。 */
+    {
+      const { commandWriteStats } = await import(pathToFileURL(join(ROOT, "src", "lib", "command-display.mjs")).href);
+      const write = commandWriteStats("Set-Content .\\a.txt @('x','y')");
+      const read = commandWriteStats("Get-Content a.txt");
+      ok(write?.added === 2 && read === null,
+        "【127】写文件命令才有行数统计（数组 2 行 → +2；读文件 → 不给统计）");
+    }
     /* ★ 10-29 用户实测令：「中间有失败，不要在这里显示×显示√就行了」——
        结束的命令行一律 ✓：非零退出大多是正常探测（`git config --get user.name` 没配就 exit 1、
        非仓库里 `git status` 也非零），标成失败只会让人误以为出错。
