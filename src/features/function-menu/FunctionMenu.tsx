@@ -53,6 +53,7 @@ import {
   toggleFunctionMenuItemOverflow,
   useCustomMenuRevision,
   useFunctionMenuConfig,
+  getFunctionMenuConfig,
   useFunctionMenuEditorOpen,
   useFunctionMenuSettingsTargets,
 } from "./store";
@@ -125,12 +126,6 @@ export function FunctionMenu({ location }: { location: FunctionMenuLocation }) {
     if (entry.action.type === "settings") openSettingsFromFunctionMenu(entry.action.target);
     else if (entry.action.type === "url") void window.codex.openExternal(entry.action.target);
   };
-  /* 目录里已有、但配置里还没登记的扩展项：补进主列表末尾（老用户升级 / 手改 extensions.json）。 */
-  useEffect(() => {
-    if (!extMenu.length) return;
-    const missing = extMenu.map((entry) => entry.id).filter((id) => !config.order.includes(id));
-    if (missing.length) appendFunctionMenuItems(missing);
-  }, [extMenu, config.order]);
   const moreRef = useRef<HTMLButtonElement | null>(null);
   const [dragId, setDragId] = useState<FunctionMenuEntryId | null>(null);
   const [dropBefore, setDropBefore] = useState<FunctionMenuEntryId | null>(null);
@@ -268,6 +263,19 @@ export function FunctionMenuTourHost() {
 /** 编辑菜单弹窗宿主：全局只挂一份，任何入口都能打开。 */
 export function FunctionMenuEditorHost() {
   const open = useFunctionMenuEditorOpen();
+  /* ⛔ 宿主是**常驻**的（侧栏菜单本身只在展开时挂载）—— 扩展项并入主列表必须放在这里，
+     否则「设置里直接打开编辑器 / 没展开功能入口」时，已加的入口不会回到列表。 */
+  const revision = useCustomMenuRevision();
+  useEffect(() => {
+    let alive = true;
+    void window.codex.extensionsCatalog?.().then((catalog) => {
+      if (!alive) return;
+      const order = getFunctionMenuConfig().order;
+      const missing = (catalog?.menu ?? []).map((entry) => entry.id).filter((id) => !order.includes(id));
+      if (missing.length) appendFunctionMenuItems(missing);
+    }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [revision]);
   if (!open) return null;
   return createPortal(<FunctionMenuEditor />, document.body);
 }
@@ -430,6 +438,16 @@ function FunctionMenuEditor() {
         </div>
 
         
+
+        {pagesOpen && (
+          <AddPagesDialog
+            targets={targets}
+            taken={takenPages}
+            remaining={Math.max(0, CUSTOM_MENU_LIMIT - extMenu.length)}
+            onClose={() => setPagesOpen(false)}
+            onAdd={(pages) => { void addTargets(pages); }}
+          />
+        )}
 
         <footer className="fm-editor-foot">
           <button type="button" className="secondary-setting fm-custom-add" disabled={extMenu.length >= CUSTOM_MENU_LIMIT}
