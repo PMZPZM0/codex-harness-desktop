@@ -80,7 +80,11 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
      ✅ 正确做法（与顶栏搜索面板同款，本仓已有先例）：**portal 到 body + position: fixed**。
      定位逻辑共用 `useAnchoredPopover`（⛔ 别在这里另写一份：三处弹层同病，
      各自复制坐标算法 = 以后改一处忘两处）。 */
-  const posStyle = useAnchoredPopover(open, wrapRef, 300);
+  /* ⛔ 宽度必须与弹层 CSS 的实际宽度一致（hook 头注释第 3 条）：写 300 而实际 352
+     ⇒ 右对齐时右边会溢出视口 52px（审查发现）。
+     ⚠️ 这里别写弹层的 class 名：守卫按「文件里第一次出现该名」找 portal 锚点，
+        注释里先出现会把判据索引错位（本轮实测）。 */
+  const posStyle = useAnchoredPopover(open, wrapRef, 352);
   const teamOn = dispatch.team === true;
   return (
     <div className={`composer-menu dispatch-menu ${open ? "open" : ""}`} ref={wrapRef}>
@@ -124,7 +128,7 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
             <span className="dispatch-head-ico"><Users size={15} /></span>
             <div className="dispatch-head-text">
               <strong>调度</strong>
-              <small>把独立子任务交给专门的角色，产出回传本会话；每次派活开一个独立会话，上下文互不串。</small>
+              <small>把独立子任务交给专门的角色，产出回传本会话。成员各有自己的会话（常驻复用），和你的会话上下文互不串。</small>
             </div>
           </div>
           {/* 10-29 用户令「这里就可以只剩一个专家团就行」：专家 / 子智能体是**常开能力**，
