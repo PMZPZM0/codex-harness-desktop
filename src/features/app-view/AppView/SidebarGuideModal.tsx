@@ -56,11 +56,11 @@ type Guide = {
   subtitle: string;
   tone: "ic-blue" | "ic-pink" | "ic-violet" | "ic-amber";
   icon: LucideIcon;
-  intro: string;
   capabilities: { icon: LucideIcon; title: string; desc: string; target?: SidebarGuideTarget }[];
   steps: { title: string; desc: ReactNode }[];
   examples: string[];
-  codexNote: ReactNode;
+  /** 只在确实有「配套工具」时要的一句话小提醒（其余弹窗不写，避免每张卡都喊一遍）。 */
+  tip?: string;
 };
 
 const GUIDES: Record<SidebarGuideKey, Guide> = {
@@ -70,7 +70,6 @@ const GUIDES: Record<SidebarGuideKey, Guide> = {
     subtitle: "用现成组件拼界面，再交给 Codex 写进项目",
     tone: "ic-blue",
     icon: LayoutGrid,
-    intro: "组件库收了 Uiverse 的 3800+ 个 MIT 控件；前端开发画布可以先把手机 / 电脑 / 网页界面摆出来，AI 画布工作流负责批量生图 / 视频 / 短剧。都能直接交给 Codex 落地。",
     capabilities: [
       { icon: Library, title: "3800+ 现成控件", desc: "按钮、卡片、表单、加载器等 11 类，带真实预览与 HTML + CSS 源码。", target: "component-library" },
       { icon: MousePointerClick, title: "可视化画布", desc: "拖 44 种 Material 3 组件，摆手机 / 电脑 / 网页，一键预览。", target: "ui-sketch" },
@@ -87,7 +86,7 @@ const GUIDES: Record<SidebarGuideKey, Guide> = {
       "用 ui_component_get 取这个按钮的完整代码，写进 src/components/PrimaryButton.tsx",
       "把当前前端画布的设计稿交给 Codex 实现，先给我文件改动清单",
     ],
-    codexNote: "这两个工具查的是同一个组件库，取出的代码带原作者与 MIT 许可；不用你手动复制。",
+    tip: "组件库与 AI 画布工作流都配好了配套工具，Codex 可以直接调用。",
   },
   extensions: {
     key: "extensions",
@@ -95,7 +94,6 @@ const GUIDES: Record<SidebarGuideKey, Guide> = {
     subtitle: "给 Codex 加装做法、能力与外部工具",
     tone: "ic-pink",
     icon: Zap,
-    intro: "技能教它「怎么做」，插件可以打包一整套能力，MCP 把外部服务接进来。装好后它们会出现在 Codex 的技能 / 工具清单里，可以直接调用。",
     capabilities: [
       { icon: Sparkles, title: "技能", desc: "一份可读的做法说明书与检查清单；合适任务会自动参考，也能点名「用 xx 技能」。", target: "skills" },
       { icon: Store, title: "插件", desc: "一个包可带技能 / MCP / 钩子；内置插件里还能配生图、视频、视觉辅助接口。", target: "plugins" },
@@ -111,7 +109,6 @@ const GUIDES: Record<SidebarGuideKey, Guide> = {
       "用刚装的总结技能把这份 PDF 整理成三句话",
       "调用 GitHub MCP 查一下这个仓库最近的未合并 PR",
     ],
-    codexNote: "技能 / 插件 / MCP 装好后不需要另写提示词：Codex 在会话里能看到技能与工具清单，按需调用。",
   },
   agents: {
     key: "agents",
@@ -119,7 +116,6 @@ const GUIDES: Record<SidebarGuideKey, Guide> = {
     subtitle: "把任务派给专人或一支小队",
     tone: "ic-violet",
     icon: Users,
-    intro: "专家 = 单人专长，专家团 = 主理人带成员按 SOP 协作，子智能体 = 你自定义的轻量角色。它们各有独立上下文，结果汇总回主会话。",
     capabilities: [
       { icon: Users, title: "专家", desc: "代码审查、内容创作、演示文稿等现成专长，开一对一会话。", target: "expert-center" },
       { icon: CheckCircle2, title: "专家团", desc: "主理人按流程拆分、多人协作，适合能并行的大任务。", target: "teams" },
@@ -135,7 +131,6 @@ const GUIDES: Record<SidebarGuideKey, Guide> = {
       "创建一个专门做周报的子智能体，跟随当前会话的模型和审批",
       "先列出可用专家，再按任务挑一个最合适的",
     ],
-    codexNote: "专家 / 专家团会话本身不开放对外调度，避免「谁在干活」失控；这是刻意设计，不是故障。",
   },
   identity: {
     key: "identity",
@@ -143,7 +138,6 @@ const GUIDES: Record<SidebarGuideKey, Guide> = {
     subtitle: "换一套性格，并让它越用越懂你",
     tone: "ic-amber",
     icon: Heart,
-    intro: "人格市场是整套人设包，应用后写进全局个性化；记忆中心把偏好、项目背景和会话经验沉淀下来；知识库放项目资料，检索时直接引用。",
     capabilities: [
       { icon: Heart, title: "人格", desc: "16 套现成人格；整套换性格、语气、称呼，下一个新会话生效。", target: "soul-market" },
       { icon: Brain, title: "记忆", desc: "项目共享层 + 会话独立层；每轮自动注入，重要条目按 P0–P3 管理。", target: "memory" },
@@ -159,7 +153,6 @@ const GUIDES: Record<SidebarGuideKey, Guide> = {
       "以后回复先给结论，再给过程；别用表情",
       "按当前人格的语气帮我写一封给客户的邮件",
     ],
-    codexNote: "人格写的是全局个性化，下一个新会话生效；记忆与知识库都在本机，删除对应条目即可清掉。",
   },
 };
 
@@ -256,7 +249,6 @@ export function SidebarGuideModal({ guideKey, onNavigate, onClose }: { guideKey:
         <div className={`sidebar-guide-body ${view === "tutorial" ? "is-tutorial" : ""}`}>
           {view === "overview" ? (
             <>
-              <p className="sidebar-guide-intro">{guide.intro}</p>
               <section className="sidebar-guide-section">
                 <h4>能做什么</h4>
                 <div className="sidebar-guide-caps" data-count={guide.capabilities.length}>
@@ -285,14 +277,14 @@ export function SidebarGuideModal({ guideKey, onNavigate, onClose }: { guideKey:
                   })}
                 </div>
               </section>
-              <section className="sidebar-guide-codex">
-                <div className="sidebar-guide-codex-head"><Sparkles size={14} /><strong>Codex 已配备工具，可以直接做</strong></div>
-                <p>{guide.codexNote}</p>
-              </section>
+              {/* 10-29 用户令：概览里那句长说明和「Codex 已配备工具」卡片都删掉；
+                  只有前端 UI 这条留一行小提醒（其余入口不再各喊一遍）。 */}
+              {guide.tip ? (
+                <p className="sidebar-guide-tip"><Sparkles size={13} aria-hidden />小提醒：{guide.tip}</p>
+              ) : null}
             </>
           ) : (
             <>
-              <p className="sidebar-guide-intro">把「{guide.title}」用起来，按下面几步走。示例可以直接点一下复制，再粘到对话里。</p>
               <section className="sidebar-guide-section">
                 <h4>操作步骤</h4>
                 <ol className="guide-steps sidebar-guide-steps">
@@ -304,9 +296,8 @@ export function SidebarGuideModal({ guideKey, onNavigate, onClose }: { guideKey:
                   ))}
                 </ol>
               </section>
-              <section className="sidebar-guide-codex">
-                <div className="sidebar-guide-codex-head"><Sparkles size={14} /><strong>Codex 已配备工具，可以直接做</strong></div>
-                <p>{guide.codexNote}</p>
+              <section className="sidebar-guide-section">
+                <h4>示例（点一下复制）</h4>
                 <div className="sidebar-guide-examples">
                   {guide.examples.map((example) => (
                     <button
