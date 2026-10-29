@@ -132,8 +132,7 @@ export function commandTarget(command, max = 48) {
 /**
  * 路径的展示形态：统一成正斜杠，**超长时从左边截**（保尾 ⇒ 文件名永远可见）。
  * 例：`D:\a\src\features\app-state\parts\part09\01-seg.tsx` → `…/features/app-state/parts/part09/01-seg.tsx`
- */
-export function shortenPath(value, max = 48) {
+ */export function shortenPath(value, max = 48) {
   // ⛔ 多分隔符要压缩（09-24 真机截图：`D://Codex Harness Desktop-refactor//.codex` —— 脚本里
   //   写的是 `D://…//` 这种双斜杠，直接归一成正斜杠会把这些双斜杠原样带到界面上）。
   const normalized = String(value ?? "").replace(/\\/g, "/").replace(/\/{2,}/g, "/");
@@ -498,4 +497,47 @@ export function commandWriteStats(command) {
      （`Add-Content` / `appendFileSync`）—— 追加不会删任何东西，所以 deleted 能确定是 0。 */
   const appended = /-Append\b|>>|Add-Content|appendFileSync/i.test(text);
   return { added: Math.max(1, added), deleted: appended ? 0 : null };
+}
+
+/**
+ * 这条命令自己 `cd` 到哪儿了。
+ *
+ * ⛔⛔ 10-30 用户实测（截图 + rollout 双重证据）：会话 cwd 是 `D:/测试`，模型却在命令里
+ * `cd 'D:/Codex Harness Desktop'; $f = '.\src\lib\command-display.mjs'; …` ⇒ 卡片把这条**相对**
+ * 路径按**会话目录**拼成 `D:/测试/src/lib/command-display.mjs`，点开就是「文件不存在或不可读」。
+ * 文件其实在 `D:/Codex Harness Desktop\src\lib\`。⇒ 相对路径必须以**命令自己的 cd 目录**为基准。
+ *
+ * 只认**绝对路径**的 cd：`cd ..` / `cd src` 推不出真目录，返回 "" （宁可退回旧行为，也不猜）。
+ * 只看命令**开头**那一段：`; cmd1; cd B; cmd2` 里的 cd B 属于后续步骤，拿它当基准会张冠李戴。
+ * @param {string} command
+ * @returns {string} 绝对目录；推不出来返回 ""
+ */
+export function commandWorkdir(command) {
+  const text = stripShellLauncher(command);
+  if (!text) return "";
+  const hit = text.match(/^\s*(?:cd|chdir|set-location|sl|pushd)\s+(?:-path\s+|--\s+)?(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/i);
+  const dir = String(hit?.[1] ?? hit?.[2] ?? hit?.[3] ?? "").trim().replace(/^["']|["']$/g, "");
+  // 绝对路径：盘符 / UNC / 根斜杠。其余（含 `..`、`src`）一律不认。
+  return /^(?:[A-Za-z]:[\\/]|\\\\|\/)/.test(dir) ? dir : "";
+}
+
+/**
+ * 命令里的相对目标 → 绝对路径（用**命令自己的 cd 目录**，不是会话目录）。
+ * 已是绝对路径、或命令没 cd、或路径含 `..`（可能逃出 cd 目录）时原样返回，交给下游兜底。
+ * @param {string} command
+ * @param {string} target
+ * @returns {string}
+ */
+export function resolveCommandTarget(command, target) {
+  const raw = String(target ?? "").trim();
+  if (!raw) return raw;
+  if (/^(?:[A-Za-z]:[\\/]|\\\\|\/)/.test(raw)) return raw;
+  if (/(?:^|[\\/])\.\.(?:[\\/]|$)/.test(raw)) return raw;
+  const dir = commandWorkdir(command);
+  if (!dir) return raw;
+  const base = dir.replace(/[\\/]+$/, "");
+  const sep = base.includes("\\") ? "\\" : "/";
+  const rel = raw.replace(/^\.\.[\\/]/, "").replace(/^\.\//, "").replace(/^\.\\/, "").replace(/^[\\/]+/, "");
+  if (!rel) return raw;
+  return `${base}${sep}${rel.replace(/[\\/]+/g, sep)}`;
 }
