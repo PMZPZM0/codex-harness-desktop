@@ -32,7 +32,7 @@ import { deletedThreadIds, purgeDeletedThread } from "./thread-deletion";
 import { bridgeDial, mutableState, readCustomModel } from "../main";
 import { codexHome, delegateRegistry, engineActiveTurnIds, server, threadCwd } from "../runtime-refs";
 import { clearGrants } from "./data-access-ipc";
-import { ensureSessionWorkspace, removeSessionWorkspace } from "./session-workspace";
+import { removeSessionWorkspace } from "./session-workspace";
 import { clearSessionPrivateMemory } from "../memory-fabric";
 import { broadcastHarnessEvent } from "./window-bus";
 import { ensureProjectAgentsMd } from "../project-conventions";
@@ -223,23 +223,6 @@ export const codexFeature = defineFeature<null>({
              ⛔ 用工作区记录里的 projectRoot 定位 —— threadCwd 在重启后可能已空。 */
           const memoryWs = wsOut?.projectRoot || "";
           if (memoryWs) void clearSessionPrivateMemory(memoryWs, purgeTarget).catch(() => undefined);
-        }
-      }
-      /* 10-29 用户令：新建会话后，在**项目地址下**给它建专属工作区。
-         ⛔ 放在主进程而不是渲染层：这里拿到的是**引擎实际用的 cwd**（result.thread.cwd），
-            渲染层那侧的 `bag.workspace` 是全局状态，新建会话时可能还没落定（实测：为空 ⇒ 一个都没建出来）。
-         ⛔ cwd 可能就是 userData 下的中枢目录/临时目录 —— 实现里的 normalizeProjectRoot 会把它们挡掉。
-         失败静默：没有工作区不影响会话本身。 */
-      if (method === "thread/start") {
-        const created = (result as any)?.thread ?? {};
-        const newId = String(created.id ?? "");
-        const newCwd = String(created.cwd ?? (params as any)?.cwd ?? "");
-        if (newId && newCwd) {
-          void ensureSessionWorkspace(app.getPath("userData"), newId, newCwd)
-            .then((out) => console.log(out.ok
-              ? `[sessionspace] 已建工作区：${newId.slice(0, 8)} → ${out.dir}`
-              : `[sessionspace] 未建工作区（${out.reason}）：${newId.slice(0, 8)}`))
-            .catch(() => undefined);
         }
       }
       if (method === "thread/list") {
