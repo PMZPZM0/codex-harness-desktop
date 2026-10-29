@@ -80,6 +80,12 @@ ok(/updated\.push\(row\.name\)/.test(skillsIpc) && /type: "skill-auto-update"/.t
   "后台更新有结果时广播 skill-auto-update（⛔ 原来全程静默，用户不知道它动过技能目录）");
 ok(/if \(updated\.length \|\| failed\)/.test(skillsIpc) || /if \(updated\.length \|\| failed /.test(skillsIpc),
   "全部一致时不打扰（只有真动过或有失败才广播）");
+/* 10-30 审查：市场安装链是「先 rm 再 cp」的非原子写；后台循环 + 控制台手动更新 + 市场安装
+   三条路径并发会互相删掉半份目录 ⇒ 必须共用同一把串行闸。 */
+ok(/let skillWriteChain: Promise<unknown> = Promise\.resolve\(\)/.test(skillsIpc) && /withSkillWriteLock\(\(\) => updateSkillFolder/.test(skillsIpc),
+  "技能目录写入串行闸（后台循环与手动更新不同时写）");
+ok(/withSkillWriteLock\(\(\) => installCocoLoopSkill/.test(skillsIpc),
+  "市场安装也走同一把锁（安装 / 更新 / 后台三方共用）");
 
 console.log("【⑥ 控制台入口 + 技能更新面板（10-30）】");
 const cardSrc = codeOnly(read("src/features/settings-general/AutoUpdateCard.tsx"));

@@ -65,10 +65,13 @@ export function SkillUpdatePanel({
 
   useEffect(() => { void check(); }, [check]);
 
-  /* 进度与后台结果都走 harness 事件：per-row 进度（skill-install）+ 后台自动更新的结果汇总。 */
+  /* 进度与后台结果都走 harness 事件：per-row 进度（skill-install）+ 后台自动更新的结果汇总。
+     ⛔ 只认**本面板正在更新的那一项**（busy）：技能页装别的技能时也会发 skill-install，
+        不筛就会在这里串出台词。 */
   useEffect(() => window.codex.onHarnessEvent?.((payload) => {
     const event = payload as HarnessPayload;
     if (event?.type === "skill-install" && event.skillId) {
+      if (!busy || event.skillId !== busy) return;
       const name = (rows ?? []).find((row) => row.folder === event.skillId)?.name ?? event.skillId;
       setStage(`${name} · ${STAGE_TEXT[event.stage ?? ""] ?? "处理中"}${event.message ? `（${event.message}）` : ""}`);
       return;
@@ -79,7 +82,7 @@ export function SkillUpdatePanel({
       push(line);
       setNotice?.("技能自动更新", line);
     }
-  }), [rows, push, setNotice]);
+  }), [rows, busy, push, setNotice]);
 
   useEffect(() => {
     const node = logRef.current;
@@ -164,7 +167,9 @@ export function SkillUpdatePanel({
       {error ? <p className="skill-update-error"><AlertTriangle size={13} />{error}</p> : null}
       <div className="skill-update-list">
         {rows === null ? <p className="settings-card-hint">正在检查…</p> : rows.length === 0 ? (
-          <p className="settings-card-hint">没有市场安装的技能。到「技能 → 市场浏览」装一个，之后就能在这里检查更新。</p>
+          <p className="settings-card-hint">
+            {error ? "刚刚的检查没成功，点上方的「检查更新」重试。" : "没有市场安装的技能。到「技能 → 市场浏览」装一个，之后就能在这里检查更新。"}
+          </p>
         ) : rows.map((row) => (
           <div className="skill-update-row" key={row.folder} data-state={row.state}>
             <span className={`skill-update-state ${row.state}`}>
