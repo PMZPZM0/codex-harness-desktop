@@ -17,7 +17,20 @@ import android.webkit.WebSettings;
 import android.webkit.ValueCallback;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.EditText;
 import android.widget.TextView;
+
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.appcompat.app.AppCompatActivity;
@@ -45,8 +58,11 @@ public class MainActivity extends AppCompatActivity {
 
     private WebView web;
     private View setup;
+    private EditText code;
     private TextView hint;
     private String baseUrl;
+    /** 配对进行中：按钮禁用，提示「正在配对 / 等待电脑端批准」 */
+    private volatile boolean busy;
 
     private final ActivityResultLauncher<ScanOptions> scanLauncher =
             registerForActivityResult(new ScanContract(), result -> {
@@ -56,7 +72,8 @@ public class MainActivity extends AppCompatActivity {
                 //    放后面的话「扫到 6 位码」这条永远走不到（会去加载 https://123456）。
                 String digitsOfScan = raw.replaceAll("[^0-9]", "");
                 if (!raw.toLowerCase(java.util.Locale.ROOT).startsWith("http") && digitsOfScan.length() == 6) {
-                    openChat(digitsOfScan);
+                    if (code != null) code.setText(digitsOfScan);
+                    startConnect(digitsOfScan);
                     return;
                 }
                 /* 10-29：中转地址是 https://<域名>/t/<设备ID>，必须**连路径前缀一起存**
@@ -68,8 +85,12 @@ public class MainActivity extends AppCompatActivity {
                 }
                 baseUrl = scanned;
                 prefs().edit().putString(KEY_BASE, baseUrl).apply();
-                /* 只扫一次码就进：连接码在网页配对页里输（⛔ App 首屏不再重复要一遍） */
-                openChat("");
+                /* 二维码里带连接码（#code=）⇒ 扫完直接配对；没有码就把码填好等用户输。
+                   ⛔ 配对全过程在 App 内完成，不再跳网页配对页。 */
+                String scannedCode = codeFromFragment(raw);
+                if (code != null) code.setText(scannedCode);
+                if (!scannedCode.isEmpty()) startConnect(scannedCode);
+                else showSetup("已连上电脑地址，请输入 6 位连接码");
             });
 
     @Override
@@ -79,14 +100,16 @@ public class MainActivity extends AppCompatActivity {
 
         web = findViewById(R.id.web);
         setup = findViewById(R.id.setup);
+        code = findViewById(R.id.code);
         hint = findViewById(R.id.hint);
+        findViewById(R.id.connect).setOnClickListener(v -> startConnect(code == null ? "" : code.getText().toString()));
         findViewById(R.id.scan).setOnClickListener(v -> startScan());
 
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.4");
+        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.5");
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(web, true);
@@ -148,10 +171,24 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onPageFinished(WebView view, String url) {
-                if (url != null && url.startsWith("http")) {
-                    setup.setVisibility(View.GONE);
-                    web.setVisibility(View.VISIBLE);
-                }
+                if (url == null || !url.startsWith("http")) return;
+                setup.setVisibility(View.GONE);
+                web.setVisibility(View.VISIBLE);
+                /* 把设备秘密同步给页面：万一 cookie 被清，页面自己的 autoLogin 还能救回来
+                   （前缀 = /t/<设备ID>；没有中转前缀时为空串） */
+                try {
+                    String secret = savedSecret();
+                    int at = url.indexOf("/t/");
+                    int chat = url.indexOf("/r/");
+                    if (!secret.isEmpty() && at >= 0 && chat > at) {
+                        String prefix = url.substring(at, chat);
+                        String js = "try{localStorage.setItem('chm-pair-secret'+"
+                                + JSONObject.quote(prefix) + "," + JSONObject.quote(secret) + ");"
+                                + "localStorage.setItem('chm-pair-device'+" + JSONObject.quote(prefix) + ","
+                                + JSONObject.quote(deviceId()) + ");}catch(e){}";
+                        view.evaluateJavascript(js, null);
+                    }
+                } catch (Exception ignored) { /* 注入失败不影响使用 */ }
             }
 
             @Override
@@ -182,16 +219,194 @@ public class MainActivity extends AppCompatActivity {
         baseUrl = origin.isEmpty() ? fallback : origin;
         // 连过一次之后，再打开 App 直接进对话：不带连接码，页面会用设备秘密自动登录；
         // 电脑端在线就永远是对话页，不需要重新连接。
-        if (prefs().getBoolean(KEY_CONNECTED, false)) resumeSession();
+        /* 连过一次：App 自己用设备秘密换新 cookie 再进对话（⛔ 不再让网页配对页出现） */
+        if (prefs().getBoolean(KEY_CONNECTED, false)) autoLogin();
         else showSetup("");
     }
 
-    /** 重进应用直连：不要求连接码（凭据失效时页面会回到配对页，再输一次码即可）。 */
-    private void resumeSession() {
+    /** 已拿到 cookie：进对话页 */
+    private void enterChat() {
+        busy = false;
         hint.setText("");
+        prefs().edit().putBoolean(KEY_CONNECTED, true).apply();
         setup.setVisibility(View.GONE);
         web.setVisibility(View.VISIBLE);
+        // ⛔ 直接开 /r/mobile：根路径会 302 一次，没必要
         web.loadUrl(baseUrl + "/r/mobile");
+    }
+
+    /** 二维码里的 #code=123456（有就自动配对，没有就让用户手输） */
+    private String codeFromFragment(String url) {
+        try {
+            String fragment = Uri.parse(url).getFragment();
+            if (fragment == null) return "";
+            java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("code=(\\d{6})").matcher(fragment);
+            return matcher.find() ? matcher.group(1) : "";
+        } catch (Exception error) {
+            return "";
+        }
+    }
+
+    private String deviceId() {
+        String id = prefs().getString("device_id", "");
+        if (id.isEmpty()) {
+            id = "dev-" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+            prefs().edit().putString("device_id", id).apply();
+        }
+        return id;
+    }
+
+    private String deviceName() {
+        String name = android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL;
+        return name.length() > 40 ? name.substring(0, 40) : name;
+    }
+
+    private String secretKey() {
+        return "secret:" + baseUrl;
+    }
+
+    private String savedSecret() {
+        return prefs().getString(secretKey(), "");
+    }
+
+    private void saveSecret(String value) {
+        prefs().edit().putString(secretKey(), value).apply();
+    }
+
+    private void setBusy(boolean value, String text) {
+        busy = value;
+        if (hint != null) hint.setText(text == null ? "" : text);
+        View connectButton = findViewById(R.id.connect);
+        View scanButton = findViewById(R.id.scan);
+        if (connectButton != null) connectButton.setEnabled(!value);
+        if (scanButton != null) scanButton.setEnabled(!value);
+    }
+
+    /** 手输 / 扫到的连接码 → 在 App 内完成配对（配对过程也显示在这里，⛔ 不跳网页配对页） */
+    private void startConnect(String rawCode) {
+        if (busy) return;
+        String digits = rawCode == null ? "" : rawCode.replaceAll("[^0-9]", "");
+        if (digits.length() != 6) { showSetup("请输入电脑上显示的 6 位连接码"); return; }
+        if (baseUrl == null || baseUrl.isEmpty()) { showSetup("还没有电脑地址：请先扫码"); return; }
+        if (code != null) code.setText(digits);
+        setBusy(true, "正在配对…");
+        new Thread(() -> {
+            try {
+                List<String> jar = new ArrayList<>();
+                JSONObject body = new JSONObject()
+                        .put("code", digits)
+                        .put("deviceId", deviceId())
+                        .put("deviceName", deviceName())
+                        .put("deviceSecret", savedSecret());
+                HttpResult result = http("POST", "/api/pair", body.toString(), jar);
+                JSONObject json = new JSONObject(result.body);
+                if (!json.optBoolean("ok")) throw new Exception(json.optString("error", "配对失败"));
+                String secret = json.optString("deviceSecret", "");
+                if (!secret.isEmpty()) saveSecret(secret);
+                applyCookies(result.cookies);
+                if (json.optBoolean("approved")) { runOnUiThread(this::enterChat); return; }
+                String rid = json.optString("rid", "");
+                runOnUiThread(() -> setBusy(true, "配对码正确，等待电脑端批准…"));
+                pollApproval(rid, jar);
+            } catch (Exception error) {
+                runOnUiThread(() -> setBusy(false, "配对失败：" + String.valueOf(error.getMessage())));
+            }
+        }).start();
+    }
+
+    private void pollApproval(String rid, List<String> jar) {
+        long deadline = System.currentTimeMillis() + 120_000;
+        while (System.currentTimeMillis() < deadline) {
+            try { Thread.sleep(1500); } catch (InterruptedException interrupted) { return; }
+            try {
+                HttpResult result = http("GET", "/api/pair-status?rid=" + Uri.encode(rid), null, jar);
+                JSONObject json = new JSONObject(result.body);
+                String status = json.optString("status", "");
+                if ("approved".equals(status)) {
+                    String secret = json.optString("deviceSecret", "");
+                    if (!secret.isEmpty()) saveSecret(secret);
+                    applyCookies(result.cookies);
+                    runOnUiThread(this::enterChat);
+                    return;
+                }
+                if ("denied".equals(status)) { runOnUiThread(() -> setBusy(false, "电脑端拒绝了这次连接")); return; }
+                if ("expired".equals(status)) { runOnUiThread(() -> setBusy(false, "配对码已过期，请刷新电脑端二维码后重试")); return; }
+            } catch (Exception ignored) { /* 网络抖动：继续轮询 */ }
+        }
+        runOnUiThread(() -> setBusy(false, "等待批准超时，请重试"));
+    }
+
+    /** 重开应用：用设备秘密换新 cookie 再进对话（accessToken 每次启动都重生成） */
+    private void autoLogin() {
+        if (savedSecret().isEmpty()) { showSetup(""); return; }
+        setBusy(true, "正在自动登录…");
+        new Thread(() -> {
+            try {
+                List<String> jar = new ArrayList<>();
+                JSONObject body = new JSONObject()
+                        .put("deviceId", deviceId())
+                        .put("deviceName", deviceName())
+                        .put("deviceSecret", savedSecret());
+                HttpResult result = http("POST", "/api/pair", body.toString(), jar);
+                JSONObject json = new JSONObject(result.body);
+                if (json.optBoolean("ok") && json.optBoolean("approved")) {
+                    applyCookies(result.cookies);
+                    runOnUiThread(this::enterChat);
+                    return;
+                }
+            } catch (Exception ignored) { /* 落到重新配对 */ }
+            runOnUiThread(() -> { setBusy(false, "连接已失效，请重新输入连接码或扫码"); showSetup("连接已失效，请重新输入连接码或扫码"); });
+        }).start();
+    }
+
+    private void applyCookies(List<String> cookies) {
+        CookieManager manager = CookieManager.getInstance();
+        for (String header : cookies) {
+            try { manager.setCookie(baseUrl, header); } catch (Exception ignored) { }
+        }
+        manager.flush();
+    }
+
+    private static class HttpResult {
+        int status;
+        String body;
+        List<String> cookies = new ArrayList<>();
+    }
+
+    private HttpResult http(String method, String path, String json, List<String> jar) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl + path).openConnection();
+        connection.setRequestMethod(method);
+        connection.setConnectTimeout(15_000);
+        connection.setReadTimeout(20_000);
+        connection.setRequestProperty("accept", "application/json");
+        if (!jar.isEmpty()) connection.setRequestProperty("Cookie", TextUtils.join("; ", jar));
+        if (json != null) {
+            connection.setDoOutput(true);
+            connection.setRequestProperty("content-type", "application/json");
+            try (OutputStream output = connection.getOutputStream()) {
+                output.write(json.getBytes(StandardCharsets.UTF_8));
+            }
+        }
+        HttpResult result = new HttpResult();
+        result.status = connection.getResponseCode();
+        InputStream stream = result.status >= 400 ? connection.getErrorStream() : connection.getInputStream();
+        StringBuilder text = new StringBuilder();
+        if (stream != null) {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) text.append(line);
+            }
+        }
+        result.body = text.toString();
+        for (java.util.Map.Entry<String, List<String>> entry : connection.getHeaderFields().entrySet()) {
+            if (entry.getKey() == null || !"set-cookie".equalsIgnoreCase(entry.getKey())) continue;
+            for (String value : entry.getValue()) {
+                result.cookies.add(value);
+                jar.add(value.split(";")[0]);
+            }
+        }
+        connection.disconnect();
+        return result;
     }
 
     private SharedPreferences prefs() {
@@ -237,22 +452,6 @@ public class MainActivity extends AppCompatActivity {
         byte[] out = new byte[raw.length];
         for (int i = 0; i < raw.length; i++) out[i] = (byte) (raw[i] ^ 0x5a);
         return new String(out, java.nio.charset.StandardCharsets.UTF_8);
-    }
-
-    /** 进对话页。rawCode 为空 = 只打开页面（连接码在网页配对页里输，App 不再重复问一遍）；
-     *  带 6 位码 = 从旧二维码扫到纯数字时走 URL 片段自动提交（不会进服务器日志）。 */
-    private void openChat(String rawCode) {
-        String digits = rawCode == null ? "" : rawCode.replaceAll("[^0-9]", "");
-        if (!digits.isEmpty() && digits.length() != 6) {
-            showSetup("二维码里的连接码不是 6 位数字");
-            return;
-        }
-        hint.setText("");
-        prefs().edit().putBoolean(KEY_CONNECTED, true).apply();
-        setup.setVisibility(View.GONE);
-        web.setVisibility(View.VISIBLE);
-        // ⛔ 直接开 /r/mobile：根路径会 302 一次，没必要（且避免刷新时把码丢掉）
-        web.loadUrl(baseUrl + "/r/mobile" + (digits.isEmpty() ? "" : "#code=" + digits));
     }
 
     private void startScan() {

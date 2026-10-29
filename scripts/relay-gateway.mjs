@@ -36,7 +36,7 @@ const MAX_INFLIGHT = 32;
 const MAX_PER_MINUTE = 900;
 /* 安装包公开下载（不要求已配对）：老版本 App 的「安装包」入口坏了，也能用手机浏览器更新 */
 const APK_URL = process.env.RELAY_APK_URL
-  || "https://github.com/PMZPZM0/codex-harness-desktop/releases/download/mobile-remote-v0.1.4/CodexRemote-0.1.4.apk";
+  || "https://github.com/PMZPZM0/codex-harness-desktop/releases/download/mobile-remote-v0.1.5/CodexRemote-0.1.5.apk";
 /* 安装包**由网关自己缓存后再发**：国内手机直连 GitHub Release 经常超时（实测 302 过去就挂），
    ⛔ 不要退回「302 到 GitHub」——那等于把可用性交给墙。镜像顺序与 gh-mirror.ts 同源。 */
 const APK_DIR = process.env.RELAY_APK_DIR || "/var/lib/relay/apk";
@@ -56,7 +56,7 @@ async function ensureApkFile() {
     let lastError = "未知错误";
     for (const url of apkCandidates()) {
       try {
-        const response = await fetch(url, { redirect: "follow" });
+        const response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(60_000) });
         if (!response.ok) { lastError = `HTTP ${response.status}`; continue; }
         const buffer = Buffer.from(await response.arrayBuffer());
         /* 镜像挂了常回一个 HTML 错误页：小于 1MB 的「APK」一定是假的 */
@@ -131,6 +131,7 @@ function saveState() {
     console.warn("[relay] 保存设备表失败：", error?.message ?? error);
   }
 }
+const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch] || ch));
 const sha256 = (value) => crypto.createHash("sha256").update(String(value)).digest("hex");
 
 function reply(res, status, body, type = "text/plain; charset=utf-8") {
@@ -156,7 +157,7 @@ h1{font-size:18px;margin:0 0 8px}p{color:#6f6f69;font-size:13px;margin:8px 0}cod
 <div class="card"><h1>这台电脑还没连上</h1>
 <p>请先<strong>打开电脑端应用</strong>（远控服务随应用启动），然后刷新本页。</p>
 <p>如果你想用的是新地址，请重新扫一次电脑上的二维码（形如 <code>/t/设备ID/r/mobile</code>）。</p>
-<p style="color:#a3a39c;font-size:12px">技术信息：${String(error?.message ?? error)}</p></div></html>`);
+<p style="color:#a3a39c;font-size:12px">技术信息：${escapeHtml(error?.message ?? error)}</p></div></html>`);
   });
   req.pipe(upstream);
 }

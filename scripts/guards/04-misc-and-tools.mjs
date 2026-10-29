@@ -1611,6 +1611,12 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (gwSrc.includes("这台电脑还没连上") && gwSrc.includes("res.writeHead(503") ? ok : fail)(
       "【139e】旧地址连不上时要给人话（503 说明页），⛔ 不许把 socket hang up 原样甩给用户"
     );
+    (relaySrc.includes("function resetSubmit()") && relaySrc.includes("resetSubmit(); el.className") ? ok : fail)(
+      "【139e】配对被拒/过期/超时后必须解锁提交按钮（否则用户只能刷新页面）"
+    );
+    (gwSrc.includes("escapeHtml(error?.message") && gwSrc.includes("AbortSignal.timeout(60_000)") ? ok : fail)(
+      "【139e】网关：错误文本转义 + 拉安装包带超时（坏镜像不许挂死请求）"
+    );
     (gwSrc.includes("lastPong") && gwSrc.includes("REQ_TIMEOUT_MS = 20_000") ? ok : fail)(
       "【139e】网关有心跳与更短超时：隧道半死时手机不会干等 35s（返回前先判死并踢连接）"
     );
@@ -1650,14 +1656,17 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       } catch (error) { console.log("      剥离模块导入失败：", error.message); }
       (stripOk ? ok : fail)("【139e】手机读历史必须剥掉 <!--boss-role--> 角色块（用户截图：整块注入显示在气泡里）");
     }
-    (androidSrc.includes('openChat("")') && !androidSrc.includes("R.id.code") && !androidSrc.includes("R.id.connect") ? ok : fail)(
-      "【139e】安卓首屏只保留扫码（连接码在网页配对页里输一次）；扫码页必须竖屏（tools:replace 覆盖 zxing 的 sensorLandscape）"
+    (androidSrc.includes("R.id.code") && androidSrc.includes("R.id.connect") && androidSrc.includes("R.id.scan") ? ok : fail)(
+      "【139e】安卓首屏保留手输连接码 + 扫码（两个入口，同一个界面）"
     );
     ((androidSrc.includes("setOrientationLocked(true)") && readFileSync(join(ROOT, "android", "app", "src", "main", "AndroidManifest.xml"), "utf8").includes('android:screenOrientation="portrait"') && readFileSync(join(ROOT, "android", "app", "src", "main", "AndroidManifest.xml"), "utf8").includes("tools:replace=\"android:screenOrientation\"")) ? ok : fail)(
       "【139e】扫码页必须竖屏（zxing 默认 sensorLandscape，必须 tools:replace 覆盖）"
     );
-    (relaySrc.includes("mobile-remote-v0.1.4") ? ok : fail)(
-      "【139e】安装包版本与 Release 对齐（0.1.4）"
+    (androidSrc.includes("startConnect(code == null") && androidSrc.includes('"/api/pair"') && androidSrc.includes("pollApproval") && !androidSrc.includes("openChat(") ? ok : fail)(
+      "【139e】配对在 App 内一次完成：手输码保留 + 直接 POST /api/pair 并轮询批准（⛔ 不再打开网页配对页）"
+    );
+    (relaySrc.includes("mobile-remote-v0.1.5") ? ok : fail)(
+      "【139e】安装包版本与 Release 对齐（0.1.5）"
     );
   }
 }

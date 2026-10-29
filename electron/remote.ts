@@ -12,13 +12,13 @@ import { buildRemotePageHtml } from "./remote/web-page";
 import { RelayTunnel, type RelayStatus } from "./relay-tunnel";
 
 /** 手机安装包所在的 Release tag（⛔ 不是桌面版安装包的 v* 发布，别混用） */
-const REMOTE_APK_RELEASE = "mobile-remote-v0.1.4";
+const REMOTE_APK_RELEASE = "mobile-remote-v0.1.5";
 
 /** 安装包校验和（GitHub 资产自带的 digest）：镜像层可能被篡改，对不上就不落盘 —— 与 updates.ts 同口径。
  *  ⛔ 重新发布同名资产时必须同步改这里，否则手机端会一直报「校验和不匹配」。 */
 const REMOTE_APK_SHA256: Record<string, string> = {
-  "CodexRemote-0.1.4.apk": "81765529cc8e83eca258823b42abe55b3d6e50296a024c42acfa607ba1f039c8",
-  "PPcodeRemote-0.1.4.apk": "c7b07eb0ad12ac94217a8d8f146c9c4fb7d0ddedad0bc9c35af9ad372538e5a7",
+  "CodexRemote-0.1.5.apk": "4cf29ed28d323df71e02711a6d2aabdeb14ed5fc792f8ad93863833eccce7430",
+  "PPcodeRemote-0.1.5.apk": "5f638e1f4f14d77cdf8b1cdebc7682cd55f8e497b2e5ca8ab0119bb34873afa7",
 };
 
 /** cloudflared 可执行文件（手机配对的公网隧道）。
@@ -1022,6 +1022,8 @@ const ua = navigator.userAgent;
 const deviceName = ua.includes("iPhone") ? "iPhone" : ua.includes("Android") ? "Android 手机" : "手机";
 const el = document.getElementById("state");
 let submitting = false;
+/* 被拒 / 过期 / 超时后必须解锁：否则按钮永远禁用，用户只能刷新页面（审查发现） */
+function resetSubmit(){ submitting = false; const b = document.querySelector("button"); if (b) b.disabled = false; }
 async function submit(){
   /* ⛔ 防重复配对：#code= 自动提交 + 用户手点会发两次，电脑端就出现两张「等待批准」 */
   if (submitting) return;
@@ -1051,10 +1053,11 @@ async function poll(rid){
       const r = await fetch(API_BASE + "/api/pair-status?rid=" + rid);
       const j = await r.json();
       if (j.status === "approved") { if (j.deviceSecret) { deviceSecret = j.deviceSecret; localStorage.setItem(KEY_SECRET, deviceSecret); } el.className = "ok"; el.textContent = "已批准，正在进入…"; setTimeout(() => location.replace(API_BASE + "/r/mobile"), 600); return; }
-      if (j.status === "denied") { el.className = "err"; el.textContent = "电脑端拒绝了这次连接"; return; }
-      if (j.status === "expired") { el.className = "err"; el.textContent = "等待超时，请重新配对"; return; }
+      if (j.status === "denied") { resetSubmit(); el.className = "err"; el.textContent = "电脑端拒绝了这次连接"; return; }
+      if (j.status === "expired") { resetSubmit(); el.className = "err"; el.textContent = "等待超时，请重新配对"; return; }
     } catch { /* 隧道偶尔超时，继续轮询 */ }
   }
+  resetSubmit();
   el.className = "err"; el.textContent = "等待批准超时，请重试";
 }
 // 老朋友自动登录：accessToken 每次应用启动都会重生成、旧 cookie 必然失效 ——
