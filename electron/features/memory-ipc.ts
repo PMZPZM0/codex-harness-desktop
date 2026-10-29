@@ -227,6 +227,30 @@ function secureHost(): HostCaps["secure"] {
   return secureRef;
 }
 
+/* ── 10-29 记忆注入审计 ────────────────────────────────────────────────────
+   用户报「多会话记忆串扰、互相污染」。隔离本身已经靠寻址做硬了，但**出了事没法定位**：
+   哪个会话、读了哪一层、拼了多少字，此前一个记录都没有。
+   这里每次往会话里拼记忆就追加一行（append-only JSONL，失败静默 —— 审计不能挡住注入）。 */
+async function auditMemoryInjection(input: {
+  kind: "context" | "recall";
+  threadId: string;
+  workspace: string;
+  chars: number;
+  hits?: number;
+}): Promise<void> {
+  try {
+    const dir = path.join(app.getPath("userData"), "memory");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.appendFile(
+      path.join(dir, "inject-audit.jsonl"),
+      `${JSON.stringify({ at: new Date().toISOString(), ...input })}\n`,
+      "utf8",
+    );
+  } catch {
+    /* 审计失败不影响注入 */
+  }
+}
+
 export const memoryFeature = defineFeature<null>({
   id: "memory",
   inject: ["ipc", "host"],
@@ -264,8 +288,24 @@ export const memoryFeature = defineFeature<null>({
     ipcHost.handle("memory:role-sessions", async () => listRoleSessions(app.getPath("userData")));
 
     ipcHost.handle("memory:list", (_event, category?: string) => memoryStore.list(category));
-    ipcHost.handle("memory:search", (_event, query: string, workspace?: string) => memoryStore.search(query, 8, { workspace }));
-    ipcHost.handle("memory:recall", (_event, query: string, workspace?: string) => memoryStore.recall(query, { workspace }));
+    /* ⛔⛔ 10-29：这条通道原来**只接受 query**（manifest 就一个参数），workspace 传进来会被通道层丢掉
+       ⇒ 检索根本不做工作区过滤，永远返回全库匹配（跨项目串扰的第二个入口）。
+       现在显式接受 workspace 并走 strictWorkspace。 */
+    ipcHost.handle("memory:search", (_event, query: string, workspace?: string) =>
+      memoryStore.search(query, 8, { workspace, strictWorkspace: true }));
+    /* ⛔ 10-29：strictWorkspace 让碎片池**只返回本工作区**的条目（原实现跨工作区 0.5 降权仍返回
+       ⇒ 别的项目的记忆混进本会话）。threadId 只用于审计，不参与检索（检索仍按工作区）。 */
+    ipcHost.handle("memory:recall", async (_event, query: string, workspace?: string, threadId?: string) => {
+      const result = await memoryStore.recall(query, { workspace, strictWorkspace: true });
+      void auditMemoryInjection({
+        kind: "recall",
+        threadId: String(threadId ?? ""),
+        workspace: String(workspace ?? ""),
+        chars: String(result?.context ?? "").length,
+        hits: result?.memoryCount,
+      });
+      return result;
+    });
     ipcHost.handle("memory:mode-read", async () => readMemoryMode());
     ipcHost.handle("memory:mode-set", async (_event, mode: MemoryMode) => {
       if (mode === "cloud" && !(await readMemoryGateway())?.endpoint) throw new Error("请先配置云端 Gateway 地址，再切到云端记忆");
@@ -370,7 +410,16 @@ export const memoryFeature = defineFeature<null>({
       await saveAppSettings(app.getPath("userData"), { memoryScale: applied });
       return memoryScalePayload();
     });
-    ipcHost.handle("memory:layers:context", (_event, workspace?: string, includeWorkspace = true) => memoryLayers.context(workspace, includeWorkspace));
+    ipcHost.handle("memory:layers:context", async (_event, workspace?: string, includeWorkspace = true, threadId?: string) => {
+      const out = await memoryLayers.context(workspace, includeWorkspace);
+      void auditMemoryInjection({
+        kind: "context",
+        threadId: String(threadId ?? ""),
+        workspace: String(workspace ?? ""),
+        chars: String(out?.text ?? "").length,
+      });
+      return out;
+    });
     ipcHost.handle("memory:workspace-enabled:read", (_event, workspace?: string) => workspaceMemoryEnabled(workspace));
     /* 10-05 角色私有记忆（读）：渲染层发送路径用它把「当前会话所属角色」的私有记忆拼进上下文。
        ⛔ 按 threadId 反查归属（索引在主进程，模型/渲染层都伪造不了），查不到就返回空段 ——

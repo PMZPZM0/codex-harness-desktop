@@ -649,7 +649,7 @@ export class MemoryLayers {
       let used = 0;
       for (let i = logs.length - 1; i >= 0; i -= 1) {
         const trimmed = clamp(logs[i].text, budget.logPerDay);
-        const block = `### ${logs[i].date}${trimmed.cut ? clipped(`${logs[i].date} 日志`, trimmed.cut) : ""}\n${trimmed.text}`;
+        const block = `### ${logs[i].date}（项目流水，跨会话共享）${trimmed.cut ? clipped(`${logs[i].date} 日志`, trimmed.cut) : ""}\n${trimmed.text}`;
         /* ⛔ 至少留一天（单天已被 logPerDay 钳过，不会超 room）—— 否则日志段整段消失，
            那正是修复前的老症状。 */
         if (kept.length && used + block.length > room) break;

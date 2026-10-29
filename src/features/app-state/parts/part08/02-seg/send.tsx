@@ -349,12 +349,12 @@ export async function send(bag: Bag, event?: FormEvent) {
       const bossMemWs = await ensureBossMemoryWorkspace(String(bag.thread?.id ?? bag.threadRef.current?.id ?? ""));
       const memWorkspace = bossMemWs || bag.workspace || undefined;
       try {
-        const standing = await window.codex.readMemoryContext(memWorkspace, bag.workspaceMemoryEnabled);
+        const standing = await window.codex.readMemoryContext(memWorkspace, bag.workspaceMemoryEnabled, bag.thread?.id ?? "");
         if (standing.text) memoryPrefix += standing.text;
       } catch (error: any) { bag.setMemoryStatus(`常驻记忆读取失败：${error.message}`); }
       if (bag.workspaceMemoryEnabled) {
         try {
-          const recalled = await window.codex.recallMemory(messageText, memWorkspace);
+          const recalled = await window.codex.recallMemory(messageText, memWorkspace, bag.thread?.id ?? "");
           if (recalled.context) memoryPrefix += `\n\n[Harness 相关记忆，仅供参考]\n${recalled.context}\n[记忆结束]\n`;
         } catch (error: any) { bag.setMemoryStatus(`记忆召回失败：${error.message}`); }
       }

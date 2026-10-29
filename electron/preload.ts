@@ -459,7 +459,8 @@ contextBridge.exposeInMainWorld("codex", {
   /* 执行清理动作：⛔ 必须 confirm: true（UI 二次确认后才置位） */
   applyMemoryHygiene: (input: { action: "purge-archive" | "prune-pool" | "tidy-lessons"; workspace?: string; confirm: true }) => __ipc("memory:hygiene:apply", 1, [input]),
   planMemoryHygiene: (workspace?: string) => __ipc("memory:hygiene:plan", 0, [workspace]),
-  readMemoryContext: (workspace?: string, includeWorkspace = true) => __ipc("memory:layers:context", 0, [workspace, includeWorkspace]),
+  /* 常驻记忆（L 层）；threadId 仅供注入审计（隔离仍按工作区） */
+  readMemoryContext: (workspace?: string, includeWorkspace = true, threadId?: string) => __ipc("memory:layers:context", 0, [workspace, includeWorkspace, threadId]),
   readMemoryLayers: (workspace?: string) => __ipc("memory:layers:read", 0, [workspace]),
   writeMemoryLayer: (input: { scope: "user" | "background" | "project" | "lessons"; content: string; workspace?: string }) => __ipc("memory:layers:write", 1, [input]),
   listMemory: (category?: string) => __ipc("memory:list", 0, [category]),
@@ -471,7 +472,8 @@ contextBridge.exposeInMainWorld("codex", {
   verifyMemoryMcp: () => __ipc("memory:mcp:verify", 0, []),
   readMemoryMode: () => __ipc("memory:mode-read", 0, []),
   setMemoryMode: (mode: "local" | "cloud") => __ipc("memory:mode-set", 1, [mode]),
-  recallMemory: (query: string, workspace?: string) => __ipc("memory:recall", 1, [query, workspace]),
+  /* 碎片池召回（strictWorkspace：只回本工作区）；threadId 仅供审计 */
+  recallMemory: (query: string, workspace?: string, threadId?: string) => __ipc("memory:recall", 1, [query, workspace, threadId]),
   resetMemory: () => __ipc("memory:reset", 0, []),
   /* 10-05 统一记忆（读）：session 段按 threadId 硬隔离 + project 段全项目共享 + 上一版角色记忆兼容段。主会话与被调度角色走同一个 handler */
   readRoleMemoryContext: (input: unknown) => __ipc("memory:role-context", 1, [input]),
@@ -482,7 +484,8 @@ contextBridge.exposeInMainWorld("codex", {
   readMemoryScale: () => __ipc("memory:scale:read", 0, []),
   /* 设置记忆容量倍率（当场生效 + 落 app-settings；非法值归一化回基准） */
   setMemoryScale: (scale: number) => __ipc("memory:scale:set", 1, [scale]),
-  searchMemory: (query: string) => __ipc("memory:search", 1, [query]),
+  /* 碎片池检索；带 workspace 时只回本工作区（strictWorkspace） */
+  searchMemory: (query: string, workspace?: string) => __ipc("memory:search", 1, [query, workspace]),
   readWorkspaceMemoryEnabled: (workspace?: string) => __ipc("memory:workspace-enabled:read", 0, [workspace]),
   setWorkspaceMemoryEnabled: (input: { workspace: string; enabled: boolean }) => __ipc("memory:workspace-enabled:set", 1, [input]),
   readModelSpecs: () => __ipc("model-specs:read", 0, []),

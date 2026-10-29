@@ -808,7 +808,8 @@ interface Window {
     /* 执行清理动作：⛔ 必须 confirm: true（UI 二次确认后才置位） */
     applyMemoryHygiene(input: { action: "purge-archive" | "prune-pool" | "tidy-lessons"; workspace?: string; confirm: true }): Promise<{ action: string; result: any }>;
     planMemoryHygiene(workspace?: string): Promise<{ rules: { layer: string; name: string; when: string; action: string; protect: string; trace: string }[]; labels: Record<string, { title: string; danger: string }>; actions: string[]; issues: { severity: "info" | "warn"; layer: string; code: string; message: string; count?: number }[]; archive: { files: number; bytes: number }; pool: { total: number; pinned: number; expiring: number; max: number; ttlDays: number }; }>;
-    readMemoryContext(workspace?: string, includeWorkspace?: boolean): Promise<{ text: string; stats: { chars: number; over: boolean } }>;
+    /* 常驻记忆（L 层）；threadId 仅供注入审计（隔离仍按工作区） */
+    readMemoryContext(workspace?: string, includeWorkspace?: boolean, threadId?: string): Promise<{ text: string; stats: { chars: number; over: boolean } }>;
     readMemoryLayers(workspace?: string): Promise<MemoryLayersSnapshot>;
     writeMemoryLayer(input: { scope: "user" | "background" | "project" | "lessons"; content: string; workspace?: string }): Promise<MemoryLayersSnapshot>;
     listMemory(category?: string): Promise<any[]>;
@@ -820,7 +821,8 @@ interface Window {
     verifyMemoryMcp(): Promise<{ code: number | null; result: any; log: string; status: any }>;
     readMemoryMode(): Promise<"local" | "cloud">;
     setMemoryMode(mode: "local" | "cloud"): Promise<"local" | "cloud">;
-    recallMemory(query: string, workspace?: string): Promise<{ context: string; remote: boolean; memoryCount?: number }>;
+    /* 碎片池召回（strictWorkspace：只回本工作区）；threadId 仅供审计 */
+    recallMemory(query: string, workspace?: string, threadId?: string): Promise<{ context: string; remote: boolean; memoryCount?: number }>;
     resetMemory(): Promise<void>;
     /* 10-05 统一记忆（读）：session 段按 threadId 硬隔离 + project 段全项目共享 + 上一版角色记忆兼容段。主会话与被调度角色走同一个 handler */
     readRoleMemoryContext(input: { threadId?: string; workspace?: string; query?: string }): Promise<{ text: string; key: string; counts: { project: number; session: number; legacy: number } }>;
@@ -831,7 +833,8 @@ interface Window {
     readMemoryScale(): Promise<{ scale: number; options: number[]; budget: { user: number; background: number; project: number; lessons: number; logs: number; total: number } }>;
     /* 设置记忆容量倍率（当场生效 + 落 app-settings；非法值归一化回基准） */
     setMemoryScale(scale: number): Promise<{ scale: number; options: number[]; budget: { user: number; background: number; project: number; lessons: number; logs: number; total: number } }>;
-    searchMemory(query: string): Promise<any[]>;
+    /* 碎片池检索；带 workspace 时只回本工作区（strictWorkspace） */
+    searchMemory(query: string, workspace?: string): Promise<any[]>;
     readWorkspaceMemoryEnabled(workspace?: string): Promise<boolean>;
     setWorkspaceMemoryEnabled(input: { workspace: string; enabled: boolean }): Promise<boolean>;
     readModelSpecs(): Promise<unknown[] | null>;

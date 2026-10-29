@@ -2456,12 +2456,12 @@
     {
       "name": "readMemoryContext",
       "channel": "memory:layers:context",
-      "paramsImpl": "workspace?: string, includeWorkspace = true",
-      "paramsDecl": "workspace?: string, includeWorkspace?: boolean",
+      "paramsImpl": "workspace?: string, includeWorkspace = true, threadId?: string",
+      "paramsDecl": "workspace?: string, includeWorkspace?: boolean, threadId?: string",
       "returns": "Promise<{ text: string; stats: { chars: number; over: boolean } }>",
-      "invokeArgs": "workspace, includeWorkspace",
+      "invokeArgs": "workspace, includeWorkspace, threadId",
       "cast": null,
-      "note": null
+      "note": "常驻记忆（L 层）；threadId 仅供注入审计（隔离仍按工作区）"
     },
     {
       "name": "readMemoryLayers",
@@ -2546,12 +2546,12 @@
     {
       "name": "recallMemory",
       "channel": "memory:recall",
-      "paramsImpl": "query: string, workspace?: string",
-      "paramsDecl": "query: string, workspace?: string",
+      "paramsImpl": "query: string, workspace?: string, threadId?: string",
+      "paramsDecl": "query: string, workspace?: string, threadId?: string",
       "returns": "Promise<{ context: string; remote: boolean; memoryCount?: number }>",
-      "invokeArgs": "query, workspace",
+      "invokeArgs": "query, workspace, threadId",
       "cast": null,
-      "note": null
+      "note": "碎片池召回（strictWorkspace：只回本工作区）；threadId 仅供审计"
     },
     {
       "name": "resetMemory",
@@ -2616,12 +2616,12 @@
     {
       "name": "searchMemory",
       "channel": "memory:search",
-      "paramsImpl": "query: string",
-      "paramsDecl": "query: string",
+      "paramsImpl": "query: string, workspace?: string",
+      "paramsDecl": "query: string, workspace?: string",
       "returns": "Promise<any[]>",
-      "invokeArgs": "query",
+      "invokeArgs": "query, workspace",
       "cast": null,
-      "note": null
+      "note": "碎片池检索；带 workspace 时只回本工作区（strictWorkspace）"
     },
     {
       "name": "readWorkspaceMemoryEnabled",
