@@ -145,7 +145,19 @@ function proxyLegacy(req, res) {
     res.writeHead(up.statusCode || 502, up.headers);
     up.pipe(res);
   });
-  upstream.on("error", (error) => reply(res, 502, "旧通道不可用：" + error.message));
+  upstream.on("error", (error) => {
+    /* 旧地址（不带 /t/<设备ID>）走的是 frp 老通道：电脑端应用没开就会 socket hang up。
+       ⛔ 别把 "socket hang up" 原样甩给用户 —— 给一张手机能看懂的说明页。 */
+    res.writeHead(503, { "content-type": "text/html; charset=utf-8", "retry-after": "5", "cache-control": "no-store" });
+    res.end(`<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>电脑端未连接</title><style>body{font-family:system-ui,sans-serif;background:#f7f7f5;margin:0;color:#23231f}
+.card{background:#fff;border:1px solid #e7e7e4;border-radius:14px;padding:22px;margin:48px 16px;text-align:center;line-height:1.8}
+h1{font-size:18px;margin:0 0 8px}p{color:#6f6f69;font-size:13px;margin:8px 0}code{background:#f2f2ef;padding:2px 6px;border-radius:6px}</style>
+<div class="card"><h1>这台电脑还没连上</h1>
+<p>请先<strong>打开电脑端应用</strong>（远控服务随应用启动），然后刷新本页。</p>
+<p>如果你想用的是新地址，请重新扫一次电脑上的二维码（形如 <code>/t/设备ID/r/mobile</code>）。</p>
+<p style="color:#a3a39c;font-size:12px">技术信息：${String(error?.message ?? error)}</p></div></html>`);
+  });
   req.pipe(upstream);
 }
 

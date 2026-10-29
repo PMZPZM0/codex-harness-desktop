@@ -1608,6 +1608,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (relaySrc.includes("let submitting = false") && relaySrc.includes("if (submitting) return") && !relaySrc.includes('location.href = API_BASE') ? ok : fail)(
       "【139e】配对防重复：自动提交与手点只发一次；审批后用 location.replace（⛔ href 会让返回键回到配对页）"
     );
+    (gwSrc.includes("这台电脑还没连上") && gwSrc.includes("res.writeHead(503") ? ok : fail)(
+      "【139e】旧地址连不上时要给人话（503 说明页），⛔ 不许把 socket hang up 原样甩给用户"
+    );
     (gwSrc.includes("lastPong") && gwSrc.includes("REQ_TIMEOUT_MS = 20_000") ? ok : fail)(
       "【139e】网关有心跳与更短超时：隧道半死时手机不会干等 35s（返回前先判死并踢连接）"
     );
