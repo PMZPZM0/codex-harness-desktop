@@ -19,7 +19,7 @@
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, Boxes, Brain, ChevronRight, CircleCheck, Copy, Film, Music2, Puzzle, Smartphone, Wrench, X } from "lucide-react";
+import { AlertTriangle, Bot, Boxes, Brain, ChevronRight, CircleCheck, Copy, Film, Music2, Puzzle, Smartphone, Wrench, X } from "lucide-react";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { Slot } from "../../runtime/Slot";
@@ -29,11 +29,12 @@ import { PhoneHarnessCard } from "./PhoneHarnessCard";
 import { LayaCard } from "./LayaCard";
 import { OpenfilmCard } from "../openfilm";
 import { MoeKoeCard } from "./MoeKoeCard";
+import { FeishuCliCard } from "./FeishuCliCard";
 
 export type DevtoolsSettingsSectionProps = { downloadSource?: any; capabilityRows: any; capabilityError: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any; runtimeModal: any; setRuntimeModal: any; };
 
 /** 一级卡片的 key —— 也是弹窗的开关值（同时只开一个）。 */
-type DevtoolsCardKey = "runtime" | "moekoe" | "capability" | "phone" | "laya" | "openfilm" | "domains" | "plugins";
+type DevtoolsCardKey = "runtime" | "moekoe" | "capability" | "phone" | "laya" | "feishu-cli" | "openfilm" | "domains" | "plugins";
 
 export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
   const { capabilityRows, capabilityError, setNotice, devRuntimes, runtimeInstalling, runtimeUninstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime, cancelDevRuntime, runtimeModal, setRuntimeModal } = props;
@@ -71,6 +72,7 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
     { key: "capability", icon: <CircleCheck size={15} />, title: "当前能力链路", desc: "同一件事有多个后端时，现在实际走的是哪条", stat: capabilityRows.length ? `${capabilityRows.length} 项能力` : "正在读取状态…" },
     { key: "phone", icon: <Smartphone size={15} />, title: "手机控制", desc: "让 Codex 直接操作手机：看屏幕、点按、打字、读日志", stat: "Android（adb）· iPhone 需 mac" },
     { key: "laya", icon: <Brain size={15} />, title: "Laya 智能判断", desc: "思考等级「自动」档的本地决策端（Python）", stat: "本地 · 可选安装" },
+    { key: "feishu-cli", icon: <Bot size={15} />, title: "飞书 CLI", desc: "官方命令行（@larksuite/cli）：让 Codex 代你操作飞书", stat: "按需安装 · 需登录一次" },
     { key: "openfilm", icon: <Film size={15} />, title: "OpenFilm 视频剪辑", desc: "第三方开源（MIT）：让 Codex 直接剪片，Studio 里手改", stat: "按需下载 · 国内镜像加速 · 可卸载" },
     { key: "domains", icon: <Boxes size={15} />, title: "功能域", desc: "启用 / 停用功能板块（停用下次启动生效）", stat: "声明式插槽 · 可被插件替换" },
     { key: "plugins", icon: <Puzzle size={15} />, title: "声明式插件", desc: "只用 JSON 往插槽挂内容、调已有通道，无代码", stat: "放好即生效 · 无需重启" },
@@ -156,6 +158,11 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
         <SettingsDialog title={activeCard.title} icon={<Brain size={15} />} hint="思考等级「自动」档的本地决策端" onClose={() => setOpenCard(null)}>
           {/* Laya 智能判断（10-01）：思考等级「自动」档的本地决策端（Python laya-serve）。 */}
           <LayaCard setNotice={setNotice} />
+        </SettingsDialog>
+      )}
+      {openCard === "feishu-cli" && activeCard && (
+        <SettingsDialog title={activeCard.title} icon={<Bot size={15} />} hint="安装 → 配置应用 → 登录（官方 device flow）" size="md" onClose={() => setOpenCard(null)}>
+          <FeishuCliCard setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} />
         </SettingsDialog>
       )}
       {openCard === "domains" && activeCard && (

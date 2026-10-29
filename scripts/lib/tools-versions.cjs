@@ -20,6 +20,8 @@ const TOOLS_VERSIONS = {
    * Windows 不用它（那边是 nuphus + 我们自己的 UIA 控件清单通道）。
    */
   computerUse: "0.3.6",
+  /** 飞书官方 CLI（@larksuite/cli，Go 二进制，npm postinstall 按平台下载）。50MB 出头 ⇒ 按需安装，不随包 */
+  feishuCli: "1.0.98",
   /** ponytail 写代码模式插件（首启自动种入） */
   ponytail: "v4.9.0",
 };

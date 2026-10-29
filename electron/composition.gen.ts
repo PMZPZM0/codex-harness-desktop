@@ -113,6 +113,7 @@ import { weixinFeature as feat_weixin } from "./features/weixin-ipc";
 import { whatsNewFeature as feat_whatsnew } from "./features/whats-new-ipc";
 import { workLogsFeature as feat_work_logs } from "./features/work-logs";
 import { shortcutsFeature as feat_shortcuts } from "./features/shortcuts-ipc";
+import { feishuCliFeature as feat_feishu_cli } from "./features/feishu-cli-ipc";
 
 import { app } from "electron";
 import { readAppSettingsSync } from "./app-settings";
@@ -232,6 +233,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "whatsnew", plugin: feat_whatsnew as Plugin<unknown>, config: null },
   { id: "work-logs", plugin: feat_work_logs as Plugin<unknown>, config: null },
   { id: "shortcuts", plugin: feat_shortcuts as Plugin<unknown>, config: null },
+  { id: "feishu-cli", plugin: feat_feishu_cli as Plugin<unknown>, config: null },
 ];
 
 /**

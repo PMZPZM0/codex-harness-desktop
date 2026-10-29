@@ -1289,6 +1289,15 @@ interface Window {
     sessionspaceRemove(threadId: string): Promise<{ ok: boolean; removed: boolean; reason?: string }>;
     /* 收口孤儿：记录在目录不在 / orphan 重试 / 目录在记录不在（后者超 maxAgeDays 才删） */
     sessionspaceGc(options?: { maxAgeDays?: number; dryRun?: boolean }): Promise<{ recordsRemoved: number; dirsRemoved: number; orphanRetried: number; scanned: number }>;
+    /* 10-29 飞书官方 CLI（@larksuite/cli）状态：是否安装 / 是否配置应用 / 是否已登录 */
+    feishuCliStatus(): Promise<{ installed: boolean; path: string; version: string; configured: boolean; loggedIn: boolean; user: string; detail: string; error: string }>;
+    /* 创建/绑定飞书应用：后台跑 lark-cli config init --new，返回授权链接 */
+    feishuCliSetupStart(): Promise<{ ok: boolean; url?: string; error?: string }>;
+    /* 用户登录 device flow：auth login --recommend --no-wait --json 拿链接，后台用 --device-code 完成 */
+    feishuCliLoginStart(): Promise<{ ok: boolean; url?: string; deviceCode?: string; error?: string }>;
+    feishuCliLogout(): Promise<{ ok: boolean; error: string }>;
+    /* Codex 工具 feishu_cli 的执行端：参数数组直传 lark-cli（⛔ 不过 shell） */
+    feishuCliRun(input: { args: string[]; cwd?: string }): Promise<{ ok: boolean; code: number; stdout: string; stderr: string; error?: string }>;
 /* ═══ gen:end ═══ */
 
 

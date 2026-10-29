@@ -559,6 +559,14 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
       { type: "function", name: "compact_context", description: "压缩当前会话的上下文（引擎原生压缩）。当对话很长、上下文占用很高、或用户说「压缩一下上下文」时调用。压缩由引擎执行：历史被摘要、上下文显著缩短，当前回合继续；无需等待它完成。", inputSchema: { type: "object", properties: {}, required: [] } },
       { type: "function", name: "task_add", description: "把一条任务加入用户的任务清单（多步任务开工时先建清单；输入框上方的「步骤 N/M」胶囊实时展示这份清单，悬停可展开）。", inputSchema: { type: "object", properties: { text: { type: "string" }, priority: { type: "string", enum: ["low", "medium", "high"] } }, required: ["text"] } },
       { type: "function", name: "task_update", description: "更新任务清单：列出全部任务（不传任何参数）、改状态或删除。status 只有 todo/doing/done。⛔ 每完成一步立刻把那一步更新为 done（正在做的那步置 doing），别攒到最后一次性更新。", inputSchema: { type: "object", properties: { id: { type: "string" }, status: { type: "string", enum: ["todo", "doing", "done"] }, text: { type: "string" }, priority: { type: "string", enum: ["low", "medium", "high"] }, done: { type: "boolean", description: "删除任务" } } } },
+      /* 飞书官方 CLI（10-29）：安装/登录在「设置 → 开发工具 → 飞书 CLI」；这里只负责把参数数组交给它。
+         ⛔ 未安装/未登录时直接给用户可执行的下一步，不要让模型反复重试。 */
+      { type: "function", name: "feishu_cli",
+        description: "调用飞书官方 CLI（lark-cli）执行一条命令（200+ 命令：im 消息、docs 文档、sheets 表格、base 多维表格、calendar 日历、task 任务、mail 邮件）。⛔ 需要用户先在「设置 → 开发工具 → 飞书 CLI」完成安装、应用配置与登录；没装/没登录时提示用户去那里操作，不要反复重试。args 是参数数组（第一项是域），不确定命令先用 <域> --help 查。返回 stdout/stderr（已截断）。",
+        inputSchema: { type: "object", properties: {
+          args: { type: "array", items: { type: "string" }, description: "命令行参数数组，例如 calendar +agenda 或 im +messages-send --chat-id oc_xxx --text hi" },
+          cwd: { type: "string", description: "可选执行目录（上传本地文件时传文件所在目录）" },
+        }, required: ["args"] } },
       { type: "function", name: "agent_ask", description: "在对话里向用户展示一组选项并等待选择（提问时必须给出选项）。**单选还是多选由你根据问题性质决定**：答案互斥（选一条就够）传 multiple=false 或省略；多项可以并存（要改哪几个文件 / 勾选要处理的项）传 multiple=true 让用户勾选多条。用户先选中、再点确认按钮提交，勾选与自定义输入会用「；」拼接返回。options 里第一项会作为推荐项高亮，也可以留空让用户自由输入。", inputSchema: { type: "object", properties: { question: { type: "string", description: "要问用户的问题" }, options: { type: "array", items: { type: "string" }, description: "2-4 个候选选项，第一项为推荐" }, multiple: { type: "boolean", description: "true = 多选（用户可勾选多项）；false/省略 = 单选（只能选一项）。两种都是：用户先选中、再点「确认/提交」按钮才把答案回给你" }, allowFree: { type: "boolean", description: "是否允许自由输入，默认允许" } }, required: ["question", "options"] } },
       // 技能运用纪律：缺技能自主搜市场/安装，缺连接器先查模板（安装前必须 agent_ask 征得同意）
       { type: "function", name: "skill_search", description: "在内置技能市场按关键词搜索技能（返回名称/简介/安装状态）。当任务没有合适技能、你想找现成技能提效时调用。", inputSchema: { type: "object", properties: { query: { type: "string", description: "关键词，如 excel、爬虫、pdf" } }, required: ["query"] } },

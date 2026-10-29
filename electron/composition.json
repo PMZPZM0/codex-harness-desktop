@@ -742,6 +742,13 @@
       "file": "features/shortcuts-ipc.ts",
       "export": "shortcutsFeature",
       "config": null
+    },
+    {
+      "id": "feishu-cli",
+      "enabled": true,
+      "file": "features/feishu-cli-ipc.ts",
+      "export": "feishuCliFeature",
+      "config": null
     }
   ]
 }

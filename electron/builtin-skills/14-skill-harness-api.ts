@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（107 个能力域 / 583 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（108 个能力域 / 588 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -54,6 +54,10 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 ⛔ **打包版没有宿主源码**：用户机器上只有一个安装包 ⇒ 那时真正的答案只有**接入类**（技能 / MCP 连接器 / 专家 · 专家团 / 定时任务 / RPA / IM 渠道 / 记忆后端）。要改宿主代码必须在**源码工程**里做；先确认源码在不在手边，再决定说哪种方案。
 
 ## 能力域
+
+### feishu-cli（5 通道）
+飞书官方 CLI（@larksuite/cli）：安装（约 51MB，npm 国内镜像）、飞书应用配置（config init）、用户登录授权（device flow）与命令执行；安装/登录在「设置 → 开发工具 → 飞书 CLI」完成，Codex 通过 feishu_cli 工具调用
+通道：feishu-cli:status, feishu-cli:setup-start, feishu-cli:login-start, feishu-cli:logout, feishu-cli:run
 
 ### pet（20 通道）
 桌面宠物（官方 Codex 宠物格式：pet.json + 8×9 图集）：list 发现四目录宠物 / settings-get·set 开关与选择 / roots 目录清单 / open-dir / import 从只读目录导入用户区 / toggle·show·hide 显示控制。宠物本体渲染在独立透明置顶浮窗，宿主侧只做发现与设置

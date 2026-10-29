@@ -940,6 +940,15 @@ contextBridge.exposeInMainWorld("codex", {
   sessionspaceRemove: (threadId: string) => __ipc("sessionspace:remove", 1, [threadId]),
   /* 收口孤儿：记录在目录不在 / orphan 重试 / 目录在记录不在（后者超 maxAgeDays 才删） */
   sessionspaceGc: (options?: { maxAgeDays?: number; dryRun?: boolean }) => __ipc("sessionspace:gc", 0, [options]),
+  /* 10-29 飞书官方 CLI（@larksuite/cli）状态：是否安装 / 是否配置应用 / 是否已登录 */
+  feishuCliStatus: () => __ipc("feishu-cli:status", 0, []),
+  /* 创建/绑定飞书应用：后台跑 lark-cli config init --new，返回授权链接 */
+  feishuCliSetupStart: () => __ipc("feishu-cli:setup-start", 0, []),
+  /* 用户登录 device flow：auth login --recommend --no-wait --json 拿链接，后台用 --device-code 完成 */
+  feishuCliLoginStart: () => __ipc("feishu-cli:login-start", 0, []),
+  feishuCliLogout: () => __ipc("feishu-cli:logout", 0, []),
+  /* Codex 工具 feishu_cli 的执行端：参数数组直传 lark-cli（⛔ 不过 shell） */
+  feishuCliRun: (input: unknown) => __ipc("feishu-cli:run", 1, [input]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

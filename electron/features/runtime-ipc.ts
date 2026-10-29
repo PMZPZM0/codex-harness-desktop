@@ -40,6 +40,7 @@ import { recordToolRemoved } from "./tool-persistence";
 import type { IpcHost } from "../ipc-host";
 // 版本比较统一走 `../updates`（含预发布语义：1.2.3-beta < 1.2.3）——⛔ 别再写第二份。
 import { compareVersions } from "../updates";
+const { TOOLS_VERSIONS } = require("../../scripts/lib/tools-versions.cjs") as { TOOLS_VERSIONS: Record<string, string> };
 
 function specFor(id: DevRuntimeId, spec: DevRuntimeSpec): DevRuntimeSpec {
   if (!IS_MAC) return spec;
@@ -282,6 +283,8 @@ const NPM_PACKAGE_ARTIFACTS: Partial<Record<DevRuntimeId, { dirs: string[]; shim
   // REA（10-13）：包体目录 + rea / rea-agents 两个 shim；删完引擎重启后 [mcp_servers.rea]
   // 段自动消失（custom-model-apply 按 reaServerScript() 的存在性生成，见 ownedMcpServers）。
   rea: { dirs: ["node_modules/rea-agents"], shims: ["rea", "rea-agents"] },
+  // 飞书 CLI（10-29）：包体 @larksuite/cli + 前缀根上的 lark-cli / lark-cli.cmd
+  "feishu-cli": { dirs: ["node_modules/@larksuite"], shims: ["lark-cli"] },
 };
 
 /** npm 包在某个 npm-global 根下留的 shim（不是包体，删完包体要顺手清掉）。
@@ -368,7 +371,7 @@ function assertInstallVerified(id: DevRuntimeId, spec: DevRuntimeSpec): void {
 }
 
 /** npm 包按需安装：用**内置 node 自带的 npm**，registry 国内镜像优先、失败回落官方源。 */
-async function runNpmInstall(id: string, pkg: string, label: string, source: NonNullable<AppSettings["downloadSource"]> = "auto"): Promise<void> {
+async function runNpmInstall(id: string, pkg: string, label: string, source: NonNullable<AppSettings["downloadSource"]> = "auto", allowScripts: string[] = []): Promise<void> {
   const node = bundledNode();
   if (!node) throw new Error(`缺少内置 Node，无法安装 ${label}`);
   // ⛔ 按平台候选探测（Windows zip 布局 / mac tar.gz 布局）—— 别在这里复制路径字面量，见 toolchain.bundledNpmCli
@@ -393,7 +396,8 @@ async function runNpmInstall(id: string, pkg: string, label: string, source: Non
         };
         // 空串 = 不设 registry，npm 回落到官方源
         if (registry) env.npm_config_registry = registry;
-        const child = spawn(node, [npmCli, "install", "--global", "--prefix", globalDir, pkg, "--no-audit", "--no-fund"], { windowsHide: true, env });
+        const scriptFlags = allowScripts.map((name) => `--allow-scripts=${name}`);
+        const child = spawn(node, [npmCli, "install", "--global", "--prefix", globalDir, pkg, "--no-audit", "--no-fund", ...scriptFlags], { windowsHide: true, env });
         trackRuntimeProc(id, child);
         let tail = "";
         const report = (chunk: Buffer | string) => {
@@ -527,6 +531,7 @@ const UPDATEABLE_TOOLS: Record<string, { pkg: string; label: string; platforms?:
   "computer-use": { pkg: "open-computer-use", label: "Mac 电脑操作（Computer Use）", platforms: ["darwin"] },
   // REA 逆向分析（10-13）：同一条在线更新链（fetchRegistryLatest = 国内镜像优先 + 官方回落）。
   rea: { pkg: "rea-agents", label: "REA 逆向分析" },
+  "feishu-cli": { pkg: "@larksuite/cli", label: "飞书 CLI" },
 };
 
 /** 单个可更新工具的包名 / 显示名（**唯一真相源**）：自动更新板块从这里取，⛔ 不许另抄一份包名。 */
@@ -860,6 +865,9 @@ export const runtimeFeature = defineFeature<null>({
           await runRuntimeInstaller(id, runtimeInstaller("install-automation.cjs"), ["--zip", bundledAutomationZip], bundledNode());
           // 解压安装成功后自动激活「桌面自动化」「浏览器自动化」联动开关
           await saveAppSettings(app.getPath("userData"), { desktopAutomation: true, browserAutomation: true });
+        } else if (id === "feishu-cli") {
+          /* 飞书官方 CLI（10-29）：npm 包自身 postinstall 会按平台下载 Go 二进制（约 50MB）⇒ 必须放行该包的脚本。 */
+          await runNpmInstall(id, `@larksuite/cli@${TOOLS_VERSIONS.feishuCli}`, "飞书 CLI", downloadSource, ["@larksuite/cli"]);
         } else if (id === "rea") {
           // REA 逆向分析（10-13）：npm 国内镜像装，失败回落官方源；重跑同一入口 = 更新到 latest
           // （UPDATEABLE_TOOLS 的 rea 条目让「设置 → 自动化」的在线更新链对它同样成立）。

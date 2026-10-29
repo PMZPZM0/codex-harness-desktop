@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 583,
+  "count": 588,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -5801,6 +5801,56 @@
       "invokeArgs": "options",
       "cast": null,
       "note": "收口孤儿：记录在目录不在 / orphan 重试 / 目录在记录不在（后者超 maxAgeDays 才删）"
+    },
+    {
+      "name": "feishuCliStatus",
+      "channel": "feishu-cli:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ installed: boolean; path: string; version: string; configured: boolean; loggedIn: boolean; user: string; detail: string; error: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "10-29 飞书官方 CLI（@larksuite/cli）状态：是否安装 / 是否配置应用 / 是否已登录"
+    },
+    {
+      "name": "feishuCliSetupStart",
+      "channel": "feishu-cli:setup-start",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; url?: string; error?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "创建/绑定飞书应用：后台跑 lark-cli config init --new，返回授权链接"
+    },
+    {
+      "name": "feishuCliLoginStart",
+      "channel": "feishu-cli:login-start",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; url?: string; deviceCode?: string; error?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "用户登录 device flow：auth login --recommend --no-wait --json 拿链接，后台用 --device-code 完成"
+    },
+    {
+      "name": "feishuCliLogout",
+      "channel": "feishu-cli:logout",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; error: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "feishuCliRun",
+      "channel": "feishu-cli:run",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { args: string[]; cwd?: string }",
+      "returns": "Promise<{ ok: boolean; code: number; stdout: string; stderr: string; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "Codex 工具 feishu_cli 的执行端：参数数组直传 lark-cli（⛔ 不过 shell）"
     }
   ]
 }
