@@ -128,7 +128,7 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
             <span className="dispatch-head-ico"><Users size={15} /></span>
             <div className="dispatch-head-text">
               <strong>调度</strong>
-              <small>把独立子任务交给专门的角色，产出回传本会话。成员各有自己的会话（常驻复用），和你的会话上下文互不串。</small>
+              <small>把子任务交给专家或团队，做完回传本会话。</small>
             </div>
           </div>
           {/* 10-29 用户令「这里就可以只剩一个专家团就行」：专家 / 子智能体是**常开能力**，
@@ -148,10 +148,10 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
               <span className="dispatch-master-text">
                 <strong>专家团{teamCount ? <em>{teamCount}</em> : null}</strong>
                 <small>{teamCount === 0
-                  ? "当前没有已启用的专家团"
+                  ? "还没有启用的专家团（去 设置 → 专家/专家团 新建）"
                   : (draft.team
-                    ? "已开启 · 主理人按 SOP 调度多名成员协作"
-                    : "开启后主理人按 SOP 调度多名成员协作")}</small>
+                    ? "已开启：主理人会安排成员分工协作"
+                    : "关闭时只派单人专家，不组队")}</small>
               </span>
             </button>
             <ToggleSwitch
@@ -164,17 +164,21 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
             />
           </div>
           {/* 常开能力只做**说明**，不是开关（点它没反应会让人以为坏了） */}
+          {/* ⛔ 文案说人话（用户原话：「默认可用，无需开启，啥意思，写清楚」）：
+              这两类**本来就能派**，这里没有开关；上方的开关只管「组队」这一件事。
+              数字标签也写准：expertCount 只是**单人专家**（没有成员的团队），
+              不是全店专家总数（档案里 7 个团共 41 个角色）—— 写「专家 5」会被当成数错。 */}
           <div className="dispatch-always">
-            <span className="dispatch-chip">专家 <b>{expertCount}</b></span>
+            <span className="dispatch-chip">单人专家 <b>{expertCount}</b></span>
             <span className="dispatch-chip">子智能体 <b>{subCount}</b></span>
-            <small>默认可用，无需开启</small>
+            <small>这两类一直可派，不用开关</small>
           </div>
-          <div className="dispatch-foot">
-            <small className={`dispatch-scope ${anyAvailable ? "" : "is-warn"}`}>
-              {!anyAvailable
-                ? "当前没有可调度的对象：先去设置里启用专家 / 子智能体 / 专家团"
-                : "仅「专家团」需要开启"}
-            </small>
+          {/* ⛔ 底部只在「一个可调度对象都没有」时才出声；正常态那句「仅专家团需要开启」
+              与卡片副标题重复，属于赘述（用户点名），删掉。 */}
+          <div className={`dispatch-foot${anyAvailable ? " no-scope" : ""}`}>
+            {!anyAvailable && (
+              <small className="dispatch-scope is-warn">当前没有可调度的对象：去设置里启用专家 / 子智能体 / 专家团</small>
+            )}
             <div className="dispatch-actions">
               <button type="button" onClick={() => setOpen(false)}>取消</button>
               <button
