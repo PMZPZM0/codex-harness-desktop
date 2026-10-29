@@ -1291,8 +1291,8 @@ interface Window {
     sessionspaceSetState(threadId: string, state: string): Promise<{ ok: boolean; record?: SessionWorkspaceRecord; reason?: string }>;
     /* 删会话工作区（目录+记录）；有安全闸，只删 sessions 下本进程算出的路径 */
     sessionspaceRemove(threadId: string): Promise<{ ok: boolean; removed: boolean; reason?: string }>;
-    /* 收口孤儿：记录在目录不在 / 目录在记录不在（后者超过 maxAgeDays 才删） */
-    sessionspaceGc(options?: { maxAgeDays?: number; dryRun?: boolean }): Promise<{ recordsRemoved: number; dirsRemoved: number; scanned: number }>;
+    /* 收口孤儿：记录在目录不在 / orphan 重试 / 目录在记录不在（后者超 maxAgeDays 才删） */
+    sessionspaceGc(options?: { maxAgeDays?: number; dryRun?: boolean }): Promise<{ recordsRemoved: number; dirsRemoved: number; orphanRetried: number; scanned: number }>;
 /* ═══ gen:end ═══ */
 
 

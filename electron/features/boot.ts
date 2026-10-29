@@ -455,7 +455,7 @@ export async function bootApp() {
      登记的目录立刻删会误伤正在创建的会话。⛔ 不 await：清目录可能很慢，不能拖慢启动。 */
   void gcSessionWorkspaces(app.getPath("userData")).then((stats) => {
     if (stats.recordsRemoved || stats.dirsRemoved) {
-      console.log(`[sessionspace] 启动收口：清记录 ${stats.recordsRemoved} 条、清孤儿目录 ${stats.dirsRemoved} 个（扫描 ${stats.scanned} 条）`);
+      console.log(`[sessionspace] 启动收口：清记录 ${stats.recordsRemoved} 条、清孤儿目录 ${stats.dirsRemoved} 个、重试 orphan ${stats.orphanRetried} 条（扫描 ${stats.scanned} 条）`);
     }
   }).catch((error) => console.warn("[sessionspace] 启动收口失败（不影响启动）：", String(error?.message ?? error).slice(0, 160)));
   // ⛔ 协议桥必须赶在**任何 config.toml 写入之前**起来：写配置时 base_url 要换成桥地址，
