@@ -9,10 +9,35 @@
  *    自造一套 `feishu-cli-step` 又没有对应 CSS，出来就是一坨原生排版（10-29 用户截图）。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, Check, Copy, Download, ExternalLink, LogIn, LogOut } from "lucide-react";
+import {
+  AlertTriangle, CalendarDays, Check, Copy, Download, ExternalLink, FileText, FolderOpen,
+  ListTodo, LogIn, LogOut, Mail, MessageSquare, Table2, Video,
+} from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { feishuPollOutcome } from "../../lib/feishu-card.mjs";
+
+/** 「能做什么」清单：按飞书开放平台的命令域归类（口径与 `lark-cli <域> --help` 一致）。 */
+const CAPABILITIES = [
+  { icon: MessageSquare, title: "消息与群聊", desc: "发消息、搜聊天记录、建群、加人 / 移人" },
+  { icon: FileText, title: "云文档", desc: "新建 / 读取 / 改写文档，导出与成员权限" },
+  { icon: Table2, title: "多维表格与电子表格", desc: "建表、读写记录、按视图统计" },
+  { icon: CalendarDays, title: "日历与会议", desc: "查日程、约会议、看空闲时间" },
+  { icon: ListTodo, title: "任务", desc: "建任务、改状态、分派给同事" },
+  { icon: Mail, title: "邮件", desc: "读邮件、写邮件、管理收件规则" },
+  { icon: FolderOpen, title: "云盘与知识库", desc: "上传下载文件、读写知识库节点" },
+  { icon: Video, title: "会议纪要", desc: "读妙记 / 录制纪要，导出成文本" },
+];
+
+/** 示例说法：给用户「照着说」的模板（不是 CLI 命令 —— 用户不该背参数）。 */
+const EXAMPLES = [
+  "把今天的会议纪要整理成飞书文档，放到「产品周会」文件夹",
+  "在「项目群」发一条：今天的构建已通过",
+  "查一下我明天的日程，按时间排好",
+  "这份 csv 帮我导成多维表格，再按负责人统计",
+  "读一下这篇飞书文档，提炼 5 条要点",
+  "把这张报价单传到飞书云盘，把链接发我",
+];
 
 type Status = {
   installed: boolean;
@@ -186,6 +211,41 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling 
         <p className="settings-card-hint"><AlertTriangle size={13} /> 还没配置飞书应用：点第 2 步「去配置」，在浏览器完成即可。</p>
       ) : null}
       {error ? <p className="settings-card-hint" style={{ color: "var(--danger, #c0392b)" }}><AlertTriangle size={13} /> {error}</p> : null}
+
+      <section className="feishu-cli-guide">
+        <div className="feishu-cli-guide-head">
+          <strong>能做什么</strong>
+          <small>装好并登录后，Codex 会多一个 feishu_cli 工具 —— 用你本人的权限操作飞书，覆盖官方 200+ 条命令里的常用部分</small>
+        </div>
+        <div className="feishu-cli-cap-grid">
+          {CAPABILITIES.map(({ icon: Icon, title, desc }) => (
+            <div className="feishu-cli-cap" key={title}>
+              <span className="feishu-cli-cap-icon"><Icon size={15} /></span>
+              <span className="feishu-cli-cap-copy"><strong>{title}</strong><small>{desc}</small></span>
+            </div>
+          ))}
+        </div>
+
+        <div className="feishu-cli-guide-head">
+          <strong>怎么用</strong>
+          <small>上面三步完成后，直接在对话里说人话，不用背命令</small>
+        </div>
+        <ol className="feishu-cli-guide-steps">
+          <li><b>说清「做什么 + 发到哪 / 放哪」</b><span>例如「发到项目群」「放进产品周会文件夹」；不确定的群名或文档名，让它先查再动手。</span></li>
+          <li><b>先读后写</b><span>要改文档 / 发表格前，先让它把现状读出来给你看，确认后再落笔。</span></li>
+          <li><b>敏感动作先说一遍</b><span>发消息、批量改表这类动作，先让它复述「发到哪、发什么」，你点头再执行。</span></li>
+        </ol>
+
+        <div className="feishu-cli-examples">
+          {EXAMPLES.map((text) => <span className="feishu-cli-example" key={text}>{text}</span>)}
+        </div>
+
+        <ul className="feishu-cli-notes">
+          <li>权限就是你在飞书里授权的范围 —— 看不到与你无关的会话和文档。</li>
+          <li>登录凭据只存在本机 <code>~/.lark-cli</code>；「退出登录」只清本机令牌，飞书后台的授权需要到飞书里解除。</li>
+          <li>更新 / 卸载在「控制台 → 组件更新」与开发工具的运行时列表里；命令拿不准，可以让它先跑 <code>&lt;域&gt; --help</code>。</li>
+        </ul>
+      </section>
     </section>
   );
 }
