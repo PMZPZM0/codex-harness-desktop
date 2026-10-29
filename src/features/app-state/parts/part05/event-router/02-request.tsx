@@ -393,6 +393,20 @@ ${st.hint}`);
                   contentItems: [{ type: "inputText", text: `已归档 ${done} 个调度会话${missed ? `（${missed} 个失败）` : ""}。` }],
                   success: missed === 0,
                 });
+              } else if (event.params?.tool === "feishu_cli") {
+                /* 飞书官方 CLI（10-29）：参数数组直传，⛔ 不过 shell；未安装/未登录时主进程回可执行的下一步。 */
+                const feishuArgs = Array.isArray(args.args) ? args.args.map(String) : [];
+                const feishuResult: any = await window.codex.feishuCliRun({
+                  args: feishuArgs,
+                  cwd: typeof args.cwd === "string" && args.cwd.trim() ? args.cwd : undefined,
+                });
+                const feishuText = feishuResult?.ok
+                  ? (String(feishuResult.stdout || "").trim() || "（命令执行成功，无输出）")
+                  : "调用失败（退出码 " + (feishuResult?.code ?? "?") + "）：" + (feishuResult?.error || feishuResult?.stderr || feishuResult?.stdout || "未知错误");
+                await toolCallRespond.send(event.id!, {
+                  contentItems: [{ type: "inputText", text: feishuText.slice(0, 18000) }],
+                  success: feishuResult?.ok === true,
+                });
               } else if (event.params?.tool === "laya_judge") {
                 /* Laya 局部判断（10-18）：工具只在装了 Laya 的机器上注册；执行端做参数校验、
                    未就绪最多等 15s 预热、低置信返回「弃权」文案。⛔ 不走能力网关（专用工具）。 */

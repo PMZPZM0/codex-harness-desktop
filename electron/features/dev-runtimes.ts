@@ -26,7 +26,7 @@ import { findMoeKoeExe } from "../moekoe";
 // 自动化工具链状态：nuphus-mcp（桌面）；浏览器自动化主通道是外部 Ego Lite。
 // 静态检测安装目录与缓存，不 spawn 进程，打开设置页即时返回。
 
-type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown" | "platform-tools" | "laya" | "phone-harness" | "kb-embedding" | "rea" | "moekoe";
+type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown" | "platform-tools" | "laya" | "phone-harness" | "kb-embedding" | "rea" | "moekoe" | "feishu-cli";
 // bundled：随包内置（zip / 预解压目录是来源，不是联网下载）。界面显示「内置」徽标；
 // 缺失时允许「修复安装」（从随包 zip 重新解压），但不允许卸载（删了没有可靠重取途径）。
 // hidden：**不在「开发工具」页出卡**（它有自己的专用卡片），但注册成正式工具项 ⇒
@@ -59,6 +59,9 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   // REA 逆向分析（10-13，源自 morluto/rea「REA: Reverse Engineer Anything」，npm rea-agents，MIT）：
   // 100MB > 50MB 内置线 ⇒ 按需下载（npm 国内镜像，失败回落官方源）。装完自动注册 [mcp_servers.rea]，
   // 配套内置专家「洞见 · 逆向工程专家」（requiresTool="rea"，未装时整队隐藏 —— readExpertTeams 口径）。
+  // 飞书官方 CLI（10-29，@larksuite/cli，MIT）：把飞书开放平台 API 变成命令行；50MB+ ⇒ 按需安装。
+  //  登录是官方 device flow（auth login --no-wait）；配套 Codex 工具 feishu_cli（见 features/feishu-cli-ipc.ts）。
+  "feishu-cli": { name: "飞书 CLI", description: "飞书官方命令行工具（@larksuite/cli，MIT）：200+ 命令覆盖消息、云文档、多维表格、日历、任务、邮件等；给 Codex 提供 feishu_cli 工具，可代你操作飞书。装完在「飞书 CLI」卡里完成应用配置与登录", size: "约 51 MB", marker: "npm-global\\node_modules\\@larksuite\\cli\\bin\\lark-cli.exe" },
   rea: { name: "REA 逆向分析", description: "逆向工程 MCP（morluto/rea，MIT）：拆解 Electron/JS 应用、.NET 程序集、网站、SQLite 的实现并给证据链；内置专家「洞见」专用，装完重启应用生效；npm 国内镜像下载、重跑同卡即更新到最新版", size: "约 100 MB", marker: "npm-global\\node_modules\\rea-agents\\package.json" },
   // ⛔ 10-01 用户定稿：「50m 以内的工具都内置」—— 以下 7 项下载体积 ≤50MB，随包内置（builtIn），
   //    用户开箱即用、卡片显示「内置」徽标，不再进首启引导的下载清单。
@@ -168,6 +171,7 @@ function cleanupRuntimeTempFiles(id: string): void {
 // 运行期装的包可能落 lib/node_modules ⇒ runtimeInstalled 对 npm-global marker 双落位都查。
 const IS_MAC = process.platform === "darwin";
 const DARWIN_MARKERS: Partial<Record<DevRuntimeId, string>> = {
+  "feishu-cli": "npm-global/lib/node_modules/@larksuite/cli/bin/lark-cli",
   python: "python/bin/python3",
   node: "node/bin/node",
   pwsh: "pwsh/pwsh",

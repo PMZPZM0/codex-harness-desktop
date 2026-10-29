@@ -1557,6 +1557,39 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     );
   }
 
+  /* ══ 【139f】飞书官方 CLI：按需安装 + 官方 device flow 登录 + Codex 工具（10-29）══
+     安装/卸载复用开发工具的 runtime:install；登录必须是官方流程（auth login --no-wait）；
+     工具执行一律参数数组 spawn（⛔ 不过 shell）。 */
+  {
+    const feishuSrc = readFileSync(join(ROOT, "electron", "features", "feishu-cli-ipc.ts"), "utf8");
+    const runtimeSrc = readFileSync(join(ROOT, "electron", "features", "runtime-ipc.ts"), "utf8");
+    const runtimesSrc = readFileSync(join(ROOT, "electron", "features", "dev-runtimes.ts"), "utf8");
+    const toolSrc = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part08", "01-seg.tsx"), "utf8");
+    const routerSrc = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part05", "event-router", "02-request.tsx"), "utf8");
+    const cardSrc = readFileSync(join(ROOT, "src", "features", "settings-devtools", "FeishuCliCard.tsx"), "utf8");
+    (runtimesSrc.includes('"feishu-cli": { name: "飞书 CLI"') && runtimesSrc.includes("lark-cli.exe") ? ok : fail)(
+      "【139f】开发工具清单有「飞书 CLI」（按需安装，marker 指向 npm-global 里的 lark-cli 二进制）"
+    );
+    (runtimeSrc.includes('id === "feishu-cli"') && runtimeSrc.includes("--allow-scripts=") && runtimeSrc.includes("@larksuite/cli@") ? ok : fail)(
+      "【139f】安装走 npm 国内镜像 + 放行 postinstall（二进制靠它下载）；⛔ 缺 allow-scripts 会装出空壳"
+    );
+    (runtimeSrc.includes("node_modules/@larksuite") && runtimeSrc.includes('"feishu-cli": { pkg: "@larksuite/cli"') ? ok : fail)(
+      "【139f】卸载/在线更新都登记了 feishu-cli（包体 @larksuite/cli）"
+    );
+    (feishuSrc.includes("--no-wait") && feishuSrc.includes("--device-code") ? ok : fail)(
+      "【139f】登录走官方 device flow（auth login --no-wait --json → --device-code）"
+    );
+    (feishuSrc.includes("spawn(binary, args") ? ok : fail)(
+      "【139f】CLI 执行用参数数组 spawn（⛔ 模型传入的 args 不能拼 shell）"
+    );
+    (toolSrc.includes('name: "feishu_cli"') && routerSrc.includes('event.params?.tool === "feishu_cli"') ? ok : fail)(
+      "【139f】Codex 侧有 feishu_cli 工具且分发到 feishu-cli:run"
+    );
+    (cardSrc.includes("feishuCliSetupStart") && cardSrc.includes("feishuCliLoginStart") && cardSrc.includes("feishuCliStatus") ? ok : fail)(
+      "【139f】开发工具卡片：安装 / 配置应用 / 登录 / 状态四步齐全"
+    );
+  }
+
   /* ══ 【139e】手机远控「装完即用」：内置隧道 + 中转网关（10-29）══
      背景：以前每台电脑都要人工装 frpc、服务器手工配通道 ⇒ 只有开发者能用。
      现在链路：App 内置隧道（主动连网关）→ 网关按设备 ID 路由 → 本机 17891。
