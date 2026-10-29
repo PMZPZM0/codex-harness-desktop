@@ -1651,10 +1651,13 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       (stripOk ? ok : fail)("【139e】手机读历史必须剥掉 <!--boss-role--> 角色块（用户截图：整块注入显示在气泡里）");
     }
     (androidSrc.includes('openChat("")') && !androidSrc.includes("R.id.code") && !androidSrc.includes("R.id.connect") ? ok : fail)(
-      "【139e】安卓首屏只保留扫码（连接码在网页配对页里输一次）—— ⛔ 不再出现两个配对界面"
+      "【139e】安卓首屏只保留扫码（连接码在网页配对页里输一次）；扫码页必须竖屏（tools:replace 覆盖 zxing 的 sensorLandscape）"
     );
-    (relaySrc.includes("mobile-remote-v0.1.3") ? ok : fail)(
-      "【139e】安装包版本与 Release 对齐（0.1.3）"
+    ((androidSrc.includes("setOrientationLocked(true)") && readFileSync(join(ROOT, "android", "app", "src", "main", "AndroidManifest.xml"), "utf8").includes('android:screenOrientation="portrait"') && readFileSync(join(ROOT, "android", "app", "src", "main", "AndroidManifest.xml"), "utf8").includes("tools:replace=\"android:screenOrientation\"")) ? ok : fail)(
+      "【139e】扫码页必须竖屏（zxing 默认 sensorLandscape，必须 tools:replace 覆盖）"
+    );
+    (relaySrc.includes("mobile-remote-v0.1.4") ? ok : fail)(
+      "【139e】安装包版本与 Release 对齐（0.1.4）"
     );
   }
 }

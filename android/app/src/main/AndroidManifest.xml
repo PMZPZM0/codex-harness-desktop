@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
 
@@ -22,5 +22,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- 扫码固定竖屏（用户令：手机扫码不要横屏） -->
+        <!-- 扫码固定竖屏（用户令：手机扫码不要横屏）。⛔ zxing 默认声明 sensorLandscape，必须 replace -->
+        <activity android:name="com.journeyapps.barcodescanner.CaptureActivity" android:screenOrientation="portrait" tools:node="merge" tools:replace="android:screenOrientation" />
     </application>
 </manifest>

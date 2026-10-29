@@ -86,7 +86,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.3");
+        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.4");
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(web, true);
@@ -260,7 +260,7 @@ public class MainActivity extends AppCompatActivity {
         options.setDesiredBarcodeFormats(ScanOptions.QR_CODE);
         options.setPrompt("对准电脑端「手机远控」里的二维码");
         options.setBeepEnabled(false);
-        options.setOrientationLocked(false);
+        options.setOrientationLocked(true); // 竖屏扫码（用户令：不要横屏）
         scanLauncher.launch(options);
     }
 
