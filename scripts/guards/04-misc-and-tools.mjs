@@ -1588,6 +1588,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (feishuSrc.includes("shell.openExternal") && feishuSrc.includes('"feishu-cli:cancel"') && cardSrc.includes("feishuCliCancel") && cardSrc.includes("runtime-row") ? ok : fail)(
       "【139f】授权链接自动用默认浏览器打开 + 可取消授权 + 卡片三行用 runtime-row 结构（⛔ 只贴链接不拉起浏览器 / 自造无 CSS 的 step 结构 = 10-29 用户截图投诉那次）"
     );
+    (feishuSrc.includes("identities") && feishuSrc.includes("userIdentity") && feishuSrc.includes("Boolean(data?.appId)") ? ok : fail)(
+      "【139f】auth status 按**真实输出**解析（appId / identities.bot.ready / identities.user；⛔ 1.0.98 输出里没有 ok 字段，按 ok 判会永远「未配置」、卡片一直转）"
+    );
     (feishuSrc.includes("spawn(binary, args") ? ok : fail)(
       "【139f】CLI 执行用参数数组 spawn（⛔ 模型传入的 args 不能拼 shell）"
     );

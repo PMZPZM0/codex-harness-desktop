@@ -87,18 +87,26 @@ async function statusOf(): Promise<CliResult> {
     const result = await execCli(["auth", "status", "--json"], { timeoutMs: 12_000 });
     const data = parseJson(result.stdout) ?? {};
     base.detail = result.stdout.slice(0, 500);
-    if (data?.ok) {
-      base.configured = true;
-      const user = data.user ?? data.currentUser ?? null;
-      const status = String(user?.status ?? "").toLowerCase();
-      base.loggedIn = Boolean(user) || status === "ready" || Boolean(data.userId);
-      base.user = String(user?.name ?? user?.email ?? user?.openId ?? data.userId ?? "");
-      if (status === "missing" || status === "expired") base.loggedIn = false;
-    } else if (data?.error?.type === "config") {
-      base.configured = false;
-      base.error = String(data?.error?.hint ?? data?.error?.message ?? "");
-    } else {
-      base.error = String(data?.error?.message ?? data?.error?.hint ?? result.stderr ?? "");
+    /* ⛔⛔ 按**实测输出**解析（1.0.98）：它就是
+         { appId, brand, identities: { bot: { status: "ready" }, user: { status: "missing", available } }, identity }
+       —— **没有 `ok` 字段**。旧实现按 `data.ok` 判定 ⇒ 应用明明配置成功也永远显示「未配置」，
+          卡片停在「等待浏览器…」一直转（10-29 用户截图实锤）。
+       配置完成 = 有 appId 或 bot 身份 ready；登录完成 = user 身份 ready / available。
+       老形状（ok/user）保留为兜底，换了版本不会一夜全红。 */
+    const identities = (data?.identities ?? {}) as Record<string, any>;
+    const bot = identities?.bot ?? null;
+    const userIdentity = identities?.user ?? null;
+    base.configured = Boolean(data?.appId) || String(bot?.status ?? "").toLowerCase() === "ready" || data?.ok === true;
+    const userStatus = String(userIdentity?.status ?? data?.user?.status ?? "").toLowerCase();
+    base.loggedIn = userIdentity
+      ? Boolean(userIdentity.available) || userStatus === "ready"
+      : data?.ok === true && Boolean(data?.user);
+    base.user = String(userIdentity?.name ?? userIdentity?.email ?? data?.user?.name ?? data?.user?.email ?? "");
+    if (userStatus === "missing" || userStatus === "expired") base.loggedIn = false;
+    if (!base.configured) {
+      base.error = String(data?.error?.hint ?? data?.error?.message ?? "还没配置飞书应用");
+    } else if (data?.error?.message) {
+      base.error = String(data.error.message);
     }
   } catch (error: any) {
     base.error = String(error?.message ?? error);
