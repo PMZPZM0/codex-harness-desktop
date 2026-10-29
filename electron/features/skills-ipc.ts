@@ -154,6 +154,17 @@ export async function checkSkillUpdateRows(): Promise<SkillUpdateRow[]> {
  * 更新单个市场技能（10-13 从 `skills:update` 处理器里抽出；链路与安全检查一字未改）。
  * 进度事件仍发 `skill-install` type——只有装完即走的安装弹窗在听，静默更新不会弹任何东西。
  */
+/* 技能目录写入串行闸（10-30 审查发现）：市场安装链是「先 fs.rm(target) 再 fs.cp」，
+   不是原子写。以前只有后台 6h 循环会写；现在控制台也能手动更新/安装 ⇒ 两条路径并发时
+   可能互相删掉对方刚写的一半目录（技能文件缺失 / 来源清单丢失）。
+   ⛔ 串行而不是拒绝：手动点更新时后台正好在跑，等它做完再执行，比给用户报错更好。 */
+let skillWriteChain: Promise<unknown> = Promise.resolve();
+function withSkillWriteLock<T>(task: () => Promise<T>): Promise<T> {
+  const run = skillWriteChain.then(task, task);
+  skillWriteChain = run.then(() => undefined, () => undefined);
+  return run;
+}
+
 export async function updateSkillFolder(key: string) {
   const folder = String(key ?? "").trim();
   if (!folder) throw new Error("缺少技能目录名");
@@ -226,11 +237,11 @@ export const skillsFeature = defineFeature<null>({
 
     ipcHost.handle("skills:market-install", async (_event, skill: MarketSkill) => {
       const emit = (stage: string, message: string) => sendToWindow("harness:event", { type: "skill-install", skillId: skill.id, stage, message, at: Date.now() });
-      const installed = await installCocoLoopSkill({
+      const installed = await withSkillWriteLock(() => installCocoLoopSkill({
         skill,
         destinationRoot: userSkillsDir,
         onProgress: ({ stage, message }) => emit(stage, message),
-      });
+      }));
       await updateSkillRegistry({ name: installed.name, path: installed.path, source: "cocoloop", marketId: installed.marketId, sourceUrl: installed.sourceUrl, installedAt: new Date().toISOString() });
       // SKILL.md 落到 CODEX_HOME/skills 后重启进程，再强制刷新 skills/list；返回的状态才是 UI 的“Codex 已发现”依据。
       emit("engine", "正在重启 Codex 引擎并注册技能");
@@ -261,7 +272,7 @@ export const skillsFeature = defineFeature<null>({
     });
 
     ipcHost.handle("skills:market-install-light", async (_event, skill: MarketSkill) => {
-      const installed = await installCocoLoopSkill({ skill, destinationRoot: userSkillsDir });
+      const installed = await withSkillWriteLock(() => installCocoLoopSkill({ skill, destinationRoot: userSkillsDir }));
       await updateSkillRegistry({ name: installed.name, path: installed.path, source: "cocoloop", marketId: installed.marketId, sourceUrl: installed.sourceUrl, installedAt: new Date().toISOString() });
       let discovered = false;
       try {
@@ -282,7 +293,7 @@ export const skillsFeature = defineFeature<null>({
 
     ipcHost.handle("skills:update-check", async () => checkSkillUpdateRows());
 
-    ipcHost.handle("skills:update", async (_event, folder: string) => updateSkillFolder(folder));
+    ipcHost.handle("skills:update", async (_event, folder: string) => withSkillWriteLock(() => updateSkillFolder(folder)));
 
     /** 后台静默自动更新（10-13 用户令）：开关关着 / 已在跑 / 网络挂了都安静退出。 */
     let autoUpdateRunning = false;
@@ -298,7 +309,7 @@ export const skillsFeature = defineFeature<null>({
         let failed = 0;
         for (const row of rows) {
           if (row.state !== "update") continue;
-          try { await updateSkillFolder(row.folder); updated.push(row.name); }
+          try { await withSkillWriteLock(() => updateSkillFolder(row.folder)); updated.push(row.name); }
           catch { failed += 1; /* 单个失败（下架/网络/审查不过）不影响其余；下个周期再试 */ }
         }
         /* 10-30 用户令「下载安装反馈」：后台更新原来**全程静默**（用户不知道它动过技能目录）。
