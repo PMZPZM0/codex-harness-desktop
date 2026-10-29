@@ -3,7 +3,7 @@ import { ThreadItem } from "../../lib/thread-item";
 import { useCardOpen, CardStatusIcon } from "../../components/CardShell";
 import type { ActionStatus } from "../../components/CardShell";
 import { useMemo, useRef, useEffect, useState } from "react";
-import { TerminalSquare, ChevronDown, ShieldCheck, CircleCheck } from "lucide-react";
+import { TerminalSquare, ChevronDown, ShieldCheck, CircleCheck, FileText, FileCode2, FolderTree, GitBranch, Search } from "lucide-react";
 import { truncateTailLines } from "../../lib/truncate-tail-lines";
 import { usePacketRevealText } from "../shared/use-packet-reveal-text";
 import { bufferedToolRevealStarts } from "../../lib/buffered-tool-reveal-starts";
@@ -17,6 +17,23 @@ function commandCodeLanguage(command: string): { language: string; label: string
   if (/\b(?:powershell|pwsh)(?:\.exe)?\b/i.test(command)) return { language: "powershell", label: "PowerShell" };
   if (/^\s*(?:cmd(?:\.exe)?\s+\/c|call\s+)/i.test(command)) return { language: "batch", label: "Command Prompt" };
   return { language: "bash", label: "Shell" };
+}
+
+/** 命令卡左侧图标：按**这一步在干什么**分类。
+ *  ⛔⛔ 10-29 用户实测截图：「这个图标全部一样了」—— 之前每条命令都挂 `SquareTerminal`，
+ *    14px 下外框+内部符号糊在一起，读文件 / 建目录 / 看 git 配置 / 跑脚本 长得一模一样，
+ *    扫时间线只能靠右侧的 ✓ 判断"做完了"，看不出做的是什么。
+ *  判据与表头动作**同源**（`commandIntentOf`），另加两个轻量特判：
+ *    · git —— 在意图表里会退化成 read（`git config --get` 命中 type/read）或 command，
+ *      而"看 git 配置 / 改分支"跟"读文件 / 跑脚本"是两件事；
+ *    · 列目录 —— `Get-ChildItem`/`dir`/`ls` 与"读文件内容"同属 read，但图标必须分开。
+ *  ⛔ 状态不靠图标形状表达（running/done/failed 由 CSS 着色 + 右侧 CardStatusIcon 管）。 */
+function iconOfCommand(command: string, intent: string) {
+  if (/^\s*git\b|\bgit\s+(?:config|status|diff|log|show|branch|rev-parse|add|commit|checkout)\b/i.test(command)) return GitBranch;
+  if (intent === "modify") return FileCode2;
+  if (intent === "read") return /Get-ChildItem|\bdir\b|\bls\b|\bfind\s/i.test(command) ? FolderTree : FileText;
+  if (intent === "search") return Search;
+  return TerminalSquare;
 }
 
 export function CommandExecutionCard({ item, waitingForApproval, turnActive }: { item: ThreadItem; waitingForApproval?: boolean; turnActive?: boolean }) {
@@ -64,6 +81,8 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive }: {
   const commandText = innerCommand || command;
   const intent = commandIntentOf(commandText);
   const intentVerb = INTENT_VERB[intent] ?? "运行";
+  /* 图标按动作分类（读 / 改 / 找 / 目录 / git / 命令），⛔ 不再一律 TerminalSquare。 */
+  const CmdIcon = iconOfCommand(commandText, intent);
   const target = commandText ? commandTarget(commandText) : "";
   const purpose = commandText ? commandPurpose(commandText) : "";
   /* 表头映射串 = 用途 · 目标（有哪个用哪个）：
@@ -88,7 +107,14 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive }: {
      ⛔ 都认不出时**一定**给命令原文（截断），不允许只剩一个「已运行」。
      ⛔ 等待批准时目标换成"在等我点"（同原让位逻辑）。 */
   const headlineText = action || purpose;
-  const headline = headlineText && !(waitingForApproval && running) ? headlineText : "";
+  /* ⛔⛔ 10-29 用户实测截图：「编辑文件 / 运行过程中 / 运行完成后那个都不见了」——
+     原来动作短语一旦命中就**只剩「写文件」这种无状态的说法**，运行中和已完成长得一样，
+     状态全靠右侧那枚 12px 的小图标。⇒ 运行时补「正在」前缀（动作短语本身是动词，读起来自然：
+     「正在写文件」/「正在看 git 配置」）；完成时保持简洁（不加「已」，与 WorkBuddy 同形）。
+     ⛔ 只给 action 加：`purpose`/原文兜底不是动词短语，拼「正在」会成了病句。 */
+  const headline = headlineText && !(waitingForApproval && running)
+    ? (running && action ? `正在${action}` : headlineText)
+    : "";
   const commandSnippet = headline || !commandText ? "" : displayCommand(commandText, 46);
   const verb = waitingForApproval && running ? "等待批准"
     : running ? `正在${intentVerb}` : `已${intentVerb}`;
@@ -111,7 +137,7 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive }: {
        ⛔ 原文一个字都不删：展开体里仍是引擎原样的 `command`（用户要能照着复现）。 */
     <div className={`cmd-card ${status} ${open ? "open" : ""}`}>
       <button type="button" className="cmd-head" onClick={toggle} aria-expanded={open} title={command || undefined}>
-        <span className="cmd-icon"><TerminalSquare size={14} /></span>
+        <span className="cmd-icon"><CmdIcon size={14} /></span>
         <span className="cmd-verb">{headline || verb}</span>
         {commandSnippet ? <span className="cmd-snippet" title={command}>{commandSnippet}</span> : null}
         {targetName ? <span className="cmd-target" title={target}>{targetName}</span> : null}

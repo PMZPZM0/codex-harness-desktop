@@ -1,6 +1,6 @@
 /** 排队消息 / 折叠流 / 渐进体（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
 import { useState, useMemo, useEffect, useRef, memo, Fragment } from "react";
-import { ChevronDown, ChevronRight, GripVertical, Clock3, Image, ArrowUp, PenLine, Trash2, TerminalSquare, FileCode2, Search, Bot, Brain, Wrench, AlarmClock, X, FileText, Sparkles, Plug, Puzzle, Globe2, CircleCheck, CircleX, LoaderCircle } from "lucide-react";
+import { ChevronDown, ChevronRight, GripVertical, Clock3, Image, ArrowUp, PenLine, Trash2, TerminalSquare, FileCode2, Search, Bot, Brain, Wrench, AlarmClock, X, FileText, Sparkles, Plug, Puzzle, Globe2, CircleCheck, LoaderCircle } from "lucide-react";
 import { parseUserRefs } from "../../lib/user-refs";
 import type { ParsedUserRefs } from "../../lib/user-refs";
 import { isImagePart } from "../../lib/prompt-images";
@@ -243,7 +243,7 @@ const FOLD_GROUP_ICONS: Record<string, typeof Wrench> = {
   other: Wrench,
 };
 
-export function FoldGroup({ title, leadGroup, variant, running, defaultOpen = false, autoFold, failedCount, children }: {
+export function FoldGroup({ title, leadGroup, variant, running, defaultOpen = false, autoFold, children }: {
   title: string;
   leadGroup?: string | null;
   variant: "summary" | "completed" | "process";
@@ -269,12 +269,15 @@ export function FoldGroup({ title, leadGroup, variant, running, defaultOpen = fa
     <div className={`wb-fold ${open ? "open" : "collapsed"} wb-fold--${variant} ${running ? "running" : ""}`}>
       <button type="button" className="wb-fold-header" title={open ? "点击收起" : "点击展开过程"} onClick={() => setManualOpen(!open)}>
         {variant === "summary" && <span className="wb-fold-lead" aria-hidden="true"><LeadIcon size={13} /></span>}
-        {/* 完成态（回合级大折叠）**没有 lead 图标位**（它讲的是整轮，不是某一类操作）⇒ 用状态图标：
-           进行中转圈 / 完成打勾 / 有失败打叉。10-29 用户令「状态类提示需使用可区分状态的图标」——
-            此前这里是一枚被 CSS 隐藏掉的 7px 小圆点，等于什么状态都看不出来。 */}
+        {/* 状态图标：**进行中转圈 / 完成打勾**。
+            ⛔⛔ 10-29 用户令：「上面那个红色 ❌ 是什么玩意，删掉，不需要，容易让人误会」
+              —— 很多命令非零退出是**正常探测**（`git config --get user.name` 没配就 exit 1、
+                 非仓库里 `git status` 也非零、策略拦截也返回非零），整轮打一个红叉会让人以为出错了。
+              失败/退出码细节仍在命令卡展开体（`.cmd-exit`）里，真要查的人点开就有。
+            ⛔ 也不再加「N 项失败」文字（09-20 已删过一次）。 */}
         {variant === "completed" && (
-          <span className={`wb-fold-state ${failedCount ? "error" : running ? "running" : "done"}`} aria-hidden="true">
-            {failedCount ? <CircleX size={13} /> : running ? <LoaderCircle size={13} className="spin" /> : <CircleCheck size={13} />}
+          <span className={`wb-fold-state ${running ? "running" : "done"}`} aria-hidden="true">
+            {running ? <LoaderCircle size={13} className="spin" /> : <CircleCheck size={13} />}
           </span>
         )}
         <span className={`wb-fold-title ${running ? "shimmer-text" : ""}`}>{title}</span>
