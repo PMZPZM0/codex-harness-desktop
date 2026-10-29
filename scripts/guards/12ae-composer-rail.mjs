@@ -209,5 +209,13 @@ ok(/DEFAULT_MENU_PAGES = new Set\(\[\s*"devtools",\s*"favorites"\s*\]\)/.test(me
   && /!Array\.isArray\(input\?\.entries\)\) return/.test(extMain),
   "自定义入口不会与内置默认页重复（收藏夹 / 开发工具）、超 40 条有提示，保存通道对非数组直接拒写（⛔ 空调用不许清空菜单）");
 
+{
+  const menuCss = read("src/styles/44-function-menu.css");
+  ok(/\.fm-edit-col\s*\{[^}]*max-height:\s*min\(46vh, 420px\)/s.test(menuCss)
+    && /\.fm-edit-list\s*\{[^}]*overflow-y:\s*auto/s.test(menuCss)
+    && /\.fm-edit-list::-webkit-scrollbar\s*\{/s.test(menuCss),
+    "编辑菜单「菜单里 / 更多」两列各自内滚（列限高 + overflow-y:auto + 细滚动条）—— ⛔ 多了不许被弹窗裁掉");
+}
+
 console.log(`\n【rail】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);
