@@ -66,14 +66,21 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                    与新的写入面脱节 ⇒ 写进去的条目召不回来。
                    ⛔ 保留 fragments 那条兜底：碎片池里可能有历史条目。 */
                 const query = String(args.query ?? "");
+                const recallThreadId = String(event.params?.threadId ?? bag.threadRef.current?.id ?? "");
+                /* ⛔⛔ 10-29 审查：指挥中枢会话的记忆检索也要走**它自己的**专属目录。
+                   原来这里直接用 bag.workspace（用户选的项目）⇒ 中枢调 memory_recall
+                   会读到项目记忆、把项目碎片当自己的上下文。写字那条早路由了，读的漏了。 */
+                const recallWs = (await ensureBossMemoryWorkspace(recallThreadId)) || bag.workspace || "";
                 const result = bag.workspaceMemoryEnabled
                   ? await window.codex.readRoleMemoryContext({
-                      threadId: String(event.params?.threadId ?? bag.threadRef.current?.id ?? ""),
-                      workspace: bag.workspace || "",
+                      threadId: recallThreadId,
+                      workspace: recallWs,
                       query,
                     })
                   : { text: "", key: "", counts: { project: 0, session: 0, legacy: 0 } };
-                const text = result?.text?.trim() || (await window.codex.recallMemory(query, bag.workspace || undefined)).context || "没有找到相关记忆";
+                const text = result?.text?.trim()
+                  || (await window.codex.recallMemory(query, recallWs || undefined, recallThreadId)).context
+                  || "没有找到相关记忆";
                 await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text }], success: true });
               } else if (event.params?.tool === "memory_write" || event.params?.tool === "memory_save") {
                 /* ⛔⛔ 10-05 统一记忆（写）：主会话与被调度角色**同一个内核**

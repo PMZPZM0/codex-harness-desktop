@@ -296,7 +296,7 @@ export const memoryFeature = defineFeature<null>({
     /* ⛔ 10-29：strictWorkspace 让碎片池**只返回本工作区**的条目（原实现跨工作区 0.5 降权仍返回
        ⇒ 别的项目的记忆混进本会话）。threadId 只用于审计，不参与检索（检索仍按工作区）。 */
     ipcHost.handle("memory:recall", async (_event, query: string, workspace?: string, threadId?: string) => {
-      const result = await memoryStore.recall(query, { workspace, strictWorkspace: true });
+      const result = await memoryStore.recall(query, { workspace, strictWorkspace: true, threadId: String(threadId ?? "") || undefined });
       void auditMemoryInjection({
         kind: "recall",
         threadId: String(threadId ?? ""),
