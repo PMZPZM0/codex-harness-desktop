@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-29 | 命令卡：结束态一律 ✓ + 映射补漏（node 开关 / 目录 / 读文件） | 修复 | `src/features/terminal/TerminalPanel.tsx`、`src/lib/command-display.mjs`、`src/styles/03-messages-turns.css`、`src/styles/15-queued-messages.css`、守卫 07 | 用户实测：「中间有失败，不要在这里显示×显示√就行了」。① 结束态不再按退出码标 ×/「失败」——`git config --get user.name` 没配、非仓库里 `git status` 都是非零退出的正常探测；退出码仍在展开体（「退出码 N」）；② 映射补漏：`node --version` →「看 node 版本」（原来「跑脚本 --version」）、`node -e` →「跑 node 脚本」/ 内联写文件 →「写文件」、`dir`/`ls` →「看目录内容」、`Get-Content`/`cat` →「读文件 <名>」；③ 复合命令只在**引号外**拆 `;`/`&&`（`node -e "a;b"` 不再拼成「…并…」）；④ 整条命令被一层引号包住时先脱壳（用途取里面的中文标签，不再把整段脚本当标题）。守卫 07 +9 条（含真值表），4 处变异全抓。 | 本轮 |
 | 2026-10-28 | 命令卡表头：映射成中文 + 兜底显示命令 | 改动 | `src/lib/command-display.mjs`、`TerminalPanel.tsx`、`15-queued-messages.css` | 用户：「已运行为啥不显示运行了啥命令，把命令映射成中文展示它是干嘛的」。表头优先级改为 动作短语 → 用途（脚本中文字面量）→ **已运行 + 剥壳命令原文（截断）**，不再只剩一个「已运行」；新增通用 CLI 子命令映射（status/config/login/auth/list/version/install/test/build/dev…，带二进制名），任意第三方 CLI 也能出中文（如 feishu-cli config → 「看 飞书CLI 配置」）；动作/用途/目标统一改用 `parsed_cmd` 内层脚本（避免 launcher 粘连导致识别错位）。07/11p 守卫全绿。 | 待提交 |
 | 2026-10-28 | 调度面板「专家」数改为专家库总数 | 修复 | `DispatchMenu.tsx`、`electron/dispatch-core.ts`、`dispatch.ts`、`vite-env.d.ts` | 用户：「专家库这么多专家为啥只显示 5 个」。根因：只统计 kind=expert（没有成员的单人专家），**团里的主理人与成员全没算**。改为「专家库角色总数」= 单人专家 + 每个团的（1 主理人 + 成员数），目录里补 memberCount 字段；提示改「每位专家都能单独用」。实测：测试档案 40、真实档案 41。 | 待提交 |
 | 2026-10-28 | 调度弹层数量实时同步 | 修复 | `DispatchMenu.tsx` | 面板打开时向主进程拉一次真实目录，并在打开期间每 3 秒同步（原来只靠 expertTeams/subAgents 变化触发，设置里增删专家后数字会停在旧值）。实测：停用一个单人专家 ⇒ 3 秒内 5→4。 | 待提交 |

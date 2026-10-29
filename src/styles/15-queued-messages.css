@@ -449,12 +449,10 @@
 .cmd-card.open .cmd-chevron {
   transform: rotate(0deg);
 }
-/* running / error 不再加外壳色——状态色交给 status-icon + verb 表达，保持外壳干净 */
+/* running 不再加外壳色——状态色交给 status-icon + verb 表达，保持外壳干净。
+   ⛔ 10-29：命令卡不再有 error 态（用户令：结束一律 ✓，不显示 ×）⇒ 对应的 .cmd-card.error 规则已删。 */
 .cmd-card.running .cmd-icon {
   color: var(--accent);
-}
-.cmd-card.error .cmd-icon {
-  color: var(--red);
 }
 .cmd-card.done .cmd-icon {
   color: var(--green);

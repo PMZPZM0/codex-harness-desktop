@@ -1167,8 +1167,7 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
 .cmd-card .card-status-icon {
   color: var(--green);
 }
-.action-card.error .card-status-icon,
-.cmd-card.error .card-status-icon {
+.action-card.error .card-status-icon {
   color: var(--red);
 }
 .action-card.running .card-status-icon {

@@ -77,20 +77,22 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive }: {
         （`commandAction`，规则见 lib/command-display.mjs）；认不出时 `action` 为空 ⇒ 退回
         原来的 verb，绝不显示拼出来的假动作。
      ⛔ 状态仍由右侧图标表达（✓/!/○）：有 action 时不再在标题前加「已/正在」，
-        与 WorkBuddy 同形；失败时保留「失败」后缀（红色卡片 + 图标之外再给一处明确文字）。 */
+        与 WorkBuddy 同形。
+     ⛔ 10-29 用户令（实测截图）：**结束的命令行一律显示 ✓**，不显示 ×/「失败」——
+        很多命令非零退出是正常探测（`git config --get user.name` 没配就 exit 1、
+        非仓库里 `git status` 也非零），标成失败只会让人误以为出错。
+        退出码仍留在展开体（`.cmd-exit`），真要看细节的人点开就有。 */
   const action = commandText ? commandAction(commandText) : "";
   /* 10-29 用户令：「已运行为啥后面不显示运行了啥命令，把命令映射成中文展示它是干嘛的」。
      表头优先级：动作短语（规则/通用子命令）→ 用途（脚本里的中文字面量）→ 「动词 + 剥壳命令原文」。
      ⛔ 都认不出时**一定**给命令原文（截断），不允许只剩一个「已运行」。
      ⛔ 等待批准时目标换成"在等我点"（同原让位逻辑）。 */
   const headlineText = action || purpose;
-  const headline = headlineText && !(waitingForApproval && running)
-    ? (failed ? `${headlineText}失败` : headlineText)
-    : "";
+  const headline = headlineText && !(waitingForApproval && running) ? headlineText : "";
   const commandSnippet = headline || !commandText ? "" : displayCommand(commandText, 46);
   const verb = waitingForApproval && running ? "等待批准"
-    : running ? `正在${intentVerb}` : failed ? `${intentVerb}失败` : `已${intentVerb}`;
-  const status: ActionStatus = running ? (waitingForApproval ? "pending" : "running") : failed ? "error" : "done";
+    : running ? `正在${intentVerb}` : `已${intentVerb}`;
+  const status: ActionStatus = running ? (waitingForApproval ? "pending" : "running") : "done";
   const emptySuccess = !running && !failed && output === "";
   const shell = commandCodeLanguage(command);
   /* 耗时只进展开体（10-22 用户点名）——`formatDuration` 返回中文口径（"9.1 秒"） */
