@@ -109,7 +109,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.5");
+        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.6");
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(web, true);
@@ -231,8 +231,10 @@ public class MainActivity extends AppCompatActivity {
         prefs().edit().putBoolean(KEY_CONNECTED, true).apply();
         setup.setVisibility(View.GONE);
         web.setVisibility(View.VISIBLE);
-        // ⛔ 直接开 /r/mobile：根路径会 302 一次，没必要
-        web.loadUrl(baseUrl + "/r/mobile");
+        /* ⛔ 直接开 /r/mobile：根路径会 302 一次，没必要。
+           延迟一拍再加载：刚 setCookie 的凭据要确保已进 WebView 的 cookie store，
+           否则首帧可能 401 → 又回到配对页（审查发现）。 */
+        web.postDelayed(() -> web.loadUrl(baseUrl + "/r/mobile"), 150);
     }
 
     /** 二维码里的 #code=123456（有就自动配对，没有就让用户手输） */
@@ -341,21 +343,36 @@ public class MainActivity extends AppCompatActivity {
         if (savedSecret().isEmpty()) { showSetup(""); return; }
         setBusy(true, "正在自动登录…");
         new Thread(() -> {
-            try {
-                List<String> jar = new ArrayList<>();
-                JSONObject body = new JSONObject()
-                        .put("deviceId", deviceId())
-                        .put("deviceName", deviceName())
-                        .put("deviceSecret", savedSecret());
-                HttpResult result = http("POST", "/api/pair", body.toString(), jar);
-                JSONObject json = new JSONObject(result.body);
-                if (json.optBoolean("ok") && json.optBoolean("approved")) {
-                    applyCookies(result.cookies);
-                    runOnUiThread(this::enterChat);
-                    return;
+            String failure = "连接已失效，请重新输入连接码或扫码";
+            for (int attempt = 0; attempt < 3; attempt += 1) {
+                try {
+                    List<String> jar = new ArrayList<>();
+                    JSONObject body = new JSONObject()
+                            .put("deviceId", deviceId())
+                            .put("deviceName", deviceName())
+                            .put("deviceSecret", savedSecret());
+                    HttpResult result = http("POST", "/api/pair", body.toString(), jar);
+                    JSONObject json = new JSONObject(result.body);
+                    if (json.optBoolean("ok") && json.optBoolean("approved")) {
+                        applyCookies(result.cookies);
+                        runOnUiThread(this::enterChat);
+                        return;
+                    }
+                    if (!json.optBoolean("ok")) {
+                        /* 服务器明确回了「不行」= 设备秘密失效，重试没意义，直接让人重新配对 */
+                        failure = json.optString("error", "连接已失效，请重新输入连接码或扫码");
+                        break;
+                    }
+                    failure = "电脑还没准备好，请稍后重试";
+                } catch (Exception error) {
+                    /* ⛔ 冷启动时中转还没连上（通常 1~2 秒）：重试几次再下结论，
+                       否则用户会被要求白白重新输一次码（审查发现） */
+                    failure = "连不上电脑：请确认电脑端应用在线，然后重试";
                 }
-            } catch (Exception ignored) { /* 落到重新配对 */ }
-            runOnUiThread(() -> { setBusy(false, "连接已失效，请重新输入连接码或扫码"); showSetup("连接已失效，请重新输入连接码或扫码"); });
+                try { Thread.sleep(1500); } catch (InterruptedException interrupted) { return; }
+            }
+            final String message = failure;
+            runOnUiThread(() -> { setBusy(false, message); showSetup(message); });
         }).start();
     }
 
@@ -402,7 +419,11 @@ public class MainActivity extends AppCompatActivity {
             if (entry.getKey() == null || !"set-cookie".equalsIgnoreCase(entry.getKey())) continue;
             for (String value : entry.getValue()) {
                 result.cookies.add(value);
-                jar.add(value.split(";")[0]);
+                /* 同名 cookie 只留最新一条（pair 与 pair-status 都会下发，重复会让服务端解析到旧值） */
+                String pair = value.split(";")[0];
+                String name = pair.split("=")[0];
+                jar.removeIf((existing) -> existing.split("=")[0].equals(name));
+                jar.add(pair);
             }
         }
         connection.disconnect();
