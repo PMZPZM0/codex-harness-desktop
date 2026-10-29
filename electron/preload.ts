@@ -926,6 +926,8 @@ contextBridge.exposeInMainWorld("codex", {
   dataaccessVaultCopy: (input: { threadId: string; id: string }) => __ipc("dataaccess:vault-copy", 1, [input]),
   /* 模型工具：写入密码本（需 vault/write + 渲染层一次性确认） */
   dataaccessVaultSave: (input: { threadId: string; item: Record<string, unknown> }) => __ipc("dataaccess:vault-save", 1, [input]),
+  /* 清内置浏览器（persist:harness-browser）的登录态/缓存；kind=all 连缓存一起清 */
+  browserClearData: (kind?: string) => __ipc("browser:clear-data", 0, [kind]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。
