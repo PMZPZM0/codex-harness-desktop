@@ -43,18 +43,17 @@ export function emptyDispatch() {
   return { expert: true, team: false, subagent: true };
 }
 
-const bool = (v, fallback) => (typeof v === "boolean" ? v : fallback);
-
 /** 归一化调度许可（坏值/缺字段一律回落默认；兼容旧结构里的 `enabled`）。
- *  旧记录迁移规则 = `team && enabled`：旧日「开过调度」才算显式开过专家团，
- *  旧记录里 team 的 `true` 只是当年的默认值（44 条存量记录全是 `0111`，不叠加就会凭空开团）。 */
+ *  ⛔ 10-29 定稿：面板只剩「专家团」一个开关 ⇒ `expert` / `subagent` **恒读为 true**。
+ *    旧记录里的 false 是当年逐类勾选留下的，界面上已无关闭入口 —— 留着只会让模型收到
+ *    用户无法纠正的"本会话禁用专家"，并让用户去点不存在的开关。 */
 export function normalizeDispatch(raw) {
   const src = raw && typeof raw === "object" ? raw : {};
   const legacy = typeof src.enabled === "boolean" ? src.enabled : null;
   return {
-    expert: bool(src.expert, true),
-    team: legacy === null ? bool(src.team, false) : src.team === true && legacy,
-    subagent: bool(src.subagent, true),
+    expert: true,
+    team: legacy === null ? src.team === true : src.team === true && legacy,
+    subagent: true,
   };
 }
 

@@ -1,12 +1,15 @@
-// 调度许可的**默认值 + 通知映射**判据：真跑 dispatch.ts 的编译产物（不是字符串比对）。
+// 调度许可的**默认值 + 注入提示词**判据：真跑 dispatch.ts 的编译产物（不是字符串比对）。
 //
-// 10-29 用户令：「子智能体调用和专家调度改为默认可直接调用，仅专家团功能需要显式开启」+
-//              「不再做数量或使用上的限制，每个会话都可以调度它们」。
-// ⇒ 总开关 / 全局独占锁 / 配额全部下线；这里钉住新语义的三条硬边界：
-//   ① 默认值：专家 ✓、子智能体 ✓、专家团 ✗（只有它能被"没开"）；
-//   ② 通知：一条消息按类分段，差异驱动（新增一段 / 停用一段 / 末尾写当前可调度），
-//      新开启的类要附对象名单（中途开团时模型才知道有谁）；
-//   ③ 渲染层只有**一个**告知入队点，且核对目标会话 id（10-04 跨会话泄漏事故）。
+// 10-29 两轮用户令：
+//   ①「子智能体调用和专家调度改为默认可直接调用，仅专家团功能需要显式开启」+
+//     「不再做数量或使用上的限制，每个会话都可以调度它们」；
+//   ②「这里就可以只剩一个专家团就行，展示优化一下」+「配套的注入提示词，要优化一下」。
+// ⇒ 总开关 / 独占锁 / 三类并排开关全部下线；面板只剩专家团，注入提示词也必须只说这件事。
+//   这里钉住四条硬边界：
+//     a) 默认值：专家 ✓、子智能体 ✓、专家团 ✗（只有它能被"没开"，且**旧记录里的 false 也读成 true**）；
+//     b) 工具描述：明确"专家/子智能体随时可派、别让用户去开开关"，且专家团未开启时显式否定；
+//     c) 告知：只有两态（开了团 / 关了团），且都写明"专家与子智能体不受影响"；
+//     d) 渲染层只有**一个**告知入队点，且核对目标会话 id（10-04 跨会话泄漏事故）。
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -29,8 +32,14 @@ const {
 } = req(join(ROOT, "dist-electron/dispatch.js"));
 
 const allow = (e, t, s) => ({ expert: e, team: t, subagent: s });
+const targets = [
+  { kind: "expert", key: "e1", name: "洞明", profession: "", description: "" },
+  { kind: "team", key: "t1", name: "施工队", profession: "", description: "" },
+  { kind: "member", key: "t1:m1", name: "小工", profession: "", description: "", teamId: "t1", memberId: "m1" },
+  { kind: "subagent", key: "s1", name: "评审", profession: "", description: "" },
+];
 
-/* ── ① 默认值：这是本轮需求的**唯一**判据面 ─────────────────────────────── */
+/* ── ① 默认值：专家/子智能体恒可用，专家团是唯一开关 ─────────────────────── */
 {
   ok(DISPATCH_DEFAULTS.expert === true && DISPATCH_DEFAULTS.subagent === true,
     "出厂默认：专家与子智能体**可用**（不需要任何开关）");
@@ -38,110 +47,70 @@ const allow = (e, t, s) => ({ expert: e, team: t, subagent: s });
   ok(!("enabled" in DISPATCH_DEFAULTS), "⛔ 默认值里没有 enabled（调度总开关已删除，不得复活）");
   const d = dispatchAllowOf(null);
   ok(d.expert && d.subagent && !d.team, "无运行时记录（新会话）⇒ 按出厂默认判定");
+  /* ⛔ 旧记录里 expert/subagent 的 false（当年逐类勾选关过）必须读成 true：
+     界面上已没有关闭它们的入口，留着 false 会让模型让用户去点一个不存在的开关。 */
+  const legacy = dispatchAllowOf({ expert: false, team: false, subagent: false, enabled: true });
+  ok(legacy.expert === true && legacy.subagent === true, "⛔ 旧记录里被关掉的专家 / 子智能体读成 true（界面已无关闭入口）");
 
   ok(dispatchKindAllowed("expert", null).ok === true, "默认可派专家（无需用户动作）");
   ok(dispatchKindAllowed("subagent", null).ok === true, "默认可派子智能体（无需用户动作）");
   const teamDenied = dispatchKindAllowed("team", null);
-  ok(teamDenied.ok === false && /显式开启/.test(teamDenied.reason),
-    "默认派专家团被拒，且文案指向「需显式开启」（模型据此改派或如实回报）");
+  ok(teamDenied.ok === false && /不要重复调用/.test(teamDenied.reason) && /专家或子智能体/.test(teamDenied.reason),
+    "默认派专家团被拒：文案给出「别再试 + 可改用专家/子智能体」（模型据此收敛）");
   ok(dispatchKindAllowed("member", null).ok === false, "团队成员随专家团（团没开 ⇒ 成员也不能派）");
-  ok(dispatchKindAllowed("team", { expert: true, team: true, subagent: true }).ok === true,
-    "显式开启专家团后放行");
-  const offExpert = dispatchKindAllowed("expert", { expert: false, team: true, subagent: true });
-  ok(offExpert.ok === false && /关闭了/.test(offExpert.reason),
-    "用户手动关掉专家后执行端拒绝（默认可用 ≠ 不可关）");
+  ok(dispatchKindAllowed("team", { expert: true, team: true, subagent: true }).ok === true, "显式开启专家团后放行");
 
-  const targets = [
-    { kind: "expert", key: "e1", name: "洞明", profession: "", description: "" },
-    { kind: "team", key: "t1", name: "施工队", profession: "", description: "" },
-    { kind: "member", key: "t1:m1", name: "小工", profession: "", description: "", teamId: "t1", memberId: "m1" },
-    { kind: "subagent", key: "s1", name: "评审", profession: "", description: "" },
-  ];
   ok(filterTargetsBySwitch(targets, null).map((t) => t.kind).join(",") === "expert,subagent",
     "目录过滤同口径：默认只列专家与子智能体");
   ok(filterTargetsBySwitch(targets, { expert: true, team: true, subagent: true }).length === 4,
     "开启专家团后目录含团与成员（4 条）");
 }
 
-/* ── ② 工具描述：为什么"没开团"必须写进模型读得到的文本 ─────────────────── */
+/* ── ② 工具描述：必须消掉"让用户去开开关"这个错觉 ───────────────────────── */
 {
-  const targets = [
-    { kind: "expert", key: "e1", name: "洞明", profession: "", description: "" },
-    { kind: "team", key: "t1", name: "施工队", profession: "", description: "" },
-    { kind: "subagent", key: "s1", name: "评审", profession: "", description: "" },
-  ];
   const def = dispatchToolDescription(targets, dispatchAllowOf(null));
-  ok(/可调度：专家、子智能体/.test(def), "默认描述首句写明「可调度：专家、子智能体」");
-  ok(/未开启（不要派）：专家团/.test(def), "默认描述显式否定专家团（不是隐藏 —— 隐藏会让模型反复试）");
-  ok(/默认关闭/.test(def) && /显式开启/.test(def), "专家团那一节写明「默认关闭、需显式开启」");
+  ok(/专家、子智能体可直接派（不需要任何开关）/.test(def), "默认描述首句：专家/子智能体可直接派、无需开关");
+  ok(/专家团未开启/.test(def) && /别硬试/.test(def), "默认描述点明专家团未开启、别硬试");
+  ok(/不要把「先去调度面板开启」当成前置条件/.test(def), "⛔ 明确禁止把「去开开关」当前置条件（10-29 实测错觉）");
+  ok(/【专家团】本会话\*\*未开启\*\*/.test(def), "专家团那一节显式否定（不是隐藏 —— 隐藏会让模型反复试）");
+  ok(!/【专家】本会话\*\*未开启\*\*/.test(def) && !/【子智能体】本会话\*\*未开启\*\*/.test(def),
+    "专家 / 子智能体**永远不被写成未开启**（它们恒可用）");
+
   const all = dispatchToolDescription(targets, allow(true, true, true));
-  ok(!/未开启/.test(all), "三类全开时描述里没有否定段");
-  const onlyTeam = dispatchToolDescription(targets, allow(false, true, false));
-  ok(/可调度：专家团/.test(onlyTeam) && /未开启（不要派）：专家、子智能体/.test(onlyTeam),
-    "只开专家团时，专家 / 子智能体被显式否定（用户关掉的两类不能被当成可用）");
+  ok(/都可直接派/.test(all) && !/未开启/.test(all), "团开着时：三类都可直接派，没有否定段");
+  ok(/【专家团（多人协作）】/.test(all) && /【专家（单人）】/.test(all) && /【子智能体（你自定义的角色）】/.test(all),
+    "三类各自分节（平铺会让模型靠名字猜、派错类型）");
   ok(dispatchToolDescription(targets, null).includes('kind="team"'),
     "allow=null 退化为全列（老调用方 / 描述通道降级时不让描述变空）");
-  const x = dispatchToolDescription(targets, null);
-  ok(/【专家（单人）】/.test(x) && /【专家团（多人协作）】/.test(x) && /【子智能体（你自定义的角色）】/.test(x),
-    "三类各自分节（平铺会让模型靠名字猜、派错类型）");
 }
 
-/* ── ③ 通知：一条消息、按类分段、差异驱动 ────────────────────────────────── */
+/* ── ③ 告知：只有两态，且都说明"专家/子智能体不受影响" ───────────────────── */
 {
-  const t = dispatchSelectionChangeNotice(["team"], [], allow(true, true, true));
-  ok(t.includes("新开启") && t.includes("【专家团】一个团队按 SOP"), "开启专家团：该类有独立段落");
-  ok(t.includes("当前仍可调度：专家、专家团、子智能体"), "开启专家团：末尾状态正确");
-  ok(!t.includes("已在本会话停用"), "开启专家团：没有停用段（不误报）");
+  const on = dispatchSelectionChangeNotice(["team"], [], allow(true, true, true), targets);
+  ok(/打开了「专家团」/.test(on), "开团告知：说清是「专家团」被打开");
+  ok(/【专家团】一个团队按 SOP/.test(on), "开团告知：带该类职责说明（模型知道该怎么用）");
+  ok(/可派对象：施工队/.test(on), "开团告知：附该团名单（中途开团时模型立刻知道有谁）");
+  ok(/专家与子智能体一直可派，不受这次变化影响/.test(on), "开团告知：明确专家/子智能体不受影响");
 
-  for (const [kind, label, rest] of [
-    ["expert", "专家", "专家团、子智能体"],
-    ["subagent", "子智能体", "专家、专家团"],
-    ["team", "专家团", "专家、子智能体"],
-  ]) {
-    const off = allow(kind !== "expert", kind !== "team", kind !== "subagent");
-    const s = dispatchSelectionChangeNotice([], [kind], off);
-    ok(s.includes(`【${label}】已在本会话停用`), `关闭${label}：有停用段`);
-    ok(s.includes(`当前仍可调度：${rest}`), `关闭${label}：其余仍写明`);
-  }
+  const off = dispatchSelectionChangeNotice([], ["team"], allow(true, false, true), targets);
+  ok(/关掉了「专家团」/.test(off), "关团告知：说清是「专家团」被关掉");
+  ok(/team" \/ "member" 的调用会被拒绝/.test(off) && /别再试/.test(off), "关团告知：明确会被拒、别重试");
+  ok(/专家与子智能体仍然可以直接派/.test(off), "关团告知：明确其余两类照旧可用");
 
-  {
-    const s = dispatchSelectionChangeNotice(["team"], ["expert"], allow(false, true, true));
-    ok(s.includes("【专家】已在本会话停用") && s.includes("【专家团】一个团队按 SOP"), "一开一关：两段都有");
-    ok(s.includes("当前仍可调度：专家团、子智能体"), "一开一关：状态正确");
-  }
-
-  {
-    const s = dispatchSelectionChangeNotice([], ["expert", "team", "subagent"], allow(false, false, false));
-    ok(s.includes("当前仍可调度：（无）") && s.includes("不要尝试调度"), "三类全关：明确告知无可调度对象");
-  }
-
-  {
-    const s = dispatchSelectionChangeNotice(["expert"], [], allow(true, false, true));
-    ok(s.includes("⛔ 未开启（默认关闭 / 用户没开，不要派）：专家团"), "未开启的专家团即使本轮没动也被显式否定");
-  }
-
-  {
-    const targets = [
-      { kind: "team", key: "t1", name: "施工队", profession: "", description: "" },
-      { kind: "team", key: "t2", name: "审校组", profession: "", description: "" },
-    ];
-    const s = dispatchSelectionChangeNotice(["team"], [], allow(true, true, true), targets);
-    ok(s.includes("可派对象：施工队、审校组"), "开启专家团时附上该类对象名单");
-    const empty = dispatchSelectionChangeNotice(["team"], [], allow(true, true, true), []);
-    ok(!empty.includes("可派对象"), "没传目录时不硬编「可派对象」（不撒谎）");
-  }
-
-  {
-    const same = dispatchSelectionChangeNotice([], [], allow(true, false, true));
-    ok(same.includes("（本次没有实际变化。）"), "差集为空：给中性说明（渲染层本不该发）");
-  }
+  const empty = dispatchSelectionChangeNotice(["team"], [], allow(true, true, true), []);
+  ok(!empty.includes("可派对象"), "没传目录时不硬编「可派对象」（不撒谎）");
+  const noChange = dispatchSelectionChangeNotice([], [], allow(true, false, true));
+  ok(noChange.includes("（本次没有实际变化。）"), "差集为空：给中性说明（渲染层本不该发）");
+  /* ⛔ 旧版"按类分段"的痕迹不许回来：那会暗示专家/子智能体也能被关掉 */
+  ok(!/新开启（可以派它们干活）/.test(on) && !/已在本会话停用/.test(off),
+    "⛔ 不再有「按勾选逐类分段」的旧文案（它暗示专家/子智能体也能关）");
 }
 
-/* ── ④ 静态：告知必须带会话作用域闸、且只有一条入队点 ─────────────────────── */
+/* ── ④ 静态：告知带会话作用域闸、且只有一条入队点 ─────────────────────────── */
 {
   const activity = readFileSync(join(ROOT, "src/features/app-state/parts/part06/02-seg/01-turn-runtime-activity.tsx"), "utf8");
   const queues = activity.split("\n").filter((l) => l.includes("queueInlineNotice(id, text)"));
-  ok(queues.length === 1, "调度告知恰好 1 个入队点（开启 / 关闭 / 变化收敛成一条路径）");
+  ok(queues.length === 1, "调度告知恰好 1 个入队点（开团 / 关团收敛成一条路径）");
   ok(queues.every((l) => l.includes("threadRef.current?.id === id")), "入队前核对目标会话 id（防跨会话泄漏）");
   ok(!/dispatchEnabledNotice|dispatchOffNotice/.test(activity), "⛔ 渲染层不再调用已删除的两条旧通知通道");
   ok(!/pendingCommandTextRef\.current = text/.test(activity),
@@ -153,19 +122,24 @@ const allow = (e, t, s) => ({ expert: e, team: t, subagent: s });
     "告知块在显示层被整段剥掉（模型看得到、气泡里看不到）");
 }
 
-/* ── ⑤ 静态：独占锁必须真的下线（否则"每个会话都能调度"是假的） ───────────── */
+/* ── ⑤ 静态：独占锁下线 + 面板只剩一个开关 ───────────────────────────────── */
 {
   const store = readFileSync(join(ROOT, "electron/thread-runtime-store.ts"), "utf8");
   ok(!/dispatchOwnerFromMap|releaseDispatch\(/.test(store), "⛔ store 里没有独占锁（dispatchOwner / releaseDispatch 已删）");
-  const ipc = readFileSync(join(ROOT, "electron/features/thread-runtime-ipc.ts"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const ipc = readFileSync(join(ROOT, "electron/features/thread-runtime-ipc.ts"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   ok(!/dispatch-owner|release-dispatch/.test(ipc), "⛔ 两条锁通道已从 IPC 域删除（不留死通道）");
   const preload = readFileSync(join(ROOT, "electron/preload.ts"), "utf8");
   ok(!/dispatchOwner|releaseDispatch/.test(preload), "⛔ preload 不再暴露锁方法");
   const types = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   ok(!/dispatchOwner|releaseDispatch/.test(types), "⛔ d.ts 不再声明锁方法（签名漂移 ⇒ 运行时丢参）");
+
   const menu = readFileSync(join(ROOT, "src/features/dispatch/DispatchMenu.tsx"), "utf8");
-  ok(!/lockedBy|onReleaseHolder|dispatch-master/.test(menu),
-    "⛔ 面板不再有总开关 / 占用者 / 一键释放（三类平行开关）");
+  ok(!/lockedBy|onReleaseHolder/.test(menu), "⛔ 面板不再有「被占用 / 一键释放会话」（独占锁已下线）");
+  ok(/className=\{`dispatch-master \$\{draft\.team \? "on" : ""\}`\}/.test(menu) && !/className=\{`dispatch-row/.test(menu),
+    "面板只剩「专家团」一个开关（专家 / 子智能体是只读说明，不再并排成三行开关）");
+  ok(/dispatch-always/.test(menu) && /onChange\(\{ expert: true, subagent: true, team: draft\.team \}\)/.test(menu),
+    "确认时 expert/subagent 一律写 true（界面上没有关闭入口，就不留假的关闭态）");
 }
 
 console.log("\n【dnotice】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));
