@@ -1046,8 +1046,10 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   max-width: min(560px, 62vw);
   overflow: hidden;
   padding-left: 22px;   /* 与第一行的文字起点（图标 16 + gap 6）对齐 */
-  color: var(--faint);
-  font-size: 11px;
+  /* ⛔ 用 --muted 而不是 --faint：这是用户点名要的「映射反馈」，11px 的 faint
+     （浅色 #9b9b95 / 深色 #7d7d78）在两种主题下都接近对比度下限，读起来吃力。 */
+  color: var(--muted);
+  font-size: 11.5px;
   line-height: 1.45;
 }
 /* 展开后**收起**第二行：展开体里已经有整段说明，再挂一份就是同屏重复（实测两次看到同一句）。 */
