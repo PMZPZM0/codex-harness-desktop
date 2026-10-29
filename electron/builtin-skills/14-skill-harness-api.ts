@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（110 个能力域 / 595 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（110 个能力域 / 596 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -325,9 +325,9 @@ MCP 服务器管理（配置/状态）
 本机**密码本**（输入框左侧竖条 → 密码本）：list 列条目 / save 新增或改（password 省略即保留原密码）/ remove 删除 / copy 把某条密码写入系统剪贴板（30 秒后若还是这条就自动清空）。⛔ 密码用系统 safeStorage 加密落 userData/vault.json，**明文永不落盘、渲染层与模型侧都拿不到**；加密不可用时拒绝保存。模型侧用不到它
 通道：vault:copy, vault:list, vault:remove, vault:save
 
-### extensions（1 通道）
+### extensions（2 通道）
 竖条与功能入口菜单的**可扩展目录**（extensions:catalog）：内置四项面板 + userData/extensions.json 里用户自建项，渲染层据此渲染，不改代码就能多一个入口。⛔ 扩展项只能声明封闭动作集（http(s) 链接 / 跳到某个设置页 / 纯说明文字）—— 没有「执行命令」这类动作
-通道：extensions:catalog
+通道：extensions:catalog, extensions:menu-set
 
 ### journal（6 通道）
 **开发日记**（竖条 → 开发日记）：按天一个 Markdown 文件（userData/dev-journal/YYYY-MM-DD.md）—— list 列日期与摘要 / read 看当天全文 / save 整篇覆盖 / append 追加一条「## HH:mm 标题 + 正文」/ remove 删当天 / search 全文检索。⛔ 与会话归档、项目工作日志是三件不同的事

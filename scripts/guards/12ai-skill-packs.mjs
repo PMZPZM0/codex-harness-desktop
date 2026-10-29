@@ -51,6 +51,18 @@ ok(/if \(installed\.length\) await server\.restart\(\)/.test(feature),
   "装完重启引擎（不重启模型扫不到新技能）");
 ok(/SKILL_SKIP_DIRS = new Set\(\["deprecated", "in-progress"/.test(feature),
   "跳过仓库里标注 deprecated / in-progress 的技能目录");
+/* ★ 10-30 用户实测「安装卸载太快了，要真安装真卸载」——
+   三条硬判据：下载要有真实字节进度、落盘要回读校验、卸载要回读确认。 */
+ok(/createWriteStream\(target\)/.test(feature) && /onProgress\?\.\(received, total\)/.test(feature) && /BODY|content-length/i.test(feature),
+  "下载是流式 + 报真实字节进度（⛔ 不许退回一口气 arrayBuffer：界面会像「点了就完成」）");
+ok(/head !== "PK"/.test(feature) && /下载内容不是 zip/.test(feature),
+  "落盘后校验 zip 魔数（镜像返回 200 + 错误页不算成功）");
+ok(/写入后校验未通过/.test(feature) && /existsSync\(path\.join\(root, folder, "SKILL\.md"\)\)/.test(feature),
+  "每个技能写完立即回读 SKILL.md（拷贝失败/进程被杀不能报成功）");
+ok(/const remaining = marker\.skills\.filter/.test(feature) && /return \{ removed, remaining \}/.test(feature),
+  "卸载后回读磁盘确认目录已不存在，并把删不掉的如实返回");
+ok(/skills: \[\.\.\.installed\]/.test(feature) && !/skills: \[\.\.\.installed, \.\.\.skipped\]/.test(feature),
+  "marker 只记真正写进去的目录（⛔ 记 skipped 会把用户的同名技能一起卸掉）");
 
 /* ── ⑤ 接线 ─────────────────────────────────────────────────────────── */
 const manifest = JSON.parse(read("electron/ipc-channels.manifest.json"));
@@ -74,6 +86,13 @@ ok(/key: "skill-packs", icon: <PackageOpen/.test(devtools) && /openCard === "ski
 const panel = codeOnly(read("src/features/skill-packs/SkillPacksPanel.tsx"));
 ok(/window\.codex\.listSkillPacks\(\)/.test(panel) && /window\.codex\.installSkillPack\(/.test(panel) && /window\.codex\.uninstallSkillPack\(/.test(panel),
   "面板只通过三条通道取数/操作");
+/* ★ 10-30「要真安装真卸载」：界面结果必须以磁盘回读为准，不能一律绿色糊过去。 */
+ok(/磁盘确认已写入/.test(panel) && /磁盘确认已不存在/.test(panel) && /没有新技能：/.test(panel),
+  "界面结果以磁盘回读为准：写入数 / 已删净 / 「同名已存在」不得说成成功");
+ok(/skill-pack-result \$\{result\.tone\}/.test(panel) && /tone: "error"/.test(panel),
+  "失败与中性结果有不同的着色（不许一律绿色糊过去）");
+ok(/打开技能目录/.test(panel) && /skillsRoot/.test(panel),
+  "面板可一键打开技能目录（用户能自己核实装了什么）");
 ok(!/mattpocock|diagram-design|HowToLiveBetter|\bMIT\b|CC BY/.test(panel),
   "⛔ 面板不许抄一份仓库/许可文案（单一真相源在主进程清单；类型字段名不算）");
 

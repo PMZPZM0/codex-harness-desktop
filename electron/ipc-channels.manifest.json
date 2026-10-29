@@ -4094,7 +4094,7 @@
       "channel": "skill-packs:list",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ id: string; name: string; repo: string; license: string; licenseUrl: string; size: string; description: string; companion: string; installed: boolean; installedSkills: string[]; installedAt: string }[]>",
+      "returns": "Promise<{ id: string; name: string; repo: string; license: string; licenseUrl: string; size: string; description: string; companion: string; installed: boolean; installedSkills: string[]; installedAt: string; skillsRoot: string }[]>",
       "invokeArgs": "",
       "cast": null,
       "note": "精选技能包（10-30）：三个第三方技能包的安装状态（已装技能名来自本板块自己写的 marker）"
@@ -4104,7 +4104,7 @@
       "channel": "skill-packs:install",
       "paramsImpl": "input: { id: string }",
       "paramsDecl": "input: { id: string }",
-      "returns": "Promise<{ installed: string[]; skipped: string[]; rejected: string[] }>",
+      "returns": "Promise<{ installed: string[]; skipped: string[]; rejected: string[]; bytes: number }>",
       "invokeArgs": "input",
       "cast": null,
       "note": "下载仓库 skills/ 子树 → 逐个 auditSkill → 落 codex-home/skills → 重启引擎；同名目录跳过、不覆盖"
@@ -4114,7 +4114,7 @@
       "channel": "skill-packs:uninstall",
       "paramsImpl": "input: { id: string }",
       "paramsDecl": "input: { id: string }",
-      "returns": "Promise<{ removed: string[] }>",
+      "returns": "Promise<{ removed: string[]; remaining: string[] }>",
       "invokeArgs": "input",
       "cast": null,
       "note": "只删本板块 marker 记下的技能目录（⛔ 用户自建的目录不动）"

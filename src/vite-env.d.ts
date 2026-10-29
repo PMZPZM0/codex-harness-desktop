@@ -1070,11 +1070,11 @@ interface Window {
     setBuiltinSkillSwitch(input: { name: string; enabled: boolean; cwd?: string }): Promise<{ name: string; enabled: boolean; available: boolean; error?: string }>;
     importSkill(): Promise<{ name: string; path: string; source: string; content: string } | null>;
     /* 精选技能包（10-30）：三个第三方技能包的安装状态（已装技能名来自本板块自己写的 marker） */
-    listSkillPacks(): Promise<{ id: string; name: string; repo: string; license: string; licenseUrl: string; size: string; description: string; companion: string; installed: boolean; installedSkills: string[]; installedAt: string }[]>;
+    listSkillPacks(): Promise<{ id: string; name: string; repo: string; license: string; licenseUrl: string; size: string; description: string; companion: string; installed: boolean; installedSkills: string[]; installedAt: string; skillsRoot: string }[]>;
     /* 下载仓库 skills/ 子树 → 逐个 auditSkill → 落 codex-home/skills → 重启引擎；同名目录跳过、不覆盖 */
-    installSkillPack(input: { id: string }): Promise<{ installed: string[]; skipped: string[]; rejected: string[] }>;
+    installSkillPack(input: { id: string }): Promise<{ installed: string[]; skipped: string[]; rejected: string[]; bytes: number }>;
     /* 只删本板块 marker 记下的技能目录（⛔ 用户自建的目录不动） */
-    uninstallSkillPack(input: { id: string }): Promise<{ removed: string[] }>;
+    uninstallSkillPack(input: { id: string }): Promise<{ removed: string[]; remaining: string[] }>;
     listLocalSkills(): Promise<LocalSkillEntry[]>;
     removeLocalSkill(input: { folder: string; name?: string }): Promise<{ ok: boolean; engineRemoved?: boolean; engineCheckMessage?: string }>;
     installMarketSkill(skill: MarketSkillEntry): Promise<LocalSkillEntry>;
