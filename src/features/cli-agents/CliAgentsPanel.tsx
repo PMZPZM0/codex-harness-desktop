@@ -123,7 +123,17 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string) => vo
   }, [confirmId, refresh, notify]);
 
   const copyInstall = useCallback(async (item: CliAgentEntry) => {
-    if (!item.installCmd) { notify("这个 CLI 没有可复制的一键安装命令，按官方文档安装即可"); return; }
+    if (!item.installCmd) {
+      /* 没有一键命令时退到**文档链接**（Harness CLI 这种自建入口就属于这一类）——
+         否则这个按钮点了只会在 toast 里说"没有"，什么也没给用户。 */
+      if (item.docs) {
+        await copyTextToClipboard(item.docs);
+        notify("这个 CLI 没有一键安装命令，已复制官方文档链接 —— 按文档装完回来点「检测」");
+        return;
+      }
+      notify("这个 CLI 既没有一键安装命令也没有文档链接 —— 按你自己的分发方式安装，装完点「检测」");
+      return;
+    }
     await copyTextToClipboard(item.installCmd);
     notify("安装命令已复制 —— 贴到终端里跑，装完回来点「检测」");
   }, [notify]);
@@ -242,7 +252,7 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string) => vo
                   <button type="button" className="cli-agents-btn" onClick={() => void runDetect(item)} title="检测本机是否已装（where/which + --version）">
                     <RefreshCw size={12} /> 检测
                   </button>
-                  <button type="button" className="cli-agents-btn" onClick={() => void copyInstall(item)} title={item.installCmd || "没有可复制的一键安装命令"}>
+                  <button type="button" className="cli-agents-btn" onClick={() => void copyInstall(item)} title={item.installCmd || item.docs || "没有可复制的一键安装命令"}>
                     <Copy size={12} /> 安装命令
                   </button>
                   <button type="button" className="cli-agents-btn" onClick={() => setDraft({ id: item.id, name: item.name, category: item.category, bin: item.bin, installCmd: item.installCmd, docs: item.docs, description: item.description })}>
