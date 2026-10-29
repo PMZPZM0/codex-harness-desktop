@@ -127,7 +127,7 @@ type ApprovedDevice = { name: string; approvedAt: number; lastSeen: number; secr
 const sha256Hex = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
 
 /** 6 位配对码：5 分钟有效，错 10 次作废并轮换（挡暴力试码） */
-const PAIR_CODE_TTL = 5 * 60_000;
+const PAIR_CODE_TTL = 30 * 60_000;   // 30 分钟：用户在两台电脑/两个应用之间来回看码时，5 分钟太容易过期
 const PAIR_CODE_MAX_TRIES = 10;
 /** 审批请求 2 分钟没人理就作废（手机端轮询到 expired） */
 const PAIR_REQUEST_TTL = 2 * 60_000;
@@ -1131,7 +1131,8 @@ else {
        ⛔ 码 5 分钟过期 / 换码后要刷新二维码，否则扫到的是旧码。
        机器人绑定二维码（botId）走另一张页面，不带这个 hash。 */
     if (botId) return `${base}?bot=${encodeURIComponent(botId)}`;
-    return `${base}?p=1#code=${encodeURIComponent(this.pairing.code || this.rotatePairingCode())}`;
+    /* ⛔ 用 pairingCode()：码过期会自动轮换，二维码里永远是新码（旧实现直接把可能过期的码嵌进去） */
+    return `${base}?p=1#code=${encodeURIComponent(this.pairingCode())}`;
   }
 
   stop() {
