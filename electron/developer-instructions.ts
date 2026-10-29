@@ -160,7 +160,7 @@ const VISION_INSTRUCTIONS = (mediaCommand: string) =>
  *  ⛔ 保留这条的原因：模型仍然会"写完就交"，交付前过一遍是唯一不依赖额外对象的质量兜底。
  *  ⛔ 必须写成条件式（与 BROWSER_INSTRUCTIONS 同一纪律）：这里是全局指令，别命令"必须复审"。 */
 const REVIEW_INSTRUCTIONS =
-  "\n6) self-review before handing over — for a non-trivial result (a code change, a plan, a document), re-read what you are about to deliver before calling it done: does it actually do what was asked, are the paths/commands/APIs real (not remembered), did you leave half-finished edits or debug leftovers. Fix what you find, and say plainly what you checked. Do not dispatch a reviewer subagent for this — there is no built-in one; if the user created their own subagent and this session has 调度 on, you may use it, otherwise review it yourself. Skip this for trivial edits, or when the user asked for speed.";
+  "\n6) self-review before handing over — for a non-trivial result (a code change, a plan, a document), re-read what you are about to deliver before calling it done: does it actually do what was asked, are the paths/commands/APIs real (not remembered), did you leave half-finished edits or debug leftovers. Fix what you find, and say plainly what you checked. Do not dispatch a reviewer subagent for this — there is no built-in one; if the user created their own subagent you may use it right away (subagents are always available, no switch to turn on). Expert teams are the one exception: they are off by default and need the user to enable 「专家团」 in the top-bar 调度 panel — so never tell the user to go enable subagents or experts.";
 
 /** ⛔⛔ 名字 / 称呼**不是**画像事实（10-24 实测定案，同一句要贴到每一档记忆文案里）。
  *

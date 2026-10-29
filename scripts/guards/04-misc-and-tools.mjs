@@ -750,13 +750,14 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       { kind: "team", key: "b", name: "乙", profession: "", description: "" },
       { kind: "subagent", key: "c", name: "丙", profession: "", description: "" },
     ];
-    dp.filterTargetsBySwitch(targets9, { enabled: false }).length === 0
-      ? ok("总开关关闭时不暴露任何可调度对象")
-      : fail("总开关关了仍能看到可调度对象");
-    const onlyTeam = dp.filterTargetsBySwitch(targets9, { enabled: true, expert: false, team: true, subagent: false });
-    onlyTeam.length === 1 && onlyTeam[0].kind === "team"
-      ? ok("三类勾选分别生效（取消专家/子智能体后只剩专家团）")
-      : fail("勾选过滤不生效");
+    /* 10-29 定稿：没有总开关；专家/子智能体恒在，专家团按 team 过滤（连旧记录里的 false 也不生效）。 */
+    const dflt9 = dp.filterTargetsBySwitch(targets9, { enabled: false });
+    dflt9.length === 2 && dflt9[0].kind === "expert"
+      ? ok("默认目录 = 专家 + 子智能体（旧记录的 enabled 不再影响）") : fail("默认目录不对 —— 专家/子智能体应当恒在、专家团默认不在");
+    const withTeam = dp.filterTargetsBySwitch(targets9, { enabled: true, expert: false, team: true, subagent: false });
+    withTeam.length === 3
+      ? ok("开启专家团后三类都在（旧记录里被关掉的专家/子智能体也算开）")
+      : fail("专家团开启后目录不全");
     dp.resolveDispatchTarget(targets9, { kind: "expert", name: "a" }).target?.name === "甲"
       && dp.resolveDispatchTarget(targets9, { kind: "expert", name: "甲" }).target?.key === "a"
       ? ok("目标解析同时认 key 与显示名（模型传中文名也能命中）")
@@ -821,14 +822,15 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
         && /subAgentConfig\.inheritApproval/.test(delegateSrc) && /subAgentConfig\.inheritModel/.test(delegateSrc)
         ? ok : fail)("★ 派活真正消费子智能体的推理强度/模型/沙箱/审批（表单不再只写不读）");
     }
-    /* 类别闸在执行端硬拦 kind（10-29：专家/子智能体默认可用，只有专家团需显式开启）。 */
+    /* 类别闸在执行端硬拦 kind（10-29 定稿：专家/子智能体**恒可用**，专家团是唯一开关）。 */
     (typeof dp.dispatchKindAllowed === "function"
-      && dp.dispatchKindAllowed("expert", { expert: false, team: true, subagent: true }).ok === false
-      && ["team", "member"].every((k) => dp.dispatchKindAllowed(k, { expert: false, team: true, subagent: true }).ok === true)
-      && ["expert", "subagent"].every((k) => dp.dispatchKindAllowed(k, null).ok === true)
+      && dp.dispatchKindAllowed("expert", { expert: false, team: false, subagent: false }).ok === true
+      && dp.dispatchKindAllowed("subagent", { expert: false, team: false, subagent: false }).ok === true
+      && dp.dispatchKindAllowed("team", { expert: true, team: true, subagent: true }).ok === true
+      && dp.dispatchKindAllowed("member", { expert: true, team: true, subagent: true }).ok === true
       && dp.dispatchKindAllowed("member", { expert: true, team: false, subagent: true }).ok === false
       && dp.dispatchKindAllowed("team", null).ok === false
-      ? ok("★ 类别闸：专家/子智能体默认放行、专家团默认拒绝（member 随 team）")
+      ? ok("★ 类别闸：专家/子智能体恒放行（连手改的 false 也不生效）、专家团默认拒绝（member 随 team）")
       : fail("dispatchKindAllowed 判据不对 —— 默认许可不是「专家/子智能体可用、专家团关闭」"));
     /dispatchKindAllowed\(input\.kind, originDispatch\)/.test(readFileSync(join(ROOT, "electron/features/delegation.ts"), "utf8"))
       ? ok("★ 勾选硬闸接线到 runDelegatedTask（agent_invoke 与 agents:invoke 两条入口共用一处闸）")
@@ -907,11 +909,11 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       : fail("applyDispatch 又出现了 resume 重放 —— 那条路是假绿（引擎不认）");
     /* 10-29：三个通知入口收敛成一个（总开关删除后只剩「逐类许可变化」）。 */
     (typeof dp.dispatchSelectionChangeNotice === "function"
-      && /新开启/.test(dp.dispatchSelectionChangeNotice(["team"], [], { expert: true, team: true, subagent: true }))
-      && /已在本会话停用/.test(dp.dispatchSelectionChangeNotice([], ["team"], { expert: true, team: false, subagent: true }))
+      && /打开了「专家团」/.test(dp.dispatchSelectionChangeNotice(["team"], [], { expert: true, team: true, subagent: true }))
+      && /关掉了「专家团」/.test(dp.dispatchSelectionChangeNotice([], ["team"], { expert: true, team: false, subagent: true }))
       && /agents:notice/.test(mainSrc9) && /window\.codex\.dispatchNotice\(/.test(appSrc9)
       && !/agents:(enabled|off)-notice/.test(mainSrc9) && !!dp.dispatchAllowOf
-      ? ok("★ 告知收敛为一条：新增/停用两段都在，且旧的两条通道已删除")
+      ? ok("★ 告知收敛为一条：开团/关团两态都在，且旧的两条通道已删除")
       : fail("告知链路不对 —— 要么语义不全，要么旧通道又长回来了"));
     // 运行状态行的词库（09-16 扩充）：规模、按活动分、不得照搬竞品原文
     const phraseBlock = /const RUN_PHRASES = \[([\s\S]*?)\];/.exec(appSrc9)?.[1] ?? "";

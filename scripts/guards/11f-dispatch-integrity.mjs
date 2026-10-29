@@ -87,22 +87,25 @@ try {
   ok(desc.length > 40, "工具描述非空（" + desc.length + " 字符）");
   ok(desc.includes("subagent") || desc.includes("子智能体"), "描述里出现子智能体（模型才知道能派谁）");
 
-  /* ⛔⛔ 2026-10-04 用户报「我只选了子智能体，点确认之后就只自动发送子智能体调度提示词」——
-     两个漏：① 描述不按勾选生成（三类全列）② 勾选变了不重取描述。
-     ⇒ 判据：只勾一类时，描述必须**只列那一类**、且对其余两类**显式否定**。 */
+  /* 10-29 两轮定稿：专家 / 子智能体**恒可用**，专家团是唯一开关 ⇒ 描述只有两种生产形态
+     （团关 / 团开）。判据钉住：团关时专家与子智能体照常列出、只有团被显式否定；
+     并且必须写明"别让用户去开开关"（否则模型会让用户去点一个不存在的开关）。 */
   {
-    const only = dispatchToolDescription(probeTargets, { expert: false, team: false, subagent: true });
-    ok(/可调度：子智能体/.test(only), "只开子智能体时描述首句写明「可调度：子智能体」");
-    ok(!only.includes('kind="expert"') && !only.includes('kind="team"'),
-      "只开子智能体时**不列**任何专家/专家团条目（列了模型就会派错）");
-    ok(/【专家】本会话\*\*未开启\*\*/.test(only) && /【专家团】本会话\*\*未开启\*\*/.test(only),
-      "未开启的类别被**显式否定**（不是隐藏 —— 隐藏会让模型以为不存在而反复试错）");
-    ok(only.includes('kind="subagent"'), "勾选的子智能体仍然列出");
-    // 反向：全勾时三类都要出现
-    const all = dispatchToolDescription(probeTargets, { expert: true, team: true, subagent: true });
-    ok(all.includes('kind="expert"') && all.includes('kind="team"') && all.includes('kind="subagent"'),
-      "三类全勾时三类都列出（不得被 allow 误伤）");
-    // 退化：allow=null 时全列（保持旧行为，不让描述变空）
+    const teamOff = dispatchToolDescription(probeTargets, { expert: true, team: false, subagent: true });
+    ok(/专家、子智能体可直接派（不需要任何开关）/.test(teamOff),
+      "团关时首句写明「专家、子智能体可直接派、不需要任何开关」");
+    ok(teamOff.includes('kind="expert"') && teamOff.includes('kind="subagent"'),
+      "团关时专家与子智能体**仍列出**（它们不该被开关误伤）");
+    ok(/【专家团】本会话\*\*未开启\*\*/.test(teamOff), "只有专家团被显式否定（不是隐藏 —— 隐藏会让模型反复试错）");
+    ok(!teamOff.includes('kind="team"'), "团关时不列团条目（只留一句显式否定，避免模型去试）");
+    ok(/不要把「先去调度面板开启」当成前置条件/.test(teamOff),
+      "⛔ 明确禁止把「去开开关」当前置条件（10-29 实测：模型让用户去勾一个已不存在的项）");
+
+    const teamOn = dispatchToolDescription(probeTargets, { expert: true, team: true, subagent: true });
+    ok(teamOn.includes('kind="expert"') && teamOn.includes('kind="team"') && teamOn.includes('kind="subagent"'),
+      "团开时三类都列出");
+    ok(!/未开启/.test(teamOn), "团开时没有任何否定段");
+
     const dflt = dispatchToolDescription(probeTargets, null);
     ok(dflt.includes('kind="expert"') && dflt.includes('kind="subagent"'), "allow=null 退化为全列（旧行为不破）");
   }

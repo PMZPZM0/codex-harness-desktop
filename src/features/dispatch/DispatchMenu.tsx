@@ -1,19 +1,20 @@
 /**
- * 调度面板（10-29 改版：专家 / 子智能体默认可用，只有专家团需显式开启）。
+ * 调度面板（10-29 定稿：面板上**只剩「专家团」一个开关**，专家 / 子智能体是常开能力）。
  *
- * ⛔⛔ 本文件是「调度许可」在 UI 上的唯一入口。10-29 用户令原文：
- *    「将子智能体调用和专家调度改为默认可直接调用，仅专家团功能需要显式开启」
- *    +「不再需要做数量或使用上的限制，每个会话都可以调度它们」。
- *    ⇒ 三处结构性改动（不是纯文案）：
- *      ① **删掉总开关**（原来那行「允许本会话调度」= 全局独占锁的入口）：它与"每个会话都能派"
- *         冲突，且默认可用之后再放一个总闸只会让人以为默认是关的；
- *      ② 三类改成**平行开关**，专家 / 子智能体出厂为开（用户仍可逐类关掉）；
- *      ③ 专家团行**自带说明**「默认关闭 · 需显式开启」—— 唯一需要用户动作的一类。
+ * ⛔⛔ 本文件是「调度许可」在 UI 上的唯一入口。用户两轮原话：
+ *    ①「将子智能体调用和专家调度改为默认可直接调用，仅专家团功能需要显式开启」
+ *      +「不再需要做数量或使用上的限制，每个会话都可以调度它们」；
+ *    ②「这里就可以只剩一个专家团就行，展示优化一下」。
+ *    ⇒ 结构与文案的最终形态：
+ *      · 删掉总开关（它同时是全局独占锁的入口，与"每个会话都能派"冲突）；
+ *      · 删掉专家 / 子智能体的开关 —— 三类并排里两个永远开着，是纯噪音，还暗示"默认是关的"；
+ *        它们改成一行**只读说明**（含当前数量），点它没反应也不会让人以为坏了；
+ *      · 专家团是唯一需要用户动作的一类，用整行 switch 承载，并写清开/关各自意味着什么。
  *    ⛔ 权限边界不在 UI：真正的闸在 `electron/dispatch.ts`（dispatchKindAllowed）+ 执行端
- *       `runDelegatedTask`。这里拿掉 disabled 只是 UX，绕不过执行端。
+ *       `runDelegatedTask`。面板只是让用户能改「专家团」这一项。
  */
 
-import { Sparkles, Users, Bot, Lock, ChevronDown, CircleCheck } from "lucide-react";
+import { Users, Lock, ChevronDown } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useAnchoredPopover } from "../app-view/hooks/useAnchoredPopover";
@@ -61,14 +62,13 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
     return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
   }, [open]);
   const countOf = (kind: DispatchTargetEntry["kind"]) => targets.filter((target) => target.kind === kind).length;
-  /* ⛔ 顺序即语义：先列**默认可用**的两类（平时不用动），最后是**需要显式开启**的专家团。 */
-  const rows: { key: keyof DispatchDraft; title: string; hint: string; n: number; icon: any }[] = [
-    { key: "expert", title: "专家", hint: "默认可用 · 代码审查 / 内容创作 / 演示文稿等单人专家", n: countOf("expert"), icon: Sparkles },
-    { key: "subagent", title: "子智能体", hint: "默认可用 · 你在设置里配置的自定义角色", n: countOf("subagent"), icon: Bot },
-    { key: "team", title: "专家团", hint: "默认关闭 · 需显式开启：主理人按 SOP 调度多名成员协作", n: countOf("team"), icon: Users },
-  ];
-  const dirty = JSON.stringify(draft) !== JSON.stringify(dispatch);
-  const anyAvailable = rows.some((row) => row.n > 0);
+  const expertCount = countOf("expert");
+  const subCount = countOf("subagent");
+  const teamCount = countOf("team");
+  /* 面板只有一个开关（专家团）⇒ 脏判定只看它。确认时 expert/subagent 一律写 true：
+     界面上没有"关掉专家"这条路，数据里就不该留一个假的关闭态（老记录里若有 false，这里顺手纠正）。 */
+  const dirty = draft.team !== (dispatch.team === true);
+  const anyAvailable = expertCount + subCount + teamCount > 0;
   /*⛔⛔ 2026-10-04 用户报「点调度弹窗展示不出来」——
      根因：`.topbar` 在 d19c510 被加了 `overflow: hidden`（修「图标压到原生窗口钮底下」），
      而本弹层是 `.topbar` 的 `position: absolute` 后代 ⇒ **被整棵子树裁掉**，
@@ -121,34 +121,41 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
             <strong>调度</strong>
             <small>把合适的独立子任务交给专门的角色去做，产出回传本会话（每次派活开一个独立会话，上下文互不串）</small>
           </div>
-          <div className="dispatch-rows">
-            {rows.map((row) => {
-              const Icon = row.icon;
-              const empty = row.n === 0;
-              return (
-                <button
-                  type="button"
-                  key={row.key}
-                  className={`dispatch-row ${draft[row.key] ? "checked" : ""}`}
-                  disabled={empty}
-                  title={empty ? "当前没有已启用的对象（先到设置里新建 / 启用）" : undefined}
-                  onClick={() => setDraft({ ...draft, [row.key]: !draft[row.key] })}
-                >
-                  <span className="dispatch-row-icon"><Icon size={14} /></span>
-                  <span className="dispatch-row-text">
-                    <strong>{row.title}{row.n ? <em>{row.n}</em> : null}</strong>
-                    <small>{empty ? "当前没有已启用的对象" : row.hint}</small>
-                  </span>
-                  <span className="dispatch-row-check">{draft[row.key] ? <CircleCheck size={15} /> : null}</span>
-                </button>
-              );
-            })}
+          {/* 10-29 用户令「这里就可以只剩一个专家团就行」：专家 / 子智能体是**常开能力**，
+              面板不再给它们开关（三个开关键里两个永远开着 = 纯噪音，还会让人以为默认是关的）。
+              ⛔ 关掉它们的能力仍在执行端（dispatchKindAllowed 看 dispatch.expert/subagent），
+                 面板确认时一律写 true —— 界面上没有"关掉专家"这条路，就不该留下一个假的关闭态。 */}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={draft.team}
+            className={`dispatch-master ${draft.team ? "on" : ""}`}
+            disabled={teamCount === 0}
+            title={teamCount === 0 ? "当前没有已启用的专家团（先到 设置 → 专家/专家团 里新建）" : undefined}
+            onClick={() => setDraft({ ...draft, team: !draft.team })}
+          >
+            <span className="dispatch-row-icon"><Users size={14} /></span>
+            <span className="dispatch-master-text">
+              <strong>专家团{teamCount ? <em>{teamCount}</em> : null}</strong>
+              <small>{teamCount === 0
+                ? "当前没有已启用的专家团"
+                : (draft.team
+                  ? "已开启：主理人按 SOP 调度多名成员协作"
+                  : "默认关闭 · 开启后主理人按 SOP 调度多名成员协作")}</small>
+            </span>
+            <span className="dispatch-toggle" aria-hidden><i /></span>
+          </button>
+          {/* 常开能力只做**说明**，不是开关（点它没反应会让人以为坏了） */}
+          <div className="dispatch-always">
+            <span>专家 <b>{expertCount}</b></span>
+            <span>子智能体 <b>{subCount}</b></span>
+            <small>默认可用，无需开启</small>
           </div>
           <div className="dispatch-foot">
             <small className="dispatch-scope">
               {!anyAvailable
                 ? "⚠️ 当前没有可调度的对象：先去设置里启用专家 / 子智能体 / 专家团"
-                : "专家/子智能体默认可用；专家团需显式开启"}
+                : "仅「专家团」需要开启"}
             </small>
             <div className="dispatch-actions">
               <button type="button" onClick={() => setOpen(false)}>取消</button>
@@ -156,7 +163,7 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
                 type="button"
                 className="primary"
                 disabled={!dirty || busy}
-                onClick={() => { onChange(draft); setOpen(false); }}
+                onClick={() => { onChange({ expert: true, subagent: true, team: draft.team }); setOpen(false); }}
               >
                 {busy ? "应用中…" : "确认"}
               </button>

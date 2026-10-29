@@ -32,16 +32,19 @@ export type ThreadRuntimeField = (typeof FIELDS)[number];
 const emptyDispatchConfig = (): DispatchConfig => ({ expert: true, team: false, subagent: true });
 
 /** 归一化调度许可（坏值/缺字段一律回落默认；兼容旧结构里的 `enabled`）。
- *  @param legacyEnabled 旧结构的「调度总开关」—— 只有它为 true 时旧记录里的 team 才算显式开启 */
+ *
+ *  ⛔ 10-29 定稿：面板只剩「专家团」一个开关 ⇒ `expert` / `subagent` 恒为 true。
+ *    旧记录里若有 `false`（当年逐类勾选时关过），在这里**直接读成 true**：界面上已经没有
+ *    关闭它们的入口，留着 false 只会让模型收到一个用户无法从 UI 纠正的"本会话禁用专家"，
+ *    并在回复里让用户去点一个不存在的开关（10-29 实测现象）。 */
 export function normalizeDispatchConfig(input: unknown): DispatchConfig {
   const src = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
-  const bool = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
   const legacy = typeof src.enabled === "boolean" ? src.enabled : null;
   return {
-    expert: bool(src.expert, true),
+    expert: true,
     // 旧记录：team 旧默认 true，但那只是"没关过"，不等于用户开过调度 ⇒ 必须叠加 enabled
-    team: legacy === null ? bool(src.team, false) : src.team === true && legacy,
-    subagent: bool(src.subagent, true),
+    team: legacy === null ? src.team === true : src.team === true && legacy,
+    subagent: true,
   };
 }
 

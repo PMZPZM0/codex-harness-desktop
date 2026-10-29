@@ -871,8 +871,8 @@
 .dispatch-master {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: flex-start;
+  gap: 9px;
   margin: 9px 10px 4px;
   padding: 9px 10px;
   border: 1px solid var(--line-soft);
@@ -884,7 +884,7 @@
   color: inherit;
 }
 .dispatch-master.on { border-color: var(--accent); background: var(--accent-soft); }
-.dispatch-master-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dispatch-master-text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .dispatch-master-text strong { font-size: 12.5px; font-weight: 600; }
 .dispatch-master-text small { font-size: 11px; color: var(--muted); line-height: 1.4; }
 .dispatch-toggle {
@@ -909,6 +909,33 @@
 }
 .dispatch-master.on .dispatch-toggle { background: var(--accent); }
 .dispatch-master.on .dispatch-toggle i { left: 16px; }
+
+/* 10-29：面板只剩「专家团」一个开关。专家 / 子智能体是常开能力，只做一行**只读说明**
+   （含当前数量）—— 不是按钮、不挂 hover、不发光标，避免"看起来能点却没反应"。 */
+.dispatch-always {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 10px 8px;
+  padding: 0 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.dispatch-always b { font-weight: 600; color: var(--text); }
+.dispatch-always span + span::before { content: "·"; margin-right: 6px; color: var(--faint); }
+.dispatch-master.on .dispatch-row-icon { background: var(--accent); color: #fff; }
+.dispatch-always small { margin-left: auto; font-size: 10.5px; color: var(--faint); }
+.dispatch-master-text strong em {
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border-radius: 20px;
+  padding: 1px 6px;
+  margin-left: 6px;
+}
+.dispatch-master:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .dispatch-rows { display: flex; flex-direction: column; gap: 5px; padding: 6px 10px 10px; }
 .dispatch-rows.is-off { opacity: 0.55; }
