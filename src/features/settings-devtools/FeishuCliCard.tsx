@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle, CalendarDays, Check, Copy, Download, ExternalLink, FileText, FolderOpen,
-  ListTodo, LogIn, LogOut, Mail, MessageSquare, Table2, Video,
+  ListTodo, LogIn, LogOut, Mail, MessageSquare, RefreshCw, Table2, Video,
 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { copyTextToClipboard } from "../../lib/clipboard";
@@ -44,6 +44,8 @@ type Status = {
   path: string;
   version: string;
   configured: boolean;
+  /** 当前配置的飞书应用 id（重新配置时用它判断"换没换成功"） */
+  appId: string;
   loggedIn: boolean;
   user: string;
   detail: string;
@@ -56,13 +58,15 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling 
   runtimeInstalling?: Record<string, boolean> | null;
 }) {
   const [status, setStatus] = useState<Status | null>(null);
-  const [busy, setBusy] = useState<"" | "setup" | "login" | "logout">("");
+  const [busy, setBusy] = useState<"" | "setup" | "reconfig" | "login" | "logout">("");
   const [link, setLink] = useState("");
   const [error, setError] = useState("");
   const releaseRef = useRef<number>(0);
   /* refresh 在间隔里跑，拿不到闭包里的最新 busy ⇒ 用 ref 镜像判断「当前这条链接属于哪个流程」。 */
   const busyRef = useRef(busy);
   busyRef.current = busy;
+  /* 重新配置前记下当前 appId：切换完成的唯一可观测信号是它变了（配置本来就是已完成态）。 */
+  const baseAppIdRef = useRef("");
 
   const refresh = useCallback(async () => {
     try {
@@ -70,9 +74,14 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling 
       setStatus(next);
       /* ⛔ 链接/等待态的归约走纯函数（真值表在守卫 139f）：见 configured 就收链接那次事故，
          就是把「登录等待中配置本来就已完成」这条规则漏在组件闭包里。 */
-      const outcome = feishuPollOutcome({ flow: busyRef.current, configured: next.configured, loggedIn: next.loggedIn });
+      const flow = busyRef.current;
+      const appChanged = flow === "reconfig" && next.appId !== baseAppIdRef.current;
+      const outcome = feishuPollOutcome({ flow, configured: next.configured, loggedIn: next.loggedIn, appChanged });
       if (!outcome.keepLink) setLink("");
-      if (outcome.clearBusy) setBusy("");
+      if (outcome.clearBusy) {
+        setBusy("");
+        if (appChanged) { baseAppIdRef.current = next.appId; setNotice?.("已切换到新的飞书应用，请重新登录"); }
+      }
       return next;
     } catch (err: any) {
       setError(String(err?.message ?? err));
@@ -103,7 +112,7 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling 
   useEffect(() => () => { if (releaseRef.current) window.clearTimeout(releaseRef.current); }, []);
 
   const installing = Boolean(runtimeInstalling?.["feishu-cli"]);
-  const waiting = busy === "setup" || busy === "login";
+  const waiting = busy === "setup" || busy === "reconfig" || busy === "login";
 
   /** 用系统默认浏览器打开授权页；打不开就给一条能自救的提示（链接本身仍可复制）。 */
   const openLink = async () => {
@@ -115,11 +124,16 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling 
     }
   };
 
-  const startSetup = async () => {
-    setError(""); setBusy("setup"); releaseLater();
+  /** replace=true = 重新配置（换一个飞书应用）：先记下当前 appId，等它变了才算切换完成。 */
+  const startSetup = async (replace = false) => {
+    if (replace) baseAppIdRef.current = String(status?.appId ?? "");
+    setError(""); setBusy(replace ? "reconfig" : "setup"); releaseLater();
     try {
       const result: any = await window.codex.feishuCliSetupStart();
-      if (result?.ok && result.url) { setLink(result.url); setNotice?.("已生成飞书应用配置链接，浏览器里完成即可"); }
+      if (result?.ok && result.url) {
+        setLink(result.url);
+        setNotice?.(replace ? "正在重新配置：在浏览器里完成新的应用创建 / 绑定，完成后需要重新登录" : "已生成飞书应用配置链接，浏览器里完成即可");
+      }
       else { setError(String(result?.error ?? "没有拿到授权链接")); releaseNow(); }
     } catch (err: any) { setError(String(err?.message ?? err)); releaseNow(); }
   };
@@ -166,15 +180,20 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling 
           </div>
         </div>
 
-        <div className={`runtime-row ${status?.configured ? "installed" : "missing"} ${busy === "setup" ? "busy" : ""}`}>
-          <span className="runtime-icon">{busy === "setup" ? <Spinner /> : status?.configured ? <Check size={15} /> : <ExternalLink size={15} />}</span>
+        <div className={`runtime-row ${status?.configured ? "installed" : "missing"} ${busy === "setup" || busy === "reconfig" ? "busy" : ""}`}>
+          <span className="runtime-icon">{busy === "setup" || busy === "reconfig" ? <Spinner /> : status?.configured ? <Check size={15} /> : <ExternalLink size={15} />}</span>
           <span className="runtime-copy">
             <strong>配置飞书应用</strong>
             <small>{status?.configured ? "已配置（应用凭据存在本机，可重复使用）" : "在浏览器里创建 / 绑定一个飞书应用，一次即可"}</small>
           </span>
           <div className="runtime-actions">
-            {status?.configured ? <span className="runtime-badge installed">已配置</span>
-              : <button type="button" className="runtime-install" disabled={!status?.installed || Boolean(busy)} onClick={() => void startSetup()}>
+            {status?.configured ? <>
+                <span className="runtime-badge installed">已配置</span>
+                <button type="button" className="runtime-install" disabled={Boolean(busy)} onClick={() => void startSetup(true)} title="换一个飞书应用（会替换当前绑定的应用，完成后需重新登录）">
+                  {busy === "reconfig" ? <><Spinner /> 配置中</> : <><RefreshCw size={13} />重新配置</>}
+                </button>
+              </>
+              : <button type="button" className="runtime-install" disabled={!status?.installed || Boolean(busy)} onClick={() => void startSetup(false)}>
                   {busy === "setup" ? <><Spinner /> 等待浏览器</> : <><ExternalLink size={13} />去配置</>}
                 </button>}
           </div>

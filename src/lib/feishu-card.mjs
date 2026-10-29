@@ -6,12 +6,16 @@
  *    轮询 effect 依赖 link 被掐断 ⇒ 浏览器里授权成功、卡片永远停在「等待授权」。
  *    组件里的判定没有真值表，改坏了只能靠用户截图发现。规则收到这里，守卫跑真值表。
  *
- * @param {{ flow: "" | "setup" | "login" | "logout"; configured: boolean; loggedIn: boolean }} input
+ * @param {{ flow: "" | "setup" | "reconfig" | "login" | "logout"; configured: boolean; loggedIn: boolean }} input
  * @returns {{ keepLink: boolean; clearBusy: boolean }}
  */
-export function feishuPollOutcome({ flow, configured, loggedIn }) {
+export function feishuPollOutcome({ flow, configured, loggedIn, appChanged = false }) {
   if (loggedIn) return { keepLink: false, clearBusy: true };
   if (flow === "setup" && configured) return { keepLink: false, clearBusy: true };
+  /* 重新配置（换一个飞书应用）：配置本来就是**已完成态** ⇒ configured 不能当完成信号，
+     唯一可观测的信号是 appId 变了（调用方算好 appChanged 传进来）。
+     ⛔ 没变之前必须 keepLink=true —— 收掉链接 = 2 秒轮询跟着断（登录那次事故同型）。 */
+  if (flow === "reconfig") return appChanged ? { keepLink: false, clearBusy: true } : { keepLink: true, clearBusy: false };
   /* 等登录时配置已经完成，这是正常状态 —— 链接必须留着，否则 2 秒轮询跟着断。 */
   if (flow === "login") return { keepLink: true, clearBusy: false };
   return { keepLink: false, clearBusy: false };

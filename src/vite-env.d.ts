@@ -52,6 +52,24 @@ type SubAgentEntry = {
   updatedAt: string;
 };
 
+/** 一个「CLI 智能体」定义（10-29 新板块；真相源在 electron/cli-agents.ts 的内置表 + userData/cli-agents.json） */
+type CliAgentEntry = {
+  id: string;
+  name: string;
+  /** coding 编码 CLI / agent 通用智能体 CLI / custom 自建·其他（分类表由 cliagents:list 一起下发） */
+  category: string;
+  /** PATH 上的可执行名（检测与派活提示都用它） */
+  bin: string;
+  /** 官方安装命令；空串 = 没有可复制的一键命令，按官方文档装 */
+  installCmd: string;
+  docs: string;
+  description: string;
+  promptHint: string;
+  enabled: boolean;
+  builtin: boolean;
+  createdAt: number;
+};
+
 /** 记忆分层快照（L1.5 坑与纪律 / L0 用户档案 / L1 项目记忆 / L2 每日日志） */
 type MemoryLayersSnapshot = {
   user: string;
@@ -161,7 +179,7 @@ type ExpertTeamConfig = {
 
 /** 可被 Codex 调度的对象（专家 / 专家团 / 团队成员 / 子智能体） */
 type DispatchTargetEntry = {
-  kind: "expert" | "team" | "member" | "subagent";
+  kind: "expert" | "team" | "member" | "subagent" | "cli";
   key: string;
   name: string;
   profession: string;
@@ -568,6 +586,13 @@ interface Window {
     readClipboardFiles(): Promise<string[]>;
     writeClipboard(text: string): Promise<boolean>;
     writeClipboardImage(filePath: string): Promise<boolean>;
+    /* 10-29 CLI 智能体板块：分类表跟着列表下发（渲染层不复制第二份分类字面量） */
+    listCliAgents(): Promise<{ items: CliAgentEntry[]; categories: { key: string; label: string; hint: string }[] }>;
+    /* 只在用户点「检测」时调：有子进程（where/which + --version） */
+    detectCliAgent(input?: { id?: string; bin?: string }): Promise<{ installed: boolean; path: string; version: string; error: string }>;
+    /* 新增/更新；内置项不可删只能关停 */
+    saveCliAgent(input?: { id?: string; name?: string; category?: string; bin?: string; installCmd?: string; docs?: string; description?: string; promptHint?: string; enabled?: boolean }): Promise<{ ok: boolean; error?: string; item?: CliAgentEntry }>;
+    removeCliAgent(id: string): Promise<{ ok: boolean; error?: string }>;
     /* 10-13 关闭确认弹窗的回包：tray=隐藏主窗口 / quit=置 closeConfirmed 后二次 close / cancel=不动。remember=true 写 closeToTray（动作）+ closePromptSeen（不再弹）。⛔ ask 方向是推送类手写桥（preload onCloseConfirmAsk），不在本清单 */
     respondCloseConfirm(action: "tray" | "quit" | "cancel", remember: boolean): Promise<{ ok: boolean; error?: string }>;
     /* 云账号登录（10-16）：账号密码换云端 Bearer 会话令牌，safeStorage 加密后落 userData/cloud/auth.json。⛔ 不是配对流程 —— 服务端 accountWho() 同时认会话令牌与设备令牌 */
@@ -1292,7 +1317,7 @@ interface Window {
     /* 收口孤儿：记录在目录不在 / orphan 重试 / 目录在记录不在（后者超 maxAgeDays 才删） */
     sessionspaceGc(options?: { maxAgeDays?: number; dryRun?: boolean }): Promise<{ recordsRemoved: number; dirsRemoved: number; orphanRetried: number; scanned: number }>;
     /* 10-29 飞书官方 CLI（@larksuite/cli）状态：是否安装 / 是否配置应用 / 是否已登录 */
-    feishuCliStatus(): Promise<{ installed: boolean; path: string; version: string; configured: boolean; loggedIn: boolean; user: string; detail: string; error: string }>;
+    feishuCliStatus(): Promise<{ installed: boolean; path: string; version: string; configured: boolean; loggedIn: boolean; appId: string; user: string; detail: string; error: string }>;
     /* 创建/绑定飞书应用：后台跑 lark-cli config init --new，返回授权链接 */
     feishuCliSetupStart(): Promise<{ ok: boolean; url?: string; error?: string }>;
     /* 用户登录 device flow：auth login --recommend --no-wait --json 拿链接，后台用 --device-code 完成 */

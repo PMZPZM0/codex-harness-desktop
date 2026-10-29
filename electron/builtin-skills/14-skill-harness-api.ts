@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（108 个能力域 / 589 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（109 个能力域 / 593 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -368,6 +368,10 @@ SSH 服务器库（保存/执行远程命令/导入导出/会话终端）
 ### teams（9 通道）
 专家团/专家的定义与成员管理——**可创建**：用户要「新建一个专家/专家团」时，**直接用真工具 \`expert_save\`**（先 \`expert_list\` 查重；normalize 自动补默认与 id 规范；teamId 相同即覆盖更新）。字段：displayName/profession/description（zh+en）/category/tags(≤3)/quickPrompts(≤3)/sop；lead 必带 name+systemPrompt；多角色协作加 members[]（每人 name+profession+description+systemPrompt）。⛔ 内置专家（知微/呈象/洞明/鲁班/画意/剪承团）每次启动确保存在——不要用与内置相同的 teamId 去覆盖内置定义，新建用独有 teamId；建完向用户复述 teamId 与成员名单
 通道：teams:invoke-member, teams:list, teams:member-session, teams:remove, teams:reset-defaults, teams:save, teams:session-config, teams:start-session, teams:tools
+
+### cliagents（4 通道）
+CLI 智能体（10-29）：把外部命令行工具（Claude Code / Codex CLI / Gemini CLI / Aider / OpenClaw / 自建入口）当成**可调度对象**，与专家、子智能体一起出现在输入框 \`@\` 候选里，派活走 \`agent_invoke\`（kind="cli"）→ 同一个 runDelegatedTask（开独立会话、登记归属、产出回传）。管理面在「设置 → 开发工具 → CLI 智能体」：按分类（编码 / 通用智能体 / 自建）分组、搜索、检测是否已装（where/which + --version）、复制官方安装命令、启停、新增自定义条目。⛔ 这一步**不能**替你一键安装：installCmd 只在核实过官方来源时才有值，其余显示「按官方文档安装」；⛔ 模型侧没有增删 CLI 定义的通道 —— 用户要接入新 CLI 时，请让他在这个面板里添加（或直接填可执行名）
+通道：cliagents:detect, cliagents:list, cliagents:remove, cliagents:save
 
 ### clipboard（4 通道）
 剪贴板（读写文本/图片）
