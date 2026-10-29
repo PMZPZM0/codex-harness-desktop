@@ -417,36 +417,8 @@
    触发条件取窗口宽 1100：这一档以下主区已被侧栏挤窄，竖条再往左外侧长会顶到侧栏
    （实测 1080 宽窗口里 rail 左缘已贴到侧栏右缘）。
    ⛔ 挪进内部就必须给正文让位（`.composer-editor` 的 padding-left），否则第一行文字被图标压住。 */
-@media (max-width: 1100px) {
-  /* ⛔ 小屏**不能用竖列**：输入框本体只有 ~114 高，5 个 28px 图标要 160 高，竖着必然被裁/滚动。
-     输入框在窄屏下依然是**宽的**（实测 700 视口下 640），所以横排一排最自然（140px 宽）。 */
-  .composer-rail {
-    right: auto;
-    left: 6px;
-    top: 6px;
-    bottom: auto;
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  .composer-rail-toggle {
-    transform: none;
-    width: 26px;              /* 横向条的"手柄"：短粗条躺在图标行左侧 */
-    height: 12px;
-  }
-  .composer-rail-grip {
-    width: 22px;
-    height: 4px;
-  }
-  .composer-rail-icons {
-    flex-flow: row nowrap;    /* 一排横放 */
-    max-height: none;
-    overflow: visible;
-    margin: 6px 0 0;          /* 横排时手柄在上、图标行在下 ⇒ 间隙放到上边 */
-  }
-  /* 正文让位：横向条高 ~36，正文从下面开始 */
-  .composer .composer-editor,
-  .composer textarea {
-    padding-left: 0;
-    padding-top: 40px;
-  }
-}
+/* ── 10-29 用户：「主要小尺寸的」───────────────────────────────────────────
+   这里原本有一条 `@media (max-width: 1100px)`：小屏把图标塞进输入框**内部左上角横排**，
+   还给正文加了 padding-top:40 让位（用户截图看到的就是这个形态，被判不合格）。
+   ⇒ 整条删掉：小尺寸与宽屏**同一套形态** —— 图标两列骑在左边框线上（69×104，装得进框高），
+      空间不够时它盖在侧栏上（z-index 40），而不是变形或钻进框里。 */
